@@ -4,9 +4,25 @@
  * 네이버 스마트플레이스 예약현황 모니터링 (Puppeteer 기반)
  * 5분 주기로 예약 현황 모니터링
  * 변경사항 감지 시 스크린샷 및 알림
+ * 
+ * ✅ VALIDATION_RULES.md에 정의된 검증 규칙 적용
  */
 
 const puppeteer = require('puppeteer');
+const { validateAndNormalizeData } = require('../lib/validation');
+
+async function initializeBrowser() {
+    const browser = await puppeteer.launch({
+        headless: false,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--window-size=1440,900'
+        ]
+    });
+    const page = await browser.newPage();
+    return {browser, page};
+}
 const fs = require('fs');
 const path = require('path');
 
@@ -36,6 +52,9 @@ function log(msg) {
   const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
   console.log(`[${timestamp}] ${msg}`);
 }
+
+// ✅ 데이터 검증은 lib/validation.js에서 import함
+// (중복 제거 및 라이브러리 일관성)
 
 // ✅ 시간 처리: "오전 12:00~오후 1:00" → { start: "00:00", end: "13:00" }
 function parseTimeText(timeText) {
@@ -930,7 +949,16 @@ async function monitorBookings() {
 
               const candidates = newest
                 .map(b => ({ ...b, date: todaySeoul }))
-                .filter(b => b.phone && b.date && b.start && b.end && b.room)
+                // ✅ 정규식 기반 데이터 검증 및 정규화
+                .map(b => {
+                  const validated = validateAndNormalizeData(b);
+                  if (!validated) {
+                    log(`   ⚠️ 검증 실패(버림): bookingId=${b.bookingId} phone=${b.phone} room=${b.room}`);
+                    return null;
+                  }
+                  return validated;
+                })
+                .filter(Boolean) // null 제거
                 .map(b => ({ ...b, _key: toKey(b) }))
                 .filter(b => !seenSet.has(b._key));
 
@@ -1109,6 +1137,12 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
       return `${String(h).padStart(2, '0')}:${m}`;
     };
 
+    // ✅ 전화번호 포맷팅: 01035000586 → 010-3500-0586
+    const formatPhone = (phoneNoHyphen) => {
+      if (!phoneNoHyphen || phoneNoHyphen.length !== 11) return phoneNoHyphen;
+      return `${phoneNoHyphen.slice(0, 3)}-${phoneNoHyphen.slice(3, 7)}-${phoneNoHyphen.slice(7)}`;
+    };
+
     const out = [];
     for (const row of rows) {
       // ✅ BookingListView 구조에서 각 셀 추출
@@ -1155,10 +1189,12 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 
       // 유효한 데이터만 추가
       if (phone && start && end && date) {
+        const phoneFormatted = formatPhone(phone);
         const uniqueId = `${date}|${start}|${end}|${room}|${phone}`;
         out.push({ 
           bookingId: bookingId || uniqueId,
-          phone, 
+          phone: phoneFormatted,  // ✅ 포맷팅된 전화번호 (010-3500-0586)
+          phoneRaw: phone,  // 원본 (01035000586)
           date, 
           start, 
           end, 
@@ -1174,16 +1210,23 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 
 function runPickko(booking) {
   return new Promise((resolve) => {
+    // ✅ 픽코 호출 직전 최종 검증 (중복 안전장치)
+    const finalValidated = validateAndNormalizeData(booking);
+    if (!finalValidated) {
+      log(`❌ 픽코 호출 전 검증 실패: ${JSON.stringify(booking)}`);
+      return resolve(1); // 검증 오류 → code 1
+    }
+
     const args = [
       'pickko-accurate.js',
-      `--phone=${booking.phone}`,
-      `--date=${booking.date}`,
-      `--start=${booking.start}`,
-      `--end=${booking.end}`,
-      `--room=${booking.room}`
+      `--phone=${finalValidated.phone}`,
+      `--date=${finalValidated.date}`,
+      `--start=${finalValidated.start}`,
+      `--end=${finalValidated.end}`,
+      `--room=${finalValidated.room}`
     ];
 
-    log(`🤖 픽코 확정 실행: ${args.join(' ')}`);
+    log(`✅ [검증완료] 🤖 픽코 확정 실행: phone=${finalValidated.phone} date=${finalValidated.date} ${finalValidated.start}~${finalValidated.end} room=${finalValidated.room}`);
 
     const child = spawn('node', args, {
       cwd: __dirname, // ⚠️ Fix: 하드코딩 경로 → 현재 파일 기준 상대 경로

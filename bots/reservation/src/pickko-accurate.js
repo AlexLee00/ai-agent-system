@@ -3,9 +3,25 @@
 /**
  * 픽코 예약 등록 (외부 모니터 + 팝업 자동 처리)
  * 010-3500-0586 / 2026-02-22 / 02:30~03:00 / A1룸
+ * 
+ * ✅ VALIDATION_RULES.md에 정의된 검증 규칙 적용
+ * ✅ lib/validation.js 라이브러리 사용
  */
 
 const puppeteer = require('puppeteer');
+const { validateAndNormalizeData, validateTimeRange } = require('../lib/validation');
+
+async function initializeBrowser() {
+    const browser = await puppeteer.launch({
+        headless: false,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--window-size=1440,900'
+        ]
+    });
+    return browser;
+}
 // NOTE: 창 위치/모니터 이동 로직은 제거 (macOS 스케일/권한 이슈로 불안정)
 
 
@@ -36,17 +52,40 @@ function parseArgs(argv) {
 
 const ARGS = parseArgs(process.argv);
 
-const DATE = ARGS.date || DEFAULTS.date; // YYYY-MM-DD
-const START_TIME = ARGS.start || DEFAULTS.start; // HH:MM
-const END_TIME = ARGS.end || DEFAULTS.end; // HH:MM
-const ROOM = (ARGS.room || DEFAULTS.room).toUpperCase();
+// ✅ 입력 데이터 검증 (VALIDATION_RULES.md 규칙 적용)
+const rawInput = {
+  phone: ARGS.phone || DEFAULTS.phone,
+  date: ARGS.date || DEFAULTS.date,
+  start: ARGS.start || DEFAULTS.start,
+  end: ARGS.end || DEFAULTS.end,
+  room: ARGS.room || DEFAULTS.room
+};
 
-// 전화번호는 숫자만 11자리
-const PHONE_NOHYPHEN = (ARGS.phone || DEFAULTS.phone).replace(/\D/g, '');
+const validated = validateAndNormalizeData(rawInput);
+if (!validated) {
+  throw new Error(`입력 데이터 검증 실패: ${JSON.stringify(rawInput)}`);
+}
 
-if (!/^\d{4}-\d{2}-\d{2}$/.test(DATE)) throw new Error(`DATE 형식 오류: ${DATE}`);
-if (!/^\d{2}:\d{2}$/.test(START_TIME) || !/^\d{2}:\d{2}$/.test(END_TIME)) throw new Error(`시간 형식 오류: start=${START_TIME}, end=${END_TIME}`);
-if (!/^\d{11}$/.test(PHONE_NOHYPHEN)) throw new Error(`PHONE(11자리) 오류: ${PHONE_NOHYPHEN}`);
+const PHONE_NOHYPHEN = validated.phone;
+const DATE = validated.date;
+const START_TIME = validated.start;
+const END_TIME = validated.end;
+const ROOM = validated.room;
+
+// ✅ DEV 모드 화이트리스트 검증 (2026-02-23)
+// 환경변수: DEV_WHITELIST_PHONES="01035000586,01054350586"
+// 기본값: 이재룡(사장님), 김정민(부사장님)
+const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
+  .split(',')
+  .map(p => p.trim())
+  .filter(p => /^\d{11}$/.test(p));
+
+log(`📋 DEV 화이트리스트: [${DEV_WHITELIST.join(', ')}]`);
+
+const MODE = (process.env.MODE || 'dev').toLowerCase();
+if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_NOHYPHEN)) {
+  throw new Error(`🔐 DEV 모드 화이트리스트 검증 실패: ${PHONE_NOHYPHEN}은(는) 테스트 대상이 아닙니다. (허용: ${DEV_WHITELIST.join(', ')})`);
+}
 
 
 // 룸명 → st_no (사장님 제공 HTML 기반)
@@ -88,22 +127,8 @@ function convertAMPMto24Hour(ampmTime, period) {
   return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// ✅ 시간 유효성 검증
-function validateTime(startTime, endTime) {
-  const startMin = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
-  const endMin = parseInt(endTime.split(':')[0]) * 60 + parseInt(endTime.split(':')[1]);
-  
-  // 자정 넘어가는 경우 처리 (예: 23:00 ~ 00:30)
-  if (endMin < startMin) {
-    return { valid: true, crossMidnight: true };
-  }
-  
-  if (endMin <= startMin) {
-    return { valid: false, error: `종료시간이 시작시간보다 앞이거나 같습니다: ${startTime} → ${endTime}` };
-  }
-  
-  return { valid: true, crossMidnight: false };
-}
+// ✅ 시간 검증은 lib/validation.js의 validateTimeRange 사용
+// (중복 제거 및 라이브러리 일관성)
 
 // ✅ 오류 발생 시 알림 (텔레그램/로그)
 async function sendErrorNotification(errorMsg, context = {}) {
@@ -174,12 +199,12 @@ async function main() {
     await delay(3000);
     log('✅ 로그인 완료');
     
-    // ✅ 시간 유효성 검증 (로그인 후)
-    const timeValidation = validateTime(START_TIME, END_TIME);
-    if (!timeValidation.valid) {
-      throw new Error(`시간 검증 실패: ${timeValidation.error}`);
+    // ✅ 시간 범위 검증 (로그인 후)
+    const timeRangeCheck = validateTimeRange(START_TIME, END_TIME);
+    if (!timeRangeCheck.ok) {
+      throw new Error(`시간 검증 실패: ${timeRangeCheck.error}`);
     }
-    log(`✅ 시간 검증 통과: ${START_TIME} ~ ${END_TIME}`);
+    log(`✅ 시간 검증 통과: ${START_TIME} ~ ${END_TIME}${timeRangeCheck.isCrossMidnight ? ' (자정 넘어감)' : ''}`);
     
     // ======================== 2단계: 페이지 이동 ========================
     log('\n[2단계] 예약 등록 페이지');
@@ -242,18 +267,25 @@ async function main() {
     // ======================== 5단계: 날짜 확인 (수정됨) ========================
     log('\n[5단계] 날짜 확인');
     
-    // 입력필드(start_date) 현재값과 목표 날짜(DATE) 비교
+    // 1) 예약일자 읽기 (li#prev_schedule)
+    const prevScheduleDate = await page.evaluate(() => {
+        const li = document.querySelector('li#prev_schedule');
+        return li ? li.textContent.trim() : '';
+    });
+    
+    // 2) 입력필드(start_date) 현재값 읽기
     const inputDate = await page.evaluate(() => {
         const inp = document.querySelector('input#start_date');
         return inp ? inp.value : '';
     });
     
+    log(`📅 예약일자(prev_schedule): ${prevScheduleDate}`);
     log(`📅 입력필드(start_date): ${inputDate}`);
     log(`📅 목표 날짜(DATE): ${DATE}`);
     
-    // 비교: 같으면 스킵, 다르면 input 값을 직접 세팅 (달력 클릭 방식 제거)
-    if (inputDate === DATE) {
-        log(`✅ 입력필드가 이미 목표 날짜(${DATE})입니다. 날짜 설정 스킵!`);
+    // 3) 비교: 예약일자와 입력필드가 같으면 스킵, 다르면 날짜 설정
+    if (inputDate === prevScheduleDate) {
+        log(`✅ 입력필드(${inputDate})가 예약일자(${prevScheduleDate})와 같습니다. 날짜 설정 스킵!`);
     } else {
         // 요청: 코드로 날짜를 먼저 세팅하고, 달력 팝업을 띄운 뒤 해당 "일자"를 클릭해서 확정
         log(`⚠️ 날짜가 다릅니다. 1) 코드로 ${DATE} 세팅 → 2) 달력 팝업 확인 → 3) 일자 클릭 확정`);
@@ -767,11 +799,41 @@ async function main() {
     await delay(1200);
 
     log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
+    
+    // ======================== 9단계: 완료 검증 ========================
+    log('\n[9단계] 픽코 예약등록 + 결제 완료 검증');
+    
+    // 최종 상태 확인: 예약이 실제로 완료되었는지 픽코에서 조회
+    const finalStatus = await page.evaluate(() => {
+      const pageTitle = document.title || '';
+      const hasErrorMsg = !!document.querySelector('body')?.innerText.includes('에러');
+      const hasSuccessMsg = !!document.querySelector('body')?.innerText.includes('완료');
+      
+      return {
+        pageTitle,
+        hasErrorMsg,
+        hasSuccessMsg,
+        url: window.location.href,
+        timestamp: new Date().toLocaleString('ko-KR')
+      };
+    });
+    
+    log(`🔍 최종 상태: ${JSON.stringify(finalStatus)}`);
+    
+    // 성공 판정: alert("등록되었습니다.") + 결제 모달 닫힘 + 오류 없음
+    const isSuccess = !finalStatus.hasErrorMsg && (finalStatus.hasSuccessMsg || paySubmitClicked);
+    
+    if (isSuccess) {
+      log(`✅ [SUCCESS] 픽코 예약등록 + 결제 완료됨!`);
+      log(`📅 예약정보: ${PHONE_NOHYPHEN} / ${DATE} / ${chosen.start}~${chosen.end} / ${ROOM}`);
+      log(`💳 결제: ${payModalResult.totalText}원 (0원 현금결제)`);
+    } else {
+      log(`⚠️ [WARNING] 완료 상태 불명확 (수동 확인 필요)`);
+    }
 
     // ✅ 성공 시 브라우저 처리
     // - DEV 모드: 기본 유지(사장님 확인 절차)
     // - OPS 모드: 기본 종료(자동화 안정)
-    const MODE = (process.env.MODE || 'dev').toLowerCase();
     const hold = (process.env.HOLD_BROWSER === '1') || (MODE === 'dev');
 
     if (hold) {
