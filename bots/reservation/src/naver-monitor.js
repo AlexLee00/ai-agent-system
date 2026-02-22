@@ -37,7 +37,43 @@ function log(msg) {
   console.log(`[${timestamp}] ${msg}`);
 }
 
-// 팝업 자동 감지 및 클릭
+// ✅ 시간 처리: "오전 12:00~오후 1:00" → { start: "00:00", end: "13:00" }
+function parseTimeText(timeText) {
+  // 예: "오전 11:00~오후 12:00" → { period1: "오전", hour1: 11, min1: 0, period2: "오후", hour2: 12, min2: 0 }
+  if (!timeText) return null;
+
+  // 정규식: "오전/오후 H:MM~오전/오후 H:MM"
+  const pattern = /(오전|오후)\s+(\d{1,2}):(\d{2})~(오전|오후)?\s*(\d{1,2}):(\d{2})/;
+  const match = timeText.match(pattern);
+  
+  if (!match) return null;
+
+  let period1 = match[1]; // "오전" 또는 "오후"
+  let hour1 = parseInt(match[2]);
+  let min1 = parseInt(match[3]);
+  let period2 = match[4] || period1; // 생략되면 period1 따라가기
+  let hour2 = parseInt(match[5]);
+  let min2 = parseInt(match[6]);
+
+  // 24시간 변환
+  const convertTo24 = (hour, period) => {
+    if (period.includes('오전')) {
+      return hour === 12 ? 0 : hour; // 오전 12:00 → 00:00
+    } else {
+      return hour === 12 ? 12 : hour + 12; // 오후 12:00 → 12:00, 오후 1:00 → 13:00
+    }
+  };
+
+  const start24 = convertTo24(hour1, period1);
+  const end24 = convertTo24(hour2, period2);
+
+  return {
+    start: `${String(start24).padStart(2, '0')}:${String(min1).padStart(2, '0')}`,
+    end: `${String(end24).padStart(2, '0')}:${String(min2).padStart(2, '0')}`
+  };
+}
+
+// ✅ 팝업 자동 감지 및 클릭 (루프로 모든 팝업 처리)
 async function closePopupsIfPresent(page) {
   try {
     // 페이지가 유효한지 확인
@@ -45,38 +81,60 @@ async function closePopupsIfPresent(page) {
       return;
     }
 
-    // 팝업/모달 감지 및 자동 클릭
-    try {
-      const popupClosed = await page.evaluate(() => {
-        let closed = false;
+    // 팝업이 없을 때까지 루프 실행
+    let popupCount = 0;
+    const maxLoops = 10; // 무한 루프 방지
 
-        // 1️⃣ 버튼 텍스트로 찾기 (확인, OK, 닫기 등)
-        const buttons = Array.from(document.querySelectorAll('button, a[role="button"], div[role="button"]'));
-        for (const btn of buttons) {
-          const text = (btn.textContent || '').trim();
-          // 확인, OK, 닫기, 완료 등의 한글/영문 버튼 찾기
-          if (text === '확인' || text === 'OK' || text === '닫기' || text === '완료' || text === '네' || text === 'Yes') {
-            // 보이는 버튼만 클릭 (display: none 아닌 것)
-            const isVisible = btn.offsetParent !== null || window.getComputedStyle(btn).display !== 'none';
+    for (let loop = 0; loop < maxLoops; loop++) {
+      try {
+        const popupHandled = await page.evaluate(() => {
+          let handled = false;
+
+          // 1️⃣ 일주일 동안 보지 않기 체크박스 찾기 및 체크
+          const checkbox = document.querySelector('input#checkShow');
+          if (checkbox && !checkbox.checked) {
+            const isVisible = checkbox.offsetParent !== null;
             if (isVisible) {
-              console.log(`🔘 팝업 버튼 클릭: "${text}"`);
-              btn.click();
-              closed = true;
+              console.log(`✅ '일주일 동안 보지 않기' 체크박스 선택`);
+              checkbox.click();
+              handled = true;
             }
           }
+
+          // 2️⃣ X 버튼 찾기 및 클릭 (class 또는 data-testid로 찾기)
+          const closeBtn = document.querySelector('button.Popup_btn_close__YO5i8') 
+                        || document.querySelector('button[data-testid="popup-close-btn"]');
+          if (closeBtn) {
+            const isVisible = closeBtn.offsetParent !== null;
+            if (isVisible) {
+              console.log(`🔘 X 버튼 클릭`);
+              closeBtn.click();
+              handled = true;
+            }
+          }
+
+          return handled;
+        }).catch(() => false);
+
+        if (popupHandled) {
+          popupCount++;
+          log(`✅ 팝업 #${popupCount} 처리 완료 (일주일동안보지않기 + X 클릭)`);
+          await delay(800); // 팝업 닫히는 시간 대기
+        } else {
+          // 팝업이 더 이상 없으면 루프 탈출
+          if (loop > 0) {
+            log(`✅ 모든 팝업 처리 완료 (총 ${popupCount}개)`);
+          } else {
+            log(`ℹ️ 팝업 없음 - 계속 진행`);
+          }
+          break;
         }
-
-        return closed;
-      }).catch(() => false);
-
-      if (popupClosed) {
-        log('✅ 팝업 자동 종료');
-        await delay(500);
-      }
-    } catch (evalErr) {
-      // evaluate 중 프레임 손상 무시
-      if (!String(evalErr).includes('detached')) {
-        log(`⚠️ 팝업 감지 중 에러(무시): ${evalErr.message}`);
+      } catch (evalErr) {
+        // evaluate 중 프레임 손상 무시
+        if (!String(evalErr).includes('detached')) {
+          log(`⚠️ 팝업 감지 중 에러(무시): ${evalErr.message}`);
+        }
+        break;
       }
     }
   } catch (err) {
@@ -178,6 +236,36 @@ async function naverLogin(page) {
     if (homeReady) {
       log('✅ 이미 로그인 상태(홈 예약현황 감지)');
       return true;
+    }
+
+    // ✅ 3단계 전: 팝업 확인 및 클릭 (로그인 폼 감지 전)
+    log('🔍 팝업 확인 중...');
+    const popupClicked = await page.evaluate(() => {
+      let clicked = false;
+      
+      // 보이는 모든 버튼 찾기
+      const buttons = Array.from(document.querySelectorAll('button'));
+      for (const btn of buttons) {
+        const text = (btn.textContent || '').trim();
+        const isVisible = btn.offsetParent !== null;
+        
+        // 확인, OK, 닫기 등의 버튼 찾기
+        if (isVisible && (text === '확인' || text === 'OK' || text === '닫기' || text === '완료' || text === '네' || text === 'Yes')) {
+          console.log(`🔘 팝업 버튼 감지 및 클릭: "${text}"`);
+          btn.click();
+          clicked = true;
+          break;
+        }
+      }
+      
+      return clicked;
+    });
+    
+    if (popupClicked) {
+      log('✅ 팝업 감지 및 클릭 완료');
+      await delay(1500); // 팝업 닫히는 시간 대기
+    } else {
+      log('ℹ️ 팝업 없음 - 계속 진행');
     }
 
     // 로그인 폼 감지
@@ -511,6 +599,61 @@ async function monitorBookings() {
             log(`🔗 오늘 확정 리스트 이동: ${confirmedHref}`);
             await page.goto(confirmedHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
+
+            // 5단계: 팝업 체크 및 처리 (일주일동안보지않기 + X 클릭)
+            log('🔍 5단계 팝업 확인 중...');
+            try {
+              const popupHandled = await page.evaluate(() => {
+                let handled = false;
+
+                // 1️⃣ '일주일동안보지않기' 체크박스 찾기
+                const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                for (const checkbox of checkboxes) {
+                  const label = checkbox.closest('label') || checkbox.parentElement;
+                  const labelText = (label?.textContent || '').trim();
+                  
+                  if (labelText.includes('일주일') || labelText.includes('보지않기')) {
+                    // 보이는 체크박스만 클릭
+                    const isVisible = checkbox.offsetParent !== null;
+                    if (isVisible && !checkbox.checked) {
+                      console.log(`✅ '일주일동안보지않기' 체크박스 선택`);
+                      checkbox.click();
+                      handled = true;
+                    }
+                    break;
+                  }
+                }
+
+                // 2️⃣ X 버튼 찾기 및 클릭 (닫기 버튼)
+                const closeButtons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                for (const btn of closeButtons) {
+                  const isClose = btn.getAttribute('aria-label')?.includes('닫기') 
+                    || btn.textContent.trim() === '✕'
+                    || btn.textContent.trim() === 'X'
+                    || btn.className.includes('close')
+                    || btn.className.includes('Close');
+                  
+                  const isVisible = btn.offsetParent !== null;
+                  if (isClose && isVisible) {
+                    console.log(`🔘 X 버튼 클릭`);
+                    btn.click();
+                    handled = true;
+                    break;
+                  }
+                }
+
+                return handled;
+              }).catch(() => false);
+
+              if (popupHandled) {
+                log('✅ 5단계 팝업 처리 완료 (일주일동안보지않기 + X 클릭)');
+                await delay(1000); // 팝업 닫히는 시간 대기
+              } else {
+                log('ℹ️ 5단계 팝업 없음 - 계속 진행');
+              }
+            } catch (popupErr) {
+              log(`⚠️ 5단계 팝업 처리 중 에러: ${popupErr.message}`);
+            }
 
             log(`🌐 현재 URL: ${page.url()}`);
             await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 30000 });

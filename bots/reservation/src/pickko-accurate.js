@@ -66,6 +66,54 @@ function addMinutesHHMM(hhmm, minutesToAdd) {
   return `${hh}:${mm}`;
 }
 
+// ✅ AM/PM 시간 → 24시간 형식 변환
+// 규칙: 오전 12:XX → 00:XX (자정)
+//      오후 12:XX → 12:XX (정오)
+//      나머지는 표준 12시간→24시간 변환
+function convertAMPMto24Hour(ampmTime, period) {
+  // ampmTime: "12:00", period: "오전" or "오후"
+  if (!ampmTime || !period) return ampmTime;
+  
+  const [h, m] = ampmTime.split(':').map(Number);
+  let hour = h;
+  
+  if (period.includes('오전')) {
+    // 오전 12:XX → 00:XX (자정)
+    if (h === 12) hour = 0;
+  } else if (period.includes('오후')) {
+    // 오후 12:XX → 12:XX (정오)
+    if (h !== 12) hour = h + 12;
+  }
+  
+  return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// ✅ 시간 유효성 검증
+function validateTime(startTime, endTime) {
+  const startMin = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
+  const endMin = parseInt(endTime.split(':')[0]) * 60 + parseInt(endTime.split(':')[1]);
+  
+  // 자정 넘어가는 경우 처리 (예: 23:00 ~ 00:30)
+  if (endMin < startMin) {
+    return { valid: true, crossMidnight: true };
+  }
+  
+  if (endMin <= startMin) {
+    return { valid: false, error: `종료시간이 시작시간보다 앞이거나 같습니다: ${startTime} → ${endTime}` };
+  }
+  
+  return { valid: true, crossMidnight: false };
+}
+
+// ✅ 오류 발생 시 알림 (텔레그램/로그)
+async function sendErrorNotification(errorMsg, context = {}) {
+  log(`🚨 ERROR: ${errorMsg}`);
+  log(`📋 컨텍스트: ${JSON.stringify(context)}`);
+  
+  // 추후 텔레그램 알림 연동 가능
+  // await notifyTelegram(errorMsg, context);
+}
+
 // (창 이동 기능 제거)
 
 function log(msg) {
@@ -83,7 +131,7 @@ async function main() {
     // 모니터 배치(사장님 제공): 내장(2560x1440) + 왼쪽 TB(2048x1152) + 오른쪽 TB(1920x1080)
     browser = await puppeteer.launch({
       headless: false,
-      // ✅ 느린 환경/무거운 페이지에서 CDP 함수 호출 타임아웃 완화
+      // ✅ 느린 환경/무거운 페이지에서 CDP 함수 호출 타임아웃 완화 (기본 180초)
       protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
       args: [
         '--no-sandbox',
@@ -125,6 +173,13 @@ async function main() {
     
     await delay(3000);
     log('✅ 로그인 완료');
+    
+    // ✅ 시간 유효성 검증 (로그인 후)
+    const timeValidation = validateTime(START_TIME, END_TIME);
+    if (!timeValidation.valid) {
+      throw new Error(`시간 검증 실패: ${timeValidation.error}`);
+    }
+    log(`✅ 시간 검증 통과: ${START_TIME} ~ ${END_TIME}`);
     
     // ======================== 2단계: 페이지 이동 ========================
     log('\n[2단계] 예약 등록 페이지');
