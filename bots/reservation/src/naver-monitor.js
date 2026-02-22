@@ -597,8 +597,9 @@ async function monitorBookings() {
             }
 
             log(`🔗 오늘 확정 리스트 이동: ${confirmedHref}`);
-            await page.goto(confirmedHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
+            await page.goto(confirmedHref, { waitUntil: 'networkidle2', timeout: 30000 });
+            await page.waitForNetworkIdle({ idleTime: 1200, timeout: 30000 }).catch(() => null);
+            await delay(500); // 추가 렌더링 대기
 
             // 5단계: 팝업 체크 및 처리 (일주일동안보지않기 + X 클릭)
             log('🔍 5단계 팝업 확인 중...');
@@ -657,9 +658,75 @@ async function monitorBookings() {
 
             log(`🌐 현재 URL: ${page.url()}`);
             await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 30000 });
+            
+            // ✅ 요소가 실제로 렌더링될 때까지 대기 (Detached Frame 방지)
+            await page.waitForFunction(() => {
+              const rows = document.querySelectorAll('a[data-tst_click_link]');
+              const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+              return rows.length > 0 || noData;
+            }, { timeout: 30000 });
+
+            await delay(800); // 최종 렌더링 대기
+
+            // ✅ 렌더링 완료 검증: 실제 예약 데이터가 로드되었는지 확인
+            log('🔍 렌더링 상태 점검 중...');
+            const pageState = await page.evaluate(() => {
+              // 1. nodata 확인
+              const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+              
+              // 2. 다양한 선택자로 예약 항목 찾기
+              const byDataAttr = document.querySelectorAll('a[data-tst_click_link]');
+              const byRole = document.querySelectorAll('[role="row"], [role="listitem"]');
+              const allAnchors = document.querySelectorAll('a');
+              
+              // 3. 페이지 텍스트에서 예약 정보 감지
+              const pageText = (document.body?.innerText || '').slice(0, 500);
+              const hasPhonePattern = /010-?\d{4}-?\d{4}/.test(pageText);
+              const hasTimePattern = /(\d{1,2}):(\d{2})/.test(pageText);
+              const hasRoomPattern = /\b(A1|A2|B)\b/.test(pageText);
+              
+              return {
+                noDataPresent: !!noData,
+                noDataVisible: noData?.offsetParent !== null,
+                dataAttrCount: byDataAttr.length,
+                roleRowCount: byRole.length,
+                totalAnchors: allAnchors.length,
+                pageHasPhone: hasPhonePattern,
+                pageHasTime: hasTimePattern,
+                pageHasRoom: hasRoomPattern,
+                pageTextSample: pageText
+              };
+            });
+            
+            log(`🔍 페이지 상태: ${JSON.stringify(pageState)}`);
+            
+            if (pageState.noDataPresent && pageState.noDataVisible) {
+              log('ℹ️ 오늘 확정 예약 없음 (nodata 영역 감지)');
+            }
 
             const newest = await scrapeNewestBookingsFromList(page, 8);
             log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
+            
+            // ✅ 디버그: 파싱 결과가 비어있으면 상세 분석
+            if (newest.length === 0 || newest.every(b => !b.phone)) {
+              const dbg = await page.evaluate(() => {
+                const allLinks = document.querySelectorAll('a[data-tst_click_link]');
+                const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+                const matchingRows = Array.from(allLinks).slice(0, 3).map(a => ({
+                  href: a.href,
+                  text: a.textContent.slice(0, 100),
+                  dataAttr: a.getAttribute('data-tst_click_link'),
+                  phone: a.querySelector('[class*="phone"]')?.textContent || 'null',
+                  time: a.querySelector('[class*="date"], [class*="time"]')?.textContent || 'null'
+                }));
+                return { 
+                  totalLinks: allLinks.length, 
+                  noDataPresent: !!noData,
+                  samples: matchingRows 
+                };
+              });
+              log(`🔍 디버그 - 상세 분석: ${JSON.stringify(dbg)}`);
+            }
             if (newest.length === 0) {
               const dbg = await page.evaluate(() => {
                 const noData = !!document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
@@ -997,14 +1064,21 @@ function saveSeen(obj) {
 }
 
 async function scrapeNewestBookingsFromList(page, limit = 5) {
-  // "오늘 확정" 리스트 화면 파싱 (BookingListView div 기반)
-  // ✅ row는 a[data-tst_click_link]
+  // "오늘 확정" 리스트 화면 파싱 (Div 기반 - BookingListView)
+  // ✅ row는 a.BookingListView__contents-user__xNWR6
 
   // 리스트가 로딩될 시간을 줌 (nodata or rows)
   await page.waitForSelector(
-    'a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata',
+    'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
     { timeout: 20000 }
   );
+
+  // ✅ 요소가 실제로 렌더링될 때까지 대기 (Detached Frame 방지)
+  await page.waitForFunction(() => {
+    const rows = document.querySelectorAll('a[class*="contents-user"]');
+    const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+    return rows.length > 0 || noData;
+  }, { timeout: 20000 });
 
   return await page.evaluate((n) => {
     const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -1012,84 +1086,86 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
     const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
     if (noData) return [];
 
-    const rows = Array.from(document.querySelectorAll('a[data-tst_click_link]')).slice(0, n);
+    const rows = Array.from(document.querySelectorAll('a[class*="contents-user"]')).slice(0, n);
+    if (rows.length === 0) return [];
 
+    // ✅ 헬퍼 함수들
     const to24Start = (ampm, hh, mm) => {
       let h = parseInt(hh, 10);
       const m = String(parseInt(mm, 10)).padStart(2, '0');
       if (ampm === '오후' && h < 12) h += 12;
-      if (ampm === '오전' && h === 12) h = 0; // 오전 12시는 00:xx
+      if (ampm === '오전' && h === 12) h = 0;
       return `${String(h).padStart(2, '0')}:${m}`;
     };
 
-    // 종료시간은 네이버가 오전/오후를 생략하는 경우가 있어 "시작 오전/오후"를 기준으로 해석
-    // ✅ 룰(사장님 합의)
-    // - 오전 11:00~12:00 → 정오(12:00)
-    // - 오후 11:00~12:00 → 자정(00:00)
     const to24End = (startAmpm, endHh, endMm) => {
       let h = parseInt(endHh, 10);
       const m = String(parseInt(endMm, 10)).padStart(2, '0');
-
       if (h === 12) {
-        if (startAmpm === '오전') {
-          // 정오
-          h = 12;
-        } else {
-          // 자정
-          h = 0;
-        }
-        return `${String(h).padStart(2, '0')}:${m}`;
+        h = startAmpm === '오전' ? 12 : 0;
+      } else if (startAmpm === '오후') {
+        h += 12;
       }
-
-      // 1~11시는 시작 ampm을 따른다
-      if (startAmpm === '오후') h += 12;
       return `${String(h).padStart(2, '0')}:${m}`;
     };
 
     const out = [];
     for (const row of rows) {
-      const bookingId = row.getAttribute('data-tst_click_link') || null;
+      // ✅ BookingListView 구조에서 각 셀 추출
+      const nameEl = row.querySelector('[class*="name__"]');
+      const phoneEl = row.querySelector('[class*="phone__"] span');
+      const bookDateEl = row.querySelector('[class*="book-date__"]');
+      const hostEl = row.querySelector('[class*="host__"]');
+      const bookIdEl = row.querySelector('[class*="book-number__"]');
 
-      // ⚠️ Fix: 클래스 해시 의존 → 속성 포함 선택자로 변경
-      const phoneText = clean(row.querySelector('[class*="phone"] span')?.textContent);
+      const name = clean(nameEl?.textContent);
+      const phoneText = clean(phoneEl?.textContent);
       const phone = phoneText ? phoneText.replace(/\D/g, '') : null;
-
-      // ⚠️ Fix: querySelector에서 클래스명의 + 이스케이프는 작동 안 함
-      //         → [class*="host"] 속성 포함 선택자로 변경
-      const hostEl = row.querySelector('[class*="host"]');
-      const hostText = clean(hostEl?.textContent);
-      const roomMatch = hostText.match(/\b(A1|A2|B)\b/i);
-      const room = roomMatch ? roomMatch[1].toUpperCase() : null;
-
-      // 이용일시 텍스트 예:
-      // - "오전 9:00~11:00"
-      // - "26. 3. 1.(일) 오전 11:00~12:00"
-      // ⚠️ Fix: 클래스 해시 의존 → 속성 포함 선택자로 변경
-      const timeText = clean(row.querySelector('[class*="book-date"]')?.textContent);
+      const bookingId = clean(bookIdEl?.textContent);
+      
+      // 이용일시 텍스트: "26. 2. 23.(월) 오후 5:00~7:00"
+      const dateTimeText = clean(bookDateEl?.textContent);
       let date = null;
       let start = null;
       let end = null;
 
-      if (timeText) {
-        // 날짜(YY. M. D.) 파싱
-        const d = timeText.match(/(\d{2})\.\s*(\d{1,2})\.\s*(\d{1,2})\./);
-        if (d) {
-          const yyyy = `20${d[1]}`;
-          const mm = String(parseInt(d[2], 10)).padStart(2, '0');
-          const dd = String(parseInt(d[3], 10)).padStart(2, '0');
+      if (dateTimeText) {
+        // 날짜 파싱 (26. 2. 23)
+        const dateMatch = dateTimeText.match(/(\d{2})\.\s+(\d{1,2})\.\s+(\d{1,2})/);
+        if (dateMatch) {
+          const yyyy = `20${dateMatch[1]}`;
+          const mm = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+          const dd = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
           date = `${yyyy}-${mm}-${dd}`;
         }
 
-        // 시간 파싱(문자열 중간에 있어도 OK)
-        const m = timeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
-        if (m) {
-          const ampm = m[1];
-          start = to24Start(ampm, m[2], m[3]);
-          end = to24End(ampm, m[4], m[5]);
+        // 시간 파싱 (오후 5:00~7:00)
+        const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
+        if (timeMatch) {
+          const ampm = timeMatch[1];
+          start = to24Start(ampm, timeMatch[2], timeMatch[3]);
+          end = to24End(ampm, timeMatch[4], timeMatch[5]);
         }
       }
 
-      out.push({ bookingId, phone, date, start, end, room, raw: { timeText, hostText, phoneText } });
+      // 룸 추출 (A1, A2, B)
+      const hostText = clean(hostEl?.textContent);
+      const roomMatch = hostText.match(/\b(A1|A2|B)\b/i);
+      const room = roomMatch ? roomMatch[1].toUpperCase() : null;
+
+      // 유효한 데이터만 추가
+      if (phone && start && end && date) {
+        const uniqueId = `${date}|${start}|${end}|${room}|${phone}`;
+        out.push({ 
+          bookingId: bookingId || uniqueId,
+          phone, 
+          date, 
+          start, 
+          end, 
+          room, 
+          raw: { name, dateTimeText, hostText, phoneText } 
+        });
+      }
     }
 
     return out;
