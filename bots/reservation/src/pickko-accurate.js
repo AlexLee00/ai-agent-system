@@ -4,12 +4,12 @@
  * 픽코 예약 등록 (외부 모니터 + 팝업 자동 처리)
  * 010-3500-0586 / 2026-02-22 / 02:30~03:00 / A1룸
  * 
- * ✅ VALIDATION_RULES.md에 정의된 검증 규칙 적용
+ * ✅ VALIDATION_RULES.md에 정의된 정규식 변환 규칙 적용
  * ✅ lib/validation.js 라이브러리 사용
  */
 
 const puppeteer = require('puppeteer');
-const { validateAndNormalizeData, validateTimeRange } = require('../lib/validation');
+const { transformAndNormalizeData, validateTimeRange } = require('../lib/validation');
 
 async function initializeBrowser() {
     const browser = await puppeteer.launch({
@@ -52,7 +52,7 @@ function parseArgs(argv) {
 
 const ARGS = parseArgs(process.argv);
 
-// ✅ 입력 데이터 검증 (VALIDATION_RULES.md 규칙 적용)
+// ✅ 입력 데이터 정규식 변환 (lib/validation.js 규칙 적용)
 const rawInput = {
   phone: ARGS.phone || DEFAULTS.phone,
   date: ARGS.date || DEFAULTS.date,
@@ -61,18 +61,18 @@ const rawInput = {
   room: ARGS.room || DEFAULTS.room
 };
 
-const validated = validateAndNormalizeData(rawInput);
-if (!validated) {
-  throw new Error(`입력 데이터 검증 실패: ${JSON.stringify(rawInput)}`);
+const normalized = transformAndNormalizeData(rawInput);
+if (!normalized) {
+  throw new Error(`입력 데이터 변환 실패: ${JSON.stringify(rawInput)}`);
 }
 
-const PHONE_NOHYPHEN = validated.phone;
-const DATE = validated.date;
-const START_TIME = validated.start;
-const END_TIME = validated.end;
-const ROOM = validated.room;
+const PHONE_NOHYPHEN = normalized.phone;
+const DATE = normalized.date;
+const START_TIME = normalized.start;
+const END_TIME = normalized.end;
+const ROOM = normalized.room;
 
-// ✅ DEV 모드 화이트리스트 검증 (2026-02-23)
+// ✅ DEV 모드 화이트리스트 (2026-02-23)
 // 환경변수: DEV_WHITELIST_PHONES="01035000586,01054350586"
 // 기본값: 이재룡(사장님), 김정민(부사장님)
 const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
@@ -80,13 +80,17 @@ const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350
   .map(p => p.trim())
   .filter(p => /^\d{11}$/.test(p));
 
+function log(msg) {
+  const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  console.log(`[${timestamp}] ${msg}`);
+}
+
 log(`📋 DEV 화이트리스트: [${DEV_WHITELIST.join(', ')}]`);
 
 const MODE = (process.env.MODE || 'dev').toLowerCase();
 if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_NOHYPHEN)) {
   throw new Error(`🔐 DEV 모드 화이트리스트 검증 실패: ${PHONE_NOHYPHEN}은(는) 테스트 대상이 아닙니다. (허용: ${DEV_WHITELIST.join(', ')})`);
 }
-
 
 // 룸명 → st_no (사장님 제공 HTML 기반)
 const ROOM_ID = {
@@ -105,29 +109,7 @@ function addMinutesHHMM(hhmm, minutesToAdd) {
   return `${hh}:${mm}`;
 }
 
-// ✅ AM/PM 시간 → 24시간 형식 변환
-// 규칙: 오전 12:XX → 00:XX (자정)
-//      오후 12:XX → 12:XX (정오)
-//      나머지는 표준 12시간→24시간 변환
-function convertAMPMto24Hour(ampmTime, period) {
-  // ampmTime: "12:00", period: "오전" or "오후"
-  if (!ampmTime || !period) return ampmTime;
-  
-  const [h, m] = ampmTime.split(':').map(Number);
-  let hour = h;
-  
-  if (period.includes('오전')) {
-    // 오전 12:XX → 00:XX (자정)
-    if (h === 12) hour = 0;
-  } else if (period.includes('오후')) {
-    // 오후 12:XX → 12:XX (정오)
-    if (h !== 12) hour = h + 12;
-  }
-  
-  return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-// ✅ 시간 검증은 lib/validation.js의 validateTimeRange 사용
+// ✅ 시간 범위 변환은 lib/validation.js의 validateTimeRange 사용
 // (중복 제거 및 라이브러리 일관성)
 
 // ✅ 오류 발생 시 알림 (텔레그램/로그)
@@ -139,28 +121,17 @@ async function sendErrorNotification(errorMsg, context = {}) {
   // await notifyTelegram(errorMsg, context);
 }
 
-// (창 이동 기능 제거)
-
-function log(msg) {
-  const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-  console.log(`[${timestamp}] ${msg}`);
-}
-
 async function main() {
   let browser;
   
   try {
-    log(`🚀 픽코 예약 등록 시작 (외부 모니터 전체화면)`);
+    log(`🚀 픽코 예약 등록 시작`);
     
-    // 브라우저 실행 (왼쪽 Thunderbolt Display(2)로 고정 + 전체화면)
-    // 모니터 배치(사장님 제공): 내장(2560x1440) + 왼쪽 TB(2048x1152) + 오른쪽 TB(1920x1080)
     browser = await puppeteer.launch({
       headless: false,
-      // ✅ 느린 환경/무거운 페이지에서 CDP 함수 호출 타임아웃 완화 (기본 180초)
       protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
       args: [
         '--no-sandbox',
-        // 맥북 화면에서 최대한 꽉 차게(전체화면/kiosk는 아님)
         '--window-position=0,25',
         '--window-size=2200,1300',
         '--start-maximized'
@@ -172,10 +143,9 @@ async function main() {
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     page.setDefaultTimeout(30000);
 
-    // 🖥️ 창 이동/모니터 제어 로직 제거 (맥북 화면에서만 실행)
     await delay(500);
 
-    // ✅ 등록 완료/오류 alert 팝업 자동 "확인" (window.alert/confirm)
+    // ✅ 등록 완료/오류 alert 팝업 자동 "확인"
     page.on('dialog', async (dialog) => {
       try {
         log(`🧾 팝업 감지: ${dialog.message()}`);
@@ -199,12 +169,12 @@ async function main() {
     await delay(3000);
     log('✅ 로그인 완료');
     
-    // ✅ 시간 범위 검증 (로그인 후)
+    // ✅ 시간 범위 변환 확인 (로그인 후)
     const timeRangeCheck = validateTimeRange(START_TIME, END_TIME);
     if (!timeRangeCheck.ok) {
-      throw new Error(`시간 검증 실패: ${timeRangeCheck.error}`);
+      throw new Error(`시간 변환 실패: ${timeRangeCheck.error}`);
     }
-    log(`✅ 시간 검증 통과: ${START_TIME} ~ ${END_TIME}${timeRangeCheck.isCrossMidnight ? ' (자정 넘어감)' : ''}`);
+    log(`✅ 시간 변환 완료: ${START_TIME} ~ ${END_TIME}${timeRangeCheck.isCrossMidnight ? ' (자정 넘어감)' : ''}`);
     
     // ======================== 2단계: 페이지 이동 ========================
     log('\n[2단계] 예약 등록 페이지');
@@ -264,91 +234,139 @@ async function main() {
     
     await delay(2000);
     
-    // ======================== 5단계: 날짜 확인 (수정됨) ========================
+    // ======================== 5단계: 날짜 확인 ========================
     log('\n[5단계] 날짜 확인');
     
     // 1) 예약일자 읽기 (li#prev_schedule)
     const prevScheduleDate = await page.evaluate(() => {
         const li = document.querySelector('li#prev_schedule');
-        return li ? li.textContent.trim() : '';
+        let text = li ? li.textContent.trim() : '';
+        // 날짜 포맷 정규화: "2026-02-21" 형식으로 통일
+        text = text.replace(/\s+/g, '').split('T')[0];  // ISO 형식 처리
+        return text;
     });
     
-    // 2) 입력필드(start_date) 현재값 읽기
+    // 2) 입력필드 현재값 읽기 (input#start_date)
     const inputDate = await page.evaluate(() => {
         const inp = document.querySelector('input#start_date');
-        return inp ? inp.value : '';
+        let val = inp ? inp.value : '';
+        // 날짜 포맷 정규화
+        val = val.replace(/\s+/g, '').split('T')[0];
+        return val;
     });
     
-    log(`📅 예약일자(prev_schedule): ${prevScheduleDate}`);
-    log(`📅 입력필드(start_date): ${inputDate}`);
-    log(`📅 목표 날짜(DATE): ${DATE}`);
+    // 3) 날짜 포맷 정규화 (YYYY-MM-DD)
+    const normalizeDate = (dateStr) => {
+        if (!dateStr) return '';
+        // "2026-02-21" 형식으로 변환
+        const match = dateStr.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (match) {
+            const [, y, m, d] = match;
+            return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        }
+        return dateStr;
+    };
     
-    // 3) 비교: 예약일자와 입력필드가 같으면 스킵, 다르면 날짜 설정
-    if (inputDate === prevScheduleDate) {
-        log(`✅ 입력필드(${inputDate})가 예약일자(${prevScheduleDate})와 같습니다. 날짜 설정 스킵!`);
+    const prevScheduleDateNorm = normalizeDate(prevScheduleDate);
+    const inputDateNorm = normalizeDate(inputDate);
+    const targetDateNorm = normalizeDate(DATE);
+    
+    log(`📅 예약일자(prev_schedule): ${prevScheduleDate} → ${prevScheduleDateNorm}`);
+    log(`📅 입력필드(start_date): ${inputDate} → ${inputDateNorm}`);
+    log(`📅 목표 날짜(DATE): ${DATE} → ${targetDateNorm}`);
+    
+    // 4) 비교: 입력필드가 예약일자와 같으면 스킵
+    if (inputDateNorm === prevScheduleDateNorm) {
+        log(`✅ 입력필드(${inputDateNorm})가 예약일자(${prevScheduleDateNorm})와 같습니다. 날짜 설정 스킵!`);
     } else {
-        // 요청: 코드로 날짜를 먼저 세팅하고, 달력 팝업을 띄운 뒤 해당 "일자"를 클릭해서 확정
-        log(`⚠️ 날짜가 다릅니다. 1) 코드로 ${DATE} 세팅 → 2) 달력 팝업 확인 → 3) 일자 클릭 확정`);
+        log(`⚠️ 날짜가 다릅니다. 변환 진행... (입력필드: ${inputDateNorm}, 예약일자: ${prevScheduleDateNorm})`);
 
-        // 1) 코드로 날짜 세팅 (+ datepicker setDate)
-        const setDateResult = await page.evaluate((dateStr) => {
+        // 🔧 하이브리드 방식: 코드로 값 변경 + 달력 클릭으로 내부 상태 동기화
+        
+        // [1단계] 코드로 날짜 값 직접 설정
+        log(`📅 [1단계] 날짜 값 직접 세팅: ${DATE}`);
+        
+        const setDateOk = await page.evaluate((dateStr) => {
           const inp = document.querySelector('input#start_date');
           if (!inp) return { ok: false, reason: 'no #start_date' };
 
+          // 1) 값 직접 설정
           inp.focus();
           inp.value = dateStr;
+
+          // 2) 이벤트 트리거
           inp.dispatchEvent(new Event('input', { bubbles: true }));
           inp.dispatchEvent(new Event('change', { bubbles: true }));
           inp.dispatchEvent(new Event('blur', { bubbles: true }));
 
+          // 3) jQuery UI datepicker가 있으면 setDate까지 반영
           try {
             if (window.jQuery && window.jQuery.fn && window.jQuery.fn.datepicker) {
               window.jQuery(inp).datepicker('setDate', dateStr);
               window.jQuery(inp).trigger('change');
             }
-          } catch (e) {}
+          } catch (e) {
+            // 무시
+          }
 
           return { ok: true, value: inp.value };
         }, DATE);
 
-        log(`📅 날짜 세팅(코드) 결과: ${JSON.stringify(setDateResult)}`);
+        log(`📅 [1단계] 결과: ${JSON.stringify(setDateOk)}`);
 
-        // 2) 달력 팝업 오픈
+        // [2단계] 달력 팝업 열기 (값이 바뀌었으니 이제 팝업에서 확인/확정)
+        log(`📅 [2단계] 달력 팝업 열기`);
         await page.click('input#start_date');
-        await delay(600);
+        await delay(800);  // 팝업 로드 대기
 
-        // 3) 달력에서 목표 날짜 클릭(연/월/일 정확히)
         const [ty, tm, td] = DATE.split('-').map(n => parseInt(n, 10));
+
+        // [3단계] 달력에서 정확한 셀렉터로 날짜 클릭
+        log(`📅 [3단계] 달력에서 ${ty}년 ${tm}월 ${td}일 클릭`);
         const clicked = await page.evaluate((year, month1, day) => {
-          const m0 = month1 - 1; // jQuery UI: data-month 0-based
-          // td[data-handler=selectDay][data-year][data-month] 안의 a 텍스트가 day인 것 클릭
+          const m0 = month1 - 1;  // 0-indexed month
+          const dayStr = String(day);
+          
+          // 정확한 셀렉터: td[data-handler="selectDay"][data-year="${year}"][data-month="${m0}"] a
           const cells = document.querySelectorAll(`td[data-handler="selectDay"][data-year="${year}"][data-month="${m0}"] a`);
           for (const a of cells) {
-            if (a.textContent.trim() === String(day)) {
+            if (a.textContent.trim() === dayStr) {
+              console.log(`✅ 셀렉터 매칭 성공: data-year=${year}, data-month=${m0}, text=${dayStr}`);
               a.click();
               return true;
             }
           }
+          
+          console.log(`⚠️ 정확한 셀렉터 실패. 폴백: 모든 링크에서 검색`);
+          // 폴백: 모든 a 태그에서 숫자만 맞는 것 찾기
+          const allLinks = document.querySelectorAll('.datepicker a, .ui-datepicker a');
+          for (const a of allLinks) {
+            if (a.textContent.trim() === dayStr && !a.classList.contains('disabled') && !a.classList.contains('ui-state-disabled')) {
+              console.log(`✅ 폴백 셀렉터 매칭: text=${dayStr}`);
+              a.click();
+              return true;
+            }
+          }
+          
           return false;
         }, ty, tm, td);
 
-        log(clicked ? `✅ 달력에서 ${tm}월 ${td}일 클릭 완료` : `⚠️ 달력에서 ${tm}월 ${td}일 클릭 실패(팝업 구조 확인 필요)`);
+        log(`📅 [3단계] 달력 클릭 결과: ${clicked ? '✅ 성공' : '❌ 실패'}`);
 
-        await delay(1200); // 클릭 후 스케줄 표 갱신 대기
+        await delay(1000);  // 팝업 닫기 대기
 
         // 최종 검증
         const after = await page.evaluate(() => document.querySelector('input#start_date')?.value || '');
         if (after !== DATE) {
-          log(`⚠️ 날짜 검증 실패: start_date=${after} (expected ${DATE})`);
+          log(`⚠️ 최종 검증 실패: start_date=${after} (expected ${DATE})`);
         } else {
-          log(`✅ 날짜 검증 성공: ${after}`);
+          log(`✅ 최종 검증 성공: ${after}`);
         }
     }
     
     // ======================== 6단계: 룸 & 시간 선택 ========================
     log('\n[6단계] 룸 & 시간 선택');
     
-    // 룸 선택
     await page.evaluate((room) => {
         const els = document.querySelectorAll('*');
         for (const el of els) {
@@ -361,11 +379,9 @@ async function main() {
     log(`✅ ${ROOM} 룸 탭 클릭`);
     await delay(1500);
     
-    // 시간 선택
     const stNo = ROOM_ID[ROOM];
     if (!stNo) throw new Error(`ROOM_ID 매핑 없음: ROOM=${ROOM}`);
 
-    // 날짜 변경 직후 스케줄 표가 갱신될 때까지 대기 (li[date=DATE]가 보일 때까지)
     log(`⏳ 스케줄 갱신 대기중... (date=${DATE}, st_no=${stNo})`);
     let scheduleReady = false;
     for (let i = 0; i < 20; i++) {
@@ -375,9 +391,8 @@ async function main() {
       if (scheduleReady) break;
       await delay(250);
     }
-    log(scheduleReady ? '✅ 스케줄 갱신 감지' : '⚠️ 스케줄 갱신 감지 실패(그래도 시간 선택 시도)');
+    log(scheduleReady ? '✅ 스케줄 갱신 감지' : '⚠️ 스케줄 갱신 감지 실패');
 
-    // ✅ (요청 #1) 예약화면에서 시간표 영역이 아래에 있을 수 있으니 스크롤
     try {
       const scrolled = await page.evaluate((dateStr, stNoStr) => {
         const el = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"]`);
@@ -391,10 +406,6 @@ async function main() {
     }
     await delay(300);
 
-    // 원하는 시간이 이미 예약(used)일 수 있으니 30분 단위로 다음 슬롯까지 자동 탐색
-    // ⚠️ 네이버 예약 연동 시에는 자동 탐색이 "다음 시간대" 중복 예약을 만들 수 있음
-    // STRICT_TIME=1이면 요청 시간(START_TIME~END_TIME)만 시도하고, 막혀있으면 즉시 실패
-    // END_TIME-START_TIME 만큼의 duration(분)을 유지해서 찾음
     const toMinutes = (hhmm) => {
       const [h, m] = hhmm.split(':').map(Number);
       return h * 60 + m;
@@ -404,9 +415,8 @@ async function main() {
       return d > 0 ? d : 30;
     })();
 
-    // DEV/OPS 룰: 기본은 strict(자동 폴백 금지)
     const strictTime = (process.env.STRICT_TIME || '1') === '1';
-    const maxSlotsToTry = strictTime ? 1 : 24; // strict면 1회만, 아니면 최대 12시간(30분*24)
+    const maxSlotsToTry = strictTime ? 1 : 24;
     let chosen = null;
 
     for (let i = 0; i < maxSlotsToTry; i++) {
@@ -421,7 +431,6 @@ async function main() {
         const okStart = !!(startLi && !startLi.classList.contains('used'));
         const okEnd   = !!(endLi && !endLi.classList.contains('used'));
 
-        // 1시간 이상이면 중간 슬롯이 모두 available인지도 확인 (30분 단위)
         let okMid = true;
         if (durationMin > 30) {
           const startMin = (() => {
@@ -475,17 +484,42 @@ async function main() {
     // ======================== 7단계: 저장 ========================
     log('\n[7단계] 저장');
 
-    // ✅ 예외처리(안전장치): 시간/금액 계산이 깨진 상태면 저장 금지
     const sanity = await page.evaluate(() => {
       const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
-
-      // ✅ 사장님 제공 HTML 기준 (정확한 셀렉터)
-      const priceText = clean(document.querySelector('#study_price')?.innerText || document.querySelector('#study_price')?.textContent);
 
       const startDate = clean(document.querySelector('#start_date')?.value);
       const startTime = clean(document.querySelector('#start_time')?.value);
       const endDate = clean(document.querySelector('#end_date')?.value);
       const endTime = clean(document.querySelector('#end_time')?.value);
+
+      // 🔧 개선: 표(tr) 기반 추출 (스크립트 텍스트 끼어들기 방지)
+      let priceText = null;
+      let useTimeText = null;
+
+      // 표에서 "이용시간"과 "이용금액" 행 찾기
+      const rows = document.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        
+        if (!th || !td) continue;
+        
+        const thText = clean(th.textContent);
+        const tdText = clean(td.textContent);
+        
+        if (thText.includes('이용시간')) {
+          useTimeText = tdText;
+        }
+        if (thText.includes('이용금액')) {
+          priceText = tdText;
+        }
+      }
+
+      // 폴백: 표 추출이 실패하면 원래 방식도 시도
+      if (!priceText) {
+        const fallback = clean(document.querySelector('#study_price')?.innerText || document.querySelector('#study_price')?.textContent);
+        if (fallback) priceText = fallback;
+      }
 
       const parseMoney = (s) => {
         if (!s) return null;
@@ -495,12 +529,11 @@ async function main() {
 
       const priceNum = parseMoney(priceText);
 
+      // 안전장치: 값에 "-"가 포함되거나 음수면 즉시 중단
       const badAmount = (typeof priceText === 'string' && priceText.includes('-')) || (priceNum !== null && priceNum < 0);
 
-      // 시간 확정 여부: start_time/end_time이 비어있으면 저장 금지
       const missingTime = !startTime || !endTime;
 
-      // 이용시간(분) 계산 (end_date/time까지 있으면 계산, 없으면 null)
       const toTs = (d, t) => {
         if (!d || !t) return null;
         const ms = Date.parse(`${d}T${t}:00`);
@@ -508,7 +541,7 @@ async function main() {
       };
 
       const ts1 = toTs(startDate, startTime);
-      const ts2 = toTs(endDate || startDate, endTime); // end_date 비어있으면 start_date 사용
+      const ts2 = toTs(endDate || startDate, endTime);
 
       let durationMin = null;
       if (ts1 !== null && ts2 !== null) {
@@ -521,21 +554,33 @@ async function main() {
         startDate, startTime, endDate, endTime,
         durationMin,
         priceText, priceNum,
+        useTimeText,
         badTime, badAmount,
-        extracted: { hasPrice: !!priceText }
+        extracted: { hasPrice: !!priceText, hasUseTime: !!useTimeText }
       };
     });
 
-    log(`🧪 저장 전 검증: ${JSON.stringify(sanity)}`);
+    log(`🧪 저장 전 확인: ${JSON.stringify(sanity)}`);
 
-    if (sanity.badTime || sanity.badAmount) {
+    // 안전장치: badTime 또는 badAmount가 true면 즉시 중단
+    if (sanity.badTime) {
       throw new Error(
-        `저장 중단: 시간/금액 비정상 (start=${sanity.startDate} ${sanity.startTime}, end=${sanity.endDate || sanity.startDate} ${sanity.endTime}, durationMin=${sanity.durationMin}, price=${sanity.priceText})`
+        `저장 중단: 시간 비정상 (start=${sanity.startDate} ${sanity.startTime}, end=${sanity.endDate || sanity.startDate} ${sanity.endTime}, durationMin=${sanity.durationMin})`
       );
     }
 
+    if (sanity.badAmount) {
+      throw new Error(
+        `저장 중단: 금액 비정상 (가격=${sanity.priceText}, 파싱결과=${sanity.priceNum})`
+      );
+    }
+
+    // 경고: 추출 실패해도 진행 (마크업 변경 대비)
     if (!sanity.extracted?.hasPrice) {
-      log('⚠️ 저장 전 검증: #study_price를 찾지 못했습니다. (그래도 음수/시간검증은 통과)');
+      log('⚠️ 저장 전 확인: 이용금액을 찾지 못했습니다. (안전장치: 음수/시간 확인만 통과하면 계속)');
+    }
+    if (!sanity.extracted?.hasUseTime) {
+      log('⚠️ 저장 전 확인: 이용시간을 찾지 못했습니다. (안전장치: 음수/시간 확인만 통과하면 계속)');
     }
 
     log('💾 "작성하기" 버튼 클릭...');
@@ -546,14 +591,11 @@ async function main() {
         throw new Error(`작성하기 버튼 클릭 실패: ${e.message}`);
     }
 
-    // 등록 완료 alert("등록되었습니다.") 등 팝업 처리 시간 확보
-    // (이 단계에서 브라우저를 닫으면 결제 모달로 못 넘어감)
     await delay(1500);
 
     // ======================== 8단계: 결제(확정) ========================
     log('\n[8단계] 결제(확정) 처리');
 
-    // 8-1) 상세 화면의 "결제하기" 버튼 클릭
     const payBtnClicked = await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
       for (const b of btns) {
@@ -565,16 +607,9 @@ async function main() {
       }
       return false;
     });
-    log(payBtnClicked ? '✅ 상세 화면 결제하기 클릭' : '⚠️ 상세 화면 결제하기 버튼을 못 찾음(화면/셀렉터 확인 필요)');
+    log(payBtnClicked ? '✅ 상세 화면 결제하기 클릭' : '⚠️ 상세 화면 결제하기 버튼을 못 찾음');
 
     await delay(1200);
-
-    // 8-2) 결제 모달에서 입력값 세팅 (사장님 정의 로직)
-    // 1) 상단 결제금액 0 입력
-    // 2) 주문메모 "네이버예약 결제" 입력
-    // 3) 현금 마우스 클릭
-    // 4) 총 결제금액 0 체크(깜빡임/원복 대비 폴링)
-    // 5) 결제하기 클릭(8-3)
 
     const norm = (s) => (s ?? '').replace(/[\s,]/g, '').trim();
 
@@ -584,11 +619,9 @@ async function main() {
 
       await priceInp.click({ clickCount: 3 });
       await delay(120);
-      // 전체선택(맥/윈도우 둘 다 시도)
       try { await page.keyboard.press('Meta+A'); } catch (e) {}
       try { await page.keyboard.press('Control+A'); } catch (e) {}
       await delay(80);
-      // 확실히 삭제
       for (let k = 0; k < 8; k++) {
         await page.keyboard.press('Backspace');
         await delay(40);
@@ -596,7 +629,6 @@ async function main() {
       await delay(80);
       await page.keyboard.type('0', { delay: 80 });
       await delay(150);
-      // blur: 모달 빈 곳 클릭 (Tab은 깜빡임 유발 가능)
       await page.mouse.click(20, 20);
       return true;
     };
@@ -654,7 +686,6 @@ async function main() {
     };
 
     const waitTotalZeroStable = async () => {
-      // 최대 ~3초 동안 0이 되는지 + 2연속 유지 확인
       for (let i = 0; i < 10; i++) {
         await delay(250);
         const s1 = await readTotals();
@@ -667,7 +698,6 @@ async function main() {
       return { ok: false, snap: last };
     };
 
-    // ---- 실행 (깜빡임/원복 대비 2회까지 재시도) ----
     let cashOk = false;
     let priceOk = false;
     let memoOk = false;
@@ -711,13 +741,7 @@ async function main() {
 
     await delay(300);
 
-    // 8-3) 모달 하단 "결제하기" 버튼 클릭 (깜빡임/원복 대비)
-    // - #pay_order 를 정확히 클릭
-    // - 클릭 직전에 다시 한번 0원 세팅(원복 방지)
-    // - 클릭 후 모달이 닫히거나 총액 0 유지되는지 확인
-    
     const preClickReassertZero = async () => {
-      // 사람이 수동으로 0 넣을 때 바뀌는 속성(price/ea)도 같이 맞춰줌
       try {
         await page.$eval('#od_add_item_price', (inp) => {
           inp.setAttribute('price', '0');
@@ -725,12 +749,10 @@ async function main() {
         });
       } catch (e) {}
 
-      // 총액 계산에 관여하는 hidden 값들도 0으로
       try {
         await page.$eval('#od_total_price', (inp) => { inp.value = '0'; });
       } catch (e) {}
 
-      // 마지막으로 실제 입력도 한번 더 (원복 직전 방어)
       try {
         const priceInp = await page.$('#od_add_item_price');
         if (priceInp) {
@@ -763,7 +785,6 @@ async function main() {
 
     const modalClosed = async () => {
       return await page.evaluate(() => {
-        // 결제 모달 컨테이너(id=order_write)가 사라지면 닫힌 것으로 간주
         return !document.querySelector('#order_write');
       });
     };
@@ -782,7 +803,6 @@ async function main() {
 
       await delay(600);
 
-      // 클릭 후 상태 체크
       const closed = await modalClosed();
       const after = await page.evaluate(() => (document.querySelector('#od_total_price3')?.textContent || '').trim());
       log(`🔍 클릭 후 상태: modalClosed=${closed}, od_total_price3=${after}`);
@@ -800,10 +820,9 @@ async function main() {
 
     log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
     
-    // ======================== 9단계: 완료 검증 ========================
-    log('\n[9단계] 픽코 예약등록 + 결제 완료 검증');
+    // ======================== 9단계: 완료 확인 ========================
+    log('\n[9단계] 픽코 예약등록 + 결제 완료 확인');
     
-    // 최종 상태 확인: 예약이 실제로 완료되었는지 픽코에서 조회
     const finalStatus = await page.evaluate(() => {
       const pageTitle = document.title || '';
       const hasErrorMsg = !!document.querySelector('body')?.innerText.includes('에러');
@@ -820,7 +839,6 @@ async function main() {
     
     log(`🔍 최종 상태: ${JSON.stringify(finalStatus)}`);
     
-    // 성공 판정: alert("등록되었습니다.") + 결제 모달 닫힘 + 오류 없음
     const isSuccess = !finalStatus.hasErrorMsg && (finalStatus.hasSuccessMsg || paySubmitClicked);
     
     if (isSuccess) {
@@ -831,9 +849,6 @@ async function main() {
       log(`⚠️ [WARNING] 완료 상태 불명확 (수동 확인 필요)`);
     }
 
-    // ✅ 성공 시 브라우저 처리
-    // - DEV 모드: 기본 유지(사장님 확인 절차)
-    // - OPS 모드: 기본 종료(자동화 안정)
     const hold = (process.env.HOLD_BROWSER === '1') || (MODE === 'dev');
 
     if (hold) {
@@ -846,8 +861,6 @@ async function main() {
 
   } catch (err) {
     log(`❌ 에러: ${err.message}`);
-    // 디버깅을 위해 에러 시 브라우저는 기본 유지
-    // HOLD_BROWSER_ON_ERROR=0 이면 에러 시에도 닫음
     if (process.env.HOLD_BROWSER_ON_ERROR === '0') {
       log('🧹 HOLD_BROWSER_ON_ERROR=0 → 에러여도 브라우저 종료');
       try { await browser.close(); } catch (e) {}
@@ -860,6 +873,5 @@ async function main() {
 
 main().catch(err => {
   console.error('Main 실행 중 예외:', err);
-  // 어떤 이유로든 최상위 에러면 브라우저를 닫지 않음
   process.exit(1);
 });

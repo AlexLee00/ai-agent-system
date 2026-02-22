@@ -118,58 +118,55 @@ function transformAndNormalizeData(data, options = {}) {
   const normalized = {};
   const errors = [];
 
-  // 1️⃣ 전화번호 (필수)
-  const phoneValidation = validatePhoneNumber(data.phone);
-  if (!phoneValidation.ok) {
-    errors.push(phoneValidation.error);
-    if (strict) return null; // 필수 필드 오류
+  // 1️⃣ 전화번호 (필수) - 정규식으로 변환
+  const phoneTransformed = transformPhoneNumber(data.phone);
+  if (phoneTransformed === null) {
+    errors.push(`전화번호 변환 실패: ${data.phone}`);
+    if (strict) return null; // 필수 필드 변환 불가
   } else {
-    normalized.phone = phoneValidation.value;
+    normalized.phone = phoneTransformed;
   }
 
-  // 2️⃣ 날짜 (필수)
-  const dateValidation = validateDate(data.date);
-  if (!dateValidation.ok) {
-    errors.push(dateValidation.error);
+  // 2️⃣ 날짜 (필수) - 정규식으로 변환
+  const dateTransformed = transformDate(data.date);
+  if (dateTransformed === null) {
+    errors.push(`날짜 변환 실패: ${data.date}`);
     if (strict) return null;
   } else {
-    normalized.date = dateValidation.value;
+    normalized.date = dateTransformed;
   }
 
-  // 3️⃣ 시작시간 (필수)
-  const startTimeValidation = validateTime(data.start, '시작시간');
-  if (!startTimeValidation.ok) {
-    errors.push(startTimeValidation.error);
+  // 3️⃣ 시작시간 (필수) - 정규식으로 변환
+  const startTimeTransformed = transformTime(data.start);
+  if (startTimeTransformed === null) {
+    errors.push(`시작시간 변환 실패: ${data.start}`);
     if (strict) return null;
   } else {
-    normalized.start = startTimeValidation.value;
+    normalized.start = startTimeTransformed;
   }
 
-  // 4️⃣ 종료시간 (필수)
-  const endTimeValidation = validateTime(data.end, '종료시간');
-  if (!endTimeValidation.ok) {
-    errors.push(endTimeValidation.error);
+  // 4️⃣ 종료시간 (필수) - 정규식으로 변환
+  const endTimeTransformed = transformTime(data.end);
+  if (endTimeTransformed === null) {
+    errors.push(`종료시간 변환 실패: ${data.end}`);
     if (strict) return null;
   } else {
-    normalized.end = endTimeValidation.value;
+    normalized.end = endTimeTransformed;
   }
 
-  // 5️⃣ 스터디룸 (필수)
-  const roomValidation = validateRoom(data.room);
-  if (!roomValidation.ok) {
-    errors.push(roomValidation.error);
+  // 5️⃣ 스터디룸 (필수) - 정규식으로 변환
+  const roomTransformed = transformRoom(data.room);
+  if (roomTransformed === null) {
+    errors.push(`룸 변환 실패: ${data.room}`);
     if (strict) return null;
   } else {
-    normalized.room = roomValidation.value;
+    normalized.room = roomTransformed;
   }
 
-  // 6️⃣ BookingID (선택)
-  const bookingIdValidation = validateBookingId(data.bookingId);
-  if (!bookingIdValidation.ok) {
-    errors.push(bookingIdValidation.error);
-    // 선택 필드이므로 오류 무시
-  } else if (bookingIdValidation.value) {
-    normalized.bookingId = bookingIdValidation.value;
+  // 6️⃣ BookingID (선택) - 정규식으로 변환
+  const bookingIdTransformed = transformBookingId(data.bookingId);
+  if (bookingIdTransformed !== null) {
+    normalized.bookingId = bookingIdTransformed;
   }
 
   // 7️⃣ 원본 데이터 유지 (raw)
@@ -178,7 +175,7 @@ function transformAndNormalizeData(data, options = {}) {
   }
 
   if (errors.length > 0 && log) {
-    log(`⚠️ 데이터 검증 경고: ${errors.join(', ')}`);
+    log(`⚠️ 데이터 변환 실패: ${errors.join(', ')}`);
   }
 
   return normalized;
@@ -367,16 +364,16 @@ function formatDataForUsage(normalized, targets = {}) {
 }
 
 module.exports = {
-  // 검증 함수
-  validatePhoneNumber,
-  validateDate,
-  validateTime,
-  validateRoom,
-  validateBookingId,
-  validateAndNormalizeData,
+  // 정규식 기반 변환 함수 (추출 데이터 → 저장 형식)
+  transformPhoneNumber,
+  transformDate,
+  transformTime,
+  transformRoom,
+  transformBookingId,
+  transformAndNormalizeData,
   validateTimeRange,
   
-  // 포맷 변환 함수
+  // 포맷 변환 함수 (저장 형식 → 사용처 맞춤)
   formatPhoneNumber,
   formatDate,
   formatTime,

@@ -9,7 +9,7 @@
  */
 
 const puppeteer = require('puppeteer');
-const { validateAndNormalizeData } = require('../lib/validation');
+const { transformAndNormalizeData } = require('../lib/validation');
 
 async function initializeBrowser() {
     const browser = await puppeteer.launch({
@@ -723,8 +723,16 @@ async function monitorBookings() {
               log('ℹ️ 오늘 확정 예약 없음 (nodata 영역 감지)');
             }
 
-            const newest = await scrapeNewestBookingsFromList(page, 8);
+            const newest = await scrapeNewestBookingsFromList(page, 20);  // ✅ 10 → 20으로 변경 (확장성 고려)
             log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
+            // ✅ 전체 데이터를 파일에 저장 (디버그용)
+            try {
+              const fullDataFile = path.join('/Users/alexlee/.openclaw/workspace', 'naver-bookings-full.json');
+              fs.writeFileSync(fullDataFile, JSON.stringify(newest, null, 2));
+              log(`💾 전체 파싱 데이터 저장: ${fullDataFile} (${newest.length}건)`);
+            } catch (e) {
+              log(`⚠️ 전체 데이터 저장 실패: ${e.message}`);
+            }
             
             // ✅ 디버그: 파싱 결과가 비어있으면 상세 분석
             if (newest.length === 0 || newest.every(b => !b.phone)) {
@@ -924,7 +932,7 @@ async function monitorBookings() {
               log(`🌐 현재 URL: ${page.url()}`);
               await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 20000 });
 
-              const newest = await scrapeNewestBookingsFromList(page, 8);
+              const newest = await scrapeNewestBookingsFromList(page, 20);  // ✅ 10 → 20으로 변경 (확장성 고려)
               log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
               if (newest.length === 0) {
                 const dbg = await page.evaluate(() => {
@@ -949,14 +957,14 @@ async function monitorBookings() {
 
               const candidates = newest
                 .map(b => ({ ...b, date: todaySeoul }))
-                // ✅ 정규식 기반 데이터 검증 및 정규화
+                // ✅ 정규식 기반 데이터 변환 및 정규화 (저장 형식으로)
                 .map(b => {
-                  const validated = validateAndNormalizeData(b);
-                  if (!validated) {
-                    log(`   ⚠️ 검증 실패(버림): bookingId=${b.bookingId} phone=${b.phone} room=${b.room}`);
+                  const normalized = transformAndNormalizeData(b);
+                  if (!normalized) {
+                    log(`   ⚠️ 변환 실패(버림): bookingId=${b.bookingId} phone=${b.phone} room=${b.room}`);
                     return null;
                   }
-                  return validated;
+                  return normalized;
                 })
                 .filter(Boolean) // null 제거
                 .map(b => ({ ...b, _key: toKey(b) }))
@@ -1210,23 +1218,23 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 
 function runPickko(booking) {
   return new Promise((resolve) => {
-    // ✅ 픽코 호출 직전 최종 검증 (중복 안전장치)
-    const finalValidated = validateAndNormalizeData(booking);
-    if (!finalValidated) {
-      log(`❌ 픽코 호출 전 검증 실패: ${JSON.stringify(booking)}`);
-      return resolve(1); // 검증 오류 → code 1
+    // ✅ 픽코 호출 직전 최종 변환 확인 (안전장치)
+    const normalized = transformAndNormalizeData(booking);
+    if (!normalized) {
+      log(`❌ 픽코 호출 전 변환 실패: ${JSON.stringify(booking)}`);
+      return resolve(1); // 변환 오류 → code 1
     }
 
     const args = [
       'pickko-accurate.js',
-      `--phone=${finalValidated.phone}`,
-      `--date=${finalValidated.date}`,
-      `--start=${finalValidated.start}`,
-      `--end=${finalValidated.end}`,
-      `--room=${finalValidated.room}`
+      `--phone=${normalized.phone}`,
+      `--date=${normalized.date}`,
+      `--start=${normalized.start}`,
+      `--end=${normalized.end}`,
+      `--room=${normalized.room}`
     ];
 
-    log(`✅ [검증완료] 🤖 픽코 확정 실행: phone=${finalValidated.phone} date=${finalValidated.date} ${finalValidated.start}~${finalValidated.end} room=${finalValidated.room}`);
+    log(`✅ [변환완료] 🤖 픽코 실행: phone=${normalized.phone} date=${normalized.date} ${normalized.start}~${normalized.end} room=${normalized.room}`);
 
     const child = spawn('node', args, {
       cwd: __dirname, // ⚠️ Fix: 하드코딩 경로 → 현재 파일 기준 상대 경로
