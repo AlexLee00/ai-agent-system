@@ -95,11 +95,20 @@ async function getBookingStatus(page) {
 // 캘린더(예약/주문) 화면이면 "홈화면 이동"으로 복귀
 async function ensureHomeFromCalendar(page) {
   // ✅ 메뉴 클릭 대신 URL로 홈 화면 강제 복귀
+  // ⚠️ Fix: NAVER_URL이 prefix이므로 booking-list-view 등의 하위 경로도 startsWith로 통과됨
+  //         → 하위 경로 키워드를 명시적으로 감지하여 복귀 처리
   try {
     const url = page.url();
-    if (url.startsWith(NAVER_URL)) return;
+    const isSubPage = [
+      'booking-list-view',
+      'booking-calendar-view',
+      'booking-order-view',
+      'booking-detail',
+    ].some((kw) => url.includes(kw));
 
-    log(`↩️ 홈 URL로 복귀: ${NAVER_URL} (현재: ${url})`);
+    if (!isSubPage && url.startsWith(NAVER_URL)) return; // 이미 홈
+
+    log(`↩️ 홈 URL로 복귀 (현재: ${url})`);
     await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
   } catch (e) {
@@ -411,27 +420,35 @@ async function monitorBookings() {
             log('🧩 오늘 확정 리스트 파싱 시도...');
 
             // 홈의 "오늘 확정" 카드 href로 직접 이동 (click/navigation 불안정 회피)
-            const confirmedHref = await page.evaluate(() => {
+            let confirmedHref = await page.evaluate(() => {
               const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
               const links = Array.from(document.querySelectorAll('a'));
               const a = links.find(x => clean(x.textContent).includes('오늘 확정') && String(x.href || '').includes('booking-list-view'));
               return a ? a.href : null;
             });
-            if (!confirmedHref) throw new Error('오늘 확정 리스트 링크(href)를 찾지 못함');
+            // ⚠️ Fix: href를 못 찾으면 URL을 직접 구성해서 폴백
+            if (!confirmedHref) {
+              const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
+                .replace(/\./g, '').replace(/\s/g, '-').split('-').filter(Boolean)
+                .map((v, i) => i === 0 ? v : v.padStart(2, '0')).join('-');
+              const bizId = NAVER_URL.match(/\/place\/(\d+)/)?.[1] || NAVER_URL.split('/').filter(Boolean).pop();
+              confirmedHref = `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CONFIRMED&date=${today}`;
+              log(`⚠️ 오늘 확정 링크 자동 탐색 실패 → URL 직접 구성: ${confirmedHref}`);
+            }
 
             log(`🔗 오늘 확정 리스트 이동: ${confirmedHref}`);
             await page.goto(confirmedHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
 
             log(`🌐 현재 URL: ${page.url()}`);
-            await page.waitForSelector('a.BookingListView__contents-user__xNWR6[data-tst_click_link], .BookingListView__nodata-area__1Pybz, .nodata', { timeout: 30000 });
+            await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 30000 });
 
             const newest = await scrapeNewestBookingsFromList(page, 8);
             log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
             if (newest.length === 0) {
               const dbg = await page.evaluate(() => {
-                const noData = !!document.querySelector('.BookingListView__nodata-area__1Pybz, .nodata');
-                const rowCount = document.querySelectorAll('a.BookingListView__contents-user__xNWR6[data-tst_click_link]').length;
+                const noData = !!document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+                const rowCount = document.querySelectorAll('a[data-tst_click_link]').length;
                 const text = ((document.body && (document.body.innerText || document.body.textContent)) || '').replace(/\s+/g, ' ').trim();
                 return { noData, rowCount, textHead: text.slice(0, 200) };
               });
@@ -604,14 +621,14 @@ async function monitorBookings() {
               if (!clicked) throw new Error('오늘 확정 링크를 찾지 못함(Home_state_link)');
 
               log(`🌐 현재 URL: ${page.url()}`);
-              await page.waitForSelector('a.BookingListView__contents-user__xNWR6[data-tst_click_link], .BookingListView__nodata-area__1Pybz, .nodata', { timeout: 20000 });
+              await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 20000 });
 
               const newest = await scrapeNewestBookingsFromList(page, 8);
               log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
               if (newest.length === 0) {
                 const dbg = await page.evaluate(() => {
-                  const noData = !!document.querySelector('.BookingListView__nodata-area__1Pybz, .nodata');
-                  const rowCount = document.querySelectorAll('a.BookingListView__contents-user__xNWR6[data-tst_click_link]').length;
+                  const noData = !!document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+                  const rowCount = document.querySelectorAll('a[data-tst_click_link]').length;
                   const text = ((document.body && (document.body.innerText || document.body.textContent)) || '').replace(/\s+/g, ' ').trim();
                   return { noData, rowCount, textHead: text.slice(0, 200) };
                 });
@@ -766,21 +783,21 @@ function saveSeen(obj) {
 
 async function scrapeNewestBookingsFromList(page, limit = 5) {
   // "오늘 확정" 리스트 화면 파싱 (BookingListView div 기반)
-  // ✅ row는 a.BookingListView__contents-user__xNWR6[data-tst_click_link]
+  // ✅ row는 a[data-tst_click_link]
 
   // 리스트가 로딩될 시간을 줌 (nodata or rows)
   await page.waitForSelector(
-    'a.BookingListView__contents-user__xNWR6[data-tst_click_link], .BookingListView__nodata-area__1Pybz, .nodata',
+    'a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata',
     { timeout: 20000 }
   );
 
   return await page.evaluate((n) => {
     const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
 
-    const noData = document.querySelector('.BookingListView__nodata-area__1Pybz, .nodata');
+    const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
     if (noData) return [];
 
-    const rows = Array.from(document.querySelectorAll('a.BookingListView__contents-user__xNWR6[data-tst_click_link]')).slice(0, n);
+    const rows = Array.from(document.querySelectorAll('a[data-tst_click_link]')).slice(0, n);
 
     const to24Start = (ampm, hh, mm) => {
       let h = parseInt(hh, 10);
@@ -818,11 +835,13 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
     for (const row of rows) {
       const bookingId = row.getAttribute('data-tst_click_link') || null;
 
-      const phoneText = clean(row.querySelector('.BookingListView__phone__i04wO span')?.textContent);
+      // ⚠️ Fix: 클래스 해시 의존 → 속성 포함 선택자로 변경
+      const phoneText = clean(row.querySelector('[class*="phone"] span')?.textContent);
       const phone = phoneText ? phoneText.replace(/\D/g, '') : null;
 
-      // class에 +가 들어있어서 반드시 escape 필요
-      const hostEl = row.querySelector('.BookingListView__host__a\\+wPh');
+      // ⚠️ Fix: querySelector에서 클래스명의 + 이스케이프는 작동 안 함
+      //         → [class*="host"] 속성 포함 선택자로 변경
+      const hostEl = row.querySelector('[class*="host"]');
       const hostText = clean(hostEl?.textContent);
       const roomMatch = hostText.match(/\b(A1|A2|B)\b/i);
       const room = roomMatch ? roomMatch[1].toUpperCase() : null;
@@ -830,7 +849,8 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
       // 이용일시 텍스트 예:
       // - "오전 9:00~11:00"
       // - "26. 3. 1.(일) 오전 11:00~12:00"
-      const timeText = clean(row.querySelector('.BookingListView__book-date__F7BCG')?.textContent);
+      // ⚠️ Fix: 클래스 해시 의존 → 속성 포함 선택자로 변경
+      const timeText = clean(row.querySelector('[class*="book-date"]')?.textContent);
       let date = null;
       let start = null;
       let end = null;
@@ -875,7 +895,7 @@ function runPickko(booking) {
     log(`🤖 픽코 확정 실행: ${args.join(' ')}`);
 
     const child = spawn('node', args, {
-      cwd: '/Users/alexlee/.openclaw/workspace',
+      cwd: __dirname, // ⚠️ Fix: 하드코딩 경로 → 현재 파일 기준 상대 경로
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
