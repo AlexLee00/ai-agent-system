@@ -1004,9 +1004,9 @@ async function main() {
     }
     
     // 날짜 비교: 2026년 02월 23일 ↔ 2026-02-23
-    // DATE = "2026-02-23" → "2026년 02월 23일"로 변환
+    // DATE = "2026-02-23" → "2026년 02월 23일"로 변환 (월과 일에 0 포함)
     const [year, month, day] = DATE.split('-');
-    const expectedDate = `${year}년 ${parseInt(month)}월 ${parseInt(day)}일`;
+    const expectedDate = `${year}년 ${month}월 ${day}일`;  // "2026년 02월 23일"
     if (!finalVerification.useTime.includes(expectedDate)) {
       comparisonErrors.push(`날짜 불일치: 픽코=${finalVerification.useTime.slice(0, 20)}, 네이버=${expectedDate}`);
     }

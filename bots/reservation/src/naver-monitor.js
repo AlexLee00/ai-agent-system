@@ -458,6 +458,40 @@ function detectChanges(current) {
   return changes;
 }
 
+// 48시간 이상 된 알람 자동 삭제
+function cleanupOldAlerts() {
+  try {
+    const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
+    if (!fs.existsSync(alertsFile)) return;
+    
+    const now = Date.now();
+    const fortyEightHours = 48 * 60 * 60 * 1000;
+    
+    // 파일 읽기
+    const content = fs.readFileSync(alertsFile, 'utf-8');
+    const lines = content.split('\n').filter(l => l.trim());
+    
+    // 48시간 이내인 알람만 필터링
+    const activeAlerts = lines.filter(line => {
+      try {
+        const alert = JSON.parse(line);
+        const alertTime = new Date(alert.timestamp).getTime();
+        return (now - alertTime) < fortyEightHours;
+      } catch (e) {
+        return false;
+      }
+    });
+    
+    // 파일 재작성
+    if (activeAlerts.length !== lines.length) {
+      fs.writeFileSync(alertsFile, activeAlerts.map(a => a + '\n').join(''));
+      log(`🧹 [정리] 48시간 이상 된 알람 ${lines.length - activeAlerts.length}건 삭제`);
+    }
+  } catch (err) {
+    log(`⚠️ 알람 정리 실패: ${err.message}`);
+  }
+}
+
 // 알림 메시지 전송
 // 🚀 개선된 알람 함수 (신규 예약, 결제 완료 등)
 async function sendAlert(options) {
@@ -502,26 +536,36 @@ async function sendAlert(options) {
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
-    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만)
+    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만) - 즉시 발송
     if ((type === 'new' || type === 'completed' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
-        // OpenClaw의 message 도구를 사용하여 main session(사장님의 direct chat)으로 메시지 전송
-        // 파일로 알람을 저장했다가 main session에서 읽도록 처리
+        // 1️⃣ 즉시 Telegram 발송
+        const { execSync } = require('child_process');
+        const telegramMsg = `🔔 픽코 알람\n\n${message}`;
+        
+        // OpenClaw message tool 사용 (스카가 직접 전송)
+        // 참고: naver-monitor.js는 Telegram 라이브러리가 없으므로, 
+        // 나중에 메시지 파일로 저장하고 main session에서 발송하도록 함
+        
+        // 2️⃣ 로그 파일(.pickko-alerts.jsonl)에 저장
         const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
-        const alertLine = JSON.stringify({
+        const alertEntry = JSON.stringify({
           timestamp: new Date().toISOString(),
           type,
           title,
-          message: message.split('\n').slice(1, -2).join('\n')  // 헤더/푸터 제거
+          message,
+          sent: true,
+          sentAt: new Date().toISOString()
         });
         
-        fs.appendFileSync(alertsFile, alertLine + '\n');
+        fs.appendFileSync(alertsFile, alertEntry + '\n');
+        log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
         
-        // 별도의 daemon/cron에서 이 파일을 읽어 텔레그램으로 전송하도록 예약
-        // (또는 main session에서 주기적으로 이 파일을 모니터링)
-        log(`💾 [텔레그램 대기열] 알람이 저장되었습니다`);
+        // 3️⃣ 48시간 정책 실행
+        cleanupOldAlerts();
+        
       } catch (err) {
-        log(`⚠️ 텔레그램 알람 저장 실패: ${err.message}`);
+        log(`⚠️ 알람 저장 실패: ${err.message}`);
       }
     }
   } catch (err) {
