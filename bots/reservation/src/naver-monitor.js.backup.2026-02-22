@@ -458,61 +458,11 @@ function detectChanges(current) {
 }
 
 // 알림 메시지 전송
-// 🚀 개선된 알람 함수 (신규 예약, 결제 완료 등)
-async function sendAlert(options) {
-  try {
-    const {
-      type = 'info',  // 'new' | 'completed' | 'error' | 'info'
-      title,
-      customer,
-      phone,
-      date,
-      time,
-      room,
-      amount,
-      status,
-      reason,
-      action,
-      error
-    } = options;
-
-    // 📋 알람 메시지 형식화
-    let message = `${title}\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    
-    if (customer) message += `👤 고객: ${customer}\n`;
-    if (phone) message += `📞 번호: ${phone}\n`;
-    if (date) message += `📅 날짜: ${date}\n`;
-    if (time) message += `⏰ 시간: ${time}\n`;
-    if (room) message += `🏛️ 룸: ${room}\n`;
-    if (amount) message += `💰 금액: ${amount}원\n`;
-    if (status) message += `📊 상태: ${status}\n`;
-    if (reason) message += `ℹ️ 사유: ${reason}\n`;
-    if (error) message += `❌ 오류: ${error}\n`;
-    
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    if (action) message += `✅ 조치: ${action}\n`;
-
-    // 📢 로그 출력
-    log(message);
-    
-    // 📁 파일에 기록
-    const logFile = path.join('/Users/alexlee/.openclaw/workspace', 'monitor-alert.log');
-    const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
-    
-    // 추후 텔레그램 연동
-    // if (type === 'new' || type === 'error') {
-    //   await sendTelegramMessage(message);
-    // }
-  } catch (err) {
-    log(`⚠️ 알람 전송 실패: ${err.message}`);
-  }
-}
-
-// 호환성을 위한 기존 함수명
 async function sendNotification(message) {
   try {
+    // Telegram 메시지 전송 (OpenClaw 메시지 시스템)
+    const axios = require('axios');
+    
     log(`📢 알림: ${message}`);
     
     // 파일에 기록
@@ -829,24 +779,6 @@ async function monitorBookings() {
               log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
             } else {
               log(`✅ 신규 후보 ${candidates.length}건 발견.`);
-              
-              // 🆕 신규 예약 감지 알람
-              for (const booking of candidates) {
-                const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
-                const state = updateBookingState(bookingId, booking, 'pending');
-                
-                await sendAlert({
-                  type: 'new',
-                  title: '🆕 신규 예약 감지!',
-                  customer: booking.raw?.name || '고객',
-                  phone: booking.phone,
-                  date: booking.date,
-                  time: `${booking.start}~${booking.end}`,
-                  room: booking.room,
-                  status: 'pending',
-                  action: 'Pickko 자동 등록 준비 중...'
-                });
-              }
 
               // ✅ 모드에 따른 기본 동작
               // dev: 픽코 실행 기본 OFF
@@ -878,8 +810,7 @@ async function monitorBookings() {
 
                 // DEV: 성공(code=0)일 때만 마킹 (실패면 재시도 가능)
                 for (const b of onlyMine) {
-                  const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                  const code = await runPickko(b, bookingId);
+                  const code = await runPickko(b);
                   if (code === 0) {
                     seenSet.add(b._key);
                     seen.seenIds = Array.from(seenSet).slice(-500);
@@ -938,8 +869,7 @@ async function monitorBookings() {
               }
               // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0)일 때만 seen 마킹
               for (const b of observeFiltered) {
-                const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                const code = await runPickko(b, bookingId);
+                const code = await runPickko(b);
                 if (code === 0) {
                   seenSet.add(b._key);
                   seen.seenIds = Array.from(seenSet).slice(-500);
@@ -1050,8 +980,7 @@ async function monitorBookings() {
                   seen.seenIds = Array.from(seenSet).slice(-500);
                   saveSeen(seen);
 
-                  const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                  await runPickko(b, bookingId);
+                  await runPickko(b);
                 }
               }
 
@@ -1159,56 +1088,15 @@ async function monitorBookings() {
 const { spawn } = require('child_process');
 const SEEN_FILE = path.join('/Users/alexlee/.openclaw/workspace', 'naver-seen.json');
 
-// 📁 naver-seen.json 형식 개선 (상태 추적)
 function loadSeen() {
   try {
-    const data = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf-8'));
-    return data || {};
+    return JSON.parse(fs.readFileSync(SEEN_FILE, 'utf-8'));
   } catch (e) {
-    return {};
+    return { seenIds: [] };
   }
 }
-
 function saveSeen(obj) {
   fs.writeFileSync(SEEN_FILE, JSON.stringify(obj, null, 2));
-}
-
-// 🔐 신규 예약 감지 및 상태 저장
-function updateBookingState(bookingId, booking, state = 'pending') {
-  const seenData = loadSeen();
-  
-  if (!seenData[bookingId]) {
-    // 🆕 신규 예약
-    seenData[bookingId] = {
-      compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
-      phone: booking.phone,
-      date: booking.date,
-      start: booking.start,
-      end: booking.end,
-      room: booking.room,
-      detectedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
-      status: 'pending',        // pending → processing → completed → failed
-      pickkoStatus: null,       // null → registered → paid
-      pickkoOrderId: null,
-      errorReason: null,
-      retries: 0
-    };
-  } else {
-    // 기존 예약 상태 업데이트
-    seenData[bookingId].status = state;
-    
-    if (state === 'processing') {
-      seenData[bookingId].pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    } else if (state === 'completed') {
-      seenData[bookingId].pickkoStatus = 'paid';
-      seenData[bookingId].pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    } else if (state === 'failed') {
-      seenData[bookingId].retries = (seenData[bookingId].retries || 0) + 1;
-    }
-  }
-  
-  saveSeen(seenData);
-  return seenData[bookingId];
 }
 
 async function scrapeNewestBookingsFromList(page, limit = 5) {
@@ -1328,33 +1216,13 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
   }, limit);
 }
 
-function runPickko(booking, bookingId = null) {
-  return new Promise(async (resolve) => {
+function runPickko(booking) {
+  return new Promise((resolve) => {
     // ✅ 픽코 호출 직전 최종 변환 확인 (안전장치)
     const normalized = transformAndNormalizeData(booking);
     if (!normalized) {
       log(`❌ 픽코 호출 전 변환 실패: ${JSON.stringify(booking)}`);
-      
-      if (bookingId) {
-        updateBookingState(bookingId, booking, 'failed');
-        await sendAlert({
-          type: 'error',
-          title: '❌ 데이터 변환 실패',
-          phone: booking.phone,
-          date: booking.date,
-          time: `${booking.start}~${booking.end}`,
-          room: booking.room,
-          reason: '정규식 변환 실패',
-          action: '수동 확인 필요'
-        });
-      }
-      
       return resolve(1); // 변환 오류 → code 1
-    }
-
-    // 📊 상태 업데이트: processing
-    if (bookingId) {
-      updateBookingState(bookingId, booking, 'processing');
     }
 
     const args = [
@@ -1366,14 +1234,10 @@ function runPickko(booking, bookingId = null) {
       `--room=${normalized.room}`
     ];
 
-    log(`✅ [변환완료] 🤖 픽코 실행 시작`);
-    log(`   📞 고객: ${normalized.phone}`);
-    log(`   📅 날짜: ${normalized.date}`);
-    log(`   ⏰ 시간: ${normalized.start}~${normalized.end}`);
-    log(`   🏛️ 룸: ${normalized.room}`);
+    log(`✅ [변환완료] 🤖 픽코 실행: phone=${normalized.phone} date=${normalized.date} ${normalized.start}~${normalized.end} room=${normalized.room}`);
 
     const child = spawn('node', args, {
-      cwd: __dirname,
+      cwd: __dirname, // ⚠️ Fix: 하드코딩 경로 → 현재 파일 기준 상대 경로
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -1381,49 +1245,7 @@ function runPickko(booking, bookingId = null) {
     child.stderr.on('data', (d) => process.stderr.write(d.toString()));
 
     child.on('close', (code) => {
-      log(`🤖 픽코 실행 종료 (exit code: ${code})`);
-      
-      // 📊 상태 업데이트 (성공/실패)
-      if (code === 0) {
-        // ✅ 성공
-        if (bookingId) {
-          updateBookingState(bookingId, booking, 'completed');
-          
-          // 📢 완료 알람
-          sendAlert({
-            type: 'completed',
-            title: '✅ 픽코 예약 완료!',
-            customer: booking.phoneText || '고객',
-            phone: booking.phone,
-            date: booking.date,
-            time: `${booking.start}~${booking.end}`,
-            room: booking.room,
-            status: 'paid',
-            action: '정상 처리됨'
-          });
-        }
-        log(`✅ [완료] 픽코 예약이 성공했습니다!`);
-      } else {
-        // ❌ 실패
-        if (bookingId) {
-          updateBookingState(bookingId, booking, 'failed');
-          
-          // 📢 실패 알람
-          sendAlert({
-            type: 'error',
-            title: '❌ 픽코 예약 실패',
-            customer: booking.phoneText || '고객',
-            phone: booking.phone,
-            date: booking.date,
-            time: `${booking.start}~${booking.end}`,
-            room: booking.room,
-            reason: `exit code ${code}`,
-            action: '수동 확인 필요'
-          });
-        }
-        log(`❌ [실패] 픽코 예약이 실패했습니다 (code=${code})`);
-      }
-      
+      log(`🤖 픽코 실행 종료 code=${code}`);
       resolve(code);
     });
   });

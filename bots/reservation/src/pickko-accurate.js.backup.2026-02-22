@@ -545,7 +545,7 @@ async function main() {
     await delay(500);
 
     // ─────────────────────────────────────────────────────────────
-    // [6-4] 시간 선택 로직 (4-Tier Fallback Selector)
+    // [6-4] 시간 선택 로직
     // ─────────────────────────────────────────────────────────────
     log(`[6-4] 시간 선택 시도`);
     
@@ -558,24 +558,25 @@ async function main() {
       return d > 0 ? d : 30;
     })();
 
-    // 🔐 **OPS 모드는 항상 STRICT (대체 시간 불가)**
-    // DEV 모드는 STRICT_TIME 환경변수 따름
-    const strictTime = MODE === 'ops' ? true : (process.env.STRICT_TIME || '1') === '1';
-    const maxSlotsToTry = MODE === 'ops' ? 1 : (strictTime ? 1 : 48);
+    const strictTime = (process.env.STRICT_TIME || '1') === '1';
+    const maxSlotsToTry = strictTime ? 1 : 48;
     let chosen = null;
-    
-    log(`⚙️ [6-4 설정] MODE=${MODE} / strictTime=${strictTime} / maxSlotsToTry=${maxSlotsToTry}`);
+
+    // 🔍 디버그 모드 활성화 여부
+    const DEBUG_MODE = (process.env.DEBUG_HTML === '1' || process.env.HOLD_BROWSER === '1');
 
     // 시간대 선택 루프
     for (let i = 0; i < maxSlotsToTry; i++) {
       const s = addMinutesHHMM(START_TIME, i * 30);
       const e = addMinutesHHMM(s, requestedDurationMin);
-      log(`   ⏰ 시도 #${i + 1}: ${s} -> ${e}`);
+      log(`⏰ 시간 시도 #${i + 1}: ${s} -> ${e} (duration=${requestedDurationMin}분)`);
 
       // 🎯 **4-Tier Fallback Selector** - 정확한 시간대 선택
       const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin) => {
         const debug = {
           methodUsed: null,
+          startSelector: null,
+          endSelector: null,
           startExists: false,
           endExists: false,
           startUsed: false,
@@ -589,32 +590,38 @@ async function main() {
         let startLi = null;
         let endLi = null;
 
-        // 🔍 Method 1: li[date][st_no][start][mb_no=""]
+        // 🔍 Selector 1: li[date][st_no][start][mb_no=""]
         startLi = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"][start="${start}"][mb_no=""]`);
         endLi = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"][start="${end}"][mb_no=""]`);
         if (startLi && endLi) {
           debug.methodUsed = 'Method-1: li[date][st_no][start][mb_no=""]';
+          debug.startSelector = `li[date="${dateStr}"][st_no="${stNoStr}"][start="${start}"][mb_no=""]`;
+          debug.endSelector = `li[date="${dateStr}"][st_no="${stNoStr}"][start="${end}"][mb_no=""]`;
         }
 
-        // 🔍 Method 2: li[date][st_no][start] (mb_no 제약 해제)
+        // 🔍 Selector 2: li[date][st_no][start] (mb_no 제약 해제)
         if (!startLi || !endLi) {
           startLi = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"][start="${start}"]`);
           endLi = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"][start="${end}"]`);
           if (startLi && endLi) {
             debug.methodUsed = 'Method-2: li[date][st_no][start]';
+            debug.startSelector = `li[date="${dateStr}"][st_no="${stNoStr}"][start="${start}"]`;
+            debug.endSelector = `li[date="${dateStr}"][st_no="${stNoStr}"][start="${end}"]`;
           }
         }
 
-        // 🔍 Method 3: li[st_no][start] (date 제약 해제)
+        // 🔍 Selector 3: li[st_no][start] (date 제약 해제)
         if (!startLi || !endLi) {
           startLi = document.querySelector(`li[st_no="${stNoStr}"][start="${start}"]`);
           endLi = document.querySelector(`li[st_no="${stNoStr}"][start="${end}"]`);
           if (startLi && endLi) {
             debug.methodUsed = 'Method-3: li[st_no][start]';
+            debug.startSelector = `li[st_no="${stNoStr}"][start="${start}"]`;
+            debug.endSelector = `li[st_no="${stNoStr}"][start="${end}"]`;
           }
         }
 
-        // 🔍 Method 4: 모든 li 순회 및 속성 매칭
+        // 🔍 Selector 4: 모든 li 순회 및 속성 매칭
         if (!startLi || !endLi) {
           const allLis = document.querySelectorAll('li[start]');
           for (const li of allLis) {
@@ -625,6 +632,8 @@ async function main() {
           }
           if (startLi && endLi) {
             debug.methodUsed = 'Method-4: li[start] attribute loop';
+            debug.startSelector = `li(start="${start}" st_no="${stNoStr}")`;
+            debug.endSelector = `li(start="${end}" st_no="${stNoStr}")`;
           }
         }
 
@@ -632,13 +641,28 @@ async function main() {
         debug.startExists = !!startLi;
         debug.endExists = !!endLi;
 
-        // ✅ 요소의 'used' 클래스 확인
-        if (startLi) debug.startUsed = startLi.classList.contains('used');
-        if (endLi) debug.endUsed = endLi.classList.contains('used');
+        if (!startLi) {
+          debug.errors.push(`startLi not found for start=${start}`);
+        }
+        if (!endLi) {
+          debug.errors.push(`endLi not found for end=${end}`);
+        }
 
-        // ✅ 클릭 가능 조건 확인
-        if (startLi && !debug.startUsed) debug.startClicked = true;
-        if (endLi && !debug.endUsed) debug.endClicked = true;
+        // ✅ 요소의 'used' 클래스 확인
+        if (startLi) {
+          debug.startUsed = startLi.classList.contains('used');
+        }
+        if (endLi) {
+          debug.endUsed = endLi.classList.contains('used');
+        }
+
+        // ✅ 클릭 가능 조건 확인 (요소 존재 + 'used' 클래스 없음)
+        if (startLi && !debug.startUsed) {
+          debug.startClicked = true;
+        }
+        if (endLi && !debug.endUsed) {
+          debug.endClicked = true;
+        }
 
         // ✅ 중간 시간대 전부 확인
         if (durationMin > 30 && debug.startClicked && debug.endClicked) {
@@ -649,7 +673,8 @@ async function main() {
           for (let t = startMin; t < startMin + durationMin; t += 30) {
             const hh = String(Math.floor(t / 60)).padStart(2, '0');
             const mm = String(t % 60).padStart(2, '0');
-            const midLi = document.querySelector(`li[st_no="${stNoStr}"][start="${hh}:${mm}"]`);
+            const midLi = document.querySelector(`li[date="${dateStr}"][st_no="${stNoStr}"][start="${hh}:${mm}"]`) ||
+                         document.querySelector(`li[st_no="${stNoStr}"][start="${hh}:${mm}"]`);
             if (!(midLi && !midLi.classList.contains('used'))) {
               debug.okMid = false;
               debug.errors.push(`Mid-slot blocked: ${hh}:${mm}`);
@@ -669,103 +694,76 @@ async function main() {
 
       // 로그 출력
       if (res.methodUsed) {
-        log(`       ✅ ${res.methodUsed}`);
+        log(`   ✅ ${res.methodUsed}`);
       }
-      log(`       ├─ start: exists=${res.startExists} used=${res.startUsed} clickable=${res.startClicked}`);
-      log(`       ├─ end: exists=${res.endExists} used=${res.endUsed} clickable=${res.endClicked}`);
-      log(`       └─ mid: ok=${res.okMid} ${res.errors.length > 0 ? `(${res.errors.join(', ')})` : ''}`);
+      log(`   ├─ startExists=${res.startExists} used=${res.startUsed} clickable=${res.startClicked}`);
+      log(`   ├─ endExists=${res.endExists} used=${res.endUsed} clickable=${res.endClicked}`);
+      log(`   └─ okMid=${res.okMid} ${res.errors.length > 0 ? `(${res.errors.join(', ')})` : ''}`);
 
       // ✅ 선택 성공 조건
       if (res.startClicked && res.endClicked && res.okMid) {
-        chosen = { 
-          start: s, 
-          end: e,
-          method: res.methodUsed
-        };
-        log(`       🎯 **시간 선택 성공!**`);
+        chosen = { start: s, end: e };
+        log(`   🎯 **시간 선택 성공!**`);
         break;
       }
 
       await delay(350);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // [6-5] 검증 - 선택 여부 확인
-    // ─────────────────────────────────────────────────────────────
-    // ─────────────────────────────────────────────────────────────
-    // [6-5] 검증 - 선택 여부 확인 (OPS vs DEV 분리)
-    // ─────────────────────────────────────────────────────────────
-    if (!chosen) {
-      if (MODE === 'ops') {
-        // 🔴 OPS 모드: 실패 + 즉시 알람 + 중단
-        const errorAlert = {
-          title: '⚠️ [OPS-실패] 예약 시간 선택 불가',
-          phone: PHONE_NOHYPHEN,
-          date: DATE,
-          requestTime: `${START_TIME}~${END_TIME}`,
-          room: ROOM,
-          reason: `해당 시간대 모두 예약됨 (최대 ${maxSlotsToTry}개 슬롯 확인)`,
-          action: 'DEV 모드로 전환 및 분석 필요',
-          timestamp: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
-        };
-        
-        log(`\n🚨 [OPS-CRITICAL] 시간 선택 실패`);
-        log(`📋 알람 내용:`);
-        log(`   • 고객 번호: ${errorAlert.phone}`);
-        log(`   • 예약 날짜: ${errorAlert.date}`);
-        log(`   • 요청 시간: ${errorAlert.requestTime}`);
-        log(`   • 요청 룸: ${errorAlert.room}`);
-        log(`   • 실패 사유: ${errorAlert.reason}`);
-        log(`   • 조치: ${errorAlert.action}`);
-        
-        // 추후 텔레그램 알람 연동
-        // await sendAlert(errorAlert);
-        
-        throw new Error(`[OPS-CRITICAL] 시간 선택 실패 - 예약 불가능한 시간대`);
-      } else {
-        // 🟡 DEV 모드: 로그만 출력 후 중단
-        log(`⚠️ [DEV] 시간 선택 실패: 모든 슬롯이 예약됨`);
-        throw new Error(`[DEV] 시간 선택 실패`);
+        // 🖱️ 클릭 실행
+        const canClick = results.startClicked && results.endClicked && results.okMid;
+        if (canClick) {
+          startLi.click();
+          endLi.click();
+        }
+
+        if (isDebug) {
+          console.log(`[SELECTOR_DEBUG] start=${start} end=${end}`, results);
+        }
+
+        return results;
+      }, DATE, stNo, s, e, requestedDurationMin, DEBUG_MODE);
+
+      // 📋 결과 로깅
+      const status = res.methodUsed ? `✅${res.methodUsed}` : '❌NoSelector';
+      log(`   ↳ ${status} | start=${res.startExists} clicked=${res.startClicked} | end=${res.endExists} clicked=${res.endClicked}`);
+
+      if (res.selectorDebug.length > 0 && DEBUG_MODE) {
+        res.selectorDebug.forEach(msg => log(`   ↳ ${msg}`));
       }
+
+      if (res.startClicked && res.endClicked && res.okMid) {
+        chosen = { start: s, end: e, method: res.methodUsed };
+        log(`✅ 시간대 선택 성공!`);
+        break;
+      }
+
+      await delay(350);
     }
 
-    log(`[6-5] ✅ 시간 선택 완료: ${chosen.start}~${chosen.end} (방법: ${chosen.method || 'unknown'})`);
+    if (!chosen) {
+      throw new Error(`시간 선택 실패: 시작=${START_TIME}부터 ${maxSlotsToTry}개 슬롯까지 모두 실패`);
+    }
 
-    // ─────────────────────────────────────────────────────────────
-    // [6-6] 검증 - Input 필드 확인
-    // ─────────────────────────────────────────────────────────────
-    log(`[6-6] 선택 검증 (input 필드 확인)`);
-    
-    await delay(1000);  // 화면 렌더링 대기
-    
-    const timeVerification = await page.evaluate(() => {
-      const inps = {
-        start_date: document.querySelector('input#start_date')?.value || '',
-        start_time: document.querySelector('input#start_time')?.value || '',
-        end_date: document.querySelector('input#end_date')?.value || '',
-        end_time: document.querySelector('input#end_time')?.value || ''
-      };
+    log(`✅ [6단계 완료] 선택된 시간: ${chosen.start}~${chosen.end} (방식: ${chosen.method})`);
 
+    // [6-5] 시간 선택 검증
+    log(`[6-5] 시간 선택 검증`);
+    const verifyTime = await page.evaluate(() => {
       return {
-        hasStartDate: !!inps.start_date,
-        hasStartTime: !!inps.start_time,
-        hasEndDate: !!inps.end_date,
-        hasEndTime: !!inps.end_time,
-        values: inps
+        start_time: document.querySelector('#start_time')?.value,
+        end_time: document.querySelector('#end_time')?.value,
+        start_date: document.querySelector('#start_date')?.value,
+        end_date: document.querySelector('#end_date')?.value
       };
     });
-
-    log(`       ├─ start_date: ${timeVerification.values.start_date || '(empty)'} ${timeVerification.hasStartDate ? '✅' : '❌'}`);
-    log(`       ├─ start_time: ${timeVerification.values.start_time || '(empty)'} ${timeVerification.hasStartTime ? '✅' : '❌'}`);
-    log(`       ├─ end_date: ${timeVerification.values.end_date || '(empty)'} ${timeVerification.hasEndDate ? '✅' : '❌'}`);
-    log(`       └─ end_time: ${timeVerification.values.end_time || '(empty)'} ${timeVerification.hasEndTime ? '✅' : '❌'}`);
-
-    // ⚠️ 검증 경고
-    if (!timeVerification.hasStartTime || !timeVerification.hasEndTime) {
-      log(`⚠️ 경고: 시간이 input 필드에 반영되지 않았을 수 있습니다. 계속 진행합니다.`);
-    }
+    log(`   ↳ start_date: ${verifyTime.start_date}`);
+    log(`   ↳ start_time: ${verifyTime.start_time}`);
+    log(`   ↳ end_date: ${verifyTime.end_date}`);
+    log(`   ↳ end_time: ${verifyTime.end_time}`);
 
     await delay(1500);
+    
     // ======================== 7단계: 저장 ========================
     log('\n[7단계] 저장');
 
@@ -1134,69 +1132,24 @@ async function main() {
       log(`⚠️ [WARNING] 완료 상태 불명확 (수동 확인 필요)`);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // 🔐 브라우저 종료 로직 (OPS vs DEV)
-    // ─────────────────────────────────────────────────────────────
-    // OPS 모드: 항상 종료 (실제 운영)
-    // DEV 모드: HOLD_BROWSER=1이면 유지 (검증용)
-    
-    const shouldCloseBrowser = MODE === 'ops' || (process.env.HOLD_BROWSER !== '1');
-    
-    if (shouldCloseBrowser) {
-      log(`🔒 [종료] 브라우저 종료 (MODE=${MODE})`);
-      try { await browser.close(); } catch (e) {
-        log(`⚠️ 브라우저 종료 실패: ${e.message}`);
-      }
-    } else {
-      log(`🔍 [대기] 브라우저 유지 (MODE=${MODE}, HOLD_BROWSER=1) → 검증용`);
-      log(`⏱️ 5분 대기 중... (완료 확인 후 Ctrl+C로 종료)`);
+    const hold = (process.env.HOLD_BROWSER === '1') || (MODE === 'dev');
+
+    if (hold) {
+      log(`🔍 브라우저 유지 (MODE=${MODE}, HOLD_BROWSER=${process.env.HOLD_BROWSER || ''}) → 사장님 확인용`);
       await delay(300_000);
+    } else {
+      log(`🧹 성공 처리 → 브라우저 종료 (MODE=${MODE})`);
       try { await browser.close(); } catch (e) {}
     }
 
   } catch (err) {
-    log(`❌ 에러 발생: ${err.message}`);
-    
-    // 🔐 **OPS 모드 오류 처리**
-    if (MODE === 'ops') {
-      log(`\n🚨 [OPS-ERROR] 예약 처리 중 오류 발생`);
-      log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      log(`❌ 오류: ${err.message}`);
-      log(`📞 고객: ${PHONE_NOHYPHEN}`);
-      log(`📅 날짜: ${DATE}`);
-      log(`⏰ 시간: ${START_TIME}~${END_TIME}`);
-      log(`🏛️ 룸: ${ROOM}`);
-      log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      log(`⚠️ 조치: 즉시 DEV 모드로 전환하여 분석 필요`);
-      log(`⚠️ 최우선 해결 과제로 등록되었습니다.`);
-      
-      // 추후 텔레그램 알람 연동
-      // await sendAlert({
-      //   title: '🚨 [OPS-ERROR]',
-      //   error: err.message,
-      //   phone: PHONE_NOHYPHEN,
-      //   date: DATE,
-      //   action: 'DEV 모드로 전환 필요'
-      // });
-      
-      // OPS 모드: 항상 브라우저 종료
+    log(`❌ 에러: ${err.message}`);
+    if (process.env.HOLD_BROWSER_ON_ERROR === '0') {
+      log('🧹 HOLD_BROWSER_ON_ERROR=0 → 에러여도 브라우저 종료');
       try { await browser.close(); } catch (e) {}
-      process.exit(1);
-    }
-    
-    // 🟡 **DEV 모드 오류 처리**
-    else {
-      log(`⚠️ [DEV] 예약 처리 중 오류 (개발 중이므로 로그만 출력)`);
-      
-      if (process.env.HOLD_BROWSER_ON_ERROR === '0') {
-        log('🧹 HOLD_BROWSER_ON_ERROR=0 → 에러여도 브라우저 종료');
-        try { await browser.close(); } catch (e) {}
-      } else {
-        log('🛑 에러 발생: 브라우저를 닫지 않고 대기합니다. (직접 화면 확인 후 알려주세요)');
-        await delay(600_000);
-        try { await browser.close(); } catch (e) {}
-      }
-      process.exit(1);
+    } else {
+      log('🛑 에러 발생: 브라우저를 닫지 않고 대기합니다. (직접 화면 확인 후 알려주세요)');
+      await delay(600_000);
     }
   }
 }
