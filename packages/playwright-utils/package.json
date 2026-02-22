@@ -1,0 +1,10 @@
+{
+  "name": "@ai-agent/playwright-utils",
+  "version": "1.0.0",
+  "description": "브라우저 자동화 공통 모듈",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer": "^24.37.5"
+  }
+}

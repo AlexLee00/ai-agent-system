@@ -1,0 +1,13 @@
+{
+  "name": "@ai-agent/academic",
+  "version": "1.0.0",
+  "description": "🎓 학술보조봇 - 박사 논문 작성 및 연구 보조",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*"
+  }
+}

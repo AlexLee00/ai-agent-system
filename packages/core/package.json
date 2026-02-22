@@ -1,0 +1,7 @@
+{
+  "name": "@ai-agent/core",
+  "version": "1.0.0",
+  "description": "공통 타입, 유틸, 인터페이스",
+  "main": "index.js",
+  "type": "commonjs"
+}

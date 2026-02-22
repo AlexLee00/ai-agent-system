@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+*.lock
+!package-lock.json
+
+# 브라우저 프로필 (개인정보)
+*-profile/
+naver-profile/
+
+# 런타임 파일
+*.out
+*.pid
+*.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# 테스트 결과
+coverage/

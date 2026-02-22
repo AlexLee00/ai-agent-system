@@ -1,0 +1,13 @@
+{
+  "name": "@ai-agent/legal",
+  "version": "1.0.0",
+  "description": "⚖️ 판례봇 - 국내외 판례 서칭 및 분석",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*"
+  }
+}

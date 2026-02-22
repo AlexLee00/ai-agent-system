@@ -1,0 +1,19 @@
+{
+  "name": "ai-agent-system",
+  "version": "1.0.0",
+  "description": "멀티 에이전트 AI 봇 시스템",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "bots/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

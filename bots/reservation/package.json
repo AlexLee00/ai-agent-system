@@ -1,0 +1,15 @@
+{
+  "name": "@ai-agent/reservation",
+  "version": "1.0.0",
+  "description": "📅 예약관리봇 - 네이버 스마트플레이스 + 픽코 자동화",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "monitor": "node src/naver-monitor.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*",
+    "@ai-agent/playwright-utils": "*"
+  }
+}

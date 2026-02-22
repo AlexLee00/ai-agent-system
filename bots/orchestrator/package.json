@@ -1,0 +1,13 @@
+{
+  "name": "@ai-agent/orchestrator",
+  "version": "1.0.0",
+  "description": "🤖 메인봇 (팀장) - 지시 해석, 업무 분배, 결과 취합",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*"
+  }
+}
