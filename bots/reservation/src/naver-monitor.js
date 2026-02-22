@@ -9,6 +9,7 @@
  */
 
 const puppeteer = require('puppeteer');
+const { exec } = require('child_process');
 const { transformAndNormalizeData } = require('../lib/validation');
 
 async function initializeBrowser() {
@@ -501,10 +502,28 @@ async function sendAlert(options) {
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
-    // 추후 텔레그램 연동
-    // if (type === 'new' || type === 'error') {
-    //   await sendTelegramMessage(message);
-    // }
+    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만)
+    if ((type === 'new' || type === 'completed' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
+      try {
+        // OpenClaw의 message 도구를 사용하여 main session(사장님의 direct chat)으로 메시지 전송
+        // 파일로 알람을 저장했다가 main session에서 읽도록 처리
+        const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
+        const alertLine = JSON.stringify({
+          timestamp: new Date().toISOString(),
+          type,
+          title,
+          message: message.split('\n').slice(1, -2).join('\n')  // 헤더/푸터 제거
+        });
+        
+        fs.appendFileSync(alertsFile, alertLine + '\n');
+        
+        // 별도의 daemon/cron에서 이 파일을 읽어 텔레그램으로 전송하도록 예약
+        // (또는 main session에서 주기적으로 이 파일을 모니터링)
+        log(`💾 [텔레그램 대기열] 알람이 저장되었습니다`);
+      } catch (err) {
+        log(`⚠️ 텔레그램 알람 저장 실패: ${err.message}`);
+      }
+    }
   } catch (err) {
     log(`⚠️ 알람 전송 실패: ${err.message}`);
   }
@@ -866,7 +885,8 @@ async function monitorBookings() {
                 }
 
                 // DEV에서는 테스트 번호만 실행
-                const onlyMine = candidates.filter(b => String(b.phone) === devTestPhone);
+                // 🔍 DEV 테스트: phoneRaw로 비교 (숫자 형식)
+                const onlyMine = candidates.filter(b => String(b.phoneRaw) === devTestPhone);
                 if (onlyMine.length === 0) {
                   log(`🧷 MODE=dev: 테스트 번호(${devTestPhone}) 후보 없음 → 픽코 실행 안 함`);
                   await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -879,7 +899,7 @@ async function monitorBookings() {
                 // DEV: 성공(code=0)일 때만 마킹 (실패면 재시도 가능)
                 for (const b of onlyMine) {
                   const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                  const code = await runPickko(b, bookingId);
+                  const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
                     seenSet.add(b._key);
                     seen.seenIds = Array.from(seenSet).slice(-500);
@@ -907,7 +927,8 @@ async function monitorBookings() {
                 .map(s => s.replace(/\D/g, ''))
                 .filter(Boolean);
               const observeOnly = (process.env.OBSERVE_ONLY || '1') === '1';
-              const observeFiltered = observeOnly ? candidates.filter(b => observePhones.includes(String(b.phone))) : candidates;
+              // 🔍 OPS 관찰: phoneRaw로 비교 (observePhones는 이미 숫자만)
+              const observeFiltered = observeOnly ? candidates.filter(b => observePhones.includes(String(b.phoneRaw))) : candidates;
 
               if (observeOnly && observeFiltered.length === 0) {
                 log(`👀 관찰 OPS: 대상 번호(${observePhones.join(',')}) 후보 없음 → 픽코 실행 안 함`);
@@ -939,7 +960,7 @@ async function monitorBookings() {
               // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0)일 때만 seen 마킹
               for (const b of observeFiltered) {
                 const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                const code = await runPickko(b, bookingId);
+                const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
                   seenSet.add(b._key);
                   seen.seenIds = Array.from(seenSet).slice(-500);
@@ -1051,7 +1072,7 @@ async function monitorBookings() {
                   saveSeen(seen);
 
                   const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                  await runPickko(b, bookingId);
+                  await runPickko(b, bookingId, page);
                 }
               }
 
@@ -1157,7 +1178,7 @@ async function monitorBookings() {
 
 // ======================== Pickko 연동 ========================
 const { spawn } = require('child_process');
-const SEEN_FILE = path.join('/Users/alexlee/.openclaw/workspace', 'naver-seen.json');
+const SEEN_FILE = path.join(__dirname, '..', 'naver-seen.json');  // 프로젝트 디렉토리
 
 // 📁 naver-seen.json 형식 개선 (상태 추적)
 function loadSeen() {
@@ -1170,45 +1191,62 @@ function loadSeen() {
 }
 
 function saveSeen(obj) {
-  fs.writeFileSync(SEEN_FILE, JSON.stringify(obj, null, 2));
+  try {
+    const json = JSON.stringify(obj, null, 2);
+    fs.writeFileSync(SEEN_FILE, json, 'utf-8');
+    const count = Object.keys(obj).length;
+    log(`💾 [저장] naver-seen.json 업데이트 (총 ${count}건)`);
+  } catch (err) {
+    log(`❌ [저장 실패] naver-seen.json: ${err.message}`);
+  }
 }
 
 // 🔐 신규 예약 감지 및 상태 저장
 function updateBookingState(bookingId, booking, state = 'pending') {
-  const seenData = loadSeen();
-  
-  if (!seenData[bookingId]) {
-    // 🆕 신규 예약
-    seenData[bookingId] = {
-      compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
-      phone: booking.phone,
-      date: booking.date,
-      start: booking.start,
-      end: booking.end,
-      room: booking.room,
-      detectedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
-      status: 'pending',        // pending → processing → completed → failed
-      pickkoStatus: null,       // null → registered → paid
-      pickkoOrderId: null,
-      errorReason: null,
-      retries: 0
-    };
-  } else {
-    // 기존 예약 상태 업데이트
-    seenData[bookingId].status = state;
+  try {
+    const seenData = loadSeen();
     
-    if (state === 'processing') {
-      seenData[bookingId].pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    } else if (state === 'completed') {
-      seenData[bookingId].pickkoStatus = 'paid';
-      seenData[bookingId].pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    } else if (state === 'failed') {
-      seenData[bookingId].retries = (seenData[bookingId].retries || 0) + 1;
+    if (!seenData[bookingId]) {
+      // 🆕 신규 예약
+      seenData[bookingId] = {
+        compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
+        phone: booking.phone,
+        phoneRaw: booking.phoneRaw,
+        date: booking.date,
+        start: booking.start,
+        end: booking.end,
+        room: booking.room,
+        detectedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+        status: state,            // pending → processing → completed → failed
+        pickkoStatus: null,       // null → registered → paid
+        pickkoOrderId: null,
+        errorReason: null,
+        retries: 0
+      };
+      log(`   📊 [신규] ${booking.phone} / ${booking.date} ${booking.start}~${booking.end} ${booking.room} → status: ${state}`);
+    } else {
+      // 기존 예약 상태 업데이트
+      const oldStatus = seenData[bookingId].status;
+      seenData[bookingId].status = state;
+      
+      if (state === 'processing') {
+        seenData[bookingId].pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+      } else if (state === 'completed') {
+        seenData[bookingId].pickkoStatus = 'paid';
+        seenData[bookingId].pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+      } else if (state === 'failed') {
+        seenData[bookingId].retries = (seenData[bookingId].retries || 0) + 1;
+      }
+      
+      log(`   📊 [업데이트] ${booking.phone}: ${oldStatus} → ${state}`);
     }
+    
+    saveSeen(seenData);
+    return seenData[bookingId];
+  } catch (err) {
+    log(`❌ updateBookingState 실패: ${err.message}`);
+    return null;
   }
-  
-  saveSeen(seenData);
-  return seenData[bookingId];
 }
 
 async function scrapeNewestBookingsFromList(page, limit = 5) {
@@ -1246,14 +1284,12 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
       return `${String(h).padStart(2, '0')}:${m}`;
     };
 
-    const to24End = (startAmpm, endHh, endMm) => {
+    const to24End = (endAmpm, endHh, endMm) => {
       let h = parseInt(endHh, 10);
       const m = String(parseInt(endMm, 10)).padStart(2, '0');
-      if (h === 12) {
-        h = startAmpm === '오전' ? 12 : 0;
-      } else if (startAmpm === '오후') {
-        h += 12;
-      }
+      // 🔧 FIX: 종료 시간의 오전/오후를 독립적으로 처리
+      if (endAmpm === '오후' && h < 12) h += 12;
+      if (endAmpm === '오전' && h === 12) h = 0;
       return `${String(h).padStart(2, '0')}:${m}`;
     };
 
@@ -1293,12 +1329,46 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
           date = `${yyyy}-${mm}-${dd}`;
         }
 
-        // 시간 파싱 (오후 5:00~7:00)
-        const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
+        // 시간 파싱 (오전 12:00~오후 1:00 또는 오후 5:00~7:00)
+        // 🔧 개선: 종료 시간의 오전/오후가 명시된 경우 캡처
+        const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(오전|오후)?\s*(\d{1,2}):(\d{2})/);
         if (timeMatch) {
-          const ampm = timeMatch[1];
-          start = to24Start(ampm, timeMatch[2], timeMatch[3]);
-          end = to24End(ampm, timeMatch[4], timeMatch[5]);
+          const startAmpm = timeMatch[1];
+          const startHour = parseInt(timeMatch[2], 10);
+          const startMin = parseInt(timeMatch[3], 10);
+          const endHour = parseInt(timeMatch[5], 10);
+          const endMin = parseInt(timeMatch[6], 10);
+          
+          let endAmpm = timeMatch[4];  // 명시된 종료 오전/오후
+          
+          // 🔧 FIX: 종료 오전/오후가 생략된 경우 24시간 형식으로 비교
+          if (!endAmpm) {
+            // 시작을 24시간 형식으로 변환
+            const start24Hour = startAmpm === '오전' 
+              ? (startHour === 12 ? 0 : startHour)
+              : (startHour === 12 ? 12 : startHour + 12);
+            
+            // 종료를 먼저 12시간 형식으로 가정하고 결정
+            // 1) 종료 시간이 1~11이면서 시작이 오전이면 오전
+            if ((endHour >= 1 && endHour <= 11) && startAmpm === '오전') {
+              endAmpm = '오전';
+            }
+            // 2) 종료 시간이 12이고 시작이 오전이면 정오(오후 12)
+            else if (endHour === 12 && startAmpm === '오전') {
+              endAmpm = '오후';
+            }
+            // 3) 시작이 오후이고 종료가 1~12이면 오후
+            else if (startAmpm === '오후' && endHour >= 1 && endHour <= 12) {
+              endAmpm = '오후';
+            }
+            // 4) 그 외: 시작값 따라가기
+            else {
+              endAmpm = startAmpm;
+            }
+          }
+          
+          start = to24Start(startAmpm, String(startHour), String(startMin).padStart(2, '0'));
+          end = to24End(endAmpm, String(endHour), String(endMin).padStart(2, '0'));
         }
       }
 
@@ -1328,7 +1398,7 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
   }, limit);
 }
 
-function runPickko(booking, bookingId = null) {
+function runPickko(booking, bookingId = null, naveraPage = null) {
   return new Promise(async (resolve) => {
     // ✅ 픽코 호출 직전 최종 변환 확인 (안전장치)
     const normalized = transformAndNormalizeData(booking);
@@ -1357,19 +1427,29 @@ function runPickko(booking, bookingId = null) {
       updateBookingState(bookingId, booking, 'processing');
     }
 
+    // 🔧 픽코 실행 중 네이버 페이지 닫기 (크롬 메모리 누수 방지)
+    if (naveraPage && !naveraPage.isClosed?.()) {
+      try {
+        await naveraPage.close();
+        log(`📄 네이버 페이지 일시 종료 (픽코 실행 중)`);
+      } catch (e) {
+        log(`⚠️ 네이버 페이지 종료 실패: ${e.message}`);
+      }
+    }
+
     const args = [
       'pickko-accurate.js',
       `--phone=${normalized.phone}`,
       `--date=${normalized.date}`,
       `--start=${normalized.start}`,
-      `--end=${normalized.end}`,
+      `--end=${normalized.end}`,  // 픽코는 자동으로 표기시간 = 저장시간 - 10분 처리
       `--room=${normalized.room}`
     ];
 
     log(`✅ [변환완료] 🤖 픽코 실행 시작`);
     log(`   📞 고객: ${normalized.phone}`);
     log(`   📅 날짜: ${normalized.date}`);
-    log(`   ⏰ 시간: ${normalized.start}~${normalized.end}`);
+    log(`   ⏰ 시간: ${normalized.start}~${normalized.end} (네이버 & 픽코 등록) → 픽코 표기: ${normalized.start}~??:?? (-10분)`);
     log(`   🏛️ 룸: ${normalized.room}`);
 
     const child = spawn('node', args, {

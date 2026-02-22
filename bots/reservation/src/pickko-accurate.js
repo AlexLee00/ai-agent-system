@@ -491,6 +491,28 @@ async function main() {
     // 날짜 설정 및 검증 실행
     await setAndVerifyDate();
     
+    // ======================== 30분 단위 슬롯 변환 (픽코 고유 기능) ========================
+    // 픽코는 시간을 30분 단위 슬롯으로 관리함
+    // 예: "00:00~01:00" → ["00:00", "00:30", "01:00"] (3개 슬롯)
+    function timeToSlots(startTime, endTime) {
+      const [startHour, startMin] = startTime.split(':').map(Number);
+      const [endHour, endMin] = endTime.split(':').map(Number);
+      
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      
+      const slots = [];
+      for (let min = startMinutes; min <= endMinutes - 1; min += 30) {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      }
+      return slots;
+    }
+    
+    const TIME_SLOTS = timeToSlots(START_TIME, END_TIME);
+    log(`🔄 [30분 단위 슬롯 변환] ${START_TIME}~${END_TIME} → [${TIME_SLOTS.join(', ')}] (${TIME_SLOTS.length}개)`);
+    
     // ======================== 6단계: 룸 & 시간 선택 ========================
     log('\n[6단계] 룸 & 시간 선택');
     
@@ -545,32 +567,31 @@ async function main() {
     await delay(500);
 
     // ─────────────────────────────────────────────────────────────
-    // [6-4] 시간 선택 로직 (4-Tier Fallback Selector)
+    // [6-4] 시간 선택 로직 (30분 단위 슬롯 순차 선택)
     // ─────────────────────────────────────────────────────────────
-    log(`[6-4] 시간 선택 시도`);
+    log(`[6-4] 시간 선택: ${TIME_SLOTS.length}개 슬롯 순차 선택`);
     
-    const toMinutes = (hhmm) => {
-      const [h, m] = hhmm.split(':').map(Number);
-      return h * 60 + m;
-    };
-    const requestedDurationMin = (() => {
-      const d = toMinutes(END_TIME) - toMinutes(START_TIME);
-      return d > 0 ? d : 30;
-    })();
-
-    // 🔐 **OPS 모드는 항상 STRICT (대체 시간 불가)**
-    // DEV 모드는 STRICT_TIME 환경변수 따름
-    const strictTime = MODE === 'ops' ? true : (process.env.STRICT_TIME || '1') === '1';
-    const maxSlotsToTry = MODE === 'ops' ? 1 : (strictTime ? 1 : 48);
     let chosen = null;
-    
-    log(`⚙️ [6-4 설정] MODE=${MODE} / strictTime=${strictTime} / maxSlotsToTry=${maxSlotsToTry}`);
+    let attemptCount = 0;
 
-    // 시간대 선택 루프
-    for (let i = 0; i < maxSlotsToTry; i++) {
-      const s = addMinutesHHMM(START_TIME, i * 30);
-      const e = addMinutesHHMM(s, requestedDurationMin);
-      log(`   ⏰ 시도 #${i + 1}: ${s} -> ${e}`);
+    // 🔄 30분 단위 슬롯 선택: 첫 슬롯 ~ 마지막 슬롯
+    // 예: ["00:00", "00:30", "01:00"] → "00:00"과 "01:00" 선택 (픽코가 중간 자동 채움)
+    const firstSlot = TIME_SLOTS[0];
+    const lastSlot = TIME_SLOTS[TIME_SLOTS.length - 1];
+    
+    // 🔧 Duration 계산 (슬롯 개수 기반)
+    const durationMin = (TIME_SLOTS.length - 1) * 30;  // 슬롯 개수 - 1 × 30분
+    
+    log(`   ⏰ 첫 슬롯: ${firstSlot} / 마지막 슬롯: ${lastSlot} / 기간: ${durationMin}분`);
+    
+    // 시간 선택 시도
+    for (let attempt = 0; attempt < 1; attempt++) {  // OPS/DEV 간단하게 처리
+      attemptCount++;
+      log(`   ⏰ 시도 #${attemptCount}: ${firstSlot} -> ${lastSlot}`);
+      
+      const s = firstSlot;
+      const e = lastSlot;
+      log(`      범위: ${s} ~ ${e}`);
 
       // 🎯 **4-Tier Fallback Selector** - 정확한 시간대 선택
       const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin) => {
@@ -665,7 +686,7 @@ async function main() {
         }
 
         return debug;
-      }, DATE, stNo, s, e, requestedDurationMin);
+      }, DATE, stNo, s, e, durationMin);
 
       // 로그 출력
       if (res.methodUsed) {
@@ -877,6 +898,128 @@ async function main() {
     }
 
     await delay(1500);
+
+    // ======================== 7-5단계: 최종 검증 (결제 직전) ========================
+    log('\n[7-5단계] 최종 검증 (결제 직전)');
+    
+    const finalVerification = await page.evaluate(() => {
+      const verification = {
+        mbInfo: null,           // 회원명(번호)
+        roomName: null,         // 룸 이름
+        useTime: null,          // 이용시간
+        priceField: null,       // 결제금액
+        errors: [],
+        warnings: []
+      };
+
+      // 🔍 <tbody>의 테이블에서 데이터 추출
+      const rows = document.querySelectorAll('tbody tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const tds = row.querySelectorAll('td');
+        
+        if (!th || !tds.length) continue;
+        
+        const thText = (th.textContent || '').trim();
+        
+        // 1️⃣ 회원 정보: <span id="mb_info">이지숙(010-3741-0771)</span>
+        if (thText.includes('회원 정보')) {
+          const mbSpan = row.querySelector('span#mb_info');
+          if (mbSpan) {
+            verification.mbInfo = (mbSpan.textContent || '').trim();
+          }
+        }
+        
+        // 2️⃣ 스터디룸: 첫 번째 td
+        if (thText.includes('스터디룸')) {
+          if (tds[0]) {
+            verification.roomName = (tds[0].textContent || '').trim();
+          }
+        }
+        
+        // 3️⃣ 이용시간: colspan이 있는 td
+        if (thText.includes('이용시간')) {
+          for (const td of tds) {
+            const tdText = (td.textContent || '').trim();
+            if (tdText.includes('년') || tdText.includes('월') || tdText.includes('일')) {
+              verification.useTime = tdText;
+              break;
+            }
+          }
+        }
+        
+        // 4️⃣ 결제하기 버튼: price 속성 추출
+        if (thText.includes('결제하기')) {
+          const orderLink = row.querySelector('a#study_order');
+          if (orderLink) {
+            const price = orderLink.getAttribute('price');
+            verification.priceField = price ? `${price}원` : null;
+          }
+        }
+      }
+      
+      // 검증 로직
+      if (!verification.mbInfo) {
+        verification.errors.push('회원 정보를 찾을 수 없습니다');
+      }
+      if (!verification.roomName) {
+        verification.errors.push('스터디룸 정보를 찾을 수 없습니다');
+      }
+      if (!verification.useTime) {
+        verification.errors.push('이용시간 정보를 찾을 수 없습니다');
+      }
+      if (!verification.priceField) {
+        verification.errors.push('결제금액 정보를 찾을 수 없습니다');
+      }
+      
+      return verification;
+    });
+
+    log(`✅ [7-5] 예약 정보 추출 완료:`);
+    log(`   회원: ${finalVerification.mbInfo || '(미확인)'}`);
+    log(`   룸: ${finalVerification.roomName || '(미확인)'}`);
+    log(`   시간: ${finalVerification.useTime || '(미확인)'}`);
+    log(`   가격: ${finalVerification.priceField || '(미확인)'}`);
+    
+    // 🔴 추출 실패 시 즉시 중단
+    if (finalVerification.errors.length > 0) {
+      log(`❌ 검증 실패: ${finalVerification.errors.join(', ')}`);
+      throw new Error(`[7-5검증] 예약 정보 추출 실패: ${finalVerification.errors.join(', ')}`);
+    }
+    
+    // 🟡 데이터 비교 검증
+    log(`\n🔍 [7-6단계] 파싱 데이터와 비교:`);
+    const comparisonErrors = [];
+    
+    // 번호 비교: 010-3500-0586 ↔ 이재룡(010-3500-0586)
+    const phoneNoHyphen = PHONE_NOHYPHEN.replace(/\D/g, '');  // 01035000586
+    const extractedPhoneDigits = finalVerification.mbInfo.replace(/\D/g, '');  // 01035000586
+    if (extractedPhoneDigits !== phoneNoHyphen) {
+      comparisonErrors.push(`번호 불일치: 픽코=${finalVerification.mbInfo}, 네이버=${PHONE_NOHYPHEN}`);
+    }
+    
+    // 룸 비교: A1 ↔ 스터디룸A1
+    if (!finalVerification.roomName.includes(ROOM)) {
+      comparisonErrors.push(`룸 불일치: 픽코=${finalVerification.roomName}, 네이버=${ROOM}`);
+    }
+    
+    // 날짜 비교: 2026년 02월 23일 ↔ 2026-02-23
+    // DATE = "2026-02-23" → "2026년 02월 23일"로 변환
+    const [year, month, day] = DATE.split('-');
+    const expectedDate = `${year}년 ${parseInt(month)}월 ${parseInt(day)}일`;
+    if (!finalVerification.useTime.includes(expectedDate)) {
+      comparisonErrors.push(`날짜 불일치: 픽코=${finalVerification.useTime.slice(0, 20)}, 네이버=${expectedDate}`);
+    }
+    
+    if (comparisonErrors.length > 0) {
+      log(`❌ 데이터 불일치: ${comparisonErrors.join(', ')}`);
+      throw new Error(`[7-6검증] 파싱 데이터 불일치: ${comparisonErrors.join(', ')}`);
+    }
+    
+    log(`✅ [7-6] 모든 데이터 일치 확인됨! 결제 진행 가능`);
+    log(`   회원번호: ✅`);
+    log(`   룸: ✅`);
+    log(`   날짜: ✅`);
 
     // ======================== 8단계: 결제(확정) ========================
     log('\n[8단계] 결제(확정) 처리');
