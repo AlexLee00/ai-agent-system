@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-agent/core": "*",
-    "@ai-agent/playwright-utils": "*"
+    "@ai-agent/playwright-utils": "*",
+    "puppeteer": "^24.37.5"
   }
 }

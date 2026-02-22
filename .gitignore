@@ -25,3 +25,6 @@ Thumbs.db
 
 # 테스트 결과
 coverage/
+
+# 민감 정보
+secrets.json

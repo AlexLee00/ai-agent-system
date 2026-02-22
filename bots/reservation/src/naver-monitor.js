@@ -37,6 +37,53 @@ function log(msg) {
   console.log(`[${timestamp}] ${msg}`);
 }
 
+// 팝업 자동 감지 및 클릭
+async function closePopupsIfPresent(page) {
+  try {
+    // 페이지가 유효한지 확인
+    if (!page || page.isClosed?.() === true) {
+      return;
+    }
+
+    // 팝업/모달 감지 및 자동 클릭
+    try {
+      const popupClosed = await page.evaluate(() => {
+        let closed = false;
+
+        // 1️⃣ 버튼 텍스트로 찾기 (확인, OK, 닫기 등)
+        const buttons = Array.from(document.querySelectorAll('button, a[role="button"], div[role="button"]'));
+        for (const btn of buttons) {
+          const text = (btn.textContent || '').trim();
+          // 확인, OK, 닫기, 완료 등의 한글/영문 버튼 찾기
+          if (text === '확인' || text === 'OK' || text === '닫기' || text === '완료' || text === '네' || text === 'Yes') {
+            // 보이는 버튼만 클릭 (display: none 아닌 것)
+            const isVisible = btn.offsetParent !== null || window.getComputedStyle(btn).display !== 'none';
+            if (isVisible) {
+              console.log(`🔘 팝업 버튼 클릭: "${text}"`);
+              btn.click();
+              closed = true;
+            }
+          }
+        }
+
+        return closed;
+      }).catch(() => false);
+
+      if (popupClosed) {
+        log('✅ 팝업 자동 종료');
+        await delay(500);
+      }
+    } catch (evalErr) {
+      // evaluate 중 프레임 손상 무시
+      if (!String(evalErr).includes('detached')) {
+        log(`⚠️ 팝업 감지 중 에러(무시): ${evalErr.message}`);
+      }
+    }
+  } catch (err) {
+    log(`⚠️ 팝업 처리 실패: ${err.message}`);
+  }
+}
+
 // 예약 현황 추출
 async function getBookingStatus(page) {
   try {
@@ -166,10 +213,30 @@ async function naverLogin(page) {
 
       // ✅ 2단계 인증/추가 동작을 사장님이 처리할 시간
       log('⏳ (필요시) IP보안/2단계 화면을 완료해주세요. 완료되면 업체 대시보드(오늘 확정)가 보입니다. 최대 10분 대기');
+      
+      // waitForFunction 내에서 팝업 자동 감지 및 클릭
       await page.waitForFunction(() => {
+        // 팝업 자동 클릭
+        try {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          for (const btn of buttons) {
+            const text = (btn.textContent || '').trim();
+            if (text === '확인' || text === 'OK' || text === 'Yes' || text === '네') {
+              const isVisible = btn.offsetParent !== null;
+              if (isVisible) {
+                btn.click();
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          // 무시
+        }
+
+        // 오늘 확정이 보이면 대기 종료
         const t = (document.body && (document.body.innerText || document.body.textContent)) || '';
         return t.includes('오늘 확정') || t.includes('예약 현황');
-      }, { timeout: 10 * 60 * 1000 });
+      }, { timeout: 10 * 60 * 1000 }).catch(() => null);
 
       // 로그인 후 홈으로 이동(리다이렉트 실패 대비)
       await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
@@ -323,12 +390,14 @@ async function monitorBookings() {
     // Puppeteer 실행
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
     browser = await puppeteer.launch({
-      headless: process.env.NAVER_HEADLESS !== '0',
+      headless: false, // 🖥️ 항상 브라우저 화면 표시
       userDataDir: path.join('/Users/alexlee/.openclaw/workspace', 'naver-profile'),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--start-maximized',
+        '--window-position=0,0', // 📍 메인 화면 좌상단에 고정 (Mac)
+        '--window-size=1920,1080', // 📺 전체 화면 크기
+        '--start-fullscreen', // 📺 전체화면 모드
         // ✅ 백그라운드/탭 회수(페이지 확보)로 인한 frame detach 완화
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
@@ -399,6 +468,9 @@ async function monitorBookings() {
         } catch (e) {
           log(`⚠️ 새로고침 클릭 실패(무시): ${e.message}`);
         }
+        
+        // 팝업 감지 및 자동 클릭 (모니터링 주기마다)
+        await closePopupsIfPresent(page);
         
         // 예약 현황 추출
         const currentState = await getBookingStatus(page);
