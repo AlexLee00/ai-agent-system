@@ -725,7 +725,7 @@ async function main() {
           date: DATE,
           requestTime: `${START_TIME}~${END_TIME}`,
           room: ROOM,
-          reason: `해당 시간대 모두 예약됨 (최대 ${maxSlotsToTry}개 슬롯 확인)`,
+          reason: `해당 시간대 모두 예약됨 (최대 ${TIME_SLOTS.length}개 슬롯 확인)`,
           action: 'DEV 모드로 전환 및 분석 필요',
           timestamp: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
         };
@@ -1288,7 +1288,7 @@ async function main() {
     if (shouldCloseBrowser) {
       log(`🔒 [종료] 브라우저 종료 (MODE=${MODE})`);
       try { await browser.close(); } catch (e) {
-        log(`⚠️ 브라우저 종료 실패: ${e.message}`);
+        log(`⚠️ 브라우저 종료 실패(무시): ${e.message}`);
       }
     } else {
       log(`🔍 [대기] 브라우저 유지 (MODE=${MODE}, HOLD_BROWSER=1) → 검증용`);
@@ -1296,6 +1296,10 @@ async function main() {
       await delay(300_000);
       try { await browser.close(); } catch (e) {}
     }
+
+    // ✅ 정상 종료 (브라우저 close 이후 발생하는 Detached Frame 오류가
+    //    catch 블록으로 전파되어 exit(1)로 오인되는 것을 방지)
+    process.exit(0);
 
   } catch (err) {
     log(`❌ 에러 발생: ${err.message}`);

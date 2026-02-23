@@ -1263,7 +1263,7 @@ async function ragSaveReservation(booking, status = '신규') {
 
 // ======================== Pickko 연동 ========================
 const { spawn } = require('child_process');
-const SEEN_FILE = path.join(__dirname, '..', 'naver-seen.json');  // 프로젝트 디렉토리
+const SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');  // OPS/DEV 데이터 격리
 
 // 📁 naver-seen.json 형식 개선 (상태 추적)
 function loadSeen() {
