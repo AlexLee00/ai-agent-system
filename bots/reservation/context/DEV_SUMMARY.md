@@ -38,12 +38,19 @@
 |------|------|------|
 | `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
 | `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] | ✅ 완성 |
-| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 (2026-02-24) |
+| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 |
+| `src/pickko-verify.js` | pending/failed 예약 재검증 + 자동 등록 | ✅ 완성 |
 | `src/start-ops.sh` | OPS 자동 재시작 루프 | ✅ PICKKO_CANCEL_ENABLE=1 |
 | `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 추가 |
+| `lib/utils.js` | delay, log (공통 유틸) | ✅ 신규 |
+| `lib/secrets.js` | loadSecrets() | ✅ 신규 |
+| `lib/formatting.js` | toKoreanTime, pickkoEndTime, formatPhone | ✅ 신규 |
+| `lib/files.js` | loadJson, saveJson | ✅ 신규 |
+| `lib/args.js` | parseArgs() | ✅ 신규 |
+| `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ 신규 |
+| `lib/pickko.js` | loginToPickko() | ✅ 신규 |
 | `secrets.json` | 네이버/픽코 로그인 정보 | ✅ |
 | `.pickko-alerts.jsonl` | 알람 저장소 (48시간 자동 정리) | ✅ 운영 중 |
-| `naver-bookings-full.json` | 네이버 파싱 데이터 | ✅ 운영 중 |
 
 **경로:** `~/projects/ai-agent-system/bots/reservation/`
 
@@ -171,6 +178,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-24 새벽 | Heartbeat 추가 (1시간 주기) | sendTelegramDirect, 09:00~22:00만 전송 |
 | 2026-02-24 새벽 | log-report.sh 신규 생성 | 3시간마다 오류 분석 + 텔레그램 리포트 |
 | 2026-02-24 새벽 | launchd ai.ska.log-report 등록 | 3시간(10800초) 주기 자동 실행 |
+| 2026-02-24 오전 | **공유 라이브러리 리팩토링** | lib/ 7개 신규 (utils/secrets/formatting/files/args/browser/pickko) |
+| 2026-02-24 오전 | 중복 코드 220줄 제거 | 4개 src 파일 → lib/ 추출, 문법 검사 통과, 봇 재시작 확인 |
 
 ---
 
@@ -180,6 +189,8 @@ curl -s -X POST http://localhost:8100/ask \
 ✅ naver-monitor.js    OPS 모드, 3분 주기 실행 중 (PICKKO_CANCEL_ENABLE=1)
 ✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송
 ✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (OPS 활성화됨)
+✅ pickko-verify.js    pending/failed 재검증 (수동 실행)
+✅ lib/ 공유 라이브러리  7개 모듈 추출 완료 (중복 제거)
 ✅ Telegram 봇         Gemini 2.0 Flash, 응답 ~7초
 ✅ RAG 서버            http://localhost:8100 정상
 ✅ OpenClaw 게이트웨이  PID 정상, CLI pairing 완료

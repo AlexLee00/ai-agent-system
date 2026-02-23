@@ -14,6 +14,20 @@
 | 채널 | 텔레그램 (@SCAFE8282_BOT) |
 | 모니터 | 자동 재시작 루프 (2시간 주기) |
 
+## 최근 완료 작업 (2026-02-24 오전)
+
+- ✅ **공유 라이브러리 리팩토링** — lib/ 7개 신규 모듈 추출
+  - `lib/utils.js` → delay, log
+  - `lib/secrets.js` → loadSecrets()
+  - `lib/formatting.js` → toKoreanTime, pickkoEndTime, formatPhone
+  - `lib/files.js` → loadJson, saveJson
+  - `lib/args.js` → parseArgs()
+  - `lib/browser.js` → getPickkoLaunchOptions, setupDialogHandler
+  - `lib/pickko.js` → loginToPickko()
+- ✅ 4개 src 파일 중복 코드 제거 (node --check 전체 통과, 봇 재시작 확인)
+- ✅ pickko-verify.js — pending/failed 예약 재검증 스크립트 신규 완성
+- ✅ 개발문서 전체 업데이트 (README, DEV_SUMMARY, HANDOFF, IMPLEMENTATION_CHECKLIST)
+
 ## 최근 완료 작업 (2026-02-24 새벽)
 
 - ✅ 취소 감지 방식 → `previousConfirmedList` 리스트 비교 (카운터 비교 폐기)

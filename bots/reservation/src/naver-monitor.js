@@ -11,12 +11,16 @@
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
 const { transformAndNormalizeData } = require('../lib/validation');
+const { delay, log } = require('../lib/utils');
+const { loadSecrets } = require('../lib/secrets');
 const fs = require('fs');
 const path = require('path');
 
-// 설정
-const NAVER_ID = 'blockchainmaster';
-const NAVER_PW = 'LEEjr03311030!';
+// 인증 정보 (secrets.json에서 로드)
+const SECRETS = loadSecrets();
+const NAVER_ID = SECRETS.naver_id;
+const NAVER_PW = SECRETS.naver_pw;
+const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 // ✅ 홈(검은 예약현황 박스)로 바로 가는 URL
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = (process.env.MODE || 'dev').toLowerCase();
@@ -25,9 +29,6 @@ const SAFE_DEV_FALLBACK = (process.env.SAFE_DEV_FALLBACK || '1') === '1';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10); // ops=5분, dev=2분 기본
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 
-// 유틸
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
 
@@ -35,11 +36,10 @@ let previousConfirmedList = [];
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000; // 1시간
 let lastHeartbeatTime = 0;
 
-// 로그 함수
-function log(msg) {
-  const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-  console.log(`[${timestamp}] ${msg}`);
-}
+// 일일 마감 요약 통계
+let dailyStats          = { date: '', detected: 0, completed: 0, cancelled: 0, failed: 0 };
+let lastDailyReportDate = '';
+const MAX_RETRIES = 5; // 최대 재시도 횟수 (초과 시 수동 처리 알람 후 건너뜀)
 
 // ✅ 데이터 검증은 lib/validation.js에서 import함
 // (중복 제거 및 라이브러리 일관성)
@@ -399,7 +399,7 @@ async function takeScreenshot(page, reason) {
       second: '2-digit'
     }).replace(/[:\s]/g, '-');
     
-    const filename = path.join('/Users/alexlee/.openclaw/workspace', `booking-${timestamp}.png`);
+    const filename = path.join(WORKSPACE, `booking-${timestamp}.png`);
     await page.screenshot({ path: filename, fullPage: true });
     log(`📸 스크린샷 저장: ${filename}`);
     return filename;
@@ -409,10 +409,37 @@ async function takeScreenshot(page, reason) {
   }
 }
 
+// 개인정보 보호: 예약일 기준 7일 경과한 항목 자동 삭제 (전화번호 등 포함)
+function cleanupExpiredSeen() {
+  try {
+    const data = loadSeen();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7); // 7일 전 기준
+    const cutoffStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+    let removed = 0;
+    for (const key of Object.keys(data)) {
+      if (key === 'seenIds' || key === 'cancelledSeenIds') continue;
+      const entry = data[key];
+      if (entry?.date && entry.date < cutoffStr) {
+        delete data[key];
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      saveSeen(data);
+      log(`🧹 개인정보 자동 정리: 만료 예약 ${removed}건 삭제 (7일 경과)`);
+    }
+  } catch (err) {
+    log(`⚠️ cleanupExpiredSeen 오류: ${err.message}`);
+  }
+}
+
 // 48시간 이상 된 알람 자동 삭제
 function cleanupOldAlerts() {
   try {
-    const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
+    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
     if (!fs.existsSync(alertsFile)) return;
     
     const now = Date.now();
@@ -502,7 +529,7 @@ async function sendAlert(options) {
     log(message);
     
     // 📁 파일에 기록
-    const logFile = path.join('/Users/alexlee/.openclaw/workspace', 'monitor-alert.log');
+    const logFile = path.join(WORKSPACE, 'monitor-alert.log');
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
@@ -510,7 +537,7 @@ async function sendAlert(options) {
     if ((type === 'new' || type === 'completed' || type === 'cancelled' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
         // 1️⃣ 이력 파일에 저장
-        const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
+        const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
         const alertEntry = JSON.stringify({
           timestamp: new Date().toISOString(),
           type,
@@ -537,6 +564,9 @@ async function sendAlert(options) {
         // 3️⃣ 48시간 정책 실행
         cleanupOldAlerts();
 
+        // 4️⃣ 개인정보 보호: 7일 경과 예약 자동 삭제
+        cleanupExpiredSeen();
+
       } catch (err) {
         log(`⚠️ 알람 전송 실패: ${err.message}`);
       }
@@ -552,7 +582,7 @@ async function sendNotification(message) {
     log(`📢 알림: ${message}`);
     
     // 파일에 기록
-    const logFile = path.join('/Users/alexlee/.openclaw/workspace', 'monitor-log.txt');
+    const logFile = path.join(WORKSPACE, 'monitor-log.txt');
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
   } catch (err) {
@@ -563,7 +593,7 @@ async function sendNotification(message) {
 // 메인 모니터링 함수
 async function monitorBookings() {
   // ✅ 단일 인스턴스 보장: 구 프로세스 확인 후 종료
-  const LOCK_FILE = path.join('/Users/alexlee/.openclaw/workspace', 'naver-monitor.lock');
+  const LOCK_FILE = path.join(WORKSPACE, 'naver-monitor.lock');
   if (fs.existsSync(LOCK_FILE)) {
     const oldPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);
     if (oldPid && oldPid !== process.pid) {
@@ -602,7 +632,7 @@ async function monitorBookings() {
     browser = await puppeteer.launch({
       headless: false, // 🖥️ 항상 브라우저 화면 표시
       defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
-      userDataDir: path.join('/Users/alexlee/.openclaw/workspace', 'naver-profile'),
+      userDataDir: path.join(WORKSPACE, 'naver-profile'),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -653,7 +683,23 @@ async function monitorBookings() {
         await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await page.waitForNetworkIdle({ idleTime: 800, timeout: 20000 }).catch(() => null);
         await ensureHomeFromCalendar(page);
-        
+
+        // ✅ 세션 만료 자동 감지 → 재로그인
+        const sessionOk = await page.evaluate(() => {
+          const t = document.body?.innerText || document.body?.textContent || '';
+          return t.includes('오늘 확정') || t.includes('예약 현황');
+        }).catch(() => false);
+        if (!sessionOk) {
+          log('⚠️ 세션 만료 감지 → 자동 재로그인 시도');
+          const recovered = await naverLogin(page);
+          if (recovered) {
+            log('✅ 세션 자동 복구 완료');
+          } else {
+            log('❌ 세션 자동 복구 실패');
+            sendTelegramDirect('⚠️ 네이버 세션 만료, 자동 재로그인 실패\n수동 확인이 필요합니다.');
+          }
+        }
+
         log(`\n📍 확인 #${checkCount}`);
 
         // ✅ 검은 박스(예약 현황) 리프레시 버튼 클릭 후 딜레이
@@ -834,7 +880,7 @@ async function monitorBookings() {
             log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
             // ✅ 전체 데이터를 파일에 저장 (디버그용)
             try {
-              const fullDataFile = path.join('/Users/alexlee/.openclaw/workspace', 'naver-bookings-full.json');
+              const fullDataFile = path.join(WORKSPACE, 'naver-bookings-full.json');
               fs.writeFileSync(fullDataFile, JSON.stringify(newest, null, 2));
               log(`💾 전체 파싱 데이터 저장: ${fullDataFile} (${newest.length}건)`);
             } catch (e) {
@@ -1106,6 +1152,22 @@ async function monitorBookings() {
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
             lastHeartbeatTime = Date.now();
           }
+
+          // ✅ 일일 마감 요약 (22:00 이후, 하루 1회)
+          const hDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+          const hHourFull = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
+          if (hHourFull >= 22 && lastDailyReportDate !== hDateStr) {
+            const dayMsg =
+              `📊 스카 일일 마감 요약 (${hDateStr})\n\n` +
+              `✅ 신규 등록 완료: ${dailyStats.completed}건\n` +
+              `🚫 취소 처리: ${dailyStats.cancelled}건\n` +
+              `⚠️ 등록 실패: ${dailyStats.failed}건\n` +
+              `🔍 감지 총계: ${dailyStats.detected}건`;
+            sendTelegramDirect(dayMsg);
+            log(`📊 일일 마감 요약 전송: 등록${dailyStats.completed} 취소${dailyStats.cancelled} 실패${dailyStats.failed} 감지${dailyStats.detected}`);
+            lastDailyReportDate = hDateStr;
+            dailyStats = { date: hDateStr, detected: 0, completed: 0, cancelled: 0, failed: 0 };
+          }
         }
 
         // 다음 확인까지 대기
@@ -1151,7 +1213,7 @@ async function monitorBookings() {
 
     // 락 해제
     try {
-      const LOCK_FILE = path.join('/Users/alexlee/.openclaw/workspace', 'naver-monitor.lock');
+      const LOCK_FILE = path.join(WORKSPACE, 'naver-monitor.lock');
       fs.unlinkSync(LOCK_FILE);
     } catch (e) {}
   }
@@ -1243,6 +1305,7 @@ function updateBookingState(bookingId, booking, state = 'pending') {
         retries: 0
       };
       log(`   📊 [신규] ${booking.phone} / ${booking.date} ${booking.start}~${booking.end} ${booking.room} → status: ${state}`);
+      dailyStats.detected++;
     } else {
       // 기존 예약 상태 업데이트
       const oldStatus = seenData[bookingId].status;
@@ -1253,8 +1316,10 @@ function updateBookingState(bookingId, booking, state = 'pending') {
       } else if (state === 'completed') {
         seenData[bookingId].pickkoStatus = 'paid';
         seenData[bookingId].pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        dailyStats.completed++;
       } else if (state === 'failed') {
         seenData[bookingId].retries = (seenData[bookingId].retries || 0) + 1;
+        dailyStats.failed++;
       }
       
       log(`   📊 [업데이트] ${booking.phone}: ${oldStatus} → ${state}`);
@@ -1439,6 +1504,7 @@ function runPickkoCancel(booking, cancelKey = null) {
 
     child.on('close', (code) => {
       if (code === 0) {
+        dailyStats.cancelled++;
         sendAlert({
           type: 'cancelled',
           title: '🗑️ 픽코 예약 취소 완료!',
@@ -1460,6 +1526,14 @@ function runPickkoCancel(booking, cancelKey = null) {
           reason: `exit code ${code}`,
           action: '수동 취소 필요'
         });
+        // 즉시 텔레그램 수동 처리 요청
+        sendTelegramDirect(
+          `🚨 픽코 취소 실패 — 수동 처리 필요!\n\n` +
+          `📞 고객: ${booking.phone}\n` +
+          `📅 날짜: ${booking.date}\n` +
+          `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
+          `픽코에서 직접 취소해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
+        );
       }
       resolve(code);
     });
@@ -1488,6 +1562,23 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       }
       
       return resolve(1); // 변환 오류 → code 1
+    }
+
+    // ⛔ 최대 재시도 초과 확인
+    if (bookingId) {
+      const currentData = loadSeen();
+      const currentRetries = currentData[bookingId]?.retries || 0;
+      if (currentRetries >= MAX_RETRIES) {
+        log(`⛔ [건너뜀] 최대 재시도 초과 (${currentRetries}회): ${booking.phone} ${booking.date}`);
+        sendTelegramDirect(
+          `⛔ 픽코 등록 포기 — 최대 재시도 초과!\n\n` +
+          `📞 고객: ${booking.phone}\n📅 날짜: ${booking.date}\n` +
+          `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n` +
+          `🔄 시도 횟수: ${currentRetries}회 (한도: ${MAX_RETRIES}회)\n\n` +
+          `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
+        );
+        return resolve(99); // 재시도 한도 초과
+      }
     }
 
     // 📊 상태 업데이트: processing
@@ -1568,6 +1659,18 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
           // 📚 RAG: 픽코 실패 상태로 저장
           ragSaveReservation(booking, '픽코실패');
+
+          // 즉시 텔레그램 수동 처리 요청
+          const failedData = loadSeen();
+          const retryCount = failedData[bookingId]?.retries || 1;
+          sendTelegramDirect(
+            `🚨 픽코 등록 실패 — 수동 처리 필요!\n\n` +
+            `📞 고객: ${booking.phone}\n` +
+            `📅 날짜: ${booking.date}\n` +
+            `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n` +
+            `🔄 시도 횟수: ${retryCount}회\n\n` +
+            `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
+          );
         }
         log(`❌ [실패] 픽코 예약이 실패했습니다 (code=${code})`);
       }

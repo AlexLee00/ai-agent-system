@@ -21,6 +21,25 @@
 - [x] DEV 모드 화이트리스트 검증
 - [x] 기존 validateTime 함수 제거 (라이브러리로 통합)
 - [x] 로그 정보 개선
+- [x] `lib/utils`, `lib/secrets`, `lib/args`, `lib/browser`, `lib/pickko` 공통 라이브러리 적용
+
+### ✅ pickko-cancel.js
+- [x] `lib/utils` → delay, log
+- [x] `lib/secrets` → loadSecrets()
+- [x] `lib/args` → parseArgs()
+- [x] `lib/formatting` → formatPhone, toKoreanTime, pickkoEndTime
+- [x] `lib/browser` → getPickkoLaunchOptions, setupDialogHandler
+- [x] `lib/pickko` → loginToPickko()
+- [x] DEV 모드 화이트리스트 검증
+
+### ✅ pickko-verify.js
+- [x] `lib/utils` → delay, log
+- [x] `lib/secrets` → loadSecrets()
+- [x] `lib/formatting` → toKoreanTime, pickkoEndTime, formatPhone
+- [x] `lib/files` → loadJson, saveJson
+- [x] `lib/browser` → getPickkoLaunchOptions, setupDialogHandler
+- [x] `lib/pickko` → loginToPickko()
+- [x] --dry-run 모드 지원
 
 ---
 

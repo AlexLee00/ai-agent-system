@@ -16,43 +16,23 @@
  */
 
 const puppeteer = require('puppeteer');
+const { delay, log } = require('../lib/utils');
+const { loadSecrets } = require('../lib/secrets');
+const { parseArgs } = require('../lib/args');
+const { formatPhone, toKoreanTime, pickkoEndTime } = require('../lib/formatting');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
+const { loginToPickko } = require('../lib/pickko');
 
 // ======================== 설정 ========================
-const PICKKO_ID = 'a2643301450';
-const PICKKO_PW = 'lsh120920!';
+const SECRETS = loadSecrets();
+const PICKKO_ID = SECRETS.pickko_id;
+const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = (process.env.MODE || 'dev').toLowerCase();
-const delay = (ms) => new Promise(r => setTimeout(r, ms));
-
-function log(msg) {
-  const ts = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-  console.log(`[${ts}] ${msg}`);
-}
-
-// ======================== 인자 파싱 ========================
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const eq = a.indexOf('=');
-    if (eq > -1) {
-      out[a.slice(2, eq)] = a.slice(eq + 1);
-    } else {
-      out[a.slice(2)] = argv[i + 1];
-      i++;
-    }
-  }
-  return out;
-}
 
 const ARGS = parseArgs(process.argv);
 const PHONE_RAW = (ARGS.phone || '').replace(/\D/g, '');
 // 검색 폼은 하이픈 포함 형식 필요 (010-XXXX-XXXX)
-const PHONE_FORMATTED = PHONE_RAW.length === 11
-  ? `${PHONE_RAW.slice(0,3)}-${PHONE_RAW.slice(3,7)}-${PHONE_RAW.slice(7)}`
-  : PHONE_RAW.length === 10
-  ? `${PHONE_RAW.slice(0,3)}-${PHONE_RAW.slice(3,6)}-${PHONE_RAW.slice(6)}`
-  : PHONE_RAW;
+const PHONE_FORMATTED = formatPhone(PHONE_RAW);
 const DATE      = ARGS.date  || '';   // YYYY-MM-DD
 const START     = ARGS.start || '';   // HH:MM
 const END       = ARGS.end   || '';   // HH:MM
@@ -75,53 +55,20 @@ if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_RAW)) {
   process.exit(0);
 }
 
-// ======================== 시간 형식 변환 ========================
-// "15:00" → "15시 00분" (픽코 목록 표기 형식)
-function toKoreanTime(hhmm) {
-  const [h, m] = hhmm.split(':');
-  return `${parseInt(h, 10)}시 ${m}분`;
-}
-// 픽코 종료시간 = 네이버 종료시간 - 10분 (픽코 내부 슬롯 계산 차이)
-function pickkoEndTime(hhmm) {
-  const [h, m] = hhmm.split(':').map(Number);
-  const total = h * 60 + m - 10;
-  const nh = Math.floor(total / 60);
-  const nm = total % 60;
-  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`;
-}
-
 // ======================== 메인 ========================
 async function run() {
   let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: false,
-      defaultViewport: null,
-      protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-position=0,25', '--window-size=2294,1380']
-    });
+    browser = await puppeteer.launch(getPickkoLaunchOptions());
 
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
     page.setDefaultTimeout(30000);
-
-    page.on('dialog', async d => {
-      try {
-        log(`🧾 팝업: ${d.message()}`);
-        await d.accept();
-        log('✅ 팝업 확인');
-      } catch (e) { log(`⚠️ 팝업 처리 실패: ${e.message}`); }
-    });
+    setupDialogHandler(page, log);
 
     // ======================== [1단계] 로그인 ========================
     log('\n[1단계] 픽코 로그인');
-    await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
-    await page.evaluate((id, pw) => {
-      document.getElementById('mn_id').value = id;
-      document.getElementById('mn_pw').value = pw;
-      document.getElementById('loginButton').click();
-    }, PICKKO_ID, PICKKO_PW);
-    await delay(3000);
+    await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log(`✅ 로그인: ${page.url()}`);
 
     // ======================== [2단계] 스터디룸 목록 이동 ========================

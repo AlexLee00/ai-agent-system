@@ -10,25 +10,18 @@
 
 const puppeteer = require('puppeteer');
 const { transformAndNormalizeData, validateTimeRange } = require('../lib/validation');
+const { delay, log } = require('../lib/utils');
+const { loadSecrets } = require('../lib/secrets');
+const { parseArgs } = require('../lib/args');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
+const { loginToPickko } = require('../lib/pickko');
 
-async function initializeBrowser() {
-    const browser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--window-position=0,25',  // 주 모니터 고정
-            '--window-size=2294,1380'
-        ]
-    });
-    return browser;
-}
-// NOTE: 창 위치/모니터 이동 로직은 제거 (macOS 스케일/권한 이슈로 불안정)
+// 인증 정보 (secrets.json에서 로드)
+const SECRETS = loadSecrets();
 
 
-const PICKKO_ID = 'a2643301450';
-const PICKKO_PW = 'lsh120920!';
+const PICKKO_ID = SECRETS.pickko_id;
+const PICKKO_PW = SECRETS.pickko_pw;
 // ======================== 입력 파라미터 ========================
 // 기본값(테스트용). 운영 연결 시 naver-monitor에서 argv로 주입.
 const DEFAULTS = {
@@ -38,19 +31,6 @@ const DEFAULTS = {
   room: 'A1',
   phone: '01035000586'
 };
-
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (!a.startsWith('--')) continue;
-    const [k, vRaw] = a.slice(2).split('=');
-    const v = vRaw ?? argv[i + 1];
-    if (vRaw === undefined) i++;
-    out[k] = v;
-  }
-  return out;
-}
 
 const ARGS = parseArgs(process.argv);
 const CUSTOMER_NAME = (ARGS.name || '고객').replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
@@ -84,11 +64,6 @@ const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350
   .split(',')
   .map(p => p.trim())
   .filter(p => /^\d{11}$/.test(p));
-
-function log(msg) {
-  const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-  console.log(`[${timestamp}] ${msg}`);
-}
 
 log(`📋 DEV 화이트리스트: [${DEV_WHITELIST.join(', ')}]`);
 log(`🔧 MODE: ${MODE.toUpperCase()} ${MODE === 'dev' ? '(테스트 모드 - 화이트리스트만 허용)' : '(운영 모드 - 모든 번호 허용)'}`);
@@ -144,8 +119,6 @@ const ROOM_ID = {
   A2: '206450',
   B:  '206487'
 };
-
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function addMinutesHHMM(hhmm, minutesToAdd) {
   const [h, m] = hhmm.split(':').map(Number);
@@ -252,18 +225,7 @@ async function main() {
   try {
     log(`🚀 픽코 예약 등록 시작`);
     
-    browser = await puppeteer.launch({
-      headless: false,
-      defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
-      protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--window-position=0,25',  // 주 모니터 고정 (메뉴바 25px 아래)
-        '--window-size=2294,1380'  // 맥북 해상도 기준
-      ],
-      defaultViewport: null
-    });
+    browser = await puppeteer.launch(getPickkoLaunchOptions());
     
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
@@ -272,27 +234,11 @@ async function main() {
     await delay(500);
 
     // ✅ 등록 완료/오류 alert 팝업 자동 "확인"
-    page.on('dialog', async (dialog) => {
-      try {
-        log(`🧾 팝업 감지: ${dialog.message()}`);
-        await dialog.accept();
-        log('✅ 팝업 확인(accept) 클릭 완료');
-      } catch (e) {
-        log(`⚠️ 팝업 처리 실패: ${e.message}`);
-      }
-    });
+    setupDialogHandler(page, log);
     
     // ======================== 1단계: 로그인 ========================
     log('\n[1단계] 로그인');
-    await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
-    
-    await page.evaluate((id, pw) => {
-      document.getElementById('mn_id').value = id;
-      document.getElementById('mn_pw').value = pw;
-      document.getElementById('loginButton').click();
-    }, PICKKO_ID, PICKKO_PW);
-    
-    await delay(3000);
+    await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log('✅ 로그인 완료');
     
     // ✅ 시간 범위 변환 확인 (로그인 후)
