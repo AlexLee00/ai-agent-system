@@ -523,8 +523,8 @@ async function sendAlert(options) {
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
-    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만)
-    if ((type === 'new' || type === 'completed' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
+    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러)
+    if ((type === 'new' || type === 'completed' || type === 'cancelled' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
         // 1️⃣ 이력 파일에 저장
         const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
@@ -1047,9 +1047,74 @@ async function monitorBookings() {
           // 스크린샷 저장
           await takeScreenshot(page, 'booking-change');
 
-          // ✅ 오늘 확정이 증가한 경우: (옵션) 신규 예약을 파싱해서 픽코로 확정 처리 시도
-          const confirmedChange = changes.find(c => c.name === '오늘 확정' && c.to > c.from);
-          if (process.env.PICKKO_ENABLE === '1' && confirmedChange) {
+          // ======================== 취소 감지 처리 ========================
+          const cancelChange = changes.find(c => c.name === '오늘 취소' && c.to > c.from);
+          if (cancelChange && process.env.PICKKO_CANCEL_ENABLE === '1') {
+            try {
+              log(`🗑️ 오늘 취소 증가 감지 (${cancelChange.from} → ${cancelChange.to}) → 취소 목록 파싱 시작`);
+
+              // "오늘 취소" 링크로 이동
+              const cancelLinks = await page.$$('a.Home_state_link__KzDE_');
+              let cancelNavDone = false;
+              for (const a of cancelLinks) {
+                const t = await a.evaluate(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
+                if (t.includes('오늘 취소')) {
+                  const box = await a.boundingBox();
+                  if (!box) continue;
+                  await Promise.all([
+                    page.mouse.click(box.x + box.width / 2, box.y + box.height / 2),
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null)
+                  ]);
+                  cancelNavDone = true;
+                  break;
+                }
+              }
+
+              if (!cancelNavDone) {
+                // 홈 링크 직접 구성 폴백
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                const bizId = NAVER_URL.match(/\/place\/(\d+)/)?.[1] || '';
+                const cancelHref = `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CANCELLED&date=${today}`;
+                log(`⚠️ 오늘 취소 링크 직접 이동: ${cancelHref}`);
+                await page.goto(cancelHref, { waitUntil: 'networkidle2', timeout: 30000 });
+              }
+
+              await page.waitForSelector(
+                'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
+                { timeout: 20000 }
+              ).catch(() => null);
+              await delay(800);
+
+              const cancelledList = await scrapeNewestBookingsFromList(page, 20);
+              log(`🧾 취소 리스트 파싱: ${cancelledList.length}건`);
+
+              const seen = loadSeen();
+              const cancelledSeenSet = new Set(seen.cancelledSeenIds || []);
+              const toCancelKey = (b) => `cancel|${b.date}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
+
+              const cancelCandidates = cancelledList.filter(c => !cancelledSeenSet.has(toCancelKey(c)));
+              log(`🗑️ 신규 취소 후보: ${cancelCandidates.length}건`);
+
+              for (const c of cancelCandidates) {
+                const cancelKey = toCancelKey(c);
+                cancelledSeenSet.add(cancelKey);
+                seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
+                saveSeen(seen);
+                await runPickkoCancel(c, cancelKey);
+              }
+
+              // 홈으로 복귀
+              await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
+            } catch (cancelErr) {
+              log(`⚠️ 취소 처리 중 오류: ${cancelErr.message}`);
+              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (e2) {}
+            }
+          }
+          // ======================== 취소 감지 처리 끝 ========================
+
+          // ✅ 변경 감지 시 항상 예약 리스트 확인 (취소+신규 동시발생 시에도 누락 방지)
+          // seenIds가 중복 처리를 막아주므로 confirmedChange 조건 불필요
+          if (process.env.PICKKO_ENABLE === '1') {
             try {
               log('🧩 신규 확정 예약 파싱 시도...');
               // 오늘 확정 리스트로 이동 (SPA 환경이라 click+navigation이 불안정 → href로 직접 이동)
@@ -1175,8 +1240,57 @@ async function monitorBookings() {
           }
         } else {
           log('✅ 변경사항 없음');
+
+          // ✅ 변경 없어도 매 사이클마다 리스트 체크 (취소+신규 동시발생 누락 방지)
+          if (process.env.PICKKO_ENABLE === '1') {
+            try {
+              const links = await page.$$('a.Home_state_link__KzDE_');
+              let clicked = false;
+              for (const a of links) {
+                const t = (await a.evaluate(el => (el.textContent || '').replace(/\s+/g, ' ').trim()));
+                if (t.includes('오늘 확정')) {
+                  const box = await a.boundingBox();
+                  if (!box) continue;
+                  await Promise.all([
+                    page.mouse.click(box.x + box.width / 2, box.y + box.height / 2),
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null)
+                  ]);
+                  clicked = true;
+                  break;
+                }
+              }
+              if (clicked) {
+                await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 20000 });
+                const newest = await scrapeNewestBookingsFromList(page, 20);
+                const todaySeoul = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                const seen = loadSeen();
+                const seenSet = new Set(seen.seenIds || []);
+                const toKey = (b) => b.bookingId || `${todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
+                const candidates = newest
+                  .map(b => ({ ...b, date: todaySeoul }))
+                  .map(b => transformAndNormalizeData(b))
+                  .filter(Boolean)
+                  .map(b => ({ ...b, _key: toKey(b) }))
+                  .filter(b => !seenSet.has(b._key));
+
+                if (candidates.length > 0) {
+                  log(`🔔 변경 없었지만 미처리 예약 ${candidates.length}건 발견!`);
+                  for (const b of candidates) {
+                    seenSet.add(b._key);
+                    seen.seenIds = Array.from(seenSet).slice(-500);
+                    saveSeen(seen);
+                    await runPickko(b, b._key, page);
+                  }
+                }
+                await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
+              }
+            } catch (e) {
+              log(`⚠️ 정기 리스트 체크 실패: ${e.message}`);
+              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch {}
+            }
+          }
         }
-        
+
         // 상태 업데이트
         previousState = { ...currentState };
         
@@ -1486,6 +1600,55 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 
     return out;
   }, limit);
+}
+
+// ======================== Pickko 취소 연동 ========================
+
+function runPickkoCancel(booking, cancelKey = null) {
+  return new Promise(async (resolve) => {
+    const args = [
+      'pickko-cancel.js',
+      `--phone=${booking.phoneRaw || booking.phone.replace(/\D/g, '')}`,
+      `--date=${booking.date}`,
+      `--start=${booking.start}`,
+      `--end=${booking.end}`,
+      `--room=${booking.room}`,
+      `--name=${(booking.raw?.name || '고객').slice(0, 20)}`
+    ];
+
+    log(`🗑️ 픽코 취소 실행: ${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
+
+    const child = spawn('node', args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', d => process.stdout.write(d.toString()));
+    child.stderr.on('data', d => process.stderr.write(d.toString()));
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        sendAlert({
+          type: 'cancelled',
+          title: '🗑️ 픽코 예약 취소 완료!',
+          phone: booking.phone,
+          date: booking.date,
+          time: `${booking.start}~${booking.end}`,
+          room: booking.room,
+          action: '정상 취소 처리됨'
+        });
+        ragSaveReservation(booking, '취소완료');
+      } else {
+        sendAlert({
+          type: 'error',
+          title: '❌ 픽코 취소 실패',
+          phone: booking.phone,
+          date: booking.date,
+          time: `${booking.start}~${booking.end}`,
+          room: booking.room,
+          reason: `exit code ${code}`,
+          action: '수동 취소 필요'
+        });
+      }
+      resolve(code);
+    });
+  });
 }
 
 function runPickko(booking, bookingId = null, naveraPage = null) {

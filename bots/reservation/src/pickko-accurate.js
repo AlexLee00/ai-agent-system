@@ -237,7 +237,9 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
   if (registerUrl.includes('/member/view/')) {
     log(`✅ 신규 회원 등록 성공: ${customerName} (${phoneNoHyphen}) → ${registerUrl}`);
   } else {
-    log(`⚠️  등록 결과 불명확 (URL: ${registerUrl})`);
+    const failMsg = `❌ 신규 회원 등록 실패: URL이 /member/view/ 아님 (${registerUrl})`;
+    log(failMsg);
+    throw new Error(failMsg);
   }
 
   await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
@@ -365,11 +367,19 @@ async function main() {
 
       // ★ 신규 고객 감지: 첫 시도에서 a.mb_select 없으면 자동 회원 등록
       const hasMember = await page.evaluate(() => !!document.querySelector('a.mb_select'));
+      if (!hasMember && retryCount >= 1) {
+        // 등록 후 재시도에서도 회원이 없으면 → 등록은 됐지만 검색 안 됨
+        const failMsg = `❌ 신규 등록 후에도 회원 검색 안됨 (${PHONE_NOHYPHEN}) → 픽코 수동 확인 필요`;
+        log(failMsg);
+        throw new Error(failMsg);
+      }
+
       if (!hasMember && retryCount === 0) {
         log(`⚠️ 픽코 미등록 고객(${PHONE_NOHYPHEN}) → 신규 회원 자동 등록 시작`);
         await page.keyboard.press('Escape');
         await delay(500);
 
+        // ★ 등록 실패 시 즉시 throw (내부에서 처리)
         await registerNewMember(page, PHONE_NOHYPHEN, CUSTOMER_NAME, DATE);
 
         // Stage [3] 재실행: 신규 등록된 회원 검색
