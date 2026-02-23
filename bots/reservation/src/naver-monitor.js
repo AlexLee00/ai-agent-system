@@ -589,14 +589,31 @@ async function sendNotification(message) {
 
 // 메인 모니터링 함수
 async function monitorBookings() {
-  // ✅ 단일 인스턴스 락(관찰 OPS에서 중복 실행 방지)
+  // ✅ 단일 인스턴스 보장: 구 프로세스 확인 후 종료
   const LOCK_FILE = path.join('/Users/alexlee/.openclaw/workspace', 'naver-monitor.lock');
+  if (fs.existsSync(LOCK_FILE)) {
+    const oldPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);
+    if (oldPid && oldPid !== process.pid) {
+      try {
+        process.kill(oldPid, 0); // 프로세스 존재 확인
+        log(`🔍 구 프로세스 발견 (PID: ${oldPid}) → 종료 중...`);
+        process.kill(oldPid, 'SIGTERM');
+        await delay(2000);
+        // SIGTERM 후에도 살아있으면 강제 종료
+        try { process.kill(oldPid, 'SIGKILL'); } catch (e) { /* 이미 종료됨 */ }
+        log(`✅ 구 프로세스 종료 완료 (PID: ${oldPid})`);
+      } catch (e) {
+        log(`ℹ️ 구 프로세스 이미 종료됨 (PID: ${oldPid})`);
+      }
+    }
+    fs.unlinkSync(LOCK_FILE);
+  }
   let lockFd = null;
   try {
     lockFd = fs.openSync(LOCK_FILE, 'wx');
     fs.writeFileSync(LOCK_FILE, String(process.pid));
   } catch (e) {
-    log(`🛑 이미 실행 중입니다(락 존재): ${LOCK_FILE}`);
+    log(`⚠️ 락 파일 생성 실패: ${e.message}`);
     return;
   }
 

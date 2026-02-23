@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "description": "AI Agent System - 봇 레지스트리 (모델 교체 시 컨텍스트 자동 배포)",
+  "bots": {
+    "reservation": {
+      "name": "스카 (Ska)",
+      "description": "스터디카페 예약 관리 AI - 네이버 ↔ 픽코 자동 동기화",
+      "status": "ops",
+      "contextPath": "bots/reservation/context",
+      "model": {
+        "primary": "google-gemini-cli/gemini-2.0-flash",
+        "fallbacks": ["anthropic/claude-haiku-4-5", "ollama/qwen2.5:7b"]
+      },
+      "deployTargets": [
+        {
+          "type": "openclaw",
+          "loginType": "api",
+          "workspace": "~/.openclaw/workspace",
+          "bootFile": "BOOT.md",
+          "files": ["IDENTITY.md", "MEMORY.md", "DEV_SUMMARY.md", "HANDOFF.md"]
+        },
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": [
+            { "src": "DEV_SUMMARY.md", "dest": "reservation-dev-summary.md" },
+            { "src": "HANDOFF.md",     "dest": "reservation-handoff.md" }
+          ]
+        }
+      ],
+      "ops": {
+        "startScript": "bots/reservation/src/start-ops.sh",
+        "logFile": "/tmp/naver-ops-mode.log"
+      }
+    },
+    "secretary": {
+      "name": "비서봇",
+      "description": "개인 일정 관리 및 업무 보조",
+      "status": "planned",
+      "contextPath": "bots/secretary/context",
+      "model": {
+        "primary": "ollama/qwen2.5:14b",
+        "fallbacks": ["anthropic/claude-haiku-4-5"]
+      },
+      "deployTargets": []
+    },
+    "business": {
+      "name": "업무봇",
+      "description": "기획 및 업무 종합 보조",
+      "status": "planned",
+      "contextPath": "bots/business/context",
+      "model": {
+        "primary": "ollama/qwen2.5:32b",
+        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+      },
+      "deployTargets": []
+    },
+    "academic": {
+      "name": "학술봇",
+      "description": "박사 논문 작성 및 연구 보조 (SE 기반 소프트웨어 감정평가)",
+      "status": "planned",
+      "contextPath": "bots/academic/context",
+      "model": {
+        "primary": "ollama/deepseek-r1:32b",
+        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+      },
+      "deployTargets": []
+    },
+    "legal": {
+      "name": "판례봇",
+      "description": "국내외 판례 서칭 및 분석",
+      "status": "planned",
+      "contextPath": "bots/legal/context",
+      "model": {
+        "primary": "ollama/deepseek-r1:32b",
+        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+      },
+      "deployTargets": []
+    },
+    "orchestrator": {
+      "name": "메인봇 (팀장)",
+      "description": "지시 해석, 팀원봇 업무 분배, 결과 취합 및 보고",
+      "status": "planned",
+      "contextPath": "bots/orchestrator/context",
+      "model": {
+        "primary": "ollama/qwen2.5:32b",
+        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+      },
+      "deployTargets": []
+    }
+  },
+  "loaderTypes": {
+    "openclaw": {
+      "description": "OpenClaw 게이트웨이 - API 로그인 모델",
+      "bootMechanism": "boot-md hook (gateway:startup 이벤트)",
+      "contextFormat": "markdown files in workspace"
+    },
+    "claude-code": {
+      "description": "Claude Code - 계정 로그인",
+      "bootMechanism": "MEMORY.md 자동 로드 (200줄 제한)",
+      "contextFormat": "~/.claude/projects/{project}/memory/*.md"
+    },
+    "n8n": {
+      "description": "n8n 워크플로우 - API 로그인 (맥미니 구매 후)",
+      "bootMechanism": "System Prompt 주입",
+      "contextFormat": "텍스트 직접 주입"
+    },
+    "ollama-direct": {
+      "description": "Ollama 직접 호출 - 로컬 모델",
+      "bootMechanism": "System Prompt 주입",
+      "contextFormat": "텍스트 직접 주입"
+    }
+  }
+}
