@@ -26,6 +26,19 @@ cleanup_old() {
     echo "$STALE_PIDS" | xargs kill 2>/dev/null
     sleep 2
   fi
+
+  # naver-profile을 사용 중인 Chromium 잔존 프로세스 정리 (SingletonLock 해제)
+  CHROME_PIDS=$(pgrep -f "naver-profile" 2>/dev/null)
+  if [ -n "$CHROME_PIDS" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🌐 Chromium 잔존 프로세스 종료 (naver-profile 락 해제)"
+    echo "$CHROME_PIDS" | xargs kill 2>/dev/null
+    sleep 3
+  fi
+
+  # SingletonLock 삭제 (죽은 프로세스가 남긴 락 파일 → frame detach 원인)
+  NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
+  rm -f "$NAVER_PROFILE/SingletonLock" "$NAVER_PROFILE/SingletonCookie" "$NAVER_PROFILE/SingletonSocket" 2>/dev/null
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🔓 Chrome SingletonLock 제거 완료"
 }
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPS 모드 자동 재시작 루프 시작"
@@ -35,9 +48,9 @@ while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ▶ naver-monitor 시작"
 
   MODE=ops PICKKO_ENABLE=1 STRICT_TIME=1 NAVER_HEADLESS=1 \
-  TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
+  TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=180000 \
   OBSERVE_ONLY=0 \
-  PICKKO_CANCEL_ENABLE=0 \
+  PICKKO_CANCEL_ENABLE=1 \
   node naver-monitor.js
 
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⏹ naver-monitor 종료 (5초 후 재시작...)"

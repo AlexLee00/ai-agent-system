@@ -28,12 +28,12 @@ const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 // 유틸
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// 이전 상태
-let previousState = {
-  '오늘 확정': null,
-  '오늘 이용': null,
-  '오늘 취소': null
-};
+// 이전 사이클 확정 리스트 (취소 감지용)
+let previousConfirmedList = [];
+
+// Heartbeat: 마지막 전송 시각 (1시간 주기)
+const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000; // 1시간
+let lastHeartbeatTime = 0;
 
 // 로그 함수
 function log(msg) {
@@ -150,60 +150,6 @@ async function closePopupsIfPresent(page) {
 }
 
 // 예약 현황 추출
-async function getBookingStatus(page) {
-  try {
-    // ✅ 홈 화면의 "예약 현황" 섹션을 텍스트로 찾고, 그 내부에서 오늘 확정/이용/취소 숫자 파싱
-    // (class 해시가 바뀌는 경우가 있어 클래스 의존도를 낮춤)
-    await page.waitForFunction(() => {
-      const t = (document.body && (document.body.innerText || document.body.textContent)) || '';
-      return t.includes('예약 현황') && (t.includes('오늘 확정') || t.includes('오늘 이용') || t.includes('오늘 취소'));
-    }, { timeout: 30000 });
-
-    const bookingData = await page.evaluate(() => {
-      const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
-      const data = { '오늘 확정': 0, '오늘 이용': 0, '오늘 취소': 0 };
-
-      // "예약 현황" 제목을 가진 섹션을 찾고, 가장 가까운 컨테이너에서 링크를 읽는다.
-      const h3 = Array.from(document.querySelectorAll('h3')).find(h => (h.textContent || '').includes('예약 현황'));
-      if (!h3) return data;
-
-      // 상위로 올라가며 a 태그가 있는 영역을 찾기
-      let root = h3.closest('div');
-      for (let i = 0; i < 6 && root; i++) {
-        const anchors = root.querySelectorAll('a');
-        if (anchors && anchors.length >= 2) break;
-        root = root.parentElement;
-      }
-      root = root || document.body;
-
-      const anchors = Array.from(root.querySelectorAll('a'))
-        .filter(a => {
-          const t = clean(a.textContent);
-          return t.includes('오늘 확정') || t.includes('오늘 이용') || t.includes('오늘 취소');
-        });
-
-      for (const a of anchors) {
-        const t = clean(a.textContent);
-        // 우선 strong 숫자 우선
-        const strong = a.querySelector('strong');
-        const numText = strong ? clean(strong.textContent) : (t.match(/(\d+)/)?.[1] || '0');
-        const num = parseInt(String(numText).replace(/\D/g, ''), 10);
-
-        if (t.includes('오늘 확정')) data['오늘 확정'] = Number.isNaN(num) ? 0 : num;
-        if (t.includes('오늘 이용')) data['오늘 이용'] = Number.isNaN(num) ? 0 : num;
-        if (t.includes('오늘 취소')) data['오늘 취소'] = Number.isNaN(num) ? 0 : num;
-      }
-
-      return data;
-    });
-
-    return bookingData;
-  } catch (err) {
-    log(`⚠️ 예약 현황 추출 실패: ${err.message}`);
-    return null;
-  }
-}
-
 // 캘린더(예약/주문) 화면이면 "홈화면 이동"으로 복귀
 async function ensureHomeFromCalendar(page) {
   // ✅ 메뉴 클릭 대신 URL로 홈 화면 강제 복귀
@@ -230,10 +176,18 @@ async function ensureHomeFromCalendar(page) {
 
 // 네이버 로그인
 async function naverLogin(page) {
+  const MAX_RETRY = 3;
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
   try {
+    if (attempt > 1) {
+      log(`🔄 로그인 재시도 ${attempt}/${MAX_RETRY} (3초 대기)...`);
+      await delay(3000);
+    }
     log('🔐 네이버 로그인 시작...');
 
-    await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
+    // domcontentloaded로 먼저 로드 후 networkidle 별도 대기 (frame detach 방지)
+    await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
 
     // 홈 예약현황(오늘 확정/이용/취소) 링크가 보이면 로그인 완료로 판단 (클래스 해시 변동 대응)
     const homeReady = await page.evaluate(() => {
@@ -306,9 +260,32 @@ async function naverLogin(page) {
         await page.keyboard.press('Enter');
       }
 
-      // ✅ 2단계 인증/추가 동작을 사장님이 처리할 시간
-      log('⏳ (필요시) IP보안/2단계 화면을 완료해주세요. 완료되면 업체 대시보드(오늘 확정)가 보입니다. 최대 10분 대기');
-      
+      // ✅ 2단계 인증/보안인증 감지 → 텔레그램 알림
+      await delay(5000); // 로그인 클릭 후 페이지 전환 대기
+      const securityCheck = await page.evaluate(() => {
+        const url = window.location.href;
+        const text = (document.body?.innerText || document.body?.textContent || '');
+        const isNaverAuth = url.includes('nid.naver.com');
+        const hasSecurityKeyword = /보안|인증|OTP|일회용|문자|전화|휴대폰|기기 등록|로그인 알림|보안문자|캡차|captcha/i.test(text);
+        const alreadyDone = text.includes('오늘 확정') || text.includes('예약 현황');
+        return { isNaverAuth, hasSecurityKeyword, alreadyDone, url: url.slice(0, 120) };
+      }).catch(() => ({ isNaverAuth: false, hasSecurityKeyword: false, alreadyDone: false }));
+
+      if (!securityCheck.alreadyDone && (securityCheck.isNaverAuth || securityCheck.hasSecurityKeyword)) {
+        log(`🔐 보안인증 화면 감지: ${JSON.stringify(securityCheck)}`);
+        sendTelegramDirect(
+          `🔐 네이버 보안인증 필요!\n\n` +
+          `로그인 후 추가 인증 화면이 감지됐어요.\n` +
+          `원격으로 맥북에 접속해서 인증을 완료해주세요.\n\n` +
+          `✅ 인증 완료되면 자동으로 모니터링이 재개됩니다.\n` +
+          `⏳ 최대 30분 대기 후 자동으로 재시작됩니다.`
+        );
+      } else if (securityCheck.alreadyDone) {
+        log('✅ 로그인 후 즉시 대시보드 감지 → 보안인증 불필요');
+      }
+
+      log('⏳ (필요시) IP보안/2단계 화면을 완료해주세요. 완료되면 업체 대시보드(오늘 확정)가 보입니다. 최대 30분 대기');
+
       // waitForFunction 내에서 팝업 자동 감지 및 클릭
       await page.waitForFunction(() => {
         // 팝업 자동 클릭
@@ -331,7 +308,7 @@ async function naverLogin(page) {
         // 오늘 확정이 보이면 대기 종료
         const t = (document.body && (document.body.innerText || document.body.textContent)) || '';
         return t.includes('오늘 확정') || t.includes('예약 현황');
-      }, { timeout: 10 * 60 * 1000 }).catch(() => null);
+      }, { timeout: 30 * 60 * 1000 }).catch(() => null);
 
       // 로그인 후 홈으로 이동(리다이렉트 실패 대비)
       await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
@@ -400,9 +377,13 @@ async function naverLogin(page) {
     log('✅ 페이지 로드 완료(오늘 확정 카드 감지)');
     return true;
   } catch (err) {
-    log(`❌ 로그인/페이지 로드 실패: ${err.message}`);
+    const isRetryable = /detached|disconnected|closed|hang up|socket/i.test(err.message);
+    log(`❌ 로그인/페이지 로드 실패 (시도 ${attempt}/${MAX_RETRY}): ${err.message}`);
+    if (attempt < MAX_RETRY && isRetryable) continue; // frame detach 계열 → 재시도
     return false;
   }
+  } // end for retry
+  return false;
 }
 
 // 스크린샷 저장
@@ -426,23 +407,6 @@ async function takeScreenshot(page, reason) {
     log(`❌ 스크린샷 실패: ${err.message}`);
     return null;
   }
-}
-
-// 변경사항 감지
-function detectChanges(current) {
-  const changes = [];
-  
-  for (const key of Object.keys(previousState)) {
-    if (previousState[key] !== null && previousState[key] !== current[key]) {
-      changes.push({
-        name: key,
-        from: previousState[key],
-        to: current[key]
-      });
-    }
-  }
-  
-  return changes;
 }
 
 // 48시간 이상 된 알람 자동 삭제
@@ -476,6 +440,25 @@ function cleanupOldAlerts() {
     }
   } catch (err) {
     log(`⚠️ 알람 정리 실패: ${err.message}`);
+  }
+}
+
+// 텔레그램 직접 발송 (sendAlert 거치지 않고 즉시 전송)
+function sendTelegramDirect(message) {
+  if (process.env.TELEGRAM_ENABLED === '0') return;
+  try {
+    const CHAT_ID = '***REMOVED***';
+    const child = spawn('openclaw', [
+      'agent',
+      '--message', `🔔 스카봇\n\n${message}`,
+      '--channel', 'telegram',
+      '--deliver',
+      '--to', CHAT_ID
+    ], { stdio: 'ignore', detached: true });
+    child.unref();
+    log(`📱 [텔레그램 직접발송] ${message.slice(0, 50)}...`);
+  } catch (e) {
+    log(`⚠️ 텔레그램 직접발송 실패: ${e.message}`);
   }
 }
 
@@ -675,22 +658,13 @@ async function monitorBookings() {
 
         // ✅ 검은 박스(예약 현황) 리프레시 버튼 클릭 후 딜레이
         try {
-          const refreshBtn = await page.$('button.Home_btn_refresh__9AS9P');
+          const refreshBtn = await page.$('button[class*="btn_refresh"]');
           if (refreshBtn) {
-            const box = await refreshBtn.boundingBox();
-            if (box) {
-              const x = box.x + box.width / 2;
-              const y = box.y + box.height / 2;
-              log(`🖱️ 예약현황 새로고침 클릭 (x=${Math.round(x)}, y=${Math.round(y)})`);
-              // 시각적으로 보이게: 더블클릭 + 짧은 딜레이
-              await page.mouse.click(x, y);
-              await delay(80);
-              await page.mouse.click(x, y);
-
-              const ms = parseInt(process.env.NAVER_REFRESH_DELAY_MS || '1200', 10);
-              log(`⏱️ 새로고침 대기 ${ms}ms`);
-              await delay(ms);
-            }
+            log(`🖱️ 예약현황 새로고침 버튼 클릭`);
+            await refreshBtn.click();
+            const ms = parseInt(process.env.NAVER_REFRESH_DELAY_MS || '1200', 10);
+            log(`⏱️ 새로고침 대기 ${ms}ms`);
+            await delay(ms);
           }
         } catch (e) {
           log(`⚠️ 새로고침 클릭 실패(무시): ${e.message}`);
@@ -699,32 +673,41 @@ async function monitorBookings() {
         // 팝업 감지 및 자동 클릭 (모니터링 주기마다)
         await closePopupsIfPresent(page);
         
-        // 예약 현황 추출
-        const currentState = await getBookingStatus(page);
-        log(`🧾 (RAW) 상태 JSON: ${JSON.stringify(currentState)}`);
-        
-        if (!currentState || Object.keys(currentState).length === 0) {
-          log('⚠️ 예약 현황 데이터 추출 실패');
-          await new Promise(resolve => setTimeout(resolve, MONITOR_INTERVAL));
-          continue;
-        }
-        
-        // 현재 상태 출력
-        log(`📊 현재: 확정=${currentState['오늘 확정'] || 0}, 이용=${currentState['오늘 이용'] || 0}, 취소=${currentState['오늘 취소'] || 0}`);
-        
-        // ✅ 오늘 확정이 있으면 항상 리스트 파싱은 수행
-        // - PICKKO_ENABLE=1 일 때만 픽코까지 실행
-        if ((currentState['오늘 확정'] || 0) > 0) {
+        // ✅ 오늘 날짜 & bizId (취소 URL 구성에 재사용)
+        const todaySeoul = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+        const bizId = NAVER_URL.match(/\/place\/(\d+)/)?.[1] || '';
+        let currentConfirmedList = [];
+        let cancelledHref = null; // 홈에서 추출한 취소 탭 href (스코프 공유)
+        let cancelledCount = 0;   // 오늘 취소 카운터 (스코프 공유)
+
+        // ✅ 매 사이클 오늘 확정 리스트 파싱 (카운터 비교 없이 항상 실행)
+        {
           try {
             log('🧩 오늘 확정 리스트 파싱 시도...');
 
-            // 홈의 "오늘 확정" 카드 href로 직접 이동 (click/navigation 불안정 회피)
-            let confirmedHref = await page.evaluate(() => {
+            // 홈에서 "오늘 확정"/"오늘 취소" 카운터 + href 동시 추출
+            const { confirmedHref: _confirmedHref, cancelledHref: _cancelledHref, confirmedCount, cancelledCount: _cancelledCount } = await page.evaluate(() => {
               const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
               const links = Array.from(document.querySelectorAll('a'));
-              const a = links.find(x => clean(x.textContent).includes('오늘 확정') && String(x.href || '').includes('booking-list-view'));
-              return a ? a.href : null;
+              const confirmed = links.find(x => clean(x.textContent).includes('오늘 확정') && String(x.href || '').includes('booking-list-view'));
+              const cancelled = links.find(x => clean(x.textContent).includes('오늘 취소') && String(x.href || '').includes('booking-list-view'));
+              const getCount = (el) => {
+                if (!el) return 0;
+                const strong = el.querySelector('strong');
+                const num = parseInt((strong ? strong.textContent : el.textContent).replace(/\D/g, ''), 10);
+                return Number.isNaN(num) ? 0 : num;
+              };
+              return {
+                confirmedHref: confirmed ? confirmed.href : null,
+                cancelledHref: cancelled ? cancelled.href : null,
+                confirmedCount: getCount(confirmed),
+                cancelledCount: getCount(cancelled),
+              };
             });
+            cancelledCount = _cancelledCount; // 루프 스코프 변수에 저장
+            cancelledHref = _cancelledHref;   // 루프 스코프 변수에 저장 (취소 감지 2에서 재사용)
+            log(`📊 카운터: 오늘 확정=${confirmedCount}, 오늘 취소=${cancelledCount}`);
+            let confirmedHref = _confirmedHref;
             // ⚠️ Fix: href를 못 찾으면 URL을 직접 구성해서 폴백
             if (!confirmedHref) {
               const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
@@ -735,7 +718,10 @@ async function monitorBookings() {
               log(`⚠️ 오늘 확정 링크 자동 탐색 실패 → URL 직접 구성: ${confirmedHref}`);
             }
 
-            log(`🔗 오늘 확정 리스트 이동: ${confirmedHref}`);
+            if (confirmedCount === 0) {
+              log('ℹ️ 오늘 확정 0건 → 리스트 파싱 스킵');
+            } else {
+            log(`🔗 오늘 확정 리스트 이동 (${confirmedCount}건): ${confirmedHref}`);
             await page.goto(confirmedHref, { waitUntil: 'networkidle2', timeout: 30000 });
             await page.waitForNetworkIdle({ idleTime: 1200, timeout: 30000 }).catch(() => null);
             await delay(500); // 추가 렌더링 대기
@@ -844,6 +830,7 @@ async function monitorBookings() {
             }
 
             const newest = await scrapeNewestBookingsFromList(page, 20);  // ✅ 10 → 20으로 변경 (확장성 고려)
+            currentConfirmedList = newest; // ✅ 취소 감지를 위해 외부 변수에 저장
             log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
             // ✅ 전체 데이터를 파일에 저장 (디버그용)
             try {
@@ -1026,274 +1013,101 @@ async function monitorBookings() {
             }
 
             await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
+            } // confirmedCount >= 1 else 닫힘
           } catch (e) {
             log(`⚠️ (상시) 오늘 확정 처리 실패: ${e.message}`);
             try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (e2) {}
           }
         }
 
-        // 변경사항 감지
-        const changes = detectChanges(currentState);
-        
-        if (changes.length > 0) {
-          log('🔔 변경 감지!');
-          
-          for (const change of changes) {
-            const message = `변경: ${change.name} (${change.from} → ${change.to})`;
-            log(`   ⚠️ ${message}`);
-            await sendNotification(message);
-          }
-          
-          // 스크린샷 저장
-          await takeScreenshot(page, 'booking-change');
+        // ✅ 취소 감지 1: 이전 사이클 확정 리스트에서 사라진 항목 → 취소로 처리
+        if (previousConfirmedList.length > 0 && process.env.PICKKO_CANCEL_ENABLE === '1') {
+          try {
+            const toKey = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
+            const toCancelKey = (b) => `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
+            const currentKeys = new Set(currentConfirmedList.map(b => toKey(b)));
+            const droppedFromConfirmed = previousConfirmedList.filter(b => !currentKeys.has(toKey(b)));
 
-          // ======================== 취소 감지 처리 ========================
-          const cancelChange = changes.find(c => c.name === '오늘 취소' && c.to > c.from);
-          if (cancelChange && process.env.PICKKO_CANCEL_ENABLE === '1') {
-            try {
-              log(`🗑️ 오늘 취소 증가 감지 (${cancelChange.from} → ${cancelChange.to}) → 취소 목록 파싱 시작`);
-
-              // "오늘 취소" 링크로 이동
-              const cancelLinks = await page.$$('a.Home_state_link__KzDE_');
-              let cancelNavDone = false;
-              for (const a of cancelLinks) {
-                const t = await a.evaluate(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
-                if (t.includes('오늘 취소')) {
-                  const box = await a.boundingBox();
-                  if (!box) continue;
-                  await Promise.all([
-                    page.mouse.click(box.x + box.width / 2, box.y + box.height / 2),
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null)
-                  ]);
-                  cancelNavDone = true;
-                  break;
-                }
-              }
-
-              if (!cancelNavDone) {
-                // 홈 링크 직접 구성 폴백
-                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-                const bizId = NAVER_URL.match(/\/place\/(\d+)/)?.[1] || '';
-                const cancelHref = `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CANCELLED&date=${today}`;
-                log(`⚠️ 오늘 취소 링크 직접 이동: ${cancelHref}`);
-                await page.goto(cancelHref, { waitUntil: 'networkidle2', timeout: 30000 });
-              }
-
-              await page.waitForSelector(
-                'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
-                { timeout: 20000 }
-              ).catch(() => null);
-              await delay(800);
-
-              const cancelledList = await scrapeNewestBookingsFromList(page, 20);
-              log(`🧾 취소 리스트 파싱: ${cancelledList.length}건`);
-
+            if (droppedFromConfirmed.length > 0) {
+              log(`🗑️ 확정 리스트에서 ${droppedFromConfirmed.length}건 사라짐 → 취소 처리`);
               const seen = loadSeen();
               const cancelledSeenSet = new Set(seen.cancelledSeenIds || []);
-              const toCancelKey = (b) => `cancel|${b.date}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
 
-              const cancelCandidates = cancelledList.filter(c => !cancelledSeenSet.has(toCancelKey(c)));
-              log(`🗑️ 신규 취소 후보: ${cancelCandidates.length}건`);
-
-              for (const c of cancelCandidates) {
+              for (const c of droppedFromConfirmed) {
                 const cancelKey = toCancelKey(c);
-                cancelledSeenSet.add(cancelKey);
-                seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
-                saveSeen(seen);
-                await runPickkoCancel(c, cancelKey);
-              }
-
-              // 홈으로 복귀
-              await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
-            } catch (cancelErr) {
-              log(`⚠️ 취소 처리 중 오류: ${cancelErr.message}`);
-              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (e2) {}
-            }
-          }
-          // ======================== 취소 감지 처리 끝 ========================
-
-          // ✅ 변경 감지 시 항상 예약 리스트 확인 (취소+신규 동시발생 시에도 누락 방지)
-          // seenIds가 중복 처리를 막아주므로 confirmedChange 조건 불필요
-          if (process.env.PICKKO_ENABLE === '1') {
-            try {
-              log('🧩 신규 확정 예약 파싱 시도...');
-              // 오늘 확정 리스트로 이동 (SPA 환경이라 click+navigation이 불안정 → href로 직접 이동)
-              const links = await page.$$('a.Home_state_link__KzDE_');
-              let clicked = false;
-              for (const a of links) {
-                const t = (await a.evaluate(el => (el.textContent || '').replace(/\s+/g, ' ').trim()));
-                if (t.includes('오늘 확정')) {
-                  const box = await a.boundingBox();
-                  if (!box) continue;
-                  const x = box.x + box.width / 2;
-                  const y = box.y + box.height / 2;
-                  log(`🖱️ 오늘 확정 카드 클릭 (x=${Math.round(x)}, y=${Math.round(y)})`);
-                  await Promise.all([
-                    page.mouse.click(x, y),
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null)
-                  ]);
-                  clicked = true;
-                  break;
-                }
-              }
-
-              if (!clicked) throw new Error('오늘 확정 링크를 찾지 못함(Home_state_link)');
-
-              log(`🌐 현재 URL: ${page.url()}`);
-              await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 20000 });
-
-              const newest = await scrapeNewestBookingsFromList(page, 20);  // ✅ 10 → 20으로 변경 (확장성 고려)
-              log(`🧾 리스트 파싱 결과(상위): ${JSON.stringify(newest.slice(0, 3))}`);
-              if (newest.length === 0) {
-                const dbg = await page.evaluate(() => {
-                  const noData = !!document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
-                  const rowCount = document.querySelectorAll('a[data-tst_click_link]').length;
-                  const text = ((document.body && (document.body.innerText || document.body.textContent)) || '').replace(/\s+/g, ' ').trim();
-                  return { noData, rowCount, textHead: text.slice(0, 200) };
-                });
-                log(`🧪 리스트 디버그: ${JSON.stringify(dbg)}`);
-              }
-
-              // "오늘 확정" 링크가 TODAY이므로 date는 오늘(서울시간)로 주입
-              const todaySeoul = (() => {
-                const s = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }); // YYYY-MM-DD
-                return s;
-              })();
-
-              const seen = loadSeen();
-              const seenSet = new Set(seen.seenIds || []);
-
-              const toKey = (b) => b.bookingId || `${todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
-
-              const candidates = newest
-                .map(b => ({ ...b, date: todaySeoul }))
-                // ✅ 정규식 기반 데이터 변환 및 정규화 (저장 형식으로)
-                .map(b => {
-                  const normalized = transformAndNormalizeData(b);
-                  if (!normalized) {
-                    log(`   ⚠️ 변환 실패(버림): bookingId=${b.bookingId} phone=${b.phone} room=${b.room}`);
-                    return null;
-                  }
-                  return normalized;
-                })
-                .filter(Boolean) // null 제거
-                .map(b => ({ ...b, _key: toKey(b) }))
-                .filter(b => !seenSet.has(b._key));
-
-              if (candidates.length === 0) {
-                log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
-              } else {
-                log(`✅ 신규 후보 ${candidates.length}건 발견. 픽코 확정 처리 시작...`);
-                for (const b of candidates) {
-                  // 처리 마킹(먼저 저장해서 중복 방지)
-                  seenSet.add(b._key);
-                  seen.seenIds = Array.from(seenSet).slice(-500);
+                if (!cancelledSeenSet.has(cancelKey)) {
+                  cancelledSeenSet.add(cancelKey);
+                  seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
                   saveSeen(seen);
-
-                  const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
-                  await runPickko(b, bookingId, page);
+                  await runPickkoCancel(c, cancelKey);
                 }
               }
-
-              // 원래 캘린더로 복귀
-              await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
-
-            } catch (e) {
-              log(`⚠️ 신규 확정 예약 처리 실패: ${e.message}`);
-              // 안전하게 원래 페이지로 복귀
-              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (e2) {}
+            } else {
+              log('ℹ️ 확정 리스트 변화 없음');
             }
-          }
-          
-          // 변경된 항목 클릭해서 상세 정보 캡처
-          try {
-            log('📋 상세 예약 정보 캡처 중...');
-            
-            // 변경된 항목에 따라 클릭
-            for (const change of changes) {
-              const clickableSelector = change.name === '오늘 확정' 
-                ? 'a[href*="bookingStatusCodes=RC03"]'
-                : change.name === '오늘 이용'
-                ? 'a[href*="countFilter=CONFIRMED"]'
-                : 'a[href*="countFilter=CANCELLED"]';
-              
-              try {
-                await page.click(clickableSelector);
-                await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 });
-                
-                // 상세 정보 스크린샷
-                await page.screenshot({
-                  path: path.join('/Users/alexlee/.openclaw/workspace', `booking-detail-${Date.now()}.png`),
-                  fullPage: true
-                });
-                
-                log('✅ 상세 정보 캡처 완료');
-                
-                // 뒤로 가기
-                await page.goBack({ waitUntil: 'networkidle2', timeout: 5000 });
-              } catch (err) {
-                log(`⚠️ 상세 정보 캡처 실패: ${err.message}`);
-              }
-            }
-          } catch (err) {
-            log(`⚠️ 상세 정보 처리 실패: ${err.message}`);
-          }
-        } else {
-          log('✅ 변경사항 없음');
-
-          // ✅ 변경 없어도 매 사이클마다 리스트 체크 (취소+신규 동시발생 누락 방지)
-          if (process.env.PICKKO_ENABLE === '1') {
-            try {
-              const links = await page.$$('a.Home_state_link__KzDE_');
-              let clicked = false;
-              for (const a of links) {
-                const t = (await a.evaluate(el => (el.textContent || '').replace(/\s+/g, ' ').trim()));
-                if (t.includes('오늘 확정')) {
-                  const box = await a.boundingBox();
-                  if (!box) continue;
-                  await Promise.all([
-                    page.mouse.click(box.x + box.width / 2, box.y + box.height / 2),
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => null)
-                  ]);
-                  clicked = true;
-                  break;
-                }
-              }
-              if (clicked) {
-                await page.waitForSelector('a[data-tst_click_link], [class*="nodata-area"], [class*="nodata"], .nodata', { timeout: 20000 });
-                const newest = await scrapeNewestBookingsFromList(page, 20);
-                const todaySeoul = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-                const seen = loadSeen();
-                const seenSet = new Set(seen.seenIds || []);
-                const toKey = (b) => b.bookingId || `${todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
-                const candidates = newest
-                  .map(b => ({ ...b, date: todaySeoul }))
-                  .map(b => transformAndNormalizeData(b))
-                  .filter(Boolean)
-                  .map(b => ({ ...b, _key: toKey(b) }))
-                  .filter(b => !seenSet.has(b._key));
-
-                if (candidates.length > 0) {
-                  log(`🔔 변경 없었지만 미처리 예약 ${candidates.length}건 발견!`);
-                  for (const b of candidates) {
-                    seenSet.add(b._key);
-                    seen.seenIds = Array.from(seenSet).slice(-500);
-                    saveSeen(seen);
-                    await runPickko(b, b._key, page);
-                  }
-                }
-                await page.goto(NAVER_URL, { waitUntil: 'networkidle2' });
-              }
-            } catch (e) {
-              log(`⚠️ 정기 리스트 체크 실패: ${e.message}`);
-              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch {}
-            }
+          } catch (dropErr) {
+            log(`⚠️ 확정→취소 감지 중 오류: ${dropErr.message}`);
           }
         }
 
-        // 상태 업데이트
-        previousState = { ...currentState };
-        
+        // ✅ 취소 감지 2: 오늘 취소 탭 파싱 (더블 체크, cancelledCount >= 1일 때만)
+        if (process.env.PICKKO_CANCEL_ENABLE === '1' && cancelledCount >= 1) {
+          try {
+            // 홈에서 추출한 href 우선, 없으면 폴백 URL 구성
+            const cancelHref = cancelledHref || `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CANCELLED&date=${todaySeoul}`;
+            log(`🔗 오늘 취소 탭 이동: ${cancelHref}`);
+            await page.goto(cancelHref, { waitUntil: 'networkidle2', timeout: 30000 });
+            await page.waitForSelector(
+              'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
+              { timeout: 20000 }
+            ).catch(() => null);
+            await delay(500);
+
+            const cancelledList = await scrapeNewestBookingsFromList(page, 20);
+            log(`🗑️ 오늘 취소 탭: ${cancelledList.length}건`);
+
+            if (cancelledList.length > 0) {
+              const seen = loadSeen();
+              const cancelledSeenSet = new Set(seen.cancelledSeenIds || []);
+              const toCancelKey = (b) => `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
+              const cancelCandidates = cancelledList.filter(c => !cancelledSeenSet.has(toCancelKey(c)));
+
+              if (cancelCandidates.length > 0) {
+                log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
+                for (const c of cancelCandidates) {
+                  const cancelKey = toCancelKey(c);
+                  cancelledSeenSet.add(cancelKey);
+                  seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
+                  saveSeen(seen);
+                  await runPickkoCancel(c, cancelKey);
+                }
+              } else {
+                log('ℹ️ 취소 탭 신규 취소 없음');
+              }
+            }
+
+            await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
+          } catch (cancelErr) {
+            log(`⚠️ 취소 탭 처리 중 오류: ${cancelErr.message}`);
+            try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (e2) {}
+          }
+        }
+
+        // ✅ previousConfirmedList 업데이트
+        previousConfirmedList = currentConfirmedList;
+
+        // ✅ Heartbeat: 1시간마다 텔레그램으로 생존 신호 전송 (09:00~22:00만)
+        if (Date.now() - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
+          const hHour = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
+          if (hHour >= 9 && hHour < 22) {
+            const upMin = Math.floor((Date.now() - startTime) / 60000);
+            const hMsg = `✅ 스카 정상 운영 중\n\n확인 #${checkCount} | 업타임 ${upMin}분\n오늘 확정: ${currentConfirmedList.length}건 | 오늘 취소: ${cancelledCount}건\n다음 heartbeat: 1시간 후`;
+            sendTelegramDirect(hMsg);
+            log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
+            lastHeartbeatTime = Date.now();
+          }
+        }
+
         // 다음 확인까지 대기
         const remainingTime = Math.max(0, MONITOR_DURATION - (Date.now() - startTime));
         const remainingMinutes = Math.floor(remainingTime / 60000);
@@ -1414,6 +1228,7 @@ function updateBookingState(bookingId, booking, state = 'pending') {
       // 🆕 신규 예약
       seenData[bookingId] = {
         compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
+        name: booking.raw?.name || null,
         phone: booking.phone,
         phoneRaw: booking.phoneRaw,
         date: booking.date,

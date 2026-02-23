@@ -59,6 +59,7 @@ function transformTime(time) {
   // 이미 HH:MM 형식이면 유효성 체크 후 반환
   if (/^\d{2}:\d{2}$/.test(timeStr)) {
     const [h, m] = timeStr.split(':').map(Number);
+    if (h === 24 && m === 0) return '24:00'; // 자정(하루 끝) 허용
     if (h >= 0 && h < 24 && m >= 0 && m < 60) {
       return timeStr;
     }
