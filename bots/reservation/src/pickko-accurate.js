@@ -14,10 +14,12 @@ const { transformAndNormalizeData, validateTimeRange } = require('../lib/validat
 async function initializeBrowser() {
     const browser = await puppeteer.launch({
         headless: false,
+        defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--window-size=1440,900'
+            '--window-position=0,25',  // 주 모니터 고정
+            '--window-size=2294,1380'
         ]
     });
     return browser;
@@ -173,50 +175,70 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
   await page.goto('https://pickkoadmin.com/member/write.html', { waitUntil: 'domcontentloaded' });
   await delay(2000);
 
-  await page.evaluate((name, p1, p2, p3, pinCode, birthDate) => {
-    // 1. 이름
-    const nameInput = document.querySelector('input[name="mb_name"]');
-    if (nameInput) {
-      nameInput.value = name;
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    // 2. 전화번호 (3분할)
-    const ph1 = document.querySelector('#mb_phone1');
-    const ph2 = document.querySelector('#mb_phone2');
-    const ph3 = document.querySelector('#mb_phone3');
-    if (ph1) ph1.value = p1;
-    if (ph2) ph2.value = p2;
-    if (ph3) ph3.value = p3;
-    // 3. PIN (010 제외 8자리)
-    const codeInput = document.querySelector('#mb_code');
-    if (codeInput) {
-      codeInput.value = pinCode;
-      codeInput.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    // 4. 생년월일 (예약날짜로 대체)
+  // 1. 이름
+  const nameInput = await page.$('input[name="mb_name"]');
+  if (nameInput) {
+    await nameInput.click({ clickCount: 3 });
+    await nameInput.type(customerName, { delay: 50 });
+  }
+  await delay(300);
+
+  // 2. 전화번호 (3분할)
+  const ph1El = await page.$('#mb_phone1');
+  const ph2El = await page.$('#mb_phone2');
+  const ph3El = await page.$('#mb_phone3');
+  if (ph1El) { await ph1El.click({ clickCount: 3 }); await ph1El.type(phone1, { delay: 50 }); }
+  await delay(200);
+  if (ph2El) { await ph2El.click({ clickCount: 3 }); await ph2El.type(phone2, { delay: 50 }); }
+  await delay(200);
+  if (ph3El) { await ph3El.click({ clickCount: 3 }); await ph3El.type(phone3, { delay: 50 }); }
+  await delay(300);
+
+  // 3. PIN (010 제외 8자리)
+  const codeEl = await page.$('#mb_code');
+  if (codeEl) {
+    await codeEl.click({ clickCount: 3 });
+    await codeEl.type(pin, { delay: 50 });
+  }
+  await delay(300);
+
+  // 4. 생년월일 (예약날짜로 대체, datepicker API 사용)
+  await page.evaluate((birthDate) => {
     const birthInput = document.querySelector('#mb_birth');
-    if (birthInput) {
+    if (!birthInput) return;
+    birthInput.removeAttribute('readonly');
+    if (typeof jQuery !== 'undefined' && jQuery(birthInput).data('datepicker')) {
+      jQuery(birthInput).datepicker('setDate', new Date(birthDate));
+    } else {
       birthInput.value = birthDate;
       birthInput.dispatchEvent(new Event('input', { bubbles: true }));
       birthInput.dispatchEvent(new Event('change', { bubbles: true }));
     }
-  }, customerName, phone1, phone2, phone3, pin, reservationDate);
+  }, reservationDate);
+  await delay(300);
 
   log(`✅ 회원정보 입력완료`);
   log(`   이름: ${customerName}`);
   log(`   전화: ${phone1}-${phone2}-${phone3}`);
   log(`   PIN: ${pin}`);
   log(`   생년월일: ${reservationDate}`);
-  await delay(500);
 
-  // 5. 회원등록 버튼 클릭
-  await page.evaluate(() => {
-    const submitBtn = document.querySelector('input[type="submit"]');
-    if (submitBtn) submitBtn.click();
-  });
+  // 5. form.submit() 직접 호출 (JS 생년월일 검증 우회)
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+    page.evaluate(() => {
+      const form = document.querySelector('form#memberFrom, form');
+      if (form) HTMLFormElement.prototype.submit.call(form);
+    })
+  ]);
+  await delay(1000);
 
-  await delay(3000);
-  log(`✅ 신규 회원 등록 완료: ${customerName} (${phoneNoHyphen})`);
+  const registerUrl = page.url();
+  if (registerUrl.includes('/member/view/')) {
+    log(`✅ 신규 회원 등록 성공: ${customerName} (${phoneNoHyphen}) → ${registerUrl}`);
+  } else {
+    log(`⚠️  등록 결과 불명확 (URL: ${registerUrl})`);
+  }
 
   await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
   await delay(3000);
@@ -230,12 +252,13 @@ async function main() {
     
     browser = await puppeteer.launch({
       headless: false,
+      defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
       protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
       args: [
         '--no-sandbox',
-        '--window-position=0,25',
-        '--window-size=2200,1300',
-        '--start-maximized'
+        '--disable-setuid-sandbox',
+        '--window-position=0,25',  // 주 모니터 고정 (메뉴바 25px 아래)
+        '--window-size=2294,1380'  // 맥북 해상도 기준
       ],
       defaultViewport: null
     });
@@ -1082,9 +1105,12 @@ async function main() {
     log(`\n🔍 [7-6단계] 파싱 데이터와 비교:`);
     const comparisonErrors = [];
     
-    // 번호 비교: 010-3500-0586 ↔ 이재룡(010-3500-0586)
+    // 번호 비교: 이재룡(010-3500-0586) → 괄호 안 숫자만 추출
     const phoneNoHyphen = PHONE_NOHYPHEN.replace(/\D/g, '');  // 01035000586
-    const extractedPhoneDigits = finalVerification.mbInfo.replace(/\D/g, '');  // 01035000586
+    const parenMatch = finalVerification.mbInfo.match(/\(([^)]+)\)/);
+    const extractedPhoneDigits = parenMatch
+      ? parenMatch[1].replace(/\D/g, '')           // 괄호 안에서 숫자만 추출
+      : finalVerification.mbInfo.replace(/\D/g, ''); // 괄호 없으면 전체에서 추출
     if (extractedPhoneDigits !== phoneNoHyphen) {
       comparisonErrors.push(`번호 불일치: 픽코=${finalVerification.mbInfo}, 네이버=${PHONE_NOHYPHEN}`);
     }

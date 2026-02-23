@@ -138,14 +138,14 @@ async function main() {
 
   let browser;
   try {
-    // 현재 맥북 논리 해상도 2294x1432 기준
     browser = await puppeteer.launch({
       headless: false,
+      defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--window-position=0,0',
-        '--window-size=2294,1432',
+        '--window-position=0,25',  // 주 모니터 고정 (메뉴바 25px 아래)
+        '--window-size=2294,1380', // 맥북 해상도 기준
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
@@ -155,7 +155,6 @@ async function main() {
 
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setViewport({ width: 2200, height: 1350 });
 
     // 팝업 자동 확인
     page.on('dialog', async (dialog) => {

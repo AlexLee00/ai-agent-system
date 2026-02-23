@@ -618,13 +618,13 @@ async function monitorBookings() {
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
     browser = await puppeteer.launch({
       headless: false, // 🖥️ 항상 브라우저 화면 표시
+      defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
       userDataDir: path.join('/Users/alexlee/.openclaw/workspace', 'naver-profile'),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--window-position=0,0', // 📍 메인 화면 좌상단에 고정 (Mac)
-        '--window-size=1920,1080', // 📺 전체 화면 크기
-        '--start-fullscreen', // 📺 전체화면 모드
+        '--window-position=0,25',  // 📍 주 모니터 고정 (메뉴바 25px 아래)
+        '--window-size=2294,1380', // 📺 맥북 해상도 기준 (2294x1432 - 메뉴바/독 여유)
         // ✅ 백그라운드/탭 회수(페이지 확보)로 인한 frame detach 완화
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
