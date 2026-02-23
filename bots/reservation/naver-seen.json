@@ -15,6 +15,22 @@
     "retries": 1,
     "pickkoStartTime": "2026. 2. 23. AM 11:27:29"
   },
+  "1165516568": {
+    "compositeKey": "01027459103-2026-02-26-14:30",
+    "phone": "010-2745-9103",
+    "phoneRaw": "01027459103",
+    "date": "2026-02-26",
+    "start": "14:30",
+    "end": "16:30",
+    "room": "A2",
+    "detectedAt": "2026. 2. 23. PM 5:03:08",
+    "status": "failed",
+    "pickkoStatus": null,
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 2,
+    "pickkoStartTime": "2026. 2. 23. PM 5:30:43"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
