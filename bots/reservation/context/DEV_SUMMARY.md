@@ -180,6 +180,7 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-24 새벽 | launchd ai.ska.log-report 등록 | 3시간(10800초) 주기 자동 실행 |
 | 2026-02-24 오전 | **공유 라이브러리 리팩토링** | lib/ 7개 신규 (utils/secrets/formatting/files/args/browser/pickko) |
 | 2026-02-24 오전 | 중복 코드 220줄 제거 | 4개 src 파일 → lib/ 추출, 문법 검사 통과, 봇 재시작 확인 |
+| 2026-02-24 오전 | **pickko-verify 자동 스케줄링** | run-verify.sh + launchd ai.ska.pickko-verify (08:00/14:00/20:00) |
 
 ---
 
@@ -189,7 +190,7 @@ curl -s -X POST http://localhost:8100/ask \
 ✅ naver-monitor.js    OPS 모드, 3분 주기 실행 중 (PICKKO_CANCEL_ENABLE=1)
 ✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송
 ✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (OPS 활성화됨)
-✅ pickko-verify.js    pending/failed 재검증 (수동 실행)
+✅ pickko-verify.js    pending/failed 재검증 (자동: 08:00/14:00/20:00, launchd)
 ✅ lib/ 공유 라이브러리  7개 모듈 추출 완료 (중복 제거)
 ✅ Telegram 봇         Gemini 2.0 Flash, 응답 ~7초
 ✅ RAG 서버            http://localhost:8100 정상
@@ -197,6 +198,7 @@ curl -s -X POST http://localhost:8100/ask \
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
 ✅ 자정 자동 보존       nightly-sync.sh + launchd (00:00 실행)
 ✅ log-report.sh       3시간 주기 오류 분석 리포트 (launchd: ai.ska.log-report)
+✅ pickko-verify 자동화  08:00/14:00/20:00 자동 실행 (launchd: ai.ska.pickko-verify)
 ```
 
 ## 📌 pickko-cancel.js 핵심 구현 노트 (2026-02-24)
@@ -216,8 +218,13 @@ curl -s -X POST http://localhost:8100/ask \
 
 ---
 
-## 📋 향후 검토 중인 기능
+## 📋 업데이트 검토 목록 (미구현)
 
-- 추가 기능 업데이트 사장님 검토 중
-- IS-001: 네이버 홈화면 복귀 이슈 (낮은 우선순위)
-- 맥미니 M4 Pro 구매 후 전체 시스템 이전 예정
+| 항목 | 설명 | 우선순위 |
+|------|------|---------|
+| IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
+| ~~pickko-verify.js 자동 스케줄링~~ | ✅ 완료 — launchd 08:00/14:00/20:00 | 완료 |
+| 일일 예약 요약 자동 전송 | 매일 지정 시각 사장님에게 예약 현황 메시지 | 중간 |
+| 예약 중복 감지 알림 | 동일 시간대 중복 예약 즉시 경고 | 중간 |
+| Playwright → 네이버 API | UI 변경 취약점 근본 해결 | 장기 검토 |
+| 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |

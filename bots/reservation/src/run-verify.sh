@@ -1,0 +1,45 @@
+#!/bin/bash
+# pickko-verify.js 자동 실행 래퍼
+# launchd (ai.ska.pickko-verify) 에서 호출
+#
+# 동작:
+#   1. 중복 실행 방지 (락 파일)
+#   2. MODE=ops 로 pickko-verify.js 실행
+#   3. pending/failed 없으면 브라우저 미실행 조기 종료 (스크립트 자체 처리)
+#   4. 로그 → /tmp/pickko-verify.log (최근 500줄 유지)
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+LOCK_FILE="$HOME/.openclaw/workspace/pickko-verify.lock"
+LOG_FILE="/tmp/pickko-verify.log"
+
+TS() { date '+%Y-%m-%d %H:%M:%S'; }
+
+# ── 중복 실행 방지 ──────────────────────────────────────
+if [ -f "$LOCK_FILE" ]; then
+  OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "[$(TS)] ⚠️  pickko-verify 이미 실행 중 (PID: $OLD_PID) → 건너뜀" | tee -a "$LOG_FILE"
+    exit 0
+  fi
+  rm -f "$LOCK_FILE"
+fi
+
+echo $$ > "$LOCK_FILE"
+trap "rm -f '$LOCK_FILE'" EXIT
+
+# ── 실행 ────────────────────────────────────────────────
+echo "" >> "$LOG_FILE"
+echo "[$(TS)] ━━━ pickko-verify 자동 실행 시작 ━━━" | tee -a "$LOG_FILE"
+
+MODE=ops "$NODE" "$SCRIPT_DIR/pickko-verify.js" >> "$LOG_FILE" 2>&1
+EXIT_CODE=$?
+
+echo "[$(TS)] ━━━ pickko-verify 완료 (exit: $EXIT_CODE) ━━━" | tee -a "$LOG_FILE"
+
+# ── 로그 500줄 유지 ─────────────────────────────────────
+if [ -f "$LOG_FILE" ]; then
+  tail -500 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+fi
+
+exit $EXIT_CODE
