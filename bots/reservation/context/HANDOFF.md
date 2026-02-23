@@ -14,6 +14,16 @@
 | 채널 | 텔레그램 (@SCAFE8282_BOT) |
 | 모니터 | 자동 재시작 루프 (2시간 주기) |
 
+## 최근 완료 작업 (2026-02-24 새벽)
+
+- ✅ 취소 감지 방식 → `previousConfirmedList` 리스트 비교 (카운터 비교 폐기)
+- ✅ 보안인증 대기 30분 + 텔레그램 알림 (원격 인증 처리 지원)
+- ✅ 모니터링 주기 3분 (`NAVER_INTERVAL_MS=180000`)
+- ✅ 새로고침 버튼 → `btn_refresh` selector 방식으로 수정
+- ✅ `updateBookingState()`에 `name` 필드 추가
+- ✅ Heartbeat 추가 (1시간 주기, 09:00~22:00만, `sendTelegramDirect`)
+- ✅ `log-report.sh` 신규 생성 + launchd `ai.ska.log-report` 등록 (3시간 주기)
+
 ## 최근 완료 작업 (2026-02-23)
 
 - ✅ `process.exit(0)` 버그 수정 - 픽코 성공 시 exit code가 1로 오인되던 문제

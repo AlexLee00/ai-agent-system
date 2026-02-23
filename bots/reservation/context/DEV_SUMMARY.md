@@ -7,8 +7,8 @@
 
 ## 🎯 프로젝트 한 줄 요약
 
-**네이버 스마트플레이스 신규 예약 → 픽코 키오스크 자동 동기화 봇 (스카)**
-현재 상태: ✅ **OPS 모드 실운영 중**
+**네이버 스마트플레이스 신규/취소 예약 → 픽코 키오스크 자동 동기화 봇 (스카)**
+현재 상태: ✅ **OPS 모드 실운영 중 (예약 등록 + 취소 자동화 완료)**
 
 ---
 
@@ -16,15 +16,16 @@
 
 ```
 [네이버 스마트플레이스]
-        ↓ 신규 예약 감지 (5분 주기)
-[naver-monitor.js] ← OPS 모드 실행 중
+        ↓ 신규 예약 감지 (3분 주기)        ↓ 취소 감지 (리스트 비교 방식)
+[naver-monitor.js] ← OPS 모드 실행 중 (PICKKO_CANCEL_ENABLE=1)
         ↓ sendAlert() → .pickko-alerts.jsonl 저장
-        ↓ runPickko() 자동 호출
-[pickko-accurate.js] ← Stage [1-9] 자동 실행
-        ↓
-[픽코 키오스크] ← 예약 + 0원 현금 결제 완료
+        ↓ runPickko()                       ↓ runPickkoCancel()
+[pickko-accurate.js]               [pickko-cancel.js]
+   Stage [1-9] 자동 실행              취소 처리 [1-10]
+        ↓                                   ↓
+[픽코 키오스크] ← 예약 등록+결제 완료 / 취소 상태 변경
         ↓ Heartbeat (30분 주기)
-[Telegram] ← 사장님에게 결과 알람
+[Telegram] ← 사장님에게 결과 알람 (new/completed/cancelled/error)
         ↓
 [RAG API] ← 예약 이력 저장 (http://localhost:8100)
 ```
@@ -35,9 +36,11 @@
 
 | 파일 | 역할 | 상태 |
 |------|------|------|
-| `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 | ✅ OPS 실행 중 |
+| `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
 | `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] | ✅ 완성 |
-| `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 완성 |
+| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 (2026-02-24) |
+| `src/start-ops.sh` | OPS 자동 재시작 루프 | ✅ PICKKO_CANCEL_ENABLE=1 |
+| `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 추가 |
 | `secrets.json` | 네이버/픽코 로그인 정보 | ✅ |
 | `.pickko-alerts.jsonl` | 알람 저장소 (48시간 자동 정리) | ✅ 운영 중 |
 | `naver-bookings-full.json` | 네이버 파싱 데이터 | ✅ 운영 중 |
@@ -99,7 +102,7 @@ node naver-monitor.js > /tmp/naver-ops-mode.log 2>&1 &
 - `cleanupOldAlerts()` → 48시간 지난 알람 자동 삭제
 - Heartbeat (30분 주기) → Telegram으로 일괄 전송
 
-**알람 타입:** `new`(신규 감지) | `completed`(픽코 완료) | `error`(실패)
+**알람 타입:** `new`(신규 감지) | `completed`(픽코 완료) | `cancelled`(취소 완료) | `error`(실패)
 
 ---
 
@@ -158,19 +161,47 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-23 오후 | 컨텍스트 관리 시스템 구축 | registry.json + deploy-context.js |
 | 2026-02-23 오후 | 자정 자동 보존 시스템 | nightly-sync.sh + launchd |
 | 2026-02-23 오후 | **모델 변경 자동 컨텍스트 보존** | BOOT.md 1단계 sync 지시 + 테스트 완료 |
+| 2026-02-24 새벽 | **픽코 자동 취소 기능 구현** | pickko-cancel.js 신규, naver-monitor.js 취소 감지 추가 |
+| 2026-02-24 새벽 | validation.js 24:00 지원 | end=24:00 입력 허용 (23:00~24:00 마지막 슬롯) |
+| 2026-02-24 새벽 | **OPS 취소 기능 활성화** | PICKKO_CANCEL_ENABLE=1, start-ops.sh 재시작 완료 |
+| 2026-02-24 새벽 | 취소 감지 → 리스트 비교 방식 전환 | previousConfirmedList + 오늘 취소 탭 이중 감지 |
+| 2026-02-24 새벽 | 보안인증 대기 30분 + 텔레그램 알림 | 원격 인증 처리 지원 |
+| 2026-02-24 새벽 | 모니터링 주기 3분으로 변경 | NAVER_INTERVAL_MS=180000 |
+| 2026-02-24 새벽 | 새로고침 버튼 selector 방식으로 수정 | 좌표 클릭 → btn_refresh selector |
+| 2026-02-24 새벽 | Heartbeat 추가 (1시간 주기) | sendTelegramDirect, 09:00~22:00만 전송 |
+| 2026-02-24 새벽 | log-report.sh 신규 생성 | 3시간마다 오류 분석 + 텔레그램 리포트 |
+| 2026-02-24 새벽 | launchd ai.ska.log-report 등록 | 3시간(10800초) 주기 자동 실행 |
 
 ---
 
-## 🚀 현재 운영 상태 (2026-02-23)
+## 🚀 현재 운영 상태 (2026-02-24)
 
 ```
-✅ naver-monitor.js    OPS 모드, 5분 주기 실행 중
+✅ naver-monitor.js    OPS 모드, 3분 주기 실행 중 (PICKKO_CANCEL_ENABLE=1)
+✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송
+✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (OPS 활성화됨)
 ✅ Telegram 봇         Gemini 2.0 Flash, 응답 ~7초
 ✅ RAG 서버            http://localhost:8100 정상
 ✅ OpenClaw 게이트웨이  PID 정상, CLI pairing 완료
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
 ✅ 자정 자동 보존       nightly-sync.sh + launchd (00:00 실행)
+✅ log-report.sh       3시간 주기 오류 분석 리포트 (launchd: ai.ska.log-report)
 ```
+
+## 📌 pickko-cancel.js 핵심 구현 노트 (2026-02-24)
+
+- 픽코 검색 전화번호: **하이픈 포함** 필요 (`010-XXXX-XXXX`)
+- 픽코 종료시간 = 네이버 종료시간 **-10분** (픽코 슬롯 계산 차이)
+  - 예: 네이버 23:00 → 픽코 목록에 `23시 50분` 표시
+- 목록 매칭: 1순위 (시작+종료 모두), 2순위 (시작만), 3순위 (전화번호 뒷 8자리)
+- 취소 셀렉터: `input#sd_step-1` (value="-1"), 제출: `input[value="작성하기"]`
+- 이미 취소 상태면 중복 처리 방지로 exit 0
+- 병렬 실행 가능 (3개 브라우저 동시 테스트 성공)
+- 세션 복구 문제: 브라우저 강제 종료 후 재시작 시 `Default/Current Session` 파일 삭제 필요
+  ```bash
+  rm -f ~/.openclaw/workspace/naver-profile/Default/"Current Session"
+  rm -f ~/.openclaw/workspace/naver-profile/Default/"Current Tabs"
+  ```
 
 ---
 
