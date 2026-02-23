@@ -9,21 +9,8 @@
  */
 
 const puppeteer = require('puppeteer');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const { transformAndNormalizeData } = require('../lib/validation');
-
-async function initializeBrowser() {
-    const browser = await puppeteer.launch({
-        headless: false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--window-size=1440,900'
-        ]
-    });
-    const page = await browser.newPage();
-    return {browser, page};
-}
 const fs = require('fs');
 const path = require('path');
 
@@ -536,36 +523,39 @@ async function sendAlert(options) {
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
-    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만) - 즉시 발송
+    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 에러만)
     if ((type === 'new' || type === 'completed' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
-        // 1️⃣ 즉시 Telegram 발송
-        const { execSync } = require('child_process');
-        const telegramMsg = `🔔 픽코 알람\n\n${message}`;
-        
-        // OpenClaw message tool 사용 (스카가 직접 전송)
-        // 참고: naver-monitor.js는 Telegram 라이브러리가 없으므로, 
-        // 나중에 메시지 파일로 저장하고 main session에서 발송하도록 함
-        
-        // 2️⃣ 로그 파일(.pickko-alerts.jsonl)에 저장
+        // 1️⃣ 이력 파일에 저장
         const alertsFile = path.join('/Users/alexlee/.openclaw/workspace', '.pickko-alerts.jsonl');
         const alertEntry = JSON.stringify({
           timestamp: new Date().toISOString(),
           type,
           title,
           message,
-          sent: true,
           sentAt: new Date().toISOString()
         });
-        
         fs.appendFileSync(alertsFile, alertEntry + '\n');
         log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
-        
+
+        // 2️⃣ 스카봇 → 텔레그램 발송 (백그라운드)
+        const CHAT_ID = '***REMOVED***';
+        const telegramMsg = `🔔 픽코 알람\n\n${message}`;
+        const child = spawn('openclaw', [
+          'agent',
+          '--message', telegramMsg,
+          '--channel', 'telegram',
+          '--deliver',
+          '--to', CHAT_ID
+        ], { stdio: 'ignore', detached: true });
+        child.unref();
+        log(`📱 [텔레그램] 스카봇 발송 요청 (백그라운드)`);
+
         // 3️⃣ 48시간 정책 실행
         cleanupOldAlerts();
-        
+
       } catch (err) {
-        log(`⚠️ 알람 저장 실패: ${err.message}`);
+        log(`⚠️ 알람 전송 실패: ${err.message}`);
       }
     }
   } catch (err) {
@@ -1207,9 +1197,8 @@ async function monitorBookings() {
         // (about:blank 탭 폭증 방지 + 브라우저 자동 종료 방지)
         const msg = String(err.message || '');
         if (/detached/i.test(msg) || /Connection closed/i.test(msg)) {
-          log('🛑 치명 오류(detached/connection closed). 새 탭 생성 없이 30초 대기 후 재시도합니다. (필요하면 브라우저에서 "복구" 클릭)');
-          await new Promise(resolve => setTimeout(resolve, 30000));
-          continue;
+          log('🛑 치명 오류(detached/connection closed). start-ops.sh 재시작에 위임합니다.');
+          process.exit(1);
         }
 
         await new Promise(resolve => setTimeout(resolve, MONITOR_INTERVAL));
@@ -1279,7 +1268,6 @@ async function ragSaveReservation(booking, status = '신규') {
 }
 
 // ======================== Pickko 연동 ========================
-const { spawn } = require('child_process');
 const SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');  // OPS/DEV 데이터 격리
 
 // 📁 naver-seen.json 형식 개선 (상태 추적)

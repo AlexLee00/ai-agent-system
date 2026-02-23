@@ -28,6 +28,10 @@
 - ✅ MEMORY.md Heartbeat 모니터 생존 체크 지시 추가
 - ✅ `nightly-sync.sh` + launchd 자정 자동 보존 시스템 구축
 - ✅ BOOT.md 모델 변경 자동 컨텍스트 보존 - 게이트웨이 재시작 시 `deploy-context.js --sync` 1단계 자동 실행 (테스트 완료)
+- ✅ detached Frame 버그 수정 - `runPickko()` 내 `naveraPage.close()` 제거 (픽코 실행 후 네이버 페이지 무효화 근본 해결)
+- ✅ 수동 등록 예약 2건 seen 처리 완료
+  - 010-2745-9103 (2026-02-26 14:30~16:30 A2) → completed/manual
+  - 010-5681-7477 (2026-02-24 04:00~09:00 A1) → completed/manual
 
 ## 실제 등록 완료 예약
 
