@@ -1529,15 +1529,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       updateBookingState(bookingId, booking, 'processing');
     }
 
-    // 🔧 픽코 실행 중 네이버 페이지 닫기 (크롬 메모리 누수 방지)
-    if (naveraPage && !naveraPage.isClosed?.()) {
-      try {
-        await naveraPage.close();
-        log(`📄 네이버 페이지 일시 종료 (픽코 실행 중)`);
-      } catch (e) {
-        log(`⚠️ 네이버 페이지 종료 실패: ${e.message}`);
-      }
-    }
+    // 픽코는 별도 spawn 프로세스 → 네이버 페이지 닫을 필요 없음 (닫으면 detached Frame 발생)
 
     const args = [
       'pickko-accurate.js',

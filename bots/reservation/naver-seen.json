@@ -24,12 +24,28 @@
     "end": "16:30",
     "room": "A2",
     "detectedAt": "2026. 2. 23. PM 5:03:08",
-    "status": "failed",
-    "pickkoStatus": null,
+    "status": "completed",
+    "pickkoStatus": "manual",
     "pickkoOrderId": null,
     "errorReason": null,
-    "retries": 2,
-    "pickkoStartTime": "2026. 2. 23. PM 5:30:43"
+    "retries": 5,
+    "pickkoStartTime": "2026. 2. 23. PM 6:17:28"
+  },
+  "1165554227": {
+    "compositeKey": "01056817477-2026-02-24-04:00",
+    "phone": "010-5681-7477",
+    "phoneRaw": "01056817477",
+    "date": "2026-02-24",
+    "start": "04:00",
+    "end": "09:00",
+    "room": "A1",
+    "detectedAt": "2026. 2. 23. PM 6:02:39",
+    "status": "completed",
+    "pickkoStatus": "manual",
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 3,
+    "pickkoStartTime": "2026. 2. 23. PM 6:16:57"
   },
   "seenIds": [
     "1164258753",
@@ -42,6 +58,8 @@
     "1164709598",
     "1164807795",
     "1165071422",
-    "1165146320"
+    "1165146320",
+    "1165516568",
+    "1165554227"
   ]
 }
