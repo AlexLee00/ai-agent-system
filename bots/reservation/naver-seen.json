@@ -135,6 +135,21 @@
     "retries": 2,
     "pickkoStartTime": "2026. 2. 22. PM 11:19:48"
   },
+  "1165071422": {
+    "compositeKey": "01042140104-2026-02-28-16:00",
+    "phone": "010-4214-0104",
+    "phoneRaw": "01042140104",
+    "date": "2026-02-28",
+    "start": "16:00",
+    "end": "18:00",
+    "room": "A1",
+    "detectedAt": "2026. 2. 23. AM 10:37:33",
+    "status": "pending",
+    "pickkoStatus": null,
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 0
+  },
   "seenIds": [
     "1164807795"
   ]

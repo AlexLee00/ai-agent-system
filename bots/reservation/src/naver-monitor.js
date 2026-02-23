@@ -897,7 +897,7 @@ async function monitorBookings() {
               for (const booking of candidates) {
                 const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
                 const state = updateBookingState(bookingId, booking, 'pending');
-                
+
                 await sendAlert({
                   type: 'new',
                   title: '🆕 신규 예약 감지!',
@@ -909,6 +909,9 @@ async function monitorBookings() {
                   status: 'pending',
                   action: 'Pickko 자동 등록 준비 중...'
                 });
+
+                // 📚 RAG: 신규 예약 저장
+                await ragSaveReservation(booking, '신규');
               }
 
               // ✅ 모드에 따른 기본 동작
@@ -1220,6 +1223,44 @@ async function monitorBookings() {
   }
 }
 
+// ======================== RAG 연동 ========================
+const RAG_API = process.env.RAG_API_URL || 'http://localhost:8100';
+
+async function ragSaveReservation(booking, status = '신규') {
+  try {
+    const name = booking.raw?.name || '고객';
+    const text = [
+      `예약자: ${name}`,
+      `날짜: ${booking.date}`,
+      `시간: ${booking.start}~${booking.end}`,
+      `공간: ${booking.room}`,
+      `전화: ${booking.phone}`,
+      `상태: ${status}`,
+    ].join(' | ');
+
+    const meta = {
+      type: 'reservation',
+      date: String(booking.date || ''),
+      status: String(status),
+      room: String(booking.room || ''),
+      phone: String(booking.phone || ''),
+      bookingId: String(booking.bookingId || booking._key || ''),
+      savedAt: new Date().toISOString(),
+    };
+
+    const res = await fetch(`${RAG_API}/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: 'reservations', texts: [text], metadatas: [meta] }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    log(`📚 [RAG] 저장 완료: ${booking.phone} / ${booking.date} ${booking.start}~${booking.end} (${status})`);
+  } catch (err) {
+    log(`⚠️ [RAG] 저장 실패(무시): ${err.message}`);
+  }
+}
+
 // ======================== Pickko 연동 ========================
 const { spawn } = require('child_process');
 const SEEN_FILE = path.join(__dirname, '..', 'naver-seen.json');  // 프로젝트 디렉토리
@@ -1512,7 +1553,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
         // ✅ 성공
         if (bookingId) {
           updateBookingState(bookingId, booking, 'completed');
-          
+
           // 📢 완료 알람
           sendAlert({
             type: 'completed',
@@ -1525,13 +1566,16 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             status: 'paid',
             action: '정상 처리됨'
           });
+
+          // 📚 RAG: 픽코 완료 상태로 업데이트 저장
+          ragSaveReservation(booking, '픽코완료');
         }
         log(`✅ [완료] 픽코 예약이 성공했습니다!`);
       } else {
         // ❌ 실패
         if (bookingId) {
           updateBookingState(bookingId, booking, 'failed');
-          
+
           // 📢 실패 알람
           sendAlert({
             type: 'error',
@@ -1544,6 +1588,9 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             reason: `exit code ${code}`,
             action: '수동 확인 필요'
           });
+
+          // 📚 RAG: 픽코 실패 상태로 저장
+          ragSaveReservation(booking, '픽코실패');
         }
         log(`❌ [실패] 픽코 예약이 실패했습니다 (code=${code})`);
       }
