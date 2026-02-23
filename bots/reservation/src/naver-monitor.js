@@ -1519,13 +1519,15 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     // 픽코는 별도 spawn 프로세스 → 네이버 페이지 닫을 필요 없음 (닫으면 detached Frame 발생)
 
+    const customerName = (booking.raw?.name || '고객').slice(0, 20);
     const args = [
       'pickko-accurate.js',
       `--phone=${normalized.phone}`,
       `--date=${normalized.date}`,
       `--start=${normalized.start}`,
       `--end=${normalized.end}`,  // 픽코는 자동으로 표기시간 = 저장시간 - 10분 처리
-      `--room=${normalized.room}`
+      `--room=${normalized.room}`,
+      `--name=${customerName}`
     ];
 
     log(`✅ [변환완료] 🤖 픽코 실행 시작`);

@@ -51,6 +51,7 @@ function parseArgs(argv) {
 }
 
 const ARGS = parseArgs(process.argv);
+const CUSTOMER_NAME = (ARGS.name || '고객').replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
 
 // ✅ 입력 데이터 정규식 변환 (lib/validation.js 규칙 적용)
 const rawInput = {
@@ -159,9 +160,66 @@ function addMinutesHHMM(hhmm, minutesToAdd) {
 async function sendErrorNotification(errorMsg, context = {}) {
   log(`🚨 ERROR: ${errorMsg}`);
   log(`📋 컨텍스트: ${JSON.stringify(context)}`);
-  
-  // 추후 텔레그램 알림 연동 가능
-  // await notifyTelegram(errorMsg, context);
+}
+
+// ======================== 신규 회원 자동 등록 ========================
+async function registerNewMember(page, phoneNoHyphen, customerName, reservationDate) {
+  log('\n[3.5단계] 신규 회원 자동 등록');
+  const phone1 = phoneNoHyphen.slice(0, 3);   // 010
+  const phone2 = phoneNoHyphen.slice(3, 7);   // XXXX
+  const phone3 = phoneNoHyphen.slice(7);       // XXXX
+  const pin    = phoneNoHyphen.slice(3);       // 010 제외 8자리
+
+  await page.goto('https://pickkoadmin.com/member/write.html', { waitUntil: 'domcontentloaded' });
+  await delay(2000);
+
+  await page.evaluate((name, p1, p2, p3, pinCode, birthDate) => {
+    // 1. 이름
+    const nameInput = document.querySelector('input[name="mb_name"]');
+    if (nameInput) {
+      nameInput.value = name;
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // 2. 전화번호 (3분할)
+    const ph1 = document.querySelector('#mb_phone1');
+    const ph2 = document.querySelector('#mb_phone2');
+    const ph3 = document.querySelector('#mb_phone3');
+    if (ph1) ph1.value = p1;
+    if (ph2) ph2.value = p2;
+    if (ph3) ph3.value = p3;
+    // 3. PIN (010 제외 8자리)
+    const codeInput = document.querySelector('#mb_code');
+    if (codeInput) {
+      codeInput.value = pinCode;
+      codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // 4. 생년월일 (예약날짜로 대체)
+    const birthInput = document.querySelector('#mb_birth');
+    if (birthInput) {
+      birthInput.value = birthDate;
+      birthInput.dispatchEvent(new Event('input', { bubbles: true }));
+      birthInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }, customerName, phone1, phone2, phone3, pin, reservationDate);
+
+  log(`✅ 회원정보 입력완료`);
+  log(`   이름: ${customerName}`);
+  log(`   전화: ${phone1}-${phone2}-${phone3}`);
+  log(`   PIN: ${pin}`);
+  log(`   생년월일: ${reservationDate}`);
+  await delay(500);
+
+  // 5. 회원등록 버튼 클릭
+  await page.evaluate(() => {
+    const submitBtn = document.querySelector('input[type="submit"]');
+    if (submitBtn) submitBtn.click();
+  });
+
+  await delay(3000);
+  log(`✅ 신규 회원 등록 완료: ${customerName} (${phoneNoHyphen})`);
+
+  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+  await delay(3000);
 }
 
 async function main() {
@@ -281,7 +339,40 @@ async function main() {
         });
       }
       await delay(2000);
-      
+
+      // ★ 신규 고객 감지: 첫 시도에서 a.mb_select 없으면 자동 회원 등록
+      const hasMember = await page.evaluate(() => !!document.querySelector('a.mb_select'));
+      if (!hasMember && retryCount === 0) {
+        log(`⚠️ 픽코 미등록 고객(${PHONE_NOHYPHEN}) → 신규 회원 자동 등록 시작`);
+        await page.keyboard.press('Escape');
+        await delay(500);
+
+        await registerNewMember(page, PHONE_NOHYPHEN, CUSTOMER_NAME, DATE);
+
+        // Stage [3] 재실행: 신규 등록된 회원 검색
+        log('\n[3단계 재실행] 신규 등록 후 재검색');
+        await page.evaluate((phone) => {
+          const inputs = document.querySelectorAll('input[type="text"]');
+          let targetInput = null;
+          for (const input of inputs) {
+            if (input.placeholder && (input.placeholder.includes('이름') || input.placeholder.includes('검색'))) {
+              targetInput = input;
+              break;
+            }
+          }
+          if (!targetInput && inputs.length > 0) targetInput = inputs[inputs.length - 1];
+          if (targetInput) {
+            targetInput.value = phone;
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+          }
+        }, PHONE_NOHYPHEN);
+        await delay(3000);
+
+        await verifyMemberInfo(1); // retryCount=1로 재시도 (재등록 방지)
+        return;
+      }
+
       // 모달 내 "선택" 버튼 클릭
       const memberSelectResult = await page.evaluate(() => {
         const selectBtn = document.querySelector('a.mb_select');
@@ -291,7 +382,7 @@ async function main() {
         }
         return false;
       });
-      
+
       if (!memberSelectResult) {
         log('⚠️ 모달 내 선택 버튼 실패');
       }
