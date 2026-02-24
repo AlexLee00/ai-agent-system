@@ -159,6 +159,23 @@
     "retries": 22,
     "pickkoStartTime": "2026. 2. 24. AM 2:42:54"
   },
+  "1166286561": {
+    "compositeKey": "01030341710-2026-02-28-15:00",
+    "name": "나은애",
+    "phone": "010-3034-1710",
+    "phoneRaw": "01030341710",
+    "date": "2026-02-28",
+    "start": "15:00",
+    "end": "19:00",
+    "room": "A2",
+    "detectedAt": "2026. 2. 24. PM 2:12:31",
+    "status": "processing",
+    "pickkoStatus": null,
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 2,
+    "pickkoStartTime": "2026. 2. 24. PM 2:45:08"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
@@ -175,5 +192,8 @@
     "1165554227",
     "1165709094",
     "1166062782"
+  ],
+  "cancelledSeenIds": [
+    "cancel|2026-02-24|11:00|12:00|A1|01036239910"
   ]
 }
