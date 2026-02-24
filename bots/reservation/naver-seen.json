@@ -159,6 +159,23 @@
     "retries": 22,
     "pickkoStartTime": "2026. 2. 24. AM 2:42:54"
   },
+  "1166062782": {
+    "compositeKey": "01036239910-2026-02-24-11:00",
+    "name": "김동훈",
+    "phone": "010-3623-9910",
+    "phoneRaw": "01036239910",
+    "date": "2026-02-24",
+    "start": "11:00",
+    "end": "12:00",
+    "room": "A1",
+    "detectedAt": "2026. 2. 24. AM 10:33:18",
+    "status": "processing",
+    "pickkoStatus": null,
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 0,
+    "pickkoStartTime": "2026. 2. 24. AM 10:33:18"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
