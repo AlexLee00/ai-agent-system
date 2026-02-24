@@ -24,6 +24,54 @@
 
 ---
 
+## 🆕 자연어 예약 등록 / 회원 가입 명령
+
+사장님이 텔레그램으로 예약 등록 또는 회원 가입을 요청하면 스카가 직접 처리한다.
+
+### 예약 등록
+
+| 항목 | 내용 |
+|------|------|
+| 명령 | `node ~/projects/ai-agent-system/bots/reservation/src/pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1\|A2\|B --phone=01000000000 --name=이름` |
+| stdout 파싱 | JSON `{ success, message }` |
+| 성공 | `success: true` → 텔레그램에 완료 보고 |
+| 실패 | `success: false` → 텔레그램에 실패 사유 보고, 사장님 수동 확인 요청 |
+
+### 회원 가입
+
+| 항목 | 내용 |
+|------|------|
+| 명령 | `node ~/projects/ai-agent-system/bots/reservation/src/pickko-member.js --phone=01000000000 --name=이름` |
+| stdout 파싱 | JSON `{ success, isNew, message }` |
+| 기존 회원 | `isNew: false` → "기존 회원입니다" 안내 |
+| 신규 등록 | `isNew: true` → 텔레그램에 등록 완료 보고 |
+
+### 자연어 → 인자 파싱 규칙
+
+| 입력 | 변환 |
+|------|------|
+| 오늘, 내일 | YYYY-MM-DD (KST 기준) |
+| M월D일 | 해당 월일의 YYYY-MM-DD |
+| 오전N시, 오후N시 | HH:MM (24시간, 예: 오후3시 → 15:00) |
+| 오전N시M분, 오후N시M분 | HH:MM |
+| A룸, A1, B룸 | A1 \| A2 \| B |
+| 전화번호 010-XXXX-XXXX | 하이픈 제거 후 그대로 |
+
+### 실행 예시
+
+```
+사장님: "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"
+→ node .../pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동
+
+사장님: "010-1234-5678 홍길동 회원가입해줘"
+→ node .../pickko-member.js --phone=01012345678 --name=홍길동
+```
+
+> **주의**: 스크립트 경로는 `~/projects/ai-agent-system/bots/reservation/src/` 기준
+> stdout에서 JSON 파싱 후 성공/실패 여부를 사장님께 텔레그램으로 보고할 것
+
+---
+
 ## 🐛 버그 리포트 & 유지보수 기록 시스템
 
 ### 개요
@@ -78,6 +126,25 @@ open → (클로드 조치) → in_progress → (수정 완료) → resolved
 ---
 
 ## 변경 이력
+
+### 2026-02-24 — 픽코 3가지 기능 신규 추가
+
+**변경 이유:** 수동 관리가 필요했던 감사/예약등록/회원가입 자동화
+
+**변경 내용:**
+- `pickko-daily-audit.js` 신규 — 당일 픽코 등록 예약 사후 감사 (매일 22:00, launchd)
+  - 픽코 study/index.html 접수일시 최신순 조회 → 오늘 등록 항목 수집
+  - naver-seen.json auto 항목과 비교 → 전화/수동 예약 탐지 → 텔레그램 리포트
+  - `run-audit.sh`, `ai.ska.pickko-daily-audit.plist` 함께 생성
+- `pickko-register.js` 신규 — 자연어 예약 등록 CLI 래퍼
+  - pickko-accurate.js 위임 실행, stdout JSON `{ success, message }` 출력
+  - 스카가 자연어 파싱 후 shell 명령으로 호출
+- `pickko-member.js` 신규 — 신규 회원 가입 CLI 래퍼
+  - 회원 존재 여부 확인 → 기존 회원 안내 OR 신규 등록
+  - stdout JSON `{ success, isNew, message }` 출력
+- `CLAUDE_NOTES.md` — 자연어 예약/회원가입 행동 지침 추가
+
+---
 
 ### 2026-02-24 — 버그 추적 & 유지보수 기록 시스템 도입
 
