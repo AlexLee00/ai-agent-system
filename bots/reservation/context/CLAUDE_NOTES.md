@@ -127,6 +127,53 @@ open → (클로드 조치) → in_progress → (수정 완료) → resolved
 
 ## 변경 이력
 
+### 2026-02-25 — 스카봇 안정화 업데이트 8건
+
+**변경 이유:** 운영 중 발견된 데이터 손실·중복등록·주기 밀림 위험 방어
+
+**변경 내용:**
+
+| # | 파일 | 내용 |
+|---|------|------|
+| C-1 | `lib/files.js`, `naver-monitor.js saveSeen()` | atomic write (tmp→rename) — 쓰기 도중 프로세스 종료 시 파일 손상 방지 |
+| C-2 | `pickko-verify.js markCompleted()` | `name` 필드 누락 수정 — verified 처리 후 이름이 사라지는 버그 수정 |
+| C-3 | `pickko-accurate.js` | 시간 슬롯 선택 1회→3회 재시도 — AJAX 갱신 타이밍 미스 대응 |
+| H-1 | `naver-monitor.js` | `rollbackProcessingEntries()` 추가 — `process.exit(1)` 4곳 전에 `processing` 항목을 `failed`로 롤백 |
+| H-2 | `start-ops.sh` | 로그 파일 관리 추가 — `/tmp/naver-ops-mode.log` 리다이렉션 + 1000줄 로테이션 |
+| H-3 | `naver-monitor.js` | `pruneSeenIds()` 추가 — `slice(-500)` 대신 90일 지난 예약 ID 날짜 기준 정리 |
+| H-4 | `pickko-register.js` | 등록 성공 후 `naver-seen.json`에 `manual` 항목 기록 — `pickko-daily-audit` 오탐 방지 |
+| M-1 | `naver-monitor.js` | `cycleStart` 기반 사이클 타임 관리 — 사이클 소요시간 차감 후 sleep (주기 밀림 방지) |
+| M-2 | `ai.ska.pickko-daily-audit.plist` | 22:00 단독 → 22:00 + 23:50 이중 실행 (22~23시 접수 예약 누락 방지) |
+
+**스카 행동 변경 없음** — 내부 안정성 강화, 외부 인터페이스 동일
+
+---
+
+### 2026-02-25 — pickko-verify.js needsVerify() 개선
+
+**변경 이유:** `completed`이지만 `pickkoStatus`가 `paid`/`auto`인 항목을 verified로 올리려면 임시로 `status: 'pending'`으로 바꿔야 했음 → 위험한 우회 방식 제거
+
+**변경 내용:**
+- `needsVerify(entry)` 함수 추가
+  - `pending` / `failed` → 항상 검증 대상 (기존 동일)
+  - `completed` + `pickkoStatus`가 `verified`·`manual`이 **아닌** 것(paid, auto 등) → 검증 대상 (신규)
+- 이제 `pickko-register.js`로 등록한 예약(status=completed, pickkoStatus=manual)은 pickko-verify 재검증 대상에서 제외됨
+
+---
+
+### 2026-02-25 — naver-seen.json entry object loss 버그 방어
+
+**변경 이유:** `updateBookingState('completed')` 저장(N건) 직후 `loadSeen()`이 N-1건을 읽는 타이밍 버그 발생 → 방금 등록한 entry 객체가 사라지는 현상
+
+**변경 내용:**
+- `_lastSeenDataSnapshot` 모듈 변수 추가
+- `updateBookingState()` — `saveSeen()` 직후 스냅샷 저장
+- OPS/DEV 코드=0 완료 블록 — `loadSeen()` 대신 스냅샷 우선 사용 후 null 초기화
+
+**한송이 3건 백필** (2026-03-09, 03-23, 03-30 A1룸) — 버그로 유실된 entry 수동 복원 + pickko-verify로 verified 확인 완료
+
+---
+
 ### 2026-02-24 — 픽코 3가지 기능 신규 추가
 
 **변경 이유:** 수동 관리가 필요했던 감사/예약등록/회원가입 자동화

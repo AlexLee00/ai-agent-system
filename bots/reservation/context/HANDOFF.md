@@ -50,6 +50,40 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-25)
+
+### 안정화 업데이트 8건 + 신규 스크립트 검증
+
+- ✅ **C-1** `lib/files.js` `saveJson()` 원자적 쓰기 — tmp 파일 + rename (파일 손상 방지)
+- ✅ **C-2** `pickko-verify.js` `markCompleted()` name 필드 유실 수정
+- ✅ **C-3** `pickko-accurate.js` 시간 슬롯 재시도 1회 → 3회 (+ 1.5초 delay)
+- ✅ **H-1** `naver-monitor.js` `rollbackProcessingEntries()` 추가 — exit 전 processing → failed 롤백
+- ✅ **H-2** `start-ops.sh` 로그 파일 관리 — `LOG_FILE` 변수 + 1000줄 로테이션
+- ✅ **H-3** `naver-monitor.js` `pruneSeenIds()` — seenIds 90일 초과 항목 정리 (기존 slice(-500) 대체)
+- ✅ **H-4** `pickko-register.js` 성공 시 naver-seen.json에 `pickkoStatus: 'manual'` 기록
+- ✅ **M-1** `naver-monitor.js` 사이클 타임 기반 슬립 조정 — 인터벌 드리프트 방지
+- ✅ **M-2** `ai.ska.pickko-daily-audit.plist` 23:50 실행 추가 (22:00+23:50 2회)
+
+### pickko-verify.js needsVerify() 개선
+
+- ✅ `needsVerify()` 신규 — `completed + paid/auto` 항목도 검증 대상으로 처리
+- 기존 임시 `status: 'pending'` 변경 우회 방식 완전 폐기
+- 한송이 3건 backfill(1166777081/64/41) → `verified` 전환 완료
+
+### 신규 스크립트 테스트 통과
+
+- ✅ `pickko-daily-audit.js` — DOM 파싱·헤더 추출 정상 (당일 0건)
+- ✅ `pickko-register.js` — 이재룡 01035000586 A1 예약 등록 성공 (`/study/view/928851.html`)
+- ✅ `pickko-member.js` — 기존회원 감지 + 신규 회원 가입 모두 정상
+  - ⚠️ 테스트 회원 `테스트 / 010-1234-1234` 픽코 admin에서 수동 삭제 필요
+
+### OPS 시작 커맨드 업데이트
+
+- `start-ops.sh` 내부에서 로그 리디렉션 처리 → 외부 `>>` 불필요
+- 재시작 방법: `kill -9 <start-ops.sh PID>` 후 `nohup bash start-ops.sh > /dev/null 2>&1 &`
+
+---
+
 ## 최근 완료 작업 (2026-02-24 오후)
 
 - ✅ **모델 교체** — gemini-2.0-flash(deprecated) → `gemini-2.5-flash`
@@ -124,20 +158,44 @@ _현재 미해결 이슈 없음_
 
 ```bash
 cd ~/projects/ai-agent-system/bots/reservation/src
-bash start-ops.sh >> /tmp/naver-ops-mode.log 2>&1 &
+nohup bash start-ops.sh > /dev/null 2>&1 &
+# 로그: /tmp/naver-ops-mode.log (start-ops.sh 내부에서 자동 리디렉션 + 1000줄 로테이션)
 ```
 
 ## 🗂️ 스카봇 기능 대기 목록 (다음 개발 예정)
 
-> 사장님 검토 또는 맥미니 이전 후 순차 개발
+### 🔜 다음 작업 (2026-02-26 예정)
+
+**픽코 예약 → 네이버 예약 불가 처리**
+
+픽코에서 직접 예약(전화/현장)이 들어왔을 때, 네이버 스마트플레이스 해당 시간대를 자동으로 예약 불가 처리하는 기능.
+
+```
+[픽코 어드민] 신규 예약 감지 (주기적 폴링 또는 감지)
+        ↓
+[naver-monitor or 신규 스크립트] 네이버 스마트플레이스 접속
+        ↓
+해당 날짜·시간·룸 → 예약 불가(블록) 처리
+        ↓
+[텔레그램] 처리 완료 알림
+```
+
+**핵심 고려사항:**
+- 픽코 신규 예약 감지 방법: pickko-daily-audit.js 방식(폴링) vs 픽코 webhook(있다면)
+- 네이버 예약 불가 처리 UI: 스마트플레이스 관리자 → 예약 설정 → 특정 시간 차단
+- 중복 처리 방지: 이미 네이버에서 들어온 예약은 스킵 (naver-seen.json 확인)
+- 대상: pickko-daily-audit이 감지한 manual/전화 예약만 (auto 제외)
+
+---
 
 | 순서 | 기능 | 설명 | 우선순위 |
 |------|------|------|---------|
-| 1 | 일일 예약 요약 자동 전송 | 매일 지정 시각에 예약 현황 요약 메시지 → 텔레그램 | 중간 |
-| 2 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 발생 시 즉시 경고 | 중간 |
-| 3 | IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
-| 4 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 (장기) | 장기 |
-| 5 | 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |
+| 1 | **픽코→네이버 예약 불가** | 픽코 직접 예약 감지 → 네이버 해당 시간 차단 | **🔜 다음** |
+| 2 | 일일 예약 요약 자동 전송 | 매일 지정 시각에 예약 현황 요약 메시지 → 텔레그램 | 중간 |
+| 3 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 발생 시 즉시 경고 | 중간 |
+| 4 | IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
+| 5 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 (장기) | 장기 |
+| 6 | 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |
 
 ---
 

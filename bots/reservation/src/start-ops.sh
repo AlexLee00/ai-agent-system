@@ -5,6 +5,7 @@
 cd "$(dirname "$0")"
 
 LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
+LOG_FILE="/tmp/naver-ops-mode.log"
 
 cleanup_old() {
   # 락 파일에서 구 PID 확인
@@ -51,8 +52,15 @@ while true; do
   TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
   OBSERVE_ONLY=0 \
   PICKKO_CANCEL_ENABLE=1 \
-  node naver-monitor.js
+  node naver-monitor.js >> "$LOG_FILE" 2>&1
+  EXIT_CODE=$?
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⏹ naver-monitor 종료 (5초 후 재시작...)"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⏹ naver-monitor 종료 (exit: $EXIT_CODE, 5초 후 재시작...)" >> "$LOG_FILE"
+
+  # 최신 1000줄만 유지
+  if [ -f "$LOG_FILE" ]; then
+    tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+  fi
+
   sleep 5
 done
