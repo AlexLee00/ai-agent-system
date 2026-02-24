@@ -169,11 +169,11 @@
     "end": "19:00",
     "room": "A2",
     "detectedAt": "2026. 2. 24. PM 2:12:31",
-    "status": "processing",
-    "pickkoStatus": null,
+    "status": "completed",
+    "pickkoStatus": "manual",
     "pickkoOrderId": null,
     "errorReason": null,
-    "retries": 2,
+    "retries": 3,
     "pickkoStartTime": "2026. 2. 24. PM 2:45:08"
   },
   "seenIds": [
@@ -191,9 +191,11 @@
     "1165516568",
     "1165554227",
     "1165709094",
-    "1166062782"
+    "1166062782",
+    "1166286561"
   ],
   "cancelledSeenIds": [
-    "cancel|2026-02-24|11:00|12:00|A1|01036239910"
+    "cancel|2026-02-24|11:00|12:00|A1|01036239910",
+    "cancel|2026-02-28|15:00|19:00|A2|01030341710"
   ]
 }

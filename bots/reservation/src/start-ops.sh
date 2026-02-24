@@ -48,7 +48,7 @@ while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ▶ naver-monitor 시작"
 
   MODE=ops PICKKO_ENABLE=1 STRICT_TIME=1 NAVER_HEADLESS=1 \
-  TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=180000 \
+  TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
   OBSERVE_ONLY=0 \
   PICKKO_CANCEL_ENABLE=1 \
   node naver-monitor.js
