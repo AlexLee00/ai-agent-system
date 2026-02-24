@@ -6,7 +6,9 @@ function loadJson(file) {
 }
 
 function saveJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, file);
 }
 
 module.exports = { loadJson, saveJson };

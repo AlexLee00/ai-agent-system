@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * pickko-verify.js — pending/failed 예약 검증 스크립트
+ * pickko-verify.js — 미검증 예약 검증 스크립트
  *
  * 대상:
  *   1. reservation/naver-seen.json 의 pending/failed 항목
- *   2. ~/.openclaw/workspace/naver-seen.json 의 pending 항목 (구 OpenClaw 파일)
+ *   2. reservation/naver-seen.json 의 completed 이지만 pickkoStatus가 verified/manual 아닌 항목
+ *   3. ~/.openclaw/workspace/naver-seen.json 의 pending 항목 (구 OpenClaw 파일)
  *
  * 동작:
  *   - 픽코에서 전화번호+날짜 검색
- *   - 이미 등록됨  → completed/manual 처리
+ *   - 이미 등록됨  → completed/verified 처리
  *   - 미등록       → pickko-accurate.js 자동 실행
  *
  * 사용법:
@@ -41,17 +42,30 @@ const PROJ_SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.j
 const WS_SEEN_FILE   = path.join(WORKSPACE, 'naver-seen.json');
 
 // ──────────────────────────────────────────────
-// pending/failed 항목 수집
+// pending/failed/미검증completed 항목 수집
 // ──────────────────────────────────────────────
+
+// 픽코 검증이 필요한 항목인지 판별
+// - pending/failed: 아직 픽코 등록 여부 확인 전
+// - completed + pickkoStatus가 verified/manual 아닌 것(paid/auto 등): 등록은 됐지만 검증 미완
+function needsVerify(entry) {
+  if (entry.status === 'pending' || entry.status === 'failed') return true;
+  if (entry.status === 'completed') {
+    const ps = entry.pickkoStatus;
+    return ps !== 'verified' && ps !== 'manual';
+  }
+  return false;
+}
+
 function collectTargets() {
   const targets = [];
   const seen    = new Set(); // 중복 방지 (compositeKey 기준)
 
-  // 1. 프로젝트 파일 (pending / failed)
+  // 1. 프로젝트 파일
   const projData = loadJson(PROJ_SEEN_FILE);
   for (const [id, entry] of Object.entries(projData)) {
     if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
-    if (entry.status === 'pending' || entry.status === 'failed') {
+    if (needsVerify(entry)) {
       const ck = entry.compositeKey || id;
       if (!seen.has(ck)) {
         seen.add(ck);
@@ -214,7 +228,7 @@ async function main() {
   const targets = collectTargets();
 
   if (targets.length === 0) {
-    log('✅ 검증 대상 없음 (pending/failed 항목 없음)');
+    log('✅ 검증 대상 없음');
     return;
   }
 
