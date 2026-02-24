@@ -1,33 +1,67 @@
 #!/usr/bin/env node
 /**
- * speed-test.js - LLM API 속도 테스트 툴 (무료 모델만)
+ * speed-test.js - LLM API 속도 테스트 툴 (무료 모델)
  *
- * 대상:
- *   - Google Gemini (OAuth, 무료) → cloudcode-pa.googleapis.com
+ * 지원 프로바이더:
+ *   - Google Gemini (OAuth, 무료)  → cloudcode-pa.googleapis.com
  *   - Ollama (로컬, 무료)
+ *   - OpenAI  (데이터공유 무료)     → api.openai.com
+ *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
+ *   - Cerebras(영구 무료 티어)      → CEREBRAS_API_KEY
+ *   - SambaNova(영구 무료 티어)     → SAMBANOVA_API_KEY
+ *   - OpenRouter(무료 :free 모델)   → OPENROUTER_API_KEY
+ *
+ * 키 설정: ~/.openclaw/speed-test-keys.json
  *
  * 사용법:
  *   node scripts/speed-test.js              # 전체 테스트
- *   node scripts/speed-test.js --runs 3     # 반복 횟수 지정
+ *   node scripts/speed-test.js --runs=3     # 반복 횟수 지정
  *   node scripts/speed-test.js --apply      # 결과를 openclaw.json에 자동 반영
- *   node scripts/speed-test.js --model gemini-2.5-flash,gemini-2.5-pro  # 특정 모델만
+ *   node scripts/speed-test.js --model=gemini-2.5-flash,llama-3.3-70b-versatile
  */
 
-const fs   = require('fs');
-const path = require('path');
+const fs    = require('fs');
+const path  = require('path');
 const http  = require('http');
 const https = require('https');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
 const OPENCLAW_CONFIG      = path.join(process.env.HOME, '.openclaw/openclaw.json');
 const AUTH_PROFILES_FILE   = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
+const SPEED_TEST_KEYS_FILE = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
 const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_VERSION  = 'v1internal';
 const OLLAMA_BASE          = 'http://127.0.0.1:11434';
-const OPENAI_ENDPOINT      = 'https://api.openai.com';
 const TEST_PROMPT          = 'Reply with exactly one word: ok';
+
+// OpenAI-호환 프로바이더 엔드포인트
+const PROVIDER_ENDPOINTS = {
+  'openai':     'https://api.openai.com/v1',
+  'groq':       'https://api.groq.com/openai/v1',
+  'cerebras':   'https://api.cerebras.ai/v1',
+  'sambanova':  'https://api.sambanova.ai/v1',
+  'openrouter': 'https://openrouter.ai/api/v1',
+};
+
+// 프로바이더별 환경변수명
+const PROVIDER_ENV_KEYS = {
+  'groq':       'GROQ_API_KEY',
+  'cerebras':   'CEREBRAS_API_KEY',
+  'sambanova':  'SAMBANOVA_API_KEY',
+  'openrouter': 'OPENROUTER_API_KEY',
+};
+
+const PROVIDER_ICONS = {
+  'google-gemini-cli': '✨',
+  'openai':            '🤖',
+  'groq':              '⚡',
+  'cerebras':          '🧠',
+  'sambanova':         '🔥',
+  'openrouter':        '🔀',
+  'ollama':            '🦙',
+};
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
 const args     = process.argv.slice(2);
@@ -50,8 +84,12 @@ function loadModels() {
 
   const supported = Object.keys(allModels).filter(id =>
     id.startsWith('google-gemini-cli/') ||
-    id.startsWith('ollama/') ||
-    id.startsWith('openai/')
+    id.startsWith('ollama/')            ||
+    id.startsWith('openai/')            ||
+    id.startsWith('groq/')              ||
+    id.startsWith('cerebras/')          ||
+    id.startsWith('sambanova/')         ||
+    id.startsWith('openrouter/')
   );
 
   if (modelArg) {
@@ -61,12 +99,25 @@ function loadModels() {
   return supported;
 }
 
-// ─── OpenAI 키 로드 ────────────────────────────────────────────────────────
+// ─── API 키 로드 ───────────────────────────────────────────────────────────
+function loadSpeedTestKeys() {
+  try { return JSON.parse(fs.readFileSync(SPEED_TEST_KEYS_FILE, 'utf-8')); }
+  catch { return {}; }
+}
+
 function loadOpenAIKey() {
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile  = Object.values(profiles.profiles ?? {})
-    .find(p => p.provider === 'openai');
+  const profile  = Object.values(profiles.profiles ?? {}).find(p => p.provider === 'openai');
   return profile?.key ?? process.env.OPENAI_API_KEY ?? null;
+}
+
+function loadProviderKey(provider) {
+  if (provider === 'openai') return loadOpenAIKey();
+  const keys = loadSpeedTestKeys();
+  if (keys[provider]) return keys[provider];
+  const envVar = PROVIDER_ENV_KEYS[provider];
+  if (envVar && process.env[envVar]) return process.env[envVar];
+  return null;
 }
 
 // ─── Google OAuth 토큰 갱신 ───────────────────────────────────────────────
@@ -74,10 +125,8 @@ async function refreshGeminiToken() {
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
   const profile  = Object.values(profiles.profiles ?? {})
     .find(p => p.provider === 'google-gemini-cli' && p.type === 'oauth');
-
   if (!profile) throw new Error('Google OAuth 프로파일 없음');
 
-  // 만료 5분 전이면 갱신
   if (profile.access && profile.expires && Date.now() < profile.expires - 5 * 60 * 1000) {
     return profile.access;
   }
@@ -89,16 +138,13 @@ async function refreshGeminiToken() {
     client_secret: GEMINI_CLIENT_SECRET,
   }).toString();
 
-  const data = await httpPost('https://oauth2.googleapis.com/token', body, {
-    'Content-Type': 'application/x-www-form-urlencoded',
-  });
+  const data = await httpPost('https://oauth2.googleapis.com/token', body,
+    { 'Content-Type': 'application/x-www-form-urlencoded' });
 
   if (data.error) throw new Error(`토큰 갱신 실패: ${data.error_description ?? data.error}`);
 
-  // 갱신된 토큰 auth-profiles에 저장
-  const profileKey = Object.keys(profiles.profiles).find(k =>
-    profiles.profiles[k].provider === 'google-gemini-cli'
-  );
+  const profileKey = Object.keys(profiles.profiles)
+    .find(k => profiles.profiles[k].provider === 'google-gemini-cli');
   profiles.profiles[profileKey].access  = data.access_token;
   profiles.profiles[profileKey].expires = Date.now() + (data.expires_in ?? 3600) * 1000;
   if (data.refresh_token) profiles.profiles[profileKey].refresh = data.refresh_token;
@@ -128,7 +174,6 @@ function httpPost(url, body, headers = {}) {
   });
 }
 
-// 스트리밍: TTFT(첫 토큰 시간)와 총 소요 시간을 모두 측정
 function httpStream(url, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -147,7 +192,12 @@ function httpStream(url, body, headers = {}) {
         if (ttft === null) ttft = Date.now() - start;
         raw += chunk.toString();
       });
-      res.on('end', () => resolve({ ttft: ttft ?? Date.now() - start, total: Date.now() - start, raw }));
+      res.on('end', () => resolve({
+        ttft: ttft ?? Date.now() - start,
+        total: Date.now() - start,
+        raw,
+        status: res.statusCode,
+      }));
     });
     req.on('error', reject);
     req.write(bodyBuf);
@@ -155,56 +205,50 @@ function httpStream(url, body, headers = {}) {
   });
 }
 
-// ─── Gemini 테스트 (Cloud Code API) ────────────────────────────────────────
+// ─── Gemini 테스트 (Cloud Code API, SSE) ───────────────────────────────────
 async function testGemini(modelId, accessToken) {
-  // e.g. google-gemini-cli/gemini-2.5-flash → gemini-2.5-flash
-  const model   = modelId.split('/')[1];
-  const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile  = Object.values(profiles.profiles ?? {})
-    .find(p => p.provider === 'google-gemini-cli');
+  const model     = modelId.split('/')[1];  // google-gemini-cli/gemini-2.5-flash → gemini-2.5-flash
+  const profiles  = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
+  const profile   = Object.values(profiles.profiles ?? {}).find(p => p.provider === 'google-gemini-cli');
   const projectId = profile?.projectId ?? 'inspiring-shell-k4g6t';
 
-  const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_VERSION}/projects/${projectId}/locations/global:streamGenerateContent`;
-
+  // 올바른 URL: v1internal:streamGenerateContent?alt=sse (SSE 스트리밍)
+  const url  = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_VERSION}:streamGenerateContent?alt=sse`;
   const body = {
-    model: `models/${model}`,
+    model:   model,   // "gemini-2.5-flash" (models/ 접두사 없음)
+    project: projectId,
     request: {
       contents: [{ role: 'user', parts: [{ text: TEST_PROMPT }] }],
       generationConfig: { maxOutputTokens: 20 },
     },
   };
 
-  const { ttft, total, raw } = await httpStream(url, body, {
+  const { ttft, total, raw, status } = await httpStream(url, body, {
     'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
+    'Content-Type':  'application/json',
   });
 
-  // 응답 확인
-  let text = '';
-  try {
-    // 스트리밍 응답은 여러 JSON 청크
-    const chunks = raw.replace(/^\[|\]$/g, '').split(/\}\s*,\s*\{/).map((c, i, a) => {
-      if (i === 0) return c + '}';
-      if (i === a.length - 1) return '{' + c;
-      return '{' + c + '}';
-    });
-    for (const c of chunks) {
-      try {
-        const d = JSON.parse(c);
-        const t = d?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-        text += t;
-      } catch {}
-    }
-  } catch {}
+  if (status >= 400) {
+    let msg = '';
+    try { msg = JSON.parse(raw)?.error?.message || raw.slice(0, 60); } catch {}
+    throw new Error(`HTTP ${status}: ${msg}`);
+  }
 
-  return { ttft, total, ok: text.length > 0 || raw.includes('text'), text: text.trim().slice(0, 30) };
+  // SSE 파싱: data: {"response": {"candidates": [...]}}
+  let text = '';
+  for (const line of raw.split('\n').filter(l => l.startsWith('data: '))) {
+    try {
+      const d = JSON.parse(line.slice(6));
+      text += d?.response?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    } catch {}
+  }
+
+  return { ttft, total, ok: text.length > 0 || raw.includes('"text"'), text: text.trim().slice(0, 30) };
 }
 
 // ─── Ollama 테스트 ─────────────────────────────────────────────────────────
 async function testOllama(modelId) {
-  const model = modelId.split('/')[1];  // ollama/qwen2.5:7b → qwen2.5:7b
-  const url   = `${OLLAMA_BASE}/api/generate`;
-
+  const model = modelId.split('/')[1];
   const start = Date.now();
   let ttft    = null;
 
@@ -218,18 +262,15 @@ async function testOllama(modelId) {
       res.on('data', chunk => {
         if (ttft === null) ttft = Date.now() - start;
         try {
-          const lines = chunk.toString().trim().split('\n');
-          for (const line of lines) {
+          for (const line of chunk.toString().trim().split('\n')) {
             const d = JSON.parse(line);
             if (d.response) text += d.response;
           }
         } catch {}
       });
       res.on('end', () => resolve({
-        ttft: ttft ?? Date.now() - start,
-        total: Date.now() - start,
-        ok: text.length > 0,
-        text: text.trim().slice(0, 30),
+        ttft: ttft ?? Date.now() - start, total: Date.now() - start,
+        ok: text.length > 0, text: text.trim().slice(0, 30),
       }));
     });
     req.on('error', reject);
@@ -238,53 +279,64 @@ async function testOllama(modelId) {
   });
 }
 
-// ─── OpenAI 테스트 ─────────────────────────────────────────────────────────
-async function testOpenAI(modelId, apiKey) {
-  const model = modelId.split('/')[1];  // openai/gpt-4o-mini → gpt-4o-mini
-  const url   = `${OPENAI_ENDPOINT}/v1/chat/completions`;
+// ─── OpenAI 호환 테스트 (OpenAI / Groq / Cerebras / SambaNova / OpenRouter) ─
+async function testOpenAICompat(provider, modelId, apiKey) {
+  const endpoint = PROVIDER_ENDPOINTS[provider];
+  if (!endpoint) throw new Error(`알 수 없는 프로바이더: ${provider}`);
 
-  const body = {
-    model,
-    messages: [{ role: 'user', content: TEST_PROMPT }],
-    max_tokens: 10,
-    stream: true,
-  };
-
-  const { ttft, total, raw } = await httpStream(url, body, {
+  const model   = modelId.split('/').slice(1).join('/');
+  const url     = `${endpoint}/chat/completions`;
+  const headers = {
     'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  });
+    'Content-Type':  'application/json',
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://github.com/ai-agent-system';
+    headers['X-Title']      = 'openclaw-speed-test';
+  }
 
-  // SSE 파싱: data: {...}\n\ndata: {...}
+  const { ttft, total, raw, status } = await httpStream(url, {
+    model,
+    messages:   [{ role: 'user', content: TEST_PROMPT }],
+    max_tokens: 10,
+    stream:     true,
+  }, headers);
+
+  if (status >= 400) {
+    let msg = '';
+    try { msg = JSON.parse(raw)?.error?.message || JSON.parse(raw)?.message || raw.slice(0, 80); }
+    catch { msg = raw.slice(0, 80); }
+    throw new Error(`HTTP ${status}: ${msg}`);
+  }
+
+  // SSE 파싱
   let text = '';
-  const lines = raw.split('\n').filter(l => l.startsWith('data: ') && !l.includes('[DONE]'));
-  for (const line of lines) {
-    try {
-      const d = JSON.parse(line.slice(6));
-      text += d?.choices?.[0]?.delta?.content ?? '';
-    } catch {}
+  for (const line of raw.split('\n').filter(l => l.startsWith('data: ') && !l.includes('[DONE]'))) {
+    try { text += JSON.parse(line.slice(6))?.choices?.[0]?.delta?.content ?? ''; } catch {}
   }
 
   return { ttft, total, ok: text.length > 0 || raw.includes('content'), text: text.trim().slice(0, 30) };
 }
 
-// ─── 단일 모델 테스트 (runs 횟수 평균) ────────────────────────────────────
-async function benchmarkModel(modelId, accessToken, openAIKey) {
-  const isGemini = modelId.startsWith('google-gemini-cli/');
-  const isOpenAI = modelId.startsWith('openai/');
-  const shortId  = modelId.replace('google-gemini-cli/', '').replace('ollama/', '🦙 ').replace('openai/', '🤖 ');
-  const label    = isGemini ? `✨ ${shortId}` : shortId;
+// ─── 단일 모델 벤치마크 ────────────────────────────────────────────────────
+const OPENAI_COMPAT_PROVIDERS = new Set(['openai', 'groq', 'cerebras', 'sambanova', 'openrouter']);
 
-  process.stdout.write(`  ${label.padEnd(30)} `);
+async function benchmarkModel(modelId, ctx) {
+  const provider = modelId.split('/')[0];
+  const icon     = PROVIDER_ICONS[provider] || '❓';
+  const shortId  = modelId.split('/').slice(1).join('/');
+  const label    = `${icon} ${shortId}`;
+
+  process.stdout.write(`  ${label.padEnd(34)} `);
 
   const results = [];
   for (let i = 0; i < runsArg; i++) {
     try {
-      const r = isGemini
-        ? await testGemini(modelId, accessToken)
-        : isOpenAI
-          ? await testOpenAI(modelId, openAIKey)
-          : await testOllama(modelId);
+      let r;
+      if (provider === 'google-gemini-cli')        r = await testGemini(modelId, ctx.geminiToken);
+      else if (provider === 'ollama')               r = await testOllama(modelId);
+      else if (OPENAI_COMPAT_PROVIDERS.has(provider)) r = await testOpenAICompat(provider, modelId, ctx.keys[provider]);
+      else throw new Error('미지원 프로바이더');
       results.push(r);
       process.stdout.write(dim('.'));
     } catch (e) {
@@ -296,33 +348,32 @@ async function benchmarkModel(modelId, accessToken, openAIKey) {
 
   const valid = results.filter(r => r.ttft !== null && r.ok);
   if (valid.length === 0) {
-    return { modelId, label, ttft: null, total: null, ok: false, error: results[0]?.error, isOpenAI };
+    return { modelId, label, provider, ttft: null, total: null, ok: false, error: results[0]?.error };
   }
 
   const avgTTFT  = Math.round(valid.reduce((s, r) => s + r.ttft,  0) / valid.length);
   const avgTotal = Math.round(valid.reduce((s, r) => s + r.total, 0) / valid.length);
-  return { modelId, label, ttft: avgTTFT, total: avgTotal, ok: true, sample: valid[0]?.text, isOpenAI };
+  return { modelId, label, provider, ttft: avgTTFT, total: avgTotal, ok: true, sample: valid[0]?.text };
 }
 
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────
 function applyFastest(results) {
   const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
+
   // primary는 Gemini(무료 OAuth)만 대상
-  const valid = results.filter(r => r.ok && r.modelId.startsWith('google-gemini-cli/'));
-  if (valid.length === 0) { log('\n⚠️  적용할 Gemini 모델 결과 없음'); return; }
+  const geminiValid = results.filter(r => r.ok && r.provider === 'google-gemini-cli');
+  if (geminiValid.length === 0) { log('\n⚠️  적용할 Gemini 모델 결과 없음'); return; }
 
-  const fastest = valid[0];  // 이미 정렬됨
-  cfg.agents.defaults.model.primary = fastest.modelId;
+  cfg.agents.defaults.model.primary = geminiValid[0].modelId;
 
-  // fallback: Gemini 나머지 → Ollama 순 (OpenAI는 fallback에만 포함, 유료이므로 맨 뒤)
-  const geminiModels    = valid.map(r => r.modelId);
-  const ollamaFallbacks = results.filter(r => r.ok && r.modelId.startsWith('ollama/')).map(r => r.modelId);
-  const openAIFallbacks = results.filter(r => r.ok && r.modelId.startsWith('openai/')).map(r => r.modelId);
-  cfg.agents.defaults.model.fallbacks = [...geminiModels.slice(1), ...ollamaFallbacks, ...openAIFallbacks];
+  const geminiRest  = geminiValid.slice(1).map(r => r.modelId);
+  const ollamaList  = results.filter(r => r.ok && r.provider === 'ollama').map(r => r.modelId);
+  const otherList   = results.filter(r => r.ok && !['google-gemini-cli','ollama'].includes(r.provider)).map(r => r.modelId);
+  cfg.agents.defaults.model.fallbacks = [...geminiRest, ...ollamaList, ...otherList];
 
   fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\n');
   log(`\n✅ openclaw.json 업데이트 완료`);
-  log(`   primary: ${fastest.modelId}`);
+  log(`   primary:   ${geminiValid[0].modelId}`);
   log(`   fallbacks: ${cfg.agents.defaults.model.fallbacks.join(', ')}`);
 }
 
@@ -332,63 +383,62 @@ async function main() {
   log(dim(`   프롬프트: "${TEST_PROMPT}"`));
   log(dim(`   반복: ${runsArg}회 평균\n`));
 
-  // 모델 목록
   const models = loadModels();
   if (models.length === 0) { log(red('테스트할 모델 없음')); process.exit(1); }
 
-  // Google OAuth 토큰 갱신
-  let accessToken = null;
-  const hasGemini = models.some(m => m.startsWith('google-gemini-cli/'));
-  if (hasGemini) {
+  const ctx = { geminiToken: null, keys: {} };
+
+  // Google Gemini OAuth
+  if (models.some(m => m.startsWith('google-gemini-cli/'))) {
     try {
-      process.stdout.write('🔑 Google OAuth 토큰 갱신 중...');
-      accessToken = await refreshGeminiToken();
+      process.stdout.write('🔑 google-gemini-cli OAuth 갱신...');
+      ctx.geminiToken = await refreshGeminiToken();
       log(green(' ✅'));
     } catch (e) {
       log(red(` ❌ ${e.message}`));
-      log(dim('   Gemini 모델은 스킵합니다'));
     }
   }
 
-  // OpenAI 키 로드
-  let openAIKey = null;
-  const hasOpenAI = models.some(m => m.startsWith('openai/'));
-  if (hasOpenAI) {
-    try {
-      openAIKey = loadOpenAIKey();
-      if (openAIKey) log(`🔑 OpenAI API 키 로드 ${green('✅')}`);
-      else log(yellow('⚠️  OpenAI API 키 없음 — OpenAI 모델 스킵'));
-    } catch (e) {
-      log(yellow(`⚠️  OpenAI 키 로드 실패: ${e.message} — 스킵`));
+  // OpenAI-호환 프로바이더 키 로드
+  for (const provider of Object.keys(PROVIDER_ENDPOINTS)) {
+    if (!models.some(m => m.startsWith(`${provider}/`))) continue;
+    const key = loadProviderKey(provider);
+    if (key) {
+      ctx.keys[provider] = key;
+      log(`🔑 ${provider.padEnd(14)} API 키 ${green('✅')}`);
+    } else {
+      log(`${yellow('⚠️')}  ${provider.padEnd(14)} API 키 없음 — ${dim('~/.openclaw/speed-test-keys.json 에 추가')}`);
     }
   }
 
   // Ollama 상태 확인
-  const hasOllama = models.some(m => m.startsWith('ollama/'));
-  if (hasOllama) {
+  if (models.some(m => m.startsWith('ollama/'))) {
     try {
       await new Promise((res, rej) => {
-        const req = http.get(`${OLLAMA_BASE}/api/tags`, r => res());
+        const req = http.get(`${OLLAMA_BASE}/api/tags`, () => res());
         req.on('error', rej);
         req.setTimeout(2000, () => { req.destroy(); rej(new Error('timeout')); });
       });
+      log(`🔑 ${'ollama'.padEnd(14)} 로컬 서버 ${green('✅')}`);
     } catch {
-      log(yellow('⚠️  Ollama 응답 없음 — Ollama 모델 스킵'));
+      log(yellow('⚠️  ollama         응답 없음 — 스킵'));
     }
   }
 
-  log(dim(`${'모델'.padEnd(32)} ${'TTFT'.padStart(8)} ${'총시간'.padStart(8)}`));
-  log(dim('─'.repeat(52)));
+  log('');
+  log(dim(`${'모델'.padEnd(36)} ${'TTFT'.padStart(8)} ${'총시간'.padStart(8)}`));
+  log(dim('─'.repeat(56)));
 
   const results = [];
   for (const modelId of models) {
-    if (modelId.startsWith('google-gemini-cli/') && !accessToken) continue;
-    if (modelId.startsWith('openai/') && !openAIKey) continue;
-    const r = await benchmarkModel(modelId, accessToken, openAIKey);
+    const provider = modelId.split('/')[0];
+    if (provider === 'google-gemini-cli' && !ctx.geminiToken) continue;
+    if (OPENAI_COMPAT_PROVIDERS.has(provider) && !ctx.keys[provider]) continue;
+    const r = await benchmarkModel(modelId, ctx);
     results.push(r);
   }
 
-  // TTFT 기준 정렬 (실패는 마지막)
+  // TTFT 기준 정렬 (실패 마지막)
   results.sort((a, b) => {
     if (a.ttft === null && b.ttft === null) return 0;
     if (a.ttft === null) return 1;
@@ -396,36 +446,32 @@ async function main() {
     return a.ttft - b.ttft;
   });
 
-  // 결과 출력
   log('');
   log(bold('📊 결과 (TTFT 기준 정렬)'));
-  log(dim('─'.repeat(60)));
+  log(dim('─'.repeat(64)));
 
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     if (!r.ok) {
-      log(`  ${red('✗')} ${r.label.padEnd(30)} ${red('실패')}  ${dim(r.error?.slice(0,40) ?? '')}`);
+      log(`  ${red('✗')} ${r.label.padEnd(34)} ${red('실패')}  ${dim(r.error?.slice(0,50) ?? '')}`);
       continue;
     }
-    const rank   = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+    const rank     = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
     const ttftStr  = `${r.ttft}ms`.padStart(8);
     const totalStr = `${r.total}ms`.padStart(8);
-    const color  = i === 0 ? green : i < 3 ? yellow : (s => s);
-    log(`  ${rank} ${color(r.label.padEnd(30))} ${cyan(ttftStr)} ${dim(totalStr)}  ${dim(r.sample ?? '')}`);
+    const color    = i === 0 ? green : i < 3 ? yellow : (s => s);
+    log(`  ${rank} ${color(r.label.padEnd(34))} ${cyan(ttftStr)} ${dim(totalStr)}  ${dim(r.sample ?? '')}`);
   }
-  log(dim('─'.repeat(60)));
+  log(dim('─'.repeat(64)));
 
-  const current = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG,'utf-8'))?.agents?.defaults?.model?.primary;
+  const current = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'))?.agents?.defaults?.model?.primary;
   log(`\n  현재 primary: ${dim(current)}`);
 
   const fastest = results.find(r => r.ok);
   if (fastest && fastest.modelId !== current) {
-    log(`  최고 속도 모델: ${green(fastest.modelId)} (TTFT ${fastest.ttft}ms)`);
-    if (doApply) {
-      applyFastest(results);
-    } else {
-      log(dim(`\n  적용하려면: node scripts/speed-test.js --apply`));
-    }
+    log(`  최고 속도: ${green(fastest.modelId)} (TTFT ${fastest.ttft}ms)`);
+    if (doApply) applyFastest(results);
+    else log(dim(`\n  Gemini 기준 적용: node scripts/speed-test.js --apply`));
   } else if (fastest) {
     log(`  ${green('✅ 현재 모델이 가장 빠릅니다')}`);
   }
