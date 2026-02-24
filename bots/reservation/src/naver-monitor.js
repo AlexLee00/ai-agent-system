@@ -1154,8 +1154,10 @@ async function monitorBookings() {
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
                     seenSet.add(b._key);
-                    seen.seenIds = Array.from(seenSet).slice(-500);
-                    saveSeen(seen);
+                    // fresh load: updateBookingState가 저장한 entry 객체 보존
+                    const freshSeen = loadSeen();
+                    freshSeen.seenIds = Array.from(seenSet).slice(-500);
+                    saveSeen(freshSeen);
                   } else {
                     log(`⚠️ DEV 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                   }
@@ -1202,8 +1204,8 @@ async function monitorBookings() {
 
                 // ops에서는 재처리 방지를 위해 마킹
                 for (const b of observeFiltered) seenSet.add(b._key);
-                seen.seenIds = Array.from(seenSet).slice(-500);
-                saveSeen(seen);
+                // fresh load: updateBookingState가 저장한 entry 객체 보존
+                { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
 
                 await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
@@ -1215,13 +1217,13 @@ async function monitorBookings() {
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
                   seenSet.add(b._key);
-                  seen.seenIds = Array.from(seenSet).slice(-500);
-                  saveSeen(seen);
+                  // fresh load: updateBookingState가 저장한 entry 객체 보존
+                  { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
                   seenSet.add(b._key);
-                  seen.seenIds = Array.from(seenSet).slice(-500);
-                  saveSeen(seen);
+                  // fresh load: updateBookingState가 저장한 entry 객체 보존
+                  { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
                   log(`⛔ 최대 재시도 초과 → seenIds 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);

@@ -33,21 +33,6 @@ function getTodayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
-// 날짜 문자열에서 YYYY-MM-DD 추출
-function extractDate(str) {
-  if (!str) return '';
-  // YYYY-MM-DD
-  const m1 = str.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (m1) return m1[0];
-  // YYYY.MM.DD or YYYY. MM. DD
-  const m2 = str.match(/(\d{4})[.\s]+(\d{1,2})[.\s]+(\d{1,2})/);
-  if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
-  // YYYY년 MM월 DD일
-  const m3 = str.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
-  if (m3) return `${m3[1]}-${m3[2].padStart(2, '0')}-${m3[3].padStart(2, '0')}`;
-  return '';
-}
-
 // 시간 문자열 → HH:MM 정규화
 function normalizeTime(str) {
   if (!str) return '';

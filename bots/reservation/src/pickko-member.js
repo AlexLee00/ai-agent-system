@@ -16,7 +16,6 @@
  */
 
 const puppeteer = require('puppeteer');
-const path = require('path');
 const { parseArgs } = require('../lib/args');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
