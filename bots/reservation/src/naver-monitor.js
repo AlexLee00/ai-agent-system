@@ -1154,8 +1154,9 @@ async function monitorBookings() {
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
                     seenSet.add(b._key);
-                    // fresh load: updateBookingState가 저장한 entry 객체 보존
-                    const freshSeen = loadSeen();
+                    // 🛡️ 스냅샷 우선 사용 (타이밍 이슈 방어)
+                    const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen();
+                    _lastSeenDataSnapshot = null;
                     freshSeen.seenIds = Array.from(seenSet).slice(-500);
                     saveSeen(freshSeen);
                   } else {
@@ -1217,13 +1218,14 @@ async function monitorBookings() {
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
                   seenSet.add(b._key);
-                  // fresh load: updateBookingState가 저장한 entry 객체 보존
-                  { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
+                  // 🛡️ 스냅샷 우선: updateBookingState가 방금 저장한 seenData를 직접 사용
+                  // (loadSeen()이 간헐적으로 직전 저장본을 읽지 못하는 타이밍 이슈 방어)
+                  { const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen(); _lastSeenDataSnapshot = null; freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
                   seenSet.add(b._key);
                   // fresh load: updateBookingState가 저장한 entry 객체 보존
-                  { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
+                  { _lastSeenDataSnapshot = null; const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
                   log(`⛔ 최대 재시도 초과 → seenIds 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
@@ -1464,6 +1466,10 @@ async function ragSaveReservation(booking, status = '신규') {
 // ======================== Pickko 연동 ========================
 const SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');  // OPS/DEV 데이터 격리
 
+// 🛡️ updateBookingState가 저장한 seenData 스냅샷 (타이밍 이슈 방어)
+// loadSeen()이 간헐적으로 직전 저장본을 읽지 못하는 현상 대비
+let _lastSeenDataSnapshot = null;
+
 // 📁 naver-seen.json 형식 개선 (상태 추적)
 function loadSeen() {
   try {
@@ -1530,6 +1536,7 @@ function updateBookingState(bookingId, booking, state = 'pending') {
     }
     
     saveSeen(seenData);
+    _lastSeenDataSnapshot = seenData; // 🛡️ freshSeen 타이밍 이슈 방어용 캐시
     return seenData[bookingId];
   } catch (err) {
     log(`❌ updateBookingState 실패: ${err.message}`);
