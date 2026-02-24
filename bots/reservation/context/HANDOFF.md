@@ -1,5 +1,6 @@
 # 스카 (Ska) - 최신 인수인계
 
+> **스카** = 스터디카페 예약관리봇 | **클로드** = Claude Code (AI 개발 파트너)
 > 이 파일은 모델 교체/재시작 시 가장 최근 상태를 빠르게 파악하기 위한 인수인계 문서입니다.
 > 새로운 작업이 완료될 때마다 업데이트하세요.
 
@@ -10,9 +11,30 @@
 | 항목 | 내용 |
 |------|------|
 | 모드 | OPS (운영) |
-| 모델 | google-gemini-cli/gemini-2.0-flash |
+| 모델 | google-gemini-cli/gemini-2.5-flash |
 | 채널 | 텔레그램 (@SCAFE8282_BOT) |
 | 모니터 | 자동 재시작 루프 (2시간 주기) |
+
+## 최근 완료 작업 (2026-02-24 오후)
+
+- ✅ **모델 교체** — gemini-2.0-flash(deprecated) → `gemini-2.5-flash`
+  - OpenClaw primary 모델 변경 + 게이트웨이 재시작 완료
+  - Fallback: gemini-2.5-pro → claude-haiku-4-5 → qwen2.5:7b 순
+
+## 최근 완료 작업 (2026-02-24 낮)
+
+- ✅ **야간 알림 차단** — `sendAlert()` 09:00~22:00 외 텔레그램 발송 차단
+  - 야간: `.pickko-alerts.jsonl`에 `sent: false`로 파일에만 기록
+  - `flushPendingAlerts()` 신규 — 09:00 첫 Heartbeat 시 보류 알림 일괄 발송
+  - `morningFlushDone` 플래그 — 당일 1회만 실행
+- ✅ **클로드↔봇 전달 채널 구축** — `CLAUDE_NOTES.md` 시스템
+  - `context/CLAUDE_NOTES.md` 신규 생성 (클로드→스카 전용 채널 파일)
+  - `registry.json` — openclaw 배포 파일 목록에 추가
+  - BOOT.md 자동 재생성 (5. `CLAUDE_NOTES.md` 추가)
+- ✅ **클로드 부팅 참조 시스템** — `SYSTEM_STATUS.md` 자동 생성
+  - `deploy-context.js` — `updateSystemStatus()` 함수 추가
+  - 봇 배포 시마다 모든 봇 상태·로그인방식·배포이력 자동 갱신
+- ✅ **역할 정의 메모리 등록** — 클로드/스카 명칭 전체 문서에 기록
 
 ## 최근 완료 작업 (2026-02-24 오전)
 

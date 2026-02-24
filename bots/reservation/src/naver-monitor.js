@@ -39,6 +39,7 @@ let lastHeartbeatTime = 0;
 // 일일 마감 요약 통계
 let dailyStats          = { date: '', detected: 0, completed: 0, cancelled: 0, failed: 0 };
 let lastDailyReportDate = '';
+let morningFlushDone   = false; // 당일 야간 미발송 알림 오전 일괄 처리 여부
 const MAX_RETRIES = 5; // 최대 재시도 횟수 (초과 시 수동 처리 알람 후 건너뜀)
 
 // ✅ 데이터 검증은 lib/validation.js에서 import함
@@ -436,6 +437,49 @@ function cleanupExpiredSeen() {
   }
 }
 
+// 야간 보류 알림 오전 일괄 발송 (sent: false → 요약 후 전송)
+function flushPendingAlerts() {
+  try {
+    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
+    if (!fs.existsSync(alertsFile)) return;
+
+    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
+    const unsent = [];
+    lines.forEach(l => {
+      try {
+        const a = JSON.parse(l);
+        if (a.sent === false) unsent.push(a);
+      } catch (e) { /* skip */ }
+    });
+
+    if (unsent.length === 0) return;
+
+    // 요약 메시지 생성
+    let summary = `🌅 야간 보류 알림 ${unsent.length}건\n\n`;
+    for (const a of unsent) {
+      const ts = new Date(a.timestamp).toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+      summary += `• [${ts}] ${a.title}\n`;
+    }
+    sendTelegramDirect(summary);
+    log(`🌅 야간 보류 알림 ${unsent.length}건 일괄 발송 완료`);
+
+    // sent: false → true 업데이트
+    const sentAt = new Date().toISOString();
+    const updated = lines.map(l => {
+      try {
+        const a = JSON.parse(l);
+        if (a.sent === false) { a.sent = true; a.sentAt = sentAt; return JSON.stringify(a); }
+        return l;
+      } catch (e) { return l; }
+    });
+    fs.writeFileSync(alertsFile, updated.join('\n') + '\n');
+  } catch (err) {
+    log(`⚠️ 야간 보류 알림 flush 실패: ${err.message}`);
+  }
+}
+
 // 48시간 이상 된 알람 자동 삭제
 function cleanupOldAlerts() {
   try {
@@ -536,30 +580,39 @@ async function sendAlert(options) {
     // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러)
     if ((type === 'new' || type === 'completed' || type === 'cancelled' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
-        // 1️⃣ 이력 파일에 저장
+        // 🕘 발송 시간 체크 (09:00~22:00만 즉시 발송)
+        const nowHour = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
+        const inAlertWindow = nowHour >= 9 && nowHour < 22;
+
+        // 1️⃣ 이력 파일에 저장 (sent 필드로 발송 여부 명시)
         const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
         const alertEntry = JSON.stringify({
           timestamp: new Date().toISOString(),
           type,
           title,
           message,
-          sentAt: new Date().toISOString()
+          sent: inAlertWindow,
+          sentAt: inAlertWindow ? new Date().toISOString() : null
         });
         fs.appendFileSync(alertsFile, alertEntry + '\n');
-        log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
+        log(`💾 [알람 저장] ${type.toUpperCase()} - ${title} (${inAlertWindow ? '즉시발송' : '야간보류'})`);
 
-        // 2️⃣ 스카봇 → 텔레그램 발송 (백그라운드)
-        const CHAT_ID = '***REMOVED***';
-        const telegramMsg = `🔔 픽코 알람\n\n${message}`;
-        const child = spawn('openclaw', [
-          'agent',
-          '--message', telegramMsg,
-          '--channel', 'telegram',
-          '--deliver',
-          '--to', CHAT_ID
-        ], { stdio: 'ignore', detached: true });
-        child.unref();
-        log(`📱 [텔레그램] 스카봇 발송 요청 (백그라운드)`);
+        if (inAlertWindow) {
+          // 2️⃣ 스카봇 → 텔레그램 발송 (백그라운드)
+          const CHAT_ID = '***REMOVED***';
+          const telegramMsg = `🔔 픽코 알람\n\n${message}`;
+          const child = spawn('openclaw', [
+            'agent',
+            '--message', telegramMsg,
+            '--channel', 'telegram',
+            '--deliver',
+            '--to', CHAT_ID
+          ], { stdio: 'ignore', detached: true });
+          child.unref();
+          log(`📱 [텔레그램] 스카봇 발송 요청 (백그라운드)`);
+        } else {
+          log(`🌙 [야간 보류] 09:00 이후 일괄 발송 예정 (현재 ${nowHour}시)`);
+        }
 
         // 3️⃣ 48시간 정책 실행
         cleanupOldAlerts();
@@ -1151,7 +1204,16 @@ async function monitorBookings() {
             sendTelegramDirect(hMsg);
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
             lastHeartbeatTime = Date.now();
+
+            // 🌅 야간 보류 알림 오전 일괄 발송 (당일 1회)
+            if (!morningFlushDone) {
+              flushPendingAlerts();
+              morningFlushDone = true;
+            }
           }
+
+          // 야간 진입 시 다음 날 morningFlush 초기화
+          if (hHour >= 22 || hHour < 9) morningFlushDone = false;
 
           // ✅ 일일 마감 요약 (22:00 이후, 하루 1회)
           const hDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });

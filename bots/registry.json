@@ -8,8 +8,8 @@
       "status": "ops",
       "contextPath": "bots/reservation/context",
       "model": {
-        "primary": "google-gemini-cli/gemini-2.0-flash",
-        "fallbacks": ["anthropic/claude-haiku-4-5", "ollama/qwen2.5:7b"]
+        "primary": "google-gemini-cli/gemini-2.5-flash",
+        "fallbacks": ["google-gemini-cli/gemini-3-pro-preview", "anthropic/claude-haiku-4-5", "ollama/qwen2.5:7b"]
       },
       "deployTargets": [
         {
@@ -17,7 +17,7 @@
           "loginType": "api",
           "workspace": "~/.openclaw/workspace",
           "bootFile": "BOOT.md",
-          "files": ["IDENTITY.md", "MEMORY.md", "DEV_SUMMARY.md", "HANDOFF.md"]
+          "files": ["IDENTITY.md", "MEMORY.md", "DEV_SUMMARY.md", "HANDOFF.md", "CLAUDE_NOTES.md"]
         },
         {
           "type": "claude-code",

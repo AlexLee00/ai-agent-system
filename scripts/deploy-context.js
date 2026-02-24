@@ -161,6 +161,77 @@ ${sectionEnd}`;
   fs.writeFileSync(memoryPath, content);
 }
 
+// ─── 시스템 현황 자동 업데이트 (클로드 부팅 참조용) ──────────────────────
+function updateSystemStatus(deployedBotId, registry) {
+  // claude-code 타겟이 있는 봇에서 워크스페이스 경로 추출
+  let claudeWorkspace = null;
+  for (const bot of Object.values(registry.bots)) {
+    const t = bot.deployTargets.find(t => t.type === 'claude-code');
+    if (t) { claudeWorkspace = expandHome(t.workspace); break; }
+  }
+  if (!claudeWorkspace) return;
+
+  const statusFile = path.join(claudeWorkspace, 'SYSTEM_STATUS.md');
+  const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  // 기존 배포 이력 보존
+  let history = [];
+  if (fs.existsSync(statusFile)) {
+    const existing = fs.readFileSync(statusFile, 'utf-8');
+    const m = existing.match(/<!-- history-start -->([\s\S]*?)<!-- history-end -->/);
+    if (m) history = m[1].trim().split('\n').filter(l => l.trim());
+  }
+  const deployed = registry.bots[deployedBotId];
+  const targets = deployed.deployTargets.map(t => t.type).join('+') || '-';
+  history.unshift(`- ${now} — **${deployedBotId}** (${deployed.name}) [${targets}]`);
+  if (history.length > 10) history = history.slice(0, 10);
+
+  // 봇 현황 테이블
+  const emoji = { ops: '✅', dev: '🔧', planned: '⏳' };
+  const rows = Object.entries(registry.bots).map(([id, b]) => {
+    const oc = b.deployTargets.find(t => t.type === 'openclaw');
+    const loginType = oc ? `${oc.type}/${oc.loginType}` : (b.deployTargets[0]?.type || '-');
+    return `| ${emoji[b.status] || '❓'} | \`${id}\` | ${b.name} | ${b.model?.primary || '-'} | ${loginType} |`;
+  }).join('\n');
+
+  const content = `# 시스템 현황 — 클로드 부팅 참조
+
+> \`deploy-context.js\` 실행 시 자동 업데이트. 직접 수정 금지.
+> 마지막 업데이트: ${now}
+
+---
+
+## 봇 배포 현황
+
+| 상태 | 봇ID | 이름 | 모델 | 로그인 방식 |
+|------|------|------|------|------------|
+${rows}
+
+---
+
+## 최근 배포 이력 (최신 10건)
+
+<!-- history-start -->
+${history.join('\n')}
+<!-- history-end -->
+
+---
+
+## 클로드 주요 경로
+
+| 항목 | 경로 |
+|------|------|
+| 봇 컨텍스트 | \`~/projects/ai-agent-system/bots/<봇ID>/context/\` |
+| 배포 명령 | \`node scripts/deploy-context.js --bot=<봇ID>\` |
+| 스카 OPS 로그 | \`/tmp/naver-ops-mode.log\` |
+| OpenClaw 워크스페이스 | \`~/.openclaw/workspace/\` |
+| 클로드 메모리 | \`~/.claude/projects/-Users-alexlee/memory/\` |
+`;
+
+  fs.writeFileSync(statusFile, content);
+  log(`  📊 SYSTEM_STATUS.md 업데이트`);
+}
+
 // ─── 배포 진입점 ──────────────────────────────────────────────────────────
 function deployBot(botId, registry, targetTypeFilter = null) {
   const bot = registry.bots[botId];
@@ -195,6 +266,7 @@ function deployBot(botId, registry, targetTypeFilter = null) {
   }
 
   log(`\n  ✅ [${botId}] 배포 완료`);
+  updateSystemStatus(botId, registry);
   return true;
 }
 
