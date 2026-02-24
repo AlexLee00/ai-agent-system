@@ -821,7 +821,8 @@ async function monitorBookings() {
     // 모니터링 루프
     while (Date.now() - startTime < MONITOR_DURATION) {
       checkCount++;
-      
+      const cycleStart = Date.now();
+
       try {
         // 매 회차 작업 탭을 홈으로 유도
         await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -1082,7 +1083,7 @@ async function monitorBookings() {
               }
             }
             if (autoMarked > 0) {
-              seen.seenIds = Array.from(seenSet).slice(-500);
+              seen.seenIds = pruneSeenIds(Array.from(seenSet), seen);
               saveSeen(seen);
             }
 
@@ -1157,7 +1158,7 @@ async function monitorBookings() {
                     // 🛡️ 스냅샷 우선 사용 (타이밍 이슈 방어)
                     const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen();
                     _lastSeenDataSnapshot = null;
-                    freshSeen.seenIds = Array.from(seenSet).slice(-500);
+                    freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen);
                     saveSeen(freshSeen);
                   } else {
                     log(`⚠️ DEV 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
@@ -1206,7 +1207,7 @@ async function monitorBookings() {
                 // ops에서는 재처리 방지를 위해 마킹
                 for (const b of observeFiltered) seenSet.add(b._key);
                 // fresh load: updateBookingState가 저장한 entry 객체 보존
-                { const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
+                { const freshSeen = loadSeen(); freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
 
                 await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
@@ -1220,12 +1221,12 @@ async function monitorBookings() {
                   seenSet.add(b._key);
                   // 🛡️ 스냅샷 우선: updateBookingState가 방금 저장한 seenData를 직접 사용
                   // (loadSeen()이 간헐적으로 직전 저장본을 읽지 못하는 타이밍 이슈 방어)
-                  { const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen(); _lastSeenDataSnapshot = null; freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
+                  { const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen(); _lastSeenDataSnapshot = null; freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
                   seenSet.add(b._key);
                   // fresh load: updateBookingState가 저장한 entry 객체 보존
-                  { _lastSeenDataSnapshot = null; const freshSeen = loadSeen(); freshSeen.seenIds = Array.from(seenSet).slice(-500); saveSeen(freshSeen); }
+                  { _lastSeenDataSnapshot = null; const freshSeen = loadSeen(); freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
                   log(`⛔ 최대 재시도 초과 → seenIds 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
@@ -1360,14 +1361,16 @@ async function monitorBookings() {
           }
         }
 
-        // 다음 확인까지 대기
+        // 사이클 소요 시간 기반 대기 (타임아웃 누적으로 인한 주기 밀림 방지)
+        const cycleElapsed = Date.now() - cycleStart;
+        const sleepMs = Math.max(0, MONITOR_INTERVAL - cycleElapsed);
         const remainingTime = Math.max(0, MONITOR_DURATION - (Date.now() - startTime));
         const remainingMinutes = Math.floor(remainingTime / 60000);
-        
-        const nextSec = Math.floor(MONITOR_INTERVAL / 1000);
-        log(`⏳ 다음 확인: ${nextSec}초 후 (남은 시간: ${remainingMinutes}분)`);
-        
-        await new Promise(resolve => setTimeout(resolve, MONITOR_INTERVAL));
+
+        const nextSec = Math.floor(sleepMs / 1000);
+        log(`⏳ 다음 확인: ${nextSec}초 후 (사이클 소요: ${Math.floor(cycleElapsed / 1000)}초, 남은 시간: ${remainingMinutes}분)`);
+
+        await new Promise(resolve => setTimeout(resolve, sleepMs));
         
       } catch (err) {
         log(`❌ 루프 오류: ${err.message}`);
@@ -1377,6 +1380,7 @@ async function monitorBookings() {
           detachRetryCount++;
           if (detachRetryCount >= 3) {
             log(`🛑 detached 오류 ${detachRetryCount}회 누적 → start-ops.sh 재시작 위임`);
+            rollbackProcessingEntries();
             process.exit(1);
           }
           log(`⚠️ detached 오류 (${detachRetryCount}/3) → 페이지 재생성 후 재시도`);
@@ -1387,11 +1391,13 @@ async function monitorBookings() {
             const reloggedIn = await naverLogin(page);
             if (!reloggedIn) {
               log('❌ 재로그인 실패 → 재시작 위임');
+              rollbackProcessingEntries();
               process.exit(1);
             }
             log('✅ 페이지 재생성 + 재로그인 완료 → 모니터링 계속');
           } catch (recreateErr) {
             log(`❌ 페이지 재생성 실패: ${recreateErr.message} → 재시작 위임`);
+            rollbackProcessingEntries();
             process.exit(1);
           }
           continue;
@@ -1483,12 +1489,49 @@ function loadSeen() {
 function saveSeen(obj) {
   try {
     const json = JSON.stringify(obj, null, 2);
-    fs.writeFileSync(SEEN_FILE, json, 'utf-8');
+    const tmp = SEEN_FILE + '.tmp';
+    fs.writeFileSync(tmp, json, 'utf-8');
+    fs.renameSync(tmp, SEEN_FILE);
     const count = Object.keys(obj).length;
     log(`💾 [저장] naver-seen.json 업데이트 (총 ${count}건)`);
   } catch (err) {
     log(`❌ [저장 실패] naver-seen.json: ${err.message}`);
   }
+}
+
+// 🛡️ process.exit 전 processing 상태 항목을 failed로 롤백
+function rollbackProcessingEntries() {
+  try {
+    const data = loadSeen();
+    let changed = 0;
+    for (const [id, entry] of Object.entries(data)) {
+      if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
+      if (entry && entry.status === 'processing') {
+        entry.status = 'failed';
+        entry.errorReason = '프로세스 강제 종료 (rollback)';
+        changed++;
+      }
+    }
+    if (changed > 0) {
+      saveSeen(data);
+      log(`🔄 [롤백] processing → failed 전환 ${changed}건`);
+    }
+  } catch (e) {
+    log(`⚠️ [롤백 실패] ${e.message}`);
+  }
+}
+
+// 날짜 기준 만료 seenId 정리 (cutoffDays일 이상 지난 예약 ID 제거)
+// 엔트리가 없거나 날짜가 없는 ID는 안전하게 유지
+function pruneSeenIds(ids, seenData, cutoffDays = 90) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - cutoffDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return ids.filter(id => {
+    const entry = seenData[id];
+    if (!entry || !entry.date) return true;
+    return entry.date >= cutoffStr;
+  });
 }
 
 // 🔐 신규 예약 감지 및 상태 저장
@@ -1900,6 +1943,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 // 실행
 monitorBookings().catch(err => {
   log(`❌ 예상치 못한 오류: ${err.message}`);
+  rollbackProcessingEntries();
   process.exit(1);
 });
 

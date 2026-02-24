@@ -167,6 +167,7 @@ function markCompleted(source, id, entry) {
   const projData = loadJson(PROJ_SEEN_FILE);
   projData[id] = {
     compositeKey:    entry.compositeKey || `${(entry.phoneRaw||entry.phone||'').replace(/\D/g,'')}`,
+    name:            entry.name || entry.raw?.name || null,
     phone:           entry.phone,
     phoneRaw:        entry.phoneRaw || (entry.phone||'').replace(/\D/g,''),
     date:            entry.date,

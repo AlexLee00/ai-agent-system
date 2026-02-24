@@ -1,7 +1,7 @@
 # DEV_SUMMARY.md - 스카봇 개발 현황 요약
 
 > **목적:** 모델 교체 후 빠른 컨텍스트 복원용. BOOT.md가 자동으로 읽음.
-> **최종 업데이트:** 2026-02-23
+> **최종 업데이트:** 2026-02-25
 
 ---
 
@@ -37,18 +37,22 @@
 | 파일 | 역할 | 상태 |
 |------|------|------|
 | `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
-| `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] | ✅ 완성 |
+| `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] (슬롯 3회 재시도) | ✅ 완성 |
 | `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 |
-| `src/pickko-verify.js` | pending/failed 예약 재검증 + 자동 등록 | ✅ 완성 |
-| `src/start-ops.sh` | OPS 자동 재시작 루프 | ✅ PICKKO_CANCEL_ENABLE=1 |
-| `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 추가 |
-| `lib/utils.js` | delay, log (공통 유틸) | ✅ 신규 |
-| `lib/secrets.js` | loadSecrets() | ✅ 신규 |
-| `lib/formatting.js` | toKoreanTime, pickkoEndTime, formatPhone | ✅ 신규 |
-| `lib/files.js` | loadJson, saveJson | ✅ 신규 |
-| `lib/args.js` | parseArgs() | ✅ 신규 |
-| `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ 신규 |
-| `lib/pickko.js` | loginToPickko() | ✅ 신규 |
+| `src/pickko-verify.js` | 미검증 예약 재검증 + 자동 등록 (needsVerify) | ✅ 완성 |
+| `src/pickko-daily-audit.js` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 신규 |
+| `src/pickko-register.js` | 자연어 예약 등록 CLI (stdout JSON) | ✅ 신규 |
+| `src/pickko-member.js` | 신규 회원 가입 CLI (stdout JSON) | ✅ 신규 |
+| `src/start-ops.sh` | OPS 자동 재시작 루프 + 로그 관리 (1000줄 로테이션) | ✅ 업데이트 |
+| `src/run-audit.sh` | pickko-daily-audit 실행 래퍼 (lock + 로테이션) | ✅ 신규 |
+| `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 |
+| `lib/utils.js` | delay, log (공통 유틸) | ✅ |
+| `lib/secrets.js` | loadSecrets() | ✅ |
+| `lib/formatting.js` | toKoreanTime, pickkoEndTime, formatPhone | ✅ |
+| `lib/files.js` | loadJson, saveJson (원자적 쓰기 tmp→rename) | ✅ 업데이트 |
+| `lib/args.js` | parseArgs() | ✅ |
+| `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
+| `lib/pickko.js` | loginToPickko() | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 | ✅ |
 | `.pickko-alerts.jsonl` | 알람 저장소 (48시간 자동 정리) | ✅ 운영 중 |
 
@@ -94,12 +98,10 @@ OPS 오류 발생 시: 자동 알람 → DEV 전환 → 재협의 (자체 해결
 **OPS 모드 시작 명령:**
 ```bash
 cd ~/projects/ai-agent-system/bots/reservation/src
-MODE=ops PICKKO_ENABLE=1 STRICT_TIME=1 NAVER_HEADLESS=1 \
-TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
-OBSERVE_ONLY=0 \
-node naver-monitor.js > /tmp/naver-ops-mode.log 2>&1 &
+nohup bash start-ops.sh > /dev/null 2>&1 &
+# 로그: /tmp/naver-ops-mode.log (start-ops.sh 내부에서 자동 리디렉션 + 1000줄 로테이션)
 ```
-> ⚠️ OBSERVE_ONLY=0 필수! 없으면 화이트리스트 번호만 처리되고 실제 고객 예약은 스킵됨
+> ⚠️ start-ops.sh 내부에서 환경변수 자동 설정 (MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=0 등)
 
 ---
 
@@ -181,24 +183,32 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-24 오전 | **공유 라이브러리 리팩토링** | lib/ 7개 신규 (utils/secrets/formatting/files/args/browser/pickko) |
 | 2026-02-24 오전 | 중복 코드 220줄 제거 | 4개 src 파일 → lib/ 추출, 문법 검사 통과, 봇 재시작 확인 |
 | 2026-02-24 오전 | **pickko-verify 자동 스케줄링** | run-verify.sh + launchd ai.ska.pickko-verify (08:00/14:00/20:00) |
+| 2026-02-24 낮 | 야간 알림 차단 + flushPendingAlerts | 09:00 첫 Heartbeat 시 보류 알림 일괄 발송 |
+| 2026-02-24 낮 | CLAUDE_NOTES.md 시스템 구축 | 클로드→스카 전달 채널 파일 신규 |
+| 2026-02-24 오후 | 모델 교체 | gemini-2.0-flash → gemini-2.5-flash |
+| 2026-02-25 | **신규 스크립트 3종** | pickko-daily-audit, pickko-register, pickko-member 완성 + 테스트 |
+| 2026-02-25 | **안정화 8건** | atomic write, rollback, pruneSeenIds, 사이클타임, 슬롯 3회 재시도 등 |
+| 2026-02-25 | pickko-verify needsVerify() | completed+paid/auto 항목도 안전하게 검증 처리 |
 
 ---
 
-## 🚀 현재 운영 상태 (2026-02-24)
+## 🚀 현재 운영 상태 (2026-02-25)
 
 ```
-✅ naver-monitor.js    OPS 모드, 3분 주기 실행 중 (PICKKO_CANCEL_ENABLE=1)
+✅ naver-monitor.js    OPS 모드, 5분 주기 실행 중 (start-ops.sh 자동 재시작)
 ✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송
-✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (OPS 활성화됨)
-✅ pickko-verify.js    pending/failed 재검증 (자동: 08:00/14:00/20:00, launchd)
-✅ lib/ 공유 라이브러리  7개 모듈 추출 완료 (중복 제거)
-✅ Telegram 봇         Gemini 2.0 Flash, 응답 ~7초
+✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (PICKKO_CANCEL_ENABLE=1)
+✅ pickko-verify.js    needsVerify() 기반 재검증 (자동: 08:00/14:00/20:00, launchd)
+✅ pickko-daily-audit  당일 픽코 감사 (22:00+23:50 자동, launchd)
+✅ pickko-register.js  자연어 예약 등록 CLI — 스카가 직접 실행 가능
+✅ pickko-member.js    신규 회원 가입 CLI — 스카가 직접 실행 가능
+✅ lib/ 공유 라이브러리  7개 모듈 (files.js 원자적 쓰기 포함)
+✅ Telegram 봇         Gemini 2.5 Flash, 응답 ~3초
 ✅ RAG 서버            http://localhost:8100 정상
 ✅ OpenClaw 게이트웨이  PID 정상, CLI pairing 완료
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
 ✅ 자정 자동 보존       nightly-sync.sh + launchd (00:00 실행)
 ✅ log-report.sh       3시간 주기 오류 분석 리포트 (launchd: ai.ska.log-report)
-✅ pickko-verify 자동화  08:00/14:00/20:00 자동 실행 (launchd: ai.ska.pickko-verify)
 ```
 
 ## 📌 pickko-cancel.js 핵심 구현 노트 (2026-02-24)
@@ -224,6 +234,9 @@ curl -s -X POST http://localhost:8100/ask \
 |------|------|---------|
 | IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
 | ~~pickko-verify.js 자동 스케줄링~~ | ✅ 완료 — launchd 08:00/14:00/20:00 | 완료 |
+| ~~pickko-daily-audit~~ | ✅ 완료 — launchd 22:00+23:50 | 완료 |
+| ~~pickko-register / pickko-member~~ | ✅ 완료 — 스카 CLI 명령 사용 가능 | 완료 |
+| **픽코→네이버 예약 불가 처리** | 픽코 직접 예약 감지 → 네이버 해당 시간 차단 | **🔜 다음** |
 | 일일 예약 요약 자동 전송 | 매일 지정 시각 사장님에게 예약 현황 메시지 | 중간 |
 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 즉시 경고 | 중간 |
 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 | 장기 검토 |

@@ -654,8 +654,12 @@ async function main() {
     
     log(`   ⏰ 첫 슬롯: ${firstSlot} / 마지막 슬롯: ${lastSlot} / 기간: ${durationMin}분`);
     
-    // 시간 선택 시도
-    for (let attempt = 0; attempt < 1; attempt++) {  // OPS/DEV 간단하게 처리
+    // 시간 선택 시도 (AJAX 갱신 타이밍을 고려해 최대 3회 재시도)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        log(`   ⏰ 재시도 #${attempt + 1}: 스케줄 갱신 대기 후 재시도...`);
+        await delay(1500);
+      }
       attemptCount++;
       log(`   ⏰ 시도 #${attemptCount}: ${firstSlot} -> ${lastSlot}`);
       
