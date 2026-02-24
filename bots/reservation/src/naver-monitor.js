@@ -1121,6 +1121,10 @@ async function monitorBookings() {
 
         // ✅ 취소 감지 1: 이전 사이클 확정 리스트에서 사라진 항목 → 취소로 처리
         if (previousConfirmedList.length > 0 && process.env.PICKKO_CANCEL_ENABLE === '1') {
+          // confirmedCount === 0 이면 페이지 로딩 글리치 가능성 → 취소 감지 스킵
+          if (confirmedCount === 0) {
+            log(`⚠️ 취소 감지 1 스킵: 카운터=0 (페이지 글리치 의심, 이전 확정 ${previousConfirmedList.length}건 유지)`);
+          } else {
           try {
             const toKey = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
             const toCancelKey = (b) => `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
@@ -1147,6 +1151,7 @@ async function monitorBookings() {
           } catch (dropErr) {
             log(`⚠️ 확정→취소 감지 중 오류: ${dropErr.message}`);
           }
+          } // end confirmedCount !== 0 guard
         }
 
         // ✅ 취소 감지 2: 오늘 취소 탭 파싱 (더블 체크, cancelledCount >= 1일 때만)
