@@ -28,3 +28,4 @@ coverage/
 
 # 민감 정보
 secrets.json
+pickko-kiosk-seen.json

@@ -97,6 +97,7 @@
   },
   "1165071422": {
     "compositeKey": "01042140104-2026-02-28-16:00",
+    "name": null,
     "phone": "010-4214-0104",
     "phoneRaw": "01042140104",
     "date": "2026-02-28",
@@ -105,11 +106,11 @@
     "room": "A1",
     "detectedAt": "2026. 2. 23. AM 11:25:13",
     "status": "completed",
-    "pickkoStatus": "auto",
+    "pickkoStatus": "verified",
     "pickkoOrderId": null,
     "errorReason": null,
     "retries": 1,
-    "pickkoStartTime": "2026. 2. 23. AM 11:27:29"
+    "pickkoStartTime": "2026. 2. 25. AM 8:00:15"
   },
   "1165516568": {
     "compositeKey": "01027459103-2026-02-26-14:30",
