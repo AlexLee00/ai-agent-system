@@ -50,7 +50,28 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
-## 최근 완료 작업 (2026-02-25)
+## 최근 완료 작업 (2026-02-25 낮)
+
+### 픽코 키오스크 모니터 신규 (pickko-kiosk-monitor.js)
+
+- ✅ **신규** `src/pickko-kiosk-monitor.js` — 픽코 키오스크/전화 예약 감지 → 네이버 예약 불가 자동 차단
+  - 이용금액 >= 1 필터로 키오스크 예약만 분리 (네이버 자동 등록 = 0원)
+  - `pickko-kiosk-seen.json` 상태 파일 관리 (원자적 쓰기 + 만료 항목 자동 정리)
+  - 네이버 booking calendar 자동화: DatePeriodCalendar 날짜선택 → 예약가능 슬롯 클릭 → 팝업 설정 → 설정변경
+  - 차단 확인: 설정변경 후 시간박스에서 예약불가 텍스트 최종 확인
+  - 실패 시 스크린샷 자동 저장 (`/tmp/naver-block-*.png`) + 텔레그램 수동 처리 요청
+  - naver-monitor.js 세션 충돌 방지: `naver-booking-profile` 별도 프로파일 사용
+- ✅ **신규** `src/run-kiosk-monitor.sh` — launchd 래퍼 (중복 실행 방지 lock)
+- ✅ **신규** `ai.ska.kiosk-monitor.plist` — 30분 주기 launchd 등록 완료
+  - 등록: `launchctl load ~/Library/LaunchAgents/ai.ska.kiosk-monitor.plist`
+  - 로그: `/tmp/pickko-kiosk-monitor.log`
+- ✅ `.gitignore` — `pickko-kiosk-seen.json` 추가 (전화번호 포함)
+
+**다음 작업**: 수동 테스트 — `node src/pickko-kiosk-monitor.js` 실행 후 셀렉터 검증
+
+---
+
+## 최근 완료 작업 (2026-02-25 오전)
 
 ### 안정화 업데이트 8건 + 신규 스크립트 검증
 
