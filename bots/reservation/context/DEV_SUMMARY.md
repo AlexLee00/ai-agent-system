@@ -132,12 +132,12 @@ curl -s -X POST http://localhost:8100/ask \
 
 ---
 
-## 🤖 OpenClaw 에이전트 구성 (2026-02-23 확정)
+## 🤖 OpenClaw 에이전트 구성 (2026-02-24 업데이트)
 
 | 항목 | 값 |
 |------|-----|
 | 에이전트 이름 | 스카 (main) |
-| 기본 모델 | `google-gemini-cli/gemini-2.0-flash` |
+| 기본 모델 | `google-gemini-cli/gemini-2.5-flash` |
 | Fallback 1 | `anthropic/claude-haiku-4-5` |
 | Fallback 2 | `ollama/qwen2.5:7b` (느림, 비상용) |
 | 채널 | Telegram (@SCAFE8282_BOT) |

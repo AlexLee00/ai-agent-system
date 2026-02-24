@@ -15,11 +15,46 @@
 | 채널 | 텔레그램 (@SCAFE8282_BOT) |
 | 모니터 | 자동 재시작 루프 (2시간 주기) |
 
+---
+
+## 🐛 이슈 & 버그 추적
+
+> 자동 관리: `bug-report.js` 실행 시 갱신 | 수동 등록: `node src/bug-report.js --new --title "..." --by ska`
+
+<!-- bug-tracker:issues:start -->
+_현재 미해결 이슈 없음_
+
+**최근 해결:**
+- ✅ `BUG-003` **알림 파일 resolved 상태 미관리 — 수동 확인 필요 알림 누적**
+  재시작 후 '✅ 미해결 알림 없음' 로그 확인 (-45분 전)
+- ✅ `BUG-004` **테스트 버그 (삭제 예정)**
+  테스트 완료, 삭제 (5분 전)
+- ✅ `BUG-002` **completed/manual 예약 재감지 루프 및 code 99 미마킹**
+  재시작 후 '신규 후보 없음' 정상 확인 — 3건 기처리 예약 재감지 없음 (25분 전)
+<!-- bug-tracker:issues:end -->
+
+---
+
+## 🔧 최근 유지보수 이력
+
+> 자동 관리: `bug-report.js --maintenance` 실행 시 갱신
+
+<!-- bug-tracker:maintenance:start -->
+- 🚑 `MAINT-004` [hotfix] **cancelledSeenIds 오감지 취소 키 제거** *(→ BUG-002)*
+  2026. 2. 24. 16:00 · claude · `naver-seen.json`
+- 🚑 `MAINT-003` [hotfix] **.pickko-alerts.jsonl 초기 누적 항목 정리 (284건→3건)**
+  2026. 2. 24. 15:50 · claude · `.pickko-alerts.jsonl`
+- ⚙️ `MAINT-002` [config] **모니터링 주기 3분 → 5분 변경 (NAVER_INTERVAL_MS)**
+  2026. 2. 24. 15:40 · claude · `src/start-ops.sh`
+- 🚑 `MAINT-001` [hotfix] **010-3034-1710 나은애 픽코 수동 등록 완료 처리**
+  2026. 2. 24. 15:30 · claude · `naver-seen.json`
+<!-- bug-tracker:maintenance:end -->
+
 ## 최근 완료 작업 (2026-02-24 오후)
 
 - ✅ **모델 교체** — gemini-2.0-flash(deprecated) → `gemini-2.5-flash`
   - OpenClaw primary 모델 변경 + 게이트웨이 재시작 완료
-  - Fallback: gemini-2.5-pro → claude-haiku-4-5 → qwen2.5:7b 순
+  - Fallback: claude-haiku-4-5 → qwen2.5:7b 순 (openclaw.json 실제 설정 기준)
 
 ## 최근 완료 작업 (2026-02-24 낮)
 

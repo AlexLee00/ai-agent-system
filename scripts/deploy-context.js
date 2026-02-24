@@ -15,6 +15,17 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const REGISTRY_FILE = path.join(ROOT, 'bots', 'registry.json');
+const OPENCLAW_CONFIG = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+
+// openclaw.json에서 실제 실행 중인 primary 모델을 읽음
+function readOpenClawPrimaryModel() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
+    return cfg?.agents?.defaults?.model?.primary || null;
+  } catch {
+    return null;
+  }
+}
 
 function log(msg) {
   const t = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -89,7 +100,7 @@ ${fileList}
 |------|------|
 | 이름 | ${bot.name} |
 | 역할 | ${bot.description} |
-| 모델 | ${bot.model?.primary} |
+| 모델 | ${readOpenClawPrimaryModel() || bot.model?.primary} |
 | 상태 | ${bot.status} |
 
 학습 완료 후 텔레그램으로 준비 완료 메시지를 보내세요.

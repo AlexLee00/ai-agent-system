@@ -34,7 +34,7 @@ let previousConfirmedList = [];
 
 // Heartbeat: 마지막 전송 시각 (1시간 주기)
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000; // 1시간
-let lastHeartbeatTime = 0;
+let lastHeartbeatTime = Date.now(); // 시작 직후 0분 Heartbeat 방지 (1시간 후 첫 발송)
 
 // 일일 마감 요약 통계
 let dailyStats          = { date: '', detected: 0, completed: 0, cancelled: 0, failed: 0 };
@@ -480,37 +480,118 @@ function flushPendingAlerts() {
   }
 }
 
-// 48시간 이상 된 알람 자동 삭제
+// 알람 파일 자동 정리
+// - resolved: true (또는 필드 없는 구버전) → 48시간 후 삭제
+// - resolved: false (미해결 오류) → 7일 후 삭제 (미해결 상태 추적 유지)
 function cleanupOldAlerts() {
   try {
     const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
     if (!fs.existsSync(alertsFile)) return;
-    
+
     const now = Date.now();
-    const fortyEightHours = 48 * 60 * 60 * 1000;
-    
-    // 파일 읽기
+    const RESOLVED_TTL   = 48 * 60 * 60 * 1000;       // 48시간 (해결됨)
+    const UNRESOLVED_TTL = 7  * 24 * 60 * 60 * 1000;  // 7일 (미해결 오류)
+
     const content = fs.readFileSync(alertsFile, 'utf-8');
     const lines = content.split('\n').filter(l => l.trim());
-    
-    // 48시간 이내인 알람만 필터링
+
     const activeAlerts = lines.filter(line => {
       try {
         const alert = JSON.parse(line);
-        const alertTime = new Date(alert.timestamp).getTime();
-        return (now - alertTime) < fortyEightHours;
+        const age = now - new Date(alert.timestamp).getTime();
+        // resolved 필드 없는 구버전은 resolved: true 취급 (48h TTL)
+        const isUnresolved = alert.resolved === false;
+        return age < (isUnresolved ? UNRESOLVED_TTL : RESOLVED_TTL);
       } catch (e) {
         return false;
       }
     });
-    
-    // 파일 재작성
+
     if (activeAlerts.length !== lines.length) {
       fs.writeFileSync(alertsFile, activeAlerts.map(a => a + '\n').join(''));
-      log(`🧹 [정리] 48시간 이상 된 알람 ${lines.length - activeAlerts.length}건 삭제`);
+      log(`🧹 [정리] 알람 ${lines.length - activeAlerts.length}건 삭제 (해결됨 48h, 미해결 7일 초과)`);
     }
   } catch (err) {
     log(`⚠️ 알람 정리 실패: ${err.message}`);
+  }
+}
+
+// 특정 예약에 대한 미해결 오류 알림을 "해결됨"으로 마킹
+// 픽코 성공(code=0) 또는 수동 처리 완료 시 호출
+function resolveAlertsByBooking(phone, date, start) {
+  try {
+    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
+    if (!fs.existsSync(alertsFile)) return;
+
+    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
+    let resolvedCount = 0;
+    const resolvedAt = new Date().toISOString();
+
+    const updated = lines.map(line => {
+      try {
+        const a = JSON.parse(line);
+        // 미해결 오류 알림이고 phone+date+start가 모두 일치하는 경우
+        if (
+          a.resolved === false &&
+          a.type === 'error' &&
+          a.phone === phone &&
+          a.date === date &&
+          a.start === start
+        ) {
+          a.resolved = true;
+          a.resolvedAt = resolvedAt;
+          resolvedCount++;
+          return JSON.stringify(a);
+        }
+        return line;
+      } catch (e) { return line; }
+    });
+
+    if (resolvedCount > 0) {
+      fs.writeFileSync(alertsFile, updated.join('\n') + '\n');
+      log(`✅ [알림 해결] ${phone} ${date} ${start} → 오류 알림 ${resolvedCount}건 해결됨 마킹`);
+    }
+  } catch (err) {
+    log(`⚠️ 알림 해결 마킹 실패: ${err.message}`);
+  }
+}
+
+// 시작 시 미해결 오류 알림 요약 보고
+function reportUnresolvedAlerts() {
+  try {
+    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
+    if (!fs.existsSync(alertsFile)) return;
+
+    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
+    const unresolved = [];
+    for (const line of lines) {
+      try {
+        const a = JSON.parse(line);
+        if (a.resolved === false) unresolved.push(a);
+      } catch (e) { /* skip */ }
+    }
+
+    if (unresolved.length === 0) {
+      log('✅ [미해결 알림] 없음');
+      return;
+    }
+
+    log(`⚠️ [미해결 알림] ${unresolved.length}건 감지`);
+    let summary = `⚠️ 스카 재시작 — 미해결 오류 ${unresolved.length}건\n\n`;
+    for (const a of unresolved) {
+      const ageMins = Math.floor((Date.now() - new Date(a.timestamp).getTime()) / 60000);
+      const ageText = ageMins >= 60 ? `${Math.floor(ageMins / 60)}시간 전` : `${ageMins}분 전`;
+      summary += `• [${ageText}] ${a.title}\n`;
+      if (a.phone) summary += `  📞 ${a.phone}`;
+      if (a.date)  summary += `  📅 ${a.date}`;
+      if (a.start) summary += `  ⏰ ${a.start}`;
+      summary += '\n';
+    }
+    summary += '\n처리 완료 시 자동으로 해결됨 처리됩니다.';
+    sendTelegramDirect(summary);
+    log(`📱 미해결 알림 ${unresolved.length}건 텔레그램 발송 완료`);
+  } catch (err) {
+    log(`⚠️ 미해결 알림 보고 실패: ${err.message}`);
   }
 }
 
@@ -543,6 +624,7 @@ async function sendAlert(options) {
       customer,
       phone,
       date,
+      start,   // 알림 해결 매칭용 (오류 알림에서 resolved 추적)
       time,
       room,
       amount,
@@ -591,6 +673,11 @@ async function sendAlert(options) {
           type,
           title,
           message,
+          phone: phone || null,     // 알림 해결 매칭용
+          date: date || null,       // 알림 해결 매칭용
+          start: start || null,     // 알림 해결 매칭용
+          resolved: type !== 'error',  // error 타입만 미해결 상태로 시작
+          resolvedAt: type !== 'error' ? new Date().toISOString() : null,
           sent: inAlertWindow,
           sentAt: inAlertWindow ? new Date().toISOString() : null
         });
@@ -676,10 +763,14 @@ async function monitorBookings() {
   let browser;
   const startTime = Date.now();
   let checkCount = 0;
+  let detachRetryCount = 0; // detached Frame 재시도 카운터
 
   try {
     log('🚀 네이버 예약 모니터링 시작 (2시간)');
-    
+
+    // ⚠️ 시작 시 미해결 오류 알림 확인 (이전 세션에서 미처리된 건 보고)
+    reportUnresolvedAlerts();
+
     // Puppeteer 실행
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
     browser = await puppeteer.launch({
@@ -778,6 +869,7 @@ async function monitorBookings() {
         let currentConfirmedList = [];
         let cancelledHref = null; // 홈에서 추출한 취소 탭 href (스코프 공유)
         let cancelledCount = 0;   // 오늘 취소 카운터 (스코프 공유)
+        let confirmedCount = 0;   // 오늘 확정 카운터 (취소 감지 1 스코프 공유)
 
         // ✅ 매 사이클 오늘 확정 리스트 파싱 (카운터 비교 없이 항상 실행)
         {
@@ -785,7 +877,7 @@ async function monitorBookings() {
             log('🧩 오늘 확정 리스트 파싱 시도...');
 
             // 홈에서 "오늘 확정"/"오늘 취소" 카운터 + href 동시 추출
-            const { confirmedHref: _confirmedHref, cancelledHref: _cancelledHref, confirmedCount, cancelledCount: _cancelledCount } = await page.evaluate(() => {
+            const { confirmedHref: _confirmedHref, cancelledHref: _cancelledHref, confirmedCount: _confirmedCount, cancelledCount: _cancelledCount } = await page.evaluate(() => {
               const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim();
               const links = Array.from(document.querySelectorAll('a'));
               const confirmed = links.find(x => clean(x.textContent).includes('오늘 확정') && String(x.href || '').includes('booking-list-view'));
@@ -803,6 +895,7 @@ async function monitorBookings() {
                 cancelledCount: getCount(cancelled),
               };
             });
+            confirmedCount = _confirmedCount; // 루프 스코프 변수에 저장 (취소 감지 1에서 재사용)
             cancelledCount = _cancelledCount; // 루프 스코프 변수에 저장
             cancelledHref = _cancelledHref;   // 루프 스코프 변수에 저장 (취소 감지 2에서 재사용)
             log(`📊 카운터: 오늘 확정=${confirmedCount}, 오늘 취소=${cancelledCount}`);
@@ -974,6 +1067,25 @@ async function monitorBookings() {
             const seenSet = new Set(seen.seenIds || []);
             const toKey = (b) => b.bookingId || `${b.date}|${b.start}|${b.end}|${b.room}|${b.phone}`;
 
+            // ✅ 완료/수동처리 건 사전 seenIds 마킹 (재감지 루프 방지)
+            let autoMarked = 0;
+            for (const b of newest) {
+              const key = toKey(b);
+              if (seenSet.has(key)) continue;
+              const existing = seen[key];
+              if (existing && (existing.status === 'completed' || existing.pickkoStatus === 'manual')) {
+                seenSet.add(key);
+                autoMarked++;
+                log(`🔄 [자동마킹] ${existing.phone || b.phone} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seenIds 추가`);
+                // 수동 처리 완료된 예약의 미해결 오류 알림 → 해결됨 마킹
+                resolveAlertsByBooking(b.phone, b.date, b.start);
+              }
+            }
+            if (autoMarked > 0) {
+              seen.seenIds = Array.from(seenSet).slice(-500);
+              saveSeen(seen);
+            }
+
             const candidates = newest
               // date가 row에 없으면(드물게) 서울 기준 오늘로 채움
               .map(b => ({ ...b, date: b.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) }))
@@ -1097,7 +1209,7 @@ async function monitorBookings() {
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
                 continue;
               }
-              // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0)일 때만 seen 마킹
+              // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0) 또는 재시도 한도 초과(code=99) 시 seen 마킹
               for (const b of observeFiltered) {
                 const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
                 const code = await runPickko(b, bookingId, page);
@@ -1105,6 +1217,12 @@ async function monitorBookings() {
                   seenSet.add(b._key);
                   seen.seenIds = Array.from(seenSet).slice(-500);
                   saveSeen(seen);
+                } else if (code === 99) {
+                  // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
+                  seenSet.add(b._key);
+                  seen.seenIds = Array.from(seenSet).slice(-500);
+                  saveSeen(seen);
+                  log(`⛔ 최대 재시도 초과 → seenIds 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                 }
@@ -1199,6 +1317,7 @@ async function monitorBookings() {
 
         // ✅ previousConfirmedList 업데이트
         previousConfirmedList = currentConfirmedList;
+        detachRetryCount = 0; // 정상 완료 시 재시도 카운터 리셋
 
         // ✅ Heartbeat: 1시간마다 텔레그램으로 생존 신호 전송 (09:00~22:00만)
         if (Date.now() - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
@@ -1249,13 +1368,29 @@ async function monitorBookings() {
       } catch (err) {
         log(`❌ 루프 오류: ${err.message}`);
 
-        // ✅ 안전 모드: detached/connection closed 등 치명 오류 시 탭을 새로 만들지 않고
-        // 잠시 멈췄다가(사장님이 "복구" 누를 시간) 같은 탭에서 재시도
-        // (about:blank 탭 폭증 방지 + 브라우저 자동 종료 방지)
         const msg = String(err.message || '');
         if (/detached/i.test(msg) || /Connection closed/i.test(msg)) {
-          log('🛑 치명 오류(detached/connection closed). start-ops.sh 재시작에 위임합니다.');
-          process.exit(1);
+          detachRetryCount++;
+          if (detachRetryCount >= 3) {
+            log(`🛑 detached 오류 ${detachRetryCount}회 누적 → start-ops.sh 재시작 위임`);
+            process.exit(1);
+          }
+          log(`⚠️ detached 오류 (${detachRetryCount}/3) → 페이지 재생성 후 재시도`);
+          try {
+            await page.close().catch(() => {});
+            page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            const reloggedIn = await naverLogin(page);
+            if (!reloggedIn) {
+              log('❌ 재로그인 실패 → 재시작 위임');
+              process.exit(1);
+            }
+            log('✅ 페이지 재생성 + 재로그인 완료 → 모니터링 계속');
+          } catch (recreateErr) {
+            log(`❌ 페이지 재생성 실패: ${recreateErr.message} → 재시작 위임`);
+            process.exit(1);
+          }
+          continue;
         }
 
         await new Promise(resolve => setTimeout(resolve, MONITOR_INTERVAL));
@@ -1588,6 +1723,7 @@ function runPickkoCancel(booking, cancelKey = null) {
           title: '❌ 픽코 취소 실패',
           phone: booking.phone,
           date: booking.date,
+          start: booking.start,
           time: `${booking.start}~${booking.end}`,
           room: booking.room,
           reason: `exit code ${code}`,
@@ -1621,6 +1757,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           title: '❌ 데이터 변환 실패',
           phone: booking.phone,
           date: booking.date,
+          start: booking.start,
           time: `${booking.start}~${booking.end}`,
           room: booking.room,
           reason: '정규식 변환 실패',
@@ -1704,6 +1841,9 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
           // 📚 RAG: 픽코 완료 상태로 업데이트 저장
           ragSaveReservation(booking, '픽코완료');
+
+          // ✅ 이 예약에 대한 미해결 오류 알림 → 해결됨 마킹
+          resolveAlertsByBooking(booking.phone, booking.date, booking.start);
         }
         log(`✅ [완료] 픽코 예약이 성공했습니다!`);
       } else {
@@ -1718,6 +1858,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             customer: booking.phoneText || '고객',
             phone: booking.phone,
             date: booking.date,
+            start: booking.start,
             time: `${booking.start}~${booking.end}`,
             room: booking.room,
             reason: `exit code ${code}`,

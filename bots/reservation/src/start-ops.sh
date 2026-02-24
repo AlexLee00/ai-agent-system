@@ -32,7 +32,7 @@ cleanup_old() {
   if [ -n "$CHROME_PIDS" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🌐 Chromium 잔존 프로세스 종료 (naver-profile 락 해제)"
     echo "$CHROME_PIDS" | xargs kill 2>/dev/null
-    sleep 3
+    sleep 5
   fi
 
   # SingletonLock 삭제 (죽은 프로세스가 남긴 락 파일 → frame detach 원인)
