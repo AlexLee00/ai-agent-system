@@ -203,31 +203,35 @@ async function naverLogin(page) {
     }
 
     // ✅ 3단계 전: 팝업 확인 및 클릭 (로그인 폼 감지 전)
+    // ⚠️ 주의: "최초 로그인이 필요한 메뉴입니다." 확인 버튼 클릭 시 navigation 발생
+    //          → evaluate 내 btn.click() 금지 (frame detach 원인)
+    //          → 버튼 좌표만 반환 후 page.mouse.click() + waitForNavigation으로 처리
     log('🔍 팝업 확인 중...');
-    const popupClicked = await page.evaluate(() => {
-      let clicked = false;
-      
-      // 보이는 모든 버튼 찾기
+    const popupBtnCoords = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
       for (const btn of buttons) {
         const text = (btn.textContent || '').trim();
         const isVisible = btn.offsetParent !== null;
-        
-        // 확인, OK, 닫기 등의 버튼 찾기
         if (isVisible && (text === '확인' || text === 'OK' || text === '닫기' || text === '완료' || text === '네' || text === 'Yes')) {
-          console.log(`🔘 팝업 버튼 감지 및 클릭: "${text}"`);
-          btn.click();
-          clicked = true;
-          break;
+          const r = btn.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, text };
         }
       }
-      
-      return clicked;
+      return null;
     });
-    
-    if (popupClicked) {
-      log('✅ 팝업 감지 및 클릭 완료');
-      await delay(1500); // 팝업 닫히는 시간 대기
+
+    if (popupBtnCoords) {
+      log(`🔍 팝업 버튼 감지: "${popupBtnCoords.text}" — navigation 대기 후 클릭`);
+      try {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+          page.mouse.click(popupBtnCoords.x, popupBtnCoords.y),
+        ]);
+        log('✅ 팝업 클릭 및 navigation 완료');
+        await delay(1500);
+      } catch (e) {
+        log(`⚠️ 팝업 클릭 중 오류(무시): ${e.message}`);
+      }
     } else {
       log('ℹ️ 팝업 없음 - 계속 진행');
     }
