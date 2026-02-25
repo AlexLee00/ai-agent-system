@@ -28,23 +28,42 @@
 
 사장님이 텔레그램으로 예약 등록 또는 회원 가입을 요청하면 스카가 직접 처리한다.
 
-### 예약 등록
+> **핵심**: `pickko-register.js`는 내부적으로 신규 회원 자동 등록 포함.
+> **예약 요청 시 pickko-member.js 별도 실행 불필요** — pickko-register.js 하나로 끝.
 
-| 항목 | 내용 |
-|------|------|
-| 명령 | `node ~/projects/ai-agent-system/bots/reservation/src/pickko-register.js --date=YYYY-MM-DD --start=HH:MM --end=HH:MM --room=A1\|A2\|B --phone=01000000000 --name=이름` |
-| stdout 파싱 | JSON `{ success, message }` |
-| 성공 | `success: true` → 텔레그램에 완료 보고 |
-| 실패 | `success: false` → 텔레그램에 실패 사유 보고, 사장님 수동 확인 요청 |
+---
 
-### 회원 가입
+### 시나리오 1: 예약 등록 (신규 회원 포함 — 가장 흔한 케이스)
 
-| 항목 | 내용 |
-|------|------|
-| 명령 | `node ~/projects/ai-agent-system/bots/reservation/src/pickko-member.js --phone=01000000000 --name=이름` |
-| stdout 파싱 | JSON `{ success, isNew, message }` |
-| 기존 회원 | `isNew: false` → "기존 회원입니다" 안내 |
-| 신규 등록 | `isNew: true` → 텔레그램에 등록 완료 보고 |
+사장님이 "XXX 예약해줘" 또는 "XXX 등록해줘"라고 하면 → **pickko-register.js 하나만 실행**
+
+```bash
+node ~/projects/ai-agent-system/bots/reservation/src/pickko-register.js \
+  --date=YYYY-MM-DD --start=HH:MM --end=HH:MM \
+  --room=A1|A2|B --phone=01000000000 --name=이름
+```
+
+- stdout JSON `{ success, message }`
+- `success: true` → 텔레그램에 완료 보고
+- `success: false` → 실패 사유 보고, 사장님 수동 확인 요청
+- **신규 회원이면 픽코 회원 등록 후 예약 등록까지 자동 처리됨** (별도 조치 불필요)
+
+---
+
+### 시나리오 2: 회원 가입만 (예약 없이 회원만 등록)
+
+사장님이 "XXX 회원가입해줘" 또는 "XXX 회원으로 등록해줘"라고 하면 → pickko-member.js 실행
+
+```bash
+node ~/projects/ai-agent-system/bots/reservation/src/pickko-member.js \
+  --phone=01000000000 --name=이름
+```
+
+- stdout JSON `{ success, isNew, message }`
+- `isNew: false` → "이미 등록된 회원입니다: 이름 (번호)" 보고
+- `isNew: true` → "신규 회원 등록 완료: 이름 (번호)" 보고
+
+---
 
 ### 자연어 → 인자 파싱 규칙
 
@@ -57,17 +76,20 @@
 | A룸, A1, B룸 | A1 \| A2 \| B |
 | 전화번호 010-XXXX-XXXX | 하이픈 제거 후 그대로 |
 
+---
+
 ### 실행 예시
 
 ```
 사장님: "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"
 → node .../pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동
+  (홍길동이 신규 회원이어도 자동 등록 후 예약까지 처리됨)
 
-사장님: "010-1234-5678 홍길동 회원가입해줘"
+사장님: "010-1234-5678 홍길동 회원가입해줘"  ← 예약 없이 회원만
 → node .../pickko-member.js --phone=01012345678 --name=홍길동
 ```
 
-> **주의**: 스크립트 경로는 `~/projects/ai-agent-system/bots/reservation/src/` 기준
+> **스크립트 경로**: `~/projects/ai-agent-system/bots/reservation/src/`
 > stdout에서 JSON 파싱 후 성공/실패 여부를 사장님께 텔레그램으로 보고할 것
 
 ---
