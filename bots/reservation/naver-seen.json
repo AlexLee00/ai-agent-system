@@ -270,12 +270,11 @@
     "room": "A2",
     "detectedAt": "2026. 2. 26. AM 6:57:18",
     "status": "completed",
-    "pickkoStatus": "paid",
+    "pickkoStatus": "verified",
     "pickkoOrderId": null,
     "errorReason": null,
     "retries": 0,
-    "pickkoStartTime": "2026. 2. 26. AM 6:57:18",
-    "pickkoCompleteTime": "2026. 2. 26. AM 6:57:49"
+    "pickkoStartTime": "2026. 2. 26. AM 8:00:12"
   },
   "seenIds": [
     "1164258753",
