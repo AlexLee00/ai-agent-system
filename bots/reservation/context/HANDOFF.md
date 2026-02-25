@@ -82,14 +82,51 @@ _현재 미해결 이슈 없음_
 
 > 928895 취소 테스트: 결제대기 → 결제완료 처리 후 `node src/pickko-cancel.js --phone 01035000586 --date 2026-02-27 --start 11:00 --end 12:00 --room A1` 실행 필요
 
-### 임시 파일 정리 필요
+---
 
-- `check-928895.js` (결제 완료 처리 디버그 스크립트)
-- `cancel-jaelyong.js` (취소 테스트용)
-- `add-test-booking.js` (폼 탐색용)
-- `debug-booking-calendar.js`
+## 최근 완료 작업 (2026-02-25 야간) — 테스트 예약불가 복원 + 임시 파일 전체 정리
+
+### 테스트 예약불가 복원 확인
+
+- `restore-available.js` 작성·실행 → 2026-02-25 테스트로 설정한 예약불가 4건 복원
+- 복원 후 스크린샷(`/tmp/feb25-calendar.png`) 확인: `suspended` 클래스 0건 ✅
+  - 화면의 A2룸 빨간 버튼은 `soldout(예약가능 0)` — 실제 확정 예약(이재룡) 있는 정상 상태
+- 2026-03-02 이승호 B룸 18:00~20:00 예약불가는 실제 예약이므로 **유지**
+
+### 루트 임시 파일 전체 정리
+
+아래 파일 모두 삭제 (디버그·테스트용, 더 이상 불필요):
+`add-test-booking.js`, `cancel-jaelyong.js`, `cancel-test-booking.js`, `complete-test-payment.js`,
+`finalize-test-payment.js`, `finalize-test-payment2.js`, `inspect-pickko-form.js`,
+`naver-browser-stub.js`, `restore-available.js`, `test-naver-parse.js`, `check-feb25.js`
 
 ---
+
+## 최근 완료 작업 (2026-02-25 저녁) — 키오스크 모니터 검증 완료 + verifyBlockInGrid 수정
+
+### pickko-kiosk-monitor.js verifyBlockInGrid 버그 수정 + 최종 검증
+
+**수정 내용:**
+- `verifyBlockInGrid()` 재작성: 이전 구현은 "예약불가" 필터 탭 텍스트가 페이지에 있으면 무조건 `verified:true` 반환하는 false positive 문제
+- 수정 후: `suspended btn-danger-light` 클래스 버튼이 실제로 target 룸 X 범위 + 시작시간 Y 범위에 있는지 DOM 좌표 기반으로 확인
+- 예약가능 슬롯 클래스: `avail btn-info-light` / 예약불가 슬롯 클래스: `suspended btn-danger-light`
+
+**API 검증 결과 (CDP 인터셉트):**
+```
+PATCH https://api-partner.booking.naver.com/v3.1/businesses/596871/biz-items/4134332/schedules
+Body: {"startDate":"2026-03-02","endDate":"2026-03-02","startTime":"18:00","endTime":"20:00","status":"OFF","stock":null}
+HTTP 200 OK ✅
+```
+
+**최종 실행 결과:**
+- 이승호 01062290586 | 2026-03-02 18:00~19:50 | 스터디룸B → 네이버 차단 확인
+- `suspendedBtn: {cls: "btn btn-xs calendar-btn suspended btn-danger-light", x:643}` ✅
+- 텔레그램: "🚫 네이버 예약 차단 완료 이승호 010-6229-0586 2026-03-02 18:00~19:50 스터디룸B" ✅
+
+**주요 발견사항 (debugging):**
+- 네이버 캘린더 Y 좌표: 오후 6:00 슬롯은 스크롤 후 Y≈865 (viewport 하단). 이전 check 스크립트가 Y>800 필터로 제외해서 "예약가능" 오판
+- `stock:null` 전송 → API 200 OK (null=변경 없음으로 처리됨)
+- `page.mouse.click()` vs `element.click()`: React SPA 날짜 피커는 반드시 mouse.click 필요
 
 ## 최근 완료 작업 (2026-02-25 낮~오후) — 픽코 키오스크 모니터 완전 구현
 
@@ -229,38 +266,15 @@ nohup bash start-ops.sh > /dev/null 2>&1 &
 
 ## 🗂️ 스카봇 기능 대기 목록 (다음 개발 예정)
 
-### 🔜 다음 작업 (2026-02-26 예정)
-
-**픽코 예약 → 네이버 예약 불가 처리**
-
-픽코에서 직접 예약(전화/현장)이 들어왔을 때, 네이버 스마트플레이스 해당 시간대를 자동으로 예약 불가 처리하는 기능.
-
-```
-[픽코 어드민] 신규 예약 감지 (주기적 폴링 또는 감지)
-        ↓
-[naver-monitor or 신규 스크립트] 네이버 스마트플레이스 접속
-        ↓
-해당 날짜·시간·룸 → 예약 불가(블록) 처리
-        ↓
-[텔레그램] 처리 완료 알림
-```
-
-**핵심 고려사항:**
-- 픽코 신규 예약 감지 방법: pickko-daily-audit.js 방식(폴링) vs 픽코 webhook(있다면)
-- 네이버 예약 불가 처리 UI: 스마트플레이스 관리자 → 예약 설정 → 특정 시간 차단
-- 중복 처리 방지: 이미 네이버에서 들어온 예약은 스킵 (naver-seen.json 확인)
-- 대상: pickko-daily-audit이 감지한 manual/전화 예약만 (auto 제외)
-
----
+### 🔜 다음 작업
 
 | 순서 | 기능 | 설명 | 우선순위 |
 |------|------|------|---------|
-| 1 | **픽코→네이버 예약 불가** | 픽코 직접 예약 감지 → 네이버 해당 시간 차단 | **🔜 다음** |
-| 2 | 일일 예약 요약 자동 전송 | 매일 지정 시각에 예약 현황 요약 메시지 → 텔레그램 | 중간 |
-| 3 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 발생 시 즉시 경고 | 중간 |
-| 4 | IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
-| 5 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 (장기) | 장기 |
-| 6 | 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |
+| 1 | 일일 예약 요약 자동 전송 | 매일 지정 시각에 예약 현황 요약 메시지 → 텔레그램 | 중간 |
+| 2 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 발생 시 즉시 경고 | 중간 |
+| 3 | IS-001 홈화면 복귀 이슈 | session/cookie 만료 처리 개선 | 낮음 |
+| 4 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 (장기) | 장기 |
+| 5 | 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |
 
 ---
 
