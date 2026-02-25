@@ -1013,39 +1013,83 @@ async function selectUnavailableStatus(page) {
 }
 
 // Step 10: 설정변경 후 시간박스에서 차단 확인
-// 해당 룸 열에서 예약가능 버튼이 사라지고 예약불가/차단 표시가 있으면 성공
+// 해당 룸 열 X 범위 + 시작시간 Y 범위에서 suspended(예약불가) 버튼 존재 여부 확인
 async function verifyBlockInGrid(page, roomRaw, start, end) {
   const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
   log(`  🔍 차단 최종 확인: room=${roomType} ${start}~${end}`);
 
-  const result = await page.evaluate((roomType, start, end) => {
-    // 시간박스 그리드에서 해당 룸 영역 확인
-    const allText = document.body?.innerText || document.body?.textContent || '';
+  // 시작시간 표시 변환 (24h → 오전/오후)
+  const [hh, mm] = (start || '').split(':').map(Number);
+  const isAM = hh < 12;
+  const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+  const ampm = isAM ? '오전' : '오후';
+  const hourMin = `${dispH}:${String(mm).padStart(2, '0')}`;
 
-    // 예약불가/차단/blocked 텍스트가 페이지에 존재하는지 확인
-    const hasBlockedText = allText.includes('예약불가') || allText.includes('예약 불가')
-      || allText.includes('차단') || allText.includes('UNAVAILABLE');
+  const result = await page.evaluate((roomType, ampm, hourMin) => {
+    // 1. 시작시간 레이블 Y 좌표 찾기 (scrollIntoView 후 getBoundingClientRect)
+    let targetTimeEl = null;
+    for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
+      if ((el.textContent || '').trim() === hourMin) {
+        const parentText = (el.parentElement?.textContent || '').trim();
+        if (parentText.includes(ampm)) { targetTimeEl = el; break; }
+      }
+    }
+    // ampm 무시 fallback
+    if (!targetTimeEl) {
+      for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
+        if ((el.textContent || '').trim() === hourMin) { targetTimeEl = el; break; }
+      }
+    }
+    if (!targetTimeEl) return { verified: false, reason: `time "${hourMin}" not found` };
 
-    // 룸 근처에서 예약가능 버튼 수 확인 (줄어들었으면 성공)
-    const roomContainers = document.querySelectorAll('[class*="room"], [class*="Room"], [class*="cell"], [class*="Cell"], th, td');
-    let roomAreaHasAvailable = false;
-    let roomAreaHasUnavailable = false;
+    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const timeRect = targetTimeEl.getBoundingClientRect();
+    const targetY = timeRect.top + timeRect.height / 2;
 
-    for (const container of roomContainers) {
-      const text = (container.textContent || '').trim();
-      if (!text.includes(roomType)) continue;
-      if (text.includes('예약가능') || text.includes('예약 가능')) roomAreaHasAvailable = true;
-      if (text.includes('예약불가') || text.includes('예약 불가') || text.includes('차단')) roomAreaHasUnavailable = true;
+    // 2. 룸 컬럼 X 범위 (헤더 영역 Y < 450)
+    let roomXRange = null;
+    const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
+    for (const el of Array.from(document.querySelectorAll('*')).filter(e => {
+      if (!e.offsetParent || e.children.length > 0) return false;
+      const r = e.getBoundingClientRect();
+      return r.top >= 0 && r.top < 450 && r.width > 20;
+    })) {
+      const txt = (el.textContent || '').trim();
+      if (pattern.test(txt) || txt === roomType) {
+        const r = el.getBoundingClientRect();
+        if (!roomXRange || r.left < roomXRange.left)
+          roomXRange = { left: r.left, right: r.right };
+      }
+    }
+
+    // 3. calendar-btn 중 suspended 클래스 찾기 (예약불가 = class includes "suspended")
+    const calBtns = Array.from(document.querySelectorAll(
+      '.calendar-btn, [class*="calendar-btn"]'
+    )).filter(b => b.offsetParent !== null);
+
+    let foundSuspended = null;
+    for (const btn of calBtns) {
+      const cls = btn.className || '';
+      if (!cls.includes('suspended') && !cls.includes('btn-danger')) continue;
+      const r = btn.getBoundingClientRect();
+      // Y 범위: targetY ±120px (넉넉하게)
+      if (Math.abs((r.top + r.height / 2) - targetY) > 120) continue;
+      // 룸 X 범위
+      if (roomXRange) {
+        const cx = r.left + r.width / 2;
+        if (cx < roomXRange.left - 20 || cx > roomXRange.right + 20) continue;
+      }
+      foundSuspended = { cls: cls.slice(0, 80), x: Math.round(r.left), y: Math.round(r.top), txt: (btn.textContent || '').trim() };
+      break;
     }
 
     return {
-      hasBlockedText,
-      roomAreaHasAvailable,
-      roomAreaHasUnavailable,
-      // 페이지에 예약불가 텍스트가 있거나, 룸 영역에 예약불가가 표시되면 성공
-      verified: hasBlockedText || roomAreaHasUnavailable
+      verified: !!foundSuspended,
+      suspendedBtn: foundSuspended,
+      targetY: Math.round(targetY),
+      roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
     };
-  }, roomType, start, end);
+  }, roomType, ampm, hourMin);
 
   log(`  확인 결과: ${JSON.stringify(result)}`);
   return result.verified;
