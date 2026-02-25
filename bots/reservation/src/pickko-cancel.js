@@ -245,37 +245,24 @@ async function run() {
     // ======================== [7단계] 결제항목 상세보기 클릭 ========================
     log('\n[7단계] 결제항목 상세보기 클릭');
 
-    const payItemDetailClicked = await page.evaluate(() => {
-      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
-      const btns = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
-      for (const btn of btns) {
-        const t = clean(btn.textContent || btn.value || '');
-        if (t === '상세보기') {
-          btn.click();
-          return { clicked: true, text: t };
-        }
-      }
-      return { clicked: false };
-    });
+    // a.pay_view = "상세보기" 버튼 (py_no 속성 있음) — Puppeteer 네이티브 클릭
+    await page.waitForSelector('a.pay_view', { timeout: 8000 });
+    await page.click('a.pay_view');
+    log('상세보기 클릭: {"clicked":true,"selector":"a.pay_view"}');
 
-    log(`상세보기 클릭: ${JSON.stringify(payItemDetailClicked)}`);
-    if (!payItemDetailClicked.clicked) {
-      throw new Error('[7단계] 결제항목 상세보기 버튼 없음');
-    }
-    await delay(1500);
+    // 오른쪽 패널 AJAX 로딩 대기
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => null);
+    await page.waitForSelector('a.pay_refund', { timeout: 8000 }).catch(() => null);
+    await delay(300);
 
-    // ======================== [8단계] 환불 버튼 클릭 (오른쪽 팝업) ========================
+    // ======================== [8단계] 환불 버튼 클릭 (오른쪽 패널 a.pay_refund) ========================
     log('\n[8단계] 환불 버튼 클릭');
 
     const refundClicked = await page.evaluate(() => {
-      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
-      const btns = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
-      for (const btn of btns) {
-        const t = clean(btn.textContent || btn.value || '');
-        if (t === '환불' || t.includes('환불')) {
-          btn.click();
-          return { clicked: true, text: t };
-        }
+      const btn = document.querySelector('a.pay_refund');
+      if (btn) {
+        btn.click();
+        return { clicked: true, text: (btn.textContent || '').trim() };
       }
       return { clicked: false };
     });
@@ -288,23 +275,11 @@ async function run() {
 
     // ======================== [9단계] 처리되었습니다. 팝업 확인 ========================
     // setupDialogHandler가 native alert 자동 처리
-    // DOM 기반 확인 팝업 추가 처리
-    log('\n[9단계] 처리완료 팝업 확인');
-
-    const finalConfirm = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
-      const confirmBtn = btns.find(b => {
-        const t = (b.textContent || b.value || '').trim();
-        return t === '확인' || t === 'OK';
-      });
-      if (confirmBtn) {
-        confirmBtn.click();
-        return { clicked: true, text: (confirmBtn.textContent || confirmBtn.value || '').trim() };
-      }
-      return { clicked: false };
-    });
-    log(`처리완료 팝업: ${JSON.stringify(finalConfirm)}`);
-    await delay(1000);
+    // [9단계] setupDialogHandler가 native alert("처리되었습니다.")를 자동 처리
+    // 환불 후 페이지가 navigate되므로 navigation 완료 대기
+    log('\n[9단계] 처리완료 후 페이지 안정 대기');
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => null);
+    await delay(500);
 
     // ======================== [10단계] 취소 완료 확인 ========================
     log('\n[10단계] 취소 완료 확인');
@@ -312,11 +287,11 @@ async function run() {
     const finalUrl = page.url();
     log(`🌐 최종 URL: ${finalUrl}`);
 
-    // 페이지 내 취소/환불 상태 확인
+    // 페이지 내 취소/환불 상태 확인 (navigation 후 새 컨텍스트)
     const finalStatusText = await page.evaluate(() => {
       const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
       return clean(document.body?.innerText || '').slice(0, 500);
-    });
+    }).catch(() => '');
     const isCancelled = finalStatusText.includes('취소') || finalStatusText.includes('환불');
     log(`📊 최종 상태: ${isCancelled ? '취소/환불 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
 

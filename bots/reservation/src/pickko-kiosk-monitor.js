@@ -406,126 +406,164 @@ async function blockNaverSlot(page, entry) {
   }
 }
 
-// Step 2~3: DatePeriodCalendar 날짜 선택 + 적용
+// Step 2~3: DatePeriodCalendar 달력 팝업 → 월 헤더 위치 기반 날짜 셀 클릭 → 적용
+// 팝업은 입력창 없이 2개월 달력으로 표시됨 (예: 2026.2 / 2026.3)
+// month header("2026.3")의 bounding rect으로 해당 월 영역을 특정 후 날짜 셀 클릭
 async function selectBookingDate(page, date) {
   const today = getTodayKST();
   const isToday = date === today;
-  const [yearStr, monthStr, dayStr] = date.split('-');
+  const [yearStr, monthStr] = date.split('-');
   const targetYear = parseInt(yearStr);
   const targetMonth = parseInt(monthStr);
-  const targetDay = parseInt(dayStr);
+  const targetDay = parseInt(date.split('-')[2]);
+  // 헤더 텍스트 형식: "2026.3" (leading zero 없음)
+  const headerText = `${targetYear}.${targetMonth}`;
 
-  log(`  📅 날짜 선택: ${date} (오늘여부: ${isToday})`);
+  log(`  📅 날짜 선택: ${date} (헤더: "${headerText}")`);
 
-  // 날짜 표시 클릭 → 달력 팝업 열기
+  // [1단계] DatePeriodCalendar date-info 클릭 → 달력 팝업 열기
   const dateInfoSel = '[class*="DatePeriodCalendar__date-info"]';
   await page.waitForSelector(dateInfoSel, { timeout: 10000 });
   await page.click(dateInfoSel);
-  await delay(1200);
+  await delay(1000);
 
-  // 달력 팝업 대기
-  await page.waitForSelector('[class*="DatePeriodCalendar__calendar"], [class*="calendar-wrap"], [class*="CalendarWrap"]', { timeout: 8000 })
-    .catch(() => log('  ℹ️ 달력 팝업 클래스 탐색 실패 — 계속 진행'));
-  await delay(500);
+  // [2단계] 목표 월 헤더 찾기 (최대 12번 >) — 없으면 > 버튼 클릭
+  // 헤더 클래스: [class*="Calendar__monthly-top"] (예: Calendar__monthly-top__3+w3o)
 
-  // 목표 날짜 셀 찾기 (최대 12번 월 이동)
+  // 진단: 팝업 내 달력 헤더 후보 덤프
+  const domDump = await page.evaluate((headerText) => {
+    const candidates = Array.from(document.querySelectorAll('*'))
+      .filter(el => {
+        if (el.offsetParent === null) return false;
+        const txt = (el.textContent || '').trim();
+        return txt === headerText || txt.startsWith('2026.');
+      })
+      .slice(0, 15)
+      .map(el => ({
+        tag: el.tagName,
+        cls: (el.className || '').slice(0, 80),
+        txt: (el.textContent || '').trim().slice(0, 20),
+        hasMonthlyTop: (el.className || '').includes('Calendar__monthly'),
+      }));
+    return candidates;
+  }, headerText);
+  log(`  DOM 월헤더 후보: ${JSON.stringify(domDump)}`);
+
+  // 좌표 기반 클릭: evaluate로 좌표 추출 → page.mouse.click()으로 실제 클릭
+  // (el.click() 대신 mouse event를 직접 발생시켜 React SPA 호환성 확보)
   let found = false;
   for (let attempt = 0; attempt < 12; attempt++) {
-    found = await page.evaluate((isToday, targetYear, targetMonth, targetDay) => {
-      // 오늘 → "오늘" 텍스트 버튼 클릭
-      if (isToday) {
-        const allEls = document.querySelectorAll('button, td, span, div');
-        for (const el of allEls) {
-          if (el.textContent.trim() === '오늘' && el.offsetParent !== null) {
-            el.click();
-            return true;
-          }
-        }
+    // 월 헤더("2026.3") 위치로 day 셀 좌표 추출
+    const coords = await page.evaluate((headerText, targetDay) => {
+      const dayStr = String(targetDay);
+
+      // 1. 텍스트가 정확히 headerText인 요소 찾기 (domDump와 동일 로직, 크기 조건 제거)
+      let headerEl = null;
+      let headerDebug = [];
+      for (const el of document.querySelectorAll('*')) {
+        if (el.offsetParent === null) continue;
+        const txt = (el.textContent || '').trim();
+        if (txt !== headerText) continue;
+        const r = el.getBoundingClientRect();
+        headerDebug.push({ tag: el.tagName, w: Math.round(r.width), h: Math.round(r.height), l: Math.round(r.left) });
+        if (r.width > 0) { headerEl = el; break; } // r.width > 0 만 확인 (크기 상한 제거)
       }
+      if (!headerEl) return { found: false, reason: `header "${headerText}" not found`, debug: headerDebug };
 
-      // 현재 달력 화면의 년/월 헤더 파싱
-      const headerEls = document.querySelectorAll('[class*="month-name"], [class*="MonthName"], [class*="month-title"], [class*="MonthTitle"], [class*="month-header"]');
-      let visibleMonths = [];
-      headerEls.forEach(el => {
-        const text = el.textContent.trim();
-        // "2026년 2월" or "2026. 2" or "2월" etc.
-        const m1 = text.match(/(\d{4})년\s*(\d{1,2})월/);
-        const m2 = text.match(/(\d{4})[.\s]+(\d{1,2})/);
-        if (m1) visibleMonths.push({ year: parseInt(m1[1]), month: parseInt(m1[2]) });
-        else if (m2) visibleMonths.push({ year: parseInt(m2[1]), month: parseInt(m2[2]) });
-      });
+      // 2. 헤더 bounding rect → 해당 월 컬럼 X 범위
+      const hRect = headerEl.getBoundingClientRect();
+      const cx = (hRect.left + hRect.right) / 2;
+      const halfW = (hRect.right - hRect.left) / 2 + 30;
 
-      // 헤더 탐지 안되면 날짜 숫자만으로 시도
-      const targetMonthVisible = visibleMonths.some(m => m.year === targetYear && m.month === targetMonth);
-
-      if (targetMonthVisible || visibleMonths.length === 0) {
-        // 날짜 셀 탐색: 텍스트가 targetDay 숫자와 일치하는 클릭 가능한 셀
-        const dayCells = document.querySelectorAll('button, td, [role="button"]');
-        for (const cell of dayCells) {
-          const txt = (cell.textContent || '').trim();
-          if (txt === String(targetDay) && cell.offsetParent !== null && !cell.disabled) {
-            // 비활성 상태 확인 (aria-disabled, class에 disabled/prev/next 등)
-            const cls = (cell.className || '').toLowerCase();
-            const ariaDisabled = cell.getAttribute('aria-disabled');
-            if (ariaDisabled === 'true') continue;
-            if (cls.includes('disabled') || cls.includes('prev-month') || cls.includes('next-month') || cls.includes('outside')) continue;
-            cell.click();
-            return true;
-          }
-        }
+      // 3. 해당 월 범위에서 dayStr 셀 좌표 추출 (클릭은 상위에서 mouse.click으로)
+      for (const cell of document.querySelectorAll('button, td, [role="gridcell"]')) {
+        if (cell.offsetParent === null) continue;
+        if ((cell.textContent || '').trim() !== dayStr) continue;
+        const r = cell.getBoundingClientRect();
+        if (r.top < hRect.bottom - 10) continue;
+        if (r.left < cx - halfW || r.right > cx + halfW) continue;
+        const cls = (cell.className || '').toLowerCase();
+        if (cell.getAttribute('aria-disabled') === 'true') continue;
+        if (cls.includes('disabled') || cls.includes('prev') || cls.includes('next') || cls.includes('outside')) continue;
+        return {
+          found: true,
+          x: r.left + r.width / 2,
+          y: r.top + r.height / 2,
+          hx: Math.round(hRect.left), hw: Math.round(hRect.width)
+        };
       }
+      return { found: false, reason: 'day cell not in header X range', hRect: { l: Math.round(hRect.left), r: Math.round(hRect.right) } };
+    }, headerText, targetDay);
 
-      return false;
-    }, isToday, targetYear, targetMonth, targetDay);
+    log(`  좌표 탐색 (attempt ${attempt + 1}): ${JSON.stringify(coords)}`);
 
-    if (found) {
-      log(`  ✅ 날짜 셀 클릭 성공 (attempt ${attempt + 1})`);
-      await delay(500);
+    if (coords.found) {
+      await page.mouse.click(coords.x, coords.y);
+      log(`  ✅ 날짜 셀 mouse.click: (${Math.round(coords.x)}, ${Math.round(coords.y)})`);
+      found = true;
+      await delay(400);
       break;
     }
 
-    // 다음 달로 이동 (> 버튼)
-    const nextClicked = await page.evaluate(() => {
+    // 목표 월이 안 보이면 picker 내 > 버튼으로 다음 달로 이동
+    // > 버튼 위치: 오른쪽 캘린더의 마지막 위치 (picker 오른쪽 끝)
+    const navCoords = await page.evaluate((headerText) => {
+      // 현재 보이는 마지막(오른쪽) 월 헤더 기준으로 > 버튼 좌표 탐색
+      const allEls = Array.from(document.querySelectorAll('*'));
+      const headers = allEls.filter(el => {
+        if (el.offsetParent === null) return false;
+        const txt = (el.textContent || '').trim();
+        if (!/^\d{4}\.\d{1,2}$/.test(txt)) return false;
+        const r = el.getBoundingClientRect();
+        return r.width < 300 && r.height < 60 && r.width > 0;
+      });
+      if (headers.length === 0) return { found: false, reason: 'no month headers' };
+      const lastHeader = headers[headers.length - 1];
+      const lhRect = lastHeader.getBoundingClientRect();
+      // 헤더 오른쪽 영역에서 버튼 탐색
       const btns = Array.from(document.querySelectorAll('button'));
       for (const btn of btns) {
-        const text = (btn.textContent || '').trim();
-        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-        if ((text === '>' || text === '›' || text === '▶' || ariaLabel.includes('next') || ariaLabel.includes('다음'))
-          && btn.offsetParent !== null) {
-          btn.click();
-          return true;
+        if (btn.offsetParent === null) continue;
+        const br = btn.getBoundingClientRect();
+        if (br.left >= lhRect.right + 5 && br.width > 0 && br.height > 0) {
+          return { found: true, x: br.left + br.width / 2, y: br.top + br.height / 2, via: 'right-of-header' };
         }
       }
-      return false;
-    });
+      // fallback: 오른쪽 상단 어딘가에 있는 small 버튼
+      const pickRight = Math.max(...headers.map(h => h.getBoundingClientRect().right));
+      for (const btn of btns) {
+        if (btn.offsetParent === null) continue;
+        const br = btn.getBoundingClientRect();
+        if (br.left >= pickRight - 40 && br.width < 60) {
+          return { found: true, x: br.left + br.width / 2, y: br.top + br.height / 2, via: 'picker-far-right' };
+        }
+      }
+      return { found: false };
+    }, headerText);
 
-    if (!nextClicked) {
-      log(`  ⚠️ 다음 달 버튼 없음 (attempt ${attempt + 1})`);
-      break;
-    }
+    log(`  → 다음 달 이동 (attempt ${attempt + 1}): ${JSON.stringify(navCoords)}`);
+    if (!navCoords.found) break;
+    await page.mouse.click(navCoords.x, navCoords.y);
     await delay(600);
   }
 
   if (!found) {
-    log(`  ❌ 날짜 셀 찾기 실패: ${date}`);
+    log(`  ❌ 날짜 선택 실패`);
     return false;
   }
 
-  // 적용 버튼 클릭
-  await delay(300);
+  // [3단계] 적용 버튼 클릭
   const applyClicked = await page.evaluate(() => {
     const btns = Array.from(document.querySelectorAll('button'));
     for (const btn of btns) {
-      const text = (btn.textContent || '').trim();
-      if (text === '적용' && btn.offsetParent !== null) {
+      if ((btn.textContent || '').trim() === '적용' && btn.offsetParent !== null) {
         btn.click();
         return true;
       }
     }
     return false;
   });
-
-  log(`  적용 버튼: ${applyClicked}`);
+  log(`  [3단계] 적용 버튼: ${applyClicked}`);
   if (!applyClicked) return false;
 
   await delay(2000); // 캘린더 뷰 갱신 대기
@@ -681,12 +719,13 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
 async function fillUnavailablePopup(page, date, start, end) {
   log(`  📋 팝업 설정: ${date} ${start}~${end} 예약불가`);
 
-  // 팝업 열림 확인
+  // 패널(우측 예약정보 패널) 열림 확인 — "설정변경" 버튼 유무로 판단
+  await delay(800);
   const popupVisible = await page.evaluate(() => {
-    const popup = document.querySelector('[class*="Popup"], [class*="Modal"], [class*="modal"], [class*="popup"], [class*="Dialog"]');
-    return !!popup && popup.offsetParent !== null;
+    const btns = Array.from(document.querySelectorAll('button'));
+    return btns.some(b => (b.textContent || '').trim() === '설정변경' && b.offsetParent !== null);
   });
-  log(`  팝업 가시성: ${popupVisible}`);
+  log(`  패널 가시성(설정변경 버튼): ${popupVisible}`);
 
   // ── Step 5: 적용날짜 확인 (시작일 = 종료일 = date) ──
   // 날짜 인풋이 있으면 date로 맞추기 (이미 Step 2에서 선택했으므로 확인만)
