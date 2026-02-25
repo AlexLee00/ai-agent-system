@@ -236,12 +236,11 @@
     "room": "A2",
     "detectedAt": "2026. 2. 25. PM 4:20:22",
     "status": "completed",
-    "pickkoStatus": "paid",
+    "pickkoStatus": "verified",
     "pickkoOrderId": null,
     "errorReason": null,
     "retries": 0,
-    "pickkoStartTime": "2026. 2. 25. PM 4:20:24",
-    "pickkoCompleteTime": "2026. 2. 25. PM 4:20:54"
+    "pickkoStartTime": "2026. 2. 25. PM 8:00:14"
   },
   "1167481463": {
     "compositeKey": "01089280726-2026-03-01-12:30",
@@ -254,12 +253,11 @@
     "room": "A1",
     "detectedAt": "2026. 2. 25. PM 6:25:32",
     "status": "completed",
-    "pickkoStatus": "paid",
+    "pickkoStatus": "verified",
     "pickkoOrderId": null,
     "errorReason": null,
     "retries": 0,
-    "pickkoStartTime": "2026. 2. 25. PM 6:25:33",
-    "pickkoCompleteTime": "2026. 2. 25. PM 6:26:03"
+    "pickkoStartTime": "2026. 2. 25. PM 8:00:21"
   },
   "seenIds": [
     "1164258753",
