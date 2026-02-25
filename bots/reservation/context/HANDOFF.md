@@ -50,6 +50,150 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — pickko-kiosk-monitor.js fetchPickkoEntries 전환
+
+### fetchKioskReservations 제거 → fetchPickkoEntries 재활용
+
+**변경 내용:** 파일 내 중복 구현이었던 `fetchKioskReservations` 함수를 제거하고 `lib/pickko.js`의 `fetchPickkoEntries`로 교체
+
+- `fetchKioskReservations` 함수 삭제 (~170줄)
+- `normalizeTime` 로컬 함수 삭제 (~25줄, fetchPickkoEntries 내부에서 처리)
+- Phase 1 결제완료 조회: `fetchPickkoEntries(page, today, { minAmount: 1 })`
+- Phase 2B 환불 조회: `fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 })`
+
+**위치:** `src/pickko-kiosk-monitor.js` import + Phase 1 + Phase 2B 호출부
+
+**결과:** fetchPickkoEntries를 사용하는 스크립트 목록
+| 스크립트 | 옵션 | 용도 |
+|----------|------|------|
+| `pickko-kiosk-monitor.js` | `{ minAmount: 1 }` | 키오스크 결제완료 조회 |
+| `pickko-kiosk-monitor.js` | `{ statusKeyword: '환불', minAmount: 1 }` | 키오스크 환불 조회 |
+| `pickko-verify.js` | `{ statusKeyword: '', endDate: date }` | 당일 전체 예약 (검증용) |
+| `pickko-daily-audit.js` | `{ sortBy: 'sd_regdate', receiptDate: today, statusKeyword: '' }` | 접수일 기준 감사 |
+
+---
+
+## 최근 완료 작업 (2026-02-26) — pickko-daily-audit.js 일괄 조회 전환 + lib/pickko.js sd_regdate 지원
+
+### lib/pickko.js fetchPickkoEntries 접수일시(sd_regdate) 모드 추가
+
+**변경 내용:** `fetchPickkoEntries`에 `sortBy` + `receiptDate` 옵션 추가
+
+- `sortBy: 'sd_regdate'` — 이용일시 필터 대신 접수일시 기준 정렬 (`o_key=sd_regdate` 라디오)
+  - `sd_start_up`/`sd_start_dw` 날짜 입력 생략 (접수일 기준 조회 시 이용일 필터 불필요)
+- `receiptDate: 'YYYY-MM-DD'` — 접수일 필터 (행 파싱 단계에서 적용)
+  - 접수일시 내림차순 정렬 특성 활용: 대상일보다 이전 날짜 행 도달 시 `break` (조기 종료)
+- `receiptTime` — colMap에 `접수일시` 컬럼 인덱스 추가
+- `receiptText` — 반환 entry에 접수일시 원본 텍스트 포함
+
+**위치:** `lib/pickko.js`
+
+### pickko-daily-audit.js 5단계 제거 → fetchPickkoEntries 1회 호출
+
+**변경 내용:** 기존 2~7단계(페이지 이동, 라디오 설정, 검색, colMap, 행 파싱, 정규화) → `fetchPickkoEntries` 1회 호출로 대체
+
+- `fetchPickkoEntries(page, today, { sortBy: 'sd_regdate', receiptDate: today, statusKeyword: '' })`
+- `normalizeTime` 로컬 함수 제거 (fetchPickkoEntries 내부에서 처리)
+- 단계 수: 6단계 → 4단계 (로그인 → 일괄조회 → 비교 → 텔레그램)
+- 코드량: ~250줄 → ~130줄
+
+**위치:** `src/pickko-daily-audit.js`
+
+---
+
+## 최근 완료 작업 (2026-02-26) — pickko-verify.js 일괄 조회 전환 + lib/pickko.js 공유 함수 추가
+
+### lib/pickko.js fetchPickkoEntries 공유 함수 추출
+
+**변경 내용:** `pickko-kiosk-monitor.js`의 `fetchKioskReservations` 패턴을 공유 라이브러리로 추출
+
+- `fetchPickkoEntries(page, startDate, opts)` 추가 — 픽코 어드민 스터디룸 예약 일괄 조회
+  - `opts.statusKeyword` — 상태 필터 (`'결제완료'` 기본 / `''` = 전체)
+  - `opts.endDate` — 이용일 종료 (기본 = `''` 무제한)
+  - `opts.minAmount` — 이용금액 하한 (기본 = `0` 필터 없음, `1` = 키오스크 전용)
+  - 반환: `{ entries: [{phoneRaw,name,room,date,start,end,amount}], fetchOk: boolean }`
+- `_normalizeTime(str)` 내부 헬퍼 — 픽코 시간 문자열 → HH:MM 정규화
+
+**위치:** `lib/pickko.js`
+
+### pickko-verify.js N번 개별 검색 → 날짜별 일괄 조회 전환
+
+**변경 내용:** 기존 N번 개별 `searchPickko(page, entry)` 호출 → `fetchPickkoEntries` 일괄 조회로 교체
+
+- 대상 항목을 날짜별로 그룹화 → 고유 날짜 수만큼만 픽코 조회 (N번 → D번, D = 날짜 수)
+- `fetchPickkoEntries(page, date, { statusKeyword: '', endDate: date })` 로 당일 전체 예약 조회
+- 로컬 매칭: `phoneRaw === r.phoneRaw && r.start === entry.start`
+- `fetchOk = false` 시 `searchPickko` 개별 검색 폴백 유지 (안전망)
+- 항목 간 `delay(2000)` 제거 (조회 단계로 이동, 루프 불필요)
+
+**위치:** `src/pickko-verify.js` imports + main() 함수
+
+---
+
+## 최근 완료 작업 (2026-02-26) — 취소 동기화 개선 (cancelledHref 파싱 실패 커버)
+
+### naver-monitor.js 취소 감지 2 조건 개선
+
+**변경 내용:** 취소 감지 2(`오늘 취소 탭 파싱`)의 실행 조건 개선
+
+- **기존:** `cancelledCount >= 1` — 네이버 홈 카운터 파싱 실패 시(0 반환) 취소 탭 미방문
+- **변경:** `cancelledCount >= 1 || !cancelledHref` — 카운터 파싱 실패로 `cancelledHref = null`인 경우에도 폴백 URL로 취소 탭 방문
+- 정상 파싱 + count=0 → 방문 안 함(취소 없음 확실) / 파싱 실패 → 폴백 URL 방문
+
+**변경 위치:** `src/naver-monitor.js` 라인 1367 조건식
+
+---
+
+## 최근 완료 작업 (2026-02-26 새벽3) — 키오스크 취소 → 네이버 차단 해제 자동화
+
+### pickko-kiosk-monitor.js Phase 2B + 3B 추가
+
+**변경 개요:** 키오스크 예약 취소 감지 → 네이버 예약불가 자동 해제
+
+**Phase 2B: 취소 감지**
+- `fetchKioskReservations` 반환값 변경: `entries[]` → `{ entries, fetchOk }`
+  - `fetchOk`: 테이블 헤더 정상 로드 여부 (쿼리 실패 오감지 방지)
+- `cancelledEntries` = seenData에서 `naverBlocked=true`인데 현재 `결제완료` 목록에 없는 것
+  - 픽코에서 결제완료 → 환불완료 전환 시 자동 감지
+  - `fetchOk=false`이면 Phase 2B 스킵 (오감지 방지)
+
+**Phase 3B: 네이버 차단 해제**
+- `unblockNaverSlot(page, entry)` — 차단 해제 메인 플로우
+  - `verifyBlockInGrid()` 선체크: 이미 해제됐으면 → 그냥 `true` 반환 (수동 해제 처리)
+  - `clickRoomSuspendedSlot()` → suspended 슬롯 클릭 → `fillAvailablePopup()` → 설정변경
+  - 최종 `verifyBlockInGrid()` → `!blocked` 이면 해제 확인
+  - 실패 시 `naverBlocked: true` 유지 → 다음 주기 자동 재시도
+- 해제 성공 시: `seenData[key] = { ...e, naverBlocked: false, naverUnblockedAt }`
+- 텔레그램: ✅ 해제 완료 / ⚠️ 수동 처리 필요
+
+**새 함수:**
+- `clickRoomSuspendedSlot(page, roomRaw, startTime)` — suspended 버튼 클릭
+- `selectAvailableStatus(page)` — 예약불가 → 예약가능 드롭다운 선택
+- `fillAvailablePopup(page, date, start, end)` — 시간+예약가능 설정+저장
+
+**pickko-kiosk-seen.json 상태 변화:**
+```json
+// 차단: { naverBlocked: true, blockedAt: "..." }
+// 해제: { naverBlocked: false, naverUnblockedAt: "..." }
+```
+
+**취소 감지 방식 변경 (픽코 직접 조회):**
+- 기존: JSON 파일 비교 (naverBlocked=true 인데 결제완료 목록 없는 것)
+- 변경: 픽코에서 `상태=환불, 이용금액>=1, 이용일>=오늘` 직접 조회 → 무결성 보장
+- `fetchKioskReservations(page, today, '환불')` 로 호출 (기존 함수 재활용, statusKeyword 파라미터 추가)
+- seenData에 `naverUnblockedAt` 있으면 이미 처리된 것으로 스킵
+
+**테스트 방법:**
+```bash
+# 1. 픽코에서 키오스크 예약 환불 처리
+# 2. node src/pickko-kiosk-monitor.js
+# 예상: "[Phase 2B] 픽코 환불 예약 직접 조회" → "🗑 환불된 키오스크 예약: 1건"
+#       → 네이버 상태 확인 → 차단 해제 or 이미 가능 처리
+#       → 텔레그램 "✅ 네이버 예약불가 해제"
+```
+
+---
+
 ## 최근 완료 작업 (2026-02-26 새벽2) — 자연어 명령 확장 (조회·취소)
 
 ### pickko-query.js 신규

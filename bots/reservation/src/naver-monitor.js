@@ -1364,8 +1364,9 @@ async function monitorBookings() {
           } // end confirmedCount !== 0 guard
         }
 
-        // ✅ 취소 감지 2: 오늘 취소 탭 파싱 (더블 체크, cancelledCount >= 1일 때만)
-        if (process.env.PICKKO_CANCEL_ENABLE === '1' && cancelledCount >= 1) {
+        // ✅ 취소 감지 2: 오늘 취소 탭 파싱 (더블 체크)
+        // cancelledCount >= 1: 취소 있음 확인 / !cancelledHref: 카운터 파싱 실패 → 폴백 URL로 반드시 방문
+        if (process.env.PICKKO_CANCEL_ENABLE === '1' && (cancelledCount >= 1 || !cancelledHref)) {
           try {
             // 홈에서 추출한 href 우선, 없으면 폴백 URL 구성
             const cancelHref = cancelledHref || `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CANCELLED&date=${todaySeoul}`;

@@ -18,7 +18,7 @@ const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { loadJson, saveJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -43,30 +43,6 @@ function nowKST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T') + '+09:00';
 }
 
-// pickko-daily-audit.js와 동일 패턴
-function normalizeTime(str) {
-  if (!str) return '';
-  const m1 = str.match(/(오전|오후)\s*(\d+)시\s*(\d+)?분?/);
-  if (m1) {
-    let h = parseInt(m1[2]);
-    const m = parseInt(m1[3] || '0');
-    if (m1[1] === '오후' && h !== 12) h += 12;
-    if (m1[1] === '오전' && h === 12) h = 0;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
-  const m2 = str.match(/(오전|오후)\s*(\d+):(\d{2})/);
-  if (m2) {
-    let h = parseInt(m2[2]);
-    if (m2[1] === '오후' && h !== 12) h += 12;
-    if (m2[1] === '오전' && h === 12) h = 0;
-    return `${String(h).padStart(2, '0')}:${m2[3]}`;
-  }
-  const m3 = str.match(/(\d{1,2}):(\d{2})/);
-  if (m3) return `${m3[1].padStart(2, '0')}:${m3[2]}`;
-  const m4 = str.match(/(\d{1,2})시\s*(\d+)?분/);
-  if (m4) return `${m4[1].padStart(2, '0')}:${String(parseInt(m4[2] || '0')).padStart(2, '0')}`;
-  return '';
-}
 
 function fmtPhone(raw) {
   if ((raw || '').length === 11) return `${raw.slice(0, 3)}-${raw.slice(3, 7)}-${raw.slice(7)}`;
@@ -98,160 +74,6 @@ function sendTelegram(message) {
   } catch (e) {
     log(`⚠️ 텔레그램 발송 실패: ${e.message}`);
   }
-}
-
-// ─── Phase 1: 픽코 키오스크 예약 파싱 ──────────────────
-
-async function fetchKioskReservations(page, today) {
-  log('\n[Phase 1] 픽코 키오스크 예약 파싱');
-
-  await page.goto('https://pickkoadmin.com/study/index.html', {
-    waitUntil: 'networkidle2',
-    timeout: 30000
-  });
-  await delay(2000);
-
-  // ── 검색 필터 설정 ──
-  // 인풋명 (study/index.html 실측):
-  //   sd_start_up / sd_start_dw = 이용일 시작/종료 범위
-  //   order_price_dw            = 이용금액 하한 (>= 1)
-  const filterResult = await page.evaluate((todayStr) => {
-    const info = {};
-
-    // 이용일 시작일 = 오늘 이후 (sd_start_up = 하한, 종료일은 빈 값 유지)
-    // → 오늘 이후 예약이 모두 조회됨 (당일 키오스크 + 미래 예약 모두 감지)
-    const startEl = document.querySelector('input[name="sd_start_up"]');
-    if (startEl) {
-      startEl.value = todayStr;
-      startEl.dispatchEvent(new Event('change', { bubbles: true }));
-      info.dateStart = 'sd_start_up';
-    }
-    // sd_start_dw (종료일) 은 설정하지 않음 — 제한 없이 미래 예약도 조회
-
-    // 이용금액 하한 = 1 (키오스크/전화 예약만, 네이버 자동=0 제외)
-    // order_price_up = 하한(FROM), order_price_dw = 상한(TO)
-    // _up = FROM/하한, _dw = TO/상한 — sd_start_up/dw 와 동일 명명 규칙
-    const amtEl = document.querySelector('input[name="order_price_up"]');
-    if (amtEl) {
-      amtEl.value = '1';
-      amtEl.dispatchEvent(new Event('input', { bubbles: true }));
-      amtEl.dispatchEvent(new Event('change', { bubbles: true }));
-      info.amtInput = 'order_price_up';
-    }
-
-    return info;
-  }, today);
-
-  log(`필터 설정: ${JSON.stringify(filterResult)}`);
-
-  // 검색 실행
-  try {
-    await Promise.all([
-      page.click('input[type="submit"][value="검색"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null)
-    ]);
-  } catch (e) {
-    log(`ℹ️ 검색 버튼 클릭: ${e.message}`);
-  }
-  await delay(2000);
-
-  // 테이블 헤더 분석 (colMap 패턴)
-  const colMap = await page.evaluate(() => {
-    const result = { name: -1, phone: -1, room: -1, startTime: -1, endTime: -1, amount: -1, status: -1, isCombined: false, headers: [] };
-    const theadRows = document.querySelectorAll('thead tr');
-    const lastRow = theadRows[theadRows.length - 1];
-    const ths = lastRow ? Array.from(lastRow.querySelectorAll('th')) : [];
-    ths.forEach((th, i) => {
-      const t = th.textContent.trim();
-      result.headers.push(t);
-      if (t === '이름' || t.includes('회원')) result.name = i;
-      if (t === '연락처' || t.includes('전화')) result.phone = i;
-      if (t === '스터디룸' || (t.includes('스터디') && !t.includes('이용'))) result.room = i;
-      if (t === '이용일시') { result.startTime = i; result.isCombined = true; }
-      else if (t.includes('시작') && !t.includes('접수')) result.startTime = i;
-      if (t.includes('종료') || t.includes('끝')) result.endTime = i;
-      if (t.includes('이용금액') || t.includes('결제금액') || t === '금액') result.amount = i;
-      // 마지막 "상태" 컬럼 사용 (index 1 = 비어있음, index 9 = "결제완료")
-      if (t === '상태' || t.includes('결제') || t.includes('처리')) result.status = i;
-    });
-    return result;
-  });
-  log(`헤더: ${JSON.stringify(colMap.headers)}`);
-  log(`컬럼맵: name=${colMap.name}, phone=${colMap.phone}, room=${colMap.room}, start=${colMap.startTime}${colMap.isCombined ? '(통합)' : ''}, end=${colMap.endTime}, amount=${colMap.amount}, status=${colMap.status}`);
-
-  // 예약 행 파싱 (결제완료 + 이용금액>=1)
-  const rawEntries = await page.evaluate((todayStr, cm) => {
-    const entries = [];
-    const trs = Array.from(document.querySelectorAll('tbody tr'));
-
-    for (const tr of trs) {
-      const tds = Array.from(tr.querySelectorAll('td'));
-      // 예약 데이터 행만 처리 (study/view 링크가 있는 행)
-      if (!tr.querySelector('a[href*="/study/view/"]')) continue;
-      if (tds.length < 3) continue;
-
-      const getText = (idx) => idx >= 0 && tds[idx]
-        ? tds[idx].textContent.replace(/\s+/g, ' ').trim()
-        : '';
-
-      // 상태 컬럼 체크 (결제완료만 수집)
-      const statusText = cm.status >= 0 ? getText(cm.status) : tr.textContent;
-      if (!statusText.includes('결제완료')) continue;
-
-      // 이용금액 체크 (>= 1)
-      const amtText = cm.amount >= 0 ? getText(cm.amount) : '';
-      const amtNum = parseInt((amtText || '0').replace(/[^0-9]/g, ''), 10);
-      // amount 컬럼을 못 찾은 경우 필터 통과 (이용금액 인풋 필터로 이미 거름)
-      if (cm.amount >= 0 && amtNum < 1) continue;
-
-      const name = getText(cm.name);
-      const phoneRaw = getText(cm.phone).replace(/[^0-9]/g, '');
-      const room = getText(cm.room);
-      const combinedText = cm.startTime >= 0 ? getText(cm.startTime) : '';
-      const endText = cm.isCombined ? '' : (cm.endTime >= 0 ? getText(cm.endTime) : '');
-
-      // 이용일시 파싱: 날짜 + 시작 ~ 종료
-      let reservationDate = '';
-      let startText = combinedText;
-      const dateMatcher = combinedText.match(/(\d{4})-(\d{2})-(\d{2})/)
-        || combinedText.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
-      if (dateMatcher) {
-        if (combinedText.includes('년')) {
-          reservationDate = `${dateMatcher[1]}-${dateMatcher[2].padStart(2, '0')}-${dateMatcher[3].padStart(2, '0')}`;
-        } else {
-          reservationDate = dateMatcher[0];
-        }
-        startText = combinedText.slice(combinedText.indexOf(dateMatcher[0]) + dateMatcher[0].length).trim();
-      }
-
-      const tildeIdx = startText.indexOf('~');
-      const parsedStart = tildeIdx >= 0 ? startText.slice(0, tildeIdx).trim() : startText;
-      const parsedEnd = cm.isCombined
-        ? (tildeIdx >= 0 ? startText.slice(tildeIdx + 1).trim() : '')
-        : endText;
-
-      entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText });
-    }
-    return entries;
-  }, today, colMap);
-
-  log(`📋 픽코 키오스크 예약 파싱: ${rawEntries.length}건 (결제완료, 이용금액>=1)`);
-
-  // 정규화
-  return rawEntries.map(e => {
-    const start = normalizeTime(e.startText);
-    const end = normalizeTime(e.endText);
-    const date = e.reservationDate || today;
-    return {
-      name: e.name,
-      phoneRaw: e.phoneRaw,
-      room: e.room,
-      date,
-      start,
-      end,
-      amount: parseInt((e.amtText || '0').replace(/[^0-9]/g, ''), 10)
-    };
-  }).filter(e => e.phoneRaw && e.date && e.start);
 }
 
 // ─── Phase 3: 네이버 booking calendar 로그인 ──────────
@@ -414,6 +236,71 @@ async function blockNaverSlot(page, entry) {
   } catch (e) {
     log(`❌ 네이버 차단 중 오류: ${e.message}`);
     const ssPath = `/tmp/naver-block-${date}-error.png`;
+    await page.screenshot({ path: ssPath }).catch(() => null);
+    log(`📸 스크린샷: ${ssPath}`);
+    return false;
+  }
+}
+
+// Phase 3B: 취소된 키오스크 예약의 네이버 예약불가 해제
+async function unblockNaverSlot(page, entry) {
+  const { name, phoneRaw, date, start, end, room } = entry;
+  log(`\n[Phase 3B] 네이버 차단 해제 시도: ${name} ${date} ${start}~${end} ${room}`);
+
+  try {
+    await page.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
+    await delay(2000);
+
+    const dateSelected = await selectBookingDate(page, date);
+    if (!dateSelected) {
+      log(`⚠️ 날짜 선택 실패: ${date}`);
+      const ssPath = `/tmp/naver-unblock-${date}-datesel.png`;
+      await page.screenshot({ path: ssPath }).catch(() => null);
+      log(`📸 스크린샷: ${ssPath}`);
+      return false;
+    }
+
+    // 먼저 슬롯이 실제로 suspended 상태인지 확인
+    const isBlocked = await verifyBlockInGrid(page, room, start, end);
+    if (!isBlocked) {
+      log(`  ℹ️ 슬롯이 이미 예약가능 상태 (수동 해제됨). 상태만 업데이트.`);
+      return true;
+    }
+
+    const slotClicked = await clickRoomSuspendedSlot(page, room, start);
+    if (!slotClicked) {
+      log(`⚠️ suspended 슬롯 클릭 실패: room=${room}`);
+      const ssPath = `/tmp/naver-unblock-${date}-slot.png`;
+      await page.screenshot({ path: ssPath }).catch(() => null);
+      log(`📸 스크린샷: ${ssPath}`);
+      return false;
+    }
+
+    const endRounded = roundUpToHalfHour(end);
+    if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
+    const done = await fillAvailablePopup(page, date, start, endRounded);
+    if (!done) {
+      const ssPath = `/tmp/naver-unblock-${date}-popup.png`;
+      await page.screenshot({ path: ssPath }).catch(() => null);
+      log(`📸 스크린샷: ${ssPath}`);
+      return false;
+    }
+
+    // 최종 확인 (suspended가 사라졌는지)
+    const stillBlocked = await verifyBlockInGrid(page, room, start, end);
+    const verified = !stillBlocked;
+    log(`  최종 확인: ${verified ? '✅ 해제 확인됨' : '⚠️ 해제 확인 불가 (수동 확인 권장)'}`);
+    if (!verified) {
+      const ssPath = `/tmp/naver-unblock-${date}-verify.png`;
+      await page.screenshot({ path: ssPath }).catch(() => null);
+      log(`📸 최종 확인 스크린샷: ${ssPath}`);
+    }
+    return true;
+
+  } catch (err) {
+    log(`❌ 네이버 차단 해제 중 오류: ${err.message}`);
+    const ssPath = `/tmp/naver-unblock-${date}-error.png`;
     await page.screenshot({ path: ssPath }).catch(() => null);
     log(`📸 스크린샷: ${ssPath}`);
     return false;
@@ -714,6 +601,112 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
   return true;
 }
 
+// Step 4 (해제용): 해당 룸의 suspended(예약불가) 버튼 클릭
+async function clickRoomSuspendedSlot(page, roomRaw, startTime) {
+  const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
+  log(`  🏠 suspended 슬롯 클릭: roomRaw="${roomRaw}" → roomType="${roomType}" time="${startTime}"`);
+
+  const [hh, mm] = (startTime || '09:00').split(':').map(Number);
+  const isAM = hh < 12;
+  const displayHour = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+  const ampm = isAM ? '오전' : '오후';
+  const hourMin = `${displayHour}:${String(mm).padStart(2, '0')}`;
+  const timeDisplay = `${ampm} ${hourMin}`;
+  log(`  시간 표시: "${timeDisplay}"`);
+
+  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin) => {
+    // 1. 시간 Y 좌표 찾기 (clickRoomAvailableSlot과 동일)
+    let targetTimeEl = null;
+    const timeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
+    for (const span of timeSpans) {
+      if ((span.textContent || '').trim() !== hourMin) continue;
+      const parentText = (span.parentElement?.textContent || '').trim();
+      if (parentText.includes(ampm)) { targetTimeEl = span; break; }
+    }
+    if (!targetTimeEl) {
+      for (const span of timeSpans) {
+        if ((span.textContent || '').trim() === hourMin) { targetTimeEl = span; break; }
+      }
+    }
+    if (!targetTimeEl) {
+      for (const el of document.querySelectorAll('*')) {
+        if (el.children.length > 0) continue;
+        if ((el.textContent || '').trim() === hourMin) { targetTimeEl = el; break; }
+      }
+    }
+    if (!targetTimeEl) return { found: false, reason: `time "${hourMin}" not found` };
+
+    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const timeRect = targetTimeEl.getBoundingClientRect();
+    const targetY = timeRect.top + timeRect.height / 2;
+
+    // 2. 룸 컬럼 X 범위
+    let roomXRange = null;
+    const allVisible = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (!el.offsetParent) return false;
+      if (el.children.length > 0) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.top >= 0 && rect.top < 450 && rect.width > 20;
+    });
+    for (const el of allVisible) {
+      const text = (el.textContent || '').trim();
+      const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
+      if (pattern.test(text) || text === roomType) {
+        const rect = el.getBoundingClientRect();
+        if (!roomXRange || rect.left < roomXRange.left)
+          roomXRange = { left: rect.left, right: rect.right, cx: rect.left + rect.width / 2 };
+      }
+    }
+
+    // 3. calendar-btn 수집
+    const calBtns = Array.from(document.querySelectorAll(
+      '.calendar-btn, [class*="calendar-btn"], [class*="week-cell"] button, [class*="WeekCell"] button'
+    )).filter(b => b.offsetParent !== null);
+    if (calBtns.length === 0) return { found: false, reason: 'no calendar-btn visible', targetY: Math.round(targetY) };
+
+    const btnInfos = calBtns.map(b => {
+      const r = b.getBoundingClientRect();
+      return { el: b, cx: r.left + r.width / 2, cy: r.top + r.height / 2, cls: b.className || '', text: (b.textContent || '').trim() };
+    });
+
+    // 4. Y 범위 필터
+    let candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 25);
+    if (candidates.length === 0) candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60);
+    if (candidates.length === 0) candidates = btnInfos;
+
+    // 5. X 범위 필터
+    if (roomXRange) {
+      const inRoom = candidates.filter(b => b.cx >= roomXRange.left - 15 && b.cx <= roomXRange.right + 15);
+      if (inRoom.length > 0) candidates = inRoom;
+    }
+
+    // 6. suspended(예약불가) 슬롯 우선 ← clickRoomAvailableSlot과의 핵심 차이
+    const suspendedCandidates = candidates.filter(b => b.cls.includes('suspended') || b.cls.includes('btn-danger'));
+    const finalCandidates = suspendedCandidates.length > 0 ? suspendedCandidates : candidates;
+
+    if (finalCandidates.length === 0) {
+      return { found: false, reason: 'no suitable button', btnsTotal: btnInfos.length, targetY: Math.round(targetY), roomXRange };
+    }
+
+    const best = finalCandidates.sort((a, b) => Math.abs(a.cy - targetY) - Math.abs(b.cy - targetY))[0];
+    best.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    best.el.click();
+
+    return {
+      found: true, clicked: true,
+      btnText: best.text, btnClass: best.cls.slice(0, 80),
+      pos: { cx: Math.round(best.cx), cy: Math.round(best.cy) },
+      targetY: Math.round(targetY),
+      isSuspended: suspendedCandidates.length > 0
+    };
+  }, roomType, timeDisplay, ampm, hourMin);
+
+  log(`  suspended 버튼: ${JSON.stringify(result)}`);
+  if (!result.found || !result.clicked) return false;
+  await delay(1500);
+  return true;
+}
+
 // Step 5~9: 팝업에서 날짜 확인 + 시작/종료 시간 + 예약불가 + 설정변경
 async function fillUnavailablePopup(page, date, start, end) {
   log(`  📋 팝업 설정: ${date} ${start}~${end} 예약불가`);
@@ -888,6 +881,64 @@ async function selectTimeDropdown(page, timeStr, which) {
   return optResult.selected;
 }
 
+// Step 5~9 (해제용): 팝업에서 날짜/시간 확인 + 예약가능 + 설정변경
+async function fillAvailablePopup(page, date, start, end) {
+  log(`  📋 팝업 설정: ${date} ${start}~${end} 예약가능`);
+
+  await delay(800);
+  const popupVisible = await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('button'));
+    return btns.some(b => (b.textContent || '').trim() === '설정변경' && b.offsetParent !== null);
+  });
+  log(`  패널 가시성(설정변경 버튼): ${popupVisible}`);
+
+  await page.evaluate((targetDate) => {
+    const dateInputs = document.querySelectorAll('input[type="date"], input[placeholder*="날짜"], input[class*="date"]');
+    dateInputs.forEach(el => {
+      if (el.value !== targetDate) {
+        el.value = targetDate;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  }, date);
+
+  const startSet = await selectTimeDropdown(page, start, 'start');
+  log(`  시작시간 설정: ${startSet}`);
+  await delay(500);
+
+  const endSet = await selectTimeDropdown(page, end, 'end');
+  log(`  종료시간 설정: ${endSet}`);
+  await delay(500);
+
+  const statusSet = await selectAvailableStatus(page);
+  log(`  예약가능 설정: ${statusSet}`);
+  await delay(500);
+
+  if (!statusSet) {
+    log('  ⚠️ 예약가능 상태 설정 실패');
+    return false;
+  }
+
+  const saved = await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('button'));
+    for (const btn of btns) {
+      const text = (btn.textContent || '').trim();
+      if ((text === '설정변경' || text.includes('설정변경')) && btn.offsetParent !== null) {
+        btn.click();
+        return { clicked: true, text };
+      }
+    }
+    return { clicked: false };
+  });
+
+  log(`  설정변경 클릭: ${JSON.stringify(saved)}`);
+  if (!saved.clicked) return false;
+
+  await delay(2500);
+  log('  ✅ 설정변경 완료 (예약가능)');
+  return true;
+}
+
 // 예약상태 드롭다운에서 "예약불가" 선택
 // 패널(X > 1100) 내 "예약가능" 텍스트 요소 클릭 → "예약불가" 옵션 선택
 async function selectUnavailableStatus(page) {
@@ -1012,6 +1063,119 @@ async function selectUnavailableStatus(page) {
   return optResult.selected;
 }
 
+// 예약상태 드롭다운에서 "예약가능" 선택 (예약불가 → 예약가능 전환)
+// 패널(X > 1100) 내 "예약불가" 트리거 클릭 → "예약가능" 옵션 선택
+async function selectAvailableStatus(page) {
+  // 1. native <select> 시도
+  const nativeResult = await page.evaluate(() => {
+    for (const sel of document.querySelectorAll('select')) {
+      const r = sel.getBoundingClientRect();
+      if (r.left < 1100) continue;
+      for (const opt of sel.options) {
+        if (opt.text.includes('예약가능') || opt.value === 'available') {
+          sel.value = opt.value;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          return { done: true, text: opt.text };
+        }
+      }
+    }
+    return { done: false };
+  });
+  if (nativeResult.done) { log(`    native: ${JSON.stringify(nativeResult)}`); return true; }
+
+  // 2. 상태 드롭다운 트리거 클릭 (현재 "예약불가" 텍스트로 표시됨)
+  const triggerResult = await page.evaluate(() => {
+    const timeRe = /오[전후]\s*\d{1,2}:\d{2}/;
+    const unavailTexts = ['예약불가', '예약 불가'];
+
+    for (const btn of document.querySelectorAll('button.form-control, button[class*="form-control"]')) {
+      const r = btn.getBoundingClientRect();
+      if (r.left < 1100 || r.top < 200 || r.width < 10 || r.height < 5) continue;
+      const txt = (btn.textContent || '').trim();
+      if (timeRe.test(txt)) continue;
+      if (unavailTexts.some(s => txt.includes(s))) {
+        btn.click();
+        return { triggered: true, txt, method: 'btn-form-control' };
+      }
+    }
+
+    for (const el of document.querySelectorAll('*')) {
+      if (el.children.length > 0) continue;
+      const txt = (el.textContent || '').trim();
+      if (txt !== '예약상태') continue;
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.top < 200) continue;
+      const timeRe2 = /오[전후]\s*\d{1,2}:\d{2}/;
+      const rowBtns = Array.from(document.querySelectorAll('button.form-control, button[class*="form-control"]'))
+        .filter(b => {
+          const br = b.getBoundingClientRect();
+          return br.left > 1100 && Math.abs(br.top - r.top) < 40 && !timeRe2.test((b.textContent || '').trim());
+        });
+      if (rowBtns.length > 0) {
+        rowBtns[0].click();
+        return { triggered: true, txt: (rowBtns[0].textContent || '').trim(), method: 'label-adjacent' };
+      }
+    }
+
+    // 폴백: 패널 내 "예약불가" 포함 요소 클릭
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.top < 200 || r.width < 10 || r.height < 5) continue;
+      const txt = (el.textContent || '').trim();
+      if (/오[전후]/.test(txt)) continue;
+      if (txt.includes('예약불가') && txt.length < 15) {
+        el.click();
+        return { triggered: true, txt, tag: el.tagName, method: 'fallback' };
+      }
+    }
+    return { triggered: false };
+  });
+
+  log(`    예약가능 상태 트리거: ${JSON.stringify(triggerResult)}`);
+  if (!triggerResult.triggered) return false;
+
+  await delay(600);
+
+  // 3. 드롭다운에서 "예약가능" 옵션 선택
+  const optResult = await page.evaluate(() => {
+    const AVAIL = ['예약가능', '예약 가능'];
+
+    for (const btn of document.querySelectorAll('button.btn-select, button[class*="btn-select"]')) {
+      const r = btn.getBoundingClientRect();
+      if (r.width < 5 || r.height < 3) continue;
+      const txt = (btn.textContent || '').trim();
+      if (AVAIL.includes(txt)) {
+        btn.click();
+        return { selected: true, txt, method: 'btn-select' };
+      }
+    }
+
+    for (const li of document.querySelectorAll('li.item, li[class*="item"]')) {
+      const r = li.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 5 || r.height < 3) continue;
+      const txt = (li.textContent || '').trim();
+      if (AVAIL.includes(txt)) {
+        li.click();
+        return { selected: true, txt, method: 'li-item' };
+      }
+    }
+
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 5 || r.height < 3) continue;
+      const txt = (el.textContent || '').trim();
+      if (AVAIL.includes(txt)) {
+        el.click();
+        return { selected: true, txt, method: 'broad' };
+      }
+    }
+    return { selected: false };
+  });
+
+  log(`    예약가능 옵션: ${JSON.stringify(optResult)}`);
+  return optResult.selected;
+}
+
 // Step 10: 설정변경 후 시간박스에서 차단 확인
 // 해당 룸 열 X 범위 + 시작시간 Y 범위에서 suspended(예약불가) 버튼 존재 여부 확인
 async function verifyBlockInGrid(page, roomRaw, start, end) {
@@ -1130,8 +1294,9 @@ async function main() {
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log(`✅ 픽코 로그인 완료: ${page.url()}`);
 
-    // ── Phase 1: 키오스크 예약 파싱 ──
-    const kioskEntries = await fetchKioskReservations(page, today);
+    // ── Phase 1: 키오스크 예약 파싱 (이용금액>=1 → 키오스크/전화 예약만) ──
+    log(`\n[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=결제완료`);
+    const { entries: kioskEntries, fetchOk } = await fetchPickkoEntries(page, today, { minAmount: 1 });
 
     for (const e of kioskEntries) {
       log(`  • ${e.name} ${e.phoneRaw} | ${e.date} ${e.start}~${e.end} | ${e.room} | ${e.amount}원`);
@@ -1143,10 +1308,26 @@ async function main() {
       return !seenData[key];
     });
 
-    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 (전체 ${kioskEntries.length}건)`);
+    // ── Phase 2B: 취소 감지 (픽코 환불 목록 직접 조회) ──
+    // JSON 파일 비교 대신 픽코를 직접 조회 → 무결성 보장
+    log('\n[Phase 2B] 픽코 환불 예약 직접 조회');
+    log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=환불`);
+    const { entries: refundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
 
-    if (newEntries.length === 0) {
-      log('✅ 신규 예약 없음. 종료');
+    // 이미 처리 완료된 항목 제외 (naverUnblockedAt 있으면 skip)
+    const cancelledEntries = refundedEntries
+      .map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }))
+      .filter(e => {
+        const saved = seenData[e.key];
+        if (saved && saved.naverBlocked === false && saved.naverUnblockedAt) return false;
+        return true;
+      });
+
+    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 (전체 ${kioskEntries.length}건)`);
+    log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
+
+    if (newEntries.length === 0 && cancelledEntries.length === 0) {
+      log('✅ 신규 예약 없음, 취소 없음. 종료');
       return;
     }
 
@@ -1164,6 +1345,11 @@ async function main() {
         seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
         sendTelegram(
           `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
+        );
+      }
+      for (const e of cancelledEntries) {
+        sendTelegram(
+          `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: naver-monitor 미실행`
         );
       }
       saveJson(SEEN_FILE, seenData);
@@ -1200,6 +1386,11 @@ async function main() {
           seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
           sendTelegram(
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
+          );
+        }
+        for (const e of cancelledEntries) {
+          sendTelegram(
+            `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: 네이버 로그인 실패`
           );
         }
         saveJson(SEEN_FILE, seenData);
@@ -1258,6 +1449,50 @@ async function main() {
           sendTelegram(
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
           );
+        }
+      }
+
+      // ── Phase 3B: 취소 → 네이버 차단 해제 ──
+      if (cancelledEntries.length > 0) {
+        log(`\n[Phase 3B] 취소 예약 ${cancelledEntries.length}건 네이버 차단 해제 시작`);
+        for (const e of cancelledEntries) {
+          const { key } = e;
+          log(`\n처리 중 (취소): ${key}`);
+
+          let unblocked = false;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              unblocked = await unblockNaverSlot(naverPg, e);
+              break;
+            } catch (err) {
+              if (err.message.includes('detached Frame') && attempt === 1) {
+                log(`⚠️ Frame detach 감지 — 새 탭으로 재시도 (attempt ${attempt + 1}/2)`);
+                try { await naverPg.close(); } catch {}
+                naverPg = await createNaverPage();
+                const reLoggedIn = await naverBookingLogin(naverPg);
+                if (!reLoggedIn) { unblocked = false; break; }
+              } else {
+                log(`❌ unblockNaverSlot 오류: ${err.message}`);
+                const ssPath = `/tmp/naver-unblock-${e.date}-fatal.png`;
+                await naverPg.screenshot({ path: ssPath }).catch(() => null);
+                break;
+              }
+            }
+          }
+
+          if (unblocked) {
+            // naverBlocked: false + naverUnblockedAt 기록 (기존 seenData 데이터 보존)
+            seenData[key] = { ...(seenData[key] || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST() };
+            saveJson(SEEN_FILE, seenData);
+            sendTelegram(
+              `✅ 네이버 예약불가 해제\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)`
+            );
+          } else {
+            // 실패 시 naverBlocked: true 유지 → 다음 주기에 재시도
+            sendTelegram(
+              `⚠️ 네이버 차단 해제 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
+            );
+          }
         }
       }
 
