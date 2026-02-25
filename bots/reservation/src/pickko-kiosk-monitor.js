@@ -12,6 +12,7 @@
 
 const puppeteer = require('puppeteer');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
@@ -27,8 +28,8 @@ const NAVER_PW = SECRETS.naver_pw;
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const SEEN_FILE = path.join(__dirname, '..', 'pickko-kiosk-seen.json');
-// naver-monitor.js와 profile 분리 → 세션 충돌 방지
-const NAVER_PROFILE = path.join(WORKSPACE, 'naver-booking-profile');
+// naver-monitor.js가 저장하는 CDP 엔드포인트 파일 (새 탭 연결용)
+const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 const CHAT_ID = '***REMOVED***';
 
@@ -100,59 +101,37 @@ async function fetchKioskReservations(page, today) {
   await delay(2000);
 
   // ── 검색 필터 설정 ──
+  // 인풋명 (study/index.html 실측):
+  //   sd_start_up / sd_start_dw = 이용일 시작/종료 범위
+  //   order_price_dw            = 이용금액 하한 (>= 1)
   const filterResult = await page.evaluate((todayStr) => {
     const info = {};
 
-    // 이용일 시작 날짜 인풋 설정 (여러 후보 셀렉터 시도)
-    const dateSelectors = [
-      'input[name="sd_start"]',
-      'input[name="start_date"]',
-      'input[name="s_date"]',
-      'input[name="use_start"]',
-      '#sd_start', '#s_date', '#start_date'
-    ];
-    for (const sel of dateSelectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        el.value = todayStr;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        info.dateInput = sel;
-        break;
-      }
+    // 이용일 시작일 = 오늘 이후 (sd_start_up = 하한, 종료일은 빈 값 유지)
+    // → 오늘 이후 예약이 모두 조회됨 (당일 키오스크 + 미래 예약 모두 감지)
+    const startEl = document.querySelector('input[name="sd_start_up"]');
+    if (startEl) {
+      startEl.value = todayStr;
+      startEl.dispatchEvent(new Event('change', { bubbles: true }));
+      info.dateStart = 'sd_start_up';
     }
+    // sd_start_dw (종료일) 은 설정하지 않음 — 제한 없이 미래 예약도 조회
 
-    // 이용금액 >= 1 인풋 설정 (이용금액 시작/from 인풋)
-    const amtSelectors = [
-      'input[name="amt_from"]',
-      'input[name="f_amt"]',
-      'input[name="amount_from"]',
-      'input[name="amt_start"]',
-      'input[name="pay_from"]',
-      '#amt_from', '#f_amt'
-    ];
-    for (const sel of amtSelectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        el.value = '1';
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        info.amtInput = sel;
-        break;
-      }
+    // 이용금액 하한 = 1 (키오스크/전화 예약만, 네이버 자동=0 제외)
+    // order_price_up = 하한(FROM), order_price_dw = 상한(TO)
+    // _up = FROM/하한, _dw = TO/상한 — sd_start_up/dw 와 동일 명명 규칙
+    const amtEl = document.querySelector('input[name="order_price_up"]');
+    if (amtEl) {
+      amtEl.value = '1';
+      amtEl.dispatchEvent(new Event('input', { bubbles: true }));
+      amtEl.dispatchEvent(new Event('change', { bubbles: true }));
+      info.amtInput = 'order_price_up';
     }
-
-    // 모든 input name을 수집해서 디버깅 참고용으로 반환
-    info.allInputNames = Array.from(document.querySelectorAll('input[name]')).map(el => ({
-      name: el.name, type: el.type, id: el.id, value: el.value
-    })).slice(0, 30);
 
     return info;
   }, today);
 
-  log(`필터 설정: dateInput=${filterResult.dateInput || '못찾음'}, amtInput=${filterResult.amtInput || '못찾음'}`);
-  if (!filterResult.dateInput || !filterResult.amtInput) {
-    log(`⚠️ 인풋 탐지 실패. 전체 input 목록:\n${JSON.stringify(filterResult.allInputNames, null, 2)}`);
-  }
+  log(`필터 설정: ${JSON.stringify(filterResult)}`);
 
   // 검색 실행
   try {
@@ -181,6 +160,7 @@ async function fetchKioskReservations(page, today) {
       else if (t.includes('시작') && !t.includes('접수')) result.startTime = i;
       if (t.includes('종료') || t.includes('끝')) result.endTime = i;
       if (t.includes('이용금액') || t.includes('결제금액') || t === '금액') result.amount = i;
+      // 마지막 "상태" 컬럼 사용 (index 1 = 비어있음, index 9 = "결제완료")
       if (t === '상태' || t.includes('결제') || t.includes('처리')) result.status = i;
     });
     return result;
@@ -195,6 +175,8 @@ async function fetchKioskReservations(page, today) {
 
     for (const tr of trs) {
       const tds = Array.from(tr.querySelectorAll('td'));
+      // 예약 데이터 행만 처리 (study/view 링크가 있는 행)
+      if (!tr.querySelector('a[href*="/study/view/"]')) continue;
       if (tds.length < 3) continue;
 
       const getText = (idx) => idx >= 0 && tds[idx]
@@ -386,7 +368,7 @@ async function blockNaverSlot(page, entry) {
     }
 
     // Step 4: 해당 룸의 예약가능 버튼 클릭
-    const slotClicked = await clickRoomAvailableSlot(page, room);
+    const slotClicked = await clickRoomAvailableSlot(page, room, start);
     if (!slotClicked) {
       log(`⚠️ 예약가능 슬롯 클릭 실패: room=${room}`);
       const ssPath = `/tmp/naver-block-${date}-slot.png`;
@@ -551,79 +533,145 @@ async function selectBookingDate(page, date) {
 }
 
 // Step 4: 해당 룸의 예약가능 버튼 클릭
-// 룸 이름 (A1, A2, B) 컬럼을 찾아 그 아래 첫 번째 예약가능 버튼 클릭
-async function clickRoomAvailableSlot(page, roomRaw) {
-  // 룸 타입 추출: "스터디룸 A1" → "A1", "A룸" → "A", "B룸" → "B"
+// calendar-btn 클래스 + 좌표 기반으로 정확한 셀 클릭
+async function clickRoomAvailableSlot(page, roomRaw, startTime) {
+  // 룸 타입 추출: "스터디룸A1" → "A1", "스터디룸B" → "B"
   const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
-  log(`  🏠 룸 슬롯 클릭: roomRaw="${roomRaw}" → roomType="${roomType}"`);
+  log(`  🏠 룸 슬롯 클릭: roomRaw="${roomRaw}" → roomType="${roomType}" time="${startTime}"`);
 
-  const result = await page.evaluate((roomType) => {
-    // 헤더에서 룸 타입 컬럼 인덱스 찾기
-    // 테이블 구조 또는 그리드 구조 모두 대응
-    const headerCells = document.querySelectorAll('th, [class*="header-cell"], [class*="HeaderCell"], [class*="room-name"], [class*="RoomName"]');
-    let roomColIndex = -1;
+  // 24h "19:00" → 캘린더 표시 포맷 "오후 7:00"
+  const [hh, mm] = (startTime || '09:00').split(':').map(Number);
+  const isAM = hh < 12;
+  const displayHour = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+  const ampm = isAM ? '오전' : '오후';
+  const hourMin = `${displayHour}:${String(mm).padStart(2, '0')}`;   // "7:00"
+  const timeDisplay = `${ampm} ${hourMin}`;                           // "오후 7:00"
+  log(`  시간 표시: "${timeDisplay}"`);
 
-    headerCells.forEach((cell, idx) => {
-      const text = (cell.textContent || '').trim();
-      if (text.includes(roomType) || text === roomType) {
-        roomColIndex = idx;
+  // 모든 로직을 단일 evaluate에서 수행 (scroll → getBoundingClientRect 일관성 유지)
+  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin) => {
+    // 1. Calendar__time 스팬에서 대상 시간 요소 찾기
+    //    오후 7:00: ampm스팬("오후") + time스팬("7:00") 구조
+    let targetTimeEl = null;
+
+    // a) Calendar__time 클래스 스팬에서 hourMin("7:00") 찾고, 부모에 ampm("오후") 포함 확인
+    const timeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
+    for (const span of timeSpans) {
+      if ((span.textContent || '').trim() !== hourMin) continue;
+      // 부모 또는 형제에 ampm 텍스트가 있는지 확인
+      const parentText = (span.parentElement?.textContent || '').trim();
+      if (parentText.includes(ampm)) {
+        targetTimeEl = span;
+        break;
       }
+    }
+    // b) ampm 무시하고 hourMin 만으로 재시도
+    if (!targetTimeEl) {
+      for (const span of timeSpans) {
+        if ((span.textContent || '').trim() === hourMin) {
+          targetTimeEl = span;
+          break;
+        }
+      }
+    }
+    // c) 최후 폴백: 모든 leaf 요소에서 hourMin 검색
+    if (!targetTimeEl) {
+      for (const el of document.querySelectorAll('*')) {
+        if (el.children.length > 0) continue;
+        if ((el.textContent || '').trim() === hourMin) {
+          targetTimeEl = el;
+          break;
+        }
+      }
+    }
+
+    if (!targetTimeEl) {
+      return { found: false, reason: `time element "${hourMin}" not found`, timeSpansCount: timeSpans.length };
+    }
+
+    // 2. 스크롤 후 Y 좌표 측정 (동일 evaluate 내에서 일관성 보장)
+    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const timeRect = targetTimeEl.getBoundingClientRect();
+    const targetY = timeRect.top + timeRect.height / 2;
+
+    // 3. 룸 컬럼 헤더 X 범위 구하기
+    //    헤더는 페이지 상단 고정 영역 (viewport Y < 500)
+    //    대상: roomType("A1") 포함 텍스트를 가진 가시 요소
+    let roomXRange = null;
+    const allVisible = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (!el.offsetParent) return false;
+      if (el.children.length > 0) return false; // leaf only (text content)
+      const rect = el.getBoundingClientRect();
+      return rect.top >= 0 && rect.top < 450 && rect.width > 20; // 상단 헤더 영역
+    });
+    for (const el of allVisible) {
+      const text = (el.textContent || '').trim();
+      // "A1룸" 또는 "A1" 포함, "A1" 로만 검색 시 A2룸 등 오매칭 방지
+      // roomType이 "A1"이면 "A1룸" 또는 "A1 " 패턴 사용
+      const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
+      if (pattern.test(text) || text === roomType) {
+        const rect = el.getBoundingClientRect();
+        // 가장 왼쪽에 있는 첫 번째 match 선택 (기본룸 우선)
+        if (!roomXRange || rect.left < roomXRange.left) {
+          roomXRange = { left: rect.left, right: rect.right, cx: rect.left + rect.width / 2 };
+        }
+      }
+    }
+
+    // 4. calendar-btn 버튼 수집 (scrollIntoView 이후 화면에 나타난 것만)
+    const calBtns = Array.from(document.querySelectorAll(
+      '.calendar-btn, [class*="calendar-btn"], [class*="week-cell"] button, [class*="WeekCell"] button'
+    )).filter(b => b.offsetParent !== null);
+
+    if (calBtns.length === 0) {
+      return { found: false, reason: 'no calendar-btn visible after scroll', targetY: Math.round(targetY), roomXRange };
+    }
+
+    const btnInfos = calBtns.map(b => {
+      const r = b.getBoundingClientRect();
+      return { el: b, cx: r.left + r.width / 2, cy: r.top + r.height / 2, cls: b.className || '', text: (b.textContent || '').trim() };
     });
 
-    // 컬럼 인덱스로 해당 열의 예약가능 버튼 찾기
-    if (roomColIndex >= 0) {
-      // 테이블 방식: tbody td의 n번째 셀
-      const rows = document.querySelectorAll('tbody tr');
-      for (const row of rows) {
-        const cells = row.querySelectorAll('td');
-        if (cells[roomColIndex]) {
-          const btn = cells[roomColIndex].querySelector('button');
-          if (btn) {
-            const btnText = (btn.textContent || '').trim();
-            if (btnText.includes('예약가능') || btnText.includes('예약 가능') || btnText.includes('가능')) {
-              btn.click();
-              return { clicked: true, method: 'table-col', roomColIndex, btnText };
-            }
-          }
-        }
-      }
+    // 5. 시간 Y 기준 필터 (±25px, 없으면 ±60px)
+    let candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 25);
+    if (candidates.length === 0) candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60);
+    if (candidates.length === 0) candidates = btnInfos; // Y 필터 포기
+
+    // 6. 룸 X 범위 필터
+    if (roomXRange) {
+      const inRoom = candidates.filter(b => b.cx >= roomXRange.left - 15 && b.cx <= roomXRange.right + 15);
+      if (inRoom.length > 0) candidates = inRoom;
     }
 
-    // 폴백: 페이지 전체에서 룸 헤더 근처 예약가능 버튼 찾기
-    // 컨테이너 기반 레이아웃 (flex/grid)
-    const allTexts = document.querySelectorAll('[class*="room"], [class*="Room"], [class*="cell"], [class*="Cell"]');
-    for (const el of allTexts) {
-      const text = (el.textContent || '').trim();
-      // 룸 타입이 포함된 컨테이너
-      if (!text.includes(roomType)) continue;
-      // 그 안에서 예약가능 버튼 찾기
-      const btns = el.querySelectorAll('button');
-      for (const btn of btns) {
-        const btnText = (btn.textContent || '').trim();
-        if ((btnText.includes('예약가능') || btnText.includes('예약 가능') || btnText.includes('가능'))
-            && btn.offsetParent !== null) {
-          btn.click();
-          return { clicked: true, method: 'container', btnText };
-        }
-      }
+    // 7. soldout 제외, avail/remaining 우선 (아무 슬롯이나 클릭해서 팝업 열기)
+    const notSoldout = candidates.filter(b => !b.cls.includes('soldout') && !b.cls.includes('disabled'));
+    const finalCandidates = notSoldout.length > 0 ? notSoldout : candidates;
+
+    if (finalCandidates.length === 0) {
+      return {
+        found: false, reason: 'no suitable button',
+        btnsTotal: btnInfos.length, targetY: Math.round(targetY), roomXRange
+      };
     }
 
-    // 최후 폴백: 아무 예약가능 버튼이나 클릭
-    const allBtns = document.querySelectorAll('button');
-    for (const btn of allBtns) {
-      const btnText = (btn.textContent || '').trim();
-      if ((btnText.includes('예약가능') || btnText.includes('예약 가능'))
-          && btn.offsetParent !== null) {
-        btn.click();
-        return { clicked: true, method: 'fallback', btnText };
-      }
-    }
+    // 8. 가장 Y좌표가 가까운 버튼 선택
+    const best = finalCandidates.sort((a, b) => Math.abs(a.cy - targetY) - Math.abs(b.cy - targetY))[0];
 
-    return { clicked: false };
-  }, roomType);
+    best.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    best.el.click();
+
+    return {
+      found: true, clicked: true,
+      btnText: best.text, btnClass: best.cls.slice(0, 80),
+      pos: { cx: Math.round(best.cx), cy: Math.round(best.cy) },
+      targetY: Math.round(targetY),
+      roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
+      btnsNearTime: btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60).length
+    };
+  }, roomType, timeDisplay, ampm, hourMin);
 
   log(`  예약가능 버튼: ${JSON.stringify(result)}`);
-  if (!result.clicked) return false;
+  if (!result.found || !result.clicked) return false;
 
   await delay(1500); // 팝업 열림 대기
   return true;
@@ -945,45 +993,46 @@ async function main() {
       return;
     }
 
-    // ── Phase 3: 네이버 blocking ──
-    log('\n[Phase 3] 네이버 booking calendar 로그인');
+    // ── Phase 3: 네이버 blocking (CDP — naver-monitor 브라우저 새 탭 사용) ──
+    log('\n[Phase 3] 네이버 booking calendar — CDP 연결');
 
-    // 새 페이지로 Naver booking 처리 (Pickko 탭과 분리)
-    const naverPage = await browser.newPage();
-    naverPage.setDefaultTimeout(30000);
+    // naver-monitor.js가 저장한 wsEndpoint 읽기
+    let wsEndpoint = null;
+    try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
 
-    // Naver 별도 프로파일이 필요하므로 새 브라우저 인스턴스 사용
-    await naverPage.close();
+    if (!wsEndpoint) {
+      log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
+      for (const e of newEntries) {
+        const key = `${e.phoneRaw}|${e.date}|${e.start}`;
+        seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
+        sendTelegram(
+          `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
+        );
+      }
+      saveJson(SEEN_FILE, seenData);
+      return;
+    }
 
-    let naverBrowser;
+    log(`📡 CDP 연결: ${wsEndpoint.slice(0, 60)}...`);
+
+    let naverBrowser = null;
+    let naverPg = null;
     try {
-      naverBrowser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: null,
-        userDataDir: NAVER_PROFILE,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--window-position=0,25',
-          '--window-size=2294,1380'
-        ]
-      });
-
-      const naverPg = await naverBrowser.newPage();
+      // naver-monitor 브라우저에 CDP로 연결 (새 인스턴스 생성 없음)
+      naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+      naverPg = await naverBrowser.newPage();
       naverPg.setDefaultTimeout(30000);
+      await naverPg.setViewport({ width: 1920, height: 1080 });
+      log('✅ CDP 연결 성공 — 새 탭 오픈 (1920×1080)');
 
+      // booking URL 접속 (naver-monitor와 동일 세션 → 이미 로그인 상태)
       const loggedIn = await naverBookingLogin(naverPg);
 
       if (!loggedIn) {
         log('❌ 네이버 booking 로그인 실패');
-        // 모든 신규 예약에 대해 수동 처리 요청
         for (const e of newEntries) {
           const key = `${e.phoneRaw}|${e.date}|${e.start}`;
-          seenData[key] = {
-            ...e,
-            naverBlocked: false,
-            firstSeenAt: nowKST()
-          };
+          seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
           sendTelegram(
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
           );
@@ -1028,9 +1077,10 @@ async function main() {
       }
 
     } finally {
-      if (naverBrowser) {
-        try { await naverBrowser.close(); } catch (e) {}
-      }
+      // 탭만 닫기 — 브라우저(naver-monitor)는 종료하지 않음
+      if (naverPg) { try { await naverPg.close(); } catch (e) {} }
+      // disconnect(): CDP 세션 해제 (브라우저 프로세스 유지)
+      if (naverBrowser) { try { naverBrowser.disconnect(); } catch (e) {} }
     }
 
     log('\n✅ 픽코 키오스크 모니터 완료');

@@ -56,6 +56,9 @@ const END_TIME = normalized.end;
 const ROOM = normalized.room;
 
 const MODE = (process.env.MODE || 'dev').toLowerCase();
+// 테스트 전용: 결제금액을 0으로 변경하지 않고 실제 금액으로 결제
+// SKIP_PRICE_ZERO=1 node src/pickko-accurate.js ...
+const SKIP_PRICE_ZERO = process.env.SKIP_PRICE_ZERO === '1';
 
 // ✅ DEV 모드 화이트리스트 (2026-02-23)
 // 환경변수: DEV_WHITELIST_PHONES="01035000586,01054350586"
@@ -1208,26 +1211,34 @@ async function main() {
     let memoOk = false;
     let totalText = '';
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      log(`🧾 결제 입력 시도 #${attempt}`);
+    if (SKIP_PRICE_ZERO) {
+      // 🧪 테스트 전용: 금액 그대로 결제 (price zero 스킵)
+      log('🧪 SKIP_PRICE_ZERO=1 — 결제금액을 0으로 변경하지 않고 실제 금액으로 결제합니다');
+      const snap = await readTotals();
+      totalText = snap?.od_total_price3 ?? '';
+      log(`🔎 현재 결제금액: ${totalText}`);
+    } else {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        log(`🧾 결제 입력 시도 #${attempt}`);
 
-      priceOk = await setTopPriceZero();
-      await delay(250);
+        priceOk = await setTopPriceZero();
+        await delay(250);
 
-      memoOk = await setMemo();
-      await delay(250);
+        memoOk = await setMemo();
+        await delay(250);
 
-      cashOk = await clickCashMouse();
-      await delay(250);
+        cashOk = await clickCashMouse();
+        await delay(250);
 
-      const stable = await waitTotalZeroStable();
-      totalText = stable.snap?.od_total_price3 ?? '';
+        const stable = await waitTotalZeroStable();
+        totalText = stable.snap?.od_total_price3 ?? '';
 
-      log(`🔎 결제 입력 후 스냅샷: ${JSON.stringify(stable.snap)}`);
+        log(`🔎 결제 입력 후 스냅샷: ${JSON.stringify(stable.snap)}`);
 
-      if (stable.ok) break;
+        if (stable.ok) break;
 
-      log(`⚠️ 총 결제금액이 0으로 안정화되지 않음(현재 ${totalText}). 재시도합니다...`);
+        log(`⚠️ 총 결제금액이 0으로 안정화되지 않음(현재 ${totalText}). 재시도합니다...`);
+      }
     }
 
     const payModalResult = {
@@ -1240,7 +1251,7 @@ async function main() {
 
     log(`🧾 결제 모달 입력 결과: ${JSON.stringify(payModalResult)}`);
 
-    if (norm(payModalResult.totalText) !== '0') {
+    if (!SKIP_PRICE_ZERO && norm(payModalResult.totalText) !== '0') {
       throw new Error(`결제 중단: 총 결제금액이 0이 아님 (od_total_price3=${payModalResult.totalText})`);
     }
 
@@ -1297,7 +1308,7 @@ async function main() {
     let paySubmitClicked = false;
     for (let attempt = 1; attempt <= 2; attempt++) {
       log(`🧾 결제하기 클릭 시도 #${attempt}`);
-      await preClickReassertZero();
+      if (!SKIP_PRICE_ZERO) await preClickReassertZero();
 
       try {
         paySubmitClicked = await clickPayOrderMouse();
@@ -1313,6 +1324,7 @@ async function main() {
       log(`🔍 클릭 후 상태: modalClosed=${closed}, od_total_price3=${after}`);
 
       if (closed) break;
+      if (SKIP_PRICE_ZERO) break; // 금액 체크 스킵
       if (norm(after) === '0') break;
 
       log('⚠️ 결제 클릭 후 총액이 원복된 것으로 보임. 0 재입력 후 재시도합니다...');

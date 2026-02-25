@@ -21,6 +21,8 @@ const SECRETS = loadSecrets();
 const NAVER_ID = SECRETS.naver_id;
 const NAVER_PW = SECRETS.naver_pw;
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
+// kiosk-monitor가 새 탭으로 연결하기 위한 CDP 엔드포인트 파일
+const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 // ✅ 홈(검은 예약현황 박스)로 바로 가는 URL
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = (process.env.MODE || 'dev').toLowerCase();
@@ -789,7 +791,11 @@ async function monitorBookings() {
         '--disable-features=TabDiscarding,Translate,BackForwardCache'
       ]
     });
-    
+
+    // CDP 엔드포인트 저장: kiosk-monitor가 새 탭으로 연결하기 위해 사용
+    try { fs.writeFileSync(NAVER_WS_FILE, browser.wsEndpoint(), 'utf8'); } catch (e) {}
+    log('📡 CDP 엔드포인트 저장됨 (kiosk-monitor 연결용)');
+
     const isHeadless = process.env.NAVER_HEADLESS !== '0';
 
     // ✅ 탭 분리(Headful일 때만): 사장님 탭을 건드리지 않기 위함
@@ -1422,6 +1428,9 @@ async function monitorBookings() {
         log('🟢 NAVER_HEADLESS=0 상태: 브라우저를 닫지 않고 유지합니다(수동 확인/2단계 대비).');
       }
     }
+
+    // CDP 엔드포인트 파일 정리
+    try { fs.unlinkSync(NAVER_WS_FILE); } catch (e) {}
 
     // 락 해제
     try {
