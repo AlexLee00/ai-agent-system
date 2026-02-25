@@ -26,7 +26,7 @@ const { loadSecrets } = require('../lib/secrets');
 const { toKoreanTime, pickkoEndTime, formatPhone } = require('../lib/formatting');
 const { loadJson, saveJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 
 // ──────────────────────────────────────────────
 // 설정
@@ -255,20 +255,53 @@ async function main() {
     setupDialogHandler(page, log);
 
     // 로그인
-    log('\n[1단계] 픽코 로그인');
+    log('\n[1단계] 픽코 로그인 + 일괄 조회');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log(`✅ 로그인 완료: ${page.url()}`);
+
+    // 날짜별 그룹화 → 일괄 조회
+    const dateGroups = {};
+    for (const item of targets) {
+      const d = item.entry.date;
+      if (!dateGroups[d]) dateGroups[d] = [];
+      dateGroups[d].push(item);
+    }
+
+    const pickkoByDate = {};
+    const uniqueDates = Object.keys(dateGroups);
+    log(`\n[2단계] 픽코 일괄 조회: ${uniqueDates.length}개 날짜`);
+    for (const date of uniqueDates) {
+      log(`  📅 ${date} 조회 중...`);
+      const result = await fetchPickkoEntries(page, date, { statusKeyword: '', endDate: date });
+      pickkoByDate[date] = result;
+      log(`  → ${result.entries.length}건 (fetchOk=${result.fetchOk})`);
+    }
 
     // 각 항목 검증
     const results = { found: [], notFound: [], error: [] };
 
-    for (const { source, id, entry } of targets) {
-      log(`\n━━━ [${targets.indexOf({ source, id, entry }) + 1}/${targets.length}] ${entry.phone} ${entry.date} ━━━`);
+    for (let i = 0; i < targets.length; i++) {
+      const { source, id, entry } = targets[i];
+      log(`\n━━━ [${i + 1}/${targets.length}] ${entry.phone} ${entry.date} ━━━`);
       try {
-        const viewHref = await searchPickko(page, entry);
+        const phoneRaw = (entry.phoneRaw || entry.phone || '').replace(/\D/g, '');
+        const { entries: rows = [], fetchOk = false } = pickkoByDate[entry.date] || {};
+
+        // 일괄 조회 결과에서 매칭 (전화번호 + 시작시간)
+        const match = rows.find(r => r.phoneRaw === phoneRaw && r.start === entry.start);
+
+        let viewHref = null;
+        if (match) {
+          viewHref = '__bulk_match__';
+          log(`  ✅ 픽코에 등록됨 (일괄 조회): ${phoneRaw} ${entry.date} ${entry.start}`);
+        } else if (!fetchOk) {
+          // 일괄 조회 실패 시 개별 검색으로 폴백
+          log(`  ⚠️ 일괄 조회 실패 → 개별 검색 폴백`);
+          viewHref = await searchPickko(page, entry);
+          if (viewHref) log(`  ✅ 픽코에 등록됨 (개별 검색): ${viewHref}`);
+        }
 
         if (viewHref) {
-          log(`  ✅ 픽코에 등록됨: ${viewHref}`);
           markCompleted(source, id, entry);
           results.found.push(id);
         } else {
@@ -296,11 +329,6 @@ async function main() {
       } catch (err) {
         log(`  ❌ 오류: ${err.message}`);
         results.error.push(id);
-      }
-
-      // 항목 간 딜레이 (픽코 부하 방지)
-      if (targets.indexOf(targets.find(t => t.id === id)) < targets.length - 1) {
-        await delay(2000);
       }
     }
 

@@ -239,7 +239,7 @@ curl -s -X POST http://localhost:8100/ask \
 | ~~pickko-verify.js 자동 스케줄링~~ | ✅ 완료 — launchd 08:00/14:00/20:00 | 완료 |
 | ~~pickko-daily-audit~~ | ✅ 완료 — launchd 22:00+23:50 | 완료 |
 | ~~pickko-register / pickko-member~~ | ✅ 완료 — 스카 CLI 명령 사용 가능 | 완료 |
-| **픽코→네이버 예약 불가 처리** | 픽코 직접 예약 감지 → 네이버 해당 시간 차단 | **🔜 다음** |
+| ~~픽코→네이버 예약 불가 처리~~ | ✅ 완료 — pickko-kiosk-monitor.js (30분 launchd, 차단+해제 자동화) | 완료 |
 | 일일 예약 요약 자동 전송 | 매일 지정 시각 사장님에게 예약 현황 메시지 | 중간 |
 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 즉시 경고 | 중간 |
 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 | 장기 검토 |
