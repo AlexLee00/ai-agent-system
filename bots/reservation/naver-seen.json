@@ -225,6 +225,24 @@
     "retries": 0,
     "pickkoStartTime": "2026. 2. 25. AM 12:49:44"
   },
+  "1167354925": {
+    "compositeKey": "01027459103-2026-02-26-12:00",
+    "name": "정진영",
+    "phone": "010-2745-9103",
+    "phoneRaw": "01027459103",
+    "date": "2026-02-26",
+    "start": "12:00",
+    "end": "14:30",
+    "room": "A2",
+    "detectedAt": "2026. 2. 25. PM 4:20:22",
+    "status": "completed",
+    "pickkoStatus": "paid",
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 0,
+    "pickkoStartTime": "2026. 2. 25. PM 4:20:24",
+    "pickkoCompleteTime": "2026. 2. 25. PM 4:20:54"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
@@ -253,7 +271,8 @@
     "1166551086",
     "1166777081",
     "1166778764",
-    "1166779441"
+    "1166779441",
+    "1167354925"
   ],
   "cancelledSeenIds": [
     "cancel|2026-02-24|11:00|12:00|A1|01036239910"
