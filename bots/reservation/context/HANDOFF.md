@@ -50,6 +50,62 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26 새벽2) — 자연어 명령 확장 (조회·취소)
+
+### pickko-query.js 신규
+
+- 예약 조회 CLI — 날짜·이름·전화번호·룸 필터 지원
+- 데이터 소스: `naver-bookings-full.json` (5분 주기 갱신)
+- CLI: `--date=today|tomorrow|YYYY-MM-DD`, `--phone`, `--name`, `--room`
+- stdout JSON `{ success, count, message, bookings }`
+- 날짜별 그룹핑 + 시간순 정렬 메시지 자동 생성
+
+### pickko-cancel-cmd.js 신규
+
+- 스카 자연어 취소 명령용 래퍼 (stdout JSON)
+- 내부적으로 `pickko-cancel.js` 스폰 (child logs → stderr, 부모 stdout = JSON 전용)
+- CLI: `--phone, --date, --start, --end, --room, [--name]`
+- stdout JSON `{ success, message }`
+
+### CLAUDE_NOTES.md 업데이트
+
+- 조회 명령 (`pickko-query.js`) 가이드 추가
+- 취소 명령 (`pickko-cancel-cmd.js`) 가이드 추가
+- 스카가 조회/취소 자연어 명령을 받으면 어떤 스크립트를 실행할지 명확화
+
+---
+
+## 최근 완료 작업 (2026-02-26 새벽) — 텔레그램 알람 안정성 + start-ops.sh self-lock
+
+### start-ops.sh self-lock (중복 실행 방지)
+
+- `SELF_LOCK=$HOME/.openclaw/workspace/start-ops.lock` 추가
+- 실행 시 기존 PID 파일 확인 → 살아있으면 중복 차단 후 exit 1
+- `trap "rm -f '$SELF_LOCK'" EXIT INT TERM` — 종료 시 자동 정리
+- 여러 번 실행해도 단일 인스턴스만 유지됨
+
+### 텔레그램 알람 안정성 개선 (naver-monitor.js)
+
+**문제:** `sendTelegramDirect`가 fire-and-forget 방식으로 실패 시 메시지 유실
+
+**해결:**
+- `tryTelegramSend(message)` — exit code 0이면 true (10초 타임아웃)
+- `sendTelegramDirect` → async, 3회 재시도 (3초/6초 백오프), 최종 실패 시 대기큐 저장
+- `pending-telegrams.jsonl` 대기큐 — 다음 재시작 시 자동 재발송 (`flushPendingTelegrams`)
+- **버그 수정**: `sendAlert`에서 `sent: inAlertWindow` (발송 전 true 기록) → `sent: false` 저장 후 성공 시 `updateAlertSentStatus`로 true 갱신
+- `flushPendingAlerts` async 변환 — 발송 성공 확인 후 sent: true 업데이트
+- `reportUnresolvedAlerts` async 변환 + await 추가
+- 시작 시 `await flushPendingTelegrams()` 호출 추가
+
+**팝업 fix (이전 세션):** "최초 로그인이 필요한 메뉴입니다." 팝업 — `btn.click()` → 좌표 클릭 + `Promise.all([waitForNavigation, click])`
+
+### 현재 운영 상태
+
+- start-ops.sh PID 60760 (self-lock 활성, 새 버전)
+- naver-monitor.js PID 60991 (새 코드 적용, 정상 작동)
+
+---
+
 ## 최근 완료 작업 (2026-02-25 오후) — 취소 로직 재작성 + 결제 플로우 개선
 
 ### pickko-cancel.js 취소 플로우 완전 재작성

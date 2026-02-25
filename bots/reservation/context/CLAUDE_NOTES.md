@@ -119,6 +119,75 @@ node ~/projects/ai-agent-system/bots/reservation/src/pickko-member.js \
 
 ---
 
+---
+
+## 🔍 자연어 예약 조회 명령
+
+사장님이 예약 현황을 물어보면 `pickko-query.js`를 실행하고 `message` 필드를 텔레그램으로 전송한다.
+
+```bash
+node ~/projects/ai-agent-system/bots/reservation/src/pickko-query.js [옵션]
+```
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| `--date=today` | 오늘 예약 조회 | "오늘 예약 알려줘" |
+| `--date=tomorrow` | 내일 예약 조회 | "내일 예약 있어?" |
+| `--date=YYYY-MM-DD` | 특정 날짜 조회 | "3월 5일 예약 알려줘" |
+| `--phone=010XXXXXXXX` | 번호로 검색 | "010-1234-5678 예약 조회" |
+| `--name=이름` | 이름으로 검색 | "홍길동 예약 확인해줘" |
+| `--room=A1` | 룸별 조회 | "A1룸 예약 현황" |
+
+- stdout JSON `{ success, count, message, bookings }`
+- `success: true` → `message` 그대로 텔레그램 전송
+- `success: false` → `message` 오류 안내 전송
+- **데이터 소스**: `naver-bookings-full.json` (5분 주기 갱신, 네이버 확정 예약만)
+
+### 조회 예시
+
+```
+사장님: "오늘 예약 현황 알려줘"
+→ node .../pickko-query.js --date=today
+
+사장님: "3월 5일 예약 있어?"
+→ node .../pickko-query.js --date=2026-03-05
+
+사장님: "정진영 예약 언제야?"
+→ node .../pickko-query.js --name=정진영
+
+사장님: "010-1234-5678 예약 조회"
+→ node .../pickko-query.js --phone=01012345678
+```
+
+---
+
+## ❌ 자연어 예약 취소 명령
+
+사장님이 예약 취소를 요청하면 `pickko-cancel-cmd.js`를 실행한다.
+(**주의**: 이 파일은 스카 수동 취소용. 네이버 자동 취소는 naver-monitor.js가 `pickko-cancel.js`를 직접 실행)
+
+```bash
+node ~/projects/ai-agent-system/bots/reservation/src/pickko-cancel-cmd.js \
+  --phone=01012345678 --date=2026-03-05 \
+  --start=15:00 --end=17:00 --room=A1 [--name=홍길동]
+```
+
+- stdout JSON `{ success, message }`
+- `success: true` → "예약 취소 완료" 텔레그램 전송
+- `success: false` → 실패 사유 보고, 픽코 수동 취소 요청
+
+### 취소 예시
+
+```
+사장님: "홍길동 3월 5일 3시 예약 취소해줘"
+→ node .../pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동
+```
+
+> **중요**: 취소 전에 반드시 `pickko-query.js`로 예약 정보를 확인한 후 처리할 것
+> (전화번호·날짜·시간·룸이 모두 정확해야 함)
+
+---
+
 ## 🐛 버그 리포트 & 유지보수 기록 시스템
 
 ### 개요
@@ -173,6 +242,29 @@ open → (클로드 조치) → in_progress → (수정 완료) → resolved
 ---
 
 ## 변경 이력
+
+### 2026-02-26 — 자연어 명령 확장 (조회·취소)
+
+**추가 내용:**
+- `pickko-query.js` 신규 — 예약 조회 CLI (날짜/이름/번호/룸 필터, stdout JSON)
+- `pickko-cancel-cmd.js` 신규 — 스카 수동 취소 래퍼 (stdout JSON)
+- `CLAUDE_NOTES.md` — 조회·취소 행동 지침 추가
+
+**스카 행동 변경:**
+- "오늘 예약 현황" 류 조회 요청 → `pickko-query.js` 실행 후 결과 전송
+- "XXX 예약 취소해줘" 류 취소 요청 → `pickko-cancel-cmd.js` 실행 후 결과 전송
+
+---
+
+### 2026-02-26 — 텔레그램 알람 안정성 개선
+
+**변경 내용:**
+- `sendTelegramDirect` async 변환 + 3회 재시도 (3s/6s 백오프)
+- `pending-telegrams.jsonl` 대기큐 — 최종 실패 시 저장, 재시작 시 자동 재발송
+- `sendAlert` 버그 수정: `sent: inAlertWindow` → `sent: false` 저장 후 성공 확인 시 `true` 갱신
+- start-ops.sh self-lock: 중복 실행 차단
+
+---
 
 ### 2026-02-25 — 스카봇 안정화 업데이트 8건
 

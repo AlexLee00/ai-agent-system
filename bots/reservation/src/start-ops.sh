@@ -5,7 +5,19 @@
 cd "$(dirname "$0")"
 
 LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
+SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
+
+# ── self-lock: 중복 실행 방지 ──
+if [ -f "$SELF_LOCK" ]; then
+  OLD_PID=$(cat "$SELF_LOCK" 2>/dev/null)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️  start-ops.sh 이미 실행 중 (PID: $OLD_PID). 중복 실행 차단." | tee -a "$LOG_FILE"
+    exit 1
+  fi
+fi
+echo $$ > "$SELF_LOCK"
+trap "rm -f '$SELF_LOCK'" EXIT INT TERM
 
 cleanup_old() {
   # 락 파일에서 구 PID 확인
