@@ -243,6 +243,24 @@
     "pickkoStartTime": "2026. 2. 25. PM 4:20:24",
     "pickkoCompleteTime": "2026. 2. 25. PM 4:20:54"
   },
+  "1167481463": {
+    "compositeKey": "01089280726-2026-03-01-12:30",
+    "name": "오지은",
+    "phone": "010-8928-0726",
+    "phoneRaw": "01089280726",
+    "date": "2026-03-01",
+    "start": "12:30",
+    "end": "14:30",
+    "room": "A1",
+    "detectedAt": "2026. 2. 25. PM 6:25:32",
+    "status": "completed",
+    "pickkoStatus": "paid",
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 0,
+    "pickkoStartTime": "2026. 2. 25. PM 6:25:33",
+    "pickkoCompleteTime": "2026. 2. 25. PM 6:26:03"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
@@ -272,7 +290,8 @@
     "1166777081",
     "1166778764",
     "1166779441",
-    "1167354925"
+    "1167354925",
+    "1167481463"
   ],
   "cancelledSeenIds": [
     "cancel|2026-02-24|11:00|12:00|A1|01036239910"
