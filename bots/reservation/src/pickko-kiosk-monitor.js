@@ -908,26 +908,55 @@ async function selectUnavailableStatus(page) {
   });
   if (nativeResult.done) { log(`    native: ${JSON.stringify(nativeResult)}`); return true; }
 
-  // 2. 패널(X > 1100) 내 "예약가능" 텍스트 요소 클릭 (드롭다운 트리거)
+  // 2. 예약상태 드롭다운 트리거 클릭
+  // 패널 위치: X > 1100, Y > 200 (필터 탭 제외)
+  // 상태 드롭다운은 "예약가능" 또는 "-" 텍스트로 표시
+  // 시간 드롭다운(오전/오후 시간 패턴)과 구별
   const triggerResult = await page.evaluate(() => {
-    const statusTexts = ['예약가능', '예약 가능'];
-    for (const el of document.querySelectorAll('*')) {
-      const r = el.getBoundingClientRect();
-      if (r.left < 1100 || r.width < 10 || r.height < 5) continue;
-      const txt = (el.textContent || '').trim();
-      if (statusTexts.includes(txt)) {
-        el.click();
-        return { triggered: true, txt, tag: el.tagName, x: Math.round(r.left), y: Math.round(r.top) };
+    const timeRe = /오[전후]\s*\d{1,2}:\d{2}/;
+    const statusTexts = ['예약가능', '예약 가능', '-'];
+
+    // 1. BUTTON.form-control 중 시간 패턴 아닌 것 (상태 드롭다운)
+    for (const btn of document.querySelectorAll('button.form-control, button[class*="form-control"]')) {
+      const r = btn.getBoundingClientRect();
+      if (r.left < 1100 || r.top < 200 || r.width < 10 || r.height < 5) continue;
+      const txt = (btn.textContent || '').trim();
+      if (timeRe.test(txt)) continue; // 시간 드롭다운 제외
+      if (statusTexts.includes(txt) || txt === '') {
+        btn.click();
+        return { triggered: true, txt, tag: btn.tagName, x: Math.round(r.left), y: Math.round(r.top), method: 'btn-form-control' };
       }
     }
-    // 폴백: "예약가능" 포함 요소 중 짧은 것
+
+    // 2. "예약상태" 라벨 인접 버튼 탐색
+    for (const el of document.querySelectorAll('*')) {
+      if (el.children.length > 0) continue;
+      const txt = (el.textContent || '').trim();
+      if (txt !== '예약상태') continue;
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.top < 200) continue;
+      // 같은 행(Y ±40px) BUTTON.form-control
+      const rowBtns = Array.from(document.querySelectorAll('button.form-control, button[class*="form-control"]'))
+        .filter(b => {
+          const br = b.getBoundingClientRect();
+          return br.left > 1100 && Math.abs(br.top - r.top) < 40 && !timeRe.test((b.textContent || '').trim());
+        });
+      if (rowBtns.length > 0) {
+        rowBtns[0].click();
+        const br = rowBtns[0].getBoundingClientRect();
+        return { triggered: true, txt: (rowBtns[0].textContent || '').trim(), method: 'label-adjacent', x: Math.round(br.left), y: Math.round(br.top) };
+      }
+    }
+
+    // 3. 폴백: statusTexts 포함 모든 요소 (Y>200, 시간 패턴 제외)
     for (const el of document.querySelectorAll('*')) {
       const r = el.getBoundingClientRect();
-      if (r.left < 1100 || r.width < 10) continue;
+      if (r.left < 1100 || r.top < 200 || r.width < 10 || r.height < 5) continue;
       const txt = (el.textContent || '').trim();
-      if ((txt.includes('예약가능') || txt.includes('예약 가능')) && txt.length < 15) {
+      if (timeRe.test(txt)) continue;
+      if (statusTexts.includes(txt) || (txt.includes('예약가능') && txt.length < 15)) {
         el.click();
-        return { triggered: true, txt, tag: el.tagName, method: 'fallback' };
+        return { triggered: true, txt, tag: el.tagName, x: Math.round(r.left), y: Math.round(r.top), method: 'fallback' };
       }
     }
     return { triggered: false };
