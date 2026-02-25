@@ -73,6 +73,17 @@ function fmtPhone(raw) {
   return raw || '';
 }
 
+// 네이버 드롭다운은 30분 단위 — 종료시간을 30분 단위로 올림
+// 예: "19:50" → "20:00", "19:30" → "19:30" (그대로)
+function roundUpToHalfHour(timeStr) {
+  const [h, m] = (timeStr || '').split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return timeStr;
+  if (m === 0 || m === 30) return timeStr; // 이미 30분 단위
+  const newM = m < 30 ? 30 : 0;
+  const newH = m >= 30 ? h + 1 : h;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+}
+
 function sendTelegram(message) {
   try {
     const child = spawn('openclaw', [
@@ -378,7 +389,10 @@ async function blockNaverSlot(page, entry) {
     }
 
     // Step 5~9: 팝업에서 시간/상태 설정 + 설정변경
-    const done = await fillUnavailablePopup(page, date, start, end);
+    // 네이버 드롭다운은 30분 단위 — 종료시간 올림 (19:50 → 20:00)
+    const endRounded = roundUpToHalfHour(end);
+    if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
+    const done = await fillUnavailablePopup(page, date, start, endRounded);
     if (!done) {
       const ssPath = `/tmp/naver-block-${date}-popup.png`;
       await page.screenshot({ path: ssPath }).catch(() => null);
@@ -430,25 +444,6 @@ async function selectBookingDate(page, date) {
   // [2단계] 목표 월 헤더 찾기 (최대 12번 >) — 없으면 > 버튼 클릭
   // 헤더 클래스: [class*="Calendar__monthly-top"] (예: Calendar__monthly-top__3+w3o)
 
-  // 진단: 팝업 내 달력 헤더 후보 덤프
-  const domDump = await page.evaluate((headerText) => {
-    const candidates = Array.from(document.querySelectorAll('*'))
-      .filter(el => {
-        if (el.offsetParent === null) return false;
-        const txt = (el.textContent || '').trim();
-        return txt === headerText || txt.startsWith('2026.');
-      })
-      .slice(0, 15)
-      .map(el => ({
-        tag: el.tagName,
-        cls: (el.className || '').slice(0, 80),
-        txt: (el.textContent || '').trim().slice(0, 20),
-        hasMonthlyTop: (el.className || '').includes('Calendar__monthly'),
-      }));
-    return candidates;
-  }, headerText);
-  log(`  DOM 월헤더 후보: ${JSON.stringify(domDump)}`);
-
   // 좌표 기반 클릭: evaluate로 좌표 추출 → page.mouse.click()으로 실제 클릭
   // (el.click() 대신 mouse event를 직접 발생시켜 React SPA 호환성 확보)
   let found = false;
@@ -476,9 +471,13 @@ async function selectBookingDate(page, date) {
       const halfW = (hRect.right - hRect.left) / 2 + 30;
 
       // 3. 해당 월 범위에서 dayStr 셀 좌표 추출 (클릭은 상위에서 mouse.click으로)
+      // 공휴일 셀은 "2대체공휴일(삼일절)" 처럼 dayStr 뒤에 추가 텍스트 있으므로 startsWith 사용
       for (const cell of document.querySelectorAll('button, td, [role="gridcell"]')) {
         if (cell.offsetParent === null) continue;
-        if ((cell.textContent || '').trim() !== dayStr) continue;
+        const cellTxt = (cell.textContent || '').trim();
+        if (!cellTxt.startsWith(dayStr)) continue;
+        // "20", "21" 등 다른 날짜가 startsWith로 걸리지 않도록 dayStr 다음 문자 체크
+        if (cellTxt.length > dayStr.length && /\d/.test(cellTxt[dayStr.length])) continue;
         const r = cell.getBoundingClientRect();
         if (r.top < hRect.bottom - 10) continue;
         if (r.left < cx - halfW || r.right > cx + halfW) continue;
@@ -781,161 +780,180 @@ async function fillUnavailablePopup(page, date, start, end) {
 }
 
 // 시간 드롭다운 선택 헬퍼 (start 또는 end)
+// 패널은 우측 고정 패널 (X > 1100) — bounding rect 기반으로 트리거 찾기
 async function selectTimeDropdown(page, timeStr, which) {
-  // timeStr 예: "15:00", "17:00"
-  // 드롭다운 옵션은 "15:00" 또는 "오후 3:00" 형식일 수 있음
+  // timeStr: "18:00", "19:50" → 오후 표시: "오후 6:00", "오후 7:50"
+  const [hh, mm] = timeStr.split(':').map(Number);
+  const isAM = hh < 12;
+  const displayH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+  const ampm = isAM ? '오전' : '오후';
+  const timeDisplay = `${ampm} ${displayH}:${String(mm).padStart(2, '0')}`;
 
-  // 먼저 native <select> 시도
-  const nativeResult = await page.evaluate((timeStr, which) => {
-    const keyword = which === 'start' ? ['시작', 'start', 'from'] : ['종료', '끝', 'end', 'to'];
-    const selects = Array.from(document.querySelectorAll('select'));
-    for (const sel of selects) {
-      const label = (sel.name || sel.id || sel.getAttribute('aria-label') || '').toLowerCase();
-      const isTarget = keyword.some(k => label.includes(k));
-      // 선택 대상 select 특정 또는 순서로 구분
-      if (isTarget || selects.length <= 2) {
-        const options = Array.from(sel.options);
-        // 정확 일치 먼저
-        for (const opt of options) {
-          if (opt.value === timeStr || opt.text.trim() === timeStr) {
-            sel.value = opt.value;
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-            return { done: true, method: 'native-exact', value: opt.value };
-          }
-        }
-        // 부분 일치 (시간 앞부분만)
-        const targetHour = timeStr.split(':')[0];
-        for (const opt of options) {
-          const v = opt.value || opt.text;
-          if (v.includes(targetHour + ':')) {
-            sel.value = opt.value;
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-            return { done: true, method: 'native-partial', value: opt.value };
-          }
+  log(`    드롭다운(${which}): "${timeStr}" → "${timeDisplay}"`);
+
+  // 1. native <select> 시도 (없을 가능성 높지만 빠른 확인)
+  const nativeResult = await page.evaluate((timeStr) => {
+    for (const sel of document.querySelectorAll('select')) {
+      const r = sel.getBoundingClientRect();
+      if (r.left < 1100) continue; // 패널 외 제외
+      for (const opt of sel.options) {
+        if (opt.value === timeStr || opt.text.trim() === timeStr) {
+          sel.value = opt.value;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          return { done: true, value: opt.value };
         }
       }
     }
     return { done: false };
-  }, timeStr, which);
-
-  if (nativeResult.done) return true;
-
-  // 커스텀 드롭다운 시도 (클릭 → 옵션 선택)
-  const customResult = await page.evaluate((timeStr, which) => {
-    const keyword = which === 'start' ? ['시작', 'start'] : ['종료', '끝', 'end'];
-
-    // 시간 관련 커스텀 드롭다운 트리거 찾기
-    const triggers = document.querySelectorAll('[class*="time-select"], [class*="TimeSelect"], [class*="time-picker"], [class*="TimePicker"], [class*="dropdown"], [class*="Dropdown"]');
-    for (const trigger of triggers) {
-      const label = (trigger.textContent || '').trim();
-      const cls = (trigger.className || '').toLowerCase();
-      const isTarget = keyword.some(k => cls.includes(k) || label.includes(k));
-      if (isTarget && trigger.offsetParent !== null) {
-        trigger.click();
-        return { triggered: true, label };
-      }
-    }
-
-    // 폴백: 현재 시간값이 표시된 버튼/div 찾기
-    const allEls = document.querySelectorAll('button, [role="button"], [class*="select"]');
-    for (const el of allEls) {
-      const text = (el.textContent || '').trim();
-      // 시간 패턴 "HH:MM" 또는 "오전/오후 H:MM" 이 있는 드롭다운 트리거
-      if (/^\d{1,2}:\d{2}$/.test(text) || /오[전후]\s*\d/.test(text)) {
-        if (el.offsetParent !== null) {
-          el.click();
-          return { triggered: true, text };
-        }
-      }
-    }
-    return { triggered: false };
-  }, timeStr, which);
-
-  if (!customResult.triggered) return false;
-  await delay(500);
-
-  // 열린 드롭다운에서 옵션 선택
-  const optionClicked = await page.evaluate((timeStr) => {
-    const [h, m] = timeStr.split(':');
-    const targetHour = parseInt(h);
-    const targetMin = parseInt(m);
-
-    // 시간 옵션 li/option/div 탐색
-    const items = document.querySelectorAll('[class*="option"], [class*="Option"], [role="option"], [class*="item"], [class*="Item"], li');
-    for (const item of items) {
-      if (item.offsetParent === null) continue;
-      const text = (item.textContent || '').trim();
-      // "15:00", "오후 3:00", "15시", "15시 00분" 등 매칭
-      const isExact = text === timeStr;
-      const hasHourMin = new RegExp(`\\b${targetHour}:${String(targetMin).padStart(2, '0')}\\b`).test(text);
-      const hasHour = new RegExp(`\\b${targetHour}시`).test(text);
-      if (isExact || hasHourMin || hasHour) {
-        item.click();
-        return { clicked: true, text };
-      }
-    }
-    return { clicked: false };
   }, timeStr);
+  if (nativeResult.done) { log(`    native: ${JSON.stringify(nativeResult)}`); return true; }
 
-  log(`    ${which} 커스텀 드롭다운 옵션: ${JSON.stringify(optionClicked)}`);
-  return optionClicked.clicked;
+  // 2. 패널(X > 1100) 내 오전/오후 시간 텍스트 요소 찾기 → 클릭 (which=start=왼쪽, end=오른쪽)
+  // BUTTON.form-control 우선 선택 — SPAN/DIV 부모 클릭 시 드롭다운이 열리지 않을 수 있음
+  const triggerResult = await page.evaluate((which) => {
+    const timeRe = /오[전후]\s*\d{1,2}:\d{2}/;
+    const candidates = [];
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 10 || r.height < 5) continue;
+      const txt = (el.textContent || '').trim();
+      if (!timeRe.test(txt) || txt.length > 20) continue;
+      candidates.push({ el, txt, x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    if (candidates.length === 0) return { triggered: false, reason: 'no time text in panel', debug: [] };
+
+    const debug = candidates.map(c => ({ tag: c.el.tagName, cls: (c.el.className||'').slice(0,60), txt: c.txt, x: Math.round(c.x), y: Math.round(c.y) }));
+
+    // BUTTON 요소 우선 (custom-selectbox > BUTTON.form-control 패턴)
+    const btnCandidates = candidates.filter(c => c.el.tagName === 'BUTTON');
+    const sorted = (btnCandidates.length >= 2 ? btnCandidates : candidates).sort((a, b) => a.x - b.x);
+
+    // start → 좌측(X 작은), end → 우측(X 큰) 요소 선택
+    const target = which === 'start' ? sorted[0] : sorted[sorted.length - 1];
+    target.el.click();
+    return { triggered: true, txt: target.txt, tag: target.el.tagName, x: Math.round(target.x), debug };
+  }, which);
+
+  log(`    패널 트리거(${which}): ${JSON.stringify(triggerResult)}`);
+  if (!triggerResult.triggered) return false;
+
+  await delay(600);
+
+  // 3. 열린 드롭다운에서 목표 시간 BUTTON.btn-select 클릭
+  // 드롭다운 구조: LI.item > BUTTON.btn-select (텍스트 "오후 6:00" 형식)
+  const optResult = await page.evaluate((timeDisplay, timeStr, ampm, displayH, mm) => {
+    const minStr = String(mm).padStart(2, '0');
+    const exact = timeDisplay;                    // "오후 6:00"
+    const noSpace = `${ampm}${displayH}:${minStr}`; // "오후6:00"
+
+    // 1. BUTTON.btn-select 우선 (정확 일치)
+    for (const btn of document.querySelectorAll('button.btn-select, button[class*="btn-select"]')) {
+      const r = btn.getBoundingClientRect();
+      if (r.width < 5 || r.height < 3) continue;
+      const txt = (btn.textContent || '').trim();
+      if (txt === exact || txt === noSpace) {
+        btn.click();
+        return { selected: true, txt, method: 'btn-select' };
+      }
+    }
+
+    // 2. LI.item 정확 일치 (short text only)
+    for (const li of document.querySelectorAll('li.item, li[class*="item"]')) {
+      const r = li.getBoundingClientRect();
+      if (r.width < 5 || r.height < 3) continue;
+      const txt = (li.textContent || '').trim();
+      if (txt.length > 15) continue; // 전체 목록 텍스트 제외
+      if (txt === exact || txt === noSpace) {
+        li.click();
+        return { selected: true, txt, method: 'li-item' };
+      }
+    }
+
+    // 3. 넓은 탐색: 짧은 텍스트 + 오전/오후 패턴
+    const pattern = new RegExp(`^${ampm}\\s*${displayH}:${minStr}$`);
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 5 || r.height < 3) continue;
+      const txt = (el.textContent || '').trim();
+      if (txt.length > 12) continue;
+      if (pattern.test(txt)) {
+        el.click();
+        return { selected: true, txt, method: 'broad' };
+      }
+    }
+    return { selected: false };
+  }, timeDisplay, timeStr, ampm, displayH, mm);
+
+  log(`    드롭다운 옵션: ${JSON.stringify(optResult)}`);
+  return optResult.selected;
 }
 
 // 예약상태 드롭다운에서 "예약불가" 선택
+// 패널(X > 1100) 내 "예약가능" 텍스트 요소 클릭 → "예약불가" 옵션 선택
 async function selectUnavailableStatus(page) {
-  // native select 시도
+  // 1. native <select> 시도
   const nativeResult = await page.evaluate(() => {
-    const selects = Array.from(document.querySelectorAll('select'));
-    for (const sel of selects) {
-      const options = Array.from(sel.options);
-      for (const opt of options) {
-        if (opt.text.includes('예약불가') || opt.text.includes('예약 불가') || opt.value === 'unavailable' || opt.value === 'UNAVAILABLE') {
+    for (const sel of document.querySelectorAll('select')) {
+      const r = sel.getBoundingClientRect();
+      if (r.left < 1100) continue;
+      for (const opt of sel.options) {
+        if (opt.text.includes('예약불가') || opt.value === 'unavailable') {
           sel.value = opt.value;
           sel.dispatchEvent(new Event('change', { bubbles: true }));
-          return { done: true, method: 'native', text: opt.text };
+          return { done: true, text: opt.text };
         }
       }
     }
     return { done: false };
   });
+  if (nativeResult.done) { log(`    native: ${JSON.stringify(nativeResult)}`); return true; }
 
-  if (nativeResult.done) return true;
-
-  // 커스텀 드롭다운: 상태 트리거 클릭
-  const triggerClicked = await page.evaluate(() => {
-    // "예약상태" 라벨 근처 드롭다운 또는 현재 상태값 표시 요소 클릭
-    const allEls = document.querySelectorAll('button, [role="button"], [class*="status"], [class*="Status"], [class*="select"], [class*="Select"]');
-    for (const el of allEls) {
-      const text = (el.textContent || '').trim();
-      const cls = (el.className || '').toLowerCase();
-      if ((cls.includes('status') || text.includes('예약가능') || text.includes('예약 가능') || text.includes('상태'))
-          && el.offsetParent !== null) {
+  // 2. 패널(X > 1100) 내 "예약가능" 텍스트 요소 클릭 (드롭다운 트리거)
+  const triggerResult = await page.evaluate(() => {
+    const statusTexts = ['예약가능', '예약 가능'];
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 10 || r.height < 5) continue;
+      const txt = (el.textContent || '').trim();
+      if (statusTexts.includes(txt)) {
         el.click();
-        return { clicked: true, text };
+        return { triggered: true, txt, tag: el.tagName, x: Math.round(r.left), y: Math.round(r.top) };
       }
     }
-    return { clicked: false };
-  });
-
-  if (!triggerClicked.clicked) return false;
-  await delay(500);
-
-  // 드롭다운에서 "예약불가" 옵션 클릭
-  const optionClicked = await page.evaluate(() => {
-    const items = document.querySelectorAll('[class*="option"], [class*="Option"], [role="option"], li, [class*="item"]');
-    for (const item of items) {
-      if (item.offsetParent === null) continue;
-      const text = (item.textContent || '').trim();
-      if (text.includes('예약불가') || text.includes('예약 불가')) {
-        item.click();
-        return { clicked: true, text };
+    // 폴백: "예약가능" 포함 요소 중 짧은 것
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 10) continue;
+      const txt = (el.textContent || '').trim();
+      if ((txt.includes('예약가능') || txt.includes('예약 가능')) && txt.length < 15) {
+        el.click();
+        return { triggered: true, txt, tag: el.tagName, method: 'fallback' };
       }
     }
-    return { clicked: false };
+    return { triggered: false };
   });
 
-  log(`    예약불가 옵션: ${JSON.stringify(optionClicked)}`);
-  return optionClicked.clicked;
+  log(`    예약상태 트리거: ${JSON.stringify(triggerResult)}`);
+  if (!triggerResult.triggered) return false;
+
+  await delay(600);
+
+  // 3. 드롭다운에서 "예약불가" 옵션 선택
+  const optResult = await page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 5 || r.height < 3) continue;
+      const txt = (el.textContent || '').trim();
+      if (txt === '예약불가' || txt === '예약 불가') {
+        el.click();
+        return { selected: true, txt };
+      }
+    }
+    return { selected: false };
+  });
+
+  log(`    예약불가 옵션: ${JSON.stringify(optResult)}`);
+  return optResult.selected;
 }
 
 // Step 10: 설정변경 후 시간박스에서 차단 확인
@@ -1059,10 +1077,18 @@ async function main() {
     try {
       // naver-monitor 브라우저에 CDP로 연결 (새 인스턴스 생성 없음)
       naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-      naverPg = await naverBrowser.newPage();
-      naverPg.setDefaultTimeout(30000);
-      await naverPg.setViewport({ width: 1920, height: 1080 });
-      log('✅ CDP 연결 성공 — 새 탭 오픈 (1920×1080)');
+      log('✅ CDP 연결 성공');
+
+      // 새 탭 생성 헬퍼 (Frame detach 재시도 시 재사용)
+      const createNaverPage = async () => {
+        const pg = await naverBrowser.newPage();
+        pg.setDefaultTimeout(30000);
+        await pg.setViewport({ width: 1920, height: 1080 });
+        return pg;
+      };
+
+      naverPg = await createNaverPage();
+      log('  → 새 탭 오픈 (1920×1080)');
 
       // booking URL 접속 (naver-monitor와 동일 세션 → 이미 로그인 상태)
       const loggedIn = await naverBookingLogin(naverPg);
@@ -1085,7 +1111,27 @@ async function main() {
         const key = `${e.phoneRaw}|${e.date}|${e.start}`;
         log(`\n처리 중: ${key}`);
 
-        const blocked = await blockNaverSlot(naverPg, e);
+        // Frame detach 시 새 탭으로 1회 재시도
+        let blocked = false;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            blocked = await blockNaverSlot(naverPg, e);
+            break;
+          } catch (err) {
+            if (err.message.includes('detached Frame') && attempt === 1) {
+              log(`⚠️ Frame detach 감지 — 새 탭으로 재시도 (attempt ${attempt + 1}/2)`);
+              try { await naverPg.close(); } catch {}
+              naverPg = await createNaverPage();
+              const reLoggedIn = await naverBookingLogin(naverPg);
+              if (!reLoggedIn) { blocked = false; break; }
+            } else {
+              log(`❌ blockNaverSlot 오류: ${err.message}`);
+              const ssPath = `/tmp/naver-block-${e.date}-fatal.png`;
+              await naverPg.screenshot({ path: ssPath }).catch(() => null);
+              break;
+            }
+          }
+        }
 
         const now = nowKST();
         seenData[key] = {
