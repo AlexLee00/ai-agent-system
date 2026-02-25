@@ -968,16 +968,43 @@ async function selectUnavailableStatus(page) {
   await delay(600);
 
   // 3. 드롭다운에서 "예약불가" 옵션 선택
+  // 반드시 패널 영역(X > 1100)에서만 찾아야 함 — 상단 필터 탭 "예약불가"(X<1000) 제외
   const optResult = await page.evaluate(() => {
-    for (const el of document.querySelectorAll('*')) {
-      const r = el.getBoundingClientRect();
+    const UNAVAIL = ['예약불가', '예약 불가'];
+
+    // 1. BUTTON.btn-select 우선 (드롭다운 옵션 버튼)
+    for (const btn of document.querySelectorAll('button.btn-select, button[class*="btn-select"]')) {
+      const r = btn.getBoundingClientRect();
       if (r.width < 5 || r.height < 3) continue;
-      const txt = (el.textContent || '').trim();
-      if (txt === '예약불가' || txt === '예약 불가') {
-        el.click();
-        return { selected: true, txt };
+      const txt = (btn.textContent || '').trim();
+      if (UNAVAIL.includes(txt)) {
+        btn.click();
+        return { selected: true, txt, method: 'btn-select', x: Math.round(r.left) };
       }
     }
+
+    // 2. LI.item 중 X > 1100 (패널 드롭다운 목록)
+    for (const li of document.querySelectorAll('li.item, li[class*="item"]')) {
+      const r = li.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 5 || r.height < 3) continue;
+      const txt = (li.textContent || '').trim();
+      if (UNAVAIL.includes(txt)) {
+        li.click();
+        return { selected: true, txt, method: 'li-item', x: Math.round(r.left) };
+      }
+    }
+
+    // 3. 모든 요소 X > 1100 (패널 영역만)
+    for (const el of document.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < 1100 || r.width < 5 || r.height < 3) continue;
+      const txt = (el.textContent || '').trim();
+      if (UNAVAIL.includes(txt)) {
+        el.click();
+        return { selected: true, txt, x: Math.round(r.left), y: Math.round(r.top) };
+      }
+    }
+
     return { selected: false };
   });
 
