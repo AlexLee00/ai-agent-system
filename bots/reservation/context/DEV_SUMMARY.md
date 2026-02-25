@@ -55,7 +55,8 @@
 | `lib/files.js` | loadJson, saveJson (원자적 쓰기 tmp→rename) | ✅ 업데이트 |
 | `lib/args.js` | parseArgs() | ✅ |
 | `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
-| `lib/pickko.js` | loginToPickko() | ✅ |
+| `lib/pickko.js` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
+| `scripts/speed-test.js` | LLM API 속도 테스트 툴 (Gemini/Groq/Ollama/OpenAI 지원, --apply로 openclaw.json 자동 반영) | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 | ✅ |
 | `.pickko-alerts.jsonl` | 알람 저장소 (48시간 자동 정리) | ✅ 운영 중 |
 

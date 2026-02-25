@@ -50,6 +50,28 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — 속도 테스트 툴 확인 + 모델 교체 검토
+
+### LLM API 속도 테스트 (`scripts/speed-test.js`)
+
+**확인 내용:** 프로젝트 루트에 `scripts/speed-test.js` 속도 테스트 툴이 존재함.
+
+**결과 (2회 평균):**
+
+| 순위 | 모델 | TTFT |
+|------|------|------|
+| 🥇 | `groq/llama-3.1-8b-instant` | 203ms |
+| 🥈 | `groq/llama-4-scout-17b` | 211ms |
+| 🥉 | `groq/llama-3.3-70b-versatile` | 225ms |
+| 4위 | `gemini-2.0-flash` (현재 primary) | 608ms |
+| 5위 | `ollama/qwen2.5:7b` | 811ms |
+| ❌ | `gemini-2.5-flash` / `gemini-2.5-pro` | HTTP 429 (용량 초과) |
+
+- `--apply` 플래그 사용 시 openclaw.json primary/fallback 자동 교체
+- Groq 교체 여부는 다음 세션에서 결정 예정
+
+---
+
 ## 최근 완료 작업 (2026-02-26) — pickko-kiosk-monitor.js fetchPickkoEntries 전환
 
 ### fetchKioskReservations 제거 → fetchPickkoEntries 재활용
