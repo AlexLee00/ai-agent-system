@@ -1212,11 +1212,15 @@ async function main() {
     let totalText = '';
 
     if (SKIP_PRICE_ZERO) {
-      // 🧪 테스트 전용: 금액 그대로 결제 (price zero 스킵)
-      log('🧪 SKIP_PRICE_ZERO=1 — 결제금액을 0으로 변경하지 않고 실제 금액으로 결제합니다');
+      // 실제 금액 현금 결제 (키오스크 결제 시뮬레이션)
+      log('🧾 [8-2] 실제 금액 현금 결제 진행');
       const snap = await readTotals();
       totalText = snap?.od_total_price3 ?? '';
       log(`🔎 현재 결제금액: ${totalText}`);
+
+      // [8-2] 현금 선택
+      cashOk = await clickCashMouse();
+      await delay(300);
     } else {
       for (let attempt = 1; attempt <= 2; attempt++) {
         log(`🧾 결제 입력 시도 #${attempt}`);
@@ -1333,7 +1337,24 @@ async function main() {
 
     log(paySubmitClicked ? '✅ 모달 결제하기 클릭' : '⚠️ 모달 결제하기 버튼 클릭 실패');
 
-    await delay(1200);
+    await delay(800);
+
+    // [8-5] 결제완료 팝업 확인
+    // setupDialogHandler가 native alert는 자동 처리 — DOM 기반 팝업 추가 처리
+    const finalConfirm = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
+      const confirmBtn = btns.find(b => {
+        const t = (b.textContent || b.value || '').trim();
+        return t === '확인' || t === 'OK';
+      });
+      if (confirmBtn) {
+        confirmBtn.click();
+        return { clicked: true, text: (confirmBtn.textContent || confirmBtn.value || '').trim() };
+      }
+      return { clicked: false };
+    });
+    log(`결제완료 팝업 확인: ${JSON.stringify(finalConfirm)}`);
+    await delay(500);
 
     log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
     

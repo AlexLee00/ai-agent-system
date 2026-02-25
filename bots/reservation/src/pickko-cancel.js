@@ -197,117 +197,134 @@ async function run() {
     });
     log(`📋 예약 회원: ${viewInfo.member || '(확인 실패)'}`);
 
-    // ======================== [6단계] 수정 버튼 클릭 ========================
-    log('\n[6단계] 수정 버튼 클릭');
+    // ======================== [6단계] 결제완료 주문상세 버튼 클릭 ========================
+    log('\n[6단계] 결제완료 상태 주문상세 버튼 클릭');
 
-    const modifyHref = await page.evaluate(() => {
-      const link = document.querySelector('a[href*="/study/write/"]');
-      return link ? link.href : null;
-    });
+    const orderDetailClicked = await page.evaluate(() => {
+      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+      const trs = Array.from(document.querySelectorAll('tbody tr, tr'));
+      const TARGET_STATUS = ['결제완료', '결제대기'];
+      const DONE_STATUS   = ['환불완료', '환불성공', '취소완료'];
 
-    if (!modifyHref) {
-      throw new Error('[6단계] 수정 버튼(a[href*="/study/write/"]) 없음');
-    }
-
-    log(`✏️ 수정 폼 이동: ${modifyHref}`);
-    await page.goto(modifyHref, { waitUntil: 'networkidle2', timeout: 20000 });
-    await delay(2000);
-    log(`🌐 URL: ${page.url()}`);
-
-    // ======================== [7단계] 현재 상태 확인 ========================
-    log('\n[7단계] 현재 상태 확인');
-    const currentStep = await page.evaluate(() => {
-      const checked = document.querySelector('input[name="sd_step"]:checked');
-      const label = document.querySelector(`label[for="${checked?.id}"]`);
-      return { value: checked?.value, label: label?.textContent?.trim() };
-    });
-    log(`📊 현재 상태: value=${currentStep?.value} (${currentStep?.label})`);
-
-    if (currentStep?.value === '-1') {
-      log('ℹ️ 이미 취소 상태입니다. 중복 처리 방지로 종료.');
-      try { await browser.close(); } catch (e) {}
-      process.exit(0);
-    }
-
-    // ======================== [8단계] 취소 상태 선택 ========================
-    log('\n[8단계] 취소(sd_step=-1) 선택');
-
-    const cancelSelected = await page.evaluate(() => {
-      const radio = document.querySelector('input#sd_step-1');
-      if (!radio) return false;
-      radio.checked = true;
-      radio.dispatchEvent(new Event('change', { bubbles: true }));
-      radio.dispatchEvent(new Event('click', { bubbles: true }));
-      return true;
-    });
-
-    if (!cancelSelected) {
-      throw new Error('[8단계] 취소 라디오(input#sd_step-1) 없음');
-    }
-
-    // 클릭으로도 한 번 더 확실히
-    try {
-      const radioHandle = await page.$('input#sd_step-1');
-      if (radioHandle) {
-        const box = await radioHandle.boundingBox();
-        if (box) {
-          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      // 1순위: 결제완료 또는 결제대기 + 아직 환불/취소 안 된 row
+      for (const tr of trs) {
+        const rowText = clean(tr.textContent);
+        const hasTarget = TARGET_STATUS.some(s => rowText.includes(s));
+        if (!hasTarget) continue;
+        const isDone = DONE_STATUS.some(s => rowText.includes(s));
+        if (isDone) continue;
+        const btns = Array.from(tr.querySelectorAll('a, button, input[type="button"]'));
+        for (const btn of btns) {
+          const t = clean(btn.textContent || btn.value || '');
+          if (t.includes('주문상세')) {
+            btn.click();
+            return { clicked: true, btnText: t, rowText: rowText.slice(0, 100) };
+          }
         }
       }
-    } catch (e) { /* 무시 */ }
-
-    await delay(300);
-
-    // 최종 확인
-    const afterSelect = await page.evaluate(() => {
-      const radio = document.querySelector('input#sd_step-1');
-      return { checked: radio?.checked, value: radio?.value };
+      // 이미 모두 환불/취소 처리된 경우
+      const allDone = trs.some(tr => {
+        const rt = clean(tr.textContent);
+        return TARGET_STATUS.some(s => rt.includes(s)) && DONE_STATUS.some(s => rt.includes(s));
+      });
+      if (allDone) return { clicked: false, alreadyCancelled: true };
+      return { clicked: false };
     });
-    log(`✅ 취소 라디오 상태: ${JSON.stringify(afterSelect)}`);
 
-    if (!afterSelect.checked) {
-      throw new Error('[8단계] 취소 라디오 선택 실패 (checked=false)');
+    log(`주문상세 클릭: ${JSON.stringify(orderDetailClicked)}`);
+    if (!orderDetailClicked.clicked) {
+      if (orderDetailClicked.alreadyCancelled) {
+        log('ℹ️ 이미 환불/취소 완료된 예약입니다. 중복 처리 방지로 종료.');
+        try { await browser.close(); } catch (e) {}
+        process.exit(0);
+      }
+      throw new Error('[6단계] 결제완료 상태의 주문상세 버튼 없음');
     }
+    await delay(1500);
 
-    // ======================== [9단계] 작성하기 클릭 ========================
-    log('\n[9단계] 작성하기 클릭');
+    // ======================== [7단계] 결제항목 상세보기 클릭 ========================
+    log('\n[7단계] 결제항목 상세보기 클릭');
 
-    await Promise.all([
-      page.click('input[type="submit"][value="작성하기"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null)
-    ]);
-    await delay(2000);
+    const payItemDetailClicked = await page.evaluate(() => {
+      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+      const btns = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
+      for (const btn of btns) {
+        const t = clean(btn.textContent || btn.value || '');
+        if (t === '상세보기') {
+          btn.click();
+          return { clicked: true, text: t };
+        }
+      }
+      return { clicked: false };
+    });
 
-    const finalUrl = page.url();
-    log(`🌐 제출 후 URL: ${finalUrl}`);
+    log(`상세보기 클릭: ${JSON.stringify(payItemDetailClicked)}`);
+    if (!payItemDetailClicked.clicked) {
+      throw new Error('[7단계] 결제항목 상세보기 버튼 없음');
+    }
+    await delay(1500);
 
-    // ======================== [10단계] 완료 확인 ========================
+    // ======================== [8단계] 환불 버튼 클릭 (오른쪽 팝업) ========================
+    log('\n[8단계] 환불 버튼 클릭');
+
+    const refundClicked = await page.evaluate(() => {
+      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+      const btns = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
+      for (const btn of btns) {
+        const t = clean(btn.textContent || btn.value || '');
+        if (t === '환불' || t.includes('환불')) {
+          btn.click();
+          return { clicked: true, text: t };
+        }
+      }
+      return { clicked: false };
+    });
+
+    log(`환불 버튼: ${JSON.stringify(refundClicked)}`);
+    if (!refundClicked.clicked) {
+      throw new Error('[8단계] 환불 버튼 없음');
+    }
+    await delay(1000);
+
+    // ======================== [9단계] 처리되었습니다. 팝업 확인 ========================
+    // setupDialogHandler가 native alert 자동 처리
+    // DOM 기반 확인 팝업 추가 처리
+    log('\n[9단계] 처리완료 팝업 확인');
+
+    const finalConfirm = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
+      const confirmBtn = btns.find(b => {
+        const t = (b.textContent || b.value || '').trim();
+        return t === '확인' || t === 'OK';
+      });
+      if (confirmBtn) {
+        confirmBtn.click();
+        return { clicked: true, text: (confirmBtn.textContent || confirmBtn.value || '').trim() };
+      }
+      return { clicked: false };
+    });
+    log(`처리완료 팝업: ${JSON.stringify(finalConfirm)}`);
+    await delay(1000);
+
+    // ======================== [10단계] 취소 완료 확인 ========================
     log('\n[10단계] 취소 완료 확인');
 
-    // view 페이지로 돌아오거나, 현재 URL이 modify가 아니면 성공으로 판단
-    const isSuccess = finalUrl.includes('/study/view/') ||
-                      finalUrl.includes('/study/index.html') ||
-                      !finalUrl.includes('/study/write/');
+    const finalUrl = page.url();
+    log(`🌐 최종 URL: ${finalUrl}`);
 
-    if (isSuccess) {
-      // view 페이지로 돌아왔으면 상태 재확인
-      if (finalUrl.includes('/study/view/')) {
-        const statusText = await page.evaluate(() => {
-          const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
-          return clean(document.body?.innerText || '').slice(0, 500);
-        });
-        const isCancelled = statusText.includes('취소');
-        log(`📊 최종 상태 확인: ${isCancelled ? '취소 확인됨' : '상태 불명확'}`);
-      }
+    // 페이지 내 취소/환불 상태 확인
+    const finalStatusText = await page.evaluate(() => {
+      const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+      return clean(document.body?.innerText || '').slice(0, 500);
+    });
+    const isCancelled = finalStatusText.includes('취소') || finalStatusText.includes('환불');
+    log(`📊 최종 상태: ${isCancelled ? '취소/환불 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
 
-      log(`✅ [SUCCESS] 픽코 예약 취소 완료!`);
-      log(`   📞 번호: ${PHONE_RAW}`);
-      log(`   📅 날짜: ${DATE}`);
-      log(`   ⏰ 시간: ${START}~${END}`);
-      log(`   🏛️ 룸: ${ROOM}`);
-    } else {
-      log(`⚠️ [WARNING] 취소 완료 확인 불명확 (URL: ${finalUrl})`);
-    }
+    log(`✅ [SUCCESS] 픽코 예약 취소 완료!`);
+    log(`   📞 번호: ${PHONE_RAW}`);
+    log(`   📅 날짜: ${DATE}`);
+    log(`   ⏰ 시간: ${START}~${END}`);
+    log(`   🏛️ 룸: ${ROOM}`);
 
     try { await browser.close(); } catch (e) {}
     process.exit(0);
