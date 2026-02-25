@@ -91,24 +91,27 @@ _현재 미해결 이슈 없음_
 
 ---
 
-## 최근 완료 작업 (2026-02-25 낮)
+## 최근 완료 작업 (2026-02-25 낮~오후) — 픽코 키오스크 모니터 완전 구현
 
-### 픽코 키오스크 모니터 신규 (pickko-kiosk-monitor.js)
+### pickko-kiosk-monitor.js — Phase 1~5 전체 완성 및 검증 완료
 
-- ✅ **신규** `src/pickko-kiosk-monitor.js` — 픽코 키오스크/전화 예약 감지 → 네이버 예약 불가 자동 차단
-  - 이용금액 >= 1 필터로 키오스크 예약만 분리 (네이버 자동 등록 = 0원)
-  - `pickko-kiosk-seen.json` 상태 파일 관리 (원자적 쓰기 + 만료 항목 자동 정리)
-  - 네이버 booking calendar 자동화: DatePeriodCalendar 날짜선택 → 예약가능 슬롯 클릭 → 팝업 설정 → 설정변경
-  - 차단 확인: 설정변경 후 시간박스에서 예약불가 텍스트 최종 확인
-  - 실패 시 스크린샷 자동 저장 (`/tmp/naver-block-*.png`) + 텔레그램 수동 처리 요청
-  - naver-monitor.js 세션 충돌 방지: `naver-booking-profile` 별도 프로파일 사용
-- ✅ **신규** `src/run-kiosk-monitor.sh` — launchd 래퍼 (중복 실행 방지 lock)
-- ✅ **신규** `ai.ska.kiosk-monitor.plist` — 30분 주기 launchd 등록 완료
-  - 등록: `launchctl load ~/Library/LaunchAgents/ai.ska.kiosk-monitor.plist`
+- ✅ **Phase 1**: 픽코 `이용금액>=1` 필터로 키오스크/전화 예약만 파싱 (네이버 자동 등록=0원 제외)
+- ✅ **Phase 2**: `pickko-kiosk-seen.json` 상태 비교 → 신규 예약 감지
+- ✅ **Phase 3**: 네이버 booking calendar 자동 차단 (CDP — naver-monitor 세션 재활용)
+  - `DatePeriodCalendar__date-info` 클릭 → 2-month picker 팝업
+  - 월 헤더 bounding rect 기반 날짜 셀 `page.mouse.click()` (공휴일 셀 startsWith 처리)
+  - `BUTTON.form-control` (custom-selectbox) 클릭 → `BUTTON.btn-select` 옵션 선택
+  - 종료시간 30분 올림: `roundUpToHalfHour()` (19:50 → 20:00)
+  - CDP Frame detach 발생 시 새 탭으로 1회 자동 재시도
+  - 예약상태 → 예약불가 선택 → 설정변경 클릭
+- ✅ **Phase 4**: 텔레그램 알림 (차단 성공/실패 구분)
+- ✅ **Phase 5**: 만료 항목 자동 정리 (date < today)
+- ✅ `src/run-kiosk-monitor.sh` — launchd 래퍼 (중복 실행 방지 lock)
+- ✅ `ai.ska.kiosk-monitor.plist` — 30분 주기 launchd 로드 완료
   - 로그: `/tmp/pickko-kiosk-monitor.log`
 - ✅ `.gitignore` — `pickko-kiosk-seen.json` 추가 (전화번호 포함)
 
-**다음 작업**: 수동 테스트 — `node src/pickko-kiosk-monitor.js` 실행 후 셀렉터 검증
+**테스트 결과**: 이승호 01062290586 | 2026-03-02 18:00~19:50 | 스터디룸B → 네이버 차단 완료 (`naverBlocked: true`)
 
 ---
 
