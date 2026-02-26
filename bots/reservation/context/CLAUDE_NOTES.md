@@ -45,6 +45,8 @@
 | `sent: false` 항목 | 발송 실패 건 — 재시도됨 |
 | alerts `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
 | 버그 발견 시 | `node src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
+| "버그리포트에 올려줘" | 사장님이 이 말을 하면 → `bug-report.js --new`로 즉시 등록 (뭔지 되묻지 말 것) |
+| "의견/이슈/메모 버그리포트에" | bug-report.js = 스카·클로드 공용 이슈 추적 도구. 바로 등록할 것 |
 
 ---
 
@@ -189,58 +191,100 @@ node ~/projects/ai-agent-system/bots/reservation/src/pickko-cancel-cmd.js \
 
 ## 🐛 버그 리포트 & 유지보수 기록 시스템
 
-### 개요
-- 저장소: `~/.openclaw/workspace/bug-tracker.json` (버그 + 유지보수 통합)
-- CLI: `~/projects/ai-agent-system/bots/reservation/src/bug-report.js`
-- **버그/유지보수 변경 시 `HANDOFF.md`의 이슈·유지보수 섹션이 자동 갱신됨**
+### 이 시스템이 무엇인가?
 
-### 스카가 버그를 발견했을 때
+스카와 클로드가 공동으로 사용하는 **버그·개발 이력 추적 도구**다.
+
+- 스카가 운영 중 이상을 발견하면 → `bug-report.js --new`로 등록 → 클로드에게 보고
+- 클로드가 코드를 수정하면 → `bug-report.js --maintenance`로 기록
+- 등록 즉시 `context/HANDOFF.md`의 이슈·유지보수 섹션이 **자동으로 갱신**됨
+- 이 기록이 쌓이면 다음 클로드 세션이 어떤 작업이 있었는지 빠르게 파악할 수 있음
+
+```
+스카 발견 → bug-report.js --new → HANDOFF.md 자동 갱신 → 클로드 보고
+클로드 수정 → bug-report.js --maintenance → HANDOFF.md 자동 갱신
+```
+
+### 저장 위치
+- 버그 데이터: `~/.openclaw/workspace/bug-tracker.json`
+- HANDOFF.md 갱신: `context/HANDOFF.md` 직접 수정 (deploy 없이 자동 반영)
+
+### 스카가 버그를 발견했을 때 (즉시 실행)
 
 ```bash
+cd ~/projects/ai-agent-system/bots/reservation
+
 # 버그 등록 (반드시 --by ska 명시)
 node src/bug-report.js --new \
-  --title "문제 요약" \
-  --desc "구체적인 현상 설명" \
+  --title "문제 요약 (한 줄)" \
+  --desc "구체적인 현상: 언제, 어떤 상황에서, 어떤 오류가 발생했는지" \
   --severity high \
   --category stability \
   --by ska \
   --files "src/naver-monitor.js"
+
+# 등록 후 텔레그램으로 클로드에게 보고
+# 예: "BUG-005 등록했어. naver-monitor.js에서 XX 오류 발생 중"
 ```
 
 ### 버그 상태 확인
 
 ```bash
 node src/bug-report.js --list              # 미해결 버그
-node src/bug-report.js --list --status all # 전체
-node src/bug-report.js --show --id BUG-001 # 상세
-node src/bug-report.js --maint-list        # 유지보수 이력
+node src/bug-report.js --list --status all # 전체 목록
+node src/bug-report.js --show --id BUG-001 # 특정 버그 상세
+node src/bug-report.js --maint-list        # 유지보수 이력 (클로드 작업 내역)
 ```
 
 ### 버그 상태 흐름
 ```
-open → (클로드 조치) → in_progress → (수정 완료) → resolved
+open (스카 등록) → in_progress (클로드 조치 중) → resolved (수정 완료)
 ```
 
 ### severity / category 기준
 
-| severity | 기준 |
-|----------|------|
-| `critical` | 모니터링 전면 중단, 데이터 손실 위험 |
-| `high` | 자동화 오작동, 수동 개입 필요 |
-| `medium` | 기능 저하, 운영 가능 |
-| `low` | 사소한 개선 |
+| severity | 기준 | 예시 |
+|----------|------|------|
+| `critical` | 모니터링 전면 중단, 데이터 손실 위험 | 프로세스 사망, DB 오류 |
+| `high` | 자동화 오작동, 수동 개입 필요 | 픽코 등록 반복 실패 |
+| `medium` | 기능 저하, 운영은 가능 | 알림 지연, 로그 이상 |
+| `low` | 사소한 불편 | 로그 문구 오타 |
 
 | category | 예시 |
 |----------|------|
-| `stability` | 재시작, 크래시 |
-| `logic` | 중복 처리, 상태 오류 |
-| `reliability` | 픽코 등록 실패, 네트워크 |
-| `ux` | 알림 내용, 리포트 형식 |
-| `data` | JSON 파일 오염, 파싱 오류 |
+| `stability` | 재시작, 크래시, 프로세스 종료 |
+| `logic` | 중복 처리, 상태 오류, 오감지 |
+| `reliability` | 픽코 등록 실패, 네트워크 타임아웃 |
+| `ux` | 알림 내용 이상, 텔레그램 메시지 오류 |
+| `data` | DB/JSON 파일 오염, 파싱 오류 |
 
 ---
 
 ## 변경 이력
+
+### 2026-02-26 (야간3) — 버그리포트 시스템 설명 보강
+
+**변경 이유:** 스카가 "버그리포트에 올려줘" 요청을 받고 뭔지 몰라 역질문하는 문제 발생.
+
+**변경 내용:**
+- 버그리포트 섹션 전면 보강: 시스템 목적·동작 원리·스카 역할 명확히 기술
+- 행동 지침 테이블: "버그리포트에 올려줘" → 되묻지 말고 즉시 등록 지침 추가
+- bug-report.js HANDOFF_FILE 경로 수정 내용 반영 (context/HANDOFF.md 직접 갱신)
+
+### 2026-02-26 (야간) — pickko-accurate.js [1.5단계] 회원 이름 자동 동기화
+
+**변경 이유:** 픽코 신규 회원 이름 미입력 시 전화번호 뒤 4자리 자동 저장 → 네이버 실명과 불일치 발생. 자동 예약 흐름에서 이름 수정 필요.
+
+**변경 내용:**
+- `pickko-accurate.js` — `syncMemberNameIfNeeded(page, phoneRaw, naverName)` 함수 추가 (1.5단계)
+- 로그인(1단계) 직후, 예약 폼(2단계) 진입 전에 실행
+- 통합 타입 회원(소셜 연동) → view 페이지 "통합" 배지 감지 → 수정 시도 없이 스킵
+- 일반 회원 이름 불일치 → "회원 정보 수정" 버튼으로 수정 후 저장
+- 비치명적 오류 처리 — 실패해도 예약 흐름 계속 진행
+
+**스카 행동 변화:** 없음 (내부 처리, 텔레그램 보고 내용 변화 없음)
+
+---
 
 ### 2026-02-26 — JSON → SQLite 마이그레이션 + 개인정보 암호화
 

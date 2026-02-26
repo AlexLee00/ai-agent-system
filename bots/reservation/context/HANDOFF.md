@@ -26,11 +26,11 @@ _현재 미해결 이슈 없음_
 
 **최근 해결:**
 - ✅ `BUG-003` **알림 파일 resolved 상태 미관리 — 수동 확인 필요 알림 누적**
-  재시작 후 '✅ 미해결 알림 없음' 로그 확인 (-45분 전)
+  재시작 후 '✅ 미해결 알림 없음' 로그 확인 (2일 전)
 - ✅ `BUG-004` **테스트 버그 (삭제 예정)**
-  테스트 완료, 삭제 (5분 전)
+  테스트 완료, 삭제 (2일 전)
 - ✅ `BUG-002` **completed/manual 예약 재감지 루프 및 code 99 미마킹**
-  재시작 후 '신규 후보 없음' 정상 확인 — 3건 기처리 예약 재감지 없음 (25분 전)
+  재시작 후 '신규 후보 없음' 정상 확인 — 3건 기처리 예약 재감지 없음 (2일 전)
 <!-- bug-tracker:issues:end -->
 
 ---
@@ -40,6 +40,14 @@ _현재 미해결 이슈 없음_
 > 자동 관리: `bug-report.js --maintenance` 실행 시 갱신
 
 <!-- bug-tracker:maintenance:start -->
+- 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
+  2026. 2. 26. 19:57 · claude · `src/bug-report.js`
+- 🚑 `MAINT-007` [hotfix] **테스트 예약 4건 취소 정리 (이재룡 3건 + 이승호 1건)**
+  2026. 2. 26. 19:47 · claude · `src/pickko-cancel-cmd.js`
+- 🔧 `MAINT-006` [fix] **pickko-cancel.js [7-B단계] 결제대기 예약 취소 폴백 추가**
+  2026. 2. 26. 19:47 · claude · `src/pickko-cancel.js`
+- ✨ `MAINT-005` [feature] **pickko-accurate.js [1.5단계] 회원 이름 자동 동기화 신규 추가**
+  2026. 2. 26. 19:47 · claude · `src/pickko-accurate.js`
 - 🚑 `MAINT-004` [hotfix] **cancelledSeenIds 오감지 취소 키 제거** *(→ BUG-002)*
   2026. 2. 24. 16:00 · claude · `naver-seen.json`
 - 🚑 `MAINT-003` [hotfix] **.pickko-alerts.jsonl 초기 누적 항목 정리 (284건→3건)**
@@ -49,6 +57,69 @@ _현재 미해결 이슈 없음_
 - 🚑 `MAINT-001` [hotfix] **010-3034-1710 나은애 픽코 수동 등록 완료 처리**
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
+
+## 최근 완료 작업 (2026-02-26 야간2) — pickko-cancel [7-B단계] 결제대기 폴백 + 테스트 예약 정리
+
+### 1. pickko-cancel.js — [7-B단계] 결제대기 폴백 추가
+
+**문제:** `결제대기` 상태 예약은 [6단계]에서 주문상세 버튼이 존재하여 클릭 성공하지만, 이후 패널에 `a.pay_view`(상세보기)가 없음 → [7단계] 8초 타임아웃 후 오류
+
+**해결:** [7단계] `a.pay_view` 미발견 시 [7-B단계] 폴백 추가
+```
+study/write/{sd_no}.html 이동 →
+input#sd_step-1 (취소 radio, value="-1") 선택 →
+작성하기 저장 → 취소 완료
+```
+
+**적용 케이스:** 결제대기 예약 (테스트 예약 등, 실제 결제 미완료 건)
+
+### 2. 테스트 예약 전체 정리 (4건 취소 완료)
+
+| 번호 | sd_no | 예약자 | 날짜/시간 | 룸 | 결과 |
+|------|-------|--------|----------|---|------|
+| 1 | 930082 | 이재룡 | 2026-07-05 19:00~20:00 | A1 | ✅ 취소 |
+| 2 | 930087 | 이재룡 | 2026-07-05 20:00~21:00 | A1 | ✅ 취소 |
+| 3 | 930090 | 이재룡 | 2099-12-31 01:00~02:00 | A1 | ✅ 취소 |
+| 4 | 930089 | 이승호 | 2026-07-10 10:00~10:30 | A1 | ✅ 취소 |
+
+모두 [7-B단계] 폴백으로 성공 처리.
+
+---
+
+## 최근 완료 작업 (2026-02-26) — pickko-accurate.js [1.5단계] 회원 이름 자동 동기화
+
+### syncMemberNameIfNeeded() — 픽코↔네이버 회원 이름 불일치 자동 수정
+
+**배경:** 픽코 신규 회원 등록 시 이름 미입력 → 전화번호 뒤 4자리 자동 저장 (예: "8283"). 네이버 예약은 항상 실명이므로 불일치 발생.
+
+**구현:** `pickko-accurate.js` 1단계(로그인) 직후 `syncMemberNameIfNeeded()` 함수 실행 (1.5단계).
+
+**동작 흐름:**
+1. `study/write.html` 모달에서 전화번호 검색 → `li[mb_no]` 속성으로 mb_no/이름 추출
+2. 이름 일치 → 즉시 종료
+3. 이름 불일치 → `member/view/{mb_no}.html` 이동
+4. **통합 타입 감지**: view 페이지에서 "통합" 배지 또는 "준비중" 텍스트 → `integrated_member` 스킵 (수정 불가)
+5. 일반 회원 → "회원 정보 수정" 버튼 클릭 → 이름 필드 수정 → form submit → `/member/view/` 리다이렉트 확인
+
+**스킵 조건 (비치명적 — 예약 흐름 계속):**
+| reason | 조건 |
+|--------|------|
+| `invalid_naver_name` | 이름 없음, "고객", 1자 |
+| `member_not_found` | 모달에 `a.mb_select` 없음 |
+| `integrated_member` | view 페이지 "통합" 배지 또는 "준비중" |
+| `edit_button_not_found` | "회원 정보 수정" 버튼 없음 |
+
+**검증 결과:**
+- 이재룡 (통합) + 이름 불일치 → `integrated_member` 스킵 ✅
+- 이승호 (일반) + 이름 일치 → `동기화 불필요` ✅
+- 이승호 (일반) + 이름 불일치 → 이름 업데이트 성공 + `/member/view/` 이동 ✅
+
+**핵심 발견 사항:**
+- `a.mb_select`에는 속성 없음 → 부모 `li[mb_no]`, `li[mb_name]` 속성 사용
+- `/member/write/{mb_no}.html`은 신규 가입 폼 (수정 폼 아님) → "회원 정보 수정" 버튼으로 이동해야 함
+- "통합" 배지는 view 페이지의 span/label 요소로 감지
+
+---
 
 ## 최근 완료 작업 (2026-02-26) — pickko-accurate.js 달력 팝업 protocolTimeout 버그픽스
 

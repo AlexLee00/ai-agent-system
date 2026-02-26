@@ -1,7 +1,7 @@
 # DEV_SUMMARY.md - 스카봇 개발 현황 요약
 
 > **목적:** 모델 교체 후 빠른 컨텍스트 복원용. BOOT.md가 자동으로 읽음.
-> **최종 업데이트:** 2026-02-26
+> **최종 업데이트:** 2026-02-26 (야간)
 
 ---
 
@@ -37,8 +37,8 @@
 | 파일 | 역할 | 상태 |
 |------|------|------|
 | `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
-| `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] (슬롯 3회 재시도) | ✅ 완성 |
-| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10]; [6-B단계] 폴백: 0원/이용중 예약 → 수정→취소→저장 플로우 | ✅ 완성 |
+| `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1→1.5→2~9]; [1.5] `syncMemberNameIfNeeded()` — 픽코↔네이버 이름 자동 동기화 (통합 타입 스킵, 비치명적) | ✅ 완성 |
+| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10]; [6-B단계] 폴백: 0원/이용중 예약 → 수정→취소→저장; [7-B단계] 폴백: 결제대기 예약 → a.pay_view 없을 시 write→취소→저장 | ✅ 완성 |
 | `src/pickko-verify.js` | 미검증 예약 재검증 + 자동 등록 (pending + completed/미검증 모두 포함) | ✅ 완성 |
 | `src/pickko-daily-audit.js` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 완성 |
 | `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 예약불가 차단 (30분 주기 launchd) | ✅ 신규 완성 |
@@ -58,6 +58,7 @@
 | `lib/args.js` | parseArgs() | ✅ |
 | `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
 | `lib/pickko.js` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
+| `src/bug-report.js` | 버그·유지보수 추적 CLI; HANDOFF_FILE = `context/HANDOFF.md` 직접 참조 (deploy 순서 의존성 제거) | ✅ 수정 |
 | `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 openclaw.json 자동 반영) | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 + db_encryption_key(64자 hex) + db_key_pepper | ✅ |
 
@@ -70,6 +71,7 @@
 | Stage | 기능 | 구현 내용 |
 |-------|------|----------|
 | [1] 로그인 | 픽코 자동 로그인 | 헤드리스 모드 |
+| **[1.5] 이름 동기화** | **픽코↔네이버 회원 이름 자동 수정** | **`syncMemberNameIfNeeded()`: study/write 모달 `li[mb_no]` 추출 → view 페이지 통합 감지 → "회원 정보 수정" 버튼으로 수정. 실패 시 비치명적 스킵** |
 | [2] 페이지 이동 | 예약 등록 폼 | URL 직접 이동 |
 | [3] 회원 검색 | 전화번호 입력 | 정규식 변환 적용 |
 | [4] 회원 선택 | 모달 자동 처리 | 팝업 감지 + 클릭 |
