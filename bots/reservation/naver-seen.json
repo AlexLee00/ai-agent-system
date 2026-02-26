@@ -276,6 +276,24 @@
     "retries": 0,
     "pickkoStartTime": "2026. 2. 26. AM 8:00:12"
   },
+  "1167892479": {
+    "compositeKey": "01064511678-2026-02-26-13:30",
+    "name": "윤길채",
+    "phone": "010-6451-1678",
+    "phoneRaw": "01064511678",
+    "date": "2026-02-26",
+    "start": "13:30",
+    "end": "15:00",
+    "room": "B",
+    "detectedAt": "2026. 2. 26. AM 9:32:27",
+    "status": "completed",
+    "pickkoStatus": "paid",
+    "pickkoOrderId": null,
+    "errorReason": null,
+    "retries": 0,
+    "pickkoStartTime": "2026. 2. 26. AM 9:32:44",
+    "pickkoCompleteTime": "2026. 2. 26. AM 9:33:30"
+  },
   "seenIds": [
     "1164258753",
     "1164415386",
@@ -307,7 +325,8 @@
     "1166779441",
     "1167354925",
     "1167481463",
-    "1167810350"
+    "1167810350",
+    "1167892479"
   ],
   "cancelledSeenIds": [
     "cancel|2026-02-24|11:00|12:00|A1|01036239910"

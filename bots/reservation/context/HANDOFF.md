@@ -50,6 +50,39 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — telecram 직접 발송 + Phase 2B 버그 수정
+
+### 1. lib/telegram.js — Telegram Bot API 직접 발송 모듈 신규
+
+**문제:** `openclaw agent --deliver` 방식이 메시지를 LLM 입력으로 전달 → LLM이 재해석하여 원본 메시지 대신 LLM 응답("HEARTBEAT_OK")이 Telegram으로 전송됨. 야간 보류 알림도 유실.
+
+**해결:** `lib/telegram.js` 신규 생성 — Telegram Bot API (`api.telegram.org/bot{TOKEN}/sendMessage`) 직접 호출, openclaw 완전 우회.
+
+- 3회 재시도, 10초 타임아웃, `TELEGRAM_ENABLED=0` 환경변수로 비활성화
+- `secrets.json`에 `telegram_bot_token`, `telegram_chat_id` 추가
+- `naver-monitor.js`, `pickko-daily-audit.js`, `pickko-kiosk-monitor.js` 모두 `lib/telegram.js` import로 교체
+- 야간 보류 로직 전체 제거 (flushPendingAlerts, pending-telegrams.jsonl 등) → 24시간 즉시 발송
+- `CLAUDE_NOTES.md` 모델 정보 수정: `gemini-2.5-flash` → `gemini-2.0-flash`
+- naver-monitor.js 재시작: PID 60760 → 71289
+
+### 2. Phase 2B 필터 버그 수정 — pickko-kiosk-monitor.js
+
+**버그:** Phase 2B 필터가 `naverBlocked=true` 여부 확인 없이 픽코 환불 항목 전체를 차단 해제 대상으로 포함. 결과적으로 seen 파일에 기록 없는 이재룡 `2026-02-26 11:00` 환불 건에 대해 불필요한 차단 해제 시도 → 날짜 선택 실패.
+
+**수정 (1302~1311행):**
+```javascript
+// 이전: seen 파일 미등록 항목도 cancelledEntries에 포함됨
+if (saved && saved.naverBlocked === false && saved.naverUnblockedAt) return false;
+
+// 수정 후: naverBlocked=true로 실제 차단한 항목만 포함
+if (!saved || saved.naverBlocked !== true) return false; // 차단 이력 없음
+if (saved.naverUnblockedAt) return false; // 이미 해제 완료
+```
+
+**영향:** 차단한 적 없는 환불 예약에 대한 오동작 완전 차단.
+
+---
+
 ## 최근 완료 작업 (2026-02-26) — 속도 테스트 툴 확인 + 모델 교체 검토
 
 ### LLM API 속도 테스트 (`scripts/speed-test.js`)

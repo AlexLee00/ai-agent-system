@@ -13,6 +13,7 @@ const { spawn } = require('child_process');
 const { transformAndNormalizeData } = require('../lib/validation');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
+const { sendTelegram: sendTelegramDirect } = require('../lib/telegram');
 const fs = require('fs');
 const path = require('path');
 
@@ -23,8 +24,6 @@ const NAVER_PW = SECRETS.naver_pw;
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 // kiosk-monitor가 새 탭으로 연결하기 위한 CDP 엔드포인트 파일
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
-// 텔레그램 발송 실패 대기큐 파일
-const PENDING_TELEGRAMS_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 // ✅ 홈(검은 예약현황 박스)로 바로 가는 URL
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = (process.env.MODE || 'dev').toLowerCase();
@@ -43,7 +42,6 @@ let lastHeartbeatTime = Date.now(); // 시작 직후 0분 Heartbeat 방지 (1시
 // 일일 마감 요약 통계
 let dailyStats          = { date: '', detected: 0, completed: 0, cancelled: 0, failed: 0 };
 let lastDailyReportDate = '';
-let morningFlushDone   = false; // 당일 야간 미발송 알림 오전 일괄 처리 여부
 const MAX_RETRIES = 5; // 최대 재시도 횟수 (초과 시 수동 처리 알람 후 건너뜀)
 
 // ✅ 데이터 검증은 lib/validation.js에서 import함
@@ -445,52 +443,7 @@ function cleanupExpiredSeen() {
   }
 }
 
-// 야간 보류 알림 오전 일괄 발송 (sent: false → 요약 후 전송)
-async function flushPendingAlerts() {
-  try {
-    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
-    if (!fs.existsSync(alertsFile)) return;
-
-    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
-    const unsent = [];
-    lines.forEach(l => {
-      try {
-        const a = JSON.parse(l);
-        if (a.sent === false) unsent.push(a);
-      } catch (e) { /* skip */ }
-    });
-
-    if (unsent.length === 0) return;
-
-    // 요약 메시지 생성
-    let summary = `🌅 야간 보류 알림 ${unsent.length}건\n\n`;
-    for (const a of unsent) {
-      const ts = new Date(a.timestamp).toLocaleString('ko-KR', {
-        timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false
-      });
-      summary += `• [${ts}] ${a.title}\n`;
-    }
-
-    // ✅ 발송 성공 확인 후 sent: true 업데이트
-    const sendOk = await sendTelegramDirect(summary, { savePending: true });
-    if (sendOk) {
-      log(`🌅 야간 보류 알림 ${unsent.length}건 일괄 발송 완료`);
-      const sentAt = new Date().toISOString();
-      const updated = lines.map(l => {
-        try {
-          const a = JSON.parse(l);
-          if (a.sent === false) { a.sent = true; a.sentAt = sentAt; return JSON.stringify(a); }
-          return l;
-        } catch (e) { return l; }
-      });
-      fs.writeFileSync(alertsFile, updated.join('\n') + '\n');
-    } else {
-      log(`⚠️ 야간 보류 알림 발송 실패 — 다음 heartbeat 시 재시도`);
-    }
-  } catch (err) {
-    log(`⚠️ 야간 보류 알림 flush 실패: ${err.message}`);
-  }
-}
+// 야간 보류 로직 제거됨 — Bot API 직접 발송으로 24시간 즉시 전송
 
 // 알람 파일 자동 정리
 // - resolved: true (또는 필드 없는 구버전) → 48시간 후 삭제
@@ -627,76 +580,7 @@ async function reportUnresolvedAlerts() {
   }
 }
 
-// 텔레그램 1회 전송 시도 — exit code 0이면 true 반환 (10초 타임아웃)
-function tryTelegramSend(message) {
-  if (process.env.TELEGRAM_ENABLED === '0') return Promise.resolve(true);
-  return new Promise((resolve) => {
-    try {
-      const CHAT_ID = '***REMOVED***';
-      const child = spawn('openclaw', [
-        'agent',
-        '--message', `🔔 스카봇\n\n${message}`,
-        '--channel', 'telegram',
-        '--deliver',
-        '--to', CHAT_ID
-      ], { stdio: 'pipe' });
-      const timer = setTimeout(() => {
-        child.kill();
-        log('⏱️ 텔레그램 발송 타임아웃 (10초)');
-        resolve(false);
-      }, 10000);
-      child.on('close', (code) => { clearTimeout(timer); resolve(code === 0); });
-      child.on('error', (e) => { clearTimeout(timer); log(`⚠️ 텔레그램 프로세스 오류: ${e.message}`); resolve(false); });
-    } catch (e) { log(`⚠️ 텔레그램 발송 예외: ${e.message}`); resolve(false); }
-  });
-}
-
-// 발송 실패 메시지 → 대기큐 저장
-function savePendingTelegram(message) {
-  try {
-    fs.appendFileSync(PENDING_TELEGRAMS_FILE, JSON.stringify({ timestamp: new Date().toISOString(), message }) + '\n');
-    log(`💾 [텔레그램 대기큐] 저장됨: ${message.slice(0, 50)}`);
-  } catch (e) { log(`❌ 텔레그램 대기큐 저장 실패: ${e.message}`); }
-}
-
-// 대기큐 재발송 (시작 시 호출)
-async function flushPendingTelegrams() {
-  if (!fs.existsSync(PENDING_TELEGRAMS_FILE)) return;
-  const lines = fs.readFileSync(PENDING_TELEGRAMS_FILE, 'utf-8').split('\n').filter(Boolean);
-  if (lines.length === 0) return;
-  log(`📤 [텔레그램 대기큐] ${lines.length}건 재발송 시도...`);
-  const remaining = [];
-  let okCount = 0;
-  for (const line of lines) {
-    try {
-      const { message } = JSON.parse(line);
-      if (await tryTelegramSend(message)) { okCount++; } else { remaining.push(line); }
-    } catch (e) { remaining.push(line); }
-  }
-  remaining.length === 0
-    ? fs.unlinkSync(PENDING_TELEGRAMS_FILE)
-    : fs.writeFileSync(PENDING_TELEGRAMS_FILE, remaining.join('\n') + '\n');
-  log(`✅ [텔레그램 대기큐] 성공 ${okCount}건, 잔류 ${remaining.length}건`);
-}
-
-// 텔레그램 직접 발송 — 3회 재시도, 최종 실패 시 대기큐 저장
-async function sendTelegramDirect(message, { savePending = true } = {}) {
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
-  const MAX_TRIES = 3;
-  for (let i = 1; i <= MAX_TRIES; i++) {
-    if (await tryTelegramSend(message)) {
-      log(`📱 [텔레그램] 발송 성공${i > 1 ? ` (${i}번째 시도)` : ''}: ${message.slice(0, 50)}`);
-      return true;
-    }
-    if (i < MAX_TRIES) {
-      log(`⚠️ 텔레그램 발송 실패 (${i}/${MAX_TRIES}), ${i * 3}초 후 재시도...`);
-      await delay(i * 3000);
-    }
-  }
-  log(`❌ 텔레그램 발송 최종 실패 (${MAX_TRIES}회 모두 실패)`);
-  if (savePending) savePendingTelegram(message);
-  return false;
-}
+// sendTelegramDirect: lib/telegram.js에서 import됨 (Telegram Bot API 직접 호출)
 
 // 알림 메시지 전송
 // 🚀 개선된 알람 함수 (신규 예약, 결제 완료 등)
@@ -743,14 +627,10 @@ async function sendAlert(options) {
     const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
-    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러)
+    // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러) — 24시간 즉시 발송
     if ((type === 'new' || type === 'completed' || type === 'cancelled' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
-        // 🕘 발송 시간 체크 (09:00~22:00만 즉시 발송)
-        const nowHour = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
-        const inAlertWindow = nowHour >= 9 && nowHour < 22;
-
-        // 1️⃣ 이력 파일에 저장 (sent: false — 발송 성공 확인 후 true로 업데이트)
+        // 1️⃣ 이력 파일에 저장
         const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
         const entryTimestamp = new Date().toISOString();
         const alertEntry = JSON.stringify({
@@ -758,28 +638,23 @@ async function sendAlert(options) {
           type,
           title,
           message,
-          phone: phone || null,     // 알림 해결 매칭용
-          date: date || null,       // 알림 해결 매칭용
-          start: start || null,     // 알림 해결 매칭용
-          resolved: type !== 'error',  // error 타입만 미해결 상태로 시작
+          phone: phone || null,
+          date: date || null,
+          start: start || null,
+          resolved: type !== 'error',
           resolvedAt: type !== 'error' ? new Date().toISOString() : null,
-          sent: false,    // ✅ 발송 전 false — 성공 후 updateAlertSentStatus로 true 갱신
+          sent: false,
           sentAt: null
         });
         fs.appendFileSync(alertsFile, alertEntry + '\n');
-        log(`💾 [알람 저장] ${type.toUpperCase()} - ${title} (${inAlertWindow ? '즉시발송' : '야간보류'})`);
+        log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
 
-        if (inAlertWindow) {
-          // 2️⃣ 스카봇 → 텔레그램 발송 (재시도 포함)
-          const telegramMsg = `🔔 픽코 알람\n\n${message}`;
-          const sendOk = await sendTelegramDirect(telegramMsg, { savePending: false });
-          if (sendOk) {
-            updateAlertSentStatus(alertsFile, entryTimestamp, true);
-          } else {
-            log(`⚠️ [알람발송 실패] sent: false 유지 → 다음 flushPendingAlerts 시 재발송`);
-          }
+        // 2️⃣ Bot API 직접 발송 (24시간, 재시도 포함)
+        const sendOk = await sendTelegramDirect(message);
+        if (sendOk) {
+          updateAlertSentStatus(alertsFile, entryTimestamp, true);
         } else {
-          log(`🌙 [야간 보류] 09:00 이후 일괄 발송 예정 (현재 ${nowHour}시)`);
+          log(`⚠️ [알람발송 실패] sent: false 유지`);
         }
 
         // 3️⃣ 48시간 정책 실행
@@ -851,8 +726,6 @@ async function monitorBookings() {
 
     // ⚠️ 시작 시 미해결 오류 알림 확인 (이전 세션에서 미처리된 건 보고)
     await reportUnresolvedAlerts();
-    // ✅ 이전 세션에서 전송 실패한 텔레그램 메시지 재발송
-    await flushPendingTelegrams();
 
     // Puppeteer 실행
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
@@ -1421,16 +1294,7 @@ async function monitorBookings() {
             sendTelegramDirect(hMsg);
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
             lastHeartbeatTime = Date.now();
-
-            // 🌅 야간 보류 알림 오전 일괄 발송 (당일 1회)
-            if (!morningFlushDone) {
-              flushPendingAlerts();
-              morningFlushDone = true;
-            }
           }
-
-          // 야간 진입 시 다음 날 morningFlush 초기화
-          if (hHour >= 22 || hHour < 9) morningFlushDone = false;
 
           // ✅ 일일 마감 요약 (22:00 이후, 하루 1회)
           const hDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
