@@ -325,70 +325,59 @@ async function selectCash(page) {
   return cashOk;
 }
 
-// ── [8단계] 결제하기 버튼 클릭 (메인 페이지) ────────────────────────────
+// ── [8단계] 결제하기 버튼 클릭 (메인 페이지, #pay_order) ──────────────
 
 async function clickMainPayButton(page) {
-  log('\n[8단계] 결제하기 클릭');
+  log('\n[8단계] #pay_order 결제하기 클릭');
 
+  // #pay_order: enabled 상태([5단계]에서 이미 확인됨) → 클릭
   const clicked = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll(
-      'button, a.btn_box, input[type="button"], input[type="submit"]'
-    ));
-    for (const b of btns) {
-      const t = (b.innerText || b.value || b.textContent || '').trim();
-      if (t === '결제하기') { b.click(); return true; }
-    }
-    return false;
-  });
-
-  if (!clicked) throw new Error('결제하기 버튼을 페이지에서 찾을 수 없음');
-  log('  ✅ 결제하기 클릭');
-  await delay(1200);
-}
-
-// ── [9단계] 결제 팝업 처리 ───────────────────────────────────────────────
-// setupDialogHandler가 native alert/confirm 자동 처리
-// DOM 팝업: 주문 상세(#pay_order 결제하기) + 결제완료(확인)
-
-async function handlePaymentPopups(page) {
-  log('\n[9단계] 결제 팝업 처리');
-
-  // [9-1] 주문 상세 팝업의 결제하기(#pay_order) — 1회만 클릭
-  await delay(800);
-  const payOrderClicked = await page.evaluate(() => {
     const btn = document.querySelector('#pay_order');
-    if (btn && btn.offsetParent !== null) {
+    if (btn && !btn.className.includes('disabled') && btn.offsetParent !== null) {
       btn.scrollIntoView({ block: 'center' });
       btn.click();
       return true;
     }
     return false;
   });
-  log(payOrderClicked ? '  ✅ #pay_order 결제하기 클릭' : '  ⚠️ #pay_order 없음 (이미 처리됨)');
-  await delay(1500);
 
-  // [9-2] 결제완료 팝업 확인 버튼 (최대 3회)
-  for (let round = 1; round <= 3; round++) {
+  if (!clicked) throw new Error('#pay_order 결제하기 버튼 클릭 실패 (없거나 비활성)');
+  log('  ✅ #pay_order 클릭 (안내 팝업은 setupDialogHandler 자동처리)');
+  await delay(1200);
+}
+
+// ── [9단계] 두 번째 결제하기 팝업 처리 ──────────────────────────────────
+// [8단계] #pay_order 클릭 → native alert 자동처리(setupDialogHandler) → 결제대기 생성
+// → .pay_start 버튼(두 번째 결제하기)이 나타남 → 클릭 → 결제완료
+
+async function handlePaymentPopups(page) {
+  log('\n[9단계] .pay_start 결제하기 클릭 (결제완료)');
+
+  // .pay_start 버튼이 나타날 때까지 폴링 (최대 5초)
+  let payStartClicked = false;
+  for (let round = 1; round <= 8; round++) {
     await delay(600);
-    const confirmed = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
-      const btn = btns.find(b => {
-        const t = (b.textContent || b.value || '').trim();
-        return t === '확인' || t === '완료';
-      });
+    payStartClicked = await page.evaluate(() => {
+      const btn = document.querySelector('.pay_start');
       if (btn && btn.offsetParent !== null) {
+        btn.scrollIntoView({ block: 'center' });
         btn.click();
-        return (btn.textContent || btn.value || '').trim();
+        return true;
       }
-      return null;
+      return false;
     });
-    if (confirmed) {
-      log(`  결제완료 팝업 확인 (round=${round}): "${confirmed}"`);
-    } else {
-      log(`  팝업 없음 (round=${round}) — 완료`);
+    if (payStartClicked) {
+      log(`  ✅ .pay_start 결제하기 클릭 (round=${round})`);
       break;
     }
   }
+
+  if (!payStartClicked) {
+    throw new Error('두 번째 결제하기(.pay_start) 버튼을 찾지 못함 (5초 대기 초과)');
+  }
+
+  // 결제완료 후 페이지 안정화 대기
+  await delay(1500);
 }
 
 // ── main ─────────────────────────────────────────────────────────────────
