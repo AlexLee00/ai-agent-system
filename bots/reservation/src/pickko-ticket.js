@@ -5,6 +5,7 @@
  *
  * 사용법:
  *   node src/pickko-ticket.js --phone=01012345678 --ticket="3시간" [--count=1]
+ *   node src/pickko-ticket.js --phone=01012345678 --ticket="3시간" --discount [--reason="리뷰체험단"]
  *
  * 이용권 종류 (--ticket 값):
  *   1시간, 2시간, 3시간, 4시간, 6시간, 8시간, 14시간(심야)
@@ -16,6 +17,10 @@
  *   30h → 30시간 / 50h → 50시간
  *   14d → 14일권 / 28d → 28일권
  *
+ * 할인 옵션:
+ *   --discount        이용권 전액 할인 (0원 처리)
+ *   --reason="사유"   주문 메모 및 할인 사유 (기본값: "기타 할인")
+ *
  * 출력 (stdout JSON):
  *   { success: true,  message: "이용권 추가 완료: ..." }
  *   { success: false, message: "오류 내용" }
@@ -26,10 +31,12 @@
  *   [3] 회원 상세 페이지 진입
  *   [4] 자유석 선택 → 이용권 목록 로드
  *   [5] 이용권 + 버튼 클릭 (count 회)
+ *   [5.5] (--discount 시) 할인 추가 (#add_dc → #add_item_dsc/price → #add_item_ok)
  *   [6] 주문정보 확인
+ *   [6.5] (--discount 또는 --reason 시) 주문 메모 입력 (#od_memo)
  *   [7] 현금 선택
  *   [8] 결제하기 클릭
- *   [9] 팝업 처리 (안내확인 → 주문상세 결제하기 → 완료확인)
+ *   [9] 팝업 처리 (안내확인 → .pay_start 결제하기 → 완료확인)
  */
 
 const puppeteer = require('puppeteer');
@@ -37,7 +44,7 @@ const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { parseArgs } = require('../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, findPickkoMember } = require('../lib/pickko');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -65,14 +72,7 @@ const VALID_TICKETS = [
 
 // ── 출력 헬퍼 ────────────────────────────────────────────────────────────
 
-function outputResult(result) {
-  process.stdout.write(JSON.stringify(result) + '\n');
-}
-
-function fail(message) {
-  outputResult({ success: false, message });
-  process.exit(1);
-}
+const { outputResult, fail } = require('../lib/cli');
 
 // ── 입력 검증 ────────────────────────────────────────────────────────────
 
@@ -92,6 +92,9 @@ if (!VALID_TICKETS.includes(TICKET_NAME)) {
 }
 
 const COUNT = Math.min(Math.max(parseInt(ARGS.count || '1', 10), 1), 9);
+const DISCOUNT = process.argv.includes('--discount');
+const REASON_RAW = (ARGS.reason || '').trim();
+const REASON = REASON_RAW || '기타 할인';
 
 // ⚠️ 이용권 중복 결제 주의:
 // - 시간권(1h/2h/3h…): 결제대기 중복 시 1개 결제 완료하면 나머지 자동 삭제 (시스템 보호)
@@ -106,71 +109,7 @@ if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_RAW)) {
   fail(`DEV 모드: 화이트리스트 번호만 허용 (입력: ${PHONE_RAW})\nOPS 모드 사용: MODE=ops node src/pickko-ticket.js ...`);
 }
 
-// ── [2단계] mb_no 조회 ───────────────────────────────────────────────────
-
-async function findMbNo(page, phone) {
-  log(`\n[2단계] mb_no 조회: ${phone}`);
-
-  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
-  await delay(2000);
-
-  // 전화번호 입력
-  await page.evaluate((p) => {
-    const inputs = document.querySelectorAll('input[type="text"]');
-    let target = null;
-    for (const inp of inputs) {
-      if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
-        target = inp; break;
-      }
-    }
-    if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
-    if (target) {
-      target.value = p;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    }
-  }, phone);
-  await delay(2000);
-
-  // 회원선택 버튼 클릭
-  try {
-    await page.click('a#mb_select_btn');
-  } catch (e) {
-    await page.evaluate(() => {
-      const links = document.querySelectorAll('a.btn_box');
-      for (const a of links) {
-        if (a.textContent.includes('회원 선택')) { a.click(); return; }
-      }
-    });
-  }
-  await delay(1500);
-
-  // a.mb_select → closest('li[mb_no]') 에서 mb_no·mb_name 추출 (pickko-accurate.js 동일 패턴)
-  const result = await page.evaluate(() => {
-    const selectEl = document.querySelector('a.mb_select');
-    if (!selectEl) return { found: false };
-
-    const li = selectEl.closest('li[mb_no]');
-    let mbNo = li?.getAttribute('mb_no') || null;
-    let name = li?.getAttribute('mb_name') || null;
-
-    // 폴백: a.detail_btn href에서 mb_no 추출
-    if (!mbNo) {
-      const detailBtn = document.querySelector('a.detail_btn[href*="/member/view/"]');
-      const m = detailBtn?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
-      if (m) mbNo = m[1];
-    }
-
-    return { found: true, mbNo, name };
-  });
-
-  try { await page.keyboard.press('Escape'); } catch (e) {}
-  await delay(300);
-
-  log(`  회원 검색 결과: ${JSON.stringify(result)}`);
-  if (!result.found || !result.mbNo) return { mbNo: null, name: null };
-  return { mbNo: result.mbNo, name: result.name };
-}
+// ── [2단계] mb_no 조회 → lib/pickko.findPickkoMember 공통 함수 사용 ──────
 
 // ── [4단계] 자유석 선택 + 이용권 목록 로드 ──────────────────────────────
 
@@ -274,6 +213,81 @@ async function addTicket(page, ticketName, count) {
   log('  ✅ #pay_order 활성화 확인');
 }
 
+// ── [5.5단계] 할인 추가 (--discount 플래그 시) ───────────────────────────
+// 주문에서 이용권 금액을 읽어 전액 할인 (합계 0원)
+
+async function applyDiscount(page) {
+  log('\n[5.5단계] 할인 추가');
+
+  // 주문 아이템 금액 추출 (input.price1 class)
+  const priceStr = await page.evaluate(() => {
+    const input = document.querySelector('input.price1');
+    return input ? input.value : '';
+  });
+  const priceNum = priceStr.replace(/[^0-9]/g, '');
+  if (!priceNum || priceNum === '0') throw new Error('이용권 금액을 주문에서 가져오지 못함 (input.price1)');
+  log(`  이용권 금액: ${priceStr} → 할인 금액: ${priceNum}원`);
+
+  // #add_dc 할인 추가 버튼 클릭
+  const dcClicked = await page.evaluate(() => {
+    const btn = document.querySelector('#add_dc');
+    if (btn) { btn.scrollIntoView({ block: 'center' }); btn.click(); return true; }
+    return false;
+  });
+  if (!dcClicked) throw new Error('#add_dc 할인 추가 버튼 없음');
+  await delay(500);
+
+  // 할인 사유: "기타할인" 입력
+  await page.evaluate(() => {
+    const input = document.querySelector('#add_item_dsc');
+    if (input) {
+      input.value = '기타할인';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+
+  // 할인 금액: 이용권 전액 입력
+  await page.evaluate((price) => {
+    const input = document.querySelector('#add_item_price');
+    if (input) {
+      input.value = price;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }, priceNum);
+  await delay(200);
+
+  // #add_item_ok 할인 추가 확인 클릭
+  const okClicked = await page.evaluate(() => {
+    const btn = document.querySelector('#add_item_ok');
+    if (btn && btn.offsetParent !== null) { btn.click(); return true; }
+    return false;
+  });
+  if (!okClicked) throw new Error('#add_item_ok 할인 추가 확인 버튼 없음');
+  await delay(800);
+
+  // 합계금액 0원 확인
+  const totalText = await page.evaluate(() =>
+    (document.querySelector('.total_price')?.innerText || '').replace(/\n/g, ' ')
+  );
+  log(`  합계금액 확인: ${totalText}`);
+  log('  ✅ 할인 추가 완료');
+}
+
+// ── [6.5단계] 주문 메모 입력 ─────────────────────────────────────────────
+
+async function fillOrderMemo(page, reason) {
+  log(`\n[6.5단계] 주문 메모 입력: "${reason}"`);
+  await page.evaluate((text) => {
+    const ta = document.querySelector('#od_memo');
+    if (ta) {
+      ta.value = text;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }, reason);
+  log('  ✅ 주문 메모 입력 완료');
+  await delay(200);
+}
+
 // ── [6단계] 주문정보 확인 ────────────────────────────────────────────────
 
 async function verifyOrderSummary(page, ticketName) {
@@ -346,18 +360,18 @@ async function clickMainPayButton(page) {
   await delay(1200);
 }
 
-// ── [9단계] 두 번째 결제하기 팝업 처리 ──────────────────────────────────
-// [8단계] #pay_order 클릭 → native alert 자동처리(setupDialogHandler) → 결제대기 생성
-// → .pay_start 버튼(두 번째 결제하기)이 나타남 → 클릭 → 결제완료
+// ── [9단계] 결제 완료 처리 ───────────────────────────────────────────────
+// 유료 결제: #pay_order 클릭 → native alert → .pay_start 등장 → 클릭 → 결제완료
+// 0원 결제:  #pay_order 클릭 → native alert → 즉시 완료 (receipt_btn 등장, .pay_start 없음)
 
 async function handlePaymentPopups(page) {
-  log('\n[9단계] .pay_start 결제하기 클릭 (결제완료)');
+  log('\n[9단계] 결제 완료 처리');
 
-  // .pay_start 버튼이 나타날 때까지 폴링 (최대 5초)
-  let payStartClicked = false;
   for (let round = 1; round <= 8; round++) {
     await delay(600);
-    payStartClicked = await page.evaluate(() => {
+
+    // 유료 결제: .pay_start 버튼 등장 → 클릭
+    const payStartClicked = await page.evaluate(() => {
       const btn = document.querySelector('.pay_start');
       if (btn && btn.offsetParent !== null) {
         btn.scrollIntoView({ block: 'center' });
@@ -368,16 +382,21 @@ async function handlePaymentPopups(page) {
     });
     if (payStartClicked) {
       log(`  ✅ .pay_start 결제하기 클릭 (round=${round})`);
-      break;
+      await delay(1500);
+      return;
+    }
+
+    // 0원 결제: receipt_btn 등장 → 이미 완료
+    const receiptFound = await page.evaluate(() =>
+      !!document.querySelector('.receipt_btn')
+    );
+    if (receiptFound) {
+      log(`  ✅ 0원 결제 완료 (영수증 출력 버튼 확인, round=${round})`);
+      return;
     }
   }
 
-  if (!payStartClicked) {
-    throw new Error('두 번째 결제하기(.pay_start) 버튼을 찾지 못함 (5초 대기 초과)');
-  }
-
-  // 결제완료 후 페이지 안정화 대기
-  await delay(1500);
+  throw new Error('결제 완료 확인 실패 (.pay_start 미등장, receipt_btn 미등장)');
 }
 
 // ── main ─────────────────────────────────────────────────────────────────
@@ -400,9 +419,11 @@ async function main() {
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log('  ✅ 로그인 완료');
 
-    // [2단계] mb_no 조회
-    const { mbNo, name: pickkName } = await findMbNo(page, PHONE_RAW);
-    if (!mbNo) fail(`회원을 찾을 수 없음: ${PHONE_RAW} (픽코 미등록 회원)`);
+    // [2단계] mb_no 조회 (lib/pickko.findPickkoMember 공통 함수)
+    log('\n[2단계] mb_no 조회');
+    const { found, mbNo, name: pickkName } = await findPickkoMember(page, PHONE_RAW, delay);
+    log(`  회원 검색 결과: found=${found}, mb_no=${mbNo}, name=${pickkName}`);
+    if (!found || !mbNo) fail(`회원을 찾을 수 없음: ${PHONE_RAW} (픽코 미등록 회원)`);
     log(`  ✅ mb_no=${mbNo} | 픽코 이름: ${pickkName || '미확인'}`);
 
     // [3단계] 회원 상세 페이지 진입 + 회원 이름 확인
@@ -426,8 +447,18 @@ async function main() {
     // [5단계] 이용권 추가 (+버튼 count회)
     await addTicket(page, TICKET_NAME, COUNT);
 
+    // [5.5단계] 할인 추가 (--discount 플래그 시)
+    if (DISCOUNT) {
+      await applyDiscount(page);
+    }
+
     // [6단계] 주문정보 확인
     await verifyOrderSummary(page, TICKET_NAME);
+
+    // [6.5단계] 주문 메모 입력 (--discount 또는 --reason 제공 시)
+    if (DISCOUNT || REASON_RAW) {
+      await fillOrderMemo(page, REASON);
+    }
 
     // [7단계] 현금 선택
     await selectCash(page);
@@ -441,7 +472,8 @@ async function main() {
     await delay(500);
 
     const targetLabel = memberName ? `${memberName} (${phoneFormatted})` : phoneFormatted;
-    const doneMsg = `이용권 추가 완료: ${targetLabel}\n이용권: ${TICKET_NAME} × ${COUNT}`;
+    const discountNote = DISCOUNT ? ` (전액할인 — ${REASON})` : '';
+    const doneMsg = `이용권 추가 완료: ${targetLabel}\n이용권: ${TICKET_NAME} × ${COUNT}${discountNote}`;
     log(`\n✅ ${doneMsg}`);
     outputResult({ success: true, message: doneMsg });
 

@@ -39,6 +39,28 @@ _현재 미해결 이슈 없음_
 
 > 자동 관리: `bug-report.js --maintenance` 실행 시 갱신
 
+<!-- session-close:2026-02-27:findPickkoMember-공통-라이브러리화 -->
+#### 2026-02-27 ♻️ findPickkoMember — 회원 조회 lib/pickko.js 공통 함수화
+- `lib/pickko.js` `findPickkoMember(page, phone, delay)` 신규: study/write.html 모달 회원 조회 공통 함수
+  - 검색 입력 → `#mb_select_btn` 클릭 → `li[mb_no]` 추출 → `{ found, mbNo, name }` 반환
+  - id 방식 실패 시 "회원 선택" 텍스트 폴백, `a.detail_btn` href 폴백 내장
+- `pickko-ticket.js`: `findMbNo()` 삭제 → `findPickkoMember` 교체
+- `pickko-member.js`: `findMember()` 80줄 → 6줄 (`findPickkoMember` 위임)
+- `pickko-accurate.js`: `syncMemberNameIfNeeded()` 내 인라인 35줄 → 1줄 교체
+- 관련 파일: `lib/pickko.js`, `src/pickko-ticket.js`, `src/pickko-member.js`, `src/pickko-accurate.js`
+<!-- session-close:2026-02-27:findPickkoMember-공통-라이브러리화:end -->
+
+<!-- session-close:2026-02-27:pickko-ticket-할인-추가-기능 -->
+#### 2026-02-27 ✨ pickko-ticket.js — 할인 추가 기능 (--discount)
+- `--discount` 플래그: 이용권 전액 할인 (0원 처리) — 리뷰체험단, 이벤트 할인 등
+- `--reason="사유"` 플래그: 주문 메모 + 할인 사유 입력 (기본값: "기타 할인")
+- `applyDiscount()`: `#add_dc` → `#add_item_dsc`/`#add_item_price` → `#add_item_ok`
+- `fillOrderMemo()`: `#od_memo` 텍스트 입력
+- `handlePaymentPopups()`: 유료(`.pay_start` 클릭) / 0원(`.receipt_btn` 감지) 분기처리
+- `waitForPayOrderEnabled()` 폴링: + 클릭 후 최대 8초 대기로 결제 흐름 안정화
+- 관련 파일: `src/pickko-ticket.js`
+<!-- session-close:2026-02-27:pickko-ticket-할인-추가-기능:end -->
+
 <!-- session-close:2026-02-26:pickko-ticket-이용권-추가-cli -->
 #### 2026-02-26 ✨ pickko-ticket.js — 픽코 이용권 추가 CLI
 - `src/pickko-ticket.js` 신규: 전화번호 기반 이용권 추가 9단계 자동화
@@ -77,6 +99,23 @@ _현재 미해결 이슈 없음_
 - `naver-monitor.js` 시작 시 `await flushPendingTelegrams()` 호출 추가
 - 관련 파일: `lib/telegram.js`, `src/naver-monitor.js`
 <!-- session-close:2026-02-26:텔레그램-알람-불가-처리-pending-queue:end -->
+
+<!-- session-close:2026-02-27:전체-시스템-공유-인프라-구축 -->
+#### 2026-02-27 ♻️ 전체 시스템 공유 인프라 구축
+- packages/core 공유 유틸리티 채우기
+- packages/playwright-utils 브라우저 헬퍼
+- bots/_template 스캐폴딩
+- reservation lib/cli.js 추가 및 6개 파일 중복 제거
+- 관련 파일: `packages/core/`, `packages/playwright-utils/`, `bots/_template/`, `bots/reservation/lib/cli.js`
+<!-- session-close:2026-02-27:전체-시스템-공유-인프라-구축:end -->
+
+<!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko- -->
+#### 2026-02-27 ✨ 완전 백그라운드 모드 전환 (launchd + Pickko headless)
+- lib/browser.js PICKKO_HEADLESS 환경변수 지원
+- start-ops.sh PICKKO_HEADLESS=1 추가
+- ai.ska.naver-monitor.plist launchd 상시 실행 등록
+- 관련 파일: `bots/reservation/lib/browser.js`, `bots/reservation/src/start-ops.sh`, `ai.ska.naver-monitor.plist`
+<!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko-:end -->
 
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**

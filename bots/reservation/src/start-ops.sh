@@ -69,6 +69,7 @@ while true; do
   TELEGRAM_ENABLED=1 NAVER_INTERVAL_MS=300000 \
   OBSERVE_ONLY=0 \
   PICKKO_CANCEL_ENABLE=1 \
+  PICKKO_HEADLESS=1 \
   node naver-monitor.js >> "$LOG_FILE" 2>&1
   EXIT_CODE=$?
 

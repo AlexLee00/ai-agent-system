@@ -101,6 +101,11 @@
 | "010-1234-5678 1시간 이용권" | `pickko-ticket.js --phone=01012345678 --ticket=1시간` |
 | "김철수 14일권 추가" | `pickko-ticket.js --phone=01000000000 --ticket=14일권` |
 | "이름 30시간권 충전" | `pickko-ticket.js --phone=01000000000 --ticket=30시간` |
+| "홍길동 리뷰체험단 3시간 이용권" | `pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount --reason="리뷰체험단"` |
+| "이벤트 할인으로 1시간 이용권 줘" | `pickko-ticket.js --phone=01012345678 --ticket=1시간 --discount --reason="이벤트 할인"` |
+| "공짜로 이용권 추가" / 할인 사유 없음 | `pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount` |
+
+> **할인 규칙**: `--discount` = 이용권 전액 0원 처리. `--reason` 없으면 "기타 할인" 자동 입력.
 
 **이용권 목록 (--ticket 값):**
 - 시간권: `1시간`, `2시간`, `3시간`, `4시간`, `6시간`, `8시간`, `14시간`(심야), `30시간`, `50시간`

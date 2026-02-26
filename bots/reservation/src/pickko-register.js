@@ -24,16 +24,12 @@ const path = require('path');
 const { parseArgs } = require('../lib/args');
 const { transformAndNormalizeData } = require('../lib/validation');
 const { addReservation, updateReservation, getReservation, markSeen } = require('../lib/db');
+const { fail } = require('../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = process.env.MODE || 'ops';
-
-function fail(message) {
-  process.stdout.write(JSON.stringify({ success: false, message }) + '\n');
-  process.exit(1);
-}
 
 // ── 필수 인자 검증 ──
 const required = ['date', 'start', 'end', 'room', 'phone'];

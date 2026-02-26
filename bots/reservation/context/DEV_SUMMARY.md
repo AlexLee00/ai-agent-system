@@ -223,6 +223,10 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-26 | **매출 통계 자연어 명령 추가 (pickko-stats-cmd.js)** | pickko-stats-cmd.js 신규: 날짜/주/월/누적 매출 조회 외 2건 |
 | 2026-02-26 | **자연어 명령 E2E 테스트 + 통합 매핑 추가** | test-nlp-e2e.js 신규: 27케이스 100% 통과 외 1건 |
 | 2026-02-26 | **텔레그램 알람 불가 처리 (pending queue)** | lib/telegram.js pending-telegrams.jsonl 대기큐, flushPendingTelegrams(), naver-monitor 시작 시 자동 재발송 |
+| 2026-02-27 | **전체 시스템 공유 인프라 구축** | packages/core 공유 유틸리티 채우기 외 3건 |
+| 2026-02-27 | **완전 백그라운드 모드 전환 (launchd + Pickko headless)** | lib/browser.js PICKKO_HEADLESS 환경변수 지원 외 2건 |
+<!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko- -->
+<!-- session-close:2026-02-27:전체-시스템-공유-인프라-구축 -->
 <!-- session-close:2026-02-26:텔레그램-알람-불가-처리-pending-queue -->
 <!-- session-close:2026-02-26:자연어-명령-e2e-테스트-통합-매핑-추가 -->
 <!-- session-close:2026-02-26:매출-통계-자연어-명령-추가-pickkostatscmd -->

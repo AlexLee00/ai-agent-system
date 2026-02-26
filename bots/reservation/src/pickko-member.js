@@ -20,21 +20,13 @@ const { parseArgs } = require('../lib/args');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, findPickkoMember } = require('../lib/pickko');
+const { outputResult, fail } = require('../lib/cli');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const ARGS = parseArgs(process.argv);
-
-function outputResult(result) {
-  process.stdout.write(JSON.stringify(result) + '\n');
-}
-
-function fail(message) {
-  outputResult({ success: false, message });
-  process.exit(1);
-}
 
 // ── 입력 검증 ──
 if (!ARGS.phone || !ARGS.name) {
@@ -49,68 +41,14 @@ if (!/^\d{10,11}$/.test(PHONE_RAW)) {
 const CUSTOMER_NAME = ARGS.name.replace(/대리예약.*/, '').trim().slice(0, 20) || '고객';
 const BIRTH_DATE = ARGS.birth || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 
-// ── 기존 회원 검색 (예약 등록 페이지의 회원 picker 활용) ──
+// ── 기존 회원 검색 → lib/pickko.findPickkoMember 공통 함수 사용 ──────────
+// findPickkoMember: { found, mbNo, name } 반환
+// pickko-member.js는 존재 여부(exists)만 필요하므로 found 필드 사용
 async function findMember(page, phoneNoHyphen) {
   log(`\n[회원 검색] 전화번호: ${phoneNoHyphen}`);
-
-  await page.goto('https://pickkoadmin.com/study/write.html', {
-    waitUntil: 'domcontentloaded'
-  });
-  await delay(3000);
-
-  // 전화번호 입력
-  await page.evaluate((phone) => {
-    const inputs = document.querySelectorAll('input[type="text"]');
-    let target = null;
-    for (const inp of inputs) {
-      if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
-        target = inp;
-        break;
-      }
-    }
-    if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
-    if (target) {
-      target.value = phone;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    }
-  }, phoneNoHyphen);
-  await delay(3000);
-
-  // 회원 선택 버튼 클릭 → 모달 열기
-  try {
-    await page.click('a#mb_select_btn');
-  } catch (e) {
-    log(`⚠️ mb_select_btn 클릭 실패, 대체 시도: ${e.message}`);
-    await page.evaluate(() => {
-      const links = document.querySelectorAll('a.btn_box');
-      for (const a of links) {
-        if (a.textContent.includes('회원 선택')) { a.click(); return; }
-      }
-    });
-  }
-  await delay(2000);
-
-  // 모달에서 회원 목록 확인
-  const found = await page.evaluate((phoneSuffix) => {
-    const members = document.querySelectorAll('a.mb_select');
-    if (members.length === 0) return { exists: false };
-    // 전화번호 suffix로 재확인
-    for (const mb of members) {
-      const row = mb.closest('tr');
-      if (row && row.textContent.replace(/\s+/g, '').includes(phoneSuffix)) {
-        return { exists: true };
-      }
-    }
-    // 검색 결과가 있으면 해당 번호의 고객 존재
-    return { exists: true };
-  }, PHONE_RAW.slice(-8));
-
-  // 모달 닫기
-  try { await page.keyboard.press('Escape'); } catch (e) {}
-  await delay(500);
-
-  return found;
+  const result = await findPickkoMember(page, phoneNoHyphen, delay);
+  log(`  검색 결과: ${JSON.stringify(result)}`);
+  return { exists: result.found };
 }
 
 // ── 신규 회원 등록 (pickko-accurate.js의 registerNewMember 로직 재활용) ──

@@ -234,4 +234,79 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
   return { entries, fetchOk: colMap.headers.length > 0 };
 }
 
-module.exports = { loginToPickko, fetchPickkoEntries };
+/**
+ * 픽코 어드민 study/write.html 모달로 전화번호 기반 회원 조회
+ *
+ * pickko-ticket.js, pickko-member.js, pickko-accurate.js에서
+ * 동일하게 반복되던 회원 검색 패턴을 공통 함수로 통합.
+ *
+ * @param {object} page    - Puppeteer page (픽코 로그인 완료 상태)
+ * @param {string} phone   - 전화번호 (하이픈 없는 숫자, e.g. '01012345678')
+ * @param {function} [d]   - delay 함수 (기본값: lib/utils의 delay)
+ * @returns {{ found: boolean, mbNo: string|null, name: string|null }}
+ */
+async function findPickkoMember(page, phone, d) {
+  const wait = d || delay;
+
+  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+  await wait(2000);
+
+  // 전화번호 검색 입력 (placeholder "이름" 또는 "검색" 기준, 없으면 마지막 텍스트 input)
+  await page.evaluate((p) => {
+    const inputs = document.querySelectorAll('input[type="text"]');
+    let target = null;
+    for (const inp of inputs) {
+      if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
+        target = inp; break;
+      }
+    }
+    if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
+    if (target) {
+      target.value = p;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    }
+  }, phone);
+  await wait(2000);
+
+  // 회원 선택 버튼 클릭 → 모달 열기 (id 방식 실패 시 텍스트 폴백)
+  try {
+    await page.click('a#mb_select_btn');
+  } catch (e) {
+    await page.evaluate(() => {
+      const links = document.querySelectorAll('a.btn_box');
+      for (const a of links) {
+        if (a.textContent.includes('회원 선택')) { a.click(); return; }
+      }
+    });
+  }
+  await wait(1500);
+
+  // 모달에서 mb_no, mb_name 추출
+  // a.mb_select의 부모 li[mb_no]에 속성으로 저장됨
+  const result = await page.evaluate(() => {
+    const selectEl = document.querySelector('a.mb_select');
+    if (!selectEl) return { found: false, mbNo: null, name: null };
+
+    const li = selectEl.closest('li[mb_no]');
+    let mbNo = li?.getAttribute('mb_no') || null;
+    let name = li?.getAttribute('mb_name') || null;
+
+    // 폴백: a.detail_btn href에서 mb_no 추출
+    if (!mbNo) {
+      const detailBtn = document.querySelector('a.detail_btn[href*="/member/view/"]');
+      const m = detailBtn?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
+      if (m) mbNo = m[1];
+    }
+
+    return { found: true, mbNo, name };
+  });
+
+  // 모달 닫기
+  try { await page.keyboard.press('Escape'); } catch (e) {}
+  await wait(300);
+
+  return result;
+}
+
+module.exports = { loginToPickko, fetchPickkoEntries, findPickkoMember };

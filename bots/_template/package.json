@@ -1,0 +1,14 @@
+{
+  "name": "@ai-agent/bot-template",
+  "version": "1.0.0",
+  "description": "신규 봇 스캐폴딩 — 복사 후 이름/설명 수정",
+  "main": "src/example-cmd.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/example-cmd.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*",
+    "@ai-agent/playwright-utils": "*"
+  }
+}
