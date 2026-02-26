@@ -39,6 +39,14 @@ _현재 미해결 이슈 없음_
 
 > 자동 관리: `bug-report.js --maintenance` 실행 시 갱신
 
+<!-- session-close:2026-02-26:pickko-ticket-이용권-추가-cli -->
+#### 2026-02-26 ✨ pickko-ticket.js — 픽코 이용권 추가 CLI
+- `src/pickko-ticket.js` 신규: 전화번호 기반 이용권 추가 9단계 자동화
+- 기간권 중복 방지 (count=1 강제), 시간권은 시스템 자동 중복 삭제
+- `CLAUDE_NOTES.md` 이용권 추가 NLP 매핑 테이블 추가
+- 관련 파일: `src/pickko-ticket.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-26:pickko-ticket-이용권-추가-cli:end -->
+
 <!-- session-close:2026-02-26:sessionclose-라이브러리-구축 -->
 #### 2026-02-26 ✨ session-close 라이브러리 구축
 - scripts/lib 모듈화
