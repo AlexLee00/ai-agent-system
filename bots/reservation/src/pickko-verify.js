@@ -28,6 +28,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser')
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const {
   getPendingReservations,
+  getUnverifiedCompletedReservations,
   addReservation,
   updateReservation,
   getReservation,
@@ -61,13 +62,13 @@ function needsVerify(entry) {
 
 function collectTargets() {
   // DB에서 pending/processing/failed + completed 미검증 항목 수집
-  // getPendingReservations() = status IN ('pending','processing','failed')
-  const pending = getPendingReservations();
+  const pending   = getPendingReservations();            // status IN ('pending','processing','failed')
+  const unverified = getUnverifiedCompletedReservations(); // completed이지만 pickkoStatus 미검증
 
   const targets = [];
   const seen = new Set();
 
-  for (const entry of pending) {
+  for (const entry of [...pending, ...unverified]) {
     if (!needsVerify(entry)) continue;
     const ck = entry.compositeKey || entry.id;
     if (!seen.has(ck)) {
