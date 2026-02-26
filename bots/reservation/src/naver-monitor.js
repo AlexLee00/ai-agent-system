@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 const { transformAndNormalizeData } = require('../lib/validation');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
-const { sendTelegram: sendTelegramDirect } = require('../lib/telegram');
+const { sendTelegram: sendTelegramDirect, flushPendingTelegrams } = require('../lib/telegram');
 const {
   isSeenId, markSeen, addReservation, updateReservation, getReservation,
   rollbackProcessing, pruneOldReservations,
@@ -636,6 +636,9 @@ async function monitorBookings() {
 
   try {
     log('🚀 네이버 예약 모니터링 시작 (2시간)');
+
+    // ⚠️ 시작 시 이전 세션 미전송 알림 재발송 (네트워크 단절 등으로 유실된 메시지)
+    await flushPendingTelegrams();
 
     // ⚠️ 시작 시 미해결 오류 알림 확인 (이전 세션에서 미처리된 건 보고)
     await reportUnresolvedAlerts();

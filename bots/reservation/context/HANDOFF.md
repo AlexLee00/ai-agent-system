@@ -62,6 +62,14 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `src/test-nlp-e2e.js`, `context/CLAUDE_NOTES.md`
 <!-- session-close:2026-02-26:자연어-명령-e2e-테스트-통합-매핑-추가:end -->
 
+<!-- session-close:2026-02-26:텔레그램-알람-불가-처리-pending-queue -->
+#### 2026-02-26 텔레그램 알람 불가 처리 — pending queue 구현
+- `lib/telegram.js` `pending-telegrams.jsonl` 대기큐: 3회 재시도 최종 실패 시 자동 저장
+- `flushPendingTelegrams()` 신규: 재시작 시 대기큐 재발송, 성공 항목 제거
+- `naver-monitor.js` 시작 시 `await flushPendingTelegrams()` 호출 추가
+- 관련 파일: `lib/telegram.js`, `src/naver-monitor.js`
+<!-- session-close:2026-02-26:텔레그램-알람-불가-처리-pending-queue:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
