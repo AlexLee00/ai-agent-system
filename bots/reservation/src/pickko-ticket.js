@@ -221,6 +221,21 @@ async function selectSeatTypeAndLoad(page) {
   log('  ✅ 이용권 목록 로드 완료');
 }
 
+// ── 결제하기 버튼 enabled 폴링 ───────────────────────────────────────────
+// #pay_order 클래스에 'disabled'가 사라질 때까지 대기 (+ 클릭 후 AJAX 반영 ~3초)
+async function waitForPayOrderEnabled(page, maxMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const enabled = await page.evaluate(() => {
+      const btn = document.querySelector('#pay_order');
+      return btn && !btn.className.includes('disabled');
+    });
+    if (enabled) return true;
+    await delay(300);
+  }
+  return false;
+}
+
 // ── [5단계] 이용권 + 버튼 클릭 ──────────────────────────────────────────
 
 async function addTicket(page, ticketName, count) {
@@ -250,8 +265,13 @@ async function addTicket(page, ticketName, count) {
     }, svcNo);
     if (!clicked) throw new Error(`+ 버튼 클릭 실패 (svc_no=${svcNo}, ${i}/${count}번째)`);
     log(`  + 클릭 ${i}/${count}`);
-    await delay(400);
+    if (i < count) await delay(400);
   }
+
+  // + 클릭 후 #pay_order enabled 폴링 (AJAX 반영까지 최대 8초)
+  const enabled = await waitForPayOrderEnabled(page, 8000);
+  if (!enabled) throw new Error('이용권 추가 후 결제하기 버튼이 활성화되지 않음 (8초 초과)');
+  log('  ✅ #pay_order 활성화 확인');
 }
 
 // ── [6단계] 주문정보 확인 ────────────────────────────────────────────────
