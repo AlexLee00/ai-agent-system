@@ -50,6 +50,28 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — pickko-accurate.js 달력 팝업 protocolTimeout 버그픽스
+
+### pickko-accurate.js [5단계] [2단계] — `page.click()` → `page.evaluate()` 교체
+
+**원인:** `page.click('input#start_date')` 호출 시 jQuery datepicker 클릭 핸들러가 동기 실행되면서 Puppeteer CDP `protocolTimeout` 기본값(180초=3분) 초과 → `Runtime.callFunctionOn timed out` exit code 1 발생 (간헐적, 평균 재시도 3회차 성공)
+
+**수정:** `page.click()` 제거 → `page.evaluate()`로 jQuery datepicker API 직접 호출
+```javascript
+await page.evaluate(() => {
+  const inp = document.querySelector('input#start_date');
+  if (!inp) return;
+  if (window.jQuery?.fn?.datepicker) window.jQuery(inp).datepicker('show');
+  else inp.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
+```
+- `datepicker('show')`: 팝업만 열고 즉시 반환 → CDP 블로킹 없음
+- 폴백: jQuery 없으면 `MouseEvent` dispatchEvent (동일하게 non-blocking)
+
+**검증:** naver-monitor PID 66050 재기동 후 정상 사이클 확인 (6:37 사이클 16초 소요)
+
+---
+
 ## 최근 완료 작업 (2026-02-26) — pickko-cancel [6-B단계] 폴백 + 정진영 중복 예약 해소
 
 ### 1. pickko-cancel.js — [6-B단계] 폴백 추가 (0원/이용중 예약 취소)
