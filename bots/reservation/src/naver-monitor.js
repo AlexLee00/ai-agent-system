@@ -648,6 +648,7 @@ async function monitorBookings() {
     browser = await puppeteer.launch({
       headless: false, // 🖥️ 항상 브라우저 화면 표시
       defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
+      protocolTimeout: 30000, // CDP 개별 호출 타임아웃 (기본 180초→30초, Runtime.callFunctionOn 타임아웃 단축)
       userDataDir: path.join(WORKSPACE, 'naver-profile'),
       args: [
         '--no-sandbox',
@@ -724,11 +725,15 @@ async function monitorBookings() {
         log(`\n📍 확인 #${checkCount}`);
 
         // ✅ 검은 박스(예약 현황) 리프레시 버튼 클릭 후 딜레이
+        // BUG-007: Runtime.callFunctionOn 타임아웃 방지 → Promise.race 8초 제한
         try {
           const refreshBtn = await page.$('button[class*="btn_refresh"]');
           if (refreshBtn) {
             log(`🖱️ 예약현황 새로고침 버튼 클릭`);
-            await refreshBtn.click();
+            await Promise.race([
+              refreshBtn.click(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('click 8초 타임아웃')), 8000)),
+            ]);
             const ms = parseInt(process.env.NAVER_REFRESH_DELAY_MS || '1200', 10);
             log(`⏱️ 새로고침 대기 ${ms}ms`);
             await delay(ms);
