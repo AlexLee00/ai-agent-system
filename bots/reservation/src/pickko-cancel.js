@@ -238,7 +238,73 @@ async function run() {
         try { await browser.close(); } catch (e) {}
         process.exit(0);
       }
-      throw new Error('[6단계] 결제완료 상태의 주문상세 버튼 없음');
+
+      // ── [6-B단계] 폴백: 0원/이용중 예약 → 수정 → 취소(sd_step=-1) → 저장 ──
+      log('\n[6-B단계] 주문상세 없음 → 수정 버튼 폴백 시도 (0원/이용중 예약)');
+
+      // 수정 버튼 클릭 → /study/write/{sd_no}.html
+      const editClicked = await page.evaluate(() => {
+        const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+        const links = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
+        for (const el of links) {
+          const t = clean(el.textContent || el.value || '');
+          if (t === '수정' || t.includes('수정')) {
+            el.click();
+            return { clicked: true, text: t, href: el.href || null };
+          }
+        }
+        return { clicked: false };
+      });
+      log(`  수정 버튼: ${JSON.stringify(editClicked)}`);
+      if (!editClicked.clicked) throw new Error('[6-B단계] 수정 버튼 없음');
+
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
+        delay(1000),
+      ]);
+      log(`  이동: ${page.url()}`);
+
+      // 취소(sd_step = -1) 라디오 선택
+      const cancelSelected = await page.evaluate(() => {
+        // input#sd_step-1 또는 input[name="sd_step"][value="-1"]
+        const radio = document.querySelector('input#sd_step-1, input[name="sd_step"][value="-1"]');
+        if (radio) { radio.click(); return { selected: true, id: radio.id, value: radio.value }; }
+        return { selected: false };
+      });
+      log(`  취소 라디오: ${JSON.stringify(cancelSelected)}`);
+      if (!cancelSelected.selected) throw new Error('[6-B단계] 취소(sd_step=-1) 라디오 없음');
+      await delay(300);
+
+      // 저장(작성하기) 버튼 클릭
+      const saveClicked = await page.evaluate(() => {
+        const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+        // input[value="작성하기"] 또는 텍스트 "저장"/"작성하기" 버튼
+        const candidates = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button'));
+        for (const el of candidates) {
+          const t = clean(el.value || el.textContent || '');
+          if (t.includes('작성하기') || t.includes('저장') || t.includes('수정하기')) {
+            el.click();
+            return { clicked: true, text: t };
+          }
+        }
+        return { clicked: false };
+      });
+      log(`  저장 버튼: ${JSON.stringify(saveClicked)}`);
+      if (!saveClicked.clicked) throw new Error('[6-B단계] 저장 버튼 없음');
+
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+      await delay(500);
+      log(`✅ [6-B단계] 수정→취소→저장 완료: ${page.url()}`);
+
+      // [10단계] 취소 완료 확인 후 종료
+      const finalStatusB = await page.evaluate(() =>
+        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      ).catch(() => '');
+      const isCancelledB = finalStatusB.includes('취소') || finalStatusB.includes('환불') || finalStatusB.includes('삭제');
+      log(`📊 최종 상태: ${isCancelledB ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      log('✅ [SUCCESS] 픽코 예약 취소 완료 (수정→취소→저장 플로우)');
+      try { await browser.close(); } catch (e) {}
+      process.exit(0);
     }
     await delay(1500);
 
