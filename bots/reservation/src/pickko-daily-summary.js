@@ -25,6 +25,7 @@ const {
   getAllNaverKeys, getDb,
   upsertDailySummary, getUnconfirmedSummaryBefore,
 } = require('../lib/db');
+const { fetchDailyDetail } = require('../lib/pickko-stats');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -125,13 +126,15 @@ function classifyLabel(cls) {
  * 예약 목록 → 텔레그램 메시지 생성
  * isNoon=true 이면 매출 + 컨펌 요청 포함
  */
-function buildMessage(today, entries, naverKeys, kioskMap, isNoon) {
+function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats = null) {
   const dateHeader = formatDateHeader(today);
 
   if (entries.length === 0) {
     const base = `📋 오늘 예약 현황 — ${dateHeader}\n\n예약 없음`;
     if (isNoon) {
-      return base + '\n\n💰 총 매출: 0원\n\n❓ 오늘 매출을 확정하시겠습니까?';
+      const generalRevenue = pickkoStats ? pickkoStats.generalRevenue : 0;
+      const baseMsg = base + `\n\n💰 총 매출: ${formatAmount(generalRevenue)}\n\n❓ 오늘 매출을 확정하시겠습니까?`;
+      return { msg: baseMsg, totalAmount: generalRevenue, roomAmounts: {} };
     }
     return base;
   }
@@ -202,14 +205,22 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon) {
     }
   }
 
-  // 12:00 보고 — 룸별 매출 + 컨펌 요청
+  // 00:00 보고 — 룸별 매출 + 컨펌 요청
   if (isNoon) {
-    msg += `\n\n💰 룸별 매출:\n`;
+    const generalRevenue = pickkoStats ? pickkoStats.generalRevenue : 0;
+    const grandTotal = generalRevenue + totalAmount;
+
+    msg += `\n\n💰 매출 현황:\n`;
+    if (pickkoStats) {
+      msg += `  일반이용: ${formatAmount(generalRevenue)}\n`;
+    }
     for (const [room, amt] of Object.entries(roomAmounts).sort(([a], [b]) => a.localeCompare(b))) {
       msg += `  ${room}: ${formatAmount(amt)}\n`;
     }
-    msg += `  합계: ${formatAmount(totalAmount)}\n`;
+    msg += `  합계: ${formatAmount(grandTotal)}\n`;
     msg += `\n❓ 오늘 매출을 확정하시겠습니까?`;
+
+    return { msg, totalAmount: grandTotal, roomAmounts };
   }
 
   return { msg, totalAmount, roomAmounts };
@@ -217,7 +228,7 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon) {
 
 async function main() {
   const hourKST    = getHourKST();
-  const isMidnight = hourKST === 0; // 00:00 실행 → 어제 영업일 마감 보고
+  const isMidnight = hourKST === 0 || process.argv.includes('--midnight'); // 00:00 실행 또는 --midnight 테스트
   const today      = getTodayKST();
   // 자정 실행 시 어제 날짜를 대상으로 보고
   const reportDate = isMidnight ? getYesterdayKST() : today;
@@ -266,9 +277,25 @@ async function main() {
       log(`  • ${e.start}~${e.end} ${e.room} ${e.name} ${calcAmount(e)}원 → ${classifyLabel(cls)}`);
     }
 
+    // ──── 3-B단계: 픽코 실제 매출 조회 (자정 실행 시만) ────
+    let pickkoStats = null;
+    if (isMidnight) {
+      log('\n[3-B단계] 픽코 실제 매출 조회');
+      try {
+        pickkoStats = await fetchDailyDetail(page, reportDate);
+        const studyTotal = Object.values(pickkoStats.studyRoomRevenue).reduce((s, v) => s + v, 0);
+        log(`  픽코 총매출: ${pickkoStats.totalRevenue}원`);
+        log(`  픽코 스터디룸: ${studyTotal}원 (${JSON.stringify(pickkoStats.studyRoomRevenue)})`);
+        log(`  일반이용: ${pickkoStats.generalRevenue}원`);
+      } catch (err) {
+        log(`  ⚠️ 픽코 매출 조회 실패 (건너뜀): ${err.message}`);
+        pickkoStats = null;
+      }
+    }
+
     // ──── 4단계: 메시지 생성 & DB 저장 ────
     log('\n[4단계] 메시지 생성 & DB 저장');
-    const result = buildMessage(reportDate, entries, naverKeys, kioskMap, isMidnight);
+    const result = buildMessage(reportDate, entries, naverKeys, kioskMap, isMidnight, pickkoStats);
 
     // result는 예약 없을 때 string, 있을 때 { msg, totalAmount, roomAmounts }
     let msg, totalAmount = 0, roomAmounts = {};
@@ -281,10 +308,16 @@ async function main() {
     }
 
     // daily_summary DB 저장 (매 보고마다 최신 데이터로 갱신)
+    const pickkoStudyRoomTotal = pickkoStats
+      ? Object.values(pickkoStats.studyRoomRevenue).reduce((s, v) => s + v, 0)
+      : 0;
     upsertDailySummary(reportDate, {
       totalAmount,
       roomAmounts,
-      entriesCount: entries.length,
+      entriesCount:    entries.length,
+      pickkoTotal:     pickkoStats ? pickkoStats.totalRevenue : 0,
+      pickkoStudyRoom: pickkoStudyRoomTotal,
+      generalRevenue:  pickkoStats ? pickkoStats.generalRevenue : 0,
     });
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);
 

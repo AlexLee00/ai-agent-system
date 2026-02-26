@@ -60,7 +60,12 @@ async function main() {
 
   // 3. 텔레그램 컨펌 완료 메시지
   const dateHeader = formatDateHeader(result.date);
-  const roomLines = Object.entries(result.roomAmounts)
+  // 일반이용 포함 전체 매출 항목
+  const allAmounts = { ...result.roomAmounts };
+  if (result.generalRevenue > 0) {
+    allAmounts['일반이용'] = result.generalRevenue;
+  }
+  const roomLines = Object.entries(allAmounts)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([room, amt]) => `  ${room}: ${formatAmount(amt)}`)
     .join('\n');
