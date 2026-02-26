@@ -225,6 +225,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-26 | **텔레그램 알람 불가 처리 (pending queue)** | lib/telegram.js pending-telegrams.jsonl 대기큐, flushPendingTelegrams(), naver-monitor 시작 시 자동 재발송 |
 | 2026-02-27 | **전체 시스템 공유 인프라 구축** | packages/core 공유 유틸리티 채우기 외 3건 |
 | 2026-02-27 | **완전 백그라운드 모드 전환 (launchd + Pickko headless)** | lib/browser.js PICKKO_HEADLESS 환경변수 지원 외 2건 |
+| 2026-02-27 | **시스템 설계 v2.0 + iPad 원격 접속 + 투자봇 설계** | SYSTEM_DESIGN.md v2.0 전면 개정 (봇별 LLM 확정·투자팀 3봇·메모리 할당) 외 8건 |
+<!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계 -->
 <!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko- -->
 <!-- session-close:2026-02-27:전체-시스템-공유-인프라-구축 -->
 <!-- session-close:2026-02-26:텔레그램-알람-불가-처리-pending-queue -->
