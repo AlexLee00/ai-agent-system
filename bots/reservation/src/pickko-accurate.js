@@ -140,6 +140,157 @@ async function sendErrorNotification(errorMsg, context = {}) {
   log(`📋 컨텍스트: ${JSON.stringify(context)}`);
 }
 
+// ======================== 회원 이름 동기화 (1.5단계) ========================
+async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
+  // 가드: 유효하지 않은 naverName이면 스킵
+  if (!naverName || naverName === '고객' || naverName.length < 2) {
+    return { skipped: true, reason: 'invalid_naver_name' };
+  }
+
+  // 1. 회원 목록 검색
+  await page.goto('https://pickkoadmin.com/member/index.html', { waitUntil: 'networkidle2' });
+  await delay(1500);
+
+  // 전화번호 검색 (검색 폼에 입력)
+  await page.evaluate((phone) => {
+    const inputs = document.querySelectorAll('input[type="text"], input[type="search"]');
+    for (const inp of inputs) {
+      const ph = (inp.placeholder || '').toLowerCase();
+      if (ph.includes('전화') || ph.includes('phone') || ph.includes('연락')) {
+        inp.value = phone;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+    }
+    // 폴백: 이름/검색 input에 입력
+    const anySearch = document.querySelector('input[name="mb_phone"], input[name="search"]');
+    if (anySearch) {
+      anySearch.value = phone;
+      anySearch.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    return false;
+  }, phoneRaw);
+
+  // 검색 버튼 클릭
+  await page.evaluate(() => {
+    const btns = document.querySelectorAll('input[type="submit"], button[type="submit"]');
+    for (const b of btns) {
+      const t = (b.value || b.textContent || '').trim();
+      if (t.includes('검색') || t.includes('Search')) { b.click(); return; }
+    }
+    // 폴백: form submit
+    const form = document.querySelector('form');
+    if (form) form.submit();
+  });
+  await delay(1500);
+
+  // 2. 검색 결과에서 이름과 view URL 추출
+  const result = await page.evaluate((phoneSuffix) => {
+    const rows = document.querySelectorAll('tbody tr');
+    for (const row of rows) {
+      const text = row.textContent.replace(/\s+/g, '');
+      if (!text.includes(phoneSuffix)) continue;
+
+      // 이름: 숫자만이 아닌 것, 짧은 텍스트
+      const tds = row.querySelectorAll('td');
+      let name = null;
+      for (const td of tds) {
+        const t = td.textContent.trim();
+        if (t && t.length >= 2 && t.length <= 20 && !/^\d+$/.test(t) && !t.includes('-')) {
+          name = t;
+          break;
+        }
+      }
+
+      // view 링크: /member/view/{mb_no}
+      const viewLink = row.querySelector('a[href*="/member/view/"]');
+      const mbMatch = viewLink?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
+      const mbNo = mbMatch ? mbMatch[1] : null;
+
+      return { found: true, name, mbNo };
+    }
+    return { found: false };
+  }, phoneRaw.slice(-8)); // 뒤 8자리로 매칭
+
+  log(`[1.5단계] 회원 검색 결과: ${JSON.stringify(result)}`);
+
+  if (!result.found || !result.mbNo) {
+    log(`[1.5단계] 회원 없음 또는 mb_no 미추출 → 스킵`);
+    return { skipped: true, reason: 'member_not_found' };
+  }
+
+  const pickkoName = result.name;
+  log(`[1.5단계] 픽코 이름: "${pickkoName}" | 네이버 이름: "${naverName}"`);
+
+  if (pickkoName === naverName) {
+    log(`[1.5단계] ✅ 이름 일치 → 동기화 불필요`);
+    return { updated: false };
+  }
+
+  log(`[1.5단계] ⚠️ 이름 불일치 → 수정 시작`);
+
+  // 3. member/view 페이지로 이동
+  await page.goto(`https://pickkoadmin.com/member/view/${result.mbNo}.html`, {
+    waitUntil: 'domcontentloaded'
+  });
+  await delay(1500);
+
+  // 4. 수정 버튼 클릭 → /member/write/{mb_no}.html 이동
+  const navigatedToWrite = await page.evaluate((mbNo) => {
+    const writeLink = document.querySelector(`a[href*="/member/write/${mbNo}"]`);
+    if (writeLink) { writeLink.click(); return true; }
+    const links = document.querySelectorAll('a');
+    for (const a of links) {
+      if (['수정', '편집', '수정하기'].includes(a.textContent.trim())) {
+        a.click();
+        return true;
+      }
+    }
+    return false;
+  }, result.mbNo);
+
+  if (!navigatedToWrite) {
+    // 직접 URL로 이동
+    await page.goto(`https://pickkoadmin.com/member/write/${result.mbNo}.html`, {
+      waitUntil: 'domcontentloaded'
+    });
+  }
+  await delay(1500);
+
+  // 5. 이름 필드 수정
+  const nameInput = await page.$('input[name="mb_name"]');
+  if (!nameInput) {
+    log(`[1.5단계] ⚠️ 이름 필드 없음 → 스킵`);
+    return { skipped: true, reason: 'name_input_not_found' };
+  }
+  await nameInput.click({ clickCount: 3 });
+  await nameInput.type(naverName, { delay: 50 });
+  await delay(300);
+
+  // 6. 저장 (form.submit())
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
+    page.evaluate(() => {
+      const form = document.querySelector('form#memberFrom, form');
+      if (form) HTMLFormElement.prototype.submit.call(form);
+    })
+  ]);
+  await delay(1000);
+
+  const afterUrl = page.url();
+  const success = afterUrl.includes('/member/view/');
+  log(`[1.5단계] ${success ? '✅' : '⚠️'} 이름 저장 결과: ${afterUrl}`);
+
+  return {
+    updated: success,
+    mbNo: result.mbNo,
+    oldName: pickkoName,
+    newName: naverName
+  };
+}
+
 // ======================== 신규 회원 자동 등록 ========================
 async function registerNewMember(page, phoneNoHyphen, customerName, reservationDate) {
   log('\n[3.5단계] 신규 회원 자동 등록');
@@ -243,7 +394,23 @@ async function main() {
     log('\n[1단계] 로그인');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log('✅ 로그인 완료');
-    
+
+    // ======================== 1.5단계: 회원 이름 동기화 ========================
+    log('\n[1.5단계] 회원 이름 동기화 확인');
+    try {
+      const syncResult = await syncMemberNameIfNeeded(page, PHONE_NOHYPHEN, CUSTOMER_NAME);
+      if (syncResult.updated) {
+        log(`✅ [1.5단계] 이름 업데이트: "${syncResult.oldName}" → "${syncResult.newName}"`);
+      } else if (syncResult.skipped) {
+        log(`[1.5단계] 스킵 (${syncResult.reason})`);
+      } else {
+        log(`[1.5단계] 이름 일치 → 변경 불필요`);
+      }
+    } catch (e) {
+      log(`⚠️ [1.5단계] 이름 동기화 오류 (예약 계속 진행): ${e.message}`);
+      // 비치명적 오류 → 계속 진행
+    }
+
     // ✅ 시간 범위 변환 확인 (로그인 후)
     const timeRangeCheck = validateTimeRange(START_TIME, END_TIME);
     if (!timeRangeCheck.ok) {
@@ -508,9 +675,18 @@ async function main() {
 
         log(`📅 [1단계] 결과: ${JSON.stringify(setDateOk)}`);
 
-        // [2단계] 달력 팝업 열기 (값이 바뀌었으니 이제 팝업에서 확인/확정)
+        // [2단계] 달력 팝업 열기 (page.click → protocolTimeout 행 방지 위해 evaluate로 대체)
         log(`📅 [2단계] 달력 팝업 열기`);
-        await page.click('input#start_date');
+        await page.evaluate(() => {
+          const inp = document.querySelector('input#start_date');
+          if (!inp) return;
+          // jQuery datepicker API로 직접 팝업 열기 (page.click의 CDP 블로킹 회피)
+          if (window.jQuery && window.jQuery.fn && window.jQuery.fn.datepicker) {
+            window.jQuery(inp).datepicker('show');
+          } else {
+            inp.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          }
+        });
         await delay(800);  // 팝업 로드 대기
 
         const [ty, tm, td] = DATE.split('-').map(n => parseInt(n, 10));
