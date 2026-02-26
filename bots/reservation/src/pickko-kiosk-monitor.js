@@ -1284,6 +1284,25 @@ async function main() {
     // ── Phase 2: 신규 예약 감지 ──
     const newEntries = kioskEntries.filter(e => !getKioskBlock(e.phoneRaw, e.date, e.start));
 
+    // ── Phase 2A: 미차단 재시도 대상 ──
+    // 이전 주기에서 차단 실패(naverBlocked=false)한 항목 중 아직 종료 전인 것
+    const _nowForRetry = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const _nowDateForRetry = `${_nowForRetry.getFullYear()}-${String(_nowForRetry.getMonth()+1).padStart(2,'0')}-${String(_nowForRetry.getDate()).padStart(2,'0')}`;
+    const _nowMinForRetry = _nowForRetry.getHours() * 60 + _nowForRetry.getMinutes();
+    const retryEntries = kioskEntries.filter(e => {
+      const saved = getKioskBlock(e.phoneRaw, e.date, e.start);
+      if (!saved) return false;              // 신규 → newEntries에서 처리
+      if (saved.naverBlocked) return false;  // 이미 차단 완료
+      if (saved.naverUnblockedAt) return false; // 해제된 항목
+      // 예약 종료 전인 항목만 재시도
+      const [_rEndH, _rEndM] = (e.end || '23:59').split(':').map(Number);
+      const isExpired = e.date < _nowDateForRetry || (e.date === _nowDateForRetry && _nowMinForRetry >= _rEndH * 60 + _rEndM);
+      return !isExpired;
+    });
+
+    // 차단 처리 대상 = 신규 + 재시도
+    const toBlockEntries = [...newEntries, ...retryEntries];
+
     // ── Phase 2B: 취소 감지 (픽코 환불 목록 직접 조회) ──
     // JSON 파일 비교 대신 픽코를 직접 조회 → 무결성 보장
     log('\n[Phase 2B] 픽코 환불 예약 직접 조회');
@@ -1301,11 +1320,11 @@ async function main() {
         return true;
       });
 
-    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 (전체 ${kioskEntries.length}건)`);
+    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
     log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
 
-    if (newEntries.length === 0 && cancelledEntries.length === 0) {
-      log('✅ 신규 예약 없음, 취소 없음. 종료');
+    if (toBlockEntries.length === 0 && cancelledEntries.length === 0) {
+      log('✅ 신규 예약 없음, 재시도 없음, 취소 없음. 종료');
       return;
     }
 
@@ -1318,7 +1337,7 @@ async function main() {
 
     if (!wsEndpoint) {
       log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
-      for (const e of newEntries) {
+      for (const e of toBlockEntries) {
         upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
         sendTelegram(
           `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
@@ -1357,7 +1376,7 @@ async function main() {
 
       if (!loggedIn) {
         log('❌ 네이버 booking 로그인 실패');
-        for (const e of newEntries) {
+        for (const e of toBlockEntries) {
           upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
           sendTelegram(
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
@@ -1371,8 +1390,8 @@ async function main() {
         return;
       }
 
-      // 각 신규 예약 처리
-      for (const e of newEntries) {
+      // 각 신규·재시도 예약 처리
+      for (const e of toBlockEntries) {
         const key = `${e.phoneRaw}|${e.date}|${e.start}`;
         log(`\n처리 중: ${key}`);
 

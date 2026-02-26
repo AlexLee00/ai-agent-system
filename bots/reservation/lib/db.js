@@ -90,6 +90,25 @@ function _initSchema(db) {
       start_time TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS daily_summary (
+      date TEXT PRIMARY KEY,
+      total_amount INTEGER DEFAULT 0,
+      room_amounts_json TEXT,
+      entries_count INTEGER DEFAULT 0,
+      reported_at TEXT,
+      last_reported_at TEXT,
+      confirmed INTEGER DEFAULT 0,
+      confirmed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS room_revenue (
+      room TEXT NOT NULL,
+      date TEXT NOT NULL,
+      amount INTEGER DEFAULT 0,
+      confirmed_at TEXT,
+      PRIMARY KEY (room, date)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_res_status ON reservations(status);
     CREATE INDEX IF NOT EXISTS idx_res_date   ON reservations(date);
     CREATE INDEX IF NOT EXISTS idx_kiosk_date ON kiosk_blocks(date);
@@ -500,6 +519,125 @@ function _safeDec(val) {
   try { return decrypt(val); } catch (e) { return null; }
 }
 
+// ─── daily_summary ─────────────────────────────────────────────────
+
+/**
+ * 일별 요약 upsert
+ * data = { totalAmount, roomAmounts, entriesCount }
+ */
+function upsertDailySummary(date, data) {
+  const db = getDb();
+  const nowISO = new Date().toISOString();
+  const roomJson = JSON.stringify(data.roomAmounts || {});
+  db.prepare(`
+    INSERT INTO daily_summary (date, total_amount, room_amounts_json, entries_count, reported_at, last_reported_at, confirmed, confirmed_at)
+    VALUES (@date, @total_amount, @room_amounts_json, @entries_count, @now, @now, 0, NULL)
+    ON CONFLICT(date) DO UPDATE SET
+      total_amount       = excluded.total_amount,
+      room_amounts_json  = excluded.room_amounts_json,
+      entries_count      = excluded.entries_count,
+      last_reported_at   = excluded.last_reported_at
+  `).run({
+    date,
+    total_amount:      data.totalAmount || 0,
+    room_amounts_json: roomJson,
+    entries_count:     data.entriesCount || 0,
+    now:               nowISO,
+  });
+}
+
+/**
+ * 날짜별 요약 조회
+ */
+function getDailySummary(date) {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM daily_summary WHERE date = ?').get(date);
+  if (!row) return null;
+  return {
+    ...row,
+    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
+    confirmed:   row.confirmed === 1,
+  };
+}
+
+/**
+ * cutoff(YYYY-MM-DD) 이전 중 미컨펌 요약 1건 (가장 최근) 반환
+ */
+function getUnconfirmedSummaryBefore(cutoffDate) {
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT * FROM daily_summary WHERE date < ? AND confirmed = 0 ORDER BY date DESC LIMIT 1"
+  ).get(cutoffDate);
+  if (!row) return null;
+  return {
+    ...row,
+    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
+    confirmed:   false,
+  };
+}
+
+/**
+ * 미컨펌 요약 중 가장 최근 1건 반환 (날짜 무관)
+ */
+function getLatestUnconfirmedSummary() {
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT * FROM daily_summary WHERE confirmed = 0 ORDER BY date DESC LIMIT 1"
+  ).get();
+  if (!row) return null;
+  return {
+    ...row,
+    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
+    confirmed:   false,
+  };
+}
+
+/**
+ * 컨펌 처리 — daily_summary.confirmed=1 + room_revenue 누적
+ * 반환: { date, totalAmount, roomAmounts }
+ */
+function confirmDailySummary(date) {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM daily_summary WHERE date = ?').get(date);
+  if (!row) return null;
+
+  const nowISO = new Date().toISOString();
+  const roomAmounts = JSON.parse(row.room_amounts_json || '{}');
+
+  db.transaction(() => {
+    // 1. daily_summary 컨펌 처리
+    db.prepare(
+      "UPDATE daily_summary SET confirmed=1, confirmed_at=? WHERE date=?"
+    ).run(nowISO, date);
+
+    // 2. room_revenue 누적 upsert
+    for (const [room, amount] of Object.entries(roomAmounts)) {
+      db.prepare(`
+        INSERT INTO room_revenue (room, date, amount, confirmed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(room, date) DO UPDATE SET
+          amount       = excluded.amount,
+          confirmed_at = excluded.confirmed_at
+      `).run(room, date, amount, nowISO);
+    }
+  })();
+
+  return { date, totalAmount: row.total_amount, roomAmounts };
+}
+
+// ─── room_revenue ───────────────────────────────────────────────────
+
+/**
+ * 스터디룸별 누적 매출 조회 (전체 기간)
+ * 반환: [{ room, totalAmount, days }]
+ */
+function getRoomRevenueSummary() {
+  const db = getDb();
+  return db.prepare(
+    "SELECT room, SUM(amount) as total_amount, COUNT(*) as days FROM room_revenue GROUP BY room ORDER BY room"
+  ).all();
+}
+
 module.exports = {
   getDb,
   // reservations
@@ -528,4 +666,12 @@ module.exports = {
   resolveAlert,
   getUnresolvedAlerts,
   pruneOldAlerts,
+  // daily_summary
+  upsertDailySummary,
+  getDailySummary,
+  getUnconfirmedSummaryBefore,
+  getLatestUnconfirmedSummary,
+  confirmDailySummary,
+  // room_revenue
+  getRoomRevenueSummary,
 };

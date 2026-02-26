@@ -22,7 +22,9 @@
 > 자동 관리: `bug-report.js` 실행 시 갱신 | 수동 등록: `node src/bug-report.js --new --title "..." --by ska`
 
 <!-- bug-tracker:issues:start -->
-_현재 미해결 이슈 없음_
+| 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |
+|------|--------|----|------|--------|------|
+| 🔴 | 🟡 | `BUG-005` | naver-monitor 가끔 느려지는 문제 | ska | 0분 전 |
 
 **최근 해결:**
 - ✅ `BUG-003` **알림 파일 resolved 상태 미관리 — 수동 확인 필요 알림 누적**
