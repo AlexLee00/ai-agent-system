@@ -1659,7 +1659,30 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     child.on('close', (code) => {
       log(`🤖 픽코 실행 종료 (exit code: ${code})`);
-      
+
+      // ⏰ 시간 경과로 등록 생략 (completed + memo)
+      if (code === 2) {
+        log(`⏰ [시간 경과] 픽코 등록 생략 — completed/time_elapsed 처리`);
+        if (bookingId) {
+          updateReservation(bookingId, {
+            status:       'completed',
+            pickkoStatus: 'time_elapsed',
+            errorReason:  '시간 경과로 등록 불가',
+            pickkoCompleteTime: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+          });
+          markSeen(bookingId);
+          resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+          sendTelegramDirect(
+            `⏰ 시간 경과 — 픽코 등록 생략\n\n` +
+            `📞 고객: ${booking.phone}\n` +
+            `📅 날짜: ${booking.date}\n` +
+            `⏰ 요청: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
+            `예약 시작 시각이 이미 지나 픽코 슬롯 선택 불가.\n픽코에서 직접 확인 후 필요 시 등록해 주세요.`
+          );
+        }
+        return resolve(2);
+      }
+
       // 📊 상태 업데이트 (성공/실패)
       if (code === 0) {
         // ✅ 성공
