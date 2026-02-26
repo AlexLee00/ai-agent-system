@@ -221,6 +221,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-26 야간4 | **픽코 매출 분리 구현** | lib/pickko-stats.js 신규(fetchDailyDetail), daily_summary 테이블 pickko_total/pickko_study_room/general_revenue 추가, 00:00 보고에 일반이용 매출 표시, room_revenue 컨펌 시 일반이용 포함 |
 | 2026-02-26 | **session-close 라이브러리 구축** | scripts/lib 모듈화 외 2건 |
 | 2026-02-26 | **매출 통계 자연어 명령 추가 (pickko-stats-cmd.js)** | pickko-stats-cmd.js 신규: 날짜/주/월/누적 매출 조회 외 2건 |
+| 2026-02-26 | **자연어 명령 E2E 테스트 + 통합 매핑 추가** | test-nlp-e2e.js 신규: 27케이스 100% 통과 외 1건 |
+<!-- session-close:2026-02-26:자연어-명령-e2e-테스트-통합-매핑-추가 -->
 <!-- session-close:2026-02-26:매출-통계-자연어-명령-추가-pickkostatscmd -->
 <!-- session-close:2026-02-26:sessionclose-라이브러리-구축 -->
 

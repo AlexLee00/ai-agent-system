@@ -55,6 +55,13 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `src/pickko-stats-cmd.js`, `lib/db.js`, `context/CLAUDE_NOTES.md`
 <!-- session-close:2026-02-26:매출-통계-자연어-명령-추가-pickkostatscmd:end -->
 
+<!-- session-close:2026-02-26:자연어-명령-e2e-테스트-통합-매핑-추가 -->
+#### 2026-02-26 ✨ 자연어 명령 E2E 테스트 + 통합 매핑 추가
+- test-nlp-e2e.js 신규: 27케이스 100% 통과
+- CLAUDE_NOTES.md 자연어 명령 전체 매핑 테이블 통합
+- 관련 파일: `src/test-nlp-e2e.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-26:자연어-명령-e2e-테스트-통합-매핑-추가:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
