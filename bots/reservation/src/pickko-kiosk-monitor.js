@@ -184,6 +184,13 @@ async function blockNaverSlot(page, entry) {
       return false;
     }
 
+    // [Step 3.5] 이미 차단된 상태인지 사전 확인 — 이미 suspended이면 재등록 생략
+    const alreadyBlocked = await verifyBlockInGrid(page, room, start, end);
+    if (alreadyBlocked) {
+      log(`  ✅ [이미 차단됨] ${room} ${start}~${end} 이미 예약불가 상태 → 차단 완료 처리`);
+      return true;
+    }
+
     // Step 4: 해당 룸의 예약가능 버튼 클릭
     const slotClicked = await clickRoomAvailableSlot(page, room, start);
     if (!slotClicked) {
@@ -1368,6 +1375,27 @@ async function main() {
       for (const e of newEntries) {
         const key = `${e.phoneRaw}|${e.date}|${e.start}`;
         log(`\n처리 중: ${key}`);
+
+        // ── [시간 경과 체크] 예약 종료 시각이 이미 지났으면 차단 불필요 ──
+        const _nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+        const _nowDateStr = `${_nowKST.getFullYear()}-${String(_nowKST.getMonth()+1).padStart(2,'0')}-${String(_nowKST.getDate()).padStart(2,'0')}`;
+        const _nowMin = _nowKST.getHours() * 60 + _nowKST.getMinutes();
+        const [_endH, _endM] = (e.end || '23:59').split(':').map(Number);
+        const _isTimeElapsed = e.date < _nowDateStr || (e.date === _nowDateStr && _nowMin >= _endH * 60 + _endM);
+
+        if (_isTimeElapsed) {
+          log(`  ⏰ [시간 경과] 네이버 차단 생략: ${e.date} ${e.end} 이미 종료됨`);
+          const _now = nowKST();
+          upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+            name: e.name, date: e.date, start: e.start, end: e.end,
+            room: e.room, amount: e.amount,
+            naverBlocked: false, firstSeenAt: _now, blockedAt: null,
+          });
+          sendTelegram(
+            `⏰ 시간 경과 — 네이버 차단 생략\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}\n예약 종료 시각이 지나 네이버 차단 불필요 (픽코에서 직접 확인)`
+          );
+          continue;
+        }
 
         // Frame detach 시 새 탭으로 1회 재시도
         let blocked = false;

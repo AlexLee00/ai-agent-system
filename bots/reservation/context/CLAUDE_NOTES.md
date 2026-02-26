@@ -41,9 +41,9 @@
 | 모델 자기 인식 | 모델이 뭔지 물어보면 반드시 "gemini-2.0-flash"라고 답할 것 |
 | 알림 발송 방식 | Telegram Bot API 직접 발송 (24시간 즉시 전송 — openclaw 경유 안 함) |
 | 야간 알림 | 즉시 발송 — 야간 보류 로직 제거됨 (2026-02-26) |
-| `.pickko-alerts.jsonl` | 이력 + 발송 상태 로그 파일 (참고용) |
+| 알람 저장소 | `~/.openclaw/workspace/state.db` alerts 테이블 (2026-02-26 마이그레이션, `.pickko-alerts.jsonl` 폐기) |
 | `sent: false` 항목 | 발송 실패 건 — 재시도됨 |
-| `.pickko-alerts.jsonl` `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
+| alerts `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
 | 버그 발견 시 | `node src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
 
 ---
@@ -241,6 +241,28 @@ open → (클로드 조치) → in_progress → (수정 완료) → resolved
 ---
 
 ## 변경 이력
+
+### 2026-02-26 — JSON → SQLite 마이그레이션 + 개인정보 암호화
+
+**변경 이유:** 상태 파일 6개 분산 관리 → 단일 state.db 통합, 전화번호/이름 평문 노출 제거
+
+**변경 내용:**
+- `lib/crypto.js` 신규 — AES-256-GCM encrypt/decrypt + SHA256 kiosk 해시 키 (Node.js crypto 내장)
+- `lib/db.js` 신규 — SQLite 싱글턴 + reservations/cancelled_keys/kiosk_blocks/alerts 4개 테이블
+- `scripts/migrate-to-sqlite.js` 신규 — 1회 마이그레이션 (42건 reservations, 1 cancelled_key, 5 kiosk_blocks, 34 alerts 이전 완료)
+- `naver-monitor.js` 전환 — isSeenId/markSeen/addReservation 등 모두 DB 함수 사용
+- `pickko-kiosk-monitor.js` 전환 — getKioskBlock/upsertKioskBlock/pruneOldKioskBlocks 사용
+- `pickko-daily-audit.js` 전환 — collectNaverKeys() → db.getAllNaverKeys()
+- `pickko-verify.js` 전환 — 이중 파일 → getPendingReservations() 단일 DB 쿼리
+- `pickko-register.js` 전환 — naver-seen.json 직접 조작 → addReservation/markSeen
+- `naver-monitor.js` 버그 수정 — pruneOldCancelledKeys() 미호출 버그 수정 (import + cleanupExpiredSeen에 추가)
+
+**스카 행동 변경:**
+- 없음 — 내부 저장소 변경, 외부 인터페이스 동일
+- `.pickko-alerts.jsonl` 파일은 더 이상 사용하지 않음 (state.db alerts 테이블 사용)
+- 상태 파일 참조 시 `~/.openclaw/workspace/state.db` 사용 (JSON 파일 참조 금지)
+
+---
 
 ### 2026-02-26 — 자연어 명령 확장 (조회·취소)
 

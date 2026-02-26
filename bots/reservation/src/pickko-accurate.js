@@ -585,7 +585,44 @@ async function main() {
     
     const TIME_SLOTS = timeToSlots(START_TIME, END_TIME);
     log(`🔄 [30분 단위 슬롯 변환] ${START_TIME}~${END_TIME} → [${TIME_SLOTS.join(', ')}] (${TIME_SLOTS.length}개)`);
-    
+
+    // ─────────────────────────────────────────────────────────────
+    // [6-0] 오늘 예약: 현재 시각 기준 경과 슬롯 자동 조정
+    //   예) 10:59에 감지된 11:00~13:00 예약 → 픽코 진입 시 이미 11:00 슬롯 사라짐
+    //       → 11:30부터 선택 (종료 슬롯은 유지)
+    // ─────────────────────────────────────────────────────────────
+    const _nowKST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const _todayStr = `${_nowKST.getFullYear()}-${String(_nowKST.getMonth()+1).padStart(2,'0')}-${String(_nowKST.getDate()).padStart(2,'0')}`;
+
+    let effectiveTimeSlots = TIME_SLOTS;
+
+    if (DATE === _todayStr && TIME_SLOTS.length >= 2) {
+      const _nowMin = _nowKST.getHours() * 60 + _nowKST.getMinutes();
+      // 현재 분을 다음 30분 경계로 올림 (11:01 → 11:30, 11:00 → 11:00)
+      const _nextSlotMin = Math.ceil(_nowMin / 30) * 30;
+
+      const [_fh, _fm] = TIME_SLOTS[0].split(':').map(Number);
+      const _firstSlotMin = _fh * 60 + _fm;
+
+      if (_nextSlotMin > _firstSlotMin) {
+        effectiveTimeSlots = TIME_SLOTS.filter(slot => {
+          const [h, m] = slot.split(':').map(Number);
+          return h * 60 + m >= _nextSlotMin;
+        });
+
+        const _nowHH = String(Math.floor(_nowMin / 60)).padStart(2, '0');
+        const _nowMM = String(_nowMin % 60).padStart(2, '0');
+        const _skipped = TIME_SLOTS.length - effectiveTimeSlots.length;
+        log(`⏰ [6-0] 경과 슬롯 ${_skipped}개 스킵 (현재 ${_nowHH}:${_nowMM}): ${TIME_SLOTS[0]}~${TIME_SLOTS[TIME_SLOTS.length-1]} → 유효: [${effectiveTimeSlots.join(', ')}]`);
+
+        if (effectiveTimeSlots.length < 2) {
+          const _err = new Error(`${START_TIME}~${END_TIME} (현재 ${_nowHH}:${_nowMM}) — 남은 유효 슬롯 없음`);
+          _err.code = 'TIME_ELAPSED';
+          throw _err;
+        }
+      }
+    }
+
     // ======================== 6단계: 룸 & 시간 선택 ========================
     log('\n[6단계] 룸 & 시간 선택');
     
@@ -642,19 +679,20 @@ async function main() {
     // ─────────────────────────────────────────────────────────────
     // [6-4] 시간 선택 로직 (30분 단위 슬롯 순차 선택)
     // ─────────────────────────────────────────────────────────────
-    log(`[6-4] 시간 선택: ${TIME_SLOTS.length}개 슬롯 순차 선택`);
+    log(`[6-4] 시간 선택: ${effectiveTimeSlots.length}개 슬롯 순차 선택 (전체 ${TIME_SLOTS.length}개 중)`);
     
     let chosen = null;
     let attemptCount = 0;
 
     // 🔄 30분 단위 슬롯 선택: 첫 슬롯 ~ 마지막 슬롯
     // 예: ["00:00", "00:30", "01:00"] → "00:00"과 "01:00" 선택 (픽코가 중간 자동 채움)
-    const firstSlot = TIME_SLOTS[0];
-    const lastSlot = TIME_SLOTS[TIME_SLOTS.length - 1];
-    
-    // 🔧 Duration 계산 (슬롯 개수 기반)
-    const durationMin = (TIME_SLOTS.length - 1) * 30;  // 슬롯 개수 - 1 × 30분
-    
+    // [6-0]에서 경과 슬롯이 제거된 effectiveTimeSlots 사용
+    const firstSlot = effectiveTimeSlots[0];
+    const lastSlot = effectiveTimeSlots[effectiveTimeSlots.length - 1];
+
+    // 🔧 Duration 계산 (유효 슬롯 개수 기반)
+    const durationMin = (effectiveTimeSlots.length - 1) * 30;  // 슬롯 개수 - 1 × 30분
+
     log(`   ⏰ 첫 슬롯: ${firstSlot} / 마지막 슬롯: ${lastSlot} / 기간: ${durationMin}분`);
     
     // 시간 선택 시도 (AJAX 갱신 타이밍을 고려해 최대 3회 재시도)
@@ -671,7 +709,7 @@ async function main() {
       log(`      범위: ${s} ~ ${e}`);
 
       // 🎯 **4-Tier Fallback Selector** - 정확한 시간대 선택
-      const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin) => {
+      const res = await page.evaluate((dateStr, stNoStr, start, end, durationMin, custName, phoneLast4) => {
         const debug = {
           methodUsed: null,
           startExists: false,
@@ -681,6 +719,8 @@ async function main() {
           startClicked: false,
           endClicked: false,
           okMid: true,
+          alreadyRegistered: false,
+          alreadyRegisteredBy: null,
           errors: []
         };
 
@@ -734,6 +774,22 @@ async function main() {
         if (startLi) debug.startUsed = startLi.classList.contains('used');
         if (endLi) debug.endUsed = endLi.classList.contains('used');
 
+        // 🔍 슬롯이 사용중이면 동일 고객 여부 확인 (이름 또는 전화 뒤 4자리)
+        if (debug.startUsed && startLi) {
+          const slotText = (startLi.textContent || '').replace(/\s+/g, ' ').trim();
+          const mbNo   = startLi.getAttribute('mb_no')   || '';
+          const mbName = startLi.getAttribute('mb_name') || '';
+          const combined = [slotText, mbNo, mbName].join(' ');
+
+          const nameMatch  = custName   && custName.length >= 2 && combined.includes(custName);
+          const phoneMatch = phoneLast4 && (combined.includes(phoneLast4) || mbNo.endsWith(phoneLast4));
+
+          if (nameMatch || phoneMatch) {
+            debug.alreadyRegistered  = true;
+            debug.alreadyRegisteredBy = (slotText || mbName || mbNo).slice(0, 40);
+          }
+        }
+
         // ✅ 클릭 가능 조건 확인
         if (startLi && !debug.startUsed) debug.startClicked = true;
         if (endLi && !debug.endUsed) debug.endClicked = true;
@@ -763,7 +819,7 @@ async function main() {
         }
 
         return debug;
-      }, DATE, stNo, s, e, durationMin);
+      }, DATE, stNo, s, e, durationMin, CUSTOMER_NAME, PHONE_NOHYPHEN.slice(-4));
 
       // 로그 출력
       if (res.methodUsed) {
@@ -772,6 +828,14 @@ async function main() {
       log(`       ├─ start: exists=${res.startExists} used=${res.startUsed} clickable=${res.startClicked}`);
       log(`       ├─ end: exists=${res.endExists} used=${res.endUsed} clickable=${res.endClicked}`);
       log(`       └─ mid: ok=${res.okMid} ${res.errors.length > 0 ? `(${res.errors.join(', ')})` : ''}`);
+
+      // 🔍 슬롯 사용중이지만 동일 고객 → 이미 등록된 것으로 완료 처리
+      if (res.alreadyRegistered) {
+        log(`       ✅ 동일 고객 슬롯 이미 등록됨: "${res.alreadyRegisteredBy}" → 완료 처리`);
+        const _alreadyErr = new Error(`슬롯 이미 등록됨: ${res.alreadyRegisteredBy}`);
+        _alreadyErr.code = 'ALREADY_REGISTERED';
+        throw _alreadyErr;
+      }
 
       // ✅ 선택 성공 조건
       if (res.startClicked && res.endClicked && res.okMid) {
@@ -1412,8 +1476,22 @@ async function main() {
     process.exit(0);
 
   } catch (err) {
+    // ⏰ 시간 경과로 등록 불가 (exit 2) — 완료로 간주, retry 없음
+    if (err.code === 'TIME_ELAPSED') {
+      log(`⏰ [시간 경과] 픽코 등록 생략: ${err.message}`);
+      try { await browser.close(); } catch(e) {}
+      process.exit(2);
+    }
+
+    // ✅ 슬롯에 동일 고객이 이미 등록됨 (exit 0) — 완료로 간주
+    if (err.code === 'ALREADY_REGISTERED') {
+      log(`✅ [이미 등록됨] 슬롯 일치 확인 → 완료 처리: ${err.message}`);
+      try { await browser.close(); } catch(e) {}
+      process.exit(0);
+    }
+
     log(`❌ 에러 발생: ${err.message}`);
-    
+
     // 🔐 **OPS 모드 오류 처리**
     if (MODE === 'ops') {
       log(`\n🚨 [OPS-ERROR] 예약 처리 중 오류 발생`);

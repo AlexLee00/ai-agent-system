@@ -295,6 +295,13 @@ async function main() {
             log(`  ✅ 등록 완료 → completed/auto`);
             // pickkoStatus를 auto로 업데이트
             updateReservation(id, { pickkoStatus: 'auto' });
+          } else if (code === 2) {
+            log(`  ⏰ 시간 경과로 등록 생략 → completed/time_elapsed`);
+            markCompleted(source, id, entry);
+            updateReservation(id, {
+              pickkoStatus: 'time_elapsed',
+              errorReason:  '시간 경과로 등록 불가',
+            });
           } else {
             log(`  ❌ 등록 실패 (exit: ${code})`);
             results.error.push(id);

@@ -50,6 +50,64 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — SQLite 마이그레이션 + 픽코·네이버 엣지케이스 버그픽스
+
+### 1. JSON → SQLite 마이그레이션 (lib/db.js + lib/crypto.js)
+
+**변경 내용:** 분산 JSON 파일 → `~/.openclaw/workspace/state.db` 단일 SQLite DB로 통합
+
+- `lib/crypto.js` 신규: AES-256-GCM 암호화/복호화, kiosk_blocks 해시 키 생성
+- `lib/db.js` 신규: 스키마 초기화(WAL 모드), reservations / cancelled_keys / kiosk_blocks / alerts 테이블 + 전체 도메인 함수
+- `scripts/migrate-to-sqlite.js` 신규: 기존 JSON 파일 1회 마이그레이션 (naver-seen → reservations, pickko-kiosk-seen → kiosk_blocks, .pickko-alerts.jsonl → alerts)
+- `secrets.json`에 `db_encryption_key` (64자 hex) + `db_key_pepper` 추가 필요
+- 전화번호(`phone_raw_enc`)·이름(`name_enc`) AES-256-GCM 암호화 (평문 DB 저장 제거)
+- 버그 수정: `pruneOldCancelledKeys` import 누락 → naver-monitor.js `cleanupExpiredSeen()`에 추가
+
+**영향 파일:** `src/naver-monitor.js`, `src/pickko-kiosk-monitor.js`, `src/pickko-daily-audit.js`, `src/pickko-verify.js`
+
+---
+
+### 2. pickko-accurate.js — 시간 경과 + 이미 등록된 슬롯 처리
+
+**버그 1 — 시간 경과:** 예약 감지 시각이 10:59이고 시작 시각이 11:00이면, pickko-accurate.js 실행 시점에 11:00 슬롯이 사라짐 → 등록 실패
+
+**수정:**
+- `[6-0]` 블록 추가: 현재 KST 기준 `Math.ceil(nowMin/30)*30`으로 다음 슬롯 산출 → 경과 슬롯 필터링 (`effectiveTimeSlots`)
+- 유효 슬롯 < 2개이면 `err.code = 'TIME_ELAPSED'` → `process.exit(2)` (새 종료코드)
+- exit 2 = "시간 경과로 등록 불가" — failed(재시도)가 아닌 completed로 처리
+
+**버그 2 — 이미 등록된 슬롯:** 재시도 중 슬롯이 이미 점유됐으면(`li[used]`) 무한 실패 → 재등록 시도
+
+**수정:**
+- `page.evaluate`에 `custName`, `phoneLast4` 전달
+- `li[used]`의 `textContent` + `mb_no` + `mb_name` 속성으로 동일 고객 확인
+- 일치하면 `err.code = 'ALREADY_REGISTERED'` → `process.exit(0)` (성공 처리)
+
+**exit code 전파:** `naver-monitor.js`, `pickko-register.js`, `pickko-verify.js` 모두 exit 2 → `completed/time_elapsed` 처리 추가
+
+---
+
+### 3. pickko-kiosk-monitor.js — 네이버 차단 엣지케이스 처리
+
+**버그 1 — 이미 차단된 슬롯:** 관리자가 수동으로 차단한 경우 `clickRoomAvailableSlot()` 실패 → 차단 실패로 기록
+
+**수정 (blockNaverSlot 내부, Step 3.5):**
+```javascript
+const alreadyBlocked = await verifyBlockInGrid(page, room, start, end);
+if (alreadyBlocked) {
+  log(`  ✅ [이미 차단됨] ${room} ${start}~${end} 이미 예약불가 상태 → 차단 완료 처리`);
+  return true;
+}
+```
+
+**버그 2 — 시간 경과:** 배치 처리 중 예약 종료 시각이 지난 경우 차단 불필요한데 시도 → 실패 처리
+
+**수정 (메인 루프):**
+- `blockNaverSlot()` 호출 전 KST 기준 `e.date` + `e.end` 경과 여부 확인
+- 경과 시: DB에 `naverBlocked: false`로 기록 (다음 주기 재시도 방지) + 텔레그램 알림 "⏰ 시간 경과 — 네이버 차단 생략"
+
+---
+
 ## 최근 완료 작업 (2026-02-26) — telecram 직접 발송 + Phase 2B 버그 수정
 
 ### 1. lib/telegram.js — Telegram Bot API 직접 발송 모듈 신규

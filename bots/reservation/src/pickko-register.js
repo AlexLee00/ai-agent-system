@@ -87,14 +87,17 @@ child.on('error', err => {
 });
 
 child.on('close', code => {
-  if (code === 0) {
-    // DB에 manual 항목 기록 (pickko-daily-audit 오탐 방지)
+  const key = `manual-${normalized.phone}-${normalized.date}-${normalized.start.replace(':', '')}`;
+  const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  if (code === 0 || code === 2) {
+    // DB에 항목 기록 (code 0: manual 완료, code 2: 시간 경과 완료)
+    const pickkoStatus = code === 2 ? 'time_elapsed' : 'manual';
+    const errorReason  = code === 2 ? '시간 경과로 등록 불가' : null;
     try {
-      const key = `manual-${normalized.phone}-${normalized.date}-${normalized.start.replace(':', '')}`;
-      const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
       const existing = getReservation(key);
       if (existing) {
-        updateReservation(key, { status: 'completed', pickkoStatus: 'manual', pickkoStartTime: now });
+        updateReservation(key, { status: 'completed', pickkoStatus, errorReason, pickkoStartTime: now });
       } else {
         addReservation(key, {
           compositeKey: `${normalized.phone}-${normalized.date}-${normalized.start}`,
@@ -107,7 +110,8 @@ child.on('close', code => {
           room: normalized.room,
           detectedAt: now,
           status: 'completed',
-          pickkoStatus: 'manual',
+          pickkoStatus,
+          errorReason,
           retries: 0,
           pickkoStartTime: now,
         });
@@ -116,10 +120,10 @@ child.on('close', code => {
     } catch (e) {
       // seen 기록 실패는 등록 성공에 영향 없음
     }
-    process.stdout.write(JSON.stringify({
-      success: true,
-      message: `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`
-    }) + '\n');
+    const message = code === 2
+      ? `시간 경과로 픽코 등록 생략: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — 픽코에서 직접 확인 필요`
+      : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`;
+    process.stdout.write(JSON.stringify({ success: true, message }) + '\n');
     process.exit(0);
   } else {
     process.stdout.write(JSON.stringify({

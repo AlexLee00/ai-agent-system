@@ -47,18 +47,19 @@
 | `src/start-ops.sh` | OPS 자동 재시작 루프 + 로그 관리 (1000줄 로테이션) | ✅ 업데이트 |
 | `src/run-audit.sh` | pickko-daily-audit 실행 래퍼 (lock + 로테이션) | ✅ 완성 |
 | `src/run-kiosk-monitor.sh` | pickko-kiosk-monitor 실행 래퍼 (lock + 로테이션) | ✅ 신규 |
-| `pickko-kiosk-seen.json` | 키오스크 예약 처리 상태 추적 (gitignore, 전화번호 포함) | ✅ 신규 |
+| `lib/db.js` | SQLite 싱글턴 + 스키마 초기화 + 도메인 함수 전체 (reservations/cancelled_keys/kiosk_blocks/alerts) | ✅ 신규 |
+| `lib/crypto.js` | AES-256-GCM 암호화/복호화 + SHA256 kiosk 해시 키 (Node.js crypto 내장) | ✅ 신규 |
+| `scripts/migrate-to-sqlite.js` | JSON → SQLite 1회 마이그레이션 스크립트 (완료 후 .bak 리네임) | ✅ 신규 |
 | `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 |
 | `lib/utils.js` | delay, log (공통 유틸) | ✅ |
 | `lib/secrets.js` | loadSecrets() | ✅ |
 | `lib/formatting.js` | toKoreanTime, pickkoEndTime, formatPhone | ✅ |
-| `lib/files.js` | loadJson, saveJson (원자적 쓰기 tmp→rename) | ✅ 업데이트 |
+| `lib/files.js` | loadJson, saveJson (원자적 쓰기 tmp→rename) | ✅ |
 | `lib/args.js` | parseArgs() | ✅ |
 | `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
 | `lib/pickko.js` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
-| `scripts/speed-test.js` | LLM API 속도 테스트 툴 (Gemini/Groq/Ollama/OpenAI 지원, --apply로 openclaw.json 자동 반영) | ✅ |
-| `secrets.json` | 네이버/픽코 로그인 정보 | ✅ |
-| `.pickko-alerts.jsonl` | 알람 저장소 (48시간 자동 정리) | ✅ 운영 중 |
+| `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 openclaw.json 자동 반영) | ✅ |
+| `secrets.json` | 네이버/픽코 로그인 정보 + db_encryption_key(64자 hex) + db_key_pepper | ✅ |
 
 **경로:** `~/projects/ai-agent-system/bots/reservation/`
 
@@ -111,11 +112,26 @@ nohup bash start-ops.sh > /dev/null 2>&1 &
 
 ## 🔔 알람 시스템
 
-- `sendAlert()` → `.pickko-alerts.jsonl` 저장 (sent=true)
-- `cleanupOldAlerts()` → 48시간 지난 알람 자동 삭제
+- `sendAlert()` → `state.db` alerts 테이블 저장 (sent=true/false)
+- `cleanupOldAlerts()` → resolved 48시간, 미해결 7일 초과 삭제 (DB prune)
 - Heartbeat (30분 주기) → Telegram으로 일괄 전송
 
 **알람 타입:** `new`(신규 감지) | `completed`(픽코 완료) | `cancelled`(취소 완료) | `error`(실패)
+
+## 🗄️ 상태 DB 구조 (2026-02-26 마이그레이션)
+
+**파일:** `~/.openclaw/workspace/state.db` (WAL 모드)
+
+| 테이블 | 용도 | 암호화 |
+|--------|------|--------|
+| `reservations` | 네이버 예약 상태 추적 (구 naver-seen.json) | phone_raw_enc, name_enc |
+| `cancelled_keys` | 취소 처리 중복 방지 키 | - |
+| `kiosk_blocks` | 키오스크 예약불가 차단 상태 (구 pickko-kiosk-seen.json) | phone_raw_enc, name_enc |
+| `alerts` | 텔레그램 알람 이력 (구 .pickko-alerts.jsonl) | - |
+
+- 암호화: AES-256-GCM, 키 위치: `secrets.json → db_encryption_key`
+- kiosk_blocks PK: SHA256(phoneRaw|date|start + pepper) — 전화번호 비노출
+- **맥미니 이전 시 복사 대상:** `state.db` + `secrets.json` 2개만
 
 ---
 
@@ -193,26 +209,33 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-25 | **신규 스크립트 3종** | pickko-daily-audit, pickko-register, pickko-member 완성 + 테스트 |
 | 2026-02-25 | **안정화 8건** | atomic write, rollback, pruneSeenIds, 사이클타임, 슬롯 3회 재시도 등 |
 | 2026-02-25 | pickko-verify needsVerify() | completed+paid/auto 항목도 안전하게 검증 처리 |
+| 2026-02-26 | **JSON → SQLite 마이그레이션 + 개인정보 암호화** | state.db 단일 파일, AES-256-GCM 암호화, 6개 JSON → 4개 DB 테이블 통합 |
 
 ---
 
-## 🚀 현재 운영 상태 (2026-02-25)
+## 🚀 현재 운영 상태 (2026-02-26)
 
 ```
-✅ naver-monitor.js    OPS 모드, 5분 주기 실행 중 (start-ops.sh 자동 재시작)
-✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송
+⏸ naver-monitor.js    마이그레이션 후 일시 중단 → 재시작 필요
+⏸ OpenClaw 게이트웨이  마이그레이션 후 일시 중단 → 재시작 필요
+✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송 (재시작 후 복구)
 ✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (PICKKO_CANCEL_ENABLE=1)
 ✅ pickko-verify.js    needsVerify() 기반 재검증 (자동: 08:00/14:00/20:00, launchd)
 ✅ pickko-daily-audit  당일 픽코 감사 (22:00+23:50 자동, launchd)
 ✅ pickko-register.js  자연어 예약 등록 CLI — 스카가 직접 실행 가능
 ✅ pickko-member.js    신규 회원 가입 CLI — 스카가 직접 실행 가능
-✅ lib/ 공유 라이브러리  7개 모듈 (files.js 원자적 쓰기 포함)
-✅ Telegram 봇         Gemini 2.5 Flash, 응답 ~3초
+✅ lib/ 공유 라이브러리  9개 모듈 (db.js + crypto.js 신규 추가)
+✅ state.db            단일 SQLite, AES-256-GCM 암호화 (phone/name)
 ✅ RAG 서버            http://localhost:8100 정상
-✅ OpenClaw 게이트웨이  PID 정상, CLI pairing 완료
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
 ✅ 자정 자동 보존       nightly-sync.sh + launchd (00:00 실행)
 ✅ log-report.sh       3시간 주기 오류 분석 리포트 (launchd: ai.ska.log-report)
+```
+
+**재시작 명령:**
+```bash
+launchctl load ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+cd ~/projects/ai-agent-system/bots/reservation && nohup bash src/start-ops.sh > /dev/null 2>&1 &
 ```
 
 ## 📌 pickko-cancel.js 핵심 구현 노트 (2026-02-24)
