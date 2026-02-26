@@ -56,6 +56,11 @@ cleanup_old() {
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPS 모드 자동 재시작 루프 시작"
 
+# ── 픽코 키오스크 모니터 동시 시작 (launchd 30분 주기 + 즉시 1회 킥스타트) ──
+launchctl kickstart -k gui/$UID/ai.ska.kiosk-monitor 2>/dev/null && \
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🔄 픽코 키오스크 모니터 킥스타트" || \
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️  픽코 키오스크 모니터 킥스타트 실패 (launchd 미등록?)"
+
 while true; do
   cleanup_old
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ▶ naver-monitor 시작"

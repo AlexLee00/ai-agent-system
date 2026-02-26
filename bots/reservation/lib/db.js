@@ -227,6 +227,17 @@ function getPendingReservations() {
 }
 
 /**
+ * completed 상태이지만 pickkoStatus가 verified/manual/time_elapsed가 아닌 항목 반환
+ * (paid, auto 등 — 픽코 재검증 필요)
+ */
+function getUnverifiedCompletedReservations() {
+  const db = getDb();
+  return db.prepare(
+    "SELECT * FROM reservations WHERE status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('verified','manual','time_elapsed'))"
+  ).all().map(_decryptRow);
+}
+
+/**
  * pickko-daily-audit의 collectNaverKeys() 대체
  * → Set<"phoneRaw|date|startTime">
  */
@@ -498,6 +509,7 @@ module.exports = {
   updateReservation,
   getReservation,
   getPendingReservations,
+  getUnverifiedCompletedReservations,
   getAllNaverKeys,
   rollbackProcessing,
   pruneOldReservations,

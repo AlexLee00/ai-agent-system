@@ -50,6 +50,33 @@ _현재 미해결 이슈 없음_
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
 
+## 최근 완료 작업 (2026-02-26) — pickko-verify 자동 검증 범위 확장 + 운영 재개
+
+### 1. lib/db.js — getUnverifiedCompletedReservations() 추가
+
+`completed` 상태이지만 `pickkoStatus`가 `verified`/`manual`/`time_elapsed`가 아닌 항목 조회 (예: `paid`, `auto` 등 재검증 필요 건)
+
+### 2. pickko-verify.js — collectTargets() 개선
+
+- `getUnverifiedCompletedReservations()` 병합 → `completed/paid` 같은 미검증 완료 항목도 자동 포함
+- 실행 결과: 윤길채 010-6451-1678 (2026-02-26 13:30~15:00 B룸) `completed/paid` → `completed/verified` 처리 완료
+
+### 3. TIME_ELAPSED exit 2 테스트 완료
+
+`MODE=ops`, 오늘 01:00~02:00 (이미 지난 시간)으로 pickko-accurate.js 실행
+```
+⏰ [6-0] 경과 슬롯 2개 스킵 (현재 11:58): 01:00~01:30 → 유효: []
+⏰ [시간 경과] 픽코 등록 생략 → EXIT CODE: 2
+```
+정상 동작 확인.
+
+### 4. 운영 재개
+
+- openclaw gateway: PID 59105
+- naver-monitor.js: PID 59166 (5분 주기, 2시간 자동 재시작)
+
+---
+
 ## 최근 완료 작업 (2026-02-26) — SQLite 마이그레이션 + 픽코·네이버 엣지케이스 버그픽스
 
 ### 1. JSON → SQLite 마이그레이션 (lib/db.js + lib/crypto.js)
