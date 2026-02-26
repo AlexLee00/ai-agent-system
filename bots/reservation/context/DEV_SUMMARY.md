@@ -38,7 +38,7 @@
 |------|------|------|
 | `src/naver-monitor.js` | 네이버 모니터링 + 픽코 트리거 (등록+취소) | ✅ OPS 실행 중 |
 | `src/pickko-accurate.js` | 픽코 자동 예약 Stage [1-9] (슬롯 3회 재시도) | ✅ 완성 |
-| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10] | ✅ 완성 |
+| `src/pickko-cancel.js` | 픽코 자동 취소 Stage [1-10]; [6-B단계] 폴백: 0원/이용중 예약 → 수정→취소→저장 플로우 | ✅ 완성 |
 | `src/pickko-verify.js` | 미검증 예약 재검증 + 자동 등록 (pending + completed/미검증 모두 포함) | ✅ 완성 |
 | `src/pickko-daily-audit.js` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 완성 |
 | `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 예약불가 차단 (30분 주기 launchd) | ✅ 신규 완성 |
