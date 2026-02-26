@@ -666,6 +666,26 @@ function confirmDailySummary(date) {
   return { date, totalAmount: row.total_amount, roomAmounts, generalRevenue: row.general_revenue || 0 };
 }
 
+/**
+ * 기간 내 daily_summary 행 목록 조회
+ * @param {string} startDate YYYY-MM-DD
+ * @param {string} endDate   YYYY-MM-DD (inclusive)
+ * @returns {Array}
+ */
+function getDailySummariesInRange(startDate, endDate) {
+  const db = getDb();
+  return db.prepare(
+    "SELECT * FROM daily_summary WHERE date >= ? AND date <= ? ORDER BY date"
+  ).all(startDate, endDate).map(row => ({
+    ...row,
+    roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
+    pickkoTotal:     row.pickko_total || 0,
+    pickkoStudyRoom: row.pickko_study_room || 0,
+    generalRevenue:  row.general_revenue || 0,
+    confirmed:       row.confirmed === 1,
+  }));
+}
+
 // ─── room_revenue ───────────────────────────────────────────────────
 
 /**
@@ -710,6 +730,7 @@ module.exports = {
   // daily_summary
   upsertDailySummary,
   getDailySummary,
+  getDailySummariesInRange,
   getUnconfirmedSummaryBefore,
   getLatestUnconfirmedSummary,
   confirmDailySummary,

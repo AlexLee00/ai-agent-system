@@ -192,6 +192,49 @@ node ~/projects/ai-agent-system/bots/reservation/src/pickko-cancel-cmd.js \
 
 ---
 
+## 📊 자연어 매출 통계 명령
+
+사장님이 매출을 물어보면 `pickko-stats-cmd.js`를 실행하고 `message` 필드를 텔레그램으로 전송한다.
+
+```bash
+node ~/projects/ai-agent-system/bots/reservation/src/pickko-stats-cmd.js [옵션]
+```
+
+| 사장님 말 | 실행 옵션 |
+|-----------|-----------|
+| "오늘 매출", "오늘 얼마야" | `--date=today` |
+| "어제 매출", "어제 얼마였어" | `--date=yesterday` |
+| "N월 M일 매출" | `--date=2026-MM-DD` |
+| "이번 주 매출", "이번주 얼마야" | `--period=week` |
+| "이번 달 매출", "이번달 총 얼마야" | `--period=month` |
+| "N월 매출", "2월 매출 알려줘" | `--month=2026-0N` |
+| "누적 매출", "지금까지 총 얼마야", "전체 매출" | `--cumulative` |
+
+- stdout JSON `{ success, message }`
+- `success: true` → `message` 그대로 텔레그램 전송
+- `success: false` → `message` 오류 안내 전송
+- **데이터 소스**: `state.db daily_summary` (00:00/09:00 갱신) — 당일 집계 전이면 "데이터 없음" 안내
+
+### 매출 통계 예시
+
+```
+사장님: "오늘 매출 얼마야?"
+→ node .../pickko-stats-cmd.js --date=today
+
+사장님: "이번달 총 얼마야?"
+→ node .../pickko-stats-cmd.js --period=month
+
+사장님: "2월 매출 알려줘"
+→ node .../pickko-stats-cmd.js --month=2026-02
+
+사장님: "지금까지 누적 매출 알려줘"
+→ node .../pickko-stats-cmd.js --cumulative
+```
+
+> **주의**: 매출 데이터는 `pickko-daily-summary.js`가 00:00/09:00에 집계. 당일 실시간 매출이 필요하면 "데이터 집계 전"임을 안내 후 `pickko-daily-summary.js --midnight` 실행 제안
+
+---
+
 ## 🐛 버그 리포트 & 유지보수 기록 시스템
 
 ### 이 시스템이 무엇인가?
