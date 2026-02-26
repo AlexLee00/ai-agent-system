@@ -95,6 +95,9 @@ function _initSchema(db) {
       total_amount INTEGER DEFAULT 0,
       room_amounts_json TEXT,
       entries_count INTEGER DEFAULT 0,
+      pickko_total INTEGER DEFAULT 0,
+      pickko_study_room INTEGER DEFAULT 0,
+      general_revenue INTEGER DEFAULT 0,
       reported_at TEXT,
       last_reported_at TEXT,
       confirmed INTEGER DEFAULT 0,
@@ -114,6 +117,16 @@ function _initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_kiosk_date ON kiosk_blocks(date);
     CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(timestamp);
   `);
+
+  // Migration: add columns added after initial release
+  const _migrations = [
+    'ALTER TABLE daily_summary ADD COLUMN pickko_total INTEGER DEFAULT 0',
+    'ALTER TABLE daily_summary ADD COLUMN pickko_study_room INTEGER DEFAULT 0',
+    'ALTER TABLE daily_summary ADD COLUMN general_revenue INTEGER DEFAULT 0',
+  ];
+  for (const sql of _migrations) {
+    try { db.exec(sql); } catch (e) { /* column already exists */ }
+  }
 }
 
 // ─── reservations ──────────────────────────────────────────────────
@@ -530,18 +543,26 @@ function upsertDailySummary(date, data) {
   const nowISO = new Date().toISOString();
   const roomJson = JSON.stringify(data.roomAmounts || {});
   db.prepare(`
-    INSERT INTO daily_summary (date, total_amount, room_amounts_json, entries_count, reported_at, last_reported_at, confirmed, confirmed_at)
-    VALUES (@date, @total_amount, @room_amounts_json, @entries_count, @now, @now, 0, NULL)
+    INSERT INTO daily_summary (date, total_amount, room_amounts_json, entries_count,
+      pickko_total, pickko_study_room, general_revenue, reported_at, last_reported_at, confirmed, confirmed_at)
+    VALUES (@date, @total_amount, @room_amounts_json, @entries_count,
+      @pickko_total, @pickko_study_room, @general_revenue, @now, @now, 0, NULL)
     ON CONFLICT(date) DO UPDATE SET
       total_amount       = excluded.total_amount,
       room_amounts_json  = excluded.room_amounts_json,
       entries_count      = excluded.entries_count,
+      pickko_total       = excluded.pickko_total,
+      pickko_study_room  = excluded.pickko_study_room,
+      general_revenue    = excluded.general_revenue,
       last_reported_at   = excluded.last_reported_at
   `).run({
     date,
     total_amount:      data.totalAmount || 0,
     room_amounts_json: roomJson,
     entries_count:     data.entriesCount || 0,
+    pickko_total:      data.pickkoTotal || 0,
+    pickko_study_room: data.pickkoStudyRoom || 0,
+    general_revenue:   data.generalRevenue || 0,
     now:               nowISO,
   });
 }
@@ -555,8 +576,11 @@ function getDailySummary(date) {
   if (!row) return null;
   return {
     ...row,
-    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
-    confirmed:   row.confirmed === 1,
+    roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
+    pickkoTotal:     row.pickko_total || 0,
+    pickkoStudyRoom: row.pickko_study_room || 0,
+    generalRevenue:  row.general_revenue || 0,
+    confirmed:       row.confirmed === 1,
   };
 }
 
@@ -571,8 +595,11 @@ function getUnconfirmedSummaryBefore(cutoffDate) {
   if (!row) return null;
   return {
     ...row,
-    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
-    confirmed:   false,
+    roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
+    pickkoTotal:     row.pickko_total || 0,
+    pickkoStudyRoom: row.pickko_study_room || 0,
+    generalRevenue:  row.general_revenue || 0,
+    confirmed:       false,
   };
 }
 
@@ -587,8 +614,11 @@ function getLatestUnconfirmedSummary() {
   if (!row) return null;
   return {
     ...row,
-    roomAmounts: JSON.parse(row.room_amounts_json || '{}'),
-    confirmed:   false,
+    roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
+    pickkoTotal:     row.pickko_total || 0,
+    pickkoStudyRoom: row.pickko_study_room || 0,
+    generalRevenue:  row.general_revenue || 0,
+    confirmed:       false,
   };
 }
 
@@ -610,7 +640,7 @@ function confirmDailySummary(date) {
       "UPDATE daily_summary SET confirmed=1, confirmed_at=? WHERE date=?"
     ).run(nowISO, date);
 
-    // 2. room_revenue 누적 upsert
+    // 2. room_revenue 누적 upsert (스터디룸)
     for (const [room, amount] of Object.entries(roomAmounts)) {
       db.prepare(`
         INSERT INTO room_revenue (room, date, amount, confirmed_at)
@@ -620,9 +650,20 @@ function confirmDailySummary(date) {
           confirmed_at = excluded.confirmed_at
       `).run(room, date, amount, nowISO);
     }
+
+    // 3. room_revenue 누적 upsert (일반이용 — 픽코 키오스크 일반 이용)
+    if (row.general_revenue > 0) {
+      db.prepare(`
+        INSERT INTO room_revenue (room, date, amount, confirmed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(room, date) DO UPDATE SET
+          amount       = excluded.amount,
+          confirmed_at = excluded.confirmed_at
+      `).run('일반이용', date, row.general_revenue, nowISO);
+    }
   })();
 
-  return { date, totalAmount: row.total_amount, roomAmounts };
+  return { date, totalAmount: row.total_amount, roomAmounts, generalRevenue: row.general_revenue || 0 };
 }
 
 // ─── room_revenue ───────────────────────────────────────────────────
