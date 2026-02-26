@@ -41,6 +41,14 @@
 
 > 자동 관리: `bug-report.js --maintenance` 실행 시 갱신
 
+<!-- session-close:2026-02-26:sessionclose-라이브러리-구축 -->
+#### 2026-02-26 ✨ session-close 라이브러리 구축
+- scripts/lib 모듈화
+- session-close CLI 신규
+- deploy-context thin wrapper
+- 관련 파일: `scripts/lib/`, `scripts/session-close.js`
+<!-- session-close:2026-02-26:sessionclose-라이브러리-구축:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
@@ -59,6 +67,43 @@
 - 🚑 `MAINT-001` [hotfix] **010-3034-1710 나은애 픽코 수동 등록 완료 처리**
   2026. 2. 24. 15:30 · claude · `naver-seen.json`
 <!-- bug-tracker:maintenance:end -->
+
+## 최근 완료 작업 (2026-02-26 야간4) — pickko-daily-summary 매출 분리 구현
+
+### 픽코 실제 매출 파싱 + 스터디카페/스터디룸 매출 분리
+
+**배경:** 픽코 통계에는 스터디룸 결제금액이 포함되어 있어 순수 일반이용(키오스크) 매출과 혼재.
+픽코 스터디룸 매출을 마이너스 처리해야 두 매출이 정확히 구분됨.
+
+**공식:**
+- 일반이용 매출 = 픽코 총매출 - 픽코 스터디룸 분
+- 총매출 = 일반이용 + 스터디룸 (calcAmount 기준, 네이버 포함)
+
+**변경 파일:**
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `lib/db.js` | daily_summary 테이블에 pickko_total/pickko_study_room/general_revenue 컬럼 추가 + ALTER TABLE 마이그레이션 |
+| `lib/db.js` | upsertDailySummary/getDailySummary/getUnconfirmedSummaryBefore/getLatestUnconfirmedSummary/confirmDailySummary 업데이트 |
+| `lib/pickko-stats.js` | (신규) fetchMonthlyRevenue/fetchDailyRevenue/fetchDailyDetail 구현 |
+| `src/pickko-daily-summary.js` | 자정 보고에 [3-B단계] 픽코 매출 조회 추가, buildMessage에 일반이용 항목 표시 |
+| `src/pickko-revenue-confirm.js` | 컨펌 메시지에 일반이용 매출 포함 |
+
+**00:00 보고 메시지 형식 (변경):**
+```
+💰 매출 현황:
+  일반이용: 12,000원       ← 픽코 실제 (fetchDailyDetail)
+  스터디룸A1: 28,000원    ← calcAmount 계산
+  스터디룸A2: 21,000원
+  스터디룸B: 36,000원
+  합계: 97,000원
+
+❓ 오늘 매출을 확정하시겠습니까?
+```
+
+**컨펌 시 room_revenue 저장:** 스터디룸 각각 + 일반이용 항목 모두 저장
+
+---
 
 ## 최근 완료 작업 (2026-02-26 야간2) — pickko-cancel [7-B단계] 결제대기 폴백 + 테스트 예약 정리
 
