@@ -14,6 +14,12 @@ const { transformAndNormalizeData } = require('../lib/validation');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { sendTelegram: sendTelegramDirect } = require('../lib/telegram');
+const {
+  isSeenId, markSeen, addReservation, updateReservation, getReservation,
+  rollbackProcessing, pruneOldReservations,
+  isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
+  addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
+} = require('../lib/db');
 const fs = require('fs');
 const path = require('path');
 
@@ -416,27 +422,19 @@ async function takeScreenshot(page, reason) {
   }
 }
 
-// 개인정보 보호: 예약일 기준 7일 경과한 항목 자동 삭제 (전화번호 등 포함)
+// 개인정보 보호: 예약일 기준 7일 경과한 항목 자동 삭제
 function cleanupExpiredSeen() {
   try {
-    const data = loadSeen();
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7); // 7일 전 기준
-    const cutoffStr = cutoff.toISOString().slice(0, 10); // "YYYY-MM-DD"
-
-    let removed = 0;
-    for (const key of Object.keys(data)) {
-      if (key === 'seenIds' || key === 'cancelledSeenIds') continue;
-      const entry = data[key];
-      if (entry?.date && entry.date < cutoffStr) {
-        delete data[key];
-        removed++;
-      }
-    }
-
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const removed = pruneOldReservations(cutoffStr);
     if (removed > 0) {
-      saveSeen(data);
       log(`🧹 개인정보 자동 정리: 만료 예약 ${removed}건 삭제 (7일 경과)`);
+    }
+    const removedCk = pruneOldCancelledKeys(cutoffStr);
+    if (removedCk > 0) {
+      log(`🧹 개인정보 자동 정리: 취소 키 ${removedCk}건 삭제 (7일 경과)`);
     }
   } catch (err) {
     log(`⚠️ cleanupExpiredSeen 오류: ${err.message}`);
@@ -445,36 +443,12 @@ function cleanupExpiredSeen() {
 
 // 야간 보류 로직 제거됨 — Bot API 직접 발송으로 24시간 즉시 전송
 
-// 알람 파일 자동 정리
-// - resolved: true (또는 필드 없는 구버전) → 48시간 후 삭제
-// - resolved: false (미해결 오류) → 7일 후 삭제 (미해결 상태 추적 유지)
+// 알람 DB 자동 정리 (resolved=1 → 48h, resolved=0 → 7일 초과 삭제)
 function cleanupOldAlerts() {
   try {
-    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
-    if (!fs.existsSync(alertsFile)) return;
-
-    const now = Date.now();
-    const RESOLVED_TTL   = 48 * 60 * 60 * 1000;       // 48시간 (해결됨)
-    const UNRESOLVED_TTL = 7  * 24 * 60 * 60 * 1000;  // 7일 (미해결 오류)
-
-    const content = fs.readFileSync(alertsFile, 'utf-8');
-    const lines = content.split('\n').filter(l => l.trim());
-
-    const activeAlerts = lines.filter(line => {
-      try {
-        const alert = JSON.parse(line);
-        const age = now - new Date(alert.timestamp).getTime();
-        // resolved 필드 없는 구버전은 resolved: true 취급 (48h TTL)
-        const isUnresolved = alert.resolved === false;
-        return age < (isUnresolved ? UNRESOLVED_TTL : RESOLVED_TTL);
-      } catch (e) {
-        return false;
-      }
-    });
-
-    if (activeAlerts.length !== lines.length) {
-      fs.writeFileSync(alertsFile, activeAlerts.map(a => a + '\n').join(''));
-      log(`🧹 [정리] 알람 ${lines.length - activeAlerts.length}건 삭제 (해결됨 48h, 미해결 7일 초과)`);
+    const removed = pruneOldAlerts();
+    if (removed > 0) {
+      log(`🧹 [정리] 알람 ${removed}건 삭제 (해결됨 48h, 미해결 7일 초과)`);
     }
   } catch (err) {
     log(`⚠️ 알람 정리 실패: ${err.message}`);
@@ -485,76 +459,19 @@ function cleanupOldAlerts() {
 // 픽코 성공(code=0) 또는 수동 처리 완료 시 호출
 function resolveAlertsByBooking(phone, date, start) {
   try {
-    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
-    if (!fs.existsSync(alertsFile)) return;
-
-    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
-    let resolvedCount = 0;
-    const resolvedAt = new Date().toISOString();
-
-    const updated = lines.map(line => {
-      try {
-        const a = JSON.parse(line);
-        // 미해결 오류 알림이고 phone+date+start가 모두 일치하는 경우
-        if (
-          a.resolved === false &&
-          a.type === 'error' &&
-          a.phone === phone &&
-          a.date === date &&
-          a.start === start
-        ) {
-          a.resolved = true;
-          a.resolvedAt = resolvedAt;
-          resolvedCount++;
-          return JSON.stringify(a);
-        }
-        return line;
-      } catch (e) { return line; }
-    });
-
-    if (resolvedCount > 0) {
-      fs.writeFileSync(alertsFile, updated.join('\n') + '\n');
-      log(`✅ [알림 해결] ${phone} ${date} ${start} → 오류 알림 ${resolvedCount}건 해결됨 마킹`);
+    const count = resolveAlert(phone, date, start);
+    if (count > 0) {
+      log(`✅ [알림 해결] ${phone} ${date} ${start} → 오류 알림 ${count}건 해결됨 마킹`);
     }
   } catch (err) {
     log(`⚠️ 알림 해결 마킹 실패: ${err.message}`);
   }
 }
 
-// 알람 파일에서 특정 timestamp 항목의 sent 상태 업데이트
-function updateAlertSentStatus(file, timestamp, success) {
-  try {
-    if (!fs.existsSync(file)) return;
-    const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean);
-    const updated = lines.map(l => {
-      try {
-        const a = JSON.parse(l);
-        if (a.timestamp === timestamp) {
-          a.sent = success;
-          a.sentAt = success ? new Date().toISOString() : null;
-          return JSON.stringify(a);
-        }
-      } catch (e) {}
-      return l;
-    });
-    fs.writeFileSync(file, updated.join('\n') + '\n');
-  } catch (e) { log(`⚠️ 알람 상태 업데이트 실패: ${e.message}`); }
-}
-
 // 시작 시 미해결 오류 알림 요약 보고
 async function reportUnresolvedAlerts() {
   try {
-    const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
-    if (!fs.existsSync(alertsFile)) return;
-
-    const lines = fs.readFileSync(alertsFile, 'utf-8').split('\n').filter(l => l.trim());
-    const unresolved = [];
-    for (const line of lines) {
-      try {
-        const a = JSON.parse(line);
-        if (a.resolved === false) unresolved.push(a);
-      } catch (e) { /* skip */ }
-    }
+    const unresolved = getUnresolvedAlerts();
 
     if (unresolved.length === 0) {
       log('✅ [미해결 알림] 없음');
@@ -567,9 +484,9 @@ async function reportUnresolvedAlerts() {
       const ageMins = Math.floor((Date.now() - new Date(a.timestamp).getTime()) / 60000);
       const ageText = ageMins >= 60 ? `${Math.floor(ageMins / 60)}시간 전` : `${ageMins}분 전`;
       summary += `• [${ageText}] ${a.title}\n`;
-      if (a.phone) summary += `  📞 ${a.phone}`;
-      if (a.date)  summary += `  📅 ${a.date}`;
-      if (a.start) summary += `  ⏰ ${a.start}`;
+      if (a.phone)      summary += `  📞 ${a.phone}`;
+      if (a.date)       summary += `  📅 ${a.date}`;
+      if (a.start_time) summary += `  ⏰ ${a.start_time}`;
       summary += '\n';
     }
     summary += '\n처리 완료 시 자동으로 해결됨 처리됩니다.';
@@ -630,34 +547,30 @@ async function sendAlert(options) {
     // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러) — 24시간 즉시 발송
     if ((type === 'new' || type === 'completed' || type === 'cancelled' || type === 'error') && process.env.TELEGRAM_ENABLED !== '0') {
       try {
-        // 1️⃣ 이력 파일에 저장
-        const alertsFile = path.join(WORKSPACE, '.pickko-alerts.jsonl');
+        // 1️⃣ DB에 저장
         const entryTimestamp = new Date().toISOString();
-        const alertEntry = JSON.stringify({
-          timestamp: entryTimestamp,
+        const alertId = addAlert({
+          timestamp:  entryTimestamp,
           type,
           title,
           message,
-          phone: phone || null,
-          date: date || null,
-          start: start || null,
-          resolved: type !== 'error',
-          resolvedAt: type !== 'error' ? new Date().toISOString() : null,
-          sent: false,
-          sentAt: null
+          phone:      phone || null,
+          date:       date || null,
+          startTime:  start || null,
+          resolved:   type !== 'error' ? 1 : 0,
+          resolvedAt: type !== 'error' ? entryTimestamp : null,
         });
-        fs.appendFileSync(alertsFile, alertEntry + '\n');
         log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
 
         // 2️⃣ Bot API 직접 발송 (24시간, 재시도 포함)
         const sendOk = await sendTelegramDirect(message);
         if (sendOk) {
-          updateAlertSentStatus(alertsFile, entryTimestamp, true);
+          updateAlertSent(alertId, new Date().toISOString());
         } else {
           log(`⚠️ [알람발송 실패] sent: false 유지`);
         }
 
-        // 3️⃣ 48시간 정책 실행
+        // 3️⃣ TTL 정책 실행
         cleanupOldAlerts();
 
         // 4️⃣ 개인정보 보호: 7일 경과 예약 자동 삭제
@@ -1024,27 +937,24 @@ async function monitorBookings() {
               log(`🧪 리스트 디버그: ${JSON.stringify(dbg)}`);
             }
 
-            const seen = loadSeen();
-            const seenSet = new Set(seen.seenIds || []);
             const toKey = (b) => b.bookingId || `${b.date}|${b.start}|${b.end}|${b.room}|${b.phone}`;
 
-            // ✅ 완료/수동처리 건 사전 seenIds 마킹 (재감지 루프 방지)
+            // ✅ 완료/수동처리 건 사전 seen 마킹 (재감지 루프 방지)
             let autoMarked = 0;
             for (const b of newest) {
               const key = toKey(b);
-              if (seenSet.has(key)) continue;
-              const existing = seen[key];
+              if (isSeenId(key)) continue;
+              const existing = getReservation(key);
               if (existing && (existing.status === 'completed' || existing.pickkoStatus === 'manual')) {
-                seenSet.add(key);
+                markSeen(key);
                 autoMarked++;
-                log(`🔄 [자동마킹] ${existing.phone || b.phone} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seenIds 추가`);
+                log(`🔄 [자동마킹] ${existing.phone || b.phone} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seen 처리`);
                 // 수동 처리 완료된 예약의 미해결 오류 알림 → 해결됨 마킹
                 resolveAlertsByBooking(b.phone, b.date, b.start);
               }
             }
             if (autoMarked > 0) {
-              seen.seenIds = pruneSeenIds(Array.from(seenSet), seen);
-              saveSeen(seen);
+              log(`🔄 [자동마킹] ${autoMarked}건 완료`);
             }
 
             const candidates = newest
@@ -1052,7 +962,7 @@ async function monitorBookings() {
               .map(b => ({ ...b, date: b.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) }))
               .filter(b => b.phone && b.date && b.start && b.end && b.room)
               .map(b => ({ ...b, _key: toKey(b) }))
-              .filter(b => !seenSet.has(b._key));
+              .filter(b => !isSeenId(b._key));
 
             if (candidates.length === 0) {
               log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
@@ -1114,12 +1024,7 @@ async function monitorBookings() {
                   const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
-                    seenSet.add(b._key);
-                    // 🛡️ 스냅샷 우선 사용 (타이밍 이슈 방어)
-                    const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen();
-                    _lastSeenDataSnapshot = null;
-                    freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen);
-                    saveSeen(freshSeen);
+                    markSeen(b._key);
                   } else {
                     log(`⚠️ DEV 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                   }
@@ -1165,9 +1070,7 @@ async function monitorBookings() {
                 }
 
                 // ops에서는 재처리 방지를 위해 마킹
-                for (const b of observeFiltered) seenSet.add(b._key);
-                // fresh load: updateBookingState가 저장한 entry 객체 보존
-                { const freshSeen = loadSeen(); freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
+                for (const b of observeFiltered) markSeen(b._key);
 
                 await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
@@ -1178,16 +1081,11 @@ async function monitorBookings() {
                 const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
-                  seenSet.add(b._key);
-                  // 🛡️ 스냅샷 우선: updateBookingState가 방금 저장한 seenData를 직접 사용
-                  // (loadSeen()이 간헐적으로 직전 저장본을 읽지 못하는 타이밍 이슈 방어)
-                  { const freshSeen = (_lastSeenDataSnapshot && _lastSeenDataSnapshot[bookingId]) ? _lastSeenDataSnapshot : loadSeen(); _lastSeenDataSnapshot = null; freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
+                  markSeen(b._key);
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
-                  seenSet.add(b._key);
-                  // fresh load: updateBookingState가 저장한 entry 객체 보존
-                  { _lastSeenDataSnapshot = null; const freshSeen = loadSeen(); freshSeen.seenIds = pruneSeenIds(Array.from(seenSet), freshSeen); saveSeen(freshSeen); }
-                  log(`⛔ 최대 재시도 초과 → seenIds 마킹 완료 (재감지 차단)`);
+                  markSeen(b._key);
+                  log(`⛔ 최대 재시도 초과 → seen 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                 }
@@ -1216,15 +1114,10 @@ async function monitorBookings() {
 
             if (droppedFromConfirmed.length > 0) {
               log(`🗑️ 확정 리스트에서 ${droppedFromConfirmed.length}건 사라짐 → 취소 처리`);
-              const seen = loadSeen();
-              const cancelledSeenSet = new Set(seen.cancelledSeenIds || []);
-
               for (const c of droppedFromConfirmed) {
                 const cancelKey = toCancelKey(c);
-                if (!cancelledSeenSet.has(cancelKey)) {
-                  cancelledSeenSet.add(cancelKey);
-                  seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
-                  saveSeen(seen);
+                if (!isCancelledKey(cancelKey)) {
+                  addCancelledKey(cancelKey);
                   await runPickkoCancel(c, cancelKey);
                 }
               }
@@ -1255,18 +1148,14 @@ async function monitorBookings() {
             log(`🗑️ 오늘 취소 탭: ${cancelledList.length}건`);
 
             if (cancelledList.length > 0) {
-              const seen = loadSeen();
-              const cancelledSeenSet = new Set(seen.cancelledSeenIds || []);
               const toCancelKey = (b) => `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
-              const cancelCandidates = cancelledList.filter(c => !cancelledSeenSet.has(toCancelKey(c)));
+              const cancelCandidates = cancelledList.filter(c => !isCancelledKey(toCancelKey(c)));
 
               if (cancelCandidates.length > 0) {
                 log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
                 for (const c of cancelCandidates) {
                   const cancelKey = toCancelKey(c);
-                  cancelledSeenSet.add(cancelKey);
-                  seen.cancelledSeenIds = Array.from(cancelledSeenSet).slice(-500);
-                  saveSeen(seen);
+                  addCancelledKey(cancelKey);
                   await runPickkoCancel(c, cancelKey);
                 }
               } else {
@@ -1425,117 +1314,61 @@ async function ragSaveReservation(booking, status = '신규') {
 }
 
 // ======================== Pickko 연동 ========================
-const SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');  // OPS/DEV 데이터 격리
-
-// 🛡️ updateBookingState가 저장한 seenData 스냅샷 (타이밍 이슈 방어)
-// loadSeen()이 간헐적으로 직전 저장본을 읽지 못하는 현상 대비
-let _lastSeenDataSnapshot = null;
-
-// 📁 naver-seen.json 형식 개선 (상태 추적)
-function loadSeen() {
-  try {
-    const data = JSON.parse(fs.readFileSync(SEEN_FILE, 'utf-8'));
-    return data || {};
-  } catch (e) {
-    return {};
-  }
-}
-
-function saveSeen(obj) {
-  try {
-    const json = JSON.stringify(obj, null, 2);
-    const tmp = SEEN_FILE + '.tmp';
-    fs.writeFileSync(tmp, json, 'utf-8');
-    fs.renameSync(tmp, SEEN_FILE);
-    const count = Object.keys(obj).length;
-    log(`💾 [저장] naver-seen.json 업데이트 (총 ${count}건)`);
-  } catch (err) {
-    log(`❌ [저장 실패] naver-seen.json: ${err.message}`);
-  }
-}
 
 // 🛡️ process.exit 전 processing 상태 항목을 failed로 롤백
 function rollbackProcessingEntries() {
   try {
-    const data = loadSeen();
-    let changed = 0;
-    for (const [id, entry] of Object.entries(data)) {
-      if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
-      if (entry && entry.status === 'processing') {
-        entry.status = 'failed';
-        entry.errorReason = '프로세스 강제 종료 (rollback)';
-        changed++;
-      }
-    }
-    if (changed > 0) {
-      saveSeen(data);
-      log(`🔄 [롤백] processing → failed 전환 ${changed}건`);
-    }
+    const count = rollbackProcessing();
+    if (count > 0) log(`🔄 [롤백] processing → failed 전환 ${count}건`);
   } catch (e) {
     log(`⚠️ [롤백 실패] ${e.message}`);
   }
 }
 
-// 날짜 기준 만료 seenId 정리 (cutoffDays일 이상 지난 예약 ID 제거)
-// 엔트리가 없거나 날짜가 없는 ID는 안전하게 유지
-function pruneSeenIds(ids, seenData, cutoffDays = 90) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - cutoffDays);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  return ids.filter(id => {
-    const entry = seenData[id];
-    if (!entry || !entry.date) return true;
-    return entry.date >= cutoffStr;
-  });
-}
-
-// 🔐 신규 예약 감지 및 상태 저장
+// 🔐 신규 예약 감지 및 상태 저장 (DB 기반)
 function updateBookingState(bookingId, booking, state = 'pending') {
   try {
-    const seenData = loadSeen();
-    
-    if (!seenData[bookingId]) {
+    const existing = getReservation(bookingId);
+
+    if (!existing) {
       // 🆕 신규 예약
-      seenData[bookingId] = {
+      addReservation(bookingId, {
         compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
-        name: booking.raw?.name || null,
-        phone: booking.phone,
-        phoneRaw: booking.phoneRaw,
-        date: booking.date,
-        start: booking.start,
-        end: booking.end,
-        room: booking.room,
-        detectedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
-        status: state,            // pending → processing → completed → failed
-        pickkoStatus: null,       // null → registered → paid
-        pickkoOrderId: null,
-        errorReason: null,
-        retries: 0
-      };
+        name:         booking.raw?.name || null,
+        phone:        booking.phone,
+        phoneRaw:     booking.phoneRaw,
+        date:         booking.date,
+        start:        booking.start,
+        end:          booking.end,
+        room:         booking.room,
+        detectedAt:   new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+        status:       state,
+        pickkoStatus: null,
+        retries:      0,
+      });
       log(`   📊 [신규] ${booking.phone} / ${booking.date} ${booking.start}~${booking.end} ${booking.room} → status: ${state}`);
       dailyStats.detected++;
     } else {
       // 기존 예약 상태 업데이트
-      const oldStatus = seenData[bookingId].status;
-      seenData[bookingId].status = state;
-      
+      const oldStatus = existing.status;
+      const updates = { status: state };
+
       if (state === 'processing') {
-        seenData[bookingId].pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        updates.pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
       } else if (state === 'completed') {
-        seenData[bookingId].pickkoStatus = 'paid';
-        seenData[bookingId].pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        updates.pickkoStatus       = 'paid';
+        updates.pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
         dailyStats.completed++;
       } else if (state === 'failed') {
-        seenData[bookingId].retries = (seenData[bookingId].retries || 0) + 1;
+        updates.retries = (existing.retries || 0) + 1;
         dailyStats.failed++;
       }
-      
+
+      updateReservation(bookingId, updates);
       log(`   📊 [업데이트] ${booking.phone}: ${oldStatus} → ${state}`);
     }
-    
-    saveSeen(seenData);
-    _lastSeenDataSnapshot = seenData; // 🛡️ freshSeen 타이밍 이슈 방어용 캐시
-    return seenData[bookingId];
+
+    return getReservation(bookingId);
   } catch (err) {
     log(`❌ updateBookingState 실패: ${err.message}`);
     return null;
@@ -1777,8 +1610,8 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     // ⛔ 최대 재시도 초과 확인
     if (bookingId) {
-      const currentData = loadSeen();
-      const currentRetries = currentData[bookingId]?.retries || 0;
+      const currentEntry = getReservation(bookingId);
+      const currentRetries = currentEntry?.retries || 0;
       if (currentRetries >= MAX_RETRIES) {
         log(`⛔ [건너뜀] 최대 재시도 초과 (${currentRetries}회): ${booking.phone} ${booking.date}`);
         sendTelegramDirect(
@@ -1876,8 +1709,8 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           ragSaveReservation(booking, '픽코실패');
 
           // 즉시 텔레그램 수동 처리 요청
-          const failedData = loadSeen();
-          const retryCount = failedData[bookingId]?.retries || 1;
+          const failedEntry = getReservation(bookingId);
+          const retryCount = failedEntry?.retries || 1;
           sendTelegramDirect(
             `🚨 픽코 등록 실패 — 수동 처리 필요!\n\n` +
             `📞 고객: ${booking.phone}\n` +

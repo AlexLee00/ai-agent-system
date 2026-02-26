@@ -12,38 +12,24 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
-const { loadJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { sendTelegram } = require('../lib/telegram');
+const { getAllNaverKeys } = require('../lib/db');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = (process.env.MODE || 'ops').toLowerCase();
 
-const PROJ_SEEN_FILE = path.join(
-  __dirname, '..',
-  MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json'
-);
-
 // KST 기준 오늘 날짜 (YYYY-MM-DD)
 function getTodayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
-// naver-seen.json에서 "네이버 경유" 예약 키 수집
-// naver-seen.json에 존재 = 네이버 예약 / 없으면 수동(전화/직접)
+// DB에서 "네이버 경유" 예약 키 수집 (collectNaverKeys 대체)
 function collectNaverKeys() {
-  const data = loadJson(PROJ_SEEN_FILE);
-  const keys = new Set();
-  for (const [id, entry] of Object.entries(data)) {
-    if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
-    const phoneRaw = (entry.phoneRaw || (entry.phone || '').replace(/\D/g, ''));
-    if (!phoneRaw || !entry.date || !entry.start) continue;
-    keys.add(`${phoneRaw}|${entry.date}|${entry.start}`);
-  }
-  return keys;
+  return getAllNaverKeys();
 }
 
 async function main() {

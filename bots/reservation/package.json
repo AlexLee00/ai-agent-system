@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-agent/core": "*",
     "@ai-agent/playwright-utils": "*",
+    "better-sqlite3": "^12.6.2",
     "puppeteer": "^24.37.5"
   }
 }
