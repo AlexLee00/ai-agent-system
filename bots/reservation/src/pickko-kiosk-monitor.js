@@ -13,12 +13,12 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { loadJson, saveJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
+const { sendTelegram } = require('../lib/telegram');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -31,7 +31,6 @@ const SEEN_FILE = path.join(__dirname, '..', 'pickko-kiosk-seen.json');
 // naver-monitor.js가 저장하는 CDP 엔드포인트 파일 (새 탭 연결용)
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
-const CHAT_ID = '***REMOVED***';
 
 // ─── 유틸 ───────────────────────────────────────────────
 
@@ -60,21 +59,7 @@ function roundUpToHalfHour(timeStr) {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
 }
 
-function sendTelegram(message) {
-  try {
-    const child = spawn('openclaw', [
-      'agent',
-      '--message', `🔔 스카봇\n\n${message}`,
-      '--channel', 'telegram',
-      '--deliver',
-      '--to', CHAT_ID
-    ], { stdio: 'ignore', detached: true });
-    child.unref();
-    log(`📱 [텔레그램] ${message.slice(0, 80)}`);
-  } catch (e) {
-    log(`⚠️ 텔레그램 발송 실패: ${e.message}`);
-  }
-}
+// sendTelegram: lib/telegram.js에서 import됨 (Telegram Bot API 직접 호출)
 
 // ─── Phase 3: 네이버 booking calendar 로그인 ──────────
 
@@ -1314,12 +1299,14 @@ async function main() {
     log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=환불`);
     const { entries: refundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
 
-    // 이미 처리 완료된 항목 제외 (naverUnblockedAt 있으면 skip)
+    // naverBlocked=true로 실제 차단한 항목만 해제 시도
+    // (seen 파일에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
     const cancelledEntries = refundedEntries
       .map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }))
       .filter(e => {
         const saved = seenData[e.key];
-        if (saved && saved.naverBlocked === false && saved.naverUnblockedAt) return false;
+        if (!saved || saved.naverBlocked !== true) return false; // 차단 이력 없음
+        if (saved.naverUnblockedAt) return false; // 이미 해제 완료
         return true;
       });
 

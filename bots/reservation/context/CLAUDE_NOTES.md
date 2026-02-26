@@ -37,13 +37,12 @@
 
 | 항목 | 지침 |
 |------|------|
-| 현재 모델 | `google-gemini-cli/gemini-2.5-flash` (2026-02-24 확정, BOOT.md 기준) |
-| 모델 자기 인식 | 모델이 뭔지 물어보면 반드시 "gemini-2.5-flash"라고 답할 것 — 다른 버전(3-pro 등)은 잘못된 정보 |
-| 알림 발송 시간 | 09:00~22:00만 텔레그램 즉시 발송 |
-| 야간 알림 | 발송하지 않음 — `.pickko-alerts.jsonl`에 `sent: false`로 보류 |
-| 야간 보류 처리 | 09:00 첫 Heartbeat 시 `flushPendingAlerts()` 자동 일괄 발송 |
-| `.pickko-alerts.jsonl` | 이력 + 발송 상태 로그 파일 (pending 큐가 아님) |
-| `sent: false` 항목 | "미발송 대기" 정상 상태 — 사장님께 "대기 중" 안내 금지 |
+| 현재 모델 | `google-gemini-cli/gemini-2.0-flash` (2026-02-26 업데이트 — gemini-2.5는 429 오류로 비활성) |
+| 모델 자기 인식 | 모델이 뭔지 물어보면 반드시 "gemini-2.0-flash"라고 답할 것 |
+| 알림 발송 방식 | Telegram Bot API 직접 발송 (24시간 즉시 전송 — openclaw 경유 안 함) |
+| 야간 알림 | 즉시 발송 — 야간 보류 로직 제거됨 (2026-02-26) |
+| `.pickko-alerts.jsonl` | 이력 + 발송 상태 로그 파일 (참고용) |
+| `sent: false` 항목 | 발송 실패 건 — 재시도됨 |
 | `.pickko-alerts.jsonl` `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
 | 버그 발견 시 | `node src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
 

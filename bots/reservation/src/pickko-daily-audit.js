@@ -9,19 +9,18 @@
  */
 
 const puppeteer = require('puppeteer');
-const { spawn } = require('child_process');
 const path = require('path');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { loadJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
+const { sendTelegram } = require('../lib/telegram');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = (process.env.MODE || 'ops').toLowerCase();
-const CHAT_ID = '***REMOVED***';
 
 const PROJ_SEEN_FILE = path.join(
   __dirname, '..',
@@ -31,27 +30,6 @@ const PROJ_SEEN_FILE = path.join(
 // KST 기준 오늘 날짜 (YYYY-MM-DD)
 function getTodayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-}
-
-// 텔레그램 발송
-function sendTelegram(message) {
-  if (process.env.TELEGRAM_ENABLED === '0') {
-    log(`[텔레그램 비활성화] ${message.slice(0, 60)}`);
-    return;
-  }
-  try {
-    const child = spawn('openclaw', [
-      'agent',
-      '--message', `🔔 스카봇\n\n${message}`,
-      '--channel', 'telegram',
-      '--deliver',
-      '--to', CHAT_ID
-    ], { stdio: 'ignore', detached: true });
-    child.unref();
-    log(`📱 [텔레그램] ${message.slice(0, 60)}...`);
-  } catch (e) {
-    log(`⚠️ 텔레그램 발송 실패: ${e.message}`);
-  }
 }
 
 // naver-seen.json에서 "네이버 경유" 예약 키 수집
