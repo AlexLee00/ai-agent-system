@@ -19,16 +19,12 @@
 const fs = require('fs');
 const path = require('path');
 const { parseArgs } = require('../lib/args');
+const { fail } = require('../lib/cli');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
 
 const ARGS = parseArgs(process.argv);
-
-function fail(message) {
-  process.stdout.write(JSON.stringify({ success: false, message }) + '\n');
-  process.exit(1);
-}
 
 // ── 날짜 파싱 ──
 function resolveDate(dateArg) {

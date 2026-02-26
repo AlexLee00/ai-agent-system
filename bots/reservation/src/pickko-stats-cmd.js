@@ -21,16 +21,12 @@
 
 const { getDailySummary, getDailySummariesInRange, getRoomRevenueSummary } = require('../lib/db');
 const { parseArgs } = require('../lib/args');
+const { outputResult, fail } = require('../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 
-function fail(message) {
-  process.stdout.write(JSON.stringify({ success: false, message }) + '\n');
-  process.exit(1);
-}
-
 function ok(message) {
-  process.stdout.write(JSON.stringify({ success: true, message }) + '\n');
+  outputResult({ success: true, message });
   process.exit(0);
 }
 

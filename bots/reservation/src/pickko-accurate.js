@@ -14,7 +14,7 @@ const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { parseArgs } = require('../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, findPickkoMember } = require('../lib/pickko');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -147,65 +147,8 @@ async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
     return { skipped: true, reason: 'invalid_naver_name' };
   }
 
-  // 1. study/write.html 모달로 회원 검색 (입증된 방식)
-  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
-  await delay(2000);
-
-  // 전화번호 입력 (3단계와 동일한 방식)
-  await page.evaluate((phone) => {
-    const inputs = document.querySelectorAll('input[type="text"]');
-    let targetInput = null;
-    for (const input of inputs) {
-      if (input.placeholder && (input.placeholder.includes('이름') || input.placeholder.includes('검색'))) {
-        targetInput = input;
-        break;
-      }
-    }
-    if (!targetInput && inputs.length > 0) targetInput = inputs[inputs.length - 1];
-    if (targetInput) {
-      targetInput.value = phone;
-      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-      targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    }
-  }, phoneRaw);
-  await delay(2500);
-
-  // 회원 선택 버튼 클릭 → 모달 열기
-  try {
-    await page.click('a#mb_select_btn');
-  } catch (e) {
-    await page.evaluate(() => {
-      const links = document.querySelectorAll('a.btn_box');
-      for (const a of links) if (a.textContent.includes('회원 선택')) a.click();
-    });
-  }
-  await delay(1500);
-
-  // 2. 모달에서 이름·mb_no 추출
-  // a.mb_select의 부모 li에 mb_no, mb_name 속성이 있음
-  const result = await page.evaluate(() => {
-    const selectEl = document.querySelector('a.mb_select');
-    if (!selectEl) return { found: false };
-
-    // 부모 li[mb_no] 에서 직접 추출
-    const li = selectEl.closest('li[mb_no]');
-    let mbNo = li?.getAttribute('mb_no') || null;
-    let name = li?.getAttribute('mb_name') || null;
-
-    // 폴백: a.detail_btn href에서 mb_no 추출
-    if (!mbNo) {
-      const detailBtn = document.querySelector('a.detail_btn[href*="/member/view/"]');
-      const m = detailBtn?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
-      if (m) mbNo = m[1];
-    }
-
-    return { found: true, mbNo, name };
-  });
-
-  // 모달 닫기
-  await page.keyboard.press('Escape');
-  await delay(500);
-
+  // 1. study/write.html 모달로 회원 검색 (lib/pickko.findPickkoMember 공통 함수)
+  const result = await findPickkoMember(page, phoneRaw, delay);
   log(`[1.5단계] 회원 검색 결과: ${JSON.stringify(result)}`);
 
   if (!result.found || !result.mbNo) {

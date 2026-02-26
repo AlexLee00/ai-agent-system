@@ -21,13 +21,9 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const { parseArgs } = require('../lib/args');
+const { fail } = require('../lib/cli');
 
 const ARGS = parseArgs(process.argv);
-
-function fail(message) {
-  process.stdout.write(JSON.stringify({ success: false, message }) + '\n');
-  process.exit(1);
-}
 
 // ── 필수 인자 검증 ──
 const required = ['phone', 'date', 'start', 'end', 'room'];
