@@ -22,17 +22,15 @@
 > 자동 관리: `bug-report.js` 실행 시 갱신 | 수동 등록: `node src/bug-report.js --new --title "..." --by ska`
 
 <!-- bug-tracker:issues:start -->
-| 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |
-|------|--------|----|------|--------|------|
-| 🔴 | 🟡 | `BUG-005` | naver-monitor 가끔 느려지는 문제 | ska | 0분 전 |
+_현재 미해결 이슈 없음_
 
 **최근 해결:**
+- ✅ `BUG-005` **naver-monitor 가끔 느려지는 문제**
+  테스트용으로 등록한 버그, 실제 이슈 아님 (0분 전)
 - ✅ `BUG-003` **알림 파일 resolved 상태 미관리 — 수동 확인 필요 알림 누적**
   재시작 후 '✅ 미해결 알림 없음' 로그 확인 (2일 전)
 - ✅ `BUG-004` **테스트 버그 (삭제 예정)**
   테스트 완료, 삭제 (2일 전)
-- ✅ `BUG-002` **completed/manual 예약 재감지 루프 및 code 99 미마킹**
-  재시작 후 '신규 후보 없음' 정상 확인 — 3건 기처리 예약 재감지 없음 (2일 전)
 <!-- bug-tracker:issues:end -->
 
 ---
@@ -48,6 +46,14 @@
 - deploy-context thin wrapper
 - 관련 파일: `scripts/lib/`, `scripts/session-close.js`
 <!-- session-close:2026-02-26:sessionclose-라이브러리-구축:end -->
+
+<!-- session-close:2026-02-26:매출-통계-자연어-명령-추가-pickkostatscmd -->
+#### 2026-02-26 ✨ 매출 통계 자연어 명령 추가 (pickko-stats-cmd.js)
+- pickko-stats-cmd.js 신규: 날짜/주/월/누적 매출 조회
+- lib/db.js getDailySummariesInRange 추가
+- CLAUDE_NOTES.md 매출 통계 자연어 지침 추가
+- 관련 파일: `src/pickko-stats-cmd.js`, `lib/db.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-26:매출-통계-자연어-명령-추가-pickkostatscmd:end -->
 
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
