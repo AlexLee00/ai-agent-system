@@ -15,10 +15,10 @@ const path = require('path');
 const fs = require('fs');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
-const { loadJson, saveJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { sendTelegram } = require('../lib/telegram');
+const { getKioskBlock, upsertKioskBlock, pruneOldKioskBlocks } = require('../lib/db');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -27,7 +27,6 @@ const NAVER_ID = SECRETS.naver_id;
 const NAVER_PW = SECRETS.naver_pw;
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const SEEN_FILE = path.join(__dirname, '..', 'pickko-kiosk-seen.json');
 // naver-monitor.js가 저장하는 CDP 엔드포인트 파일 (새 탭 연결용)
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
@@ -1250,21 +1249,9 @@ async function main() {
   const today = getTodayKST();
   log(`\n🔍 픽코 키오스크 모니터 시작: ${today}`);
 
-  const seenData = loadJson(SEEN_FILE);
-
   // ── Phase 5 선처리: 만료 항목 정리 ──
-  let pruned = 0;
-  for (const key of Object.keys(seenData)) {
-    const entry = seenData[key];
-    if (entry.date && entry.date < today) {
-      delete seenData[key];
-      pruned++;
-    }
-  }
-  if (pruned > 0) {
-    log(`🧹 만료 항목 삭제: ${pruned}건`);
-    saveJson(SEEN_FILE, seenData);
-  }
+  const pruned = pruneOldKioskBlocks(today);
+  if (pruned > 0) log(`🧹 만료 항목 삭제: ${pruned}건`);
 
   let browser;
   try {
@@ -1288,10 +1275,7 @@ async function main() {
     }
 
     // ── Phase 2: 신규 예약 감지 ──
-    const newEntries = kioskEntries.filter(e => {
-      const key = `${e.phoneRaw}|${e.date}|${e.start}`;
-      return !seenData[key];
-    });
+    const newEntries = kioskEntries.filter(e => !getKioskBlock(e.phoneRaw, e.date, e.start));
 
     // ── Phase 2B: 취소 감지 (픽코 환불 목록 직접 조회) ──
     // JSON 파일 비교 대신 픽코를 직접 조회 → 무결성 보장
@@ -1300,12 +1284,12 @@ async function main() {
     const { entries: refundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
 
     // naverBlocked=true로 실제 차단한 항목만 해제 시도
-    // (seen 파일에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
+    // (DB에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
     const cancelledEntries = refundedEntries
       .map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }))
       .filter(e => {
-        const saved = seenData[e.key];
-        if (!saved || saved.naverBlocked !== true) return false; // 차단 이력 없음
+        const saved = getKioskBlock(e.phoneRaw, e.date, e.start);
+        if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
         if (saved.naverUnblockedAt) return false; // 이미 해제 완료
         return true;
       });
@@ -1328,8 +1312,7 @@ async function main() {
     if (!wsEndpoint) {
       log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
       for (const e of newEntries) {
-        const key = `${e.phoneRaw}|${e.date}|${e.start}`;
-        seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
+        upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
         sendTelegram(
           `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
         );
@@ -1339,7 +1322,6 @@ async function main() {
           `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: naver-monitor 미실행`
         );
       }
-      saveJson(SEEN_FILE, seenData);
       return;
     }
 
@@ -1369,8 +1351,7 @@ async function main() {
       if (!loggedIn) {
         log('❌ 네이버 booking 로그인 실패');
         for (const e of newEntries) {
-          const key = `${e.phoneRaw}|${e.date}|${e.start}`;
-          seenData[key] = { ...e, naverBlocked: false, firstSeenAt: nowKST() };
+          upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
           sendTelegram(
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
           );
@@ -1380,7 +1361,6 @@ async function main() {
             `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: 네이버 로그인 실패`
           );
         }
-        saveJson(SEEN_FILE, seenData);
         return;
       }
 
@@ -1412,20 +1392,17 @@ async function main() {
         }
 
         const now = nowKST();
-        seenData[key] = {
-          name: e.name,
-          phoneRaw: e.phoneRaw,
-          date: e.date,
-          start: e.start,
-          end: e.end,
-          room: e.room,
-          amount: e.amount,
+        upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+          name:         e.name,
+          date:         e.date,
+          start:        e.start,
+          end:          e.end,
+          room:         e.room,
+          amount:       e.amount,
           naverBlocked: blocked,
-          firstSeenAt: now,
-          ...(blocked && { blockedAt: now })
-        };
-
-        saveJson(SEEN_FILE, seenData);
+          firstSeenAt:  now,
+          blockedAt:    blocked ? now : null,
+        });
 
         // ── Phase 4: 텔레그램 알림 ──
         if (blocked) {
@@ -1468,9 +1445,11 @@ async function main() {
           }
 
           if (unblocked) {
-            // naverBlocked: false + naverUnblockedAt 기록 (기존 seenData 데이터 보존)
-            seenData[key] = { ...(seenData[key] || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST() };
-            saveJson(SEEN_FILE, seenData);
+            // naverBlocked: false + naverUnblockedAt 기록 (기존 DB 데이터 보존)
+            const existing = getKioskBlock(e.phoneRaw, e.date, e.start);
+            upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+              ...(existing || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST()
+            });
             sendTelegram(
               `✅ 네이버 예약불가 해제\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)`
             );

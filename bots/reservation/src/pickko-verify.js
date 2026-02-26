@@ -24,9 +24,15 @@ const path = require('path');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { toKoreanTime, pickkoEndTime, formatPhone } = require('../lib/formatting');
-const { loadJson, saveJson } = require('../lib/files');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
+const {
+  getPendingReservations,
+  addReservation,
+  updateReservation,
+  getReservation,
+  markSeen,
+} = require('../lib/db');
 
 // ──────────────────────────────────────────────
 // 설정
@@ -37,12 +43,8 @@ const PICKKO_PW  = SECRETS.pickko_pw;
 const MODE       = (process.env.MODE || 'ops').toLowerCase();
 const DRY_RUN    = process.argv.includes('--dry-run');
 
-const WORKSPACE      = path.join(process.env.HOME, '.openclaw', 'workspace');
-const PROJ_SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');
-const WS_SEEN_FILE   = path.join(WORKSPACE, 'naver-seen.json');
-
 // ──────────────────────────────────────────────
-// pending/failed/미검증completed 항목 수집
+// pending/failed/미검증completed 항목 수집 (DB 기반)
 // ──────────────────────────────────────────────
 
 // 픽코 검증이 필요한 항목인지 판별
@@ -58,32 +60,19 @@ function needsVerify(entry) {
 }
 
 function collectTargets() {
+  // DB에서 pending/processing/failed + completed 미검증 항목 수집
+  // getPendingReservations() = status IN ('pending','processing','failed')
+  const pending = getPendingReservations();
+
   const targets = [];
-  const seen    = new Set(); // 중복 방지 (compositeKey 기준)
+  const seen = new Set();
 
-  // 1. 프로젝트 파일
-  const projData = loadJson(PROJ_SEEN_FILE);
-  for (const [id, entry] of Object.entries(projData)) {
-    if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
-    if (needsVerify(entry)) {
-      const ck = entry.compositeKey || id;
-      if (!seen.has(ck)) {
-        seen.add(ck);
-        targets.push({ source: 'proj', id, entry });
-      }
-    }
-  }
-
-  // 2. workspace 파일 (pending)
-  const wsData = loadJson(WS_SEEN_FILE);
-  for (const [id, entry] of Object.entries(wsData)) {
-    if (id === 'seenIds' || id === 'cancelledSeenIds') continue;
-    if (entry.status === 'pending') {
-      const ck = entry.compositeKey || id;
-      if (!seen.has(ck)) {
-        seen.add(ck);
-        targets.push({ source: 'ws', id, entry });
-      }
+  for (const entry of pending) {
+    if (!needsVerify(entry)) continue;
+    const ck = entry.compositeKey || entry.id;
+    if (!seen.has(ck)) {
+      seen.add(ck);
+      targets.push({ source: 'db', id: entry.id, entry });
     }
   }
 
@@ -158,44 +147,37 @@ async function searchPickko(page, entry) {
 }
 
 // ──────────────────────────────────────────────
-// 상태 업데이트
+// 상태 업데이트 (DB 기반)
 // ──────────────────────────────────────────────
 function markCompleted(source, id, entry) {
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
-  // 프로젝트 파일에 반영
-  const projData = loadJson(PROJ_SEEN_FILE);
-  projData[id] = {
-    compositeKey:    entry.compositeKey || `${(entry.phoneRaw||entry.phone||'').replace(/\D/g,'')}`,
-    name:            entry.name || entry.raw?.name || null,
-    phone:           entry.phone,
-    phoneRaw:        entry.phoneRaw || (entry.phone||'').replace(/\D/g,''),
-    date:            entry.date,
-    start:           entry.start,
-    end:             entry.end,
-    room:            entry.room,
-    detectedAt:      entry.detectedAt,
-    status:          'completed',
-    pickkoStatus:    'verified',   // 픽코에서 존재 확인됨
-    pickkoOrderId:   null,
-    errorReason:     null,
-    retries:         entry.retries || 0,
-    pickkoStartTime: now,
-  };
-  // seenIds에도 추가 (중복 방지)
-  if (!Array.isArray(projData.seenIds)) projData.seenIds = [];
-  if (!projData.seenIds.includes(id)) projData.seenIds.push(id);
-  saveJson(PROJ_SEEN_FILE, projData);
-
-  // workspace 파일도 업데이트
-  if (source === 'ws') {
-    const wsData = loadJson(WS_SEEN_FILE);
-    if (wsData[id]) {
-      wsData[id].status      = 'completed';
-      wsData[id].pickkoStatus = 'verified';
-      saveJson(WS_SEEN_FILE, wsData);
-    }
+  const existing = getReservation(id);
+  if (existing) {
+    updateReservation(id, {
+      status:          'completed',
+      pickkoStatus:    'verified',
+      errorReason:     null,
+      pickkoStartTime: now,
+    });
+  } else {
+    addReservation(id, {
+      compositeKey:    entry.compositeKey || `${(entry.phoneRaw||entry.phone||'').replace(/\D/g,'')}`,
+      name:            entry.name || entry.raw?.name || null,
+      phone:           entry.phone,
+      phoneRaw:        entry.phoneRaw || (entry.phone||'').replace(/\D/g,''),
+      date:            entry.date,
+      start:           entry.start,
+      end:             entry.end,
+      room:            entry.room,
+      detectedAt:      entry.detectedAt,
+      status:          'completed',
+      pickkoStatus:    'verified',
+      retries:         entry.retries || 0,
+      pickkoStartTime: now,
+    });
   }
+  markSeen(id);
 }
 
 // ──────────────────────────────────────────────
@@ -312,18 +294,13 @@ async function main() {
             markCompleted(source, id, entry);
             log(`  ✅ 등록 완료 → completed/auto`);
             // pickkoStatus를 auto로 업데이트
-            const projData = loadJson(PROJ_SEEN_FILE);
-            if (projData[id]) projData[id].pickkoStatus = 'auto';
-            saveJson(PROJ_SEEN_FILE, projData);
+            updateReservation(id, { pickkoStatus: 'auto' });
           } else {
             log(`  ❌ 등록 실패 (exit: ${code})`);
             results.error.push(id);
-            // 프로젝트 파일에 retries 증가
-            const projData = loadJson(PROJ_SEEN_FILE);
-            if (projData[id]) {
-              projData[id].retries = (projData[id].retries || 0) + 1;
-            }
-            saveJson(PROJ_SEEN_FILE, projData);
+            // retries 증가
+            const cur = getReservation(id);
+            updateReservation(id, { retries: (cur?.retries || 0) + 1 });
           }
         }
       } catch (err) {

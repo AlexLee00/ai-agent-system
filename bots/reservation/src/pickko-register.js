@@ -23,13 +23,12 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { parseArgs } = require('../lib/args');
 const { transformAndNormalizeData } = require('../lib/validation');
-const { loadJson, saveJson } = require('../lib/files');
+const { addReservation, updateReservation, getReservation, markSeen } = require('../lib/db');
 
 const ARGS = parseArgs(process.argv);
 
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = process.env.MODE || 'ops';
-const SEEN_FILE = path.join(__dirname, '..', MODE === 'ops' ? 'naver-seen.json' : 'naver-seen-dev.json');
 
 function fail(message) {
   process.stdout.write(JSON.stringify({ success: false, message }) + '\n');
@@ -89,12 +88,15 @@ child.on('error', err => {
 
 child.on('close', code => {
   if (code === 0) {
-    // naver-seen.json에 manual 항목 기록 (pickko-daily-audit 오탐 방지)
+    // DB에 manual 항목 기록 (pickko-daily-audit 오탐 방지)
     try {
-      const seenData = loadJson(SEEN_FILE);
       const key = `manual-${normalized.phone}-${normalized.date}-${normalized.start.replace(':', '')}`;
-      if (!seenData[key]) {
-        seenData[key] = {
+      const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+      const existing = getReservation(key);
+      if (existing) {
+        updateReservation(key, { status: 'completed', pickkoStatus: 'manual', pickkoStartTime: now });
+      } else {
+        addReservation(key, {
           compositeKey: `${normalized.phone}-${normalized.date}-${normalized.start}`,
           name: customerName,
           phone: normalized.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3'),
@@ -103,16 +105,14 @@ child.on('close', code => {
           start: normalized.start,
           end: normalized.end,
           room: normalized.room,
-          detectedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+          detectedAt: now,
           status: 'completed',
           pickkoStatus: 'manual',
-          pickkoOrderId: null,
-          errorReason: null,
           retries: 0,
-          pickkoStartTime: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
-        };
-        saveJson(SEEN_FILE, seenData);
+          pickkoStartTime: now,
+        });
       }
+      markSeen(key);
     } catch (e) {
       // seen 기록 실패는 등록 성공에 영향 없음
     }
