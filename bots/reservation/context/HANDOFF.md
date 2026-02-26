@@ -117,6 +117,20 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/lib/browser.js`, `bots/reservation/src/start-ops.sh`, `ai.ska.naver-monitor.plist`
 <!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko-:end -->
 
+<!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계 -->
+#### 2026-02-27 ✨ 시스템 설계 v2.0 + iPad 원격 접속 + 투자봇 설계
+- SYSTEM_DESIGN.md v2.0 전면 개정 (봇별 LLM 확정·투자팀 3봇·메모리 할당)
+- README.md 10봇 전체 아키텍처 다이어그램
+- iPad Termius SSH 설정 (로컬+Tailscale 외부 접속)
+- ~/.zshrc alias 등록 (ska/skalog/skastatus)
+- OpenClaw 공식 문서 전체 학습
+- 투자팀 멀티에이전트 설계 (투자메인봇+바이낸스실행봇+리서치봇+백테스팅)
+- 2026 LLM·트레이딩봇 커뮤니티 리서치 (RESEARCH_2026.md 저장)
+- 공유 인프라 packages/core + playwright-utils 구축
+- PICKKO_HEADLESS=1 launchd KeepAlive 백그라운드 전환
+- 관련 파일: `docs/SYSTEM_DESIGN.md`, `docs/RESEARCH_2026.md`, `README.md`, `~/.zshrc`, `~/.ssh/authorized_keys`
+<!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
