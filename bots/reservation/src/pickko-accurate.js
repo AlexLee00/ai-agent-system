@@ -147,72 +147,64 @@ async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
     return { skipped: true, reason: 'invalid_naver_name' };
   }
 
-  // 1. 회원 목록 검색
-  await page.goto('https://pickkoadmin.com/member/index.html', { waitUntil: 'networkidle2' });
-  await delay(1500);
+  // 1. study/write.html 모달로 회원 검색 (입증된 방식)
+  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+  await delay(2000);
 
-  // 전화번호 검색 (검색 폼에 입력)
+  // 전화번호 입력 (3단계와 동일한 방식)
   await page.evaluate((phone) => {
-    const inputs = document.querySelectorAll('input[type="text"], input[type="search"]');
-    for (const inp of inputs) {
-      const ph = (inp.placeholder || '').toLowerCase();
-      if (ph.includes('전화') || ph.includes('phone') || ph.includes('연락')) {
-        inp.value = phone;
-        inp.dispatchEvent(new Event('input', { bubbles: true }));
-        inp.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
+    const inputs = document.querySelectorAll('input[type="text"]');
+    let targetInput = null;
+    for (const input of inputs) {
+      if (input.placeholder && (input.placeholder.includes('이름') || input.placeholder.includes('검색'))) {
+        targetInput = input;
+        break;
       }
     }
-    // 폴백: 이름/검색 input에 입력
-    const anySearch = document.querySelector('input[name="mb_phone"], input[name="search"]');
-    if (anySearch) {
-      anySearch.value = phone;
-      anySearch.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
+    if (!targetInput && inputs.length > 0) targetInput = inputs[inputs.length - 1];
+    if (targetInput) {
+      targetInput.value = phone;
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+      targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     }
-    return false;
   }, phoneRaw);
+  await delay(2500);
 
-  // 검색 버튼 클릭
-  await page.evaluate(() => {
-    const btns = document.querySelectorAll('input[type="submit"], button[type="submit"]');
-    for (const b of btns) {
-      const t = (b.value || b.textContent || '').trim();
-      if (t.includes('검색') || t.includes('Search')) { b.click(); return; }
-    }
-    // 폴백: form submit
-    const form = document.querySelector('form');
-    if (form) form.submit();
-  });
+  // 회원 선택 버튼 클릭 → 모달 열기
+  try {
+    await page.click('a#mb_select_btn');
+  } catch (e) {
+    await page.evaluate(() => {
+      const links = document.querySelectorAll('a.btn_box');
+      for (const a of links) if (a.textContent.includes('회원 선택')) a.click();
+    });
+  }
   await delay(1500);
 
-  // 2. 검색 결과에서 이름과 view URL 추출
-  const result = await page.evaluate((phoneSuffix) => {
-    const rows = document.querySelectorAll('tbody tr');
-    for (const row of rows) {
-      const text = row.textContent.replace(/\s+/g, '');
-      if (!text.includes(phoneSuffix)) continue;
+  // 2. 모달에서 이름·mb_no 추출
+  // a.mb_select의 부모 li에 mb_no, mb_name 속성이 있음
+  const result = await page.evaluate(() => {
+    const selectEl = document.querySelector('a.mb_select');
+    if (!selectEl) return { found: false };
 
-      // 이름: 숫자만이 아닌 것, 짧은 텍스트
-      const tds = row.querySelectorAll('td');
-      let name = null;
-      for (const td of tds) {
-        const t = td.textContent.trim();
-        if (t && t.length >= 2 && t.length <= 20 && !/^\d+$/.test(t) && !t.includes('-')) {
-          name = t;
-          break;
-        }
-      }
+    // 부모 li[mb_no] 에서 직접 추출
+    const li = selectEl.closest('li[mb_no]');
+    let mbNo = li?.getAttribute('mb_no') || null;
+    let name = li?.getAttribute('mb_name') || null;
 
-      // view 링크: /member/view/{mb_no}
-      const viewLink = row.querySelector('a[href*="/member/view/"]');
-      const mbMatch = viewLink?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
-      const mbNo = mbMatch ? mbMatch[1] : null;
-
-      return { found: true, name, mbNo };
+    // 폴백: a.detail_btn href에서 mb_no 추출
+    if (!mbNo) {
+      const detailBtn = document.querySelector('a.detail_btn[href*="/member/view/"]');
+      const m = detailBtn?.getAttribute('href')?.match(/\/member\/view\/(\d+)/);
+      if (m) mbNo = m[1];
     }
-    return { found: false };
-  }, phoneRaw.slice(-8)); // 뒤 8자리로 매칭
+
+    return { found: true, mbNo, name };
+  });
+
+  // 모달 닫기
+  await page.keyboard.press('Escape');
+  await delay(500);
 
   log(`[1.5단계] 회원 검색 결과: ${JSON.stringify(result)}`);
 
@@ -237,26 +229,51 @@ async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
   });
   await delay(1500);
 
-  // 4. 수정 버튼 클릭 → /member/write/{mb_no}.html 이동
-  const navigatedToWrite = await page.evaluate((mbNo) => {
-    const writeLink = document.querySelector(`a[href*="/member/write/${mbNo}"]`);
-    if (writeLink) { writeLink.click(); return true; }
-    const links = document.querySelectorAll('a');
-    for (const a of links) {
-      if (['수정', '편집', '수정하기'].includes(a.textContent.trim())) {
-        a.click();
+  // 3-A. 통합 타입 감지 (view 페이지)
+  // 통합 회원은 외부 연동 계정으로 픽코 웹에서 이름 수정 불가
+  // 감지 조건 1: "준비중" 텍스트 (통합 회원 view 페이지가 준비중으로 표시됨)
+  // 감지 조건 2: 전화번호 옆 "통합" 배지
+  const isIntegrated = await page.evaluate(() => {
+    const bodyText = document.body?.innerText || document.body?.textContent || '';
+
+    // 조건 1: 페이지 본문에 "준비중" 포함
+    if (bodyText.includes('준비중')) return true;
+
+    // 조건 2: "통합" 배지 요소
+    const candidates = document.querySelectorAll(
+      'td, th, span, small, label, b, strong, ' +
+      '[class*="badge"], [class*="type"], [class*="tag"], [class*="label"]'
+    );
+    for (const el of candidates) {
+      if (el.children.length === 0 && el.textContent.trim() === '통합') return true;
+    }
+    return false;
+  });
+
+  if (isIntegrated) {
+    log(`[1.5단계] 통합 회원 감지 (view 페이지 "준비중" 또는 "통합" 타입) → 웹 수정 불가, 스킵`);
+    return { skipped: true, reason: 'integrated_member' };
+  }
+
+  // 4. "회원 정보 수정" 버튼 클릭 (view 페이지에서 실제 수정 폼으로 이동)
+  const editBtnClicked = await page.evaluate(() => {
+    const candidates = document.querySelectorAll('button, a, input[type="button"], input[type="submit"]');
+    for (const el of candidates) {
+      const t = (el.textContent || el.value || '').trim();
+      if (t.includes('회원 정보 수정') || t === '수정' || t === '수정하기' || t === '편집') {
+        el.click();
         return true;
       }
     }
     return false;
-  }, result.mbNo);
+  });
 
-  if (!navigatedToWrite) {
-    // 직접 URL로 이동
-    await page.goto(`https://pickkoadmin.com/member/write/${result.mbNo}.html`, {
-      waitUntil: 'domcontentloaded'
-    });
+  if (!editBtnClicked) {
+    log(`[1.5단계] ⚠️ 수정 버튼 없음 → 스킵`);
+    return { skipped: true, reason: 'edit_button_not_found' };
   }
+
+  await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
   await delay(1500);
 
   // 5. 이름 필드 수정
@@ -265,6 +282,17 @@ async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
     log(`[1.5단계] ⚠️ 이름 필드 없음 → 스킵`);
     return { skipped: true, reason: 'name_input_not_found' };
   }
+
+  // 5-A. 이름 필드 disabled/readonly 체크 (통합 write 페이지 안전망)
+  const nameInputLocked = await page.evaluate(() => {
+    const inp = document.querySelector('input[name="mb_name"]');
+    return inp ? (inp.disabled || inp.readOnly) : false;
+  });
+  if (nameInputLocked) {
+    log(`[1.5단계] 이름 필드 수정 불가 (disabled/readonly) → 통합 회원으로 스킵`);
+    return { skipped: true, reason: 'integrated_member' };
+  }
+
   await nameInput.click({ clickCount: 3 });
   await nameInput.type(naverName, { delay: 50 });
   await delay(300);

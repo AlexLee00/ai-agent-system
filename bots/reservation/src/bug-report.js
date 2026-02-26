@@ -34,7 +34,9 @@ const path = require('path');
 const WORKSPACE    = process.env.OPENCLAW_WORKSPACE
   || path.join(process.env.HOME, '.openclaw', 'workspace');
 const TRACKER_FILE = path.join(WORKSPACE, 'bug-tracker.json');
-const HANDOFF_FILE = path.join(WORKSPACE, 'HANDOFF.md');
+// HANDOFF.md는 workspace 복사본이 아닌 소스 파일을 직접 수정
+// → deploy-context.js가 덮어쓰는 순서 의존성 제거
+const HANDOFF_FILE = path.join(__dirname, '..', 'context', 'HANDOFF.md');
 
 // ─── 저장소 ────────────────────────────────────────────────────────────
 

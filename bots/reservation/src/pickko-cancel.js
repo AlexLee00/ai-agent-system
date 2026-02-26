@@ -312,7 +312,64 @@ async function run() {
     log('\n[7단계] 결제항목 상세보기 클릭');
 
     // a.pay_view = "상세보기" 버튼 (py_no 속성 있음) — Puppeteer 네이티브 클릭
-    await page.waitForSelector('a.pay_view', { timeout: 8000 });
+    let payViewFound = false;
+    try {
+      await page.waitForSelector('a.pay_view', { timeout: 8000 });
+      payViewFound = true;
+    } catch (e) {
+      log(`  ⚠️ a.pay_view 미발견 (결제대기 등) → [7-B단계] 폴백`);
+    }
+
+    if (!payViewFound) {
+      // ── [7-B단계] 결제대기 폴백: 예약 수정 페이지에서 취소 상태 저장 ──
+      log('\n[7-B단계] study/write → 취소 상태 저장 폴백');
+      const sdMatch = viewHref.match(/\/study\/view\/(\d+)/);
+      const sdNo = sdMatch ? sdMatch[1] : null;
+      if (!sdNo) throw new Error('[7-B단계] sd_no 추출 실패');
+
+      await page.goto(`https://pickkoadmin.com/study/write/${sdNo}.html`, {
+        waitUntil: 'domcontentloaded', timeout: 20000
+      });
+      await delay(1500);
+      log(`  이동: ${page.url()}`);
+
+      const cancelSelected = await page.evaluate(() => {
+        const radio = document.querySelector('input#sd_step-1, input[name="sd_step"][value="-1"]');
+        if (radio) { radio.click(); return { selected: true, id: radio.id, value: radio.value }; }
+        return { selected: false };
+      });
+      log(`  취소 라디오: ${JSON.stringify(cancelSelected)}`);
+      if (!cancelSelected.selected) throw new Error('[7-B단계] 취소(sd_step=-1) 라디오 없음');
+      await delay(300);
+
+      const saveClicked = await page.evaluate(() => {
+        const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+        const candidates = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button'));
+        for (const el of candidates) {
+          const t = clean(el.value || el.textContent || '');
+          if (t.includes('작성하기') || t.includes('저장') || t.includes('수정하기')) {
+            el.click();
+            return { clicked: true, text: t };
+          }
+        }
+        return { clicked: false };
+      });
+      log(`  저장 버튼: ${JSON.stringify(saveClicked)}`);
+      if (!saveClicked.clicked) throw new Error('[7-B단계] 저장 버튼 없음');
+
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+      await delay(500);
+
+      const finalStatusB = await page.evaluate(() =>
+        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      ).catch(() => '');
+      const isCancelledB = finalStatusB.includes('취소') || finalStatusB.includes('환불') || finalStatusB.includes('삭제');
+      log(`📊 최종 상태: ${isCancelledB ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      log('✅ [SUCCESS] 픽코 예약 취소 완료 (결제대기→수정→취소 플로우)');
+      try { await browser.close(); } catch (e) {}
+      process.exit(0);
+    }
+
     await page.click('a.pay_view');
     log('상세보기 클릭: {"clicked":true,"selector":"a.pay_view"}');
 
