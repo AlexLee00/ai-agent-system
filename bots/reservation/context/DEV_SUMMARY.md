@@ -1,7 +1,7 @@
 # DEV_SUMMARY.md - 스카봇 개발 현황 요약
 
 > **목적:** 모델 교체 후 빠른 컨텍스트 복원용. BOOT.md가 자동으로 읽음.
-> **최종 업데이트:** 2026-02-26 (야간)
+> **최종 업데이트:** 2026-02-26 (야간4)
 
 ---
 
@@ -42,12 +42,15 @@
 | `src/pickko-verify.js` | 미검증 예약 재검증 + 자동 등록 (pending + completed/미검증 모두 포함) | ✅ 완성 |
 | `src/pickko-daily-audit.js` | 당일 픽코 등록 사후 감사 (22:00+23:50 launchd) | ✅ 완성 |
 | `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 예약불가 차단 (30분 주기 launchd) | ✅ 신규 완성 |
+| `src/pickko-daily-summary.js` | 일일 예약 요약 + 매출 보고 (09:00/00:00 launchd); `--midnight` 플래그로 강제 자정 모드 가능 | ✅ 신규 완성 |
+| `src/pickko-revenue-confirm.js` | 매출 컨펌 처리 CLI; 미컨펌 daily_summary → room_revenue 누적 + 텔레그램 발송 | ✅ 신규 완성 |
 | `src/pickko-register.js` | 자연어 예약 등록 CLI (stdout JSON) | ✅ 완성 |
 | `src/pickko-member.js` | 신규 회원 가입 CLI (stdout JSON) | ✅ 완성 |
 | `src/start-ops.sh` | OPS 자동 재시작 루프 + 로그 관리 (1000줄 로테이션) | ✅ 업데이트 |
 | `src/run-audit.sh` | pickko-daily-audit 실행 래퍼 (lock + 로테이션) | ✅ 완성 |
 | `src/run-kiosk-monitor.sh` | pickko-kiosk-monitor 실행 래퍼 (lock + 로테이션) | ✅ 신규 |
-| `lib/db.js` | SQLite 싱글턴 + 스키마 초기화 + 도메인 함수 전체 (reservations/cancelled_keys/kiosk_blocks/alerts); getUnverifiedCompletedReservations() 포함 | ✅ 신규 |
+| `lib/db.js` | SQLite 싱글턴 + 스키마 초기화 + 도메인 함수 전체 (reservations/cancelled_keys/kiosk_blocks/alerts/daily_summary/room_revenue); ALTER TABLE 마이그레이션 블록 포함 | ✅ 신규 |
+| `lib/pickko-stats.js` | 픽코 매출통계 스크래퍼; fetchMonthlyRevenue/fetchDailyRevenue/fetchDailyDetail (일별 거래 스터디룸/일반 분리) | ✅ 신규 |
 | `lib/crypto.js` | AES-256-GCM 암호화/복호화 + SHA256 kiosk 해시 키 (Node.js crypto 내장) | ✅ 신규 |
 | `scripts/migrate-to-sqlite.js` | JSON → SQLite 1회 마이그레이션 스크립트 (완료 후 .bak 리네임) | ✅ 신규 |
 | `lib/validation.js` | 전화번호/날짜/시간 정규식 변환 | ✅ 24:00 지원 |
@@ -130,6 +133,8 @@ nohup bash start-ops.sh > /dev/null 2>&1 &
 | `cancelled_keys` | 취소 처리 중복 방지 키 | - |
 | `kiosk_blocks` | 키오스크 예약불가 차단 상태 (구 pickko-kiosk-seen.json) | phone_raw_enc, name_enc |
 | `alerts` | 텔레그램 알람 이력 (구 .pickko-alerts.jsonl) | - |
+| `daily_summary` | 일별 매출 요약 (total_amount/room_amounts/pickko_total/pickko_study_room/general_revenue/confirmed) | - |
+| `room_revenue` | 룸별 확정 매출 누적 (스터디룸A1/A2/B + 일반이용; PK: room+date) | - |
 
 - 암호화: AES-256-GCM, 키 위치: `secrets.json → db_encryption_key`
 - kiosk_blocks PK: SHA256(phoneRaw|date|start + pepper) — 전화번호 비노출
@@ -212,6 +217,10 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-25 | **안정화 8건** | atomic write, rollback, pruneSeenIds, 사이클타임, 슬롯 3회 재시도 등 |
 | 2026-02-25 | pickko-verify needsVerify() | completed+paid/auto 항목도 안전하게 검증 처리 |
 | 2026-02-26 | **JSON → SQLite 마이그레이션 + 개인정보 암호화** | state.db 단일 파일, AES-256-GCM 암호화, 6개 JSON → 4개 DB 테이블 통합 |
+| 2026-02-26 야간 | **pickko-daily-summary.js 신규** | 09:00 예약현황 / 00:00 마감 매출+컨펌 요청, fetchPickkoEntries(결제완료+endDate) + calcAmount(A1/A2 3500원, B 6000원/30분) |
+| 2026-02-26 야간4 | **픽코 매출 분리 구현** | lib/pickko-stats.js 신규(fetchDailyDetail), daily_summary 테이블 pickko_total/pickko_study_room/general_revenue 추가, 00:00 보고에 일반이용 매출 표시, room_revenue 컨펌 시 일반이용 포함 |
+| 2026-02-26 | **session-close 라이브러리 구축** | scripts/lib 모듈화 외 2건 |
+<!-- session-close:2026-02-26:sessionclose-라이브러리-구축 -->
 
 ---
 
@@ -226,7 +235,8 @@ curl -s -X POST http://localhost:8100/ask \
 ✅ pickko-daily-audit  당일 픽코 감사 (22:00+23:50 자동, launchd)
 ✅ pickko-register.js  자연어 예약 등록 CLI — 스카가 직접 실행 가능
 ✅ pickko-member.js    신규 회원 가입 CLI — 스카가 직접 실행 가능
-✅ lib/ 공유 라이브러리  9개 모듈 (db.js + crypto.js 신규 추가)
+✅ pickko-daily-summary  09:00 예약현황 / 00:00 마감 매출+컨펌 (launchd: ai.ska.pickko-daily-summary)
+✅ lib/ 공유 라이브러리  10개 모듈 (pickko-stats.js 신규 추가)
 ✅ state.db            단일 SQLite, AES-256-GCM 암호화 (phone/name)
 ✅ RAG 서버            http://localhost:8100 정상
 ✅ BOOT.md             게이트웨이 재시작 시 자동 실행 + sync 자동 보존
@@ -266,7 +276,7 @@ cd ~/projects/ai-agent-system/bots/reservation && nohup bash src/start-ops.sh > 
 | ~~pickko-daily-audit~~ | ✅ 완료 — launchd 22:00+23:50 | 완료 |
 | ~~pickko-register / pickko-member~~ | ✅ 완료 — 스카 CLI 명령 사용 가능 | 완료 |
 | ~~픽코→네이버 예약 불가 처리~~ | ✅ 완료 — pickko-kiosk-monitor.js (30분 launchd, 차단+해제 자동화) | 완료 |
-| 일일 예약 요약 자동 전송 | 매일 지정 시각 사장님에게 예약 현황 메시지 | 중간 |
+| ~~일일 예약 요약 자동 전송~~ | ✅ 완료 — pickko-daily-summary.js (09:00/00:00 launchd, 매출 분리 + 컨펌) | 완료 |
 | 예약 중복 감지 알림 | 동일 시간대 중복 예약 즉시 경고 | 중간 |
 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 | 장기 검토 |
 | 맥미니 이전 | M4 Pro 구매 후 전체 시스템 이전 | Phase 3 |
