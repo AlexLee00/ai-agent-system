@@ -181,6 +181,14 @@
 - 관련 파일: `docs/coding-guide.md`
 <!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용:end -->
 
+<!-- session-close:2026-02-27:precommit-훅-설치-및-공유-인프라-플랜-완료- -->
+#### 2026-02-27 ⚙️ pre-commit 훅 설치 및 공유 인프라 플랜 완료 검증
+- scripts/pre-commit 설치 (.git/hooks/ 등록 + chmod +x)
+- scripts/setup-hooks.sh 원클릭 설치 스크립트 신규
+- packages/core·playwright-utils·_template 플랜 완료 검증 (전 Phase 완료 확인)
+- 관련 파일: `scripts/pre-commit`, `scripts/setup-hooks.sh`
+<!-- session-close:2026-02-27:precommit-훅-설치-및-공유-인프라-플랜-완료-:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

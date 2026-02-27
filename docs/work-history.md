@@ -51,6 +51,12 @@
 - 전체 봇 로그 마스킹·입력 검증·감사 로그 패턴 추가
 <!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용 -->
 
+### ⚙️ pre-commit 훅 설치 및 공유 인프라 플랜 완료 검증
+- scripts/pre-commit 설치 (.git/hooks/ 등록 + chmod +x)
+- scripts/setup-hooks.sh 원클릭 설치 스크립트 신규
+- packages/core·playwright-utils·_template 플랜 완료 검증 (전 Phase 완료 확인)
+<!-- session-close:2026-02-27:precommit-훅-설치-및-공유-인프라-플랜-완료- -->
+
 ## 2026-02-26
 
 ### 스카봇 — 신규 기능
