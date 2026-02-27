@@ -37,6 +37,12 @@
 
 ---
 
+### ♻️ 코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화
+- coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의
+- doc-patcher.js: patchWorkHistory + patchCodingGuide 추가
+- session-close.js: docsDir 연결
+<!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->
+
 ## 2026-02-26
 
 ### 스카봇 — 신규 기능
