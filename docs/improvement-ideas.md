@@ -29,7 +29,7 @@
 #### 📋 업데이트 검토 (미구현)
 - 📋 **IS-001** 네이버 홈화면 복귀 이슈 — session/cookie 만료 처리 개선 (낮은 우선순위)
 - ✅ **pickko-verify.js 자동 스케줄링** — launchd ai.ska.pickko-verify (08:00/14:00/20:00) 완료
-- 📋 **일일 예약 요약 자동 전송** — 매일 지정 시각에 사장님에게 예약 현황 요약 메시지
+- ✅ **일일 예약 요약 자동 전송** — `pickko-daily-summary.js` 완료 (2026-02-26): 09:00 예약현황 / 00:00 마감 매출+컨펌 launchd 자동화
 - 📋 **예약 중복 감지 알림** — 동일 시간대 중복 예약 발생 시 즉시 경고
 - 📋 **맥미니 이전** — M4 Pro 구매 후 전체 시스템 이전 (Phase 3)
 - 📋 **Playwright → 네이버 API 직접 호출** — UI 변경 취약점 근본 해결 (장기, 검토 중)
@@ -42,7 +42,7 @@
 | 2 | 텔레그램 자연어 명령 개선/테스트 | ✅ 완료 (2026-02-26) | 매출통계 추가 + E2E 27케이스 100% 통과 |
 | 3 | 키오스크 취소 → 네이버 예약불가 자동 해제 | ✅ 완료 (2026-02-26) | pickko-kiosk-monitor.js Phase 2B+3B |
 | 4 | 픽코 예약 취소 자동화 | ✅ 완료 (2026-02-24) | pickko-cancel.js [1-10단계] |
-| 5 | 픽코 키오스크 이용권 추가 | 📋 미구현 | 운영 편의 |
+| 5 | 픽코 키오스크 이용권 추가 | ✅ 완료 (2026-02-27) | pickko-ticket.js 9단계 자동화 |
 | 6 | 픽코 회원 이름 수정 | ✅ 완료 (2026-02-26) | pickko-accurate.js [1.5단계] syncMemberNameIfNeeded() |
 
 **상세:**
@@ -61,8 +61,8 @@
   cancelledEntries 감지 → unblockNaverSlot (clickRoomSuspendedSlot → fillAvailablePopup → verifyBlockInGrid)
 - ✅ **[4] 픽코 예약 취소 자동화** — `pickko-cancel.js` [1-10단계] 완성 (2026-02-24)
   [6-B단계] 0원/이용중 폴백, [7-B단계] 결제대기 폴백 포함
-- 📋 **[5] 픽코 키오스크 이용권 추가 기능** — 픽코 관리자에서 키오스크 이용권 추가 UI 자동화
-  회원별 잔여 이용권 충전/추가 처리
+- ✅ **[5] 픽코 키오스크 이용권 추가 기능** — `pickko-ticket.js` 완료 (2026-02-27)
+  9단계 자동화 + `--discount` 전액할인 / `--reason` 주문메모 / 기간권 중복 방지
 - ✅ **[6] 픽코 회원 이름 수정 기능** — `pickko-accurate.js` [1.5단계] `syncMemberNameIfNeeded()` 완성 (2026-02-26)
   study/write 모달 li[mb_no] 추출 → 통합 타입 스킵 → "회원 정보 수정" 버튼으로 이름 수정
 
@@ -88,6 +88,7 @@
 | CL-003 | 매출 예측 엔진 설계 및 개발 | 높 | 📋 대기 |
 | CL-004 | Dev/OPS 분리 방안 필요성 검토 | 중 | 📋 대기 |
 | CL-005 | 에이전트 활동 GUI 도입 여부 검토 | 낮 | 📋 대기 |
+| CL-006 | 코딩가이드 기준 전체 코드 리팩토링 | 중 | 📋 대기 |
 
 ### CL-001: 작업 히스토리 파일 생성
 - 세션별 주요 작업을 단일 타임라인으로 볼 수 있는 `memory/work-history.md` 신규
@@ -135,6 +136,36 @@
   - **커스텀 웹 UI** (Express + SSE) — 봇별 최근 활동, 예약 현황, 매출 요약
   - **n8n 모니터링 탭** 활용
 - 맥미니 이전 후 리소스 여유가 생기면 본격 검토
+
+### CL-006: 코딩가이드 기준 전체 코드 리팩토링
+**목표**: `docs/coding-guide.md`에 정의된 원칙을 기존 코드에 소급 적용하여 일관성 확보
+
+**리팩토링 체크 항목:**
+- **Security by Design**
+  - `loadSecrets(requiredKeys)` 강제 검증 패턴 미적용 파일 적용
+  - 로그 마스킹 (`maskPhone`, `maskKey`, `maskEmail`) 누락 부분 추가
+  - 입력 검증 누락 (`validateDate`, `validateRoomId` 등) 경계값 보완
+- **모듈 통일**
+  - `lib/cli.js` (`outputResult`, `fail`) 미사용 src 파일 전환
+  - `lib/args.js` (`parseArgs`) 자체 구현 남은 파일 전환
+  - `lib/utils.js` (`delay`, `log`) 인라인 중복 제거
+- **에러 처리**
+  - `try/catch` 누락된 Playwright 호출 보완
+  - exit code 불일치 (`process.exit(0)` vs 실패 흐름) 점검
+- **코드 일관성**
+  - 함수명·변수명 네이밍 컨벤션 (`camelCase`, 동사+명사) 통일
+  - 주석 언어 혼재 (영어/한국어) 정리 — 한국어 주석으로 통일
+  - `const` vs `let` 오용 정리
+
+**대상 파일 (우선순위 순):**
+1. `src/naver-monitor.js` — 가장 복잡, 핵심 로직
+2. `src/pickko-accurate.js` — 픽코 자동 등록 메인
+3. `src/pickko-cancel.js` — 취소 플로우
+4. `src/pickko-kiosk-monitor.js` — 키오스크 모니터
+5. `src/pickko-daily-summary.js`, `src/pickko-daily-audit.js`
+6. 나머지 src/*.js 전체
+
+**진행 방식**: 파일 단위로 순차 진행, 기능 변경 없이 구조 개선만
 
 ---
 
