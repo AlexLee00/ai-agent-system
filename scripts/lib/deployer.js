@@ -44,28 +44,40 @@ function deployOpenclaw(bot, botId, target, contextDir) {
 }
 
 function generateOpenclawBoot(bot, botId, target, workspace) {
-  const fileList = normalizeFiles(target.files)
-    .map(({ dest }, i) => `${i + 1}. \`${dest}\``)
-    .join('\n');
+  // BOOT 속도 최적화:
+  // - IDENTITY.md + MEMORY.md → 인라인 포함 (별도 LLM 읽기 턴 불필요)
+  // - CLAUDE_NOTES.md → 1회 읽기 (행동 지침, 31KB라 인라인 제외)
+  // - DEV_SUMMARY.md / HANDOFF.md → BOOT에서 제외 (필요 시 on-demand 참조)
+  // - --sync 단계 제거 (BOOT 시 불필요한 1턴 절감)
+  // 결과: 7턴(~7분) → 2턴(~2분)
+  const INLINE_FILES = ['IDENTITY.md', 'MEMORY.md'];
+  const READ_FILES   = ['CLAUDE_NOTES.md'];
+
+  // 인라인 섹션 빌드 (배포된 workspace 파일에서 읽음)
+  let inlinedSections = '';
+  for (const filename of INLINE_FILES) {
+    const filePath = path.join(workspace, filename);
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      inlinedSections += `\n\n---\n\n## 📄 ${filename} (인라인)\n\n${fileContent}`;
+    }
+  }
+
+  const readList = READ_FILES.map((f, i) => `${i + 1}. \`${f}\``).join('\n');
 
   const content = `# BOOT - ${bot.name}
 
 > 자동 생성 파일 (deploy-context.js). 직접 수정하지 마세요.
 > 수정 필요 시: bots/${bot.contextPath.split('/').slice(-2, -1)[0]}/context/ 수정 후 재배포.
+${inlinedSections}
+
+---
 
 ## 시작 절차
 
-### 1단계: 이전 세션 컨텍스트 보존 (파일 읽기 전 먼저 실행)
+아래 파일 **1개만** 읽으세요 (IDENTITY/MEMORY는 위에 인라인 포함됨):
 
-아래 명령을 실행하여 이전 모델의 워크스페이스 변경사항을 context/에 저장하세요:
-
-\`\`\`bash
-node ~/projects/ai-agent-system/scripts/deploy-context.js --bot=${botId} --sync
-\`\`\`
-
-### 2단계: 파일 순서대로 읽기
-
-${fileList}
+${readList}
 
 ## 봇 정보
 

@@ -141,6 +141,28 @@
 - 관련 파일: `src/naver-monitor.js`, `context/CLAUDE_NOTES.md`
 <!-- session-close:2026-02-27:bug007-수정-boot-파일명-누출-방지:end -->
 
+<!-- session-close:2026-02-27:libargsjs-불리언-플래그-지원-bugreport -->
+#### 2026-02-27 ♻️ lib/args.js 불리언 플래그 지원 + bug-report.js parseArgs 통합
+- lib/args.js: --key 불리언 플래그 지원 (next가 --로 시작하면 true)
+- bug-report.js: 인라인 parseArgs 제거 → require('../lib/args') 통합
+- 관련 파일: `bots/reservation/lib/args.js`, `bots/reservation/src/bug-report.js`
+<!-- session-close:2026-02-27:libargsjs-불리언-플래그-지원-bugreport:end -->
+
+<!-- session-close:2026-02-27:boot-속도-최적화-7분50초 -->
+#### 2026-02-27 ♻️ BOOT 속도 최적화 — 7분→50초
+- deployer.js generateOpenclawBoot: IDENTITY+MEMORY 인라인, --sync 제거, DEV_SUMMARY/HANDOFF BOOT 제외
+- BOOT 7턴→2턴 (50초, 8.4× 개선)
+- 관련 파일: `scripts/lib/deployer.js`
+<!-- session-close:2026-02-27:boot-속도-최적화-7분50초:end -->
+
+<!-- session-close:2026-02-27:boot-시간-재확인-54초-2회-연속-검증 -->
+#### 2026-02-27 ⚙️ BOOT 시간 재확인 — 54초 2회 연속 검증
+- BOOT durationMs=54121 확인 (gemini-2.5-flash, 2회 연속)
+- 로그 파일 경로 확인: /tmp/openclaw/openclaw-YYYY-MM-DD.log
+- 모니터링 명령 개선: gateway.err.log → /tmp/openclaw/ 파일 참조
+- 관련 파일: `scripts/lib/deployer.js`
+<!-- session-close:2026-02-27:boot-시간-재확인-54초-2회-연속-검증:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

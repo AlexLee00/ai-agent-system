@@ -30,6 +30,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { parseArgs } = require('../lib/args');
 
 const WORKSPACE    = process.env.OPENCLAW_WORKSPACE
   || path.join(process.env.HOME, '.openclaw', 'workspace');
@@ -59,22 +60,6 @@ function nextId(list, prefix) {
     .filter(n => !isNaN(n));
   const next = nums.length === 0 ? 1 : Math.max(...nums) + 1;
   return `${prefix}-${String(next).padStart(3, '0')}`;
-}
-
-// ─── args 파서 ────────────────────────────────────────────────────────
-
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) {
-      const key  = a.slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) { args[key] = next; i++; }
-      else                                { args[key] = true; }
-    }
-  }
-  return args;
 }
 
 // ─── 표시 헬퍼 ────────────────────────────────────────────────────────
@@ -333,7 +318,7 @@ function cmdMaintList(args) {
 
 // ─── 메인 ────────────────────────────────────────────────────────────
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv);
 
 if      (args.new)           cmdNew(args);
 else if (args.action)        cmdAction(args);

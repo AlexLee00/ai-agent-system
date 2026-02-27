@@ -4,9 +4,13 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) continue;
     const [k, vRaw] = a.slice(2).split('=');
-    const v = vRaw ?? argv[i + 1];
-    if (vRaw === undefined) i++;
-    out[k] = v;
+    if (vRaw !== undefined) {
+      out[k] = vRaw;
+    } else {
+      const next = argv[i + 1];
+      if (next && !next.startsWith('--')) { out[k] = next; i++; }
+      else                                { out[k] = true; }
+    }
   }
   return out;
 }
