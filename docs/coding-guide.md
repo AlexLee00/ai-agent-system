@@ -11,17 +11,31 @@
 
 ---
 
-## 0. 핵심 원칙 (모든 코드에 적용)
+## 0. 핵심 원칙 (모든 코드에 예외 없이 적용)
+
+### 클린 코드 원칙
 
 | 원칙 | 내용 |
 |------|------|
 | **단일 책임** | 함수 하나 = 역할 하나. 50줄 넘으면 분리 검토 |
-| **비밀 금지** | 하드코딩 비밀번호·토큰 절대 금지. `secrets.json` + `lib/secrets.js` |
 | **경로 상수화** | 경로 문자열 반복 금지. `WORKSPACE`, `DB_PATH` 상수 사용 |
-| **외부 격리** | 텔레그램·RAG 등 외부 호출은 반드시 `try/catch` 격리 |
 | **원자적 쓰기** | 파일 저장은 `lib/files.js saveJson()` 사용 (직접 `writeFileSync` 금지) |
 | **명시적 실패** | 에러는 삼키지 말고 로그 + 텔레그램 알림 |
 | **DEV/OPS 분리** | `MODE=ops`일 때만 실제 실행. 기본은 DEV(관찰 전용) |
+| **외부 격리** | 텔레그램·RAG 등 외부 호출은 반드시 `try/catch` 격리 |
+
+### 보안 원칙 (전체 봇 공통 필수)
+
+| 원칙 | 내용 |
+|------|------|
+| **시크릿 금지** | 코드·환경변수·로그에 API키·비밀번호 절대 포함 금지. `secrets.json`만 사용 |
+| **로그 마스킹** | 전화번호·이름·API키 로그 출력 시 반드시 마스킹 |
+| **입력 검증** | 외부 입력(사용자·API·DB) 항상 검증 후 사용 |
+| **인젝션 방지** | `spawn` 배열 방식 사용. `exec` 문자열 방식 금지 |
+| **최소 권한** | API 키는 필요한 권한만. 출금·삭제 권한 기본 금지 |
+| **감사 로그** | 중요 작업(주문·취소·변경)은 DB에 기록 — 추적 가능해야 함 |
+| **암호화** | 개인정보·금융정보 DB 저장 시 AES-256-GCM 암호화 필수 |
+| **gitignore** | `secrets.json`, `*.db`, `*.jsonl`, `.env` 커밋 절대 금지 |
 
 ---
 
@@ -86,20 +100,33 @@ bots/_template/         새 봇 스캐폴딩
 
 ---
 
-## 2. 인증 정보 관리
+## 2. 시크릿 & 보안 관리
 
-### secrets.json 패턴
+> ### 🔒 Security by Design 원칙
+>
+> **보안은 "기억해서 지키는 규칙"이 아니라 "어기면 코드가 실행되지 않는 구조"로 만든다.**
+>
+> IT를 잘 모르는 사람도, 바쁜 상황에서도, 실수로라도 보안을 우회할 수 없게 코드 자체가 차단한다.
+>
+> - ❌ `secrets.json` 없이 봇 시작 → 즉시 종료
+> - ❌ 필수 키 누락 → 즉시 종료
+> - ❌ DEV 모드에서 실제 주문 → 즉시 거부 (코드 레벨)
+> - ❌ 한도 초과 주문 → 즉시 거부 (설정값이 아닌 코드 레벨)
+> - ❌ `secrets.json` git 추가 시도 → pre-commit hook이 차단
 
-```javascript
-// ✅ lib/secrets.js 사용
-const { loadSecrets } = require('../lib/secrets');
-const SECRETS = loadSecrets();
-const NAVER_ID  = SECRETS.naver_id;
-const PICKKO_ID = SECRETS.pickko_id;
+### 2-1. secrets.json 계층 구조
+
+봇 종류에 따라 secrets.json을 **분리 저장**한다. 하나의 파일에 모든 시크릿을 몰아두지 않는다.
+
+```
+bots/reservation/secrets.json    ← 스카봇 전용 (네이버, 픽코, 텔레그램)
+bots/investment/secrets.json     ← 투자봇 전용 (거래소 API, 텔레그램)
+# 절대 루트에 secrets.json 두지 않을 것
 ```
 
-### secrets.json 전체 키 목록
+### 2-2. secrets.json 키 목록 (봇별)
 
+**스카봇 (`bots/reservation/secrets.json`)**
 ```json
 {
   "naver_id": "",
@@ -110,17 +137,146 @@ const PICKKO_ID = SECRETS.pickko_id;
   "pickko_url": "",
   "telegram_bot_token": "",
   "telegram_chat_id": "",
-  "db_encryption_key": "",     // 64자 hex (AES-256 키)
-  "db_key_pepper":    ""       // kiosk_blocks SHA256 해시 pepper
+  "db_encryption_key": "",     // 64자 hex (AES-256-GCM 키)
+  "db_key_pepper": ""          // SHA256 해시 pepper
 }
 ```
 
-### 금지 패턴
+**투자봇 (`bots/investment/secrets.json`)**
+```json
+{
+  "binance_api_key": "",        // 거래 권한만, 출금 권한 ❌
+  "binance_api_secret": "",
+  "upbit_access_key": "",       // 거래 권한만, 출금 권한 ❌
+  "upbit_secret_key": "",
+  "telegram_bot_token": "",     // 투자봇 전용 별도 봇 토큰
+  "telegram_chat_id": "",
+  "db_encryption_key": "",      // 스카봇과 다른 키 사용
+  "db_key_pepper": "",
+  "max_order_usdt": 100,        // 최대 1회 주문 한도 (USDT) — 코드 아닌 설정으로 관리
+  "max_position_usdt": 500      // 최대 포지션 한도 (USDT)
+}
+```
+
+### 2-3. 시크릿 로딩 — 강제 검증 패턴
+
+`lib/secrets.js`는 단순한 파일 로더가 아니라 **보안 게이트**다.
+필수 키가 없거나 비어 있으면 봇 자체가 시작되지 않는다.
 
 ```javascript
-// ❌ 절대 금지
-const NAVER_PW = 'password123';
+// lib/secrets.js — 이렇게 구현되어야 한다
+function loadSecrets(requiredKeys = []) {
+  let secrets;
+  try {
+    secrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8'));
+  } catch {
+    console.error('❌ secrets.json 없음 또는 파싱 실패 — 봇 시작 불가');
+    process.exit(1);  // 여기서 무조건 종료
+  }
+
+  // 필수 키 누락 → 시작 불가
+  for (const key of requiredKeys) {
+    if (!secrets[key] || secrets[key] === '') {
+      console.error(`❌ secrets.json 필수 키 누락: "${key}" — 봇 시작 불가`);
+      process.exit(1);
+    }
+  }
+  return secrets;
+}
+
+// ✅ 사용법 — 봇 시작 시 필수 키 명시
+const SECRETS = loadSecrets([
+  'binance_api_key', 'binance_api_secret',
+  'telegram_bot_token', 'db_encryption_key'
+]);
+// → 위 키 중 하나라도 없으면 즉시 종료, 이후 코드 실행 불가
 ```
+
+```javascript
+// ❌ 절대 금지 패턴 3가지
+const API_KEY = 'abc123...';              // 하드코딩
+const API_KEY = process.env.BINANCE_KEY;  // 환경변수 (로그 노출 위험)
+log(`key: ${SECRETS.binance_api_key}`);   // 로그 출력
+```
+
+### 2-4. 거래소 API 키 권한 원칙 (투자봇 필수)
+
+| 권한 | 허용 | 이유 |
+|------|------|------|
+| 잔고 조회 | ✅ | 필수 |
+| 주문 생성/취소 | ✅ | 필수 |
+| **출금** | ❌ **절대 금지** | 탈취 시 전액 인출 가능 |
+| **다른 주소로 전송** | ❌ **절대 금지** | 동일 이유 |
+| IP 화이트리스트 | ✅ **필수 설정** | 맥미니 고정 IP or Tailscale IP만 허용 |
+
+> 거래소 설정에서 API 키 생성 시 **출금 권한 체크 금지**, **IP 제한 필수**.
+
+### 2-4-B. pre-commit hook — git 실수 자동 차단
+
+사람이 실수로 `git add secrets.json`을 해도 커밋이 막힌다.
+
+```bash
+# .git/hooks/pre-commit (실행 권한 필요: chmod +x)
+#!/bin/bash
+
+BLOCKED=(
+  "secrets.json"
+  ".env"
+  "state.db"
+  "*.jsonl"
+)
+
+for pattern in "${BLOCKED[@]}"; do
+  if git diff --cached --name-only | grep -q "$pattern"; then
+    echo "❌ 보안 차단: '$pattern' 파일은 커밋할 수 없습니다."
+    echo "   git reset HEAD $pattern 으로 스테이징을 취소하세요."
+    exit 1
+  fi
+done
+```
+
+```bash
+# 프로젝트 초기 1회 설정
+cp scripts/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+### 2-5. gitignore 필수 항목
+
+```gitignore
+# 시크릿
+**/secrets.json
+**/*.env
+**/.env*
+
+# DB (개인정보 + 거래 데이터)
+**/state.db
+**/state.db-wal
+**/state.db-shm
+
+# 런타임 파일
+**/*.jsonl
+**/pending-telegrams.jsonl
+
+# 로그 (거래 내역 포함 가능)
+**/logs/
+*.log
+```
+
+### 2-6. 키 노출 사고 대응 절차
+
+API 키가 노출됐거나 의심될 때 즉시 실행:
+
+```
+1. 거래소 로그인 → API 관리 → 해당 키 즉시 삭제
+2. 활성 주문 전체 취소
+3. 텔레그램으로 사고 알림
+4. 새 API 키 발급 (IP 제한 재확인)
+5. secrets.json 교체 후 서비스 재시작
+6. 거래 이력 확인 (무단 거래 여부)
+```
+
+---
 
 ---
 
@@ -565,6 +721,175 @@ const blockKey = hashKioskKey(phoneRaw, date, start, SECRETS.db_key_pepper);
 
 ## 16. 시큐어 코딩
 
+### 16-A. 투자봇 전용 보안 수칙 ⚠️
+
+> 실제 자금이 오가는 코드. 아래 수칙은 **선택이 아닌 필수**.
+
+#### 주문 실행 전 이중 검증
+
+```javascript
+// ✅ 필수 패턴 — 주문 직전 가드 체크
+function validateOrder(order, secrets) {
+  // 1. 한도 초과 차단
+  if (order.usdt > secrets.max_order_usdt) {
+    throw new Error(`주문 한도 초과: ${order.usdt} > ${secrets.max_order_usdt} USDT`);
+  }
+  // 2. OPS 모드 확인
+  if (process.env.MODE !== 'ops') {
+    throw new Error('DEV 모드에서는 실제 주문 불가. MODE=ops 필요.');
+  }
+  // 3. 심볼 화이트리스트 확인
+  const ALLOWED_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'];
+  if (!ALLOWED_SYMBOLS.includes(order.symbol)) {
+    throw new Error(`허용되지 않은 심볼: ${order.symbol}`);
+  }
+}
+```
+
+#### 킬 스위치 (긴급 전체 청산)
+
+```javascript
+// 모든 투자봇 모듈에 킬 스위치 체크 포함
+const KILL_SWITCH_FILE = path.join(WORKSPACE, 'KILL_SWITCH');
+
+function checkKillSwitch() {
+  if (fs.existsSync(KILL_SWITCH_FILE)) {
+    log('🚨 킬 스위치 활성화 — 모든 주문 중단');
+    // 활성 포지션 전체 시장가 청산
+    await closeAllPositions();
+    process.exit(99);
+  }
+}
+// 주문 루프마다 호출
+```
+
+```bash
+# 긴급 상황 시 킬 스위치 활성화
+touch ~/.openclaw/workspace/KILL_SWITCH
+```
+
+#### 거래 감사 로그 (Audit Trail)
+
+```javascript
+// ✅ 모든 주문 시도를 DB에 기록 — 성공/실패 무관
+await logTrade({
+  timestamp: new Date().toISOString(),
+  symbol: order.symbol,
+  side: order.side,          // 'BUY' | 'SELL'
+  qty: order.qty,
+  price: order.price,
+  status: 'attempted',       // → 'filled' | 'rejected' | 'error'
+  orderId: null,             // 거래소 응답 후 업데이트
+  reason: order.reason,      // LLM 판단 근거 (간략)
+});
+```
+
+#### 포지션 한도 초과 방지
+
+```javascript
+// 신규 주문 전 현재 포지션 합산 확인
+const totalExposure = await getTotalPositionUsdt();
+if (totalExposure + order.usdt > secrets.max_position_usdt) {
+  await sendTelegram(`⚠️ 포지션 한도 도달: ${totalExposure} USDT — 주문 취소`);
+  return;
+}
+```
+
+#### 텔레그램 주문 확인 알림 (실거래 필수)
+
+```javascript
+// ✅ 모든 체결 즉시 알림
+await sendTelegram(
+  `📊 주문 체결\n` +
+  `${order.side} ${order.qty} ${order.symbol}\n` +
+  `체결가: $${fill.price}\n` +
+  `금액: $${fill.usdt} USDT\n` +
+  `포지션: $${totalExposure} USDT`
+);
+```
+
+#### DEV 모드 강제 시뮬레이션 (우회 불가 구조)
+
+```javascript
+// ✅ DEV 모드 차단은 개별 함수가 아닌 Exchange 클래스 레벨에서 적용
+// → 어떤 코드도 실수로 실거래 API를 호출할 수 없음
+class SafeExchange {
+  constructor(secrets) {
+    this._isOps = process.env.MODE === 'ops';
+    if (this._isOps) {
+      log('⚠️ OPS 모드 — 실제 주문 활성화');
+    } else {
+      log('🔒 DEV 모드 — 모든 주문 시뮬레이션');
+    }
+    this._client = this._isOps ? new RealExchangeClient(secrets) : null;
+  }
+
+  async createOrder(order) {
+    validateOrder(order, this._limits);  // 한도 검증 (여기서도 차단)
+    if (!this._isOps) {
+      return { simulated: true, orderId: `SIM-${Date.now()}`, ...order };
+    }
+    return await this._client.createOrder(order);
+  }
+}
+// → new SafeExchange(secrets) 한 번만 생성하면
+//   이후 모든 주문은 자동으로 DEV/OPS 분기 처리됨
+```
+
+---
+
+### 16-B. 전체 봇 공통 보안 패턴
+
+#### 로그 마스킹 (모든 봇 공통)
+
+```javascript
+// ✅ 개인정보·시크릿 로그 마스킹 필수
+const maskPhone  = p  => p ? `${p.slice(0,3)}****${p.slice(-4)}` : '';
+const maskKey    = k  => k ? `${k.slice(0,4)}...${k.slice(-4)}`  : '';
+const maskEmail  = e  => e ? `${e.split('@')[0].slice(0,2)}***@${e.split('@')[1]}` : '';
+
+log(`처리 중: ${maskPhone(phone)}`);    // 010****0586
+log(`API Key: ${maskKey(apiKey)}`);     // abcd...wxyz
+
+// ❌ 절대 금지
+log(`전화번호: ${phone}`);
+log(`API Key: ${SECRETS.binance_api_key}`);
+console.log(SECRETS);
+```
+
+#### 입력 검증 (시스템 경계에서 반드시 실행)
+
+```javascript
+// ✅ 외부 입력은 항상 검증 후 사용 (LLM 출력, 사용자 입력, API 응답 포함)
+function validateInput({ phone, date, amount }) {
+  if (phone && !/^010-?\d{4}-?\d{4}$/.test(phone))
+    throw new Error(`유효하지 않은 전화번호: ${maskPhone(phone)}`);
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    throw new Error(`유효하지 않은 날짜: ${date}`);
+  if (amount !== undefined && (isNaN(amount) || amount < 0))
+    throw new Error(`유효하지 않은 금액: ${amount}`);
+}
+```
+
+#### 감사 로그 패턴 (중요 작업 필수)
+
+```javascript
+// ✅ 예약 등록·취소, 주문 실행 등 모든 중요 작업 기록
+await db.run(`
+  INSERT INTO audit_log (action, actor, target, result, detail, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`, [
+  'pickko_register',          // 작업 종류
+  'naver-monitor',            // 실행 주체
+  maskPhone(phone),           // 대상 (마스킹)
+  'success',                  // 결과
+  JSON.stringify({ date, room, start }), // 상세 (개인정보 제외)
+  new Date().toISOString()
+]);
+```
+
+---
+
 ### 명령어 인젝션 방지
 
 ```javascript
@@ -612,18 +937,31 @@ try {
 
 ## 17. 새 기능 추가 체크리스트
 
-- [ ] `lib/secrets.js` 패턴으로 인증 정보 로드
-- [ ] `WORKSPACE` 상수로 경로 처리 (하드코딩 금지)
+### 공통
+
+- [ ] `lib/secrets.js` 패턴으로 인증 정보 로드 (하드코딩 절대 금지)
+- [ ] `WORKSPACE` 상수로 경로 처리
 - [ ] DEV/OPS 분기 포함 (`MODE === 'ops'`)
 - [ ] NLP CLI라면 stdout JSON 컨벤션 적용
-- [ ] `lib/telegram.js`로 텔레그램 발송 (openclaw deliver 사용 금지)
+- [ ] `lib/telegram.js`로 텔레그램 발송
 - [ ] 개인정보 컬럼 암호화 (`lib/crypto.js`)
-- [ ] 실패 시 retries 증가 + MAX_RETRIES(5) 체크
-- [ ] Playwright 셀렉터 폴백 체인 구성
-- [ ] launchd 등록 필요하면 run-*.sh 래퍼 + plist 작성
+- [ ] 외부 호출 `try/catch` 격리
+- [ ] 실패 시 retries 증가 + MAX_RETRIES 체크
 - [ ] 개인정보 포함 파일 gitignore 확인
-- [ ] 테스트 후 `node scripts/deploy-context.js --bot=reservation`
-- [ ] 세션 마감 `node scripts/session-close.js --bot=reservation ...`
+- [ ] 세션 마감 `node scripts/session-close.js --bot=<봇ID> ...`
+
+### 투자봇 추가 체크리스트 ⚠️ (실거래 전 필수)
+
+- [ ] 거래소 API 키: **출금 권한 없음** + **IP 화이트리스트** 설정 확인
+- [ ] `validateOrder()` 가드: 한도·OPS모드·심볼 화이트리스트 검증
+- [ ] 킬 스위치 체크 `checkKillSwitch()` 주문 루프에 포함
+- [ ] 모든 주문 시도 감사 로그(Audit Trail) DB 기록
+- [ ] 포지션 한도 초과 방지 로직 포함
+- [ ] 체결 즉시 텔레그램 알림
+- [ ] DEV 모드 시뮬레이션 반환 (실제 API 차단)
+- [ ] `secrets.json` `max_order_usdt` / `max_position_usdt` 설정
+- [ ] 실거래 전 **페이퍼 트레이딩** 1주일 이상 검증
+- [ ] 백테스팅 결과 확인 (샤프비율 > 1.0, MDD < 20%)
 
 ---
 
@@ -634,4 +972,6 @@ try {
 | 2026-02-24 | 최초 작성 (secrets, WORKSPACE, MAX_RETRIES, archive 패턴) |
 | 2026-02-27 | 전면 업데이트 — SQLite/DB, telegram 직접 발송, CLI stdout JSON, args.js, exit code, launchd, OpenClaw/LLM 연동, 모델 비교표, 암호화 패턴 추가 |
 | 2026-02-27 | **코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화** — coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의 외 2건 |
+| 2026-02-27 | **코딩가이드 Security by Design 전면 적용** — Security by Design 원칙 선언 (어기면 코드가 실행 안 되는 구조) 외 4건 |
+<!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용 -->
 <!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->

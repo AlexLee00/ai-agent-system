@@ -43,6 +43,14 @@
 - session-close.js: docsDir 연결
 <!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->
 
+### ♻️ 코딩가이드 Security by Design 전면 적용
+- Security by Design 원칙 선언 (어기면 코드가 실행 안 되는 구조)
+- lib/secrets.js 강제 검증 패턴 (필수 키 누락 시 즉시 종료)
+- pre-commit hook 차단 패턴 (secrets.json git 커밋 자동 차단)
+- SafeExchange 클래스 레벨 DEV/OPS 분리 (우회 불가)
+- 전체 봇 로그 마스킹·입력 검증·감사 로그 패턴 추가
+<!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용 -->
+
 ## 2026-02-26
 
 ### 스카봇 — 신규 기능
