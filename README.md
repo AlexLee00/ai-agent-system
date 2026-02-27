@@ -217,6 +217,54 @@ node scripts/deploy-context.js --bot=reservation --sync  # 역동기화
 
 ---
 
+## 맥북 재부팅 절차
+
+### 재부팅 전 체크리스트
+
+```bash
+# 1. 진행 중인 작업 저장 및 커밋
+cd ~/projects/ai-agent-system
+git status                          # 미커밋 변경사항 확인
+# 변경사항 있으면: git add . && git commit -m "..." && git push
+
+# 2. 스카 OPS 안전 종료
+skastatus                           # 실행 중인 서비스 확인
+launchctl stop ai.ska.naver-monitor
+launchctl stop ai.openclaw.gateway
+
+# 3. 재부팅
+sudo reboot
+```
+
+### 재부팅 후 확인 절차
+
+```bash
+# 1. 서비스 자동 재시작 확인 (launchd KeepAlive=true → 자동)
+skastatus                           # ai.ska.* 서비스 PID 확인
+# 예상 출력: 숫자 PID가 보이면 정상
+
+# 2. 스카 BOOT 완료 확인 (약 60초 소요)
+bootlog                             # durationMs=5xxxx 보이면 완료
+
+# 3. 텔레그램에서 스카 응답 확인
+# → "안녕" 메시지 전송 후 응답 확인
+
+# 4. OpenClaw 게이트웨이 상태
+launchctl list | grep openclaw      # PID 있으면 정상
+```
+
+### launchd 자동 재시작 서비스 목록
+
+| 서비스 | 역할 | 재시작 방식 |
+|--------|------|-----------|
+| `ai.openclaw.gateway` | 스카 LLM 게이트웨이 | 자동 (KeepAlive) |
+| `ai.ska.naver-monitor` | 네이버 예약 5분 모니터링 | 자동 (KeepAlive) |
+| `ai.ska.kiosk-monitor` | 키오스크 30분 모니터링 | 자동 (KeepAlive) |
+| `ai.ska.pickko-verify` | 픽코 검증 (08/14/20시) | 자동 (StartCalendarInterval) |
+| `ai.ska.daily-audit` | 일일 감사 (00/22/23시) | 자동 (StartCalendarInterval) |
+
+---
+
 ## iPad SSH 접속 가이드
 
 ```bash
