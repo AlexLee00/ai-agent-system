@@ -227,6 +227,12 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-27 | **완전 백그라운드 모드 전환 (launchd + Pickko headless)** | lib/browser.js PICKKO_HEADLESS 환경변수 지원 외 2건 |
 | 2026-02-27 | **시스템 설계 v2.0 + iPad 원격 접속 + 투자봇 설계** | SYSTEM_DESIGN.md v2.0 전면 개정 (봇별 LLM 확정·투자팀 3봇·메모리 할당) 외 8건 |
 | 2026-02-27 | **BUG-007 수정 + BOOT 파일명 누출 방지** | BUG-007: protocolTimeout 30초 + Promise.race 8초 타임아웃 외 2건 |
+| 2026-02-27 | **lib/args.js 불리언 플래그 지원 + bug-report.js parseArgs 통합** | lib/args.js: --key 불리언 플래그 지원 (next가 --로 시작하면 true) 외 1건 |
+| 2026-02-27 | **BOOT 속도 최적화 — 7분→50초** | deployer.js generateOpenclawBoot: IDENTITY+MEMORY 인라인, --sync 제거, DEV_SUMMARY/HANDOFF BOOT 제외 외 1건 |
+| 2026-02-27 | **BOOT 시간 재확인 — 54초 2회 연속 검증** | BOOT durationMs=54121 확인 (gemini-2.5-flash, 2회 연속) 외 2건 |
+<!-- session-close:2026-02-27:boot-시간-재확인-54초-2회-연속-검증 -->
+<!-- session-close:2026-02-27:boot-속도-최적화-7분50초 -->
+<!-- session-close:2026-02-27:libargsjs-불리언-플래그-지원-bugreport -->
 <!-- session-close:2026-02-27:bug007-수정-boot-파일명-누출-방지 -->
 <!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계 -->
 <!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko- -->
