@@ -100,9 +100,12 @@ if (!flags.deployOnly) {
   log(`   contextDir: ${contextDir}`);
   log(`   memoryDir: ${claudeMemoryDir}`);
 
+  const docsDir = path.join(ROOT, 'docs');
+
   const patchResults = patchDocs(botId, note, {
     contextDir,
     claudeMemoryDir,
+    docsDir,
     dryRun: flags.dryRun,
   });
 

@@ -1,7 +1,27 @@
 # 코딩 가이드 — ai-agent-system
 
-> 새 기능 추가 / 버그 수정 / 신규 봇 개발 전 반드시 참조.
+> **목적**: 코드 분량이 늘어나도 일관성을 유지하고, 환경변수·라이브러리·모듈 단위로
+> 클린 코드를 적용해 모든 봇 개발의 표준을 정의한다.
+>
+> **적용 범위**: 모든 봇 (`reservation`, `investment`, `secretary` …) + 공유 인프라 (`packages/`)
+>
+> **언제 참조**: 새 기능 추가 / 버그 수정 / 신규 봇 개발 / 코드 리뷰 전 **반드시** 참조.
+>
 > 마지막 업데이트: 2026-02-27
+
+---
+
+## 0. 핵심 원칙 (모든 코드에 적용)
+
+| 원칙 | 내용 |
+|------|------|
+| **단일 책임** | 함수 하나 = 역할 하나. 50줄 넘으면 분리 검토 |
+| **비밀 금지** | 하드코딩 비밀번호·토큰 절대 금지. `secrets.json` + `lib/secrets.js` |
+| **경로 상수화** | 경로 문자열 반복 금지. `WORKSPACE`, `DB_PATH` 상수 사용 |
+| **외부 격리** | 텔레그램·RAG 등 외부 호출은 반드시 `try/catch` 격리 |
+| **원자적 쓰기** | 파일 저장은 `lib/files.js saveJson()` 사용 (직접 `writeFileSync` 금지) |
+| **명시적 실패** | 에러는 삼키지 말고 로그 + 텔레그램 알림 |
+| **DEV/OPS 분리** | `MODE=ops`일 때만 실제 실행. 기본은 DEV(관찰 전용) |
 
 ---
 
@@ -613,3 +633,5 @@ try {
 |------|------|
 | 2026-02-24 | 최초 작성 (secrets, WORKSPACE, MAX_RETRIES, archive 패턴) |
 | 2026-02-27 | 전면 업데이트 — SQLite/DB, telegram 직접 발송, CLI stdout JSON, args.js, exit code, launchd, OpenClaw/LLM 연동, 모델 비교표, 암호화 패턴 추가 |
+| 2026-02-27 | **코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화** — coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의 외 2건 |
+<!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->

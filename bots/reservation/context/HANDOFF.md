@@ -163,6 +163,14 @@
 - 관련 파일: `scripts/lib/deployer.js`
 <!-- session-close:2026-02-27:boot-시간-재확인-54초-2회-연속-검증:end -->
 
+<!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->
+#### 2026-02-27 ♻️ 코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화
+- coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의
+- doc-patcher.js: patchWorkHistory + patchCodingGuide 추가
+- session-close.js: docsDir 연결
+- 관련 파일: `docs/coding-guide.md`, `scripts/lib/doc-patcher.js`, `scripts/session-close.js`
+<!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

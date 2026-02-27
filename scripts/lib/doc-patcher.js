@@ -14,11 +14,12 @@ const path = require('path');
  * @param {object} opts
  *   @param {string} opts.contextDir       - 절대 경로 (bots/reservation/context)
  *   @param {string} opts.claudeMemoryDir  - 절대 경로 (~/.claude/.../memory)
+ *   @param {string} [opts.docsDir]        - 절대 경로 (docs/)
  *   @param {boolean} [opts.dryRun]        - true면 변경 없이 diff만 출력
  * @returns {Array<{file: string, status: 'patched'|'skipped'|'error'|'dry', detail: string}>}
  */
 function patchDocs(botId, note, opts) {
-  const { contextDir, claudeMemoryDir, dryRun = false } = opts;
+  const { contextDir, claudeMemoryDir, docsDir, dryRun = false } = opts;
   const results = [];
 
   // 1. HANDOFF.md 패치
@@ -32,6 +33,18 @@ function patchDocs(botId, note, opts) {
   // 3. MEMORY.md 패치
   const memoryPath = path.join(claudeMemoryDir, 'MEMORY.md');
   results.push(patchMemory(memoryPath, note, dryRun));
+
+  // 4. work-history.md 패치 (docs/ 또는 symlink 경유)
+  const workHistoryPath = docsDir
+    ? path.join(docsDir, 'work-history.md')
+    : path.join(claudeMemoryDir, 'work-history.md');
+  results.push(patchWorkHistory(workHistoryPath, note, dryRun));
+
+  // 5. coding-guide.md 변경 이력 패치
+  const codingGuidePath = docsDir
+    ? path.join(docsDir, 'coding-guide.md')
+    : path.join(claudeMemoryDir, 'coding-guide.md');
+  results.push(patchCodingGuide(codingGuidePath, note, dryRun));
 
   return results;
 }
@@ -162,6 +175,110 @@ function patchMemory(filePath, note, dryRun) {
   content = content.replace(insertBefore, newLine + insertBefore);
   fs.writeFileSync(filePath, content);
   return { file: 'MEMORY.md', status: 'patched', detail: '다음 작업 줄 위에 삽입' };
+}
+
+// ─── work-history.md 패치 ────────────────────────────────────────────────
+function patchWorkHistory(filePath, note, dryRun) {
+  const { title, type, items, date, slug } = note;
+  const marker = `<!-- session-close:${date}:${slug} -->`;
+
+  if (!fs.existsSync(filePath)) {
+    return { file: 'work-history.md', status: 'error', detail: '파일 없음' };
+  }
+
+  let content = fs.readFileSync(filePath, 'utf-8');
+
+  if (content.includes(marker)) {
+    return { file: 'work-history.md', status: 'skipped', detail: '이미 패치됨' };
+  }
+
+  const typeEmoji = { feature: '✨', fix: '🔧', refactor: '♻️', ops: '⚙️', config: '⚙️' }[type] || '📝';
+  const itemLines = items.map(i => `- ${i}`).join('\n');
+  const newBlock = `\n### ${typeEmoji} ${title}\n${itemLines}\n${marker}\n`;
+  const dateHeader = `## ${date}`;
+
+  if (content.includes(dateHeader)) {
+    // 기존 날짜 섹션에 추가 — 다음 날짜 섹션 바로 앞
+    const nextSection = content.indexOf('\n## ', content.indexOf(dateHeader) + 1);
+    if (nextSection === -1) {
+      content = content.trimEnd() + newBlock;
+    } else {
+      content = content.slice(0, nextSection) + newBlock + content.slice(nextSection);
+    }
+  } else {
+    // 새 날짜 섹션 생성 — 첫 번째 ## 앞에 삽입 (최신이 위)
+    const firstSection = content.indexOf('\n## ');
+    const newSection = `\n${dateHeader}${newBlock}`;
+    if (firstSection === -1) {
+      content = content.trimEnd() + '\n' + newSection;
+    } else {
+      content = content.slice(0, firstSection) + '\n' + newSection + content.slice(firstSection);
+    }
+  }
+
+  if (dryRun) {
+    console.log('\n[dry-run] work-history.md 삽입 예정:\n' + newBlock);
+    return { file: 'work-history.md', status: 'dry', detail: `${dateHeader} 섹션에 추가` };
+  }
+
+  fs.writeFileSync(filePath, content);
+  return { file: 'work-history.md', status: 'patched', detail: `${dateHeader} 섹션에 추가` };
+}
+
+// ─── coding-guide.md 변경 이력 패치 ─────────────────────────────────────
+function patchCodingGuide(filePath, note, dryRun) {
+  const { title, type, items, date, slug } = note;
+  const marker = `<!-- session-close:${date}:${slug} -->`;
+
+  if (!fs.existsSync(filePath)) {
+    return { file: 'coding-guide.md', status: 'error', detail: '파일 없음' };
+  }
+
+  let content = fs.readFileSync(filePath, 'utf-8');
+
+  if (content.includes(marker)) {
+    return { file: 'coding-guide.md', status: 'skipped', detail: '이미 패치됨' };
+  }
+
+  // "마지막 업데이트" 날짜 갱신
+  content = content.replace(
+    /> 마지막 업데이트: \d{4}-\d{2}-\d{2}/,
+    `> 마지막 업데이트: ${date}`
+  );
+
+  // 변경 이력 테이블에 행 추가
+  const tableMarker = '| 날짜 | 내용 |';
+  if (!content.includes(tableMarker)) {
+    return { file: 'coding-guide.md', status: 'error', detail: '변경 이력 테이블 없음' };
+  }
+
+  const summary = items.length > 1 ? `${items[0]} 외 ${items.length - 1}건` : items[0] || title;
+  const newRow = `| ${date} | **${title}** — ${summary} |\n${marker}`;
+
+  // 테이블 마지막 행 뒤에 추가
+  const lines = content.split('\n');
+  let lastTableRowIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\| 20\d\d-/.test(lines[i])) lastTableRowIdx = i;
+  }
+
+  if (lastTableRowIdx === -1) {
+    // 테이블 헤더 바로 뒤 (구분선 다음)
+    const headerIdx = lines.findIndex(l => l.includes(tableMarker));
+    lines.splice(headerIdx + 2, 0, newRow);
+  } else {
+    lines.splice(lastTableRowIdx + 1, 0, newRow);
+  }
+
+  content = lines.join('\n');
+
+  if (dryRun) {
+    console.log('\n[dry-run] coding-guide.md 변경 이력 추가:\n' + newRow);
+    return { file: 'coding-guide.md', status: 'dry', detail: '변경 이력 테이블에 행 추가' };
+  }
+
+  fs.writeFileSync(filePath, content);
+  return { file: 'coding-guide.md', status: 'patched', detail: '변경 이력 테이블 + 날짜 갱신' };
 }
 
 module.exports = { patchDocs };
