@@ -231,6 +231,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-27 | **BOOT 속도 최적화 — 7분→50초** | deployer.js generateOpenclawBoot: IDENTITY+MEMORY 인라인, --sync 제거, DEV_SUMMARY/HANDOFF BOOT 제외 외 1건 |
 | 2026-02-27 | **BOOT 시간 재확인 — 54초 2회 연속 검증** | BOOT durationMs=54121 확인 (gemini-2.5-flash, 2회 연속) 외 2건 |
 | 2026-02-27 | **코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화** | coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의 외 2건 |
+| 2026-02-27 | **코딩가이드 Security by Design 전면 적용** | Security by Design 원칙 선언 (어기면 코드가 실행 안 되는 구조) 외 4건 |
+<!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용 -->
 <!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->
 <!-- session-close:2026-02-27:boot-시간-재확인-54초-2회-연속-검증 -->
 <!-- session-close:2026-02-27:boot-속도-최적화-7분50초 -->
