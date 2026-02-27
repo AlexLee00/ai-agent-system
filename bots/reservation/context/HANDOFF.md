@@ -133,6 +133,14 @@
 - 관련 파일: `docs/SYSTEM_DESIGN.md`, `docs/RESEARCH_2026.md`, `README.md`, `~/.zshrc`, `~/.ssh/authorized_keys`
 <!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계:end -->
 
+<!-- session-close:2026-02-27:bug007-수정-boot-파일명-누출-방지 -->
+#### 2026-02-27 🔧 BUG-007 수정 + BOOT 파일명 누출 방지
+- BUG-007: protocolTimeout 30초 + Promise.race 8초 타임아웃
+- CLAUDE_NOTES: BOOT 중 파일명 단독 전송 금지 규칙 추가
+- BUG-006 재발 모니터링 중
+- 관련 파일: `src/naver-monitor.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-27:bug007-수정-boot-파일명-누출-방지:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
