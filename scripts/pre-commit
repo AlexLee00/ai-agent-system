@@ -1,0 +1,126 @@
+#!/bin/bash
+# pre-commit hook — Security by Design
+# 설치: bash scripts/setup-hooks.sh
+# 또는: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -e
+
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+BLOCKED=0
+
+echo "🔒 보안 검사 실행 중..."
+
+# ─── 1. 금지 파일 차단 ────────────────────────────────────────────────────
+BLOCKED_FILES=(
+  "secrets.json"
+  ".env"
+  ".env.local"
+  ".env.production"
+  "state.db"
+  "state.db-wal"
+  "state.db-shm"
+  "pending-telegrams.jsonl"
+  "bug-tracker.json"
+  "paired.json"
+)
+
+STAGED=$(git diff --cached --name-only 2>/dev/null)
+
+for pattern in "${BLOCKED_FILES[@]}"; do
+  # 파일명이 패턴과 정확히 일치하는 경우 (경로 무관)
+  if echo "$STAGED" | grep -qE "(^|/)${pattern}$"; then
+    echo -e "${RED}❌ 보안 차단: '${pattern}' 파일은 커밋할 수 없습니다.${NC}"
+    echo -e "   → ${YELLOW}git restore --staged \$(git diff --cached --name-only | grep '${pattern}')${NC}"
+    BLOCKED=1
+  fi
+done
+
+# ─── 2. 확장자 기반 차단 ──────────────────────────────────────────────────
+BLOCKED_EXTENSIONS=(
+  "*.jsonl"
+  "*.db"
+  "*.db-wal"
+  "*.db-shm"
+  "*.pem"
+  "*.key"
+  "*.p12"
+  "*.pfx"
+)
+
+for ext in "${BLOCKED_EXTENSIONS[@]}"; do
+  MATCHES=$(echo "$STAGED" | grep -E "${ext//\*/.*}" 2>/dev/null || true)
+  if [ -n "$MATCHES" ]; then
+    echo -e "${RED}❌ 보안 차단: '${ext}' 파일 커밋 불가:${NC}"
+    echo "$MATCHES" | while read -r f; do echo "   → $f"; done
+    echo -e "   → ${YELLOW}git restore --staged <파일명>${NC}"
+    BLOCKED=1
+  fi
+done
+
+# ─── 3. 하드코딩 시크릿 패턴 감지 ────────────────────────────────────────
+# staged된 .js 파일에서 의심 패턴 검색
+JS_STAGED=$(echo "$STAGED" | grep -E '\.(js|ts|json)$' || true)
+
+if [ -n "$JS_STAGED" ]; then
+  # 검사할 패턴 (오탐 최소화를 위해 구체적으로 지정)
+  SECRET_PATTERNS=(
+    # API 키 패턴 (32자 이상 영숫자, 변수명에 key/secret/token/password 포함)
+    "(api_key|api_secret|secret_key|access_key|bot_token|chat_id)\s*[=:]\s*['\"][A-Za-z0-9_\-]{20,}['\"]"
+    # 바이낸스/업비트 키 길이
+    "['\"][A-Za-z0-9]{64}['\"]"
+    # 한국 전화번호 하드코딩 (테스트 화이트리스트 제외)
+    "['\"]010-[0-9]{4}-[0-9]{4}['\"]"
+  )
+
+  WHITELIST_PHONES=(
+    "010-3500-0586"  # 이재룡 (DEV 화이트리스트)
+    "010-5435-0586"  # 김정민 (DEV 화이트리스트)
+  )
+
+  for pattern in "${SECRET_PATTERNS[@]}"; do
+    while IFS= read -r file; do
+      # git에서 staged 내용 추출
+      CONTENT=$(git show ":$file" 2>/dev/null || true)
+      MATCHES=$(echo "$CONTENT" | grep -inE "$pattern" || true)
+
+      if [ -n "$MATCHES" ]; then
+        # 전화번호 패턴은 화이트리스트 제외
+        if [[ "$pattern" == *"010"* ]]; then
+          FILTERED=""
+          while IFS= read -r line; do
+            IS_WHITE=0
+            for wp in "${WHITELIST_PHONES[@]}"; do
+              if echo "$line" | grep -q "$wp"; then IS_WHITE=1; break; fi
+            done
+            [ $IS_WHITE -eq 0 ] && FILTERED="$FILTERED\n$line"
+          done <<< "$MATCHES"
+          MATCHES="$FILTERED"
+        fi
+
+        if [ -n "$MATCHES" ]; then
+          echo -e "${RED}⚠️  의심 패턴 감지: ${file}${NC}"
+          echo "$MATCHES" | head -3 | while read -r line; do
+            echo -e "   ${YELLOW}→ $line${NC}"
+          done
+          BLOCKED=1
+        fi
+      fi
+    done <<< "$JS_STAGED"
+  done
+fi
+
+# ─── 4. 결과 ─────────────────────────────────────────────────────────────
+if [ $BLOCKED -eq 1 ]; then
+  echo ""
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${RED}  커밋 차단됨. 위 문제를 해결한 후 다시 시도하세요.  ${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✅ 보안 검사 통과${NC}"
+exit 0
