@@ -973,5 +973,7 @@ try {
 | 2026-02-27 | 전면 업데이트 — SQLite/DB, telegram 직접 발송, CLI stdout JSON, args.js, exit code, launchd, OpenClaw/LLM 연동, 모델 비교표, 암호화 패턴 추가 |
 | 2026-02-27 | **코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화** — coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의 외 2건 |
 | 2026-02-27 | **코딩가이드 Security by Design 전면 적용** — Security by Design 원칙 선언 (어기면 코드가 실행 안 되는 구조) 외 4건 |
+| 2026-02-27 | **pre-commit 훅 설치 및 공유 인프라 플랜 완료 검증** — scripts/pre-commit 설치 (.git/hooks/ 등록 + chmod +x) 외 2건 |
+<!-- session-close:2026-02-27:precommit-훅-설치-및-공유-인프라-플랜-완료- -->
 <!-- session-close:2026-02-27:코딩가이드-security-by-design-전면-적용 -->
 <!-- session-close:2026-02-27:코딩가이드-목적-재정의-workhistorycoding -->
