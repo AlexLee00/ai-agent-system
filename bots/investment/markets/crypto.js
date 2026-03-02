@@ -117,7 +117,7 @@ async function updateState(symbols) {
 tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   const label = type === 'daily' ? '일일' : '월간';
   const cost  = tracker.getToday();
-  const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 암호화폐 사이클 중단\n일간: $${cost.daily.toFixed(4)} | 월간: $${cost.monthly.toFixed(4)}`;
+  const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 암호화폐 사이클 중단\n일간: $${cost.usage.toFixed(4)} | 월간: $${cost.monthUsage.toFixed(4)}`;
   console.error(msg);
   await sendTelegram(msg).catch(() => {});
   process.exit(1);
@@ -222,7 +222,7 @@ export async function runCryptoCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`✅ ${tag} 사이클 완료 — ${elapsed}초 | ${results.length}개 신호 | LLM $${cost.daily.toFixed(4)}/일`);
+    console.log(`✅ ${tag} 사이클 완료 — ${elapsed}초 | ${results.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
     console.log(`${'═'.repeat(60)}\n`);
 
     return results;

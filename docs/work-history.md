@@ -10,6 +10,16 @@
 
 
 ## 2026-03-02
+### ✨ Phase 3-B 국내외주식 사이클 구현 완료
+- aria.js: Yahoo Finance OHLCV + analyzeKisMTF(일봉65%/1h35%) + analyzeKisOverseasMTF(일봉60%/1h40%)
+- domestic.js: 국내주식 30분 사이클 (아리아·헤르메스·소피아·루나·한울 파이프라인 완성)
+- overseas.js: 미국주식 30분 사이클 (동일 파이프라인, kis_overseas exchange)
+- cost.daily→cost.usage 버그 수정 (crypto.js·domestic.js·overseas.js 3개)
+- launchd: ai.investment.domestic + ai.investment.overseas 등록 (5분 주기, PAPER_MODE=true)
+- 테스트: domestic --force (삼성전자·SK하이닉스) 5.3초 완료 / overseas --force (AAPL·NVDA) 5.1초 완료
+<!-- session-close:2026-03-02:phase3b-국내외주식-사이클-구현-완료 -->
+
+
 ### ✨ SKA-P05~P08 루나팀 패턴 적용 + deploy-ops.sh
 - lib/error-tracker.js 연속 오류 카운터 (naver-monitor+kiosk-monitor 통합)
 - scripts/e2e-test.js E2E 통합 테스트 28/28

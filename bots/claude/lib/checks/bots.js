@@ -32,8 +32,11 @@ function checkLaunchd(items) {
     { id: 'ai.invest.fund',       label: '루나팀 펀드매니저 (launchd)' },
     { id: 'ai.invest.report',     label: '루나팀 성과리포트 (launchd)' },
     { id: 'ai.invest.bridge',     label: '루나팀 브릿지 (launchd)' },
-    { id: 'ai.ska.tmux',          label: '스카팀 tmux 세션 (launchd)' },
-    { id: 'ai.claude.speed-test', label: 'LLM 속도 테스트 (launchd)' },
+    { id: 'ai.investment.crypto',   label: '루나팀 Phase 3-A 암호화폐 사이클 (launchd)' },
+    { id: 'ai.investment.domestic', label: '루나팀 Phase 3-B 국내주식 사이클 (launchd)' },
+    { id: 'ai.investment.overseas', label: '루나팀 Phase 3-B 미국주식 사이클 (launchd)' },
+    { id: 'ai.ska.tmux',            label: '스카팀 tmux 세션 (launchd)' },
+    { id: 'ai.claude.speed-test',   label: 'LLM 속도 테스트 (launchd)' },
   ];
 
   for (const svc of SERVICES) {

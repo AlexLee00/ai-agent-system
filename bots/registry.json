@@ -132,6 +132,67 @@
         "logFile": "/tmp/ska-analytics.log"
       }
     },
+    "investment": {
+      "name": "루나 Phase 3 (Luna v3)",
+      "team": "루나팀",
+      "teamRole": "Phase 3 자동매매 시스템",
+      "description": "암호화폐(바이낸스) + KIS 국내주식 + KIS 해외주식(미국) 30분 사이클 자동매매 (PAPER_MODE=true 기본)",
+      "status": "paper",
+      "contextPath": "bots/investment",
+      "runtime": "node ESM (type:module)",
+      "model": {
+        "paper": "groq/llama-4-scout-17b-16e-instruct (무료)",
+        "live_llm_agents": "groq/llama-4-scout-17b-16e-instruct",
+        "live_orchestrator": "anthropic/claude-haiku-4-5-20251001"
+      },
+      "subBots": {
+        "aria":       { "name": "아리아",     "file": "bots/investment/team/aria.js",       "role": "기술분석가 — 암호화폐/국내/해외주식 MTF TA (RSI/MACD/BB/Stoch/ATR/볼륨)", "status": "ops" },
+        "oracle":     { "name": "오라클",     "file": "bots/investment/team/oracle.js",     "role": "온체인 분석 — 공포탐욕지수/펀딩비/Long-Short비율/미결제약정 (암호화폐 전용)", "status": "ops" },
+        "hermes":     { "name": "헤르메스",   "file": "bots/investment/team/hermes.js",     "role": "뉴스 분석 — Yahoo/MarketWatch(해외) + Naver뉴스/DART(국내) + CoinTelegraph(코인)", "status": "ops" },
+        "sophia":     { "name": "소피아",     "file": "bots/investment/team/sophia.js",     "role": "감성 분석 — Reddit(해외/코인) + 네이버 증권 토론실(국내)", "status": "ops" },
+        "zeus":       { "name": "제우스",     "file": "bots/investment/team/zeus.js",       "role": "강세 리서처 — 매수 근거 + 목표가 제시 (luna에서 호출)", "status": "ops" },
+        "athena":     { "name": "아테나",     "file": "bots/investment/team/athena.js",     "role": "약세 리서처 — 매도 근거 + 손절가 제시 (luna에서 호출)", "status": "ops" },
+        "luna":       { "name": "루나",       "file": "bots/investment/team/luna.js",       "role": "오케스트레이터 — 강세/약세 토론 + 최종 신호 판단 + 네메시스 리스크 검토", "status": "ops" },
+        "nemesis":    { "name": "네메시스",   "file": "bots/investment/team/nemesis.js",    "role": "리스크 매니저 — 하드 규칙(v1) + LLM 리스크 평가(v2, live 시 Haiku)", "status": "ops" },
+        "hephaestos": { "name": "헤파이스토스", "file": "bots/investment/team/hephaestos.js", "role": "암호화폐 실행봇 — 바이낸스 Spot 주문 (PAPER: DB+텔레그램만)", "status": "ops" },
+        "hanul":      { "name": "한울",       "file": "bots/investment/team/hanul.js",      "role": "KIS 실행봇 — 국내주식 + 해외주식(미국) 주문 (PAPER: DB+텔레그램만)", "status": "ops" },
+        "argos":      { "name": "아르고스",   "file": "bots/investment/team/argos.js",      "role": "전략 수집봇 — TradingView 파인스크립트/알파 신호 수집 (Phase 3-E 구현 예정)", "status": "skeleton" },
+        "chronos":    { "name": "크로노스",   "file": "bots/investment/team/chronos.js",    "role": "백테스팅 엔진 — 전략 성과 검증 + 파라미터 최적화 (Phase 3-D 구현 예정)", "status": "skeleton" }
+      },
+      "markets": {
+        "crypto":   { "file": "bots/investment/markets/crypto.js",   "launchd": "ai.investment.crypto",   "schedule": "5분 주기 (내부 30분 throttle + BTC ±3% 긴급트리거)", "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"] },
+        "domestic": { "file": "bots/investment/markets/domestic.js", "launchd": "ai.investment.domestic", "schedule": "5분 주기 (내부 30분 throttle + KST 09:00~15:30 장중필터)", "symbols": ["005930", "000660"] },
+        "overseas": { "file": "bots/investment/markets/overseas.js", "launchd": "ai.investment.overseas", "schedule": "5분 주기 (내부 30분 throttle + DST 자동반영 NYSE 장중필터)", "symbols": ["AAPL", "TSLA", "NVDA"] }
+      },
+      "shared": {
+        "db":          "bots/investment/shared/db.js",
+        "llm-client":  "bots/investment/shared/llm-client.js",
+        "secrets":     "bots/investment/shared/secrets.js",
+        "cost-tracker":"bots/investment/shared/cost-tracker.js",
+        "report":      "bots/investment/shared/report.js"
+      },
+      "config": "bots/investment/config.yaml",
+      "db":     "bots/investment/db/investment.duckdb",
+      "deployTargets": [],
+      "ops": {
+        "logFiles": {
+          "crypto":   "/tmp/investment-crypto.log",
+          "domestic": "/tmp/investment-domestic.log",
+          "overseas": "/tmp/investment-overseas.log"
+        },
+        "stateFiles": {
+          "crypto":   "~/.openclaw/investment-state.json",
+          "domestic": "~/.openclaw/investment-domestic-state.json",
+          "overseas": "~/.openclaw/investment-overseas-state.json"
+        },
+        "opsRequirements": [
+          "PAPER_MODE=false 환경변수 설정 (현재 paper 단계)",
+          "config.yaml: KIS appkey/appsecret/account (실계좌)",
+          "config.yaml: binance api_key/api_secret",
+          "30일 PAPER 검증 후 LIVE 전환 검토"
+        ]
+      }
+    },
     "invest": {
       "name": "루나 (Luna)",
       "team": "루나팀",

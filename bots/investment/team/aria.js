@@ -2,15 +2,18 @@
  * team/aria.js — 아리아 (TA MTF 기술분석가)
  *
  * 역할: 규칙 기반 멀티타임프레임 기술분석 (LLM 없음 — 순수 수학)
- * 타임프레임: 5m(20%) / 1h(35%) / 4h(45%) — 암호화폐 전용
+ * 암호화폐: 5m(20%) / 1h(35%) / 4h(45%) — Binance CCXT
+ * 국내주식:  1d(65%) / 1h(35%) — Yahoo Finance (.KS)
+ * 미국주식:  1d(60%) / 1h(40%) — Yahoo Finance (ticker 직접)
  * 지표: RSI / MACD / 볼린저밴드 / MA정배열 / 스토캐스틱 / ATR / 거래량
  *
- * bots/invest/src/analysts/ta-analyst.js v2 로직 재사용
- *
  * 실행: node team/aria.js --symbol=BTC/USDT
+ *        node team/aria.js --symbol=005930 --exchange=kis
+ *        node team/aria.js --symbol=AAPL   --exchange=kis_overseas
  */
 
-import ccxt from 'ccxt';
+import ccxt  from 'ccxt';
+import https from 'https';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
@@ -27,8 +30,18 @@ function getPublicExchange() {
   return _publicExchange;
 }
 
-async function fetchOHLCV(symbol, timeframe, limit) {
-  return getPublicExchange().fetchOHLCV(symbol, timeframe, undefined, limit);
+async function fetchOHLCV(symbol, timeframe, limit, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await getPublicExchange().fetchOHLCV(symbol, timeframe, undefined, limit);
+    } catch (e) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 // ─── 시장별 파라미터 ────────────────────────────────────────────────
@@ -58,6 +71,78 @@ const CRYPTO_TIMEFRAMES = [
   { tf: '1h', label: '1시간봉', weight: 0.35 },
   { tf: '5m', label: '5분봉',   weight: 0.20 },
 ];
+
+// ─── 국내/미국주식 MTF 설정 ──────────────────────────────────────────
+
+const KIS_TIMEFRAMES = [
+  { tf: '1d', range: '6mo', label: '일봉',    weight: 0.65 },
+  { tf: '1h', range: '1mo', label: '1시간봉', weight: 0.35 },
+];
+
+const KIS_OVERSEAS_TIMEFRAMES = [
+  { tf: '1d', range: '6mo', label: '일봉',    weight: 0.60 },
+  { tf: '1h', range: '1mo', label: '1시간봉', weight: 0.40 },
+];
+
+// ─── Yahoo Finance OHLCV (국내·미국주식) ────────────────────────────
+
+/**
+ * Yahoo Finance에서 OHLCV 데이터 수집
+ * @param {string} ticker   Yahoo 심볼 (예: '005930.KS', 'AAPL')
+ * @param {string} interval '1d' | '1h' | '5m'
+ * @param {string} range    '1mo' | '3mo' | '6mo' | '1y'
+ * @returns {Promise<Array>}  [[timestamp_ms, o, h, l, c, v], ...]
+ */
+function fetchYahooOHLCV(ticker, interval, range) {
+  return new Promise((resolve, reject) => {
+    const urlPath = `/v8/finance/chart/${ticker}?range=${range}&interval=${interval}`;
+    const req = https.request(
+      {
+        hostname: 'query1.finance.yahoo.com',
+        path:     urlPath,
+        method:   'GET',
+        headers:  { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', d => raw += d);
+        res.on('end', () => {
+          try {
+            const json  = JSON.parse(raw);
+            const chart = json.chart?.result?.[0];
+            if (!chart) { resolve([]); return; }
+            const timestamps = chart.timestamp || [];
+            const q          = chart.indicators.quote[0];
+            const result     = timestamps
+              .map((ts, i) => [
+                ts * 1000,
+                q.open[i]   || 0, q.high[i]  || 0,
+                q.low[i]    || 0, q.close[i] || 0,
+                q.volume[i] || 0,
+              ])
+              .filter(c => c[4] > 0);
+            resolve(result);
+          } catch (e) {
+            reject(new Error(`Yahoo Finance 파싱 실패: ${e.message}`));
+          }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Yahoo Finance 타임아웃')); });
+    req.end();
+  });
+}
+
+/**
+ * 심볼 → Yahoo 티커 변환
+ * 국내주식: '005930' → '005930.KS'
+ * 미국주식: 'AAPL' → 'AAPL' (변환 없음)
+ */
+function toYahooTicker(symbol, exchange) {
+  if (exchange === 'kis' && /^\d{6}$/.test(symbol)) return `${symbol}.KS`;
+  return symbol;
+}
 
 // ─── 기본 지표 계산 ────────────────────────────────────────────────
 
@@ -185,9 +270,13 @@ export function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol 
   }
 
   if (bb && currentPrice) {
-    if (currentPrice <= bb.lower)      { score += 0.5; factors.push('BB 하단'); }
-    else if (currentPrice >= bb.upper) { score -= 0.5; factors.push('BB 상단'); }
-    else                                { factors.push(`BB 중립`); }
+    const bbRange = bb.upper - bb.lower;
+    if (bbRange > 0) {
+      const bbPct = (currentPrice - bb.lower) / bbRange; // 0=하단, 1=상단
+      if (bbPct <= 0.05)      { score += 0.5; factors.push('BB 하단'); }
+      else if (bbPct >= 0.95) { score -= 0.5; factors.push('BB 상단 근접'); }
+      else                     { factors.push(`BB 중립 (${(bbPct * 100).toFixed(0)}%)`); }
+    }
   }
 
   if (mas) {
@@ -320,14 +409,127 @@ export async function analyzeCryptoMTF(symbol) {
   return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice };
 }
 
+// ─── 국내/미국주식 단일 타임프레임 분석 ─────────────────────────────
+
+async function analyzeTFStock(symbol, exchange, { tf, range, label }) {
+  const ticker = toYahooTicker(symbol, exchange);
+  const ohlcv  = await fetchYahooOHLCV(ticker, tf, range);
+  if (ohlcv.length < 30) throw new Error(`데이터 부족 (${ohlcv.length}캔들)`);
+
+  const highs   = ohlcv.map(c => c[2]);
+  const lows    = ohlcv.map(c => c[3]);
+  const closes  = ohlcv.map(c => c[4]);
+  const volumes = ohlcv.map(c => c[5]);
+  const currentPrice = closes[closes.length - 1];
+
+  const rsi   = calcRSI(closes);
+  const macd  = calcMACD(closes);
+  const bb    = calcBB(closes);
+  const mas   = calcMovingAverages(closes);
+  const stoch = calcStochastic(highs, lows, closes);
+  const atr   = calcATR(highs, lows, closes);
+  const vol   = analyzeVolume(volumes);
+
+  const result = judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange);
+  console.log(`  [아리아 ${label}] ${symbol}: ${result.signal} (${(result.confidence * 100).toFixed(0)}%) | 점수: ${result.score.toFixed(2)}`);
+  return { ...result, currentPrice, timeframe: tf };
+}
+
+// ─── 공통 주식 MTF 분석 헬퍼 ────────────────────────────────────────
+
+async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
+  console.log(`\n📊 [아리아] ${symbol} ${exchangeLabel} TA 분석 (일봉/1h)`);
+
+  const tfResults = {};
+  for (const tfCfg of timeframes) {
+    try {
+      tfResults[tfCfg.tf] = await analyzeTFStock(symbol, exchange, tfCfg);
+      await new Promise(r => setTimeout(r, 300)); // Yahoo Finance 호출 간격
+    } catch (e) {
+      console.warn(`  ⚠️ [아리아] ${symbol} ${tfCfg.label} 실패: ${e.message}`);
+    }
+  }
+
+  let weightedScore = 0;
+  let totalWeight   = 0;
+  for (const { tf, weight } of timeframes) {
+    if (tfResults[tf]) {
+      weightedScore += tfResults[tf].score * weight;
+      totalWeight   += weight;
+    }
+  }
+  if (totalWeight === 0) return null;
+
+  const normalizedScore = weightedScore / totalWeight;
+  const confidence      = Math.min(Math.abs(normalizedScore) / 5.0, 1);
+  const threshold       = MARKET_PARAMS[exchange]?.signalThreshold ?? 1.5;
+
+  let signal;
+  if (normalizedScore >= threshold)       signal = ACTIONS.BUY;
+  else if (normalizedScore <= -threshold) signal = ACTIONS.SELL;
+  else                                     signal = ACTIONS.HOLD;
+
+  const tfSummary = timeframes
+    .filter(({ tf }) => tfResults[tf])
+    .map(({ tf, label, weight }) =>
+      `[${label} ${(weight * 100).toFixed(0)}%] ${tfResults[tf].signal} (${(tfResults[tf].confidence * 100).toFixed(0)}%)`
+    ).join(' | ');
+
+  const currentPrice = tfResults['1d']?.currentPrice || tfResults['1h']?.currentPrice;
+  const reasoning    = `${exchangeLabel} MTF: ${tfSummary} → 가중점수 ${normalizedScore.toFixed(2)}`;
+
+  console.log(`  → [아리아 ${exchange}] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
+
+  try {
+    await db.insertAnalysis({
+      symbol,
+      analyst:   ANALYST_TYPES.TA_MTF,
+      signal,
+      confidence,
+      reasoning: `[${exchange.toUpperCase()} MTF] ${reasoning}`,
+      metadata:  {
+        weightedScore: normalizedScore,
+        exchange,
+        tfResults: Object.fromEntries(
+          Object.entries(tfResults).map(([tf, r]) => [tf, { signal: r.signal, confidence: r.confidence, score: r.score }])
+        ),
+      },
+    });
+  } catch (e) {
+    console.warn(`  ⚠️ [아리아] DB 저장 실패: ${e.message}`);
+  }
+
+  return { signal, confidence, reasoning, score: normalizedScore, tfResults, currentPrice };
+}
+
+/**
+ * 국내주식 MTF 분석 (일봉 65% + 1시간봉 35%)
+ * @param {string} symbol  6자리 종목코드 (예: '005930')
+ */
+export async function analyzeKisMTF(symbol) {
+  return analyzeStockMTF(symbol, 'kis', KIS_TIMEFRAMES, '국내주식');
+}
+
+/**
+ * 미국주식 MTF 분석 (일봉 60% + 1시간봉 40%)
+ * @param {string} symbol  Yahoo 티커 (예: 'AAPL', 'TSLA')
+ */
+export async function analyzeKisOverseasMTF(symbol) {
+  return analyzeStockMTF(symbol, 'kis_overseas', KIS_OVERSEAS_TIMEFRAMES, '미국주식');
+}
+
 // CLI 실행
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args   = process.argv.slice(2);
-  const symbol = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+  const args     = process.argv.slice(2);
+  const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
+  const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
 
   await db.initSchema();
   try {
-    const r = await analyzeCryptoMTF(symbol);
+    let r;
+    if (exchange === 'kis')          r = await analyzeKisMTF(symbol);
+    else if (exchange === 'kis_overseas') r = await analyzeKisOverseasMTF(symbol);
+    else                              r = await analyzeCryptoMTF(symbol);
     console.log('\n결과:', JSON.stringify(r, null, 2));
     process.exit(0);
   } catch (e) {
