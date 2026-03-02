@@ -25,12 +25,14 @@ launchd:
 import sys
 import os
 import json
+import sqlite3
 import duckdb
 from datetime import date as date_type, timedelta
 
 DUCKDB_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', 'db', 'ska.duckdb')
 )
+STATE_DB_PATH = os.path.expanduser('~/.openclaw/workspace/state.db')
 
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -362,6 +364,68 @@ def get_next_week_events(con, next_start, next_end):
         return []
 
 
+def get_weekly_kpi(week_start, week_end):
+    """SQLite state.db에서 재방문율·자동등록 성공률 집계"""
+    try:
+        con = sqlite3.connect(STATE_DB_PATH)
+        w_start = str(week_start)
+        w_end   = str(week_end)
+
+        # 이번 주 완료 예약 (phone 목록)
+        rows = con.execute("""
+            SELECT phone
+            FROM reservations
+            WHERE date >= ? AND date <= ?
+              AND status = 'completed'
+              AND seen_only = 0
+        """, (w_start, w_end)).fetchall()
+        week_phones = [r[0] for r in rows]
+        total_completed = len(week_phones)
+
+        # 재방문자 = 이번 주 완료자 중 이전에도 completed 기록이 있는 phone
+        revisit_count = 0
+        for phone in set(week_phones):
+            prev = con.execute("""
+                SELECT COUNT(*) FROM reservations
+                WHERE phone = ?
+                  AND status = 'completed'
+                  AND seen_only = 0
+                  AND date < ?
+            """, (phone, w_start)).fetchone()[0]
+            if prev > 0:
+                revisit_count += 1
+
+        unique_visitors = len(set(week_phones))
+        revisit_rate = round(revisit_count / unique_visitors * 100) if unique_visitors > 0 else 0
+
+        # 자동등록 성공률 = completed / (completed + failed) in the week
+        failed = con.execute("""
+            SELECT COUNT(*) FROM reservations
+            WHERE date >= ? AND date <= ?
+              AND status = 'failed'
+              AND seen_only = 0
+        """, (w_start, w_end)).fetchone()[0]
+
+        total_processed = total_completed + failed
+        success_rate = round(total_completed / total_processed * 100) if total_processed > 0 else 100
+
+        con.close()
+        return {
+            'total_completed':  total_completed,
+            'unique_visitors':  unique_visitors,
+            'revisit_count':    revisit_count,
+            'revisit_rate':     revisit_rate,
+            'failed':           failed,
+            'success_rate':     success_rate,
+        }
+    except Exception as e:
+        return {
+            'total_completed': 0, 'unique_visitors': 0,
+            'revisit_count': 0, 'revisit_rate': 0,
+            'failed': 0, 'success_rate': 0,
+        }
+
+
 def format_weekly_review(report):
     """주간 회고 리포트 텔레그램 포맷"""
     w_start = date_type.fromisoformat(report['week_start'])
@@ -413,6 +477,18 @@ def format_weekly_review(report):
         lines.append('🎯 예측 정확도: 데이터 누적 중 (forecast 실행 후 익일부터 집계)')
     lines.append('')
 
+    # ── 재방문율·자동등록 성공률 ──
+    kpi = report.get('kpi', {})
+    if kpi:
+        lines.append('👥 고객 KPI')
+        lines.append(f'   완료 예약: {kpi["total_completed"]}건 ({kpi["unique_visitors"]}명)')
+        lines.append(f'   재방문율: {kpi["revisit_rate"]}% ({kpi["revisit_count"]}/{kpi["unique_visitors"]}명)')
+        revisit_flag = '✅' if kpi['revisit_rate'] >= 30 else ('🟡' if kpi['revisit_rate'] >= 15 else '📉')
+        lines[-1] += f'  {revisit_flag}'
+        success_flag = '✅' if kpi['success_rate'] >= 95 else ('🟡' if kpi['success_rate'] >= 80 else '🔴')
+        lines.append(f'   자동등록 성공률: {kpi["success_rate"]}% ({kpi["total_completed"]}/{kpi["total_completed"]+kpi["failed"]}건)  {success_flag}')
+        lines.append('')
+
     # ── 이번 주 이벤트 예고 ──
     next_start = date_type.fromisoformat(report['next_start'])
     next_end   = date_type.fromisoformat(report['next_end'])
@@ -450,6 +526,8 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
     finally:
         con.close()
 
+    kpi = get_weekly_kpi(week_start, week_end)
+
     report = {
         'week_start': str(week_start),
         'week_end':   str(week_end),
@@ -458,6 +536,7 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
         'summary':    summary,
         'accuracy':   accuracy,
         'next_events': next_events,
+        'kpi':         kpi,
     }
 
     if output_json:

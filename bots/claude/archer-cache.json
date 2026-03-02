@@ -1,5 +1,5 @@
 {
-  "lastRun": "2026-03-01T23:54:54.121Z",
+  "lastRun": "2026-03-02T07:01:12.382Z",
   "versions": {
     "ccxt": "v4.5.40",
     "duckdb": "v1.4.4",
@@ -10,8 +10,8 @@
     "gemini-js": "v1.43.0"
   },
   "lastAnalysis": {
-    "summary": "공포탐욕지수 14(극단적 공포) 속 BTC $65,704로 하락세 지속. 루나팀은 DEV/idle 상태이나 BUY 신호 10건으로 저점 매수 신호 집중. 스카팀 연속오류 1회 발생 및 gemini-js v1.43.0 등 주요 SDK 업데이트 다수 확인.",
+    "summary": "공포탐욕지수 10(극단적 공포) 속 BTC/ETH 동반 하락세 지속. 루나팀 7일 신호가 SELL 50건 압도적 우세였으나 최근 로그에서는 BUY 7/HOLD 14로 반전 조짐. 루나팀·스카팀 모두 상태값 undefined로 모니터링 파이프라인 점검 필요. gemini-js v1.43.0, anthropic-sdk v0.84.0 등 LLM SDK 신규 릴리즈 다수 확인.",
     "priority_count": 7,
-    "action_count": 5
+    "action_count": 7
   }
 }

@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const { maskPhone, maskName } = require('../lib/formatting');
 const { saveJson } = require('../lib/files');
+const { formatVipBadge } = require('../lib/vip');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -1026,9 +1027,10 @@ async function monitorBookings() {
                 const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
                 const state = updateBookingState(bookingId, booking, 'pending');
 
+                const vipBadge = formatVipBadge(booking.phone);
                 await sendAlert({
                   type: 'new',
-                  title: '🆕 신규 예약 감지!',
+                  title: `🆕 신규 예약 감지!${vipBadge ? ' ' + vipBadge.trim() : ''}`,
                   customer: booking.raw?.name || '고객',
                   phone: booking.phone,
                   date: booking.date,
