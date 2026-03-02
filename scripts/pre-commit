@@ -52,7 +52,9 @@ BLOCKED_EXTENSIONS=(
 )
 
 for ext in "${BLOCKED_EXTENSIONS[@]}"; do
-  MATCHES=$(echo "$STAGED" | grep -E "${ext//\*/.*}" 2>/dev/null || true)
+  # 확장자 패턴을 정확한 suffix 매칭 regex로 변환 (*.db → \.db$)
+  REGEX=$(echo "$ext" | sed 's/\*\./\\./' | sed 's/$/$/')
+  MATCHES=$(echo "$STAGED" | grep -E "$REGEX" 2>/dev/null || true)
   if [ -n "$MATCHES" ]; then
     echo -e "${RED}❌ 보안 차단: '${ext}' 파일 커밋 불가:${NC}"
     echo "$MATCHES" | while read -r f; do echo "   → $f"; done
@@ -81,8 +83,19 @@ if [ -n "$JS_STAGED" ]; then
     "010-5435-0586"  # 김정민 (DEV 화이트리스트)
   )
 
+  # 시크릿 검사 제외 파일 (체크섬, 해시 파일 등 오탐 방지)
+  SECRET_SKIP_FILES=(
+    ".checksums.json"
+  )
+
   for pattern in "${SECRET_PATTERNS[@]}"; do
     while IFS= read -r file; do
+      # 제외 파일 스킵
+      SKIP=0
+      for skip_f in "${SECRET_SKIP_FILES[@]}"; do
+        if [[ "$file" == *"$skip_f" ]]; then SKIP=1; break; fi
+      done
+      [ $SKIP -eq 1 ] && continue
       # git에서 staged 내용 추출
       CONTENT=$(git show ":$file" 2>/dev/null || true)
       MATCHES=$(echo "$CONTENT" | grep -inE "$pattern" || true)

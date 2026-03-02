@@ -11,6 +11,13 @@
  *   - SambaNova(영구 무료 티어)     → SAMBANOVA_API_KEY
  *   - OpenRouter(무료 :free 모델)   → OPENROUTER_API_KEY
  *
+ * 미등록 프로바이더 (키 등록 후 활성화):
+ *   - xAI     (Grok 시리즈)        → XAI_API_KEY
+ *   - Mistral (영구 무료 티어)      → MISTRAL_API_KEY
+ *   - Together AI (무료 모델)       → TOGETHER_API_KEY
+ *   - Fireworks AI (무료 크레딧)    → FIREWORKS_API_KEY
+ *   - DeepInfra (무료 티어)         → DEEPINFRA_API_KEY
+ *
  * 키 설정: ~/.openclaw/speed-test-keys.json
  *
  * 사용법:
@@ -26,9 +33,12 @@ const http  = require('http');
 const https = require('https');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
-const OPENCLAW_CONFIG      = path.join(process.env.HOME, '.openclaw/openclaw.json');
-const AUTH_PROFILES_FILE   = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
-const SPEED_TEST_KEYS_FILE = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
+const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.json');
+const AUTH_PROFILES_FILE     = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
+const SPEED_TEST_KEYS_FILE   = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
+const LUNA_CANDIDATES_FILE   = path.join(__dirname, '../bots/invest/config/llm-candidates.json');
+const LUNA_LLM_BEST_FILE     = path.join(process.env.HOME, '.openclaw/luna-llm-best.json');
+const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/invest/secrets.json');
 const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const GEMINI_CLIENT_SECRET = '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';
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
@@ -36,13 +46,19 @@ const CODE_ASSIST_VERSION  = 'v1internal';
 const OLLAMA_BASE          = 'http://127.0.0.1:11434';
 const TEST_PROMPT          = 'Reply with exactly one word: ok';
 
-// OpenAI-호환 프로바이더 엔드포인트
+// OpenAI-호환 프로바이더 엔드포인트 (미등록: xai/mistral/together/fireworks/deepinfra)
 const PROVIDER_ENDPOINTS = {
   'openai':     'https://api.openai.com/v1',
   'groq':       'https://api.groq.com/openai/v1',
   'cerebras':   'https://api.cerebras.ai/v1',
   'sambanova':  'https://api.sambanova.ai/v1',
   'openrouter': 'https://openrouter.ai/api/v1',
+  // 미등록 — API 키 발급 후 speed-test-keys.json에 추가하면 자동 활성화
+  'xai':        'https://api.x.ai/v1',
+  'mistral':    'https://api.mistral.ai/v1',
+  'together':   'https://api.together.xyz/v1',
+  'fireworks':  'https://api.fireworks.ai/inference/v1',
+  'deepinfra':  'https://api.deepinfra.com/v1/openai',
 };
 
 // 프로바이더별 환경변수명
@@ -51,6 +67,11 @@ const PROVIDER_ENV_KEYS = {
   'cerebras':   'CEREBRAS_API_KEY',
   'sambanova':  'SAMBANOVA_API_KEY',
   'openrouter': 'OPENROUTER_API_KEY',
+  'xai':        'XAI_API_KEY',
+  'mistral':    'MISTRAL_API_KEY',
+  'together':   'TOGETHER_API_KEY',
+  'fireworks':  'FIREWORKS_API_KEY',
+  'deepinfra':  'DEEPINFRA_API_KEY',
 };
 
 const PROVIDER_ICONS = {
@@ -61,13 +82,20 @@ const PROVIDER_ICONS = {
   'sambanova':         '🔥',
   'openrouter':        '🔀',
   'ollama':            '🦙',
+  'xai':               '𝕏 ',
+  'mistral':           '🌀',
+  'together':          '🤝',
+  'fireworks':         '🎆',
+  'deepinfra':         '🏗️',
 };
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
-const args     = process.argv.slice(2);
-const runsArg  = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
-const doApply  = args.includes('--apply');
-const modelArg = args.find(a => a.startsWith('--model='))?.split('=')[1];
+const args        = process.argv.slice(2);
+const runsArg     = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
+const doApply     = args.includes('--apply');
+const doTelegram  = args.includes('--telegram');
+const doLuna      = args.includes('--luna');
+const modelArg    = args.find(a => a.startsWith('--model='))?.split('=')[1];
 
 function log(msg) { process.stdout.write(msg + '\n'); }
 function dim(s)   { return `\x1b[2m${s}\x1b[0m`; }
@@ -89,7 +117,12 @@ function loadModels() {
     id.startsWith('groq/')              ||
     id.startsWith('cerebras/')          ||
     id.startsWith('sambanova/')         ||
-    id.startsWith('openrouter/')
+    id.startsWith('openrouter/')        ||
+    id.startsWith('xai/')               ||
+    id.startsWith('mistral/')           ||
+    id.startsWith('together/')          ||
+    id.startsWith('fireworks/')         ||
+    id.startsWith('deepinfra/')
   );
 
   if (modelArg) {
@@ -111,12 +144,32 @@ function loadOpenAIKey() {
   return profile?.key ?? process.env.OPENAI_API_KEY ?? null;
 }
 
+// invest/secrets.json에서 무료 LLM 키 조회 (groq/cerebras/sambanova)
+function loadInvestSecretKeys() {
+  const INVEST_KEY_MAP = {
+    groq:      'groq_api_key',
+    cerebras:  'cerebras_api_key',
+    sambanova: 'sambanova_api_key',
+  };
+  try {
+    const s = JSON.parse(fs.readFileSync(INVEST_SECRETS_FILE, 'utf-8'));
+    const result = {};
+    for (const [provider, field] of Object.entries(INVEST_KEY_MAP)) {
+      if (s[field]) result[provider] = s[field];
+    }
+    return result;
+  } catch { return {}; }
+}
+
 function loadProviderKey(provider) {
   if (provider === 'openai') return loadOpenAIKey();
   const keys = loadSpeedTestKeys();
   if (keys[provider]) return keys[provider];
   const envVar = PROVIDER_ENV_KEYS[provider];
   if (envVar && process.env[envVar]) return process.env[envVar];
+  // invest/secrets.json fallback (groq/cerebras/sambanova)
+  const investKeys = loadInvestSecretKeys();
+  if (investKeys[provider]) return investKeys[provider];
   return null;
 }
 
@@ -319,7 +372,10 @@ async function testOpenAICompat(provider, modelId, apiKey) {
 }
 
 // ─── 단일 모델 벤치마크 ────────────────────────────────────────────────────
-const OPENAI_COMPAT_PROVIDERS = new Set(['openai', 'groq', 'cerebras', 'sambanova', 'openrouter']);
+const OPENAI_COMPAT_PROVIDERS = new Set([
+  'openai', 'groq', 'cerebras', 'sambanova', 'openrouter',
+  'xai', 'mistral', 'together', 'fireworks', 'deepinfra',
+]);
 
 async function benchmarkModel(modelId, ctx) {
   const provider = modelId.split('/')[0];
@@ -356,13 +412,113 @@ async function benchmarkModel(modelId, ctx) {
   return { modelId, label, provider, ttft: avgTTFT, total: avgTotal, ok: true, sample: valid[0]?.text };
 }
 
+// ─── Telegram 알림 ────────────────────────────────────────────────────────
+function sendTelegramNotify(results, appliedModel, lunaResults = [], lunaBest = null) {
+  const keys = loadSpeedTestKeys();
+  const token  = keys.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = keys.telegram_chat_id   || process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return Promise.resolve();
+
+  const dateStr = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const top3 = results.filter(r => r.ok).slice(0, 5).map((r, i) => {
+    const medal = ['🥇', '🥈', '🥉', '4위', '5위'][i] || '';
+    return `${medal} ${r.label} — ${r.ttft}ms`;
+  }).join('\n');
+  const failed = results.filter(r => !r.ok).length;
+  const changedLine = appliedModel
+    ? `\n🔄 primary 변경: ${appliedModel}`
+    : '';
+
+  // 루나팀 결과 섹션
+  let lunaSection = '';
+  if (lunaResults.length > 0) {
+    const lunaTop = lunaResults.filter(r => r.ok).slice(0, 5).map((r, i) => {
+      const medal = ['🥇', '🥈', '🥉', '4위', '5위'][i] || '';
+      return `  ${medal} ${r.label} — ${r.ttft}ms`;
+    }).join('\n');
+    const lunaBestLine = lunaBest
+      ? '\n' + Object.entries(lunaBest).map(([a, b]) => `  ✅ ${a}: ${b.provider}/${b.model} (${b.ttft}ms)`).join('\n')
+      : '';
+    lunaSection = `\n\n🌙 루나팀 LLM 후보군\n${lunaTop}${lunaBestLine}`;
+  }
+
+  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${changedLine}\n\n❌ 실패: ${failed}개${lunaSection}`;
+
+  return new Promise((resolve) => {
+    const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
+    const req  = https.request({
+      hostname: 'api.telegram.org',
+      path:     `/bot${token}/sendMessage`,
+      method:   'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
+    }, (res) => {
+      res.resume();
+      resolve();
+    });
+    req.on('error', () => resolve());
+    req.setTimeout(10000, () => { req.destroy(); resolve(); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// ─── 루나팀 LLM 후보군 ─────────────────────────────────────────────────────
+
+function loadLunaCandidates() {
+  try { return JSON.parse(fs.readFileSync(LUNA_CANDIDATES_FILE, 'utf-8')); }
+  catch { return null; }
+}
+
+/** 후보군에서 중복 제거된 provider/modelId 목록 추출 */
+function getLunaTestModels(candidates) {
+  const seen = new Set();
+  const models = [];
+  for (const list of Object.values(candidates.analysts || {})) {
+    for (const c of list) {
+      const key = `${c.provider}/${c.model}`;
+      if (!seen.has(key)) { seen.add(key); models.push(key); }
+    }
+  }
+  return models;
+}
+
+/** 벤치마크 결과 → 분석가별 최고 모델 → luna-llm-best.json 저장 */
+function applyLunaBest(results, candidates) {
+  const resultMap = new Map(results.filter(r => r.ok).map(r => [r.modelId, r]));
+  const best = {};
+
+  for (const [analyst, list] of Object.entries(candidates.analysts || {})) {
+    let bestEntry = null;
+    let bestTTFT  = Infinity;
+    for (const c of list) {
+      const key = `${c.provider}/${c.model}`;
+      const r   = resultMap.get(key);
+      if (r && r.ttft < bestTTFT) {
+        bestTTFT  = r.ttft;
+        bestEntry = { provider: c.provider, model: c.model, ttft: r.ttft };
+      }
+    }
+    if (bestEntry) best[analyst] = bestEntry;
+  }
+
+  fs.writeFileSync(LUNA_LLM_BEST_FILE, JSON.stringify({
+    updatedAt: new Date().toISOString(), best,
+  }, null, 2) + '\n');
+
+  log(`\n✅ luna-llm-best.json 업데이트 완료`);
+  for (const [analyst, b] of Object.entries(best)) {
+    log(`   ${analyst.padEnd(20)} ${b.provider}/${b.model}  ${cyan(b.ttft + 'ms')}`);
+  }
+  return best;
+}
+
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────
 function applyFastest(results) {
   const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
 
-  // primary는 Gemini(무료 OAuth)만 대상
+  // primary는 Gemini(무료 OAuth) 중 가장 빠른 모델 — 버전 무관 자동 교체
   const geminiValid = results.filter(r => r.ok && r.provider === 'google-gemini-cli');
-  if (geminiValid.length === 0) { log('\n⚠️  적용할 Gemini 모델 결과 없음'); return; }
+  if (geminiValid.length === 0) { log('\n⚠️  적용할 Gemini 모델 결과 없음'); return null; }
 
   cfg.agents.defaults.model.primary = geminiValid[0].modelId;
 
@@ -375,6 +531,7 @@ function applyFastest(results) {
   log(`\n✅ openclaw.json 업데이트 완료`);
   log(`   primary:   ${geminiValid[0].modelId}`);
   log(`   fallbacks: ${cfg.agents.defaults.model.fallbacks.join(', ')}`);
+  return geminiValid[0].modelId;
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────────────
@@ -468,12 +625,89 @@ async function main() {
   log(`\n  현재 primary: ${dim(current)}`);
 
   const fastest = results.find(r => r.ok);
+  let appliedModel = null;
   if (fastest && fastest.modelId !== current) {
     log(`  최고 속도: ${green(fastest.modelId)} (TTFT ${fastest.ttft}ms)`);
-    if (doApply) applyFastest(results);
-    else log(dim(`\n  Gemini 기준 적용: node scripts/speed-test.js --apply`));
+    if (doApply) {
+      appliedModel = applyFastest(results);
+    } else {
+      log(dim(`\n  Gemini 기준 적용: node scripts/speed-test.js --apply`));
+    }
   } else if (fastest) {
     log(`  ${green('✅ 현재 모델이 가장 빠릅니다')}`);
+  }
+
+  // ─── 루나팀 LLM 후보군 테스트 ──────────────────────────────────────────
+  let lunaResults = [];
+  let lunaBest    = null;
+  if (doLuna) {
+    const candidates = loadLunaCandidates();
+    if (!candidates) {
+      log(yellow('\n⚠️  luna candidates 파일 없음 — 스킵'));
+    } else {
+      const lunaModels = getLunaTestModels(candidates);
+      log(bold('\n🌙 루나팀 LLM 후보군 속도 테스트'));
+      log(dim(`   후보: ${lunaModels.join(', ')}\n`));
+
+      // 루나 프로바이더 키 로드
+      const lunaProviders = [...new Set(lunaModels.map(m => m.split('/')[0]))];
+      for (const provider of lunaProviders) {
+        if (!ctx.keys[provider]) {
+          const key = loadProviderKey(provider);
+          if (key) {
+            ctx.keys[provider] = key;
+            log(`🔑 ${provider.padEnd(14)} API 키 ${green('✅')}`);
+          } else {
+            log(`${yellow('⚠️')}  ${provider.padEnd(14)} API 키 없음 — 스킵`);
+          }
+        }
+      }
+
+      log('');
+      log(dim(`${'모델'.padEnd(36)} ${'TTFT'.padStart(8)} ${'총시간'.padStart(8)}`));
+      log(dim('─'.repeat(56)));
+
+      for (const modelId of lunaModels) {
+        const provider = modelId.split('/')[0];
+        if (!ctx.keys[provider]) continue;
+        const r = await benchmarkModel(modelId, ctx);
+        lunaResults.push(r);
+      }
+
+      lunaResults.sort((a, b) => {
+        if (a.ttft === null && b.ttft === null) return 0;
+        if (a.ttft === null) return 1;
+        if (b.ttft === null) return -1;
+        return a.ttft - b.ttft;
+      });
+
+      log('');
+      log(bold('📊 루나 결과 (TTFT 기준)'));
+      log(dim('─'.repeat(64)));
+      for (let i = 0; i < lunaResults.length; i++) {
+        const r = lunaResults[i];
+        if (!r.ok) {
+          log(`  ${red('✗')} ${r.label.padEnd(34)} ${red('실패')}  ${dim(r.error?.slice(0,50) ?? '')}`);
+          continue;
+        }
+        const rank     = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+        const ttftStr  = `${r.ttft}ms`.padStart(8);
+        const totalStr = `${r.total}ms`.padStart(8);
+        const color    = i === 0 ? green : i < 3 ? yellow : (s => s);
+        log(`  ${rank} ${color(r.label.padEnd(34))} ${cyan(ttftStr)} ${dim(totalStr)}  ${dim(r.sample ?? '')}`);
+      }
+      log(dim('─'.repeat(64)));
+
+      if (doApply && lunaResults.some(r => r.ok)) {
+        lunaBest = applyLunaBest(lunaResults, candidates);
+      }
+    }
+  }
+
+  if (doTelegram) {
+    process.stdout.write('\n📨 텔레그램 알림 전송...');
+    await sendTelegramNotify(results, appliedModel, lunaResults, lunaBest);
+    log(green(' ✅'));
   }
   log('');
 }

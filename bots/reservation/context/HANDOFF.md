@@ -24,15 +24,22 @@
 <!-- bug-tracker:issues:start -->
 | 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |
 |------|--------|----|------|--------|------|
-| 🔴 | 🟡 | `BUG-006` | BOOT 재시작 시 파일명 텔레그램 출력 이슈 | ska | 11분 전 |
+| 🔴 | 🟡 | `BUG-006` | BOOT 재시작 시 파일명 텔레그램 출력 이슈 | ska | 3일 전 |
+| 🔴 | 🔴 | `BUG-010` | 픽코 자동 등록 실패 | ska | 1일 전 |
+| 🔴 | 🔴 | `BUG-011` | 픽코 자동 등록 실패 | ska | 21시간 전 |
+| 🔴 | 🔴 | `BUG-012` | pickko-member.js 회원 등록 중 Runtime.callFunctionOn 타임아웃 발생 | ska | 21시간 전 |
+| 🔴 | 🔴 | `BUG-013` | 픽코 자동 등록 실패 | ska | 12시간 전 |
+| 🔴 | 🟡 | `DXT-300739` | [덱스터] 핵심 파일 체크섬 변경 감지 | undefined | NaN분 전 |
+| 🔴 | 🔴 | `BUG-014` | 픽코 자동 등록 실패 | ska | 10분 전 |
+| 🔴 | 🔴 | `BUG-015` | 픽코 자동 등록 실패 | ska | 0분 전 |
 
 **최근 해결:**
+- ✅ `BUG-009` **픽코 자동 취소 실패**
+  고객:010-2187-5073 / 2026-03-14 09:00~10:30 / B룸 / exit code 1 (1일 전)
+- ✅ `BUG-008` **픽코 자동 등록 실패**
+  고객:010-2187-5073 / 2026-03-14 09:00~10:30 / B룸 / exit code 1 (1일 전)
 - ✅ `BUG-007` **Puppeteer Runtime.callFunctionOn 타임아웃 반복 발생**
-  버그 최초 보고 (0분 전)
-- ✅ `BUG-005` **naver-monitor 가끔 느려지는 문제**
-  테스트용으로 등록한 버그, 실제 이슈 아님 (10시간 전)
-- ✅ `BUG-003` **알림 파일 resolved 상태 미관리 — 수동 확인 필요 알림 누적**
-  재시작 후 '✅ 미해결 알림 없음' 로그 확인 (2일 전)
+  버그 최초 보고 (3일 전)
 <!-- bug-tracker:issues:end -->
 
 ---
@@ -188,6 +195,399 @@
 - packages/core·playwright-utils·_template 플랜 완료 검증 (전 Phase 완료 확인)
 - 관련 파일: `scripts/pre-commit`, `scripts/setup-hooks.sh`
 <!-- session-close:2026-02-27:precommit-훅-설치-및-공유-인프라-플랜-완료-:end -->
+
+<!-- session-close:2026-02-27:st001003-완료-ska-설계-백로그-전체-등록 -->
+#### 2026-02-27 ✨ ST-001~003 완료 + ska 설계 + 백로그 전체 등록
+- ST-001 state.db 자동 백업 (launchd 03:00 일일)
+- ST-002 BUG-006 해결 — deployer.js BOOT 침묵 강화 + telegram.js 파일명 필터
+- ST-003 launchd 헬스체크 (10분 주기, 7개 서비스 감시)
+- ska 매출예측 시스템 설계 확정 (Prophet + DuckDB, 4개 봇팀)
+- 전체 개발 백로그 등록 (ST/FE/MD/LT 20개 항목)
+- 관련 파일: `bots/reservation/scripts/backup-db.js|bots/reservation/scripts/health-check.js|bots/reservation/lib/telegram.js|scripts/lib/deployer.js|Library/LaunchAgents/ai.ska.db-backup.plist|Library/LaunchAgents/ai.ska.health-check.plist`
+<!-- session-close:2026-02-27:st001003-완료-ska-설계-백로그-전체-등록:end -->
+
+<!-- session-close:2026-02-27:fe002-룸별시간대별-가동률-리포트-구현 -->
+#### 2026-02-27 ✨ FE-002 룸별·시간대별 가동률 리포트 구현
+- src/occupancy-report.js 신규: 룸별/시간대별 가동률 계산
+- 영업시간 09:00~22:00 기준 13슬롯 분석
+- --period=week/month --month=YYYY-MM 기간 옵션 지원
+- CLAUDE_NOTES.md 가동률 자연어 명령 테이블 추가
+- 관련 파일: `src/occupancy-report.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-27:fe002-룸별시간대별-가동률-리포트-구현:end -->
+
+<!-- session-close:2026-02-27:fe005-로그-rotation-copytruncate -->
+#### 2026-02-27 ✨ FE-005 로그 rotation (copytruncate, 매일 04:05)
+- scripts/log-rotate.js 신규: 10개 로그 copytruncate 방식 로테이션
+- ai.ska.log-rotate.plist: 매일 04:05 자동 실행
+- 보관 7일, 1KB 미만 스킵, 당일 중복 방지
+- health-check.js: 8번째 서비스(log-rotate) 추가
+- 관련 파일: `scripts/log-rotate.js`, `~/Library/LaunchAgents/ai.ska.log-rotate.plist`, `scripts/health-check.js`
+<!-- session-close:2026-02-27:fe005-로그-rotation-copytruncate:end -->
+
+<!-- session-close:2026-02-27:fe006-gemini25flash-execute_to -->
+#### 2026-02-27 ⚙️ FE-006 gemini-2.5-flash execute_tool 누출 버그 재테스트 — 버그 종결
+- gemini-2.5-flash telegram run 6건 전수 검사 — execute_tool 텍스트 누출 0건
+- 실제 도구 호출(tool=exec) 정상 확인 — 버그 미재현으로 종결
+- 부수 발견: sendChatAction 실패 10건 (typing 인디케이터, 메시지 발송 무영향)
+<!-- session-close:2026-02-27:fe006-gemini25flash-execute_to:end -->
+
+<!-- session-close:2026-02-27:fe009-healthcheck-staleness-체크 -->
+#### 2026-02-27 ✨ FE-009 health-check staleness 체크 추가 (naver-monitor 크래시루프 감지)
+- health-check.js: checkNaverLogStaleness() 추가 — 15분 무활동 시 알림
+- PID 체크만으로 감지 못했던 크래시루프 상황 커버
+- 30분 쿨다운 적용, 로그 없으면 스킵
+- 관련 파일: `scripts/health-check.js`
+<!-- session-close:2026-02-27:fe009-healthcheck-staleness-체크:end -->
+
+<!-- session-close:2026-02-27:fe007-mosh-설치-및-아이패드-ssh-환경-개선 -->
+#### 2026-02-27 ⚙️ FE-007 mosh 설치 및 아이패드 SSH 환경 개선 검토
+- mosh 1.4.0 설치 완료 (brew install mosh)
+- ~/.zprofile 생성 — SSH 로그인 셸 PATH 설정 (mosh-server 검색 가능)
+- 검토 결과: 한글 입력 개선 없음(transport 무관 Ink 버그)
+- 실제 이점: WiFi↔LTE 전환 시 세션 유지, 네트워크 복구
+- 관련 파일: `~/.zprofile`
+<!-- session-close:2026-02-27:fe007-mosh-설치-및-아이패드-ssh-환경-개선:end -->
+
+<!-- session-close:2026-02-27:fe008-claude-code-한글-버그-github -->
+#### 2026-02-27 ⚙️ FE-008 Claude Code 한글 버그 GitHub 이슈 #15705 코멘트 등록
+- 기존 이슈 #15705 확인 (OPEN, 9개 코멘트, area:tui bug 레이블)
+- 코멘트 추가: macOS 로컬(iTerm2) 재현 + rlwrap/mosh 무효 확인
+- 단기 FE 백로그 전체 완료 (FE-002~009)
+<!-- session-close:2026-02-27:fe008-claude-code-한글-버그-github:end -->
+
+<!-- session-close:2026-02-27:md006-datagokr-api-키-발급-가이드 -->
+#### 2026-02-27 ⚙️ MD-006: data.go.kr API 키 발급 가이드
+- secrets.json 플레이스홀더 4개 추가
+- improvement-ideas.md MD-006 완료 처리
+- API 신청 가이드 작성
+- 관련 파일: `bots/reservation/secrets.json`
+<!-- session-close:2026-02-27:md006-datagokr-api-키-발급-가이드:end -->
+
+<!-- session-close:2026-02-27:픽코-타임아웃-근본-해결-자동-버그리포트-ska001- -->
+#### 2026-02-27 🔧 픽코 타임아웃 근본 해결 + 자동 버그리포트 + ska-001 + SKA 통일
+- pickko-accurate.js 7단계 page.click→evaluate (Runtime.callFunctionOn 타임아웃 근본 해결)
+- pickko-cancel.js 3단계 page.$eval/click→evaluate 동일 수정
+- naver-monitor.js autoBugReport() 추가 — 픽코 오류 시 bug-tracker 자동 등록
+- ska-001 DuckDB 스키마 생성 (revenue_daily·environment_factors·forecast)
+- bots/scar→bots/ska 디렉토리 + 전체 문서 SKA 통일
+- MD-006 data.go.kr API 키 4종 secrets.json 등록 완료
+- 관련 파일: `bots/reservation/src/pickko-accurate.js`, `bots/reservation/src/pickko-cancel.js`, `bots/reservation/src/naver-monitor.js`, `bots/ska/scripts/setup-db.py`
+<!-- session-close:2026-02-27:픽코-타임아웃-근본-해결-자동-버그리포트-ska001-:end -->
+
+<!-- session-close:2026-02-27:ska005008-완료-이브크롤링launchd-스케줄링 -->
+#### 2026-02-27 ✨ ska-005~008 완료 — 이브크롤링+launchd 스케줄링
+- ska-005 이브크롤링(큐넷+수능) — 547건 upsert 343일
+- ska-008 launchd 4개 서비스 완료 — etl/eve/eve-crawl/rebecca
+- scripts/send-telegram.py + scripts/run-rebecca.sh 생성
+- ai.ska.etl(00:30)+ai.ska.eve(06:00)+ai.ska.eve-crawl(일04:30)+ai.ska.rebecca(08:00)
+- 관련 파일: `bots/ska/src/eve_crawl.py|bots/ska/scripts/send-telegram.py|bots/ska/scripts/run-rebecca.sh`
+<!-- session-close:2026-02-27:ska005008-완료-이브크롤링launchd-스케줄링:end -->
+
+<!-- session-close:2026-02-27:ska006-완료-prophet-매출-예측-엔진 -->
+#### 2026-02-27 ✨ ska-006 완료 — Prophet 매출 예측 엔진
+- forecast.py Prophet 기본 엔진 (daily/weekly/monthly 3모드)
+- regressor: exam_score+rain_prob+vacation_flag+KR 공휴일
+- base_forecast=요일히스토리평균 / yhat=Prophet예측 / 신뢰구간 80%
+- ai.ska.forecast-daily(매일18:00)+ai.ska.forecast-weekly(금18:00) launchd
+- scripts/run-forecast.sh + requirements.txt prophet==1.3.0 추가
+- 관련 파일: `bots/ska/src/forecast.py|bots/ska/scripts/run-forecast.sh|bots/ska/requirements.txt`
+<!-- session-close:2026-02-27:ska006-완료-prophet-매출-예측-엔진:end -->
+
+<!-- session-close:2026-02-27:ska007-완료-prophet-regressor-ex -->
+#### 2026-02-27 ✨ ska-007 완료 — Prophet regressor exam_events 연동
+- forecast.py prophet-v1→v2 업그레이드
+- load_history: exam_events JOIN으로 역사데이터 exam_score 강화
+- load_future_env: UNION approach로 env+exam_events 완전 커버
+- 3월 학력평가 score=5 자동 반영 확인 (3/12 당일, 3/7~11 D-7 prep)
+- 관련 파일: `bots/ska/src/forecast.py`
+<!-- session-close:2026-02-27:ska007-완료-prophet-regressor-ex:end -->
+
+<!-- session-close:2026-02-27:ska014015-대학교-크롤링-공무원-정적-캘린더 -->
+#### 2026-02-27 ✨ ska-014/015: 대학교 크롤링 + 공무원 정적 캘린더
+- ska-014: 가천대·단국대 죽전 시험기간 Playwright 크롤링
+- ska-015: 공무원 시험 정적 캘린더 (국가직9급·지방직9급·7급·경찰·소방)
+- upsert_events source 파라미터 추가 (calc/crawl/static 구분)
+- exam_events: 850행 (calc547+crawl148+static155)
+- 4월 중간고사 exam_score 피크 12~15 정상
+- 관련 파일: `bots/ska/src/eve_crawl.py`
+<!-- session-close:2026-02-27:ska014015-대학교-크롤링-공무원-정적-캘린더:end -->
+
+<!-- session-close:2026-02-27:설계문서-v21-레베카-llm-제거-확정 -->
+#### 2026-02-27 ⚙️ 설계문서 v2.1: 레베카 LLM 제거 확정
+- ska-design.md v2.1 업데이트
+- 레베카 LLM 완전 제거 (팀 테이블·LLM 레이어·리포트 종류·피드백 루프)
+- LLM은 포캐스트 월간 전담으로 확정
+- launchd 스케줄 전체 17개 plist 현황 반영
+- Phase 1·2 완료 표기
+- 관련 파일: `memory/ska-design.md`
+<!-- session-close:2026-02-27:설계문서-v21-레베카-llm-제거-확정:end -->
+
+<!-- session-close:2026-02-27:설계문서-v22-phase-33-루프-자동화-로드맵 -->
+#### 2026-02-27 ⚙️ 설계문서 v2.2: Phase 3/3+ 루프 자동화 로드맵
+- Phase 3 목표 명확화 (진단→수동 적용, 반자동, 3개월+)
+- Phase 3+ 신설 (완전 자동 루프, 6개월+, 백테스트+롤백)
+- 루프 구조 요약 섹션 추가 (Phase별 자동화 수준)
+- ska-design.md v2.2 업데이트
+- 관련 파일: `memory/ska-design.md`
+<!-- session-close:2026-02-27:설계문서-v22-phase-33-루프-자동화-로드맵:end -->
+
+<!-- session-close:2026-02-27:tmux-remote-control-설정-llm-api -->
+#### 2026-02-27 ⚙️ tmux Remote Control 설정 + LLM API 코드 개선
+- tmux 설치 + ai.ska.tmux launchd 등록 (재부팅 자동 복구)
+- 아이패드 Claude Remote Control (/rc) 연결 확인
+- forecast.py _call_llm_diagnosis system 파라미터 분리 + Prompt Caching + temperature=0.1 + 에러 세분화
+- coding-guide.md 섹션 12/13 Anthropic SDK 직접 호출 패턴 + temperature 가이드 + 모델 표 추가
+- 관련 파일: `bots/ska/src/forecast.py|docs/coding-guide.md|Library/LaunchAgents/ai.ska.tmux.plist|start-ska-session.sh`
+<!-- session-close:2026-02-27:tmux-remote-control-설정-llm-api:end -->
+
+<!-- session-close:2026-02-27:cl006-코딩가이드-기준-전체-코드-리팩토링 -->
+#### 2026-02-27 ♻️ CL-006 코딩가이드 기준 전체 코드 리팩토링
+- maskPhone/maskName 함수 추가 (lib/formatting.js)
+- JS 8개 파일 개인정보 로그 마스킹 (phone/name)
+- Python DB 연결 try/finally 래핑 (etl/rebecca/eve)
+- Python 에러 묵음→경고 출력 (etl/eve/eve_crawl)
+- writeFileSync→saveJson 전환 (naver-monitor/bug-report)
+- inspect-naver.js 하드코딩 경로 제거
+- 관련 파일: `lib/formatting.js`, `src/naver-monitor.js`, `src/pickko-accurate.js`, `src/pickko-verify.js`, `src/pickko-member.js`, `src/pickko-ticket.js`, `src/pickko-kiosk-monitor.js`, `src/pickko-daily-audit.js`, `src/pickko-daily-summary.js`, `src/bug-report.js`, `src/inspect-naver.js`, `bots/ska/src/etl.py`, `bots/ska/src/rebecca.py`, `bots/ska/src/eve.py`, `bots/ska/src/eve_crawl.py`
+<!-- session-close:2026-02-27:cl006-코딩가이드-기준-전체-코드-리팩토링:end -->
+
+<!-- session-close:2026-02-27:pickkodailyauditsummary-실행-시간- -->
+#### 2026-02-27 ⚙️ pickko-daily-audit/summary 실행 시간 23:50으로 변경
+- pickko-daily-audit 22:00→23:50 (plist 수정 + launchd 재등록)
+- pickko-daily-summary 00:00→23:50 (LaunchAgents plist 수정 + launchd 재등록)
+- 관련 파일: `bots/reservation/ai.ska.pickko-daily-audit.plist`, `LaunchAgents/ai.ska.pickko-daily-summary.plist`
+<!-- session-close:2026-02-27:pickkodailyauditsummary-실행-시간-:end -->
+
+<!-- session-close:2026-02-28:pickkodailyaudit-스케줄-2200-원복 -->
+#### 2026-02-28 ⚙️ pickko-daily-audit 스케줄 22:00 원복
+- pickko-daily-audit 23:50→22:00 원복 (plist 수정 + launchd 재등록)
+- 관련 파일: `bots/reservation/ai.ska.pickko-daily-audit.plist`
+<!-- session-close:2026-02-28:pickkodailyaudit-스케줄-2200-원복:end -->
+
+<!-- session-close:2026-02-28:openclaw-v2026226-업데이트-및-재시작 -->
+#### 2026-02-28 ⚙️ OpenClaw v2026.2.26 업데이트 및 재시작
+- openclaw gateway restart (완전 중지 후 재시작)
+- openclaw v2026.2.19-2 → v2026.2.26 업데이트
+- 텔레그램 업데이트 완료 알림 전송
+<!-- session-close:2026-02-28:openclaw-v2026226-업데이트-및-재시작:end -->
+
+<!-- session-close:2026-02-28:스카-재부팅 -->
+#### 2026-02-28 ⚙️ 스카 재부팅
+- openclaw gateway restart → 스카 부팅 완료 (durationMs=59s)
+<!-- session-close:2026-02-28:스카-재부팅:end -->
+
+<!-- session-close:2026-02-28:매출-보고-일반이용-합산-수정 -->
+#### 2026-02-28 🔧 매출 보고 일반이용 합산 수정
+- pickko-daily-summary.js: 23:50 자동 보고 합계에 일반이용(스터디카페) 포함
+- pickko-stats-cmd.js: 일별/기간별 조회 합계에 일반이용 포함
+- pickko-revenue-confirm.js: 매출 확정 메시지 합계에 일반이용 포함
+- CLAUDE_NOTES.md: 매출 보고 시 일반이용 포함 규칙 추가
+- 관련 파일: `bots/reservation/src/pickko-daily-summary.js|bots/reservation/src/pickko-stats-cmd.js|bots/reservation/src/pickko-revenue-confirm.js|bots/reservation/context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-28:매출-보고-일반이용-합산-수정:end -->
+
+<!-- session-close:2026-02-28:미해결-알림-해제-매출-일반이용-합산-수정 -->
+#### 2026-02-28 🔧 미해결 알림 해제 + 매출 일반이용 합산 수정
+- 픽코 취소 실패 알림 수동 resolved 처리 (2026-02-27 18:00 A2)
+- naver-monitor 재시작 후 미해결 알림 반복 전송 중단 확인
+- pickko-daily-summary.js 일반이용 합계 포함 수정
+- pickko-stats-cmd.js 일반이용 합계 포함 수정
+- pickko-revenue-confirm.js 일반이용 합계 포함 수정
+- CLAUDE_NOTES.md 매출 보고 규칙 추가
+- 관련 파일: `bots/reservation/src/pickko-daily-summary.js|bots/reservation/src/pickko-stats-cmd.js|bots/reservation/src/pickko-revenue-confirm.js|bots/reservation/context/CLAUDE_NOTES.md`
+<!-- session-close:2026-02-28:미해결-알림-해제-매출-일반이용-합산-수정:end -->
+
+<!-- session-close:2026-02-28:고아-프로세스-자동-정리-추가 -->
+#### 2026-02-28 🔧 고아 프로세스 자동 정리 추가
+- start-ops.sh cleanup_old()에 고아 tail -f 프로세스 자동 정리 추가 (2시간 재시작마다 실행)
+- 관련 파일: `bots/reservation/src/start-ops.sh`
+<!-- session-close:2026-02-28:고아-프로세스-자동-정리-추가:end -->
+
+<!-- session-close:2026-02-28:runtimecallfunctionon-타임아웃-근본- -->
+#### 2026-02-28 🔧 Runtime.callFunctionOn 타임아웃 근본 수정 + DB 중복 레코드 정리
+- pickko-accurate.js page.click→evaluate (회원선택 버튼)
+- pickko-verify.js page.click→evaluate (검색 버튼)
+- start-ops.sh PICKKO_PROTOCOL_TIMEOUT_MS=300000 추가
+- DB 중복 레코드 정리 (010-2187-5073 03-14 failed)
+- 관련 파일: `src/pickko-accurate.js`, `src/pickko-verify.js`, `src/start-ops.sh`
+<!-- session-close:2026-02-28:runtimecallfunctionon-타임아웃-근본-:end -->
+
+<!-- session-close:2026-02-28:2350-generalrevenue-미수집-중복예약-표 -->
+#### 2026-02-28 🔧 23:50 generalRevenue 미수집 + 중복예약 표시 버그 수정
+- isMidnight 버그 수정 (hourKST===0 → hourKST===23
+- 0) — 23:50 실행시 generalRevenue 수집
+- dedup 키 수정 (date
+- start
+- end
+- room → date
+- start
+- room) — 중복예약 11건→8건 정리
+- launchd runs=0 원인 규명 — 재부팅 카운터 리셋, 오딧 정상 운영 확인
+- etl.py sqlite_con.close() finally 블록 이동
+- 관련 파일: `bots/reservation/src/pickko-daily-summary.js|bots/ska/src/etl.py`
+<!-- session-close:2026-02-28:2350-generalrevenue-미수집-중복예약-표:end -->
+
+<!-- session-close:2026-02-28:cl006-코딩가이드-리팩토링-완료-확인-백필-스크립트 -->
+#### 2026-02-28 🔧 CL-006 코딩가이드 리팩토링 완료 확인 + 백필 스크립트
+- CL-006 플랜 전항목 완료 확인 (P0~P4 모두 이전 세션에서 구현됨)
+- backfill-study-room.js 36건 업데이트 완료 (이전 세션 작업)
+- pickko-daily-summary isMidnight 23:50 버그 수정 확인
+- 관련 파일: `bots/reservation/src/backfill-study-room.js|bots/reservation/src/pickko-daily-summary.js`
+<!-- session-close:2026-02-28:cl006-코딩가이드-리팩토링-완료-확인-백필-스크립트:end -->
+
+<!-- session-close:2026-03-01:새로고침-버튼-fix-알림-컨텍스트-공유 -->
+#### 2026-03-01 🔧 새로고침 버튼 fix + 알림 컨텍스트 공유
+- naver-monitor 새로고침 버튼 ElementHandle.click→evaluate() 수정
+- pickko-alerts-query.js 신규 (알림 DB 조회 CLI)
+- CLAUDE_NOTES.md 알림 인식 규칙 추가 (방금 알림 키워드 트리거)
+- deployer.js BOOT.md 생성 시 최근 48시간 에러 알림 자동 인라인
+- 관련 파일: `bots/reservation/src/naver-monitor.js|bots/reservation/src/pickko-alerts-query.js|bots/reservation/context/CLAUDE_NOTES.md|scripts/lib/deployer.js`
+<!-- session-close:2026-03-01:새로고침-버튼-fix-알림-컨텍스트-공유:end -->
+
+<!-- session-close:2026-03-01:etl-actual_revenue-입금-기준-전환-pi -->
+#### 2026-03-01 🔧 ETL actual_revenue 입금 기준 전환 + pickko_total 분석
+- ETL actual_revenue: pickko_total(이용일) → total_amount(입금일) 기준 전환
+- studyroom_revenue = total_amount - general_revenue 로 재계산
+- DuckDB 02/28 수동 수정 (236,000→319,500)
+- ETL 즉시 재실행 — 91건 upsert, 02/27·02/28 정상화
+- 관련 파일: `bots/ska/src/etl.py`
+<!-- session-close:2026-03-01:etl-actual_revenue-입금-기준-전환-pi:end -->
+
+<!-- session-close:2026-03-01:boot-침묵-규칙-통일-etl-total_amount -->
+#### 2026-03-01 🔧 BOOT 침묵 규칙 통일 + ETL total_amount 기준 변경
+- BOOT.md 메시지 전송 규칙 제거(침묵 대기로 통일)
+- ETL actual_revenue를 total_amount 기준으로 변경
+- DuckDB 02/28 actual_revenue 수동 수정(319,500)
+- naver-monitor 새로고침 버튼 click 타임아웃 수정
+- pickko-alerts-query.js 신규 생성
+- deployer.js BOOT 에러 알림 인라인 추가
+- 관련 파일: `scripts/lib/deployer.js bots/ska/src/etl.py bots/reservation/src/naver-monitor.js bots/reservation/src/pickko-alerts-query.js bots/reservation/context/CLAUDE_NOTES.md`
+<!-- session-close:2026-03-01:boot-침묵-규칙-통일-etl-total_amount:end -->
+
+<!-- session-close:2026-03-01:미컨펌-알림-날짜-버그-수정 -->
+#### 2026-03-01 🔧 미컨펌 알림 날짜 버그 수정
+- 미컨펌 알림 범위 최근 3일 이내로 제한
+- 메시지 '어제 매출이' → 실제 날짜(prevHeader) 표시로 수정
+- 관련 파일: `bots/reservation/src/pickko-daily-summary.js`
+<!-- session-close:2026-03-01:미컨펌-알림-날짜-버그-수정:end -->
+
+<!-- session-close:2026-03-01:예약-오류-체크-픽코-cdp-타임아웃-원인-분석 -->
+#### 2026-03-01 ⚙️ 예약 오류 체크 - 픽코 CDP 타임아웃 원인 분석
+- 픽코 예약 실패 원인 확인 (Runtime.callFunctionOn timed out)
+- 픽코 서버 일시 지연 → 재시도 로직 정상 작동 확인
+- 3건 모두 최종 픽코 등록 성공 확인 (verified)
+<!-- session-close:2026-03-01:예약-오류-체크-픽코-cdp-타임아웃-원인-분석:end -->
+
+<!-- session-close:2026-03-01:스카-재시작-및-부팅-확인 -->
+#### 2026-03-01 ⚙️ 스카 재시작 및 부팅 확인
+- 스카 재시작 (PID 66467)
+- 부팅 완료 확인 (5.2초, isError=false)
+<!-- session-close:2026-03-01:스카-재시작-및-부팅-확인:end -->
+
+<!-- session-close:2026-03-01:스카팀-루나팀-패턴-적용 -->
+#### 2026-03-01 ✨ 스카팀 루나팀 패턴 적용 ①②③
+- DB Migration System (scripts/migrate.js + migrations/)
+- Secrets Fallback Strategy (lib/secrets.js + lib/telegram.js)
+- Start Script Validation (scripts/preflight.js + start-ops.sh 2중 체크)
+- 관련 파일: `scripts/preflight.js|src/start-ops.sh|lib/secrets.js|lib/telegram.js|scripts/migrate.js|migrations/001_initial_schema.js|migrations/002_daily_summary_columns.js`
+<!-- session-close:2026-03-01:스카팀-루나팀-패턴-적용:end -->
+
+<!-- session-close:2026-03-02:skap05p08-루나팀-패턴-적용-deployopss -->
+#### 2026-03-02 ✨ SKA-P05~P08 루나팀 패턴 적용 + deploy-ops.sh
+- lib/error-tracker.js 연속 오류 카운터 (naver-monitor+kiosk-monitor 통합)
+- scripts/e2e-test.js E2E 통합 테스트 28/28
+- lib/mode.js DEV/OPS 모드 분리 (MODE=ops, getModeSuffix)
+- lib/status.js 프로세스 상태 파일 /tmp/ska-status.json
+- scripts/deploy-ops.sh E2E→컨펌→OPS재시작→체크섬→텔레그램
+- 관련 파일: `bots/reservation/lib/error-tracker.js|bots/reservation/lib/mode.js|bots/reservation/lib/status.js|bots/reservation/scripts/e2e-test.js|bots/reservation/scripts/deploy-ops.sh|bots/reservation/src/naver-monitor.js`
+<!-- session-close:2026-03-02:skap05p08-루나팀-패턴-적용-deployopss:end -->
+
+<!-- session-close:2026-03-02:3중-가동중지-libhealthjs-deployopss -->
+#### 2026-03-02 ✨ 3중 가동/중지 lib/health.js + deploy-ops.sh
+- lib/health.js 3중 가동(preflightSystemCheck/ConnCheck)+3중 중지(shutdownDB/Cleanup/registerShutdownHandlers)
+- scripts/preflight.js health.js 래퍼로 교체
+- src/start-ops.sh 3중 체크 추가(--conn)
+- src/naver-monitor.js registerShutdownHandlers+isShuttingDown 루프 가드
+- scripts/e2e-test.js 32/32 통과
+- 관련 파일: `bots/reservation/lib/health.js|bots/reservation/scripts/preflight.js|bots/reservation/src/start-ops.sh|bots/reservation/src/naver-monitor.js|bots/reservation/scripts/e2e-test.js`
+<!-- session-close:2026-03-02:3중-가동중지-libhealthjs-deployopss:end -->
+
+<!-- session-close:2026-03-02:하트비트-오늘예약현황-추가-scarska-정리-절대규칙 -->
+#### 2026-03-02 ✨ 하트비트 오늘예약현황 추가 + scar→ska 정리 + 절대규칙 등록
+- getTodayStats() DB함수 추가 (네이버+키오스크 합계)
+- 하트비트 메시지 오늘 예약현황 섹션 추가
+- etl.py scar.duckdb→ska.duckdb 주석 수정
+- 이브(Eve) 절대규칙 스카팀 등록 + registry.json 추가
+- 절대규칙 기본언어 한국어 추가
+- 관련 파일: `bots/reservation/lib/db.js|bots/reservation/src/naver-monitor.js|bots/ska/src/etl.py|bots/registry.json`
+<!-- session-close:2026-03-02:하트비트-오늘예약현황-추가-scarska-정리-절대규칙:end -->
+
+<!-- session-close:2026-03-02:대리등록네이버예약불가자동처리로직추가 -->
+#### 2026-03-02 ✨ 대리등록-네이버-예약불가-자동처리-로직-추가
+- pickko-kiosk-monitor.js blockSlotOnly() + --block-slot 모드 추가
+- pickko-register.js 픽코 등록 성공 후 네이버 차단 자동 호출
+- 오수정님 테스트 통과 (이미 차단됨 감지)
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js|bots/reservation/src/pickko-register.js`
+<!-- session-close:2026-03-02:대리등록네이버예약불가자동처리로직추가:end -->
+
+<!-- session-close:2026-03-02:오늘예약검증audittoday구현 -->
+#### 2026-03-02 ✨ 오늘-예약-검증-audit-today-구현
+- auditToday() 함수 추가 (pickko-kiosk-monitor.js)
+- getKioskBlocksForDate(date) DB 함수 추가 (lib/db.js)
+- --audit-today 진입점 추가
+- run-today-audit.sh 래퍼 스크립트 생성
+- ai.ska.today-audit.plist 08:30 KST launchd 등록
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js`, `bots/reservation/lib/db.js`, `bots/reservation/src/run-today-audit.sh`
+<!-- session-close:2026-03-02:오늘예약검증audittoday구현:end -->
+
+<!-- session-close:2026-03-02:audittodayfailedlist차단실패알림추가 -->
+#### 2026-03-02 🔧 auditToday-failedList-차단실패-알림-추가
+- blockNaverSlot false반환시 DB false positive 방지 확인
+- auditToday failedList 추가 - 차단실패 텔레그램 알림
+- 덱스터 체크섬 갱신
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js`
+<!-- session-close:2026-03-02:audittodayfailedlist차단실패알림추가:end -->
+
+<!-- session-close:2026-03-02:blocknaverslotavail소멸보조확인차단성공 -->
+#### 2026-03-02 🔧 blockNaverSlot-avail소멸-보조확인-차단성공
+- verifyBlockInGrid suspended만 확인하는 한계 발견
+- blockNaverSlot avail 소멸 보조 확인 추가 (예약가능설정 방식 차단 지원)
+- B룸 18:00 차단 성공 확인
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js`
+<!-- session-close:2026-03-02:blocknaverslotavail소멸보조확인차단성공:end -->
+
+<!-- session-close:2026-03-02:auditdate내일날짜검증완료 -->
+#### 2026-03-02 ✨ audit-date-내일날짜-검증-완료
+- auditToday dateOverride 파라미터 추가
+- --audit-date=YYYY-MM-DD CLI 옵션 추가
+- 내일(03/03) 고아차단 해제 흐름 검증 완료
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js`
+<!-- session-close:2026-03-02:auditdate내일날짜검증완료:end -->
+
+<!-- session-close:2026-03-02:픽코취소네이버해제자동화unblockslot -->
+#### 2026-03-02 ✨ 픽코취소-네이버해제-자동화-unblock-slot
+- unblockNaverSlot avail-gone 버그 수정 (false positive return 제거)
+- restoreAvailGoneSlot 헬퍼 추가 (B룸 예약가능설정방식 복구)
+- unblockSlotOnly + --unblock-slot CLI 모드 추가
+- pickko-cancel-cmd.js: 픽코취소→네이버해제 자동 2단계 실행
+- 관련 파일: `bots/reservation/src/pickko-kiosk-monitor.js bots/reservation/src/pickko-cancel-cmd.js`
+<!-- session-close:2026-03-02:픽코취소네이버해제자동화unblockslot:end -->
+
+<!-- session-close:2026-03-02:취소테스트성공availgone복구확인 -->
+#### 2026-03-02 🔧 취소-테스트-성공-avail-gone-복구-확인
+- 이승호 B룸 18:00 취소 테스트 성공 (픽코취소+네이버해제)
+- avail-gone 방식 복구 확인 (restoreAvailGoneSlot 정상 작동)
+- 관련 파일: `bots/reservation/src/pickko-cancel-cmd.js bots/reservation/src/pickko-kiosk-monitor.js`
+<!-- session-close:2026-03-02:취소테스트성공availgone복구확인:end -->
+
+<!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정 -->
+#### 2026-03-02 ✨ 예약 취소 E2E 완성 + TOOLS.md 취소/등록 도구 정비
+- pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제) 완성
+- avail-gone 방식 unblockNaverSlot 수정 + restoreAvailGoneSlot 구현
+- --block-slot --unblock-slot --audit-date CLI 추가
+- TOOLS.md 취소 섹션 추가 + pickko-accurate.js 내부모듈 명시
+- 취소+등록 E2E 스카봇 자연어 테스트 통과
+- 관련 파일: `src/pickko-kiosk-monitor.js`, `src/pickko-cancel-cmd.js`, `context/CLAUDE_NOTES.md`
+<!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정:end -->
 
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**

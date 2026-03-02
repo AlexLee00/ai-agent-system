@@ -23,7 +23,7 @@ const { spawn }  = require('child_process');
 const path = require('path');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
-const { toKoreanTime, pickkoEndTime, formatPhone } = require('../lib/formatting');
+const { toKoreanTime, pickkoEndTime, formatPhone, maskPhone } = require('../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const {
@@ -90,7 +90,7 @@ async function searchPickko(page, entry) {
   const endKorean   = toKoreanTime(pickkoEndTime(entry.end));
   const phoneSuffix = phone.replace(/\D/g,'').slice(-8);
 
-  log(`  🔍 검색: ${phone} | ${date} | ${entry.start}~${entry.end} | ${entry.room}룸`);
+  log(`  🔍 검색: ${maskPhone(phone)} | ${date} | ${entry.start}~${entry.end} | ${entry.room}룸`);
 
   // 목록 페이지 이동
   await page.goto('https://pickkoadmin.com/study/index.html', { waitUntil: 'networkidle2', timeout: 30000 });
@@ -118,9 +118,12 @@ async function searchPickko(page, entry) {
 
   await delay(300);
 
-  // 검색
+  // 검색 (page.click → evaluate: Runtime.callFunctionOn 타임아웃 방지)
   await Promise.all([
-    page.click('input[type="submit"].btn_box'),
+    page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"].btn_box');
+      if (btn) btn.click();
+    }),
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null)
   ]);
   await delay(1500);
@@ -196,7 +199,7 @@ function runPickko(entry) {
       `--room=${entry.room}`,
       `--name=${entry.raw?.name || '고객'}`
     ];
-    log(`  🤖 픽코 등록 실행: ${phone} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
+    log(`  🤖 픽코 등록 실행: ${maskPhone(phone)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
     const child = spawn('node', args, { cwd: __dirname, stdio: 'inherit' });
     child.on('close', code => {
       log(`  🤖 픽코 완료 (exit: ${code})`);
@@ -218,7 +221,7 @@ async function main() {
 
   log(`\n📋 검증 대상: ${targets.length}건`);
   for (const { source, id, entry } of targets) {
-    log(`  [${source}] ${id} | ${entry.phone} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room}룸 | status=${entry.status} | retries=${entry.retries||0}`);
+    log(`  [${source}] ${id} | ${maskPhone(entry.phone)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room}룸 | status=${entry.status} | retries=${entry.retries||0}`);
   }
 
   if (DRY_RUN) {
@@ -265,7 +268,7 @@ async function main() {
 
     for (let i = 0; i < targets.length; i++) {
       const { source, id, entry } = targets[i];
-      log(`\n━━━ [${i + 1}/${targets.length}] ${entry.phone} ${entry.date} ━━━`);
+      log(`\n━━━ [${i + 1}/${targets.length}] ${maskPhone(entry.phone)} ${entry.date} ━━━`);
       try {
         const phoneRaw = (entry.phoneRaw || entry.phone || '').replace(/\D/g, '');
         const { entries: rows = [], fetchOk = false } = pickkoByDate[entry.date] || {};
@@ -276,7 +279,7 @@ async function main() {
         let viewHref = null;
         if (match) {
           viewHref = '__bulk_match__';
-          log(`  ✅ 픽코에 등록됨 (일괄 조회): ${phoneRaw} ${entry.date} ${entry.start}`);
+          log(`  ✅ 픽코에 등록됨 (일괄 조회): ${maskPhone(phoneRaw)} ${entry.date} ${entry.start}`);
         } else if (!fetchOk) {
           // 일괄 조회 실패 시 개별 검색으로 폴백
           log(`  ⚠️ 일괄 조회 실패 → 개별 검색 폴백`);

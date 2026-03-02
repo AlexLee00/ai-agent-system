@@ -1,5 +1,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const path = require('path');
+const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 
 async function inspect() {
   const browser = await puppeteer.launch({ headless: false });
@@ -52,7 +54,7 @@ async function inspect() {
     console.log(JSON.stringify(elements, null, 2));
     
     // HTML 저장
-    fs.writeFileSync('/Users/alexlee/.openclaw/workspace/naver-home.html', html);
+    fs.writeFileSync(path.join(WORKSPACE, 'naver-home.html'), html);
     console.log('\n✅ HTML이 naver-home.html에 저장됨');
     
     console.log('\n브라우저는 열려있습니다. 예약 리스트를 클릭하거나 조사해보세요.');

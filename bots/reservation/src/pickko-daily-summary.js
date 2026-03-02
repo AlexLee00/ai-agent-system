@@ -26,6 +26,7 @@ const {
   upsertDailySummary, getUnconfirmedSummaryBefore,
 } = require('../lib/db');
 const { fetchDailyDetail } = require('../lib/pickko-stats');
+const { maskName } = require('../lib/formatting');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -169,7 +170,7 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
     .map(([room, cnt]) => `${room}×${cnt}`)
     .join(' / ');
 
-  const SEP = '━━━━━━━━━━━━━━━━━━━━━━━━';
+  const SEP = '━━━━━━━━━━━━━━━';
 
   let msg = `📋 오늘 예약 현황 — ${dateHeader}\n\n`;
   msg += `총 ${sorted.length}건 | ${formatAmount(totalAmount)}\n`;
@@ -211,7 +212,7 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
     const grandTotal = generalRevenue + totalAmount;
 
     msg += `\n\n💰 매출 현황:\n`;
-    if (pickkoStats) {
+    if (pickkoStats && generalRevenue > 0) {
       msg += `  일반이용: ${formatAmount(generalRevenue)}\n`;
     }
     for (const [room, amt] of Object.entries(roomAmounts).sort(([a], [b]) => a.localeCompare(b))) {
@@ -228,11 +229,13 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
 
 async function main() {
   const hourKST    = getHourKST();
-  const isMidnight = hourKST === 0 || process.argv.includes('--midnight'); // 00:00 실행 또는 --midnight 테스트
+  // 23:50(hour=23) 또는 00:00(hour=0) 실행 시 마감 보고 모드 (pickko 실매출 조회)
+  const isMidnight = hourKST === 23 || hourKST === 0 || process.argv.includes('--midnight');
   const today      = getTodayKST();
-  // 자정 실행 시 어제 날짜를 대상으로 보고
-  const reportDate = isMidnight ? getYesterdayKST() : today;
-  log(`\n📋 픽코 일일 요약 시작: ${reportDate} (${isMidnight ? '00:00 마감 보고' : '09:00 보고'})`);
+  // 00:00 실행 시 어제 날짜, 23:50 실행 시 오늘 날짜 대상
+  const reportDate = hourKST === 0 ? getYesterdayKST() : today;
+  const modeLabel  = hourKST === 23 ? '23:50 마감 보고' : hourKST === 0 ? '00:00 마감 보고' : '09:00 보고';
+  log(`\n📋 픽코 일일 요약 시작: ${reportDate} (${modeLabel})`);
 
   let browser;
   try {
@@ -255,12 +258,29 @@ async function main() {
       statusKeyword: '결제완료',
     });
     log(`📋 당일 예약(raw): ${rawEntries.length}건 (fetchOk=${fetchOk})`);
+    // raw entries 진단 (중복 의심 시 분석용)
+    if (rawEntries.length > 0) {
+      const keyMap = {};
+      rawEntries.forEach(e => {
+        const k = `${e.date}|${e.start}|${JSON.stringify(e.room)}`;
+        keyMap[k] = (keyMap[k] || 0) + 1;
+      });
+      const dupes = Object.entries(keyMap).filter(([, n]) => n > 1);
+      if (dupes.length > 0) {
+        log(`  ⚠️ 중복 raw 키 발견: ${dupes.map(([k, n]) => `${k}×${n}`).join(', ')}`);
+      }
+    }
 
-    // 중복 제거 (date|start|end|room)
+    // 중복 제거 (date|start|room) — 같은 룸에 같은 시작시간이 중복될 수 없음
+    // room 정규화: nbsp(\u00a0), 전각공백(\u3000) 등 모든 공백 제거 후 소문자화
+    const _normRoom = s => (s || '').replace(/[\s\u00a0\u3000\ufeff]+/g, '').toLowerCase();
     const _seen = new Set();
     const entries = rawEntries.filter(e => {
-      const k = `${e.date}|${e.start}|${e.end}|${e.room}`;
-      if (_seen.has(k)) return false;
+      const k = `${e.date}|${e.start}|${_normRoom(e.room)}`;
+      if (_seen.has(k)) {
+        log(`  [dedup] 중복 제거: ${e.start} ${e.room} ${e.name} (key=${k})`);
+        return false;
+      }
       _seen.add(k);
       return true;
     });
@@ -274,7 +294,7 @@ async function main() {
 
     for (const e of entries) {
       const cls = classifyEntry(e, naverKeys, kioskMap);
-      log(`  • ${e.start}~${e.end} ${e.room} ${e.name} ${calcAmount(e)}원 → ${classifyLabel(cls)}`);
+      log(`  • ${e.start}~${e.end} ${e.room} ${maskName(e.name)} ${calcAmount(e)}원 → ${classifyLabel(cls)}`);
     }
 
     // ──── 3-B단계: 픽코 실제 매출 조회 (자정 실행 시만) ────
@@ -322,10 +342,14 @@ async function main() {
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);
 
     // ──── 5단계: 전날 미컨펌 리마인드 (09:00 보고 시만) ────
+    // 최근 3일 이내 미컨펌만 알림 (오래된 미컨펌은 무시)
     if (!isMidnight) {
+      const cutoff3days = new Date(today);
+      cutoff3days.setDate(cutoff3days.getDate() - 3);
+      const cutoff3str = cutoff3days.toISOString().slice(0, 10);
       const unconfirmed = getUnconfirmedSummaryBefore(today);
 
-      if (unconfirmed) {
+      if (unconfirmed && unconfirmed.date >= cutoff3str) {
         const prevHeader = formatDateHeader(unconfirmed.date);
         const prevRoomLines = Object.entries(unconfirmed.roomAmounts)
           .sort(([a], [b]) => a.localeCompare(b))
@@ -335,7 +359,7 @@ async function main() {
           `⚠️ 미컨펌 알림 — ${prevHeader}\n\n` +
           `${prevRoomLines}\n` +
           `  합계: ${formatAmount(unconfirmed.total_amount)}\n\n` +
-          `❓ 어제 매출이 아직 확정되지 않았습니다. 지금 확정하시겠습니까?`;
+          `❓ ${prevHeader} 매출이 아직 확정되지 않았습니다. 지금 확정하시겠습니까?`;
         log('\n미컨펌 리마인드 발송:\n' + remindMsg);
         sendTelegram(remindMsg);
       }

@@ -1,0 +1,12 @@
+{
+  "name": "@ai-agent/claude",
+  "version": "1.0.0",
+  "description": "클로드팀 — 덱스터 (Dexter) 시스템 유지보수 봇",
+  "main": "src/dexter.js",
+  "type": "commonjs",
+  "scripts": {
+    "dexter": "node src/dexter.js",
+    "dexter:full": "node src/dexter.js --full",
+    "dexter:telegram": "node src/dexter.js --telegram"
+  }
+}

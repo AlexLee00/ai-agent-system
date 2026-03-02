@@ -9,12 +9,15 @@
  */
 
 const puppeteer = require('puppeteer');
+const path = require('path');
+const { spawn } = require('child_process');
 const { transformAndNormalizeData, validateTimeRange } = require('../lib/validation');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { parseArgs } = require('../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, findPickkoMember } = require('../lib/pickko');
+const { maskPhone, maskName } = require('../lib/formatting');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -316,9 +319,8 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
   await delay(300);
 
   log(`✅ 회원정보 입력완료`);
-  log(`   이름: ${customerName}`);
-  log(`   전화: ${phone1}-${phone2}-${phone3}`);
-  log(`   PIN: ${pin}`);
+  log(`   이름: ${maskName(customerName)}`);
+  log(`   전화: ${maskPhone(phoneNoHyphen)}`);
   log(`   생년월일: ${reservationDate}`);
 
   // 5. form.submit() 직접 호출 (JS 생년월일 검증 우회)
@@ -333,7 +335,7 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
 
   const registerUrl = page.url();
   if (registerUrl.includes('/member/view/')) {
-    log(`✅ 신규 회원 등록 성공: ${customerName} (${phoneNoHyphen}) → ${registerUrl}`);
+    log(`✅ 신규 회원 등록 성공: ${maskName(customerName)} (${maskPhone(phoneNoHyphen)}) → ${registerUrl}`);
   } else {
     const failMsg = `❌ 신규 회원 등록 실패: URL이 /member/view/ 아님 (${registerUrl})`;
     log(failMsg);
@@ -440,16 +442,14 @@ async function main() {
         throw new Error(errorMsg);
       }
       
-      // 회원 선택 버튼 클릭
-      try {
-        await page.click('a#mb_select_btn');
-      } catch (e) {
-        log('⚠️ ID 클릭 실패, 대체 시도...');
-        await page.evaluate(() => {
-          const links = document.querySelectorAll('a.btn_box');
-          for (const a of links) if (a.textContent.includes('회원 선택')) a.click();
-        });
-      }
+      // 회원 선택 버튼 클릭 (page.click → evaluate: Runtime.callFunctionOn 타임아웃 방지)
+      await page.evaluate(() => {
+        const btn = document.querySelector('a#mb_select_btn');
+        if (btn) { btn.click(); return; }
+        // 폴백: btn_box 중 "회원 선택" 텍스트
+        const links = document.querySelectorAll('a.btn_box');
+        for (const a of links) if (a.textContent.includes('회원 선택')) { a.click(); return; }
+      });
       await delay(2000);
 
       // ★ 신규 고객 감지: 첫 시도에서 a.mb_select 없으면 자동 회원 등록
@@ -531,7 +531,7 @@ async function main() {
         return;
       }
       
-      log(`📋 선택된 회원: ${memberInfo.name}(${memberInfo.phone})`);
+      log(`📋 선택된 회원: ${maskName(memberInfo.name)}(${maskPhone(memberInfo.phone)})`);
       
       // 전화번호 비교 (하이푼 제거 후)
       const inputPhoneNoHyphen = PHONE_NOHYPHEN;
@@ -548,8 +548,8 @@ async function main() {
       }
       
       log(`✅ 회원정보 검증 완료 (시도 ${retryCount + 1}/5)`);
-      log(`   이름: ${memberInfo.name}`);
-      log(`   전화: ${formatPhoneForComparison(memberInfo.phone)}`);
+      log(`   이름: ${maskName(memberInfo.name)}`);
+      log(`   전화: ${maskPhone(memberInfo.phone)}`);
     };
     
     // 회원 선택 및 검증 실행
@@ -1020,7 +1020,7 @@ async function main() {
         
         log(`\n🚨 [OPS-CRITICAL] 시간 선택 실패`);
         log(`📋 알람 내용:`);
-        log(`   • 고객 번호: ${errorAlert.phone}`);
+        log(`   • 고객 번호: ${maskPhone(errorAlert.phone)}`);
         log(`   • 예약 날짜: ${errorAlert.date}`);
         log(`   • 요청 시간: ${errorAlert.requestTime}`);
         log(`   • 요청 룸: ${errorAlert.room}`);
@@ -1178,12 +1178,24 @@ async function main() {
     }
 
     log('💾 "작성하기" 버튼 클릭...');
-    try {
-        await page.click('input[type="submit"][value="작성하기"]');
-        log('✅ 작성하기 클릭 완료');
-    } catch (e) {
-        throw new Error(`작성하기 버튼 클릭 실패: ${e.message}`);
+    // page.click() 대신 evaluate()로 직접 클릭
+    // 이유: page.click()은 내부적으로 Runtime.callFunctionOn을 여러 번 호출 →
+    //       픽코 서버 응답 지연 시 protocolTimeout(180초) 발생
+    // evaluate()는 단일 Runtime.evaluate 호출로 즉시 반환
+    const submitClicked = await page.evaluate(() => {
+        const btn = document.querySelector('input[type="submit"][value="작성하기"]');
+        if (!btn) return false;
+        btn.click();
+        return true;
+    }).catch(() => false);
+    if (!submitClicked) {
+        log('⚠️ 작성하기 버튼 미발견 → form.submit() 폴백');
+        await page.evaluate(() => {
+            const form = document.querySelector('form');
+            if (form) HTMLFormElement.prototype.submit.call(form);
+        }).catch(() => {});
     }
+    log('✅ 작성하기 클릭 완료');
 
     await delay(1500);
 
@@ -1587,13 +1599,19 @@ async function main() {
     });
     
     log(`🔍 최종 상태: ${JSON.stringify(finalStatus)}`);
-    
-    const isSuccess = !finalStatus.hasErrorMsg && (finalStatus.hasSuccessMsg || paySubmitClicked);
-    
+
+    // ✅ URL이 #/order/view/{숫자}로 바뀌면 결제 완료 확정 (가장 신뢰할 수 있는 지표)
+    const hasOrderUrl = /\/order\/view\/\d+/.test(finalStatus.url);
+    // paySubmitClicked 단독으로는 불충분 — URL 변경 또는 성공 메시지 필요
+    const isSuccess = !finalStatus.hasErrorMsg && (hasOrderUrl || finalStatus.hasSuccessMsg);
+
     if (isSuccess) {
       log(`✅ [SUCCESS] 픽코 예약등록 + 결제 완료됨!`);
       log(`📅 예약정보: ${PHONE_NOHYPHEN} / ${DATE} / ${chosen.start}~${chosen.end} / ${ROOM}`);
       log(`💳 결제: ${payModalResult.totalText}원 (0원 현금결제)`);
+    } else if (paySubmitClicked) {
+      log(`⚠️ [WARNING] 결제 버튼 클릭됐으나 완료 미확인 (URL: ${finalStatus.url})`);
+      log(`⚠️ [WARNING] 수동 확인 필요 — 픽코 관리자에서 결제 상태 확인 바랍니다`);
     } else {
       log(`⚠️ [WARNING] 완료 상태 불명확 (수동 확인 필요)`);
     }
@@ -1630,10 +1648,28 @@ async function main() {
       process.exit(2);
     }
 
-    // ✅ 슬롯에 동일 고객이 이미 등록됨 (exit 0) — 완료로 간주
+    // ⚠️ 슬롯에 동일 고객이 이미 등록됨 → 결제대기 여부 확인 후 결제 완료 처리
     if (err.code === 'ALREADY_REGISTERED') {
-      log(`✅ [이미 등록됨] 슬롯 일치 확인 → 완료 처리: ${err.message}`);
+      log(`⚠️ [이미 등록됨] 결제대기 여부 확인 → pickko-pay-pending.js 실행: ${err.message}`);
       try { await browser.close(); } catch(e) {}
+
+      await new Promise((resolve) => {
+        const child = spawn('node', [
+          path.join(__dirname, 'pickko-pay-pending.js'),
+          `--phone=${PHONE_NOHYPHEN}`,
+          `--date=${DATE}`,
+          `--start=${START_TIME}`,
+          `--end=${END_TIME}`,
+          `--room=${ROOM}`,
+        ], {
+          cwd: __dirname,
+          env: { ...process.env, MODE: process.env.MODE || 'ops' },
+          stdio: ['ignore', process.stdout, process.stderr],
+        });
+        child.on('close', resolve);
+        child.on('error', (e) => { log(`⚠️ pickko-pay-pending 실행 오류: ${e.message}`); resolve(1); });
+      });
+
       process.exit(0);
     }
 
@@ -1642,13 +1678,13 @@ async function main() {
     // 🔐 **OPS 모드 오류 처리**
     if (MODE === 'ops') {
       log(`\n🚨 [OPS-ERROR] 예약 처리 중 오류 발생`);
-      log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      log(`━━━━━━━━━━━━━━━`);
       log(`❌ 오류: ${err.message}`);
       log(`📞 고객: ${PHONE_NOHYPHEN}`);
       log(`📅 날짜: ${DATE}`);
       log(`⏰ 시간: ${START_TIME}~${END_TIME}`);
       log(`🏛️ 룸: ${ROOM}`);
-      log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      log(`━━━━━━━━━━━━━━━`);
       log(`⚠️ 조치: 즉시 DEV 모드로 전환하여 분석 필요`);
       log(`⚠️ 최우선 해결 과제로 등록되었습니다.`);
       

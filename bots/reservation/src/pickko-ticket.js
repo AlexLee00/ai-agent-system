@@ -73,6 +73,7 @@ const VALID_TICKETS = [
 // ── 출력 헬퍼 ────────────────────────────────────────────────────────────
 
 const { outputResult, fail } = require('../lib/cli');
+const { maskPhone, maskName } = require('../lib/formatting');
 
 // ── 입력 검증 ────────────────────────────────────────────────────────────
 
@@ -403,7 +404,7 @@ async function handlePaymentPopups(page) {
 
 async function main() {
   const phoneFormatted = PHONE_RAW.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
-  log(`\n🎫 픽코 이용권 추가: ${TICKET_NAME} × ${COUNT} → ${phoneFormatted}`);
+  log(`\n🎫 픽코 이용권 추가: ${TICKET_NAME} × ${COUNT} → ${maskPhone(PHONE_RAW)}`);
   log(`🔧 MODE: ${MODE.toUpperCase()}`);
 
   let browser;
@@ -422,7 +423,7 @@ async function main() {
     // [2단계] mb_no 조회 (lib/pickko.findPickkoMember 공통 함수)
     log('\n[2단계] mb_no 조회');
     const { found, mbNo, name: pickkName } = await findPickkoMember(page, PHONE_RAW, delay);
-    log(`  회원 검색 결과: found=${found}, mb_no=${mbNo}, name=${pickkName}`);
+    log(`  회원 검색 결과: found=${found}, mb_no=${mbNo}, name=${maskName(pickkName)}`);
     if (!found || !mbNo) fail(`회원을 찾을 수 없음: ${PHONE_RAW} (픽코 미등록 회원)`);
     log(`  ✅ mb_no=${mbNo} | 픽코 이름: ${pickkName || '미확인'}`);
 
@@ -439,7 +440,7 @@ async function main() {
       if (nameInput && nameInput.value) return nameInput.value.trim();
       return null;
     }) || pickkName;
-    log(`  이용권 추가 대상: ${memberName || '(이름 미확인)'} (mb_no=${mbNo}, ${phoneFormatted})`);
+    log(`  이용권 추가 대상: ${maskName(memberName) || '(이름 미확인)'} (mb_no=${mbNo}, ${maskPhone(PHONE_RAW)})`);
 
     // [4단계] 자유석 선택 + 이용권 목록 로드
     await selectSeatTypeAndLoad(page);

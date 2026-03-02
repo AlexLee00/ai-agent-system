@@ -26,6 +26,15 @@ Thumbs.db
 # 테스트 결과
 coverage/
 
+# Python 가상환경
+venv/
+.venv/
+
 # 민감 정보
 secrets.json
 pickko-kiosk-seen.json
+
+# DB 데이터 파일
+*.db
+*.duckdb
+*.duckdb.wal

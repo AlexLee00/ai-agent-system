@@ -79,12 +79,15 @@ async function run() {
     // ======================== [3단계] 검색 조건 입력 ========================
     log('\n[3단계] 전화번호 + 날짜 검색');
 
-    // 전화번호 입력 (하이픈 포함 형식)
-    await page.$eval('input[name="mb_phone"]', (el, phone) => {
+    // 전화번호 입력 — page.$eval() 대신 evaluate() 사용
+    // 이유: page.$eval()도 Runtime.callFunctionOn 사용 → 픽코 서버 지연 시 타임아웃
+    await page.evaluate((phone) => {
+      const el = document.querySelector('input[name="mb_phone"]');
+      if (!el) return;
       el.value = phone;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, PHONE_FORMATTED);
+    }, PHONE_FORMATTED).catch(() => {});
     log(`📞 전화번호 입력: ${PHONE_FORMATTED}`);
 
     // 시작날짜 입력 (예약일)
@@ -121,11 +124,13 @@ async function run() {
 
     await delay(300);
 
-    // 검색 버튼 클릭
-    await Promise.all([
-      page.click('input[type="submit"].btn_box'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null)
-    ]);
+    // 검색 버튼 클릭 — page.click() 대신 evaluate() 사용
+    // 이유: page.click()의 Runtime.callFunctionOn이 픽코 서버 지연 시 타임아웃
+    await page.evaluate(() => {
+      const btn = document.querySelector('input[type="submit"].btn_box');
+      if (btn) btn.click();
+    }).catch(() => {});
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null);
     await delay(1500);
     log(`🔍 검색 완료: ${page.url()}`);
 

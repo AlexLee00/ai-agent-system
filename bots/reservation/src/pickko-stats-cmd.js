@@ -74,15 +74,15 @@ function buildDayMessage(row, label) {
   lines.push('');
 
   const roomAmounts = row.roomAmounts || {};
+  const generalRevenue = row.generalRevenue || 0;
+  const grandTotal = (row.total_amount || 0) + generalRevenue;
 
-  if (row.generalRevenue > 0) {
-    lines.push(`  일반이용: ${won(row.generalRevenue)}`);
-  }
+  if (generalRevenue > 0) lines.push(`  일반이용: ${won(generalRevenue)}`);
   for (const [room, amount] of Object.entries(roomAmounts).sort()) {
     if (amount > 0) lines.push(`  ${room}룸: ${won(amount)}`);
   }
 
-  lines.push(`  합계: ${won(row.total_amount)}`);
+  lines.push(`  합계: ${won(grandTotal)}`);
   lines.push('');
   lines.push(row.confirmed ? '  ✅ 확정됨' : '  ⏳ 미확정');
 
@@ -117,13 +117,11 @@ function buildPeriodMessage(rows, label) {
   lines.push(`   (${rows.length}일 집계)`);
   lines.push('');
 
-  if (generalRevenue > 0) {
-    lines.push(`  일반이용: ${won(generalRevenue)}`);
-  }
+  if (generalRevenue > 0) lines.push(`  일반이용: ${won(generalRevenue)}`);
   for (const [room, amount] of Object.entries(totals).sort()) {
     if (amount > 0) lines.push(`  ${room}룸: ${won(amount)}`);
   }
-  lines.push(`  합계: ${won(totalAmount)}`);
+  lines.push(`  합계: ${won(totalAmount + generalRevenue)}`);
   lines.push('');
 
   const statusParts = [];

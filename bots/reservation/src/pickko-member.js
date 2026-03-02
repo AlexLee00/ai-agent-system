@@ -22,6 +22,7 @@ const { loadSecrets } = require('../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 const { loginToPickko, findPickkoMember } = require('../lib/pickko');
 const { outputResult, fail } = require('../lib/cli');
+const { maskPhone, maskName } = require('../lib/formatting');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -45,7 +46,7 @@ const BIRTH_DATE = ARGS.birth || new Date().toLocaleDateString('sv-SE', { timeZo
 // findPickkoMember: { found, mbNo, name } 반환
 // pickko-member.js는 존재 여부(exists)만 필요하므로 found 필드 사용
 async function findMember(page, phoneNoHyphen) {
-  log(`\n[회원 검색] 전화번호: ${phoneNoHyphen}`);
+  log(`\n[회원 검색] 전화번호: ${maskPhone(phoneNoHyphen)}`);
   const result = await findPickkoMember(page, phoneNoHyphen, delay);
   log(`  검색 결과: ${JSON.stringify(result)}`);
   return { exists: result.found };
@@ -53,7 +54,7 @@ async function findMember(page, phoneNoHyphen) {
 
 // ── 신규 회원 등록 (pickko-accurate.js의 registerNewMember 로직 재활용) ──
 async function registerNewMember(page, phoneNoHyphen, customerName, birthDate) {
-  log(`\n[회원 등록] ${customerName} (${phoneNoHyphen})`);
+  log(`\n[회원 등록] ${maskName(customerName)} (${maskPhone(phoneNoHyphen)})`);
 
   const phone1 = phoneNoHyphen.slice(0, 3);
   const phone2 = phoneNoHyphen.slice(3, 7);
@@ -107,7 +108,7 @@ async function registerNewMember(page, phoneNoHyphen, customerName, birthDate) {
   }, birthDate);
   await delay(300);
 
-  log(`✅ 회원정보 입력: ${customerName} / ${phone1}-${phone2}-${phone3} / PIN: ${pin}`);
+  log(`✅ 회원정보 입력: ${maskName(customerName)} / ${maskPhone(phoneNoHyphen)}`);
 
   // form.submit() (JS 생년월일 검증 우회)
   await Promise.all([
@@ -121,7 +122,7 @@ async function registerNewMember(page, phoneNoHyphen, customerName, birthDate) {
 
   const registerUrl = page.url();
   if (registerUrl.includes('/member/view/')) {
-    log(`✅ 신규 회원 등록 성공: ${customerName} (${phoneNoHyphen}) → ${registerUrl}`);
+    log(`✅ 신규 회원 등록 성공: ${maskName(customerName)} (${maskPhone(phoneNoHyphen)}) → ${registerUrl}`);
     return true;
   } else {
     throw new Error(`회원 등록 실패: URL이 /member/view/ 아님 (${registerUrl})`);

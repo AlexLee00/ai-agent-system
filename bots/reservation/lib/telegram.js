@@ -13,6 +13,9 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
+
+// ── 팀 이름 (변경 시 이 상수만 수정)
+const TEAM_NAME = '스카팀';
 const { log } = require('./utils');
 
 const SECRETS = loadSecrets();
@@ -27,10 +30,11 @@ const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
  * @returns {Promise<boolean>} 성공 여부
  */
 function tryTelegramSend(message, chatId = DEFAULT_CHAT_ID) {
+  if (!BOT_TOKEN) return Promise.resolve(false); // 텔레그램 토큰 미설정 — 무음 스킵
   if (process.env.TELEGRAM_ENABLED === '0') return Promise.resolve(true);
   return new Promise((resolve) => {
     try {
-      const text = `🔔 스카봇\n\n${message}`;
+      const text = `🔔 ${TEAM_NAME}\n\n${message}`;
       const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
       const req = https.request({
         hostname: 'api.telegram.org',
@@ -60,15 +64,45 @@ function tryTelegramSend(message, chatId = DEFAULT_CHAT_ID) {
 }
 
 /**
+ * 파일명 단독 메시지 감지 (BUG-006 방어)
+ * BOOT 중 LLM이 읽은 파일명을 텔레그램으로 흘려보내는 현상 차단.
+ * @param {string} message
+ * @returns {boolean} true면 파일명 누출로 판단 → 전송 차단
+ */
+function isFilenameLeak(message) {
+  const trimmed = message.trim();
+  const FILE_PATTERN = /^[\w\-. ]+\.(md|js|json|txt|sh|py|plist|log|db)$/i;
+
+  // 단일 줄 파일명
+  if (!trimmed.includes('\n') && FILE_PATTERN.test(trimmed)) return true;
+
+  // 여러 줄이지만 전부 파일명
+  const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length >= 1 && lines.every(l => FILE_PATTERN.test(l))) return true;
+
+  return false;
+}
+
+/**
  * 텔레그램 메시지 발송 — 3회 재시도
  * @param {string} message  발송할 메시지 본문
  * @param {string} [chatId] 수신자 chat_id (기본: secrets.telegram_chat_id)
  * @returns {Promise<boolean>}
  */
 async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
+  if (!BOT_TOKEN) {
+    log(`[텔레그램 비활성화] 토큰 미설정 — 스킵: ${message.slice(0, 60)}`);
+    return false;
+  }
   if (process.env.TELEGRAM_ENABLED === '0') {
     log(`[텔레그램 비활성화] ${message.slice(0, 60)}`);
     return true;
+  }
+
+  // BUG-006 방어: 파일명 단독 메시지 차단
+  if (isFilenameLeak(message)) {
+    log(`🚫 [텔레그램 차단] 파일명 누출 감지: "${message.trim().slice(0, 60)}"`);
+    return false;
   }
   const MAX_TRIES = 3;
   for (let i = 1; i <= MAX_TRIES; i++) {

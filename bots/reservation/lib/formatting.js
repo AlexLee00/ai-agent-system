@@ -15,4 +15,19 @@ function formatPhone(raw) {
        : d.length === 10 ? `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}` : d;
 }
 
-module.exports = { toKoreanTime, pickkoEndTime, formatPhone };
+function maskPhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  if (d.length === 11) return `${d.slice(0, 3)}****${d.slice(7)}`;
+  if (d.length === 10) return `${d.slice(0, 3)}***${d.slice(7)}`;
+  if (d.length > 4) return `${d.slice(0, 3)}****${d.slice(-4)}`;
+  return d || String(p || '');
+}
+
+function maskName(n) {
+  if (!n) return '';
+  const s = String(n).trim();
+  if (s.length <= 1) return s;
+  return s[0] + '*' + s[s.length - 1];
+}
+
+module.exports = { toKoreanTime, pickkoEndTime, formatPhone, maskPhone, maskName };

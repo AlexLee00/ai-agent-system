@@ -15,7 +15,11 @@
  *   { success: true,  message: "예약 취소 완료: ..." }
  *   { success: false, message: "오류 내용" }
  *
- * 로그: pickko-cancel.js 출력이 stderr로 전달됨
+ * 흐름:
+ *   1. pickko-cancel.js  — 픽코 어드민에서 예약 취소 처리
+ *   2. pickko-kiosk-monitor.js --unblock-slot — 네이버 예약불가 → 예약가능 복구
+ *
+ * 로그: 각 child 출력이 stderr로 전달됨
  */
 
 const { spawn } = require('child_process');
@@ -47,10 +51,25 @@ if (!VALID_ROOMS.includes(room)) {
   fail(`유효하지 않은 룸: ${ARGS.room} (허용: ${VALID_ROOMS.join(', ')})`);
 }
 
-// ── pickko-cancel.js 실행 ──
+// ── 공통 spawn 헬퍼 ──
+function runScript(scriptPath, args, label) {
+  return new Promise((resolve) => {
+    const child = spawn('node', [scriptPath, ...args], {
+      cwd: __dirname,
+      env: { ...process.env, MODE: process.env.MODE || 'ops' },
+      stdio: ['ignore', process.stderr, process.stderr]
+    });
+    child.on('error', err => {
+      process.stderr.write(`[${label}] 실행 실패: ${err.message}\n`);
+      resolve(false);
+    });
+    child.on('close', code => resolve(code === 0));
+  });
+}
+
+// ── Step 1: 픽코 예약 취소 ──
 const cancelScript = path.join(__dirname, 'pickko-cancel.js');
-const childArgs = [
-  cancelScript,
+const cancelArgs = [
   `--phone=${phoneRaw}`,
   `--date=${ARGS.date}`,
   `--start=${ARGS.start}`,
@@ -59,29 +78,49 @@ const childArgs = [
   ...(ARGS.name ? [`--name=${ARGS.name}`] : [])
 ];
 
-const child = spawn('node', childArgs, {
-  cwd: __dirname,
-  env: { ...process.env, MODE: process.env.MODE || 'ops' },
-  // child의 stdout/stderr → 부모의 stderr (로그용), 부모 stdout은 JSON 전용
-  stdio: ['ignore', process.stderr, process.stderr]
-});
+process.stderr.write(`[pickko-cancel-cmd] 픽코 취소 시작: ${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸\n`);
 
-child.on('error', err => {
-  fail(`pickko-cancel.js 실행 실패: ${err.message}`);
-});
+runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
+  if (!cancelOk) {
+    process.stdout.write(JSON.stringify({
+      success: false,
+      message: `예약 취소 실패 — 픽코 수동 취소 필요`
+    }) + '\n');
+    process.exit(1);
+  }
 
-child.on('close', code => {
-  if (code === 0) {
+  process.stderr.write(`[pickko-cancel-cmd] 픽코 취소 완료 → 네이버 해제 시작\n`);
+
+  // ── Step 2: 네이버 예약불가 → 예약가능 해제 ──
+  const kioskScript = path.join(__dirname, 'pickko-kiosk-monitor.js');
+  const unblockArgs = [
+    '--unblock-slot',
+    `--phone=${phoneRaw}`,
+    `--date=${ARGS.date}`,
+    `--start=${ARGS.start}`,
+    `--end=${ARGS.end}`,
+    `--room=${room}`,
+    ...(ARGS.name ? [`--name=${ARGS.name}`] : [])
+  ];
+
+  const unblockOk = await runScript(kioskScript, unblockArgs, 'unblock-slot');
+
+  const nameStr = ARGS.name ? ` (${ARGS.name})` : '';
+  const baseInfo = `${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸${nameStr}`;
+
+  if (unblockOk) {
     process.stdout.write(JSON.stringify({
       success: true,
-      message: `예약 취소 완료: ${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸${ARGS.name ? ` (${ARGS.name})` : ''}`
+      message: `예약 취소 완료: ${baseInfo}`
     }) + '\n');
     process.exit(0);
   } else {
+    // 픽코 취소는 성공했지만 네이버 해제 실패
     process.stdout.write(JSON.stringify({
-      success: false,
-      message: `예약 취소 실패 (exit: ${code}) — 픽코 수동 취소 필요`
+      success: true,
+      naverUnblockFailed: true,
+      message: `예약 취소 완료 (픽코), 네이버 해제 실패 — 수동 확인 필요: ${baseInfo}`
     }) + '\n');
-    process.exit(1);
+    process.exit(0); // 픽코 취소가 핵심 — 네이버는 경고만
   }
 });

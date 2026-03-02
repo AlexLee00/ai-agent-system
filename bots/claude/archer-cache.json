@@ -1,0 +1,17 @@
+{
+  "lastRun": "2026-03-01T23:54:54.121Z",
+  "versions": {
+    "ccxt": "v4.5.40",
+    "duckdb": "v1.4.4",
+    "better-sqlite3": "v12.6.2",
+    "playwright": "v1.58.2",
+    "anthropic-sdk": "v0.84.0",
+    "groq-node": "v1.1.0",
+    "gemini-js": "v1.43.0"
+  },
+  "lastAnalysis": {
+    "summary": "공포탐욕지수 14(극단적 공포) 속 BTC $65,704로 하락세 지속. 루나팀은 DEV/idle 상태이나 BUY 신호 10건으로 저점 매수 신호 집중. 스카팀 연속오류 1회 발생 및 gemini-js v1.43.0 등 주요 SDK 업데이트 다수 확인.",
+    "priority_count": 7,
+    "action_count": 5
+  }
+}

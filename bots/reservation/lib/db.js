@@ -31,6 +31,15 @@ function getDb() {
 }
 
 function _initSchema(db) {
+  // schema_migrations 테이블은 항상 먼저 생성
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version     INTEGER PRIMARY KEY,
+      name        TEXT NOT NULL,
+      applied_at  TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS reservations (
       id TEXT PRIMARY KEY,
@@ -118,15 +127,6 @@ function _initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(timestamp);
   `);
 
-  // Migration: add columns added after initial release
-  const _migrations = [
-    'ALTER TABLE daily_summary ADD COLUMN pickko_total INTEGER DEFAULT 0',
-    'ALTER TABLE daily_summary ADD COLUMN pickko_study_room INTEGER DEFAULT 0',
-    'ALTER TABLE daily_summary ADD COLUMN general_revenue INTEGER DEFAULT 0',
-  ];
-  for (const sql of _migrations) {
-    try { db.exec(sql); } catch (e) { /* column already exists */ }
-  }
 }
 
 // ─── reservations ──────────────────────────────────────────────────
@@ -403,6 +403,25 @@ function getBlockedKioskBlocks() {
   return db.prepare(
     'SELECT * FROM kiosk_blocks WHERE naver_blocked=1 AND naver_unblocked_at IS NULL'
   ).all().map(row => ({
+    ...row,
+    phoneRaw:     decrypt(row.phone_raw_enc),
+    name:         decrypt(row.name_enc),
+    naverBlocked: row.naver_blocked === 1,
+    firstSeenAt:  row.first_seen_at,
+    blockedAt:    row.blocked_at,
+    start:        row.start_time,
+    end:          row.end_time,
+  }));
+}
+
+/**
+ * 특정 날짜의 naverBlocked=true 항목 전체 반환 (오늘 예약 검증용)
+ */
+function getKioskBlocksForDate(date) {
+  const db = getDb();
+  return db.prepare(
+    'SELECT * FROM kiosk_blocks WHERE date = ? AND naver_blocked = 1 AND naver_unblocked_at IS NULL'
+  ).all(date).map(row => ({
     ...row,
     phoneRaw:     decrypt(row.phone_raw_enc),
     name:         decrypt(row.name_enc),
@@ -699,8 +718,59 @@ function getRoomRevenueSummary() {
   ).all();
 }
 
+/**
+ * 오늘 예약 현황 집계 (네이버 + 키오스크)
+ * @param {string} date — 'YYYY-MM-DD'
+ * @returns {{ naverTotal, naverConfirmed, kioskTotal, total }}
+ */
+function getTodayStats(date) {
+  const db = getDb();
+  const naverTotal     = db.prepare(
+    "SELECT COUNT(*) as cnt FROM reservations WHERE date=? AND seen_only=0 AND status NOT IN ('failed')"
+  ).get(date)?.cnt ?? 0;
+  const naverConfirmed = db.prepare(
+    "SELECT COUNT(*) as cnt FROM reservations WHERE date=? AND seen_only=0 AND status='completed'"
+  ).get(date)?.cnt ?? 0;
+  const kioskTotal     = db.prepare(
+    'SELECT COUNT(*) as cnt FROM kiosk_blocks WHERE date=?'
+  ).get(date)?.cnt ?? 0;
+  return { naverTotal, naverConfirmed, kioskTotal, total: naverTotal + kioskTotal };
+}
+
+// ─── 마이그레이션 헬퍼 ─────────────────────────────────────────────
+
+/** schema_migrations 테이블 생성 (이미 _initSchema에서 처리, 단독 호출용) */
+function initMigrationsTable() {
+  const db = getDb(); // getDb()가 _initSchema()를 호출하므로 테이블은 이미 생성됨
+  return db;
+}
+
+/** 적용된 마이그레이션 버전 Set 반환 */
+function getAppliedMigrations() {
+  const db = getDb();
+  const rows = db.prepare('SELECT version FROM schema_migrations ORDER BY version ASC').all();
+  return new Set(rows.map(r => r.version));
+}
+
+/** 마이그레이션 이력 기록 */
+function recordMigration(version, name) {
+  const db = getDb();
+  db.prepare(
+    "INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (?, ?)"
+  ).run(version, name);
+}
+
+/** 현재 스키마 버전 반환 (최대 version) */
+function getSchemaVersion() {
+  const db = getDb();
+  const row = db.prepare('SELECT MAX(version) as v FROM schema_migrations').get();
+  return row?.v ?? 0;
+}
+
 module.exports = {
   getDb,
+  // 마이그레이션
+  initMigrationsTable, getAppliedMigrations, recordMigration, getSchemaVersion,
   // reservations
   isSeenId,
   markSeen,
@@ -720,6 +790,7 @@ module.exports = {
   getKioskBlock,
   upsertKioskBlock,
   getBlockedKioskBlocks,
+  getKioskBlocksForDate,
   pruneOldKioskBlocks,
   // alerts
   addAlert,
@@ -736,4 +807,6 @@ module.exports = {
   confirmDailySummary,
   // room_revenue
   getRoomRevenueSummary,
+  // stats
+  getTodayStats,
 };

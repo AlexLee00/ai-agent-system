@@ -116,9 +116,32 @@ child.on('close', code => {
     } catch (e) {
       // seen 기록 실패는 등록 성공에 영향 없음
     }
+
+    // 픽코 등록 성공(code 0) 시 네이버 예약불가 처리 (fire-and-forget)
+    // 결과는 텔레그램으로 별도 알림됨
+    if (code === 0) {
+      const blockArgs = [
+        path.join(__dirname, 'pickko-kiosk-monitor.js'),
+        '--block-slot',
+        `--date=${normalized.date}`,
+        `--start=${normalized.start}`,
+        `--end=${normalized.end}`,
+        `--room=${normalized.room}`,
+        `--phone=${normalized.phone}`,
+        `--name=${customerName}`,
+      ];
+      const blockChild = spawn('node', blockArgs, {
+        cwd: __dirname,
+        env: process.env,
+        stdio: ['ignore', process.stderr, process.stderr],
+        detached: true,
+      });
+      blockChild.unref();
+    }
+
     const message = code === 2
       ? `시간 경과로 픽코 등록 생략: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — 픽코에서 직접 확인 필요`
-      : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`;
+      : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 중`;
     process.stdout.write(JSON.stringify({ success: true, message }) + '\n');
     process.exit(0);
   } else {
