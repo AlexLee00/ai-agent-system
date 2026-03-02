@@ -12,6 +12,72 @@
 
 ---
 
+## 🔄 재부팅 절차
+
+### 재부팅 전 종료절차
+
+```bash
+# 1. 미커밋 변경사항 있으면 먼저 커밋
+git -C ~/projects/ai-agent-system status --short
+
+# 2. 안전 종료 스크립트 실행 (모든 봇 정지 + 텔레그램 알림)
+bash ~/projects/ai-agent-system/scripts/pre-reboot.sh
+
+# 3. 완료 로그 확인 후 재부팅
+tail /tmp/pre-reboot.log
+```
+
+**pre-reboot.sh 수행 내용:**
+| 단계 | 동작 |
+|------|------|
+| 1 | 미커밋 변경사항 경고 |
+| 2 | 루나팀 서비스 정지 (ai.invest.dev/fund/tpsl) |
+| 3 | 클로드팀 서비스 정지 (dexter/archer) |
+| 4 | 스카팀 모니터 종료 (naver-monitor/kiosk-monitor) |
+| 5 | OpenClaw 게이트웨이 정지 |
+| 6 | launchd 서비스 스냅샷 → `/tmp/pre-reboot-services.txt` |
+| 7 | 재부팅 시각 기록 → `/tmp/last-reboot-time.txt` |
+| 8 | 텔레그램 알림 발송 |
+
+---
+
+### 재부팅 후 시작절차
+
+**자동 실행 (RunAtLoad=true):**
+- `ai.agent.post-reboot` launchd → 재부팅 후 약 65초 내 자동 실행
+- 완료 시 텔레그램으로 서비스 상태 리포트 발송
+
+**로그 확인:**
+```bash
+tail -f /tmp/post-reboot.log
+```
+
+**수동 실행 (자동 실행 실패 시):**
+```bash
+bash ~/projects/ai-agent-system/scripts/post-reboot.sh
+```
+
+**post-reboot.sh 점검 서비스:**
+| 서비스 | 종류 | 정상 조건 |
+|--------|------|-----------|
+| ai.openclaw.gateway | KeepAlive | PID 있음 |
+| ai.ska.naver-monitor | KeepAlive | PID 있음 |
+| ai.ska.kiosk-monitor | 10분 주기 | 등록됨 |
+| ai.invest.dev | 10분 주기 | 등록됨 |
+| ai.invest.bridge | 1시간 주기 | 등록됨 |
+| ai.claude.dexter | 1시간 주기 | 등록됨 |
+
+**재부팅 후 즉시 실행이 필요한 경우 (선택):**
+```bash
+# 루나팀 신호 집계 즉시 실행
+DRY_RUN=true node ~/projects/ai-agent-system/bots/invest/src/analysts/signal-aggregator.js
+
+# 덱스터 시스템 점검 즉시 실행
+node ~/projects/ai-agent-system/bots/claude/src/dexter.js --telegram --fix
+```
+
+---
+
 ## 절대규칙 (클로드팀)
 
 1. **DEV 모드에서 개발·테스트 → 사용자 협의 후 OPS 배포**
