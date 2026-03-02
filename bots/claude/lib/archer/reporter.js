@@ -88,6 +88,30 @@ function buildMarkdown(data, analysis, prev) {
       const { buy, sell, hold, total } = luna.signals;
       lines.push(`- **최근 신호 (로그 기준)**: BUY ${buy} / SELL ${sell} / HOLD ${hold} (합계 ${total})`);
     }
+    const perf = luna.performance;
+    if (perf) {
+      lines.push('');
+      lines.push('### 📊 7일 성과 (DuckDB)');
+      const { byAction, total, bySymbol } = perf.signals7d;
+      lines.push(`- **신호 합계**: ${total}건 — BUY ${byAction.BUY} / SELL ${byAction.SELL} / HOLD ${byAction.HOLD}`);
+      if (Object.keys(bySymbol).length > 0) {
+        lines.push('- **심볼별**:');
+        for (const [sym, v] of Object.entries(bySymbol)) {
+          lines.push(`  - ${sym}: B${v.buy}/S${v.sell}/H${v.hold} (평균 신뢰도 ${v.avgConf}%)`);
+        }
+      }
+      lines.push(`- **드라이런 거래**: ${perf.trades7d.total}건 | 누적 PnL: $${perf.trades7d.pnl}`);
+      if (perf.positions.length > 0) {
+        lines.push('- **현재 포지션**:');
+        for (const p of perf.positions) {
+          lines.push(`  - ${p.symbol} [${p.exchange}]: ${p.amount} @ $${p.avgPrice} (미실현 $${p.unrealizedPnl})`);
+        }
+      } else {
+        lines.push(`- **현재 포지션**: 없음 (드라이런)`);
+      }
+    } else if (luna.performanceError) {
+      lines.push(`- ⚠️ DuckDB 성과 조회 실패: ${luna.performanceError}`);
+    }
     lines.push('');
   }
 
@@ -215,6 +239,12 @@ function buildTelegramText(analysis, data) {
       : '신호 데이터 없음';
     const errTag = luna.consecutiveErrors > 0 ? ` ⚠️오류${luna.consecutiveErrors}회` : '';
     lines.push(`🌙 *루나팀*: ${luna.mode || 'DEV'} | ${signal}${errTag}`);
+    const perf = luna.performance;
+    if (perf) {
+      const { byAction, total } = perf.signals7d;
+      const pnlTag = perf.trades7d.pnl >= 0 ? `+$${perf.trades7d.pnl}` : `-$${Math.abs(perf.trades7d.pnl)}`;
+      lines.push(`  📊 7일: 신호 ${total}건(B${byAction.BUY}/S${byAction.SELL}/H${byAction.HOLD}) | 거래 ${perf.trades7d.total}건 PnL ${pnlTag}`);
+    }
   }
   if (ska?.available) {
     const rev = ska.revenue ? `매출 ₩${ska.revenue.total7d.toLocaleString()}(7일)` : '매출 없음';

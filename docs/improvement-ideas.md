@@ -294,11 +294,11 @@
 | 13 | **취소 감지 교차검증** | ✅ 완료 (2026-03-02) | currentCancelledList 비교, 이용완료 추정 스킵 |
 | 14 | **LLM 비용 최적화** | ✅ 완료 (2026-03-02) | sonnet→haiku, 스케줄 최적화, debate 제한 |
 | 15 | **앤디 에러메시지 캡처** | ✅ 완료 (2026-03-02) | naver-monitor outputBuf → error_reason DB 저장 |
-| 16 | **SKA-N01** pickko-pay-scan launchd | 🔄 진행 중 | 결제대기 일괄처리 09:30 자동화 |
-| 17 | **SKA-N02** VIP 고객 인식 | 📋 대기 | visit_count 3회↑ 자동 태그 + 텔레그램 |
-| 18 | **SKA-N03** 재방문율·취소율 주간 리포트 | 📋 대기 | 레베카 weekly_report() 월요일 자동발송 |
+| 16 | **SKA-N01** pickko-pay-scan launchd | ✅ 완료 (2026-03-02) | 결제대기 일괄처리 09:30 자동화 |
+| 17 | **SKA-N02** VIP 고객 인식 | ✅ 완료 (2026-03-02) | lib/vip.js + naver-monitor 신규예약 배지 표시 |
+| 18 | **SKA-N03** 재방문율·취소율 주간 리포트 | ✅ 완료 (2026-03-02) | rebecca.py get_weekly_kpi() + format_weekly_review KPI 섹션 |
 | 19 | **LU-KIS** KIS 모의투자 실주문 테스트 | 📋 대기 | dry_run=false 1주 테스트 (LU-039 선행) |
-| 20 | **SKA-N04** 성수기/비수기 가격 최적화 | 📋 대기 | 레베카 가동률 기반 권고가 |
+| 20 | **SKA-N04** 성수기/비수기 가격 최적화 | ⏭️ 스킵 | 운영 데이터 충분 후 재검토 |
 | 21 | **CL-008** 아처 루나 성과 통합 | 📋 대기 | 드라이런 승률·신호빈도 리포트 반영 |
 | 22 | **CL-006** 코드 리팩토링 | 📋 맥북 | naver-monitor.js 우선 |
 | 23 | **LU-039 ChromaDB 학습 루프** | 📋 맥북 | 30일 데이터 누적 후 |

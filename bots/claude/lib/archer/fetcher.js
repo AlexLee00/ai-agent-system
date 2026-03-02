@@ -175,6 +175,92 @@ function fetchLunaStats() {
   return stats;
 }
 
+// ─── 루나팀 DuckDB 성과 수집 ─────────────────────────────────────────
+
+async function fetchLunaPerformance() {
+  const DB_PATH = path.join(cfg.ROOT, 'bots', 'invest', 'db', 'invest.duckdb');
+  if (!fs.existsSync(DB_PATH)) return null;
+
+  let db = null;
+  let conn = null;
+  try {
+    const duckdb = require(path.join(cfg.ROOT, 'node_modules', 'duckdb'));
+    db   = new duckdb.Database(DB_PATH, duckdb.OPEN_READONLY);
+    conn = db.connect();
+
+    const queryAll = (sql, params = []) => new Promise((resolve, reject) => {
+      conn.all(sql, ...params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+
+    // 최근 7일 신호 집계 (심볼×액션) — BigInt 방지를 위해 CAST INT 사용
+    const signalRows = await queryAll(`
+      SELECT symbol, action,
+             CAST(COUNT(*) AS INT) AS cnt,
+             CAST(AVG(COALESCE(confidence, 0)) AS DOUBLE) AS avg_conf
+      FROM signals
+      WHERE created_at >= now() - INTERVAL '7 days'
+      GROUP BY symbol, action
+      ORDER BY symbol, action
+    `);
+
+    // 최근 7일 거래 집계 (드라이런 포함)
+    const tradeRows = await queryAll(`
+      SELECT CAST(COUNT(*) AS INT) AS total,
+             CAST(COALESCE(SUM(CASE WHEN side='sell' THEN total_usdt ELSE -total_usdt END), 0) AS DOUBLE) AS pnl
+      FROM trades
+      WHERE executed_at >= now() - INTERVAL '7 days'
+    `);
+
+    // 현재 포지션
+    const posRows = await queryAll(`
+      SELECT symbol, amount, avg_price, unrealized_pnl, exchange
+      FROM positions
+      WHERE amount > 0
+      ORDER BY symbol
+    `);
+
+    // 신호 집계 정리
+    const bySymbol = {};
+    const byAction = { BUY: 0, SELL: 0, HOLD: 0 };
+    for (const row of signalRows) {
+      if (!bySymbol[row.symbol]) bySymbol[row.symbol] = { buy: 0, sell: 0, hold: 0, avgConf: 0 };
+      const sym = bySymbol[row.symbol];
+      if (row.action === 'BUY')  { sym.buy  = row.cnt; byAction.BUY  += row.cnt; }
+      if (row.action === 'SELL') { sym.sell = row.cnt; byAction.SELL += row.cnt; }
+      if (row.action === 'HOLD') { sym.hold = row.cnt; byAction.HOLD += row.cnt; }
+      sym.avgConf = Math.round((row.avg_conf || 0) * 100);
+    }
+
+    const td = tradeRows[0] || {};
+    return {
+      signals7d: {
+        total:    byAction.BUY + byAction.SELL + byAction.HOLD,
+        bySymbol,
+        byAction,
+      },
+      trades7d: {
+        total: td.total || 0,
+        pnl:   parseFloat((td.pnl || 0).toFixed(2)),
+      },
+      positions: posRows.map(p => ({
+        symbol:        p.symbol,
+        amount:        p.amount,
+        avgPrice:      p.avg_price,
+        unrealizedPnl: parseFloat((p.unrealized_pnl || 0).toFixed(2)),
+        exchange:      p.exchange,
+      })),
+    };
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    try { conn?.close(); } catch { /* ignore */ }
+    try { db?.close();   } catch { /* ignore */ }
+  }
+}
+
 // ─── 스카팀 상태 수집 ─────────────────────────────────────────────────
 
 function fetchSkaStats() {
@@ -232,16 +318,23 @@ async function fetchAll() {
   const start = Date.now();
   console.log('  📡 데이터 수집 중...');
 
-  const [github, npm, fearGreed, btc, eth] = await Promise.all([
+  const [github, npm, fearGreed, btc, eth, lunaPerf] = await Promise.all([
     fetchAllGithub(),
     fetchAllNpm(),
     fetchFearGreed(),
     fetchBinanceTicker('BTC/USDT', cfg.MARKET.btc),
     fetchBinanceTicker('ETH/USDT', cfg.MARKET.eth),
+    fetchLunaPerformance(),
   ]);
 
   // 내부 봇 상태 (동기, 파일 기반)
   const luna = fetchLunaStats();
+  // DuckDB 성과 데이터 병합
+  if (lunaPerf && !lunaPerf.error) {
+    luna.performance = lunaPerf;
+  } else if (lunaPerf?.error) {
+    luna.performanceError = lunaPerf.error;
+  }
   const ska  = fetchSkaStats();
 
   const elapsed = Date.now() - start;

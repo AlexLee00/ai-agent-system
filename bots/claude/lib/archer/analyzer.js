@@ -94,6 +94,22 @@ function buildContext(data, prev) {
       const { buy, sell, hold } = luna.signals;
       lines.push(`최근 신호 분포 (로그 기준): BUY ${buy} / SELL ${sell} / HOLD ${hold}`);
     }
+    const perf = luna.performance;
+    if (perf) {
+      lines.push('\n=== 루나팀 7일 성과 (DuckDB) ===');
+      const { byAction, total } = perf.signals7d;
+      lines.push(`신호 합계: ${total}건 | BUY ${byAction.BUY} / SELL ${byAction.SELL} / HOLD ${byAction.HOLD}`);
+      const symLines = Object.entries(perf.signals7d.bySymbol)
+        .map(([s, v]) => `${s}(B${v.buy}/S${v.sell}/H${v.hold} conf${v.avgConf}%)`).join(' ');
+      if (symLines) lines.push(`심볼별: ${symLines}`);
+      lines.push(`드라이런 거래: ${perf.trades7d.total}건 | 누적 PnL: $${perf.trades7d.pnl}`);
+      if (perf.positions.length > 0) {
+        const posStr = perf.positions.map(p => `${p.symbol} ${p.amount}(미실현 $${p.unrealizedPnl})`).join(', ');
+        lines.push(`현재 포지션: ${posStr}`);
+      } else {
+        lines.push(`현재 포지션: 없음 (드라이런)`);
+      }
+    }
   }
   if (ska?.available) {
     lines.push('\n=== 스카팀 현황 ===');
