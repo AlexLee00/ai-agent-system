@@ -1,0 +1,23 @@
+{
+  "name": "@ai-agent/investment",
+  "version": "3.0.0",
+  "description": "🌙 루나팀 Phase 3-A — 암호화폐·국내외주식 자동매매 (PAPER_MODE 기본값)",
+  "main": "markets/crypto.js",
+  "type": "commonjs",
+  "scripts": {
+    "crypto":    "PAPER_MODE=true node markets/crypto.js",
+    "domestic":  "PAPER_MODE=true node markets/domestic.js",
+    "overseas":  "PAPER_MODE=true node markets/overseas.js",
+    "luna":      "PAPER_MODE=true node team/luna.js --symbols=BTC/USDT",
+    "aria":      "node team/aria.js --symbol=BTC/USDT",
+    "oracle":    "node team/oracle.js --symbol=BTC/USDT",
+    "hermes":    "node team/hermes.js --symbol=BTC/USDT",
+    "sophia":    "node team/sophia.js --symbol=BTC/USDT",
+    "nemesis":   "node team/nemesis.js",
+    "check":     "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm.js"
+  },
+  "dependencies": {
+    "ccxt": "^4.4.0",
+    "duckdb": "^1.4.4"
+  }
+}

@@ -12,9 +12,27 @@
  * 실행: node team/aria.js --symbol=BTC/USDT
  */
 
-const binance = require('../../invest/lib/binance');
 const db      = require('../shared/db');
 const { ANALYST_TYPES, ACTIONS } = require('../shared/signal');
+
+// ─── CCXT public-only 인스턴스 (API 키 없음 — OHLCV 전용) ───────────
+// API 키가 있는 CCXT는 loadMarkets 시 private 엔드포인트 호출 → 타임아웃 발생
+// OHLCV는 public 엔드포인트만 필요하므로 키 없는 인스턴스를 별도 생성
+
+let _publicExchange = null;
+
+function getPublicExchange() {
+  if (_publicExchange) return _publicExchange;
+  const ccxt = require('ccxt');
+  _publicExchange = new ccxt.binance({
+    options: { defaultType: 'spot' },
+  });
+  return _publicExchange;
+}
+
+async function fetchOHLCV(symbol, timeframe, limit) {
+  return getPublicExchange().fetchOHLCV(symbol, timeframe, undefined, limit);
+}
 
 // ─── 시장별 파라미터 ────────────────────────────────────────────────
 
@@ -214,7 +232,7 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exch
 // ─── 단일 타임프레임 분석 ───────────────────────────────────────────
 
 async function analyzeTF(symbol, timeframe, exchange = 'binance') {
-  const ohlcv = await binance.fetchOHLCV(symbol, timeframe, 150);
+  const ohlcv = await fetchOHLCV(symbol, timeframe, 150);
   const highs   = ohlcv.map(c => c[2]);
   const lows    = ohlcv.map(c => c[3]);
   const closes  = ohlcv.map(c => c[4]);

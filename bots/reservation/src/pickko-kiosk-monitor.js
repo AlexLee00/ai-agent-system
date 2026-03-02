@@ -1719,50 +1719,51 @@ async function blockSlotOnly(entry) {
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
       await sendTelegram(`⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패`);
-      process.exit(1);
-    }
-
-    // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
-    let blocked = false;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        blocked = await blockNaverSlot(naverPg, entry);
-        break;
-      } catch (err) {
-        if (err.message.includes('detached Frame') && attempt === 1) {
-          log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
-          try { await naverPg.close(); } catch {}
-          naverPg = await createPage();
-          const reLoggedIn = await naverBookingLogin(naverPg);
-          if (!reLoggedIn) break;
-        } else {
-          log(`❌ blockNaverSlot 오류: ${err.message}`);
+      // exitCode = 1 (기본값), finally로 탭 닫기 후 종료
+    } else {
+      // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
+      let blocked = false;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          blocked = await blockNaverSlot(naverPg, entry);
           break;
+        } catch (err) {
+          if (err.message.includes('detached Frame') && attempt === 1) {
+            log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
+            try { await naverPg.close(); } catch {}
+            naverPg = await createPage();
+            const reLoggedIn = await naverBookingLogin(naverPg);
+            if (!reLoggedIn) break;
+          } else {
+            log(`❌ blockNaverSlot 오류: ${err.message}`);
+            break;
+          }
         }
       }
+
+      // kiosk_blocks DB에 기록 (중복 차단 방지 / 추적)
+      upsertKioskBlock(phoneRaw, date, start, {
+        name, date, start, end, room, amount: 0,
+        naverBlocked: blocked,
+        firstSeenAt:  nowKST(),
+        blockedAt:    blocked ? nowKST() : null,
+      });
+
+      if (blocked) {
+        log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
+        await sendTelegram(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`);
+      } else {
+        log(`⚠️ 네이버 차단 실패 — 수동 확인 필요`);
+        await sendTelegram(`⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
+      }
+      exitCode = blocked ? 0 : 1;
     }
-
-    // kiosk_blocks DB에 기록 (중복 차단 방지 / 추적)
-    upsertKioskBlock(phoneRaw, date, start, {
-      name, date, start, end, room, amount: 0,
-      naverBlocked: blocked,
-      firstSeenAt:  nowKST(),
-      blockedAt:    blocked ? nowKST() : null,
-    });
-
-    if (blocked) {
-      log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
-      await sendTelegram(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`);
-    } else {
-      log(`⚠️ 네이버 차단 실패 — 수동 확인 필요`);
-      await sendTelegram(`⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
-    }
-
-    process.exit(blocked ? 0 : 1);
   } finally {
-    if (naverPg)     { try { await naverPg.close();        } catch {} }
-    if (naverBrowser){ try { naverBrowser.disconnect();     } catch {} }
+    // process.exit()는 finally를 건너뛰므로 반드시 finally에서 탭 닫기
+    if (naverPg)     { try { await naverPg.close();    } catch {} }
+    if (naverBrowser){ try { naverBrowser.disconnect(); } catch {} }
   }
+  process.exit(exitCode);
 }
 
 // ─── 오늘 예약 검증 (--audit-today) ──────────────────────────────────────────
@@ -1988,6 +1989,7 @@ async function unblockSlotOnly(entry) {
 
   let naverBrowser = null;
   let naverPg = null;
+  let exitCode = 1;
   try {
     naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
     log('✅ CDP 연결 성공');
@@ -2004,49 +2006,50 @@ async function unblockSlotOnly(entry) {
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
       await sendTelegram(`⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패`);
-      process.exit(1);
-    }
-
-    let unblocked = false;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        unblocked = await unblockNaverSlot(naverPg, entry);
-        break;
-      } catch (err) {
-        if (err.message.includes('detached Frame') && attempt === 1) {
-          log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
-          try { await naverPg.close(); } catch {}
-          naverPg = await createPage();
-          const reLoggedIn = await naverBookingLogin(naverPg);
-          if (!reLoggedIn) break;
-        } else {
-          log(`❌ unblockNaverSlot 오류: ${err.message}`);
+      // exitCode stays 1, falls through to finally
+    } else {
+      let unblocked = false;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          unblocked = await unblockNaverSlot(naverPg, entry);
           break;
+        } catch (err) {
+          if (err.message.includes('detached Frame') && attempt === 1) {
+            log(`⚠️ Frame detach 감지 — 새 탭으로 재시도`);
+            try { await naverPg.close(); } catch {}
+            naverPg = await createPage();
+            const reLoggedIn = await naverBookingLogin(naverPg);
+            if (!reLoggedIn) break;
+          } else {
+            log(`❌ unblockNaverSlot 오류: ${err.message}`);
+            break;
+          }
         }
       }
+
+      // DB 업데이트
+      const existing = getKioskBlock(phoneRaw, date, start);
+      upsertKioskBlock(phoneRaw, date, start, {
+        ...(existing || {}), name, date, start, end, room,
+        naverBlocked: false,
+        naverUnblockedAt: unblocked ? nowKST() : (existing?.naverUnblockedAt || null),
+      });
+
+      if (unblocked) {
+        log(`✅ 네이버 해제 완료: ${name} ${date} ${start}~${end} ${room}`);
+        await sendTelegram(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
+      } else {
+        log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
+        await sendTelegram(`⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
+      }
+      exitCode = unblocked ? 0 : 1;
     }
-
-    // DB 업데이트
-    const existing = getKioskBlock(phoneRaw, date, start);
-    upsertKioskBlock(phoneRaw, date, start, {
-      ...(existing || {}), name, date, start, end, room,
-      naverBlocked: false,
-      naverUnblockedAt: unblocked ? nowKST() : (existing?.naverUnblockedAt || null),
-    });
-
-    if (unblocked) {
-      log(`✅ 네이버 해제 완료: ${name} ${date} ${start}~${end} ${room}`);
-      await sendTelegram(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
-    } else {
-      log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
-      await sendTelegram(`⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
-    }
-
-    process.exit(unblocked ? 0 : 1);
   } finally {
+    // process.exit()는 finally를 건너뛰므로 반드시 finally에서 탭 닫기
     if (naverPg)     { try { await naverPg.close();        } catch {} }
     if (naverBrowser){ try { naverBrowser.disconnect();     } catch {} }
   }
+  process.exit(exitCode);
 }
 
 if (KIOSK_ARGS['block-slot']) {
