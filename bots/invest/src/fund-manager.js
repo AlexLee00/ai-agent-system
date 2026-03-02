@@ -3,11 +3,11 @@
 /**
  * src/fund-manager.js — 루나 펀드매니저 (LU-030)
  *
- * claude-sonnet-4-6 기반 포트폴리오 레벨 최종 투자 판단
+ * claude-haiku-4-5 기반 포트폴리오 레벨 최종 투자 판단
  *
  * 흐름:
  *  1. signal-aggregator → 심볼별 신호 생성 (haiku, 기존)
- *  2. fund-manager → 포지션 + 잔고 + 신호 종합 → 최종 판단 (sonnet)
+ *  2. fund-manager → 포지션 + 잔고 + 신호 종합 → 최종 판단 (haiku)
  *  3. 승인된 신호 → binance-executor / kis-executor 실행
  *
  * 실행: node src/fund-manager.js [--dry-run] [--skip-pipeline]
@@ -23,8 +23,8 @@ const { executeSignal } = require('./binance-executor');
 const { guardRealOrder, printModeBanner, getMode } = require('../lib/mode');
 const { ACTIONS } = require('../lib/signal');
 
-const MODEL        = 'claude-sonnet-4-6';
-const MIN_CONF     = 0.6;  // 펀드매니저 최소 확신도 (haiku의 0.5보다 엄격)
+const MODEL        = 'claude-haiku-4-5-20251001';
+const MIN_CONF     = 0.6;  // 펀드매니저 최소 확신도 (signal-aggregator의 0.5보다 엄격)
 const MAX_POSITION = 0.20; // 단일 포지션 최대 20%
 const MAX_POS_COUNT = 5;   // 최대 동시 포지션 수
 
@@ -65,9 +65,9 @@ const SYSTEM_PROMPT = `당신은 루나팀의 수석 펀드매니저(Fund Manage
 - 단일 주문 최대 금액: $1000 (리스크 매니저 하드 규칙, 초과 시 자동 거부)
 - 단일 주문 최소 금액: $10`;
 
-// ─── Sonnet API 호출 ────────────────────────────────────────────────
+// ─── Haiku API 호출 ────────────────────────────────────────────────
 
-function callSonnetAPI(userMessage) {
+function callHaikuAPI(userMessage) {
   const secrets = loadSecrets();
   const apiKey  = secrets.anthropic_api_key || process.env.ANTHROPIC_API_KEY;
 
@@ -79,7 +79,7 @@ function callSonnetAPI(userMessage) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify({
       model:       MODEL,
-      max_tokens:  2048,
+      max_tokens:  1024,
       temperature: 0.1,
       system:      SYSTEM_PROMPT,
       messages:    [{ role: 'user', content: userMessage }],
@@ -119,7 +119,7 @@ function callSonnetAPI(userMessage) {
     });
 
     req.on('error', reject);
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Sonnet API 타임아웃')); });
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Haiku API 타임아웃')); });
     req.write(body);
     req.end();
   });
@@ -217,13 +217,13 @@ async function getFundManagerDecision(signals, portfolio) {
     `가용 USDT: $${portfolio.usdtFree.toFixed(2)} / 총자산: $${portfolio.totalAsset.toFixed(2)}`,
   ].join('\n');
 
-  const raw = await callSonnetAPI(userMsg);
+  const raw = await callHaikuAPI(userMsg);
   if (!raw) return null;
 
   try {
     return JSON.parse(raw.replace(/```json?\n?|\n?```/g, '').trim());
   } catch (e) {
-    console.error('⚠️ Sonnet 응답 파싱 실패:', raw.slice(0, 200));
+    console.error('⚠️ Haiku 응답 파싱 실패:', raw.slice(0, 200));
     return null;
   }
 }

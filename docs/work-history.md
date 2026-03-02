@@ -78,6 +78,15 @@
 - 맥북 개발 방침 확정 + 개발 우선순위 재조정 문서 반영
 <!-- session-close:2026-03-02:lu035리서처lu024리포터eth실매수 -->
 
+### ✨ 취소 감지 교차검증 + KIS 구현 + LLM 비용 최적화
+- naver-monitor.js 취소 감지 교차검증: 감지 2 먼저 실행 → currentCancelledList → 감지 1 교차검증 (이용완료 오탐 방지)
+- KIS lib/kis.js qty<1 버그 수정 (dryRun 분기 앞으로 이동)
+- fund-manager.js: sonnet-4-6 → haiku-4-5-20251001, max_tokens 2048→1024, timeout 30s→20s
+- signal-aggregator.js: MAX_DEBATE_SYMBOLS=2 추가 (debate 최대 2심볼/실행, API 비용 절감)
+- launchd 스케줄 최적화: ai.invest.dev 5분→10분, ai.invest.fund 30분→60분
+- SYSTEM_DESIGN.md + work-history.md 전체 업데이트
+<!-- session-close:2026-03-02:취소감지교차검증-kis구현-llm비용최적화 -->
+
 ### ✨ LU-030펀드매니저+LU-036리스크매니저v2
 - LU-030 fund-manager.js — sonnet-4-6 포트폴리오 오케스트레이터 (30분 launchd)
 - LU-036 risk-manager.js v2 — ATR변동성·상관관계·시간대·LLM haiku 4단계 조정
