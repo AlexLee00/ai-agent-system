@@ -1,7 +1,7 @@
 # 🤖 멀티 에이전트 AI 봇 시스템 설계서
 
 > 최초 작성: 2026년 2월 22일
-> 최종 업데이트: 2026년 2월 27일
+> 최종 업데이트: 2026년 3월 2일
 > 목적: 맥미니 M4 Pro 기반 로컬 AI 멀티 에이전트 시스템 구축
 
 ---
@@ -114,7 +114,7 @@ skastatus # → launchctl list | grep ai.ska
 | 💼 업무봇 | 문서·이메일 처리 | `kimi-k2p5` | `claude-sonnet-4-6` | ~$5 | API |
 | 📚 학술봇 | 논문 리서치·KCI | `ollama/deepseek-r1:32b` | `claude-opus-4-6` | $0 | 로컬 |
 | ⚖️ 판례봇 | 법률 판례 분석 | `ollama/deepseek-r1:32b` | `kimi-k2p5` | $0 | 로컬 |
-| 💹 투자 메인봇 | 매매 의사결정·조율 | `claude-sonnet-4-6` | `gemini-2.0-flash` | (메인봇 공유) | API |
+| 💹 투자 메인봇 | 매매 의사결정·조율 | `claude-haiku-4-5-20251001` | `gemini-2.0-flash` | ~$0.3 | API |
 | 📊 기술분석가 | TA 지표 분석 | `groq/llama-3.3-70b-versatile` | `gemini-2.0-flash` | $0 (무료) | API |
 | 🌐 감성분석가 | 커뮤니티 감성 | `gemini-2.0-flash` | `groq/llama-4-scout-17b` | $0 (무료 OAuth) | API |
 | ⛓️ 온체인분석가 | 온체인·매크로 | `groq/llama-3.1-8b-instant` | `gemini-2.0-flash` | $0 (무료) | API |
@@ -141,12 +141,12 @@ skastatus # → launchctl list | grep ai.ska
 | 학술·추론 집약 (무료 로컬) | `deepseek-r1:32b` | 학술봇, 판례봇, 백테스팅 |
 | 반복·단순 파싱 (무료 로컬) | `qwen2.5:7b` | 스카봇 (24/7 상주) |
 
-### Groq 무료 한도 분석 (5분 주기 운영 기준)
+### Groq 무료 한도 분석 (10분 주기 운영 기준, 2026-03-02 업데이트)
 
-| 모델 | 무료 한도 | 일 소비량 (5분 주기) | 잔여율 | 전략 |
+| 모델 | 무료 한도 | 일 소비량 (10분 주기) | 잔여율 | 전략 |
 |------|---------|-----------------|--------|------|
-| `llama-3.1-8b-instant` | 14,400 RPD / 500K TPD | 288 calls (온체인) + 288 calls (뉴스) = **576** | **96% 남음** | 단일 계정 충분 |
-| `llama-3.3-70b-versatile` | 1,000 RPD / 100K TPD | 288 calls (기술분석) | **71% 남음** | 단일 계정 충분 |
+| `llama-3.1-8b-instant` | 14,400 RPD / 500K TPD | 144 calls (온체인) + 144 calls (뉴스) = **288** | **98% 남음** | 단일 계정 충분 |
+| `llama-3.3-70b-versatile` | 1,000 RPD / 100K TPD | 144 calls (기술분석) | **86% 남음** | 단일 계정 충분 |
 | `llama-4-scout-17b` | 1,000 RPD / 500K TPD | Fallback용 (미사용 시 0) | — | 예비 계정 |
 | **리스크 완화** | — | Groq 계정 2~3개 라운드로빈 → 한도 2~3배 확장 | — | 멀티계정 전략 |
 
@@ -241,14 +241,18 @@ skastatus # → launchctl list | grep ai.ska
 
 | 봇 (별명) | 파일 | 역할 | 상태 |
 |-----------|------|------|------|
-| 제이슨 | `src/analysts/signal-aggregator.js` | TA 집계 + Claude LLM 판단 | ✅ DEV 운영 중 |
+| 제이슨 | `src/analysts/signal-aggregator.js` | TA 집계 + Claude haiku 판단 (10분 주기) | ✅ DEV 운영 중 |
+| 루나(펀드매니저) | `src/fund-manager.js` | 포트폴리오 레벨 최종 판단 haiku (60분 주기) | ✅ DEV 운영 중 |
 | 타일러 | `src/binance-executor.js` | 바이낸스 Spot 실행봇 (드라이런) | ✅ 드라이런 구현 |
 | 몰리 | `src/upbit-bridge.js` | 업비트 브릿지 (드라이런) | ✅ 드라이런 구현 |
+| 크리스 | `src/kis-executor.js` | KIS 국내주식 실행봇 (모의투자) | ✅ 구현 완료 |
+| - | `src/analysts/researchers.js` | 강세/약세 리서처 (haiku, 최대 2심볼/실행) | ✅ 구현 완료 |
 | - | `src/risk-manager.js` | 규칙 기반 리스크 매니저 | ✅ 구현 완료 |
 | - | `src/analysts/ta-analyst.js` | RSI/MACD/볼린저밴드 계산 | ✅ 구현 완료 |
 
 **launchd 운영:**
-- `ai.invest.dev.plist` — 10분 주기, `INVEST_MODE=dev`, `DRY_RUN=true`, `RunAtLoad=true`
+- `ai.invest.dev.plist` — **10분 주기**, `INVEST_MODE=dev`, `DRY_RUN=true`, `RunAtLoad=true`
+- `ai.invest.fund.plist` — **60분 주기**, `DRY_RUN=true`, `--skip-pipeline`
 - OPS 플리스트(`ai.invest.pipeline`, `ai.invest.bridge`)는 실 API 키 준비 시까지 언로드
 
 **드라이런 테스트 (2026-03-01):** BTC/USDT + ETH/USDT, 9/9 단계 통과
@@ -263,7 +267,7 @@ skastatus # → launchctl list | grep ai.ska
 #### 전체 구조 (v2.0)
 
 ```
-투자 메인봇 / 펀드매니저 (claude-sonnet-4-6)
+투자 메인봇 / 펀드매니저 (claude-haiku-4-5)
     │
     ├── [병렬 ~5초] 4개 분석가 동시 실행 ──────────────────────
     │   ├── 📊 기술분석가   groq/llama-3.3-70b      RSI/MACD/볼린저/이평정배열
@@ -275,7 +279,7 @@ skastatus # → launchctl list | grep ai.ska
     ├── [토론 ~5초] 불/베어 토론으로 합의 도출 ────────────────
     │   ├── 🐂 강세 리서처  claude-haiku-4-5        매수 근거 + 목표가 제시
     │   └── 🐻 약세 리서처  claude-haiku-4-5        매도 근거 + 리스크 제시
-    │         └─→ n라운드 토론 → 합의 의견 → 펀드매니저에게 전달
+    │         └─→ 최대 2심볼/실행 debate → 합의 의견 → 펀드매니저에게 전달
     │
     ├── [리스크 검토 ~3초] ──────────────────────────────────
     │   └── ⚖️ 리스크 매니저  claude-haiku-4-5      포지션 크기·손실한도 최종 검토
@@ -297,17 +301,17 @@ skastatus # → launchctl list | grep ai.ska
 
 | 항목 | 내용 |
 |------|------|
-| Primary LLM | `claude-sonnet-4-6` |
+| Primary LLM | `claude-haiku-4-5-20251001` (비용 최적화, 2026-03-02 변경) |
 | Fallback | `gemini-2.0-flash` |
-| 상태 | ⏳ Phase 3 구축 예정 |
-| 역할 | 전체 조율 → 최종 매매 결정 → 실행봇 명령 → 보고 |
+| 상태 | ✅ DEV 운영 중 (60분 주기, 드라이런) |
+| 역할 | 포트폴리오 레벨 최종 판단 → 실행봇 명령 → 보고 |
 
 **핵심 기능**
 
 | 기능 | 설명 |
 |------|------|
 | 4개 분석가 병렬 실행 | Promise.all() → 구조화 보고서 수집 |
-| 리서처 토론 조율 | 강세↔약세 n라운드 → 합의 추출 |
+| 리서처 토론 조율 | 강세↔약세 최대 2심볼 debate → 합의 추출 |
 | 리스크 매니저 검토 요청 | 결정 전 최종 안전장치 |
 | 실행봇 명령 발송 | JSON 명령어 → 바이낸스/업비트 선택 |
 | 학습 루프 | 거래 결과 → ChromaDB → 전략 가중치 조정 |

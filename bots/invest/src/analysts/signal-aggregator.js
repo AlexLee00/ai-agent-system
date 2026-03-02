@@ -25,8 +25,9 @@ const { notifySignal, notifyKisSignal, notifyError } = require('../../lib/telegr
 const { printModeBanner, assertOpsReady, getMode } = require('../../lib/mode');
 const kis = require('../../lib/kis');
 
-const DEFAULT_SYMBOLS = getSymbols(); // secrets.binance_symbols || BTC/ETH/SOL/BNB
-const MIN_CONFIDENCE  = 0.5;
+const DEFAULT_SYMBOLS    = getSymbols(); // secrets.binance_symbols || BTC/ETH/SOL/BNB
+const MIN_CONFIDENCE     = 0.5;
+const MAX_DEBATE_SYMBOLS = 2; // 실행당 강세/약세 리서처 debate 최대 심볼 수 (API 비용 절감)
 
 // 멀티타임프레임 설정 (가중치 합계 = 1.0)
 // 장기 → 단기 순으로 실행 (맥락 파악 후 단기 신호 판단)
@@ -234,6 +235,7 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
   console.log(`📐 타임프레임: ${TIMEFRAMES.map(t => t.tf).join(' + ')} + 온체인 + 뉴스 + 감성`);
 
   const results = [];
+  let debateCount = 0; // 이번 실행에서 debate 실행된 심볼 수 (MAX_DEBATE_SYMBOLS 제한)
 
   // ─── 코인 파이프라인 ────────────────────────────────────────────
   for (const symbol of symbols) {
@@ -273,19 +275,24 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
         continue;
       }
 
-      // 6. 강세/약세 리서처 병렬 실행 (HedgeAgents 패턴)
+      // 6. 강세/약세 리서처 병렬 실행 (HedgeAgents 패턴, 최대 MAX_DEBATE_SYMBOLS 심볼)
       let debate = null;
-      try {
-        const summaryForResearchers = buildAnalysisSummary(analyses);
-        const [bull, bear] = await Promise.all([
-          runBullResearcher(symbol, summaryForResearchers, null, 'binance'),
-          runBearResearcher(symbol, summaryForResearchers, null, 'binance'),
-        ]);
-        debate = { bull, bear };
-        if (bull) console.log(`  🐂 [강세] 목표가 ${bull.targetPrice} | ${bull.reasoning?.slice(0, 50)}`);
-        if (bear) console.log(`  🐻 [약세] 목표가 ${bear.targetPrice} | ${bear.reasoning?.slice(0, 50)}`);
-      } catch (e) {
-        console.warn(`  ⚠️ [리서처] ${symbol} 실패 (계속): ${e.message}`);
+      if (debateCount < MAX_DEBATE_SYMBOLS) {
+        try {
+          const summaryForResearchers = buildAnalysisSummary(analyses);
+          const [bull, bear] = await Promise.all([
+            runBullResearcher(symbol, summaryForResearchers, null, 'binance'),
+            runBearResearcher(symbol, summaryForResearchers, null, 'binance'),
+          ]);
+          debate = { bull, bear };
+          debateCount++;
+          if (bull) console.log(`  🐂 [강세] 목표가 ${bull.targetPrice} | ${bull.reasoning?.slice(0, 50)}`);
+          if (bear) console.log(`  🐻 [약세] 목표가 ${bear.targetPrice} | ${bear.reasoning?.slice(0, 50)}`);
+        } catch (e) {
+          console.warn(`  ⚠️ [리서처] ${symbol} 실패 (계속): ${e.message}`);
+        }
+      } else {
+        console.log(`  ⏭️ [리서처] ${symbol}: debate 한도 도달 (${debateCount}/${MAX_DEBATE_SYMBOLS}) → 스킵`);
       }
 
       // 7. LLM 최종 판단 (토론 결과 포함)
@@ -399,19 +406,24 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
 
         const analyses = await db.getRecentAnalysis(symbol, 30);
 
-        // 강세/약세 리서처 병렬 실행 (HedgeAgents 패턴)
+        // 강세/약세 리서처 병렬 실행 (HedgeAgents 패턴, 코인과 공유 debate 카운터)
         let debate = null;
-        try {
-          const summaryForResearchers = buildAnalysisSummary(analyses);
-          const [bull, bear] = await Promise.all([
-            runBullResearcher(symbol, summaryForResearchers, currentPrice, 'kis'),
-            runBearResearcher(symbol, summaryForResearchers, currentPrice, 'kis'),
-          ]);
-          debate = { bull, bear };
-          if (bull) console.log(`  🐂 [강세] 목표가 ${bull.targetPrice?.toLocaleString()}원 | ${bull.reasoning?.slice(0, 40)}`);
-          if (bear) console.log(`  🐻 [약세] 목표가 ${bear.targetPrice?.toLocaleString()}원 | ${bear.reasoning?.slice(0, 40)}`);
-        } catch (e) {
-          console.warn(`  ⚠️ [리서처] ${symbol} (KIS) 실패 (계속): ${e.message}`);
+        if (debateCount < MAX_DEBATE_SYMBOLS) {
+          try {
+            const summaryForResearchers = buildAnalysisSummary(analyses);
+            const [bull, bear] = await Promise.all([
+              runBullResearcher(symbol, summaryForResearchers, currentPrice, 'kis'),
+              runBearResearcher(symbol, summaryForResearchers, currentPrice, 'kis'),
+            ]);
+            debate = { bull, bear };
+            debateCount++;
+            if (bull) console.log(`  🐂 [강세] 목표가 ${bull.targetPrice?.toLocaleString()}원 | ${bull.reasoning?.slice(0, 40)}`);
+            if (bear) console.log(`  🐻 [약세] 목표가 ${bear.targetPrice?.toLocaleString()}원 | ${bear.reasoning?.slice(0, 40)}`);
+          } catch (e) {
+            console.warn(`  ⚠️ [리서처] ${symbol} (KIS) 실패 (계속): ${e.message}`);
+          }
+        } else {
+          console.log(`  ⏭️ [리서처] ${symbol} (KIS): debate 한도 도달 (${debateCount}/${MAX_DEBATE_SYMBOLS}) → 스킵`);
         }
 
         console.log(`\n🤖 [LLM haiku] ${symbol} (KIS) 판단 요청...`);
