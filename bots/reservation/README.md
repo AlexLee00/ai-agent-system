@@ -10,17 +10,17 @@
 
 ```
 [네이버 스마트플레이스]
-        ↓ 신규 예약 감지 (3분 주기)     ↓ 취소 감지 (리스트 비교)
-[naver-monitor.js]
-        ↓ runPickko()                  ↓ runPickkoCancel()
+        ↓ 신규 예약 감지 (5분 주기)     ↓ 취소 감지 (교차검증)
+[naver-monitor.js]                         ↓ currentCancelledList 비교
+        ↓ runPickko()               runPickkoCancel() / 이용완료 추정 스킵
 [pickko-accurate.js]           [pickko-cancel.js]
    Stage [1-9] 자동 등록          취소 처리 [1-10]
         ↓
 [픽코 키오스크] ← 예약 등록+결제 / 취소 상태 변경
         ↓
-[Telegram] ← 사장님 알람 (new/completed/cancelled/error)
+[SQLite DB] ← 예약 이력 + AES-256-GCM 암호화
         ↓
-[RAG API] ← 예약 이력 저장 (http://localhost:8100)
+[Telegram] ← 사장님 알람 (new/completed/cancelled/error)
 ```
 
 ---
@@ -41,9 +41,17 @@ reservation/
 │   ├── secrets.js            # loadSecrets()
 │   ├── formatting.js         # toKoreanTime, pickkoEndTime, formatPhone
 │   ├── files.js              # loadJson, saveJson
-│   ├── args.js               # parseArgs()
+│   ├── args.js               # parseArgs() — 불리언 플래그 지원
 │   ├── browser.js            # getPickkoLaunchOptions, setupDialogHandler
-│   └── pickko.js             # loginToPickko()
+│   ├── pickko.js             # loginToPickko()
+│   ├── db.js                 # SQLite (better-sqlite3) 연결 + 마이그레이션
+│   ├── crypto.js             # AES-256-GCM 예약 데이터 암호화
+│   ├── telegram.js           # sendTelegram, savePending, flushPendingTelegrams
+│   ├── health.js             # preflightSystemCheck, preflightConnCheck, registerShutdownHandlers
+│   ├── mode.js               # DEV/OPS 분리 (MODE 환경변수, getModeSuffix)
+│   ├── status.js             # 프로세스 상태 파일 (/tmp/ska-status.json)
+│   ├── error-tracker.js      # 연속 오류 카운터
+│   └── cli.js                # outputResult, fail (공통 출력 포맷)
 ├── secrets.json              # 네이버/픽코 로그인 정보 (git 제외)
 ├── naver-seen.json           # OPS 예약 상태 저장
 ├── naver-seen-dev.json       # DEV 예약 상태 저장

@@ -9,19 +9,19 @@
 | 봇 | Primary LLM | Fallback | 예상 월비용 | 상태 |
 |----|-------------|----------|-----------|------|
 | 🧠 메인봇 (오케스트레이터) | `claude-sonnet-4-6` | `kimi-k2p5` | ~$8 | ⏳ Phase 3 |
-| 📅 스카봇 (예약관리) | `ollama/qwen2.5:7b` | `gemini-2.0-flash` | $0 | ✅ OPS 운영 중 |
+| 📅 스카봇 (예약관리) | `google-gemini-cli/gemini-2.5-flash` | `claude-haiku-4-5` | $0 | ✅ OPS 운영 중 |
 | 🗓️ 비서봇 (일정·캘린더) | `gemini-2.0-flash` | `ollama/qwen2.5:7b` | ~$1 | ⏳ Phase 3 |
 | 💼 업무봇 (문서·이메일) | `kimi-k2p5` | `claude-sonnet-4-6` | ~$5 | ⏳ Phase 3 |
 | 📚 학술봇 (논문 리서치) | `ollama/deepseek-r1:32b` | `claude-opus-4-6` | $0 | ⏳ Phase 4 |
 | ⚖️ 판례봇 (법률 판례) | `ollama/deepseek-r1:32b` | `kimi-k2p5` | $0 | ⏳ Phase 4 |
-| 💹 투자 메인봇 (펀드매니저) | `claude-sonnet-4-6` | `gemini-2.0-flash` | (메인봇 공유) | ⏳ Phase 3 |
-| 📊 기술·감성·온체인·뉴스 분석가 | `groq/llama-3.3-70b` + `gemini-flash` | `claude-haiku-4-5` | $0 (무료) | ⏳ Phase 3 |
-| 🔍 강세·약세 리서처 + 리스크매니저 | `claude-haiku-4-5` | `groq/llama-4-scout` | ~$0.5 | ⏳ Phase 3 |
-| ⚡ 바이낸스 실행봇 | LLM 없음 (규칙 기반) | — | $0 | ⏳ Phase 3 |
-| 🇰🇷 업비트 실행봇 | LLM 없음 (규칙 기반) | — | $0 | ⏳ Phase 3 |
-| 📚 백테스팅 엔진 | `ollama/deepseek-r1:32b` | — | $0 | ⏳ Phase 3 |
+| 💹 투자 메인봇 (펀드매니저) | `claude-haiku-4-5-20251001` | — | ~$0.1 | ✅ DEV 운영 중 |
+| 📊 기술·감성·온체인·뉴스 분석가 | `groq/llama-3.3-70b` + `groq/llama-3.1-8b` | `claude-haiku-4-5` | $0 (무료) | ✅ DEV 운영 중 |
+| 🔍 강세·약세 리서처 + 리스크매니저 | `claude-haiku-4-5-20251001` | — | ~$0.1 | ✅ DEV 운영 중 |
+| ⚡ 바이낸스 실행봇 (타일러) | LLM 없음 (규칙 기반) | — | $0 | ✅ DEV 드라이런 |
+| 🇰🇷 업비트 실행봇 (몰리) + KIS 실행봇 (크리스) | LLM 없음 (규칙 기반) | — | $0 | ✅ DEV 드라이런 |
+| 📊 성과 리포터 + 백테스팅 엔진 | 규칙 기반 | — | $0 | ✅ DEV 운영 중 |
 
-**총 예상 월 API 비용: ~$16.5**
+**총 예상 월 API 비용: ~$0.2 (DEV 모드, haiku 2개 봇 실비용)**
 
 ---
 
@@ -111,17 +111,21 @@
 - 국내 법원 판례 검색·분석
 - 학술봇과 deepseek-r1:32b 모델 공유
 
-### 💹 투자팀 v2.0 (Phase 3) — 9 에이전트 구조
+### 💹 루나팀 (투자팀) — Phase 0 DEV 운영 중
 > TradingAgents (arXiv:2412.20138) + HedgeAgents (arXiv:2502.13165) 논문 기반 설계
+> **모든 엔진이 암호화폐(바이낸스·업비트) + 국내주식(KIS) 함께 처리**
 
-- **투자 메인봇** (펀드매니저): 전체 조율 → 최종 매매 결정 → 실행봇 명령 → 일일 리포트
-- **분석가팀 (4명, 병렬)**: 기술분석(Groq 70B) / 감성분석(Gemini) / 온체인(Groq 8B) / 뉴스(Groq 8B)
-- **리서처팀 (2명, 토론)**: 강세 리서처 ↔ 약세 리서처 — 합의 의견 도출 (claude-haiku)
-- **리스크 매니저**: 포지션 한도·손실 한도 최종 검토 (claude-haiku)
-- **바이낸스 실행봇**: USDT 마켓 spot/futures, TP/SL 자동 설정 (LLM 없음)
-- **업비트 실행봇**: KRW 마켓 현물 거래 (LLM 없음)
-- **백테스팅 엔진**: 전략 파라미터 최적화, 샤프비율/MDD 검증 (deepseek-r1 로컬)
-- **3가지 회의 체계**: 정기(5분) / 경험공유(22:00) / 긴급(±5% 급락 자동 소집)
+- **루나 펀드매니저** (fund-manager.js): 전체 조율 → 최종 매매 결정 → 일일 리포트 (claude-haiku, 60분)
+- **제이슨 신호집계기** (signal-aggregator.js): 4개 분석가 병렬 → 리서처 토론 → LLM 판단 (10분)
+- **분석가팀 (4명)**: 기술분석(haiku) / 감성분석(Groq 70B) / 온체인(Groq 8B) / 뉴스(Groq 8B)
+- **리서처팀 (2명, 토론)**: 강세 리서처 ↔ 약세 리서처 — MAX 2심볼 debate (claude-haiku)
+- **리스크 매니저 v2**: ATR변동성·상관관계·시간대·LLM 4단계 조정 (claude-haiku)
+- **타일러** (binance-executor): 바이낸스 Spot 주문 (드라이런)
+- **몰리 v2** (upbit-bridge): 업비트 TP/SL 자동 청산 ±3% (드라이런)
+- **크리스** (kis-executor): KIS 국내주식 모의투자 실행봇 (모의투자 기본값)
+- **성과 리포터** (reporter.js): 일/주/월 수익률 리포트 (22:00 자동 발송)
+- **백테스팅 엔진** (backtest.js): 4심볼 1d/4h 전략 검증, 샤프비율/MDD
+- **대상 심볼**: 코인 BTC/ETH/SOL/BNB + KIS 005930(삼성)/000660(SK하이닉스)
 
 ---
 
@@ -185,83 +189,77 @@ node scripts/deploy-context.js --bot=reservation --sync  # 역동기화
 
 ---
 
-## 클로드 다음 작업 목록 (2026-02-27 등록)
-
-> iPad SSH 접속 후 `ai` 명령으로 클로드 실행 → 아래 CL 번호로 작업 지시
-
-| # | 항목 | 우선순위 | 상태 |
-|---|------|---------|------|
-| CL-001 | 작업 히스토리 파일 생성 (`memory/work-history.md`) | 중 | 📋 대기 |
-| CL-002 | 코딩가이드 최신화 (기술스택 + 모델 + OpenClaw/LLM 연동 패턴) | 중 | 📋 대기 |
-| CL-003 | 매출 예측 엔진 설계 및 개발 | 높 | 📋 대기 |
-| CL-004 | Dev/OPS 분리 방안 필요성 검토 | 중 | 📋 대기 |
-| CL-005 | 에이전트 활동 GUI 도입 여부 검토 | 낮 | 📋 대기 |
-
-### CL-003 매출 예측 엔진 상세
-
-**목표**: 스터디카페 매출 예측 — 다음 주/월 예상 매출 범위를 텔레그램으로 보고
-
-반영할 외부 요인 데이터:
-- 🎓 **대학생 학사일정** — 중간·기말고사, 방학 시즌 (매출 급등)
-- 📚 **중고등학생 수업일정** — 지필고사 2주 전후, 방학
-- 🏙️ **성남시 지역 행사** — 판교 테크노밸리 행사, 지역 축제 (유동인구 영향)
-- 🎊 **공휴일 / 명절** — 설·추석 연휴 (급락), 어린이날, 수능
-- 📊 **스터디카페 커뮤니티 서칭** — 네이버 카페·오픈카톡에서 시즌별 이용 패턴 데이터 수집
-
-### CL-002 코딩가이드 최신화 항목
-
-- **기술스택**: Node.js v24, Playwright, SQLite, launchd 패턴 정리
-- **모델**: 모델별 특성·성능·비용 비교표, 선택 기준
-- **OpenClaw + LLM 연동**: BOOT 최적화 패턴 (인라인 컨텍스트), tool 호출 최적화, 모델별 quirks
-- 국내외 커뮤니티(Reddit, HN, 한국 개발 커뮤니티) 베스트 프랙티스 반영
-
----
-
 ## 맥북 재부팅 절차
 
-### 재부팅 전 체크리스트
+### 재부팅 전 (자동화)
 
 ```bash
-# 1. 진행 중인 작업 저장 및 커밋
-cd ~/projects/ai-agent-system
-git status                          # 미커밋 변경사항 확인
-# 변경사항 있으면: git add . && git commit -m "..." && git push
-
-# 2. 스카 OPS 안전 종료
-skastatus                           # 실행 중인 서비스 확인
-launchctl stop ai.ska.naver-monitor
-launchctl stop ai.openclaw.gateway
-
-# 3. 재부팅
-sudo reboot
+# 재부팅 전 종료 루틴 실행 (git 상태 확인 + 서비스 정지 + 텔레그램 알림)
+bash scripts/pre-reboot.sh
+# → 완료 후 재부팅
 ```
 
-### 재부팅 후 확인 절차
+### 재부팅 후 (자동)
+
+재부팅 완료 후 약 65초 내에 텔레그램으로 상태 알림이 자동 전송됩니다.
+(`ai.agent.post-reboot` launchd 서비스가 RunAtLoad로 자동 실행)
 
 ```bash
-# 1. 서비스 자동 재시작 확인 (launchd KeepAlive=true → 자동)
-skastatus                           # ai.ska.* 서비스 PID 확인
-# 예상 출력: 숫자 PID가 보이면 정상
-
-# 2. 스카 BOOT 완료 확인 (약 60초 소요)
-bootlog                             # durationMs=5xxxx 보이면 완료
-
-# 3. 텔레그램에서 스카 응답 확인
-# → "안녕" 메시지 전송 후 응답 확인
-
-# 4. OpenClaw 게이트웨이 상태
-launchctl list | grep openclaw      # PID 있으면 정상
+# 수동 확인이 필요한 경우
+skastatus                           # 스카 서비스 PID 확인
+bootlog                             # 스카 BOOT 완료 확인 (durationMs 확인)
+tail -f /tmp/post-reboot.log        # 재부팅 후 시작 루틴 로그
 ```
 
 ### launchd 자동 재시작 서비스 목록
 
-| 서비스 | 역할 | 재시작 방식 |
-|--------|------|-----------|
-| `ai.openclaw.gateway` | 스카 LLM 게이트웨이 | 자동 (KeepAlive) |
-| `ai.ska.naver-monitor` | 네이버 예약 5분 모니터링 | 자동 (KeepAlive) |
-| `ai.ska.kiosk-monitor` | 키오스크 30분 모니터링 | 자동 (KeepAlive) |
-| `ai.ska.pickko-verify` | 픽코 검증 (08/14/20시) | 자동 (StartCalendarInterval) |
-| `ai.ska.daily-audit` | 일일 감사 (00/22/23시) | 자동 (StartCalendarInterval) |
+**스카팀 (KeepAlive — 항상 실행)**
+
+| 서비스 | 역할 |
+|--------|------|
+| `ai.openclaw.gateway` | 스카 LLM 게이트웨이 (gemini-2.5-flash) |
+| `ai.ska.naver-monitor` | 앤디 — 네이버 예약 5분 모니터링 |
+| `ai.ska.kiosk-monitor` | 지미 — 키오스크 30분 모니터링 |
+
+**스카팀 (스케줄 기반)**
+
+| 서비스 | 역할 |
+|--------|------|
+| `ai.ska.pickko-verify` | 픽코 검증 (08:00/14:00/20:00) |
+| `ai.ska.pickko-daily-summary` | 일일 예약 요약 (09:00 / 00:00) |
+| `ai.ska.pickko-daily-audit` | 일일 감사 (00:00/22:00/23:00) |
+| `ai.ska.health-check` | 헬스체크 (30분 주기) |
+| `ai.ska.log-rotate` | 로그 로테이션 (자정) |
+| `ai.ska.etl` | ETL 데이터 동기화 (매시) |
+| `ai.ska.rebecca` | 매출 분석 (일일) |
+| `ai.ska.eve` | 환경요소 수집 (일일) |
+| `ai.ska.forecast-daily` | 일별 예측 (일일) |
+
+**루나팀 (스케줄 기반 — DEV 드라이런)**
+
+| 서비스 | 역할 |
+|--------|------|
+| `ai.invest.dev` | 제이슨 신호집계 (10분 주기) |
+| `ai.invest.fund` | 루나 펀드매니저 (60분 주기) |
+| `ai.invest.tpsl` | 몰리 TP/SL 모니터 (5분 주기) |
+| `ai.invest.bridge` | 업비트 브릿지 (1시간 주기) |
+| `ai.invest.report` | 성과 리포터 (22:00 일일) |
+
+**클로드팀 (스케줄 기반)**
+
+| 서비스 | 역할 |
+|--------|------|
+| `ai.claude.dexter` | 덱스터 시스템 점검 (1시간) |
+| `ai.claude.dexter.daily` | 덱스터 일일 보고 (08:00) |
+| `ai.claude.archer` | 아처 기술 인텔리전스 (매주 월 09:00) |
+
+**공통**
+
+| 서비스 | 역할 |
+|--------|------|
+| `ai.agent.post-reboot` | 재부팅 후 상태 확인 (RunAtLoad, 1회) |
+| `ai.agent.auto-commit` | 자동 커밋 (KeepAlive) |
+| `ai.agent.nightly-sync` | 야간 컨텍스트 동기화 (자정) |
 
 ---
 
