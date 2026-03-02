@@ -1331,3 +1331,32 @@ nohup bash start-ops.sh > /dev/null 2>&1 &
 - DEV 테스트 데이터는 절대 OPS로 처리하지 말 것
 - 새 기능은 반드시 `MODE=dev`로 테스트 후 OPS 재시작
 - `naver-seen.json`에는 실제 완료 예약만 보존
+
+<!-- session-close:2026-03-02:재부팅-전-인수인계-스카팀 -->
+#### 2026-03-02 🔄 재부팅 전 인수인계 — 스카팀 전체 현황
+
+**✅ 이번 세션 완료 항목:**
+- 취소 감지 교차검증: currentCancelledList 비교 → 이용완료 추정 시 cancelCancel 스킵
+- SKA-P05~P08 루나팀 패턴 적용: error-tracker.js, mode.js, status.js, e2e-test.js (32/32)
+- 3중 가동/중지 체계: lib/health.js + start-ops.sh 3중 체크 + SIGTERM/SIGINT 루프가드
+- 예약 취소 E2E 완성: pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제)
+- auditToday failedList 추가: 차단 실패 텔레그램 알림 "❌ 차단실패(수동필요)"
+
+**현재 운영 상태 (재부팅 직전):**
+- naver-monitor.js: OPS 운영 중 (PID 94318, 약 1시간, RSS 137MB)
+- Puppeteer Chrome for Testing: 정상 동작 (세션 유지, ~1.3GB)
+- 취소 감지 교차검증 로직: 활성화됨 (currentCancelledList 비교)
+- 버그 현황: BUG-010~015 미해결 (픽코 자동 등록 실패, 픽코 서버 측 일시 지연 추정)
+  → 재시도 로직 정상 동작 중, 심각한 코드 버그 아님
+
+**재부팅 후 복구 절차:**
+- launchd KeepAlive: ai.ska.naver-monitor, ai.ska.kiosk-monitor 자동 재시작 (30초 내)
+- BOOT 완료: 약 60초 후 텔레그램 "준비 완료" 메시지
+- 로그 확인: `tail -f /tmp/naver-ops-mode.log`
+- 상태 확인: `skastatus` 명령
+
+**주의사항:**
+- 픽코 자동 등록 실패 (BUG-010~015): 픽코 서버 CDP 타임아웃 추정, 재시도 로직 정상
+- 재부팅 후 첫 예약 등록 시 픽코 서버 응답 주시
+- DEV 테스트 데이터는 절대 OPS로 처리 금지
+<!-- session-close:2026-03-02:재부팅-전-인수인계-스카팀:end -->

@@ -120,3 +120,39 @@ node bots/invest/scripts/dry-run-test.js
 |------|------|------|
 | 2026-03-01 | KIS API 연결 + 실전/모의투자 키 이중화 | ✅ |
 <!-- bug-tracker:maintenance:end -->
+
+<!-- session-close:2026-03-02:재부팅-전-인수인계-haiku전환 -->
+#### 2026-03-02 🔄 재부팅 전 인수인계 — 루나팀 전체 현황
+
+**✅ 이번 세션 완료 항목:**
+- LU-030 펀드매니저 (fund-manager.js): sonnet-4-6 → **haiku-4-5-20251001** (비용 절감)
+- LU-035 강세/약세 리서처: MAX_DEBATE_SYMBOLS=2 (6심볼 중 최대 2개 debate)
+- LU-036 리스크 매니저 v2: ATR·상관관계·시간대·haiku 4단계
+- LU-037 백테스팅 엔진 (backtest.js): 4심볼 1d/4h, 텔레그램 자동 발송
+- LU-038 몰리 v2 TP/SL (upbit-bridge.js): ±3% 자동 청산, ai.invest.tpsl launchd 등록
+- CL-004 Dev/OPS 분리: mode.js + health.js DEV/OPS 분기 + switch-to-ops.sh
+- 취소 감지 교차검증: naver-monitor.js currentCancelledList 비교
+- JSON 파싱 안정화: regex fallback + SYSTEM_PROMPT 압축 (한 줄 JSON)
+- launchd 스케줄 최적화: ai.invest.dev 5분→10분, ai.invest.fund 30분→60분
+
+**현재 운영 상태 (재부팅 직전):**
+- ai.invest.dev: 10분 주기, DRY_RUN=true — 신호 생성 + DB 저장 + 텔레그램
+- ai.invest.fund: 60분 주기, DRY_RUN=true — 펀드매니저 최종 판단
+- ai.invest.tpsl: 5분 주기, DRY_RUN=true — TP/SL 모니터
+- 모든 서비스 DEV 모드 (dry_run=true) — OPS 전환은 사용자 협의 필수
+
+**LLM 정책 (2026-03-02 확정):**
+- 펀드매니저 / 강세·약세 리서처 / 리스크매니저: claude-haiku-4-5-20251001
+- 감성분석가: groq/llama-3.3-70b / 온체인·뉴스: groq/llama-3.1-8b-instant
+- MAX_DEBATE_SYMBOLS=2: 6심볼(코인4+KIS2) 중 최대 2개만 bull/bear debate
+
+**재부팅 후 복구 절차:**
+- launchd StartInterval 서비스: 다음 주기에 자동 실행 (즉시 실행 안 됨)
+- 수동 즉시 실행: `DRY_RUN=true node bots/invest/src/analysts/signal-aggregator.js`
+- 로그 확인: `/tmp/invest-fund.log`, `/tmp/invest-dev.log`
+
+**다음 개발 우선순위:**
+- LU-039 ChromaDB 학습 루프 (맥미니 이전 후)
+- LU-025 OPS 전환 (바이낸스 API 키 등록 + 사용자 최종 승인)
+- Phase 2: 맥미니 이전 → `memory/mac-mini-migration.md` 참조
+<!-- session-close:2026-03-02:재부팅-전-인수인계-haiku전환:end -->
