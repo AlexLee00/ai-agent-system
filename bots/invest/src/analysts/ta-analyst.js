@@ -6,12 +6,46 @@
  * 지표: RSI / MACD / 볼린저밴드 / 이평정배열(MA5/10/20/60/120) / 스토캐스틱 / ATR / 거래량
  * CCXT OHLCV 기반 (외부 라이브러리 없음)
  *
- * 실행: node src/analysts/ta-analyst.js [--symbol=BTC/USDT] [--timeframe=1h]
+ * 3시장 분기:
+ *   암호화폐: binance.fetchOHLCV — RSI <30/>70 (고변동성 기준)
+ *   미국주식:  kis.fetchOHLCVOverseas — RSI <35/>65 (보수적 기준), 신호 임계값 ±2.0
+ *   국내주식:  signal-aggregator에서 직접 OHLCV 전달 (kis.fetchOHLCV)
+ *
+ * 실행: node src/analysts/ta-analyst.js [--symbol=BTC/USDT] [--timeframe=1h] [--exchange=binance]
  */
 
-const { fetchOHLCV } = require('../../lib/binance');
+const binance = require('../../lib/binance');
 const { insertAnalysis } = require('../../lib/db');
 const { ANALYST_TYPES, ACTIONS } = require('../../lib/signal');
+
+// ─── 시장별 파라미터 ─────────────────────────────────────────────
+
+const MARKET_PARAMS = {
+  binance: {
+    // 암호화폐: 고변동성 → 넓은 RSI 범위, 낮은 신호 임계값
+    rsiOversold:  30,
+    rsiOverbought: 70,
+    stochOversold:  20,
+    stochOverbought: 80,
+    signalThreshold: 1.5,  // score ±1.5 이상 BUY/SELL
+  },
+  kis_overseas: {
+    // 미국주식: 중변동성 → 보수적 RSI, 높은 신호 임계값
+    rsiOversold:  35,
+    rsiOverbought: 65,
+    stochOversold:  20,
+    stochOverbought: 80,
+    signalThreshold: 2.0,  // score ±2.0 이상 BUY/SELL (더 보수적)
+  },
+  kis: {
+    // 국내주식: 가격제한폭 ±30% → 암호화폐와 유사
+    rsiOversold:  30,
+    rsiOverbought: 70,
+    stochOversold:  20,
+    stochOverbought: 80,
+    signalThreshold: 1.5,
+  },
+};
 
 // ─── 기본 지표 계산 ────────────────────────────────────────────────
 
@@ -197,20 +231,22 @@ function analyzeVolume(volumes, period = 20) {
  *   최대 합계     ±5.0
  *
  * @param {object} indicators 계산된 지표 모음
+ * @param {string} exchange   'binance' | 'kis_overseas' | 'kis'
  * @returns {{ signal, confidence, reasoning, indicators }}
  */
-function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }) {
+function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange = 'binance') {
+  const p       = MARKET_PARAMS[exchange] || MARKET_PARAMS.binance;
   const factors = [];
   let score = 0;
 
-  // 1. RSI
+  // 1. RSI (시장별 임계값 적용)
   if (rsi !== null) {
-    if (rsi < 30) {
+    if (rsi < p.rsiOversold) {
       score += 1.5;
-      factors.push(`RSI ${rsi.toFixed(1)} 과매도`);
-    } else if (rsi > 70) {
+      factors.push(`RSI ${rsi.toFixed(1)} 과매도(<${p.rsiOversold})`);
+    } else if (rsi > p.rsiOverbought) {
       score -= 1.5;
-      factors.push(`RSI ${rsi.toFixed(1)} 과매수`);
+      factors.push(`RSI ${rsi.toFixed(1)} 과매수(>${p.rsiOverbought})`);
     } else {
       factors.push(`RSI ${rsi.toFixed(1)} 중립`);
     }
@@ -256,12 +292,12 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }) {
     }
   }
 
-  // 5. 스토캐스틱
+  // 5. 스토캐스틱 (시장별 임계값 적용)
   if (stoch) {
-    if (stoch.k < 20 && stoch.d < 20) {
+    if (stoch.k < p.stochOversold && stoch.d < p.stochOversold) {
       score += 0.5;
       factors.push(`스토캐스틱 과매도 (K:${stoch.k.toFixed(1)} D:${stoch.d.toFixed(1)})`);
-    } else if (stoch.k > 80 && stoch.d > 80) {
+    } else if (stoch.k > p.stochOverbought && stoch.d > p.stochOverbought) {
       score -= 0.5;
       factors.push(`스토캐스틱 과매수 (K:${stoch.k.toFixed(1)} D:${stoch.d.toFixed(1)})`);
     } else {
@@ -284,15 +320,16 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }) {
     factors.push(`ATR ${atrPct.toFixed(2)}% (변동성)`);
   }
 
-  // 신호 결정
-  const maxScore  = 5.0;
-  const absScore  = Math.abs(score);
+  // 신호 결정 (시장별 임계값 적용)
+  const maxScore   = 5.0;
+  const absScore   = Math.abs(score);
   const confidence = Math.min(absScore / maxScore, 1);
+  const threshold  = p.signalThreshold;
 
   let signal;
-  if (score >= 1.5)      signal = ACTIONS.BUY;
-  else if (score <= -1.5) signal = ACTIONS.SELL;
-  else                    signal = ACTIONS.HOLD;
+  if (score >= threshold)      signal = ACTIONS.BUY;
+  else if (score <= -threshold) signal = ACTIONS.SELL;
+  else                          signal = ACTIONS.HOLD;
 
   return {
     signal,
@@ -303,18 +340,39 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }) {
   };
 }
 
+// ─── OHLCV 소스 라우터 ─────────────────────────────────────────────
+
+/**
+ * exchange에 따라 적절한 OHLCV 데이터 조회
+ * @param {string} symbol
+ * @param {string} timeframe
+ * @param {string} exchange  'binance' | 'kis_overseas' | 'kis'
+ * @param {number} limit
+ */
+async function fetchOHLCVByExchange(symbol, timeframe, exchange, limit = 150) {
+  if (exchange === 'kis_overseas') {
+    // 미국 주식: Yahoo Finance 일봉 (KIS fetchOHLCVOverseas)
+    const kis = require('../../lib/kis');
+    return kis.fetchOHLCVOverseas(symbol, limit);
+  }
+  // 암호화폐 (기본) — 국내주식은 signal-aggregator에서 직접 전달
+  return binance.fetchOHLCV(symbol, timeframe, limit);
+}
+
 // ─── 메인 실행 ──────────────────────────────────────────────────────
 
 /**
  * 심볼 기술분석 실행 + DB 저장
- * @param {string} symbol    ex) 'BTC/USDT'
+ * @param {string} symbol    ex) 'BTC/USDT' | 'AAPL'
  * @param {string} timeframe ex) '1h', '4h', '1d'
+ * @param {string} exchange  'binance' | 'kis_overseas' | 'kis'
  */
-async function analyzeSymbol(symbol = 'BTC/USDT', timeframe = '1h') {
-  console.log(`\n📊 [TA v2] ${symbol} 분석 시작 (${timeframe})`);
+async function analyzeSymbol(symbol = 'BTC/USDT', timeframe = '1h', exchange = 'binance') {
+  const marketLabel = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  console.log(`\n📊 [TA v2] ${symbol}(${marketLabel}) 분석 시작 (${timeframe})`);
 
   // OHLCV 조회 (MA120 계산을 위해 최소 150개)
-  const ohlcv   = await fetchOHLCV(symbol, timeframe, 150);
+  const ohlcv   = await fetchOHLCVByExchange(symbol, timeframe, exchange, 150);
   const highs   = ohlcv.map(c => c[2]);
   const lows    = ohlcv.map(c => c[3]);
   const closes  = ohlcv.map(c => c[4]);
@@ -331,10 +389,11 @@ async function analyzeSymbol(symbol = 'BTC/USDT', timeframe = '1h') {
   const vol   = analyzeVolume(volumes);
 
   const { signal, confidence, reasoning, score, indicators } =
-    judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol });
+    judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange);
 
   // 로그 출력
-  console.log(`  현재가: $${currentPrice?.toLocaleString()}`);
+  const priceLabel = exchange === 'kis' ? `${currentPrice?.toLocaleString()}원` : `$${currentPrice?.toLocaleString()}`;
+  console.log(`  현재가: ${priceLabel}`);
   console.log(`  RSI: ${rsi?.toFixed(1)} | MACD: ${macd?.histogram?.toFixed(4)} | BB폭: ${(bb?.bandwidth * 100)?.toFixed(1)}%`);
   console.log(`  MA5: ${mas.ma5?.toFixed(0)} | MA20: ${mas.ma20?.toFixed(0)} | MA60: ${mas.ma60?.toFixed(0)} | MA120: ${mas.ma120?.toFixed(0)}`);
   console.log(`  스토캐스틱 K: ${stoch?.k?.toFixed(1)} D: ${stoch?.d?.toFixed(1)} | ATR: ${atr?.toFixed(2)} | 거래량: ${vol?.ratio?.toFixed(2)}x`);
@@ -352,6 +411,7 @@ async function analyzeSymbol(symbol = 'BTC/USDT', timeframe = '1h') {
       metadata:  {
         timeframe,
         score,
+        exchange,
         indicators: {
           rsi,
           macd:     macd?.histogram,
@@ -366,6 +426,7 @@ async function analyzeSymbol(symbol = 'BTC/USDT', timeframe = '1h') {
           volRatio: vol?.ratio,
         },
       },
+      ...(exchange !== 'binance' && { exchange }),
     });
     console.log(`  ✅ DB 저장 완료 (${timeframe})`);
   } catch (e) {
@@ -380,8 +441,9 @@ if (require.main === module) {
   const args      = process.argv.slice(2);
   const symbol    = args.find(a => a.startsWith('--symbol='))?.split('=')[1]    || 'BTC/USDT';
   const timeframe = args.find(a => a.startsWith('--timeframe='))?.split('=')[1] || '1h';
+  const exchange  = args.find(a => a.startsWith('--exchange='))?.split('=')[1]  || 'binance';
 
-  analyzeSymbol(symbol, timeframe)
+  analyzeSymbol(symbol, timeframe, exchange)
     .then(() => process.exit(0))
     .catch(e => { console.error('❌ TA 분석 실패:', e.message); process.exit(1); });
 }
