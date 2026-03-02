@@ -618,4 +618,117 @@ _작성: 2026-03-01_
 
 ---
 
+## 9. 루나팀 Phase 3-A v2.1 — 신규 아키텍처 설계기 (2026-03-02)
+
+### 배경
+
+기존 `bots/invest/` (루나팀 Phase 0)는 단일 사이클, CJS(require), 단일 LLM(Claude Sonnet)으로 동작했다. Phase 3-A에서는 3시장 분리(암호화폐/국내/해외), 12명 에이전트 팀, 다중 LLM 프로바이더, 비용 최적화를 목표로 완전 재설계했다. 기존 시스템을 건드리지 않기 위해 `bots/investment/` 신규 디렉토리를 별도로 생성했다.
+
+---
+
+### DEC-016 | ESM-first 모듈 시스템 선택
+
+**배경:** 기존 `bots/invest/`는 CJS(`require`)로 작성됐다. Phase 3-A를 새로 만들 때 모듈 시스템을 결정해야 했다.
+
+**고려한 옵션:**
+- A. CJS 유지 — 기존 패턴, `require.main === module`, 익숙한 환경
+- B. ESM 전환 — `import`/`export`, top-level await, ccxt/최신 패키지 요구
+
+**선택:** B (ESM, `"type":"module"` in package.json)
+
+**이유:**
+- `ccxt`가 ESM first로 전환 중 — CJS 환경에서 dynamic import 문제 발생
+- top-level await로 CLI entry point 코드가 단순해짐
+- Node.js v24 환경, 최신 패키지들 ESM 권장
+
+**발생한 문제와 해결:**
+- `require('ccxt')` → top-level `import ccxt from 'ccxt'` 이동 필수 (함수 내 lazy require 불가)
+- `require.main === module` → `process.argv[1] === fileURLToPath(import.meta.url)`
+- 레거시 CJS 모듈 로드 필요 시(`../../invest/lib/kis.js`): `createRequire(import.meta.url)` 사용
+
+**결과:** 20개 파일 전체 `node --check` 통과, dynamic import 오류 없음.
+
+---
+
+### DEC-017 | callLLM 통합 함수 + PAPER/LIVE 분기
+
+**배경:** Phase 0에서는 LLM이 Claude Sonnet 단일이었다. Phase 3-A에서는 비용 최적화를 위해 에이전트별로 다른 모델을 써야 했다.
+
+**설계:**
+```js
+// shared/llm-client.js
+const HAIKU_AGENTS = new Set(['luna', 'nemesis']);
+
+async function callLLM(agentName, systemPrompt, userMessage, maxTokens = 512) {
+  if (isPaperMode()) {
+    return callGroq(systemPrompt, userMessage, maxTokens);  // 전원 Groq Scout
+  }
+  if (HAIKU_AGENTS.has(agentName)) {
+    return callHaiku(systemPrompt, userMessage, maxTokens); // 판단 전담: Haiku 4.5
+  }
+  return callGroq(systemPrompt, userMessage, maxTokens);    // 나머지: Groq Scout
+}
+```
+
+**결정 근거:**
+- **PAPER_MODE=true**: 시뮬레이션 — 비용 절약이 최우선. 전원 Groq(무료)로도 신호 품질 검증 가능
+- **LIVE luna/nemesis**: 최종 투자 판단·리스크 평가 — 품질 중요. Haiku 4.5 사용
+- **나머지 에이전트**: TA계산/뉴스요약/감성분류 — 속도 중요. Groq Scout(무료, 최고속)
+
+**결과:** PAPER_MODE 시 LLM 비용 $0/일. LIVE 시 하루 예상 비용 Haiku $0.05~0.10 수준.
+
+---
+
+### DEC-018 | 30분 throttle과 launchd 주기 분리
+
+**배경:** 사이클 주기를 어떻게 구현할지 결정해야 했다.
+
+**옵션:**
+- A. launchd plist StartInterval=1800 (30분) — 간단하지만 긴급 트리거 불가
+- B. launchd plist StartInterval=300 (5분) + 내부 상태 파일로 30분 throttle
+
+**선택:** B
+
+**이유:**
+- BTC ±3% 급등락 시 30분 기다리지 않고 즉시 사이클 실행 필요 (긴급 트리거)
+- launchd 자체는 정각 주기가 아니라 "5분 뒤 다시 확인"만 담당
+- 상태 파일 `~/.openclaw/investment-state.json`에 `lastCycleAt` + `lastBtcPrice` 저장
+
+```js
+async function shouldRunCycle(symbols) {
+  if (now - state.lastCycleAt >= CYCLE_INTERVAL) return { run: true, reason: '30분 정규 사이클' };
+  const btcPriceChange = Math.abs((currentPrice - state.lastBtcPrice) / state.lastBtcPrice);
+  if (btcPriceChange >= 0.03) return { run: true, emergency: true, reason: 'BTC 긴급 트리거' };
+  return { run: false };
+}
+```
+
+**결과:** 평상시 30분 주기 + BTC 급변 시 즉시 대응 가능. `--force` 플래그로 테스트 시 throttle 우회.
+
+---
+
+### DEC-019 | BUDGET_EXCEEDED EventEmitter — 비용 초과 즉시 중단
+
+**배경:** LLM API를 여러 에이전트가 병렬로 호출하면 예상 외 비용이 발생할 수 있다.
+
+**설계:**
+```js
+// shared/cost-tracker.js — EventEmitter 패턴
+tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
+  await sendTelegram(`💸 ${label} LLM 예산 초과 — 사이클 중단`);
+  process.exit(1);
+});
+```
+
+**결정 근거:**
+- LLM 호출 전 매번 예산 확인보다 이벤트 리스너가 비침투적(non-invasive)
+- `once`를 사용해 중복 실행 방지
+- 텔레그램 알림 후 즉시 `process.exit(1)` — 현재 사이클만 중단, 다음 실행에는 영향 없음
+
+**한계:** 이미 시작된 병렬 호출은 중단 불가. 허용 오버런이 발생할 수 있으나 1 사이클 분량이라 수용 가능 수준.
+
+_작성: 2026-03-02_
+
+---
+
 _최초 작성: 2026-02-27 | 작성자: 클로드 (Claude Code) + 사용자_
