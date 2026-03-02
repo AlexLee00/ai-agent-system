@@ -53,7 +53,7 @@ function callClaudeAPI(systemPrompt, userMessage) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify({
       model:       'claude-haiku-4-5-20251001',
-      max_tokens:  1024,
+      max_tokens:  1500,
       temperature: 0.1,
       system:      systemPrompt,
       messages:    [{ role: 'user', content: userMessage }],
@@ -101,29 +101,25 @@ function callClaudeAPI(systemPrompt, userMessage) {
 
 // ─── LLM 프롬프트 ──────────────────────────────────────────────────
 
-const SYSTEM_PROMPT_CRYPTO = `당신은 암호화폐 투자 종합 판단 전문가(펀드매니저)입니다.
-멀티타임프레임 TA, 온체인 지표, 뉴스 감성, 강세/약세 리서처 토론 의견을 종합해 최종 매매 신호를 판단합니다.
+const SYSTEM_PROMPT_CRYPTO = `당신은 암호화폐 투자 종합 판단 전문가입니다.
+분석 데이터를 종합해 최종 매매 신호를 판단합니다.
 
-응답 형식 (JSON만, 마크다운 없음):
-{"action":"BUY"|"SELL"|"HOLD","amount_usdt":100,"confidence":0.0~1.0,"reasoning":"근거 2~3문장 (한국어)"}
+응답: JSON 한 줄만 (코드블록 없음):
+{"action":"HOLD","amount_usdt":100,"confidence":0.6,"reasoning":"근거 60자 이내"}
 
 규칙:
-- 장기(일봉)와 단기(1시간봉) 방향이 일치할 때만 BUY/SELL 고려
-- TA + 온체인 + 뉴스 + 감성 4가지가 같은 방향이면 confidence 높임
-- 신호 충돌(특히 뉴스/감성 역방향) 시 HOLD
-- 강세/약세 리서처 의견이 있으면 두 근거를 균형 있게 검토할 것
+- 장기(일봉)와 단기(1시간봉) 방향이 일치할 때만 BUY/SELL
 - confidence 0.5 미만이면 반드시 HOLD
-- amount_usdt: 50~300 USDT (총자산 20% 이하)`;
+- amount_usdt: 50~300 USDT`;
 
-const SYSTEM_PROMPT_KIS = `당신은 한국 주식시장 종합 판단 전문가(펀드매니저)입니다.
-기술지표와 강세/약세 리서처 토론 의견을 종합해 국내주식 매매 신호를 판단합니다.
+const SYSTEM_PROMPT_KIS = `당신은 한국 주식시장 종합 판단 전문가입니다.
+기술지표를 종합해 국내주식 매매 신호를 판단합니다.
 
-응답 형식 (JSON만, 마크다운 없음):
-{"action":"BUY"|"SELL"|"HOLD","amount_usdt":300000,"confidence":0.0~1.0,"reasoning":"근거 2~3문장 (한국어)"}
+응답: JSON 한 줄만 (코드블록 없음):
+{"action":"HOLD","amount_usdt":300000,"confidence":0.6,"reasoning":"근거 60자 이내"}
 
 주의:
-- amount_usdt 필드는 KRW 금액 (100,000~500,000원)
-- 강세/약세 리서처 의견이 있으면 두 근거를 균형 있게 검토할 것
+- amount_usdt는 KRW 금액 (100,000~500,000원)
 - confidence 0.5 미만이면 반드시 HOLD
 - 가격제한폭 ±30%, 시간외거래 없음 고려`;
 
@@ -216,8 +212,25 @@ async function getLLMDecision(symbol, analyses, exchange = 'binance', debate = n
   }
 
   try {
-    return JSON.parse(responseText.replace(/```json?\n?|\n?```/g, '').trim());
+    const cleaned = responseText.replace(/```json?\n?|\n?```/g, '').trim();
+    // JSON 객체 경계 추출 (잘린 응답 대비)
+    const s = cleaned.indexOf('{'), e2 = cleaned.lastIndexOf('}');
+    return JSON.parse(s >= 0 && e2 > s ? cleaned.slice(s, e2 + 1) : cleaned);
   } catch (e) {
+    // 잘린 JSON에서 필드 추출 (부분복구)
+    const aMatch = responseText.match(/"action"\s*:\s*"(\w+)"/);
+    const cMatch = responseText.match(/"confidence"\s*:\s*([\d.]+)/);
+    const mMatch = responseText.match(/"amount_usdt"\s*:\s*([\d]+)/);
+    const rMatch = responseText.match(/"reasoning"\s*:\s*"([^"]{1,80})/);
+    if (aMatch) {
+      console.warn(`  ⚠️ LLM 응답 부분복구: action=${aMatch[1]}`);
+      return {
+        action:      aMatch[1],
+        amount_usdt: mMatch ? parseInt(mMatch[1]) : 0,
+        confidence:  cMatch ? parseFloat(cMatch[1]) : 0,
+        reasoning:   (rMatch ? rMatch[1] : '부분복구') + ' (파싱복구)',
+      };
+    }
     console.error('⚠️ LLM 응답 파싱 실패:', responseText.slice(0, 200));
     return { action: ACTIONS.HOLD, amount_usdt: 0, confidence: 0, reasoning: 'LLM 응답 파싱 실패 → HOLD' };
   }
