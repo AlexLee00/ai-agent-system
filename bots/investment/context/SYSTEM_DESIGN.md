@@ -55,17 +55,23 @@ bots/investment/
 
 ---
 
-## LLM 정책
+## LLM 정책 (v2.1 — callLLM 통합, 2026-03-02)
 
+### PAPER_MODE=true (시뮬레이션)
+> 전원 Groq `meta-llama/llama-4-scout-17b-16e-instruct` — 비용 $0
+
+### PAPER_MODE=false (실전)
 | 에이전트 | 제공자 | 모델 | 이유 |
 |---------|-------|------|------|
-| 루나 (오케스트레이터) | Anthropic | claude-haiku-4-5 | 포트폴리오 판단 품질 |
-| 제우스·아테나 (리서처) | Anthropic | claude-haiku-4-5 | 투자 리서치 품질 |
-| 네메시스 (리스크) | Anthropic | claude-haiku-4-5 | 리스크 판단 정확성 |
-| 오라클 (온체인) | Cerebras → Groq | llama-3.1-8b | 빠른 수치 해석 |
-| 헤르메스 (뉴스) | Groq | llama-3.1-8b-instant | 최고속 텍스트 분류 |
-| 소피아 (감성) | SambaNova → Groq | llama-3.3-70b | 감성 분류 정확성 |
+| 루나 (오케스트레이터) | Anthropic | claude-haiku-4-5-20251001 | 포트폴리오 최종 판단 품질 |
+| 네메시스 (리스크) | Anthropic | claude-haiku-4-5-20251001 | 리스크 판단 정확성 |
+| 제우스·아테나 (리서처) | Groq | llama-4-scout-17b | 투자 리서치 (Scout 충분) |
+| 오라클 (온체인) | Groq | llama-4-scout-17b | 빠른 수치 해석 |
+| 헤르메스 (뉴스) | Groq | llama-4-scout-17b | 최고속 텍스트 분류 |
+| 소피아 (감성) | Groq | llama-4-scout-17b | 감성 분류 |
 | 아리아·헤파이스토스·한울 | 없음 | — | 규칙 기반 충분 |
+
+> **callLLM(agentName, system, user, maxTokens)** — shared/llm-client.js 자동 분기
 
 ---
 

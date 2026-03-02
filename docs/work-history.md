@@ -180,6 +180,18 @@
 - 덱스터 체크섬 갱신 9개 파일
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->
 
+### ✨ 루나팀 Phase 3-A v2.1 — bots/investment/ 신규 아키텍처 구현
+- **bots/investment/ 디렉토리 전체 신규 생성** (ESM "type":"module")
+- shared/ 5개 모듈: llm-client.js(통합LLM) + db.js(DuckDB) + signal.js + secrets.js(config.yaml) + report.js + cost-tracker.js
+- team/ 9개 에이전트: aria(MTF TA) + oracle(온체인) + hermes(뉴스) + sophia(감성+xAI) + zeus(강세) + athena(약세) + nemesis(리스크) + luna(오케스트레이터) + hephaestos(바이낸스) + hanul(KIS)
+- markets/ 3개 사이클: crypto.js(30분 throttle+BTC±3% 긴급트리거) + domestic.js(스켈레톤) + overseas.js(스켈레톤)
+- **callLLM(agentName, system, user, maxTokens)** 통합 — PAPER_MODE=true→전원 Groq Scout, LIVE→luna+nemesis Haiku 4.5
+- config.yaml 도입 (secrets.json 폴백), cost-tracker.js BUDGET_EXCEEDED EventEmitter
+- npm 의존성: @anthropic-ai/sdk + groq-sdk + ccxt + js-yaml + axios (36 packages)
+- node --check 20개 파일 전체 통과
+- launchd ai.investment.crypto: 5분 주기(내부 30분 스로틀), BTC 긴급 트리거
+<!-- session-close:2026-03-02:루나팀-phase3a-v21-bots-investment-신규아키텍처 -->
+
 ## 2026-03-01
 ### 🔧 새로고침 버튼 fix + 알림 컨텍스트 공유
 - naver-monitor 새로고침 버튼 ElementHandle.click→evaluate() 수정
