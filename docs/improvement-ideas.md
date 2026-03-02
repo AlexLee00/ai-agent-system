@@ -293,10 +293,53 @@
 | 12 | **CL-004** Dev/OPS 분리 | ✅ 완료 (2026-03-02) | mode.js + health.js + switch-to-ops.sh |
 | 13 | **취소 감지 교차검증** | ✅ 완료 (2026-03-02) | currentCancelledList 비교, 이용완료 추정 스킵 |
 | 14 | **LLM 비용 최적화** | ✅ 완료 (2026-03-02) | sonnet→haiku, 스케줄 최적화, debate 제한 |
-| 15 | **LU-039 ChromaDB 학습 루프** | 📋 맥북 | 장기 누적 학습 |
-| 16 | **LU-025** OPS 전환 | 📋 **맨 마지막** | 맥북 안정화 완료 후 |
-| 17 | **CL-005** GUI / 맥미니 이전 | 📋 Phase 2 | 맥미니 구매 후 |
-| 18 | **CL-006** 코드 리팩토링 | 📋 맥북 | 기능 안정화 후 |
+| 15 | **앤디 에러메시지 캡처** | ✅ 완료 (2026-03-02) | naver-monitor outputBuf → error_reason DB 저장 |
+| 16 | **SKA-N01** pickko-pay-scan launchd | 🔄 진행 중 | 결제대기 일괄처리 09:30 자동화 |
+| 17 | **SKA-N02** VIP 고객 인식 | 📋 대기 | visit_count 3회↑ 자동 태그 + 텔레그램 |
+| 18 | **SKA-N03** 재방문율·취소율 주간 리포트 | 📋 대기 | 레베카 weekly_report() 월요일 자동발송 |
+| 19 | **LU-KIS** KIS 모의투자 실주문 테스트 | 📋 대기 | dry_run=false 1주 테스트 (LU-039 선행) |
+| 20 | **SKA-N04** 성수기/비수기 가격 최적화 | 📋 대기 | 레베카 가동률 기반 권고가 |
+| 21 | **CL-008** 아처 루나 성과 통합 | 📋 대기 | 드라이런 승률·신호빈도 리포트 반영 |
+| 22 | **CL-006** 코드 리팩토링 | 📋 맥북 | naver-monitor.js 우선 |
+| 23 | **LU-039 ChromaDB 학습 루프** | 📋 맥북 | 30일 데이터 누적 후 |
+| 24 | **LU-025** OPS 전환 | 📋 **맨 마지막** | 맥북 안정화 완료 후 |
+| 25 | **CL-005** GUI / 맥미니 이전 | 📋 Phase 2 | 맥미니 구매 후 |
+
+---
+
+## 신규 개발 항목 상세 (2026-03-02 추가)
+
+### SKA-N01: pickko-pay-scan.js launchd 자동화
+**목적**: 결제대기 건 매일 자동 일괄처리
+- `~/Library/LaunchAgents/ai.ska.pickko-pay-scan.plist` 생성
+- 매일 09:30 KST 자동 실행 (영업 시작 직후)
+- 완료/실패 텔레그램 알림
+
+### SKA-N02: VIP 고객 인식
+**목적**: 재방문 고객 자동 인식 + 우대 서비스
+- SQLite `reservations` 테이블 `phone` 기준 `visit_count` 집계
+- 3회↑: 🥉 일반VIP / 7회↑: 🥈 실버 / 15회↑: 🥇 골드
+- 신규 예약 감지 시 VIP 여부 텔레그램 표시: `📞 010-xxxx-xxxx (VIP 🥈 9회 방문)`
+- `lib/vip.js` 신규 모듈
+
+### SKA-N03: 재방문율·취소율 주간 리포트
+**목적**: 운영 KPI 주간 자동 추적
+- 레베카 `bots/ska/src/rebecca.py` → `weekly_report()` 추가
+- 매주 월요일 09:00 launchd 실행
+- 지표: 재방문율 / 취소율 / 룸별 가동률 / 전주 대비 매출 증감
+- launchd: `ai.ska.rebecca.weekly`
+
+### LU-KIS: KIS 모의투자 실주문 테스트
+**목적**: OPS 전환 전 실제 주문 흐름 검증
+- `dry_run: false` 로컬 테스트 (VTS 모의투자 환경)
+- 005930 삼성전자 1주 매수 → 체결 확인 → 매도
+- 성공 시 LU-039 ChromaDB 진행
+
+### CL-008: 아처 루나팀 성과 통합
+**목적**: 주간 리포트에 루나팀 드라이런 실적 반영
+- `fetcher.js` `fetchLunaPerformance()` 추가 — DuckDB signals 테이블 조회
+- 신호 정확도·심볼별 승률·가장 많은 신호 타입 통계
+- 월요일 아처 리포트에 "📊 루나팀 주간 성과" 섹션 추가
 
 ### SKA-P01~P08: 루나팀 → 스카팀 패턴 적용 (2026-03-02)
 
