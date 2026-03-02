@@ -109,6 +109,32 @@ const BEAR_PROMPT_KIS = `당신은 한국 주식시장 약세(Bearish) 리서처
 
 주의: target_price·stop_loss는 KRW 단위, 가격제한폭 ±30% 고려`;
 
+const BULL_PROMPT_KIS_OVERSEAS = `당신은 미국 주식시장 강세(Bullish) 리서처입니다.
+주어진 기술지표 분석 데이터를 바탕으로 매수 관점의 근거를 제시하세요.
+데이터에 근거해야 하며, 억지 낙관론은 금지입니다.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"target_price":숫자,"stop_loss":숫자,"upside_pct":숫자,"reasoning":"매수 근거 2문장 (한국어)","key_catalysts":["촉매1","촉매2"]}
+
+주의:
+- target_price·stop_loss는 USD 단위 (소수점 2자리)
+- 1주 단위 거래, 미국 장(EDT/EST) 내에서만 체결
+- S&P500·나스닥 전체 추세 고려
+- 어닝 시즌·연준 금리 결정 일정 감안`;
+
+const BEAR_PROMPT_KIS_OVERSEAS = `당신은 미국 주식시장 약세(Bearish) 리서처입니다.
+주어진 기술지표 분석 데이터를 바탕으로 매도/관망 관점의 근거를 제시하세요.
+데이터에 근거해야 하며, 억지 비관론은 금지입니다.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
+
+주의:
+- target_price·stop_loss는 USD 단위 (소수점 2자리)
+- 1주 단위 거래, 미국 장(EDT/EST) 내에서만 체결
+- 매크로 리스크(연준·경기침체·달러강세) 우선 고려
+- 기술 섹터 특이사항(AI 버블·규제·경쟁) 반영`;
+
 // ─── 파싱 ────────────────────────────────────────────────────────────
 
 function parseResponse(raw) {
@@ -131,9 +157,11 @@ function parseResponse(raw) {
  * @returns {Promise<{targetPrice,stopLoss,upsidePct,reasoning,keyCatalysts}|null>}
  */
 async function runBullResearcher(symbol, analysisSummary, currentPrice, exchange = 'binance') {
-  const marketLabel  = exchange === 'kis' ? '국내주식' : '암호화폐';
+  const marketLabel  = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
   const priceUnit    = exchange === 'kis' ? 'KRW' : 'USD';
-  const systemPrompt = exchange === 'kis' ? BULL_PROMPT_KIS : BULL_PROMPT_CRYPTO;
+  const systemPrompt = exchange === 'kis' ? BULL_PROMPT_KIS
+                     : exchange === 'kis_overseas' ? BULL_PROMPT_KIS_OVERSEAS
+                     : BULL_PROMPT_CRYPTO;
 
   const priceStr = currentPrice ? `${currentPrice.toLocaleString()} ${priceUnit}` : '정보 없음';
   const userMsg  = `심볼: ${symbol} (${marketLabel}) | 현재가: ${priceStr}\n\n시장 분석 데이터:\n${analysisSummary}\n\n강세 관점 투자 의견을 제시하세요.`;
@@ -162,9 +190,11 @@ async function runBullResearcher(symbol, analysisSummary, currentPrice, exchange
  * @returns {Promise<{targetPrice,stopLoss,downsidePct,reasoning,keyRisks}|null>}
  */
 async function runBearResearcher(symbol, analysisSummary, currentPrice, exchange = 'binance') {
-  const marketLabel  = exchange === 'kis' ? '국내주식' : '암호화폐';
+  const marketLabel  = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
   const priceUnit    = exchange === 'kis' ? 'KRW' : 'USD';
-  const systemPrompt = exchange === 'kis' ? BEAR_PROMPT_KIS : BEAR_PROMPT_CRYPTO;
+  const systemPrompt = exchange === 'kis' ? BEAR_PROMPT_KIS
+                     : exchange === 'kis_overseas' ? BEAR_PROMPT_KIS_OVERSEAS
+                     : BEAR_PROMPT_CRYPTO;
 
   const priceStr = currentPrice ? `${currentPrice.toLocaleString()} ${priceUnit}` : '정보 없음';
   const userMsg  = `심볼: ${symbol} (${marketLabel}) | 현재가: ${priceStr}\n\n시장 분석 데이터:\n${analysisSummary}\n\n약세 관점 투자 의견을 제시하세요.`;

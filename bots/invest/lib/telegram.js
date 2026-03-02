@@ -133,8 +133,34 @@ function notifyKisTrade({ symbol, side, qty, price, totalKrw, dryRun }) {
   return sendTelegram(msg);
 }
 
+// ─── KIS 해외주식(미국) 전용 포매터 (USD 단위) ────────────────────
+
+function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, dryRun }) {
+  const tag   = dryRun ? '[드라이런] ' : '';
+  const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
+  const msg   = [
+    `${tag}${emoji} [미국주식] ${action} 신호 — ${symbol}`,
+    `금액: $${amountUsdt?.toFixed(2) || 'N/A'}`,
+    `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
+    reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
+  ].filter(Boolean).join('\n');
+  return sendTelegram(msg);
+}
+
+function notifyKisOverseasTrade({ symbol, side, qty, price, totalUsd, dryRun }) {
+  const tag   = dryRun ? '[드라이런] ' : '';
+  const emoji = side === 'buy' ? '✅ 매수' : '✅ 매도';
+  const msg   = [
+    `${tag}${emoji} [미국주식] 체결 — ${symbol}`,
+    `수량: ${qty}주 / 가격: $${price?.toFixed(2)}`,
+    `총액: $${totalUsd?.toFixed(2)}`,
+  ].join('\n');
+  return sendTelegram(msg);
+}
+
 module.exports = {
   sendTelegram,
   notifySignal, notifyTrade, notifyError, notifyRiskRejection,
   notifyKisSignal, notifyKisTrade,
+  notifyKisOverseasSignal, notifyKisOverseasTrade,
 };

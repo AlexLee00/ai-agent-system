@@ -21,7 +21,7 @@ const { runBullResearcher, runBearResearcher } = require('./researchers');
 const db = require('../../lib/db');
 const { validateSignal, ACTIONS, ANALYST_TYPES } = require('../../lib/signal');
 const { loadSecrets, isDryRun, hasKisApiKey, getKisSymbols, getKisOverseasSymbols, getSymbols, isKisMarketOpen, isKisOverseasMarketOpen } = require('../../lib/secrets');
-const { notifySignal, notifyKisSignal, notifyError } = require('../../lib/telegram');
+const { notifySignal, notifyKisSignal, notifyKisOverseasSignal, notifyError } = require('../../lib/telegram');
 const { printModeBanner, assertOpsReady, getMode } = require('../../lib/mode');
 const kis = require('../../lib/kis');
 
@@ -281,16 +281,16 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
         console.warn(`  ⚠️ [온체인] ${symbol} 분석 실패 (계속): ${e.message}`);
       }
 
-      // 3. 뉴스 분석
+      // 3. 뉴스 분석 (암호화폐)
       try {
-        await analyzeNews(symbol);
+        await analyzeNews(symbol, 'binance');
       } catch (e) {
         console.warn(`  ⚠️ [뉴스] ${symbol} 분석 실패 (계속): ${e.message}`);
       }
 
-      // 4. 커뮤니티 감성 분석
+      // 4. 커뮤니티 감성 분석 (암호화폐)
       try {
-        await analyzeSentiment(symbol);
+        await analyzeSentiment(symbol, 'binance');
       } catch (e) {
         console.warn(`  ⚠️ [감성] ${symbol} 분석 실패 (계속): ${e.message}`);
       }
@@ -550,6 +550,20 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
           exchange:  'kis_overseas',
         });
 
+        // 뉴스 분석 (미국주식 RSS — Yahoo Finance + MarketWatch)
+        try {
+          await analyzeNews(symbol, 'kis_overseas');
+        } catch (e) {
+          console.warn(`  ⚠️ [뉴스] ${symbol} (미국주식) 분석 실패 (계속): ${e.message}`);
+        }
+
+        // 커뮤니티 감성 분석 (Reddit r/stocks, r/investing, r/wallstreetbets)
+        try {
+          await analyzeSentiment(symbol, 'kis_overseas');
+        } catch (e) {
+          console.warn(`  ⚠️ [감성] ${symbol} (미국주식) 분석 실패 (계속): ${e.message}`);
+        }
+
         const analyses = await db.getRecentAnalysis(symbol, 30);
 
         // 강세/약세 리서처 병렬 실행 (코인·국내주식과 공유 debate 카운터)
@@ -592,7 +606,7 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
         if (decision.action !== ACTIONS.HOLD && decision.confidence >= MIN_CONFIDENCE) {
           const signalId = await db.insertSignal(signalData);
           console.log(`  ✅ KIS 해외 신호 저장: ${signalId}`);
-          await notifyKisSignal({ ...signalData, dryRun: isDryRun() });
+          await notifyKisOverseasSignal({ ...signalData, dryRun: isDryRun() });
           results.push({ symbol, signalId, exchange: 'kis_overseas', ...decision });
         } else {
           console.log(`  ⏸️ ${symbol} (미국주식): HOLD 또는 확신도 낮음 → 대기`);

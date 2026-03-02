@@ -14,7 +14,7 @@ const db        = require('../lib/db');
 const kis       = require('../lib/kis');
 const { isDryRun, isKisPaper } = require('../lib/secrets');
 const { SIGNAL_STATUS, ACTIONS } = require('../lib/signal');
-const { notifyKisTrade, notifyError } = require('../lib/telegram');
+const { notifyKisTrade, notifyKisOverseasTrade, notifyError } = require('../lib/telegram');
 const { guardRealOrder, printModeBanner } = require('../lib/mode');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
@@ -264,10 +264,10 @@ async function executeOverseasSignal(signal) {
     await db.insertTrade(trade);
     await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
 
-    // 텔레그램: KRW 포맷 재사용 (USD 금액으로 전달, totalKrw 필드에 USD 값)
-    await notifyKisTrade({
-      symbol: `🌏${symbol}(US)`, side: trade.side, qty: trade.amount,
-      price: trade.price, totalKrw: trade.totalUsdt, dryRun: trade.dryRun,
+    // 텔레그램: 해외주식 전용 USD 포매터 사용
+    await notifyKisOverseasTrade({
+      symbol, side: trade.side, qty: trade.amount,
+      price: trade.price, totalUsd: trade.totalUsdt, dryRun: trade.dryRun,
     });
 
     const modeTag = dryRun ? ' [드라이런]' : paper ? ' [모의투자]' : '';
