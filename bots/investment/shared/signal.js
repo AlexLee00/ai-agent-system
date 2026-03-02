@@ -30,7 +30,7 @@ const ANALYST_TYPES = Object.freeze({
   SENTIMENT:   'sentiment',   // 커뮤니티 감성 (소피아)
   FEAR_GREED:  'fear_greed',  // 공포탐욕지수 (소피아)
   CRYPTO_PANIC:'crypto_panic',// CryptoPanic (소피아)
-  X_SEARCH:    'x_search',    // xAI X 검색 감성 (소피아)
+  NAVER_DISC:  'naver_disc',  // 네이버 증권 종목토론실 (소피아 — 국내주식)
   BULL:        'bull',        // 강세 리서처 (제우스)
   BEAR:        'bear',        // 약세 리서처 (아테나)
 });

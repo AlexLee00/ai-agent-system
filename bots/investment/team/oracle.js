@@ -173,7 +173,8 @@ async function analyzeOnchain(symbol = 'BTC/USDT') {
     openInterest ? `미결제약정: ${parseFloat(openInterest.openInterest).toLocaleString()} ${futureSymbol.replace('USDT', '')}` : '',
   ].filter(Boolean).join('\n');
 
-  const responseText = await callFreeLLM(SYSTEM_PROMPT, userMsg, 'llama3.1-8b', 'oracle', 'cerebras');
+  // cerebras 8b → Groq 8b fallback (groqModel='llama-3.1-8b-instant')
+  const responseText = await callFreeLLM(SYSTEM_PROMPT, userMsg, 'llama3.1-8b', 'oracle', 'cerebras', 256, 'llama-3.1-8b-instant');
   const parsed       = parseJSON(responseText);
 
   if (parsed?.action) {
