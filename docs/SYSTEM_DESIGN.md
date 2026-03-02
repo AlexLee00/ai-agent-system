@@ -232,6 +232,34 @@ skastatus # → launchctl list | grep ai.ska
 > **논문 기반 설계**: TradingAgents (arXiv:2412.20138) + HedgeAgents (arXiv:2502.13165) + LLM_trader 패턴 통합
 > **구조**: 투자 메인봇(펀드매니저)이 9개 에이전트를 지휘 — 병렬 분석 → 토론 → 리스크 검토 → 실행
 
+#### ⚡ 현재 구현 상태 (Phase 0 — 드라이런, 2026-03-01)
+
+> Phase 0는 v2.0 설계 구축 전 **드라이런 검증용 간소화 구현**입니다.
+> 바이낸스 API 키 없이 실제 가격 데이터로 신호를 생성하고 DB에 기록하며, 실제 주문은 실행하지 않습니다.
+
+**구현된 컴포넌트:**
+
+| 봇 (별명) | 파일 | 역할 | 상태 |
+|-----------|------|------|------|
+| 제이슨 | `src/analysts/signal-aggregator.js` | TA 집계 + Claude LLM 판단 | ✅ DEV 운영 중 |
+| 타일러 | `src/binance-executor.js` | 바이낸스 Spot 실행봇 (드라이런) | ✅ 드라이런 구현 |
+| 몰리 | `src/upbit-bridge.js` | 업비트 브릿지 (드라이런) | ✅ 드라이런 구현 |
+| - | `src/risk-manager.js` | 규칙 기반 리스크 매니저 | ✅ 구현 완료 |
+| - | `src/analysts/ta-analyst.js` | RSI/MACD/볼린저밴드 계산 | ✅ 구현 완료 |
+
+**launchd 운영:**
+- `ai.invest.dev.plist` — 10분 주기, `INVEST_MODE=dev`, `DRY_RUN=true`, `RunAtLoad=true`
+- OPS 플리스트(`ai.invest.pipeline`, `ai.invest.bridge`)는 실 API 키 준비 시까지 언로드
+
+**드라이런 테스트 (2026-03-01):** BTC/USDT + ETH/USDT, 9/9 단계 통과
+
+**Phase 0 → OPS 전환 조건:**
+- `secrets.json`: `binance_api_key`, `binance_api_secret`, `dry_run: false`
+- 바이낸스 API: IP 화이트리스트 + 거래 권한만 (출금 비활성화)
+- `ai.invest.dev` 언로드 → `ai.invest.pipeline` + `ai.invest.bridge` 로드
+
+---
+
 #### 전체 구조 (v2.0)
 
 ```

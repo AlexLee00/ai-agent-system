@@ -1,0 +1,20 @@
+{
+  "_comment": "루나팀 LLM 후보군 — 분석가별 프로바이더/모델 우선순위 (speed-test --luna 로 갱신)",
+  "_update": "scripts/speed-test.js --luna --apply 로 후보군 벤치마크 후 luna-llm-best.json 자동 생성",
+
+  "analysts": {
+    "news-analyst": [
+      { "provider": "groq", "model": "llama-3.1-8b-instant" },
+      { "provider": "groq", "model": "meta-llama/llama-4-scout-17b-16e-instruct" },
+      { "provider": "groq", "model": "llama-3.3-70b-versatile" }
+    ],
+    "onchain-analyst": [
+      { "provider": "cerebras", "model": "llama3.1-8b" },
+      { "provider": "cerebras", "model": "llama-3.3-70b" }
+    ],
+    "sentiment-analyst": [
+      { "provider": "sambanova", "model": "Meta-Llama-3.3-70B-Instruct" },
+      { "provider": "groq",     "model": "llama-3.3-70b-versatile" }
+    ]
+  }
+}

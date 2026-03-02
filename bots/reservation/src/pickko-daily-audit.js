@@ -16,6 +16,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser')
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { sendTelegram } = require('../lib/telegram');
 const { getAllNaverKeys } = require('../lib/db');
+const { maskPhone, maskName } = require('../lib/formatting');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -60,7 +61,7 @@ async function main() {
     });
     log(`📋 당일 접수: ${pickkoEntries.length}건 (fetchOk=${fetchOk})`);
     for (const e of pickkoEntries) {
-      log(`  • ${e.name} ${e.phoneRaw} | ${e.date} ${e.start}~${e.end} | ${e.room} | 접수: ${e.receiptText.slice(0, 16)}`);
+      log(`  • ${maskName(e.name)} ${maskPhone(e.phoneRaw)} | ${e.date} ${e.start}~${e.end} | ${e.room} | 접수: ${e.receiptText.slice(0, 16)}`);
     }
 
     // ──── 3단계: naver-seen.json 네이버 예약 키와 비교 ────
@@ -102,7 +103,7 @@ async function main() {
       report = `📊 픽코 일일 감사 — ${today}\n\n`;
       report += `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건\n\n`;
       report += `⚠️ 수동(전화/직접) 등록 항목:\n`;
-      report += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      report += `━━━━━━━━━━━━━━━\n`;
       for (const e of manualEntries) {
         report += `• ${e.name || '(이름없음)'} ${e.phoneRaw ? fmtPhone(e.phoneRaw) : '(번호없음)'}\n`;
         report += `  ${e.date} ${e.start}~${e.end} ${e.room || ''}\n`;

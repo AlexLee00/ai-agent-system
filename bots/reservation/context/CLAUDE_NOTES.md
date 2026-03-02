@@ -1,10 +1,24 @@
 # 클로드 → 스카 유지보수 노트
 
 > **작성자:** 클로드 (Claude Code — AI 개발 파트너)
-> **대상:** 스카 (Ska — 스터디카페 예약관리봇)
+> **대상:** 스카 (Ska — 스터디카페 예약관리봇, 팀 메인봇)
 >
 > 이 파일은 클로드가 스카 코드를 수정·유지보수할 때마다 업데이트합니다.
 > 스카는 부팅 시 이 파일을 읽고 최신 변경 사항과 행동 지침을 반드시 숙지하세요.
+
+## ⛔ 절대 규칙 — 스카팀 네이밍
+
+**스카팀 = 스터디카페 관리 전담팀**
+
+| 봇 이름 | 파일 | 역할 |
+|---------|------|------|
+| **스카** | `bots/reservation/` | 메인봇 (스카, 자연어 처리·OpenClaw) |
+| **앤디** | `src/naver-monitor.js` | 네이버 스마트플레이스 모니터링 |
+| **지미** | `src/pickko-kiosk-monitor.js` | 키오스크 예약 감지 |
+| **레베카** | `bots/ska/` (Python) | 매출·예측 분석봇 |
+
+- 신규 스카팀 봇: 쉬운 단어 랜덤 이름 (예: 나비, 콩이처럼 단순·기억하기 쉬운 이름)
+- 기능 서술식 이름 금지 (naver-monitor-bot 등)
 
 ---
 
@@ -82,6 +96,47 @@
 | **"매출 컨펌" / "매출 확정"** | `node src/pickko-revenue-confirm.js` 실행 → 가장 최근 미컨펌 daily_summary를 room_revenue에 누적 확정 + 텔레그램 결과 발송 |
 | **매출 확정 질문에 긍정 답변** | 스카가 "오늘 매출을 확정하시겠습니까?" 또는 "지금 확정하시겠습니까?" 라고 물은 직후 사장님이 "네", "응", "확정", "맞아", "ㅇㅇ", "그래" 등 긍정으로 답하면 → `node src/pickko-revenue-confirm.js` 실행 |
 | **매출 확정 질문에 부정 답변** | "아니", "나중에", "ㄴㄴ" 등 부정이면 → "알겠습니다. 나중에 '매출 컨펌'이라고 말씀해주시면 처리하겠습니다." 라고 안내만 하고 종료 |
+| **⚠️ 매출 확정 관련 절대 금지** | 매출 확정 상황에서 "어떤 도움을 드릴까요?", "확인 부탁드립니다", "어떻게 하면 될까요?" 같은 **메타 질문 절대 금지**. 로그에서 `오늘 확정=0` 또는 미컨펌 상태를 발견해도 **스카가 먼저 메시지 보내지 말 것** — pickko-daily-summary가 이미 확정 질문을 보냈으므로 사장님 답변을 기다릴 것. 만약 사장님이 먼저 확정 관련 메시지를 보내면 즉시 실행하거나 "예/아니오"로만 답하게 유도할 것. |
+| **매출 보고 시 일반이용 포함** | 매출 보고·합계 계산 시 **스터디룸(A1/A2/B룸) + 일반이용(스터디카페 키오스크) 합산**해서 보고. 일반이용이 0원이면 생략 가능 |
+
+---
+
+## 🔔 알림 인식 규칙 (2026-03-01 신규)
+
+> naver-monitor가 텔레그램 알림을 **직접** 발송하기 때문에 스카의 대화 컨텍스트에는 그 내용이 없다.
+> 사장님이 알림을 언급하면 반드시 DB를 먼저 조회해서 내용을 파악한 뒤 답변할 것.
+
+### 알림 조회 트리거
+
+사장님 말에 아래 키워드가 포함되면 **답변 전에 반드시** `pickko-alerts-query.js`를 먼저 실행해 컨텍스트를 파악한다:
+- "방금 알림", "알림 왔는데", "알림 뭐야", "알림 봤어"
+- "픽코 실패", "픽코 실패 알림", "등록 실패", "취소 실패"
+- "최근 알림", "알림 현황", "어떤 알림"
+- "아까 알림", "조금 전에", "뭐가 왔어"
+
+```bash
+# 기본 (최근 24시간 전체)
+node src/pickko-alerts-query.js
+
+# 실패/에러만
+node src/pickko-alerts-query.js --type=error
+
+# 미해결만
+node src/pickko-alerts-query.js --unresolved
+
+# 최근 48시간
+node src/pickko-alerts-query.js --hours=48
+```
+
+**중요**: 조회 결과를 읽고 상황을 파악한 뒤 사장님께 요약해서 답변. DB 조회했다는 사실은 텔레그램에 보고 금지.
+
+### 예약 조회 등 기존 명령
+
+| 사장님 말 (예시) | 실행 명령 |
+|-----------------|-----------|
+| "최근 알림", "알림 현황" | `pickko-alerts-query.js` |
+| "에러 알림", "실패 알림" | `pickko-alerts-query.js --type=error` |
+| "미해결 알림" | `pickko-alerts-query.js --unresolved` |
 
 ---
 
@@ -163,6 +218,18 @@
 | "2월 매출 알려줘" | `pickko-stats-cmd.js --month=2026-02` |
 | "지금까지 누적 매출", "전체 매출" | `pickko-stats-cmd.js --cumulative` |
 | "매출 확정해줘", "매출 컨펌" | `pickko-revenue-confirm.js` |
+
+### 가동률 리포트
+
+| 사장님 말 (예시) | 실행 명령 |
+|-----------------|-----------|
+| "가동률 알려줘", "이번 달 가동률" | `occupancy-report.js --period=month` |
+| "이번 주 가동률" | `occupancy-report.js --period=week` |
+| "2월 가동률", "2월달 룸 가동률" | `occupancy-report.js --month=2026-02` |
+| "최근 가동률", "전체 가동률" | `occupancy-report.js` |
+
+- 룸별 가동률 (A1/A2/B 각각) + 시간대별 피크 분석
+- stdout JSON `{ success, message }` → 텔레그램 전송
 
 ### 자연어 인자 파싱 규칙
 
@@ -292,7 +359,10 @@ node ~/projects/ai-agent-system/bots/reservation/src/pickko-query.js [옵션]
 ## ❌ 자연어 예약 취소 명령
 
 사장님이 예약 취소를 요청하면 `pickko-cancel-cmd.js`를 실행한다.
-(**주의**: 이 파일은 스카 수동 취소용. 네이버 자동 취소는 naver-monitor.js가 `pickko-cancel.js`를 직접 실행)
+
+**2단계 자동 처리:**
+1. **픽코 취소** (`pickko-cancel.js`) — 픽코 어드민에서 예약 환불 처리
+2. **네이버 해제** (`pickko-kiosk-monitor.js --unblock-slot`) — 네이버 예약불가 → 예약가능 복구
 
 ```bash
 node ~/projects/ai-agent-system/bots/reservation/src/pickko-cancel-cmd.js \
@@ -300,14 +370,16 @@ node ~/projects/ai-agent-system/bots/reservation/src/pickko-cancel-cmd.js \
   --start=15:00 --end=17:00 --room=A1 [--name=홍길동]
 ```
 
-- stdout JSON `{ success, message }`
-- `success: true` → "예약 취소 완료" 텔레그램 전송
+- stdout JSON `{ success, message [, naverUnblockFailed] }`
+- `success: true` → "✅ 예약 취소 완료: ..." 텔레그램 전송
+- `success: true` + `naverUnblockFailed: true` → 픽코 취소 성공, 네이버 해제 실패 → "취소 완료, 네이버 수동 확인 필요" 전송
 - `success: false` → 실패 사유 보고, 픽코 수동 취소 요청
 
 ### 취소 예시
 
 ```
 사장님: "홍길동 3월 5일 3시 예약 취소해줘"
+→ pickko-query.js 로 예약 확인 (전번·시간·룸 정확히)
 → node .../pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동
 ```
 

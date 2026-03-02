@@ -10,6 +10,41 @@ const { log, expandHome, normalizeFiles } = require('./utils');
 const ROOT = path.resolve(__dirname, '..', '..');
 const OPENCLAW_CONFIG = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
 
+// 최근 미해결 에러 알림 조회 (BOOT.md 인라인용)
+function getRecentErrorAlerts(botId) {
+  try {
+    // reservation 봇만 해당
+    if (botId !== 'reservation') return '';
+    const Database = require('better-sqlite3');
+    const dbPath = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
+    if (!fs.existsSync(dbPath)) return '';
+    const db = new Database(dbPath, { readonly: true });
+    const rows = db.prepare(`
+      SELECT timestamp, type, title, phone, date, start_time, resolved
+      FROM alerts
+      WHERE timestamp > datetime('now', '-48 hours')
+        AND type = 'error'
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `).all();
+    db.close();
+    if (rows.length === 0) return '';
+    const unresCnt = rows.filter(r => !r.resolved).length;
+    const lines = rows.map(r => {
+      const ts  = new Date(r.timestamp).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+      const res = r.resolved ? '✅해결' : '🔴미해결';
+      const who = r.phone ? ` (${r.phone})` : '';
+      const when = r.date ? ` ${r.date}${r.start_time ? ' ' + r.start_time : ''}` : '';
+      return `- [${ts}] ${res} ${r.title}${who}${when}`;
+    });
+    return `\n\n## ⚠️ 최근 48시간 실패 알림 (${rows.length}건, 미해결 ${unresCnt}건)\n\n` +
+           `> 사장님이 이 알림에 대해 질문하면 \`node src/pickko-alerts-query.js\`로 상세 조회할 것.\n\n` +
+           lines.join('\n') + '\n';
+  } catch {
+    return '';
+  }
+}
+
 // openclaw.json에서 실제 실행 중인 primary 모델을 읽음
 function readOpenClawPrimaryModel() {
   try {
@@ -64,12 +99,13 @@ function generateOpenclawBoot(bot, botId, target, workspace) {
   }
 
   const readList = READ_FILES.map((f, i) => `${i + 1}. \`${f}\``).join('\n');
+  const recentErrors = getRecentErrorAlerts(botId);
 
   const content = `# BOOT - ${bot.name}
 
 > 자동 생성 파일 (deploy-context.js). 직접 수정하지 마세요.
 > 수정 필요 시: bots/${bot.contextPath.split('/').slice(-2, -1)[0]}/context/ 수정 후 재배포.
-${inlinedSections}
+${inlinedSections}${recentErrors}
 
 ---
 
@@ -88,7 +124,19 @@ ${readList}
 | 모델 | ${readOpenClawPrimaryModel() || bot.model?.primary} |
 | 상태 | ${bot.status} |
 
-학습 완료 후 텔레그램으로 준비 완료 메시지를 보내세요.
+## ⚠️ BOOT 중 텔레그램 절대 규칙
+
+파일을 읽고 학습하는 동안 **텔레그램으로 아무것도 보내지 마세요.**
+
+금지 사항 (위반 시 BUG-006 재발):
+- 파일명 단독 전송 금지 ("HANDOFF.md", "CLAUDE_NOTES.md" 등)
+- 읽고 있는 내용 중간 보고 금지
+- "읽는 중...", "학습 중..." 등 진행 상태 보고 금지
+- 내부 독백, 메모 전송 금지
+
+올바른 행동:
+- 모든 파일 학습 완전히 완료 후 **아무것도 전송하지 말 것**
+- 사장님이 먼저 말 걸 때까지 **침묵 대기**
 `;
   fs.writeFileSync(path.join(workspace, target.bootFile), content);
   log(`  🔄 ${target.bootFile} 자동 생성`);

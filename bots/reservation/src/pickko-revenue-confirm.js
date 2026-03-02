@@ -70,9 +70,10 @@ async function main() {
     .map(([room, amt]) => `  ${room}: ${formatAmount(amt)}`)
     .join('\n');
 
+  const grandTotal = result.totalAmount + (result.generalRevenue || 0);
   let msg = `✅ 매출 확정 — ${dateHeader}\n\n`;
   msg += `${roomLines}\n`;
-  msg += `  합계: ${formatAmount(result.totalAmount)}\n`;
+  msg += `  합계: ${formatAmount(grandTotal)}\n`;
 
   // 4. 누적 매출 요약 (room_revenue 전체)
   const revSummary = getRoomRevenueSummary();

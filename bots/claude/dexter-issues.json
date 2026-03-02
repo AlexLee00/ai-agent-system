@@ -1,0 +1,24 @@
+{
+  "bugs": [
+    {
+      "id": "DXT-300739",
+      "title": "[덱스터] 핵심 파일 체크섬 변경 감지",
+      "detail": "2개 파일 변경 감지",
+      "source": "dexter",
+      "severity": "medium",
+      "status": "open",
+      "createdAt": "2026-03-01T12:15:00.739Z",
+      "updatedAt": "2026-03-01T12:15:00.739Z"
+    },
+    {
+      "id": "DXT-552824",
+      "title": "[덱스터] DB 무결성 오류",
+      "detail": "DuckDB (루나): Command failed: node \"/var/folders/5r/5024qfb56hx2lkvw6jc_ldbm0000gn/T/dexter-db-1772410550619.js\"\n{\"error\":\"Connection Error: Connection was never established or has been closed already\"}",
+      "source": "dexter",
+      "severity": "high",
+      "status": "open",
+      "createdAt": "2026-03-02T00:15:52.824Z",
+      "updatedAt": "2026-03-02T00:15:52.824Z"
+    }
+  ]
+}

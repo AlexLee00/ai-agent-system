@@ -11,17 +11,15 @@
         <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/src/run-kiosk-monitor.sh</string>
     </array>
 
-    <!-- 30분 주기 실행 (매시 0분, 30분) -->
+    <!-- 10분 주기 실행 (매시 0, 10, 20, 30, 40, 50분) -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Minute</key>
-            <integer>30</integer>
-        </dict>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Minute</key><integer>50</integer></dict>
     </array>
 
     <key>RunAtLoad</key>

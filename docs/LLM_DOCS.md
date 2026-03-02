@@ -1,18 +1,7 @@
 # LLM API 개발 문서 참조
 
 > AI Agent System에서 사용하는 모든 LLM API 참조 문서
-> 최종 업데이트: 2026-02-27
-
----
-
-## ⚠️ 긴급 알림
-
-**`gemini-2.0-flash` 2026-03-03 (4일 후) 은퇴** — `openclaw.json` 모델을 `google-gemini-cli/gemini-2.5-flash`로 즉시 교체 필요
-
-```bash
-openclaw models set google-gemini-cli/gemini-2.5-flash
-openclaw models status
-```
+> 최종 업데이트: 2026-03-02
 
 ---
 
@@ -21,9 +10,11 @@ openclaw models status
 1. [Claude API (Anthropic)](#1-claude-api-anthropic)
 2. [Gemini API (Google)](#2-gemini-api-google)
 3. [Groq API](#3-groq-api)
-4. [xAI Grok API](#4-xai-grok-api)
-5. [DeepSeek R1 + Qwen 2.5 (Ollama 로컬)](#5-deepseek-r1--qwen-25-ollama-로컬)
-6. [멀티에이전트 시스템용 모델 선택 가이드](#6-멀티에이전트-시스템용-모델-선택-가이드)
+4. [Cerebras API](#4-cerebras-api)
+5. [SambaNova API](#5-sambanova-api)
+6. [xAI Grok API](#6-xai-grok-api)
+7. [DeepSeek R1 + Qwen 2.5 (Ollama 로컬)](#7-deepseek-r1--qwen-25-ollama-로컬)
+8. [멀티에이전트 시스템용 모델 선택 가이드](#8-멀티에이전트-시스템용-모델-선택-가이드)
 
 ---
 
@@ -443,9 +434,153 @@ function getNextGroqKey(model) {
 
 ---
 
-## 4. xAI Grok API
+## 4. Cerebras API
 
-### 4.1 모델 목록 및 가격
+### 4.1 모델 목록
+
+| 모델 ID | 컨텍스트 | RPM | TPD | 속도 | 용도 |
+|---------|---------|-----|-----|------|------|
+| `llama3.1-8b` | 128K | 60 | 1,000,000 | 매우 빠름 | 온체인분석가 — 고빈도 처리 |
+| `llama-3.3-70b` | 128K | 30 | 1,000,000 | 빠름 | 고품질 분석 |
+
+**무료 티어 특징:**
+- 1M TPD — Groq(500K)보다 2배 이상 넉넉
+- Cerebras WSE(웨이퍼 스케일 엔진) 기반 → 70B 모델도 8B와 유사한 지연시간
+- 일일 리셋: 00:00 UTC (= 09:00 KST)
+
+### 4.2 설정
+
+```bash
+# API 키 발급: https://cloud.cerebras.ai
+export CEREBRAS_API_KEY="..."
+# Base URL: https://api.cerebras.ai/v1  (OpenAI 호환)
+```
+
+secrets.json 등록:
+```json
+{ "cerebras_api_key": "YOUR_CEREBRAS_API_KEY" }
+```
+
+### 4.3 기본 사용 (OpenAI SDK 호환)
+
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+    apiKey: process.env.CEREBRAS_API_KEY,
+    baseURL: 'https://api.cerebras.ai/v1',
+});
+
+const response = await client.chat.completions.create({
+    model: 'llama3.1-8b',
+    messages: [
+        { role: 'system', content: '온체인 데이터 분석 전문가입니다.' },
+        { role: 'user', content: userMessage },
+    ],
+    max_tokens: 256,
+    temperature: 0.1,
+});
+
+const text  = response.choices[0].message.content;
+const usage = response.usage; // prompt_tokens, completion_tokens, total_tokens
+```
+
+직접 HTTPS 사용 (lib/groq.js 방식):
+```javascript
+// POST https://api.cerebras.ai/v1/chat/completions
+// 헤더: Authorization: Bearer <key>, Content-Type: application/json
+// 바디: OpenAI /v1/chat/completions와 동일
+```
+
+### 4.4 루나팀 할당량 분석
+
+```
+5분 주기 = 288 사이클/일
+
+온체인분석가: llama3.1-8b 1회/사이클
+  → 288 calls/일
+  → ~500 토큰/호출 × 288 = ~144,000 토큰/일
+  → 한도 1,000,000 TPD 대비 14.4% 사용 — 여유 충분
+
+결론: Groq와 분산 배치해도 한도 걱정 없음
+```
+
+---
+
+## 5. SambaNova API
+
+### 5.1 모델 목록
+
+| 모델 ID | 컨텍스트 | 용도 |
+|---------|---------|------|
+| `Meta-Llama-3.3-70B-Instruct` | 128K | 감성분석가 — 고품질 70B |
+| `Meta-Llama-3.1-8B-Instruct` | 128K | 경량 처리 |
+| `Qwen2.5-72B-Instruct` | 128K | 고급 추론 |
+
+**무료 티어 특징:**
+- 영구 무료 티어 (daily limit 있음)
+- 공식 TPD 수치 미공개 — 보수적으로 10,000 토큰/일로 추정
+- 일일 리셋: 00:00 UTC (= 09:00 KST)
+- 70B 고성능 모델 무료 제공이 핵심 장점
+
+### 5.2 설정
+
+```bash
+# API 키 발급: https://cloud.sambanova.ai
+export SAMBANOVA_API_KEY="..."
+# Base URL: https://api.sambanova.ai/v1  (OpenAI 호환)
+```
+
+secrets.json 등록:
+```json
+{ "sambanova_api_key": "YOUR_SAMBANOVA_API_KEY" }
+```
+
+### 5.3 기본 사용 (OpenAI SDK 호환)
+
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+    apiKey: process.env.SAMBANOVA_API_KEY,
+    baseURL: 'https://api.sambanova.ai/v1',
+});
+
+const response = await client.chat.completions.create({
+    model: 'Meta-Llama-3.3-70B-Instruct',
+    messages: [
+        { role: 'system', content: '암호화폐 커뮤니티 감성분석 전문가입니다.' },
+        { role: 'user', content: userMessage },
+    ],
+    max_tokens: 256,
+    temperature: 0.1,
+});
+
+const text  = response.choices[0].message.content;
+const usage = response.usage;
+```
+
+### 5.4 루나팀 할당량 주의사항
+
+```
+⚠️ 공식 TPD 수치 미확인 — 보수적으로 10,000 TPD 추정
+
+5분 주기 = 288 사이클/일
+
+감성분석가: Meta-Llama-3.3-70B-Instruct 1회/사이클
+  → 288 calls/일
+  → ~800 토큰/호출 × 288 = ~230,400 토큰/일
+  → 추정 10K TPD 대비 초과 위험
+
+대응: 감성 분석은 10~20분 주기로 완화, 또는 Groq fallback 활용
+TODO: SambaNova 실제 한도 확인 후 llm-candidates.json 및 이 문서 갱신
+```
+
+---
+
+## 6. xAI Grok API
+
+### 6.1 모델 목록 및 가격
 
 | 모델 ID | 컨텍스트 | 입력 $/1M | 출력 $/1M | 특징 |
 |---------|---------|---------|---------|------|
@@ -461,7 +596,7 @@ function getNextGroqKey(model) {
 
 **무료 크레딧:** 가입 시 $25 + 데이터 공유 시 $150/월 = 최대 $175/월
 
-### 4.2 설정
+### 6.2 설정
 
 ```bash
 export XAI_API_KEY="xai-..."
@@ -469,7 +604,7 @@ export XAI_API_KEY="xai-..."
 # OpenAI SDK 완전 호환
 ```
 
-### 4.3 Function Calling (커스텀 툴)
+### 6.3 Function Calling (커스텀 툴)
 
 OpenAI SDK 방식과 동일:
 ```javascript
@@ -490,7 +625,7 @@ const response = await client.chat.completions.create({
 });
 ```
 
-### 4.4 Live Search — X 실시간 데이터 (핵심 차별점)
+### 6.4 Live Search — X 실시간 데이터 (핵심 차별점)
 
 ```javascript
 // Responses API 사용 (구 Live Search API는 2026-01-12 종료)
@@ -520,9 +655,9 @@ const response = await client.responses.create({
 
 ---
 
-## 5. DeepSeek R1 + Qwen 2.5 (Ollama 로컬)
+## 7. DeepSeek R1 + Qwen 2.5 (Ollama 로컬)
 
-### 5.1 DeepSeek R1 모델 변형 및 요구 RAM
+### 7.1 DeepSeek R1 모델 변형 및 요구 RAM
 
 | 변형 | Pull 명령 | 파일 크기 | 최소 RAM |
 |------|----------|---------|---------|
@@ -537,7 +672,7 @@ const response = await client.responses.create({
 | 14B | ~20–28 t/s | ⭐ 최적 (학술봇, 백테스팅) |
 | 32B | ~11–14 t/s | 사용 가능 |
 
-### 5.2 Thinking 모드 (CoT 추론)
+### 7.2 Thinking 모드 (CoT 추론)
 
 ```javascript
 import ollama from 'ollama';
@@ -564,7 +699,7 @@ curl http://localhost:11434/api/chat -d '{
 }'
 ```
 
-### 5.3 Tool Calling 현황
+### 7.3 Tool Calling 현황
 
 **⚠️ 중요**: 표준 Ollama 레지스트리의 deepseek-r1은 tools API 미지원 (pre-0528 버전)
 
@@ -579,7 +714,7 @@ deepseek-r1:14b   → 추론 전담 (think=true)
 qwen2.5:7b       → 툴 호출 전담
 ```
 
-### 5.4 Qwen 2.5 모델 변형
+### 7.4 Qwen 2.5 모델 변형
 
 | 변형 | Pull 명령 | RAM |
 |------|----------|-----|
@@ -590,7 +725,7 @@ qwen2.5:7b       → 툴 호출 전담
 - **한국어 지원**: 29개 언어 포함 (한국어 사전학습)
 - **Tool Calling**: 네이티브 지원 (qwen2.5:7b 이상 안정적)
 
-### 5.5 Qwen 2.5 Tool Calling (Node.js)
+### 7.5 Qwen 2.5 Tool Calling (Node.js)
 
 ```javascript
 import ollama from 'ollama';
@@ -626,7 +761,7 @@ if (response.message.tool_calls) {
 }
 ```
 
-### 5.6 Ollama 환경 변수 (Mac Mini 서버 설정)
+### 7.6 Ollama 환경 변수 (Mac Mini 서버 설정)
 
 ```bash
 export OLLAMA_MAX_LOADED_MODELS=3   # 동시 로드 모델 수
@@ -647,7 +782,7 @@ OS + 여유      → ~8 GB
 합계 (3개 모델): ~46 GB ← 64GB에 적합
 ```
 
-### 5.7 Ollama API 레퍼런스
+### 7.7 Ollama API 레퍼런스
 
 **Base URL:** `http://localhost:11434`
 
@@ -672,9 +807,9 @@ OS + 여유      → ~8 GB
 
 ---
 
-## 6. 멀티에이전트 시스템용 모델 선택 가이드
+## 8. 멀티에이전트 시스템용 모델 선택 가이드
 
-### 6.1 봇별 권장 모델
+### 8.1 봇별 권장 모델
 
 | 봇 | Primary | Fallback | 이유 |
 |----|---------|---------|------|
@@ -688,7 +823,7 @@ OS + 여유      → ~8 GB
 | 학술봇/판례봇 | `deepseek-r1:32b` (로컬) | `claude-opus-4-6` | 논문 추론, 비용 무료 |
 | 백테스팅 | `deepseek-r1:14b` (로컬) | — | 수학적 추론, 로컬 |
 
-### 6.2 투자팀 5분 사이클 타임라인
+### 8.2 투자팀 5분 사이클 타임라인
 
 ```
 T+0s   :  tick 수신
@@ -699,7 +834,7 @@ T+13~14s: 투자 메인봇 결정 → 실행봇 명령 (sonnet-4-6)
 T+14~15s: 바이낸스/업비트 실행봇 주문 실행 (LLM 없음)
 ```
 
-### 6.3 비용 최적화 원칙
+### 8.3 비용 최적화 원칙
 
 1. **Groq 무료 모델** → 고빈도 신호 처리 (투자 분석가 4명)
 2. **Haiku 4.5** → 에이전트 루프, 툴 호출 (~1/3 Sonnet 비용)
@@ -711,7 +846,7 @@ T+14~15s: 바이낸스/업비트 실행봇 주문 실행 (LLM 없음)
    - $500→$2000/월: 분석가팀 Haiku 적용
    - $2000+/월: Opus 투입 검토
 
-### 6.4 에이전트 간 통신 패턴
+### 8.4 에이전트 간 통신 패턴
 
 ```
 ❌ 금지: 메시지 히스토리 전체 전달 (telephone effect - 정보 왜곡)

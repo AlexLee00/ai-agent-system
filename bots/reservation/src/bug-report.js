@@ -31,6 +31,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { parseArgs } = require('../lib/args');
+const { saveJson } = require('../lib/files');
 
 const WORKSPACE    = process.env.OPENCLAW_WORKSPACE
   || path.join(process.env.HOME, '.openclaw', 'workspace');
@@ -50,7 +51,7 @@ function loadTracker() {
 
 function saveTracker(data) {
   data.lastUpdated = new Date().toISOString();
-  fs.writeFileSync(TRACKER_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  saveJson(TRACKER_FILE, data);
   syncHandoff(data);   // 저장 시마다 HANDOFF.md 자동 갱신
 }
 
