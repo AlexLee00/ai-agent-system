@@ -10,13 +10,13 @@
  * 출력: JSON stdout (스카 봇이 파싱) + 텔레그램 직접 발송
  */
 
-const { log } = require('../lib/utils');
-const { sendTelegram } = require('../lib/telegram');
+const { log } = require('../../lib/utils');
+const { sendTelegram } = require('../../lib/telegram');
 const {
   getLatestUnconfirmedSummary,
   confirmDailySummary,
   getRoomRevenueSummary,
-} = require('../lib/db');
+} = require('../../lib/db');
 
 function formatAmount(amount) {
   return Number(amount || 0).toLocaleString('ko-KR') + '원';

@@ -12,7 +12,7 @@
 
 cd "$(dirname "$0")"
 
-BOT_DIR="$(cd .. && pwd)"
+BOT_DIR="$(cd ../.. && pwd)"
 LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
 SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"

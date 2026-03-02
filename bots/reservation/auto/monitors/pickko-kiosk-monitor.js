@@ -13,14 +13,15 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
-const { sendTelegram } = require('../lib/telegram');
-const { createErrorTracker } = require('../lib/error-tracker');
-const { getKioskBlock, upsertKioskBlock, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../lib/db');
-const { maskPhone, maskName } = require('../lib/formatting');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
+const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
+const { sendTelegram } = require('../../lib/telegram');
+const { createErrorTracker } = require('../../lib/error-tracker');
+const { getKioskBlock, upsertKioskBlock, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
+const { maskPhone, maskName } = require('../../lib/formatting');
+const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -1414,13 +1415,24 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
 async function main() {
   const today = getTodayKST();
   log(`\n🔍 픽코 키오스크 모니터 시작: ${today}`);
+  updateAgentState('jimmy', 'running', `키오스크 모니터 ${today}`);
 
   // ── Phase 5 선처리: 만료 항목 정리 ──
   const pruned = pruneOldKioskBlocks(today);
   if (pruned > 0) log(`🧹 만료 항목 삭제: ${pruned}건`);
 
   let browser;
+  let lockAcquired = false;
   try {
+    // 픽코 단독접근 락 획득 (최대 5분)
+    lockAcquired = acquirePickkoLock('jimmy');
+    if (!lockAcquired) {
+      log('⚠️ 픽코 락 획득 실패 — 다른 에이전트가 사용 중. 이번 사이클 스킵');
+      updateAgentState('jimmy', 'idle');
+      return;
+    }
+    log('🔒 픽코 락 획득 (jimmy)');
+
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     const pages = await browser.pages();
     const page = pages[0] || await browser.newPage();
@@ -1676,8 +1688,13 @@ async function main() {
     }
 
     log('\n✅ 픽코 키오스크 모니터 완료');
+    updateAgentState('jimmy', 'idle');
 
   } finally {
+    if (lockAcquired) {
+      releasePickkoLock('jimmy');
+      log('🔓 픽코 락 해제 (jimmy)');
+    }
     if (browser) {
       try { await browser.close(); } catch (e) {}
     }

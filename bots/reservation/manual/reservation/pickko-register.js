@@ -21,10 +21,10 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { parseArgs } = require('../lib/args');
-const { transformAndNormalizeData } = require('../lib/validation');
-const { addReservation, updateReservation, getReservation, markSeen } = require('../lib/db');
-const { fail } = require('../lib/cli');
+const { parseArgs } = require('../../lib/args');
+const { transformAndNormalizeData } = require('../../lib/validation');
+const { addReservation, updateReservation, getReservation, markSeen } = require('../../lib/db');
+const { fail } = require('../../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 

@@ -16,12 +16,12 @@
  */
 
 const puppeteer = require('puppeteer');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { parseArgs } = require('../lib/args');
-const { formatPhone } = require('../lib/formatting');
-const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { parseArgs } = require('../../lib/args');
+const { formatPhone } = require('../../lib/formatting');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
+const { loginToPickko } = require('../../lib/pickko');
 
 const SECRETS   = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;

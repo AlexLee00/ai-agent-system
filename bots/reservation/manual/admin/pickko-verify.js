@@ -21,11 +21,11 @@
 const puppeteer = require('puppeteer');
 const { spawn }  = require('child_process');
 const path = require('path');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { toKoreanTime, pickkoEndTime, formatPhone, maskPhone } = require('../lib/formatting');
-const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { toKoreanTime, pickkoEndTime, formatPhone, maskPhone } = require('../../lib/formatting');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
+const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const {
   getPendingReservations,
   getUnverifiedCompletedReservations,
@@ -33,7 +33,7 @@ const {
   updateReservation,
   getReservation,
   markSeen,
-} = require('../lib/db');
+} = require('../../lib/db');
 
 // ──────────────────────────────────────────────
 // 설정

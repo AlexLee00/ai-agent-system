@@ -19,9 +19,9 @@
  * 데이터 소스: state.db daily_summary / room_revenue (00:00/09:00 갱신)
  */
 
-const { getDailySummary, getDailySummariesInRange, getRoomRevenueSummary } = require('../lib/db');
-const { parseArgs } = require('../lib/args');
-const { outputResult, fail } = require('../lib/cli');
+const { getDailySummary, getDailySummariesInRange, getRoomRevenueSummary } = require('../../lib/db');
+const { parseArgs } = require('../../lib/args');
+const { outputResult, fail } = require('../../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 

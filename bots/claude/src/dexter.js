@@ -30,6 +30,7 @@ const checks = {
   bots:      require('../lib/checks/bots'),
   resources: require('../lib/checks/resources'),
   network:   require('../lib/checks/network'),
+  ska:       require('../lib/checks/ska'),
   deps:      require('../lib/checks/deps'),
 };
 
@@ -71,6 +72,7 @@ async function main() {
     () => checks.resources.run(),
     () => checks.network.run(),
     () => checks.bots.run(),
+    () => checks.ska.run(),
     () => checks.logs.run(),
     () => checks.security.run(),
     () => checks.database.run(),

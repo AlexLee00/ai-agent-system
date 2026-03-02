@@ -21,8 +21,8 @@
 
 const Database = require('better-sqlite3');
 const path = require('path');
-const { parseArgs } = require('../lib/args');
-const { outputResult, fail } = require('../lib/cli');
+const { parseArgs } = require('../../lib/args');
+const { outputResult, fail } = require('../../lib/cli');
 
 const DB_PATH = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
 const ARGS = parseArgs(process.argv);

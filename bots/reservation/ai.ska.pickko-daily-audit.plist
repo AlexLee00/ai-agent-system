@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/src/run-audit.sh</string>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/scheduled/run-audit.sh</string>
     </array>
 
     <!-- 매일 22:00 (하루 영업 마감 직전 감사) -->

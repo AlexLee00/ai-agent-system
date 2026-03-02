@@ -24,8 +24,8 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
-const { parseArgs } = require('../lib/args');
-const { fail } = require('../lib/cli');
+const { parseArgs } = require('../../lib/args');
+const { fail } = require('../../lib/cli');
 
 const ARGS = parseArgs(process.argv);
 

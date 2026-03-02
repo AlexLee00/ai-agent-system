@@ -18,8 +18,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { parseArgs } = require('../lib/args');
-const { fail } = require('../lib/cli');
+const { parseArgs } = require('../../lib/args');
+const { fail } = require('../../lib/cli');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
