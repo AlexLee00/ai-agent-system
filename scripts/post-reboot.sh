@@ -9,6 +9,7 @@ set -uo pipefail
 PROJECT_DIR="$HOME/projects/ai-agent-system"
 LOG_FILE="/tmp/post-reboot.log"
 CHAT_ID=***REMOVED***
+LAUNCHCTL_DOMAIN="gui/$(id -u)"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
@@ -60,21 +61,49 @@ check_svc() {
   fi
 }
 
+# 주기 태스크 점검: runs≥1+exit0=정상 / runs=0=대기중(오류아님) / exit≠0=실패
+check_periodic() {
+  local svc="$1"
+  local label="$2"
+  local info runs exit_code
+  info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null)
+  runs=$(echo "$info" | awk '/	runs =/ {print $3}')
+  exit_code=$(echo "$info" | awk '/	last exit code =/ {print $5}')
+
+  if [ -z "$runs" ]; then
+    log "   ⚠️  ${label} (서비스 미등록)"
+    REPORT="${REPORT}⚠️ ${label} 미등록%0A"
+    ((FAIL++)) || true
+  elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
+    log "   ✅ ${label} (${runs}회 실행, exit=0)"
+    REPORT="${REPORT}✅ ${label}%0A"
+    ((OK++)) || true
+  elif [ "$runs" -eq 0 ]; then
+    log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
+    REPORT="${REPORT}⏳ ${label} 대기중%0A"
+    ((OK++)) || true
+  else
+    log "   ❌ ${label} (exit=${exit_code})"
+    REPORT="${REPORT}❌ ${label} 오류(exit=${exit_code})%0A"
+    ((FAIL++)) || true
+  fi
+}
+
 log "📡 OpenClaw / 스카팀:"
-check_svc "ai.openclaw.gateway"    "OpenClaw 게이트웨이"
-check_svc "ai.ska.naver-monitor"   "앤디 (네이버 모니터)"
-check_svc "ai.ska.kiosk-monitor"   "지미 (키오스크 모니터)"
+check_svc      "ai.openclaw.gateway"    "OpenClaw 게이트웨이"
+check_svc      "ai.ska.naver-monitor"   "앤디 (네이버 모니터)"
+check_periodic "ai.ska.kiosk-monitor"   "지미 (키오스크 모니터, 10분)"
 
 log "💹 루나팀:"
-check_svc "ai.invest.dev"          "제이슨 (신호 집계, 10분)"
-check_svc "ai.invest.bridge"       "몰리 (업비트 브릿지, 1시간)"
+check_periodic "ai.invest.dev"          "제이슨 (신호 집계, 10분)"
+check_periodic "ai.invest.bridge"       "몰리 (업비트 브릿지, 1시간)"
 
 log "🤖 클로드팀:"
-check_svc "ai.claude.dexter"       "덱스터 (시스템 점검, 1시간)"
+check_periodic "ai.claude.dexter"       "덱스터 (시스템 점검, 1시간)"
 
 log "🔄 공통 에이전트:"
-check_svc "ai.agent.auto-commit"   "auto-commit"
-check_svc "ai.agent.nightly-sync"  "nightly-sync"
+check_periodic "ai.agent.auto-commit"   "auto-commit"
+check_periodic "ai.agent.nightly-sync"  "nightly-sync"
 
 # ── 전체 launchd 서비스 목록 저장 ────────────────────────
 launchctl list 2>/dev/null | grep "	ai\." | sort > /tmp/post-reboot-services.txt

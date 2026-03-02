@@ -1728,8 +1728,9 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    child.stdout.on('data', (d) => process.stdout.write(d.toString()));
-    child.stderr.on('data', (d) => process.stderr.write(d.toString()));
+    let outputBuf = '';
+    child.stdout.on('data', (d) => { const s = d.toString(); process.stdout.write(s); outputBuf += s; });
+    child.stderr.on('data', (d) => { const s = d.toString(); process.stderr.write(s); outputBuf += s; });
 
     child.on('close', (code) => {
       log(`🤖 픽코 실행 종료 (exit code: ${code})`);
@@ -1784,9 +1785,17 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
         }
         log(`✅ [완료] 픽코 예약이 성공했습니다!`);
       } else {
-        // ❌ 실패
+        // ❌ 실패 — 실제 에러 메시지 추출
+        const errMatch = outputBuf.match(/❌\s*(?:에러|오류)\s*발생[:\s]+(.+)/m)
+          || outputBuf.match(/OPS-CRITICAL[:\s]+(.+)/m)
+          || outputBuf.match(/Error[:\s]+(.+)/m);
+        const errorMsg = errMatch
+          ? errMatch[1].trim().substring(0, 200)
+          : `exit code ${code}`;
+
         if (bookingId) {
           updateBookingState(bookingId, booking, 'failed');
+          updateReservation(bookingId, { errorReason: errorMsg });
 
           // 📢 실패 알람
           sendAlert({
@@ -1798,7 +1807,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             start: booking.start,
             time: `${booking.start}~${booking.end}`,
             room: booking.room,
-            reason: `exit code ${code}`,
+            reason: errorMsg,
             action: '수동 확인 필요'
           });
 
@@ -1813,14 +1822,15 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             `📞 고객: ${booking.phone}\n` +
             `📅 날짜: ${booking.date}\n` +
             `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n` +
-            `🔄 시도 횟수: ${retryCount}회\n\n` +
+            `🔄 시도 횟수: ${retryCount}회\n` +
+            `❌ 원인: ${errorMsg}\n\n` +
             `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
           );
         }
         // 자동 버그리포트 등록
         autoBugReport({
           title: '픽코 자동 등록 실패',
-          desc: `고객:${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}룸 / exit code ${code}`,
+          desc: `고객:${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}룸 / ${errorMsg}`,
           severity: 'high',
           category: 'reliability',
         });
