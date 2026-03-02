@@ -119,6 +119,12 @@ function getKisSymbols() {
   return s.kis_symbols || ['005930', '000660'];
 }
 
+/** KIS 해외주식 분석 대상 심볼 (기본: AAPL, TSLA, NVDA) */
+function getKisOverseasSymbols() {
+  const s = loadSecrets();
+  return s.kis_overseas_symbols || ['AAPL', 'TSLA', 'NVDA'];
+}
+
 /** 바이낸스 분석 대상 심볼 (기본: BTC/USDT, ETH/USDT, SOL/USDT, BNB/USDT) */
 function getSymbols() {
   const s = loadSecrets();
@@ -141,6 +147,29 @@ function isKisMarketOpen() {
   return kstMinutes >= 9 * 60 && kstMinutes < 15 * 60 + 30; // 09:00~15:30
 }
 
+/**
+ * 미국 주식시장 장 중 여부 (서머타임 자동 반영)
+ * NY EDT(UTC-4): 09:30~16:00 → UTC 13:30~20:00
+ * NY EST(UTC-5): 09:30~16:00 → UTC 14:30~21:00
+ * 서머타임 근사: 4~10월 = EDT, 나머지 = EST
+ * @returns {boolean}
+ */
+function isKisOverseasMarketOpen() {
+  const now = new Date();
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const utcDay     = now.getUTCDay(); // 0=일, 6=토
+
+  if (utcDay === 0 || utcDay === 6) return false; // 주말
+
+  const month  = now.getUTCMonth() + 1;
+  const isDST  = month >= 4 && month <= 10; // 서머타임 근사 (4~10월 = EDT)
+
+  const openUtc  = isDST ? 13 * 60 + 30 : 14 * 60 + 30; // EDT: 13:30 / EST: 14:30
+  const closeUtc = isDST ? 20 * 60       : 21 * 60;       // EDT: 20:00 / EST: 21:00
+
+  return utcMinutes >= openUtc && utcMinutes < closeUtc;
+}
+
 module.exports = {
   loadSecrets,
   isDryRun,
@@ -151,6 +180,8 @@ module.exports = {
   getKisAppKey,
   getKisAppSecret,
   getKisSymbols,
+  getKisOverseasSymbols,
   getSymbols,
   isKisMarketOpen,
+  isKisOverseasMarketOpen,
 };

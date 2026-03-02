@@ -20,7 +20,7 @@ const { analyzeSentiment } = require('./sentiment-analyst');
 const { runBullResearcher, runBearResearcher } = require('./researchers');
 const db = require('../../lib/db');
 const { validateSignal, ACTIONS, ANALYST_TYPES } = require('../../lib/signal');
-const { loadSecrets, isDryRun, hasKisApiKey, getKisSymbols, getSymbols, isKisMarketOpen } = require('../../lib/secrets');
+const { loadSecrets, isDryRun, hasKisApiKey, getKisSymbols, getKisOverseasSymbols, getSymbols, isKisMarketOpen, isKisOverseasMarketOpen } = require('../../lib/secrets');
 const { notifySignal, notifyKisSignal, notifyError } = require('../../lib/telegram');
 const { printModeBanner, assertOpsReady, getMode } = require('../../lib/mode');
 const kis = require('../../lib/kis');
@@ -123,6 +123,18 @@ const SYSTEM_PROMPT_KIS = `당신은 한국 주식시장 종합 판단 전문가
 - confidence 0.5 미만이면 반드시 HOLD
 - 가격제한폭 ±30%, 시간외거래 없음 고려`;
 
+const SYSTEM_PROMPT_KIS_OVERSEAS = `당신은 미국 주식시장 종합 판단 전문가입니다.
+기술지표를 종합해 미국주식 매매 신호를 판단합니다.
+
+응답: JSON 한 줄만 (코드블록 없음):
+{"action":"HOLD","amount_usdt":100,"confidence":0.6,"reasoning":"근거 60자 이내"}
+
+주의:
+- amount_usdt는 USD 금액 (50~300 USD)
+- confidence 0.5 미만이면 반드시 HOLD
+- 미국 장 시간(EST/EDT) 내에서만 거래 가능
+- 1주 단위 거래 (소수점 불가)`;
+
 // ─── 분석 요약 빌더 (리서처용) ────────────────────────────────────
 
 function buildAnalysisSummary(analyses) {
@@ -181,7 +193,7 @@ async function getLLMDecision(symbol, analyses, exchange = 'binance', debate = n
 
   const summary = [taSummary, onchainSummary, newsSummary, sentimentSummary].filter(Boolean).join('\n');
 
-  const marketLabel = exchange === 'kis' ? '국내주식' : '암호화폐';
+  const marketLabel = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
   let debateSection = '';
   if (debate) {
     const bullText = debate.bull
@@ -193,7 +205,9 @@ async function getLLMDecision(symbol, analyses, exchange = 'binance', debate = n
     debateSection = `\n\n강세/약세 리서처 토론:\n[강세 리서처] ${bullText}\n[약세 리서처] ${bearText}`;
   }
   const userMsg = `심볼: ${symbol} (${marketLabel})\n\n멀티타임프레임 분석:\n${summary || '분석 없음'}${debateSection}\n\n최종 매매 판단을 내려주세요.`;
-  const systemPrompt = exchange === 'kis' ? SYSTEM_PROMPT_KIS : SYSTEM_PROMPT_CRYPTO;
+  const systemPrompt = exchange === 'kis' ? SYSTEM_PROMPT_KIS
+                     : exchange === 'kis_overseas' ? SYSTEM_PROMPT_KIS_OVERSEAS
+                     : SYSTEM_PROMPT_CRYPTO;
 
   const responseText = await callClaudeAPI(systemPrompt, userMsg);
 
@@ -468,6 +482,125 @@ async function runPipeline(symbols = DEFAULT_SYMBOLS) {
       } catch (e) {
         console.error(`  ❌ ${symbol} (KIS) 처리 오류: ${e.message}`);
         await notifyError(`신호 집계(KIS) - ${symbol}`, e);
+      }
+    }
+  }
+
+  // ─── KIS 해외주식(미국) 파이프라인 ──────────────────────────────
+  const overseasSymbols = getKisOverseasSymbols();
+  const overseasIsOpen  = isKisOverseasMarketOpen();
+
+  if (!hasKisApiKey()) {
+    console.log(`\n⚠️ [KIS 해외] API 키 미설정 — 해외주식 파이프라인 건너뜀 (${overseasSymbols.join(', ')})`);
+  } else if (!overseasIsOpen) {
+    const now = new Date();
+    const etOffset = -4 * 60; // EDT (서머타임 간소화)
+    const etMin    = ((now.getUTCHours() * 60 + now.getUTCMinutes()) + etOffset + 24 * 60) % (24 * 60);
+    const etTime   = `${String(Math.floor(etMin / 60)).padStart(2, '0')}:${String(etMin % 60).padStart(2, '0')}`;
+    console.log(`\n⏸️ [KIS 해외] 장외 시간 — 파이프라인 건너뜀 (ET ${etTime}, 09:30~16:00 장중만 실행)`);
+  } else {
+    console.log(`\n🌏 [KIS 해외] 파이프라인 시작 — ${overseasSymbols.join(', ')}`);
+
+    for (const symbol of overseasSymbols) {
+      try {
+        console.log(`\n📊 [TA] ${symbol} (미국주식) 분석 시작`);
+
+        const ohlcv = await kis.fetchOHLCVOverseas(symbol, 150);
+        if (ohlcv.length < 27) {
+          console.log(`  ⚠️ ${symbol}: 데이터 부족 (${ohlcv.length}개, 최소 27개 필요) → 스킵`);
+          continue;
+        }
+
+        const highs   = ohlcv.map(c => c[2]);
+        const lows    = ohlcv.map(c => c[3]);
+        const closes  = ohlcv.map(c => c[4]);
+        const volumes = ohlcv.map(c => c[5]);
+        const currentPrice = closes[closes.length - 1];
+
+        const rsi   = calcRSI(closes);
+        const macd  = calcMACD(closes);
+        const bb    = calcBB(closes);
+        const mas   = calcMovingAverages(closes);
+        const stoch = calcStochastic(highs, lows, closes);
+        const atr   = calcATR(highs, lows, closes);
+        const vol   = analyzeVolume(volumes);
+
+        const { signal, confidence, reasoning, score } =
+          judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol });
+
+        console.log(`  현재가: $${currentPrice?.toFixed(2)} | RSI: ${rsi?.toFixed(1)} | MACD: ${macd?.histogram?.toFixed(4)}`);
+        console.log(`  MA5: ${mas.ma5?.toFixed(2)} | MA20: ${mas.ma20?.toFixed(2)} | MA60: ${mas.ma60?.toFixed(2)} | 스토캐스틱K: ${stoch?.k?.toFixed(1)}`);
+        console.log(`  → 점수: ${score?.toFixed(2)} | 신호: ${signal} (확신도 ${(confidence * 100).toFixed(0)}%)`);
+
+        await db.insertAnalysis({
+          symbol,
+          analyst:   ANALYST_TYPES.TA,
+          signal,
+          confidence,
+          reasoning: `[1d] ${reasoning}`,
+          metadata:  {
+            timeframe: '1d',
+            score,
+            indicators: {
+              rsi, macd: macd?.histogram, bbWidth: bb?.bandwidth,
+              ma5: mas.ma5, ma20: mas.ma20, ma60: mas.ma60, ma120: mas.ma120,
+              stochK: stoch?.k, stochD: stoch?.d, atr, volRatio: vol?.ratio,
+            },
+          },
+          exchange:  'kis_overseas',
+        });
+
+        const analyses = await db.getRecentAnalysis(symbol, 30);
+
+        // 강세/약세 리서처 병렬 실행 (코인·국내주식과 공유 debate 카운터)
+        let debate = null;
+        if (debateCount < MAX_DEBATE_SYMBOLS) {
+          try {
+            const summaryForResearchers = buildAnalysisSummary(analyses);
+            const [bull, bear] = await Promise.all([
+              runBullResearcher(symbol, summaryForResearchers, currentPrice, 'kis_overseas'),
+              runBearResearcher(symbol, summaryForResearchers, currentPrice, 'kis_overseas'),
+            ]);
+            debate = { bull, bear };
+            debateCount++;
+            if (bull) console.log(`  🐂 [강세] 목표가 $${bull.targetPrice} | ${bull.reasoning?.slice(0, 40)}`);
+            if (bear) console.log(`  🐻 [약세] 목표가 $${bear.targetPrice} | ${bear.reasoning?.slice(0, 40)}`);
+          } catch (e) {
+            console.warn(`  ⚠️ [리서처] ${symbol} (해외) 실패 (계속): ${e.message}`);
+          }
+        } else {
+          console.log(`  ⏭️ [리서처] ${symbol} (해외): debate 한도 도달 (${debateCount}/${MAX_DEBATE_SYMBOLS}) → 스킵`);
+        }
+
+        console.log(`\n🤖 [LLM haiku] ${symbol} (미국주식) 판단 요청...`);
+        const decision = await getLLMDecision(symbol, analyses, 'kis_overseas', debate);
+        console.log(`  → ${decision.action} (확신도 ${((decision.confidence || 0) * 100).toFixed(0)}%)`);
+        console.log(`  근거: ${decision.reasoning}`);
+
+        const signalData = {
+          symbol,
+          action:     decision.action,
+          amountUsdt: decision.amount_usdt, // USD 금액
+          confidence: decision.confidence,
+          reasoning:  decision.reasoning,
+          exchange:   'kis_overseas',
+        };
+
+        const { valid, errors } = validateSignal(signalData);
+        if (!valid) { console.warn(`  ⚠️ KIS 해외 신호 검증 실패: ${errors.join(', ')}`); continue; }
+
+        if (decision.action !== ACTIONS.HOLD && decision.confidence >= MIN_CONFIDENCE) {
+          const signalId = await db.insertSignal(signalData);
+          console.log(`  ✅ KIS 해외 신호 저장: ${signalId}`);
+          await notifyKisSignal({ ...signalData, dryRun: isDryRun() });
+          results.push({ symbol, signalId, exchange: 'kis_overseas', ...decision });
+        } else {
+          console.log(`  ⏸️ ${symbol} (미국주식): HOLD 또는 확신도 낮음 → 대기`);
+        }
+
+      } catch (e) {
+        console.error(`  ❌ ${symbol} (KIS 해외) 처리 오류: ${e.message}`);
+        await notifyError(`신호 집계(KIS 해외) - ${symbol}`, e);
       }
     }
   }
