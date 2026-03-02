@@ -1,29 +1,23 @@
-'use strict';
-
 /**
  * team/sophia.js — 소피아 (커뮤니티 감성 분석가)
  *
  * 역할: 커뮤니티 감성 분석 (3시장)
- * LLM: SambaNova Meta-Llama-3.3-70B → Groq llama-3.3-70b fallback
+ * LLM: Groq llama-4-scout (PAPER) / Groq llama-4-scout (LIVE, sophia는 Groq 전용)
  *
  * 소스:
  *   암호화폐: Reddit + DCInside + CryptoPanic
  *   미국주식:  Reddit (r/stocks, r/investing, r/wallstreetbets)
  *   국내주식:  네이버 증권 종목토론실
  *
- * xAI 제거 결정 (2026-03-02):
- *   - X 데이터 공유 프로그램 종료 (2025년 5월)
- *   - 검색 비용 월 $24~46 과도
- *   - X 트렌드 전략은 아르고스가 6시간 주기로 수집 (참조용)
- *
  * 실행: node team/sophia.js --symbol=BTC/USDT --exchange=binance
  */
 
-const https = require('https');
-const db    = require('../shared/db');
-const { callFreeLLM, parseJSON } = require('../shared/llm');
-const { loadSecrets } = require('../shared/secrets');
-const { ANALYST_TYPES, ACTIONS } = require('../shared/signal');
+import https from 'https';
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { callLLM, parseJSON } from '../shared/llm-client.js';
+import { loadSecrets } from '../shared/secrets.js';
+import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 
 // ─── 소스 설정 ────────────────────────────────────────────────────────
 
@@ -65,7 +59,6 @@ const SYMBOL_KEYWORDS_US = {
 };
 const COMMON_KWS_US = ['stock', 'market', 'nasdaq', 'earnings', 'fed', 'bull', 'bear', 'tariff'];
 
-// 네이버 증권 토론실 종목코드 맵
 const NAVER_DISC_NAMES = {
   '005930': '삼성전자',
   '000660': 'SK하이닉스',
@@ -186,7 +179,6 @@ async function fetchNaverDiscussion(stockCode) {
     if (status !== 200) return [];
 
     const posts = [];
-    // 종목토론실 제목 파싱: board_read.naver href의 title 속성 사용
     const re = /href="[^"]*board_read\.[^"]*"[^>]*title="([^"]{4,})"/g;
     let m;
     while ((m = re.exec(body)) !== null) {
@@ -242,8 +234,8 @@ const BEAR_KWS_KIS    = ['하락', '매도', '급락', '약세', '하향', '악�
 
 function keywordFallback(posts, exchange) {
   let bullKws, bearKws;
-  if (exchange === 'kis_overseas') { bullKws = BULL_KWS_US;    bearKws = BEAR_KWS_US; }
-  else if (exchange === 'kis')     { bullKws = BULL_KWS_KIS;   bearKws = BEAR_KWS_KIS; }
+  if (exchange === 'kis_overseas') { bullKws = BULL_KWS_US;     bearKws = BEAR_KWS_US; }
+  else if (exchange === 'kis')     { bullKws = BULL_KWS_KIS;    bearKws = BEAR_KWS_KIS; }
   else                              { bullKws = BULL_KWS_CRYPTO; bearKws = BEAR_KWS_CRYPTO; }
 
   let score = 0, totalWeight = 0;
@@ -284,14 +276,13 @@ const PROMPTS = {
  * @param {string} symbol
  * @param {string} exchange  'binance' | 'kis_overseas' | 'kis'
  */
-async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
+export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   console.log(`\n💬 [소피아] ${symbol}(${label}) 커뮤니티 수집 중...`);
 
   let posts;
 
   if (exchange === 'kis_overseas') {
-    // 미국주식: Reddit
     const subreddits    = [...DEFAULT_REDDIT_US, ...(REDDIT_SOURCES_US[symbol] || [])];
     const redditResults = await Promise.all(subreddits.map(sub => fetchReddit(sub)));
     const allReddit     = redditResults.flat();
@@ -299,14 +290,12 @@ async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
     console.log(`  Reddit: ${allReddit.length}건 → 관련: ${posts.length}건`);
 
   } else if (exchange === 'kis') {
-    // 국내주식: 네이버 증권 종목토론실
     const stockName  = NAVER_DISC_NAMES[symbol] || symbol;
     const naverPosts = await fetchNaverDiscussion(symbol);
     console.log(`  네이버 토론 (${stockName}): ${naverPosts.length}건`);
     posts = naverPosts;
 
   } else {
-    // 암호화폐: Reddit + DCInside + CryptoPanic
     const subreddits = REDDIT_SOURCES_CRYPTO[symbol] || DEFAULT_REDDIT_CRYPTO;
     const dcGallIds  = DC_SOURCES_CRYPTO[symbol] || [];
 
@@ -328,11 +317,10 @@ async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '게시물 부족' };
   }
 
-  // SambaNova 70B → Groq 70B fallback
   const postList     = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg      = `심볼: ${symbol} (${label})\n커뮤니티 게시물 (${posts.length}건):\n${postList}`;
-  const responseText = await callFreeLLM(systemPrompt, userMsg, 'Meta-Llama-3.3-70B-Instruct', 'sophia', 'sambanova', 512, 'llama-3.3-70b-versatile');
+  const responseText = await callLLM('sophia', systemPrompt, userMsg, 512);
   const parsed       = parseJSON(responseText);
 
   let signal, confidence, reasoning, sentiment = '중립';
@@ -358,15 +346,18 @@ async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args     = process.argv.slice(2);
   const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1]   || 'BTC/USDT';
   const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
 
-  db.initSchema()
-    .then(() => analyzeSentiment(symbol, exchange))
-    .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
-    .catch(e => { console.error('❌ 소피아 오류:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    const r = await analyzeSentiment(symbol, exchange);
+    console.log('\n결과:', JSON.stringify(r, null, 2));
+    process.exit(0);
+  } catch (e) {
+    console.error('❌ 소피아 오류:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = { analyzeSentiment };

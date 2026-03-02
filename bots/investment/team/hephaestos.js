@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * team/hephaestos.js — 헤파이스토스 (바이낸스 실행봇)
  *
@@ -13,10 +11,12 @@
  * 실행: node team/hephaestos.js [--symbol=BTC/USDT] [--action=BUY] [--amount=100]
  */
 
-const db       = require('../shared/db');
-const { isPaperMode }       = require('../shared/secrets');
-const { SIGNAL_STATUS, ACTIONS } = require('../shared/signal');
-const { notifyTrade, notifyError } = require('../shared/report');
+import ccxt from 'ccxt';
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { loadSecrets, isPaperMode } from '../shared/secrets.js';
+import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
+import { notifyTrade, notifyError } from '../shared/report.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -32,9 +32,7 @@ let _exchange = null;
 
 function getExchange() {
   if (_exchange) return _exchange;
-  const { loadSecrets } = require('../shared/secrets');
   const secrets = loadSecrets();
-  const ccxt = require('ccxt');
   _exchange = new ccxt.binance({
     apiKey: secrets.binance_api_key || '',
     secret: secrets.binance_api_secret || '',
@@ -46,7 +44,7 @@ function getExchange() {
 /**
  * 현재가 조회 (PAPER_MODE에서도 사용)
  */
-async function fetchTicker(symbol) {
+export async function fetchTicker(symbol) {
   const ex = getExchange();
   const ticker = await ex.fetchTicker(symbol);
   return ticker.last;
@@ -57,7 +55,7 @@ async function fetchTicker(symbol) {
  */
 async function marketBuy(symbol, amountUsdt, paperMode) {
   if (paperMode) {
-    const price = await fetchTicker(symbol).catch(() => 0);
+    const price  = await fetchTicker(symbol).catch(() => 0);
     const filled = price > 0 ? amountUsdt / price : 0;
     console.log(`  📄 [헤파이스토스] PAPER BUY ${symbol} $${amountUsdt} @ ~$${price?.toLocaleString()}`);
     return { filled, price, dryRun: true };
@@ -71,7 +69,7 @@ async function marketBuy(symbol, amountUsdt, paperMode) {
  */
 async function marketSell(symbol, amount, paperMode) {
   if (paperMode) {
-    const price = await fetchTicker(symbol).catch(() => 0);
+    const price     = await fetchTicker(symbol).catch(() => 0);
     const totalUsdt = amount * price;
     console.log(`  📄 [헤파이스토스] PAPER SELL ${symbol} ${amount} @ ~$${price?.toLocaleString()}`);
     return { amount, price, totalUsdt, dryRun: true };
@@ -86,8 +84,8 @@ async function marketSell(symbol, amount, paperMode) {
  * 단일 바이낸스 신호 실행
  * @param {object} signal  { id, symbol, action, amountUsdt, confidence, reasoning }
  */
-async function executeSignal(signal) {
-  const paperMode = isPaperMode();
+export async function executeSignal(signal) {
+  const paperMode  = isPaperMode();
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
 
@@ -114,9 +112,8 @@ async function executeSignal(signal) {
         exchange:  'binance',
       };
 
-      // 포지션 업데이트
-      const existing   = await db.getPosition(symbol);
-      const newAmount  = (existing?.amount || 0) + (order.filled || 0);
+      const existing    = await db.getPosition(symbol);
+      const newAmount   = (existing?.amount || 0) + (order.filled || 0);
       const newAvgPrice = existing && existing.amount > 0
         ? ((existing.amount * existing.avg_price) + amountUsdt) / newAmount
         : order.price || 0;
@@ -125,7 +122,7 @@ async function executeSignal(signal) {
 
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);
-      const amount = position?.amount;
+      const amount   = position?.amount;
       if (!amount || amount <= 0) {
         console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
         await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
@@ -170,7 +167,7 @@ async function executeSignal(signal) {
 /**
  * 대기 중인 바이낸스 신호 전체 처리
  */
-async function processAllPendingSignals() {
+export async function processAllPendingSignals() {
   const signals = await db.getPendingSignals('binance');
   if (signals.length === 0) {
     console.log('[헤파이스토스] 대기 신호 없음');
@@ -182,34 +179,37 @@ async function processAllPendingSignals() {
   for (const signal of signals) {
     const r = await executeSignal(signal);
     results.push(r);
-    await new Promise(res => setTimeout(res, 500)); // API 레이트 방어
+    await new Promise(res => setTimeout(res, 500));
   }
   return results;
 }
 
 // CLI 실행
-if (require.main === module) {
-  const args       = process.argv.slice(2);
-  const actionArg  = args.find(a => a.startsWith('--action='))?.split('=')[1];
-  const symbolArg  = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
-  const amountArg  = args.find(a => a.startsWith('--amount='))?.split('=')[1];
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const args      = process.argv.slice(2);
+  const actionArg = args.find(a => a.startsWith('--action='))?.split('=')[1];
+  const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
+  const amountArg = args.find(a => a.startsWith('--amount='))?.split('=')[1];
 
-  db.initSchema()
-    .then(() => {
-      if (actionArg && symbolArg) {
-        return executeSignal({
-          id:         `CLI-${Date.now()}`,
-          symbol:     symbolArg.toUpperCase(),
-          action:     actionArg.toUpperCase(),
-          amountUsdt: parseFloat(amountArg || '100'),
-          confidence: 0.7,
-          reasoning:  'CLI 수동 실행',
-        });
-      }
-      return processAllPendingSignals();
-    })
-    .then(r => { console.log('완료:', JSON.stringify(r)); process.exit(0); })
-    .catch(e => { console.error('❌ 헤파이스토스 오류:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    let r;
+    if (actionArg && symbolArg) {
+      r = await executeSignal({
+        id:         `CLI-${Date.now()}`,
+        symbol:     symbolArg.toUpperCase(),
+        action:     actionArg.toUpperCase(),
+        amountUsdt: parseFloat(amountArg || '100'),
+        confidence: 0.7,
+        reasoning:  'CLI 수동 실행',
+      });
+    } else {
+      r = await processAllPendingSignals();
+    }
+    console.log('완료:', JSON.stringify(r));
+    process.exit(0);
+  } catch (e) {
+    console.error('❌ 헤파이스토스 오류:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = { executeSignal, processAllPendingSignals, fetchTicker };

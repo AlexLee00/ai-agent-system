@@ -1,19 +1,17 @@
-'use strict';
-
 /**
- * shared/signal.js — 신호 타입 정의 (Phase 3-A 확장)
+ * shared/signal.js — 신호 타입 정의 (Phase 3-A ESM)
  *
  * bots/invest/lib/signal.js 대비 추가:
  *   ANALYST_TYPES: TA_MTF, MACRO, FEAR_GREED, CRYPTO_PANIC
  */
 
-const ACTIONS = Object.freeze({
+export const ACTIONS = Object.freeze({
   BUY:  'BUY',
   SELL: 'SELL',
   HOLD: 'HOLD',
 });
 
-const SIGNAL_STATUS = Object.freeze({
+export const SIGNAL_STATUS = Object.freeze({
   PENDING:   'pending',
   APPROVED:  'approved',
   REJECTED:  'rejected',
@@ -21,7 +19,7 @@ const SIGNAL_STATUS = Object.freeze({
   FAILED:    'failed',
 });
 
-const ANALYST_TYPES = Object.freeze({
+export const ANALYST_TYPES = Object.freeze({
   TA:          'ta',          // 기술분석 (아리아 — 단일 타임프레임)
   TA_MTF:      'ta_mtf',      // 기술분석 멀티타임프레임 (아리아)
   ONCHAIN:     'onchain',     // 온체인·파생상품 (오라클)
@@ -40,7 +38,7 @@ const ANALYST_TYPES = Object.freeze({
  * @param {object} signal
  * @returns {{ valid: boolean, errors: string[] }}
  */
-function validateSignal(signal) {
+export function validateSignal(signal) {
   const errors = [];
   if (!signal.symbol || typeof signal.symbol !== 'string') errors.push('symbol 필수');
   if (!Object.values(ACTIONS).includes(signal.action))     errors.push(`action은 BUY/SELL/HOLD`);
@@ -58,7 +56,7 @@ function validateSignal(signal) {
  * @param {object} analysis
  * @returns {{ valid: boolean, errors: string[] }}
  */
-function validateAnalysis(analysis) {
+export function validateAnalysis(analysis) {
   const errors = [];
   if (!analysis.symbol)  errors.push('symbol 필수');
   if (!analysis.analyst) errors.push('analyst 필수');
@@ -68,5 +66,3 @@ function validateAnalysis(analysis) {
   }
   return { valid: errors.length === 0, errors };
 }
-
-module.exports = { ACTIONS, SIGNAL_STATUS, ANALYST_TYPES, validateSignal, validateAnalysis };

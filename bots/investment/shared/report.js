@@ -1,19 +1,17 @@
-'use strict';
-
 /**
- * shared/report.js — 루나팀 텔레그램 리포터 (Phase 3-A)
+ * shared/report.js — 루나팀 텔레그램 리포터 (Phase 3-A ESM)
  *
  * bots/invest/lib/telegram.js 패턴 재사용 + 3시장 포매터 통합
  */
 
-const https = require('https');
-const { loadSecrets } = require('./secrets');
+import https from 'https';
+import { loadSecrets } from './secrets.js';
 
-const SECRETS       = loadSecrets();
-const BOT_TOKEN     = SECRETS.telegram_bot_token;
-const DEFAULT_CHAT  = SECRETS.telegram_chat_id;
-const TEAM_NAME     = '루나팀 v3';
-const PREFIX        = `📈 ${TEAM_NAME}`;
+const SECRETS      = loadSecrets();
+const BOT_TOKEN    = SECRETS.telegram_bot_token;
+const DEFAULT_CHAT = SECRETS.telegram_chat_id;
+const TEAM_NAME    = '루나팀 v3';
+const PREFIX       = `📈 ${TEAM_NAME}`;
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────
 
@@ -32,7 +30,7 @@ function tryTelegramSend(message, chatId = DEFAULT_CHAT) {
         hostname: 'api.telegram.org',
         path:     `/bot${BOT_TOKEN}/sendMessage`,
         method:   'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
+        headers:  { 'Content-Type': 'application/json', 'Content-Length': body.length },
       }, (res) => {
         let raw = '';
         res.on('data', d => raw += d);
@@ -52,7 +50,7 @@ function tryTelegramSend(message, chatId = DEFAULT_CHAT) {
   });
 }
 
-async function sendTelegram(message, chatId = DEFAULT_CHAT) {
+export async function sendTelegram(message, chatId = DEFAULT_CHAT) {
   if (process.env.TELEGRAM_ENABLED === '0') {
     console.log(`[텔레그램 비활성] ${message.slice(0, 60)}`);
     return true;
@@ -70,8 +68,7 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT) {
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
 
-/** 암호화폐 신호 알림 */
-function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
+export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
@@ -83,8 +80,7 @@ function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper
   return sendTelegram(msg);
 }
 
-/** 암호화폐 체결 알림 */
-function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
+export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = side === 'buy' ? '✅ 매수' : '✅ 매도';
   const msg   = [
@@ -95,8 +91,7 @@ function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
   return sendTelegram(msg);
 }
 
-/** 국내주식(KIS) 신호 알림 */
-function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
+export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
@@ -108,8 +103,7 @@ function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, pap
   return sendTelegram(msg);
 }
 
-/** 미국주식(KIS 해외) 신호 알림 */
-function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
+export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
@@ -121,22 +115,19 @@ function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reaso
   return sendTelegram(msg);
 }
 
-/** 리스크 거부 알림 */
-function notifyRiskRejection({ symbol, action, reason }) {
+export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
   return sendTelegram(msg);
 }
 
-/** 오류 알림 */
-function notifyError(context, error) {
+export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
   return sendTelegram(msg);
 }
 
-/** 사이클 요약 알림 */
-function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
-  const tag    = paperMode ? '[PAPER] ' : '';
-  const lines  = [
+export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
+  const tag   = paperMode ? '[PAPER] ' : '';
+  const lines = [
     `${tag}🔄 ${cycle} 사이클 완료`,
     `심볼: ${symbols.join(', ')}`,
     `소요: ${(durationMs / 1000).toFixed(1)}s`,
@@ -153,11 +144,3 @@ function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) 
   }
   return sendTelegram(lines.join('\n'));
 }
-
-module.exports = {
-  sendTelegram,
-  notifySignal, notifyTrade,
-  notifyKisSignal, notifyKisOverseasSignal,
-  notifyRiskRejection, notifyError,
-  notifyCycleSummary,
-};

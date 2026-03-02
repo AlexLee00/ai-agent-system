@@ -1,27 +1,24 @@
-'use strict';
-
 /**
  * team/hermes.js — 헤르메스 (뉴스 분석가)
  *
  * 역할: 3시장 뉴스 수집 + 감성 분류
- * LLM: Groq llama-3.1-8b-instant → Cerebras fallback
+ * LLM: Groq Scout (paper+live 모두 무료)
  *
  * 소스:
  *   암호화폐: CoinDesk + CoinTelegraph RSS
  *   미국주식:  Yahoo Finance RSS + MarketWatch RSS
- *   국내주식:  네이버 뉴스 검색 API (키 없으면 RSS fallback) + DART 공시
- *
- * bots/invest/src/analysts/news-analyst.js v2 + Naver + DART 추가
+ *   국내주식:  네이버 뉴스 검색 API (키 없으면 스킵) + DART 공시
  *
  * 실행: node team/hermes.js --symbol=BTC/USDT --exchange=binance
  */
 
-const https  = require('https');
-const http   = require('http');
-const db     = require('../shared/db');
-const { callFreeLLM, parseJSON } = require('../shared/llm');
-const { loadSecrets }            = require('../shared/secrets');
-const { ANALYST_TYPES, ACTIONS } = require('../shared/signal');
+import https from 'https';
+import http  from 'http';
+import * as db from '../shared/db.js';
+import { callLLM, parseJSON } from '../shared/llm-client.js';
+import { loadSecrets }        from '../shared/secrets.js';
+import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import { fileURLToPath } from 'url';
 
 // ─── RSS 소스 ────────────────────────────────────────────────────────
 
@@ -60,19 +57,17 @@ const SYMBOL_KEYWORDS_US = {
 };
 const COMMON_KWS_US = ['STOCK', 'NASDAQ', 'NYSE', 'EARNINGS', 'FED', 'RATE', 'BULL', 'BEAR', 'AI', 'TARIFF'];
 
-// 네이버 뉴스 — 국내주식 종목명 매핑
 const SYMBOL_NAME_KR = {
   '005930': '삼성전자', '000660': 'SK하이닉스',
   '035420': 'NAVER',   '051910': 'LG화학',
-  '006400': '삼성SDI', '035720': '카카오',
 };
 
 // ─── HTTP(S) GET ──────────────────────────────────────────────────────
 
 function httpsGetRaw(hostname, path, headers = {}) {
   return new Promise((resolve, reject) => {
-    const isHttps = !hostname.startsWith('http://');
-    const lib     = isHttps ? https : http;
+    const isHttps  = !hostname.startsWith('http://');
+    const lib      = isHttps ? https : http;
     const cleanHost = hostname.replace(/^https?:\/\//, '');
 
     const req = lib.request({
@@ -134,25 +129,21 @@ function filterRelevant(items, symbol, exchange) {
 
 async function fetchNaverNews(symbol) {
   const s = loadSecrets();
-  const clientId     = s.naver_client_id;
-  const clientSecret = s.naver_client_secret;
-
-  if (!clientId || !clientSecret) {
-    // API 키 없음 — 스킵 (국내주식 뉴스는 현재 네이버 API에 의존)
+  if (!s.naver_client_id || !s.naver_client_secret) {
     console.warn(`  ⚠️ [헤르메스] 네이버 API 키 없음 — 국내주식 뉴스 스킵`);
     return [];
   }
 
-  const query     = encodeURIComponent(SYMBOL_NAME_KR[symbol] || symbol);
-  const path      = `/v1/search/news.json?query=${query}&display=20&sort=date`;
+  const query = encodeURIComponent(SYMBOL_NAME_KR[symbol] || symbol);
+  const path  = `/v1/search/news.json?query=${query}&display=20&sort=date`;
 
   try {
     const { status, body } = await httpsGetRaw('openapi.naver.com', path, {
-      'X-Naver-Client-Id':     clientId,
-      'X-Naver-Client-Secret': clientSecret,
+      'X-Naver-Client-Id':     s.naver_client_id,
+      'X-Naver-Client-Secret': s.naver_client_secret,
     });
     if (status !== 200) return [];
-    const data  = JSON.parse(body);
+    const data = JSON.parse(body);
     return (data?.items || []).map(item => ({
       title:       item.title.replace(/<[^>]+>/g, '').trim(),
       description: item.description?.replace(/<[^>]+>/g, '').trim().slice(0, 200) || '',
@@ -166,13 +157,13 @@ async function fetchNaverNews(symbol) {
 // ─── DART 공시 조회 ──────────────────────────────────────────────────
 
 async function fetchDartDisclosures(symbol) {
-  const s       = loadSecrets();
-  const apiKey  = s.dart_api_key;
+  const s      = loadSecrets();
+  const apiKey = s.dart_api_key;
   if (!apiKey) return [];
 
-  const today  = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const aWeek  = new Date(Date.now() - 7 * 86400 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
-  const path   = `/api/list.json?crtfc_key=${apiKey}&corp_code=${symbol}&bgn_de=${aWeek}&end_de=${today}&page_count=10`;
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const aWeek = new Date(Date.now() - 7 * 86400 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+  const path  = `/api/list.json?crtfc_key=${apiKey}&corp_code=${symbol}&bgn_de=${aWeek}&end_de=${today}&page_count=10`;
 
   try {
     const { status, body } = await httpsGetRaw('opendart.fss.or.kr', path);
@@ -230,16 +221,10 @@ const PROMPTS = {
 
 // ─── 메인 분석 ─────────────────────────────────────────────────────
 
-/**
- * 뉴스 수집 + 감성 분석 + DB 저장
- * @param {string} symbol
- * @param {string} exchange  'binance' | 'kis_overseas' | 'kis'
- */
-async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
+export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   console.log(`\n📰 [헤르메스] ${symbol}(${label}) 뉴스 수집 중...`);
 
-  // 소스 선택
   let rssSources;
   let extraItems = [];
 
@@ -255,7 +240,6 @@ async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
     rssSources = RSS_CRYPTO;
   }
 
-  // RSS 병렬 수집
   const rssItems = [];
   await Promise.all(rssSources.map(async ({ name, hostname, path }) => {
     try {
@@ -278,15 +262,15 @@ async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '관련 기사 없음' };
   }
 
-  const headlines = relevant.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+  const headlines    = relevant.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
   relevant.slice(0, 3).forEach(a => console.log(`  • ${a.title.slice(0, 70)}`));
 
-  let signal, confidence, reasoning, sentiment = '중립';
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg      = `심볼: ${symbol} (${label})\n최신 뉴스 ${relevant.length}건:\n${headlines}`;
-  const responseText = await callFreeLLM(systemPrompt, userMsg, 'llama-3.1-8b-instant', 'hermes', 'groq');
+  const responseText = await callLLM('hermes', systemPrompt, userMsg, 512);
   const parsed       = parseJSON(responseText);
 
+  let signal, confidence, reasoning, sentiment = '중립';
   if (parsed?.action) {
     signal = parsed.action; confidence = parsed.confidence; reasoning = parsed.reasoning; sentiment = parsed.sentiment || '중립';
   } else {
@@ -307,7 +291,7 @@ async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args     = process.argv.slice(2);
   const symbol   = args.find(a => a.startsWith('--symbol='))?.split('=')[1]   || 'BTC/USDT';
   const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
@@ -317,5 +301,3 @@ if (require.main === module) {
     .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
     .catch(e => { console.error('❌ 헤르메스 오류:', e.message); process.exit(1); });
 }
-
-module.exports = { analyzeNews };
