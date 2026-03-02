@@ -41,7 +41,7 @@ const SYSTEM_PROMPT = `당신은 루나팀의 수석 펀드매니저(Fund Manage
 - USDT 잔고 내에서만 매수를 허용합니다
 - 강세/약세 리서처 토론이 있으면 반드시 균형 있게 검토합니다
 
-응답 형식 (JSON만, 마크다운 없음):
+응답: JSON만 (마크다운 코드블록 없음):
 {
   "decisions": [
     {
@@ -49,10 +49,10 @@ const SYSTEM_PROMPT = `당신은 루나팀의 수석 펀드매니저(Fund Manage
       "action": "BUY"|"SELL"|"HOLD",
       "amount_usdt": 100,
       "confidence": 0.75,
-      "reasoning": "판단 근거 (한국어)"
+      "reasoning": "판단 근거 (한국어 1~2문장, 60자 이내)"
     }
   ],
-  "portfolio_view": "포트폴리오 전체 시황 평가 (한국어 2~3문장)",
+  "portfolio_view": "포트폴리오 전체 시황 평가 (한국어 1~2문장, 80자 이내)",
   "risk_level": "LOW"|"MEDIUM"|"HIGH"
 }
 
@@ -79,7 +79,7 @@ function callHaikuAPI(userMessage) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify({
       model:       MODEL,
-      max_tokens:  1024,
+      max_tokens:  2048,
       temperature: 0.1,
       system:      SYSTEM_PROMPT,
       messages:    [{ role: 'user', content: userMessage }],
@@ -221,7 +221,9 @@ async function getFundManagerDecision(signals, portfolio) {
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw.replace(/```json?\n?|\n?```/g, '').trim());
+    const cleaned = raw.replace(/```json?\n?|\n?```/g, '').trim();
+    const s = cleaned.indexOf('{'), e2 = cleaned.lastIndexOf('}');
+    return JSON.parse(s >= 0 && e2 > s ? cleaned.slice(s, e2 + 1) : cleaned);
   } catch (e) {
     console.error('⚠️ Haiku 응답 파싱 실패:', raw.slice(0, 200));
     return null;
