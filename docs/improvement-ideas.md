@@ -298,6 +298,7 @@
 | 17 | **SKA-N02** VIP 고객 인식 | ✅ 완료 (2026-03-02) | lib/vip.js + naver-monitor 신규예약 배지 표시 |
 | 18 | **SKA-N03** 재방문율·취소율 주간 리포트 | ✅ 완료 (2026-03-02) | rebecca.py get_weekly_kpi() + format_weekly_review KPI 섹션 |
 | 19 | **Phase 3-B** 국내외주식 사이클 | ✅ 완료 (2026-03-02) | aria KIS Yahoo OHLCV + domestic/overseas 사이클 |
+| 19.5 | **Phase 3 E2E 테스트 + 아리아 개선** | ✅ 완료 (2026-03-02) | 전 사이클 통과 + fetchOHLCV 재시도 + BB 버퍼존(95%) + 덱스터/registry 업데이트 |
 | 20 | **LU-KIS** KIS 모의투자 실주문 테스트 | 📋 대기 | dry_run=false 1주 테스트 (LU-039 선행) |
 | 21 | **SKA-N04** 성수기/비수기 가격 최적화 | ⏭️ 스킵 | 운영 데이터 충분 후 재검토 |
 | 22 | **CL-008** 아처 루나 성과 통합 | ✅ 90% 완료 | fetchLunaPerformance + 리포트 섹션 구현됨. 승률 대기 중 |
