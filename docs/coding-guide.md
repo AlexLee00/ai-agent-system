@@ -24,6 +24,82 @@
 | **DEV/OPS 분리** | `MODE=ops`일 때만 실제 실행. 기본은 DEV(관찰 전용) |
 | **외부 격리** | 텔레그램·RAG 등 외부 호출은 반드시 `try/catch` 격리 |
 
+### 솔루션화 원칙 (재사용성·공용성) ⭐ 핵심
+
+> **동일·유사 코드는 라이브러리화·모듈화하여 공용으로 관리한다.**
+> 솔루션 확장 시 개별 봇이 각자 구현하는 것이 아니라, 공유 라이브러리에서 옵션으로 선택하여 사용한다.
+
+#### 라이브러리화 원칙
+
+| 원칙 | 내용 | 예시 |
+|------|------|------|
+| **중복 제거** | 2개 이상 봇에서 동일 로직 → `lib/` 또는 `packages/core/`로 추출 | `telegram.js`, `secrets.js`, `health.js` |
+| **공용 변수** | 매직 넘버·반복 문자열 → 상수로 선언 후 재사용 | `const MAX_RETRIES = 5` |
+| **환경변수 공용화** | 봇 공통 제어 옵션은 환경변수로 노출 (하드코딩 금지) | `MODE`, `DRY_RUN`, `TELEGRAM_ENABLED` |
+| **공유 인프라 우선** | 새 기능 구현 전 `packages/core` 에 있는지 먼저 확인 | `packages/playwright-utils` |
+
+#### 모듈화 원칙
+
+```
+✅ 올바른 구조:
+  lib/
+  ├── secrets.js       ← 모든 봇 공통 시크릿 로더
+  ├── telegram.js      ← 텔레그램 발송 (봇 무관 공용)
+  ├── health.js        ← 헬스체크 (스카/루나 공용 패턴)
+  ├── mode.js          ← DEV/OPS 모드 분기 (공용)
+  └── error-tracker.js ← 연속 오류 카운터 (공용)
+
+❌ 금지 패턴:
+  각 봇이 sendTelegram 직접 구현 (복붙 금지)
+  하드코딩된 파일 경로 반복 사용
+  동일 함수를 봇마다 중복 작성
+```
+
+#### 옵션화 원칙
+
+> 기능을 ON/OFF 할 수 있도록 옵션(플래그·환경변수)으로 설계한다.
+> 하드코딩으로 기능을 고정하지 말고, 나중에 다른 봇·프로젝트에서 일부만 선택 사용할 수 있게 한다.
+
+```javascript
+// ✅ 옵션화 패턴 — 플래그로 기능 선택
+function createHealthChecker({
+  enableTelegram = true,   // 텔레그램 알림 ON/OFF
+  enableAutoFix  = false,  // 자동 수정 ON/OFF
+  reportOnly     = false,  // 무음 모드
+} = {}) { ... }
+
+// 봇마다 필요한 옵션만 선택
+const checker = createHealthChecker({ enableAutoFix: true });  // 덱스터
+const checker = createHealthChecker({ reportOnly: true });      // CI 테스트
+
+// ✅ CLI 플래그로 실행 시 옵션 선택 (args.js 사용)
+// node dexter.js --telegram --fix --full
+```
+
+```javascript
+// ❌ 금지 패턴 — 기능이 하드코딩됨
+function checkHealth() {
+  sendTelegram(...);  // 항상 텔레그램 발송, 끌 수 없음
+  autoFix(...);       // 항상 자동 수정, 테스트 불가
+}
+```
+
+#### 공용 라이브러리 현황
+
+| 라이브러리 | 위치 | 사용 봇 |
+|-----------|------|---------|
+| `telegram.js` | `lib/telegram.js` | 스카, 루나, 클로드팀 |
+| `secrets.js` | `lib/secrets.js` (봇별) | 각 봇 |
+| `health.js` | `lib/health.js` | 스카, 루나 |
+| `mode.js` | `lib/mode.js` | 스카, 루나 |
+| `error-tracker.js` | `lib/error-tracker.js` | 스카, 루나 |
+| `status.js` | `lib/status.js` | 루나 |
+| `args.js` | `lib/args.js` | 스카, 클로드팀 |
+| `playwright-utils` | `packages/playwright-utils/` | 스카 |
+| `core` | `packages/core/` | 모든 봇 |
+
+> **새 기능 추가 전 체크**: 유사 기능이 이미 lib/에 있는지 확인 → 없으면 추가 후 공용화
+
 ### 보안 원칙 (전체 봇 공통 필수)
 
 | 원칙 | 내용 |
@@ -1100,6 +1176,7 @@ try {
 | 2026-03-02 | **blockNaverSlot-avail소멸-보조확인-차단성공** — verifyBlockInGrid suspended만 확인하는 한계 발견 외 2건 |
 | 2026-03-02 | **audit-date-내일날짜-검증-완료** — auditToday dateOverride 파라미터 추가 외 2건 |
 | 2026-03-02 | **픽코취소-네이버해제-자동화-unblock-slot** — unblockNaverSlot avail-gone 버그 수정 (false positive return 제거) 외 3건 |
+| 2026-03-02 | **솔루션화 원칙 추가** — Section 0에 "솔루션화 원칙(재사용성·공용성)" 신규 추가 — 라이브러리화·모듈화·옵션화·공용 변수/환경변수 원칙 체계화 |
 | 2026-03-02 | **취소-테스트-성공-avail-gone-복구-확인** — 이승호 B룸 18:00 취소 테스트 성공 (픽코취소+네이버해제) 외 1건 |
 | 2026-03-02 | **예약 취소 E2E 완성 + TOOLS.md 취소/등록 도구 정비** — pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제) 완성 외 4건 |
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |

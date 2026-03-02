@@ -16,6 +16,17 @@ const fs    = require('fs');
 const path  = require('path');
 const { loadSecrets, isKisPaper, getKisAccount, getKisAppKey, getKisAppSecret } = require('./secrets');
 
+// ─── 해외거래소 코드 맵 (NASDAQ 기본값) ───────────────────────────────
+// secrets.kis_overseas_exchange 로 재정의 가능
+const DEFAULT_EXCHANGE_MAP = {
+  AAPL: 'NAS', TSLA: 'NAS', NVDA: 'NAS', MSFT: 'NAS', AMZN: 'NAS',
+  GOOG: 'NAS', GOOGL: 'NAS', META: 'NAS', NFLX: 'NAS', AMD: 'NAS',
+  INTC: 'NAS', QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS',
+  // NYSE 종목
+  JPM: 'NYS', BAC: 'NYS', GS: 'NYS', MS: 'NYS', WMT: 'NYS',
+  JNJ: 'NYS', PG: 'NYS', KO: 'NYS', DIS: 'NYS', IBM: 'NYS',
+};
+
 // 실전/모의투자 토큰 캐시 분리 (서로 다른 API 키이므로 토큰도 별개)
 function getTokenCachePath() {
   return isKisPaper() ? '/tmp/kis-token-paper.json' : '/tmp/kis-token.json';
@@ -23,9 +34,24 @@ function getTokenCachePath() {
 
 // ─── 기본 설정 ──────────────────────────────────────────────────────
 
-/** KIS 심볼 여부 판단 (6자리 숫자) */
+/** KIS 국내주식 심볼 여부 (6자리 숫자) */
 function isKisSymbol(symbol) {
   return /^\d{6}$/.test(symbol);
+}
+
+/** KIS 해외주식 심볼 여부 (알파벳 1~5자) */
+function isKisOverseasSymbol(symbol) {
+  return /^[A-Z]{1,5}$/.test(symbol);
+}
+
+/**
+ * 해외거래소 코드 반환 (OVRS_EXCG_CD)
+ * secrets.kis_overseas_exchange 재정의 가능, 없으면 기본 맵 참조, 없으면 NAS
+ */
+function getExchangeCode(symbol) {
+  const s   = loadSecrets();
+  const map = { ...DEFAULT_EXCHANGE_MAP, ...(s.kis_overseas_exchange || {}) };
+  return map[symbol] || 'NAS';
 }
 
 /** 실전 / 모의투자 호스트 */
@@ -480,13 +506,196 @@ async function marketSell(stockCode, quantity, dryRun = true) {
   return { orderId, qty: quantity, price, totalKrw: quantity * price, dryRun: false };
 }
 
+// ─── 해외주식 시세 ────────────────────────────────────────────────────
+
+/**
+ * 해외주식 현재가 조회 (KIS HHDFS00000300)
+ * @param {string} symbol  예) 'AAPL', 'TSLA'
+ * @returns {Promise<{price: number, name: string}>}
+ */
+async function fetchPriceOverseas(symbol) {
+  const token   = await getAccessToken();
+  const excd    = getExchangeCode(symbol);
+  const headers = makeHeaders('HHDFS00000300', token);
+
+  const res = await httpsRequest(
+    'GET',
+    getBaseHost(),
+    `/uapi/overseas-price/v1/quotations/price?AUTH=&EXCD=${excd}&SYMB=${symbol}`,
+    headers,
+    null
+  );
+
+  const out = res.output;
+  return {
+    price: parseFloat(out.last || out.stck_prpr || '0'),
+    name:  out.rsym || symbol,
+  };
+}
+
+/**
+ * 해외주식 일봉 OHLCV (Yahoo Finance 직접 — 심볼 변환 없음, AAPL→AAPL)
+ * KIS 해외 일봉 API는 100건 제한이어서 Yahoo Finance 우선 사용
+ * @param {string} symbol  예) 'AAPL'
+ * @param {number} limit
+ * @returns {Promise<Array>}  [[timestamp_ms, o, h, l, c, v], ...]  오래된 순
+ */
+function fetchOHLCVOverseas(symbol, limit = 150) {
+  return new Promise((resolve, reject) => {
+    const range   = limit <= 60 ? '3mo' : limit <= 130 ? '6mo' : '1y';
+    const urlPath = `/v8/finance/chart/${symbol}?range=${range}&interval=1d`;
+
+    const req = https.request(
+      {
+        hostname: 'query1.finance.yahoo.com',
+        path:     urlPath,
+        method:   'GET',
+        headers:  { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', d => raw += d);
+        res.on('end', () => {
+          try {
+            const json  = JSON.parse(raw);
+            const chart = json.chart?.result?.[0];
+            if (!chart) { reject(new Error(`Yahoo Finance 데이터 없음: ${symbol}`)); return; }
+
+            const timestamps = chart.timestamp || [];
+            const q          = chart.indicators.quote[0];
+            const result     = timestamps
+              .map((ts, i) => [
+                ts * 1000,
+                q.open[i]   || 0,
+                q.high[i]   || 0,
+                q.low[i]    || 0,
+                q.close[i]  || 0,
+                q.volume[i] || 0,
+              ])
+              .filter(c => c[4] > 0);
+
+            resolve(result.slice(-limit));
+          } catch (e) {
+            reject(new Error(`Yahoo Finance 파싱 실패 (${symbol}): ${e.message}`));
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Yahoo Finance 타임아웃')); });
+    req.end();
+  });
+}
+
+// ─── 해외주식 주문 ────────────────────────────────────────────────────
+
+/**
+ * 해외주식 지정가 매수 (현재가 지정 → 사실상 시장가)
+ * @param {string}  symbol     예) 'AAPL'
+ * @param {number}  amountUsd  매수 금액 (USD)
+ * @param {boolean} dryRun
+ * @returns {Promise<{orderId, qty, price, totalUsd, dryRun}>}
+ */
+async function marketBuyOverseas(symbol, amountUsd, dryRun = true) {
+  let price = 0;
+  try {
+    const info = await fetchPriceOverseas(symbol);
+    price = info.price;
+  } catch {
+    price = 0;
+  }
+
+  const qty = price > 0 ? Math.floor(amountUsd / price) : 0;
+  if (qty < 1) throw new Error(`해외주식 매수 수량 0 — 금액 부족 ($${amountUsd}, 현재가 $${price})`);
+
+  if (dryRun) {
+    console.log(`🧪 [드라이런 해외매수] ${symbol} ${qty}주 @ $${price}`);
+    return { orderId: `DRY-KIS-OVR-BUY-${Date.now()}`, qty, price, totalUsd: qty * price, dryRun: true };
+  }
+
+  const token               = await getAccessToken();
+  const { cano, acntPrdtCd } = getKisAccount();
+  const excd                = getExchangeCode(symbol);
+  const trId                = `${trPrefix()}TTT1002U`; // VTTT1002U(모의) / TTTT1002U(실전)
+
+  const body = {
+    CANO:          cano,
+    ACNT_PRDT_CD:  acntPrdtCd,
+    OVRS_EXCG_CD:  excd,
+    PDNO:          symbol,
+    ORD_DVSN:      '00',                      // 지정가 (KIS 해외는 지정가로 현재가 입력)
+    ORD_QTY:       String(qty),
+    OVRS_ORD_UNPR: price.toFixed(2),           // 현재가 지정 → 즉시 체결
+    ORD_SVR_DVSN:  '0',
+  };
+
+  const hashkey = await fetchHashkey(body);
+  const res = await httpsRequest('POST', getBaseHost(), '/uapi/overseas-stock/v1/trading/order', { ...makeHeaders(trId, token), hashkey }, body);
+  const orderId = res.output?.ODNO || `KIS-OVR-BUY-${Date.now()}`;
+
+  console.log(`✅ [KIS 해외매수] ${symbol} ${qty}주 주문번호: ${orderId}`);
+  return { orderId, qty, price, totalUsd: qty * price, dryRun: false };
+}
+
+/**
+ * 해외주식 지정가 매도 (현재가 지정 → 사실상 시장가)
+ * @param {string}  symbol    예) 'AAPL'
+ * @param {number}  quantity  매도 수량 (주)
+ * @param {boolean} dryRun
+ * @returns {Promise<{orderId, qty, price, totalUsd, dryRun}>}
+ */
+async function marketSellOverseas(symbol, quantity, dryRun = true) {
+  let price = 0;
+  try {
+    const info = await fetchPriceOverseas(symbol);
+    price = info.price;
+  } catch {
+    price = 0;
+  }
+
+  if (dryRun) {
+    console.log(`🧪 [드라이런 해외매도] ${symbol} ${quantity}주 @ $${price}`);
+    return { orderId: `DRY-KIS-OVR-SELL-${Date.now()}`, qty: quantity, price, totalUsd: quantity * price, dryRun: true };
+  }
+
+  const token               = await getAccessToken();
+  const { cano, acntPrdtCd } = getKisAccount();
+  const excd                = getExchangeCode(symbol);
+  const trId                = `${trPrefix()}TTT1006S`; // VTTT1006S(모의) / TTTT1006S(실전)
+
+  const body = {
+    CANO:          cano,
+    ACNT_PRDT_CD:  acntPrdtCd,
+    OVRS_EXCG_CD:  excd,
+    PDNO:          symbol,
+    ORD_DVSN:      '00',
+    ORD_QTY:       String(quantity),
+    OVRS_ORD_UNPR: price.toFixed(2),
+    ORD_SVR_DVSN:  '0',
+  };
+
+  const hashkey = await fetchHashkey(body);
+  const res = await httpsRequest('POST', getBaseHost(), '/uapi/overseas-stock/v1/trading/order', { ...makeHeaders(trId, token), hashkey }, body);
+  const orderId = res.output?.ODNO || `KIS-OVR-SELL-${Date.now()}`;
+
+  console.log(`✅ [KIS 해외매도] ${symbol} ${quantity}주 주문번호: ${orderId}`);
+  return { orderId, qty: quantity, price, totalUsd: quantity * price, dryRun: false };
+}
+
 module.exports = {
   isKisSymbol,
+  isKisOverseasSymbol,
+  getExchangeCode,
   getBaseHost,
   getAccessToken,
   fetchPrice,
+  fetchPriceOverseas,
   fetchOHLCV,
+  fetchOHLCVOverseas,
   fetchBalance,
   marketBuy,
   marketSell,
+  marketBuyOverseas,
+  marketSellOverseas,
 };
