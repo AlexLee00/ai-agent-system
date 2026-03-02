@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * markets/domestic.js — 국내주식 30분 사이클 (Skeleton)
  *
@@ -13,17 +11,17 @@
  * 실행: node markets/domestic.js [--symbols=005930,000660]
  */
 
-const db         = require('../shared/db');
-const { getKisSymbols, isKisMarketOpen, isPaperMode } = require('../shared/secrets');
-
-const { orchestrate }                    = require('../team/luna');
-const { processAllPendingKisSignals }    = require('../team/hanul');
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { getKisSymbols, isKisMarketOpen, isPaperMode } from '../shared/secrets.js';
+import { orchestrate } from '../team/luna.js';
+import { processAllPendingKisSignals } from '../team/hanul.js';
 
 /**
  * 국내주식 30분 사이클 실행 (Skeleton)
  * @param {string[]} symbols  ex) ['005930', '000660']
  */
-async function runDomesticCycle(symbols) {
+export async function runDomesticCycle(symbols) {
   const paperMode = isPaperMode();
   const tag       = paperMode ? '[PAPER]' : '[LIVE]';
 
@@ -60,17 +58,20 @@ async function runDomesticCycle(symbols) {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args    = process.argv.slice(2);
   const symArg  = args.find(a => a.startsWith('--symbols='));
   const symbols = symArg
     ? symArg.split('=')[1].split(',').map(s => s.trim())
     : getKisSymbols();
 
-  db.initSchema()
-    .then(() => runDomesticCycle(symbols))
-    .then(r => { console.log(`완료: ${r.length}개 신호`); process.exit(0); })
-    .catch(e => { console.error('❌:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    const r = await runDomesticCycle(symbols);
+    console.log(`완료: ${r.length}개 신호`);
+    process.exit(0);
+  } catch (e) {
+    console.error('❌:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = { runDomesticCycle };

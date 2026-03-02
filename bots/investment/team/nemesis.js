@@ -1,25 +1,20 @@
-'use strict';
-
 /**
  * team/nemesis.js — 네메시스 (리스크 매니저)
  *
  * 역할: 신호 평가 — 하드 규칙(v1) + LLM 리스크 평가(v2)
- * LLM: Claude Haiku
- *
- * bots/invest/src/risk-manager.js v2 재사용
- * (binance fetchBalance 의존 → binance 키 없으면 기본값 10000 USDT 사용)
+ * LLM: Groq Scout (paper) / Claude Haiku (live)
  *
  * 실행: node team/nemesis.js (단독 실행 불가 — luna.js에서 호출)
  */
 
-const db     = require('../shared/db');
-const { callHaiku, parseJSON } = require('../shared/llm');
-const { SIGNAL_STATUS, ACTIONS } = require('../shared/signal');
-const { notifyRiskRejection }    = require('../shared/report');
+import * as db from '../shared/db.js';
+import { callLLM, parseJSON } from '../shared/llm-client.js';
+import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
+import { notifyRiskRejection }    from '../shared/report.js';
 
 // ─── 하드 규칙 (v1) ─────────────────────────────────────────────────
 
-const RULES = {
+export const RULES = {
   MAX_SINGLE_POSITION_PCT: 0.20,  // 단일 포지션 최대 20%
   MAX_DAILY_LOSS_PCT:      0.05,  // 일일 손실 한도 5%
   MAX_OPEN_POSITIONS:      5,     // 최대 동시 포지션
@@ -30,14 +25,10 @@ const RULES = {
 
 // ─── v2: 변동성 조정 ────────────────────────────────────────────────
 
-/**
- * ATR 기반 변동성 조정 계수
- * aria.js의 4h 결과에서 ATR 가져오기 (없으면 1.0)
- */
 async function calcVolatilityFactor(symbol, atrRatio = null) {
   if (atrRatio === null) return 1.0;
-  if (atrRatio > 0.05) return 0.50;  // 고변동성
-  if (atrRatio > 0.03) return 0.75;  // 중변동성
+  if (atrRatio > 0.05) return 0.50;
+  if (atrRatio > 0.03) return 0.75;
   return 1.0;
 }
 
@@ -98,7 +89,7 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callHaiku(RISK_PROMPT, userMsg, 'nemesis', 256);
+  const raw    = await callLLM('nemesis', RISK_PROMPT, userMsg, 256);
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };
@@ -113,10 +104,10 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
  * @param {object} signal  { id, symbol, action, amount_usdt, confidence, reasoning }
  * @param {object} [opts]  { atrRatio, totalUsdt }
  */
-async function evaluateSignal(signal, opts = {}) {
+export async function evaluateSignal(signal, opts = {}) {
   const { symbol, action } = signal;
-  let amountUsdt = signal.amount_usdt || 100;
-  const totalUsdt = opts.totalUsdt || 10000; // 바이낸스 키 없으면 기본값
+  let amountUsdt   = signal.amount_usdt || 100;
+  const totalUsdt  = opts.totalUsdt || 10000;
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
@@ -137,7 +128,6 @@ async function evaluateSignal(signal, opts = {}) {
     }
   }
 
-  // 일일 손실 한도
   const todayPnl = await db.getTodayPnl();
   const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
   if (lossPct >= RULES.MAX_DAILY_LOSS_PCT) {
@@ -147,7 +137,6 @@ async function evaluateSignal(signal, opts = {}) {
     return { approved: false, reason };
   }
 
-  // 최대 포지션
   let positionCount = 0;
   if (action === ACTIONS.BUY) {
     const positions = await db.getAllPositions();
@@ -192,5 +181,3 @@ async function evaluateSignal(signal, opts = {}) {
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
   return { approved: true, adjustedAmount: amountUsdt };
 }
-
-module.exports = { evaluateSignal, RULES };

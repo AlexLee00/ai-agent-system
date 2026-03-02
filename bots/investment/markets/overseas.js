@@ -1,11 +1,9 @@
-'use strict';
-
 /**
  * markets/overseas.js — 해외주식(미국) 30분 사이클 (Skeleton)
  *
  * 파이프라인 (Phase 3-B에서 구현):
  *   1. 장중 여부 확인 (NYSE/NASDAQ, 서머타임 자동 반영)
- *   2. [병렬] 아리아(TA) + 헤르메스(Yahoo/MarketWatch) + 소피아(Reddit+AlphaVantage+xAI)
+ *   2. [병렬] 아리아(TA) + 헤르메스(Yahoo/MarketWatch) + 소피아(Reddit+AlphaVantage)
  *   3. 루나 오케스트레이터
  *   4. 한울 실행 (KIS 해외주식)
  *
@@ -13,17 +11,17 @@
  * 실행: node markets/overseas.js [--symbols=AAPL,TSLA,NVDA]
  */
 
-const db         = require('../shared/db');
-const { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } = require('../shared/secrets');
-
-const { orchestrate }                          = require('../team/luna');
-const { processAllPendingKisOverseasSignals }  = require('../team/hanul');
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
+import { orchestrate } from '../team/luna.js';
+import { processAllPendingKisOverseasSignals } from '../team/hanul.js';
 
 /**
  * 미국주식 30분 사이클 실행 (Skeleton)
  * @param {string[]} symbols  ex) ['AAPL', 'TSLA', 'NVDA']
  */
-async function runOverseasCycle(symbols) {
+export async function runOverseasCycle(symbols) {
   const paperMode = isPaperMode();
   const tag       = paperMode ? '[PAPER]' : '[LIVE]';
 
@@ -41,7 +39,7 @@ async function runOverseasCycle(symbols) {
   // TODO: Phase 3-B
   // 1. runAria(symbols, 'kis_overseas')
   // 2. runHermes(symbols, 'kis_overseas')
-  // 3. runSophia(symbols, 'kis_overseas') — xAI X Search 30분 주기 포함
+  // 3. runSophia(symbols, 'kis_overseas')
   // 4. orchestrate(symbols, 'kis_overseas')
   // 5. processAllPendingKisOverseasSignals()
 
@@ -60,17 +58,20 @@ async function runOverseasCycle(symbols) {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args    = process.argv.slice(2);
   const symArg  = args.find(a => a.startsWith('--symbols='));
   const symbols = symArg
     ? symArg.split('=')[1].split(',').map(s => s.trim())
     : getKisOverseasSymbols();
 
-  db.initSchema()
-    .then(() => runOverseasCycle(symbols))
-    .then(r => { console.log(`완료: ${r.length}개 신호`); process.exit(0); })
-    .catch(e => { console.error('❌:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    const r = await runOverseasCycle(symbols);
+    console.log(`완료: ${r.length}개 신호`);
+    process.exit(0);
+  } catch (e) {
+    console.error('❌:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = { runOverseasCycle };

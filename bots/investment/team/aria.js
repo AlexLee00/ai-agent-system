@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * team/aria.js — 아리아 (TA MTF 기술분석가)
  *
@@ -12,18 +10,17 @@
  * 실행: node team/aria.js --symbol=BTC/USDT
  */
 
-const db      = require('../shared/db');
-const { ANALYST_TYPES, ACTIONS } = require('../shared/signal');
+import ccxt from 'ccxt';
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 
 // ─── CCXT public-only 인스턴스 (API 키 없음 — OHLCV 전용) ───────────
-// API 키가 있는 CCXT는 loadMarkets 시 private 엔드포인트 호출 → 타임아웃 발생
-// OHLCV는 public 엔드포인트만 필요하므로 키 없는 인스턴스를 별도 생성
 
 let _publicExchange = null;
 
 function getPublicExchange() {
   if (_publicExchange) return _publicExchange;
-  const ccxt = require('ccxt');
   _publicExchange = new ccxt.binance({
     options: { defaultType: 'spot' },
   });
@@ -77,7 +74,7 @@ function ema(values, period) {
   return result;
 }
 
-function calcRSI(closes, period = 14) {
+export function calcRSI(closes, period = 14) {
   if (closes.length < period + 1) return null;
   const changes = closes.slice(1).map((v, i) => v - closes[i]);
   const gains   = changes.map(c => c > 0 ? c : 0);
@@ -92,7 +89,7 @@ function calcRSI(closes, period = 14) {
   return 100 - 100 / (1 + avgGain / avgLoss);
 }
 
-function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
+export function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
   if (closes.length < slow + signal) return null;
   const macdHistory = [];
   for (let i = slow - 1; i < closes.length; i++) {
@@ -106,7 +103,7 @@ function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
   return { macd: macdLine, signal: signalLine, histogram: macdLine - signalLine };
 }
 
-function calcBB(closes, period = 20, stdDev = 2) {
+export function calcBB(closes, period = 20, stdDev = 2) {
   if (closes.length < period) return null;
   const slice    = closes.slice(-period);
   const middle   = slice.reduce((a, b) => a + b) / period;
@@ -115,7 +112,7 @@ function calcBB(closes, period = 20, stdDev = 2) {
   return { upper: middle + stdDev * std, middle, lower: middle - stdDev * std, bandwidth: (2 * stdDev * std) / middle };
 }
 
-function calcMovingAverages(closes) {
+export function calcMovingAverages(closes) {
   return { ma5: sma(closes, 5), ma10: sma(closes, 10), ma20: sma(closes, 20), ma60: sma(closes, 60), ma120: sma(closes, 120) };
 }
 
@@ -132,7 +129,7 @@ function getMaArrangement(mas) {
   return 'mixed';
 }
 
-function calcStochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
+export function calcStochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
   if (closes.length < kPeriod + dPeriod) return null;
   const kValues = [];
   for (let i = kPeriod - 1; i < closes.length; i++) {
@@ -146,7 +143,7 @@ function calcStochastic(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
   return { k, d };
 }
 
-function calcATR(highs, lows, closes, period = 14) {
+export function calcATR(highs, lows, closes, period = 14) {
   if (closes.length < period + 1) return null;
   const trs = [];
   for (let i = 1; i < closes.length; i++) {
@@ -159,7 +156,7 @@ function calcATR(highs, lows, closes, period = 14) {
   return trs.slice(-period).reduce((a, b) => a + b) / period;
 }
 
-function analyzeVolume(volumes, period = 20) {
+export function analyzeVolume(volumes, period = 20) {
   if (volumes.length < period + 1) return null;
   const avg     = volumes.slice(-period - 1, -1).reduce((a, b) => a + b) / period;
   const current = volumes[volumes.length - 1];
@@ -170,15 +167,15 @@ function analyzeVolume(volumes, period = 20) {
 
 // ─── 신호 판단 ───────────────────────────────────────────────────────
 
-function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange = 'binance') {
+export function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange = 'binance') {
   const p       = MARKET_PARAMS[exchange] || MARKET_PARAMS.binance;
   const factors = [];
   let score = 0;
 
   if (rsi !== null) {
-    if (rsi < p.rsiOversold)       { score += 1.5; factors.push(`RSI ${rsi.toFixed(1)} 과매도`); }
-    else if (rsi > p.rsiOverbought){ score -= 1.5; factors.push(`RSI ${rsi.toFixed(1)} 과매수`); }
-    else                            { factors.push(`RSI ${rsi.toFixed(1)} 중립`); }
+    if (rsi < p.rsiOversold)        { score += 1.5; factors.push(`RSI ${rsi.toFixed(1)} 과매도`); }
+    else if (rsi > p.rsiOverbought) { score -= 1.5; factors.push(`RSI ${rsi.toFixed(1)} 과매수`); }
+    else                             { factors.push(`RSI ${rsi.toFixed(1)} 중립`); }
   }
 
   if (macd) {
@@ -195,13 +192,13 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exch
 
   if (mas) {
     const arr = getMaArrangement(mas);
-    if (arr === 'golden')      { score += 1.0; factors.push('이평 정배열'); }
-    else if (arr === 'dead')   { score -= 1.0; factors.push('이평 역배열'); }
-    else if (arr === 'mixed')  { factors.push('이평 혼조'); }
+    if (arr === 'golden')     { score += 1.0; factors.push('이평 정배열'); }
+    else if (arr === 'dead')  { score -= 1.0; factors.push('이평 역배열'); }
+    else if (arr === 'mixed') { factors.push('이평 혼조'); }
   }
 
   if (stoch) {
-    if (stoch.k < p.stochOversold && stoch.d < p.stochOversold)       { score += 0.5; factors.push(`스토캐스틱 과매도`); }
+    if (stoch.k < p.stochOversold && stoch.d < p.stochOversold)        { score += 0.5; factors.push(`스토캐스틱 과매도`); }
     else if (stoch.k > p.stochOverbought && stoch.d > p.stochOverbought){ score -= 0.5; factors.push(`스토캐스틱 과매수`); }
     else                                                                  { factors.push(`스토캐스틱 중립`); }
   }
@@ -231,7 +228,7 @@ function judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exch
 
 // ─── 단일 타임프레임 분석 ───────────────────────────────────────────
 
-async function analyzeTF(symbol, timeframe, exchange = 'binance') {
+export async function analyzeTF(symbol, timeframe, exchange = 'binance') {
   const ohlcv = await fetchOHLCV(symbol, timeframe, 150);
   const highs   = ohlcv.map(c => c[2]);
   const lows    = ohlcv.map(c => c[3]);
@@ -259,7 +256,7 @@ async function analyzeTF(symbol, timeframe, exchange = 'binance') {
  * @param {string} symbol
  * @returns {Promise<{signal, confidence, reasoning, score, weightedScore, tfResults, currentPrice}>}
  */
-async function analyzeCryptoMTF(symbol) {
+export async function analyzeCryptoMTF(symbol) {
   console.log(`\n📊 [아리아] ${symbol} MTF 분석 (5m/1h/4h)`);
 
   const tfResults = {};
@@ -272,7 +269,6 @@ async function analyzeCryptoMTF(symbol) {
     }
   }
 
-  // 가중치 합산
   let weightedScore = 0;
   let totalWeight   = 0;
   for (const { tf, weight } of CRYPTO_TIMEFRAMES) {
@@ -303,7 +299,6 @@ async function analyzeCryptoMTF(symbol) {
 
   console.log(`  → [아리아 MTF] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
 
-  // DB 저장
   try {
     await db.insertAnalysis({
       symbol,
@@ -326,17 +321,17 @@ async function analyzeCryptoMTF(symbol) {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args   = process.argv.slice(2);
   const symbol = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
 
-  db.initSchema()
-    .then(() => analyzeCryptoMTF(symbol))
-    .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
-    .catch(e => { console.error('❌ 아리아 오류:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    const r = await analyzeCryptoMTF(symbol);
+    console.log('\n결과:', JSON.stringify(r, null, 2));
+    process.exit(0);
+  } catch (e) {
+    console.error('❌ 아리아 오류:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = {
-  analyzeCryptoMTF, analyzeTF,
-  judgeSignal, calcRSI, calcMACD, calcBB, calcMovingAverages, calcStochastic, calcATR, analyzeVolume,
-};

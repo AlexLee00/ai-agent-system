@@ -1,17 +1,13 @@
-'use strict';
-
 /**
  * team/athena.js — 아테나 (약세 리서처)
  *
- * 역할: 매도 관점 근거 + 손절가 제시 (HedgeAgents 패턴)
- * LLM: Claude Haiku (anthropic)
- *
- * bots/invest/src/analysts/researchers.js 재사용
+ * 역할: 매도 관점 근거 + 손절가 제시
+ * LLM: Groq Scout (paper) / Groq Scout (live) — 비용 무료
  *
  * 실행: node team/athena.js (단독 실행 불가 — luna.js에서 호출)
  */
 
-const { callHaiku, parseJSON } = require('../shared/llm');
+import { callLLM, parseJSON } from '../shared/llm-client.js';
 
 const PROMPTS = {
   binance: `당신은 암호화폐 약세(Bearish) 리서처입니다.
@@ -47,14 +43,14 @@ const PROMPTS = {
  * @param {number|null} currentPrice
  * @param {string} exchange  'binance' | 'kis_overseas' | 'kis'
  */
-async function runBearResearcher(symbol, analysisSummary, currentPrice, exchange = 'binance') {
+export async function runBearResearcher(symbol, analysisSummary, currentPrice, exchange = 'binance') {
   const label    = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
   const unit     = exchange === 'kis' ? 'KRW' : 'USD';
   const priceStr = currentPrice ? `${currentPrice.toLocaleString()} ${unit}` : '정보 없음';
   const prompt   = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n약세 관점 투자 의견을 제시하세요.`;
 
-  const raw    = await callHaiku(prompt, userMsg, 'athena', 512);
+  const raw    = await callLLM('athena', prompt, userMsg, 512);
   const parsed = parseJSON(raw);
   if (!parsed) return null;
 
@@ -66,5 +62,3 @@ async function runBearResearcher(symbol, analysisSummary, currentPrice, exchange
     keyRisks:    parsed.key_risks || [],
   };
 }
-
-module.exports = { runBearResearcher };

@@ -1,21 +1,18 @@
-'use strict';
-
 /**
  * team/oracle.js — 오라클 (온체인·매크로 분석가)
  *
  * 역할: 온체인 + 파생상품 데이터 분석
- * LLM: Cerebras llama3.1-8b → Groq fallback
+ * LLM: Groq Scout (paper+live 모두 무료)
  * 소스: alternative.me (공포탐욕) + Binance Futures (펀딩비·L/S·OI)
- *
- * bots/invest/src/analysts/onchain-analyst.js 재사용
  *
  * 실행: node team/oracle.js --symbol=BTC/USDT
  */
 
-const https = require('https');
-const db    = require('../shared/db');
-const { callFreeLLM, parseJSON } = require('../shared/llm');
-const { ANALYST_TYPES, ACTIONS } = require('../shared/signal');
+import https from 'https';
+import * as db from '../shared/db.js';
+import { callLLM, parseJSON } from '../shared/llm-client.js';
+import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import { fileURLToPath } from 'url';
 
 // ─── 공개 API 수집 ──────────────────────────────────────────────────
 
@@ -35,7 +32,7 @@ function httpsGet(hostname, path) {
   });
 }
 
-async function fetchFearGreed() {
+export async function fetchFearGreed() {
   try {
     const data = await httpsGet('api.alternative.me', '/fng/?limit=1');
     const item = data?.data?.[0];
@@ -47,7 +44,7 @@ async function fetchFearGreed() {
   }
 }
 
-async function fetchFundingRate(symbol) {
+export async function fetchFundingRate(symbol) {
   try {
     const data = await httpsGet('fapi.binance.com', `/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
     const item = Array.isArray(data) ? data[0] : null;
@@ -59,7 +56,7 @@ async function fetchFundingRate(symbol) {
   }
 }
 
-async function fetchLongShortRatio(symbol) {
+export async function fetchLongShortRatio(symbol) {
   try {
     const data = await httpsGet(
       'fapi.binance.com',
@@ -78,7 +75,7 @@ async function fetchLongShortRatio(symbol) {
   }
 }
 
-async function fetchOpenInterest(symbol) {
+export async function fetchOpenInterest(symbol) {
   try {
     const data = await httpsGet('fapi.binance.com', `/fapi/v1/openInterest?symbol=${symbol}`);
     if (!data?.openInterest) return null;
@@ -96,11 +93,11 @@ function ruleBasedSignal(fearGreed, funding, lsRatio) {
   const factors = [];
 
   if (fearGreed) {
-    if (fearGreed.value <= 20)       { score += 1.5; factors.push(`극도의 공포 (${fearGreed.value})`); }
-    else if (fearGreed.value >= 80)  { score -= 1.5; factors.push(`극도의 탐욕 (${fearGreed.value})`); }
-    else if (fearGreed.value <= 40)  { score += 0.5; factors.push(`공포 (${fearGreed.value})`); }
-    else if (fearGreed.value >= 60)  { score -= 0.5; factors.push(`탐욕 (${fearGreed.value})`); }
-    else                              { factors.push(`중립 (${fearGreed.value})`); }
+    if (fearGreed.value <= 20)      { score += 1.5; factors.push(`극도의 공포 (${fearGreed.value})`); }
+    else if (fearGreed.value >= 80) { score -= 1.5; factors.push(`극도의 탐욕 (${fearGreed.value})`); }
+    else if (fearGreed.value <= 40) { score += 0.5; factors.push(`공포 (${fearGreed.value})`); }
+    else if (fearGreed.value >= 60) { score -= 0.5; factors.push(`탐욕 (${fearGreed.value})`); }
+    else                             { factors.push(`중립 (${fearGreed.value})`); }
   }
 
   if (funding) {
@@ -111,18 +108,14 @@ function ruleBasedSignal(fearGreed, funding, lsRatio) {
   }
 
   if (lsRatio) {
-    if (lsRatio.longShortRatio > 1.8)       { score -= 0.5; factors.push(`롱 과도 (${lsRatio.longShortRatio.toFixed(2)})`); }
-    else if (lsRatio.longShortRatio < 0.8)  { score += 0.5; factors.push(`숏 과도 (${lsRatio.longShortRatio.toFixed(2)})`); }
-    else                                     { factors.push(`L/S 균형 (${lsRatio.longShortRatio.toFixed(2)})`); }
+    if (lsRatio.longShortRatio > 1.8)      { score -= 0.5; factors.push(`롱 과도 (${lsRatio.longShortRatio.toFixed(2)})`); }
+    else if (lsRatio.longShortRatio < 0.8) { score += 0.5; factors.push(`숏 과도 (${lsRatio.longShortRatio.toFixed(2)})`); }
+    else                                    { factors.push(`L/S 균형 (${lsRatio.longShortRatio.toFixed(2)})`); }
   }
 
   const maxScore   = 3.0;
   const confidence = Math.min(Math.abs(score) / maxScore, 1);
-  let signal;
-  if (score >= 1.0)       signal = ACTIONS.BUY;
-  else if (score <= -1.0) signal = ACTIONS.SELL;
-  else                    signal = ACTIONS.HOLD;
-
+  const signal     = score >= 1.0 ? ACTIONS.BUY : score <= -1.0 ? ACTIONS.SELL : ACTIONS.HOLD;
   return { signal, confidence, reasoning: factors.join(' | '), score };
 }
 
@@ -143,11 +136,7 @@ const SYSTEM_PROMPT = `당신은 암호화폐 온체인·파생상품 시장 분
 
 // ─── 메인 분석 ─────────────────────────────────────────────────────
 
-/**
- * 온체인·파생상품 분석 + DB 저장
- * @param {string} symbol ex) 'BTC/USDT'
- */
-async function analyzeOnchain(symbol = 'BTC/USDT') {
+export async function analyzeOnchain(symbol = 'BTC/USDT') {
   const futureSymbol = symbol.replace('/', '');
   console.log(`\n🔗 [오라클] ${symbol} 온체인 데이터 수집 중...`);
 
@@ -163,8 +152,6 @@ async function analyzeOnchain(symbol = 'BTC/USDT') {
   console.log(`  Long/Short: ${lsRatio ? `${lsRatio.longShortRatio.toFixed(2)}` : 'N/A'}`);
   console.log(`  미결제약정: ${openInterest ? `${parseFloat(openInterest.openInterest).toLocaleString()}` : 'N/A'}`);
 
-  let signal, confidence, reasoning;
-
   const userMsg = [
     `심볼: ${symbol}`,
     fearGreed    ? `공포탐욕지수: ${fearGreed.value} (${fearGreed.classification})` : '',
@@ -173,8 +160,8 @@ async function analyzeOnchain(symbol = 'BTC/USDT') {
     openInterest ? `미결제약정: ${parseFloat(openInterest.openInterest).toLocaleString()} ${futureSymbol.replace('USDT', '')}` : '',
   ].filter(Boolean).join('\n');
 
-  // cerebras 8b → Groq 8b fallback (groqModel='llama-3.1-8b-instant')
-  const responseText = await callFreeLLM(SYSTEM_PROMPT, userMsg, 'llama3.1-8b', 'oracle', 'cerebras', 256, 'llama-3.1-8b-instant');
+  let signal, confidence, reasoning;
+  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 256);
   const parsed       = parseJSON(responseText);
 
   if (parsed?.action) {
@@ -207,7 +194,7 @@ async function analyzeOnchain(symbol = 'BTC/USDT') {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args   = process.argv.slice(2);
   const symbol = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
 
@@ -216,5 +203,3 @@ if (require.main === module) {
     .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
     .catch(e => { console.error('❌ 오라클 오류:', e.message); process.exit(1); });
 }
-
-module.exports = { analyzeOnchain, fetchFearGreed, fetchFundingRate, fetchLongShortRatio, fetchOpenInterest };

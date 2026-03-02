@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * team/hanul.js — 한울 (KIS 실행봇)
  *
@@ -18,33 +16,37 @@
  *       node team/hanul.js [--symbol=AAPL] [--action=BUY] [--amount=100]
  */
 
-const db       = require('../shared/db');
-const { loadSecrets, isPaperMode, isKisPaper } = require('../shared/secrets');
-const { SIGNAL_STATUS, ACTIONS } = require('../shared/signal');
-const { notifyTrade, notifyError } = require('../shared/report');
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
+import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
+import { notifyTrade, notifyError } from '../shared/report.js';
+
+const _require = createRequire(import.meta.url);
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
 /** 국내주식 심볼: 6자리 숫자 (예: 005930) */
-function isKisSymbol(symbol) {
+export function isKisSymbol(symbol) {
   return /^\d{6}$/.test(symbol);
 }
 
 /** 해외주식 심볼: 알파벳 1~5자 (예: AAPL, TSLA) */
-function isKisOverseasSymbol(symbol) {
+export function isKisOverseasSymbol(symbol) {
   return /^[A-Z]{1,5}$/.test(symbol);
 }
 
 // ─── KIS 리스크 규칙 ─────────────────────────────────────────────────
 
 const KIS_RULES = {
-  MIN_ORDER_KRW:   10_000,      // 국내주식 최소 주문금액 (원)
-  MAX_ORDER_KRW: 5_000_000,     // 국내주식 최대 단건 주문금액 (원)
+  MIN_ORDER_KRW:   10_000,
+  MAX_ORDER_KRW: 5_000_000,
 };
 
 const KIS_OVERSEAS_RULES = {
-  MIN_ORDER_USD:    10,         // 해외주식 최소 주문금액 (USD)
-  MAX_ORDER_USD: 1_000,         // 해외주식 최대 단건 주문금액 (USD)
+  MIN_ORDER_USD:    10,
+  MAX_ORDER_USD: 1_000,
 };
 
 async function checkKisRisk(signal) {
@@ -82,19 +84,15 @@ async function checkKisOverseasRisk(signal) {
 }
 
 // ─── KIS API (lazy load) ─────────────────────────────────────────────
-// Phase 3-A에서는 PAPER_MODE=true이므로 실제 KIS API 키가 없어도 동작
-// Phase 3-C에서 bots/invest/lib/kis.js 또는 신규 shared/kis.js로 교체
 
 let _kis = null;
 
 function getKis() {
   if (_kis) return _kis;
-  // Phase 3-A: bots/invest/lib/kis.js 재사용 시도, 없으면 모의 객체
   try {
-    _kis = require('../../invest/lib/kis');
+    _kis = _require('../../invest/lib/kis');
     console.log('  ℹ️ [한울] KIS lib 로드: bots/invest/lib/kis.js');
   } catch {
-    // 스탠드얼론 모의 KIS 객체
     _kis = {
       async marketBuy(symbol, amountKrw, dryRun) {
         return { qty: 1, price: amountKrw, totalKrw: amountKrw, dryRun: true };
@@ -120,7 +118,7 @@ function getKis() {
  * KIS 국내주식 단일 신호 실행
  * @param {object} signal  { id, symbol, action, amount_usdt(=amountKrw), confidence }
  */
-async function executeSignal(signal) {
+export async function executeSignal(signal) {
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
@@ -145,7 +143,7 @@ async function executeSignal(signal) {
         signalId, symbol, side: 'buy',
         amount:    order.qty,
         price:     order.price,
-        totalUsdt: order.totalKrw, // KRW 금액 (DB 컬럼 재사용)
+        totalUsdt: order.totalKrw,
         paper:     paperMode,
         exchange:  'kis',
       };
@@ -206,7 +204,7 @@ async function executeSignal(signal) {
  * KIS 해외주식 단일 신호 실행
  * @param {object} signal  { id, symbol, action, amount_usdt(=amountUsd), confidence }
  */
-async function executeOverseasSignal(signal) {
+export async function executeOverseasSignal(signal) {
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
@@ -289,7 +287,7 @@ async function executeOverseasSignal(signal) {
 /**
  * 대기 중인 KIS 국내주식 신호 전체 처리
  */
-async function processAllPendingKisSignals() {
+export async function processAllPendingKisSignals() {
   const signals = await db.getPendingSignals('kis');
   if (signals.length === 0) { console.log('[한울] 대기 KIS 국내 신호 없음'); return []; }
   console.log(`[한울] ${signals.length}개 KIS 국내 신호 처리 시작`);
@@ -304,7 +302,7 @@ async function processAllPendingKisSignals() {
 /**
  * 대기 중인 KIS 해외주식 신호 전체 처리
  */
-async function processAllPendingKisOverseasSignals() {
+export async function processAllPendingKisOverseasSignals() {
   const signals = await db.getPendingSignals('kis_overseas');
   if (signals.length === 0) { console.log('[한울] 대기 KIS 해외 신호 없음'); return []; }
   console.log(`[한울] ${signals.length}개 KIS 해외 신호 처리 시작`);
@@ -317,45 +315,44 @@ async function processAllPendingKisOverseasSignals() {
 }
 
 // CLI 실행
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args      = process.argv.slice(2);
   const actionArg = args.find(a => a.startsWith('--action='))?.split('=')[1];
   const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1];
   const amountArg = args.find(a => a.startsWith('--amount='))?.split('=')[1];
 
-  db.initSchema()
-    .then(() => {
-      if (actionArg && symbolArg) {
-        const sym = symbolArg.toUpperCase();
-        const isOverseas = isKisOverseasSymbol(sym);
-        const isDomestic = isKisSymbol(sym);
-        if (!isDomestic && !isOverseas) {
-          console.error(`❌ KIS 심볼 아님: ${sym} (국내: 6자리 숫자, 해외: 알파벳 1~5자)`);
-          process.exit(1);
-        }
-        const mockSignal = {
-          id:          `CLI-HAN-${Date.now()}`,
-          symbol:      sym,
-          action:      actionArg.toUpperCase(),
-          amount_usdt: parseFloat(amountArg || (isOverseas ? '100' : '500000')),
-          confidence:  0.7,
-          reasoning:   'CLI 수동 실행',
-          exchange:    isOverseas ? 'kis_overseas' : 'kis',
-        };
-        return isOverseas ? executeOverseasSignal(mockSignal) : executeSignal(mockSignal);
+  await db.initSchema();
+  try {
+    let r;
+    if (actionArg && symbolArg) {
+      const sym        = symbolArg.toUpperCase();
+      const isOverseas = isKisOverseasSymbol(sym);
+      const isDomestic = isKisSymbol(sym);
+      if (!isDomestic && !isOverseas) {
+        console.error(`❌ KIS 심볼 아님: ${sym} (국내: 6자리 숫자, 해외: 알파벳 1~5자)`);
+        process.exit(1);
       }
-      // 자동: 국내 + 해외 병렬 처리
-      return Promise.all([processAllPendingKisSignals(), processAllPendingKisOverseasSignals()]);
-    })
-    .then(r => { console.log('완료:', JSON.stringify(r)); process.exit(0); })
-    .catch(e => { console.error('❌ 한울 오류:', e.message); process.exit(1); });
+      const mockSignal = {
+        id:          `CLI-HAN-${Date.now()}`,
+        symbol:      sym,
+        action:      actionArg.toUpperCase(),
+        amount_usdt: parseFloat(amountArg || (isOverseas ? '100' : '500000')),
+        confidence:  0.7,
+        reasoning:   'CLI 수동 실행',
+        exchange:    isOverseas ? 'kis_overseas' : 'kis',
+      };
+      r = isOverseas ? await executeOverseasSignal(mockSignal) : await executeSignal(mockSignal);
+    } else {
+      const [domestic, overseas] = await Promise.all([
+        processAllPendingKisSignals(),
+        processAllPendingKisOverseasSignals(),
+      ]);
+      r = { domestic, overseas };
+    }
+    console.log('완료:', JSON.stringify(r));
+    process.exit(0);
+  } catch (e) {
+    console.error('❌ 한울 오류:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = {
-  executeSignal,
-  executeOverseasSignal,
-  processAllPendingKisSignals,
-  processAllPendingKisOverseasSignals,
-  isKisSymbol,
-  isKisOverseasSymbol,
-};

@@ -1,17 +1,16 @@
-'use strict';
-
 /**
- * shared/db.js — DuckDB 래퍼 (Phase 3-A 전용)
+ * shared/db.js — DuckDB 래퍼 (Phase 3-A ESM)
  *
  * 경로: bots/investment/db/investment.duckdb
  * 테이블: analysis, signals, trades, positions
- * bots/invest/lib/db.js 패턴 동일 + exchange 컬럼 기본 포함
  */
 
-const path   = require('path');
-const duckdb = require('duckdb');
+import { join, dirname } from 'path';
+import { fileURLToPath }  from 'url';
+import duckdb             from 'duckdb';
 
-const DB_PATH = path.join(__dirname, '..', 'db', 'investment.duckdb');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DB_PATH   = join(__dirname, '..', 'db', 'investment.duckdb');
 
 let _db   = null;
 let _conn = null;
@@ -24,7 +23,7 @@ function getConn() {
 }
 
 /** Promise 래핑 query */
-function query(sql, params = []) {
+export function query(sql, params = []) {
   return new Promise((resolve, reject) => {
     const conn = getConn();
     conn.all(sql, ...params, (err, rows) => {
@@ -35,7 +34,7 @@ function query(sql, params = []) {
 }
 
 /** Promise 래핑 run (INSERT / UPDATE / DELETE) */
-function run(sql, params = []) {
+export function run(sql, params = []) {
   return new Promise((resolve, reject) => {
     const conn = getConn();
     conn.run(sql, ...params, (err) => {
@@ -47,8 +46,7 @@ function run(sql, params = []) {
 
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
 
-async function initSchema() {
-  // 마이그레이션 테이블
+export async function initSchema() {
   await run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
@@ -57,7 +55,6 @@ async function initSchema() {
     )
   `);
 
-  // 분석가 결과
   await run(`
     CREATE TABLE IF NOT EXISTS analysis (
       id         VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
@@ -72,7 +69,6 @@ async function initSchema() {
     )
   `);
 
-  // 매매 신호
   await run(`
     CREATE TABLE IF NOT EXISTS signals (
       id          VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
@@ -87,7 +83,6 @@ async function initSchema() {
     )
   `);
 
-  // 실행된 거래 (PAPER 포함)
   await run(`
     CREATE TABLE IF NOT EXISTS trades (
       id          VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
@@ -103,7 +98,6 @@ async function initSchema() {
     )
   `);
 
-  // 현재 포지션
   await run(`
     CREATE TABLE IF NOT EXISTS positions (
       symbol         VARCHAR PRIMARY KEY,
@@ -115,7 +109,6 @@ async function initSchema() {
     )
   `);
 
-  // 초기 마이그레이션 기록
   try {
     const rows = await query(`SELECT version FROM schema_migrations WHERE version = 1`);
     if (rows.length === 0) {
@@ -128,7 +121,7 @@ async function initSchema() {
 
 // ─── analysis ───────────────────────────────────────────────────────
 
-async function insertAnalysis({ symbol, analyst, signal, confidence, reasoning, metadata, exchange = 'binance' }) {
+export async function insertAnalysis({ symbol, analyst, signal, confidence, reasoning, metadata, exchange = 'binance' }) {
   await run(
     `INSERT INTO analysis (symbol, analyst, signal, confidence, reasoning, metadata, exchange)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -137,7 +130,7 @@ async function insertAnalysis({ symbol, analyst, signal, confidence, reasoning, 
   );
 }
 
-async function getRecentAnalysis(symbol, minutesBack = 30) {
+export async function getRecentAnalysis(symbol, minutesBack = 30) {
   return query(
     `SELECT * FROM analysis
      WHERE symbol = ? AND created_at > now() - INTERVAL '${minutesBack} minutes'
@@ -148,7 +141,7 @@ async function getRecentAnalysis(symbol, minutesBack = 30) {
 
 // ─── signals ────────────────────────────────────────────────────────
 
-async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance' }) {
+export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance' }) {
   const rows = await query(
     `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange)
      VALUES (?, ?, ?, ?, ?, 'pending', ?)
@@ -158,11 +151,11 @@ async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning,
   return rows[0]?.id;
 }
 
-async function updateSignalStatus(id, status) {
+export async function updateSignalStatus(id, status) {
   await run(`UPDATE signals SET status = ? WHERE id = ?`, [status, id]);
 }
 
-async function getPendingSignals(exchange) {
+export async function getPendingSignals(exchange) {
   if (exchange) {
     return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = ? ORDER BY created_at ASC`, [exchange]);
   }
@@ -171,7 +164,7 @@ async function getPendingSignals(exchange) {
 
 // ─── trades ─────────────────────────────────────────────────────────
 
-async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance' }) {
+export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance' }) {
   await run(
     `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -179,7 +172,7 @@ async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, p
   );
 }
 
-async function getTradeHistory(symbol, limit = 50) {
+export async function getTradeHistory(symbol, limit = 50) {
   const params = symbol ? [symbol] : [];
   const where  = symbol ? 'WHERE symbol = ?' : '';
   return query(`SELECT * FROM trades ${where} ORDER BY executed_at DESC LIMIT ${limit}`, params);
@@ -187,7 +180,7 @@ async function getTradeHistory(symbol, limit = 50) {
 
 // ─── positions ──────────────────────────────────────────────────────
 
-async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance' }) {
+export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance' }) {
   await run(
     `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, exchange, updated_at)
      VALUES (?, ?, ?, ?, ?, now())
@@ -201,22 +194,22 @@ async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchang
   );
 }
 
-async function getPosition(symbol) {
+export async function getPosition(symbol) {
   const rows = await query(`SELECT * FROM positions WHERE symbol = ?`, [symbol]);
   return rows[0] || null;
 }
 
-async function getAllPositions() {
+export async function getAllPositions() {
   return query(`SELECT * FROM positions WHERE amount > 0 ORDER BY symbol`);
 }
 
-async function deletePosition(symbol) {
+export async function deletePosition(symbol) {
   await run(`DELETE FROM positions WHERE symbol = ?`, [symbol]);
 }
 
 // ─── 집계 ───────────────────────────────────────────────────────────
 
-async function getTodayPnl() {
+export async function getTodayPnl() {
   const rows = await query(`
     SELECT
       SUM(CASE WHEN side='sell' THEN total_usdt ELSE -total_usdt END) AS pnl,
@@ -227,12 +220,12 @@ async function getTodayPnl() {
   return rows[0] || { pnl: 0, trade_count: 0 };
 }
 
-function close() {
+export function close() {
   if (_conn) { _conn.close(); _conn = null; }
   if (_db)   { _db.close();   _db   = null; }
 }
 
-module.exports = {
+export default {
   query, run, initSchema,
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, getPendingSignals,
