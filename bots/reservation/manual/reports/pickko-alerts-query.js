@@ -13,8 +13,8 @@
  *   { success: true, count: N, message: "포맷된 결과" }
  */
 
-const { parseArgs } = require('../lib/args');
-const { getDb } = require('../lib/db');
+const { parseArgs } = require('../../lib/args');
+const { getDb } = require('../../lib/db');
 
 const ARGS   = parseArgs(process.argv);
 const hours  = parseInt(ARGS['hours'] || '24', 10);

@@ -16,17 +16,17 @@
  */
 
 const puppeteer = require('puppeteer');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
-const { sendTelegram } = require('../lib/telegram');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
+const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
+const { sendTelegram } = require('../../lib/telegram');
 const {
   getAllNaverKeys, getDb,
   upsertDailySummary, getUnconfirmedSummaryBefore,
-} = require('../lib/db');
-const { fetchDailyDetail } = require('../lib/pickko-stats');
-const { maskName } = require('../lib/formatting');
+} = require('../../lib/db');
+const { fetchDailyDetail } = require('../../lib/pickko-stats');
+const { maskName } = require('../../lib/formatting');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;

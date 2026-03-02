@@ -10,26 +10,27 @@
 
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
-const { transformAndNormalizeData } = require('../lib/validation');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { sendTelegram: sendTelegramDirect, flushPendingTelegrams } = require('../lib/telegram');
-const { createErrorTracker } = require('../lib/error-tracker');
-const { printModeBanner, getModeSuffix } = require('../lib/mode');
-const { recordHeartbeat, markStopped } = require('../lib/status');
-const { registerShutdownHandlers, isShuttingDown } = require('../lib/health');
+const { transformAndNormalizeData } = require('../../lib/validation');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { sendTelegram: sendTelegramDirect, flushPendingTelegrams } = require('../../lib/telegram');
+const { createErrorTracker } = require('../../lib/error-tracker');
+const { printModeBanner, getModeSuffix } = require('../../lib/mode');
+const { recordHeartbeat, markStopped } = require('../../lib/status');
+const { registerShutdownHandlers, isShuttingDown } = require('../../lib/health');
 const {
   isSeenId, markSeen, addReservation, updateReservation, getReservation,
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
   getTodayStats,
-} = require('../lib/db');
+} = require('../../lib/db');
 const fs = require('fs');
 const path = require('path');
-const { maskPhone, maskName } = require('../lib/formatting');
-const { saveJson } = require('../lib/files');
-const { formatVipBadge } = require('../lib/vip');
+const { maskPhone, maskName } = require('../../lib/formatting');
+const { saveJson } = require('../../lib/files');
+const { formatVipBadge } = require('../../lib/vip');
+const { updateAgentState } = require('../../lib/state-bus');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -745,6 +746,7 @@ async function monitorBookings() {
       checkCount++;
       const cycleStart = Date.now();
       recordHeartbeat({ status: 'running' }); // 사이클 시작
+      updateAgentState('andy', 'running', `모니터링 사이클 #${checkCount}`);
 
       try {
         // 매 회차 작업 탭을 홈으로 유도
@@ -1267,6 +1269,7 @@ async function monitorBookings() {
           }
         }
 
+        updateAgentState('andy', 'idle');
         // 사이클 소요 시간 기반 대기 (타임아웃 누적으로 인한 주기 밀림 방지)
         const cycleElapsed = Date.now() - cycleStart;
         const sleepMs = Math.max(0, MONITOR_INTERVAL - cycleElapsed);
@@ -1322,6 +1325,7 @@ async function monitorBookings() {
     
   } catch (err) {
     log(`❌ 치명적 오류: ${err.message}`);
+    updateAgentState('andy', 'error', null, err.message);
   } finally {
     const isHeadless = process.env.NAVER_HEADLESS !== '0';
     if (browser) {

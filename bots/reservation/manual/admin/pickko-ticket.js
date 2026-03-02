@@ -40,11 +40,11 @@
  */
 
 const puppeteer = require('puppeteer');
-const { delay, log } = require('../lib/utils');
-const { loadSecrets } = require('../lib/secrets');
-const { parseArgs } = require('../lib/args');
-const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko, findPickkoMember } = require('../lib/pickko');
+const { delay, log } = require('../../lib/utils');
+const { loadSecrets } = require('../../lib/secrets');
+const { parseArgs } = require('../../lib/args');
+const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
+const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -72,8 +72,8 @@ const VALID_TICKETS = [
 
 // ── 출력 헬퍼 ────────────────────────────────────────────────────────────
 
-const { outputResult, fail } = require('../lib/cli');
-const { maskPhone, maskName } = require('../lib/formatting');
+const { outputResult, fail } = require('../../lib/cli');
+const { maskPhone, maskName } = require('../../lib/formatting');
 
 // ── 입력 검증 ────────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/src/run-kiosk-monitor.sh</string>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/run-kiosk-monitor.sh</string>
     </array>
 
     <!-- 10분 주기 실행 (매시 0, 10, 20, 30, 40, 50분) -->
