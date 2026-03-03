@@ -807,3 +807,58 @@
 | 2026-02-28 | ETL 버그 수정 + OpenClaw 업데이트 + ska DB 백필 |
 | 2026-03-01 | 루나팀 Phase 0 드라이런 + 덱스터 + 아처 + KIS 크리스 구현 |
 | 2026-03-03 | 스카팀 고도화 v3.0 + 루나팀 크립토 OPS 전환 + 실행체인 버그 수정 + ETH→USDT |
+| 2026-03-04 | RC 세션 폭발 버그 수정 + tmux/RC 전체 제거 + 루나팀 Phase 3 고도화 + DuckDB WAL 버그 수정 + 암호화폐 OPS 전환 |
+
+---
+
+## 2026-03-04
+
+### 긴급 — claude remote-control 세션 폭발 사고 (2,407건)
+- `ai.agent.cc-remote` launchd → `cc-remote-start.sh` (while true 루프) 실행 중
+- `claude remote-control` 내부 버그: `--sdk-url <session_id>` 노드 플래그 전달 → 즉시 실패 → 10초 후 재시작 루프
+- 발견 당시 2,407개 세션 생성됨
+- 대응: PID 65530 종료 → launchd unload → plist + script 삭제
+
+### tmux / Termius / Remote Control 전체 제거
+- 삭제 항목: `ai.agent.cc-remote.plist`, `ai.agent.tmux.plist`, `ai.ska.tmux.plist`
+- 삭제 스크립트: `cc-remote-start.sh`, `update-rc-context.sh`, `tmux-start.sh`, `~/start-ska-session.sh`
+- 삭제 파일: `RC_CONTEXT.md`, `config/tmux-windows.json`
+- `CLAUDE.md` Remote Control 섹션 제거, `~/.zshrc` alias 제거
+- `bots/claude/lib/checks/bots.js` `ai.ska.tmux` 체크 제거
+
+### 루나팀 Phase 3 고도화 v2 (TASK 4~9)
+- **TASK 4**: `launchd/ai.investment.argos.plist` 생성 (6시간 주기, 아르고스 전략 수집)
+- **TASK 5**: `team/aria.js` — `isMarketOpen(exchange)` export + KIS/KIS Overseas 장중 가드
+- **TASK 8**: `shared/cost-tracker.js` — `reportToTelegram()` 메서드 클래스 내부 이동 (class 외부 선언 버그 수정)
+- **TASK 9**: `team/chronos.js` — CJS → ESM 전환 + `chronosGuard()` 추가
+
+### DuckDB WAL 재생 버그 수정
+- 증상: `[Error: Connection was never established]` — DB 오픈 시마다 실패
+- 원인: `ALTER TABLE signals ADD COLUMN` WAL 진입을 DuckDB 1.4.4가 재생 불가
+  - 버그 메시지: `Calling DatabaseManager::GetDefaultDatabase with no default database set`
+- 해결: `shared/db.js` `initSchema()` 끝에 `CHECKPOINT` 추가 → WAL을 메인 DB로 즉시 플러시
+- 검증: 단독 initSchema + 연속 2회 오픈 모두 성공
+
+### E2E 전체 테스트 통과
+- crypto: 6.8초 ✅ | domestic: 5.7초 ✅ (장 마감, 아리아 스킵 정상) | overseas: 9.2초 ✅
+
+### 암호화폐 OPS 전환 (LIVE 실거래 테스트)
+- `PAPER_MODE=false node markets/crypto.js --force` 실행
+- 결과: BTC/USDT BUY 68% → 네메시스 $100 승인 → 헤파이스토스 실행 시도 → 잔고 부족 ($14.02)
+- 파이프라인 완전 정상 동작 확인 (Haiku LLM 사용 확인)
+
+### LLM 정책 v2.2 — Groq 전용
+- 사용자 지시: "llm은 groq 유지한다"
+- `shared/llm-client.js` 변경: `HAIKU_AGENTS` 제거, 전 모드 Groq Scout 전용
+- 결과: LIVE 모드도 Groq (무료, $0/월)
+
+### 투자 리포트 시스템 (team/reporter.js)
+- 바이낸스 실잔고 + 모의 포지션 미실현 PnL + 신호 통계 + LLM 비용
+- `npm run report` / `npm run report:tg`
+- 첫 리포트 텔레그램 발송 완료
+
+### 커밋 내역
+- `0395e8d` Phase 3 고도화 (TASK4-9): argos plist, aria 시장가드, chronos ESM, cost-tracker
+- `fa273f6` DuckDB WAL 수정 + cost-tracker reportToTelegram 클래스 내부 이동
+- `915859c` LLM 정책 v2.2 — Groq 전용
+- `d603831` 투자 리포트 시스템 (reporter.js)
