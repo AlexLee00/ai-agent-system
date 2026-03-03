@@ -1,17 +1,18 @@
 {
-  "lastRun": "2026-03-02T07:01:12.382Z",
+  "lastRun": "2026-03-03",
   "versions": {
-    "ccxt": "v4.5.40",
-    "duckdb": "v1.4.4",
-    "better-sqlite3": "v12.6.2",
-    "playwright": "v1.58.2",
-    "anthropic-sdk": "v0.84.0",
-    "groq-node": "v1.1.0",
-    "gemini-js": "v1.43.0"
+    "@anthropic-ai/sdk": "0.78.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "groq-sdk": "0.37.0",
+    "duckdb": "1.4.4",
+    "better-sqlite3": "12.6.2",
+    "ccxt": "4.5.40",
+    "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "공포탐욕지수 10(극단적 공포) 속 BTC/ETH 동반 하락세 지속. 루나팀 7일 신호가 SELL 50건 압도적 우세였으나 최근 로그에서는 BUY 7/HOLD 14로 반전 조짐. 루나팀·스카팀 모두 상태값 undefined로 모니터링 파이프라인 점검 필요. gemini-js v1.43.0, anthropic-sdk v0.84.0 등 LLM SDK 신규 릴리즈 다수 확인.",
-    "priority_count": 7,
-    "action_count": 7
+    "summary": "이번 주 npm 패키지는 전반적으로 최신 상태이나 tar의 Unicode Ligature 경로 충돌 Race Condition을 포함한 high 심각도 취약점 5건이 발견되어 즉시 npm audit fix 및 수동 검토가 필요합니다. MCP 생태계 관련 HumanMCP 벤치마크 논문이 발표되어 현재 사용 중인 MCP SDK의 툴 검색 품질을 정량 평가할 수 있는 기회가 생겼습니다. GGML/llama.cpp의 HuggingFace 합류로 로컬 AI 추론 생태계 안정성이 높아졌으며, 멀티 프로바이더 및 온프레미스 폴백 전략 수립 시 긍정적으로 참고할 수 있습니다.",
+    "patchCount": 3,
+    "securityCount": 4,
+    "llmApiCount": 3
   }
 }
