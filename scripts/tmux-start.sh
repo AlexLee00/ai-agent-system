@@ -28,16 +28,16 @@ else
   tmux new-session -d -s "$SESSION" -n "init"
 fi
 
-# config에서 창 목록 읽어서 생성
+# config에서 창 목록 읽어서 생성 (탭 구분자)
 WINDOWS=$(node -e "
   const c = require('$CONFIG');
   c.windows.forEach(w => {
-    console.log([w.name, w.dir, w.init_cmd, w.status].join('|||'));
+    console.log([w.name, w.dir, w.init_cmd, w.status].join('\t'));
   });
 ")
 
 FIRST=true
-while IFS='|||' read -r name dir cmd status; do
+while IFS=$'\t' read -r name dir cmd status; do
   FULL_DIR="$PROJECT_DIR/$dir"
   [ "$dir" = "." ] && FULL_DIR="$PROJECT_DIR"
 
