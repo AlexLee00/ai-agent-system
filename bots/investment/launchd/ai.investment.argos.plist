@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.investment.argos</string>
+
+  <!-- 아르고스: Reddit 외부 전략 수집 (6시간 주기) -->
+  <!-- 설치: cp launchd/ai.investment.argos.plist ~/Library/LaunchAgents/ -->
+  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.argos.plist -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/team/argos.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+
+  <!-- 6시간 주기 (전략 수집) -->
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/investment-argos.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/investment-argos.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+
+  <!-- 부팅 시 자동 실행 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

@@ -17,6 +17,25 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import { isKisMarketOpen, isKisOverseasMarketOpen } from '../shared/secrets.js';
+
+// ─── 장 시간 체크 ────────────────────────────────────────────────────
+
+/**
+ * 주어진 exchange가 현재 장 시간인지 반환
+ * @param {'binance'|'kis'|'kis_overseas'} exchange
+ * @returns {{ open: boolean, reason: string }}
+ */
+export function isMarketOpen(exchange) {
+  if (exchange === 'binance') return { open: true, reason: '암호화폐 24/7' };
+  if (exchange === 'kis')          return isKisMarketOpen()
+    ? { open: true,  reason: 'KST 09:00~15:30 장중' }
+    : { open: false, reason: '국내주식 장 마감 시간 외' };
+  if (exchange === 'kis_overseas') return isKisOverseasMarketOpen()
+    ? { open: true,  reason: 'NYSE/NASDAQ 장중' }
+    : { open: false, reason: '미국주식 장 마감 시간 외' };
+  return { open: true, reason: '알 수 없는 거래소 — 분석 허용' };
+}
 
 // ─── CCXT public-only 인스턴스 (API 키 없음 — OHLCV 전용) ───────────
 
@@ -504,17 +523,33 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
 
 /**
  * 국내주식 MTF 분석 (일봉 65% + 1시간봉 35%)
- * @param {string} symbol  6자리 종목코드 (예: '005930')
+ * @param {string} symbol   6자리 종목코드 (예: '005930')
+ * @param {boolean} force   장 마감 시간 외에도 강제 실행
  */
-export async function analyzeKisMTF(symbol) {
+export async function analyzeKisMTF(symbol, force = false) {
+  if (!force) {
+    const mkt = isMarketOpen('kis');
+    if (!mkt.open) {
+      console.log(`  ⏰ [아리아] ${symbol} 분석 스킵 — ${mkt.reason}`);
+      return null;
+    }
+  }
   return analyzeStockMTF(symbol, 'kis', KIS_TIMEFRAMES, '국내주식');
 }
 
 /**
  * 미국주식 MTF 분석 (일봉 60% + 1시간봉 40%)
- * @param {string} symbol  Yahoo 티커 (예: 'AAPL', 'TSLA')
+ * @param {string} symbol   Yahoo 티커 (예: 'AAPL', 'TSLA')
+ * @param {boolean} force   장 마감 시간 외에도 강제 실행
  */
-export async function analyzeKisOverseasMTF(symbol) {
+export async function analyzeKisOverseasMTF(symbol, force = false) {
+  if (!force) {
+    const mkt = isMarketOpen('kis_overseas');
+    if (!mkt.open) {
+      console.log(`  ⏰ [아리아] ${symbol} 분석 스킵 — ${mkt.reason}`);
+      return null;
+    }
+  }
   return analyzeStockMTF(symbol, 'kis_overseas', KIS_OVERSEAS_TIMEFRAMES, '미국주식');
 }
 

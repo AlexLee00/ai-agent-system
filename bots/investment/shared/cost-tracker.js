@@ -183,6 +183,29 @@ class CostTracker extends EventEmitter {
   }
 }
 
+  /**
+   * 오늘 비용 요약을 텔레그램으로 전송
+   * @param {Function} sendTelegramFn  report.js의 sendTelegram 함수
+   */
+  async reportToTelegram(sendTelegramFn) {
+    const s    = this.getToday();
+    const mode = s.paperMode ? '📄 PAPER' : '💸 LIVE';
+    const msg  = [
+      `💰 *루나팀 LLM 비용 리포트*`,
+      `모드: ${mode}`,
+      ``,
+      `📅 오늘 (${s.date})`,
+      `  사용: $${s.usage.toFixed(4)} / $${s.dailyBudget.toFixed(2)} (${(s.usage / s.dailyBudget * 100).toFixed(1)}%)`,
+      `  잔여: $${s.remaining.toFixed(4)}`,
+      ``,
+      `📆 이번 달 (${s.month})`,
+      `  사용: $${s.monthUsage.toFixed(4)} / $${s.monthlyBudget.toFixed(2)} (${(s.monthUsage / s.monthlyBudget * 100).toFixed(1)}%)`,
+      `  잔여: $${s.monthRemaining.toFixed(4)}`,
+    ].join('\n');
+    await sendTelegramFn(msg).catch(e => console.warn('  ⚠️ [비용리포트] 텔레그램 실패:', e.message));
+  }
+}
+
 // 싱글톤 (같은 프로세스 내 공유)
 export const tracker = new CostTracker();
 export { CostTracker };
