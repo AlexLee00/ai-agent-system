@@ -72,8 +72,8 @@
       "teamRole": "메인봇",
       "description": "스터디카페 예약 관리 메인봇 - 네이버 ↔ 픽코 자동 동기화",
       "subBots": {
-        "andy":  { "name": "앤디", "file": "src/naver-monitor.js",        "role": "네이버 스마트플레이스 모니터" },
-        "jimmy": { "name": "지미", "file": "src/pickko-kiosk-monitor.js", "role": "키오스크 예약 감지" }
+        "andy":  { "name": "앤디", "file": "auto/monitors/naver-monitor.js",        "role": "네이버 스마트플레이스 모니터", "stateBus": true },
+        "jimmy": { "name": "지미", "file": "auto/monitors/pickko-kiosk-monitor.js", "role": "키오스크 예약 감지", "stateBus": true }
       },
       "status": "ops",
       "contextPath": "bots/reservation/context",
@@ -150,8 +150,13 @@
       "name": "루나 Phase 3 (Luna v3)",
       "team": "루나팀",
       "teamRole": "Phase 3 자동매매 시스템",
-      "description": "암호화폐(바이낸스) + KIS 국내주식 + KIS 해외주식(미국) 30분 사이클 자동매매 (PAPER_MODE=true 기본)",
-      "status": "paper",
+      "description": "암호화폐(바이낸스) + KIS 국내주식 + KIS 해외주식(미국) 30분 사이클 자동매매",
+      "status": "live",
+      "marketModes": {
+        "crypto": "live",
+        "domestic": "paper",
+        "overseas": "paper"
+      },
       "contextPath": "bots/investment",
       "runtime": "node ESM (type:module)",
       "model": {

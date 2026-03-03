@@ -358,7 +358,45 @@
 
 ---
 
-## 클로드팀 개선 / 추가 개발 내역 (2026-03-01)
+## 클로드팀 개선 / 추가 개발 내역 (2026-03-03)
+
+### CL-009: 스카팀 고도화 v3.0 완료 ✅ (2026-03-03)
+
+**3개 축 고도화:**
+
+| Axis | 내용 | 결과 |
+|------|------|------|
+| A. 폴더 구조 | `src/` → `auto/monitors/`, `auto/scheduled/`, `manual/reservation/`, `manual/admin/`, `manual/reports/` | git mv + 경로 수정 완료 |
+| B. 에이전트 통신 | `migrations/003_agent_state.js` + `lib/state-bus.js` | agent_state·pickko_lock·pending_blocks 3테이블 |
+| C. 덱스터 감시 | `bots/claude/lib/checks/ska.js` | DB파일존재·staleness·데드락·블록큐·앤디활성 5개 체크 |
+
+**상세 구현:**
+- `lib/state-bus.js`: updateAgentState·acquirePickkoLock·enqueuePendingBlock 등 전체 API
+- `auto/monitors/naver-monitor.js`: state-bus 통합 (running→idle, 앤디 상태 추적)
+- `auto/monitors/pickko-kiosk-monitor.js`: pickkoLock 뮤텍스 적용
+- `bots/claude/src/dexter.js`: ska 체크 9번째 항목 추가
+
+### CL-010: 클로드팀 고도화 v2.0 완료 ✅ (2026-03-03)
+
+**team-bus (Axis 1) + 아처 v2.0 재정의 (Axis 2):**
+
+| 파일 | 내용 |
+|------|------|
+| `migrations/001_team_bus.js` | claude-team.db 4테이블 스키마 |
+| `lib/team-bus.js` | setStatus·markDone·recordCheck·addTechDigest·sendMessage |
+| `lib/archer/config.js` | MARKET 제거 → WEB_SOURCES 5개 추가 |
+| `lib/archer/fetcher.js` | RSS 파서·웹소스·npm audit 신규 구현 |
+| `lib/archer/analyzer.js` | AI/LLM 중심 시스템 프롬프트 재작성 |
+| `lib/archer/patcher.js` | PATCH_REQUEST.md 자동 생성·패치 티켓 저장 |
+| `lib/archer/reporter.js` | patches·security·llm_api·ai_techniques·web_highlights 섹션 |
+| `scripts/migrate.js` + `team-status.js` + `patch-status.js` | 유틸 3종 |
+| `CLAUDE.md` | 프로젝트 루트 세션 규칙 파일 (PATCH_REQUEST.md 처리) |
+| `package.json v2.0.0` | 11개 scripts (dexter:fix/daily, archer:telegram, migrate, status, patch:status) |
+
+**실제 아처 실행 결과 (52s):**
+- tar/duckdb/cacache/make-fetch-happen high 취약점 4건
+- anthropic-sdk-py v0.84.0 / Node v25.7.0 / claude-code v2.1.63 패키지 업데이트 3건
+- HumanMCP 벤치마크 / MoE / AML LLM / GGML llama.cpp 합류 AI 트렌드 4건
 
 ### CL-007: 아처(Archer) 봇 구현 완료 ✅ (2026-03-01)
 
