@@ -52,6 +52,30 @@
 - 루나팀 + 스카팀 launchd 정지 → 테스트 → 재시작
 <!-- session-close:2026-03-03:스카팀-고도화-v3.0 -->
 
+### ✨ 클로드팀 고도화 v2.0 (커밋 `3956782`)
+- **Axis 1 — 덱스터↔아처 팀 통신 버스**:
+  - `migrations/001_team_bus.js`: `~/.openclaw/workspace/claude-team.db` 스키마 (4테이블)
+    - `agent_state`: 에이전트 상태 공유 (idle/running/error), `messages`: 에이전트 간 메시지 큐
+    - `tech_digest`: 아처 기술 소화 이력, `check_history`: 덱스터 체크 실행 이력
+  - `lib/team-bus.js`: 에이전트 상태·메시지큐·기술소화이력·체크이력 API
+  - `scripts/migrate.js`: DB 마이그레이션 러너
+  - `scripts/team-status.js`: 팀 상태 대시보드 콘솔 (`npm run status`)
+  - `src/dexter.js`: team-bus 연동 — 시작/체크이력/완료 상태 자동 기록
+- **Axis 2 — 아처 역할 재정의 (AI/LLM 트렌드 + 패치업 오케스트레이터)**:
+  - `lib/archer/config.js`: MARKET 제거, WEB_SOURCES 추가 (Anthropic뉴스/OpenAI/HuggingFace/arXiv/The Batch), GitHub 12개·npm 7개
+  - `lib/archer/fetcher.js`: 시장/봇 함수 제거, `fetchWebSource(RSS)` + `runNpmAudit` 추가
+  - `lib/archer/analyzer.js`: buildContext 재작성, SYSTEM_PROMPT AI/LLM 패치 집중 (patches/security/llm_api/ai_techniques/web_highlights)
+  - `lib/archer/patcher.js` (신규): `savePatchTickets` + `savePatchRequest(PATCH_REQUEST.md)` + `sendTelegram`
+  - `lib/archer/reporter.js`: market/bots 섹션 제거, patch/audit/llm_api/ai_techniques/web_highlights 추가
+  - `src/archer.js`: team-bus + patcher 연동
+  - `scripts/patch-status.js` (신규): 패치 현황 콘솔 (`npm run patch:status`)
+- **인프라**:
+  - `package.json`: 11개 scripts (dexter:fix/daily + archer/archer:telegram/fetch-only + migrate/status/patch:status)
+  - `CLAUDE.md` (신규): PATCH_REQUEST.md 처리 규칙 + 팀버스 섹션 (세션 시작 시 자동 로드)
+  - `bots/registry.json`: archer dataSources v2.0 업데이트
+- **검증**: 마이그레이션 ✅ / team-bus CRUD ✅ / 덱스터+team-bus ✅ / 아처 --fetch-only ✅ (GitHub 12개·npm 7개·웹소스 5개·audit 5건)
+<!-- session-close:2026-03-03:클로드팀-고도화-v2.0 -->
+
 ## 2026-03-02
 ### ✨ Phase 3 E2E 테스트 + 아리아 안정성 개선
 - 루나팀 Phase 3 전 사이클 E2E 테스트 완료: crypto(8.4초) / domestic(4.3초) / overseas(5.9초)
