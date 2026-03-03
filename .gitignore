@@ -33,6 +33,7 @@ venv/
 # 민감 정보
 secrets.json
 pickko-kiosk-seen.json
+bots/investment/config.yaml
 
 # DB 데이터 파일
 *.db

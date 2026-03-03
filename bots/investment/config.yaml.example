@@ -1,0 +1,72 @@
+# 루나팀 Phase 3-A 설정 — 예시 파일 (실제 키 없음)
+# ⚠️ config.yaml은 .gitignore에 포함 — 절대 커밋 금지
+# 사용법: cp config.yaml.example config.yaml → 실제 키 입력
+
+paper_mode: true
+
+anthropic:
+  api_key: "sk-ant-api03-YOUR_KEY_HERE"
+
+groq:
+  accounts:
+    - api_key: "gsk_YOUR_KEY_1"
+    - api_key: "gsk_YOUR_KEY_2"
+    - api_key: "gsk_YOUR_KEY_3"
+    - api_key: "gsk_YOUR_KEY_4"
+
+cerebras:
+  api_key: "csk-YOUR_KEY_HERE"
+
+sambanova:
+  api_key: "YOUR-UUID-HERE"
+
+xai:
+  api_key: "xai-YOUR_KEY_HERE"
+
+telegram:
+  bot_token: "BOT_TOKEN_HERE"
+  chat_id: 0
+
+binance:
+  api_key: "YOUR_BINANCE_API_KEY"
+  api_secret: "YOUR_BINANCE_API_SECRET"
+  testnet: true
+  symbols:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+    - "BNB/USDT"
+  deposit_address_usdt: ""
+
+upbit:
+  access_key: "YOUR_UPBIT_ACCESS_KEY"
+  secret_key: "YOUR_UPBIT_SECRET_KEY"
+
+kis:
+  app_key: "YOUR_KIS_APP_KEY"
+  app_secret: "YOUR_KIS_APP_SECRET"
+  paper_trading: true
+  paper_app_key: "YOUR_KIS_PAPER_APP_KEY"
+  paper_app_secret: "YOUR_KIS_PAPER_APP_SECRET"
+  account_number: ""
+  paper_account_number: ""
+  symbols:
+    - "005930"
+    - "000660"
+  overseas_symbols:
+    - "AAPL"
+    - "TSLA"
+    - "NVDA"
+
+news:
+  naver_client_id: "YOUR_NAVER_CLIENT_ID"
+  naver_client_secret: "YOUR_NAVER_CLIENT_SECRET"
+  dart_api_key: ""
+  cryptopanic_api_key: ""
+  alpha_vantage_api_key: ""
+
+cost:
+  daily_budget_paper:   0.05
+  daily_budget_live:    0.10
+  monthly_budget_paper: 1.00
+  monthly_budget_live:  2.00
