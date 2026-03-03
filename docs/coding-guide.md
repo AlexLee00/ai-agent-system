@@ -112,7 +112,8 @@ function checkHealth() {
 | **최소 권한** | API 키는 필요한 권한만. 출금·삭제 권한 기본 금지 |
 | **감사 로그** | 중요 작업(주문·취소·변경)은 DB에 기록 — 추적 가능해야 함 |
 | **암호화** | 개인정보·금융정보 DB 저장 시 AES-256-GCM 암호화 필수 |
-| **gitignore** | `secrets.json`, `*.db`, `*.jsonl`, `.env` 커밋 절대 금지 |
+| **gitignore** | `secrets.json`, `config.yaml`, `*.db`, `*.jsonl`, `.env` 커밋 절대 금지 |
+| **설정 파일 분리** | API 키가 포함된 설정 파일(config.yaml 등)은 반드시 `.gitignore` 등록 후 `.example` 템플릿만 커밋 |
 
 ---
 
@@ -319,6 +320,10 @@ cp scripts/pre-commit .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 ```
 
+> ⚠️ **사고 사례 (2026-03-03)**: `bots/investment/config.yaml`에 Anthropic·Groq·Binance 등 실제 API 키를 포함한 채로 4회 커밋됨. 원인: `.gitignore` 미등록 + pre-commit 훅이 `.yaml` 파일을 검사하지 않았음.
+> - **수정**: pre-commit 훅 검사 대상에 `.yaml`, `.yml`, `.sh`, `.env` 추가
+> - **교훈**: API 키가 포함될 수 있는 **모든 설정 파일**은 파일 생성 시점에 즉시 `.gitignore` 등록
+
 ### 2-5. gitignore 필수 항목
 
 ```gitignore
@@ -326,6 +331,9 @@ chmod +x .git/hooks/pre-commit
 **/secrets.json
 **/*.env
 **/.env*
+
+# API 키 포함 설정 파일 — .example 파일만 커밋
+bots/investment/config.yaml
 
 # DB (개인정보 + 거래 데이터)
 **/state.db
@@ -340,6 +348,8 @@ chmod +x .git/hooks/pre-commit
 **/logs/
 *.log
 ```
+
+> **규칙**: API 키가 들어가는 파일을 새로 만들 때 → 파일 생성 직후 `.gitignore` 등록 → `.example` 파일 먼저 커밋 → 실제 키 입력
 
 ### 2-6. 키 노출 사고 대응 절차
 

@@ -64,8 +64,8 @@ for ext in "${BLOCKED_EXTENSIONS[@]}"; do
 done
 
 # ─── 3. 하드코딩 시크릿 패턴 감지 ────────────────────────────────────────
-# staged된 .js 파일에서 의심 패턴 검색
-JS_STAGED=$(echo "$STAGED" | grep -E '\.(js|ts|json)$' || true)
+# staged된 코드/설정 파일에서 의심 패턴 검색 (yaml/yml/sh 포함)
+JS_STAGED=$(echo "$STAGED" | grep -E '\.(js|ts|json|yaml|yml|sh|env)$' || true)
 
 if [ -n "$JS_STAGED" ]; then
   # 검사할 패턴 (오탐 최소화를 위해 구체적으로 지정)
