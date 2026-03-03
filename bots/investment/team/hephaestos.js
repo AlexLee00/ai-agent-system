@@ -168,7 +168,7 @@ export async function executeSignal(signal) {
  * 대기 중인 바이낸스 신호 전체 처리
  */
 export async function processAllPendingSignals() {
-  const signals = await db.getPendingSignals('binance');
+  const signals = await db.getApprovedSignals('binance');
   if (signals.length === 0) {
     console.log('[헤파이스토스] 대기 신호 없음');
     return [];

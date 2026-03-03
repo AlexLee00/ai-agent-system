@@ -178,6 +178,7 @@ export async function evaluateSignal(signal, opts = {}) {
   }
 
   await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
+  await db.updateSignalAmount(signal.id, amountUsdt);
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
   return { approved: true, adjustedAmount: amountUsdt };
 }
