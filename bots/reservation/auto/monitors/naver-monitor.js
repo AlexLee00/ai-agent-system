@@ -23,7 +23,7 @@ const {
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
-  getTodayStats, getFuturePickkoRegistered,
+  getTodayStats,
 } = require('../../lib/db');
 const fs = require('fs');
 const path = require('path');
@@ -1257,35 +1257,9 @@ async function monitorBookings() {
           } // end confirmedCount !== 0 guard
         }
 
-        // ✅ 취소 감지 3: DB 크로스체크 (재시작 후에도 미래 예약 취소 누락 방지)
-        // state.db 픽코 등록 완료 미래 예약 → 네이버 확정 리스트에 없으면 취소로 간주
-        if (process.env.PICKKO_CANCEL_ENABLE === '1') {
-          try {
-            const tomorrowSeoul = new Date(new Date(todaySeoul + 'T00:00:00+09:00').getTime() + 86400000)
-              .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-            const futureRegistered = getFuturePickkoRegistered(tomorrowSeoul);
-            if (futureRegistered.length > 0) {
-              const _d3ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
-              const _d3ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
-              // 현재 확정 리스트: bookingId + 복합키 집합
-              const confirmedIds  = new Set(currentConfirmedList.map(b => b.bookingId).filter(Boolean));
-              const confirmedKeys = new Set(currentConfirmedList.map(b => `${b.date}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g,'')}`));
-              for (const reg of futureRegistered) {
-                if (_d3ObserveOnly && !_d3ObservePhones.includes(reg.phoneRaw || '')) continue;
-                const regKey   = `${reg.date}|${reg.start}|${reg.end}|${reg.room}|${reg.phoneRaw}`;
-                const cancelKey = toCancelKey(reg);
-                if (isCancelledKey(cancelKey)) continue; // 이미 처리됨
-                if (confirmedIds.has(reg.id) || confirmedKeys.has(regKey)) continue; // 확정 리스트에 있음
-                // 확정 리스트에 없음 → 취소로 간주
-                log(`🗑️ [취소감지3] DB크로스체크: ${maskPhone(reg.phone)} ${reg.date} ${reg.start}~${reg.end} 네이버 확정 미존재 → 취소 처리`);
-                addCancelledKey(cancelKey);
-                await runPickkoCancel(reg, cancelKey);
-              }
-            }
-          } catch (d3Err) {
-            log(`⚠️ 취소 감지 3 (DB 크로스체크) 오류: ${d3Err.message}`);
-          }
-        }
+        // ⛔ 취소 감지 3: 제거됨 (2026-03-03)
+        // 설계 결함: currentConfirmedList는 오늘 날짜만 포함 → 미래 예약 전부 "누락"으로 오인 → 대규모 오취소 발생
+        // 미래 예약 취소 감지는 감지 1(previousConfirmedList 비교)로만 처리
 
         // ✅ previousConfirmedList 업데이트
         previousConfirmedList = currentConfirmedList;
