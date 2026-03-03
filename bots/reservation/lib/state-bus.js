@@ -47,7 +47,7 @@ function updateAgentState(agent, status, currentTask = null, errorMsg = null) {
         last_success_at = excluded.last_success_at,
         last_error      = excluded.last_error,
         updated_at      = excluded.updated_at
-    `).run(agent, status, currentTask, errorMsg, now, now);
+    `).run(agent, status, currentTask, now, errorMsg, now);
   } else {
     db.prepare(`
       INSERT INTO agent_state (agent, status, current_task, last_success_at, last_error, updated_at)

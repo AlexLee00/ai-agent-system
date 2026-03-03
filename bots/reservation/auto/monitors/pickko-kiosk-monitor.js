@@ -1688,9 +1688,10 @@ async function main() {
     }
 
     log('\n✅ 픽코 키오스크 모니터 완료');
-    updateAgentState('jimmy', 'idle');
 
   } finally {
+    // 성공/조기리턴/오류 모든 경로에서 idle 전환 + 락 해제
+    updateAgentState('jimmy', 'idle');
     if (lockAcquired) {
       releasePickkoLock('jimmy');
       log('🔓 픽코 락 해제 (jimmy)');
