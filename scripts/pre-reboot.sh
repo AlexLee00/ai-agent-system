@@ -41,7 +41,7 @@ fi
 
 # ── 2. 루나팀 투자 서비스 정지 (데이터 안전) ────────────
 log "⏹️  루나팀 투자 서비스 정지 중..."
-for svc in ai.invest.dev ai.invest.fund ai.invest.tpsl ai.invest.bridge ai.invest.report ai.invest.pipeline; do
+for svc in ai.investment.crypto ai.investment.domestic ai.investment.overseas; do
   if launchctl list 2>/dev/null | grep -q "	${svc}$"; then
     launchctl stop "$svc" 2>/dev/null && log "   ✅ $svc 정지" || log "   ⚠️ $svc 정지 실패"
   fi

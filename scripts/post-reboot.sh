@@ -95,8 +95,9 @@ check_svc      "ai.ska.naver-monitor"   "앤디 (네이버 모니터)"
 check_periodic "ai.ska.kiosk-monitor"   "지미 (키오스크 모니터, 10분)"
 
 log "💹 루나팀:"
-check_periodic "ai.invest.dev"          "제이슨 (신호 집계, 10분)"
-check_periodic "ai.invest.bridge"       "몰리 (업비트 브릿지, 1시간)"
+check_periodic "ai.investment.crypto"   "루나 크립토 사이클 (5분)"
+check_periodic "ai.investment.domestic" "루나 국내주식 사이클 (5분)"
+check_periodic "ai.investment.overseas" "루나 해외주식 사이클 (5분)"
 
 log "🤖 클로드팀:"
 check_periodic "ai.claude.dexter"       "덱스터 (시스템 점검, 1시간)"
