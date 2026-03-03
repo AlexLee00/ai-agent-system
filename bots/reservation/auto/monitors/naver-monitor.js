@@ -1602,7 +1602,7 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 function runPickkoCancel(booking, cancelKey = null) {
   return new Promise(async (resolve) => {
     const args = [
-      'pickko-cancel.js',
+      path.join(__dirname, '../../manual/reservation/pickko-cancel.js'),
       `--phone=${booking.phoneRaw || booking.phone.replace(/\D/g, '')}`,
       `--date=${booking.date}`,
       `--start=${booking.start}`,
@@ -1714,7 +1714,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     const customerName = (booking.raw?.name || '고객').slice(0, 20);
     const args = [
-      'pickko-accurate.js',
+      path.join(__dirname, '../../manual/reservation/pickko-accurate.js'),
       `--phone=${normalized.phone}`,
       `--date=${normalized.date}`,
       `--start=${normalized.start}`,
