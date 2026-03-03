@@ -1,0 +1,45 @@
+{
+  "session": "skaya",
+  "windows": [
+    {
+      "name": "ska",
+      "phase": 1,
+      "status": "active",
+      "desc": "스카팀 — 예약관리 (OPS 운영 중)",
+      "dir": "bots/reservation",
+      "init_cmd": "echo '=== 스카팀 ===' && skastatus"
+    },
+    {
+      "name": "luna",
+      "phase": 1,
+      "status": "active",
+      "desc": "루나팀 — 자동매매 (DEV)",
+      "dir": "bots/investment",
+      "init_cmd": "echo '=== 루나팀 ==='"
+    },
+    {
+      "name": "main",
+      "phase": 3,
+      "status": "pending",
+      "desc": "메인봇/비서봇/업무봇 (맥미니 도착 후 구축)",
+      "dir": ".",
+      "init_cmd": "echo '=== Phase 3 대기 중 ==='"
+    },
+    {
+      "name": "research",
+      "phase": 4,
+      "status": "pending",
+      "desc": "학술봇/판례봇 (Phase 3 완료 후 구축)",
+      "dir": ".",
+      "init_cmd": "echo '=== Phase 4 대기 중 ==='"
+    },
+    {
+      "name": "cc",
+      "phase": 0,
+      "status": "active",
+      "desc": "Claude Code Remote Control 전용 (항상 마지막 창)",
+      "dir": ".",
+      "init_cmd": "echo '[CC] Remote Control 준비 완료'"
+    }
+  ]
+}

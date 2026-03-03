@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.agent.cc-remote</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>sleep 30 &amp;&amp; tmux send-keys -t skaya:cc "bash ~/projects/ai-agent-system/scripts/cc-remote-start.sh" Enter</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/alexlee</string>
+    <key>PATH</key><string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/cc-remote-launchd.log</string>
+  <key>StandardErrorPath</key><string>/tmp/cc-remote-launchd.log</string>
+</dict>
+</plist>
