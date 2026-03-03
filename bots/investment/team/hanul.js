@@ -16,14 +16,11 @@
  *       node team/hanul.js [--symbol=AAPL] [--action=BUY] [--amount=100]
  */
 
-import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError } from '../shared/report.js';
-
-const _require = createRequire(import.meta.url);
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -85,31 +82,27 @@ async function checkKisOverseasRisk(signal) {
 
 // ─── KIS API (lazy load) ─────────────────────────────────────────────
 
-let _kis = null;
+let _kisPromise = null;
 
+/** kis-client.js 동적 로드 (ESM). 실패 시 mock 반환 */
 function getKis() {
-  if (_kis) return _kis;
-  try {
-    _kis = _require('../../invest/lib/kis');
-    console.log('  ℹ️ [한울] KIS lib 로드: bots/invest/lib/kis.js');
-  } catch {
-    _kis = {
-      async marketBuy(symbol, amountKrw, dryRun) {
-        return { qty: 1, price: amountKrw, totalKrw: amountKrw, dryRun: true };
-      },
-      async marketSell(symbol, qty, dryRun) {
-        return { qty, price: 0, totalKrw: 0, dryRun: true };
-      },
-      async marketBuyOverseas(symbol, amountUsd, dryRun) {
-        return { qty: 1, price: amountUsd, totalUsd: amountUsd, dryRun: true };
-      },
-      async marketSellOverseas(symbol, qty, dryRun) {
-        return { qty, price: 0, totalUsd: 0, dryRun: true };
-      },
-    };
-    console.log('  ℹ️ [한울] KIS lib 없음 — 모의 KIS 객체 사용');
+  if (!_kisPromise) {
+    _kisPromise = import('../shared/kis-client.js')
+      .then(m => {
+        console.log('  ℹ️ [한울] KIS 클라이언트 로드 완료 (kis-client.js)');
+        return m;
+      })
+      .catch(() => {
+        console.log('  ⚠️ [한울] KIS 클라이언트 로드 실패 — mock 사용');
+        return {
+          marketBuy:         async (s, a, dry) => ({ qty: 1, price: a, totalKrw: a, dryRun: true }),
+          marketSell:        async (s, q, dry) => ({ qty: q, price: 0, totalKrw: 0, dryRun: true }),
+          marketBuyOverseas:  async (s, a, dry) => ({ qty: 1, price: a, totalUsd: a, dryRun: true }),
+          marketSellOverseas: async (s, q, dry) => ({ qty: q, price: 0, totalUsd: 0, dryRun: true }),
+        };
+      });
   }
-  return _kis;
+  return _kisPromise;
 }
 
 // ─── 국내주식 신호 실행 ──────────────────────────────────────────────
@@ -134,11 +127,12 @@ export async function executeSignal(signal) {
       return { success: false, reason: risk.reason };
     }
 
-    const kis = getKis();
+    const kis = await getKis();
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const order = await kis.marketBuy(symbol, amountKrw, paperMode || kisPaper);
+      // paperMode=true → dryRun(API 호출 없음) / false → 모의투자 또는 실전 API 호출
+      const order = await kis.marketBuy(symbol, amountKrw, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    order.qty,
@@ -165,7 +159,7 @@ export async function executeSignal(signal) {
         return { success: false, reason: '포지션 없음' };
       }
 
-      const order = await kis.marketSell(symbol, Math.floor(qty), paperMode || kisPaper);
+      const order = await kis.marketSell(symbol, Math.floor(qty), paperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,
@@ -220,11 +214,11 @@ export async function executeOverseasSignal(signal) {
       return { success: false, reason: risk.reason };
     }
 
-    const kis = getKis();
+    const kis = await getKis();
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const order = await kis.marketBuyOverseas(symbol, amountUsd, paperMode || kisPaper);
+      const order = await kis.marketBuyOverseas(symbol, amountUsd, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    order.qty,
@@ -251,7 +245,7 @@ export async function executeOverseasSignal(signal) {
         return { success: false, reason: '해외 포지션 없음' };
       }
 
-      const order = await kis.marketSellOverseas(symbol, Math.floor(qty), paperMode || kisPaper);
+      const order = await kis.marketSellOverseas(symbol, Math.floor(qty), paperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,
