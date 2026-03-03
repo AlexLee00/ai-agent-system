@@ -155,11 +155,24 @@ export async function updateSignalStatus(id, status) {
   await run(`UPDATE signals SET status = ? WHERE id = ?`, [status, id]);
 }
 
+/** 네메시스 조정 금액 반영 */
+export async function updateSignalAmount(id, amountUsdt) {
+  await run(`UPDATE signals SET amount_usdt = ? WHERE id = ?`, [amountUsdt, id]);
+}
+
 export async function getPendingSignals(exchange) {
   if (exchange) {
     return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = ? ORDER BY created_at ASC`, [exchange]);
   }
   return query(`SELECT * FROM signals WHERE status = 'pending' ORDER BY created_at ASC`);
+}
+
+/** 네메시스 승인 완료된 신호 조회 (헤파이스토스 실행 대상) */
+export async function getApprovedSignals(exchange) {
+  if (exchange) {
+    return query(`SELECT * FROM signals WHERE status = 'approved' AND exchange = ? ORDER BY created_at ASC`, [exchange]);
+  }
+  return query(`SELECT * FROM signals WHERE status = 'approved' ORDER BY created_at ASC`);
 }
 
 // ─── trades ─────────────────────────────────────────────────────────
@@ -228,7 +241,7 @@ export function close() {
 export default {
   query, run, initSchema,
   insertAnalysis, getRecentAnalysis,
-  insertSignal, updateSignalStatus, getPendingSignals,
+  insertSignal, updateSignalStatus, updateSignalAmount, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory,
   upsertPosition, getPosition, getAllPositions, deletePosition,
   getTodayPnl,
