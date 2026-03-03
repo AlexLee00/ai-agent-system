@@ -56,9 +56,10 @@ function checkMemory(items) {
 
 function checkLogSizes(items) {
   const logs = [
-    { path: cfg.LOGS.naver,  label: '스카 로그' },
-    { path: cfg.LOGS.invest, label: '루나 파이프라인 로그' },
-    { path: cfg.LOGS.bridge, label: '루나 브릿지 로그' },
+    { path: cfg.LOGS.naver,    label: '스카 로그' },
+    { path: cfg.LOGS.crypto,   label: '루나 크립토 로그' },
+    { path: cfg.LOGS.domestic, label: '루나 국내주식 로그' },
+    { path: cfg.LOGS.overseas, label: '루나 해외주식 로그' },
   ];
 
   for (const { path: p, label } of logs) {

@@ -68,9 +68,10 @@ async function run() {
   const items = [];
 
   // 봇별 로그 분석
-  items.push(analyzeLog(cfg.LOGS.naver,  '스카팀 (naver-monitor)'));
-  items.push(analyzeLog(cfg.LOGS.invest, '루나팀 (invest pipeline)'));
-  items.push(analyzeLog(cfg.LOGS.bridge, '루나팀 (upbit bridge)'));
+  items.push(analyzeLog(cfg.LOGS.naver,    '스카팀 (naver-monitor)'));
+  items.push(analyzeLog(cfg.LOGS.crypto,   '루나팀 (크립토 사이클)'));
+  items.push(analyzeLog(cfg.LOGS.domestic, '루나팀 (국내주식 사이클)'));
+  items.push(analyzeLog(cfg.LOGS.overseas, '루나팀 (해외주식 사이클)'));
 
   // OpenClaw 로그 (디렉토리 내 최신 파일)
   if (fs.existsSync(cfg.LOGS.openclaw)) {

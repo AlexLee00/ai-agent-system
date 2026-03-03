@@ -12,7 +12,7 @@ module.exports = {
   // ─── 봇 경로 ───────────────────────────────────────
   BOTS: {
     reservation: path.join(ROOT, 'bots', 'reservation'),
-    invest:      path.join(ROOT, 'bots', 'invest'),
+    investment:  path.join(ROOT, 'bots', 'investment'),
     ska:         path.join(ROOT, 'bots', 'ska'),
     claude:      path.join(ROOT, 'bots', 'claude'),
   },
@@ -20,14 +20,15 @@ module.exports = {
   // ─── DB 파일 ───────────────────────────────────────
   DBS: {
     reservation: path.join(HOME, '.openclaw', 'workspace', 'state.db'),
-    invest:      path.join(ROOT, 'bots', 'invest', 'db', 'invest.duckdb'),
+    investment:  path.join(ROOT, 'bots', 'investment', 'db', 'investment.duckdb'),
   },
 
   // ─── 로그 파일 ─────────────────────────────────────
   LOGS: {
     naver:    '/tmp/naver-ops-mode.log',
-    invest:   '/tmp/invest-pipeline.log',
-    bridge:   '/tmp/invest-bridge.log',
+    crypto:   '/tmp/investment-crypto.log',
+    domestic: '/tmp/investment-domestic.log',
+    overseas: '/tmp/investment-overseas.log',
     openclaw: path.join(HOME, '.openclaw', 'logs'),
     dexter:   '/tmp/dexter.log',
     fixes:    path.join(HOME, 'projects', 'ai-agent-system', 'bots', 'claude', 'dexter-fixes.json'),
@@ -35,15 +36,13 @@ module.exports = {
 
   // ─── Lock 파일 ─────────────────────────────────────
   LOCKS: {
-    invest: '/tmp/invest-ops.lock',
-    bridge: '/tmp/invest-bridge.lock',
     dexter: '/tmp/dexter.lock',
   },
 
   // ─── secrets 경로 (텔레그램 토큰 읽기) ─────────────
   SECRETS: {
     reservation: path.join(ROOT, 'bots', 'reservation', 'secrets.json'),
-    invest:      path.join(ROOT, 'bots', 'invest', 'secrets.json'),
+    investment:  path.join(ROOT, 'bots', 'investment', 'secrets.json'),
   },
 
   // ─── 핵심 파일 무결성 체크 대상 ────────────────────
@@ -51,11 +50,11 @@ module.exports = {
     'bots/reservation/lib/secrets.js',
     'bots/reservation/lib/db.js',
     'bots/reservation/auto/monitors/start-ops.sh',
-    'bots/invest/lib/secrets.js',
-    'bots/invest/lib/db.js',
-    'bots/invest/lib/mode.js',
-    'bots/invest/lib/health.js',
-    'bots/invest/src/start-invest-ops.sh',
+    'bots/investment/markets/crypto.js',
+    'bots/investment/markets/domestic.js',
+    'bots/investment/markets/overseas.js',
+    'bots/investment/shared/secrets.js',
+    'bots/investment/shared/llm-client.js',
     'bots/claude/src/dexter.js',
   ],
 

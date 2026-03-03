@@ -51,8 +51,9 @@ function scanHardcodedKeys(items) {
   const SCAN_DIRS = [
     path.join(cfg.BOTS.reservation, 'src'),
     path.join(cfg.BOTS.reservation, 'lib'),
-    path.join(cfg.BOTS.invest, 'src'),
-    path.join(cfg.BOTS.invest, 'lib'),
+    path.join(cfg.BOTS.investment, 'markets'),
+    path.join(cfg.BOTS.investment, 'shared'),
+    path.join(cfg.BOTS.investment, 'team'),
     path.join(cfg.BOTS.claude, 'src'),
     path.join(cfg.BOTS.claude, 'lib'),
   ];
