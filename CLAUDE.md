@@ -94,7 +94,7 @@ bash scripts/reload-monitor.sh      # 스카팀 빠른 재시작 (E2E 없음)
 bash scripts/tmux-start.sh --reload # 새 팀 창 추가
 ```
 
-### tmux 세션 구조 (skaya)
+### tmux 세션 구조 (agent)
 | 창 | 역할 |
 |----|------|
 | `ska` | 스카팀 작업 |
