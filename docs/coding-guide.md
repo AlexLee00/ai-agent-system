@@ -95,6 +95,7 @@ function checkHealth() {
 | `error-tracker.js` | `lib/error-tracker.js` | 스카, 루나 |
 | `status.js` | `lib/status.js` | 루나 |
 | `args.js` | `lib/args.js` | 스카, 클로드팀 |
+| `team-bus.js` | `bots/claude/lib/team-bus.js` | 클로드팀 전용 (덱스터↔아처 통신) |
 | `playwright-utils` | `packages/playwright-utils/` | 스카 |
 | `core` | `packages/core/` | 모든 봇 |
 
@@ -800,6 +801,8 @@ except Exception as e:
 |----|---------|---------|------|
 | 스카봇 (OpenClaw) | `gemini-2.5-flash` | `claude-haiku-4-5` | 무료 OAuth, 고빈도 |
 | 스카봇 LLM 진단 (직접 호출) | `claude-haiku-4-5-20251001` | — | 저비용, 분석 충분 |
+| 클로드팀 아처 (주간 기술 분석) | `claude-sonnet-4-6` | — | 복잡한 패치 티켓 생성 |
+| 클로드팀 덱스터 (일일 리포트) | `claude-haiku-4-5-20251001` | — | 비용 최적화 |
 | 미래 투자봇 오케스트레이터 | `claude-sonnet-4-6` | `gemini-2.5-flash` | 복잡한 멀티에이전트 결정 |
 | 미래 투자봇 분석가 (고빈도) | `groq/llama-3.3-70b` | `claude-haiku-4-5` | 속도 3배, 무료 |
 
@@ -1096,7 +1099,171 @@ try {
 
 ---
 
-## 17. 새 기능 추가 체크리스트
+## 17. 클로드팀 전용 패턴 (덱스터 + 아처)
+
+> 클로드팀(bots/claude/)은 시스템 유지보수 전담팀이다.
+> 스카팀·루나팀 코드를 **직접 수정하지 않고**, 점검·알림·패치 티켓 생성까지만 담당한다.
+
+### 17-1. 팀 경계 규칙 (절대 준수)
+
+```javascript
+// ✅ 허용: 공유 secrets.json 읽기
+const secrets = loadSecrets(['telegram_bot_token', 'telegram_chat_id']);
+
+// ✅ 허용: 클로드팀 전용 DB — team-bus.js를 통해서만
+const tb = require('../lib/team-bus');
+tb.setStatus('dexter', 'running');
+
+// ❌ 금지: 루나팀 DuckDB 직접 쿼리
+const lunaDb = new Database(LUNA_DB_PATH);
+
+// ❌ 금지: 스카팀 state.db 직접 접근 (dexter/ska.js 읽기 전용 제외)
+const skaDb = new Database(SKA_STATE_DB);
+
+// ❌ 금지: 다른 팀 소스파일 require
+const oracle = require('../../invest/lib/oracle');
+```
+
+### 17-2. team-bus.js 사용 규칙
+
+클로드팀 내부 통신은 반드시 `lib/team-bus.js`를 통한다. 직접 DB 쿼리 금지.
+
+```javascript
+const tb = require('../lib/team-bus');
+
+// ✅ main() 시작/종료 시에만 상태 업데이트
+async function main() {
+  tb.setStatus('dexter', 'running', '시스템 점검');
+  try {
+    await run();
+    tb.markDone('dexter');
+  } catch (e) {
+    tb.markError('dexter', e.message);
+    throw e;
+  }
+}
+
+// ✅ 팀간 메시지: 심각한 이슈 발견 시만 발송 (노이즈 최소화)
+tb.sendMessage('dexter', 'archer', 'alert', 'high', '로그 오류 급증', detail);
+tb.sendMessage('archer', 'dexter', 'alert', 'critical', 'CVE-2026-XXXX', cve);
+
+// ❌ 금지: checks/*.js 내부에서 tb 직접 호출
+// checks/bots.js, checks/ska.js 등에서 team-bus import 금지
+```
+
+### 17-3. 아처 서칭 범위 (확정)
+
+```
+✅ 수집 대상
+  GitHub Releases API  — 의존성 업데이트 (claude-code, node, python, anthropic-sdk)
+  npm Registry         — 패키지 최신 버전
+  npm audit            — 보안 취약점 (CVE)
+  웹 서칭 8개          — Anthropic 뉴스/API Changelog, OpenClaw, HuggingFace, AI 블로그
+
+❌ 수집 금지 (루나팀 담당)
+  BTC / ETH 가격       → 루나팀 oracle.js
+  Fear & Greed Index   → 루나팀 oracle.js
+```
+
+### 17-4. PATCH_REQUEST.md 처리 규칙
+
+```bash
+# 위치: 항상 프로젝트 루트
+~/projects/ai-agent-system/PATCH_REQUEST.md
+
+# 아처가 생성 → Claude Code RC 세션이 자동 감지 → urgency 순 실행
+# critical → high → medium → low
+
+# 완료 후 반드시 삭제 (중복 실행 방지)
+rm PATCH_REQUEST.md
+```
+
+```javascript
+// urgency 정의
+// critical — 보안 취약점, 서비스 중단 위험
+// high     — API 호환성 변경, 주요 의존성 업데이트
+// medium   — 성능 개선, 비필수 업데이트
+// low      — 기술 트렌드 적용, 리팩토링
+
+// 패치 커밋 메시지 형식
+// git commit -m "patch: PATCH-001 better-sqlite3 보안 업데이트"
+```
+
+### 17-5. SESSION.md 업데이트 규칙
+
+Claude Code RC 세션이 끊겼다가 재접속할 때 컨텍스트 복원에 사용한다.
+**작업 완료 후 / 세션 중단 전 / 방향 전환 시** 반드시 갱신한다.
+
+```markdown
+# SESSION.md 형식
+
+## 🔄 현재 작업
+- [ ] 진행 중인 내용 (어디까지 했는지, 뭐가 남았는지)
+
+## ✅ 완료된 작업
+- [x] 완료된 내용 (커밋: abc1234, 2026-03-03)
+
+## ➡️ 다음 작업 (재접속 시 여기서 시작)
+1. 구체적인 첫 번째 행동
+2. 두 번째 행동
+
+## ⚠️ 주의사항
+- 중단 이유, 주의할 점, 알아야 할 상황
+```
+
+### 17-6. 아처 HTTP 요청 패턴
+
+```javascript
+// ✅ Node.js 기본 https 모듈만 사용 (axios, node-fetch 금지)
+const https = require('https');
+
+function httpGet(hostname, path, timeout = 8000) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { hostname, path, method: 'GET',
+        headers: { 'User-Agent': 'ai-agent-system/1.0' } },
+      (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try   { resolve({ status: res.statusCode, data: JSON.parse(body) }); }
+          catch { resolve({ status: res.statusCode, raw: body }); }
+        });
+      }
+    );
+    req.setTimeout(timeout, () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// ✅ 여러 소스 병렬 수집 — Promise.allSettled (하나 실패해도 전체 진행)
+const results = await Promise.allSettled([
+  fetchAllGithub(),
+  fetchAllNpm(),
+  fetchAllWebSources(),
+  runNpmAudit(),
+]);
+```
+
+### 17-7. Claude API 호출 패턴 (아처 분석)
+
+```javascript
+// ✅ JSON 응답 파싱 — 마크다운 코드블록 제거 후 파싱
+function parseJsonResponse(text) {
+  return JSON.parse(
+    text
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim()
+  );
+}
+```
+
+---
+
+## 18. 새 기능 추가 체크리스트
 
 ### 공통
 
@@ -1110,6 +1277,17 @@ try {
 - [ ] 실패 시 retries 증가 + MAX_RETRIES 체크
 - [ ] 개인정보 포함 파일 gitignore 확인
 - [ ] 세션 마감 `node scripts/session-close.js --bot=<봇ID> ...`
+
+### 클로드팀 봇 추가 체크리스트
+
+- [ ] 팀 경계 확인 — 다른 팀 DB/소스 직접 접근 없음
+- [ ] team-bus 연동 — main() 시작/종료 시 setStatus/markDone/markError
+- [ ] team-bus 직접 DB 쿼리 금지 — lib/team-bus.js 함수만 사용
+- [ ] 아처 서칭 범위 준수 — BTC/ETH/FearGreed 수집 코드 없음
+- [ ] PATCH_REQUEST.md 위치 — 항상 프로젝트 루트
+- [ ] 패치 완료 후 PATCH_REQUEST.md 삭제 로직 포함
+- [ ] SESSION.md 업데이트 — 작업 완료/중단 시 갱신
+- [ ] 외부 HTTP — Node.js https 모듈만 사용 (axios 등 금지)
 
 ### 투자봇 추가 체크리스트 ⚠️ (실거래 전 필수)
 
@@ -1200,6 +1378,7 @@ try {
 | 2026-03-02 | **솔루션화 원칙 추가** — Section 0에 "솔루션화 원칙(재사용성·공용성)" 신규 추가 — 라이브러리화·모듈화·옵션화·공용 변수/환경변수 원칙 체계화 |
 | 2026-03-02 | **취소-테스트-성공-avail-gone-복구-확인** — 이승호 B룸 18:00 취소 테스트 성공 (픽코취소+네이버해제) 외 1건 |
 | 2026-03-02 | **예약 취소 E2E 완성 + TOOLS.md 취소/등록 도구 정비** — pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제) 완성 외 4건 |
+| 2026-03-03 | **클로드팀 고도화 반영** — 섹션 17 신규 (클로드팀 전용 패턴: team-bus 사용 규칙 / 아처 서칭 범위 / PATCH_REQUEST 처리 / SESSION.md 규칙 / HTTP 패턴 / Claude API 패턴), 섹션 18 체크리스트에 클로드팀 항목 추가, 공용 라이브러리 표에 team-bus.js 추가, 봇별 권장 모델 표에 아처/덱스터 추가 |
 | 2026-03-03 | **배포 프로세스 안전화 + OBSERVE_ONLY 수정** — start-ops.sh `OBSERVE_ONLY=0` → `${OBSERVE_ONLY:-0}` (plist 환경변수 무시 버그 수정, 17건 오취소 재발 방지) / scripts/reload-monitor.sh 신규 (문법 체크→재시작, 직접 launchctl 금지 가이드 추가) / §1·§11·§14 코딩가이드 반영 |
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->
