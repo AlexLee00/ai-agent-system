@@ -14,7 +14,9 @@
     "hermes":    "node team/hermes.js --symbol=BTC/USDT",
     "sophia":    "node team/sophia.js --symbol=BTC/USDT",
     "nemesis":   "node team/nemesis.js",
-    "check":     "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js"
+    "check":     "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js",
+    "report":    "node team/reporter.js",
+    "report:tg": "node team/reporter.js --telegram"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
