@@ -31,15 +31,19 @@ const MAX_DEBATE_SYMBOLS = 2;
 
 // ─── 시스템 프롬프트 ────────────────────────────────────────────────
 
-const SIGNAL_PROMPT = `당신은 루나팀 투자 분석가입니다. 멀티타임프레임 분석·온체인·뉴스·감성·리서처 토론 결과를 종합해 최종 매매 신호를 판단합니다.
+const LUNA_SYSTEM = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다.
+멀티타임프레임 TA·온체인·뉴스·감성·강세/약세 2라운드 토론 결과를 종합해 최종 매매 신호를 결정한다.
 
-응답: JSON 한 줄만 (코드블록 없음):
+핵심 원칙:
+- 불확실할 때는 HOLD — 확신이 없으면 진입하지 않는다
+- 장기(4h)와 단기(1h) 방향이 일치할 때만 BUY/SELL
+- 2라운드 토론 후 강세가 약세를 충분히 반박하지 못하면 HOLD
+- confidence 0.55 미만이면 반드시 HOLD
+
+응답 형식 (JSON만, 다른 텍스트 없이):
 {"action":"HOLD","amount_usdt":100,"confidence":0.6,"reasoning":"근거 60자 이내"}
 
-규칙:
-- 장기(4h)와 단기(1h) 방향이 일치할 때만 BUY/SELL
-- confidence 0.55 미만이면 반드시 HOLD
-- amount_usdt: 50~300 USDT`;
+amount_usdt 범위: 50~300 USDT`.trim();
 
 const PORTFOLIO_PROMPT = `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.
 
@@ -86,7 +90,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   }
 
   const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}\n\n최종 매매 신호:`;
-  const raw     = await callLLM('luna', SIGNAL_PROMPT, userMsg, 512);
+  const raw     = await callLLM('luna', LUNA_SYSTEM, userMsg, 512);
   const parsed  = parseJSON(raw);
 
   if (!parsed?.action) {
@@ -137,6 +141,41 @@ async function buildPortfolioContext() {
   return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions };
 }
 
+// ─── 2라운드 토론 ───────────────────────────────────────────────────
+
+/**
+ * 리서처 토론 1라운드 or 2라운드 실행
+ * @param {string} symbol
+ * @param {string} summary    분석 요약 텍스트
+ * @param {string} exchange
+ * @param {object|null} prevDebate  1라운드 결과 (null이면 1라운드)
+ * @returns {{ bull, bear, round }}
+ */
+async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
+  if (!prevDebate) {
+    // 1라운드: 병렬 실행
+    const [bull, bear] = await Promise.all([
+      runBullResearcher(symbol, summary, null, exchange),
+      runBearResearcher(symbol, summary, null, exchange),
+    ]);
+    return { bull, bear, round: 1 };
+  }
+
+  // 2라운드: 상대방 주장 포함 재반박
+  const bullCtx = prevDebate.bear
+    ? `${summary}\n\n[약세 주장 반박 요청]\n${prevDebate.bear.reasoning}`
+    : summary;
+  const bearCtx = prevDebate.bull
+    ? `${summary}\n\n[강세 주장 반박 요청]\n${prevDebate.bull.reasoning}`
+    : summary;
+
+  const [bull2, bear2] = await Promise.all([
+    runBullResearcher(symbol, bullCtx, null, exchange),
+    runBearResearcher(symbol, bearCtx, null, exchange),
+  ]);
+  return { bull: bull2, bear: bear2, round: 2 };
+}
+
 // ─── 메인 오케스트레이터 ────────────────────────────────────────────
 
 /**
@@ -167,16 +206,20 @@ export async function orchestrate(symbols, exchange = 'binance') {
       let debate = null;
       if (debateCount < MAX_DEBATE_SYMBOLS) {
         try {
-          const summary      = buildAnalysisSummary(analyses);
-          const currentPrice = null;
-          const [bull, bear] = await Promise.all([
-            runBullResearcher(symbol, summary, currentPrice, exchange),
-            runBearResearcher(symbol, summary, currentPrice, exchange),
-          ]);
-          debate = { bull, bear };
+          const summary = buildAnalysisSummary(analyses);
+
+          // 1라운드
+          const r1 = await runDebateRound(symbol, summary, exchange, null);
+          if (r1.bull) console.log(`  🐂 [제우스 R1] 목표가 ${r1.bull.targetPrice} | ${r1.bull.reasoning?.slice(0, 50)}`);
+          if (r1.bear) console.log(`  🐻 [아테나 R1] 목표가 ${r1.bear.targetPrice} | ${r1.bear.reasoning?.slice(0, 50)}`);
+
+          // 2라운드 (상대방 주장 보고 재반박)
+          const r2 = await runDebateRound(symbol, summary, exchange, r1);
+          if (r2.bull) console.log(`  🐂 [제우스 R2] ${r2.bull.reasoning?.slice(0, 60)}`);
+          if (r2.bear) console.log(`  🐻 [아테나 R2] ${r2.bear.reasoning?.slice(0, 60)}`);
+
+          debate = { bull: r2.bull, bear: r2.bear, r1 };
           debateCount++;
-          if (bull) console.log(`  🐂 [제우스] 목표가 ${bull.targetPrice} | ${bull.reasoning?.slice(0, 50)}`);
-          if (bear) console.log(`  🐻 [아테나] 목표가 ${bear.targetPrice} | ${bear.reasoning?.slice(0, 50)}`);
         } catch (e) {
           console.warn(`  ⚠️ [루나] ${symbol} 리서처 실패: ${e.message}`);
         }
