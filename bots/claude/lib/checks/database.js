@@ -55,7 +55,7 @@ function duckdbQuery(sql) {
   const script = `
 'use strict';
 const duckdb = require(${JSON.stringify(modulePath)});
-const db = new duckdb.Database(${JSON.stringify(cfg.DBS.invest)});
+const db = new duckdb.Database(${JSON.stringify(cfg.DBS.invest)}, { access_mode: 'READ_ONLY' });
 const conn = db.connect();
 conn.all(${JSON.stringify(sql)}, (err, rows) => {
   if (err) { process.stderr.write(JSON.stringify({ error: err.message })); process.exit(1); }
