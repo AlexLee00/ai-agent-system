@@ -36,9 +36,7 @@ const https = require('https');
 const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.json');
 const AUTH_PROFILES_FILE     = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
 const SPEED_TEST_KEYS_FILE   = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
-const LUNA_CANDIDATES_FILE   = path.join(__dirname, '../bots/invest/config/llm-candidates.json');
-const LUNA_LLM_BEST_FILE     = path.join(process.env.HOME, '.openclaw/luna-llm-best.json');
-const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/invest/secrets.json');
+const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/investment/secrets.json');
 const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
@@ -94,7 +92,6 @@ const args        = process.argv.slice(2);
 const runsArg     = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
 const doApply     = args.includes('--apply');
 const doTelegram  = args.includes('--telegram');
-const doLuna      = args.includes('--luna');
 const modelArg    = args.find(a => a.startsWith('--model='))?.split('=')[1];
 
 function log(msg) { process.stdout.write(msg + '\n'); }
@@ -413,7 +410,7 @@ async function benchmarkModel(modelId, ctx) {
 }
 
 // ─── Telegram 알림 ────────────────────────────────────────────────────────
-function sendTelegramNotify(results, appliedModel, lunaResults = [], lunaBest = null) {
+function sendTelegramNotify(results, appliedModel) {
   const keys = loadSpeedTestKeys();
   const token  = keys.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
   const chatId = keys.telegram_chat_id   || process.env.TELEGRAM_CHAT_ID;
@@ -429,20 +426,7 @@ function sendTelegramNotify(results, appliedModel, lunaResults = [], lunaBest = 
     ? `\n🔄 primary 변경: ${appliedModel}`
     : '';
 
-  // 루나팀 결과 섹션
-  let lunaSection = '';
-  if (lunaResults.length > 0) {
-    const lunaTop = lunaResults.filter(r => r.ok).slice(0, 5).map((r, i) => {
-      const medal = ['🥇', '🥈', '🥉', '4위', '5위'][i] || '';
-      return `  ${medal} ${r.label} — ${r.ttft}ms`;
-    }).join('\n');
-    const lunaBestLine = lunaBest
-      ? '\n' + Object.entries(lunaBest).map(([a, b]) => `  ✅ ${a}: ${b.provider}/${b.model} (${b.ttft}ms)`).join('\n')
-      : '';
-    lunaSection = `\n\n🌙 루나팀 LLM 후보군\n${lunaTop}${lunaBestLine}`;
-  }
-
-  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${changedLine}\n\n❌ 실패: ${failed}개${lunaSection}`;
+  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${changedLine}\n\n❌ 실패: ${failed}개`;
 
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
@@ -460,56 +444,6 @@ function sendTelegramNotify(results, appliedModel, lunaResults = [], lunaBest = 
     req.write(body);
     req.end();
   });
-}
-
-// ─── 루나팀 LLM 후보군 ─────────────────────────────────────────────────────
-
-function loadLunaCandidates() {
-  try { return JSON.parse(fs.readFileSync(LUNA_CANDIDATES_FILE, 'utf-8')); }
-  catch { return null; }
-}
-
-/** 후보군에서 중복 제거된 provider/modelId 목록 추출 */
-function getLunaTestModels(candidates) {
-  const seen = new Set();
-  const models = [];
-  for (const list of Object.values(candidates.analysts || {})) {
-    for (const c of list) {
-      const key = `${c.provider}/${c.model}`;
-      if (!seen.has(key)) { seen.add(key); models.push(key); }
-    }
-  }
-  return models;
-}
-
-/** 벤치마크 결과 → 분석가별 최고 모델 → luna-llm-best.json 저장 */
-function applyLunaBest(results, candidates) {
-  const resultMap = new Map(results.filter(r => r.ok).map(r => [r.modelId, r]));
-  const best = {};
-
-  for (const [analyst, list] of Object.entries(candidates.analysts || {})) {
-    let bestEntry = null;
-    let bestTTFT  = Infinity;
-    for (const c of list) {
-      const key = `${c.provider}/${c.model}`;
-      const r   = resultMap.get(key);
-      if (r && r.ttft < bestTTFT) {
-        bestTTFT  = r.ttft;
-        bestEntry = { provider: c.provider, model: c.model, ttft: r.ttft };
-      }
-    }
-    if (bestEntry) best[analyst] = bestEntry;
-  }
-
-  fs.writeFileSync(LUNA_LLM_BEST_FILE, JSON.stringify({
-    updatedAt: new Date().toISOString(), best,
-  }, null, 2) + '\n');
-
-  log(`\n✅ luna-llm-best.json 업데이트 완료`);
-  for (const [analyst, b] of Object.entries(best)) {
-    log(`   ${analyst.padEnd(20)} ${b.provider}/${b.model}  ${cyan(b.ttft + 'ms')}`);
-  }
-  return best;
 }
 
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────
@@ -637,76 +571,9 @@ async function main() {
     log(`  ${green('✅ 현재 모델이 가장 빠릅니다')}`);
   }
 
-  // ─── 루나팀 LLM 후보군 테스트 ──────────────────────────────────────────
-  let lunaResults = [];
-  let lunaBest    = null;
-  if (doLuna) {
-    const candidates = loadLunaCandidates();
-    if (!candidates) {
-      log(yellow('\n⚠️  luna candidates 파일 없음 — 스킵'));
-    } else {
-      const lunaModels = getLunaTestModels(candidates);
-      log(bold('\n🌙 루나팀 LLM 후보군 속도 테스트'));
-      log(dim(`   후보: ${lunaModels.join(', ')}\n`));
-
-      // 루나 프로바이더 키 로드
-      const lunaProviders = [...new Set(lunaModels.map(m => m.split('/')[0]))];
-      for (const provider of lunaProviders) {
-        if (!ctx.keys[provider]) {
-          const key = loadProviderKey(provider);
-          if (key) {
-            ctx.keys[provider] = key;
-            log(`🔑 ${provider.padEnd(14)} API 키 ${green('✅')}`);
-          } else {
-            log(`${yellow('⚠️')}  ${provider.padEnd(14)} API 키 없음 — 스킵`);
-          }
-        }
-      }
-
-      log('');
-      log(dim(`${'모델'.padEnd(36)} ${'TTFT'.padStart(8)} ${'총시간'.padStart(8)}`));
-      log(dim('─'.repeat(56)));
-
-      for (const modelId of lunaModels) {
-        const provider = modelId.split('/')[0];
-        if (!ctx.keys[provider]) continue;
-        const r = await benchmarkModel(modelId, ctx);
-        lunaResults.push(r);
-      }
-
-      lunaResults.sort((a, b) => {
-        if (a.ttft === null && b.ttft === null) return 0;
-        if (a.ttft === null) return 1;
-        if (b.ttft === null) return -1;
-        return a.ttft - b.ttft;
-      });
-
-      log('');
-      log(bold('📊 루나 결과 (TTFT 기준)'));
-      log(dim('─'.repeat(64)));
-      for (let i = 0; i < lunaResults.length; i++) {
-        const r = lunaResults[i];
-        if (!r.ok) {
-          log(`  ${red('✗')} ${r.label.padEnd(34)} ${red('실패')}  ${dim(r.error?.slice(0,50) ?? '')}`);
-          continue;
-        }
-        const rank     = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
-        const ttftStr  = `${r.ttft}ms`.padStart(8);
-        const totalStr = `${r.total}ms`.padStart(8);
-        const color    = i === 0 ? green : i < 3 ? yellow : (s => s);
-        log(`  ${rank} ${color(r.label.padEnd(34))} ${cyan(ttftStr)} ${dim(totalStr)}  ${dim(r.sample ?? '')}`);
-      }
-      log(dim('─'.repeat(64)));
-
-      if (doApply && lunaResults.some(r => r.ok)) {
-        lunaBest = applyLunaBest(lunaResults, candidates);
-      }
-    }
-  }
-
   if (doTelegram) {
     process.stdout.write('\n📨 텔레그램 알림 전송...');
-    await sendTelegramNotify(results, appliedModel, lunaResults, lunaBest);
+    await sendTelegramNotify(results, appliedModel);
     log(green(' ✅'));
   }
   log('');
