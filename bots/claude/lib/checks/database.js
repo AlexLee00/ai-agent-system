@@ -51,11 +51,11 @@ db.close();
 
 // DuckDB 쿼리
 function duckdbQuery(sql) {
-  const modulePath = resolveModule(cfg.BOTS.invest, 'duckdb');
+  const modulePath = resolveModule(cfg.BOTS.investment, 'duckdb');
   const script = `
 'use strict';
 const duckdb = require(${JSON.stringify(modulePath)});
-const db = new duckdb.Database(${JSON.stringify(cfg.DBS.invest)}, { access_mode: 'READ_ONLY' });
+const db = new duckdb.Database(${JSON.stringify(cfg.DBS.investment)}, { access_mode: 'READ_ONLY' });
 const conn = db.connect();
 conn.all(${JSON.stringify(sql)}, (err, rows) => {
   if (err) { process.stderr.write(JSON.stringify({ error: err.message })); process.exit(1); }
@@ -121,7 +121,7 @@ async function checkSQLite(items) {
 
 async function checkDuckDB(items) {
   // node_modules 존재 여부 — 봇 로컬 또는 루트 워크스페이스
-  const duckdbLocal = `${cfg.BOTS.invest}/node_modules/duckdb`;
+  const duckdbLocal = `${cfg.BOTS.investment}/node_modules/duckdb`;
   const duckdbRoot  = `${cfg.ROOT}/node_modules/duckdb`;
   if (!fs.existsSync(duckdbLocal) && !fs.existsSync(duckdbRoot)) {
     items.push({ label: 'DuckDB (루나)', status: 'warn', detail: 'duckdb 모듈 미설치 (npm install 필요)' });
@@ -129,7 +129,7 @@ async function checkDuckDB(items) {
   }
 
   // DB 파일 존재
-  if (!fs.existsSync(cfg.DBS.invest)) {
+  if (!fs.existsSync(cfg.DBS.investment)) {
     items.push({ label: 'DuckDB (루나)', status: 'warn', detail: 'DB 파일 없음 (setup-db.js 실행 필요)' });
     return;
   }
