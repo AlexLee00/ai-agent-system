@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.agent.tmux</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/tmux-start.sh</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/alexlee</string>
+    <key>PATH</key><string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/tmux-start.log</string>
+  <key>StandardErrorPath</key><string>/tmp/tmux-start.log</string>
+</dict>
+</plist>

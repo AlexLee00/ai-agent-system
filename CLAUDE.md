@@ -78,6 +78,38 @@ npm run patch:status        # 패치 현황 콘솔
 
 ---
 
+## Remote Control 세션 규칙
+
+> Remote Control(`claude remote-control`)로 접속하면 이 규칙이 추가 적용됩니다.
+
+### 세션 시작 시 필독
+1. **RC_CONTEXT.md 먼저 읽기** — 프로젝트 루트의 `RC_CONTEXT.md`에 현재 시스템 현황이 자동 생성됩니다.
+2. 파일이 없으면 `bash scripts/update-rc-context.sh` 실행
+
+### RC 세션 전용 명령
+```bash
+rcupdate                             # 현황판 수동 갱신
+tail -f /tmp/cc-remote.log          # Remote Control 로그
+bash scripts/reload-monitor.sh      # 스카팀 빠른 재시작 (E2E 없음)
+bash scripts/tmux-start.sh --reload # 새 팀 창 추가
+```
+
+### tmux 세션 구조 (skaya)
+| 창 | 역할 |
+|----|------|
+| `ska` | 스카팀 작업 |
+| `luna` | 루나팀 작업 |
+| `main` | Phase 3 (맥미니 예정) |
+| `research` | Phase 4 (맥미니 예정) |
+| `cc` | Remote Control 전용 (이 창) |
+
+### RC 절대 규칙
+- DEV → OPS 전환은 반드시 사용자 확인 후
+- 직접 `launchctl unload/load` 금지 → `bash scripts/reload-monitor.sh` 사용
+- 새 팀 추가 = `config/tmux-windows.json` 수정만
+
+---
+
 ## 절대 규칙 (변경 불가)
 
 - 시스템 기본 언어: **한국어** (코드 주석, 로그, 알림 포함)

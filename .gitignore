@@ -38,3 +38,6 @@ pickko-kiosk-seen.json
 *.db
 *.duckdb
 *.duckdb.wal
+
+# Remote Control 자동 생성 파일
+RC_CONTEXT.md
