@@ -170,6 +170,9 @@ export async function initSchema() {
     }
   } catch { /* 무시 */ }
 
+  // WAL → 메인 DB 플러시 (ALTER TABLE ADD COLUMN WAL 재생 버그 방지)
+  try { await run('CHECKPOINT'); } catch { /* 무시 */ }
+
   console.log(`✅ DB 스키마 초기화 완료: ${DB_PATH}`);
 }
 
