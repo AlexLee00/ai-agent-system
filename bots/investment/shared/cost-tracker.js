@@ -181,7 +181,6 @@ class CostTracker extends EventEmitter {
       paperMode:      this.paperMode,
     };
   }
-}
 
   /**
    * 오늘 비용 요약을 텔레그램으로 전송
