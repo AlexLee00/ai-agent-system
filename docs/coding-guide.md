@@ -156,6 +156,7 @@ bots/reservation/
 ├── scripts/
 │   ├── session-close.js            세션 마감 자동화
 │   ├── deploy-context.js           OpenClaw 컨텍스트 배포
+│   ├── reload-monitor.sh           빠른 재시작 (문법 체크 → 재시작, E2E 없음)
 │   └── lib/                        스크립트 공유 모듈
 ├── context/
 │   ├── CLAUDE_NOTES.md             클로드 → 스카 행동 지침
@@ -649,6 +650,21 @@ launchctl unload ~/Library/LaunchAgents/ai.ska.{서비스}.plist
 launchctl list | grep ai.ska
 ```
 
+### 빠른 재시작 — reload-monitor.sh
+
+코드 수정 후 E2E 테스트(~3분) 없이 빠르게 재시작할 때 사용.
+**직접 `launchctl unload/load` 금지** — 문법 오류 검증 없이 즉시 반영되어 장애 유발 가능.
+
+```bash
+# ✅ 코드 수정 후 항상 이것으로 재시작
+bash scripts/reload-monitor.sh
+# → 문법 체크 → 정지 → 재시작 → PID 확인 순으로 자동 처리
+
+# ❌ 절대 금지 — 문법 오류 검증 없이 즉시 반영
+launchctl unload ~/Library/LaunchAgents/ai.ska.naver-monitor.plist
+launchctl load  ~/Library/LaunchAgents/ai.ska.naver-monitor.plist
+```
+
 ### 실행 래퍼 (run-*.sh) 필수 패턴
 
 ```bash
@@ -817,7 +833,7 @@ openclaw models set google-gemini-cli/gemini-2.5-flash
 node src/naver-monitor.js
 
 # OPS (운영, 픽코 실행 허용) — start-ops.sh가 자동 설정
-MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=0 PICKKO_CANCEL_ENABLE=1 PICKKO_HEADLESS=1 \
+MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=${OBSERVE_ONLY:-0} PICKKO_CANCEL_ENABLE=1 PICKKO_HEADLESS=1 \
   node src/naver-monitor.js
 ```
 
@@ -825,9 +841,14 @@ MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=0 PICKKO_CANCEL_ENABLE=1 PICKKO_HEADLESS=1
 |---------|------|------|
 | `MODE` | `dev` | `ops`일 때만 픽코 실행 |
 | `PICKKO_ENABLE` | `0` | `1`이어야 픽코 활성화 |
-| `OBSERVE_ONLY` | `1` | `0`이어야 실제 등록/취소 |
+| `OBSERVE_ONLY` | `0` | `1`이면 화이트리스트 번호만 실행 (관찰 모드) |
 | `PICKKO_CANCEL_ENABLE` | `0` | `1`이어야 자동 취소 |
 | `PICKKO_HEADLESS` | `0` | `1`이면 완전 headless |
+
+> **OBSERVE_ONLY 설정 방법**: `start-ops.sh`는 `${OBSERVE_ONLY:-0}` 패턴 사용.
+> plist `EnvironmentVariables`에 `OBSERVE_ONLY=1` 추가 → 화이트리스트 모드 활성화.
+> plist에서 제거하면 기본값 `0` (전체 OPS) 복원.
+> **하드코딩(`OBSERVE_ONLY=0`) 절대 금지** — plist 설정이 무시되어 오취소 유발.
 
 **DEV 화이트리스트**: 이재룡 010-3500-0586 / 김정민 010-5435-0586
 
@@ -1179,6 +1200,7 @@ try {
 | 2026-03-02 | **솔루션화 원칙 추가** — Section 0에 "솔루션화 원칙(재사용성·공용성)" 신규 추가 — 라이브러리화·모듈화·옵션화·공용 변수/환경변수 원칙 체계화 |
 | 2026-03-02 | **취소-테스트-성공-avail-gone-복구-확인** — 이승호 B룸 18:00 취소 테스트 성공 (픽코취소+네이버해제) 외 1건 |
 | 2026-03-02 | **예약 취소 E2E 완성 + TOOLS.md 취소/등록 도구 정비** — pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제) 완성 외 4건 |
+| 2026-03-03 | **배포 프로세스 안전화 + OBSERVE_ONLY 수정** — start-ops.sh `OBSERVE_ONLY=0` → `${OBSERVE_ONLY:-0}` (plist 환경변수 무시 버그 수정, 17건 오취소 재발 방지) / scripts/reload-monitor.sh 신규 (문법 체크→재시작, 직접 launchctl 금지 가이드 추가) / §1·§11·§14 코딩가이드 반영 |
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정 -->
