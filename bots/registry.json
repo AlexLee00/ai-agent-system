@@ -19,9 +19,21 @@
         }
       ],
       "subBots": {
-        "eric":   { "name": "에릭",   "type": "Explore", "role": "코드베이스 탐색·리서치" },
-        "kevin":  { "name": "케빈",   "type": "Plan",    "role": "설계·구현 계획" },
-        "brian":  { "name": "브라이언", "type": "Bash",   "role": "명령 실행·시스템 작업" },
+        "eric": {
+          "name": "에릭",
+          "type": "Explore",
+          "role": "코드베이스 탐색·리서치"
+        },
+        "kevin": {
+          "name": "케빈",
+          "type": "Plan",
+          "role": "설계·구현 계획"
+        },
+        "brian": {
+          "name": "브라이언",
+          "type": "Bash",
+          "role": "명령 실행·시스템 작업"
+        },
         "dexter": {
           "name": "덱스터",
           "file": "bots/claude/src/dexter.js",
@@ -29,13 +41,23 @@
           "description": "코드무결성·DB무결성·보안·로그·봇상태·리소스·네트워크·의존성 주기 점검 + 자동수정",
           "schedule": "매 1시간 (launchd: ai.claude.dexter)",
           "flags": {
-            "--full":        "전체 점검 (npm audit 포함)",
-            "--telegram":    "이상 발견 시 텔레그램 알림",
-            "--fix":         "자동 수정 가능 항목 처리",
+            "--full": "전체 점검 (npm audit 포함)",
+            "--telegram": "이상 발견 시 텔레그램 알림",
+            "--fix": "자동 수정 가능 항목 처리",
             "--report-only": "로그 기록만 (무음)"
           },
-          "autofixable": ["stale lock 제거", "secrets.json 권한 600", "로그 로테이션"],
-          "bugReportTriggers": ["DB 무결성 오류", "코드 체크섬 변경", "하드코딩 API 키", "npm 취약점", "반복 오류 패턴"]
+          "autofixable": [
+            "stale lock 제거",
+            "secrets.json 권한 600",
+            "로그 로테이션"
+          ],
+          "bugReportTriggers": [
+            "DB 무결성 오류",
+            "코드 체크섬 변경",
+            "하드코딩 API 키",
+            "npm 취약점",
+            "반복 오류 패턴"
+          ]
         },
         "archer": {
           "name": "아처",
@@ -44,9 +66,9 @@
           "description": "GitHub Releases·npm·웹RSS(Anthropic/OpenAI/HuggingFace/arXiv) 수집 → Claude 분석 → 패치 티켓 + PATCH_REQUEST.md 자동 생성 + 텔레그램",
           "schedule": "매주 월요일 09:00 KST (launchd: ai.claude.archer)",
           "flags": {
-            "--telegram":    "패치 알림을 텔레그램으로 발송",
-            "--no-claude":   "Claude API 건너뜀 (데이터 수집만)",
-            "--fetch-only":  "수집만 하고 분석·저장 생략 (디버그)"
+            "--telegram": "패치 알림을 텔레그램으로 발송",
+            "--no-claude": "Claude API 건너뜀 (데이터 수집만)",
+            "--fetch-only": "수집만 하고 분석·저장 생략 (디버그)"
           },
           "dataSources": [
             "GitHub Releases API (anthropic-sdk-js/py, mcp-sdk, groq-node, gemini-js, claude-code, node, cpython, ccxt, duckdb, better-sqlite3, playwright)",
@@ -55,13 +77,18 @@
             "npm audit (보안 취약점 스캔)"
           ],
           "outputs": {
-            "reportDir":        "bots/claude/reports/",
-            "patchDir":         "bots/claude/reports/patches/",
+            "reportDir": "bots/claude/reports/",
+            "patchDir": "bots/claude/reports/patches/",
             "patchRequestFile": "PATCH_REQUEST.md (프로젝트 루트)"
           },
           "teamBus": {
             "db": "~/.openclaw/workspace/claude-team.db",
-            "tables": ["agent_state", "messages", "tech_digest", "check_history"]
+            "tables": [
+              "agent_state",
+              "messages",
+              "tech_digest",
+              "check_history"
+            ]
           }
         }
       }
@@ -72,14 +99,28 @@
       "teamRole": "메인봇",
       "description": "스터디카페 예약 관리 메인봇 - 네이버 ↔ 픽코 자동 동기화",
       "subBots": {
-        "andy":  { "name": "앤디", "file": "auto/monitors/naver-monitor.js",        "role": "네이버 스마트플레이스 모니터", "stateBus": true },
-        "jimmy": { "name": "지미", "file": "auto/monitors/pickko-kiosk-monitor.js", "role": "키오스크 예약 감지", "stateBus": true }
+        "andy": {
+          "name": "앤디",
+          "file": "auto/monitors/naver-monitor.js",
+          "role": "네이버 스마트플레이스 모니터",
+          "stateBus": true
+        },
+        "jimmy": {
+          "name": "지미",
+          "file": "auto/monitors/pickko-kiosk-monitor.js",
+          "role": "키오스크 예약 감지",
+          "stateBus": true
+        }
       },
       "status": "ops",
       "contextPath": "bots/reservation/context",
       "model": {
         "primary": "google-gemini-cli/gemini-2.5-flash",
-        "fallbacks": ["google-gemini-cli/gemini-3-pro-preview", "anthropic/claude-haiku-4-5", "ollama/qwen2.5:7b"]
+        "fallbacks": [
+          "google-gemini-cli/gemini-3-pro-preview",
+          "anthropic/claude-haiku-4-5",
+          "ollama/qwen2.5:7b"
+        ]
       },
       "deployTargets": [
         {
@@ -87,7 +128,13 @@
           "loginType": "api",
           "workspace": "~/.openclaw/workspace",
           "bootFile": "BOOT.md",
-          "files": ["IDENTITY.md", "MEMORY.md", "DEV_SUMMARY.md", "HANDOFF.md", "CLAUDE_NOTES.md"]
+          "files": [
+            "IDENTITY.md",
+            "MEMORY.md",
+            "DEV_SUMMARY.md",
+            "HANDOFF.md",
+            "CLAUDE_NOTES.md"
+          ]
         },
         {
           "type": "claude-code",
@@ -95,8 +142,14 @@
           "workspace": "~/.claude/projects/-Users-alexlee/memory",
           "memoryFile": "MEMORY.md",
           "files": [
-            { "src": "DEV_SUMMARY.md", "dest": "reservation-dev-summary.md" },
-            { "src": "HANDOFF.md",     "dest": "reservation-handoff.md" }
+            {
+              "src": "DEV_SUMMARY.md",
+              "dest": "reservation-dev-summary.md"
+            },
+            {
+              "src": "HANDOFF.md",
+              "dest": "reservation-handoff.md"
+            }
           ]
         }
       ],
@@ -120,10 +173,10 @@
       "deployTargets": [],
       "ops": {
         "scripts": {
-          "etl":      "bots/ska/src/etl.py",
+          "etl": "bots/ska/src/etl.py",
           "forecast": "bots/ska/src/forecast.py",
-          "report":   "bots/ska/src/rebecca.py",
-          "crawl":    "bots/ska/src/eve_crawl.py"
+          "report": "bots/ska/src/rebecca.py",
+          "crawl": "bots/ska/src/eve_crawl.py"
         },
         "logFile": "/tmp/ska-analytics.log"
       }
@@ -139,8 +192,8 @@
       "deployTargets": [],
       "ops": {
         "scripts": {
-          "main":    "bots/ska/src/eve.py",
-          "crawl":   "bots/ska/src/eve_crawl.py"
+          "main": "bots/ska/src/eve.py",
+          "crawl": "bots/ska/src/eve_crawl.py"
         },
         "schedule": "날씨 매일 06:00 / 공휴일·학사·축제 매주 일요일",
         "logFile": "/tmp/ska-analytics.log"
@@ -165,42 +218,129 @@
         "live_orchestrator": "anthropic/claude-haiku-4-5-20251001"
       },
       "subBots": {
-        "aria":       { "name": "아리아",     "file": "bots/investment/team/aria.js",       "role": "기술분석가 — 암호화폐/국내/해외주식 MTF TA (RSI/MACD/BB/Stoch/ATR/볼륨)", "status": "ops" },
-        "oracle":     { "name": "오라클",     "file": "bots/investment/team/oracle.js",     "role": "온체인 분석 — 공포탐욕지수/펀딩비/Long-Short비율/미결제약정 (암호화폐 전용)", "status": "ops" },
-        "hermes":     { "name": "헤르메스",   "file": "bots/investment/team/hermes.js",     "role": "뉴스 분석 — Yahoo/MarketWatch(해외) + Naver뉴스/DART(국내) + CoinTelegraph(코인)", "status": "ops" },
-        "sophia":     { "name": "소피아",     "file": "bots/investment/team/sophia.js",     "role": "감성 분석 — Reddit(해외/코인) + 네이버 증권 토론실(국내)", "status": "ops" },
-        "zeus":       { "name": "제우스",     "file": "bots/investment/team/zeus.js",       "role": "강세 리서처 — 매수 근거 + 목표가 제시 (luna에서 호출)", "status": "ops" },
-        "athena":     { "name": "아테나",     "file": "bots/investment/team/athena.js",     "role": "약세 리서처 — 매도 근거 + 손절가 제시 (luna에서 호출)", "status": "ops" },
-        "luna":       { "name": "루나",       "file": "bots/investment/team/luna.js",       "role": "오케스트레이터 — 강세/약세 토론 + 최종 신호 판단 + 네메시스 리스크 검토", "status": "ops" },
-        "nemesis":    { "name": "네메시스",   "file": "bots/investment/team/nemesis.js",    "role": "리스크 매니저 — 하드 규칙(v1) + LLM 리스크 평가(v2, live 시 Haiku)", "status": "ops" },
-        "hephaestos": { "name": "헤파이스토스", "file": "bots/investment/team/hephaestos.js", "role": "암호화폐 실행봇 — 바이낸스 Spot 주문 (PAPER: DB+텔레그램만)", "status": "ops" },
-        "hanul":      { "name": "한울",       "file": "bots/investment/team/hanul.js",      "role": "KIS 실행봇 — 국내주식 + 해외주식(미국) 주문 (PAPER: DB+텔레그램만)", "status": "ops" },
-        "argos":      { "name": "아르고스",   "file": "bots/investment/team/argos.js",      "role": "전략 수집봇 — TradingView 파인스크립트/알파 신호 수집 (Phase 3-E 구현 예정)", "status": "skeleton" },
-        "chronos":    { "name": "크로노스",   "file": "bots/investment/team/chronos.js",    "role": "백테스팅 엔진 — 전략 성과 검증 + 파라미터 최적화 (Phase 3-D 구현 예정)", "status": "skeleton" }
+        "aria": {
+          "name": "아리아",
+          "file": "bots/investment/team/aria.js",
+          "role": "기술분석가 — 암호화폐/국내/해외주식 MTF TA (RSI/MACD/BB/Stoch/ATR/볼륨)",
+          "status": "ops"
+        },
+        "oracle": {
+          "name": "오라클",
+          "file": "bots/investment/team/oracle.js",
+          "role": "온체인 분석 — 공포탐욕지수/펀딩비/Long-Short비율/미결제약정 (암호화폐 전용)",
+          "status": "ops"
+        },
+        "hermes": {
+          "name": "헤르메스",
+          "file": "bots/investment/team/hermes.js",
+          "role": "뉴스 분석 — Yahoo/MarketWatch(해외) + Naver뉴스/DART(국내) + CoinTelegraph(코인)",
+          "status": "ops"
+        },
+        "sophia": {
+          "name": "소피아",
+          "file": "bots/investment/team/sophia.js",
+          "role": "감성 분석 — Reddit(해외/코인) + 네이버 증권 토론실(국내)",
+          "status": "ops"
+        },
+        "zeus": {
+          "name": "제우스",
+          "file": "bots/investment/team/zeus.js",
+          "role": "강세 리서처 — 매수 근거 + 목표가 제시 (luna에서 호출)",
+          "status": "ops"
+        },
+        "athena": {
+          "name": "아테나",
+          "file": "bots/investment/team/athena.js",
+          "role": "약세 리서처 — 매도 근거 + 손절가 제시 (luna에서 호출)",
+          "status": "ops"
+        },
+        "luna": {
+          "name": "루나",
+          "file": "bots/investment/team/luna.js",
+          "role": "오케스트레이터 — 강세/약세 토론 + 최종 신호 판단 + 네메시스 리스크 검토",
+          "status": "ops"
+        },
+        "nemesis": {
+          "name": "네메시스",
+          "file": "bots/investment/team/nemesis.js",
+          "role": "리스크 매니저 — 하드 규칙(v1) + LLM 리스크 평가(v2, live 시 Haiku)",
+          "status": "ops"
+        },
+        "hephaestos": {
+          "name": "헤파이스토스",
+          "file": "bots/investment/team/hephaestos.js",
+          "role": "암호화폐 실행봇 — 바이낸스 Spot 주문 (PAPER: DB+텔레그램만)",
+          "status": "ops"
+        },
+        "hanul": {
+          "name": "한울",
+          "file": "bots/investment/team/hanul.js",
+          "role": "KIS 실행봇 — 국내주식 + 해외주식(미국) 주문 (PAPER: DB+텔레그램만)",
+          "status": "ops"
+        },
+        "argos": {
+          "name": "아르고스",
+          "file": "bots/investment/team/argos.js",
+          "role": "전략 수집봇 — TradingView 파인스크립트/알파 신호 수집 (Phase 3-E 구현 예정)",
+          "status": "skeleton"
+        },
+        "chronos": {
+          "name": "크로노스",
+          "file": "bots/investment/team/chronos.js",
+          "role": "백테스팅 엔진 — 전략 성과 검증 + 파라미터 최적화 (Phase 3-D 구현 예정)",
+          "status": "skeleton"
+        }
       },
       "markets": {
-        "crypto":   { "file": "bots/investment/markets/crypto.js",   "launchd": "ai.investment.crypto",   "schedule": "5분 주기 (내부 30분 throttle + BTC ±3% 긴급트리거)", "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"] },
-        "domestic": { "file": "bots/investment/markets/domestic.js", "launchd": "ai.investment.domestic", "schedule": "5분 주기 (내부 30분 throttle + KST 09:00~15:30 장중필터)", "symbols": ["005930", "000660"] },
-        "overseas": { "file": "bots/investment/markets/overseas.js", "launchd": "ai.investment.overseas", "schedule": "5분 주기 (내부 30분 throttle + DST 자동반영 NYSE 장중필터)", "symbols": ["AAPL", "TSLA", "NVDA"] }
+        "crypto": {
+          "file": "bots/investment/markets/crypto.js",
+          "launchd": "ai.investment.crypto",
+          "schedule": "5분 주기 (내부 30분 throttle + BTC ±3% 긴급트리거)",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "BNB/USDT"
+          ]
+        },
+        "domestic": {
+          "file": "bots/investment/markets/domestic.js",
+          "launchd": "ai.investment.domestic",
+          "schedule": "5분 주기 (내부 30분 throttle + KST 09:00~15:30 장중필터)",
+          "symbols": [
+            "005930",
+            "000660"
+          ]
+        },
+        "overseas": {
+          "file": "bots/investment/markets/overseas.js",
+          "launchd": "ai.investment.overseas",
+          "schedule": "5분 주기 (내부 30분 throttle + DST 자동반영 NYSE 장중필터)",
+          "symbols": [
+            "AAPL",
+            "TSLA",
+            "NVDA"
+          ]
+        }
       },
       "shared": {
-        "db":          "bots/investment/shared/db.js",
-        "llm-client":  "bots/investment/shared/llm-client.js",
-        "secrets":     "bots/investment/shared/secrets.js",
-        "cost-tracker":"bots/investment/shared/cost-tracker.js",
-        "report":      "bots/investment/shared/report.js"
+        "db": "bots/investment/shared/db.js",
+        "llm-client": "bots/investment/shared/llm-client.js",
+        "secrets": "bots/investment/shared/secrets.js",
+        "cost-tracker": "bots/investment/shared/cost-tracker.js",
+        "report": "bots/investment/shared/report.js"
       },
       "config": "bots/investment/config.yaml",
-      "db":     "bots/investment/db/investment.duckdb",
+      "db": "bots/investment/db/investment.duckdb",
       "deployTargets": [],
       "ops": {
         "logFiles": {
-          "crypto":   "/tmp/investment-crypto.log",
+          "crypto": "/tmp/investment-crypto.log",
           "domestic": "/tmp/investment-domestic.log",
           "overseas": "/tmp/investment-overseas.log"
         },
         "stateFiles": {
-          "crypto":   "~/.openclaw/investment-state.json",
+          "crypto": "~/.openclaw/investment-state.json",
           "domestic": "~/.openclaw/investment-domestic-state.json",
           "overseas": "~/.openclaw/investment-overseas-state.json"
         },
@@ -212,111 +352,6 @@
         ]
       }
     },
-    "invest": {
-      "name": "루나 (Luna)",
-      "team": "루나팀",
-      "teamRole": "메인봇",
-      "description": "암호화폐·국내외주식 자동매매 메인봇 — 바이낸스 Spot(BTC/ETH/SOL/BNB) + 업비트 브릿지 + KIS 국내주식(005930/000660) (드라이런 기본값)",
-      "subBots": {
-        "_status_note": "Phase 0 DEV 드라이런 운영 중 (2026-03-02). v2.0 리서처·백테스팅은 Phase 3(맥미니 이전 후)",
-        "jason": {
-          "name": "제이슨",
-          "file": "src/analysts/signal-aggregator.js",
-          "role": "신호 집계기 — TA(6지표·3타임프레임) + 온체인 + 뉴스 + 감성 + haiku LLM 최종 판단 (5분 주기)",
-          "status": "dev",
-          "symbols": {
-            "crypto": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"],
-            "kis":    ["005930", "000660"]
-          },
-          "pipeline": [
-            "TA 분석 (RSI/MACD/BB/이평정배열/스토캐스틱/ATR/거래량) × 3 TF(1d/4h/1h)",
-            "온체인 분석 (공포탐욕지수/펀딩비/Long-Short비율/미결제약정)",
-            "뉴스 분석 (CoinTelegraph RSS 키워드 감성)",
-            "커뮤니티 감성 분석 (Reddit/DCInside)",
-            "KIS 일봉 TA (Yahoo Finance 폴백, 150개 이력) + 장중필터(09:00~15:30 KST)",
-            "claude-haiku-4-5 LLM 최종 판단 → DB 저장 + 텔레그램"
-          ]
-        },
-        "tyler": {
-          "name": "타일러",
-          "file": "src/binance-executor.js",
-          "role": "바이낸스 Spot 실행봇 — 시장가 매수/매도, 리스크 매니저 연동 (드라이런)",
-          "status": "dev"
-        },
-        "molly": {
-          "name": "몰리",
-          "file": "src/upbit-bridge.js",
-          "role": "업비트 브릿지 — KRW↔USDT 환전·전송 (드라이런)",
-          "status": "dev"
-        },
-        "chris": {
-          "name": "크리스",
-          "file": "src/kis-executor.js",
-          "role": "KIS 국내주식 실행봇 — 시장가 주문, 모의투자 기본값, 6지표 TA",
-          "status": "dev",
-          "notes": [
-            "lib/kis.js: 토큰캐시·OHLCV(Yahoo폴백)·매수매도·잔고",
-            "모의투자(kis_paper_trading:true) 기본, kis_paper_app_key 필요",
-            "VTS 포트: 29443, TLS rejectUnauthorized:false"
-          ]
-        },
-        "_analysts_integrated": {
-          "_note": "아래 분석가들은 제이슨(signal-aggregator.js)에 통합 구현됨 — 별도 봇 없음",
-          "ta-analyst":   { "name": "기술분석가",  "file": "src/analysts/ta-analyst.js",         "role": "RSI/MACD/BB/이평정배열/스토캐스틱/ATR/거래량 6지표",      "status": "dev" },
-          "onchain":      { "name": "온체인분석가", "file": "src/analysts/onchain-analyst.js",    "role": "공포탐욕지수/펀딩비/Long-Short/미결제약정",               "status": "dev" },
-          "news":         { "name": "뉴스분석가",  "file": "src/analysts/news-analyst.js",       "role": "CoinTelegraph RSS 키워드 분석",                          "status": "dev" },
-          "sentiment":    { "name": "감성분석가",  "file": "src/analysts/sentiment-analyst.js",  "role": "Reddit/DCInside 커뮤니티 감성",                          "status": "dev" }
-        },
-        "fund-manager": {
-          "name": "루나 펀드매니저",
-          "file": "src/fund-manager.js",
-          "llm": "claude-sonnet-4-6",
-          "role": "포트폴리오 레벨 최종 투자 판단 — 신호 종합 + 자산배분 + 실행 (30분 주기)",
-          "status": "dev",
-          "launchd": "ai.invest.fund"
-        },
-        "reporter": {
-          "name": "루나 리포터",
-          "file": "src/reporter.js",
-          "role": "일간/주간/월간 성과 리포트 — 매일 22:00 KST 텔레그램 자동 발송",
-          "status": "dev",
-          "launchd": "ai.invest.report"
-        },
-        "_v2_researchers": {
-          "_note": "HedgeAgents 토론 패턴 (arXiv:2502.13165) — signal-aggregator에 통합 완료",
-          "bull-researcher": { "name": "강세 리서처", "llm": "claude-haiku-4-5-20251001", "role": "매수 근거 + 목표가 제시", "status": "dev" },
-          "bear-researcher": { "name": "약세 리서처", "llm": "claude-haiku-4-5-20251001", "role": "매도 근거 + 손절가 제시", "status": "dev" }
-        },
-        "_v2_others": {
-          "risk-manager-v2": { "name": "리스크 매니저 v2", "llm": "claude-haiku-4-5-20251001", "role": "포지션·손실 한도 최종 검토 (LLM 강화, 현재 규칙 기반)", "status": "planned" },
-          "backtester":      { "name": "백테스팅 엔진",   "llm": "ollama/deepseek-r1:32b",  "role": "신규 전략 검증 + 파라미터 최적화 (매주 일요일 02:00)",     "status": "planned" }
-        }
-      },
-      "status": "dev",
-      "contextPath": "bots/invest/context",
-      "model": {
-        "primary": "anthropic/claude-haiku-4-5-20251001",
-        "fallbacks": ["google-gemini-cli/gemini-2.5-flash"]
-      },
-      "deployTargets": [],
-      "ops": {
-        "startScript":    "bots/invest/src/start-invest-ops.sh",
-        "bridgeScript":   "bots/invest/src/start-invest-bridge.sh",
-        "executorScript": "bots/invest/src/binance-executor.js",
-        "logFile":        "/tmp/invest-dev.log",
-        "launchd": {
-          "ai.invest.dev":    "5분 주기 신호 집계 (DRY_RUN=true)",
-          "ai.invest.bridge": "업비트 브릿지"
-        },
-        "opsRequirements": [
-          "secrets.json: dry_run=false",
-          "secrets.json: binance_api_key, binance_api_secret",
-          "secrets.json: telegram_bot_token",
-          "INVEST_MODE=ops 환경변수",
-          "바이낸스 API: IP 화이트리스트 + 출금 비활성화"
-        ]
-      }
-    },
     "secretary": {
       "name": "비서봇",
       "description": "개인 일정 관리 및 업무 보조",
@@ -324,7 +359,9 @@
       "contextPath": "bots/secretary/context",
       "model": {
         "primary": "ollama/qwen2.5:14b",
-        "fallbacks": ["anthropic/claude-haiku-4-5"]
+        "fallbacks": [
+          "anthropic/claude-haiku-4-5"
+        ]
       },
       "deployTargets": []
     },
@@ -335,7 +372,9 @@
       "contextPath": "bots/business/context",
       "model": {
         "primary": "ollama/qwen2.5:32b",
-        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+        "fallbacks": [
+          "anthropic/claude-sonnet-4-6"
+        ]
       },
       "deployTargets": []
     },
@@ -346,7 +385,9 @@
       "contextPath": "bots/academic/context",
       "model": {
         "primary": "ollama/deepseek-r1:32b",
-        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+        "fallbacks": [
+          "anthropic/claude-sonnet-4-6"
+        ]
       },
       "deployTargets": []
     },
@@ -357,7 +398,9 @@
       "contextPath": "bots/legal/context",
       "model": {
         "primary": "ollama/deepseek-r1:32b",
-        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+        "fallbacks": [
+          "anthropic/claude-sonnet-4-6"
+        ]
       },
       "deployTargets": []
     },
@@ -368,7 +411,9 @@
       "contextPath": "bots/orchestrator/context",
       "model": {
         "primary": "ollama/qwen2.5:32b",
-        "fallbacks": ["anthropic/claude-sonnet-4-6"]
+        "fallbacks": [
+          "anthropic/claude-sonnet-4-6"
+        ]
       },
       "deployTargets": []
     }

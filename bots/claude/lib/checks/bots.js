@@ -35,12 +35,6 @@ function checkLaunchd(items) {
     { id: 'ai.ska.naver-monitor',     label: '스카팀 앤디 네이버모니터 (launchd)' },
     { id: 'ai.ska.kiosk-monitor',     label: '스카팀 지미 키오스크모니터 (launchd)' },
     { id: 'ai.ska.tmux',              label: '스카팀 tmux 세션 (launchd)' },
-    // 루나팀 Phase 0 (DEV)
-    { id: 'ai.invest.dev',            label: '루나팀 신호집계-DEV (launchd)' },
-    { id: 'ai.invest.tpsl',           label: '루나팀 TP/SL 모니터 (launchd)' },
-    { id: 'ai.invest.fund',           label: '루나팀 펀드매니저 (launchd)' },
-    { id: 'ai.invest.report',         label: '루나팀 성과리포트 (launchd)' },
-    { id: 'ai.invest.bridge',         label: '루나팀 브릿지 (launchd)' },
     // 루나팀 Phase 3
     { id: 'ai.investment.crypto',     label: '루나팀 크립토 사이클 (launchd)' },
     { id: 'ai.investment.domestic',   label: '루나팀 국내주식 사이클 (launchd)' },
