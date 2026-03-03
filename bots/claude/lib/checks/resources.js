@@ -44,7 +44,24 @@ function checkDisk(items) {
 
 function checkMemory(items) {
   const totalGB = os.totalmem() / 1073741824;
-  const freeGB  = os.freemem()  / 1073741824;
+
+  // macOS는 Inactive 메모리를 즉시 반환 가능한 여유 메모리로 사용
+  // os.freemem()은 Free 페이지만 반환해 97%+ 오탐 발생 → vm_stat 기준으로 계산
+  let freeGB;
+  try {
+    const vmstat = execSync('vm_stat', { encoding: 'utf8', timeout: 3000 });
+    const page   = 16384; // Apple Silicon 16KB 페이지
+    const get    = key => {
+      const m = vmstat.match(new RegExp(key + ':\\s+(\\d+)'));
+      return m ? parseInt(m[1], 10) * page / 1073741824 : 0;
+    };
+    // 활동 모니터 기준: Free + Inactive = 실제 사용 가능한 여유 메모리
+    freeGB = get('Pages free') + get('Pages inactive') + get('Pages speculative');
+  } catch {
+    // vm_stat 실패 시 os.freemem() 폴백
+    freeGB = os.freemem() / 1073741824;
+  }
+
   const usedPct = ((totalGB - freeGB) / totalGB * 100).toFixed(1);
 
   if (freeGB < cfg.THRESHOLDS.memMinFreeGB) {
