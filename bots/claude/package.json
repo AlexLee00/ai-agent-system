@@ -15,6 +15,10 @@
     "archer:fetch-only": "node src/archer.js --fetch-only",
     "migrate":           "node scripts/migrate.js",
     "status":            "node scripts/team-status.js",
-    "patch:status":      "node scripts/patch-status.js"
+    "patch:status":      "node scripts/patch-status.js",
+    "check:claude":      "node scripts/team-check.js --team=claude",
+    "check:ska":         "node scripts/team-check.js --team=ska",
+    "check:luna":        "node scripts/team-check.js --team=luna",
+    "check:all":         "node scripts/team-check.js --team=all"
   }
 }
