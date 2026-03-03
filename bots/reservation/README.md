@@ -11,51 +11,113 @@
 ```
 [네이버 스마트플레이스]
         ↓ 신규 예약 감지 (5분 주기)     ↓ 취소 감지 (교차검증)
-[naver-monitor.js]                         ↓ currentCancelledList 비교
+[auto/monitors/naver-monitor.js]            ↓ currentCancelledList 비교
         ↓ runPickko()               runPickkoCancel() / 이용완료 추정 스킵
-[pickko-accurate.js]           [pickko-cancel.js]
-   Stage [1-9] 자동 등록          취소 처리 [1-10]
+[manual/reservation/pickko-accurate.js]  [manual/reservation/pickko-cancel.js]
+   Stage [1-9] 자동 등록                  취소 처리 [1-10]
         ↓
 [픽코 키오스크] ← 예약 등록+결제 / 취소 상태 변경
         ↓
-[SQLite DB] ← 예약 이력 + AES-256-GCM 암호화
+[SQLite DB] ← 예약 이력 + AES-256-GCM 암호화  +  agent_state / pickko_lock / pending_blocks
         ↓
 [Telegram] ← 사장님 알람 (new/completed/cancelled/error)
 ```
 
 ---
 
-## 파일 구조
+## 디렉토리 구조 (v3.0 — 2026-03-03)
 
 ```
 reservation/
-├── src/
-│   ├── naver-monitor.js      # 네이버 모니터링 + 픽코 트리거 (메인)
-│   ├── pickko-accurate.js    # 픽코 자동 예약 등록 Stage [1-9]
-│   ├── pickko-cancel.js      # 픽코 자동 취소 Stage [1-10]
-│   ├── pickko-verify.js      # pending/failed 예약 재검증 + 자동 등록
-│   └── start-ops.sh          # OPS 자동 재시작 루프
+├── auto/
+│   ├── monitors/
+│   │   ├── naver-monitor.js          # 앤디: 네이버 모니터링 + 픽코 트리거 (상시)
+│   │   ├── pickko-kiosk-monitor.js   # 지미: 키오스크 예약 감지 + 네이버 차단 (10분)
+│   │   ├── start-ops.sh              # OPS 자동 재시작 루프 (naver-monitor)
+│   │   ├── run-kiosk-monitor.sh      # 키오스크 모니터 래퍼 (launchd)
+│   │   └── run-today-audit.sh        # 오늘 예약 검증 래퍼 (08:30 KST)
+│   └── scheduled/
+│       ├── pickko-daily-summary.js   # 일일 요약 (자동)
+│       ├── pickko-daily-audit.js     # 일일 감사 (자동)
+│       ├── pickko-pay-scan.js        # 결제 스캔 (자동)
+│       ├── run-daily-summary.sh      # 래퍼
+│       ├── run-audit.sh              # 래퍼
+│       └── run-pay-scan.sh           # 래퍼
+├── manual/
+│   ├── reservation/
+│   │   ├── pickko-accurate.js        # 예약 등록 Stage [1-9]
+│   │   ├── pickko-cancel.js          # 예약 취소 Stage [1-10]
+│   │   ├── pickko-cancel-cmd.js      # 취소 CLI
+│   │   ├── pickko-register.js        # 등록 CLI
+│   │   └── pickko-query.js           # 조회
+│   ├── admin/
+│   │   ├── pickko-member.js          # 회원 관리
+│   │   ├── pickko-ticket.js          # 티켓 관리
+│   │   ├── pickko-verify.js          # pending/failed 재검증
+│   │   └── run-verify.sh             # 래퍼
+│   └── reports/
+│       ├── occupancy-report.js       # 가동률 리포트
+│       ├── pickko-alerts-query.js    # 알림 조회
+│       ├── pickko-stats-cmd.js       # 통계 CLI
+│       ├── pickko-revenue-confirm.js # 매출 확인
+│       ├── pickko-pay-pending.js     # 결제 대기 조회
+│       └── log-report.sh             # 로그 분석 리포트
 ├── lib/
-│   ├── validation.js         # 전화번호/날짜/시간 정규식 변환
-│   ├── utils.js              # delay, log
-│   ├── secrets.js            # loadSecrets()
-│   ├── formatting.js         # toKoreanTime, pickkoEndTime, formatPhone
-│   ├── files.js              # loadJson, saveJson
-│   ├── args.js               # parseArgs() — 불리언 플래그 지원
-│   ├── browser.js            # getPickkoLaunchOptions, setupDialogHandler
-│   ├── pickko.js             # loginToPickko()
-│   ├── db.js                 # SQLite (better-sqlite3) 연결 + 마이그레이션
-│   ├── crypto.js             # AES-256-GCM 예약 데이터 암호화
-│   ├── telegram.js           # sendTelegram, savePending, flushPendingTelegrams
-│   ├── health.js             # preflightSystemCheck, preflightConnCheck, registerShutdownHandlers
-│   ├── mode.js               # DEV/OPS 분리 (MODE 환경변수, getModeSuffix)
-│   ├── status.js             # 프로세스 상태 파일 (/tmp/ska-status.json)
-│   ├── error-tracker.js      # 연속 오류 카운터
-│   └── cli.js                # outputResult, fail (공통 출력 포맷)
-├── secrets.json              # 네이버/픽코 로그인 정보 (git 제외)
-├── naver-seen.json           # OPS 예약 상태 저장
-├── naver-seen-dev.json       # DEV 예약 상태 저장
+│   ├── state-bus.js      # ★ 에이전트 간 통신 버스 (v3.0 신규)
+│   ├── pickko.js         # 핵심 픽코 엔진
+│   ├── db.js             # SQLite (better-sqlite3) + 마이그레이션
+│   ├── validation.js     # 전화번호/날짜/시간 정규식 변환
+│   ├── crypto.js         # AES-256-GCM 암호화
+│   ├── telegram.js       # 텔레그램 알림
+│   ├── browser.js        # Puppeteer 설정
+│   ├── health.js         # 프리플라이트 + 셧다운 핸들러
+│   ├── mode.js           # DEV/OPS 분리
+│   ├── status.js         # 프로세스 상태 파일
+│   ├── error-tracker.js  # 연속 오류 카운터
+│   ├── args.js           # parseArgs() — 불리언 플래그 지원
+│   ├── cli.js            # outputResult, fail
+│   ├── formatting.js     # toKoreanTime, formatPhone
+│   ├── files.js          # loadJson, saveJson
+│   ├── secrets.js        # loadSecrets()
+│   ├── utils.js          # delay, log
+│   ├── vip.js            # VIP 배지
+│   └── pickko-stats.js   # 픽코 통계
+├── migrations/
+│   ├── 001_initial_schema.js
+│   ├── 002_daily_summary_columns.js
+│   └── 003_agent_state.js  # ★ agent_state / pickko_lock / pending_blocks (v3.0)
+├── src/                    # 진단·테스트 도구 (비자동화)
+│   ├── analyze-booking-page.js
+│   ├── backfill-study-room.js
+│   ├── bug-report.js
+│   ├── check-naver.js
+│   ├── get-naver-html.js
+│   ├── init-naver-booking-session.js
+│   ├── inspect-naver.js
+│   ├── test-kiosk-register.js
+│   └── test-nlp-e2e.js
+├── secrets.json            # 네이버/픽코 로그인 정보 (git 제외)
 └── package.json
+```
+
+---
+
+## 에이전트 통신 (v3.0 신규)
+
+`lib/state-bus.js` — SQLite 기반 에이전트 간 통신:
+
+| 테이블 | 역할 |
+|--------|------|
+| `agent_state` | 앤디/지미/수동 상태 공유 (idle/running/error) |
+| `pickko_lock` | 픽코 어드민 단독접근 뮤텍스 (TTL 5분) |
+| `pending_blocks` | 앤디→지미 블록 요청 큐 |
+
+```javascript
+// 사용 예
+const sb = require('./lib/state-bus');
+sb.updateAgentState('andy', 'running', '모니터링 사이클 #1');
+const ok = sb.acquirePickkoLock('jimmy');   // 픽코 락 획득
+sb.releasePickkoLock('jimmy');              // 해제
 ```
 
 ---
@@ -64,17 +126,16 @@ reservation/
 
 ```bash
 # OPS 모드 시작 (자동 재시작 루프)
-cd ~/projects/ai-agent-system/bots/reservation/src
-bash start-ops.sh >> /tmp/naver-ops-mode.log 2>&1 &
+launchctl load ~/Library/LaunchAgents/ai.ska.naver-monitor.plist
 
 # 로그 확인
 tail -f /tmp/naver-ops-mode.log
 
-# pending/failed 재검증 (수동)
-node src/pickko-verify.js
+# 수동 재검증
+node manual/admin/pickko-verify.js
 
-# dry-run (로그인 없이 대상 목록만 확인)
-node src/pickko-verify.js --dry-run
+# dry-run
+node manual/admin/pickko-verify.js --dry-run
 ```
 
 ---
@@ -84,10 +145,10 @@ node src/pickko-verify.js --dry-run
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `MODE` | dev | `ops` = 전체 고객, `dev` = 화이트리스트만 |
-| `NAVER_INTERVAL_MS` | 180000 | 모니터링 주기 (ms) |
+| `NAVER_INTERVAL_MS` | 300000 | 모니터링 주기 (ms, ops 기본 5분) |
 | `PICKKO_ENABLE` | 0 | 픽코 자동 등록 활성화 |
 | `PICKKO_CANCEL_ENABLE` | 0 | 픽코 자동 취소 활성화 |
-| `PICKKO_PROTOCOL_TIMEOUT_MS` | 180000 | 픽코 브라우저 프로토콜 타임아웃 |
+| `PICKKO_PROTOCOL_TIMEOUT_MS` | 300000 | 픽코 브라우저 프로토콜 타임아웃 |
 | `OBSERVE_ONLY` | 0 | 1 = 픽코 실행 없이 관찰만 |
 
 ---

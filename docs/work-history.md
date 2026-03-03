@@ -9,6 +9,32 @@
 
 
 
+## 2026-03-03
+### ✨ 스카팀 운영관리 고도화 v3.0
+- **Phase A: 폴더 구조 개편** — bots/reservation/src/ 27개 파일 → auto/manual 계층 구조 재편 (git mv)
+  - auto/monitors/: naver-monitor(앤디), pickko-kiosk-monitor(지미) + 래퍼 sh
+  - auto/scheduled/: daily-summary/audit/pay-scan + 래퍼 sh
+  - manual/reservation/: pickko-accurate/cancel/register/query
+  - manual/admin/: pickko-member/ticket/verify
+  - manual/reports/: occupancy/alerts/stats/revenue/pay-pending
+  - src/ 잔류: 진단·테스트 9개 파일
+  - launchd plist 8개 경로 업데이트 + 재로드 (exit 127 전부 해소)
+- **Phase B: 에이전트 통신 구축** — lib/state-bus.js + migrations/003_agent_state.js
+  - agent_state 테이블: 에이전트 상태 공유 (idle/running/error)
+  - pickko_lock 테이블: 픽코 어드민 단독접근 뮤텍스 (TTL 5분)
+  - pending_blocks 테이블: 앤디→지미 블록 요청 큐
+  - 앤디: 사이클 시작→running, 완료→idle, 오류→error 전환
+  - 지미: acquirePickkoLock + finally 블록에서 idle 전환 + 락 해제
+  - 수동(pickko-accurate): acquirePickkoLock('manual') + process.once('exit') 자동 해제
+- **Phase C: 덱스터 ska 감시** — bots/claude/lib/checks/ska.js (5개 체크)
+  - DB 존재, agent staleness(10분warn/30분error), pickko 데드락, 큐 적체, 앤디 마지막 성공
+  - dexter.js: bots→ska→logs 순서로 등록
+- **버그 수정**: state-bus updateAgentState 파라미터 순서 오류 (last_success_at↔last_error 뒤바뀜)
+- **버그 수정**: pickko-kiosk-monitor 조기리턴 경로에서 jimmy 'running' 잔존 → finally 블록으로 이동
+- 테스트: 폴더구조/state-bus(9케이스)/kiosk-monitor DEV 실행/덱스터 ska 전체 통과
+- 루나팀 + 스카팀 launchd 정지 → 테스트 → 재시작
+<!-- session-close:2026-03-03:스카팀-고도화-v3.0 -->
+
 ## 2026-03-02
 ### ✨ Phase 3 E2E 테스트 + 아리아 안정성 개선
 - 루나팀 Phase 3 전 사이클 E2E 테스트 완료: crypto(8.4초) / domestic(4.3초) / overseas(5.9초)
