@@ -760,6 +760,19 @@ function recordMigration(version, name) {
   ).run(version, name);
 }
 
+/**
+ * 취소 감지 3 (DB 크로스체크)용
+ * fromDate(YYYY-MM-DD) 이후 미래 날짜 중 픽코 등록 완료된 예약 반환
+ * → 현재 네이버 확정 리스트에 없으면 취소로 간주
+ */
+function getFuturePickkoRegistered(fromDate) {
+  const db = getDb();
+  const rows = db.prepare(
+    "SELECT * FROM reservations WHERE date >= ? AND status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('cancelled','manual','time_elapsed'))"
+  ).all(fromDate);
+  return rows.map(_decryptRow);
+}
+
 /** 현재 스키마 버전 반환 (최대 version) */
 function getSchemaVersion() {
   const db = getDb();
@@ -780,6 +793,7 @@ module.exports = {
   getPendingReservations,
   getUnverifiedCompletedReservations,
   getAllNaverKeys,
+  getFuturePickkoRegistered,
   rollbackProcessing,
   pruneOldReservations,
   // cancelled_keys

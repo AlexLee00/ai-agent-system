@@ -109,16 +109,17 @@ function syncHandoff(data) {
     issueBlock += '| 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |\n';
     issueBlock += '|------|--------|----|------|--------|------|\n';
     for (const b of openBugs) {
-      issueBlock += `| ${STATUS_ICON[b.status]} | ${SEV_ICON[b.severity] || b.severity} | \`${b.id}\` | ${b.title} | ${b.detectedBy} | ${ageText(b.detectedAt)} |\n`;
+      issueBlock += `| ${STATUS_ICON[b.status]} | ${SEV_ICON[b.severity] || b.severity} | \`${b.id}\` | ${b.title} | ${b.detectedBy || b.source || '-'} | ${ageText(b.detectedAt || b.createdAt)} |\n`;
     }
   }
 
   if (recentResolved.length > 0) {
     issueBlock += '\n**최근 해결:**\n';
     for (const b of recentResolved) {
-      const last = b.actions[b.actions.length - 1];
+      const actions = Array.isArray(b.actions) ? b.actions : [];
+      const last = actions[actions.length - 1];
       issueBlock += `- ✅ \`${b.id}\` **${b.title}**\n`;
-      issueBlock += `  ${last?.description || ''} (${ageText(b.resolvedAt)})\n`;
+      issueBlock += `  ${last?.description || b.detail || ''} (${ageText(b.resolvedAt || b.updatedAt)})\n`;
     }
   }
 
@@ -247,8 +248,12 @@ function cmdList(args) {
   console.log(`\n📋 버그 목록 [${filter}] — ${bugs.length}건\n`);
   for (const b of bugs) {
     console.log(`${STATUS_ICON[b.status] || '?'} [${b.id}] ${SEV_ICON[b.severity] || ''} ${b.title}`);
-    console.log(`   카테고리: ${b.category} | 발견: ${b.detectedBy} | ${ageText(b.detectedAt)} | 조치: ${b.actions.length}건`);
-    if (b.relatedFiles.length) console.log(`   파일: ${b.relatedFiles.join(', ')}`);
+    const detectedBy = b.detectedBy || b.source || '-';
+    const detectedAt = b.detectedAt || b.createdAt || '';
+    const actionCount = Array.isArray(b.actions) ? b.actions.length : 0;
+    const relatedFiles = Array.isArray(b.relatedFiles) ? b.relatedFiles : [];
+    console.log(`   카테고리: ${b.category || '-'} | 발견: ${detectedBy} | ${ageText(detectedAt)} | 조치: ${actionCount}건`);
+    if (relatedFiles.length) console.log(`   파일: ${relatedFiles.join(', ')}`);
     console.log();
   }
 }

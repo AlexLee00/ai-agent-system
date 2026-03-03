@@ -22,24 +22,16 @@
 > 자동 관리: `bug-report.js` 실행 시 갱신 | 수동 등록: `node src/bug-report.js --new --title "..." --by ska`
 
 <!-- bug-tracker:issues:start -->
-| 상태 | 심각도 | ID | 제목 | 발견자 | 경과 |
-|------|--------|----|------|--------|------|
-| 🔴 | 🟡 | `BUG-006` | BOOT 재시작 시 파일명 텔레그램 출력 이슈 | ska | 3일 전 |
-| 🔴 | 🔴 | `BUG-010` | 픽코 자동 등록 실패 | ska | 1일 전 |
-| 🔴 | 🔴 | `BUG-011` | 픽코 자동 등록 실패 | ska | 21시간 전 |
-| 🔴 | 🔴 | `BUG-012` | pickko-member.js 회원 등록 중 Runtime.callFunctionOn 타임아웃 발생 | ska | 21시간 전 |
-| 🔴 | 🔴 | `BUG-013` | 픽코 자동 등록 실패 | ska | 12시간 전 |
-| 🔴 | 🟡 | `DXT-300739` | [덱스터] 핵심 파일 체크섬 변경 감지 | undefined | NaN분 전 |
-| 🔴 | 🔴 | `BUG-014` | 픽코 자동 등록 실패 | ska | 10분 전 |
-| 🔴 | 🔴 | `BUG-015` | 픽코 자동 등록 실패 | ska | 0분 전 |
+_현재 미해결 이슈 없음_
 
 **최근 해결:**
-- ✅ `BUG-009` **픽코 자동 취소 실패**
-  고객:010-2187-5073 / 2026-03-14 09:00~10:30 / B룸 / exit code 1 (1일 전)
-- ✅ `BUG-008` **픽코 자동 등록 실패**
-  고객:010-2187-5073 / 2026-03-14 09:00~10:30 / B룸 / exit code 1 (1일 전)
-- ✅ `BUG-007` **Puppeteer Runtime.callFunctionOn 타임아웃 반복 발생**
-  버그 최초 보고 (3일 전)
+- ✅ `BUG-006` **BOOT 재시작 시 파일명 텔레그램 출력 이슈**
+  버그 최초 보고 (0분 전)
+- ✅ `BUG-012` **pickko-member.js 회원 등록 중 Runtime.callFunctionOn 타임아웃 발생**
+  010-9075-3796 유선욱 고객 회원 등록 중 Runtime.callFunctionOn timed out 오류 발생. Puppeteer protocolTimeout이 부족하거나 다른 원인으로 인해 회원 등록 프로세스가 완료되지 못함. (2분 전)
+- ✅ `DXT-552824` **[덱스터] DB 무결성 오류**
+  DuckDB (루나): Command failed: node "/var/folders/5r/5024qfb56hx2lkvw6jc_ldbm0000gn/T/dexter-db-1772410550619.js"
+{"error":"Connection Error: Connection was never established or has been closed already"} (2분 전)
 <!-- bug-tracker:issues:end -->
 
 ---

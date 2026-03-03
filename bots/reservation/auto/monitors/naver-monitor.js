@@ -23,7 +23,7 @@ const {
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
-  getTodayStats,
+  getTodayStats, getFuturePickkoRegistered,
 } = require('../../lib/db');
 const fs = require('fs');
 const path = require('path');
@@ -1178,7 +1178,14 @@ async function monitorBookings() {
             log(`🗑️ 오늘 취소 탭: ${cancelledList.length}건`);
 
             if (cancelledList.length > 0) {
-              const cancelCandidates = cancelledList.filter(c => !isCancelledKey(toCancelKey(c)));
+              const _c2ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
+              const _c2ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
+              const cancelCandidates = cancelledList.filter(c => {
+                if (isCancelledKey(toCancelKey(c))) return false;
+                // OBSERVE_ONLY 모드: 화이트리스트 번호만 취소 처리
+                if (_c2ObserveOnly && !_c2ObservePhones.includes(String(c.phoneRaw || c.phone.replace(/\D/g, '')))) return false;
+                return true;
+              });
 
               if (cancelCandidates.length > 0) {
                 log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
@@ -1208,7 +1215,14 @@ async function monitorBookings() {
             try {
               const toKey = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
               const currentKeys = new Set(currentConfirmedList.map(b => toKey(b)));
-              const droppedFromConfirmed = previousConfirmedList.filter(b => !currentKeys.has(toKey(b)));
+              // OBSERVE_ONLY 모드: 화이트리스트 번호만 취소 처리
+              const _d1ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
+              const _d1ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
+              const droppedFromConfirmed = previousConfirmedList.filter(b => {
+                if (currentKeys.has(toKey(b))) return false;
+                if (_d1ObserveOnly && !_d1ObservePhones.includes(String(b.phoneRaw || b.phone.replace(/\D/g, '')))) return false;
+                return true;
+              });
 
               if (droppedFromConfirmed.length > 0) {
                 log(`🗑️ 확정 리스트에서 ${droppedFromConfirmed.length}건 사라짐 → 취소 탭 교차검증 시작`);
@@ -1221,8 +1235,16 @@ async function monitorBookings() {
                       addCancelledKey(cancelKey);
                       await runPickkoCancel(dropped, cancelKey);
                     } else {
-                      // 취소 탭에 없음 → 이용완료 또는 기타 사유 (픽코 취소 안 함)
-                      log(`⚠️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.start}~${dropped.end} 확정 리스트에서 사라졌으나 취소 탭 미확인 → 이용완료 추정, 픽코 취소 스킵`);
+                      // 취소 탭에 없음 → 날짜로 판단
+                      if (dropped.date && dropped.date > todaySeoul) {
+                        // 미래 날짜 예약은 이용완료 불가 → 취소 탭 URL이 date= 기준이라 안 보일 수 있음 → 취소로 간주
+                        log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 미래 예약이 확정 리스트에서 사라짐 → 이용완료 불가, 취소 처리`);
+                        addCancelledKey(cancelKey);
+                        await runPickkoCancel(dropped, cancelKey);
+                      } else {
+                        // 오늘/과거 날짜 → 이용완료 추정 (정상 종료)
+                        log(`⚠️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.start}~${dropped.end} 확정 리스트에서 사라졌으나 취소 탭 미확인 → 이용완료 추정, 픽코 취소 스킵`);
+                      }
                     }
                   }
                 }
@@ -1233,6 +1255,36 @@ async function monitorBookings() {
               log(`⚠️ 확정→취소 감지 중 오류: ${dropErr.message}`);
             }
           } // end confirmedCount !== 0 guard
+        }
+
+        // ✅ 취소 감지 3: DB 크로스체크 (재시작 후에도 미래 예약 취소 누락 방지)
+        // state.db 픽코 등록 완료 미래 예약 → 네이버 확정 리스트에 없으면 취소로 간주
+        if (process.env.PICKKO_CANCEL_ENABLE === '1') {
+          try {
+            const tomorrowSeoul = new Date(new Date(todaySeoul + 'T00:00:00+09:00').getTime() + 86400000)
+              .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const futureRegistered = getFuturePickkoRegistered(tomorrowSeoul);
+            if (futureRegistered.length > 0) {
+              const _d3ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
+              const _d3ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
+              // 현재 확정 리스트: bookingId + 복합키 집합
+              const confirmedIds  = new Set(currentConfirmedList.map(b => b.bookingId).filter(Boolean));
+              const confirmedKeys = new Set(currentConfirmedList.map(b => `${b.date}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g,'')}`));
+              for (const reg of futureRegistered) {
+                if (_d3ObserveOnly && !_d3ObservePhones.includes(reg.phoneRaw || '')) continue;
+                const regKey   = `${reg.date}|${reg.start}|${reg.end}|${reg.room}|${reg.phoneRaw}`;
+                const cancelKey = toCancelKey(reg);
+                if (isCancelledKey(cancelKey)) continue; // 이미 처리됨
+                if (confirmedIds.has(reg.id) || confirmedKeys.has(regKey)) continue; // 확정 리스트에 있음
+                // 확정 리스트에 없음 → 취소로 간주
+                log(`🗑️ [취소감지3] DB크로스체크: ${maskPhone(reg.phone)} ${reg.date} ${reg.start}~${reg.end} 네이버 확정 미존재 → 취소 처리`);
+                addCancelledKey(cancelKey);
+                await runPickkoCancel(reg, cancelKey);
+              }
+            }
+          } catch (d3Err) {
+            log(`⚠️ 취소 감지 3 (DB 크로스체크) 오류: ${d3Err.message}`);
+          }
         }
 
         // ✅ previousConfirmedList 업데이트

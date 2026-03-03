@@ -199,12 +199,12 @@ def run_forecast(con, base_date, periods):
 
     print(f'[FORECAST] 모델 학습 완료')
 
-    # 미래 DataFrame (예측 대상 기간만 확장)
-    future = model.make_future_dataframe(periods=periods, freq='D')
-
-    # 환경 요인 로드
+    # 미래 DataFrame — 훈련 마지막 날짜 기준으로 필요한 만큼 확장
     predict_start = base_date + timedelta(days=1)
     predict_end   = base_date + timedelta(days=periods)
+    hist_last = hist_df['ds'].max().date()
+    needed = max(periods, (predict_end - hist_last).days)
+    future = model.make_future_dataframe(periods=needed, freq='D')
     env_map = load_future_env(con, predict_start, predict_end)
     # 학습 기간 환경 요인도 포함 (future에 과거 포함되므로)
     hist_env_map = {}
