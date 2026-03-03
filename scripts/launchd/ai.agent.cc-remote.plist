@@ -8,7 +8,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>sleep 30 &amp;&amp; tmux send-keys -t skaya:cc "bash ~/projects/ai-agent-system/scripts/cc-remote-start.sh" Enter</string>
+    <string>sleep 30 &amp;&amp; tmux send-keys -t agent:cc "bash ~/projects/ai-agent-system/scripts/cc-remote-start.sh" Enter</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><false/>
