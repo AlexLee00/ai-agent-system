@@ -12,6 +12,30 @@ import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
 
+// ─── 시스템 프롬프트 (v2 — 보수화) ──────────────────────────────────
+
+const NEMESIS_SYSTEM = `
+당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다.
+
+핵심 가치: 수익 극대화가 아니라 손실 최소화.
+의심스러우면 REJECT. 확신 없으면 ADJUST. APPROVE는 엄격하게.
+
+REJECT 조건 (하나라도 해당하면 즉시 REJECT):
+1. 리스크 점수 7 이상
+2. 수익/손실 비율 2:1 미만
+3. 확신도(confidence) 0.55 미만
+4. KST 01:00~07:00 심야 시간 + 포지션 크기 > 5%
+5. 포지션 한도(3개) 도달 + 신규 BUY 신호
+
+ADJUST 조건:
+- 포지션 크기가 5% 초과 → 5%로 축소
+- 심야 시간 → 포지션 크기 50% 강제 축소
+- 동일 방향 상관 포지션 2개 이상 → 신규 크기 50% 축소
+
+응답 형식 (JSON만, 다른 텍스트 없이):
+{"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
+`.trim();
+
 // ─── 하드 규칙 (v1) ─────────────────────────────────────────────────
 
 export const RULES = {
@@ -62,19 +86,6 @@ function calcTimeFactor() {
 
 // ─── v2: LLM 리스크 평가 ────────────────────────────────────────────
 
-const RISK_PROMPT = `당신은 퀀트 리스크 매니저입니다.
-주어진 매매 신호와 포트폴리오 상황을 검토해 리스크 판단을 내립니다.
-
-응답 (JSON만):
-{"decision":"APPROVE"|"ADJUST"|"REJECT","adjusted_amount":숫자,"reasoning":"근거 1문장 (한국어)"}
-
-규칙:
-- APPROVE: 제안 금액 그대로 승인
-- ADJUST: 금액 조정 후 승인 (adjusted_amount에 조정값 명시)
-- REJECT: 리스크가 너무 높아 거부
-- 확신도 0.5~0.6: ADJUST 50% 축소 권장
-- 확신도 0.6 이상: 시황에 따라 APPROVE 가능`;
-
 async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount }) {
   const userMsg = [
     `신호: ${signal.symbol} ${signal.action} $${adjustedAmount}`,
@@ -89,7 +100,7 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callLLM('nemesis', RISK_PROMPT, userMsg, 256);
+  const raw    = await callLLM('nemesis', NEMESIS_SYSTEM, userMsg, 256);
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };
@@ -108,6 +119,7 @@ export async function evaluateSignal(signal, opts = {}) {
   const { symbol, action } = signal;
   let amountUsdt   = signal.amount_usdt || 100;
   const totalUsdt  = opts.totalUsdt || 10000;
+  const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
@@ -170,15 +182,18 @@ export async function evaluateSignal(signal, opts = {}) {
     if (llm.decision === 'REJECT') {
       await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
       await notifyRiskRejection({ symbol, action, reason: `[LLM] ${llm.reasoning}` });
+      await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
       return { approved: false, reason: llm.reasoning };
     }
     if (llm.decision === 'ADJUST' && llm.adjusted_amount) {
       amountUsdt = Math.max(RULES.MIN_ORDER_USDT, Math.floor(llm.adjusted_amount));
     }
+
+    await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
   }
 
   await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
   await db.updateSignalAmount(signal.id, amountUsdt);
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
-  return { approved: true, adjustedAmount: amountUsdt };
+  return { approved: true, adjustedAmount: amountUsdt, traceId };
 }

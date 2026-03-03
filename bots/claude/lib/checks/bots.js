@@ -34,7 +34,6 @@ function checkLaunchd(items) {
     { id: 'ai.openclaw.gateway',      label: '스카팀 OpenClaw 게이트웨이 (launchd)' },
     { id: 'ai.ska.naver-monitor',     label: '스카팀 앤디 네이버모니터 (launchd)' },
     { id: 'ai.ska.kiosk-monitor',     label: '스카팀 지미 키오스크모니터 (launchd)' },
-    { id: 'ai.ska.tmux',              label: '스카팀 tmux 세션 (launchd)' },
     // 루나팀 Phase 3
     { id: 'ai.investment.crypto',     label: '루나팀 크립토 사이클 (launchd)' },
     { id: 'ai.investment.domestic',   label: '루나팀 국내주식 사이클 (launchd)' },

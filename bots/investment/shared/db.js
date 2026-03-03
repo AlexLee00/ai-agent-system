@@ -109,10 +109,64 @@ export async function initSchema() {
     )
   `);
 
+  // ── strategy_pool: 아르고스 수집 외부 전략 ──────────────────────
+  await run(`
+    CREATE TABLE IF NOT EXISTS strategy_pool (
+      id                   VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      strategy_name        VARCHAR UNIQUE NOT NULL,
+      market               VARCHAR NOT NULL,
+      source               VARCHAR,
+      source_url           VARCHAR,
+      entry_condition      TEXT,
+      exit_condition       TEXT,
+      risk_management      TEXT,
+      applicable_timeframe VARCHAR,
+      quality_score        DOUBLE DEFAULT 0.0,
+      summary              TEXT,
+      applicable_now       BOOLEAN DEFAULT true,
+      collected_at         TIMESTAMP DEFAULT now(),
+      applied_count        INTEGER DEFAULT 0,
+      win_rate             DOUBLE
+    )
+  `);
+
+  // ── risk_log: 네메시스 감사 로그 ─────────────────────────────────
+  await run(`
+    CREATE TABLE IF NOT EXISTS risk_log (
+      id           VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      trace_id     VARCHAR UNIQUE NOT NULL,
+      symbol       VARCHAR,
+      exchange     VARCHAR,
+      decision     VARCHAR,
+      risk_score   INTEGER,
+      reason       TEXT,
+      evaluated_at TIMESTAMP DEFAULT now()
+    )
+  `);
+
+  // ── asset_snapshot: 자산 스냅샷 (드로우다운 계산용) ──────────────
+  await run(`
+    CREATE TABLE IF NOT EXISTS asset_snapshot (
+      id         VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      equity     DOUBLE NOT NULL,
+      value_usd  DOUBLE,
+      snapped_at TIMESTAMP DEFAULT now()
+    )
+  `);
+
+  // ── signals 컬럼 추가 (없으면 추가) ─────────────────────────────
+  for (const [col, type] of [['trace_id', 'VARCHAR'], ['block_reason', 'VARCHAR']]) {
+    try { await run(`ALTER TABLE signals ADD COLUMN ${col} ${type}`); } catch { /* 이미 있으면 무시 */ }
+  }
+
   try {
     const rows = await query(`SELECT version FROM schema_migrations WHERE version = 1`);
     if (rows.length === 0) {
       await run(`INSERT INTO schema_migrations (version, name) VALUES (1, 'initial_schema')`);
+    }
+    const v2 = await query(`SELECT version FROM schema_migrations WHERE version = 2`);
+    if (v2.length === 0) {
+      await run(`INSERT INTO schema_migrations (version, name) VALUES (2, 'strategy_pool_risk_log_asset_snapshot')`);
     }
   } catch { /* 무시 */ }
 
@@ -233,6 +287,75 @@ export async function getTodayPnl() {
   return rows[0] || { pnl: 0, trade_count: 0 };
 }
 
+// ─── strategy_pool ───────────────────────────────────────────────────
+
+export async function upsertStrategy(s) {
+  await run(`
+    INSERT INTO strategy_pool
+      (strategy_name, market, source, source_url,
+       entry_condition, exit_condition, risk_management,
+       applicable_timeframe, quality_score, summary, applicable_now, collected_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,now())
+    ON CONFLICT (strategy_name) DO UPDATE SET
+      quality_score        = excluded.quality_score,
+      summary              = excluded.summary,
+      applicable_now       = excluded.applicable_now,
+      collected_at         = excluded.collected_at
+  `, [
+    s.strategy_name, s.market, s.source ?? null, s.source_url ?? null,
+    s.entry_condition ?? null, s.exit_condition ?? null, s.risk_management ?? null,
+    s.applicable_timeframe ?? null, s.quality_score ?? 0, s.summary ?? null,
+    s.applicable_now !== false,
+  ]);
+}
+
+export async function getActiveStrategies(market = 'all', limit = 5) {
+  const marketFilter = market === 'all' ? '' : `AND (market = '${market}' OR market = 'all')`;
+  return query(`
+    SELECT * FROM strategy_pool
+    WHERE applicable_now = true
+      AND quality_score >= 0.6
+      AND collected_at > now() - INTERVAL '7 days'
+      ${marketFilter}
+    ORDER BY quality_score DESC
+    LIMIT ${limit}
+  `);
+}
+
+export async function recordStrategyResult(strategyName, won) {
+  await run(`
+    UPDATE strategy_pool
+    SET applied_count = applied_count + 1,
+        win_rate = (COALESCE(win_rate, 0.5) * applied_count + ?) / (applied_count + 1)
+    WHERE strategy_name = ?
+  `, [won ? 1 : 0, strategyName]);
+}
+
+// ─── risk_log ────────────────────────────────────────────────────────
+
+export async function insertRiskLog({ traceId, symbol, exchange, decision, riskScore, reason }) {
+  await run(
+    `INSERT INTO risk_log (trace_id, symbol, exchange, decision, risk_score, reason)
+     VALUES (?,?,?,?,?,?)`,
+    [traceId, symbol ?? null, exchange ?? null, decision, riskScore ?? null, reason ?? null],
+  );
+}
+
+// ─── asset_snapshot ──────────────────────────────────────────────────
+
+export async function insertAssetSnapshot(equity, valueUsd = null) {
+  await run(`INSERT INTO asset_snapshot (equity, value_usd) VALUES (?,?)`, [equity, valueUsd]);
+}
+
+export async function getLatestEquity() {
+  const rows = await query(`SELECT equity FROM asset_snapshot ORDER BY snapped_at DESC LIMIT 1`);
+  return rows[0]?.equity ?? null;
+}
+
+export async function getEquityHistory(limit = 200) {
+  return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT ${limit}`);
+}
+
 export function close() {
   if (_conn) { _conn.close(); _conn = null; }
   if (_db)   { _db.close();   _db   = null; }
@@ -245,5 +368,8 @@ export default {
   insertTrade, getTradeHistory,
   upsertPosition, getPosition, getAllPositions, deletePosition,
   getTodayPnl,
+  upsertStrategy, getActiveStrategies, recordStrategyResult,
+  insertRiskLog,
+  insertAssetSnapshot, getLatestEquity, getEquityHistory,
   close,
 };

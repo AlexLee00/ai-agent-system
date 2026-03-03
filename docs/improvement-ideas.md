@@ -98,7 +98,6 @@
 | 덱스터 메모리 오탐 수정 | 2026-03-03 | os.freemem() → vm_stat (macOS Inactive 고려) |
 | team-features.md | 2026-03-03 | 팀별 기능 목록 문서 |
 | team-profiles.md | 2026-03-03 | 팀별 프로필 문서 |
-| Remote Control 환경 | 2026-03-03 | tmux agent 세션(5창) + CC창 + RC_CONTEXT.md 자동생성 |
 | pre-commit yaml 검사 | 2026-03-03 | .yaml/.yml/.sh/.env 파일까지 시크릿 검사 확장 |
 | config.yaml git 정리 | 2026-03-03 | filter-repo로 전체 이력 제거 + .gitignore 등록 |
 | 코딩가이드 v3 | 2026-03-03 | §0보안/§11재시작/§14OBSERVE_ONLY/§17클로드팀/보안사고 반영 |

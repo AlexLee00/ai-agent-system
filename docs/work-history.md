@@ -9,6 +9,28 @@
 
 
 
+## 2026-03-04
+### 🔄 루나팀 Phase 3 고도화 — 미완료 상태로 중단
+
+**이전 세션(2026-03-03 심야)에서 작업된 내용 (미커밋 상태):**
+- `bots/investment/shared/signal.js`: PAPER_MODE 통합 + 자산 보호 5원칙 (`checkSafetyGates`)
+- `bots/investment/shared/db.js`: strategy_pool + risk_log + asset_snapshot 테이블 추가
+- `bots/investment/team/luna.js`: 2라운드 토론 구조 (`runDebateRound`)
+- `bots/investment/team/nemesis.js`: 보수화 프롬프트 + traceId + NEMESIS_SYSTEM 교체
+- `bots/investment/team/argos.js`: 외부 전략 수집봇 구현 (Reddit r/algotrading + r/CryptoCurrency + r/stocks)
+
+**남은 작업 (다음 세션에서 이어서):**
+- TASK 4: `bots/investment/launchd/ai.investment.argos.plist` 생성 (6시간 주기)
+- TASK 5: `aria.js` 장 시간 체크 — `analyzeKisMTF`/`analyzeKisOverseasMTF`에 장 시간 외 처리 추가
+  - `isKisMarketOpen`, `isKisOverseasMarketOpen`은 이미 `shared/secrets.js`에 있음
+  - `domestic.js`/`overseas.js`에서 이미 사용 중 → aria.js 내부에 추가는 이중체크 or 다른 의미일 수 있음
+- TASK 7: launchd plist (argos + 기타 누락분)
+- TASK 8: cost-tracker 텔레그램 리포트 함수 추가
+- TASK 9: chronos.js ESM 전환 (현재 CommonJS `require` 사용)
+- 전체 커밋
+
+<!-- session-interrupted:2026-03-04:루나팀-phase3-고도화-미완료-중단 -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)
