@@ -731,4 +731,75 @@ _작성: 2026-03-02_
 
 ---
 
+---
+
+### DEC-020 | DuckDB WAL 재생 버그 — CHECKPOINT로 해결
+
+**배경:** DuckDB 1.4.4에서 `ALTER TABLE ... ADD COLUMN` DDL이 WAL에 기록된 후, 다음 세션에서 WAL 재생 시 내부 오류 발생.
+
+**증상:**
+```
+[Error: INTERNAL Error: Failure while replaying WAL file:
+Calling DatabaseManager::GetDefaultDatabase with no default database set]
+```
+
+**원인 분석:**
+- `initSchema()` 에서 `ALTER TABLE signals ADD COLUMN trace_id VARCHAR` 실행 → WAL에 기록됨
+- 프로세스 정상 종료 전 WAL이 메인 DB로 플러시되지 않은 채 남음
+- 다음 오픈 시 DuckDB가 WAL을 재생하려 하지만 Catalog 초기화 타이밍 문제로 실패
+
+**해결:**
+```js
+// shared/db.js — initSchema() 마지막에 추가
+try { await run('CHECKPOINT'); } catch { /* 무시 */ }
+```
+`CHECKPOINT` 명령으로 WAL → 메인 DB 즉시 플러시 → 다음 오픈 시 WAL 없음
+
+**교훈:** DuckDB를 단기 실행 프로세스(launchd)에서 사용할 때 DDL 후 반드시 CHECKPOINT 또는 명시적 `db.close()` 필요.
+
+_작성: 2026-03-04_
+
+---
+
+### DEC-021 | LLM 정책 v2.2 — Groq 전용 (LIVE 모드에서도 무료)
+
+**배경:** 초기 설계(v2.1)는 LIVE 모드에서 luna·nemesis에 Claude Haiku를 사용하는 정책이었으나, 실운영 중 예산 초과 및 사용자 비용 부담 문제가 제기됨.
+
+**검토:**
+- Haiku 비용: LIVE 30분 사이클 4심볼 기준 약 $3~5/월
+- Groq llama-4-scout: 무료, 속도 충분 (6~12초/사이클)
+- LIVE 모드의 핵심 가치는 "실주문 여부"이지 "더 비싼 LLM" 사용 여부가 아님
+
+**결정:**
+```js
+// shared/llm-client.js
+// HAIKU_AGENTS 제거 → 전 모드 Groq 전용
+export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512) {
+  // Groq Scout 라운드로빈만 실행 (Haiku 분기 삭제)
+}
+```
+
+**결과:** LLM 비용 $0/월 유지하면서 LIVE 실거래 운영 가능. 향후 정확도 차이가 체감되면 재검토.
+
+_작성: 2026-03-04_
+
+---
+
+### DEC-022 | Claude Remote Control 세션 폭발 사고 — 아키텍처 교훈
+
+**사건:** `cc-remote-start.sh` (while true 루프)가 launchd에 등록되어 부팅부터 실행 중. `claude remote-control` 명령이 내부적으로 `--sdk-url <session_id>` 를 Node.js 플래그로 전달하는 버그로 즉시 실패 → 10초 후 재시작 → 2,407개 세션 생성.
+
+**근본 원인:** `claude remote-control`이 아직 불안정한 실험적 기능. 자동 재시작 루프와 결합 시 폭발적 증식.
+
+**대응:** 해당 launchd 에이전트·스크립트 전체 삭제. tmux, Termius 관련 인프라도 함께 제거.
+
+**설계 교훈:**
+1. 실험적 CLI 기능을 launchd 자동 재시작 루프에 넣지 말 것
+2. 새 외부 도구 통합 시 먼저 수동 검증 → 안정화 확인 후 자동화
+3. while true 루프는 반드시 성공 판정 후 재시작 조건 명시 (예: 종료 코드 확인)
+
+_작성: 2026-03-04_
+
+---
+
 _최초 작성: 2026-02-27 | 작성자: 클로드 (Claude Code) + 사용자_
