@@ -1,12 +1,20 @@
 {
   "name": "@ai-agent/claude",
-  "version": "1.0.0",
-  "description": "클로드팀 — 덱스터 (Dexter) 시스템 유지보수 봇",
+  "version": "2.0.0",
+  "description": "클로드팀 — 덱스터 (Dexter) 시스템 유지보수봇 + 아처 (Archer) 기술 인텔리전스봇",
   "main": "src/dexter.js",
   "type": "commonjs",
   "scripts": {
-    "dexter": "node src/dexter.js",
-    "dexter:full": "node src/dexter.js --full",
-    "dexter:telegram": "node src/dexter.js --telegram"
+    "dexter":            "node src/dexter.js",
+    "dexter:full":       "node src/dexter.js --full",
+    "dexter:telegram":   "node src/dexter.js --telegram",
+    "dexter:fix":        "node src/dexter.js --fix --telegram",
+    "dexter:daily":      "node src/dexter.js --daily-report --telegram",
+    "archer":            "node src/archer.js",
+    "archer:telegram":   "node src/archer.js --telegram",
+    "archer:fetch-only": "node src/archer.js --fetch-only",
+    "migrate":           "node scripts/migrate.js",
+    "status":            "node scripts/team-status.js",
+    "patch:status":      "node scripts/patch-status.js"
   }
 }

@@ -40,15 +40,29 @@
         "archer": {
           "name": "아처",
           "file": "bots/claude/src/archer.js",
-          "role": "기술 인텔리전스 봇 — 주간 기술스택·LLM·시장 동향 분석 리포트",
-          "description": "GitHub Releases·npm·Binance·FearGreed 수집 → Claude 분석 → 마크다운 리포트 + 텔레그램",
+          "role": "기술 인텔리전스 봇 v2.0 — AI/LLM 기술 트렌드 서칭 + PATCH_REQUEST.md 패치업 오케스트레이터",
+          "description": "GitHub Releases·npm·웹RSS(Anthropic/OpenAI/HuggingFace/arXiv) 수집 → Claude 분석 → 패치 티켓 + PATCH_REQUEST.md 자동 생성 + 텔레그램",
           "schedule": "매주 월요일 09:00 KST (launchd: ai.claude.archer)",
           "flags": {
-            "--telegram":  "텔레그램으로 요약 발송",
-            "--no-claude": "Claude API 건너뜀 (데이터 수집만)"
+            "--telegram":    "패치 알림을 텔레그램으로 발송",
+            "--no-claude":   "Claude API 건너뜀 (데이터 수집만)",
+            "--fetch-only":  "수집만 하고 분석·저장 생략 (디버그)"
           },
-          "dataSources": ["GitHub Releases API", "npm Registry", "Binance 24hr ticker", "Fear & Greed Index"],
-          "outputDir": "bots/claude/reports/"
+          "dataSources": [
+            "GitHub Releases API (anthropic-sdk-js/py, mcp-sdk, groq-node, gemini-js, claude-code, node, cpython, ccxt, duckdb, better-sqlite3, playwright)",
+            "npm Registry (@anthropic-ai/sdk, @modelcontextprotocol/sdk, groq-sdk, duckdb, better-sqlite3, ccxt, playwright)",
+            "웹 RSS (Anthropic뉴스, OpenAI블로그, HuggingFace, arXiv CS.AI, The Batch)",
+            "npm audit (보안 취약점 스캔)"
+          ],
+          "outputs": {
+            "reportDir":        "bots/claude/reports/",
+            "patchDir":         "bots/claude/reports/patches/",
+            "patchRequestFile": "PATCH_REQUEST.md (프로젝트 루트)"
+          },
+          "teamBus": {
+            "db": "~/.openclaw/workspace/claude-team.db",
+            "tables": ["agent_state", "messages", "tech_digest", "check_history"]
+          }
         }
       }
     },

@@ -15,8 +15,9 @@
  *   node src/dexter.js --daily-report    # 일일 보고 (텔레그램 발송)
  */
 
-const fs   = require('fs');
-const cfg  = require('../lib/config');
+const fs      = require('fs');
+const cfg     = require('../lib/config');
+const teamBus = require('../lib/team-bus');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -64,6 +65,9 @@ async function main() {
 
   acquireLock();
 
+  // 팀버스: 시작 상태 등록
+  try { teamBus.setStatus('dexter', 'running', '시스템 점검 중'); } catch { /* DB 없으면 무시 */ }
+
   const start   = Date.now();
   const results = [];
 
@@ -85,6 +89,17 @@ async function main() {
       const r = await run();
       results.push(r);
       if (!SILENT) process.stdout.write(`  ${r.status === 'ok' ? '✅' : r.status === 'warn' ? '⚠️' : '❌'} ${r.name}\n`);
+      // 팀버스: 체크 이력 기록
+      try {
+        const errorCount = (r.items || []).filter(i => i.status === 'error').length;
+        teamBus.recordCheck({
+          checkName:  r.name,
+          status:     r.status,
+          itemCount:  (r.items || []).length,
+          errorCount,
+          detail:     errorCount > 0 ? (r.items || []).filter(i => i.status === 'error').map(i => i.label).slice(0, 5) : null,
+        });
+      } catch { /* 무시 */ }
     } catch (e) {
       results.push({ name: '체크 실행 오류', status: 'error', items: [{ label: e.message, status: 'error', detail: '' }] });
     }
@@ -118,6 +133,18 @@ async function main() {
       if (!SILENT) console.log('  ✅ 이상 없음 — 텔레그램 발송 생략');
     }
   }
+
+  // 팀버스: 완료 상태 갱신
+  try {
+    const hasError = results.some(r => r.status === 'error');
+    if (hasError) {
+      const errNames = results.filter(r => r.status === 'error').map(r => r.name).join(', ');
+      teamBus.markError('dexter', `체크 오류: ${errNames}`);
+    } else {
+      teamBus.markDone('dexter');
+    }
+    teamBus.cleanupOldMessages();
+  } catch { /* 무시 */ }
 
   // 종료 코드: 오류 있으면 1
   const hasError = results.some(r => r.status === 'error');
