@@ -50,7 +50,7 @@ module.exports = {
   CRITICAL_FILES: [
     'bots/reservation/lib/secrets.js',
     'bots/reservation/lib/db.js',
-    'bots/reservation/src/start-ops.sh',
+    'bots/reservation/auto/monitors/start-ops.sh',
     'bots/invest/lib/secrets.js',
     'bots/invest/lib/db.js',
     'bots/invest/lib/mode.js',
