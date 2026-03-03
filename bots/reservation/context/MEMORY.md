@@ -30,13 +30,31 @@ OPS 모드는 테스트 완료 후 사장님과 협의하여 전환한다.
 ### 프로젝트 경로
 ```
 ~/projects/ai-agent-system/bots/reservation/
+├── auto/
+│   ├── monitors/
+│   │   ├── naver-monitor.js      ← OPS 모드 실행 파일 (launchd 상시 실행)
+│   │   ├── pickko-kiosk-monitor.js ← 키오스크 예약 감지
+│   │   └── start-ops.sh          ← 부트스트랩
+│   └── scheduled/
+│       └── pickko-daily-summary.js ← 일일 매출 집계
+├── manual/
+│   ├── reservation/
+│   │   ├── pickko-register.js    ← 예약 등록
+│   │   ├── pickko-accurate.js    ← 픽코 자동 등록 (naver-monitor 호출)
+│   │   ├── pickko-cancel.js      ← 픽코 취소 (naver-monitor 호출)
+│   │   ├── pickko-cancel-cmd.js  ← 자연어 취소 명령
+│   │   └── pickko-query.js       ← 예약 조회
+│   ├── admin/
+│   │   └── pickko-member.js      ← 회원 등록
+│   └── reports/
+│       ├── pickko-stats-cmd.js   ← 매출 통계
+│       ├── pickko-revenue-confirm.js ← 매출 확정
+│       └── pickko-alerts-query.js ← 알림 조회
 ├── src/
-│   ├── naver-monitor.js      ← OPS 모드 실행 파일
-│   ├── pickko-accurate.js    ← 픽코 자동 예약
-│   └── naver-monitor.py      ← 파이썬 모니터링
+│   └── bug-report.js             ← 버그·유지보수 추적 도구
 ├── lib/
-│   └── validation.js         ← 정규식 변환
-└── secrets.json             ← 로그인 정보
+│   └── validation.js             ← 정규식 변환
+└── secrets.json                  ← 로그인 정보
 ```
 
 ### 접근 정보
