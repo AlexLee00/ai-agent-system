@@ -18,7 +18,7 @@ db_query() {
 launchd_status() {
   local svc="$1"
   local result
-  result=$(launchctl list 2>/dev/null | grep -w "$svc" | awk '{print $1}')
+  result=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s{print $1}')
   if [[ -z "$result" ]]; then
     echo "중단 ❌"
   elif [[ "$result" == "-" ]]; then
