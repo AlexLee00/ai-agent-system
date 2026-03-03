@@ -1,17 +1,10 @@
 /**
- * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.1)
+ * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.2)
  *
- * PAPER_MODE=true  → 전원 Groq llama-4-scout (무료, ~$0/월)
- * PAPER_MODE=false → luna·nemesis = Claude Haiku 4.5 + 프롬프트 캐싱
- *                    나머지       = Groq Scout (무료)
+ * 전 모드 Groq llama-4-scout 전용 (무료, ~$0/월)
+ * PAPER_MODE 무관 — Haiku 사용 중단 (2026-03-04 정책 변경)
  *
- * 모델 단가 (live mode):
- *   Haiku input  $1.00/1M | output $5.00/1M
- *   캐시 hit $0.10/1M (90% 절감) | write $1.25/1M
- *
- * 예상 비용:
- *   PAPER: ~$0/월
- *   LIVE:  ~$3-5/월 (luna+nemesis만 haiku, 30분 4심볼)
+ * Groq 라운드로빈 (4개 키, 429 시 자동 다음 키)
  */
 
 import Anthropic    from '@anthropic-ai/sdk';
@@ -49,8 +42,7 @@ export const PAPER_MODE = process.env.PAPER_MODE !== 'false' && _cfg.paper_mode 
 export const GROQ_SCOUT_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 export const HAIKU_MODEL      = 'claude-haiku-4-5-20251001';
 
-// live mode에서 Haiku를 사용하는 에이전트
-const HAIKU_AGENTS = new Set(['luna', 'nemesis']);
+// Groq 전용 — Haiku 미사용 (2026-03-04 정책 변경)
 
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
@@ -101,20 +93,6 @@ export function parseJSON(text) {
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512) {
-  const useHaiku = !PAPER_MODE && HAIKU_AGENTS.has(agentName);
-
-  if (useHaiku) {
-    // Claude Haiku + 프롬프트 캐싱 (live mode 전용)
-    const res = await getAnthropic().messages.create({
-      model:      HAIKU_MODEL,
-      max_tokens: maxTokens,
-      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userPrompt }],
-    });
-    tracker.track(res.usage, agentName);
-    return res.content[0]?.text || '';
-  }
-
   // Groq Scout 라운드로빈 (rate limit 시 다음 키로)
   let lastErr;
   const maxAttempts = Math.max(_groqClients.length, 1);
