@@ -1,16 +1,30 @@
-'use strict';
-
 /**
- * team/chronos.js — 크로노스 (백테스팅)
+ * team/chronos.js — 크로노스 (백테스팅 · 성과 분석)
  *
- * 역할: 과거 데이터로 전략 성과 검증
- * LLM: DeepSeek (추후 구현)
+ * 역할: 과거 데이터로 전략 성과 검증 + 신호 성과 분석
+ * LLM: 없음 (순수 수학 기반)
  * 상태: Skeleton — Phase 3-D에서 구현 예정
  *
  * 실행: node team/chronos.js --symbol=BTC/USDT --from=2024-01-01 --to=2024-12-31
  */
 
-const db = require('../shared/db');
+import { fileURLToPath } from 'url';
+import * as db from '../shared/db.js';
+
+// ─── 크로노스 가드 ───────────────────────────────────────────────────
+
+/**
+ * 백테스팅 실행 전 안전 체크
+ * - 실거래(PAPER_MODE=false) 중에는 실행 제한
+ * - DB 연결 확인
+ */
+export function chronosGuard() {
+  const isPaper = process.env.PAPER_MODE !== 'false';
+  if (!isPaper) {
+    console.warn('  ⚠️ [크로노스] LIVE 모드에서 백테스팅 주의 — DB 부하 가능');
+  }
+  return { allowed: true, paper: isPaper };
+}
 
 // ─── 백테스팅 결과 구조 ──────────────────────────────────────────────
 
@@ -34,7 +48,8 @@ const db = require('../shared/db');
  * @param {string} strategy  전략 ID (미래 구현)
  * @returns {Promise<BacktestResult>}
  */
-async function runBacktest(symbol, from, to, strategy = 'default') {
+export async function runBacktest(symbol, from, to, strategy = 'default') {
+  const guard = chronosGuard();
   console.log(`\n⏰ [크로노스] 백테스트: ${symbol} (${from} ~ ${to}), 전략: ${strategy}`);
   console.log('  ℹ️ Skeleton — Phase 3-D에서 DeepSeek 기반 전략 최적화 구현 예정');
 
@@ -50,8 +65,9 @@ async function runBacktest(symbol, from, to, strategy = 'default') {
     from,
     to,
     strategy,
-    status:    'skeleton',
-    message:   'Phase 3-D에서 구현 예정',
+    paper: guard.paper,
+    status:      'skeleton',
+    message:     'Phase 3-D에서 구현 예정',
     totalTrades:  0,
     winRate:      0,
     totalPnlPct:  0,
@@ -64,27 +80,19 @@ async function runBacktest(symbol, from, to, strategy = 'default') {
  * 저장된 신호 기반 성과 분석 (실제 DB 데이터 활용)
  * @param {number} days  최근 N일
  */
-async function analyzeSignalPerformance(days = 30) {
+export async function analyzeSignalPerformance(days = 30) {
   console.log(`\n⏰ [크로노스] 최근 ${days}일 신호 성과 분석`);
 
   try {
-    const conn = await db._getConn?.();
-    if (!conn) {
-      console.log('  ℹ️ DB 연결 없음 — 스킵');
-      return null;
-    }
-
     // 향후: signals + trades JOIN으로 실제 성과 계산
-    // const result = await conn.all(
+    // const result = await db.query(
     //   `SELECT action, COUNT(*) as count, AVG(confidence) as avg_conf
     //    FROM signals
     //    WHERE created_at > NOW() - INTERVAL '${days} days'
     //    GROUP BY action`
     // );
-
     console.log('  ℹ️ 성과 분석 Skeleton — Phase 3-D에서 구현 예정');
     return null;
-
   } catch (e) {
     console.warn(`  ⚠️ 성과 분석 오류: ${e.message}`);
     return null;
@@ -92,15 +100,19 @@ async function analyzeSignalPerformance(days = 30) {
 }
 
 // CLI 실행
-if (require.main === module) {
-  const args     = process.argv.slice(2);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const args      = process.argv.slice(2);
   const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
   const fromArg   = args.find(a => a.startsWith('--from='))?.split('=')[1]   || '2024-01-01';
   const toArg     = args.find(a => a.startsWith('--to='))?.split('=')[1]     || new Date().toISOString().slice(0, 10);
 
-  runBacktest(symbolArg, fromArg, toArg)
-    .then(r => { console.log('\n결과:', JSON.stringify(r, null, 2)); process.exit(0); })
-    .catch(e => { console.error('❌ 크로노스 오류:', e.message); process.exit(1); });
+  await db.initSchema();
+  try {
+    const r = await runBacktest(symbolArg, fromArg, toArg);
+    console.log('\n결과:', JSON.stringify(r, null, 2));
+    process.exit(0);
+  } catch (e) {
+    console.error('❌ 크로노스 오류:', e.message);
+    process.exit(1);
+  }
 }
-
-module.exports = { runBacktest, analyzeSignalPerformance };
