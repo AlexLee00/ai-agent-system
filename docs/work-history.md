@@ -10,6 +10,23 @@
 
 
 ## 2026-03-03
+### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
+- **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)
+  - config.yaml `news.naver_client_id/secret` 설정, 10건 뉴스 수집 확인
+- **덱스터 DuckDB 읽기전용 수정**: database.js 체크 스크립트에 `READ_ONLY` 모드 추가
+  - ai.invest.pipeline 실행 중 DuckDB 락 충돌 해소
+- **루나팀 전체 테스트**: crypto/domestic/overseas 3사이클 전 통과
+- **크립토 OPS 전환**: `ai.investment.crypto` PAPER_MODE=true → false (2026-03-03)
+  - launchd plist 수정 + 재로드, `🔴 PAPER_MODE=false` LIVE 모드 확인
+- **시그널 실행 체인 버그 수정** (커밋 `9390f7e`):
+  - Bug 1: 헤파이스토스가 `getPendingSignals` 사용 → 네메시스 승인 후 `approved` 조회 안됨
+    → `getApprovedSignals()` 추가, 헤파이스토스 전환
+  - Bug 2: 네메시스 조정 금액($100)이 DB에 미반영 → 헤파이스토스가 원본 $2000 사용
+    → `updateSignalAmount()` 추가, 네메시스에서 승인 시 호출
+- **ETH → USDT 전환**: 바이낸스 ETH 0.0681 전량 매도 → $138.10 USDT 확보 (avg $2,028.94)
+  - 크립토 봇 실거래 자금 확보 ($100 BUY 주문 가능)
+<!-- session-close:2026-03-03:루나팀-ops전환-실행체인버그수정 -->
+
 ### ✨ 스카팀 운영관리 고도화 v3.0
 - **Phase A: 폴더 구조 개편** — bots/reservation/src/ 27개 파일 → auto/manual 계층 구조 재편 (git mv)
   - auto/monitors/: naver-monitor(앤디), pickko-kiosk-monitor(지미) + 래퍼 sh
@@ -743,3 +760,4 @@
 | 2026-02-27 | 공유 인프라 + 백그라운드 전환 + BOOT 8.4× 개선 |
 | 2026-02-28 | ETL 버그 수정 + OpenClaw 업데이트 + ska DB 백필 |
 | 2026-03-01 | 루나팀 Phase 0 드라이런 + 덱스터 + 아처 + KIS 크리스 구현 |
+| 2026-03-03 | 스카팀 고도화 v3.0 + 루나팀 크립토 OPS 전환 + 실행체인 버그 수정 + ETH→USDT |
