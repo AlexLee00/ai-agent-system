@@ -31,6 +31,15 @@
 
 <!-- session-interrupted:2026-03-04:루나팀-phase3-고도화-미완료-중단 -->
 
+### ⚙️ Phase 3 OPS 전환 + 투자 리포트 + 메모리 정리
+- DuckDB WAL 버그 수정 (CHECKPOINT)
+- E2E 테스트 전체 통과 (crypto/domestic/overseas)
+- 암호화폐 PAPER_MODE=false OPS 전환
+- LLM 정책 v2.2 Groq 전용
+- reporter.js 투자 리포트 시스템
+- MEMORY.md 350→179줄 압축
+<!-- session-close:2026-03-04:phase-3-ops-전환-투자-리포트-메모리-정리 -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)
