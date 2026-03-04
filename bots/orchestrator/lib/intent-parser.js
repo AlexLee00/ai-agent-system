@@ -144,6 +144,9 @@ const KEYWORD_PATTERNS = [
   { re: /덱스터.*(일일|daily|보고)|일일.*(보고|리포트)|daily.*(report|보고)|오늘.*보고서/i,                              intent: 'claude_action', args: { command: 'daily_report' } },
   { re: /덱스터.*(점검|체크|check|괜찮|확인|살아)|시스템.*(점검|체크|check|괜찮)|서버.*(점검|체크|괜찮|확인)|보안.*점검/i, intent: 'claude_action', args: { command: 'run_check' } },
 
+  // ── 스카팀 점검 (generic '스카' 패턴보다 먼저 체크) ──
+  { re: /스카.*(시스템|서버|봇|점검|체크|확인|상태|health|check)|스카.*점검|ska.*check/i, intent: 'claude_action', args: { command: 'run_check' } },
+
   // ── 봇/팀 명칭 — 세부 명령 미매칭 시 팀 현황 조회 ──
   { re: /루나|luna/i,                             intent: 'luna'    },
   { re: /스카|ska/i,                              intent: 'ska'     },
