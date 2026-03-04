@@ -34,6 +34,7 @@
 | CL-005 | GUI 대시보드 | Grafana+Loki or 커스텀 Express+SSE — 봇 활동 시각화 |
 | LU-025 | 루나 OPS 전환 | 바이낸스 실거래 전환 (맥미니 안정화 후) |
 | LU-039 | ChromaDB 학습 루프 | 맥미니 로컬 LLM(ollama) 연동 가능해지면 고도화 |
+| DX-001 | 덱스터 패턴 벡터화 | dexter_error_log → ChromaDB 벡터 저장 → 유사 오류 사전 감지 (단기 SQL 패턴 이후) |
 | LT-002 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 — 장기 검토 |
 | LT-004 | RAG 도입 | ChromaDB 봇별 컬렉션 분리 — 예약 패턴 벡터 저장 |
 
@@ -86,6 +87,15 @@
 | Phase 3 E2E 전체 통과 | 2026-03-02 | 3사이클 8.4s/4.3s/5.9s |
 | 크립토 OPS 전환 | 2026-03-03 | PAPER_MODE=false, $138 USDT 실거래 자금 |
 | Groq 9키 라운드로빈 | 2026-03-03 | 4→9키 확장, 429 분산 |
+
+### 공통 인프라 / LLM 키 통합
+
+| 항목 | 완료일 | 내용 |
+|------|--------|------|
+| LLM API 키 통합 | 2026-03-04 | packages/core/lib/llm-keys.js 공용 로더 — config.yaml 단일 소스 |
+| secrets.json LLM 키 제거 | 2026-03-04 | investment/secrets.json 중복 키 삭제 (anthropic/groq/cerebras/sambanova/xai) |
+| launchd 하드코딩 제거 | 2026-03-04 | ai.investment.crypto.plist ANTHROPIC_API_KEY 삭제 |
+| openai/gemini config 추가 | 2026-03-04 | config.yaml에 openai/gemini 섹션 추가 (사용자 키 입력 대기) |
 
 ### 클로드팀
 
