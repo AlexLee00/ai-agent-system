@@ -34,7 +34,10 @@ const checks = {
   network:   require('../lib/checks/network'),
   ska:       require('../lib/checks/ska'),
   deps:      require('../lib/checks/deps'),
+  patterns:  require('../lib/checks/patterns'),
 };
+
+const { saveErrorItems } = require('../lib/error-history');
 
 const { printReport, buildTelegramText, writeLog, writeFixLog } = require('../lib/reporter');
 
@@ -104,6 +107,18 @@ async function main() {
     } catch (e) {
       results.push({ name: '체크 실행 오류', status: 'error', items: [{ label: e.message, status: 'error', detail: '' }] });
     }
+  }
+
+  // 오류 이력 저장 (패턴 분석용) — patterns 체크 실행 전에 저장
+  try { saveErrorItems(results); } catch { /* 무시 */ }
+
+  // 패턴 분석 체크 (이력 기반 — 항상 마지막 실행)
+  try {
+    const r = await checks.patterns.run();
+    results.push(r);
+    if (!SILENT) process.stdout.write(`  ${r.status === 'ok' ? '✅' : r.status === 'warn' ? '⚠️' : '❌'} ${r.name}\n`);
+  } catch (e) {
+    results.push({ name: '오류 패턴 분석', status: 'warn', items: [{ label: e.message, status: 'warn', detail: '' }] });
   }
 
   const elapsed = Date.now() - start;
