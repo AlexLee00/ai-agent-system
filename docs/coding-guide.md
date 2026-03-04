@@ -1395,6 +1395,8 @@ function parseJsonResponse(text) {
 | 2026-03-04 | **메인봇(오케스트레이터) 구현 완료** — DB 마이그레이션(token_usage 포함) 외 6건 |
 | 2026-03-04 | **전체 봇 sendTelegram → publishToMainBot 전면 교체** — error-tracker.js 마지막 교체 완료 외 1건 |
 | 2026-03-04 | **메인봇 문서화 + time-mode 연동 + 전체 sendTelegram 교체 완료** — MAINBOT.md 최신화 외 4건 |
+| 2026-03-04 | **API 문서 분석 기반 개선사항 적용** — parse_mode HTML 추가 (telegram.js + mainbot.js) 외 2건 |
+<!-- session-close:2026-03-04:api-문서-분석-기반-개선사항-적용 -->
 <!-- session-close:2026-03-04:메인봇-문서화-timemode-연동-전체-sendtel -->
 <!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
 <!-- session-close:2026-03-04:메인봇오케스트레이터-구현-완료 -->

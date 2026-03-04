@@ -76,7 +76,7 @@ async function tryTelegramSend(text, chatId) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
 
   return new Promise((resolve) => {
-    const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
+    const body = Buffer.from(JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }));
     const req  = https.request({
       hostname: 'api.telegram.org',
       path:     `/bot${token}/sendMessage`,
@@ -97,20 +97,61 @@ async function tryTelegramSend(text, chatId) {
   });
 }
 
+const TG_MAX_LEN = 4096;
+
+/**
+ * 4096자 초과 메시지 분할 (줄 단위)
+ * @param {string} text
+ * @returns {string[]}
+ */
+function splitMessage(text) {
+  if (text.length <= TG_MAX_LEN) return [text];
+  const chunks = [];
+  const lines  = text.split('\n');
+  let   chunk  = '';
+  for (const line of lines) {
+    const append = (chunk ? '\n' : '') + line;
+    if (chunk.length + append.length > TG_MAX_LEN) {
+      if (chunk) chunks.push(chunk);
+      // 단일 줄이 4096자 초과인 경우 강제 분할
+      if (line.length > TG_MAX_LEN) {
+        for (let i = 0; i < line.length; i += TG_MAX_LEN) {
+          chunks.push(line.slice(i, i + TG_MAX_LEN));
+        }
+        chunk = '';
+      } else {
+        chunk = line;
+      }
+    } else {
+      chunk += append;
+    }
+  }
+  if (chunk) chunks.push(chunk);
+  return chunks;
+}
+
 async function sendTelegram(text) {
   const secrets = loadSecrets();
   const chatId  = secrets.telegram_chat_id || '***REMOVED***';
+  const chunks  = splitMessage(text);
 
-  for (let i = 0; i < 3; i++) {
-    if (await tryTelegramSend(text, chatId)) return true;
-    if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+  let allOk = true;
+  for (const chunk of chunks) {
+    let sent = false;
+    for (let i = 0; i < 3; i++) {
+      if (await tryTelegramSend(chunk, chatId)) { sent = true; break; }
+      if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+    if (!sent) {
+      allOk = false;
+      try {
+        fs.appendFileSync(PENDING_FILE, JSON.stringify({ text: chunk, chatId, ts: new Date().toISOString() }) + '\n');
+      } catch {}
+    }
+    // 분할 전송 시 rate limit 방지 (1 msg/sec per chat)
+    if (chunks.length > 1) await new Promise(r => setTimeout(r, 1100));
   }
-
-  // pending queue에 저장
-  try {
-    fs.appendFileSync(PENDING_FILE, JSON.stringify({ text, chatId, ts: new Date().toISOString() }) + '\n');
-  } catch {}
-  return false;
+  return allOk;
 }
 
 async function flushPendingTelegrams() {
