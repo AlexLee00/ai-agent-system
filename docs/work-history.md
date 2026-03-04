@@ -33,6 +33,14 @@
 - RAG 상세 로드맵 등록 (improvement-ideas)
 <!-- session-close:2026-03-05:덱스터-phase-c-버그수정-업비트-출금지연-자동예약 -->
 
+### 🔧 헬스체크 회복 로직 + 제이 할루시네이션 방지 + db-backup 수정
+- health-check.js 회복 감지·알림·state 저장 로직 추가
+- backup-db.js async 누락 수정
+- intent-parser.js 스카 점검 패턴 추가
+- TOOLS.md 제이 bot_commands 명령 테이블 + 할루시네이션 방지 경고 추가
+- 전체 흐름 테스트 완료 (회복 알림 텔레그램 수신 확인)
+<!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 

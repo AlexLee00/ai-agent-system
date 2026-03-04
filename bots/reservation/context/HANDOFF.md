@@ -597,6 +597,16 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `packages/core/lib/llm-keys.js|bots/orchestrator/src/filter.js|bots/orchestrator/src/mainbot.js|bots/claude/lib/checks/database.js|bots/claude/lib/error-history.js|bots/claude/lib/checks/patterns.js|bots/claude/src/dexter.js`
 <!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습:end -->
 
+<!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback -->
+#### 2026-03-05 🔧 헬스체크 회복 로직 + 제이 할루시네이션 방지 + db-backup 수정
+- health-check.js 회복 감지·알림·state 저장 로직 추가
+- backup-db.js async 누락 수정
+- intent-parser.js 스카 점검 패턴 추가
+- TOOLS.md 제이 bot_commands 명령 테이블 + 할루시네이션 방지 경고 추가
+- 전체 흐름 테스트 완료 (회복 알림 텔레그램 수신 확인)
+- 관련 파일: `bots/reservation/scripts/health-check.js|bots/reservation/scripts/backup-db.js|bots/orchestrator/lib/intent-parser.js`
+<!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
