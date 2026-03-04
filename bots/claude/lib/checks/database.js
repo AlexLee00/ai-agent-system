@@ -179,11 +179,74 @@ async function checkDuckDB(items) {
   }
 }
 
+// claude-team.db 큐 건강 체크
+function checkMainbotQueue(items) {
+  const dbPath = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
+  if (!fs.existsSync(dbPath)) {
+    items.push({ label: 'mainbot_queue (제이)', status: 'warn', detail: 'claude-team.db 없음' });
+    return;
+  }
+
+  const modulePath = resolveModule(cfg.BOTS.reservation, 'better-sqlite3');
+  const script = `
+'use strict';
+const Database = require(${JSON.stringify(modulePath)});
+const db = new Database(${JSON.stringify(dbPath)}, { readonly: true });
+const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+if (!tables.includes('mainbot_queue')) { process.stdout.write(JSON.stringify({ noTable: true })); db.close(); process.exit(0); }
+
+// pending 장기 적체 (5분 이상)
+const stuckPending = db.prepare("SELECT COUNT(*) as cnt FROM mainbot_queue WHERE status='pending' AND created_at < datetime('now','-5 minutes')").get().cnt;
+// batched 장기 적체 (3분 이상 — 배치 타이머 1분 + 여유)
+const stuckBatched = db.prepare("SELECT COUNT(*) as cnt FROM mainbot_queue WHERE status='batched' AND processed_at < datetime('now','-3 minutes')").get().cnt;
+// 최근 1분 내 같은 봇 알람 폭탄 (10개 초과)
+const floodRows = db.prepare("SELECT from_bot, COUNT(*) as cnt FROM mainbot_queue WHERE created_at > datetime('now','-1 minutes') GROUP BY from_bot HAVING cnt > 10").all();
+// 전체 현황
+const summary = db.prepare("SELECT status, COUNT(*) as cnt FROM mainbot_queue GROUP BY status").all();
+
+process.stdout.write(JSON.stringify({ stuckPending, stuckBatched, floodRows, summary }));
+db.close();
+`;
+
+  try {
+    const result = runScript(script);
+    if (result.noTable) {
+      items.push({ label: 'mainbot_queue', status: 'warn', detail: '테이블 없음 (마이그레이션 필요)' });
+      return;
+    }
+
+    // 현황 요약
+    const statusMap = {};
+    for (const r of (result.summary || [])) statusMap[r.status] = r.cnt;
+    const summaryStr = Object.entries(statusMap).map(([s, c]) => `${s}:${c}`).join(', ') || '빈 큐';
+    items.push({ label: 'mainbot_queue 현황', status: 'ok', detail: summaryStr });
+
+    // 알람 폭탄 감지
+    for (const row of (result.floodRows || [])) {
+      items.push({ label: `  알람폭탄 [${row.from_bot}]`, status: 'warn', detail: `1분 내 ${row.cnt}건 (10건 초과)` });
+    }
+
+    // pending 장기 적체
+    if (result.stuckPending > 0) {
+      items.push({ label: '  pending 장기 적체', status: 'error', detail: `5분 이상 미처리 ${result.stuckPending}건 — 메인봇 확인 필요` });
+    }
+
+    // batched 장기 적체
+    if (result.stuckBatched > 0) {
+      items.push({ label: '  batched 장기 적체', status: 'warn', detail: `3분 이상 ${result.stuckBatched}건 — 배치 타이머 이상` });
+    }
+
+  } catch (e) {
+    items.push({ label: 'mainbot_queue', status: 'warn', detail: e.message.slice(0, 100) });
+  }
+}
+
 async function run() {
   const items = [];
 
   await checkSQLite(items);
   await checkDuckDB(items);
+  checkMainbotQueue(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');
