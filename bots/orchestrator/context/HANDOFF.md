@@ -17,6 +17,9 @@
 3. **bot_commands 테이블**: DB 마이그레이션 v4, 팀장 지휘 채널
 4. **팀장 커맨더 3종**: ska.js, luna-commander.cjs, claude-commander.js
 5. **LLM 교체**: 제이 인텐트 파서 Groq → Gemini 2.5 Flash
+6. **NLP 고도화**: 키워드 패턴 14→24개, Gemini 프롬프트 전면 개편
+7. **TEAMS.md**: 팀 기능 정의서 신규 작성 (`context/TEAMS.md`)
+8. **/dexter·/archer**: 정적 응답 → bot_commands 실제 실행 전환
 
 ## 다음 작업 후보
 
