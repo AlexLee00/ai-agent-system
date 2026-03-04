@@ -7,7 +7,7 @@
 >
 > **언제 참조**: 새 기능 추가 / 버그 수정 / 신규 봇 개발 / 코드 리뷰 전 **반드시** 참조.
 >
-> 마지막 업데이트: 2026-03-02
+> 마지막 업데이트: 2026-03-04
 
 ---
 
@@ -1391,6 +1391,8 @@ function parseJsonResponse(text) {
 | 2026-03-03 | **클로드팀 고도화 반영** — 섹션 17 신규 (클로드팀 전용 패턴: team-bus 사용 규칙 / 아처 서칭 범위 / PATCH_REQUEST 처리 / SESSION.md 규칙 / HTTP 패턴 / Claude API 패턴), 섹션 18 체크리스트에 클로드팀 항목 추가, 공용 라이브러리 표에 team-bus.js 추가, 봇별 권장 모델 표에 아처/덱스터 추가 |
 | 2026-03-03 | **배포 프로세스 안전화 + OBSERVE_ONLY 수정** — start-ops.sh `OBSERVE_ONLY=0` → `${OBSERVE_ONLY:-0}` (plist 환경변수 무시 버그 수정, 17건 오취소 재발 방지) / scripts/reload-monitor.sh 신규 (문법 체크→재시작, 직접 launchctl 금지 가이드 추가) / §1·§11·§14 코딩가이드 반영 |
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |
+| 2026-03-04 | **Phase 3 OPS 전환 + 투자 리포트 + 메모리 정리** — DuckDB WAL 버그 수정 (CHECKPOINT) 외 5건 |
+<!-- session-close:2026-03-04:phase-3-ops-전환-투자-리포트-메모리-정리 -->
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정 -->
 <!-- session-close:2026-03-02:취소테스트성공availgone복구확인 -->
