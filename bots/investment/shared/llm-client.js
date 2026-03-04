@@ -1,14 +1,16 @@
 /**
- * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.2)
+ * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.3)
  *
- * 전 모드 Groq llama-4-scout 전용 (무료, ~$0/월)
- * PAPER_MODE 무관 — Haiku 사용 중단 (2026-03-04 정책 변경)
+ * 에이전트별 LLM 라우팅:
+ *   - 성능 우선 (luna, nemesis, oracle, athena, zeus) → OpenAI gpt-4o
+ *   - 속도 우선 (argos, hermes, sophia, 기타)         → Groq llama-4-scout (무료)
  *
- * Groq 라운드로빈 (4개 키, 429 시 자동 다음 키)
+ * Groq 라운드로빈 (다중 키, 429 시 자동 다음 키)
  */
 
 import Anthropic    from '@anthropic-ai/sdk';
 import Groq         from 'groq-sdk';
+import OpenAI       from 'openai';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -39,10 +41,12 @@ export const PAPER_MODE = process.env.PAPER_MODE !== 'false' && _cfg.paper_mode 
 
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
-export const GROQ_SCOUT_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
-export const HAIKU_MODEL      = 'claude-haiku-4-5-20251001';
+export const GROQ_SCOUT_MODEL  = 'meta-llama/llama-4-scout-17b-16e-instruct';
+export const OPENAI_PERF_MODEL = _cfg.openai?.model || 'gpt-4o';
+export const HAIKU_MODEL       = 'claude-haiku-4-5-20251001';
 
-// Groq 전용 — Haiku 미사용 (2026-03-04 정책 변경)
+// 성능 우선 에이전트 — OpenAI gpt-4o 라우팅
+const OPENAI_AGENTS = new Set(['luna', 'nemesis', 'oracle', 'athena', 'zeus']);
 
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
@@ -71,6 +75,17 @@ function getAnthropic() {
   return _anthropic;
 }
 
+// ─── OpenAI 클라이언트 (지연 초기화) ─────────────────────────────────
+
+let _openai = null;
+function getOpenAI() {
+  if (_openai) return _openai;
+  const apiKey = _cfg.openai?.api_key || '';
+  if (!apiKey) throw new Error('OpenAI API 키 없음 — config.yaml openai.api_key 설정 필요');
+  _openai = new OpenAI({ apiKey });
+  return _openai;
+}
+
 // ─── JSON 파싱 헬퍼 ──────────────────────────────────────────────────
 
 export function parseJSON(text) {
@@ -93,7 +108,34 @@ export function parseJSON(text) {
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512) {
-  // Groq Scout 라운드로빈 (rate limit 시 다음 키로)
+  // 성능 우선 에이전트 → OpenAI gpt-4o
+  if (OPENAI_AGENTS.has(agentName)) {
+    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+  // 속도 우선 에이전트 → Groq Scout
+  return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
+}
+
+async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
+  try {
+    const openai = getOpenAI();
+    const res    = await openai.chat.completions.create({
+      model:      OPENAI_PERF_MODEL,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userPrompt   },
+      ],
+    });
+    return res.choices[0]?.message?.content || '';
+  } catch (err) {
+    // OpenAI 실패 시 Groq로 폴백
+    console.warn(`  ⚠️ [${agentName}] OpenAI 실패 (${err.message?.slice(0,60)}) → Groq 폴백`);
+    return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+}
+
+async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
   let lastErr;
   const maxAttempts = Math.max(_groqClients.length, 1);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -109,7 +151,7 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
       });
       return res.choices[0]?.message?.content || '';
     } catch (err) {
-      if (err.status === 429) { lastErr = err; continue; } // rate limit → 다음 키
+      if (err.status === 429) { lastErr = err; continue; }
       throw err;
     }
   }
