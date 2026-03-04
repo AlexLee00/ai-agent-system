@@ -14,7 +14,7 @@
  *   npm run check:claude | check:ska | check:luna | check:all
  */
 
-const { sendTelegram } = require('../lib/reporter');
+const { publishToMainBot } = require('../lib/mainbot-client');
 
 // ── 아이콘 ───────────────────────────────────────────────────────────
 const ICON = { ok: '✅', warn: '⚠️', error: '❌' };
@@ -152,8 +152,8 @@ async function main() {
   // 콘솔 출력 (stderr — JSON 파싱 방해 안 함)
   process.stderr.write('\n' + message + '\n\n');
 
-  // 텔레그램 직접 발송 (--telegram 플래그 시)
-  if (doTelegram) await sendTelegram(message);
+  // 제이 큐 발행 (--telegram 플래그 시)
+  if (doTelegram) publishToMainBot({ from_bot: 'dexter', event_type: 'report', alert_level: 1, message });
 
   // OpenClaw/스카 호환 JSON (stdout)
   console.log(JSON.stringify({ success: true, message }));

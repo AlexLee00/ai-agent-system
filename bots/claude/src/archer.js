@@ -153,7 +153,7 @@ async function main() {
 
     // 6. 텔레그램 전송 (patcher 위임)
     if (TELEGRAM && analysis) {
-      await patcher.sendTelegram(analysis, runDate);
+      patcher.sendTelegram(analysis, runDate);
     }
 
     // 7. 캐시 저장

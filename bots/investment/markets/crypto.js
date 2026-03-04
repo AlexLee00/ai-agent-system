@@ -22,6 +22,7 @@ import * as db from '../shared/db.js';
 import { getSymbols, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
+import { getLunaParams } from '../shared/time-mode.js';
 
 import { analyzeCryptoMTF }         from '../team/aria.js';
 import { analyzeOnchain }           from '../team/oracle.js';
@@ -32,9 +33,8 @@ import { processAllPendingSignals } from '../team/hephaestos.js';
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
-const STATE_FILE     = join(homedir(), '.openclaw', 'investment-state.json');
-const CYCLE_INTERVAL = 30 * 60 * 1000;   // 30분
-const EMERGENCY_CHG  = 0.03;             // BTC ±3% 긴급 트리거
+const STATE_FILE    = join(homedir(), '.openclaw', 'investment-state.json');
+const EMERGENCY_CHG = 0.03;  // BTC ±3% 긴급 트리거
 
 function loadState() {
   try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')); }
@@ -70,16 +70,19 @@ function fetchBtcPrice() {
 }
 
 async function shouldRunCycle(symbols) {
-  const state = loadState();
-  const now   = Date.now();
+  const state  = loadState();
+  const now    = Date.now();
+  const params = getLunaParams();
+  const cycleMs = params.cycleSec * 1000;
 
-  // 30분 경과 → 정규 사이클
-  if (now - state.lastCycleAt >= CYCLE_INTERVAL) {
-    return { run: true, emergency: false, reason: '30분 정규 사이클' };
+  // 정규 사이클 (시간대별 간격 적용)
+  if (now - state.lastCycleAt >= cycleMs) {
+    const cycleMin = params.cycleSec / 60;
+    return { run: true, emergency: false, reason: `${cycleMin}분 정규 사이클 (${params.mode})` };
   }
 
-  // BTC 긴급 트리거 (±3%)
-  if (symbols.some(s => s.startsWith('BTC')) && state.lastBtcPrice > 0) {
+  // BTC 긴급 트리거 (시간대별 활성 여부)
+  if (params.emergencyTrigger && symbols.some(s => s.startsWith('BTC')) && state.lastBtcPrice > 0) {
     try {
       const currentPrice = await fetchBtcPrice();
       const changePct    = Math.abs((currentPrice - state.lastBtcPrice) / state.lastBtcPrice);
@@ -96,11 +99,11 @@ async function shouldRunCycle(symbols) {
     }
   }
 
-  const remainMin = Math.ceil((CYCLE_INTERVAL - (now - state.lastCycleAt)) / 60000);
+  const remainMin = Math.ceil((cycleMs - (now - state.lastCycleAt)) / 60000);
   const lastTime  = state.lastCycleAt > 0
     ? new Date(state.lastCycleAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })
     : '없음';
-  console.log(`⏳ 다음 사이클까지 ${remainMin}분 (마지막: ${lastTime})`);
+  console.log(`⏳ [${params.mode}] 다음 사이클까지 ${remainMin}분 (마지막: ${lastTime})`);
   return { run: false, reason: `대기 중 (${remainMin}분 남음)` };
 }
 
@@ -188,10 +191,12 @@ export async function runCryptoCycle(symbols) {
   const paperMode = isPaperMode();
   const startTime = Date.now();
   const tag       = paperMode ? '[PAPER]' : '[LIVE]';
+  const params    = getLunaParams();
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`🚀 ${tag} 암호화폐 사이클 시작 — ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
   console.log(`   심볼: ${symbols.join(', ')}`);
+  console.log(`   시간대: ${params.mode} | 최소신호점수: ${params.minSignalScore} | 최대포지션: ${params.maxOpenPositions}개`);
   console.log(`${'═'.repeat(60)}`);
 
   try {
@@ -206,7 +211,7 @@ export async function runCryptoCycle(symbols) {
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
-    const results = await orchestrate(symbols, 'binance');
+    const results = await orchestrate(symbols, 'binance', params);
 
     // ── 단계 3: 헤파이스토스 실행 (PAPER_MODE: 신호만 저장) ──
     if (results.length > 0) {

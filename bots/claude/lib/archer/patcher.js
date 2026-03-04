@@ -11,8 +11,8 @@
 
 const fs      = require('fs');
 const path    = require('path');
-const https   = require('https');
 const config  = require('./config');
+const { publishToMainBot } = require('../mainbot-client');
 
 // ─── 패치 티켓 저장 ──────────────────────────────────────────────────
 
@@ -163,50 +163,12 @@ function savePatchRequest(analysis, runDate) {
 
 // ─── 텔레그램 알림 ──────────────────────────────────────────────────
 
-function loadTelegramConfig() {
-  for (const p of config.SECRETS_PATHS) {
-    try {
-      if (!fs.existsSync(p)) continue;
-      const s = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (s?.telegram_bot_token && s?.telegram_chat_id) {
-        return { token: s.telegram_bot_token, chatId: s.telegram_chat_id };
-      }
-    } catch { /* 무시 */ }
-  }
-  return null;
-}
-
-function sendTelegramMsg(token, chatId, text) {
-  return new Promise((resolve) => {
-    const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
-    const req  = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${token}/sendMessage`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, (res) => {
-      res.resume();
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(8000, () => { req.destroy(); resolve(false); });
-    req.write(body);
-    req.end();
-  });
-}
-
 /**
- * 패치 알림 텔레그램 전송
+ * 패치 알림 제이 큐 발행
  * @param {object} analysis
  * @param {string} runDate
  */
-async function sendTelegram(analysis, runDate) {
-  const tg = loadTelegramConfig();
-  if (!tg) {
-    console.log('  ℹ️ [아처] 텔레그램 미설정 — 알림 스킵');
-    return;
-  }
-
+function sendTelegram(analysis, runDate) {
   const patches  = analysis.patches  || [];
   const security = analysis.security || [];
   const llmApi   = analysis.llm_api  || [];
@@ -215,7 +177,7 @@ async function sendTelegram(analysis, runDate) {
   const criticalSecurity = security.filter(s => s.severity === 'critical' || s.severity === 'high');
 
   const lines = [];
-  lines.push(`🏹 <b>아처 주간 리포트</b> (${runDate})`);
+  lines.push(`🏹 아처 주간 리포트 (${runDate})`);
   lines.push('');
 
   if (analysis.summary) {
@@ -224,7 +186,7 @@ async function sendTelegram(analysis, runDate) {
   }
 
   if (criticalPatches.length > 0) {
-    lines.push(`📦 <b>긴급 패치 (${criticalPatches.length}건)</b>`);
+    lines.push(`📦 긴급 패치 (${criticalPatches.length}건)`);
     for (const p of criticalPatches.slice(0, 3)) {
       const brk = p.breaking ? ' ⚠️Breaking' : '';
       lines.push(`  • ${p.package}: ${p.current} → ${p.latest}${brk}`);
@@ -233,7 +195,7 @@ async function sendTelegram(analysis, runDate) {
   }
 
   if (criticalSecurity.length > 0) {
-    lines.push(`🔒 <b>보안 취약점 (${criticalSecurity.length}건)</b>`);
+    lines.push(`🔒 보안 취약점 (${criticalSecurity.length}건)`);
     for (const s of criticalSecurity.slice(0, 3)) {
       lines.push(`  • [${s.severity}] ${s.package}: ${s.summary}`);
     }
@@ -241,7 +203,7 @@ async function sendTelegram(analysis, runDate) {
   }
 
   if (llmApi.length > 0) {
-    lines.push(`🤖 <b>LLM API 변경 (${llmApi.length}건)</b>`);
+    lines.push(`🤖 LLM API 변경 (${llmApi.length}건)`);
     for (const l of llmApi.slice(0, 2)) {
       lines.push(`  • [${l.provider}] ${l.title}`);
     }
@@ -251,13 +213,9 @@ async function sendTelegram(analysis, runDate) {
   const totalItems = patches.length + security.length + llmApi.length + (analysis.ai_techniques || []).length;
   lines.push(`📄 PATCH_REQUEST.md 생성됨 (${totalItems}건 항목)`);
 
-  const text = lines.join('\n');
-  const ok   = await sendTelegramMsg(tg.token, tg.chatId, text);
-  if (ok) {
-    console.log('  📲 [아처] 텔레그램 전송 완료');
-  } else {
-    console.warn('  ⚠️ [아처] 텔레그램 전송 실패');
-  }
+  const level = criticalSecurity.length > 0 ? 3 : criticalPatches.length > 0 ? 3 : 2;
+  publishToMainBot({ from_bot: 'archer', event_type: 'report', alert_level: level, message: lines.join('\n') });
+  console.log('  📲 [아처] 제이 큐 발행 완료');
 }
 
 module.exports = {

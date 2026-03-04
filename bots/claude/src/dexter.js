@@ -36,7 +36,7 @@ const checks = {
   deps:      require('../lib/checks/deps'),
 };
 
-const { printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog } = require('../lib/reporter');
+const { printReport, buildTelegramText, writeLog, writeFixLog } = require('../lib/reporter');
 
 // ─── 자동 수정 ─────────────────────────────────────────────────────
 const autofix = require('../lib/autofix');
@@ -128,10 +128,8 @@ async function main() {
     const hasIssue = results.some(r => r.status !== 'ok');
     if (hasIssue) {
       const text = buildTelegramText(results, elapsed);
-      const sent = await sendTelegram(text);
-      if (!SILENT) console.log(sent ? '✅ 텔레그램 알림 발송' : '⚠️  텔레그램 발송 실패');
+      if (!SILENT) console.log('✅ 제이 큐 발행');
 
-      // 메인봇 큐에도 발행 (알람 통합)
       const criticals = results.filter(r => r.status === 'critical');
       const errors    = results.filter(r => r.status === 'error');
       const level     = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;

@@ -17,7 +17,7 @@ import ccxt            from 'ccxt';
 import { fileURLToPath } from 'url';
 import * as db          from '../shared/db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
-import { sendTelegram } from '../shared/report.js';
+import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker }      from '../shared/cost-tracker.js';
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
@@ -247,8 +247,8 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   console.log('\n' + report);
 
   if (telegram) {
-    await sendTelegram(report).catch(e => console.warn('  ⚠️ 텔레그램 발송 실패:', e.message));
-    console.log('\n📱 텔레그램 발송 완료');
+    publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: report });
+    console.log('\n📱 제이 큐 발송 완료');
   }
 
   return report;

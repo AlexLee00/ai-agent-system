@@ -12,7 +12,7 @@
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
-import { sendTelegram } from '../shared/report.js';
+import { publishToMainBot } from '../shared/mainbot-client.js';
 
 const SUBREDDITS = [
   { name: 'algotrading',    market: 'all',    limit: 10 },
@@ -127,7 +127,7 @@ export async function collectStrategies() {
       '',
       ...summary.slice(0, 5),
     ].join('\n');
-    await sendTelegram(msg).catch(() => {});
+    publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
   }
 
   return saved;
