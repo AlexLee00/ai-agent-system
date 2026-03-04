@@ -407,6 +407,76 @@ function checkClaudeTeamIdentity() {
   return results;
 }
 
+// ─── 세션 마감 핸들러 ─────────────────────────────────────────────────
+
+/**
+ * 세션 마감 자동화
+ * git log에서 변경사항 추출 → session-close.js 실행 → git commit
+ */
+function handleSessionClose(args) {
+  try {
+    const botTarget = args.bot || 'orchestrator';
+    const sessionCloseJs = path.join(PROJECT_ROOT, 'scripts', 'session-close.js');
+
+    // git log로 최근 변경사항 파악
+    let gitLog = '';
+    try {
+      gitLog = require('child_process').execSync('git log --oneline -8', {
+        cwd: PROJECT_ROOT, encoding: 'utf8',
+      });
+    } catch {}
+
+    // auto 모드로 실행 (title/items git log 자동 추출) + git commit
+    const result = spawnSync(NODE, [
+      sessionCloseJs,
+      `--bot=${botTarget}`,
+      '--auto',
+      '--git-commit',
+    ], {
+      cwd:     PROJECT_ROOT,
+      timeout: 120000,
+      env:     { ...process.env, SESSION_CLOSE_JSON: '1' },
+      encoding: 'utf8',
+    });
+
+    const stdout = (result.stdout || '').trim();
+    const stderr = (result.stderr || '').trim();
+
+    // __SESSION_CLOSE_RESULT__ 파싱
+    const jsonMatch = stdout.match(/__SESSION_CLOSE_RESULT__({.+})/);
+    let parsed = null;
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[1]); } catch {}
+    }
+
+    if (result.status >= 2) {
+      return { ok: false, error: stderr.slice(0, 300) || 'session-close 실패' };
+    }
+
+    // 성공 메시지 구성
+    const lines = parsed?.lines || [];
+    const summary = lines.map(l => `• ${l}`).join('\n');
+    const gitHash = (() => {
+      try {
+        return require('child_process').execSync('git log --oneline -1', {
+          cwd: PROJECT_ROOT, encoding: 'utf8',
+        }).trim();
+      } catch { return ''; }
+    })();
+
+    const msg = [
+      `📋 처리 완료:`,
+      summary || '문서 패치 + 배포',
+      gitHash ? `\n🔖 ${gitHash}` : '',
+    ].filter(Boolean).join('\n');
+
+    console.log(`[클로드] session_close → done (${botTarget})`);
+    return { ok: true, message: msg };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -417,6 +487,7 @@ const HANDLERS = {
   run_archer:      handleRunArcher,
   ask_claude:      handleAskClaude,
   analyze_unknown: handleAnalyzeUnknown,
+  session_close:   handleSessionClose,
 };
 
 async function processCommands() {

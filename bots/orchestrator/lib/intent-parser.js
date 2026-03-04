@@ -117,6 +117,9 @@ const KEYWORD_PATTERNS = [
   { re: /덱스터|dexter/i,                         intent: 'claude_action', args: { command: 'run_check' } },
   { re: /아처|archer/i,                           intent: 'claude_action', args: { command: 'run_archer' } },
 
+  // ── 세션 마감 ──
+  { re: /세션.*(마무리|마감|정리|close|끝)|마무리.*해줘|마감.*해줘|정리.*해줘|session.*close/i, intent: 'session_close' },
+
   // ── 기타 제이 직접 처리 ──
   { re: /브리핑|briefing|아침.*알람|야간.*보류/i, intent: 'brief'  },
   { re: /큐|queue/i,                              intent: 'queue'  },
