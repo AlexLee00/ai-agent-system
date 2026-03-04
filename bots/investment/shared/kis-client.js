@@ -24,11 +24,11 @@ const TR_ID = {
   DOMESTIC_BUY_LIVE:    'TTTC0802U',
   DOMESTIC_SELL_LIVE:   'TTTC0801U',
   OVERSEAS_BUY_PAPER:   'VTTT1002U',
-  OVERSEAS_SELL_PAPER:  'VTTT1001U',
+  OVERSEAS_SELL_PAPER:  'VTTT1006U',   // 미국 매도 모의투자
   OVERSEAS_BUY_LIVE:    'TTTT1002U',
-  OVERSEAS_SELL_LIVE:   'TTTT1001U',
+  OVERSEAS_SELL_LIVE:   'TTTT1006U',   // 미국 매도 실전
   DOMESTIC_PRICE:       'FHKST01010100',
-  OVERSEAS_PRICE:       'HHDFS00000300',
+  OVERSEAS_PRICE:       'HHDFS76200200', // 해외주식 현재체결가
 };
 
 // ─── 토큰 관리 ─────────────────────────────────────────────────────
@@ -145,18 +145,38 @@ async function getDomesticPrice(symbol, paper) {
   return price;
 }
 
-/** 해외주식 현재가 (USD) */
-async function getOverseasPrice(symbol, paper) {
-  // 거래소 코드: NASD(나스닥) / NYSE
-  const excd = symbol === 'NVDA' || symbol.length <= 4 ? 'NASD' : 'NYSE';
+/** 해외주식 현재가 (USD)
+ *  - 가격조회: NAS/NYS (HHDFS76200200 API 요구)
+ *  - 주문 EXCD: NASD/NYSE (order API 요구)
+ */
+async function getOverseasPrice(symbol) {
+  // 가격조회용 (shorter code)
+  const PRICE_EXCD = {
+    AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
+    NVDA: 'NAS', TSLA: 'NAS', NFLX: 'NAS', INTC: 'NAS', AMD:  'NAS',
+    QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
+    COIN: 'NAS', MSTR: 'NAS',
+    JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
+    XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD: 'NYS',
+  };
+  // 주문용 (full code — order API 요구)
+  const ORDER_EXCD = {
+    AAPL: 'NASD', MSFT: 'NASD', AMZN: 'NASD', GOOGL: 'NASD', META: 'NASD',
+    NVDA: 'NASD', TSLA: 'NASD', NFLX: 'NASD', INTC: 'NASD', AMD:  'NASD',
+    QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
+    COIN: 'NASD', MSTR: 'NASD',
+    JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
+    XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD: 'NYSE',
+  };
+  // 시세 조회는 항상 실서버 (openapivts는 해외시세 미지원)
   const data  = await kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
     trId:   TR_ID.OVERSEAS_PRICE,
-    params: { AUTH: '', EXCD: excd, SYMB: symbol },
-    paper,
+    params: { AUTH: '', EXCD: PRICE_EXCD[symbol] ?? 'NAS', SYMB: symbol },
+    paper:  false,
   });
   const price = parseFloat(data.output?.last || '0');
   if (!price) throw new Error(`${symbol} 해외 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
-  return { price, excd };
+  return { price, excd: ORDER_EXCD[symbol] ?? 'NASD' };  // 주문용 EXCD 반환
 }
 
 // ─── 계좌번호 파싱 ──────────────────────────────────────────────────
@@ -273,7 +293,7 @@ export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
 
-  const { price: currentPrice, excd } = await getOverseasPrice(symbol, paper);
+  const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   const qty = Math.floor(amountUsd / currentPrice);
 
   if (qty < 1) {
@@ -293,13 +313,16 @@ export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
   const res = await kisRequest('POST', '/uapi/overseas-stock/v1/trading/order', {
     trId, paper,
     body: {
-      CANO:          cano,
-      ACNT_PRDT_CD:  prodCd,
-      OVRS_EXCG_CD:  excd,
-      PDNO:          symbol,
-      ORD_DVSN:      '00',    // 지정가 (해외 시장가 미지원)
-      ORD_QTY:       String(qty),
-      OVRS_ORD_UNPR: currentPrice.toFixed(2),
+      CANO:            cano,
+      ACNT_PRDT_CD:    prodCd,
+      OVRS_EXCG_CD:    excd,         // NASD / NYSE / AMEX
+      PDNO:            symbol,
+      ORD_DVSN:        '00',          // 지정가 (해외는 시장가 미지원)
+      ORD_QTY:         String(qty),
+      OVRS_ORD_UNPR:   currentPrice.toFixed(2),
+      CTAC_TLNO:       '',
+      MGCO_APTM_ODNO:  '',
+      ORD_SVR_DVSN_CD: '0',           // 주문서버구분코드 (필수)
     },
   });
 
@@ -319,7 +342,7 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
   const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
 
-  const { price: currentPrice, excd } = await getOverseasPrice(symbol, paper);
+  const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   console.log(`  📊 [KIS] ${symbol} 현재가 $${currentPrice} → 매도 ${qty}주 ${tag}`);
 
   if (dryRun) {
@@ -333,13 +356,16 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const res = await kisRequest('POST', '/uapi/overseas-stock/v1/trading/order', {
     trId, paper,
     body: {
-      CANO:          cano,
-      ACNT_PRDT_CD:  prodCd,
-      OVRS_EXCG_CD:  excd,
-      PDNO:          symbol,
-      ORD_DVSN:      '00',
-      ORD_QTY:       String(qty),
-      OVRS_ORD_UNPR: currentPrice.toFixed(2),
+      CANO:            cano,
+      ACNT_PRDT_CD:    prodCd,
+      OVRS_EXCG_CD:    excd,
+      PDNO:            symbol,
+      ORD_DVSN:        '00',
+      ORD_QTY:         String(qty),
+      OVRS_ORD_UNPR:   currentPrice.toFixed(2),
+      CTAC_TLNO:       '',
+      MGCO_APTM_ODNO:  '',
+      ORD_SVR_DVSN_CD: '0',           // 주문서버구분코드 (필수)
     },
   });
 
