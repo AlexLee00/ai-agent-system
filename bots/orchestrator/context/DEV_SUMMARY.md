@@ -53,10 +53,13 @@
 - `daily_report` — 덱스터 일일 보고
 - `run_archer` — 아처 실행
 
-## LLM 정책
+## NLP 파싱 정책
 
-- **제이 인텐트 파싱**: Gemini 2.5 Flash (무료 OAuth)
-- **파싱 3단계**: slash → keyword → Gemini LLM fallback
+- **제이 인텐트 파싱**: 3단계 (slash → keyword 24개 → Gemini 2.5 Flash fallback)
+- **키워드 커버리지**: "앤디 죽었어", "매매 멈춰", "서버 괜찮아?", "AI 트렌드 알려줘" 등 구어체 포함
+- **Gemini 시스템 프롬프트**: 팀별 컨텍스트·자연어 예시 포함 (intent-parser.js)
+- **TEAMS.md**: 팀 기능 정의서 (`context/TEAMS.md`) — 신규 봇 추가 시 업데이트 필요
+- **/dexter·/archer**: bot_commands 실제 실행 (5분 타임아웃)
 
 ## launchd
 
