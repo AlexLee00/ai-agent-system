@@ -588,6 +588,15 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/lib/error-tracker.js`
 <!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai:end -->
 
+<!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습 -->
+#### 2026-03-04 ✨ LLM키통합+알람버그수정+덱스터패턴학습
+- packages/core/lib/llm-keys.js 공용 LLM 키 로더
+- mainbot_queue 무한반복 알람 버그 수정
+- 덱스터 mainbot_queue 건강 체크 추가
+- 덱스터 오류 패턴 학습 시스템 (dexter_error_log)
+- 관련 파일: `packages/core/lib/llm-keys.js|bots/orchestrator/src/filter.js|bots/orchestrator/src/mainbot.js|bots/claude/lib/checks/database.js|bots/claude/lib/error-history.js|bots/claude/lib/checks/patterns.js|bots/claude/src/dexter.js`
+<!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
