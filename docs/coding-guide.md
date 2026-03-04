@@ -1392,6 +1392,8 @@ function parseJsonResponse(text) {
 | 2026-03-03 | **배포 프로세스 안전화 + OBSERVE_ONLY 수정** — start-ops.sh `OBSERVE_ONLY=0` → `${OBSERVE_ONLY:-0}` (plist 환경변수 무시 버그 수정, 17건 오취소 재발 방지) / scripts/reload-monitor.sh 신규 (문법 체크→재시작, 직접 launchctl 금지 가이드 추가) / §1·§11·§14 코딩가이드 반영 |
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |
 | 2026-03-04 | **Phase 3 OPS 전환 + 투자 리포트 + 메모리 정리** — DuckDB WAL 버그 수정 (CHECKPOINT) 외 5건 |
+| 2026-03-04 | **메인봇(오케스트레이터) 구현 완료** — DB 마이그레이션(token_usage 포함) 외 6건 |
+<!-- session-close:2026-03-04:메인봇오케스트레이터-구현-완료 -->
 <!-- session-close:2026-03-04:phase-3-ops-전환-투자-리포트-메모리-정리 -->
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정 -->

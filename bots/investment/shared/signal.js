@@ -10,6 +10,7 @@
 import * as db from './db.js';
 import { isPaperMode } from './secrets.js';
 import { sendTelegram } from './report.js';
+import { publishToMainBot } from './mainbot-client.js';
 
 export const ACTIONS = Object.freeze({
   BUY:  'BUY',
@@ -183,6 +184,7 @@ export async function executeSignal(signal) {
       [traceId, signal.id ?? ''],
     ).catch(() => {});
     await sendTelegram(formatPaperMsg(signal, traceId));
+    publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 1, message: msg, payload: signal });
     return { executed: false, mode: 'paper', traceId };
   }
 
@@ -190,7 +192,9 @@ export async function executeSignal(signal) {
   const guard = await checkSafetyGates(signal);
   if (!guard.passed) {
     console.warn(`[GUARD:${traceId}] 차단 — ${guard.reason}`);
+    const guardMsg = `🛡️ 안전장치 발동\n사유: ${guard.reason}\n신호: ${signal.symbol} ${signal.action}`;
     await sendTelegram(`🛡️ *안전장치 발동*\n사유: ${guard.reason}\n신호: ${signal.symbol} ${signal.action}`);
+    publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: guardMsg, payload: { reason: guard.reason, signal } });
     await db.run(
       `UPDATE signals SET trace_id = ?, block_reason = ?, status = 'blocked' WHERE id = ?`,
       [traceId, guard.reason, signal.id ?? ''],

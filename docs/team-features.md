@@ -287,8 +287,47 @@ npm run patch:status        # 패치 현황 콘솔
 
 ---
 
+---
+
+## 메인봇 (오케스트레이터) — 알람 통합 허브
+
+**위치**: `bots/orchestrator/`
+**상태**: ✅ 구현 완료 (launchd 등록 필요)
+**설명**: 모든 팀 알람을 mainbot_queue(DB)로 수신 → 필터링/배치/무음 처리 → 텔레그램 발송. 사용자 명령 라우팅.
+
+### 핵심 기능
+
+| 기능 | 설명 |
+|------|------|
+| 알람 통합 | 스카팀/루나팀/클로드팀 모든 알람을 DB 큐로 수신 |
+| 필터링 | 무음/야간 보류/배치 집약 3단계 |
+| 명령 파싱 | 슬래시→키워드→Groq Scout 3단계 파싱 |
+| LLM 토큰 추적 | 전 봇 무료/유료 토큰 사용 통합 기록 |
+| 야간 운영 | 22:00~08:00 MEDIUM 이하 보류 → 아침 브리핑 |
+
+### 명령 목록
+`/status` `/cost` `/mute` `/unmute` `/luna` `/ska` `/dexter` `/archer` `/brief` `/queue` `/help`
+
+### 팀별 publishToMainBot 클라이언트
+| 팀 | 파일 | 모듈 방식 |
+|----|------|---------|
+| 스카팀 | `bots/reservation/lib/mainbot-client.js` | CJS |
+| 루나팀 | `bots/investment/shared/mainbot-client.js` | ESM |
+| 클로드팀 | `bots/claude/lib/mainbot-client.js` | CJS |
+
+### launchd 등록
+```bash
+cp bots/orchestrator/launchd/ai.orchestrator.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/ai.orchestrator.plist
+```
+
+→ 상세: `docs/MAINBOT.md`
+
+---
+
 ## 변경 이력
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-03-04 | 메인봇(오케스트레이터) 추가 — 알람 통합 허브, token_usage 추적, time-mode.js |
 | 2026-03-03 | 최초 작성 — 스카팀(v3.0 구조 반영) + 루나팀(Phase 3-A/B) + 클로드팀(덱스터/아처 v2.0) |

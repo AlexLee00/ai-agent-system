@@ -40,6 +40,16 @@
 - MEMORY.md 350→179줄 압축
 <!-- session-close:2026-03-04:phase-3-ops-전환-투자-리포트-메모리-정리 -->
 
+### ✨ 메인봇(오케스트레이터) 구현 완료
+- DB 마이그레이션(token_usage 포함)
+- mainbot.js/router/filter/dashboard 구현
+- 팀별 publishToMainBot 클라이언트(CJS/ESM)
+- time-mode.js
+- naver-monitor/signal/dexter 교체
+- launchd plist
+- docs/MAINBOT.md
+<!-- session-close:2026-03-04:메인봇오케스트레이터-구현-완료 -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)

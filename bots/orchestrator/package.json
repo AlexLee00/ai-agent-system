@@ -1,13 +1,15 @@
 {
   "name": "@ai-agent/orchestrator",
   "version": "1.0.0",
-  "description": "🤖 메인봇 (팀장) - 지시 해석, 업무 분배, 결과 취합",
-  "main": "src/index.js",
+  "description": "🤖 메인봇 (오케스트레이터) - 알람 통합 허브, 명령 라우팅, 봇 총괄",
+  "main": "src/mainbot.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/mainbot.js",
+    "migrate": "node migrations/002_mainbot.js"
   },
   "dependencies": {
-    "@ai-agent/core": "*"
+    "better-sqlite3": "*",
+    "js-yaml": "*"
   }
 }
