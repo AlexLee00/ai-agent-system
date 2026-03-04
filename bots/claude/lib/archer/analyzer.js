@@ -10,8 +10,8 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk').default || require('@anthropic-ai/sdk');
-const fs        = require('fs');
 const config    = require('./config');
+const { getAnthropicKey } = require('../../../../packages/core/lib/llm-keys');
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
@@ -136,20 +136,9 @@ function buildContext({ github, npm, webSources, audit, cache }) {
 
 // ─── Claude API 호출 ─────────────────────────────────────────────────
 
-function loadApiKey() {
-  for (const p of config.SECRETS_PATHS) {
-    try {
-      if (!fs.existsSync(p)) continue;
-      const s = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (s?.anthropic_api_key) return s.anthropic_api_key;
-    } catch { /* 무시 */ }
-  }
-  return process.env.ANTHROPIC_API_KEY || null;
-}
-
 async function callClaude(contextText) {
-  const apiKey = loadApiKey();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY 없음');
+  const apiKey = getAnthropicKey();
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY 없음 — bots/investment/config.yaml anthropic.api_key 확인');
 
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
