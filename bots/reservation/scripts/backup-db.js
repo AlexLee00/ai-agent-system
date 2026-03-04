@@ -40,7 +40,7 @@ function purgeOldBackups() {
   }
 }
 
-function main() {
+async function main() {
   const dateStr = getDateStr();
   const destPath = path.join(BACKUP_DIR, `state-${dateStr}.db`);
 
