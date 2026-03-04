@@ -19,11 +19,10 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
+const { publishToMainBot } = require('../lib/mainbot-client');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const STATE_FILE = path.join(WORKSPACE, 'health-check-state.json');
-const SECRETS_FILE = path.join(__dirname, '..', 'secrets.json');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.naver-monitor'];
@@ -105,38 +104,9 @@ function getLaunchctlStatus() {
   return services;
 }
 
-// ─── 텔레그램 ───────────────────────────────────────────────────
-
-async function sendTelegram(message) {
-  try {
-    const secrets = JSON.parse(fs.readFileSync(SECRETS_FILE, 'utf-8'));
-    const { telegram_bot_token, telegram_chat_id } = secrets;
-    if (!telegram_bot_token || !telegram_chat_id) return;
-
-    const body = JSON.stringify({ chat_id: telegram_chat_id, text: message });
-    await new Promise((resolve) => {
-      const req = https.request(
-        {
-          hostname: 'api.telegram.org',
-          path: `/bot${telegram_bot_token}/sendMessage`,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        },
-        resolve
-      );
-      req.on('error', resolve);
-      req.write(body);
-      req.end();
-    });
-    console.log(`[헬스체크] 텔레그램 발송: ${message.slice(0, 60)}`);
-  } catch (e) {
-    console.error(`[헬스체크] 텔레그램 실패: ${e.message}`);
-  }
-}
-
 // ─── 메인 ───────────────────────────────────────────────────────
 
-async function main() {
+function main() {
   const now = new Date().toISOString();
   console.log(`[헬스체크] 시작 — ${now}`);
 
@@ -200,14 +170,16 @@ async function main() {
   // 알림 발송 + 상태 기록
   for (const { key, msg } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
-    await sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: 3, message: msg });
     state[key] = now;
   }
 
   saveState(state);
 }
 
-main().catch((e) => {
+try {
+  main();
+} catch (e) {
   console.error(`[헬스체크] 예외: ${e.message}`);
   process.exit(1);
-});
+}

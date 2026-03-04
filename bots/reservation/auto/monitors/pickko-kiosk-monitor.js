@@ -17,7 +17,7 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { sendTelegram } = require('../../lib/telegram');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { getKioskBlock, upsertKioskBlock, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
@@ -61,7 +61,7 @@ function roundUpToHalfHour(timeStr) {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
 }
 
-// sendTelegram: lib/telegram.js에서 import됨 (Telegram Bot API 직접 호출)
+
 
 // ─── Phase 3: 네이버 booking calendar 로그인 ──────────
 
@@ -153,7 +153,7 @@ async function naverBookingLogin(page) {
 
   log(`⚠️ 로그인 후 상태: ${JSON.stringify(secCheck)}`);
   if (secCheck.needsSecurity) {
-    sendTelegram('🔐 네이버 예약관리 보안인증 필요!\n수동 로그인 후 재시작 필요');
+    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 4, message: '🔐 네이버 예약관리 보안인증 필요!\n수동 로그인 후 재시작 필요' });
   }
   return false;
 }
@@ -1510,14 +1510,14 @@ async function main() {
       log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
       for (const e of toBlockEntries) {
         upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
-        sendTelegram(
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
           `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
-        );
+        });
       }
       for (const e of cancelledEntries) {
-        sendTelegram(
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
           `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: naver-monitor 미실행`
-        );
+        });
       }
       return;
     }
@@ -1549,14 +1549,14 @@ async function main() {
         log('❌ 네이버 booking 로그인 실패');
         for (const e of toBlockEntries) {
           upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
-          sendTelegram(
+          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
-          );
+          });
         }
         for (const e of cancelledEntries) {
-          sendTelegram(
+          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
             `⚠️ 네이버 차단 해제 필요 — 수동 처리\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)\n사유: 네이버 로그인 실패`
-          );
+          });
         }
         return;
       }
@@ -1581,9 +1581,9 @@ async function main() {
             room: e.room, amount: e.amount,
             naverBlocked: false, firstSeenAt: _now, blockedAt: null,
           });
-          sendTelegram(
+          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
             `⏰ 시간 경과 — 네이버 차단 생략\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}\n예약 종료 시각이 지나 네이버 차단 불필요 (픽코에서 직접 확인)`
-          );
+          });
           continue;
         }
 
@@ -1624,13 +1624,13 @@ async function main() {
 
         // ── Phase 4: 텔레그램 알림 ──
         if (blocked) {
-          sendTelegram(
+          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
             `🚫 네이버 예약 차단 완료\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)`
-          );
+          });
         } else {
-          sendTelegram(
+          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
-          );
+          });
         }
       }
 
@@ -1668,14 +1668,14 @@ async function main() {
             upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST()
             });
-            sendTelegram(
+            publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
               `✅ 네이버 예약불가 해제\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)`
-            );
+            });
           } else {
             // 실패 시 naverBlocked: true 유지 → 다음 주기에 재시도
-            sendTelegram(
+            publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
               `⚠️ 네이버 차단 해제 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
-            );
+            });
           }
         }
       }
@@ -1715,7 +1715,7 @@ async function blockSlotOnly(entry) {
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
   if (!wsEndpoint) {
     log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 차단 필요');
-    await sendTelegram(`⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행`);
+    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행` });
     process.exit(1);
   }
 
@@ -1736,7 +1736,7 @@ async function blockSlotOnly(entry) {
     const loggedIn = await naverBookingLogin(naverPg);
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
-      await sendTelegram(`⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패`);
+      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패` });
       // exitCode = 1 (기본값), finally로 탭 닫기 후 종료
     } else {
       // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
@@ -1769,10 +1769,10 @@ async function blockSlotOnly(entry) {
 
       if (blocked) {
         log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
-        await sendTelegram(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`);
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸` });
       } else {
         log(`⚠️ 네이버 차단 실패 — 수동 확인 필요`);
-        await sendTelegram(`⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });
       }
       exitCode = blocked ? 0 : 1;
     }
@@ -1822,7 +1822,7 @@ async function auditToday(dateOverride = null) {
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch {}
   if (!wsEndpoint) {
     log('⚠️ naver-monitor 미실행 — 검증 불가');
-    await sendTelegram(`⚠️ [오늘 예약 검증] naver-monitor 미실행으로 검증 불가`);
+    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] naver-monitor 미실행으로 검증 불가` });
     return;
   }
 
@@ -1845,7 +1845,7 @@ async function auditToday(dateOverride = null) {
     const loggedIn = await naverBookingLogin(naverPg);
     if (!loggedIn) {
       log('❌ 네이버 로그인 실패');
-      await sendTelegram(`⚠️ [오늘 예약 검증] 네이버 로그인 실패`);
+      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] 네이버 로그인 실패` });
       return;
     }
 
@@ -1975,7 +1975,7 @@ async function auditToday(dateOverride = null) {
   } else if (blockedList.length === 0 && unblockedList.length === 0) {
     msgParts.push('이상 없음');
   }
-  await sendTelegram(msgParts.join('\n'));
+  publishToMainBot({ from_bot: 'jimmy', event_type: 'report', alert_level: 1, message: msgParts.join('\n') });
   log(`\n✅ 오늘 예약 검증 완료 — 확인: ${okList.length}, 차단추가: ${blockedList.length}, 해제: ${unblockedList.length}, 실패: ${failedList.length}`);
 }
 
@@ -2001,7 +2001,7 @@ async function unblockSlotOnly(entry) {
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
   if (!wsEndpoint) {
     log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 해제 필요');
-    await sendTelegram(`⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행`);
+    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행` });
     process.exit(1);
   }
 
@@ -2023,7 +2023,7 @@ async function unblockSlotOnly(entry) {
     const loggedIn = await naverBookingLogin(naverPg);
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
-      await sendTelegram(`⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패`);
+      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 해제 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패` });
       // exitCode stays 1, falls through to finally
     } else {
       let unblocked = false;
@@ -2055,10 +2055,10 @@ async function unblockSlotOnly(entry) {
 
       if (unblocked) {
         log(`✅ 네이버 해제 완료: ${name} ${date} ${start}~${end} ${room}`);
-        await sendTelegram(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸` });
       } else {
         log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
-        await sendTelegram(`⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸`);
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });
       }
       exitCode = unblocked ? 0 : 1;
     }
@@ -2103,7 +2103,7 @@ if (KIOSK_ARGS['block-slot']) {
     .then(() => process.exit(0))
     .catch(async err => {
       log(`❌ audit-today 오류: ${err.message}`);
-      await sendTelegram(`⚠️ [오늘 예약 검증] 실행 오류: ${err.message}`).catch(() => null);
+      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [오늘 예약 검증] 실행 오류: ${err.message}` });
       process.exit(1);
     });
 } else {

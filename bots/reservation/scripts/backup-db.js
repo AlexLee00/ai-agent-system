@@ -14,38 +14,11 @@
 
 const path = require('path');
 const fs = require('fs');
+const { publishToMainBot } = require('../lib/mainbot-client');
 
 const DB_PATH = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
 const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backups');
 const KEEP_DAYS = 7;
-
-async function sendTelegram(message) {
-  try {
-    const secrets = JSON.parse(
-      fs.readFileSync(
-        path.join(__dirname, '..', 'secrets.json'),
-        'utf8'
-      )
-    );
-    const { telegram_token, telegram_chat_id } = secrets;
-    if (!telegram_token || !telegram_chat_id) return;
-
-    const https = require('https');
-    const body = JSON.stringify({ chat_id: telegram_chat_id, text: message });
-    await new Promise((resolve) => {
-      const req = https.request(
-        `https://api.telegram.org/bot${telegram_token}/sendMessage`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
-        resolve
-      );
-      req.on('error', resolve);
-      req.write(body);
-      req.end();
-    });
-  } catch {
-    // 텔레그램 실패는 무시 (백업 결과에 영향 없음)
-  }
-}
 
 function getDateStr() {
   const now = new Date();
@@ -67,7 +40,7 @@ function purgeOldBackups() {
   }
 }
 
-async function main() {
+function main() {
   const dateStr = getDateStr();
   const destPath = path.join(BACKUP_DIR, `state-${dateStr}.db`);
 
@@ -82,7 +55,7 @@ async function main() {
   if (!fs.existsSync(DB_PATH)) {
     const msg = `⚠️ [스카 백업] state.db 없음\n경로: ${DB_PATH}`;
     console.error(msg);
-    await sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 4, message: msg });
     process.exit(1);
   }
 
@@ -107,7 +80,7 @@ async function main() {
   } catch (err) {
     const msg = `🚨 [스카 백업 실패]\n${err.message}`;
     console.error(msg);
-    await sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
     process.exit(1);
   }
 }

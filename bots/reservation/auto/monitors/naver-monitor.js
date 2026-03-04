@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 const { transformAndNormalizeData } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
-const { sendTelegram: sendTelegramDirect, flushPendingTelegrams } = require('../../lib/telegram');
+const { flushPendingTelegrams } = require('../../lib/telegram');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { printModeBanner, getModeSuffix } = require('../../lib/mode');
@@ -330,7 +330,6 @@ async function naverLogin(page) {
           `원격으로 맥북에 접속해서 인증을 완료해주세요.\n\n` +
           `✅ 인증 완료되면 자동으로 모니터링이 재개됩니다.\n` +
           `⏳ 최대 30분 대기 후 자동으로 재시작됩니다.`;
-        sendTelegramDirect(_authMsg); // CRITICAL — 직접 발송 유지
         publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 4, message: _authMsg });
       } else if (securityCheck.alreadyDone) {
         log('✅ 로그인 후 즉시 대시보드 감지 → 보안인증 불필요');
@@ -529,14 +528,12 @@ async function reportUnresolvedAlerts() {
       summary += '\n';
     }
     summary += '\n처리 완료 시 자동으로 해결됨 처리됩니다.';
-    await sendTelegramDirect(summary);
-    log(`📱 미해결 알림 ${unresolved.length}건 텔레그램 발송 완료`);
+    publishToMainBot({ from_bot: 'andy', event_type: 'report', alert_level: 2, message: summary });
+    log(`📱 미해결 알림 ${unresolved.length}건 제이 큐 발송 완료`);
   } catch (err) {
     log(`⚠️ 미해결 알림 보고 실패: ${err.message}`);
   }
 }
-
-// sendTelegramDirect: lib/telegram.js에서 import됨 (Telegram Bot API 직접 호출)
 
 // 알림 메시지 전송
 // 🚀 개선된 알람 함수 (신규 예약, 결제 완료 등)
@@ -601,13 +598,10 @@ async function sendAlert(options) {
         });
         log(`💾 [알람 저장] ${type.toUpperCase()} - ${title}`);
 
-        // 2️⃣ Bot API 직접 발송 (24시간, 재시도 포함)
-        const sendOk = await sendTelegramDirect(message);
-        if (sendOk) {
-          updateAlertSent(alertId, new Date().toISOString());
-        } else {
-          log(`⚠️ [알람발송 실패] sent: false 유지`);
-        }
+        // 2️⃣ 제이 큐를 통해 발송
+        const level = (type === 'error') ? 3 : (type === 'new') ? 3 : 1;
+        publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: level, message });
+        updateAlertSent(alertId, new Date().toISOString());
 
         // 3️⃣ TTL 정책 실행
         cleanupOldAlerts();
@@ -767,7 +761,7 @@ async function monitorBookings() {
             log('✅ 세션 자동 복구 완료');
           } else {
             log('❌ 세션 자동 복구 실패');
-            sendTelegramDirect('⚠️ 네이버 세션 만료, 자동 재로그인 실패\n수동 확인이 필요합니다.');
+            publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message: '⚠️ 네이버 세션 만료, 자동 재로그인 실패\n수동 확인이 필요합니다.' });
           }
         }
 
@@ -1274,7 +1268,7 @@ async function monitorBookings() {
             const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
             const todayStats = getTodayStats(todayStr);
             const hMsg = `✅ 스카 정상 운영 중\n\n확인 #${checkCount} | 업타임 ${upMin}분\n\n📋 오늘 예약 현황 (${todayStr})\n네이버: ${currentConfirmedList.length}건 확정 | ${cancelledCount}건 취소\n키오스크: ${todayStats.kioskTotal}건\n합계: ${todayStats.total}건\n\n다음 heartbeat: 1시간 후`;
-            sendTelegramDirect(hMsg);
+            publishToMainBot({ from_bot: 'andy', event_type: 'heartbeat', alert_level: 1, message: hMsg });
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
             lastHeartbeatTime = Date.now();
           }
@@ -1289,7 +1283,7 @@ async function monitorBookings() {
               `🚫 취소 처리: ${dailyStats.cancelled}건\n` +
               `⚠️ 등록 실패: ${dailyStats.failed}건\n` +
               `🔍 감지 총계: ${dailyStats.detected}건`;
-            sendTelegramDirect(dayMsg);
+            publishToMainBot({ from_bot: 'andy', event_type: 'report', alert_level: 1, message: dayMsg });
             log(`📊 일일 마감 요약 전송: 등록${dailyStats.completed} 취소${dailyStats.cancelled} 실패${dailyStats.failed} 감지${dailyStats.detected}`);
             lastDailyReportDate = hDateStr;
             dailyStats = { date: hDateStr, detected: 0, completed: 0, cancelled: 0, failed: 0 };
@@ -1669,14 +1663,14 @@ function runPickkoCancel(booking, cancelKey = null) {
           reason: `exit code ${code}`,
           action: '수동 취소 필요'
         });
-        // 즉시 텔레그램 수동 처리 요청
-        sendTelegramDirect(
+        // 즉시 수동 처리 요청
+        publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
           `🚨 픽코 취소 실패 — 수동 처리 필요!\n\n` +
           `📞 고객: ${booking.phone}\n` +
           `📅 날짜: ${booking.date}\n` +
           `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
           `픽코에서 직접 취소해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
-        );
+        });
         // 자동 버그리포트 등록
         autoBugReport({
           title: '픽코 자동 취소 실패',
@@ -1721,13 +1715,13 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       const currentRetries = currentEntry?.retries || 0;
       if (currentRetries >= MAX_RETRIES) {
         log(`⛔ [건너뜀] 최대 재시도 초과 (${currentRetries}회): ${maskPhone(booking.phone)} ${booking.date}`);
-        sendTelegramDirect(
+        publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
           `⛔ 픽코 등록 포기 — 최대 재시도 초과!\n\n` +
           `📞 고객: ${booking.phone}\n📅 날짜: ${booking.date}\n` +
           `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n` +
           `🔄 시도 횟수: ${currentRetries}회 (한도: ${MAX_RETRIES}회)\n\n` +
           `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
-        );
+        });
         return resolve(99); // 재시도 한도 초과
       }
     }
@@ -1780,13 +1774,13 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           });
           markSeen(bookingId);
           resolveAlertsByBooking(booking.phone, booking.date, booking.start);
-          sendTelegramDirect(
+          publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 2, message:
             `⏰ 시간 경과 — 픽코 등록 생략\n\n` +
             `📞 고객: ${booking.phone}\n` +
             `📅 날짜: ${booking.date}\n` +
             `⏰ 요청: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
             `예약 시작 시각이 이미 지나 픽코 슬롯 선택 불가.\n픽코에서 직접 확인 후 필요 시 등록해 주세요.`
-          );
+          });
         }
         return resolve(2);
       }
@@ -1847,10 +1841,10 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           // 📚 RAG: 픽코 실패 상태로 저장
           ragSaveReservation(booking, '픽코실패');
 
-          // 즉시 텔레그램 수동 처리 요청
+          // 즉시 수동 처리 요청
           const failedEntry = getReservation(bookingId);
           const retryCount = failedEntry?.retries || 1;
-          sendTelegramDirect(
+          publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
             `🚨 픽코 등록 실패 — 수동 처리 필요!\n\n` +
             `📞 고객: ${booking.phone}\n` +
             `📅 날짜: ${booking.date}\n` +
@@ -1858,7 +1852,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             `🔄 시도 횟수: ${retryCount}회\n` +
             `❌ 원인: ${errorMsg}\n\n` +
             `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
-          );
+          });
         }
         // 자동 버그리포트 등록
         autoBugReport({
