@@ -51,7 +51,7 @@ function runDbScript(script) {
   `;
   try {
     fs.writeFileSync(tmp, wrapped);
-    const out = execSync(`node "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
+    const out = execSync(`"${process.execPath}" "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
     return JSON.parse(out.trim());
   } finally {
     try { fs.unlinkSync(tmp); } catch {}

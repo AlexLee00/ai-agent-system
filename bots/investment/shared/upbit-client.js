@@ -144,6 +144,41 @@ export async function getBinanceDepositAddress() {
   };
 }
 
+// ─── 업비트 KRW 입금 이력 조회 (출금지연제 해제 시각 추정) ────────────
+
+/**
+ * 가장 최근 KRW 입금 완료 시각 반환
+ * - 1차: 업비트 KRW 입금 이력 API (privateGetDepositsKrw)
+ * - 2차: USDT/KRW 최근 체결 주문 시각 (근사치)
+ * @returns {Date|null}
+ */
+export async function getRecentKrwDepositTime() {
+  const upbit = getUpbit();
+
+  // 1차: KRW 입금 이력
+  try {
+    const resp = await upbit.privateGetDepositsKrw({ limit: 5 });
+    if (Array.isArray(resp)) {
+      const completed = resp.find(d =>
+        d.state === 'ACCEPTED' || d.state === 'done' || d.state === 'accepted'
+      );
+      const ts = completed?.done_at || completed?.created_at;
+      if (ts) return new Date(ts);
+    }
+  } catch { /* API 미지원 → 2차 시도 */ }
+
+  // 2차: USDT/KRW 최근 체결 주문 (매수 시점 ≈ KRW 입금 직후)
+  try {
+    const orders = await upbit.fetchOrders('USDT/KRW', undefined, 5);
+    const filled = orders
+      .filter(o => o.status === 'closed' || o.status === 'filled')
+      .sort((a, b) => b.timestamp - a.timestamp);
+    if (filled.length > 0) return new Date(filled[0].timestamp);
+  } catch { /* 조회 실패 */ }
+
+  return null;
+}
+
 // ─── 업비트 USDT 출금 ────────────────────────────────────────────────
 
 /**
@@ -162,7 +197,9 @@ export async function withdrawUsdtToAddress(amount, address, network = 'TRC20', 
   }
 
   // 0이면 전량 (출금 수수료 차감 후 남은 전량)
-  const withdrawAmount = amount > 0 ? Math.min(amount, available) : available;
+  // 업비트 소수점 6자리 제한 → floor 절사
+  const raw            = amount > 0 ? Math.min(amount, available) : available;
+  const withdrawAmount = Math.floor(raw * 1e6) / 1e6;
 
   // 업비트 net_type 매핑 (ccxt가 표준→업비트 변환을 지원 안 함)
   // TRC20(Tron) → TRX, ERC20(Ethereum) → ETH

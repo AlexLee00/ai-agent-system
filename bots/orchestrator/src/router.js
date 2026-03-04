@@ -506,6 +506,23 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       return formatSkaResult(command, raw);
     }
 
+    case 'upbit_withdraw': {
+      await notify(`⏳ 업비트 USDT 출금 중... (~30초, TRC20 수수료 ~1 USDT 차감)`);
+      const cmdId = insertBotCommand('luna', 'upbit_withdraw_only', {});
+      const raw   = await waitForCommandResult(cmdId, 60000);
+      if (!raw) return '⏱ 업비트 출금 타임아웃. 업비트 앱에서 출금 내역 확인하세요.';
+      let r;
+      try { r = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return String(raw); }
+      if (!r.ok) return `❌ 출금 실패: ${r.error || '알 수 없음'}`;
+      return [
+        `✅ 업비트 USDT 출금 완료`,
+        `  수량: ${(r.usdtAmount || 0).toFixed(4)} USDT`,
+        `  네트워크: ${r.network}`,
+        `  상태: ${r.status}`,
+        `  (바이낸스 도착: 약 5~30분)`,
+      ].join('\n');
+    }
+
     case 'upbit_transfer': {
       await notify(`⏳ 업비트 잔고 확인 중... (소요: ~2분)`);
       const cmdId = insertBotCommand('luna', 'upbit_to_binance', args || {});

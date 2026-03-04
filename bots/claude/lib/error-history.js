@@ -39,6 +39,9 @@ function getDb() {
   return _db;
 }
 
+// 패턴 분석에서 제외할 레이블 (개발 중 자연스러운 상태 — false positive 방지)
+const PATTERN_SKIP_LABELS = ['git 상태'];
+
 /**
  * 체크 결과에서 error/warn 항목을 모두 저장
  * @param {Array} results  dexter check results []
@@ -56,6 +59,8 @@ function saveErrorItems(results) {
     for (const r of results) {
       for (const item of (r.items || [])) {
         if (item.status === 'error' || item.status === 'warn') {
+          // 패턴 분석 제외 레이블 스킵
+          if (PATTERN_SKIP_LABELS.includes(item.label.trim())) continue;
           insert.run(r.name, item.label.trim(), item.status, item.detail || '');
         }
       }
@@ -96,18 +101,43 @@ function getPatterns(days = 7, minCount = 3) {
 }
 
 /**
+ * 해결된 이슈 이력 삭제
+ * @param {string|null} label  특정 레이블만 삭제 (null이면 모두)
+ * @param {string|null} checkName  특정 체크 모듈만 삭제
+ * @returns {number} 삭제된 행 수
+ */
+function clearPatterns(label = null, checkName = null) {
+  const db = getDb();
+  if (!db) return 0;
+  try {
+    if (label && checkName) {
+      return db.prepare(`DELETE FROM dexter_error_log WHERE check_name=? AND label=?`).run(checkName, label).changes;
+    } else if (label) {
+      return db.prepare(`DELETE FROM dexter_error_log WHERE label LIKE ?`).run(`%${label}%`).changes;
+    } else if (checkName) {
+      return db.prepare(`DELETE FROM dexter_error_log WHERE check_name=?`).run(checkName).changes;
+    } else {
+      return db.prepare(`DELETE FROM dexter_error_log`).run().changes;
+    }
+  } catch { return 0; }
+}
+
+/**
  * 최근 첫 등장 오류 조회 (이전 기간에는 없었고 최근에 등장)
  * @param {number} recentHours   최근 범위 (시간)
  * @param {number} prevDays      비교 대상 과거 기간 (일)
  * @returns {Array} [{ check_name, label, status, detail, detected_at }]
  */
-function getNewErrors(recentHours = 24, prevDays = 7) {
+function getNewErrors(recentHours = 8, prevDays = 7) {
   const db = getDb();
   if (!db) return [];
   try {
     // 최근 recentHours 내 등장했고, 그 이전 prevDays에는 없었던 항목
+    // GROUP BY로 중복 제거 (detected_at이 달라도 같은 이슈는 1건으로)
     return db.prepare(`
-      SELECT DISTINCT check_name, label, status, detail, detected_at
+      SELECT check_name, label, status,
+             MIN(detail)       AS detail,
+             MIN(detected_at)  AS detected_at
       FROM dexter_error_log
       WHERE detected_at > datetime('now', ? || ' hours')
         AND status IN ('error', 'warn')
@@ -117,7 +147,8 @@ function getNewErrors(recentHours = 24, prevDays = 7) {
           WHERE detected_at <= datetime('now', ? || ' hours')
             AND detected_at > datetime('now', ? || ' days')
         )
-      ORDER BY detected_at DESC
+      GROUP BY check_name, label, status
+      ORDER BY detected_at ASC
       LIMIT 10
     `).all(`-${recentHours}`, `-${recentHours}`, `-${prevDays}`);
   } catch { return []; }
@@ -138,4 +169,4 @@ function cleanup(keepDays = 30) {
   } catch { return 0; }
 }
 
-module.exports = { saveErrorItems, getPatterns, getNewErrors, cleanup };
+module.exports = { saveErrorItems, getPatterns, getNewErrors, cleanup, clearPatterns };

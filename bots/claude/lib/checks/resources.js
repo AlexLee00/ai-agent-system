@@ -109,13 +109,94 @@ function checkBotMemory(items) {
   }
 }
 
+// macOS swap 사용량 체크
+function checkSwap(items) {
+  try {
+    const out = execSync('sysctl vm.swapusage', { encoding: 'utf8', timeout: 3000 });
+    // 예: "vm.swapusage: total = 2048.00M  used = 512.00M  free = 1536.00M"
+    const usedM = out.match(/used\s*=\s*([\d.]+)M/);
+    if (!usedM) {
+      items.push({ label: 'Swap', status: 'ok', detail: 'Swap 없음 (정상)' });
+      return;
+    }
+    const usedMB = parseFloat(usedM[1]);
+    if (usedMB > 1024) {
+      items.push({ label: 'Swap', status: 'warn', detail: `${(usedMB / 1024).toFixed(1)}GB 사용 중 — 메모리 압박 의심` });
+    } else if (usedMB > 0) {
+      items.push({ label: 'Swap', status: 'ok', detail: `${usedMB.toFixed(0)}MB 사용` });
+    } else {
+      items.push({ label: 'Swap', status: 'ok', detail: '미사용' });
+    }
+  } catch {
+    items.push({ label: 'Swap', status: 'ok', detail: '확인 스킵' });
+  }
+}
+
+// Ollama 프로세스 메모리 체크
+function checkOllamaMemory(items) {
+  try {
+    const out = execSync('ps aux | grep -E "ollama" | grep -v grep | awk \'{print $4, $6}\'',
+      { encoding: 'utf8', timeout: 5000 }).trim();
+    if (!out) {
+      items.push({ label: 'Ollama', status: 'ok', detail: '미실행' });
+      return;
+    }
+    let totalRssMB = 0;
+    let maxPct = 0;
+    for (const line of out.split('\n').filter(Boolean)) {
+      const [pct, rsKB] = line.split(/\s+/);
+      totalRssMB += parseInt(rsKB || 0, 10) / 1024;
+      maxPct = Math.max(maxPct, parseFloat(pct || 0));
+    }
+    const rssMB = Math.round(totalRssMB);
+    // Ollama 기본 모델(qwen2.5:7b) ~ 4GB 이하 정상, 10GB 초과 warn
+    items.push({
+      label:  'Ollama',
+      status: rssMB > 10240 ? 'warn' : 'ok',
+      detail: rssMB > 10240
+        ? `${(rssMB / 1024).toFixed(1)}GB 점유 (10GB 초과 — 모델 확인)`
+        : `${(rssMB / 1024).toFixed(1)}GB (메모리 ${maxPct.toFixed(1)}%)`,
+    });
+  } catch {
+    items.push({ label: 'Ollama', status: 'ok', detail: '확인 스킵' });
+  }
+}
+
+// 단일 로그 파일 1GB 초과 체크 (전체 /tmp + 로그 경로)
+function checkHugeLogFiles(items) {
+  const WATCH = [
+    cfg.LOGS.naver,
+    cfg.LOGS.crypto,
+    cfg.LOGS.domestic,
+    cfg.LOGS.overseas,
+    cfg.LOGS.dexter,
+    '/tmp/naver-ops-mode.log',
+  ];
+
+  let found = 0;
+  for (const p of WATCH) {
+    if (!fs.existsSync(p)) continue;
+    const mb = fs.statSync(p).size / 1048576;
+    if (mb > 1024) {
+      found++;
+      items.push({ label: `거대 로그 파일`, status: 'error', detail: `${(mb / 1024).toFixed(1)}GB: ${p}` });
+    }
+  }
+  if (found === 0) {
+    items.push({ label: '로그 파일 크기 (1GB 초과)', status: 'ok', detail: '없음' });
+  }
+}
+
 async function run() {
   const items = [];
 
   checkDisk(items);
   checkMemory(items);
+  checkSwap(items);
   checkLogSizes(items);
+  checkHugeLogFiles(items);
   checkBotMemory(items);
+  checkOllamaMemory(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

@@ -50,8 +50,9 @@ function loadBotIdentity() {
 }
 
 // ─── Self-lock ─────────────────────────────────────────────────────
-const LOCK_PATH  = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-commander.lock');
-const PAUSE_FLAG = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
+const LOCK_PATH           = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-commander.lock');
+const PAUSE_FLAG          = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
+const WITHDRAW_SCHED_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'withdraw-schedule.json');
 
 function acquireLock() {
   if (fs.existsSync(LOCK_PATH)) {
@@ -72,6 +73,90 @@ function getDb() {
   _db = new Database(CMD_DB_PATH);
   _db.pragma('journal_mode = WAL');
   return _db;
+}
+
+// ─── 메인봇 알람 발행 (mainbot_queue 직접 INSERT) ───────────────────
+
+/**
+ * 마스터에게 텔레그램 알람 발행
+ * @param {string} message   - 발송할 메시지
+ * @param {number} level     - 알람 레벨 (1=info, 2=warn, 3=error)
+ */
+function publishAlert(message, level = 1) {
+  try {
+    getDb().prepare(`
+      INSERT INTO mainbot_queue (from_bot, event_type, alert_level, message, payload, status)
+      VALUES (?, 'system', ?, ?, '{}', 'pending')
+    `).run(BOT_ID, level, message);
+    console.log(`[루나] 마스터 알람 발행 (level ${level})`);
+  } catch (e) {
+    console.error(`[루나] 알람 발행 실패:`, e.message);
+  }
+}
+
+// ─── 출금지연제 자동 예약 ────────────────────────────────────────────
+
+/**
+ * 출금 예약 저장 (withdraw-schedule.json)
+ */
+function saveWithdrawSchedule({ unlockAt, usdtBalance, network, address }) {
+  const data = { unlockAt, usdtBalance, network, address, savedAt: new Date().toISOString() };
+  fs.writeFileSync(WITHDRAW_SCHED_FILE, JSON.stringify(data, null, 2));
+  console.log(`[루나] 출금 예약 저장: ${unlockAt}`);
+}
+
+/**
+ * 예약된 출금 실행 여부 체크 (폴링 루프에서 호출)
+ * unlockAt이 현재보다 과거면 즉시 출금 실행
+ */
+function checkWithdrawSchedule() {
+  if (!fs.existsSync(WITHDRAW_SCHED_FILE)) return;
+
+  let sched;
+  try {
+    sched = JSON.parse(fs.readFileSync(WITHDRAW_SCHED_FILE, 'utf8'));
+  } catch {
+    fs.unlinkSync(WITHDRAW_SCHED_FILE);
+    return;
+  }
+
+  const unlockAt = new Date(sched.unlockAt);
+  const now      = new Date();
+
+  if (now < unlockAt) {
+    // 아직 해제 전 — 10분마다 로그
+    const remainMin = Math.ceil((unlockAt - now) / 60000);
+    if (remainMin % 10 === 0) {
+      console.log(`[루나] 출금 대기 중: 약 ${remainMin}분 후 해제`);
+    }
+    return;
+  }
+
+  // 해제 시각 도래 → 예약 파일 삭제 후 출금 실행
+  console.log(`[루나] 출금지연 해제 확인 → 자동 출금 시작`);
+  fs.unlinkSync(WITHDRAW_SCHED_FILE);
+
+  const result = handleUpbitWithdrawOnly();
+  if (result.ok) {
+    publishAlert(
+      `✅ 루나 — 출금지연 해제 후 자동 출금 완료\n${result.message}`,
+      1
+    );
+    console.log(`[루나] 자동 출금 완료`);
+  } else if (result.delay) {
+    // 아직 지연 중 (예상보다 늦게 해제됨) → 1시간 후 재예약
+    const newUnlock = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    saveWithdrawSchedule({ ...sched, unlockAt: newUnlock });
+    publishAlert(
+      `⏳ 루나 — 출금지연 미해제 (예상 시각 지났으나 아직 제한 중)\n1시간 후 재시도합니다.`,
+      2
+    );
+  } else {
+    publishAlert(
+      `❌ 루나 — 자동 출금 실패\n오류: ${result.error || '알 수 없음'}`,
+      3
+    );
+  }
 }
 
 // ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
@@ -271,6 +356,51 @@ function handleUpbitToBinance() {
 }
 
 /**
+ * 업비트 USDT 잔고 전량 바이낸스 출금 (KRW 매수 없이 출금만)
+ * - 출금지연제 감지 시: 마스터에게 Telegram 안내 + 자동 예약
+ */
+function handleUpbitWithdrawOnly() {
+  try {
+    const nodeExe = process.execPath;
+    const script  = path.join(__dirname, 'manual', 'transfer', 'upbit-withdraw-only.js');
+    if (!fs.existsSync(script)) return { ok: false, error: `스크립트 없음: manual/transfer/upbit-withdraw-only.js` };
+
+    const stdout = execSync(`${nodeExe} ${script}`, {
+      cwd:     __dirname,
+      timeout: 60000,
+      env:     { ...process.env },
+    }).toString().trim();
+
+    const jsonLine = stdout.split('\n').filter(l => l.startsWith('{')).pop();
+    if (!jsonLine) return { ok: false, error: '스크립트 출력 없음', raw: stdout.slice(0, 200) };
+
+    const result = JSON.parse(jsonLine);
+
+    // ── 출금지연제 처리 ─────────────────────────────────────────────
+    if (result.delay === true) {
+      // 마스터에게 Telegram 안내 발송
+      publishAlert(result.message, 2);
+
+      // 자동 출금 예약 저장
+      if (result.unlockAt) {
+        saveWithdrawSchedule({
+          unlockAt:    result.unlockAt,
+          usdtBalance: result.usdtBalance,
+          network:     result.network,
+          address:     result.address,
+        });
+      }
+
+      console.log(`[루나] 출금지연제 감지 → 마스터 안내 + 자동 예약`);
+    }
+
+    return result;
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
  * 투자 리포트 강제 실행
  */
 function handleForceReport() {
@@ -327,6 +457,7 @@ const HANDLERS = {
   force_report:              handleForceReport,
   get_status:                handleGetStatus,
   upbit_to_binance:          handleUpbitToBinance,
+  upbit_withdraw_only:       handleUpbitWithdrawOnly,
   get_upbit_balance:         handleGetUpbitBalance,
   get_binance_balance:       handleGetBinanceBalance,
   get_crypto_price:          handleGetCryptoPrice,
@@ -387,6 +518,10 @@ async function main() {
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[루나] 루프 오류:`, e.message); }
+
+    // 출금지연 자동 예약 체크 (매 루프 = 30초마다)
+    try { checkWithdrawSchedule(); }
+    catch (e) { console.error(`[루나] 출금 스케줄 체크 오류:`, e.message); }
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;

@@ -30,20 +30,40 @@ function checkLaunchd(items) {
     { id: 'ai.claude.dexter',         label: '클로드팀 덱스터 (launchd)' },
     { id: 'ai.claude.dexter.daily',   label: '클로드팀 덱스터 일일보고 (launchd)' },
     { id: 'ai.claude.archer',         label: '클로드팀 아처 (launchd)' },
-    // 스카팀
-    { id: 'ai.openclaw.gateway',      label: '스카팀 OpenClaw 게이트웨이 (launchd)' },
-    { id: 'ai.ska.naver-monitor',     label: '스카팀 앤디 네이버모니터 (launchd)' },
-    { id: 'ai.ska.kiosk-monitor',     label: '스카팀 지미 키오스크모니터 (launchd)' },
+    // 제이팀
+    { id: 'ai.openclaw.gateway',        label: '제이팀 OpenClaw 게이트웨이 (launchd)' },
+    { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)' },
+    // 스카팀 — 핵심
+    { id: 'ai.ska.naver-monitor',       label: '스카팀 앤디 네이버모니터 (launchd)' },
+    { id: 'ai.ska.kiosk-monitor',       label: '스카팀 지미 키오스크모니터 (launchd)' },
+    { id: 'ai.ska.commander',           label: '스카팀 커맨더 (launchd)' },
+    // 스카팀 — 데이터/예측 파이프라인 (미구현 서비스는 warn 정상)
+    { id: 'ai.ska.etl',                 label: '스카팀 ETL (launchd)', optional: true },
+    { id: 'ai.ska.eve',                 label: '스카팀 이브 환경수집 (launchd)', optional: true },
+    { id: 'ai.ska.eve-crawl',           label: '스카팀 이브 크롤 (launchd)', optional: true },
+    { id: 'ai.ska.rebecca',             label: '스카팀 레베카 일간보고 (launchd)', optional: true },
+    { id: 'ai.ska.rebecca-weekly',      label: '스카팀 레베카 주간보고 (launchd)', optional: true },
+    { id: 'ai.ska.forecast-daily',      label: '스카팀 포캐스트 일간 (launchd)', optional: true },
+    { id: 'ai.ska.forecast-weekly',     label: '스카팀 포캐스트 주간 (launchd)', optional: true },
+    { id: 'ai.ska.pickko-verify',       label: '스카팀 픽코 검증 (launchd)', optional: true },
+    { id: 'ai.ska.daily-audit',         label: '스카팀 일간감사 (launchd)', optional: true },
+    { id: 'ai.ska.nightly-sync',        label: '스카팀 야간동기화 (launchd)', optional: true },
     // 루나팀 Phase 3
-    { id: 'ai.investment.crypto',     label: '루나팀 크립토 사이클 (launchd)' },
-    { id: 'ai.investment.domestic',   label: '루나팀 국내주식 사이클 (launchd)' },
-    { id: 'ai.investment.overseas',   label: '루나팀 미국주식 사이클 (launchd)' },
+    { id: 'ai.investment.crypto',       label: '루나팀 크립토 사이클 (launchd)' },
+    { id: 'ai.investment.domestic',     label: '루나팀 국내주식 사이클 (launchd)' },
+    { id: 'ai.investment.overseas',     label: '루나팀 미국주식 사이클 (launchd)' },
+    { id: 'ai.investment.commander',    label: '루나팀 커맨더 (launchd)' },
+    // 클로드팀
+    { id: 'ai.claude.commander',        label: '클로드팀 커맨더 (launchd)' },
   ];
 
   for (const svc of SERVICES) {
     const s = launchdStatus(svc.id);
     if (!s) {
-      items.push({ label: svc.label, status: 'warn', detail: 'launchd 미등록 또는 중지' });
+      // optional: 아직 미구현 서비스는 info 수준 (warn 아님)
+      const status = svc.optional ? 'ok' : 'warn';
+      const detail = svc.optional ? '미등록 (선택적 서비스)' : 'launchd 미등록 또는 중지';
+      items.push({ label: svc.label, status, detail });
     } else if (s.pid === '-') {
       // 등록됐지만 실행 중 아님 (주기 실행 봇은 정상)
       items.push({ label: svc.label, status: 'ok', detail: `등록됨 (대기, 종료코드: ${s.status})` });
@@ -85,6 +105,54 @@ function checkZombies(items) {
     }
   } catch {
     items.push({ label: '좀비 프로세스', status: 'ok', detail: '확인 스킵' });
+  }
+}
+
+// ppid=1 고아 Node.js 프로세스 감지 (launchd 외 비정상 고아)
+function checkOrphanProcesses(items) {
+  try {
+    // macOS: ps -eo pid,ppid,comm에서 ppid=1이고 node인 프로세스 확인
+    const out = execSync('ps -eo pid,ppid,comm | awk \'$2==1 && /node/ {print $1,$3}\'',
+      { encoding: 'utf8', timeout: 5000 }).trim();
+    if (!out) {
+      items.push({ label: '고아 Node 프로세스 (ppid=1)', status: 'ok', detail: '없음' });
+      return;
+    }
+    const lines = out.split('\n').filter(Boolean);
+    // launchd 자식은 정상이므로 수 기준으로만 판단 (5개 초과 시 warn)
+    if (lines.length > 5) {
+      items.push({
+        label:  '고아 Node 프로세스 (ppid=1)',
+        status: 'warn',
+        detail: `${lines.length}개 — 비정상 프로세스 의심 (launchd 직계 제외)`,
+      });
+    } else {
+      items.push({ label: '고아 Node 프로세스 (ppid=1)', status: 'ok', detail: `${lines.length}개 (정상 범위)` });
+    }
+  } catch {
+    items.push({ label: '고아 Node 프로세스', status: 'ok', detail: '확인 스킵' });
+  }
+}
+
+// Playwright/Chromium 프로세스 수 체크 (10개 초과 → warn)
+function checkPlaywrightChrome(items) {
+  try {
+    const out = execSync('pgrep -c -f "Chromium|chromium|playwright.*chrome" 2>/dev/null || echo 0',
+      { encoding: 'utf8', timeout: 5000 }).trim();
+    const cnt = parseInt(out, 10) || 0;
+    if (cnt > 10) {
+      items.push({
+        label:  'Playwright Chromium 프로세스',
+        status: 'warn',
+        detail: `${cnt}개 실행 중 (10개 초과 — 좀비 크롬 의심, 스카팀 확인)`,
+      });
+    } else if (cnt > 0) {
+      items.push({ label: 'Playwright Chromium 프로세스', status: 'ok', detail: `${cnt}개` });
+    } else {
+      items.push({ label: 'Playwright Chromium 프로세스', status: 'ok', detail: '없음' });
+    }
+  } catch {
+    items.push({ label: 'Playwright Chromium 프로세스', status: 'ok', detail: '확인 스킵' });
   }
 }
 
@@ -131,6 +199,8 @@ async function run() {
   checkLaunchd(items);
   checkLocks(items);
   checkZombies(items);
+  checkOrphanProcesses(items);
+  checkPlaywrightChrome(items);
   checkInvestStatus(items);
 
   const hasError = items.some(i => i.status === 'error');

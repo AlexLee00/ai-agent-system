@@ -15,12 +15,34 @@ const cfg  = require('../config');
 const ERROR_PATTERNS = [/❌/, /ERROR/, /error:/i, /FATAL/, /uncaughtException/, /UnhandledPromiseRejection/];
 const WARN_PATTERNS  = [/⚠️/, /WARN/, /warn:/i, /deprecated/i];
 
+// 로그 품질 특수 패턴
+const QUALITY_PATTERNS = [
+  { re: /TimeoutError|timeout.*exceeded|Navigation timeout/i, label: 'Playwright 타임아웃', threshold: 5 },
+  { re: /rate.?limit|RateLimitError|429|Too Many Requests/i,  label: 'Rate Limit',        threshold: 3 },
+  { re: /ECONNREFUSED|ECONNRESET|ETIMEDOUT/i,                 label: '네트워크 연결 거부', threshold: 5 },
+];
+
 function readLastN(filePath, n = 200) {
   if (!fs.existsSync(filePath)) return [];
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     return content.split('\n').filter(Boolean).slice(-n);
   } catch { return []; }
+}
+
+// 동일 오류 10회 이상 반복 감지 (최근 200줄 기준)
+function detectRepeatedErrors(lines) {
+  const freq = {};
+  for (const line of lines) {
+    if (!ERROR_PATTERNS.some(p => p.test(line))) continue;
+    // 타임스탬프·PID 제거 후 정규화 (앞 60자 기준)
+    const normalized = line.replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*/g, '').trim().slice(0, 80);
+    if (normalized.length < 10) continue;
+    freq[normalized] = (freq[normalized] || 0) + 1;
+  }
+  return Object.entries(freq)
+    .filter(([, cnt]) => cnt >= 10)
+    .map(([msg, cnt]) => ({ msg: msg.slice(0, 60), cnt }));
 }
 
 function analyzeLog(filePath, label) {
@@ -38,22 +60,23 @@ function analyzeLog(filePath, label) {
     return { label, status: 'warn', detail: `로그 크기 ${sizeMB.toFixed(1)}MB (>${cfg.THRESHOLDS.logMaxMB}MB) — 로테이션 필요` };
   }
 
-  const lines      = readLastN(filePath, 100);
+  const lines      = readLastN(filePath, 200);
   const total      = lines.length;
   const errCount   = lines.filter(l => ERROR_PATTERNS.some(p => p.test(l))).length;
   const warnCount  = lines.filter(l => WARN_PATTERNS.some(p => p.test(l))).length;
   const errorRate  = total > 0 ? (errCount / total * 100) : 0;
 
-  // 반복 오류 패턴 (최근 10줄 중 동일 패턴 3회 이상)
-  const recent = readLastN(filePath, 10);
-  const errLines = recent.filter(l => ERROR_PATTERNS.some(p => p.test(l)));
-  const repeating = errLines.length >= 3;
+  // 동일 오류 10회 이상 반복 감지
+  const repeated = detectRepeatedErrors(lines);
 
   if (errCount === 0 && warnCount === 0) {
     result.detail = `정상 (최근 ${total}줄)`;
-  } else if (errorRate >= cfg.THRESHOLDS.errorRateCrit || repeating) {
+  } else if (errorRate >= cfg.THRESHOLDS.errorRateCrit || repeated.length > 0) {
     result.status = 'error';
-    result.detail = `오류율 ${errorRate.toFixed(0)}% (${errCount}/${total}) ${repeating ? '— 반복 오류 감지' : ''}`;
+    const repeatInfo = repeated.length > 0
+      ? ` — 반복오류: "${repeated[0].msg}" ${repeated[0].cnt}회`
+      : '';
+    result.detail = `오류율 ${errorRate.toFixed(0)}% (${errCount}/${total})${repeatInfo}`;
   } else if (errorRate >= cfg.THRESHOLDS.errorRateWarn) {
     result.status = 'warn';
     result.detail = `오류율 ${errorRate.toFixed(0)}% (${errCount}/${total}), 경고 ${warnCount}건`;
@@ -62,6 +85,31 @@ function analyzeLog(filePath, label) {
   }
 
   return result;
+}
+
+// 로그 품질 패턴 체크 (Playwright 타임아웃, rate_limit 등)
+function checkLogQuality(items) {
+  const LOG_FILES = {
+    '스카팀':     cfg.LOGS.naver,
+    '루나 크립토': cfg.LOGS.crypto,
+    '루나 국내':   cfg.LOGS.domestic,
+    '루나 해외':   cfg.LOGS.overseas,
+  };
+
+  for (const [botLabel, filePath] of Object.entries(LOG_FILES)) {
+    if (!fs.existsSync(filePath)) continue;
+    const lines = readLastN(filePath, 200);
+    for (const { re, label, threshold } of QUALITY_PATTERNS) {
+      const cnt = lines.filter(l => re.test(l)).length;
+      if (cnt >= threshold) {
+        items.push({
+          label:  `${botLabel} — ${label}`,
+          status: 'warn',
+          detail: `최근 200줄에서 ${cnt}회 감지 (기준: ${threshold}회)`,
+        });
+      }
+    }
+  }
 }
 
 async function run() {
@@ -94,6 +142,9 @@ async function run() {
       detail: `${sizeMB.toFixed(2)}MB`,
     });
   }
+
+  // 로그 품질 패턴 체크 (Playwright 타임아웃, rate_limit 등)
+  checkLogQuality(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

@@ -242,6 +242,11 @@ function runCleanup() {
       UPDATE bot_commands SET status='error', result='{"error":"timeout"}'
       WHERE status='pending' AND created_at < datetime('now', '-5 minutes')
     `).run();
+    // 1시간 초과 batched mainbot_queue → sent 처리 (배치 전송 후 상태 미갱신 항목)
+    getDb().prepare(`
+      UPDATE mainbot_queue SET status='sent'
+      WHERE status='batched' AND processed_at < datetime('now', '-1 hour')
+    `).run();
   } catch {}
 }
 

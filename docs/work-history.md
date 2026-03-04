@@ -9,6 +9,30 @@
 
 
 
+
+## 2026-03-05
+### ✨ 출금지연제 자동예약 + 덱스터 Phase C
+- 출금지연제 delay 감지·ETA 계산·Telegram 안내
+- 자동 출금 예약(withdraw-schedule.json)
+- 루나 커맨더 30초 폴링 자동 실행
+- 덱스터 신규감지 중복버그 수정
+- 신규감지 창 24h→8h
+- 시간표시 UTC→KST
+- --clear-patterns CLI
+- batched 자동정리
+- RAG 서버 optional 처리
+<!-- session-close:2026-03-05:출금지연제-자동예약-덱스터-phase-c -->
+
+### 🔧 덱스터 Phase C 버그수정 + 업비트 출금지연 자동예약
+- deps.js cd→cwd 수정 (launchd PATH 오류)
+- git 상태 패턴 저장 제외 (false positive)
+- getNewErrors 중복 수정 (GROUP BY)
+- node→process.execPath 수정 (code/database/ska.js)
+- 업비트 출금지연제 자동예약 (luna-commander)
+- 마스터 절대규칙 등록
+- RAG 상세 로드맵 등록 (improvement-ideas)
+<!-- session-close:2026-03-05:덱스터-phase-c-버그수정-업비트-출금지연-자동예약 -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 

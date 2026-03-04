@@ -21,6 +21,7 @@ module.exports = {
   DBS: {
     reservation: path.join(HOME, '.openclaw', 'workspace', 'state.db'),
     investment:  path.join(ROOT, 'bots', 'investment', 'db', 'investment.duckdb'),
+    ska:         path.join(ROOT, 'bots', 'ska', 'db', 'ska.duckdb'),
   },
 
   // ─── 로그 파일 ─────────────────────────────────────

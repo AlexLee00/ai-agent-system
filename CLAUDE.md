@@ -64,6 +64,12 @@ npm run dexter              # 기본 점검
 npm run dexter:full         # 전체 점검 (npm audit 포함)
 npm run dexter:fix          # 자동 수정 + 텔레그램 알림
 npm run dexter:daily        # 일일 보고 (텔레그램)
+npm run dexter:checksums    # 체크섬 갱신 (코드 수정 후)
+
+# 패턴 이력 초기화
+node src/dexter.js --clear-patterns --label=<레이블>   # 특정 이슈 이력 삭제
+node src/dexter.js --clear-patterns --check=<체크명>    # 특정 체크 모듈 이력 삭제
+node src/dexter.js --clear-patterns --all               # 전체 이력 삭제
 
 # 아처 (기술 인텔리전스)
 npm run archer              # 데이터 수집 + Claude 분석 (텔레그램 없음)
