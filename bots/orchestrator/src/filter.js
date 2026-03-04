@@ -52,7 +52,7 @@ function processItem(item, onSend) {
     batch.timer = setTimeout(() => {
       _recent.delete(key);
       const msg = formatBatch(item.from_bot, batch.items);
-      onSend(msg, batch.items[batch.items.length - 1]);
+      onSend(msg, batch.items); // 전체 배치 항목 전달 (DB 일괄 업데이트용)
     }, DEDUP_WINDOW_MS);
 
     _recent.set(key, batch);
@@ -74,7 +74,7 @@ function flushAll(onSend) {
     if (batch.items.length > 0) {
       const first = batch.items[0];
       const msg   = formatBatch(first.from_bot, batch.items);
-      onSend(msg, batch.items[batch.items.length - 1]);
+      onSend(msg, batch.items); // 전체 배치 항목 전달
     }
     _recent.delete(key);
   }

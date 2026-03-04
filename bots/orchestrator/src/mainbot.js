@@ -233,23 +233,27 @@ async function processQueue() {
     `).all();
 
     for (const item of pending) {
-      const result = processItem(item, async (message, processedItem) => {
+      const result = processItem(item, async (message, processedItems) => {
         await sendTelegram(message);
         try {
+          // 배치 전체 항목 또는 단일 항목 일괄 status='sent' 처리
+          const ids = Array.isArray(processedItems)
+            ? processedItems.map(i => i.id)
+            : [processedItems.id];
+          const placeholders = ids.map(() => '?').join(',');
           getDb().prepare(`
-            UPDATE mainbot_queue SET status = 'sent', processed_at = datetime('now') WHERE id = ?
-          `).run(processedItem.id);
+            UPDATE mainbot_queue SET status = 'sent', processed_at = datetime('now')
+            WHERE id IN (${placeholders})
+          `).run(...ids);
         } catch {}
       });
 
-      // 상태 업데이트
-      if (result !== 'batched') {
-        try {
-          getDb().prepare(`
-            UPDATE mainbot_queue SET status = ?, processed_at = datetime('now') WHERE id = ?
-          `).run(result, item.id);
-        } catch {}
-      }
+      // 상태 업데이트 — batched도 즉시 'batched'로 표시 (pending 재처리 방지)
+      try {
+        getDb().prepare(`
+          UPDATE mainbot_queue SET status = ?, processed_at = datetime('now') WHERE id = ?
+        `).run(result, item.id);
+      } catch {}
     }
   } catch (e) {
     console.error(`[mainbot] 큐 처리 오류:`, e.message);
