@@ -12,8 +12,8 @@ const cfg  = require('../config');
 
 function npmAudit(botDir, label) {
   try {
-    const out = execSync(`cd "${botDir}" && npm audit --json 2>/dev/null`, {
-      encoding: 'utf8', timeout: 30000,
+    const out = execSync(`npm audit --json 2>/dev/null`, {
+      cwd: botDir, encoding: 'utf8', timeout: 30000,
     });
     const report   = JSON.parse(out);
     const vulns    = report.metadata?.vulnerabilities || {};
@@ -50,7 +50,7 @@ function npmAudit(botDir, label) {
 
 function checkOutdated(botDir, label) {
   try {
-    execSync(`cd "${botDir}" && npm outdated --json 2>/dev/null`, { encoding: 'utf8', timeout: 20000 });
+    execSync(`npm outdated --json 2>/dev/null`, { cwd: botDir, encoding: 'utf8', timeout: 20000 });
     return { label: `${label} (패키지 최신)`, status: 'ok', detail: '최신 상태' };
   } catch (e) {
     try {

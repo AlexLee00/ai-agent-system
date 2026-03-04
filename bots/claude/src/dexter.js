@@ -25,16 +25,17 @@ const BOT_NAME = '덱스터';
 
 // ─── 체크 모듈 ─────────────────────────────────────────────────────
 const checks = {
-  code:      require('../lib/checks/code'),
-  database:  require('../lib/checks/database'),
-  security:  require('../lib/checks/security'),
-  logs:      require('../lib/checks/logs'),
-  bots:      require('../lib/checks/bots'),
-  resources: require('../lib/checks/resources'),
-  network:   require('../lib/checks/network'),
-  ska:       require('../lib/checks/ska'),
-  deps:      require('../lib/checks/deps'),
-  patterns:  require('../lib/checks/patterns'),
+  code:          require('../lib/checks/code'),
+  database:      require('../lib/checks/database'),
+  security:      require('../lib/checks/security'),
+  logs:          require('../lib/checks/logs'),
+  bots:          require('../lib/checks/bots'),
+  resources:     require('../lib/checks/resources'),
+  network:       require('../lib/checks/network'),
+  ska:           require('../lib/checks/ska'),
+  deps:          require('../lib/checks/deps'),
+  patterns:      require('../lib/checks/patterns'),
+  selfDiagnosis: require('../lib/checks/self-diagnosis'),
 };
 
 const { saveErrorItems } = require('../lib/error-history');
@@ -123,6 +124,16 @@ async function main() {
 
   const elapsed = Date.now() - start;
 
+  // 자기진단 (전체 결과 수집 후 — 항목 수 계산 필요)
+  try {
+    const totalItems = results.reduce((acc, r) => acc + (r.items || []).length, 0);
+    const r = await checks.selfDiagnosis.run(totalItems);
+    results.push(r);
+    if (!SILENT) process.stdout.write(`  ${r.status === 'ok' ? '✅' : r.status === 'warn' ? '⚠️' : '❌'} ${r.name}\n`);
+  } catch (e) {
+    results.push({ name: '덱스터 자기진단', status: 'warn', items: [{ label: e.message, status: 'warn', detail: '' }] });
+  }
+
   // 자동 수정
   if (FIX) {
     const fixes = await autofix.run(results);
@@ -139,6 +150,8 @@ async function main() {
   writeLog(results, elapsed);
 
   // 텔레그램: 오류/경고 있을 때만 발송
+  let telegramSent = false;
+  let telegramOk   = false;
   if (TELEGRAM) {
     const hasIssue = results.some(r => r.status !== 'ok');
     if (hasIssue) {
@@ -148,15 +161,25 @@ async function main() {
       const criticals = results.filter(r => r.status === 'critical');
       const errors    = results.filter(r => r.status === 'error');
       const level     = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;
-      publishToMainBot({
-        from_bot: 'dexter', event_type: 'system', alert_level: level,
-        message: `덱스터 점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류\n${text.split('\n')[0]}`,
-        payload: { criticals: criticals.length, errors: errors.length },
-      });
+      try {
+        publishToMainBot({
+          from_bot: 'dexter', event_type: 'system', alert_level: level,
+          message: `덱스터 점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류\n${text.split('\n')[0]}`,
+          payload: { criticals: criticals.length, errors: errors.length },
+        });
+        telegramOk = true;
+      } catch { /* 발송 실패 — recordRun에서 기록 */ }
+      telegramSent = true;
     } else {
       if (!SILENT) console.log('  ✅ 이상 없음 — 텔레그램 발송 생략');
     }
   }
+
+  // 자기진단 상태 기록 (다음 실행 시 비교용)
+  try {
+    const totalItems = results.reduce((acc, r) => acc + (r.items || []).length, 0);
+    checks.selfDiagnosis.recordRun({ itemCount: totalItems, elapsedMs: elapsed, telegramSent, telegramOk });
+  } catch { /* 무시 */ }
 
   // 팀버스: 완료 상태 갱신
   try {
@@ -193,6 +216,27 @@ if (_args.includes('--daily-report')) {
     console.log(`⚠️  파일 없음 (${result.missing.length}개):`);
     result.missing.forEach(f => console.log(`   - ${f}`));
   }
+  process.exit(0);
+
+} else if (_args.includes('--clear-patterns')) {
+  // 패턴 이력 초기화 모드
+  // 사용법: --clear-patterns [--label=<label>] [--check=<체크명>] [--all]
+  const { clearPatterns } = require('../lib/error-history');
+  const labelArg = _args.find(a => a.startsWith('--label='))?.split('=')[1] || null;
+  const checkArg = _args.find(a => a.startsWith('--check='))?.split('=')[1] || null;
+  const allFlag  = _args.includes('--all');
+
+  if (!allFlag && !labelArg && !checkArg) {
+    console.log('사용법:');
+    console.log('  --clear-patterns --label=<레이블 키워드>   특정 레이블 이력 삭제');
+    console.log('  --clear-patterns --check=<체크 이름>       특정 체크 모듈 이력 삭제');
+    console.log('  --clear-patterns --all                     전체 이력 삭제');
+    process.exit(0);
+  }
+
+  const deleted = clearPatterns(labelArg, checkArg);
+  const target  = allFlag ? '전체' : labelArg ? `레이블: ${labelArg}` : `체크: ${checkArg}`;
+  console.log(`✅ 패턴 이력 삭제 완료: ${target} — ${deleted}건`);
   process.exit(0);
 
 } else {

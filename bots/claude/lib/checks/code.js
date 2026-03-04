@@ -112,7 +112,7 @@ async function run() {
   for (const rel of jsTargets) {
     const abs = path.join(cfg.ROOT, rel);
     try {
-      execSync(`node --check "${abs}"`, { timeout: 5000, stdio: 'pipe' });
+      execSync(`"${process.execPath}" --check "${abs}"`, { timeout: 5000, stdio: 'pipe' });
     } catch (e) {
       syntaxErrors++;
       items.push({ label: `문법: ${path.basename(rel)}`, status: 'error', detail: e.stderr?.toString().slice(0, 120) || '문법 오류' });

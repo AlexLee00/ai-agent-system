@@ -14,6 +14,40 @@
 
 ---
 
+## 🟠 중기 개선 (언제든 진행 가능)
+
+### RAG 통합 로드맵 (우선순위: 스카 → 제이 → 루나)
+
+> RAG 서버: `localhost:8100` (FastAPI 래퍼, ChromaDB PersistentClient)
+> OpenClaw 통합 방법: ①SKILL.md (즉시) ②TypeScript Plugin tool (고도화)
+> 연구 완료: 2026-03-05
+
+#### 스카팀 RAG (ROI 최고 — 레베카·이브 데이터 직접 활용)
+
+| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
+|---|------|------|-----------|-----------|
+| SKA-RAG-01 | **레베카 예측 정확도 개선** | 과거 예약 패턴을 ChromaDB `ska_reservations` 컬렉션에 벡터 저장. Prophet 예측 시 유사 날짜 패턴(공휴일 전날, 시험기간 등) 참조 → MAPE 15%→8% 목표. `bots/ska/src/rebecca.py`에 `POST /search` 호출 추가 | 1단계: ChromaDB 컬렉션 생성 + 예약 데이터 임베딩 / 2단계: 레베카 예측 루프에 RAG 컨텍스트 주입 | 예측 정확도 ↑, 덱스터 MAPE 경보 감소 |
+| SKA-RAG-02 | **이브 환경 데이터 장기 벡터화** | 이브가 수집하는 날씨·공휴일·학사일정·축제를 ChromaDB `ska_environment` 컬렉션에 누적. 레베카가 예측 시 "작년 같은 날씨·이벤트 조합" 검색 → 계절성 패턴 자동 반영. `bots/ska/src/eve.py` 수집 루프에 `POST /ingest` 추가 | 1단계: 이브 수집 루프에 벡터 저장 / 2단계: 레베카 RAG 쿼리에 환경 컬렉션 포함 | 계절·이벤트 예측 정확도 ↑ |
+
+#### 제이팀 RAG (즉시 적용 가능)
+
+| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
+|---|------|------|-----------|-----------|
+| JY-RAG-01 | **SKILL.md RAG 연동** | 제이의 OpenClaw SKILL.md에 `search_rag` 스킬 등록. 예약규정 질문·과거이슈·시스템 설명 요청 시 `GET localhost:8100/search?q=...` 호출 후 컨텍스트 주입. **코드 수정 없음, SKILL.md만 편집**. 컬렉션: `orchestrator_knowledge` | 1단계: SKILL.md 편집 + 지식 문서 임베딩 (MAINBOT.md, 운영가이드 등) | 운영 질문 응답 품질 ↑, 할루시네이션 ↓ |
+| JY-RAG-02 | **OpenClaw Plugin RAG tool** | TypeScript로 RAG Plugin 등록 (`~/.openclaw/plugins/rag-search/`). SKILL.md보다 정밀한 컨텍스트 윈도우 제어 가능. `tool_call` 형태로 호출 → 응답 스트리밍 지원 | 1단계: JY-RAG-01 완료 후 / 2단계: Plugin 등록 + 컬렉션 멀티 쿼리 | 다중 컬렉션 동시 검색, 팀별 답변 통합 |
+
+#### 루나팀 RAG (중장기 — 30일 데이터 누적 후)
+
+| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
+|---|------|------|-----------|-----------|
+| LU-RAG-01 | **매매 이력 → 아리아 신호 보조** | 바이낸스 실거래 결과(진입가·청산가·수익률·시장상황)를 ChromaDB `luna_trades` 컬렉션에 저장. 아리아 신호 생성 시 "이 조합에서 과거 승률" 검색 → LLM 프롬프트 컨텍스트 추가. `bots/investment/src/analysts/signal-aggregator.js`에 RAG 쿼리 추가 | 1단계: 사이클 완료 시 trade record 벡터화 / 2단계: 아리아 LLM 호출 전 RAG 컨텍스트 주입 | 과거 실패 패턴 재방지, 신호 정확도 ↑ |
+| LU-RAG-02 | **뉴스·공시 벡터화 → 오라클 강화** | 오라클이 수집하는 뉴스/공시를 ChromaDB `luna_news` 컬렉션에 임베딩. 동일 이슈 반복 감지 (중복 알람 제거) + 과거 유사 뉴스 시장반응 참조. `team/oracle.js` Groq 분석 전 RAG 검색 추가 | 1단계: 뉴스 수집 시 벡터 저장 / 2단계: 오라클 분석 프롬프트에 유사 뉴스 이력 포함 | 뉴스 분석 정확도 ↑, 중복 알람 ↓ |
+
+| # | 항목 | 내용 |
+|---|------|------|
+
+---
+
 ## 🟠 맥미니 도착 전 (맥북에서 준비)
 
 | # | 항목 | 내용 |

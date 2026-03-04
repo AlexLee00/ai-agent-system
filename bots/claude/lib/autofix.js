@@ -9,15 +9,18 @@
  *   - 로그 파일 크기 초과 → 로테이션 (백업 후 비움)
  *
  * 자동 수정 불가 → 버그 레포트 등록:
- *   - 코드 체크섬 변경 (소스 파일 변경)
  *   - DB 무결성 오류
  *   - 하드코딩 키 발견
  *   - npm audit 취약점
  *   - 반복 오류 패턴
+ *
+ * 체크섬 변경 감지 시:
+ *   - git diff로 의도적 변경 확인 후 자동 갱신
  */
 
 const fs   = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
 
@@ -84,6 +87,35 @@ function fixLogRotation(fixes) {
   }
 }
 
+// 체크섬 자동 갱신 (git에서 의도적 변경이 감지된 파일)
+function fixChecksums(results, fixes) {
+  const codeSection = results.find(r => r.name === '코드 무결성');
+  if (!codeSection) return;
+
+  const mismatch = codeSection.items.filter(
+    i => i.status === 'warn' && i.label !== '체크섬' && i.label !== 'git 상태' && !i.label.includes('문법')
+  );
+  if (mismatch.length === 0) return;
+
+  // git diff로 해당 파일이 실제 변경됐는지 확인
+  try {
+    const gitDiff = execSync('git -C "' + cfg.ROOT + '" diff --name-only HEAD', { encoding: 'utf8', timeout: 5000 });
+    const changedFiles = gitDiff.split('\n').map(f => f.trim()).filter(Boolean);
+
+    // 체크섬 불일치 파일 중 git에서 변경된 파일 → 의도적 수정으로 간주, 자동 갱신
+    const toUpdate = mismatch.filter(i => changedFiles.some(f => i.label.includes(path.basename(f))));
+    if (toUpdate.length === 0) return;
+
+    const { updateChecksums } = require('./checks/code');
+    const result = updateChecksums();
+    fixes.push({
+      label:  `체크섬 자동 갱신`,
+      status: 'ok',
+      detail: `git 변경 파일 ${toUpdate.length}개 → ${result.updated}개 갱신`,
+    });
+  } catch { /* git 없으면 무시 */ }
+}
+
 // 버그 레포트 등록 대상 판별 + 등록
 async function reportBugs(results, fixes) {
   const BUG_TRIGGERS = [
@@ -133,6 +165,7 @@ async function run(results) {
   fixStaleLock(fixes);
   fixSecretsPermissions(fixes);
   fixLogRotation(fixes);
+  fixChecksums(results, fixes);
   await reportBugs(results, fixes);
 
   return fixes;

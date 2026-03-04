@@ -55,12 +55,18 @@ const SLASH_MAP = {
   '/mute':    { intent: 'mute',    args: {} },  // 추가 파싱 필요
   '/unmute':  { intent: 'unmute',  args: {} },
   '/mutes':   { intent: 'mutes',   args: {} },
-  '/luna':    { intent: 'luna',    args: {} },
-  '/ska':     { intent: 'ska',     args: {} },
-  '/dexter':  { intent: 'claude_action', args: { command: 'run_check'   } },
-  '/archer':  { intent: 'claude_action', args: { command: 'run_archer'  } },
-  '/brief':   { intent: 'brief',   args: {} },
-  '/queue':   { intent: 'queue',   args: {} },
+  '/luna':     { intent: 'luna',    args: {} },
+  '/ska':      { intent: 'ska',     args: {} },
+  '/dexter':   { intent: 'claude_action',     args: { command: 'run_check'        } },
+  '/archer':   { intent: 'claude_action',     args: { command: 'run_archer'       } },
+  '/brief':    { intent: 'brief',   args: {} },
+  '/queue':    { intent: 'queue',   args: {} },
+  '/withdraw': { intent: 'upbit_withdraw',    args: {} },
+  '/upbit':    { intent: 'upbit_balance',     args: { command: 'get_upbit_balance'  } },
+  '/binance':  { intent: 'binance_balance',   args: { command: 'get_binance_balance'} },
+  '/price':    { intent: 'crypto_price',      args: { command: 'get_crypto_price'   } },
+  '/market':   { intent: 'market_status',     args: { market: 'all' } },
+  '/transfer': { intent: 'upbit_transfer',    args: { command: 'upbit_to_binance'   } },
 };
 
 function parseSlash(text) {
@@ -108,9 +114,14 @@ const KEYWORD_PATTERNS = [
   { re: /전체.*장|모든.*시장|장.*(뭐|뭔|어디).*열/i,                                                                         intent: 'market_status', args: { market: 'all' } },
   { re: /장.*(열렸|열려|시간|중이야|이야|언제|끝나|마감|개장|폐장)|국내.*장|코스피|코스닥/i,                                   intent: 'market_status', args: { market: 'domestic' } },
 
-  // ── 업비트→바이낸스 USDT 전송 (루나팀 위임) — 세부 명령보다 먼저 매칭 ──
+  // ── 업비트 USDT 출금 전용 (매수 없이 기존 USDT 잔고만 출금) — 전체전송보다 먼저 ──
+  { re: /업비트.*(usdt|잔고).*(출금|보내|바이낸스|전송)(?!.*매수|.*구매)/i,     intent: 'upbit_withdraw', args: {} },
+  { re: /usdt.*(출금만|만.*출금|출금.*해|출금.*바이낸스|출금.*전송)(?!.*매수)/i, intent: 'upbit_withdraw', args: {} },
+  { re: /출금만.*해줘|usdt.*출금.*전용|withdraw.*usdt/i,                         intent: 'upbit_withdraw', args: {} },
+
+  // ── 업비트→바이낸스 USDT 전체 플로우 (KRW 매수 + 출금) ──
   { re: /업비트.*바이낸스|upbit.*binance/i,                                     intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
-  { re: /usdt.*(전송|보내|출금|바이낸스)|바이낸스.*(usdt|전송|보내)/i,          intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+  { re: /usdt.*(전송|보내|바이낸스)|바이낸스.*(usdt|전송|보내)/i,               intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
   { re: /업비트.*(usdt|달러|달러코인).*구매|krw.*usdt.*매수|원화.*usdt/i,       intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
   { re: /입금.*(usdt|달러|바이낸스|전송)|업비트.*입금.*바이낸스/i,              intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
 
@@ -218,10 +229,12 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 - luna_query  command=get_status       : 현재 상태 (잔고·모드·포지션)
   예) "루나 상태 어때", "잔고 얼마야", "USDT 얼마 있어", "포지션 어때", "투자 현황"
 - luna (현황만) : "루나 어때", "루나팀 상태"
-- upbit_transfer command=upbit_to_binance : 업비트 KRW 전량으로 USDT 매수 후 바이낸스로 전송
+- upbit_withdraw : 업비트 USDT 잔고 전량 바이낸스로 출금 (KRW 매수 없이 기존 USDT만)
+  예) "업비트 USDT 출금해줘", "USDT 출금만 해줘", "업비트 잔고 바이낸스로 출금", "출금만 해줘"
+  ※ 매수 없이 이미 있는 USDT를 출금할 때만 사용
+- upbit_transfer command=upbit_to_binance : 업비트 KRW 전량으로 USDT 매수 후 바이낸스로 전송 (전체 플로우)
   예) "업비트 계좌 입금했어 전량 usdt 구매하고 바이낸스로 보내줘"
   예) "업비트에서 usdt 사서 바이낸스로 전송해줘"
-  예) "usdt 바이낸스로 보내줘"
   예) "업비트 바이낸스로 전송"
 - upbit_balance command=get_upbit_balance : 업비트 계좌 잔고 조회 (KRW·코인별)
   예) "업비트 잔고 얼마야", "업비트 계좌 확인해", "업비트에 뭐 있어"

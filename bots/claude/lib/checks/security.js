@@ -130,11 +130,116 @@ function checkSecretsPlaceholders(items) {
   }
 }
 
+// .env 파일 권한 체크 (644 이상이면 경고 — 600 권장)
+function checkEnvPermissions(items) {
+  const ENV_PATHS = [
+    path.join(cfg.ROOT, '.env'),
+    path.join(cfg.BOTS.reservation, '.env'),
+    path.join(cfg.BOTS.investment, '.env'),
+    path.join(cfg.BOTS.claude, '.env'),
+  ];
+  let found = 0;
+  for (const p of ENV_PATHS) {
+    if (!fs.existsSync(p)) continue;
+    found++;
+    const mode = fileMode(p);
+    // 644 (rw-r--r--) 이상 → 타인 읽기 가능 → warn
+    const groupRead  = parseInt(mode[1] || '0', 8) & 0o4;
+    const otherRead  = parseInt(mode[2] || '0', 8) & 0o4;
+    if (groupRead || otherRead) {
+      items.push({
+        label:  `.env 권한 (${path.relative(cfg.ROOT, p)})`,
+        status: 'warn',
+        detail: `${mode} — 그룹/기타 읽기 가능 → chmod 600 ${p}`,
+      });
+    } else {
+      items.push({ label: `.env 권한 (${path.relative(cfg.ROOT, p)})`, status: 'ok', detail: `${mode}` });
+    }
+  }
+  if (found === 0) {
+    items.push({ label: '.env 파일', status: 'ok', detail: '없음 (secrets.json 방식 사용)' });
+  }
+}
+
+// 로그 파일 내 API 키 패턴 스캔 (최근 50줄만)
+const LOG_KEY_PATTERNS = [
+  { re: /sk-ant-[A-Za-z0-9_\-]{20,}/,  label: 'Anthropic API 키' },
+  { re: /sk-[A-Za-z0-9]{40,}/,          label: 'OpenAI API 키' },
+  { re: /AIza[A-Za-z0-9_\-]{30,}/,      label: 'Google API 키' },
+  { re: /gsk_[A-Za-z0-9]{40,}/,         label: 'Groq API 키' },
+  { re: /Bearer\s+[A-Za-z0-9_\-\.]{30,}/i, label: 'Bearer 토큰' },
+  { re: /[0-9]{8,}:[A-Za-z0-9_\-]{30,}/, label: '텔레그램 토큰' },
+];
+
+function scanLogsForKeys(items) {
+  const SCAN_LOGS = [
+    { path: cfg.LOGS.naver,    label: '스카 로그' },
+    { path: cfg.LOGS.crypto,   label: '루나 크립토 로그' },
+    { path: cfg.LOGS.domestic, label: '루나 국내 로그' },
+    { path: cfg.LOGS.overseas, label: '루나 해외 로그' },
+    { path: cfg.LOGS.dexter,   label: '덱스터 로그' },
+  ];
+
+  let totalFindings = 0;
+  for (const { path: logPath, label } of SCAN_LOGS) {
+    if (!fs.existsSync(logPath)) continue;
+    try {
+      const content = fs.readFileSync(logPath, 'utf8');
+      const lines   = content.split('\n').slice(-50); // 최근 50줄만
+      for (const { re, label: keyLabel } of LOG_KEY_PATTERNS) {
+        if (lines.some(l => re.test(l))) {
+          totalFindings++;
+          items.push({ label: `로그 키 노출 [${label}]`, status: 'error', detail: `${keyLabel} 패턴 감지 — 로그 삭제 필요` });
+        }
+      }
+    } catch { /* 읽기 실패 무시 */ }
+  }
+  if (totalFindings === 0) {
+    items.push({ label: '로그 내 키 노출 스캔', status: 'ok', detail: '의심 패턴 없음' });
+  }
+}
+
+// git 최근 커밋 API 키 패턴 스캔 (최근 5커밋 diff)
+function scanGitCommits(items) {
+  try {
+    const out = execSync('git -C ' + cfg.ROOT + ' log --oneline -5 2>/dev/null || echo "no-git"',
+      { encoding: 'utf8', timeout: 5000 }).trim();
+    if (!out || out === 'no-git') {
+      items.push({ label: 'git 커밋 스캔', status: 'ok', detail: 'git 저장소 없음' });
+      return;
+    }
+
+    // diff 내 키 패턴 스캔 (+로 시작하는 추가 라인만)
+    let diffOut = '';
+    try {
+      diffOut = execSync('git -C ' + cfg.ROOT + ' log -p -5 --no-color 2>/dev/null',
+        { encoding: 'utf8', timeout: 8000 });
+    } catch { return; }
+
+    const addedLines = diffOut.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++'));
+    let findings = 0;
+    for (const { re, label } of LOG_KEY_PATTERNS) {
+      if (addedLines.some(l => re.test(l))) {
+        findings++;
+        items.push({ label: `git 커밋 키 노출`, status: 'error', detail: `${label} 패턴 — git history 정리 필요` });
+      }
+    }
+    if (findings === 0) {
+      items.push({ label: 'git 커밋 스캔 (최근 5개)', status: 'ok', detail: '의심 패턴 없음' });
+    }
+  } catch {
+    items.push({ label: 'git 커밋 스캔', status: 'ok', detail: '확인 스킵' });
+  }
+}
+
 async function run() {
   const items = [];
 
   checkSecretsPermissions(items);
+  checkEnvPermissions(items);
   scanHardcodedKeys(items);
+  scanLogsForKeys(items);
+  scanGitCommits(items);
   checkGitignore(items);
   checkSecretsPlaceholders(items);
 

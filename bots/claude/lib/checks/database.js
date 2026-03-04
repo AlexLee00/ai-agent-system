@@ -24,7 +24,7 @@ function runScript(script) {
   const tmp = path.join(os.tmpdir(), `dexter-db-${Date.now()}.js`);
   try {
     fs.writeFileSync(tmp, script);
-    const out = execSync(`node "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
+    const out = execSync(`"${process.execPath}" "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
     return JSON.parse(out.trim());
   } finally {
     try { fs.unlinkSync(tmp); } catch {}
@@ -241,10 +241,107 @@ db.close();
   }
 }
 
+// ska DuckDB 쿼리 (Python venv duckdb 활용)
+function skaDuckdbQuery(sql) {
+  const dbPath = cfg.DBS.ska;
+  const script = `
+import duckdb, json, sys
+try:
+    db = duckdb.connect('${dbPath}', read_only=True)
+    rows = db.execute(${JSON.stringify(sql)}).fetchall()
+    cols = [d[0] for d in db.execute(${JSON.stringify(sql)}).description] if rows else []
+    # description from execute
+    conn2 = db.execute(${JSON.stringify(sql)})
+    cols = [d[0] for d in conn2.description]
+    result = [dict(zip(cols, row)) for row in rows]
+    print(json.dumps(result))
+    db.close()
+except Exception as e:
+    print(json.dumps({'error': str(e)}))
+    sys.exit(1)
+`;
+  const { execSync: _exec } = require('child_process');
+  const tmp = path.join(os.tmpdir(), `dexter-ska-duck-${Date.now()}.py`);
+  try {
+    fs.writeFileSync(tmp, script);
+    // ska venv python 우선, 없으면 시스템 python3
+    const skaPython = path.join(cfg.BOTS.ska, 'venv', 'bin', 'python');
+    const pythonBin = fs.existsSync(skaPython) ? skaPython : 'python3';
+    const out = _exec(`${pythonBin} "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
+    const result = JSON.parse(out.trim());
+    if (result?.error) throw new Error(result.error);
+    return result;
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
+async function checkSkaDuckDB(items) {
+  if (!fs.existsSync(cfg.DBS.ska)) {
+    items.push({ label: 'DuckDB (스카)', status: 'warn', detail: 'ska.duckdb 파일 없음 (ETL 미실행)' });
+    return;
+  }
+
+  const REQUIRED = ['revenue_daily', 'environment_factors', 'forecast_accuracy'];
+
+  try {
+    const tableRows = skaDuckdbQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='main'");
+    const tables    = tableRows.map(r => r.table_name);
+    const missing   = REQUIRED.filter(t => !tables.includes(t));
+
+    if (missing.length > 0) {
+      items.push({ label: 'DuckDB 테이블 (스카)', status: 'warn', detail: `누락: ${missing.join(', ')} (ETL 필요)` });
+    } else {
+      items.push({ label: 'DuckDB 테이블 (스카)', status: 'ok', detail: `${tables.length}개 확인` });
+    }
+
+    // ETL 최신 데이터 확인 (revenue_daily 마지막 날짜)
+    if (tables.includes('revenue_daily')) {
+      try {
+        const lastRow = skaDuckdbQuery("SELECT MAX(date) as last_date FROM revenue_daily");
+        const lastDate = lastRow[0]?.last_date;
+        if (lastDate) {
+          const daysDiff = Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000);
+          const detail   = `최신: ${lastDate} (${daysDiff}일 전)`;
+          items.push({
+            label:  'ETL 최신성 (revenue_daily)',
+            status: daysDiff > 2 ? 'warn' : 'ok',
+            detail: daysDiff > 2 ? `${detail} — ETL 미실행 의심` : detail,
+          });
+        }
+      } catch { /* 쿼리 실패는 무시 */ }
+    }
+
+    // MAPE 경보 (forecast_accuracy 최근 7일 평균)
+    if (tables.includes('forecast_accuracy')) {
+      try {
+        const mapeRow = skaDuckdbQuery(
+          "SELECT AVG(mape) as avg_mape FROM forecast_accuracy WHERE forecast_date >= current_date - INTERVAL '7 days'"
+        );
+        const mape = mapeRow[0]?.avg_mape;
+        if (mape !== null && mape !== undefined) {
+          const mapeVal = Math.round(mape * 10) / 10;
+          items.push({
+            label:  'MAPE 예측 정확도 (7일)',
+            status: mapeVal > 15 ? 'warn' : 'ok',
+            detail: mapeVal > 15 ? `MAPE ${mapeVal}% (15% 초과 — 모델 재학습 필요)` : `MAPE ${mapeVal}%`,
+          });
+        } else {
+          items.push({ label: 'MAPE 예측 정확도 (7일)', status: 'ok', detail: '데이터 없음 (예측 미실행)' });
+        }
+      } catch { /* 쿼리 실패는 무시 */ }
+    }
+
+  } catch (e) {
+    items.push({ label: 'DuckDB (스카)', status: 'warn', detail: e.message.slice(0, 150) });
+  }
+}
+
 async function run() {
   const items = [];
 
   await checkSQLite(items);
+  await checkSkaDuckDB(items);
   await checkDuckDB(items);
   checkMainbotQueue(items);
 
