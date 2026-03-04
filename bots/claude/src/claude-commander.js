@@ -83,11 +83,17 @@ const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nl
 const TG_MAX_CHARS = 3500;
 
 function runScript(script, flags = '') {
-  execSync(`${NODE} ${script} ${flags}`, {
-    cwd:     CWD,
-    timeout: 300000, // 최대 5분
-    env:     { ...process.env },
-  });
+  // dexter는 이슈 발견 시 exit(1) → execSync가 throw → status 확인 후 무시
+  try {
+    execSync(`${NODE} ${script} ${flags}`, {
+      cwd:     CWD,
+      timeout: 300000, // 최대 5분
+      env:     { ...process.env },
+    });
+  } catch (e) {
+    // exit code 1: 이슈 발견 (정상 동작). exit code 2+: 실제 오류
+    if ((e.status ?? 1) >= 2) throw e;
+  }
 }
 
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
