@@ -65,11 +65,24 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
   "앤디 재시작해"            → 앤디 재시작
   "지미 죽었어"              → 지미 재시작
 
+📈 시장 현황
+  "장 열렸어?"               → 국내/해외/암호화폐 현황
+  "미국 장 시간"             → 미국주식 장 시간
+  "코스피 장이야?"            → 국내주식 장 시간
+
+💰 잔고·가격 조회
+  "업비트 잔고 얼마야"        → 업비트 계좌 잔고
+  "바이낸스 잔고 얼마야"      → 바이낸스 계좌 잔고
+  "비트코인 얼마야"           → 암호화폐 현재가 (BTC/ETH/SOL/BNB)
+  "국내 주식 잔고"            → KIS 국내주식 보유·손익
+  "미국 주식 잔고"            → KIS 해외주식 보유·손익
+
 🌙 루나팀 (자동매매)
   "루나 상태 어때"           → 현황·잔고
   "루나 리포트 줘"           → 투자 리포트
   "매매 멈춰"                → 거래 일시정지
   "거래 재개해"              → 거래 재개
+  "업비트 USDT 바이낸스로 보내" → KRW→USDT 매수 후 전송
 
 🔧 클로드팀 (유지보수)
   "덱스터 점검해"            → 시스템 점검
@@ -111,6 +124,110 @@ async function waitForCommandResult(id, timeoutMs = 30000) {
     await new Promise(r => setTimeout(r, 2000));
   }
   return null;
+}
+
+/**
+ * 업비트 잔고를 텍스트로 포맷
+ */
+function formatUpbitBalance(rawResult) {
+  if (!rawResult) return '⏱ 업비트 잔고 조회 타임아웃';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ 업비트 잔고 오류: ${r.error || '알 수 없음'}`;
+
+  const lines = ['🟡 업비트 잔고'];
+  for (const b of (r.balances || [])) {
+    if (b.coin === 'KRW') {
+      lines.push(`  KRW: ${b.total.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}원`);
+    } else {
+      const krw = b.krw_value ? ` (≈${b.krw_value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}원)` : '';
+      lines.push(`  ${b.coin}: ${b.total}${krw}`);
+    }
+  }
+  lines.push(`  합계: ${(r.total_krw || 0).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}원`);
+  return lines.join('\n');
+}
+
+/**
+ * 바이낸스 잔고를 텍스트로 포맷
+ */
+function formatBinanceBalance(rawResult) {
+  if (!rawResult) return '⏱ 바이낸스 잔고 조회 타임아웃';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ 바이낸스 잔고 오류: ${r.error || '알 수 없음'}`;
+
+  const lines = ['🟠 바이낸스 잔고'];
+  for (const b of (r.balances || [])) {
+    if (b.coin === 'USDT') {
+      lines.push(`  USDT: $${b.total.toFixed(2)}`);
+    } else {
+      const usd = b.usdt_value ? ` (≈$${b.usdt_value.toFixed(2)})` : '';
+      lines.push(`  ${b.coin}: ${b.total}${usd}`);
+    }
+  }
+  lines.push(`  합계: ≈$${(r.total_usdt || 0).toFixed(2)}`);
+  return lines.join('\n');
+}
+
+/**
+ * 암호화폐 현재가를 텍스트로 포맷
+ */
+function formatCryptoPrice(rawResult) {
+  if (!rawResult) return '⏱ 가격 조회 타임아웃';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ 가격 조회 오류: ${r.error || '알 수 없음'}`;
+
+  const lines = ['📈 암호화폐 현재가'];
+  for (const s of (r.symbols || [])) {
+    const sign    = (s.change_pct ?? 0) >= 0 ? '+' : '';
+    const change  = s.change_pct != null ? ` (${sign}${s.change_pct.toFixed(2)}%)` : '';
+    lines.push(`  ${s.symbol}: $${(s.price_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}${change}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * KIS 잔고를 텍스트로 포맷
+ */
+function formatKisBalance(rawResult, type) {
+  if (!rawResult) return '⏱ KIS 잔고 조회 타임아웃';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ KIS 잔고 오류: ${r.error || '알 수 없음'}`;
+
+  const lines = [];
+  if (r.domestic) {
+    const d = r.domestic;
+    const mode = d.paper ? '[모의]' : '[실전]';
+    lines.push(`🇰🇷 국내주식 잔고 ${mode}`);
+    if (d.holdings?.length > 0) {
+      for (const h of d.holdings) {
+        const pnl = h.pnl_amt >= 0 ? `+${h.pnl_amt.toLocaleString()}원` : `${h.pnl_amt.toLocaleString()}원`;
+        lines.push(`  ${h.name}(${h.symbol}): ${h.qty}주 ${pnl} (${h.pnl_pct.toFixed(1)}%)`);
+      }
+    } else {
+      lines.push('  보유 종목 없음');
+    }
+    if (d.total_eval_amt) lines.push(`  평가금액: ${d.total_eval_amt.toLocaleString()}원 | 예수금: ${d.dnca_tot_amt.toLocaleString()}원`);
+  }
+  if (r.overseas) {
+    const o = r.overseas;
+    const mode = o.paper ? '[모의]' : '[실전]';
+    if (lines.length > 0) lines.push('');
+    lines.push(`🇺🇸 해외주식 잔고 ${mode}`);
+    if (o.holdings?.length > 0) {
+      for (const h of o.holdings) {
+        const pnl = (h.pnl_usd || 0) >= 0 ? `+$${(h.pnl_usd).toFixed(2)}` : `-$${Math.abs(h.pnl_usd).toFixed(2)}`;
+        lines.push(`  ${h.symbol}: ${h.qty}주 ${pnl} (${(h.pnl_pct || 0).toFixed(1)}%)`);
+      }
+    } else {
+      lines.push('  보유 종목 없음');
+    }
+    if (o.total_eval_usd) lines.push(`  총평가: $${o.total_eval_usd.toFixed(2)}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : 'KIS 잔고 없음';
 }
 
 /**
@@ -231,6 +348,71 @@ function getLunaStatus() {
   } catch { return '📊 루나팀 상태 조회 실패'; }
 }
 
+// ─── 시장 오픈 여부 (ESM 불가 — 인라인 복사) ─────────────────────────
+
+function _isKisMarketOpen() {
+  const now        = new Date();
+  const kstOffset  = 9 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const kstMinutes = (utcMinutes + kstOffset) % (24 * 60);
+  const kstDay     = new Date(now.getTime() + kstOffset * 60000).getUTCDay();
+  if (kstDay === 0 || kstDay === 6) return false;
+  return kstMinutes >= 9 * 60 && kstMinutes < 15 * 60 + 30;
+}
+
+function _isKisOverseasMarketOpen() {
+  const now        = new Date();
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const utcDay     = now.getUTCDay();
+  if (utcDay === 0 || utcDay === 6) return false;
+  const month    = now.getUTCMonth() + 1;
+  const isDST    = month >= 4 && month <= 10;
+  const openUtc  = isDST ? 13 * 60 + 30 : 14 * 60 + 30;
+  const closeUtc = isDST ? 20 * 60       : 21 * 60;
+  return utcMinutes >= openUtc && utcMinutes < closeUtc;
+}
+
+/**
+ * 시장 현황 텍스트 생성
+ * @param {'domestic'|'overseas'|'crypto'|'all'} market
+ */
+function getMarketStatus(market = 'all') {
+  const now        = new Date();
+  const kstOffset  = 9 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const kstMinutes = (utcMinutes + kstOffset) % (24 * 60);
+  const kstH       = Math.floor(kstMinutes / 60);
+  const kstM       = kstMinutes % 60;
+  const kstTimeStr = `${String(kstH).padStart(2,'0')}:${String(kstM).padStart(2,'0')} KST`;
+
+  const domesticOpen = _isKisMarketOpen();
+  const overseasOpen = _isKisOverseasMarketOpen();
+  const month        = now.getUTCMonth() + 1;
+  const isDST        = month >= 4 && month <= 10;
+
+  const lines = [`📊 시장 현황 (${kstTimeStr})`];
+
+  if (market === 'domestic' || market === 'all') {
+    const icon = domesticOpen ? '🟢' : '🔴';
+    lines.push(`${icon} 국내주식 (KOSPI/KOSDAQ): ${domesticOpen ? '장중 ▶' : '장외 ■'}`);
+    if (!domesticOpen) lines.push(`   개장 09:00 / 마감 15:30 KST (평일)`);
+  }
+
+  if (market === 'overseas' || market === 'all') {
+    const icon    = overseasOpen ? '🟢' : '🔴';
+    const openKst = isDST ? '22:30' : '23:30';
+    const closeKst = isDST ? '05:00+1' : '06:00+1';
+    lines.push(`${icon} 미국주식 (NYSE/NASDAQ): ${overseasOpen ? '장중 ▶' : '장외 ■'}`);
+    if (!overseasOpen) lines.push(`   개장 ${openKst} / 마감 ${closeKst} KST (평일${isDST ? ', 서머타임' : ''})`);
+  }
+
+  if (market === 'crypto' || market === 'all') {
+    lines.push(`🟢 암호화폐 (바이낸스/업비트): 24/7 거래 중`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * 스카팀 현황 텍스트
  */
@@ -304,6 +486,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       )].join('\n');
     }
 
+    case 'market_status': {
+      const market = args?.market || 'all';
+      return getMarketStatus(market);
+    }
+
     case 'luna':
       return getLunaStatus();
 
@@ -317,6 +504,49 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const cmdId = insertBotCommand('ska', command, args);
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatSkaResult(command, raw);
+    }
+
+    case 'upbit_transfer': {
+      await notify(`⏳ 업비트 잔고 확인 중... (소요: ~2분)`);
+      const cmdId = insertBotCommand('luna', 'upbit_to_binance', args || {});
+      const raw   = await waitForCommandResult(cmdId, 180000); // 3분 타임아웃
+      if (!raw) return '⏱ 업비트→바이낸스 전송 타임아웃 (3분). 업비트 앱에서 직접 확인하세요.';
+      let r;
+      try { r = JSON.parse(raw); } catch { return raw; }
+      if (!r.ok) return `⚠️ 전송 실패: ${r.error || '알 수 없음'}`;
+      return `✅ ${r.message}`;
+    }
+
+    case 'upbit_balance': {
+      const cmdId = insertBotCommand('luna', 'get_upbit_balance', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatUpbitBalance(raw);
+    }
+
+    case 'binance_balance': {
+      const cmdId = insertBotCommand('luna', 'get_binance_balance', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatBinanceBalance(raw);
+    }
+
+    case 'crypto_price': {
+      const cmdId = insertBotCommand('luna', 'get_crypto_price', args || {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatCryptoPrice(raw);
+    }
+
+    case 'kis_domestic_balance': {
+      await notify(`⏳ KIS 국내주식 잔고 조회 중...`);
+      const cmdId = insertBotCommand('luna', 'get_kis_domestic_balance', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatKisBalance(raw, 'domestic');
+    }
+
+    case 'kis_overseas_balance': {
+      await notify(`⏳ KIS 해외주식 잔고 조회 중...`);
+      const cmdId = insertBotCommand('luna', 'get_kis_overseas_balance', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatKisBalance(raw, 'overseas');
     }
 
     case 'luna_query':
@@ -335,20 +565,6 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const cmdId = insertBotCommand('claude', command, args);
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult(command, raw);
-    }
-
-    case 'dexter': {
-      await notify(`⏳ 덱스터 점검 중... (최대 2분 소요)`);
-      const cmdId = insertBotCommand('claude', 'run_check', {});
-      const raw   = await waitForCommandResult(cmdId, 300000);
-      return formatClaudeResult('run_check', raw);
-    }
-
-    case 'archer': {
-      await notify(`⏳ 아처 기술 분석 중... (최대 5분 소요)`);
-      const cmdId = insertBotCommand('claude', 'run_archer', {});
-      const raw   = await waitForCommandResult(cmdId, 300000);
-      return formatClaudeResult('run_archer', raw);
     }
 
     case 'session_close': {

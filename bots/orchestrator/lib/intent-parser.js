@@ -98,6 +98,28 @@ const KEYWORD_PATTERNS = [
   { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계|통계/i, intent: 'ska_query', args: { command: 'query_today_stats' } },
   { re: /알람.*(확인|조회|있어|뭐)|미해결.*(알람|문제|있어)|이상.*있어|경고.*있어/i, intent: 'ska_query', args: { command: 'query_alerts' } },
 
+  // ── KIS 잔고 조회 (시장 현황 패턴보다 먼저 — "미국 주식 잔고" 오매칭 방지) ──
+  { re: /국내.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|KIS.*(잔고|잔액|보유|국내)/i,                                                                                         intent: 'kis_domestic_balance', args: { command: 'get_kis_domestic_balance' } },
+  { re: /미국.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|해외.*(주식|주).*(잔고|잔액|보유)|(나스닥|NYSE|해외주식).*(잔고|보유)/i,                                             intent: 'kis_overseas_balance', args: { command: 'get_kis_overseas_balance' } },
+
+  // ── 시장 장시간 조회 (해외·암호화폐 먼저 — 국내 패턴에 오매칭 방지) ──
+  { re: /미국.*(장|시장|시간|주식|마켓)|나스닥.*(장|열|중|시간)|뉴욕.*(장|열|중)|NYSE|NASDAQ|US.*market/i,                   intent: 'market_status', args: { market: 'overseas' } },
+  { re: /지금.*거래.*가능|암호화폐.*장|코인.*장|바이낸스.*열/i,                                                               intent: 'market_status', args: { market: 'crypto' } },
+  { re: /전체.*장|모든.*시장|장.*(뭐|뭔|어디).*열/i,                                                                         intent: 'market_status', args: { market: 'all' } },
+  { re: /장.*(열렸|열려|시간|중이야|이야|언제|끝나|마감|개장|폐장)|국내.*장|코스피|코스닥/i,                                   intent: 'market_status', args: { market: 'domestic' } },
+
+  // ── 업비트→바이낸스 USDT 전송 (루나팀 위임) — 세부 명령보다 먼저 매칭 ──
+  { re: /업비트.*바이낸스|upbit.*binance/i,                                     intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+  { re: /usdt.*(전송|보내|출금|바이낸스)|바이낸스.*(usdt|전송|보내)/i,          intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+  { re: /업비트.*(usdt|달러|달러코인).*구매|krw.*usdt.*매수|원화.*usdt/i,       intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+  { re: /입금.*(usdt|달러|바이낸스|전송)|업비트.*입금.*바이낸스/i,              intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+
+  // ── 잔고·가격 조회 ──
+  { re: /업비트.*(잔고|잔액|계좌|얼마|있어|뭐.*있|확인|조회)|upbit.*(balance|잔고)/i,     intent: 'upbit_balance',  args: { command: 'get_upbit_balance' } },
+  { re: /바이낸스.*(잔고|잔액|계좌|얼마|있어|뭐.*있|확인|조회)|binance.*(balance|잔고)/i, intent: 'binance_balance', args: { command: 'get_binance_balance' } },
+  { re: /\b(btc|eth|sol|bnb|xrp|ada|avax|doge|meme)\b.*(가격|얼마|현재가|price|시세)|비트코인.*(가격|얼마|현재가|시세)|이더리움.*(가격|얼마|현재가|시세)|솔라나.*(가격|얼마|현재가)/i, intent: 'crypto_price', args: { command: 'get_crypto_price' } },
+  { re: /코인.*(가격|현재가|시세|얼마)|(가격|현재가|시세).*(코인|암호화폐|비트)/i,         intent: 'crypto_price',   args: { command: 'get_crypto_price' } },
+
   // ── 루나팀 세부 명령 ──
   { re: /루나.*(정지|멈춰|pause|중지|꺼|stop)|거래.*(정지|중지|멈춰|stop)|매매.*(멈춰|정지|중지|stop)|투자.*(멈춰|정지|중지)/i, intent: 'luna_action', args: { command: 'pause_trading' } },
   { re: /루나.*(재개|시작|resume|켜|다시)|거래.*(재개|다시|resume)|매매.*(재개|다시|시작)|투자.*(재개|다시)/i,                  intent: 'luna_action', args: { command: 'resume_trading' } },
@@ -196,6 +218,31 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 - luna_query  command=get_status       : 현재 상태 (잔고·모드·포지션)
   예) "루나 상태 어때", "잔고 얼마야", "USDT 얼마 있어", "포지션 어때", "투자 현황"
 - luna (현황만) : "루나 어때", "루나팀 상태"
+- upbit_transfer command=upbit_to_binance : 업비트 KRW 전량으로 USDT 매수 후 바이낸스로 전송
+  예) "업비트 계좌 입금했어 전량 usdt 구매하고 바이낸스로 보내줘"
+  예) "업비트에서 usdt 사서 바이낸스로 전송해줘"
+  예) "usdt 바이낸스로 보내줘"
+  예) "업비트 바이낸스로 전송"
+- upbit_balance command=get_upbit_balance : 업비트 계좌 잔고 조회 (KRW·코인별)
+  예) "업비트 잔고 얼마야", "업비트 계좌 확인해", "업비트에 뭐 있어"
+- binance_balance command=get_binance_balance : 바이낸스 계좌 잔고 조회 (USDT·코인별)
+  예) "바이낸스 잔고 얼마야", "바이낸스 계좌 확인해", "바이낸스에 뭐 있어"
+- crypto_price command=get_crypto_price : 암호화폐 현재가 조회 (BTC/ETH/SOL/BNB 기본)
+  예) "비트코인 얼마야", "BTC 가격", "이더리움 현재가", "코인 시세", "ETH SOL 가격"
+- kis_domestic_balance command=get_kis_domestic_balance : KIS 국내주식 잔고·평가손익
+  예) "국내 주식 잔고", "한국 주식 보유 현황", "KIS 국내 잔고"
+- kis_overseas_balance command=get_kis_overseas_balance : KIS 해외주식 잔고·평가손익
+  예) "미국 주식 잔고", "해외 주식 보유 현황", "나스닥 보유 종목"
+
+[시장 장시간 조회]
+- market_status args.market=domestic : 국내주식 장 현황 (KOSPI/KOSDAQ)
+  예) "국내장 열렸어?", "코스피 장 중이야?", "지금 국내장이야?", "국내 주식 거래되?", "장 언제 끝나?", "국내 시장 몇 시에 닫혀?"
+- market_status args.market=overseas : 미국주식 장 현황 (NYSE/NASDAQ)
+  예) "미국장 열렸어?", "나스닥 장 중이야?", "US 마켓 열려있어?", "뉴욕 거래소 열려?", "미국 주식 거래 시간이야?"
+- market_status args.market=crypto   : 암호화폐 거래 현황
+  예) "코인 거래 가능해?", "바이낸스 열려있어?", "암호화폐 지금 거래돼?"
+- market_status args.market=all      : 전체 시장 장 현황
+  예) "어디 장 열려있어?", "지금 어떤 시장이야?", "전체 시장 현황", "어느 시장 거래 중이야?"
 
 [클로드팀] 시스템 유지보수·기술 분석
 - claude_action command=run_check   : 덱스터 기본 점검 (코드·보안·DB)
@@ -229,7 +276,7 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 반드시 JSON 형식으로만 응답:
 {"intent": "...", "args": {}, "confidence": 0.0~1.0}
 
-args 필드: ska_query/ska_action/luna_query/luna_action/claude_action은 반드시 command 포함
+args 필드: ska_query/ska_action/luna_query/luna_action/claude_action/upbit_transfer는 반드시 command 포함
 claude_ask는 반드시 query 포함 (트리거 문구 제외한 실제 질문)
 mute/unmute는 target 포함 (all|luna|ska|dexter|archer|claude)
 mute는 duration 포함 (예: "1h", "30m", "1d")`;
