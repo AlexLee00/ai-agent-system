@@ -14,8 +14,8 @@
 const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
-const { execSync } = require('child_process');
-const Database     = require('better-sqlite3');
+const { execSync, spawnSync } = require('child_process');
+const Database                = require('better-sqlite3');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME = '클로드';
@@ -46,10 +46,14 @@ function getDb() {
 }
 
 // ─── 명령 실행 헬퍼 ──────────────────────────────────────────────────
-const NODE    = process.execPath;
-const DEXTER  = path.join(__dirname, 'dexter.js');
-const ARCHER  = path.join(__dirname, 'archer.js');
-const CWD     = path.join(__dirname, '..');
+const NODE         = process.execPath;
+const DEXTER       = path.join(__dirname, 'dexter.js');
+const ARCHER       = path.join(__dirname, 'archer.js');
+const CWD          = path.join(__dirname, '..');
+const PROJECT_ROOT = path.join(os.homedir(), 'projects', 'ai-agent-system');
+
+// 텔레그램 메시지 최대 길이 (안전 마진 포함)
+const TG_MAX_CHARS = 3500;
 
 function runScript(script, flags = '') {
   execSync(`${NODE} ${script} ${flags}`, {
@@ -121,6 +125,38 @@ function handleRunArcher() {
   }
 }
 
+/**
+ * 클로드 AI에게 직접 질문 (claude -p 헤드리스 모드)
+ * 제이 → bot_commands → 클로드 AI → 응답 → 텔레그램
+ */
+function handleAskClaude(args) {
+  const query = (args.query || '').trim();
+  if (!query) return { ok: false, error: '질문 내용 없음' };
+
+  const result = spawnSync('claude', ['-p', query, '--dangerously-skip-permissions'], {
+    cwd:      PROJECT_ROOT,
+    timeout:  280000, // 4분 40초 (커맨더 5분 내)
+    env:      { ...process.env },
+    encoding: 'utf8',
+  });
+
+  if (result.error) return { ok: false, error: result.error.message };
+  if (result.status !== 0) {
+    const errMsg = (result.stderr || '').trim().slice(0, 300);
+    return { ok: false, error: errMsg || `exit code ${result.status}` };
+  }
+
+  const response = (result.stdout || '').trim();
+  if (!response) return { ok: false, error: '빈 응답' };
+
+  // 텔레그램 길이 제한 처리
+  const message = response.length > TG_MAX_CHARS
+    ? response.slice(0, TG_MAX_CHARS) + '\n\n…(이하 생략)'
+    : response;
+
+  return { ok: true, message };
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -129,6 +165,7 @@ const HANDLERS = {
   run_fix:      handleRunFix,
   daily_report: handleDailyReport,
   run_archer:   handleRunArcher,
+  ask_claude:   handleAskClaude,
 };
 
 async function processCommands() {

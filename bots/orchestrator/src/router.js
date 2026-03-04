@@ -76,7 +76,12 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
   "전체 점검해줘"            → 전체 점검 (audit)
   "덱스터 수정해"            → 자동 수정
   "아처 실행해"              → 기술 트렌드 분석
-  "일일 보고해줘"            → 일일 리포트`;
+  "일일 보고해줘"            → 일일 리포트
+
+🤖 클로드 AI 직접 질문
+  /claude <질문>  또는  /ask <질문>
+  예) /claude 루나팀 전략 리스크 분석해줘
+  예) /claude DB 스키마 최적화 방법 알려줘`;
 
 // ─── bot_commands 유틸 ────────────────────────────────────────────────
 
@@ -342,6 +347,19 @@ async function handleIntent(parsed, msg) {
       const cmdId = insertBotCommand('claude', 'run_archer', {});
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult('run_archer', raw);
+    }
+
+    case 'claude_ask': {
+      const query = args.query;
+      if (!query) return '⚠️ 질문 내용이 없습니다.\n예) /claude 루나팀 전략 리스크 분석해줘';
+      const cmdId = insertBotCommand('claude', 'ask_claude', { query });
+      // 클로드 AI 응답은 최대 5분 소요
+      const raw   = await waitForCommandResult(cmdId, 300000);
+      if (!raw) return '⏱ 클로드 응답 없음 (5분 타임아웃)';
+      let r;
+      try { r = JSON.parse(raw); } catch { return raw; }
+      if (!r.ok) return `⚠️ 클로드 오류: ${r.error || '알 수 없음'}`;
+      return `🤖 클로드\n\n${r.message}`;
     }
 
     case 'brief': {
