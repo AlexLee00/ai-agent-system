@@ -38,8 +38,6 @@
     <string>production</string>
     <key>PAPER_MODE</key>
     <string>false</string>
-    <key>ANTHROPIC_API_KEY</key>
-    <string>***REMOVED***</string>
   </dict>
 
   <!-- 부팅 시 자동 실행 -->

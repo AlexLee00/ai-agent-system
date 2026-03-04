@@ -11,31 +11,16 @@
  */
 
 const https = require('https');
-const path  = require('path');
-const fs    = require('fs');
-const { trackTokens } = require('./token-tracker');
+const { trackTokens }   = require('./token-tracker');
+const { getGroqAccounts } = require('../../../packages/core/lib/llm-keys');
 
 // ─── Groq 클라이언트 설정 ─────────────────────────────────────────────
-
-function loadGroqKeys() {
-  try {
-    const cfgPath = path.join(__dirname, '..', '..', 'investment', 'config.yaml');
-    const yaml = require('js-yaml');
-    const cfg  = yaml.load(fs.readFileSync(cfgPath, 'utf8'));
-    return (cfg?.groq?.accounts || []).map(a => a.api_key).filter(Boolean);
-  } catch {}
-  try {
-    const s = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'secrets.json'), 'utf8'));
-    return [s.groq_api_key].filter(Boolean);
-  } catch {}
-  return [];
-}
 
 let _groqKeys = null;
 let _groqIdx  = 0;
 
 function nextGroqKey() {
-  if (!_groqKeys) _groqKeys = loadGroqKeys();
+  if (!_groqKeys) _groqKeys = getGroqAccounts().map(a => a.api_key).filter(Boolean);
   if (_groqKeys.length === 0) return null;
   const key = _groqKeys[_groqIdx % _groqKeys.length];
   _groqIdx++;

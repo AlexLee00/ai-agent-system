@@ -39,10 +39,9 @@ module.exports = {
     dexter: '/tmp/dexter.lock',
   },
 
-  // ─── secrets 경로 (텔레그램 토큰 읽기) ─────────────
+  // ─── secrets 경로 (텔레그램 토큰 읽기) — investment는 config.yaml 사용
   SECRETS: {
     reservation: path.join(ROOT, 'bots', 'reservation', 'secrets.json'),
-    investment:  path.join(ROOT, 'bots', 'investment', 'secrets.json'),
   },
 
   // ─── 핵심 파일 무결성 체크 대상 ────────────────────

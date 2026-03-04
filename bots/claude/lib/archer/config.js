@@ -118,10 +118,4 @@ module.exports = {
     temperature: 0.3,
   },
 
-  // ─── secrets 경로 ───────────────────────────────────────────────
-  SECRETS_PATHS: [
-    path.join(ROOT, 'bots', 'invest', 'secrets.json'),
-    path.join(ROOT, 'bots', 'reservation', 'secrets.json'),
-    path.join(ROOT, 'bots', 'investment', 'secrets.json'),
-  ],
 };
