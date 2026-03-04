@@ -32,6 +32,20 @@
 
 ---
 
+### ✨ 제이 중심 지휘 체계 + 루나팀 고도화
+- 제이 OpenClaw 에이전트 전환
+- mainbot.js Telegram 폴링 제거
+- bot_commands 테이블 추가(v4)
+- 스카 커맨더 신설(ai.ska.commander)
+- 루나 커맨더 신설(ai.investment.commander)
+- 클로드 커맨더 신설(ai.claude.commander)
+- intent-parser 스카/루나/클로드 인텐트 추가
+- router.js 팀장 명령 연동
+- luna.js 아르고스 전략 컨텍스트 연결
+- luna.js asset_snapshot 자동 기록
+- nemesis.js 포지션 한도 불일치 수정
+<!-- session-close:2026-03-04:제이-중심-지휘-체계-루나팀-고도화 -->
+
 ## 2026-03-04 (세션 1)
 ### 🔄 루나팀 Phase 3 고도화 — 미완료 상태로 중단
 
