@@ -4,16 +4,28 @@
  *
  * 지원 프로바이더:
  *   - Google Gemini (OAuth, 무료)  → cloudcode-pa.googleapis.com
+ *       gemini-2.5-flash-lite / gemini-2.5-flash / gemini-2.5-pro
  *   - Ollama (로컬, 무료)
  *   - OpenAI  (데이터공유 무료)     → api.openai.com
  *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
+ *       llama-3.1-8b-instant / llama-3.3-70b-versatile
+ *       meta-llama/llama-4-scout-17b-16e-instruct (750 T/s)
+ *       meta-llama/llama-4-maverick-17b-128e-instruct (1M ctx)
+ *       moonshotai/kimi-k2-instruct (1T MoE, 256K ctx)
+ *       qwen/qwen3-32b
+ *       openai/gpt-oss-20b (1000 T/s, 최고속)
  *   - Cerebras(영구 무료 티어)      → CEREBRAS_API_KEY
- *   - SambaNova(영구 무료 티어)     → SAMBANOVA_API_KEY
+ *       llama3.1-8b / llama-3.3-70b
+ *       llama-4-scout-17b-16e-instruct (~2600 T/s, 세계 최고속)
+ *   - SambaNova($5 크레딧 무료)     → SAMBANOVA_API_KEY
+ *       Meta-Llama-3.3-70B-Instruct / DeepSeek-V3-0324
  *   - OpenRouter(무료 :free 모델)   → OPENROUTER_API_KEY
+ *       meta-llama/llama-4-scout:free / meta-llama/llama-3.3-70b-instruct:free
  *
  * 미등록 프로바이더 (키 등록 후 활성화):
  *   - xAI     (Grok 시리즈)        → XAI_API_KEY
  *   - Mistral (영구 무료 티어)      → MISTRAL_API_KEY
+ *       mistral-small-latest / open-mistral-nemo (1B 토큰/월)
  *   - Together AI (무료 모델)       → TOGETHER_API_KEY
  *   - Fireworks AI (무료 크레딧)    → FIREWORKS_API_KEY
  *   - DeepInfra (무료 티어)         → DEEPINFRA_API_KEY
@@ -24,7 +36,7 @@
  *   node scripts/speed-test.js              # 전체 테스트
  *   node scripts/speed-test.js --runs=3     # 반복 횟수 지정
  *   node scripts/speed-test.js --apply      # 결과를 openclaw.json에 자동 반영
- *   node scripts/speed-test.js --model=gemini-2.5-flash,llama-3.3-70b-versatile
+ *   node scripts/speed-test.js --model=gemini-2.5-flash,llama-4-scout
  */
 
 const fs    = require('fs');
