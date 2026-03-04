@@ -802,4 +802,84 @@ _작성: 2026-03-04_
 
 ---
 
+---
+
+### DEC-023 | LLM 명칭 일반화 — "제이는 항상 Gemini가 아니다"
+
+**배경:** intent-parser.js에 `parseGemini`, `GEMINI_MODEL`, `groqResult`, `source: 'gemini'` 등 특정 LLM 이름이 하드코딩되어 있었음. 사용자가 지적: "LLM API는 속도·성능에 따라 달라질 수 있는데 Gemini로 작성하는 건 오류."
+
+**결정:**
+- `parseGemini` → `parseLLMFallback`
+- `GEMINI_MODEL / GEMINI_PROVIDER` → `LLM_FALLBACK_MODEL / LLM_FALLBACK_PROVIDER`
+- `groqResult` → `llmResult`, `source: 'gemini'` → `source: 'llm'`
+- 실제 모델값은 두 상수에만 격리 → 교체 시 두 줄 수정으로 완료
+
+**교훈:** 특정 벤더/모델 이름을 코드 전반에 퍼뜨리지 말 것. 추상화 상수 1~2개에만 격리.
+
+_작성: 2026-03-04_
+
+---
+
+### DEC-024 | NLP 자동개선 루프 — "배우는 제이"
+
+**설계 문제:** 제이가 이해하지 못하는 명령에 "명령을 이해하지 못했습니다"만 반환하면 영구적으로 개선되지 않는다.
+
+**해결:**
+1. `router.js` default case → `analyze_unknown` bot_command 발행
+2. `claude-commander.js` `handleAnalyzeUnknown()`: `claude -p` headless 실행
+   - 구조화된 프롬프트(전체 인텐트 목록 + 예시 포함) → JSON 응답
+   - 응답: `user_response` (사용자에게 전달) + `pattern` (학습할 regex)
+3. `saveLearning()`: regex 유효성 검증 후 `nlp-learnings.json`에 저장 (중복 방지)
+4. `intent-parser.js`: 5분마다 JSON 리로드, `_learnedPatterns` 배열을 keyword 앞에서 먼저 체크
+
+**장점:** 코드 수정 없이 런타임 학습. 잘못된 패턴도 JSON에서 직접 삭제 가능. LLM 교체 시 학습 데이터 그대로 유지.
+
+**한계:** Claude가 제안한 regex가 너무 광범위하면 오탐 가능. 향후 confidence score 추가 고려.
+
+_작성: 2026-03-04_
+
+---
+
+### DEC-025 | 봇 정체성 유지 — LLM 없이 역할 망각 방지
+
+**문제 정의:** 봇이 자신의 역할과 임무를 "망각"하는 현상. LLM 기반 시스템은 컨텍스트가 초기화되면 페르소나가 사라짐. 파일 기반 봇도 코드가 없으면 자신이 무엇인지 모름.
+
+**최종 목표 (사용자 명시):** "각 팀장과 팀원들이 본인의 역할과 임무를 망각하지 않고 지속 수행하는 것."
+
+**3계층 구조로 설계:**
+
+| 계층 | 담당 | 주기 | 방식 |
+|------|------|------|------|
+| 제이 | 3개 팀장 정체성 점검 | 6시간 | `identity-checker.js` — COMMANDER_IDENTITY.md 존재 + 필수 섹션 확인, 없으면 템플릿으로 자동 복원 |
+| 각 팀장 | 자신의 팀원 정체성 점검 | 6시간 | `bot-identities/[id].json` 생성·갱신 (name/role/mission/llm) |
+| 각 커맨더 자신 | 자신의 역할 능동 확인 | 시작+6시간 | `BOT_IDENTITY` 하드코드 기본값 + `loadBotIdentity()` — COMMANDER_IDENTITY.md에서 역할/임무 파싱 |
+
+**LLM 없이 작동하는 이유:**
+- `BOT_IDENTITY` 하드코드 기본값: 파일 없어도 역할 유지
+- 파일 기반 로딩: 외부 API 불필요
+- 향후 LLM 연동 시 `BOT_IDENTITY.role + mission`을 시스템 프롬프트에 주입하면 됨 (확장 포인트 확보)
+
+_작성: 2026-03-04_
+
+---
+
+### DEC-026 | 제이↔클로드 직접 통신 채널
+
+**필요성:** 사용자가 Telegram에서 복잡한 질문(루나팀 전략 분석, 코드 리뷰 등)을 했을 때 제이(NLP 봇)가 직접 답하는 데는 한계가 있음. Claude Code의 전체 프로젝트 컨텍스트가 필요한 작업은 Claude Code가 직접 처리해야 함.
+
+**구현:**
+- 트리거: `/claude <질문>` 또는 `/ask <질문>` 슬래시 명령
+- 경로: intent-parser `claude_ask` → router `ask_claude` bot_command → claude-commander `handleAskClaude()`
+- 실행: `spawnSync('claude', ['-p', query, '--dangerously-skip-permissions'], { cwd: PROJECT_ROOT })`
+- 제한: 응답 3500자 (Telegram 4096자 - 여유), 타임아웃 280초 (5분 - 20초 여유)
+
+**트레이드오프:**
+- `--dangerously-skip-permissions`: 자동 승인 필요 (claude-commander가 백그라운드 데몬이므로 대화형 불가)
+- PROJECT_ROOT에서 실행: 전체 프로젝트 CLAUDE.md + 메모리 컨텍스트 로드됨
+- headless 모드: 응답이 순수 텍스트로 반환됨 (마크다운 렌더링 없음)
+
+_작성: 2026-03-04_
+
+---
+
 _최초 작성: 2026-02-27 | 작성자: 클로드 (Claude Code) + 사용자_
