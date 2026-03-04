@@ -5,25 +5,26 @@
   "main": "markets/crypto.js",
   "type": "module",
   "scripts": {
-    "crypto":    "PAPER_MODE=true node markets/crypto.js",
-    "domestic":  "PAPER_MODE=true node markets/domestic.js",
-    "overseas":  "PAPER_MODE=true node markets/overseas.js",
-    "luna":      "PAPER_MODE=true node team/luna.js --symbols=BTC/USDT",
-    "aria":      "node team/aria.js --symbol=BTC/USDT",
-    "oracle":    "node team/oracle.js --symbol=BTC/USDT",
-    "hermes":    "node team/hermes.js --symbol=BTC/USDT",
-    "sophia":    "node team/sophia.js --symbol=BTC/USDT",
-    "nemesis":   "node team/nemesis.js",
-    "check":     "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js",
-    "report":    "node team/reporter.js",
+    "crypto": "PAPER_MODE=true node markets/crypto.js",
+    "domestic": "PAPER_MODE=true node markets/domestic.js",
+    "overseas": "PAPER_MODE=true node markets/overseas.js",
+    "luna": "PAPER_MODE=true node team/luna.js --symbols=BTC/USDT",
+    "aria": "node team/aria.js --symbol=BTC/USDT",
+    "oracle": "node team/oracle.js --symbol=BTC/USDT",
+    "hermes": "node team/hermes.js --symbol=BTC/USDT",
+    "sophia": "node team/sophia.js --symbol=BTC/USDT",
+    "nemesis": "node team/nemesis.js",
+    "check": "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js",
+    "report": "node team/reporter.js",
     "report:tg": "node team/reporter.js --telegram"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "groq-sdk": "^0.9.0",
+    "axios": "^1.6.0",
     "ccxt": "^4.4.0",
     "duckdb": "^1.4.4",
+    "groq-sdk": "^0.9.0",
     "js-yaml": "^4.1.0",
-    "axios": "^1.6.0"
+    "openai": "^6.25.0"
   }
 }
