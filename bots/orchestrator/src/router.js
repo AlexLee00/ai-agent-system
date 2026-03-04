@@ -371,8 +371,16 @@ async function handleIntent(parsed, msg) {
     case 'queue':
       return getQueueSummary();
 
-    default:
-      return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
+    default: {
+      // 처리 불가 명령 → 클로드에게 분석 요청 (NLP 자동 개선)
+      const cmdId = insertBotCommand('claude', 'analyze_unknown', { text: msg.text });
+      const raw   = await waitForCommandResult(cmdId, 120000); // 2분
+      if (!raw) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
+      let r;
+      try { r = JSON.parse(raw); } catch { return raw; }
+      if (!r.ok) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
+      return r.message;
+    }
   }
 }
 

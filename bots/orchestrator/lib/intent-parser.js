@@ -4,15 +4,41 @@
  * lib/intent-parser.js — 명령 인텐트 3단계 파싱
  *
  * 1단계: 슬래시 명령 직접 매핑 (토큰 0)
- * 2단계: 키워드 패턴 매칭 (토큰 0)
+ * 2단계: 키워드 패턴 매칭 (토큰 0) — 학습된 패턴 포함 (nlp-learnings.json)
  * 3단계: LLM 폴백 파싱 (토큰 사용 — 현재 모델: llm-keys.js 참조)
  *
- * parse_source: 'slash' | 'keyword' | 'llm' | 'failed'
+ * parse_source: 'slash' | 'keyword' | 'learned' | 'llm' | 'failed'
  */
 
 const https = require('https');
+const fs    = require('fs');
+const path  = require('path');
+const os    = require('os');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
+
+// ─── 학습 패턴 로더 ─────────────────────────────────────────────────
+// claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
+
+const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+
+function loadLearnedPatterns() {
+  try {
+    if (!fs.existsSync(NLP_LEARNINGS_PATH)) return [];
+    const raw = JSON.parse(fs.readFileSync(NLP_LEARNINGS_PATH, 'utf8'));
+    return raw
+      .filter(l => l.re && l.intent)
+      .map(l => ({
+        re:     new RegExp(l.re, 'i'),
+        intent: l.intent,
+        args:   l.args || {},
+      }));
+  } catch { return []; }
+}
+
+let _learnedPatterns = loadLearnedPatterns();
+// 5분마다 리로드 (analyze_unknown이 새 패턴 추가 시 자동 반영)
+setInterval(() => { _learnedPatterns = loadLearnedPatterns(); }, 5 * 60 * 1000);
 
 // ─── LLM 폴백 설정 (3단계 파싱용) ───────────────────────────────────
 // 실제 사용 모델·키는 llm-keys.js에서 관리. 모델 교체 시 이 상수만 수정.
@@ -121,6 +147,13 @@ function extractDuration(text) {
 }
 
 function parseKeyword(text) {
+  // 학습된 패턴 우선 확인 (analyze_unknown이 추가한 패턴)
+  for (const p of _learnedPatterns) {
+    if (p.re.test(text)) {
+      return { intent: p.intent, args: p.args, source: 'learned' };
+    }
+  }
+  // 기본 정적 패턴
   for (const p of KEYWORD_PATTERNS) {
     if (p.re.test(text)) {
       const args = typeof p.args === 'function' ? p.args(null, text) : (p.args || {});

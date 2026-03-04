@@ -46,11 +46,12 @@ function getDb() {
 }
 
 // ─── 명령 실행 헬퍼 ──────────────────────────────────────────────────
-const NODE         = process.execPath;
-const DEXTER       = path.join(__dirname, 'dexter.js');
-const ARCHER       = path.join(__dirname, 'archer.js');
-const CWD          = path.join(__dirname, '..');
-const PROJECT_ROOT = path.join(os.homedir(), 'projects', 'ai-agent-system');
+const NODE               = process.execPath;
+const DEXTER             = path.join(__dirname, 'dexter.js');
+const ARCHER             = path.join(__dirname, 'archer.js');
+const CWD                = path.join(__dirname, '..');
+const PROJECT_ROOT       = path.join(os.homedir(), 'projects', 'ai-agent-system');
+const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
 
 // 텔레그램 메시지 최대 길이 (안전 마진 포함)
 const TG_MAX_CHARS = 3500;
@@ -157,15 +158,138 @@ function handleAskClaude(args) {
   return { ok: true, message };
 }
 
+/**
+ * NLP 학습 패턴 저장 (nlp-learnings.json)
+ */
+function saveLearning(entry) {
+  try {
+    let learnings = [];
+    if (fs.existsSync(NLP_LEARNINGS_PATH)) {
+      learnings = JSON.parse(fs.readFileSync(NLP_LEARNINGS_PATH, 'utf8'));
+    }
+    // 중복 패턴 방지
+    if (!learnings.some(l => l.re === entry.re)) {
+      learnings.push({ ...entry, added_at: new Date().toISOString() });
+      fs.writeFileSync(NLP_LEARNINGS_PATH, JSON.stringify(learnings, null, 2));
+      console.log(`[클로드] NLP 패턴 학습: /${entry.re}/ → ${entry.intent}`);
+    }
+  } catch (e) {
+    console.error(`[클로드] NLP 학습 저장 실패:`, e.message);
+  }
+}
+
+/**
+ * 제이가 처리 못한 메시지 분석 및 NLP 자동 개선
+ * 1) claude -p 로 의도 파악 + 사용자 응답 생성
+ * 2) 제안된 패턴을 nlp-learnings.json에 저장
+ * 3) intent-parser.js가 5분마다 리로드해서 자동 적용
+ */
+function handleAnalyzeUnknown(args) {
+  const text = (args.text || '').trim();
+  if (!text) return { ok: false, error: '분석할 텍스트 없음' };
+
+  const prompt = `너는 AI 봇 시스템 제이(Jay)의 NLP 개선 담당이다.
+제이가 처리하지 못한 사용자 메시지: "${text}"
+
+사용 가능한 인텐트 목록:
+- status              : 전체 시스템 현황 조회
+- ska_query  command=query_reservations : 오늘 예약 현황·목록
+- ska_query  command=query_today_stats  : 오늘 매출·입장 통계
+- ska_query  command=query_alerts       : 미해결 알람 목록
+- ska_action command=restart_andy       : 앤디(네이버 모니터) 재시작
+- ska_action command=restart_jimmy      : 지미(키오스크 모니터) 재시작
+- luna_action command=pause_trading     : 거래 일시정지
+- luna_action command=resume_trading    : 거래 재개
+- luna_query  command=force_report      : 투자 리포트 즉시 발송
+- luna_query  command=get_status        : 루나팀 상태·잔고 조회
+- claude_action command=run_check       : 덱스터 기본 점검
+- claude_action command=run_full        : 덱스터 전체 점검 (npm audit)
+- claude_action command=run_fix         : 덱스터 자동 수정
+- claude_action command=daily_report    : 덱스터 일일 보고
+- claude_action command=run_archer      : 아처 기술 트렌드 분석
+- claude_ask  query=<질문내용>           : 클로드 AI에게 직접 질문
+- cost    : LLM 비용·토큰 사용량
+- brief   : 야간 보류 알람 브리핑
+- queue   : 알람 큐 최근 10건
+- mute    : 무음 설정 (target, duration)
+- unmute  : 무음 해제
+- mutes   : 무음 목록
+- help    : 도움말
+- unknown : 어디에도 해당 없음
+
+할 일:
+1. 사용자 메시지의 의도를 파악한다.
+2. 가장 적합한 인텐트를 선택한다. 없으면 null.
+3. 사용자에게 전달할 자연스러운 한국어 응답을 작성한다.
+4. 향후 유사한 메시지를 자동 처리할 수 있는 JavaScript 정규식 패턴을 제안한다.
+   - 패턴은 new RegExp(pattern, 'i') 형태로 검증 가능해야 한다.
+   - 너무 포괄적이면 오탐 발생하므로 구체적으로 작성한다.
+   - 명확한 패턴이 없으면 null.
+
+반드시 JSON 한 블록만 출력 (다른 텍스트 없이):
+{
+  "user_response": "사용자에게 보낼 메시지 (한국어)",
+  "intent": "인텐트명 또는 null",
+  "args": {},
+  "pattern": "정규식 문자열 또는 null",
+  "reason": "판단 근거 한 줄"
+}`;
+
+  const result = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+    cwd:      PROJECT_ROOT,
+    timeout:  120000, // 2분
+    env:      { ...process.env },
+    encoding: 'utf8',
+  });
+
+  if (result.error) return { ok: false, error: result.error.message };
+  if (result.status !== 0) return { ok: false, error: (result.stderr || '').slice(0, 300) };
+
+  const output = (result.stdout || '').trim();
+
+  // JSON 추출
+  let parsed;
+  try {
+    const jsonMatch = output.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+  }
+
+  // 유효한 패턴 제안 → 저장 (intent-parser.js가 5분마다 리로드)
+  if (parsed.pattern && parsed.intent && parsed.intent !== 'unknown') {
+    try {
+      new RegExp(parsed.pattern); // 유효성 검증
+      saveLearning({
+        re:            parsed.pattern,
+        intent:        parsed.intent,
+        args:          parsed.args || {},
+        original_text: text,
+        reason:        parsed.reason || '',
+      });
+    } catch {
+      console.warn(`[클로드] 잘못된 정규식 패턴 무시: ${parsed.pattern}`);
+    }
+  }
+
+  const userMsg = (parsed.user_response || output).slice(0, TG_MAX_CHARS);
+  const patternAdded = (parsed.pattern && parsed.intent && parsed.intent !== 'unknown')
+    ? `\n\n💡 패턴 학습: \`${parsed.pattern}\` → ${parsed.intent}` : '';
+
+  return { ok: true, message: userMsg + patternAdded };
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
-  run_check:    handleRunCheck,
-  run_full:     handleRunFull,
-  run_fix:      handleRunFix,
-  daily_report: handleDailyReport,
-  run_archer:   handleRunArcher,
-  ask_claude:   handleAskClaude,
+  run_check:       handleRunCheck,
+  run_full:        handleRunFull,
+  run_fix:         handleRunFix,
+  daily_report:    handleDailyReport,
+  run_archer:      handleRunArcher,
+  ask_claude:      handleAskClaude,
+  analyze_unknown: handleAnalyzeUnknown,
 };
 
 async function processCommands() {
