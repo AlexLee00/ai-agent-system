@@ -16,10 +16,12 @@
 2. **mainbot.js 슬림화**: Telegram 폴링 제거, 알람 큐 처리만 담당
 3. **bot_commands 테이블**: DB 마이그레이션 v4, 팀장 지휘 채널
 4. **팀장 커맨더 3종**: ska.js, luna-commander.cjs, claude-commander.js
-5. **LLM 교체**: 제이 인텐트 파서 Groq → Gemini 2.5 Flash
-6. **NLP 고도화**: 키워드 패턴 14→24개, Gemini 프롬프트 전면 개편
-7. **TEAMS.md**: 팀 기능 정의서 신규 작성 (`context/TEAMS.md`)
-8. **/dexter·/archer**: 정적 응답 → bot_commands 실제 실행 전환
+5. **LLM 명칭 일반화**: Gemini 고정 → LLM_FALLBACK_MODEL/PROVIDER (소스별 표기: 'slash'|'learned'|'keyword'|'llm')
+6. **NLP 고도화**: 키워드 패턴 14→24개, LLM 프롬프트 전면 개편
+7. **제이↔클로드 직접 통신**: `/claude <질문>` → ask_claude bot_command → claude -p headless (5분 타임아웃)
+8. **NLP 자동개선 루프**: 미인식 명령 → analyze_unknown → Claude가 패턴 추출 → nlp-learnings.json 학습
+9. **팀장·팀원 정체성 유지**: identity-checker.js + 각 팀장 checkXxxTeamIdentity() + loadBotIdentity()
+10. **/dexter·/archer**: 정적 응답 → bot_commands 실제 실행 전환
 
 ## 다음 작업 후보
 
