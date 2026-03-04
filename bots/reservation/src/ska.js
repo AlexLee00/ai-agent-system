@@ -19,8 +19,37 @@ const { execSync } = require('child_process');
 const Database = require('better-sqlite3');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
-const BOT_NAME = '스카';
-const BOT_ID   = 'ska';
+const BOT_NAME       = '스카';
+const BOT_ID         = 'ska';
+const IDENTITY_FILE  = path.join(__dirname, '../context/COMMANDER_IDENTITY.md');
+
+// ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
+// 봇이 자신의 역할·임무를 인식하고 유지하기 위한 핵심 메커니즘.
+// 향후 LLM 추가 시 BOT_IDENTITY를 시스템 프롬프트에 주입.
+
+let BOT_IDENTITY = {
+  name:    '스카 커맨더',
+  team:    '스카팀',
+  role:    '스카팀 팀장 — 스터디카페 운영 관리 지휘',
+  mission: 'bot_commands 폴링(30초), 예약·매출·알람 조회, 앤디·지미 재시작, 팀원 정체성 점검',
+};
+
+function loadBotIdentity() {
+  try {
+    if (!fs.existsSync(IDENTITY_FILE)) {
+      console.log(`[스카] 🎭 정체성: ${BOT_IDENTITY.role} (기본값)`);
+      return;
+    }
+    const content = fs.readFileSync(IDENTITY_FILE, 'utf8');
+    const roleM    = content.match(/## 역할\n+([\s\S]*?)(?=\n## )/);
+    const missionM = content.match(/## 임무\n+([\s\S]*?)(?=\n## )/);
+    if (roleM)    BOT_IDENTITY.role    = roleM[1].trim().split('\n')[0];
+    if (missionM) BOT_IDENTITY.mission = missionM[1].trim().replace(/^- /gm, '').split('\n')[0];
+    console.log(`[스카] 🎭 정체성 로드: ${BOT_IDENTITY.role}`);
+  } catch (e) {
+    console.error(`[스카] 정체성 로드 실패:`, e.message);
+  }
+}
 
 // ─── Self-lock ─────────────────────────────────────────────────────
 const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'ska.lock');
@@ -296,17 +325,22 @@ let _identityCounter = 0;
 
 async function main() {
   acquireLock();
+  loadBotIdentity(); // 시작 시 정체성 로드
   console.log(`🤖 ${BOT_NAME} 팀장봇 시작 (PID: ${process.pid})`);
+  console.log(`   역할: ${BOT_IDENTITY.role}`);
 
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[스카] 루프 오류:`, e.message); }
 
-    // 팀원 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+    // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;
     if (_identityCounter % 720 === 2) {
-      try { checkSkaTeamIdentity(); }
-      catch (e) { console.error(`[스카] 정체성 점검 오류:`, e.message); }
+      try {
+        loadBotIdentity(); // 정체성 리로드 (파일 변경 반영)
+        console.log(`[스카] 역할 확인: ${BOT_IDENTITY.role}`);
+        checkSkaTeamIdentity();
+      } catch (e) { console.error(`[스카] 정체성 점검 오류:`, e.message); }
     }
 
     await new Promise(r => setTimeout(r, 30000)); // 30초 간격
