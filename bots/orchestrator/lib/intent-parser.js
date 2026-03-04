@@ -5,29 +5,18 @@
  *
  * 1단계: 슬래시 명령 직접 매핑 (토큰 0)
  * 2단계: 키워드 패턴 매칭 (토큰 0)
- * 3단계: Groq Scout LLM 파싱 (토큰 사용, 단 무료)
+ * 3단계: Gemini LLM 파싱 (토큰 사용, 단 무료)
  *
- * parse_source: 'slash' | 'keyword' | 'groq' | 'failed'
+ * parse_source: 'slash' | 'keyword' | 'gemini' | 'failed'
  */
 
 const https = require('https');
-const { trackTokens }   = require('./token-tracker');
-const { getGroqAccounts } = require('../../../packages/core/lib/llm-keys');
+const { trackTokens }  = require('./token-tracker');
+const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 
-// ─── Groq 클라이언트 설정 ─────────────────────────────────────────────
+// ─── Gemini 클라이언트 설정 ───────────────────────────────────────────
 
-let _groqKeys = null;
-let _groqIdx  = 0;
-
-function nextGroqKey() {
-  if (!_groqKeys) _groqKeys = getGroqAccounts().map(a => a.api_key).filter(Boolean);
-  if (_groqKeys.length === 0) return null;
-  const key = _groqKeys[_groqIdx % _groqKeys.length];
-  _groqIdx++;
-  return key;
-}
-
-const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
 
@@ -108,7 +97,7 @@ function parseKeyword(text) {
   return null;
 }
 
-// ─── 3단계: Groq Scout LLM ───────────────────────────────────────────
+// ─── 3단계: Gemini LLM ───────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 사용자의 자연어 메시지를 분석해서 JSON으로만 응답해.
@@ -131,13 +120,13 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 반드시 JSON 형식으로만 응답:
 {"intent": "...", "args": {}, "confidence": 0.0~1.0}`;
 
-async function parseGroq(text) {
-  const key = nextGroqKey();
+async function parseGemini(text) {
+  const key = getGeminiKey();
   if (!key) return null;
 
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({
-      model: GROQ_MODEL,
+      model: GEMINI_MODEL,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: text },
@@ -147,8 +136,8 @@ async function parseGroq(text) {
     }));
 
     const req = https.request({
-      hostname: 'api.groq.com',
-      path:     '/openai/v1/chat/completions',
+      hostname: 'generativelanguage.googleapis.com',
+      path:     '/v1beta/openai/chat/completions',
       method:   'POST',
       headers: {
         'Authorization': `Bearer ${key}`,
@@ -170,8 +159,8 @@ async function parseGroq(text) {
           trackTokens({
             bot:       '제이',
             team:      'orchestrator',
-            model:     GROQ_MODEL,
-            provider:  'groq',
+            model:     GEMINI_MODEL,
+            provider:  'google',
             taskType:  'command_parse',
             tokensIn:  usage.prompt_tokens     || 0,
             tokensOut: usage.completion_tokens || 0,
@@ -186,7 +175,7 @@ async function parseGroq(text) {
             resolve({
               intent: parsed.intent,
               args:   parsed.args || {},
-              source: 'groq',
+              source: 'gemini',
               confidence: parsed.confidence || 0.8,
               tokensIn:  usage.prompt_tokens     || 0,
               tokensOut: usage.completion_tokens || 0,
@@ -224,8 +213,8 @@ async function parseIntent(text) {
   const kw = parseKeyword(t);
   if (kw) return kw;
 
-  // 3단계: Groq
-  const groqResult = await parseGroq(t);
+  // 3단계: Gemini
+  const groqResult = await parseGemini(t);
   if (groqResult && groqResult.intent !== 'unknown') return groqResult;
 
   return { intent: 'unknown', args: {}, source: 'failed' };

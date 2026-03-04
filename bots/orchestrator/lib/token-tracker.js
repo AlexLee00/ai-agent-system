@@ -25,6 +25,7 @@ const PRICING = {
   'claude-haiku-4-5-20251001':                  { input: 1.00,  output: 5.00,   free: false },
   'meta-llama/llama-4-scout-17b-16e-instruct':  { input: 0,     output: 0,      free: true  },
   'google-gemini-cli/gemini-2.5-flash':         { input: 0,     output: 0,      free: true  },
+  'gemini-2.5-flash':                           { input: 0,     output: 0,      free: true  },
   'groq/llama-3.1-8b-instant':                  { input: 0,     output: 0,      free: true  },
 };
 
