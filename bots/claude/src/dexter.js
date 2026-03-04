@@ -18,6 +18,7 @@
 const fs      = require('fs');
 const cfg     = require('../lib/config');
 const teamBus = require('../lib/team-bus');
+const { publishToMainBot } = require('../lib/mainbot-client');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -129,6 +130,16 @@ async function main() {
       const text = buildTelegramText(results, elapsed);
       const sent = await sendTelegram(text);
       if (!SILENT) console.log(sent ? '✅ 텔레그램 알림 발송' : '⚠️  텔레그램 발송 실패');
+
+      // 메인봇 큐에도 발행 (알람 통합)
+      const criticals = results.filter(r => r.status === 'critical');
+      const errors    = results.filter(r => r.status === 'error');
+      const level     = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;
+      publishToMainBot({
+        from_bot: 'dexter', event_type: 'system', alert_level: level,
+        message: `덱스터 점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류\n${text.split('\n')[0]}`,
+        payload: { criticals: criticals.length, errors: errors.length },
+      });
     } else {
       if (!SILENT) console.log('  ✅ 이상 없음 — 텔레그램 발송 생략');
     }

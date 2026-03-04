@@ -14,6 +14,7 @@ const { transformAndNormalizeData } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { sendTelegram: sendTelegramDirect, flushPendingTelegrams } = require('../../lib/telegram');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { printModeBanner, getModeSuffix } = require('../../lib/mode');
 const { recordHeartbeat, markStopped } = require('../../lib/status');
@@ -324,13 +325,13 @@ async function naverLogin(page) {
 
       if (!securityCheck.alreadyDone && (securityCheck.isNaverAuth || securityCheck.hasSecurityKeyword)) {
         log(`🔐 보안인증 화면 감지: ${JSON.stringify(securityCheck)}`);
-        sendTelegramDirect(
-          `🔐 네이버 보안인증 필요!\n\n` +
+        const _authMsg = `🔐 네이버 보안인증 필요!\n\n` +
           `로그인 후 추가 인증 화면이 감지됐어요.\n` +
           `원격으로 맥북에 접속해서 인증을 완료해주세요.\n\n` +
           `✅ 인증 완료되면 자동으로 모니터링이 재개됩니다.\n` +
-          `⏳ 최대 30분 대기 후 자동으로 재시작됩니다.`
-        );
+          `⏳ 최대 30분 대기 후 자동으로 재시작됩니다.`;
+        sendTelegramDirect(_authMsg); // CRITICAL — 직접 발송 유지
+        publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 4, message: _authMsg });
       } else if (securityCheck.alreadyDone) {
         log('✅ 로그인 후 즉시 대시보드 감지 → 보안인증 불필요');
       }
