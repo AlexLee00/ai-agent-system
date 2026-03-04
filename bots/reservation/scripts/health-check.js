@@ -134,11 +134,33 @@ function main() {
       continue;
     }
 
+    // 미로드 → 회복 시 state 클리어 + 알림
+    if (state[`unloaded:${label}`]) {
+      console.log(`[헬스체크] ${shortName} 로드 회복 확인`);
+      publishToMainBot({
+        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
+        message: `✅ [스카 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`,
+      });
+      delete state[`unloaded:${label}`];
+    }
+
     // 2. 상시 서비스 다운 감지 (PID 없음)
-    if (CONTINUOUS.includes(label) && !svc.running) {
-      const key = `down:${label}`;
-      if (canAlert(state, key)) {
-        issues.push({ key, msg: `🔴 [스카 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
+    if (CONTINUOUS.includes(label)) {
+      if (!svc.running) {
+        const key = `down:${label}`;
+        if (canAlert(state, key)) {
+          issues.push({ key, msg: `🔴 [스카 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
+        }
+      } else {
+        // PID 회복 시 state 클리어 + 알림
+        if (state[`down:${label}`]) {
+          console.log(`[헬스체크] ${shortName} PID 회복 확인`);
+          publishToMainBot({
+            from_bot: 'ska', event_type: 'health_check', alert_level: 1,
+            message: `✅ [스카 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`,
+          });
+          delete state[`down:${label}`];
+        }
       }
     }
 
@@ -147,6 +169,17 @@ function main() {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (canAlert(state, key)) {
         issues.push({ key, msg: `⚠️ [스카 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
+      }
+    } else {
+      // exit code 정상(0) → 이전 오류 키 있으면 회복으로 판단
+      const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
+      if (prevKeys.length > 0) {
+        console.log(`[헬스체크] ${shortName} 회복 확인 (exit code → 0)`);
+        publishToMainBot({
+          from_bot: 'ska', event_type: 'health_check', alert_level: 1,
+          message: `✅ [스카 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`,
+        });
+        prevKeys.forEach(k => delete state[k]);
       }
     }
   }
@@ -160,11 +193,16 @@ function main() {
       const minAgo = Math.floor(naverLog.ageMs / 60000);
       issues.push({ key, msg: `⚠️ [스카 헬스] naver-monitor 로그 무활동\n${minAgo}분간 로그 미기록 — 크래시루프 가능성` });
     }
-  }
-
-  if (issues.length === 0) {
-    console.log(`[헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);
-    return;
+  } else if (naverLog.exists && !naverLog.stale) {
+    // 로그 정상화 시 state 클리어 + 알림
+    if (state['stale:ai.ska.naver-monitor']) {
+      console.log('[헬스체크] naver-monitor 로그 활동 재개 확인');
+      publishToMainBot({
+        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
+        message: `✅ [스카 헬스] naver-monitor 회복\n로그 활동 재개 — 자동 감지`,
+      });
+      delete state['stale:ai.ska.naver-monitor'];
+    }
   }
 
   // 알림 발송 + 상태 기록
@@ -174,7 +212,12 @@ function main() {
     state[key] = now;
   }
 
+  // 이슈 유무 관계없이 state 저장 (회복 시 클리어된 키도 반영)
   saveState(state);
+
+  if (issues.length === 0) {
+    console.log(`[헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);
+  }
 }
 
 try {
