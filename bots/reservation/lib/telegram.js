@@ -35,7 +35,7 @@ function tryTelegramSend(message, chatId = DEFAULT_CHAT_ID) {
   return new Promise((resolve) => {
     try {
       const text = `🔔 ${TEAM_NAME}\n\n${message}`;
-      const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
+      const body = Buffer.from(JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }));
       const req = https.request({
         hostname: 'api.telegram.org',
         path: `/bot${BOT_TOKEN}/sendMessage`,

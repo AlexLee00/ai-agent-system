@@ -63,6 +63,12 @@
 - manual scripts 교체 (pickko-revenue-confirm, e2e-test)
 <!-- session-close:2026-03-04:메인봇-문서화-timemode-연동-전체-sendtel -->
 
+### ✨ API 문서 분석 기반 개선사항 적용
+- parse_mode HTML 추가 (telegram.js + mainbot.js)
+- 4096자 메시지 분할 로직 (mainbot.js)
+- LLM_DOCS.md 업데이트 (Telegram 9.5 + Groq 신모델 + OpenClaw + Claude 자동 캐싱)
+<!-- session-close:2026-03-04:api-문서-분석-기반-개선사항-적용 -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)

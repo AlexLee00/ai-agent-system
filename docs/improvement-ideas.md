@@ -1,6 +1,6 @@
 # 시스템 개선 아이디어 & 개발 백로그
 
-> 최종 업데이트: 2026-03-03
+> 최종 업데이트: 2026-03-04
 > 맥미니 M4 Pro 64GB 주문 완료 (2026-03-03) — 약 6주 후 도착 예정 (4월 중순)
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## ✅ 완료 이력 (2026-03-03 기준)
+## ✅ 완료 이력 (2026-03-04 기준)
 
 ### 스카팀
 
@@ -101,6 +101,19 @@
 | pre-commit yaml 검사 | 2026-03-03 | .yaml/.yml/.sh/.env 파일까지 시크릿 검사 확장 |
 | config.yaml git 정리 | 2026-03-03 | filter-repo로 전체 이력 제거 + .gitignore 등록 |
 | 코딩가이드 v3 | 2026-03-03 | §0보안/§11재시작/§14OBSERVE_ONLY/§17클로드팀/보안사고 반영 |
+
+### 메인봇 (오케스트레이터 / 제이)
+
+| 항목 | 완료일 | 내용 |
+|------|--------|------|
+| 메인봇 구현 | 2026-03-04 | mainbot.js/router/filter/dashboard + launchd ai.orchestrator |
+| 팀별 publishToMainBot | 2026-03-04 | 스카(CJS) + 루나(ESM) + 클로드(CJS) 클라이언트 |
+| sendTelegram 전면 교체 | 2026-03-04 | 전체 봇 → publishToMainBot (mainbot_queue 경유) |
+| time-mode.js 연동 | 2026-03-04 | 루나팀 사이클/minScore 시간대별 자동 조정 |
+| parse_mode HTML | 2026-03-04 | telegram.js + mainbot.js 포매팅 버그 수정 |
+| 4096자 분할 전송 | 2026-03-04 | mainbot.js splitMessage() |
+| docs/MAINBOT.md | 2026-03-04 | 설계/아키텍처/명령체계/6주 안정화 계획 |
+| LLM_DOCS.md §8·§9 신규 | 2026-03-04 | Telegram Bot API 9.5 + OpenClaw 섹션 추가 |
 
 ### OpenClaw / 인프라
 
