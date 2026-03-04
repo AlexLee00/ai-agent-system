@@ -43,30 +43,40 @@ function isAuthorized(chatId) {
   return String(chatId) === _allowedChatId;
 }
 
-const HELP_TEXT = `🤖 메인봇 명령 목록
+const HELP_TEXT = `🤖 제이(Jay) 명령 안내
 
-📊 조회
-  /status     — 전체 시스템 현황
-  /cost       — LLM 토큰/비용 현황
-  /queue      — 최근 알람 큐
-  /mutes      — 활성 무음 목록
+📊 시스템 조회
+  /status   또는 "시스템 상태", "전체 현황"
+  /cost     또는 "비용 얼마야", "토큰 사용량"
+  /queue    또는 "알람 큐 확인"
+  /mutes    또는 "무음 목록"
+  /brief    또는 "야간 브리핑"
 
 🔇 무음 제어
-  /mute <대상> <시간>  — 무음 설정
-    대상: all | luna | ska | dexter | archer
-         | investment | reservation | claude
+  /mute <대상> <시간>   예) /mute luna 1h
+    대상: all | luna | ska | claude
     시간: 30m | 1h | 2h | 1d
-  /unmute <대상>       — 무음 해제
+  /unmute <대상>
 
-📋 팀 현황
-  /luna    — 루나팀 현황
-  /ska     — 스카팀 현황
-  /dexter  — 덱스터 시스템 점검 요청
-  /archer  — 아처 기술 소화 현황
+📅 스카팀 (스터디카페)
+  "오늘 예약 뭐 있어"       → 예약 목록
+  "오늘 매출 얼마야"         → 매출·통계
+  "알람 있어?"               → 미해결 알람
+  "앤디 재시작해"            → 앤디 재시작
+  "지미 죽었어"              → 지미 재시작
 
-🌅 기타
-  /brief  — 야간 보류 알람 브리핑
-  /help   — 이 도움말`;
+🌙 루나팀 (자동매매)
+  "루나 상태 어때"           → 현황·잔고
+  "루나 리포트 줘"           → 투자 리포트
+  "매매 멈춰"                → 거래 일시정지
+  "거래 재개해"              → 거래 재개
+
+🔧 클로드팀 (유지보수)
+  "덱스터 점검해"            → 시스템 점검
+  "전체 점검해줘"            → 전체 점검 (audit)
+  "덱스터 수정해"            → 자동 수정
+  "아처 실행해"              → 기술 트렌드 분석
+  "일일 보고해줘"            → 일일 리포트`;
 
 // ─── bot_commands 유틸 ────────────────────────────────────────────────
 
@@ -322,11 +332,17 @@ async function handleIntent(parsed, msg) {
       return formatClaudeResult(command, raw);
     }
 
-    case 'dexter':
-      return `🔧 덱스터는 launchd 주기(1시간)로 자동 실행됩니다.\n수동 실행: node bots/claude/src/dexter.js --telegram`;
+    case 'dexter': {
+      const cmdId = insertBotCommand('claude', 'run_check', {});
+      const raw   = await waitForCommandResult(cmdId, 300000);
+      return formatClaudeResult('run_check', raw);
+    }
 
-    case 'archer':
-      return `🎯 아처는 매주 월요일 09:00 KST 자동 실행됩니다.\n수동 실행: node bots/claude/src/archer.js --telegram`;
+    case 'archer': {
+      const cmdId = insertBotCommand('claude', 'run_archer', {});
+      const raw   = await waitForCommandResult(cmdId, 300000);
+      return formatClaudeResult('run_archer', raw);
+    }
 
     case 'brief': {
       const items = flushMorningQueue();
