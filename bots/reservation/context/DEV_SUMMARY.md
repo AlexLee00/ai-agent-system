@@ -279,6 +279,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-03-02 | **취소-테스트-성공-avail-gone-복구-확인** | 이승호 B룸 18:00 취소 테스트 성공 (픽코취소+네이버해제) 외 1건 |
 | 2026-03-02 | **예약 취소 E2E 완성 + TOOLS.md 취소/등록 도구 정비** | pickko-cancel-cmd.js 2단계 취소(픽코+네이버 해제) 완성 외 4건 |
 | 2026-03-04 | **전체 봇 sendTelegram → publishToMainBot 전면 교체** | error-tracker.js 마지막 교체 완료 외 1건 |
+| 2026-03-04 | **LLM키통합+알람버그수정+덱스터패턴학습** | packages/core/lib/llm-keys.js 공용 LLM 키 로더 외 3건 |
+<!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습 -->
 <!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정 -->
 <!-- session-close:2026-03-02:취소테스트성공availgone복구확인 -->

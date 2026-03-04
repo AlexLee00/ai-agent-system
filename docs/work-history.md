@@ -69,6 +69,13 @@
 - LLM_DOCS.md 업데이트 (Telegram 9.5 + Groq 신모델 + OpenClaw + Claude 자동 캐싱)
 <!-- session-close:2026-03-04:api-문서-분석-기반-개선사항-적용 -->
 
+### ✨ LLM키통합+알람버그수정+덱스터패턴학습
+- packages/core/lib/llm-keys.js 공용 LLM 키 로더
+- mainbot_queue 무한반복 알람 버그 수정
+- 덱스터 mainbot_queue 건강 체크 추가
+- 덱스터 오류 패턴 학습 시스템 (dexter_error_log)
+<!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습 -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)
