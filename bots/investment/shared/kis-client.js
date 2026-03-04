@@ -19,16 +19,21 @@ const BASE_URL_PAPER = 'https://openapivts.koreainvestment.com:29443';
 const BASE_URL_LIVE  = 'https://openapi.koreainvestment.com:9443';
 
 const TR_ID = {
-  DOMESTIC_BUY_PAPER:   'VTTC0802U',
-  DOMESTIC_SELL_PAPER:  'VTTC0801U',
-  DOMESTIC_BUY_LIVE:    'TTTC0802U',
-  DOMESTIC_SELL_LIVE:   'TTTC0801U',
-  OVERSEAS_BUY_PAPER:   'VTTT1002U',
-  OVERSEAS_SELL_PAPER:  'VTTT1006U',   // 미국 매도 모의투자
-  OVERSEAS_BUY_LIVE:    'TTTT1002U',
-  OVERSEAS_SELL_LIVE:   'TTTT1006U',   // 미국 매도 실전
-  DOMESTIC_PRICE:       'FHKST01010100',
-  OVERSEAS_PRICE:       'HHDFS76200200', // 해외주식 현재체결가
+  DOMESTIC_BUY_PAPER:      'VTTC0802U',
+  DOMESTIC_SELL_PAPER:     'VTTC0801U',
+  DOMESTIC_BUY_LIVE:       'TTTC0802U',
+  DOMESTIC_SELL_LIVE:      'TTTC0801U',
+  OVERSEAS_BUY_PAPER:      'VTTT1002U',
+  OVERSEAS_SELL_PAPER:     'VTTT1006U',   // 미국 매도 모의투자
+  OVERSEAS_BUY_LIVE:       'TTTT1002U',
+  OVERSEAS_SELL_LIVE:      'TTTT1006U',   // 미국 매도 실전
+  DOMESTIC_PRICE:          'FHKST01010100',
+  OVERSEAS_PRICE:          'HHDFS76200200', // 해외주식 현재체결가
+  // ── 잔고 조회 ──
+  DOMESTIC_BALANCE_PAPER:  'VTTC8434R',
+  DOMESTIC_BALANCE_LIVE:   'TTTC8434R',
+  OVERSEAS_BALANCE_PAPER:  'VTTS3012R',
+  OVERSEAS_BALANCE_LIVE:   'TTTS3012R',
 };
 
 // ─── 토큰 관리 ─────────────────────────────────────────────────────
@@ -372,4 +377,92 @@ export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const ordNo = res.output?.ODNO;
   console.log(`  ✅ [KIS] ${tag} 해외 매도 완료: ${symbol} ${qty}주 주문번호=${ordNo}`);
   return { qty, price: currentPrice, totalUsd: qty * currentPrice, ordNo };
+}
+
+// ─── 잔고 조회 ───────────────────────────────────────────────────────
+
+/**
+ * 국내주식 잔고 조회 (보유종목·평가손익)
+ * TR_ID: TTTC8434R (실전) / VTTC8434R (모의)
+ */
+export async function getDomesticBalance(paper) {
+  const usePaper = paper ?? isKisPaper();
+  const { cano, prodCd } = parseAccount(usePaper);
+  const data = await kisRequest('GET', '/uapi/domestic-stock/v1/trading/inquire-balance', {
+    trId: usePaper ? TR_ID.DOMESTIC_BALANCE_PAPER : TR_ID.DOMESTIC_BALANCE_LIVE,
+    params: {
+      CANO:                   cano,
+      ACNT_PRDT_CD:           prodCd,
+      AFHR_FLPR_YN:           'N',
+      OFL_YN:                 '',
+      INQR_DVSN:              '02',   // 02=종목별
+      UNPR_DVSN:              '01',
+      FUND_STTL_ICLD_YN:      'N',
+      FNCG_AMT_AUTO_RDPT_YN:  'N',
+      PRCS_DVSN:              '01',
+      CTX_AREA_FK100:         '',
+      CTX_AREA_NK100:         '',
+    },
+    paper: usePaper,
+  });
+
+  const holdings = (data.output1 || []).map(h => ({
+    symbol:    h.pdno,
+    name:      h.prdt_name,
+    qty:       parseInt(h.hldg_qty    || '0', 10),
+    avg_price: parseFloat(h.pchs_avg_pric || '0'),
+    eval_amt:  parseInt(h.evlu_amt    || '0', 10),
+    pnl_amt:   parseInt(h.evlu_pfls_amt  || '0', 10),
+    pnl_pct:   parseFloat(h.evlu_pfls_rt  || '0'),
+  })).filter(h => h.qty > 0);
+
+  const sum = data.output2?.[0] || {};
+  return {
+    holdings,
+    total_eval_amt:     parseInt(sum.tot_evlu_amt       || '0', 10),
+    total_purchase_amt: parseInt(sum.pchs_amt_smtl_amt  || '0', 10),
+    total_pnl_amt:      parseInt(sum.evlu_pfls_smtl_amt || '0', 10),
+    dnca_tot_amt:       parseInt(sum.dnca_tot_amt        || '0', 10),  // 예수금
+    paper: usePaper,
+  };
+}
+
+/**
+ * 해외주식 잔고 조회 (미국)
+ * TR_ID: TTTS3012R (실전) / VTTS3012R (모의)
+ */
+export async function getOverseasBalance(paper) {
+  const usePaper = paper ?? isKisPaper();
+  const { cano, prodCd } = parseAccount(usePaper);
+  const data = await kisRequest('GET', '/uapi/overseas-stock/v1/trading/inquire-balance', {
+    trId: usePaper ? TR_ID.OVERSEAS_BALANCE_PAPER : TR_ID.OVERSEAS_BALANCE_LIVE,
+    params: {
+      CANO:            cano,
+      ACNT_PRDT_CD:    prodCd,
+      OVRS_EXCG_CD:    'NASD',  // 나스닥 기준 (NASD/NYSE/AMEX)
+      TR_CRCY_CD:      'USD',
+      CTX_AREA_FK200:  '',
+      CTX_AREA_NK200:  '',
+    },
+    paper: usePaper,
+  });
+
+  const holdings = (data.output1 || []).map(h => ({
+    symbol:     h.ovrs_pdno,
+    name:       h.ovrs_item_name,
+    qty:        parseFloat(h.ovrs_cblc_qty    || '0'),
+    avg_price:  parseFloat(h.pchs_avg_pric    || '0'),
+    curr_price: parseFloat(h.now_pric2        || '0'),
+    eval_usd:   parseFloat(h.ovrs_stck_evlu_amt  || '0'),
+    pnl_usd:    parseFloat(h.frcr_evlu_pfls_amt  || '0'),
+    pnl_pct:    parseFloat(h.evlu_pfls_rt         || '0'),
+  })).filter(h => h.qty > 0);
+
+  const sum = data.output2 || {};
+  return {
+    holdings,
+    total_eval_usd: parseFloat(sum.tot_evlu_pfls_amt2 || '0'),
+    total_pnl_usd:  parseFloat(sum.ovrs_tot_pfls       || '0'),
+    paper: usePaper,
+  };
 }

@@ -171,6 +171,106 @@ function handleResumeTrading() {
 }
 
 /**
+ * execSync 실행 헬퍼 (manual/ 스크립트용)
+ */
+function runManualScript(relPath, cliArgs = []) {
+  const nodeExe = process.execPath;
+  const script  = path.join(__dirname, relPath);
+  if (!fs.existsSync(script)) return { ok: false, error: `스크립트 없음: ${relPath}` };
+
+  const argStr = cliArgs.join(' ');
+  const stdout = execSync(`${nodeExe} ${script} ${argStr}`, {
+    cwd:     __dirname,
+    timeout: 60000,
+    env:     { ...process.env },
+  }).toString().trim();
+
+  const jsonLine = stdout.split('\n').filter(l => l.startsWith('{')).pop();
+  if (!jsonLine) return { ok: false, error: '스크립트 출력 없음', raw: stdout.slice(0, 200) };
+  return JSON.parse(jsonLine);
+}
+
+/**
+ * 업비트 전체 잔고 조회
+ */
+function handleGetUpbitBalance() {
+  try {
+    return runManualScript('manual/balance/upbit-balance.js');
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
+ * 바이낸스 전체 잔고 조회
+ */
+function handleGetBinanceBalance() {
+  try {
+    return runManualScript('manual/balance/binance-balance.js');
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
+ * 암호화폐 현재가 조회
+ */
+function handleGetCryptoPrice(args) {
+  try {
+    const cliArgs = args?.symbol ? [`--symbol=${args.symbol}`] : [];
+    return runManualScript('manual/price/crypto-price.js', cliArgs);
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
+ * KIS 국내주식 잔고 조회
+ */
+function handleGetKisDomesticBalance() {
+  try {
+    return runManualScript('manual/balance/kis-balance.js', ['--type=domestic']);
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
+ * KIS 해외주식 잔고 조회
+ */
+function handleGetKisOverseasBalance() {
+  try {
+    return runManualScript('manual/balance/kis-balance.js', ['--type=overseas']);
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
+ * 업비트 KRW→USDT 매수 후 바이낸스 전송
+ * (실제 자금 이동 — secrets.json upbit_access_key / binance_deposit_address_usdt 필요)
+ */
+function handleUpbitToBinance() {
+  try {
+    const nodeExe = process.execPath;
+    const script  = path.join(__dirname, 'manual', 'transfer', 'upbit-to-binance.js');
+    if (!fs.existsSync(script)) return { ok: false, error: `스크립트 없음: manual/transfer/upbit-to-binance.js` };
+
+    const stdout = execSync(`${nodeExe} ${script}`, {
+      cwd:     __dirname,
+      timeout: 120000,
+      env:     { ...process.env },
+    }).toString().trim();
+
+    const jsonLine = stdout.split('\n').filter(l => l.startsWith('{')).pop();
+    if (!jsonLine) return { ok: false, error: '스크립트 출력 없음', raw: stdout.slice(0, 200) };
+    return JSON.parse(jsonLine);
+  } catch (e) {
+    return { ok: false, error: e.stderr?.toString()?.slice(0, 400) || e.message };
+  }
+}
+
+/**
  * 투자 리포트 강제 실행
  */
 function handleForceReport() {
@@ -222,10 +322,16 @@ function handleGetStatus() {
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
-  pause_trading:  handlePauseTrading,
-  resume_trading: handleResumeTrading,
-  force_report:   handleForceReport,
-  get_status:     handleGetStatus,
+  pause_trading:             handlePauseTrading,
+  resume_trading:            handleResumeTrading,
+  force_report:              handleForceReport,
+  get_status:                handleGetStatus,
+  upbit_to_binance:          handleUpbitToBinance,
+  get_upbit_balance:         handleGetUpbitBalance,
+  get_binance_balance:       handleGetBinanceBalance,
+  get_crypto_price:          handleGetCryptoPrice,
+  get_kis_domestic_balance:  handleGetKisDomesticBalance,
+  get_kis_overseas_balance:  handleGetKisOverseasBalance,
 };
 
 async function processCommands() {
