@@ -24,7 +24,8 @@
 | `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands 연동 |
 | `src/filter.js` | 무음·중복·야간 필터 |
 | `src/dashboard.js` | /status 빌더 |
-| `lib/intent-parser.js` | 3단계 파싱 (slash→keyword→Gemini) |
+| `lib/intent-parser.js` | 4단계 파싱 (slash→learned→keyword→LLM fallback) + nlp-learnings.json 5분 리로드 |
+| `lib/identity-checker.js` | 팀장 커맨더 정체성 점검·자동 복원 (6시간 주기) |
 | `lib/token-tracker.js` | LLM 토큰 추적 |
 | `lib/mute-manager.js` | 무음 관리 |
 | `lib/night-handler.js` | 야간 보류 큐 |
@@ -52,14 +53,26 @@
 - `run_fix` — 덱스터 자동 수정
 - `daily_report` — 덱스터 일일 보고
 - `run_archer` — 아처 실행
+- `ask_claude` — Claude AI 직접 질문 (claude -p headless)
+- `analyze_unknown` — 미인식 명령 분석 + NLP 패턴 학습
 
 ## NLP 파싱 정책
 
-- **제이 인텐트 파싱**: 3단계 (slash → keyword 24개 → Gemini 2.5 Flash fallback)
-- **키워드 커버리지**: "앤디 죽었어", "매매 멈춰", "서버 괜찮아?", "AI 트렌드 알려줘" 등 구어체 포함
-- **Gemini 시스템 프롬프트**: 팀별 컨텍스트·자연어 예시 포함 (intent-parser.js)
+- **제이 인텐트 파싱**: 4단계 (slash → learned → keyword → LLM fallback)
+  - `slash`: `/명령어` 정적 매핑
+  - `learned`: `~/.openclaw/workspace/nlp-learnings.json` (5분 리로드, Claude가 자동 학습)
+  - `keyword`: 정적 패턴 24개 (구어체 포함)
+  - `llm`: LLM_FALLBACK (현재 Gemini 2.5 Flash — 변경 가능)
+- **미인식 명령 자동 개선**: default case → analyze_unknown → claude -p → 패턴 추출 → nlp-learnings.json
+- **제이↔클로드 직접 통신**: `/claude <질문>` or `/ask <질문>` → ask_claude bot_command (5분 타임아웃)
 - **TEAMS.md**: 팀 기능 정의서 (`context/TEAMS.md`) — 신규 봇 추가 시 업데이트 필요
-- **/dexter·/archer**: bot_commands 실제 실행 (5분 타임아웃)
+
+## 정체성 유지 시스템
+
+- **제이(mainbot.js)**: 6시간마다 `runCommanderIdentityCheck()` → 각 팀장 COMMANDER_IDENTITY.md 점검·복원
+- **각 팀장**: 6시간마다 팀원 `bot-identities/[id].json` 점검·갱신
+- **모든 커맨더**: 시작 시 + 6시간마다 `loadBotIdentity()` → `BOT_IDENTITY` 로드 (LLM 없이 작동)
+- **이슈 시**: Telegram 보고 + 자동 복원. 정상이면 침묵.
 
 ## launchd
 
