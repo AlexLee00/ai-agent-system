@@ -20,7 +20,7 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { sendTelegram } = require('../../lib/telegram');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 const {
   getAllNaverKeys, getDb,
   upsertDailySummary, getUnconfirmedSummaryBefore,
@@ -361,14 +361,14 @@ async function main() {
           `  합계: ${formatAmount(unconfirmed.total_amount)}\n\n` +
           `❓ ${prevHeader} 매출이 아직 확정되지 않았습니다. 지금 확정하시겠습니까?`;
         log('\n미컨펌 리마인드 발송:\n' + remindMsg);
-        sendTelegram(remindMsg);
+        publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 2, message: remindMsg });
       }
     }
 
     // ──── 6단계: 텔레그램 발송 ────
     log('\n[6단계] 텔레그램 발송');
     log('\n' + msg);
-    sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
     log('\n✅ 픽코 일일 요약 완료');
 
   } finally {

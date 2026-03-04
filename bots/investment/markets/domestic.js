@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.js';
 import { getKisSymbols, isKisMarketOpen, isPaperMode } from '../shared/secrets.js';
-import { sendTelegram } from '../shared/report.js';
+import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 
 import { analyzeKisMTF }               from '../team/aria.js';
@@ -69,7 +69,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   const cost  = tracker.getToday();
   const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 국내주식 사이클 중단\n일간: $${cost.usage.toFixed(4)} | 월간: $${cost.monthUsage.toFixed(4)}`;
   console.error(msg);
-  await sendTelegram(msg).catch(() => {});
+  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
   process.exit(1);
 });
 

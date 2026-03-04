@@ -14,7 +14,7 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
-const { sendTelegram } = require('../../lib/telegram');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 const { getAllNaverKeys } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 
@@ -111,7 +111,7 @@ async function main() {
     }
 
     log('\n' + report);
-    sendTelegram(report);
+    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
     log('\n✅ 픽코 일일 감사 완료');
 
   } finally {
