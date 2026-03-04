@@ -280,6 +280,101 @@ function handleAnalyzeUnknown(args) {
   return { ok: true, message: userMsg + patternAdded };
 }
 
+// ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
+
+const CLAUDE_BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+
+const CLAUDE_TEAM = [
+  {
+    id: 'dexter', name: '덱스터', launchd: 'ai.claude.dexter',
+    role: '시스템 점검 (코드 무결성·보안·DB)',
+    mission: '1시간마다 자동 점검, 이상 발견 시 Telegram 알람 발송',
+    source: path.join(CWD, 'src/dexter.js'),
+  },
+  {
+    id: 'archer', name: '아처', launchd: 'ai.claude.archer',
+    role: '기술 인텔리전스 수집·분석',
+    mission: '매주 월요일 09:00 KST 최신 AI·LLM 트렌드 수집 및 분석 보고',
+    source: path.join(CWD, 'src/archer.js'),
+  },
+  {
+    id: 'eric', name: '에릭', launchd: null,
+    role: 'Explore 에이전트 (코드베이스 탐색·리서치)',
+    mission: '수동 호출 시 코드베이스 분석 및 리서치 수행',
+    source: null,
+  },
+  {
+    id: 'kevin', name: '케빈', launchd: null,
+    role: 'Plan 에이전트 (설계·구현 계획)',
+    mission: '수동 호출 시 기능 설계 및 구현 계획 수립',
+    source: null,
+  },
+  {
+    id: 'brian', name: '브라이언', launchd: null,
+    role: 'Bash 에이전트 (명령 실행·시스템 작업)',
+    mission: '수동 호출 시 시스템 명령 실행 및 결과 보고',
+    source: null,
+  },
+];
+
+function checkClaudeTeamIdentity() {
+  if (!fs.existsSync(CLAUDE_BOT_ID_DIR)) fs.mkdirSync(CLAUDE_BOT_ID_DIR, { recursive: true });
+
+  const results = [];
+  for (const member of CLAUDE_TEAM) {
+    const issues  = [];
+    let   trained = false;
+
+    // 1. 프로세스 상태 (launchd 있는 봇만)
+    if (member.launchd) {
+      try {
+        const out = require('child_process').execSync(
+          `launchctl list ${member.launchd} 2>&1`, { encoding: 'utf8', timeout: 5000 }
+        );
+        if (out.includes('Could not find')) issues.push('프로세스 미실행');
+      } catch { issues.push('프로세스 상태 확인 실패'); }
+    }
+
+    // 2. 소스 파일 존재 (있는 경우)
+    if (member.source && !fs.existsSync(member.source)) {
+      issues.push(`소스 파일 없음: ${path.basename(member.source)}`);
+    }
+
+    // 3. 정체성 파일 체크
+    const idFile = path.join(CLAUDE_BOT_ID_DIR, `claude_${member.id}.json`);
+    if (!fs.existsSync(idFile)) {
+      fs.writeFileSync(idFile, JSON.stringify({
+        name: member.name, team: '클로드팀', role: member.role,
+        mission: member.mission, updated_at: new Date().toISOString(),
+      }, null, 2));
+      trained = true;
+      issues.push('→ 정체성 파일 생성');
+    } else {
+      const data  = JSON.parse(fs.readFileSync(idFile, 'utf8'));
+      const ageMs = Date.now() - new Date(data.updated_at || 0).getTime();
+      const miss  = ['name', 'role', 'mission'].filter(f => !data[f]);
+      if (miss.length > 0 || ageMs > 30 * 24 * 3600 * 1000) {
+        if (miss.length > 0) issues.push(`누락 필드: ${miss.join(', ')}`);
+        Object.assign(data, { name: member.name, team: '클로드팀', role: member.role, mission: member.mission, updated_at: new Date().toISOString() });
+        fs.writeFileSync(idFile, JSON.stringify(data, null, 2));
+        trained = true;
+        issues.push('→ 정체성 갱신');
+      }
+    }
+
+    results.push({ name: member.name, issues, trained });
+  }
+
+  const problems = results.filter(r => r.issues.some(i => !i.startsWith('→')));
+  if (problems.length > 0) {
+    console.log(`[클로드] 팀원 정체성 점검: ${problems.length}건 이슈`);
+    for (const r of problems) console.log(`  ${r.name}: ${r.issues.filter(i => !i.startsWith('→')).join(' | ')}`);
+  } else {
+    console.log(`[클로드] 팀원 정체성 점검: 정상`);
+  }
+  return results;
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -334,6 +429,7 @@ async function processCommands() {
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
+let _identityCounter = 0;
 
 async function main() {
   acquireLock();
@@ -342,6 +438,14 @@ async function main() {
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[클로드] 루프 오류:`, e.message); }
+
+    // 팀원 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+    _identityCounter++;
+    if (_identityCounter % 720 === 2) {
+      try { checkClaudeTeamIdentity(); }
+      catch (e) { console.error(`[클로드] 정체성 점검 오류:`, e.message); }
+    }
+
     await new Promise(r => setTimeout(r, 30000));
   }
 }

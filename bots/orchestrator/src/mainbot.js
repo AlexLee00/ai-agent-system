@@ -176,6 +176,7 @@ const { processItem }       = require('./filter');
 const { cleanExpired: cleanMutes }   = require('../lib/mute-manager');
 const { cleanExpired: cleanConfirms }= require('../lib/confirm');
 const { isBriefingTime, flushMorningQueue, buildMorningBriefing } = require('../lib/night-handler');
+const { runCommanderIdentityCheck, buildIdentityReport }          = require('../lib/identity-checker');
 
 let _lastBriefHour = -1;
 
@@ -244,12 +245,35 @@ function runCleanup() {
   } catch {}
 }
 
+// ─── 팀장 정체성 점검 (6시간 주기) ──────────────────────────────────
+// 2초 루프 기준: 30 tick = 1분, 10800 tick = 6시간
+let _identityCounter = 0;
+
+async function runIdentityCheck() {
+  try {
+    const results = runCommanderIdentityCheck();
+    const report  = buildIdentityReport(results);
+    if (report) {
+      console.log(`[mainbot] 정체성 점검 이슈 발견 → Telegram 보고`);
+      await sendTelegram(report);
+    } else {
+      console.log(`[mainbot] 정체성 점검: 모든 팀장 정상`);
+    }
+  } catch (e) {
+    console.error(`[mainbot] 정체성 점검 오류:`, e.message);
+  }
+}
+
 // ─── 메인 루프 ───────────────────────────────────────────────────────
 async function mainLoop() {
   // 큐 폴링 (2초 간격)
   await processQueue();
   await runMorningBriefing();
   runCleanup();
+
+  // 팀장 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+  _identityCounter++;
+  if (_identityCounter % 10800 === 30) await runIdentityCheck();
 }
 
 async function main() {
