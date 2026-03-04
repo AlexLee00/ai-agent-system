@@ -9,7 +9,30 @@
 
 
 
-## 2026-03-04
+## 2026-03-04 (세션 2)
+### ✅ 제이 중심 지휘 체계 구축 — 완료
+
+**완료 항목:**
+- 제이 LLM Groq → Gemini 2.5 Flash 교체 (`intent-parser.js`, `token-tracker.js`)
+- 제이 OpenClaw 에이전트 전환 — IDENTITY/MEMORY/TOOLS/HEARTBEAT.md 전면 교체
+- mainbot.js Telegram 폴링 제거 (알람 큐 처리 전용화)
+- bot_commands 테이블 추가 (DB 마이그레이션 v4)
+- 스카 커맨더 (`ska.js`) 신설 — `ai.ska.commander` launchd 등록
+- 루나 커맨더 (`luna-commander.cjs`) 신설 — `ai.investment.commander` launchd 등록
+- 클로드 커맨더 (`claude-commander.js`) 신설 — `ai.claude.commander` launchd 등록
+- intent-parser.js: ska_query/ska_action/luna_query/luna_action/claude_action 인텐트 추가
+- router.js: 각 팀 bot_commands 연동 핸들러 추가
+- crypto.js: 거래 일시정지 플래그(luna-paused.flag) 체크 추가
+
+**현재 지휘 체계:**
+```
+사장님(텔레그램) → 제이(OpenClaw) → bot_commands → 스카/루나/클로드 커맨더
+                                  ← mainbot_queue ← 팀봇 알람
+```
+
+---
+
+## 2026-03-04 (세션 1)
 ### 🔄 루나팀 Phase 3 고도화 — 미완료 상태로 중단
 
 **이전 세션(2026-03-03 심야)에서 작업된 내용 (미커밋 상태):**
