@@ -42,6 +42,15 @@ function getExchange() {
 }
 
 /**
+ * 바이낸스 USDT 가용 잔고 조회 (LU-004: 잔고 부족 알림용)
+ */
+export async function fetchUsdtBalance() {
+  const ex  = getExchange();
+  const bal = await ex.fetchBalance();
+  return bal.free?.USDT || 0;
+}
+
+/**
  * 현재가 조회 (PAPER_MODE에서도 사용)
  */
 export async function fetchTicker(symbol) {

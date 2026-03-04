@@ -139,11 +139,21 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   // ── 4. 바이낸스 실잔고 ─────────────────────────────────────────────
   const balances = await fetchBinanceBalance();
   const usdtBal  = balances.find(b => b.coin === 'USDT');
-  const totalBalUsd = balances.reduce((s, b) => {
-    if (b.coin === 'USDT') return s + b.total;
-    // 간단 추정 (정확한 계산은 각 코인 현재가 필요)
-    return s;
+
+  // LU-002: 실잔고 기반 equity 계산 (USDT free + 보유 코인 현재가 환산)
+  const nonUsdtHoldings = balances.filter(b => b.coin !== 'USDT' && b.total > 0);
+  const realCoinPrices  = nonUsdtHoldings.length > 0
+    ? await fetchPrices(nonUsdtHoldings.map(b => `${b.coin}/USDT`))
+    : {};
+  const coinUsdValue = nonUsdtHoldings.reduce((s, b) => {
+    const p = realCoinPrices[`${b.coin}/USDT`];
+    return p ? s + b.total * p : s;
   }, 0);
+  const equity = (usdtBal?.free || 0) + coinUsdValue;
+
+  // 스냅샷 저장 후 히스토리 조회 (오늘 포함)
+  try { await db.insertAssetSnapshot(equity, usdtBal?.free || 0); } catch {}
+  const equityHistory = await db.getEquityHistory(7);
 
   // ── 5. LLM 비용 ────────────────────────────────────────────────────
   const cost = tracker.getToday();
@@ -183,8 +193,27 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       lines.push(`  ${b.coin}: ${b.total.toFixed(6)} (가용 ${b.free.toFixed(6)})`);
     }
     lines.push(`  USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`);
+    lines.push(`  총 자산(추정): $${equity.toFixed(2)}`);
   }
   lines.push(``);
+
+  // 자산 추이 (스냅샷 2개 이상일 때)
+  if (equityHistory.length >= 2) {
+    lines.push(`━━━ 자산 추이 ━━━`);
+    for (const snap of equityHistory.slice(-5)) {
+      const dt = new Date(snap.snapped_at).toLocaleDateString('ko-KR', {
+        timeZone: 'Asia/Seoul', month: 'short', day: 'numeric',
+      });
+      lines.push(`  ${dt}: $${Number(snap.equity).toFixed(2)}`);
+    }
+    const oldest = Number(equityHistory[0].equity);
+    const latest  = Number(equityHistory[equityHistory.length - 1].equity);
+    const change  = latest - oldest;
+    const pct     = oldest > 0 ? (change / oldest * 100).toFixed(1) : '0.0';
+    const sign    = change >= 0 ? '+' : '';
+    lines.push(`  기간 변화: ${sign}$${change.toFixed(2)} (${sign}${pct}%)`);
+    lines.push(``);
+  }
 
   // 모의 포지션
   lines.push(`━━━ 모의 포지션 현황 ━━━`);

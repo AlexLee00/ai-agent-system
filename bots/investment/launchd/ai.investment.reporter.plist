@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.investment.reporter</string>
+
+  <!-- 루나팀 일일 리포트 — 매일 08:00 KST (23:00 UTC) -->
+  <!-- 설치: cp launchd/ai.investment.reporter.plist ~/Library/LaunchAgents/ -->
+  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.reporter.plist -->
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/team/reporter.js</string>
+    <string>--telegram</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+
+  <!-- 08:00 KST = 23:00 UTC (전날) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>23</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/investment-reporter.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/investment-reporter.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PAPER_MODE</key>
+    <string>false</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
