@@ -1393,6 +1393,10 @@ function parseJsonResponse(text) {
 | 2026-03-02 | **봇 이름 변수화 완료** — dexter.js/reporter.js/autofix.js BOT_NAME='덱스터' 상수 추가 외 3건 |
 | 2026-03-04 | **Phase 3 OPS 전환 + 투자 리포트 + 메모리 정리** — DuckDB WAL 버그 수정 (CHECKPOINT) 외 5건 |
 | 2026-03-04 | **메인봇(오케스트레이터) 구현 완료** — DB 마이그레이션(token_usage 포함) 외 6건 |
+| 2026-03-04 | **전체 봇 sendTelegram → publishToMainBot 전면 교체** — error-tracker.js 마지막 교체 완료 외 1건 |
+| 2026-03-04 | **메인봇 문서화 + time-mode 연동 + 전체 sendTelegram 교체 완료** — MAINBOT.md 최신화 외 4건 |
+<!-- session-close:2026-03-04:메인봇-문서화-timemode-연동-전체-sendtel -->
+<!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
 <!-- session-close:2026-03-04:메인봇오케스트레이터-구현-완료 -->
 <!-- session-close:2026-03-04:phase-3-ops-전환-투자-리포트-메모리-정리 -->
 <!-- session-close:2026-03-02:봇-이름-변수화-완료 -->

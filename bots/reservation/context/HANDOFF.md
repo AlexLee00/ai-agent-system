@@ -581,6 +581,13 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `src/pickko-kiosk-monitor.js`, `src/pickko-cancel-cmd.js`, `context/CLAUDE_NOTES.md`
 <!-- session-close:2026-03-02:예약-취소-e2e-완성-toolsmd-취소등록-도구-정:end -->
 
+<!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
+#### 2026-03-04 ♻️ 전체 봇 sendTelegram → publishToMainBot 전면 교체
+- error-tracker.js 마지막 교체 완료
+- dexter 체크섬 갱신 (9개 파일)
+- 관련 파일: `bots/reservation/lib/error-tracker.js`
+<!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

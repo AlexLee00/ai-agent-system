@@ -1,69 +1,16 @@
 /**
- * shared/report.js — 루나팀 텔레그램 리포터 (Phase 3-A ESM)
+ * shared/report.js — 루나팀 알림 리포터 (Phase 3-A ESM)
  *
- * bots/invest/lib/telegram.js 패턴 재사용 + 3시장 포매터 통합
+ * 모든 알림은 제이(mainbot) 큐를 통해 발송됩니다.
  */
 
-import https from 'https';
-import { loadSecrets } from './secrets.js';
-
-const SECRETS      = loadSecrets();
-const BOT_TOKEN    = SECRETS.telegram_bot_token;
-const DEFAULT_CHAT = SECRETS.telegram_chat_id;
-const TEAM_NAME    = '루나팀 v3';
-const PREFIX       = `📈 ${TEAM_NAME}`;
+import { publishToMainBot } from './mainbot-client.js';
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────
 
-function tryTelegramSend(message, chatId = DEFAULT_CHAT) {
-  if (!BOT_TOKEN) {
-    console.log(`[텔레그램 토큰 없음] ${message.slice(0, 80)}`);
-    return Promise.resolve(false);
-  }
-  if (process.env.TELEGRAM_ENABLED === '0') return Promise.resolve(true);
-
-  return new Promise((resolve) => {
-    try {
-      const text = `${PREFIX}\n\n${message}`;
-      const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
-      const req  = https.request({
-        hostname: 'api.telegram.org',
-        path:     `/bot${BOT_TOKEN}/sendMessage`,
-        method:   'POST',
-        headers:  { 'Content-Type': 'application/json', 'Content-Length': body.length },
-      }, (res) => {
-        let raw = '';
-        res.on('data', d => raw += d);
-        res.on('end', () => {
-          try {
-            const r = JSON.parse(raw);
-            if (!r.ok) console.warn(`⚠️ 텔레그램 API 오류: ${r.description || raw.slice(0, 60)}`);
-            resolve(r.ok === true);
-          } catch { resolve(false); }
-        });
-      });
-      req.on('error', (e) => { console.warn(`⚠️ 텔레그램: ${e.message}`); resolve(false); });
-      req.setTimeout(10000, () => { req.destroy(); resolve(false); });
-      req.write(body);
-      req.end();
-    } catch (e) { console.warn(`⚠️ 텔레그램 예외: ${e.message}`); resolve(false); }
-  });
-}
-
-export async function sendTelegram(message, chatId = DEFAULT_CHAT) {
-  if (process.env.TELEGRAM_ENABLED === '0') {
-    console.log(`[텔레그램 비활성] ${message.slice(0, 60)}`);
-    return true;
-  }
-  for (let i = 1; i <= 3; i++) {
-    if (await tryTelegramSend(message, chatId)) {
-      console.log(`📱 [텔레그램] 발송${i > 1 ? `(${i}회)` : ''}: ${message.slice(0, 50)}`);
-      return true;
-    }
-    if (i < 3) await new Promise(r => setTimeout(r, i * 2000));
-  }
-  console.error('❌ 텔레그램 최종 실패');
-  return false;
+export function sendTelegram(message) {
+  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message });
+  return Promise.resolve(true);
 }
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
@@ -77,7 +24,8 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
@@ -88,7 +36,8 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
     `수량: ${amount?.toFixed(6)} / 가격: $${price?.toLocaleString()}`,
     `총액: $${totalUsdt?.toFixed(2)}`,
   ].join('\n');
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
@@ -100,7 +49,8 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
@@ -112,17 +62,20 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
-  return sendTelegram(msg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: msg });
+  return Promise.resolve(true);
 }
 
 export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
@@ -142,5 +95,6 @@ export function notifyCycleSummary({ cycle, symbols, results, paperMode, duratio
   } else {
     lines.push('신호: HOLD (모든 심볼)');
   }
-  return sendTelegram(lines.join('\n'));
+  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: lines.join('\n') });
+  return Promise.resolve(true);
 }

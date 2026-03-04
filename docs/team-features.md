@@ -264,8 +264,9 @@ npm run patch:status        # 패치 현황 콘솔
 | 팀 | 봇 수 | launchd 수 | 상태 | 핵심 기술 |
 |----|------|-----------|------|---------|
 | **스카** | 5 | 19 | ✅ OPS | Puppeteer, SQLite, Prophet |
-| **루나** | 10 | 3 | 🌙 OPS(암)/테스트(주) | CCXT, KIS API, DuckDB, Groq/Haiku |
+| **루나** | 10 | 3 | 🌙 OPS(암)/테스트(주) | CCXT, KIS API, DuckDB, Groq |
 | **클로드** | 2 | 3 | ✅ DEV | Claude Sonnet, npm audit, GitHub API |
+| **메인봇** | 1 | 1 | ✅ OPS | SQLite 큐, Groq Scout, 3단계 파싱 |
 
 ### 공용 인프라
 
@@ -292,7 +293,7 @@ npm run patch:status        # 패치 현황 콘솔
 ## 메인봇 (오케스트레이터) — 알람 통합 허브
 
 **위치**: `bots/orchestrator/`
-**상태**: ✅ 구현 완료 (launchd 등록 필요)
+**상태**: ✅ OPS 운영 중 (launchd: `ai.orchestrator`, KeepAlive)
 **설명**: 모든 팀 알람을 mainbot_queue(DB)로 수신 → 필터링/배치/무음 처리 → 텔레그램 발송. 사용자 명령 라우팅.
 
 ### 핵심 기능
@@ -329,5 +330,5 @@ launchctl load ~/Library/LaunchAgents/ai.orchestrator.plist
 
 | 날짜 | 내용 |
 |------|------|
-| 2026-03-04 | 메인봇(오케스트레이터) 추가 — 알람 통합 허브, token_usage 추적, time-mode.js |
+| 2026-03-04 | 메인봇(오케스트레이터) OPS 전환 — 전체 봇 sendTelegram→publishToMainBot 교체 완료, time-mode.js 루나팀 연동 |
 | 2026-03-03 | 최초 작성 — 스카팀(v3.0 구조 반영) + 루나팀(Phase 3-A/B) + 클로드팀(덱스터/아처 v2.0) |

@@ -256,47 +256,9 @@ function buildReport(today, dexterLog, luna, ska, fixes) {
   return lines.join('\n');
 }
 
-// ─── 텔레그램 발송 ────────────────────────────────────────────────────
-
-function loadTelegramCreds() {
-  for (const p of Object.values(cfg.SECRETS)) {
-    try {
-      const s = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (s.telegram_bot_token && s.telegram_chat_id) {
-        return { token: s.telegram_bot_token, chatId: s.telegram_chat_id };
-      }
-    } catch { /* try next */ }
-  }
-  return null;
-}
-
-function sendTelegram(text) {
-  const https = require('https');
-  const creds = loadTelegramCreds();
-  if (!creds) return Promise.resolve(false);
-
-  const body = Buffer.from(JSON.stringify({
-    chat_id:    creds.chatId,
-    text,
-    parse_mode: 'Markdown',
-  }));
-
-  return new Promise((resolve) => {
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${creds.token}/sendMessage`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': body.length },
-    }, res => { res.resume(); res.on('end', () => resolve(true)); });
-
-    req.on('error', () => resolve(false));
-    req.setTimeout(10000, () => { req.destroy(); resolve(false); });
-    req.write(body);
-    req.end();
-  });
-}
-
 // ─── 메인 ────────────────────────────────────────────────────────────
+
+const { publishToMainBot } = require('./mainbot-client');
 
 async function run({ telegram = false, print = true } = {}) {
   const today = todayKST();
@@ -311,9 +273,8 @@ async function run({ telegram = false, print = true } = {}) {
   if (print) console.log(report.replace(/\*/g, '').replace(/_/g, ''));
 
   if (telegram) {
-    const sent = await sendTelegram(report);
-    if (print) console.log(sent ? '\n✅ 텔레그램 발송 완료' : '\n⚠️ 텔레그램 발송 실패');
-    return sent;
+    publishToMainBot({ from_bot: 'dexter', event_type: 'report', alert_level: 1, message: report });
+    if (print) console.log('\n✅ 제이 큐 발행 완료');
   }
 
   return true;

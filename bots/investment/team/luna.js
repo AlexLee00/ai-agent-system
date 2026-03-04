@@ -18,7 +18,8 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from '../shared/signal.js';
-import { notifySignal, notifyError, sendTelegram } from '../shared/report.js';
+import { notifySignal, notifyError } from '../shared/report.js';
+import { publishToMainBot } from '../shared/mainbot-client.js';
 import { isPaperMode } from '../shared/secrets.js';
 import { runBullResearcher } from './zeus.js';
 import { runBearResearcher } from './athena.js';
@@ -184,7 +185,7 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
  * @param {string}   exchange
  * @returns {Promise<Array>}
  */
-export async function orchestrate(symbols, exchange = 'binance') {
+export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
   let debateCount       = 0;
@@ -265,12 +266,13 @@ export async function orchestrate(symbols, exchange = 'binance') {
       return `${emoji} ${d.action} ${d.symbol} $${d.amount_usdt} (${((d.confidence || 0) * 100).toFixed(0)}%)\n  ${d.reasoning?.slice(0, 80)}`;
     }),
   ].join('\n');
-  await sendTelegram(summaryMsg);
+  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: summaryMsg });
 
   for (const dec of (portfolio_decision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    if ((dec.confidence || 0) < FUND_MIN_CONF) {
-      console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}%) → HOLD`);
+    const minConf = params?.minSignalScore ?? FUND_MIN_CONF;
+    if ((dec.confidence || 0) < minConf) {
+      console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}% < ${(minConf * 100).toFixed(0)}%) → HOLD`);
       continue;
     }
 

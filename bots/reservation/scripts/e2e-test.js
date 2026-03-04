@@ -190,12 +190,12 @@ async function runTests() {
     if (t2.getCount() !== 0) throw new Error('success 후 파일 미삭제');
   });
 
-  // ─── 8. 텔레그램 (suppressed) ─────────────────────────────
-  console.log('\n[8] 텔레그램 suppressed');
-  const { sendTelegram } = require('../lib/telegram');
+  // ─── 8. 제이 큐 (publishToMainBot) ───────────────────────
+  console.log('\n[8] 제이 큐 (publishToMainBot)');
+  const { publishToMainBot } = require('../lib/mainbot-client');
 
-  await step('TELEGRAM_ENABLED=0 발송 (차단 확인)', async () => {
-    const result = await sendTelegram('E2E 테스트 메시지 — 실제 발송 아님');
+  await step('publishToMainBot DB 삽입 확인', () => {
+    const result = publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: 1, message: 'E2E 테스트 메시지' });
     if (result !== true) throw new Error(`예상 결과: true, 실제: ${result}`);
   });
 

@@ -164,7 +164,7 @@ export async function runDomesticCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 국내주식 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);
-    await sendTelegram(`❌ 국내주식 사이클 오류\n${e.message}`).catch(() => {});
+    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 국내주식 사이클 오류\n${e.message}` });
     throw e;
   }
 }

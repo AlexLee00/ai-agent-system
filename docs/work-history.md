@@ -50,6 +50,19 @@
 - docs/MAINBOT.md
 <!-- session-close:2026-03-04:메인봇오케스트레이터-구현-완료 -->
 
+### ♻️ 전체 봇 sendTelegram → publishToMainBot 전면 교체
+- error-tracker.js 마지막 교체 완료
+- dexter 체크섬 갱신 (9개 파일)
+<!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->
+
+### ✨ 메인봇 문서화 + time-mode 연동 + 전체 sendTelegram 교체 완료
+- MAINBOT.md 최신화
+- team-features.md 메인봇 OPS 상태 반영
+- MEMORY.md 시스템 상태 업데이트
+- time-mode.js crypto.js 연동
+- manual scripts 교체 (pickko-revenue-confirm, e2e-test)
+<!-- session-close:2026-03-04:메인봇-문서화-timemode-연동-전체-sendtel -->
+
 ## 2026-03-03
 ### ✨ 루나팀 OPS 전환 + 실행 체인 버그 수정
 - **네이버 뉴스 API 등록**: 헤르메스 국내주식 뉴스 수집 활성화 (25,000 call/day)

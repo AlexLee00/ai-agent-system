@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.js';
 import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
-import { sendTelegram } from '../shared/report.js';
+import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 
 import { analyzeKisOverseasMTF }               from '../team/aria.js';
@@ -69,7 +69,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   const cost  = tracker.getToday();
   const msg   = `💸 [예산 초과] ${label} LLM 예산 초과 — 미국주식 사이클 중단\n일간: $${cost.usage.toFixed(4)} | 월간: $${cost.monthUsage.toFixed(4)}`;
   console.error(msg);
-  await sendTelegram(msg).catch(() => {});
+  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
   process.exit(1);
 });
 
@@ -164,7 +164,7 @@ export async function runOverseasCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 미국주식 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);
-    await sendTelegram(`❌ 미국주식 사이클 오류\n${e.message}`).catch(() => {});
+    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 미국주식 사이클 오류\n${e.message}` });
     throw e;
   }
 }

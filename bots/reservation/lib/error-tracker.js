@@ -19,7 +19,7 @@
 
 const fs   = require('fs');
 const path = require('path');
-const { sendTelegram } = require('./telegram');
+const { publishToMainBot } = require('./mainbot-client');
 const { log } = require('./utils');
 
 const DEFAULT_THRESHOLD   = 3;   // 연속 3회 실패 시 첫 알림
@@ -63,7 +63,7 @@ function createErrorTracker({ label = 'unknown', threshold = DEFAULT_THRESHOLD, 
    * 실패 기록. 임계값 도달 시 텔레그램 알림 발송.
    * @param {Error|string} error
    */
-  async function fail(error) {
+  function fail(error) {
     count++;
     const msg = (error instanceof Error ? error.message : String(error)) || '알 수 없는 오류';
     log(`⚠️ [${label}] 연속 오류 ${count}회: ${msg}`);
@@ -80,7 +80,7 @@ function createErrorTracker({ label = 'unknown', threshold = DEFAULT_THRESHOLD, 
         `시각: ${new Date().toLocaleTimeString('ko-KR')}`,
       ];
       if (count > threshold) lines.push(`(${count - threshold}회 추가 지속 — 수동 확인 권장)`);
-      await sendTelegram(lines.join('\n'));
+      publishToMainBot({ from_bot: 'ska', event_type: 'alert', alert_level: 3, message: lines.join('\n') });
     }
   }
 

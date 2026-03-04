@@ -11,7 +11,7 @@
  */
 
 const { log } = require('../../lib/utils');
-const { sendTelegram } = require('../../lib/telegram');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 const {
   getLatestUnconfirmedSummary,
   confirmDailySummary,
@@ -39,7 +39,7 @@ async function main() {
   if (!pending) {
     const msg = '✅ 컨펌할 매출 내역이 없습니다.\n(이미 모두 확정됐거나 아직 보고된 내역이 없습니다)';
     log(msg);
-    sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
     console.log(JSON.stringify({ ok: false, reason: 'no_pending' }));
     return;
   }
@@ -51,7 +51,7 @@ async function main() {
   if (!result) {
     const msg = `❌ 컨펌 처리 실패: ${pending.date}`;
     log(msg);
-    sendTelegram(msg);
+    publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: msg });
     console.log(JSON.stringify({ ok: false, reason: 'confirm_failed' }));
     return;
   }
@@ -85,7 +85,7 @@ async function main() {
   }
 
   log('\n' + msg);
-  sendTelegram(msg);
+  publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
 
   console.log(JSON.stringify({
     ok:         true,
@@ -97,7 +97,7 @@ async function main() {
 
 main().catch(err => {
   log(`❌ 치명 오류: ${err.message}`);
-  sendTelegram(`❌ 매출 컨펌 오류: ${err.message}`);
+  publishToMainBot({ from_bot: 'ska', event_type: 'system_error', alert_level: 3, message: `❌ 매출 컨펌 오류: ${err.message}` });
   console.log(JSON.stringify({ ok: false, reason: err.message }));
   process.exit(1);
 });
