@@ -9,6 +9,22 @@
 
 
 
+## 2026-03-04 (세션 3)
+### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
+
+**완료 항목:**
+- **제이↔클로드 직접 통신**: `/claude`, `/ask` 슬래시 명령 → `ask_claude` bot_command → `claude -p headless` (5분 타임아웃)
+- **LLM 명칭 일반화**: `parseGemini` → `parseLLMFallback`, `GEMINI_MODEL` → `LLM_FALLBACK_MODEL/PROVIDER` — LLM 교체 시 두 줄만 변경
+- **NLP 4단계 파싱**: slash → learned → keyword → LLM fallback (소스 태그: 'slash'|'learned'|'keyword'|'llm')
+- **NLP 자동개선 루프**: 미인식 명령 → `analyze_unknown` bot_command → Claude가 JSON 응답(user_response + 패턴) → `nlp-learnings.json` 저장 → intent-parser.js 5분 리로드
+- **팀장 정체성 점검**: `identity-checker.js` — 제이가 6시간마다 3개 팀장 COMMANDER_IDENTITY.md 점검·자동 복원
+- **팀원 정체성 점검**: 스카(4명) / 루나(10명) / 클로드(5명) 각 팀장이 6시간마다 bot-identities JSON 갱신
+- **커맨더 정체성 능동 유지**: 각 커맨더 `BOT_IDENTITY` 하드코드 기본값 + `loadBotIdentity()` 시작 및 6시간 리로드 (LLM 없이 작동)
+
+**커밋:** `010b944`, `bd155de`, `8ab4686`, `1b2e1e7`, `24702f5`
+
+---
+
 ## 2026-03-04 (세션 2)
 ### ✅ 제이 중심 지휘 체계 구축 — 완료
 
@@ -55,6 +71,14 @@
 - LLM 속도테스트 모델 목록 갱신
 - OpenAI 키 갱신 및 o-시리즈 파라미터 수정
 <!-- session-close:2026-03-04:팀-기능-문서화-및-제이-nlp-고도화 -->
+
+### ✨ 제이↔클로드 통신·NLP자동개선·정체성유지시스템
+- 제이↔클로드 직접 통신 채널 (ask_claude)
+- NLP 자동개선 루프 (analyze_unknown → nlp-learnings.json)
+- 팀장·팀원 정체성 주기적 점검 및 자동 학습
+- 각 커맨더 LLM 없이 파일 기반 정체성 능동 유지
+- LLM 명칭 일반화 (Gemini → LLM_FALLBACK)
+<!-- session-close:2026-03-04:제이클로드-통신nlp자동개선정체성유지시스템 -->
 
 ## 2026-03-04 (세션 1)
 ### 🔄 루나팀 Phase 3 고도화 — 미완료 상태로 중단
