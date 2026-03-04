@@ -68,6 +68,110 @@ const HELP_TEXT = `🤖 메인봇 명령 목록
   /brief  — 야간 보류 알람 브리핑
   /help   — 이 도움말`;
 
+// ─── bot_commands 유틸 ────────────────────────────────────────────────
+
+/**
+ * bot_commands에 명령 삽입 후 id 반환
+ */
+function insertBotCommand(toBot, command, args = {}) {
+  const result = getDb().prepare(`
+    INSERT INTO bot_commands (to_bot, command, args)
+    VALUES (?, ?, ?)
+  `).run(toBot, command, JSON.stringify(args));
+  return result.lastInsertRowid;
+}
+
+/**
+ * bot_commands 결과 폴링 (2초 간격)
+ * @returns {string|null} result JSON 문자열 or null (타임아웃)
+ */
+async function waitForCommandResult(id, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const row = getDb().prepare(`
+      SELECT status, result FROM bot_commands WHERE id = ?
+    `).get(id);
+    if (!row) return null;
+    if (row.status === 'done' || row.status === 'error') return row.result;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  return null;
+}
+
+/**
+ * luna_query/luna_action 결과를 텍스트로 포맷
+ */
+function formatLunaResult(command, rawResult) {
+  if (!rawResult) return '⏱ 루나 응답 없음 (30초 타임아웃)';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ 루나 오류: ${r.error || '알 수 없음'}`;
+
+  switch (command) {
+    case 'pause_trading':
+    case 'resume_trading':
+      return `🌙 ${r.message}`;
+    case 'force_report':
+      return `📊 ${r.message}`;
+    case 'get_status': {
+      const lines = ['🌙 루나팀 현황'];
+      lines.push(`  상태: ${r.paused ? '⏸ 일시정지' : '▶ 실행 중'}`);
+      if (r.paused) lines.push(`  정지 사유: ${r.pause_reason || '없음'}`);
+      if (r.last_cycle) lines.push(`  마지막 사이클: ${r.last_cycle}`);
+      if (r.balance_usdt !== undefined) lines.push(`  USDT 잔고: $${r.balance_usdt}`);
+      return lines.join('\n');
+    }
+    default:
+      return JSON.stringify(r, null, 2);
+  }
+}
+
+/**
+ * claude_action 결과를 텍스트로 포맷
+ */
+function formatClaudeResult(command, rawResult) {
+  if (!rawResult) return '⏱ 클로드팀 응답 없음 (5분 타임아웃)';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+  if (!r.ok) return `⚠️ 클로드팀 오류: ${r.error || '알 수 없음'}`;
+  return `🔧 ${r.message}`;
+}
+
+/**
+ * ska_query/ska_action 결과를 텍스트로 포맷
+ */
+function formatSkaResult(command, rawResult) {
+  if (!rawResult) return '⏱ 스카 응답 없음 (30초 타임아웃)';
+  let r;
+  try { r = JSON.parse(rawResult); } catch { return rawResult; }
+
+  if (!r.ok) return `⚠️ 스카 오류: ${r.error || '알 수 없음'}`;
+
+  switch (command) {
+    case 'query_reservations': {
+      const list = r.reservations || [];
+      if (list.length === 0) return `📅 ${r.date} 예약 없음`;
+      return [`📅 ${r.date} 예약 (${r.count}건)`, ...list].join('\n');
+    }
+    case 'query_today_stats':
+      if (r.message) return `📊 ${r.message}`;
+      return `📊 ${r.date} 매출\n  총액: ${(r.total_amount || 0).toLocaleString()}원\n  입장: ${r.entries_count || 0}건`;
+    case 'query_alerts': {
+      if (r.count === 0) return '✅ 미해결 알람 없음';
+      const lines = [`⚠️ 미해결 알람 (${r.count}건)`];
+      for (const a of (r.alerts || [])) {
+        lines.push(`  • [${a.type}] ${a.title}`);
+      }
+      return lines.join('\n');
+    }
+    case 'restart_andy':
+    case 'restart_jimmy':
+      return `✅ ${r.message}`;
+    default:
+      return JSON.stringify(r, null, 2);
+  }
+}
+
 /**
  * 큐 최근 항목 조회
  */
@@ -190,6 +294,33 @@ async function handleIntent(parsed, msg) {
 
     case 'ska':
       return getSkaStatus();
+
+    case 'ska_query':
+    case 'ska_action': {
+      const command = args.command;
+      if (!command) return '⚠️ 명령 파싱 오류';
+      const cmdId = insertBotCommand('ska', command, args);
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatSkaResult(command, raw);
+    }
+
+    case 'luna_query':
+    case 'luna_action': {
+      const command = args.command;
+      if (!command) return '⚠️ 명령 파싱 오류';
+      const cmdId = insertBotCommand('luna', command, args);
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      return formatLunaResult(command, raw);
+    }
+
+    case 'claude_action': {
+      const command = args.command;
+      if (!command) return '⚠️ 명령 파싱 오류';
+      const cmdId = insertBotCommand('claude', command, args);
+      // 덱스터 점검은 최대 5분 소요
+      const raw   = await waitForCommandResult(cmdId, 300000);
+      return formatClaudeResult(command, raw);
+    }
 
     case 'dexter':
       return `🔧 덱스터는 launchd 주기(1시간)로 자동 실행됩니다.\n수동 실행: node bots/claude/src/dexter.js --telegram`;

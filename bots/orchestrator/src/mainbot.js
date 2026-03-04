@@ -2,13 +2,15 @@
 'use strict';
 
 /**
- * src/mainbot.js — 메인봇 (오케스트레이터) 진입점
+ * src/mainbot.js — 메인봇 알람 큐 처리기
  *
  * 역할:
- *   1. Telegram polling — 사용자 명령 수신 → router.js
- *   2. mainbot_queue 폴링 — 봇 알람 수신 → filter.js → Telegram 발송
- *   3. 아침 브리핑 (08:00 KST) — 야간 보류 알람 발송
- *   4. 주기적 정리 (무음 만료, 확인 만료)
+ *   1. mainbot_queue 폴링 — 봇 알람 수신 → filter.js → Telegram 발송
+ *   2. 아침 브리핑 (08:00 KST) — 야간 보류 알람 발송
+ *   3. 주기적 정리 (무음 만료, 확인 만료, bot_commands 타임아웃)
+ *
+ * NOTE: Telegram 폴링(사용자 명령 수신)은 OpenClaw/Jay가 담당.
+ *       이 프로세스는 봇 알람 발송 전용.
  */
 
 const fs       = require('fs');
@@ -169,52 +171,6 @@ async function flushPendingTelegrams() {
   } catch {}
 }
 
-// ─── Telegram Polling ────────────────────────────────────────────────
-const { route } = require('./router');
-
-let _lastUpdateId = 0;
-
-async function pollTelegram() {
-  const secrets = loadSecrets();
-  const token   = secrets.telegram_bot_token;
-  if (!token) return;
-
-  return new Promise((resolve) => {
-    const params = new URLSearchParams({
-      offset:  String(_lastUpdateId + 1),
-      timeout: '20',
-      allowed_updates: JSON.stringify(['message']),
-    });
-
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${token}/getUpdates?${params}`,
-      method:   'GET',
-    }, (res) => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', async () => {
-        try {
-          const r = JSON.parse(raw);
-          if (!r.ok || !r.result?.length) { resolve(); return; }
-
-          for (const update of r.result) {
-            _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
-            const msg = update.message;
-            if (msg?.text) {
-              await route(msg, (text) => sendTelegram(text));
-            }
-          }
-        } catch {}
-        resolve();
-      });
-    });
-    req.on('error', () => resolve());
-    req.setTimeout(25000, () => { req.destroy(); resolve(); });
-    req.end();
-  });
-}
-
 // ─── 큐 폴링 (봇 알람 처리) ─────────────────────────────────────────
 const { processItem }       = require('./filter');
 const { cleanExpired: cleanMutes }   = require('../lib/mute-manager');
@@ -280,12 +236,15 @@ function runCleanup() {
   try {
     cleanMutes();
     cleanConfirms();
+    // 5분 초과 pending bot_commands → error 처리
+    getDb().prepare(`
+      UPDATE bot_commands SET status='error', result='{"error":"timeout"}'
+      WHERE status='pending' AND created_at < datetime('now', '-5 minutes')
+    `).run();
   } catch {}
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
-let _running = false;
-
 async function mainLoop() {
   // 큐 폴링 (2초 간격)
   await processQueue();
@@ -297,29 +256,14 @@ async function main() {
   acquireLock();
   await flushPendingTelegrams();
 
-  console.log(`🤖 ${BOT_NAME} 시작 (PID: ${process.pid})`);
-  await sendTelegram(`🤖 ${BOT_NAME} 시작됨\n버전: 1.0.0 | PID: ${process.pid}`);
-
-  // Telegram polling 루프 (비동기, 20초 long-poll)
-  const telegramLoop = async () => {
-    while (true) {
-      try { await pollTelegram(); }
-      catch (e) { console.error(`[telegram] polling 오류:`, e.message); }
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  };
+  console.log(`🤖 ${BOT_NAME} 알람 큐 처리기 시작 (PID: ${process.pid})`);
 
   // 큐 처리 루프 (2초 간격)
-  const queueLoop = async () => {
-    while (true) {
-      try { await mainLoop(); }
-      catch (e) { console.error(`[queue] 처리 오류:`, e.message); }
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  };
-
-  // 동시 실행
-  await Promise.all([telegramLoop(), queueLoop()]);
+  while (true) {
+    try { await mainLoop(); }
+    catch (e) { console.error(`[queue] 처리 오류:`, e.message); }
+    await new Promise(r => setTimeout(r, 2000));
+  }
 }
 
 main().catch(e => {

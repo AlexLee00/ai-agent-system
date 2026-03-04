@@ -24,6 +24,7 @@ import { isPaperMode } from '../shared/secrets.js';
 import { runBullResearcher } from './zeus.js';
 import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
+import { recommendStrategy } from './argos.js';
 
 const MIN_CONFIDENCE     = 0.55;
 const FUND_MIN_CONF      = 0.60;
@@ -90,7 +91,16 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     debateSection = `\n\n[강세 리서처] ${bullText}\n[약세 리서처] ${bearText}`;
   }
 
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}\n\n최종 매매 신호:`;
+  // 아르고스 전략 컨텍스트 (실패 시 빈 문자열)
+  let strategySection = '';
+  try {
+    const strat = await recommendStrategy(symbol, exchange);
+    if (strat) {
+      strategySection = `\n\n[참고 전략 — 아르고스]\n${strat.strategy_name}: ${strat.entry_condition || '진입 조건 없음'} (품질점수 ${strat.quality_score?.toFixed(2)})`;
+    }
+  } catch {}
+
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}\n\n최종 매매 신호:`;
   const raw     = await callLLM('luna', LUNA_SYSTEM, userMsg, 512);
   const parsed  = parseJSON(raw);
 
@@ -139,6 +149,8 @@ async function buildPortfolioContext() {
   const posValue   = positions.reduce((s, p) => s + (p.amount * p.avg_price), 0);
   const usdtFree   = 10000;
   const totalAsset = usdtFree + posValue;
+  // 사이클별 자산 스냅샷 기록 (드로우다운 추적용)
+  try { await db.insertAssetSnapshot(totalAsset, usdtFree); } catch {}
   return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions };
 }
 

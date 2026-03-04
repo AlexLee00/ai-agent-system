@@ -12,7 +12,7 @@
  * 실행: PAPER_MODE=true node markets/crypto.js [--symbols=BTC/USDT,ETH/USDT] [--force]
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import https from 'https';
@@ -255,6 +255,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-A)');
   } else {
     console.log('🔴 PAPER_MODE=false — 실주문 실행 모드 (주의!)');
+  }
+
+  // 거래 일시정지 플래그 확인 (luna-commander가 제어)
+  const PAUSE_FLAG = join(homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
+  if (!force && existsSync(PAUSE_FLAG)) {
+    console.log('⏸ 거래 일시정지 플래그 감지 — 사이클 스킵 (재개: resume_trading 명령)');
+    process.exit(0);
   }
 
   // 30분 주기 또는 긴급 트리거 확인
