@@ -351,6 +351,20 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       return formatClaudeResult('run_archer', raw);
     }
 
+    case 'session_close': {
+      await notify(`⏳ 세션 마감 시작합니다...\n문서 업데이트·저널·git commit 처리 중`);
+      const cmdId = insertBotCommand('claude', 'session_close', {
+        text: msg.text,
+        bot: 'orchestrator',
+      });
+      const raw = await waitForCommandResult(cmdId, 300000); // 5분
+      if (!raw) return '⏱ 세션 마감 타임아웃 (5분). 수동으로 확인하세요.';
+      let r;
+      try { r = JSON.parse(raw); } catch { return raw; }
+      if (!r.ok) return `⚠️ 세션 마감 오류: ${r.error || '알 수 없음'}`;
+      return `✅ 세션 마감 완료\n\n${r.message}`;
+    }
+
     case 'claude_ask': {
       const query = args.query;
       if (!query) return '⚠️ 질문 내용이 없습니다.\n예) /claude 루나팀 전략 리스크 분석해줘';

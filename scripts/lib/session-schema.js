@@ -50,7 +50,8 @@ function parseArgs(argv) {
   const files = filesRaw ? filesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
   const slug  = title ? makeSlug(title) : '';
 
-  const note = { title, type, items, files, date, slug };
+  const journalEntry = get('--journal-entry=') || null;
+  const note = { title, type, items, files, date, slug, journalEntry };
 
   const flags = {
     deployOnly: argv.includes('--deploy-only'),
@@ -58,6 +59,8 @@ function parseArgs(argv) {
     all:        argv.includes('--all'),
     list:       argv.includes('--list'),
     sync:       argv.includes('--sync'),
+    gitCommit:  argv.includes('--git-commit'),
+    auto:       argv.includes('--auto'),
   };
 
   return { botId, note, flags };
