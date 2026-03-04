@@ -253,7 +253,7 @@ function getSkaStatus() {
  * @param {object} msg      Telegram 메시지 객체
  * @returns {Promise<string>}
  */
-async function handleIntent(parsed, msg) {
+async function handleIntent(parsed, msg, notify = async () => {}) {
   const { intent, args } = parsed;
 
   // command_history 기록
@@ -331,19 +331,21 @@ async function handleIntent(parsed, msg) {
     case 'claude_action': {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
+      await notify(`⏳ 클로드팀에 전달 중...`);
       const cmdId = insertBotCommand('claude', command, args);
-      // 덱스터 점검은 최대 5분 소요
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult(command, raw);
     }
 
     case 'dexter': {
+      await notify(`⏳ 덱스터 점검 중... (최대 2분 소요)`);
       const cmdId = insertBotCommand('claude', 'run_check', {});
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult('run_check', raw);
     }
 
     case 'archer': {
+      await notify(`⏳ 아처 기술 분석 중... (최대 5분 소요)`);
       const cmdId = insertBotCommand('claude', 'run_archer', {});
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult('run_archer', raw);
@@ -352,8 +354,8 @@ async function handleIntent(parsed, msg) {
     case 'claude_ask': {
       const query = args.query;
       if (!query) return '⚠️ 질문 내용이 없습니다.\n예) /claude 루나팀 전략 리스크 분석해줘';
+      await notify(`⏳ 클로드가 생각 중...`);
       const cmdId = insertBotCommand('claude', 'ask_claude', { query });
-      // 클로드 AI 응답은 최대 5분 소요
       const raw   = await waitForCommandResult(cmdId, 300000);
       if (!raw) return '⏱ 클로드 응답 없음 (5분 타임아웃)';
       let r;
@@ -373,6 +375,7 @@ async function handleIntent(parsed, msg) {
 
     default: {
       // 처리 불가 명령 → 클로드에게 분석 요청 (NLP 자동 개선)
+      await notify(`🤔 잠깐, 클로드에게 확인해볼게요...`);
       const cmdId = insertBotCommand('claude', 'analyze_unknown', { text: msg.text });
       const raw   = await waitForCommandResult(cmdId, 120000); // 2분
       if (!raw) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
@@ -401,7 +404,7 @@ async function route(msg, sendReply) {
   const start = Date.now();
   try {
     const parsed   = await parseIntent(msg.text);
-    const response = await handleIntent(parsed, msg);
+    const response = await handleIntent(parsed, msg, sendReply);
 
     // command_history 응답 시간 업데이트
     try {
