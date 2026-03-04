@@ -56,6 +56,90 @@ function getStateDb() {
   return _stateDb;
 }
 
+// ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
+
+const BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+
+const SKA_TEAM = [
+  {
+    id: 'andy', name: '앤디', launchd: 'ai.ska.naver-monitor',
+    team: '스카팀',
+    role: '네이버 스마트플레이스 모니터링',
+    mission: '5분마다 예약 현황 수집 및 이상 감지 알람 발송',
+  },
+  {
+    id: 'jimmy', name: '지미', launchd: 'ai.ska.kiosk-monitor',
+    team: '스카팀',
+    role: '픽코 키오스크 예약 모니터링',
+    mission: '키오스크 신규 예약 감지 및 알람 발송',
+  },
+  {
+    id: 'rebecca', name: '레베카', launchd: null,
+    team: '스카팀',
+    role: '매출 예측 분석',
+    mission: '과거 데이터 기반 매출·입장수 예측 모델 실행',
+  },
+  {
+    id: 'eve', name: '이브', launchd: null,
+    team: '스카팀',
+    role: '공공API 환경요소 수집',
+    mission: '공휴일·날씨·학사·축제 데이터 수집 및 저장',
+  },
+];
+
+function checkSkaTeamIdentity() {
+  if (!fs.existsSync(BOT_ID_DIR)) fs.mkdirSync(BOT_ID_DIR, { recursive: true });
+
+  const results = [];
+  for (const member of SKA_TEAM) {
+    const issues  = [];
+    let   trained = false;
+
+    // 1. 프로세스 상태 (launchd 서비스 있는 봇만)
+    if (member.launchd) {
+      try {
+        const out = execSync(`launchctl list ${member.launchd} 2>&1`, { encoding: 'utf8', timeout: 5000 });
+        if (out.includes('Could not find')) issues.push('프로세스 미실행');
+      } catch { issues.push('프로세스 상태 확인 실패'); }
+    }
+
+    // 2. 정체성 파일 체크 (없으면 생성, 30일 초과면 갱신)
+    const idFile = path.join(BOT_ID_DIR, `${member.id}.json`);
+    if (!fs.existsSync(idFile)) {
+      fs.writeFileSync(idFile, JSON.stringify({
+        name: member.name, team: member.team,
+        role: member.role, mission: member.mission,
+        launchd: member.launchd, updated_at: new Date().toISOString(),
+      }, null, 2));
+      trained = true;
+      issues.push('→ 정체성 파일 생성');
+    } else {
+      const data    = JSON.parse(fs.readFileSync(idFile, 'utf8'));
+      const ageMs   = Date.now() - new Date(data.updated_at || 0).getTime();
+      const missing = ['name', 'role', 'mission'].filter(f => !data[f]);
+      if (missing.length > 0 || ageMs > 30 * 24 * 3600 * 1000) {
+        if (missing.length > 0) issues.push(`누락 필드: ${missing.join(', ')}`);
+        Object.assign(data, { name: member.name, team: member.team, role: member.role, mission: member.mission, updated_at: new Date().toISOString() });
+        fs.writeFileSync(idFile, JSON.stringify(data, null, 2));
+        trained = true;
+        issues.push('→ 정체성 갱신');
+      }
+    }
+
+    results.push({ name: member.name, issues, trained });
+  }
+
+  // 콘솔 요약
+  const problems = results.filter(r => r.issues.some(i => !i.startsWith('→')));
+  if (problems.length > 0) {
+    console.log(`[스카] 팀원 정체성 점검: ${problems.length}건 이슈`);
+    for (const r of problems) console.log(`  ${r.name}: ${r.issues.filter(i => !i.startsWith('→')).join(' | ')}`);
+  } else {
+    console.log(`[스카] 팀원 정체성 점검: 정상`);
+  }
+  return results;
+}
+
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
 
 /**
@@ -207,6 +291,8 @@ async function processCommands() {
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
+// 30초 루프 기준: 2 tick = 1분, 720 tick = 6시간
+let _identityCounter = 0;
 
 async function main() {
   acquireLock();
@@ -215,6 +301,14 @@ async function main() {
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[스카] 루프 오류:`, e.message); }
+
+    // 팀원 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+    _identityCounter++;
+    if (_identityCounter % 720 === 2) {
+      try { checkSkaTeamIdentity(); }
+      catch (e) { console.error(`[스카] 정체성 점검 오류:`, e.message); }
+    }
+
     await new Promise(r => setTimeout(r, 30000)); // 30초 간격
   }
 }

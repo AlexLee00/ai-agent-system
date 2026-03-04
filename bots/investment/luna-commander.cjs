@@ -48,6 +48,72 @@ function getDb() {
   return _db;
 }
 
+// ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
+
+const BOT_ID_DIR   = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+const TEAM_AGENTS  = path.join(__dirname, 'team');
+
+const LUNA_TEAM = [
+  { id: 'luna',        name: '루나',      llm: 'gpt-4o',  role: '최종 매수/매도 판단',               mission: '분석 종합 후 포지션 결정 및 헤파이스토스 지시' },
+  { id: 'oracle',      name: '오라클',    llm: 'gpt-4o',  role: '온체인·파생 데이터 분석',           mission: '바이낸스 선물·온체인 지표 수집 및 시그널 생성' },
+  { id: 'nemesis',     name: '네메시스',  llm: 'gpt-4o',  role: '리스크 평가',                       mission: 'APPROVE/ADJUST/REJECT 판정으로 과잉 진입 방지' },
+  { id: 'athena',      name: '아테나',    llm: 'gpt-4o',  role: '매도 관점 근거·손절가 제시',        mission: '하방 리스크 논거 및 손절 기준 제공' },
+  { id: 'zeus',        name: '제우스',    llm: 'gpt-4o',  role: '매수 관점 근거·목표가 제시',        mission: '상방 모멘텀 논거 및 목표가 제공' },
+  { id: 'hermes',      name: '헤르메스',  llm: 'Groq',    role: '뉴스 수집·감성 분류',               mission: '암호화폐 뉴스 수집 및 긍정/부정 감성 점수화' },
+  { id: 'sophia',      name: '소피아',    llm: 'Groq',    role: '커뮤니티 감성 분석',                mission: 'Reddit·Twitter 커뮤니티 감성 분석' },
+  { id: 'argos',       name: '아르고스',  llm: 'Groq',    role: 'Reddit 전략 추천 수집',             mission: 'r/CryptoCurrency 등 전략 데이터 수집' },
+  { id: 'hephaestos',  name: '헤파이스토스', llm: '—',   role: '자동화·주문 실행',                  mission: '루나 지시에 따라 바이낸스 API로 실제 주문 실행' },
+  { id: 'hanul',       name: '한울',      llm: 'Groq',    role: '국내 주식 담당',                    mission: 'KIS API로 국내주식 신호 생성 및 주문 관리' },
+];
+
+function checkLunaTeamIdentity() {
+  if (!fs.existsSync(BOT_ID_DIR)) fs.mkdirSync(BOT_ID_DIR, { recursive: true });
+
+  const results = [];
+  for (const member of LUNA_TEAM) {
+    const issues  = [];
+    let   trained = false;
+
+    // 1. 에이전트 소스 파일 존재 여부
+    const agentFile = path.join(TEAM_AGENTS, `${member.id}.js`);
+    if (!fs.existsSync(agentFile)) issues.push(`에이전트 파일 없음: team/${member.id}.js`);
+
+    // 2. 정체성 파일 체크
+    const idFile = path.join(BOT_ID_DIR, `luna_${member.id}.json`);
+    if (!fs.existsSync(idFile)) {
+      fs.writeFileSync(idFile, JSON.stringify({
+        name: member.name, team: '루나팀', role: member.role,
+        mission: member.mission, llm: member.llm,
+        updated_at: new Date().toISOString(),
+      }, null, 2));
+      trained = true;
+      issues.push('→ 정체성 파일 생성');
+    } else {
+      const data  = JSON.parse(fs.readFileSync(idFile, 'utf8'));
+      const ageMs = Date.now() - new Date(data.updated_at || 0).getTime();
+      const miss  = ['name', 'role', 'mission'].filter(f => !data[f]);
+      if (miss.length > 0 || ageMs > 30 * 24 * 3600 * 1000) {
+        if (miss.length > 0) issues.push(`누락 필드: ${miss.join(', ')}`);
+        Object.assign(data, { name: member.name, team: '루나팀', role: member.role, mission: member.mission, llm: member.llm, updated_at: new Date().toISOString() });
+        fs.writeFileSync(idFile, JSON.stringify(data, null, 2));
+        trained = true;
+        issues.push('→ 정체성 갱신');
+      }
+    }
+
+    results.push({ name: member.name, issues, trained });
+  }
+
+  const problems = results.filter(r => r.issues.some(i => !i.startsWith('→')));
+  if (problems.length > 0) {
+    console.log(`[루나] 팀원 정체성 점검: ${problems.length}건 이슈`);
+    for (const r of problems) console.log(`  ${r.name}: ${r.issues.filter(i => !i.startsWith('→')).join(' | ')}`);
+  } else {
+    console.log(`[루나] 팀원 정체성 점검: 정상`);
+  }
+  return results;
+}
+
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
 
 /**
@@ -178,6 +244,7 @@ async function processCommands() {
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
+let _identityCounter = 0;
 
 async function main() {
   acquireLock();
@@ -186,6 +253,14 @@ async function main() {
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[루나] 루프 오류:`, e.message); }
+
+    // 팀원 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+    _identityCounter++;
+    if (_identityCounter % 720 === 2) {
+      try { checkLunaTeamIdentity(); }
+      catch (e) { console.error(`[루나] 정체성 점검 오류:`, e.message); }
+    }
+
     await new Promise(r => setTimeout(r, 30000));
   }
 }
