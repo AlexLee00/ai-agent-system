@@ -18,8 +18,34 @@ const { execSync, spawnSync } = require('child_process');
 const Database                = require('better-sqlite3');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
-const BOT_NAME = '클로드';
-const BOT_ID   = 'claude';
+const BOT_NAME       = '클로드';
+const BOT_ID         = 'claude';
+const IDENTITY_FILE  = path.join(__dirname, '../context/COMMANDER_IDENTITY.md');
+
+// ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
+let BOT_IDENTITY = {
+  name:    '클로드 커맨더',
+  team:    '클로드팀',
+  role:    '클로드팀 팀장 — 시스템 점검·기술 분석·AI 직접 소통 지휘',
+  mission: 'bot_commands 폴링(30초), 덱스터·아처 실행, claude -p 직접 질문, NLP 자동 개선, 팀원 정체성 점검',
+};
+
+function loadBotIdentity() {
+  try {
+    if (!fs.existsSync(IDENTITY_FILE)) {
+      console.log(`[클로드] 🎭 정체성: ${BOT_IDENTITY.role} (기본값)`);
+      return;
+    }
+    const content = fs.readFileSync(IDENTITY_FILE, 'utf8');
+    const roleM    = content.match(/## 역할\n+([\s\S]*?)(?=\n## )/);
+    const missionM = content.match(/## 임무\n+([\s\S]*?)(?=\n## )/);
+    if (roleM)    BOT_IDENTITY.role    = roleM[1].trim().split('\n')[0];
+    if (missionM) BOT_IDENTITY.mission = missionM[1].trim().replace(/^- /gm, '').split('\n')[0];
+    console.log(`[클로드] 🎭 정체성 로드: ${BOT_IDENTITY.role}`);
+  } catch (e) {
+    console.error(`[클로드] 정체성 로드 실패:`, e.message);
+  }
+}
 
 // ─── Self-lock ─────────────────────────────────────────────────────
 const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-commander.lock');
@@ -433,17 +459,22 @@ let _identityCounter = 0;
 
 async function main() {
   acquireLock();
+  loadBotIdentity(); // 시작 시 정체성 로드
   console.log(`🤖 ${BOT_NAME} 팀 커맨더 시작 (PID: ${process.pid})`);
+  console.log(`   역할: ${BOT_IDENTITY.role}`);
 
   while (true) {
     try { await processCommands(); }
     catch (e) { console.error(`[클로드] 루프 오류:`, e.message); }
 
-    // 팀원 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
+    // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;
     if (_identityCounter % 720 === 2) {
-      try { checkClaudeTeamIdentity(); }
-      catch (e) { console.error(`[클로드] 정체성 점검 오류:`, e.message); }
+      try {
+        loadBotIdentity();
+        console.log(`[클로드] 역할 확인: ${BOT_IDENTITY.role}`);
+        checkClaudeTeamIdentity();
+      } catch (e) { console.error(`[클로드] 정체성 점검 오류:`, e.message); }
     }
 
     await new Promise(r => setTimeout(r, 30000));
