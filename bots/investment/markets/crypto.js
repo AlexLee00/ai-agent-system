@@ -29,7 +29,7 @@ import { analyzeOnchain }           from '../team/oracle.js';
 import { analyzeNews }              from '../team/hermes.js';
 import { analyzeSentiment }         from '../team/sophia.js';
 import { orchestrate }              from '../team/luna.js';
-import { processAllPendingSignals } from '../team/hephaestos.js';
+import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.js';
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
@@ -113,6 +113,29 @@ async function updateState(symbols) {
     try { lastBtcPrice = await fetchBtcPrice(); } catch {}
   }
   saveState({ lastCycleAt: Date.now(), lastBtcPrice });
+}
+
+// ─── LU-004: USDT 잔고 부족 알림 ────────────────────────────────────
+
+const USDT_LOW_THRESHOLD    = 20;                    // $20 이하 경고
+const USDT_ALERT_INTERVAL   = 6 * 3600 * 1000;      // 6시간마다 1회
+
+async function checkLowUsdtBalance() {
+  try {
+    const state = loadState();
+    const now   = Date.now();
+    if (state.lastUsdtAlertAt && (now - state.lastUsdtAlertAt) < USDT_ALERT_INTERVAL) return;
+
+    const usdtFree = await fetchUsdtBalance();
+    if (usdtFree < USDT_LOW_THRESHOLD) {
+      const msg = `⚠️ [루나팀] USDT 잔고 부족\n현재: $${usdtFree.toFixed(2)} (권장 $${USDT_LOW_THRESHOLD}↑)\n바이낸스 입금이 필요합니다.`;
+      publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message: msg });
+      console.warn(`⚠️ USDT 잔고 부족: $${usdtFree.toFixed(2)}`);
+      saveState({ ...state, lastUsdtAlertAt: now });
+    }
+  } catch (e) {
+    console.warn(`  ⚠️ USDT 잔고 확인 실패: ${e.message}`);
+  }
 }
 
 // ─── 예산 초과 리스너 ────────────────────────────────────────────────
@@ -223,6 +246,9 @@ export async function runCryptoCycle(symbols) {
 
     // ── 상태 저장 ──
     await updateState(symbols);
+
+    // LU-004: USDT 잔고 부족 알림 (LIVE 모드만)
+    if (!paperMode) await checkLowUsdtBalance();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
