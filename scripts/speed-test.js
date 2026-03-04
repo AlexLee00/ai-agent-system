@@ -357,12 +357,17 @@ async function testOpenAICompat(provider, modelId, apiKey) {
     headers['X-Title']      = 'openclaw-speed-test';
   }
 
-  const { ttft, total, raw, status } = await httpStream(url, {
+  // o-시리즈 추론 모델은 max_completion_tokens 사용 (max_tokens 미지원)
+  const isReasoningModel = /^o\d/.test(model);
+  const body = {
     model,
-    messages:   [{ role: 'user', content: TEST_PROMPT }],
-    max_tokens: 10,
-    stream:     true,
-  }, headers);
+    messages: [{ role: 'user', content: TEST_PROMPT }],
+    stream:   true,
+  };
+  if (isReasoningModel) body.max_completion_tokens = 50;
+  else                   body.max_tokens = 10;
+
+  const { ttft, total, raw, status } = await httpStream(url, body, headers);
 
   if (status >= 400) {
     let msg = '';
