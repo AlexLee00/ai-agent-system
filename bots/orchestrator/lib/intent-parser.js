@@ -5,18 +5,20 @@
  *
  * 1단계: 슬래시 명령 직접 매핑 (토큰 0)
  * 2단계: 키워드 패턴 매칭 (토큰 0)
- * 3단계: Gemini LLM 파싱 (토큰 사용, 단 무료)
+ * 3단계: LLM 폴백 파싱 (토큰 사용 — 현재 모델: llm-keys.js 참조)
  *
- * parse_source: 'slash' | 'keyword' | 'gemini' | 'failed'
+ * parse_source: 'slash' | 'keyword' | 'llm' | 'failed'
  */
 
 const https = require('https');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 
-// ─── Gemini 클라이언트 설정 ───────────────────────────────────────────
+// ─── LLM 폴백 설정 (3단계 파싱용) ───────────────────────────────────
+// 실제 사용 모델·키는 llm-keys.js에서 관리. 모델 교체 시 이 상수만 수정.
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const LLM_FALLBACK_MODEL    = 'gemini-2.5-flash';
+const LLM_FALLBACK_PROVIDER = 'google';
 
 // ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
 
@@ -38,6 +40,13 @@ const SLASH_MAP = {
 function parseSlash(text) {
   const parts  = text.trim().split(/\s+/);
   const cmd    = parts[0].toLowerCase();
+
+  // /claude <질문> — 클로드 AI 직접 질문
+  if ((cmd === '/claude' || cmd === '/ask') && parts.length >= 2) {
+    const query = text.trim().replace(/^\/\S+\s+/, '').trim();
+    if (query) return { intent: 'claude_ask', args: { query }, source: 'slash' };
+  }
+
   const mapped = SLASH_MAP[cmd];
   if (!mapped) return null;
 
@@ -164,6 +173,12 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 - claude_action command=run_archer  : 아처 기술 트렌드 수집·분석
   예) "아처 실행해", "기술 소화해줘", "AI 트렌드 알려줘", "최신 LLM 소식", "아처 보고"
 
+[클로드 AI 직접 질문]
+- claude_ask args.query=<질문내용> : 클로드 AI에게 직접 질문 (개발·분석·조언)
+  예) "클로드한테 물어봐 루나 전략 어떻게 생각해", "클로드에게 질문 현재 시스템 구조 분석해줘"
+  예) "클로드야 DB 스키마 최적화 방법 알려줘", "클로드 의견 들어봐 아처 보고서 개선방향"
+  ※ 질문 내용(query)은 트리거 문구를 제외한 실제 질문만 추출
+
 [제이 직접 처리]
 - status : "시스템 현황", "전체 상태", "다들 어때", "모두 살아있어"
 - cost   : "비용 얼마야", "토큰 얼마 썼어", "LLM 비용"
@@ -179,16 +194,17 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 {"intent": "...", "args": {}, "confidence": 0.0~1.0}
 
 args 필드: ska_query/ska_action/luna_query/luna_action/claude_action은 반드시 command 포함
+claude_ask는 반드시 query 포함 (트리거 문구 제외한 실제 질문)
 mute/unmute는 target 포함 (all|luna|ska|dexter|archer|claude)
 mute는 duration 포함 (예: "1h", "30m", "1d")`;
 
-async function parseGemini(text) {
+async function parseLLMFallback(text) {
   const key = getGeminiKey();
   if (!key) return null;
 
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({
-      model: GEMINI_MODEL,
+      model: LLM_FALLBACK_MODEL,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: text },
@@ -221,8 +237,8 @@ async function parseGemini(text) {
           trackTokens({
             bot:       '제이',
             team:      'orchestrator',
-            model:     GEMINI_MODEL,
-            provider:  'google',
+            model:     LLM_FALLBACK_MODEL,
+            provider:  LLM_FALLBACK_PROVIDER,
             taskType:  'command_parse',
             tokensIn:  usage.prompt_tokens     || 0,
             tokensOut: usage.completion_tokens || 0,
@@ -237,7 +253,7 @@ async function parseGemini(text) {
             resolve({
               intent: parsed.intent,
               args:   parsed.args || {},
-              source: 'gemini',
+              source: 'llm',
               confidence: parsed.confidence || 0.8,
               tokensIn:  usage.prompt_tokens     || 0,
               tokensOut: usage.completion_tokens || 0,
@@ -275,9 +291,9 @@ async function parseIntent(text) {
   const kw = parseKeyword(t);
   if (kw) return kw;
 
-  // 3단계: Gemini
-  const groqResult = await parseGemini(t);
-  if (groqResult && groqResult.intent !== 'unknown') return groqResult;
+  // 3단계: LLM 폴백
+  const llmResult = await parseLLMFallback(t);
+  if (llmResult && llmResult.intent !== 'unknown') return llmResult;
 
   return { intent: 'unknown', args: {}, source: 'failed' };
 }
