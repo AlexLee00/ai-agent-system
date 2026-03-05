@@ -74,6 +74,42 @@ function isAlertMuted(botName, teamName) {
   return isMuted('all') || isMuted(teamName) || isMuted(botName);
 }
 
+// ─── 이벤트 타입 기반 무음 ───────────────────────────────────────────
+// target 형식: "event:{fromBot}:{eventType}"
+// 사용자가 "이 알람 안 해도 돼"라고 할 때 특정 from_bot+event_type 조합만 뮤트
+
+const EVENT_PREFIX = 'event:';
+
+/**
+ * 이벤트 타입 기반 무음 설정
+ * @param {string} fromBot    발신 봇 이름
+ * @param {string} eventType  이벤트 타입
+ * @param {number} durationMs 무음 지속 시간 (ms)
+ * @param {string} [reason]   사유
+ * @returns {string} until ISO 문자열
+ */
+function setMuteByEvent(fromBot, eventType, durationMs, reason = '') {
+  return setMute(`${EVENT_PREFIX}${fromBot}:${eventType}`, durationMs, reason);
+}
+
+/**
+ * 이벤트 타입 기반 무음 여부 확인
+ * @param {string} fromBot
+ * @param {string} eventType
+ * @returns {boolean}
+ */
+function isEventMuted(fromBot, eventType) {
+  if (!fromBot || !eventType) return false;
+  return isMuted(`${EVENT_PREFIX}${fromBot}:${eventType}`);
+}
+
+/**
+ * 이벤트 타입 기반 무음 해제
+ */
+function clearMuteByEvent(fromBot, eventType) {
+  clearMute(`${EVENT_PREFIX}${fromBot}:${eventType}`);
+}
+
 /**
  * 현재 활성 무음 목록
  */
@@ -111,4 +147,4 @@ function parseDuration(duration) {
   return { ms, label: `${n}${label}` };
 }
 
-module.exports = { setMute, clearMute, isMuted, isAlertMuted, listMutes, cleanExpired, parseDuration };
+module.exports = { setMute, clearMute, isMuted, isAlertMuted, listMutes, cleanExpired, parseDuration, setMuteByEvent, isEventMuted, clearMuteByEvent };
