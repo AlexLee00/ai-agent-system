@@ -129,7 +129,7 @@ async function main() {
 }
 
 function output(result) {
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(JSON.stringify(result) + '\n');
 }
 
 main();

@@ -148,32 +148,29 @@ export async function getBinanceDepositAddress() {
 
 /**
  * 가장 최근 KRW 입금 완료 시각 반환
- * - 1차: 업비트 KRW 입금 이력 API (privateGetDepositsKrw)
- * - 2차: USDT/KRW 최근 체결 주문 시각 (근사치)
+ * - 1차: 업비트 KRW 입금 이력 API (fetchDeposits 'KRW')
+ * - 2차: USDT/KRW 최근 체결 주문 시각 (근사치, fetchClosedOrders)
  * @returns {Date|null}
  */
 export async function getRecentKrwDepositTime() {
   const upbit = getUpbit();
 
-  // 1차: KRW 입금 이력
+  // 1차: KRW 입금 이력 (fetchDeposits)
   try {
-    const resp = await upbit.privateGetDepositsKrw({ limit: 5 });
-    if (Array.isArray(resp)) {
-      const completed = resp.find(d =>
-        d.state === 'ACCEPTED' || d.state === 'done' || d.state === 'accepted'
-      );
-      const ts = completed?.done_at || completed?.created_at;
-      if (ts) return new Date(ts);
+    const deps = await upbit.fetchDeposits('KRW', undefined, 5);
+    if (Array.isArray(deps) && deps.length > 0) {
+      const completed = deps
+        .filter(d => d.status === 'ok' || d.status === 'done' || d.status === 'accepted')
+        .sort((a, b) => b.timestamp - a.timestamp)[0];
+      if (completed?.datetime) return new Date(completed.datetime);
     }
   } catch { /* API 미지원 → 2차 시도 */ }
 
   // 2차: USDT/KRW 최근 체결 주문 (매수 시점 ≈ KRW 입금 직후)
   try {
-    const orders = await upbit.fetchOrders('USDT/KRW', undefined, 5);
-    const filled = orders
-      .filter(o => o.status === 'closed' || o.status === 'filled')
-      .sort((a, b) => b.timestamp - a.timestamp);
-    if (filled.length > 0) return new Date(filled[0].timestamp);
+    const orders = await upbit.fetchClosedOrders('USDT/KRW', undefined, 5);
+    const sorted = orders.sort((a, b) => b.timestamp - a.timestamp);
+    if (sorted.length > 0) return new Date(sorted[0].timestamp);
   } catch { /* 조회 실패 */ }
 
   return null;
