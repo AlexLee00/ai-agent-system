@@ -11,7 +11,7 @@
  *   - 단기 중복 → 배치 집약
  */
 
-const { isAlertMuted }           = require('../lib/mute-manager');
+const { isAlertMuted, isEventMuted } = require('../lib/mute-manager');
 const { shouldDefer, deferToMorning } = require('../lib/night-handler');
 const { formatSingle, formatBatch }   = require('../lib/batch-formatter');
 
@@ -27,8 +27,13 @@ const _recent = new Map(); // `${fromBot}:${eventType}` → { items, timer, reso
  * @returns {'sent'|'muted'|'deferred'|'batched'}
  */
 function processItem(item, onSend) {
-  // 1. 무음 체크
+  // 1. 무음 체크 (봇/팀 단위)
   if (isAlertMuted(item.from_bot, item.team)) {
+    return 'muted';
+  }
+
+  // 1-b. 이벤트 타입 무음 체크 ("이 알람 안 해도 돼" 등으로 설정)
+  if (isEventMuted(item.from_bot, item.event_type)) {
     return 'muted';
   }
 

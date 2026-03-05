@@ -8,7 +8,7 @@
 
 const { buildStatus }                    = require('./dashboard');
 const { parseIntent }                    = require('../lib/intent-parser');
-const { setMute, clearMute, listMutes, parseDuration } = require('../lib/mute-manager');
+const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteByEvent } = require('../lib/mute-manager');
 const { flushMorningQueue, buildMorningBriefing }      = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
@@ -57,6 +57,8 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
     대상: all | luna | ska | claude
     시간: 30m | 1h | 2h | 1d
   /unmute <대상>
+  "이 알람 안 해도 돼"  → 방금 받은 알람 타입 30일 무음
+  "이 알람 다시 알려줘" → 무음 해제
 
 📅 스카팀 (스터디카페)
   "오늘 예약 뭐 있어"       → 예약 목록
@@ -609,6 +611,36 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       try { r = JSON.parse(raw); } catch { return raw; }
       if (!r.ok) return `⚠️ 클로드 오류: ${r.error || '알 수 없음'}`;
       return `🤖 클로드\n\n${r.message}`;
+    }
+
+    case 'mute_last_alert': {
+      // mainbot_queue에서 가장 최근 sent 알람을 찾아 해당 event_type 무음
+      const last = getDb().prepare(`
+        SELECT from_bot, event_type, message
+        FROM mainbot_queue
+        WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
+        ORDER BY id DESC
+        LIMIT 1
+      `).get();
+      if (!last?.event_type) return '⚠️ 무음 처리할 최근 알람이 없습니다.';
+      // 기본 30일 (사실상 장기 — "안 해도 돼" = 당분간 불필요)
+      const dur = parseDuration(args.duration || '30d') || { ms: 30 * 86400_000, label: '30일' };
+      setMuteByEvent(last.from_bot, last.event_type, dur.ms, '사용자 요청');
+      const preview = last.message.split('\n')[0].slice(0, 40);
+      return `🔇 알람 무음 설정됨\n봇: ${last.from_bot} / 타입: ${last.event_type}\n"${preview}"\n다시 받으려면: "이 알람 다시 알려줘"`;
+    }
+
+    case 'unmute_last_alert': {
+      const last = getDb().prepare(`
+        SELECT from_bot, event_type, message
+        FROM mainbot_queue
+        WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
+        ORDER BY id DESC
+        LIMIT 1
+      `).get();
+      if (!last?.event_type) return '⚠️ 해제할 알람이 없습니다.';
+      clearMuteByEvent(last.from_bot, last.event_type);
+      return `🔔 알람 무음 해제됨\n봇: ${last.from_bot} / 타입: ${last.event_type}`;
     }
 
     case 'brief': {

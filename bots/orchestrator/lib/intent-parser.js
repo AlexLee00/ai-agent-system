@@ -156,6 +156,13 @@ const KEYWORD_PATTERNS = [
   // ── 세션 마감 ──
   { re: /세션.*(마무리|마감|정리|close|끝)|마무리.*해줘|마감.*해줘|정리.*해줘|session.*close/i, intent: 'session_close' },
 
+  // ── 마지막 알람 이벤트 무음·해제 ("이 알람 안 해도 돼" 등) ──
+  // unmute가 mute보다 반드시 먼저 매칭 (해제 표현이 무음 표현에 포함될 수 있으므로)
+  { re: /이\s*(알람|경고|메시지).*(무음\s*해제|해제해|해제해줘)/i,                                    intent: 'unmute_last_alert', args: {} },
+  { re: /이\s*(알람|경고).*(다시|또|계속|알려줘|받을게)/i,                                            intent: 'unmute_last_alert', args: {} },
+  { re: /이\s*(알람|경고|거|걸|것).*(안\s*해도|무시|끄|꺼|필요\s*없|충분히\s*알|알았어|됐어|그만|그냥)/i, intent: 'mute_last_alert', args: {} },
+  { re: /이\s*(알람|경고|메시지).*(무음|조용히)/i,                                                    intent: 'mute_last_alert',   args: {} },
+
   // ── 기타 제이 직접 처리 ──
   { re: /브리핑|briefing|아침.*알람|야간.*보류/i, intent: 'brief'  },
   { re: /큐|queue/i,                              intent: 'queue'  },
@@ -286,6 +293,8 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 - mute   : "루나 1시간 무음", "전체 조용히 30분" (args: target, duration)
 - unmute : "루나 무음 해제" (args: target)
 - mutes  : "무음 목록", "뭐 무음했어"
+- mute_last_alert   : "이 알람 안 해도 돼", "이거 무시해", "이 경고 필요 없어", "충분히 알았어", "이 알람 꺼줘"
+- unmute_last_alert : "이 알람 다시 알려줘", "이 알람 무음 해제해줘", "이거 다시 받을게"
 - help   : "도움말", "뭐할 수 있어", "명령 목록"
 - unknown: 위 어디에도 해당하지 않을 때
 
