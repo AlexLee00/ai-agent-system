@@ -728,13 +728,18 @@ async function main() {
     function timeToSlots(startTime, endTime) {
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
-      
+
       const startMinutes = startHour * 60 + startMin;
-      const endMinutes = endHour * 60 + endMin;
-      
+      let endMinutes = endHour * 60 + endMin;
+
+      // 자정 넘어가는 경우 처리 (예: 23:00~02:00 → endMinutes += 1440)
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+      }
+
       const slots = [];
       for (let min = startMinutes; min <= endMinutes - 1; min += 30) {
-        const h = Math.floor(min / 60);
+        const h = Math.floor(min / 60) % 24; // 24시간 나머지 (자정 넘어도 00~23 유지)
         const m = min % 60;
         slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
       }

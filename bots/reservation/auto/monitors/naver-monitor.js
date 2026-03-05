@@ -1374,7 +1374,12 @@ async function monitorBookings() {
 
             // 오늘 이전 스냅샷 정리
             pruneOldFutureConfirmed(todaySeoul);
+            // 홈으로 복귀 (브라우저 화면 정상화)
+            await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
           } catch (det4Err) {
+            if (det4Err.message !== 'cancelledHref 없음') {
+              try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (_) {}
+            }
             log(`⚠️ [취소감지4] 오류 — 스킵: ${det4Err.message}`);
           }
         }
