@@ -132,8 +132,9 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
   try {
     const openai = getOpenAI();
     const res    = await openai.chat.completions.create({
-      model:      OPENAI_PERF_MODEL,
-      max_tokens: maxTokens,
+      model:           OPENAI_PERF_MODEL,
+      max_tokens:      maxTokens,
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userPrompt   },
@@ -163,8 +164,9 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
     try {
       const groq = nextGroqClient();
       const res  = await groq.chat.completions.create({
-        model:      GROQ_SCOUT_MODEL,
-        max_tokens: maxTokens,
+        model:           GROQ_SCOUT_MODEL,
+        max_tokens:      maxTokens,
+        response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
