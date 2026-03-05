@@ -1408,6 +1408,8 @@ function parseJsonResponse(text) {
 | 2026-03-05 | **LLM 토큰 이력 DB 기록 + 거래 일지 스크립트** — llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록 외 3건 |
 | 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** — OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
 | 2026-03-05 | **예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정** — naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
+| 2026-03-05 | **스카 pickko-query/cancel-cmd 경로 누락 버그 수정** — CLAUDE_NOTES.md 명령 테이블 절대경로 수정 외 1건 |
+<!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
 <!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
 <!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
 <!-- session-close:2026-03-05:llm-토큰-이력-db-기록-거래-일지-스크립트 -->

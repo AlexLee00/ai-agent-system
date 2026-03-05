@@ -79,6 +79,11 @@
 - state.db 오류 예약 수동처리
 <!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
 
+### 🔧 스카 pickko-query/cancel-cmd 경로 누락 버그 수정
+- CLAUDE_NOTES.md 명령 테이블 절대경로 수정
+- pickko-query.js 및 pickko-cancel-cmd.js 경로 누락 원인 파악
+<!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 
