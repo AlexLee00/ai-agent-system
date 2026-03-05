@@ -16,7 +16,11 @@
     "nemesis": "node team/nemesis.js",
     "check": "node --check markets/crypto.js && node --check team/luna.js && node --check shared/llm-client.js",
     "report": "node team/reporter.js",
-    "report:tg": "node team/reporter.js --telegram"
+    "report:tg": "node team/reporter.js --telegram",
+    "journal": "node scripts/trading-journal.js",
+    "journal:week": "node scripts/trading-journal.js --days=7",
+    "journal:all": "node scripts/trading-journal.js --all",
+    "journal:tg": "node scripts/trading-journal.js --telegram"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
