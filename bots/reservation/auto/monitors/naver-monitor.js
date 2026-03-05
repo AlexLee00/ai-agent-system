@@ -462,6 +462,7 @@ async function takeScreenshot(page, reason) {
 }
 
 // 개인정보 보호: 예약일 기준 7일 경과한 항목 자동 삭제
+// (취소 키는 90일 보관 — Detection 2E가 네이버 이력에서 중복 재시도 방지)
 function cleanupExpiredSeen() {
   try {
     const cutoff = new Date();
@@ -471,9 +472,13 @@ function cleanupExpiredSeen() {
     if (removed > 0) {
       log(`🧹 개인정보 자동 정리: 만료 예약 ${removed}건 삭제 (7일 경과)`);
     }
-    const removedCk = pruneOldCancelledKeys(cutoffStr);
+    // cancelled_keys: 90일 보관 (네이버 취소 이력 표시 기간보다 길게 유지 → 중복 취소 방지)
+    const ckCutoff = new Date();
+    ckCutoff.setDate(ckCutoff.getDate() - 90);
+    const ckCutoffStr = ckCutoff.toISOString().slice(0, 10);
+    const removedCk = pruneOldCancelledKeys(ckCutoffStr);
     if (removedCk > 0) {
-      log(`🧹 개인정보 자동 정리: 취소 키 ${removedCk}건 삭제 (7일 경과)`);
+      log(`🧹 개인정보 자동 정리: 취소 키 ${removedCk}건 삭제 (90일 경과)`);
     }
   } catch (err) {
     log(`⚠️ cleanupExpiredSeen 오류: ${err.message}`);
