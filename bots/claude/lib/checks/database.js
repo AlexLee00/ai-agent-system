@@ -174,6 +174,42 @@ async function checkDuckDB(items) {
       });
     }
 
+    // 신호 exchange 불일치 체크 (예: BTC/USDT가 exchange='kis'로 저장된 경우)
+    // - 암호화폐 심볼(/ 포함) → exchange='binance' 이어야 함
+    // - KIS 국내 심볼(6자리 숫자) → exchange='kis' 이어야 함
+    if (tables.includes('signals')) {
+      try {
+        const mismatchCrypto = duckdbQuery(
+          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE symbol LIKE '%/%' AND exchange != 'binance' AND status NOT IN ('executed','failed','cancelled')"
+        );
+        const mismatchKis = duckdbQuery(
+          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE regexp_matches(symbol, '^\\d{6}$') AND exchange != 'kis' AND status NOT IN ('executed','failed','cancelled')"
+        );
+        const staleSignals = duckdbQuery(
+          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE status IN ('pending','approved') AND created_at < NOW() - INTERVAL 2 HOUR"
+        );
+
+        const mc = mismatchCrypto[0]?.cnt ?? 0;
+        const mk = mismatchKis[0]?.cnt ?? 0;
+        const ss = staleSignals[0]?.cnt ?? 0;
+
+        if (mc > 0 || mk > 0) {
+          const details = [];
+          if (mc > 0) details.push(`암호화폐→KIS 오분류 ${mc}건`);
+          if (mk > 0) details.push(`KIS→바이낸스 오분류 ${mk}건`);
+          items.push({ label: 'DuckDB 신호 exchange 불일치', status: 'error', detail: details.join(', ') });
+        } else {
+          items.push({ label: 'DuckDB 신호 exchange 불일치', status: 'ok', detail: '정상' });
+        }
+
+        if (ss > 0) {
+          items.push({ label: 'DuckDB 미처리 신호 (2h+)', status: 'warn', detail: `${ss}건 장기 미실행 (approved/pending)` });
+        }
+      } catch (e) {
+        items.push({ label: 'DuckDB 신호 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });
+      }
+    }
+
   } catch (e) {
     items.push({ label: 'DuckDB (루나)', status: 'error', detail: e.message });
   }
