@@ -65,6 +65,7 @@ npm run dexter:full         # 전체 점검 (npm audit 포함)
 npm run dexter:fix          # 자동 수정 + 텔레그램 알림
 npm run dexter:daily        # 일일 보고 (텔레그램)
 npm run dexter:checksums    # 체크섬 갱신 (코드 수정 후)
+npm run dexter:quick        # 퀵체크 수동 실행 (5분 주기: ai.claude.dexter.quick)
 
 # 패턴 이력 초기화
 node src/dexter.js --clear-patterns --label=<레이블>   # 특정 이슈 이력 삭제

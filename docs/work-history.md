@@ -1038,3 +1038,29 @@
 - `fa273f6` DuckDB WAL 수정 + cost-tracker reportToTelegram 클래스 내부 이동
 - `915859c` LLM 정책 v2.2 — Groq 전용
 - `d603831` 투자 리포트 시스템 (reporter.js)
+
+## 2026-03-05 (세션 다수)
+
+### 출금지연제 자동예약 + 덱스터 Phase C
+deps.js cd→cwd 수정(launchd PATH 오류) | git 상태 패턴 저장 제외(false positive) | getNewErrors 중복 수정(GROUP BY) | node→process.execPath 수정 | 업비트 출금지연제 자동예약(luna-commander) | 신규감지 창 24h→8h | --clear-patterns CLI | RAG 서버 optional 처리
+
+### 헬스체크 회복 로직 + 제이 할루시네이션 방지
+health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 수정 | TOOLS.md bot_commands 명령 테이블 + 할루시네이션 방지 경고
+
+### 스카팀 취소 루틴 버그 수정
+page.click(body)→Escape 키 수정(상세보기 블러 문제) | toCancelKey bookingId 기반 개선(슬롯 재예약 키 충돌 방지)
+
+### 루나팀 국내/국외 모의투자 배포
+국내장 모의투자 활성화(ai.investment.domestic) | 포트폴리오 프롬프트 심볼 환각 버그 수정(luna.js) | 덱스터 신호 exchange 불일치 감지 추가
+
+### LLM 토큰 이력 DB 기록 + 거래 일지
+llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록 | token_usage 테이블 duration_ms 컬럼 | scripts/trading-journal.js 신규
+
+### OpenClaw 업데이트 + 제이 RAG 연동
+OpenClaw 2026.2.26→2026.3.2 | TOOLS.md RAG 검색 섹션(system_docs 12건 임베딩) | state.db e2e 테스트 데이터 삭제
+
+### 덱스터 AI 분석 레이어 + 2-티어 퀵체크
+- bots/claude/lib/ai-analyst.js: OpenAI gpt-4o-mini/4o 종합 진단, dexter-insights.json (최대 20개 FIFO)
+- bots/claude/src/dexter-quickcheck.js: 5분 주기 크래시 감지·자동재시작·중복알림방지
+- ai.claude.dexter.quick launchd 등록 (StartInterval=300, --telegram --fix)
+- 덱스터 체크 티어: quick(5분) + full(1h)

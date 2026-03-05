@@ -10,6 +10,7 @@
     "dexter:telegram":   "node src/dexter.js --telegram",
     "dexter:fix":        "node src/dexter.js --fix --telegram",
     "dexter:daily":      "node src/dexter.js --daily-report --telegram",
+    "dexter:quick":      "node src/dexter-quickcheck.js --telegram --fix",
     "archer":            "node src/archer.js",
     "archer:telegram":   "node src/archer.js --telegram",
     "archer:fetch-only": "node src/archer.js --fetch-only",
