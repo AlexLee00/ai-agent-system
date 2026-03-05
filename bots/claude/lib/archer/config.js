@@ -97,7 +97,7 @@ module.exports = {
     githubTimeout:  8000,
     npmTimeout:     5000,
     webTimeout:     10000,
-    claudeTimeout:  60000,
+    openaiTimeout:  60000,
     auditTimeout:   30000,
   },
 
@@ -111,9 +111,9 @@ module.exports = {
     logFile:          '/tmp/archer.log',
   },
 
-  // ─── Claude API ─────────────────────────────────────────────────
-  CLAUDE: {
-    model:       'claude-sonnet-4-6',
+  // ─── OpenAI API ─────────────────────────────────────────────────
+  OPENAI: {
+    model:       'gpt-4o',
     maxTokens:   4096,
     temperature: 0.3,
   },

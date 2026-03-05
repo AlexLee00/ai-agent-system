@@ -9,9 +9,9 @@
  *   - 응답 스키마: patches[], security[], llm_api[], ai_techniques[], web_highlights[], summary
  */
 
-const Anthropic = require('@anthropic-ai/sdk').default || require('@anthropic-ai/sdk');
-const config    = require('./config');
-const { getAnthropicKey } = require('../../../../packages/core/lib/llm-keys');
+const OpenAI = require('openai');
+const config = require('./config');
+const { getOpenAIKey } = require('../../../../packages/core/lib/llm-keys');
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
@@ -134,21 +134,24 @@ function buildContext({ github, npm, webSources, audit, cache }) {
   return lines.join('\n');
 }
 
-// ─── Claude API 호출 ─────────────────────────────────────────────────
+// ─── OpenAI API 호출 ─────────────────────────────────────────────────
 
-async function callClaude(contextText) {
-  const apiKey = getAnthropicKey();
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY 없음 — bots/investment/config.yaml anthropic.api_key 확인');
+async function callOpenAI(contextText) {
+  const apiKey = getOpenAIKey();
+  if (!apiKey) throw new Error('OPENAI_API_KEY 없음 — bots/investment/config.yaml openai.api_key 확인');
 
-  const client = new Anthropic({ apiKey });
-  const msg = await client.messages.create({
-    model:      config.CLAUDE.model,
-    max_tokens: config.CLAUDE.maxTokens,
-    system:     SYSTEM_PROMPT,
-    messages:   [{ role: 'user', content: contextText }],
+  const client = new OpenAI({ apiKey });
+  const resp = await client.chat.completions.create({
+    model:      config.OPENAI.model,
+    max_tokens: config.OPENAI.maxTokens,
+    temperature: config.OPENAI.temperature,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: contextText },
+    ],
   });
 
-  return msg.content[0]?.text || '';
+  return resp.choices[0]?.message?.content || '';
 }
 
 // ─── 메인 분석 함수 ──────────────────────────────────────────────────
@@ -163,9 +166,9 @@ async function analyze(data, cache = {}) {
 
   let raw;
   try {
-    raw = await callClaude(contextText);
+    raw = await callOpenAI(contextText);
   } catch (e) {
-    console.warn(`  ⚠️ [아처] Claude API 실패: ${e.message}`);
+    console.warn(`  ⚠️ [아처] OpenAI API 실패: ${e.message}`);
     return null;
   }
 
