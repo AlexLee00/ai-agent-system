@@ -1671,7 +1671,7 @@ async function main() {
 
       await new Promise((resolve) => {
         const child = spawn('node', [
-          path.join(__dirname, 'pickko-pay-pending.js'),
+          path.join(__dirname, '../reports/pickko-pay-pending.js'),
           `--phone=${PHONE_NOHYPHEN}`,
           `--date=${DATE}`,
           `--start=${START_TIME}`,
