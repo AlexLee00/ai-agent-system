@@ -147,22 +147,24 @@ node manual/reports/pickko-alerts-query.js --hours=48
 
 ### 예약 조회
 
+> ⚠️ **반드시 아래 절대 경로로 실행** — 파일명만 쓰면 찾지 못함
+
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "오늘 예약 현황", "오늘 예약 알려줘" | `pickko-query.js --date=today` |
-| "내일 예약 있어?" | `pickko-query.js --date=tomorrow` |
-| "3월 5일 예약 알려줘" | `pickko-query.js --date=2026-03-05` |
-| "홍길동 예약 언제야?" | `pickko-query.js --name=홍길동` |
-| "010-1234-5678 예약 조회" | `pickko-query.js --phone=01012345678` |
-| "A1룸 예약 현황" | `pickko-query.js --room=A1` |
-| "오늘 B룸 예약" | `pickko-query.js --date=today --room=B` |
+| "오늘 예약 현황", "오늘 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=today` |
+| "내일 예약 있어?" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=tomorrow` |
+| "3월 5일 예약 알려줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=2026-03-05` |
+| "홍길동 예약 언제야?" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --name=홍길동` |
+| "010-1234-5678 예약 조회" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --phone=01012345678` |
+| "A1룸 예약 현황" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --room=A1` |
+| "오늘 B룸 예약" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js --date=today --room=B` |
 
 ### 예약 등록
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘" | `pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동` |
-| "내일 오전 10시~12시 B룸 010-0000-0000 김철수" | `pickko-register.js --date=내일 --start=10:00 --end=12:00 --room=B --phone=01000000000 --name=김철수` |
+| "3월 5일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --phone=01012345678 --name=홍길동` |
+| "내일 오전 10시~12시 B룸 010-0000-0000 김철수" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-register.js --date=내일 --start=10:00 --end=12:00 --room=B --phone=01000000000 --name=김철수` |
 
 - 신규 회원이어도 픽코 자동 등록 포함 (별도 회원 가입 불필요)
 
@@ -170,26 +172,26 @@ node manual/reports/pickko-alerts-query.js --hours=48
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "홍길동 3월 5일 3시 A1 취소해줘" | `pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동` |
+| "홍길동 3월 5일 3시 A1 취소해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동` |
 
-- **취소 전 반드시** `pickko-query.js`로 예약 확인 후 정확한 정보로 실행
+- **취소 전 반드시** pickko-query.js로 예약 확인 후 정확한 정보로 실행
 
 ### 회원 가입 (예약 없이 회원만)
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "010-1234-5678 홍길동 회원가입해줘" | `pickko-member.js --phone=01012345678 --name=홍길동` |
+| "010-1234-5678 홍길동 회원가입해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-member.js --phone=01012345678 --name=홍길동` |
 
 ### 이용권 추가
 
 | 사장님 말 (예시) | 실행 명령 |
 |-----------------|-----------|
-| "홍길동한테 3시간 이용권 추가해줘" | `pickko-ticket.js --phone=01012345678 --ticket=3시간` |
-| "010-1234-5678 1시간 이용권" | `pickko-ticket.js --phone=01012345678 --ticket=1시간` |
-| "김철수 14일권 추가" | `pickko-ticket.js --phone=01000000000 --ticket=14일권` |
-| "이름 30시간권 충전" | `pickko-ticket.js --phone=01000000000 --ticket=30시간` |
-| "홍길동 리뷰체험단 3시간 이용권" | `pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount --reason="리뷰체험단"` |
-| "이벤트 할인으로 1시간 이용권 줘" | `pickko-ticket.js --phone=01012345678 --ticket=1시간 --discount --reason="이벤트 할인"` |
+| "홍길동한테 3시간 이용권 추가해줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=3시간` |
+| "010-1234-5678 1시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=1시간` |
+| "김철수 14일권 추가" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01000000000 --ticket=14일권` |
+| "이름 30시간권 충전" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01000000000 --ticket=30시간` |
+| "홍길동 리뷰체험단 3시간 이용권" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount --reason="리뷰체험단"` |
+| "이벤트 할인으로 1시간 이용권 줘" | `node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-ticket.js --phone=01012345678 --ticket=1시간 --discount --reason="이벤트 할인"` |
 | "공짜로 이용권 추가" / 할인 사유 없음 | `pickko-ticket.js --phone=01012345678 --ticket=3시간 --discount` |
 
 > **할인 규칙**: `--discount` = 이용권 전액 0원 처리. `--reason` 없으면 "기타 할인" 자동 입력.
@@ -318,10 +320,10 @@ node ~/projects/ai-agent-system/bots/reservation/manual/admin/pickko-member.js \
 
 ## 🔍 자연어 예약 조회 명령
 
-사장님이 예약 현황을 물어보면 `pickko-query.js`를 실행하고 `message` 필드를 텔레그램으로 전송한다.
+사장님이 예약 현황을 물어보면 아래 절대 경로로 실행하고 `message` 필드를 텔레그램으로 전송한다.
 
 ```bash
-node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js [옵션]
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query.js [옵션]
 ```
 
 | 옵션 | 설명 | 예시 |
@@ -341,17 +343,19 @@ node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query
 ### 조회 예시
 
 ```
+SCRIPT=/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation
+
 사장님: "오늘 예약 현황 알려줘"
-→ node .../pickko-query.js --date=today
+→ node $SCRIPT/pickko-query.js --date=today
 
 사장님: "3월 5일 예약 있어?"
-→ node .../pickko-query.js --date=2026-03-05
+→ node $SCRIPT/pickko-query.js --date=2026-03-05
 
 사장님: "정진영 예약 언제야?"
-→ node .../pickko-query.js --name=정진영
+→ node $SCRIPT/pickko-query.js --name=정진영
 
 사장님: "010-1234-5678 예약 조회"
-→ node .../pickko-query.js --phone=01012345678
+→ node $SCRIPT/pickko-query.js --phone=01012345678
 ```
 
 ---
@@ -365,7 +369,7 @@ node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-query
 2. **네이버 해제** (`pickko-kiosk-monitor.js --unblock-slot`) — 네이버 예약불가 → 예약가능 복구
 
 ```bash
-node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
   --phone=01012345678 --date=2026-03-05 \
   --start=15:00 --end=17:00 --room=A1 [--name=홍길동]
 ```
@@ -378,9 +382,11 @@ node ~/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cance
 ### 취소 예시
 
 ```
+SCRIPT=/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation
+
 사장님: "홍길동 3월 5일 3시 예약 취소해줘"
-→ pickko-query.js 로 예약 확인 (전번·시간·룸 정확히)
-→ node .../pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동
+→ node $SCRIPT/pickko-query.js --phone=01012345678 --date=2026-03-05  (예약 확인 먼저)
+→ node $SCRIPT/pickko-cancel-cmd.js --phone=01012345678 --date=2026-03-05 --start=15:00 --end=17:00 --room=A1 --name=홍길동
 ```
 
 > **중요**: 취소 전에 반드시 `pickko-query.js`로 예약 정보를 확인한 후 처리할 것
