@@ -115,6 +115,8 @@ const KEYWORD_PATTERNS = [
   { re: /장.*(열렸|열려|시간|중이야|이야|언제|끝나|마감|개장|폐장)|국내.*장|코스피|코스닥/i,                                   intent: 'market_status', args: { market: 'domestic' } },
 
   // ── 업비트 USDT 출금 전용 (매수 없이 기존 USDT 잔고만 출금) — 전체전송보다 먼저 ──
+  { re: /테더.*(전송|보내|바이낸스|출금|이동)|바이낸스.*테더.*(보내|전송)/i,     intent: 'upbit_withdraw', args: {} },
+  { re: /tether.*(전송|보내|바이낸스|출금)|테더.*있.*(보내|전송|출금)/i,          intent: 'upbit_withdraw', args: {} },
   { re: /업비트.*(usdt|잔고).*(출금|보내|바이낸스|전송)(?!.*매수|.*구매)/i,     intent: 'upbit_withdraw', args: {} },
   { re: /usdt.*(출금만|만.*출금|출금.*해|출금.*바이낸스|출금.*전송)(?!.*매수)/i, intent: 'upbit_withdraw', args: {} },
   { re: /출금만.*해줘|usdt.*출금.*전용|withdraw.*usdt/i,                         intent: 'upbit_withdraw', args: {} },
@@ -241,7 +243,8 @@ const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
 - luna (현황만) : "루나 어때", "루나팀 상태"
 - upbit_withdraw : 업비트 USDT 잔고 전량 바이낸스로 출금 (KRW 매수 없이 기존 USDT만)
   예) "업비트 USDT 출금해줘", "USDT 출금만 해줘", "업비트 잔고 바이낸스로 출금", "출금만 해줘"
-  ※ 매수 없이 이미 있는 USDT를 출금할 때만 사용
+  예) "테더 전송해줘", "테더 바이낸스로 보내줘", "테더 출금해", "테더 전송해달라"
+  ※ 매수 없이 이미 있는 USDT(테더)를 출금할 때 사용. "테더"라는 단어가 있으면 반드시 upbit_withdraw
 - upbit_transfer command=upbit_to_binance : 업비트 KRW 전량으로 USDT 매수 후 바이낸스로 전송 (전체 플로우)
   예) "업비트 계좌 입금했어 전량 usdt 구매하고 바이낸스로 보내줘"
   예) "업비트에서 usdt 사서 바이낸스로 전송해줘"
