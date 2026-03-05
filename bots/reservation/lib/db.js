@@ -121,10 +121,21 @@ function _initSchema(db) {
       PRIMARY KEY (room, date)
     );
 
+    CREATE TABLE IF NOT EXISTS naver_future_confirmed (
+      booking_key  TEXT PRIMARY KEY,
+      phone_raw    TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      start_time   TEXT NOT NULL,
+      end_time     TEXT NOT NULL,
+      room         TEXT,
+      last_scan    INTEGER DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_res_status ON reservations(status);
     CREATE INDEX IF NOT EXISTS idx_res_date   ON reservations(date);
     CREATE INDEX IF NOT EXISTS idx_kiosk_date ON kiosk_blocks(date);
     CREATE INDEX IF NOT EXISTS idx_alerts_ts  ON alerts(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_nfc_date   ON naver_future_confirmed(date);
   `);
 
 }
@@ -737,6 +748,72 @@ function getTodayStats(date) {
   return { naverTotal, naverConfirmed, kioskTotal, total: naverTotal + kioskTotal };
 }
 
+// ─── naver_future_confirmed (미래 예약 스냅샷) ─────────────────────
+
+/**
+ * 미래 예약 스냅샷 upsert (3사이클마다 갱신)
+ * - bookingKey: bookingId 또는 "date|start|end|room|phone" 복합키
+ * - scanCycle: 현재 checkCount (last_scan 갱신용)
+ */
+function upsertFutureConfirmed(bookingKey, phoneRaw, date, startTime, endTime, room, scanCycle) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO naver_future_confirmed
+      (booking_key, phone_raw, date, start_time, end_time, room, last_scan)
+    VALUES
+      (@booking_key, @phone_raw, @date, @start_time, @end_time, @room, @last_scan)
+    ON CONFLICT(booking_key) DO UPDATE SET
+      phone_raw  = excluded.phone_raw,
+      date       = excluded.date,
+      start_time = excluded.start_time,
+      end_time   = excluded.end_time,
+      room       = excluded.room,
+      last_scan  = excluded.last_scan
+  `).run({
+    booking_key: bookingKey,
+    phone_raw:   phoneRaw || '',
+    date:        date || '',
+    start_time:  startTime || '',
+    end_time:    endTime || '',
+    room:        room || null,
+    last_scan:   scanCycle || 0,
+  });
+}
+
+/**
+ * stale(사라진) 예약 조회: last_scan < currentCycle AND date >= minDate
+ * → 이번 스캔에서 갱신되지 않은 = 네이버에서 사라짐 = 취소 가능성
+ */
+function getStaleConfirmed(currentCycle, minDate) {
+  const db = getDb();
+  return db.prepare(
+    'SELECT * FROM naver_future_confirmed WHERE last_scan < ? AND date >= ?'
+  ).all(currentCycle, minDate || '');
+}
+
+/**
+ * stale 항목 일괄 삭제 (취소 처리 완료 후 호출)
+ * - currentCycle, minDate 조건은 getStaleConfirmed와 동일
+ */
+function deleteStaleConfirmed(currentCycle, minDate) {
+  const db = getDb();
+  const result = db.prepare(
+    'DELETE FROM naver_future_confirmed WHERE last_scan < ? AND date >= ?'
+  ).run(currentCycle, minDate || '');
+  return result.changes;
+}
+
+/**
+ * cutoffDate 이전 스냅샷 삭제 (과거 날짜 정리)
+ */
+function pruneOldFutureConfirmed(cutoffDate) {
+  const db = getDb();
+  const result = db.prepare(
+    'DELETE FROM naver_future_confirmed WHERE date < ?'
+  ).run(cutoffDate);
+  return result.changes;
+}
+
 // ─── 마이그레이션 헬퍼 ─────────────────────────────────────────────
 
 /** schema_migrations 테이블 생성 (이미 _initSchema에서 처리, 단독 호출용) */
@@ -823,4 +900,9 @@ module.exports = {
   getRoomRevenueSummary,
   // stats
   getTodayStats,
+  // naver_future_confirmed (Detection 4)
+  upsertFutureConfirmed,
+  getStaleConfirmed,
+  deleteStaleConfirmed,
+  pruneOldFutureConfirmed,
 };
