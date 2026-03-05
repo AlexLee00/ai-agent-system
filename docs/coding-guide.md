@@ -1406,6 +1406,8 @@ function parseJsonResponse(text) {
 | 2026-03-05 | **취소 루틴 버그 수정 (블러/키 충돌)** — page.click(body)→Escape 키 수정(상세보기 블러 문제) 외 3건 |
 | 2026-03-05 | **루나팀 국내/국외 모의투자 배포** — 국내장 모의투자 활성화 (ai.investment.domestic) 외 4건 |
 | 2026-03-05 | **LLM 토큰 이력 DB 기록 + 거래 일지 스크립트** — llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록 외 3건 |
+| 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** — OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
+<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
 <!-- session-close:2026-03-05:llm-토큰-이력-db-기록-거래-일지-스크립트 -->
 <!-- session-close:2026-03-05:루나팀-국내국외-모의투자-배포 -->
 <!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->

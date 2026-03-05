@@ -92,3 +92,10 @@ token_usage (id, bot_name, team, model, provider, is_free, task_type,
 - `is_free=1`: Groq/Google 무료 호출
 - investment 봇은 `shared/llm-client.js`에서 자동 기록
 - `/cost` 명령으로 조회 (buildCostReport)
+
+## 변경 이력
+
+| 날짜 | 제목 | 내용 |
+|------|------|------|
+| 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** | OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
+<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
