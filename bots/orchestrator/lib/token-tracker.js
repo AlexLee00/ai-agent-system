@@ -27,6 +27,8 @@ const PRICING = {
   'google-gemini-cli/gemini-2.5-flash':         { input: 0,     output: 0,      free: true  },
   'gemini-2.5-flash':                           { input: 0,     output: 0,      free: true  },
   'groq/llama-3.1-8b-instant':                  { input: 0,     output: 0,      free: true  },
+  'gpt-4o':                                     { input: 2.50,  output: 10.00,  free: false },
+  'gpt-4o-mini':                                { input: 0.15,  output: 0.60,   free: false },
 };
 
 let _db = null;
@@ -43,16 +45,17 @@ function getDb() {
 /**
  * 토큰 사용 기록
  * @param {object} opts
- * @param {string} opts.bot       봇명 (archer, luna, jason, 제이...)
- * @param {string} opts.team      팀명 (claude|investment|orchestrator|reservation)
- * @param {string} opts.model     모델 ID
- * @param {string} opts.provider  anthropic|groq|google|openclaw
- * @param {string} opts.taskType  업무 유형 (tech_analysis|trade_signal|command_parse|report...)
- * @param {number} opts.tokensIn  입력 토큰
- * @param {number} opts.tokensOut 출력 토큰
- * @param {number} [opts.costUsd] 비용 (미제공 시 단가표로 계산)
+ * @param {string} opts.bot        봇명 (archer, luna, jason, 제이...)
+ * @param {string} opts.team       팀명 (claude|investment|orchestrator|reservation)
+ * @param {string} opts.model      모델 ID
+ * @param {string} opts.provider   anthropic|groq|openai|google|openclaw
+ * @param {string} opts.taskType   업무 유형 (tech_analysis|trade_signal|command_parse|report...)
+ * @param {number} opts.tokensIn   입력 토큰
+ * @param {number} opts.tokensOut  출력 토큰
+ * @param {number} [opts.durationMs] 응답 소요 시간 (ms)
+ * @param {number} [opts.costUsd]  비용 (미제공 시 단가표로 계산)
  */
-function trackTokens({ bot, team, model, provider, taskType = 'unknown', tokensIn = 0, tokensOut = 0, costUsd }) {
+function trackTokens({ bot, team, model, provider, taskType = 'unknown', tokensIn = 0, tokensOut = 0, durationMs = 0, costUsd }) {
   try {
     const p       = PRICING[model] || { input: 0, output: 0, free: false };
     const isFree  = p.free || provider === 'groq' || provider === 'google';
@@ -64,9 +67,9 @@ function trackTokens({ bot, team, model, provider, taskType = 'unknown', tokensI
 
     getDb().prepare(`
       INSERT INTO token_usage
-        (bot_name, team, model, provider, is_free, task_type, tokens_in, tokens_out, cost_usd, date_kst)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(bot, team, model, provider, isFree ? 1 : 0, taskType, tokensIn, tokensOut, cost, kstDate);
+        (bot_name, team, model, provider, is_free, task_type, tokens_in, tokens_out, cost_usd, duration_ms, date_kst)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(bot, team, model, provider, isFree ? 1 : 0, taskType, tokensIn, tokensOut, cost, durationMs, kstDate);
   } catch (e) {
     // 추적 실패는 무음 처리 — 본 기능 방해 안 함
     console.warn(`[token-tracker] 기록 실패 (${bot}): ${e.message}`);

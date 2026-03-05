@@ -14,8 +14,19 @@ import OpenAI       from 'openai';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import yaml         from 'js-yaml';
 import { tracker }  from './cost-tracker.js';
+
+// CJS 토큰 트래커 (orchestrator 공용)
+let _trackTokens = null;
+try {
+  const require = createRequire(import.meta.url);
+  const tt = require('../../orchestrator/lib/token-tracker.js');
+  _trackTokens = tt.trackTokens;
+} catch {
+  // 오케스트레이터 모듈 없는 환경에서는 무음 처리
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -117,6 +128,7 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
 }
 
 async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
+  const t0 = Date.now();
   try {
     const openai = getOpenAI();
     const res    = await openai.chat.completions.create({
@@ -126,6 +138,14 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userPrompt   },
       ],
+    });
+    const dur = Date.now() - t0;
+    _trackTokens?.({
+      bot: agentName, team: 'investment', model: OPENAI_PERF_MODEL, provider: 'openai',
+      taskType: 'trade_signal',
+      tokensIn:  res.usage?.prompt_tokens     || 0,
+      tokensOut: res.usage?.completion_tokens || 0,
+      durationMs: dur,
     });
     return res.choices[0]?.message?.content || '';
   } catch (err) {
@@ -139,6 +159,7 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
   let lastErr;
   const maxAttempts = Math.max(_groqClients.length, 1);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const t0 = Date.now();
     try {
       const groq = nextGroqClient();
       const res  = await groq.chat.completions.create({
@@ -148,6 +169,14 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
           { role: 'system', content: systemPrompt },
           { role: 'user',   content: userPrompt   },
         ],
+      });
+      const dur = Date.now() - t0;
+      _trackTokens?.({
+        bot: agentName, team: 'investment', model: GROQ_SCOUT_MODEL, provider: 'groq',
+        taskType: 'trade_signal',
+        tokensIn:  res.usage?.prompt_tokens     || 0,
+        tokensOut: res.usage?.completion_tokens || 0,
+        durationMs: dur,
       });
       return res.choices[0]?.message?.content || '';
     } catch (err) {
