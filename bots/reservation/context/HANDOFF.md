@@ -628,6 +628,13 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js|bots/reservation/manual/reservation/pickko-accurate.js|bots/claude/lib/checks/logs.js|bots/claude/.checksums.json`
 <!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터:end -->
 
+<!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
+#### 2026-03-05 🔧 스카 pickko-query/cancel-cmd 경로 누락 버그 수정
+- CLAUDE_NOTES.md 명령 테이블 절대경로 수정
+- pickko-query.js 및 pickko-cancel-cmd.js 경로 누락 원인 파악
+- 관련 파일: `bots/reservation/context/CLAUDE_NOTES.md`
+<!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락-:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
