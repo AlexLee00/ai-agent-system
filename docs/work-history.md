@@ -48,6 +48,14 @@
 - 한송이 수동 픽코 취소 처리 완료
 <!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
 
+### ✨ 루나팀 국내/국외 모의투자 배포
+- 국내장 모의투자 활성화 (ai.investment.domestic)
+- 국외장 서비스 확인 (ai.investment.overseas)
+- 포트폴리오 프롬프트 심볼 환각 버그 수정 (luna.js)
+- 덱스터 신호 exchange 불일치 감지 추가 (database.js)
+- Claude API 크레딧 소비 원인 분석 (OpenClaw Gemini OAuth 만료→Haiku 폴백)
+<!-- session-close:2026-03-05:루나팀-국내국외-모의투자-배포 -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 
