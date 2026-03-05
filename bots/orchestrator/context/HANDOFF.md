@@ -23,6 +23,13 @@
 9. **팀장·팀원 정체성 유지**: identity-checker.js + 각 팀장 checkXxxTeamIdentity() + loadBotIdentity()
 10. **/dexter·/archer**: 정적 응답 → bot_commands 실제 실행 전환
 
+<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
+#### 2026-03-05 ✨ OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리
+- OpenClaw 2026.2.26→2026.3.2 업데이트
+- 제이 TOOLS.md RAG 검색 섹션 추가 (system_docs 12건 임베딩)
+- state.db e2e 테스트 데이터 4건 삭제 (2099-01-01)
+<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이:end -->
+
 ## 다음 작업 후보
 
 - 루나팀 Phase 3-B: KIS 국내/해외 주식 실거래 전환

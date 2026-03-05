@@ -33,7 +33,7 @@
 
 | # | 항목 | 내용 | 구현 단계 | 예상 효과 |
 |---|------|------|-----------|-----------|
-| JY-RAG-01 | **SKILL.md RAG 연동** | 제이의 OpenClaw SKILL.md에 `search_rag` 스킬 등록. 예약규정 질문·과거이슈·시스템 설명 요청 시 `GET localhost:8100/search?q=...` 호출 후 컨텍스트 주입. **코드 수정 없음, SKILL.md만 편집**. 컬렉션: `orchestrator_knowledge` | 1단계: SKILL.md 편집 + 지식 문서 임베딩 (MAINBOT.md, 운영가이드 등) | 운영 질문 응답 품질 ↑, 할루시네이션 ↓ |
+| ~~JY-RAG-01~~ | ~~**SKILL.md RAG 연동**~~ | ✅ **2026-03-05 완료** — TOOLS.md RAG 검색 섹션 추가, system_docs 12건 임베딩 (TOOLS.md·DEV_SUMMARY·SYSTEM_DESIGN) | - | - |
 | JY-RAG-02 | **OpenClaw Plugin RAG tool** | TypeScript로 RAG Plugin 등록 (`~/.openclaw/plugins/rag-search/`). SKILL.md보다 정밀한 컨텍스트 윈도우 제어 가능. `tool_call` 형태로 호출 → 응답 스트리밍 지원 | 1단계: JY-RAG-01 완료 후 / 2단계: Plugin 등록 + 컬렉션 멀티 쿼리 | 다중 컬렉션 동시 검색, 팀별 답변 통합 |
 
 #### 루나팀 RAG (중장기 — 30일 데이터 누적 후)
