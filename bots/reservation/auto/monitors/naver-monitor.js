@@ -1812,11 +1812,18 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
             else if (endHour === 12 && startAmpm === '오전') {
               endAmpm = '오후';
             }
-            // 3) 시작이 오후이고 종료가 1~11이면: 오후 시작보다 작으면 자정 넘어 오전
+            // 3) 시작이 오후이고 종료가 1~11이면
             //    예: 오후 11:00~2:00 → endHour(2) < startHour(11) → 오전 2시(02:00)
             //    예: 오후 1:00~5:00  → endHour(5) >= startHour(1) → 오후 5시(17:00)
+            //    ⚠️ 예외: 오후 12:00~2:30 → startHour(12) 이므로 무조건 오후 (14:30)
+            //             endHour(2) < startHour(12) 이지만 자정 넘어가는 것이 아님
             else if (startAmpm === '오후' && endHour >= 1 && endHour <= 11) {
-              endAmpm = endHour < startHour ? '오전' : '오후';
+              if (startHour === 12) {
+                // 정오(오후 12시) 시작: 종료 1~11은 오후 1~11시 (13:00~23:00)
+                endAmpm = '오후';
+              } else {
+                endAmpm = endHour < startHour ? '오전' : '오후';
+              }
             }
             // 4) 그 외: 시작값 따라가기
             else {

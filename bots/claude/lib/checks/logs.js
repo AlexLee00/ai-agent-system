@@ -18,7 +18,7 @@ const WARN_PATTERNS  = [/⚠️/, /WARN/, /warn:/i, /deprecated/i];
 // 로그 품질 특수 패턴
 const QUALITY_PATTERNS = [
   { re: /TimeoutError|timeout.*exceeded|Navigation timeout/i, label: 'Playwright 타임아웃', threshold: 5 },
-  { re: /rate.?limit|RateLimitError|429|Too Many Requests/i,  label: 'Rate Limit',        threshold: 3 },
+  { re: /rate.?limit|RateLimitError|\bHTTP 429\b|Too Many Requests/i, label: 'Rate Limit', threshold: 3 },
   { re: /ECONNREFUSED|ECONNRESET|ETIMEDOUT/i,                 label: '네트워크 연결 거부', threshold: 5 },
 ];
 
@@ -100,7 +100,8 @@ function checkLogQuality(items) {
     if (!fs.existsSync(filePath)) continue;
     const lines = readLastN(filePath, 200);
     for (const { re, label, threshold } of QUALITY_PATTERNS) {
-      const cnt = lines.filter(l => re.test(l)).length;
+      // JSON 데이터 포함 라인(300자 초과)은 앞 300자만 검사 — 전화번호 등 오탐 방지
+      const cnt = lines.filter(l => re.test(l.length > 300 ? l.slice(0, 300) : l)).length;
       if (cnt >= threshold) {
         items.push({
           label:  `${botLabel} — ${label}`,
