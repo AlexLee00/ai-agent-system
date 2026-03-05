@@ -152,10 +152,19 @@ async function flushPendingTelegrams() {
   if (lines.length === 0) return;
   log(`📤 대기큐 재발송 시작: ${lines.length}건`);
 
+  // Telegram 최대 길이: 4096자 (프리픽스 "🔔 스카팀\n\n" ~12자 포함)
+  const TG_MAX = 4096 - 20;
+
   const remaining = [];
   for (const line of lines) {
     let entry;
     try { entry = JSON.parse(line); } catch { continue; } // 손상된 줄 제거
+
+    // 영구 실패 조건: 메시지가 Telegram 허용 한도 초과 → 재시도 불필요, 폐기
+    if (entry.message && entry.message.length > TG_MAX) {
+      log(`🗑️ 대기큐 폐기 (메시지 너무 김 ${entry.message.length}자): ${entry.message.slice(0, 50)}`);
+      continue;
+    }
 
     const ok = await tryTelegramSend(entry.message, entry.chatId || DEFAULT_CHAT_ID);
     if (ok) {
