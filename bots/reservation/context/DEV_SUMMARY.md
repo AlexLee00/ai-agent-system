@@ -281,6 +281,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-03-04 | **전체 봇 sendTelegram → publishToMainBot 전면 교체** | error-tracker.js 마지막 교체 완료 외 1건 |
 | 2026-03-04 | **LLM키통합+알람버그수정+덱스터패턴학습** | packages/core/lib/llm-keys.js 공용 LLM 키 로더 외 3건 |
 | 2026-03-05 | **헬스체크 회복 로직 + 제이 할루시네이션 방지 + db-backup 수정** | health-check.js 회복 감지·알림·state 저장 로직 추가 외 4건 |
+| 2026-03-05 | **취소 루틴 버그 수정 (블러/키 충돌)** | page.click(body)→Escape 키 수정(상세보기 블러 문제) 외 3건 |
+<!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
 <!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback -->
 <!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습 -->
 <!-- session-close:2026-03-04:전체-봇-sendtelegram-publishtomai -->

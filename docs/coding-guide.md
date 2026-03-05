@@ -1403,6 +1403,8 @@ function parseJsonResponse(text) {
 | 2026-03-05 | **출금지연제 자동예약 + 덱스터 Phase C** — 출금지연제 delay 감지·ETA 계산·Telegram 안내 외 8건 |
 | 2026-03-05 | **덱스터 Phase C 버그수정 + 업비트 출금지연 자동예약** — deps.js cd→cwd 수정 (launchd PATH 오류) 외 6건 |
 | 2026-03-05 | **헬스체크 회복 로직 + 제이 할루시네이션 방지 + db-backup 수정** — health-check.js 회복 감지·알림·state 저장 로직 추가 외 4건 |
+| 2026-03-05 | **취소 루틴 버그 수정 (블러/키 충돌)** — page.click(body)→Escape 키 수정(상세보기 블러 문제) 외 3건 |
+<!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
 <!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback -->
 <!-- session-close:2026-03-05:덱스터-phase-c-버그수정-업비트-출금지연-자동예약 -->
 <!-- session-close:2026-03-05:출금지연제-자동예약-덱스터-phase-c -->

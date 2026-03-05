@@ -607,6 +607,15 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/scripts/health-check.js|bots/reservation/scripts/backup-db.js|bots/orchestrator/lib/intent-parser.js`
 <!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback:end -->
 
+<!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
+#### 2026-03-05 🔧 취소 루틴 버그 수정 (블러/키 충돌)
+- page.click(body)→Escape 키 수정(상세보기 블러 문제)
+- toCancelKey bookingId 기반 개선(슬롯 재예약 키 충돌 방지)
+- Detection4 cancel key 동일 개선
+- 한송이 수동 픽코 취소 처리 완료
+- 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
+<!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
