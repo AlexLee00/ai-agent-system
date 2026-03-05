@@ -25,6 +25,7 @@ const {
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
   getTodayStats,
+  upsertFutureConfirmed, getStaleConfirmed, deleteStaleConfirmed, pruneOldFutureConfirmed,
 } = require('../../lib/db');
 const fs = require('fs');
 const path = require('path');
@@ -1201,6 +1202,44 @@ async function monitorBookings() {
           }
         }
 
+        // ✅ 취소 감지 2E: 확장 취소 감지 (3사이클마다 — checkCount % 3 === 2)
+        // 목적: Detection 2의 오늘취소 필터(오늘 날짜 예약만) 한계 극복
+        //        → "오늘취소" 버튼 비활성화 + 일간 + 취소 필터 → 미래 날짜 예약 취소 포함 감지
+        if (checkCount % 3 === 2 && process.env.PICKKO_CANCEL_ENABLE === '1' && cancelledHref) {
+          try {
+            const _c2eObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
+            const _c2eObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
+
+            log(`🔍 [취소감지2E] 확장 취소 스캔 시작 — 사이클 #${checkCount}`);
+            const expandedList = await scrapeExpandedCancelled(page, cancelledHref);
+            log(`🔍 [취소감지2E] ${expandedList.length}건 확인`);
+
+            if (expandedList.length > 0) {
+              const newCancels = expandedList.filter(c => {
+                const key = toCancelKey(c);
+                if (isCancelledKey(key)) return false;
+                if (_c2eObserveOnly && !_c2eObservePhones.includes(String(c.phoneRaw || c.phone?.replace(/\D/g, '') || ''))) return false;
+                return true;
+              });
+              if (newCancels.length > 0) {
+                log(`🗑️ [취소감지2E] 신규 취소 ${newCancels.length}건 처리`);
+                for (const c of newCancels) {
+                  const key = toCancelKey(c);
+                  addCancelledKey(key);
+                  await runPickkoCancel(c, key);
+                }
+              } else {
+                log('[취소감지2E] 신규 취소 없음');
+              }
+            }
+
+            await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
+          } catch (c2eErr) {
+            log(`⚠️ [취소감지2E] 오류: ${c2eErr.message}`);
+            try { await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }); } catch (_) {}
+          }
+        }
+
         // ✅ 취소 감지 1: 이전 사이클 확정 리스트에서 사라진 항목 → 취소 탭 교차검증 후 처리
         if (previousConfirmedList.length > 0 && process.env.PICKKO_CANCEL_ENABLE === '1') {
           // confirmedCount === 0 이면 페이지 로딩 글리치 가능성 → 취소 감지 스킵
@@ -1258,6 +1297,88 @@ async function monitorBookings() {
 
         // ✅ previousConfirmedList 업데이트
         previousConfirmedList = currentConfirmedList;
+
+        // ✅ 취소 감지 4: 미래 예약 스냅샷 비교 (3사이클 = ~15분마다, 내일~+60일)
+        // 목적: Detection 1은 현재 세션에서 감지된 예약만 비교 → 이전 세션에 등록된 미래 예약 취소 누락
+        // 방식: 미래 확정 예약을 DB에 upsert → 다음 스캔에서 갱신되지 않은 항목(stale) = 취소
+        if (checkCount % 3 === 1) {
+          try {
+            const tomorrowStr = new Date(Date.now() + 24 * 60 * 60 * 1000)
+              .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const future60Str = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+              .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            // cancelledHref에서 base URL 추출 (올바른 도메인 + partner bizId 보장)
+            // 예: https://partner.booking.naver.com/bizes/596871/booking-list-view
+            const _listBase = cancelledHref
+              ? (new URL(cancelledHref)).origin + (new URL(cancelledHref)).pathname
+              : null;
+            if (!_listBase) {
+              log('⚠️ [취소감지4] cancelledHref 없음 → 스킵');
+              throw new Error('cancelledHref 없음');
+            }
+            // REGDATE(신청일) 기준으로 과거 30일 확정 예약을 가져온 후 client-side에서 미래 날짜만 필터링
+            // (dateFilter=BOOKDATE 등 이용일 기준 파라미터가 불명확하므로 REGDATE+넓은 범위 사용)
+            const past30Str = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+              .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const futureUrl =
+              `${_listBase}?bookingStatusCodes=RC03&dateDropdownType=RANGE` +
+              `&dateFilter=REGDATE&startDateTime=${past30Str}&endDateTime=${future60Str}`;
+
+            log(`🔮 [취소감지4] 미래 예약 스캔 (${tomorrowStr}~${future60Str}) — 사이클 #${checkCount}`);
+            await page.goto(futureUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+            await delay(1500);
+            const futureList = await scrapeNewestBookingsFromList(page, 50);
+            // client-side 필터: 미래 날짜 예약만 (date > 오늘) 스냅샷 저장
+            const futureDateItems = futureList.filter(item => item.date && item.date > todaySeoul);
+            log(`🔮 [취소감지4] ${futureList.length}건 확인 → 미래 날짜 ${futureDateItems.length}건 스냅샷`);
+
+            // upsert: 미래 날짜 예약만 → last_scan = checkCount으로 갱신
+            for (const item of futureDateItems) {
+              const phoneRawItem = item.phoneRaw || item.phone?.replace(/\D/g, '') || '';
+              const bKey = item.bookingId ||
+                `${item.date}|${item.start}|${item.end}|${item.room || ''}|${phoneRawItem}`;
+              upsertFutureConfirmed(
+                bKey, phoneRawItem,
+                item.date || '', item.start || '', item.end || '',
+                item.room || null, checkCount,
+              );
+            }
+
+            // stale 감지: 갱신되지 않은 항목 = 네이버에서 사라짐 = 취소 가능성
+            // ⚠️ futureList=0건이면 페이지 로딩 실패 가능성 → stale 처리 스킵
+            if (futureList.length > 0) {
+              const staleItems = getStaleConfirmed(checkCount, tomorrowStr);
+              if (staleItems.length > 0) {
+                log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 취소 처리`);
+                for (const stale of staleItems) {
+                  const cancelKey = `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
+                  if (!isCancelledKey(cancelKey)) {
+                    log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} 사라짐 → 취소 처리`);
+                    addCancelledKey(cancelKey);
+                    const booking = {
+                      phoneRaw: stale.phone_raw,
+                      phone:    stale.phone_raw,
+                      date:     stale.date,
+                      start:    stale.start_time,
+                      end:      stale.end_time,
+                      room:     stale.room || '',
+                    };
+                    await runPickkoCancel(booking, cancelKey);
+                  }
+                }
+                deleteStaleConfirmed(checkCount, tomorrowStr);
+              }
+            } else {
+              log(`⚠️ [취소감지4] 미래 예약 0건 — stale 감지 스킵 (페이지 로딩 실패 가능성)`);
+            }
+
+            // 오늘 이전 스냅샷 정리
+            pruneOldFutureConfirmed(todaySeoul);
+          } catch (det4Err) {
+            log(`⚠️ [취소감지4] 오류 — 스킵: ${det4Err.message}`);
+          }
+        }
+
         detachRetryCount = 0; // 정상 완료 시 재시도 카운터 리셋
 
         // ✅ Heartbeat: 1시간마다 텔레그램으로 생존 신호 전송 (09:00~22:00만)
@@ -1469,6 +1590,90 @@ function updateBookingState(bookingId, booking, state = 'pending') {
   }
 }
 
+/**
+ * scrapeExpandedCancelled — 확장 취소 탭 파싱 (Detection 2E)
+ * 사용자 제안 UI 흐름:
+ *   1) cancelHref로 이동 → 활성화된 "오늘취소 N" 필터 버튼 클릭해 비활성화 (날짜 제한 해제)
+ *   2) 날짜 범위 드롭다운 "한달" → "일간" 변경 (취소 이벤트 기준 = 오늘 하루)
+ *   3) "예약상태" 드롭다운에서 "취소" 체크박스 선택
+ *   4) 리스트 파싱 → 미래 날짜 예약 취소 포함한 모든 취소 반환
+ *
+ * @param {import('puppeteer').Page} page
+ * @param {string} cancelHref  취소 탭 href (cancelledHref 변수)
+ * @returns {Promise<Array>}    scrapeNewestBookingsFromList 동일 형식
+ */
+async function scrapeExpandedCancelled(page, cancelHref) {
+  await page.goto(cancelHref, { waitUntil: 'networkidle2', timeout: 30000 });
+  await delay(1000);
+
+  // Step 1: 활성화된 "오늘취소 N" 버튼 → 클릭해 비활성화 (날짜 제한 해제)
+  try {
+    const activeBtn = await page.$(
+      'input[class*="BookingListView__active__"][value*="오늘취소"], ' +
+      'input.BookingListView__active__2xtEI[value*="오늘취소"]'
+    );
+    if (activeBtn) {
+      log('[취소감지2E] "오늘취소" 날짜 필터 비활성화');
+      await activeBtn.click();
+      await delay(1200);
+    }
+  } catch (e) {
+    log(`[취소감지2E] Step1 실패 (무시): ${e.message}`);
+  }
+
+  // Step 2: 날짜 범위 드롭다운 "한달" → "일간" 변경
+  try {
+    const dateDropBtn = await page.$('[class*="Select__root"] button[class*="Select__btn-selected"]');
+    if (dateDropBtn) {
+      const curText = await page.evaluate(el => el.querySelector('span')?.textContent?.trim(), dateDropBtn);
+      if (curText && curText !== '일간') {
+        await dateDropBtn.click();
+        await delay(500);
+        const changed = await page.evaluate(() => {
+          for (const el of Array.from(document.querySelectorAll('button, li, [role="option"]'))) {
+            if (el.textContent?.trim() === '일간') { el.click(); return true; }
+          }
+          return false;
+        });
+        if (changed) await delay(1000);
+      }
+    }
+  } catch (e) {
+    log(`[취소감지2E] Step2 실패 (무시): ${e.message}`);
+  }
+
+  // Step 3: "예약상태" 드롭다운 → "취소" 체크박스 선택
+  try {
+    const statusDropBtn = await page.$('#dropdownBookingStatus');
+    if (statusDropBtn) {
+      await statusDropBtn.click();
+      await delay(500);
+      const checked = await page.evaluate(() => {
+        const menu = document.querySelector('[aria-labelledby="dropdownBookingStatus"], [class*="dropdown-menu"]');
+        if (!menu) return false;
+        for (const item of Array.from(menu.querySelectorAll('li, label, [role="option"]'))) {
+          const text = item.textContent?.trim() || '';
+          if (text === '취소' || (text.includes('취소') && !text.includes('노쇼') && !text.includes('이용완료'))) {
+            const cb = item.querySelector('input[type="checkbox"]');
+            if (cb && !cb.checked) { cb.click(); return true; }
+            item.click(); return true;
+          }
+        }
+        return false;
+      });
+      if (checked) {
+        await delay(500);
+        await page.click('body').catch(() => {});
+        await delay(1000);
+      }
+    }
+  } catch (e) {
+    log(`[취소감지2E] Step3 실패 (무시): ${e.message}`);
+  }
+
+  return await scrapeNewestBookingsFromList(page, 50);
+}
+
 async function scrapeNewestBookingsFromList(page, limit = 5) {
   // "오늘 확정" 리스트 화면 파싱 (Div 기반 - BookingListView)
   // ✅ row는 a.BookingListView__contents-user__xNWR6
@@ -1569,17 +1774,21 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
               : (startHour === 12 ? 12 : startHour + 12);
             
             // 종료를 먼저 12시간 형식으로 가정하고 결정
-            // 1) 종료 시간이 1~11이면서 시작이 오전이면 오전
+            // 1) 오전 시작 + 종료가 1~11: 종료가 시작보다 작으면 오후로 넘어감
+            //    예: 오전 11:00~2:00 → endHour(2) < startHour(11) → 오후 2시(14:00)
+            //    예: 오전 9:00~11:00 → endHour(11) >= startHour(9) → 오전 11시(11:00)
             if ((endHour >= 1 && endHour <= 11) && startAmpm === '오전') {
-              endAmpm = '오전';
+              endAmpm = endHour < startHour ? '오후' : '오전';
             }
             // 2) 종료 시간이 12이고 시작이 오전이면 정오(오후 12)
             else if (endHour === 12 && startAmpm === '오전') {
               endAmpm = '오후';
             }
-            // 3) 시작이 오후이고 종료가 1~12이면 오후
-            else if (startAmpm === '오후' && endHour >= 1 && endHour <= 12) {
-              endAmpm = '오후';
+            // 3) 시작이 오후이고 종료가 1~11이면: 오후 시작보다 작으면 자정 넘어 오전
+            //    예: 오후 11:00~2:00 → endHour(2) < startHour(11) → 오전 2시(02:00)
+            //    예: 오후 1:00~5:00  → endHour(5) >= startHour(1) → 오후 5시(17:00)
+            else if (startAmpm === '오후' && endHour >= 1 && endHour <= 11) {
+              endAmpm = endHour < startHour ? '오전' : '오후';
             }
             // 4) 그 외: 시작값 따라가기
             else {
