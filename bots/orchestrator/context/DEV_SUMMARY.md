@@ -1,6 +1,6 @@
 # 오케스트레이터(제이) 개발 요약
 
-> 최종 업데이트: 2026-03-04
+> 최종 업데이트: 2026-03-05
 
 ## 시스템 역할
 
@@ -26,7 +26,7 @@
 | `src/dashboard.js` | /status 빌더 |
 | `lib/intent-parser.js` | 4단계 파싱 (slash→learned→keyword→LLM fallback) + nlp-learnings.json 5분 리로드 |
 | `lib/identity-checker.js` | 팀장 커맨더 정체성 점검·자동 복원 (6시간 주기) |
-| `lib/token-tracker.js` | LLM 토큰 추적 |
+| `lib/token-tracker.js` | LLM 토큰 추적 (duration_ms·gpt-4o 단가 추가, 2026-03-05) |
 | `lib/mute-manager.js` | 무음 관리 |
 | `lib/night-handler.js` | 야간 보류 큐 |
 | `lib/confirm.js` | 확인 요청 |
@@ -78,3 +78,17 @@
 
 - `ai.orchestrator` — mainbot.js KeepAlive, 2초 폴링
 - 재시작: `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
+
+## token_usage 테이블 (claude-team.db)
+
+전 봇 LLM 사용 이력 공용 기록. `lib/token-tracker.js` 사용.
+
+```sql
+token_usage (id, bot_name, team, model, provider, is_free, task_type,
+             tokens_in, tokens_out, cost_usd, duration_ms, recorded_at, date_kst)
+```
+
+- `duration_ms`: 응답 소요 시간 (2026-03-05 추가)
+- `is_free=1`: Groq/Google 무료 호출
+- investment 봇은 `shared/llm-client.js`에서 자동 기록
+- `/cost` 명령으로 조회 (buildCostReport)

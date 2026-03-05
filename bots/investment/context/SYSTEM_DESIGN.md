@@ -1,4 +1,4 @@
-# 루나팀 시스템 설계 (Phase 3-A)
+# 루나팀 시스템 설계 (Phase 3-A v2.3)
 
 ## 개요
 
@@ -9,11 +9,23 @@
 
 ## 운영 모드
 
-| 모드 | PAPER_MODE | 설명 |
-|------|-----------|------|
-| Phase 3-A | `true` | 신호 생성·DB·텔레그램만 (실주문 없음) |
-| Phase 3-B | `true` | 국내·해외주식 파이프라인 추가 |
-| Phase 3-C | `false` | 실주문 활성화 (사용자 최종 승인 후) |
+| 모드 | PAPER_MODE | kis.paper_trading | 설명 |
+|------|-----------|------------------|------|
+| 완전 PAPER | `true` | - | 신호 생성·DB·텔레그램만 (실주문 없음) |
+| KIS 모의투자 | `false` | `true` | KIS API → 모의투자 계좌 실주문 |
+| 암호화폐 실전 | `false` | - | Binance 실주문 |
+| 전체 실전 | `false` | `false` | KIS+Binance 실주문 (최종 승인 후) |
+
+---
+
+## 현재 운영 상태 (2026-03-05)
+
+| 서비스 | 모드 | 상태 |
+|-------|------|------|
+| ai.investment.crypto (5분) | PAPER_MODE=false (실전) | ✅ OPS |
+| ai.investment.domestic (30분) | PAPER_MODE=false + kis.paper_trading=true (모의) | ✅ OPS |
+| ai.investment.overseas (30분) | PAPER_MODE=false + kis.paper_trading=true (모의) | ✅ OPS |
+| ai.investment.commander | bot_commands 폴링 | ✅ OPS |
 
 ---
 
@@ -21,120 +33,104 @@
 
 ```
 bots/investment/
-├── team/               # 12명 에이전트
-│   ├── luna.js         # 오케스트레이터·최종 판단 (Haiku)
+├── team/               # 팀원 에이전트
+│   ├── luna.js         # 오케스트레이터·최종 판단
 │   ├── aria.js         # TA MTF 5m/1h/4h (규칙기반)
-│   ├── oracle.js       # 온체인·매크로 (Cerebras→Groq)
+│   ├── oracle.js       # 온체인·매크로 (Groq)
 │   ├── hermes.js       # 뉴스 3시장 (Groq + Naver + DART)
-│   ├── sophia.js       # 감성 3시장 (SambaNova→Groq + xAI)
-│   ├── zeus.js         # 강세 리서처 (Haiku)
-│   ├── athena.js       # 약세 리서처 (Haiku)
-│   ├── nemesis.js      # 리스크 평가 (Haiku)
+│   ├── sophia.js       # 감성 3시장 (Groq + xAI)
+│   ├── zeus.js         # 강세 리서처 (OpenAI)
+│   ├── athena.js       # 약세 리서처 (OpenAI)
+│   ├── nemesis.js      # 리스크 평가 (OpenAI)
 │   ├── hephaestos.js   # 바이낸스 실행 (LLM 없음)
 │   ├── hanul.js        # KIS 실행 (국내+해외, LLM 없음)
+│   ├── reporter.js     # 투자 리포트 (npm run report)
 │   ├── chronos.js      # 백테스팅 (Skeleton)
-│   └── argos.js        # 전략수집 (Skeleton)
+│   └── argos.js        # 전략수집 (Groq — 루나 판단에 연결됨)
 ├── markets/            # 사이클 진입점
-│   ├── crypto.js       # 암호화폐 5분 사이클
-│   ├── domestic.js     # 국내주식 30분 사이클 (Skeleton)
-│   └── overseas.js     # 미국주식 30분 사이클 (Skeleton)
+│   ├── crypto.js       # 암호화폐 5분 주기 launchd 트리거
+│   ├── domestic.js     # 국내주식 30분 사이클 (KST 09:00~15:30)
+│   └── overseas.js     # 미국주식 30분 사이클 (동절기 KST 23:30~06:00)
 ├── shared/             # 공용 모듈
-│   ├── llm.js          # 통합 LLM (groq+cerebras+sambanova+xai+anthropic)
+│   ├── llm-client.js   # 통합 LLM (Groq + OpenAI, 토큰 DB 추적)
 │   ├── db.js           # DuckDB 래퍼 (investment.duckdb)
-│   ├── signal.js       # 신호 상수 (ACTIONS, ANALYST_TYPES)
-│   ├── secrets.js      # 설정 로더 (PAPER_MODE 포함)
-│   └── report.js       # 텔레그램 포매터
+│   ├── secrets.js      # 설정 로더 (장 시간 체크 포함)
+│   ├── cost-tracker.js # 비용 추적 (JSON, Haiku 전용)
+│   └── mainbot-client.js # 제이 큐 전송
+├── scripts/            # CLI 유틸
+│   └── trading-journal.js # 매매 일지 (npm run journal)
 ├── context/
-│   ├── IDENTITY.md     # 팀원 정체성
+│   ├── IDENTITY.md
+│   ├── COMMANDER_IDENTITY.md
 │   └── SYSTEM_DESIGN.md (이 파일)
 ├── db/                 # investment.duckdb 저장 위치
 ├── launchd/            # macOS 서비스 plist
 ├── package.json
-└── secrets.json        # 실제 키 (gitignore)
+└── config.yaml         # 실제 설정 (secrets.json fallback)
 ```
 
 ---
 
-## LLM 정책 (v2.1 — callLLM 통합, 2026-03-02)
+## LLM 정책 (v2.3 — 2026-03-04)
 
-### PAPER_MODE=true (시뮬레이션)
-> 전원 Groq `meta-llama/llama-4-scout-17b-16e-instruct` — 비용 $0
+**전 모드 공통**: Groq llama-4-scout-17b (무료) / 성능 우선 에이전트 → OpenAI gpt-4o
 
-### PAPER_MODE=false (실전)
-| 에이전트 | 제공자 | 모델 | 이유 |
-|---------|-------|------|------|
-| 루나 (오케스트레이터) | Anthropic | claude-haiku-4-5-20251001 | 포트폴리오 최종 판단 품질 |
-| 네메시스 (리스크) | Anthropic | claude-haiku-4-5-20251001 | 리스크 판단 정확성 |
-| 제우스·아테나 (리서처) | Groq | llama-4-scout-17b | 투자 리서치 (Scout 충분) |
-| 오라클 (온체인) | Groq | llama-4-scout-17b | 빠른 수치 해석 |
-| 헤르메스 (뉴스) | Groq | llama-4-scout-17b | 최고속 텍스트 분류 |
-| 소피아 (감성) | Groq | llama-4-scout-17b | 감성 분류 |
-| 아리아·헤파이스토스·한울 | 없음 | — | 규칙 기반 충분 |
+| 에이전트 | 제공자 | 모델 |
+|---------|-------|------|
+| 루나·네메시스·오라클·아테나·제우스 | OpenAI | gpt-4o |
+| 아르고스·헤르메스·소피아·기타 | Groq | llama-4-scout-17b (무료) |
+| 아리아·헤파이스토스·한울 | 없음 | 규칙 기반 |
 
 > **callLLM(agentName, system, user, maxTokens)** — shared/llm-client.js 자동 분기
+> 모든 호출은 `claude-team.db token_usage` 테이블에 자동 기록 (토큰수·응답시간·비용)
 
 ---
 
-## 데이터 소스
+## DB 스키마
 
-### 암호화폐 (5분 사이클)
-
-| 소스 | 에이전트 | 주기 |
-|------|---------|------|
-| Binance OHLCV (CCXT) | 아리아 | 5분 |
-| Alternative.me F&G | 오라클 | 5분 |
-| Binance Futures (funding/LS/OI) | 오라클 | 5분 |
-| CoinDesk·CoinTelegraph RSS | 헤르메스 | 5분 |
-| CoinMarketCap 뉴스 RSS | 헤르메스 | 5분 |
-| Reddit r/CryptoCurrency 등 | 소피아 | 5분 |
-| DCInside 비트코인갤 | 소피아 | 5분 |
-| CryptoPanic API | 소피아 | 5분 |
-
-### 미국주식 (30분 사이클, Phase 3-B)
-
-| 소스 | 에이전트 | 주기 |
-|------|---------|------|
-| KIS OHLCV (해외) | 아리아 | 30분 |
-| Yahoo Finance RSS | 헤르메스 | 30분 |
-| MarketWatch RSS | 헤르메스 | 30분 |
-| Reddit (r/stocks·r/investing·r/wallstreetbets) | 소피아 | 30분 |
-| Alpha Vantage 뉴스감성 | 소피아 | 30분 |
-
-### 국내주식 (30분 사이클, Phase 3-B)
-
-| 소스 | 에이전트 | 주기 |
-|------|---------|------|
-| KIS OHLCV (국내) | 아리아 | 30분 |
-| 네이버 뉴스 API | 헤르메스 | 30분 |
-| DART OpenDart 공시 | 헤르메스 | 30분 |
-| 네이버 증권 종목토론실 | 소피아 | 30분 |
-
----
-
-## xAI 결정 (2026-03-02)
-
-- X 데이터 공유 프로그램 종료 (2025년 5월), 학생 할인 없음
-- X Search 비용 월 $24~46 — 제거 결정
-- xAI API 키는 보관 (추후 필요 시 callOpenAICompat 직접 호출 가능)
-- X 트렌드 전략은 아르고스(6시간 주기)가 수집 → 실시간 아님, 전략 참조용
-
----
-
-## DB 스키마 (investment.duckdb)
+### investment.duckdb
 
 ```sql
 -- 분석가 결과
 analyses (id, symbol, exchange, analyst, signal, confidence, reasoning, metadata, created_at)
 
 -- 신호 (루나 최종 판단)
-signals (id, symbol, exchange, action, amount_usdt, confidence, reasoning, status, paper, created_at)
+signals (id, symbol, exchange, action, amount_usdt, confidence, reasoning, status, trace_id, block_reason, created_at)
 
 -- 체결 내역
-trades (id, signal_id, symbol, exchange, side, amount, price, total_usdt, paper, created_at)
+trades (id, signal_id, symbol, exchange, side, amount, price, total_usdt, paper, executed_at)
 
 -- 현재 포지션
 positions (symbol, exchange, amount, avg_price, unrealized_pnl, updated_at)
+
+-- 자산 스냅샷 (사이클별)
+asset_snapshots (id, exchange, usdt_balance, total_usdt_equiv, created_at)
 ```
+
+### claude-team.db (SQLite, 공용)
+
+```sql
+-- LLM 사용 이력 (전 봇 공통)
+token_usage (id, bot_name, team, model, provider, is_free, task_type,
+             tokens_in, tokens_out, cost_usd, duration_ms, recorded_at, date_kst)
+```
+
+---
+
+## 매매 일지 CLI
+
+```bash
+npm run journal          # 오늘 거래 내역 + 손익 + 토큰 사용
+npm run journal:week     # 최근 7일
+npm run journal:all      # 전체 이력
+npm run journal:tg       # 텔레그램 전송
+```
+
+출력 내용:
+- 거래 내역 (날짜별, 원화/달러 자동 구분)
+- FIFO 방식 실현손익
+- 미결 포지션 현황
+- LLM 토큰 사용 (호출수·토큰수·응답시간·비용)
 
 ---
 
@@ -150,7 +146,7 @@ positions (symbol, exchange, amount, avg_price, unrealized_pnl, updated_at)
 네메시스 v2 조정 계수
   └── ATR 변동성 × 상관관계 × 시간대(KST 01~07: 0.5)
       ↓
-네메시스 LLM (Haiku)
+네메시스 LLM (gpt-4o)
   └── APPROVE / ADJUST / REJECT
 ```
 
@@ -158,43 +154,38 @@ positions (symbol, exchange, amount, avg_price, unrealized_pnl, updated_at)
 
 ## launchd 서비스
 
-| 서비스 | 파일 | 주기 | 상태 |
-|-------|------|------|------|
-| ai.investment.crypto | `launchd/ai.investment.crypto.plist` | 5분 | Phase 3-A |
-| ai.investment.domestic | (추후) | 30분 | Phase 3-B |
-| ai.investment.overseas | (추후) | 30분 | Phase 3-B |
+| 서비스 | 주기 | PAPER_MODE | 상태 |
+|-------|------|-----------|------|
+| ai.investment.crypto | 5분 | false (실전) | ✅ OPS |
+| ai.investment.domestic | KST 09:00~15:30 30분 | false+모의투자 | ✅ OPS |
+| ai.investment.overseas | KST 23:30~06:00 30분 | false+모의투자 | ✅ OPS |
+| ai.investment.commander | KeepAlive | - | ✅ OPS |
 
 ---
 
-## 신규 API 키 (secrets.json)
+## 상태 파일 (~/.openclaw/investment-state.json)
 
 ```json
 {
-  "xai_api_key": "",              // grok-3-mini-fast x_search — 없으면 Groq fallback
-  "naver_client_id": "",          // 네이버 뉴스 API — 없으면 RSS fallback
-  "naver_client_secret": "",
-  "dart_api_key": "",             // DART 공시 API — 없으면 스킵
-  "cryptopanic_api_key": "",      // CryptoPanic — 없으면 스킵
-  "alpha_vantage_api_key": "",    // Alpha Vantage — 없으면 스킵
-  "paper_mode": true,
-  "binance_symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"],
-  "kis_symbols": ["005930", "000660"],
-  "kis_overseas_symbols": ["AAPL", "TSLA", "NVDA"]
+  "lastCycleAt": 1772680278215,
+  "lastBtcPrice": 72561.8,
+  "lastUsdtAlertAt": 1772680278216
 }
 ```
 
----
-
-## Phase 로드맵
-
-| Phase | 내용 | 상태 |
-|-------|------|------|
-| 3-A | 암호화폐 5분 사이클 (PAPER_MODE) | **현재** |
-| 3-B | 국내·해외주식 30분 사이클 추가 | 다음 |
-| 3-C | 실주문 활성화 (사용자 최종 승인) | 추후 |
-| 3-D | 크로노스 백테스팅 (DeepSeek) | 추후 |
-| 3-E | 아르고스 전략 수집 | 추후 |
+**주의**: `saveState` 호출 시 반드시 `{ ...prev, ...updates }` spread 패턴 사용
+(특정 필드만 저장 시 다른 필드 손실 버그 발생 — 2026-03-05 수정 완료)
 
 ---
 
-*최종 업데이트: Phase 3-A (2026-03-02)*
+## 주요 버그 수정 이력
+
+| 날짜 | 버그 | 수정 |
+|------|------|------|
+| 2026-03-05 | USDT 잔고 알람 쿨다운 미작동 | updateState spread 패턴 적용 |
+| 2026-03-05 | 포트폴리오 프롬프트 BTC/USDT 환각 | buildPortfolioPrompt 동적 생성 + 심볼 필터링 |
+| 2026-03-05 | KIS 신호에 exchange='binance' 기록 | 덱스터 감지 추가 |
+
+---
+
+*최종 업데이트: Phase 3-A v2.3 (2026-03-05)*
