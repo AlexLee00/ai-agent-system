@@ -1158,7 +1158,14 @@ async function monitorBookings() {
         }
 
         // 취소 키 생성 공통 함수 (감지 1·2 공유)
-        const toCancelKey = (b) => `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
+        // ✅ bookingId가 숫자 ID(Naver 발급)이면 cancelid|{id} 사용
+        //    → 동일 슬롯 재예약 시 새 ID 발급 → 이전 취소 이력과 키 충돌 없음
+        //    → 숫자 아닌 composite key이거나 없으면 기존 날짜/시간 기반 키 사용
+        const toCancelKey = (b) => {
+          const bid = b.bookingId;
+          if (bid && /^\d+$/.test(String(bid))) return `cancelid|${bid}`;
+          return `cancel|${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phoneRaw || b.phone.replace(/\D/g, '')}`;
+        };
 
         // ✅ 취소 감지 2: 오늘 취소 탭 파싱 (항상 실행 — 감지 1 교차검증을 위해 먼저 실행)
         let currentCancelledList = []; // 감지 1 교차검증용
@@ -1356,7 +1363,10 @@ async function monitorBookings() {
               if (staleItems.length > 0) {
                 log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 취소 처리`);
                 for (const stale of staleItems) {
-                  const cancelKey = `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
+                  // ✅ booking_key가 숫자 ID이면 cancelid| 키 사용 (슬롯 재예약 충돌 방지)
+                  const cancelKey = /^\d+$/.test(String(stale.booking_key))
+                    ? `cancelid|${stale.booking_key}`
+                    : `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
                   if (!isCancelledKey(cancelKey)) {
                     log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} 사라짐 → 취소 처리`);
                     addCancelledKey(cancelKey);
@@ -1673,8 +1683,16 @@ async function scrapeExpandedCancelled(page, cancelHref) {
       });
       if (checked) {
         await delay(500);
-        await page.click('body').catch(() => {});
-        await delay(1000);
+        // ✅ Fix: page.click('body')는 예약 행을 클릭해 상세보기를 열어 다른 항목을 숨길 수 있음
+        // → Escape 키 또는 포커스 해제로 드롭다운 닫기
+        await page.keyboard.press('Escape').catch(() => {});
+        await delay(800);
+        // 혹시 상세보기가 열렸다면 닫기
+        await page.evaluate(() => {
+          const closeBtn = document.querySelector('[class*="drawer__close"], [class*="side-panel__close"], [aria-label="닫기"]');
+          if (closeBtn) closeBtn.click();
+        }).catch(() => {});
+        await delay(500);
       }
     }
   } catch (e) {
