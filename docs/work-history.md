@@ -69,6 +69,16 @@
 - state.db e2e 테스트 데이터 4건 삭제 (2099-01-01)
 <!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
 
+### 🔧 예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정
+- naver-monitor 정오 종료시간 파싱 버그 수정
+- pickko-accurate 경로 버그 수정
+- logs.js Rate Limit 오탐 수정
+- OpenClaw gemini-2.5-flash 복원
+- OpenClaw fallback#3 gpt-4o 추가
+- start-gateway.sh 래퍼 스크립트 생성(groq 키 하드코딩 제거)
+- state.db 오류 예약 수동처리
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 

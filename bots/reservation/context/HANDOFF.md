@@ -616,6 +616,18 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
 <!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌:end -->
 
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
+#### 2026-03-05 🔧 예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정
+- naver-monitor 정오 종료시간 파싱 버그 수정
+- pickko-accurate 경로 버그 수정
+- logs.js Rate Limit 오탐 수정
+- OpenClaw gemini-2.5-flash 복원
+- OpenClaw fallback#3 gpt-4o 추가
+- start-gateway.sh 래퍼 스크립트 생성(groq 키 하드코딩 제거)
+- state.db 오류 예약 수동처리
+- 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js|bots/reservation/manual/reservation/pickko-accurate.js|bots/claude/lib/checks/logs.js|bots/claude/.checksums.json`
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
