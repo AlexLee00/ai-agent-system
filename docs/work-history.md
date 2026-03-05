@@ -56,6 +56,13 @@
 - Claude API 크레딧 소비 원인 분석 (OpenClaw Gemini OAuth 만료→Haiku 폴백)
 <!-- session-close:2026-03-05:루나팀-국내국외-모의투자-배포 -->
 
+### ✨ LLM 토큰 이력 DB 기록 + 거래 일지 스크립트
+- llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록
+- token-tracker.js duration_ms + gpt-4o 단가 추가
+- token_usage 테이블 duration_ms 컬럼 추가
+- scripts/trading-journal.js 신규 (매매일지 CLI)
+<!-- session-close:2026-03-05:llm-토큰-이력-db-기록-거래-일지-스크립트 -->
+
 ## 2026-03-04 (세션 3)
 ### ✅ 제이↔클로드 통신·NLP자동개선·정체성유지 시스템 — 완료
 
