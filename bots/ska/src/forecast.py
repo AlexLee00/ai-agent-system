@@ -459,22 +459,21 @@ def _run_cross_validation(hist_df):
 
 
 def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
-    """Anthropic Haiku로 모델 진단 요청
-    - system 파라미터로 역할 분리 (응답 품질 향상)
-    - Prompt Caching: 정적 system 프롬프트 캐싱 (5분 TTL)
+    """OpenAI GPT-4o로 모델 진단 요청
     - temperature=0.1: 분석용 낮은 온도 → 일관된 진단
     """
     import os
     try:
-        import anthropic
+        from openai import OpenAI
+        import openai
     except ImportError:
-        return '(anthropic 패키지 미설치)'
+        return '(openai 패키지 미설치)'
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    api_key = os.environ.get('OPENAI_API_KEY', '')
     if not api_key:
-        return '(ANTHROPIC_API_KEY 미설정)'
+        return '(OPENAI_API_KEY 미설정)'
 
-    # ── 정적 system 프롬프트 (Prompt Caching 대상) ──
+    # ── 시스템 프롬프트 ──
     SYSTEM_PROMPT = (
         "당신은 스터디카페 매출 예측 모델(Prophet) 전문 진단 AI입니다. "
         "성능 지표 데이터를 분석하여 한국어로 간결하고 실용적인 개선 방안을 제시합니다."
@@ -521,25 +520,21 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
 4. prophet-v4 업그레이드 시점 권고"""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model='claude-haiku-4-5-20251001',
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model='gpt-4o',
             max_tokens=500,
             temperature=0.1,   # 분석용 — 낮은 온도로 일관된 진단
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},  # 5분 TTL 캐싱
-                }
+            messages=[
+                {'role': 'system', 'content': SYSTEM_PROMPT},
+                {'role': 'user',   'content': user_content},
             ],
-            messages=[{'role': 'user', 'content': user_content}],
         )
-        return resp.content[0].text.strip()
-    except anthropic.RateLimitError:
+        return resp.choices[0].message.content.strip()
+    except openai.RateLimitError:
         return '(API 한도 초과 — 잠시 후 재시도)'
-    except anthropic.AuthenticationError:
-        return '(ANTHROPIC_API_KEY 인증 실패)'
+    except openai.AuthenticationError:
+        return '(OPENAI_API_KEY 인증 실패)'
     except Exception as e:
         return f'(LLM 호출 실패: {e})'
 
