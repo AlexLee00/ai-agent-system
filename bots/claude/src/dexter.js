@@ -158,14 +158,16 @@ async function main() {
       const text = buildTelegramText(results, elapsed);
       if (!SILENT) console.log('✅ 제이 큐 발행');
 
-      const criticals = results.filter(r => r.status === 'critical');
-      const errors    = results.filter(r => r.status === 'error');
-      const level     = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;
+      const criticals  = results.filter(r => r.status === 'critical');
+      const errors     = results.filter(r => r.status === 'error');
+      const warns      = results.filter(r => r.status === 'warn');
+      const level      = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;
+      const statusIcon = criticals.length > 0 || errors.length > 0 ? '❌' : '⚠️';
       try {
         publishToMainBot({
           from_bot: 'dexter', event_type: 'system', alert_level: level,
-          message: `덱스터 점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류\n${text.split('\n')[0]}`,
-          payload: { criticals: criticals.length, errors: errors.length },
+          message: `🤖 덱스터 유지보수 리포트 ${statusIcon}\n점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류, ${warns.length}개 경고`,
+          payload: { criticals: criticals.length, errors: errors.length, warns: warns.length },
         });
         telegramOk = true;
       } catch { /* 발송 실패 — recordRun에서 기록 */ }
