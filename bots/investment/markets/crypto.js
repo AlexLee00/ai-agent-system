@@ -108,11 +108,12 @@ async function shouldRunCycle(symbols) {
 }
 
 async function updateState(symbols) {
-  let lastBtcPrice = loadState().lastBtcPrice;
+  const prev = loadState();
+  let lastBtcPrice = prev.lastBtcPrice;
   if (symbols.some(s => s.startsWith('BTC'))) {
     try { lastBtcPrice = await fetchBtcPrice(); } catch {}
   }
-  saveState({ lastCycleAt: Date.now(), lastBtcPrice });
+  saveState({ ...prev, lastCycleAt: Date.now(), lastBtcPrice });
 }
 
 // ─── LU-004: USDT 잔고 부족 알림 ────────────────────────────────────
