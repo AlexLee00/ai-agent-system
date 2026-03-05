@@ -317,8 +317,9 @@ async function parseLLMFallback(text) {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: text },
       ],
-      max_tokens:  150,
-      temperature: 0,
+      max_tokens:      150,
+      temperature:     0,
+      response_format: { type: 'json_object' },
     }));
 
     const req = https.request({

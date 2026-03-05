@@ -142,9 +142,10 @@ async function callOpenAI(contextText) {
 
   const client = new OpenAI({ apiKey });
   const resp = await client.chat.completions.create({
-    model:      config.OPENAI.model,
-    max_tokens: config.OPENAI.maxTokens,
-    temperature: config.OPENAI.temperature,
+    model:           config.OPENAI.model,
+    max_tokens:      config.OPENAI.maxTokens,
+    temperature:     config.OPENAI.temperature,
+    response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user',   content: contextText },

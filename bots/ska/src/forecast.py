@@ -523,7 +523,7 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
         client = OpenAI(api_key=api_key)
         resp = client.chat.completions.create(
             model='gpt-4o',
-            max_tokens=500,
+            max_tokens=300,
             temperature=0.1,   # 분석용 — 낮은 온도로 일관된 진단
             messages=[
                 {'role': 'system', 'content': SYSTEM_PROMPT},

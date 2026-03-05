@@ -78,7 +78,7 @@ async function evaluatePost(post, market) {
     `이 포스트에서 트레이딩 전략을 추출하고 평가하시오.`,
   ].join('\n');
 
-  const raw    = await callLLM('argos', ARGOS_SYSTEM, userMsg, 512);
+  const raw    = await callLLM('argos', ARGOS_SYSTEM, userMsg, 300);
   const parsed = parseJSON(raw);
   if (!parsed?.strategy_name) return null;
 

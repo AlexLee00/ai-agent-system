@@ -114,7 +114,7 @@ module.exports = {
   // ─── OpenAI API ─────────────────────────────────────────────────
   OPENAI: {
     model:       'gpt-4o',
-    maxTokens:   4096,
+    maxTokens:   2048,
     temperature: 0.3,
   },
 

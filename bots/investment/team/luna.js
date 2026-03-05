@@ -108,7 +108,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   } catch {}
 
   const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}\n\n최종 매매 신호:`;
-  const raw     = await callLLM('luna', LUNA_SYSTEM, userMsg, 512);
+  const raw     = await callLLM('luna', LUNA_SYSTEM, userMsg, 256);
   const parsed  = parseJSON(raw);
 
   if (!parsed?.action) {
@@ -143,7 +143,7 @@ export async function getPortfolioDecision(symbolDecisions, portfolio) {
     `최종 포트폴리오 투자 결정:`,
   ].join('\n');
 
-  const raw    = await callLLM('luna', buildPortfolioPrompt(symbols), userMsg, 1024);
+  const raw    = await callLLM('luna', buildPortfolioPrompt(symbols), userMsg, 768);
   const parsed = parseJSON(raw);
   if (!parsed) return { decisions: symbolDecisions.map(s => ({ ...s })), portfolio_view: 'LLM 판단 실패', risk_level: 'MEDIUM' };
 
