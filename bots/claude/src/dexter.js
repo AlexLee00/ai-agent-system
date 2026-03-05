@@ -39,6 +39,7 @@ const checks = {
 };
 
 const { saveErrorItems } = require('../lib/error-history');
+const { analyzeWithAI } = require('../lib/ai-analyst');
 
 const { printReport, buildTelegramText, writeLog, writeFixLog } = require('../lib/reporter');
 
@@ -163,10 +164,34 @@ async function main() {
       const warns      = results.filter(r => r.status === 'warn');
       const level      = criticals.length > 0 ? 4 : errors.length > 0 ? 3 : 2;
       const statusIcon = criticals.length > 0 || errors.length > 0 ? '❌' : '⚠️';
+
+      // ── AI 분석 ─────────────────────────────────────────────────
+      let aiSection = '';
+      try {
+        const insight = await analyzeWithAI(results, elapsed, level);
+        if (insight) {
+          const TREND_ICON = { improving: '📈', stable: '📊', degrading: '📉' };
+          aiSection = [
+            '',
+            `🧠 AI 진단: ${insight.diagnosis}`,
+            insight.root_cause ? `🔍 원인: ${insight.root_cause}` : '',
+            `${TREND_ICON[insight.trend] || '📊'} 추세: ${insight.trend}`,
+            insight.prediction ? `⚡ 예측: ${insight.prediction}` : '',
+            insight.action     ? `💡 권장: ${insight.action}` : '',
+          ].filter(Boolean).join('\n');
+        }
+      } catch (e) {
+        console.warn('  ⚠️ AI 분석 실패:', e.message);
+      }
+
       try {
         publishToMainBot({
           from_bot: 'dexter', event_type: 'system', alert_level: level,
-          message: `🤖 덱스터 유지보수 리포트 ${statusIcon}\n점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류, ${warns.length}개 경고`,
+          message: [
+            `🤖 덱스터 유지보수 리포트 ${statusIcon}`,
+            `점검 결과: ${criticals.length}개 CRITICAL, ${errors.length}개 오류, ${warns.length}개 경고`,
+            aiSection,
+          ].filter(Boolean).join('\n'),
           payload: { criticals: criticals.length, errors: errors.length, warns: warns.length },
         });
         telegramOk = true;
