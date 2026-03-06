@@ -58,8 +58,8 @@ async function run() {
     // 1. 오늘 일간 요약
     const today     = kstDate();
     const yesterday = kstDate(-1);
-    const todaySummary     = tracker.getDailySummary(today);
-    const yesterdaySummary = tracker.getDailySummary(yesterday);
+    const todaySummary     = await tracker.getDailySummary(today);
+    const yesterdaySummary = await tracker.getDailySummary(yesterday);
 
     const todayCalls  = todaySummary?.total_calls  || 0;
     const todayCostUsd = todaySummary?.total_cost_usd || 0;
@@ -81,7 +81,7 @@ async function run() {
     }
 
     // 3. 월간 예산 대비 사용률
-    const monthReport = tracker.buildCostReport();
+    const monthReport = await tracker.buildCostReport();
     const monthlyCost = monthReport?.monthly_total_usd || 0;
     const usageRatio  = monthlyCost / MONTHLY_BUDGET_USD;
 

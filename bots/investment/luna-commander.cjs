@@ -17,7 +17,7 @@ const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
 const { execSync } = require('child_process');
-const Database     = require('better-sqlite3');
+const pgPool       = require('../../../packages/core/lib/pg-pool');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '루나';
@@ -65,16 +65,6 @@ function acquireLock() {
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
 }
 
-// ─── DB ──────────────────────────────────────────────────────────────
-const CMD_DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  _db = new Database(CMD_DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
-}
-
 // ─── 메인봇 알람 발행 (mainbot_queue 직접 INSERT) ───────────────────
 
 /**
@@ -82,12 +72,12 @@ function getDb() {
  * @param {string} message   - 발송할 메시지
  * @param {number} level     - 알람 레벨 (1=info, 2=warn, 3=error)
  */
-function publishAlert(message, level = 1) {
+async function publishAlert(message, level = 1) {
   try {
-    getDb().prepare(`
+    await pgPool.run('claude', `
       INSERT INTO mainbot_queue (from_bot, event_type, alert_level, message, payload, status)
-      VALUES (?, 'system', ?, ?, '{}', 'pending')
-    `).run(BOT_ID, level, message);
+      VALUES ($1, 'system', $2, $3, '{}', 'pending')
+    `, [BOT_ID, level, message]);
     console.log(`[루나] 마스터 알람 발행 (level ${level})`);
   } catch (e) {
     console.error(`[루나] 알람 발행 실패:`, e.message);
@@ -109,7 +99,7 @@ function saveWithdrawSchedule({ unlockAt, usdtBalance, network, address }) {
  * 예약된 출금 실행 여부 체크 (폴링 루프에서 호출)
  * unlockAt이 현재보다 과거면 즉시 출금 실행
  */
-function checkWithdrawSchedule() {
+async function checkWithdrawSchedule() {
   if (!fs.existsSync(WITHDRAW_SCHED_FILE)) return;
 
   let sched;
@@ -136,9 +126,9 @@ function checkWithdrawSchedule() {
   console.log(`[루나] 출금지연 해제 확인 → 자동 출금 시작`);
   fs.unlinkSync(WITHDRAW_SCHED_FILE);
 
-  const result = handleUpbitWithdrawOnly();
+  const result = await handleUpbitWithdrawOnly();
   if (result.ok) {
-    publishAlert(
+    await publishAlert(
       `✅ 루나 — 출금지연 해제 후 자동 출금 완료\n${result.message}`,
       1
     );
@@ -147,12 +137,12 @@ function checkWithdrawSchedule() {
     // 아직 지연 중 (예상보다 늦게 해제됨) → 1시간 후 재예약
     const newUnlock = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     saveWithdrawSchedule({ ...sched, unlockAt: newUnlock });
-    publishAlert(
+    await publishAlert(
       `⏳ 루나 — 출금지연 미해제 (예상 시각 지났으나 아직 제한 중)\n1시간 후 재시도합니다.`,
       2
     );
   } else {
-    publishAlert(
+    await publishAlert(
       `❌ 루나 — 자동 출금 실패\n오류: ${result.error || '알 수 없음'}`,
       3
     );
@@ -359,7 +349,7 @@ function handleUpbitToBinance() {
  * 업비트 USDT 잔고 전량 바이낸스 출금 (KRW 매수 없이 출금만)
  * - 출금지연제 감지 시: 마스터에게 Telegram 안내 + 자동 예약
  */
-function handleUpbitWithdrawOnly() {
+async function handleUpbitWithdrawOnly() {
   try {
     const nodeExe = process.execPath;
     const script  = path.join(__dirname, 'manual', 'transfer', 'upbit-withdraw-only.js');
@@ -379,7 +369,7 @@ function handleUpbitWithdrawOnly() {
     // ── 출금지연제 처리 ─────────────────────────────────────────────
     if (result.delay === true) {
       // 마스터에게 Telegram 안내 발송
-      publishAlert(result.message, 2);
+      await publishAlert(result.message, 2);
 
       // 자동 출금 예약 저장
       if (result.unlockAt) {
@@ -467,17 +457,17 @@ const HANDLERS = {
 
 async function processCommands() {
   try {
-    const pending = getDb().prepare(`
+    const pending = await pgPool.query('claude', `
       SELECT * FROM bot_commands
-      WHERE to_bot = ? AND status = 'pending'
+      WHERE to_bot = $1 AND status = 'pending'
       ORDER BY created_at ASC
       LIMIT 5
-    `).all(BOT_ID);
+    `, [BOT_ID]);
 
     for (const cmd of pending) {
-      getDb().prepare(`
-        UPDATE bot_commands SET status = 'running' WHERE id = ?
-      `).run(cmd.id);
+      await pgPool.run('claude', `
+        UPDATE bot_commands SET status = 'running' WHERE id = $1
+      `, [cmd.id]);
 
       let result;
       try {
@@ -493,11 +483,11 @@ async function processCommands() {
         result = { ok: false, error: e.message };
       }
 
-      getDb().prepare(`
+      await pgPool.run('claude', `
         UPDATE bot_commands
-        SET status = ?, result = ?, done_at = datetime('now')
-        WHERE id = ?
-      `).run(result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id);
+        SET status = $1, result = $2, done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+        WHERE id = $3
+      `, [result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id]);
 
       console.log(`[루나] ${cmd.command} → ${result.ok ? 'done' : 'error'}`);
     }
@@ -520,7 +510,7 @@ async function main() {
     catch (e) { console.error(`[루나] 루프 오류:`, e.message); }
 
     // 출금지연 자동 예약 체크 (매 루프 = 30초마다)
-    try { checkWithdrawSchedule(); }
+    try { await checkWithdrawSchedule(); }
     catch (e) { console.error(`[루나] 출금 스케줄 체크 오류:`, e.message); }
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다

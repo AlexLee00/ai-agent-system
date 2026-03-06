@@ -129,26 +129,6 @@ const WHITELIST = {
     },
   },
 
-  // ── DB WAL 체크포인트 ──────────────────────────────────────────────────
-  repair_wal_checkpoint: {
-    description: 'SQLite WAL 체크포인트 강제 실행',
-    requires_confirmation: false,
-    allowed_dbs: ['state.db', 'claude-team.db'],
-    action: async ({ dbName }) => {
-      if (!dbName) throw new Error('dbName 파라미터 필수');
-      const allowed = WHITELIST.repair_wal_checkpoint.allowed_dbs;
-      if (!allowed.includes(dbName)) {
-        throw new Error(`허용되지 않은 DB: ${dbName}. 허용 목록: ${allowed.join(', ')}`);
-      }
-      const dbPath = dbName === 'state.db' ? STATE_DB_PATH : CLAUDE_TEAM_DB;
-      if (!fs.existsSync(dbPath)) throw new Error(`DB 없음: ${dbPath}`);
-      const db     = new Database(dbPath);
-      const result = db.pragma('wal_checkpoint(TRUNCATE)');
-      db.close();
-      return { dbName, checkpointResult: result };
-    },
-  },
-
   // ── LLM 캐시 정리 ─────────────────────────────────────────────────────
   clear_expired_cache: {
     description: '만료된 LLM 캐시 정리',
@@ -156,7 +136,7 @@ const WHITELIST = {
     action: async () => {
       try {
         const cache   = require('../../../packages/core/lib/llm-cache');
-        const deleted = cache.cleanExpired();
+        const deleted = await cache.cleanExpired();
         return { deleted };
       } catch (e) {
         throw new Error(`캐시 정리 실패: ${e.message}`);
