@@ -8,7 +8,7 @@
 
 | ID | 컴포넌트 | 이슈 | 발견일 | 우선순위 |
 |----|----------|------|--------|---------|
-| KI-001 | workspace-git.js | `.gitignore`에 `*.key`, `api_key` 패턴 없어서 warn 발생 | 2026-03-06 | 낮음 |
+| ~~KI-001~~ | ~~workspace-git.js~~ | ~~`.gitignore`에 `*.key` 패턴 없어서 warn 발생~~ | ~~2026-03-06~~ | ✅ 해결됨 (2026-03-07) |
 | KI-002 | archer.js | `trackTokens()` 미적용 — LLM 비용 미추적 | 2026-03-06 | 보통 |
 | KI-003 | bots/investment | npm audit high 5건: duckdb→node-gyp→tar 빌드타임 의존성. 런타임 무관, duckdb 업그레이드 전까지 수정 불가. 덱스터 패턴 이력 주기적 정리 필요 | 2026-03-06 | 낮음(무시) |
 
