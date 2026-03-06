@@ -18,6 +18,15 @@
 - CLAUDE_NOTES.md tool_code 누출 금지 규칙 추가
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
 
+### ✨ Day 4 — 루나팀 매매일지 시스템
+- trade-journal-db.js 신규 (5개 테이블 + DB함수)
+- report.js notifyJournalEntry + notifyDailyJournal 추가
+- hephaestos.js 매매일지 자동 기록 연동
+- nemesis.js trade_rationale 자동 기록 연동
+- schema_migrations v4 등록
+- DuckDB 5개 신규 테이블 생성 확인
+<!-- session-close:2026-03-06:day-4-루나팀-매매일지-시스템 -->
+
 ## 2026-03-05
 ### ✨ 출금지연제 자동예약 + 덱스터 Phase C
 - 출금지연제 delay 감지·ETA 계산·Telegram 안내
