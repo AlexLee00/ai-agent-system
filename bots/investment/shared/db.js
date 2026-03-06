@@ -168,6 +168,16 @@ export async function initSchema() {
     if (v2.length === 0) {
       await run(`INSERT INTO schema_migrations (version, name) VALUES (2, 'strategy_pool_risk_log_asset_snapshot')`);
     }
+    // v3: trades 테이블 TP/SL 컬럼 추가
+    const v3 = await query(`SELECT version FROM schema_migrations WHERE version = 3`);
+    if (v3.length === 0) {
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_price DOUBLE`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS sl_price DOUBLE`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_order_id VARCHAR`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS sl_order_id VARCHAR`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_sl_set BOOLEAN DEFAULT false`);
+      await run(`INSERT INTO schema_migrations (version, name) VALUES (3, 'trades_tp_sl_columns')`);
+    }
   } catch { /* 무시 */ }
 
   // WAL → 메인 DB 플러시 (ALTER TABLE ADD COLUMN WAL 재생 버그 방지)
@@ -234,11 +244,12 @@ export async function getApprovedSignals(exchange) {
 
 // ─── trades ─────────────────────────────────────────────────────────
 
-export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance' }) {
+export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false }) {
   await run(
-    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [signalId ?? null, symbol, side, amount, price, totalUsdt ?? null, paper !== false, exchange],
+    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [signalId ?? null, symbol, side, amount, price, totalUsdt ?? null, paper !== false, exchange,
+     tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false],
   );
 }
 

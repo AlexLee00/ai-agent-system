@@ -129,6 +129,35 @@ export async function executeSignal(signal) {
 
       await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0 });
 
+      // ── TP/SL OCO 주문 설정 (실투자 모드에서만) ────────────────────
+      // Spot 모드: TAKE_PROFIT_MARKET 불가 → OCO (TP limit + SL stop-limit) 사용
+      // TP: fill price × 1.06 (+6%), SL: fill price × 0.97 (-3%) → 2:1 R/R
+      if (!paperMode) {
+        const fillPrice = order.price || order.average || 0;
+        if (fillPrice > 0 && order.filled > 0) {
+          trade.tpPrice = parseFloat((fillPrice * 1.06).toFixed(2));
+          trade.slPrice = parseFloat((fillPrice * 0.97).toFixed(2));
+          try {
+            const ex      = getExchange();
+            const slLimit = parseFloat((trade.slPrice * 0.999).toFixed(2));
+            const ocoOrder = await ex.createOrder(symbol, 'oco_sell', 'sell', order.filled, trade.tpPrice, {
+              stopPrice:            trade.slPrice,
+              stopLimitPrice:       slLimit,
+              stopLimitTimeInForce: 'GTC',
+            });
+            // Binance OCO 응답: orderReports[0]=LIMIT_MAKER(TP), [1]=STOP_LOSS_LIMIT(SL)
+            trade.tpOrderId = ocoOrder?.info?.orderReports?.[0]?.orderId?.toString() ?? null;
+            trade.slOrderId = ocoOrder?.info?.orderReports?.[1]?.orderId?.toString() ?? null;
+            trade.tpSlSet   = true;
+            console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
+          } catch (tpslErr) {
+            console.error(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
+            trade.tpSlSet = false;
+            await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, tpslErr);
+          }
+        }
+      }
+
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);
       const amount   = position?.amount;
