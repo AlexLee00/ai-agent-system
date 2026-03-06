@@ -43,7 +43,7 @@ function npmAudit(botDir, label) {
       }
       return { label, status: 'ok', detail: '취약점 없음' };
     } catch {
-      return { label, status: 'ok', detail: 'audit 스킵 (네트워크 오류 또는 lock 없음)' };
+      return { label, status: 'warn', detail: 'audit 스킵 (네트워크 오류 또는 lock 없음)' };
     }
   }
 }
@@ -79,7 +79,7 @@ async function run(full = false) {
 
   const BOTS = [
     { dir: cfg.BOTS.reservation, label: 'npm audit (스카팀)' },
-    { dir: cfg.BOTS.invest,      label: 'npm audit (루나팀)' },
+    { dir: cfg.BOTS.investment,  label: 'npm audit (루나팀)' },
   ];
 
   for (const { dir, label } of BOTS) {
