@@ -427,7 +427,7 @@ async function benchmarkModel(modelId, ctx) {
 }
 
 // ─── Telegram 알림 ────────────────────────────────────────────────────────
-function sendTelegramNotify(results, appliedModel) {
+function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   const keys = loadSpeedTestKeys();
   const token  = keys.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
   const chatId = keys.telegram_chat_id   || process.env.TELEGRAM_CHAT_ID;
@@ -439,11 +439,17 @@ function sendTelegramNotify(results, appliedModel) {
     return `${medal} ${r.label} — ${r.ttft}ms`;
   }).join('\n');
   const failed = results.filter(r => !r.ok).length;
-  const changedLine = appliedModel
-    ? `\n🔄 primary 변경: ${appliedModel}`
-    : '';
 
-  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${changedLine}\n\n❌ 실패: ${failed}개`;
+  let statusLine;
+  if (applied) {
+    statusLine = `\n🔄 primary 자동 변경: ${applied}`;
+  } else if (recommended && recommended !== current) {
+    statusLine = `\n\n📌 현재: ${current}\n💡 추천: ${recommended}\n⚠️ 적용: node scripts/speed-test.js --apply`;
+  } else {
+    statusLine = `\n\n✅ 현재 모델(${current})이 가장 빠름`;
+  }
+
+  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}\n\n❌ 실패: ${failed}개`;
 
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
@@ -590,7 +596,11 @@ async function main() {
 
   if (doTelegram) {
     process.stdout.write('\n📨 텔레그램 알림 전송...');
-    await sendTelegramNotify(results, appliedModel);
+    await sendTelegramNotify(results, {
+      applied: appliedModel,
+      recommended: fastest?.modelId,
+      current,
+    });
     log(green(' ✅'));
   }
   log('');
