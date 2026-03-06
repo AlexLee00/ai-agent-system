@@ -91,6 +91,21 @@ function scanHardcodedKeys(items) {
   }
 }
 
+// pre-commit 훅 존재 + 실행 권한 확인
+function checkPreCommitHook(items) {
+  const hookPath = path.join(cfg.ROOT, '.git', 'hooks', 'pre-commit');
+  if (!fs.existsSync(hookPath)) {
+    items.push({ label: 'pre-commit 훅', status: 'warn', detail: '미설치 — bash scripts/setup-hooks.sh 실행 필요' });
+    return;
+  }
+  const mode = (fs.statSync(hookPath).mode & 0o111);
+  if (!mode) {
+    items.push({ label: 'pre-commit 훅', status: 'warn', detail: '실행 권한 없음 — chmod +x .git/hooks/pre-commit 필요' });
+  } else {
+    items.push({ label: 'pre-commit 훅', status: 'ok', detail: '설치됨 + 실행 권한 확인' });
+  }
+}
+
 // .gitignore secrets 제외 확인
 function checkGitignore(items) {
   const gitignorePath = path.join(cfg.ROOT, '.gitignore');
@@ -100,7 +115,7 @@ function checkGitignore(items) {
   }
 
   const content  = fs.readFileSync(gitignorePath, 'utf8');
-  const required = ['secrets.json', '*.duckdb', '*.db'];
+  const required = ['secrets.json', 'config.yaml', '*.duckdb', '*.db'];
   const missing  = required.filter(p => !content.includes(p));
 
   if (missing.length > 0) {
@@ -242,6 +257,7 @@ async function run() {
   scanGitCommits(items);
   checkGitignore(items);
   checkSecretsPlaceholders(items);
+  checkPreCommitHook(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');
