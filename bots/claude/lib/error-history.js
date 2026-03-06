@@ -101,6 +101,36 @@ function getPatterns(days = 7, minCount = 3) {
 }
 
 /**
+ * 현재 ok인 항목의 과거 오류 이력 삭제 (오류 해결 시 패턴 누적 방지)
+ *
+ * 설계 의도: saveErrorItems는 error/warn만 저장하므로, ok로 돌아온 항목의
+ * 이전 error 레코드가 DB에 그대로 남아 "지속적 오탐"으로 나타나는 문제를 해결.
+ * saveErrorItems 호출 직전에 실행해야 함.
+ *
+ * @param {Array} results  dexter check results []
+ * @returns {number} 삭제된 행 수
+ */
+function markResolved(results) {
+  const db = getDb();
+  if (!db) return 0;
+  let total = 0;
+  try {
+    const del = db.prepare(`DELETE FROM dexter_error_log WHERE check_name = ? AND label = ?`);
+    const run = db.transaction(() => {
+      for (const r of results) {
+        for (const item of (r.items || [])) {
+          if (item.status === 'ok') {
+            total += del.run(r.name, item.label.trim()).changes;
+          }
+        }
+      }
+    });
+    run();
+  } catch { /* DB 없으면 무시 */ }
+  return total;
+}
+
+/**
  * 해결된 이슈 이력 삭제
  * @param {string|null} label  특정 레이블만 삭제 (null이면 모두)
  * @param {string|null} checkName  특정 체크 모듈만 삭제
@@ -169,4 +199,4 @@ function cleanup(keepDays = 30) {
   } catch { return 0; }
 }
 
-module.exports = { saveErrorItems, getPatterns, getNewErrors, cleanup, clearPatterns };
+module.exports = { saveErrorItems, markResolved, getPatterns, getNewErrors, cleanup, clearPatterns };
