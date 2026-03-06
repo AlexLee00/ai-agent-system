@@ -121,7 +121,7 @@ child.on('close', code => {
     // 결과는 텔레그램으로 별도 알림됨
     if (code === 0) {
       const blockArgs = [
-        path.join(__dirname, 'pickko-kiosk-monitor.js'),
+        path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js'),
         '--block-slot',
         `--date=${normalized.date}`,
         `--start=${normalized.start}`,
