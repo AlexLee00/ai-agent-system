@@ -157,7 +157,7 @@ async function main() {
   // 오류 이력 저장 (패턴 분석용) — patterns 체크 실행 전에 저장
   try { saveErrorItems(results); } catch { /* 무시 */ }
   // 30일 이상 된 이력 자동 삭제 (무한 누적 방지)
-  try { cleanupErrorHistory(30); } catch { /* 무시 */ }
+  try { cleanupErrorHistory(7); } catch { /* 무시 */ }
 
   // 패턴 분석 체크 (이력 기반 — 항상 마지막 실행)
   try {
