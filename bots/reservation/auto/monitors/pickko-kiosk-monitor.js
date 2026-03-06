@@ -1415,20 +1415,20 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
 async function main() {
   const today = getTodayKST();
   log(`\n🔍 픽코 키오스크 모니터 시작: ${today}`);
-  updateAgentState('jimmy', 'running', `키오스크 모니터 ${today}`);
+  await updateAgentState('jimmy', 'running', `키오스크 모니터 ${today}`);
 
   // ── Phase 5 선처리: 만료 항목 정리 ──
-  const pruned = pruneOldKioskBlocks(today);
+  const pruned = await pruneOldKioskBlocks(today);
   if (pruned > 0) log(`🧹 만료 항목 삭제: ${pruned}건`);
 
   let browser;
   let lockAcquired = false;
   try {
     // 픽코 단독접근 락 획득 (최대 5분)
-    lockAcquired = acquirePickkoLock('jimmy');
+    lockAcquired = await acquirePickkoLock('jimmy');
     if (!lockAcquired) {
       log('⚠️ 픽코 락 획득 실패 — 다른 에이전트가 사용 중. 이번 사이클 스킵');
-      updateAgentState('jimmy', 'idle');
+      await updateAgentState('jimmy', 'idle');
       return;
     }
     log('🔒 픽코 락 획득 (jimmy)');
@@ -1453,7 +1453,8 @@ async function main() {
     }
 
     // ── Phase 2: 신규 예약 감지 ──
-    const newEntries = kioskEntries.filter(e => !getKioskBlock(e.phoneRaw, e.date, e.start));
+    const _kioskFlags = await Promise.all(kioskEntries.map(e => getKioskBlock(e.phoneRaw, e.date, e.start)));
+    const newEntries = kioskEntries.filter((_, i) => !_kioskFlags[i]);
 
     // ── Phase 2A: 미차단 재시도 대상 ──
     // 이전 주기에서 차단 실패(naverBlocked=false)한 항목 중 아직 종료 전인 것
@@ -1461,7 +1462,7 @@ async function main() {
     const _nowDateForRetry = `${_nowForRetry.getFullYear()}-${String(_nowForRetry.getMonth()+1).padStart(2,'0')}-${String(_nowForRetry.getDate()).padStart(2,'0')}`;
     const _nowMinForRetry = _nowForRetry.getHours() * 60 + _nowForRetry.getMinutes();
     const retryEntries = kioskEntries.filter(e => {
-      const saved = getKioskBlock(e.phoneRaw, e.date, e.start);
+      const saved = await getKioskBlock(e.phoneRaw, e.date, e.start);
       if (!saved) return false;              // 신규 → newEntries에서 처리
       if (saved.naverBlocked) return false;  // 이미 차단 완료
       if (saved.naverUnblockedAt) return false; // 해제된 항목
@@ -1485,7 +1486,7 @@ async function main() {
     const cancelledEntries = refundedEntries
       .map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }))
       .filter(e => {
-        const saved = getKioskBlock(e.phoneRaw, e.date, e.start);
+        const saved = await getKioskBlock(e.phoneRaw, e.date, e.start);
         if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
         if (saved.naverUnblockedAt) return false; // 이미 해제 완료
         return true;
@@ -1509,7 +1510,7 @@ async function main() {
     if (!wsEndpoint) {
       log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
       for (const e of toBlockEntries) {
-        upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
+        await upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
           `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
         });
@@ -1548,7 +1549,7 @@ async function main() {
       if (!loggedIn) {
         log('❌ 네이버 booking 로그인 실패');
         for (const e of toBlockEntries) {
-          upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
+          await upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
           publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
             `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
           });
@@ -1576,7 +1577,7 @@ async function main() {
         if (_isTimeElapsed) {
           log(`  ⏰ [시간 경과] 네이버 차단 생략: ${e.date} ${e.end} 이미 종료됨`);
           const _now = nowKST();
-          upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+          await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
             name: e.name, date: e.date, start: e.start, end: e.end,
             room: e.room, amount: e.amount,
             naverBlocked: false, firstSeenAt: _now, blockedAt: null,
@@ -1610,7 +1611,7 @@ async function main() {
         }
 
         const now = nowKST();
-        upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+        await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
           name:         e.name,
           date:         e.date,
           start:        e.start,
@@ -1664,8 +1665,8 @@ async function main() {
 
           if (unblocked) {
             // naverBlocked: false + naverUnblockedAt 기록 (기존 DB 데이터 보존)
-            const existing = getKioskBlock(e.phoneRaw, e.date, e.start);
-            upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+            const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
+            await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST()
             });
             publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
@@ -1691,9 +1692,9 @@ async function main() {
 
   } finally {
     // 성공/조기리턴/오류 모든 경로에서 idle 전환 + 락 해제
-    updateAgentState('jimmy', 'idle');
+    await updateAgentState('jimmy', 'idle');
     if (lockAcquired) {
-      releasePickkoLock('jimmy');
+      await releasePickkoLock('jimmy');
       log('🔓 픽코 락 해제 (jimmy)');
     }
     if (browser) {
@@ -1760,7 +1761,7 @@ async function blockSlotOnly(entry) {
       }
 
       // kiosk_blocks DB에 기록 (중복 차단 방지 / 추적)
-      upsertKioskBlock(phoneRaw, date, start, {
+      await upsertKioskBlock(phoneRaw, date, start, {
         name, date, start, end, room, amount: 0,
         naverBlocked: blocked,
         firstSeenAt:  nowKST(),
@@ -1865,9 +1866,9 @@ async function auditToday(dateOverride = null) {
           log(`  ✅ 차단확인: ${e.room} ${e.start}~${e.end} (${maskName(e.name)})`);
           okList.push(e);
           // DB 동기화: 확인됐으면 naverBlocked=true 보장
-          const existing = getKioskBlock(e.phoneRaw, e.date, e.start);
+          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
           if (!existing || !existing.naverBlocked) {
-            upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+            await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e,
               naverBlocked: true,
               firstSeenAt: existing?.firstSeenAt || nowKST(),
@@ -1894,8 +1895,8 @@ async function auditToday(dateOverride = null) {
               }
             }
           }
-          const existing = getKioskBlock(e.phoneRaw, e.date, e.start);
-          upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
+          await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
             ...(existing || {}), ...e,
             naverBlocked: success,
             firstSeenAt: existing?.firstSeenAt || nowKST(),
@@ -1914,7 +1915,7 @@ async function auditToday(dateOverride = null) {
     }
 
     // ── Step 4: DB 차단 항목 중 픽코 예약 없는 것 해제 ──
-    const dbBlocks = getKioskBlocksForDate(today);
+    const dbBlocks = await getKioskBlocksForDate(today);
     const pickkoSet = new Set(pickkoEntries.map(e => `${e.phoneRaw}|${e.start}`));
     const orphans = dbBlocks.filter(b => !pickkoSet.has(`${b.phoneRaw}|${b.start}`));
     log(`\n[검증] DB 차단 항목: ${dbBlocks.length}건, 고아 항목: ${orphans.length}건`);
@@ -1940,8 +1941,8 @@ async function auditToday(dateOverride = null) {
         }
       }
       if (unblocked) {
-        const existing = getKioskBlock(b.phoneRaw, b.date, b.start);
-        upsertKioskBlock(b.phoneRaw, b.date, b.start, {
+        const existing = await getKioskBlock(b.phoneRaw, b.date, b.start);
+        await upsertKioskBlock(b.phoneRaw, b.date, b.start, {
           ...(existing || {}), ...b,
           naverBlocked: false,
           naverUnblockedAt: nowKST(),
@@ -2046,8 +2047,8 @@ async function unblockSlotOnly(entry) {
       }
 
       // DB 업데이트
-      const existing = getKioskBlock(phoneRaw, date, start);
-      upsertKioskBlock(phoneRaw, date, start, {
+      const existing = await getKioskBlock(phoneRaw, date, start);
+      await upsertKioskBlock(phoneRaw, date, start, {
         ...(existing || {}), name, date, start, end, room,
         naverBlocked: false,
         naverUnblockedAt: unblocked ? nowKST() : (existing?.naverUnblockedAt || null),

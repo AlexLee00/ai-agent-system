@@ -72,7 +72,7 @@ async function heartbeat(teamLeadId, opts = {}) {
 
   // ── 1. agent_state 갱신 ──────────────────────────────────────────
   try {
-    stateBus.updateAgentState(teamLeadId, 'idle', null, null);
+    await stateBus.updateAgentState(teamLeadId, 'idle', null, null);
     if (verbose) console.log(`  ✅ [하트비트:${teamLeadId}] agent_state 갱신 (${now})`);
   } catch (e) {
     const msg = `agent_state 갱신 실패: ${e.message}`;
@@ -83,7 +83,7 @@ async function heartbeat(teamLeadId, opts = {}) {
   // ── 2. 미처리 이벤트 폴링 ────────────────────────────────────────
   let eventsProcessed = 0;
   try {
-    const events = stateBus.getUnprocessedEvents(teamLeadId, eventLimit);
+    const events = await stateBus.getUnprocessedEvents(teamLeadId, eventLimit);
     if (events.length > 0) {
       if (verbose || events.some(e => e.priority === 'critical' || e.priority === 'high')) {
         console.log(`  📥 [하트비트:${teamLeadId}] 미처리 이벤트 ${events.length}건`);
@@ -103,7 +103,7 @@ async function heartbeat(teamLeadId, opts = {}) {
             console.log(`  📨 [하트비트:${teamLeadId}] 이벤트 #${ev.id} [${ev.event_type}/${ev.priority}] from ${ev.from_agent}`);
           }
 
-          stateBus.markEventProcessed(ev.id);
+          await stateBus.markEventProcessed(ev.id);
           eventsProcessed++;
         } catch (evErr) {
           const msg = `이벤트 #${ev.id} 처리 실패: ${evErr.message}`;

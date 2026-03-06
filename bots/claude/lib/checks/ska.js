@@ -3,86 +3,42 @@
 /**
  * checks/ska.js — 스카팀 에이전트 상태 체크 (덱스터 전용)
  *
- * state.db를 read-only로 열어 다음을 확인:
- *   1. DB 파일 존재 여부
+ * PostgreSQL reservation 스키마 직접 조회:
+ *   1. DB 연결 확인 (pgPool.ping)
  *   2. agent_state staleness (> 10분 warn, > 30분 error)
  *   3. pickko_lock 데드락 감지 (TTL 초과 락 잔존 → warn)
  *   4. pending_blocks 적체 (> 5건 → warn)
  *   5. naver-monitor(앤디) 마지막 성공 시각 (> 60분 → warn)
  */
 
-const fs   = require('fs');
-const path = require('path');
-const os   = require('os');
-const { execSync } = require('child_process');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
+const SCHEMA = 'reservation';
 
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'state.db');
-
-// 덱스터는 bots/reservation/node_modules 아래의 better-sqlite3 사용
-const RESERVATION_BOT_PATH = path.join(
-  __dirname, '..', '..', '..', '..', 'reservation'
-);
-
-function getBetterSqlitePath() {
-  const local = path.join(RESERVATION_BOT_PATH, 'node_modules', 'better-sqlite3');
-  if (fs.existsSync(local)) return local;
-  // 루트 node_modules 폴백
-  const root = path.join(__dirname, '..', '..', '..', '..', 'node_modules', 'better-sqlite3');
-  return root;
-}
-
-/**
- * state.db 스크립트를 임시 파일로 실행 (read-only)
- * @param {string} script
- * @returns {any} JSON 파싱 결과
- */
-function runDbScript(script) {
-  const tmp = path.join(os.tmpdir(), `dexter-ska-${Date.now()}.js`);
-  const bsPath = getBetterSqlitePath();
-  const wrapped = `
-    'use strict';
-    const Database = require(${JSON.stringify(bsPath)});
-    const db = new Database(${JSON.stringify(DB_PATH)}, { readonly: true });
-    try {
-      ${script}
-    } finally {
-      db.close();
-    }
-  `;
+// ── 체크 1: DB 연결 확인 ──────────────────────────────────────────
+async function checkDbExists(items) {
   try {
-    fs.writeFileSync(tmp, wrapped);
-    const out = execSync(`"${process.execPath}" "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
-    return JSON.parse(out.trim());
-  } finally {
-    try { fs.unlinkSync(tmp); } catch {}
-  }
-}
-
-// ── 체크 1: DB 파일 존재 ──────────────────────────────────────────
-function checkDbExists(items) {
-  if (!fs.existsSync(DB_PATH)) {
-    items.push({ label: '스카팀 state.db', status: 'error', detail: `DB 파일 없음: ${DB_PATH}` });
+    const ok = await pgPool.ping(SCHEMA);
+    if (ok) {
+      items.push({ label: '스카팀 PostgreSQL', status: 'ok', detail: `reservation 스키마 연결 정상` });
+      return true;
+    } else {
+      items.push({ label: '스카팀 PostgreSQL', status: 'error', detail: 'ping 실패' });
+      return false;
+    }
+  } catch (e) {
+    items.push({ label: '스카팀 PostgreSQL', status: 'error', detail: `연결 실패: ${e.message}` });
     return false;
   }
-  const stat = fs.statSync(DB_PATH);
-  const kb = Math.round(stat.size / 1024);
-  items.push({ label: '스카팀 state.db', status: 'ok', detail: `${kb}KB` });
-  return true;
 }
 
 // ── 체크 2: agent_state staleness ───────────────────────────────
-function checkAgentStaleness(items) {
+async function checkAgentStaleness(items) {
   let rows;
   try {
-    rows = runDbScript(`
-      const rows = db.prepare(
-        "SELECT agent, status, updated_at FROM agent_state"
-      ).all();
-      process.stdout.write(JSON.stringify(rows));
-    `);
+    rows = await pgPool.query(SCHEMA,
+      'SELECT agent, status, updated_at FROM agent_state');
   } catch (e) {
-    // agent_state 테이블이 아직 없을 수 있음 (마이그레이션 전)
-    items.push({ label: '에이전트 상태 테이블', status: 'warn', detail: `조회 실패 (마이그레이션 필요?): ${e.message}` });
+    items.push({ label: '에이전트 상태 테이블', status: 'warn', detail: `조회 실패: ${e.message}` });
     return;
   }
 
@@ -120,13 +76,10 @@ function checkAgentStaleness(items) {
 }
 
 // ── 체크 3: pickko_lock 데드락 감지 ─────────────────────────────
-function checkPickkoLock(items) {
+async function checkPickkoLock(items) {
   let lock;
   try {
-    lock = runDbScript(`
-      const row = db.prepare("SELECT * FROM pickko_lock WHERE id = 1").get();
-      process.stdout.write(JSON.stringify(row || null));
-    `);
+    lock = await pgPool.get(SCHEMA, 'SELECT * FROM pickko_lock WHERE id = 1');
   } catch (e) {
     items.push({ label: '픽코 락 상태', status: 'warn', detail: `조회 실패: ${e.message}` });
     return;
@@ -159,15 +112,12 @@ function checkPickkoLock(items) {
 }
 
 // ── 체크 4: pending_blocks 적체 ─────────────────────────────────
-function checkPendingBlocks(items) {
+async function checkPendingBlocks(items) {
   let count;
   try {
-    count = runDbScript(`
-      const row = db.prepare(
-        "SELECT COUNT(*) as cnt FROM pending_blocks WHERE status = 'pending'"
-      ).get();
-      process.stdout.write(JSON.stringify(row.cnt));
-    `);
+    const row = await pgPool.get(SCHEMA,
+      "SELECT COUNT(*) AS cnt FROM pending_blocks WHERE status = 'pending'");
+    count = parseInt(row?.cnt ?? 0, 10);
   } catch (e) {
     items.push({ label: '블록 요청 큐', status: 'warn', detail: `조회 실패: ${e.message}` });
     return;
@@ -181,15 +131,11 @@ function checkPendingBlocks(items) {
 }
 
 // ── 체크 5: 앤디(naver-monitor) 마지막 성공 시각 ────────────────
-function checkAndyLastSuccess(items) {
+async function checkAndyLastSuccess(items) {
   let row;
   try {
-    row = runDbScript(`
-      const r = db.prepare(
-        "SELECT last_success_at FROM agent_state WHERE agent = 'andy'"
-      ).get();
-      process.stdout.write(JSON.stringify(r || null));
-    `);
+    row = await pgPool.get(SCHEMA,
+      "SELECT last_success_at FROM agent_state WHERE agent = 'andy'");
   } catch (e) {
     items.push({ label: '앤디 마지막 성공', status: 'warn', detail: `조회 실패: ${e.message}` });
     return;
@@ -224,16 +170,16 @@ function checkAndyLastSuccess(items) {
 async function run() {
   const items = [];
 
-  const dbOk = checkDbExists(items);
+  const dbOk = await checkDbExists(items);
   if (!dbOk) {
-    // DB 없으면 나머지 체크 생략
+    // DB 연결 실패 시 나머지 체크 생략
     return { name: '스카팀 에이전트', status: 'error', items };
   }
 
-  checkAgentStaleness(items);
-  checkPickkoLock(items);
-  checkPendingBlocks(items);
-  checkAndyLastSuccess(items);
+  await checkAgentStaleness(items);
+  await checkPickkoLock(items);
+  await checkPendingBlocks(items);
+  await checkAndyLastSuccess(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

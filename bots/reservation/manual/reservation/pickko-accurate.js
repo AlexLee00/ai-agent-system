@@ -355,13 +355,13 @@ async function main() {
     log(`🚀 픽코 예약 등록 시작`);
 
     // 픽코 단독접근 락 획득 (최대 5분)
-    lockAcquired = acquirePickkoLock('manual');
+    lockAcquired = await acquirePickkoLock('manual');
     if (!lockAcquired) {
       log('⚠️ 픽코 락 획득 실패 — 자동 에이전트가 픽코 사용 중. 잠시 후 재시도하세요.');
       process.exit(1);
     }
     log('🔒 픽코 락 획득 (manual)');
-    process.once('exit', () => { if (lockAcquired) releasePickkoLock('manual'); });
+    process.once('exit', () => { if (lockAcquired) releasePickkoLock('manual').catch(() => {}); });
     
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     
