@@ -12,7 +12,7 @@ MODE="${1:-daily}"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST (${MODE}) 시작"
 
-TMPFILE=$(mktemp /tmp/ska-forecast-XXXX.txt)
+TMPFILE=$(mktemp /tmp/ska-forecast-XXXXXX)
 
 "$PYTHON" "$FORECAST" "--mode=${MODE}" > "$TMPFILE" 2>&1
 EXIT_CODE=$?
