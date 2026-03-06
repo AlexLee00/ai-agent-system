@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * packages/core/lib/llm-cache.js — 시맨틱 캐시 (SQLite 경량 구현)
+ * packages/core/lib/llm-cache.js — 시맨틱 캐시 (PostgreSQL 구현)
  *
  * 동일/유사 요청에 대해 이전 응답 재사용으로 LLM 비용 절감.
  * 벡터 DB 없이 키워드 해시 기반 경량 구현.
@@ -20,19 +20,41 @@
  *
  * 사용법:
  *   const cache = require('../../../packages/core/lib/llm-cache');
- *   const hit = cache.getCached('ska', 'reservation_check', inputText);
+ *   const hit = await cache.getCached('ska', 'reservation_check', inputText);
  *   if (hit) return JSON.parse(hit.response);
  *   // ... LLM 호출 ...
- *   cache.setCache('ska', 'reservation_check', inputText, response, model);
+ *   await cache.setCache('ska', 'reservation_check', inputText, response, model);
  */
 
-const crypto   = require('crypto');
-const path     = require('path');
-const os       = require('os');
-const fs       = require('fs');
-const Database = require('better-sqlite3');
+const crypto  = require('crypto');
+const pgPool  = require('./pg-pool');
 
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'state.db');
+// ── 초기화 플래그 ─────────────────────────────────────────────────────
+let _initialized = false;
+
+async function _ensureTable() {
+  if (_initialized) return;
+  await pgPool.run('reservation', `
+    CREATE TABLE IF NOT EXISTS llm_cache (
+      id              SERIAL PRIMARY KEY,
+      cache_key       TEXT    NOT NULL,
+      team            TEXT    NOT NULL,
+      request_type    TEXT,
+      request_summary TEXT,
+      response        TEXT    NOT NULL,
+      model           TEXT    NOT NULL,
+      hit_count       INTEGER DEFAULT 0,
+      ttl_minutes     INTEGER NOT NULL,
+      created_at      TEXT    NOT NULL,
+      expires_at      TEXT    NOT NULL,
+      UNIQUE (cache_key, team)
+    )
+  `);
+  await pgPool.run('reservation', `
+    CREATE INDEX IF NOT EXISTS idx_cache_expires ON llm_cache(expires_at)
+  `);
+  _initialized = true;
+}
 
 // ── TTL 설정 (분) ─────────────────────────────────────────────────────
 
@@ -55,58 +77,10 @@ const STOP_WORDS = new Set([
   'of', 'and', 'or', 'but', 'with', 'this', 'that', 'it',
 ]);
 
-// ── DB 연결 ───────────────────────────────────────────────────────────
-
-let _db = null;
-
-function _getDb() {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS llm_cache (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      cache_key       TEXT    NOT NULL,
-      team            TEXT    NOT NULL,
-      request_type    TEXT,
-      request_summary TEXT,
-      response        TEXT    NOT NULL,
-      model           TEXT    NOT NULL,
-      hit_count       INTEGER DEFAULT 0,
-      ttl_minutes     INTEGER NOT NULL,
-      created_at      TEXT    NOT NULL,
-      expires_at      TEXT    NOT NULL
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_key
-      ON llm_cache(cache_key, team);
-    CREATE INDEX IF NOT EXISTS idx_cache_expires
-      ON llm_cache(expires_at);
-  `);
-  return _db;
-}
-
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
 function _kstNow() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('Z', '+09:00');
-}
-
-/**
- * 입력 텍스트에서 핵심 키워드 추출
- * @param {string} text
- * @returns {string} 정렬된 키워드 문자열
- */
-function _extractKeywords(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^\w\s가-힣]/g, ' ')    // 특수문자 제거
-    .split(/\s+/)
-    .filter(w => w.length > 1 && !STOP_WORDS.has(w))
-    .sort()
-    .slice(0, 30)                       // 최대 30개 키워드
-    .join(' ');
 }
 
 // ── 핵심 함수 ─────────────────────────────────────────────────────────
@@ -122,27 +96,42 @@ function generateCacheKey(team, requestType, input) {
 }
 
 /**
- * 캐시 조회
- * @returns {{ response: string, model: string, hitCount: number } | null}
+ * 입력 텍스트에서 핵심 키워드 추출
  */
-function getCached(team, requestType, input) {
+function _extractKeywords(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\w\s가-힣]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOP_WORDS.has(w))
+    .sort()
+    .slice(0, 30)
+    .join(' ');
+}
+
+/**
+ * 캐시 조회
+ * @returns {Promise<{ response: string, model: string, hitCount: number } | null>}
+ */
+async function getCached(team, requestType, input) {
   try {
+    await _ensureTable();
     const key = generateCacheKey(team, requestType, input);
     const now = _kstNow();
 
-    const row = _getDb().prepare(`
+    const row = await pgPool.get('reservation', `
       SELECT id, response, model, hit_count
       FROM llm_cache
-      WHERE cache_key = ? AND team = ? AND expires_at > ?
-    `).get(key, team, now);
+      WHERE cache_key = $1 AND team = $2 AND expires_at > $3
+    `, [key, team, now]);
 
     if (!row) return null;
 
-    _getDb().prepare(`
-      UPDATE llm_cache SET hit_count = hit_count + 1 WHERE id = ?
-    `).run(row.id);
+    await pgPool.run('reservation', `
+      UPDATE llm_cache SET hit_count = hit_count + 1 WHERE id = $1
+    `, [row.id]);
 
-    return { response: row.response, model: row.model, hitCount: row.hit_count + 1 };
+    return { response: row.response, model: row.model, hitCount: parseInt(row.hit_count) + 1 };
   } catch { return null; }
 }
 
@@ -154,8 +143,9 @@ function getCached(team, requestType, input) {
  * @param {object|string} response    LLM 응답
  * @param {string}        model       사용한 모델
  */
-function setCache(team, requestType, input, response, model) {
+async function setCache(team, requestType, input, response, model) {
   try {
+    await _ensureTable();
     const key     = generateCacheKey(team, requestType, input);
     const ttl     = TTL_CONFIG[team] || 30;
     const now     = new Date(Date.now() + 9 * 3600 * 1000);
@@ -163,24 +153,23 @@ function setCache(team, requestType, input, response, model) {
     const expires = new Date(now.getTime() + ttl * 60 * 1000)
       .toISOString().replace('Z', '+09:00');
 
-    // 민감정보 보호: 앞 100자 + 긴 숫자열 마스킹
     const summary = String(input || '').slice(0, 100).replace(/\d{6,}/g, '***');
     const respStr = typeof response === 'string' ? response : JSON.stringify(response);
 
-    _getDb().prepare(`
+    await pgPool.run('reservation', `
       INSERT INTO llm_cache
         (cache_key, team, request_type, request_summary, response, model,
          hit_count, ttl_minutes, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
-      ON CONFLICT(cache_key, team) DO UPDATE SET
-        response        = excluded.response,
-        model           = excluded.model,
-        request_summary = excluded.request_summary,
-        ttl_minutes     = excluded.ttl_minutes,
-        created_at      = excluded.created_at,
-        expires_at      = excluded.expires_at,
+      VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9)
+      ON CONFLICT (cache_key, team) DO UPDATE SET
+        response        = EXCLUDED.response,
+        model           = EXCLUDED.model,
+        request_summary = EXCLUDED.request_summary,
+        ttl_minutes     = EXCLUDED.ttl_minutes,
+        created_at      = EXCLUDED.created_at,
+        expires_at      = EXCLUDED.expires_at,
         hit_count       = 0
-    `).run(key, team, requestType, summary, respStr, model, ttl, nowStr, expires);
+    `, [key, team, requestType, summary, respStr, model, ttl, nowStr, expires]);
   } catch { /* 캐시 저장 실패는 무음 */ }
 }
 
@@ -188,32 +177,34 @@ function setCache(team, requestType, input, response, model) {
  * 캐시 통계 (최근 N일)
  * @param {number} days
  */
-function getCacheStats(days = 7) {
+async function getCacheStats(days = 7) {
+  await _ensureTable();
   const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
     .toISOString().replace('Z', '+09:00');
 
-  return _getDb().prepare(`
+  return pgPool.query('reservation', `
     SELECT team,
-           COUNT(*)        AS total_entries,
-           SUM(hit_count)  AS total_hits,
-           AVG(ttl_minutes) AS avg_ttl
+           COUNT(*)::integer        AS total_entries,
+           SUM(hit_count)::integer  AS total_hits,
+           AVG(ttl_minutes)::float  AS avg_ttl
     FROM llm_cache
-    WHERE created_at >= ?
+    WHERE created_at >= $1
     GROUP BY team
     ORDER BY total_hits DESC
-  `).all(cutoff);
+  `, [cutoff]);
 }
 
 /**
  * 만료된 캐시 정리
- * @returns {number} 삭제 건수
+ * @returns {Promise<number>} 삭제 건수
  */
-function cleanExpired() {
+async function cleanExpired() {
   try {
-    const result = _getDb().prepare(`
-      DELETE FROM llm_cache WHERE expires_at <= ?
-    `).run(_kstNow());
-    return result.changes;
+    await _ensureTable();
+    const { rowCount } = await pgPool.run('reservation', `
+      DELETE FROM llm_cache WHERE expires_at <= $1
+    `, [_kstNow()]);
+    return rowCount || 0;
   } catch { return 0; }
 }
 

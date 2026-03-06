@@ -17,7 +17,7 @@ const fs       = require('fs');
 const https    = require('https');
 const path     = require('path');
 const os       = require('os');
-const Database = require('better-sqlite3');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME = '제이';
@@ -56,16 +56,6 @@ function loadSecrets() {
     telegram_chat_id:   process.env.TELEGRAM_CHAT_ID   || '***REMOVED***',
   };
   return _secrets;
-}
-
-// ─── DB ──────────────────────────────────────────────────────────────
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
 }
 
 // ─── Telegram 발송 ───────────────────────────────────────────────────
@@ -182,34 +172,31 @@ let _lastBriefHour = -1;
 
 async function processQueue() {
   try {
-    const pending = getDb().prepare(`
+    const pending = await pgPool.query('claude', `
       SELECT * FROM mainbot_queue
       WHERE status = 'pending'
       ORDER BY alert_level DESC, created_at ASC
       LIMIT 20
-    `).all();
+    `);
 
     for (const item of pending) {
       const result = processItem(item, async (message, processedItems) => {
         await sendTelegram(message);
         try {
-          // 배치 전체 항목 또는 단일 항목 일괄 status='sent' 처리
           const ids = Array.isArray(processedItems)
             ? processedItems.map(i => i.id)
             : [processedItems.id];
-          const placeholders = ids.map(() => '?').join(',');
-          getDb().prepare(`
-            UPDATE mainbot_queue SET status = 'sent', processed_at = datetime('now')
-            WHERE id IN (${placeholders})
-          `).run(...ids);
+          await pgPool.run('claude', `
+            UPDATE mainbot_queue SET status = 'sent', processed_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+            WHERE id = ANY($1::int[])
+          `, [ids]);
         } catch {}
       });
 
-      // 상태 업데이트 — batched도 즉시 'batched'로 표시 (pending 재처리 방지)
       try {
-        getDb().prepare(`
-          UPDATE mainbot_queue SET status = ?, processed_at = datetime('now') WHERE id = ?
-        `).run(result, item.id);
+        await pgPool.run('claude', `
+          UPDATE mainbot_queue SET status = $1, processed_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS') WHERE id = $2
+        `, [result, item.id]);
       } catch {}
     }
   } catch (e) {
@@ -231,22 +218,22 @@ async function runMorningBriefing() {
 
 // ─── 주기적 정리 ─────────────────────────────────────────────────────
 let _cleanupCounter = 0;
-function runCleanup() {
+async function runCleanup() {
   _cleanupCounter++;
   if (_cleanupCounter % 60 !== 0) return; // 1분(60 * 1초)마다
   try {
-    cleanMutes();
-    cleanConfirms();
+    await cleanMutes();
+    await cleanConfirms();
     // 5분 초과 pending bot_commands → error 처리
-    getDb().prepare(`
+    await pgPool.run('claude', `
       UPDATE bot_commands SET status='error', result='{"error":"timeout"}'
-      WHERE status='pending' AND created_at < datetime('now', '-5 minutes')
-    `).run();
-    // 1시간 초과 batched mainbot_queue → sent 처리 (배치 전송 후 상태 미갱신 항목)
-    getDb().prepare(`
+      WHERE status='pending' AND created_at < to_char(now() - INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS')
+    `);
+    // 1시간 초과 batched mainbot_queue → sent 처리
+    await pgPool.run('claude', `
       UPDATE mainbot_queue SET status='sent'
-      WHERE status='batched' AND processed_at < datetime('now', '-1 hour')
-    `).run();
+      WHERE status='batched' AND processed_at < to_char(now() - INTERVAL '1 hour', 'YYYY-MM-DD HH24:MI:SS')
+    `);
   } catch {}
 }
 
@@ -274,7 +261,7 @@ async function mainLoop() {
   // 큐 폴링 (2초 간격)
   await processQueue();
   await runMorningBriefing();
-  runCleanup();
+  await runCleanup();
 
   // 팀장 정체성 점검: 시작 1분 후 첫 실행, 이후 6시간마다
   _identityCounter++;

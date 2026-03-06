@@ -15,7 +15,7 @@ const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
 const { execSync, spawnSync } = require('child_process');
-const Database                = require('better-sqlite3');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '클로드';
@@ -59,16 +59,6 @@ function acquireLock() {
   fs.writeFileSync(LOCK_PATH, String(process.pid));
   process.on('exit', () => { try { fs.unlinkSync(LOCK_PATH); } catch {} });
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
-}
-
-// ─── DB ──────────────────────────────────────────────────────────────
-const CMD_DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  _db = new Database(CMD_DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
 }
 
 // ─── 명령 실행 헬퍼 ──────────────────────────────────────────────────
@@ -492,17 +482,17 @@ const HANDLERS = {
 
 async function processCommands() {
   try {
-    const pending = getDb().prepare(`
+    const pending = await pgPool.query('claude', `
       SELECT * FROM bot_commands
-      WHERE to_bot = ? AND status = 'pending'
+      WHERE to_bot = $1 AND status = 'pending'
       ORDER BY created_at ASC
       LIMIT 3
-    `).all(BOT_ID);
+    `, [BOT_ID]);
 
     for (const cmd of pending) {
-      getDb().prepare(`
-        UPDATE bot_commands SET status = 'running' WHERE id = ?
-      `).run(cmd.id);
+      await pgPool.run('claude', `
+        UPDATE bot_commands SET status = 'running' WHERE id = $1
+      `, [cmd.id]);
 
       let result;
       try {
@@ -518,11 +508,11 @@ async function processCommands() {
         result = { ok: false, error: e.message };
       }
 
-      getDb().prepare(`
+      await pgPool.run('claude', `
         UPDATE bot_commands
-        SET status = ?, result = ?, done_at = datetime('now')
-        WHERE id = ?
-      `).run(result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id);
+        SET status = $1, result = $2, done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+        WHERE id = $3
+      `, [result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id]);
 
       console.log(`[클로드] ${cmd.command} → ${result.ok ? 'done' : 'error'}`);
     }

@@ -7,45 +7,28 @@
  * confirm_key: "yes_<id>" | "no_<id>"
  */
 
-const path     = require('path');
-const os       = require('os');
-const fs       = require('fs');
-const Database = require('better-sqlite3');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
-}
-
+const SCHEMA = 'claude';
 const CONFIRM_TTL_MS = 10 * 60 * 1000; // 10분 후 만료
 
 /**
  * 확인 요청 생성
- * @param {number} queueId   mainbot_queue.id
- * @param {string} message   확인 내용
- * @returns {{ confirmKey: string, rejectKey: string, expiresAt: string }}
  */
-function createConfirm(queueId, message) {
-  const expiresAt = new Date(Date.now() + CONFIRM_TTL_MS).toISOString();
+async function createConfirm(queueId, message) {
+  const expiresAt  = new Date(Date.now() + CONFIRM_TTL_MS).toISOString();
   const confirmKey = `yes_${queueId}_${Date.now()}`;
   const rejectKey  = `no_${queueId}_${Date.now()}`;
 
-  getDb().prepare(`
+  await pgPool.run(SCHEMA, `
     INSERT INTO pending_confirms (queue_id, confirm_key, message, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(queueId, confirmKey, message, expiresAt);
+    VALUES ($1, $2, $3, $4)
+  `, [queueId, confirmKey, message, expiresAt]);
 
-  getDb().prepare(`
+  await pgPool.run(SCHEMA, `
     INSERT INTO pending_confirms (queue_id, confirm_key, message, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(queueId, rejectKey, message, expiresAt);
+    VALUES ($1, $2, $3, $4)
+  `, [queueId, rejectKey, message, expiresAt]);
 
   return { confirmKey, rejectKey, expiresAt };
 }
@@ -53,37 +36,35 @@ function createConfirm(queueId, message) {
 /**
  * 확인 키로 대기 항목 조회
  */
-function getByKey(key) {
-  return getDb().prepare(`
-    SELECT * FROM pending_confirms WHERE confirm_key = ? AND status = 'pending'
-  `).get(key);
+async function getByKey(key) {
+  return pgPool.get(SCHEMA, `
+    SELECT * FROM pending_confirms WHERE confirm_key = $1 AND status = 'pending'
+  `, [key]);
 }
 
 /**
  * 승인/거부 처리
- * @param {string} key     confirm_key
- * @param {string} action  'approved' | 'rejected'
  */
-function resolve(key, action) {
+async function resolve(key, action) {
   const now = new Date().toISOString();
-  const { changes } = getDb().prepare(`
+  const { rowCount } = await pgPool.run(SCHEMA, `
     UPDATE pending_confirms
-    SET status = ?, resolved_at = ?
-    WHERE confirm_key = ? AND status = 'pending' AND expires_at > ?
-  `).run(action, now, key, now);
-  return changes > 0;
+    SET status = $1, resolved_at = $2
+    WHERE confirm_key = $3 AND status = 'pending' AND expires_at > $2
+  `, [action, now, key]);
+  return (rowCount || 0) > 0;
 }
 
 /**
  * 만료된 확인 요청 정리
  */
-function cleanExpired() {
+async function cleanExpired() {
   const now = new Date().toISOString();
-  const { changes } = getDb().prepare(`
+  const { rowCount } = await pgPool.run(SCHEMA, `
     UPDATE pending_confirms SET status = 'expired'
-    WHERE status = 'pending' AND expires_at <= ?
-  `).run(now);
-  return changes;
+    WHERE status = 'pending' AND expires_at <= $1
+  `, [now]);
+  return rowCount || 0;
 }
 
 module.exports = { createConfirm, getByKey, resolve, cleanExpired };

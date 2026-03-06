@@ -16,18 +16,7 @@ const { invalidate }                     = require('../lib/response-cache');
 const path     = require('path');
 const os       = require('os');
 const fs       = require('fs');
-const Database = require('better-sqlite3');
-
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
-}
+const pgPool   = require('../../../packages/core/lib/pg-pool');
 
 // 허가된 chat_id (secrets에서 로드)
 let _allowedChatId = null;
@@ -103,12 +92,13 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
 /**
  * bot_commands에 명령 삽입 후 id 반환
  */
-function insertBotCommand(toBot, command, args = {}) {
-  const result = getDb().prepare(`
+async function insertBotCommand(toBot, command, args = {}) {
+  const rows = await pgPool.query('claude', `
     INSERT INTO bot_commands (to_bot, command, args)
-    VALUES (?, ?, ?)
-  `).run(toBot, command, JSON.stringify(args));
-  return result.lastInsertRowid;
+    VALUES ($1, $2, $3)
+    RETURNING id
+  `, [toBot, command, JSON.stringify(args)]);
+  return rows[0]?.id;
 }
 
 /**
@@ -118,9 +108,9 @@ function insertBotCommand(toBot, command, args = {}) {
 async function waitForCommandResult(id, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const row = getDb().prepare(`
-      SELECT status, result FROM bot_commands WHERE id = ?
-    `).get(id);
+    const row = await pgPool.get('claude', `
+      SELECT status, result FROM bot_commands WHERE id = $1
+    `, [id]);
     if (!row) return null;
     if (row.status === 'done' || row.status === 'error') return row.result;
     await new Promise(r => setTimeout(r, 2000));
@@ -309,14 +299,14 @@ function formatSkaResult(command, rawResult) {
 /**
  * 큐 최근 항목 조회
  */
-function getQueueSummary() {
+async function getQueueSummary() {
   try {
-    const rows = getDb().prepare(`
+    const rows = await pgPool.query('claude', `
       SELECT from_bot, event_type, alert_level, message, status, created_at
       FROM mainbot_queue
       ORDER BY created_at DESC
       LIMIT 10
-    `).all();
+    `);
 
     if (rows.length === 0) return '📬 큐가 비어있습니다.';
 
@@ -442,16 +432,16 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
   // command_history 기록
   try {
-    getDb().prepare(`
+    await pgPool.run('claude', `
       INSERT INTO command_history (raw_text, intent, parse_source, llm_tokens_in, llm_tokens_out, success)
-      VALUES (?, ?, ?, ?, ?, 1)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, 1)
+    `, [
       msg.text || '',
       intent,
       parsed.source || 'unknown',
       parsed.tokensIn  || 0,
       parsed.tokensOut || 0,
-    );
+    ]);
   } catch {}
 
   switch (intent) {
@@ -460,7 +450,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       return await buildStatus();
 
     case 'cost':
-      return buildCostReport();
+      return await buildCostReport();
 
     case 'help':
       return HELP_TEXT;
@@ -470,18 +460,18 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const durStr   = args.duration || '1h';
       const dur      = parseDuration(durStr);
       if (!dur) return `⚠️ 시간 형식 오류: ${durStr}\n예) /mute luna 1h`;
-      const until    = setMute(target, dur.ms, '사용자 요청');
+      const until    = await setMute(target, dur.ms, '사용자 요청');
       return `🔇 [${target}] ${dur.label} 무음 설정\n해제: ${until.slice(0, 16)} KST`;
     }
 
     case 'unmute': {
       const target = args.target || 'all';
-      clearMute(target);
+      await clearMute(target);
       return `🔔 [${target}] 무음 해제됨`;
     }
 
     case 'mutes': {
-      const mutes = listMutes();
+      const mutes = await listMutes();
       if (mutes.length === 0) return '🔔 활성 무음 없음';
       return ['🔇 활성 무음 목록', ...mutes.map(m =>
         `  • ${m.target} → ${m.mute_until.slice(0, 16)} KST${m.reason ? ` (${m.reason})` : ''}`
@@ -614,43 +604,41 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'mute_last_alert': {
-      // mainbot_queue에서 가장 최근 sent 알람을 찾아 해당 event_type 무음
-      const last = getDb().prepare(`
+      const last = await pgPool.get('claude', `
         SELECT from_bot, event_type, message
         FROM mainbot_queue
         WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
         ORDER BY id DESC
         LIMIT 1
-      `).get();
+      `);
       if (!last?.event_type) return '⚠️ 무음 처리할 최근 알람이 없습니다.';
-      // 기본 30일 (사실상 장기 — "안 해도 돼" = 당분간 불필요)
       const dur = parseDuration(args.duration || '30d') || { ms: 30 * 86400_000, label: '30일' };
-      setMuteByEvent(last.from_bot, last.event_type, dur.ms, '사용자 요청');
+      await setMuteByEvent(last.from_bot, last.event_type, dur.ms, '사용자 요청');
       const preview = last.message.split('\n')[0].slice(0, 40);
       return `🔇 알람 무음 설정됨\n봇: ${last.from_bot} / 타입: ${last.event_type}\n"${preview}"\n다시 받으려면: "이 알람 다시 알려줘"`;
     }
 
     case 'unmute_last_alert': {
-      const last = getDb().prepare(`
+      const last = await pgPool.get('claude', `
         SELECT from_bot, event_type, message
         FROM mainbot_queue
         WHERE status = 'sent' AND event_type IS NOT NULL AND event_type != ''
         ORDER BY id DESC
         LIMIT 1
-      `).get();
+      `);
       if (!last?.event_type) return '⚠️ 해제할 알람이 없습니다.';
-      clearMuteByEvent(last.from_bot, last.event_type);
+      await clearMuteByEvent(last.from_bot, last.event_type);
       return `🔔 알람 무음 해제됨\n봇: ${last.from_bot} / 타입: ${last.event_type}`;
     }
 
     case 'brief': {
-      const items = flushMorningQueue();
+      const items = await flushMorningQueue();
       if (items.length === 0) return '🌅 야간 보류 알람 없음';
       return buildMorningBriefing(items) || '브리핑 생성 실패';
     }
 
     case 'queue':
-      return getQueueSummary();
+      return await getQueueSummary();
 
     default: {
       // 처리 불가 명령 → 클로드에게 분석 요청 (NLP 자동 개선)
@@ -687,10 +675,10 @@ async function route(msg, sendReply) {
 
     // command_history 응답 시간 업데이트
     try {
-      getDb().prepare(`
-        UPDATE command_history SET response_ms = ?
-        WHERE id = (SELECT MAX(id) FROM command_history)
-      `).run(Date.now() - start);
+      await pgPool.run('claude', `
+        UPDATE command_history SET response_ms = $1
+        WHERE id = (SELECT MAX(id) FROM claude.command_history)
+      `, [Date.now() - start]);
     } catch {}
 
     await sendReply(response);
