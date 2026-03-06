@@ -11,6 +11,7 @@ const path = require('path');
 const os   = require('os');
 const cfg  = require('../config');
 const { execSync } = require('child_process');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 
 // node_modules 경로 해석 (로컬 우선 → 루트 폴백)
 function resolveModule(botPath, moduleName) {
@@ -215,61 +216,54 @@ async function checkDuckDB(items) {
   }
 }
 
-// claude-team.db 큐 건강 체크
-function checkMainbotQueue(items) {
-  const dbPath = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-  if (!fs.existsSync(dbPath)) {
-    items.push({ label: 'mainbot_queue (제이)', status: 'warn', detail: 'claude-team.db 없음' });
-    return;
-  }
-
-  const modulePath = resolveModule(cfg.BOTS.reservation, 'better-sqlite3');
-  const script = `
-'use strict';
-const Database = require(${JSON.stringify(modulePath)});
-const db = new Database(${JSON.stringify(dbPath)}, { readonly: true });
-const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
-if (!tables.includes('mainbot_queue')) { process.stdout.write(JSON.stringify({ noTable: true })); db.close(); process.exit(0); }
-
-// pending 장기 적체 (5분 이상)
-const stuckPending = db.prepare("SELECT COUNT(*) as cnt FROM mainbot_queue WHERE status='pending' AND created_at < datetime('now','-5 minutes')").get().cnt;
-// batched 장기 적체 (3분 이상 — 배치 타이머 1분 + 여유)
-const stuckBatched = db.prepare("SELECT COUNT(*) as cnt FROM mainbot_queue WHERE status='batched' AND processed_at < datetime('now','-3 minutes')").get().cnt;
-// 최근 1분 내 같은 봇 알람 폭탄 (10개 초과)
-const floodRows = db.prepare("SELECT from_bot, COUNT(*) as cnt FROM mainbot_queue WHERE created_at > datetime('now','-1 minutes') GROUP BY from_bot HAVING cnt > 10").all();
-// 전체 현황
-const summary = db.prepare("SELECT status, COUNT(*) as cnt FROM mainbot_queue GROUP BY status").all();
-
-process.stdout.write(JSON.stringify({ stuckPending, stuckBatched, floodRows, summary }));
-db.close();
-`;
-
+// mainbot_queue 큐 건강 체크 (PostgreSQL claude 스키마)
+async function checkMainbotQueue(items) {
   try {
-    const result = runScript(script);
-    if (result.noTable) {
-      items.push({ label: 'mainbot_queue', status: 'warn', detail: '테이블 없음 (마이그레이션 필요)' });
-      return;
-    }
+    // pending 장기 적체 (5분 이상)
+    const stuckPendingRow = await pgPool.get('claude', `
+      SELECT COUNT(*) AS cnt FROM mainbot_queue
+      WHERE status='pending' AND created_at < to_char(now() - INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS')
+    `);
+    const stuckPending = Number(stuckPendingRow?.cnt ?? 0);
+
+    // batched 장기 적체 (3분 이상)
+    const stuckBatchedRow = await pgPool.get('claude', `
+      SELECT COUNT(*) AS cnt FROM mainbot_queue
+      WHERE status='batched' AND processed_at < to_char(now() - INTERVAL '3 minutes', 'YYYY-MM-DD HH24:MI:SS')
+    `);
+    const stuckBatched = Number(stuckBatchedRow?.cnt ?? 0);
+
+    // 최근 1분 내 같은 봇 알람 폭탄 (10개 초과)
+    const floodRows = await pgPool.query('claude', `
+      SELECT from_bot, COUNT(*) AS cnt FROM mainbot_queue
+      WHERE created_at > to_char(now() - INTERVAL '1 minutes', 'YYYY-MM-DD HH24:MI:SS')
+      GROUP BY from_bot HAVING COUNT(*) > 10
+    `);
+
+    // 전체 현황
+    const summary = await pgPool.query('claude', `
+      SELECT status, COUNT(*) AS cnt FROM mainbot_queue GROUP BY status
+    `);
 
     // 현황 요약
     const statusMap = {};
-    for (const r of (result.summary || [])) statusMap[r.status] = r.cnt;
+    for (const r of summary) statusMap[r.status] = Number(r.cnt);
     const summaryStr = Object.entries(statusMap).map(([s, c]) => `${s}:${c}`).join(', ') || '빈 큐';
     items.push({ label: 'mainbot_queue 현황', status: 'ok', detail: summaryStr });
 
     // 알람 폭탄 감지
-    for (const row of (result.floodRows || [])) {
-      items.push({ label: `  알람폭탄 [${row.from_bot}]`, status: 'warn', detail: `1분 내 ${row.cnt}건 (10건 초과)` });
+    for (const row of floodRows) {
+      items.push({ label: `  알람폭탄 [${row.from_bot}]`, status: 'warn', detail: `1분 내 ${Number(row.cnt)}건 (10건 초과)` });
     }
 
     // pending 장기 적체
-    if (result.stuckPending > 0) {
-      items.push({ label: '  pending 장기 적체', status: 'error', detail: `5분 이상 미처리 ${result.stuckPending}건 — 메인봇 확인 필요` });
+    if (stuckPending > 0) {
+      items.push({ label: '  pending 장기 적체', status: 'error', detail: `5분 이상 미처리 ${stuckPending}건 — 메인봇 확인 필요` });
     }
 
     // batched 장기 적체
-    if (result.stuckBatched > 0) {
-      items.push({ label: '  batched 장기 적체', status: 'warn', detail: `3분 이상 ${result.stuckBatched}건 — 배치 타이머 이상` });
+    if (stuckBatched > 0) {
+      items.push({ label: '  batched 장기 적체', status: 'warn', detail: `3분 이상 ${stuckBatched}건 — 배치 타이머 이상` });
     }
 
   } catch (e) {
@@ -379,7 +373,7 @@ async function run() {
   await checkSQLite(items);
   await checkSkaDuckDB(items);
   await checkDuckDB(items);
-  checkMainbotQueue(items);
+  await checkMainbotQueue(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

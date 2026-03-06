@@ -9,21 +9,7 @@
 const { execSync }       = require('child_process');
 const { cached }         = require('../lib/response-cache');
 const path               = require('path');
-const os                 = require('os');
-const fs                 = require('fs');
-const Database           = require('better-sqlite3');
-
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
-}
+const pgPool             = require('../../../packages/core/lib/pg-pool');
 
 // launchd 서비스 목록
 const LAUNCHD_SERVICES = [
@@ -53,23 +39,23 @@ function checkLaunchd(serviceId) {
 /**
  * 에이전트 상태 조회
  */
-function getAgentStatuses() {
+async function getAgentStatuses() {
   try {
-    return getDb().prepare(`
+    return await pgPool.query('claude', `
       SELECT agent, status, current_task, last_success_at, last_error, updated_at
       FROM agent_state
       ORDER BY agent
-    `).all();
+    `);
   } catch { return []; }
 }
 
 /**
  * 오늘 큐 통계
  */
-function getQueueStats() {
+async function getQueueStats() {
   try {
     const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
-    return getDb().prepare(`
+    return await pgPool.get('claude', `
       SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN status='sent'     THEN 1 ELSE 0 END) AS sent,
@@ -78,36 +64,36 @@ function getQueueStats() {
         SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
         MAX(alert_level) AS max_level
       FROM mainbot_queue
-      WHERE date(created_at) = ?
-    `).get(today) || {};
+      WHERE created_at::date = $1::date
+    `, [today]) || {};
   } catch { return {}; }
 }
 
 /**
  * 최근 알람 (최대 5건)
  */
-function getRecentAlerts() {
+async function getRecentAlerts() {
   try {
-    return getDb().prepare(`
+    return await pgPool.query('claude', `
       SELECT from_bot, event_type, alert_level, message, created_at
       FROM mainbot_queue
       ORDER BY created_at DESC
       LIMIT 5
-    `).all();
+    `);
   } catch { return []; }
 }
 
 /**
  * 활성 무음 목록
  */
-function getActiveMutes() {
+async function getActiveMutes() {
   try {
     const now = new Date().toISOString();
-    return getDb().prepare(`
+    return await pgPool.query('claude', `
       SELECT target, mute_until, reason
       FROM mute_settings
-      WHERE mute_until > ?
-    `).all(now);
+      WHERE mute_until > $1
+    `, [now]);
   } catch { return []; }
 }
 
@@ -120,10 +106,10 @@ const ALERT_ICONS  = { 1: '🔵', 2: '🟡', 3: '🟠', 4: '🔴' };
 async function buildStatus() {
   return cached('status', async () => {
     const kstNow   = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 16);
-    const agents   = getAgentStatuses();
-    const qStats   = getQueueStats();
-    const mutes    = getActiveMutes();
-    const recents  = getRecentAlerts();
+    const agents   = await getAgentStatuses();
+    const qStats   = await getQueueStats();
+    const mutes    = await getActiveMutes();
+    const recents  = await getRecentAlerts();
 
     const lines = [
       `🤖 JayLabs 시스템 현황`,
