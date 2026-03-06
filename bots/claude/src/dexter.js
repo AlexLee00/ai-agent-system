@@ -36,7 +36,16 @@ const checks = {
   deps:          require('../lib/checks/deps'),
   patterns:      require('../lib/checks/patterns'),
   selfDiagnosis: require('../lib/checks/self-diagnosis'),
+  // v2 신규 모듈
+  teamLeads:     require('../lib/checks/team-leads'),
+  openclaw:      require('../lib/checks/openclaw'),
+  llmCost:       require('../lib/checks/llm-cost'),
+  workspaceGit:  require('../lib/checks/workspace-git'),
 };
+
+// ─── 이중 모드 관리자 ────────────────────────────────────────────────
+const { DexterMode } = require('../lib/dexter-mode');
+const dexterMode = new DexterMode();
 
 const { saveErrorItems } = require('../lib/error-history');
 const { analyzeWithAI } = require('../lib/ai-analyst');
@@ -88,6 +97,11 @@ async function main() {
     () => checks.database.run(),
     () => checks.code.run(),
     () => checks.deps.run(FULL),
+    // v2 신규 체크 (에러 격리 — 기존 점검에 영향 없음)
+    () => checks.teamLeads.run(),
+    () => checks.openclaw.run(),
+    () => checks.llmCost.run(),
+    () => checks.workspaceGit.run(),
   ];
 
   for (const run of runners) {
@@ -110,6 +124,37 @@ async function main() {
       results.push({ name: '체크 실행 오류', status: 'error', items: [{ label: e.message, status: 'error', detail: '' }] });
     }
   }
+
+  // v2: 인프라 상태 기반 이중 모드 전환 판단
+  // Emergency 조건: OpenClaw 게이트웨이 or 스카야 텔레그램 봇 3분 이상 다운
+  // TODO: 팀장 봇 구축(5주차) 후 → 팀장 무응답 기반 Emergency 전환으로 교체
+  // TODO: stateBus.emitEvent('dexter', 'claude-lead', 'system_alert', result, priority); 보고 경로 전환
+  try {
+    const { isOpenClawOk, isSkayaOk } = require('../lib/checks/team-leads');
+    const teamLeadsResult = results.find(r => r.name === '핵심 봇 프로세스 건강');
+    const openclawOk      = isOpenClawOk(teamLeadsResult);
+    const skayaOk         = isSkayaOk(teamLeadsResult);
+
+    const { flushed } = dexterMode.checkModeTransition(openclawOk, skayaOk);
+
+    if (dexterMode.isEmergency()) {
+      console.log('⚠️ 덱스터 비상 모드 — 텔레그램 보고 불가, 로컬 파일에 기록 중');
+    }
+    // 비상 모드 해제 시 밀린 알림 일괄 발송
+    if (flushed.length > 0) {
+      try {
+        const { publishToMainBot } = require('../lib/mainbot-client');
+        publishToMainBot({
+          from_bot:    'dexter',
+          event_type:  'system',
+          alert_level: 2,
+          message:     `✅ 덱스터 비상 모드 해제\n밀린 알림 ${flushed.length}건 전송:\n` +
+                       flushed.map(a => `• ${a.message}`).join('\n').slice(0, 800),
+          payload:     { flushed_count: flushed.length },
+        });
+      } catch { /* 발송 실패 무시 */ }
+    }
+  } catch { /* 무시 */ }
 
   // 오류 이력 저장 (패턴 분석용) — patterns 체크 실행 전에 저장
   try { saveErrorItems(results); } catch { /* 무시 */ }

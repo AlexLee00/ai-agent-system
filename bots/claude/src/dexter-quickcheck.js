@@ -23,6 +23,10 @@ const { execSync } = require('child_process');
 
 const { publishToMainBot } = require('../lib/mainbot-client');
 
+// v2: 팀장·OpenClaw 빠른 점검 모듈
+const teamLeadsCheck = require('../lib/checks/team-leads');
+const openclawCheck  = require('../lib/checks/openclaw');
+
 // ── 상수 ─────────────────────────────────────────────────────────────
 
 const STATE_FILE    = path.join(os.homedir(), '.openclaw', 'workspace', 'quickcheck-state.json');
@@ -187,6 +191,61 @@ async function main() {
       state.services[svc.id] = { status: 'ok', restartCount: 0, restartedAt: null, restartResult: null };
     }
   }
+
+  // ── v2: 팀장 봇 빠른 점검 ──────────────────────────────────────────
+  try {
+    const leadResult = await teamLeadsCheck.run();
+    const leadErrors = (leadResult.items || []).filter(i => i.status === 'error');
+    for (const item of leadErrors) {
+      const prev = state.services?.[`team-lead:${item.label}`] || {};
+      const needAlert = !prev.status || prev.status === 'ok' ||
+        (prev.status === 'down' && cooldownExpired(prev.alertedAt));
+
+      state.services = state.services || {};
+      state.services[`team-lead:${item.label}`] = {
+        status: 'down', alertedAt: needAlert ? now : (prev.alertedAt || now),
+      };
+
+      if (needAlert) {
+        alerts.push({ label: item.label, detail: item.detail, restartable: false, restarted: false });
+      }
+    }
+    // 정상 회복 감지
+    for (const item of (leadResult.items || []).filter(i => i.status === 'ok')) {
+      const key  = `team-lead:${item.label}`;
+      const prev = state.services?.[key];
+      if (prev?.status === 'down') {
+        recoveries.push({ label: item.label, downSince: null });
+      }
+      if (state.services) state.services[key] = { status: 'ok' };
+    }
+  } catch { /* 팀장 점검 실패 — 기존 체크에 영향 없음 */ }
+
+  // ── v2: OpenClaw 게이트웨이 빠른 점검 ─────────────────────────────
+  try {
+    const ocResult = await openclawCheck.run();
+    if (ocResult.status === 'error') {
+      const errorItem = (ocResult.items || []).find(i => i.status === 'error');
+      const key  = 'openclaw-v2';
+      const prev = state.services?.[key] || {};
+      const needAlert = !prev.status || prev.status === 'ok' ||
+        (prev.status === 'down' && cooldownExpired(prev.alertedAt));
+
+      state.services = state.services || {};
+      state.services[key] = {
+        status: 'down', alertedAt: needAlert ? now : (prev.alertedAt || now),
+      };
+
+      if (needAlert && errorItem) {
+        alerts.push({ label: 'OpenClaw 게이트웨이 (v2)', detail: errorItem.detail, restartable: false, restarted: false });
+      }
+    } else {
+      if (state.services?.['openclaw-v2']?.status === 'down') {
+        recoveries.push({ label: 'OpenClaw 게이트웨이 (v2)', downSince: null });
+      }
+      if (state.services) state.services['openclaw-v2'] = { status: 'ok' };
+    }
+  } catch { /* OpenClaw 점검 실패 — 기존 체크에 영향 없음 */ }
 
   // ── 2. 디스크 위기 체크 ─────────────────────────────────────────────
   const diskUsage = getDiskUsage();
