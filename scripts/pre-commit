@@ -17,6 +17,7 @@ echo "🔒 보안 검사 실행 중..."
 # ─── 1. 금지 파일 차단 ────────────────────────────────────────────────────
 BLOCKED_FILES=(
   "secrets.json"
+  "config.yaml"
   ".env"
   ".env.local"
   ".env.production"
