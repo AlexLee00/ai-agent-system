@@ -7,7 +7,7 @@
 >
 > **언제 참조**: 새 기능 추가 / 버그 수정 / 신규 봇 개발 / 코드 리뷰 전 **반드시** 참조.
 >
-> 마지막 업데이트: 2026-03-06
+> 마지막 업데이트: 2026-03-07
 
 ---
 
@@ -1411,6 +1411,8 @@ function parseJsonResponse(text) {
 | 2026-03-05 | **스카 pickko-query/cancel-cmd 경로 누락 버그 수정** — CLAUDE_NOTES.md 명령 테이블 절대경로 수정 외 1건 |
 | 2026-03-06 | **미해결 알림 반복 + tool_code 누출 버그 수정** — pickko-alerts-resolve.js 신규 (수동 해결 CLI) 외 2건 |
 | 2026-03-06 | **Day 4 — 루나팀 매매일지 시스템** — trade-journal-db.js 신규 (5개 테이블 + DB함수) 외 5건 |
+| 2026-03-07 | **오탐 근본 수정 + Day 6 검증 완료** — markResolved() 추가 (ok 복귀 시 error 이력 자동 삭제) 외 2건 |
+<!-- session-close:2026-03-07:오탐-근본-수정-day-6-검증-완료 -->
 <!-- session-close:2026-03-06:day-4-루나팀-매매일지-시스템 -->
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
 <!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
