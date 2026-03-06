@@ -127,8 +127,6 @@ async function main() {
 
   // v2: 인프라 상태 기반 이중 모드 전환 판단
   // Emergency 조건: OpenClaw 게이트웨이 or 스카야 텔레그램 봇 3분 이상 다운
-  // TODO: 팀장 봇 구축(5주차) 후 → 팀장 무응답 기반 Emergency 전환으로 교체
-  // TODO: stateBus.emitEvent('dexter', 'claude-lead', 'system_alert', result, priority); 보고 경로 전환
   try {
     const { isOpenClawOk, isSkayaOk } = require('../lib/checks/team-leads');
     const teamLeadsResult = results.find(r => r.name === '핵심 봇 프로세스 건강');
