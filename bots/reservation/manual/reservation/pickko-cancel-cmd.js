@@ -92,7 +92,7 @@ runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
   process.stderr.write(`[pickko-cancel-cmd] 픽코 취소 완료 → 네이버 해제 시작\n`);
 
   // ── Step 2: 네이버 예약불가 → 예약가능 해제 ──
-  const kioskScript = path.join(__dirname, 'pickko-kiosk-monitor.js');
+  const kioskScript = path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js');
   const unblockArgs = [
     '--unblock-slot',
     `--phone=${phoneRaw}`,
