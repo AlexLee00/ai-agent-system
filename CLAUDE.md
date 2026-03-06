@@ -172,3 +172,46 @@ npm run patch:status        # 패치 현황 콘솔
 - 팀 경계 침범 금지: 타 팀 DB 직접 접근 금지. State Bus의 agent_events/agent_tasks 경유만 허용
 - LLM 판단으로 OPS 데이터 직접 수정 금지: LLM 결과를 OPS DB에 직접 쓰기 금지, 규칙 기반 실행봇 경유 필수
 - DEV/OPS 데이터 격리: MODE=dev에서 OPS 데이터 접근 금지, MODE=ops에서 실험적 코드 실행 금지
+
+---
+
+## 개발 루틴 (대규모/핵심 개발 시 필수)
+
+### 세션 시작 루틴
+1. CLAUDE.md 읽기 (프로젝트 규칙)
+2. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
+3. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
+4. team-jay-strategy.md 해당 섹션 확인 (오늘 할 일)
+5. git status로 현재 상태 확인
+
+### 세션 마무리 루틴
+1. Git 커밋 (미커밋 변경사항 정리)
+2. docs/work-history.md 업데이트 (오늘 한 일 — 사실 중심)
+3. docs/dev-journal.md 업데이트 (중요 결정/인사이트 — 연구/논문/발표용)
+4. docs/TEST_RESULTS.md 업데이트 (테스트 실행했다면)
+5. docs/CHANGELOG.md 업데이트 (기능 추가/변경이 있었다면)
+6. docs/KNOWN_ISSUES.md 업데이트 (새로 발견된 이슈가 있다면)
+7. docs/SESSION_HANDOFF.md 작성 (다음 세션에 전달할 컨텍스트)
+8. Git 최종 커밋 + push — 커밋 메시지: `docs: 세션 마감 문서 업데이트 (YYYY-MM-DD)`
+
+### 작업 중 규칙
+- 의미 있는 단위로 자주 Git 커밋 (한 번에 몰아서 ❌)
+- 커밋 메시지: `feat:`, `fix:`, `docs:`, `chore:` 접두사 + 한국어
+- 새로운 기능/변경 시 해당 테스트 작성 또는 실행
+
+### 개발 문서 목적
+
+| 문서 | 목적 | 작성 시점 |
+|------|------|----------|
+| work-history.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과) | 매 작업 완료 즉시 |
+| dev-journal.md | 왜 이렇게 결정했는가 (연구/논문/발표용) | 중요 결정/인사이트 시 |
+| SESSION_HANDOFF.md | 다음 세션에 전달할 맥락 (기억 이전) | 매 세션 종료 시 |
+| TEST_RESULTS.md | 테스트 결과 누적 | 테스트 실행 시 |
+| CHANGELOG.md | 버전별 변경 이력 | 기능 변경 시 |
+| KNOWN_ISSUES.md | 알려진 이슈 추적 | 이슈 발견 시 |
+
+### 기억 이전 체계
+- **즉시** (같은 날): SESSION_HANDOFF.md → 다음 세션이 읽음
+- **단기** (1주): work-history.md, KNOWN_ISSUES.md
+- **장기** (영구): dev-journal.md, CHANGELOG.md, team-jay-strategy.md, CLAUDE.md
+- **전략 기억**: claude.ai (전략 담당)가 메모리로 장기 기억 유지
