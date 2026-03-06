@@ -3,31 +3,11 @@
 /**
  * lib/mainbot-client.js — 스카팀 → 메인봇 알람 발행 클라이언트 (CJS)
  *
- * claude-team.db mainbot_queue에 INSERT.
+ * PostgreSQL jay.claude 스키마 mainbot_queue에 INSERT.
  * 메인봇이 실행 중이 아니어도 큐에 쌓이면 재시작 시 처리.
  */
 
-const path     = require('path');
-const os       = require('os');
-const fs       = require('fs');
-const Database = require('better-sqlite3');
-
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  try {
-    const dir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    _db = new Database(DB_PATH);
-    _db.pragma('journal_mode = WAL');
-  } catch (e) {
-    console.warn(`[mainbot-client] DB 연결 실패: ${e.message}`);
-    return null;
-  }
-  return _db;
-}
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 /**
  * 메인봇 큐에 알람 발행
@@ -39,14 +19,12 @@ function getDb() {
  * @param {string} opts.message      사람이 읽는 메시지
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
-function publishToMainBot({ from_bot, team = 'reservation', event_type, alert_level = 2, message, payload }) {
-  const db = getDb();
-  if (!db) return false;
+async function publishToMainBot({ from_bot, team = 'reservation', event_type, alert_level = 2, message, payload }) {
   try {
-    db.prepare(`
+    await pgPool.run('claude', `
       INSERT INTO mainbot_queue (from_bot, team, event_type, alert_level, message, payload)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(from_bot, team, event_type, alert_level, message, payload ? JSON.stringify(payload) : null);
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [from_bot, team, event_type, alert_level, message, payload ? JSON.stringify(payload) : null]);
     return true;
   } catch (e) {
     console.warn(`[mainbot-client] 큐 삽입 실패: ${e.message}`);

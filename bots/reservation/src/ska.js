@@ -16,7 +16,7 @@ const fs       = require('fs');
 const path     = require('path');
 const os       = require('os');
 const { execSync } = require('child_process');
-const Database = require('better-sqlite3');
+const pgPool   = require('../../../packages/core/lib/pg-pool');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -66,24 +66,8 @@ function acquireLock() {
 }
 
 // ─── DB ──────────────────────────────────────────────────────────────
-const CMD_DB_PATH   = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-const STATE_DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'state.db');
-
-let _cmdDb   = null;
-let _stateDb = null;
-
-function getCmdDb() {
-  if (_cmdDb) return _cmdDb;
-  _cmdDb = new Database(CMD_DB_PATH);
-  _cmdDb.pragma('journal_mode = WAL');
-  return _cmdDb;
-}
-
-function getStateDb() {
-  if (_stateDb) return _stateDb;
-  _stateDb = new Database(STATE_DB_PATH, { readonly: true });
-  return _stateDb;
-}
+// claude 스키마: bot_commands (제이팀)
+// reservation 스키마: reservations, daily_summary, alerts (Phase 3에서 마이그레이션 완료)
 
 // ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
 
@@ -174,15 +158,15 @@ function checkSkaTeamIdentity() {
 /**
  * 오늘 예약 현황 조회
  */
-function handleQueryReservations(args) {
+async function handleQueryReservations(args) {
   const date = args.date || new Date().toISOString().slice(0, 10);
   try {
-    const rows = getStateDb().prepare(`
+    const rows = await pgPool.query('reservation', `
       SELECT name_enc, date, start_time, end_time, room, status
       FROM reservations
-      WHERE date = ?
+      WHERE date = $1
       ORDER BY start_time
-    `).all(date);
+    `, [date]);
 
     if (rows.length === 0) {
       return { ok: true, date, count: 0, message: `${date} 예약 없음` };
@@ -200,12 +184,12 @@ function handleQueryReservations(args) {
 /**
  * 오늘 매출/예약수 조회
  */
-function handleQueryTodayStats(args) {
+async function handleQueryTodayStats(args) {
   const date = args.date || new Date().toISOString().slice(0, 10);
   try {
-    const summary = getStateDb().prepare(`
-      SELECT total_amount, entries_count FROM daily_summary WHERE date = ?
-    `).get(date);
+    const summary = await pgPool.get('reservation', `
+      SELECT total_amount, entries_count FROM daily_summary WHERE date = $1
+    `, [date]);
 
     if (!summary) {
       return { ok: true, date, message: `${date} 매출 데이터 없음` };
@@ -225,16 +209,16 @@ function handleQueryTodayStats(args) {
 /**
  * 미해결 알람 조회
  */
-function handleQueryAlerts(args) {
+async function handleQueryAlerts(args) {
   try {
     const limit = args.limit || 10;
-    const rows = getStateDb().prepare(`
+    const rows = await pgPool.query('reservation', `
       SELECT type, title, message, timestamp
       FROM alerts
       WHERE resolved = 0
       ORDER BY timestamp DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1
+    `, [limit]);
 
     return { ok: true, count: rows.length, alerts: rows };
   } catch (e) {
@@ -278,18 +262,17 @@ const HANDLERS = {
 
 async function processCommands() {
   try {
-    const pending = getCmdDb().prepare(`
+    const pending = await pgPool.query('claude', `
       SELECT * FROM bot_commands
-      WHERE to_bot = ? AND status = 'pending'
+      WHERE to_bot = $1 AND status = 'pending'
       ORDER BY created_at ASC
       LIMIT 5
-    `).all(BOT_ID);
+    `, [BOT_ID]);
 
     for (const cmd of pending) {
-      // running 상태로 전환
-      getCmdDb().prepare(`
-        UPDATE bot_commands SET status = 'running' WHERE id = ?
-      `).run(cmd.id);
+      await pgPool.run('claude', `
+        UPDATE bot_commands SET status = 'running' WHERE id = $1
+      `, [cmd.id]);
 
       let result;
       try {
@@ -305,12 +288,11 @@ async function processCommands() {
         result = { ok: false, error: e.message };
       }
 
-      // 완료 처리
-      getCmdDb().prepare(`
+      await pgPool.run('claude', `
         UPDATE bot_commands
-        SET status = ?, result = ?, done_at = datetime('now')
-        WHERE id = ?
-      `).run(result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id);
+        SET status = $1, result = $2, done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+        WHERE id = $3
+      `, [result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id]);
 
       console.log(`[스카] ${cmd.command} → ${result.ok ? 'done' : 'error'}`);
     }

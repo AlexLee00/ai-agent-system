@@ -3,140 +3,96 @@
 /**
  * lib/mute-manager.js — 알람 무음 관리
  *
- * mute_settings 테이블 기반.
+ * PostgreSQL jay.claude 스키마 mute_settings 테이블 기반.
  * target: 'all' | 팀명(investment/reservation/claude) | 봇명(luna/ska/dexter...)
  */
 
-const path     = require('path');
-const os       = require('os');
-const fs       = require('fs');
-const Database = require('better-sqlite3');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-
-let _db = null;
-function getDb() {
-  if (_db) return _db;
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-  return _db;
-}
+const SCHEMA = 'claude';
 
 /**
  * 무음 설정
- * @param {string} target     'all' | 팀명 | 봇명
- * @param {number} durationMs 무음 지속 시간 (ms)
- * @param {string} [reason]   사유
  */
-function setMute(target, durationMs, reason = '') {
+async function setMute(target, durationMs, reason = '') {
   const until = new Date(Date.now() + durationMs).toISOString();
-  // 기존 같은 target 덮어쓰기
-  getDb().prepare(`
-    DELETE FROM mute_settings WHERE target = ?
-  `).run(target);
-  getDb().prepare(`
-    INSERT INTO mute_settings (target, mute_until, reason) VALUES (?, ?, ?)
-  `).run(target, until, reason);
+  await pgPool.run(SCHEMA, `DELETE FROM mute_settings WHERE target = $1`, [target]);
+  await pgPool.run(SCHEMA, `
+    INSERT INTO mute_settings (target, mute_until, reason) VALUES ($1, $2, $3)
+  `, [target, until, reason]);
   return until;
 }
 
 /**
  * 무음 해제
  */
-function clearMute(target) {
-  getDb().prepare('DELETE FROM mute_settings WHERE target = ?').run(target);
+async function clearMute(target) {
+  await pgPool.run(SCHEMA, 'DELETE FROM mute_settings WHERE target = $1', [target]);
 }
 
 /**
  * 특정 target이 현재 무음인지 확인
- * @param {string} target
- * @returns {boolean}
  */
-function isMuted(target) {
+async function isMuted(target) {
   const now = new Date().toISOString();
-  const row = getDb().prepare(`
+  const row = await pgPool.get(SCHEMA, `
     SELECT 1 FROM mute_settings
-    WHERE target = ? AND mute_until > ?
+    WHERE target = $1 AND mute_until > $2
     LIMIT 1
-  `).get(target, now);
+  `, [target, now]);
   return !!row;
 }
 
 /**
  * 봇/팀 알람이 무음인지 확인 (all + 팀 + 봇 3단계)
- * @param {string} botName   봇 이름 (luna, dexter...)
- * @param {string} teamName  팀 이름 (investment, reservation, claude)
- * @returns {boolean}
  */
-function isAlertMuted(botName, teamName) {
-  return isMuted('all') || isMuted(teamName) || isMuted(botName);
+async function isAlertMuted(botName, teamName) {
+  const [a, b, c] = await Promise.all([isMuted('all'), isMuted(teamName), isMuted(botName)]);
+  return a || b || c;
 }
 
 // ─── 이벤트 타입 기반 무음 ───────────────────────────────────────────
-// target 형식: "event:{fromBot}:{eventType}"
-// 사용자가 "이 알람 안 해도 돼"라고 할 때 특정 from_bot+event_type 조합만 뮤트
-
 const EVENT_PREFIX = 'event:';
 
-/**
- * 이벤트 타입 기반 무음 설정
- * @param {string} fromBot    발신 봇 이름
- * @param {string} eventType  이벤트 타입
- * @param {number} durationMs 무음 지속 시간 (ms)
- * @param {string} [reason]   사유
- * @returns {string} until ISO 문자열
- */
-function setMuteByEvent(fromBot, eventType, durationMs, reason = '') {
+async function setMuteByEvent(fromBot, eventType, durationMs, reason = '') {
   return setMute(`${EVENT_PREFIX}${fromBot}:${eventType}`, durationMs, reason);
 }
 
-/**
- * 이벤트 타입 기반 무음 여부 확인
- * @param {string} fromBot
- * @param {string} eventType
- * @returns {boolean}
- */
-function isEventMuted(fromBot, eventType) {
+async function isEventMuted(fromBot, eventType) {
   if (!fromBot || !eventType) return false;
   return isMuted(`${EVENT_PREFIX}${fromBot}:${eventType}`);
 }
 
-/**
- * 이벤트 타입 기반 무음 해제
- */
-function clearMuteByEvent(fromBot, eventType) {
-  clearMute(`${EVENT_PREFIX}${fromBot}:${eventType}`);
+async function clearMuteByEvent(fromBot, eventType) {
+  return clearMute(`${EVENT_PREFIX}${fromBot}:${eventType}`);
 }
 
 /**
  * 현재 활성 무음 목록
  */
-function listMutes() {
+async function listMutes() {
   const now = new Date().toISOString();
-  return getDb().prepare(`
+  return pgPool.query(SCHEMA, `
     SELECT target, mute_until, reason
     FROM mute_settings
-    WHERE mute_until > ?
+    WHERE mute_until > $1
     ORDER BY mute_until ASC
-  `).all(now);
+  `, [now]);
 }
 
 /**
  * 만료된 무음 정리
  */
-function cleanExpired() {
+async function cleanExpired() {
   const now = new Date().toISOString();
-  const { changes } = getDb().prepare('DELETE FROM mute_settings WHERE mute_until <= ?').run(now);
-  return changes;
+  const { rowCount } = await pgPool.run(SCHEMA,
+    'DELETE FROM mute_settings WHERE mute_until <= $1', [now]
+  );
+  return rowCount || 0;
 }
 
 /**
- * 무음 설정 파싱 ("/mute luna 2h" 또는 "/mute all 30m")
- * @param {string} target   봇명 또는 'all'
- * @param {string} duration "30m" | "1h" | "2h" | "1d"
- * @returns {{ ms: number, label: string } | null}
+ * 무음 설정 파싱 ("/mute luna 2h")
  */
 function parseDuration(duration) {
   const m = duration.match(/^(\d+)(m|h|d)$/i);
