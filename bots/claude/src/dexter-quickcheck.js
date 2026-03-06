@@ -23,9 +23,9 @@ const { execSync } = require('child_process');
 
 const { publishToMainBot } = require('../lib/mainbot-client');
 
-// v2: 팀장·OpenClaw 빠른 점검 모듈
+// v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads');
-const openclawCheck  = require('../lib/checks/openclaw');
+// NOTE: openclawCheck (lsof 기반 포트 검사)는 1시간 주기 dexter.js에서만 실행
 
 // ── 상수 ─────────────────────────────────────────────────────────────
 
@@ -221,33 +221,9 @@ async function main() {
     }
   } catch { /* 팀장 점검 실패 — 기존 체크에 영향 없음 */ }
 
-  // ── v2: OpenClaw 게이트웨이 빠른 점검 ─────────────────────────────
-  try {
-    const ocResult = await openclawCheck.run();
-    if (ocResult.status === 'error') {
-      const errorItem = (ocResult.items || []).find(i => i.status === 'error');
-      const key  = 'openclaw-v2';
-      const prev = state.services?.[key] || {};
-      const needAlert = !prev.status || prev.status === 'ok' ||
-        (prev.status === 'down' && cooldownExpired(prev.alertedAt));
-
-      state.services = state.services || {};
-      state.services[key] = {
-        status: 'down', alertedAt: needAlert ? now : (prev.alertedAt || now),
-      };
-
-      if (needAlert && errorItem) {
-        alerts.push({ label: 'OpenClaw 게이트웨이 (v2)', detail: errorItem.detail, restartable: false, restarted: false });
-      }
-    } else {
-      if (state.services?.['openclaw-v2']?.status === 'down') {
-        recoveries.push({ label: 'OpenClaw 게이트웨이 (v2)', downSince: null });
-      }
-      if (state.services) state.services['openclaw-v2'] = { status: 'ok' };
-    }
-  } catch { /* OpenClaw 점검 실패 — 기존 체크에 영향 없음 */ }
-
   // ── 2. 디스크 위기 체크 ─────────────────────────────────────────────
+  // NOTE: OpenClaw 포트/보안 점검은 1시간 주기 dexter.js (openclaw.js 모듈)에서 수행
+  //       퀵체크에서는 launchd 프로세스 생존 체크(위 SERVICES 목록)만으로 충분
   const diskUsage = getDiskUsage();
   const diskPrev  = state.disk || {};
 
