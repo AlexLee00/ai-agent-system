@@ -8,6 +8,7 @@
  */
 
 import * as db from '../shared/db.js';
+import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
@@ -190,6 +191,22 @@ export async function evaluateSignal(signal, opts = {}) {
     }
 
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
+
+    // ── 매매일지 판단 근거 기록 (승인/수정된 BUY만) ───────────────────
+    try {
+      await journalDb.insertRationale({
+        signal_id:             signal.id,
+        luna_decision:         'enter',
+        luna_reasoning:        signal.reasoning || '',
+        luna_confidence:       signal.confidence ?? null,
+        nemesis_verdict:       llm.decision === 'ADJUST' ? 'modified' : 'approved',
+        nemesis_notes:         llm.reasoning ?? null,
+        position_size_original: signal.amount_usdt,
+        position_size_approved: amountUsdt,
+      });
+    } catch (e) {
+      console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);
+    }
   }
 
   await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);

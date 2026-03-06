@@ -78,6 +78,92 @@ export function notifyError(context, error) {
   return Promise.resolve(true);
 }
 
+// ─── 매매일지 알림 (기존 함수 수정 없이 추가) ─────────────────────────
+
+/**
+ * 실시간 진입 알림 (trade_journal 기록 후 호출)
+ * 실투자 🔴 / 모의투자 🔵 구분 표시
+ */
+export function notifyJournalEntry({
+  tradeId, symbol, direction = 'long', market = 'crypto',
+  entryPrice, entryValue, isPaper,
+  confidence, reasoning,
+  tpPrice, slPrice, tpSlSet,
+  signalToExecMs,
+}) {
+  const tag      = isPaper ? '🔵모의투자' : '🔴실투자';
+  const emoji    = direction === 'long' ? '🟢 진입' : '🔴 진입(Short)';
+  const currency = market === 'domestic' ? '₩' : '$';
+  const fmtPrice = (v) => v != null ? `${currency}${Number(v).toLocaleString()}` : '-';
+
+  const lines = [
+    `${emoji}: ${symbol} Long ${tag}`,
+    `가격: ${fmtPrice(entryPrice)} | 금액: ${fmtPrice(entryValue)}`,
+  ];
+  if (reasoning)  lines.push(`근거: ${String(reasoning).slice(0, 100)}`);
+  if (confidence) lines.push(`확신도: ${(confidence * 100).toFixed(0)}%`);
+  if (tpPrice && slPrice && entryPrice) {
+    const tpPct = ((tpPrice / entryPrice - 1) * 100).toFixed(1);
+    const slPct = ((slPrice / entryPrice - 1) * 100).toFixed(1);
+    lines.push(`목표: ${fmtPrice(tpPrice)} (+${tpPct}%) | 손절: ${fmtPrice(slPrice)} (${slPct}%)`);
+  }
+  if (tpSlSet !== undefined) lines.push(`TP/SL 거래소 설정: ${tpSlSet ? '✅ 완료' : '⚠️ 미설정'}`);
+  if (signalToExecMs)        lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
+
+  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: lines.join('\n') });
+  return Promise.resolve(true);
+}
+
+/**
+ * 일간 매매일지 리포트 텔레그램 발송
+ * @param {string} date  'YYYY-MM-DD'
+ * @param {Array}  records  getDailyPerformance() 결과 (호출자가 조회해서 전달)
+ */
+export function notifyDailyJournal(date, records = []) {
+  const lines = [
+    `📊 루나팀 일간 매매일지 (${date})`,
+    '═'.repeat(31),
+    '',
+  ];
+
+  const marketLabel = { crypto: '암호화폐', domestic: '국내장', overseas: '국외장', all: '전체' };
+  const marketTag   = { crypto: '실투자 🔴', domestic: '모의투자 🔵', overseas: '모의투자 🔵' };
+
+  const mainRecords = records.filter(r => r.market !== 'all');
+
+  if (mainRecords.length === 0) {
+    lines.push('거래 없음');
+  } else {
+    for (const r of mainRecords) {
+      const label    = marketLabel[r.market] || r.market;
+      const tag      = marketTag[r.market]   || '';
+      const currency = r.market === 'domestic' ? '₩' : '$';
+      const winRate  = r.win_rate != null ? `${(r.win_rate * 100).toFixed(1)}%` : '-';
+      const pnlSign  = (r.pnl_net || 0) >= 0 ? '+' : '';
+      lines.push(`■ ${label} (${tag})`);
+      lines.push(`  거래: ${r.total_trades}건 (승 ${r.winning_trades} / 패 ${r.losing_trades})`);
+      lines.push(`  승률: ${winRate}`);
+      lines.push(`  순손익: ${pnlSign}${currency}${Math.abs(r.pnl_net || 0).toFixed(2)}`);
+      lines.push('');
+    }
+  }
+
+  // 분석팀 성적표 (all 레코드 우선, 없으면 첫 번째)
+  const allRec = records.find(r => r.market === 'all') || records[0];
+  if (allRec && allRec.aria_accuracy != null) {
+    const acc   = (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-';
+    const trend = (v) => v == null ? '━' : v >= 0.7 ? '▲' : v >= 0.5 ? '━' : '▼';
+    lines.push('■ 분석팀 성적표');
+    lines.push(`  아리아:   ${acc(allRec.aria_accuracy)} ${trend(allRec.aria_accuracy)}`);
+    lines.push(`  소피아:   ${acc(allRec.sophia_accuracy)} ${trend(allRec.sophia_accuracy)}`);
+    lines.push(`  오라클:   ${acc(allRec.oracle_accuracy)} ${trend(allRec.oracle_accuracy)}`);
+    lines.push(`  헤르메스: ${acc(allRec.hermes_accuracy)} ${trend(allRec.hermes_accuracy)}`);
+  }
+
+  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: lines.join('\n') });
+  return Promise.resolve(true);
+}
+
 export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
   const tag   = paperMode ? '[PAPER] ' : '';
   const lines = [

@@ -14,9 +14,10 @@
 import ccxt from 'ccxt';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
+import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
-import { notifyTrade, notifyError } from '../shared/report.js';
+import { notifyTrade, notifyError, notifyJournalEntry } from '../shared/report.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -190,6 +191,62 @@ export async function executeSignal(signal) {
     await db.insertTrade(trade);
     await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
     await notifyTrade(trade);
+
+    // ── 매매일지 기록 (기존 기능에 영향 없도록 try-catch 감쌈) ────────
+    try {
+      if (trade.side === 'buy') {
+        const execTime = Date.now();
+        const tradeId  = await journalDb.generateTradeId();
+        await journalDb.insertJournalEntry({
+          trade_id:      tradeId,
+          signal_id:     signalId,
+          market:        'crypto',
+          exchange:      trade.exchange,
+          symbol:        trade.symbol,
+          is_paper:      trade.paper,
+          entry_time:    execTime,
+          entry_price:   trade.price || 0,
+          entry_size:    trade.amount || 0,
+          entry_value:   trade.totalUsdt || 0,
+          direction:     'long',
+          tp_price:      trade.tpPrice ?? null,
+          sl_price:      trade.slPrice ?? null,
+          tp_order_id:   trade.tpOrderId ?? null,
+          sl_order_id:   trade.slOrderId ?? null,
+          tp_sl_set:     trade.tpSlSet ?? false,
+        });
+        await journalDb.linkRationaleToTrade(tradeId, signalId);
+        notifyJournalEntry({
+          tradeId,
+          symbol:    trade.symbol,
+          direction: 'long',
+          market:    'crypto',
+          entryPrice: trade.price,
+          entryValue: trade.totalUsdt,
+          isPaper:   trade.paper,
+          tpPrice:   trade.tpPrice,
+          slPrice:   trade.slPrice,
+          tpSlSet:   trade.tpSlSet,
+        });
+      } else if (trade.side === 'sell') {
+        // 열린 일지 항목 찾아서 청산 처리
+        const openEntries = await journalDb.getOpenJournalEntries('crypto');
+        const entry = openEntries.find(e => e.symbol === trade.symbol);
+        if (entry) {
+          const pnlAmount  = (trade.totalUsdt || 0) - (entry.entry_value || 0);
+          const pnlPercent = entry.entry_value > 0 ? pnlAmount / entry.entry_value : null;
+          await journalDb.closeJournalEntry(entry.trade_id, {
+            exitPrice:  trade.price,
+            exitValue:  trade.totalUsdt,
+            exitReason: 'signal_reverse',
+            pnlAmount,
+            pnlPercent,
+          });
+        }
+      }
+    } catch (journalErr) {
+      console.warn(`  ⚠️ 매매일지 기록 실패 (거래는 정상 완료): ${journalErr.message}`);
+    }
 
     console.log(`  ✅ ${tag} 완료: ${trade.side} ${trade.amount?.toFixed(6)} @ $${trade.price?.toLocaleString()}`);
     return { success: true, trade };
