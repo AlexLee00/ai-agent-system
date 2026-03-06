@@ -10,6 +10,14 @@
 
 
 
+
+## 2026-03-06
+### 🔧 미해결 알림 반복 + tool_code 누출 버그 수정
+- pickko-alerts-resolve.js 신규 (수동 해결 CLI)
+- CLAUDE_NOTES.md 처리완료 핸들러 추가
+- CLAUDE_NOTES.md tool_code 누출 금지 규칙 추가
+<!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
+
 ## 2026-03-05
 ### ✨ 출금지연제 자동예약 + 덱스터 Phase C
 - 출금지연제 delay 감지·ETA 계산·Telegram 안내

@@ -635,6 +635,14 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/context/CLAUDE_NOTES.md`
 <!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락-:end -->
 
+<!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
+#### 2026-03-06 🔧 미해결 알림 반복 + tool_code 누출 버그 수정
+- pickko-alerts-resolve.js 신규 (수동 해결 CLI)
+- CLAUDE_NOTES.md 처리완료 핸들러 추가
+- CLAUDE_NOTES.md tool_code 누출 금지 규칙 추가
+- 관련 파일: `bots/reservation/manual/reports/pickko-alerts-resolve.js|bots/reservation/context/CLAUDE_NOTES.md`
+<!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
