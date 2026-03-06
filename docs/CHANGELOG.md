@@ -9,6 +9,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ---
 
+## [2026-03-06] — 팀 제이 아키텍처 Day 3
+
+### Added
+- **llm-logger.js** (`packages/core/lib/llm-logger.js`)
+  - 전 팀 LLM 호출 통합 추적 (state.db `llm_usage_log` 테이블 자동 생성)
+  - 모델별 단가표: Groq=무료, Haiku=$1/$5, Sonnet=$3/$15, Opus=$15/$75 per 1M
+  - `logLLMCall`, `getDailyCost`, `getCostBreakdown`, `buildDailyCostReport` 함수
+  - 기존 cost-tracker.js (루나팀 파일 기반) 독립 유지
+
+- **llm-router.js** (`packages/core/lib/llm-router.js`)
+  - 복잡도 기반 LLM 모델 자동 라우팅 (DB 의존 없음, 순수 로직)
+  - simple→Groq(무료), medium→Haiku, complex→Sonnet, deep→Opus
+  - 팀별 requestType 매핑: ska(7종), claude(6종), luna(6종)
+  - 긴급도(urgency) 상향 로직: simple→medium (high/critical)
+  - `selectModel`, `classifyComplexity` 함수
+
+- **llm-cache.js** (`packages/core/lib/llm-cache.js`)
+  - 시맨틱 캐시: 벡터 DB 없이 키워드 해시 기반 경량 구현 (state.db `llm_cache`)
+  - 캐시 키: 불용어 제거 → 키워드 추출 → 정렬 → SHA256(team:requestType:keywords)
+  - TTL 팀별 차등: ska=30분, claude=360분(6h), luna=5분
+  - 민감정보 보호: 앞 100자 요약 + 긴 숫자열(6자리+) 마스킹
+  - `generateCacheKey`, `getCached`, `setCache`, `getCacheStats`, `cleanExpired` 함수
+
+### Changed
+- **llm-client.js** (`bots/investment/shared/llm-client.js`)
+  - `_logLLMCall` import 추가 (createRequire 패턴, 무음 실패)
+  - callOpenAI / callGroq 양쪽에 `_logLLMCall?.()` 연동
+
+---
+
 ## [2026-03-06] — 팀 제이 아키텍처 Day 1~2
 
 ### Added
