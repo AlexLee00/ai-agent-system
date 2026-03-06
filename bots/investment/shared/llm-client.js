@@ -28,6 +28,16 @@ try {
   // 오케스트레이터 모듈 없는 환경에서는 무음 처리
 }
 
+// CJS 통합 로거 (packages/core 공용)
+let _logLLMCall = null;
+try {
+  const require = createRequire(import.meta.url);
+  const ll = require('../../../packages/core/lib/llm-logger.js');
+  _logLLMCall = ll.logLLMCall;
+} catch {
+  // 로거 없는 환경에서는 무음 처리
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ─── 설정 로드 (config.yaml → secrets.json fallback) ─────────────────
@@ -141,12 +151,15 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
       ],
     });
     const dur = Date.now() - t0;
+    const inTok  = res.usage?.prompt_tokens     || 0;
+    const outTok = res.usage?.completion_tokens || 0;
     _trackTokens?.({
       bot: agentName, team: 'investment', model: OPENAI_PERF_MODEL, provider: 'openai',
-      taskType: 'trade_signal',
-      tokensIn:  res.usage?.prompt_tokens     || 0,
-      tokensOut: res.usage?.completion_tokens || 0,
-      durationMs: dur,
+      taskType: 'trade_signal', tokensIn: inTok, tokensOut: outTok, durationMs: dur,
+    });
+    _logLLMCall?.({
+      team: 'luna', bot: agentName, model: OPENAI_PERF_MODEL,
+      requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
     });
     return res.choices[0]?.message?.content || '';
   } catch (err) {
@@ -172,13 +185,16 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
           { role: 'user',   content: userPrompt   },
         ],
       });
-      const dur = Date.now() - t0;
+      const dur    = Date.now() - t0;
+      const inTok  = res.usage?.prompt_tokens     || 0;
+      const outTok = res.usage?.completion_tokens || 0;
       _trackTokens?.({
         bot: agentName, team: 'investment', model: GROQ_SCOUT_MODEL, provider: 'groq',
-        taskType: 'trade_signal',
-        tokensIn:  res.usage?.prompt_tokens     || 0,
-        tokensOut: res.usage?.completion_tokens || 0,
-        durationMs: dur,
+        taskType: 'trade_signal', tokensIn: inTok, tokensOut: outTok, durationMs: dur,
+      });
+      _logLLMCall?.({
+        team: 'luna', bot: agentName, model: GROQ_SCOUT_MODEL,
+        requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
       });
       return res.choices[0]?.message?.content || '';
     } catch (err) {
