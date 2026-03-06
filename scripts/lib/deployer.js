@@ -5,29 +5,24 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const { log, expandHome, normalizeFiles } = require('./utils');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const OPENCLAW_CONFIG = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
 
 // 최근 미해결 에러 알림 조회 (BOOT.md 인라인용)
+// psql execSync 방식으로 PostgreSQL reservation 스키마 직접 조회 (sync 컨텍스트 유지)
 function getRecentErrorAlerts(botId) {
   try {
     // reservation 봇만 해당
     if (botId !== 'reservation') return '';
-    const Database = require('better-sqlite3');
-    const dbPath = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
-    if (!fs.existsSync(dbPath)) return '';
-    const db = new Database(dbPath, { readonly: true });
-    const rows = db.prepare(`
-      SELECT timestamp, type, title, phone, date, start_time, resolved
-      FROM alerts
-      WHERE timestamp > datetime('now', '-48 hours')
-        AND type = 'error'
-      ORDER BY timestamp DESC
-      LIMIT 10
-    `).all();
-    db.close();
+    const out = execSync(
+      `psql jay -t -A -c "SELECT row_to_json(t) FROM (SELECT timestamp, type, title, phone, date, start_time, resolved FROM reservation.alerts WHERE timestamp > now() - INTERVAL '48 hours' AND type = 'error' ORDER BY timestamp DESC LIMIT 10) t" 2>/dev/null`,
+      { encoding: 'utf8', timeout: 5000 }
+    ).trim();
+    if (!out) return '';
+    const rows = out.split('\n').filter(Boolean).map(line => JSON.parse(line));
     if (rows.length === 0) return '';
     const unresCnt = rows.filter(r => !r.resolved).length;
     const lines = rows.map(r => {

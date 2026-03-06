@@ -20,14 +20,14 @@
  *   const tc = require('../../../packages/core/lib/team-comm');
  *
  *   // 메시지 전송
- *   tc.sendToTeamLead('claude-lead', 'luna', 'API 장애 발생 — 진입 중단 권고', { apiName: 'binance' });
+ *   await tc.sendToTeamLead('claude-lead', 'luna', 'API 장애 발생 — 진입 중단 권고', { apiName: 'binance' });
  *
  *   // 브로드캐스트 회의
- *   tc.teamLeadMeeting('일일 현황 공유', 'ska', { revenue: 450000 });
+ *   await tc.teamLeadMeeting('일일 현황 공유', 'ska', { revenue: 450000 });
  *
  *   // 수신 메시지 폴링
- *   const msgs = tc.getPendingMessages('luna');
- *   msgs.forEach(m => { console.log(m.message); tc.ackTeamMessage(m.id); });
+ *   const msgs = await tc.getPendingMessages('luna');
+ *   for (const m of msgs) { console.log(m.message); await tc.ackTeamMessage(m.id); }
  */
 
 const stateBus = require('../../../bots/reservation/lib/state-bus');
@@ -54,9 +54,9 @@ function _validateTeamLead(id) {
  * @param {string} message   - 전달할 텍스트 메시지
  * @param {object} [context] - 추가 컨텍스트 (JSON 직렬화 가능)
  * @param {string} [priority] - 'critical' | 'high' | 'normal' | 'low'
- * @returns {number} 생성된 이벤트 ID
+ * @returns {Promise<number>} 생성된 이벤트 ID
  */
-function sendToTeamLead(from, to, message, context = {}, priority = 'normal') {
+async function sendToTeamLead(from, to, message, context = {}, priority = 'normal') {
   _validateTeamLead(from);
   _validateTeamLead(to);
 
@@ -70,7 +70,7 @@ function sendToTeamLead(from, to, message, context = {}, priority = 'normal') {
     sentAt: new Date().toISOString(),
   };
 
-  const eventId = stateBus.emitEvent(from, to, 'team_message', payload, priority);
+  const eventId = await stateBus.emitEvent(from, to, 'team_message', payload, priority);
   console.log(`📨 [팀 소통] ${from} → ${to}: "${message.slice(0, 60)}${message.length > 60 ? '…' : ''}" (이벤트 #${eventId})`);
   return eventId;
 }
@@ -83,9 +83,9 @@ function sendToTeamLead(from, to, message, context = {}, priority = 'normal') {
  * @param {string} initiator - 회의 소집 팀장 ID
  * @param {object} [data]    - 첨부 데이터 (JSON 직렬화 가능)
  * @param {string} [priority]
- * @returns {number[]} 생성된 이벤트 ID 배열
+ * @returns {Promise<number[]>} 생성된 이벤트 ID 배열
  */
-function teamLeadMeeting(agenda, initiator, data = {}, priority = 'normal') {
+async function teamLeadMeeting(agenda, initiator, data = {}, priority = 'normal') {
   _validateTeamLead(initiator);
 
   const recipients = TEAM_LEADS.filter(id => id !== initiator);
@@ -96,10 +96,9 @@ function teamLeadMeeting(agenda, initiator, data = {}, priority = 'normal') {
     sentAt: new Date().toISOString(),
   };
 
-  const eventIds = recipients.map(to => {
-    const id = stateBus.emitEvent(initiator, to, 'team_meeting', payload, priority);
-    return id;
-  });
+  const eventIds = await Promise.all(
+    recipients.map(to => stateBus.emitEvent(initiator, to, 'team_meeting', payload, priority))
+  );
 
   console.log(`🏛️  [팀 회의] ${initiator} → [${recipients.join(', ')}]: "${agenda.slice(0, 60)}${agenda.length > 60 ? '…' : ''}" (이벤트 ${eventIds.join(', ')})`);
   return eventIds;
@@ -114,9 +113,9 @@ function teamLeadMeeting(agenda, initiator, data = {}, priority = 'normal') {
  * @param {string} requestType - 요청 종류 ('data_share' | 'system_support' | 'joint_task')
  * @param {string} description - 요청 설명
  * @param {object} [params]   - 요청 세부 파라미터
- * @returns {number} 생성된 이벤트 ID
+ * @returns {Promise<number>} 생성된 이벤트 ID
  */
-function requestFromTeamLead(from, to, requestType, description, params = {}) {
+async function requestFromTeamLead(from, to, requestType, description, params = {}) {
   _validateTeamLead(from);
   _validateTeamLead(to);
 
@@ -127,7 +126,7 @@ function requestFromTeamLead(from, to, requestType, description, params = {}) {
     sentAt: new Date().toISOString(),
   };
 
-  const eventId = stateBus.emitEvent(from, to, 'team_request', payload, 'high');
+  const eventId = await stateBus.emitEvent(from, to, 'team_request', payload, 'high');
   console.log(`🤝 [팀 요청] ${from} → ${to} [${requestType}]: "${description.slice(0, 60)}${description.length > 60 ? '…' : ''}" (이벤트 #${eventId})`);
   return eventId;
 }
@@ -138,12 +137,12 @@ function requestFromTeamLead(from, to, requestType, description, params = {}) {
  *
  * @param {string} to     - 수신 팀장 ID
  * @param {number} [limit]
- * @returns {Array<{ id, from_agent, event_type, message, context, agenda, data, sentAt, priority }>}
+ * @returns {Promise<Array<{ id, from_agent, event_type, message, context, agenda, data, sentAt, priority }>>}
  */
-function getPendingMessages(to, limit = 20) {
+async function getPendingMessages(to, limit = 20) {
   _validateTeamLead(to);
 
-  const events = stateBus.getUnprocessedEvents(to, limit * 2); // 여유있게 조회 후 필터
+  const events = await stateBus.getUnprocessedEvents(to, limit * 2); // 여유있게 조회 후 필터
   const TEAM_EVENT_TYPES = ['team_message', 'team_meeting', 'team_request'];
 
   return events
@@ -180,19 +179,20 @@ function getPendingMessages(to, limit = 20) {
  * 팀 메시지 처리 완료 표시 (ACK)
  *
  * @param {number} eventId
+ * @returns {Promise<void>}
  */
-function ackTeamMessage(eventId) {
-  stateBus.markEventProcessed(eventId);
+async function ackTeamMessage(eventId) {
+  await stateBus.markEventProcessed(eventId);
 }
 
 /**
  * 전체 팀장 상태 요약 조회
  * State Bus의 agent_state 기반
  *
- * @returns {Array<{ agent, status, currentTask, lastSuccessAt, lastError, updatedAt }>}
+ * @returns {Promise<Array<{ agent, status, currentTask, lastSuccessAt, lastError, updatedAt }>>}
  */
-function getTeamStatus() {
-  const all = stateBus.getAllAgentStates();
+async function getTeamStatus() {
+  const all = await stateBus.getAllAgentStates();
   return all
     .filter(s => TEAM_LEADS.includes(s.agent))
     .map(s => ({

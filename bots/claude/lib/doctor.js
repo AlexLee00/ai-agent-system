@@ -19,36 +19,9 @@ const os         = require('os');
 const fs         = require('fs');
 const path       = require('path');
 const { execSync } = require('child_process');
-const Database   = require('better-sqlite3');
+const pgPool     = require('../../../packages/core/lib/pg-pool');
 
-const STATE_DB_PATH   = path.join(os.homedir(), '.openclaw', 'workspace', 'state.db');
-const CLAUDE_TEAM_DB  = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-
-let _db = null;
-
-function _getDb() {
-  if (_db) return _db;
-  try {
-    _db = new Database(STATE_DB_PATH);
-    _db.pragma('journal_mode = WAL');
-    _db.exec(`
-      CREATE TABLE IF NOT EXISTS doctor_log (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        task_type       TEXT NOT NULL,
-        params          TEXT,
-        result          TEXT,
-        success         INTEGER NOT NULL,
-        error_msg       TEXT,
-        requested_by    TEXT NOT NULL,
-        confirmed_by    TEXT,
-        executed_at     TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_doctor_log_at
-        ON doctor_log(executed_at);
-    `);
-  } catch { return null; }
-  return _db;
-}
+const SCHEMA = 'reservation';
 
 // ─── 블랙리스트 (절대 금지 명령/패턴) ─────────────────────────────────────
 const BLACKLIST = [
@@ -175,7 +148,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   const banned = _checkBlacklist(params);
   if (banned) {
     const msg = `블랙리스트 위반 — "${banned}" 포함 파라미터 거부`;
-    logRecovery(taskType, params, null, false, requestedBy, null, msg);
+    await logRecovery(taskType, params, null, false, requestedBy, null, msg);
     return { success: false, message: msg };
   }
 
@@ -183,26 +156,26 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   const task = WHITELIST[taskType];
   if (!task) {
     const msg = `화이트리스트에 없는 작업: ${taskType}`;
-    logRecovery(taskType, params, null, false, requestedBy, null, msg);
+    await logRecovery(taskType, params, null, false, requestedBy, null, msg);
     return { success: false, message: msg };
   }
 
   // 3. 마스터 확인 필요 시 — 현재는 거부 후 알림으로 처리 (추후 텔레그램 연동 확장)
   if (task.requires_confirmation) {
     const msg = `"${task.description}" 작업은 마스터 확인이 필요합니다. 텔레그램으로 요청하세요.`;
-    logRecovery(taskType, params, null, false, requestedBy, null, msg);
+    await logRecovery(taskType, params, null, false, requestedBy, null, msg);
     return { success: false, message: msg, requiresConfirmation: true };
   }
 
   // 4. 실행
   try {
     const data = await task.action(params);
-    logRecovery(taskType, params, data, true, requestedBy, 'auto');
+    await logRecovery(taskType, params, data, true, requestedBy, 'auto');
     const msg = `✅ [독터] ${task.description} 완료`;
     console.log(`${msg} — ${JSON.stringify(data)}`);
     return { success: true, message: msg, data };
   } catch (e) {
-    logRecovery(taskType, params, null, false, requestedBy, null, e.message);
+    await logRecovery(taskType, params, null, false, requestedBy, null, e.message);
     const msg = `❌ [독터] ${task.description} 실패: ${e.message}`;
     console.error(msg);
     return { success: false, message: msg };
@@ -220,14 +193,12 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
  * @param {string|null} confirmedBy
  * @param {string|null} errorMsg
  */
-function logRecovery(taskType, params, result, success, requestedBy, confirmedBy = null, errorMsg = null) {
-  const db = _getDb();
-  if (!db) return;
+async function logRecovery(taskType, params, result, success, requestedBy, confirmedBy = null, errorMsg = null) {
   try {
-    db.prepare(`
+    await pgPool.run(SCHEMA, `
       INSERT INTO doctor_log (task_type, params, result, success, error_msg, requested_by, confirmed_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [
       taskType,
       JSON.stringify(params  ?? null),
       JSON.stringify(result  ?? null),
@@ -235,7 +206,7 @@ function logRecovery(taskType, params, result, success, requestedBy, confirmedBy
       errorMsg ?? null,
       requestedBy,
       confirmedBy ?? null,
-    );
+    ]);
   } catch { /* DB 없으면 무시 */ }
 }
 
@@ -255,16 +226,14 @@ function canRecover(taskType) {
  * @param {number} days  최근 N일
  * @returns {Array}
  */
-function getRecoveryHistory(days = 7) {
-  const db = _getDb();
-  if (!db) return [];
+async function getRecoveryHistory(days = 7) {
   try {
-    return db.prepare(`
+    return await pgPool.query(SCHEMA, `
       SELECT * FROM doctor_log
-      WHERE executed_at > datetime('now', ? || ' days')
+      WHERE executed_at > now() - ($1 || ' days')::INTERVAL
       ORDER BY executed_at DESC
       LIMIT 50
-    `).all(`-${days}`);
+    `, [String(days)]);
   } catch { return []; }
 }
 

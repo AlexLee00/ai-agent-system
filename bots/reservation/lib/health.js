@@ -63,51 +63,51 @@ async function preflightSystemCheck() {
     errors.push(`secrets 로드 실패: ${e.message}`);
   }
 
-  // 2-3. SQLite DB 파일 존재
-  const dbPath = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
-  if (!fs.existsSync(dbPath)) {
-    errors.push(`DB 파일 없음: ${dbPath} → node scripts/migrate.js 실행 필요`);
-  } else {
-    const stat = fs.statSync(dbPath);
-    console.log(`      ✅ DB 파일 (${(stat.size / 1024).toFixed(0)}KB)`);
+  // 2-3. PostgreSQL 연결 확인
+  try {
+    const pgPool = require('../../../packages/core/lib/pg-pool');
+    const ok = await pgPool.ping('reservation');
+    if (ok) {
+      console.log('      ✅ PostgreSQL 연결 (reservation 스키마)');
+    } else {
+      errors.push('PostgreSQL 연결 실패 → PostgreSQL 서비스 확인 필요');
+    }
+  } catch (e) {
+    errors.push(`PostgreSQL 연결 오류: ${e.message.split('\n')[0]}`);
   }
 
-  // 2-4. DB 연결 + 필수 테이블
-  if (fs.existsSync(dbPath)) {
+  // 2-4. 필수 테이블 확인
+  try {
+    const pgPool = require('../../../packages/core/lib/pg-pool');
+    const rows = await pgPool.query('reservation',
+      "SELECT tablename FROM pg_tables WHERE schemaname = 'reservation' ORDER BY tablename");
+    const tables = rows.map(r => r.tablename);
+    const REQUIRED_TABLES = ['reservations', 'daily_summary', 'schema_migrations'];
+    const missingTables   = REQUIRED_TABLES.filter(t => !tables.includes(t));
+    if (missingTables.length > 0) {
+      errors.push(`DB 테이블 누락: ${missingTables.join(', ')}`);
+    } else {
+      console.log(`      ✅ DB 스키마 (${tables.length}개 테이블)`);
+    }
+
+    // 미적용 마이그레이션 (경고만)
     try {
       const db = require('./db');
-      const rawDb = db.getDb();
-      const tables = rawDb
-        .prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`)
-        .all().map(r => r.name);
-
-      const REQUIRED_TABLES = ['reservations', 'daily_summary', 'schema_migrations'];
-      const missingTables   = REQUIRED_TABLES.filter(t => !tables.includes(t));
-      if (missingTables.length > 0) {
-        errors.push(`DB 테이블 누락: ${missingTables.join(', ')} → node scripts/migrate.js 실행 필요`);
-      } else {
-        console.log(`      ✅ DB 스키마 (${tables.length}개 테이블)`);
+      const BOT_DIR = path.join(__dirname, '..');
+      const migDir  = path.join(BOT_DIR, 'migrations');
+      if (fs.existsSync(migDir)) {
+        const migFiles = fs.readdirSync(migDir).filter(f => /^\d+_.+\.js$/.test(f));
+        const applied = await db.getAppliedMigrations();
+        const pending = migFiles.filter(f => {
+          const mod = require(path.join(migDir, f));
+          return !applied.has(mod.version);
+        });
+        if (pending.length > 0) warns.push(`미적용 마이그레이션 ${pending.length}개`);
+        else console.log('      ✅ DB 마이그레이션 최신');
       }
-
-      // 미적용 마이그레이션 (경고만)
-      try {
-        const BOT_DIR = path.join(__dirname, '..');
-        const migDir  = path.join(BOT_DIR, 'migrations');
-        if (fs.existsSync(migDir)) {
-          const migFiles = fs.readdirSync(migDir).filter(f => /^\d+_.+\.js$/.test(f));
-          db.initMigrationsTable();
-          const applied = db.getAppliedMigrations();
-          const pending = migFiles.filter(f => {
-            const mod = require(path.join(migDir, f));
-            return !applied.has(mod.version);
-          });
-          if (pending.length > 0) warns.push(`미적용 마이그레이션 ${pending.length}개`);
-          else console.log('      ✅ DB 마이그레이션 최신');
-        }
-      } catch (e) { warns.push(`마이그레이션 확인 오류: ${e.message.split('\n')[0]}`); }
-    } catch (e) {
-      errors.push(`DB 연결 실패: ${e.message.split('\n')[0]}`);
-    }
+    } catch (e) { warns.push(`마이그레이션 확인 오류: ${e.message.split('\n')[0]}`); }
+  } catch (e) {
+    errors.push(`DB 테이블 확인 실패: ${e.message.split('\n')[0]}`);
   }
 
   // 2-5. Puppeteer Chrome 설치 여부
@@ -204,8 +204,8 @@ function isShuttingDown()  { return _isShuttingDown; }
 async function shutdownDB() {
   console.log('\n  🗄️  [2중 종료] DB 정리...');
   try {
-    const { rollbackProcessing, log: dbLog } = require('./db');
-    const count = rollbackProcessing();
+    const { rollbackProcessing } = require('./db');
+    const count = await rollbackProcessing();
     if (count > 0) console.log(`      ✅ processing → failed 롤백 ${count}건`);
     else            console.log('      ✅ 롤백 대상 없음');
   } catch (e) {

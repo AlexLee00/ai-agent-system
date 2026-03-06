@@ -61,7 +61,7 @@ function autoBugReport({ title, desc, severity = 'high', category = 'reliability
     '--category', category,
   ], { cwd: path.join(__dirname, '..'), stdio: 'ignore' });
 
-  child.on('close', (code) => {
+  child.on('close', async (code) => {
     log(`[버그리포트] ${code === 0 ? '✅ 자동 등록 완료' : '⚠️ 등록 실패'}: ${title}`);
   });
   child.on('error', (e) => {
@@ -463,12 +463,12 @@ async function takeScreenshot(page, reason) {
 
 // 개인정보 보호: 예약일 기준 7일 경과한 항목 자동 삭제
 // (취소 키는 90일 보관 — Detection 2E가 네이버 이력에서 중복 재시도 방지)
-function cleanupExpiredSeen() {
+async function cleanupExpiredSeen() {
   try {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const removed = pruneOldReservations(cutoffStr);
+    const removed = await pruneOldReservations(cutoffStr);
     if (removed > 0) {
       log(`🧹 개인정보 자동 정리: 만료 예약 ${removed}건 삭제 (7일 경과)`);
     }
@@ -476,7 +476,7 @@ function cleanupExpiredSeen() {
     const ckCutoff = new Date();
     ckCutoff.setDate(ckCutoff.getDate() - 90);
     const ckCutoffStr = ckCutoff.toISOString().slice(0, 10);
-    const removedCk = pruneOldCancelledKeys(ckCutoffStr);
+    const removedCk = await pruneOldCancelledKeys(ckCutoffStr);
     if (removedCk > 0) {
       log(`🧹 개인정보 자동 정리: 취소 키 ${removedCk}건 삭제 (90일 경과)`);
     }
@@ -488,9 +488,9 @@ function cleanupExpiredSeen() {
 // 야간 보류 로직 제거됨 — Bot API 직접 발송으로 24시간 즉시 전송
 
 // 알람 DB 자동 정리 (resolved=1 → 48h, resolved=0 → 7일 초과 삭제)
-function cleanupOldAlerts() {
+async function cleanupOldAlerts() {
   try {
-    const removed = pruneOldAlerts();
+    const removed = await pruneOldAlerts();
     if (removed > 0) {
       log(`🧹 [정리] 알람 ${removed}건 삭제 (해결됨 48h, 미해결 7일 초과)`);
     }
@@ -501,9 +501,9 @@ function cleanupOldAlerts() {
 
 // 특정 예약에 대한 미해결 오류 알림을 "해결됨"으로 마킹
 // 픽코 성공(code=0) 또는 수동 처리 완료 시 호출
-function resolveAlertsByBooking(phone, date, start) {
+async function resolveAlertsByBooking(phone, date, start) {
   try {
-    const count = resolveAlert(phone, date, start);
+    const count = await resolveAlert(phone, date, start);
     if (count > 0) {
       log(`✅ [알림 해결] ${maskPhone(phone)} ${date} ${start} → 오류 알림 ${count}건 해결됨 마킹`);
     }
@@ -515,7 +515,7 @@ function resolveAlertsByBooking(phone, date, start) {
 // 시작 시 미해결 오류 알림 요약 보고
 async function reportUnresolvedAlerts() {
   try {
-    const unresolved = getUnresolvedAlerts();
+    const unresolved = await getUnresolvedAlerts();
 
     if (unresolved.length === 0) {
       log('✅ [미해결 알림] 없음');
@@ -591,7 +591,7 @@ async function sendAlert(options) {
       try {
         // 1️⃣ DB에 저장
         const entryTimestamp = new Date().toISOString();
-        const alertId = addAlert({
+        const alertId = await addAlert({
           timestamp:  entryTimestamp,
           type,
           title,
@@ -607,13 +607,13 @@ async function sendAlert(options) {
         // 2️⃣ 제이 큐를 통해 발송
         const level = (type === 'error') ? 3 : (type === 'new') ? 3 : 1;
         publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: level, message });
-        updateAlertSent(alertId, new Date().toISOString());
+        await updateAlertSent(alertId, new Date().toISOString());
 
         // 3️⃣ TTL 정책 실행
-        cleanupOldAlerts();
+        await cleanupOldAlerts();
 
         // 4️⃣ 개인정보 보호: 7일 경과 예약 자동 삭제
-        cleanupExpiredSeen();
+        await cleanupExpiredSeen();
 
       } catch (err) {
         log(`⚠️ 알람 전송 실패: ${err.message}`);
@@ -747,7 +747,7 @@ async function monitorBookings() {
       checkCount++;
       const cycleStart = Date.now();
       recordHeartbeat({ status: 'running' }); // 사이클 시작
-      updateAgentState('andy', 'running', `모니터링 사이클 #${checkCount}`);
+      await updateAgentState('andy', 'running', `모니터링 사이클 #${checkCount}`);
 
       try {
         // 매 회차 작업 탭을 홈으로 유도
@@ -999,26 +999,27 @@ async function monitorBookings() {
             let autoMarked = 0;
             for (const b of newest) {
               const key = toKey(b);
-              if (isSeenId(key)) continue;
-              const existing = getReservation(key);
+              if (await isSeenId(key)) continue;
+              const existing = await getReservation(key);
               if (existing && (existing.status === 'completed' || existing.pickkoStatus === 'manual')) {
-                markSeen(key);
+                await markSeen(key);
                 autoMarked++;
                 log(`🔄 [자동마킹] ${maskPhone(existing.phone || b.phone)} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seen 처리`);
                 // 수동 처리 완료된 예약의 미해결 오류 알림 → 해결됨 마킹
-                resolveAlertsByBooking(b.phone, b.date, b.start);
+                await resolveAlertsByBooking(b.phone, b.date, b.start);
               }
             }
             if (autoMarked > 0) {
               log(`🔄 [자동마킹] ${autoMarked}건 완료`);
             }
 
-            const candidates = newest
+            const _baseItems = newest
               // date가 row에 없으면(드물게) 서울 기준 오늘로 채움
               .map(b => ({ ...b, date: b.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) }))
               .filter(b => b.phone && b.date && b.start && b.end && b.room)
-              .map(b => ({ ...b, _key: toKey(b) }))
-              .filter(b => !isSeenId(b._key));
+              .map(b => ({ ...b, _key: toKey(b) }));
+            const _seenFlags = await Promise.all(_baseItems.map(b => isSeenId(b._key)));
+            const candidates = _baseItems.filter((_, i) => !_seenFlags[i]);
 
             if (candidates.length === 0) {
               log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
@@ -1028,7 +1029,7 @@ async function monitorBookings() {
               // 🆕 신규 예약 감지 알람
               for (const booking of candidates) {
                 const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
-                const state = updateBookingState(bookingId, booking, 'pending');
+                const state = await updateBookingState(bookingId, booking, 'pending');
 
                 const vipBadge = formatVipBadge(booking.phone);
                 await sendAlert({
@@ -1081,7 +1082,7 @@ async function monitorBookings() {
                   const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
-                    markSeen(b._key);
+                    await markSeen(b._key);
                   } else {
                     log(`⚠️ DEV 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                   }
@@ -1127,7 +1128,7 @@ async function monitorBookings() {
                 }
 
                 // ops에서는 재처리 방지를 위해 마킹
-                for (const b of observeFiltered) markSeen(b._key);
+                for (const b of observeFiltered) await markSeen(b._key);
 
                 await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
@@ -1138,10 +1139,10 @@ async function monitorBookings() {
                 const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
-                  markSeen(b._key);
+                  await markSeen(b._key);
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
-                  markSeen(b._key);
+                  await markSeen(b._key);
                   log(`⛔ 최대 재시도 초과 → seen 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
@@ -1188,8 +1189,9 @@ async function monitorBookings() {
             if (cancelledList.length > 0) {
               const _c2ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
               const _c2ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
-              const cancelCandidates = cancelledList.filter(c => {
-                if (isCancelledKey(toCancelKey(c))) return false;
+              const _cancelledFlags = await Promise.all(cancelledList.map(c => isCancelledKey(toCancelKey(c))));
+              const cancelCandidates = cancelledList.filter((c, i) => {
+                if (_cancelledFlags[i]) return false;
                 // OBSERVE_ONLY 모드: 화이트리스트 번호만 취소 처리
                 if (_c2ObserveOnly && !_c2ObservePhones.includes(String(c.phoneRaw || c.phone.replace(/\D/g, '')))) return false;
                 return true;
@@ -1199,7 +1201,7 @@ async function monitorBookings() {
                 log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
                 for (const c of cancelCandidates) {
                   const cancelKey = toCancelKey(c);
-                  addCancelledKey(cancelKey);
+                  await addCancelledKey(cancelKey);
                   await runPickkoCancel(c, cancelKey);
                 }
               } else {
@@ -1227,9 +1229,9 @@ async function monitorBookings() {
             log(`🔍 [취소감지2E] ${expandedList.length}건 확인`);
 
             if (expandedList.length > 0) {
-              const newCancels = expandedList.filter(c => {
-                const key = toCancelKey(c);
-                if (isCancelledKey(key)) return false;
+              const _expandedFlags = await Promise.all(expandedList.map(c => isCancelledKey(toCancelKey(c))));
+              const newCancels = expandedList.filter((c, i) => {
+                if (_expandedFlags[i]) return false;
                 if (_c2eObserveOnly && !_c2eObservePhones.includes(String(c.phoneRaw || c.phone?.replace(/\D/g, '') || ''))) return false;
                 return true;
               });
@@ -1237,7 +1239,7 @@ async function monitorBookings() {
                 log(`🗑️ [취소감지2E] 신규 취소 ${newCancels.length}건 처리`);
                 for (const c of newCancels) {
                   const key = toCancelKey(c);
-                  addCancelledKey(key);
+                  await addCancelledKey(key);
                   await runPickkoCancel(c, key);
                 }
               } else {
@@ -1275,17 +1277,17 @@ async function monitorBookings() {
                 const cancelledKeySet = new Set(currentCancelledList.map(c => toCancelKey(c)));
                 for (const dropped of droppedFromConfirmed) {
                   const cancelKey = toCancelKey(dropped);
-                  if (!isCancelledKey(cancelKey)) {
+                  if (!await isCancelledKey(cancelKey)) {
                     if (cancelledKeySet.has(cancelKey)) {
                       // 취소 탭에서 확인됨 → 처리 (감지 2 isCancelledKey 방어로 중복 실행 방지)
-                      addCancelledKey(cancelKey);
+                      await addCancelledKey(cancelKey);
                       await runPickkoCancel(dropped, cancelKey);
                     } else {
                       // 취소 탭에 없음 → 날짜로 판단
                       if (dropped.date && dropped.date > todaySeoul) {
                         // 미래 날짜 예약은 이용완료 불가 → 취소 탭 URL이 date= 기준이라 안 보일 수 있음 → 취소로 간주
                         log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 미래 예약이 확정 리스트에서 사라짐 → 이용완료 불가, 취소 처리`);
-                        addCancelledKey(cancelKey);
+                        await addCancelledKey(cancelKey);
                         await runPickkoCancel(dropped, cancelKey);
                       } else {
                         // 오늘/과거 날짜 → 이용완료 추정 (정상 종료)
@@ -1349,7 +1351,7 @@ async function monitorBookings() {
               const phoneRawItem = item.phoneRaw || item.phone?.replace(/\D/g, '') || '';
               const bKey = item.bookingId ||
                 `${item.date}|${item.start}|${item.end}|${item.room || ''}|${phoneRawItem}`;
-              upsertFutureConfirmed(
+              await upsertFutureConfirmed(
                 bKey, phoneRawItem,
                 item.date || '', item.start || '', item.end || '',
                 item.room || null, checkCount,
@@ -1359,7 +1361,7 @@ async function monitorBookings() {
             // stale 감지: 갱신되지 않은 항목 = 네이버에서 사라짐 = 취소 가능성
             // ⚠️ futureList=0건이면 페이지 로딩 실패 가능성 → stale 처리 스킵
             if (futureList.length > 0) {
-              const staleItems = getStaleConfirmed(checkCount, tomorrowStr);
+              const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
               if (staleItems.length > 0) {
                 log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 취소 처리`);
                 for (const stale of staleItems) {
@@ -1367,9 +1369,9 @@ async function monitorBookings() {
                   const cancelKey = /^\d+$/.test(String(stale.booking_key))
                     ? `cancelid|${stale.booking_key}`
                     : `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
-                  if (!isCancelledKey(cancelKey)) {
+                  if (!await isCancelledKey(cancelKey)) {
                     log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} 사라짐 → 취소 처리`);
-                    addCancelledKey(cancelKey);
+                    await addCancelledKey(cancelKey);
                     const booking = {
                       phoneRaw: stale.phone_raw,
                       phone:    stale.phone_raw,
@@ -1381,14 +1383,14 @@ async function monitorBookings() {
                     await runPickkoCancel(booking, cancelKey);
                   }
                 }
-                deleteStaleConfirmed(checkCount, tomorrowStr);
+                await deleteStaleConfirmed(checkCount, tomorrowStr);
               }
             } else {
               log(`⚠️ [취소감지4] 미래 예약 0건 — stale 감지 스킵 (페이지 로딩 실패 가능성)`);
             }
 
             // 오늘 이전 스냅샷 정리
-            pruneOldFutureConfirmed(todaySeoul);
+            await pruneOldFutureConfirmed(todaySeoul);
             // 홈으로 복귀 (브라우저 화면 정상화)
             await page.goto(NAVER_URL, { waitUntil: 'networkidle2' }).catch(() => null);
           } catch (det4Err) {
@@ -1407,7 +1409,7 @@ async function monitorBookings() {
           if (hHour >= 9 && hHour < 22) {
             const upMin = Math.floor((Date.now() - startTime) / 60000);
             const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-            const todayStats = getTodayStats(todayStr);
+            const todayStats = await getTodayStats(todayStr);
             const hMsg = `✅ 스카 정상 운영 중\n\n확인 #${checkCount} | 업타임 ${upMin}분\n\n📋 오늘 예약 현황 (${todayStr})\n네이버: ${currentConfirmedList.length}건 확정 | ${cancelledCount}건 취소\n키오스크: ${todayStats.kioskTotal}건\n합계: ${todayStats.total}건\n\n다음 heartbeat: 1시간 후`;
             publishToMainBot({ from_bot: 'andy', event_type: 'heartbeat', alert_level: 1, message: hMsg });
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
@@ -1431,7 +1433,7 @@ async function monitorBookings() {
           }
         }
 
-        updateAgentState('andy', 'idle');
+        await updateAgentState('andy', 'idle');
         // 사이클 소요 시간 기반 대기 (타임아웃 누적으로 인한 주기 밀림 방지)
         const cycleElapsed = Date.now() - cycleStart;
         const sleepMs = Math.max(0, MONITOR_INTERVAL - cycleElapsed);
@@ -1455,7 +1457,7 @@ async function monitorBookings() {
           detachRetryCount++;
           if (detachRetryCount >= 3) {
             log(`🛑 detached 오류 ${detachRetryCount}회 누적 → start-ops.sh 재시작 위임`);
-            rollbackProcessingEntries();
+            await rollbackProcessingEntries();
             process.exit(1);
           }
           log(`⚠️ detached 오류 (${detachRetryCount}/3) → 페이지 재생성 후 재시도`);
@@ -1466,13 +1468,13 @@ async function monitorBookings() {
             const reloggedIn = await naverLogin(page);
             if (!reloggedIn) {
               log('❌ 재로그인 실패 → 재시작 위임');
-              rollbackProcessingEntries();
+              await rollbackProcessingEntries();
               process.exit(1);
             }
             log('✅ 페이지 재생성 + 재로그인 완료 → 모니터링 계속');
           } catch (recreateErr) {
             log(`❌ 페이지 재생성 실패: ${recreateErr.message} → 재시작 위임`);
-            rollbackProcessingEntries();
+            await rollbackProcessingEntries();
             process.exit(1);
           }
           continue;
@@ -1487,7 +1489,7 @@ async function monitorBookings() {
     
   } catch (err) {
     log(`❌ 치명적 오류: ${err.message}`);
-    updateAgentState('andy', 'error', null, err.message);
+    await updateAgentState('andy', 'error', null, err.message);
   } finally {
     const isHeadless = process.env.NAVER_HEADLESS !== '0';
     if (browser) {
@@ -1551,9 +1553,9 @@ async function ragSaveReservation(booking, status = '신규') {
 // ======================== Pickko 연동 ========================
 
 // 🛡️ process.exit 전 processing 상태 항목을 failed로 롤백
-function rollbackProcessingEntries() {
+async function rollbackProcessingEntries() {
   try {
-    const count = rollbackProcessing();
+    const count = await rollbackProcessing();
     if (count > 0) log(`🔄 [롤백] processing → failed 전환 ${count}건`);
   } catch (e) {
     log(`⚠️ [롤백 실패] ${e.message}`);
@@ -1561,13 +1563,13 @@ function rollbackProcessingEntries() {
 }
 
 // 🔐 신규 예약 감지 및 상태 저장 (DB 기반)
-function updateBookingState(bookingId, booking, state = 'pending') {
+async function updateBookingState(bookingId, booking, state = 'pending') {
   try {
-    const existing = getReservation(bookingId);
+    const existing = await getReservation(bookingId);
 
     if (!existing) {
       // 🆕 신규 예약
-      addReservation(bookingId, {
+      await addReservation(bookingId, {
         compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
         name:         booking.raw?.name || null,
         phone:        booking.phone,
@@ -1599,11 +1601,11 @@ function updateBookingState(bookingId, booking, state = 'pending') {
         dailyStats.failed++;
       }
 
-      updateReservation(bookingId, updates);
+      await updateReservation(bookingId, updates);
       log(`   📊 [업데이트] ${maskPhone(booking.phone)}: ${oldStatus} → ${state}`);
     }
 
-    return getReservation(bookingId);
+    return await getReservation(bookingId);
   } catch (err) {
     log(`❌ updateBookingState 실패: ${err.message}`);
     return null;
@@ -1882,7 +1884,7 @@ function runPickkoCancel(booking, cancelKey = null) {
     child.stdout.on('data', d => process.stdout.write(d.toString()));
     child.stderr.on('data', d => process.stderr.write(d.toString()));
 
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       if (code === 0) {
         dailyStats.cancelled++;
         sendAlert({
@@ -1936,7 +1938,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       log(`❌ 픽코 호출 전 변환 실패: ${JSON.stringify(booking)}`);
       
       if (bookingId) {
-        updateBookingState(bookingId, booking, 'failed');
+        await updateBookingState(bookingId, booking, 'failed');
         await sendAlert({
           type: 'error',
           title: '❌ 데이터 변환 실패',
@@ -1955,7 +1957,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     // ⛔ 최대 재시도 초과 확인
     if (bookingId) {
-      const currentEntry = getReservation(bookingId);
+      const currentEntry = await getReservation(bookingId);
       const currentRetries = currentEntry?.retries || 0;
       if (currentRetries >= MAX_RETRIES) {
         log(`⛔ [건너뜀] 최대 재시도 초과 (${currentRetries}회): ${maskPhone(booking.phone)} ${booking.date}`);
@@ -1972,7 +1974,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     // 📊 상태 업데이트: processing
     if (bookingId) {
-      updateBookingState(bookingId, booking, 'processing');
+      await updateBookingState(bookingId, booking, 'processing');
     }
 
     // 픽코는 별도 spawn 프로세스 → 네이버 페이지 닫을 필요 없음 (닫으면 detached Frame 발생)
@@ -2003,21 +2005,21 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
     child.stdout.on('data', (d) => { const s = d.toString(); process.stdout.write(s); outputBuf += s; });
     child.stderr.on('data', (d) => { const s = d.toString(); process.stderr.write(s); outputBuf += s; });
 
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       log(`🤖 픽코 실행 종료 (exit code: ${code})`);
 
       // ⏰ 시간 경과로 등록 생략 (completed + memo)
       if (code === 2) {
         log(`⏰ [시간 경과] 픽코 등록 생략 — completed/time_elapsed 처리`);
         if (bookingId) {
-          updateReservation(bookingId, {
+          await updateReservation(bookingId, {
             status:       'completed',
             pickkoStatus: 'time_elapsed',
             errorReason:  '시간 경과로 등록 불가',
             pickkoCompleteTime: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
           });
-          markSeen(bookingId);
-          resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+          await markSeen(bookingId);
+          await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
           publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 2, message:
             `⏰ 시간 경과 — 픽코 등록 생략\n\n` +
             `📞 고객: ${booking.phone}\n` +
@@ -2033,7 +2035,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       if (code === 0) {
         // ✅ 성공
         if (bookingId) {
-          updateBookingState(bookingId, booking, 'completed');
+          await updateBookingState(bookingId, booking, 'completed');
 
           // 📢 완료 알람
           sendAlert({
@@ -2052,7 +2054,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           ragSaveReservation(booking, '픽코완료');
 
           // ✅ 이 예약에 대한 미해결 오류 알림 → 해결됨 마킹
-          resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+          await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
         }
         log(`✅ [완료] 픽코 예약이 성공했습니다!`);
       } else {
@@ -2065,8 +2067,8 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           : `exit code ${code}`;
 
         if (bookingId) {
-          updateBookingState(bookingId, booking, 'failed');
-          updateReservation(bookingId, { errorReason: errorMsg });
+          await updateBookingState(bookingId, booking, 'failed');
+          await updateReservation(bookingId, { errorReason: errorMsg });
 
           // 📢 실패 알람
           sendAlert({
@@ -2086,7 +2088,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
           ragSaveReservation(booking, '픽코실패');
 
           // 즉시 수동 처리 요청
-          const failedEntry = getReservation(bookingId);
+          const failedEntry = await getReservation(bookingId);
           const retryCount = failedEntry?.retries || 1;
           publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
             `🚨 픽코 등록 실패 — 수동 처리 필요!\n\n` +
@@ -2119,7 +2121,7 @@ monitorBookings()
   .catch(err => {
     log(`❌ 예상치 못한 오류: ${err.message}`);
     markStopped({ reason: err.message, error: true });
-    rollbackProcessingEntries();
+    await rollbackProcessingEntries();
     process.exit(1);
   });
 
