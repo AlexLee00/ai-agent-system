@@ -12,6 +12,7 @@
 const OpenAI = require('openai');
 const config = require('./config');
 const { getOpenAIKey } = require('../../../../packages/core/lib/llm-keys');
+const { logLLMCall } = require('../../../../packages/core/lib/llm-logger');
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
@@ -151,6 +152,16 @@ async function callOpenAI(contextText) {
       { role: 'user',   content: contextText },
     ],
   });
+
+  try {
+    const usage = resp.usage || {};
+    logLLMCall({
+      team: 'claude', bot: 'archer', model: config.OPENAI.model,
+      requestType: 'architecture_review',
+      inputTokens: usage.prompt_tokens || 0,
+      outputTokens: usage.completion_tokens || 0,
+    });
+  } catch { /* 비용 추적 실패는 무시 */ }
 
   return resp.choices[0]?.message?.content || '';
 }

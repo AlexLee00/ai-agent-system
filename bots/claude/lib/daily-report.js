@@ -96,15 +96,15 @@ function getTodayFixes(today) {
 // ─── 루나팀 DuckDB 현황 ─────────────────────────────────────────────
 
 function getLunaSummary(today) {
-  const duckdbPath = resolveModule(cfg.BOTS.invest, 'duckdb');
-  if (!fs.existsSync(duckdbPath) || !fs.existsSync(cfg.DBS.invest)) {
+  const duckdbPath = resolveModule(cfg.BOTS.investment, 'duckdb');
+  if (!fs.existsSync(duckdbPath) || !fs.existsSync(cfg.DBS.investment)) {
     return null;
   }
 
   const script = `
 'use strict';
 const duckdb = require(${JSON.stringify(duckdbPath)});
-const db = new duckdb.Database(${JSON.stringify(cfg.DBS.invest)});
+const db = new duckdb.Database(${JSON.stringify(cfg.DBS.investment)});
 const conn = db.connect();
 
 const today = ${JSON.stringify(today)};
