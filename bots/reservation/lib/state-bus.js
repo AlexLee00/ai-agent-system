@@ -20,7 +20,41 @@ function _getDb() {
   if (_db) return _db;
   _db = new Database(DB_PATH);
   _db.pragma('journal_mode = WAL');
+  _initEventBusTables(_db);
   return _db;
+}
+
+/** agent_events / agent_tasks 테이블 자동 생성 (마이그레이션 미실행 환경 대비) */
+function _initEventBusTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_agent   TEXT NOT NULL,
+      to_agent     TEXT NOT NULL,
+      event_type   TEXT NOT NULL,
+      priority     TEXT NOT NULL DEFAULT 'normal',
+      payload      TEXT,
+      processed    INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT NOT NULL,
+      processed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_unprocessed
+      ON agent_events(to_agent, processed, created_at);
+    CREATE TABLE IF NOT EXISTS agent_tasks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_agent   TEXT NOT NULL,
+      to_agent     TEXT NOT NULL,
+      task_type    TEXT NOT NULL,
+      priority     TEXT NOT NULL DEFAULT 'normal',
+      payload      TEXT,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      result       TEXT,
+      created_at   TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_pending
+      ON agent_tasks(to_agent, status, created_at);
+  `);
 }
 
 // ─── 에이전트 상태 ──────────────────────────────────────────────────
@@ -192,6 +226,120 @@ function markBlockProcessed(id, status = 'done') {
   `).run(status, now, id);
 }
 
+// ─── 이벤트 버스 (팀원 → 팀장) ─────────────────────────────────────
+
+const PRIORITY_ORDER = `CASE priority
+  WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+  WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END`;
+
+/**
+ * 이벤트 발행 (팀원 → 팀장)
+ * @param {string} fromAgent  - 'andy' | 'jimmy' | 'dexter'
+ * @param {string} toAgent    - 'ska' | 'claude-lead' | 'luna'
+ * @param {string} eventType  - 'new_reservation' | 'system_alert' | 'trade_signal'
+ * @param {object} payload    - JSON 직렬화 가능한 데이터
+ * @param {string} priority   - 'critical' | 'high' | 'normal' | 'low'
+ * @returns {number} 생성된 이벤트 ID
+ */
+function emitEvent(fromAgent, toAgent, eventType, payload, priority = 'normal') {
+  const db  = _getDb();
+  const now = new Date().toISOString();
+  const result = db.prepare(`
+    INSERT INTO agent_events (from_agent, to_agent, event_type, priority, payload, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(fromAgent, toAgent, eventType, priority, JSON.stringify(payload ?? null), now);
+  return result.lastInsertRowid;
+}
+
+/**
+ * 미처리 이벤트 조회 (priority → 시간 순)
+ * @param {string} toAgent
+ * @param {number} limit
+ * @returns {Array}
+ */
+function getUnprocessedEvents(toAgent, limit = 20) {
+  const db = _getDb();
+  return db.prepare(`
+    SELECT * FROM agent_events
+    WHERE to_agent = ? AND processed = 0
+    ORDER BY ${PRIORITY_ORDER}, created_at ASC
+    LIMIT ?
+  `).all(toAgent, limit);
+}
+
+/**
+ * 이벤트 처리 완료 표시
+ * @param {number} eventId
+ */
+function markEventProcessed(eventId) {
+  const db  = _getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE agent_events SET processed = 1, processed_at = ? WHERE id = ?
+  `).run(now, eventId);
+}
+
+// ─── 작업 버스 (팀장 → 팀원) ────────────────────────────────────────
+
+/**
+ * 작업 지시 생성 (팀장 → 팀원)
+ * @param {string} fromAgent
+ * @param {string} toAgent
+ * @param {string} taskType   - 'block_naver' | 'restart_service'
+ * @param {object} payload
+ * @param {string} priority
+ * @returns {number} 생성된 작업 ID
+ */
+function createTask(fromAgent, toAgent, taskType, payload, priority = 'normal') {
+  const db  = _getDb();
+  const now = new Date().toISOString();
+  const result = db.prepare(`
+    INSERT INTO agent_tasks (from_agent, to_agent, task_type, priority, payload, status, created_at)
+    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+  `).run(fromAgent, toAgent, taskType, priority, JSON.stringify(payload ?? null), now);
+  return result.lastInsertRowid;
+}
+
+/**
+ * 대기 중인 작업 목록 조회 (priority → 시간 순)
+ * @param {string} toAgent
+ * @returns {Array}
+ */
+function getPendingTasks(toAgent) {
+  const db = _getDb();
+  return db.prepare(`
+    SELECT * FROM agent_tasks
+    WHERE to_agent = ? AND status = 'pending'
+    ORDER BY ${PRIORITY_ORDER}, created_at ASC
+  `).all(toAgent);
+}
+
+/**
+ * 작업 완료 표시
+ * @param {number} taskId
+ * @param {object} result
+ */
+function completeTask(taskId, result) {
+  const db  = _getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE agent_tasks SET status = 'completed', result = ?, completed_at = ? WHERE id = ?
+  `).run(JSON.stringify(result ?? null), now, taskId);
+}
+
+/**
+ * 작업 실패 표시
+ * @param {number} taskId
+ * @param {string} error
+ */
+function failTask(taskId, error) {
+  const db  = _getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE agent_tasks SET status = 'failed', result = ?, completed_at = ? WHERE id = ?
+  `).run(JSON.stringify({ error }), now, taskId);
+}
+
 module.exports = {
   updateAgentState,
   getAgentState,
@@ -203,4 +351,13 @@ module.exports = {
   enqueuePendingBlock,
   dequeuePendingBlocks,
   markBlockProcessed,
+  // 이벤트 버스
+  emitEvent,
+  getUnprocessedEvents,
+  markEventProcessed,
+  // 작업 버스
+  createTask,
+  getPendingTasks,
+  completeTask,
+  failTask,
 };

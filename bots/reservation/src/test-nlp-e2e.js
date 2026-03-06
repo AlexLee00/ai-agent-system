@@ -19,7 +19,22 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 
-const SRC = __dirname;
+const RESERVATION_DIR = path.join(__dirname, '..', 'manual', 'reservation');
+const REPORTS_DIR     = path.join(__dirname, '..', 'manual', 'reports');
+
+// 스크립트명 → 디렉토리 매핑 (src/ → manual/ 이전 후 경로 업데이트)
+const SCRIPT_DIRS = {
+  'pickko-query.js':      RESERVATION_DIR,
+  'pickko-register.js':   RESERVATION_DIR,
+  'pickko-cancel-cmd.js': RESERVATION_DIR,
+  'pickko-stats-cmd.js':  REPORTS_DIR,
+};
+
+function resolveScript(script) {
+  const dir = SCRIPT_DIRS[script] || RESERVATION_DIR;
+  return { scriptPath: path.join(dir, script), cwd: dir };
+}
+
 const VERBOSE = process.argv.includes('--verbose');
 
 let passed = 0, failed = 0;
@@ -28,8 +43,9 @@ const results = [];
 // ── 실행 헬퍼 ────────────────────────────────────────────────────────────────
 
 function run(script, args, timeoutMs = 8000) {
-  const result = spawnSync('node', [path.join(SRC, script), ...args], {
-    cwd: SRC,
+  const { scriptPath, cwd } = resolveScript(script);
+  const result = spawnSync('node', [scriptPath, ...args], {
+    cwd,
     env: { ...process.env, MODE: 'ops' },
     timeout: timeoutMs,
   });
