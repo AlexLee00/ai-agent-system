@@ -11,6 +11,14 @@
 
 
 
+
+## 2026-03-07
+### 🔧 오탐 근본 수정 + Day 6 검증 완료
+- markResolved() 추가 (ok 복귀 시 error 이력 자동 삭제)
+- dexter.js markResolved 호출 통합
+- Day 6 검증 15/15 전체 통과
+<!-- session-close:2026-03-07:오탐-근본-수정-day-6-검증-완료 -->
+
 ## 2026-03-06
 ### 🔧 미해결 알림 반복 + tool_code 누출 버그 수정
 - pickko-alerts-resolve.js 신규 (수동 해결 CLI)
