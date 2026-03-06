@@ -10,9 +10,6 @@
  * 점검하지 않는 것:
  *   - 아직 존재하지 않는 팀장 봇 프로세스
  *   - 아직 미구현된 OpenClaw 에이전트 세션
- *
- * TODO: 팀장 봇 구축(5주차) 후 agent_state 기반 팀장 건강 점검 추가
- * TODO: 팀장 무응답 감지 → dexter-mode.js 비상 모드 전환 연동
  */
 
 const { execSync } = require('child_process');
@@ -111,13 +108,6 @@ async function run() {
       });
     }
   }
-
-  // TODO: 팀장 봇 구축(5주차) 후 아래 코드 활성화
-  // for (const lead of ['ska', 'claude-lead', 'luna']) {
-  //   const state = getAgentStateRO(lead);
-  //   const mins  = minutesAgo(state?.updated_at);
-  //   // 10분 초과 → warn, 30분 초과 → error
-  // }
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

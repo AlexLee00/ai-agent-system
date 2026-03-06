@@ -15,9 +15,6 @@
  *   - 팀장 에이전트 세션 존재 여부 (OpenClaw 에이전트 미구현)
  *   - sessions_send 동작 여부
  *
- * TODO: 팀장 에이전트(5주차) 구축 후 세션 건강 점검 추가
- * TODO: sessions_send 응답 시간 모니터링 추가
- *
  * 참고: network.js의 OpenClaw 포트 체크와 중복 없이
  *       여기서는 보안 바인딩·메모리·launchd 상태에 집중
  */

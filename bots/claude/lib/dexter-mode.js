@@ -15,7 +15,6 @@
  *   → 텔레그램 대신 콘솔 로그 + 로컬 파일 기록
  *   → 복구 시 밀린 알림 일괄 반환 (caller가 telegram으로 발송)
  *
- * TODO: 클로드(팀장) 구축(5주차) 후 → 팀장 무응답 기반 Emergency 전환
  * TODO: Emergency 시 Groq LLM으로 임시 판단 대행 (LLM 폴백: Groq → Gemini → Ollama)
  *
  * 상태 파일: ~/.openclaw/workspace/dexter-mode-state.json  (run 간 지속)
