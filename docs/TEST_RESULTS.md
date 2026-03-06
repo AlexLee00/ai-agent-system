@@ -30,6 +30,22 @@
 | dexter.js v2 모듈 통합 | ✅ |
 | dexter-quickcheck.js v2 팀장 점검 | ✅ |
 
+### Day 3 — llm-logger + llm-router + llm-cache (2026-03-06)
+
+| 테스트 | 결과 |
+|--------|------|
+| llm-logger: logLLMCall DB 기록 | ✅ |
+| llm-logger: getDailyCost 비용 집계 | ✅ |
+| llm-router: ska status_check → simple/Groq | ✅ |
+| llm-router: luna trade_decision → complex/Sonnet | ✅ |
+| llm-router: claude architecture_review → deep/Opus | ✅ |
+| llm-router: 긴급도 상향 (ska simple → medium) | ✅ |
+| llm-cache: getCached 미스 → null | ✅ |
+| llm-cache: setCache + getCached 히트 | ✅ |
+| llm-cache: getCacheStats 집계 | ✅ |
+| llm-cache: cleanExpired 만료 삭제 | ✅ |
+| state.db 테이블 자동 생성 (llm_usage_log, llm_cache) | ✅ |
+
 ### False Positive 수정 (2026-03-06)
 
 | 수정 | 결과 |
