@@ -34,6 +34,9 @@ venv/
 secrets.json
 pickko-kiosk-seen.json
 bots/investment/config.yaml
+*.key
+*api_key*
+*api-key*
 
 # DB 데이터 파일
 *.db
