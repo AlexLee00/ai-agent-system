@@ -13,11 +13,33 @@
 
 
 ## 2026-03-07
+### ✅ Day 7 — 통합 테스트 + 1주차 마무리
+- 통합 테스트 5개 카테고리 전체 통과 (State Bus / 덱스터+독터 / 매매일지 / 크로스팀 / LLM 인프라)
+- 1주차 문서화 완료 (work-history / dev-journal / CHANGELOG / SESSION_HANDOFF)
+- 안정화 기준선 v3.2.0 설정 (docs/TEST_RESULTS.md)
+<!-- session-close:2026-03-07:day-7-통합-테스트-1주차-마무리 -->
+
 ### 🔧 오탐 근본 수정 + Day 6 검증 완료
 - markResolved() 추가 (ok 복귀 시 error 이력 자동 삭제)
 - dexter.js markResolved 호출 통합
 - Day 6 검증 15/15 전체 통과
 <!-- session-close:2026-03-07:오탐-근본-수정-day-6-검증-완료 -->
+
+### ✨ Day 6 — 독터 + 보안 강화 + OPS/DEV 분리
+- doctor.js 신규 (화이트리스트 5개, 블랙리스트 9개, doctor_log 테이블)
+- mode-guard.js 신규 (ensureOps / ensureDev / runIfOps)
+- deploy-ops.sh 신규 (배포 전 5단계 점검)
+- scripts/pre-commit에 config.yaml 차단 추가
+- security.js pre-commit 훅 설치/권한 점검 추가
+- markResolved() 추가 (오탐 근본 수정 — ok 복귀 시 error 이력 자동 삭제)
+<!-- session-close:2026-03-07:day-6-독터-보안-ops-dev-분리 -->
+
+### ✨ Day 5 — OpenClaw 멀티에이전트 구조
+- packages/core/lib/team-comm.js 신규 (팀장 간 소통, State Bus 기반)
+- packages/core/lib/heartbeat.js 신규 (팀장 생존 확인 + 이벤트 폴링)
+- openclaw.json agents.teamLeads 등록 (ska / claude-lead / luna)
+- SOUL.md 3개 생성 (ska / claude-lead / luna — 팀장 페르소나)
+<!-- session-close:2026-03-06:day-5-openclaw-멀티에이전트 -->
 
 ## 2026-03-06
 ### 🔧 미해결 알림 반복 + tool_code 누출 버그 수정

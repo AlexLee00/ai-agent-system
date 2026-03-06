@@ -10,6 +10,72 @@
 
 ---
 
+## 2026-03-06~07: 1주차 — 3계층 아키텍처 핵심 기반 구축
+
+### 배경
+단방향 알림 기반(봇 → 텔레그램 → 마스터)에서 **3계층 자율 에이전트 모델**로 전환.
+- Layer 1: 팀원 봇 (규칙 기반, 실행·보고)
+- Layer 2: 팀장 봇 (LLM, 자율 판단·조율) — 구조 생성, LLM 판단은 2~4주차
+- Layer 3: 마스터 (전략, 예외 승인)
+
+1주차 목표: 인프라 기반(State Bus, 로거, 캐시, 라우터, 독터, 매매일지) 구축.
+
+### 핵심 의사결정
+
+**TP/SL: Spot OCO 선택**
+- Futures에서는 TP/SL을 포지션 단계에서 설정 가능하지만, Spot은 OCO 방식이 최선
+- TP +6%, SL -3% 고정 비율 (R/R 2:1). 향후 네메시스가 동적 산출 예정
+
+**State Bus: state.db 통합 (별도 DB 미생성)**
+- Redis 등 별도 메시지 브로커 대신 SQLite 기반 State Bus 선택
+- 이유: 외부 의존성 제로, 동일 서버에서 운영, WAL 모드로 동시 접근 안전
+
+**팀장 간 소통: sessions_send 대신 State Bus**
+- OpenClaw `sessions_send`가 아직 실험적 상태 → State Bus의 `agent_events` 기반으로 대체
+- team-comm.js를 추상화 계층으로 두어 향후 sessions_send 전환 용이하게 설계
+
+**이중 모드 (Normal/Emergency): 인프라 장애 기반**
+- OpenClaw/스카야 3분 이상 다운 시 비상 모드 전환
+- 팀장 미구축이므로 팀장 무응답 기반 전환은 3주차로 연기
+
+**독터 블랙리스트 설계**
+- `rm -rf`, `DROP TABLE`, `DELETE FROM`, `kill -9`, `git push --force`, `--hard` 등 9개
+- JSON 직렬화 후 문자열 포함 여부 검사 → 파라미터 주입 공격도 차단
+
+**LLM 로거/라우터/캐시 공용 모듈화**
+- `packages/core/lib/`에 통합 → 팀별 중복 구현 방지
+- 라우터는 DB 의존 없는 순수 함수형 설계 (테스트 용이)
+- 캐시 키: 불용어 제거 + 키워드 정렬 + SHA256 (벡터 DB 없이 시맨틱 유사도 근사)
+
+### 시행착오
+- **tmux 세션명**: CLAUDE.md에 "skaya"로 기록됐으나 실제는 "ska". launchd plist 기준으로 수정
+- **덱스터 오류 이력 무한 누적**: `cleanup()` 함수가 구현됐으나 호출 코드가 없었던 버그. 7일 보존 + `markResolved()`로 근본 수정
+- **openclaw.js IPv6 파싱 오탐**: `::1` 주소를 `split(':')` 하면 `''` → wildcard로 오인. bracket notation 처리 추가
+- **insertReview 파라미터**: `insertReview(review)` 아닌 `insertReview(tradeId, review)` — ESM과 CJS 혼재 시 함수 시그니처 확인 필요
+
+### 기술 인사이트
+
+**Shadow Mode 3단계 전환 전략**
+1. Shadow: LLM이 판단하되 로그만 기록 (규칙이 실행)
+2. Confirmation: LLM 판단 + 사람이 승인
+3. LLM Primary: LLM이 직접 실행 (규칙은 안전망)
+→ 일치율 95%+ 달성 시 다음 단계 전환
+
+**LLM 졸업 (LLM Graduation)**
+- 반복 패턴을 규칙으로 전환하는 개념
+- 로거가 패턴 감지 → 마스터 승인 → 규칙으로 코드화 → LLM 호출 감소 = 비용 절감
+
+**매매일지의 분석팀 성적표**
+- 각 봇(아리아/소피아/오라클/네메시스)의 신호 정확도를 trade_journal로 측정 가능
+- 예: `aria_accurate` 컬럼 집계 → 아리아 TA 신호 신뢰도 측정
+
+**독터의 화이트리스트 설계 원칙**
+- 허용 목록만 나열 (기본 거부) + 블랙리스트로 이중 차단
+- `requires_confirmation: true` 작업은 현재 마스터에게 텔레그램 요청으로 처리
+  → 향후 팀장 봇이 승인/거부 역할 담당 예정
+
+---
+
 ## 1. 프로젝트 개요
 
 ### 무엇을 만들었나
