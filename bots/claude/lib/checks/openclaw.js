@@ -57,15 +57,21 @@ function getPortBindingInfo(port) {
     const lines = out.split('\n').filter(l => !l.startsWith('COMMAND'));
     if (lines.length === 0) return { listening: false };
 
-    // NAME 컬럼에서 주소 추출 (예: *:18789 → 0.0.0.0, 127.0.0.1:18789 → loopback)
+    // NAME 컬럼에서 주소 추출
+    // IPv4: 127.0.0.1:18789 → '127.0.0.1'
+    // IPv6: [::1]:18789 → '::1'  (bracket notation 처리)
+    // 와일드카드: *:18789 → '*'
     const addresses = lines.map(l => {
       const parts = l.trim().split(/\s+/);
       const name  = parts[8] || '';           // NAME 컬럼
+      const ipv6  = name.match(/^\[([^\]]+)\]/);
+      if (ipv6) return ipv6[1];               // [::1]:18789 → '::1'
       return name.split(':')[0] || '';
     }).filter(Boolean);
 
-    const hasWildcard  = addresses.some(a => a === '*' || a === '0.0.0.0');
-    const hasLoopback  = addresses.some(a => a === '127.0.0.1' || a === 'localhost');
+    const IPV6_WILDCARDS  = new Set(['', '::', '0:0:0:0:0:0:0:0', '0000:0000:0000:0000:0000:0000:0000:0000']);
+    const hasWildcard  = addresses.some(a => a === '*' || a === '0.0.0.0' || IPV6_WILDCARDS.has(a));
+    const hasLoopback  = addresses.some(a => a === '127.0.0.1' || a === 'localhost' || a === '::1');
     const pid          = lines[0]?.trim().split(/\s+/)[1] || null;
 
     return { listening: true, hasWildcard, hasLoopback, pid, addresses };
