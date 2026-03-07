@@ -17,6 +17,7 @@ const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { getAllNaverKeys } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const shadow = require('../../../../packages/core/lib/shadow-mode');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -83,6 +84,16 @@ async function main() {
       }
     }
 
+    // ──── 3-b단계: Shadow Mode — 수동 예약 심각도 AI 판단 ────
+    // 기존 동작에 영향 없음. LLM 판단은 shadow_log에만 기록됨.
+    if (manualCount > 0) {
+      try {
+        await _shadowEvalManualEntries(manualEntries, today);
+      } catch (e) {
+        log(`⚠️ Shadow Mode 평가 실패 (무시): ${e.message}`);
+      }
+    }
+
     // ──── 4단계: 텔레그램 리포트 ────
     log('\n[4단계] 텔레그램 리포트 발송');
 
@@ -125,3 +136,58 @@ main().catch(err => {
   log(`❌ 치명 오류: ${err.message}`);
   process.exit(1);
 });
+
+// ── Shadow Mode: 수동 예약 심각도 평가 ──────────────────────────────
+/**
+ * 수동 예약 항목들의 심각도를 Shadow Mode로 평가
+ * 규칙: 건수 기반 (low/medium/high)
+ * LLM:  Groq가 예약 패턴 종합 판단
+ * → shadow_log에 비교 기록 (기존 리포트 발송에 영향 없음)
+ */
+async function _shadowEvalManualEntries(manualEntries, today) {
+  const count = manualEntries.length;
+
+  // 규칙 엔진: 단순 건수 기반 심각도
+  const ruleEngine = (input) => {
+    if (input.count <= 1) return { decision: 'low',    reason: '수동 예약 1건 이하 — 통상 범위' };
+    if (input.count <= 3) return { decision: 'medium', reason: `수동 예약 ${input.count}건 — 주의 필요` };
+    return               { decision: 'high',   reason: `수동 예약 ${input.count}건 — 다수 발생` };
+  };
+
+  // LLM 시스템 프롬프트
+  const llmPrompt = [
+    '스터디카페 픽코 시스템의 당일 감사를 수행합니다.',
+    '수동 등록 예약 = 전화/방문 예약 (네이버 자동 등록 아님).',
+    '입력된 수동 예약 목록을 분석하여 심각도를 판단하세요.',
+    '',
+    '판단 기준:',
+    '- low: 1건 이하, 일반 방문 예약으로 보임',
+    '- medium: 2~3건, 수동 처리가 필요하나 비정상적이지 않음',
+    '- high: 4건 이상 또는 동일 고객 반복 예약, 비정상 패턴 의심',
+    '',
+    '반드시 JSON으로만 답하세요:',
+    '{"decision": "low|medium|high", "reasoning": "판단 이유 (한국어)", "action_needed": true|false}',
+  ].join('\n');
+
+  // PII 마스킹된 입력
+  const sanitizedEntries = manualEntries.map(e => ({
+    date:   e.date,
+    time:   `${e.start || '?'}~${e.end || '?'}`,
+    room:   e.room   || '',
+    amount: e.amount || 0,
+  }));
+
+  const result = await shadow.evaluate({
+    team:      'ska',
+    context:   'manual_entry_severity',
+    input:     { count, entries: sanitizedEntries, date: today },
+    ruleEngine,
+    llmPrompt,
+    mode:      'shadow',
+  });
+
+  log(`  [Shadow] 심각도 규칙=${result.action?.decision || '?'} LLM=${result.shadow?.decision || 'N/A'} 일치=${result.match}`);
+  if (result.shadow?.reasoning) {
+    log(`  [Shadow] LLM 이유: ${result.shadow.reasoning}`);
+  }
+}
