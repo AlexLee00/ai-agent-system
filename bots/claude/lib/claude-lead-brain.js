@@ -140,7 +140,9 @@ async function evaluateWithClaudeLead(results) {
         messages: [{ role: 'user', content: _buildUserPrompt(issues) }],
       });
       const raw = resp.content[0]?.text?.trim() || '';
-      llmResult = JSON.parse(raw);
+      // ```json ... ``` 마크다운 블록 제거
+      const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+      llmResult = JSON.parse(json);
       if (!llmResult.decision) llmResult = null;
     } catch (e) {
       llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
