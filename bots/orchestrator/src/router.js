@@ -18,18 +18,18 @@ const os       = require('os');
 const fs       = require('fs');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 
-// 허가된 chat_id (secrets에서 로드)
-let _allowedChatId = null;
+// 허가된 chat_id (secrets에서 로드) — 개인 채팅 + 그룹 채팅 모두 허용
+let _allowedChatIds = null;
 function isAuthorized(chatId) {
-  if (!_allowedChatId) {
+  if (!_allowedChatIds) {
     try {
       const s = JSON.parse(fs.readFileSync(
         path.join(__dirname, '..', '..', 'reservation', 'secrets.json'), 'utf8'
       ));
-      _allowedChatId = String(s.telegram_chat_id);
-    } catch { _allowedChatId = '***REMOVED***'; }
+      _allowedChatIds = [s.telegram_chat_id, s.telegram_group_id].filter(Boolean).map(String);
+    } catch { _allowedChatIds = ['***REMOVED***']; }
   }
-  return String(chatId) === _allowedChatId;
+  return _allowedChatIds.includes(String(chatId));
 }
 
 const HELP_TEXT = `🤖 제이(Jay) 명령 안내
