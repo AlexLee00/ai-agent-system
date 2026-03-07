@@ -45,7 +45,7 @@ function getPortBindingInfo(port) {
   try {
     // lsof -i :<port> -sTCP:LISTEN → 바인딩 중인 프로세스 목록
     const out = execSync(
-      `lsof -i :${port} -sTCP:LISTEN -n -P 2>/dev/null`,
+      `/usr/sbin/lsof -i :${port} -sTCP:LISTEN -n -P 2>/dev/null`,
       { encoding: 'utf8', timeout: 5000 },
     ).trim();
 

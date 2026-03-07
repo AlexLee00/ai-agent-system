@@ -112,7 +112,7 @@ function checkBotMemory(items) {
 // macOS swap 사용량 체크
 function checkSwap(items) {
   try {
-    const out = execSync('sysctl vm.swapusage', { encoding: 'utf8', timeout: 3000 });
+    const out = execSync('/usr/sbin/sysctl vm.swapusage', { encoding: 'utf8', timeout: 3000 });
     // 예: "vm.swapusage: total = 2048.00M  used = 512.00M  free = 1536.00M"
     const usedM = out.match(/used\s*=\s*([\d.]+)M/);
     if (!usedM) {
