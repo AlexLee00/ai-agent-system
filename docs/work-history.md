@@ -51,6 +51,17 @@
 - KNOWN_ISSUES KI-003 해결
 <!-- session-close:2026-03-07:postgresql-단일-db-통합-마이그레이션-완료- -->
 
+### ✨ 3주차 구축 — 클로드(팀장) Sonnet Shadow + 장애주입 테스트 + LLM 졸업 엔진
+- claude-lead-brain.js — Sonnet Shadow 판단 엔진 신규
+- dexter.js Shadow 연동 + await 누락 수정
+- scripts/chaos/ 장애 주입 5종 스크립트
+- llm-graduation.js LLM 졸업 엔진 신규
+- analyst-accuracy.js 분석팀 정확도 추적 신규 (ESM)
+- Groq↔OpenAI 양방향 폴백 (skipFallback 무한루프 방지)
+- 오류패턴분석 메타루프 수정
+- pickko-verify process.exit(0) 누락 수정
+<!-- session-close:2026-03-07:3주차-구축-클로드팀장-sonnet-shadow-장애주 -->
+
 ## 2026-03-06
 ### 🔧 미해결 알림 반복 + tool_code 누출 버그 수정
 - pickko-alerts-resolve.js 신규 (수동 해결 CLI)
