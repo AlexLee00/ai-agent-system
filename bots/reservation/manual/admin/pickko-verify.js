@@ -60,10 +60,10 @@ function needsVerify(entry) {
   return false;
 }
 
-function collectTargets() {
+async function collectTargets() {
   // DB에서 pending/processing/failed + completed 미검증 항목 수집
-  const pending   = getPendingReservations();            // status IN ('pending','processing','failed')
-  const unverified = getUnverifiedCompletedReservations(); // completed이지만 pickkoStatus 미검증
+  const pending    = await getPendingReservations();            // status IN ('pending','processing','failed')
+  const unverified = await getUnverifiedCompletedReservations(); // completed이지만 pickkoStatus 미검증
 
   const targets = [];
   const seen = new Set();
@@ -212,7 +212,7 @@ function runPickko(entry) {
 // 메인
 // ──────────────────────────────────────────────
 async function main() {
-  const targets = collectTargets();
+  const targets = await collectTargets();
 
   if (targets.length === 0) {
     log('✅ 검증 대상 없음');
