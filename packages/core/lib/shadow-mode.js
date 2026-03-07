@@ -22,6 +22,7 @@ const fs      = require('fs');
 const pgPool  = require('./pg-pool');
 const cache   = require('./llm-cache');
 const llmLog  = require('./llm-logger');
+const { getTimeout } = require('./llm-timeouts');
 
 const SCHEMA = 'reservation';
 
@@ -76,7 +77,7 @@ function _getGroqClients() {
     const cfg = yaml.load(fs.readFileSync(cfgPath, 'utf8'));
     _groqClients = (cfg.groq?.accounts || [])
       .filter(a => a.api_key)
-      .map(a => new Groq({ apiKey: a.api_key }));
+      .map(a => new Groq({ apiKey: a.api_key, timeout: getTimeout('groq') }));
   } catch {
     _groqClients = [];
   }
@@ -272,7 +273,7 @@ async function evaluate({ team, context, input, ruleEngine, llmPrompt, mode }) {
   _logShadowResult({
     team, context, inputSummary, ruleResult, llmResult,
     llmError, match, mode: effectiveMode, elapsedMs: elapsed,
-  }).catch(() => {});
+  }).catch(e => { console.warn('[shadow-mode] shadow_log 기록 실패 (메인 로직에 영향 없음):', e.message); });
 
   // 6. 모드별 실행 결과 결정
   if (effectiveMode === 'confirmation') {

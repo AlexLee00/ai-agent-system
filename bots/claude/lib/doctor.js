@@ -207,7 +207,7 @@ async function logRecovery(taskType, params, result, success, requestedBy, confi
       requestedBy,
       confirmedBy ?? null,
     ]);
-  } catch { /* DB 없으면 무시 */ }
+  } catch (e) { console.warn('[doctor] doctor_log INSERT 실패 (메인 로직에 영향 없음):', e.message); }
 }
 
 // ─── 조회 함수 ─────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ async function getRecoveryHistory(days = 7) {
       ORDER BY executed_at DESC
       LIMIT 50
     `, [String(days)]);
-  } catch { return []; }
+  } catch (e) { console.warn('[doctor] doctor_log 조회 실패:', e.message); return []; }
 }
 
 /**

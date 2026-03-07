@@ -38,6 +38,16 @@ try {
   // 로거 없는 환경에서는 무음 처리
 }
 
+// CJS 타임아웃 상수 로드
+let _LLM_TIMEOUTS = null;
+try {
+  const require = createRequire(import.meta.url);
+  _LLM_TIMEOUTS = require('../../../packages/core/lib/llm-timeouts.js').LLM_TIMEOUTS;
+} catch {
+  // 타임아웃 모듈 없으면 기본값 사용
+  _LLM_TIMEOUTS = { groq: 5_000, haiku: 15_000, sonnet: 30_000, openai: 30_000 };
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ─── 설정 로드 (config.yaml → secrets.json fallback) ─────────────────
@@ -72,7 +82,7 @@ const OPENAI_AGENTS = new Set(['luna', 'nemesis', 'oracle', 'athena', 'zeus']);
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
 const _groqAccounts = (_cfg.groq?.accounts || []).filter(a => a.api_key);
-const _groqClients  = _groqAccounts.map(a => new Groq({ apiKey: a.api_key }));
+const _groqClients  = _groqAccounts.map(a => new Groq({ apiKey: a.api_key, timeout: _LLM_TIMEOUTS.groq, maxRetries: 1 }));
 let   _groqIdx      = 0;
 
 function nextGroqClient() {
@@ -91,6 +101,8 @@ function getAnthropic() {
   if (!apiKey) throw new Error('Anthropic API 키 없음 — config.yaml anthropic.api_key 설정 필요');
   _anthropic = new Anthropic({
     apiKey,
+    timeout:        _LLM_TIMEOUTS.sonnet,  // Sonnet 기본, Opus 호출 시 per-request 60s 오버라이드
+    maxRetries:     2,
     defaultHeaders: { 'anthropic-beta': 'prompt-caching-2024-07-31' },
   });
   return _anthropic;
@@ -103,7 +115,7 @@ function getOpenAI() {
   if (_openai) return _openai;
   const apiKey = _cfg.openai?.api_key || '';
   if (!apiKey) throw new Error('OpenAI API 키 없음 — config.yaml openai.api_key 설정 필요');
-  _openai = new OpenAI({ apiKey });
+  _openai = new OpenAI({ apiKey, timeout: _LLM_TIMEOUTS.openai, maxRetries: 1 });
   return _openai;
 }
 

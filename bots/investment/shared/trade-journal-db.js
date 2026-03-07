@@ -218,27 +218,31 @@ export async function generateTradeId() {
 export async function insertJournalEntry(entry) {
   await ensureInit();
   const now = Date.now();
-  await run(
-    `INSERT INTO trade_journal (
-      trade_id, signal_id, market, exchange, symbol, is_paper,
-      entry_time, entry_price, entry_size, entry_value, direction,
-      signal_time, decision_time, execution_time, signal_to_exec_ms,
-      tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set,
-      status, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      entry.trade_id, entry.signal_id ?? null,
-      entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true,
-      entry.entry_time ?? now, entry.entry_price, entry.entry_size, entry.entry_value,
-      entry.direction ?? 'long',
-      entry.signal_time ?? null, entry.decision_time ?? null,
-      entry.execution_time ?? now, entry.signal_to_exec_ms ?? null,
-      entry.tp_price ?? null, entry.sl_price ?? null,
-      entry.tp_order_id ?? null, entry.sl_order_id ?? null,
-      entry.tp_sl_set ?? false,
-      'open', now,
-    ],
-  );
+  try {
+    await run(
+      `INSERT INTO trade_journal (
+        trade_id, signal_id, market, exchange, symbol, is_paper,
+        entry_time, entry_price, entry_size, entry_value, direction,
+        signal_time, decision_time, execution_time, signal_to_exec_ms,
+        tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set,
+        status, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        entry.trade_id, entry.signal_id ?? null,
+        entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true,
+        entry.entry_time ?? now, entry.entry_price, entry.entry_size, entry.entry_value,
+        entry.direction ?? 'long',
+        entry.signal_time ?? null, entry.decision_time ?? null,
+        entry.execution_time ?? now, entry.signal_to_exec_ms ?? null,
+        entry.tp_price ?? null, entry.sl_price ?? null,
+        entry.tp_order_id ?? null, entry.sl_order_id ?? null,
+        entry.tp_sl_set ?? false,
+        'open', now,
+      ],
+    );
+  } catch (e) {
+    console.warn('[trade-journal] trade_journal INSERT 실패 (메인 로직에 영향 없음):', e.message);
+  }
 }
 
 /**
@@ -308,29 +312,33 @@ export async function getJournalByDate(date, market = null) {
 export async function insertRationale(rationaleData) {
   await ensureInit();
   const now = Date.now();
-  await run(
-    `INSERT INTO trade_rationale (
-      trade_id, signal_id,
-      aria_signal, sophia_signal, oracle_signal, hermes_signal,
-      zeus_bull_case, zeus_target, athena_bear_case, athena_risk,
-      luna_decision, luna_reasoning, luna_confidence,
-      nemesis_verdict, nemesis_notes,
-      position_size_original, position_size_approved,
-      created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      rationaleData.trade_id ?? null, rationaleData.signal_id ?? null,
-      rationaleData.aria_signal ?? null, rationaleData.sophia_signal ?? null,
-      rationaleData.oracle_signal ?? null, rationaleData.hermes_signal ?? null,
-      rationaleData.zeus_bull_case ?? null, rationaleData.zeus_target ?? null,
-      rationaleData.athena_bear_case ?? null, rationaleData.athena_risk ?? null,
-      rationaleData.luna_decision ?? 'skip', rationaleData.luna_reasoning ?? '',
-      rationaleData.luna_confidence ?? null,
-      rationaleData.nemesis_verdict ?? null, rationaleData.nemesis_notes ?? null,
-      rationaleData.position_size_original ?? null, rationaleData.position_size_approved ?? null,
-      now,
-    ],
-  );
+  try {
+    await run(
+      `INSERT INTO trade_rationale (
+        trade_id, signal_id,
+        aria_signal, sophia_signal, oracle_signal, hermes_signal,
+        zeus_bull_case, zeus_target, athena_bear_case, athena_risk,
+        luna_decision, luna_reasoning, luna_confidence,
+        nemesis_verdict, nemesis_notes,
+        position_size_original, position_size_approved,
+        created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        rationaleData.trade_id ?? null, rationaleData.signal_id ?? null,
+        rationaleData.aria_signal ?? null, rationaleData.sophia_signal ?? null,
+        rationaleData.oracle_signal ?? null, rationaleData.hermes_signal ?? null,
+        rationaleData.zeus_bull_case ?? null, rationaleData.zeus_target ?? null,
+        rationaleData.athena_bear_case ?? null, rationaleData.athena_risk ?? null,
+        rationaleData.luna_decision ?? 'skip', rationaleData.luna_reasoning ?? '',
+        rationaleData.luna_confidence ?? null,
+        rationaleData.nemesis_verdict ?? null, rationaleData.nemesis_notes ?? null,
+        rationaleData.position_size_original ?? null, rationaleData.position_size_approved ?? null,
+        now,
+      ],
+    );
+  } catch (e) {
+    console.warn('[trade-journal] trade_rationale INSERT 실패 (메인 로직에 영향 없음):', e.message);
+  }
 }
 
 /**
@@ -348,25 +356,29 @@ export async function linkRationaleToTrade(tradeId, signalId) {
 
 export async function insertReview(tradeId, review) {
   await ensureInit();
-  await run(
-    `INSERT INTO trade_review (
-      trade_id, entry_timing, exit_timing, signal_accuracy,
-      risk_managed, tp_sl_protected, execution_speed,
-      max_favorable, max_adverse,
-      aria_accurate, sophia_accurate, oracle_accurate, hermes_accurate,
-      luna_review, lessons_learned, strategy_adjustment, reviewed_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [
-      tradeId,
-      review.entry_timing ?? null, review.exit_timing ?? null, review.signal_accuracy ?? null,
-      review.risk_managed ?? null, review.tp_sl_protected ?? null, review.execution_speed ?? null,
-      review.max_favorable ?? null, review.max_adverse ?? null,
-      review.aria_accurate ?? null, review.sophia_accurate ?? null,
-      review.oracle_accurate ?? null, review.hermes_accurate ?? null,
-      review.luna_review ?? null, review.lessons_learned ?? null,
-      review.strategy_adjustment ?? null, Date.now(),
-    ],
-  );
+  try {
+    await run(
+      `INSERT INTO trade_review (
+        trade_id, entry_timing, exit_timing, signal_accuracy,
+        risk_managed, tp_sl_protected, execution_speed,
+        max_favorable, max_adverse,
+        aria_accurate, sophia_accurate, oracle_accurate, hermes_accurate,
+        luna_review, lessons_learned, strategy_adjustment, reviewed_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        tradeId,
+        review.entry_timing ?? null, review.exit_timing ?? null, review.signal_accuracy ?? null,
+        review.risk_managed ?? null, review.tp_sl_protected ?? null, review.execution_speed ?? null,
+        review.max_favorable ?? null, review.max_adverse ?? null,
+        review.aria_accurate ?? null, review.sophia_accurate ?? null,
+        review.oracle_accurate ?? null, review.hermes_accurate ?? null,
+        review.luna_review ?? null, review.lessons_learned ?? null,
+        review.strategy_adjustment ?? null, Date.now(),
+      ],
+    );
+  } catch (e) {
+    console.warn('[trade-journal] trade_review INSERT 실패 (메인 로직에 영향 없음):', e.message);
+  }
 }
 
 // ─── performance_daily ────────────────────────────────────────────────
