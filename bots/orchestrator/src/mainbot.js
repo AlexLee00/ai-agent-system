@@ -14,10 +14,10 @@
  */
 
 const fs       = require('fs');
-const https    = require('https');
 const path     = require('path');
 const os       = require('os');
-const pgPool = require('../../../packages/core/lib/pg-pool');
+const pgPool   = require('../../../packages/core/lib/pg-pool');
+const sender   = require('../../../packages/core/lib/telegram-sender');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME = '제이';
@@ -37,57 +37,7 @@ function acquireLock() {
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
 }
 
-// ─── Secrets ─────────────────────────────────────────────────────────
-let _secrets = null;
-function loadSecrets() {
-  if (_secrets) return _secrets;
-  // 스카팀 secrets.json 공유 (같은 봇 토큰 / chat_id)
-  const paths = [
-    path.join(__dirname, '..', 'secrets.json'),
-    path.join(__dirname, '..', '..', 'reservation', 'secrets.json'),
-  ];
-  for (const p of paths) {
-    try { _secrets = JSON.parse(fs.readFileSync(p, 'utf8')); return _secrets; }
-    catch {}
-  }
-  console.warn(`⚠️ secrets.json 없음 — 환경변수로 진행`);
-  _secrets = {
-    telegram_bot_token: process.env.TELEGRAM_BOT_TOKEN || '',
-    telegram_chat_id:   process.env.TELEGRAM_CHAT_ID   || '***REMOVED***',
-  };
-  return _secrets;
-}
-
 // ─── Telegram 발송 ───────────────────────────────────────────────────
-const PENDING_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'mainbot-pending.jsonl');
-
-async function tryTelegramSend(text, chatId) {
-  const secrets  = loadSecrets();
-  const token    = secrets.telegram_bot_token;
-  if (!token) { console.warn('⚠️ telegram_bot_token 없음'); return false; }
-  if (process.env.TELEGRAM_ENABLED === '0') return true;
-
-  return new Promise((resolve) => {
-    const body = Buffer.from(JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }));
-    const req  = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${token}/sendMessage`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': body.length },
-    }, (res) => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => {
-        try { const r = JSON.parse(raw); resolve(r.ok === true); }
-        catch { resolve(false); }
-      });
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(10000, () => { req.destroy(); resolve(false); });
-    req.write(body);
-    req.end();
-  });
-}
 
 const TG_MAX_LEN = 4096;
 
@@ -122,43 +72,23 @@ function splitMessage(text) {
   return chunks;
 }
 
+/**
+ * 텔레그램 발송 — 📌 일반 Forum Topic 경유
+ * 4096자 초과 시 분할 전송
+ */
 async function sendTelegram(text) {
-  const secrets = loadSecrets();
-  const chatId  = secrets.telegram_chat_id || '***REMOVED***';
-  const chunks  = splitMessage(text);
-
+  const chunks = splitMessage(text);
   let allOk = true;
   for (const chunk of chunks) {
-    let sent = false;
-    for (let i = 0; i < 3; i++) {
-      if (await tryTelegramSend(chunk, chatId)) { sent = true; break; }
-      if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-    }
-    if (!sent) {
-      allOk = false;
-      try {
-        fs.appendFileSync(PENDING_FILE, JSON.stringify({ text: chunk, chatId, ts: new Date().toISOString() }) + '\n');
-      } catch {}
-    }
-    // 분할 전송 시 rate limit 방지 (1 msg/sec per chat)
+    const ok = await sender.send('general', chunk);
+    if (!ok) allOk = false;
     if (chunks.length > 1) await new Promise(r => setTimeout(r, 1100));
   }
   return allOk;
 }
 
 async function flushPendingTelegrams() {
-  if (!fs.existsSync(PENDING_FILE)) return;
-  try {
-    const lines = fs.readFileSync(PENDING_FILE, 'utf8').split('\n').filter(Boolean);
-    fs.unlinkSync(PENDING_FILE);
-    for (const line of lines) {
-      try {
-        const { text, chatId } = JSON.parse(line);
-        await tryTelegramSend(text, chatId);
-        await new Promise(r => setTimeout(r, 200));
-      } catch {}
-    }
-  } catch {}
+  return sender.flushPending();
 }
 
 // ─── 큐 폴링 (봇 알람 처리) ─────────────────────────────────────────

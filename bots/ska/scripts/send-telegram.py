@@ -28,16 +28,25 @@ def main():
         sys.exit(1)
 
     token = secrets.get('telegram_bot_token', '')
-    chat_id = secrets.get('telegram_chat_id', '')
+    # 그룹 ID 우선, 폴백: 개인 채팅 ID
+    chat_id = secrets.get('telegram_group_id') or secrets.get('telegram_chat_id', '')
+    # 스카팀 Forum Topic thread_id (설정 없으면 일반 발송)
+    topic_ids = secrets.get('telegram_topic_ids', {})
+    thread_id = topic_ids.get('ska')
 
     if not token or not chat_id:
         print('[TELEGRAM] ⚠️ 토큰/채팅ID 없음')
         sys.exit(1)
 
-    data = urllib.parse.urlencode({'chat_id': str(chat_id), 'text': msg}).encode()
+    payload = {'chat_id': str(chat_id), 'text': msg}
+    if thread_id:
+        payload['message_thread_id'] = int(thread_id)
+
+    data = json.dumps(payload).encode('utf-8')
     req = urllib.request.Request(
         f'https://api.telegram.org/bot{token}/sendMessage',
-        data=data
+        data=data,
+        headers={'Content-Type': 'application/json'},
     )
 
     try:

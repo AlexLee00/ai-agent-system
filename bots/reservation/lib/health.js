@@ -174,8 +174,8 @@ async function preflightConnCheck() {
 
   // 3-2. 텔레그램 테스트 발송
   try {
-    const { tryTelegramSend } = require('./telegram');
-    const ok = await tryTelegramSend('[3중 체크] 스카봇 OPS 시작 — 연결 확인');
+    const { sendTelegram } = require('./telegram');
+    const ok = await sendTelegram('[3중 체크] 스카봇 OPS 시작 — 연결 확인');
     if (ok) {
       console.log('      ✅ 텔레그램 연결');
     } else {
@@ -242,9 +242,9 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
 
   // 텔레그램 종료 알림
   try {
-    const { tryTelegramSend } = require('./telegram');
+    const { sendTelegram } = require('./telegram');
     const emoji = error ? '❌' : '🏁';
-    await tryTelegramSend(`${emoji} [스카봇 OPS] 종료\n사유: ${reason}`);
+    await sendTelegram(`${emoji} [스카봇 OPS] 종료\n사유: ${reason}`);
     console.log('      ✅ 텔레그램 종료 알림');
   } catch (e) {
     console.warn(`      ⚠️  텔레그램 알림 실패: ${e.message}`);
