@@ -26,9 +26,9 @@ const SCHEMA = 'investment';
 
 // ── 분석팀 봇 정의 ─────────────────────────────────────────────────────
 const ANALYSTS = [
-  { name: 'aria',   label: '아리아',   column: 'aria_accurate',   role: '기술분석',  defaultWeight: 0.25 },
-  { name: 'sophia', label: '소피아',   column: 'sophia_accurate', role: '감성분석',  defaultWeight: 0.20 },
-  { name: 'oracle', label: '오라클',   column: 'oracle_accurate', role: '온체인',    defaultWeight: 0.25 },
+  { name: 'aria',   label: '아리아',   column: 'aria_accurate',   role: '기술분석',  defaultWeight: 0.30 },
+  { name: 'sophia', label: '소피아',   column: 'sophia_accurate', role: '감성분석',  defaultWeight: 0.25 },
+  { name: 'oracle', label: '오라클',   column: 'oracle_accurate', role: '온체인',    defaultWeight: 0.30 },
   { name: 'hermes', label: '헤르메스', column: 'hermes_accurate', role: '뉴스분석',  defaultWeight: 0.15 },
 ];
 
@@ -45,7 +45,7 @@ function _weekCutoff(weeksAgo = 0) {
   const d = new Date();
   d.setDate(d.getDate() - (weeksAgo * 7 + d.getDay()));  // 이번 주 시작(일요일)
   d.setHours(0, 0, 0, 0);
-  return d.toISOString();
+  return d.getTime();  // bigint (Unix ms) — trade_review.reviewed_at 타입 맞춤
 }
 
 function _clamp(val, min, max) {
