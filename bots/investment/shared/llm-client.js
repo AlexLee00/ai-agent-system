@@ -149,7 +149,7 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
 }
 
-async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
+async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
   const t0 = Date.now();
   try {
     const openai = getOpenAI();
@@ -175,13 +175,14 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens) {
     });
     return res.choices[0]?.message?.content || '';
   } catch (err) {
+    if (skipFallback) throw err;
     // OpenAI 실패 시 Groq로 폴백
     console.warn(`  ⚠️ [${agentName}] OpenAI 실패 (${err.message?.slice(0,60)}) → Groq 폴백`);
-    return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
+    return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
   }
 }
 
-async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
+async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
   let lastErr;
   const maxAttempts = Math.max(_groqClients.length, 1);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -210,9 +211,14 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens) {
       });
       return res.choices[0]?.message?.content || '';
     } catch (err) {
-      if (err.status === 429) { lastErr = err; continue; }
-      throw err;
+      lastErr = err;
+      if (err.status === 429) { continue; }
+      break;  // 429 외 오류 → 루프 종료 후 폴백
     }
   }
-  throw lastErr ?? new Error(`Groq 전체 키 rate limit — ${agentName}`);
+  if (skipFallback) throw lastErr ?? new Error(`Groq 전체 실패 — ${agentName}`);
+  // Groq 전체 실패 → OpenAI 폴백
+  const reason = lastErr?.status === 429 ? '전체 키 rate limit' : (lastErr?.message?.slice(0, 60) ?? '알 수 없는 오류');
+  console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → OpenAI 폴백`);
+  return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
 }
