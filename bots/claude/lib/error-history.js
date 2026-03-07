@@ -17,12 +17,16 @@ const SCHEMA = 'claude';
 // 패턴 분석에서 제외할 레이블 (개발 중 자연스러운 상태 — false positive 방지)
 const PATTERN_SKIP_LABELS = ['git 상태'];
 
+// 저장 제외 체크명 — 이 체크 결과는 메타 데이터이므로 피드백 루프 방지를 위해 DB 저장 안 함
+const SKIP_CHECK_NAMES = ['오류 패턴 분석'];
+
 /**
  * 체크 결과에서 error/warn 항목을 모두 저장
  */
 async function saveErrorItems(results) {
   try {
     for (const r of results) {
+      if (SKIP_CHECK_NAMES.includes(r.name)) continue;  // 메타 체크 제외
       for (const item of (r.items || [])) {
         if (item.status === 'error' || item.status === 'warn') {
           if (PATTERN_SKIP_LABELS.includes(item.label.trim())) continue;
