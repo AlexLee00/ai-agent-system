@@ -30,6 +30,26 @@
 - state.db e2e 테스트 데이터 4건 삭제 (2099-01-01)
 <!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이:end -->
 
+<!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
+#### 2026-03-08 ✨ Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동
+- shadow-mode.js getTeamMode/setTeamMode 추가
+- luna-transition-analysis.js 신규
+- router.js luna_confirm/luna_shadow/luna_analysis 케이스
+- run-graduation-analysis.js 신규
+- weekly-stability-report.js weeklyValidation 연동
+- reporter.js emitDexterEvent (agent_events 이중경로)
+- claude-lead-brain.js processAgentEvent/pollAgentEvents
+- dexter.js emitDexterEvent+pollAgentEvents 연결
+- processAgentEvent payload TEXT 파싱 버그 수정
+- db-backup pg_dump 절대경로 버그 수정 (이전 세션 이어)
+- pickko-daily-audit manualCount TDZ 버그 수정 (이전 세션 이어)
+- 테스트 14/14 전체 통과
+- 스카팀 매출 데이터 체크 (마이그레이션 타이밍 이슈, 정상화)
+- 포캐스트 학습데이터 0일 오류 분석 (정상화)
+- pickko-daily-audit+db-backup launchd exit 1 갱신
+- 관련 파일: `packages/core/lib/shadow-mode.js scripts/luna-transition-analysis.js scripts/run-graduation-analysis.js scripts/weekly-stability-report.js bots/orchestrator/src/router.js bots/claude/lib/reporter.js bots/claude/lib/claude-lead-brain.js bots/claude/src/dexter.js bots/reservation/scripts/backup-db.js bots/reservation/auto/scheduled/pickko-daily-audit.js`
+<!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장:end -->
+
 ## 다음 작업 후보
 
 - 루나팀 Phase 3-B: KIS 국내/해외 주식 실거래 전환

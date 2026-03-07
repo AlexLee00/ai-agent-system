@@ -7,7 +7,7 @@
 >
 > **언제 참조**: 새 기능 추가 / 버그 수정 / 신규 봇 개발 / 코드 리뷰 전 **반드시** 참조.
 >
-> 마지막 업데이트: 2026-03-07
+> 마지막 업데이트: 2026-03-08
 
 ---
 
@@ -1414,6 +1414,8 @@ function parseJsonResponse(text) {
 | 2026-03-07 | **오탐 근본 수정 + Day 6 검증 완료** — markResolved() 추가 (ok 복귀 시 error 이력 자동 삭제) 외 2건 |
 | 2026-03-07 | **PostgreSQL 단일 DB 통합 마이그레이션 완료 (Phase 5~6)** — forecast.py psycopg2 마이그레이션 외 6건 |
 | 2026-03-07 | **3주차 구축 — 클로드(팀장) Sonnet Shadow + 장애주입 테스트 + LLM 졸업 엔진** — claude-lead-brain.js — Sonnet Shadow 판단 엔진 신규 외 7건 |
+| 2026-03-08 | **Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동** — shadow-mode.js getTeamMode/setTeamMode 추가 외 14건 |
+<!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
 <!-- session-close:2026-03-07:3주차-구축-클로드팀장-sonnet-shadow-장애주 -->
 <!-- session-close:2026-03-07:postgresql-단일-db-통합-마이그레이션-완료- -->
 <!-- session-close:2026-03-07:오탐-근본-수정-day-6-검증-완료 -->
