@@ -7,7 +7,7 @@ ska-003/012: 이브(EVE) — 공공API 환경 요소 수집 모듈
   - 학사:   교육부 NEIS 학사일정 API (open.neis.go.kr) — 경기도 성남 고등학교
   - 축제:   전국문화축제표준데이터 API (data.go.kr) — 성남시 필터
 
-타겟: bots/ska/db/ska.duckdb → environment_factors
+타겟: PostgreSQL jay DB, ska 스키마 → environment_factors
 
 실행:
   bots/ska/venv/bin/python bots/ska/src/eve.py [--days=30]
@@ -24,19 +24,40 @@ import os
 import json
 import re
 import requests
-import duckdb
+import psycopg2
 from datetime import date as date_type, datetime, timedelta
 from urllib.parse import urljoin
 
 SECRETS_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'reservation', 'secrets.json')
 )
-DUCKDB_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..', 'db', 'ska.duckdb')
-)
+PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
 # 성남시 분당구 기상 격자 좌표
 NX, NY = 62, 122
+
+
+# ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
+
+def _qry(con, sql, params=()):
+    cur = con.cursor()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+def _one(con, sql, params=()):
+    cur = con.cursor()
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    cur.close()
+    return row
+
+def _run(con, sql, params=()):
+    cur = con.cursor()
+    cur.execute(sql, params)
+    cur.close()
+    con.commit()
 
 
 # ─── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -106,7 +127,7 @@ def get_base_time():
     """현재 시각 기준 최근 사용 가능한 기상청 단기예보 발표 시간 (HH00)"""
     slots = [2, 5, 8, 11, 14, 17, 20, 23]
     now_hour = datetime.now().hour
-    avail_hour = now_hour - 1  # 발표 후 ~40분 대기 여유
+    avail_hour = now_hour - 1
     best = slots[0]
     for s in slots:
         if s <= avail_hour:
@@ -199,8 +220,8 @@ def fetch_weather(base_date_str, base_time, key):
             return results
 
         item_list = items.get('item', [])
-        pop_by_date = {}   # date_str → max POP (%)
-        tmp_by_date = {}   # date_str → [TMP values]
+        pop_by_date = {}
+        tmp_by_date = {}
 
         for item in item_list:
             fcst_date = item.get('fcstDate', '')
@@ -245,9 +266,9 @@ def get_seongnam_school_codes(key, max_schools=5):
         'Type': 'json',
         'pIndex': 1,
         'pSize': max_schools,
-        'ATPT_OFCDC_SC_CODE': 'J10',      # 경기도교육청
+        'ATPT_OFCDC_SC_CODE': 'J10',
         'SCHUL_KND_SC_NM': '고등학교',
-        'ORG_RDNMAAD': '경기도 성남시',    # 도로명주소 필터
+        'ORG_RDNMAAD': '경기도 성남시',
     }
     try:
         resp = requests.get(url, params=params, timeout=10)
@@ -275,7 +296,6 @@ def fetch_neis_schedule(year_months, key):
         print('[EVE] ⚠️ 학교코드 없음 — NEIS 학사일정 수집 스킵')
         return {}
 
-    # 정확한 서비스명: SchoolSchedule (scheduleInfo 아님)
     url = 'https://open.neis.go.kr/hub/SchoolSchedule'
     results = {}
 
@@ -297,7 +317,7 @@ def fetch_neis_schedule(year_months, key):
 
                 result_code = data.get('RESULT', {}).get('CODE', '')
                 if result_code == 'INFO-200':
-                    continue  # 해당 월 데이터 없음 (정상)
+                    continue
 
                 schedule_data = data.get('SchoolSchedule')
                 if not schedule_data or len(schedule_data) < 2:
@@ -305,7 +325,7 @@ def fetch_neis_schedule(year_months, key):
 
                 rows = schedule_data[1].get('row', [])
                 for item in rows:
-                    event_date = item.get('AA_YMD', '')   # 'YYYYMMDD'
+                    event_date = item.get('AA_YMD', '')
                     event_name = item.get('EVENT_NM', '').strip()
                     if len(event_date) == 8 and event_name:
                         date_str = f'{event_date[:4]}-{event_date[4:6]}-{event_date[6:]}'
@@ -339,8 +359,6 @@ def fetch_festivals(key):
     try:
         resp = requests.get(url, params=params, timeout=10)
         if 'text/html' in resp.headers.get('Content-Type', ''):
-            # data.go.kr 동적 JS 챌린지 → 브라우저 없이 처리 불가
-            # (API 키 미활성화 or 봇 차단) — 축제 데이터 수집 스킵
             print('[EVE] ⚠️ 축제 API: data.go.kr JS 챌린지 응답 — 키 활성화 대기 중이거나 Playwright 필요 (ska-005에서 처리)')
             return results
         resp = _follow_js_redirect(resp)
@@ -354,7 +372,7 @@ def fetch_festivals(key):
             items = [items]
 
         for item in items:
-            start_str = item.get('fstvlStartDate', '')  # 'YYYYMMDD'
+            start_str = item.get('fstvlStartDate', '')
             end_str   = item.get('fstvlEndDate',   '')
             name      = item.get('fstvlNm', '').strip()
             if len(start_str) != 8 or not name:
@@ -409,25 +427,21 @@ def calc_bridge_holiday_flags(con, range_start, range_end):
     징검다리 연휴 감지 후 environment_factors.bridge_holiday_flag 업데이트.
 
     정의: 평일(월~금)인데 전날과 다음날이 모두 쉬는 날(공휴일 or 주말)인 경우.
-      예) 화요일 공휴일 → 월요일(평일)의 전날=일요일(주말), 다음날=화요일(공휴일) → 징검다리
-      예) 목요일 공휴일 → 금요일(평일)의 전날=목요일(공휴일), 다음날=토요일(주말) → 징검다리
     """
     buf_start = range_start - timedelta(days=1)
     buf_end   = range_end   + timedelta(days=1)
 
-    # DB에서 공휴일 로드 + 주말 계산 → off_days set
-    rows = con.execute("""
+    rows = _qry(con, """
         SELECT date, holiday_flag
         FROM environment_factors
-        WHERE date >= ? AND date <= ?
-    """, (str(buf_start), str(buf_end))).fetchall()
+        WHERE date >= %s AND date <= %s
+    """, (str(buf_start), str(buf_end)))
 
     off_days = set()
     for r in rows:
         d = date_type.fromisoformat(str(r[0]))
-        if r[1]:           # 공휴일
+        if r[1]:
             off_days.add(d)
-    # 주말 (DB 유무 무관)
     cur = buf_start
     while cur <= buf_end:
         if cur.weekday() >= 5:
@@ -435,32 +449,35 @@ def calc_bridge_holiday_flags(con, range_start, range_end):
         cur += timedelta(days=1)
 
     # 각 날짜 bridge 여부 계산 + UPDATE
+    db_cur = con.cursor()
     updated = 0
     cur = range_start
     while cur <= range_end:
-        if cur.weekday() < 5 and cur not in off_days:  # 평일 + 비공휴일
+        if cur.weekday() < 5 and cur not in off_days:
             is_bridge = (
                 (cur - timedelta(days=1)) in off_days and
                 (cur + timedelta(days=1)) in off_days
             )
         else:
             is_bridge = False
-        con.execute(
-            "UPDATE environment_factors SET bridge_holiday_flag = ? WHERE date = ?",
+        db_cur.execute(
+            "UPDATE environment_factors SET bridge_holiday_flag = %s WHERE date = %s",
             (is_bridge, str(cur))
         )
         updated += 1
         cur += timedelta(days=1)
+    db_cur.close()
+    con.commit()
 
-    bridge_cnt = con.execute("""
+    bridge_cnt = _one(con, """
         SELECT COUNT(*) FROM environment_factors
-        WHERE bridge_holiday_flag = true AND date >= ? AND date <= ?
-    """, (str(range_start), str(range_end))).fetchone()[0]
+        WHERE bridge_holiday_flag = true AND date >= %s AND date <= %s
+    """, (str(range_start), str(range_end)))[0]
     print(f'[EVE] 🗓️ 징검다리 연휴: {bridge_cnt}일 감지 (범위: {range_start}~{range_end})')
     return bridge_cnt
 
 
-# ─── DuckDB 저장 ──────────────────────────────────────────────────────────────
+# ─── PostgreSQL 저장 ──────────────────────────────────────────────────────────
 
 def upsert_factor(con, date_str, holiday_map, weather_map, neis_map, festival_map):
     holiday_flag  = date_str in holiday_map
@@ -487,12 +504,13 @@ def upsert_factor(con, date_str, holiday_map, weather_map, neis_map, festival_ma
         'festival':    festival_name,
     }, ensure_ascii=False)
 
-    con.execute("""
+    cur = con.cursor()
+    cur.execute("""
         INSERT INTO environment_factors
           (date, holiday_flag, holiday_name, rain_prob, temperature,
            exam_score, exam_types, vacation_flag, festival_flag, festival_name,
            factors_json, bridge_holiday_flag, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, current_timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, false, now())
         ON CONFLICT (date) DO UPDATE SET
           holiday_flag  = excluded.holiday_flag,
           holiday_name  = excluded.holiday_name,
@@ -510,6 +528,7 @@ def upsert_factor(con, date_str, holiday_map, weather_map, neis_map, festival_ma
         exam_score, exam_types, vacation_flag, festival_flag, festival_name,
         factors_json,
     ))
+    cur.close()
     # bridge_holiday_flag는 calc_bridge_holiday_flags()에서 일괄 재계산
 
 
@@ -521,7 +540,7 @@ def run_eve(days_back=30, flags=None):
 
     today = date_type.today()
     start = today - timedelta(days=days_back)
-    end   = today + timedelta(days=7)   # 미래 7일 포함 (예측용)
+    end   = today + timedelta(days=7)
 
     print(f'[EVE] 수집 기간: {start} ~ {end} (과거 {days_back}일 + 미래 7일)')
     print(f'[EVE] 플래그: {sorted(flags)}')
@@ -561,7 +580,6 @@ def run_eve(days_back=30, flags=None):
         festival_map = fetch_festivals(festival_key)
         print(f'[EVE] 축제 {len(festival_map)}일치 발견')
 
-    # 전체 날짜 집합: 수집 기간 전체 + API에서 발견된 날짜
     all_dates = set()
     cur = start
     while cur <= end:
@@ -572,29 +590,30 @@ def run_eve(days_back=30, flags=None):
     all_dates.update(neis_map.keys())
     all_dates.update(festival_map.keys())
 
-    con = duckdb.connect(DUCKDB_PATH)
+    con = psycopg2.connect(PG_SKA)
     upserted = 0
     try:
         for date_str in sorted(all_dates):
             upsert_factor(con, date_str, holiday_map, weather_map, neis_map, festival_map)
             upserted += 1
 
-        total       = con.execute("SELECT COUNT(*) FROM environment_factors").fetchone()[0]
-        holiday_cnt = con.execute("SELECT COUNT(*) FROM environment_factors WHERE holiday_flag = true").fetchone()[0]
-        weather_cnt = con.execute("SELECT COUNT(*) FROM environment_factors WHERE rain_prob > 0").fetchone()[0]
+        con.commit()
+
+        total       = _one(con, "SELECT COUNT(*) FROM environment_factors")[0]
+        holiday_cnt = _one(con, "SELECT COUNT(*) FROM environment_factors WHERE holiday_flag = true")[0]
+        weather_cnt = _one(con, "SELECT COUNT(*) FROM environment_factors WHERE rain_prob > 0")[0]
 
         print(f'[EVE] ✅ 완료: {upserted}행 upsert')
         print(f'[EVE] environment_factors 총 {total}행 / 공휴일 {holiday_cnt}일 / 강수기록 {weather_cnt}일')
 
-        # 향후 7일 미리보기
-        preview = con.execute("""
+        preview = _qry(con, """
             SELECT date, holiday_flag, holiday_name, rain_prob, temperature,
                    exam_score, festival_flag, festival_name
             FROM environment_factors
             WHERE date >= current_date
             ORDER BY date
             LIMIT 7
-        """).fetchall()
+        """)
 
         print('[EVE] 향후 7일:')
         for p in preview:

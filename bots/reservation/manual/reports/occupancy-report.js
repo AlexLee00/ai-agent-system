@@ -19,12 +19,12 @@
 
 'use strict';
 
-const Database = require('better-sqlite3');
 const path = require('path');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { parseArgs } = require('../../lib/args');
 const { outputResult, fail } = require('../../lib/cli');
 
-const DB_PATH = path.join(process.env.HOME, '.openclaw', 'workspace', 'state.db');
+const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
 
 // 영업시간: 09:00 ~ 22:00 → 슬롯 09~21 (총 13개)
@@ -75,20 +75,17 @@ function overlapMin(startMin, endMin, slotH) {
 
 // ── DB 조회 ────────────────────────────────────────────────────────────────
 
-function fetchReservations(startDate, endDate) {
-  const db = new Database(DB_PATH, { readonly: true });
-  const rows = db.prepare(`
+async function fetchReservations(startDate, endDate) {
+  return pgPool.query(SCHEMA, `
     SELECT room, date, start_time, end_time
     FROM   reservations
     WHERE  seen_only = 0
       AND  status != 'cancelled'
-      AND  date BETWEEN ? AND ?
+      AND  date BETWEEN $1 AND $2
       AND  room IS NOT NULL AND room != ''
       AND  start_time IS NOT NULL AND end_time IS NOT NULL
     ORDER BY date, start_time
-  `).all(startDate, endDate);
-  db.close();
-  return rows;
+  `, [startDate, endDate]);
 }
 
 // ── 가동률 계산 ────────────────────────────────────────────────────────────
@@ -235,18 +232,20 @@ function resolveRange() {
 
 // ── 메인 ──────────────────────────────────────────────────────────────────
 
-try {
-  const { start, end, label } = resolveRange();
-  const rows  = fetchReservations(start, end);
-  const dates = dateRange(start, end);
-  const rooms = ['A1', 'A2', 'B'];
+(async () => {
+  try {
+    const { start, end, label } = resolveRange();
+    const rows  = await fetchReservations(start, end);
+    const dates = dateRange(start, end);
+    const rooms = ['A1', 'A2', 'B'];
 
-  const roomStats = calcRoomOccupancy(rows, dates, rooms);
-  const slotStats = calcSlotOccupancy(rows, dates, rooms);
+    const roomStats = calcRoomOccupancy(rows, dates, rooms);
+    const slotStats = calcSlotOccupancy(rows, dates, rooms);
 
-  const msg = formatReport(label, roomStats, slotStats, rows.length, dates.length);
-  outputResult({ success: true, message: msg });
-  process.exit(0);
-} catch (e) {
-  fail(`가동률 조회 실패: ${e.message}`);
-}
+    const msg = formatReport(label, roomStats, slotStats, rows.length, dates.length);
+    outputResult({ success: true, message: msg });
+    process.exit(0);
+  } catch (e) {
+    fail(`가동률 조회 실패: ${e.message}`);
+  }
+})();

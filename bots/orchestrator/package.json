@@ -9,7 +9,6 @@
     "migrate": "node migrations/002_mainbot.js"
   },
   "dependencies": {
-    "better-sqlite3": "*",
     "js-yaml": "*"
   }
 }

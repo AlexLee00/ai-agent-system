@@ -1,47 +1,32 @@
 /**
- * shared/db.js — DuckDB 래퍼 (Phase 3-A ESM)
+ * shared/db.js — PostgreSQL investment 스키마 (Phase 4 마이그레이션)
  *
- * 경로: bots/investment/db/investment.duckdb
- * 테이블: analysis, signals, trades, positions
+ * 위치: PostgreSQL jay DB, investment 스키마
+ * 테이블: analysis, signals, trades, positions,
+ *         strategy_pool, risk_log, asset_snapshot, schema_migrations
  */
 
-import { join, dirname } from 'path';
-import { fileURLToPath }  from 'url';
-import duckdb             from 'duckdb';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH   = join(__dirname, '..', 'db', 'investment.duckdb');
+const SCHEMA = 'investment';
 
-let _db   = null;
-let _conn = null;
+// ─── 기본 쿼리 래퍼 (외부 호환 API 유지) ──────────────────────────────
 
-function getConn() {
-  if (_conn) return _conn;
-  _db   = new duckdb.Database(DB_PATH);
-  _conn = _db.connect();
-  return _conn;
-}
-
-/** Promise 래핑 query */
+/** SELECT 쿼리 — rows 배열 반환 */
 export function query(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    const conn = getConn();
-    conn.all(sql, ...params, (err, rows) => {
-      if (err) reject(err);
-      else     resolve(rows || []);
-    });
-  });
+  return pgPool.query(SCHEMA, sql, params);
 }
 
-/** Promise 래핑 run (INSERT / UPDATE / DELETE) */
+/** INSERT / UPDATE / DELETE — { rowCount, rows } 반환 */
 export function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    const conn = getConn();
-    conn.run(sql, ...params, (err) => {
-      if (err) reject(err);
-      else     resolve();
-    });
-  });
+  return pgPool.run(SCHEMA, sql, params);
+}
+
+/** 단일 행 SELECT — row 또는 null */
+export function get(sql, params = []) {
+  return pgPool.get(SCHEMA, sql, params);
 }
 
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
@@ -50,140 +35,136 @@ export async function initSchema() {
   await run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
-      name       VARCHAR NOT NULL,
+      name       TEXT NOT NULL,
       applied_at TIMESTAMP DEFAULT now()
     )
   `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS analysis (
-      id         VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      symbol     VARCHAR NOT NULL,
-      analyst    VARCHAR NOT NULL,
-      signal     VARCHAR NOT NULL,
-      confidence DOUBLE,
+      id         TEXT DEFAULT gen_random_uuid()::text,
+      symbol     TEXT NOT NULL,
+      analyst    TEXT NOT NULL,
+      signal     TEXT NOT NULL,
+      confidence DOUBLE PRECISION,
       reasoning  TEXT,
-      metadata   JSON,
-      exchange   VARCHAR DEFAULT 'binance',
+      metadata   JSONB,
+      exchange   TEXT DEFAULT 'binance',
       created_at TIMESTAMP DEFAULT now()
     )
   `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS signals (
-      id          VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      symbol      VARCHAR NOT NULL,
-      action      VARCHAR NOT NULL,
-      amount_usdt DOUBLE,
-      confidence  DOUBLE,
+      id          TEXT DEFAULT gen_random_uuid()::text,
+      symbol      TEXT NOT NULL,
+      action      TEXT NOT NULL,
+      amount_usdt DOUBLE PRECISION,
+      confidence  DOUBLE PRECISION,
       reasoning   TEXT,
-      status      VARCHAR DEFAULT 'pending',
-      exchange    VARCHAR DEFAULT 'binance',
+      status      TEXT DEFAULT 'pending',
+      exchange    TEXT DEFAULT 'binance',
       created_at  TIMESTAMP DEFAULT now()
     )
   `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS trades (
-      id          VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      signal_id   VARCHAR,
-      symbol      VARCHAR NOT NULL,
-      side        VARCHAR NOT NULL,
-      amount      DOUBLE,
-      price       DOUBLE,
-      total_usdt  DOUBLE,
+      id          TEXT DEFAULT gen_random_uuid()::text,
+      signal_id   TEXT,
+      symbol      TEXT NOT NULL,
+      side        TEXT NOT NULL,
+      amount      DOUBLE PRECISION,
+      price       DOUBLE PRECISION,
+      total_usdt  DOUBLE PRECISION,
       paper       BOOLEAN DEFAULT true,
-      exchange    VARCHAR DEFAULT 'binance',
+      exchange    TEXT DEFAULT 'binance',
       executed_at TIMESTAMP DEFAULT now()
     )
   `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS positions (
-      symbol         VARCHAR PRIMARY KEY,
-      amount         DOUBLE DEFAULT 0,
-      avg_price      DOUBLE DEFAULT 0,
-      unrealized_pnl DOUBLE DEFAULT 0,
-      exchange       VARCHAR DEFAULT 'binance',
+      symbol         TEXT PRIMARY KEY,
+      amount         DOUBLE PRECISION DEFAULT 0,
+      avg_price      DOUBLE PRECISION DEFAULT 0,
+      unrealized_pnl DOUBLE PRECISION DEFAULT 0,
+      exchange       TEXT DEFAULT 'binance',
       updated_at     TIMESTAMP DEFAULT now()
     )
   `);
 
-  // ── strategy_pool: 아르고스 수집 외부 전략 ──────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS strategy_pool (
-      id                   VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      strategy_name        VARCHAR UNIQUE NOT NULL,
-      market               VARCHAR NOT NULL,
-      source               VARCHAR,
-      source_url           VARCHAR,
+      id                   TEXT DEFAULT gen_random_uuid()::text,
+      strategy_name        TEXT UNIQUE NOT NULL,
+      market               TEXT NOT NULL,
+      source               TEXT,
+      source_url           TEXT,
       entry_condition      TEXT,
       exit_condition       TEXT,
       risk_management      TEXT,
-      applicable_timeframe VARCHAR,
-      quality_score        DOUBLE DEFAULT 0.0,
+      applicable_timeframe TEXT,
+      quality_score        DOUBLE PRECISION DEFAULT 0.0,
       summary              TEXT,
       applicable_now       BOOLEAN DEFAULT true,
       collected_at         TIMESTAMP DEFAULT now(),
       applied_count        INTEGER DEFAULT 0,
-      win_rate             DOUBLE
+      win_rate             DOUBLE PRECISION
     )
   `);
 
-  // ── risk_log: 네메시스 감사 로그 ─────────────────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS risk_log (
-      id           VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      trace_id     VARCHAR UNIQUE NOT NULL,
-      symbol       VARCHAR,
-      exchange     VARCHAR,
-      decision     VARCHAR,
+      id           TEXT DEFAULT gen_random_uuid()::text,
+      trace_id     TEXT UNIQUE NOT NULL,
+      symbol       TEXT,
+      exchange     TEXT,
+      decision     TEXT,
       risk_score   INTEGER,
       reason       TEXT,
       evaluated_at TIMESTAMP DEFAULT now()
     )
   `);
 
-  // ── asset_snapshot: 자산 스냅샷 (드로우다운 계산용) ──────────────
   await run(`
     CREATE TABLE IF NOT EXISTS asset_snapshot (
-      id         VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
-      equity     DOUBLE NOT NULL,
-      value_usd  DOUBLE,
+      id         TEXT DEFAULT gen_random_uuid()::text,
+      equity     DOUBLE PRECISION NOT NULL,
+      value_usd  DOUBLE PRECISION,
       snapped_at TIMESTAMP DEFAULT now()
     )
   `);
 
-  // ── signals 컬럼 추가 (없으면 추가) ─────────────────────────────
-  for (const [col, type] of [['trace_id', 'VARCHAR'], ['block_reason', 'VARCHAR']]) {
-    try { await run(`ALTER TABLE signals ADD COLUMN ${col} ${type}`); } catch { /* 이미 있으면 무시 */ }
+  // signals 컬럼 추가 (없으면 추가)
+  for (const [col, type] of [['trace_id', 'TEXT'], ['block_reason', 'TEXT']]) {
+    try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
 
+  // trades TP/SL 컬럼
+  for (const [col, type] of [
+    ['tp_price', 'DOUBLE PRECISION'], ['sl_price', 'DOUBLE PRECISION'],
+    ['tp_order_id', 'TEXT'], ['sl_order_id', 'TEXT'],
+    ['tp_sl_set', 'BOOLEAN DEFAULT false'],
+  ]) {
+    try { await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
+  }
+
+  // 스키마 버전 기록
   try {
-    const rows = await query(`SELECT version FROM schema_migrations WHERE version = 1`);
-    if (rows.length === 0) {
-      await run(`INSERT INTO schema_migrations (version, name) VALUES (1, 'initial_schema')`);
-    }
-    const v2 = await query(`SELECT version FROM schema_migrations WHERE version = 2`);
-    if (v2.length === 0) {
-      await run(`INSERT INTO schema_migrations (version, name) VALUES (2, 'strategy_pool_risk_log_asset_snapshot')`);
-    }
-    // v3: trades 테이블 TP/SL 컬럼 추가
-    const v3 = await query(`SELECT version FROM schema_migrations WHERE version = 3`);
-    if (v3.length === 0) {
-      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_price DOUBLE`);
-      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS sl_price DOUBLE`);
-      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_order_id VARCHAR`);
-      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS sl_order_id VARCHAR`);
-      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS tp_sl_set BOOLEAN DEFAULT false`);
-      await run(`INSERT INTO schema_migrations (version, name) VALUES (3, 'trades_tp_sl_columns')`);
+    for (const [v, name] of [
+      [1, 'initial_schema'],
+      [2, 'strategy_pool_risk_log_asset_snapshot'],
+      [3, 'trades_tp_sl_columns'],
+    ]) {
+      await run(
+        `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [v, name],
+      );
     }
   } catch { /* 무시 */ }
 
-  // WAL → 메인 DB 플러시 (ALTER TABLE ADD COLUMN WAL 재생 버그 방지)
-  try { await run('CHECKPOINT'); } catch { /* 무시 */ }
-
-  console.log(`✅ DB 스키마 초기화 완료: ${DB_PATH}`);
+  console.log(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
 }
 
 // ─── analysis ───────────────────────────────────────────────────────
@@ -191,7 +172,7 @@ export async function initSchema() {
 export async function insertAnalysis({ symbol, analyst, signal, confidence, reasoning, metadata, exchange = 'binance' }) {
   await run(
     `INSERT INTO analysis (symbol, analyst, signal, confidence, reasoning, metadata, exchange)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [symbol, analyst, signal, confidence ?? null, reasoning ?? null,
      metadata ? JSON.stringify(metadata) : null, exchange],
   );
@@ -200,9 +181,9 @@ export async function insertAnalysis({ symbol, analyst, signal, confidence, reas
 export async function getRecentAnalysis(symbol, minutesBack = 30) {
   return query(
     `SELECT * FROM analysis
-     WHERE symbol = ? AND created_at > now() - INTERVAL '${minutesBack} minutes'
+     WHERE symbol = $1 AND created_at > now() - INTERVAL '1 minute' * $2
      ORDER BY created_at DESC`,
-    [symbol],
+    [symbol, minutesBack],
   );
 }
 
@@ -211,7 +192,7 @@ export async function getRecentAnalysis(symbol, minutesBack = 30) {
 export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance' }) {
   const rows = await query(
     `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
      RETURNING id`,
     [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange],
   );
@@ -219,25 +200,23 @@ export async function insertSignal({ symbol, action, amountUsdt, confidence, rea
 }
 
 export async function updateSignalStatus(id, status) {
-  await run(`UPDATE signals SET status = ? WHERE id = ?`, [status, id]);
+  await run(`UPDATE signals SET status = $1 WHERE id = $2`, [status, id]);
 }
 
-/** 네메시스 조정 금액 반영 */
 export async function updateSignalAmount(id, amountUsdt) {
-  await run(`UPDATE signals SET amount_usdt = ? WHERE id = ?`, [amountUsdt, id]);
+  await run(`UPDATE signals SET amount_usdt = $1 WHERE id = $2`, [amountUsdt, id]);
 }
 
 export async function getPendingSignals(exchange) {
   if (exchange) {
-    return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = ? ORDER BY created_at ASC`, [exchange]);
+    return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = $1 ORDER BY created_at ASC`, [exchange]);
   }
   return query(`SELECT * FROM signals WHERE status = 'pending' ORDER BY created_at ASC`);
 }
 
-/** 네메시스 승인 완료된 신호 조회 (헤파이스토스 실행 대상) */
 export async function getApprovedSignals(exchange) {
   if (exchange) {
-    return query(`SELECT * FROM signals WHERE status = 'approved' AND exchange = ? ORDER BY created_at ASC`, [exchange]);
+    return query(`SELECT * FROM signals WHERE status = 'approved' AND exchange = $1 ORDER BY created_at ASC`, [exchange]);
   }
   return query(`SELECT * FROM signals WHERE status = 'approved' ORDER BY created_at ASC`);
 }
@@ -247,16 +226,17 @@ export async function getApprovedSignals(exchange) {
 export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false }) {
   await run(
     `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [signalId ?? null, symbol, side, amount, price, totalUsdt ?? null, paper !== false, exchange,
      tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false],
   );
 }
 
 export async function getTradeHistory(symbol, limit = 50) {
-  const params = symbol ? [symbol] : [];
-  const where  = symbol ? 'WHERE symbol = ?' : '';
-  return query(`SELECT * FROM trades ${where} ORDER BY executed_at DESC LIMIT ${limit}`, params);
+  if (symbol) {
+    return query(`SELECT * FROM trades WHERE symbol = $1 ORDER BY executed_at DESC LIMIT $2`, [symbol, limit]);
+  }
+  return query(`SELECT * FROM trades ORDER BY executed_at DESC LIMIT $1`, [limit]);
 }
 
 // ─── positions ──────────────────────────────────────────────────────
@@ -264,20 +244,19 @@ export async function getTradeHistory(symbol, limit = 50) {
 export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance' }) {
   await run(
     `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, exchange, updated_at)
-     VALUES (?, ?, ?, ?, ?, now())
+     VALUES ($1, $2, $3, $4, $5, now())
      ON CONFLICT (symbol) DO UPDATE SET
-       amount         = excluded.amount,
-       avg_price      = excluded.avg_price,
-       unrealized_pnl = excluded.unrealized_pnl,
-       exchange       = excluded.exchange,
-       updated_at     = excluded.updated_at`,
+       amount         = EXCLUDED.amount,
+       avg_price      = EXCLUDED.avg_price,
+       unrealized_pnl = EXCLUDED.unrealized_pnl,
+       exchange       = EXCLUDED.exchange,
+       updated_at     = EXCLUDED.updated_at`,
     [symbol, amount, avgPrice, unrealizedPnl ?? 0, exchange],
   );
 }
 
 export async function getPosition(symbol) {
-  const rows = await query(`SELECT * FROM positions WHERE symbol = ?`, [symbol]);
-  return rows[0] || null;
+  return get(`SELECT * FROM positions WHERE symbol = $1`, [symbol]);
 }
 
 export async function getAllPositions() {
@@ -285,7 +264,7 @@ export async function getAllPositions() {
 }
 
 export async function deletePosition(symbol) {
-  await run(`DELETE FROM positions WHERE symbol = ?`, [symbol]);
+  await run(`DELETE FROM positions WHERE symbol = $1`, [symbol]);
 }
 
 // ─── 집계 ───────────────────────────────────────────────────────────
@@ -296,7 +275,7 @@ export async function getTodayPnl() {
       SUM(CASE WHEN side='sell' THEN total_usdt ELSE -total_usdt END) AS pnl,
       COUNT(*) AS trade_count
     FROM trades
-    WHERE executed_at::DATE = current_date
+    WHERE executed_at::date = current_date
   `);
   return rows[0] || { pnl: 0, trade_count: 0 };
 }
@@ -309,12 +288,12 @@ export async function upsertStrategy(s) {
       (strategy_name, market, source, source_url,
        entry_condition, exit_condition, risk_management,
        applicable_timeframe, quality_score, summary, applicable_now, collected_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,now())
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
     ON CONFLICT (strategy_name) DO UPDATE SET
-      quality_score        = excluded.quality_score,
-      summary              = excluded.summary,
-      applicable_now       = excluded.applicable_now,
-      collected_at         = excluded.collected_at
+      quality_score        = EXCLUDED.quality_score,
+      summary              = EXCLUDED.summary,
+      applicable_now       = EXCLUDED.applicable_now,
+      collected_at         = EXCLUDED.collected_at
   `, [
     s.strategy_name, s.market, s.source ?? null, s.source_url ?? null,
     s.entry_condition ?? null, s.exit_condition ?? null, s.risk_management ?? null,
@@ -340,8 +319,8 @@ export async function recordStrategyResult(strategyName, won) {
   await run(`
     UPDATE strategy_pool
     SET applied_count = applied_count + 1,
-        win_rate = (COALESCE(win_rate, 0.5) * applied_count + ?) / (applied_count + 1)
-    WHERE strategy_name = ?
+        win_rate = (COALESCE(win_rate, 0.5) * applied_count + $1) / (applied_count + 1)
+    WHERE strategy_name = $2
   `, [won ? 1 : 0, strategyName]);
 }
 
@@ -350,7 +329,7 @@ export async function recordStrategyResult(strategyName, won) {
 export async function insertRiskLog({ traceId, symbol, exchange, decision, riskScore, reason }) {
   await run(
     `INSERT INTO risk_log (trace_id, symbol, exchange, decision, risk_score, reason)
-     VALUES (?,?,?,?,?,?)`,
+     VALUES ($1,$2,$3,$4,$5,$6)`,
     [traceId, symbol ?? null, exchange ?? null, decision, riskScore ?? null, reason ?? null],
   );
 }
@@ -358,25 +337,24 @@ export async function insertRiskLog({ traceId, symbol, exchange, decision, riskS
 // ─── asset_snapshot ──────────────────────────────────────────────────
 
 export async function insertAssetSnapshot(equity, valueUsd = null) {
-  await run(`INSERT INTO asset_snapshot (equity, value_usd) VALUES (?,?)`, [equity, valueUsd]);
+  await run(`INSERT INTO asset_snapshot (equity, value_usd) VALUES ($1,$2)`, [equity, valueUsd]);
 }
 
 export async function getLatestEquity() {
-  const rows = await query(`SELECT equity FROM asset_snapshot ORDER BY snapped_at DESC LIMIT 1`);
-  return rows[0]?.equity ?? null;
+  const row = await get(`SELECT equity FROM asset_snapshot ORDER BY snapped_at DESC LIMIT 1`);
+  return row?.equity ?? null;
 }
 
 export async function getEquityHistory(limit = 200) {
-  return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT ${limit}`);
+  return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT $1`, [limit]);
 }
 
 export function close() {
-  if (_conn) { _conn.close(); _conn = null; }
-  if (_db)   { _db.close();   _db   = null; }
+  // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
 }
 
 export default {
-  query, run, initSchema,
+  query, run, get, initSchema,
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, updateSignalAmount, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory,

@@ -5,16 +5,14 @@
  *
  * 매일 1회 실행 (launchd: ai.claude.dexter.daily)
  * - 덱스터 당일 점검 이력 집계
- * - 루나팀 드라이런 거래·포지션 현황 (DuckDB)
- * - 스카팀 예약 현황 (SQLite)
+ * - 루나팀 거래·포지션 현황 (PostgreSQL investment 스키마)
+ * - 스카팀 예약 현황 (PostgreSQL reservation 스키마)
  * - 텔레그램 발송
  */
 
 const fs   = require('fs');
 const path = require('path');
-const os   = require('os');
 const cfg  = require('./config');
-const { execSync } = require('child_process');
 
 // ── 팀 이름 (변경 시 이 상수만 수정)
 const TEAM_SKA  = '스카팀';
@@ -60,27 +58,6 @@ function parseDexterLog(today) {
   return result;
 }
 
-// ─── DB 쿼리 공통 ────────────────────────────────────────────────────
-
-function resolveModule(botPath, moduleName) {
-  const local = path.join(botPath, 'node_modules', moduleName);
-  const root  = path.join(cfg.ROOT, 'node_modules', moduleName);
-  return fs.existsSync(local) ? local : root;
-}
-
-function runScript(script) {
-  const tmp = path.join(os.tmpdir(), `dexter-daily-${Date.now()}.js`);
-  try {
-    fs.writeFileSync(tmp, script);
-    const out = execSync(`node "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
-    return JSON.parse(out.trim() || 'null');
-  } catch {
-    return null;
-  } finally {
-    try { fs.unlinkSync(tmp); } catch {}
-  }
-}
-
 // ─── 자동 픽스 이력 ─────────────────────────────────────────────────
 
 function getTodayFixes(today) {
@@ -93,100 +70,48 @@ function getTodayFixes(today) {
   }
 }
 
-// ─── 루나팀 DuckDB 현황 ─────────────────────────────────────────────
+// ─── 루나팀 PostgreSQL 현황 ─────────────────────────────────────────
 
-function getLunaSummary(today) {
-  const duckdbPath = resolveModule(cfg.BOTS.investment, 'duckdb');
-  if (!fs.existsSync(duckdbPath) || !fs.existsSync(cfg.DBS.investment)) {
+async function getLunaSummary(today) {
+  const pgPool = require('../../../packages/core/lib/pg-pool');
+  try {
+    const [tradesRow, signalRows, posRow] = await Promise.all([
+      pgPool.get('investment',
+        `SELECT COUNT(*) AS cnt, SUM(CASE WHEN paper THEN 1 ELSE 0 END) AS paper_cnt
+         FROM trades WHERE executed_at::date = $1`, [today]),
+      pgPool.query('investment',
+        `SELECT action, COUNT(*) AS cnt FROM signals WHERE created_at::date = $1 GROUP BY action`, [today]),
+      pgPool.get('investment', `SELECT COUNT(*) AS cnt FROM positions WHERE amount > 0`),
+    ]);
+    return {
+      trades:    Number(tradesRow?.cnt    ?? 0),
+      dryRun:    (Number(tradesRow?.paper_cnt ?? 0) > 0) || Number(tradesRow?.cnt ?? 0) === 0,
+      signals:   signalRows.map(r => ({ action: r.action, cnt: Number(r.cnt) })),
+      positions: Number(posRow?.cnt ?? 0),
+    };
+  } catch {
     return null;
   }
-
-  const script = `
-'use strict';
-const duckdb = require(${JSON.stringify(duckdbPath)});
-const db = new duckdb.Database(${JSON.stringify(cfg.DBS.investment)});
-const conn = db.connect();
-
-const today = ${JSON.stringify(today)};
-
-// 오늘 거래 수 + 드라이런 여부
-conn.all(
-  "SELECT CAST(COUNT(*) AS INTEGER) as cnt, CAST(SUM(CASE WHEN dry_run THEN 1 ELSE 0 END) AS INTEGER) as dry_cnt FROM trades WHERE DATE(executed_at) = ?",
-  [today],
-  (err, trades) => {
-    if (err) { process.stdout.write(JSON.stringify(null)); conn.close(); db.close(); return; }
-
-    // 오늘 신호 수
-    conn.all(
-      "SELECT CAST(COUNT(*) AS INTEGER) as cnt, action FROM signals WHERE DATE(created_at) = ? GROUP BY action",
-      [today],
-      (err2, signals) => {
-        if (err2) { process.stdout.write(JSON.stringify(null)); conn.close(); db.close(); return; }
-
-        // 현재 포지션 수
-        conn.all(
-          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM positions WHERE amount > 0",
-          [],
-          (err3, pos) => {
-            const result = {
-              trades: trades[0]?.cnt ?? 0,
-              dryRun: (trades[0]?.dry_cnt ?? 0) > 0 || trades[0]?.cnt === 0,
-              signals: signals,
-              positions: pos?.[0]?.cnt ?? 0,
-            };
-            process.stdout.write(JSON.stringify(result));
-            conn.close(); db.close();
-          }
-        );
-      }
-    );
-  }
-);
-`;
-
-  return runScript(script);
 }
 
-// ─── 스카팀 SQLite 현황 ──────────────────────────────────────────────
+// ─── 스카팀 PostgreSQL 현황 ──────────────────────────────────────────
 
-function getSkaSummary(today) {
-  const sqlitePath = resolveModule(cfg.BOTS.reservation, 'better-sqlite3');
-  if (!fs.existsSync(sqlitePath) || !fs.existsSync(cfg.DBS.reservation)) {
+async function getSkaSummary(today) {
+  const pgPool = require('../../../packages/core/lib/pg-pool');
+  try {
+    const [totalRow, completedRow, cancelledRow] = await Promise.all([
+      pgPool.get('reservation', 'SELECT COUNT(*) AS cnt FROM reservations WHERE date = $1 AND seen_only = 0', [today]),
+      pgPool.get('reservation', "SELECT COUNT(*) AS cnt FROM reservations WHERE date = $1 AND status = 'completed' AND seen_only = 0", [today]),
+      pgPool.get('reservation', "SELECT COUNT(*) AS cnt FROM reservations WHERE date = $1 AND status = 'cancelled'", [today]),
+    ]);
+    return {
+      total:     Number(totalRow?.cnt     ?? 0),
+      confirmed: Number(completedRow?.cnt ?? 0),
+      cancelled: Number(cancelledRow?.cnt ?? 0),
+    };
+  } catch {
     return null;
   }
-
-  const script = `
-'use strict';
-const Database = require(${JSON.stringify(sqlitePath)});
-const db = new Database(${JSON.stringify(cfg.DBS.reservation)}, { readonly: true });
-const today = ${JSON.stringify(today)};
-
-try {
-  const reservations = db.prepare(
-    "SELECT COUNT(*) AS cnt FROM reservations WHERE date = ?"
-  ).get(today);
-
-  const confirmed = db.prepare(
-    "SELECT COUNT(*) AS cnt FROM reservations WHERE date = ? AND confirmed = 1"
-  ).get(today);
-
-  const cancelled = db.prepare(
-    "SELECT COUNT(*) AS cnt FROM reservations WHERE date = ? AND status = 'cancelled'"
-  ).get(today);
-
-  process.stdout.write(JSON.stringify({
-    total:     reservations?.cnt ?? 0,
-    confirmed: confirmed?.cnt ?? 0,
-    cancelled: cancelled?.cnt ?? 0,
-  }));
-} catch (e) {
-  process.stdout.write(JSON.stringify(null));
-} finally {
-  db.close();
-}
-`;
-
-  return runScript(script);
 }
 
 // ─── 보고서 포맷 ─────────────────────────────────────────────────────
@@ -264,8 +189,7 @@ async function run({ telegram = false, print = true } = {}) {
   const today = todayKST();
 
   const dexterLog = parseDexterLog(today);
-  const luna      = getLunaSummary(today);
-  const ska       = getSkaSummary(today);
+  const [luna, ska] = await Promise.all([getLunaSummary(today), getSkaSummary(today)]);
   const fixes     = getTodayFixes(today);
 
   const report = buildReport(today, dexterLog, luna, ska, fixes);
