@@ -17,6 +17,7 @@ const path   = require('path');
 const os     = require('os');
 
 const { getOpenAIKey }              = require('../../../packages/core/lib/llm-keys');
+const { getTimeout }                = require('../../../packages/core/lib/llm-timeouts');
 const { getPatterns, getNewErrors } = require('./error-history');
 
 const INSIGHTS_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-insights.json');
@@ -115,7 +116,7 @@ async function analyzeWithAI(results, elapsed, level) {
   }
 
   const model  = level >= 4 ? 'gpt-4o' : 'gpt-4o-mini';
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, timeout: getTimeout(model), maxRetries: 1 });
 
   // 1. 이슈 항목 추출
   const issues = results.flatMap(r =>

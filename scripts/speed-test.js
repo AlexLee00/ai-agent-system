@@ -100,11 +100,20 @@ const PROVIDER_ICONS = {
 };
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
-const args        = process.argv.slice(2);
-const runsArg     = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
-const doApply     = args.includes('--apply');
-const doTelegram  = args.includes('--telegram');
-const modelArg    = args.find(a => a.startsWith('--model='))?.split('=')[1];
+const args              = process.argv.slice(2);
+const runsArg           = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
+const doApply           = args.includes('--apply');
+const doTelegram        = args.includes('--telegram');
+const doUpdateTimeouts  = args.includes('--update-timeouts') || args.includes('--apply');
+const modelArg          = args.find(a => a.startsWith('--model='))?.split('=')[1];
+
+// 타임아웃 자동 업데이트 모듈 (없으면 무음)
+let _calcTimeout = null, _updateTimeouts = null;
+try {
+  const lt = require('../packages/core/lib/llm-timeouts');
+  _calcTimeout    = lt.calcTimeout;
+  _updateTimeouts = lt.updateTimeouts;
+} catch { /* packages/core 없는 환경 무시 */ }
 
 function log(msg) { process.stdout.write(msg + '\n'); }
 function dim(s)   { return `\x1b[2m${s}\x1b[0m`; }
@@ -592,6 +601,24 @@ async function main() {
     }
   } else if (fastest) {
     log(`  ${green('✅ 현재 모델이 가장 빠릅니다')}`);
+  }
+
+  // ── 타임아웃 자동 업데이트 (측정값 기반) ──────────────────────────
+  if (doUpdateTimeouts && _calcTimeout && _updateTimeouts) {
+    const updates = {};
+    for (const r of results) {
+      if (r.ok && r.total != null) {
+        const newMs = _calcTimeout(r.modelId, r.total);
+        updates[r.modelId] = newMs;
+        // short name도 등록 (provider/model → model)
+        const short = r.modelId.split('/').pop();
+        if (short !== r.modelId) updates[short] = newMs;
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      _updateTimeouts(updates);
+      log(dim(`\n  ⏱️ 타임아웃 갱신 (${Object.keys(updates).length}개): ${path.basename(require('../packages/core/lib/llm-timeouts').OVERRIDE_FILE)}`));
+    }
   }
 
   if (doTelegram) {

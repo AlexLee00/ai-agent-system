@@ -170,7 +170,7 @@ async function setCache(team, requestType, input, response, model) {
         expires_at      = EXCLUDED.expires_at,
         hit_count       = 0
     `, [key, team, requestType, summary, respStr, model, ttl, nowStr, expires]);
-  } catch { /* 캐시 저장 실패는 무음 */ }
+  } catch (e) { console.warn('[llm-cache] 캐시 저장 실패 (메인 로직에 영향 없음):', e.message); }
 }
 
 /**
