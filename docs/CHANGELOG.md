@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-08] — 제이 자연어 능력 향상 v2.0
+
+### Added
+- **intent-parser.js**: Intent 53개 (기존 36 + 17 신규), 슬래시 명령 7개 추가
+- **CoT + Few-shot 프롬프트**: 2단계 Chain-of-Thought + 10개 예시 + 동적 DB 주입
+- **`loadDynamicExamples()`**: unrecognized_intents DB에서 5분 캐시 동적 Few-shot 주입
+- **unrecognized_intents 테이블** (claude 스키마): 미인식 명령 자동 기록
+- **chat 폴백 2단계**: TEAM_KEYWORDS → delegateToTeamLead → geminiChatFallback
+- **17개 신규 router 핸들러**: Shadow, LLM 졸업, 투자 일지, 덱스터 즉시 실행 등
+- **`promoteToIntent()`**: 미인식 명령 → nlp-learnings.json 즉시 승격 + 5분 내 자동 반영
+- **HELP_TEXT v2.0**: 전체 명령 + 자동학습 섹션 추가
+
+### Fixed
+- ska_query 패턴 bare `|통계` 제거 → "캐시 통계" 오매칭 버그 수정
+- OpenClaw `openclaw.json` `agents.teamLeads` 미인식 키 → `openclaw doctor --fix` 제거
+
 ---
 
 ## [Unreleased]

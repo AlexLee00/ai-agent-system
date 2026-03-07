@@ -4,6 +4,35 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-08
+
+### 제이 자연어 능력 향상 v2.0 (커밋: `4c9efa1`)
+- **intent-parser.js 전면 재작성**
+  - Intent 36→53개 (+17개): shadow_report, shadow_mismatches, llm_cost, cache_stats, llm_graduation, dexter_report, dexter_quickcheck, doctor_history, analyst_accuracy, analyst_weight, trade_journal, trade_review, trade_performance, tp_sl_status, stability, telegram_status, unrecognized_report, promote_intent, chat
+  - 신규 슬래시 명령: /shadow, /graduation, /stability, /journal, /performance, /unrec, /promote
+  - CoT 2단계 + Few-shot 10개 예시 → LLM 프롬프트 품질 향상
+  - `loadDynamicExamples()`: unrecognized_intents DB에서 5분 캐시로 동적 Few-shot 주입
+  - 최종 폴백: unknown → chat (자유 대화 허용)
+  - **버그 수정**: ska_query 패턴 bare `|통계` 제거 → "캐시 통계" 오매칭 방지
+- **router.js 대규모 확장**
+  - unrecognized_intents PostgreSQL 테이블 (claude 스키마) + `logUnrecognizedIntent()`, `buildUnrecognizedReport()`, `promoteToIntent()`
+  - chat 폴백 2단계: TEAM_KEYWORDS regex → `delegateToTeamLead()` → `geminiChatFallback()`
+  - 17개 신규 case 핸들러: Shadow 리포트, LLM 졸업, 투자 일지, 덱스터 즉시 실행 등
+  - HELP_TEXT v2.0: 전체 명령 반영 + 자동학습 안내 섹션
+- 테스트: 24/24 케이스 통과
+- 체크섬 갱신 (9개 파일)
+
+### OpenClaw 게이트웨이 설정 오류 수정
+- **원인**: `~/.openclaw/openclaw.json`에 `agents.teamLeads` 미인식 키 → config 유효성 실패 → exitCode: 1 반복
+- **수정**: `openclaw doctor --fix` → 키 자동 제거
+- **패턴 이력 초기화**: OpenClaw 메모리 반복 패턴 8건 삭제
+- **덱스터 결과**: ❌ 0건, ⚠️ 2건 (OpenClaw 메모리 518MB — 추이 관찰)
+
+### 변경 파일
+- `bots/orchestrator/lib/intent-parser.js` (전면 재작성)
+- `bots/orchestrator/src/router.js` (대규모 확장)
+- `~/.openclaw/openclaw.json` (코드 외 설정 파일)
+
 ---
 
 
