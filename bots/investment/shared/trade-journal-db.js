@@ -30,7 +30,7 @@ export async function initJournalSchema() {
   // ── trade_journal: 상세 거래 기록 ──────────────────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS trade_journal (
-      id                VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      id                VARCHAR DEFAULT gen_random_uuid()::text,
       trade_id          VARCHAR NOT NULL UNIQUE,
       signal_id         VARCHAR,
 
@@ -40,20 +40,20 @@ export async function initJournalSchema() {
       is_paper          BOOLEAN NOT NULL DEFAULT true,
 
       entry_time        BIGINT NOT NULL,
-      entry_price       DOUBLE NOT NULL,
-      entry_size        DOUBLE NOT NULL,
-      entry_value       DOUBLE NOT NULL,
+      entry_price       DOUBLE PRECISION NOT NULL,
+      entry_size        DOUBLE PRECISION NOT NULL,
+      entry_value       DOUBLE PRECISION NOT NULL,
       direction         VARCHAR NOT NULL DEFAULT 'long',
 
       exit_time         BIGINT,
-      exit_price        DOUBLE,
-      exit_value        DOUBLE,
+      exit_price        DOUBLE PRECISION,
+      exit_value        DOUBLE PRECISION,
       exit_reason       VARCHAR,
 
-      pnl_amount        DOUBLE,
-      pnl_percent       DOUBLE,
-      fee_total         DOUBLE,
-      pnl_net           DOUBLE,
+      pnl_amount        DOUBLE PRECISION,
+      pnl_percent       DOUBLE PRECISION,
+      fee_total         DOUBLE PRECISION,
+      pnl_net           DOUBLE PRECISION,
 
       status            VARCHAR NOT NULL DEFAULT 'open',
       hold_duration     BIGINT,
@@ -63,8 +63,8 @@ export async function initJournalSchema() {
       execution_time    BIGINT,
       signal_to_exec_ms BIGINT,
 
-      tp_price          DOUBLE,
-      sl_price          DOUBLE,
+      tp_price          DOUBLE PRECISION,
+      sl_price          DOUBLE PRECISION,
       tp_order_id       VARCHAR,
       sl_order_id       VARCHAR,
       tp_sl_set         BOOLEAN DEFAULT false,
@@ -78,7 +78,7 @@ export async function initJournalSchema() {
   // ── trade_rationale: 판단 근거 ─────────────────────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS trade_rationale (
-      id                     VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      id                     VARCHAR DEFAULT gen_random_uuid()::text,
       trade_id               VARCHAR,
       signal_id              VARCHAR,
 
@@ -88,18 +88,18 @@ export async function initJournalSchema() {
       hermes_signal          VARCHAR,
 
       zeus_bull_case         VARCHAR,
-      zeus_target            DOUBLE,
+      zeus_target            DOUBLE PRECISION,
       athena_bear_case       VARCHAR,
-      athena_risk            DOUBLE,
+      athena_risk            DOUBLE PRECISION,
 
       luna_decision          VARCHAR NOT NULL,
       luna_reasoning         VARCHAR NOT NULL,
-      luna_confidence        DOUBLE,
+      luna_confidence        DOUBLE PRECISION,
 
       nemesis_verdict        VARCHAR,
       nemesis_notes          VARCHAR,
-      position_size_original DOUBLE,
-      position_size_approved DOUBLE,
+      position_size_original DOUBLE PRECISION,
+      position_size_approved DOUBLE PRECISION,
 
       created_at             BIGINT NOT NULL
     )
@@ -110,7 +110,7 @@ export async function initJournalSchema() {
   // ── trade_review: 사후 평가 ────────────────────────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS trade_review (
-      id                  VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      id                  VARCHAR DEFAULT gen_random_uuid()::text,
       trade_id            VARCHAR NOT NULL,
 
       entry_timing        VARCHAR,
@@ -120,8 +120,8 @@ export async function initJournalSchema() {
       tp_sl_protected     BOOLEAN,
       execution_speed     VARCHAR,
 
-      max_favorable       DOUBLE,
-      max_adverse         DOUBLE,
+      max_favorable       DOUBLE PRECISION,
+      max_adverse         DOUBLE PRECISION,
 
       aria_accurate       BOOLEAN,
       sophia_accurate     BOOLEAN,
@@ -140,27 +140,27 @@ export async function initJournalSchema() {
   // ── performance_daily: 일간 성과 ───────────────────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS performance_daily (
-      id              VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      id              VARCHAR DEFAULT gen_random_uuid()::text,
       date            VARCHAR NOT NULL,
       market          VARCHAR NOT NULL,
 
       total_trades    INTEGER DEFAULT 0,
       winning_trades  INTEGER DEFAULT 0,
       losing_trades   INTEGER DEFAULT 0,
-      win_rate        DOUBLE,
+      win_rate        DOUBLE PRECISION,
 
-      pnl_gross       DOUBLE DEFAULT 0,
-      pnl_net         DOUBLE DEFAULT 0,
-      fees_total      DOUBLE DEFAULT 0,
+      pnl_gross       DOUBLE PRECISION DEFAULT 0,
+      pnl_net         DOUBLE PRECISION DEFAULT 0,
+      fees_total      DOUBLE PRECISION DEFAULT 0,
 
-      best_trade_pnl  DOUBLE,
-      worst_trade_pnl DOUBLE,
+      best_trade_pnl  DOUBLE PRECISION,
+      worst_trade_pnl DOUBLE PRECISION,
       avg_hold_time   BIGINT,
 
-      aria_accuracy   DOUBLE,
-      sophia_accuracy DOUBLE,
-      oracle_accuracy DOUBLE,
-      hermes_accuracy DOUBLE,
+      aria_accuracy   DOUBLE PRECISION,
+      sophia_accuracy DOUBLE PRECISION,
+      oracle_accuracy DOUBLE PRECISION,
+      hermes_accuracy DOUBLE PRECISION,
 
       created_at      BIGINT NOT NULL,
 
@@ -171,7 +171,7 @@ export async function initJournalSchema() {
   // ── luna_monitor: 에러율 + API + 실행속도 추적 ──────────────────────
   await run(`
     CREATE TABLE IF NOT EXISTS luna_monitor (
-      id         VARCHAR DEFAULT gen_random_uuid()::VARCHAR,
+      id         VARCHAR DEFAULT gen_random_uuid()::text,
       timestamp  BIGINT NOT NULL,
       event_type VARCHAR NOT NULL,
       exchange   VARCHAR,
@@ -189,9 +189,6 @@ export async function initJournalSchema() {
       await run(`INSERT INTO schema_migrations (version, name) VALUES (4, 'trade_journal_system')`);
     }
   } catch { /* 무시 */ }
-
-  // WAL 플러시
-  try { await run('CHECKPOINT'); } catch { /* 무시 */ }
 
   console.log('✅ 매매일지 스키마 초기화 완료');
 }

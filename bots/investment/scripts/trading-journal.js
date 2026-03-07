@@ -17,27 +17,10 @@
 
 import * as db from '../shared/db.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
-import { join, dirname }    from 'path';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const require   = createRequire(import.meta.url);
-
-// ─── SQLite (token_usage, claude-team.db) ───────────────────────────
-
-let _sqliteDb = null;
-function getSqlite() {
-  if (_sqliteDb) return _sqliteDb;
-  try {
-    const Database = require('better-sqlite3');
-    const os = require('os');
-    const path = require('path');
-    const dbPath = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
-    _sqliteDb = new Database(dbPath, { readonly: true });
-    return _sqliteDb;
-  } catch { return null; }
-}
+const require = createRequire(import.meta.url);
+const pgPool  = require('../../../packages/core/lib/pg-pool');
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
 
@@ -136,13 +119,11 @@ function calcPnl(trades) {
   return pnlMap;
 }
 
-// ─── 토큰 사용 이력 (SQLite) ────────────────────────────────────────
+// ─── 토큰 사용 이력 (PostgreSQL claude 스키마) ──────────────────────
 
-function fetchTokenUsage(fromDate, toDate) {
-  const sqlite = getSqlite();
-  if (!sqlite) return [];
+async function fetchTokenUsage(fromDate, toDate) {
   try {
-    return sqlite.prepare(`
+    return await pgPool.query('claude', `
       SELECT
         bot_name,
         model,
@@ -156,10 +137,10 @@ function fetchTokenUsage(fromDate, toDate) {
         SUM(cost_usd)   AS total_cost,
         COUNT(*)        AS call_count
       FROM token_usage
-      WHERE team = 'investment' AND date_kst BETWEEN ? AND ?
+      WHERE team = 'investment' AND date_kst BETWEEN $1 AND $2
       GROUP BY bot_name, model, task_type
       ORDER BY total_tokens DESC
-    `).all(fromDate, toDate);
+    `, [fromDate, toDate]);
   } catch { return []; }
 }
 
@@ -271,7 +252,7 @@ async function main() {
   ]);
 
   const pnlMap    = calcPnl(trades);
-  const tokenRows = fetchTokenUsage(from, to);
+  const tokenRows = await fetchTokenUsage(from, to);
 
   // ─── 출력 조립 ───
   const lines = [

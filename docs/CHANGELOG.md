@@ -9,6 +9,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ---
 
+## [v3.3.0] - 2026-03-07 — PostgreSQL 단일 DB 통합 마이그레이션
+
+### Changed
+- **DB 아키텍처 전면 통합**: SQLite 2종 + DuckDB 2종 → PostgreSQL 17 단일 DB (`jay`)
+  - `~/.openclaw/workspace/state.db` → `reservation` 스키마
+  - `~/.openclaw/workspace/claude-team.db` → `claude` 스키마
+  - `bots/investment/db/investment.duckdb` → `investment` 스키마
+  - `bots/ska/db/ska.duckdb` → `ska` 스키마
+
+### Added
+- **`packages/core/lib/pg-pool.js`**: Node.js PostgreSQL 커넥션 풀 싱글톤
+  - 스키마별 `search_path` 자동 설정
+  - `?` → `$N` 파라미터 자동 변환
+  - `prepare()` → `run/get/all()` better-sqlite3 호환 API
+- **`bots/ska/scripts/setup-db.py`**: ska PostgreSQL 스키마 초기화 (5개 테이블)
+
+### Removed
+- `duckdb` npm 패키지 (`bots/investment`) — KI-003 취약점 해결
+- `better-sqlite3` npm 패키지 (`bots/reservation`, `bots/orchestrator`)
+- `duckdb==1.2.0` pip 패키지 (`bots/ska`)
+
+### Fixed
+- **KI-003**: duckdb→node-gyp→tar npm audit high 취약점 — duckdb 완전 제거로 해결
+
+---
+
 ## [v3.2.0] - 2026-03-07 — 1주차 완료: 3계층 핵심 기반 구축
 
 ### Added

@@ -2,217 +2,145 @@
 
 /**
  * checks/database.js — DB 무결성 체크
- * - 스카팀 SQLite: 테이블 존재, row count, 파싱 테스트
- * - 루나팀 DuckDB: 테이블 존재, 스키마 버전, 데이터 파싱 테스트
+ * - 스카팀: PostgreSQL reservation 스키마 (연결, 테이블, 파싱)
+ * - 루나팀: PostgreSQL investment 스키마 (연결, 테이블, 신호 무결성)
+ * - 스카 분석: DuckDB ska 스키마 (ETL 최신성, MAPE) — Phase 5에서 PostgreSQL 전환 예정
  */
 
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 const cfg  = require('../config');
-const { execSync } = require('child_process');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
-// node_modules 경로 해석 (로컬 우선 → 루트 폴백)
-function resolveModule(botPath, moduleName) {
-  const local = path.join(botPath, 'node_modules', moduleName);
-  const root  = path.join(cfg.ROOT, 'node_modules', moduleName);
-  return fs.existsSync(local) ? local : root;
-}
 
-// 임시 스크립트 파일로 실행 (node -e 이스케이프 문제 회피)
-function runScript(script) {
-  const tmp = path.join(os.tmpdir(), `dexter-db-${Date.now()}.js`);
-  try {
-    fs.writeFileSync(tmp, script);
-    const out = execSync(`"${process.execPath}" "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
-    return JSON.parse(out.trim());
-  } finally {
-    try { fs.unlinkSync(tmp); } catch {}
-  }
-}
-
-// SQLite 쿼리 (better-sqlite3 활용)
-function sqliteQuery(sql) {
-  const modulePath = resolveModule(cfg.BOTS.reservation, 'better-sqlite3');
-  const script = `
-'use strict';
-const Database = require(${JSON.stringify(modulePath)});
-const db = new Database(${JSON.stringify(cfg.DBS.reservation)}, { readonly: true });
-const rows = db.prepare(${JSON.stringify(sql)}).all();
-process.stdout.write(JSON.stringify(rows));
-db.close();
-`;
-  try {
-    return runScript(script);
-  } catch (e) {
-    throw new Error(e.message.slice(0, 200));
-  }
-}
-
-// DuckDB 쿼리
-function duckdbQuery(sql) {
-  const modulePath = resolveModule(cfg.BOTS.investment, 'duckdb');
-  const script = `
-'use strict';
-const duckdb = require(${JSON.stringify(modulePath)});
-const db = new duckdb.Database(${JSON.stringify(cfg.DBS.investment)}, { access_mode: 'READ_ONLY' });
-const conn = db.connect();
-conn.all(${JSON.stringify(sql)}, (err, rows) => {
-  if (err) { process.stderr.write(JSON.stringify({ error: err.message })); process.exit(1); }
-  process.stdout.write(JSON.stringify(rows));
-  conn.close(); db.close();
-});
-`;
-  try {
-    return runScript(script);
-  } catch (e) {
-    throw new Error(e.message.slice(0, 200));
-  }
-}
-
-async function checkSQLite(items) {
-  // node_modules 존재 여부 — 봇 로컬 또는 루트 워크스페이스
-  const sqliteLocal = `${cfg.BOTS.reservation}/node_modules/better-sqlite3`;
-  const sqliteRoot  = `${cfg.ROOT}/node_modules/better-sqlite3`;
-  if (!fs.existsSync(sqliteLocal) && !fs.existsSync(sqliteRoot)) {
-    items.push({ label: 'SQLite (스카)', status: 'warn', detail: 'better-sqlite3 모듈 미설치' });
-    return;
-  }
-
-  // DB 파일 존재
-  if (!fs.existsSync(cfg.DBS.reservation)) {
-    items.push({ label: 'SQLite (스카)', status: 'warn', detail: 'DB 파일 없음' });
-    return;
-  }
-
+async function checkReservationPostgres(items) {
   const REQUIRED = ['reservations', 'kiosk_blocks', 'daily_summary'];
 
+  // DB 연결 확인
   try {
-    const tables = sqliteQuery("SELECT name FROM sqlite_master WHERE type='table'").map(r => r.name);
+    const ok = await pgPool.ping('reservation');
+    if (!ok) {
+      items.push({ label: 'PostgreSQL (스카 reservation)', status: 'error', detail: 'ping 실패' });
+      return;
+    }
+    items.push({ label: 'PostgreSQL (스카 reservation)', status: 'ok', detail: 'reservation 스키마 연결 정상' });
+  } catch (e) {
+    items.push({ label: 'PostgreSQL (스카 reservation)', status: 'error', detail: `연결 실패: ${e.message.slice(0, 100)}` });
+    return;
+  }
+
+  // row count 체크
+  for (const t of REQUIRED) {
+    try {
+      const row = await pgPool.get('reservation', `SELECT COUNT(*) AS cnt FROM ${t}`);
+      const cnt = Number(row?.cnt ?? 0);
+      items.push({ label: `  ${t}`, status: 'ok', detail: `${cnt}행` });
+    } catch (e) {
+      items.push({ label: `  ${t}`, status: 'error', detail: `조회 실패: ${e.message.slice(0, 100)}` });
+    }
+  }
+
+  // 데이터 파싱 테스트 (최근 1건 SELECT)
+  try {
+    await pgPool.get('reservation', 'SELECT * FROM reservations ORDER BY updated_at DESC LIMIT 1');
+    items.push({ label: 'reservation 파싱', status: 'ok', detail: 'SELECT/파싱 정상' });
+  } catch (e) {
+    items.push({ label: 'reservation 파싱', status: 'error', detail: e.message.slice(0, 100) });
+  }
+}
+
+async function checkInvestmentPostgres(items) {
+  const REQUIRED = ['analysis', 'signals', 'trades', 'positions', 'schema_migrations'];
+
+  // DB 연결 확인
+  try {
+    const ok = await pgPool.ping('investment');
+    if (!ok) {
+      items.push({ label: 'PostgreSQL (루나 investment)', status: 'error', detail: 'ping 실패' });
+      return;
+    }
+    items.push({ label: 'PostgreSQL (루나 investment)', status: 'ok', detail: 'investment 스키마 연결 정상' });
+  } catch (e) {
+    items.push({ label: 'PostgreSQL (루나 investment)', status: 'error', detail: `연결 실패: ${e.message.slice(0, 100)}` });
+    return;
+  }
+
+  // 테이블 존재 확인
+  try {
+    const tableRows = await pgPool.query('investment',
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'investment'");
+    const tables  = tableRows.map(r => r.table_name);
     const missing = REQUIRED.filter(t => !tables.includes(t));
 
     if (missing.length > 0) {
-      items.push({ label: 'SQLite 테이블', status: 'error', detail: `누락: ${missing.join(', ')}` });
+      items.push({ label: 'investment 테이블', status: 'error', detail: `누락: ${missing.join(', ')}` });
     } else {
-      items.push({ label: 'SQLite 테이블', status: 'ok', detail: `${tables.length}개 확인 (${REQUIRED.join(', ')})` });
+      items.push({ label: 'investment 테이블', status: 'ok', detail: `${tables.length}개 확인` });
     }
 
-    // row count 체크
-    for (const t of REQUIRED) {
-      if (tables.includes(t)) {
-        const rows = sqliteQuery(`SELECT COUNT(*) AS cnt FROM ${t}`);
-        const cnt  = rows[0]?.cnt ?? 0;
-        items.push({ label: `  ${t}`, status: 'ok', detail: `${cnt}행` });
-      }
-    }
-
-    // 데이터 파싱 테스트 (최근 1건 SELECT)
+    // 스키마 버전
     try {
-      sqliteQuery('SELECT * FROM reservations ORDER BY rowid DESC LIMIT 1');
-      items.push({ label: 'SQLite 파싱', status: 'ok', detail: 'SELECT/파싱 정상' });
-    } catch (e) {
-      items.push({ label: 'SQLite 파싱', status: 'error', detail: e.message });
-    }
-
-  } catch (e) {
-    items.push({ label: 'SQLite (스카)', status: 'error', detail: e.message });
-  }
-}
-
-async function checkDuckDB(items) {
-  // node_modules 존재 여부 — 봇 로컬 또는 루트 워크스페이스
-  const duckdbLocal = `${cfg.BOTS.investment}/node_modules/duckdb`;
-  const duckdbRoot  = `${cfg.ROOT}/node_modules/duckdb`;
-  if (!fs.existsSync(duckdbLocal) && !fs.existsSync(duckdbRoot)) {
-    items.push({ label: 'DuckDB (루나)', status: 'warn', detail: 'duckdb 모듈 미설치 (npm install 필요)' });
-    return;
-  }
-
-  // DB 파일 존재
-  if (!fs.existsSync(cfg.DBS.investment)) {
-    items.push({ label: 'DuckDB (루나)', status: 'warn', detail: 'DB 파일 없음 (setup-db.js 실행 필요)' });
-    return;
-  }
-
-  const REQUIRED = ['analysis', 'signals', 'trades', 'positions', 'schema_migrations'];
-
-  try {
-    const tableRows = duckdbQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='main'");
-    const tables    = tableRows.map(r => r.table_name);
-    const missing   = REQUIRED.filter(t => !tables.includes(t));
-
-    if (missing.length > 0) {
-      items.push({ label: 'DuckDB 테이블', status: 'error', detail: `누락: ${missing.join(', ')}` });
-    } else {
-      items.push({ label: 'DuckDB 테이블', status: 'ok', detail: `${tables.length}개 확인` });
-    }
-
-    // 스키마 버전 (BigInt 방지: CAST)
-    try {
-      const ver = duckdbQuery('SELECT CAST(MAX(version) AS INTEGER) as v FROM schema_migrations');
-      items.push({ label: 'DuckDB 스키마', status: 'ok', detail: `v${ver[0]?.v ?? 0}` });
+      const ver = await pgPool.get('investment', 'SELECT MAX(version) AS v FROM schema_migrations');
+      items.push({ label: 'investment 스키마', status: 'ok', detail: `v${ver?.v ?? 0}` });
     } catch {
-      items.push({ label: 'DuckDB 스키마', status: 'warn', detail: 'schema_migrations 조회 실패' });
+      items.push({ label: 'investment 스키마', status: 'warn', detail: 'schema_migrations 조회 실패' });
     }
 
-    // row count (BigInt 방지: CAST)
+    // row count
     for (const t of ['trades', 'positions', 'signals']) {
       if (tables.includes(t)) {
-        const rows = duckdbQuery(`SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM ${t}`);
-        items.push({ label: `  ${t}`, status: 'ok', detail: `${rows[0]?.cnt ?? 0}행` });
+        const row = await pgPool.get('investment', `SELECT COUNT(*) AS cnt FROM ${t}`);
+        items.push({ label: `  ${t}`, status: 'ok', detail: `${Number(row?.cnt ?? 0)}행` });
       }
     }
 
-    // 포지션 무결성 (음수 수량 체크, BigInt 방지: CAST)
+    // 포지션 무결성 (음수 수량 체크)
     if (tables.includes('positions')) {
-      const neg = duckdbQuery('SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM positions WHERE amount < 0');
-      const cnt = neg[0]?.cnt ?? 0;
+      const neg = await pgPool.get('investment', 'SELECT COUNT(*) AS cnt FROM positions WHERE amount < 0');
+      const cnt = Number(neg?.cnt ?? 0);
       items.push({
-        label:  'DuckDB 포지션 무결성',
+        label:  'investment 포지션 무결성',
         status: cnt > 0 ? 'error' : 'ok',
         detail: cnt > 0 ? `음수 수량 포지션 ${cnt}건` : '정상',
       });
     }
 
-    // 신호 exchange 불일치 체크 (예: BTC/USDT가 exchange='kis'로 저장된 경우)
-    // - 암호화폐 심볼(/ 포함) → exchange='binance' 이어야 함
-    // - KIS 국내 심볼(6자리 숫자) → exchange='kis' 이어야 함
+    // 신호 exchange 불일치 체크
     if (tables.includes('signals')) {
       try {
-        const mismatchCrypto = duckdbQuery(
-          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE symbol LIKE '%/%' AND exchange != 'binance' AND status NOT IN ('executed','failed','cancelled')"
-        );
-        const mismatchKis = duckdbQuery(
-          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE regexp_matches(symbol, '^\\d{6}$') AND exchange != 'kis' AND status NOT IN ('executed','failed','cancelled')"
-        );
-        const staleSignals = duckdbQuery(
-          "SELECT CAST(COUNT(*) AS INTEGER) as cnt FROM signals WHERE status IN ('pending','approved') AND created_at < NOW() - INTERVAL 2 HOUR"
-        );
+        const [mismatchCrypto, mismatchKis, staleSignals] = await Promise.all([
+          pgPool.get('investment',
+            "SELECT COUNT(*) AS cnt FROM signals WHERE symbol LIKE '%/%' AND exchange != 'binance' AND status NOT IN ('executed','failed','cancelled')"),
+          pgPool.get('investment',
+            "SELECT COUNT(*) AS cnt FROM signals WHERE symbol ~ '^[0-9]{6}$' AND exchange != 'kis' AND status NOT IN ('executed','failed','cancelled')"),
+          pgPool.get('investment',
+            "SELECT COUNT(*) AS cnt FROM signals WHERE status IN ('pending','approved') AND created_at < now() - INTERVAL '2 hours'"),
+        ]);
 
-        const mc = mismatchCrypto[0]?.cnt ?? 0;
-        const mk = mismatchKis[0]?.cnt ?? 0;
-        const ss = staleSignals[0]?.cnt ?? 0;
+        const mc = Number(mismatchCrypto?.cnt ?? 0);
+        const mk = Number(mismatchKis?.cnt    ?? 0);
+        const ss = Number(staleSignals?.cnt   ?? 0);
 
         if (mc > 0 || mk > 0) {
           const details = [];
           if (mc > 0) details.push(`암호화폐→KIS 오분류 ${mc}건`);
           if (mk > 0) details.push(`KIS→바이낸스 오분류 ${mk}건`);
-          items.push({ label: 'DuckDB 신호 exchange 불일치', status: 'error', detail: details.join(', ') });
+          items.push({ label: 'investment 신호 exchange 불일치', status: 'error', detail: details.join(', ') });
         } else {
-          items.push({ label: 'DuckDB 신호 exchange 불일치', status: 'ok', detail: '정상' });
+          items.push({ label: 'investment 신호 exchange 불일치', status: 'ok', detail: '정상' });
         }
 
         if (ss > 0) {
-          items.push({ label: 'DuckDB 미처리 신호 (2h+)', status: 'warn', detail: `${ss}건 장기 미실행 (approved/pending)` });
+          items.push({ label: 'investment 미처리 신호 (2h+)', status: 'warn', detail: `${ss}건 장기 미실행 (approved/pending)` });
         }
       } catch (e) {
-        items.push({ label: 'DuckDB 신호 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });
+        items.push({ label: 'investment 신호 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });
       }
     }
 
   } catch (e) {
-    items.push({ label: 'DuckDB (루나)', status: 'error', detail: e.message });
+    items.push({ label: 'PostgreSQL (루나 investment)', status: 'error', detail: e.message.slice(0, 150) });
   }
 }
 
@@ -370,9 +298,9 @@ async function checkSkaDuckDB(items) {
 async function run() {
   const items = [];
 
-  await checkSQLite(items);
+  await checkReservationPostgres(items);
   await checkSkaDuckDB(items);
-  await checkDuckDB(items);
+  await checkInvestmentPostgres(items);
   await checkMainbotQueue(items);
 
   const hasError = items.some(i => i.status === 'error');

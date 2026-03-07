@@ -29,20 +29,37 @@ import sys
 import os
 import json
 import warnings
-import duckdb
+import psycopg2
 import pandas as pd
 from datetime import date as date_type, timedelta
 
 warnings.filterwarnings('ignore')  # Prophet Stan 경고 억제
 
-DUCKDB_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..', 'db', 'ska.duckdb')
-)
+PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
 MODEL_VERSION = 'prophet-v3'
 TEMP_DEFAULT  = 15.0  # 기온 기본값 (°C) — 수집 누락 시
 MIN_TRAIN_DAYS = 14  # 최소 학습 데이터 일수
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
+
+
+# ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
+
+def _qry(con, sql, params=()):
+    """SELECT → rows list"""
+    cur = con.cursor()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+def _one(con, sql, params=()):
+    """SELECT single row"""
+    cur = con.cursor()
+    cur.execute(sql, params)
+    row = cur.fetchone()
+    cur.close()
+    return row
 
 
 # ─── 인자 파싱 ─────────────────────────────────────────────────────────────────
@@ -67,15 +84,15 @@ def load_history(con):
     """revenue_daily + environment_factors + exam_events JOIN → Prophet 학습용 DataFrame
     ska-007: exam_score = env.exam_score + SUM(exam_events.score_weight)
     """
-    rows = con.execute("""
+    rows = _qry(con, """
         SELECT
             r.date,
             r.actual_revenue,
             COALESCE(e.exam_score,   0) +
-                COALESCE(ex.total_event_score, 0)         AS exam_score,
-            COALESCE(e.rain_prob,    0.0)                 AS rain_prob,
-            COALESCE(CAST(e.vacation_flag AS INTEGER), 0) AS vacation_flag,
-            COALESCE(e.temperature, 15.0)                 AS temperature,
+                COALESCE(ex.total_event_score, 0)              AS exam_score,
+            COALESCE(e.rain_prob,    0.0)                      AS rain_prob,
+            COALESCE(CAST(e.vacation_flag AS INTEGER), 0)      AS vacation_flag,
+            COALESCE(e.temperature, 15.0)                      AS temperature,
             COALESCE(CAST(e.bridge_holiday_flag AS INTEGER), 0) AS bridge_holiday
         FROM revenue_daily r
         LEFT JOIN environment_factors e ON e.date = r.date
@@ -85,7 +102,7 @@ def load_history(con):
             GROUP BY date
         ) ex ON ex.date = r.date
         ORDER BY r.date
-    """).fetchall()
+    """)
 
     df = pd.DataFrame(rows, columns=['ds', 'y', 'exam_score', 'rain_prob', 'vacation_flag', 'temperature', 'bridge_holiday'])
     df['ds'] = pd.to_datetime(df['ds'])
@@ -94,12 +111,14 @@ def load_history(con):
 
 
 def load_weekday_avg(con):
-    """요일별 평균 매출 → base_forecast 기준값"""
-    rows = con.execute("""
-        SELECT dayofweek(date) as dow, AVG(actual_revenue) as avg_rev
+    """요일별 평균 매출 → base_forecast 기준값
+    EXTRACT(DOW FROM date): 0=일..6=토 (DuckDB dayofweek와 동일)
+    """
+    rows = _qry(con, """
+        SELECT EXTRACT(DOW FROM date)::integer AS dow, AVG(actual_revenue) AS avg_rev
         FROM revenue_daily
         GROUP BY 1 ORDER BY 1
-    """).fetchall()
+    """)
     return {r[0]: round(r[1]) for r in rows}
 
 
@@ -108,21 +127,21 @@ def load_future_env(con, start_date, end_date):
     ska-007: environment_factors + exam_events UNION — 한쪽만 있는 날도 커버
     combined_exam = env.exam_score + SUM(exam_events.score_weight)
     """
-    rows = con.execute("""
+    rows = _qry(con, """
         SELECT
             d.date,
             COALESCE(e.exam_score, 0) +
-                COALESCE(ex.total_event_score, 0)         AS exam_score,
-            COALESCE(e.rain_prob,    0.0)                 AS rain_prob,
-            COALESCE(CAST(e.vacation_flag AS INTEGER), 0) AS vacation_flag,
-            COALESCE(e.temperature, 15.0)                 AS temperature,
+                COALESCE(ex.total_event_score, 0)              AS exam_score,
+            COALESCE(e.rain_prob,    0.0)                      AS rain_prob,
+            COALESCE(CAST(e.vacation_flag AS INTEGER), 0)      AS vacation_flag,
+            COALESCE(e.temperature, 15.0)                      AS temperature,
             COALESCE(CAST(e.bridge_holiday_flag AS INTEGER), 0) AS bridge_holiday
         FROM (
             SELECT date FROM environment_factors
-            WHERE date >= ? AND date <= ?
+            WHERE date >= %s AND date <= %s
             UNION
             SELECT date FROM exam_events
-            WHERE date >= ? AND date <= ?
+            WHERE date >= %s AND date <= %s
         ) d
         LEFT JOIN environment_factors e ON e.date = d.date
         LEFT JOIN (
@@ -132,7 +151,7 @@ def load_future_env(con, start_date, end_date):
         ) ex ON ex.date = d.date
         ORDER BY d.date
     """, (str(start_date), str(end_date),
-          str(start_date), str(end_date))).fetchall()
+          str(start_date), str(end_date)))
 
     env = {str(r[0]): {'exam_score': r[1], 'rain_prob': r[2], 'vacation_flag': r[3], 'temperature': r[4], 'bridge_holiday': r[5]}
            for r in rows}
@@ -235,10 +254,8 @@ def run_forecast(con, base_date, periods):
         d_str    = str(target_d)
         env_info = env_map.get(d_str, {})
         # base_forecast: 해당 요일의 히스토리 평균 (regressor 영향 제외한 기준선)
-        # dayofweek: Python weekday() 0=월 ... 6=일, DuckDB dayofweek 0=일 ... 6=토
-        # → 통일: 요일 키를 Python weekday()로 사용 (0=월...6=일)
-        # weekday_avg 키는 DuckDB dayofweek (0=일..6=토)
-        # target_d.weekday(): 0=월..6=일 → DuckDB: (weekday+1)%7
+        # PostgreSQL EXTRACT(DOW): 0=일..6=토 (DuckDB dayofweek와 동일)
+        # target_d.weekday(): 0=월..6=일 → DOW: (weekday+1)%7
         duck_dow = (target_d.weekday() + 1) % 7
         base = weekday_avg.get(duck_dow, round(row['yhat']))
         yhat_raw   = round(row['yhat'])
@@ -266,27 +283,26 @@ def run_forecast(con, base_date, periods):
     return results
 
 
-# ─── DuckDB 저장 ──────────────────────────────────────────────────────────────
+# ─── PostgreSQL 저장 ────────────────────────────────────────────────────────────
 
 def save_forecast(con, results):
     """forecast 테이블에 저장 (target_date 기존 예측 교체)"""
     target_dates = [str(r['date']) for r in results]
+    cur = con.cursor()
 
     # 같은 날짜 모든 버전 기존 예측 삭제 (구버전 누적 방지)
     for d in target_dates:
-        con.execute("DELETE FROM forecast WHERE target_date = ?", (d,))
+        cur.execute("DELETE FROM forecast WHERE target_date = %s", (d,))
 
     for r in results:
-        next_id = con.execute("SELECT nextval('forecast_id_seq')").fetchone()[0]
         # 폴백 사용 시 확신도 고정 0.15 (CI 기반 보수적 추정 — 신뢰도 낮음)
         confidence = 0.15 if r.get('is_fallback') else _calc_confidence(r)
-        con.execute("""
+        cur.execute("""
             INSERT INTO forecast
-              (id, target_date, predicted_revenue, base_forecast,
+              (target_date, predicted_revenue, base_forecast,
                env_score, yhat_lower, yhat_upper, confidence, model_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            next_id,
             str(r['date']),
             r['yhat'],
             r['base_forecast'],
@@ -297,6 +313,8 @@ def save_forecast(con, results):
             MODEL_VERSION,
         ))
 
+    cur.close()
+    con.commit()
     return len(results)
 
 
@@ -401,13 +419,13 @@ def format_monthly(results, base_date):
 def _get_accuracy_history(con, days=90):
     """forecast_accuracy 최근 N일 조회 — 편향·MAPE 추이용"""
     try:
-        rows = con.execute("""
+        rows = _qry(con, f"""
             SELECT target_date, actual_revenue, predicted_revenue,
                    error, mape, model_version
             FROM forecast_accuracy
-            WHERE target_date >= current_date - INTERVAL (?) DAY
+            WHERE target_date >= current_date - INTERVAL '{int(days)} days'
             ORDER BY target_date
-        """, (days,)).fetchall()
+        """)
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model': r[5]}
                 for r in rows]
@@ -593,7 +611,7 @@ def run_monthly_review(base_date_str=None):
     base_date = date_type.fromisoformat(base_date_str) if base_date_str else date_type.today()
     print(f'[REVIEW] 월간 모델 진단 시작: {base_date}')
 
-    con = duckdb.connect(DUCKDB_PATH)
+    con = psycopg2.connect(PG_SKA)
     try:
         hist_df = load_history(con)
         accuracy_list = _get_accuracy_history(con, days=90)
@@ -637,7 +655,7 @@ def run(mode='daily', base_date_str=None, output_json=False):
 
     print(f'[FORECAST] 기준: {base_date}  모드: {mode}  기간: {periods}일')
 
-    con = duckdb.connect(DUCKDB_PATH)
+    con = psycopg2.connect(PG_SKA)
 
     try:
         results = run_forecast(con, base_date, periods)
@@ -645,7 +663,6 @@ def run(mode='daily', base_date_str=None, output_json=False):
         print(f'[FORECAST] ✅ {saved}건 저장 → forecast 테이블')
     except ValueError as e:
         print(f'[FORECAST] ❌ {e}')
-        con.close()
         return None
     finally:
         con.close()

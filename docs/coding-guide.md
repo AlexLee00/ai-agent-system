@@ -1412,6 +1412,8 @@ function parseJsonResponse(text) {
 | 2026-03-06 | **미해결 알림 반복 + tool_code 누출 버그 수정** — pickko-alerts-resolve.js 신규 (수동 해결 CLI) 외 2건 |
 | 2026-03-06 | **Day 4 — 루나팀 매매일지 시스템** — trade-journal-db.js 신규 (5개 테이블 + DB함수) 외 5건 |
 | 2026-03-07 | **오탐 근본 수정 + Day 6 검증 완료** — markResolved() 추가 (ok 복귀 시 error 이력 자동 삭제) 외 2건 |
+| 2026-03-07 | **PostgreSQL 단일 DB 통합 마이그레이션 완료 (Phase 5~6)** — forecast.py psycopg2 마이그레이션 외 6건 |
+<!-- session-close:2026-03-07:postgresql-단일-db-통합-마이그레이션-완료- -->
 <!-- session-close:2026-03-07:오탐-근본-수정-day-6-검증-완료 -->
 <!-- session-close:2026-03-06:day-4-루나팀-매매일지-시스템 -->
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
