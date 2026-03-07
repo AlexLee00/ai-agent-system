@@ -20,6 +20,8 @@ const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backup
 const KEEP_DAYS = 7;
 const DB_NAME = 'jay';
 const SCHEMA = 'reservation';
+// launchd 환경에서 PATH에 PostgreSQL bin 없음 → 절대 경로
+const PG_DUMP = '/opt/homebrew/opt/postgresql@17/bin/pg_dump';
 
 function getDateStr() {
   const now = new Date();
@@ -53,9 +55,9 @@ async function main() {
   }
 
   try {
-    // pg_dump: schema-only + data dump
+    // pg_dump: schema-only + data dump (절대 경로 사용 — launchd PATH 미포함)
     execSync(
-      `pg_dump --schema=${SCHEMA} --no-owner --no-acl ${DB_NAME} > "${destPath}"`,
+      `"${PG_DUMP}" --schema=${SCHEMA} --no-owner --no-acl ${DB_NAME} > "${destPath}"`,
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
 
