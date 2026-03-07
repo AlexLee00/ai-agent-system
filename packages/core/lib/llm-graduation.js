@@ -76,6 +76,7 @@ async function findGraduationCandidates(team, minSamples = 20, minMatchRate = 0.
     WHERE team = $1
       AND llm_result IS NOT NULL
       AND match IS NOT NULL
+      AND llm_result->>'decision' IS NOT NULL
     GROUP BY team, context, llm_result->>'decision'
     HAVING COUNT(*) >= $2
     ORDER BY total DESC
