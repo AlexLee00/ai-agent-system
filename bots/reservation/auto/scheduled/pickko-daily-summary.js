@@ -380,7 +380,9 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  log(`❌ 치명 오류: ${err.message}`);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    log(`❌ 치명 오류: ${err.message}`);
+    process.exit(1);
+  });
