@@ -22,13 +22,13 @@ async function run() {
   const items = [];
 
   // 오래된 이력 정리 (30일)
-  const deleted = cleanup(30);
+  const deleted = await cleanup(30);
   if (deleted > 0) {
     items.push({ label: '이력 정리', status: 'ok', detail: `${deleted}건 삭제 (30일 초과)` });
   }
 
   // 1. 반복 오류 패턴 분석
-  const patterns = getPatterns(PATTERN_DAYS, WARN_THRESH);
+  const patterns = await getPatterns(PATTERN_DAYS, WARN_THRESH);
 
   if (patterns.length === 0) {
     items.push({ label: `반복 패턴 (${PATTERN_DAYS}일)`, status: 'ok', detail: '반복 오류 없음' });
@@ -48,7 +48,7 @@ async function run() {
   }
 
   // 2. 신규 오류 감지 (24시간 내 첫 등장)
-  const newErrors = getNewErrors(NEW_ERROR_HOURS, PATTERN_DAYS);
+  const newErrors = await getNewErrors(NEW_ERROR_HOURS, PATTERN_DAYS);
 
   if (newErrors.length > 0) {
     for (const e of newErrors) {

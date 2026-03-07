@@ -2118,7 +2118,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 // 실행
 monitorBookings()
   .then(() => markStopped({ reason: '정상 종료' }))
-  .catch(err => {
+  .catch(async err => {
     log(`❌ 예상치 못한 오류: ${err.message}`);
     markStopped({ reason: err.message, error: true });
     await rollbackProcessingEntries();

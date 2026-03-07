@@ -1461,8 +1461,9 @@ async function main() {
     const _nowForRetry = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
     const _nowDateForRetry = `${_nowForRetry.getFullYear()}-${String(_nowForRetry.getMonth()+1).padStart(2,'0')}-${String(_nowForRetry.getDate()).padStart(2,'0')}`;
     const _nowMinForRetry = _nowForRetry.getHours() * 60 + _nowForRetry.getMinutes();
-    const retryEntries = kioskEntries.filter(e => {
-      const saved = await getKioskBlock(e.phoneRaw, e.date, e.start);
+    // _kioskFlags 재사용 (위에서 이미 조회 완료 — getKioskBlock은 async이므로 filter 내 await 불가)
+    const retryEntries = kioskEntries.filter((e, i) => {
+      const saved = _kioskFlags[i];
       if (!saved) return false;              // 신규 → newEntries에서 처리
       if (saved.naverBlocked) return false;  // 이미 차단 완료
       if (saved.naverUnblockedAt) return false; // 해제된 항목
@@ -1483,14 +1484,14 @@ async function main() {
 
     // naverBlocked=true로 실제 차단한 항목만 해제 시도
     // (DB에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
-    const cancelledEntries = refundedEntries
-      .map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }))
-      .filter(e => {
-        const saved = await getKioskBlock(e.phoneRaw, e.date, e.start);
-        if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
-        if (saved.naverUnblockedAt) return false; // 이미 해제 완료
-        return true;
-      });
+    const _refundedWithKey = refundedEntries.map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }));
+    const _refundedSaved = await Promise.all(_refundedWithKey.map(e => getKioskBlock(e.phoneRaw, e.date, e.start)));
+    const cancelledEntries = _refundedWithKey.filter((e, i) => {
+      const saved = _refundedSaved[i];
+      if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
+      if (saved.naverUnblockedAt) return false; // 이미 해제 완료
+      return true;
+    });
 
     log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
     log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);

@@ -308,10 +308,16 @@ if (_args.includes('--daily-report')) {
     process.exit(0);
   }
 
-  const deleted = clearPatterns(labelArg, checkArg);
-  const target  = allFlag ? '전체' : labelArg ? `레이블: ${labelArg}` : `체크: ${checkArg}`;
-  console.log(`✅ 패턴 이력 삭제 완료: ${target} — ${deleted}건`);
-  process.exit(0);
+  clearPatterns(allFlag ? null : labelArg, allFlag ? null : checkArg, allFlag)
+    .then(deleted => {
+      const target = allFlag ? '전체' : labelArg ? `레이블: ${labelArg}` : `체크: ${checkArg}`;
+      console.log(`✅ 패턴 이력 삭제 완료: ${target} — ${deleted}건`);
+      process.exit(0);
+    })
+    .catch(e => {
+      console.error(`❌ 패턴 이력 삭제 실패: ${e.message}`);
+      process.exit(1);
+    });
 
 } else {
   // 기본 점검 모드
