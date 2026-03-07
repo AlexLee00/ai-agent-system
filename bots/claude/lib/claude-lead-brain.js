@@ -50,6 +50,19 @@ function _ruleEngine(issues) {
   }
   if (hasError) {
     const cnt = issues.filter(i => i.status === 'error').length;
+    // 바이낸스 연결 실패 → 루나팀 실투자 직접 영향 → 즉시 에스컬레이션
+    const hasBinanceError = issues.some(
+      i => i.status === 'error' && (i.label || '').includes('바이낸스')
+    );
+    if (hasBinanceError) {
+      return {
+        decision:       'escalate',
+        severity:       'critical',
+        action:         'notify_master',
+        reasoning:      '바이낸스 연결 실패 — 루나팀 실투자 주문/시세 차단 위험, 즉시 마스터 보고',
+        affected_teams: ['luna'],
+      };
+    }
     return {
       decision:       'monitor',
       severity:       'high',
