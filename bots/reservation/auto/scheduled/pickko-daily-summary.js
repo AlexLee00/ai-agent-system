@@ -15,6 +15,7 @@
  * 스케줄: 매일 09:00, 00:00 (launchd: ai.ska.pickko-daily-summary)
  */
 
+const fs        = require('fs');
 const puppeteer = require('puppeteer');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
@@ -367,10 +368,27 @@ async function main() {
       }
     }
 
-    // ──── 6단계: 텔레그램 발송 ────
+    // ──── 6단계: 텔레그램 발송 (30분 중복 방지) ────
     log('\n[6단계] 텔레그램 발송');
-    log('\n' + msg);
-    publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
+    const slot        = isMidnight ? 'night' : 'morning';
+    const guardFile   = `/tmp/pickko-daily-summary-${reportDate}-${slot}.guard`;
+    const COOLDOWN_MS = 30 * 60 * 1000; // 30분
+
+    let skipSend = false;
+    if (fs.existsSync(guardFile)) {
+      const sentAt = new Date(fs.readFileSync(guardFile, 'utf8').trim());
+      const ageMs  = Date.now() - sentAt.getTime();
+      if (ageMs < COOLDOWN_MS) {
+        log(`⏭ 텔레그램 발송 스킵 — ${Math.floor(ageMs / 60000)}분 전 이미 발송됨 (30분 쿨다운)`);
+        skipSend = true;
+      }
+    }
+
+    if (!skipSend) {
+      fs.writeFileSync(guardFile, new Date().toISOString());
+      log('\n' + msg);
+      publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: msg });
+    }
     log('\n✅ 픽코 일일 요약 완료');
 
   } finally {
