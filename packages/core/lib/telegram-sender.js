@@ -42,7 +42,8 @@ function _secrets() {
 }
 
 const _token  = () => _secrets().telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
-const _chatId = () => _secrets().telegram_chat_id   || process.env.TELEGRAM_CHAT_ID   || '';
+// Forum Topic 발송용 chat_id: 그룹 ID 우선, 없으면 개인 chat_id 폴백
+const _chatId = () => _secrets().telegram_group_id  || _secrets().telegram_chat_id || process.env.TELEGRAM_CHAT_ID || '';
 const _topics = () => _secrets().telegram_topic_ids || {};
 
 // ── Team → secrets.json 키 매핑 ──────────────────────────────────────

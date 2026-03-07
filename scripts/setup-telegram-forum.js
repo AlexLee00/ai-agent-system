@@ -72,7 +72,7 @@ async function createTopic(token, chatId, name, iconColor) {
 async function main() {
   const secrets = loadSecrets();
   const token   = secrets.telegram_bot_token;
-  const chatId  = secrets.telegram_chat_id;
+  const chatId  = secrets.telegram_group_id || secrets.telegram_chat_id;  // 그룹 우선
 
   if (!token || !chatId) {
     console.error('❌ secrets.json에 telegram_bot_token / telegram_chat_id가 없습니다.');
