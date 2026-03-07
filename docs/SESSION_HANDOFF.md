@@ -2,56 +2,72 @@
 
 > 다음 Claude Code 세션에서 이 파일을 먼저 읽어주세요.
 
-## 최종 세션 (2026-03-07) — 1주차 완료
+## 이번 세션 완료 내역 (2026-03-08)
 
-### 현재 상태
-- **1주차 Day 1~7 전체 완료** ✅
-- 통합 테스트 5/5 카테고리 전체 통과
-- 기존 OPS 서비스 정상 운영 중 (크립토 실투자 포함)
-- 안정화 기준선 v3.2.0 설정 완료
+### 1. 제이 자연어 능력 향상 v2.0 (`4c9efa1`)
+- intent-parser.js: 53개 intent (기존 36 + 17 신규), CoT+Few-shot, loadDynamicExamples()
+- router.js: 17개 신규 핸들러, chat 폴백 2단계, unrecognized_intents 자동학습
+- 테스트: 24/24 통과
+- 체크섬 갱신 완료, push 완료
 
-### 완료 커밋 이력 (1주차)
+### 2. OpenClaw 게이트웨이 설정 오류 수정
+- 원인: `agents.teamLeads` 미인식 키 → `openclaw doctor --fix` 제거
+- 덱스터 ❌ 0건 확인
+
+### 3. 5주차 통합 안정화 검증 (이전 세션)
+- 28/28 전체 통과
+- Telegram long-polling mainbot.js 추가
+- router.js await 버그 13곳 수정
+
+---
+
+## 다음 세션에서 할 것
+
+### 우선순위 1: 2주차 — 스카팀 Shadow Mode 적용
 ```
-3c530a0  docs: 세션 마감 문서 업데이트 (2026-03-07)
-b3d0ace  chore: 덱스터 체크섬 갱신 (markResolved 반영)
-c11886d  fix: 오류 패턴 오탐 근본 수정 — markResolved() 추가
-d5df7df  chore: 덱스터 체크섬 갱신 (Day 6 반영)
-b9e7b46  feat: Day 6 — 독터 + 보안 강화 + OPS/DEV 분리
-(이전) Day 5: team-comm + heartbeat + SOUL.md
-(이전) Day 4: 매매일지 시스템
-(이전) Day 3: llm-logger + llm-router + llm-cache
-(이전) Day 1~2: State Bus + TP/SL OCO + 덱스터 v2
-```
-
-### 다음 세션에서 해야 할 것
-
-**2주차 시작: 스카팀 Shadow Mode 적용**
-1. `bots/reservation/lib/shadow-mode.js` 구현
-   - 규칙 엔진 실행과 LLM 판단을 병렬로 실행
-   - 결과 일치율 DB에 기록 (shadow_log 테이블)
+1. bots/reservation/lib/shadow-mode.js 구현
+   - 규칙 엔진 + LLM 병렬 실행
+   - shadow_log 테이블 (reservation 스키마)
    - LLM: Groq llama-4-scout (무료)
-2. Groq API 연동 (스카팀 config.yaml에 groq 키 추가)
-3. Shadow Mode 검증: 일치율 모니터링 대시보드
+2. 스카 Groq API 연동 (config.yaml groq 키 확인)
+3. Shadow Mode 일치율 모니터링
+```
 
-**주의사항**
-- tmux 세션명은 `ska` (skaya 아님)
-- 팀장 봇(스카/클로드/루나 OpenClaw 에이전트) 아직 미구축 — 구조만 존재
-- agent_events 보고 경로 전환은 3주차
-- TP/SL은 고정 비율 (네메시스 동적 산출은 향후)
-- Gemini API는 스카팀 전용 — 루나팀 사용 불가
-- insertReview 함수: `insertReview(tradeId, review)` 형식 (tradeId 첫 번째 인자)
+### 우선순위 2: OpenClaw 메모리 누수 모니터링
+- 재시작 직후 518MB (임계 500MB) — 빠른 누수 가능성
+- 덱스터 quick 5분 주기가 감시 중
+- 다음 세션 시작 시 메모리 추이 확인 필요
 
-### 알려진 이슈
-- KNOWN_ISSUES.md 참조
-- KI-001: workspace-git.js `*.key` warn — .gitignore에 추가 완료, 덱스터 체크 다음 실행 시 자동 소거 예정
-- KI-002: archer.js trackTokens() 미적용 — LLM 비용 미추적 (낮은 우선순위)
-- KI-003: npm audit high 5건 (duckdb→node-gyp) — 런타임 무관, 무시
+### 우선순위 3: unrecognized_intents 데이터 검토
+- 제이 v2.0 배포 후 미인식 명령 패턴 축적 중
+- `/unrec` 명령으로 조회, `/promote` 로 즉시 승격 가능
 
-### 시스템 현황 (2026-03-07 기준)
-| 팀 | 상태 | 모드 |
-|----|------|------|
-| 스카팀 | ✅ OPS | 예약관리 정상 |
-| 루나팀 크립토 | ✅ OPS | PAPER_MODE=false |
-| 루나팀 국내/해외 | ✅ DEV | PAPER_MODE=true |
-| 클로드팀 덱스터 | ✅ OPS | 5분+1시간 주기 |
-| OpenClaw 제이 | ✅ OPS | 포트 18789 |
+---
+
+## 현재 시스템 상태 (2026-03-08 기준)
+
+| 팀 | 상태 | 모드 | 비고 |
+|----|------|------|------|
+| 스카팀 | ✅ OPS | 예약관리 정상 | 앤디·지미 실행 중 |
+| 루나팀 크립토 | ✅ OPS | PAPER_MODE=false | 30분 사이클 |
+| 루나팀 국내/해외 | ✅ DEV | PAPER_MODE=true | 모의투자 |
+| 클로드팀 덱스터 | ✅ OPS | 5분+1시간 주기 | ❌ 0건 정상 |
+| 제이 OpenClaw | ✅ OPS | 포트 18789 | 재시작 후 518MB |
+| 제이 오케스트레이터 | ✅ OPS | PID 769 | long-polling 활성 |
+
+## 알려진 이슈
+- KI-001~004: KNOWN_ISSUES.md 참조
+- OpenClaw 메모리 누수: 재시작 직후 518MB — 추이 관찰 중
+- `agents.teamLeads` 키가 openclaw.json에서 제거됨 → 다음 업데이트 시 재삽입 금지
+
+## 커밋 이력 (이번 세션)
+```
+4c9efa1  feat: 제이 자연어 능력 향상 v2.0 — Intent 확장 + CoT + 자동학습
+(이전)   feat: 5주차 통합 안정화 검증 28/28 통과 + Telegram long-polling
+```
+
+## 주의사항
+- tmux 세션명: `ska`
+- Gemini API: 스카팀 전용 (루나팀 사용 불가)
+- OPS 전환은 반드시 마스터 확인 후
+- insertReview(tradeId, review) — tradeId 첫 번째 인자
