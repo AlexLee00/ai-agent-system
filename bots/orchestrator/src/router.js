@@ -16,7 +16,9 @@ const { invalidate }                     = require('../lib/response-cache');
 const path     = require('path');
 const os       = require('os');
 const fs       = require('fs');
-const pgPool   = require('../../../packages/core/lib/pg-pool');
+const pgPool        = require('../../../packages/core/lib/pg-pool');
+const shadowMode    = require('../../../packages/core/lib/shadow-mode');
+const llmGraduation = require('../../../packages/core/lib/llm-graduation');
 
 // 허가된 chat_id (secrets에서 로드) — 개인 채팅 + 그룹 채팅 모두 허용
 let _allowedChatIds = null;
@@ -32,7 +34,7 @@ function isAuthorized(chatId) {
   return _allowedChatIds.includes(String(chatId));
 }
 
-const HELP_TEXT = `🤖 제이(Jay) 명령 안내
+const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
 
 📊 시스템 조회
   /status   또는 "시스템 상태", "전체 현황"
@@ -40,6 +42,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
   /queue    또는 "알람 큐 확인"
   /mutes    또는 "무음 목록"
   /brief    또는 "야간 브리핑"
+  /stability 또는 "시스템 안정성 현황"
 
 🔇 무음 제어
   /mute <대상> <시간>   예) /mute luna 1h
@@ -59,14 +62,14 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
 📈 시장 현황
   "장 열렸어?"               → 국내/해외/암호화폐 현황
   "미국 장 시간"             → 미국주식 장 시간
-  "코스피 장이야?"            → 국내주식 장 시간
+  "코스피 장이야?"           → 국내주식 장 시간
 
 💰 잔고·가격 조회
-  "업비트 잔고 얼마야"        → 업비트 계좌 잔고
-  "바이낸스 잔고 얼마야"      → 바이낸스 계좌 잔고
-  "비트코인 얼마야"           → 암호화폐 현재가 (BTC/ETH/SOL/BNB)
-  "국내 주식 잔고"            → KIS 국내주식 보유·손익
-  "미국 주식 잔고"            → KIS 해외주식 보유·손익
+  "업비트 잔고 얼마야"       → 업비트 계좌 잔고
+  "바이낸스 잔고 얼마야"     → 바이낸스 계좌 잔고
+  "비트코인 얼마야"          → 암호화폐 현재가 (BTC/ETH/SOL/BNB)
+  "국내 주식 잔고"           → KIS 국내주식 보유·손익
+  "미국 주식 잔고"           → KIS 해외주식 보유·손익
 
 🌙 루나팀 (자동매매)
   "루나 상태 어때"           → 현황·잔고
@@ -74,18 +77,38 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내
   "매매 멈춰"                → 거래 일시정지
   "거래 재개해"              → 거래 재개
   "업비트 USDT 바이낸스로 보내" → KRW→USDT 매수 후 전송
+  "매매일지"                 → 최근 매매 기록 (/journal)
+  "투자 성과"                → 수익률·기간별 성과 (/performance)
+  "TP SL 현황"               → 손절·익절 설정 상태
 
 🔧 클로드팀 (유지보수)
   "덱스터 점검해"            → 시스템 점검
   "전체 점검해줘"            → 전체 점검 (audit)
   "덱스터 수정해"            → 자동 수정
+  "덱스터 퀵체크"            → 5분 주기 단기 점검
   "아처 실행해"              → 기술 트렌드 분석
-  "일일 보고해줘"            → 일일 리포트
+  "일일 보고해줘"            → 일일 리포트 (/dexter)
+  "점검 이력"                → 에러 기록 조회
+
+📊 시스템 분석 (신규)
+  /shadow       또는 "섀도 리포트" → LLM vs 규칙 비교 리포트
+  "섀도 불일치"              → 불일치 케이스 목록
+  /graduation   또는 "LLM 졸업 현황" → 규칙 자동전환 후보
+  "캐시 통계"                → LLM 캐시 적중률
+  "LLM 비용 상세"            → 팀별·모델별 비용
+  "텔레그램 상태"            → 폴링 연결 상태
 
 🤖 클로드 AI 직접 질문
   /claude <질문>  또는  /ask <질문>
   예) /claude 루나팀 전략 리스크 분석해줘
-  예) /claude DB 스키마 최적화 방법 알려줘`;
+
+🧠 자동학습
+  /unrec         → 미인식 명령 목록 조회
+  /promote <인텐트> <패턴>  → 패턴 학습 등록
+  예) /promote ska_query 오늘 방문객 몇 명이야
+
+💬 자유 대화
+  그 외 모든 텍스트 → 팀 키워드 감지 후 위임 또는 AI 자유 대화`;
 
 // ─── bot_commands 유틸 ────────────────────────────────────────────────
 
@@ -116,6 +139,164 @@ async function waitForCommandResult(id, timeoutMs = 30000) {
     await new Promise(r => setTimeout(r, 2000));
   }
   return null;
+}
+
+// ─── 미인식 명령 추적 ─────────────────────────────────────────────────
+
+let _unrecTableReady = false;
+
+async function _ensureUnrecTable() {
+  if (_unrecTableReady) return;
+  try {
+    await pgPool.run('claude', `
+      CREATE TABLE IF NOT EXISTS unrecognized_intents (
+        id           SERIAL PRIMARY KEY,
+        text         TEXT NOT NULL,
+        parse_source TEXT,
+        llm_intent   TEXT,
+        promoted_to  TEXT,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgPool.run('claude', `
+      CREATE INDEX IF NOT EXISTS idx_unrec_created ON unrecognized_intents(created_at DESC)
+    `);
+    _unrecTableReady = true;
+  } catch {}
+}
+
+async function logUnrecognizedIntent(text, source, llmIntent) {
+  try {
+    await _ensureUnrecTable();
+    await pgPool.run('claude', `
+      INSERT INTO unrecognized_intents (text, parse_source, llm_intent)
+      VALUES ($1, $2, $3)
+    `, [text.slice(0, 500), source || 'unknown', llmIntent || null]);
+  } catch {}
+}
+
+async function buildUnrecognizedReport() {
+  try {
+    await _ensureUnrecTable();
+    const rows = await pgPool.query('claude', `
+      SELECT text, COUNT(*) as cnt,
+             MAX(llm_intent) as llm_intent,
+             MAX(promoted_to) as promoted_to,
+             MAX(created_at) as last_seen
+      FROM unrecognized_intents
+      WHERE created_at > NOW() - INTERVAL '7 days'
+      GROUP BY text
+      ORDER BY cnt DESC, last_seen DESC
+      LIMIT 20
+    `);
+    if (rows.length === 0) return '✅ 최근 7일 미인식 명령 없음';
+    const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
+    const lines = [`❓ 미인식 명령 (최근 7일, ${rows.length}종 ${total}회)`];
+    for (const r of rows) {
+      const promoted = r.promoted_to ? ` ✅→${r.promoted_to}` : '';
+      lines.push(`  [${r.cnt}회] "${r.text.slice(0, 50)}"${promoted}`);
+      if (r.llm_intent && !r.promoted_to) lines.push(`         LLM 추정: ${r.llm_intent}`);
+    }
+    lines.push('\n/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.');
+    return lines.join('\n');
+  } catch (e) {
+    return `⚠️ 미인식 이력 조회 실패: ${e.message}`;
+  }
+}
+
+async function promoteToIntent(text, toIntent, pattern) {
+  try {
+    await _ensureUnrecTable();
+    // DB에 promoted_to 기록
+    if (text) {
+      await pgPool.run('claude', `
+        UPDATE unrecognized_intents
+        SET promoted_to = $1
+        WHERE text = $2 AND promoted_to IS NULL
+      `, [toIntent, text]);
+    }
+    // nlp-learnings.json에 패턴 추가 (intent-parser.js가 5분 내 자동 로드)
+    const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+    let learnings = [];
+    try {
+      if (fs.existsSync(learnPath)) learnings = JSON.parse(fs.readFileSync(learnPath, 'utf8'));
+    } catch {}
+    const re = pattern || text;
+    if (re && !learnings.some(l => l.re === re)) {
+      learnings.push({ re, intent: toIntent, args: {} });
+      fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
+    }
+  } catch {}
+}
+
+// ─── 팀 키워드 감지 + 자유 대화 폴백 ─────────────────────────────────
+
+const TEAM_KEYWORDS = {
+  luna:   /루나|luna|투자.*(?:관련|문제|질문)|매매.*(?:관련|문의)|코인.*(?:관련|문의)|포지션.*(?:관련|질문)/i,
+  claude: /클로드|claude|덱스터.*(?:관련|문의)|시스템.*(?:문제|오류|질문)|개발.*(?:관련|이슈|문의)/i,
+  ska:    /스카|ska|예약.*(?:관련|문의|질문)|스터디카페.*(?:관련|문의)|카페.*(?:운영|문의)/i,
+};
+
+async function delegateToTeamLead(team, text) {
+  switch (team) {
+    case 'luna': {
+      // 루나 커맨더에 채팅 쿼리 위임
+      const cmdId = await insertBotCommand('luna', 'chat_query', { text });
+      const raw = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return null;
+      try { const r = JSON.parse(raw); return r.ok ? r.message : null; } catch { return null; }
+    }
+    case 'claude': {
+      // 클로드 AI에 직접 질문
+      const cmdId = await insertBotCommand('claude', 'ask_claude', { query: text });
+      const raw = await waitForCommandResult(cmdId, 60000);
+      if (!raw) return null;
+      try { const r = JSON.parse(raw); return r.ok ? r.message : null; } catch { return null; }
+    }
+    case 'ska': {
+      return `스카팀 관련 질문은 구체적인 명령으로 말씀해 주세요:\n  "오늘 예약 뭐 있어" · "오늘 매출" · "앤디 재시작해"`;
+    }
+    default:
+      return null;
+  }
+}
+
+async function geminiChatFallback(text) {
+  try {
+    const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
+    const key = getGeminiKey();
+    if (!key) return null;
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        model: 'gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: '너는 AI 봇 시스템의 총괄 허브 제이(Jay)야. 마스터(Alex)가 운영하는 스카팀(스터디카페 관리), 루나팀(암호화폐 자동매매), 클로드팀(시스템 유지보수) 에이전트들을 관리해. 친근하고 간결하게 한국어로 답해. 명령 처리 외의 일반 대화에 짧게 응답해.' },
+          { role: 'user',   content: text },
+        ],
+        max_tokens:  300,
+        temperature: 0.7,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || null;
+  } catch { return null; }
+}
+
+async function handleChatFallback(text) {
+  // 1단계: 팀 키워드 감지 → 팀장 위임
+  for (const [team, re] of Object.entries(TEAM_KEYWORDS)) {
+    if (re.test(text)) {
+      const resp = await delegateToTeamLead(team, text);
+      if (resp) return `💬 ${resp}`;
+    }
+  }
+  // 2단계: Gemini Flash 자유 대화
+  const resp = await geminiChatFallback(text);
+  if (resp) return `💬 ${resp}`;
+  return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
 }
 
 /**
@@ -640,16 +821,199 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'queue':
       return await getQueueSummary();
 
+    // ── 섀도 모드 ──────────────────────────────────────────────────────
+
+    case 'shadow_report': {
+      try {
+        const teams   = ['ska', 'claude', 'luna'];
+        const reports = [];
+        for (const t of teams) {
+          const r = await shadowMode.buildShadowReport(t, 7);
+          if (r) reports.push(r);
+        }
+        return reports.length > 0 ? reports.join('\n\n') : '✅ 섀도 로그 없음 (최근 7일)';
+      } catch (e) { return `⚠️ 섀도 리포트 오류: ${e.message}`; }
+    }
+
+    case 'shadow_mismatches': {
+      try {
+        const team       = args.team || 'luna';
+        const mismatches = await shadowMode.getMismatches(team, null, 7);
+        if (!mismatches?.length) return `✅ ${team}팀 불일치 없음 (최근 7일)`;
+        const lines = [`🔍 ${team}팀 섀도 불일치 (${mismatches.length}건, 최근 7일)`];
+        for (const m of mismatches.slice(0, 15)) {
+          const ctx  = m.context || m.team || '?';
+          const rule = m.rule_decision || m.decision || '?';
+          const llm  = m.llm_decision || m.llm_result?.decision || '?';
+          lines.push(`  • [${ctx}] 규칙: ${rule} → LLM: ${llm}`);
+        }
+        return lines.join('\n');
+      } catch (e) { return `⚠️ 섀도 불일치 조회 오류: ${e.message}`; }
+    }
+
+    // ── LLM 비용·캐시·졸업 ────────────────────────────────────────────
+
+    case 'llm_cost':
+      return await buildCostReport();
+
+    case 'cache_stats': {
+      try {
+        const rows = await pgPool.query('reservation', `
+          SELECT team, COUNT(*) as total,
+                 SUM(CASE WHEN expires_at > NOW() THEN 1 ELSE 0 END) as active,
+                 COALESCE(SUM(hit_count), 0) as hits
+          FROM llm_cache
+          GROUP BY team
+          ORDER BY hits DESC
+        `);
+        if (rows.length === 0) return '📦 LLM 캐시 비어있음';
+        const lines = ['📦 LLM 캐시 현황'];
+        for (const r of rows) {
+          lines.push(`  ${r.team}: 전체 ${r.total}건 / 유효 ${r.active}건 / 히트 ${r.hits}회`);
+        }
+        return lines.join('\n');
+      } catch (e) { return `⚠️ 캐시 통계 조회 실패: ${e.message}`; }
+    }
+
+    case 'llm_graduation': {
+      try {
+        const teams   = ['ska', 'claude', 'luna'];
+        const reports = [];
+        for (const t of teams) {
+          const r = await llmGraduation.buildGraduationReport(t);
+          if (r) reports.push(r);
+        }
+        return reports.length > 0 ? reports.join('\n\n') : '✅ LLM 졸업 후보 없음';
+      } catch (e) { return `⚠️ 졸업 현황 오류: ${e.message}`; }
+    }
+
+    // ── 덱스터 상세 ───────────────────────────────────────────────────
+
+    case 'dexter_report': {
+      await notify(`⏳ 덱스터 일일 보고 중...`);
+      const cmdId = await insertBotCommand('claude', 'daily_report', {});
+      const raw   = await waitForCommandResult(cmdId, 300000);
+      return formatClaudeResult('daily_report', raw);
+    }
+
+    case 'dexter_quickcheck': {
+      await notify(`⏳ 덱스터 퀵체크 실행 중...`);
+      const cmdId = await insertBotCommand('claude', 'quick_check', {});
+      const raw   = await waitForCommandResult(cmdId, 60000);
+      return formatClaudeResult('quick_check', raw);
+    }
+
+    case 'doctor_history': {
+      try {
+        const rows = await pgPool.query('claude', `
+          SELECT check_name, status, message, created_at
+          FROM dexter_error_log
+          ORDER BY created_at DESC
+          LIMIT 20
+        `);
+        if (rows.length === 0) return '✅ 점검 에러 이력 없음';
+        const lines = [`🔧 덱스터 에러 이력 (최근 ${rows.length}건)`];
+        for (const r of rows) {
+          const time = String(r.created_at).slice(0, 16);
+          lines.push(`  • [${time}] [${r.check_name}] ${(r.message || '').slice(0, 60)}`);
+        }
+        return lines.join('\n');
+      } catch (e) { return `⚠️ 점검 이력 조회 실패: ${e.message}`; }
+    }
+
+    // ── 투자 분석 (루나 커맨더 위임) ──────────────────────────────────
+
+    case 'analyst_accuracy': {
+      await notify(`⏳ 애널리스트 정확도 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_analyst_accuracy', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ 애널리스트 정확도 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `📊 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    case 'analyst_weight': {
+      await notify(`⏳ 애널리스트 가중치 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_analyst_weight', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ 가중치 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `📊 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    case 'trade_journal': {
+      await notify(`⏳ 매매일지 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_trade_journal', args || {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ 매매일지 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `📒 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    case 'trade_review': {
+      await notify(`⏳ 매매 리뷰 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_trade_review', args || {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ 매매 리뷰 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `📝 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    case 'performance': {
+      await notify(`⏳ 투자 성과 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_performance', args || {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ 성과 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `📈 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    case 'tp_sl_status': {
+      await notify(`⏳ TP/SL 현황 조회 중...`);
+      const cmdId = await insertBotCommand('luna', 'get_tp_sl_status', {});
+      const raw   = await waitForCommandResult(cmdId, 30000);
+      if (!raw) return '⏱ TP/SL 조회 타임아웃';
+      try { const r = JSON.parse(raw); return r.ok ? `🎯 ${r.message}` : `⚠️ ${r.error || '조회 실패'}`; } catch { return String(raw); }
+    }
+
+    // ── 시스템 현황 ───────────────────────────────────────────────────
+
+    case 'stability': {
+      invalidate('status');
+      return await buildStatus();
+    }
+
+    case 'telegram_status': {
+      return [
+        `📡 텔레그램 폴링 상태`,
+        `  수신 폴링: ✅ long-poll (timeout=30s)`,
+        `  현재 PID: ${process.pid}`,
+        `  업타임: ${Math.floor(process.uptime() / 60)}분 ${Math.floor(process.uptime() % 60)}초`,
+      ].join('\n');
+    }
+
+    // ── 미인식 명령 관리 ──────────────────────────────────────────────
+
+    case 'unrecognized_report':
+      return await buildUnrecognizedReport();
+
+    case 'promote_intent': {
+      const { intent: toIntent, pattern, text: uText } = args;
+      if (!toIntent || (!pattern && !uText)) {
+        return '⚠️ 사용법: /promote <인텐트> <패턴>\n예) /promote ska_query 오늘 방문객 몇 명이야';
+      }
+      await promoteToIntent(uText || pattern, toIntent, pattern || uText);
+      return `✅ "${(uText || pattern).slice(0, 40)}" → ${toIntent} 학습 등록 완료\nnlp-learnings.json 업데이트됨 (5분 내 자동 반영)`;
+    }
+
+    // ── 자유 대화 ─────────────────────────────────────────────────────
+
+    case 'chat':
+      return await handleChatFallback(msg.text || '');
+
     default: {
-      // 처리 불가 명령 → 클로드에게 분석 요청 (NLP 자동 개선)
-      await notify(`🤔 잠깐, 클로드에게 확인해볼게요...`);
-      const cmdId = await insertBotCommand('claude', 'analyze_unknown', { text: msg.text });
-      const raw   = await waitForCommandResult(cmdId, 120000); // 2분
-      if (!raw) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
-      let r;
-      try { r = JSON.parse(raw); } catch { return raw; }
-      if (!r.ok) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
-      return r.message;
+      // 인식됐지만 핸들러 없는 인텐트 → 미인식 로깅 후 chat 폴백
+      await logUnrecognizedIntent(
+        msg.text || '',
+        parsed.source || 'unknown',
+        intent !== 'chat' ? intent : null,
+      );
+      return await handleChatFallback(msg.text || '');
     }
   }
 }
