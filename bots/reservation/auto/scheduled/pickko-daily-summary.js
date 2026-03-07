@@ -22,7 +22,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const {
-  getAllNaverKeys, getDb,
+  getAllNaverKeys, getKioskBlocksForDate,
   upsertDailySummary, getUnconfirmedSummaryBefore,
 } = require('../../lib/db');
 const { fetchDailyDetail } = require('../../lib/pickko-stats');
@@ -93,9 +93,11 @@ function calcAmount(entry) {
 /**
  * 오늘 kiosk_blocks DB 조회 → { "date|start|room": naverBlocked } 맵
  */
-function getTodayKioskMap(today) {
-  const db = getDb();
-  const rows = db.prepare('SELECT date, start_time, room, naver_blocked FROM kiosk_blocks WHERE date = ?').all(today);
+async function getTodayKioskMap(today) {
+  const pgPool = require('../../../../packages/core/lib/pg-pool');
+  const rows = await pgPool.query('reservation',
+    'SELECT date, start_time, room, naver_blocked FROM kiosk_blocks WHERE date = $1',
+    [today]);
   const map = {};
   for (const row of rows) {
     const key = `${row.date}|${row.start_time}|${row.room || ''}`;
@@ -288,8 +290,8 @@ async function main() {
 
     // ──── 3단계: DB 분류 데이터 조회 ────
     log('\n[3단계] DB 분류 데이터 조회');
-    const naverKeys = getAllNaverKeys();
-    const kioskMap  = getTodayKioskMap(reportDate);
+    const naverKeys = await getAllNaverKeys();
+    const kioskMap  = await getTodayKioskMap(reportDate);
     log(`  naverKeys: ${naverKeys.size}개, kioskBlocks(오늘): ${Object.keys(kioskMap).length}개`);
 
     for (const e of entries) {
