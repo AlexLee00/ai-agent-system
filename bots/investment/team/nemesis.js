@@ -109,6 +109,51 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
   return parsed;
 }
 
+// ─── Phase 1: 동적 TP/SL 산출 (로그만 — 실투자 미적용) ─────────────
+
+/**
+ * ATR 기반 동적 TP/SL 산출 (Phase 1 — 로그만, 실투자 미적용)
+ *
+ * 현재 고정값: TP +6%, SL -3% (헤파이스토스 설정)
+ * Phase 1: ATR 기반 산출값을 로그만 출력하고 applied: false 고정
+ * Phase 2 (향후): 마스터 승인 후 헤파이스토스에 동적 TP/SL 적용 가능
+ *
+ * R/R 비율 2:1 유지: TP = ATR × 2.5, SL = ATR × 1.25
+ *
+ * @param {string}      symbol
+ * @param {number|null} entryPrice   현재가 (null 허용)
+ * @param {number|null} atrRatio     ATR/현재가 비율 (예: 0.02 = 2%)
+ * @returns {{ tpPct, slPct, tp, sl, source, applied }}
+ */
+export function calculateDynamicTPSL(symbol, entryPrice = null, atrRatio = null) {
+  const FIXED_TP_PCT = 0.06;  // 고정 +6%
+  const FIXED_SL_PCT = 0.03;  // 고정 -3%
+
+  if (!atrRatio || atrRatio <= 0) {
+    return {
+      tpPct:   FIXED_TP_PCT,
+      slPct:   FIXED_SL_PCT,
+      tp:      entryPrice ? entryPrice * (1 + FIXED_TP_PCT) : null,
+      sl:      entryPrice ? entryPrice * (1 - FIXED_SL_PCT) : null,
+      source:  'fixed',
+      applied: false,  // Phase 1: 항상 false
+    };
+  }
+
+  // ATR 기반: 2:1 R/R (TP = ATR × 2.5, SL = ATR × 1.25) — 범위 클램프
+  const tpPct = Math.min(Math.max(atrRatio * 2.5, 0.03), 0.15);   // 3%~15%
+  const slPct = Math.min(Math.max(atrRatio * 1.25, 0.015), 0.075); // 1.5%~7.5%
+
+  return {
+    tpPct,
+    slPct,
+    tp:      entryPrice ? entryPrice * (1 + tpPct) : null,
+    sl:      entryPrice ? entryPrice * (1 - slPct) : null,
+    source:  'atr',
+    applied: false,  // Phase 1: 항상 false
+  };
+}
+
 // ─── 메인 신호 평가 ─────────────────────────────────────────────────
 
 /**
@@ -191,6 +236,10 @@ export async function evaluateSignal(signal, opts = {}) {
     }
 
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
+
+    // ── Phase 1: 동적 TP/SL 로그 (applied: false — 실투자 미적용) ──────
+    const dynamicTPSL = calculateDynamicTPSL(symbol, null, opts.atrRatio);
+    console.log(`  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}% / SL-${(dynamicTPSL.slPct * 100).toFixed(1)}% (${dynamicTPSL.source}, applied: false)`);
 
     // ── 매매일지 판단 근거 기록 (승인/수정된 BUY만) ───────────────────
     try {
