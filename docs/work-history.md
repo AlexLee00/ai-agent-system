@@ -41,6 +41,24 @@
 
 
 
+### ✨ Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동
+- shadow-mode.js getTeamMode/setTeamMode 추가
+- luna-transition-analysis.js 신규
+- router.js luna_confirm/luna_shadow/luna_analysis 케이스
+- run-graduation-analysis.js 신규
+- weekly-stability-report.js weeklyValidation 연동
+- reporter.js emitDexterEvent (agent_events 이중경로)
+- claude-lead-brain.js processAgentEvent/pollAgentEvents
+- dexter.js emitDexterEvent+pollAgentEvents 연결
+- processAgentEvent payload TEXT 파싱 버그 수정
+- db-backup pg_dump 절대경로 버그 수정 (이전 세션 이어)
+- pickko-daily-audit manualCount TDZ 버그 수정 (이전 세션 이어)
+- 테스트 14/14 전체 통과
+- 스카팀 매출 데이터 체크 (마이그레이션 타이밍 이슈, 정상화)
+- 포캐스트 학습데이터 0일 오류 분석 (정상화)
+- pickko-daily-audit+db-backup launchd exit 1 갱신
+<!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
+
 ## 2026-03-07
 ### ✅ Day 7 — 통합 테스트 + 1주차 마무리
 - 통합 테스트 5개 카테고리 전체 통과 (State Bus / 덱스터+독터 / 매매일지 / 크로스팀 / LLM 인프라)

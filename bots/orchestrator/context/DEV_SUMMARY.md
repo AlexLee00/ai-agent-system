@@ -98,4 +98,6 @@ token_usage (id, bot_name, team, model, provider, is_free, task_type,
 | 날짜 | 제목 | 내용 |
 |------|------|------|
 | 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** | OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
+| 2026-03-08 | **Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동** | shadow-mode.js getTeamMode/setTeamMode 추가 외 14건 |
+<!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
 <!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
