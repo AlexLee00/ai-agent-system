@@ -249,8 +249,12 @@ async function getJudgmentQuality(days = 7) {
  * @param {object} event  agent_events 레코드
  */
 async function processAgentEvent(event) {
-  const { id, from_agent, event_type, payload } = event;
-  const p = payload ?? {};
+  const { id, from_agent, event_type, payload: rawPayload } = event;
+  // payload는 TEXT 컬럼 → JSON 파싱 필요
+  let p = {};
+  try {
+    p = typeof rawPayload === 'string' ? (JSON.parse(rawPayload) ?? {}) : (rawPayload ?? {});
+  } catch { /* 파싱 실패 시 빈 객체 */ }
 
   switch (event_type) {
     case 'dexter_check_result': {
