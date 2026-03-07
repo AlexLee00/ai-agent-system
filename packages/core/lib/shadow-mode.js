@@ -398,6 +398,64 @@ async function buildShadowReport(team, days = 1) {
   return lines.join('\n');
 }
 
+// ── 팀 모드 관리 (confirmation 전환 제어) ─────────────────────────────
+
+let _teamModeTableReady = false;
+const _teamModeCache    = {};  // { team: { mode, expiresAt } }
+
+async function _ensureTeamModeTable() {
+  if (_teamModeTableReady) return;
+  await pgPool.run('claude', `
+    CREATE TABLE IF NOT EXISTS team_modes (
+      team        TEXT PRIMARY KEY,
+      mode        TEXT NOT NULL DEFAULT 'shadow',
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_by  TEXT
+    )
+  `);
+  _teamModeTableReady = true;
+}
+
+/**
+ * 팀의 현재 Shadow 모드 조회 (1분 캐시)
+ * @param {string} team
+ * @returns {Promise<string>}  'shadow' | 'confirmation' | 'llm_primary'
+ */
+async function getTeamMode(team) {
+  const cached = _teamModeCache[team];
+  if (cached && cached.expiresAt > Date.now()) return cached.mode;
+  try {
+    await _ensureTeamModeTable();
+    const row  = await pgPool.get('claude', `SELECT mode FROM team_modes WHERE team = $1`, [team]);
+    const mode = row?.mode ?? 'shadow';
+    _teamModeCache[team] = { mode, expiresAt: Date.now() + 60_000 };
+    return mode;
+  } catch { return 'shadow'; }
+}
+
+/**
+ * 팀의 Shadow 모드 변경 (마스터 승인 전용)
+ * @param {string} team
+ * @param {string} mode        'shadow' | 'confirmation' | 'llm_primary'
+ * @param {string} updatedBy
+ * @returns {Promise<{team, mode, updatedBy}>}
+ */
+async function setTeamMode(team, mode, updatedBy = 'master') {
+  const VALID = ['shadow', 'confirmation', 'llm_primary', 'off'];
+  if (!VALID.includes(mode)) throw new Error(`유효하지 않은 모드: ${mode}`);
+  await _ensureTeamModeTable();
+  await pgPool.run('claude', `
+    INSERT INTO team_modes (team, mode, updated_at, updated_by)
+    VALUES ($1, $2, NOW(), $3)
+    ON CONFLICT (team) DO UPDATE SET
+      mode       = EXCLUDED.mode,
+      updated_at = NOW(),
+      updated_by = EXCLUDED.updated_by
+  `, [team, mode, updatedBy]);
+  _teamModeCache[team] = { mode, expiresAt: Date.now() + 60_000 };
+  return { team, mode, updatedBy };
+}
+
 // ── 오래된 로그 정리 ─────────────────────────────────────────────────
 
 /**
@@ -422,6 +480,8 @@ module.exports = {
   getMismatches,
   buildShadowReport,
   pruneOldLogs,
+  getTeamMode,
+  setTeamMode,
   TEAM_MODE,
   GROQ_MODEL,
 };

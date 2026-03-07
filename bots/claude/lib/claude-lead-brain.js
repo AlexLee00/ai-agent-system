@@ -22,6 +22,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const pgPool    = require('../../../packages/core/lib/pg-pool');
 const { getAnthropicKey } = require('../../../packages/core/lib/llm-keys');
 const { getTimeout }      = require('../../../packages/core/lib/llm-timeouts');
+const stateBus  = require('../../reservation/lib/state-bus');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 const MODEL   = 'claude-sonnet-4-6';
@@ -240,4 +241,60 @@ async function getJudgmentQuality(days = 7) {
   }
 }
 
-module.exports = { evaluateWithClaudeLead, getJudgmentQuality };
+// ── agent_events 수신 처리 ─────────────────────────────────────────────
+
+/**
+ * 단일 agent_event 처리
+ * Phase 1: 이벤트 수신 로그 + dexter_check_result는 shadow_log에 기록
+ * @param {object} event  agent_events 레코드
+ */
+async function processAgentEvent(event) {
+  const { id, from_agent, event_type, payload } = event;
+  const p = payload ?? {};
+
+  switch (event_type) {
+    case 'dexter_check_result': {
+      // 이미 evaluateWithClaudeLead가 직접 Sonnet 평가를 수행하므로
+      // Phase 1에서는 수신 확인 로그만 남김
+      const icon = p.overall === 'error' ? '❌' : p.overall === 'warn' ? '⚠️' : '✅';
+      console.log(
+        `  [클로드 팀장] 이벤트 수신 — [${from_agent}/${event_type}]`,
+        `${icon} ${p.overall?.toUpperCase()} (❌${p.errorCount ?? 0} ⚠️${p.warnCount ?? 0})`,
+      );
+      break;
+    }
+
+    default: {
+      // 알 수 없는 이벤트 타입 — 일단 로그만
+      console.log(`  [클로드 팀장] 이벤트 수신 — [${from_agent}/${event_type}] (미처리 타입)`);
+      break;
+    }
+  }
+}
+
+/**
+ * claude-lead 수신 미처리 이벤트 일괄 처리
+ * 덱스터 실행 시 호출하여 event bus 소화
+ */
+async function pollAgentEvents() {
+  let events;
+  try {
+    events = await stateBus.getUnprocessedEvents('claude-lead', 10);
+  } catch (e) {
+    console.warn('[claude-lead-brain] 이벤트 폴링 실패 (무시):', e.message);
+    return;
+  }
+  if (!events || events.length === 0) return;
+
+  console.log(`  [클로드 팀장] 미처리 이벤트 ${events.length}건 처리 중...`);
+  for (const ev of events) {
+    try {
+      await processAgentEvent(ev);
+      await stateBus.markEventProcessed(ev.id);
+    } catch (e) {
+      console.warn(`  [클로드 팀장] 이벤트 id=${ev.id} 처리 실패 (무시):`, e.message);
+    }
+  }
+}
+
+module.exports = { evaluateWithClaudeLead, getJudgmentQuality, processAgentEvent, pollAgentEvents };
