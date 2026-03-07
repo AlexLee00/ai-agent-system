@@ -39,10 +39,11 @@
  *   node scripts/speed-test.js --model=gemini-2.5-flash,llama-4-scout
  */
 
-const fs    = require('fs');
-const path  = require('path');
-const http  = require('http');
-const https = require('https');
+const fs     = require('fs');
+const path   = require('path');
+const http   = require('http');
+const https  = require('https');
+const sender = require('../packages/core/lib/telegram-sender');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
 const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.json');
@@ -437,11 +438,6 @@ async function benchmarkModel(modelId, ctx) {
 
 // ─── Telegram 알림 ────────────────────────────────────────────────────────
 function sendTelegramNotify(results, { applied, recommended, current } = {}) {
-  const keys = loadSpeedTestKeys();
-  const token  = keys.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = keys.telegram_chat_id   || process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return Promise.resolve();
-
   const dateStr = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
   const top3 = results.filter(r => r.ok).slice(0, 5).map((r, i) => {
     const medal = ['🥇', '🥈', '🥉', '4위', '5위'][i] || '';
@@ -459,23 +455,7 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   }
 
   const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}\n\n❌ 실패: ${failed}개`;
-
-  return new Promise((resolve) => {
-    const body = Buffer.from(JSON.stringify({ chat_id: chatId, text }));
-    const req  = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${token}/sendMessage`,
-      method:   'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
-    }, (res) => {
-      res.resume();
-      resolve();
-    });
-    req.on('error', () => resolve());
-    req.setTimeout(10000, () => { req.destroy(); resolve(); });
-    req.write(body);
-    req.end();
-  });
+  return sender.send('claude-lead', text);
 }
 
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────

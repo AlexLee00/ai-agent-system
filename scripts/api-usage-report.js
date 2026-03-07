@@ -15,10 +15,10 @@
 
 'use strict';
 
-const fs    = require('fs');
-const path  = require('path');
-const os    = require('os');
-const https = require('https');
+const fs     = require('fs');
+const path   = require('path');
+const os     = require('os');
+const sender = require('../packages/core/lib/telegram-sender');
 
 const LOG_FILE         = path.join(os.homedir(), '.openclaw', 'api-usage.jsonl');
 const SPEED_TEST_KEYS  = path.join(os.homedir(), '.openclaw', 'speed-test-keys.json');
@@ -110,26 +110,7 @@ function usageBar(used, limit, width = 20) {
 
 // ─── Telegram 전송 ─────────────────────────────────────────────────
 function sendTelegram(text) {
-  try {
-    const keys    = JSON.parse(fs.readFileSync(SPEED_TEST_KEYS, 'utf-8'));
-    const token   = keys.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
-    const chatId  = keys.telegram_chat_id   || process.env.TELEGRAM_CHAT_ID;
-    if (!token || !chatId) { log(yellow('⚠️  텔레그램 키 없음 — 전송 스킵')); return Promise.resolve(); }
-
-    return new Promise((resolve) => {
-      const body = Buffer.from(JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }));
-      const req  = https.request({
-        hostname: 'api.telegram.org',
-        path:     `/bot${token}/sendMessage`,
-        method:   'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
-      }, (res) => { res.resume(); resolve(); });
-      req.on('error', () => resolve());
-      req.setTimeout(10000, () => { req.destroy(); resolve(); });
-      req.write(body);
-      req.end();
-    });
-  } catch { return Promise.resolve(); }
+  return sender.send('claude-lead', text);
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────

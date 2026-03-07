@@ -2,11 +2,13 @@
 
 /**
  * lib/reporter.js — 덱스터 리포트 포맷 + 텔레그램 발송
+ *
+ * 텔레그램 발송: telegram-sender.js 경유 → 🔧 클로드 Forum Topic
  */
 
-const fs    = require('fs');
-const https = require('https');
-const cfg   = require('./config');
+const fs     = require('fs');
+const cfg    = require('./config');
+const sender = require('../../../packages/core/lib/telegram-sender');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 
@@ -82,41 +84,11 @@ function buildTelegramText(results, elapsed) {
 
 // ─── 텔레그램 발송 ──────────────────────────────────────────────────
 
-function loadTelegramCreds() {
-  for (const p of Object.values(cfg.SECRETS)) {
-    try {
-      const s = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (s.telegram_bot_token && s.telegram_chat_id) {
-        return { token: s.telegram_bot_token, chatId: s.telegram_chat_id };
-      }
-    } catch { /* try next */ }
-  }
-  return null;
-}
-
+/**
+ * 덱스터 리포트 발송 — 🔧 클로드 Forum Topic 경유
+ */
 function sendTelegram(text) {
-  const creds = loadTelegramCreds();
-  if (!creds) return Promise.resolve(false);
-
-  const body = Buffer.from(JSON.stringify({
-    chat_id:    creds.chatId,
-    text,
-    parse_mode: 'Markdown',
-  }));
-
-  return new Promise((resolve) => {
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path:     `/bot${creds.token}/sendMessage`,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': body.length },
-    }, res => { res.resume(); res.on('end', () => resolve(true)); });
-
-    req.on('error', () => resolve(false));
-    req.setTimeout(10000, () => { req.destroy(); resolve(false); });
-    req.write(body);
-    req.end();
-  });
+  return sender.send('claude-lead', text);
 }
 
 // ─── 로그 파일 기록 ─────────────────────────────────────────────────
