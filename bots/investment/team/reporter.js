@@ -15,10 +15,16 @@
 
 import ccxt            from 'ccxt';
 import { fileURLToPath } from 'url';
+import { createRequire }  from 'module';
 import * as db          from '../shared/db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker }      from '../shared/cost-tracker.js';
+import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
+
+const _require = createRequire(import.meta.url);
+const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
+const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
 
@@ -169,6 +175,14 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   const pnl = await db.getTodayPnl();
 
+  // ── 7. 분석팀 정확도 ────────────────────────────────────────────────
+  let accuracyReport = null;
+  try {
+    accuracyReport = await buildAccuracyReport();
+  } catch (e) {
+    console.warn(`  ⚠️ 분석팀 정확도 조회 실패: ${e.message}`);
+  }
+
   // ─── 리포트 조립 ──────────────────────────────────────────────────
   const paperMode = isPaperMode();
   const modeTag   = paperMode ? '📄 PAPER' : '🔴 LIVE';
@@ -272,15 +286,102 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   lines.push(`  이번달: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`);
   lines.push(`  (Groq 무료 — 실비용 $0)`);
 
+  // 분석팀 정확도
+  if (accuracyReport) {
+    lines.push(``);
+    lines.push(accuracyReport.text);
+  }
+
   const report = lines.join('\n');
   console.log('\n' + report);
+
+  // 가중치 조정 알림 (텔레그램, 조정 제안 있을 시)
+  if (telegram && accuracyReport) {
+    const needsAlert = accuracyReport.adjustments.some(
+      a => (a.action !== 'maintain' && a.action !== 'insufficient_data') || a.needsReview
+    );
+    if (needsAlert) {
+      const alertLines = ['📊 분석팀 가중치 조정 제안 (마스터 승인 필요)'];
+      for (const adj of accuracyReport.adjustments) {
+        if (adj.action !== 'maintain' && adj.action !== 'insufficient_data') {
+          alertLines.push(`  ${adj.botName}: ${adj.currentWeight} → ${adj.suggestedWeight} (${adj.reason})`);
+        }
+        if (adj.needsReview) {
+          alertLines.push(`  ⚠️ ${adj.botName} 3주 연속 50% 미만 — 역할 재검토 필요`);
+        }
+      }
+      alertLines.push('', '⚠️ 자동 변경 없음 — 마스터 승인 후 적용');
+      publishToMainBot({ from_bot: 'luna', event_type: 'accuracy_alert', alert_level: 2, message: alertLines.join('\n') });
+      console.log('\n📊 가중치 조정 알림 발송 완료');
+    }
+  }
 
   if (telegram) {
     publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: report });
     console.log('\n📱 제이 큐 발송 완료');
   }
 
+  // 4주차 안정화 지표 (콘솔 로그)
+  const week4Summary = await buildWeek4Summary();
+  console.log('\n' + week4Summary);
+
   return report;
+}
+
+// ─── 4주차 종합 안정화 지표 ──────────────────────────────────────────
+
+export async function buildWeek4Summary() {
+  const lines = [
+    `📊 4주차 안정화 지표`,
+    `════════════════════════`,
+  ];
+
+  // 1. Shadow 일치율 (7일)
+  try {
+    const [lunaStats, skaStats, claudeStats] = await Promise.all([
+      shadow.getMatchRate('luna',       null, 7),
+      shadow.getMatchRate('ska',        null, 7),
+      shadow.getMatchRate('claude-lead', null, 7),
+    ]);
+    lines.push(`━━ Shadow 일치율 (7일) ━━`);
+    const fmtRate = (s) => s.total > 0 ? `${s.matchRate}% (${s.total}건)` : '데이터 없음';
+    lines.push(`  루나:   ${fmtRate(lunaStats)}`);
+    lines.push(`  스카:   ${fmtRate(skaStats)}`);
+    lines.push(`  클로드: ${fmtRate(claudeStats)}`);
+  } catch (e) {
+    lines.push(`━━ Shadow 일치율 ━━\n  조회 실패: ${e.message}`);
+  }
+  lines.push(``);
+
+  // 2. LLM 비용
+  const cost = tracker.getToday();
+  lines.push(`━━ LLM 비용 ━━`);
+  lines.push(`  오늘: $${cost.usage.toFixed(4)} (Groq: $0.00)`);
+  lines.push(`  이번달: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`);
+  lines.push(``);
+
+  // 3. LLM 졸업 후보 (claude.graduation_candidates)
+  try {
+    const candidates = await pgPool.query('claude', `
+      SELECT team, context, predicted_decision, sample_count, match_rate
+      FROM graduation_candidates
+      WHERE status = 'candidate'
+      ORDER BY match_rate DESC
+      LIMIT 5
+    `, []);
+    lines.push(`━━ LLM 졸업 후보 ━━`);
+    if (candidates.length === 0) {
+      lines.push(`  없음 (90%+ 일치 패턴 미도달)`);
+    } else {
+      for (const c of candidates) {
+        lines.push(`  [${c.team}] ${c.context} → ${c.predicted_decision}: ${(Number(c.match_rate) * 100).toFixed(1)}% (n=${c.sample_count})`);
+      }
+    }
+  } catch (e) {
+    lines.push(`━━ LLM 졸업 후보 ━━\n  조회 실패: ${e.message}`);
+  }
+
+  return lines.join('\n');
 }
 
 // ─── CLI 실행 ───────────────────────────────────────────────────────

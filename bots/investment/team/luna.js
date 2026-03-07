@@ -15,7 +15,11 @@
  */
 
 import { fileURLToPath } from 'url';
+import { createRequire }  from 'module';
 import * as db from '../shared/db.js';
+
+const _require = createRequire(import.meta.url);
+const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from '../shared/signal.js';
 import { notifySignal, notifyError } from '../shared/report.js';
@@ -108,17 +112,28 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   } catch {}
 
   const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}\n\n최종 매매 신호:`;
-  const raw     = await callLLM('luna', LUNA_SYSTEM, userMsg, 256);
-  const parsed  = parseJSON(raw);
 
-  if (!parsed?.action) {
-    const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
-    const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
-    const vote    = votes.reduce((a, b) => a + b, 0);
-    const action  = vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD;
-    return { action, amount_usdt: 100, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
-  }
-  return parsed;
+  // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
+  const shadowResult = await shadow.evaluate({
+    team:      'luna',
+    context:   'symbol_decision',
+    input:     userMsg,
+    ruleEngine: async () => {
+      const raw    = await callLLM('luna', LUNA_SYSTEM, userMsg, 256);
+      const parsed = parseJSON(raw);
+      if (!parsed?.action) {
+        const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
+        const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
+        const vote    = votes.reduce((a, b) => a + b, 0);
+        const action  = vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD;
+        return { action, amount_usdt: 100, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
+      }
+      return parsed;
+    },
+    llmPrompt: LUNA_SYSTEM,
+    mode:      'shadow',
+  });
+  return shadowResult.action;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
 }
 
 // ─── 포트폴리오 판단 ───────────────────────────────────────────────
