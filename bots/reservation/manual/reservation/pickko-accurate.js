@@ -361,7 +361,13 @@ async function main() {
       process.exit(1);
     }
     log('🔒 픽코 락 획득 (manual)');
-    process.once('exit', () => { if (lockAcquired) releasePickkoLock('manual').catch(() => {}); });
+    // ⚠️ process.once('exit', ...) 는 async 작업 완료를 보장하지 않음 → releaseLock() 직접 호출로 대체
+    const releaseLock = async () => {
+      if (lockAcquired) {
+        try { await releasePickkoLock('manual'); log('🔓 픽코 락 해제'); } catch {}
+        lockAcquired = false;
+      }
+    };
     
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     
@@ -1654,6 +1660,7 @@ async function main() {
 
     // ✅ 정상 종료 (브라우저 close 이후 발생하는 Detached Frame 오류가
     //    catch 블록으로 전파되어 exit(1)로 오인되는 것을 방지)
+    await releaseLock();
     process.exit(0);
 
   } catch (err) {
@@ -1661,6 +1668,7 @@ async function main() {
     if (err.code === 'TIME_ELAPSED') {
       log(`⏰ [시간 경과] 픽코 등록 생략: ${err.message}`);
       try { await browser.close(); } catch(e) {}
+      await releaseLock();
       process.exit(2);
     }
 
@@ -1668,6 +1676,7 @@ async function main() {
     if (err.code === 'ALREADY_REGISTERED') {
       log(`⚠️ [이미 등록됨] 결제대기 여부 확인 → pickko-pay-pending.js 실행: ${err.message}`);
       try { await browser.close(); } catch(e) {}
+      await releaseLock();
 
       await new Promise((resolve) => {
         const child = spawn('node', [
@@ -1703,7 +1712,7 @@ async function main() {
       log(`━━━━━━━━━━━━━━━`);
       log(`⚠️ 조치: 즉시 DEV 모드로 전환하여 분석 필요`);
       log(`⚠️ 최우선 해결 과제로 등록되었습니다.`);
-      
+
       // 추후 텔레그램 알람 연동
       // await sendAlert({
       //   title: '🚨 [OPS-ERROR]',
@@ -1712,16 +1721,17 @@ async function main() {
       //   date: DATE,
       //   action: 'DEV 모드로 전환 필요'
       // });
-      
+
       // OPS 모드: 항상 브라우저 종료
       try { await browser.close(); } catch (e) {}
+      await releaseLock();
       process.exit(1);
     }
-    
+
     // 🟡 **DEV 모드 오류 처리**
     else {
       log(`⚠️ [DEV] 예약 처리 중 오류 (개발 중이므로 로그만 출력)`);
-      
+
       if (process.env.HOLD_BROWSER_ON_ERROR === '0') {
         log('🧹 HOLD_BROWSER_ON_ERROR=0 → 에러여도 브라우저 종료');
         try { await browser.close(); } catch (e) {}
@@ -1730,6 +1740,7 @@ async function main() {
         await delay(600_000);
         try { await browser.close(); } catch (e) {}
       }
+      await releaseLock();
       process.exit(1);
     }
   }
