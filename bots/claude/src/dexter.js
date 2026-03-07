@@ -49,6 +49,7 @@ const dexterMode = new DexterMode();
 
 const { saveErrorItems, markResolved, cleanup: cleanupErrorHistory } = require('../lib/error-history');
 const { analyzeWithAI } = require('../lib/ai-analyst');
+const { evaluateWithClaudeLead } = require('../lib/claude-lead-brain');
 
 const { printReport, buildTelegramText, writeLog, writeFixLog } = require('../lib/reporter');
 
@@ -266,6 +267,13 @@ async function main() {
     }
     teamBus.cleanupOldMessages();
   } catch { /* 무시 */ }
+
+  // Shadow: 클로드(팀장) Sonnet 종합 판단 (기존 보고에 영향 없음)
+  try {
+    await evaluateWithClaudeLead(results);
+  } catch (e) {
+    console.warn('⚠️ 클로드(팀장) Shadow 판단 실패 (무시):', e.message);
+  }
 
   // 종료 코드: 오류 있으면 1
   const hasError = results.some(r => r.status === 'error');

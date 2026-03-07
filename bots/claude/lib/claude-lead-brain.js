@@ -1,0 +1,228 @@
+'use strict';
+
+/**
+ * bots/claude/lib/claude-lead-brain.js — 클로드 팀장 두뇌
+ *
+ * 덱스터가 감지한 이슈를 Anthropic Sonnet으로 종합 판단.
+ * Shadow Mode: 판단 결과는 shadow_log에만 기록 (기존 알림에 영향 없음).
+ *
+ * 판단 영역:
+ *   1. 이슈 심각도 재평가 (덱스터 규칙 기반 vs Sonnet 판단)
+ *   2. 복구 필요 여부 (독터에게 지시할지)
+ *   3. 마스터 에스컬레이션 판단 (마스터에게 알릴지)
+ *   4. 팀 간 영향도 분석 (스카/루나에게 알릴지)
+ *
+ * 현재: Shadow Mode (덱스터 직접 보고 유지)
+ * 향후: Confirmation → LLM Primary 단계별 전환
+ *
+ * DB: PostgreSQL reservation.shadow_log (shadow-mode.js 공유 테이블)
+ */
+
+const Anthropic = require('@anthropic-ai/sdk');
+const pgPool    = require('../../../packages/core/lib/pg-pool');
+const { getAnthropicKey } = require('../../../packages/core/lib/llm-keys');
+const { getTimeout }      = require('../../../packages/core/lib/llm-timeouts');
+
+const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
+const MODEL   = 'claude-sonnet-4-6';
+const TEAM    = 'claude-lead';
+const CONTEXT = 'system_issue_triage';
+
+// ── 규칙 엔진 (덱스터 현재 동작 기준) ────────────────────────────────
+/**
+ * 이슈 목록을 규칙 기반으로 판단 (기존 덱스터 정책 반영)
+ * @param {Array} issues  {checkName, label, status, detail}[]
+ * @returns {object}      ruleResult
+ */
+function _ruleEngine(issues) {
+  const hasCritical = issues.some(i => i.status === 'critical');
+  const hasError    = issues.some(i => i.status === 'error');
+
+  if (hasCritical) {
+    const cnt = issues.filter(i => i.status === 'critical').length;
+    return {
+      decision:       'escalate',
+      severity:       'critical',
+      action:         'notify_master',
+      reasoning:      `CRITICAL 이슈 ${cnt}건 감지 — 즉시 마스터 보고`,
+      affected_teams: [],
+    };
+  }
+  if (hasError) {
+    const cnt = issues.filter(i => i.status === 'error').length;
+    return {
+      decision:       'monitor',
+      severity:       'high',
+      action:         'log_only',
+      reasoning:      `ERROR 이슈 ${cnt}건 감지 — 추이 관찰`,
+      affected_teams: [],
+    };
+  }
+  return {
+    decision:       'monitor',
+    severity:       'medium',
+    action:         'log_only',
+    reasoning:      `WARN 이슈 ${issues.length}건 감지 — 경미한 상태`,
+    affected_teams: [],
+  };
+}
+
+// ── 프롬프트 ─────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `당신은 클로드 — AI 에이전트 시스템의 팀장입니다.
+덱스터(시스템 점검봇)가 감지한 이슈 목록을 분석하여 종합 판단을 내립니다.
+
+반드시 다음 JSON 형식으로만 응답하세요 (추가 텍스트 없이):
+{
+  "decision": "escalate|recover|monitor|ignore",
+  "severity": "critical|high|medium|low",
+  "action": "notify_master|run_doctor|notify_team|log_only",
+  "reasoning": "판단 근거 1-2문장 (한국어)",
+  "affected_teams": []
+}
+
+decision 기준:
+- escalate: 마스터 즉시 보고 필요 (서비스 중단, 보안 위반, 실투자 위험)
+- recover:  독터에게 자동 복구 지시 가능한 경우
+- monitor:  이상 감지했으나 추이 관찰로 충분한 경우
+- ignore:   일시적·무해한 상태 (예: git clean 상태, 정상 재시작)
+
+action 기준:
+- notify_master: 마스터 텔레그램 즉시 알림 (escalate와 동행)
+- run_doctor:    독터 자동 복구 실행 (recover와 동행)
+- notify_team:   관련 팀 알림 (스카/루나팀 영향 시)
+- log_only:      로그 기록만 (monitor/ignore와 동행)
+
+affected_teams: 이슈가 스카팀 또는 루나팀에 영향을 줄 경우 포함 (예: ["ska"], ["luna"], [])`;
+
+function _buildUserPrompt(issues) {
+  const lines = issues.map((iss, i) =>
+    `${i + 1}. [${iss.checkName}] ${iss.label}: ${iss.detail || '-'} (${iss.status})`
+  );
+  return `덱스터가 감지한 이슈 ${issues.length}건을 분석해주세요:\n\n${lines.join('\n')}`;
+}
+
+// ── 메인 평가 함수 ────────────────────────────────────────────────────
+/**
+ * 덱스터 체크 결과를 Sonnet으로 종합 판단 (Shadow Mode)
+ * @param {Array} results  덱스터 results 배열 [{name, status, items:[{label,status,detail}]}]
+ */
+async function evaluateWithClaudeLead(results) {
+  // 1. 비-ok 이슈 추출 (패턴 분석·자기진단 체크 제외 — 메타 노이즈 방지)
+  const SKIP_CHECKS = ['오류 패턴 분석', '덱스터 자기진단', '자동 수정'];
+  const issues = results.flatMap(r => {
+    if (SKIP_CHECKS.includes(r.name)) return [];
+    return (r.items || [])
+      .filter(i => i.status !== 'ok')
+      .map(i => ({ checkName: r.name, label: i.label, status: i.status, detail: i.detail || '' }));
+  });
+
+  if (issues.length === 0) return;  // 이슈 없으면 스킵
+
+  const t0 = Date.now();
+
+  // 2. 규칙 엔진 판단 (동기)
+  const ruleResult = _ruleEngine(issues);
+
+  // 3. Sonnet LLM 판단 (비동기, Shadow)
+  let llmResult = null;
+  let llmError  = null;
+  const apiKey  = getAnthropicKey();
+
+  if (apiKey) {
+    try {
+      const client = new Anthropic({ apiKey, timeout: getTimeout(MODEL), maxRetries: 1 });
+      const resp   = await client.messages.create({
+        model:       MODEL,
+        max_tokens:  300,
+        temperature: 0.1,
+        system:      SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: _buildUserPrompt(issues) }],
+      });
+      const raw = resp.content[0]?.text?.trim() || '';
+      llmResult = JSON.parse(raw);
+      if (!llmResult.decision) llmResult = null;
+    } catch (e) {
+      llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
+    }
+  } else {
+    llmError = 'Anthropic API 키 없음 — shadow 기록만';
+  }
+
+  // 4. 일치 여부
+  const match = llmResult
+    ? (llmResult.decision === ruleResult.decision)
+    : null;
+
+  // 5. shadow_log 기록
+  const elapsed      = Date.now() - t0;
+  const inputSummary = issues
+    .map(i => `[${i.checkName}] ${i.label}(${i.status})`)
+    .join(' | ')
+    .slice(0, 500);
+
+  try {
+    await pgPool.run(SCHEMA, `
+      INSERT INTO shadow_log
+        (team, context, input_summary, rule_result, llm_result, llm_error, match, mode, elapsed_ms)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      TEAM,
+      CONTEXT,
+      inputSummary,
+      JSON.stringify(ruleResult),
+      llmResult ? JSON.stringify(llmResult) : null,
+      llmError  ?? null,
+      match,
+      'shadow',
+      elapsed,
+    ]);
+  } catch (e) {
+    console.warn('[claude-lead-brain] shadow_log INSERT 실패 (무시):', e.message);
+  }
+
+  // 6. 판단 로그
+  const icon = llmResult ? (match ? '✅' : '⚡') : '⚠️';
+  const matchStr = llmResult
+    ? ` — 규칙:${ruleResult.decision} / Sonnet:${llmResult.decision}${match ? ' (일치)' : ' (불일치!)'}`
+    : ` — Sonnet 실패: ${llmError}`;
+  console.log(`  ${icon} [클로드 팀장] 이슈 ${issues.length}건 Shadow 판단${matchStr}`);
+}
+
+/**
+ * shadow_log 기반 판단 품질 조회 (일치율 + 불일치 목록)
+ * @param {number} days
+ * @returns {Promise<{total, matched, matchRate, mismatches}>}
+ */
+async function getJudgmentQuality(days = 7) {
+  try {
+    const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+    const rows = await pgPool.query(SCHEMA, `
+      SELECT match, rule_result, llm_result, input_summary, created_at
+      FROM shadow_log
+      WHERE team = $1 AND context = $2 AND created_at > $3
+      ORDER BY created_at DESC
+      LIMIT 200
+    `, [TEAM, CONTEXT, cutoff]);
+
+    const total      = rows.length;
+    const matched    = rows.filter(r => r.match === true).length;
+    const matchRate  = total > 0 ? matched / total : null;
+    const mismatches = rows
+      .filter(r => r.match === false)
+      .map(r => ({
+        ruleDecision: r.rule_result?.decision,
+        llmDecision:  r.llm_result?.decision,
+        llmReasoning: r.llm_result?.reasoning,
+        input:        r.input_summary?.slice(0, 100),
+        at:           r.created_at,
+      }));
+
+    return { total, matched, matchRate, mismatches };
+  } catch (e) {
+    console.warn('[claude-lead-brain] 품질 조회 실패:', e.message);
+    return { total: 0, matched: 0, matchRate: null, mismatches: [] };
+  }
+}
+
+module.exports = { evaluateWithClaudeLead, getJudgmentQuality };
