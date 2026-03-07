@@ -125,6 +125,14 @@ async function main() {
     publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
     log('\n✅ 픽코 일일 감사 완료');
 
+    // ──── 5단계: Shadow Log 자동 정리 (30일 초과 레코드 삭제) ────
+    try {
+      const pruned = await shadow.pruneOldLogs(30);
+      if (pruned > 0) log(`🧹 shadow_log 정리: ${pruned}건 (30일 초과)`);
+    } catch (e) {
+      log(`⚠️ shadow_log 정리 실패 (무시): ${e.message}`);
+    }
+
   } finally {
     if (browser) {
       try { await browser.close(); } catch (e) {}
