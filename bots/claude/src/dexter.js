@@ -155,11 +155,11 @@ async function main() {
   } catch { /* 무시 */ }
 
   // ok로 돌아온 항목의 과거 오류 이력 삭제 (해결된 이슈 패턴 누적 방지)
-  try { markResolved(results); } catch { /* 무시 */ }
+  try { await markResolved(results); } catch { /* 무시 */ }
   // 오류 이력 저장 (패턴 분석용) — patterns 체크 실행 전에 저장
-  try { saveErrorItems(results); } catch { /* 무시 */ }
+  try { await saveErrorItems(results); } catch { /* 무시 */ }
   // 7일 이상 된 이력 자동 삭제 (무한 누적 방지)
-  try { cleanupErrorHistory(7); } catch { /* 무시 */ }
+  try { await cleanupErrorHistory(7); } catch { /* 무시 */ }
 
   // 패턴 분석 체크 (이력 기반 — 항상 마지막 실행)
   try {
