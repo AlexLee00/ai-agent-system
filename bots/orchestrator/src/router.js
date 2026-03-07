@@ -493,14 +493,14 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'ska_action': {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
-      const cmdId = insertBotCommand('ska', command, args);
+      const cmdId = await insertBotCommand('ska', command, args);
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatSkaResult(command, raw);
     }
 
     case 'upbit_withdraw': {
       await notify(`⏳ 업비트 USDT 출금 중... (~30초, TRC20 수수료 ~1 USDT 차감)`);
-      const cmdId = insertBotCommand('luna', 'upbit_withdraw_only', {});
+      const cmdId = await insertBotCommand('luna', 'upbit_withdraw_only', {});
       const raw   = await waitForCommandResult(cmdId, 60000);
       if (!raw) return '⏱ 업비트 출금 타임아웃. 업비트 앱에서 출금 내역 확인하세요.';
       let r;
@@ -517,7 +517,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'upbit_transfer': {
       await notify(`⏳ 업비트 잔고 확인 중... (소요: ~2분)`);
-      const cmdId = insertBotCommand('luna', 'upbit_to_binance', args || {});
+      const cmdId = await insertBotCommand('luna', 'upbit_to_binance', args || {});
       const raw   = await waitForCommandResult(cmdId, 180000); // 3분 타임아웃
       if (!raw) return '⏱ 업비트→바이낸스 전송 타임아웃 (3분). 업비트 앱에서 직접 확인하세요.';
       let r;
@@ -527,33 +527,33 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'upbit_balance': {
-      const cmdId = insertBotCommand('luna', 'get_upbit_balance', {});
+      const cmdId = await insertBotCommand('luna', 'get_upbit_balance', {});
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatUpbitBalance(raw);
     }
 
     case 'binance_balance': {
-      const cmdId = insertBotCommand('luna', 'get_binance_balance', {});
+      const cmdId = await insertBotCommand('luna', 'get_binance_balance', {});
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatBinanceBalance(raw);
     }
 
     case 'crypto_price': {
-      const cmdId = insertBotCommand('luna', 'get_crypto_price', args || {});
+      const cmdId = await insertBotCommand('luna', 'get_crypto_price', args || {});
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatCryptoPrice(raw);
     }
 
     case 'kis_domestic_balance': {
       await notify(`⏳ KIS 국내주식 잔고 조회 중...`);
-      const cmdId = insertBotCommand('luna', 'get_kis_domestic_balance', {});
+      const cmdId = await insertBotCommand('luna', 'get_kis_domestic_balance', {});
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatKisBalance(raw, 'domestic');
     }
 
     case 'kis_overseas_balance': {
       await notify(`⏳ KIS 해외주식 잔고 조회 중...`);
-      const cmdId = insertBotCommand('luna', 'get_kis_overseas_balance', {});
+      const cmdId = await insertBotCommand('luna', 'get_kis_overseas_balance', {});
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatKisBalance(raw, 'overseas');
     }
@@ -562,7 +562,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'luna_action': {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
-      const cmdId = insertBotCommand('luna', command, args);
+      const cmdId = await insertBotCommand('luna', command, args);
       const raw   = await waitForCommandResult(cmdId, 30000);
       return formatLunaResult(command, raw);
     }
@@ -571,14 +571,14 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
       await notify(`⏳ 클로드팀에 전달 중...`);
-      const cmdId = insertBotCommand('claude', command, args);
+      const cmdId = await insertBotCommand('claude', command, args);
       const raw   = await waitForCommandResult(cmdId, 300000);
       return formatClaudeResult(command, raw);
     }
 
     case 'session_close': {
       await notify(`⏳ 세션 마감 시작합니다...\n문서 업데이트·저널·git commit 처리 중`);
-      const cmdId = insertBotCommand('claude', 'session_close', {
+      const cmdId = await insertBotCommand('claude', 'session_close', {
         text: msg.text,
         bot: 'orchestrator',
       });
@@ -594,7 +594,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const query = args.query;
       if (!query) return '⚠️ 질문 내용이 없습니다.\n예) /claude 루나팀 전략 리스크 분석해줘';
       await notify(`⏳ 클로드가 생각 중...`);
-      const cmdId = insertBotCommand('claude', 'ask_claude', { query });
+      const cmdId = await insertBotCommand('claude', 'ask_claude', { query });
       const raw   = await waitForCommandResult(cmdId, 300000);
       if (!raw) return '⏱ 클로드 응답 없음 (5분 타임아웃)';
       let r;
@@ -643,7 +643,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     default: {
       // 처리 불가 명령 → 클로드에게 분석 요청 (NLP 자동 개선)
       await notify(`🤔 잠깐, 클로드에게 확인해볼게요...`);
-      const cmdId = insertBotCommand('claude', 'analyze_unknown', { text: msg.text });
+      const cmdId = await insertBotCommand('claude', 'analyze_unknown', { text: msg.text });
       const raw   = await waitForCommandResult(cmdId, 120000); // 2분
       if (!raw) return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
       let r;
