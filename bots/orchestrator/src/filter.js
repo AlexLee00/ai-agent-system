@@ -26,20 +26,20 @@ const _recent = new Map(); // `${fromBot}:${eventType}` → { items, timer, reso
  * @param {Function} onSend  (message: string) => void  실제 발송 콜백
  * @returns {'sent'|'muted'|'deferred'|'batched'}
  */
-function processItem(item, onSend) {
+async function processItem(item, onSend) {
   // 1. 무음 체크 (봇/팀 단위)
-  if (isAlertMuted(item.from_bot, item.team)) {
+  if (await isAlertMuted(item.from_bot, item.team)) {
     return 'muted';
   }
 
   // 1-b. 이벤트 타입 무음 체크 ("이 알람 안 해도 돼" 등으로 설정)
-  if (isEventMuted(item.from_bot, item.event_type)) {
+  if (await isEventMuted(item.from_bot, item.event_type)) {
     return 'muted';
   }
 
   // 2. 야간 보류 체크
   if (shouldDefer(item.alert_level)) {
-    deferToMorning(item.id, item.message.split('\n')[0].slice(0, 60), [item.from_bot]);
+    await deferToMorning(item.id, item.message.split('\n')[0].slice(0, 60), [item.from_bot]);
     return 'deferred';
   }
 

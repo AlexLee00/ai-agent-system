@@ -180,7 +180,7 @@ async function processQueue() {
     `);
 
     for (const item of pending) {
-      const result = processItem(item, async (message, processedItems) => {
+      const result = await processItem(item, async (message, processedItems) => {
         await sendTelegram(message);
         try {
           const ids = Array.isArray(processedItems)
