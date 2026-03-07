@@ -1,16 +1,18 @@
 /**
  * shared/report.js — 루나팀 알림 리포터 (Phase 3-A ESM)
  *
- * 모든 알림은 제이(mainbot) 큐를 통해 발송됩니다.
+ * 모든 알림은 telegram-sender.js 경유로 💰 루나 Forum Topic에 직접 발송.
+ * CRITICAL(오류) 알림은 🚨 긴급 + 💰 루나 이중 발송.
  */
 
-import { publishToMainBot } from './mainbot-client.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const sender  = require('../../../packages/core/lib/telegram-sender');
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────
 
 export function sendTelegram(message) {
-  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message });
-  return Promise.resolve(true);
+  return sender.send('luna', message);
 }
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
@@ -24,8 +26,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
-  return Promise.resolve(true);
+  return sender.send('luna', msg);
 }
 
 export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
@@ -36,8 +37,7 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
     `수량: ${amount?.toFixed(6)} / 가격: $${price?.toLocaleString()}`,
     `총액: $${totalUsdt?.toFixed(2)}`,
   ].join('\n');
-  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
-  return Promise.resolve(true);
+  return sender.send('luna', msg);
 }
 
 export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
@@ -49,8 +49,7 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
-  return Promise.resolve(true);
+  return sender.send('luna', msg);
 }
 
 export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
@@ -62,23 +61,20 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: msg });
-  return Promise.resolve(true);
+  return sender.send('luna', msg);
 }
 
 export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
-  publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 2, message: msg });
-  return Promise.resolve(true);
+  return sender.send('luna', msg);
 }
 
 export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
-  publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: msg });
-  return Promise.resolve(true);
+  return sender.sendCritical('luna', msg);  // 🚨 긴급 + 💰 루나 이중 발송
 }
 
-// ─── 매매일지 알림 (기존 함수 수정 없이 추가) ─────────────────────────
+// ─── 매매일지 알림 ───────────────────────────────────────────────────
 
 /**
  * 실시간 진입 알림 (trade_journal 기록 후 호출)
@@ -110,8 +106,7 @@ export function notifyJournalEntry({
   if (tpSlSet !== undefined) lines.push(`TP/SL 거래소 설정: ${tpSlSet ? '✅ 완료' : '⚠️ 미설정'}`);
   if (signalToExecMs)        lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
 
-  publishToMainBot({ from_bot: 'luna', event_type: 'trade', alert_level: 2, message: lines.join('\n') });
-  return Promise.resolve(true);
+  return sender.send('luna', lines.join('\n'));
 }
 
 /**
@@ -160,8 +155,7 @@ export function notifyDailyJournal(date, records = []) {
     lines.push(`  헤르메스: ${acc(allRec.hermes_accuracy)} ${trend(allRec.hermes_accuracy)}`);
   }
 
-  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: lines.join('\n') });
-  return Promise.resolve(true);
+  return sender.send('luna', lines.join('\n'));
 }
 
 export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
@@ -181,6 +175,5 @@ export function notifyCycleSummary({ cycle, symbols, results, paperMode, duratio
   } else {
     lines.push('신호: HOLD (모든 심볼)');
   }
-  publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: lines.join('\n') });
-  return Promise.resolve(true);
+  return sender.send('luna', lines.join('\n'));
 }
