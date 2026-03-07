@@ -49,9 +49,9 @@ const dexterMode = new DexterMode();
 
 const { saveErrorItems, markResolved, cleanup: cleanupErrorHistory } = require('../lib/error-history');
 const { analyzeWithAI } = require('../lib/ai-analyst');
-const { evaluateWithClaudeLead } = require('../lib/claude-lead-brain');
+const { evaluateWithClaudeLead, pollAgentEvents } = require('../lib/claude-lead-brain');
 
-const { printReport, buildTelegramText, writeLog, writeFixLog } = require('../lib/reporter');
+const { printReport, buildTelegramText, writeLog, writeFixLog, emitDexterEvent } = require('../lib/reporter');
 
 // ─── 자동 수정 ─────────────────────────────────────────────────────
 const autofix = require('../lib/autofix');
@@ -268,11 +268,21 @@ async function main() {
     teamBus.cleanupOldMessages();
   } catch { /* 무시 */ }
 
+  // agent_events 발행 (이중 경로 — 팀장봇 event bus)
+  await emitDexterEvent(results, elapsed);
+
   // Shadow: 클로드(팀장) Sonnet 종합 판단 (기존 보고에 영향 없음)
   try {
     await evaluateWithClaudeLead(results);
   } catch (e) {
     console.warn('⚠️ 클로드(팀장) Shadow 판단 실패 (무시):', e.message);
+  }
+
+  // agent_events 미처리 수신 이벤트 소화 (타 팀봇 → 클로드 팀장)
+  try {
+    await pollAgentEvents();
+  } catch (e) {
+    console.warn('⚠️ 팀장 이벤트 폴링 실패 (무시):', e.message);
   }
 
   // 종료 코드: 오류 있으면 1

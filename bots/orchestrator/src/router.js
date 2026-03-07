@@ -748,6 +748,86 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       return formatLunaResult(command, raw);
     }
 
+    case 'luna_confirm': {
+      const currentMode = await shadowMode.getTeamMode('luna');
+      if (currentMode === 'confirmation') return '⚠️ 이미 confirmation 모드입니다.';
+      const rate = await shadowMode.getMatchRate('luna', null, 7);
+      if (rate.total < 10) {
+        return `❌ 샘플 부족 (${rate.total}건 — 최소 10건 필요)\n먼저 shadow 모드로 더 많은 데이터를 수집하세요.`;
+      }
+      if (rate.matchRate < 0.80) {
+        return `❌ 일치율 미달 (${(rate.matchRate * 100).toFixed(1)}% — 최소 80% 필요)\n/luna_analysis 로 분석 후 프롬프트 튜닝 필요.`;
+      }
+      await shadowMode.setTeamMode('luna', 'confirmation', 'master');
+      return [
+        '✅ 루나팀 confirmation 모드 전환 완료',
+        `이전 모드: ${currentMode}`,
+        `최근 7일 일치율: ${(rate.matchRate * 100).toFixed(1)}% (${rate.total}건)`,
+        '',
+        '⚠️ 이제 LLM이 1차 판단, 규칙엔진이 검증합니다.',
+        '/luna_shadow — shadow 모드로 복귀',
+      ].join('\n');
+    }
+
+    case 'luna_shadow': {
+      const currentMode = await shadowMode.getTeamMode('luna');
+      if (currentMode === 'shadow') return '⚠️ 이미 shadow 모드입니다.';
+      await shadowMode.setTeamMode('luna', 'shadow', 'master');
+      return [
+        '✅ 루나팀 shadow 모드 복귀 완료',
+        `이전 모드: ${currentMode}`,
+        '',
+        '이제 규칙엔진이 실행되고 LLM은 비교만 합니다.',
+        '/luna_confirm — confirmation 모드로 전환',
+      ].join('\n');
+    }
+
+    case 'luna_analysis': {
+      await notify('⏳ 루나팀 전환 분석 중...');
+      const [allTime, recent7, recent3] = await Promise.all([
+        shadowMode.getMatchRate('luna', null, 30),
+        shadowMode.getMatchRate('luna', null, 7),
+        shadowMode.getMatchRate('luna', null, 3),
+      ]);
+      const mismatches  = await shadowMode.getMismatches('luna', null, 14);
+      const currentMode = await shadowMode.getTeamMode('luna');
+
+      const fmtRate = (r, n) => r === null ? 'N/A' : `${(r * 100).toFixed(1)}% (${n}건)`;
+
+      const rate7 = recent7.matchRate;
+      let rec;
+      if (rate7 === null || recent7.total < 10) {
+        rec = '❓ DATA_INSUFFICIENT — 샘플 부족, 추가 관측 필요';
+      } else if (rate7 >= 0.90) {
+        rec = '✅ READY — /luna_confirm 으로 전환 가능';
+      } else if (rate7 >= 0.80) {
+        rec = '⚠️ TUNING — 프롬프트 튜닝 후 재검토 (목표 90%+)';
+      } else {
+        rec = '❌ HOLD — 기존 규칙엔진 유지, 추가 분석 필요';
+      }
+
+      const mismatchLines = mismatches.slice(0, 3).map(m => {
+        const rule = m.rule_result?.decision ?? '-';
+        const llm  = m.llm_result?.decision  ?? '-';
+        return `  • 규칙=${rule} vs LLM=${llm}`;
+      });
+
+      return [
+        '💰 루나팀 Shadow 전환 분석',
+        '════════════════════════',
+        `현재 모드: ${currentMode}`,
+        '',
+        `전체(30일): ${fmtRate(allTime.matchRate, allTime.total)}`,
+        `최근  7일:  ${fmtRate(recent7.matchRate, recent7.total)}`,
+        `최근  3일:  ${fmtRate(recent3.matchRate, recent3.total)}`,
+        '',
+        `불일치 ${mismatches.length}건 (최근 14일)`,
+        ...(mismatchLines.length > 0 ? mismatchLines : ['  (없음)']),
+        '',
+        `📋 판단: ${rec}`,
+      ].join('\n');
+    }
+
     case 'claude_action': {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
@@ -885,6 +965,79 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
         }
         return reports.length > 0 ? reports.join('\n\n') : '✅ LLM 졸업 후보 없음';
       } catch (e) { return `⚠️ 졸업 현황 오류: ${e.message}`; }
+    }
+
+    case 'graduation_scan': {
+      try {
+        await notify('⏳ LLM 졸업 후보 탐색 중...');
+        const allCandidates = [];
+        for (const team of ['ska', 'claude-lead', 'luna']) {
+          const c = await llmGraduation.findGraduationCandidates(team, 20, 0.90);
+          allCandidates.push(...(c || []));
+        }
+        if (allCandidates.length === 0) return '✅ 현재 졸업 후보 없음 (샘플 부족 또는 일치율 미달)';
+        const lines = [
+          `🎓 LLM 졸업 후보 ${allCandidates.length}건`,
+          '⚠️ 마스터 승인 후에만 적용 가능',
+          '',
+          ...allCandidates.slice(0, 8).map(c =>
+            `  • id=? [${c.team}/${c.context}] ${c.decision} — ${c.matchRate} (n=${c.total})`
+          ),
+          '',
+          '/graduate_start <id> — 검증 시작 (2주 병렬 테스트)',
+          '/graduate_approve <id> — 최종 승인',
+        ];
+        // ID 조회
+        const rows = await pgPool.query('claude', `
+          SELECT id, team, context, predicted_decision AS decision, match_rate, status
+          FROM graduation_candidates
+          WHERE status = 'candidate'
+          ORDER BY match_rate DESC LIMIT 8
+        `);
+        const withId = rows.map(r =>
+          `  • id=${r.id} [${r.team}/${r.context}] ${r.decision} — ${(r.match_rate * 100).toFixed(1)}%`
+        );
+        return [
+          `🎓 LLM 졸업 후보 ${allCandidates.length}건`,
+          '⚠️ 마스터 승인 후에만 적용 가능',
+          '',
+          ...withId,
+          '',
+          '/graduate_start <id> — 검증 시작 (2주 병렬 테스트)',
+          '/graduate_approve <id> — 최종 승인',
+        ].join('\n');
+      } catch (e) { return `⚠️ 졸업 탐색 실패: ${e.message}`; }
+    }
+
+    case 'graduate_start': {
+      const id = parseInt(args.id || '', 10);
+      if (isNaN(id)) return '⚠️ ID가 필요합니다.\n예) /graduate_start 3';
+      try {
+        const result = await llmGraduation.startVerification(id);
+        return [
+          `🔄 졸업 검증 시작: id=${result.id}`,
+          `팀: ${result.team} / 맥락: ${result.context}`,
+          `판단: ${result.decision}`,
+          '',
+          '2주간 shadow_log에서 병렬 비교합니다.',
+          '검증 완료 후 /graduate_approve <id> 로 최종 승인하세요.',
+        ].join('\n');
+      } catch (e) { return `⚠️ 검증 시작 실패: ${e.message}`; }
+    }
+
+    case 'graduate_approve': {
+      const id = parseInt(args.id || '', 10);
+      if (isNaN(id)) return '⚠️ ID가 필요합니다.\n예) /graduate_approve 3';
+      try {
+        const result = await llmGraduation.approveGraduation(id, 'master');
+        return [
+          `✅ LLM 졸업 승인 완료: id=${result.id}`,
+          '이제 이 패턴에는 LLM 호출 없이 규칙이 적용됩니다.',
+          '',
+          '⚠️ shadow_log 모니터링은 계속됩니다.',
+          '불일치 20%+ 시 자동 복귀합니다 (주간 검증).',
+        ].join('\n');
+      } catch (e) { return `⚠️ 졸업 승인 실패: ${e.message}`; }
     }
 
     // ── 덱스터 상세 ───────────────────────────────────────────────────

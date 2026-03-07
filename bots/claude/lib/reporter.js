@@ -136,4 +136,36 @@ function writeFixLog(fixes) {
   } catch { /* ignore */ }
 }
 
-module.exports = { printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog };
+// ─── agent_events 발행 ──────────────────────────────────────────────
+
+/**
+ * 덱스터 체크 결과를 agent_events에 발행 (이중 경로 — 기존 텔레그램 경로 유지)
+ * dexter → claude-lead 이벤트 채널
+ */
+async function emitDexterEvent(results, elapsed) {
+  try {
+    const stateBus = require('../../reservation/lib/state-bus');
+    const overall = results.some(r => r.status === 'error') ? 'error'
+                  : results.some(r => r.status === 'warn')  ? 'warn'
+                  : 'ok';
+    const errors = results.flatMap(r => r.items.filter(i => i.status === 'error'));
+    const warns  = results.flatMap(r => r.items.filter(i => i.status === 'warn'));
+    const priority = overall === 'error' ? 'high' : overall === 'warn' ? 'normal' : 'low';
+    await stateBus.emitEvent('dexter', 'claude-lead', 'dexter_check_result', {
+      overall,
+      errorCount:  errors.length,
+      warnCount:   warns.length,
+      elapsed,
+      issues: errors.concat(warns).map(i => ({
+        checkName: i.checkName,
+        label:     i.label,
+        status:    i.status,
+        detail:    (i.detail || '').slice(0, 200),
+      })),
+    }, priority);
+  } catch (e) {
+    console.warn('[reporter] agent_events 발행 실패 (무시):', e.message);
+  }
+}
+
+module.exports = { printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog, emitDexterEvent };

@@ -65,10 +65,14 @@ async function collectWeeklyMetrics() {
   // ── LLM 졸업 후보 ────────────────────────────────────────────────
   let graduationCandidates = [];
   let graduationReport = '';
+  let graduationReverted = [];
   try {
     for (const team of ['ska', 'claude-lead', 'luna']) {
       const c = await grad.findGraduationCandidates(team, 20, 0.90);
       graduationCandidates = graduationCandidates.concat(c || []);
+      // 졸업 규칙 주간 검증 — 불일치 20%+ 시 자동 복귀
+      const reverted = await grad.weeklyValidation(team);
+      graduationReverted = graduationReverted.concat(reverted || []);
     }
     graduationReport = await grad.buildGraduationReport('all') ?? '';
   } catch {}
@@ -149,6 +153,7 @@ async function collectWeeklyMetrics() {
       cache_hit_rate: cacheStats.hitRate ?? null,
       graduation_candidates: graduationCandidates.length,
       graduation_report: graduationReport,
+      graduation_reverted: graduationReverted,
       crash_count: crashCount,
     },
     migration: {
@@ -224,7 +229,7 @@ function buildWeeklyReport(m) {
     '',
     `■ 루나팀 전환 판단: ${transitionText}`,
     '',
-    `■ LLM 졸업 후보: ${s.graduation_candidates}건`,
+    `■ LLM 졸업 후보: ${s.graduation_candidates}건${s.graduation_reverted?.length > 0 ? ` (복귀 ${s.graduation_reverted.length}건 ⚠️)` : ''}`,
     `■ 맥미니 이관 준비: ${m.migration.done}/${m.migration.total} 체크`,
     '',
     `목표 달성: ${achieved}/${goals.length} ${achieved === goals.length ? '🎉 전체 달성!' : '📈 계속 진행'}`,
@@ -257,6 +262,16 @@ async function main() {
     if (metrics.system.graduation_candidates > 0 && metrics.system.graduation_report) {
       await sender.send('claude-lead',
         `🎓 LLM 졸업 후보 ${metrics.system.graduation_candidates}건\n⚠️ 마스터 승인 후 적용\n\n${metrics.system.graduation_report.slice(0, 500)}`
+      );
+    }
+    // 복귀 항목 있으면 별도 알림
+    if (metrics.system.graduation_reverted?.length > 0) {
+      const revertLines = metrics.system.graduation_reverted
+        .map(r => `  • [${r.team}/${r.context}] ${r.decision} — ${r.mismatchRate} 불일치`)
+        .join('\n');
+      await sender.send('claude-lead',
+        `↩️ LLM 졸업 규칙 자동 복귀 ${metrics.system.graduation_reverted.length}건\n` +
+        `최근 7일 불일치율 20%+ 초과\n\n${revertLines}`
       );
     }
   }
