@@ -18,6 +18,7 @@ const path     = require('path');
 const os       = require('os');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const sender   = require('../../../packages/core/lib/telegram-sender');
+const router   = require('./router');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME = '제이';
@@ -186,6 +187,111 @@ async function runIdentityCheck() {
   }
 }
 
+// ─── Telegram 수신 폴링 (마스터 명령 처리) ──────────────────────────
+
+// Secrets 캐시 (bot_token 로드용 — telegram-sender와 별도 관리)
+let _rcvSecrets = null;
+function _getRcvSecrets() {
+  if (!_rcvSecrets) {
+    try { _rcvSecrets = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'reservation', 'secrets.json'), 'utf8'
+    )); } catch { _rcvSecrets = {}; }
+  }
+  return _rcvSecrets;
+}
+
+let _tgOffset = 0;
+
+async function tgPost(method, body) {
+  const token = _getRcvSecrets().telegram_bot_token;
+  if (!token) return null;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(35000),
+    });
+    return await res.json();
+  } catch { return null; }
+}
+
+/**
+ * 마스터 메시지에 답장 발송
+ * - 같은 Forum Topic에 answer (message_thread_id 유지)
+ * - 원본 메시지에 reply (reply_to_message_id)
+ * - Markdown 파싱 오류 시 plain text로 fallback
+ */
+async function sendReplyTo(msg, text) {
+  const chunks = splitMessage(text);
+  for (let i = 0; i < chunks.length; i++) {
+    const payload = {
+      chat_id:             msg.chat.id,
+      text:                chunks[i],
+      parse_mode:          'Markdown',
+      reply_to_message_id: msg.message_id,
+    };
+    if (msg.message_thread_id) payload.message_thread_id = msg.message_thread_id;
+    const r = await tgPost('sendMessage', payload);
+    // Markdown 파싱 오류 → plain text 재시도
+    if (!r?.ok && r?.error_code === 400) {
+      delete payload.parse_mode;
+      await tgPost('sendMessage', payload);
+    }
+    if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 1100));
+  }
+}
+
+async function pollTelegramUpdates() {
+  const result = await tgPost('getUpdates', {
+    offset:          _tgOffset,
+    timeout:         30,
+    allowed_updates: ['message'],
+  });
+  if (!result?.ok || !result.result?.length) return;
+
+  for (const update of result.result) {
+    _tgOffset = update.update_id + 1;
+    const msg = update.message;
+    if (!msg?.text) continue;
+
+    // 그룹 채팅 슬래시 명령 정규화: /status@BotName → /status
+    if (msg.text.startsWith('/')) {
+      msg.text = msg.text.replace(/@\w+/, '').trim();
+    }
+
+    // router.route: isAuthorized + parseIntent + handleIntent + sendReply
+    router.route(msg, (text) => sendReplyTo(msg, text)).catch(e => {
+      console.error('[telegram-recv] 라우팅 오류:', e.message);
+    });
+  }
+}
+
+async function telegramPollLoop() {
+  const token = _getRcvSecrets().telegram_bot_token;
+  if (!token) {
+    console.warn('[telegram-recv] telegram_bot_token 없음 — 수신 비활성화');
+    return;
+  }
+
+  // 시작 시 미처리 메시지 drain (재시작 후 old 메시지 skip)
+  const drain = await tgPost('getUpdates', { offset: _tgOffset, timeout: 0, limit: 100 });
+  if (drain?.ok && drain.result?.length) {
+    _tgOffset = drain.result[drain.result.length - 1].update_id + 1;
+    console.log(`[telegram-recv] 기존 메시지 ${drain.result.length}건 skip (offset=${_tgOffset})`);
+  }
+
+  console.log('[telegram-recv] 수신 폴링 시작');
+  while (true) {
+    try {
+      await pollTelegramUpdates();
+    } catch (e) {
+      console.error('[telegram-recv] 폴링 오류:', e.message);
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+}
+
 // ─── 메인 루프 ───────────────────────────────────────────────────────
 async function mainLoop() {
   // 큐 폴링 (2초 간격)
@@ -203,6 +309,9 @@ async function main() {
   await flushPendingTelegrams();
 
   console.log(`🤖 ${BOT_NAME} 알람 큐 처리기 시작 (PID: ${process.pid})`);
+
+  // 텔레그램 수신 폴링 (병렬 실행 — 마스터 명령 처리)
+  telegramPollLoop().catch(e => console.error('[telegram-poll] 치명 오류:', e));
 
   // 큐 처리 루프 (2초 간격)
   while (true) {
