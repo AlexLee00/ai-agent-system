@@ -1418,8 +1418,13 @@ async function main() {
   await updateAgentState('jimmy', 'running', `키오스크 모니터 ${today}`);
 
   // ── Phase 5 선처리: 만료 항목 정리 ──
-  const pruned = await pruneOldKioskBlocks(today);
-  if (pruned > 0) log(`🧹 만료 항목 삭제: ${pruned}건`);
+  // 어제 날짜 이전만 삭제 (어제 예약이 오늘도 픽코에 표시될 수 있어 1일 여유)
+  const _todayParts = today.split('-').map(Number);
+  const _pruneDt = new Date(_todayParts[0], _todayParts[1] - 1, _todayParts[2]);
+  _pruneDt.setDate(_pruneDt.getDate() - 1);
+  const _pruneDate = `${_pruneDt.getFullYear()}-${String(_pruneDt.getMonth()+1).padStart(2,'0')}-${String(_pruneDt.getDate()).padStart(2,'0')}`;
+  const pruned = await pruneOldKioskBlocks(_pruneDate);
+  if (pruned > 0) log(`🧹 만료 항목 삭제: ${pruned}건 (${_pruneDate} 이전)`);
 
   let browser;
   let lockAcquired = false;
