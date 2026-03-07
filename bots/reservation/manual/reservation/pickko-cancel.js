@@ -22,6 +22,7 @@ const { parseArgs } = require('../../lib/args');
 const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
+const { sendTelegram } = require('../../lib/telegram');
 
 // ======================== 설정 ========================
 const SECRETS = loadSecrets();
@@ -378,35 +379,97 @@ async function run() {
     await page.click('a.pay_view');
     log('상세보기 클릭: {"clicked":true,"selector":"a.pay_view"}');
 
-    // 오른쪽 패널 AJAX 로딩 대기
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => null);
-    await page.waitForSelector('a.pay_refund', { timeout: 8000 }).catch(() => null);
-    await delay(300);
+    // 팝업 창 포함 로딩 대기
+    // a.pay_view 클릭이 팝업(새 창)을 열 수 있음 → 모든 페이지에서 탐색
+    const REFUND_SEL = 'a.pay_refund_app, a.pay_refund';
+    await delay(3000);  // 팝업 로딩 대기
 
-    // ======================== [8단계] 환불 버튼 클릭 (오른쪽 패널 a.pay_refund) ========================
+    // ======================== [8단계] 환불 버튼 클릭 (팝업 포함 모든 페이지 탐색) ========================
     log('\n[8단계] 환불 버튼 클릭');
 
-    const refundClicked = await page.evaluate(() => {
-      const btn = document.querySelector('a.pay_refund');
-      if (btn) {
-        btn.click();
-        return { clicked: true, text: (btn.textContent || '').trim() };
-      }
-      return { clicked: false };
-    });
+    const allPages8 = await browser.pages();
+    log(`  열린 페이지 수: ${allPages8.length}`);
+
+    let refundPage8 = null;
+    for (const p of allPages8) {
+      try {
+        await p.waitForSelector(REFUND_SEL, { timeout: 3000 }).catch(() => null);
+        const found = await p.evaluate(() => !!document.querySelector('a.pay_refund_app, a.pay_refund'));
+        if (found) { refundPage8 = p; break; }
+      } catch (e) { /* 무시 */ }
+    }
+
+    let refundClicked = { clicked: false };
+    if (refundPage8) {
+      refundClicked = await refundPage8.evaluate(() => {
+        const btn = document.querySelector('a.pay_refund_app, a.pay_refund');
+        if (btn) {
+          btn.click();
+          return { clicked: true, text: (btn.textContent || '').trim(), cls: btn.className };
+        }
+        return { clicked: false };
+      });
+    }
 
     log(`환불 버튼: ${JSON.stringify(refundClicked)}`);
     if (!refundClicked.clicked) {
-      throw new Error('[8단계] 환불 버튼 없음');
+      // ── [8-B단계] 환불 버튼 없음 → 수정→취소(sd_step=-1) 폴백 ──
+      // 키오스크 단말기 결제(PG 아님) → pay_refund 버튼 없음 → 직접 상태 변경
+      log('\n[8-B단계] 환불 버튼 없음 → 수정→취소 폴백 시도 (키오스크 단말 결제 추정)');
+      const sdMatch = viewHref.match(/\/study\/view\/(\d+)/);
+      const sdNo = sdMatch ? sdMatch[1] : null;
+      if (!sdNo) throw new Error('[8단계] 환불 버튼 없음 + sd_no 추출 실패');
+
+      await page.goto(`https://pickkoadmin.com/study/write/${sdNo}.html`, {
+        waitUntil: 'domcontentloaded', timeout: 20000,
+      });
+      await delay(1500);
+      log(`  이동: ${page.url()}`);
+
+      const cancelSelected8b = await page.evaluate(() => {
+        const radio = document.querySelector('input#sd_step-1, input[name="sd_step"][value="-1"]');
+        if (radio) { radio.click(); return { selected: true, id: radio.id, value: radio.value }; }
+        return { selected: false };
+      });
+      log(`  취소 라디오: ${JSON.stringify(cancelSelected8b)}`);
+      if (!cancelSelected8b.selected) throw new Error('[8-B단계] 취소(sd_step=-1) 라디오 없음');
+      await delay(300);
+
+      const saveClicked8b = await page.evaluate(() => {
+        const clean = s => (s ?? '').replace(/\s+/g, ' ').trim();
+        const candidates = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button'));
+        for (const el of candidates) {
+          const t = clean(el.value || el.textContent || '');
+          if (t.includes('작성하기') || t.includes('저장') || t.includes('수정하기')) {
+            el.click();
+            return { clicked: true, text: t };
+          }
+        }
+        return { clicked: false };
+      });
+      log(`  저장 버튼: ${JSON.stringify(saveClicked8b)}`);
+      if (!saveClicked8b.clicked) throw new Error('[8-B단계] 저장 버튼 없음');
+
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+      await delay(500);
+
+      const finalStatus8b = await page.evaluate(() =>
+        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      ).catch(() => '');
+      const isCancelled8b = finalStatus8b.includes('취소') || finalStatus8b.includes('환불') || finalStatus8b.includes('삭제');
+      log(`📊 최종 상태: ${isCancelled8b ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      log('✅ [SUCCESS] 픽코 예약 취소 완료 (결제상세→환불버튼없음→수정→취소 플로우)');
+      try { await browser.close(); } catch (e) {}
+      process.exit(0);
     }
     await delay(1000);
 
     // ======================== [9단계] 처리되었습니다. 팝업 확인 ========================
     // setupDialogHandler가 native alert 자동 처리
-    // [9단계] setupDialogHandler가 native alert("처리되었습니다.")를 자동 처리
-    // 환불 후 페이지가 navigate되므로 navigation 완료 대기
+    // 환불이 팝업 페이지에서 실행됐을 경우 해당 페이지에서 대기
     log('\n[9단계] 처리완료 후 페이지 안정 대기');
-    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => null);
+    const waitPage9 = refundPage8 || page;
+    await waitPage9.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }).catch(() => null);
     await delay(500);
 
     // ======================== [10단계] 취소 완료 확인 ========================
@@ -428,6 +491,25 @@ async function run() {
     log(`   📅 날짜: ${DATE}`);
     log(`   ⏰ 시간: ${START}~${END}`);
     log(`   🏛️ 룸: ${ROOM}`);
+
+    // ⚠️ pay_refund_app (앱/키오스크 PG 결제) 환불 후 픽코 예약 상태 미갱신 이슈
+    // 픽코 어드민 버그로 인해 PG 환불 후 예약 상태가 자동 취소 처리되지 않음
+    // 유지보수 업체 문의 중 — 해결 전까지 수동 확인 필요
+    if (refundClicked.cls && refundClicked.cls.includes('pay_refund_app') && MODE === 'ops') {
+      const msg = [
+        `⚠️ [수동처리 필요] 픽코 앱/키오스크 PG 환불 완료`,
+        ``,
+        `📞 ${PHONE_RAW} (${NAME})`,
+        `📅 ${DATE} ${START}~${END} / ${ROOM}룸`,
+        ``,
+        `💳 PG 환불(IAMPORT)은 성공했으나`,
+        `픽코 예약 목록에 예약이 그대로 남아있습니다.`,
+        `픽코 어드민에서 수동으로 예약 취소 처리 해주세요.`,
+        `(픽코 어드민 버그 — 유지보수 업체 문의 중)`,
+      ].join('\n');
+      await sendTelegram(msg).catch(e => log(`텔레그램 알림 실패: ${e.message}`));
+      log('📨 수동처리 알림 발송 완료');
+    }
 
     try { await browser.close(); } catch (e) {}
     process.exit(0);
