@@ -84,6 +84,13 @@ async function main() {
       }
     }
 
+    // ──── 4단계: 텔레그램 리포트 ────
+    log('\n[4단계] 텔레그램 리포트 발송');
+
+    const total = pickkoEntries.length;
+    const autoCount = autoMatched.length;
+    const manualCount = manualEntries.length;
+
     // ──── 3-b단계: Shadow Mode — 수동 예약 심각도 AI 판단 ────
     // 기존 동작에 영향 없음. LLM 판단은 shadow_log에만 기록됨.
     if (manualCount > 0) {
@@ -93,13 +100,6 @@ async function main() {
         log(`⚠️ Shadow Mode 평가 실패 (무시): ${e.message}`);
       }
     }
-
-    // ──── 4단계: 텔레그램 리포트 ────
-    log('\n[4단계] 텔레그램 리포트 발송');
-
-    const total = pickkoEntries.length;
-    const autoCount = autoMatched.length;
-    const manualCount = manualEntries.length;
 
     let report;
     if (total === 0) {
