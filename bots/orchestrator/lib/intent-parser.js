@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * lib/intent-parser.js — 명령 인텐트 3단계 파싱
+ * lib/intent-parser.js — 명령 인텐트 3단계 파싱 v2.0
  *
  * 1단계: 슬래시 명령 직접 매핑 (토큰 0)
  * 2단계: 키워드 패턴 매칭 (토큰 0) — 학습된 패턴 포함 (nlp-learnings.json)
- * 3단계: LLM 폴백 파싱 (토큰 사용 — 현재 모델: llm-keys.js 참조)
+ * 3단계: LLM 폴백 파싱 (CoT + Few-shot + 동적 예시, DB에서 자동 로드)
  *
  * parse_source: 'slash' | 'keyword' | 'learned' | 'llm' | 'failed'
  */
@@ -16,6 +16,7 @@ const path  = require('path');
 const os    = require('os');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
+const pgPool           = require('../../../packages/core/lib/pg-pool');
 
 // ─── 학습 패턴 로더 ─────────────────────────────────────────────────
 // claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
@@ -40,8 +41,34 @@ let _learnedPatterns = loadLearnedPatterns();
 // 5분마다 리로드 (analyze_unknown이 새 패턴 추가 시 자동 반영)
 setInterval(() => { _learnedPatterns = loadLearnedPatterns(); }, 5 * 60 * 1000);
 
-// ─── LLM 폴백 설정 (3단계 파싱용) ───────────────────────────────────
-// 실제 사용 모델·키는 llm-keys.js에서 관리. 모델 교체 시 이 상수만 수정.
+// ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
+// router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
+
+let _dynamicExamples    = [];
+let _dynamicExamplesAge = 0;
+
+async function loadDynamicExamples() {
+  const now = Date.now();
+  if (now - _dynamicExamplesAge < 5 * 60 * 1000) return _dynamicExamples; // 5분 캐시
+  try {
+    const rows = await pgPool.query('claude', `
+      SELECT DISTINCT ON (promoted_to) text, promoted_to
+      FROM unrecognized_intents
+      WHERE promoted_to IS NOT NULL
+      ORDER BY promoted_to, created_at DESC
+      LIMIT 30
+    `);
+    _dynamicExamples = rows.map(r =>
+      `사용자: "${r.text.slice(0, 60)}" → {"intent": "${r.promoted_to}", "args": {}, "confidence": 0.90}`
+    );
+    _dynamicExamplesAge = now;
+  } catch {
+    _dynamicExamples = [];
+  }
+  return _dynamicExamples;
+}
+
+// ─── LLM 폴백 설정 ───────────────────────────────────────────────────
 
 const LLM_FALLBACK_MODEL    = 'gemini-2.5-flash';
 const LLM_FALLBACK_PROVIDER = 'google';
@@ -49,34 +76,48 @@ const LLM_FALLBACK_PROVIDER = 'google';
 // ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
 
 const SLASH_MAP = {
-  '/status':  { intent: 'status',  args: {} },
-  '/help':    { intent: 'help',    args: {} },
-  '/cost':    { intent: 'cost',    args: {} },
-  '/mute':    { intent: 'mute',    args: {} },  // 추가 파싱 필요
-  '/unmute':  { intent: 'unmute',  args: {} },
-  '/mutes':   { intent: 'mutes',   args: {} },
-  '/luna':     { intent: 'luna',    args: {} },
-  '/ska':      { intent: 'ska',     args: {} },
-  '/dexter':   { intent: 'claude_action',     args: { command: 'run_check'        } },
-  '/archer':   { intent: 'claude_action',     args: { command: 'run_archer'       } },
-  '/brief':    { intent: 'brief',   args: {} },
-  '/queue':    { intent: 'queue',   args: {} },
-  '/withdraw': { intent: 'upbit_withdraw',    args: {} },
-  '/upbit':    { intent: 'upbit_balance',     args: { command: 'get_upbit_balance'  } },
-  '/binance':  { intent: 'binance_balance',   args: { command: 'get_binance_balance'} },
-  '/price':    { intent: 'crypto_price',      args: { command: 'get_crypto_price'   } },
-  '/market':   { intent: 'market_status',     args: { market: 'all' } },
-  '/transfer': { intent: 'upbit_transfer',    args: { command: 'upbit_to_binance'   } },
+  '/status':      { intent: 'status',              args: {} },
+  '/help':        { intent: 'help',                args: {} },
+  '/cost':        { intent: 'cost',                args: {} },
+  '/mute':        { intent: 'mute',                args: {} },
+  '/unmute':      { intent: 'unmute',              args: {} },
+  '/mutes':       { intent: 'mutes',               args: {} },
+  '/luna':        { intent: 'luna',                args: {} },
+  '/ska':         { intent: 'ska',                 args: {} },
+  '/dexter':      { intent: 'claude_action',       args: { command: 'run_check'          } },
+  '/archer':      { intent: 'claude_action',       args: { command: 'run_archer'         } },
+  '/brief':       { intent: 'brief',               args: {} },
+  '/queue':       { intent: 'queue',               args: {} },
+  '/withdraw':    { intent: 'upbit_withdraw',      args: {} },
+  '/upbit':       { intent: 'upbit_balance',       args: { command: 'get_upbit_balance'   } },
+  '/binance':     { intent: 'binance_balance',     args: { command: 'get_binance_balance' } },
+  '/price':       { intent: 'crypto_price',        args: { command: 'get_crypto_price'    } },
+  '/market':      { intent: 'market_status',       args: { market: 'all' } },
+  '/transfer':    { intent: 'upbit_transfer',      args: { command: 'upbit_to_binance'    } },
+  // ── 신규 슬래시 명령 ──
+  '/shadow':      { intent: 'shadow_report',       args: {} },
+  '/graduation':  { intent: 'llm_graduation',      args: {} },
+  '/stability':   { intent: 'stability',           args: {} },
+  '/journal':     { intent: 'trade_journal',       args: {} },
+  '/performance': { intent: 'performance',         args: {} },
+  '/unrec':       { intent: 'unrecognized_report', args: {} },
 };
 
 function parseSlash(text) {
-  const parts  = text.trim().split(/\s+/);
-  const cmd    = parts[0].toLowerCase();
+  const parts = text.trim().split(/\s+/);
+  const cmd   = parts[0].toLowerCase();
 
-  // /claude <질문> — 클로드 AI 직접 질문
+  // /claude <질문> 또는 /ask <질문> — 클로드 AI 직접 질문
   if ((cmd === '/claude' || cmd === '/ask') && parts.length >= 2) {
     const query = text.trim().replace(/^\/\S+\s+/, '').trim();
     if (query) return { intent: 'claude_ask', args: { query }, source: 'slash' };
+  }
+
+  // /promote <인텐트> <패턴> — 미인식 명령 프로모트
+  if (cmd === '/promote' && parts.length >= 3) {
+    const toIntent = parts[1];
+    const pattern  = parts.slice(2).join(' ');
+    return { intent: 'promote_intent', args: { intent: toIntent, pattern }, source: 'slash' };
   }
 
   const mapped = SLASH_MAP[cmd];
@@ -101,37 +142,37 @@ const KEYWORD_PATTERNS = [
   { re: /지미.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_jimmy' } },
   { re: /예약.*(현황|목록|오늘|확인|조회|몇|있어)/i,          intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /오늘.*(예약|방문|입장)/i,                            intent: 'ska_query',  args: { command: 'query_reservations' } },
-  { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계|통계/i, intent: 'ska_query', args: { command: 'query_today_stats' } },
+  { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계/i,    intent: 'ska_query', args: { command: 'query_today_stats' } },
   { re: /알람.*(확인|조회|있어|뭐)|미해결.*(알람|문제|있어)|이상.*있어|경고.*있어/i, intent: 'ska_query', args: { command: 'query_alerts' } },
 
-  // ── KIS 잔고 조회 (시장 현황 패턴보다 먼저 — "미국 주식 잔고" 오매칭 방지) ──
-  { re: /국내.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|KIS.*(잔고|잔액|보유|국내)/i,                                                                                         intent: 'kis_domestic_balance', args: { command: 'get_kis_domestic_balance' } },
-  { re: /미국.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|해외.*(주식|주).*(잔고|잔액|보유)|(나스닥|NYSE|해외주식).*(잔고|보유)/i,                                             intent: 'kis_overseas_balance', args: { command: 'get_kis_overseas_balance' } },
+  // ── KIS 잔고 조회 (시장 현황 패턴보다 먼저) ──
+  { re: /국내.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|KIS.*(잔고|잔액|보유|국내)/i,                                                intent: 'kis_domestic_balance', args: { command: 'get_kis_domestic_balance' } },
+  { re: /미국.*(주식|주).*(잔고|잔액|포트폴리오|현황|얼마|보유)|해외.*(주식|주).*(잔고|잔액|보유)|(나스닥|NYSE|해외주식).*(잔고|보유)/i,     intent: 'kis_overseas_balance', args: { command: 'get_kis_overseas_balance' } },
 
-  // ── 시장 장시간 조회 (해외·암호화폐 먼저 — 국내 패턴에 오매칭 방지) ──
-  { re: /미국.*(장|시장|시간|주식|마켓)|나스닥.*(장|열|중|시간)|뉴욕.*(장|열|중)|NYSE|NASDAQ|US.*market/i,                   intent: 'market_status', args: { market: 'overseas' } },
-  { re: /지금.*거래.*가능|암호화폐.*장|코인.*장|바이낸스.*열/i,                                                               intent: 'market_status', args: { market: 'crypto' } },
-  { re: /전체.*장|모든.*시장|장.*(뭐|뭔|어디).*열/i,                                                                         intent: 'market_status', args: { market: 'all' } },
-  { re: /장.*(열렸|열려|시간|중이야|이야|언제|끝나|마감|개장|폐장)|국내.*장|코스피|코스닥/i,                                   intent: 'market_status', args: { market: 'domestic' } },
+  // ── 시장 장시간 조회 ──
+  { re: /미국.*(장|시장|시간|주식|마켓)|나스닥.*(장|열|중|시간)|뉴욕.*(장|열|중)|NYSE|NASDAQ|US.*market/i,    intent: 'market_status', args: { market: 'overseas' } },
+  { re: /지금.*거래.*가능|암호화폐.*장|코인.*장|바이낸스.*열/i,                                               intent: 'market_status', args: { market: 'crypto' } },
+  { re: /전체.*장|모든.*시장|장.*(뭐|뭔|어디).*열/i,                                                         intent: 'market_status', args: { market: 'all' } },
+  { re: /장.*(열렸|열려|시간|중이야|이야|언제|끝나|마감|개장|폐장)|국내.*장|코스피|코스닥/i,                   intent: 'market_status', args: { market: 'domestic' } },
 
-  // ── 업비트 USDT 출금 전용 (매수 없이 기존 USDT 잔고만 출금) — 전체전송보다 먼저 ──
+  // ── 업비트 USDT 출금 전용 (매수 없이 기존 USDT만) ──
   { re: /테더.*(전송|보내|바이낸스|출금|이동)|바이낸스.*테더.*(보내|전송)/i,     intent: 'upbit_withdraw', args: {} },
   { re: /tether.*(전송|보내|바이낸스|출금)|테더.*있.*(보내|전송|출금)/i,          intent: 'upbit_withdraw', args: {} },
   { re: /업비트.*(usdt|잔고).*(출금|보내|바이낸스|전송)(?!.*매수|.*구매)/i,     intent: 'upbit_withdraw', args: {} },
   { re: /usdt.*(출금만|만.*출금|출금.*해|출금.*바이낸스|출금.*전송)(?!.*매수)/i, intent: 'upbit_withdraw', args: {} },
   { re: /출금만.*해줘|usdt.*출금.*전용|withdraw.*usdt/i,                         intent: 'upbit_withdraw', args: {} },
 
-  // ── 업비트→바이낸스 USDT 전체 플로우 (KRW 매수 + 출금) ──
-  { re: /업비트.*바이낸스|upbit.*binance/i,                                     intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
-  { re: /usdt.*(전송|보내|바이낸스)|바이낸스.*(usdt|전송|보내)/i,               intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
-  { re: /업비트.*(usdt|달러|달러코인).*구매|krw.*usdt.*매수|원화.*usdt/i,       intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
-  { re: /입금.*(usdt|달러|바이낸스|전송)|업비트.*입금.*바이낸스/i,              intent: 'upbit_transfer',  args: { command: 'upbit_to_binance' } },
+  // ── 업비트→바이낸스 USDT 전체 플로우 ──
+  { re: /업비트.*바이낸스|upbit.*binance/i,                                     intent: 'upbit_transfer', args: { command: 'upbit_to_binance' } },
+  { re: /usdt.*(전송|보내|바이낸스)|바이낸스.*(usdt|전송|보내)/i,               intent: 'upbit_transfer', args: { command: 'upbit_to_binance' } },
+  { re: /업비트.*(usdt|달러|달러코인).*구매|krw.*usdt.*매수|원화.*usdt/i,       intent: 'upbit_transfer', args: { command: 'upbit_to_binance' } },
+  { re: /입금.*(usdt|달러|바이낸스|전송)|업비트.*입금.*바이낸스/i,              intent: 'upbit_transfer', args: { command: 'upbit_to_binance' } },
 
   // ── 잔고·가격 조회 ──
   { re: /업비트.*(잔고|잔액|계좌|얼마|있어|뭐.*있|확인|조회)|upbit.*(balance|잔고)/i,     intent: 'upbit_balance',  args: { command: 'get_upbit_balance' } },
   { re: /바이낸스.*(잔고|잔액|계좌|얼마|있어|뭐.*있|확인|조회)|binance.*(balance|잔고)/i, intent: 'binance_balance', args: { command: 'get_binance_balance' } },
   { re: /\b(btc|eth|sol|bnb|xrp|ada|avax|doge|meme)\b.*(가격|얼마|현재가|price|시세)|비트코인.*(가격|얼마|현재가|시세)|이더리움.*(가격|얼마|현재가|시세)|솔라나.*(가격|얼마|현재가)/i, intent: 'crypto_price', args: { command: 'get_crypto_price' } },
-  { re: /코인.*(가격|현재가|시세|얼마)|(가격|현재가|시세).*(코인|암호화폐|비트)/i,         intent: 'crypto_price',   args: { command: 'get_crypto_price' } },
+  { re: /코인.*(가격|현재가|시세|얼마)|(가격|현재가|시세).*(코인|암호화폐|비트)/i, intent: 'crypto_price', args: { command: 'get_crypto_price' } },
 
   // ── 루나팀 세부 명령 ──
   { re: /루나.*(정지|멈춰|pause|중지|꺼|stop)|거래.*(정지|중지|멈춰|stop)|매매.*(멈춰|정지|중지|stop)|투자.*(멈춰|정지|중지)/i, intent: 'luna_action', args: { command: 'pause_trading' } },
@@ -139,27 +180,52 @@ const KEYWORD_PATTERNS = [
   { re: /루나.*(리포트|보고|보여|report)|투자.*(리포트|보고|현황|report)|포트폴리오.*(보여|알려|현황)|수익률.*(알려|보여)/i,    intent: 'luna_query',  args: { command: 'force_report' } },
   { re: /루나.*(상태|현황|어때|잔고|포지션)|투자.*(상태|현황|어때)|잔고.*(얼마|어때)|USDT.*(얼마|있어)/i,                      intent: 'luna_query',  args: { command: 'get_status' } },
 
+  // ── 투자 분석 세부 ──
+  { re: /애널리스트.*(정확도|정확성|accuracy)|분석가.*(정확도|성과|적중)/i,       intent: 'analyst_accuracy' },
+  { re: /애널리스트.*(가중치|weight|비율)|분석가.*(가중치|비율)/i,               intent: 'analyst_weight' },
+  { re: /매매일지|trade.*journal|거래.*일지|매매.*기록/i,                         intent: 'trade_journal' },
+  { re: /매매.*리뷰|trade.*review|거래.*리뷰|투자.*후기/i,                        intent: 'trade_review' },
+  { re: /투자.*성과|수익률.*상세|성과.*분석|performance.*detail/i,                intent: 'performance' },
+  { re: /TP.*SL.*(현황|상태|설정)|손절.*익절.*(현황|상태)|stop.*loss.*(현황|설정)/i, intent: 'tp_sl_status' },
+
   // ── 클로드팀 세부 명령 ──
   { re: /아처.*(실행|해줘|보고|report|트렌드|소화)|기술.*(소화|트렌드|보고)|AI.*(트렌드|소식|최신)|LLM.*(소식|트렌드)/i, intent: 'claude_action', args: { command: 'run_archer' } },
   { re: /덱스터.*(전체|full|풀|완전).*점검|(전체|full|풀|완전).*점검|npm.*audit/i,                                       intent: 'claude_action', args: { command: 'run_full' } },
   { re: /덱스터.*(수정|fix|패치|고쳐)|자동.*(수정|fix|패치)/i,                                                           intent: 'claude_action', args: { command: 'run_fix' } },
-  { re: /덱스터.*(일일|daily|보고)|일일.*(보고|리포트)|daily.*(report|보고)|오늘.*보고서/i,                              intent: 'claude_action', args: { command: 'daily_report' } },
+  { re: /덱스터.*(퀵|빠른|quick|5분|단기)|퀵.*체크|quick.*check/i,                                                       intent: 'dexter_quickcheck' },
+  { re: /덱스터.*(일일|daily|보고서|리포트)|일일.*(보고|리포트)|daily.*(report|보고)|오늘.*보고서/i,                       intent: 'dexter_report' },
   { re: /덱스터.*(점검|체크|check|괜찮|확인|살아)|시스템.*(점검|체크|check|괜찮)|서버.*(점검|체크|괜찮|확인)|보안.*점검/i, intent: 'claude_action', args: { command: 'run_check' } },
+  { re: /점검.*(이력|히스토리|기록)|에러.*(이력|log|기록)|오류.*(이력|기록)/i,                                            intent: 'doctor_history' },
 
-  // ── 스카팀 점검 (generic '스카' 패턴보다 먼저 체크) ──
+  // ── 스카팀 점검 ──
   { re: /스카.*(시스템|서버|봇|점검|체크|확인|상태|health|check)|스카.*점검|ska.*check/i, intent: 'claude_action', args: { command: 'run_check' } },
 
-  // ── 봇/팀 명칭 — 세부 명령 미매칭 시 팀 현황 조회 ──
-  { re: /루나|luna/i,                             intent: 'luna'    },
-  { re: /스카|ska/i,                              intent: 'ska'     },
-  { re: /덱스터|dexter/i,                         intent: 'claude_action', args: { command: 'run_check' } },
-  { re: /아처|archer/i,                           intent: 'claude_action', args: { command: 'run_archer' } },
+  // ── 섀도 모드 ──
+  { re: /섀도.*(불일치|오류|틀린|mismatch)|LLM.*(불일치|틀린)/i,             intent: 'shadow_mismatches' },
+  { re: /섀도.*(리포트|보고|현황|결과|통계)|shadow.*(report|현황|리포트)/i,   intent: 'shadow_report' },
+
+  // ── LLM 캐시·비용·졸업 ──
+  { re: /캐시.*(현황|통계|적중|조회|hit)|cache.*(stats|현황|적중|통계)/i,      intent: 'cache_stats' },
+  { re: /LLM.*(비용.*상세|팀별.*비용|cost.*detail)|토큰.*(상세|팀별|breakdown)/i, intent: 'llm_cost' },
+  { re: /졸업.*(현황|후보|리포트|목록)|LLM.*졸업|graduation.*(현황|report)/i,  intent: 'llm_graduation' },
+
+  // ── 시스템 안정성·텔레그램 ──
+  { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
+  { re: /텔레그램.*(상태|연결|폴링|봇.*상태)|telegram.*(status|connected|polling)/i,       intent: 'telegram_status' },
+
+  // ── 미인식 패턴 리포트 ──
+  { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
+
+  // ── 봇/팀 명칭 (세부 명령 미매칭 시) ──
+  { re: /루나|luna/i,     intent: 'luna' },
+  { re: /스카|ska/i,      intent: 'ska' },
+  { re: /덱스터|dexter/i, intent: 'claude_action', args: { command: 'run_check' } },
+  { re: /아처|archer/i,   intent: 'claude_action', args: { command: 'run_archer' } },
 
   // ── 세션 마감 ──
   { re: /세션.*(마무리|마감|정리|close|끝)|마무리.*해줘|마감.*해줘|정리.*해줘|session.*close/i, intent: 'session_close' },
 
-  // ── 마지막 알람 이벤트 무음·해제 ("이 알람 안 해도 돼" 등) ──
-  // unmute가 mute보다 반드시 먼저 매칭 (해제 표현이 무음 표현에 포함될 수 있으므로)
+  // ── 마지막 알람 이벤트 무음·해제 ──
   { re: /이\s*(알람|경고|메시지).*(무음\s*해제|해제해|해제해줘)/i,                                    intent: 'unmute_last_alert', args: {} },
   { re: /이\s*(알람|경고).*(다시|또|계속|알려줘|받을게)/i,                                            intent: 'unmute_last_alert', args: {} },
   { re: /이\s*(알람|경고|거|걸|것).*(안\s*해도|무시|끄|꺼|필요\s*없|충분히\s*알|알았어|됐어|그만|그냥)/i, intent: 'mute_last_alert', args: {} },
@@ -173,11 +239,11 @@ const KEYWORD_PATTERNS = [
   { re: /비용|cost|토큰|token/i,                  intent: 'cost'   },
   { re: /도움|help|명령\s*목록|뭐\s*할\s*수\s*있/i, intent: 'help' },
 
-  // ── 팀 관련 일반 키워드 (봇 명칭 미매칭 시) ──
-  { re: /투자|매매|비트|암호화폐|코인|주식/i,     intent: 'luna'   },
-  { re: /예약|스터디|카페|손님/i,                 intent: 'ska'    },
+  // ── 팀 관련 일반 키워드 ──
+  { re: /투자|매매|비트|암호화폐|코인|주식/i, intent: 'luna' },
+  { re: /예약|스터디|카페|손님/i,             intent: 'ska'  },
 
-  // ── 마지막: 일반 상태 (가장 포괄적) ──
+  // ── 마지막: 일반 상태 ──
   { re: /상태|현황|status|다들.*살아|모두.*어때/i, intent: 'status' },
 ];
 
@@ -195,7 +261,7 @@ function extractDuration(text) {
 }
 
 function parseKeyword(text) {
-  // 학습된 패턴 우선 확인 (analyze_unknown이 추가한 패턴)
+  // 학습된 패턴 우선 확인
   for (const p of _learnedPatterns) {
     if (p.re.test(text)) {
       return { intent: p.intent, args: p.args, source: 'learned' };
@@ -211,95 +277,104 @@ function parseKeyword(text) {
   return null;
 }
 
-// ─── 3단계: Gemini LLM ───────────────────────────────────────────────
+// ─── 3단계: Gemini LLM (Chain-of-Thought + Few-shot) ─────────────────
 
-const SYSTEM_PROMPT = `너는 AI 봇 시스템 제이(Jay)의 명령 파서다.
+const SYSTEM_PROMPT_BASE = `너는 AI 봇 시스템 제이(Jay)의 명령 분류기다.
 사용자의 자연어 메시지를 분석해서 intent와 args를 JSON으로만 응답해.
+
+=== 분류 방법 (Chain-of-Thought) ===
+1단계: 어느 팀/영역인지 파악
+   - 예약·스터디·카페·손님·앤디·지미·매출 → 스카팀
+   - 투자·매매·코인·비트·주식·루나·바이낸스·업비트·잔고·포지션·수익 → 루나팀
+   - 덱스터·아처·시스템·점검·체크·개발·서버·보안 → 클로드팀
+   - 섀도·LLM·캐시·졸업·비용·토큰·안정성 → 시스템 분석
+   - 인사말·잡담·날씨·이해 불가 → chat
+
+2단계: 명령 유형 결정
+   - 데이터 조회: query/balance/status → ska_query / luna_query / kis_*_balance 등
+   - 액션 실행: 재시작/정지/재개 → ska_action / luna_action / claude_action
+   - 분석 리포트: shadow/cost/graduation → 전용 intent
+   - 일반 대화: 위 없음 → chat
 
 === 팀 구성 ===
 
 [스카팀] 스터디카페 운영 관리
-- ska_query  command=query_reservations : 오늘 예약 현황·목록
-  예) "오늘 예약 뭐 있어", "예약 확인해", "예약 몇 건이야", "오늘 방문객 있어"
+- ska_query  command=query_reservations : 예약 현황·목록
+  예) "오늘 예약 뭐 있어", "예약 확인해", "예약 몇 건이야"
 - ska_query  command=query_today_stats  : 오늘 매출·입장 통계
-  예) "오늘 매출 얼마야", "오늘 얼마 벌었어", "오늘 손님 몇 명", "통계 줘", "수익 확인"
+  예) "오늘 매출 얼마야", "오늘 얼마 벌었어", "오늘 손님 몇 명"
 - ska_query  command=query_alerts       : 미해결 알람·경고 목록
-  예) "알람 있어?", "미해결 문제 있어?", "이상한 거 있어?", "경고 있어?"
+  예) "알람 있어?", "미해결 문제 있어?", "경고 있어?"
 - ska_action command=restart_andy       : 앤디(네이버 모니터) 재시작
-  예) "앤디 재시작해", "앤디 죽었어", "앤디 안 돼", "앤디 오류나"
 - ska_action command=restart_jimmy      : 지미(키오스크 모니터) 재시작
-  예) "지미 재시작해", "지미 죽었어", "지미 안 돼", "지미 오류나"
-- ska (현황만) : "스카 상태", "스카 어때", "스카팀 현황"
+- ska (현황만)
 
-[루나팀] 암호화폐·주식 자동매매 (바이낸스 BTC/ETH/SOL/BNB)
+[루나팀] 암호화폐·주식 자동매매
 - luna_action command=pause_trading    : 거래 일시정지
-  예) "루나 정지해", "매매 멈춰", "거래 중지해", "투자 일시정지", "루나 꺼"
 - luna_action command=resume_trading   : 거래 재개
-  예) "루나 재개해", "매매 다시 시작해", "거래 재개", "루나 다시 켜"
 - luna_query  command=force_report     : 투자 리포트 즉시 발송
-  예) "루나 리포트 줘", "투자 현황 보고해", "포트폴리오 보여줘", "수익률 알려줘"
 - luna_query  command=get_status       : 현재 상태 (잔고·모드·포지션)
-  예) "루나 상태 어때", "잔고 얼마야", "USDT 얼마 있어", "포지션 어때", "투자 현황"
-- luna (현황만) : "루나 어때", "루나팀 상태"
-- upbit_withdraw : 업비트 USDT 잔고 전량 바이낸스로 출금 (KRW 매수 없이 기존 USDT만)
-  예) "업비트 USDT 출금해줘", "USDT 출금만 해줘", "업비트 잔고 바이낸스로 출금", "출금만 해줘"
-  예) "테더 전송해줘", "테더 바이낸스로 보내줘", "테더 출금해", "테더 전송해달라"
-  ※ 매수 없이 이미 있는 USDT(테더)를 출금할 때 사용. "테더"라는 단어가 있으면 반드시 upbit_withdraw
-- upbit_transfer command=upbit_to_binance : 업비트 KRW 전량으로 USDT 매수 후 바이낸스로 전송 (전체 플로우)
-  예) "업비트 계좌 입금했어 전량 usdt 구매하고 바이낸스로 보내줘"
-  예) "업비트에서 usdt 사서 바이낸스로 전송해줘"
-  예) "업비트 바이낸스로 전송"
-- upbit_balance command=get_upbit_balance : 업비트 계좌 잔고 조회 (KRW·코인별)
-  예) "업비트 잔고 얼마야", "업비트 계좌 확인해", "업비트에 뭐 있어"
-- binance_balance command=get_binance_balance : 바이낸스 계좌 잔고 조회 (USDT·코인별)
-  예) "바이낸스 잔고 얼마야", "바이낸스 계좌 확인해", "바이낸스에 뭐 있어"
-- crypto_price command=get_crypto_price : 암호화폐 현재가 조회 (BTC/ETH/SOL/BNB 기본)
-  예) "비트코인 얼마야", "BTC 가격", "이더리움 현재가", "코인 시세", "ETH SOL 가격"
-- kis_domestic_balance command=get_kis_domestic_balance : KIS 국내주식 잔고·평가손익
-  예) "국내 주식 잔고", "한국 주식 보유 현황", "KIS 국내 잔고"
-- kis_overseas_balance command=get_kis_overseas_balance : KIS 해외주식 잔고·평가손익
-  예) "미국 주식 잔고", "해외 주식 보유 현황", "나스닥 보유 종목"
-
-[시장 장시간 조회]
-- market_status args.market=domestic : 국내주식 장 현황 (KOSPI/KOSDAQ)
-  예) "국내장 열렸어?", "코스피 장 중이야?", "지금 국내장이야?", "국내 주식 거래되?", "장 언제 끝나?", "국내 시장 몇 시에 닫혀?"
-- market_status args.market=overseas : 미국주식 장 현황 (NYSE/NASDAQ)
-  예) "미국장 열렸어?", "나스닥 장 중이야?", "US 마켓 열려있어?", "뉴욕 거래소 열려?", "미국 주식 거래 시간이야?"
-- market_status args.market=crypto   : 암호화폐 거래 현황
-  예) "코인 거래 가능해?", "바이낸스 열려있어?", "암호화폐 지금 거래돼?"
-- market_status args.market=all      : 전체 시장 장 현황
-  예) "어디 장 열려있어?", "지금 어떤 시장이야?", "전체 시장 현황", "어느 시장 거래 중이야?"
+- luna (현황만)
+- upbit_withdraw : 업비트 USDT 잔고 바이낸스 출금 (매수 없이)
+  ※ "테더"라는 단어 포함 시 반드시 upbit_withdraw
+- upbit_transfer command=upbit_to_binance : 업비트 KRW→USDT 매수 후 바이낸스 전송
+- upbit_balance  : 업비트 계좌 잔고 조회
+- binance_balance : 바이낸스 계좌 잔고 조회
+- crypto_price command=get_crypto_price : 암호화폐 현재가
+- kis_domestic_balance : KIS 국내주식 잔고·평가손익
+- kis_overseas_balance : KIS 해외주식 잔고·평가손익
+- market_status args.market=domestic/overseas/crypto/all : 시장 장 현황
+- analyst_accuracy  : 애널리스트 정확도 통계
+- analyst_weight    : 애널리스트 가중치 조회
+- trade_journal     : 매매일지 조회 (최근 거래 기록)
+- trade_review      : 매매 리뷰 조회 (사후 분석)
+- performance       : 투자 성과 상세 (수익률·기간별)
+- tp_sl_status      : TP/SL 설정 현황 (손절·익절 라인)
 
 [클로드팀] 시스템 유지보수·기술 분석
-- claude_action command=run_check   : 덱스터 기본 점검 (코드·보안·DB)
-  예) "덱스터 점검해", "시스템 점검해줘", "서버 괜찮아?", "보안 체크해"
-- claude_action command=run_full    : 덱스터 전체 점검 (npm audit 포함)
-  예) "전체 점검해줘", "풀 점검", "완전 점검", "npm audit 해줘"
+- claude_action command=run_check   : 덱스터 기본 점검
+- claude_action command=run_full    : 덱스터 전체 점검 (npm audit)
 - claude_action command=run_fix     : 덱스터 자동 수정
-  예) "덱스터 수정해", "자동 수정해", "패치해줘", "취약점 고쳐줘"
-- claude_action command=daily_report: 덱스터 일일 보고
-  예) "일일 보고해줘", "오늘 보고서 줘", "데일리 리포트"
-- claude_action command=run_archer  : 아처 기술 트렌드 수집·분석
-  예) "아처 실행해", "기술 소화해줘", "AI 트렌드 알려줘", "최신 LLM 소식", "아처 보고"
+- claude_action command=run_archer  : 아처 기술 트렌드 분석
+- dexter_report    : 덱스터 일일 보고
+- dexter_quickcheck: 덱스터 퀵체크 (5분 단기 점검)
+- doctor_history   : 점검 에러 이력 조회
+- stability        : 시스템 안정성 대시보드
+- telegram_status  : 텔레그램 폴링 상태
+- claude_ask args.query=<질문> : 클로드 AI 직접 질문
 
-[클로드 AI 직접 질문]
-- claude_ask args.query=<질문내용> : 클로드 AI에게 직접 질문 (개발·분석·조언)
-  예) "클로드한테 물어봐 루나 전략 어떻게 생각해", "클로드에게 질문 현재 시스템 구조 분석해줘"
-  예) "클로드야 DB 스키마 최적화 방법 알려줘", "클로드 의견 들어봐 아처 보고서 개선방향"
-  ※ 질문 내용(query)은 트리거 문구를 제외한 실제 질문만 추출
+[시스템 분석]
+- shadow_report    : 섀도 모드 리포트 (LLM vs 규칙 비교)
+- shadow_mismatches: 섀도 불일치 목록 (LLM이 틀린 케이스)
+- llm_cost         : LLM 비용 상세 분석 (팀별·모델별)
+- cache_stats      : LLM 캐시 적중률 통계
+- llm_graduation   : LLM 졸업 현황 (자동 규칙 전환 후보)
 
 [제이 직접 처리]
-- status : "시스템 현황", "전체 상태", "다들 어때", "모두 살아있어"
-- cost   : "비용 얼마야", "토큰 얼마 썼어", "LLM 비용"
-- brief  : "브리핑", "야간 알람 뭐 있어", "밤새 뭔 일 있었어"
-- queue  : "알람 큐", "큐 확인"
-- mute   : "루나 1시간 무음", "전체 조용히 30분" (args: target, duration)
-- unmute : "루나 무음 해제" (args: target)
-- mutes  : "무음 목록", "뭐 무음했어"
-- mute_last_alert   : "이 알람 안 해도 돼", "이거 무시해", "이 경고 필요 없어", "충분히 알았어", "이 알람 꺼줘"
-- unmute_last_alert : "이 알람 다시 알려줘", "이 알람 무음 해제해줘", "이거 다시 받을게"
-- help   : "도움말", "뭐할 수 있어", "명령 목록"
-- unknown: 위 어디에도 해당하지 않을 때
+- status : 전체 시스템 현황 ("/status", "다들 어때", "전체 상태")
+- cost   : LLM 비용 요약 ("/cost", "비용 얼마야", "토큰 사용량")
+- brief  : 야간 브리핑 ("브리핑", "밤새 뭔 일 있었어")
+- queue  : 알람 큐 확인 ("/queue", "큐 확인")
+- mute   : 무음 설정 args: target, duration (예: "루나 1시간 무음")
+- unmute : 무음 해제 args: target
+- mutes  : 무음 목록
+- mute_last_alert   : 방금 받은 알람 타입 무음
+- unmute_last_alert : 방금 받은 알람 무음 해제
+- help   : 도움말
+- chat   : 일반 대화·인사·이해 불가 (모든 팀과 무관한 자유 대화)
+
+=== 분류 예시 (Few-shot) ===
+사용자: "오늘 예약 뭐 있어?" → {"intent": "ska_query", "args": {"command": "query_reservations"}, "confidence": 0.97}
+사용자: "루나 상태 어때?" → {"intent": "luna_query", "args": {"command": "get_status"}, "confidence": 0.95}
+사용자: "시스템 섀도 리포트 보여줘" → {"intent": "shadow_report", "args": {}, "confidence": 0.92}
+사용자: "LLM 졸업 현황" → {"intent": "llm_graduation", "args": {}, "confidence": 0.95}
+사용자: "캐시 통계 보여줘" → {"intent": "cache_stats", "args": {}, "confidence": 0.90}
+사용자: "매매일지 최근 10건" → {"intent": "trade_journal", "args": {}, "confidence": 0.93}
+사용자: "TP SL 설정 어떻게 돼있어?" → {"intent": "tp_sl_status", "args": {}, "confidence": 0.92}
+사용자: "덱스터 퀵체크 결과 알려줘" → {"intent": "dexter_quickcheck", "args": {}, "confidence": 0.93}
+사용자: "안녕 제이야 잘 지내?" → {"intent": "chat", "args": {}, "confidence": 0.90}
+사용자: "오늘 날씨 어때?" → {"intent": "chat", "args": {}, "confidence": 0.85}
+{DYNAMIC_EXAMPLES}
 
 반드시 JSON 형식으로만 응답:
 {"intent": "...", "args": {}, "confidence": 0.0~1.0}
@@ -313,14 +388,21 @@ async function parseLLMFallback(text) {
   const key = getGeminiKey();
   if (!key) return null;
 
+  // 동적 Few-shot 예시 주입 (unrecognized_intents에서 승인된 예시)
+  const dynamicExamples = await loadDynamicExamples();
+  const dynamicSection  = dynamicExamples.length > 0
+    ? dynamicExamples.join('\n')
+    : '';
+  const systemPrompt = SYSTEM_PROMPT_BASE.replace('{DYNAMIC_EXAMPLES}', dynamicSection);
+
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({
       model: LLM_FALLBACK_MODEL,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         { role: 'user',   content: text },
       ],
-      max_tokens:      150,
+      max_tokens:      200,
       temperature:     0,
       response_format: { type: 'json_object' },
     }));
@@ -330,8 +412,8 @@ async function parseLLMFallback(text) {
       path:     '/v1beta/openai/chat/completions',
       method:   'POST',
       headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type':  'application/json',
+        'Authorization':  `Bearer ${key}`,
+        'Content-Type':   'application/json',
         'Content-Length': body.length,
       },
     }, (res) => {
@@ -345,7 +427,6 @@ async function parseLLMFallback(text) {
           const content = r.choices?.[0]?.message?.content?.trim() || '';
           const usage   = r.usage || {};
 
-          // 토큰 기록
           trackTokens({
             bot:       '제이',
             team:      'orchestrator',
@@ -356,19 +437,18 @@ async function parseLLMFallback(text) {
             tokensOut: usage.completion_tokens || 0,
           });
 
-          // JSON 추출
           const jsonMatch = content.match(/\{[\s\S]*\}/);
           if (!jsonMatch) { resolve(null); return; }
 
           const parsed = JSON.parse(jsonMatch[0]);
           if (parsed.intent) {
             resolve({
-              intent: parsed.intent,
-              args:   parsed.args || {},
-              source: 'llm',
+              intent:     parsed.intent,
+              args:       parsed.args || {},
+              source:     'llm',
               confidence: parsed.confidence || 0.8,
-              tokensIn:  usage.prompt_tokens     || 0,
-              tokensOut: usage.completion_tokens || 0,
+              tokensIn:   usage.prompt_tokens     || 0,
+              tokensOut:  usage.completion_tokens || 0,
             });
           } else {
             resolve(null);
@@ -388,7 +468,7 @@ async function parseLLMFallback(text) {
 /**
  * 명령 파싱 (3단계)
  * @param {string} text  사용자 입력 텍스트
- * @returns {Promise<{intent, args, source}>}
+ * @returns {Promise<{intent, args, source, confidence?}>}
  */
 async function parseIntent(text) {
   const t = text.trim();
@@ -403,11 +483,12 @@ async function parseIntent(text) {
   const kw = parseKeyword(t);
   if (kw) return kw;
 
-  // 3단계: LLM 폴백
+  // 3단계: LLM 폴백 (CoT + Few-shot + 동적 예시)
   const llmResult = await parseLLMFallback(t);
-  if (llmResult && llmResult.intent !== 'unknown') return llmResult;
+  if (llmResult) return llmResult;
 
-  return { intent: 'unknown', args: {}, source: 'failed' };
+  // 모든 단계 실패 → chat 폴백 (router.js가 handleChatFallback 처리)
+  return { intent: 'chat', args: { text: t }, source: 'failed' };
 }
 
 module.exports = { parseIntent };
