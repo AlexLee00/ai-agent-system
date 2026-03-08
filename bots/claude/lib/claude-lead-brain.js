@@ -145,11 +145,11 @@ action 기준:
 
 affected_teams: 이슈가 스카팀 또는 루나팀에 영향을 줄 경우 포함 (예: ["ska"], ["luna"], [])`;
 
-function _buildUserPrompt(issues) {
+function _buildUserPrompt(issues, ragContext = '') {
   const lines = issues.map((iss, i) =>
     `${i + 1}. [${iss.checkName}] ${iss.label}: ${iss.detail || '-'} (${iss.status})`
   );
-  return `덱스터가 감지한 이슈 ${issues.length}건을 분석해주세요:\n\n${lines.join('\n')}`;
+  return `덱스터가 감지한 이슈 ${issues.length}건을 분석해주세요:\n\n${lines.join('\n')}${ragContext}`;
 }
 
 // ── 메인 평가 함수 ────────────────────────────────────────────────────
@@ -181,6 +181,21 @@ async function evaluateWithClaudeLead(results) {
   const ruleResult = _ruleEngine(issues);
 
   // 3. Sonnet LLM 판단 (비동기, Shadow)
+  // RAG 검색: 유사 과거 장애/복구 사례 조회 → LLM 컨텍스트 보강
+  let ragContext = '';
+  try {
+    const rag      = require('../../../packages/core/lib/rag');
+    const ragQuery = issues.slice(0, 3).map(i => i.label).join(' ');
+    const hits     = await rag.search('operations', ragQuery, { limit: 3, threshold: 0.7 });
+    if (hits.length > 0) {
+      ragContext = '\n\n[과거 유사 장애/복구 사례]\n' + hits.map(h => {
+        const m = h.metadata || {};
+        const tag = m.category === 'recovery' ? '복구' : m.category === 'incident' ? '인시던트' : '기록';
+        return `  [${tag}] ${h.content.slice(0, 80)}`;
+      }).join('\n');
+    }
+  } catch { /* RAG 검색 실패 시 무시 */ }
+
   let llmResult = null;
   let llmError  = null;
   const apiKey  = getAnthropicKey();
@@ -193,7 +208,7 @@ async function evaluateWithClaudeLead(results) {
         max_tokens:  300,
         temperature: 0.1,
         system:      SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: _buildUserPrompt(issues) }],
+        messages: [{ role: 'user', content: _buildUserPrompt(issues, ragContext) }],
       });
       const raw = resp.content[0]?.text?.trim() || '';
       // ```json ... ``` 마크다운 블록 제거
@@ -237,6 +252,25 @@ async function evaluateWithClaudeLead(results) {
     ]);
   } catch (e) {
     console.warn('[claude-lead-brain] shadow_log INSERT 실패 (무시):', e.message);
+  }
+
+  // RAG 저장: 이슈 분석 이력을 rag_operations에 학습 데이터로 기록
+  try {
+    const rag     = require('../../../packages/core/lib/rag');
+    const content = [
+      `클로드팀장 이슈 분석: ${issues.length}건`,
+      `판단: ${ruleResult.decision}`,
+      `항목: ${issues.slice(0, 3).map(i => i.label).join(', ')}`,
+    ].join(' | ');
+    await rag.store('operations', content, {
+      category:    'analysis',
+      team:        'claude',
+      decision:    ruleResult.decision,
+      issue_count: issues.length,
+      match:       match,
+    }, 'claude-lead');
+  } catch (e) {
+    console.warn('[claude-lead-brain] RAG 저장 실패 (무시):', e.message);
   }
 
   // 6. 판단 로그

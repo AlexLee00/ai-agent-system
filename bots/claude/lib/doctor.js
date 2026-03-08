@@ -291,6 +291,23 @@ async function pollDoctorTasks() {
             message:  result.message,
           });
         } catch { /* 이벤트 발행 실패 무시 */ }
+        // RAG 저장: 복구 이력을 rag_operations에 학습 데이터로 기록
+        try {
+          const rag     = require('../../../packages/core/lib/rag');
+          const content = [
+            `장애 복구 성공: ${taskType}`,
+            `원인: ${params.original_issue?.detail || params.reason || ''}`,
+            `복구 방법: ${result.message || taskType}`,
+          ].join(' | ');
+          await rag.store('operations', content, {
+            task_type: taskType,
+            success:   true,
+            category:  'recovery',
+            team:      'claude',
+          }, 'doctor');
+        } catch (e) {
+          console.warn('[doctor] RAG 저장 실패 (무시):', e.message);
+        }
       } else {
         await stateBus.failTask(task.id, result.message);
       }
