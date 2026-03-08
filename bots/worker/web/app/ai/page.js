@@ -3,6 +3,17 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 
+// XSS 방지 — AI 답변·예측 텍스트에 HTML 특수문자 이스케이프
+function sanitizeText(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 function TrendBadge({ trend }) {
   const map = {
     '상승': 'bg-green-100 text-green-700',
@@ -105,7 +116,7 @@ export default function AIPage() {
           <div className="space-y-3">
             {/* 답변 */}
             <div className="bg-indigo-50 rounded-lg p-4">
-              <p className="text-sm font-medium text-indigo-900 whitespace-pre-wrap">{askResult.answer}</p>
+              <p className="text-sm font-medium text-indigo-900 whitespace-pre-wrap">{sanitizeText(askResult.answer)}</p>
             </div>
 
             {/* 메타 정보 */}
@@ -174,12 +185,12 @@ export default function AIPage() {
 
                 {/* 분석 */}
                 <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-                  <p className="text-gray-700">{forecast.forecast.analysis}</p>
+                  <p className="text-gray-700">{sanitizeText(forecast.forecast.analysis)}</p>
                   {forecast.forecast.weekly_pattern && (
-                    <p className="text-gray-500 text-xs">{forecast.forecast.weekly_pattern}</p>
+                    <p className="text-gray-500 text-xs">{sanitizeText(forecast.forecast.weekly_pattern)}</p>
                   )}
                   {forecast.forecast.warnings && (
-                    <p className="text-amber-600 text-xs">{forecast.forecast.warnings}</p>
+                    <p className="text-amber-600 text-xs">{sanitizeText(forecast.forecast.warnings)}</p>
                   )}
                 </div>
 

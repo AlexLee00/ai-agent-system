@@ -70,4 +70,23 @@ function isSafeQuestion(question) {
   return !DANGEROUS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(question));
 }
 
-module.exports = { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion };
+// ── 허용 테이블 화이트리스트 ──────────────────────────────────────────
+
+const ALLOWED_TABLES = [
+  'worker.employees', 'worker.attendance', 'worker.revenue', 'worker.sales',
+  'worker.payroll', 'worker.projects', 'worker.project_members',
+  'worker.milestones', 'worker.schedules', 'worker.documents',
+  'worker.work_journals', 'worker.companies', 'worker.users',
+  'worker.approval_requests',
+];
+
+function hasOnlyAllowedTables(sql) {
+  const tablePattern = /(?:FROM|JOIN)\s+([\w]+\.[\w]+)/gi;
+  let match;
+  while ((match = tablePattern.exec(sql)) !== null) {
+    if (!ALLOWED_TABLES.includes(match[1].toLowerCase())) return false;
+  }
+  return true;
+}
+
+module.exports = { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables };
