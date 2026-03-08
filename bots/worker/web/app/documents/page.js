@@ -57,6 +57,14 @@ export default function DocumentsPage() {
     finally { setSaving(false); }
   };
 
+  const handleDelete = async (id) => {
+    if (!confirm('문서를 삭제하시겠습니까?')) return;
+    try {
+      await api.delete(`/documents/${id}`);
+      load();
+    } catch (e) { alert(e.message); }
+  };
+
   const columns = [
     { key: 'category',   label: '분류' },
     { key: 'filename',   label: '파일명',   render: (v, row) => row.file_path
@@ -64,6 +72,8 @@ export default function DocumentsPage() {
         : v },
     { key: 'ai_summary', label: 'AI 요약',  render: v => v ? v.slice(0,40)+'...' : '-' },
     { key: 'created_at', label: '업로드일', render: v => v?.slice(0,10) || '-' },
+    { key: 'id', label: '', render: (v) =>
+        <button onClick={() => handleDelete(v)} className="text-xs text-red-500 hover:text-red-700">삭제</button> },
   ];
 
   return (

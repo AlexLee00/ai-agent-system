@@ -54,14 +54,20 @@ app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.', code: 'RATE_LIMIT' }),
+});
 app.use('/api/', limiter);
 
 // ── 접근 로그 (OWASP) — 모든 라우트 앞에 배치 ─────────────────────
 app.use(accessLogger);
 
 // 로그인 엔드포인트는 더 엄격한 Rate Limit
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20,
+  handler: (req, res) => res.status(429).json({ error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도하세요.', code: 'RATE_LIMIT' }),
+});
 app.use('/api/auth/login', loginLimiter);
 
 // ── 정적 파일 / 루트 리다이렉트 ──────────────────────────────────────
@@ -646,7 +652,7 @@ app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
 });
 
 app.post('/api/sales',
-  requireAuth, auditLog('CREATE', 'sales'),
+  requireAuth, companyFilter, auditLog('CREATE', 'sales'),
   body('amount').isInt({ min: 1 }),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -715,7 +721,9 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
 app.post('/api/documents/upload',
   requireAuth, upload.single('file'), auditLog('UPLOAD', 'documents'),
   async (req, res) => {
-    const filename  = req.file?.originalname || req.body?.filename;
+    // multer는 파일명을 latin1로 디코딩 — 한글 등 UTF-8 파일명 복원
+    const rawName   = req.file?.originalname || req.body?.filename;
+    const filename  = rawName ? Buffer.from(rawName, 'latin1').toString('utf8') : null;
     if (!filename?.trim()) return res.status(400).json({ error: '파일이 없습니다.', code: 'NO_FILE' });
     const file_path = req.file ? `/uploads/${req.file.filename}` : req.body?.file_path || null;
     const category  = req.body?.category || '';
@@ -743,6 +751,16 @@ app.post('/api/documents/upload',
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
+
+app.delete('/api/documents/:id', requireAuth, companyFilter, auditLog('DELETE', 'documents'), async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `UPDATE worker.documents SET deleted_at=NOW() WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL RETURNING id`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '문서 없음', code: 'NOT_FOUND' });
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
 
 // ── 업무일지 API (에밀리 확장) ───────────────────────────────────────
 
@@ -980,7 +998,7 @@ app.get('/api/payroll/:id', requireAuth, companyFilter, async (req, res) => {
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
-app.post('/api/payroll/calculate', requireAuth, requireRole('master','admin'), auditLog('CALCULATE', 'payroll'), async (req, res) => {
+app.post('/api/payroll/calculate', requireAuth, requireRole('master','admin'), companyFilter, auditLog('CALCULATE', 'payroll'), async (req, res) => {
   const yearMonth = req.body.year_month || new Date().toISOString().slice(0, 7);
   try {
     const { calculatePayroll } = require('../src/sophie');
@@ -1041,8 +1059,20 @@ app.post('/api/projects',
   }
 );
 
+app.get('/api/projects/:id', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT p.*, e.name AS owner_name
+       FROM worker.projects p LEFT JOIN worker.employees e ON e.id=p.owner_id
+       WHERE p.id=$1 AND p.company_id=$2 AND p.deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '프로젝트 없음', code: 'NOT_FOUND' });
+    res.json({ project: row });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
 app.put('/api/projects/:id',
-  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'projects'),
+  requireAuth, companyFilter, requireRole('master','admin'), auditLog('UPDATE', 'projects'),
   body('name').optional().trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -1088,7 +1118,7 @@ app.get('/api/projects/:id/milestones', requireAuth, companyFilter, async (req, 
 });
 
 app.post('/api/projects/:id/milestones',
-  requireAuth, requireRole('master','admin'), auditLog('CREATE', 'milestones'),
+  requireAuth, companyFilter, requireRole('master','admin'), auditLog('CREATE', 'milestones'),
   body('title').trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -1158,7 +1188,7 @@ app.get('/api/schedules/today', requireAuth, companyFilter, async (req, res) => 
 });
 
 app.post('/api/schedules',
-  requireAuth, auditLog('CREATE', 'schedules'),
+  requireAuth, companyFilter, auditLog('CREATE', 'schedules'),
   body('title').trim().notEmpty(),
   body('start_time').notEmpty(),
   async (req, res) => {
@@ -1180,7 +1210,7 @@ app.post('/api/schedules',
 );
 
 app.put('/api/schedules/:id',
-  requireAuth, auditLog('UPDATE', 'schedules'),
+  requireAuth, companyFilter, auditLog('UPDATE', 'schedules'),
   body('title').optional().trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -1205,7 +1235,7 @@ app.put('/api/schedules/:id',
   }
 );
 
-app.delete('/api/schedules/:id', requireAuth, auditLog('DELETE', 'schedules'), async (req, res) => {
+app.delete('/api/schedules/:id', requireAuth, companyFilter, auditLog('DELETE', 'schedules'), async (req, res) => {
   try {
     await pgPool.run(SCHEMA,
       `UPDATE worker.schedules SET deleted_at=NOW() WHERE id=$1 AND company_id=$2`,
