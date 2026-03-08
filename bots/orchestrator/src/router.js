@@ -829,17 +829,27 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     }
 
     case 'dynamic_tpsl_on':
-    case 'dynamic_tpsl_off': {
-      // 루나팀 ATR 기반 동적 TP/SL 토글
+    case 'dynamic_tpsl_off':
+    case 'dynamic_tpsl_status': {
+      // 루나팀 ATR 기반 동적 TP/SL 토글 / 상태 조회
       const configPath = path.join(__dirname, '..', '..', '..', 'investment', 'config.yaml');
-      const enable     = intent === 'dynamic_tpsl_on';
       try {
-        let yaml = fs.readFileSync(configPath, 'utf8');
-        yaml = yaml.replace(
+        const yaml   = fs.readFileSync(configPath, 'utf8');
+        const match  = yaml.match(/^dynamic_tp_sl_enabled\s*:\s*(.+)$/m);
+        const current = match ? match[1].trim() === 'true' : false;
+
+        if (intent === 'dynamic_tpsl_status') {
+          return current
+            ? '📊 동적 TP/SL 상태: ✅ 활성화\nATR 기반 동적 TP/SL 적용 중'
+            : '📊 동적 TP/SL 상태: ⛔ 비활성화\n고정 TP +6% / SL -3% 적용 중';
+        }
+
+        const enable = intent === 'dynamic_tpsl_on';
+        const updated = yaml.replace(
           /^(dynamic_tp_sl_enabled\s*:\s*).*$/m,
           `$1${enable}`
         );
-        fs.writeFileSync(configPath, yaml);
+        fs.writeFileSync(configPath, updated);
         return enable
           ? '✅ 동적 TP/SL 활성화\nATR 기반 동적 TP/SL이 헤파이스토스에 적용됩니다.\n⚠️ 실투자 포지션에 즉시 영향 — 확인 필요'
           : '✅ 동적 TP/SL 비활성화\n고정 TP +6% / SL -3%로 복귀합니다.';
