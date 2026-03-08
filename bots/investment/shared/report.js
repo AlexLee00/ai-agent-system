@@ -29,7 +29,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
   return sender.send('luna', msg);
 }
 
-export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource }) {
+export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = side === 'buy' ? '✅ 매수' : '✅ 매도';
   const lines = [
@@ -43,6 +43,12 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
     const tpPct     = ((tpPrice / price - 1) * 100).toFixed(1);
     const slPct     = ((slPrice / price - 1) * 100).toFixed(1);
     lines.push(`${dynTag} TP: $${tpPrice?.toLocaleString()} (+${tpPct}%) | SL: $${slPrice?.toLocaleString()} (${slPct}%)`);
+  }
+  if (capitalInfo) {
+    lines.push('───────────────');
+    if (capitalInfo.balance    != null) lines.push(`💰 가용 잔고: $${parseFloat(capitalInfo.balance).toFixed(2)}`);
+    if (capitalInfo.openPositions != null) lines.push(`📊 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions}`);
+    if (capitalInfo.dailyPnL   != null) lines.push(`🛡️ 일간 PnL: ${capitalInfo.dailyPnL >= 0 ? '+' : ''}${capitalInfo.dailyPnL.toFixed(2)} USDT`);
   }
   return sender.send('luna', lines.join('\n'));
 }
@@ -74,6 +80,28 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
 export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
   return sender.send('luna', msg);
+}
+
+export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions }) {
+  const lines = [
+    `⚠️ 매매 스킵 — ${symbol} ${action}`,
+    `사유: ${reason}`,
+  ];
+  if (balance !== undefined) lines.push(`💰 가용 잔고: $${parseFloat(balance).toFixed(2)}`);
+  if (openPositions !== undefined) lines.push(`📊 동시 포지션: ${openPositions}/${maxPositions}`);
+  return sender.send('luna', lines.join('\n'));
+}
+
+export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
+  const lines = [
+    '🚨 서킷 브레이커 발동!',
+    `사유: ${reason}`,
+  ];
+  if (type === 'daily_loss' && dailyPnL !== undefined)  lines.push(`일간 PnL: ${dailyPnL.toFixed(2)} USDT`);
+  if (type === 'weekly_loss' && weeklyPnL !== undefined) lines.push(`주간 PnL: ${weeklyPnL.toFixed(2)} USDT`);
+  lines.push('매매 중지 → 마스터 확인 필요');
+  lines.push('재개: /resume_trading');
+  return sender.sendCritical('luna', lines.join('\n'));
 }
 
 export function notifyError(context, error) {

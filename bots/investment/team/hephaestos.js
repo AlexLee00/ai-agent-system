@@ -17,7 +17,8 @@ import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
-import { notifyTrade, notifyError, notifyJournalEntry } from '../shared/report.js';
+import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker } from '../shared/report.js';
+import { preTradeCheck, calculatePositionSize, getAvailableBalance, getOpenPositions, getDailyPnL, config as cmConfig } from '../shared/capital-manager.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -110,14 +111,43 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const order = await marketBuy(symbol, amountUsdt, paperMode);
+      // ── 자본 관리 게이트 ────────────────────────────────────────────
+      const check = await preTradeCheck(symbol, 'BUY', amountUsdt);
+      if (!check.allowed) {
+        console.log(`  ⛔ [자본관리] 매매 스킵: ${check.reason}`);
+        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+        await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [check.reason, signalId]);
+        if (check.circuit) {
+          notifyCircuitBreaker({ reason: check.reason, type: check.circuitType }).catch(() => {});
+        } else {
+          const openPos = await getOpenPositions().catch(() => []);
+          notifyTradeSkip({ symbol, action, reason: check.reason, openPositions: openPos.length, maxPositions: cmConfig.max_concurrent_positions }).catch(() => {});
+        }
+        return { success: false, reason: check.reason };
+      }
+
+      // ── 동적 포지션 사이징 ──────────────────────────────────────────
+      const slPrice = signal.slPrice || 0;
+      const currentPrice = await fetchTicker(symbol).catch(() => 0);
+      const sizing  = await calculatePositionSize(symbol, currentPrice, slPrice);
+      if (sizing.skip) {
+        console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
+        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+        await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [sizing.reason, signalId]);
+        notifyTradeSkip({ symbol, action, reason: sizing.reason }).catch(() => {});
+        return { success: false, reason: sizing.reason };
+      }
+      const actualAmount = sizing.size;
+      console.log(`  📐 [자본관리] 포지션 ${actualAmount.toFixed(2)} USDT (자본의 ${sizing.capitalPct}% | 리스크 ${sizing.riskPercent}%)`);
+
+      const order = await marketBuy(symbol, actualAmount, paperMode);
       trade = {
         signalId,
         symbol,
         side:      'buy',
         amount:    order.filled,
         price:     order.price,
-        totalUsdt: amountUsdt,
+        totalUsdt: actualAmount,
         paper:     paperMode,
         exchange:  'binance',
       };
@@ -207,7 +237,22 @@ export async function executeSignal(signal) {
 
     await db.insertTrade(trade);
     await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
-    await notifyTrade(trade);
+
+    // 자본 관리 정보 포함 알림
+    const [curBalance, curPositions, curDailyPnl] = await Promise.all([
+      getAvailableBalance().catch(() => null),
+      getOpenPositions().catch(() => []),
+      getDailyPnL().catch(() => null),
+    ]);
+    await notifyTrade({
+      ...trade,
+      capitalInfo: {
+        balance:       curBalance,
+        openPositions: curPositions.length,
+        maxPositions:  cmConfig.max_concurrent_positions,
+        dailyPnL:      curDailyPnl,
+      },
+    });
 
     // ── 매매일지 기록 (기존 기능에 영향 없도록 try-catch 감쌈) ────────
     try {
