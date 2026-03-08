@@ -150,7 +150,7 @@ async function main() {
         name: '오늘 매출',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 200],
+        position: [460, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT
@@ -169,7 +169,7 @@ WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')`,
         name: '전일 매출',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 350],
+        position: [680, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT COALESCE(total_amount, 0) AS total
@@ -183,7 +183,7 @@ WHERE date = TO_CHAR(CURRENT_DATE - 1, 'YYYY-MM-DD')`,
         name: '전주 동요일 매출',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 500],
+        position: [900, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT COALESCE(total_amount, 0) AS total
@@ -197,7 +197,7 @@ WHERE date = TO_CHAR(CURRENT_DATE - 7, 'YYYY-MM-DD')`,
         name: '변동률 계산',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [700, 350],
+        position: [1120, 300],
         parameters: {
           jsCode: `
 const today    = $('오늘 매출').first().json;
@@ -227,7 +227,7 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
         name: '이상 여부',
         type: 'n8n-nodes-base.if',
         typeVersion: 2,
-        position: [920, 350],
+        position: [1340, 300],
         parameters: {
           conditions: {
             options: { caseSensitive: false },
@@ -242,7 +242,7 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
         name: '🏢 스카 이상 알림',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1140, 200],
+        position: [1560, 200],
         parameters: {
           chatId: CHAT_ID,
           text: `={{
@@ -268,7 +268,7 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
         name: '🏢 스카 일반 리포트',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1140, 500],
+        position: [1560, 400],
         parameters: {
           chatId: CHAT_ID,
           text: `={{
@@ -290,21 +290,17 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
       },
     ],
     connections: {
-      '매일 22:00':       { main: [[
-        { node: '오늘 매출',       type: 'main', index: 0 },
-        { node: '전일 매출',       type: 'main', index: 0 },
-        { node: '전주 동요일 매출', type: 'main', index: 0 },
-      ]] },
-      '오늘 매출':        { main: [[{ node: '변동률 계산', type: 'main', index: 0 }]] },
-      '전일 매출':        { main: [[{ node: '변동률 계산', type: 'main', index: 0 }]] },
-      '전주 동요일 매출': { main: [[{ node: '변동률 계산', type: 'main', index: 0 }]] },
-      '변동률 계산':      { main: [[{ node: '이상 여부', type: 'main', index: 0 }]] },
+      '매일 22:00':       { main: [[{ node: '오늘 매출',        type: 'main', index: 0 }]] },
+      '오늘 매출':        { main: [[{ node: '전일 매출',        type: 'main', index: 0 }]] },
+      '전일 매출':        { main: [[{ node: '전주 동요일 매출', type: 'main', index: 0 }]] },
+      '전주 동요일 매출': { main: [[{ node: '변동률 계산',      type: 'main', index: 0 }]] },
+      '변동률 계산':      { main: [[{ node: '이상 여부',        type: 'main', index: 0 }]] },
       '이상 여부':        { main: [
         [{ node: '🏢 스카 이상 알림',   type: 'main', index: 0 }],
         [{ node: '🏢 스카 일반 리포트', type: 'main', index: 0 }],
       ]},
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -354,7 +350,7 @@ return [{ json: { hour, elapsed } }];
         name: '오늘 누적 매출',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [700, 200],
+        position: [680, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT COALESCE(SUM(amount), 0) AS current_total
@@ -368,7 +364,7 @@ WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')`,
         name: '전주 동요일 기준선',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [700, 400],
+        position: [900, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT COALESCE(total_amount, 0) AS baseline_total
@@ -382,7 +378,7 @@ WHERE date = TO_CHAR(CURRENT_DATE - 7, 'YYYY-MM-DD')`,
         name: '이상 판단',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [940, 300],
+        position: [1120, 300],
         parameters: {
           jsCode: `
 const current  = Number($('오늘 누적 매출').first().json.current_total)  || 0;
@@ -423,7 +419,7 @@ return [{
         name: 'CRITICAL 여부',
         type: 'n8n-nodes-base.if',
         typeVersion: 2,
-        position: [1160, 300],
+        position: [1340, 300],
         parameters: {
           conditions: {
             options: { caseSensitive: false },
@@ -438,7 +434,7 @@ return [{
         name: '🚨 긴급 + 마스터 DM',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1380, 200],
+        position: [1560, 200],
         parameters: {
           chatId: CHAT_ID,
           text: `={{ '🚨 <b>스카팀 매출 급감 CRITICAL</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)\\n\\n⚠️ 즉시 확인 필요!' }}`,
@@ -454,7 +450,7 @@ return [{
         name: '마스터 DM',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1380, 350],
+        position: [1780, 200],
         parameters: {
           chatId: '***REMOVED***',
           text: `={{ '🚨 <b>[스카] 매출 급감</b>\\n오늘: ' + Number($json.current).toLocaleString('ko-KR') + '원 / 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원 (' + $json.ratio + '%)' }}`,
@@ -467,7 +463,7 @@ return [{
         name: '⚠️ 스카 경고',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1380, 500],
+        position: [1560, 400],
         parameters: {
           chatId: CHAT_ID,
           text: `={{ '⚠️ <b>스카팀 매출 감소 감지</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)' }}`,
@@ -480,20 +476,18 @@ return [{
       },
     ],
     connections: {
-      '매시간':            { main: [[{ node: '영업시간 체크', type: 'main', index: 0 }]] },
-      '영업시간 체크':     { main: [[
-        { node: '오늘 누적 매출',     type: 'main', index: 0 },
-        { node: '전주 동요일 기준선', type: 'main', index: 0 },
-      ]] },
-      '오늘 누적 매출':     { main: [[{ node: '이상 판단', type: 'main', index: 0 }]] },
-      '전주 동요일 기준선': { main: [[{ node: '이상 판단', type: 'main', index: 0 }]] },
-      '이상 판단':          { main: [[{ node: 'CRITICAL 여부', type: 'main', index: 0 }]] },
+      '매시간':             { main: [[{ node: '영업시간 체크',     type: 'main', index: 0 }]] },
+      '영업시간 체크':      { main: [[{ node: '오늘 누적 매출',    type: 'main', index: 0 }]] },
+      '오늘 누적 매출':     { main: [[{ node: '전주 동요일 기준선', type: 'main', index: 0 }]] },
+      '전주 동요일 기준선': { main: [[{ node: '이상 판단',          type: 'main', index: 0 }]] },
+      '이상 판단':          { main: [[{ node: 'CRITICAL 여부',      type: 'main', index: 0 }]] },
       'CRITICAL 여부':      { main: [
-        [{ node: '🚨 긴급 + 마스터 DM', type: 'main', index: 0 }, { node: '마스터 DM', type: 'main', index: 0 }],
+        [{ node: '🚨 긴급 + 마스터 DM', type: 'main', index: 0 }],
         [{ node: '⚠️ 스카 경고',        type: 'main', index: 0 }],
       ]},
+      '🚨 긴급 + 마스터 DM': { main: [[{ node: '마스터 DM', type: 'main', index: 0 }]] },
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -521,7 +515,7 @@ return [{
         name: '최근 28일 일별 매출',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 200],
+        position: [460, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT
@@ -541,7 +535,7 @@ ORDER BY date`,
         name: '주별 합계',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 420],
+        position: [680, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT
@@ -562,7 +556,7 @@ ORDER BY week_start`,
         name: '트렌드 분석',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [700, 300],
+        position: [900, 300],
         parameters: {
           jsCode: `
 const dailyData  = $('최근 28일 일별 매출').all().map(r => r.json);
@@ -615,7 +609,7 @@ return [{ json: { weekTrend, dowSummary, topDow, overallTrend } }];
         name: 'Gemini AI 분석',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
-        position: [940, 300],
+        position: [1120, 300],
         parameters: {
           method: 'POST',
           url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
@@ -648,7 +642,7 @@ return [{ json: { weekTrend, dowSummary, topDow, overallTrend } }];
         name: '리포트 조합',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [1160, 300],
+        position: [1340, 300],
         parameters: {
           jsCode: `
 const trend  = $('트렌드 분석').first().json;
@@ -685,7 +679,7 @@ return [{ json: { report } }];
         name: '🏢 스카 토픽 발송',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1380, 200],
+        position: [1560, 300],
         parameters: {
           chatId: CHAT_ID,
           text: '={{ $json.report }}',
@@ -701,7 +695,7 @@ return [{ json: { report } }];
         name: '📌 총괄 토픽 발송',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [1380, 400],
+        position: [1780, 300],
         parameters: {
           chatId: CHAT_ID,
           text: '={{ $json.report }}',
@@ -714,20 +708,15 @@ return [{ json: { report } }];
       },
     ],
     connections: {
-      '매주 월 09:00':        { main: [[
-        { node: '최근 28일 일별 매출', type: 'main', index: 0 },
-        { node: '주별 합계',           type: 'main', index: 0 },
-      ]] },
-      '최근 28일 일별 매출': { main: [[{ node: '트렌드 분석', type: 'main', index: 0 }]] },
-      '주별 합계':           { main: [[{ node: '트렌드 분석', type: 'main', index: 0 }]] },
-      '트렌드 분석':         { main: [[{ node: 'Gemini AI 분석', type: 'main', index: 0 }]] },
-      'Gemini AI 분석':      { main: [[{ node: '리포트 조합', type: 'main', index: 0 }]] },
-      '리포트 조합':         { main: [[
-        { node: '🏢 스카 토픽 발송', type: 'main', index: 0 },
-        { node: '📌 총괄 토픽 발송', type: 'main', index: 0 },
-      ]] },
+      '매주 월 09:00':       { main: [[{ node: '최근 28일 일별 매출', type: 'main', index: 0 }]] },
+      '최근 28일 일별 매출': { main: [[{ node: '주별 합계',            type: 'main', index: 0 }]] },
+      '주별 합계':           { main: [[{ node: '트렌드 분석',          type: 'main', index: 0 }]] },
+      '트렌드 분석':         { main: [[{ node: 'Gemini AI 분석',       type: 'main', index: 0 }]] },
+      'Gemini AI 분석':      { main: [[{ node: '리포트 조합',          type: 'main', index: 0 }]] },
+      '리포트 조합':         { main: [[{ node: '🏢 스카 토픽 발송',   type: 'main', index: 0 }]] },
+      '🏢 스카 토픽 발송':  { main: [[{ node: '📌 총괄 토픽 발송',   type: 'main', index: 0 }]] },
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   console.log('\n✅ 스카팀 n8n 워크플로우 3개 설정 완료\n');

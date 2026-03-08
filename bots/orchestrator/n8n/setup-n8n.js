@@ -166,7 +166,7 @@ async function main() {
         name: '덱스터 최신 점검',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 200],
+        position: [460, 300],
         parameters: {
           operation: 'select',
           schema: { __rl: true, value: 'reservation', mode: 'name' },
@@ -182,7 +182,7 @@ async function main() {
         name: 'LLM 비용 오늘',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 350],
+        position: [680, 300],
         parameters: {
           operation: 'executeQuery',
           query: "SELECT COALESCE(SUM(cost_usd),0) AS total_cost, COUNT(*) AS calls FROM reservation.llm_log WHERE created_at::date = CURRENT_DATE",
@@ -194,7 +194,7 @@ async function main() {
         name: '루나 오늘 거래',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 500],
+        position: [900, 300],
         parameters: {
           operation: 'executeQuery',
           query: "SELECT COUNT(*) AS trades, COALESCE(SUM(pnl_usdt),0) AS total_pnl FROM investment.trades WHERE created_at::date = CURRENT_DATE",
@@ -206,7 +206,7 @@ async function main() {
         name: '리포트 포맷',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [680, 350],
+        position: [1120, 300],
         parameters: {
           jsCode: `
 const dexterRow = $('덱스터 최신 점검').first().json;
@@ -238,7 +238,7 @@ return [{
         name: '📌 총괄 토픽 발송',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [900, 350],
+        position: [1340, 300],
         parameters: {
           chatId: CHAT_ID,
           text:   '={{ $json.text }}',
@@ -251,13 +251,13 @@ return [{
       },
     ],
     connections: {
-      '매일 08:00':    { main: [[{ node: '덱스터 최신 점검', type: 'main', index: 0 }, { node: 'LLM 비용 오늘', type: 'main', index: 0 }, { node: '루나 오늘 거래', type: 'main', index: 0 }]] },
-      '덱스터 최신 점검': { main: [[{ node: '리포트 포맷', type: 'main', index: 0 }]] },
-      'LLM 비용 오늘':  { main: [[{ node: '리포트 포맷', type: 'main', index: 0 }]] },
-      '루나 오늘 거래':  { main: [[{ node: '리포트 포맷', type: 'main', index: 0 }]] },
-      '리포트 포맷':    { main: [[{ node: '📌 총괄 토픽 발송', type: 'main', index: 0 }]] },
+      '매일 08:00':      { main: [[{ node: '덱스터 최신 점검', type: 'main', index: 0 }]] },
+      '덱스터 최신 점검': { main: [[{ node: 'LLM 비용 오늘',   type: 'main', index: 0 }]] },
+      'LLM 비용 오늘':   { main: [[{ node: '루나 오늘 거래',   type: 'main', index: 0 }]] },
+      '루나 오늘 거래':  { main: [[{ node: '리포트 포맷',       type: 'main', index: 0 }]] },
+      '리포트 포맷':     { main: [[{ node: '📌 총괄 토픽 발송', type: 'main', index: 0 }]] },
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   // 2-2. CRITICAL 알림 에스컬레이션
@@ -363,17 +363,18 @@ return [{
       },
     ],
     connections: {
-      'CRITICAL 웹훅':    { main: [[{ node: 'CRITICAL 여부', type: 'main', index: 0 }]] },
-      'CRITICAL 여부':   { main: [
-        [{ node: '🚨 긴급 토픽 발송', type: 'main', index: 0 }, { node: '응답', type: 'main', index: 0 }],
-        [{ node: '응답', type: 'main', index: 0 }],
+      'CRITICAL 웹훅':     { main: [[{ node: 'CRITICAL 여부',    type: 'main', index: 0 }]] },
+      'CRITICAL 여부':     { main: [
+        [{ node: '🚨 긴급 토픽 발송', type: 'main', index: 0 }],
+        [{ node: '응답',              type: 'main', index: 0 }],
       ]},
-      '🚨 긴급 토픽 발송': { main: [[{ node: '5분 대기', type: 'main', index: 0 }]] },
-      '5분 대기':         { main: [[{ node: '복구 확인 조회', type: 'main', index: 0 }]] },
-      '복구 확인 조회':   { main: [[{ node: '복구됐나?', type: 'main', index: 0 }]] },
-      '복구됐나?':        { main: [[], [{ node: '마스터 DM 발송', type: 'main', index: 0 }]] },
+      '🚨 긴급 토픽 발송': { main: [[{ node: '응답',            type: 'main', index: 0 }]] },
+      '응답':              { main: [[{ node: '5분 대기',         type: 'main', index: 0 }]] },
+      '5분 대기':          { main: [[{ node: '복구 확인 조회',   type: 'main', index: 0 }]] },
+      '복구 확인 조회':    { main: [[{ node: '복구됐나?',        type: 'main', index: 0 }]] },
+      '복구됐나?':         { main: [[], [{ node: '마스터 DM 발송', type: 'main', index: 0 }]] },
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   // 2-3. 주간 매매 성과 요약
@@ -399,7 +400,7 @@ return [{
         name: '주간 거래 조회',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 200],
+        position: [460, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT
@@ -419,7 +420,7 @@ WHERE created_at > NOW() - INTERVAL '7 days'`,
         name: '주간 성과 조회',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
-        position: [460, 420],
+        position: [680, 300],
         parameters: {
           operation: 'executeQuery',
           query: `SELECT
@@ -438,7 +439,7 @@ ORDER BY date ASC`,
         name: '주간 성과 포맷',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [700, 300],
+        position: [900, 300],
         parameters: {
           jsCode: `
 const t = $('주간 거래 조회').first().json;
@@ -470,7 +471,7 @@ return [{
         name: '💰 루나 토픽 발송',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
-        position: [920, 300],
+        position: [1120, 300],
         parameters: {
           chatId: CHAT_ID,
           text:   '={{ $json.text }}',
@@ -483,12 +484,12 @@ return [{
       },
     ],
     connections: {
-      '매주 일요일 20:00': { main: [[{ node: '주간 거래 조회', type: 'main', index: 0 }, { node: '주간 성과 조회', type: 'main', index: 0 }]] },
-      '주간 거래 조회':    { main: [[{ node: '주간 성과 포맷', type: 'main', index: 0 }]] },
-      '주간 성과 조회':    { main: [[{ node: '주간 성과 포맷', type: 'main', index: 0 }]] },
+      '매주 일요일 20:00': { main: [[{ node: '주간 거래 조회',      type: 'main', index: 0 }]] },
+      '주간 거래 조회':    { main: [[{ node: '주간 성과 조회',      type: 'main', index: 0 }]] },
+      '주간 성과 조회':    { main: [[{ node: '주간 성과 포맷',      type: 'main', index: 0 }]] },
       '주간 성과 포맷':    { main: [[{ node: '💰 루나 토픽 발송', type: 'main', index: 0 }]] },
     },
-    settings: { executionOrder: 'v1' },
+    settings: {},
   });
 
   console.log('\n✅ n8n 파일럿 설정 완료!');
