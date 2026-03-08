@@ -11,6 +11,7 @@
 import Anthropic    from '@anthropic-ai/sdk';
 import Groq         from 'groq-sdk';
 import OpenAI       from 'openai';
+import { createHash }   from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -36,6 +37,15 @@ try {
   _logLLMCall = ll.logLLMCall;
 } catch {
   // 로거 없는 환경에서는 무음 처리
+}
+
+// CJS pgPool (LLM 시맨틱 캐시용 — reservation 스키마)
+let _pgPool = null;
+try {
+  const require = createRequire(import.meta.url);
+  _pgPool = require('../../../packages/core/lib/pg-pool');
+} catch {
+  // pgPool 없는 환경에서는 캐시 비활성화
 }
 
 // CJS 타임아웃 상수 로드
@@ -149,11 +159,34 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
 }
 
+// ─── 재시도 헬퍼 (500/502/503 Exponential Backoff) ──────────────────
+
+/**
+ * 서버 오류(500/502/503) 시 지수 백오프 재시도
+ * 429는 Groq 키 라운드로빈에서 처리 — 여기서는 서버 장애만 대상
+ */
+async function callWithRetry(fn, agentName, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const status = e.status || e.statusCode || e.response?.status;
+      if ([500, 502, 503].includes(status) && i < maxRetries - 1) {
+        const delay = Math.pow(2, i) * 1000;  // 1s → 2s → 4s
+        console.warn(`  ⚠️ [${agentName}] HTTP ${status} 재시도 ${i + 1}/${maxRetries - 1} (${delay}ms 대기)`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
   const t0 = Date.now();
-  try {
+  const doCall = async () => {
     const openai = getOpenAI();
-    const res    = await openai.chat.completions.create({
+    return openai.chat.completions.create({
       model:           OPENAI_PERF_MODEL,
       max_tokens:      maxTokens,
       response_format: { type: 'json_object' },
@@ -162,7 +195,10 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skip
         { role: 'user',   content: userPrompt   },
       ],
     });
-    const dur = Date.now() - t0;
+  };
+  try {
+    const res    = await callWithRetry(doCall, agentName);
+    const dur    = Date.now() - t0;
     const inTok  = res.usage?.prompt_tokens     || 0;
     const outTok = res.usage?.completion_tokens || 0;
     _trackTokens?.({
@@ -221,4 +257,86 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFa
   const reason = lastErr?.status === 429 ? '전체 키 rate limit' : (lastErr?.message?.slice(0, 60) ?? '알 수 없는 오류');
   console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → OpenAI 폴백`);
   return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+}
+
+// ─── 시맨틱 캐싱 (SHA256 해시, PostgreSQL reservation.llm_cache) ──────
+
+let _cacheReady = false;
+
+async function ensureLLMCache() {
+  if (_cacheReady || !_pgPool) return;
+  try {
+    await _pgPool.run('reservation', `
+      CREATE TABLE IF NOT EXISTS llm_cache (
+        cache_key  TEXT PRIMARY KEY,
+        response   TEXT NOT NULL,
+        model      TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL
+      )
+    `);
+    await _pgPool.run('reservation',
+      `CREATE INDEX IF NOT EXISTS idx_llm_cache_expires ON llm_cache (expires_at)`
+    );
+    _cacheReady = true;
+  } catch {
+    // 캐시 테이블 생성 실패 시 조용히 비활성화
+  }
+}
+
+/**
+ * 캐싱 래퍼 — 동일 프롬프트는 TTL 내에서 DB 캐시 반환
+ *
+ * @param {string} agentName
+ * @param {string} systemPrompt
+ * @param {string} userPrompt
+ * @param {number} [maxTokens=512]
+ * @param {object} [opts]
+ * @param {number} [opts.cacheTTL=300]  캐시 유효 시간(초) — 루나팀 기본 5분
+ * @param {boolean} [opts.skipCache]    true: 캐시 우회 (긴급 시)
+ * @returns {Promise<string>}
+ */
+export async function cachedCallLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, opts = {}) {
+  const ttl = Math.max(60, Math.min(86400, Math.floor(opts.cacheTTL ?? 300)));  // 1분~24시간
+
+  if (opts.skipCache || !_pgPool) {
+    return callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+
+  await ensureLLMCache();
+  if (!_cacheReady) {
+    return callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+
+  const key = createHash('sha256')
+    .update(agentName + systemPrompt + userPrompt)
+    .digest('hex');
+
+  // 캐시 조회
+  try {
+    const rows = await _pgPool.query('reservation',
+      'SELECT response FROM llm_cache WHERE cache_key = $1 AND expires_at > NOW()',
+      [key],
+    );
+    if (rows.length > 0) {
+      console.log(`  💾 [${agentName}] LLM 캐시 히트 (${key.slice(0, 8)}...)`);
+      return rows[0].response;
+    }
+  } catch { /* 조회 실패 → API 직접 호출 */ }
+
+  // 캐시 미스 → API 호출
+  const result = await callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+
+  // 캐시 저장 (실패해도 결과는 반환)
+  try {
+    await _pgPool.run('reservation',
+      `INSERT INTO llm_cache (cache_key, response, model, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '${ttl} seconds')
+       ON CONFLICT (cache_key) DO UPDATE
+         SET response = $2, expires_at = NOW() + INTERVAL '${ttl} seconds'`,
+      [key, result, agentName],
+    );
+  } catch { /* 저장 실패 → 무시 */ }
+
+  return result;
 }

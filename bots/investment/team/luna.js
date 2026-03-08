@@ -20,7 +20,7 @@ import * as db from '../shared/db.js';
 
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
-import { callLLM, parseJSON } from '../shared/llm-client.js';
+import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from '../shared/signal.js';
 import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
@@ -132,7 +132,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     context:   'symbol_decision',
     input:     userMsg,
     ruleEngine: async () => {
-      const raw    = await callLLM('luna', LUNA_SYSTEM, userMsg, 256);
+      const raw    = await cachedCallLLM('luna', LUNA_SYSTEM, userMsg, 256, { cacheTTL: 300 });
       const parsed = parseJSON(raw);
       if (!parsed?.action) {
         const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
