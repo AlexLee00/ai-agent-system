@@ -62,4 +62,12 @@ function isSelectOnly(sql) {
   return !FORBIDDEN.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(sql));
 }
 
-module.exports = { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly };
+// ── 질문 입력 안전성 검증 ─────────────────────────────────────────────
+// SQL 조작 의도가 있는 질문 입력을 사전 차단
+
+function isSafeQuestion(question) {
+  const DANGEROUS = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE', 'EXECUTE', 'EXEC', 'CALL'];
+  return !DANGEROUS.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(question));
+}
+
+module.exports = { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion };

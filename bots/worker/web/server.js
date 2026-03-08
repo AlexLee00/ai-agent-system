@@ -31,7 +31,7 @@ const { recalcProgress } = require('../src/ryan');
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
-const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly } = require('../lib/ai-helper');
+const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion } = require('../lib/ai-helper');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -813,6 +813,7 @@ app.get('/api/journals/:id', requireAuth, companyFilter, async (req, res) => {
 app.post('/api/journals',
   requireAuth, companyFilter, auditLog('CREATE', 'work_journals'),
   body('content').trim().notEmpty(),
+  body('category').optional().isIn(['general','meeting','task','report','other']),
   async (req, res) => {
     if (!validate(req, res)) return;
     const { content, category, date } = req.body;
@@ -1267,6 +1268,12 @@ app.post('/api/ai/ask',
     if (!validate(req, res)) return;
     const { question } = req.body;
     const companyId   = req.companyId;
+
+    // 0단계: 입력 질문 안전성 검증 (SQL 조작 의도 차단)
+    if (!isSafeQuestion(question)) {
+      return res.status(400).json({ error: 'SQL 조작 명령어가 포함된 질문은 허용되지 않습니다.', code: 'UNSAFE_QUESTION' });
+    }
+
     try {
       // 1단계: SQL 생성 (Groq 우선 → Haiku 폴백)
       const { text: sqlText } = await callLLMWithFallback(
@@ -1297,7 +1304,13 @@ app.post('/api/ai/ask',
         '당신은 업무 데이터 분석가입니다.',
         buildSummaryPrompt(question, rows, ragContext), 1024);
 
-      res.json({ answer, data: rows.slice(0, 50), sql, rowCount: rows.length, ragUsed: ragContext.length > 0 });
+      const result = { answer, data: rows.slice(0, 50), sql, rowCount: rows.length, ragUsed: ragContext.length > 0 };
+      // 감사 로그 기록 (비동기, 실패 무시)
+      pgPool.run(SCHEMA,
+        `INSERT INTO worker.audit_log (company_id, user_id, action, target, detail, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [companyId, req.user.id, 'ai_question', 'ai', JSON.stringify({ question, rowCount: rows.length }), req.ip]
+      ).catch(() => {});
+      res.json(result);
     } catch (e) {
       console.error('[AI/ask]', e.message);
       res.status(500).json({ error: 'AI 분석 중 오류가 발생했습니다.', code: 'AI_ERROR', detail: e.message });
@@ -1351,8 +1364,14 @@ ${dataStr}
         forecast = { analysis: forecastText, raw: true };
       }
 
-      res.json({ forecast, dataPoints: rows.length,
-        period: { from: rows[0]?.date, to: rows[rows.length - 1]?.date } });
+      const forecastResult = { forecast, dataPoints: rows.length,
+        period: { from: rows[0]?.date, to: rows[rows.length - 1]?.date } };
+      // 감사 로그 기록 (비동기, 실패 무시)
+      pgPool.run(SCHEMA,
+        `INSERT INTO worker.audit_log (company_id, user_id, action, target, detail, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [req.companyId, req.user.id, 'ai_forecast', 'ai', JSON.stringify({ dataPoints: rows.length, trend: forecast?.trend }), req.ip]
+      ).catch(() => {});
+      res.json(forecastResult);
     } catch (e) {
       console.error('[AI/revenue-forecast]', e.message);
       res.status(500).json({ error: 'AI 예측 중 오류가 발생했습니다.', code: 'FORECAST_ERROR' });
