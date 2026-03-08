@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, FileText, CheckSquare, Settings,
+  Building2, UserCog,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -31,7 +32,7 @@ export default function Sidebar() {
       </div>
 
       {/* 네비 */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map(item => {
           const active = pathname.startsWith(item.href);
           const Icon   = item.icon;
@@ -50,6 +51,36 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {/* 마스터 전용 메뉴 */}
+        {user?.role === 'master' && (
+          <>
+            <div className="pt-3 pb-1">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-3">관리자</p>
+            </div>
+            {[
+              { href: '/admin/companies', icon: Building2, label: '업체 관리' },
+              { href: '/admin/users',     icon: UserCog,   label: '사용자 관리' },
+            ].map(item => {
+              const active = pathname.startsWith(item.href);
+              const Icon   = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-purple-50 text-purple-700'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-purple-600' : 'text-gray-400'}`} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* 사용자 */}

@@ -29,8 +29,16 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '로그인 실패');
     localStorage.setItem('worker_token', data.token);
-    setUser(data.user);
-    return data.user;
+    setUser({ ...data.user, must_change_pw: !!data.must_change_pw });
+    return data;
+  };
+
+  const refreshUser = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
+    if (!token) return;
+    const res  = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = res.ok ? await res.json() : null;
+    if (data?.user) setUser(data.user);
   };
 
   const logout = () => {
@@ -39,7 +47,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
