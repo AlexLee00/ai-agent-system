@@ -39,6 +39,17 @@
 - 아리아 DB 메타데이터에 weights 추가
 <!-- session-close:2026-03-08:루나팀-개선-33-소피아아리아-고도화 -->
 
+### ✨ 클로드팀 완전체 개선 + 루나팀 자본관리
+- team-bus.js 에러핸들링(try-catch 0→15개)
+- dexter-mode.js 에러핸들링 보강(5→16개)
+- Phase2 agent_state DB 기반 팀장 무응답 감지
+- Phase3 Emergency 폴백 직접복구(emergencyDirectRecover)
+- 루나팀 자본관리 완전체(capital-manager.js 신규)
+- 루나팀 신호 pending→approved 전환 버그 수정
+- 헤파이스토스 SELL 바이낸스 실잔고 폴백
+- reporter.js ROUND 타입 버그 수정
+<!-- session-close:2026-03-08:클로드팀-완전체-개선-루나팀-자본관리 -->
+
 ## 2026-03-08
 
 ### 제이 자연어 능력 향상 v2.0 (커밋: `4c9efa1`)

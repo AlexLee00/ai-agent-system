@@ -1416,6 +1416,8 @@ function parseJsonResponse(text) {
 | 2026-03-07 | **3주차 구축 — 클로드(팀장) Sonnet Shadow + 장애주입 테스트 + LLM 졸업 엔진** — claude-lead-brain.js — Sonnet Shadow 판단 엔진 신규 외 7건 |
 | 2026-03-08 | **Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동** — shadow-mode.js getTeamMode/setTeamMode 추가 외 14건 |
 | 2026-03-08 | **루나팀 개선 3/3 — 소피아+아리아 고도화** — 소피아 Fear&Greed Index 추가 (alternative.me, 1시간 캐시) 외 5건 |
+| 2026-03-08 | **클로드팀 완전체 개선 + 루나팀 자본관리** — team-bus.js 에러핸들링(try-catch 0→15개) 외 7건 |
+<!-- session-close:2026-03-08:클로드팀-완전체-개선-루나팀-자본관리 -->
 <!-- session-close:2026-03-08:루나팀-개선-33-소피아아리아-고도화 -->
 <!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
 <!-- session-close:2026-03-07:3주차-구축-클로드팀장-sonnet-shadow-장애주 -->
