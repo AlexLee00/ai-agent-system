@@ -47,52 +47,52 @@ async function markSeen(id) {
  */
 async function addReservation(id, data) {
   try {
-  await pgPool.run(SCHEMA, `
-    INSERT INTO reservations
-      (id, composite_key, name_enc, phone, phone_raw_enc,
-       date, start_time, end_time, room, status,
-       pickko_status, pickko_order_id, error_reason, retries,
-       detected_at, pickko_start_time, pickko_complete_time,
-       marked_seen, seen_only, updated_at)
-    VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,0,0,to_char(now(),'YYYY-MM-DD HH24:MI:SS'))
-    ON CONFLICT(id) DO UPDATE SET
-      composite_key        = EXCLUDED.composite_key,
-      name_enc             = EXCLUDED.name_enc,
-      phone                = EXCLUDED.phone,
-      phone_raw_enc        = EXCLUDED.phone_raw_enc,
-      date                 = EXCLUDED.date,
-      start_time           = EXCLUDED.start_time,
-      end_time             = EXCLUDED.end_time,
-      room                 = EXCLUDED.room,
-      status               = EXCLUDED.status,
-      pickko_status        = EXCLUDED.pickko_status,
-      pickko_order_id      = EXCLUDED.pickko_order_id,
-      error_reason         = EXCLUDED.error_reason,
-      retries              = EXCLUDED.retries,
-      detected_at          = EXCLUDED.detected_at,
-      pickko_start_time    = EXCLUDED.pickko_start_time,
-      pickko_complete_time = EXCLUDED.pickko_complete_time,
-      updated_at           = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
-  `, [
-    id,
-    data.compositeKey      || null,
-    encrypt(data.name      || null),
-    data.phone             || null,
-    encrypt(data.phoneRaw  || null),
-    data.date              || '',
-    data.start             || '',
-    data.end               || null,
-    data.room              || null,
-    data.status            || 'pending',
-    data.pickkoStatus      || null,
-    data.pickkoOrderId     || null,
-    data.errorReason       || null,
-    data.retries           || 0,
-    data.detectedAt        || null,
-    data.pickkoStartTime   || null,
-    data.pickkoCompleteTime|| null,
-  ]);
+    await pgPool.run(SCHEMA, `
+      INSERT INTO reservations
+        (id, composite_key, name_enc, phone, phone_raw_enc,
+         date, start_time, end_time, room, status,
+         pickko_status, pickko_order_id, error_reason, retries,
+         detected_at, pickko_start_time, pickko_complete_time,
+         marked_seen, seen_only, updated_at)
+      VALUES
+        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,0,0,to_char(now(),'YYYY-MM-DD HH24:MI:SS'))
+      ON CONFLICT(id) DO UPDATE SET
+        composite_key        = EXCLUDED.composite_key,
+        name_enc             = EXCLUDED.name_enc,
+        phone                = EXCLUDED.phone,
+        phone_raw_enc        = EXCLUDED.phone_raw_enc,
+        date                 = EXCLUDED.date,
+        start_time           = EXCLUDED.start_time,
+        end_time             = EXCLUDED.end_time,
+        room                 = EXCLUDED.room,
+        status               = EXCLUDED.status,
+        pickko_status        = EXCLUDED.pickko_status,
+        pickko_order_id      = EXCLUDED.pickko_order_id,
+        error_reason         = EXCLUDED.error_reason,
+        retries              = EXCLUDED.retries,
+        detected_at          = EXCLUDED.detected_at,
+        pickko_start_time    = EXCLUDED.pickko_start_time,
+        pickko_complete_time = EXCLUDED.pickko_complete_time,
+        updated_at           = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+    `, [
+      id,
+      data.compositeKey      || null,
+      encrypt(data.name      || null),
+      data.phone             || null,
+      encrypt(data.phoneRaw  || null),
+      data.date              || '',
+      data.start             || '',
+      data.end               || null,
+      data.room              || null,
+      data.status            || 'pending',
+      data.pickkoStatus      || null,
+      data.pickkoOrderId     || null,
+      data.errorReason       || null,
+      data.retries           || 0,
+      data.detectedAt        || null,
+      data.pickkoStartTime   || null,
+      data.pickkoCompleteTime|| null,
+    ]);
   } catch (e) {
     console.error('[db] addReservation 실패 (id:', id, '):', e.message);
     throw e;
