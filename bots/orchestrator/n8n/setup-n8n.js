@@ -102,11 +102,17 @@ async function createWorkflow(workflow) {
   if (r.status !== 200) throw new Error(`워크플로우 생성 실패: ${JSON.stringify(r.body)}`);
   console.log(`  ✅ 워크플로우 생성: "${workflow.name}" (id: ${r.body.data?.id})`);
 
-  // 워크플로우 활성화
+  // 워크플로우 활성화 (versionId 필요 — n8n 2.x)
   const id = r.body.data?.id;
   if (id) {
-    await request('PATCH', `/rest/workflows/${id}`, { active: true });
-    console.log(`  ✅ 워크플로우 활성화: "${workflow.name}"`);
+    const det = await request('GET', `/rest/workflows/${id}`);
+    const versionId = det.body?.data?.versionId;
+    const ar = await request('POST', `/rest/workflows/${id}/activate`, { versionId });
+    if (ar.body?.data?.active) {
+      console.log(`  ✅ 워크플로우 활성화: "${workflow.name}"`);
+    } else {
+      console.log(`  ⚠️ 활성화 응답 확인 필요: "${workflow.name}"`);
+    }
   }
 }
 
