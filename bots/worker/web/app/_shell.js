@@ -1,0 +1,58 @@
+'use client';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import Sidebar from '@/components/Sidebar';
+import BottomNav from '@/components/BottomNav';
+import Header from '@/components/Header';
+
+const PUBLIC_PATHS = ['/login'];
+
+export default function AppShell({ children }) {
+  const { user, loading } = useAuth();
+  const pathname = usePathname();
+  const router   = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
+    if (!user && !isPublic) router.push('/login');
+    if (user  && pathname === '/login') router.push('/dashboard');
+  }, [user, loading, pathname, router]);
+
+  const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin text-3xl">⏳</div>
+      </div>
+    );
+  }
+
+  if (isPublic) return <>{children}</>;
+
+  if (!user) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* PC 사이드바 */}
+      <aside className="hidden lg:fixed lg:flex lg:flex-col lg:inset-y-0 lg:w-60 bg-white border-r shadow-sm z-30">
+        <Sidebar />
+      </aside>
+
+      {/* 메인 영역 */}
+      <div className="lg:pl-60">
+        <Header />
+        <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-3.5rem)]">
+          {children}
+        </main>
+      </div>
+
+      {/* 모바일 하단 네비 */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t shadow-lg z-40 safe-area-pb">
+        <BottomNav />
+      </nav>
+    </div>
+  );
+}
