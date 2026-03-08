@@ -83,9 +83,12 @@ app.post('/api/auth/login',
       const ok = await verifyPassword(password, user.password_hash);
       if (!ok) return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
 
+      // 마지막 로그인 시각 갱신
+      await pgPool.run(SCHEMA, `UPDATE worker.users SET last_login_at=NOW() WHERE id=$1`, [user.id]);
+
       const token = generateToken(user);
       const { password_hash: _, ...safeUser } = user;
-      res.json({ token, user: safeUser });
+      res.json({ token, user: safeUser, must_change_pw: !!user.must_change_pw });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
@@ -123,7 +126,7 @@ app.post('/api/auth/register',
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
     const user = await pgPool.get(SCHEMA,
-      `SELECT id, company_id, username, role, name, email, telegram_id, created_at FROM worker.users WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at FROM worker.users WHERE id = $1 AND deleted_at IS NULL`,
       [req.user.id]);
     if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
     res.json({ user });
@@ -148,7 +151,9 @@ app.post('/api/auth/change-password',
         return res.status(401).json({ error: '현재 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
       }
       const hash = await hashPassword(new_password);
-      await pgPool.run(SCHEMA, `UPDATE worker.users SET password_hash=$1, updated_at=NOW() WHERE id=$2`, [hash, req.user.id]);
+      await pgPool.run(SCHEMA,
+        `UPDATE worker.users SET password_hash=$1, must_change_pw=FALSE, updated_at=NOW() WHERE id=$2`,
+        [hash, req.user.id]);
       res.json({ ok: true });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -280,6 +285,27 @@ app.delete('/api/users/:id', requireAuth, requireRole('master','admin'), auditLo
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
+
+// POST /api/users/:id/reset-pw (master만 — 임시 비밀번호 설정 + must_change_pw=true)
+app.post('/api/users/:id/reset-pw',
+  requireAuth, requireRole('master'), auditLog('RESET_PW', 'users'),
+  body('new_password').notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { new_password } = req.body;
+    const policy = validatePasswordPolicy(new_password);
+    if (!policy.valid) return res.status(400).json({ error: policy.reason, code: 'WEAK_PASSWORD' });
+    try {
+      const hash = await hashPassword(new_password);
+      const user = await pgPool.get(SCHEMA,
+        `UPDATE worker.users SET password_hash=$1, must_change_pw=TRUE, updated_at=NOW()
+         WHERE id=$2 AND deleted_at IS NULL RETURNING id,username,name`,
+        [hash, req.params.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      res.json({ ok: true });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
 
 // ── 승인 API ──────────────────────────────────────────────────────────
 

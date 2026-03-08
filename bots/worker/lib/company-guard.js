@@ -32,6 +32,12 @@ function requireAuth(req, res, next) {
 
 // ── 역할 ─────────────────────────────────────────────────────────────
 
+function requireMaster(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
+  if (req.user.role !== 'master') return res.status(403).json({ error: '마스터 권한이 필요합니다.', code: 'FORBIDDEN' });
+  next();
+}
+
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
@@ -96,4 +102,4 @@ async function assertCompanyAccess(req, res, targetCompanyId) {
   return true;
 }
 
-module.exports = { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess };
+module.exports = { requireAuth, requireMaster, requireRole, companyFilter, auditLog, assertCompanyAccess };

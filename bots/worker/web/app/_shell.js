@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
 import Header from '@/components/Header';
 
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/change-password'];
 
 export default function AppShell({ children }) {
   const { user, loading } = useAuth();
@@ -18,6 +18,10 @@ export default function AppShell({ children }) {
     const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
     if (!user && !isPublic) router.push('/login');
     if (user  && pathname === '/login') router.push('/dashboard');
+    // 비밀번호 강제 변경 가드
+    if (user?.must_change_pw && !pathname.startsWith('/change-password')) {
+      router.push('/change-password');
+    }
   }, [user, loading, pathname, router]);
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
