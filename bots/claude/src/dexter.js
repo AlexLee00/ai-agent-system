@@ -136,6 +136,9 @@ async function main() {
 
     const { flushed } = dexterMode.checkModeTransition(openclawOk, skayaOk);
 
+    // Phase 2: 팀장 무응답 Emergency 체크 (인프라 기반 전환과 별개)
+    dexterMode.checkEmergencyCondition();
+
     if (dexterMode.isEmergency()) {
       console.log('⚠️ 덱스터 비상 모드 — 텔레그램 보고 불가, 로컬 파일에 기록 중');
     }
@@ -283,6 +286,14 @@ async function main() {
     await pollAgentEvents();
   } catch (e) {
     console.warn('⚠️ 팀장 이벤트 폴링 실패 (무시):', e.message);
+  }
+
+  // Phase 3: 독터 대기 태스크 처리 (팀장→독터 역할 분리)
+  try {
+    const doctor = require('../lib/doctor');
+    await doctor.pollDoctorTasks();
+  } catch (e) {
+    console.warn('⚠️ 독터 태스크 처리 실패 (무시):', e.message);
   }
 
   // 종료 코드: 오류 있으면 1

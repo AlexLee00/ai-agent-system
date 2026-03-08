@@ -14,18 +14,13 @@ LAUNCHCTL_DOMAIN="gui/$(id -u)"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
 send_telegram() {
-  local msg="$1"
+  local msg_file="$1"
   /Users/alexlee/.nvm/versions/node/v24.13.1/bin/node -e "
-    try {
-      const s = require('$PROJECT_DIR/bots/reservation/lib/secrets.js');
-      const { telegram_bot_token: tok, telegram_chat_id: cid } = s.loadSecrets(['telegram_bot_token','telegram_chat_id']);
-      const https = require('https');
-      const body = JSON.stringify({ chat_id: cid, text: '$msg', parse_mode: 'Markdown' });
-      const req = https.request({ hostname:'api.telegram.org', path:'/bot'+tok+'/sendMessage', method:'POST', headers:{'Content-Type':'application/json'} }, ()=>{});
-      req.on('error', ()=>{});
-      req.write(body); req.end();
-      setTimeout(()=>{}, 3000);
-    } catch(e) {}
+    const fs = require('fs');
+    const sender = require('$PROJECT_DIR/packages/core/lib/telegram-sender');
+    const text = fs.readFileSync('$msg_file', 'utf-8');
+    sender.send('claude-lead', text).catch(() => {});
+    setTimeout(() => {}, 3000);
   " 2>/dev/null || true
 }
 
@@ -52,11 +47,13 @@ check_svc() {
   pid=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s {print $1}')
   if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" != "0" ]; then
     log "   ✅ ${label} (PID: ${pid})"
-    REPORT="${REPORT}✅ ${label}%0A"
+    REPORT="${REPORT}✅ ${label}
+"
     ((OK++)) || true
   else
     log "   ❌ ${label} 미실행"
-    REPORT="${REPORT}❌ ${label}%0A"
+    REPORT="${REPORT}❌ ${label} 미실행
+"
     ((FAIL++)) || true
   fi
 }
@@ -70,21 +67,30 @@ check_periodic() {
   runs=$(echo "$info" | awk '/	runs =/ {print $3}')
   exit_code=$(echo "$info" | awk '/	last exit code =/ {print $5}')
 
+  # exit_code가 숫자가 아니면(never 등) 빈 값으로 처리
+  if ! [[ "$exit_code" =~ ^[0-9]+$ ]]; then
+    exit_code=""
+  fi
+
   if [ -z "$runs" ]; then
     log "   ⚠️  ${label} (서비스 미등록)"
-    REPORT="${REPORT}⚠️ ${label} 미등록%0A"
+    REPORT="${REPORT}⚠️ ${label} 미등록
+"
     ((FAIL++)) || true
   elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
     log "   ✅ ${label} (${runs}회 실행, exit=0)"
-    REPORT="${REPORT}✅ ${label}%0A"
+    REPORT="${REPORT}✅ ${label}
+"
     ((OK++)) || true
-  elif [ "$runs" -eq 0 ]; then
+  elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ]; then
     log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
-    REPORT="${REPORT}⏳ ${label} 대기중%0A"
+    REPORT="${REPORT}⏳ ${label} 대기중
+"
     ((OK++)) || true
   else
     log "   ❌ ${label} (exit=${exit_code})"
-    REPORT="${REPORT}❌ ${label} 오류(exit=${exit_code})%0A"
+    REPORT="${REPORT}❌ ${label} 오류 (exit=${exit_code})
+"
     ((FAIL++)) || true
   fi
 }
@@ -126,8 +132,15 @@ else
   STATUS_TEXT="${FAIL}개 서비스 미실행"
 fi
 
-MSG="🖥️ *맥북 재부팅 완료* (${BOOT_TIME})%0A${STATUS_ICON} ${STATUS_TEXT}%0A%0A${REPORT}%0A마지막 커밋: ${LAST_COMMIT}"
-send_telegram "$MSG"
+MSG_FILE="/tmp/post-reboot-msg.txt"
+cat > "$MSG_FILE" << EOF
+🖥️ <b>맥북 재부팅 완료</b> (${BOOT_TIME})
+${STATUS_ICON} ${STATUS_TEXT}
+
+${REPORT}
+마지막 커밋: ${LAST_COMMIT}
+EOF
+send_telegram "$MSG_FILE"
 
 log ""
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
