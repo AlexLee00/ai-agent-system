@@ -2,7 +2,7 @@
  * team/aria.js — 아리아 (TA MTF 기술분석가)
  *
  * 역할: 규칙 기반 멀티타임프레임 기술분석 (LLM 없음 — 순수 수학)
- * 암호화폐: 5m(20%) / 1h(35%) / 4h(45%) — Binance CCXT
+ * 암호화폐: 15m(15%) / 1h(35%) / 4h(30%) / 1d(20%) — Binance CCXT (변동성 기반 동적 가중치)
  * 국내주식:  1d(65%) / 1h(35%) — Yahoo Finance (.KS)
  * 미국주식:  1d(60%) / 1h(40%) — Yahoo Finance (ticker 직접)
  * 지표: RSI / MACD / 볼린저밴드 / MA정배열 / 스토캐스틱 / ATR / 거래량
@@ -86,10 +86,35 @@ const MARKET_PARAMS = {
 // ─── 암호화폐 MTF 설정 ──────────────────────────────────────────────
 
 const CRYPTO_TIMEFRAMES = [
-  { tf: '4h', label: '4시간봉', weight: 0.45 },
-  { tf: '1h', label: '1시간봉', weight: 0.35 },
-  { tf: '5m', label: '5분봉',   weight: 0.20 },
+  { tf: '15m', label: '15분봉', weight: 0.15 },
+  { tf: '1h',  label: '1시간봉', weight: 0.35 },
+  { tf: '4h',  label: '4시간봉', weight: 0.30 },
+  { tf: '1d',  label: '일봉',    weight: 0.20 },
 ];
+
+// ─── 변동성 기반 동적 가중치 ──────────────────────────────────────────
+
+/**
+ * ATR 비율에 따른 동적 타임프레임 가중치 계산
+ * @param {number|null} atrRatio  ATR / currentPrice (예: 0.02 = 2%)
+ * @returns {{ '15m': number, '1h': number, '4h': number, '1d': number }}
+ */
+function calculateAutoWeights(atrRatio) {
+  if (atrRatio == null) {
+    // 기본 가중치 (DEFAULT)
+    return { '15m': 0.15, '1h': 0.35, '4h': 0.30, '1d': 0.20 };
+  }
+  if (atrRatio > 0.03) {
+    // 고변동 — 단기 비중 높임
+    return { '15m': 0.25, '1h': 0.35, '4h': 0.25, '1d': 0.15 };
+  }
+  if (atrRatio < 0.01) {
+    // 저변동 — 장기 비중 높임
+    return { '15m': 0.10, '1h': 0.25, '4h': 0.35, '1d': 0.30 };
+  }
+  // 중간 변동 (DEFAULT)
+  return { '15m': 0.15, '1h': 0.35, '4h': 0.30, '1d': 0.20 };
+}
 
 // ─── 국내/미국주식 MTF 설정 ──────────────────────────────────────────
 
@@ -365,7 +390,7 @@ export async function analyzeTF(symbol, timeframe, exchange = 'binance') {
  * @returns {Promise<{signal, confidence, reasoning, score, weightedScore, tfResults, currentPrice}>}
  */
 export async function analyzeCryptoMTF(symbol) {
-  console.log(`\n📊 [아리아] ${symbol} MTF 분석 (5m/1h/4h)`);
+  console.log(`\n📊 [아리아] ${symbol} MTF 분석 (15m/1h/4h/1d)`);
 
   const tfResults = {};
   for (const { tf } of CRYPTO_TIMEFRAMES) {
@@ -377,12 +402,19 @@ export async function analyzeCryptoMTF(symbol) {
     }
   }
 
+  // ATR 비율 → 동적 가중치 산출 (1h 기준, 없으면 4h 사용)
+  const atrSource    = tfResults['1h'] || tfResults['4h'];
+  const atrValue     = atrSource?.indicators?.atr ?? null;
+  const currentPrice = tfResults['1h']?.currentPrice || tfResults['4h']?.currentPrice || tfResults['1d']?.currentPrice;
+  const atrRatio     = (atrValue && currentPrice) ? atrValue / currentPrice : null;
+  const weights      = calculateAutoWeights(atrRatio);
+
   let weightedScore = 0;
   let totalWeight   = 0;
-  for (const { tf, weight } of CRYPTO_TIMEFRAMES) {
+  for (const { tf } of CRYPTO_TIMEFRAMES) {
     if (tfResults[tf]) {
-      weightedScore += tfResults[tf].score * weight;
-      totalWeight   += weight;
+      weightedScore += tfResults[tf].score * (weights[tf] || 0);
+      totalWeight   += (weights[tf] || 0);
     }
   }
   if (totalWeight === 0) return null;
@@ -398,19 +430,13 @@ export async function analyzeCryptoMTF(symbol) {
 
   const tfSummary = CRYPTO_TIMEFRAMES
     .filter(({ tf }) => tfResults[tf])
-    .map(({ tf, label, weight }) =>
-      `[${label} ${(weight * 100).toFixed(0)}%] ${tfResults[tf].signal} (${(tfResults[tf].confidence * 100).toFixed(0)}%)`
+    .map(({ tf, label }) =>
+      `[${label} ${((weights[tf] || 0) * 100).toFixed(0)}%] ${tfResults[tf].signal} (${(tfResults[tf].confidence * 100).toFixed(0)}%)`
     ).join(' | ');
 
-  const currentPrice = tfResults['1h']?.currentPrice || tfResults['4h']?.currentPrice;
-  const reasoning    = `MTF: ${tfSummary} → 가중점수 ${normalizedScore.toFixed(2)}`;
-
-  console.log(`  → [아리아 MTF] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
-
-  // 1h ATR 비율 (네메시스 동적 TP/SL용) — 1h 없으면 4h 사용
-  const atrSource    = tfResults['1h'] || tfResults['4h'];
-  const atrValue     = atrSource?.indicators?.atr ?? null;
-  const atrRatio     = (atrValue && currentPrice) ? atrValue / currentPrice : null;
+  const reasoning = `MTF: ${tfSummary} → 가중점수 ${normalizedScore.toFixed(2)}`;
+  const atrLabel  = atrRatio == null ? 'N/A' : atrRatio > 0.03 ? '고변동' : atrRatio < 0.01 ? '저변동' : '중간';
+  console.log(`  → [아리아 MTF] ${signal} (${(confidence * 100).toFixed(0)}%) | ATR ${(atrRatio != null ? (atrRatio * 100).toFixed(2) : '?')}% (${atrLabel}) | ${reasoning}`);
 
   try {
     await db.insertAnalysis({
@@ -420,9 +446,10 @@ export async function analyzeCryptoMTF(symbol) {
       confidence,
       reasoning: `[MTF] ${reasoning}`,
       metadata:  {
-        weightedScore:  normalizedScore,
-        atrRatio,          // 네메시스 동적 TP/SL용
-        tfResults:      Object.fromEntries(
+        weightedScore: normalizedScore,
+        atrRatio,                // 네메시스 동적 TP/SL용
+        weights,                 // 적용된 동적 가중치
+        tfResults: Object.fromEntries(
           Object.entries(tfResults).map(([tf, r]) => [tf, { signal: r.signal, confidence: r.confidence, score: r.score }])
         ),
       },
