@@ -101,8 +101,9 @@ const SLASH_MAP = {
   '/journal':     { intent: 'trade_journal',       args: {} },
   '/performance': { intent: 'performance',         args: {} },
   '/unrec':       { intent: 'unrecognized_report', args: {} },
-  '/dynamic_tpsl_on':  { intent: 'dynamic_tpsl_on',  args: {} },
-  '/dynamic_tpsl_off': { intent: 'dynamic_tpsl_off', args: {} },
+  '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
+  '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
+  '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
 };
 
 function parseSlash(text) {
