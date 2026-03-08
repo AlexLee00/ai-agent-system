@@ -635,6 +635,118 @@ app.post('/api/documents/upload',
   }
 );
 
+// ── 업무일지 API (에밀리 확장) ───────────────────────────────────────
+
+app.get('/api/journals', requireAuth, companyFilter, async (req, res) => {
+  const { page, limit, offset } = pagination(req);
+  const { date, employee_id, category, keyword } = req.query;
+  const params = [req.companyId];
+  let where = 'j.company_id=$1 AND j.deleted_at IS NULL';
+  if (date)        { params.push(date);           where += ` AND j.date=$${params.length}`; }
+  if (employee_id) { params.push(employee_id);    where += ` AND j.employee_id=$${params.length}`; }
+  if (category)    { params.push(category);       where += ` AND j.category=$${params.length}`; }
+  if (keyword)     { params.push(`%${keyword}%`); where += ` AND j.content ILIKE $${params.length}`; }
+  params.push(limit, offset);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT j.*, e.name AS employee_name
+       FROM worker.work_journals j
+       JOIN worker.employees e ON e.id=j.employee_id
+       WHERE ${where}
+       ORDER BY j.date DESC, j.created_at DESC
+       LIMIT $${params.length-1} OFFSET $${params.length}`,
+      params);
+    res.json({ journals: rows, page, limit });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/journals/:id', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT j.*, e.name AS employee_name
+       FROM worker.work_journals j
+       JOIN worker.employees e ON e.id=j.employee_id
+       WHERE j.id=$1 AND j.company_id=$2 AND j.deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '업무일지를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    res.json({ journal: row });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/journals',
+  requireAuth, companyFilter, auditLog('CREATE', 'work_journals'),
+  body('content').trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { content, category, date } = req.body;
+    try {
+      // 사용자와 연결된 직원 조회
+      let emp = await pgPool.get(SCHEMA,
+        `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+        [req.companyId, req.user.id]);
+      // 직원 미연결 시 body.employee_id (admin/master 전용)
+      const empId = emp?.id ||
+        (req.body.employee_id && ['admin','master'].includes(req.user.role) ? Number(req.body.employee_id) : null);
+      if (!empId) return res.status(404).json({ error: '연결된 직원 정보가 없습니다. 관리자에게 문의하세요.', code: 'NOT_FOUND' });
+      const row = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.work_journals (company_id, employee_id, date, content, category)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [req.companyId, empId, date || new Date().toISOString().slice(0,10), content, category || 'general']);
+      res.status(201).json({ journal: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/journals/:id',
+  requireAuth, companyFilter,
+  body('content').optional().trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const existing = await pgPool.get(SCHEMA,
+        `SELECT j.*, e.user_id FROM worker.work_journals j
+         JOIN worker.employees e ON e.id=j.employee_id
+         WHERE j.id=$1 AND j.company_id=$2 AND j.deleted_at IS NULL`,
+        [req.params.id, req.companyId]);
+      if (!existing) return res.status(404).json({ error: '업무일지를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (existing.user_id !== req.user.id && !['admin','master'].includes(req.user.role)) {
+        return res.status(403).json({ error: '본인 작성만 수정할 수 있습니다.', code: 'FORBIDDEN' });
+      }
+      const { content, category } = req.body;
+      const row = await pgPool.get(SCHEMA,
+        `UPDATE worker.work_journals
+         SET content=COALESCE($1,content), category=COALESCE($2,category), updated_at=NOW()
+         WHERE id=$3 RETURNING *`,
+        [content || null, category || null, req.params.id]);
+      await pgPool.run(SCHEMA,
+        `INSERT INTO worker.audit_log (company_id,user_id,action,target_type,target_id)
+         VALUES ($1,$2,'update','work_journal',$3)`,
+        [req.companyId, req.user.id, req.params.id]);
+      res.json({ journal: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/journals/:id', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const existing = await pgPool.get(SCHEMA,
+      `SELECT j.*, e.user_id FROM worker.work_journals j
+       JOIN worker.employees e ON e.id=j.employee_id
+       WHERE j.id=$1 AND j.company_id=$2 AND j.deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!existing) return res.status(404).json({ error: '업무일지를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    if (existing.user_id !== req.user.id && !['admin','master'].includes(req.user.role)) {
+      return res.status(403).json({ error: '본인 작성만 삭제할 수 있습니다.', code: 'FORBIDDEN' });
+    }
+    await pgPool.run(SCHEMA, `UPDATE worker.work_journals SET deleted_at=NOW() WHERE id=$1`, [req.params.id]);
+    await pgPool.run(SCHEMA,
+      `INSERT INTO worker.audit_log (company_id,user_id,action,target_type,target_id)
+       VALUES ($1,$2,'delete','work_journal',$3)`,
+      [req.companyId, req.user.id, req.params.id]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
 // ── 대시보드 요약 API ─────────────────────────────────────────────────
 
 app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) => {

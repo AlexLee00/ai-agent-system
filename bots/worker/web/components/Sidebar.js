@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/employees',  icon: '👥', label: '직원 관리' },
   { href: '/attendance', icon: '⏰', label: '근태 관리' },
   { href: '/sales',      icon: '💰', label: '매출 관리' },
+  { href: '/journals',   icon: '📝', label: '업무일지' },
   { href: '/documents',  icon: '📋', label: '문서 관리' },
   { href: '/approvals',  icon: '✅', label: '승인 관리' },
   { href: '/settings',   icon: '⚙️', label: '설정' },
