@@ -52,13 +52,9 @@ function requireRole(...roles) {
 
 function companyFilter(req, res, next) {
   if (!req.user) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
-  if (req.user.role !== 'master') {
-    // 쿼리/바디의 company_id를 강제 주입 (다른 업체 접근 차단)
-    req.companyId = req.user.company_id;
-  } else {
-    // master: 쿼리 파라미터 company_id로 필터링 허용, 없으면 전체
-    req.companyId = req.query.company_id || null;
-  }
+  // 모든 역할: 기본은 본인 소속 업체 (master도 동일)
+  // master가 명시적으로 ?company_id=xxx 전달 시 해당 업체로 필터
+  req.companyId = req.query.company_id || req.user.company_id;
   next();
 }
 

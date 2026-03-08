@@ -473,17 +473,12 @@ app.get('/api/employees', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset, sort, order } = pagination(req);
   const validSort = ['name','position','department','hire_date','created_at'].includes(sort) ? sort : 'name';
   try {
-    // master + 필터 없음: 전체 조회 / 그 외: 소속 업체만
-    const params = req.companyId ? [req.companyId, limit, offset] : [limit, offset];
-    const cond   = req.companyId ? 'company_id=$1 AND deleted_at IS NULL' : 'deleted_at IS NULL';
-    const l = req.companyId ? '$2' : '$1';
-    const o = req.companyId ? '$3' : '$2';
     const rows = await pgPool.query(SCHEMA,
       `SELECT id,company_id,user_id,name,phone,position,department,hire_date,status,base_salary,created_at
        FROM worker.employees
-       WHERE ${cond}
-       ORDER BY ${validSort} ${order} LIMIT ${l} OFFSET ${o}`,
-      params);
+       WHERE company_id=$1 AND deleted_at IS NULL
+       ORDER BY ${validSort} ${order} LIMIT $2 OFFSET $3`,
+      [req.companyId, limit, offset]);
     res.json({ employees: rows });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
