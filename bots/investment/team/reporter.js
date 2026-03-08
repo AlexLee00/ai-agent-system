@@ -84,7 +84,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     SELECT
       status,
       COUNT(*)::INTEGER  AS cnt,
-      ROUND(AVG(confidence) * 100, 1) AS avg_conf
+      ROUND(AVG(confidence)::numeric * 100, 1) AS avg_conf
     FROM signals
     WHERE created_at > now() - INTERVAL '${days} days'
     GROUP BY status
