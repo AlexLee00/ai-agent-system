@@ -143,13 +143,14 @@ function writeFixLog(fixes) {
  * dexter → claude-lead 이벤트 채널
  */
 async function emitDexterEvent(results, elapsed) {
+  const overall = results.some(r => r.status === 'error') ? 'error'
+                : results.some(r => r.status === 'warn')  ? 'warn'
+                : 'ok';
+  const errors = results.flatMap(r => r.items.filter(i => i.status === 'error'));
+  const warns  = results.flatMap(r => r.items.filter(i => i.status === 'warn'));
+
   try {
     const stateBus = require('../../reservation/lib/state-bus');
-    const overall = results.some(r => r.status === 'error') ? 'error'
-                  : results.some(r => r.status === 'warn')  ? 'warn'
-                  : 'ok';
-    const errors = results.flatMap(r => r.items.filter(i => i.status === 'error'));
-    const warns  = results.flatMap(r => r.items.filter(i => i.status === 'warn'));
     const priority = overall === 'error' ? 'high' : overall === 'warn' ? 'normal' : 'low';
     await stateBus.emitEvent('dexter', 'claude-lead', 'dexter_check_result', {
       overall,
