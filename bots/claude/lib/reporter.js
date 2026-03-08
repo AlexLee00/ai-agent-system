@@ -190,4 +190,93 @@ async function emitDexterEvent(results, elapsed) {
   }
 }
 
-module.exports = { printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog, emitDexterEvent };
+// ─── 심각도별 구조화 알림 ────────────────────────────────────────────
+
+const SEP_DOUBLE = '═'.repeat(19);
+const SEP_SINGLE = '─'.repeat(19);
+
+/**
+ * ⚠️ WARNING 알림 — 🔧 클로드 Topic
+ */
+function sendWarning({ service, status, action }) {
+  const lines = [
+    '⚠️ 시스템 경고',
+    SEP_SINGLE,
+    `서비스: ${service}`,
+    `상태: ${status}`,
+    `조치: ${action || '모니터링 중 (자동 복구 대기)'}`,
+    SEP_DOUBLE,
+  ];
+  return sender.send('claude-lead', lines.join('\n'));
+}
+
+/**
+ * 🚨 CRITICAL 알림 — 🚨 긴급 Topic + 마스터 DM (sendCritical 경유)
+ */
+function sendCriticalAlert({ service, status, impact, taskId }) {
+  const lines = [
+    '🚨 CRITICAL — 서비스 장애',
+    SEP_SINGLE,
+    `서비스: ${service}`,
+    `상태: ${status}`,
+  ];
+  if (impact) lines.push(`영향: ${impact}`);
+  if (taskId) {
+    lines.push(SEP_SINGLE);
+    lines.push('자동 복구: 독터에게 지시 완료');
+    lines.push(`태스크 ID: #${taskId}`);
+  }
+  lines.push(SEP_DOUBLE);
+  return sender.sendCritical('claude-lead', lines.join('\n'));
+}
+
+/**
+ * 🚨 Emergency 모드 전환 알림
+ */
+function sendEmergencyAlert({ reason }) {
+  const lines = [
+    '🚨 Emergency 모드 전환!',
+    SEP_SINGLE,
+    `원인: ${reason}`,
+    '조치: 덱스터 직접 복구 모드 활성화',
+    SEP_SINGLE,
+    '복귀 시 자동 Normal 전환',
+    SEP_DOUBLE,
+  ];
+  return sender.sendCritical('claude-lead', lines.join('\n'));
+}
+
+/**
+ * ✅ Normal 모드 복귀 알림 — Emergency 해제 후
+ */
+function sendNormalModeRestore({ durationMin }) {
+  const lines = [
+    '✅ Normal 모드 복귀',
+    SEP_SINGLE,
+    '클로드 팀장 응답 확인',
+    `Emergency 해제 (${durationMin}분간 유지)`,
+    SEP_DOUBLE,
+  ];
+  return sender.send('claude-lead', lines.join('\n'));
+}
+
+/**
+ * ✅ 복구 완료 알림 — 독터 처리 완료 후
+ */
+function sendRecoveryComplete({ service, method, durationSec, taskId }) {
+  const lines = [
+    '✅ 복구 완료',
+    SEP_SINGLE,
+    `서비스: ${service}`,
+    `방법: ${method}`,
+  ];
+  if (durationSec != null) lines.push(`소요: ${durationSec}초`);
+  if (taskId)              lines.push(`태스크 ID: #${taskId}`);
+  lines.push(SEP_DOUBLE);
+  return sender.send('claude-lead', lines.join('\n'));
+}
+
+module.exports = {
+  printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog, emitDexterEvent,
+  sendWarning, sendCriticalAlert, sendEmergencyAlert, sendNormalModeRestore, sendRecoveryComplete,
+};

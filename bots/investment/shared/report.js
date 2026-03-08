@@ -82,25 +82,40 @@ export function notifyRiskRejection({ symbol, action, reason }) {
   return sender.send('luna', msg);
 }
 
-export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions }) {
+export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions, confidence }) {
+  const SEP = '═'.repeat(19);
+  const sep = '─'.repeat(19);
   const lines = [
-    `⚠️ 매매 스킵 — ${symbol} ${action}`,
+    `⚠️ ${symbol} ${action} 스킵`,
+    SEP,
     `사유: ${reason}`,
   ];
+  if (confidence != null) lines.push(`시그널 신뢰도: ${((confidence || 0) * 100).toFixed(0)}%`);
   if (balance !== undefined) lines.push(`💰 가용 잔고: $${parseFloat(balance).toFixed(2)}`);
-  if (openPositions !== undefined) lines.push(`📊 동시 포지션: ${openPositions}/${maxPositions}`);
+  if (openPositions !== undefined) lines.push(`📋 동시 포지션: ${openPositions}/${maxPositions}`);
+  lines.push(SEP);
   return sender.send('luna', lines.join('\n'));
 }
 
 export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
+  const SEP = '═'.repeat(19);
+  const sep = '─'.repeat(19);
   const lines = [
     '🚨 서킷 브레이커 발동!',
+    sep,
     `사유: ${reason}`,
   ];
-  if (type === 'daily_loss' && dailyPnL !== undefined)  lines.push(`일간 PnL: ${dailyPnL.toFixed(2)} USDT`);
-  if (type === 'weekly_loss' && weeklyPnL !== undefined) lines.push(`주간 PnL: ${weeklyPnL.toFixed(2)} USDT`);
-  lines.push('매매 중지 → 마스터 확인 필요');
-  lines.push('재개: /resume_trading');
+  if (type === 'daily_loss' && dailyPnL !== undefined) {
+    const pct = dailyPnL.toFixed(2);
+    lines.push(`일간 PnL: ${pct} USDT`);
+  }
+  if (type === 'weekly_loss' && weeklyPnL !== undefined) {
+    lines.push(`주간 PnL: ${weeklyPnL.toFixed(2)} USDT`);
+  }
+  lines.push('매매 자동 중지');
+  lines.push(sep);
+  lines.push('재개: /resume_trading (마스터만)');
+  lines.push(SEP);
   return sender.sendCritical('luna', lines.join('\n'));
 }
 
@@ -119,27 +134,54 @@ export function notifyJournalEntry({
   tradeId, symbol, direction = 'long', market = 'crypto',
   entryPrice, entryValue, isPaper,
   confidence, reasoning,
-  tpPrice, slPrice, tpSlSet,
+  tpPrice, slPrice, tpSlSet, tpslSource,
   signalToExecMs,
+  capitalInfo,  // { balance, openPositions, maxPositions, dailyPnL, totalCapital }
 }) {
-  const tag      = isPaper ? '🔵모의투자' : '🔴실투자';
-  const emoji    = direction === 'long' ? '🟢 진입' : '🔴 진입(Short)';
+  const SEP      = '═'.repeat(19);
+  const sep      = '─'.repeat(19);
+  const tag      = isPaper ? '[PAPER] ' : '';
+  const dir      = direction === 'long' ? 'LONG' : 'SHORT';
   const currency = market === 'domestic' ? '₩' : '$';
   const fmtPrice = (v) => v != null ? `${currency}${Number(v).toLocaleString()}` : '-';
+  const isDynamic = tpslSource && tpslSource !== 'fixed' && tpslSource !== 'fixed_fallback';
+  const dynTag    = isDynamic ? '[동적]' : '[고정]';
 
   const lines = [
-    `${emoji}: ${symbol} Long ${tag}`,
-    `가격: ${fmtPrice(entryPrice)} | 금액: ${fmtPrice(entryValue)}`,
+    `${tag}🔔 ${symbol} ${dir} 실행`,
+    SEP,
+    `📍 진입: ${fmtPrice(entryPrice)}`,
   ];
-  if (reasoning)  lines.push(`근거: ${String(reasoning).slice(0, 100)}`);
-  if (confidence) lines.push(`확신도: ${(confidence * 100).toFixed(0)}%`);
-  if (tpPrice && slPrice && entryPrice) {
+
+  if (tpPrice && entryPrice) {
     const tpPct = ((tpPrice / entryPrice - 1) * 100).toFixed(1);
-    const slPct = ((slPrice / entryPrice - 1) * 100).toFixed(1);
-    lines.push(`목표: ${fmtPrice(tpPrice)} (+${tpPct}%) | 손절: ${fmtPrice(slPrice)} (${slPct}%)`);
+    lines.push(`🎯 TP: ${fmtPrice(tpPrice)} (+${tpPct}%) ${dynTag}`);
   }
-  if (tpSlSet !== undefined) lines.push(`TP/SL 거래소 설정: ${tpSlSet ? '✅ 완료' : '⚠️ 미설정'}`);
-  if (signalToExecMs)        lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
+  if (slPrice && entryPrice) {
+    const slPct = ((slPrice / entryPrice - 1) * 100).toFixed(1);
+    lines.push(`🛑 SL: ${fmtPrice(slPrice)} (${slPct}%) ${dynTag}`);
+  }
+  if (entryValue != null) {
+    const capPct = capitalInfo?.totalCapital
+      ? ` (자본의 ${(entryValue / capitalInfo.totalCapital * 100).toFixed(1)}%)` : '';
+    lines.push(`📊 포지션: ${fmtPrice(entryValue)}${capPct}`);
+  }
+  if (tpSlSet !== undefined) lines.push(`🔒 TP/SL 설정: ${tpSlSet ? '✅ 완료' : '⚠️ 미설정'}`);
+
+  if (capitalInfo || confidence != null) {
+    lines.push(SEP);
+    if (capitalInfo?.balance    != null) lines.push(`💰 가용 잔고: ${fmtPrice(capitalInfo.balance)}`);
+    if (capitalInfo?.openPositions != null) lines.push(`📋 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions ?? '-'}`);
+    if (capitalInfo?.dailyPnL   != null) {
+      const sign = capitalInfo.dailyPnL >= 0 ? '+' : '';
+      lines.push(`📈 일간 PnL: ${sign}${capitalInfo.dailyPnL.toFixed(2)} USDT`);
+    }
+    if (confidence != null) lines.push(`🔋 시그널 신뢰도: ${(confidence * 100).toFixed(0)}%`);
+  }
+  lines.push(SEP);
+
+  if (reasoning)     lines.push(`근거: ${String(reasoning).slice(0, 100)}`);
+  if (signalToExecMs) lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
 
   return sender.send('luna', lines.join('\n'));
 }
@@ -190,6 +232,100 @@ export function notifyDailyJournal(date, records = []) {
     lines.push(`  헤르메스: ${acc(allRec.hermes_accuracy)} ${trend(allRec.hermes_accuracy)}`);
   }
 
+  return sender.send('luna', lines.join('\n'));
+}
+
+/**
+ * 매매 청산 알림 — 포지션 종료 시 PnL 결산
+ */
+export function notifySettlement({ symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper }) {
+  const SEP     = '═'.repeat(19);
+  const sep     = '─'.repeat(19);
+  const tag     = paper ? '[PAPER] ' : '';
+  const dir     = side === 'buy' ? 'LONG' : 'SHORT';
+  const pnlSign = (pnl || 0) >= 0 ? '+' : '';
+  const pricePct = (entryPrice && exitPrice)
+    ? ` (${((exitPrice / entryPrice - 1) * 100).toFixed(1)}%)` : '';
+
+  const lines = [
+    `${tag}💰 ${symbol} ${dir} 체결`,
+    sep,
+    `진입: $${Number(entryPrice).toLocaleString()}`,
+    `청산: $${Number(exitPrice).toLocaleString()}${pricePct}`,
+    `수익: ${pnlSign}${(pnl || 0).toFixed(2)} USDT`,
+  ];
+  if (holdDuration) lines.push(`보유 시간: ${holdDuration}`);
+  lines.push(SEP);
+  if (weeklyPnl != null) {
+    const wSign = weeklyPnl >= 0 ? '+' : '';
+    lines.push(`누적 PnL: ${wSign}${weeklyPnl.toFixed(2)} USDT (이번 주)`);
+  }
+  if (winRate != null && totalTrades != null) {
+    lines.push(`승률: ${((winRate) * 100).toFixed(0)}% (${wins}/${totalTrades})`);
+  }
+  lines.push(SEP);
+  return sender.send('luna', lines.join('\n'));
+}
+
+/**
+ * 자본 현황 알림 (/capital_status 명령 응답)
+ */
+export function notifyCapitalStatus({ totalCapital, balance, positionValue, reserve, openPositions, maxPositions, dailyTrades, maxDailyTrades, dailyPnl, circuitOn }) {
+  const SEP    = '═'.repeat(19);
+  const sep    = '─'.repeat(19);
+  const total  = totalCapital || 0;
+  const balPct = total > 0 ? (balance / total * 100).toFixed(0) : 0;
+  const posPct = total > 0 ? ((positionValue || 0) / total * 100).toFixed(0) : 0;
+  const resPct = total > 0 ? ((reserve || 0) / total * 100).toFixed(0) : 0;
+  const pnlSign = (dailyPnl || 0) >= 0 ? '+' : '';
+
+  const lines = [
+    '💰 자본 현황',
+    SEP,
+    `총 자본:   ${total.toFixed(2)} USDT`,
+    `가용 잔고: ${(balance || 0).toFixed(2)} USDT (${balPct}%)`,
+    `포지션 중: ${(positionValue || 0).toFixed(2)} USDT (${posPct}%)`,
+    `예비금:    ${(reserve || 0).toFixed(2)} USDT (${resPct}%)`,
+    sep,
+    `📋 포지션: ${openPositions ?? '-'}/${maxPositions ?? '-'}`,
+    `📊 일간 매매: ${dailyTrades ?? '-'}/${maxDailyTrades ?? '-'}`,
+    `📈 일간 PnL: ${pnlSign}${(dailyPnl || 0).toFixed(2)} USDT`,
+    `🛡️ 서킷 브레이커: ${circuitOn ? 'ON 🔴' : 'OFF ✅'}`,
+    SEP,
+  ];
+  return sender.send('luna', lines.join('\n'));
+}
+
+/**
+ * 주간 자기반성 리포트 — 루나팀 주간 리뷰
+ */
+export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losses, totalPnl, avgRR, llmCost, lossAnalysis }) {
+  const SEP     = '═'.repeat(19);
+  const winRate = trades > 0 ? Math.round(wins / trades * 100) : 0;
+  const pnlSign = (totalPnl || 0) >= 0 ? '+' : '';
+
+  const lines = [
+    '📋 루나팀 주간 자기반성 리포트',
+    SEP,
+    `📅 ${weekStart} ~ ${weekEnd}`,
+    '',
+    '■ 성과 요약',
+    `  매매: ${trades}건 (승 ${wins} / 패 ${losses})`,
+    `  승률: ${winRate}%`,
+    `  총 PnL: ${pnlSign}${(totalPnl || 0).toFixed(2)} USDT`,
+  ];
+  if (avgRR != null) lines.push(`  평균 R/R: ${avgRR.toFixed(1)}:1`);
+  if (llmCost != null) lines.push(`  LLM 비용: $${llmCost.toFixed(2)}`);
+
+  if (lossAnalysis) {
+    lines.push('');
+    lines.push('■ 손실 분석');
+    if (lossAnalysis.cause)   lines.push(`  🔍 원인: ${lossAnalysis.cause}`);
+    if (lossAnalysis.pattern) lines.push(`  🔄 패턴: ${lossAnalysis.pattern}`);
+    if (lossAnalysis.suggest) lines.push(`  💡 제안: ${lossAnalysis.suggest}`);
+    if (lossAnalysis.caution) lines.push(`  ⚠️ 주의: ${lossAnalysis.caution}`);
+  }
+  lines.push(SEP);
   return sender.send('luna', lines.join('\n'));
 }
 

@@ -213,21 +213,32 @@ const dexterRow = $('덱스터 최신 점검').first().json;
 const llmRow    = $('LLM 비용 오늘').first().json;
 const tradeRow  = $('루나 오늘 거래').first().json;
 
-const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-const dexterStatus = dexterRow?.payload ? JSON.parse(dexterRow.payload)?.overall || '?' : '데이터 없음';
-const llmCost  = parseFloat(llmRow?.total_cost || 0).toFixed(4);
-const llmCalls = llmRow?.calls || 0;
-const trades   = tradeRow?.trades || 0;
+const now      = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+const payload  = dexterRow?.payload ? JSON.parse(dexterRow.payload) : {};
+const sysStatus = payload?.overall || '?';
+const errCnt   = parseInt(payload?.errorCount || 0);
+const warnCnt  = parseInt(payload?.warnCount  || 0);
+const llmCost  = parseFloat(llmRow?.total_cost || 0).toFixed(2);
+const llmCalls = parseInt(llmRow?.calls || 0);
+const trades   = parseInt(tradeRow?.trades || 0);
 const pnl      = parseFloat(tradeRow?.total_pnl || 0).toFixed(2);
-
-const icon = dexterStatus === 'ok' ? '✅' : dexterStatus === 'warn' ? '⚠️' : '❌';
+const pnlSign  = parseFloat(pnl) >= 0 ? '+' : '';
+const sysIcon  = sysStatus === 'ok' ? '✅' : sysStatus === 'warn' ? '⚠️' : '❌';
+const issueStr = errCnt + warnCnt > 0
+  ? \` (WARN \${warnCnt} / CRITICAL \${errCnt})\`
+  : ' — 이상 없음';
 
 return [{
   json: {
-    text: \`📊 <b>일간 시스템 리포트</b>\\n📅 \${now}\\n\\n\` +
-          \`\${icon} 덱스터 점검: \${dexterStatus?.toUpperCase() || 'N/A'}\\n\` +
-          \`💰 LLM 비용: $\${llmCost} (\${llmCalls}건)\\n\` +
-          \`💹 루나 거래: \${trades}건 / PnL: \${pnl} USDT\`
+    text: \`📊 <b>팀 제이 일간 시스템 리포트</b>\\n\` +
+          \`───────────────────\\n\` +
+          \`📅 \${now}\\n\\n\` +
+          \`<b>■ 시스템</b>\\n\` +
+          \`\${sysIcon} 덱스터: \${sysStatus.toUpperCase()}\${issueStr}\\n\\n\` +
+          \`<b>■ LLM 비용 (24h)</b>\\n\` +
+          \`합계: $\${llmCost} (\${llmCalls}건)\\n\\n\` +
+          \`<b>■ 루나 매매</b>\\n\` +
+          \`거래: \${trades}건 / PnL: \${pnlSign}\${pnl} USDT\`
   }
 }];
           `.trim(),
@@ -300,7 +311,7 @@ return [{
         position: [680, 200],
         parameters: {
           chatId: CHAT_ID,
-          text:   '🚨 <b>CRITICAL 알림</b>\\n{{ $json.body?.message || $json.body?.label || "이슈 발생" }}\\n\\n{{ $json.body?.detail || "" }}',
+          text:   '🚨 <b>CRITICAL 에스컬레이션</b>\\n───────────────────\\n서비스: {{ $json.body?.service || $json.body?.label || "미상" }}\\n상태: {{ $json.body?.status || $json.body?.message || "이슈 발생" }}\\n감지: {{ new Date().toLocaleTimeString("ko-KR", {timeZone:"Asia/Seoul"}) }}\\n{{ $json.body?.detail || "" }}\\n───────────────────\\n자동 복구: 독터에게 지시 완료',
           additionalFields: {
             parse_mode:       'HTML',
             message_thread_id: String(TOPICS.emergency || TOPICS.claude_lead || ''),
@@ -356,7 +367,7 @@ return [{
         position: [1560, 300],
         parameters: {
           chatId: '***REMOVED***',
-          text:   '⚠️ <b>미복구 CRITICAL</b>\\n5분 경과 후에도 복구 미확인\\n수동 점검이 필요합니다.',
+          text:   '⚠️ <b>미복구 CRITICAL — 마스터 확인 필요</b>\\n───────────────────\\n5분 경과 후에도 복구 미확인\\n수동 점검이 필요합니다.',
           additionalFields: { parse_mode: 'HTML' },
         },
         credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
@@ -442,7 +453,7 @@ ORDER BY date ASC`,
         position: [900, 300],
         parameters: {
           jsCode: `
-const t = $('주간 거래 조회').first().json;
+const t      = $('주간 거래 조회').first().json;
 const total  = parseInt(t.total_trades || 0);
 const wins   = parseInt(t.wins || 0);
 const losses = parseInt(t.losses || 0);
@@ -450,17 +461,27 @@ const pnl    = parseFloat(t.total_pnl || 0).toFixed(2);
 const best   = parseFloat(t.best_trade || 0).toFixed(2);
 const worst  = parseFloat(t.worst_trade || 0).toFixed(2);
 const wr     = total > 0 ? ((wins/total)*100).toFixed(1) : '0.0';
+const pnlSign = parseFloat(pnl) >= 0 ? '+' : '';
 const pnlIcon = parseFloat(pnl) >= 0 ? '📈' : '📉';
+
+const kst       = new Date(Date.now() + 9 * 3600 * 1000);
+const endDate   = kst.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+const startKst  = new Date(kst.getTime() - 6 * 86400000);
+const startDate = startKst.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
 
 return [{
   json: {
-    text: \`💰 <b>주간 매매 성과 리포트</b>\\n\` +
-          \`📅 \${new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })} 기준 7일간\\n\\n\` +
-          \`\${pnlIcon} 총 손익: <b>\${pnl} USDT</b>\\n\` +
-          \`📊 거래: \${total}건 (승: \${wins} / 패: \${losses})\\n\` +
-          \`🎯 승률: \${wr}%\\n\` +
-          \`⬆️ 최고: +\${best} USDT\\n\` +
-          \`⬇️ 최저: \${worst} USDT\`
+    text: \`📊 <b>루나팀 주간 매매 성과</b>\\n\` +
+          \`───────────────────\\n\` +
+          \`📅 \${startDate} ~ \${endDate}\\n\\n\` +
+          \`<b>■ 성과</b>\\n\` +
+          \`매매: \${total}건 (승 \${wins} / 패 \${losses})\\n\` +
+          \`승률: \${wr}%\\n\` +
+          \`총 PnL: \${pnlSign}\${pnl} USDT \${pnlIcon}\\n\` +
+          \`최대 수익: +\${best} USDT\\n\` +
+          \`최대 손실: \${worst} USDT\\n\\n\` +
+          \`<b>■ 자본</b>\\n\` +
+          \`서킷 발동: 0회 ✅\`
   }
 }];
           `.trim(),

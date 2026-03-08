@@ -10,9 +10,10 @@
  * - 텔레그램 발송
  */
 
-const fs   = require('fs');
-const path = require('path');
-const cfg  = require('./config');
+const fs             = require('fs');
+const path           = require('path');
+const { execSync }   = require('child_process');
+const cfg            = require('./config');
 
 // ── 팀 이름 (변경 시 이 상수만 수정)
 const TEAM_SKA  = '스카팀';
@@ -70,6 +71,89 @@ function getTodayFixes(today) {
   }
 }
 
+// ─── 서비스 가동률 ──────────────────────────────────────────────────
+
+const KEY_SERVICES = [
+  { label: 'ai.claude.dexter.quick',  name: '덱스터(퀵)' },
+  { label: 'ai.investment.crypto',    name: '루나(크립토)' },
+  { label: 'ai.ska.naver-monitor',    name: '앤디' },
+  { label: 'ai.ska.commander',        name: '스카커맨더' },
+  { label: 'ai.openclaw.gateway',     name: 'OpenClaw' },
+  { label: 'ai.ska.rebecca',          name: '레베카' },
+];
+
+function _isServiceRunning(label) {
+  try {
+    const out = execSync(`launchctl list '${label}' 2>/dev/null`, {
+      encoding: 'utf8', timeout: 3000,
+    });
+    // PID 존재 → 데몬 실행 중 / LastExitStatus=0 → 주기 작업 마지막 성공
+    return out.includes('"PID"') || out.includes('"LastExitStatus" = 0');
+  } catch {
+    return false;
+  }
+}
+
+function getServiceStatus() {
+  return KEY_SERVICES.map(s => ({ ...s, running: _isServiceRunning(s.label) }));
+}
+
+// ─── LLM 비용 조회 ───────────────────────────────────────────────────
+
+async function getLlmCostByProvider(today) {
+  const pgPool = require('../../../packages/core/lib/pg-pool');
+  try {
+    // provider 컬럼 또는 model prefix로 그룹핑 시도
+    const rows = await pgPool.query('reservation', `
+      SELECT
+        COALESCE(provider,
+          CASE
+            WHEN model ILIKE 'groq%'    THEN 'Groq'
+            WHEN model ILIKE 'gemini%'  THEN 'Gemini'
+            WHEN model ILIKE 'claude%'  THEN 'Anthropic'
+            WHEN model ILIKE 'gpt%'     THEN 'OpenAI'
+            ELSE 'Other'
+          END
+        ) AS provider,
+        COUNT(*) AS calls,
+        COALESCE(SUM(cost_usd), 0) AS cost
+      FROM llm_log
+      WHERE created_at::date = $1
+      GROUP BY 1
+      ORDER BY cost DESC
+    `, [today]);
+    return rows || [];
+  } catch {
+    try {
+      const row = await pgPool.get('reservation',
+        `SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost FROM llm_log WHERE created_at::date = $1`, [today]);
+      return row ? [{ provider: '합계', calls: Number(row.calls), cost: Number(row.cost) }] : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+// ─── PostgreSQL 상태 ──────────────────────────────────────────────────
+
+async function getPostgresStats() {
+  const pgPool = require('../../../packages/core/lib/pg-pool');
+  try {
+    const [connRow, sizeRow] = await Promise.all([
+      pgPool.get('reservation',
+        `SELECT COUNT(*) AS cnt FROM pg_stat_activity WHERE datname = current_database() AND state = 'active'`),
+      pgPool.get('reservation',
+        `SELECT pg_size_pretty(pg_database_size(current_database())) AS db_size`),
+    ]);
+    return {
+      activeConnections: Number(connRow?.cnt ?? 0),
+      dbSize: sizeRow?.db_size || 'N/A',
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── 루나팀 PostgreSQL 현황 ─────────────────────────────────────────
 
 async function getLunaSummary(today) {
@@ -116,50 +200,85 @@ async function getSkaSummary(today) {
 
 // ─── 보고서 포맷 ─────────────────────────────────────────────────────
 
-function buildReport(today, dexterLog, luna, ska, fixes) {
+function buildReport(today, dexterLog, luna, ska, fixes, services, llmCost, pgStats) {
   const lines = [];
-  const statusIcon = { OK: '✅', WARN: '⚠️', ERROR: '❌', null: '❓' };
+  const SEP   = '═'.repeat(19);
 
-  lines.push(`📊 *덱스터 일일 보고* — ${today}`);
-  lines.push(`🕐 ${nowKST()} KST`);
+  lines.push(`📊 *클로드팀 일간 시스템 리포트*`);
+  lines.push(`📅 ${today} ${nowKST().slice(-5)} KST`);
+  lines.push(SEP);
   lines.push('');
 
-  // ── 시스템 점검 이력
-  lines.push('*📋 시스템 점검 이력*');
+  // ── 서비스 가동률
+  if (services && services.length > 0) {
+    const runCnt = services.filter(s => s.running).length;
+    const pct    = Math.round(runCnt / services.length * 100);
+    lines.push('*■ 서비스 가동률*');
+    for (const s of services) {
+      const icon = s.running ? '✅' : '❌';
+      const pad  = ' '.repeat(Math.max(0, 22 - s.label.length));
+      lines.push(`  ${s.label}${pad}${icon}`);
+    }
+    lines.push(`  가동률: ${pct}% (${runCnt}/${services.length})`);
+    lines.push('');
+  }
+
+  // ── 24시간 이슈
+  lines.push('*■ 24시간 이슈*');
   if (dexterLog.runs === 0) {
     lines.push('  ❓ 오늘 점검 기록 없음');
   } else {
-    const icon = statusIcon[dexterLog.lastStatus] ?? '❓';
-    lines.push(`  ${icon} 점검 ${dexterLog.runs}회 실행`);
-    if (dexterLog.errors > 0) lines.push(`  ❌ 오류 누적 ${dexterLog.errors}건`);
-    if (dexterLog.warns  > 0) lines.push(`  ⚠️ 경고 누적 ${dexterLog.warns}건`);
-    if (dexterLog.errors === 0 && dexterLog.warns === 0) lines.push('  ✅ 이상 없음');
+    const issueCount = dexterLog.errors + dexterLog.warns;
+    lines.push(`  감지: ${issueCount}건 (WARN ${dexterLog.warns} / CRITICAL ${dexterLog.errors})`);
+    const okFixes = (fixes || []).filter(f => f.status === 'ok').length;
+    if (dexterLog.errors > 0) {
+      const recRate = dexterLog.errors > 0 ? Math.round(okFixes / dexterLog.errors * 100) : 100;
+      lines.push(`  자동 복구: ${okFixes}/${dexterLog.errors} (${recRate}%) ${recRate === 100 ? '✅' : '⚠️'}`);
+      lines.push(`  미복구: ${Math.max(0, dexterLog.errors - okFixes)}건`);
+    } else {
+      lines.push('  ✅ 이상 없음');
+    }
   }
   lines.push('');
 
+  // ── LLM 비용
+  if (llmCost && llmCost.length > 0) {
+    let totalCost = 0, totalCalls = 0;
+    lines.push('*■ LLM 비용 (24시간)*');
+    for (const r of llmCost) {
+      const cost  = parseFloat(r.cost || 0);
+      const calls = parseInt(r.calls || 0);
+      totalCost  += cost; totalCalls += calls;
+      lines.push(`  ${r.provider}: ${calls}회 ($${cost.toFixed(2)})`);
+    }
+    lines.push(`  합계: $${totalCost.toFixed(2)} (${totalCalls}회)`);
+    lines.push('');
+  }
+
+  // ── PostgreSQL
+  if (pgStats) {
+    lines.push('*■ PostgreSQL*');
+    lines.push(`  활성 커넥션: ${pgStats.activeConnections}개`);
+    lines.push(`  DB 크기: ${pgStats.dbSize}`);
+    lines.push('');
+  }
+
   // ── 루나팀 현황
-  lines.push(`*🌙 ${TEAM_LUNA} 현황*`);
+  lines.push(`*■ ${TEAM_LUNA}*`);
   if (!luna) {
-    lines.push('  ❓ DB 미연결 (드라이런 대기 중)');
+    lines.push('  ❓ DB 미연결');
   } else {
     const modeTag = luna.dryRun ? ' _(드라이런)_' : '';
-    lines.push(`  거래 실행: ${luna.trades}건${modeTag}`);
-    lines.push(`  보유 포지션: ${luna.positions}개`);
-
+    lines.push(`  거래: ${luna.trades}건${modeTag}  포지션: ${luna.positions}개`);
     if (luna.signals && luna.signals.length > 0) {
       const sigMap = Object.fromEntries(luna.signals.map(s => [s.action, s.cnt]));
-      const buy  = sigMap['BUY']  ?? 0;
-      const sell = sigMap['SELL'] ?? 0;
-      const hold = sigMap['HOLD'] ?? 0;
-      lines.push(`  신호: BUY ${buy} / SELL ${sell} / HOLD ${hold}`);
-    } else {
-      lines.push('  신호: 없음');
+      lines.push(`  신호: BUY ${sigMap['BUY'] ?? 0} / SELL ${sigMap['SELL'] ?? 0} / HOLD ${sigMap['HOLD'] ?? 0}`);
     }
   }
   lines.push('');
 
   // ── 스카팀 현황
-  lines.push(`*☕ ${TEAM_SKA} 현황*`);
+  lines.push(`*■ ${TEAM_SKA}*`);
   if (!ska) {
     lines.push('  ❓ DB 미연결');
   } else {
@@ -169,14 +288,13 @@ function buildReport(today, dexterLog, luna, ska, fixes) {
 
   // ── 자동 픽스 이력
   if (fixes && fixes.length > 0) {
-    lines.push('*🔧 오늘 자동 처리 내역*');
-    const okFixes   = fixes.filter(f => f.status === 'ok');
-    const warnFixes = fixes.filter(f => f.status === 'warn');
-    for (const f of okFixes)   lines.push(`  ✅ ${f.label}: ${f.detail}`);
-    for (const f of warnFixes) lines.push(`  ⚠️ ${f.label}: ${f.detail}`);
+    lines.push('*■ 자동 처리 내역*');
+    for (const f of fixes.filter(x => x.status === 'ok'))   lines.push(`  ✅ ${f.label}: ${f.detail}`);
+    for (const f of fixes.filter(x => x.status === 'warn'))  lines.push(`  ⚠️ ${f.label}: ${f.detail}`);
     lines.push('');
   }
 
+  lines.push(SEP);
   lines.push('_자동 생성: 덱스터 (ai.claude.dexter.daily)_');
   return lines.join('\n');
 }
@@ -188,11 +306,17 @@ const { publishToMainBot } = require('./mainbot-client');
 async function run({ telegram = false, print = true } = {}) {
   const today = todayKST();
 
-  const dexterLog = parseDexterLog(today);
-  const [luna, ska] = await Promise.all([getLunaSummary(today), getSkaSummary(today)]);
-  const fixes     = getTodayFixes(today);
+  const dexterLog  = parseDexterLog(today);
+  const services   = getServiceStatus();
+  const [luna, ska, llmCost, pgStats] = await Promise.all([
+    getLunaSummary(today),
+    getSkaSummary(today),
+    getLlmCostByProvider(today),
+    getPostgresStats(),
+  ]);
+  const fixes = getTodayFixes(today);
 
-  const report = buildReport(today, dexterLog, luna, ska, fixes);
+  const report = buildReport(today, dexterLog, luna, ska, fixes, services, llmCost, pgStats);
 
   if (print) console.log(report.replace(/\*/g, '').replace(/_/g, ''));
 
