@@ -26,10 +26,10 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* 로고 */}
-      <div className="p-6 border-b">
+      <Link href="/dashboard" className="p-6 border-b block hover:bg-gray-50 transition-colors">
         <h1 className="text-xl font-bold text-primary">💼 워커</h1>
         <p className="text-xs text-gray-500 mt-1">업무관리 시스템</p>
-      </div>
+      </Link>
 
       {/* 네비 */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
