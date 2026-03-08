@@ -6,8 +6,13 @@ export const metadata = {
   title: '워커 업무관리',
   description: '워커팀 업무 자동화 시스템',
   manifest: '/manifest.json',
+};
+
+export const viewport = {
   themeColor: '#3B82F6',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }) {

@@ -1,3 +1,4 @@
+'use client';
 export default function Card({ title, value, subtitle, icon, color = 'blue', onClick }) {
   const colors = {
     blue:   'bg-blue-50  text-blue-600',
