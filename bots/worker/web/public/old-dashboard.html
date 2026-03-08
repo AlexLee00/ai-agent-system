@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>워커팀 대시보드</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .brand { font-size: 18px; font-weight: 700; color: #4f46e5; }
+    .user-info { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+    .user-info span { color: #666; }
+    .btn-logout {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      color: #666;
+      transition: all 0.2s;
+    }
+    .btn-logout:hover { border-color: #ef4444; color: #ef4444; }
+    main { max-width: 960px; margin: 40px auto; padding: 0 24px; }
+    .welcome {
+      background: #fff;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      margin-bottom: 24px;
+    }
+    .welcome h2 { font-size: 22px; margin-bottom: 8px; }
+    .welcome p  { color: #666; font-size: 15px; line-height: 1.6; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
+    .card-icon { font-size: 32px; margin-bottom: 12px; }
+    .card h3 { font-size: 16px; margin-bottom: 6px; }
+    .card p  { font-size: 13px; color: #888; }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-master { background: #fef3c7; color: #b45309; }
+    .badge-admin  { background: #dbeafe; color: #1d4ed8; }
+    .badge-member { background: #dcfce7; color: #15803d; }
+    .coming-soon { opacity: 0.45; cursor: not-allowed; }
+    @media (max-width: 600px) { main { padding: 0 12px; margin: 24px auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">💼 워커팀</div>
+    <div class="user-info">
+      <span id="userLabel">로딩 중...</span>
+      <button class="btn-logout" id="logoutBtn" aria-label="로그아웃">로그아웃</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="welcome" aria-label="환영 메시지">
+      <h2 id="welcomeMsg">안녕하세요!</h2>
+      <p>워커팀 대시보드입니다. Phase 2에서 카테고리별 업무 기능이 추가됩니다.</p>
+    </section>
+
+    <section class="cards" aria-label="기능 목록">
+      <article class="card">
+        <div class="card-icon" aria-hidden="true">🏢</div>
+        <h3>업체 관리</h3>
+        <p>업체 등록 및 정보 관리 (Phase 2)</p>
+        <p class="coming-soon" aria-label="준비 중">준비 중...</p>
+      </article>
+      <article class="card">
+        <div class="card-icon" aria-hidden="true">👥</div>
+        <h3>사용자 관리</h3>
+        <p>팀원 계정 생성 및 역할 설정 (Phase 2)</p>
+        <p class="coming-soon" aria-label="준비 중">준비 중...</p>
+      </article>
+      <article class="card">
+        <div class="card-icon" aria-hidden="true">✅</div>
+        <h3>승인 요청</h3>
+        <p>업무 승인/반려 처리 (Phase 2)</p>
+        <p class="coming-soon" aria-label="준비 중">준비 중...</p>
+      </article>
+      <article class="card">
+        <div class="card-icon" aria-hidden="true">📋</div>
+        <h3>감사 로그</h3>
+        <p>변경 이력 추적 (Phase 2)</p>
+        <p class="coming-soon" aria-label="준비 중">준비 중...</p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const token = sessionStorage.getItem('wt');
+    if (!token) { window.location.href = '/'; }
+
+    async function loadUser() {
+      try {
+        const res  = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) { sessionStorage.removeItem('wt'); window.location.href = '/'; return; }
+        const { user } = await res.json();
+        const badgeClass = { master: 'badge-master', admin: 'badge-admin', member: 'badge-member' }[user.role] || '';
+        document.getElementById('userLabel').innerHTML =
+          `${user.name} <span class="badge ${badgeClass}">${user.role}</span>`;
+        document.getElementById('welcomeMsg').textContent = `안녕하세요, ${user.name}님!`;
+      } catch {
+        sessionStorage.removeItem('wt');
+        window.location.href = '/';
+      }
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      sessionStorage.removeItem('wt');
+      window.location.href = '/';
+    });
+
+    loadUser();
+  </script>
+</body>
+</html>
