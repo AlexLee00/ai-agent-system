@@ -5,7 +5,7 @@
  *
  * 동일/유사 요청에 대해 이전 응답 재사용으로 LLM 비용 절감.
  * 벡터 DB 없이 키워드 해시 기반 경량 구현.
- * 향후 ChromaDB 연동 시 이 모듈을 업그레이드 예정.
+ * 벡터 시맨틱 검색이 필요하면 packages/core/lib/rag.js (pgvector) 사용.
  *
  * 캐시 키 생성:
  *   입력에서 핵심 키워드 추출 → 정렬 → SHA256(team:requestType:keywords)

@@ -3,7 +3,7 @@
 /**
  * packages/core/lib/rag-server.js — RAG HTTP API 서버 (포트 8100)
  *
- * 기존 ~/projects/rag-system/ (Python FastAPI + ChromaDB) 대체
+ * pgvector 기반 RAG HTTP API 서버 (PostgreSQL + pgvector)
  * OpenClaw TOOLS.md의 search_rag 호출과 호환 유지:
  *   POST http://localhost:8100/search
  *   POST http://localhost:8100/add
@@ -77,12 +77,11 @@ async function handleRequest(req, res) {
       }
 
       const hits = await rag.search(collection, query, { limit: k, filter });
-      // ChromaDB 응답 형식과 호환 (OpenClaw 기존 파서 호환)
       return sendJSON(res, 200, {
         results: hits.map(h => ({
           document: h.content,
           metadata: h.metadata,
-          distance: 1 - h.similarity,   // cosine distance (ChromaDB 방식)
+          distance: 1 - h.similarity,   // cosine distance (낮을수록 유사)
           id:       String(h.id),
         })),
         total: hits.length,
