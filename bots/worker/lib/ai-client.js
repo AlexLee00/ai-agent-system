@@ -76,4 +76,25 @@ async function callLLM(model, system, user, maxTokens = 1024) {
   }
 }
 
-module.exports = { callLLM };
+/**
+ * Groq 우선 → Haiku 폴백 LLM 호출
+ * @param {string} groqModel  Groq 모델 ID (prefix 없이)
+ * @param {string} system
+ * @param {string} user
+ * @param {number} [maxTokens=1024]
+ * @returns {Promise<{ text: string, model: string }>}
+ */
+async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024) {
+  // 1차: Groq
+  try {
+    const text = await callLLM(`groq/${groqModel}`, system, user, maxTokens);
+    return { text, model: `groq/${groqModel}` };
+  } catch (e) {
+    console.warn(`[ai-client] Groq 실패, Haiku 폴백: ${e.message}`);
+  }
+  // 2차: Claude Haiku
+  const text = await callLLM('claude-haiku-4-5-20251001', system, user, maxTokens);
+  return { text, model: 'claude-haiku-4-5-20251001' };
+}
+
+module.exports = { callLLM, callLLMWithFallback };

@@ -30,7 +30,7 @@ const { recalcProgress } = require('../src/ryan');
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag'));
-const { callLLM } = require('../lib/ai-client');
+const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly } = require('../lib/ai-helper');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
@@ -1268,10 +1268,12 @@ app.post('/api/ai/ask',
     const { question } = req.body;
     const companyId   = req.companyId;
     try {
-      // 1단계: SQL 생성
-      const { model } = llmRouter.selectModel({ team: 'worker', requestType: 'ai_question' });
-      const sqlText   = await callLLM(model, '당신은 PostgreSQL 전문가입니다.', buildSQLPrompt(question, companyId), 512);
-      const sql       = extractSQL(sqlText);
+      // 1단계: SQL 생성 (Groq 우선 → Haiku 폴백)
+      const { text: sqlText } = await callLLMWithFallback(
+        'meta-llama/llama-4-maverick-17b-128e-instruct',
+        '당신은 PostgreSQL 전문가입니다.',
+        buildSQLPrompt(question, companyId), 512);
+      const sql = extractSQL(sqlText);
 
       // 2단계: 안전성 검증
       if (!isSelectOnly(sql)) {
@@ -1289,8 +1291,10 @@ app.post('/api/ai/ask',
         ragContext = hits.map(h => h.content).join('\n');
       } catch { /* RAG 실패 무시 */ }
 
-      // 5단계: 결과 요약
-      const answer = await callLLM(model, '당신은 업무 데이터 분석가입니다.',
+      // 5단계: 결과 요약 (Groq 우선 → Haiku 폴백)
+      const { text: answer } = await callLLMWithFallback(
+        'meta-llama/llama-4-maverick-17b-128e-instruct',
+        '당신은 업무 데이터 분석가입니다.',
         buildSummaryPrompt(question, rows, ragContext), 1024);
 
       res.json({ answer, data: rows.slice(0, 50), sql, rowCount: rows.length, ragUsed: ragContext.length > 0 });
@@ -1318,10 +1322,12 @@ app.post('/api/ai/revenue-forecast',
           dataPoints: rows.length });
       }
 
-      const { model } = llmRouter.selectModel({ team: 'worker', requestType: 'revenue_forecast' });
-      const dataStr   = rows.map(r => `${r.date}: ${Number(r.daily_total).toLocaleString()}원 (${r.tx_count}건)`).join('\n');
+      const dataStr = rows.map(r => `${r.date}: ${Number(r.daily_total).toLocaleString()}원 (${r.tx_count}건)`).join('\n');
 
-      const forecastText = await callLLM(model, '당신은 매출 분석 전문가입니다.',
+      // 매출 예측 (Groq 우선 → Haiku 폴백)
+      const { text: forecastText } = await callLLMWithFallback(
+        'meta-llama/llama-4-maverick-17b-128e-instruct',
+        '당신은 매출 분석 전문가입니다.',
         `아래 일별 매출 데이터를 분석하고 다음 30일 예측을 JSON으로 반환하세요.
 
 ## 매출 데이터
