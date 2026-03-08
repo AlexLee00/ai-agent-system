@@ -87,8 +87,10 @@ class DexterMode {
    * 클로드(팀장) 활동 시각 갱신 — claude-lead-brain.js에서 호출
    */
   updateClaudeLeadActivity() {
-    this.state.lastClaudeLeadActivity = new Date().toISOString();
-    this._saveState();
+    try {
+      this.state.lastClaudeLeadActivity = new Date().toISOString();
+      this._saveState();
+    } catch { /* 저장 실패 무시 */ }
   }
 
   /**
@@ -96,9 +98,11 @@ class DexterMode {
    * @returns {boolean}
    */
   isClaudeLeadUnresponsive() {
-    const last = this.state.lastClaudeLeadActivity;
-    if (!last) return false;  // 아직 활동 기록 없음 → 비상 아님 (초기화 기간)
-    return (Date.now() - new Date(last).getTime()) > TEAM_LEAD_TIMEOUT_MS;
+    try {
+      const last = this.state.lastClaudeLeadActivity;
+      if (!last) return false;  // 아직 활동 기록 없음 → 비상 아님 (초기화 기간)
+      return (Date.now() - new Date(last).getTime()) > TEAM_LEAD_TIMEOUT_MS;
+    } catch { return false; }
   }
 
   /**
@@ -106,11 +110,31 @@ class DexterMode {
    * dexter.js 점검 완료 후 checkModeTransition 바로 다음에 호출
    */
   checkEmergencyCondition() {
-    if (!this.isClaudeLeadUnresponsive()) return;
-    if (this.state.mode === MODES.EMERGENCY) return;  // 이미 비상 모드
-    const last    = this.state.lastClaudeLeadActivity;
-    const minAgo  = last ? Math.round((Date.now() - new Date(last).getTime()) / 60000) : 0;
-    this.enterEmergency(`클로드(팀장) ${minAgo}분 무응답`);
+    try {
+      if (!this.isClaudeLeadUnresponsive()) return;
+      if (this.state.mode === MODES.EMERGENCY) return;  // 이미 비상 모드
+      const last    = this.state.lastClaudeLeadActivity;
+      const minAgo  = last ? Math.round((Date.now() - new Date(last).getTime()) / 60000) : 0;
+      this.enterEmergency(`클로드(팀장) ${minAgo}분 무응답`);
+    } catch (e) {
+      console.warn('[dexter-mode] checkEmergencyCondition 실패 (무시):', e.message);
+    }
+  }
+
+  /**
+   * Phase 2: DB(team-bus agent_state) 기반 클로드(팀장) 마지막 활동 조회
+   * 파일 기반 체크의 DB 보완 확인 — 비동기
+   * @returns {Promise<{updatedAt: string|null, isStale: boolean}|null>}
+   */
+  async checkClaudeLeadDbStatus() {
+    try {
+      const teamBus = require('./team-bus');
+      const st = await teamBus.getStatus('claude-lead');
+      if (!st || !st.updated_at) return null;
+      const updatedAt = new Date(st.updated_at.replace(' ', 'T'));
+      const isStale   = (Date.now() - updatedAt.getTime()) > TEAM_LEAD_TIMEOUT_MS;
+      return { updatedAt: st.updated_at, status: st.status, isStale };
+    } catch { return null; }
   }
 
   /**
@@ -198,20 +222,26 @@ class DexterMode {
   // ── 다운타임 추적 ───────────────────────────────────────────────
 
   _updateServiceDown(name, isDown) {
-    const now = new Date().toISOString();
-    if (isDown) {
-      if (!this.state.criticalDown[name]) {
-        this.state.criticalDown[name] = now;  // 첫 감지 시각 기록
+    try {
+      const now = new Date().toISOString();
+      if (isDown) {
+        if (!this.state.criticalDown[name]) {
+          this.state.criticalDown[name] = now;  // 첫 감지 시각 기록
+        }
+      } else {
+        delete this.state.criticalDown[name];
       }
-    } else {
-      delete this.state.criticalDown[name];
+    } catch (e) {
+      console.warn('[dexter-mode] _updateServiceDown 실패 (무시):', e.message);
     }
   }
 
   _minutesDown(name) {
-    const since = this.state.criticalDown[name];
-    if (!since) return 0;
-    return (Date.now() - new Date(since).getTime()) / 60000;
+    try {
+      const since = this.state.criticalDown[name];
+      if (!since) return 0;
+      return (Date.now() - new Date(since).getTime()) / 60000;
+    } catch { return 0; }
   }
 
   // ── 모드 전환 판단 ─────────────────────────────────────────────
@@ -225,41 +255,50 @@ class DexterMode {
    * @returns {{ flushed: object[] }}  Emergency 해제 시 밀린 알림 배열
    */
   checkModeTransition(openclawOk, skayaOk = true) {
-    this._updateServiceDown('openclaw', !openclawOk);
-    this._updateServiceDown('skaya',    !skayaOk);
+    try {
+      this._updateServiceDown('openclaw', !openclawOk);
+      this._updateServiceDown('skaya',    !skayaOk);
 
-    const openclawDownMin = this._minutesDown('openclaw');
-    const skayaDownMin    = this._minutesDown('skaya');
-    const shouldEmergency = openclawDownMin > EMERGENCY_THRESHOLD_MIN ||
-                            skayaDownMin    > EMERGENCY_THRESHOLD_MIN;
+      const openclawDownMin = this._minutesDown('openclaw');
+      const skayaDownMin    = this._minutesDown('skaya');
+      const shouldEmergency = openclawDownMin > EMERGENCY_THRESHOLD_MIN ||
+                              skayaDownMin    > EMERGENCY_THRESHOLD_MIN;
 
-    let flushed = [];
+      let flushed = [];
 
-    if (shouldEmergency && this.state.mode === MODES.NORMAL) {
-      const reason = openclawDownMin > EMERGENCY_THRESHOLD_MIN
-        ? `OpenClaw 게이트웨이 ${Math.round(openclawDownMin)}분 다운`
-        : `스카야 텔레그램 봇 ${Math.round(skayaDownMin)}분 다운`;
-      this.enterEmergency(reason);
-    } else if (!shouldEmergency && !this.isClaudeLeadUnresponsive() && this.state.mode === MODES.EMERGENCY) {
-      // 인프라 복구 + 팀장 응답 정상 → Normal 복귀
-      flushed = this.exitEmergency();
+      if (shouldEmergency && this.state.mode === MODES.NORMAL) {
+        const reason = openclawDownMin > EMERGENCY_THRESHOLD_MIN
+          ? `OpenClaw 게이트웨이 ${Math.round(openclawDownMin)}분 다운`
+          : `스카야 텔레그램 봇 ${Math.round(skayaDownMin)}분 다운`;
+        this.enterEmergency(reason);
+      } else if (!shouldEmergency && !this.isClaudeLeadUnresponsive() && this.state.mode === MODES.EMERGENCY) {
+        // 인프라 복구 + 팀장 응답 정상 → Normal 복귀
+        flushed = this.exitEmergency();
+      }
+
+      this._saveState();
+      return { flushed };
+    } catch (e) {
+      console.warn('[dexter-mode] checkModeTransition 실패 (무시):', e.message);
+      return { flushed: [] };
     }
-
-    this._saveState();
-    return { flushed };
   }
 
   // ── 모드 진입/해제 ──────────────────────────────────────────────
 
   enterEmergency(reason = '보고 채널 다운') {
-    if (this.state.mode === MODES.EMERGENCY) return;
-    this.state.mode           = MODES.EMERGENCY;
-    this.state.emergencySince = new Date().toISOString();
+    try {
+      if (this.state.mode === MODES.EMERGENCY) return;
+      this.state.mode           = MODES.EMERGENCY;
+      this.state.emergencySince = new Date().toISOString();
 
-    const msg = `🚨 덱스터 비상 모드 전환 — ${reason}. 텔레그램 대신 로컬 파일에 기록합니다.`;
-    console.warn(`⚠️ ${msg}`);
-    this._appendEmergencyLog(`[비상 모드 진입] ${reason}`);
-    this._saveState();
+      const msg = `🚨 덱스터 비상 모드 전환 — ${reason}. 텔레그램 대신 로컬 파일에 기록합니다.`;
+      console.warn(`⚠️ ${msg}`);
+      this._appendEmergencyLog(`[비상 모드 진입] ${reason}`);
+      this._saveState();
+    } catch (e) {
+      console.warn('[dexter-mode] enterEmergency 실패 (무시):', e.message);
+    }
   }
 
   /**
@@ -267,24 +306,29 @@ class DexterMode {
    * @returns {object[]} 밀린 알림 배열 — caller가 telegram으로 발송
    */
   exitEmergency() {
-    if (this.state.mode === MODES.NORMAL) return [];
+    try {
+      if (this.state.mode === MODES.NORMAL) return [];
 
-    const since = this.state.emergencySince;
-    const durationMin = since
-      ? Math.round((Date.now() - new Date(since).getTime()) / 60000)
-      : 0;
-    const buffered = [...(this.state.bufferedAlerts || [])];
+      const since = this.state.emergencySince;
+      const durationMin = since
+        ? Math.round((Date.now() - new Date(since).getTime()) / 60000)
+        : 0;
+      const buffered = [...(this.state.bufferedAlerts || [])];
 
-    this.state.mode           = MODES.NORMAL;
-    this.state.emergencySince = null;
-    this.state.bufferedAlerts = [];
+      this.state.mode           = MODES.NORMAL;
+      this.state.emergencySince = null;
+      this.state.bufferedAlerts = [];
 
-    const msg = `✅ 덱스터 기본 모드 복귀 (비상 지속: ${durationMin}분, 밀린 알림: ${buffered.length}건)`;
-    console.log(msg);
-    this._appendEmergencyLog(`[비상 모드 해제] 지속: ${durationMin}분, 밀린 알림: ${buffered.length}건`);
-    this._saveState();
+      const msg = `✅ 덱스터 기본 모드 복귀 (비상 지속: ${durationMin}분, 밀린 알림: ${buffered.length}건)`;
+      console.log(msg);
+      this._appendEmergencyLog(`[비상 모드 해제] 지속: ${durationMin}분, 밀린 알림: ${buffered.length}건`);
+      this._saveState();
 
-    return buffered;
+      return buffered;
+    } catch (e) {
+      console.warn('[dexter-mode] exitEmergency 실패 (무시):', e.message);
+      return [];
+    }
   }
 
   // ── Emergency 중 알림 버퍼링 ───────────────────────────────────
@@ -297,11 +341,16 @@ class DexterMode {
    * @returns {boolean}  true: 버퍼에 저장됨, false: 버퍼 안 함 (직접 발송 필요)
    */
   bufferAlert(message) {
-    if (this.state.mode !== MODES.EMERGENCY) return false;
-    this.state.bufferedAlerts.push({ ts: new Date().toISOString(), message });
-    this._appendEmergencyLog(`[BUFFERED] ${message}`);
-    this._saveState();
-    return true;
+    try {
+      if (this.state.mode !== MODES.EMERGENCY) return false;
+      this.state.bufferedAlerts.push({ ts: new Date().toISOString(), message });
+      this._appendEmergencyLog(`[BUFFERED] ${message}`);
+      this._saveState();
+      return true;
+    } catch (e) {
+      console.warn('[dexter-mode] bufferAlert 실패 (무시):', e.message);
+      return false;
+    }
   }
 
   /**
@@ -326,16 +375,22 @@ class DexterMode {
   }
 
   getStatus() {
-    return {
-      mode:             this.state.mode,
-      isEmergency:      this.isEmergency(),
-      emergencySince:   this.state.emergencySince,
-      durationMin:      this.state.emergencySince
-        ? Math.round((Date.now() - new Date(this.state.emergencySince).getTime()) / 60000)
-        : 0,
-      criticalDown:     { ...this.state.criticalDown },
-      bufferedAlertCount: (this.state.bufferedAlerts || []).length,
-    };
+    try {
+      return {
+        mode:             this.state.mode,
+        isEmergency:      this.isEmergency(),
+        emergencySince:   this.state.emergencySince,
+        durationMin:      this.state.emergencySince
+          ? Math.round((Date.now() - new Date(this.state.emergencySince).getTime()) / 60000)
+          : 0,
+        criticalDown:     { ...this.state.criticalDown },
+        bufferedAlertCount: (this.state.bufferedAlerts || []).length,
+        lastClaudeLeadActivity: this.state.lastClaudeLeadActivity,
+      };
+    } catch (e) {
+      console.warn('[dexter-mode] getStatus 실패 (무시):', e.message);
+      return { mode: MODES.NORMAL, isEmergency: false, durationMin: 0, criticalDown: {}, bufferedAlertCount: 0 };
+    }
   }
 }
 

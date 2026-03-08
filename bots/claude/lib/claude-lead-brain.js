@@ -273,7 +273,13 @@ async function evaluateWithClaudeLead(results) {
     console.warn('[claude-lead-brain] RAG 저장 실패 (무시):', e.message);
   }
 
-  // 6. 판단 로그
+  // 6. Phase 2: team-bus agent_state 기록 (DB 기반 팀장 활동 추적)
+  try {
+    const teamBus = require('../lib/team-bus');
+    await teamBus.setStatus('claude-lead', 'idle', `이슈 ${issues.length}건 분석 완료`);
+  } catch { /* team-bus 실패 무시 */ }
+
+  // 7. 판단 로그
   const icon = llmResult ? (match ? '✅' : '⚡') : '⚠️';
   const matchStr = llmResult
     ? ` — 규칙:${ruleResult.decision} / Sonnet:${llmResult.decision}${match ? ' (일치)' : ' (불일치!)'}`

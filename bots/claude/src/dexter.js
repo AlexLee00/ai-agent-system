@@ -145,6 +145,14 @@ async function main() {
     // Phase 2: 팀장 무응답 Emergency 체크 (인프라 기반 전환과 별개)
     dexterMode.checkEmergencyCondition();
 
+    // Phase 2: DB 기반 팀장 무응답 보완 체크 (파일 기반과 이중 검증)
+    try {
+      const dbSt = await dexterMode.checkClaudeLeadDbStatus();
+      if (dbSt?.isStale) {
+        console.warn(`  ⚠️ [Phase 2] DB 기반 클로드(팀장) 무응답 감지 — 마지막 업데이트: ${dbSt.updatedAt}`);
+      }
+    } catch { /* 무시 */ }
+
     if (dexterMode.isEmergency()) {
       console.log('⚠️ 덱스터 비상 모드 — 텔레그램 보고 불가, 로컬 파일에 기록 중');
     }
