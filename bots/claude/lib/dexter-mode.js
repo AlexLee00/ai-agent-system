@@ -32,8 +32,9 @@ const MODES = {
 // Emergency 진입 임계: 보고 채널 다운 분(分)
 const EMERGENCY_THRESHOLD_MIN = 3;
 
-// Phase 2: 클로드(팀장) 무응답 임계 (10분)
-const TEAM_LEAD_TIMEOUT_MS = 10 * 60 * 1000;
+// Phase 2: 클로드(팀장) 무응답 임계 (90분 — full 체크 1h + 여유 30분)
+// dexter-quickcheck.js는 pollAgentEvents 미포함 → full 체크(1h)만 갱신
+const TEAM_LEAD_TIMEOUT_MS = 90 * 60 * 1000;
 
 const STATE_FILE     = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-mode-state.json');
 const EMERGENCY_LOG  = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-emergency.log');
