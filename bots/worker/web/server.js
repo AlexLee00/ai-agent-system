@@ -24,6 +24,8 @@ const { body, query, param, validationResult } = require('express-validator');
 const pgPool  = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { hashPassword, verifyPassword, generateToken, validatePasswordPolicy } = require('../lib/auth');
 const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard');
+const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
+const { recalcProgress } = require('../src/ryan');
 
 const SCHEMA = 'worker';
 const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
@@ -39,6 +41,9 @@ app.use(express.urlencoded({ extended: false }));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', limiter);
+
+// ── 접근 로그 (OWASP) — 모든 라우트 앞에 배치 ─────────────────────
+app.use(accessLogger);
 
 // 로그인 엔드포인트는 더 엄격한 Rate Limit
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
@@ -76,15 +81,32 @@ app.post('/api/auth/login',
     if (!validate(req, res)) return;
     const { username, password } = req.body;
     try {
+      // 연속 5회 실패 → 30분 잠금 (OWASP 계정 잠금)
+      const failRow = await pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.access_log
+         WHERE username=$1 AND action='login_fail' AND created_at > NOW() - interval '30 minutes'`,
+        [username]);
+      if (Number(failRow?.cnt ?? 0) >= 5) {
+        await logAuth('login_locked', username, req.ip, req.headers['user-agent']);
+        return res.status(423).json({ error: '로그인 시도 초과. 30분 후 재시도해주세요.', code: 'ACCOUNT_LOCKED' });
+      }
+
       const user = await pgPool.get(SCHEMA,
         `SELECT * FROM worker.users WHERE username = $1 AND deleted_at IS NULL`, [username]);
-      if (!user) return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
+      if (!user) {
+        await logAuth('login_fail', username, req.ip, req.headers['user-agent'], { reason: '존재하지 않는 아이디' });
+        return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
+      }
 
       const ok = await verifyPassword(password, user.password_hash);
-      if (!ok) return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
+      if (!ok) {
+        await logAuth('login_fail', username, req.ip, req.headers['user-agent'], { reason: '비밀번호 불일치' });
+        return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', code: 'AUTH_FAILED' });
+      }
 
       // 마지막 로그인 시각 갱신
       await pgPool.run(SCHEMA, `UPDATE worker.users SET last_login_at=NOW() WHERE id=$1`, [user.id]);
+      await logAuth('login', username, req.ip, req.headers['user-agent']);
 
       const token = generateToken(user);
       const { password_hash: _, ...safeUser } = user;
@@ -778,7 +800,7 @@ app.delete('/api/journals/:id', requireAuth, companyFilter, async (req, res) => 
 
 app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) => {
   try {
-    const [salesRow, attendRow, docsRow, approvalsRow] = await Promise.all([
+    const [salesRow, attendRow, docsRow, approvalsRow, projectsRow, schedulesRow] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total FROM worker.sales
          WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`, [req.companyId]),
@@ -793,12 +815,22 @@ app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) =
       pgPool.get(SCHEMA,
         `SELECT COUNT(*) AS cnt FROM worker.approval_requests
          WHERE company_id=$1 AND status='pending' AND deleted_at IS NULL`, [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.projects
+         WHERE company_id=$1 AND status IN ('planning','in_progress','review') AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.schedules
+         WHERE company_id=$1 AND deleted_at IS NULL AND start_time::date=CURRENT_DATE`,
+        [req.companyId]),
     ]);
     res.json({
-      today_sales:      Number(salesRow?.total    ?? 0),
-      checked_in:       Number(attendRow?.cnt     ?? 0),
-      pending_docs:     Number(docsRow?.cnt       ?? 0),
-      pending_approvals: Number(approvalsRow?.cnt ?? 0),
+      today_sales:       Number(salesRow?.total     ?? 0),
+      checked_in:        Number(attendRow?.cnt      ?? 0),
+      pending_docs:      Number(docsRow?.cnt        ?? 0),
+      pending_approvals: Number(approvalsRow?.cnt   ?? 0),
+      active_projects:   Number(projectsRow?.cnt    ?? 0),
+      today_schedules:   Number(schedulesRow?.cnt   ?? 0),
     });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
@@ -844,8 +876,282 @@ app.get('/api/activity', requireAuth, companyFilter, async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════
+// Phase 3 API — 급여(소피) / 프로젝트(라이언) / 일정(클로이)
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 급여 API (소피) ────────────────────────────────────────────────────
+
+app.get('/api/payroll', requireAuth, companyFilter, async (req, res) => {
+  const yearMonth = req.query.year_month || new Date().toISOString().slice(0, 7);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT p.*, e.name AS employee_name
+       FROM worker.payroll p JOIN worker.employees e ON e.id=p.employee_id
+       WHERE p.company_id=$1 AND p.year_month=$2
+       ORDER BY e.name`,
+      [req.companyId, yearMonth]);
+    res.json({ payroll: rows, year_month: yearMonth });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/payroll/summary', requireAuth, companyFilter, async (req, res) => {
+  const yearMonth = req.query.year_month || new Date().toISOString().slice(0, 7);
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT COUNT(*) AS cnt, COALESCE(SUM(net_salary),0) AS total_net,
+              COALESCE(SUM(deduction),0) AS total_deduction,
+              COALESCE(SUM(base_salary),0) AS total_base
+       FROM worker.payroll WHERE company_id=$1 AND year_month=$2`,
+      [req.companyId, yearMonth]);
+    res.json({ summary: row, year_month: yearMonth });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/payroll/:id', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT p.*, e.name AS employee_name
+       FROM worker.payroll p JOIN worker.employees e ON e.id=p.employee_id
+       WHERE p.id=$1 AND p.company_id=$2`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '급여 정보 없음', code: 'NOT_FOUND' });
+    res.json({ payroll: row });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/payroll/calculate', requireAuth, requireRole('master','admin'), auditLog('CALCULATE', 'payroll'), async (req, res) => {
+  const yearMonth = req.body.year_month || new Date().toISOString().slice(0, 7);
+  try {
+    const { calculatePayroll } = require('../src/sophie');
+    const results = await calculatePayroll(req.companyId, yearMonth);
+    res.json({ ok: true, count: results.length, year_month: yearMonth });
+  } catch (e) { res.status(500).json({ error: e.message, code: 'SERVER_ERROR' }); }
+});
+
+app.put('/api/payroll/:id', requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'payroll'), async (req, res) => {
+  const { net_salary, status, incentive, base_salary } = req.body;
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `UPDATE worker.payroll
+       SET net_salary=COALESCE($1,net_salary), status=COALESCE($2,status),
+           incentive=COALESCE($3,incentive), base_salary=COALESCE($4,base_salary),
+           confirmed_by=$5, updated_at=NOW()
+       WHERE id=$6 AND company_id=$7 RETURNING *`,
+      [net_salary??null, status||null, incentive??null, base_salary??null,
+       req.user.id, req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '급여 정보 없음', code: 'NOT_FOUND' });
+    res.json({ payroll: row });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ── 프로젝트 API (라이언) ──────────────────────────────────────────────
+
+app.get('/api/projects', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const status = req.query.status || '';
+  const params = [req.companyId];
+  let where = 'p.company_id=$1 AND p.deleted_at IS NULL';
+  if (status) { params.push(status); where += ` AND p.status=$${params.length}`; }
+  params.push(limit, offset);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT p.*, e.name AS owner_name
+       FROM worker.projects p LEFT JOIN worker.employees e ON e.id=p.owner_id
+       WHERE ${where}
+       ORDER BY p.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+      params);
+    res.json({ projects: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/projects',
+  requireAuth, requireRole('master','admin'), auditLog('CREATE', 'projects'),
+  body('name').trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { name, description, owner_id, start_date, end_date } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.projects (company_id, name, description, owner_id, start_date, end_date)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.companyId, name, description||null, owner_id||null, start_date||null, end_date||null]);
+      res.status(201).json({ project: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/projects/:id',
+  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'projects'),
+  body('name').optional().trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { name, description, status, owner_id, start_date, end_date, progress } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `UPDATE worker.projects
+         SET name=COALESCE($1,name), description=COALESCE($2,description),
+             status=COALESCE($3,status), owner_id=COALESCE($4,owner_id),
+             start_date=COALESCE($5,start_date), end_date=COALESCE($6,end_date),
+             progress=COALESCE($7,progress), updated_at=NOW()
+         WHERE id=$8 AND company_id=$9 AND deleted_at IS NULL RETURNING *`,
+        [name||null, description||null, status||null, owner_id||null,
+         start_date||null, end_date||null, progress??null,
+         req.params.id, req.companyId]);
+      if (!row) return res.status(404).json({ error: '프로젝트 없음', code: 'NOT_FOUND' });
+      res.json({ project: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/projects/:id', requireAuth, requireRole('master','admin'), auditLog('DELETE', 'projects'), async (req, res) => {
+  try {
+    await pgPool.run(SCHEMA,
+      `UPDATE worker.projects SET deleted_at=NOW() WHERE id=$1 AND company_id=$2`,
+      [req.params.id, req.companyId]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ── 마일스톤 API (라이언) ──────────────────────────────────────────────
+
+app.get('/api/projects/:id/milestones', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT m.*, e.name AS assignee_name
+       FROM worker.milestones m LEFT JOIN worker.employees e ON e.id=m.assigned_to
+       WHERE m.project_id=$1 AND m.company_id=$2 AND m.deleted_at IS NULL
+       ORDER BY m.due_date ASC NULLS LAST, m.created_at ASC`,
+      [req.params.id, req.companyId]);
+    res.json({ milestones: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/projects/:id/milestones',
+  requireAuth, requireRole('master','admin'), auditLog('CREATE', 'milestones'),
+  body('title').trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { title, description, due_date, assigned_to } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.milestones (project_id, company_id, title, description, due_date, assigned_to)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.params.id, req.companyId, title, description||null, due_date||null, assigned_to||null]);
+      await recalcProgress(req.params.id);
+      res.status(201).json({ milestone: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/milestones/:id',
+  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'milestones'),
+  async (req, res) => {
+    const { title, description, status, due_date, assigned_to } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `UPDATE worker.milestones
+         SET title=COALESCE($1,title), description=COALESCE($2,description),
+             status=COALESCE($3,status), due_date=COALESCE($4,due_date),
+             assigned_to=COALESCE($5,assigned_to),
+             completed_at=CASE WHEN $3='completed' THEN NOW() ELSE completed_at END
+         WHERE id=$6 AND deleted_at IS NULL RETURNING *`,
+        [title||null, description||null, status||null, due_date||null,
+         assigned_to||null, req.params.id]);
+      if (!row) return res.status(404).json({ error: '마일스톤 없음', code: 'NOT_FOUND' });
+      await recalcProgress(row.project_id);
+      res.json({ milestone: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+// ── 일정 API (클로이) ──────────────────────────────────────────────────
+
+app.get('/api/schedules', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const from = req.query.from || new Date().toISOString().slice(0,10);
+  const to   = req.query.to   || new Date(Date.now() + 30*24*3600*1000).toISOString().slice(0,10);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT * FROM worker.schedules
+       WHERE company_id=$1 AND deleted_at IS NULL
+         AND start_time::date BETWEEN $2 AND $3
+       ORDER BY start_time LIMIT $4 OFFSET $5`,
+      [req.companyId, from, to, limit, offset]);
+    res.json({ schedules: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/schedules/today', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const { getTodaySchedules } = require('../src/chloe');
+    const rows = await getTodaySchedules(req.companyId);
+    res.json({ schedules: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/schedules',
+  requireAuth, auditLog('CREATE', 'schedules'),
+  body('title').trim().notEmpty(),
+  body('start_time').notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { title, description, type, start_time, end_time, all_day, location, attendees, recurrence, reminder } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.schedules
+           (company_id, title, description, type, start_time, end_time, all_day,
+            location, attendees, recurrence, reminder, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [req.companyId, title, description||null, type||'task',
+         start_time, end_time||null, all_day||false,
+         location||null, JSON.stringify(attendees||[]),
+         recurrence||null, reminder??30, req.user.id]);
+      res.status(201).json({ schedule: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/schedules/:id',
+  requireAuth, auditLog('UPDATE', 'schedules'),
+  body('title').optional().trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { title, description, type, start_time, end_time, all_day, location, attendees, recurrence } = req.body;
+    try {
+      const row = await pgPool.get(SCHEMA,
+        `UPDATE worker.schedules
+         SET title=COALESCE($1,title), description=COALESCE($2,description),
+             type=COALESCE($3,type), start_time=COALESCE($4,start_time),
+             end_time=COALESCE($5,end_time), all_day=COALESCE($6,all_day),
+             location=COALESCE($7,location),
+             attendees=COALESCE($8,attendees), recurrence=COALESCE($9,recurrence),
+             updated_at=NOW()
+         WHERE id=$10 AND company_id=$11 AND deleted_at IS NULL RETURNING *`,
+        [title||null, description||null, type||null, start_time||null,
+         end_time||null, all_day??null, location||null,
+         attendees?JSON.stringify(attendees):null,
+         recurrence||null, req.params.id, req.companyId]);
+      if (!row) return res.status(404).json({ error: '일정 없음', code: 'NOT_FOUND' });
+      res.json({ schedule: row });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/schedules/:id', requireAuth, auditLog('DELETE', 'schedules'), async (req, res) => {
+  try {
+    await pgPool.run(SCHEMA,
+      `UPDATE worker.schedules SET deleted_at=NOW() WHERE id=$1 AND company_id=$2`,
+      [req.params.id, req.companyId]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
 // ── 헬스체크 ─────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', port: PORT, ts: new Date().toISOString() }));
+
+// ── 에러 로그 미들웨어 (에러 핸들러 앞) ──────────────────────────────
+app.use(errorLogger);
 
 // ── 에러 핸들러 ──────────────────────────────────────────────────────
 app.use((err, req, res, _next) => {

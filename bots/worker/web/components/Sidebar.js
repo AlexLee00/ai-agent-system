@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, FileText, CheckSquare, Settings,
-  Building2, UserCog,
+  Building2, UserCog, Wallet, FolderKanban, Calendar,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -13,6 +13,9 @@ const NAV_ITEMS = [
   { href: '/employees',  icon: Users,           label: '직원 관리' },
   { href: '/attendance', icon: Clock,           label: '근태 관리' },
   { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
+  { href: '/payroll',    icon: Wallet,          label: '급여 관리' },
+  { href: '/projects',   icon: FolderKanban,    label: '프로젝트' },
+  { href: '/schedules',  icon: Calendar,        label: '일정 관리' },
   { href: '/journals',   icon: BookOpen,        label: '업무일지' },
   { href: '/documents',  icon: FileText,        label: '문서 관리' },
   { href: '/approvals',  icon: CheckSquare,     label: '승인 관리' },
