@@ -29,15 +29,22 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
   return sender.send('luna', msg);
 }
 
-export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper }) {
+export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource }) {
   const tag   = paper ? '[PAPER] ' : '';
   const emoji = side === 'buy' ? '✅ 매수' : '✅ 매도';
-  const msg   = [
+  const lines = [
     `${tag}${emoji} 체결 — ${symbol}`,
     `수량: ${amount?.toFixed(6)} / 가격: $${price?.toLocaleString()}`,
     `총액: $${totalUsdt?.toFixed(2)}`,
-  ].join('\n');
-  return sender.send('luna', msg);
+  ];
+  if (tpPrice && slPrice && price) {
+    const isDynamic = tpslSource && tpslSource !== 'fixed' && tpslSource !== 'fixed_fallback';
+    const dynTag    = isDynamic ? '[동적 TP/SL]' : '[고정 TP/SL]';
+    const tpPct     = ((tpPrice / price - 1) * 100).toFixed(1);
+    const slPct     = ((slPrice / price - 1) * 100).toFixed(1);
+    lines.push(`${dynTag} TP: $${tpPrice?.toLocaleString()} (+${tpPct}%) | SL: $${slPrice?.toLocaleString()} (${slPct}%)`);
+  }
+  return sender.send('luna', lines.join('\n'));
 }
 
 export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
