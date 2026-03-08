@@ -64,6 +64,59 @@ const NAVER_DISC_NAMES = {
   '000660': 'SK하이닉스',
 };
 
+// ─── 인메모리 캐시 ─────────────────────────────────────────────────────
+
+const _fgCache   = { data: null, ts: 0 };  // Fear & Greed 캐시 (1시간)
+const _sentCache = new Map();               // 감성 결과 캐시 (5분, key: `exchange:symbol`)
+const FG_TTL     = 3_600_000;
+const SENT_TTL   = 300_000;
+
+// ─── Fear & Greed Index (alternative.me) ─────────────────────────────
+
+async function fetchFearGreedIndex() {
+  const now = Date.now();
+  if (_fgCache.data !== null && (now - _fgCache.ts) < FG_TTL) return _fgCache.data;
+  try {
+    const { status, body } = await httpsGet('api.alternative.me', '/fng/?limit=1');
+    if (status !== 200) return null;
+    const json  = JSON.parse(body);
+    const value = parseInt(json?.data?.[0]?.value ?? '-1', 10);
+    if (isNaN(value) || value < 0 || value > 100) return null;
+    _fgCache.data = value;
+    _fgCache.ts   = now;
+    console.log(`  📊 [소피아] Fear & Greed Index: ${value} (${json?.data?.[0]?.value_classification})`);
+    return value;
+  } catch (e) {
+    console.warn(`  ⚠️ [소피아] Fear & Greed 조회 실패: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── 감성 점수 통합 (가중 평균) ───────────────────────────────────────
+
+/**
+ * 다중 소스 감성 점수 통합 (소셜은 커뮤니티에 포함)
+ * @param {number}      communityScore  -1~1 (LLM/키워드 + Reddit/DC 종합)
+ * @param {number|null} fearGreed       0~100 (alternative.me) 또는 null
+ * @param {number|null} newsScore       -1~1 (CryptoPanic 뉴스 투표 비율) 또는 null
+ * @returns {{ combined: number, fgNorm: number|null, label: string }}
+ */
+function combineSentiment(communityScore, fearGreed, newsScore) {
+  const fgNorm = fearGreed != null ? (fearGreed - 50) / 50 : null;
+
+  // 소셜(Reddit/DC)은 커뮤니티 점수에 포함 → community 기본비중 0.5 (0.4+0.1)
+  let wC = 0.5, wF = fgNorm != null ? 0.3 : 0, wN = newsScore != null ? 0.2 : 0;
+  const sum = wC + wF + wN;
+  wC /= sum; wF /= sum; wN /= sum;  // 합이 1이 되도록 정규화
+
+  const combined = communityScore * wC
+    + (fgNorm   != null ? fgNorm    * wF : 0)
+    + (newsScore != null ? newsScore * wN : 0);
+
+  const label = combined >= 0.3 ? '낙관' : combined <= -0.3 ? '비관' : '중립';
+  return { combined: Math.max(-1, Math.min(1, combined)), fgNorm, label };
+}
+
 // ─── HTTP(S) GET ──────────────────────────────────────────────────────
 
 function httpsGet(hostname, path, headers = {}) {
@@ -278,9 +331,20 @@ const PROMPTS = {
  */
 export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+
+  // 5분 캐시 확인
+  const cacheKey = `${exchange}:${symbol}`;
+  const cached   = _sentCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < SENT_TTL) {
+    console.log(`  💾 [소피아] 캐시 히트 (${symbol} ${label})`);
+    return cached.data;
+  }
+
   console.log(`\n💬 [소피아] ${symbol}(${label}) 커뮤니티 수집 중...`);
 
   let posts;
+  let cpPostsRef = [];  // CryptoPanic 참조 (binance 전용, 뉴스 감성 계산용)
+  let fearGreed  = null;
 
   if (exchange === 'kis_overseas') {
     const subreddits    = [...DEFAULT_REDDIT_US, ...(REDDIT_SOURCES_US[symbol] || [])];
@@ -299,11 +363,14 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     const subreddits = REDDIT_SOURCES_CRYPTO[symbol] || DEFAULT_REDDIT_CRYPTO;
     const dcGallIds  = DC_SOURCES_CRYPTO[symbol] || [];
 
-    const [redditResults, dcResults, cpPosts] = await Promise.all([
+    const [redditResults, dcResults, cpPosts, fg] = await Promise.all([
       Promise.all(subreddits.map(sub => fetchReddit(sub))),
       Promise.all(dcGallIds.map(id => fetchDCinside(id))),
       fetchCryptoPanic(symbol),
+      fetchFearGreedIndex(),
     ]);
+    cpPostsRef = cpPosts;
+    fearGreed  = fg;
     const allReddit = redditResults.flat();
     const allDC     = dcResults.flat();
     console.log(`  Reddit: ${allReddit.length}건 | DC: ${allDC.length}건 | CryptoPanic: ${cpPosts.length}건`);
@@ -333,16 +400,31 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   console.log(`  → [소피아] ${signal} (${(confidence * 100).toFixed(0)}%) | ${sentiment}`);
   posts.slice(0, 2).forEach(p => console.log(`  • [${p.source}] ${p.title.slice(0, 60)}`));
 
+  // 암호화폐: 다중 소스 감성 통합 (커뮤니티 + Fear & Greed + CryptoPanic 뉴스)
+  let combinedScore = null;
+  if (exchange === 'binance') {
+    const communityScore = signal === ACTIONS.BUY ? confidence : signal === ACTIONS.SELL ? -confidence : 0;
+    const totalVotes     = cpPostsRef.reduce((s, p) => s + Math.abs(p.score), 0);
+    const newsScore      = totalVotes > 0
+      ? Math.max(-1, Math.min(1, cpPostsRef.reduce((s, p) => s + p.score, 0) / totalVotes))
+      : null;
+    const { combined, fgNorm, label: sentLabel } = combineSentiment(communityScore, fearGreed, newsScore);
+    combinedScore = combined;
+    console.log(`  📊 [소피아] 통합감성: ${combined.toFixed(2)} (커뮤니티: ${communityScore.toFixed(2)}, F&G: ${fgNorm?.toFixed(2) ?? 'N/A'}, 뉴스: ${newsScore?.toFixed(2) ?? 'N/A'}) → ${sentLabel}`);
+  }
+
   await db.insertAnalysis({
     symbol, analyst: ANALYST_TYPES.SENTIMENT, signal, confidence,
     reasoning: `[감성] ${reasoning}`,
-    metadata:  { filteredCount: posts.length, sentiment, exchange,
+    metadata:  { filteredCount: posts.length, sentiment, exchange, combinedScore,
                  topPosts: posts.slice(0, 5).map(p => `[${p.source}] ${p.title.slice(0, 80)}`) },
     exchange,
   });
   console.log(`  ✅ [소피아] DB 저장 완료`);
 
-  return { symbol, signal, confidence, reasoning, sentiment };
+  const result = { symbol, signal, confidence, reasoning, sentiment, combinedScore };
+  _sentCache.set(cacheKey, { data: result, ts: Date.now() });
+  return result;
 }
 
 // CLI 실행
