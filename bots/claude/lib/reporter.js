@@ -166,6 +166,27 @@ async function emitDexterEvent(results, elapsed) {
   } catch (e) {
     console.warn('[reporter] agent_events 발행 실패 (무시):', e.message);
   }
+
+  // RAG 저장: ERROR/WARN 이슈를 rag_operations에 학습 데이터로 기록
+  if (overall !== 'ok') {
+    try {
+      const rag      = require('../../../packages/core/lib/rag');
+      const topItems = errors.concat(warns).slice(0, 5);
+      const content  = [
+        `덱스터 점검 ${overall.toUpperCase()}: 오류 ${errors.length}건, 경고 ${warns.length}건`,
+        `항목: ${topItems.map(i => `[${i.checkName}] ${i.label}`).join(' / ')}`,
+      ].join(' | ');
+      await rag.store('operations', content, {
+        category:    'incident',
+        team:        'claude',
+        overall,
+        error_count: errors.length,
+        warn_count:  warns.length,
+      }, 'dexter');
+    } catch (e) {
+      console.warn('[reporter] RAG 저장 실패 (무시):', e.message);
+    }
+  }
 }
 
 module.exports = { printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog, emitDexterEvent };

@@ -111,7 +111,20 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     }
   } catch {}
 
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}\n\n최종 매매 신호:`;
+  // RAG 검색: 과거 유사 신호 조회 (참고용 컨텍스트)
+  let ragContext = '';
+  try {
+    const rag  = _require('../../../packages/core/lib/rag');
+    const hits = await rag.search('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 });
+    if (hits.length > 0) {
+      ragContext = '\n\n[과거 유사 신호]\n' + hits.map(h => {
+        const m = h.metadata || {};
+        return `  ${m.symbol || '?'} ${m.action || '?'} (신뢰도 ${m.confidence || '?'}): ${h.content.slice(0, 80)}`;
+      }).join('\n');
+    }
+  } catch { /* RAG 검색 실패 시 무시 */ }
+
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
   const shadowResult = await shadow.evaluate({
@@ -335,6 +348,25 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     const signalId = await db.insertSignal(signalData);
     console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action})`);
     await notifySignal({ ...signalData, paper: paperMode });
+
+    // RAG 저장: 투자 신호 이력을 rag_trades에 학습 데이터로 기록
+    try {
+      const rag     = _require('../../../packages/core/lib/rag');
+      const content = [
+        `${dec.symbol} ${dec.action} 신호`,
+        `신뢰도: ${dec.confidence || '?'}`,
+        `판단: ${(dec.reasoning || '').slice(0, 100)}`,
+      ].join(' | ');
+      await rag.store('trades', content, {
+        symbol:     dec.symbol,
+        action:     dec.action,
+        confidence: dec.confidence,
+        exchange,
+        paper_mode: paperMode,
+      }, 'luna');
+    } catch (e) {
+      console.warn('[luna] RAG 저장 실패 (무시):', e.message);
+    }
 
     try {
       // 최근 TA 분석에서 atrRatio 추출 (아리아가 저장한 메타데이터)

@@ -169,6 +169,35 @@ async function main() {
       } : null,
     });
 
+    // RAG 저장: 기술 분석 결과를 rag_tech에 학습 데이터로 기록
+    if (analysis && !analysis.error) {
+      try {
+        const rag       = require('../../../packages/core/lib/rag');
+        const techItems = [
+          ...(analysis.patches  || []).slice(0, 3).map(p => `패치: ${p.name || p.package || p.title || '?'}`),
+          ...(analysis.security || []).slice(0, 3).map(s => `보안: ${s.title || s.name || '?'}`),
+          ...(analysis.llm_api  || []).slice(0, 2).map(l => `LLM: ${l.title || l.name || '?'}`),
+        ];
+        if (techItems.length > 0) {
+          const content = [
+            `아처 기술 보고 (${runDate})`,
+            techItems.join(' / '),
+            analysis.summary ? `요약: ${analysis.summary.slice(0, 100)}` : '',
+          ].filter(Boolean).join(' | ');
+          await rag.store('tech', content, {
+            run_date:       runDate,
+            patch_count:    (analysis.patches  || []).length,
+            security_count: (analysis.security || []).length,
+            llm_api_count:  (analysis.llm_api  || []).length,
+            change_type:    'weekly_report',
+          }, 'archer');
+          console.log(`  [아처] RAG 저장 완료 (tech ${techItems.length}건)`);
+        }
+      } catch (e) {
+        console.warn('[archer] RAG 저장 실패 (무시):', e.message);
+      }
+    }
+
     const elapsed = Date.now() - start;
     console.log(`\n✅ ${BOT_NAME} 완료 (총 ${elapsed}ms)`);
     if (filePath) console.log(`📄 리포트: ${filePath}`);
