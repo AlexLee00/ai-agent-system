@@ -185,10 +185,19 @@ app.post('/api/auth/change-password',
 
 app.get('/api/companies', requireAuth, requireRole('master'), async (req, res) => {
   const { limit, offset, sort, order } = pagination(req);
+  const search = req.query.q ? `%${req.query.q}%` : null;
   try {
+    const params = search ? [search, limit, offset] : [limit, offset];
+    const where  = search ? `WHERE deleted_at IS NULL AND (c.name ILIKE $1 OR c.owner ILIKE $1)` : `WHERE deleted_at IS NULL`;
+    const pLimit = search ? '$2' : '$1';
+    const pOff   = search ? '$3' : '$2';
     const rows = await pgPool.query(SCHEMA,
-      `SELECT * FROM worker.companies WHERE deleted_at IS NULL ORDER BY ${sort} ${order} LIMIT $1 OFFSET $2`,
-      [limit, offset]);
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM worker.users    u WHERE u.company_id=c.id AND u.deleted_at IS NULL) AS user_count,
+        (SELECT COUNT(*) FROM worker.employees e WHERE e.company_id=c.id AND e.deleted_at IS NULL) AS employee_count
+       FROM worker.companies c ${where}
+       ORDER BY c.${sort} ${order} LIMIT ${pLimit} OFFSET ${pOff}`,
+      params);
     res.json({ companies: rows });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
@@ -199,10 +208,12 @@ app.post('/api/companies',
   body('name').trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
-    const { id, name } = req.body;
+    const { id, name, owner, phone, biz_number, memo } = req.body;
     try {
       const company = await pgPool.get(SCHEMA,
-        `INSERT INTO worker.companies (id, name) VALUES ($1, $2) RETURNING *`, [id, name]);
+        `INSERT INTO worker.companies (id, name, owner, phone, biz_number, memo)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [id, name, owner || null, phone || null, biz_number || null, memo || null]);
       res.status(201).json({ company });
     } catch (e) {
       if (e.code === '23505') return res.status(409).json({ error: '이미 존재하는 업체 ID입니다.', code: 'DUPLICATE' });
@@ -216,10 +227,13 @@ app.put('/api/companies/:id',
   body('name').trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
+    const { name, owner, phone, biz_number, memo } = req.body;
     try {
       const company = await pgPool.get(SCHEMA,
-        `UPDATE worker.companies SET name=$1, updated_at=NOW() WHERE id=$2 AND deleted_at IS NULL RETURNING *`,
-        [req.body.name, req.params.id]);
+        `UPDATE worker.companies
+         SET name=$1, owner=$2, phone=$3, biz_number=$4, memo=$5, updated_at=NOW()
+         WHERE id=$6 AND deleted_at IS NULL RETURNING *`,
+        [name, owner || null, phone || null, biz_number || null, memo || null, req.params.id]);
       if (!company) return res.status(404).json({ error: '업체를 찾을 수 없습니다.', code: 'NOT_FOUND' });
       res.json({ company });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
@@ -238,12 +252,23 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
 
 app.get('/api/users', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
   const { limit, offset, sort, order } = pagination(req);
-  const params = req.companyId ? [req.companyId, limit, offset] : [limit, offset];
-  const where  = req.companyId ? 'WHERE company_id=$1 AND deleted_at IS NULL' : 'WHERE deleted_at IS NULL';
-  const lp     = req.companyId ? `$2,$3` : `$1,$2`;
+  // 필터: company_id (master가 선택), role
+  const cid  = req.companyId || req.query.company_id || null;
+  const role = req.query.role || null;
+  const conds = ['deleted_at IS NULL'];
+  const params = [];
+  if (cid)  { params.push(cid);  conds.push(`company_id=$${params.length}`); }
+  if (role) { params.push(role); conds.push(`role=$${params.length}`); }
+  params.push(limit, offset);
+  const where = `WHERE ${conds.join(' AND ')}`;
+  const pLimit = `$${params.length - 1}`;
+  const pOff   = `$${params.length}`;
   try {
     const rows = await pgPool.query(SCHEMA,
-      `SELECT id,company_id,username,role,name,email,telegram_id,created_at FROM worker.users ${where} ORDER BY ${sort} ${order} LIMIT ${req.companyId?'$2':'$1'} OFFSET ${req.companyId?'$3':'$2'}`,
+      `SELECT id,company_id,username,role,name,email,telegram_id,
+              channel,must_change_pw,last_login_at,created_at
+       FROM worker.users ${where}
+       ORDER BY ${sort} ${order} LIMIT ${pLimit} OFFSET ${pOff}`,
       params);
     res.json({ users: rows });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
@@ -266,9 +291,9 @@ app.post('/api/users',
     try {
       const hash = await hashPassword(password);
       const user = await pgPool.get(SCHEMA,
-        `INSERT INTO worker.users (company_id,username,password_hash,role,name,email,telegram_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         RETURNING id,company_id,username,role,name,email,telegram_id,created_at`,
+        `INSERT INTO worker.users (company_id,username,password_hash,role,name,email,telegram_id,must_change_pw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
+         RETURNING id,company_id,username,role,name,email,telegram_id,must_change_pw,created_at`,
         [company_id, username, hash, role, name, email || null, telegram_id || null]);
       res.status(201).json({ user });
     } catch (e) {
