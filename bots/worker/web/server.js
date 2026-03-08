@@ -44,7 +44,8 @@ app.use('/api/', limiter);
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 app.use('/api/auth/login', loginLimiter);
 
-// ── 정적 파일 ─────────────────────────────────────────────────────────
+// ── 정적 파일 / 루트 리다이렉트 ──────────────────────────────────────
+app.get('/', (req, res) => res.redirect('http://localhost:4001'));
 app.use(express.static(path.join(__dirname, 'pages')));
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
