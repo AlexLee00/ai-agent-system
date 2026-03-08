@@ -4,6 +4,41 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-09
+
+### 워커팀 Phase 4 AI 고도화 완료 + rag-system 잔재 제거 (`0bfaa70`~`a21ce69`)
+
+**버그 수정 (이전 세션 이어)**
+- `sophie.js`: `base_salary` 하드코딩 → DB 컬럼 참조
+- `POST /api/payroll/calculate`: `companyFilter` 누락 추가
+- `POST /api/schedules`, `POST /api/sales`: `companyFilter` 누락 추가
+- Rate limit 핸들러 JSON 형식 수정, 한글 파일명 인코딩 수정
+- `GET /api/projects/:id` 신규 추가, `DELETE /api/documents/:id` 신규 추가
+- `pickko-daily-audit.js`: `await collectNaverKeys()` 누락 수정
+
+**Phase 4: AI 자연어 질문 + 매출 예측**
+- `lib/ai-client.js` 신규: `callLLM()` + `callLLMWithFallback()` (Groq 우선 → Haiku 폴백)
+- `lib/ai-helper.js` 신규: SQL 생성/요약 프롬프트, `isSelectOnly()`, `isSafeQuestion()`
+- `POST /api/ai/ask`: 자연어 → SQL → 실행 → RAG → 요약 파이프라인 (admin/master 전용)
+- `POST /api/ai/revenue-forecast`: 90일 매출 → Groq 분석 → 30일 예측
+- 감사 로그: `ai_question`, `ai_forecast` 자동 기록
+- `web/app/ai/page.js` 신규: AI 질문 폼 + 예시 칩 + 데이터 테이블 + 매출 예측
+- `Sidebar.js`: admin/master 전용 AI 분석 메뉴 추가
+- launchd 키 관리: `start-worker-web.sh` 래퍼로 `config.yaml`에서 런타임 로드
+
+**보안 강화**
+- `isSafeQuestion()`: 입력 질문에 DELETE/DROP 등 차단 (입력 단계 차단)
+- `isSelectOnly()`: 생성된 SQL SELECT 전용 검증 (이중 방어)
+
+**rag-system 잔재 제거**
+- `~/projects/rag-system/` 제거 (백업: `~/backups/rag-system-backup-20260309.tar.gz`)
+- `scripts/migrate-rag.js` 삭제 (마이그레이션 완료)
+- `network.js`, `migrate` 스크립트 3종, `llm-cache.js`, `rag-server.js` ChromaDB 주석 정리
+
+**미완 — RAG 임베딩**
+- OpenAI 쿼터 초과 → RAG store/search 실패 (try-catch로 조용히 무시)
+- **맥미니 도착 후** Ollama `nomic-embed-text`로 전환 예정
+
 ## 2026-03-08 (계속)
 
 ### RAG 자동 수집 파이프라인 + 팀장 RAG 연동 완성 (커밋: `7630fc8`)
