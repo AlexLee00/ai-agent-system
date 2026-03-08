@@ -4,8 +4,9 @@
  * 테이블: trade_journal, trade_rationale, trade_review, performance_daily, luna_monitor
  * 기존 trades/signals/positions 테이블은 그대로 유지 (이 파일은 보완용)
  *
- * 주의: DuckDB ESM 모듈. 기존 shared/db.js의 query/run 재사용.
+ * 주의: shared/db.js의 query/run 재사용 (PostgreSQL investment 스키마).
  *       AUTO INCREMENT 없음 → gen_random_uuid() 또는 시퀀스 ID 사용.
+ *       ? 플레이스홀더 → pg-pool이 $1/$2... 자동 변환.
  */
 
 import { query, run } from './db.js';
