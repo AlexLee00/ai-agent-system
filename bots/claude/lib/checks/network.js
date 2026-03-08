@@ -3,7 +3,7 @@
 /**
  * checks/network.js — 네트워크 연결성 체크
  * - Binance, Upbit, Telegram, Naver, Anthropic API ping
- * - ChromaDB RAG 서버 로컬 포트 8000 체크
+ * - pgvector RAG 서버 로컬 포트 8100 체크 (rag-server.js, launchd: ai.rag.server)
  */
 
 const https = require('https');
@@ -30,18 +30,16 @@ function ping(endpoint, timeoutMs = 5000) {
   });
 }
 
-// RAG API 서버 체크 (포트 8100, FastAPI 래퍼)
-// ChromaDB PersistentClient → 직접 포트 없음 → FastAPI 래퍼만 체크
+// RAG API 서버 체크 (포트 8100, pgvector rag-server.js)
 async function checkRagServer(items) {
   const ep = { host: '127.0.0.1', port: 8100, path: '/health', https: false };
   const r  = await ping(ep, 3000);
   if (!r.ok) {
-    // RAG 서버는 선택적 서비스 — 미실행 시 warn 아닌 info로 처리
-    items.push({ label: 'RAG API 서버 (포트 8100)', status: 'ok', detail: '미실행 (선택적 서비스 — rag-system/main.py)' });
+    items.push({ label: 'RAG 서버 (포트 8100)', status: 'warn', detail: '미실행 — launchctl start ai.rag.server' });
   } else if (r.code === 200) {
-    items.push({ label: 'RAG API 서버 (포트 8100)', status: 'ok', detail: `응답 ${r.ms}ms` });
+    items.push({ label: 'RAG 서버 (포트 8100)', status: 'ok', detail: `응답 ${r.ms}ms` });
   } else {
-    items.push({ label: 'RAG API 서버 (포트 8100)', status: 'warn', detail: `HTTP ${r.code} — 서버 오류 확인 필요` });
+    items.push({ label: 'RAG 서버 (포트 8100)', status: 'warn', detail: `HTTP ${r.code} — 서버 오류 확인 필요` });
   }
 }
 

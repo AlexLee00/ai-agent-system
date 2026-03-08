@@ -66,19 +66,7 @@ rsync -avz --progress \
   "$TARGET:~/projects/ai-agent-system/"
 ok "ai-agent-system 전송 완료"
 
-# rag-system (.venv 제외)
-if [[ -d ~/projects/rag-system ]]; then
-  log "rag-system 전송 (.venv 제외) ..."
-  rsync -avz --progress \
-    --exclude='.venv' \
-    --exclude='*.pyc' \
-    --exclude='__pycache__' \
-    ~/projects/rag-system/ \
-    "$TARGET:~/projects/rag-system/"
-  ok "rag-system 전송 완료"
-else
-  warn "rag-system 없음 — 스킵"
-fi
+# rag-system 제거됨 — pgvector(rag-server.js)로 전환 완료 (2026-03-09)
 
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

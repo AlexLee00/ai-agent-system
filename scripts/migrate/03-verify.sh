@@ -134,11 +134,11 @@ else
   fail "ska venv 없음: $SKA_VENV"
 fi
 
-RAG_VENV="$HOME/projects/rag-system/.venv"
-if [[ -d "$RAG_VENV" ]]; then
-  pass "rag-system venv 존재"
+# rag-system(ChromaDB) 제거됨 — pgvector RAG 서버 확인
+if curl -sf http://127.0.0.1:8100/health > /dev/null 2>&1; then
+  pass "RAG 서버 (pgvector, 포트 8100) 실행 중"
 else
-  warn "rag-system venv 없음 (RAG 사용 시 필요)"
+  warn "RAG 서버 미실행 — launchctl start ai.rag.server"
 fi
 
 # ── ETL 빠른 테스트 ────────────────────────────────────────

@@ -147,23 +147,11 @@ log "CmdStan 설치 (Prophet 의존성) ..."
   || warn "CmdStan 설치 실패 — Prophet 예측 기능 비활성화될 수 있음"
 
 # ═══════════════════════════════════════════════════════════
-section "7단계: rag-system Python venv 설치"
+section "7단계: RAG 서버 확인 (pgvector)"
 # ═══════════════════════════════════════════════════════════
-
-RAG_DIR="$HOME/projects/rag-system"
-if [[ -d "$RAG_DIR" ]]; then
-  log "rag-system venv 생성 ..."
-  python3.12 -m venv "$RAG_DIR/.venv"
-  if [[ -f "$RAG_DIR/requirements.txt" ]]; then
-    "$RAG_DIR/.venv/bin/pip" install --upgrade pip -q
-    "$RAG_DIR/.venv/bin/pip" install -r "$RAG_DIR/requirements.txt"
-    ok "rag-system 패키지 설치 완료"
-  else
-    warn "rag-system/requirements.txt 없음 — 수동 설치 필요"
-  fi
-else
-  warn "rag-system 없음 — 스킵"
-fi
+# Python rag-system(ChromaDB) 제거됨 — pgvector(rag-server.js)로 전환 완료 (2026-03-09)
+# RAG 서버: packages/core/lib/rag-server.js (launchd: ai.rag.server, 포트 8100)
+ok "RAG: pgvector 전환 완료 — Python venv 설치 불필요"
 
 # ═══════════════════════════════════════════════════════════
 section "8단계: launchd plist 수정 및 등록"
