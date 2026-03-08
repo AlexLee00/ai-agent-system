@@ -50,6 +50,16 @@
 - reporter.js ROUND 타입 버그 수정
 <!-- session-close:2026-03-08:클로드팀-완전체-개선-루나팀-자본관리 -->
 
+### ✨ 워커팀 Phase 1 기반 구축 완료
+- worker 스키마+4개 테이블
+- bcrypt+JWT 인증
+- 업체 격리 미들웨어
+- REST API 서버(포트4000)
+- 워커팀장 텔레그램 봇
+- Web 로그인/대시보드
+- launchd ai.worker.web 등록
+<!-- session-close:2026-03-08:워커팀-phase-1-기반-구축-완료 -->
+
 ## 2026-03-08
 
 ### 제이 자연어 능력 향상 v2.0 (커밋: `4c9efa1`)
