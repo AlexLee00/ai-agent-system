@@ -56,7 +56,7 @@ export default function DashboardPage() {
       <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <Card
           title="오늘 매출"
           value={`₩${(summary?.today_sales ?? 0).toLocaleString()}`}
@@ -84,6 +84,20 @@ export default function DashboardPage() {
           icon="✅"
           color="red"
           onClick={() => router.push('/approvals')}
+        />
+        <Card
+          title="진행 중 프로젝트"
+          value={`${summary?.active_projects ?? 0}건`}
+          icon="📋"
+          color="blue"
+          onClick={() => router.push('/projects')}
+        />
+        <Card
+          title="오늘 일정"
+          value={`${summary?.today_schedules ?? 0}건`}
+          icon="📅"
+          color="green"
+          onClick={() => router.push('/schedules')}
         />
       </div>
 
