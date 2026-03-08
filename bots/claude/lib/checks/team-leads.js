@@ -12,6 +12,23 @@
  */
 
 const { execSync } = require('child_process');
+const fs           = require('fs');
+const path         = require('path');
+
+// crashed 알람 쿨다운: 동일 서비스 1시간 이내 중복 발송 방지
+const CRASH_COOLDOWN_MS = 60 * 60 * 1000;
+const STATE_FILE = path.join(process.env.HOME, '.openclaw', 'workspace', 'team-leads-state.json');
+
+function loadState() {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); } catch { return {}; }
+}
+function saveState(state) {
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch { /* ignore */ }
+}
+function canAlert(state, key) {
+  const last = state[key];
+  return !last || Date.now() - new Date(last).getTime() > CRASH_COOLDOWN_MS;
+}
 
 // ── 핵심 launchd 서비스 ────────────────────────────────────────────
 // bots.js가 전체 서비스를 점검하므로, 여기서는 가장 중요한 것만 집중 점검
@@ -41,10 +58,13 @@ function getLaunchdStatus(serviceId) {
 
 async function run() {
   const items = [];
+  const state = loadState();
+  let stateChanged = false;
 
   // launchd 핵심 서비스 점검
   for (const svc of CRITICAL_SERVICES) {
     const info = getLaunchdStatus(svc.id);
+    const crashKey = `crash:${svc.key}`;
 
     if (info === null) {
       items.push({
@@ -58,23 +78,38 @@ async function run() {
 
     const crashed = info.pid === '-' && info.exitCode !== 0;
     if (crashed) {
+      // 쿨다운: 1시간 이내 동일 서비스 중복 알람 방지
+      const suppress = !canAlert(state, crashKey);
+      if (!suppress) {
+        state[crashKey] = new Date().toISOString();
+        stateChanged = true;
+      }
       items.push({
-        label:  svc.label,
-        status: 'error',
-        detail: `비정상 종료 (exitCode: ${info.exitCode})`,
-        _key:   svc.key,
+        label:    svc.label,
+        status:   'error',
+        detail:   `비정상 종료 (exitCode: ${info.exitCode})`,
+        _key:     svc.key,
+        _suppress: suppress,
       });
     } else {
+      // 회복 시 쿨다운 키 초기화
+      if (state[crashKey]) {
+        delete state[crashKey];
+        stateChanged = true;
+      }
       items.push({
         label:  svc.label,
         status: 'ok',
-        detail: `실행 중 (PID: ${info.pid})`,
+        detail: info.pid === '-' ? `대기 중 (exitCode: ${info.exitCode})` : `실행 중 (PID: ${info.pid})`,
         _key:   svc.key,
       });
     }
   }
 
-  const hasError = items.some(i => i.status === 'error');
+  if (stateChanged) saveState(state);
+
+  // suppress된 항목은 알람 레벨 산정에서 제외 (쿨다운 중복 방지)
+  const hasError = items.some(i => i.status === 'error' && !i._suppress);
   const hasWarn  = items.some(i => i.status === 'warn');
 
   return {

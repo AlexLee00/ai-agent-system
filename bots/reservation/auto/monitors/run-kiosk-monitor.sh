@@ -2,12 +2,15 @@
 # pickko-kiosk-monitor.js 자동 실행 래퍼 (launchd)
 # - 중복 실행 방지 (lock file)
 # - MODE=ops로 pickko-kiosk-monitor.js 실행
-# - 로그 유지 (/tmp/pickko-kiosk-monitor.log, 최신 500줄)
+# - 로그 유지 (날짜별 아카이브, 7일 보존)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-kiosk-monitor.lock"
-LOG_FILE="/tmp/pickko-kiosk-monitor.log"
+LOG_DIR="/tmp"
+LOG_DATE=$(date '+%Y-%m-%d')
+LOG_FILE="$LOG_DIR/pickko-kiosk-monitor-$LOG_DATE.log"
+LOG_SYMLINK="$LOG_DIR/pickko-kiosk-monitor.log"
 
 # 중복 실행 방지
 if [ -f "$LOCK_FILE" ]; then
@@ -22,6 +25,9 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
+# 오늘 날짜 로그 파일로 심볼릭 링크 갱신
+ln -sf "$LOG_FILE" "$LOG_SYMLINK" 2>/dev/null
+
 echo "[$(date)] ▶ pickko-kiosk-monitor 시작" >> "$LOG_FILE"
 
 MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-kiosk-monitor.js" >> "$LOG_FILE" 2>&1
@@ -29,9 +35,7 @@ EXIT_CODE=$?
 
 echo "[$(date)] ⏹ pickko-kiosk-monitor 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"
 
-# 최신 500줄만 유지
-if [ -f "$LOG_FILE" ]; then
-  tail -500 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
-fi
+# 7일 이상 된 로그 삭제
+find "$LOG_DIR" -name "pickko-kiosk-monitor-*.log" -mtime +7 -delete 2>/dev/null
 
 exit $EXIT_CODE
