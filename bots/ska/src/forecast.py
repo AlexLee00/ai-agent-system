@@ -1,26 +1,28 @@
 """
-ska-006/007/010/011/013: 포캐스트(FORECAST) — Prophet 예측 엔진 + 월간 모델 진단
+ska-006/007/010/011/013/014: 포캐스트(FORECAST) — Prophet + SARIMA + SMA/EMA 앙상블 예측 엔진
+
+ska-014 추가 (Level 4):
+  - SARIMA 앙상블 (statsmodels SARIMAX, 단기 가중)
+  - SMA/EMA 빠른 예측 (14일 미만 데이터 또는 보조)
+  - 예약 건수 선행 지표 (reservation 스키마 연동)
+  - 자동 파라미터 튜닝 (--mode=review, MAPE > 15%)
+  - forecast_results 테이블 저장 (n8n SKA-WF-03 / 레베카 연동)
+  - 🔮 앙상블 예측 알림 형식 (모델별 상세 출력)
 
 모드:
   --mode=daily   : 익일 1일 예측 (기본)
   --mode=weekly  : 다음 7일 예측 (D+1 ~ D+7)
   --mode=monthly : 다음 30일 예측 (D+1 ~ D+30)
-  --mode=review  : 월간 모델 진단 + LLM 분석 (ska-011)
+  --mode=review  : 월간 모델 진단 + LLM 분석 + 자동 파라미터 튜닝
   --date=YYYY-MM-DD : 기준 날짜 (기본: 오늘)
   --json         : JSON 출력 (텔레그램용)
 
-모델 (prophet-v3):
+모델 (prophet-v3 + ensemble):
   - Prophet (weekly_seasonality=True, yearly=False)
   - add_country_holidays(KR)
-  - regressor: exam_score, rain_prob, vacation_flag, temperature (ska-010 추가)
-
-ska-007 변경: exam_score = environment_factors.exam_score
-             + SUM(exam_events.score_weight) — 큐넷·수능·모의고사 반영
-ska-010 변경: temperature regressor 추가 (이미 eve.py가 수집 중, 기본값=15.0°C)
-
-출력:
-  텔레그램 포맷 텍스트 (stdout)
-  --json: JSON
+  - regressor: exam_score, rain_prob, vacation_flag, temperature (ska-010)
+  - SARIMA(1,1,1)(1,1,1,7) — 단기 보정 (statsmodels, 선택적)
+  - SMA/EMA — 빠른 예측 / 보조
 
 실행: bots/ska/venv/bin/python bots/ska/src/forecast.py [--mode=daily]
 launchd: 매일 18:00 (ai.ska.forecast)
@@ -37,10 +39,21 @@ warnings.filterwarnings('ignore')  # Prophet Stan 경고 억제
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
-MODEL_VERSION = 'prophet-v3'
-TEMP_DEFAULT  = 15.0  # 기온 기본값 (°C) — 수집 누락 시
-MIN_TRAIN_DAYS = 14  # 최소 학습 데이터 일수
-WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
+MODEL_VERSION  = 'prophet-v3'
+TEMP_DEFAULT   = 15.0   # 기온 기본값 (°C) — 수집 누락 시
+MIN_TRAIN_DAYS = 14     # 최소 학습 데이터 일수
+WEEKDAY_KO     = ['월', '화', '수', '목', '금', '토', '일']
+
+# 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
+_MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
+
+# SARIMA 조건부 임포트
+try:
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    _SARIMA_AVAILABLE = True
+except ImportError:
+    _SARIMA_AVAILABLE = False
+    print('[FORECAST] ⚠️ statsmodels 미설치 — SARIMA 비활성화 (pip install statsmodels)')
 
 
 # ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
@@ -60,6 +73,24 @@ def _one(con, sql, params=()):
     row = cur.fetchone()
     cur.close()
     return row
+
+
+# ─── 모델 파라미터 관리 ────────────────────────────────────────────────────────
+
+def _load_model_params():
+    """저장된 자동 튜닝 파라미터 로드 (없으면 기본값)"""
+    try:
+        with open(_MODEL_PARAMS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_model_params(params):
+    """자동 튜닝 파라미터 저장"""
+    os.makedirs(os.path.dirname(_MODEL_PARAMS_FILE), exist_ok=True)
+    with open(_MODEL_PARAMS_FILE, 'w') as f:
+        json.dump(params, f, indent=2)
+    print(f'[FORECAST] 모델 파라미터 저장 → {_MODEL_PARAMS_FILE}')
 
 
 # ─── 인자 파싱 ─────────────────────────────────────────────────────────────────
@@ -112,7 +143,7 @@ def load_history(con):
 
 def load_weekday_avg(con):
     """요일별 평균 매출 → base_forecast 기준값
-    EXTRACT(DOW FROM date): 0=일..6=토 (DuckDB dayofweek와 동일)
+    EXTRACT(DOW FROM date): 0=일..6=토
     """
     rows = _qry(con, """
         SELECT EXTRACT(DOW FROM date)::integer AS dow, AVG(actual_revenue) AS avg_rev
@@ -125,7 +156,6 @@ def load_weekday_avg(con):
 def load_future_env(con, start_date, end_date):
     """예측 기간의 환경 요인 로드
     ska-007: environment_factors + exam_events UNION — 한쪽만 있는 날도 커버
-    combined_exam = env.exam_score + SUM(exam_events.score_weight)
     """
     rows = _qry(con, """
         SELECT
@@ -160,22 +190,26 @@ def load_future_env(con, start_date, end_date):
 
 # ─── Prophet 모델 ─────────────────────────────────────────────────────────────
 
-def build_model():
+def build_model(params=None):
+    """Prophet 모델 생성 (자동 튜닝 파라미터 적용 가능)"""
     from prophet import Prophet
+    p = params if params is not None else _load_model_params()
     model = Prophet(
         weekly_seasonality=True,
-        yearly_seasonality=False,   # 1년 미만 데이터
+        yearly_seasonality=False,
         daily_seasonality=False,
         seasonality_mode='additive',
-        interval_width=0.80,        # 80% 신뢰구간
+        interval_width=0.80,
         uncertainty_samples=500,
+        changepoint_prior_scale=p.get('changepoint_prior_scale', 0.05),
+        seasonality_prior_scale=p.get('seasonality_prior_scale', 10.0),
     )
     model.add_country_holidays(country_name='KR')
     model.add_regressor('exam_score')
     model.add_regressor('rain_prob')
     model.add_regressor('vacation_flag')
-    model.add_regressor('temperature')    # ska-010: 기온 영향 반영
-    model.add_regressor('bridge_holiday') # ska-012: 징검다리 연휴 (수요 급감)
+    model.add_regressor('temperature')    # ska-010: 기온 영향
+    model.add_regressor('bridge_holiday') # ska-012: 징검다리 연휴
     return model
 
 
@@ -183,30 +217,211 @@ def fill_future_regressors(future_df, env_map):
     """미래 DataFrame에 환경 요인 채우기 (없는 날 = 0)"""
     future_df = future_df.copy()
     dates = future_df['ds'].dt.strftime('%Y-%m-%d')
-    future_df['exam_score']   = dates.map(lambda d: env_map.get(d, {}).get('exam_score',    0))
-    future_df['rain_prob']    = dates.map(lambda d: env_map.get(d, {}).get('rain_prob',     0.0))
-    future_df['vacation_flag']= dates.map(lambda d: env_map.get(d, {}).get('vacation_flag', 0))
+    future_df['exam_score']    = dates.map(lambda d: env_map.get(d, {}).get('exam_score',    0))
+    future_df['rain_prob']     = dates.map(lambda d: env_map.get(d, {}).get('rain_prob',     0.0))
+    future_df['vacation_flag'] = dates.map(lambda d: env_map.get(d, {}).get('vacation_flag', 0))
     future_df['temperature']   = dates.map(lambda d: env_map.get(d, {}).get('temperature',   TEMP_DEFAULT))
     future_df['bridge_holiday']= dates.map(lambda d: env_map.get(d, {}).get('bridge_holiday', 0))
     return future_df
 
 
+# ─── SARIMA 앙상블 (ska-014) ──────────────────────────────────────────────────
+
+def forecast_sarima(df, periods=7):
+    """SARIMA(1,1,1)(1,1,1,7) 단기 예측 — 주간 계절성 반영
+    statsmodels 미설치 시 None 반환 (Prophet 폴백)
+    """
+    if not _SARIMA_AVAILABLE:
+        return None
+    try:
+        model = SARIMAX(
+            df['y'],
+            order=(1, 1, 1),
+            seasonal_order=(1, 1, 1, 7),
+            enforce_stationarity=False,
+            enforce_invertibility=False,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            result = model.fit(disp=False, maxiter=200)
+        forecast = result.forecast(steps=periods)
+        return [max(0.0, float(v)) for v in forecast.values]
+    except Exception as e:
+        print(f'[FORECAST] SARIMA 실패: {e}')
+        return None
+
+
+def quick_forecast_sma(df, target_date):
+    """SMA/EMA 기반 빠른 예측
+    요일 평균 50% + EMA7 30% + SMA7 20%
+    14일 미만 데이터 또는 SARIMA 없을 때 보조로 활용
+    """
+    dow = target_date.weekday()  # 0=월..6=일
+
+    # 같은 요일 최근 4주 평균
+    same_dow = df[df['ds'].dt.weekday == dow].tail(4)
+    dow_avg = float(same_dow['y'].mean()) if len(same_dow) > 0 else 0.0
+
+    tail7 = df.tail(7)
+    sma_7 = float(tail7['y'].mean()) if len(tail7) > 0 else 0.0
+    ema_7 = float(tail7['y'].ewm(span=7).mean().iloc[-1]) if len(tail7) > 0 else 0.0
+
+    quick_pred = dow_avg * 0.5 + ema_7 * 0.3 + sma_7 * 0.2
+
+    return {
+        'prediction': round(quick_pred),
+        'dow_avg':    round(dow_avg),
+        'sma_7':      round(sma_7),
+        'ema_7':      round(ema_7),
+        'method':     'quick_sma_ema',
+    }
+
+
+def _ensemble_val(prophet_val, sarima_val, quick_val, day_idx):
+    """Prophet + SARIMA + SMA/EMA 앙상블
+    단기(0~2일): SARIMA 가중  / 장기(3일+): Prophet 가중
+    SARIMA 없으면: Prophet 70% + quick 30%
+    """
+    if sarima_val is None:
+        return round(prophet_val * 0.7 + quick_val * 0.3)
+    if day_idx < 3:  # 단기
+        p_w, s_w, q_w = 0.30, 0.50, 0.20
+    else:            # 장기
+        p_w, s_w, q_w = 0.55, 0.25, 0.20
+    return round(prophet_val * p_w + sarima_val * s_w + quick_val * q_w)
+
+
+# ─── 예약 선행 지표 (ska-014) ─────────────────────────────────────────────────
+
+def get_reservation_count(con, target_date_str):
+    """특정 날짜의 확정 예약 건수 조회 (reservation 스키마)
+    reservation 스키마 연결이 필요하므로 별도 con 필요 시 내부 처리
+    """
+    try:
+        res_con = psycopg2.connect("dbname=jay options='-c search_path=reservation,public'")
+        try:
+            row = _one(res_con, """
+                SELECT COUNT(*) AS cnt
+                FROM reservations
+                WHERE date = %s
+                  AND status IN ('confirmed', 'pending', 'completed')
+            """, (target_date_str,))
+            return int(row[0]) if row and row[0] else 0
+        finally:
+            res_con.close()
+    except Exception:
+        return 0  # 조회 실패 시 무시
+
+
+# ─── forecast_results 테이블 (n8n 연동) ──────────────────────────────────────
+
+def ensure_forecast_results_table(con):
+    """ska.forecast_results 테이블이 없으면 생성"""
+    cur = con.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ska.forecast_results (
+            id              SERIAL PRIMARY KEY,
+            forecast_date   DATE NOT NULL,
+            model_version   TEXT NOT NULL DEFAULT 'prophet-v3',
+            predictions     JSONB NOT NULL,
+            mape            REAL,
+            params          JSONB DEFAULT '{}',
+            created_at      TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (forecast_date, model_version)
+        )
+    """)
+    con.commit()
+    cur.close()
+
+
+def save_forecast_result(con, forecast_date, result, mape=None):
+    """예측 결과를 ska.forecast_results에 저장 → n8n/레베카에서 조회 가능"""
+    predictions = {
+        'yhat':         result['yhat'],
+        'yhat_prophet': result.get('yhat_prophet', result['yhat']),
+        'yhat_sarima':  result.get('yhat_sarima'),
+        'yhat_quick':   result.get('yhat_quick'),
+        'yhat_lower':   result['yhat_lower'],
+        'yhat_upper':   result['yhat_upper'],
+        'reservation_count': result.get('reservation_count', 0),
+    }
+    params = _load_model_params()
+    preds_json  = json.dumps(predictions)
+    params_json = json.dumps(params)
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO ska.forecast_results
+          (forecast_date, model_version, predictions, mape, params)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (forecast_date, model_version)
+        DO UPDATE SET predictions=%s, mape=%s, params=%s, created_at=NOW()
+    """, (
+        str(forecast_date), MODEL_VERSION, preds_json, mape, params_json,
+        preds_json, mape, params_json,
+    ))
+    con.commit()
+    cur.close()
+
+
+def get_recent_mape(con, days=7):
+    """최근 N일 평균 MAPE 조회 (forecast_accuracy 테이블)"""
+    try:
+        row = _one(con, """
+            SELECT AVG(mape) FROM forecast_accuracy
+            WHERE target_date >= current_date - %s
+              AND mape IS NOT NULL
+        """, (days,))
+        return round(float(row[0]), 1) if row and row[0] else None
+    except Exception:
+        return None
+
+
 # ─── 예측 실행 ────────────────────────────────────────────────────────────────
 
 def run_forecast(con, base_date, periods):
+    """Prophet + SARIMA + SMA/EMA 앙상블 예측
+    returns: list of result dicts (yhat = 앙상블 최종값)
+    """
     weekday_avg = load_weekday_avg(con)
-
-    """
-    Prophet 학습 → N일 예측
-    returns: list of (target_date, yhat, base_forecast, env_score, yhat_lower, yhat_upper)
-    """
     hist_df = load_history(con)
+
     if len(hist_df) < MIN_TRAIN_DAYS:
-        raise ValueError(f'학습 데이터 부족: {len(hist_df)}일 (최소 {MIN_TRAIN_DAYS}일 필요)')
+        # 데이터 부족: quick_forecast만 사용
+        print(f'[FORECAST] ⚠️ 데이터 부족({len(hist_df)}일) — SMA/EMA 빠른 예측 사용')
+        results = []
+        for i in range(periods):
+            target_d = base_date + timedelta(days=i + 1)
+            q = quick_forecast_sma(hist_df, target_d)
+            duck_dow = (target_d.weekday() + 1) % 7
+            base = weekday_avg.get(duck_dow, q['prediction'])
+            results.append({
+                'date':             target_d,
+                'yhat':             q['prediction'],
+                'yhat_prophet':     None,
+                'yhat_sarima':      None,
+                'yhat_quick':       q['prediction'],
+                'base_forecast':    max(0, base),
+                'env_score':        0,
+                'yhat_lower':       round(q['prediction'] * 0.8),
+                'yhat_upper':       round(q['prediction'] * 1.2),
+                'is_fallback':      True,
+                'reservation_count': get_reservation_count(con, str(target_d)),
+            })
+        return results
 
     print(f'[FORECAST] 학습 데이터: {len(hist_df)}일 ({hist_df["ds"].min().date()}~{hist_df["ds"].max().date()})')
 
-    # 모델 학습 (Prophet stderr 억제)
+    # ── SARIMA 예측 (periods <= 7) ──
+    sarima_preds = None
+    if periods <= 7:
+        print('[FORECAST] SARIMA 예측 실행 중...')
+        sarima_preds = forecast_sarima(hist_df, periods)
+        if sarima_preds:
+            print(f'[FORECAST] SARIMA 완료: {[round(v) for v in sarima_preds[:3]]}...')
+        else:
+            print('[FORECAST] SARIMA 비활성 — Prophet + SMA/EMA 앙상블')
+
+    # ── Prophet 학습 ──
     model = build_model()
     with open(os.devnull, 'w') as devnull:
         old_stderr = sys.stderr
@@ -215,71 +430,84 @@ def run_forecast(con, base_date, periods):
             model.fit(hist_df)
         finally:
             sys.stderr = old_stderr
+    print('[FORECAST] Prophet 학습 완료')
 
-    print(f'[FORECAST] 모델 학습 완료')
-
-    # 미래 DataFrame — 훈련 마지막 날짜 기준으로 필요한 만큼 확장
+    # ── 미래 DataFrame 구성 ──
     predict_start = base_date + timedelta(days=1)
     predict_end   = base_date + timedelta(days=periods)
     hist_last = hist_df['ds'].max().date()
     needed = max(periods, (predict_end - hist_last).days)
     future = model.make_future_dataframe(periods=needed, freq='D')
     env_map = load_future_env(con, predict_start, predict_end)
-    # 학습 기간 환경 요인도 포함 (future에 과거 포함되므로)
     hist_env_map = {}
     for _, row in hist_df.iterrows():
         d = row['ds'].strftime('%Y-%m-%d')
         hist_env_map[d] = {
-            'exam_score':    row['exam_score'],
-            'rain_prob':     row['rain_prob'],
-            'vacation_flag': row['vacation_flag'],
-            'temperature':   row['temperature'],
+            'exam_score':     row['exam_score'],
+            'rain_prob':      row['rain_prob'],
+            'vacation_flag':  row['vacation_flag'],
+            'temperature':    row['temperature'],
             'bridge_holiday': row['bridge_holiday'],
         }
-    combined_env = {**hist_env_map, **env_map}
+    future = fill_future_regressors(future, {**hist_env_map, **env_map})
 
-    future = fill_future_regressors(future, combined_env)
-
-    # 예측
+    # ── Prophet 예측 ──
     forecast = model.predict(future)
 
-    # 예측 대상 날짜만 필터 (D+1 ~ D+periods)
     start_ts = pd.Timestamp(predict_start)
     end_ts   = pd.Timestamp(predict_end)
     filt = forecast[(forecast['ds'] >= start_ts) & (forecast['ds'] <= end_ts)].copy()
 
     results = []
-    for _, row in filt.iterrows():
+    for i, (_, row) in enumerate(filt.iterrows()):
         target_d = row['ds'].date()
         d_str    = str(target_d)
         env_info = env_map.get(d_str, {})
-        # base_forecast: 해당 요일의 히스토리 평균 (regressor 영향 제외한 기준선)
-        # PostgreSQL EXTRACT(DOW): 0=일..6=토 (DuckDB dayofweek와 동일)
-        # target_d.weekday(): 0=월..6=일 → DOW: (weekday+1)%7
         duck_dow = (target_d.weekday() + 1) % 7
         base = weekday_avg.get(duck_dow, round(row['yhat']))
-        yhat_raw   = round(row['yhat'])
-        yhat_upper = max(0, round(row['yhat_upper']))
-        yhat_lower = max(0, round(row['yhat_lower']))
-        # 공휴일/이상값 과보정: Prophet이 음수를 예측하는 경우 CI 상한 기반 보수적 추정
-        # (삼일절·대체공휴일 등 holiday coefficient 과대 반영 방지)
-        if yhat_raw <= 0 and yhat_upper > 0:
-            yhat_final  = round(yhat_upper * 0.5)
+
+        yhat_prophet = round(row['yhat'])
+        yhat_upper   = max(0, round(row['yhat_upper']))
+        yhat_lower   = max(0, round(row['yhat_lower']))
+
+        if yhat_prophet <= 0 and yhat_upper > 0:
+            yhat_prophet_final = round(yhat_upper * 0.5)
             is_fallback = True
         else:
-            yhat_final  = max(0, yhat_raw)
+            yhat_prophet_final = max(0, yhat_prophet)
             is_fallback = False
+
+        # ── SMA/EMA 보조 예측 ──
+        quick_info = quick_forecast_sma(hist_df, target_d)
+        yhat_quick = quick_info['prediction']
+
+        # ── SARIMA 값 ──
+        yhat_sarima = None
+        if sarima_preds is not None and i < len(sarima_preds):
+            yhat_sarima = round(sarima_preds[i])
+
+        # ── 앙상블 최종값 ──
+        yhat_final = _ensemble_val(yhat_prophet_final, yhat_sarima, yhat_quick, i)
+
+        # ── 예약 선행 지표 ──
+        res_cnt = get_reservation_count(con, d_str)
+
         results.append({
-            'date':           target_d,
-            'yhat':           yhat_final,
-            'base_forecast':  max(0, base),
-            'env_score':      env_info.get('exam_score', 0),
-            'yhat_lower':     yhat_lower,
-            'yhat_upper':     yhat_upper,
-            'is_fallback':    is_fallback,
+            'date':              target_d,
+            'yhat':              yhat_final,
+            'yhat_prophet':      yhat_prophet_final,
+            'yhat_sarima':       yhat_sarima,
+            'yhat_quick':        yhat_quick,
+            'base_forecast':     max(0, base),
+            'env_score':         env_info.get('exam_score', 0),
+            'env_info':          env_info,
+            'yhat_lower':        yhat_lower,
+            'yhat_upper':        yhat_upper,
+            'is_fallback':       is_fallback,
+            'reservation_count': res_cnt,
         })
 
-    print(f'[FORECAST] 예측 완료: {len(results)}일')
+    print(f'[FORECAST] 앙상블 예측 완료: {len(results)}일')
     return results
 
 
@@ -290,12 +518,10 @@ def save_forecast(con, results):
     target_dates = [str(r['date']) for r in results]
     cur = con.cursor()
 
-    # 같은 날짜 모든 버전 기존 예측 삭제 (구버전 누적 방지)
     for d in target_dates:
         cur.execute("DELETE FROM forecast WHERE target_date = %s", (d,))
 
     for r in results:
-        # 폴백 사용 시 확신도 고정 0.15 (CI 기반 보수적 추정 — 신뢰도 낮음)
         confidence = 0.15 if r.get('is_fallback') else _calc_confidence(r)
         cur.execute("""
             INSERT INTO forecast
@@ -319,45 +545,84 @@ def save_forecast(con, results):
 
 
 def _calc_confidence(r):
-    """신뢰구간 폭 기반 확신도 (0.0~1.0, 높을수록 좁은 구간)"""
+    """신뢰구간 폭 기반 확신도 (0.0~1.0)"""
     if r['yhat'] <= 0:
         return 0.0
     spread = r['yhat_upper'] - r['yhat_lower']
     ratio  = spread / r['yhat']
-    # ratio 0 → 1.0, ratio 2 → 0.0
     return max(0.0, round(1.0 - ratio / 2, 3))
 
 
 # ─── 텔레그램 포맷 ────────────────────────────────────────────────────────────
 
-def format_daily(result, base_date):
-    """익일 단일 예측 포맷"""
+def format_daily(result, base_date, recent_mape=None):
+    """익일 앙상블 예측 포맷 (🔮 형식)"""
     r    = result[0]
     d    = r['date']
     wd   = WEEKDAY_KO[d.weekday()]
     conf = r.get('confidence', _calc_confidence(r))
 
+    # 앙상블 유무
+    has_sarima = r.get('yhat_sarima') is not None
+    has_prophet = r.get('yhat_prophet') is not None
+
     lines = [
-        f'📊 포캐스트 익일 예측 리포트',
-        f'{"─" * 15}',
-        f'📅 {d.month}/{d.day}({wd}) 예상 매출',
-        '',
-        f'💰 예측: {r["yhat"]:,}원',
-        f'   범위: {r["yhat_lower"]:,}원 ~ {r["yhat_upper"]:,}원',
-        f'   확신: {"█" * round(conf * 10)}{"░" * (10 - round(conf * 10))}  ({conf * 100:.0f}%)',
+        '🔮 내일 매출 예측',
+        '═' * 19,
+        f'📅 {d.month}월 {d.day}일 ({wd}) 예상',
         '',
     ]
 
-    env_parts = []
-    if r['env_score'] > 0:
-        env_parts.append(f'📚 시험 기간 (점수 +{r["env_score"]})')
-    elif r['env_score'] < 0:
-        env_parts.append(f'📚 방학 중 (점수 {r["env_score"]})')
-    if env_parts:
-        lines.append('🌍 환경 요인:')
-        for p in env_parts:
-            lines.append(f'   {p}')
+    if has_prophet or has_sarima:
+        lines.append('■ 예측 모델별')
+        if has_prophet:
+            mape_str = f' (MAPE {recent_mape}%)' if recent_mape else ''
+            lines.append(f'  Prophet:  {r["yhat_prophet"]:,}원{mape_str}')
+        if has_sarima:
+            lines.append(f'  SARIMA:   {r["yhat_sarima"]:,}원')
+        lines.append(f'  SMA/EMA:  {r["yhat_quick"]:,}원')
+        lines.append('─' * 21)
+        lines.append(f'  앙상블:   {r["yhat"]:,}원 ★')
         lines.append('')
+    else:
+        # 데이터 부족 — quick만
+        lines.append(f'  SMA/EMA:  {r["yhat"]:,}원 (데이터 부족, 빠른 예측)')
+        lines.append('')
+
+    # 보정 요인
+    env = r.get('env_info', {})
+    env_score = r.get('env_score', 0)
+    res_cnt   = r.get('reservation_count', 0)
+
+    lines.append('■ 보정 요인')
+    lines.append(f'  요일({wd}): 주간 패턴 반영 📅')
+
+    temp = env.get('temperature', TEMP_DEFAULT)
+    rain = env.get('rain_prob', 0.0)
+    if rain > 0.3:
+        lines.append(f'  날씨(강수 {int(rain*100)}%  {temp:.0f}°C): 감소 요인 🌧️')
+    else:
+        lines.append(f'  날씨(맑음 {temp:.0f}°C): 보정 없음 ☀️')
+
+    if res_cnt > 0:
+        lines.append(f'  예약 현황: {res_cnt}건 확정 📋')
+    else:
+        lines.append('  예약 현황: 조회 없음')
+
+    if env_score > 0:
+        lines.append(f'  시험 기간: +{env_score}점 📚')
+    elif env.get('vacation_flag'):
+        lines.append('  방학 중 📚')
+    else:
+        lines.append('  이벤트: 없음')
+
+    lines.append('')
+
+    # 신뢰 구간
+    lines.append('■ 신뢰 구간')
+    lines.append(f'  80%: {r["yhat_lower"]:,} ~ {r["yhat_upper"]:,}원')
+    lines.append(f'  확신도: {"█" * round(conf*10)}{"░" * (10-round(conf*10))} ({conf*100:.0f}%)')
+    lines.append('═' * 19)
 
     return '\n'.join(lines)
 
@@ -365,9 +630,9 @@ def format_daily(result, base_date):
 def format_weekly(results, base_date):
     """주간 예측 포맷"""
     lines = [
-        f'📊 포캐스트 주간 예측 리포트',
-        f'{"─" * 15}',
-        f'📅 향후 7일 예상 매출',
+        '📊 포캐스트 주간 예측 리포트',
+        '─' * 15,
+        '📅 향후 7일 예상 매출',
         '',
     ]
     total = 0
@@ -391,16 +656,15 @@ def format_monthly(results, base_date):
     high  = sum(r['yhat_upper'] for r in results)
 
     lines = [
-        f'📊 포캐스트 월간 예측 리포트',
-        f'{"─" * 15}',
-        f'📅 향후 30일 예상 매출',
+        '📊 포캐스트 월간 예측 리포트',
+        '─' * 15,
+        '📅 향후 30일 예상 매출',
         '',
         f'💰 예측 합계: ~{total:,}원',
         f'   범위: {low:,}원 ~ {high:,}원',
         f'   일 평균: ~{avg:,}원',
         '',
     ]
-    # 주별 소계
     for week in range(0, len(results), 7):
         chunk = results[week:week + 7]
         w_total = sum(r['yhat'] for r in chunk)
@@ -417,7 +681,7 @@ def format_monthly(results, base_date):
 # ─── 월간 모델 진단 (ska-011/013) ────────────────────────────────────────────
 
 def _get_accuracy_history(con, days=90):
-    """forecast_accuracy 최근 N일 조회 — 편향·MAPE 추이용"""
+    """forecast_accuracy 최근 N일 조회"""
     try:
         rows = _qry(con, f"""
             SELECT target_date, actual_revenue, predicted_revenue,
@@ -434,12 +698,12 @@ def _get_accuracy_history(con, days=90):
 
 
 def _calc_weekday_bias(accuracy_list):
-    """요일별 평균 오차 계산 (error = actual - predicted, 양수=과소예측)"""
+    """요일별 평균 오차 계산"""
     from collections import defaultdict
     buckets = defaultdict(list)
     for a in accuracy_list:
         if a['error'] is not None:
-            wd = date_type.fromisoformat(a['date']).weekday()  # 0=월
+            wd = date_type.fromisoformat(a['date']).weekday()
             buckets[wd].append(a['error'])
     return {wd: round(sum(v) / len(v)) for wd, v in buckets.items()}
 
@@ -449,7 +713,6 @@ def _run_cross_validation(hist_df):
     try:
         from prophet.diagnostics import cross_validation, performance_metrics
         model = build_model()
-        import sys, os
         with open(os.devnull, 'w') as devnull:
             old_stderr = sys.stderr
             sys.stderr = devnull
@@ -476,10 +739,62 @@ def _run_cross_validation(hist_df):
         return None
 
 
-def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
-    """OpenAI GPT-4o로 모델 진단 요청
-    - temperature=0.1: 분석용 낮은 온도 → 일관된 진단
+def auto_tune_prophet(hist_df):
+    """MAPE 기반 자동 파라미터 튜닝 (--mode=review, MAPE > 15%)
+    최근 7일을 검증 세트로 사용, 20개 조합 그리드 서치
+    반환: (best_params, best_mape)
     """
+    def calc_mape(actual, predicted):
+        valid = [(a, p) for a, p in zip(actual, predicted) if a > 0]
+        if not valid:
+            return float('inf')
+        return sum(abs(a - p) / a for a, p in valid) / len(valid) * 100
+
+    param_grid = {
+        'changepoint_prior_scale': [0.001, 0.01, 0.05, 0.1, 0.5],
+        'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0],
+    }
+
+    train = hist_df.iloc[:-7]
+    valid = hist_df.iloc[-7:]
+
+    if len(train) < MIN_TRAIN_DAYS:
+        print('[TUNE] ⚠️ 학습 데이터 부족 — 튜닝 생략')
+        return {}, float('inf')
+
+    best_mape   = float('inf')
+    best_params = {}
+    total = len(param_grid['changepoint_prior_scale']) * len(param_grid['seasonality_prior_scale'])
+    tried = 0
+
+    print(f'[TUNE] 파라미터 그리드 서치 시작 ({total}개 조합)...')
+
+    for cps in param_grid['changepoint_prior_scale']:
+        for sps in param_grid['seasonality_prior_scale']:
+            tried += 1
+            try:
+                m = build_model({'changepoint_prior_scale': cps, 'seasonality_prior_scale': sps})
+                with open(os.devnull, 'w') as devnull:
+                    old_stderr = sys.stderr
+                    sys.stderr = devnull
+                    try:
+                        m.fit(train)
+                        pred = m.predict(valid[['ds']])
+                    finally:
+                        sys.stderr = old_stderr
+                mape = calc_mape(valid['y'].values.tolist(), pred['yhat'].values.tolist())
+                if mape < best_mape:
+                    best_mape   = mape
+                    best_params = {'changepoint_prior_scale': cps, 'seasonality_prior_scale': sps}
+            except Exception:
+                continue
+
+    print(f'[TUNE] 완료: 최적 파라미터 {best_params}  MAPE={best_mape:.1f}%')
+    return best_params, best_mape
+
+
+def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
+    """OpenAI GPT-4o로 모델 진단 요청"""
     import os
     try:
         from openai import OpenAI
@@ -491,13 +806,11 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
     if not api_key:
         return '(OPENAI_API_KEY 미설정)'
 
-    # ── 시스템 프롬프트 ──
     SYSTEM_PROMPT = (
         "당신은 스터디카페 매출 예측 모델(Prophet) 전문 진단 AI입니다. "
         "성능 지표 데이터를 분석하여 한국어로 간결하고 실용적인 개선 방안을 제시합니다."
     )
 
-    # ── 동적 컨텍스트 구성 ──
     cv_text = '교차검증 미실시 (데이터 부족)' if not cv_metrics else (
         f"평균 MAPE: {cv_metrics['mape']:.1f}%\n"
         f"평균 RMSE: {cv_metrics['rmse']:,}원\n"
@@ -520,21 +833,21 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
 [교차검증 결과]
 {cv_text}
 
-[요일별 예측 편향 (error = 실제 - 예측, 최근 90일)]
+[요일별 예측 편향 (최근 90일)]
 {bias_text}
 
 [최근 추이]
 {mape_trend}
 
-현재 모델: prophet-v3
+현재 모델: prophet-v3 (+ SARIMA/SMA/EMA 앙상블)
   - seasonality_mode: additive
   - regressors: exam_score, rain_prob, vacation_flag, temperature
-  - weekly_seasonality: True, yearly_seasonality: False
+  - weekly_seasonality: True
 
 다음을 한국어로 간결하게 답해줘 (최대 6줄):
 1. 모델 성능 평가 (어느 요일/구간이 취약한지)
 2. 핵심 원인 추정
-3. 파라미터 조정 권고 (seasonality_mode, changepoint_prior_scale 등 구체적으로)
+3. 파라미터 조정 권고
 4. prophet-v4 업그레이드 시점 권고"""
 
     try:
@@ -542,7 +855,7 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
         resp = client.chat.completions.create(
             model='gpt-4o',
             max_tokens=300,
-            temperature=0.1,   # 분석용 — 낮은 온도로 일관된 진단
+            temperature=0.1,
             messages=[
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user',   'content': user_content},
@@ -557,19 +870,18 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
         return f'(LLM 호출 실패: {e})'
 
 
-def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis):
+def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis, tune_result=None):
     """월간 모델 진단 텔레그램 포맷"""
     wd_names = ['월', '화', '수', '목', '금', '토', '일']
     m, y = base_date.month, base_date.year
 
     lines = [
-        f'🔬 포캐스트 월간 모델 진단',
-        f'{"─" * 15}',
+        '🔬 포캐스트 월간 모델 진단',
+        '─' * 15,
         f'📅 {y}년 {m}월 리뷰  (모델: {MODEL_VERSION})',
         '',
     ]
 
-    # ── 교차검증 ──
     if cv_metrics:
         mape = cv_metrics['mape']
         grade = '✅ 양호' if mape <= 12 else ('🟡 주의' if mape <= 22 else '🔴 개선 필요')
@@ -583,7 +895,6 @@ def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, ll
     else:
         lines += ['📊 교차검증: 데이터 부족 (60일+ 필요)', '']
 
-    # ── 요일별 편향 ──
     if weekday_bias:
         lines.append('📉 요일별 예측 편향')
         for wd in range(7):
@@ -594,10 +905,23 @@ def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, ll
                 lines.append(f'  {flag}{wd_names[wd]}: {bias:+,}원 ({direction}예측)')
         lines.append('')
 
-    # ── LLM 진단 ──
+    # 자동 튜닝 결과
+    if tune_result:
+        best_params, best_mape, prev_mape = tune_result
+        if best_params:
+            improvement = f'{prev_mape:.1f}% → {best_mape:.1f}%' if prev_mape else f'MAPE {best_mape:.1f}%'
+            lines += [
+                f'🔧 자동 파라미터 튜닝',
+                f'   결과: {improvement}',
+                f'   cps={best_params.get("changepoint_prior_scale")}  '
+                f'sps={best_params.get("seasonality_prior_scale")}',
+                f'   ✅ 새 파라미터 저장 완료',
+                '',
+            ]
+
     lines += [
-        f'🤖 AI 진단',
-        f'{"─" * 15}',
+        '🤖 AI 진단',
+        '─' * 15,
     ]
     for line in llm_diagnosis.split('\n'):
         lines.append(f'  {line}' if line.strip() else '')
@@ -607,7 +931,7 @@ def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, ll
 
 
 def run_monthly_review(base_date_str=None):
-    """월간 모델 진단 실행 (ska-011)"""
+    """월간 모델 진단 실행 (ska-011) + 자동 파라미터 튜닝 (ska-014)"""
     base_date = date_type.fromisoformat(base_date_str) if base_date_str else date_type.today()
     print(f'[REVIEW] 월간 모델 진단 시작: {base_date}')
 
@@ -620,7 +944,6 @@ def run_monthly_review(base_date_str=None):
 
     print(f'[REVIEW] 학습 데이터: {len(hist_df)}일 / 정확도 기록: {len(accuracy_list)}건')
 
-    # 교차검증
     cv_metrics = None
     if len(hist_df) >= 75:
         print('[REVIEW] 교차검증 실행 중...')
@@ -630,16 +953,28 @@ def run_monthly_review(base_date_str=None):
     else:
         print(f'[REVIEW] ⚠️ 교차검증 스킵: 데이터 {len(hist_df)}일 < 75일')
 
-    # 요일별 편향
     weekday_bias = _calc_weekday_bias(accuracy_list)
 
-    # LLM 진단
+    # ── 자동 파라미터 튜닝 (MAPE > 15%) ──
+    tune_result = None
+    current_mape = cv_metrics['mape'] if cv_metrics else None
+    if current_mape is not None and current_mape > 15.0 and len(hist_df) >= MIN_TRAIN_DAYS + 7:
+        print(f'[REVIEW] MAPE {current_mape:.1f}% > 15% — 자동 파라미터 튜닝 실행')
+        best_params, best_mape = auto_tune_prophet(hist_df)
+        if best_params and best_mape < current_mape:
+            _save_model_params(best_params)
+            print(f'[REVIEW] 튜닝 완료: {current_mape:.1f}% → {best_mape:.1f}%')
+            tune_result = (best_params, best_mape, current_mape)
+        else:
+            print(f'[REVIEW] 튜닝 결과 개선 없음 — 기존 파라미터 유지')
+    elif current_mape is not None:
+        print(f'[REVIEW] MAPE {current_mape:.1f}% ≤ 15% — 파라미터 튜닝 불필요')
+
     print('[REVIEW] LLM 모델 진단 요청 중...')
     llm_diagnosis = _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias)
-    print(f'[REVIEW] LLM 응답 완료')
+    print('[REVIEW] LLM 응답 완료')
 
-    # 포맷 + 출력
-    report = format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis)
+    report = format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis, tune_result)
     print(report)
     return report
 
@@ -658,30 +993,35 @@ def run(mode='daily', base_date_str=None, output_json=False):
     con = psycopg2.connect(PG_SKA)
 
     try:
+        # forecast_results 테이블 보장
+        ensure_forecast_results_table(con)
+
         results = run_forecast(con, base_date, periods)
         saved   = save_forecast(con, results)
         print(f'[FORECAST] ✅ {saved}건 저장 → forecast 테이블')
+
+        # forecast_results에 저장 (n8n/레베카 연동용) — daily만
+        recent_mape = get_recent_mape(con)
+        if mode == 'daily' and results:
+            save_forecast_result(con, results[0]['date'], results[0], mape=recent_mape)
+            print(f'[FORECAST] ✅ forecast_results 저장 ({results[0]["date"]})')
+
     except ValueError as e:
         print(f'[FORECAST] ❌ {e}')
         return None
     finally:
         con.close()
 
-    # 결과에 confidence 추가
     for r in results:
         r['confidence'] = 0.15 if r.get('is_fallback') else _calc_confidence(r)
 
     if output_json:
-        out = [
-            {**r, 'date': str(r['date'])}
-            for r in results
-        ]
+        out = [{**r, 'date': str(r['date'])} for r in results]
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return results
 
-    # 텔레그램 포맷 출력
     if mode == 'daily':
-        print(format_daily(results, base_date))
+        print(format_daily(results, base_date, recent_mape=recent_mape))
     elif mode == 'weekly':
         print(format_weekly(results, base_date))
     elif mode == 'monthly':

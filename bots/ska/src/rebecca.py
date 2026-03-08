@@ -193,12 +193,29 @@ def detect_anomalies(today, avg_7d, env_today):
         anomalies.append('⚠️ 매출 0원 (비공휴일·비방학)')
 
     if avg > 0 and rev < avg * 0.4 and rev > 0:
-        anomalies.append(f'⚠️ 매출 급감 (7일 평균 {avg:,}원 대비 {rev/avg*100:.0f}%)')
+        # 표준 형식: 핵심 수치 먼저, ─ 구분
+        anomalies.append(f'⚠️ 매출 급감 ─ 7일 평균 대비 {rev/avg*100:.0f}% (평균 {avg:,}원)')
 
     if avg > 0 and rev > avg * 2.5:
-        anomalies.append(f'📈 매출 급등 (7일 평균 대비 +{rev/avg*100-100:.0f}%)')
+        anomalies.append(f'📈 매출 급등 ─ 7일 평균 대비 +{rev/avg*100-100:.0f}% (평균 {avg:,}원)')
 
     return anomalies
+
+
+def get_yesterday_forecast(con, date_str):
+    """어제 forecast.py가 예측한 오늘 매출 조회 (ska.forecast_results)
+    forecast_date = 예측 대상 날짜 (오늘 = date_str)
+    """
+    try:
+        row = _one(con, """
+            SELECT predictions->>'yhat' AS predicted
+            FROM ska.forecast_results
+            WHERE forecast_date = %s
+            ORDER BY created_at DESC LIMIT 1
+        """, (date_str,))
+        return float(row[0]) if row and row[0] else None
+    except Exception:
+        return None
 
 
 # ─── 텔레그램 포맷 ─────────────────────────────────────────────────────────────
@@ -237,6 +254,7 @@ def format_telegram(report):
 
     prev_day = report.get('prev_day')
     prev_week = report.get('prev_week')
+    prev_forecast = report.get('prev_forecast')  # 어제 예측값
 
     lines = [
         f'📊 레베카 일간 현황 리포트',
@@ -254,6 +272,15 @@ def format_telegram(report):
     if avg['avg_revenue'] > 0:
         lines.append(f'   ↕ 7일 평균:    {pct_str(d["revenue"], avg["avg_revenue"])}  (평균 {avg["avg_revenue"]:,}원)')
     lines.append('')
+
+    # 어제 예측 정확도 (ska-014: forecast_results 연동)
+    if prev_forecast and d['revenue'] > 0:
+        mape = abs(prev_forecast - d['revenue']) / d['revenue'] * 100
+        flag = '✅' if mape < 10 else ('🟡' if mape < 20 else '🔴')
+        lines.append('🎯 어제 예측 정확도')
+        lines.append(f'   예측: {int(prev_forecast):,}원 → 실제: {d["revenue"]:,}원')
+        lines.append(f'   MAPE: {mape:.1f}% {flag}')
+        lines.append('')
 
     occ_pct = d['occupancy_rate'] * 100
     booked_h = d['occupancy_rate'] * 39
@@ -346,6 +373,21 @@ def get_weekly_accuracy(con, week_start, week_end):
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model_version': r[5]}
                 for r in rows]
+    except Exception:
+        return []
+
+
+def get_weekly_forecast_mape(con, week_start, week_end):
+    """forecast_results에서 주간 일별 MAPE 조회 (ska-014, forecast_accuracy 없을 때 폴백)"""
+    try:
+        rows = _qry(con, """
+            SELECT DISTINCT ON (forecast_date) forecast_date, mape
+            FROM ska.forecast_results
+            WHERE forecast_date >= %s AND forecast_date <= %s
+              AND mape IS NOT NULL
+            ORDER BY forecast_date, created_at DESC
+        """, (str(week_start), str(week_end)))
+        return [{'date': str(r[0]), 'mape': float(r[1])} for r in rows]
     except Exception:
         return []
 
@@ -443,33 +485,46 @@ def format_weekly_review(report):
     lines.append(f'   총 예약:  {summary["reservations"]}건')
     lines.append('')
 
+    # 📊 이번 주 예측 정확도 (작업 7-2: 컴팩트 MAPE 블록)
+    lines.append('📊 이번 주 예측 정확도')
     if accuracy_list:
         valid = [a for a in accuracy_list if a['mape'] is not None]
-        avg_mape = sum(a['mape'] for a in valid) / len(valid) if valid else None
 
-        lines.append('🎯 예측 정확도')
+        # 일별 MAPE 한줄 요약
+        mape_parts = []
         for a in accuracy_list:
             d  = date_type.fromisoformat(a['date'])
             wd = WEEKDAY_KO[d.weekday()]
-            mape_s = f'{a["mape"]:.1f}%' if a['mape'] is not None else 'N/A'
-            sign   = '+' if (a['error'] or 0) >= 0 else ''
-            flag   = '⚠️' if (a['mape'] or 0) > 15 else '  '
-            lines.append(
-                f'  {flag}{d.month}/{d.day}({wd})  '
-                f'예측 {a["predicted"]:,} → 실제 {a["actual"]:,}'
-                f'  ({sign}{a["error"]:,}원, {mape_s})'
-            )
-
-        if avg_mape is not None:
-            lines.append(f'   평균 MAPE: {avg_mape:.1f}%  ')
-            if avg_mape <= 10:
-                lines[-1] += '✅ 양호'
-            elif avg_mape <= 20:
-                lines[-1] += '🟡 주의'
+            if a['mape'] is not None:
+                m    = a['mape']
+                flag = '✅' if m < 10 else ('🟡' if m < 20 else '🔴')
+                mape_parts.append(f'{wd} {m:.1f}%{flag}')
             else:
-                lines[-1] += '🔴 모델 검토 필요'
+                mape_parts.append(f'{wd} N/A')
+        if mape_parts:
+            lines.append('   일별 MAPE: ' + ' / '.join(mape_parts))
+
+        # 주간 평균 MAPE
+        if valid:
+            avg_mape = sum(a['mape'] for a in valid) / len(valid)
+            grade = ('✅ 양호' if avg_mape <= 10
+                     else ('🟡 주의' if avg_mape <= 20
+                           else '🔴 모델 검토 필요'))
+            lines.append(f'   주간 평균 MAPE: {avg_mape:.1f}% {grade}')
+
+    elif report.get('forecast_mape'):
+        # forecast_results 폴백 (forecast_accuracy 없을 때)
+        mape_parts = []
+        for item in report['forecast_mape']:
+            d  = date_type.fromisoformat(item['date'])
+            wd = WEEKDAY_KO[d.weekday()]
+            m  = item['mape']
+            flag = '✅' if m < 10 else ('🟡' if m < 20 else '🔴')
+            mape_parts.append(f'{wd} {m:.1f}%{flag}')
+        if mape_parts:
+            lines.append('   일별 MAPE: ' + ' / '.join(mape_parts))
     else:
-        lines.append('🎯 예측 정확도: 데이터 누적 중 (forecast 실행 후 익일부터 집계)')
+        lines.append('   데이터 누적 중 (forecast 실행 후 익일부터 집계)')
     lines.append('')
 
     kpi = report.get('kpi', {})
@@ -511,23 +566,25 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
         next_start = today
         next_end   = today + timedelta(days=6 - today.weekday())
 
-        summary     = get_week_summary(con, week_start, week_end)
-        accuracy    = get_weekly_accuracy(con, week_start, week_end)
-        next_events = get_next_week_events(con, next_start, next_end)
+        summary       = get_week_summary(con, week_start, week_end)
+        accuracy      = get_weekly_accuracy(con, week_start, week_end)
+        forecast_mape = get_weekly_forecast_mape(con, week_start, week_end)  # ska-014 폴백
+        next_events   = get_next_week_events(con, next_start, next_end)
     finally:
         con.close()
 
     kpi = get_weekly_kpi(week_start, week_end)
 
     report = {
-        'week_start': str(week_start),
-        'week_end':   str(week_end),
-        'next_start': str(next_start),
-        'next_end':   str(next_end),
-        'summary':    summary,
-        'accuracy':   accuracy,
-        'next_events': next_events,
-        'kpi':         kpi,
+        'week_start':    str(week_start),
+        'week_end':      str(week_end),
+        'next_start':    str(next_start),
+        'next_end':      str(next_end),
+        'summary':       summary,
+        'accuracy':      accuracy,
+        'forecast_mape': forecast_mape,  # ska-014: forecast_results 기반 MAPE 폴백
+        'next_events':   next_events,
+        'kpi':           kpi,
     }
 
     if output_json:
@@ -568,6 +625,7 @@ def run_rebecca(target_date_str=None, output_json=False):
         env_tomorrow = get_env(con, tomorrow_str)
         bars      = get_recent_bars(con, date_str, n=7)
         anomalies = detect_anomalies(today_data, avg_7d, env_today)
+        prev_forecast = get_yesterday_forecast(con, date_str)  # ska-014
     finally:
         con.close()
 
@@ -582,6 +640,7 @@ def run_rebecca(target_date_str=None, output_json=False):
         'env_tomorrow':  env_tomorrow,
         'recent_bars':   bars,
         'anomalies':     anomalies,
+        'prev_forecast': prev_forecast,  # ska-014: 어제 예측값
     }
 
     if output_json:
