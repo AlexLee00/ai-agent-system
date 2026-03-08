@@ -31,21 +31,50 @@ const { recalcProgress } = require('../src/ryan');
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
-const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion } = require('../lib/ai-helper');
+const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables } = require('../lib/ai-helper');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
 const UPLOAD_DIR = path.join(__dirname, '../uploads');
 require('fs').mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const ALLOWED_EXTENSIONS = [
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.txt', '.csv', '.hwp', '.hwpx',
+  '.zip', '.rar', '.7z',
+];
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'text/plain', 'text/csv',
+  'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+  'application/haansofthwp', 'application/hwp',
+];
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOAD_DIR),
     filename:    (req, file, cb) => {
-      const ext = path.extname(file.originalname);
+      const ext = path.extname(file.originalname).toLowerCase();
       cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
     },
   }),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  fileFilter: (req, file, cb) => {
+    const ext  = path.extname(file.originalname).toLowerCase();
+    const mime = file.mimetype;
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      return cb(new Error(`허용되지 않는 파일 형식입니다: ${ext}`), false);
+    }
+    if (!ALLOWED_MIME_TYPES.includes(mime)) {
+      return cb(new Error(`허용되지 않는 MIME 타입입니다: ${mime}`), false);
+    }
+    cb(null, true);
+  },
 });
 
 const SCHEMA = 'worker';
@@ -55,7 +84,22 @@ const app = express();
 
 // ── 보안 미들웨어 ─────────────────────────────────────────────────────
 app.set('trust proxy', 1);
-app.use(helmet());
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:      ["'self'"],
+      scriptSrc:       ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Next.js 필요
+      styleSrc:        ["'self'", "'unsafe-inline'"],
+      imgSrc:          ["'self'", 'data:', 'blob:'],
+      connectSrc:      ["'self'", 'http://localhost:4000', 'http://localhost:4001'],
+      fontSrc:         ["'self'"],
+      objectSrc:       ["'none'"],
+      frameAncestors:  ["'none'"], // 클릭재킹 방지
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Next.js 호환
+}));
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:4000', 'http://localhost:4001'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -75,6 +119,13 @@ const loginLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: '로그인 시도가 너무 많습니다. 15분 후 다시 시도하세요.', code: 'RATE_LIMIT' }),
 });
 app.use('/api/auth/login', loginLimiter);
+
+// AI 전용 Rate Limit (1분 10회)
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'AI 질문은 1분에 10회까지 가능합니다.', code: 'AI_RATE_LIMIT' }),
+});
+app.use('/api/ai/', aiLimiter);
 
 // ── 정적 파일 / 루트 리다이렉트 ──────────────────────────────────────
 app.get('/', (req, res) => res.redirect('http://localhost:4001'));
@@ -1287,6 +1338,21 @@ app.post('/api/ai/ask',
         return res.status(400).json({ error: 'SELECT 쿼리만 허용됩니다.', code: 'UNSAFE_QUERY', sql });
       }
 
+      // 2-1단계: 허용 테이블 화이트리스트 검증
+      if (!hasOnlyAllowedTables(sql)) {
+        return res.status(400).json({ error: '허용되지 않은 테이블 접근입니다.', code: 'UNAUTHORIZED_TABLE' });
+      }
+
+      // 2-2단계: company_id 강제 검증 (업체 격리 확인)
+      if (!sql.includes(companyId)) {
+        return res.status(400).json({ error: '쿼리에 업체 필터가 누락되었습니다.', code: 'MISSING_COMPANY_FILTER' });
+      }
+
+      // 2-3단계: LIMIT 강제 (LLM이 누락 시)
+      if (!/LIMIT\s+\d+/i.test(sql)) {
+        sql = sql.replace(/;?\s*$/, ' LIMIT 100;');
+      }
+
       // 3단계: SQL 실행
       const rows = await pgPool.query(SCHEMA, sql, []);
 
@@ -1381,6 +1447,20 @@ ${dataStr}
 
 // ── 헬스체크 ─────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', port: PORT, ts: new Date().toISOString() }));
+
+// ── multer 에러 핸들러 ────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: '파일 크기는 20MB 이하만 가능합니다.', code: 'FILE_TOO_LARGE' });
+    }
+    return res.status(400).json({ error: `파일 업로드 오류: ${err.message}`, code: 'UPLOAD_ERROR' });
+  }
+  if (err?.message?.includes('허용되지 않는')) {
+    return res.status(400).json({ error: err.message, code: 'INVALID_FILE_TYPE' });
+  }
+  next(err);
+});
 
 // ── 에러 로그 미들웨어 (에러 핸들러 앞) ──────────────────────────────
 app.use(errorLogger);
