@@ -4,6 +4,32 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-08 (계속)
+
+### RAG 자동 수집 파이프라인 + 팀장 RAG 연동 완성 (커밋: `7630fc8`)
+
+**구현 완료:**
+- `reporter.js` — 덱스터 ERROR/WARN 점검 결과 → rag_operations 저장
+- `doctor.js` — 독터 복구 성공 이력 → rag_operations 저장
+- `archer.js` — 아처 주간 기술 보고 (patches/security/llm_api) → rag_tech 저장
+- `luna.js` — 매매 신호 확정 → rag_trades 저장 + LLM 전 유사 신호 검색·주입
+- `claude-lead-brain.js` — shadow_log 후 분석 결과 → rag_operations 저장 + LLM 전 유사 장애 검색·주입
+
+**최종 자동 수집 파이프라인:**
+```
+✅ 매매 완료       → rag_trades      (luna.js)
+✅ 독터 복구       → rag_operations  (doctor.js)
+✅ 덱스터 CRITICAL → rag_operations  (reporter.js)
+✅ 아처 기술 보고  → rag_tech        (archer.js)
+❌ nightly git log → 제거 (아처와 중복, 불필요한 임베딩 비용)
+```
+
+**설계 원칙:** 모든 RAG 저장/검색은 try-catch + console.warn 보호 — 실패해도 본 로직 무영향
+
+**테스트 결과: 20/21 PASS** (A-5 nightly git log → 불필요하여 의도적 미구현)
+
+---
+
 ## 2026-03-08
 
 ### 제이 자연어 능력 향상 v2.0 (커밋: `4c9efa1`)
