@@ -10,8 +10,8 @@ async function loginToPickko(page, id, pw, delayFn) {
   }
   try {
     await page.evaluate((id, pw) => {
-      document.getElementById('mn_id').value = id;
-      document.getElementById('mn_pw').value = pw;
+      document.getElementById('mn_id').value  = id;
+      document.getElementById('mn_pw').value  = pw;
       document.getElementById('loginButton').click();
     }, id, pw);
   } catch (e) {
@@ -147,28 +147,28 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
   let colMap;
   try {
     colMap = await page.evaluate(() => {
-    const result = {
-      name: -1, phone: -1, room: -1,
-      startTime: -1, endTime: -1, amount: -1, status: -1, receiptTime: -1,
-      isCombined: false, headers: []
-    };
-    const theadRows = document.querySelectorAll('thead tr');
-    const lastRow = theadRows[theadRows.length - 1];
-    const ths = lastRow ? Array.from(lastRow.querySelectorAll('th')) : [];
-    ths.forEach((th, i) => {
-      const t = th.textContent.trim();
-      result.headers.push(t);
-      if (t === '이름' || t.includes('회원')) result.name = i;
-      if (t === '연락처' || t.includes('전화')) result.phone = i;
-      if (t === '스터디룸' || (t.includes('스터디') && !t.includes('이용'))) result.room = i;
-      if (t === '이용일시') { result.startTime = i; result.isCombined = true; }
-      else if (t.includes('시작') && !t.includes('접수')) result.startTime = i;
-      if (t.includes('종료') || t.includes('끝')) result.endTime = i;
-      if (t.includes('이용금액') || t.includes('결제금액') || t === '금액') result.amount = i;
-      if (t === '상태' || t.includes('결제') || t.includes('처리')) result.status = i;
-      if (t === '접수일시' || (t.includes('접수') && t.includes('일'))) result.receiptTime = i;
-    });
-    return result;
+      const result = {
+        name: -1, phone: -1, room: -1,
+        startTime: -1, endTime: -1, amount: -1, status: -1, receiptTime: -1,
+        isCombined: false, headers: []
+      };
+      const theadRows = document.querySelectorAll('thead tr');
+      const lastRow = theadRows[theadRows.length - 1];
+      const ths = lastRow ? Array.from(lastRow.querySelectorAll('th')) : [];
+      ths.forEach((th, i) => {
+        const t = th.textContent.trim();
+        result.headers.push(t);
+        if (t === '이름' || t.includes('회원')) result.name = i;
+        if (t === '연락처' || t.includes('전화')) result.phone = i;
+        if (t === '스터디룸' || (t.includes('스터디') && !t.includes('이용'))) result.room = i;
+        if (t === '이용일시') { result.startTime = i; result.isCombined = true; }
+        else if (t.includes('시작') && !t.includes('접수')) result.startTime = i;
+        if (t.includes('종료') || t.includes('끝')) result.endTime = i;
+        if (t.includes('이용금액') || t.includes('결제금액') || t === '금액') result.amount = i;
+        if (t === '상태' || t.includes('결제') || t.includes('처리')) result.status = i;
+        if (t === '접수일시' || (t.includes('접수') && t.includes('일'))) result.receiptTime = i;
+      });
+      return result;
     });
   } catch (e) {
     console.error('[pickko] colMap 파싱 실패:', e.message);
@@ -179,68 +179,68 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
   let rawEntries;
   try {
     rawEntries = await page.evaluate((sd, cm, sk, ma, rd) => {
-    const entries = [];
-    const trs = Array.from(document.querySelectorAll('tbody tr'));
-    for (const tr of trs) {
-      const tds = Array.from(tr.querySelectorAll('td'));
-      if (!tr.querySelector('a[href*="/study/view/"]')) continue;
-      if (tds.length < 3) continue;
+      const entries = [];
+      const trs = Array.from(document.querySelectorAll('tbody tr'));
+      for (const tr of trs) {
+        const tds = Array.from(tr.querySelectorAll('td'));
+        if (!tr.querySelector('a[href*="/study/view/"]')) continue;
+        if (tds.length < 3) continue;
 
-      const getText = (idx) => idx >= 0 && tds[idx]
-        ? tds[idx].textContent.replace(/\s+/g, ' ').trim() : '';
+        const getText = (idx) => idx >= 0 && tds[idx]
+          ? tds[idx].textContent.replace(/\s+/g, ' ').trim() : '';
 
-      // 접수일시 필터 (receiptDate가 있을 때만)
-      if (rd && cm.receiptTime >= 0) {
-        const rText = getText(cm.receiptTime);
-        let rDate = (rText.match(/(\d{4})-(\d{2})-(\d{2})/) || [])[0] || '';
-        if (!rDate) {
-          const m = rText.match(/(\d{2,4})[.\s]+(\d{1,2})[.\s]+(\d{1,2})/);
-          if (m) {
-            const y = m[1].length === 2 ? '20' + m[1] : m[1];
-            rDate = `${y}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        // 접수일시 필터 (receiptDate가 있을 때만)
+        if (rd && cm.receiptTime >= 0) {
+          const rText = getText(cm.receiptTime);
+          let rDate = (rText.match(/(\d{4})-(\d{2})-(\d{2})/) || [])[0] || '';
+          if (!rDate) {
+            const m = rText.match(/(\d{2,4})[.\s]+(\d{1,2})[.\s]+(\d{1,2})/);
+            if (m) {
+              const y = m[1].length === 2 ? '20' + m[1] : m[1];
+              rDate = `${y}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+            }
           }
+          // 접수일시 내림차순 → 대상일보다 이전이면 이후 행도 이전 → 중단
+          if (rDate && rDate < rd) break;
+          if (rDate !== rd) continue; // 미래 날짜 스킵 (파싱 실패 포함)
         }
-        // 접수일시 내림차순 → 대상일보다 이전이면 이후 행도 이전 → 중단
-        if (rDate && rDate < rd) break;
-        if (rDate !== rd) continue; // 미래 날짜 스킵 (파싱 실패 포함)
-      }
 
-      // 상태 필터
-      if (sk) {
-        const statusText = cm.status >= 0 ? getText(cm.status) : tr.textContent;
-        if (!statusText.includes(sk)) continue;
-      }
+        // 상태 필터
+        if (sk) {
+          const statusText = cm.status >= 0 ? getText(cm.status) : tr.textContent;
+          if (!statusText.includes(sk)) continue;
+        }
 
-      // 이용금액 필터
-      if (ma > 0) {
-        const amtText = cm.amount >= 0 ? getText(cm.amount) : '';
-        const amtNum = parseInt((amtText || '0').replace(/[^0-9]/g, ''), 10);
-        if (cm.amount >= 0 && amtNum < ma) continue;
-      }
+        // 이용금액 필터
+        if (ma > 0) {
+          const amtText = cm.amount >= 0 ? getText(cm.amount) : '';
+          const amtNum = parseInt((amtText || '0').replace(/[^0-9]/g, ''), 10);
+          if (cm.amount >= 0 && amtNum < ma) continue;
+        }
 
-      const name = getText(cm.name);
-      const phoneRaw = getText(cm.phone).replace(/[^0-9]/g, '');
-      const room = getText(cm.room);
-      const combinedText = cm.startTime >= 0 ? getText(cm.startTime) : '';
-      const endText = cm.isCombined ? '' : (cm.endTime >= 0 ? getText(cm.endTime) : '');
-      const receiptText = cm.receiptTime >= 0 ? getText(cm.receiptTime) : '';
+        const name        = getText(cm.name);
+        const phoneRaw    = getText(cm.phone).replace(/[^0-9]/g, '');
+        const room        = getText(cm.room);
+        const combinedText = cm.startTime >= 0 ? getText(cm.startTime) : '';
+        const endText     = cm.isCombined ? '' : (cm.endTime >= 0 ? getText(cm.endTime) : '');
+        const receiptText = cm.receiptTime >= 0 ? getText(cm.receiptTime) : '';
 
-      let reservationDate = '', startText = combinedText;
-      const dm = combinedText.match(/(\d{4})-(\d{2})-(\d{2})/)
-        || combinedText.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
-      if (dm) {
-        reservationDate = combinedText.includes('년')
-          ? `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}`
-          : dm[0];
-        startText = combinedText.slice(combinedText.indexOf(dm[0]) + dm[0].length).trim();
+        let reservationDate = '', startText = combinedText;
+        const dm = combinedText.match(/(\d{4})-(\d{2})-(\d{2})/)
+          || combinedText.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+        if (dm) {
+          reservationDate = combinedText.includes('년')
+            ? `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}`
+            : dm[0];
+          startText = combinedText.slice(combinedText.indexOf(dm[0]) + dm[0].length).trim();
+        }
+        const ti         = startText.indexOf('~');
+        const parsedStart = ti >= 0 ? startText.slice(0, ti).trim() : startText;
+        const parsedEnd   = cm.isCombined ? (ti >= 0 ? startText.slice(ti + 1).trim() : '') : endText;
+        const amtText2    = cm.amount >= 0 ? getText(cm.amount) : '';
+        entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText });
       }
-      const ti = startText.indexOf('~');
-      const parsedStart = ti >= 0 ? startText.slice(0, ti).trim() : startText;
-      const parsedEnd = cm.isCombined ? (ti >= 0 ? startText.slice(ti + 1).trim() : '') : endText;
-      const amtText2 = cm.amount >= 0 ? getText(cm.amount) : '';
-      entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText });
-    }
-    return entries;
+      return entries;
     }, startDate, colMap, statusKeyword, minAmount, receiptDate);
   } catch (e) {
     console.error('[pickko] 행 파싱 실패:', e.message);
@@ -285,21 +285,21 @@ async function findPickkoMember(page, phone, d) {
 
   // 전화번호 검색 입력 (placeholder "이름" 또는 "검색" 기준, 없으면 마지막 텍스트 input)
   try {
-  await page.evaluate((p) => {
-    const inputs = document.querySelectorAll('input[type="text"]');
-    let target = null;
-    for (const inp of inputs) {
-      if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
-        target = inp; break;
+    await page.evaluate((p) => {
+      const inputs = document.querySelectorAll('input[type="text"]');
+      let target = null;
+      for (const inp of inputs) {
+        if (inp.placeholder && (inp.placeholder.includes('이름') || inp.placeholder.includes('검색'))) {
+          target = inp; break;
+        }
       }
-    }
-    if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
-    if (target) {
-      target.value = p;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    }
-  }, phone);
+      if (!target && inputs.length > 0) target = inputs[inputs.length - 1];
+      if (target) {
+        target.value = p;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      }
+    }, phone);
   } catch (e) {
     console.error('[pickko] 회원 검색 입력 실패:', e.message);
   }
