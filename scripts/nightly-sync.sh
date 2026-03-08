@@ -12,8 +12,8 @@ echo "[$DATE] ====== 자정 컨텍스트 보존 시작 ======" >> "$LOG_FILE"
 echo "[$DATE] 📥 활성 봇 역동기화 중..." >> "$LOG_FILE"
 node "$ROOT/scripts/deploy-context.js" --all --sync >> "$LOG_FILE" 2>&1
 
-# 2. LLM 캐시 만료 항목 정리
-echo "[$DATE] 🧹 LLM 캐시 만료 항목 정리 중..." >> "$LOG_FILE"
+# 2. llm_cache 만료 항목 정리 (Node.js — psql PATH 미보장 환경 대응)
+echo "[$DATE] 🧹 llm_cache 만료 항목 정리 중..." >> "$LOG_FILE"
 node -e "
   require('$ROOT/packages/core/lib/llm-cache').cleanExpired()
     .then(n => console.log('[llm-cache] 삭제:', n, '건'))
@@ -32,7 +32,20 @@ node -e "
   ));
 " >> "$LOG_FILE" 2>&1
 
-# 4. git commit (변경사항 있을 때만)
+# 4. PostgreSQL 커넥션 풀 상태 로그
+echo "[$DATE] 🗄️  PostgreSQL 활성 커넥션 수..." >> "$LOG_FILE"
+node -e "
+  require('$ROOT/packages/core/lib/pg-pool').query('public', 'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database()')
+    .then(r => console.log('[pg-pool] 활성 커넥션:', r[0].n, '개'))
+    .catch(e => console.warn('[pg-pool] 조회 실패 (무시):', e.message));
+" >> "$LOG_FILE" 2>&1
+
+# 5. n8n 워크플로우 활성 상태 확인
+echo "[$DATE] ⚙️  n8n 활성 워크플로우..." >> "$LOG_FILE"
+WF_COUNT=$(curl -s http://localhost:5678/api/v1/workflows 2>/dev/null | grep -o '"active":true' | wc -l | tr -d ' ')
+echo "  활성: ${WF_COUNT}개" >> "$LOG_FILE"
+
+# 6. git commit (변경사항 있을 때만)
 cd "$ROOT"
 if ! git diff --quiet bots/; then
   git add bots/
