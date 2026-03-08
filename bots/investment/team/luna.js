@@ -428,6 +428,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       );
       if (riskResult.approved) {
         console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
+        await db.updateSignalStatus(signalId, 'approved');
         results.push({
           symbol: dec.symbol, signalId, ...dec,
           adjustedAmount: riskResult.adjustedAmount,
@@ -438,6 +439,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         });
       } else {
         console.log(`  🚫 [네메시스] 거부: ${riskResult.reason}`);
+        await db.updateSignalStatus(signalId, 'rejected');
       }
     } catch (e) {
       console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 (신호만 저장): ${e.message}`);
