@@ -1,14 +1,16 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router    = useRouter();
-  const [form, setForm] = useState({ username: '', password: '' });
-  const [error, setError] = useState('');
+  const [form,   setForm]   = useState({ username: '', password: '' });
+  const [error,  setError]  = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPw,  setShowPw]  = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,15 +52,25 @@ export default function LoginPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              className="input-base"
-              placeholder="비밀번호 입력"
-              value={form.password}
-              onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-              disabled={loading}
-            />
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                autoComplete="current-password"
+                className="input-base pr-10"
+                placeholder="비밀번호 입력"
+                value={form.password}
+                onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowPw(v => !v)}
+                className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -70,9 +82,14 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full text-base mt-2"
+            className="btn-primary w-full text-base mt-2 flex items-center justify-center gap-2"
           >
-            {loading ? '로그인 중...' : '로그인'}
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                로그인 중...
+              </>
+            ) : '로그인'}
           </button>
         </form>
       </div>

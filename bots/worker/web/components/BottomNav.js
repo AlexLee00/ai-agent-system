@@ -1,13 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LayoutDashboard, BookOpen, DollarSign, CheckSquare, Settings } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',  icon: '🏠', label: '홈' },
-  { href: '/journals',   icon: '📝', label: '일지' },
-  { href: '/sales',      icon: '💰', label: '매출' },
-  { href: '/approvals',  icon: '✅', label: '승인' },
-  { href: '/settings',   icon: '⚙️', label: '설정' },
+  { href: '/dashboard',  icon: LayoutDashboard, label: '홈' },
+  { href: '/journals',   icon: BookOpen,        label: '일지' },
+  { href: '/sales',      icon: DollarSign,      label: '매출' },
+  { href: '/approvals',  icon: CheckSquare,     label: '승인' },
+  { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 
 export default function BottomNav() {
@@ -17,15 +18,16 @@ export default function BottomNav() {
     <div className="flex items-center justify-around h-16 px-2">
       {NAV_ITEMS.map(item => {
         const active = pathname.startsWith(item.href);
+        const Icon   = item.icon;
         return (
           <Link
             key={item.href}
             href={item.href}
             className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg min-w-[44px] transition-colors ${
-              active ? 'text-primary' : 'text-gray-500'
+              active ? 'text-indigo-600' : 'text-gray-400'
             }`}
           >
-            <span className="text-xl">{item.icon}</span>
+            <Icon className="w-5 h-5" />
             <span className="text-xs font-medium">{item.label}</span>
           </Link>
         );

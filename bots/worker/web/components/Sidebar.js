@@ -2,16 +2,20 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import {
+  LayoutDashboard, Users, Clock, DollarSign,
+  BookOpen, FileText, CheckSquare, Settings,
+} from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',  icon: '🏠', label: '대시보드' },
-  { href: '/employees',  icon: '👥', label: '직원 관리' },
-  { href: '/attendance', icon: '⏰', label: '근태 관리' },
-  { href: '/sales',      icon: '💰', label: '매출 관리' },
-  { href: '/journals',   icon: '📝', label: '업무일지' },
-  { href: '/documents',  icon: '📋', label: '문서 관리' },
-  { href: '/approvals',  icon: '✅', label: '승인 관리' },
-  { href: '/settings',   icon: '⚙️', label: '설정' },
+  { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
+  { href: '/employees',  icon: Users,           label: '직원 관리' },
+  { href: '/attendance', icon: Clock,           label: '근태 관리' },
+  { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
+  { href: '/journals',   icon: BookOpen,        label: '업무일지' },
+  { href: '/documents',  icon: FileText,        label: '문서 관리' },
+  { href: '/approvals',  icon: CheckSquare,     label: '승인 관리' },
+  { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 
 export default function Sidebar() {
@@ -30,17 +34,18 @@ export default function Sidebar() {
       <nav className="flex-1 p-4 space-y-1">
         {NAV_ITEMS.map(item => {
           const active = pathname.startsWith(item.href);
+          const Icon   = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 active
-                  ? 'bg-primary-light text-primary'
+                  ? 'bg-indigo-50 text-indigo-600'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <span>{item.icon}</span>
+              <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
               {item.label}
             </Link>
           );

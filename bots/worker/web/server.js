@@ -777,6 +777,47 @@ app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) =
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
+// ── 최근 활동 피드 ────────────────────────────────────────────────────
+app.get('/api/activity', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const rows = await pgPool.query(SCHEMA, `
+      SELECT type, created_at, actor, detail FROM (
+        SELECT 'journal' AS type, j.created_at, e.name AS actor,
+               CONCAT(COALESCE(e.name,'직원'), '이(가) 업무일지를 작성했습니다') AS detail
+        FROM worker.work_journals j
+        LEFT JOIN worker.employees e ON e.id = j.employee_id
+        WHERE j.company_id = $1 AND j.deleted_at IS NULL
+        UNION ALL
+        SELECT 'attendance' AS type,
+               COALESCE(a.check_out, a.created_at) AS created_at,
+               e.name AS actor,
+               CONCAT(COALESCE(e.name,'직원'), '이(가) ',
+                 CASE WHEN a.check_out IS NOT NULL THEN '퇴근' ELSE '출근' END,
+               ' 체크했습니다') AS detail
+        FROM worker.attendance a
+        LEFT JOIN worker.employees e ON e.id = a.employee_id
+        WHERE a.company_id = $1
+        UNION ALL
+        SELECT 'sales' AS type, s.created_at, NULL AS actor,
+               CONCAT('₩', TO_CHAR(s.amount, 'FM999,999,999'), ' 매출이 등록되었습니다') AS detail
+        FROM worker.sales s
+        WHERE s.company_id = $1 AND s.deleted_at IS NULL
+        UNION ALL
+        SELECT 'approval' AS type, ar.updated_at AS created_at, u.name AS actor,
+               CONCAT(ar.action, ' ',
+                 CASE WHEN ar.status = 'approved' THEN '승인됨' ELSE '반려됨' END) AS detail
+        FROM worker.approval_requests ar
+        LEFT JOIN worker.users u ON u.id = ar.approver_id
+        WHERE ar.company_id = $1 AND ar.status != 'pending' AND ar.deleted_at IS NULL
+      ) t ORDER BY created_at DESC LIMIT 10
+    `, [req.companyId]);
+    res.json({ activities: rows });
+  } catch (e) {
+    console.error('[activity]', e.message);
+    res.status(500).json({ error: '활동 조회 실패' });
+  }
+});
+
 // ── 헬스체크 ─────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', port: PORT, ts: new Date().toISOString() }));
 
