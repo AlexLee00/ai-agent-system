@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from './Sidebar';
 
@@ -10,12 +11,12 @@ export default function Header({ title }) {
   return (
     <>
       <header className="sticky top-0 z-40 bg-white border-b px-4 h-14 flex items-center gap-3">
-        {/* 햄버거 (태블릿) */}
+        {/* 햄버거 (모바일/태블릿) */}
         <button
           onClick={() => setDrawerOpen(true)}
           className="lg:hidden p-2 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
-          ☰
+          <Menu className="w-5 h-5 text-gray-600" />
         </button>
 
         <h2 className="font-semibold text-gray-800 flex-1">{title || '워커 업무관리'}</h2>
@@ -29,7 +30,7 @@ export default function Header({ title }) {
         )}
       </header>
 
-      {/* 태블릿 드로어 */}
+      {/* 드로어 */}
       {drawerOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="w-64 bg-white shadow-xl flex flex-col">
@@ -39,7 +40,7 @@ export default function Header({ title }) {
                 onClick={() => setDrawerOpen(false)}
                 className="p-2 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center"
               >
-                ✕
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
             <Sidebar />

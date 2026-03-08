@@ -1,18 +1,19 @@
 'use client';
-import { useState } from 'react';
 
 /**
  * 반응형 데이터 테이블
  * PC: 일반 테이블 / 모바일: 카드 리스트
  *
  * Props:
- *   columns: [{ key, label, render? }]
- *   data: []
- *   actions?: (row) => ReactNode
+ *   columns:   [{ key, label, render? }]
+ *   data:      []
+ *   actions?:  (row) => ReactNode
  *   emptyText?: string
+ *   emptyNode?: ReactNode  — 커스텀 빈 상태 (CTA 포함 가능)
  */
-export default function DataTable({ columns, data, actions, emptyText = '데이터 없음' }) {
+export default function DataTable({ columns, data, actions, emptyText = '데이터 없음', emptyNode }) {
   if (!data?.length) {
+    if (emptyNode) return emptyNode;
     return (
       <div className="text-center py-12 text-gray-400">
         <p className="text-4xl mb-2">📭</p>

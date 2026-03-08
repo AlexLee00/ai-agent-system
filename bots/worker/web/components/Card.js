@@ -1,4 +1,5 @@
 'use client';
+
 export default function Card({ title, value, subtitle, icon, color = 'blue', onClick }) {
   const colors = {
     blue:   'bg-blue-50  text-blue-600',
@@ -9,7 +10,9 @@ export default function Card({ title, value, subtitle, icon, color = 'blue', onC
 
   return (
     <div
-      className={`card ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      className={`card transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
+        onClick ? 'cursor-pointer' : ''
+      }`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between">

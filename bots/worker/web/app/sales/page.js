@@ -10,7 +10,7 @@ const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
 
 export default function SalesPage() {
-  const [sales, setSales]    = useState([]);
+  const [sales, setSales]     = useState([]);
   const [summary, setSummary] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,7 +18,7 @@ export default function SalesPage() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
-  const [tab, setTab]         = useState('list'); // list | chart
+  const [tab, setTab]         = useState('list');
 
   const load = () => {
     setLoading(true);
@@ -38,6 +38,8 @@ export default function SalesPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const openModal = () => { setForm(EMPTY_FORM); setError(''); setModal(true); };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -64,11 +66,21 @@ export default function SalesPage() {
     { key: 'description', label: '메모' },
   ];
 
+  const emptyNode = (
+    <div className="text-center py-12">
+      <p className="text-4xl mb-3">💰</p>
+      <p className="text-gray-500 mb-4">오늘의 매출을 입력해보세요</p>
+      <button onClick={openModal} className="btn-primary text-sm">
+        + 매출 등록하기
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">💰 매출 관리</h1>
-        <button className="btn-primary text-sm" onClick={() => { setForm(EMPTY_FORM); setError(''); setModal(true); }}>
+        <button className="btn-primary text-sm" onClick={openModal}>
           + 매출 등록
         </button>
       </div>
@@ -93,7 +105,7 @@ export default function SalesPage() {
             : <DataTable
                 columns={columns}
                 data={sales}
-                emptyText="매출 데이터 없음"
+                emptyNode={emptyNode}
                 actions={row => (
                   <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
                 )}
@@ -103,10 +115,17 @@ export default function SalesPage() {
       ) : (
         <div className="card">
           <h2 className="font-semibold text-gray-800 mb-4">주간 매출 추이</h2>
-          {chartData.length > 0
-            ? <SalesBarChart data={chartData} />
-            : <p className="text-center text-gray-400 py-10">데이터 없음</p>
-          }
+          {chartData.length > 0 ? (
+            <SalesBarChart data={chartData} />
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-4xl mb-3">📊</p>
+              <p className="text-gray-500 text-sm mb-4">매출 데이터가 없습니다</p>
+              <button onClick={openModal} className="btn-primary text-sm">
+                + 매출 등록하기
+              </button>
+            </div>
+          )}
         </div>
       )}
 

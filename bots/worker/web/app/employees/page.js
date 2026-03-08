@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
@@ -66,6 +67,16 @@ export default function EmployeesPage() {
     { key: 'status',     label: '상태',   render: v => v === 'active' ? '✅ 재직' : '⬛ 퇴직' },
   ];
 
+  const emptyNode = (
+    <div className="text-center py-12">
+      <p className="text-4xl mb-3">👥</p>
+      <p className="text-gray-500 mb-4">아직 등록된 직원이 없습니다</p>
+      <button onClick={openNew} className="btn-primary text-sm">
+        + 첫 직원 등록하기
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -74,12 +85,17 @@ export default function EmployeesPage() {
       </div>
 
       {/* 검색 */}
-      <input
-        className="input-base max-w-xs"
-        placeholder="이름/부서/직급 검색"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-      />
+      <div className="flex gap-2 max-w-xs">
+        <input
+          className="input-base flex-1"
+          placeholder="이름/부서/직급 검색"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <button className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+          <Search className="w-4 h-4" />
+        </button>
+      </div>
 
       <div className="card">
         {loading
@@ -87,7 +103,7 @@ export default function EmployeesPage() {
           : <DataTable
               columns={columns}
               data={filtered}
-              emptyText="직원 없음"
+              emptyNode={emptyNode}
               actions={row => (
                 <div className="flex gap-2">
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
@@ -77,6 +78,16 @@ export default function JournalsPage() {
     { key: 'content',       label: '내용',   render: v => v?.length > 50 ? v.slice(0, 50) + '…' : v },
   ];
 
+  const emptyNode = (
+    <div className="text-center py-12">
+      <p className="text-4xl mb-3">📝</p>
+      <p className="text-gray-500 mb-4">오늘의 업무를 기록해보세요</p>
+      <button onClick={openNew} className="btn-primary text-sm">
+        + 업무일지 작성하기
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -103,7 +114,9 @@ export default function JournalsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          <button type="submit" className="btn-secondary text-sm">검색</button>
+          <button type="submit" className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+            <Search className="w-4 h-4" />
+          </button>
         </form>
         {(filterDate || filterCat || search) && (
           <button
@@ -119,7 +132,7 @@ export default function JournalsPage() {
           : <DataTable
               columns={columns}
               data={journals}
-              emptyText="업무일지 없음"
+              emptyNode={emptyNode}
               actions={row => (
                 <div className="flex gap-2">
                   <Link href={`/journals/${row.id}`} className="btn-secondary text-xs px-3 py-1.5">보기</Link>
