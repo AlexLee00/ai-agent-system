@@ -30,7 +30,19 @@ const EMBED_MODEL = 'text-embedding-3-small';
 const EMBED_DIM   = 1536;
 
 // 허용 컬렉션 (SQL Injection 방지용 화이트리스트)
-const VALID_COLLECTIONS = ['rag_operations', 'rag_trades', 'rag_tech'];
+// 기존 rag-system(ChromaDB) 컬렉션 대응 포함
+const VALID_COLLECTIONS = [
+  // 신규 (이번 세션 추가)
+  'rag_operations',    // 운영 이슈·알림 (덱스터, 제이)
+  'rag_trades',        // 투자 매매 기록 (루나팀)
+  'rag_tech',          // 기술 인텔리전스 (아처)
+  // 기존 rag-system 대응 (ChromaDB 마이그레이션)
+  'rag_system_docs',   // 시스템 운영 가이드 (TOOLS.md 등)
+  'rag_reservations',  // 스카팀 예약 이력
+  'rag_market_data',   // 루나팀 주식·암호화폐 뉴스/공시
+  'rag_schedule',      // 일정/메모 (미래 확장)
+  'rag_work_docs',     // 업무문서 (미래 확장)
+];
 
 function _validateCollection(name) {
   const table = name.startsWith('rag_') ? name : `rag_${name}`;
