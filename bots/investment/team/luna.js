@@ -70,6 +70,52 @@ function buildPortfolioPrompt(symbols) {
 - USDT 잔고 초과 매수 금지`;
 }
 
+// ─── 시그널 융합 ─────────────────────────────────────────────────────
+
+const ANALYST_WEIGHTS = {
+  [ANALYST_TYPES.TA_MTF]:    0.35,
+  [ANALYST_TYPES.ONCHAIN]:   0.25,
+  [ANALYST_TYPES.SENTIMENT]: 0.20,
+  [ANALYST_TYPES.NEWS]:      0.15,
+};
+const DIRECTION_MAP = { BUY: 1, SELL: -1, HOLD: 0 };
+
+/**
+ * 분석가별 신호를 가중 평균으로 융합
+ * @param {Array} analyses  DB에서 읽은 분석 결과 배열
+ * @returns {{ fusedScore, averageConfidence, hasConflict, recommendation }}
+ */
+export function fuseSignals(analyses) {
+  // 같은 타입이 여러 개면 첫 번째(최신)만 사용
+  const byType = new Map();
+  for (const a of analyses) {
+    if (!byType.has(a.analyst)) byType.set(a.analyst, a);
+  }
+
+  let weightedScore = 0, totalWeight = 0;
+  const directions = [];
+  for (const [type, analysis] of byType) {
+    const weight    = ANALYST_WEIGHTS[type] ?? 0.05;
+    const direction = DIRECTION_MAP[analysis.signal] ?? 0;
+    const conf      = Math.max(0, Math.min(1, analysis.confidence || 0.5));
+    weightedScore  += direction * conf * weight;
+    totalWeight    += weight;
+    if (direction !== 0) directions.push(direction);
+  }
+
+  const fusedScore        = totalWeight > 0 ? weightedScore / totalWeight : 0;
+  const averageConfidence = byType.size > 0
+    ? [...byType.values()].reduce((s, a) => s + (a.confidence || 0.5), 0) / byType.size
+    : 0.5;
+  const hasConflict    = directions.some(d => d > 0) && directions.some(d => d < 0);
+  const recommendation =
+    hasConflict && Math.abs(fusedScore) < 0.3 ? 'HOLD' :
+    fusedScore  >  0.2                        ? 'LONG' :
+    fusedScore  < -0.2                        ? 'SHORT' : 'HOLD';
+
+  return { fusedScore, averageConfidence, hasConflict, recommendation };
+}
+
 // ─── 분석 요약 빌더 ─────────────────────────────────────────────────
 
 export function buildAnalysisSummary(analyses) {
@@ -90,6 +136,8 @@ export function buildAnalysisSummary(analyses) {
 export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null) {
   const summary = buildAnalysisSummary(analyses);
   const label   = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  const fused   = fuseSignals(analyses);
+  const fusedSection = `\n\n[시그널 융합] 방향=${fused.recommendation} | 점수=${fused.fusedScore.toFixed(3)} | 평균확신도=${(fused.averageConfidence * 100).toFixed(0)}%${fused.hasConflict ? ' | ⚠️ 신호 충돌' : ''}`;
 
   let debateSection = '';
   if (debate) {
@@ -124,7 +172,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     }
   } catch { /* RAG 검색 실패 시 무시 */ }
 
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
   const shadowResult = await shadow.evaluate({

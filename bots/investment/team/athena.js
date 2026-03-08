@@ -15,14 +15,15 @@ const PROMPTS = {
 데이터에 근거해야 하며, 억지 비관론은 금지입니다.
 
 응답 형식 (JSON만, 마크다운 없음):
-{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}`,
+{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"confidence":0.0~1.0,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
+confidence: 0.5=중립, 0.7+=확신, 0.9+=매우 확신`,
 
   kis_overseas: `당신은 미국 주식시장 약세(Bearish) 리서처입니다.
 주어진 기술지표 분석 데이터를 바탕으로 매도/관망 관점의 근거를 제시하세요.
 데이터에 근거해야 하며, 억지 비관론은 금지입니다.
 
 응답 형식 (JSON만, 마크다운 없음):
-{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
+{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"confidence":0.0~1.0,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
 
 주의: target_price·stop_loss는 USD 단위. 매크로 리스크(연준·경기침체) 우선 고려.`,
 
@@ -31,7 +32,7 @@ const PROMPTS = {
 데이터에 근거해야 하며, 억지 비관론은 금지입니다.
 
 응답 형식 (JSON만, 마크다운 없음):
-{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
+{"target_price":숫자,"stop_loss":숫자,"downside_pct":숫자,"confidence":0.0~1.0,"reasoning":"매도 근거 2문장 (한국어)","key_risks":["리스크1","리스크2"]}
 
 주의: target_price·stop_loss는 KRW 단위, 가격제한폭 ±30% 고려.`,
 };
@@ -58,6 +59,7 @@ export async function runBearResearcher(symbol, analysisSummary, currentPrice, e
     targetPrice: parsed.target_price,
     stopLoss:    parsed.stop_loss,
     downsidePct: parsed.downside_pct,
+    confidence:  parsed.confidence ?? Math.min(Math.abs(parsed.downside_pct || 0) / 20, 0.90),
     reasoning:   parsed.reasoning,
     keyRisks:    parsed.key_risks || [],
   };

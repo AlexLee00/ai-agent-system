@@ -20,7 +20,10 @@
     "journal": "node scripts/trading-journal.js",
     "journal:week": "node scripts/trading-journal.js --days=7",
     "journal:all": "node scripts/trading-journal.js --all",
-    "journal:tg": "node scripts/trading-journal.js --telegram"
+    "journal:tg": "node scripts/trading-journal.js --telegram",
+    "review": "node scripts/weekly-trade-review.js",
+    "review:dry": "node scripts/weekly-trade-review.js --dry-run",
+    "review:2w": "node scripts/weekly-trade-review.js --days=14"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
