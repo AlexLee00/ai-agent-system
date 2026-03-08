@@ -46,6 +46,7 @@ async function markSeen(id) {
  * 신규 예약 추가 (name, phoneRaw 자동 암호화)
  */
 async function addReservation(id, data) {
+  try {
   await pgPool.run(SCHEMA, `
     INSERT INTO reservations
       (id, composite_key, name_enc, phone, phone_raw_enc,
@@ -92,6 +93,10 @@ async function addReservation(id, data) {
     data.pickkoStartTime   || null,
     data.pickkoCompleteTime|| null,
   ]);
+  } catch (e) {
+    console.error('[db] addReservation 실패 (id:', id, '):', e.message);
+    throw e;
+  }
 }
 
 /**
@@ -123,7 +128,12 @@ async function updateReservation(id, updates) {
   sets.push(`updated_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')`);
   params.push(id);
 
-  await pgPool.run(SCHEMA, `UPDATE reservations SET ${sets.join(', ')} WHERE id = $${i}`, params);
+  try {
+    await pgPool.run(SCHEMA, `UPDATE reservations SET ${sets.join(', ')} WHERE id = $${i}`, params);
+  } catch (e) {
+    console.error('[db] updateReservation 실패 (id:', id, '):', e.message);
+    throw e;
+  }
 }
 
 /**
@@ -138,9 +148,14 @@ async function getReservation(id) {
  * pending/processing/failed 상태 예약 목록 반환
  */
 async function getPendingReservations() {
-  const rows = await pgPool.query(SCHEMA,
-    "SELECT * FROM reservations WHERE status IN ('pending','processing','failed') AND seen_only=0");
-  return rows.map(_decryptRow);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      "SELECT * FROM reservations WHERE status IN ('pending','processing','failed') AND seen_only=0");
+    return rows.map(_decryptRow);
+  } catch (e) {
+    console.error('[db] getPendingReservations 실패:', e.message);
+    throw e;
+  }
 }
 
 /**
@@ -386,6 +401,7 @@ function _safeDec(val) {
 async function upsertDailySummary(date, data) {
   const nowISO  = new Date().toISOString();
   const roomJson = JSON.stringify(data.roomAmounts || {});
+  try {
   await pgPool.run(SCHEMA, `
     INSERT INTO daily_summary
       (date, total_amount, room_amounts_json, entries_count,
@@ -410,19 +426,28 @@ async function upsertDailySummary(date, data) {
     data.generalRevenue || 0,
     nowISO,
   ]);
+  } catch (e) {
+    console.error('[db] upsertDailySummary 실패 (date:', date, '):', e.message);
+    throw e;
+  }
 }
 
 async function getDailySummary(date) {
-  const row = await pgPool.get(SCHEMA, 'SELECT * FROM daily_summary WHERE date = $1', [date]);
-  if (!row) return null;
-  return {
-    ...row,
-    roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
-    pickkoTotal:     row.pickko_total     || 0,
-    pickkoStudyRoom: row.pickko_study_room|| 0,
-    generalRevenue:  row.general_revenue  || 0,
-    confirmed:       row.confirmed === 1,
-  };
+  try {
+    const row = await pgPool.get(SCHEMA, 'SELECT * FROM daily_summary WHERE date = $1', [date]);
+    if (!row) return null;
+    return {
+      ...row,
+      roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
+      pickkoTotal:     row.pickko_total     || 0,
+      pickkoStudyRoom: row.pickko_study_room|| 0,
+      generalRevenue:  row.general_revenue  || 0,
+      confirmed:       row.confirmed === 1,
+    };
+  } catch (e) {
+    console.error('[db] getDailySummary 실패 (date:', date, '):', e.message);
+    throw e;
+  }
 }
 
 async function getUnconfirmedSummaryBefore(cutoffDate) {
@@ -458,6 +483,7 @@ async function getLatestUnconfirmedSummary() {
  * 컨펌 처리 — daily_summary.confirmed=1 + room_revenue 누적 (트랜잭션)
  */
 async function confirmDailySummary(date) {
+  try {
   const row = await pgPool.get(SCHEMA, 'SELECT * FROM daily_summary WHERE date = $1', [date]);
   if (!row) return null;
 
@@ -490,6 +516,10 @@ async function confirmDailySummary(date) {
   });
 
   return { date, totalAmount: row.total_amount, roomAmounts, generalRevenue: row.general_revenue || 0 };
+  } catch (e) {
+    console.error('[db] confirmDailySummary 실패 (date:', date, '):', e.message);
+    throw e;
+  }
 }
 
 async function getDailySummariesInRange(startDate, endDate) {
@@ -516,18 +546,23 @@ async function getRoomRevenueSummary() {
 // ─── stats ──────────────────────────────────────────────────────────
 
 async function getTodayStats(date) {
-  const [naverTotalRow, naverConfirmedRow, kioskTotalRow] = await Promise.all([
-    pgPool.get(SCHEMA,
-      "SELECT COUNT(*) as cnt FROM reservations WHERE date=$1 AND seen_only=0 AND status NOT IN ('failed')", [date]),
-    pgPool.get(SCHEMA,
-      "SELECT COUNT(*) as cnt FROM reservations WHERE date=$1 AND seen_only=0 AND status='completed'", [date]),
-    pgPool.get(SCHEMA,
-      'SELECT COUNT(*) as cnt FROM kiosk_blocks WHERE date=$1', [date]),
-  ]);
-  const naverTotal     = Number(naverTotalRow?.cnt     ?? 0);
-  const naverConfirmed = Number(naverConfirmedRow?.cnt ?? 0);
-  const kioskTotal     = Number(kioskTotalRow?.cnt     ?? 0);
-  return { naverTotal, naverConfirmed, kioskTotal, total: naverTotal + kioskTotal };
+  try {
+    const [naverTotalRow, naverConfirmedRow, kioskTotalRow] = await Promise.all([
+      pgPool.get(SCHEMA,
+        "SELECT COUNT(*) as cnt FROM reservations WHERE date=$1 AND seen_only=0 AND status NOT IN ('failed')", [date]),
+      pgPool.get(SCHEMA,
+        "SELECT COUNT(*) as cnt FROM reservations WHERE date=$1 AND seen_only=0 AND status='completed'", [date]),
+      pgPool.get(SCHEMA,
+        'SELECT COUNT(*) as cnt FROM kiosk_blocks WHERE date=$1', [date]),
+    ]);
+    const naverTotal     = Number(naverTotalRow?.cnt     ?? 0);
+    const naverConfirmed = Number(naverConfirmedRow?.cnt ?? 0);
+    const kioskTotal     = Number(kioskTotalRow?.cnt     ?? 0);
+    return { naverTotal, naverConfirmed, kioskTotal, total: naverTotal + kioskTotal };
+  } catch (e) {
+    console.error('[db] getTodayStats 실패 (date:', date, '):', e.message);
+    throw e;
+  }
 }
 
 // ─── naver_future_confirmed ─────────────────────────────────────────
