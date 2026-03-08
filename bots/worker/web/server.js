@@ -33,7 +33,7 @@ const app = express();
 // ── 보안 미들웨어 ─────────────────────────────────────────────────────
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:4000'] }));
+app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:4000', 'http://localhost:4001'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -353,6 +353,314 @@ app.get('/api/audit', requireAuth, requireRole('master','admin'), companyFilter,
        ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
       [req.companyId, limit, offset]);
     res.json({ logs: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Phase 2 API — 직원(노아) / 근태(노아) / 매출(올리버) / 문서(에밀리)
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 직원 API (노아) ────────────────────────────────────────────────────
+
+app.get('/api/employees', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset, sort, order } = pagination(req);
+  const validSort = ['name','position','department','hire_date','created_at'].includes(sort) ? sort : 'name';
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT id,company_id,user_id,name,phone,position,department,hire_date,status,created_at
+       FROM worker.employees
+       WHERE company_id=$1 AND deleted_at IS NULL
+       ORDER BY ${validSort} ${order} LIMIT $2 OFFSET $3`,
+      [req.companyId, limit, offset]);
+    res.json({ employees: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/employees',
+  requireAuth, requireRole('master','admin'), auditLog('CREATE', 'employees'),
+  body('name').trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { name, phone, position, department, hire_date, user_id } = req.body;
+    const companyId = req.user.role === 'master' ? (req.body.company_id || req.user.company_id) : req.user.company_id;
+    try {
+      const emp = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.employees (company_id,user_id,name,phone,position,department,hire_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING id,company_id,name,position,department,hire_date,status`,
+        [companyId, user_id||null, name, phone||null, position||null, department||null, hire_date||null]);
+      res.status(201).json({ employee: emp });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/employees/:id',
+  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'employees'),
+  body('name').optional().trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.employees WHERE id=$1 AND deleted_at IS NULL`, [req.params.id]);
+      if (!target) return res.status(404).json({ error: '직원을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (!await assertCompanyAccess(req, res, target.company_id)) return;
+
+      const { name, phone, position, department, hire_date, status, user_id } = req.body;
+      const emp = await pgPool.get(SCHEMA,
+        `UPDATE worker.employees
+         SET name=COALESCE($1,name), phone=COALESCE($2,phone), position=COALESCE($3,position),
+             department=COALESCE($4,department), hire_date=COALESCE($5,hire_date),
+             status=COALESCE($6,status), user_id=COALESCE($7,user_id)
+         WHERE id=$8 RETURNING id,company_id,name,phone,position,department,hire_date,status`,
+        [name||null, phone||null, position||null, department||null, hire_date||null,
+         status||null, user_id||null, req.params.id]);
+      res.json({ employee: emp });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/employees/:id', requireAuth, requireRole('master','admin'), auditLog('DELETE', 'employees'), async (req, res) => {
+  try {
+    const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.employees WHERE id=$1`, [req.params.id]);
+    if (target && !await assertCompanyAccess(req, res, target.company_id)) return;
+    await pgPool.run(SCHEMA, `UPDATE worker.employees SET deleted_at=NOW() WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ── 근태 API (노아) ────────────────────────────────────────────────────
+
+app.get('/api/attendance', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT a.*, e.name AS employee_name
+       FROM worker.attendance a
+       JOIN worker.employees e ON e.id=a.employee_id
+       WHERE a.company_id=$1 AND a.date=$2
+       ORDER BY e.name LIMIT $3 OFFSET $4`,
+      [req.companyId, date, limit, offset]);
+    res.json({ attendance: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/attendance/checkin', requireAuth, async (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const now   = new Date().toISOString();
+  try {
+    // user_id로 employee 조회
+    const emp = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+      [req.user.company_id, req.user.id]);
+    if (!emp) {
+      // employee_id 직접 지정도 허용 (admin)
+      const empId = req.body.employee_id;
+      if (!empId) return res.status(404).json({ error: '연결된 직원 정보 없음', code: 'NOT_FOUND' });
+      await pgPool.run(SCHEMA,
+        `INSERT INTO worker.attendance (company_id,employee_id,date,check_in,status)
+         VALUES ($1,$2,$3,$4,'present') ON CONFLICT (employee_id,date) DO UPDATE SET check_in=$4`,
+        [req.user.company_id, empId, today, now]);
+      return res.json({ ok: true, check_in: now });
+    }
+    const existing = await pgPool.get(SCHEMA,
+      `SELECT check_in FROM worker.attendance WHERE employee_id=$1 AND date=$2`, [emp.id, today]);
+    if (existing?.check_in) return res.status(409).json({ error: '이미 출근 체크됨', code: 'DUPLICATE' });
+    await pgPool.run(SCHEMA,
+      `INSERT INTO worker.attendance (company_id,employee_id,date,check_in,status)
+       VALUES ($1,$2,$3,$4,'present') ON CONFLICT (employee_id,date) DO UPDATE SET check_in=$4`,
+      [req.user.company_id, emp.id, today, now]);
+    res.json({ ok: true, check_in: now });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/attendance/checkout', requireAuth, async (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const now   = new Date().toISOString();
+  try {
+    const emp = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+      [req.user.company_id, req.user.id]);
+    const empId = emp?.id || req.body.employee_id;
+    if (!empId) return res.status(404).json({ error: '연결된 직원 정보 없음', code: 'NOT_FOUND' });
+
+    const existing = await pgPool.get(SCHEMA,
+      `SELECT check_in FROM worker.attendance WHERE employee_id=$1 AND date=$2`, [empId, today]);
+    if (!existing?.check_in) return res.status(400).json({ error: '출근 기록이 없습니다', code: 'NOT_CHECKED_IN' });
+
+    await pgPool.run(SCHEMA,
+      `UPDATE worker.attendance SET check_out=$1 WHERE employee_id=$2 AND date=$3`,
+      [now, empId, today]);
+    res.json({ ok: true, check_out: now });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ── 매출 API (올리버) ──────────────────────────────────────────────────
+
+app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const from = req.query.from || new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0,10);
+  const to   = req.query.to   || new Date().toISOString().slice(0, 10);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT id,date,amount,category,description,registered_by,created_at
+       FROM worker.sales
+       WHERE company_id=$1 AND date BETWEEN $2 AND $3 AND deleted_at IS NULL
+       ORDER BY date DESC, created_at DESC LIMIT $4 OFFSET $5`,
+      [req.companyId, from, to, limit, offset]);
+    res.json({ sales: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const [daily, weekly, monthly] = await Promise.all([
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+         FROM worker.sales WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT date, SUM(amount) AS total, COUNT(*) AS cnt
+         FROM worker.sales WHERE company_id=$1 AND date>=CURRENT_DATE-6 AND deleted_at IS NULL
+         GROUP BY date ORDER BY date`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM') AS month, SUM(amount) AS total, COUNT(*) AS cnt
+         FROM worker.sales WHERE company_id=$1 AND date>=CURRENT_DATE-364 AND deleted_at IS NULL
+         GROUP BY 1 ORDER BY 1`,
+        [req.companyId]),
+    ]);
+    res.json({
+      today:   { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
+      weekly,
+      monthly,
+    });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/sales',
+  requireAuth, auditLog('CREATE', 'sales'),
+  body('amount').isInt({ min: 1 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { amount, category, description, date } = req.body;
+    const saleDate = date || new Date().toISOString().slice(0, 10);
+    try {
+      const sale = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.sales (company_id,date,amount,category,description,registered_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,date,amount,category`,
+        [req.user.company_id, saleDate, amount, category||'기타', description||null, req.user.id]);
+      res.status(201).json({ sale });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.put('/api/sales/:id',
+  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'sales'),
+  body('amount').optional().isInt({ min: 1 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.sales WHERE id=$1 AND deleted_at IS NULL`, [req.params.id]);
+      if (!target) return res.status(404).json({ error: '매출 항목을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (!await assertCompanyAccess(req, res, target.company_id)) return;
+      const { amount, category, description, date } = req.body;
+      const sale = await pgPool.get(SCHEMA,
+        `UPDATE worker.sales
+         SET amount=COALESCE($1,amount), category=COALESCE($2,category),
+             description=COALESCE($3,description), date=COALESCE($4,date)
+         WHERE id=$5 RETURNING id,date,amount,category`,
+        [amount||null, category||null, description||null, date||null, req.params.id]);
+      res.json({ sale });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/sales/:id', requireAuth, requireRole('master','admin'), auditLog('DELETE', 'sales'), async (req, res) => {
+  try {
+    const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.sales WHERE id=$1`, [req.params.id]);
+    if (target && !await assertCompanyAccess(req, res, target.company_id)) return;
+    await pgPool.run(SCHEMA, `UPDATE worker.sales SET deleted_at=NOW() WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// ── 문서 API (에밀리) ──────────────────────────────────────────────────
+
+app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const keyword  = req.query.keyword  || '';
+  const category = req.query.category || '';
+  const params   = [req.companyId];
+  let where = `company_id=$1 AND deleted_at IS NULL`;
+  if (keyword)  { params.push(`%${keyword}%`);  where += ` AND (filename ILIKE $${params.length} OR ai_summary ILIKE $${params.length})`; }
+  if (category) { params.push(category); where += ` AND category=$${params.length}`; }
+  params.push(limit, offset);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT id,category,filename,ai_summary,uploaded_by,created_at FROM worker.documents
+       WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+      params);
+    res.json({ documents: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/documents/upload',
+  requireAuth, auditLog('UPLOAD', 'documents'),
+  body('filename').trim().notEmpty(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { filename, file_path, category } = req.body;
+
+    // 규칙 기반 분류 (Gemini 없이)
+    const CATEGORY_KW = {
+      '계약서':   ['계약','협약','약정'],
+      '견적서':   ['견적','estimate','quote'],
+      '세금계산서': ['세금계산서','invoice','tax'],
+    };
+    let detectedCategory = category || '기타';
+    if (!category) {
+      const lower = filename.toLowerCase();
+      for (const [cat, kws] of Object.entries(CATEGORY_KW)) {
+        if (kws.some(k => lower.includes(k))) { detectedCategory = cat; break; }
+      }
+    }
+
+    try {
+      const doc = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id,category,filename,created_at`,
+        [req.user.company_id, detectedCategory, filename, file_path||null, req.user.id]);
+      res.status(201).json({ document: doc });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+// ── 대시보드 요약 API ─────────────────────────────────────────────────
+
+app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const [salesRow, attendRow, docsRow, approvalsRow] = await Promise.all([
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total FROM worker.sales
+         WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`, [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.attendance a
+         JOIN worker.employees e ON e.id=a.employee_id
+         WHERE a.company_id=$1 AND a.date=CURRENT_DATE AND a.check_in IS NOT NULL AND e.deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.documents
+         WHERE company_id=$1 AND ai_summary IS NULL AND deleted_at IS NULL`, [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.approval_requests
+         WHERE company_id=$1 AND status='pending' AND deleted_at IS NULL`, [req.companyId]),
+    ]);
+    res.json({
+      today_sales:      Number(salesRow?.total    ?? 0),
+      checked_in:       Number(attendRow?.cnt     ?? 0),
+      pending_docs:     Number(docsRow?.cnt       ?? 0),
+      pending_approvals: Number(approvalsRow?.cnt ?? 0),
+    });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
