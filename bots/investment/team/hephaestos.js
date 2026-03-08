@@ -170,12 +170,19 @@ export async function executeSignal(signal) {
       }
 
     } else if (action === ACTIONS.SELL) {
+      // DB 포지션 우선, 없으면 실제 바이낸스 잔고 조회 (외부 매수 코인도 매도 가능)
       const position = await db.getPosition(symbol);
-      const amount   = position?.amount;
+      let amount = position?.amount;
       if (!amount || amount <= 0) {
-        console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
-        return { success: false, reason: '포지션 없음' };
+        const base = symbol.split('/')[0];
+        const bal  = await getExchange().fetchBalance();
+        amount = bal.free[base] || 0;
+        if (amount <= 0) {
+          console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
+          await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+          return { success: false, reason: '보유량 없음' };
+        }
+        console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${base}`);
       }
 
       const order = await marketSell(symbol, amount, paperMode);
