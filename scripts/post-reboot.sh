@@ -112,6 +112,9 @@ log "🔄 공통 에이전트:"
 check_periodic "ai.agent.auto-commit"   "auto-commit"
 check_periodic "ai.agent.nightly-sync"  "nightly-sync"
 
+log "⚙️  n8n:"
+check_svc      "ai.n8n.server"          "n8n 워크플로우 서버 (포트 5678)"
+
 # ── 전체 launchd 서비스 목록 저장 ────────────────────────
 launchctl list 2>/dev/null | grep "	ai\." | sort > /tmp/post-reboot-services.txt
 log "💾 전체 서비스 목록 저장 → /tmp/post-reboot-services.txt"

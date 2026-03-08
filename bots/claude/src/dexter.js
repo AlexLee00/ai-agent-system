@@ -41,6 +41,7 @@ const checks = {
   openclaw:      require('../lib/checks/openclaw'),
   llmCost:       require('../lib/checks/llm-cost'),
   workspaceGit:  require('../lib/checks/workspace-git'),
+  n8n:           require('../lib/checks/n8n'),
 };
 
 // ─── 이중 모드 관리자 ────────────────────────────────────────────────
@@ -103,6 +104,7 @@ async function main() {
     () => checks.openclaw.run(),
     () => checks.llmCost.run(),
     () => checks.workspaceGit.run(),
+    () => checks.n8n.run(),
   ];
 
   for (const run of runners) {

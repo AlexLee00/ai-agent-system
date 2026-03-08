@@ -60,9 +60,12 @@ for svc in ai.ska.naver-monitor ai.ska.kiosk-monitor; do
   fi
 done
 
-# ── 5. OpenClaw 게이트웨이 정지 ──────────────────────────
+# ── 5. OpenClaw 게이트웨이 + n8n 정지 ───────────────────
 log "⏹️  OpenClaw 게이트웨이 정지..."
 launchctl stop ai.openclaw.gateway 2>/dev/null && log "   ✅ OpenClaw 게이트웨이 정지" || true
+
+log "⏹️  n8n 워크플로우 서버 정지..."
+launchctl stop ai.n8n.server 2>/dev/null && log "   ✅ n8n 서버 정지" || log "   ⚠️  n8n 미실행 (무시)"
 
 # ── 6. 현재 launchd 서비스 상태 스냅샷 저장 ─────────────
 log "💾 launchd 서비스 상태 스냅샷 저장 → /tmp/pre-reboot-services.txt"
