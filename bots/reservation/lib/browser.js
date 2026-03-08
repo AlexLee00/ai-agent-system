@@ -24,4 +24,45 @@ function setupDialogHandler(page, log) {
   });
 }
 
-module.exports = { getPickkoLaunchOptions, setupDialogHandler };
+const MAX_RETRIES = 3;
+
+/**
+ * 브라우저 실행 (최대 3회 재시도 + 2초 대기)
+ * @returns {Promise<import('puppeteer').Browser>}
+ */
+async function launchBrowserWithRetry() {
+  const opts = getPickkoLaunchOptions();
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const browser = await puppeteer.launch(opts);
+      return browser;
+    } catch (e) {
+      console.warn(`[browser] 브라우저 실행 실패 (${i + 1}/${MAX_RETRIES}):`, e.message);
+      if (i < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+  throw new Error('[browser] 브라우저 실행 불가 — 3회 재시도 실패');
+}
+
+/**
+ * 페이지 이동 (타임아웃 시 크래시 없이 계속 진행)
+ * @param {import('puppeteer').Page} page
+ * @param {string} url
+ * @param {number} [timeout=30000]
+ */
+async function navigateWithTimeout(page, url, timeout = 30000) {
+  try {
+    await page.goto(url, { timeout, waitUntil: 'networkidle2' });
+  } catch (e) {
+    if (e.name === 'TimeoutError' || e.message.includes('timeout')) {
+      console.warn('[browser] 페이지 로드 타임아웃:', url);
+      // 타임아웃이어도 DOM이 있을 수 있음 → 진행
+    } else {
+      throw e;
+    }
+  }
+}
+
+module.exports = { getPickkoLaunchOptions, setupDialogHandler, launchBrowserWithRetry, navigateWithTimeout };

@@ -2,12 +2,22 @@ const { delay } = require('./utils');
 
 async function loginToPickko(page, id, pw, delayFn) {
   const d = delayFn || delay;
-  await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
-  await page.evaluate((id, pw) => {
-    document.getElementById('mn_id').value = id;
-    document.getElementById('mn_pw').value = pw;
-    document.getElementById('loginButton').click();
-  }, id, pw);
+  try {
+    await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
+  } catch (e) {
+    console.error('[pickko] 로그인 페이지 로드 실패:', e.message);
+    throw e;
+  }
+  try {
+    await page.evaluate((id, pw) => {
+      document.getElementById('mn_id').value = id;
+      document.getElementById('mn_pw').value = pw;
+      document.getElementById('loginButton').click();
+    }, id, pw);
+  } catch (e) {
+    console.error('[pickko] 로그인 폼 입력 실패:', e.message);
+    throw e;
+  }
   await d(3000);
 }
 
@@ -60,9 +70,14 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
     receiptDate = ''
   } = opts;
 
-  await page.goto('https://pickkoadmin.com/study/index.html', {
-    waitUntil: 'networkidle2', timeout: 30000
-  });
+  try {
+    await page.goto('https://pickkoadmin.com/study/index.html', {
+      waitUntil: 'networkidle2', timeout: 30000
+    });
+  } catch (e) {
+    console.error('[pickko] fetchPickkoEntries 페이지 로드 실패:', e.message);
+    return { entries: [], fetchOk: false };
+  }
   await delay(2000);
 
   // 필터 설정
@@ -129,7 +144,9 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
   await delay(2000);
 
   // colMap 분석
-  const colMap = await page.evaluate(() => {
+  let colMap;
+  try {
+    colMap = await page.evaluate(() => {
     const result = {
       name: -1, phone: -1, room: -1,
       startTime: -1, endTime: -1, amount: -1, status: -1, receiptTime: -1,
@@ -152,10 +169,16 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
       if (t === '접수일시' || (t.includes('접수') && t.includes('일'))) result.receiptTime = i;
     });
     return result;
-  });
+    });
+  } catch (e) {
+    console.error('[pickko] colMap 파싱 실패:', e.message);
+    return { entries: [], fetchOk: false };
+  }
 
   // 행 파싱
-  const rawEntries = await page.evaluate((sd, cm, sk, ma, rd) => {
+  let rawEntries;
+  try {
+    rawEntries = await page.evaluate((sd, cm, sk, ma, rd) => {
     const entries = [];
     const trs = Array.from(document.querySelectorAll('tbody tr'));
     for (const tr of trs) {
@@ -218,7 +241,11 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
       entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText });
     }
     return entries;
-  }, startDate, colMap, statusKeyword, minAmount, receiptDate);
+    }, startDate, colMap, statusKeyword, minAmount, receiptDate);
+  } catch (e) {
+    console.error('[pickko] 행 파싱 실패:', e.message);
+    return { entries: [], fetchOk: false };
+  }
 
   const entries = rawEntries.map(e => ({
     name: e.name,
@@ -248,10 +275,16 @@ async function fetchPickkoEntries(page, startDate, opts = {}) {
 async function findPickkoMember(page, phone, d) {
   const wait = d || delay;
 
-  await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+  try {
+    await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+  } catch (e) {
+    console.error('[pickko] findPickkoMember 페이지 로드 실패:', e.message);
+    return { found: false, mbNo: null, name: null };
+  }
   await wait(2000);
 
   // 전화번호 검색 입력 (placeholder "이름" 또는 "검색" 기준, 없으면 마지막 텍스트 input)
+  try {
   await page.evaluate((p) => {
     const inputs = document.querySelectorAll('input[type="text"]');
     let target = null;
@@ -267,6 +300,9 @@ async function findPickkoMember(page, phone, d) {
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     }
   }, phone);
+  } catch (e) {
+    console.error('[pickko] 회원 검색 입력 실패:', e.message);
+  }
   await wait(2000);
 
   // 회원 선택 버튼 클릭 → 모달 열기 (id 방식 실패 시 텍스트 폴백)
