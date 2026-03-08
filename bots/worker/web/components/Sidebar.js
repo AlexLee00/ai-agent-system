@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, FileText, CheckSquare, Settings,
-  Building2, UserCog, Wallet, FolderKanban, Calendar,
+  Building2, UserCog, Wallet, FolderKanban, Calendar, Bot,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -54,6 +54,22 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {/* AI 분석 — admin/master 전용 */}
+        {(user?.role === 'admin' || user?.role === 'master') && (() => {
+          const active = pathname.startsWith('/ai');
+          return (
+            <Link
+              href="/ai"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Bot className={`w-5 h-5 shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+              AI 분석
+            </Link>
+          );
+        })()}
 
         {/* 마스터 전용 메뉴 */}
         {user?.role === 'master' && (

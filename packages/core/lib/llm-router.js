@@ -61,6 +61,12 @@ const TEAM_REQUEST_MAP = {
     risk_assessment:     'complex',
     strategy_review:     'deep',
   },
+  worker: {
+    document_classify:  'simple',
+    ai_question:        'medium',
+    report_generate:    'medium',
+    revenue_forecast:   'complex',
+  },
 };
 
 // 팀별 기본 복잡도
@@ -68,6 +74,7 @@ const TEAM_DEFAULTS = {
   ska:    'simple',
   claude: 'medium',
   luna:   'medium',
+  worker: 'medium',
 };
 
 // ── 복잡도 분류 ────────────────────────────────────────────────────────

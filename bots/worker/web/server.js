@@ -27,6 +27,12 @@ const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess }
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { recalcProgress } = require('../src/ryan');
 
+// ── AI 모듈 ───────────────────────────────────────────────────────────
+const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
+const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag'));
+const { callLLM } = require('../lib/ai-client');
+const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly } = require('../lib/ai-helper');
+
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
 const UPLOAD_DIR = path.join(__dirname, '../uploads');
@@ -747,6 +753,10 @@ app.post('/api/documents/upload',
         `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by)
          VALUES ($1,$2,$3,$4,$5) RETURNING id,category,filename,created_at`,
         [req.user.company_id, detectedCategory, filename, file_path||null, req.user.id]);
+      // RAG 자동 저장 (실패해도 본 기능 영향 없음)
+      rag.store('rag_work_docs', `[${detectedCategory}] ${filename}`,
+        { company_id: req.user.company_id, document_id: doc.id, category: detectedCategory }, 'emily'
+      ).catch(() => {});
       res.status(201).json({ document: doc });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -819,6 +829,10 @@ app.post('/api/journals',
         `INSERT INTO worker.work_journals (company_id, employee_id, date, content, category)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
         [req.companyId, empId, date || new Date().toISOString().slice(0,10), content, category || 'general']);
+      // RAG 자동 저장 (실패해도 본 기능 영향 없음)
+      rag.store('rag_work_docs', `[업무일지] ${content.slice(0, 500)}`,
+        { company_id: req.companyId, journal_id: row.id, category: category || 'general' }, 'emily'
+      ).catch(() => {});
       res.status(201).json({ journal: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -1243,6 +1257,102 @@ app.delete('/api/schedules/:id', requireAuth, companyFilter, auditLog('DELETE', 
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
+
+// ── AI 질문 API ───────────────────────────────────────────────────────
+
+app.post('/api/ai/ask',
+  requireAuth, requireRole('admin', 'master'), companyFilter,
+  body('question').isString().trim().isLength({ min: 2, max: 500 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const { question } = req.body;
+    const companyId   = req.companyId;
+    try {
+      // 1단계: SQL 생성
+      const { model } = llmRouter.selectModel({ team: 'worker', requestType: 'ai_question' });
+      const sqlText   = await callLLM(model, '당신은 PostgreSQL 전문가입니다.', buildSQLPrompt(question, companyId), 512);
+      const sql       = extractSQL(sqlText);
+
+      // 2단계: 안전성 검증
+      if (!isSelectOnly(sql)) {
+        return res.status(400).json({ error: 'SELECT 쿼리만 허용됩니다.', code: 'UNSAFE_QUERY', sql });
+      }
+
+      // 3단계: SQL 실행
+      const rows = await pgPool.query(SCHEMA, sql, []);
+
+      // 4단계: RAG 컨텍스트
+      let ragContext = '';
+      try {
+        const hits = await rag.search('rag_work_docs', question, { limit: 3,
+          filter: { company_id: companyId } });
+        ragContext = hits.map(h => h.content).join('\n');
+      } catch { /* RAG 실패 무시 */ }
+
+      // 5단계: 결과 요약
+      const answer = await callLLM(model, '당신은 업무 데이터 분석가입니다.',
+        buildSummaryPrompt(question, rows, ragContext), 1024);
+
+      res.json({ answer, data: rows.slice(0, 50), sql, rowCount: rows.length, ragUsed: ragContext.length > 0 });
+    } catch (e) {
+      console.error('[AI/ask]', e.message);
+      res.status(500).json({ error: 'AI 분석 중 오류가 발생했습니다.', code: 'AI_ERROR', detail: e.message });
+    }
+  }
+);
+
+app.post('/api/ai/revenue-forecast',
+  requireAuth, requireRole('admin', 'master'), companyFilter,
+  async (req, res) => {
+    try {
+      const rows = await pgPool.query(SCHEMA,
+        `SELECT date::text, SUM(amount) AS daily_total, COUNT(*) AS tx_count
+         FROM worker.sales
+         WHERE company_id=$1 AND date >= NOW() - INTERVAL '90 days' AND deleted_at IS NULL
+         GROUP BY date ORDER BY date`,
+        [req.companyId]);
+
+      if (rows.length < 7) {
+        return res.json({ forecast: null,
+          message: '예측에 필요한 데이터가 부족합니다. 최소 7일 이상의 매출 데이터가 필요합니다.',
+          dataPoints: rows.length });
+      }
+
+      const { model } = llmRouter.selectModel({ team: 'worker', requestType: 'revenue_forecast' });
+      const dataStr   = rows.map(r => `${r.date}: ${Number(r.daily_total).toLocaleString()}원 (${r.tx_count}건)`).join('\n');
+
+      const forecastText = await callLLM(model, '당신은 매출 분석 전문가입니다.',
+        `아래 일별 매출 데이터를 분석하고 다음 30일 예측을 JSON으로 반환하세요.
+
+## 매출 데이터
+${dataStr}
+
+## JSON 형식으로 답변 (다른 텍스트 없이)
+{
+  "trend": "상승/하락/횡보",
+  "analysis": "분석 요약 (2~3문장)",
+  "forecast_30d_total": 숫자,
+  "forecast_30d_daily_avg": 숫자,
+  "weekly_pattern": "요일별 패턴",
+  "warnings": "주의사항",
+  "confidence": "high/medium/low"
+}`, 1024);
+
+      let forecast;
+      try {
+        forecast = JSON.parse(forecastText.replace(/```json?\n?/gi, '').replace(/```/g, '').trim());
+      } catch {
+        forecast = { analysis: forecastText, raw: true };
+      }
+
+      res.json({ forecast, dataPoints: rows.length,
+        period: { from: rows[0]?.date, to: rows[rows.length - 1]?.date } });
+    } catch (e) {
+      console.error('[AI/revenue-forecast]', e.message);
+      res.status(500).json({ error: 'AI 예측 중 오류가 발생했습니다.', code: 'FORECAST_ERROR' });
+    }
+  }
+);
 
 // ── 헬스체크 ─────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ status: 'ok', port: PORT, ts: new Date().toISOString() }));
