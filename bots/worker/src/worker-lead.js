@@ -18,6 +18,12 @@ const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
 const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
 const { getSecret } = require('../lib/secrets');
 
+// ── Phase 2 봇 ────────────────────────────────────────────────────────
+const emily  = require('./emily');
+const noah   = require('./noah');
+const oliver = require('./oliver');
+const { handleCallback: handleApprovalCallback } = require('../lib/approval');
+
 const SCHEMA = 'worker';
 const TOPIC  = getSecret('telegram_worker_topic_id') || null;
 
@@ -29,13 +35,33 @@ async function _poll() {
   if (!token) { console.warn('[worker-lead] telegram_bot_token 없음 — 폴링 스킵'); return; }
 
   try {
-    const res  = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${_offset}&timeout=10&allowed_updates=["message"]`,
+    const res  = await fetch(
+      `https://api.telegram.org/bot${token}/getUpdates?offset=${_offset}&timeout=10&allowed_updates=["message","callback_query"]`,
       { signal: AbortSignal.timeout(15000) });
     const data = await res.json();
     if (!data.ok) return;
 
     for (const upd of data.result) {
       _offset = upd.update_id + 1;
+
+      // 인라인 버튼 콜백 (승인/반려)
+      if (upd.callback_query) {
+        const cb   = upd.callback_query;
+        const user = cb.from?.id ? await _getUser(cb.from.id) : null;
+        if (user) {
+          const reply = await handleApprovalCallback(cb.data, user);
+          if (reply) {
+            await _sendReply(token, cb.message.chat.id, reply, cb.message.message_thread_id);
+          }
+        }
+        // 콜백 응답 (버튼 로딩 해제)
+        await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: cb.id }),
+        }).catch(() => {});
+        continue;
+      }
+
       const msg = upd.message;
       if (!msg?.text) continue;
 
@@ -71,6 +97,31 @@ async function _getUser(telegramId) {
 async function handleCommand(text, fromTelegramId) {
   const parts  = text.split(/\s+/);
   const cmd    = parts[0].toLowerCase();
+
+  // Phase 2 봇 위임 (에밀리/노아/올리버)
+  const PHASE2_CMDS = [
+    '/doc_upload','/doc_list','/doc_search','/emily_report',      // 에밀리
+    '/checkin','/checkout','/attendance','/employee_list','/leave_request', // 노아
+    '/sales_today','/sales_week','/sales_register','/sales_analysis',       // 올리버
+  ];
+  if (PHASE2_CMDS.includes(cmd)) {
+    const user = fromTelegramId ? await _getUser(fromTelegramId) : null;
+    if (!user) return '⚠️ 등록되지 않은 사용자입니다.';
+    const ctx = { user };
+    const args = parts.slice(1).join(' ');
+
+    // 에밀리 명령어
+    let reply = await emily.handleCommand(cmd, args, ctx);
+    if (reply !== null) return reply;
+
+    // 노아 명령어
+    reply = await noah.handleCommand(cmd, args, ctx);
+    if (reply !== null) return reply;
+
+    // 올리버 명령어
+    reply = await oliver.handleCommand(cmd, args, ctx);
+    if (reply !== null) return reply;
+  }
 
   if (!['/worker','/companies','/users','/approve','/reject'].includes(cmd)) return null;
 
@@ -143,19 +194,38 @@ async function handleCommand(text, fromTelegramId) {
 
 function _helpMessage(user) {
   const lines = [
-    `💼 워커팀 (Phase 1)`,
+    `💼 워커팀 (Phase 2)`,
     `══════════════════`,
     `역할: <b>${user.role}</b> | ${user.name}`,
     ``,
-    `📌 명령어:`,
+    `📌 기본 명령어:`,
     `  /worker       — 이 도움말`,
     `  /approve      — 승인 대기 목록`,
     `  /approve {ID} — 승인`,
     `  /reject {ID} {사유} — 반려`,
+    ``,
+    `📎 에밀리 (문서):`,
+    `  /doc_upload   — 업로드 안내`,
+    `  /doc_list     — 최근 문서`,
+    `  /doc_search   — 검색`,
+    `  /emily_report — 주간 리포트`,
+    ``,
+    `👥 노아 (인사):`,
+    `  /checkin      — 출근 체크`,
+    `  /checkout     — 퇴근 체크`,
+    `  /attendance   — 오늘 근태`,
+    `  /employee_list — 직원 목록`,
+    `  /leave_request — 휴가 신청`,
+    ``,
+    `💰 올리버 (매출):`,
+    `  /sales_today  — 오늘 매출`,
+    `  /sales_week   — 주간 매출`,
+    `  /sales_register — 매출 등록`,
+    `  /sales_analysis — AI 분석`,
   ];
-  if (['master','admin'].includes(user.role)) lines.push(`  /users        — 사용자 목록`);
+  if (['master','admin'].includes(user.role)) lines.push(``, `  /users        — 사용자 목록`);
   if (user.role === 'master') lines.push(`  /companies    — 업체 목록`);
-  lines.push(``, `🌐 웹: <code>http://localhost:4000</code>`);
+  lines.push(``, `🌐 웹: <code>http://localhost:4000</code> (API)`, `🌐 대시보드: <code>http://localhost:4001</code>`);
   return lines.join('\n');
 }
 

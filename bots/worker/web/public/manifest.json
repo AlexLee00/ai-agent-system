@@ -1,0 +1,28 @@
+{
+  "name": "워커 업무관리",
+  "short_name": "워커",
+  "description": "워커팀 업무 자동화 시스템",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3B82F6",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "매출 등록", "url": "/sales",      "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}] },
+    { "name": "근태 체크", "url": "/attendance", "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}] }
+  ]
+}
