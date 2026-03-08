@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 
-const EMPTY_FORM = { name: '', position: '', department: '', phone: '', hire_date: '', status: 'active' };
+const EMPTY_FORM = { name: '', position: '', department: '', phone: '', hire_date: '', status: 'active', base_salary: '' };
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -33,6 +33,7 @@ export default function EmployeesPage() {
     setForm({
       name: emp.name || '', position: emp.position || '', department: emp.department || '',
       phone: emp.phone || '', hire_date: emp.hire_date?.slice(0,10) || '', status: emp.status || 'active',
+      base_salary: emp.base_salary ? String(emp.base_salary) : '',
     });
     setEditId(emp.id); setError(''); setModal(true);
   };
@@ -59,12 +60,13 @@ export default function EmployeesPage() {
   };
 
   const columns = [
-    { key: 'name',       label: '이름' },
-    { key: 'position',   label: '직급' },
-    { key: 'department', label: '부서' },
-    { key: 'phone',      label: '연락처' },
-    { key: 'hire_date',  label: '입사일', render: v => v?.slice(0,10) || '-' },
-    { key: 'status',     label: '상태',   render: v => v === 'active' ? '✅ 재직' : '⬛ 퇴직' },
+    { key: 'name',        label: '이름' },
+    { key: 'position',    label: '직급' },
+    { key: 'department',  label: '부서' },
+    { key: 'phone',       label: '연락처' },
+    { key: 'base_salary', label: '기본급', render: v => v ? `₩${Number(v).toLocaleString()}` : '-' },
+    { key: 'hire_date',   label: '입사일', render: v => v?.slice(0,10) || '-' },
+    { key: 'status',      label: '상태',   render: v => v === 'active' ? '✅ 재직' : '⬛ 퇴직' },
   ];
 
   const emptyNode = (
@@ -137,6 +139,11 @@ export default function EmployeesPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">입사일</label>
             <input className="input-base" type="date" value={form.hire_date} onChange={e => setForm(p=>({...p,hire_date:e.target.value}))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">기본급 (원)</label>
+            <input className="input-base font-mono" type="number" min="0" step="10000" value={form.base_salary}
+              onChange={e => setForm(p=>({...p,base_salary:e.target.value}))} placeholder="3000000" />
           </div>
           {editId && (
             <div>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import Link from 'next/link';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -79,21 +80,24 @@ function DetailModal({ row, onClose }) {
 
 export default function PayrollPage() {
   const thisMonth = new Date().toISOString().slice(0, 7);
-  const [yearMonth,  setYearMonth]  = useState(thisMonth);
-  const [rows,       setRows]       = useState([]);
-  const [summary,    setSummary]    = useState(null);
-  const [loading,    setLoading]    = useState(true);
-  const [calculating, setCalc]      = useState(false);
-  const [selected,   setSelected]   = useState(null);
+  const [yearMonth,    setYearMonth]  = useState(thisMonth);
+  const [rows,         setRows]       = useState([]);
+  const [summary,      setSummary]    = useState(null);
+  const [loading,      setLoading]    = useState(true);
+  const [calculating,  setCalc]       = useState(false);
+  const [selected,     setSelected]   = useState(null);
+  const [empCount,     setEmpCount]   = useState(null); // null=로딩중, 0=직원없음
 
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get(`/payroll?year_month=${yearMonth}`).catch(() => ({ payroll: [] })),
       api.get(`/payroll/summary?year_month=${yearMonth}`).catch(() => null),
-    ]).then(([p, s]) => {
+      api.get('/employees').catch(() => ({ employees: [] })),
+    ]).then(([p, s, e]) => {
       setRows(p.payroll || []);
       setSummary(s);
+      setEmpCount((e.employees || []).filter(emp => emp.status === 'active').length);
     }).finally(() => setLoading(false));
   };
 
@@ -137,9 +141,10 @@ export default function PayrollPage() {
           />
         </div>
         <button
-          className="btn-primary sm:mt-5"
+          className="btn-primary sm:mt-5 disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={handleCalculate}
-          disabled={calculating}
+          disabled={calculating || empCount === 0}
+          title={empCount === 0 ? '재직 직원이 없습니다' : ''}
         >
           {calculating ? '계산 중...' : '급여 계산 실행'}
         </button>
@@ -151,6 +156,21 @@ export default function PayrollPage() {
           </div>
         )}
       </div>
+
+      {/* 직원 없음 안내 */}
+      {empCount === 0 && !loading && (
+        <div className="card bg-amber-50 border border-amber-200 flex items-start gap-3 p-4">
+          <span className="text-xl">⚠️</span>
+          <div>
+            <p className="font-medium text-amber-800">재직 직원이 없습니다</p>
+            <p className="text-sm text-amber-700 mt-1">
+              급여 계산을 하려면 먼저{' '}
+              <Link href="/employees" className="underline font-medium">직원 관리</Link>에서
+              직원을 등록하고 기본급을 설정해야 합니다.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 테이블 */}
       <div className="card">

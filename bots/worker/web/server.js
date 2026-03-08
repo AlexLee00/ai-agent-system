@@ -27,6 +27,21 @@ const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess }
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { recalcProgress } = require('../src/ryan');
 
+// ── 파일 업로드 (multer) ──────────────────────────────────────────────
+const multer = require('multer');
+const UPLOAD_DIR = path.join(__dirname, '../uploads');
+require('fs').mkdirSync(UPLOAD_DIR, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename:    (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+});
+
 const SCHEMA = 'worker';
 const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
 
@@ -52,6 +67,7 @@ app.use('/api/auth/login', loginLimiter);
 // ── 정적 파일 / 루트 리다이렉트 ──────────────────────────────────────
 app.get('/', (req, res) => res.redirect('http://localhost:4001'));
 app.use(express.static(path.join(__dirname, 'pages')));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 function validate(req, res) {
@@ -295,6 +311,12 @@ app.post('/api/users',
          VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
          RETURNING id,company_id,username,role,name,email,telegram_id,must_change_pw,created_at`,
         [company_id, username, hash, role, name, email || null, telegram_id || null]);
+      // Bug 1 수정: employees 테이블에 자동 등록 (업무일지·근태 등 직원 연동용)
+      try {
+        await pgPool.run(SCHEMA,
+          `INSERT INTO worker.employees (company_id, user_id, name) VALUES ($1, $2, $3)`,
+          [company_id, user.id, name]);
+      } catch (_) { /* 중복 등록 방지 — 무시 */ }
       res.status(201).json({ user });
     } catch (e) {
       if (e.code === '23505') return res.status(409).json({ error: '이미 사용 중인 아이디입니다.', code: 'DUPLICATE' });
@@ -441,7 +463,7 @@ app.get('/api/employees', requireAuth, companyFilter, async (req, res) => {
   const validSort = ['name','position','department','hire_date','created_at'].includes(sort) ? sort : 'name';
   try {
     const rows = await pgPool.query(SCHEMA,
-      `SELECT id,company_id,user_id,name,phone,position,department,hire_date,status,created_at
+      `SELECT id,company_id,user_id,name,phone,position,department,hire_date,status,base_salary,created_at
        FROM worker.employees
        WHERE company_id=$1 AND deleted_at IS NULL
        ORDER BY ${validSort} ${order} LIMIT $2 OFFSET $3`,
@@ -478,15 +500,16 @@ app.put('/api/employees/:id',
       if (!target) return res.status(404).json({ error: '직원을 찾을 수 없습니다.', code: 'NOT_FOUND' });
       if (!await assertCompanyAccess(req, res, target.company_id)) return;
 
-      const { name, phone, position, department, hire_date, status, user_id } = req.body;
+      const { name, phone, position, department, hire_date, status, user_id, base_salary } = req.body;
       const emp = await pgPool.get(SCHEMA,
         `UPDATE worker.employees
          SET name=COALESCE($1,name), phone=COALESCE($2,phone), position=COALESCE($3,position),
              department=COALESCE($4,department), hire_date=COALESCE($5,hire_date),
-             status=COALESCE($6,status), user_id=COALESCE($7,user_id)
-         WHERE id=$8 RETURNING id,company_id,name,phone,position,department,hire_date,status`,
+             status=COALESCE($6,status), user_id=COALESCE($7,user_id),
+             base_salary=COALESCE($8,base_salary)
+         WHERE id=$9 RETURNING id,company_id,name,phone,position,department,hire_date,status,base_salary`,
         [name||null, phone||null, position||null, department||null, hire_date||null,
-         status||null, user_id||null, req.params.id]);
+         status||null, user_id||null, base_salary ?? null, req.params.id]);
       res.json({ employee: emp });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
@@ -679,11 +702,12 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
 });
 
 app.post('/api/documents/upload',
-  requireAuth, auditLog('UPLOAD', 'documents'),
-  body('filename').trim().notEmpty(),
+  requireAuth, upload.single('file'), auditLog('UPLOAD', 'documents'),
   async (req, res) => {
-    if (!validate(req, res)) return;
-    const { filename, file_path, category } = req.body;
+    const filename  = req.file?.originalname || req.body?.filename;
+    if (!filename?.trim()) return res.status(400).json({ error: '파일이 없습니다.', code: 'NO_FILE' });
+    const file_path = req.file ? `/uploads/${req.file.filename}` : req.body?.file_path || null;
+    const category  = req.body?.category || '';
 
     // 규칙 기반 분류 (Gemini 없이)
     const CATEGORY_KW = {
@@ -991,7 +1015,7 @@ app.get('/api/projects', requireAuth, companyFilter, async (req, res) => {
 });
 
 app.post('/api/projects',
-  requireAuth, requireRole('master','admin'), auditLog('CREATE', 'projects'),
+  requireAuth, companyFilter, auditLog('CREATE', 'projects'),
   body('name').trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -1094,8 +1118,15 @@ app.put('/api/milestones/:id',
 
 app.get('/api/schedules', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
-  const from = req.query.from || new Date().toISOString().slice(0,10);
-  const to   = req.query.to   || new Date(Date.now() + 30*24*3600*1000).toISOString().slice(0,10);
+  let from, to;
+  if (req.query.year_month) {
+    const [y, m] = req.query.year_month.split('-').map(Number);
+    from = `${req.query.year_month}-01`;
+    to   = new Date(y, m, 0).toISOString().slice(0, 10); // 해당 월 마지막 날
+  } else {
+    from = req.query.from || new Date().toISOString().slice(0,10);
+    to   = req.query.to   || new Date(Date.now() + 30*24*3600*1000).toISOString().slice(0,10);
+  }
   try {
     const rows = await pgPool.query(SCHEMA,
       `SELECT * FROM worker.schedules
