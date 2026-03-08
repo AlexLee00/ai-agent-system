@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { href: '/dashboard',  icon: '🏠', label: '홈' },
-  { href: '/employees',  icon: '👥', label: '직원' },
+  { href: '/journals',   icon: '📝', label: '일지' },
   { href: '/sales',      icon: '💰', label: '매출' },
   { href: '/approvals',  icon: '✅', label: '승인' },
   { href: '/settings',   icon: '⚙️', label: '설정' },

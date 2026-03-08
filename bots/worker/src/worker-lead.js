@@ -100,7 +100,8 @@ async function handleCommand(text, fromTelegramId) {
 
   // Phase 2 봇 위임 (에밀리/노아/올리버)
   const PHASE2_CMDS = [
-    '/doc_upload','/doc_list','/doc_search','/emily_report',      // 에밀리
+    '/doc_upload','/doc_list','/doc_search','/emily_report',              // 에밀리
+    '/journal','/journal_list','/journal_edit','/journal_delete',         // 에밀리 업무일지
     '/checkin','/checkout','/attendance','/employee_list','/leave_request', // 노아
     '/sales_today','/sales_week','/sales_register','/sales_analysis',       // 올리버
   ];
@@ -204,11 +205,17 @@ function _helpMessage(user) {
     `  /approve {ID} — 승인`,
     `  /reject {ID} {사유} — 반려`,
     ``,
-    `📎 에밀리 (문서):`,
+    `📎 에밀리 (문서/업무일지):`,
     `  /doc_upload   — 업로드 안내`,
     `  /doc_list     — 최근 문서`,
     `  /doc_search   — 검색`,
     `  /emily_report — 주간 리포트`,
+    ``,
+    `📝 업무일지:`,
+    `  /journal {내용}          — 오늘 일지 등록`,
+    `  /journal_list             — 이번 주 목록`,
+    `  /journal_edit {ID} {내용} — 수정`,
+    `  /journal_delete {ID}      — 삭제`,
     ``,
     `👥 노아 (인사):`,
     `  /checkin      — 출근 체크`,

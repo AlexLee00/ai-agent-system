@@ -118,6 +118,41 @@ async function getWeeklyReport({ companyId }) {
   };
 }
 
+// ── 업무일지 기능 ─────────────────────────────────────────────────────
+
+const WEEKDAY = ['일','월','화','수','목','금','토'];
+
+async function createJournal({ companyId, employeeId, content, category, date }) {
+  return pgPool.get(SCHEMA,
+    `INSERT INTO worker.work_journals (company_id, employee_id, date, content, category)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id, date, content, category`,
+    [companyId, employeeId, date || new Date().toISOString().slice(0,10), content, category || 'general']);
+}
+
+async function listJournals({ companyId, employeeId, limit = 10 }) {
+  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  return pgPool.query(SCHEMA,
+    `SELECT id, date, content, category FROM worker.work_journals
+     WHERE company_id=$1 AND employee_id=$2 AND date >= $3 AND deleted_at IS NULL
+     ORDER BY date DESC, created_at DESC LIMIT $4`,
+    [companyId, employeeId, since, limit]);
+}
+
+async function updateJournal({ companyId, journalId, employeeId, content, category }) {
+  return pgPool.get(SCHEMA,
+    `UPDATE worker.work_journals
+     SET content=$1, category=COALESCE($2,category), updated_at=NOW()
+     WHERE id=$3 AND company_id=$4 AND employee_id=$5 AND deleted_at IS NULL RETURNING id, date`,
+    [content, category || null, journalId, companyId, employeeId]);
+}
+
+async function deleteJournal({ companyId, journalId, employeeId }) {
+  return pgPool.get(SCHEMA,
+    `UPDATE worker.work_journals SET deleted_at=NOW()
+     WHERE id=$1 AND company_id=$2 AND employee_id=$3 AND deleted_at IS NULL RETURNING id`,
+    [journalId, companyId, employeeId]);
+}
+
 // ── 텔레그램 명령어 핸들러 ────────────────────────────────────────────
 
 /**
@@ -171,7 +206,68 @@ async function handleCommand(cmd, args, ctx) {
     return lines.join('\n');
   }
 
+  // ── 업무일지 명령어 ───────────────────────────────────────────────
+  const JOURNAL_CMDS = ['/journal', '/journal_list', '/journal_edit', '/journal_delete'];
+  if (JOURNAL_CMDS.includes(cmd)) {
+    // 직원 조회 (공통)
+    const getEmp = () => pgPool.get(SCHEMA,
+      `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+      [companyId, ctx.user.id]);
+
+    if (cmd === '/journal') {
+      if (!args) return '사용법: /journal {업무 내용}\n예: /journal 오늘 미팅 3건 완료';
+      const emp = await getEmp();
+      if (!emp) return '⚠️ 연결된 직원 정보가 없습니다.\n관리자에게 직원 등록을 요청하세요.';
+      const row  = await createJournal({ companyId, employeeId: emp.id, content: args });
+      const dt   = new Date(row.date);
+      const wd   = WEEKDAY[dt.getDay()];
+      const date = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      return `✅ 업무일지 등록 완료\n───────────────────\n📅 ${date} (${wd})\n📝 ${args}\n🏷️ 카테고리: 일반\n───────────────────\n수정: /journal_edit ${row.id} {새내용}\n삭제: /journal_delete ${row.id}`;
+    }
+
+    if (cmd === '/journal_list') {
+      const emp = await getEmp();
+      if (!emp) return '⚠️ 연결된 직원 정보가 없습니다.';
+      const rows = await listJournals({ companyId, employeeId: emp.id });
+      if (!rows.length) return '📝 이번 주 업무일지 없음';
+      const lines = ['📝 <b>이번 주 업무일지</b>', '───────────────────'];
+      for (const r of rows) {
+        const d  = new Date(r.date);
+        const wd = WEEKDAY[d.getDay()];
+        const ct = r.content.length > 40 ? r.content.slice(0, 40) + '…' : r.content;
+        lines.push(`#${r.id} [${d.getMonth()+1}/${d.getDate()}(${wd})] ${ct}`);
+      }
+      return lines.join('\n');
+    }
+
+    if (cmd === '/journal_edit') {
+      const parts   = (args || '').split(' ');
+      const id      = parseInt(parts[0], 10);
+      const content = parts.slice(1).join(' ');
+      if (isNaN(id) || !content) return '사용법: /journal_edit {ID} {새 내용}';
+      const emp = await getEmp();
+      if (!emp) return '⚠️ 연결된 직원 정보가 없습니다.';
+      const row = await updateJournal({ companyId, journalId: id, employeeId: emp.id, content });
+      if (!row) return `⚠️ 업무일지 #${id}를 찾을 수 없거나 본인 작성이 아닙니다.`;
+      return `✅ 업무일지 #${id} 수정 완료`;
+    }
+
+    if (cmd === '/journal_delete') {
+      const id = parseInt(args, 10);
+      if (isNaN(id)) return '사용법: /journal_delete {ID}';
+      const emp = await getEmp();
+      if (!emp) return '⚠️ 연결된 직원 정보가 없습니다.';
+      const row = await deleteJournal({ companyId, journalId: id, employeeId: emp.id });
+      if (!row) return `⚠️ 업무일지 #${id}를 찾을 수 없거나 본인 작성이 아닙니다.`;
+      return `🗑️ 업무일지 #${id} 삭제 완료`;
+    }
+  }
+
   return null;
 }
 
-module.exports = { handleCommand, uploadDocument, listDocuments, getWeeklyReport };
+module.exports = {
+  handleCommand,
+  uploadDocument, listDocuments, getWeeklyReport,
+  createJournal, listJournals, updateJournal, deleteJournal,
+};
