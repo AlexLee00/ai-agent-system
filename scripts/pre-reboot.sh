@@ -11,18 +11,14 @@ CHAT_ID=***REMOVED***
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
-# 텔레그램 알림 (node로 secrets 활용)
 send_telegram() {
-  local msg="$1"
-  node -e "
-    try {
-      const s = require('$PROJECT_DIR/bots/reservation/lib/secrets.js');
-      const { telegram_bot_token: tok, telegram_chat_id: cid } = s.loadSecrets(['telegram_bot_token','telegram_chat_id']);
-      const https = require('https');
-      const body = JSON.stringify({ chat_id: cid, text: '$msg', parse_mode: 'Markdown' });
-      const req = https.request({ hostname:'api.telegram.org', path:'/bot'+tok+'/sendMessage', method:'POST', headers:{'Content-Type':'application/json'} }, ()=>{});
-      req.write(body); req.end();
-    } catch(e) {}
+  local msg_file="$1"
+  /Users/alexlee/.nvm/versions/node/v24.13.1/bin/node -e "
+    const fs = require('fs');
+    const sender = require('$PROJECT_DIR/packages/core/lib/telegram-sender');
+    const text = fs.readFileSync('$msg_file', 'utf-8');
+    sender.send('claude-lead', text).catch(() => {});
+    setTimeout(() => {}, 3000);
   " 2>/dev/null || true
 }
 
@@ -78,7 +74,18 @@ log "📝 재부팅 시각 기록: $(cat /tmp/last-reboot-time.txt)"
 
 # ── 8. 텔레그램 알림 ─────────────────────────────────────
 REBOOT_TIME=$(date '+%H:%M:%S')
-send_telegram "🔄 *맥북 재부팅 준비 완료* (${REBOOT_TIME})%0A%0A모든 봇 서비스 안전 종료%0A재부팅 후 자동 재시작 예정%0A%0A[재부팅 후 확인]%0A• 텔레그램 '부팅완료' 알림 대기 (약 1분 소요)%0A• skastatus 명령으로 서비스 상태 확인"
+PRE_MSG_FILE="/tmp/pre-reboot-msg.txt"
+cat > "$PRE_MSG_FILE" << EOF
+🔄 <b>맥북 재부팅 준비 완료</b> (${REBOOT_TIME})
+
+모든 봇 서비스 안전 종료
+재부팅 후 자동 재시작 예정
+
+[재부팅 후 확인]
+• 텔레그램 '부팅완료' 알림 대기 (약 1분 소요)
+• skastatus 명령으로 서비스 상태 확인
+EOF
+send_telegram "$PRE_MSG_FILE"
 
 log ""
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

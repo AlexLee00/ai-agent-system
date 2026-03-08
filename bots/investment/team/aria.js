@@ -407,6 +407,11 @@ export async function analyzeCryptoMTF(symbol) {
 
   console.log(`  → [아리아 MTF] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);
 
+  // 1h ATR 비율 (네메시스 동적 TP/SL용) — 1h 없으면 4h 사용
+  const atrSource    = tfResults['1h'] || tfResults['4h'];
+  const atrValue     = atrSource?.indicators?.atr ?? null;
+  const atrRatio     = (atrValue && currentPrice) ? atrValue / currentPrice : null;
+
   try {
     await db.insertAnalysis({
       symbol,
@@ -416,6 +421,7 @@ export async function analyzeCryptoMTF(symbol) {
       reasoning: `[MTF] ${reasoning}`,
       metadata:  {
         weightedScore:  normalizedScore,
+        atrRatio,          // 네메시스 동적 TP/SL용
         tfResults:      Object.fromEntries(
           Object.entries(tfResults).map(([tf, r]) => [tf, { signal: r.signal, confidence: r.confidence, score: r.score }])
         ),
@@ -425,7 +431,7 @@ export async function analyzeCryptoMTF(symbol) {
     console.warn(`  ⚠️ [아리아] DB 저장 실패: ${e.message}`);
   }
 
-  return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice };
+  return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice, atrRatio };
 }
 
 // ─── 국내/미국주식 단일 타임프레임 분석 ─────────────────────────────

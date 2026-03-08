@@ -337,10 +337,25 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     await notifySignal({ ...signalData, paper: paperMode });
 
     try {
-      const riskResult = await evaluateSignal({ id: signalId, ...signalData }, { totalUsdt: portfolio.totalAsset });
+      // 최근 TA 분석에서 atrRatio 추출 (아리아가 저장한 메타데이터)
+      const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
+      const atrRatio   = taAnalysis?.metadata?.atrRatio ?? null;
+      const currentPrice = taAnalysis?.metadata?.currentPrice ?? null;
+
+      const riskResult = await evaluateSignal(
+        { id: signalId, ...signalData },
+        { totalUsdt: portfolio.totalAsset, atrRatio, currentPrice }
+      );
       if (riskResult.approved) {
-        console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}`);
-        results.push({ symbol: dec.symbol, signalId, ...dec, adjustedAmount: riskResult.adjustedAmount });
+        console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
+        results.push({
+          symbol: dec.symbol, signalId, ...dec,
+          adjustedAmount: riskResult.adjustedAmount,
+          // 동적 TP/SL (applied=true일 때만 전달)
+          tpPrice: riskResult.tpPrice ?? null,
+          slPrice: riskResult.slPrice ?? null,
+          tpslSource: riskResult.tpslSource ?? null,
+        });
       } else {
         console.log(`  🚫 [네메시스] 거부: ${riskResult.reason}`);
       }

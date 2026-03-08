@@ -249,12 +249,65 @@ function getAvailableTasks() {
   }));
 }
 
+// ─── Phase 3: agent_tasks 폴링 (팀장→독터 역할 분리) ─────────────────────────
+
+/**
+ * stateBus의 대기 태스크를 소화하여 복구 실행
+ * 팀장(claude-lead)이 createTask로 발행한 복구 지시를 독터가 처리
+ * dexter.js 마지막에 호출
+ */
+async function pollDoctorTasks() {
+  const stateBus = require('../../reservation/lib/state-bus');
+  let tasks;
+  try {
+    tasks = await stateBus.getPendingTasks('doctor');
+  } catch (e) {
+    console.warn('[doctor] 태스크 폴링 실패 (무시):', e.message);
+    return;
+  }
+  if (!tasks || tasks.length === 0) return;
+
+  console.log(`  [독터] 대기 태스크 ${tasks.length}건 처리 중...`);
+
+  for (const task of tasks) {
+    const taskType = task.task_type;
+    let params = {};
+    try {
+      params = typeof task.payload === 'string'
+        ? (JSON.parse(task.payload) ?? {})
+        : (task.payload ?? {});
+    } catch { /* 파싱 실패 시 빈 객체 */ }
+
+    try {
+      const result = await execute(taskType, params, task.from_agent || 'claude-lead');
+      if (result.success) {
+        await stateBus.completeTask(task.id, { message: result.message, data: result.data ?? null });
+        // 팀장에게 복구 완료 이벤트 발행
+        try {
+          await stateBus.emitEvent('doctor', 'claude-lead', 'recovery_completed', {
+            taskType,
+            params,
+            success: true,
+            message:  result.message,
+          });
+        } catch { /* 이벤트 발행 실패 무시 */ }
+      } else {
+        await stateBus.failTask(task.id, result.message);
+      }
+    } catch (e) {
+      await stateBus.failTask(task.id, e.message).catch(() => {});
+      console.error(`  [독터] 태스크 id=${task.id} 실행 오류:`, e.message);
+    }
+  }
+}
+
 module.exports = {
   execute,
   canRecover,
   logRecovery,
   getRecoveryHistory,
   getAvailableTasks,
+  pollDoctorTasks,
   WHITELIST,
   BLACKLIST,
 };

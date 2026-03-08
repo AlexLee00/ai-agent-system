@@ -7,11 +7,41 @@
  * 실행: node team/nemesis.js (단독 실행 불가 — luna.js에서 호출)
  */
 
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
+
+// ─── config.yaml 로드 (dynamic_tp_sl_enabled) ────────────────────────
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = dirname(__filename);
+
+function loadConfig() {
+  try {
+    const raw  = readFileSync(resolve(__dirname, '../config.yaml'), 'utf8');
+    const yaml = Object.fromEntries(
+      raw.split('\n')
+        .filter(l => l.includes(':') && !l.trim().startsWith('#'))
+        .map(l => {
+          const idx = l.indexOf(':');
+          const key = l.slice(0, idx).trim();
+          const val = l.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+          return [key, val];
+        })
+    );
+    return yaml;
+  } catch { return {}; }
+}
+
+function isDynamicTPSLEnabled() {
+  const cfg = loadConfig();
+  return String(cfg.dynamic_tp_sl_enabled).toLowerCase() === 'true';
+}
 
 // ─── 시스템 프롬프트 (v2 — 보수화) ──────────────────────────────────
 
@@ -109,48 +139,84 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
   return parsed;
 }
 
-// ─── Phase 1: 동적 TP/SL 산출 (로그만 — 실투자 미적용) ─────────────
+// ─── Phase 2: 동적 TP/SL (ATR 기반, 마스터 승인 후 활성화) ──────────
+
+// 동적 TP/SL 범위 제한 (폭주 방지)
+export const TPSL_LIMITS = {
+  min_tp: 0.02,   // 최소 TP 2%
+  max_tp: 0.15,   // 최대 TP 15%
+  min_sl: 0.01,   // 최소 SL 1%
+  max_sl: 0.08,   // 최대 SL 8%
+  min_rr: 2.0,    // 최소 R/R 2:1
+};
 
 /**
- * ATR 기반 동적 TP/SL 산출 (Phase 1 — 로그만, 실투자 미적용)
+ * 동적 TP/SL 범위 검증
+ * @returns {boolean} true: 유효, false: 범위 초과 → 고정 폴백
+ */
+export function validateDynamicTPSL(tpPct, slPct) {
+  if (tpPct < TPSL_LIMITS.min_tp || tpPct > TPSL_LIMITS.max_tp) return false;
+  if (slPct < TPSL_LIMITS.min_sl || slPct > TPSL_LIMITS.max_sl) return false;
+  if (slPct <= 0) return false;
+  if (tpPct / slPct < TPSL_LIMITS.min_rr) return false;
+  return true;
+}
+
+/**
+ * ATR 기반 동적 TP/SL 산출
  *
- * 현재 고정값: TP +6%, SL -3% (헤파이스토스 설정)
- * Phase 1: ATR 기반 산출값을 로그만 출력하고 applied: false 고정
- * Phase 2 (향후): 마스터 승인 후 헤파이스토스에 동적 TP/SL 적용 가능
+ * Phase 1: applied: false (로그만)
+ * Phase 2: dynamic_tp_sl_enabled=true 시 applied: true → 헤파이스토스 실적용
  *
  * R/R 비율 2:1 유지: TP = ATR × 2.5, SL = ATR × 1.25
  *
  * @param {string}      symbol
  * @param {number|null} entryPrice   현재가 (null 허용)
  * @param {number|null} atrRatio     ATR/현재가 비율 (예: 0.02 = 2%)
- * @returns {{ tpPct, slPct, tp, sl, source, applied }}
+ * @returns {{ tpPct, slPct, tpPrice, slPrice, source, applied }}
  */
 export function calculateDynamicTPSL(symbol, entryPrice = null, atrRatio = null) {
   const FIXED_TP_PCT = 0.06;  // 고정 +6%
   const FIXED_SL_PCT = 0.03;  // 고정 -3%
+  const enabled      = isDynamicTPSLEnabled();
 
   if (!atrRatio || atrRatio <= 0) {
     return {
-      tpPct:   FIXED_TP_PCT,
-      slPct:   FIXED_SL_PCT,
-      tp:      entryPrice ? entryPrice * (1 + FIXED_TP_PCT) : null,
-      sl:      entryPrice ? entryPrice * (1 - FIXED_SL_PCT) : null,
-      source:  'fixed',
-      applied: false,  // Phase 1: 항상 false
+      tpPct:    FIXED_TP_PCT,
+      slPct:    FIXED_SL_PCT,
+      tpPrice:  entryPrice ? entryPrice * (1 + FIXED_TP_PCT) : null,
+      slPrice:  entryPrice ? entryPrice * (1 - FIXED_SL_PCT) : null,
+      source:   'fixed',
+      applied:  false,
     };
   }
 
   // ATR 기반: 2:1 R/R (TP = ATR × 2.5, SL = ATR × 1.25) — 범위 클램프
-  const tpPct = Math.min(Math.max(atrRatio * 2.5, 0.03), 0.15);   // 3%~15%
-  const slPct = Math.min(Math.max(atrRatio * 1.25, 0.015), 0.075); // 1.5%~7.5%
+  const rawTpPct = atrRatio * 2.5;
+  const rawSlPct = atrRatio * 1.25;
+  const tpPct    = Math.min(Math.max(rawTpPct, TPSL_LIMITS.min_tp), TPSL_LIMITS.max_tp);
+  const slPct    = Math.min(Math.max(rawSlPct, TPSL_LIMITS.min_sl), TPSL_LIMITS.max_sl);
+
+  // 범위 검증 실패 → 고정 폴백
+  if (!validateDynamicTPSL(tpPct, slPct)) {
+    console.warn(`  ⚠️ [네메시스] ${symbol} 동적 TP/SL 범위 초과 → 고정 폴백`);
+    return {
+      tpPct:    FIXED_TP_PCT,
+      slPct:    FIXED_SL_PCT,
+      tpPrice:  entryPrice ? entryPrice * (1 + FIXED_TP_PCT) : null,
+      slPrice:  entryPrice ? entryPrice * (1 - FIXED_SL_PCT) : null,
+      source:   'fixed_fallback',
+      applied:  false,
+    };
+  }
 
   return {
     tpPct,
     slPct,
-    tp:      entryPrice ? entryPrice * (1 + tpPct) : null,
-    sl:      entryPrice ? entryPrice * (1 - slPct) : null,
+    tpPrice: entryPrice ? entryPrice * (1 + tpPct) : null,
+    slPrice: entryPrice ? entryPrice * (1 - slPct) : null,
     source:  'atr',
-    applied: false,  // Phase 1: 항상 false
+    applied: enabled,  // Phase 2: enabled=true 시 헤파이스토스 실적용
   };
 }
 
@@ -237,9 +303,14 @@ export async function evaluateSignal(signal, opts = {}) {
 
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
 
-    // ── Phase 1: 동적 TP/SL 로그 (applied: false — 실투자 미적용) ──────
-    const dynamicTPSL = calculateDynamicTPSL(symbol, null, opts.atrRatio);
-    console.log(`  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}% / SL-${(dynamicTPSL.slPct * 100).toFixed(1)}% (${dynamicTPSL.source}, applied: false)`);
+    // ── Phase 2: 동적 TP/SL 산출 + 신호에 포함 (enabled 시 헤파이스토스 실적용) ──
+    const entryEstimate = opts.currentPrice || null;
+    const dynamicTPSL   = calculateDynamicTPSL(symbol, entryEstimate, opts.atrRatio);
+    const tpslTag = dynamicTPSL.applied ? '✅ 적용' : '⏸️ 미적용 (비활성화)';
+    console.log(
+      `  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}%` +
+      ` / SL-${(dynamicTPSL.slPct * 100).toFixed(1)}% (${dynamicTPSL.source}, ${tpslTag})`
+    );
 
     // ── 매매일지 판단 근거 기록 (승인/수정된 BUY만) ───────────────────
     try {
@@ -261,5 +332,11 @@ export async function evaluateSignal(signal, opts = {}) {
   await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
   await db.updateSignalAmount(signal.id, amountUsdt);
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
-  return { approved: true, adjustedAmount: amountUsdt, traceId };
+
+  // dynamicTPSL이 applied=true면 헤파이스토스에 전달할 tp/sl 가격 포함
+  const tpslResult = (action === ACTIONS.BUY && typeof dynamicTPSL !== 'undefined' && dynamicTPSL.applied)
+    ? { tpPrice: dynamicTPSL.tpPrice, slPrice: dynamicTPSL.slPrice, tpslSource: dynamicTPSL.source }
+    : {};
+
+  return { approved: true, adjustedAmount: amountUsdt, traceId, ...tpslResult };
 }

@@ -4,12 +4,11 @@
  * checks/team-leads.js — 핵심 봇 프로세스 건강 점검
  *
  * 현재 점검 대상 (실제 존재하는 프로세스):
- *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, openclaw.gateway, investment.crypto)
- *   2. tmux 세션: ska (텔레그램 봇 — skaya)
+ *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, openclaw.gateway, investment.crypto, ska.commander)
  *
  * 점검하지 않는 것:
+ *   - tmux 세션 (2026-03-08 제거: 스카 텔레그램봇은 제이가 담당, ska.commander로 대체)
  *   - 아직 존재하지 않는 팀장 봇 프로세스
- *   - 아직 미구현된 OpenClaw 에이전트 세션
  */
 
 const { execSync } = require('child_process');
@@ -21,11 +20,7 @@ const CRITICAL_SERVICES = [
   { id: 'ai.ska.naver-monitor',     label: '앤디 (네이버모니터)',      key: 'naver_monitor' },
   { id: 'ai.ska.kiosk-monitor',     label: '지미 (키오스크모니터)',    key: 'kiosk_monitor' },
   { id: 'ai.investment.crypto',     label: '루나 크립토 사이클',       key: 'luna_crypto' },
-];
-
-// tmux 세션 점검 대상
-const TMUX_SESSIONS = [
-  { name: 'ska', label: '스카야 텔레그램 봇 (tmux:ska)', key: 'skaya' },
+  { id: 'ai.ska.commander',         label: '스카 커맨더 (launchd)',    key: 'skaya' },
 ];
 
 // ── launchd 상태 조회 ──────────────────────────────────────────────
@@ -42,29 +37,12 @@ function getLaunchdStatus(serviceId) {
   } catch { return null; }
 }
 
-// ── tmux 세션 존재 여부 ────────────────────────────────────────────
-
-function isTmuxSessionAlive(sessionName) {
-  try {
-    const out = execSync(
-      `tmux has-session -t "${sessionName}" 2>/dev/null && echo "yes" || echo "no"`,
-      { encoding: 'utf8', timeout: 3000 },
-    ).trim();
-    return out === 'yes';
-  } catch { return false; }
-}
-
-function isTmuxInstalled() {
-  try { execSync('which tmux', { timeout: 2000 }); return true; }
-  catch { return false; }
-}
-
 // ── 메인 run ──────────────────────────────────────────────────────
 
 async function run() {
   const items = [];
 
-  // 1. launchd 핵심 서비스 점검
+  // launchd 핵심 서비스 점검
   for (const svc of CRITICAL_SERVICES) {
     const info = getLaunchdStatus(svc.id);
 
@@ -96,19 +74,6 @@ async function run() {
     }
   }
 
-  // 2. tmux 세션 점검 (tmux 미설치 시 스킵)
-  if (isTmuxInstalled()) {
-    for (const sess of TMUX_SESSIONS) {
-      const alive = isTmuxSessionAlive(sess.name);
-      items.push({
-        label:  sess.label,
-        status: alive ? 'ok' : 'error',
-        detail: alive ? `세션 활성 (tmux:${sess.name})` : `세션 없음 — 텔레그램 봇 재시작 필요`,
-        _key:   sess.key,
-      });
-    }
-  }
-
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');
 
@@ -129,7 +94,7 @@ function isOpenClawOk(teamLeadsResult) {
 }
 
 /**
- * 스카야(텔레그램 봇) 정상 여부 반환 (dexter-mode 연동용)
+ * 스카 커맨더 정상 여부 반환 (dexter-mode 연동용)
  * @returns {boolean}
  */
 function isSkayaOk(teamLeadsResult) {

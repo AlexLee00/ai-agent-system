@@ -17,7 +17,7 @@ const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
 const { execSync } = require('child_process');
-const pgPool       = require('../../../packages/core/lib/pg-pool');
+const pgPool       = require('../../packages/core/lib/pg-pool');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '루나';

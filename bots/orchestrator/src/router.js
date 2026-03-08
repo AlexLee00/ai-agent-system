@@ -828,6 +828,26 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       ].join('\n');
     }
 
+    case 'dynamic_tpsl_on':
+    case 'dynamic_tpsl_off': {
+      // 루나팀 ATR 기반 동적 TP/SL 토글
+      const configPath = path.join(__dirname, '..', '..', '..', 'investment', 'config.yaml');
+      const enable     = intent === 'dynamic_tpsl_on';
+      try {
+        let yaml = fs.readFileSync(configPath, 'utf8');
+        yaml = yaml.replace(
+          /^(dynamic_tp_sl_enabled\s*:\s*).*$/m,
+          `$1${enable}`
+        );
+        fs.writeFileSync(configPath, yaml);
+        return enable
+          ? '✅ 동적 TP/SL 활성화\nATR 기반 동적 TP/SL이 헤파이스토스에 적용됩니다.\n⚠️ 실투자 포지션에 즉시 영향 — 확인 필요'
+          : '✅ 동적 TP/SL 비활성화\n고정 TP +6% / SL -3%로 복귀합니다.';
+      } catch (e) {
+        return `❌ config.yaml 수정 실패: ${e.message}`;
+      }
+    }
+
     case 'claude_action': {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';

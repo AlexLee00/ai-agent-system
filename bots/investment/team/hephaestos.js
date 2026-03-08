@@ -131,13 +131,22 @@ export async function executeSignal(signal) {
       await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0 });
 
       // ── TP/SL OCO 주문 설정 (실투자 모드에서만) ────────────────────
-      // Spot 모드: TAKE_PROFIT_MARKET 불가 → OCO (TP limit + SL stop-limit) 사용
-      // TP: fill price × 1.06 (+6%), SL: fill price × 0.97 (-3%) → 2:1 R/R
+      // 우선순위: 1) 네메시스 동적 TP/SL (signal.tpPrice/slPrice)
+      //           2) 고정 TP +6%, SL -3% 폴백
       if (!paperMode) {
         const fillPrice = order.price || order.average || 0;
         if (fillPrice > 0 && order.filled > 0) {
-          trade.tpPrice = parseFloat((fillPrice * 1.06).toFixed(2));
-          trade.slPrice = parseFloat((fillPrice * 0.97).toFixed(2));
+          // 동적 TP/SL: 네메시스가 applied=true로 전달한 경우 사용
+          const hasDynamic = signal.tpPrice && signal.slPrice;
+          trade.tpPrice = hasDynamic
+            ? parseFloat(signal.tpPrice.toFixed(2))
+            : parseFloat((fillPrice * 1.06).toFixed(2));
+          trade.slPrice = hasDynamic
+            ? parseFloat(signal.slPrice.toFixed(2))
+            : parseFloat((fillPrice * 0.97).toFixed(2));
+          if (hasDynamic) {
+            console.log(`  📐 동적 TP/SL 적용 (${signal.tpslSource}): TP=${trade.tpPrice} SL=${trade.slPrice}`);
+          }
           try {
             const ex      = getExchange();
             const slLimit = parseFloat((trade.slPrice * 0.999).toFixed(2));

@@ -81,6 +81,42 @@ function _ruleEngine(issues) {
   };
 }
 
+// ── Phase 3: 이슈 → 독터 태스크 매핑 ────────────────────────────────────
+
+/**
+ * 이슈 목록을 독터가 처리할 수 있는 복구 태스크로 매핑
+ * @param {Array} issues  { checkName, label, status, detail }[]
+ * @returns {{ taskType, params }[]}
+ */
+function _mapIssuesToDoctorTasks(issues) {
+  const tasks = [];
+  for (const issue of issues) {
+    const label  = (issue.label  || '').toLowerCase();
+    const detail = (issue.detail || '').toLowerCase();
+
+    if (label.includes('앤디') || label.includes('naver-monitor')) {
+      tasks.push({ taskType: 'restart_launchd_service', params: { label: 'ai.ska.naver-monitor' } });
+    } else if (label.includes('지미') || label.includes('kiosk-monitor')) {
+      tasks.push({ taskType: 'restart_launchd_service', params: { label: 'ai.ska.kiosk-monitor' } });
+    } else if (label.includes('스카 커맨더') || label.includes('ska.commander')) {
+      tasks.push({ taskType: 'restart_launchd_service', params: { label: 'ai.ska.commander' } });
+    } else if (label.includes('루나 커맨더') || label.includes('investment.commander')) {
+      tasks.push({ taskType: 'restart_launchd_service', params: { label: 'ai.investment.commander' } });
+    } else if ((label.includes('secrets') || detail.includes('secrets')) && (label.includes('권한') || detail.includes('권한'))) {
+      const match = (issue.detail || '').match(/(\/[^\s]+secrets\.json)/);
+      if (match) tasks.push({ taskType: 'fix_file_permissions', params: { filePath: match[1] } });
+    }
+  }
+  // 중복 제거 (같은 taskType+params 조합)
+  const seen = new Set();
+  return tasks.filter(t => {
+    const key = `${t.taskType}:${JSON.stringify(t.params)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ── 프롬프트 ─────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `당신은 클로드 — AI 에이전트 시스템의 팀장입니다.
@@ -122,6 +158,12 @@ function _buildUserPrompt(issues) {
  * @param {Array} results  덱스터 results 배열 [{name, status, items:[{label,status,detail}]}]
  */
 async function evaluateWithClaudeLead(results) {
+  // Phase 2: 팀장 활동 시각 갱신 — 덱스터의 무응답 감지용
+  try {
+    const { DexterMode } = require('../lib/dexter-mode');
+    new DexterMode().updateClaudeLeadActivity();
+  } catch { /* 무시 */ }
+
   // 1. 비-ok 이슈 추출 (패턴 분석·자기진단 체크 제외 — 메타 노이즈 방지)
   const SKIP_CHECKS = ['오류 패턴 분석', '덱스터 자기진단', '자동 수정'];
   const issues = results.flatMap(r => {
@@ -203,6 +245,21 @@ async function evaluateWithClaudeLead(results) {
     ? ` — 규칙:${ruleResult.decision} / Sonnet:${llmResult.decision}${match ? ' (일치)' : ' (불일치!)'}`
     : ` — Sonnet 실패: ${llmError}`;
   console.log(`  ${icon} [클로드 팀장] 이슈 ${issues.length}건 Shadow 판단${matchStr}`);
+
+  // Phase 3: LLM이 run_doctor 결정 시 → 독터에게 복구 태스크 발행
+  if (llmResult?.action === 'run_doctor') {
+    try {
+      const doctorTasks = _mapIssuesToDoctorTasks(issues);
+      for (const dt of doctorTasks) {
+        await stateBus.createTask('claude-lead', 'doctor', dt.taskType, dt.params, 'high');
+      }
+      if (doctorTasks.length > 0) {
+        console.log(`  🏥 [클로드 팀장] 독터 복구 지시 ${doctorTasks.length}건 — ${doctorTasks.map(t => t.taskType).join(', ')}`);
+      }
+    } catch (e) {
+      console.warn('[claude-lead-brain] 독터 태스크 발행 실패 (무시):', e.message);
+    }
+  }
 }
 
 /**
@@ -265,6 +322,13 @@ async function processAgentEvent(event) {
         `  [클로드 팀장] 이벤트 수신 — [${from_agent}/${event_type}]`,
         `${icon} ${p.overall?.toUpperCase()} (❌${p.errorCount ?? 0} ⚠️${p.warnCount ?? 0})`,
       );
+      break;
+    }
+
+    case 'recovery_completed': {
+      // Phase 3: 독터 복구 완료 이벤트 수신
+      const icon = p.success ? '✅' : '❌';
+      console.log(`  [클로드 팀장] 독터 복구 — ${icon} ${p.taskType}: ${p.message || ''}`);
       break;
     }
 

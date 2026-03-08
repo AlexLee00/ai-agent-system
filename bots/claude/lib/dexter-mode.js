@@ -6,16 +6,14 @@
  * Normal 모드 (기본):
  *   → 기존과 동일하게 덱스터가 점검하고 텔레그램으로 직접 보고
  *
- * Emergency 모드 진입 조건 (현재 인프라 기반):
- *   → OpenClaw 게이트웨이 다운 + EMERGENCY_THRESHOLD_MIN 이상 미복구
- *   → 또는 스카야(tmux:ska) 텔레그램 봇 다운 + EMERGENCY_THRESHOLD_MIN 이상 미복구
- *   → 즉, "보고 채널 자체가 죽었을 때"
+ * Emergency 모드 진입 조건:
+ *   1. 인프라 기반: OpenClaw 또는 스카야 3분 이상 다운
+ *   2. Phase 2: 클로드(팀장) 10분 무응답 → 자동 전환
  *
  * Emergency 모드 동작:
  *   → 텔레그램 대신 콘솔 로그 + 로컬 파일 기록
+ *   → Groq LLM 임시 판단 대행 ("응급 처치만, 수술은 안 함")
  *   → 복구 시 밀린 알림 일괄 반환 (caller가 telegram으로 발송)
- *
- * TODO: Emergency 시 Groq LLM으로 임시 판단 대행 (LLM 폴백: Groq → Gemini → Ollama)
  *
  * 상태 파일: ~/.openclaw/workspace/dexter-mode-state.json  (run 간 지속)
  * 비상 로그: ~/.openclaw/workspace/dexter-emergency.log
@@ -24,6 +22,7 @@
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
+const https = require('https');
 
 const MODES = {
   NORMAL:    'normal',
@@ -33,16 +32,20 @@ const MODES = {
 // Emergency 진입 임계: 보고 채널 다운 분(分)
 const EMERGENCY_THRESHOLD_MIN = 3;
 
+// Phase 2: 클로드(팀장) 무응답 임계 (10분)
+const TEAM_LEAD_TIMEOUT_MS = 10 * 60 * 1000;
+
 const STATE_FILE     = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-mode-state.json');
 const EMERGENCY_LOG  = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-emergency.log');
 
 // 기본 상태 구조
 function defaultState() {
   return {
-    mode:           MODES.NORMAL,
-    emergencySince: null,
-    criticalDown:   {},       // { serviceName: firstDownIsoStr }
-    bufferedAlerts: [],       // { ts, message } — Emergency 중 밀린 알림
+    mode:                  MODES.NORMAL,
+    emergencySince:        null,
+    criticalDown:          {},       // { serviceName: firstDownIsoStr }
+    bufferedAlerts:        [],       // { ts, message } — Emergency 중 밀린 알림
+    lastClaudeLeadActivity: null,    // Phase 2: 팀장 마지막 응답 ISO 시각
   };
 }
 
@@ -76,6 +79,120 @@ class DexterMode {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(EMERGENCY_LOG, `[${new Date().toISOString()}] ${message}\n`);
     } catch { /* 파일 쓰기 실패 무시 */ }
+  }
+
+  // ── Phase 2: 클로드(팀장) 활동 추적 ────────────────────────────
+
+  /**
+   * 클로드(팀장) 활동 시각 갱신 — claude-lead-brain.js에서 호출
+   */
+  updateClaudeLeadActivity() {
+    this.state.lastClaudeLeadActivity = new Date().toISOString();
+    this._saveState();
+  }
+
+  /**
+   * 클로드(팀장) 무응답 여부 확인
+   * @returns {boolean}
+   */
+  isClaudeLeadUnresponsive() {
+    const last = this.state.lastClaudeLeadActivity;
+    if (!last) return false;  // 아직 활동 기록 없음 → 비상 아님 (초기화 기간)
+    return (Date.now() - new Date(last).getTime()) > TEAM_LEAD_TIMEOUT_MS;
+  }
+
+  /**
+   * Phase 2: 팀장 무응답 여부 기반 Emergency 진입 체크
+   * dexter.js 점검 완료 후 checkModeTransition 바로 다음에 호출
+   */
+  checkEmergencyCondition() {
+    if (!this.isClaudeLeadUnresponsive()) return;
+    if (this.state.mode === MODES.EMERGENCY) return;  // 이미 비상 모드
+    const last    = this.state.lastClaudeLeadActivity;
+    const minAgo  = last ? Math.round((Date.now() - new Date(last).getTime()) / 60000) : 0;
+    this.enterEmergency(`클로드(팀장) ${minAgo}분 무응답`);
+  }
+
+  /**
+   * Emergency 중 Groq Scout LLM에 응급 판단 의뢰
+   * ("응급 처치만, 수술은 안 함" — monitor/restart/escalate만 결정)
+   *
+   * @param {string} issueDescription  이슈 설명
+   * @returns {Promise<{action: string, reasoning: string}>}
+   */
+  async emergencyJudgment(issueDescription) {
+    // Groq 키 로드 (config.yaml → 환경변수 폴백)
+    let groqKey = null;
+    try {
+      const { getGroqAccounts } = require('../../../packages/core/lib/llm-keys');
+      const accounts = getGroqAccounts();
+      if (accounts.length > 0) {
+        const acct = accounts[0];
+        groqKey = (typeof acct === 'string') ? acct : (acct.api_key || acct.key || null);
+      }
+    } catch { /* llm-keys 없으면 env fallback */ }
+    if (!groqKey) groqKey = process.env.GROQ_API_KEY;
+
+    if (!groqKey) {
+      const result = { action: 'monitor', reasoning: 'Groq 키 없음 — 기본 monitor 유지' };
+      this._appendEmergencyLog(`[GROQ 판단 실패] 키 없음 → ${result.action}`);
+      return result;
+    }
+
+    const body = JSON.stringify({
+      model:       'meta-llama/llama-4-scout-17b-16e-instruct',
+      max_tokens:  120,
+      temperature: 0.1,
+      messages: [
+        {
+          role:    'system',
+          content: '비상 시스템 대응 전문가. 이슈에 대해 응급 판단만 하세요. 반드시 JSON만 응답: {"action":"monitor|restart|escalate","reasoning":"한국어 1문장"}',
+        },
+        { role: 'user', content: `이슈: ${issueDescription}` },
+      ],
+    });
+
+    return new Promise(resolve => {
+      const fallback = reason => {
+        const result = { action: 'monitor', reasoning: reason };
+        this._appendEmergencyLog(`[GROQ 판단 실패] ${reason} → monitor`);
+        resolve(result);
+      };
+
+      const options = {
+        hostname: 'api.groq.com',
+        path:     '/openai/v1/chat/completions',
+        method:   'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type':  'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      };
+
+      const req = https.request(options, res => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const resp = JSON.parse(data);
+            const raw  = resp.choices?.[0]?.message?.content?.trim() || '';
+            const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+            const result = JSON.parse(json);
+            if (!['monitor', 'restart', 'escalate'].includes(result.action)) throw new Error('invalid action');
+            this._appendEmergencyLog(`[GROQ 판단] ${result.action} — ${result.reasoning}`);
+            resolve(result);
+          } catch {
+            fallback('Groq 응답 파싱 실패');
+          }
+        });
+      });
+
+      req.on('error', () => fallback('Groq 호출 오류'));
+      req.setTimeout(8000, () => { req.destroy(); fallback('Groq 타임아웃'); });
+      req.write(body);
+      req.end();
+    });
   }
 
   // ── 다운타임 추적 ───────────────────────────────────────────────
@@ -123,7 +240,8 @@ class DexterMode {
         ? `OpenClaw 게이트웨이 ${Math.round(openclawDownMin)}분 다운`
         : `스카야 텔레그램 봇 ${Math.round(skayaDownMin)}분 다운`;
       this.enterEmergency(reason);
-    } else if (!shouldEmergency && this.state.mode === MODES.EMERGENCY) {
+    } else if (!shouldEmergency && !this.isClaudeLeadUnresponsive() && this.state.mode === MODES.EMERGENCY) {
+      // 인프라 복구 + 팀장 응답 정상 → Normal 복귀
       flushed = this.exitEmergency();
     }
 
