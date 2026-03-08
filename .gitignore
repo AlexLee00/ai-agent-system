@@ -45,3 +45,4 @@ bots/investment/config.yaml
 
 # Remote Control 자동 생성 파일
 RC_CONTEXT.md
+bots/worker/secrets.json

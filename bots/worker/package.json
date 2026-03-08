@@ -1,0 +1,23 @@
+{
+  "name": "@ai-agent/worker",
+  "version": "1.0.0",
+  "description": "워커팀 — 업무 자동화 봇 + API 서버",
+  "main": "src/worker-lead.js",
+  "type": "commonjs",
+  "scripts": {
+    "start":   "node src/worker-lead.js",
+    "serve":   "node web/server.js",
+    "migrate": "node migrations/001-init-schema.js",
+    "setup":   "node scripts/setup-worker.js"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1"
+  }
+}
