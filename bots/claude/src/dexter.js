@@ -310,6 +310,29 @@ async function main() {
     console.warn('⚠️ 독터 태스크 처리 실패 (무시):', e.message);
   }
 
+  // Emergency 폴백: 클로드(팀장) 무응답 시 직접 복구 (agent_tasks 루프 우회)
+  // 정상 모드: 덱스터 → agent_tasks → 독터 (팀장 경유)
+  // Emergency: 덱스터 → 독터 직접 호출 (팀장 무응답으로 tasks 생성 불가)
+  if (dexterMode.isEmergency()) {
+    try {
+      const doctor      = require('../lib/doctor');
+      const errorItems  = results.flatMap(r =>
+        (r.items || [])
+          .filter(i => i.status === 'error')
+          .map(i => ({ checkName: r.name, label: i.label, status: i.status, detail: i.detail || '' }))
+      );
+      if (errorItems.length > 0) {
+        const recoveries = await doctor.emergencyDirectRecover(errorItems, 'dexter-emergency');
+        const succeeded  = recoveries.filter(r => r.success).length;
+        if (recoveries.length > 0) {
+          console.log(`  🚨 [Emergency 폴백] 복구 결과: ${succeeded}/${recoveries.length}건 성공`);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Emergency 폴백 직접 복구 실패 (무시):', e.message);
+    }
+  }
+
   // 종료 코드: 오류 있으면 1
   const hasError = results.some(r => r.status === 'error');
   process.exit(hasError ? 1 : 0);
