@@ -165,7 +165,8 @@ function main() {
     }
 
     // 3. 비정상 종료 코드 감지
-    if (!NORMAL_EXIT_CODES.has(svc.exitCode)) {
+    // CONTINUOUS 서비스는 현재 실행 중(PID 있음)이면 이전 exitCode 무시
+    if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (canAlert(state, key)) {
         issues.push({ key, msg: `⚠️ [스카 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
