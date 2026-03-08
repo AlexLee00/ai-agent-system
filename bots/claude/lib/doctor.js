@@ -318,6 +318,49 @@ async function pollDoctorTasks() {
   }
 }
 
+// ─── Emergency 폴백: 클로드(팀장) 무응답 시 덱스터가 직접 호출 ──────────────
+
+/**
+ * 이슈 목록에서 자동 복구 가능한 작업을 직접 실행 (팀장 경유 없음)
+ * Emergency 모드에서 agent_tasks 루프가 끊길 때 덱스터가 직접 호출
+ *
+ * @param {Array}  issues      { checkName, label, status, detail }[]
+ * @param {string} requestedBy 'dexter-emergency'
+ * @returns {Promise<{ issue, taskType, success, message }[]>}
+ */
+async function emergencyDirectRecover(issues, requestedBy = 'dexter-emergency') {
+  // 이슈 → taskType 매핑 (claude-lead-brain.js의 _mapIssuesToDoctorTasks와 동일 정책)
+  const ISSUE_MAP = [
+    { match: l => l.includes('앤디')       || l.includes('naver-monitor'),     taskType: 'restart_launchd_service', params: { label: 'ai.ska.naver-monitor' } },
+    { match: l => l.includes('지미')       || l.includes('kiosk-monitor'),     taskType: 'restart_launchd_service', params: { label: 'ai.ska.kiosk-monitor' } },
+    { match: l => l.includes('스카 커맨더') || l.includes('ska.commander'),     taskType: 'restart_launchd_service', params: { label: 'ai.ska.commander' } },
+    { match: l => l.includes('루나 커맨더') || l.includes('investment.commander'), taskType: 'restart_launchd_service', params: { label: 'ai.investment.commander' } },
+  ];
+
+  const results = [];
+  const seen    = new Set();
+
+  for (const issue of issues) {
+    const label = (issue.label || '').toLowerCase();
+    for (const rule of ISSUE_MAP) {
+      if (!rule.match(label)) continue;
+      const key = `${rule.taskType}:${JSON.stringify(rule.params)}`;
+      if (seen.has(key)) break;  // 중복 방지
+      seen.add(key);
+
+      console.log(`  🚨 [Emergency 폴백] 직접 복구 — ${rule.taskType}(${JSON.stringify(rule.params)})`);
+      try {
+        const r = await execute(rule.taskType, rule.params, requestedBy);
+        results.push({ issue: issue.label, taskType: rule.taskType, success: r.success, message: r.message });
+      } catch (e) {
+        results.push({ issue: issue.label, taskType: rule.taskType, success: false, message: e.message });
+      }
+      break;
+    }
+  }
+  return results;
+}
+
 module.exports = {
   execute,
   canRecover,
@@ -325,6 +368,7 @@ module.exports = {
   getRecoveryHistory,
   getAvailableTasks,
   pollDoctorTasks,
+  emergencyDirectRecover,
   WHITELIST,
   BLACKLIST,
 };
