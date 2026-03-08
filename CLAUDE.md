@@ -1,7 +1,7 @@
 # 팀 제이 (Team Jay) 아키텍처
 
 > 전략문서 상세: team-jay-strategy.md 참조
-> 최종 업데이트: 2026-03-06
+> 최종 업데이트: 2026-03-08
 
 ## 명칭 체계
 
@@ -56,12 +56,22 @@ Day 1 추가 (2026-03-06):
 - API 장애 시: 신규 진입 중단 (포지션 보호 모드), 기존 포지션은 거래소 TP/SL로 보호
 - `tp_sl_set = true` 확인 후에만 포지션 활성으로 간주
 
+## 최근 주요 변경 (2026-03-08)
+
+- **capital-manager.js**: 루나팀 자본 관리 완전체 (잔고 체크/포지션 사이징/서킷 브레이커)
+- **시그널 융합**: confidence score 기반 가중 의사결정 + LLM 자기반성 주간 리뷰
+- **덱스터 Phase 3**: 이벤트 발행 → 클로드 팀장 판단 → 독터 복구 + Emergency 폴백
+- **n8n fan-out → 순차 체인**: 409 Conflict + 메모리 누수 수정
+- **RAG pgvector 마이그레이션**: Python rag-system deprecated, packages/core/lib/rag.js 전환
+- **pg-pool 자동 재연결**: exponential backoff + _safeQuery 3회 재시도 + Graceful Shutdown
+- **telegram Rate Limit**: 429 retry_after 준수 + Throttle (1500ms) + 배치 (2초 윈도우)
+
 ## 안정화 기간 (6주, ~4월 중순 맥미니 도착까지)
 
-- 1주차(현재): 핵심 기반 구축 — State Bus + TP/SL ✅
-- 2주차: 스카팀 LLM(Groq) 적용 (Shadow Mode 병렬 검증)
-- 3주차: 클로드팀 LLM(Sonnet) 적용 + 장애 주입 테스트
-- 4주차: 루나팀 LLM 적용 (가장 신중, 병렬 검증)
+- 1주차: 핵심 기반 구축 — State Bus + TP/SL ✅
+- 2주차: 스카팀 LLM(Groq) 적용 (Shadow Mode 병렬 검증) ✅
+- 3주차: 클로드팀 LLM(Sonnet) 적용 + 덱스터 Phase 3 ✅
+- 4주차: 루나팀 자본관리 + 시그널 융합 + 코어 인프라 강화 ✅ (현재)
 - 5~6주차: 전체 통합 안정화 + 맥미니 이관
 
 ## LLM 최적화 원칙

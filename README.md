@@ -1,26 +1,29 @@
 # 🤖 AI Agent System
 
-맥북프로 M1 Pro 기반 멀티 에이전트 AI 봇 시스템 | v3.0 (2026-03-03)
+맥북프로 M1 Pro 기반 멀티 에이전트 AI 봇 시스템 | v4.0 (2026-03-08)
 
 ---
 
-## 봇 현황 (2026-03-03 기준)
+## 봇 현황 (2026-03-08 기준)
 
 | 팀 | 봇 | LLM | 상태 |
 |----|-----|-----|------|
-| 클로드팀 | 덱스터 (시스템 점검) | — (규칙 기반) | ✅ OPS — 1시간 주기 |
+| 클로드팀 | 클로드 (팀장) | claude-sonnet-4-6 | ✅ OPS — agent_tasks 기반 |
+| 클로드팀 | 덱스터 (시스템 점검) | — (규칙 기반) | ✅ OPS — Phase 3 완료 |
+| 클로드팀 | 독터 (자동 복구) | — | ✅ OPS — 태스크 폴링 |
 | 클로드팀 | 아처 (기술 인텔리전스) | claude-sonnet-4-6 | ✅ OPS — 매주 월 09:00 |
 | 스카팀 | 스카 (예약관리 메인봇) | gemini-2.5-flash / haiku-4-5 | ✅ OPS |
 | 스카팀 | 앤디 (네이버 모니터) | — | ✅ OPS — 5분 주기 |
 | 스카팀 | 지미 (키오스크 모니터) | — | ✅ OPS — 30분 주기 |
 | 스카팀 | 레베카 (매출 분석) | claude-sonnet-4-6 | ✅ OPS — 일일 |
 | 스카팀 | 이브 (환경요소 수집) | — | ✅ OPS — 일일 |
-| 루나팀 | Phase 3 크립토 (아리아/루나/네메시스/헤파이스토스 등) | Groq Scout / Haiku 4.5 | ✅ **LIVE** — 5분 주기 |
-| 루나팀 | Phase 3 국내주식 (한울 KIS) | Groq Scout / Haiku 4.5 | 🧪 PAPER — 5분 주기 |
-| 루나팀 | Phase 3 해외주식 (한울 KIS) | Groq Scout / Haiku 4.5 | 🧪 PAPER — 5분 주기 |
+| 루나팀 | 루나 (팀장) | Groq Scout | ✅ OPS — 시그널 융합 |
+| 루나팀 | 네메시스 (리스크 매니저) | Groq/Gemini | ✅ OPS — 동적 TP/SL |
+| 루나팀 | 헤파이스토스 (실행봇) | — | ✅ OPS — 자본 관리 |
+| 루나팀 | 분석팀 7명 (아리아/오라클/헤르메스/소피아/제우스/아테나/한울) | Groq Scout | ✅ OPS — confidence score |
 | 루나팀 | Phase 0 (제이슨/루나 DEV) | Haiku 4.5 | 🔧 DEV — 10분 주기 |
 
-**총 월 API 비용 추정: ~$1~3 (바이낸스 LIVE 실거래, Haiku 소량 사용)**
+**총 월 API 비용 추정: ~$1~3 (바이낸스 LIVE 실거래, Groq 무료 위주)**
 
 ---
 
@@ -158,17 +161,32 @@ npm run patch:status        # PATCH_REQUEST.md + 패치 이력
 
 ---
 
+## 최근 변경 (2026-03-08)
+
+- 루나팀: 자본 관리 완전체 (capital-manager.js — 잔고 체크/포지션 사이징/서킷 브레이커)
+- 루나팀: 시그널 융합 + LLM 자기반성 주간 리뷰 (confidence score 기반 가중 의사결정)
+- 루나팀: 네메시스 동적 TP/SL Phase 2 실적용
+- 루나팀: 분석팀 확장 (소피아 Fear&Greed + 아리아 MTF)
+- 루나팀: LLM 재시도 + 시맨틱 캐싱 (Groq Scout 전용)
+- 클로드팀: 덱스터 Phase 2~3 완전체 (클로드 팀장 → 독터 역할 분리, Emergency 폴백)
+- 스카팀: 에러 핸들링 보강 (state-bus/pickko)
+- n8n: 6개 워크플로우 (팀 제이 3 + 스카 3) + fan-out → 순차 체인 전환
+- RAG: pgvector 마이그레이션 + 자동 수집 파이프라인 (Python rag-system deprecated)
+- 코어: pg-pool 자동 재연결 + telegram Rate Limit/Throttle/배치
+
+---
+
 ## 구축 단계
 
 | Phase | 내용 | 상태 |
 |-------|------|------|
 | **Phase 1** | 스카팀 OPS + SQLite + 공유 인프라 + iPad 접속 | ✅ 완료 |
 | **Phase 1-B** | 스카팀 고도화 v3.0 (폴더구조·state-bus·덱스터 ska 체크) | ✅ 완료 (2026-03-03) |
-| **Phase 2** | 클로드팀 구축 (덱스터 + 아처 v2.0 + team-bus) | ✅ 완료 (2026-03-03) |
-| **Phase 3-A** | 루나팀 크립토 LIVE 자동매매 (바이낸스 Spot) | ✅ OPS (2026-03-03) |
+| **Phase 2** | 클로드팀 구축 (덱스터 Phase 3 + 아처 v2.0 + 독터 + 팀장) | ✅ 완료 (2026-03-08) |
+| **Phase 3-A** | 루나팀 크립토 LIVE 자동매매 (바이낸스 Spot + 자본관리) | ✅ OPS (2026-03-08) |
 | **Phase 3-B** | 루나팀 국내외주식 PAPER (KIS) | 🧪 PAPER 검증 중 |
 | **Phase 3-C** | 루나팀 국내외주식 LIVE 전환 | ⏳ 30일 PAPER 검증 후 |
-| **Phase 4** | 맥미니 M4 Pro 이전 + 비서봇·업무봇·학술봇 | ⏳ 맥미니 구매 후 |
+| **Phase 4** | 맥미니 M4 Pro 이전 + 비서봇·업무봇·학술봇 | ⏳ 맥미니 도착 후 (4월 중순) |
 
 ---
 
