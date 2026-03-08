@@ -119,8 +119,9 @@ function checkOrphanProcesses(items) {
       return;
     }
     const lines = out.split('\n').filter(Boolean);
-    // launchd 자식은 정상이므로 수 기준으로만 판단 (7개 초과 시 warn — n8n 포함 현재 6개)
-    if (lines.length > 7) {
+    // launchd 자식은 정상이므로 수 기준으로만 판단 (8개 초과 시 warn)
+    // 정상 launchd 서비스: claude-commander, ska, luna-commander, rag-server, mainbot, n8n, worker-web = 7개
+    if (lines.length > 8) {
       items.push({
         label:  '고아 Node 프로세스 (ppid=1)',
         status: 'warn',
