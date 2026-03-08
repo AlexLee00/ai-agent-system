@@ -98,7 +98,7 @@ async function calculatePayroll(companyId, yearMonth, employeeId = null) {
   const empFilter = employeeId ? `AND id=$2` : '';
   const empParams = employeeId ? [companyId, employeeId] : [companyId];
   const employees = await pgPool.query(SCHEMA,
-    `SELECT id, name FROM worker.employees
+    `SELECT id, name, base_salary FROM worker.employees
      WHERE company_id=$1 AND status='active' AND deleted_at IS NULL ${empFilter}`,
     empParams);
 
@@ -123,7 +123,7 @@ async function calculatePayroll(companyId, yearMonth, employeeId = null) {
     }).length;
 
     // 야근: 18:00 이후 퇴근 (초과 시간 × 시급 × 1.5)
-    const BASE_SALARY  = 3_000_000;
+    const BASE_SALARY  = emp.base_salary > 0 ? emp.base_salary : 3_000_000;
     const hourlyRate   = Math.round(BASE_SALARY / 209);       // 월 209시간 기준
     let overtimePay    = 0;
     for (const r of attRows) {

@@ -67,7 +67,7 @@ async function main() {
 
     // ──── 3단계: naver-seen.json 네이버 예약 키와 비교 ────
     log('\n[3단계] naver-seen.json 네이버 예약 키 비교');
-    const autoKeys = collectNaverKeys();
+    const autoKeys = await collectNaverKeys();
     log(`📋 naver-seen 네이버 예약 키 수: ${autoKeys.size}개`);
 
     const autoMatched = [];

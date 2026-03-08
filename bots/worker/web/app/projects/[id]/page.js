@@ -18,6 +18,39 @@ const STATUS_CONFIG = {
   completed:   { label: '완료',   bar: 'bg-green-500' },
 };
 
+const MS_STATUS = [
+  { value: 'pending',     label: '대기',   style: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
+  { value: 'in_progress', label: '진행중', style: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
+  { value: 'completed',   label: '완료',   style: 'bg-green-100 text-green-700 hover:bg-green-200' },
+];
+
+function MilestoneStatusBtn({ ms, onChange }) {
+  const [loading, setLoading] = useState(false);
+
+  const cycle = async () => {
+    const order = ['pending', 'in_progress', 'completed'];
+    const next = order[(order.indexOf(ms.status) + 1) % order.length];
+    setLoading(true);
+    try {
+      await api.put(`/milestones/${ms.id}`, { status: next });
+      onChange();
+    } catch (e) { alert(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const cur = MS_STATUS.find(s => s.value === ms.status) || MS_STATUS[0];
+
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); cycle(); }}
+      disabled={loading}
+      className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${cur.style}`}
+    >
+      {loading ? '...' : cur.label}
+    </button>
+  );
+}
+
 function AddMilestoneForm({ projectId, onAdded }) {
   const [title,   setTitle]   = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -96,25 +129,16 @@ export default function ProjectDetailPage() {
     finally { setSaving(false); }
   };
 
-  const toggleMilestone = async (ms) => {
-    const newStatus = ms.status === 'completed' ? 'pending' : 'completed';
-    try {
-      await api.put(`/milestones/${ms.id}`, { status: newStatus });
-      load();
-    } catch (e) { alert(e.message); }
-  };
-
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
   if (!project) return null;
 
-  const cfg    = STATUS_CONFIG[status] || {};
-  const pct    = Number(project.progress ?? 0);
-  const done   = milestones.filter(m => m.status === 'completed').length;
-  const total  = milestones.length;
+  const cfg   = STATUS_CONFIG[status] || {};
+  const pct   = Number(project.progress ?? 0);
+  const done  = milestones.filter(m => m.status === 'completed').length;
+  const total = milestones.length;
 
   return (
     <div className="space-y-4 max-w-2xl">
-      {/* 헤더 */}
       <div className="flex items-center gap-2">
         <Link href="/projects" className="text-sm text-gray-500 hover:text-gray-700">← 프로젝트 목록</Link>
       </div>
@@ -122,9 +146,9 @@ export default function ProjectDetailPage() {
       <div className="card space-y-4">
         <h1 className="text-xl font-bold text-gray-900">{project.name}</h1>
 
-        {/* 상태 변경 */}
+        {/* 프로젝트 상태 변경 */}
         <div>
-          <label className="text-sm font-medium text-gray-700 block mb-1.5">상태</label>
+          <label className="text-sm font-medium text-gray-700 block mb-1.5">프로젝트 상태</label>
           <div className="flex flex-wrap gap-2">
             {STATUS_OPTIONS.map(opt => (
               <button
@@ -165,24 +189,20 @@ export default function ProjectDetailPage() {
         <h2 className="font-semibold text-gray-800 mb-3">🏁 마일스톤</h2>
 
         {milestones.length === 0 ? (
-          <p className="text-sm text-gray-400 py-2">마일스톤 없음</p>
+          <p className="text-sm text-gray-400 py-2">마일스톤 없음 — 아래에서 추가하세요</p>
         ) : (
           <div className="space-y-2">
             {milestones.map(ms => (
               <div
                 key={ms.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                className={`flex items-center gap-3 p-3 rounded-lg border ${
                   ms.status === 'completed'
                     ? 'bg-green-50 border-green-200'
-                    : 'border-gray-100 hover:border-indigo-200'
+                    : ms.status === 'in_progress'
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'border-gray-100'
                 }`}
-                onClick={() => toggleMilestone(ms)}
               >
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
-                  ms.status === 'completed' ? 'bg-green-500 border-green-500' : 'border-gray-300'
-                }`}>
-                  {ms.status === 'completed' && <span className="text-white text-xs">✓</span>}
-                </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-medium ${ms.status === 'completed' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                     {ms.title}
@@ -196,6 +216,7 @@ export default function ProjectDetailPage() {
                     {new Date(ms.completed_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                   </p>
                 )}
+                <MilestoneStatusBtn ms={ms} onChange={load} />
               </div>
             ))}
           </div>
