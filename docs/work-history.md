@@ -30,6 +30,15 @@
 
 ---
 
+### ✨ 루나팀 개선 3/3 — 소피아+아리아 고도화
+- 소피아 Fear&Greed Index 추가 (alternative.me, 1시간 캐시)
+- 소피아 combineSentiment() 다중소스 통합 (커뮤니티0.5+FG0.3+뉴스0.2)
+- 소피아 analyzeSentiment 5분 결과 캐시
+- 아리아 CRYPTO_TIMEFRAMES 3→4개 확장 (15m/1h/4h/1d)
+- 아리아 calculateAutoWeights() 변동성 기반 동적 가중치
+- 아리아 DB 메타데이터에 weights 추가
+<!-- session-close:2026-03-08:루나팀-개선-33-소피아아리아-고도화 -->
+
 ## 2026-03-08
 
 ### 제이 자연어 능력 향상 v2.0 (커밋: `4c9efa1`)
