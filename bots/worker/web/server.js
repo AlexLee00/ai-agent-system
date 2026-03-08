@@ -124,6 +124,17 @@ app.post('/api/auth/login',
       await pgPool.run(SCHEMA, `UPDATE worker.users SET last_login_at=NOW() WHERE id=$1`, [user.id]);
       await logAuth('login', username, req.ip, req.headers['user-agent']);
 
+      // employees 자동 등록 (기존 사용자 호환: 로그인 시마다 없으면 생성)
+      try {
+        const emp = await pgPool.get(SCHEMA,
+          `SELECT id FROM worker.employees WHERE user_id=$1 AND deleted_at IS NULL`, [user.id]);
+        if (!emp) {
+          await pgPool.run(SCHEMA,
+            `INSERT INTO worker.employees (company_id, user_id, name) VALUES ($1, $2, $3)`,
+            [user.company_id, user.id, user.name]);
+        }
+      } catch (_) { /* 무시 */ }
+
       const token = generateToken(user);
       const { password_hash: _, ...safeUser } = user;
       res.json({ token, user: safeUser, must_change_pw: !!user.must_change_pw });
