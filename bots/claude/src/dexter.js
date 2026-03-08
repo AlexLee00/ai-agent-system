@@ -131,6 +131,10 @@ async function main() {
   // v2: 인프라 상태 기반 이중 모드 전환 판단
   // Emergency 조건: OpenClaw 게이트웨이 or 스카야 텔레그램 봇 3분 이상 다운
   try {
+    // 덱스터 실행 = 팀장(클로드) 활성 증거 → checkModeTransition 전에 갱신
+    // (이전: evaluateWithClaudeLead 내부에서만 갱신 → 1시간 주기 실행 시 항상 stale → emergency 자동 해제 불가 버그)
+    dexterMode.updateClaudeLeadActivity();
+
     const { isOpenClawOk, isSkayaOk } = require('../lib/checks/team-leads');
     const teamLeadsResult = results.find(r => r.name === '핵심 봇 프로세스 건강');
     const openclawOk      = isOpenClawOk(teamLeadsResult);
