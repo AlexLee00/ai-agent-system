@@ -1544,6 +1544,9 @@ app.use((err, req, res, _next) => {
 
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {
+  // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
+  rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
+
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`[worker/server] API 서버 기동 — http://localhost:${PORT}`);
   });
