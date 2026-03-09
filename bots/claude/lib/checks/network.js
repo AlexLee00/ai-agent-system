@@ -3,7 +3,6 @@
 /**
  * checks/network.js — 네트워크 연결성 체크
  * - Binance, Upbit, Telegram, Naver, Anthropic API ping
- * - pgvector RAG 서버 로컬 포트 8100 체크 (rag-server.js, launchd: ai.rag.server)
  */
 
 const https = require('https');
@@ -28,19 +27,6 @@ function ping(endpoint, timeoutMs = 5000) {
     req.on('timeout', () => { req.destroy(); resolve({ ok: false, ms: timeoutMs, timeout: true }); });
     req.end();
   });
-}
-
-// RAG API 서버 체크 (포트 8100, pgvector rag-server.js)
-async function checkRagServer(items) {
-  const ep = { host: '127.0.0.1', port: 8100, path: '/health', https: false };
-  const r  = await ping(ep, 3000);
-  if (!r.ok) {
-    items.push({ label: 'RAG 서버 (포트 8100)', status: 'warn', detail: '미실행 — launchctl start ai.rag.server' });
-  } else if (r.code === 200) {
-    items.push({ label: 'RAG 서버 (포트 8100)', status: 'ok', detail: `응답 ${r.ms}ms` });
-  } else {
-    items.push({ label: 'RAG 서버 (포트 8100)', status: 'warn', detail: `HTTP ${r.code} — 서버 오류 확인 필요` });
-  }
 }
 
 // OpenClaw 게이트웨이 포트 18789 바인딩 확인
@@ -129,8 +115,6 @@ async function run() {
     }
   }
 
-  // RAG API 서버 체크 (선택적)
-  await checkRagServer(items);
   // OpenClaw 포트 + Tailscale + SSH — 순차 실행
   await checkOpenClawPort(items);
   checkTailscale(items);
