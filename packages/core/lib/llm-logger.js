@@ -71,8 +71,19 @@ function _kstDate() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
 }
 
+function _normalizeModel(model) {
+  if (!model) return '';
+  // gpt-4o-2024-08-06 → gpt-4o
+  if (model.startsWith('gpt-4o-mini')) return 'gpt-4o-mini';
+  if (model.startsWith('gpt-4o'))     return 'gpt-4o';
+  // claude-sonnet-4-6-20251001 → claude-sonnet-4-6
+  const claudeMatch = model.match(/^(claude-(?:haiku|sonnet|opus)-[\d.-]+)/);
+  if (claudeMatch) return claudeMatch[1];
+  return model;
+}
+
 function _calcCost(model, inputTokens, outputTokens) {
-  const p = PRICING[model] || { input: 0, output: 0 };
+  const p = PRICING[_normalizeModel(model)] || PRICING[model] || { input: 0, output: 0 };
   return ((inputTokens * p.input) + (outputTokens * p.output)) / 1_000_000;
 }
 
@@ -237,4 +248,125 @@ async function buildDailyCostReport() {
   ].join('\n');
 }
 
-module.exports = { logLLMCall, getDailyCost, getCostBreakdown, buildDailyCostReport };
+/**
+ * 비용 트렌드 분석 (최근 N일)
+ * @param {number} [days] 분석 기간 (기본 14일)
+ */
+async function analyzeCostTrend(days = 14) {
+  await _ensureTable();
+  const half   = Math.floor(days / 2);
+  const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
+    .toISOString().split('T')[0];
+  const midDate = new Date(Date.now() + 9 * 3600 * 1000 - half * 86400 * 1000)
+    .toISOString().split('T')[0];
+
+  const rows = await pgPool.query('reservation', `
+    SELECT created_at::date AS day, SUM(cost_usd)::float AS daily_cost
+    FROM llm_usage_log
+    WHERE created_at::date >= $1::date
+    GROUP BY day ORDER BY day
+  `, [cutoff]);
+
+  const thisWeekRows = rows.filter(r => r.day >= midDate);
+  const lastWeekRows = rows.filter(r => r.day <  midDate);
+
+  const thisWeekCost = thisWeekRows.reduce((s, r) => s + r.daily_cost, 0);
+  const lastWeekCost = lastWeekRows.reduce((s, r) => s + r.daily_cost, 0);
+  const weekOverWeek = lastWeekCost > 0
+    ? ((thisWeekCost - lastWeekCost) / lastWeekCost * 100)
+    : null;
+
+  const avgDaily = rows.length > 0
+    ? rows.reduce((s, r) => s + r.daily_cost, 0) / rows.length
+    : 0;
+
+  return { thisWeekCost, lastWeekCost, weekOverWeek, avgDaily, dailyRows: rows };
+}
+
+/**
+ * 모델별 효율 분석 + 최적화 추천
+ * @param {number} [days] 분석 기간 (기본 30일)
+ */
+async function analyzeModelEfficiency(days = 30) {
+  await _ensureTable();
+  const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
+    .toISOString().split('T')[0];
+
+  const models = await pgPool.query('reservation', `
+    SELECT team, bot, model,
+           COUNT(*)                            AS calls,
+           SUM(cost_usd)::float                AS total_cost,
+           AVG(latency_ms)::integer            AS avg_latency,
+           ROUND(AVG(success) * 100)::integer  AS success_rate
+    FROM llm_usage_log
+    WHERE created_at::date >= $1::date
+    GROUP BY team, bot, model
+    ORDER BY total_cost DESC
+  `, [cutoff]);
+
+  // 추천 로직: gpt-4o 비용 높고 낮은 복잡도 작업 → gpt-4o-mini 추천
+  const recommendations = models
+    .filter(m => m.model === 'gpt-4o' && parseFloat(m.total_cost) > 0.05 && m.calls >= 5)
+    .map(m => ({
+      team:           m.team,
+      bot:            m.bot,
+      currentModel:   m.model,
+      recommendModel: 'gpt-4o-mini',
+      reason:         `${m.calls}회 호출, $${parseFloat(m.total_cost).toFixed(4)} 소요 — 단순 작업이라면 gpt-4o-mini로 97% 절감 가능`,
+      estimatedSaving: parseFloat(m.total_cost) * 0.94,
+      priority:        parseFloat(m.total_cost) > 0.5 ? 'high' : 'medium',
+    }));
+
+  return { models, recommendations };
+}
+
+/**
+ * 주간 피드백 리포트 텍스트 생성
+ */
+async function buildWeeklyFeedbackReport() {
+  const trend   = await analyzeCostTrend(14);
+  const { models, recommendations } = await analyzeModelEfficiency(7);
+
+  const today      = _kstDate();
+  const totalCost  = models.reduce((s, m) => s + parseFloat(m.total_cost), 0);
+  const totalCalls = models.reduce((s, m) => s + parseInt(m.calls), 0);
+  const freeCalls  = models.filter(m => m.model.includes('llama') || m.model.includes('gemini'))
+    .reduce((s, m) => s + parseInt(m.calls), 0);
+
+  const lines = [
+    `📊 팀 제이 LLM 주간 피드백 리포트 (${today})`,
+    `━━━━━━━━━━━━━━━━━━━━━━`,
+    ``,
+    `💰 비용 현황 (최근 7일)`,
+    `  총 비용:   $${totalCost.toFixed(4)}`,
+    `  총 호출:   ${totalCalls}회 (무료 ${freeCalls}회 포함)`,
+    `  일 평균:   $${(trend.avgDaily || 0).toFixed(4)}`,
+    trend.weekOverWeek != null
+      ? `  전주 대비: ${trend.weekOverWeek > 0 ? '+' : ''}${trend.weekOverWeek.toFixed(1)}%`
+      : `  전주 대비: 데이터 부족`,
+    ``,
+    `🤖 모델별 사용 TOP5`,
+    ...models.slice(0, 5).map(m =>
+      `  ${m.team}/${m.bot} [${m.model.slice(0, 20)}] $${parseFloat(m.total_cost).toFixed(4)} ${m.calls}회`
+    ),
+    ``,
+  ];
+
+  if (recommendations.length > 0) {
+    lines.push(`💡 최적화 추천`);
+    recommendations.forEach((r, i) => {
+      lines.push(`  ${i + 1}. [${r.priority.toUpperCase()}] ${r.team}/${r.bot}`);
+      lines.push(`     ${r.currentModel} → ${r.recommendModel}`);
+      lines.push(`     절감 예상: $${r.estimatedSaving.toFixed(4)}`);
+    });
+  } else {
+    lines.push(`💡 최적화 추천: 없음 (이미 최적 또는 데이터 부족)`);
+  }
+
+  return lines.join('\n');
+}
+
+module.exports = {
+  logLLMCall, getDailyCost, getCostBreakdown, buildDailyCostReport,
+  analyzeCostTrend, analyzeModelEfficiency, buildWeeklyFeedbackReport,
+};
