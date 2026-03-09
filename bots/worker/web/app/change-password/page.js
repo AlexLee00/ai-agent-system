@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
+import { validatePassword } from '@/lib/password-validator';
+import PasswordRuleChecker from '@/components/PasswordRuleChecker';
 
 export default function ChangePasswordPage() {
   const { user, refreshUser } = useAuth();
@@ -12,10 +14,16 @@ export default function ChangePasswordPage() {
   const [error, setError]  = useState('');
   const [saving, setSaving] = useState(false);
 
+  const validation    = validatePassword(form.new_password);
+  const confirmMatch  = form.confirm ? form.new_password === form.confirm : null; // null = 미입력
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validation.isValid) {
+      setError('비밀번호 정책을 충족하지 않습니다. (8자 이상 + 대/소/숫자/특수 중 3가지)');
+      return;
+    }
     if (form.new_password !== form.confirm) { setError('새 비밀번호가 일치하지 않습니다.'); return; }
-    if (form.new_password.length < 8) { setError('비밀번호는 8자 이상이어야 합니다.'); return; }
     setSaving(true); setError('');
     try {
       await api.post('/auth/change-password', {
@@ -64,11 +72,12 @@ export default function ChangePasswordPage() {
               type="password"
               className="input-base"
               autoComplete="new-password"
-              placeholder="8자 이상"
+              placeholder="8자 이상, 3가지 조합"
               value={form.new_password}
               onChange={e => setForm(p => ({ ...p, new_password: e.target.value }))}
               disabled={saving}
             />
+            <PasswordRuleChecker password={form.new_password} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 확인</label>
@@ -80,6 +89,8 @@ export default function ChangePasswordPage() {
               onChange={e => setForm(p => ({ ...p, confirm: e.target.value }))}
               disabled={saving}
             />
+            {confirmMatch === true  && <p className="text-xs text-green-600 mt-1">✅ 비밀번호 일치</p>}
+            {confirmMatch === false && <p className="text-xs text-red-500 mt-1">❌ 비밀번호가 일치하지 않습니다</p>}
           </div>
 
           {error && (
@@ -90,7 +101,7 @@ export default function ChangePasswordPage() {
 
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || !validation.isValid || form.new_password !== form.confirm || !form.current_password}
             className="btn-primary w-full flex items-center justify-center gap-2"
           >
             {saving ? (
