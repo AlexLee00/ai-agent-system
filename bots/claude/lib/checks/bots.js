@@ -27,17 +27,20 @@ function launchdStatus(label) {
 function checkLaunchd(items) {
   const SERVICES = [
     // 클로드팀
-    { id: 'ai.claude.dexter',         label: '클로드팀 덱스터 (launchd)' },
+    { id: 'ai.claude.dexter',         label: '클로드팀 덱스터 full (launchd)' },
+    { id: 'ai.claude.dexter.quick',   label: '클로드팀 덱스터 quick (launchd)' },
     { id: 'ai.claude.dexter.daily',   label: '클로드팀 덱스터 일일보고 (launchd)' },
     { id: 'ai.claude.archer',         label: '클로드팀 아처 (launchd)' },
+    { id: 'ai.claude.commander',      label: '클로드팀 커맨더 (launchd)' },
     // 제이팀
     { id: 'ai.openclaw.gateway',        label: '제이팀 OpenClaw 게이트웨이 (launchd)' },
+    { id: 'ai.openclaw.model-sync',     label: '제이팀 OpenClaw 모델동기화 (launchd)', optional: true },
     { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)' },
     // 스카팀 — 핵심
     { id: 'ai.ska.naver-monitor',       label: '스카팀 앤디 네이버모니터 (launchd)' },
     { id: 'ai.ska.kiosk-monitor',       label: '스카팀 지미 키오스크모니터 (launchd)' },
     { id: 'ai.ska.commander',           label: '스카팀 커맨더 (launchd)' },
-    // 스카팀 — 데이터/예측 파이프라인 (미구현 서비스는 warn 정상)
+    // 스카팀 — 데이터/예측 파이프라인 (미구현 서비스는 ok 정상)
     { id: 'ai.ska.etl',                 label: '스카팀 ETL (launchd)', optional: true },
     { id: 'ai.ska.eve',                 label: '스카팀 이브 환경수집 (launchd)', optional: true },
     { id: 'ai.ska.eve-crawl',           label: '스카팀 이브 크롤 (launchd)', optional: true },
@@ -46,15 +49,17 @@ function checkLaunchd(items) {
     { id: 'ai.ska.forecast-daily',      label: '스카팀 포캐스트 일간 (launchd)', optional: true },
     { id: 'ai.ska.forecast-weekly',     label: '스카팀 포캐스트 주간 (launchd)', optional: true },
     { id: 'ai.ska.pickko-verify',       label: '스카팀 픽코 검증 (launchd)', optional: true },
-    { id: 'ai.ska.daily-audit',         label: '스카팀 일간감사 (launchd)', optional: true },
-    { id: 'ai.ska.nightly-sync',        label: '스카팀 야간동기화 (launchd)', optional: true },
+    { id: 'ai.ska.pickko-daily-audit',  label: '스카팀 일간감사 (launchd)', optional: true },
     // 루나팀 Phase 3
     { id: 'ai.investment.crypto',       label: '루나팀 크립토 사이클 (launchd)' },
     { id: 'ai.investment.domestic',     label: '루나팀 국내주식 사이클 (launchd)' },
     { id: 'ai.investment.overseas',     label: '루나팀 미국주식 사이클 (launchd)' },
     { id: 'ai.investment.commander',    label: '루나팀 커맨더 (launchd)' },
-    // 클로드팀
-    { id: 'ai.claude.commander',        label: '클로드팀 커맨더 (launchd)' },
+    { id: 'ai.investment.argos',        label: '루나팀 아르고스 모니터 (launchd)', optional: true },
+    { id: 'ai.investment.reporter',     label: '루나팀 리포터 (launchd)', optional: true },
+    // 워커팀
+    { id: 'ai.worker.web',             label: '워커팀 웹서버 (launchd)' },
+    { id: 'ai.worker.nextjs',          label: '워커팀 Next.js (launchd)' },
   ];
 
   for (const svc of SERVICES) {
@@ -120,7 +125,7 @@ function checkOrphanProcesses(items) {
     }
     const lines = out.split('\n').filter(Boolean);
     // launchd 자식은 정상이므로 수 기준으로만 판단 (8개 초과 시 warn)
-    // 정상 launchd 서비스: claude-commander, ska, luna-commander, rag-server, mainbot, n8n, worker-web = 7개
+    // 정상 launchd 서비스: claude-commander, ska, luna-commander, mainbot, n8n, worker-web 등
     if (lines.length > 8) {
       items.push({
         label:  '고아 Node 프로세스 (ppid=1)',

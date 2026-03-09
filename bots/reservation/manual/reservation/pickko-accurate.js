@@ -350,6 +350,13 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
 async function main() {
   let browser;
   let lockAcquired = false;
+  // try/catch 양쪽에서 접근 가능하도록 바깥에 선언
+  const releaseLock = async () => {
+    if (lockAcquired) {
+      try { await releasePickkoLock('manual'); log('🔓 픽코 락 해제'); } catch {}
+      lockAcquired = false;
+    }
+  };
 
   try {
     log(`🚀 픽코 예약 등록 시작`);
@@ -361,13 +368,6 @@ async function main() {
       process.exit(1);
     }
     log('🔒 픽코 락 획득 (manual)');
-    // ⚠️ process.once('exit', ...) 는 async 작업 완료를 보장하지 않음 → releaseLock() 직접 호출로 대체
-    const releaseLock = async () => {
-      if (lockAcquired) {
-        try { await releasePickkoLock('manual'); log('🔓 픽코 락 해제'); } catch {}
-        lockAcquired = false;
-      }
-    };
     
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     

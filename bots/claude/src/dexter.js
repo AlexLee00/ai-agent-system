@@ -36,7 +36,6 @@ const checks = {
   deps:          require('../lib/checks/deps'),
   patterns:      require('../lib/checks/patterns'),
   selfDiagnosis: require('../lib/checks/self-diagnosis'),
-  // v2 신규 모듈
   teamLeads:     require('../lib/checks/team-leads'),
   openclaw:      require('../lib/checks/openclaw'),
   llmCost:       require('../lib/checks/llm-cost'),
@@ -99,7 +98,6 @@ async function main() {
     () => checks.database.run(),
     () => checks.code.run(),
     () => checks.deps.run(FULL),
-    // v2 신규 체크 (에러 격리 — 기존 점검에 영향 없음)
     () => checks.teamLeads.run(),
     () => checks.openclaw.run(),
     () => checks.llmCost.run(),
@@ -128,7 +126,7 @@ async function main() {
     }
   }
 
-  // v2: 인프라 상태 기반 이중 모드 전환 판단
+  // 인프라 상태 기반 이중 모드 전환 판단
   // Emergency 조건: OpenClaw 게이트웨이 or 스카야 텔레그램 봇 3분 이상 다운
   try {
     // 덱스터 실행 = 팀장(클로드) 활성 증거 → checkModeTransition 전에 갱신
