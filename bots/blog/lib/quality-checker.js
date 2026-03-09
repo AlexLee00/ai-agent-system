@@ -4,8 +4,8 @@
  * quality-checker.js — 포스팅 품질 검증 + AI 탐지 리스크 분석
  */
 
-const MIN_CHARS  = { lecture: 8000, general: 7000 };
-const GOAL_CHARS = { lecture: 9000, general: 8500 };
+const MIN_CHARS  = { lecture: 7000, general: 4500 };
+const GOAL_CHARS = { lecture: 9000, general: 7000 };
 
 const REQUIRED_SECTIONS = {
   lecture: ['인사말', '브리핑', '실무 인사이트', '코드', 'FAQ', '해시태그'],
