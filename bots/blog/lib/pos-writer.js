@@ -107,28 +107,34 @@ ${GEO_RULES}
 6. Node.js 공식 문서 출처 명시
 7. ★ 날씨 맥락 3회 이상 자연스럽게 삽입 (인사말/본문 중간/결론)
 8. 개인 경험/감상 표현 2회 이상 ("제가 직접 운영하는 시스템에서...", "솔직히...")
+9. 모든 섹션을 빠짐없이 작성 완료한 후, 반드시 마지막 줄에 _THE_END_ 를 적어라.
+   _THE_END_ 가 없으면 글이 미완성된 것으로 간주한다.
+   절대로 중간에 멈추지 말라. 해시태그까지 모두 작성한 후 _THE_END_ 로 끝내라.
 
-[필수 구조]
-0. [핵심 요약 3줄] — 150자 내외, AI 스니펫용 (인사말 바로 위)
-1. [승호아빠 인사말] — 가변형 인사 (날씨/시사 반영), 200자
-2. [최신 기술 브리핑] — 최근 7일 Node.js 릴리스/보안 이슈, 1,000자
-3. [전문가의 실무 인사이트 ①] — 비즈니스 관점, 500자
+[필수 구조 — 각 섹션의 최소 글자수를 반드시 준수하라]
+0. [핵심 요약 3줄] — 150자 (AI 스니펫용)
+1. [승호아빠 인사말] — 최소 300자 (날씨/시사 반영)
+2. [최신 기술 브리핑] — 최소 1,000자 (Node.js 릴리스/보안)
+3. [전문가의 실무 인사이트 ①] — 최소 500자
 4. ━━━━━━━━━━━━━━━━━━━━━
-5. [강의 - 이론] — 해당 강의 핵심 개념, 2,000자+
-6. [전문가의 실무 인사이트 ②] — 기획 단계 관점, 500자
+5. [강의 - 이론] — 최소 2,000자 ★ (핵심 개념 상세 설명)
+6. [전문가의 실무 인사이트 ②] — 최소 500자
 7. ━━━━━━━━━━━━━━━━━━━━━
-8. [실무 - 코드 및 아키텍처] — 실습 코드 3개+ 상세 주석, 2,000자+
-9. [전문가의 실무 인사이트 ③] — 코드의 비즈니스 가치, 500자
+8. [실무 - 코드 및 아키텍처] — 최소 2,000자 ★ (코드 3개+ 상세 주석)
+9. [전문가의 실무 인사이트 ③] — 최소 500자
 10. ━━━━━━━━━━━━━━━━━━━━━
-11. [에러 탐지 신경망과 환경의 역학] — 커피랑도서관 자연 홍보 800자
+11. [에러 탐지 신경망과 환경의 역학] — 최소 800자
     (ACC-ERN, CO₂ 800ppm 이하, 세스코 에어 시스템, 집중력 환경 언급)
-12. [전문가의 실무 인사이트 ④] — 공간과 아키텍트, 300자
+12. [전문가의 실무 인사이트 ④] — 최소 300자
 13. ━━━━━━━━━━━━━━━━━━━━━
-14. [AEO FAQ] — Q&A 4~5개, 800자
+14. [AEO FAQ] — 최소 800자 (Q&A 4~5개)
 15. ━━━━━━━━━━━━━━━━━━━━━
-16. [마무리 인사] — 다음 강의 예고 + 감사 인사, 300자
-17. [함께 읽으면 좋은 글] — 관련 과거 포스팅 3개 추천 (내부 링킹)
-18. [해시태그] — 주제 관련 12개 + 스터디카페 홍보 10개 = 22개+
+16. [마무리 인사] — 최소 300자
+17. [함께 읽으면 좋은 글] — 3개 추천 (내부 링킹)
+18. [해시태그] — 22개+
+
+위 글자수를 합산하면 최소 9,150자이다.
+각 섹션의 최소 글자수를 반드시 준수하라.
 
 [스터디카페 홍보 키워드 (자연스럽게 녹이기)]
 - 커피랑도서관 분당서현점
@@ -222,6 +228,14 @@ ${experienceBlock}${linkingBlock}
 - [마무리 인사 + 함께 읽으면 좋은 글]: 400자
 - [해시태그]: 22개 이상
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
+
+[출력 규칙]
+- 이 강의는 수강생이 실무에 즉시 적용할 수 있도록 빈틈없이(exhaustively) 작성되어야 한다.
+- 각 섹션을 충분하고 상세하게(comprehensively and thoroughly) 서술하라.
+- 절대 요약하거나 축약하지 말라. 모든 개념을 풍부한 예시와 함께 설명하라.
+- 이 글은 전문가가 집필하는 기술 서적의 한 챕터에 해당하는 분량이어야 한다.
+- 코드 블록마다 최소 5줄 이상의 상세한 주석을 포함하라.
+- 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
   `.trim();
 
   const apiKey = getOpenAIKey();
@@ -238,7 +252,7 @@ ${experienceBlock}${linkingBlock}
         { role: 'user',   content: userPrompt },
       ],
       max_tokens:  16000,
-      temperature: 0.75,
+      temperature: 0.82,
     });
   } finally {
     const latencyMs = Date.now() - startTime;
@@ -269,7 +283,48 @@ ${experienceBlock}${linkingBlock}
     });
   }
 
-  const content = response.choices[0]?.message?.content || '';
+  const MIN_CHARS_LECTURE = 7000;
+  let content = response.choices[0]?.message?.content || '';
+
+  // ── Continue 이어쓰기: 글자수 부족 + _THE_END_ 없으면 2차 호출 ──
+  if (content.length < MIN_CHARS_LECTURE && !content.includes('_THE_END_')) {
+    console.log(`[포스] 글자수 부족 (${content.length}자) — 이어쓰기 호출`);
+
+    const continueResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system',    content: POS_SYSTEM_PROMPT },
+        { role: 'user',      content: userPrompt },
+        { role: 'assistant', content },
+        { role: 'user',      content: '글이 중간에 끊겼다. 끊긴 부분부터 이어서 작성하라.\n앞 내용을 절대 반복하지 말라. 끊긴 지점부터 바로 이어서 쓰라.\n남은 섹션을 모두 완성하고, 마지막에 _THE_END_ 를 적어라.' },
+      ],
+      max_tokens:  8000,
+      temperature: 0.82,
+    });
+
+    const continued = continueResponse.choices[0]?.message?.content || '';
+    content = content + '\n' + continued;
+
+    await toolLogger.logToolCall('openai', 'chat.completions.create', {
+      bot: 'blog-pos', success: true,
+      duration_ms: Date.now() - startTime,
+      metadata: {
+        model:         'gpt-4o',
+        type:          'continue',
+        input_tokens:  continueResponse?.usage?.prompt_tokens,
+        output_tokens: continueResponse?.usage?.completion_tokens,
+        cost_usd:      _estimateCost(continueResponse?.usage),
+        lecture_num:   lectureNumber,
+        trace_id:      getTraceId(),
+      },
+    });
+
+    console.log(`[포스] 이어쓰기 완료: ${content.length}자`);
+  }
+
+  // _THE_END_ 마커 제거
+  content = content.replace(/_THE_END_/g, '').trim();
+
   const result  = {
     content,
     charCount: content.length,

@@ -87,26 +87,30 @@ ${GEO_RULES}
 6. 커피랑도서관 분당서현점이 성과를 높이는 이유를 논리적으로 증명
 7. ★ 날씨 맥락 2회 이상 자연스럽게 삽입 (서론 + 스터디카페 홍보 섹션)
 8. 개인 경험/감상 표현 2회 이상
+9. 모든 섹션을 빠짐없이 작성 완료한 후, 반드시 마지막 줄에 _THE_END_ 를 적어라.
+   _THE_END_ 가 없으면 글이 미완성된 것으로 간주한다.
 
-[필수 구조]
-1. [AI 스니펫 요약] — 150자 내외, 검색 노출용
+[필수 구조 — 각 섹션의 최소 글자수를 반드시 준수하라]
+1. [AI 스니펫 요약] — 150자
 2. ━━━━━━━━━━━━━━━━━━━━━
-3. [이 글에서 배울 수 있는 것] — 3~5개 목차 (GEO용)
+3. [이 글에서 배울 수 있는 것] — 200자 (3~5개 목차)
 4. ━━━━━━━━━━━━━━━━━━━━━
-5. [승호아빠 인사말] — 날씨/시사 반영, 친근한 인사, 300자
+5. [승호아빠 인사말] — 최소 300자 (날씨/시사 반영)
 6. ━━━━━━━━━━━━━━━━━━━━━
-7. [본론 섹션 1] — 주제 도입 + 번호 리스트, 1,500자
+7. [본론 섹션 1] — 최소 1,500자 ★ (주제 도입 + 번호 리스트 상세)
 8. ━━━━━━━━━━━━━━━━━━━━━
-9. [본론 섹션 2] — 핵심 분석 + 불릿 리스트, 1,500자
+9. [본론 섹션 2] — 최소 1,500자 ★ (핵심 분석 + 불릿 리스트 상세)
 10. ━━━━━━━━━━━━━━━━━━━━━
-11. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트), 1,500자
+11. [본론 섹션 3] — 최소 1,500자 ★ (실천 전략 3가지, 각 전략 400자 이상)
 12. ━━━━━━━━━━━━━━━━━━━━━
-13. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결
-    세스코 에어 + 날씨와 공간 환경 연결, 불릿 리스트, 800자
+13. [스터디카페 홍보 섹션] — 최소 800자 (작업 메모리/인지 부하 → 커피랑도서관)
 14. ━━━━━━━━━━━━━━━━━━━━━
-15. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 500자
-16. [함께 읽으면 좋은 글] — 관련 과거 포스팅 3개 추천
-17. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개+ (질문형 키워드 포함)
+15. [마무리 제언] — 최소 500자 (명언형 인용 + 결론 + 감사 + 독려)
+16. [함께 읽으면 좋은 글] — 3개 추천
+17. [해시태그] — 27개+
+
+위 글자수를 합산하면 최소 6,450자이다.
+각 섹션의 최소 글자수를 반드시 준수하라.
 
 [카테고리별 작성 방향]
 - 자기계발: 개인 성장 + AI 시대 역량
@@ -193,6 +197,12 @@ ${experienceBlock}${linkingBlock}
 - [함께 읽으면 좋은 글]: 관련 포스팅 3개
 - [해시태그]: 27개 이상
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
+
+[출력 규칙]
+- 독자가 이 글 하나로 해당 주제를 완전히 이해할 수 있도록 포괄적으로(comprehensively) 작성하라.
+- 각 본론 섹션을 깊이 있고 상세하게(in-depth and detailed) 서술하라.
+- 절대 요약하거나 축약하지 말라. 모든 주장에 근거와 사례를 제시하라.
+- 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
   `.trim();
 
   const apiKey = getOpenAIKey();
@@ -209,7 +219,7 @@ ${experienceBlock}${linkingBlock}
         { role: 'user',   content: userPrompt },
       ],
       max_tokens:  16000,
-      temperature: 0.8,
+      temperature: 0.85,
     });
   } finally {
     const latencyMs = Date.now() - startTime;
@@ -239,7 +249,48 @@ ${experienceBlock}${linkingBlock}
     });
   }
 
-  const content   = response.choices[0]?.message?.content || '';
+  const MIN_CHARS_GENERAL = 4500;
+  let content = response.choices[0]?.message?.content || '';
+
+  // ── Continue 이어쓰기: 글자수 부족 + _THE_END_ 없으면 2차 호출 ──
+  if (content.length < MIN_CHARS_GENERAL && !content.includes('_THE_END_')) {
+    console.log(`[젬스] 글자수 부족 (${content.length}자) — 이어쓰기 호출`);
+
+    const continueResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system',    content: GEMS_SYSTEM_PROMPT },
+        { role: 'user',      content: userPrompt },
+        { role: 'assistant', content },
+        { role: 'user',      content: '글이 중간에 끊겼다. 끊긴 부분부터 이어서 작성하라.\n앞 내용을 절대 반복하지 말라. 끊긴 지점부터 바로 이어서 쓰라.\n남은 섹션을 모두 완성하고, 마지막에 _THE_END_ 를 적어라.' },
+      ],
+      max_tokens:  8000,
+      temperature: 0.85,
+    });
+
+    const continued = continueResponse.choices[0]?.message?.content || '';
+    content = content + '\n' + continued;
+
+    await toolLogger.logToolCall('openai', 'chat.completions.create', {
+      bot: 'blog-gems', success: true,
+      duration_ms: Date.now() - startTime,
+      metadata: {
+        model:         'gpt-4o',
+        type:          'continue',
+        input_tokens:  continueResponse?.usage?.prompt_tokens,
+        output_tokens: continueResponse?.usage?.completion_tokens,
+        cost_usd:      _estimateCost(continueResponse?.usage),
+        category,
+        trace_id:      getTraceId(),
+      },
+    });
+
+    console.log(`[젬스] 이어쓰기 완료: ${content.length}자`);
+  }
+
+  // _THE_END_ 마커 제거
+  content = content.replace(/_THE_END_/g, '').trim();
+
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
 
