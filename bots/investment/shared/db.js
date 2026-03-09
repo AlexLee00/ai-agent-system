@@ -137,7 +137,11 @@ export async function initSchema() {
   `);
 
   // signals 컬럼 추가 (없으면 추가)
-  for (const [col, type] of [['trace_id', 'TEXT'], ['block_reason', 'TEXT']]) {
+  for (const [col, type] of [
+    ['trace_id',        'TEXT'],
+    ['block_reason',    'TEXT'],
+    ['analyst_signals', 'TEXT'],  // 분석 봇 4인 신호 패턴 (예: "A:B|O:B|H:N|S:B")
+  ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
 
@@ -189,12 +193,12 @@ export async function getRecentAnalysis(symbol, minutesBack = 30) {
 
 // ─── signals ────────────────────────────────────────────────────────
 
-export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance' }) {
+export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null }) {
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
      RETURNING id`,
-    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange],
+    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null],
   );
   return rows[0]?.id;
 }

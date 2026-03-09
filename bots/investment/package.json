@@ -25,7 +25,9 @@
     "review:dry": "node scripts/weekly-trade-review.js --dry-run",
     "review:2w": "node scripts/weekly-trade-review.js --days=14",
     "analyze-rr": "node scripts/analyze-rr.js",
-    "analyze-rr:30": "node scripts/analyze-rr.js --days=30"
+    "analyze-rr:30": "node scripts/analyze-rr.js --days=30",
+    "analyze-signals": "node scripts/analyze-signal-correlation.js",
+    "analyze-signals:30": "node scripts/analyze-signal-correlation.js --days=30"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
