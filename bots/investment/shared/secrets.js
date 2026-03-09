@@ -113,13 +113,33 @@ export function isKisMarketOpen() {
   return kstMinutes >= 9 * 60 && kstMinutes < 15 * 60 + 30;
 }
 
+/**
+ * 미국 DST 여부 (자동 계산)
+ * 시작: 3월 둘째 주 일요일 02:00 ET / 종료: 11월 첫째 주 일요일 02:00 ET
+ */
+function isUsDST(date) {
+  const y = date.getUTCFullYear();
+  const m = date.getUTCMonth() + 1; // 1~12
+
+  // 3월 둘째 주 일요일 계산
+  const marchFirst  = new Date(Date.UTC(y, 2, 1));
+  const marchOffset = (7 - marchFirst.getUTCDay()) % 7; // 첫 번째 일요일까지 남은 일수
+  const dstStart    = new Date(Date.UTC(y, 2, 1 + marchOffset + 7, 7)); // 둘째 일요일 02:00 ET = UTC 07:00
+
+  // 11월 첫째 주 일요일 계산
+  const novFirst  = new Date(Date.UTC(y, 10, 1));
+  const novOffset = (7 - novFirst.getUTCDay()) % 7;
+  const dstEnd    = new Date(Date.UTC(y, 10, 1 + novOffset, 6)); // 첫째 일요일 02:00 ET = UTC 06:00
+
+  return date >= dstStart && date < dstEnd;
+}
+
 export function isKisOverseasMarketOpen() {
   const now        = new Date();
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const utcDay     = now.getUTCDay();
   if (utcDay === 0 || utcDay === 6) return false;
-  const month    = now.getUTCMonth() + 1;
-  const isDST    = month >= 4 && month <= 10;
+  const isDST    = isUsDST(now);
   const openUtc  = isDST ? 13 * 60 + 30 : 14 * 60 + 30;
   const closeUtc = isDST ? 20 * 60       : 21 * 60;
   return utcMinutes >= openUtc && utcMinutes < closeUtc;
