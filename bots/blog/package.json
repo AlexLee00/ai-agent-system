@@ -1,0 +1,16 @@
+{
+  "name": "@ai-agent/blog",
+  "version": "1.0.0",
+  "description": "📝 블로그팀 — 블로(팀장) + 리처 + 포스 + 젬스 + 퍼블리셔",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "daily":               "node scripts/run-daily.js",
+    "seed-curriculum":     "node scripts/seed-curriculum.js",
+    "seed-curriculum:dry": "node scripts/seed-curriculum.js --dry-run"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*",
+    "openai": "^4.0.0"
+  }
+}

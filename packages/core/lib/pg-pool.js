@@ -49,7 +49,7 @@ const PG_CONFIG = {
 };
 
 // 유효 스키마 목록
-const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'public']);
+const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
 
 // 스키마별 풀 싱글톤 맵
 const _pools = new Map();
