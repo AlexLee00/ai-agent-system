@@ -116,6 +116,34 @@ function fixChecksums(results, fixes) {
   } catch { /* git 없으면 무시 */ }
 }
 
+// OpenClaw 메모리 자동 재시작
+// openclaw.js에서 _autoRestart: true 플래그가 세팅된 경우 처리
+async function fixOpenClawMemory(results, fixes) {
+  const section = results.find(r => r.name === 'OpenClaw 게이트웨이');
+  if (!section) return;
+
+  const item = section.items.find(i => i._autoRestart && i._restartService);
+  if (!item) return;
+
+  const svc = item._restartService;
+  try {
+    execSync(`launchctl stop "${svc}"`, { timeout: 5000 });
+    await new Promise(r => setTimeout(r, 3000)); // 프로세스 완전 종료 대기
+    execSync(`launchctl start "${svc}"`, { timeout: 5000 });
+    fixes.push({
+      label:  'OpenClaw 자동 재시작',
+      status: 'ok',
+      detail: `${svc} 재시작 완료 — 원인: ${item._restartReason || item.detail}`,
+    });
+  } catch (e) {
+    fixes.push({
+      label:  'OpenClaw 자동 재시작 실패',
+      status: 'warn',
+      detail: `${svc}: ${e.message}`,
+    });
+  }
+}
+
 // 버그 레포트 등록 대상 판별 + 등록
 async function reportBugs(results, fixes) {
   const BUG_TRIGGERS = [
@@ -166,6 +194,7 @@ async function run(results) {
   fixSecretsPermissions(fixes);
   fixLogRotation(fixes);
   fixChecksums(results, fixes);
+  await fixOpenClawMemory(results, fixes);
   await reportBugs(results, fixes);
 
   return fixes;
