@@ -281,4 +281,133 @@ ${experienceBlock}${linkingBlock}
   return result;
 }
 
-module.exports = { writeLecturePost, POS_SYSTEM_PROMPT };
+// ─── 분할 생성 — 강의 포스팅 (무료 API용) ────────────────────────────
+
+const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
+
+/**
+ * 4그룹으로 나눠서 호출 → 합쳐서 하나의 강의 포스팅 완성
+ * 환경변수 BLOG_LLM_MODEL: 'gemini' (무료) | 'gpt4o' (유료 폴백)
+ */
+async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData) {
+  const weather         = researchData.weather        || {};
+  const nodejsUpdates   = researchData.nodejs_updates || [];
+  const itNews          = researchData.it_news        || [];
+  const realExperiences = researchData.realExperiences || [];
+  const relatedPosts    = researchData.relatedPosts   || [];
+
+  const weatherContext  = _weatherToContext(weather);
+  const model           = process.env.BLOG_LLM_MODEL || 'gemini';
+
+  const experienceBlock = realExperiences.length > 0
+    ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
+    : '';
+  const linkingBlock = relatedPosts.length > 0
+    ? relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n')
+    : '';
+
+  const chunks = [
+    {
+      id: 'group_a', minChars: 2000,
+      prompt: `
+다음 강의 포스팅의 [그룹 A]를 작성하라.
+
+[강의 정보] ${lectureNumber}강: ${lectureTitle}
+[오늘 날씨] ${weatherContext}
+[최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
+[최신 Node.js] ${nodejsUpdates.map(u => `${u.tag} ${u.name}`).join(', ') || '자체 지식 보충'}
+
+작성할 섹션 (이것만 작성하라):
+  [핵심 요약 3줄] — 150자 내외 AI 스니펫용
+  [승호아빠 인사말] — 날씨+시사 반영, 300자
+  [최신 기술 브리핑] — Node.js 릴리스/보안 이슈, 1,200자
+  [전문가의 실무 인사이트 ①] — 비즈니스 관점, 500자
+
+총 2,500자 이상. 날씨 맥락 1회 포함.
+이전 강의(${lectureNumber - 1}강) 내용을 인사말에서 간략히 연결하라.
+      `.trim(),
+    },
+    {
+      id: 'group_b', minChars: 2000,
+      prompt: `
+다음 강의 포스팅의 [그룹 B]를 작성하라.
+
+[강의 정보] ${lectureNumber}강: ${lectureTitle}
+${experienceBlock ? `[실전 에피소드]\n${experienceBlock}\n→ "제가 운영하는 ai-agent-system에서 겪은 경험"으로 녹여라` : ''}
+
+작성할 섹션 (이것만 작성하라):
+  ━━━━━━━━━━━━━━━━━━━━━
+  [강의 - 이론] — ${lectureTitle}의 핵심 개념, 2,000자+
+  [전문가의 실무 인사이트 ②] — 기획 단계 관점, 500자
+
+총 2,500자 이상. 코드 용어에 괄호 풀이.
+      `.trim(),
+    },
+    {
+      id: 'group_c', minChars: 2000,
+      prompt: `
+다음 강의 포스팅의 [그룹 C]를 작성하라.
+
+[강의 정보] ${lectureNumber}강: ${lectureTitle}
+
+작성할 섹션 (이것만 작성하라):
+  ━━━━━━━━━━━━━━━━━━━━━
+  [실무 - 코드 및 아키텍처] — JavaScript(Node.js) 실습 코드 3개+, JSDoc 주석, 안티패턴 vs 권장 패턴, 2,000자+
+  [전문가의 실무 인사이트 ③] — 코드의 비즈니스 가치, 500자
+
+총 2,500자 이상. 날씨 맥락 1회 삽입. async/await 패턴, 상세 주석 필수.
+      `.trim(),
+    },
+    {
+      id: 'group_d', minChars: 1500,
+      prompt: `
+다음 강의 포스팅의 [그룹 D]를 작성하라.
+
+[강의 정보] ${lectureNumber}강: ${lectureTitle}
+[오늘 날씨] ${weatherContext}
+${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
+
+작성할 섹션 (이것만 작성하라):
+  ━━━━━━━━━━━━━━━━━━━━━
+  [에러 탐지 신경망과 환경의 역학] — 커피랑도서관 분당서현점 홍보, ACC-ERN, 세스코 에어, 800자
+  [전문가의 실무 인사이트 ④] — 공간과 아키텍트, 300자
+  ━━━━━━━━━━━━━━━━━━━━━
+  [AEO FAQ] — Q&A 4~5개, 800자
+  ━━━━━━━━━━━━━━━━━━━━━
+  [마무리 인사] — 다음 강의(${lectureNumber + 1}강) 예고, 300자
+  [함께 읽으면 좋은 글] — 과거 포스팅 3개 추천
+  [해시태그] — 주제 12개 + 스터디카페 10개 = 22개+
+
+총 2,000자 이상. 날씨 맥락 1회 포함.
+      `.trim(),
+    },
+  ];
+
+  const startTime = Date.now();
+  const result    = await chunkedGenerate(POS_SYSTEM_PROMPT, chunks, {
+    model,
+    contextCarry: 200,
+    maxRetries:   1,
+    onChunkComplete: ({ id, charCount, index }) =>
+      console.log(`[포스] 청크 ${id} 완료: ${charCount}자 (${index + 1}/4)`),
+  });
+
+  console.log(`[포스] 분할생성 완료: 총 ${result.charCount}자 (${((Date.now() - startTime) / 1000).toFixed(1)}초)`);
+
+  await llmLogger.logLLMCall({
+    team: 'blog', bot: 'blog-pos',
+    model:        `${model}-chunked`,
+    requestType:  'lecture_post_chunked',
+    inputTokens:  result.totalTokens.input,
+    outputTokens: result.totalTokens.output,
+    latencyMs:    Date.now() - startTime,
+  }).catch(() => {});
+
+  return {
+    content:   result.content,
+    charCount: result.charCount,
+    model:     `chunked-${model}`,
+  };
+}
+
+module.exports = { writeLecturePost, writeLecturePostChunked, POS_SYSTEM_PROMPT };

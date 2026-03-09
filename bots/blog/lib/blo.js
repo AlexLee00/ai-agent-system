@@ -21,8 +21,8 @@ const {
   isSeriesComplete,       getLectureTitle,
 }                                                   = require('./category-rotation');
 const richer                                        = require('./richer');
-const { writeLecturePost }                          = require('./pos-writer');
-const { writeGeneralPost }                          = require('./gems-writer');
+const { writeLecturePost, writeLecturePostChunked } = require('./pos-writer');
+const { writeGeneralPost, writeGeneralPostChunked } = require('./gems-writer');
 const { checkQuality }                              = require('./quality-checker');
 const { publishToFile }                             = require('./publ');
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
@@ -121,16 +121,23 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
     researchData.pastPosts = pastPosts;
   }
 
+  // BLOG_LLM_MODEL=gemini → 분할생성 (무료), 기본=gpt4o
+  const useChunked = (process.env.BLOG_LLM_MODEL === 'gemini');
+
   // 작성
   return await withTrace(traceCtx, async () => {
-    let post    = await writeLecturePost(number, lectureTitle, researchData);
+    let post    = useChunked
+      ? await writeLecturePostChunked(number, lectureTitle, researchData)
+      : await writeLecturePost(number, lectureTitle, researchData);
     let quality = checkQuality(post.content, 'lecture');
     console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
     quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
 
     if (!quality.passed) {
       console.log('[품질] 재작성 시도...');
-      const retry        = await writeLecturePost(number, lectureTitle, researchData);
+      const retry        = useChunked
+        ? await writeLecturePostChunked(number, lectureTitle, researchData)
+        : await writeLecturePost(number, lectureTitle, researchData);
       const retryQuality = checkQuality(retry.content, 'lecture');
       if (retryQuality.passed) {
         post    = retry;
@@ -188,15 +195,22 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
   // 도서리뷰는 별도 리서치
   const data = needsBook ? await richer.research(category, true) : researchData;
 
+  // BLOG_LLM_MODEL=gemini → 분할생성 (무료), 기본=gpt4o
+  const useChunked = (process.env.BLOG_LLM_MODEL === 'gemini');
+
   return await withTrace(traceCtx, async () => {
-    let post    = await writeGeneralPost(category, data);
+    let post    = useChunked
+      ? await writeGeneralPostChunked(category, data)
+      : await writeGeneralPost(category, data);
     let quality = checkQuality(post.content, 'general');
     console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
     quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
 
     if (!quality.passed) {
       console.log('[품질] 재작성 시도...');
-      const retry        = await writeGeneralPost(category, data);
+      const retry        = useChunked
+        ? await writeGeneralPostChunked(category, data)
+        : await writeGeneralPost(category, data);
       const retryQuality = checkQuality(retry.content, 'general');
       if (retryQuality.passed) {
         post    = retry;

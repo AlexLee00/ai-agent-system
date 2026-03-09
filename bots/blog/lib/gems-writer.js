@@ -5,14 +5,15 @@
  *
  * IT 전략 컨설턴트 페르소나
  * 필수 7,000자 이상 (목표 9,000자)
- * 모델: GPT-4o (OpenAI)
+ * 모델: GPT-4o (OpenAI) 또는 Gemini Flash (분할생성)
  */
 
-const OpenAI     = require('openai');
-const toolLogger = require('../../../packages/core/lib/tool-logger');
-const llmLogger  = require('../../../packages/core/lib/llm-logger');
-const llmCache   = require('../../../packages/core/lib/llm-cache');
-const { getTraceId } = require('../../../packages/core/lib/trace');
+const OpenAI            = require('openai');
+const toolLogger        = require('../../../packages/core/lib/tool-logger');
+const llmLogger         = require('../../../packages/core/lib/llm-logger');
+const llmCache          = require('../../../packages/core/lib/llm-cache');
+const { getTraceId }    = require('../../../packages/core/lib/trace');
+const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
 
@@ -248,4 +249,137 @@ ${experienceBlock}${linkingBlock}
   return result;
 }
 
-module.exports = { writeGeneralPost, GEMS_SYSTEM_PROMPT };
+// ─── 분할 생성 (Gemini Flash 무료) ──────────────────────────────────────
+
+/**
+ * 3그룹 분할 생성 — Gemini Flash (무료) 기본
+ * group_a: AI스니펫 + 목차 + 인사말 + 본론1  (~2,000자+)
+ * group_b: 본론2 + 본론3                      (~3,000자+)
+ * group_c: 스터디카페 홍보 + 마무리 + 링크 + 해시태그 (~1,500자+)
+ *
+ * @param {string} category
+ * @param {object} researchData
+ * @returns {{ content, charCount, model, title }}
+ */
+async function writeGeneralPostChunked(category, researchData) {
+  const today    = new Date().toLocaleDateString('ko-KR');
+  const model    = process.env.BLOG_LLM_MODEL || 'gemini';
+
+  const weather         = researchData.weather || {};
+  const itNews          = researchData.it_news || [];
+  const realExperiences = researchData.realExperiences || [];
+  const relatedPosts    = researchData.relatedPosts    || [];
+
+  const weatherContext = _weatherToContext(weather);
+
+  const experienceBlock = realExperiences.length > 0
+    ? `\n[실전 에피소드 — 샌드위치 화법의 "일상 에피소드" 부분에 녹여라]\n` +
+      realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n') +
+      `\n예) "얼마 전 제가 운영하는 시스템에서 예상치 못한 오류가 발생했습니다..."\n`
+    : '';
+
+  const linkingBlock = relatedPosts.length > 0
+    ? `\n[내부 링킹 — 결론 하단 "함께 읽으면 좋은 글" 3개 추천]\n` +
+      relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n') + '\n'
+    : '';
+
+  const newsBlock = itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n')
+    || '- 최신 IT 트렌드를 자체 지식으로 언급하라';
+
+  const baseCtx = `
+[카테고리] ${category}
+[발행일] ${today}
+[오늘 날씨] ${weatherContext}
+[최신 IT 뉴스] ${newsBlock}
+${researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}` : ''}
+${experienceBlock}`.trim();
+
+  const chunks = [
+    {
+      id:       'group_a',
+      minChars: 2000,
+      prompt: `${baseCtx}
+
+카테고리 "${category}"에 맞는 주제를 선정하여 아래 섹션을 작성하라.
+글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
+
+작성할 섹션 (모두 포함, 생략 금지):
+1. [AI 스니펫 요약] — 150자, 검색 노출용
+2. ━━━━━━━━━━━━━━━━━━━━━
+3. [이 글에서 배울 수 있는 것] — 3~5개 목차 항목
+4. ━━━━━━━━━━━━━━━━━━━━━
+5. [승호아빠 인사말] — 날씨/시사 반영, 친근한 인사, 300자
+6. ━━━━━━━━━━━━━━━━━━━━━
+7. [본론 섹션 1] — 주제 도입 + 번호 리스트 상세 설명, 1,500자 이상
+
+글자수 요구: 전체 2,000자 이상. 본론 섹션 1은 최소 1,500자.`,
+    },
+    {
+      id:       'group_b',
+      minChars: 2500,
+      prompt: `${baseCtx}
+
+카테고리 "${category}" 포스팅의 중반부를 작성하라.
+이전 섹션([승호아빠 인사말], [본론 섹션 1])에 이어서 자연스럽게 연결하라.
+
+작성할 섹션 (모두 포함, 생략 금지):
+1. [본론 섹션 2] — 핵심 분석 + 불릿 리스트 상세 설명, 1,500자 이상
+2. ━━━━━━━━━━━━━━━━━━━━━
+3. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트, 각 전략 300자 이상), 1,500자 이상
+
+글자수 요구: 전체 3,000자 이상. 각 섹션 최소 1,500자.`,
+    },
+    {
+      id:       'group_c',
+      minChars: 1500,
+      prompt: `${baseCtx}
+${linkingBlock}
+카테고리 "${category}" 포스팅의 마무리 섹션을 작성하라.
+앞서 작성된 3개의 본론 섹션에 이어 자연스럽게 마무리하라.
+날씨 맥락(${weatherContext})을 스터디카페 섹션에 자연스럽게 포함하라.
+
+작성할 섹션 (모두 포함, 생략 금지):
+1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결, 세스코 에어 + 날씨 환경 연결, 불릿 리스트, 800자 이상
+2. ━━━━━━━━━━━━━━━━━━━━━
+3. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 500자 이상
+4. [함께 읽으면 좋은 글] — 관련 포스팅 3개 추천
+5. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개 이상 (질문형 키워드 포함)
+
+글자수 요구: 전체 1,500자 이상. 스터디카페 섹션 최소 800자.`,
+    },
+  ];
+
+  const startTime = Date.now();
+  let result;
+  try {
+    result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
+      model,
+      contextCarry: 200,
+      maxRetries:   1,
+      onChunkComplete: ({ id, charCount, index }) =>
+        console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
+    });
+  } finally {
+    const latencyMs = Date.now() - startTime;
+    await llmLogger.logLLMCall({
+      team:         'blog',
+      bot:          'blog-gems',
+      model:        `${model}-chunked`,
+      requestType:  'general_post_chunked',
+      inputTokens:  result?.totalTokens?.input  || 0,
+      outputTokens: result?.totalTokens?.output || 0,
+      latencyMs,
+      success:      !!result,
+    });
+  }
+
+  const content   = result.content;
+  const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
+  const title     = firstLine.slice(0, 80).trim();
+
+  console.log(`[젬스청크] 전체 ${result.charCount}자 (${chunks.length}청크)`);
+
+  return { content, charCount: result.charCount, model: `chunked-${model}`, title };
+}
+
+module.exports = { writeGeneralPost, writeGeneralPostChunked, GEMS_SYSTEM_PROMPT };
