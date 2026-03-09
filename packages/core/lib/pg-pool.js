@@ -258,29 +258,104 @@ async function closeAll() {
 /**
  * 커넥션 풀 상태 조회
  * @param {string} [schema]  스키마명 (생략 시 전체 반환)
- * @returns {{ total, idle, waiting, active } | Object | null}
+ * @returns {{ total, idle, waiting, active, utilization } | Object | null}
  */
 function getPoolStats(schema) {
   if (schema) {
     const pool = _pools.get(schema);
     if (!pool) return null;
+    const active = pool.totalCount - pool.idleCount;
     return {
-      total:   pool.totalCount,
-      idle:    pool.idleCount,
-      waiting: pool.waitingCount,
-      active:  pool.totalCount - pool.idleCount,
+      schema,
+      total:       pool.totalCount,
+      idle:        pool.idleCount,
+      waiting:     pool.waitingCount,
+      active,
+      utilization: pool.totalCount > 0
+        ? (active / pool.totalCount * 100).toFixed(1) + '%'
+        : '0%',
     };
   }
   const all = {};
   for (const [s, p] of _pools) {
+    const active = p.totalCount - p.idleCount;
     all[s] = {
-      total:   p.totalCount,
-      idle:    p.idleCount,
-      waiting: p.waitingCount,
-      active:  p.totalCount - p.idleCount,
+      schema:      s,
+      total:       p.totalCount,
+      idle:        p.idleCount,
+      waiting:     p.waitingCount,
+      active,
+      utilization: p.totalCount > 0
+        ? (active / p.totalCount * 100).toFixed(1) + '%'
+        : '0%',
     };
   }
   return all;
+}
+
+/**
+ * 모든 활성 스키마의 풀 상태 배열 반환
+ * @returns {Array<{ schema, total, idle, waiting, active, utilization }>}
+ */
+function getAllPoolStats() {
+  const result = [];
+  for (const [s, p] of _pools) {
+    const active = p.totalCount - p.idleCount;
+    result.push({
+      schema:      s,
+      total:       p.totalCount,
+      idle:        p.idleCount,
+      waiting:     p.waitingCount,
+      active,
+      utilization: p.totalCount > 0
+        ? (active / p.totalCount * 100).toFixed(1) + '%'
+        : '0%',
+    });
+  }
+  return result;
+}
+
+/**
+ * 커넥션 풀 건강 상태 점검
+ * @param {number} [threshold=0.8] 사용률 경고 임계값 (80%)
+ * @returns {{ stats: Array, issues: Array }}
+ */
+function checkPoolHealth(threshold = 0.8) {
+  const stats  = getAllPoolStats();
+  const issues = [];
+  const maxPool = PG_CONFIG.max;  // 풀 최대 커넥션 수
+
+  for (const s of stats) {
+    if (s.total >= maxPool * threshold) {
+      issues.push({
+        schema: s.schema,
+        status: 'warning',
+        detail: `커넥션 ${s.total}/${maxPool} (${s.utilization} 사용)`,
+      });
+    }
+    if (s.waiting > 5) {
+      issues.push({
+        schema: s.schema,
+        status: 'warning',
+        detail: `대기 쿼리 ${s.waiting}건 — 풀 부족 가능`,
+      });
+    }
+  }
+
+  return { stats, issues };
+}
+
+/**
+ * 단일 클라이언트 커넥션 획득 (카오스 테스트 / 트랜잭션 수동 관리용)
+ * 반드시 사용 후 client.release() 호출 필요
+ * @param {string} schema
+ * @returns {Promise<import('pg').PoolClient>}
+ */
+async function getClient(schema) {
+  const pool   = getPool(schema);
+  const client = await pool.connect();
+  await client.query(`SET search_path = ${schema}, public`);
+  return client;
 }
 
 // 1분마다 풀 80%+ 사용 시 경고 (프로세스 종료 방해 안 함)
@@ -324,4 +399,7 @@ module.exports = {
   ping,
   closeAll,
   getPoolStats,
+  getAllPoolStats,
+  checkPoolHealth,
+  getClient,
 };

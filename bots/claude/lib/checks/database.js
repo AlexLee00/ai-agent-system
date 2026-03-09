@@ -295,6 +295,26 @@ async function checkSkaDuckDB(items) {
   }
 }
 
+// 커넥션 풀 상태 체크
+async function checkPoolStatus(items) {
+  try {
+    const { stats, issues } = pgPool.checkPoolHealth(0.8);
+
+    if (issues.length > 0) {
+      for (const i of issues) {
+        items.push({ label: `DB 풀 [${i.schema}]`, status: i.status === 'warning' ? 'warn' : i.status, detail: i.detail });
+      }
+    }
+
+    if (stats.length > 0) {
+      const summary = stats.map(s => `${s.schema}: ${s.active}/${s.total}`).join(', ');
+      items.push({ label: 'DB 커넥션 풀', status: issues.length > 0 ? 'warn' : 'ok', detail: summary });
+    }
+  } catch (e) {
+    items.push({ label: 'DB 커넥션 풀', status: 'warn', detail: e.message.slice(0, 60) });
+  }
+}
+
 async function run() {
   const items = [];
 
@@ -302,6 +322,7 @@ async function run() {
   await checkSkaDuckDB(items);
   await checkInvestmentPostgres(items);
   await checkMainbotQueue(items);
+  await checkPoolStatus(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');

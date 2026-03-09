@@ -16,6 +16,7 @@ const path     = require('path');
 const os       = require('os');
 const { execSync } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
+// getAllPoolStats는 module.exports에 포함됨
 const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
 
 const args    = process.argv.slice(2);
@@ -145,6 +146,12 @@ async function getHealthData() {
   const resources   = getResourceStats();
   const leadMode    = _getLeadMode();
 
+  // DB 커넥션 풀 상태
+  let poolStats = [];
+  try {
+    poolStats = pgPool.getAllPoolStats();
+  } catch {}
+
   const runningCount = botStatuses.filter(b => b.status === 'running').length;
   const totalBots    = botStatuses.length;
 
@@ -157,6 +164,7 @@ async function getHealthData() {
     doctor_stats:  doctorStats,
     recent_issues: recentIssues,
     shadow_stats:  shadowStats,
+    pool_stats:    poolStats,
     resources,
   };
 }
