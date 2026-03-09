@@ -3,6 +3,20 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-10] — 블로그팀 분할 생성 + llm-keys 통합
+
+### Added
+- **chunked-llm.js** (packages/core): Gemini Flash / GPT-4o 분할 생성 공용 유틸
+- **writeLecturePostChunked()**: 강의 포스팅 4청크 분할 생성
+- **writeGeneralPostChunked()**: 일반 포스팅 3청크 분할 생성
+- **BLOG_LLM_MODEL 환경변수**: `gemini`(무료 분할) / `gpt4o`(유료 단일) 전환
+
+### Fixed
+- `pos-writer`, `gems-writer`, `chunked-llm`: OpenAI 키를 `getOpenAIKey()` (llm-keys 폴백) 로 통일
+- 글자수 기준 실측 기반 재조정: 강의 MIN 7,000 / 일반 MIN 4,500
+
+---
+
 ## [2026-03-09] — 블로그팀 Phase 1 완전체
 
 ### Added

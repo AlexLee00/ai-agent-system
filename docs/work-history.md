@@ -4,6 +4,29 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-10
+
+### 블로그팀 분할 생성(Chunked Generation) + llm-keys 폴백 + 글자수 튜닝
+
+**분할 생성 완성**
+- `packages/core/lib/chunked-llm.js` 신규: `callGemini` / `callGpt4o` / `chunkedGenerate`
+- `pos-writer.js`: `writeLecturePostChunked()` 4청크 추가 (group_a~d, 각 1,500~2,000자)
+- `gems-writer.js`: `writeGeneralPostChunked()` 3청크 추가 (group_a~c)
+- `blo.js`: `BLOG_LLM_MODEL=gemini` 환경변수로 전체 파이프라인 Gemini 분할 생성 전환
+
+**llm-keys 폴백 적용**
+- `pos-writer.js`, `gems-writer.js`, `chunked-llm.js`: `process.env.OPENAI_API_KEY` → `getOpenAIKey()` 교체
+- 키 조회 순서: `config.yaml` → 환경변수
+
+**글자수 기준 튜닝 (실측 기반)**
+- quality-checker MIN/GOAL: 강의 7,000/9,000 / 일반 4,500/7,000
+- gems 시스템 프롬프트: 6,000 → 7,000자 / 목표 8,000 → 8,500자
+- gems 유저 프롬프트: 본론 섹션 1,500 → 2,000자씩
+
+**테스트 결과**: ✅ 강의 8,122자 / ✅ 일반 4,602자 통과
+
+---
+
 ## 2026-03-09
 
 ### 워커팀 Phase 4 AI 고도화 완료 + rag-system 잔재 제거 (`0bfaa70`~`a21ce69`)
