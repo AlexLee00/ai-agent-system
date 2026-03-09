@@ -55,6 +55,18 @@
 - package.json analyze-rr 스크립트 추가
 <!-- session-close:2026-03-09:네메시스-phase-3-rr-최적화 -->
 
+### ✨ 클로드팀 개선 5가지 + 스카팀 개선 4가지
+- bot-behavior.js 신규(독터 루프+실패율+루나급속)
+- doctor.js 복구실패 RAG 학습 + getPastSuccessfulFix
+- claude-lead-brain.js Shadow 4단계(CLAUDE_LEAD_MODE 환경변수)
+- 헬스 대시보드 포트3032(npm run health)
+- deps.js 패치 티켓 자동생성
+- 스카 커맨더 RAG 연동(searchPastCases+storeAlertContext)
+- 예약 현황 대시보드 포트3031(npm run dashboard)
+- forecast.py 동적 가중치(MAPE 역수 기반)
+- weather.py classify_weather_impact(API 재호출 없음)
+<!-- session-close:2026-03-09:클로드팀-개선-5가지-스카팀-개선-4가지 -->
+
 ## 2026-03-08 (계속)
 
 ### RAG 자동 수집 파이프라인 + 팀장 RAG 연동 완성 (커밋: `7630fc8`)
