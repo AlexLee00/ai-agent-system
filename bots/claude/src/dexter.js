@@ -41,6 +41,7 @@ const checks = {
   llmCost:       require('../lib/checks/llm-cost'),
   workspaceGit:  require('../lib/checks/workspace-git'),
   n8n:           require('../lib/checks/n8n'),
+  botBehavior:   require('../lib/checks/bot-behavior'),
 };
 
 // ─── 이중 모드 관리자 ────────────────────────────────────────────────

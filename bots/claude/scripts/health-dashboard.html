@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>클로드팀 시스템 헬스 대시보드</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Apple SD Gothic Neo', 'Nanum Gothic', sans-serif; background: #0f1117; color: #e8eaed; min-height: 100vh; padding: 20px; }
+  h1 { font-size: 1.4rem; color: #ce93d8; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #888; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: #1e2130; border-radius: 10px; padding: 18px; }
+  .card-title { font-size: 0.85rem; color: #ce93d8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+  .stat-big { font-size: 2.2rem; font-weight: 700; color: #fff; }
+  .stat-sub { font-size: 0.85rem; color: #aaa; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { color: #ce93d8; text-align: left; padding: 6px 8px; border-bottom: 1px solid #2d3250; font-weight: 500; }
+  td { padding: 6px 8px; border-bottom: 1px solid #1a1e2e; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  .badge-ok      { background: #1a3a2a; color: #4caf50; }
+  .badge-running { background: #1a3a2a; color: #4caf50; }
+  .badge-warn    { background: #2a2a1a; color: #ffb74d; }
+  .badge-error   { background: #3a1a1a; color: #ef5350; }
+  .badge-stopped { background: #3a1a1a; color: #ef5350; }
+  .badge-shadow  { background: #1a2a3a; color: #4fc3f7; }
+  .badge-auto-low { background: #1a3a2a; color: #a5d6a7; }
+  .badge-auto-all { background: #2a3a1a; color: #ffcc80; }
+  .empty { color: #555; font-size: 0.85rem; padding: 12px 0; }
+  .refresh-info { font-size: 0.75rem; color: #555; margin-top: 20px; text-align: right; }
+  #last-updated { color: #666; font-size: 0.78rem; }
+  .res-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #1a1e2e; font-size: 0.85rem; }
+  .res-row:last-child { border-bottom: none; }
+  .res-label { color: #aaa; }
+  .res-val { color: #e8eaed; font-weight: 500; }
+  .mode-selector { margin-top: 12px; font-size: 0.8rem; color: #666; }
+  .mode-tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.78rem; margin: 2px; cursor: default; }
+  .mode-tag-active { background: #2a1a3a; color: #ce93d8; font-weight: 700; border: 1px solid #ce93d8; }
+  .mode-tag-inactive { background: #1a1e2e; color: #555; border: 1px solid #2d3250; }
+</style>
+</head>
+<body>
+<h1>🛡 클로드팀 시스템 헬스 대시보드</h1>
+<div class="subtitle">봇 상태 · 독터 이슈 · 리소스 · 5분마다 자동 갱신 · <span id="last-updated">로딩 중...</span></div>
+
+<div class="grid" id="main-grid">
+  <div class="card"><div style="color:#555">데이터 로딩 중...</div></div>
+</div>
+
+<div class="refresh-info">다음 갱신: <span id="next-refresh">—</span></div>
+
+<script>
+const API = '/api/health';
+const REFRESH_MS = 5 * 60 * 1000;
+
+function badge(status) {
+  const map = {
+    ok:      ['ok',      '정상'],
+    warn:    ['warn',    '경고'],
+    error:   ['error',   '오류'],
+    running: ['running', '실행중'],
+    stopped: ['stopped', '중단'],
+  };
+  const [cls, label] = map[status] || ['warn', status];
+  return `<span class="badge badge-${cls}">${label}</span>`;
+}
+
+function modeBadge(mode) {
+  if (mode === 'shadow')    return `<span class="badge badge-shadow">shadow (기록만)</span>`;
+  if (mode === 'auto_low')  return `<span class="badge badge-auto-low">auto_low (저위험 자동)</span>`;
+  if (mode === 'auto_all')  return `<span class="badge badge-auto-all">auto_all (전체 자동)</span>`;
+  return `<span class="badge badge-warn">${mode}</span>`;
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function render(data) {
+  const grid = document.getElementById('main-grid');
+
+  // 1. 봇 상태 카드
+  const botRows = (data.bot_statuses || []).map(b =>
+    `<tr>
+      <td>${b.label}</td>
+      <td>${badge(b.status)}</td>
+    </tr>`
+  ).join('');
+  const { running, total } = data.bot_summary || {};
+  const botCard = `
+    <div class="card">
+      <div class="card-title">🤖 봇 상태 (${running}/${total} 실행중)</div>
+      <table>
+        <thead><tr><th>봇</th><th>상태</th></tr></thead>
+        <tbody>${botRows || '<tr><td colspan="2" class="empty">데이터 없음</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  // 2. 클로드팀장 모드 카드
+  const shadowStat  = data.shadow_stats || {};
+  const matchRate   = shadowStat.total > 0
+    ? Math.round((shadowStat.matched / shadowStat.total) * 100)
+    : null;
+  const modeTags = (data.lead_modes || []).map(m =>
+    `<span class="mode-tag ${m === data.lead_mode ? 'mode-tag-active' : 'mode-tag-inactive'}">${m}</span>`
+  ).join('');
+  const leadCard = `
+    <div class="card">
+      <div class="card-title">🧠 클로드팀장 (Shadow Mode)</div>
+      <div style="margin-bottom:10px">현재 모드: ${modeBadge(data.lead_mode)}</div>
+      <div class="res-row"><span class="res-label">24h 분석 건수</span><span class="res-val">${shadowStat.total || 0}건</span></div>
+      <div class="res-row"><span class="res-label">규칙-LLM 일치율</span><span class="res-val">${matchRate !== null ? matchRate + '%' : '—'}</span></div>
+      <div class="res-row"><span class="res-label">평균 응답시간</span><span class="res-val">${shadowStat.avg_ms ? Math.round(shadowStat.avg_ms) + 'ms' : '—'}</span></div>
+      <div class="mode-selector">모드 전환: CLAUDE_LEAD_MODE 환경변수<br>${modeTags}</div>
+    </div>`;
+
+  // 3. 독터 통계 카드
+  let doctorRows = '';
+  if (data.doctor_stats?.length > 0) {
+    doctorRows = data.doctor_stats.map(r => {
+      const rate = r.total > 0 ? Math.round((r.ok_cnt / r.total) * 100) : 0;
+      return `<tr>
+        <td>${r.task_type}</td>
+        <td>${r.total}</td>
+        <td>${rate >= 70 ? badge('ok') : rate >= 40 ? badge('warn') : badge('error')} ${rate}%</td>
+      </tr>`;
+    }).join('');
+  } else {
+    doctorRows = '<tr><td colspan="3" class="empty">24시간 내 복구 이력 없음</td></tr>';
+  }
+  const doctorCard = `
+    <div class="card">
+      <div class="card-title">🏥 독터 복구 통계 (24h)</div>
+      <table>
+        <thead><tr><th>복구 유형</th><th>건수</th><th>성공률</th></tr></thead>
+        <tbody>${doctorRows}</tbody>
+      </table>
+    </div>`;
+
+  // 4. 최근 이슈 카드
+  let issueRows = '';
+  if (data.recent_issues?.length > 0) {
+    issueRows = data.recent_issues.slice(0, 8).map(r => `<tr>
+      <td>${formatTime(r.created_at)}</td>
+      <td>${r.task_type}</td>
+      <td>${badge(r.success ? 'ok' : 'error')}</td>
+    </tr>`).join('');
+  } else {
+    issueRows = '<tr><td colspan="3" class="empty">최근 이슈 없음</td></tr>';
+  }
+  const issueCard = `
+    <div class="card">
+      <div class="card-title">📋 최근 복구 이력</div>
+      <table>
+        <thead><tr><th>시간</th><th>유형</th><th>결과</th></tr></thead>
+        <tbody>${issueRows}</tbody>
+      </table>
+    </div>`;
+
+  // 5. 리소스 카드
+  const res = data.resources || {};
+  const memStatus = res.mem_used_pct >= 90 ? 'error' : res.mem_used_pct >= 75 ? 'warn' : 'ok';
+  const resourceCard = `
+    <div class="card">
+      <div class="card-title">💻 시스템 리소스</div>
+      <div class="res-row"><span class="res-label">메모리 사용률</span><span class="res-val">${badge(memStatus)} ${res.mem_used_pct || '?'}% / ${res.mem_total_gb || '?'}GB</span></div>
+      <div class="res-row"><span class="res-label">CPU 부하 (1/5분)</span><span class="res-val">${res.load_1m || '?'} / ${res.load_5m || '?'}</span></div>
+      <div class="res-row"><span class="res-label">디스크 사용률</span><span class="res-val">${res.disk_usage || '?'}</span></div>
+      <div class="res-row"><span class="res-label">시스템 업타임</span><span class="res-val">${res.uptime_days || 0}일</span></div>
+      <div class="res-row"><span class="res-label">CPU 코어</span><span class="res-val">${res.cpu_count || '?'}코어</span></div>
+    </div>`;
+
+  grid.innerHTML = botCard + leadCard + doctorCard + issueCard + resourceCard;
+  document.getElementById('last-updated').textContent =
+    '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR');
+}
+
+async function fetchAndRender() {
+  try {
+    const resp = await fetch(API);
+    const data = await resp.json();
+    render(data);
+  } catch (e) {
+    document.getElementById('main-grid').innerHTML =
+      `<div class="card"><div style="color:#ef5350">❌ 데이터 조회 실패: ${e.message}</div></div>`;
+  }
+}
+
+function updateCountdown() {
+  const el = document.getElementById('next-refresh');
+  let remaining = REFRESH_MS;
+  clearInterval(window._countdown);
+  window._countdown = setInterval(() => {
+    remaining -= 1000;
+    if (remaining <= 0) {
+      fetchAndRender();
+      remaining = REFRESH_MS;
+    }
+    const m = Math.floor(remaining / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    el.textContent = `${m}분 ${s}초`;
+  }, 1000);
+}
+
+fetchAndRender();
+updateCountdown();
+</script>
+</body>
+</html>

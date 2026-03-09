@@ -20,6 +20,7 @@
     "check:claude":      "node scripts/team-check.js --team=claude",
     "check:ska":         "node scripts/team-check.js --team=ska",
     "check:luna":        "node scripts/team-check.js --team=luna",
-    "check:all":         "node scripts/team-check.js --team=all"
+    "check:all":         "node scripts/team-check.js --team=all",
+    "health":            "node scripts/health-dashboard-server.js"
   }
 }
