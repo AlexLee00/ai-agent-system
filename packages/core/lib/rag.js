@@ -42,6 +42,7 @@ const VALID_COLLECTIONS = [
   'rag_market_data',   // 루나팀 주식·암호화폐 뉴스/공시
   'rag_schedule',      // 일정/메모 (미래 확장)
   'rag_work_docs',     // 업무문서 (미래 확장)
+  'rag_blog',          // 블로그팀 — 과거 포스팅 / 인기 패턴 / 실전 사례
 ];
 
 function _validateCollection(name) {

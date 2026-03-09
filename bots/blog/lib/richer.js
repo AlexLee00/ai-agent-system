@@ -11,6 +11,7 @@
 
 const https  = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const rag    = require('../../../packages/core/lib/rag');
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -141,4 +142,97 @@ async function research(category, needsBookInfo = false) {
   return result;
 }
 
-module.exports = { research, fetchITNews, fetchNodejsUpdates, fetchWeather };
+// ─── RAG 실전 사례 검색 ───────────────────────────────────────────────
+
+/**
+ * RAG에서 포스팅 주제와 관련된 실전 에피소드 검색
+ * 검색 대상: tech(크래시/버그), operations(장애/복구), blog(과거 포스팅)
+ */
+async function searchRealExperiences(topic, postType = 'lecture') {
+  const episodes = [];
+  try {
+    await rag.initSchema();
+
+    // tech — 개발 크래시/오류 수정 사례
+    const techHits = await rag.search('tech', topic, { limit: 2, threshold: 0.5 });
+    if (techHits?.length) {
+      episodes.push(...techHits.map(h => ({
+        source: 'tech',
+        type:   '기술 이슈/해결 사례',
+        content: h.content?.slice(0, 300),
+      })));
+    }
+
+    // operations — 운영 장애/복구 사례
+    const opsHits = await rag.search('operations', topic, { limit: 2, threshold: 0.5 });
+    if (opsHits?.length) {
+      episodes.push(...opsHits.map(h => ({
+        source: 'operations',
+        type:   '운영 장애/복구 사례',
+        content: h.content?.slice(0, 300),
+      })));
+    }
+
+    // 강의 포스팅이면 기술 키워드로 추가 검색
+    if (postType === 'lecture') {
+      const techKws = topic.match(/[A-Za-z]{3,}/g) || [];
+      for (const kw of techKws.slice(0, 2)) {
+        const kwHits = await rag.search('tech', `${kw} error crash fix`, { limit: 1, threshold: 0.4 });
+        if (kwHits?.length) {
+          episodes.push({
+            source: 'tech',
+            type:   `${kw} 크래시/오류 수정 사례`,
+            content: kwHits[0].content?.slice(0, 300),
+          });
+        }
+      }
+    }
+
+    // blog — 과거 포스팅 연결점
+    const blogHits = await rag.search('blog', topic, { limit: 1, threshold: 0.6 });
+    if (blogHits?.length) {
+      episodes.push({
+        source: 'blog',
+        type:   '과거 포스팅 연결점',
+        content: blogHits[0].content?.slice(0, 200),
+      });
+    }
+  } catch (e) {
+    console.warn('[리처] RAG 실전 사례 검색 실패:', e.message);
+  }
+
+  console.log(`[리처] 실전 에피소드 ${episodes.length}건 발견`);
+  return episodes;
+}
+
+/**
+ * RAG에서 현재 포스팅 주제와 관련된 과거 포스팅 검색 (내부 링킹용)
+ */
+async function searchRelatedPosts(topic) {
+  try {
+    await rag.initSchema();
+    const hits = await rag.search('blog', topic, { limit: 5, threshold: 0.5 });
+    if (!hits?.length) return [];
+
+    return hits
+      .filter(h => h.content && !h.content.includes(topic.slice(0, 15)))
+      .slice(0, 3)
+      .map(h => ({
+        title:   h.content?.match(/\[.*?\]\s*(.*)/)?.[1]?.slice(0, 60) || '관련 포스팅',
+        summary: h.content?.slice(0, 120),
+        meta:    h.metadata,
+      }));
+  } catch (e) {
+    console.warn('[리처] 관련 포스팅 검색 실패:', e.message);
+    return [];
+  }
+}
+
+module.exports = {
+  research,
+  fetchITNews,
+  fetchNodejsUpdates,
+  fetchWeather,
+  searchRealExperiences,
+  searchRelatedPosts,
+};
