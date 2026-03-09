@@ -1341,6 +1341,11 @@ app.post('/api/schedules',
          start_time, end_time||null, all_day||false,
          location||null, JSON.stringify(attendees||[]),
          recurrence||null, reminder??30, req.user.id]);
+      // RAG 자동 저장 (실패해도 본 기능 영향 없음)
+      rag.store('rag_schedule',
+        `[일정] ${title} | ${start_time}${end_time ? '~' + end_time : ''} | ${type || 'task'}`,
+        { company_id: req.companyId, schedule_id: row.id, type: type || 'task' }, 'chloe'
+      ).catch(() => {});
       res.status(201).json({ schedule: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }

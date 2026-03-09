@@ -15,9 +15,13 @@
 import ccxt  from 'ccxt';
 import https from 'https';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 import { isKisMarketOpen, isKisOverseasMarketOpen } from '../shared/secrets.js';
+
+const _require = createRequire(import.meta.url);
+const rag = _require('../../../packages/core/lib/rag');
 
 // ─── 장 시간 체크 ────────────────────────────────────────────────────
 
@@ -457,6 +461,21 @@ export async function analyzeCryptoMTF(symbol) {
   } catch (e) {
     console.warn(`  ⚠️ [아리아] DB 저장 실패: ${e.message}`);
   }
+
+  // RAG 시장 데이터 저장 (실패해도 무시)
+  try {
+    const atrLabel = atrRatio == null ? 'N/A' : atrRatio > 0.03 ? '고변동' : atrRatio < 0.01 ? '저변동' : '중간';
+    const summary  = `[시장분석 ${symbol} MTF] 신호:${signal} 확신:${(confidence * 100).toFixed(0)}% ` +
+      `점수:${normalizedScore.toFixed(2)} 변동성:${atrLabel} | ${reasoning}`;
+    await rag.store('market_data', summary, {
+      symbol,
+      market: 'crypto',
+      signal,
+      confidence: parseFloat(confidence.toFixed(4)),
+      score:      parseFloat(normalizedScore.toFixed(4)),
+      atr_ratio:  atrRatio != null ? parseFloat(atrRatio.toFixed(6)) : null,
+    }, 'aria');
+  } catch { /* RAG 저장 실패 무시 */ }
 
   return { signal, confidence, reasoning, score: normalizedScore, weightedScore, tfResults, currentPrice, atrRatio };
 }
