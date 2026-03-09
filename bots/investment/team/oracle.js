@@ -13,6 +13,7 @@ import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 import { fileURLToPath } from 'url';
+import { getFundingRate, getOpenInterest, getLongShortRatio } from '../shared/onchain-data.js';
 
 // ─── 공개 API 수집 ──────────────────────────────────────────────────
 
@@ -44,47 +45,8 @@ export async function fetchFearGreed() {
   }
 }
 
-export async function fetchFundingRate(symbol) {
-  try {
-    const data = await httpsGet('fapi.binance.com', `/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
-    const item = Array.isArray(data) ? data[0] : null;
-    if (!item) return null;
-    return { symbol: item.symbol, fundingRate: parseFloat(item.fundingRate) };
-  } catch (e) {
-    console.warn(`  ⚠️ [오라클] 펀딩비 실패 (${symbol}): ${e.message}`);
-    return null;
-  }
-}
-
-export async function fetchLongShortRatio(symbol) {
-  try {
-    const data = await httpsGet(
-      'fapi.binance.com',
-      `/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`,
-    );
-    const item = Array.isArray(data) ? data[0] : null;
-    if (!item) return null;
-    return {
-      longShortRatio: parseFloat(item.longShortRatio),
-      longAccount:    parseFloat(item.longAccount),
-      shortAccount:   parseFloat(item.shortAccount),
-    };
-  } catch (e) {
-    console.warn(`  ⚠️ [오라클] L/S 비율 실패 (${symbol}): ${e.message}`);
-    return null;
-  }
-}
-
-export async function fetchOpenInterest(symbol) {
-  try {
-    const data = await httpsGet('fapi.binance.com', `/fapi/v1/openInterest?symbol=${symbol}`);
-    if (!data?.openInterest) return null;
-    return { openInterest: parseFloat(data.openInterest) };
-  } catch (e) {
-    console.warn(`  ⚠️ [오라클] 미결제약정 실패 (${symbol}): ${e.message}`);
-    return null;
-  }
-}
+// fetchFundingRate, fetchLongShortRatio, fetchOpenInterest → shared/onchain-data.js로 이전
+export { getFundingRate as fetchFundingRate, getLongShortRatio as fetchLongShortRatio, getOpenInterest as fetchOpenInterest };
 
 // ─── 규칙 기반 판단 (LLM fallback) ─────────────────────────────────
 
@@ -142,9 +104,9 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
 
   const [fearGreed, funding, lsRatio, openInterest] = await Promise.all([
     fetchFearGreed(),
-    fetchFundingRate(futureSymbol),
-    fetchLongShortRatio(futureSymbol),
-    fetchOpenInterest(futureSymbol),
+    getFundingRate(futureSymbol),
+    getLongShortRatio(futureSymbol),
+    getOpenInterest(futureSymbol),
   ]);
 
   console.log(`  공포탐욕지수: ${fearGreed ? `${fearGreed.value} (${fearGreed.classification})` : 'N/A'}`);

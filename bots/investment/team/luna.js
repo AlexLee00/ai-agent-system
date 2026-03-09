@@ -290,9 +290,10 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
 export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
-  let debateCount       = 0;
-  const portfolio       = await buildPortfolioContext();
-  const symbolDecisions = [];
+  let debateCount          = 0;
+  const portfolio          = await buildPortfolioContext();
+  const symbolDecisions    = [];
+  const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 
   console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
 
@@ -304,6 +305,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         continue;
       }
 
+      symbolAnalysesMap.set(symbol, analyses);
       console.log(`  📋 [루나] ${symbol}: ${analyses.length}개 분석 결과`);
 
       let debate = null;
@@ -378,13 +380,32 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       continue;
     }
 
+    // 분석 봇 신호 패턴 추출 (상관관계 분석용)
+    const _getChar = s => !s ? 'N' : s.toUpperCase() === 'BUY' ? 'B' : s.toUpperCase() === 'SELL' ? 'S' : 'N';
+    const _symAnalyses = symbolAnalysesMap.get(dec.symbol) || [];
+    const analystSignals = [
+      `A:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.TA_MTF)?.signal)}`,
+      `O:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.ONCHAIN)?.signal)}`,
+      `H:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal)}`,
+      `S:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal)}`,
+    ].join('|');
+
+    // 펀딩레이트 극단값 경고 (오라클 메타데이터 참조)
+    const _oracleMeta = _symAnalyses.find(a => a.analyst === ANALYST_TYPES.ONCHAIN)?.metadata;
+    if (_oracleMeta?.fundingRate != null) {
+      const fPct = _oracleMeta.fundingRate * 100;
+      if (fPct > 0.05)      console.log(`  ⚠️ [루나] 펀딩레이트 롱 과열 (+${fPct.toFixed(4)}%) — 반전 주의`);
+      else if (fPct < -0.01) console.log(`  ⚠️ [루나] 펀딩레이트 음수 (${fPct.toFixed(4)}%) — 숏 스퀴즈 주의`);
+    }
+
     const signalData = {
-      symbol:     dec.symbol,
-      action:     dec.action,
-      amountUsdt: dec.amount_usdt || 100,
-      confidence: dec.confidence,
-      reasoning:  `[루나] ${dec.reasoning}`,
-      exchange:   dec.exchange || exchange,
+      symbol:          dec.symbol,
+      action:          dec.action,
+      amountUsdt:      dec.amount_usdt || 100,
+      confidence:      dec.confidence,
+      reasoning:       `[루나] ${dec.reasoning}`,
+      exchange:        dec.exchange || exchange,
+      analystSignals,
     };
 
     const { valid, errors } = validateSignal(signalData);
