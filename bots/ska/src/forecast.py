@@ -35,6 +35,14 @@ import psycopg2
 import pandas as pd
 from datetime import date as date_type, timedelta
 
+# RAG 클라이언트 (실패해도 예측 기능에 영향 없음)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
+    from bots.ska.lib.rag_client import RagClient as _RagClient
+    _rag = _RagClient()
+except Exception:
+    _rag = None
+
 warnings.filterwarnings('ignore')  # Prophet Stan 경고 억제
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
@@ -828,6 +836,18 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
     mape_trend = f"최근 30일 평균 MAPE: {sum(recent_mapes)/len(recent_mapes):.1f}%" \
         if recent_mapes else "최근 MAPE 데이터 없음"
 
+    # RAG에서 과거 예측 오류 패턴 검색
+    rag_context = ''
+    if _rag:
+        try:
+            hits = _rag.search('operations', '매출 예측 오류 MAPE 패턴', limit=3, threshold=0.6)
+            if hits:
+                rag_context = '\n\n[RAG: 과거 유사 예측 이슈]\n' + '\n'.join(
+                    f'- {h["content"][:200]}' for h in hits
+                )
+        except Exception:
+            pass
+
     user_content = f"""Prophet 매출 예측 모델 월간 성능 평가 데이터입니다.
 
 [교차검증 결과]
@@ -837,7 +857,7 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
 {bias_text}
 
 [최근 추이]
-{mape_trend}
+{mape_trend}{rag_context}
 
 현재 모델: prophet-v3 (+ SARIMA/SMA/EMA 앙상블)
   - seasonality_mode: additive
@@ -976,6 +996,25 @@ def run_monthly_review(base_date_str=None):
 
     report = format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis, tune_result)
     print(report)
+
+    # RAG: 월간 리뷰 결과 저장
+    if _rag:
+        try:
+            mape_str = f'MAPE {cv_metrics["mape"]:.1f}%' if cv_metrics else 'CV 미실시'
+            rag_summary = (
+                f'[월간 포캐스트 리뷰 {base_date.strftime("%Y-%m")}] '
+                f'{mape_str} | LLM진단: {llm_diagnosis[:200]}'
+            )
+            _rag.store('operations', rag_summary, {
+                'date':  str(base_date),
+                'type':  'monthly_review',
+                'mape':  cv_metrics['mape'] if cv_metrics else None,
+                'model': MODEL_VERSION,
+            }, 'forecast')
+            print('[REVIEW] ✅ [RAG] 월간 리뷰 결과 저장 완료')
+        except Exception as e:
+            print(f'[REVIEW] ⚠️ [RAG] 저장 실패 (무시): {e}')
+
     return report
 
 

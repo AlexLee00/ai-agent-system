@@ -28,6 +28,14 @@ import json
 import psycopg2
 from datetime import date as date_type, timedelta
 
+# RAG 클라이언트 (실패해도 리포트 기능에 영향 없음)
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
+    from bots.ska.lib.rag_client import RagClient as _RagClient
+    _rag = _RagClient()
+except Exception:
+    _rag = None
+
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 
@@ -592,6 +600,27 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
     else:
         print(format_weekly_review(report))
 
+    # RAG: 주간 요약 저장
+    if _rag:
+        try:
+            s = summary
+            valid_mapes = [a['mape'] for a in accuracy if a.get('mape') is not None]
+            avg_mape_str = f'평균MAPE {sum(valid_mapes)/len(valid_mapes):.1f}%' if valid_mapes else 'MAPE없음'
+            rag_summary = (
+                f'[주간 현황 {report["week_start"]}~{report["week_end"]}] '
+                f'주간매출 {s["total"]:,}원 | 일평균 {s["avg"]:,}원 | 예약 {s["reservations"]}건 | {avg_mape_str}'
+            )
+            _rag.store('operations', rag_summary, {
+                'week_start':  report['week_start'],
+                'week_end':    report['week_end'],
+                'type':        'weekly_report',
+                'total':       s['total'],
+                'avg':         s['avg'],
+                'reservations': s['reservations'],
+            }, 'rebecca')
+        except Exception:
+            pass
+
     return report
 
 
@@ -643,10 +672,48 @@ def run_rebecca(target_date_str=None, output_json=False):
         'prev_forecast': prev_forecast,  # ska-014: 어제 예측값
     }
 
+    # RAG: 이상 감지 시 과거 유사 사례 검색
+    rag_past_cases = ''
+    if anomalies and _rag:
+        try:
+            query = ' '.join(anomalies)[:200]
+            hits = _rag.search('operations', query, limit=3, threshold=0.55)
+            if hits:
+                rag_past_cases = '\n\n[과거 유사 사례]\n' + '\n'.join(
+                    f'- {h["content"][:180]}' for h in hits
+                )
+        except Exception:
+            pass
+
     if output_json:
+        if rag_past_cases:
+            report['rag_past_cases'] = rag_past_cases
         print(json.dumps(report, ensure_ascii=False, default=str, indent=2))
     else:
-        print(format_telegram(report))
+        tg_text = format_telegram(report)
+        if rag_past_cases:
+            tg_text += rag_past_cases
+        print(tg_text)
+
+    # RAG: 일간 현황 요약 저장
+    if _rag:
+        try:
+            rev = today_data['revenue']
+            occ = today_data['occupancy_rate'] * 100
+            anom_str = ' | '.join(anomalies) if anomalies else '이상 없음'
+            rag_summary = (
+                f'[일간 현황 {date_str}] '
+                f'매출 {rev:,}원 | 가동률 {occ:.1f}% | {anom_str}'
+            )
+            _rag.store('operations', rag_summary, {
+                'date':    date_str,
+                'type':    'daily_report',
+                'revenue': rev,
+                'occ':     round(occ, 1),
+                'has_anomaly': len(anomalies) > 0,
+            }, 'rebecca')
+        except Exception:
+            pass
 
     return report
 
