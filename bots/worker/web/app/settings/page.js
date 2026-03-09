@@ -2,6 +2,8 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { validatePassword } from '@/lib/password-validator';
+import PasswordRuleChecker from '@/components/PasswordRuleChecker';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -9,8 +11,13 @@ export default function SettingsPage() {
   const [msg, setMsg]       = useState('');
   const [saving, setSaving] = useState(false);
 
+  const validation   = validatePassword(pwForm.next);
+  const confirmMatch = pwForm.confirm ? pwForm.next === pwForm.confirm : null;
+
   const handlePwChange = async (e) => {
     e.preventDefault();
+    const v = validatePassword(pwForm.next);
+    if (!v.isValid) { setMsg('비밀번호 정책을 충족하지 않습니다.'); return; }
     if (pwForm.next !== pwForm.confirm) { setMsg('새 비밀번호가 일치하지 않습니다.'); return; }
     setSaving(true); setMsg('');
     try {
@@ -45,19 +52,27 @@ export default function SettingsPage() {
         <form onSubmit={handlePwChange} className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">현재 비밀번호</label>
-            <input type="password" className="input-base" value={pwForm.current} onChange={e=>setPwForm(p=>({...p,current:e.target.value}))} />
+            <input type="password" className="input-base" value={pwForm.current}
+              onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호</label>
-            <input type="password" className="input-base" value={pwForm.next}    onChange={e=>setPwForm(p=>({...p,next:e.target.value}))} />
-            <p className="text-xs text-gray-400 mt-1">8자 이상, 대/소문자/숫자/특수문자 중 3가지 이상</p>
+            <input type="password" className="input-base" value={pwForm.next}
+              onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))} />
+            <PasswordRuleChecker password={pwForm.next} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">새 비밀번호 확인</label>
-            <input type="password" className="input-base" value={pwForm.confirm} onChange={e=>setPwForm(p=>({...p,confirm:e.target.value}))} />
+            <input type="password" className="input-base" value={pwForm.confirm}
+              onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} />
+            {confirmMatch === true  && <p className="text-xs text-green-600 mt-1">✅ 비밀번호 일치</p>}
+            {confirmMatch === false && <p className="text-xs text-red-500 mt-1">❌ 비밀번호가 일치하지 않습니다</p>}
           </div>
           {msg && <p className={`text-sm ${msg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{msg}</p>}
-          <button type="submit" className="btn-primary w-full" disabled={saving}>{saving ? '변경 중...' : '비밀번호 변경'}</button>
+          <button type="submit" className="btn-primary w-full"
+            disabled={saving || !validation.isValid || pwForm.next !== pwForm.confirm}>
+            {saving ? '변경 중...' : '비밀번호 변경'}
+          </button>
         </form>
       </div>
     </div>

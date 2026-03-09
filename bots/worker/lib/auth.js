@@ -48,10 +48,16 @@ function validatePasswordPolicy(password) {
   if (!password || password.length < 8) {
     return { valid: false, reason: '비밀번호는 최소 8자 이상이어야 합니다.' };
   }
+  if (password.length > 72) {
+    return { valid: false, reason: '비밀번호는 72자를 초과할 수 없습니다.' };
+  }
+  if (/\s/.test(password)) {
+    return { valid: false, reason: '비밀번호에 공백을 포함할 수 없습니다.' };
+  }
   const checks = [
-    /[A-Z]/.test(password),   // 대문자
-    /[a-z]/.test(password),   // 소문자
-    /[0-9]/.test(password),   // 숫자
+    /[A-Z]/.test(password),        // 대문자
+    /[a-z]/.test(password),        // 소문자
+    /[0-9]/.test(password),        // 숫자
     /[^A-Za-z0-9]/.test(password), // 특수문자
   ];
   if (checks.filter(Boolean).length < 3) {
