@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
-import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday } from '../shared/secrets.js';
+import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday, isNyseHoliday } from '../shared/secrets.js';
 
 const _require = createRequire(import.meta.url);
 const rag = _require('../../../packages/core/lib/rag');
@@ -38,9 +38,12 @@ export async function isMarketOpen(exchange) {
     if (holiday.isHoliday) return { open: false, reason: `공휴일 (${holiday.name})` };
     return { open: true, reason: 'KST 09:00~15:30 장중' };
   }
-  if (exchange === 'kis_overseas') return isKisOverseasMarketOpen()
-    ? { open: true,  reason: 'NYSE/NASDAQ 장중' }
-    : { open: false, reason: '미국주식 장 마감 시간 외' };
+  if (exchange === 'kis_overseas') {
+    const nyseHol = isNyseHoliday();
+    if (nyseHol.isHoliday)           return { open: false, reason: `NYSE 휴장 (${nyseHol.name})` };
+    if (!isKisOverseasMarketOpen())  return { open: false, reason: '미국주식 장 마감 시간 외' };
+    return { open: true, reason: 'NYSE/NASDAQ 장중' };
+  }
   return { open: true, reason: '알 수 없는 거래소 — 분석 허용' };
 }
 

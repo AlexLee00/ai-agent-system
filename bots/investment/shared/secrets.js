@@ -7,8 +7,11 @@
 
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { createRequire } from 'module';
 import yaml from 'js-yaml';
+
+const _require = createRequire(import.meta.url);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -103,7 +106,46 @@ export function getKisOverseasSymbols() {
 
 // ─── 공휴일 체크 (ska.environment_factors) ──────────────────────────
 
-const _holidayCache = new Map(); // key: 'YYYY-MM-DD', value: { flag, name }
+const _holidayCache    = new Map(); // key: 'YYYY-MM-DD', value: { isHoliday, name }
+const _nyseHolidayCache = new Map(); // key: year, value: Set<'YYYY-MM-DD'>
+
+/**
+ * NYSE 휴장일 Set 반환 (nyse-holidays 패키지, 연도별 캐시)
+ * @param {number} year
+ * @returns {Set<string>} 'YYYY-MM-DD' 형식
+ */
+function getNyseHolidaySet(year) {
+  if (_nyseHolidayCache.has(year)) return _nyseHolidayCache.get(year);
+  try {
+    const h   = _require('nyse-holidays');
+    const set = new Set(h.getHolidays(year).map(d => d.dateString));
+    _nyseHolidayCache.set(year, set);
+    return set;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * 해당 날짜가 NYSE 휴장일인지 확인
+ * @param {Date} [date]
+ * @returns {{ isHoliday: boolean, name: string|null }}
+ */
+export function isNyseHoliday(date = new Date()) {
+  const dateStr = date.toISOString().slice(0, 10); // UTC 기준 (NYSE는 ET, 하루 단위로 충분)
+  const year    = date.getUTCFullYear();
+  const set     = getNyseHolidaySet(year);
+  if (set.has(dateStr)) {
+    try {
+      const holidays = _require('nyse-holidays').getHolidays(year);
+      const found    = holidays.find(h => h.dateString === dateStr);
+      return { isHoliday: true, name: found?.name || 'NYSE Holiday' };
+    } catch {
+      return { isHoliday: true, name: 'NYSE Holiday' };
+    }
+  }
+  return { isHoliday: false, name: null };
+}
 
 /**
  * 오늘이 한국 공휴일인지 확인 (ska.environment_factors 조회)
@@ -177,6 +219,7 @@ export function isKisOverseasMarketOpen() {
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const utcDay     = now.getUTCDay();
   if (utcDay === 0 || utcDay === 6) return false;
+  if (isNyseHoliday(now).isHoliday)  return false;
   const isDST    = isUsDST(now);
   const openUtc  = isDST ? 13 * 60 + 30 : 14 * 60 + 30;
   const closeUtc = isDST ? 20 * 60       : 21 * 60;
