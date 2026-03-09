@@ -125,6 +125,24 @@ async function main() {
     publishToMainBot({ from_bot: 'ska', event_type: 'report', alert_level: 1, message: report });
     log('\n✅ 픽코 일일 감사 완료');
 
+    // ──── RAG: 일간 예약 감사 요약 저장 ────
+    try {
+      const rag = require('../../../../packages/core/lib/rag');
+      const ragSummary = `[일간 예약 감사 ${today}] ` +
+        `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건 | ` +
+        `이슈: ${manualCount > 0 ? `수동 ${manualCount}건 감지` : '없음'}`;
+      await rag.store('reservations', ragSummary, {
+        date:         today,
+        type:         'daily_audit',
+        total,
+        auto_count:   autoCount,
+        manual_count: manualCount,
+      }, 'audit');
+      log('✅ [RAG] 일간 예약 감사 요약 저장 완료');
+    } catch (e) {
+      log(`⚠️ [RAG] 예약 감사 요약 저장 실패 (무시): ${e.message}`);
+    }
+
     // ──── 5단계: Shadow Log 자동 정리 (30일 초과 레코드 삭제) ────
     try {
       const pruned = await shadow.pruneOldLogs(30);
