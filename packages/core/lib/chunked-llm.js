@@ -12,12 +12,13 @@
  */
 
 const https = require('https');
+const { getOpenAIKey, getGeminiKey } = require('./llm-keys');
 
 // ─── Gemini Flash 호출 ──────────────────────────────────────────────
 
 async function callGemini(systemPrompt, userPrompt, maxTokens = 4096) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY 없음');
+  const apiKey = getGeminiKey();
+  if (!apiKey) throw new Error('GEMINI_API_KEY 없음 (환경변수 또는 config.yaml 확인)');
 
   const body = JSON.stringify({
     contents: [{ parts: [{ text: userPrompt }] }],
@@ -64,7 +65,7 @@ async function callGemini(systemPrompt, userPrompt, maxTokens = 4096) {
 
 async function callGpt4o(systemPrompt, userPrompt, maxTokens = 4096) {
   const OpenAI = require('openai');
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = new OpenAI({ apiKey: getOpenAIKey() });
   const res    = await openai.chat.completions.create({
     model: 'gpt-4o', max_tokens: maxTokens, temperature: 0.75,
     messages: [

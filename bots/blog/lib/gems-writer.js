@@ -8,12 +8,13 @@
  * 모델: GPT-4o (OpenAI) 또는 Gemini Flash (분할생성)
  */
 
-const OpenAI            = require('openai');
-const toolLogger        = require('../../../packages/core/lib/tool-logger');
-const llmLogger         = require('../../../packages/core/lib/llm-logger');
-const llmCache          = require('../../../packages/core/lib/llm-cache');
-const { getTraceId }    = require('../../../packages/core/lib/trace');
+const OpenAI              = require('openai');
+const toolLogger          = require('../../../packages/core/lib/tool-logger');
+const llmLogger           = require('../../../packages/core/lib/llm-logger');
+const llmCache            = require('../../../packages/core/lib/llm-cache');
+const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
+const { getOpenAIKey }    = require('../../../packages/core/lib/llm-keys');
 
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
 
@@ -194,8 +195,8 @@ ${experienceBlock}${linkingBlock}
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
   `.trim();
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY 환경변수 없음');
+  const apiKey = getOpenAIKey();
+  if (!apiKey) throw new Error('OPENAI_API_KEY 없음 (환경변수 또는 config.yaml 확인)');
 
   const openai    = new OpenAI({ apiKey });
   const startTime = Date.now();
