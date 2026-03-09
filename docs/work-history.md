@@ -1328,3 +1328,12 @@ OpenClaw 2026.2.26→2026.3.2 | TOOLS.md RAG 검색 섹션(system_docs 12건 임
 - bots/claude/src/dexter-quickcheck.js: 5분 주기 크래시 감지·자동재시작·중복알림방지
 - ai.claude.dexter.quick launchd 등록 (StartInterval=300, --telegram --fix)
 - 덱스터 체크 티어: quick(5분) + full(1h)
+
+### 클로드팀 개선 5가지
+bot-behavior.js 신규(독터루프+실패율+루나급속신호) | doctor.js RAG 복구 실패 저장+getPastSuccessfulFix | claude-lead-brain.js Shadow 4단계(CLAUDE_LEAD_MODE) | health-dashboard-server.js 포트3032 | deps.js 패치티켓 RAG 자동저장
+
+### 시스템 인프라 개선 3가지
+scripts/weekly-team-report.js 4팀 KPI 주간리포트 | pg-pool getAllPoolStats/checkPoolHealth/getClient 추가 | 카오스테스트 3종(db-pool-exhaust/llm-failover/telegram-rate-limit)
+
+### 블로그팀 Phase 1 MVP (2026-03-09)
+blo.js(팀장) + richer.js(IT뉴스/HN/날씨) + pos-writer.js(강의8000자+) + gems-writer.js(일반7000자+) + publ.js(마크다운저장) | 지원모듈: category-rotation/quality-checker/daily-config | blog 스키마 5테이블 마이그레이션 완료 | 120강 커리큘럼 시딩 완료 | ai.blog.daily launchd 등록(06:00 KST)

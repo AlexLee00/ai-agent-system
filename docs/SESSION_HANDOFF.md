@@ -4,50 +4,74 @@
 
 ## 이번 세션 완료 내역 (2026-03-09)
 
-### 워커팀 Phase 4 AI 고도화 완료
+### 블로그팀 Phase 1 MVP 완료
 
-#### 구현 완료
-- `bots/worker/lib/ai-client.js`: `callLLM()` + `callLLMWithFallback()` (Groq llama-4-maverick → Claude haiku-4-5 폴백)
-- `bots/worker/lib/ai-helper.js`: `buildSQLPrompt`, `buildSummaryPrompt`, `extractSQL`, `isSelectOnly`, `isSafeQuestion`
-- `POST /api/ai/ask`: 자연어→SQL→실행→RAG→요약 / admin/master 전용 / 감사 로그 기록
-- `POST /api/ai/revenue-forecast`: 90일 매출 → Groq 30일 예측 / 감사 로그 기록
-- `web/app/ai/page.js`: AI 질문 UI + 매출 예측 UI
-- `bots/worker/scripts/start-worker-web.sh`: launchd 래퍼 (config.yaml에서 API 키 런타임 로드)
-- `ai.worker.web.plist`: 래퍼 스크립트 방식으로 변경
+#### 구현된 봇 (5봇)
+- `bots/blog/lib/blo.js` — 팀장 오케스트레이션 (설정→리서치→강의포스팅→일반포스팅→텔레그램)
+- `bots/blog/lib/richer.js` — IT뉴스(HN)/Node.js릴리스(GitHub)/날씨(OpenWeatherMap) 수집
+- `bots/blog/lib/pos-writer.js` — 강의 포스팅 (GPT-4o, 8,000자+, 16개 필수 섹션)
+- `bots/blog/lib/gems-writer.js` — 일반 포스팅 (GPT-4o, 7,000자+, 7개 카테고리)
+- `bots/blog/lib/publ.js` — 마크다운 파일 저장 + DB 기록
 
-#### 보안
-- `isSafeQuestion()`: 입력 질문에 위험 키워드 차단 (UNSAFE_QUESTION)
-- `isSelectOnly()`: 생성 SQL SELECT 전용 검증 (이중 방어)
+#### 지원 모듈
+- `bots/blog/lib/category-rotation.js` — 7개 일반 카테고리 순환 + 강의 번호 관리
+- `bots/blog/lib/quality-checker.js` — 글자수/섹션/홍보/해시태그 품질 검증
+- `bots/blog/lib/daily-config.js` — 일일 발행 수 설정 (DB 기반)
 
-#### 미완 — RAG 임베딩 비활성
-- OpenAI `text-embedding-3-small` 쿼터 초과 → RAG 저장/검색 모두 실패
-- 실패는 `try-catch` + `.catch(()=>{})` 로 조용히 무시됨 — 기능 영향 없음
-- **맥미니 도착 후** Ollama `nomic-embed-text`(768dim) 로 전환 예정
-  - `packages/core/lib/rag.js` `createEmbedding()` → Ollama HTTP 폴백 추가
-  - `reservation.rag_work_docs` 테이블 현재 빈 상태 (재생성 가능)
+#### 인프라
+- `bots/blog/migrations/001-blog-schema.sql` — 5개 테이블 (posts/category_rotation/curriculum/research_cache/daily_config)
+- `bots/blog/context/curriculum.txt` — Node.js 120강 전체 커리큘럼
+- `bots/blog/scripts/seed-curriculum.js` — 커리큘럼 시딩
+- `bots/blog/launchd/ai.blog.daily.plist` — 매일 06:00 KST 자동 실행
 
-### Python rag-system 잔재 완전 제거
-- `~/projects/rag-system/` 삭제, `scripts/migrate-rag.js` 삭제
-- `network.js` 덱스터 체크: RAG 서버 미실행 시 warn 격상
-- `migrate` 스크립트 3종, `llm-cache.js`, `rag-server.js` 주석 정리
+#### 운영 상태
+- DB 마이그레이션: ✅ 완료
+- 커리큘럼 시딩: ✅ 120/120강
+- launchd 등록: ✅ `ai.blog.daily` (06:00 KST)
+- 현재 설정: 강의 1편 + 일반 1편 / 일
+
+#### 운영 명령
+```bash
+cd bots/blog
+node scripts/run-daily.js          # 수동 실행
+node scripts/seed-curriculum.js    # 커리큘럼 재시딩
+```
+
+---
+
+### 클로드팀 개선 5가지 완료
+
+- `bot-behavior.js`: 독터 루프 감지 + 실패율 + 루나 급속 신호 (dexter 16번째 체크)
+- `doctor.js`: 복구 실패 RAG 저장 + `getPastSuccessfulFix()`
+- `claude-lead-brain.js`: Shadow 4단계 (CLAUDE_LEAD_MODE: shadow/confirmation/auto_low/auto_all)
+- `health-dashboard-server.js`: 포트 3032 헬스 대시보드
+- `deps.js`: 패치 티켓 자동 RAG 저장
+
+### 시스템 인프라 개선 3가지 완료
+
+- `scripts/weekly-team-report.js`: 4팀 KPI 주간 종합 리포트 (텔레그램 발송)
+- `pg-pool.js`: `getAllPoolStats()` / `checkPoolHealth()` / `getClient()` 추가
+- 카오스 테스트 3종: `db-pool-exhaust.js` / `llm-failover.js` / `telegram-rate-limit.js`
 
 ---
 
 ## 다음 작업 백로그 (우선순위 순)
 
-1. **업체별 메뉴 설정** — 업체마다 사용하는 기능 모듈 ON/OFF 제어
-2. **RAG 자동 수집 완성** — 맥미니 Ollama 도착 후 (`nomic-embed-text` 전환)
-3. **1호 업체 파일럿 준비** — 실제 업체 데이터 마이그레이션 + 테스트
+1. **블로그팀 첫 실행 테스트** — `node bots/blog/scripts/run-daily.js` 수동 실행 → 결과 확인
+2. **블로그팀 launchd 첫 자동 실행 확인** — 오전 6시 후 로그 확인
+3. **워커팀 1호 업체 파일럿** — 실제 업체 데이터 마이그레이션 + 테스트
+4. **RAG 임베딩 복원** — 맥미니 Ollama 도착 후 (`nomic-embed-text` 전환)
 
 ---
 
-## 워커팀 현재 운영 상태
+## 시스템 운영 상태
 
 | 서비스 | launchd | 포트 | 상태 |
 |--------|---------|------|------|
-| API 서버 | `ai.worker.web` | 4000 | ✅ |
-| Next.js | `ai.worker.nextjs` | 4001 | ✅ |
-| RAG 서버 | `ai.rag.server` | 8100 | ✅ (임베딩만 비활성) |
+| 워커 API | `ai.worker.web` | 4000 | ✅ |
+| 워커 Next.js | `ai.worker.nextjs` | 4001 | ✅ |
+| 블로그팀 | `ai.blog.daily` | - | ✅ (06:00 KST) |
+| 헬스 대시보드 | 수동 | 3032 | 수동 실행 |
 
 ## 워커팀 계정 (테스트용)
 - `alex` / `admin1234` — master 권한 (AI 분석 메뉴 접근 가능)
