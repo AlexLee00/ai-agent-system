@@ -6,6 +6,14 @@
 
 ## 2026-03-10
 
+### 블로그팀 장문 출력 극대화 5가지 방법 적용
+
+**Continue 이어쓰기 + _THE_END_ 마커 + exhaustive 키워드 + temperature 조정**
+- `pos-writer.js`: Continue 패턴 (MIN 7,000자 미달 시 2차 호출), _THE_END_ 마커, exhaustive 키워드, temperature 0.75→0.82
+- `gems-writer.js`: 동일 패턴, temperature 0.80→0.85
+- `quality-checker.js`: MIN 강의 9,000 / 일반 5,000 / GOAL 강의 10,000 / 일반 7,000
+- **테스트 결과**: 강의 10,225자 ✅ / 일반 5,500자 ✅
+
 ### 블로그팀 분할 생성(Chunked Generation) + llm-keys 폴백 + 글자수 튜닝
 
 **분할 생성 완성**
