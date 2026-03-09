@@ -33,6 +33,11 @@ coverage/
 venv/
 .venv/
 
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+
 # 민감 정보
 secrets.json
 pickko-kiosk-seen.json
