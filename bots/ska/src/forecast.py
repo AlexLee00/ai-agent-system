@@ -1154,16 +1154,13 @@ def run(mode='daily', base_date_str=None, output_json=False):
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return results
 
-    # 실시간 날씨 영향 (daily 모드에서만 시도)
+    # 날씨 영향 분류 (daily 모드, env_info 재사용 — API 재호출 없음)
     weather_impact = None
-    if mode == 'daily':
+    if mode == 'daily' and results:
         try:
-            from bots.ska.src.weather import get_current_weather, classify_weather_impact as _cwi
-            _w = get_current_weather()
-            if _w:
-                weather_impact = _cwi(_w)
-                print(f'[FORECAST] 날씨: {_w.get("description","N/A")} '
-                      f'| 영향: {weather_impact[0]} ({weather_impact[1]:+d}pt)')
+            from bots.ska.src.weather import classify_weather_impact as _cwi
+            weather_impact = _cwi(results[0].get('env_info', {}))
+            print(f'[FORECAST] 날씨 영향: {weather_impact[0]} ({weather_impact[1]:+d}pt) — {weather_impact[2]}')
         except Exception:
             pass
 
