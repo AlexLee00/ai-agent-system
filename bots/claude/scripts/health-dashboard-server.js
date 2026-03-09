@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * scripts/health-dashboard-server.js — 클로드팀 시스템 헬스 대시보드
+ *
+ * 봇 상태 / 이슈 이력 / 리소스 / 클로드팀장 모드를 웹으로 실시간 확인
+ *
+ * 실행: node scripts/health-dashboard-server.js [--port=3032]
+ * 브라우저: http://localhost:3032
+ */
+
+const http     = require('http');
+const fs       = require('fs');
+const path     = require('path');
+const os       = require('os');
+const { execSync } = require('child_process');
+const pgPool   = require('../../../packages/core/lib/pg-pool');
+const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
+
+const args    = process.argv.slice(2);
+const portArg = args.find(a => a.startsWith('--port='));
+const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3032;
+
+const HTML_FILE = path.join(__dirname, 'health-dashboard.html');
+
+// ─── 데이터 조회 ─────────────────────────────────────────────────────
+
+async function getDoctorStats() {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const rows = await pgPool.query('reservation', `
+      SELECT
+        task_type,
+        COUNT(*) FILTER (WHERE success = true)  AS ok_cnt,
+        COUNT(*) FILTER (WHERE success = false) AS fail_cnt,
+        COUNT(*) AS total,
+        MAX(created_at) AS last_at
+      FROM doctor_log
+      WHERE created_at > $1
+      GROUP BY task_type
+      ORDER BY total DESC
+    `, [cutoff]);
+    return rows;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function getRecentIssues() {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const rows = await pgPool.query('reservation', `
+      SELECT id, task_type, success, error_msg, requested_by, created_at
+      FROM doctor_log
+      WHERE created_at > $1
+      ORDER BY created_at DESC
+      LIMIT 20
+    `, [cutoff]);
+    return rows;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function getShadowStats() {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const row = await pgPool.get('reservation', `
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE match = true)  AS matched,
+        COUNT(*) FILTER (WHERE match = false) AS mismatched,
+        AVG(elapsed_ms) AS avg_ms,
+        MAX(mode) AS mode
+      FROM shadow_log
+      WHERE team = 'claude-lead' AND created_at > $1
+    `, [cutoff]);
+    return row || { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow' };
+  } catch (e) {
+    return { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow' };
+  }
+}
+
+function getBotStatuses() {
+  const BOTS = [
+    { label: '덱스터 (quick)',       service: 'ai.claude.dexter.quick' },
+    { label: '덱스터 (full)',        service: 'ai.claude.dexter' },
+    { label: '아처',                 service: 'ai.claude.archer' },
+    { label: '스카 커맨더',          service: 'ai.ska.commander' },
+    { label: '앤디 (네이버모니터)', service: 'ai.ska.naver-monitor' },
+    { label: '루나 커맨더',          service: 'ai.investment.commander' },
+    { label: '루나 크립토',          service: 'ai.investment.crypto' },
+    { label: '제이 (오케스트레이터)', service: 'ai.orchestrator.main' },
+  ];
+
+  return BOTS.map(b => {
+    try {
+      execSync(`launchctl list ${b.service} 2>/dev/null`, { timeout: 3000 });
+      return { label: b.label, service: b.service, status: 'running' };
+    } catch {
+      return { label: b.label, service: b.service, status: 'stopped' };
+    }
+  });
+}
+
+function getResourceStats() {
+  try {
+    const cpuCount    = os.cpus().length;
+    const totalMem    = os.totalmem();
+    const freeMem     = os.freemem();
+    const usedMemPct  = Math.round((1 - freeMem / totalMem) * 100);
+    const loadAvg     = os.loadavg();
+    const uptimeDays  = Math.floor(os.uptime() / 86400);
+
+    // 디스크 사용량
+    let diskUsage = '조회 불가';
+    try {
+      const df = execSync("df -h / | tail -1 | awk '{print $5}'", { encoding: 'utf8', timeout: 3000 }).trim();
+      diskUsage = df;
+    } catch {}
+
+    return {
+      cpu_count:    cpuCount,
+      mem_used_pct: usedMemPct,
+      mem_total_gb: Math.round(totalMem / (1024 ** 3)),
+      load_1m:      loadAvg[0].toFixed(2),
+      load_5m:      loadAvg[1].toFixed(2),
+      uptime_days:  uptimeDays,
+      disk_usage:   diskUsage,
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function getHealthData() {
+  const [doctorStats, recentIssues, shadowStats] = await Promise.all([
+    getDoctorStats(),
+    getRecentIssues(),
+    getShadowStats(),
+  ]);
+
+  const botStatuses = getBotStatuses();
+  const resources   = getResourceStats();
+  const leadMode    = _getLeadMode();
+
+  const runningCount = botStatuses.filter(b => b.status === 'running').length;
+  const totalBots    = botStatuses.length;
+
+  return {
+    generated_at:  new Date().toISOString(),
+    lead_mode:     leadMode,
+    lead_modes:    LEAD_MODES,
+    bot_statuses:  botStatuses,
+    bot_summary:   { running: runningCount, total: totalBots },
+    doctor_stats:  doctorStats,
+    recent_issues: recentIssues,
+    shadow_stats:  shadowStats,
+    resources,
+  };
+}
+
+// ─── HTTP 서버 ────────────────────────────────────────────────────────
+
+const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method === 'GET' && req.url === '/api/health') {
+    try {
+      const data = await getHealthData();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(data, null, 2));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+  } else if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+    try {
+      const html = fs.readFileSync(HTML_FILE, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    } catch {
+      res.writeHead(500);
+      res.end('health-dashboard.html 파일을 찾을 수 없습니다.');
+    }
+  } else {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`[클로드팀 헬스 대시보드] 서버 시작: http://localhost:${PORT}`);
+  console.log(`  헬스 API: http://localhost:${PORT}/api/health`);
+  console.log('  종료: Ctrl+C');
+});

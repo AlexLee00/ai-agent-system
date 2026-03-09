@@ -29,6 +29,34 @@ const MODEL   = 'claude-sonnet-4-6';
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
 
+// ── 팀장 자동화 모드 ─────────────────────────────────────────────────
+/**
+ * shadow      — 판단만 기록, 자동 실행 없음 (기본값)
+ * confirmation — 독터 실행 전 마스터 확인 요청 (미구현)
+ * auto_low    — 저위험 복구 자동 실행 (마스터 보고)
+ * auto_all    — 전체 복구 자동 실행 (마스터 보고)
+ */
+const LEAD_MODES = ['shadow', 'confirmation', 'auto_low', 'auto_all'];
+
+// 저위험으로 분류되는 task_type 목록
+const LOW_RISK_ACTIONS = [
+  'restart_launchd_service',
+  'clear_lock_file',
+  'rotate_log',
+];
+
+function _getLeadMode() {
+  const mode = (process.env.CLAUDE_LEAD_MODE || 'shadow').toLowerCase();
+  return LEAD_MODES.includes(mode) ? mode : 'shadow';
+}
+
+function _isLowRisk(issues) {
+  // 이슈가 모두 warn 이하이고 critical/error 없으면 저위험
+  const hasCritical = issues.some(i => i.status === 'critical');
+  const hasError    = issues.some(i => i.status === 'error');
+  return !hasCritical && !hasError;
+}
+
 // ── 규칙 엔진 (덱스터 현재 동작 기준) ────────────────────────────────
 /**
  * 이슈 목록을 규칙 기반으로 판단 (기존 덱스터 정책 반영)
@@ -234,6 +262,8 @@ async function evaluateWithClaudeLead(results) {
     .join(' | ')
     .slice(0, 500);
 
+  const leadMode = _getLeadMode();
+
   try {
     await pgPool.run(SCHEMA, `
       INSERT INTO shadow_log
@@ -247,7 +277,7 @@ async function evaluateWithClaudeLead(results) {
       llmResult ? JSON.stringify(llmResult) : null,
       llmError  ?? null,
       match,
-      'shadow',
+      leadMode,
       elapsed,
     ]);
   } catch (e) {
@@ -286,19 +316,31 @@ async function evaluateWithClaudeLead(results) {
     : ` — Sonnet 실패: ${llmError}`;
   console.log(`  ${icon} [클로드 팀장] 이슈 ${issues.length}건 Shadow 판단${matchStr}`);
 
-  // Phase 3: LLM이 run_doctor 결정 시 → 독터에게 복구 태스크 발행
-  if (llmResult?.action === 'run_doctor') {
-    try {
-      const doctorTasks = _mapIssuesToDoctorTasks(issues);
-      for (const dt of doctorTasks) {
-        await stateBus.createTask('claude-lead', 'doctor', dt.taskType, dt.params, 'high');
+  // Phase 3: 모드에 따라 독터 복구 태스크 발행
+  // shadow: 기록만 (실행 없음)
+  // auto_low: 저위험 이슈만 자동 실행
+  // auto_all: 모든 이슈 자동 실행
+  if (llmResult?.action === 'run_doctor' && leadMode !== 'shadow') {
+    const isLow      = _isLowRisk(issues);
+    const shouldRun  = leadMode === 'auto_all' || (leadMode === 'auto_low' && isLow);
+
+    if (shouldRun) {
+      try {
+        const doctorTasks = _mapIssuesToDoctorTasks(issues);
+        for (const dt of doctorTasks) {
+          await stateBus.createTask('claude-lead', 'doctor', dt.taskType, dt.params, 'high');
+        }
+        if (doctorTasks.length > 0) {
+          console.log(`  🏥 [클로드 팀장] 독터 복구 지시 ${doctorTasks.length}건 (모드: ${leadMode}) — ${doctorTasks.map(t => t.taskType).join(', ')}`);
+        }
+      } catch (e) {
+        console.warn('[claude-lead-brain] 독터 태스크 발행 실패 (무시):', e.message);
       }
-      if (doctorTasks.length > 0) {
-        console.log(`  🏥 [클로드 팀장] 독터 복구 지시 ${doctorTasks.length}건 — ${doctorTasks.map(t => t.taskType).join(', ')}`);
-      }
-    } catch (e) {
-      console.warn('[claude-lead-brain] 독터 태스크 발행 실패 (무시):', e.message);
+    } else if (leadMode === 'auto_low' && !isLow) {
+      console.log(`  ⚠️ [클로드 팀장] auto_low 모드 — 고위험 이슈로 자동 실행 보류 (마스터 확인 필요)`);
     }
+  } else if (llmResult?.action === 'run_doctor' && leadMode === 'shadow') {
+    console.log(`  👁 [클로드 팀장] shadow 모드 — 독터 지시 기록만 (실행 보류)`);
   }
 }
 
@@ -405,4 +447,4 @@ async function pollAgentEvents() {
   }
 }
 
-module.exports = { evaluateWithClaudeLead, getJudgmentQuality, processAgentEvent, pollAgentEvents };
+module.exports = { evaluateWithClaudeLead, getJudgmentQuality, processAgentEvent, pollAgentEvents, LEAD_MODES, _getLeadMode };

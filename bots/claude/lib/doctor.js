@@ -310,11 +310,48 @@ async function pollDoctorTasks() {
         }
       } else {
         await stateBus.failTask(task.id, result.message);
+        // RAG 저장: 복구 실패 이력 학습
+        try {
+          const rag     = require('../../../packages/core/lib/rag');
+          const content = [
+            `장애 복구 실패: ${taskType}`,
+            `원인: ${params.original_issue?.detail || params.reason || ''}`,
+            `실패 이유: ${result.message || '알 수 없음'}`,
+          ].join(' | ');
+          await rag.store('operations', content, {
+            task_type: taskType,
+            success:   false,
+            category:  'recovery_failure',
+            team:      'claude',
+          }, 'doctor');
+        } catch (e) {
+          console.warn('[doctor] RAG 실패 이력 저장 실패 (무시):', e.message);
+        }
       }
     } catch (e) {
       await stateBus.failTask(task.id, e.message).catch(() => {});
       console.error(`  [독터] 태스크 id=${task.id} 실행 오류:`, e.message);
     }
+  }
+}
+
+/**
+ * 과거 성공한 복구 방법 조회 (RAG 검색)
+ * @param {string} issueType  task_type 또는 이슈 설명
+ * @returns {Promise<string|null>} 과거 성공 복구 요약 또는 null
+ */
+async function getPastSuccessfulFix(issueType) {
+  try {
+    const rag     = require('../../../packages/core/lib/rag');
+    const results = await rag.search('operations', `장애 복구 성공: ${issueType}`, {
+      limit:     3,
+      threshold: 0.6,
+      filter:    { success: true, category: 'recovery' },
+    });
+    if (!results || results.length === 0) return null;
+    return results.map(r => r.content || r.text || '').filter(Boolean).join(' / ');
+  } catch {
+    return null;
   }
 }
 
@@ -369,6 +406,7 @@ module.exports = {
   getAvailableTasks,
   pollDoctorTasks,
   emergencyDirectRecover,
+  getPastSuccessfulFix,
   WHITELIST,
   BLACKLIST,
 };

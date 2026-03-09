@@ -74,6 +74,30 @@ function checkOutdated(botDir, label) {
   }
 }
 
+// ─── 패치 티켓 생성 (RAG tech 컬렉션 저장) ───────────────────────────
+
+async function _createPatchTicket(vulnerability) {
+  try {
+    const rag     = require('../../../../packages/core/lib/rag');
+    const content = [
+      `보안 패치 필요: ${vulnerability.label}`,
+      `심각도: ${vulnerability.severity || vulnerability.status}`,
+      `상세: ${vulnerability.detail}`,
+      `발견일: ${new Date().toISOString().slice(0, 10)}`,
+    ].join(' | ');
+    await rag.store('tech', content, {
+      category:  'patch_ticket',
+      severity:  vulnerability.severity || vulnerability.status,
+      label:     vulnerability.label,
+      status:    'pending',
+      team:      'claude',
+    }, 'archer');
+    console.log(`  [deps] 패치 티켓 생성: ${vulnerability.label} (${vulnerability.status})`);
+  } catch (e) {
+    console.warn('[deps] 패치 티켓 RAG 저장 실패 (무시):', e.message);
+  }
+}
+
 async function run(full = false) {
   const items = [];
 
@@ -83,7 +107,12 @@ async function run(full = false) {
   ];
 
   for (const { dir, label } of BOTS) {
-    items.push(npmAudit(dir, label));
+    const result = npmAudit(dir, label);
+    items.push(result);
+    // critical/high 취약점 → 패치 티켓 자동 생성
+    if (result.status === 'error' || result.status === 'warn') {
+      await _createPatchTicket({ ...result, severity: result.status === 'error' ? 'critical' : 'high' });
+    }
   }
 
   if (full) {
