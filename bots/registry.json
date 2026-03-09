@@ -416,6 +416,46 @@
         ]
       },
       "deployTargets": []
+    },
+    "blog-blo": {
+      "name": "블로",
+      "team": "blog",
+      "role": "team_lead",
+      "description": "블로그팀 팀장 — 오케스트레이션 + 품질 검증 + trace/State Bus",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/blo.js"
+    },
+    "blog-richer": {
+      "name": "리처",
+      "team": "blog",
+      "role": "researcher",
+      "description": "정보 수집 — IT뉴스/Node.js/날씨/RAG 실전 사례/관련 포스팅",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/richer.js"
+    },
+    "blog-pos": {
+      "name": "포스",
+      "team": "blog",
+      "role": "writer",
+      "description": "강의 포스팅 작성 — 시니어 백엔드 아키텍트 페르소나 (GPT-4o, 8000자+)",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/pos-writer.js"
+    },
+    "blog-gems": {
+      "name": "젬스",
+      "team": "blog",
+      "role": "writer",
+      "description": "일반 포스팅 작성 — IT 전략 컨설턴트 페르소나 (GPT-4o, 7000자+)",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/gems-writer.js"
+    },
+    "blog-publ": {
+      "name": "퍼블",
+      "team": "blog",
+      "role": "publisher",
+      "description": "포스팅 파일 생성 + DB 기록 + RAG 저장 + 발행 이력 추적",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/publ.js"
     }
   },
   "loaderTypes": {

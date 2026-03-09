@@ -8,7 +8,60 @@
  * 모델: GPT-4o (OpenAI)
  */
 
-const OpenAI = require('openai');
+const OpenAI     = require('openai');
+const toolLogger = require('../../../packages/core/lib/tool-logger');
+const llmCache   = require('../../../packages/core/lib/llm-cache');
+const { getTraceId } = require('../../../packages/core/lib/trace');
+
+// ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
+
+const AI_AGENT_CONTEXT = `
+[마스터의 실제 프로젝트: ai-agent-system]
+재룡 님(승호아빠)이 직접 개발·운영 중인 멀티에이전트 AI 봇 시스템.
+5개 팀, 30+ 봇 — 스카(스터디카페 관리), 루나(자동매매), 클로드(시스템감시), 블로(블로그), 워커(SaaS)
+
+카테고리별 자연스러운 연결:
+- 자기계발 → "AI 에이전트 30개를 지휘하며 깨달은 성장의 법칙"
+- 성장과성공 → "1일 1커밋 120일, 완강이 가르쳐준 복리 효과"
+- 최신IT트렌드 → "직접 구축한 멀티에이전트 시스템으로 본 AI 트렌드"
+- IT정보와분석 → "자동매매 봇 데이터로 분석한 시장 인사이트"
+- 개발기획과컨설팅 → "30개 봇 아키텍처 설계 경험에서 배운 PM의 역할"
+- 홈페이지와App → "SaaS 근로관리 시스템 개발기"
+- 도서리뷰 → "이 책의 원리가 내 에이전트 시스템 설계에 어떻게 적용되었나"
+
+샌드위치 화법의 "일상 에피소드" 부분에서 1~2회 자연스럽게 언급하라.
+`.trim();
+
+// ─── GEO 최적화 규칙 ─────────────────────────────────────────────────
+
+const GEO_RULES = `
+[GEO(Generative Engine Optimization) 규칙]
+1. [이 글에서 배울 수 있는 것] 목차를 서론 직후 배치 (AI가 글 구조 즉시 파악)
+2. 각 섹션 시작에 한줄 요약 기재 (AI가 섹션별 핵심 추출 가능)
+3. 해시태그에 질문형 키워드 추가 (#AI시대자기계발방법 #스터디카페추천이유)
+4. 결론에 "핵심 메시지 한줄" 명확히 (AI가 이 글의 결론을 한 문장으로 인용 가능)
+`.trim();
+
+// ─── 날씨 → 글 맥락 변환 ─────────────────────────────────────────────
+
+function _weatherToContext(weather) {
+  const desc = weather.description || '맑음';
+  const temp = weather.temperature != null ? `${weather.temperature}°C` : '';
+
+  if (/비|rain/i.test(desc))   return `봄비가 내리는 ${temp}의 오늘`;
+  if (/눈|snow/i.test(desc))   return `눈 내리는 겨울 ${temp}의 아침`;
+  if (/흐림|cloud/i.test(desc)) return `흐린 ${temp}의 오늘`;
+  if (weather.temperature < 10) return `쌀쌀한 ${temp}의 오늘`;
+  if (weather.temperature > 28) return `무더운 ${temp}의 오늘`;
+  return `쾌청한 ${desc} ${temp}의 오늘`;
+}
+
+function _estimateCost(usage) {
+  if (!usage) return 0;
+  return ((usage.prompt_tokens || 0) * 2.5 + (usage.completion_tokens || 0) * 10) / 1_000_000;
+}
+
+// ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
 const GEMS_SYSTEM_PROMPT = `
 너는 IT 전략 컨설턴트 '젬스(GEMS)'다.
@@ -16,6 +69,10 @@ const GEMS_SYSTEM_PROMPT = `
 '지식의 저주를 푼 전문가의 언어'를 사용하라.
 
 닉네임 '승호아빠'로 활동. 정중하면서도 친근한 어조 유지.
+
+${AI_AGENT_CONTEXT}
+
+${GEO_RULES}
 
 [필수 작성 규칙]
 1. 총 글자수 7,000자 이상 (목표 9,000자) — 반드시 달성
@@ -25,23 +82,28 @@ const GEMS_SYSTEM_PROMPT = `
 4. 뇌과학 키워드 활용: 몰입, 인지 부하, 작업 메모리
 5. 1,000자마다 독자 소통 브릿지 문구 삽입
 6. 커피랑도서관 분당서현점이 성과를 높이는 이유를 논리적으로 증명
+7. ★ 날씨 맥락 2회 이상 자연스럽게 삽입 (서론 + 스터디카페 홍보 섹션)
+8. 개인 경험/감상 표현 2회 이상
 
 [필수 구조]
 1. [AI 스니펫 요약] — 150자 내외, 검색 노출용
 2. ━━━━━━━━━━━━━━━━━━━━━
-3. [승호아빠 인사말] — 날씨/시사 반영, 친근한 인사, 300자
+3. [이 글에서 배울 수 있는 것] — 3~5개 목차 (GEO용)
 4. ━━━━━━━━━━━━━━━━━━━━━
-5. [본론 섹션 1] — 주제 도입 + 번호 리스트, 1,500자
+5. [승호아빠 인사말] — 날씨/시사 반영, 친근한 인사, 300자
 6. ━━━━━━━━━━━━━━━━━━━━━
-7. [본론 섹션 2] — 핵심 분석 + 불릿 리스트, 1,500자
+7. [본론 섹션 1] — 주제 도입 + 번호 리스트, 1,500자
 8. ━━━━━━━━━━━━━━━━━━━━━
-9. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트), 1,500자
+9. [본론 섹션 2] — 핵심 분석 + 불릿 리스트, 1,500자
 10. ━━━━━━━━━━━━━━━━━━━━━
-11. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결
-    세스코 에어 + 정서적 평온, 불릿 리스트, 800자
+11. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트), 1,500자
 12. ━━━━━━━━━━━━━━━━━━━━━
-13. [마무리 제언] — 명언형 인용 + 결론 + 감사 인사 + 좋아요/댓글 독려, 500자
-14. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개+
+13. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결
+    세스코 에어 + 날씨와 공간 환경 연결, 불릿 리스트, 800자
+14. ━━━━━━━━━━━━━━━━━━━━━
+15. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 500자
+16. [함께 읽으면 좋은 글] — 관련 과거 포스팅 3개 추천
+17. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개+ (질문형 키워드 포함)
 
 [카테고리별 작성 방향]
 - 자기계발: 개인 성장 + AI 시대 역량
@@ -63,28 +125,55 @@ const GEMS_SYSTEM_PROMPT = `
 각 섹션은 [섹션명] 형태로 구분하라.
 `.trim();
 
+// ─── 일반 포스팅 생성 ────────────────────────────────────────────────
+
 /**
- * 일반 포스팅 생성
- * @param {string} category     — 오늘 카테고리
- * @param {object} researchData — 리처 수집 결과
+ * @param {string} category
+ * @param {object} researchData — 리처 수집 결과 (realExperiences, relatedPosts 포함)
  * @returns {{ content, charCount, model, title }}
  */
 async function writeGeneralPost(category, researchData) {
-  const weather = researchData.weather || {};
-  const itNews  = researchData.it_news || [];
+  const today    = new Date().toLocaleDateString('ko-KR');
+  const cacheKey = `gems_general_${category}_${new Date().toISOString().slice(0, 10)}`;
+
+  // 캐시 확인
+  const cached = await llmCache.getCached('blog', 'general_post', cacheKey);
+  if (cached) {
+    console.log('[젬스] 캐시 히트:', cacheKey);
+    try { return JSON.parse(cached.response); } catch {}
+  }
+
+  const weather         = researchData.weather || {};
+  const itNews          = researchData.it_news || [];
+  const realExperiences = researchData.realExperiences || [];
+  const relatedPosts    = researchData.relatedPosts    || [];
+
+  const weatherContext = _weatherToContext(weather);
+
+  const experienceBlock = realExperiences.length > 0
+    ? `\n[실전 에피소드 — 샌드위치 화법의 "일상 에피소드" 부분에 녹여라]\n` +
+      realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n') +
+      `\n예) "얼마 전 제가 운영하는 시스템에서 예상치 못한 오류가 발생했습니다..."\n`
+    : '';
+
+  const linkingBlock = relatedPosts.length > 0
+    ? `\n[내부 링킹 — 결론 하단 "함께 읽으면 좋은 글" 3개 추천]\n` +
+      relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n') + '\n'
+    : '';
 
   const userPrompt = `
 다음 일반 포스팅을 작성하라:
 
 [카테고리] ${category}
-[발행일] ${new Date().toLocaleDateString('ko-KR')}
-[오늘 날씨] ${weather.description || '맑음'}${weather.temperature != null ? `, ${weather.temperature}°C` : ''}
+[발행일] ${today}
+[오늘 날씨 — 서론 + 스터디카페 섹션에 각 1회 자연스럽게 활용]
+${weatherContext}
 
 [최신 IT 뉴스 (서론에 활용 — 상위 3개 선택)]
 ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 
 ${researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}` : ''}
-
+${experienceBlock}${linkingBlock}
 카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.
 반드시 7,000자 이상 작성하라. 목표 9,000자.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
@@ -93,28 +182,44 @@ ${researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY 환경변수 없음');
 
-  const openai   = new OpenAI({ apiKey });
-  const response = await openai.chat.completions.create({
-    model:      'gpt-4o',
-    messages:   [
-      { role: 'system', content: GEMS_SYSTEM_PROMPT },
-      { role: 'user',   content: userPrompt },
-    ],
-    max_tokens:  8000,
-    temperature: 0.8,
-  });
+  const openai    = new OpenAI({ apiKey });
+  const startTime = Date.now();
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model:      'gpt-4o',
+      messages:   [
+        { role: 'system', content: GEMS_SYSTEM_PROMPT },
+        { role: 'user',   content: userPrompt },
+      ],
+      max_tokens:  8000,
+      temperature: 0.8,
+    });
+  } finally {
+    await toolLogger.logToolCall('openai', 'chat.completions.create', {
+      bot:         'blog-gems',
+      success:     !!response,
+      duration_ms: Date.now() - startTime,
+      metadata: {
+        model:         'gpt-4o',
+        input_tokens:  response?.usage?.prompt_tokens,
+        output_tokens: response?.usage?.completion_tokens,
+        cost_usd:      _estimateCost(response?.usage),
+        category,
+        trace_id:      getTraceId(),
+      },
+    });
+  }
 
   const content   = response.choices[0]?.message?.content || '';
-  // 제목: 첫 줄에서 추출
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
 
-  return {
-    content,
-    charCount: content.length,
-    model:     response.model || 'gpt-4o',
-    title,
-  };
+  const result = { content, charCount: content.length, model: response.model || 'gpt-4o', title };
+
+  await llmCache.setCache('blog', 'general_post', cacheKey, JSON.stringify(result), 'gpt-4o');
+
+  return result;
 }
 
 module.exports = { writeGeneralPost, GEMS_SYSTEM_PROMPT };

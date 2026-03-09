@@ -9,6 +9,7 @@
 const fs     = require('fs');
 const path   = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const rag    = require('../../../packages/core/lib/rag');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
 
@@ -65,6 +66,25 @@ async function publishToFile(postData) {
     console.log(`[퍼블] 저장 완료: ${filename} (DB ID: ${postId})`);
   } catch (e) {
     console.warn('[퍼블] DB 저장 실패:', e.message);
+  }
+
+  // RAG 저장 — 과거 포스팅 참조 + 중복 방지용
+  try {
+    await rag.initSchema();
+    await rag.store('blog',
+      `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+      {
+        type:           postType,
+        category,
+        lecture_number: lectureNumber || null,
+        char_count:     charCount,
+        publish_date:   today,
+        filename,
+      },
+      'blog-publ'
+    );
+  } catch (e) {
+    console.warn('[퍼블] RAG 저장 실패:', e.message);
   }
 
   return { filepath, postId, filename };
