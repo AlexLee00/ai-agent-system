@@ -11,7 +11,8 @@ const path   = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag');
 
-const OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
+const GDRIVE_DIR    = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost';
 
 /**
  * 포스팅을 마크다운 파일로 저장 + DB 기록
@@ -44,6 +45,15 @@ async function publishToFile(postData) {
   ].filter(Boolean).join('\n');
 
   fs.writeFileSync(filepath, header + content, 'utf8');
+
+  // 구글드라이브 추가 저장
+  try {
+    if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(GDRIVE_DIR, filename), header + content, 'utf8');
+    console.log(`[퍼블] 구글드라이브 저장: ${filename}`);
+  } catch (e) {
+    console.warn('[퍼블] 구글드라이브 저장 실패:', e.message);
+  }
 
   // DB 기록
   let postId = null;
