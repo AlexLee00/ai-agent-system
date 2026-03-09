@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "monitor": "node src/naver-monitor.js"
+    "monitor": "node src/naver-monitor.js",
+    "dashboard": "node scripts/dashboard-server.js"
   },
   "dependencies": {
     "@ai-agent/core": "*",

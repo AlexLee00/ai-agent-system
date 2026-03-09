@@ -17,6 +17,7 @@ const path     = require('path');
 const os       = require('os');
 const { execSync } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
+const rag      = require('../../../packages/core/lib/rag');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -153,6 +154,41 @@ function checkSkaTeamIdentity() {
   return results;
 }
 
+// ─── RAG 유틸 ────────────────────────────────────────────────────────
+
+/**
+ * 예약 이상 발생 시 과거 유사 사례 검색
+ * @param {string} issueType — 알람 타입 (예: 'mismatch', 'sync_error')
+ * @param {string} detail    — 이슈 상세 키워드
+ */
+async function searchPastCases(issueType, detail) {
+  try {
+    const query = `${issueType} ${detail}`.slice(0, 200);
+    const hits  = await rag.search('reservations', query, { limit: 3, threshold: 0.6 });
+    if (!hits || hits.length === 0) return null;
+    return hits.map(h => ({
+      content: (h.content || '').slice(0, 150),
+      date:    h.created_at ? new Date(h.created_at).toLocaleDateString('ko-KR') : '',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 알람 처리 결과를 RAG에 기록 (향후 유사 사례 검색에 활용)
+ */
+async function storeAlertContext(issueType, detail, resolution) {
+  try {
+    await rag.store(
+      'reservations',
+      `[알람 처리] ${issueType} | ${detail} | 조치: ${resolution}`,
+      { type: issueType, detail, resolution },
+      'ska-commander',
+    );
+  } catch { /* 무시 */ }
+}
+
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
 
 /**
@@ -207,7 +243,7 @@ async function handleQueryTodayStats(args) {
 }
 
 /**
- * 미해결 알람 조회
+ * 미해결 알람 조회 (RAG 과거 사례 포함)
  */
 async function handleQueryAlerts(args) {
   try {
@@ -220,7 +256,26 @@ async function handleQueryAlerts(args) {
       LIMIT $1
     `, [limit]);
 
-    return { ok: true, count: rows.length, alerts: rows };
+    // RAG: 첫 번째 알람과 유사한 과거 사례 검색
+    let pastCases = null;
+    if (rows.length > 0) {
+      pastCases = await searchPastCases(rows[0].type || '알람', rows[0].title || '');
+    }
+
+    return { ok: true, count: rows.length, alerts: rows, past_cases: pastCases };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * 알람 해결 결과 RAG 저장 (제이가 처리 완료 보고 시 호출)
+ */
+async function handleStoreResolution(args) {
+  const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
+  try {
+    await storeAlertContext(issueType, detail, resolution);
+    return { ok: true, message: 'RAG 저장 완료' };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -258,6 +313,7 @@ const HANDLERS = {
   query_alerts:       handleQueryAlerts,
   restart_andy:       handleRestartAndy,
   restart_jimmy:      handleRestartJimmy,
+  store_resolution:   handleStoreResolution,
 };
 
 async function processCommands() {
@@ -308,6 +364,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
+  try { await rag.initSchema(); } catch { /* RAG 사용 불가 시 무시 */ }
   console.log(`🤖 ${BOT_NAME} 팀장봇 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
