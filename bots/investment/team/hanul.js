@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
-import { notifyTrade, notifyError } from '../shared/report.js';
+import { notifyTrade, notifyError, notifyKisSignal, notifyKisOverseasSignal } from '../shared/report.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -127,6 +127,11 @@ export async function executeSignal(signal) {
       return { success: false, reason: risk.reason };
     }
 
+    // 신호 알람 (BUY/SELL만, HOLD 제외)
+    if (action !== ACTIONS.HOLD) {
+      notifyKisSignal({ symbol, action, amountKrw, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper });
+    }
+
     const kis = await getKis();
     let trade;
 
@@ -212,6 +217,11 @@ export async function executeOverseasSignal(signal) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
       await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
       return { success: false, reason: risk.reason };
+    }
+
+    // 신호 알람 (BUY/SELL만, HOLD 제외)
+    if (action !== ACTIONS.HOLD) {
+      notifyKisOverseasSignal({ symbol, action, amountUsdt: amountUsd, confidence: signal.confidence, reasoning: signal.reasoning, paper: paperMode || kisPaper });
     }
 
     const kis = await getKis();
