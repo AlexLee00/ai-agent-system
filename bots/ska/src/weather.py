@@ -5,9 +5,10 @@ forecast.py LLM 컨텍스트 강화용.
 eve.py가 기상청 데이터를 매일 06:00에 수집하지만,
 이 모듈은 예측 실행 시점의 실시간 날씨를 추가로 조회한다.
 
-필요 환경변수 (둘 중 하나):
-  OPENWEATHERMAP_API_KEY  — openweathermap.org 무료 API 키 (일 1,000회)
-  KMA_API_KEY             — data.go.kr 기상청 단기예보 API 키 (일 500회)
+API 키 로드 순서 (기상청):
+  1. secrets.json 의 datagokr_weather_key  (eve.py와 동일한 키)
+  2. 환경변수 KMA_API_KEY
+  3. 환경변수 OPENWEATHERMAP_API_KEY (OWM 폴백)
 
 사용법:
     from bots.ska.src.weather import get_current_weather, classify_weather_impact
@@ -22,6 +23,18 @@ import json
 import urllib.request
 import urllib.parse
 from datetime import datetime
+
+# eve.py와 동일한 secrets.json 경로
+_SECRETS_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'reservation', 'secrets.json')
+
+def _load_kma_key():
+    """secrets.json → datagokr_weather_key (없으면 환경변수 폴백)"""
+    try:
+        with open(_SECRETS_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f).get('datagokr_weather_key', '')
+    except Exception:
+        pass
+    return os.environ.get('KMA_API_KEY', '')
 
 # 성남시 분당구 좌표 (eve.py와 동일)
 DEFAULT_LAT = 37.3595
@@ -77,13 +90,13 @@ def get_weather_owm(lat=DEFAULT_LAT, lon=DEFAULT_LON):
 
 def get_weather_kma(nx=KMA_NX, ny=KMA_NY):
     """
-    기상청 단기예보 조회 (KMA_API_KEY 환경변수 필요)
+    기상청 단기예보 조회 (eve.py와 동일한 datagokr_weather_key 사용)
 
     반환:
         {'source': 'kma', 'temperature': float, 'rain_prob': float,
          'precip_type': int, 'sky': int}
     """
-    api_key = os.environ.get('KMA_API_KEY', '')
+    api_key = _load_kma_key()
     if not api_key:
         return None
 
