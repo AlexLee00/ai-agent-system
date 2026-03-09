@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-10] — 블로그팀 장문 출력 극대화
+
+### Added
+- **Continue 이어쓰기 패턴**: 1차 호출 글자수 부족 시 자동 2차 호출 (pos/gems)
+- **_THE_END_ 마커**: 시스템 프롬프트에 완성 신호 강제 지시
+- **exhaustive 키워드**: comprehensively / in-depth / thoroughly 장문 유도
+
+### Fixed
+- temperature 조정: pos 0.75→0.82 / gems 0.80→0.85
+- 글자수 기준 상향: 강의 MIN 9,000/GOAL 10,000 / 일반 MIN 5,000/GOAL 7,000
+
+### Result
+- 강의 포스팅: 최대 10,225자 달성 (이전 ~8,122자)
+
+---
+
 ## [2026-03-10] — 블로그팀 분할 생성 + llm-keys 통합
 
 ### Added
