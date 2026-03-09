@@ -9,7 +9,7 @@
  *      - 127.0.0.1만 바인딩 → 정상
  *      - 0.0.0.0 바인딩 → CRITICAL (보안 위험)
  *      - 미바인딩 → error
- *   3. 프로세스 메모리 사용량 (500MB 초과 → warn)
+ *   3. 프로세스 메모리 사용량 (800MB 초과 → warn, 재시작 직후 기준선 ~520MB)
  *
  * 점검하지 않는 것 (아직 미구현):
  *   - 팀장 에이전트 세션 존재 여부 (OpenClaw 에이전트 미구현)
@@ -23,7 +23,7 @@ const { execSync } = require('child_process');
 
 const OPENCLAW_SERVICE = 'ai.openclaw.gateway';
 const OPENCLAW_PORT    = 18789;
-const MEM_WARN_MB      = 500;
+const MEM_WARN_MB      = 800;   // 재시작 직후 기준선 ~520MB → 여유 포함 800MB
 
 // ── launchd 상태 조회 ──────────────────────────────────────────────
 
