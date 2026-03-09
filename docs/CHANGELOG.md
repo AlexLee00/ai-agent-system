@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-09] — 블로그팀 Phase 1 완전체
+
+### Added
+- **블로그팀 5봇**: blo(팀장) + richer(리서치) + pos(강의작성) + gems(일반작성) + publ(퍼블리셔)
+- **blog 스키마 5테이블**: posts / category_rotation / curriculum / research_cache / daily_config
+- **Node.js 120강 커리큘럼** 시딩 완료
+- **ai.blog.daily launchd**: 매일 06:00 KST 자동 실행
+- **팀 제이 핵심 기술 15종 통합**: RAG/MessageEnvelope/trace_id/tool-logger/StateBus/llm-cache/mode-guard/AI탐지리스크/GEO+AEO/ai-agent-system컨텍스트/RAG실전에피소드/내부링킹/리라이팅가이드/포럼토픽/Registry등록
+- **rag_blog 컬렉션** (pgvector): 과거 포스팅 중복 방지 + 내부 링킹용
+- **publ.js 구글드라이브 자동 저장**: `/010_BlogPost` 폴더 동기화
+
+### Fixed
+- pos-writer max_tokens 8000 → 16000 (글자수 부족 해결)
+- 섹션별 최소 글자수 userPrompt 명시 (GPT-4o 출력 유도)
+- 글자수 기준 실측 기반 조정: lecture 7,000자 / general 3,500자
+
 ## [2026-03-08] — 제이 자연어 능력 향상 v2.0
 
 ### Added

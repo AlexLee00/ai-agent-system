@@ -1337,3 +1337,6 @@ scripts/weekly-team-report.js 4팀 KPI 주간리포트 | pg-pool getAllPoolStats
 
 ### 블로그팀 Phase 1 MVP (2026-03-09)
 blo.js(팀장) + richer.js(IT뉴스/HN/날씨) + pos-writer.js(강의8000자+) + gems-writer.js(일반7000자+) + publ.js(마크다운저장) | 지원모듈: category-rotation/quality-checker/daily-config | blog 스키마 5테이블 마이그레이션 완료 | 120강 커리큘럼 시딩 완료 | ai.blog.daily launchd 등록(06:00 KST)
+
+### 블로그팀 팀 제이 핵심 기술 통합 + 구글드라이브 저장 (2026-03-09)
+RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | quality-checker AI탐지리스크(0~100) | GEO/AEO + ai-agent-system 컨텍스트 시스템프롬프트 통합 | RAG 실전에피소드+내부링킹 자동화 | 리라이팅가이드 텔레그램 포함 | publ.js 구글드라이브 자동저장(/010_BlogPost) | 글자수 기준 실측조정(강의7000/일반3500) | 전파이프라인 통과(강의8018자, 일반3990자) | rag_blog 컬렉션 pgvector 추가 | 커밋: a12364e, e361917, dae45f6

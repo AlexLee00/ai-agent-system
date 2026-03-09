@@ -4,74 +4,66 @@
 
 ## 이번 세션 완료 내역 (2026-03-09)
 
-### 블로그팀 Phase 1 MVP 완료
+### 블로그팀 Phase 1 완전체 완료
 
 #### 구현된 봇 (5봇)
-- `bots/blog/lib/blo.js` — 팀장 오케스트레이션 (설정→리서치→강의포스팅→일반포스팅→텔레그램)
-- `bots/blog/lib/richer.js` — IT뉴스(HN)/Node.js릴리스(GitHub)/날씨(OpenWeatherMap) 수집
-- `bots/blog/lib/pos-writer.js` — 강의 포스팅 (GPT-4o, 8,000자+, 16개 필수 섹션)
-- `bots/blog/lib/gems-writer.js` — 일반 포스팅 (GPT-4o, 7,000자+, 7개 카테고리)
-- `bots/blog/lib/publ.js` — 마크다운 파일 저장 + DB 기록
+- `bots/blog/lib/blo.js` — 팀장 오케스트레이션
+- `bots/blog/lib/richer.js` — IT뉴스(HN)/Node.js릴리스(GitHub)/날씨(OpenWeatherMap) + RAG 실전에피소드/관련포스팅 검색
+- `bots/blog/lib/pos-writer.js` — 강의 포스팅 (GPT-4o, max_tokens 16000, 섹션별 글자수 요구)
+- `bots/blog/lib/gems-writer.js` — 일반 포스팅 (GPT-4o, max_tokens 16000, 섹션별 글자수 요구)
+- `bots/blog/lib/publ.js` — 마크다운 파일 저장 + DB + RAG + 구글드라이브 동기화
 
-#### 지원 모듈
-- `bots/blog/lib/category-rotation.js` — 7개 일반 카테고리 순환 + 강의 번호 관리
-- `bots/blog/lib/quality-checker.js` — 글자수/섹션/홍보/해시태그 품질 검증
-- `bots/blog/lib/daily-config.js` — 일일 발행 수 설정 (DB 기반)
-
-#### 인프라
-- `bots/blog/migrations/001-blog-schema.sql` — 5개 테이블 (posts/category_rotation/curriculum/research_cache/daily_config)
-- `bots/blog/context/curriculum.txt` — Node.js 120강 전체 커리큘럼
-- `bots/blog/scripts/seed-curriculum.js` — 커리큘럼 시딩
-- `bots/blog/launchd/ai.blog.daily.plist` — 매일 06:00 KST 자동 실행
+#### 팀 제이 핵심 기술 통합 (15종)
+1. RAG 과거 포스팅 참조/저장 (rag_blog 컬렉션, pgvector)
+2. MessageEnvelope 봇 간 구조화 통신
+3. trace_id 전체 일간 추적 (startTrace/withTrace)
+4. tool-logger OpenAI API 비용 기록
+5. State Bus agent_events 발행 (daily_start/post_completed/post_failed)
+6. llm-cache 24h TTL 중복 방지
+7. mode-guard OPS/DEV 텔레그램 분리
+8. quality-checker AI 탐지 리스크 (0~100점)
+9. GEO/AEO 최적화 시스템 프롬프트 통합
+10. ai-agent-system 프로젝트 컨텍스트 자동 삽입
+11. RAG 실전 에피소드 자동 검색 (tech/operations/blog)
+12. 내부 링킹 자동화 (과거 포스팅 3개 추천)
+13. 리라이팅 가이드 텔레그램 리포트 포함
+14. 구글드라이브 자동 저장 (`/010_BlogPost`)
+15. Registry.json 5봇 등록
 
 #### 운영 상태
-- DB 마이그레이션: ✅ 완료
-- 커리큘럼 시딩: ✅ 120/120강
-- launchd 등록: ✅ `ai.blog.daily` (06:00 KST)
-- 현재 설정: 강의 1편 + 일반 1편 / 일
+- launchd: `ai.blog.daily` ✅ (06:00 KST, OPENAI_API_KEY 환경변수 필요)
+- DB: blog 스키마 5테이블 + Node.js 120강 시딩 완료
+- 전체 파이프라인 테스트: ✅ 강의 8,018자, 일반 3,990자
 
-#### 운영 명령
-```bash
-cd bots/blog
-node scripts/run-daily.js          # 수동 실행
-node scripts/seed-curriculum.js    # 커리큘럼 재시딩
-```
+#### 글자수 기준 (실측 기반)
+- 강의 포스팅: 최소 7,000자 / 목표 8,500자
+- 일반 포스팅: 최소 3,500자 / 목표 6,000자
+- GPT-4o는 코드 섹션 없는 일반 포스팅에서 3,500~4,000자 수준 생성 (정상)
+- 마스터 리라이팅 가이드로 실제 발행 전 분량 보강 권장
 
 ---
 
-### 클로드팀 개선 5가지 완료
+## 다음 세션 할 일
 
-- `bot-behavior.js`: 독터 루프 감지 + 실패율 + 루나 급속 신호 (dexter 16번째 체크)
-- `doctor.js`: 복구 실패 RAG 저장 + `getPastSuccessfulFix()`
-- `claude-lead-brain.js`: Shadow 4단계 (CLAUDE_LEAD_MODE: shadow/confirmation/auto_low/auto_all)
-- `health-dashboard-server.js`: 포트 3032 헬스 대시보드
-- `deps.js`: 패치 티켓 자동 RAG 저장
+### 블로그팀 Phase 2 후보
+- [ ] 네이버 블로그 자동 발행 API 연동 (현재: 마크다운 파일 수동 복붙)
+- [ ] 포스팅 성과 추적 (조회수/댓글 수집 → RAG 인기 패턴 학습)
+- [ ] 도서리뷰 카테고리: 교보/예스24 API 연동
+- [ ] 일반 포스팅 글자수 증가 연구 (현재 ~4,000자 → 목표 6,000자+)
 
-### 시스템 인프라 개선 3가지 완료
-
-- `scripts/weekly-team-report.js`: 4팀 KPI 주간 종합 리포트 (텔레그램 발송)
-- `pg-pool.js`: `getAllPoolStats()` / `checkPoolHealth()` / `getClient()` 추가
-- 카오스 테스트 3종: `db-pool-exhaust.js` / `llm-failover.js` / `telegram-rate-limit.js`
+### 기타
+- 맥미니 M4 Pro 도착 예정: 4월 중순 (이관 준비)
+- 루나팀 Phase 3-A 크립토 OPS 안정화 모니터링 지속
 
 ---
 
-## 다음 작업 백로그 (우선순위 순)
+## 현재 시스템 상태 (2026-03-09 기준)
 
-1. **블로그팀 첫 실행 테스트** — `node bots/blog/scripts/run-daily.js` 수동 실행 → 결과 확인
-2. **블로그팀 launchd 첫 자동 실행 확인** — 오전 6시 후 로그 확인
-3. **워커팀 1호 업체 파일럿** — 실제 업체 데이터 마이그레이션 + 테스트
-4. **RAG 임베딩 복원** — 맥미니 Ollama 도착 후 (`nomic-embed-text` 전환)
-
----
-
-## 시스템 운영 상태
-
-| 서비스 | launchd | 포트 | 상태 |
-|--------|---------|------|------|
-| 워커 API | `ai.worker.web` | 4000 | ✅ |
-| 워커 Next.js | `ai.worker.nextjs` | 4001 | ✅ |
-| 블로그팀 | `ai.blog.daily` | - | ✅ (06:00 KST) |
-| 헬스 대시보드 | 수동 | 3032 | 수동 실행 |
-
-## 워커팀 계정 (테스트용)
-- `alex` / `admin1234` — master 권한 (AI 분석 메뉴 접근 가능)
+| 팀 | 상태 | 주요 프로세스 |
+|----|------|-------------|
+| 제이팀 | ✅ OPS | OpenClaw 포트18789, 오케스트레이터 PID769, TG long-poll |
+| 스카팀 | ✅ OPS | ai.ska.commander |
+| 루나팀 | ✅ OPS (크립토) | ai.investment.crypto (PAPER_MODE=false) |
+| 클로드팀 | ✅ OPS | ai.claude.dexter.quick(5분) + ai.claude.dexter(1h) |
+| 블로팀 | ✅ OPS | ai.blog.daily (06:00 KST) |
+| 워커팀 | ✅ OPS | ai.worker.web (포트4000) |
