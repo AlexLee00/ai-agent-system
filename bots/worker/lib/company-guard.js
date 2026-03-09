@@ -76,7 +76,7 @@ function auditLog(action, target) {
             req.user?.id         || null,
             action,
             target,
-            body?.id ?? req.params?.id ?? null,
+            parseInt(body?.id ?? req.params?.id) || null,  // integer만 허용, 문자열 ID는 detail에 기록
             JSON.stringify({ body: req.body, params: req.params }),
             req.ip,
           ]);
