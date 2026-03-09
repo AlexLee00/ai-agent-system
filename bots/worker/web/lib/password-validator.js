@@ -12,11 +12,12 @@ export function validatePassword(password) {
   const str = password || '';
 
   const rules = {
-    minLength:      { passed: str.length >= 8,              label: '8자 이상' },
-    hasUppercase:   { passed: /[A-Z]/.test(str),            label: '대문자 포함' },
-    hasLowercase:   { passed: /[a-z]/.test(str),            label: '소문자 포함' },
-    hasNumber:      { passed: /[0-9]/.test(str),            label: '숫자 포함' },
-    hasSpecialChar: { passed: /[^A-Za-z0-9]/.test(str),     label: '특수문자 포함' },
+    minLength:      { passed: str.length >= 8 && str.length <= 72, label: '8자 이상 72자 이하' },
+    noWhitespace:   { passed: str.length === 0 || !/\s/.test(str), label: '공백 미포함' },
+    hasUppercase:   { passed: /[A-Z]/.test(str),                   label: '대문자 포함' },
+    hasLowercase:   { passed: /[a-z]/.test(str),                   label: '소문자 포함' },
+    hasNumber:      { passed: /[0-9]/.test(str),                   label: '숫자 포함' },
+    hasSpecialChar: { passed: /[^A-Za-z0-9]/.test(str),            label: '특수문자 포함' },
   };
 
   const categoryCount = [
@@ -26,7 +27,7 @@ export function validatePassword(password) {
     rules.hasSpecialChar.passed,
   ].filter(Boolean).length;
 
-  const isValid = rules.minLength.passed && categoryCount >= 3;
+  const isValid = rules.minLength.passed && rules.noWhitespace.passed && categoryCount >= 3;
 
   let strength;
   if (!rules.minLength.passed || categoryCount < 2) {
