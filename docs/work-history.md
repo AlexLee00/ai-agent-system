@@ -48,6 +48,13 @@
 - multer CVE 보안패치 + 5개 패키지 minor 업데이트
 <!-- session-close:2026-03-09:rag-완성-에이전트-오케스트레이션-phase-2-보안 -->
 
+### ✨ 네메시스 Phase 3 R/R 최적화
+- analyze-rr.js 신규 — 8가지 TP/SL 시뮬레이션+봇정확도+RAG저장
+- nemesis.js getDynamicRR() ESM export 추가
+- weekly-trade-review.js buildRRSection() 주간 R/R 섹션 통합
+- package.json analyze-rr 스크립트 추가
+<!-- session-close:2026-03-09:네메시스-phase-3-rr-최적화 -->
+
 ## 2026-03-08 (계속)
 
 ### RAG 자동 수집 파이프라인 + 팀장 RAG 연동 완성 (커밋: `7630fc8`)
