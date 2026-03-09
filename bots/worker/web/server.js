@@ -241,7 +241,16 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
       `SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at FROM worker.users WHERE id = $1 AND deleted_at IS NULL`,
       [req.user.id]);
     if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
-    res.json({ user });
+
+    // 업체별 메뉴 설정 포함 (master는 항상 전체 메뉴 → null 반환)
+    let enabled_menus = null;
+    if (user.role !== 'master' && user.company_id) {
+      const comp = await pgPool.get(SCHEMA,
+        `SELECT enabled_menus FROM worker.companies WHERE id = $1`, [user.company_id]);
+      enabled_menus = comp?.enabled_menus ?? null;
+    }
+
+    res.json({ user: { ...user, enabled_menus } });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
@@ -337,6 +346,68 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
+
+// ── 업체 메뉴 설정 API (master 전용) ─────────────────────────────────
+
+const MENU_KEYS = [
+  'dashboard','employees','attendance','sales','payroll',
+  'projects','schedules','journals','documents','approvals','settings','ai',
+];
+const ALL_MENUS = [
+  { key: 'dashboard',  label: '대시보드',  alwaysOn: true },
+  { key: 'employees',  label: '직원 관리' },
+  { key: 'attendance', label: '근태 관리' },
+  { key: 'sales',      label: '매출 관리' },
+  { key: 'payroll',    label: '급여 관리' },
+  { key: 'projects',   label: '프로젝트' },
+  { key: 'schedules',  label: '일정 관리' },
+  { key: 'journals',   label: '업무일지' },
+  { key: 'documents',  label: '문서 관리' },
+  { key: 'approvals',  label: '승인 관리' },
+  { key: 'settings',   label: '설정',     alwaysOn: true },
+  { key: 'ai',         label: 'AI 분석' },
+];
+
+// GET /api/companies/:id/menus — 업체 메뉴 설정 조회
+app.get('/api/companies/:id/menus', requireAuth, requireRole('master'), async (req, res) => {
+  try {
+    const company = await pgPool.get(SCHEMA,
+      `SELECT id, name, enabled_menus FROM worker.companies WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]);
+    if (!company) return res.status(404).json({ error: '업체를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    res.json({ company, allMenus: ALL_MENUS });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+// PUT /api/companies/:id/menus — 업체 메뉴 설정 저장
+app.put('/api/companies/:id/menus',
+  requireAuth, requireRole('master'),
+  auditLog('UPDATE_MENUS', 'companies'),
+  body('enabled_menus').isArray(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    let { enabled_menus } = req.body;
+
+    // 유효 키만 허용 + alwaysOn 메뉴 강제 포함
+    enabled_menus = [...new Set([
+      'dashboard',
+      'settings',
+      ...enabled_menus.filter(k => MENU_KEYS.includes(k)),
+    ])];
+
+    try {
+      const company = await pgPool.get(SCHEMA,
+        `SELECT id FROM worker.companies WHERE id = $1 AND deleted_at IS NULL`, [req.params.id]);
+      if (!company) return res.status(404).json({ error: '업체를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+      await pgPool.run(SCHEMA,
+        `UPDATE worker.companies SET enabled_menus=$1, updated_at=NOW() WHERE id=$2`,
+        [JSON.stringify(enabled_menus), req.params.id]);
+
+      res.json({ success: true, enabled_menus });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
 
 // ── 사용자 API ────────────────────────────────────────────────────────
 

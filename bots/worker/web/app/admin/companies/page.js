@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2 } from 'lucide-react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import DataTable from '@/components/DataTable';
@@ -127,7 +128,11 @@ export default function AdminCompaniesPage() {
             data={companies}
             emptyNode={emptyNode}
             actions={row => (
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <Link href={`/admin/companies/${row.id}/menus`}
+                  className="text-xs text-indigo-500 hover:text-indigo-700 font-medium px-2 py-1.5 rounded hover:bg-indigo-50 transition-colors">
+                  메뉴 설정
+                </Link>
                 <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
                 <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row)}>삭제</button>
               </div>

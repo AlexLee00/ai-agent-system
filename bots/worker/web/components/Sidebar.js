@@ -26,6 +26,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
+  // 업체별 메뉴 필터링 (master는 항상 전체, null이면 전체)
+  const isMaster      = user?.role === 'master';
+  const enabledMenus  = user?.enabled_menus;  // null = 전체
+  const visibleItems  = isMaster || !enabledMenus
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter(item => enabledMenus.includes(item.href.replace('/', '')));
+  const showAI = (user?.role === 'admin' || user?.role === 'master') &&
+    (isMaster || !enabledMenus || enabledMenus.includes('ai'));
+
   return (
     <div className="flex flex-col h-full">
       {/* 로고 */}
@@ -36,7 +45,7 @@ export default function Sidebar() {
 
       {/* 네비 */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(item => {
+        {visibleItems.map(item => {
           const active = pathname.startsWith(item.href);
           const Icon   = item.icon;
           return (
@@ -55,8 +64,8 @@ export default function Sidebar() {
           );
         })}
 
-        {/* AI 분석 — admin/master 전용 */}
-        {(user?.role === 'admin' || user?.role === 'master') && (() => {
+        {/* AI 분석 — admin/master 전용 + 메뉴 설정에 따라 표시 */}
+        {showAI && (() => {
           const active = pathname.startsWith('/ai');
           return (
             <Link
