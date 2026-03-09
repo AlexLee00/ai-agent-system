@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
-import { isKisMarketOpen, isKisOverseasMarketOpen } from '../shared/secrets.js';
+import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday } from '../shared/secrets.js';
 
 const _require = createRequire(import.meta.url);
 const rag = _require('../../../packages/core/lib/rag');
@@ -30,11 +30,14 @@ const rag = _require('../../../packages/core/lib/rag');
  * @param {'binance'|'kis'|'kis_overseas'} exchange
  * @returns {{ open: boolean, reason: string }}
  */
-export function isMarketOpen(exchange) {
+export async function isMarketOpen(exchange) {
   if (exchange === 'binance') return { open: true, reason: '암호화폐 24/7' };
-  if (exchange === 'kis')          return isKisMarketOpen()
-    ? { open: true,  reason: 'KST 09:00~15:30 장중' }
-    : { open: false, reason: '국내주식 장 마감 시간 외' };
+  if (exchange === 'kis') {
+    if (!isKisMarketOpen()) return { open: false, reason: '국내주식 장 마감 시간 외' };
+    const holiday = await isKisHoliday();
+    if (holiday.isHoliday) return { open: false, reason: `공휴일 (${holiday.name})` };
+    return { open: true, reason: 'KST 09:00~15:30 장중' };
+  }
   if (exchange === 'kis_overseas') return isKisOverseasMarketOpen()
     ? { open: true,  reason: 'NYSE/NASDAQ 장중' }
     : { open: false, reason: '미국주식 장 마감 시간 외' };
@@ -580,7 +583,7 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
  */
 export async function analyzeKisMTF(symbol, force = false) {
   if (!force) {
-    const mkt = isMarketOpen('kis');
+    const mkt = await isMarketOpen('kis');
     if (!mkt.open) {
       console.log(`  ⏰ [아리아] ${symbol} 분석 스킵 — ${mkt.reason}`);
       return null;
@@ -596,7 +599,7 @@ export async function analyzeKisMTF(symbol, force = false) {
  */
 export async function analyzeKisOverseasMTF(symbol, force = false) {
   if (!force) {
-    const mkt = isMarketOpen('kis_overseas');
+    const mkt = await isMarketOpen('kis_overseas');
     if (!mkt.open) {
       console.log(`  ⏰ [아리아] ${symbol} 분석 스킵 — ${mkt.reason}`);
       return null;

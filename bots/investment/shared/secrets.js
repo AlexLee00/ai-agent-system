@@ -101,6 +101,44 @@ export function getKisOverseasSymbols() {
   return loadSecrets().kis_overseas_symbols || ['AAPL', 'TSLA', 'NVDA'];
 }
 
+// ─── 공휴일 체크 (ska.environment_factors) ──────────────────────────
+
+const _holidayCache = new Map(); // key: 'YYYY-MM-DD', value: { flag, name }
+
+/**
+ * 오늘이 한국 공휴일인지 확인 (ska.environment_factors 조회)
+ * - 당일 캐시 적용 (프로세스 내 1회만 쿼리)
+ * - DB 조회 실패 시 false 반환 (장 운영 우선)
+ * @returns {Promise<{ isHoliday: boolean, name: string|null }>}
+ */
+export async function isKisHoliday(date = new Date()) {
+  const kst     = new Date(date.getTime() + 9 * 3600 * 1000);
+  const dateStr = kst.toISOString().slice(0, 10);
+
+  if (_holidayCache.has(dateStr)) return _holidayCache.get(dateStr);
+
+  try {
+    const { createRequire } = await import('module');
+    const require = createRequire(import.meta.url);
+    const pgPool  = require('../../../packages/core/lib/pg-pool');
+    const rows    = await pgPool.query('reservation', `
+      SELECT holiday_flag, holiday_name
+      FROM ska.environment_factors
+      WHERE date = $1
+    `, [dateStr]);
+
+    const result = rows.length > 0 && rows[0].holiday_flag
+      ? { isHoliday: true,  name: rows[0].holiday_name || '공휴일' }
+      : { isHoliday: false, name: null };
+
+    _holidayCache.set(dateStr, result);
+    return result;
+  } catch {
+    // DB 조회 실패 시 장 운영 우선 (false)
+    return { isHoliday: false, name: null };
+  }
+}
+
 // ─── 시장 오픈 여부 ─────────────────────────────────────────────────
 
 export function isKisMarketOpen() {

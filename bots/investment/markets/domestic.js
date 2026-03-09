@@ -18,7 +18,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.js';
-import { getKisSymbols, isKisMarketOpen, isPaperMode } from '../shared/secrets.js';
+import { getKisSymbols, isKisMarketOpen, isKisHoliday, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 
@@ -199,6 +199,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const now = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(11, 16);
     console.log(`⏰ 장외 시간 (KST ${now}) — 스킵`);
     process.exit(0);
+  }
+
+  // 공휴일 체크
+  if (!force) {
+    const holiday = await isKisHoliday();
+    if (holiday.isHoliday) {
+      console.log(`🎌 공휴일 (${holiday.name}) — 스킵`);
+      process.exit(0);
+    }
   }
 
   // 30분 주기 체크
