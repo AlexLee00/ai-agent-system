@@ -285,13 +285,87 @@ def quick_forecast_sma(df, target_date):
     }
 
 
-def _ensemble_val(prophet_val, sarima_val, quick_val, day_idx):
+def get_per_model_accuracy(con, days=30):
+    """최근 N일 모델별 MAPE 조회 (forecast_results × revenue_daily JOIN)
+    반환: {'prophet': 8.5, 'sarima': 12.3, 'quick': 15.0}  — 데이터 없으면 {}
+    """
+    try:
+        row = _one(con, """
+            SELECT
+                AVG(ABS((fr.predictions->>'yhat_prophet')::float - rd.actual_revenue)
+                    / NULLIF(rd.actual_revenue, 0)) * 100 AS prophet_mape,
+                AVG(ABS((fr.predictions->>'yhat_sarima')::float - rd.actual_revenue)
+                    / NULLIF(rd.actual_revenue, 0)) * 100 AS sarima_mape,
+                AVG(ABS((fr.predictions->>'yhat_quick')::float - rd.actual_revenue)
+                    / NULLIF(rd.actual_revenue, 0)) * 100 AS quick_mape
+            FROM forecast_results fr
+            JOIN revenue_daily rd ON rd.date = fr.forecast_date
+            WHERE fr.forecast_date >= current_date - %s
+              AND rd.actual_revenue > 0
+              AND fr.predictions->>'yhat_prophet' IS NOT NULL
+        """, (days,))
+        if not row or all(v is None for v in row):
+            return {}
+        return {
+            k: round(float(v), 2)
+            for k, v in zip(['prophet', 'sarima', 'quick'], row)
+            if v is not None
+        }
+    except Exception:
+        return {}
+
+
+def calculate_dynamic_weights(accuracy):
+    """모델별 MAPE 역수 기반 동적 가중치 계산
+    MAPE가 낮을수록 정확한 모델 → 더 높은 가중치 부여
+    최소 가중치 10% 보장 후 재정규화
+    반환: {'prophet': 0.45, 'sarima': 0.30, 'quick': 0.25} or None
+    """
+    if not accuracy or len(accuracy) < 2:
+        return None
+
+    MIN_WEIGHT = 0.10
+    inv = {}
+    for model, mape in accuracy.items():
+        inv[model] = 1.0 / mape if (mape and mape > 0) else 0.1  # 기본 10% MAPE 가정
+
+    total = sum(inv.values())
+    if total == 0:
+        return None
+
+    weights = {m: v / total for m, v in inv.items()}
+
+    # 최소 가중치 보장 후 재정규화
+    for m in weights:
+        if weights[m] < MIN_WEIGHT:
+            weights[m] = MIN_WEIGHT
+    total2 = sum(weights.values())
+    return {m: round(w / total2, 4) for m, w in weights.items()}
+
+
+def _ensemble_val(prophet_val, sarima_val, quick_val, day_idx, weights=None):
     """Prophet + SARIMA + SMA/EMA 앙상블
     단기(0~2일): SARIMA 가중  / 장기(3일+): Prophet 가중
     SARIMA 없으면: Prophet 70% + quick 30%
+    weights: 동적 가중치 dict (없으면 기본값 사용)
     """
     if sarima_val is None:
+        if weights:
+            t = weights.get('prophet', 0.7) + weights.get('quick', 0.3)
+            if t > 0:
+                p_w = weights.get('prophet', 0.7) / t
+                q_w = weights.get('quick',   0.3) / t
+                return round(prophet_val * p_w + quick_val * q_w)
         return round(prophet_val * 0.7 + quick_val * 0.3)
+
+    if weights:
+        p_w = weights.get('prophet', 0.30 if day_idx < 3 else 0.55)
+        s_w = weights.get('sarima',  0.50 if day_idx < 3 else 0.25)
+        q_w = weights.get('quick',   0.20)
+        t = p_w + s_w + q_w
+        if t > 0:
+            return round(prophet_val * p_w/t + sarima_val * s_w/t + quick_val * q_w/t)
+
     if day_idx < 3:  # 단기
         p_w, s_w, q_w = 0.30, 0.50, 0.20
     else:            # 장기
@@ -419,6 +493,20 @@ def run_forecast(con, base_date, periods):
 
     print(f'[FORECAST] 학습 데이터: {len(hist_df)}일 ({hist_df["ds"].min().date()}~{hist_df["ds"].max().date()})')
 
+    # ── 동적 가중치 계산 (최근 30일 모델별 MAPE 기반) ──
+    dynamic_weights = None
+    try:
+        per_model_acc = get_per_model_accuracy(con, days=30)
+        if len(per_model_acc) >= 2:
+            dynamic_weights = calculate_dynamic_weights(per_model_acc)
+            if dynamic_weights:
+                w_str = ' | '.join(f'{k}:{v:.0%}' for k, v in dynamic_weights.items())
+                print(f'[FORECAST] 동적 가중치: {w_str}')
+            else:
+                print('[FORECAST] 동적 가중치: 기본값 사용 (데이터 부족)')
+    except Exception:
+        pass
+
     # ── SARIMA 예측 (periods <= 7) ──
     sarima_preds = None
     if periods <= 7:
@@ -495,7 +583,7 @@ def run_forecast(con, base_date, periods):
             yhat_sarima = round(sarima_preds[i])
 
         # ── 앙상블 최종값 ──
-        yhat_final = _ensemble_val(yhat_prophet_final, yhat_sarima, yhat_quick, i)
+        yhat_final = _ensemble_val(yhat_prophet_final, yhat_sarima, yhat_quick, i, dynamic_weights)
 
         # ── 예약 선행 지표 ──
         res_cnt = get_reservation_count(con, d_str)
@@ -563,7 +651,7 @@ def _calc_confidence(r):
 
 # ─── 텔레그램 포맷 ────────────────────────────────────────────────────────────
 
-def format_daily(result, base_date, recent_mape=None):
+def format_daily(result, base_date, recent_mape=None, weather_impact=None):
     """익일 앙상블 예측 포맷 (🔮 형식)"""
     r    = result[0]
     d    = r['date']
@@ -630,6 +718,13 @@ def format_daily(result, base_date, recent_mape=None):
     lines.append('■ 신뢰 구간')
     lines.append(f'  80%: {r["yhat_lower"]:,} ~ {r["yhat_upper"]:,}원')
     lines.append(f'  확신도: {"█" * round(conf*10)}{"░" * (10-round(conf*10))} ({conf*100:.0f}%)')
+    # 실시간 날씨 영향 (weather.py 제공 시)
+    if weather_impact and weather_impact[0] != 'neutral':
+        impact, score, desc = weather_impact
+        icon = '📈' if impact == 'positive' else '📉'
+        lines.append(f'  실시간 날씨: {icon} {desc}')
+        lines.append('')
+
     lines.append('═' * 19)
 
     return '\n'.join(lines)
@@ -1059,8 +1154,21 @@ def run(mode='daily', base_date_str=None, output_json=False):
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return results
 
+    # 실시간 날씨 영향 (daily 모드에서만 시도)
+    weather_impact = None
     if mode == 'daily':
-        print(format_daily(results, base_date, recent_mape=recent_mape))
+        try:
+            from bots.ska.src.weather import get_current_weather, classify_weather_impact as _cwi
+            _w = get_current_weather()
+            if _w:
+                weather_impact = _cwi(_w)
+                print(f'[FORECAST] 날씨: {_w.get("description","N/A")} '
+                      f'| 영향: {weather_impact[0]} ({weather_impact[1]:+d}pt)')
+        except Exception:
+            pass
+
+    if mode == 'daily':
+        print(format_daily(results, base_date, recent_mape=recent_mape, weather_impact=weather_impact))
     elif mode == 'weekly':
         print(format_weekly(results, base_date))
     elif mode == 'monthly':
