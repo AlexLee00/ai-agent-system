@@ -10,6 +10,7 @@
 
 const OpenAI     = require('openai');
 const toolLogger = require('../../../packages/core/lib/tool-logger');
+const llmLogger  = require('../../../packages/core/lib/llm-logger');
 const llmCache   = require('../../../packages/core/lib/llm-cache');
 const { getTraceId } = require('../../../packages/core/lib/trace');
 
@@ -209,10 +210,11 @@ ${experienceBlock}${linkingBlock}
       temperature: 0.8,
     });
   } finally {
+    const latencyMs = Date.now() - startTime;
     await toolLogger.logToolCall('openai', 'chat.completions.create', {
       bot:         'blog-gems',
       success:     !!response,
-      duration_ms: Date.now() - startTime,
+      duration_ms: latencyMs,
       metadata: {
         model:         'gpt-4o',
         input_tokens:  response?.usage?.prompt_tokens,
@@ -221,6 +223,17 @@ ${experienceBlock}${linkingBlock}
         category,
         trace_id:      getTraceId(),
       },
+    });
+    // llm-logger: LLM 비용 추적
+    await llmLogger.logLLMCall({
+      team:         'blog',
+      bot:          'blog-gems',
+      model:        response?.model || 'gpt-4o',
+      requestType:  'general_post',
+      inputTokens:  response?.usage?.prompt_tokens    || 0,
+      outputTokens: response?.usage?.completion_tokens || 0,
+      latencyMs,
+      success:      !!response,
     });
   }
 
