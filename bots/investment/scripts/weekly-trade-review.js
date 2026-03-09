@@ -75,7 +75,7 @@ async function fetchSignalStats(days) {
 
 // ─── 분석 요약 생성 ───────────────────────────────────────────────────
 
-function buildTradeSummary(trades, signalStats) {
+function buildTradeSummary(trades, signalStats, rrSection = null) {
   if (trades.length === 0) return '해당 기간 종료 거래 없음';
 
   const closed   = trades.filter(t => !t.is_paper);
@@ -125,7 +125,56 @@ function buildTradeSummary(trades, signalStats) {
     );
   }
 
+  if (rrSection?.text) {
+    lines.push(``, rrSection.text);
+  }
+
   return lines.join('\n');
+}
+
+// ─── R/R 분석 섹션 ───────────────────────────────────────────────────
+
+/**
+ * 주간 R/R 분석 섹션 생성
+ * pnl_net / entry_value 기반으로 실현 R/R 계산
+ * @param {Array} trades
+ * @returns {{ text: string, winRate: number, currentRR: number|null }}
+ */
+function buildRRSection(trades) {
+  if (trades.length === 0) return { text: '', winRate: 0, currentRR: null };
+
+  const pnlList = trades
+    .map(t => t.entry_value > 0 ? (t.pnl_net / t.entry_value) * 100 : null)
+    .filter(p => p !== null);
+
+  if (pnlList.length === 0) return { text: '', winRate: 0, currentRR: null };
+
+  const wins   = pnlList.filter(p => p > 0);
+  const losses = pnlList.filter(p => p <= 0);
+  const winRate  = (wins.length / pnlList.length * 100).toFixed(1);
+  const avgWin   = wins.length   > 0 ? wins.reduce((s, p)   => s + p, 0) / wins.length   : 0;
+  const avgLoss  = losses.length > 0 ? losses.reduce((s, p) => s + p, 0) / losses.length : 0;
+  const currentRR = avgLoss !== 0
+    ? (Math.abs(avgWin) / Math.abs(avgLoss)).toFixed(2)
+    : null;
+
+  let rrStatus = '';
+  if (currentRR) {
+    const v = parseFloat(currentRR);
+    if (v >= 2)      rrStatus = '✅ R/R 목표(2:1) 달성';
+    else if (v >= 1) rrStatus = '🟡 R/R 보통 — 개선 여지 있음';
+    else             rrStatus = '🔴 R/R 경고 — 손절 대비 수익 부족';
+  }
+
+  const lines = [
+    `=== R/R 분석 (실현값) ===`,
+    `승률: ${winRate}% | 평균 승: +${avgWin.toFixed(3)}% | 평균 패: ${avgLoss.toFixed(3)}%`,
+    `실현 R/R: ${currentRR ?? 'N/A'} (기준: 고정 TP 6% / SL 3% = 2:1)`,
+  ];
+  if (rrStatus) lines.push(`→ ${rrStatus}`);
+  lines.push(`(상세 시뮬레이션: node scripts/analyze-rr.js)`);
+
+  return { text: lines.join('\n'), winRate: parseFloat(winRate), currentRR: currentRR ? parseFloat(currentRR) : null };
 }
 
 // ─── LLM 자기반성 ────────────────────────────────────────────────────
@@ -152,20 +201,23 @@ async function runLLMReview(tradeSummary) {
 
 // ─── RAG 저장 ─────────────────────────────────────────────────────────
 
-async function storeReviewToRAG(summary, review, trades) {
+async function storeReviewToRAG(summary, review, trades, rrSection = null) {
   try {
     const rag     = require('../../../packages/core/lib/rag');
+    const rrStr   = rrSection?.currentRR != null ? ` | R/R ${rrSection.currentRR} 승률 ${rrSection.winRate}%` : '';
     const content = [
-      `주간 리뷰 (${DAYS}일): 등급=${review.overall_grade}`,
+      `주간 리뷰 (${DAYS}일): 등급=${review.overall_grade}${rrStr}`,
       `개선점: ${(review.issues || []).join(' / ')}`,
       `전략: ${review.next_week_strategy || ''}`,
     ].join(' | ');
     await rag.store('trades', content, {
-      type:       'weekly_review',
-      grade:      review.overall_grade,
-      trade_cnt:  trades.length,
+      type:        'weekly_review',
+      grade:       review.overall_grade,
+      trade_cnt:   trades.length,
       period_days: DAYS,
-      ts:         Date.now(),
+      rr_ratio:    rrSection?.currentRR ?? null,
+      win_rate:    rrSection?.winRate   ?? null,
+      ts:          Date.now(),
     }, 'luna');
     console.log('  ✅ [RAG] 주간 리뷰 저장 완료');
   } catch (e) {
@@ -175,7 +227,7 @@ async function storeReviewToRAG(summary, review, trades) {
 
 // ─── 텔레그램 포맷 ───────────────────────────────────────────────────
 
-function buildTelegramMessage(trades, review) {
+function buildTelegramMessage(trades, review, rrSection = null) {
   const gradeEmoji = { A: '🏆', B: '✅', C: '⚠️', D: '❌' }[review.overall_grade] || '📊';
   const pnl = trades.reduce((s, t) => s + (t.pnl_net ?? 0), 0);
   const wins = trades.filter(t => (t.pnl_net ?? 0) > 0).length;
@@ -185,8 +237,13 @@ function buildTelegramMessage(trades, review) {
     `${gradeEmoji} 루나팀 주간 리뷰 (최근 ${DAYS}일)`,
     ``,
     `📊 실적: ${trades.length}건 | 승률 ${wr}% | 손익 $${pnl.toFixed(2)}`,
-    ``,
   ];
+
+  if (rrSection?.currentRR != null) {
+    const rrEmoji = rrSection.currentRR >= 2 ? '✅' : rrSection.currentRR >= 1 ? '🟡' : '🔴';
+    lines.push(`${rrEmoji} R/R: ${rrSection.currentRR} (기준 2:1)`);
+  }
+  lines.push('');
 
   if (review.highlights?.length) {
     lines.push(`✨ 잘한 점`);
@@ -232,7 +289,10 @@ async function main() {
     process.exit(0);
   }
 
-  const summary = buildTradeSummary(trades, signalStats);
+  const rrSection = buildRRSection(trades);
+  if (rrSection.text) console.log('\n' + rrSection.text);
+
+  const summary = buildTradeSummary(trades, signalStats, rrSection);
   console.log('\n' + summary);
 
   console.log('\n  🤖 LLM 자기반성 분석 중...');
@@ -246,15 +306,15 @@ async function main() {
   console.log(`  → 등급: ${review.overall_grade}`);
   console.log(`  → 전략: ${review.next_week_strategy}`);
 
-  await storeReviewToRAG(summary, review, trades);
+  await storeReviewToRAG(summary, review, trades, rrSection);
 
   if (!DRY_RUN) {
-    const msg = buildTelegramMessage(trades, review);
+    const msg = buildTelegramMessage(trades, review, rrSection);
     publishToMainBot({ from_bot: 'luna', event_type: 'weekly_review', alert_level: 1, message: msg });
     console.log('  ✅ 텔레그램 발송 완료');
   } else {
     console.log('\n--- 텔레그램 미리보기 (dry-run) ---');
-    console.log(buildTelegramMessage(trades, review));
+    console.log(buildTelegramMessage(trades, review, rrSection));
   }
 
   console.log('\n✅ [주간 리뷰] 완료');

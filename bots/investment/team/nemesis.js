@@ -163,6 +163,56 @@ export function validateDynamicTPSL(tpPct, slPct) {
 }
 
 /**
+ * 매매 실적 기반 동적 R/R 조회 (Phase 3)
+ *
+ * trade_journal 과거 실적에서 심볼별 평균 승/패를 계산하여 R/R 제안.
+ * 데이터 부족(10건 미만) 시 null 반환 → 고정/ATR 폴백.
+ *
+ * @param {string} symbol
+ * @param {number} [minSamples=10]
+ * @returns {Promise<{suggested_tp_pct, suggested_sl_pct, rr_ratio, win_rate, sample_size, source}|null>}
+ */
+export async function getDynamicRR(symbol, minSamples = 10) {
+  try {
+    const row = db.get(`
+      SELECT
+        COUNT(*)                                                             AS trades,
+        ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4)       AS avg_win,
+        ROUND(ABS(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END)), 4) AS avg_loss,
+        ROUND(COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 1.0 / COUNT(*), 4) AS win_rate
+      FROM trade_journal
+      WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
+    `, [symbol]);
+
+    if (!row || parseInt(row.trades || 0) < minSamples) return null;
+
+    const avgWin  = parseFloat(row.avg_win  || 0);
+    const avgLoss = parseFloat(row.avg_loss || 0);
+    const winRate = parseFloat(row.win_rate || 0);
+
+    if (!avgWin || !avgLoss || avgLoss === 0) return null;
+
+    // 제안 값은 TPSL_LIMITS 범위 내로 클램프
+    const suggestedTp = Math.min(Math.max(avgWin  / 100, TPSL_LIMITS.min_tp), TPSL_LIMITS.max_tp);
+    const suggestedSl = Math.min(Math.max(avgLoss / 100, TPSL_LIMITS.min_sl), TPSL_LIMITS.max_sl);
+
+    if (!validateDynamicTPSL(suggestedTp, suggestedSl)) return null;
+
+    return {
+      suggested_tp_pct: suggestedTp,
+      suggested_sl_pct: suggestedSl,
+      rr_ratio:         (suggestedTp / suggestedSl).toFixed(2),
+      win_rate:         (winRate * 100).toFixed(1),
+      sample_size:      parseInt(row.trades),
+      source:           'data_driven',
+    };
+  } catch (e) {
+    console.warn('[nemesis] getDynamicRR 실패 (무시):', e.message);
+    return null;
+  }
+}
+
+/**
  * ATR 기반 동적 TP/SL 산출
  *
  * Phase 1: applied: false (로그만)

@@ -1,0 +1,248 @@
+#!/usr/bin/env node
+/**
+ * scripts/analyze-rr.js — 네메시스 Phase 3: R/R 최적화 분석
+ *
+ * trade_journal + trade_review 데이터를 분석하여 최적 R/R 비율을 도출한다.
+ *
+ * 기능:
+ *   1. 전체 매매 현황 (승률, 평균 승/패, 실현 R/R)
+ *   2. 심볼별 분석 (3건 이상)
+ *   3. TP/SL 시뮬레이션 (8가지 R/R 조합 백테스트)
+ *      - max_favorable / max_adverse (trade_review) 기반
+ *   4. trade_review 봇 정확도 분석
+ *   5. RAG rag_trades에 분석 결과 저장
+ *
+ * 실행: node scripts/analyze-rr.js [--days=90]
+ */
+
+import { createRequire } from 'module';
+import * as db from '../shared/db.js';
+import * as journalDb from '../shared/trade-journal-db.js';
+
+const _require = createRequire(import.meta.url);
+const rag      = _require('../../../packages/core/lib/rag');
+
+const args    = process.argv.slice(2);
+const daysArg = args.find(a => a.startsWith('--days='));
+const DAYS    = daysArg ? parseInt(daysArg.split('=')[1]) : 90;
+
+async function analyzeRR() {
+  console.log(`=== 네메시스 R/R 최적화 분석 (최근 ${DAYS}일) ===\n`);
+
+  await journalDb.initJournalSchema();
+
+  const sinceMs = Date.now() - DAYS * 24 * 60 * 60 * 1000;
+
+  // ── 1. 전체 매매 현황 ─────────────────────────────────────────────────
+  const summary = db.get(`
+    SELECT
+      COUNT(*)                                                    AS total_trades,
+      COUNT(CASE WHEN pnl_percent > 0 THEN 1 END)                AS wins,
+      COUNT(CASE WHEN pnl_percent <= 0 THEN 1 END)               AS losses,
+      ROUND(AVG(pnl_percent), 4)                                  AS avg_pnl,
+      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4) AS avg_win,
+      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END), 4) AS avg_loss,
+      ROUND(MAX(pnl_percent), 4)                                  AS best,
+      ROUND(MIN(pnl_percent), 4)                                  AS worst
+    FROM trade_journal
+    WHERE status = 'closed' AND exit_time IS NOT NULL AND created_at >= ?
+  `, [sinceMs]);
+
+  const total = parseInt(summary?.total_trades || 0);
+
+  if (total === 0) {
+    console.log('⬜ 종료된 매매 없음 — 충분한 매매 기록이 쌓인 후 재실행하세요.');
+    console.log('   (최소 10건 이상 권장)');
+    process.exit(0);
+  }
+
+  const wins      = parseInt(summary.wins || 0);
+  const losses    = parseInt(summary.losses || 0);
+  const winRate   = (wins / total * 100).toFixed(1);
+  const avgWin    = parseFloat(summary.avg_win  || 0);
+  const avgLoss   = parseFloat(summary.avg_loss || 0);
+  const currentRR = avgLoss !== 0
+    ? (Math.abs(avgWin) / Math.abs(avgLoss)).toFixed(2)
+    : 'N/A';
+
+  console.log('1. 전체 매매 현황');
+  console.log(`   총 매매: ${total}건 (승: ${wins} / 패: ${losses})`);
+  console.log(`   승률: ${winRate}%`);
+  console.log(`   평균 수익률: ${summary.avg_pnl}%`);
+  console.log(`   평균 승: +${avgWin.toFixed(4)}% | 평균 패: ${avgLoss.toFixed(4)}%`);
+  console.log(`   최고: +${summary.best}% | 최저: ${summary.worst}%`);
+  console.log(`   실현 R/R: ${currentRR}`);
+  console.log('');
+
+  // ── 2. 심볼별 분석 ────────────────────────────────────────────────────
+  const bySymbol = db.query(`
+    SELECT
+      symbol,
+      COUNT(*)                                                     AS trades,
+      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4) AS avg_win,
+      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END), 4) AS avg_loss,
+      ROUND(COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 100.0 / COUNT(*), 1) AS win_rate
+    FROM trade_journal
+    WHERE status = 'closed' AND exit_time IS NOT NULL AND created_at >= ?
+    GROUP BY symbol
+    HAVING COUNT(*) >= 3
+    ORDER BY trades DESC
+  `, [sinceMs]);
+
+  if (bySymbol.length > 0) {
+    console.log('2. 심볼별 분석 (3건 이상)');
+    bySymbol.forEach(r => {
+      const rr = r.avg_win && r.avg_loss
+        ? (Math.abs(parseFloat(r.avg_win)) / Math.abs(parseFloat(r.avg_loss))).toFixed(2)
+        : 'N/A';
+      const flag = parseFloat(rr) >= 2 ? '✅' : parseFloat(rr) >= 1 ? '🟡' : '🔴';
+      console.log(`   ${flag} ${r.symbol}: ${r.trades}건 | 승률 ${r.win_rate}% | 평균승 +${r.avg_win}% | 평균패 ${r.avg_loss}% | R/R ${rr}`);
+    });
+    console.log('');
+  }
+
+  // ── 3. TP/SL 시뮬레이션 (trade_review max_favorable/max_adverse 기반) ──
+  const reviewedTrades = db.query(`
+    SELECT
+      j.trade_id,
+      j.symbol,
+      j.direction,
+      j.entry_price,
+      j.pnl_percent,
+      r.max_favorable,
+      r.max_adverse
+    FROM trade_journal j
+    INNER JOIN trade_review r ON j.trade_id = r.trade_id
+    WHERE j.status = 'closed'
+      AND j.exit_time IS NOT NULL
+      AND r.max_favorable IS NOT NULL
+      AND r.max_adverse IS NOT NULL
+      AND j.created_at >= ?
+    ORDER BY j.entry_time
+  `, [sinceMs]);
+
+  if (reviewedTrades.length < 5) {
+    console.log(`3. TP/SL 시뮬레이션: 데이터 부족 (${reviewedTrades.length}건 — max_favorable/max_adverse 포함 최소 5건 필요)`);
+    console.log('   → trade_review에 데이터가 쌓이면 시뮬레이션 가능합니다.');
+    console.log('');
+  } else {
+    console.log(`3. TP/SL 시뮬레이션 (${reviewedTrades.length}건 리뷰 기반)`);
+
+    const scenarios = [
+      { tp: 1.0, sl: 0.5,  label: 'TP 1.0% / SL 0.5%  (R/R 2:1)' },
+      { tp: 1.5, sl: 0.75, label: 'TP 1.5% / SL 0.75% (R/R 2:1)' },
+      { tp: 2.0, sl: 1.0,  label: 'TP 2.0% / SL 1.0%  (R/R 2:1)' },
+      { tp: 3.0, sl: 1.0,  label: 'TP 3.0% / SL 1.0%  (R/R 3:1)' },
+      { tp: 6.0, sl: 3.0,  label: 'TP 6.0% / SL 3.0%  (현재 고정 R/R 2:1)' },
+      { tp: 1.5, sl: 1.0,  label: 'TP 1.5% / SL 1.0%  (R/R 1.5:1)' },
+      { tp: 2.0, sl: 0.7,  label: 'TP 2.0% / SL 0.7%  (R/R 2.86:1)' },
+      { tp: 1.0, sl: 1.0,  label: 'TP 1.0% / SL 1.0%  (R/R 1:1)' },
+    ];
+
+    let bestExpectancy = -Infinity;
+    let bestScenario   = null;
+
+    for (const sc of scenarios) {
+      let wins2 = 0, losses2 = 0, neither = 0, totalPnl = 0;
+
+      for (const t of reviewedTrades) {
+        // max_favorable: 롱 기준 최대 수익 가능 % / max_adverse: 최대 손실 가능 %
+        const mf = parseFloat(t.max_favorable || 0);  // % 단위
+        const ma = parseFloat(t.max_adverse   || 0);  // % 단위 (음수)
+
+        const tpHit = mf >= sc.tp;
+        const slHit = ma <= -sc.sl;
+
+        if (tpHit && !slHit) {
+          wins2++;
+          totalPnl += sc.tp;
+        } else if (slHit && !tpHit) {
+          losses2++;
+          totalPnl -= sc.sl;
+        } else if (tpHit && slHit) {
+          // 둘 다 도달 — 보수적으로 SL 처리
+          losses2++;
+          totalPnl -= sc.sl;
+        } else {
+          neither++;
+          totalPnl += parseFloat(t.pnl_percent || 0);
+        }
+      }
+
+      const n            = wins2 + losses2 + neither;
+      const simWR        = n > 0 ? (wins2 / n * 100).toFixed(1) : '—';
+      const expectancy   = n > 0 ? (totalPnl / n).toFixed(3) : '—';
+      const expVal       = parseFloat(expectancy);
+      const marker       = expVal > 0 ? '✅' : expVal > -0.1 ? '🟡' : '❌';
+
+      console.log(`   ${marker} ${sc.label}`);
+      console.log(`      승: ${wins2} / 패: ${losses2} / 미도달: ${neither} | 승률: ${simWR}% | 기대값: ${expectancy}% | 총PnL: ${totalPnl.toFixed(2)}%`);
+
+      if (expVal > bestExpectancy) {
+        bestExpectancy = expVal;
+        bestScenario   = { ...sc, expectancy: expVal, winRate: simWR };
+      }
+    }
+
+    if (bestScenario) {
+      console.log('');
+      console.log(`   ✨ 최적 R/R: TP ${bestScenario.tp}% / SL ${bestScenario.sl}%`);
+      console.log(`      기대값: ${bestScenario.expectancy}% | 승률: ${bestScenario.winRate}%`);
+    }
+    console.log('');
+  }
+
+  // ── 4. 봇 정확도 분석 ────────────────────────────────────────────────
+  const accuracy = db.get(`
+    SELECT
+      COUNT(*)                                                               AS reviews,
+      ROUND(AVG(CASE WHEN aria_accurate    THEN 1.0 ELSE 0.0 END) * 100, 1) AS aria_acc,
+      ROUND(AVG(CASE WHEN sophia_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS sophia_acc,
+      ROUND(AVG(CASE WHEN oracle_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS oracle_acc,
+      ROUND(AVG(CASE WHEN hermes_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS hermes_acc
+    FROM trade_review
+    WHERE reviewed_at >= ?
+  `, [sinceMs]);
+
+  if (accuracy && parseInt(accuracy.reviews || 0) > 0) {
+    console.log('4. 봇 정확도 (trade_review 기준)');
+    console.log(`   리뷰 건수: ${accuracy.reviews}건`);
+    console.log(`   아리아(기술): ${accuracy.aria_acc}% | 소피아(감성): ${accuracy.sophia_acc}%`);
+    console.log(`   오라클(종합): ${accuracy.oracle_acc}% | 헤르메스(거시): ${accuracy.hermes_acc}%`);
+    console.log('');
+  }
+
+  // ── 5. 권장 사항 ─────────────────────────────────────────────────────
+  console.log('5. 권장 사항');
+  console.log('   - 기대값(expectancy) > 0 인 조합 중 승률·총PnL 종합 고려');
+  console.log('   - 현재 고정 TP 6% / SL 3% (R/R 2:1) 대비 시뮬레이션 결과 비교');
+  console.log('   - 마스터 승인 후 nemesis.js의 FIXED_TP_PCT / FIXED_SL_PCT 변경');
+  console.log('   - 데이터가 20건+ 쌓이면 analyze-rr.js 재실행하여 재검토 권장');
+  console.log('');
+
+  // ── 6. RAG 저장 ──────────────────────────────────────────────────────
+  try {
+    await rag.initSchema();
+    const ragSummary =
+      `[R/R 분석 ${new Date().toISOString().slice(0, 10)}] ` +
+      `총 ${total}건 | 승률 ${winRate}% | 실현 R/R ${currentRR} | ` +
+      `평균승 +${avgWin.toFixed(3)}% 평균패 ${avgLoss.toFixed(3)}%`;
+    await rag.store('trades', ragSummary, {
+      type:        'rr_analysis',
+      total_trades: total,
+      win_rate:    parseFloat(winRate),
+      current_rr:  parseFloat(currentRR) || null,
+      days:        DAYS,
+    }, 'nemesis');
+    console.log('✅ [RAG] R/R 분석 결과 rag_trades 저장 완료');
+  } catch (e) {
+    console.warn('⚠️ [RAG] 저장 실패 (무시):', e.message);
+  }
+
+  process.exit(0);
+}
+
+analyzeRR().catch(e => {
+  console.error('❌ 분석 실패:', e.message);
+  process.exit(1);
+});
