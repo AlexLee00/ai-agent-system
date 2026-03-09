@@ -166,12 +166,25 @@ function buildRRSection(trades) {
     else             rrStatus = '🔴 R/R 경고 — 손절 대비 수익 부족';
   }
 
+  // 켈리 포지션 인라인 계산 (순환 의존 방지)
+  let kellyLine = '';
+  if (currentRR !== null && wins.length > 0) {
+    const p    = wins.length / pnlList.length;
+    const b    = parseFloat(currentRR);
+    if (b > 0) {
+      const kelly     = (p * b - (1 - p)) / b;
+      const halfKelly = kelly > 0 ? Math.min(kelly / 2, 0.05) : 0.01;
+      kellyLine = `Half Kelly 권장 포지션: ${(halfKelly * 100).toFixed(1)}%`;
+    }
+  }
+
   const lines = [
     `=== R/R 분석 (실현값) ===`,
     `승률: ${winRate}% | 평균 승: +${avgWin.toFixed(3)}% | 평균 패: ${avgLoss.toFixed(3)}%`,
     `실현 R/R: ${currentRR ?? 'N/A'} (기준: 고정 TP 6% / SL 3% = 2:1)`,
   ];
-  if (rrStatus) lines.push(`→ ${rrStatus}`);
+  if (rrStatus)   lines.push(`→ ${rrStatus}`);
+  if (kellyLine)  lines.push(`켈리: ${kellyLine}`);
   lines.push(`(상세 시뮬레이션: node scripts/analyze-rr.js)`);
 
   return { text: lines.join('\n'), winRate: parseFloat(winRate), currentRR: currentRR ? parseFloat(currentRR) : null };

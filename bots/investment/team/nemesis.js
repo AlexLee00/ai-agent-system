@@ -270,6 +270,170 @@ export function calculateDynamicTPSL(symbol, entryPrice = null, atrRatio = null)
   };
 }
 
+// ─── Phase 3-A: 시장상황별 R/R 분화 (변동성 적응형) ─────────────────
+
+// atr_at_entry 컬럼 1회 마이그레이션 (없는 경우 추가)
+let _atrColumnReady = false;
+function ensureAtrColumn() {
+  if (_atrColumnReady) return;
+  try { db.run('ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS atr_at_entry DOUBLE'); } catch { /* 이미 존재 */ }
+  _atrColumnReady = true;
+}
+
+/**
+ * 시장 상황(변동성 레짐)별 동적 R/R
+ * ATR 퍼센타일 3분위: low_vol / mid_vol / high_vol
+ * 데이터 부족(5건 미만) 또는 atr_at_entry 미기록 시 null 반환
+ *
+ * @param {string} symbol
+ * @param {number} currentATR  현재 ATR 비율 (예: 0.02 = 2%)
+ * @param {number} [minSamples=5]
+ * @returns {Promise<{suggested_tp_pct, suggested_sl_pct, rr_ratio, win_rate, sample_size, regime, source}|null>}
+ */
+export async function getDynamicRRByRegime(symbol, currentATR, minSamples = 5) {
+  ensureAtrColumn();
+  try {
+    const allRows = db.query(`
+      SELECT atr_at_entry, pnl_percent
+      FROM trade_journal
+      WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
+        AND atr_at_entry IS NOT NULL AND atr_at_entry > 0
+      ORDER BY atr_at_entry ASC
+    `, [symbol]);
+
+    if (allRows.length < minSamples) return null;
+
+    const sorted = allRows.map(r => parseFloat(r.atr_at_entry));
+    const p33    = sorted[Math.floor(sorted.length * 0.33)];
+    const p66    = sorted[Math.floor(sorted.length * 0.66)];
+
+    // 현재 ATR 레짐 분류
+    let regime, regimeRows;
+    if (currentATR <= p33) {
+      regime     = 'low_vol';
+      regimeRows = allRows.filter(r => parseFloat(r.atr_at_entry) <= p33);
+    } else if (currentATR >= p66) {
+      regime     = 'high_vol';
+      regimeRows = allRows.filter(r => parseFloat(r.atr_at_entry) >= p66);
+    } else {
+      regime     = 'mid_vol';
+      regimeRows = allRows.filter(r => { const a = parseFloat(r.atr_at_entry); return a > p33 && a < p66; });
+    }
+
+    if (regimeRows.length < minSamples) return null;
+
+    const pnls   = regimeRows.map(r => parseFloat(r.pnl_percent));
+    const wins   = pnls.filter(p => p > 0);
+    const losses = pnls.filter(p => p <= 0);
+    if (!wins.length || !losses.length) return null;
+
+    const avgWin  = wins.reduce((s, p) => s + p, 0) / wins.length;
+    const avgLoss = Math.abs(losses.reduce((s, p) => s + p, 0) / losses.length);
+    const winRate = wins.length / pnls.length;
+
+    const suggestedTp = Math.min(Math.max(avgWin / 100, TPSL_LIMITS.min_tp), TPSL_LIMITS.max_tp);
+    const suggestedSl = Math.min(Math.max(avgLoss / 100, TPSL_LIMITS.min_sl), TPSL_LIMITS.max_sl);
+    if (!validateDynamicTPSL(suggestedTp, suggestedSl)) return null;
+
+    return {
+      suggested_tp_pct: suggestedTp,
+      suggested_sl_pct: suggestedSl,
+      rr_ratio:    (suggestedTp / suggestedSl).toFixed(2),
+      win_rate:    (winRate * 100).toFixed(1),
+      sample_size: regimeRows.length,
+      regime,
+      source: 'regime',
+    };
+  } catch (e) {
+    console.warn('[nemesis] getDynamicRRByRegime 실패 (무시):', e.message);
+    return null;
+  }
+}
+
+// ─── Phase 3-B: 시간 가중 R/R (최근 매매 비중 UP) ───────────────────
+
+/**
+ * 시간 가중 동적 R/R — 최근 30일 ×3, 30~60일 ×2, 이전 ×1
+ * 데이터 부족(10건 미만) 시 null 반환
+ *
+ * @param {string} symbol
+ * @param {number} [minSamples=10]
+ * @returns {Promise<{suggested_tp_pct, suggested_sl_pct, rr_ratio, win_rate, sample_size, source}|null>}
+ */
+export async function getDynamicRRWeighted(symbol, minSamples = 10) {
+  try {
+    const now = Date.now();
+    const d30 = now - 30 * 24 * 3600 * 1000;
+    const d60 = now - 60 * 24 * 3600 * 1000;
+
+    const rows = db.query(`
+      SELECT pnl_percent, created_at
+      FROM trade_journal
+      WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
+      ORDER BY created_at DESC
+    `, [symbol]);
+
+    if (rows.length < minSamples) return null;
+
+    // 시간 가중 복제: 30일 이내 ×3, 30~60일 ×2, 60일 초과 ×1
+    const weighted = [];
+    for (const r of rows) {
+      const t = parseInt(r.created_at);
+      const w = t >= d30 ? 3 : t >= d60 ? 2 : 1;
+      const p = parseFloat(r.pnl_percent);
+      for (let i = 0; i < w; i++) weighted.push(p);
+    }
+
+    const wins   = weighted.filter(p => p > 0);
+    const losses = weighted.filter(p => p <= 0);
+    if (!wins.length || !losses.length) return null;
+
+    const avgWin  = wins.reduce((s, p) => s + p, 0) / wins.length;
+    const avgLoss = Math.abs(losses.reduce((s, p) => s + p, 0) / losses.length);
+    const winRate = wins.length / weighted.length;
+
+    const suggestedTp = Math.min(Math.max(avgWin / 100, TPSL_LIMITS.min_tp), TPSL_LIMITS.max_tp);
+    const suggestedSl = Math.min(Math.max(avgLoss / 100, TPSL_LIMITS.min_sl), TPSL_LIMITS.max_sl);
+    if (!validateDynamicTPSL(suggestedTp, suggestedSl)) return null;
+
+    return {
+      suggested_tp_pct: suggestedTp,
+      suggested_sl_pct: suggestedSl,
+      rr_ratio:    (suggestedTp / suggestedSl).toFixed(2),
+      win_rate:    (winRate * 100).toFixed(1),
+      sample_size: rows.length,
+      source: 'weighted',
+    };
+  } catch (e) {
+    console.warn('[nemesis] getDynamicRRWeighted 실패 (무시):', e.message);
+    return null;
+  }
+}
+
+// ─── Phase 3-C: 켈리 기준 포지션 사이징 ────────────────────────────
+
+/**
+ * 켈리 기준 포지션 비율 산출
+ * f* = (p×b − q) / b  →  Half Kelly 권장, 최대 5% 캡
+ *
+ * @param {number} winRate   승률 (0~1)
+ * @param {number} rrRatio   수익/손실 비율 (R/R, 예: 2.0)
+ * @param {'half'|'full'} [mode='half']
+ * @returns {number} 포지션 비율 (0.01 ~ 0.05)
+ */
+export function calcKellyPosition(winRate, rrRatio, mode = 'half') {
+  const p = winRate;
+  const q = 1 - p;
+  const b = rrRatio;
+  if (b <= 0 || p <= 0 || p >= 1) return 0.01;
+
+  const kelly = (p * b - q) / b;
+  if (kelly <= 0) return 0.01; // 음수 → 최소 포지션
+
+  const raw = mode === 'half' ? kelly / 2 : kelly;
+  return Math.min(raw, 0.05); // 최대 5% 캡
+}
+
 // ─── 메인 신호 평가 ─────────────────────────────────────────────────
 
 /**
@@ -324,6 +488,7 @@ export async function evaluateSignal(signal, opts = {}) {
   }
 
   // ── v2: 조정 계수 ──
+  let dynamicTPSL; // function scope — BUY 블록 내에서 할당, tpslResult에서 참조
   if (action === ACTIONS.BUY) {
     const [volFactor, corrFactor] = await Promise.all([
       calcVolatilityFactor(symbol, opts.atrRatio),
@@ -353,9 +518,44 @@ export async function evaluateSignal(signal, opts = {}) {
 
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
 
-    // ── Phase 2: 동적 TP/SL 산출 + 신호에 포함 (enabled 시 헤파이스토스 실적용) ──
+    // ── Phase 3: 동적 R/R 우선순위 체인 (레짐→가중→단순→ATR→고정) ──
+    let _rrData = null;
+    if (opts.atrRatio) {
+      _rrData = await getDynamicRRByRegime(symbol, opts.atrRatio);
+      if (_rrData) console.log(`  📊 [네메시스] ${_rrData.regime} 레짐 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
+    }
+    if (!_rrData) {
+      _rrData = await getDynamicRRWeighted(symbol);
+      if (_rrData) console.log(`  📊 [네메시스] 시간가중 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
+    }
+    if (!_rrData) {
+      _rrData = await getDynamicRR(symbol);
+      if (_rrData) console.log(`  📊 [네메시스] 단순 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
+    }
+
+    // 켈리 포지션 사이징 (실적 데이터 기반 R/R 있을 때만)
+    if (_rrData) {
+      const kellyPct    = calcKellyPosition(parseFloat(_rrData.win_rate) / 100, parseFloat(_rrData.rr_ratio), 'half');
+      const kellyAmount = Math.max(RULES.MIN_ORDER_USDT, Math.floor(totalUsdt * kellyPct));
+      if (kellyAmount < amountUsdt) {
+        console.log(`  📐 [네메시스 켈리] $${amountUsdt} → $${kellyAmount} (Half Kelly ${(kellyPct * 100).toFixed(1)}%, R/R ${_rrData.rr_ratio}, 승률 ${_rrData.win_rate}%)`);
+        amountUsdt = kellyAmount;
+      }
+    }
+
+    // ── Phase 2: 동적 TP/SL 산출 (레짐/가중/단순 → ATR → 고정) ──
     const entryEstimate = opts.currentPrice || null;
-    const dynamicTPSL   = calculateDynamicTPSL(symbol, entryEstimate, opts.atrRatio);
+    const _tpslEnabled  = isDynamicTPSLEnabled();
+    dynamicTPSL = (_rrData && _tpslEnabled)
+      ? {
+          tpPct:   _rrData.suggested_tp_pct,
+          slPct:   _rrData.suggested_sl_pct,
+          tpPrice: entryEstimate ? entryEstimate * (1 + _rrData.suggested_tp_pct) : null,
+          slPrice: entryEstimate ? entryEstimate * (1 - _rrData.suggested_sl_pct) : null,
+          source:  _rrData.source,
+          applied: true,
+        }
+      : calculateDynamicTPSL(symbol, entryEstimate, opts.atrRatio);
     const tpslTag = dynamicTPSL.applied ? '✅ 적용' : '⏸️ 미적용 (비활성화)';
     console.log(
       `  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}%` +
@@ -384,7 +584,7 @@ export async function evaluateSignal(signal, opts = {}) {
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
 
   // dynamicTPSL이 applied=true면 헤파이스토스에 전달할 tp/sl 가격 포함
-  const tpslResult = (action === ACTIONS.BUY && typeof dynamicTPSL !== 'undefined' && dynamicTPSL.applied)
+  const tpslResult = (action === ACTIONS.BUY && dynamicTPSL?.applied)
     ? { tpPrice: dynamicTPSL.tpPrice, slPrice: dynamicTPSL.slPrice, tpslSource: dynamicTPSL.source }
     : {};
 
