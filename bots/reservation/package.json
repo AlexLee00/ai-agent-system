@@ -11,6 +11,6 @@
   "dependencies": {
     "@ai-agent/core": "*",
     "@ai-agent/playwright-utils": "*",
-    "puppeteer": "^24.37.5"
+    "puppeteer": "^24.38.0"
   }
 }
