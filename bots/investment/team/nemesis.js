@@ -174,12 +174,12 @@ export function validateDynamicTPSL(tpPct, slPct) {
  */
 export async function getDynamicRR(symbol, minSamples = 10) {
   try {
-    const row = db.get(`
+    const row = await db.get(`
       SELECT
-        COUNT(*)                                                             AS trades,
-        ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4)       AS avg_win,
-        ROUND(ABS(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END)), 4) AS avg_loss,
-        ROUND(COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 1.0 / COUNT(*), 4) AS win_rate
+        COUNT(*)                                                                        AS trades,
+        ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END)::numeric, 4)        AS avg_win,
+        ROUND(ABS(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END))::numeric, 4)  AS avg_loss,
+        ROUND((COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 1.0 / NULLIF(COUNT(*), 0))::numeric, 4) AS win_rate
       FROM trade_journal
       WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
     `, [symbol]);
@@ -274,9 +274,9 @@ export function calculateDynamicTPSL(symbol, entryPrice = null, atrRatio = null)
 
 // atr_at_entry 컬럼 1회 마이그레이션 (없는 경우 추가)
 let _atrColumnReady = false;
-function ensureAtrColumn() {
+async function ensureAtrColumn() {
   if (_atrColumnReady) return;
-  try { db.run('ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS atr_at_entry DOUBLE'); } catch { /* 이미 존재 */ }
+  try { await db.run('ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS atr_at_entry DOUBLE PRECISION'); } catch { /* 이미 존재 */ }
   _atrColumnReady = true;
 }
 
@@ -291,9 +291,9 @@ function ensureAtrColumn() {
  * @returns {Promise<{suggested_tp_pct, suggested_sl_pct, rr_ratio, win_rate, sample_size, regime, source}|null>}
  */
 export async function getDynamicRRByRegime(symbol, currentATR, minSamples = 5) {
-  ensureAtrColumn();
+  await ensureAtrColumn();
   try {
-    const allRows = db.query(`
+    const allRows = await db.query(`
       SELECT atr_at_entry, pnl_percent
       FROM trade_journal
       WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
@@ -366,7 +366,7 @@ export async function getDynamicRRWeighted(symbol, minSamples = 10) {
     const d30 = now - 30 * 24 * 3600 * 1000;
     const d60 = now - 60 * 24 * 3600 * 1000;
 
-    const rows = db.query(`
+    const rows = await db.query(`
       SELECT pnl_percent, created_at
       FROM trade_journal
       WHERE symbol = ? AND status = 'closed' AND exit_time IS NOT NULL
@@ -519,6 +519,7 @@ export async function evaluateSignal(signal, opts = {}) {
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
 
     // ── Phase 3: 동적 R/R 우선순위 체인 (레짐→가중→단순→ATR→고정) ──
+    await ensureAtrColumn();
     let _rrData = null;
     if (opts.atrRatio) {
       _rrData = await getDynamicRRByRegime(symbol, opts.atrRatio);
