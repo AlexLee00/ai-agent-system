@@ -220,7 +220,27 @@ async function analyzeRR() {
   console.log('   - 데이터가 20건+ 쌓이면 analyze-rr.js 재실행하여 재검토 권장');
   console.log('');
 
-  // ── 6. RAG 저장 ──────────────────────────────────────────────────────
+  // ── 6. 켈리 기준 포지션 사이징 (전체 실적 기반) ────────────────────
+  if (total >= 10 && currentRR !== 'N/A') {
+    const { calcKellyPosition } = await import('../team/nemesis.js');
+    const winRateFrac = wins / total;
+    const rrVal       = parseFloat(currentRR);
+    if (rrVal > 0) {
+      const fullKelly = calcKellyPosition(winRateFrac, rrVal, 'full');
+      const halfKelly = calcKellyPosition(winRateFrac, rrVal, 'half');
+      const kellyRec  = Math.floor(halfKelly * 10000); // $10,000 포트폴리오 기준
+      console.log('6. 켈리 기준 포지션 사이징');
+      console.log(`   승률: ${winRate}% | R/R: ${currentRR}`);
+      console.log(`   Full Kelly: ${(fullKelly * 100).toFixed(1)}% | Half Kelly (권장): ${(halfKelly * 100).toFixed(1)}%`);
+      console.log(`   → $10,000 포트폴리오 기준 권장 포지션: $${kellyRec} (Half Kelly)`);
+      if (halfKelly <= 0.01) {
+        console.log('   ⚠️ 켈리 음수/최소 — 현재 R/R로는 최소 포지션($10) 권장');
+      }
+      console.log('');
+    }
+  }
+
+  // ── 7. RAG 저장 (분석 결과 영구 기록) ────────────────────────────────
   try {
     await rag.initSchema();
     const ragSummary =
