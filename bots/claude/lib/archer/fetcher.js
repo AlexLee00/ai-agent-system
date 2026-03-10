@@ -32,7 +32,13 @@ function httpsGet(urlOrOpts, timeout = 8000) {
         : urlOrOpts,
       (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          resolve(httpsGet(res.headers.location, timeout));
+          // 상대경로 리다이렉트 → 절대 URL로 변환
+          let loc = res.headers.location;
+          if (loc.startsWith('/') && typeof urlOrOpts === 'string') {
+            const u = new URL(urlOrOpts);
+            loc = `${u.protocol}//${u.host}${loc}`;
+          }
+          resolve(httpsGet(loc, timeout));
           return;
         }
         let raw = '';
