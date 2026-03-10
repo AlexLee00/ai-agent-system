@@ -16,7 +16,7 @@ const GDRIVE_DIR    = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVE
 
 // ─── 텍스트 → HTML 변환 ──────────────────────────────────────────────
 
-function _contentToHtml(content, title) {
+function _contentToHtml(content, title, images = null) {
   // _THE_END_ 제거
   let text = content.replace(/_THE_END_\s*$/, '').trim();
 
@@ -83,6 +83,31 @@ function _contentToHtml(content, title) {
 
   const body = htmlLines.join('\n');
 
+  // 이미지 HTML 생성
+  const thumbImg = images?.thumb?.filename
+    ? `<div class="post-thumb"><img src="images/${images.thumb.filename}" alt="${title || ''}" loading="lazy"></div>`
+    : '';
+  const midImg = images?.mid?.filename
+    ? `<div class="post-mid-img"><img src="images/${images.mid.filename}" alt="${title || ''} 본문 이미지" loading="lazy"></div>`
+    : '';
+
+  // 본문 중간에 midImg 삽입 (전체 본문의 40% 위치 부근 <h2> 앞)
+  let finalBody = body;
+  if (midImg) {
+    const bodyParts = finalBody.split('<h2 class="section-title">');
+    // 두 번째 섹션 헤더 앞에 삽입 (없으면 본문 중간)
+    if (bodyParts.length >= 3) {
+      bodyParts[2] = midImg + '\n<h2 class="section-title">' + bodyParts[2];
+      finalBody = bodyParts[0] + '<h2 class="section-title">' + bodyParts.slice(1).join('<h2 class="section-title">');
+    } else if (bodyParts.length === 2) {
+      bodyParts[1] = midImg + '\n<h2 class="section-title">' + bodyParts[1];
+      finalBody = bodyParts[0] + bodyParts[1];
+    } else {
+      // 섹션 없으면 본문 끝에 추가
+      finalBody = body + '\n' + midImg;
+    }
+  }
+
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -101,22 +126,27 @@ function _contentToHtml(content, title) {
   .hashtags { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; }
   .hashtag { display: inline-block; background: #e8f0fe; color: #1a73e8; border-radius: 12px; padding: 2px 9px; margin: 2px 3px; font-size: 0.82rem; }
   .post-meta { color: #888; font-size: 0.82rem; margin-bottom: 20px; }
+  .post-thumb { margin: 0 0 24px; text-align: center; }
+  .post-thumb img { max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .post-mid-img { margin: 24px 0; text-align: center; }
+  .post-mid-img img { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.10); }
 </style>
 </head>
 <body>
 <h1 class="post-title">${title || ''}</h1>
-${body}
+${thumbImg}
+${finalBody}
 </body>
 </html>`;
 }
 
 /**
- * 포스팅을 마크다운 파일로 저장 + DB 기록
- * @param {{ title, content, category, postType, lectureNumber, charCount, hashtags }} postData
+ * 포스팅을 HTML 파일로 저장 + DB 기록
+ * @param {{ title, content, category, postType, lectureNumber, charCount, hashtags, images }} postData
  * @returns {{ filepath, postId, filename }}
  */
 async function publishToFile(postData) {
-  const { title, content, category, postType, lectureNumber, charCount, hashtags } = postData;
+  const { title, content, category, postType, lectureNumber, charCount, hashtags, images } = postData;
 
   // output 디렉토리 보장
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -126,8 +156,8 @@ async function publishToFile(postData) {
   const filename  = `${today}_${postType}_${safeTitle}.html`;
   const filepath  = path.join(OUTPUT_DIR, filename);
 
-  // HTML 변환
-  const htmlContent = _contentToHtml(content, title);
+  // HTML 변환 (이미지 포함)
+  const htmlContent = _contentToHtml(content, title, images);
 
   fs.writeFileSync(filepath, htmlContent, 'utf8');
 

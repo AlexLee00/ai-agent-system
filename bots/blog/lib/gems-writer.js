@@ -4,7 +4,7 @@
  * gems-writer.js (젬스 GEMS) — 일반 포스팅 작성
  *
  * IT 전략 컨설턴트 페르소나
- * 필수 7,000자 이상 (목표 8,500자)
+ * 필수 7,000자 이상 (목표 8,000자)
  * 모델: GPT-4o (OpenAI) 또는 Gemini Flash (분할생성)
  */
 
@@ -83,7 +83,7 @@ ${AI_AGENT_CONTEXT}
 ${GEO_RULES}
 
 [필수 작성 규칙]
-1. 총 글자수 7,000자 이상 (목표 8,500자) — 반드시 달성
+1. 총 글자수 7,000자 이상 (목표 8,000자) — 반드시 달성
 2. 샌드위치 화법:
    [일상 에피소드/흥미 유발] → [날카로운 공학적/뇌과학적 근거] → [실천 가능한 쉬운 결론]
 3. 어려운 용어 뒤에 반드시 일상적 비유 덧붙이기 (예: 작업 메모리는 책상 크기)
@@ -240,7 +240,7 @@ ${experienceBlock}${linkingBlock}
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
 ★★★ 글자수 요구사항 (반드시 준수) ★★★
-전체 최소 7,000자 (한국어 기준). 각 섹션별 최소 글자수:
+전체 최소 7,000자 이상 (목표 8,000자, 한국어 기준). 각 섹션별 최소 글자수:
 - [AI 스니펫 요약]: 150자
 - [이 글에서 배울 수 있는 것]: 목차 3~5개
 - [승호아빠 인사말]: 300자
@@ -284,10 +284,10 @@ ${_buildVariationBlock(sectionVariation)}
     }).catch(() => {});
   }
 
-  const MIN_CHARS_GENERAL = 4500;
+  const MIN_CHARS_GENERAL = 7500;
 
-  // ── Continue 이어쓰기: 글자수 부족 + _THE_END_ 없으면 2차 호출 ──
-  if (content.length < MIN_CHARS_GENERAL && !content.includes('_THE_END_')) {
+  // ── Continue 이어쓰기: 글자수 부족 시 2차 호출 (_THE_END_ 여부 무관) ──
+  if (content.length < MIN_CHARS_GENERAL) {
     console.log(`[젬스] 글자수 부족 (${content.length}자) — 이어쓰기 호출`);
 
     const continuePrompt = `[이전 작성 내용 — 절대 반복하지 말 것]\n${content}\n\n[지시] 위 내용이 끊긴 부분부터 이어서 작성하라. 앞 내용을 반복하지 말고 끊긴 지점부터 바로 이어서 쓰라. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
