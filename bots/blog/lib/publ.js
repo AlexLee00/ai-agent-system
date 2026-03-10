@@ -37,8 +37,11 @@ function _contentToHtml(content, title) {
       if (!line.includes('</pre>')) inPre = true;
       continue;
     }
-    if (line.startsWith('</pre>')) { inPre = false; htmlLines.push(line); continue; }
-    if (inPre) { htmlLines.push(line); continue; }
+    if (inPre) {
+      htmlLines.push(line);
+      if (line.includes('</pre>')) inPre = false;
+      continue;
+    }
 
     // 섹션 헤더: [섹션명] (뒤 공백/탭 허용)
     const secMatch = line.match(/^\[(.+)\]\s*$/);
@@ -67,7 +70,13 @@ function _contentToHtml(content, title) {
     // 일반 줄 — 인라인 강조 변환
     let l = line
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');   // 인라인 코드
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // 굵게
+      .replace(/`([^`]+)`/g, '<code>$1</code>');          // 인라인 코드
+
+    // 제목과 동일한 첫 줄 중복 스킵
+    const cleanTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+    const cleanLine  = line.replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+    if (cleanLine && cleanLine === cleanTitle && htmlLines.length < 5) continue;
 
     htmlLines.push(`<p>${l}</p>`);
   }
