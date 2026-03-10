@@ -16,13 +16,20 @@
 
 const maestro                                       = require('./maestro');
 const { generatePostImages }                        = require('./img-gen');
-const { createInstaContent }                        = require('./social');
+const { createInstaContent }                        = require('./star');
 const { getConfig }                                 = require('./daily-config');
 const {
-  getNextGeneralCategory, advanceGeneralCategory,
-  getNextLectureNumber,   advanceLectureNumber,
-  isSeriesComplete,       getLectureTitle,
+  advanceGeneralCategory,
+  advanceLectureNumber,
+  isSeriesComplete,
+  getLectureTitle,
+  getNextLectureNumber,
 }                                                   = require('./category-rotation');
+const {
+  getTodayContext,
+  updateScheduleStatus,
+}                                                   = require('./schedule');
+const { researchBook }                              = require('./book-research');
 const richer                                        = require('./richer');
 const { writeLecturePost, writeLecturePostChunked } = require('./pos-writer');
 const { writeGeneralPost, writeGeneralPostChunked } = require('./gems-writer');
@@ -93,7 +100,7 @@ function _buildRewriteGuide(aiRisk) {
 
 // ─── 강의 포스팅 ──────────────────────────────────────────────────────
 
-async function runLecturePost(researchData, traceCtx, preloaded = {}) {
+async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
   if (await isSeriesComplete()) {
     const msg = '⚠️ [블로그팀] Node.js 120강 완료!\n다음 시리즈를 선택해 주세요.\n추천: Python > TypeScript > React';
     console.log('[블로]', msg);
@@ -164,7 +171,23 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
       charCount:     post.charCount,
     });
 
+    // 스케줄 상태 업데이트
+    if (scheduleId) {
+      await updateScheduleStatus(scheduleId, 'published', published.postId);
+    }
+
     await advanceLectureNumber();
+
+    // ★ 강의 인스타 콘텐츠 (BLOG_INSTA_ENABLED=true 시)
+    let instaContent = null;
+    if (process.env.BLOG_INSTA_ENABLED === 'true') {
+      instaContent = await createInstaContent(post.content, postTitle, 'Node.js강의').catch(e => {
+        console.warn('[소셜] 강의 인스타 생성 실패 (무시):', e.message); return null;
+      });
+      if (instaContent) {
+        console.log(`[소셜] 강의 인스타 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
+      }
+    }
 
     await _emitEvent('post_completed', {
       type: 'lecture', number, title: lectureTitle, charCount: post.charCount,
@@ -172,9 +195,10 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
     });
 
     return {
-      type:      'lecture',
+      type:         'lecture',
       number,
-      title:     lectureTitle,
+      title:        lectureTitle,
+      instaContent: instaContent || null,
       charCount: post.charCount,
       quality:   quality.passed,
       aiRisk:    quality.aiRisk,
@@ -186,8 +210,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
-  const { category } = preloaded.category ? preloaded : await getNextGeneralCategory();
+async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+  const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook    = category === '도서리뷰';
@@ -201,8 +225,34 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
   });
   console.log(`[블로] MessageEnvelope → 젬스 (${writeReq.message_id.slice(0, 8)})`);
 
-  // 도서리뷰는 별도 리서치
-  const data = needsBook ? await richer.research(category, true) : researchData;
+  // 도서리뷰: book-research.js로 실제 도서 정보 수집 (스케줄 도서 정보 우선)
+  let data = researchData;
+  if (needsBook) {
+    data = { ...researchData };
+    const scheduledBook = preloaded.bookInfo;
+    if (scheduledBook?.book_title) {
+      // 스케줄에 이미 도서 정보 있으면 그대로 사용
+      data.book_info = scheduledBook;
+      console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title}`);
+    } else {
+      // 없으면 book-research.js로 수집
+      try {
+        const book = await researchBook();
+        data.book_info = book;
+        // 스케줄에 도서 정보 저장 (다음 실행 시 재사용)
+        if (scheduleId && book?.title) {
+          const { updateBookInfo } = require('./schedule');
+          await updateBookInfo(scheduleId, {
+            book_title:  book.title,
+            book_author: book.author,
+            book_isbn:   book.isbn,
+          });
+        }
+      } catch (e) {
+        console.warn('[젬스] 도서 정보 수집 실패 (기본 진행):', e.message);
+      }
+    }
+  }
 
   // BLOG_LLM_MODEL=gemini → 분할생성 (무료), 기본=gpt4o
   const useChunked = (process.env.BLOG_LLM_MODEL === 'gemini');
@@ -252,6 +302,11 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
       charCount: post.charCount,
       images,
     });
+
+    // 스케줄 상태 업데이트
+    if (scheduleId) {
+      await updateScheduleStatus(scheduleId, 'published', published.postId);
+    }
 
     await advanceGeneralCategory();
 
@@ -315,26 +370,35 @@ async function run() {
   const popularPatterns = await getPopularPatterns();
   if (popularPatterns) researchData.popularPatterns = popularPatterns;
 
+  // 4. 스케줄 기반으로 오늘 작성 목록 결정 (publish_schedule 우선, 없으면 자동 생성)
+  const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = await getTodayContext();
+  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음'} / 일반: ${generalCtx?.category || '없음'}`);
+
   const results = [];
 
-  // 4. 강의 포스팅
-  for (let i = 0; i < (config.lecture_count || 0); i++) {
+  // 5. 강의 포스팅
+  if (lectureCtx && config.lecture_count > 0) {
     try {
-      // 강의 주제 미리 파악하여 RAG 사례 검색
-      const { number, seriesName } = await getNextLectureNumber();
-      const lectureTitle = await getLectureTitle(number, seriesName) || `제${number}강`;
-      const [realExperiences, relatedPosts] = await Promise.all([
-        richer.searchRealExperiences(lectureTitle, 'lecture'),
-        richer.searchRelatedPosts(lectureTitle),
-      ]);
-      researchData.realExperiences = realExperiences;
-      researchData.relatedPosts    = relatedPosts;
+      if (await isSeriesComplete()) {
+        results.push({ type: 'lecture', skipped: true, reason: '시리즈 완료' });
+      } else {
+        const { number, seriesName, lectureTitle } = lectureCtx;
+        const [realExperiences, relatedPosts] = await Promise.all([
+          richer.searchRealExperiences(lectureTitle, 'lecture'),
+          richer.searchRelatedPosts(lectureTitle, number),
+        ]);
+        researchData.realExperiences = realExperiences;
+        researchData.relatedPosts    = relatedPosts;
 
-      const r = await runLecturePost(researchData, traceCtx, {
-        number, seriesName, lectureTitle,
-        sectionVariation: lectureVariations,
-      });
-      results.push(r);
+        // 스케줄 상태 → writing
+        if (lectureSchedule?.id) await updateScheduleStatus(lectureSchedule.id, 'writing');
+
+        const r = await runLecturePost(researchData, traceCtx, {
+          number, seriesName, lectureTitle,
+          sectionVariation: lectureVariations,
+        }, lectureSchedule?.id);
+        results.push(r);
+      }
     } catch (e) {
       console.error('[블로] 강의 포스팅 실패:', e.message);
       results.push({ type: 'lecture', error: e.message });
@@ -342,10 +406,10 @@ async function run() {
     }
   }
 
-  // 5. 일반 포스팅
-  for (let i = 0; i < (config.general_count || 0); i++) {
+  // 6. 일반 포스팅
+  if (generalCtx && config.general_count > 0) {
     try {
-      const { category } = await getNextGeneralCategory();
+      const { category, scheduleId, bookInfo } = generalCtx;
       const [realExperiences, relatedPosts] = await Promise.all([
         richer.searchRealExperiences(category, 'general'),
         richer.searchRelatedPosts(category),
@@ -353,10 +417,14 @@ async function run() {
       researchData.realExperiences = realExperiences;
       researchData.relatedPosts    = relatedPosts;
 
+      // 스케줄 상태 → writing
+      if (scheduleId) await updateScheduleStatus(scheduleId, 'writing');
+
       const r = await runGeneralPost(researchData, traceCtx, {
         category,
+        bookInfo,
         sectionVariation: generalVariations,
-      });
+      }, scheduleId);
       results.push(r);
     } catch (e) {
       console.error('[블로] 일반 포스팅 실패:', e.message);
