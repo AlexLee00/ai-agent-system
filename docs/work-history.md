@@ -4,6 +4,30 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### API 빌링 추적 + 아처 비용 트렌드 리포트 (2026-03-10)
+
+**덱스터 billing.js 체크 모듈 신규**
+- Anthropic Admin API (`GET /v1/organizations/costs`) + OpenAI Usage API 월간 실비용 수집
+- `claude.billing_snapshots` 테이블 자동 생성 (provider, date, cost_usd, UNIQUE(provider,date))
+- 예산 초과(100%)/경고(80%) + 일일 급등(전일 대비 N배) 감지
+- `dexter.js`에 `billing` 체크 모듈 등록
+
+**llm-keys.js 확장**
+- `getAnthropicAdminKey()`: `anthropic.admin_api_key` 또는 `ANTHROPIC_ADMIN_API_KEY` 환경변수
+- `getBillingBudget()`: 예산 설정 (anthropic $50 / openai $30 / total $80 / spike_threshold 3.0)
+
+**아처 비용 트렌드 리포트**
+- `analyzer.js`: `buildBillingTrendSection()` 추가 — 최근 7일 일별 비용 테이블 + 월간 소진율/예상 월말 비용
+- `reporter.js`: `buildMarkdownWithBilling()` 추가 — 아처 리포트에 💰 LLM 비용 트렌드 섹션 자동 삽입
+
+**config.yaml 업데이트**
+- `anthropic.admin_api_key` 필드 추가 (빈 값, 별도 설정 필요)
+- `billing` 섹션 추가: budget_anthropic/openai/total, spike_threshold
+
+**체크섬 갱신**: 35개 파일 갱신 (`bots/claude/.checksums.json`)
+
+---
+
 ### 스카팀 취소감지1 더블체크 + 블로팀 품질 강화 (2026-03-10)
 
 **스카팀 naver-monitor**
