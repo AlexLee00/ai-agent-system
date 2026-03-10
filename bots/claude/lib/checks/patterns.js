@@ -36,9 +36,10 @@ async function run() {
     for (const p of patterns) {
       const isError = p.cnt >= ERROR_THRESH;
       const status  = isError ? 'error' : 'warn';
-      // UTC → KST (+9h) 변환
-      const utcMs   = new Date(p.last_seen + 'Z').getTime();
-      const kstDate = new Date(utcMs + 9 * 60 * 60 * 1000).toISOString().slice(5, 16).replace('T', ' ');
+      // UTC → KST (+9h) 변환 (last_seen이 이미 Z 포함 가능)
+      const lastSeenStr = p.last_seen?.endsWith('Z') ? p.last_seen : (p.last_seen + 'Z');
+      const utcMs   = new Date(lastSeenStr).getTime();
+      const kstDate = isNaN(utcMs) ? '?' : new Date(utcMs + 9 * 60 * 60 * 1000).toISOString().slice(5, 16).replace('T', ' ');
       items.push({
         label:  `반복 [${p.check_name}] ${p.label}`,
         status,
@@ -52,9 +53,10 @@ async function run() {
 
   if (newErrors.length > 0) {
     for (const e of newErrors) {
-      // UTC → KST (+9h) 변환
-      const utcMs  = new Date(e.detected_at + 'Z').getTime();
-      const kstStr = new Date(utcMs + 9 * 60 * 60 * 1000).toISOString().slice(11, 16);
+      // UTC → KST (+9h) 변환 (detected_at이 이미 Z 포함 가능)
+      const detectedStr = e.detected_at?.endsWith('Z') ? e.detected_at : (e.detected_at + 'Z');
+      const utcMs  = new Date(detectedStr).getTime();
+      const kstStr = isNaN(utcMs) ? '?' : new Date(utcMs + 9 * 60 * 60 * 1000).toISOString().slice(11, 16);
       items.push({
         label:  `신규 감지 [${e.check_name}] ${e.label}`,
         status: 'warn',

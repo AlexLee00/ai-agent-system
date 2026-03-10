@@ -177,7 +177,7 @@ async function checkFalseCancellation(items) {
       JOIN reservations r
         ON ck.cancel_key = 'cancelid|' || r.id::text
       WHERE r.status = 'completed'
-        AND ck.cancelled_at > NOW() - INTERVAL '7 days'
+        AND ck.cancelled_at::timestamp > NOW() - INTERVAL '7 days'
       LIMIT 10
     `);
   } catch (e) {
