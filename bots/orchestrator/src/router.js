@@ -20,6 +20,15 @@ const pgPool        = require('../../../packages/core/lib/pg-pool');
 const shadowMode    = require('../../../packages/core/lib/shadow-mode');
 const llmGraduation = require('../../../packages/core/lib/llm-graduation');
 
+// 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
+let _curriculumPlanner = null;
+function _getCP() {
+  if (!_curriculumPlanner) {
+    try { _curriculumPlanner = require('../../blog/lib/curriculum-planner'); } catch { /* 미설치 */ }
+  }
+  return _curriculumPlanner;
+}
+
 // 허가된 chat_id (secrets에서 로드) — 개인 채팅 + 그룹 채팅 모두 허용
 let _allowedChatIds = null;
 function isAuthorized(chatId) {
@@ -1182,6 +1191,120 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       }
       await promoteToIntent(uText || pattern, toIntent, pattern || uText);
       return `✅ "${(uText || pattern).slice(0, 40)}" → ${toIntent} 학습 등록 완료\nnlp-learnings.json 업데이트됨 (5분 내 자동 반영)`;
+    }
+
+    // ── 블로그팀 커리큘럼 ─────────────────────────────────────────────
+
+    case 'curriculum_status': {
+      const cp = _getCP();
+      if (!cp) return '⚠️ curriculum-planner 모듈 없음 (blog 봇 미설치)';
+      try {
+        const [series, ending] = await Promise.all([
+          cp.getActiveSeries(),
+          cp.checkSeriesEndingSoon(),
+        ]);
+        if (!series) return '📚 활성 커리큘럼 시리즈 없음\n/curriculum_approve 로 새 시리즈 제안을 받으세요.';
+        const lines = [
+          `📚 커리큘럼 현황`,
+          `  시리즈: ${series.series_name}`,
+          `  전체: ${series.total_lectures}강`,
+          `  상태: ${series.status}`,
+          `  시작일: ${String(series.start_date).slice(0, 10)}`,
+        ];
+        if (ending?.needsPlanning) {
+          lines.push('');
+          lines.push(`⚠️ 잔여 ${ending.remainingLectures}강 — 차기 시리즈 제안 진행 중`);
+          lines.push('  /curriculum_approve 로 확인하세요.');
+        } else if (ending) {
+          lines.push(`  잔여: ${ending.remainingLectures}강`);
+        }
+        return lines.join('\n');
+      } catch (e) { return `⚠️ 커리큘럼 조회 오류: ${e.message}`; }
+    }
+
+    case 'curriculum_approve': {
+      const cp = _getCP();
+      if (!cp) return '⚠️ curriculum-planner 모듈 없음 (blog 봇 미설치)';
+
+      const input = (args.topic || msg.text || '').trim();
+      const num   = parseInt(input, 10);
+
+      // 숫자 1~3 회신: DB candidate 목록에서 선택
+      if (!isNaN(num) && num >= 1 && num <= 3) {
+        try {
+          const candidates = await pgPool.query('blog', `
+            SELECT id, series_name, total_lectures, proposed_at
+            FROM blog.curriculum_series
+            WHERE status = 'candidate'
+            ORDER BY proposed_at DESC
+            LIMIT 3
+          `);
+          if (!candidates || candidates.length === 0) {
+            return '⚠️ 승인할 커리큘럼 후보가 없습니다.\n블로그팀이 새 후보를 제안할 때까지 기다려 주세요.';
+          }
+          const chosen = candidates[num - 1];
+          if (!chosen) return `⚠️ ${num}번 후보가 없습니다. (후보 수: ${candidates.length})`;
+
+          await notify(`⏳ "${chosen.series_name}" 커리큘럼 생성 중... (최대 2분)`);
+          await cp.generateCurriculum(chosen.series_name, chosen.total_lectures || 100);
+          await cp.transitionSeries();
+
+          return [
+            `✅ 커리큘럼 생성 완료!`,
+            `  시리즈: ${chosen.series_name}`,
+            `  강의 수: ${chosen.total_lectures || 100}강`,
+            ``,
+            `내일부터 새 시리즈로 블로그 포스팅이 시작됩니다.`,
+          ].join('\n');
+        } catch (e) {
+          return `⚠️ 커리큘럼 생성 실패: ${e.message}`;
+        }
+      }
+
+      // 직접 주제명 입력: generateCurriculum 직접 호출
+      if (input && input.length > 2 && isNaN(num)) {
+        // "/curriculum_approve" 슬래시 자체만 왔을 때는 후보 목록 조회
+        const isSlashOnly = input === '/curriculum_approve';
+        if (!isSlashOnly) {
+          try {
+            await notify(`⏳ "${input}" 커리큘럼 생성 중... (최대 2분)`);
+            await cp.generateCurriculum(input, 100);
+            await cp.transitionSeries();
+            return [
+              `✅ "${input}" 커리큘럼 생성 완료!`,
+              `  강의 수: 100강`,
+              ``,
+              `내일부터 새 시리즈로 포스팅이 시작됩니다.`,
+            ].join('\n');
+          } catch (e) {
+            return `⚠️ 커리큘럼 생성 실패: ${e.message}`;
+          }
+        }
+      }
+
+      // 후보 목록 조회 (슬래시 단독 or 빈 입력)
+      try {
+        const candidates = await pgPool.query('blog', `
+          SELECT series_name, total_lectures, proposed_at
+          FROM blog.curriculum_series
+          WHERE status = 'candidate'
+          ORDER BY proposed_at DESC
+          LIMIT 3
+        `);
+        if (!candidates || candidates.length === 0) {
+          return '⚠️ 현재 승인 대기 중인 커리큘럼 후보가 없습니다.\n잔여 강의가 7강 이하가 되면 자동으로 제안이 전송됩니다.';
+        }
+        const lines = [`📚 승인 대기 커리큘럼 후보 (1~${candidates.length} 중 선택)`];
+        candidates.forEach((c, i) => {
+          lines.push(`  ${i + 1}. ${c.series_name} (${c.total_lectures || 100}강)`);
+        });
+        lines.push('');
+        lines.push('회신: 1, 2, 또는 3');
+        lines.push('또는 직접 주제 입력: /curriculum_approve Python기초_100');
+        return lines.join('\n');
+      } catch (e) {
+        return `⚠️ 후보 목록 조회 실패: ${e.message}`;
+      }
     }
 
     // ── 자유 대화 ─────────────────────────────────────────────────────

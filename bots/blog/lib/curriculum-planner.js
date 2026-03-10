@@ -72,14 +72,10 @@ async function checkSeriesEndingSoon() {
   let currentLecture = 0;
   try {
     const rotRow = await pgPool.query('blog', `
-      SELECT data FROM blog.category_rotation WHERE key = 'lecture_series' LIMIT 1
+      SELECT current_index FROM blog.category_rotation
+      WHERE rotation_type = 'lecture_series' LIMIT 1
     `);
-    if (rotRow[0]?.data) {
-      const data = typeof rotRow[0].data === 'string'
-        ? JSON.parse(rotRow[0].data)
-        : rotRow[0].data;
-      currentLecture = data.current_index ?? 0;
-    }
+    currentLecture = rotRow[0]?.current_index ?? 0;
   } catch { /* 무시 */ }
 
   const remaining = series.total_lectures - currentLecture;
@@ -316,10 +312,10 @@ async function generateCurriculum(topic, lectureCount = 100) {
   // DB 저장: 개별 강의
   for (const lec of parsed.curriculum) {
     await pgPool.run('blog', `
-      INSERT INTO blog.curriculum (series_id, lecture_number, lecture_title, section, keywords)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO blog.curriculum (series_id, series_name, lecture_number, title, section, keywords)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (series_id, lecture_number) DO NOTHING
-    `, [seriesId, lec.lecture, lec.title, lec.section || null, lec.keywords || []]);
+    `, [seriesId, topic, lec.lecture, lec.title, lec.section || null, lec.keywords || []]);
   }
 
   // candidate 상태 정리
@@ -382,14 +378,14 @@ async function transitionSeries() {
 async function getNextLectureTitle(seriesName, lectureNumber) {
   try {
     const rows = await pgPool.query('blog', `
-      SELECT c.lecture_title
+      SELECT c.title
       FROM blog.curriculum c
       JOIN blog.curriculum_series s ON c.series_id = s.id
       WHERE s.series_name = $1 AND c.lecture_number = $2
         AND s.status = 'active'
       LIMIT 1
     `, [seriesName, lectureNumber]);
-    return rows[0]?.lecture_title || null;
+    return rows[0]?.title || null;
   } catch { return null; }
 }
 
