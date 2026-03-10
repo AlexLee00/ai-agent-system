@@ -15,6 +15,7 @@
  */
 
 const maestro                                       = require('./maestro');
+const { generatePostImages }                        = require('./img-gen');
 const { getConfig }                                 = require('./daily-config');
 const {
   getNextGeneralCategory, advanceGeneralCategory,
@@ -152,8 +153,9 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
       }
     }
 
+    const postTitle = `[Node.js ${number}강] ${lectureTitle}`;
     const published = await publishToFile({
-      title:         `[Node.js ${number}강] ${lectureTitle}`,
+      title:         postTitle,
       content:       post.content,
       category:      'Node.js강의',
       postType:      'lecture',
@@ -225,12 +227,17 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
       }
     }
 
+    const genTitle = post.title || `[${category}] 오늘의 포스팅`;
+    const images = await generatePostImages({ title: genTitle, postType: 'general', category }).catch(e => {
+      console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
+    });
     const published = await publishToFile({
-      title:    post.title || `[${category}] 오늘의 포스팅`,
+      title:    genTitle,
       content:  post.content,
       category,
       postType: 'general',
       charCount: post.charCount,
+      images,
     });
 
     await advanceGeneralCategory();
