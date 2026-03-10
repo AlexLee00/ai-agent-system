@@ -379,8 +379,12 @@ ${_buildVariationBlock(sectionVariation)}
     fallbackUsed,
   };
 
-  // 캐시 저장 (TTL: 24시간)
-  await llmCache.setCache('blog', 'lecture_post', cacheKey, JSON.stringify(result), 'gpt-4o');
+  // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
+  if (content.length >= MIN_CHARS_LECTURE) {
+    await llmCache.setCache('blog', 'lecture_post', cacheKey, JSON.stringify(result), 'gpt-4o');
+  } else {
+    console.log(`[포스] 글자수 미달 (${content.length}자) — 캐시 저장 건너뜀`);
+  }
 
   return result;
 }

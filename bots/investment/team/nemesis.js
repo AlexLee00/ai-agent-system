@@ -43,9 +43,9 @@ function isDynamicTPSLEnabled() {
   return String(cfg.dynamic_tp_sl_enabled).toLowerCase() === 'true';
 }
 
-// ─── 시스템 프롬프트 (v2 — 보수화) ──────────────────────────────────
+// ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
 
-const NEMESIS_SYSTEM = `
+const NEMESIS_SYSTEM_CRYPTO = `
 당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다.
 
 핵심 가치: 수익 극대화가 아니라 손실 최소화.
@@ -67,9 +67,38 @@ ADJUST 조건:
 {"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
 `.trim();
 
-// ─── 하드 규칙 (v1) ─────────────────────────────────────────────────
+const NEMESIS_SYSTEM_STOCK = `
+당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다. (국내/해외 주식 — 공격적 모드)
 
-export const RULES = {
+핵심 가치: 기본적으로 APPROVE. 명백한 위험만 차단한다.
+소규모 신호($200 이하)는 자동 APPROVE. 심각한 위험만 REJECT.
+
+REJECT 조건 (명백한 위험만):
+1. 리스크 점수 9 이상 (극도의 위험만)
+2. 확신도(confidence) 0.25 미만 (매우 낮은 확신도만)
+3. 포지션 한도(5개) 도달 + 신규 BUY 신호
+
+APPROVE 우선 원칙:
+- 소규모 신호($200 이하): 별도 검토 없이 자동 APPROVE
+- 리스크 점수 9 미만: 기본 APPROVE
+- 분할 진입 권장: 큰 금액은 절반으로 나눠 ADJUST
+
+ADJUST 조건:
+- 포지션 크기 30% 초과 → 30%로 축소
+- 동일 종목 이미 보유 → 추가 매수 금액 50% 축소
+
+응답 형식 (JSON만, 다른 텍스트 없이):
+{"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
+`.trim();
+
+function getNemesisSystem(exchange) {
+  if (exchange === 'kis' || exchange === 'kis_overseas') return NEMESIS_SYSTEM_STOCK;
+  return NEMESIS_SYSTEM_CRYPTO;
+}
+
+// ─── 하드 규칙 (마켓별 분기) ─────────────────────────────────────────
+
+const RULES_CRYPTO = {
   MAX_SINGLE_POSITION_PCT: 0.20,  // 단일 포지션 최대 20%
   MAX_DAILY_LOSS_PCT:      0.05,  // 일일 손실 한도 5%
   MAX_OPEN_POSITIONS:      5,     // 최대 동시 포지션
@@ -77,6 +106,23 @@ export const RULES = {
   MIN_ORDER_USDT:          10,    // 최소 주문 $10
   MAX_ORDER_USDT:          1000,  // 최대 주문 $1000
 };
+
+const RULES_STOCK = {
+  MAX_SINGLE_POSITION_PCT: 0.30,  // 단일 포지션 최대 30% (공격적)
+  MAX_DAILY_LOSS_PCT:      0.10,  // 일일 손실 한도 10% (공격적)
+  MAX_OPEN_POSITIONS:      5,     // 최대 동시 포지션
+  STOP_LOSS_PCT:           0.05,  // 손절 5%
+  MIN_ORDER_USDT:          10,    // 최소 주문 $10
+  MAX_ORDER_USDT:          2000,  // 최대 주문 $2000 (공격적)
+};
+
+// 하위 호환성 — 암호화폐 기본값
+export const RULES = RULES_CRYPTO;
+
+function getRules(exchange) {
+  if (exchange === 'kis' || exchange === 'kis_overseas') return RULES_STOCK;
+  return RULES_CRYPTO;
+}
 
 // ─── v2: 변동성 조정 ────────────────────────────────────────────────
 
@@ -117,7 +163,8 @@ function calcTimeFactor() {
 
 // ─── v2: LLM 리스크 평가 ────────────────────────────────────────────
 
-async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount }) {
+async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange }) {
+  const rules  = getRules(exchange);
   const userMsg = [
     `신호: ${signal.symbol} ${signal.action} $${adjustedAmount}`,
     `확신도: ${((signal.confidence || 0) * 100).toFixed(0)}%`,
@@ -125,13 +172,13 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     ``,
     `포트폴리오:`,
     `  오늘 P&L: ${(todayPnl?.pnl || 0) >= 0 ? '+' : ''}$${(todayPnl?.pnl || 0).toFixed(2)}`,
-    `  현재 포지션: ${positionCount}/${RULES.MAX_OPEN_POSITIONS}개`,
+    `  현재 포지션: ${positionCount}/${rules.MAX_OPEN_POSITIONS}개`,
     `  조정 계수: vol×${volFactor.toFixed(2)} | corr×${corrFactor.toFixed(2)} | time×${timeFactor.toFixed(2)}`,
     ``,
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callLLM('nemesis', NEMESIS_SYSTEM, userMsg, 256);
+  const raw    = await callLLM('nemesis', getNemesisSystem(exchange), userMsg, 256);
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };
@@ -446,29 +493,30 @@ export async function evaluateSignal(signal, opts = {}) {
   let amountUsdt   = signal.amount_usdt || 100;
   const totalUsdt  = opts.totalUsdt || 10000;
   const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
+  const rules      = getRules(signal.exchange);
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
-    if (amountUsdt < RULES.MIN_ORDER_USDT) {
-      const reason = `최소 주문 미달 ($${amountUsdt} < $${RULES.MIN_ORDER_USDT})`;
+    if (amountUsdt < rules.MIN_ORDER_USDT) {
+      const reason = `최소 주문 미달 ($${amountUsdt} < $${rules.MIN_ORDER_USDT})`;
       await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
       await notifyRiskRejection({ symbol, action, reason });
       return { approved: false, reason };
     }
-    if (amountUsdt > RULES.MAX_ORDER_USDT) {
-      amountUsdt = RULES.MAX_ORDER_USDT;
+    if (amountUsdt > rules.MAX_ORDER_USDT) {
+      amountUsdt = rules.MAX_ORDER_USDT;
       console.log(`  📐 [네메시스] 최대 주문 초과 → $${amountUsdt} 로 조정`);
     }
     const pct = amountUsdt / totalUsdt;
-    if (pct > RULES.MAX_SINGLE_POSITION_PCT) {
-      amountUsdt = Math.floor(totalUsdt * RULES.MAX_SINGLE_POSITION_PCT);
-      console.log(`  📐 [네메시스] 포지션 한도 조정 → $${amountUsdt} (20%)`);
+    if (pct > rules.MAX_SINGLE_POSITION_PCT) {
+      amountUsdt = Math.floor(totalUsdt * rules.MAX_SINGLE_POSITION_PCT);
+      console.log(`  📐 [네메시스] 포지션 한도 조정 → $${amountUsdt} (${(rules.MAX_SINGLE_POSITION_PCT * 100).toFixed(0)}%)`);
     }
   }
 
   const todayPnl = await db.getTodayPnl();
   const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
-  if (lossPct >= RULES.MAX_DAILY_LOSS_PCT) {
+  if (lossPct >= rules.MAX_DAILY_LOSS_PCT) {
     const reason = `일일 손실 한도 초과 (${(lossPct * 100).toFixed(1)}%)`;
     await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
     await notifyRiskRejection({ symbol, action, reason });
@@ -479,8 +527,8 @@ export async function evaluateSignal(signal, opts = {}) {
   if (action === ACTIONS.BUY) {
     const positions = await db.getAllPositions();
     positionCount   = positions.length;
-    if (positionCount >= RULES.MAX_OPEN_POSITIONS) {
-      const reason = `최대 포지션 초과 (${positionCount}/${RULES.MAX_OPEN_POSITIONS})`;
+    if (positionCount >= rules.MAX_OPEN_POSITIONS) {
+      const reason = `최대 포지션 초과 (${positionCount}/${rules.MAX_OPEN_POSITIONS})`;
       await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
       await notifyRiskRejection({ symbol, action, reason });
       return { approved: false, reason };
@@ -499,11 +547,11 @@ export async function evaluateSignal(signal, opts = {}) {
 
     if (combinedFact < 1.0) {
       const prev = amountUsdt;
-      amountUsdt = Math.max(RULES.MIN_ORDER_USDT, Math.floor(amountUsdt * combinedFact));
+      amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(amountUsdt * combinedFact));
       console.log(`  📐 [네메시스] 금액 조정: $${prev} → $${amountUsdt} (vol×${volFactor} corr×${corrFactor} time×${timeFactor})`);
     }
 
-    const llm = await evaluateWithLLM({ signal, adjustedAmount: amountUsdt, volFactor, corrFactor, timeFactor, todayPnl, positionCount });
+    const llm = await evaluateWithLLM({ signal, adjustedAmount: amountUsdt, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange: signal.exchange });
     console.log(`  🤖 [네메시스 LLM] ${llm.decision}: ${llm.reasoning}`);
 
     if (llm.decision === 'REJECT') {
@@ -513,7 +561,7 @@ export async function evaluateSignal(signal, opts = {}) {
       return { approved: false, reason: llm.reasoning };
     }
     if (llm.decision === 'ADJUST' && llm.adjusted_amount) {
-      amountUsdt = Math.max(RULES.MIN_ORDER_USDT, Math.floor(llm.adjusted_amount));
+      amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(llm.adjusted_amount));
     }
 
     await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
@@ -537,7 +585,7 @@ export async function evaluateSignal(signal, opts = {}) {
     // 켈리 포지션 사이징 (실적 데이터 기반 R/R 있을 때만)
     if (_rrData) {
       const kellyPct    = calcKellyPosition(parseFloat(_rrData.win_rate) / 100, parseFloat(_rrData.rr_ratio), 'half');
-      const kellyAmount = Math.max(RULES.MIN_ORDER_USDT, Math.floor(totalUsdt * kellyPct));
+      const kellyAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(totalUsdt * kellyPct));
       if (kellyAmount < amountUsdt) {
         console.log(`  📐 [네메시스 켈리] $${amountUsdt} → $${kellyAmount} (Half Kelly ${(kellyPct * 100).toFixed(1)}%, R/R ${_rrData.rr_ratio}, 승률 ${_rrData.win_rate}%)`);
         amountUsdt = kellyAmount;
