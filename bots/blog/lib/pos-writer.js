@@ -205,6 +205,18 @@ function _buildVariationBlock(variation = {}) {
     lines.push(`카페 홍보 위치: ${cPos[variation.cafePosition] || '기본 위치'}`);
   }
 
+  // ★ 보너스 인사이트 지시
+  if (variation.bonusInsights?.length > 0) {
+    lines.push('');
+    lines.push(`★ 보너스 인사이트 ${variation.bonusInsights.length}개 추가 작성 (총 인사이트 ${variation.totalInsights || 4 + variation.bonusInsights.length}개):`);
+    variation.bonusInsights.forEach((bonus, i) => {
+      lines.push(`  ${i + 1}. ${bonus.title} — ${bonus.instruction}`);
+      lines.push(`     삽입 위치: ${bonus.insertAfter} 뒤에 배치`);
+    });
+    lines.push('  위 보너스 섹션을 기존 인사이트 사이에 자연스럽게 삽입하라.');
+    lines.push('  기존 인사이트 ①②③④의 글자수는 줄이지 말 것 — 보너스는 순수 추가분이다.');
+  }
+
   return '\n' + lines.join('\n') + '\n';
 }
 
@@ -244,9 +256,15 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
       `\n중요: "제가 실제로 운영하는 ai-agent-system에서 겪은 경험"으로 풀어서 설명하라.\n`
     : '';
 
-  // 내부 링킹 블록
+  // 내부 링킹 블록 (Phase 1: 제목만 + "← 여기에 링크 삽입" 안내)
   const linkingBlock = relatedPosts.length > 0
-    ? `\n[내부 링킹 — 본문 중 1~2회 과거 포스팅 언급, 결론 하단 "함께 읽으면 좋은 글" 3개 추천]\n` +
+    ? `\n[내부 링킹 — 이전 포스팅 제목만 표시]\n` +
+      `★ 중요: "함께 읽으면 좋은 글"에는 반드시 이미 발행된 과거 포스팅만 추천하라.\n` +
+      `현재 강의 번호(${lectureNumber}강)보다 앞선 강의만 포함.\n` +
+      `아직 작성되지 않은 미래 강의(${lectureNumber + 1}강 이상)의 제목을 절대 넣지 말라.\n\n` +
+      `각 추천 글은 아래 형식으로 작성하라:\n` +
+      `  → [제목] ← 여기에 링크 삽입\n\n` +
+      `참고 가능한 과거 포스팅 목록:\n` +
       relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n') + '\n'
     : '';
 

@@ -132,6 +132,8 @@ async function saveExecutionHistory(date, postType, pipeline, variations) {
  * @returns {object} sectionVariation
  */
 function buildDynamicVariation(postType, history) {
+  const { selectBonusInsights } = require('./bonus-insights');
+
   // 최근 이력에서 사용된 스타일 추출
   const usedGreetings  = new Set(history.map(h => h.variations?.greetingStyle).filter(Boolean));
   const usedCafePos    = new Set(history.map(h => h.variations?.cafePosition).filter(Boolean));
@@ -147,6 +149,11 @@ function buildDynamicVariation(postType, history) {
     ? _pick(availableCafePos)
     : _pick(CAFE_POSITIONS);
 
+  // 보너스 인사이트 선택 (0~2개, 최근 이력 중복 회피)
+  const botType        = postType === 'lecture' ? 'pos' : 'gems';
+  const recentBonusIds = history.flatMap(h => (h.variations?.bonusInsights || []).map(b => b.id));
+  const bonusInsights  = selectBonusInsights(botType, recentBonusIds);
+
   const variation = {
     greetingStyle,
     faqCount:       _randInt(3, 6),
@@ -155,11 +162,13 @@ function buildDynamicVariation(postType, history) {
     includeInsta:   Math.random() < 0.4,  // 40% 확률
     imageCount:     _randInt(0, 5),
     cafePosition,
+    bonusInsights,                         // ★ 0~2개 보너스 인사이트
+    totalInsights:  4 + bonusInsights.length,  // ★ 4~6개
   };
 
   if (postType === 'lecture') {
     // 강의 전용 변형
-    variation.insightCount  = _randInt(2, 5);
+    variation.insightCount   = _randInt(2, 5);
     variation.codeBlockCount = _randInt(2, 5);
   } else {
     // 일반 전용 변형

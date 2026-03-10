@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * bots/blog/lib/social.js — 소셜(SOCIAL) 봇
+ * bots/blog/lib/star.js — 스타(STAR) 봇
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (gpt-4o-mini, OpenAI)

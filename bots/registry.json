@@ -423,7 +423,16 @@
       "role": "team_lead",
       "description": "블로그팀 팀장 — 오케스트레이션 + 품질 검증 + trace/State Bus",
       "status": "ops",
-      "contextPath": "bots/blog/lib/blo.js"
+      "contextPath": "bots/blog/lib/blo.js",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     },
     "blog-richer": {
       "name": "리처",
@@ -431,7 +440,16 @@
       "role": "researcher",
       "description": "정보 수집 — IT뉴스/Node.js/날씨/RAG 실전 사례/관련 포스팅",
       "status": "ops",
-      "contextPath": "bots/blog/lib/richer.js"
+      "contextPath": "bots/blog/lib/richer.js",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     },
     "blog-pos": {
       "name": "포스",
@@ -439,7 +457,16 @@
       "role": "writer",
       "description": "강의 포스팅 작성 — 시니어 백엔드 아키텍트 페르소나 (GPT-4o, 8000자+)",
       "status": "ops",
-      "contextPath": "bots/blog/lib/pos-writer.js"
+      "contextPath": "bots/blog/lib/pos-writer.js",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     },
     "blog-gems": {
       "name": "젬스",
@@ -447,7 +474,16 @@
       "role": "writer",
       "description": "일반 포스팅 작성 — IT 전략 컨설턴트 페르소나 (GPT-4o, 7000자+)",
       "status": "ops",
-      "contextPath": "bots/blog/lib/gems-writer.js"
+      "contextPath": "bots/blog/lib/gems-writer.js",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     },
     "blog-publ": {
       "name": "퍼블",
@@ -455,17 +491,35 @@
       "role": "publisher",
       "description": "포스팅 파일 생성 + DB 기록 + RAG 저장 + 발행 이력 추적",
       "status": "ops",
-      "contextPath": "bots/blog/lib/publ.js"
+      "contextPath": "bots/blog/lib/publ.js",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     },
-    "blog-social": {
-      "name": "소셜",
+    "blog-star": {
+      "name": "스타",
       "team": "blog",
       "role": "insta_cross_posting",
-      "description": "인스타 크로스 포스팅 — 블로그 1편 → 카드 3장(Imagen) + 캡션 + 해시태그 자동 생성",
+      "description": "인스타 크로스 포스팅 — 블로그 1편→인스타 카드+캡션+해시태그",
       "status": "ops",
-      "contextPath": "bots/blog/lib/social.js",
+      "contextPath": "bots/blog/lib/star.js",
       "trigger": "BLOG_INSTA_ENABLED=true 환경변수 활성화 시 일반 포스팅 파이프라인에서 자동 실행",
-      "cost": "카드 3장 기준 ~$0.09/편 (Imagen $0.03/장, Gemini Flash 무료)"
+      "cost": "카드 3장 기준 ~$0.09/편 (Imagen $0.03/장, Gemini Flash 무료)",
+      "deployTargets": [
+        {
+          "type": "claude-code",
+          "loginType": "account",
+          "workspace": "~/.claude/projects/-Users-alexlee/memory",
+          "memoryFile": "MEMORY.md",
+          "files": []
+        }
+      ]
     }
   },
   "loaderTypes": {

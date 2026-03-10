@@ -137,6 +137,37 @@ ${GEO_RULES}
 각 섹션은 [섹션명] 형태로 구분하라.
 `.trim();
 
+// ─── 도서리뷰 특별 프롬프트 블록 ─────────────────────────────────────
+
+/**
+ * 도서리뷰 카테고리 전용 추가 지시 블록
+ * @param {object} bookInfo — researchBook() 결과
+ * @returns {string}
+ */
+function _buildBookReviewBlock(bookInfo) {
+  if (!bookInfo?.title) return '';
+
+  return `
+[도서리뷰 전용 지시 — 반드시 준수]
+리뷰할 도서:
+- 제목: ${bookInfo.title}
+- 저자: ${bookInfo.author || ''}
+- 출판사: ${bookInfo.publisher || ''}
+- 출판일: ${bookInfo.pubDate || ''}
+- ISBN: ${bookInfo.isbn || ''}
+${bookInfo.description ? `- 소개: ${bookInfo.description.slice(0, 300)}` : ''}
+
+도서리뷰 작성 규칙:
+1. 위 도서를 실제로 읽은 독자(승호아빠) 입장에서 리뷰하라.
+2. [본론 섹션 1]: 책 소개 + 저자 소개 + 읽게 된 계기 (1,500자 이상)
+3. [본론 섹션 2]: 핵심 내용 3가지 챕터 요약 + 인상 깊은 구절 직접 인용 (1,500자 이상)
+4. [본론 섹션 3]: ai-agent-system 개발에 어떻게 적용했는지 실전 연결 (1,500자 이상)
+5. 평점: 별점(★★★★☆ 형식) + 200자 총평 포함
+6. "이런 분께 추천": 독자 대상 3가지 구체적으로 명시
+7. 표지 이미지는 별도 삽입 예정이므로 "[도서 표지 이미지]" 텍스트 자리표시자 삽입
+`.trim();
+}
+
 // ─── sectionVariation 지시 블록 생성 ────────────────────────────────
 
 /**
@@ -183,6 +214,18 @@ function _buildVariationBlock(variation = {}) {
     lines.push(`카페 홍보 위치: ${cPos[variation.cafePosition] || '기본 위치'}`);
   }
 
+  // ★ 보너스 인사이트 지시
+  if (variation.bonusInsights?.length > 0) {
+    lines.push('');
+    lines.push(`★ 보너스 인사이트 ${variation.bonusInsights.length}개 추가 작성 (총 인사이트 ${variation.totalInsights || 4 + variation.bonusInsights.length}개):`);
+    variation.bonusInsights.forEach((bonus, i) => {
+      lines.push(`  ${i + 1}. ${bonus.title} — ${bonus.instruction}`);
+      lines.push(`     삽입 위치: ${bonus.insertAfter} 뒤에 배치`);
+    });
+    lines.push('  위 보너스 섹션을 기존 인사이트 사이에 자연스럽게 삽입하라.');
+    lines.push('  기존 인사이트 ①②③④의 글자수는 줄이지 말 것 — 보너스는 순수 추가분이다.');
+  }
+
   return '\n' + lines.join('\n') + '\n';
 }
 
@@ -218,10 +261,19 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
       `\n예) "얼마 전 제가 운영하는 시스템에서 예상치 못한 오류가 발생했습니다..."\n`
     : '';
 
+  // 내부 링킹 블록 (Phase 1: 제목만 + "← 여기에 링크 삽입" 안내)
   const linkingBlock = relatedPosts.length > 0
-    ? `\n[내부 링킹 — 결론 하단 "함께 읽으면 좋은 글" 3개 추천]\n` +
+    ? `\n[내부 링킹 — 이전 포스팅 제목만 표시]\n` +
+      `★ 이미 발행된 과거 포스팅만 추천. 미래 포스팅 절대 금지.\n` +
+      `각 추천 글 형식: → [제목] ← 여기에 링크 삽입\n\n` +
+      `참고 가능한 과거 포스팅 목록:\n` +
       relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n') + '\n'
     : '';
+
+  // 도서리뷰 특별 블록
+  const bookReviewBlock = category === '도서리뷰'
+    ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
+    : (researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}\n` : '');
 
   const userPrompt = `
 다음 일반 포스팅을 작성하라:
@@ -234,8 +286,7 @@ ${weatherContext}
 [최신 IT 뉴스 (서론에 활용 — 상위 3개 선택)]
 ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 
-${researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}` : ''}
-${experienceBlock}${linkingBlock}
+${bookReviewBlock}${experienceBlock}${linkingBlock}
 카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
@@ -356,21 +407,29 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
       `\n예) "얼마 전 제가 운영하는 시스템에서 예상치 못한 오류가 발생했습니다..."\n`
     : '';
 
+  // 내부 링킹 블록 (Phase 1: 제목만 + "← 여기에 링크 삽입" 안내)
   const linkingBlock = relatedPosts.length > 0
-    ? `\n[내부 링킹 — 결론 하단 "함께 읽으면 좋은 글" 3개 추천]\n` +
+    ? `\n[내부 링킹 — 이전 포스팅 제목만 표시]\n` +
+      `★ 이미 발행된 과거 포스팅만 추천. 미래 포스팅 절대 금지.\n` +
+      `각 추천 글 형식: → [제목] ← 여기에 링크 삽입\n\n` +
+      `참고 가능한 과거 포스팅 목록:\n` +
       relatedPosts.map((p, i) => `${i + 1}. ${p.title} — ${p.summary}`).join('\n') + '\n'
     : '';
 
   const newsBlock = itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n')
     || '- 최신 IT 트렌드를 자체 지식으로 언급하라';
 
+  // 도서리뷰 특별 블록 (청크 버전)
+  const bookReviewBlock = category === '도서리뷰'
+    ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
+    : (researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}\n` : '');
+
   const baseCtx = `
 [카테고리] ${category}
 [발행일] ${today}
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${newsBlock}
-${researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}` : ''}
-${experienceBlock}`.trim();
+${bookReviewBlock}${experienceBlock}`.trim();
 
   const chunks = [
     {

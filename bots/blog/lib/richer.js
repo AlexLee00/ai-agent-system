@@ -208,20 +208,34 @@ async function searchRealExperiences(topic, postType = 'lecture') {
 /**
  * RAG에서 현재 포스팅 주제와 관련된 과거 포스팅 검색 (내부 링킹용)
  */
-async function searchRelatedPosts(topic) {
+/**
+ * @param {string} topic
+ * @param {number|null} [currentLectureNum] — 강의 포스팅이면 현재 강의 번호 (과거만 필터)
+ */
+async function searchRelatedPosts(topic, currentLectureNum = null) {
   try {
     await rag.initSchema();
     const hits = await rag.search('blog', topic, { limit: 5, threshold: 0.5 });
     if (!hits?.length) return [];
 
-    return hits
+    let filtered = hits
       .filter(h => h.content && !h.content.includes(topic.slice(0, 15)))
-      .slice(0, 3)
+      .slice(0, 5)
       .map(h => ({
-        title:   h.content?.match(/\[.*?\]\s*(.*)/)?.[1]?.slice(0, 60) || '관련 포스팅',
-        summary: h.content?.slice(0, 120),
-        meta:    h.metadata,
+        title:         h.content?.match(/\[.*?\]\s*(.*)/)?.[1]?.slice(0, 60) || '관련 포스팅',
+        summary:       h.content?.slice(0, 120),
+        meta:          h.metadata,
+        lectureNumber: h.metadata?.lecture_number ? Number(h.metadata.lecture_number) : null,
       }));
+
+    // 강의 포스팅이면 현재 강의 번호보다 앞선 것만 (미래 포스팅 404 방지)
+    if (currentLectureNum) {
+      filtered = filtered.filter(p =>
+        !p.lectureNumber || p.lectureNumber < currentLectureNum
+      );
+    }
+
+    return filtered.slice(0, 3);
   } catch (e) {
     console.warn('[리처] 관련 포스팅 검색 실패:', e.message);
     return [];

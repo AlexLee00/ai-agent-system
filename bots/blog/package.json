@@ -12,6 +12,7 @@
   "dependencies": {
     "@ai-agent/core": "*",
     "express": "^4.22.1",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "sharp": "^0.34.5"
   }
 }
