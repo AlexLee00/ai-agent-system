@@ -29,6 +29,7 @@
 
 const { getAnthropicKey, getOpenAIKey, getGeminiKey, getGroqAccounts } = require('./llm-keys');
 const { logLLMCall } = require('./llm-logger');
+const billingGuard = require('./billing-guard');
 
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
@@ -187,6 +188,11 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
 async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} }) {
+  // ★ 긴급 차단 체크
+  if (billingGuard.isBlocked()) {
+    const r = billingGuard.getBlockReason();
+    throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
+  }
   if (!chain || chain.length === 0) throw new Error('폴백 체인이 비어 있음');
 
   let lastError;

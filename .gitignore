@@ -55,3 +55,4 @@ bots/investment/config.yaml
 RC_CONTEXT.md
 bots/worker/secrets.json
 bots/blog/output/
+.llm-emergency-stop

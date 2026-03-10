@@ -29,6 +29,13 @@ try {
   // 오케스트레이터 모듈 없는 환경에서는 무음 처리
 }
 
+// CJS billing-guard (긴급 차단)
+let _billingGuard = null;
+try {
+  const require = createRequire(import.meta.url);
+  _billingGuard = require('../../../packages/core/lib/billing-guard');
+} catch { /* 무음 처리 */ }
+
 // CJS 통합 로거 (packages/core 공용)
 let _logLLMCall = null;
 try {
@@ -155,6 +162,11 @@ export function parseJSON(text) {
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
+  // ★ 긴급 차단 체크
+  if (_billingGuard?.isBlocked()) {
+    const r = _billingGuard.getBlockReason();
+    throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
+  }
   // 성능 우선 에이전트 → 멀티 모델 경쟁 (활성) 또는 OpenAI gpt-4o (비활성)
   if (OPENAI_AGENTS.has(agentName)) {
     return DUAL_MODEL

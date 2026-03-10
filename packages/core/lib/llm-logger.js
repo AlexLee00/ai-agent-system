@@ -12,7 +12,16 @@
  *   logger.logLLMCall({ team: 'ska', bot: 'ska', model: 'groq/llama-4-scout', ... });
  */
 
-const pgPool = require('./pg-pool');
+const pgPool        = require('./pg-pool');
+const billingGuard  = require('./billing-guard');
+
+// ── 긴급 차단 한도 ─────────────────────────────────────────────────────
+const EMERGENCY_LIMITS = {
+  daily:      parseFloat(process.env.BILLING_LIMIT_DAILY    || '10'),
+  hourly:     parseFloat(process.env.BILLING_LIMIT_HOURLY   || '3'),
+  perCall:    parseFloat(process.env.BILLING_LIMIT_PER_CALL || '1'),
+  spikeRatio: parseFloat(process.env.BILLING_SPIKE_RATIO    || '5'),
+};
 
 // ── 스키마 초기화 플래그 ───────────────────────────────────────────────
 let _initialized = false;
@@ -138,9 +147,88 @@ async function logLLMCall({
       cacheHit ? 1 : 0, latencyMs,
       success ? 1 : 0, errorMsg, now,
     ]);
+
+    // ★ 실시간 긴급 한도 체크 (성공 호출 + 비용 있을 때만, 비동기)
+    if (success && cost > 0) {
+      _checkEmergencyLimits(cost).catch(() => {});
+    }
   } catch (e) {
     console.warn(`[llm-logger] 기록 실패 (${bot}): ${e.message}`);
   }
+}
+
+// ── 긴급 한도 체크 ────────────────────────────────────────────────────
+
+async function _checkEmergencyLimits(cost) {
+  if (billingGuard.isBlocked()) return;
+
+  try {
+    // 단건 한도
+    if (cost > EMERGENCY_LIMITS.perCall) {
+      return _triggerEmergency(`단건 $${cost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.perCall}`, cost);
+    }
+
+    // 시간당 누적
+    const hrRow = await pgPool.get('reservation',
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at > NOW() - INTERVAL '1 hour'`
+    );
+    const hourlyCost = parseFloat(hrRow?.t || 0);
+    if (hourlyCost > EMERGENCY_LIMITS.hourly) {
+      return _triggerEmergency(`시간당 $${hourlyCost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.hourly}`, hourlyCost);
+    }
+
+    // 일일 누적
+    const dyRow = await pgPool.get('reservation',
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::date = CURRENT_DATE`
+    );
+    const dailyCost = parseFloat(dyRow?.t || 0);
+    if (dailyCost > EMERGENCY_LIMITS.daily) {
+      return _triggerEmergency(`일일 $${dailyCost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.daily}`, dailyCost);
+    }
+
+    // 10분 급등 (직전 10분 vs 그 이전 10분)
+    const r10 = await pgPool.get('reservation',
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at > NOW() - INTERVAL '10 minutes'`
+    );
+    const p10 = await pgPool.get('reservation',
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+       WHERE created_at BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`
+    );
+    const recent = parseFloat(r10?.t || 0);
+    const prev   = parseFloat(p10?.t || 0);
+    if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
+      _triggerEmergency(`10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent);
+    }
+  } catch (e) {
+    console.warn(`[llm-logger] 긴급 한도 체크 실패 (무시): ${e.message}`);
+  }
+}
+
+function _triggerEmergency(reason, cost) {
+  billingGuard.activate(reason, cost, 'llm-logger');
+
+  // 텔레그램 CRITICAL 알림 (실패해도 차단 유지)
+  try {
+    const mainbotClient = require('../../bots/claude/lib/mainbot-client');
+    const pub = mainbotClient.publishToMainBot || mainbotClient.default?.publishToMainBot;
+    if (pub) {
+      pub({
+        from_bot:   'dexter',
+        event_type: 'billing_emergency',
+        alert_level: 3,
+        message: [
+          '🚨 *LLM 긴급 차단 발동!*',
+          '',
+          `사유: ${reason}`,
+          `비용: $${cost.toFixed(4)}`,
+          `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST`,
+          '',
+          '⚠️ 모든 LLM 호출 즉시 중단됨',
+          '해제: `rm .llm-emergency-stop` (마스터만)',
+        ].join('\n'),
+      }).catch(() => {});
+    }
+  } catch { /* 알림 실패해도 차단 유지 */ }
 }
 
 /**
