@@ -135,10 +135,12 @@ function buildContext({ github, npm, webSources, audit, cache }) {
 
 // ─── 폴백 체인: gpt-4o → gpt-oss-20b (Groq) → gemini-2.5-flash ───────
 
+// ★ 한국어 품질 테스트(2026-03-10): gpt-oss-20b가 기술 트렌드 분석에서 빈 응답(0점)
+//   → gemini-2.5-flash가 더 안정적이므로 gpt-oss보다 먼저 시도
 const ARCHER_CHAIN = [
-  { provider: 'openai',  model: config.OPENAI.model,      maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
-  { provider: 'groq',    model: 'openai/gpt-oss-20b',      maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
-  { provider: 'gemini',  model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+  { provider: 'openai',  model: config.OPENAI.model,                    maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+  { provider: 'gemini',  model: 'google-gemini-cli/gemini-2.5-flash',   maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+  { provider: 'groq',    model: 'openai/gpt-oss-20b',                   maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
 ];
 
 // ─── 메인 분석 함수 ──────────────────────────────────────────────────
