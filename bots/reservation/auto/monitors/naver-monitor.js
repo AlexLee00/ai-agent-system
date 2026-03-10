@@ -1370,6 +1370,12 @@ async function monitorBookings() {
                     ? `cancelid|${stale.booking_key}`
                     : `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
                   if (!await isCancelledKey(cancelKey)) {
+                    // ✅ [버그 수정] 이미 completed 상태인 예약은 취소 스킵 (이용 완료 후 네이버 확정 탭에서 사라지는 정상 케이스)
+                    const existingRes = await getReservation(stale.booking_key);
+                    if (existingRes && existingRes.status === 'completed') {
+                      log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 이미 완료된 예약 → 취소 스킵`);
+                      continue;
+                    }
                     log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} 사라짐 → 취소 처리`);
                     await addCancelledKey(cancelKey);
                     const booking = {
