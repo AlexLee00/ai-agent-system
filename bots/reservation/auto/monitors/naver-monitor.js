@@ -81,6 +81,10 @@ const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
 
+// 취소감지1 더블체크 맵: 미래 예약 사라짐 1차 감지 → 1사이클 후 재확인 후 취소 실행
+// { cancelKey → { booking, detectedAt } }
+const pendingCancelMap = new Map();
+
 // Heartbeat: 마지막 전송 시각 (1시간 주기)
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000; // 1시간
 let lastHeartbeatTime = Date.now(); // 시작 직후 0분 Heartbeat 방지 (1시간 후 첫 발송)
@@ -1272,6 +1276,27 @@ async function monitorBookings() {
                 return true;
               });
 
+              // ── pendingCancelMap 클린업: 다시 나타난 항목 제거 ──
+              if (pendingCancelMap.size > 0) {
+                const toKey2 = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
+                const currentKeysSet = new Set(currentConfirmedList.map(b => toKey2(b)));
+                for (const [pKey, entry] of pendingCancelMap.entries()) {
+                  const reappeared = currentKeysSet.has(toKey2(entry.booking));
+                  const expired    = Date.now() - entry.detectedAt > 30 * 60 * 1000; // 30분 만료
+                  if (reappeared) {
+                    log(`✅ [취소감지1] 더블체크 취소 — 다시 나타남: ${maskPhone(entry.booking.phone)} ${entry.booking.date} (오탐 방지)`);
+                    pendingCancelMap.delete(pKey);
+                  } else if (expired) {
+                    log(`⏱️ [취소감지1] pending 30분 만료 → 취소 확정: ${maskPhone(entry.booking.phone)} ${entry.booking.date}`);
+                    pendingCancelMap.delete(pKey);
+                    if (!await isCancelledKey(pKey)) {
+                      await addCancelledKey(pKey);
+                      await runPickkoCancel(entry.booking, pKey);
+                    }
+                  }
+                }
+              }
+
               if (droppedFromConfirmed.length > 0) {
                 log(`🗑️ 확정 리스트에서 ${droppedFromConfirmed.length}건 사라짐 → 취소 탭 교차검증 시작`);
                 const cancelledKeySet = new Set(currentCancelledList.map(c => toCancelKey(c)));
@@ -1279,16 +1304,24 @@ async function monitorBookings() {
                   const cancelKey = toCancelKey(dropped);
                   if (!await isCancelledKey(cancelKey)) {
                     if (cancelledKeySet.has(cancelKey)) {
-                      // 취소 탭에서 확인됨 → 처리 (감지 2 isCancelledKey 방어로 중복 실행 방지)
+                      // 취소 탭에서 확인됨 → 즉시 처리 (신뢰도 높음, 더블체크 불필요)
                       await addCancelledKey(cancelKey);
                       await runPickkoCancel(dropped, cancelKey);
                     } else {
                       // 취소 탭에 없음 → 날짜로 판단
                       if (dropped.date && dropped.date > todaySeoul) {
-                        // 미래 날짜 예약은 이용완료 불가 → 취소 탭 URL이 date= 기준이라 안 보일 수 있음 → 취소로 간주
-                        log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 미래 예약이 확정 리스트에서 사라짐 → 이용완료 불가, 취소 처리`);
-                        await addCancelledKey(cancelKey);
-                        await runPickkoCancel(dropped, cancelKey);
+                        // 미래 날짜 예약: 이용완료 불가 → 더블체크 (1사이클 후 재확인)
+                        if (pendingCancelMap.has(cancelKey)) {
+                          // 2번째 연속 미감지 → 취소 확정
+                          log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 2회 연속 미감지 → 취소 확정`);
+                          pendingCancelMap.delete(cancelKey);
+                          await addCancelledKey(cancelKey);
+                          await runPickkoCancel(dropped, cancelKey);
+                        } else {
+                          // 1번째 감지 → pending 등록 (다음 사이클에 재확인)
+                          log(`⏳ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 사라짐 감지 → 1사이클 후 재확인 (더블체크 대기)`);
+                          pendingCancelMap.set(cancelKey, { booking: dropped, detectedAt: Date.now() });
+                        }
                       } else {
                         // 오늘/과거 날짜 → 이용완료 추정 (정상 종료)
                         log(`⚠️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.start}~${dropped.end} 확정 리스트에서 사라졌으나 취소 탭 미확인 → 이용완료 추정, 픽코 취소 스킵`);
