@@ -49,7 +49,12 @@ module.exports = {
   },
 
   // ─── 웹 소스 (RSS / HTML) ────────────────────────────────────────
+  //
+  // ★★★ 현재 활성 (10개)
+  // ★★  검토 후 추가 권장 — 하단 CANDIDATE_SOURCES 주석 참조
+  //
   WEB_SOURCES: [
+    // ── 공식 AI 기업 블로그 ──────────────────────────────────────
     {
       id:     'openai-blog',
       label:  'OpenAI 뉴스',
@@ -63,11 +68,50 @@ module.exports = {
       url:    'https://huggingface.co/blog/feed.xml',
     },
     {
+      id:     'google-research',
+      label:  'Google Research 블로그',
+      type:   'rss',
+      url:    'https://research.google/blog/rss/',
+    },
+    // ── arXiv 논문 (3채널) ───────────────────────────────────────
+    {
       id:     'arxiv-cs-ai',
-      label:  'arXiv CS.AI (주간)',
+      label:  'arXiv CS.AI',
       type:   'rss',
       url:    'https://rss.arxiv.org/rss/cs.AI',
     },
+    {
+      id:     'arxiv-cs-lg',
+      label:  'arXiv CS.LG (머신러닝)',
+      type:   'rss',
+      url:    'https://rss.arxiv.org/rss/cs.LG',
+    },
+    {
+      id:     'arxiv-cs-cl',
+      label:  'arXiv CS.CL (NLP/LLM)',
+      type:   'rss',
+      url:    'https://rss.arxiv.org/rss/cs.CL',
+    },
+    // ── 주간 뉴스레터 (월요일 봇과 타이밍 최적) ──────────────────
+    {
+      id:     'last-week-in-ai',
+      label:  'Last Week in AI',
+      type:   'rss',
+      url:    'https://lastweekin.ai/feed',
+    },
+    {
+      id:     'interconnects-ai',
+      label:  'Interconnects AI (Nathan Lambert)',
+      type:   'rss',
+      url:    'https://www.interconnects.ai/feed',
+    },
+    {
+      id:     'import-ai',
+      label:  'Import AI (Jack Clark)',
+      type:   'rss',
+      url:    'https://jack-clark.net/feed/',
+    },
+    // ── 테크 미디어 ──────────────────────────────────────────────
     {
       id:     'simonwillison',
       label:  'Simon Willison (LLM 트렌드)',
@@ -81,6 +125,40 @@ module.exports = {
       url:    'https://www.technologyreview.com/feed/',
     },
   ],
+
+  // ─── 추가 후보 소스 (클로드 검토 의견) ──────────────────────────
+  //
+  // 아래 소스들은 검증됐으나 현재 미포함. 필요 시 WEB_SOURCES에 추가.
+  //
+  // ★★ 추천 (실용성 높음)
+  //   - VentureBeat AI        : https://venturebeat.com/category/ai/feed/
+  //                             → 스타트업 펀딩·LLM 출시 속보. 노이즈 많지만 산업 동향 빠름.
+  //                             → MIT TR이 있으면 중복 가능성 있어 현재 제외.
+  //
+  //   - Lil'Log (Lilian Weng) : https://lilianweng.github.io/index.xml
+  //                             → OpenAI 연구원. 에이전트·정렬·추론 심층 기술 리뷰.
+  //                             → 업데이트 월 0~1회로 드물지만 나오면 반드시 읽을 가치.
+  //                             → 추가 권장 — 저빈도라 컨텍스트 부담 없음.
+  //
+  //   - AI News (smol.ai)     : https://buttondown.com/ainews/rss
+  //                             → Reddit·Discord·Twitter AI 커뮤니티 동향 일간 집계.
+  //                             → 커뮤니티 반응 온도 파악에 유용. 단, 매일 발행이라 양 많음.
+  //
+  // ★ 참고 (상황에 따라)
+  //   - HN AI 필터            : https://hnrss.org/newest?q=LLM+AI&points=50
+  //                             → HN 점수 50+ AI 게시물. 커뮤니티 화제 파악용.
+  //                             → Simon Willison이 HN 링크를 이미 많이 커버해 중복 가능성.
+  //
+  //   - The Gradient          : https://thegradient.pub/rss/
+  //                             → AI 철학·안전·정렬 심층 분석. 월 2~4회.
+  //                             → 실무 적용보다 연구/철학 성격 강함.
+  //
+  //   - Sebastian Raschka     : https://sebastianraschka.com/rss_feed.xml
+  //                             → LLM 아키텍처·PyTorch 실습. 주 1~2회.
+  //                             → 구현 수준 튜토리얼 필요 시 추가.
+  //
+  // ⛔ RSS 없음 (수집 불가)
+  //   - Anthropic 공식 뉴스, Google DeepMind, Mistral AI, Cohere
 
   // ─── 현재 시스템 사용 버전 (초기값, 이후 cache.json이 관리) ───────
   CURRENT_VERSIONS: {
@@ -112,9 +190,10 @@ module.exports = {
   },
 
   // ─── OpenAI API ─────────────────────────────────────────────────
+  // maxTokens: 소스 10개 확대에 따라 2048 → 4096으로 증가
   OPENAI: {
     model:       'gpt-4o',
-    maxTokens:   2048,
+    maxTokens:   4096,
     temperature: 0.3,
   },
 
