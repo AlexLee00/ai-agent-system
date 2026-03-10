@@ -5,17 +5,17 @@
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (Gemini Flash, 무료)
- *   N41. 요약 텍스트 → 1080×1080 인스타 카드 (Imagen 3, $0.03/장)
+ *   N41. 요약 텍스트 → 1024×1024 인스타 카드 (gpt-image-1, medium)
  *   N42. 캡션 + 해시태그 자동 생성 (Gemini Flash, 무료)
  *
- * 비용: 카드 3장 기준 ~$0.09/편 (Gemini Flash는 무료)
+ * 비용: Gemini Flash(N40/N42) 무료, Imagen 4 Fast(N41) 유료
  */
 
 const { callGemini } = require('../../../packages/core/lib/chunked-llm');
-const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
-const https = require('https');
-const fs    = require('fs');
-const path  = require('path');
+const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
+const OpenAI = require('openai');
+const fs   = require('fs');
+const path = require('path');
 
 // ── N40: 문단별 요약 (insta-summarize) ──────────────────────────────
 
@@ -65,66 +65,44 @@ ${content.slice(0, 6000)}
 // ── N41: 인스타 카드 이미지 생성 (insta-card) ───────────────────────
 
 /**
- * 요약 텍스트 → 1080×1080 인스타 카드 (Imagen 3)
+ * 요약 텍스트 → 1024×1024 인스타 카드 (gpt-image-1)
  * @param {string} summary — 15~20자 요약 텍스트
  * @param {number} cardIndex — 카드 번호 (1, 2, 3)
  * @param {string} outputDir — 저장 디렉토리
  * @returns {string|null} — 저장된 파일 경로
  */
 async function generateInstaCard(summary, cardIndex, outputDir) {
-  const apiKey = getGeminiKey();
+  const apiKey = getOpenAIKey();
   if (!apiKey) {
-    console.warn('[소셜] GEMINI_API_KEY 없음 — 인스타 카드 생성 불가');
+    console.warn('[소셜] OPENAI_API_KEY 없음 — 인스타 카드 생성 불가');
     return null;
   }
 
   const prompt = [
-    'Create a minimalist Instagram card image, 1080x1080 pixels, square format.',
-    'Style: clean modern design, white/light background with subtle tech-themed gradient.',
-    `Center text in bold Korean: "${summary}"`,
-    'Bottom: small "승호아빠 | cafe_library" watermark.',
-    `Card ${cardIndex} of series.`,
-    'Professional IT blog aesthetic, focus on readability.',
+    'Minimalist Instagram card, 1024x1024, square format.',
+    'Clean modern design, white/light background with subtle tech-themed gradient.',
+    `Large bold Korean text centered: "${summary}"`,
+    'Small bottom watermark: "승호아빠 | cafe_library".',
+    'Professional IT blog aesthetic, high readability, no extra decoration.',
   ].join(' ');
 
   try {
-    const body = JSON.stringify({
-      instances:  [{ prompt }],
-      parameters: {
-        sampleCount:       1,
-        aspectRatio:       '1:1',
-        safetyFilterLevel: 'block_few',
-      },
+    const openai = new OpenAI({ apiKey });
+    const res = await openai.images.generate({
+      model:   'gpt-image-1',
+      prompt,
+      n:       1,
+      size:    '1024x1024',
+      quality: 'medium',
     });
 
-    const response = await new Promise((resolve, reject) => {
-      const req = https.request({
-        hostname: 'generativelanguage.googleapis.com',
-        path:     `/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
-        method:   'POST',
-        headers:  { 'Content-Type': 'application/json' },
-        timeout:  30000,
-      }, res => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try   { resolve(JSON.parse(data)); }
-          catch { reject(new Error('응답 파싱 실패')); }
-        });
-      });
-      req.on('error',   reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃 (30s)')); });
-      req.write(body);
-      req.end();
-    });
-
-    const imageData = response?.predictions?.[0]?.bytesBase64Encoded;
+    const imageData = res.data?.[0]?.b64_json;
     if (!imageData) {
       console.warn(`[소셜] 카드 ${cardIndex}: 이미지 데이터 없음`);
       return null;
     }
 
-    const dir      = path.join(outputDir, 'insta');
+    const dir = path.join(outputDir, 'insta');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const filePath = path.join(dir, `insta_card_${cardIndex}.png`);
     fs.writeFileSync(filePath, Buffer.from(imageData, 'base64'));
