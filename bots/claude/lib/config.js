@@ -1,10 +1,51 @@
 'use strict';
 
+const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 
 const HOME    = os.homedir();
 const ROOT    = path.join(HOME, 'projects', 'ai-agent-system');
+
+// 팀별 lib/ 디렉토리에서 .js 파일을 자동 수집 (신규 팀 추가 시 자동 포함)
+function _scanBotFiles() {
+  const fixed = [
+    'bots/reservation/lib/secrets.js',
+    'bots/reservation/lib/db.js',
+    'bots/reservation/auto/monitors/start-ops.sh',
+    'bots/investment/markets/crypto.js',
+    'bots/investment/markets/domestic.js',
+    'bots/investment/markets/overseas.js',
+    'bots/investment/shared/secrets.js',
+    'bots/investment/shared/llm-client.js',
+    'bots/claude/src/dexter.js',
+  ];
+
+  // bots/ 하위 각 팀의 lib/*.js 자동 수집 (blog, worker 등 신규 팀 포함)
+  const auto = [];
+  const botsDir = path.join(ROOT, 'bots');
+  try {
+    const teams = fs.readdirSync(botsDir).filter(t => {
+      const p = path.join(botsDir, t);
+      return fs.statSync(p).isDirectory() && !['claude', 'reservation', 'investment', '_template'].includes(t);
+    });
+    for (const team of teams) {
+      const libDir = path.join(botsDir, team, 'lib');
+      if (!fs.existsSync(libDir)) continue;
+      fs.readdirSync(libDir)
+        .filter(f => f.endsWith('.js'))
+        .forEach(f => auto.push(`bots/${team}/lib/${f}`));
+    }
+  } catch (_) {}
+
+  // 중복 제거 후 반환
+  const seen = new Set(fixed);
+  const result = [...fixed];
+  for (const f of auto) {
+    if (!seen.has(f)) { seen.add(f); result.push(f); }
+  }
+  return result;
+}
 
 module.exports = {
   ROOT,
@@ -46,17 +87,7 @@ module.exports = {
   },
 
   // ─── 핵심 파일 무결성 체크 대상 ────────────────────
-  CRITICAL_FILES: [
-    'bots/reservation/lib/secrets.js',
-    'bots/reservation/lib/db.js',
-    'bots/reservation/auto/monitors/start-ops.sh',
-    'bots/investment/markets/crypto.js',
-    'bots/investment/markets/domestic.js',
-    'bots/investment/markets/overseas.js',
-    'bots/investment/shared/secrets.js',
-    'bots/investment/shared/llm-client.js',
-    'bots/claude/src/dexter.js',
-  ],
+  CRITICAL_FILES: _scanBotFiles(),
 
   // ─── 네트워크 엔드포인트 ───────────────────────────
   ENDPOINTS: {
