@@ -1,18 +1,18 @@
 {
-  "lastRun": "2026-03-03",
+  "lastRun": "2026-03-10",
   "versions": {
     "@anthropic-ai/sdk": "0.78.0",
     "@modelcontextprotocol/sdk": "1.27.1",
     "groq-sdk": "0.37.0",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.6.2",
-    "ccxt": "4.5.40",
+    "ccxt": "4.5.42",
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주 npm 패키지는 전반적으로 최신 상태이나 tar의 Unicode Ligature 경로 충돌 Race Condition을 포함한 high 심각도 취약점 5건이 발견되어 즉시 npm audit fix 및 수동 검토가 필요합니다. MCP 생태계 관련 HumanMCP 벤치마크 논문이 발표되어 현재 사용 중인 MCP SDK의 툴 검색 품질을 정량 평가할 수 있는 기회가 생겼습니다. GGML/llama.cpp의 HuggingFace 합류로 로컬 AI 추론 생태계 안정성이 높아졌으며, 멀티 프로바이더 및 온프레미스 폴백 전략 수립 시 긍정적으로 참고할 수 있습니다.",
-    "patchCount": 3,
-    "securityCount": 4,
-    "llmApiCount": 3
+    "summary": "이번 주에는 보안 취약점이 발견된 패키지에 대한 업데이트가 필요합니다. HuggingFace의 새로운 AI 모델과 기술은 엣지 환경과 대규모 데이터 처리에 유용할 수 있습니다. LeRobot v0.5.0의 릴리스는 주목할 만한 발전입니다.",
+    "patchCount": 0,
+    "securityCount": 2,
+    "llmApiCount": 0
   }
 }

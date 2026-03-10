@@ -137,14 +137,64 @@ ${GEO_RULES}
 각 섹션은 [섹션명] 형태로 구분하라.
 `.trim();
 
+// ─── sectionVariation 지시 블록 생성 ────────────────────────────────
+
+/**
+ * sectionVariation 객체를 LLM 지시 텍스트로 변환.
+ * pos-writer.js와 동일한 로직 (공통화 후보 — 현재는 각 writer 자립).
+ *
+ * @param {object} variation
+ * @returns {string}
+ */
+function _buildVariationBlock(variation = {}) {
+  if (!Object.keys(variation).length) return '';
+
+  const lines = ['[이번 포스팅 변형 지시 — 반드시 준수]'];
+
+  if (variation.greetingStyle) {
+    const styles = {
+      formal:   '격식체 존댓말로 정중하게',
+      casual:   '편안한 반말체로 친근하게',
+      question: '독자에게 질문을 던지는 형식으로',
+      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링으로',
+    };
+    lines.push(`인사말 스타일: ${styles[variation.greetingStyle] || '자유롭게'}`);
+  }
+  if (variation.bodyCount)      lines.push(`본론 섹션 수: ${variation.bodyCount}개`);
+  if (variation.faqCount)       lines.push(`FAQ 개수: ${variation.faqCount}개`);
+  if (variation.listStyle) {
+    const lStyles = {
+      number: '번호 리스트(1. 2. 3.)',
+      bullet: '불릿 리스트(•)',
+      mixed:  '번호와 불릿 혼용',
+    };
+    lines.push(`리스트 스타일: ${lStyles[variation.listStyle] || '자유'}`);
+  }
+  if (variation.bridgeInterval) {
+    lines.push(`독자 소통 브릿지: ${variation.bridgeInterval}자마다 삽입`);
+  }
+  if (variation.cafePosition) {
+    const cPos = {
+      after_theory: '본론 이론 섹션 직후',
+      after_code:   '코드 섹션 직후',
+      before_faq:   'FAQ 바로 앞',
+      last:         '마무리 직전',
+    };
+    lines.push(`카페 홍보 위치: ${cPos[variation.cafePosition] || '기본 위치'}`);
+  }
+
+  return '\n' + lines.join('\n') + '\n';
+}
+
 // ─── 일반 포스팅 생성 ────────────────────────────────────────────────
 
 /**
  * @param {string} category
- * @param {object} researchData — 리처 수집 결과 (realExperiences, relatedPosts 포함)
+ * @param {object} researchData    — 리처 수집 결과 (realExperiences, relatedPosts 포함)
+ * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model, title }}
  */
-async function writeGeneralPost(category, researchData) {
+async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
   const cacheKey = `gems_general_${category}_${new Date().toISOString().slice(0, 10)}`;
 
@@ -202,7 +252,7 @@ ${experienceBlock}${linkingBlock}
 - [함께 읽으면 좋은 글]: 관련 포스팅 3개
 - [해시태그]: 27개 이상
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
-
+${_buildVariationBlock(sectionVariation)}
 [출력 규칙]
 - 독자가 이 글 하나로 해당 주제를 완전히 이해할 수 있도록 포괄적으로(comprehensively) 작성하라.
 - 각 본론 섹션을 깊이 있고 상세하게(in-depth and detailed) 서술하라.
@@ -286,9 +336,10 @@ ${experienceBlock}${linkingBlock}
  *
  * @param {string} category
  * @param {object} researchData
+ * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model, title }}
  */
-async function writeGeneralPostChunked(category, researchData) {
+async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
   const model    = process.env.BLOG_LLM_MODEL || 'gemini';
 
@@ -339,7 +390,8 @@ ${experienceBlock}`.trim();
 6. ━━━━━━━━━━━━━━━━━━━━━
 7. [본론 섹션 1] — 주제 도입 + 번호 리스트 상세 설명, 1,500자 이상
 
-글자수 요구: 전체 2,000자 이상. 본론 섹션 1은 최소 1,500자.`,
+글자수 요구: 전체 2,000자 이상. 본론 섹션 1은 최소 1,500자.
+${_buildVariationBlock(sectionVariation)}`,
     },
     {
       id:       'group_b',
