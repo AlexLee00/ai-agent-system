@@ -364,5 +364,23 @@
     "label": "버그 레포트 등록: 핵심 파일 체크섬 변경 감지",
     "status": "warn",
     "detail": "ID: DXT-300739"
+  },
+  {
+    "ts": "2026-03-10T20:23:49.054Z",
+    "label": "버그 레포트 등록: DB 무결성 오류",
+    "status": "warn",
+    "detail": "ID: DXT-552824"
+  },
+  {
+    "ts": "2026-03-10T21:28:57.039Z",
+    "label": "OpenClaw 자동 재시작",
+    "status": "ok",
+    "detail": "ai.openclaw.gateway 재시작 완료 — 원인: 누수 추세 — 6h +405MB 증가"
+  },
+  {
+    "ts": "2026-03-10T21:28:57.039Z",
+    "label": "버그 레포트 등록: DB 무결성 오류",
+    "status": "warn",
+    "detail": "ID: DXT-552824"
   }
 ]
