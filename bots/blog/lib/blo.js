@@ -236,8 +236,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
     // ★ 소셜(SOCIAL) — 인스타 크로스 포스팅 (generalVariations.includeInsta 기반)
     let instaContent = null;
     if (process.env.BLOG_INSTA_ENABLED === 'true') {
-      const imgDir = images?.outputDir || path.join(require('os').homedir(), 'Library/Mobile Documents/com~apple~CloudDocs/blog/output/images');
-      instaContent = await createInstaContent(post.content, genTitle, category, imgDir).catch(e => {
+      instaContent = await createInstaContent(post.content, genTitle, category).catch(e => {
         console.warn('[소셜] 인스타 생성 실패 (무시):', e.message); return null;
       });
       if (instaContent) {
