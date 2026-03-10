@@ -30,15 +30,8 @@
 const { getAnthropicKey, getOpenAIKey, getGeminiKey, getGroqAccounts } = require('./llm-keys');
 const { logLLMCall } = require('./llm-logger');
 
-// ── 그루크 계정 라운드로빈 ────────────────────────────────────────────
+// ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
-function _nextGroqKey() {
-  const accounts = getGroqAccounts();
-  if (!accounts.length) return null;
-  const key = accounts[_groqIdx % accounts.length]?.api_key || null;
-  _groqIdx++;
-  return key;
-}
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
 function _extractText(resp, provider) {
@@ -89,22 +82,54 @@ async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, 
   });
 }
 
-async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
-  const apiKey = _nextGroqKey();
-  if (!apiKey) throw new Error('Groq API 키 없음');
+async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
-  // Groq 모델 ID에서 "openai/" 또는 "groq/" 접두사 제거
-  const groqModel = model.replace(/^(?:openai|groq)\//, '');
   return client.chat.completions.create({
-    model:       groqModel,
-    max_tokens:  maxTokens,
+    model: groqModel,
+    max_tokens: maxTokens,
     temperature,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user',   content: userPrompt },
     ],
   });
+}
+
+async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
+  const groqModel  = model.replace(/^(?:openai|groq)\//, '');
+  const accounts   = getGroqAccounts();
+
+  // 계정 목록 없으면 환경변수 키로 1회 시도
+  if (!accounts.length) {
+    const envKey = process.env.GROQ_API_KEY;
+    if (!envKey) throw new Error('Groq API 키 없음');
+    return _groqSingleCall(envKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt);
+  }
+
+  // 최대 3개 키 순회하며 429 retry
+  const maxRetry = Math.min(accounts.length, 3);
+  let lastError;
+
+  for (let i = 0; i < maxRetry; i++) {
+    const apiKey = accounts[(_groqIdx + i) % accounts.length]?.api_key;
+    if (!apiKey) continue;
+    try {
+      const result = await _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt);
+      _groqIdx = (_groqIdx + i + 1) % accounts.length;  // 성공 키 다음부터 시작
+      return result;
+    } catch (e) {
+      lastError = e;
+      const is429 = e.status === 429 || e.message?.includes('429') || e.message?.includes('rate_limit');
+      if (is429) {
+        console.warn(`  ⚠️ [Groq] 429 rate limit → 키 ${i + 1}/${maxRetry} 실패, 다음 키 시도...`);
+        continue;
+      }
+      throw e;  // 429 외 오류는 즉시 throw
+    }
+  }
+
+  throw lastError || new Error('Groq 전체 키 소진 (429)');
 }
 
 async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {

@@ -244,46 +244,97 @@ export async function screenCryptoSymbols(maxDynamic) {
 export async function screenDomesticSymbols(maxDynamic) {
   const max = maxDynamic ?? _screenCfg('domestic', 'max_dynamic', 2);
 
-  try {
-    const data = await new Promise((resolve, reject) => {
-      const req = https.get(
-        'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=15',
-        { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 },
-        res => {
-          let body = '';
-          res.on('data', c => body += c);
-          res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-        }
-      );
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
+  // 대안 1: 네이버 모바일 상승률 상위 API
+  const r1 = await _tryNaverMobile(max);
+  if (r1) return r1;
+
+  // 대안 2: 네이버 증권 시세 API (더 안정적)
+  const r2 = await _tryNaverSise(max);
+  if (r2) return r2;
+
+  // 모두 실패 → 코어만 반환
+  console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 코어만 반환');
+  return { core: CORE_KIS, dynamic: [], all: CORE_KIS, screening: [], error: 'all_apis_failed' };
+}
+
+/** 공통: JSON fetch 유틸 */
+function _fetchJSON(url, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('JSON 파싱 실패')); } });
     });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
+  });
+}
 
-    const stocks = data?.stocks || data?.result?.stocks || [];
-    if (!stocks.length) throw new Error('데이터 없음');
+/** 공통: 결과 빌드 */
+function _buildDomesticResult(stocks, max) {
+  const coreSet    = new Set(CORE_KIS);
+  const candidates = stocks
+    .filter(s => s.stockCode && !coreSet.has(s.stockCode))
+    .slice(0, max)
+    .map(s => ({
+      symbol:     String(s.stockCode).padStart(6, '0'),
+      name:       s.stockName || s.name || '',
+      price:      parseInt(s.closePrice || s.price) || 0,
+      changeRate: parseFloat(s.fluctuationsRatio || s.changeRate) || 0,
+      volume:     parseInt(s.accumulatedTradingVolume || s.volume) || 0,
+    }));
 
-    const coreSet    = new Set(CORE_KIS);
-    const candidates = stocks
-      .filter(s => s.stockCode && !coreSet.has(s.stockCode))
-      .slice(0, max)
-      .map(s => ({
-        symbol:     s.stockCode,
-        name:       s.stockName || s.name,
-        price:      parseInt(s.closePrice || s.price) || 0,
-        changeRate: parseFloat(s.fluctuationsRatio || s.changeRate) || 0,
-        volume:     parseInt(s.accumulatedTradingVolume || s.volume) || 0,
-      }));
+  if (!candidates.length) return null;
 
-    const dynamicSymbols = candidates.map(c => c.symbol);
-    console.log(`[아르고스] 국내주식 스크리닝: 코어 ${CORE_KIS.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
-    candidates.forEach(c =>
-      console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
+  const dynamicSymbols = candidates.map(c => c.symbol);
+  console.log(`[아르고스] 국내주식 스크리닝: 코어 ${CORE_KIS.join(', ')} + 동적 ${dynamicSymbols.join(', ')}`);
+  candidates.forEach(c =>
+    console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
+  );
+  return { core: CORE_KIS, dynamic: dynamicSymbols, all: [...CORE_KIS, ...dynamicSymbols], screening: candidates };
+}
+
+/** 대안 1: 네이버 모바일 상승률 API (불안정) */
+async function _tryNaverMobile(max) {
+  try {
+    const data = await _fetchJSON(
+      'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=15', 5000
     );
-
-    return { core: CORE_KIS, dynamic: dynamicSymbols, all: [...CORE_KIS, ...dynamicSymbols], screening: candidates };
+    // 응답 구조 자동 감지 (API 변경 대응)
+    const stocks = data?.stocks
+      || data?.result?.stocks
+      || data?.data?.stocks
+      || data?.result?.data
+      || [];
+    if (!stocks.length || !stocks[0]?.stockCode) return null;
+    return _buildDomesticResult(stocks, max);
   } catch (e) {
-    console.warn(`[아르고스] 국내주식 스크리닝 실패: ${e.message} — 코어만 반환`);
-    return { core: CORE_KIS, dynamic: [], all: CORE_KIS, screening: [], error: e.message };
+    console.warn(`[아르고스] 네이버 모바일 API 실패: ${e.message}`);
+    return null;
+  }
+}
+
+/** 대안 2: 네이버 증권 시세 API (더 안정적) */
+async function _tryNaverSise(max) {
+  try {
+    // 네이버 증권 국내주식 상승률 상위
+    const data = await _fetchJSON(
+      'https://finance.naver.com/api/sise/siseList.nhn?sosok=0&page=1&type=up', 5000
+    );
+    const items = data?.result?.itemList || data?.itemList || data?.result || [];
+    if (!Array.isArray(items) || !items.length) return null;
+
+    const normalized = items.map(s => ({
+      stockCode:                 s.cd   || s.itemcode || s.code,
+      stockName:                 s.nm   || s.itemname || s.name,
+      closePrice:                s.nv   || s.now      || s.closePrice,
+      fluctuationsRatio:         s.cr   || s.changeRate,
+      accumulatedTradingVolume:  s.aq   || s.quant    || s.volume,
+    }));
+    return _buildDomesticResult(normalized, max);
+  } catch (e) {
+    console.warn(`[아르고스] 네이버 시세 API 실패: ${e.message}`);
+    return null;
   }
 }
 
