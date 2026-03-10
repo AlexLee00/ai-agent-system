@@ -181,4 +181,85 @@ async function analyze(data, cache = {}) {
   }
 }
 
-module.exports = { analyze, buildContext };
+// ── 빌링 트렌드 섹션 ─────────────────────────────────────────────
+
+/**
+ * billing_snapshots에서 최근 7일 일별 비용 + 월간 소진율 조회
+ * @returns {string} 마크다운 섹션 문자열
+ */
+async function buildBillingTrendSection() {
+  const pgPool = require('../../../../packages/core/lib/pg-pool');
+  const lines  = [];
+
+  try {
+    // 최근 7일 일별 비용
+    const rows = await pgPool.query('claude', `
+      SELECT date, provider, cost_usd
+      FROM billing_snapshots
+      WHERE date >= CURRENT_DATE - 6
+      ORDER BY date DESC, provider
+    `);
+
+    if (!rows || rows.length === 0) {
+      return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (billing_snapshots 비어있음)\n';
+    }
+
+    // 날짜별 맵
+    const byDate = {};
+    for (const r of rows) {
+      const d = String(r.date).slice(0, 10);
+      if (!byDate[d]) byDate[d] = {};
+      byDate[d][r.provider] = parseFloat(r.cost_usd || 0);
+    }
+
+    lines.push('## 💰 LLM 비용 트렌드');
+    lines.push('');
+    lines.push('| 날짜 | Anthropic | OpenAI | 일합계 |');
+    lines.push('|------|-----------|--------|--------|');
+
+    const dates = Object.keys(byDate).sort().reverse();
+    for (const d of dates) {
+      const ant = byDate[d].anthropic || 0;
+      const oai = byDate[d].openai    || 0;
+      lines.push(`| ${d} | $${ant.toFixed(3)} | $${oai.toFixed(3)} | $${(ant + oai).toFixed(3)} |`);
+    }
+    lines.push('');
+
+    // 월간 소진율 + 예상 월말
+    const monthRows = await pgPool.query('claude', `
+      SELECT provider, SUM(cost_usd) AS total
+      FROM billing_snapshots
+      WHERE date >= date_trunc('month', CURRENT_DATE)::date
+      GROUP BY provider
+    `);
+
+    let grandTotal = 0;
+    const byProvider = {};
+    for (const r of (monthRows || [])) {
+      const t = parseFloat(r.total || 0);
+      byProvider[r.provider] = t;
+      grandTotal += t;
+    }
+
+    const now       = new Date();
+    const daysPassed  = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const burnRate    = daysPassed > 0 ? grandTotal / daysPassed : 0;
+    const projected   = burnRate * daysInMonth;
+
+    lines.push(`**이번 달 누적**: $${grandTotal.toFixed(3)} (Anthropic: $${(byProvider.anthropic || 0).toFixed(3)}, OpenAI: $${(byProvider.openai || 0).toFixed(3)})`);
+    lines.push('');
+    lines.push(`**소진율**: 일평균 $${burnRate.toFixed(3)} → 예상 월말 **$${projected.toFixed(2)}**`);
+    lines.push('');
+
+  } catch (e) {
+    lines.push('## 💰 LLM 비용 트렌드');
+    lines.push('');
+    lines.push(`> 조회 실패: ${e.message}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+module.exports = { analyze, buildContext, buildBillingTrendSection };
