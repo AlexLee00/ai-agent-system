@@ -9,10 +9,8 @@
  *   - 응답 스키마: patches[], security[], llm_api[], ai_techniques[], web_highlights[], summary
  */
 
-const OpenAI = require('openai');
 const config = require('./config');
-const { getOpenAIKey } = require('../../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../../packages/core/lib/llm-logger');
+const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
@@ -135,36 +133,13 @@ function buildContext({ github, npm, webSources, audit, cache }) {
   return lines.join('\n');
 }
 
-// ─── OpenAI API 호출 ─────────────────────────────────────────────────
+// ─── 폴백 체인: gpt-4o → gpt-oss-20b (Groq) → gemini-2.5-flash ───────
 
-async function callOpenAI(contextText) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OPENAI_API_KEY 없음 — bots/investment/config.yaml openai.api_key 확인');
-
-  const client = new OpenAI({ apiKey });
-  const resp = await client.chat.completions.create({
-    model:           config.OPENAI.model,
-    max_tokens:      config.OPENAI.maxTokens,
-    temperature:     config.OPENAI.temperature,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: contextText },
-    ],
-  });
-
-  try {
-    const usage = resp.usage || {};
-    logLLMCall({
-      team: 'claude', bot: 'archer', model: config.OPENAI.model,
-      requestType: 'architecture_review',
-      inputTokens: usage.prompt_tokens || 0,
-      outputTokens: usage.completion_tokens || 0,
-    });
-  } catch { /* 비용 추적 실패는 무시 */ }
-
-  return resp.choices[0]?.message?.content || '';
-}
+const ARCHER_CHAIN = [
+  { provider: 'openai',  model: config.OPENAI.model,      maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+  { provider: 'groq',    model: 'openai/gpt-oss-20b',      maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+  { provider: 'gemini',  model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
+];
 
 // ─── 메인 분석 함수 ──────────────────────────────────────────────────
 
@@ -178,9 +153,18 @@ async function analyze(data, cache = {}) {
 
   let raw;
   try {
-    raw = await callOpenAI(contextText);
+    const { text, provider, model: usedModel, attempt } = await callWithFallback({
+      chain:        ARCHER_CHAIN,
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt:   contextText,
+      logMeta: { team: 'claude', bot: 'archer', requestType: 'architecture_review' },
+    });
+    if (attempt > 1) {
+      console.log(`  ↳ [아처] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
+    }
+    raw = text;
   } catch (e) {
-    console.warn(`  ⚠️ [아처] OpenAI API 실패: ${e.message}`);
+    console.warn(`  ⚠️ [아처] LLM 모든 폴백 실패: ${e.message}`);
     return null;
   }
 

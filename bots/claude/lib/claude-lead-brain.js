@@ -18,14 +18,19 @@
  * DB: PostgreSQL reservation.shadow_log (shadow-mode.js 공유 테이블)
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
 const pgPool    = require('../../../packages/core/lib/pg-pool');
-const { getAnthropicKey } = require('../../../packages/core/lib/llm-keys');
-const { getTimeout }      = require('../../../packages/core/lib/llm-timeouts');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const stateBus  = require('../../reservation/lib/state-bus');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
-const MODEL   = 'claude-sonnet-4-6';
+
+// 폴백 체인: claude-sonnet-4-6 → gpt-4o → gpt-oss-20b (Groq)
+const LLM_CHAIN = [
+  { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 300, temperature: 0.1 },
+  { provider: 'openai',    model: 'gpt-4o',            maxTokens: 300, temperature: 0.1 },
+  { provider: 'groq',      model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.1 },
+];
+const MODEL   = LLM_CHAIN[0].model;  // 로그 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
 
@@ -226,28 +231,23 @@ async function evaluateWithClaudeLead(results) {
 
   let llmResult = null;
   let llmError  = null;
-  const apiKey  = getAnthropicKey();
 
-  if (apiKey) {
-    try {
-      const client = new Anthropic({ apiKey, timeout: getTimeout(MODEL), maxRetries: 1 });
-      const resp   = await client.messages.create({
-        model:       MODEL,
-        max_tokens:  300,
-        temperature: 0.1,
-        system:      SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: _buildUserPrompt(issues, ragContext) }],
-      });
-      const raw = resp.content[0]?.text?.trim() || '';
-      // ```json ... ``` 마크다운 블록 제거
-      const json = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-      llmResult = JSON.parse(json);
-      if (!llmResult.decision) llmResult = null;
-    } catch (e) {
-      llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
+  try {
+    const { text, provider, model: usedModel, attempt } = await callWithFallback({
+      chain:        LLM_CHAIN,
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt:   _buildUserPrompt(issues, ragContext),
+      logMeta: { team: 'claude', bot: 'claude-lead', requestType: 'system_issue_triage' },
+    });
+    if (attempt > 1 || usedModel !== MODEL) {
+      console.log(`  ↳ [클로드 팀장] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
     }
-  } else {
-    llmError = 'Anthropic API 키 없음 — shadow 기록만';
+    // ```json ... ``` 마크다운 블록 제거
+    const json = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+    llmResult = JSON.parse(json);
+    if (!llmResult.decision) llmResult = null;
+  } catch (e) {
+    llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
   }
 
   // 4. 일치 여부
