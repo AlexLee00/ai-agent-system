@@ -74,7 +74,8 @@ async function generateWithNanoBanana(prompt, opts = {}) {
 // ── 2. OpenAI gpt-image-1 High (폴백 — 유료) ───────────────────
 
 /**
- * OpenAI gpt-image-1 quality=high로 이미지 생성
+ * OpenAI gpt-image-1 이미지 생성
+ * quality: OPENAI_IMAGE_QUALITY 환경변수 (high|medium|low, 기본 medium)
  * @param {string} prompt
  * @param {{ aspectRatio?: string }} [opts]
  * @returns {Promise<{ buffer: Buffer, source: 'openai_high' }>}
@@ -85,7 +86,8 @@ async function generateWithOpenAI(prompt, opts = {}) {
 
   const OpenAI = require('openai');
   const { aspectRatio = '1:1' } = opts;
-  const size = OPENAI_SIZE_MAP[aspectRatio] || '1024x1024';
+  const size    = OPENAI_SIZE_MAP[aspectRatio] || '1024x1024';
+  const quality = process.env.OPENAI_IMAGE_QUALITY || 'medium';
 
   const openai    = new OpenAI({ apiKey });
   const response  = await openai.images.generate({
@@ -93,7 +95,7 @@ async function generateWithOpenAI(prompt, opts = {}) {
     prompt,
     n:       1,
     size,
-    quality: 'high',
+    quality,
   });
 
   const imageData = response.data?.[0];

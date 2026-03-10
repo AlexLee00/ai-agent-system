@@ -16,6 +16,14 @@ const {
   getLectureTitle,
   getNextGeneralCategory,
 } = require('./category-rotation');
+// curriculum-planner: 커리큘럼 테이블 제목 우선 사용 (없으면 category-rotation 폴백)
+let _curriculumPlanner = null;
+function _getPlanner() {
+  if (!_curriculumPlanner) {
+    try { _curriculumPlanner = require('./curriculum-planner'); } catch { /* 미설치 */ }
+  }
+  return _curriculumPlanner;
+}
 
 const IS_TEST    = process.env.BLOG_TEST_MODE  === 'true';
 const RUN_DATE   = process.env.BLOG_RUN_DATE  || null;   // YYYY-MM-DD, 미설정 시 오늘
@@ -166,7 +174,13 @@ async function getTodayContext() {
       lectureCtx = await resolveTestLecture();
     } else {
       const { number, seriesName } = await getNextLectureNumber();
+      // 커리큘럼 테이블 우선 → category-rotation 폴백
+      const planner = _getPlanner();
+      const curriculumTitle = planner
+        ? await planner.getNextLectureTitle(seriesName, number).catch(() => null)
+        : null;
       const title = lectureRow.lecture_title
+        || curriculumTitle
         || (await getLectureTitle(number, seriesName))
         || `제${number}강`;
       lectureCtx = { number, seriesName, lectureTitle: title };

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.investment.prescreen-overseas</string>
+
+  <!-- 미국주식 장전 종목 확정 — KST 21:00 (UTC 12:00) -->
+  <!-- NYSE/NASDAQ 개장 KST 22:30(DST)/23:30(비DST) → 1~2시간 전 스크리닝 -->
+  <!-- 설치: cp bots/investment/launchd/ai.investment.prescreen-overseas.plist ~/Library/LaunchAgents/ -->
+  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.prescreen-overseas.plist -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/pre-market-screen.js</string>
+    <string>overseas</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+
+  <!-- KST 21:00 = UTC 12:00 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/investment-prescreen-overseas.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/investment-prescreen-overseas.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PAPER_MODE</key>
+    <string>false</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

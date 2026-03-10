@@ -30,6 +30,10 @@ const {
   updateScheduleStatus,
 }                                                   = require('./schedule');
 const { researchBook }                              = require('./book-research');
+const {
+  dailyCurriculumCheck,
+  transitionSeries,
+}                                                   = require('./curriculum-planner');
 const richer                                        = require('./richer');
 const { writeLecturePost, writeLecturePostChunked } = require('./pos-writer');
 const { writeGeneralPost, writeGeneralPostChunked } = require('./gems-writer');
@@ -102,10 +106,17 @@ function _buildRewriteGuide(aiRisk) {
 
 async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
   if (await isSeriesComplete()) {
-    const msg = '⚠️ [블로그팀] Node.js 120강 완료!\n다음 시리즈를 선택해 주세요.\n추천: Python > TypeScript > React';
-    console.log('[블로]', msg);
-    await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 텔레그램 생략'));
-    return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
+    // 차기 planned 시리즈가 있으면 자동 전환
+    const next = await transitionSeries();
+    if (!next) {
+      const msg = '⚠️ [블로그팀] 강의 시리즈 완료!\n다음 시리즈가 아직 준비되지 않았습니다.\n텔레그램으로 승인 번호를 보내주세요.';
+      console.log('[블로]', msg);
+      await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 텔레그램 생략'));
+      return { type: 'lecture', skipped: true, reason: '시리즈 완료 — 차기 준비 중' };
+    }
+    // 전환 성공: 1강부터 다시 시작 (category_rotation은 별도 초기화 필요)
+    console.log(`[블로] 🔄 시리즈 전환 완료 → ${next.series_name} 1강부터 시작`);
+    return { type: 'lecture', skipped: true, reason: `시리즈 전환: ${next.series_name}` };
   }
 
   // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
@@ -468,6 +479,11 @@ async function run() {
       () => {}
     ).catch(() => {});
   }
+
+  // 강의 시리즈 종료 임박 체크 (7강 전 트리거 → 텔레그램 후보 제안)
+  await dailyCurriculumCheck().catch(e =>
+    console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
+  );
 
   console.log('\n📝 [블로] 일간 작업 완료\n');
   return results;

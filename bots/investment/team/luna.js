@@ -30,14 +30,14 @@ import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
 import { recommendStrategy } from './argos.js';
 
-const MIN_CONFIDENCE     = 0.55;
-const FUND_MIN_CONF      = 0.60;
+const MIN_CONFIDENCE     = { binance: 0.55, kis: 0.35, kis_overseas: 0.35 };
+const FUND_MIN_CONF      = { binance: 0.60, kis: 0.40, kis_overseas: 0.40 };
 const MAX_POS_COUNT      = 5;
 const MAX_DEBATE_SYMBOLS = 2;
 
 // ─── 시스템 프롬프트 ────────────────────────────────────────────────
 
-const LUNA_SYSTEM = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다.
+const LUNA_SYSTEM_CRYPTO = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다.
 멀티타임프레임 TA·온체인·뉴스·감성·강세/약세 2라운드 토론 결과를 종합해 최종 매매 신호를 결정한다.
 
 핵심 원칙:
@@ -51,10 +51,34 @@ const LUNA_SYSTEM = `당신은 루나(Luna), 루나팀의 수석 오케스트레
 
 amount_usdt 범위: 50~300 USDT`.trim();
 
+const LUNA_SYSTEM_STOCK = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다. (국내/해외 주식 — 공격적 모드)
+멀티타임프레임 TA·뉴스·감성·강세/약세 2라운드 토론 결과를 종합해 최종 매매 신호를 결정한다.
+
+핵심 원칙 (공격적):
+- 기본 전략은 진입 — HOLD는 명확한 반대 신호가 있을 때만
+- 단기(1h) 방향이 긍정적이면 BUY 검토, 명확한 하락 추세일 때만 SELL/HOLD
+- 2라운드 토론 후 강세가 약세보다 설득력 있으면 BUY
+- confidence 0.30 이상이면 진입 검토 (0.30 미만만 HOLD)
+- 소규모 분할 진입으로 리스크 분산
+
+응답 형식 (JSON만, 다른 텍스트 없이):
+{"action":"BUY","amount_usdt":100,"confidence":0.5,"reasoning":"근거 60자 이내"}
+
+amount_usdt 범위: 50~300 USDT`.trim();
+
+function getLunaSystem(exchange) {
+  if (exchange === 'kis' || exchange === 'kis_overseas') return LUNA_SYSTEM_STOCK;
+  return LUNA_SYSTEM_CRYPTO;
+}
+
 // PORTFOLIO_PROMPT는 함수로 생성 — 실제 심볼 목록을 예시에 반영해 LLM 환각 방지
-function buildPortfolioPrompt(symbols) {
+function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const exampleSymbol = symbols[0] || 'SYMBOL';
-  return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.
+  const isStock       = exchange === 'kis' || exchange === 'kis_overseas';
+  const minConf       = FUND_MIN_CONF[exchange] ?? 0.60;
+  const maxPosPct     = isStock ? '30%' : '20%';
+  const dailyLoss     = isStock ? '10%' : '5%';
+  return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ' (주식 — 공격적 모드)' : ''}
 
 분석 대상 심볼: ${symbols.join(', ')}
 ⚠️ 반드시 위 심볼 중에서만 결정을 내려야 합니다. 다른 심볼은 절대 포함하지 마세요.
@@ -63,10 +87,10 @@ function buildPortfolioPrompt(symbols) {
 {"decisions":[{"symbol":"${exampleSymbol}","action":"BUY","amount_usdt":100,"confidence":0.7,"reasoning":"판단 근거 (한국어 60자)"}],"portfolio_view":"전체 시황 평가 (80자)","risk_level":"LOW"|"MEDIUM"|"HIGH"}
 
 제약:
-- 단일 포지션: 총자산 20% 이하
+- 단일 포지션: 총자산 ${maxPosPct} 이하
 - 동시 포지션: 최대 ${MAX_POS_COUNT}개
-- 일손실 한도: 5%
-- confidence ${FUND_MIN_CONF} 미만: HOLD
+- 일손실 한도: ${dailyLoss}
+- confidence ${minConf} 미만: HOLD
 - USDT 잔고 초과 매수 금지`;
 }
 
@@ -180,18 +204,21 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     context:   'symbol_decision',
     input:     userMsg,
     ruleEngine: async () => {
-      const raw    = await cachedCallLLM('luna', LUNA_SYSTEM, userMsg, 256, { cacheTTL: 300 });
+      const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300 });
       const parsed = parseJSON(raw);
       if (!parsed?.action) {
         const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
         const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
         const vote    = votes.reduce((a, b) => a + b, 0);
-        const action  = vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD;
+        const isStock = exchange === 'kis' || exchange === 'kis_overseas';
+        const action  = isStock
+          ? (vote >= 0 && avgConf >= 0.3 ? ACTIONS.BUY : vote < -1 ? ACTIONS.SELL : ACTIONS.HOLD)
+          : (vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD);
         return { action, amount_usdt: 100, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
       }
       return parsed;
     },
-    llmPrompt: LUNA_SYSTEM,
+    llmPrompt: getLunaSystem(exchange),
     mode:      'shadow',
   });
   return shadowResult.action;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
@@ -199,7 +226,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
 
 // ─── 포트폴리오 판단 ───────────────────────────────────────────────
 
-export async function getPortfolioDecision(symbolDecisions, portfolio) {
+export async function getPortfolioDecision(symbolDecisions, portfolio, exchange = 'binance') {
   if (symbolDecisions.length === 0) return null;
 
   const symbols     = [...new Set(symbolDecisions.map(s => s.symbol))];
@@ -219,7 +246,7 @@ export async function getPortfolioDecision(symbolDecisions, portfolio) {
     `최종 포트폴리오 투자 결정:`,
   ].join('\n');
 
-  const raw    = await callLLM('luna', buildPortfolioPrompt(symbols), userMsg, 768);
+  const raw    = await callLLM('luna', buildPortfolioPrompt(symbols, exchange), userMsg, 768);
   const parsed = parseJSON(raw);
   if (!parsed) return { decisions: symbolDecisions.map(s => ({ ...s })), portfolio_view: 'LLM 판단 실패', risk_level: 'MEDIUM' };
 
@@ -349,7 +376,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   }
 
   console.log(`\n🏦 [루나] 포트폴리오 최종 판단...`);
-  const portfolio_decision = await getPortfolioDecision(symbolDecisions, portfolio);
+  const portfolio_decision = await getPortfolioDecision(symbolDecisions, portfolio, exchange);
 
   if (!portfolio_decision) {
     console.log('  ⚠️ [루나] 포트폴리오 판단 실패');
@@ -374,7 +401,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
   for (const dec of (portfolio_decision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    const minConf = params?.minSignalScore ?? FUND_MIN_CONF;
+    const minConf = params?.minSignalScore ?? (FUND_MIN_CONF[exchange] ?? 0.60);
     if ((dec.confidence || 0) < minConf) {
       console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}% < ${(minConf * 100).toFixed(0)}%) → HOLD`);
       continue;

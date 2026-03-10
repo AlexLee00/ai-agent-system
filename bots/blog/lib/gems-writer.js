@@ -372,7 +372,12 @@ ${_buildVariationBlock(sectionVariation)}
 
   const result = { content, charCount: content.length, model: usedModel, title, fallbackUsed };
 
-  await llmCache.setCache('blog', 'general_post', cacheKey, JSON.stringify(result), 'gpt-4o');
+  // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
+  if (content.length >= MIN_CHARS_GENERAL) {
+    await llmCache.setCache('blog', 'general_post', cacheKey, JSON.stringify(result), 'gpt-4o');
+  } else {
+    console.log(`[젬스] 글자수 미달 (${content.length}자) — 캐시 저장 건너뜀`);
+  }
 
   return result;
 }

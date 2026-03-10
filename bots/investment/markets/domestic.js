@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { loadPreScreened } from '../scripts/pre-market-screen.js';
 
 import * as db from '../shared/db.js';
 import { getKisSymbols, isKisMarketOpen, isKisHoliday, isPaperMode } from '../shared/secrets.js';
@@ -192,16 +193,38 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (noDynamic) {
     symbols = getKisSymbols();
   } else {
-    try {
-      const { screenDomesticSymbols } = await import('../team/argos.js');
-      const screening = await screenDomesticSymbols();
-      symbols = screening.all;
-      console.log(`🔍 [아르고스] 국내주식 스크리닝: ${symbols.join(', ')}`);
-    } catch (e) {
-      console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
-      symbols = getKisSymbols();
+    // 장전 스크리닝 파일 우선 사용 → 실시간 아르고스 폴백
+    const preScreened = loadPreScreened('domestic');
+    if (preScreened?.symbols?.length > 0) {
+      symbols = preScreened.symbols;
+      const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
+      console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
+    } else {
+      try {
+        const { screenDomesticSymbols } = await import('../team/argos.js');
+        const screening = await screenDomesticSymbols();
+        symbols = screening.all;
+        console.log(`🔍 [아르고스] 국내주식 실시간 스크리닝: ${symbols.join(', ')}`);
+      } catch (e) {
+        console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
+        symbols = getKisSymbols();
+      }
     }
   }
+
+  // 현재 보유 포지션 심볼 추가 (놓치지 않도록)
+  try {
+    await db.initSchema();
+    const positions = await db.getAllPositions();
+    const heldSymbols = positions
+      .filter(p => p.exchange === 'kis')
+      .map(p => p.symbol)
+      .filter(s => !symbols.includes(s));
+    if (heldSymbols.length > 0) {
+      console.log(`  📌 보유 포지션 추가: ${heldSymbols.join(', ')}`);
+      symbols = [...symbols, ...heldSymbols];
+    }
+  } catch { /* 무시 */ }
 
   if (isPaperMode()) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-B)');

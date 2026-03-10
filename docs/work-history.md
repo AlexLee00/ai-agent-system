@@ -62,6 +62,30 @@
 - 35강: Redis 1 인메모리 DB 캐싱 전략 (9,292자, DB ID:27)
 - 최신IT트렌드: AI와 최신 기술이 만들어가는 새로운 미래 (9,853자, DB ID:32, 이미지 2장)
 
+
+## 2026-03-11
+### ✨ 강의 인스타 페어링 + 캐시 실패방지 + launchd INSTA 환경변수 + 이미지 medium 품질
+- runLecturePost 강의 인스타 콘텐츠 페어링 추가 (BLOG_INSTA_ENABLED)
+- img-gen.js quality=high→medium (OPENAI_IMAGE_QUALITY 환경변수 제어)
+- gems-writer.js+pos-writer.js 글자수 미달 시 캐시 저장 건너뜀 (실패 결과 캐시 방지)
+- schedule.js BLOG_RUN_DATE 오버라이드 + _today() 함수 추가
+- launchd ai.blog.daily.plist BLOG_INSTA_ENABLED=true 추가 + reload
+- DB 수동 보정: category_rotation 35/5, publish_schedule 3/10 카테고리 수정
+<!-- session-close:2026-03-11:강의-인스타-페어링-캐시-실패방지-launchd-ins -->
+
+### ✨ 루나팀 국내외장 공격적 매매 전환 (2주 검증)
+- luna.js MIN_CONFIDENCE/FUND_MIN_CONF 마켓별 객체 차등
+- luna.js LUNA_SYSTEM_CRYPTO/STOCK + getLunaSystem() 분기
+- luna.js 투표 폴백 완화 (주식 vote>=0&&conf>=0.3=BUY)
+- nemesis.js NEMESIS_SYSTEM_CRYPTO/STOCK + getNemesisSystem() 분기
+- nemesis.js RULES_CRYPTO/STOCK + getRules() 분기 (주식 MAX_ORDER_USDT 2000)
+- nemesis.js evaluateSignal rules=getRules(signal.exchange) 전면 교체
+- scripts/pre-market-screen.js 신규 (장전 아르고스 스크리닝 → JSON 저장)
+- domestic.js 장전 스크리닝 우선 로드 + 보유 포지션 추가
+- overseas.js 동일 패턴 적용
+- launchd prescreen-domestic(KST 08:00)+prescreen-overseas(KST 21:00) 2개 신규
+<!-- session-close:2026-03-11:루나팀-국내외장-공격적-매매-전환-2주-검증 -->
+
 ## 2026-03-10
 
 ### 블로그팀 장문 출력 극대화 5가지 방법 적용
@@ -92,6 +116,36 @@
 **테스트 결과**: ✅ 강의 8,122자 / ✅ 일반 4,602자 통과
 
 ---
+
+### ✨ 블로그팀 소셜봇 + 이미지 생성 완성
+- N40/N42 Gemini→OpenAI(gpt-4o-mini) 전환
+- N41 인스타 카드 gpt-image-1+sharp 한글 합성
+- img-gen.js Nano Banana 메인+OpenAI High 폴백 신규 구현
+- 이모지→AI 배경 힌트 전략(EMOJI_HINT 맵)
+- llm-keys getGeminiImageKey() 추가
+- llm-logger SQL timestamptz 수정
+- gpt-oss-20b reasoning_effort:low 추가
+- Gemini thinkingBudget:0 추가
+<!-- session-close:2026-03-10:블로그팀-소셜봇-이미지-생성-완성 -->
+
+### ✨ 동적 인사이트 4~6개 + 내부 링킹 과거만 + 소셜→스타
+- bonus-insights.js 신규 (봇별 보너스 풀 + 랜덤 선택)
+- section-ratio.js 신규 (섹션별 글자수 동적 배분, 보너스 순수 추가)
+- social.js→star.js 이름 변경 + blo.js 참조 변경
+- maestro.js bonusInsights+totalInsights 추가
+- pos-writer.js 보너스 인사이트 지시 + 내부 링킹 과거만 Phase 1
+- gems-writer.js 동일 패턴 적용
+- richer.js searchRelatedPosts currentLectureNum 필터 추가
+- registry.json blog-social→blog-star
+<!-- session-close:2026-03-10:동적-인사이트-46개-내부-링킹-과거만-소셜스타 -->
+
+### ✨ 일자별 발행 스케줄 + 테스트 정책 + 도서리뷰 실제 도서 기반
+- publish_schedule 테이블 마이그레이션(002-publish-schedule.sql)
+- schedule.js 신규 (getTodayContext/updateScheduleStatus/ensureSchedule 등)
+- book-research.js 신규 (네이버 책API→Google Books→폴백 베스트셀러)
+- gems-writer.js 도서리뷰 특별 프롬프트 블록 추가
+- blo.js 스케줄 기반 오케스트레이션으로 전면 개편 (category-rotation→schedule.js)
+<!-- session-close:2026-03-10:일자별-발행-스케줄-테스트-정책-도서리뷰-실제-도서-기 -->
 
 ## 2026-03-09
 
