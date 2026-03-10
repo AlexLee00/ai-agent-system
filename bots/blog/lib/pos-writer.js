@@ -8,12 +8,17 @@
  * 모델: GPT-4o (OpenAI)
  */
 
-const OpenAI     = require('openai');
 const toolLogger = require('../../../packages/core/lib/tool-logger');
-const llmLogger  = require('../../../packages/core/lib/llm-logger');
 const llmCache   = require('../../../packages/core/lib/llm-cache');
-const { getTraceId }  = require('../../../packages/core/lib/trace');
-const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
+const { getTraceId }      = require('../../../packages/core/lib/trace');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+
+// 폴백 체인: gpt-4o → gpt-oss-20b (Groq) → gemini-2.5-flash
+const POS_LLM_CHAIN = [
+  { provider: 'openai', model: 'gpt-4o',                                  maxTokens: 16000, temperature: 0.82 },
+  { provider: 'groq',   model: 'openai/gpt-oss-20b',                      maxTokens: 4096,  temperature: 0.82 },
+  { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash',       maxTokens: 4096,  temperature: 0.75 },
+];
 
 // ─── ai-agent-system 프로젝트 컨텍스트 (AI 탐지 우회용) ─────────────
 
@@ -238,86 +243,51 @@ ${experienceBlock}${linkingBlock}
 - 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
   `.trim();
 
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OPENAI_API_KEY 없음 (환경변수 또는 config.yaml 확인)');
-
-  const openai    = new OpenAI({ apiKey });
   const startTime = Date.now();
-  let response;
+  let usedModel = 'gpt-4o';
+  let fallbackUsed = false;
+  let content;
+
   try {
-    response = await openai.chat.completions.create({
-      model:      'gpt-4o',
-      messages:   [
-        { role: 'system', content: POS_SYSTEM_PROMPT },
-        { role: 'user',   content: userPrompt },
-      ],
-      max_tokens:  16000,
-      temperature: 0.82,
+    const result = await callWithFallback({
+      chain:        POS_LLM_CHAIN,
+      systemPrompt: POS_SYSTEM_PROMPT,
+      userPrompt,
+      logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post' },
     });
+    content      = result.text;
+    usedModel    = result.model;
+    fallbackUsed = result.attempt > 1;
+    if (fallbackUsed) console.log(`[포스] LLM 폴백 발생: ${result.provider}/${result.model} (시도 ${result.attempt})`);
   } finally {
-    const latencyMs = Date.now() - startTime;
-    // tool-logger: API 호출 기록
-    await toolLogger.logToolCall('openai', 'chat.completions.create', {
-      bot:          'blog-pos',
-      success:      !!response,
-      duration_ms:  latencyMs,
-      metadata: {
-        model:         'gpt-4o',
-        input_tokens:  response?.usage?.prompt_tokens,
-        output_tokens: response?.usage?.completion_tokens,
-        cost_usd:      _estimateCost(response?.usage),
-        lecture_num:   lectureNumber,
-        trace_id:      getTraceId(),
-      },
-    });
-    // llm-logger: LLM 비용 추적
-    await llmLogger.logLLMCall({
-      team:         'blog',
-      bot:          'blog-pos',
-      model:        response?.model || 'gpt-4o',
-      requestType:  'lecture_post',
-      inputTokens:  response?.usage?.prompt_tokens  || 0,
-      outputTokens: response?.usage?.completion_tokens || 0,
-      latencyMs,
-      success:      !!response,
-    });
+    await toolLogger.logToolCall('llm', 'callWithFallback', {
+      bot: 'blog-pos', success: !!content,
+      duration_ms: Date.now() - startTime,
+      metadata: { model: usedModel, lecture_num: lectureNumber, trace_id: getTraceId(), fallback_used: fallbackUsed },
+    }).catch(() => {});
   }
 
   const MIN_CHARS_LECTURE = 7000;
-  let content = response.choices[0]?.message?.content || '';
 
   // ── Continue 이어쓰기: 글자수 부족 + _THE_END_ 없으면 2차 호출 ──
   if (content.length < MIN_CHARS_LECTURE && !content.includes('_THE_END_')) {
     console.log(`[포스] 글자수 부족 (${content.length}자) — 이어쓰기 호출`);
 
-    const continueResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system',    content: POS_SYSTEM_PROMPT },
-        { role: 'user',      content: userPrompt },
-        { role: 'assistant', content },
-        { role: 'user',      content: '글이 중간에 끊겼다. 끊긴 부분부터 이어서 작성하라.\n앞 내용을 절대 반복하지 말라. 끊긴 지점부터 바로 이어서 쓰라.\n남은 섹션을 모두 완성하고, 마지막에 _THE_END_ 를 적어라.' },
-      ],
-      max_tokens:  8000,
-      temperature: 0.82,
-    });
+    // 이전 내용을 user prompt에 포함한 single-turn 이어쓰기 (폴백 호환)
+    const continuePrompt = `[이전 작성 내용 — 절대 반복하지 말 것]\n${content}\n\n[지시] 위 내용이 끊긴 부분부터 이어서 작성하라. 앞 내용을 반복하지 말고 끊긴 지점부터 바로 이어서 쓰라. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
+    const POS_CONTINUE_CHAIN = POS_LLM_CHAIN.map(c => ({ ...c, maxTokens: 8000 }));
 
-    const continued = continueResponse.choices[0]?.message?.content || '';
-    content = content + '\n' + continued;
-
-    await toolLogger.logToolCall('openai', 'chat.completions.create', {
-      bot: 'blog-pos', success: true,
-      duration_ms: Date.now() - startTime,
-      metadata: {
-        model:         'gpt-4o',
-        type:          'continue',
-        input_tokens:  continueResponse?.usage?.prompt_tokens,
-        output_tokens: continueResponse?.usage?.completion_tokens,
-        cost_usd:      _estimateCost(continueResponse?.usage),
-        lecture_num:   lectureNumber,
-        trace_id:      getTraceId(),
-      },
-    });
+    try {
+      const cont = await callWithFallback({
+        chain:        POS_CONTINUE_CHAIN,
+        systemPrompt: POS_SYSTEM_PROMPT,
+        userPrompt:   continuePrompt,
+        logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_continue' },
+      });
+      content = content + '\n' + cont.text;
+    } catch (e) {
+      console.warn(`[포스] 이어쓰기 실패 (무시): ${e.message}`);
+    }
 
     console.log(`[포스] 이어쓰기 완료: ${content.length}자`);
   }
@@ -328,7 +298,8 @@ ${experienceBlock}${linkingBlock}
   const result  = {
     content,
     charCount: content.length,
-    model:     response.model || 'gpt-4o',
+    model:     usedModel,
+    fallbackUsed,
   };
 
   // 캐시 저장 (TTL: 24시간)

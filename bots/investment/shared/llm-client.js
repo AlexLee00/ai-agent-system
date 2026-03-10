@@ -154,11 +154,11 @@ export function parseJSON(text) {
  * @param {number} [maxTokens=512]
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
-export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512) {
+export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
   // 성능 우선 에이전트 → 멀티 모델 경쟁 (활성) 또는 OpenAI gpt-4o (비활성)
   if (OPENAI_AGENTS.has(agentName)) {
     return DUAL_MODEL
-      ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens)
+      ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens, options)
       : callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
   }
   // 속도 우선 에이전트 → Groq Scout
@@ -240,7 +240,8 @@ function _buildWinReason(ossScore, scoutScore, ossJson, scoutJson) {
 
 // ─── 멀티 모델 경쟁 (gpt-oss-20b vs llama-4-scout, 둘 다 무료) ──────
 
-async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 512) {
+async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
+  const { symbol, cycleId } = options;
   const t0 = Date.now();
 
   const [ossResult, scoutResult] = await Promise.allSettled([
@@ -274,14 +275,15 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
       const pg = require('../../../packages/core/lib/pg-pool');
       await pg.run('investment', `
         INSERT INTO dual_model_results (
-          agent, oss_response, oss_signal, oss_confidence, oss_reasoning,
+          agent, symbol, cycle_id,
+          oss_response, oss_signal, oss_confidence, oss_reasoning,
           oss_score, oss_parseable, oss_latency_ms, oss_input_tokens, oss_output_tokens,
           scout_response, scout_signal, scout_confidence, scout_reasoning,
           scout_score, scout_parseable, scout_latency_ms, scout_input_tokens, scout_output_tokens,
           winner, win_reason, score_diff, signals_agree
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
       `, [
-        agentName,
+        agentName, symbol || null, cycleId || null,
         ossText.slice(0, 2000), ossJson?.signal, ossJson?.confidence, ossJson?.reasoning?.slice(0, 500),
         ossScore, !!ossJson, ossResult.value.latencyMs, ossResult.value.inputTokens, ossResult.value.outputTokens,
         scoutText.slice(0, 2000), scoutJson?.signal, scoutJson?.confidence, scoutJson?.reasoning?.slice(0, 500),
