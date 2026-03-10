@@ -104,6 +104,9 @@ const SLASH_MAP = {
   '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
   '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
   '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
+  // ── 블로그팀 커리큘럼 ──
+  '/curriculum':          { intent: 'curriculum_status',   args: {} },
+  '/curriculum_approve':  { intent: 'curriculum_approve',  args: {} },
 };
 
 function parseSlash(text) {
@@ -224,6 +227,12 @@ const KEYWORD_PATTERNS = [
   { re: /스카|ska/i,      intent: 'ska' },
   { re: /덱스터|dexter/i, intent: 'claude_action', args: { command: 'run_check' } },
   { re: /아처|archer/i,   intent: 'claude_action', args: { command: 'run_archer' } },
+
+  // ── 블로그팀 커리큘럼 ──
+  { re: /^[123]$/, intent: 'curriculum_approve', args: {} },  // 제안 번호 회신
+  { re: /커리큘럼.*(승인|선택|확인|[123]번)|차기.*(시리즈|강의).*(승인|선택|[123])/i, intent: 'curriculum_approve', args: {} },
+  { re: /커리큘럼.*(현황|상태|어때|잔여|남은|몇\s*강)/i, intent: 'curriculum_status', args: {} },
+  { re: /차기.*시리즈.*(현황|제안|추천|언제)/i, intent: 'curriculum_status', args: {} },
 
   // ── 세션 마감 ──
   { re: /세션.*(마무리|마감|정리|close|끝)|마무리.*해줘|마감.*해줘|정리.*해줘|session.*close/i, intent: 'session_close' },

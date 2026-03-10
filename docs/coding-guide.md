@@ -1427,6 +1427,10 @@ function parseJsonResponse(text) {
 | 2026-03-10 | **일자별 발행 스케줄 + 테스트 정책 + 도서리뷰 실제 도서 기반** — publish_schedule 테이블 마이그레이션(002-publish-schedule.sql) 외 4건 |
 | 2026-03-11 | **강의 인스타 페어링 + 캐시 실패방지 + launchd INSTA 환경변수 + 이미지 medium 품질** — runLecturePost 강의 인스타 콘텐츠 페어링 추가 (BLOG_INSTA_ENABLED) 외 5건 |
 | 2026-03-11 | **루나팀 국내외장 공격적 매매 전환 (2주 검증)** — luna.js MIN_CONFIDENCE/FUND_MIN_CONF 마켓별 객체 차등 외 9건 |
+| 2026-03-11 | **블로그팀 차기 강의 시리즈 자동 선정** — curriculum-planner.js 신규 (종료 7강 전 트리거, HN+GitHub 트렌드, LLM 후보 3개, generateCurriculum) 외 4건 |
+| 2026-03-11 | **전 팀 LLM 최적화 + 스크리닝 RAG 폴백 + 스카팀 재가동** — llm-client MINI_FIRST_AGENTS+callOpenAIMini 외 7건 |
+<!-- session-close:2026-03-11:전-팀-llm-최적화-스크리닝-rag-폴백-스카팀-재가 -->
+<!-- session-close:2026-03-11:블로그팀-차기-강의-시리즈-자동-선정 -->
 <!-- session-close:2026-03-11:루나팀-국내외장-공격적-매매-전환-2주-검증 -->
 <!-- session-close:2026-03-11:강의-인스타-페어링-캐시-실패방지-launchd-ins -->
 <!-- session-close:2026-03-10:일자별-발행-스케줄-테스트-정책-도서리뷰-실제-도서-기 -->

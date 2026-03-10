@@ -43,8 +43,8 @@ export function loadSecrets() {
       kis_account_number:         c.kis?.account_number        || '',
       kis_paper_account_number:   c.kis?.paper_account_number  || '',
       kis_paper_trading:    c.kis?.paper_trading   !== false,
-      kis_symbols:          c.kis?.symbols          || ['005930', '000660'],
-      kis_overseas_symbols: c.kis?.overseas_symbols || ['AAPL', 'TSLA', 'NVDA'],
+      kis_symbols:          c.kis?.symbols          || [],  // 아르고스 동적 선정
+      kis_overseas_symbols: c.kis?.overseas_symbols || [],  // 아르고스 동적 선정
       // LLM
       anthropic_api_key:    c.anthropic?.api_key   || '',
       groq_api_key:         c.groq?.accounts?.[0]?.api_key || '',

@@ -125,10 +125,10 @@ app.post('/api/blog/node/rag-experiences', async (req, res) => {
  * → 관련 포스팅 RAG 검색 후 저장
  */
 app.post('/api/blog/node/related-posts', async (req, res) => {
-  const { sessionId, topic } = req.body;
+  const { sessionId, topic, lectureNumber } = req.body;  // ★ lectureNumber 추가
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const result = await richer.searchRelatedPosts(topic || '');
+    const result = await richer.searchRelatedPosts(topic || '', lectureNumber || null);  // ★ 전달
     await ragStore.storeNodeResult(sessionId, 'related-posts', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {

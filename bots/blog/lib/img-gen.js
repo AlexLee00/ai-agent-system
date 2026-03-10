@@ -3,18 +3,18 @@
 /**
  * img-gen.js — 블로그팀 이미지 생성
  *
- * 전략: Nano Banana 메인(무료) → OpenAI gpt-image-1 High 폴백(유료)
+ * 전략: OpenAI gpt-image-1 Medium 메인(유료) → Nano Banana 폴백(무료)
  *
  * 함수:
  *   generateImage(prompt, opts)          — 단건 생성 (폴백 체인)
- *   generateWithNanoBanana(prompt, opts) — Gemini 직접 호출
- *   generateWithOpenAI(prompt, opts)     — OpenAI gpt-image-1 high 직접 호출
+ *   generateWithOpenAI(prompt, opts)     — OpenAI gpt-image-1 medium 직접 호출 (메인)
+ *   generateWithNanoBanana(prompt, opts) — Gemini 직접 호출 (폴백)
  *   generatePostImages({ title, postType, category }) — 블로그 포스팅 이미지 2장
  *   generateInstaCard(summary, cardIndex, outputPath) — 인스타 카드 1장
  *
  * 비용:
- *   Nano Banana: 무료 500장/일 (RPM 15, RPD 1,000)
- *   OpenAI high: ~$0.07/장 (1024×1024, 폴백 시에만)
+ *   OpenAI medium: ~$0.04/장 (1024×1024, 메인)
+ *   Nano Banana: 무료 500장/일 (RPM 15, RPD 1,000, 폴백 시에만)
  */
 
 const fs   = require('fs');
@@ -71,7 +71,7 @@ async function generateWithNanoBanana(prompt, opts = {}) {
   return { buffer: Buffer.from(imgPart.inlineData.data, 'base64'), source: 'nano_banana' };
 }
 
-// ── 2. OpenAI gpt-image-1 High (폴백 — 유료) ───────────────────
+// ── 2. OpenAI gpt-image-1 Medium (폴백 — 유료) ──────────────────
 
 /**
  * OpenAI gpt-image-1 이미지 생성
@@ -117,13 +117,13 @@ async function generateWithOpenAI(prompt, opts = {}) {
     throw new Error('OpenAI 이미지 응답 없음');
   }
 
-  return { buffer, source: 'openai_high' };
+  return { buffer, source: 'openai_medium' };
 }
 
-// ── 3. 폴백 체인 (Nano Banana → OpenAI High) ────────────────────
+// ── 3. 메인 체인 (OpenAI Medium → Nano Banana 폴백) ─────────────
 
 /**
- * 이미지 생성 — Nano Banana 시도, 실패 시 OpenAI High 폴백
+ * 이미지 생성 — OpenAI medium 메인, 실패 시 Nano Banana 폴백
  * @param {string} prompt
  * @param {{ aspectRatio?: string, outputPath?: string }} [opts]
  * @returns {Promise<{ buffer: Buffer, source: string, fallback: boolean }>}
@@ -131,17 +131,17 @@ async function generateWithOpenAI(prompt, opts = {}) {
 async function generateImage(prompt, opts = {}) {
   const { outputPath, ...genOpts } = opts;
 
-  // Nano Banana 시도
+  // OpenAI medium 시도 (메인)
   try {
-    const result = await generateWithNanoBanana(prompt, genOpts);
+    const result = await generateWithOpenAI(prompt, genOpts);
     if (outputPath) _saveBuffer(result.buffer, outputPath);
     return { ...result, fallback: false };
   } catch (e) {
-    console.warn(`  ⚠️ [img-gen] Nano Banana 실패 → OpenAI 폴백: ${e.message}`);
+    console.warn(`  ⚠️ [img-gen] OpenAI 실패 → Nano Banana 폴백: ${e.message}`);
   }
 
-  // OpenAI High 폴백
-  const result = await generateWithOpenAI(prompt, genOpts);
+  // Nano Banana 폴백 (무료)
+  const result = await generateWithNanoBanana(prompt, genOpts);
   if (outputPath) _saveBuffer(result.buffer, outputPath);
   return { ...result, fallback: true };
 }
@@ -195,7 +195,7 @@ async function generatePostImages({ title, postType, category }) {
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug     = `${today}_${postType}_${safeSlug}`;
 
-  console.log(`[이미지] 생성 시작 (Nano Banana → OpenAI High 폴백) — ${title}`);
+  console.log(`[이미지] 생성 시작 (OpenAI Medium 메인 → Nano Banana 폴백) — ${title}`);
 
   const thumbPrompt = _buildThumbPrompt(title, postType, category);
   const midPrompt   = _buildMidPrompt(title, postType, category);

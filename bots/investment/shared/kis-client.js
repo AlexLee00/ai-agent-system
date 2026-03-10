@@ -162,7 +162,12 @@ async function getOverseasPrice(symbol) {
     QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
     COIN: 'NAS', MSTR: 'NAS',
     JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
-    XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD: 'NYS',
+    XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
+    // EV / 중국계 NYSE 상장
+    NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
+    JD:   'NYS', BIDU: 'NYS',
+    // 기타 NYSE
+    RIVN: 'NYS', LCID: 'NYS', PLTR: 'NYS', UBER: 'NYS', LYFT: 'NYS',
   };
   // 주문용 (full code — order API 요구)
   const ORDER_EXCD = {
@@ -171,17 +176,43 @@ async function getOverseasPrice(symbol) {
     QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
     COIN: 'NASD', MSTR: 'NASD',
     JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
-    XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD: 'NYSE',
+    XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
+    // EV / 중국계 NYSE 상장
+    NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
+    JD:   'NYSE', BIDU: 'NYSE',
+    // 기타 NYSE
+    RIVN: 'NYSE', LCID: 'NYSE', PLTR: 'NYSE', UBER: 'NYSE', LYFT: 'NYSE',
   };
+
   // 시세 조회는 항상 실서버 (openapivts는 해외시세 미지원)
-  const data  = await kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
+  const tryFetch = async (excd) => kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
     trId:   TR_ID.OVERSEAS_PRICE,
-    params: { AUTH: '', EXCD: PRICE_EXCD[symbol] ?? 'NAS', SYMB: symbol },
+    params: { AUTH: '', EXCD: excd, SYMB: symbol },
     paper:  false,
   });
-  const price = parseFloat(data.output?.last || '0');
-  if (!price) throw new Error(`${symbol} 해외 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
-  return { price, excd: ORDER_EXCD[symbol] ?? 'NASD' };  // 주문용 EXCD 반환
+
+  const priceExcd = PRICE_EXCD[symbol];
+
+  // ① 맵에 있으면 해당 거래소로 1회 조회
+  if (priceExcd) {
+    const data  = await tryFetch(priceExcd);
+    const price = parseFloat(data.output?.last || '0');
+    if (!price) throw new Error(`${symbol} 해외 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
+    return { price, excd: ORDER_EXCD[symbol] };
+  }
+
+  // ② 맵에 없으면 NAS → NYS → AMX 순으로 자동 탐색
+  for (const [priceCode, orderCode] of [['NAS', 'NASD'], ['NYS', 'NYSE'], ['AMX', 'AMEX']]) {
+    try {
+      const data  = await tryFetch(priceCode);
+      const price = parseFloat(data.output?.last || '0');
+      if (price > 0) {
+        console.log(`  ℹ️ [KIS] ${symbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`);
+        return { price, excd: orderCode };
+      }
+    } catch { /* 다음 거래소 시도 */ }
+  }
+  throw new Error(`${symbol} 해외 현재가 조회 실패 — NAS/NYS/AMX 전체 응답 없음`);
 }
 
 // ─── 계좌번호 파싱 ──────────────────────────────────────────────────
