@@ -52,14 +52,14 @@ async function fetchAnthropicCost() {
   const adminKey = getAnthropicAdminKey();
   if (!adminKey) return null;
 
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const end   = now.toISOString().slice(0, 10);
+  const now        = new Date();
+  const startingAt = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const endingAt   = now.toISOString();
 
   try {
-    // 월간 비용 리포트 (Admin API)
+    // 월간 비용 리포트 (Admin API — cost_report, 일별 granularity)
     const data = await _httpGet(
-      `https://api.anthropic.com/v1/organizations/costs?start_date=${start}&end_date=${end}&granularity=day`,
+      `https://api.anthropic.com/v1/organizations/cost_report?starting_at=${encodeURIComponent(startingAt)}&ending_at=${encodeURIComponent(endingAt)}`,
       {
         'anthropic-version': '2023-06-01',
         'x-api-key': adminKey,
@@ -146,16 +146,18 @@ async function detectAnomalies(provider, monthlyCost) {
 // ── 비용 파싱 ─────────────────────────────────────────────────────
 
 function parseAnthropicCost(data) {
-  // 응답 형식: { data: [{ date, input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, cost_usd }] }
-  // 또는 다른 형식일 수 있으므로 유연하게 처리
+  // cost_report 응답: { data: [{ starting_at, ending_at, results: [{ currency, amount }] }] }
+  // amount: USD 센트(cent) decimal string → /100 해서 USD로 변환
   if (data?._error) return { cost: 0, error: data._error };
-  const items = data?.data || data?.results || [];
-  let total = 0;
-  for (const item of items) {
-    const cost = parseFloat(item.cost_usd || item.cost || item.amount?.value || 0);
-    total += isNaN(cost) ? 0 : cost;
+  const buckets = data?.data || [];
+  let totalCents = 0;
+  for (const bucket of buckets) {
+    for (const r of (bucket.results || [])) {
+      const c = parseFloat(r.amount ?? 0);
+      totalCents += isNaN(c) ? 0 : c;
+    }
   }
-  return { cost: total };
+  return { cost: totalCents / 100 };  // 센트 → USD
 }
 
 function parseOpenAICost(data) {
