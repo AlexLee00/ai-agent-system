@@ -16,6 +16,7 @@
 
 const maestro                                       = require('./maestro');
 const { generatePostImages }                        = require('./img-gen');
+const { createInstaContent }                        = require('./social');
 const { getConfig }                                 = require('./daily-config');
 const {
   getNextGeneralCategory, advanceGeneralCategory,
@@ -231,6 +232,19 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
     const images = await generatePostImages({ title: genTitle, postType: 'general', category }).catch(e => {
       console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
     });
+
+    // ★ 소셜(SOCIAL) — 인스타 크로스 포스팅 (generalVariations.includeInsta 기반)
+    let instaContent = null;
+    if (process.env.BLOG_INSTA_ENABLED === 'true') {
+      const imgDir = images?.outputDir || path.join(require('os').homedir(), 'Library/Mobile Documents/com~apple~CloudDocs/blog/output/images');
+      instaContent = await createInstaContent(post.content, genTitle, category, imgDir).catch(e => {
+        console.warn('[소셜] 인스타 생성 실패 (무시):', e.message); return null;
+      });
+      if (instaContent) {
+        console.log(`[소셜] 인스타 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
+      }
+    }
+
     const published = await publishToFile({
       title:    genTitle,
       content:  post.content,
@@ -248,14 +262,15 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
     });
 
     return {
-      type:      'general',
+      type:         'general',
       category,
-      title:     post.title || `[${category}]`,
-      charCount: post.charCount,
-      quality:   quality.passed,
-      aiRisk:    quality.aiRisk,
-      filename:  published.filename,
-      postId:    published.postId,
+      title:        post.title || `[${category}]`,
+      charCount:    post.charCount,
+      quality:      quality.passed,
+      aiRisk:       quality.aiRisk,
+      filename:     published.filename,
+      postId:       published.postId,
+      instaContent: instaContent || null,
     };
   });
 }
