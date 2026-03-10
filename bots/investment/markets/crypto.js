@@ -287,9 +287,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const screening = await screenCryptoSymbols();
       symbols = screening.all;
       console.log(`🔍 [아르고스] 스크리닝 완료: ${symbols.join(', ')}`);
+      const { savePreScreened } = await import('../scripts/pre-market-screen.js');
+      savePreScreened('crypto', symbols);  // RAG용 최신 결과 저장
+      const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
+      await recordScreeningSuccess('crypto');
     } catch (e) {
-      console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
-      symbols = getSymbols();
+      console.warn(`⚠️ 아르고스 스크리닝 실패 — RAG 폴백 시도: ${e.message}`);
+      const { loadPreScreenedFallback } = await import('../scripts/pre-market-screen.js');
+      const rag = loadPreScreenedFallback('crypto');
+      if (rag?.symbols?.length > 0) {
+        symbols = rag.symbols;
+        const ageMin = Math.floor((Date.now() - rag.savedAt) / 60000);
+        console.log(`  📚 [RAG 폴백] 최근 스크리닝 재사용 (${ageMin}분 전): ${symbols.join(', ')}`);
+      } else {
+        symbols = getSymbols();  // config.yaml 기본 종목 최후 폴백
+      }
+      const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
+      await recordScreeningFailure('crypto', e.message);
     }
   }
 

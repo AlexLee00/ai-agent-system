@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { loadPreScreened } from '../scripts/pre-market-screen.js';
+import { loadPreScreened, loadPreScreenedFallback, savePreScreened } from '../scripts/pre-market-screen.js';
 
 import * as db from '../shared/db.js';
 import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
@@ -205,9 +205,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         const screening = await screenOverseasSymbols();
         symbols = screening.all;
         console.log(`🔍 [아르고스] 해외주식 실시간 스크리닝: ${symbols.join(', ')}`);
+        savePreScreened('overseas', symbols);  // RAG용 최신 결과 저장
+        const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
+        await recordScreeningSuccess('overseas');
       } catch (e) {
-        console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
-        symbols = getKisOverseasSymbols();
+        console.warn(`⚠️ 아르고스 스크리닝 실패 — RAG 폴백 시도: ${e.message}`);
+        const rag = loadPreScreenedFallback('overseas');
+        if (rag?.symbols?.length > 0) {
+          symbols = rag.symbols;
+          const ageMin = Math.floor((Date.now() - rag.savedAt) / 60000);
+          console.log(`  📚 [RAG 폴백] 최근 스크리닝 재사용 (${ageMin}분 전): ${symbols.join(', ')}`);
+        } else {
+          symbols = [];  // 기본 종목 없음 — 보유 포지션은 아래 블록에서 추가
+        }
+        const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
+        await recordScreeningFailure('overseas', e.message);
       }
     }
   }
@@ -243,6 +255,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const check = shouldRunCycle(force);
   if (!check.run) {
     console.log(`⏳ 사이클 스킵: ${check.reason}`);
+    process.exit(0);
+  }
+
+  // 보유 포지션 포함 후에도 종목 없으면 스킵
+  if (symbols.length === 0) {
+    console.log('⏭️ 처리할 종목 없음 (아르고스 스크리닝 필요) — 사이클 스킵');
     process.exit(0);
   }
 

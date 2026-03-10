@@ -13,10 +13,10 @@ const llmCache   = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 
-// 폴백 체인: gpt-4o → gpt-oss-20b (OpenAI 오픈소스, Groq 경유) → gemini-2.5-flash
+// 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const POS_LLM_CHAIN = [
   { provider: 'openai', model: 'gpt-4o',                                  maxTokens: 16000, temperature: 0.82 },
-  { provider: 'groq',   model: 'openai/gpt-oss-20b',                      maxTokens: 4096,  temperature: 0.82 },
+  { provider: 'openai', model: 'gpt-4o-mini',                             maxTokens: 4096,  temperature: 0.82 },
   { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash',       maxTokens: 4096,  temperature: 0.75 },
 ];
 
@@ -110,6 +110,18 @@ ${GEO_RULES}
 4. 기술 용어는 괄호를 통해 쉽게 풀이
 5. 1,000자마다 독자 소통 브릿지 문구 삽입 ("어떠세요, 이해가 되셨나요?" 등)
 6. Node.js 공식 문서 출처 명시
+6-1. [섹션 내 참고 링크 삽입 규칙]
+   각 주요 섹션에 관련 공식 문서 또는 참고 링크를 1~2개 자연스럽게 삽입하라.
+   허용 도메인 (이 도메인만 사용 — 환각 방지):
+     nodejs.org/api/  · developer.mozilla.org/  · github.com/
+     npmjs.com/package/  · expressjs.com/  · redis.io/docs/  · www.postgresql.org/docs/
+   삽입 형식: → 자세한 내용은 [문서명](URL) 참고 ← 여기에 링크 삽입
+   삽입 위치:
+     [강의 - 이론] 섹션: 해당 기술의 공식 문서 1개
+     [실무 - 코드] 섹션: 사용한 라이브러리 npm 또는 공식 문서 1개
+     [AEO FAQ] 섹션: 관련 공식 문서 1개 (Q&A 답변 근거)
+   주의: URL을 확실히 아는 것만 삽입. 모르면 "← 여기에 링크 삽입" 안내만 하라.
+         존재하지 않는 URL 절대 생성 금지.
 7. ★ 날씨 맥락 3회 이상 자연스럽게 삽입 (인사말/본문 중간/결론)
 8. 개인 경험/감상 표현 2회 이상 ("제가 직접 운영하는 시스템에서...", "솔직히...")
 9. 모든 섹션을 빠짐없이 작성 완료한 후, 반드시 마지막 줄에 _THE_END_ 를 적어라.

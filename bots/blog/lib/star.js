@@ -5,10 +5,11 @@
  *
  * 역할:
  *   N40. 포스팅 본문 → 섹션별 15~20자 요약 (gpt-4o-mini, OpenAI)
- *   N41. 요약 텍스트 → 1024×1024 인스타 카드 (img-gen: Nano Banana 메인 + OpenAI High 폴백)
+ *   N41. 요약 텍스트 → 1024×1024 인스타 카드 (img-gen: Nano Banana 메인 + OpenAI Medium 폴백)
  *   N42. 캡션 + 해시태그 자동 생성 (gpt-4o-mini, OpenAI)
  *
- * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI High 폴백 유료
+ * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI Medium 폴백 유료
+ * 산출물: insta_content.html (Safari 복붙) + insta_content.txt (메모앱) + meta JSON
  */
 
 const { callWithFallback }  = require('../../../packages/core/lib/llm-fallback');
@@ -55,7 +56,10 @@ ${content.slice(0, 6000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: [{ provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024 }],
+    chain: [
+      { provider: 'openai', model: 'gpt-4o-mini',                              maxTokens: 1024 },
+      { provider: 'groq',   model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024 },
+    ],
     systemPrompt: SUMMARIZE_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_summarize' },
@@ -115,7 +119,10 @@ ${content.slice(0, 3000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: [{ provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024 }],
+    chain: [
+      { provider: 'openai', model: 'gpt-4o-mini',                              maxTokens: 1024 },
+      { provider: 'groq',   model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024 },
+    ],
     systemPrompt: CAPTION_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_caption' },
@@ -204,13 +211,93 @@ async function createInstaContent(content, title, category, cardCount = 3) {
     caption, hashtags, cta, fullText,
     createdAt: new Date().toISOString(),
   };
-  const metaFilename = `${slug}_insta-meta.json`;
+
   if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
+
+  // ── JSON (기존 호환 — 프로그래밍 참조용) ──
+  const metaFilename = `${slug}_insta-meta.json`;
   fs.writeFileSync(path.join(INSTA_DIR, metaFilename), JSON.stringify(meta, null, 2));
+
+  // ── HTML (아이폰 Safari — 이모지+서식 + 복사 버튼) ──
+  const htmlContent = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📸 ${title} — 인스타</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; line-height: 1.8; color: #222; }
+  h1 { font-size: 1.2rem; border-bottom: 2px solid #e1306c; padding-bottom: 8px; }
+  h2 { font-size: 1rem; margin-top: 20px; }
+  .caption { background: #fafafa; border-left: 4px solid #e1306c; padding: 12px; margin: 8px 0; white-space: pre-wrap; }
+  .hashtags { color: #00376b; word-wrap: break-word; line-height: 2; background: #f0f7ff; padding: 12px; border-radius: 8px; }
+  .card-info { background: #f0f0f0; padding: 8px 12px; margin: 6px 0; border-radius: 8px; font-size: 0.9rem; }
+  .copy-btn { background: #e1306c; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 0.95rem; margin: 6px 4px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  footer { color: #aaa; font-size: 0.78rem; margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; }
+</style>
+</head>
+<body>
+<h1>📸 ${title}</h1>
+
+<h2>📝 캡션</h2>
+<div class="caption" id="cap">${caption.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cap').innerText).then(()=>alert('캡션 복사됨!'))">캡션 복사</button>
+
+<h2>#️⃣ 해시태그</h2>
+<div class="hashtags" id="tags">${hashtags.join(' ')}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('tags').innerText).then(()=>alert('해시태그 복사됨!'))">해시태그 복사</button>
+
+<h2>📣 CTA</h2>
+<div class="caption" id="cta">${(cta || '').replace(/</g, '&lt;')}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cta').innerText).then(()=>alert('CTA 복사됨!'))">CTA 복사</button>
+
+<h2>🖼️ 카드 목록 (${cards.length}장)</h2>
+${cards.map((c, i) => `<div class="card-info">카드 ${i + 1}: ${c.summary || ''}</div>`).join('\n')}
+
+<footer>생성: ${new Date().toLocaleString('ko-KR')} | 팀 제이 스타 봇</footer>
+</body>
+</html>`;
+  const htmlFilename = `${slug}_insta.html`;
+  fs.writeFileSync(path.join(INSTA_DIR, htmlFilename), htmlContent, 'utf8');
+
+  // ── TXT (아이폰 메모 앱 — 플레인 텍스트 복붙용) ──
+  const txtContent = [
+    `📸 ${title}`,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    '📝 캡션',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    caption,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    '#️⃣ 해시태그',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    hashtags.join(' '),
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    '📣 CTA',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    cta || '',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    `🖼️ 카드 ${cards.length}장`,
+    ...cards.map((c, i) => `  카드 ${i + 1}: ${c.summary || ''}`),
+    '',
+    `생성: ${new Date().toLocaleString('ko-KR')}`,
+  ].join('\n');
+  const txtFilename = `${slug}_insta.txt`;
+  fs.writeFileSync(path.join(INSTA_DIR, txtFilename), txtContent, 'utf8');
+
+  // ── 구글드라이브 동기화 (html + txt + json) ──
   try {
     if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
     fs.writeFileSync(path.join(GDRIVE_DIR, metaFilename), JSON.stringify(meta, null, 2));
-  } catch (_) {}
+    fs.writeFileSync(path.join(GDRIVE_DIR, htmlFilename), htmlContent, 'utf8');
+    fs.writeFileSync(path.join(GDRIVE_DIR, txtFilename), txtContent, 'utf8');
+    console.log(`  📱 [스타] 구글드라이브 동기화: html + txt + json`);
+  } catch (e) {
+    console.warn(`  ⚠️ [스타] 구글드라이브 복사 실패: ${e.message}`);
+  }
 
   console.log(`[소셜] 완성: 카드 ${cards.length}장 + 해시태그 ${hashtags.length}개`);
   return meta;

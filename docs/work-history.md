@@ -4,6 +4,38 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 전 팀 LLM 모델 최적화 + 스카팀 재가동 (2026-03-11)
+
+**루나팀 llm-client.js v2.4 — 에이전트 라우팅 재배치**
+- `GROQ_AGENTS`: `['nemesis', 'oracle']` (athena/zeus 제거)
+- `MINI_FIRST_AGENTS` 신규: `['hermes', 'sophia', 'zeus', 'athena']` → gpt-4o-mini 메인 + scout 폴백
+- `callOpenAIMini()` 함수 신규 추가
+- `callGroq()` 폴백: gpt-4o → **gpt-4o-mini**로 변경 (비용 절감)
+
+**블로그팀 LLM 폴백 체인 변경**
+- `pos-writer.js`, `gems-writer.js`: 2순위 `gpt-oss-20b` → `gpt-4o-mini`
+- `star.js`: 단일 chain → gpt-4o-mini + llama-4-scout 폴백 추가
+
+**클로드팀 LLM 최적화**
+- `claude-lead-brain.js`: LLM_CHAIN에서 `claude-sonnet-4-6` 제거 → `gpt-4o → gpt-4o-mini → scout`
+- `archer/config.js`: OPENAI.model `gpt-4o` → `gpt-4o-mini`
+
+**루나팀 스크리닝 장애 대응 인프라 (변경 7)**
+- `screening-monitor.js` 신규: 연속 실패 횟수 추적 + 3회 이상 시 텔레그램 알림 (2h 중복 방지)
+- `pre-market-screen.js`: `PRESCREENED_FILE`에 `crypto` 추가, `loadPreScreenedFallback()` 신규 (24h TTL RAG 폴백)
+- `domestic.js`, `overseas.js`: 아르고스 성공 시 `savePreScreened()` 저장, 실패 시 RAG 폴백 → 없으면 빈 배열
+- `crypto.js`: 동일 RAG 폴백 패턴 적용 (최후 폴백: config.yaml 기본 종목)
+
+**스카팀 완전 재가동**
+- 구 프로세스 정리: ska.js(22143), start-ops.sh(22637), naver-monitor.js(57001)
+- Chrome SingletonLock 제거, 스테일 락 파일 정리
+- kickstart: ska.commander(59200), naver-monitor(59205/59289), kiosk-monitor(59390/59398)
+- kiosk-monitor 이전 exit 1 (02:10 Navigation timeout) → 재기동 후 정상
+
+**체크섬 갱신**: `bots/claude/.checksums.json`
+
+---
+
 ### API 빌링 추적 + 아처 비용 트렌드 리포트 (2026-03-10)
 
 **덱스터 billing.js 체크 모듈 신규**
@@ -85,6 +117,25 @@
 - overseas.js 동일 패턴 적용
 - launchd prescreen-domestic(KST 08:00)+prescreen-overseas(KST 21:00) 2개 신규
 <!-- session-close:2026-03-11:루나팀-국내외장-공격적-매매-전환-2주-검증 -->
+
+### ✨ 블로그팀 차기 강의 시리즈 자동 선정
+- curriculum-planner.js 신규 (종료 7강 전 트리거, HN+GitHub 트렌드, LLM 후보 3개, generateCurriculum)
+- 003-curriculum-tables.sql 마이그레이션 (curriculum_series 신규 + 기존 curriculum 확장)
+- blo.js dailyCurriculumCheck() 매일 호출 + transitionSeries() 시리즈 자동 전환
+- schedule.js curriculum-planner getNextLectureTitle 우선 조회 연동
+- DB: curriculum_series 생성 (Node.js 시리즈 active) + 기존 120강 series_id 연결 완료
+<!-- session-close:2026-03-11:블로그팀-차기-강의-시리즈-자동-선정 -->
+
+### ✨ 전 팀 LLM 최적화 + 스크리닝 RAG 폴백 + 스카팀 재가동
+- llm-client MINI_FIRST_AGENTS+callOpenAIMini
+- pos/gems-writer gpt-4o-mini 폴백
+- star.js scout 폴백
+- claude-lead-brain sonnet 제거
+- archer gpt-4o-mini
+- screening-monitor.js 신규
+- RAG 폴백 24h TTL
+- 스카팀 kickstart 재가동
+<!-- session-close:2026-03-11:전-팀-llm-최적화-스크리닝-rag-폴백-스카팀-재가 -->
 
 ## 2026-03-10
 

@@ -24,9 +24,11 @@ const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const PRESCREENED_FILE = {
   domestic: join(OPENCLAW_DIR, 'domestic-prescreened.json'),
   overseas: join(OPENCLAW_DIR, 'overseas-prescreened.json'),
+  crypto:   join(OPENCLAW_DIR, 'crypto-prescreened.json'),
 };
 
-const PRESCREENED_TTL_MS = 4 * 3600 * 1000;  // 4시간 유효
+const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
+const PRESCREENED_RAG_TTL_MS = 24 * 3600 * 1000;  // 24시간 (RAG 폴백)
 
 // ─── 공개 유틸 (domestic.js / overseas.js에서 import) ───────────────
 
@@ -50,8 +52,28 @@ export function loadPreScreened(market) {
 }
 
 /**
+ * RAG 폴백: 최근 24시간 내 마지막 성공 스크리닝 결과 반환
+ * 아르고스 실시간 스크리닝 실패 시 사용
+ * @param {'domestic'|'overseas'|'crypto'} market
+ * @returns {{ symbols: string[], savedAt: number, ... } | null}
+ */
+export function loadPreScreenedFallback(market) {
+  const file = PRESCREENED_FILE[market];
+  if (!file || !existsSync(file)) return null;
+  try {
+    const data  = JSON.parse(readFileSync(file, 'utf8'));
+    const ageMs = Date.now() - (data.savedAt || 0);
+    if (ageMs > PRESCREENED_RAG_TTL_MS) {
+      console.log(`  ⏰ RAG 폴백 캐시 만료 (${Math.floor(ageMs / 3600000)}h 경과) — 무시`);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+/**
  * 장전 스크리닝 결과 저장
- * @param {'domestic'|'overseas'} market
+ * @param {'domestic'|'overseas'|'crypto'} market
  * @param {string[]} symbols
  * @param {object} [meta]
  */
