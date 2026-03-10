@@ -456,6 +456,16 @@
       "description": "포스팅 파일 생성 + DB 기록 + RAG 저장 + 발행 이력 추적",
       "status": "ops",
       "contextPath": "bots/blog/lib/publ.js"
+    },
+    "blog-social": {
+      "name": "소셜",
+      "team": "blog",
+      "role": "insta_cross_posting",
+      "description": "인스타 크로스 포스팅 — 블로그 1편 → 카드 3장(Imagen) + 캡션 + 해시태그 자동 생성",
+      "status": "ops",
+      "contextPath": "bots/blog/lib/social.js",
+      "trigger": "BLOG_INSTA_ENABLED=true 환경변수 활성화 시 일반 포스팅 파이프라인에서 자동 실행",
+      "cost": "카드 3장 기준 ~$0.09/편 (Imagen $0.03/장, Gemini Flash 무료)"
     }
   },
   "loaderTypes": {
