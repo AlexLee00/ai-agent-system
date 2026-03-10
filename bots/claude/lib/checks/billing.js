@@ -14,7 +14,7 @@
 
 const https   = require('https');
 const pgPool  = require('../../../../packages/core/lib/pg-pool');
-const { getAnthropicAdminKey, getOpenAIKey, getBillingBudget } = require('../../../../packages/core/lib/llm-keys');
+const { getAnthropicAdminKey, getOpenAIAdminKey, getBillingBudget } = require('../../../../packages/core/lib/llm-keys');
 
 // ── 예산/임계값 ────────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ async function fetchAnthropicCost() {
 // ── OpenAI Usage API ──────────────────────────────────────────────
 
 async function fetchOpenAICost() {
-  const apiKey = getOpenAIKey();
+  const apiKey = getOpenAIAdminKey();
   if (!apiKey) return null;
 
   const now   = new Date();

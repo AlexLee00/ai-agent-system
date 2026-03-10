@@ -31,6 +31,7 @@ function loadConfig() {
 function getAnthropicKey()      { return loadConfig()?.anthropic?.api_key       || process.env.ANTHROPIC_API_KEY       || null; }
 function getAnthropicAdminKey() { return loadConfig()?.anthropic?.admin_api_key  || process.env.ANTHROPIC_ADMIN_API_KEY  || null; }
 function getOpenAIKey()         { return loadConfig()?.openai?.api_key           || process.env.OPENAI_API_KEY           || null; }
+function getOpenAIAdminKey()    { return loadConfig()?.openai?.admin_api_key      || process.env.OPENAI_ADMIN_API_KEY      || null; }
 function getGeminiKey()         { return loadConfig()?.gemini?.api_key           || process.env.GEMINI_API_KEY           || null; }
 function getGroqAccounts()      { return loadConfig()?.groq?.accounts            || []; }
 function getCerebrasKey()       { return loadConfig()?.cerebras?.api_key         || null; }
@@ -52,6 +53,7 @@ module.exports = {
   getAnthropicKey,
   getAnthropicAdminKey,
   getOpenAIKey,
+  getOpenAIAdminKey,
   getGeminiKey,
   getGroqAccounts,
   getCerebrasKey,
