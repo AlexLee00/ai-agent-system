@@ -165,6 +165,39 @@ async function checkAndyLastSuccess(items) {
   }
 }
 
+// ── 체크 6: 완료 예약 허위 취소 감지 ───────────────────────────────
+// cancelled_keys에 등록된 항목 중 reservations.status='completed'인 건이 있으면
+// → 이용 완료된 예약이 취소 처리된 이상 케이스 (2026-03-10 발견·수정된 버그 재발 감지)
+async function checkFalseCancellation(items) {
+  let rows;
+  try {
+    rows = await pgPool.query(SCHEMA, `
+      SELECT ck.cancel_key, r.id, r.date, r.start_time, r.end_time, r.room, ck.cancelled_at
+      FROM cancelled_keys ck
+      JOIN reservations r
+        ON ck.cancel_key = 'cancelid|' || r.id::text
+      WHERE r.status = 'completed'
+        AND ck.cancelled_at > NOW() - INTERVAL '7 days'
+      LIMIT 10
+    `);
+  } catch (e) {
+    items.push({ label: '완료 예약 허위 취소', status: 'warn', detail: `조회 실패: ${e.message}` });
+    return;
+  }
+
+  if (rows && rows.length > 0) {
+    for (const row of rows) {
+      items.push({
+        label:  '완료 예약 허위 취소',
+        status: 'error',
+        detail: `id=${row.id} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — completed 상태인데 cancelled_keys 등록됨 (취소감지4 오발동 의심)`,
+      });
+    }
+  } else {
+    items.push({ label: '완료 예약 허위 취소', status: 'ok', detail: '이상 없음' });
+  }
+}
+
 // ─── 메인 run ────────────────────────────────────────────────────
 
 async function run() {
@@ -180,6 +213,7 @@ async function run() {
   await checkPickkoLock(items);
   await checkPendingBlocks(items);
   await checkAndyLastSuccess(items);
+  await checkFalseCancellation(items);
 
   const hasError = items.some(i => i.status === 'error');
   const hasWarn  = items.some(i => i.status === 'warn');
