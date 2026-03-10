@@ -158,15 +158,66 @@ ${GEO_RULES}
 각 섹션은 [섹션명] 형태로 구분하라.
 `.trim();
 
+// ─── sectionVariation 지시 블록 생성 ────────────────────────────────
+
+/**
+ * sectionVariation 객체를 LLM 지시 텍스트로 변환.
+ * variation이 비어있으면 빈 문자열 반환.
+ *
+ * @param {object} variation - maestro.buildDynamicVariation() 결과
+ * @returns {string}
+ */
+function _buildVariationBlock(variation = {}) {
+  if (!Object.keys(variation).length) return '';
+
+  const lines = ['[이번 포스팅 변형 지시 — 반드시 준수]'];
+
+  if (variation.greetingStyle) {
+    const styles = {
+      formal:   '격식체 존댓말로 정중하게',
+      casual:   '편안한 반말체로 친근하게',
+      question: '독자에게 질문을 던지는 형식으로',
+      story:    '오늘 아침 에피소드를 먼저 들려주는 스토리텔링으로',
+    };
+    lines.push(`인사말 스타일: ${styles[variation.greetingStyle] || '자유롭게'}`);
+  }
+  if (variation.insightCount)   lines.push(`실무 인사이트 개수: ${variation.insightCount}개`);
+  if (variation.codeBlockCount) lines.push(`코드 블록 수: ${variation.codeBlockCount}개 이상`);
+  if (variation.faqCount)       lines.push(`FAQ 개수: ${variation.faqCount}개`);
+  if (variation.listStyle) {
+    const lStyles = {
+      number: '번호 리스트(1. 2. 3.)',
+      bullet: '불릿 리스트(•)',
+      mixed:  '번호와 불릿 혼용',
+    };
+    lines.push(`리스트 스타일: ${lStyles[variation.listStyle] || '자유'}`);
+  }
+  if (variation.bridgeInterval) {
+    lines.push(`독자 소통 브릿지: ${variation.bridgeInterval}자마다 삽입`);
+  }
+  if (variation.cafePosition) {
+    const cPos = {
+      after_theory: '강의 이론 직후',
+      after_code:   '코드 섹션 직후',
+      before_faq:   'FAQ 바로 앞',
+      last:         '마무리 직전',
+    };
+    lines.push(`카페 홍보 위치: ${cPos[variation.cafePosition] || '기본 위치'}`);
+  }
+
+  return '\n' + lines.join('\n') + '\n';
+}
+
 // ─── 강의 포스팅 생성 ────────────────────────────────────────────────
 
 /**
  * @param {number} lectureNumber
  * @param {string} lectureTitle
- * @param {object} researchData — 리처 수집 결과 (realExperiences, relatedPosts 포함)
+ * @param {object} researchData    — 리처 수집 결과 (realExperiences, relatedPosts 포함)
+ * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model }}
  */
-async function writeLecturePost(lectureNumber, lectureTitle, researchData) {
+async function writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation = {}) {
   const cacheKey = `pos_lecture_${lectureNumber}`;
 
   // 캐시 확인 (당일 재실행 중복 방지)
@@ -233,7 +284,7 @@ ${experienceBlock}${linkingBlock}
 - [마무리 인사 + 함께 읽으면 좋은 글]: 400자
 - [해시태그]: 22개 이상
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
-
+${_buildVariationBlock(sectionVariation)}
 [출력 규칙]
 - 이 강의는 수강생이 실무에 즉시 적용할 수 있도록 빈틈없이(exhaustively) 작성되어야 한다.
 - 각 섹션을 충분하고 상세하게(comprehensively and thoroughly) 서술하라.
@@ -315,8 +366,13 @@ const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 /**
  * 4그룹으로 나눠서 호출 → 합쳐서 하나의 강의 포스팅 완성
  * 환경변수 BLOG_LLM_MODEL: 'gemini' (무료) | 'gpt4o' (유료 폴백)
+ *
+ * @param {number} lectureNumber
+ * @param {string} lectureTitle
+ * @param {object} researchData
+ * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  */
-async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData) {
+async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation = {}) {
   const weather         = researchData.weather        || {};
   const nodejsUpdates   = researchData.nodejs_updates || [];
   const itNews          = researchData.it_news        || [];
@@ -352,7 +408,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
 
 총 2,500자 이상. 날씨 맥락 1회 포함.
 이전 강의(${lectureNumber - 1}강) 내용을 인사말에서 간략히 연결하라.
-      `.trim(),
+${_buildVariationBlock(sectionVariation)}      `.trim(),
     },
     {
       id: 'group_b', minChars: 2000,

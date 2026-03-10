@@ -1,0 +1,212 @@
+{
+  "name": "블로그팀 동적 포스팅",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook 수신",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "blog-pipeline",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "split-pipeline",
+      "name": "파이프라인 파싱",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "// 웹훅 입력 파싱\nconst body = $input.item.json.body || $input.item.json;\nconst { postType, sessionId, pipeline, variations } = body;\n\nreturn [{ json: { postType, sessionId, pipeline, variations } }];"
+      }
+    },
+    {
+      "id": "node-weather",
+      "name": "날씨 수집",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/weather",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
+        }
+      }
+    },
+    {
+      "id": "node-it-news",
+      "name": "IT뉴스 수집",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/it-news",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
+        }
+      }
+    },
+    {
+      "id": "node-nodejs",
+      "name": "Node.js 업데이트 수집",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/nodejs-updates",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
+        }
+      }
+    },
+    {
+      "id": "node-rag-exp",
+      "name": "RAG 실전 사례",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/rag-experiences",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
+          "topic": "Node.js",
+          "postType": "={{ $('파이프라인 파싱').item.json.postType }}"
+        }
+      }
+    },
+    {
+      "id": "node-related",
+      "name": "관련 포스팅",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/related-posts",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
+          "topic": "Node.js"
+        }
+      }
+    },
+    {
+      "id": "node-write",
+      "name": "글 생성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3100/api/blog/node/write-{{ $('파이프라인 파싱').item.json.postType === 'lecture' ? 'lecture' : 'general' }}",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
+          "category": "자기계발",
+          "lectureNumber": 1,
+          "lectureTitle": "Node.js 기초",
+          "sectionVariation": "={{ $('파이프라인 파싱').item.json.variations }}"
+        }
+      }
+    },
+    {
+      "id": "node-quality",
+      "name": "품질 검증",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3100/api/blog/node/quality-check",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": {
+          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
+          "postType": "={{ $('파이프라인 파싱').item.json.postType }}"
+        }
+      }
+    },
+    {
+      "id": "respond-webhook",
+      "name": "완료 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, sessionId: $('파이프라인 파싱').item.json.sessionId, quality: $('품질 검증').item.json }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook 수신": {
+      "main": [
+        [{ "node": "파이프라인 파싱", "type": "main", "index": 0 }]
+      ]
+    },
+    "파이프라인 파싱": {
+      "main": [
+        [
+          { "node": "날씨 수집",              "type": "main", "index": 0 },
+          { "node": "IT뉴스 수집",            "type": "main", "index": 0 },
+          { "node": "Node.js 업데이트 수집",  "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "날씨 수집": {
+      "main": [
+        [{ "node": "RAG 실전 사례", "type": "main", "index": 0 }]
+      ]
+    },
+    "IT뉴스 수집": {
+      "main": [
+        [{ "node": "RAG 실전 사례", "type": "main", "index": 0 }]
+      ]
+    },
+    "Node.js 업데이트 수집": {
+      "main": [
+        [{ "node": "관련 포스팅", "type": "main", "index": 0 }]
+      ]
+    },
+    "RAG 실전 사례": {
+      "main": [
+        [{ "node": "글 생성", "type": "main", "index": 0 }]
+      ]
+    },
+    "관련 포스팅": {
+      "main": [
+        [{ "node": "글 생성", "type": "main", "index": 0 }]
+      ]
+    },
+    "글 생성": {
+      "main": [
+        [{ "node": "품질 검증", "type": "main", "index": 0 }]
+      ]
+    },
+    "품질 검증": {
+      "main": [
+        [{ "node": "완료 응답", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

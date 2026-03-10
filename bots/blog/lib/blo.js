@@ -14,6 +14,7 @@
  *   8. 텔레그램 리포트 + AI 리라이팅 가이드 (mode-guard)
  */
 
+const maestro                                       = require('./maestro');
 const { getConfig }                                 = require('./daily-config');
 const {
   getNextGeneralCategory, advanceGeneralCategory,
@@ -98,6 +99,9 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
     return { type: 'lecture', skipped: true, reason: '시리즈 완료' };
   }
 
+  // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
+  const sectionVariation = preloaded.sectionVariation || {};
+
   const { number, seriesName } = preloaded.number
     ? preloaded
     : await getNextLectureNumber();
@@ -127,8 +131,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
   // 작성
   return await withTrace(traceCtx, async () => {
     let post    = useChunked
-      ? await writeLecturePostChunked(number, lectureTitle, researchData)
-      : await writeLecturePost(number, lectureTitle, researchData);
+      ? await writeLecturePostChunked(number, lectureTitle, researchData, sectionVariation)
+      : await writeLecturePost(number, lectureTitle, researchData, sectionVariation);
     let quality = checkQuality(post.content, 'lecture');
     console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
     quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
@@ -136,8 +140,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
     if (!quality.passed) {
       console.log('[품질] 재작성 시도...');
       const retry        = useChunked
-        ? await writeLecturePostChunked(number, lectureTitle, researchData)
-        : await writeLecturePost(number, lectureTitle, researchData);
+        ? await writeLecturePostChunked(number, lectureTitle, researchData, sectionVariation)
+        : await writeLecturePost(number, lectureTitle, researchData, sectionVariation);
       const retryQuality = checkQuality(retry.content, 'lecture');
       if (retryQuality.passed) {
         post    = retry;
@@ -181,6 +185,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}) {
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
   const { category } = preloaded.category ? preloaded : await getNextGeneralCategory();
+  // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
+  const sectionVariation = preloaded.sectionVariation || {};
   const needsBook    = category === '도서리뷰';
 
   console.log(`\n[젬스] 일반 포스팅: ${category}`);
@@ -200,8 +206,8 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
 
   return await withTrace(traceCtx, async () => {
     let post    = useChunked
-      ? await writeGeneralPostChunked(category, data)
-      : await writeGeneralPost(category, data);
+      ? await writeGeneralPostChunked(category, data, sectionVariation)
+      : await writeGeneralPost(category, data, sectionVariation);
     let quality = checkQuality(post.content, 'general');
     console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
     quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
@@ -209,8 +215,8 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}) {
     if (!quality.passed) {
       console.log('[품질] 재작성 시도...');
       const retry        = useChunked
-        ? await writeGeneralPostChunked(category, data)
-        : await writeGeneralPost(category, data);
+        ? await writeGeneralPostChunked(category, data, sectionVariation)
+        : await writeGeneralPost(category, data, sectionVariation);
       const retryQuality = checkQuality(retry.content, 'general');
       if (retryQuality.passed) {
         post    = retry;
@@ -272,14 +278,25 @@ async function run() {
     traceId: traceCtx.trace_id,
   });
 
-  // 2. 리서치 수집 + RAG 실전 사례 + 관련 포스팅 + 인기 패턴
+  // 2. 마에스트로: 오늘의 변형 결정 (maestro 실패 시 빈 객체로 폴백)
+  let lectureVariations = {};
+  let generalVariations = {};
+  try {
+    lectureVariations = maestro.buildDynamicVariation('lecture', []);
+    generalVariations = maestro.buildDynamicVariation('general', []);
+    console.log(`[마에스트로] 강의 변형: ${lectureVariations.greetingStyle} / 일반 변형: ${generalVariations.greetingStyle}`);
+  } catch (e) {
+    console.warn('[블로] 마에스트로 변형 결정 실패 (기본값 사용):', e.message);
+  }
+
+  // 3. 리서치 수집 + RAG 실전 사례 + 관련 포스팅 + 인기 패턴
   const researchData    = await richer.research('general', false);
   const popularPatterns = await getPopularPatterns();
   if (popularPatterns) researchData.popularPatterns = popularPatterns;
 
   const results = [];
 
-  // 3. 강의 포스팅
+  // 4. 강의 포스팅
   for (let i = 0; i < (config.lecture_count || 0); i++) {
     try {
       // 강의 주제 미리 파악하여 RAG 사례 검색
@@ -292,7 +309,10 @@ async function run() {
       researchData.realExperiences = realExperiences;
       researchData.relatedPosts    = relatedPosts;
 
-      const r = await runLecturePost(researchData, traceCtx, { number, seriesName, lectureTitle });
+      const r = await runLecturePost(researchData, traceCtx, {
+        number, seriesName, lectureTitle,
+        sectionVariation: lectureVariations,
+      });
       results.push(r);
     } catch (e) {
       console.error('[블로] 강의 포스팅 실패:', e.message);
@@ -301,7 +321,7 @@ async function run() {
     }
   }
 
-  // 4. 일반 포스팅
+  // 5. 일반 포스팅
   for (let i = 0; i < (config.general_count || 0); i++) {
     try {
       const { category } = await getNextGeneralCategory();
@@ -312,7 +332,10 @@ async function run() {
       researchData.realExperiences = realExperiences;
       researchData.relatedPosts    = relatedPosts;
 
-      const r = await runGeneralPost(researchData, traceCtx, { category });
+      const r = await runGeneralPost(researchData, traceCtx, {
+        category,
+        sectionVariation: generalVariations,
+      });
       results.push(r);
     } catch (e) {
       console.error('[블로] 일반 포스팅 실패:', e.message);
@@ -321,7 +344,7 @@ async function run() {
     }
   }
 
-  // 5. 텔레그램 리포트 (mode-guard 적용)
+  // 6. 텔레그램 리포트 (mode-guard 적용)
   const hasErrors = results.some(r => r.error);
   const reportLines = [
     '📝 [블로그팀] 일간 작업 완료',

@@ -5,12 +5,13 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "daily":               "node scripts/run-daily.js",
-    "seed-curriculum":     "node scripts/seed-curriculum.js",
+    "daily": "node scripts/run-daily.js",
+    "seed-curriculum": "node scripts/seed-curriculum.js",
     "seed-curriculum:dry": "node scripts/seed-curriculum.js --dry-run"
   },
   "dependencies": {
     "@ai-agent/core": "*",
+    "express": "^4.22.1",
     "openai": "^4.0.0"
   }
 }
