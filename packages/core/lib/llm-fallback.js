@@ -97,7 +97,9 @@ async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, system
 }
 
 async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
-  const groqModel  = model.replace(/^(?:openai|groq)\//, '');
+  // groq/ 외부 네임스페이스만 제거 (openai/는 Groq 모델 ID의 일부이므로 유지)
+  // 예: groq/openai/gpt-oss-20b → openai/gpt-oss-20b, openai/gpt-oss-20b → openai/gpt-oss-20b
+  const groqModel  = model.replace(/^groq\//, '');
   const accounts   = getGroqAccounts();
 
   // 계정 목록 없으면 환경변수 키로 1회 시도
