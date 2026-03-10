@@ -28,20 +28,34 @@ function loadConfig() {
   return _config;
 }
 
-function getAnthropicKey()  { return loadConfig()?.anthropic?.api_key   || process.env.ANTHROPIC_API_KEY  || null; }
-function getOpenAIKey()     { return loadConfig()?.openai?.api_key      || process.env.OPENAI_API_KEY     || null; }
-function getGeminiKey()     { return loadConfig()?.gemini?.api_key      || process.env.GEMINI_API_KEY     || null; }
-function getGroqAccounts()  { return loadConfig()?.groq?.accounts       || []; }
-function getCerebrasKey()   { return loadConfig()?.cerebras?.api_key    || null; }
-function getSambaNovaKey()  { return loadConfig()?.sambanova?.api_key   || null; }
-function getXAIKey()        { return loadConfig()?.xai?.api_key         || null; }
+function getAnthropicKey()      { return loadConfig()?.anthropic?.api_key       || process.env.ANTHROPIC_API_KEY       || null; }
+function getAnthropicAdminKey() { return loadConfig()?.anthropic?.admin_api_key  || process.env.ANTHROPIC_ADMIN_API_KEY  || null; }
+function getOpenAIKey()         { return loadConfig()?.openai?.api_key           || process.env.OPENAI_API_KEY           || null; }
+function getGeminiKey()         { return loadConfig()?.gemini?.api_key           || process.env.GEMINI_API_KEY           || null; }
+function getGroqAccounts()      { return loadConfig()?.groq?.accounts            || []; }
+function getCerebrasKey()       { return loadConfig()?.cerebras?.api_key         || null; }
+function getSambaNovaKey()      { return loadConfig()?.sambanova?.api_key        || null; }
+function getXAIKey()            { return loadConfig()?.xai?.api_key             || null; }
+
+// 빌링 예산 설정 (config.yaml billing 섹션 또는 환경변수)
+function getBillingBudget() {
+  const b = loadConfig()?.billing || {};
+  return {
+    anthropic: parseFloat(b.budget_anthropic || process.env.BILLING_BUDGET_ANTHROPIC || '50'),
+    openai:    parseFloat(b.budget_openai    || process.env.BILLING_BUDGET_OPENAI    || '30'),
+    total:     parseFloat(b.budget_total     || process.env.BILLING_BUDGET_TOTAL     || '80'),
+    spike_threshold: parseFloat(b.spike_threshold || process.env.BILLING_SPIKE_THRESHOLD || '3.0'),
+  };
+}
 
 module.exports = {
   getAnthropicKey,
+  getAnthropicAdminKey,
   getOpenAIKey,
   getGeminiKey,
   getGroqAccounts,
   getCerebrasKey,
   getSambaNovaKey,
   getXAIKey,
+  getBillingBudget,
 };

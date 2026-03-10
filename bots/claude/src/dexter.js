@@ -39,6 +39,7 @@ const checks = {
   teamLeads:     require('../lib/checks/team-leads'),
   openclaw:      require('../lib/checks/openclaw'),
   llmCost:       require('../lib/checks/llm-cost'),
+  billing:       require('../lib/checks/billing'),
   workspaceGit:  require('../lib/checks/workspace-git'),
   n8n:           require('../lib/checks/n8n'),
   botBehavior:   require('../lib/checks/bot-behavior'),
@@ -102,6 +103,7 @@ async function main() {
     () => checks.teamLeads.run(),
     () => checks.openclaw.run(),
     () => checks.llmCost.run(),
+    () => checks.billing.run(),
     () => checks.workspaceGit.run(),
     () => checks.n8n.run(),
   ];

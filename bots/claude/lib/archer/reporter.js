@@ -11,7 +11,8 @@
 
 const fs     = require('fs');
 const path   = require('path');
-const config = require('./config');
+const config   = require('./config');
+const analyzer = require('./analyzer');
 
 // ─── 마크다운 리포트 생성 ─────────────────────────────────────────────
 
@@ -148,14 +149,27 @@ function buildMarkdown({ data, analysis, runDate }) {
   return lines.join('\n');
 }
 
+// ─── 빌링 트렌드 섹션 삽입 ───────────────────────────────────────────
+
+async function buildMarkdownWithBilling({ data, analysis, runDate }) {
+  const base    = buildMarkdown({ data, analysis, runDate });
+  const billing = await analyzer.buildBillingTrendSection();
+  // 웹 소스 수집 섹션 앞에 삽입 (없으면 끝에 추가)
+  const insertBefore = '## 🌐 웹 소스 수집';
+  if (base.includes(insertBefore)) {
+    return base.replace(insertBefore, billing + '\n' + insertBefore);
+  }
+  return base + '\n' + billing;
+}
+
 // ─── 리포트 저장 ─────────────────────────────────────────────────────
 
-function saveReport({ data, analysis, runDate }) {
+async function saveReport({ data, analysis, runDate }) {
   if (!fs.existsSync(config.OUTPUT.reportDir)) {
     fs.mkdirSync(config.OUTPUT.reportDir, { recursive: true });
   }
 
-  const md       = buildMarkdown({ data, analysis, runDate });
+  const md       = await buildMarkdownWithBilling({ data, analysis, runDate });
   const fileName = `archer-${runDate}.md`;
   const filePath = path.join(config.OUTPUT.reportDir, fileName);
   fs.writeFileSync(filePath, md, 'utf8');
