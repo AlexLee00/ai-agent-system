@@ -55,6 +55,7 @@ const TOPIC_KEYS = {
   'claude-lead': 'claude_lead',
   'meeting':     'meeting',
   'emergency':   'emergency',
+  'blog':        'blog',
 };
 
 function _getThreadId(team) {
