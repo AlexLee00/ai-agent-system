@@ -14,10 +14,10 @@ const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 
-// 폴백 체인: gpt-4o → gpt-oss-20b (OpenAI 오픈소스, Groq 경유) → gemini-2.5-flash
+// 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const GEMS_LLM_CHAIN = [
   { provider: 'openai', model: 'gpt-4o',                            maxTokens: 16000, temperature: 0.85 },
-  { provider: 'groq',   model: 'openai/gpt-oss-20b',                maxTokens: 4096,  temperature: 0.85 },
+  { provider: 'openai', model: 'gpt-4o-mini',                       maxTokens: 4096,  temperature: 0.85 },
   { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096,  temperature: 0.75 },
 ];
 
@@ -89,6 +89,12 @@ ${GEO_RULES}
 3. 어려운 용어 뒤에 반드시 일상적 비유 덧붙이기 (예: 작업 메모리는 책상 크기)
 4. 뇌과학 키워드 활용: 몰입, 인지 부하, 작업 메모리
 5. 1,000자마다 독자 소통 브릿지 문구 삽입
+5-1. [섹션 내 참고 링크 삽입 규칙]
+   각 주요 섹션에 관련 참고 링크를 1~2개 자연스럽게 삽입하라.
+   허용 도메인: developer.mozilla.org/ · github.com/ · 각 기술 공식 문서
+   삽입 형식: → 참고: [문서명](URL) ← 여기에 링크 삽입
+   URL을 확실히 아는 것만 삽입. 모르면 "← 여기에 링크 삽입" 안내만 하라.
+   존재하지 않는 URL 절대 생성 금지.
 6. 커피랑도서관 분당서현점이 성과를 높이는 이유를 논리적으로 증명
 7. ★ 날씨 맥락 2회 이상 자연스럽게 삽입 (서론 + 스터디카페 홍보 섹션)
 8. 개인 경험/감상 표현 2회 이상

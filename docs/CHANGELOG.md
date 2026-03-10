@@ -3,6 +3,24 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-11] — 전 팀 LLM 모델 최적화 + 스크리닝 장애 대응
+
+### Added
+- **screening-monitor.js** (루나팀): 아르고스 스크리닝 연속 실패 추적 + 3회 이상 텔레그램 알림
+- **loadPreScreenedFallback()** (pre-market-screen.js): 24h TTL RAG 폴백 — 아르고스 실패 시 마지막 성공 결과 재사용
+- **callOpenAIMini()** (llm-client.js): gpt-4o-mini 전용 호출 함수
+- **MINI_FIRST_AGENTS** (llm-client.js): hermes/sophia/zeus/athena → gpt-4o-mini 메인 라우팅
+
+### Changed
+- `llm-client.js`: GROQ_AGENTS `[nemesis,oracle,athena,zeus]` → `[nemesis,oracle]` / callGroq 폴백 gpt-4o→gpt-4o-mini
+- `pos-writer.js`, `gems-writer.js`: LLM 폴백 체인 2순위 gpt-oss-20b → gpt-4o-mini
+- `star.js`: 단일 체인 → gpt-4o-mini + llama-4-scout 폴백
+- `claude-lead-brain.js`: LLM_CHAIN claude-sonnet 제거 → gpt-4o → gpt-4o-mini → scout
+- `archer/config.js`: OPENAI.model gpt-4o → gpt-4o-mini
+- `domestic.js`, `overseas.js`, `crypto.js`: 아르고스 RAG 폴백 + screening-monitor 연동
+
+---
+
 ## [2026-03-10] — 블로그팀 장문 출력 극대화
 
 ### Added

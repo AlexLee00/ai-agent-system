@@ -1,9 +1,11 @@
 /**
- * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.3)
+ * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.4)
  *
  * 에이전트별 LLM 라우팅:
- *   - 성능 우선 (luna, nemesis, oracle, athena, zeus) → OpenAI gpt-4o
- *   - 속도 우선 (argos, hermes, sophia, 기타)         → Groq llama-4-scout (무료)
+ *   - 루나 전용    (luna)                    → OpenAI gpt-4o (판단 최고 품질)
+ *   - Groq 경쟁   (nemesis, oracle)          → Groq dual model (gpt-oss-20b vs scout)
+ *   - Mini 우선   (hermes, sophia, zeus, athena) → gpt-4o-mini 메인 + scout 폴백
+ *   - 속도 우선   (argos, 기타)              → Groq llama-4-scout (무료)
  *
  * Groq 라운드로빈 (다중 키, 429 시 자동 다음 키)
  */
@@ -94,10 +96,16 @@ export const GPT_OSS_20B_MODEL = 'openai/gpt-oss-20b';  // OpenAI 오픈소스, 
 export const OPENAI_PERF_MODEL = _cfg.openai?.model || 'gpt-4o';
 export const HAIKU_MODEL       = 'claude-haiku-4-5-20251001';
 
-// 성능 우선 에이전트 — 멀티 모델 경쟁 (gpt-oss-20b vs llama-4-scout) 또는 OpenAI gpt-4o
-const OPENAI_AGENTS = new Set(['luna', 'nemesis', 'oracle', 'athena', 'zeus']);
+// 루나 전용 — OpenAI gpt-4o 직행 (최고 품질 판단)
+const LUNA_AGENTS  = new Set(['luna']);
 
-// 멀티 모델 경쟁 활성 여부 (기본: true)
+// Groq 경쟁 에이전트 — gpt-oss-20b vs llama-4-scout 멀티 모델
+const GROQ_AGENTS  = new Set(['nemesis', 'oracle']);
+
+// Mini 우선 에이전트 — gpt-4o-mini 메인 + llama-4-scout 폴백 (비용 절감)
+const MINI_FIRST_AGENTS = new Set(['hermes', 'sophia', 'zeus', 'athena']);
+
+// 멀티 모델 경쟁 활성 여부 (GROQ_AGENTS에만 적용, 기본: true)
 const DUAL_MODEL = process.env.LUNA_DUAL_MODEL !== 'false';
 
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
@@ -167,13 +175,21 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     const r = _billingGuard.getBlockReason();
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
-  // 성능 우선 에이전트 → 멀티 모델 경쟁 (활성) 또는 OpenAI gpt-4o (비활성)
-  if (OPENAI_AGENTS.has(agentName)) {
+  // 루나 전용 → OpenAI gpt-4o 직행
+  if (LUNA_AGENTS.has(agentName)) {
+    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+  // Groq 경쟁 에이전트 (nemesis/oracle) → 멀티 모델 경쟁 (활성) 또는 Groq Scout (비활성)
+  if (GROQ_AGENTS.has(agentName)) {
     return DUAL_MODEL
       ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens, options)
-      : callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
+      : callGroq(agentName, systemPrompt, userPrompt, maxTokens);
   }
-  // 속도 우선 에이전트 → Groq Scout
+  // Mini 우선 에이전트 (hermes/sophia/zeus/athena) → gpt-4o-mini 메인 + scout 폴백
+  if (MINI_FIRST_AGENTS.has(agentName)) {
+    return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens);
+  }
+  // 속도 우선 에이전트 (argos 등) → Groq Scout
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
 }
 
@@ -336,6 +352,43 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
 
 // ─── OpenAI 호출 ─────────────────────────────────────────────────────
 
+async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
+  const MINI_MODEL = 'gpt-4o-mini';
+  const t0 = Date.now();
+  const doCall = async () => {
+    const openai = getOpenAI();
+    return openai.chat.completions.create({
+      model:           MINI_MODEL,
+      max_tokens:      maxTokens,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userPrompt   },
+      ],
+    });
+  };
+  try {
+    const res    = await callWithRetry(doCall, agentName);
+    const dur    = Date.now() - t0;
+    const inTok  = res.usage?.prompt_tokens     || 0;
+    const outTok = res.usage?.completion_tokens || 0;
+    _trackTokens?.({
+      bot: agentName, team: 'investment', model: MINI_MODEL, provider: 'openai',
+      taskType: 'trade_signal', tokensIn: inTok, tokensOut: outTok, durationMs: dur,
+    });
+    _logLLMCall?.({
+      team: 'luna', bot: agentName, model: MINI_MODEL,
+      requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
+    });
+    return res.choices[0]?.message?.content || '';
+  } catch (err) {
+    if (skipFallback) throw err;
+    // gpt-4o-mini 실패 시 Groq Scout 폴백
+    console.warn(`  ⚠️ [${agentName}] gpt-4o-mini 실패 (${err.message?.slice(0,60)}) → Groq Scout 폴백`);
+    return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+  }
+}
+
 async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
   const t0 = Date.now();
   const doCall = async () => {
@@ -407,10 +460,10 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFa
     }
   }
   if (skipFallback) throw lastErr ?? new Error(`Groq 전체 실패 — ${agentName}`);
-  // Groq 전체 실패 → OpenAI 폴백
+  // Groq 전체 실패 → gpt-4o-mini 폴백 (비용 절감)
   const reason = lastErr?.status === 429 ? '전체 키 rate limit' : (lastErr?.message?.slice(0, 60) ?? '알 수 없는 오류');
-  console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → OpenAI 폴백`);
-  return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+  console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → gpt-4o-mini 폴백`);
+  return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
 }
 
 // ─── 시맨틱 캐싱 (SHA256 해시, PostgreSQL reservation.llm_cache) ──────

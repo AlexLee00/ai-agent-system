@@ -192,7 +192,7 @@ module.exports = {
   // ─── OpenAI API ─────────────────────────────────────────────────
   // maxTokens: 소스 10개 확대에 따라 2048 → 4096으로 증가
   OPENAI: {
-    model:       'gpt-4o',
+    model:       'gpt-4o-mini',
     maxTokens:   4096,
     temperature: 0.3,
   },
