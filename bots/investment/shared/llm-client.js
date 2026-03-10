@@ -90,7 +90,7 @@ export const PAPER_MODE = process.env.PAPER_MODE !== 'false' && _cfg.paper_mode 
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
 export const GROQ_SCOUT_MODEL  = 'meta-llama/llama-4-scout-17b-16e-instruct';
-export const GPT_OSS_20B_MODEL = 'openai/gpt-oss-20b';
+export const GPT_OSS_20B_MODEL = 'openai/gpt-oss-20b';  // OpenAI 오픈소스, Groq 경유
 export const OPENAI_PERF_MODEL = _cfg.openai?.model || 'gpt-4o';
 export const HAIKU_MODEL       = 'claude-haiku-4-5-20251001';
 
@@ -205,7 +205,9 @@ async function callWithRetry(fn, agentName, maxRetries = 3) {
 async function callGroqModel(agentName, systemPrompt, userPrompt, maxTokens, model) {
   const groq = nextGroqClient();
   const t0   = Date.now();
-  const res  = await groq.chat.completions.create({
+  // gpt-oss-20b는 추론(reasoning) 모델 — reasoning_effort:low로 내부 추론 토큰 최소화
+  const isReasoning = model.includes('gpt-oss-20b');
+  const params = {
     model,
     max_tokens:      maxTokens,
     response_format: { type: 'json_object' },
@@ -213,7 +215,9 @@ async function callGroqModel(agentName, systemPrompt, userPrompt, maxTokens, mod
       { role: 'system', content: systemPrompt },
       { role: 'user',   content: userPrompt   },
     ],
-  });
+  };
+  if (isReasoning) params.reasoning_effort = 'low';
+  const res  = await groq.chat.completions.create(params);
   return {
     text:         res.choices[0]?.message?.content || '',
     inputTokens:  res.usage?.prompt_tokens     || 0,

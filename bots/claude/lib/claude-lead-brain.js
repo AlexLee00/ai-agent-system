@@ -24,10 +24,10 @@ const stateBus  = require('../../reservation/lib/state-bus');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
-// 폴백 체인: claude-sonnet-4-6 → gpt-4o → gpt-oss-20b (Groq)
+// 폴백 체인: claude-sonnet-4-6 → gpt-4o → gpt-oss-20b (OpenAI 오픈소스, Groq 경유)
 const LLM_CHAIN = [
-  { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 300, temperature: 0.1 },
-  { provider: 'openai',    model: 'gpt-4o',            maxTokens: 300, temperature: 0.1 },
+  { provider: 'anthropic', model: 'claude-sonnet-4-6',  maxTokens: 300, temperature: 0.1 },
+  { provider: 'openai',    model: 'gpt-4o',             maxTokens: 300, temperature: 0.1 },
   { provider: 'groq',      model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.1 },
 ];
 const MODEL   = LLM_CHAIN[0].model;  // 로그 표시용

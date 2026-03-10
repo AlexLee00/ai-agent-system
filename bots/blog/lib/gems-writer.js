@@ -14,7 +14,7 @@ const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 
-// 폴백 체인: gpt-4o → gpt-oss-20b (Groq) → gemini-2.5-flash
+// 폴백 체인: gpt-4o → gpt-oss-20b (OpenAI 오픈소스, Groq 경유) → gemini-2.5-flash
 const GEMS_LLM_CHAIN = [
   { provider: 'openai', model: 'gpt-4o',                            maxTokens: 16000, temperature: 0.85 },
   { provider: 'groq',   model: 'openai/gpt-oss-20b',                maxTokens: 4096,  temperature: 0.85 },

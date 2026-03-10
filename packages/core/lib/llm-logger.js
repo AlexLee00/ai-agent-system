@@ -68,8 +68,8 @@ const PRICING = {
   'gemini-2.5-flash':                         { input: 0,     output: 0     },
   'gpt-4o':                                   { input: 2.50,  output: 10.00 },
   'gpt-4o-mini':                              { input: 0.15,  output: 0.60  },
-  'openai/gpt-oss-20b':                       { input: 0,     output: 0     },  // Groq 무료
-  'gpt-oss-20b':                              { input: 0,     output: 0     },  // Groq 무료
+  'openai/gpt-oss-20b':                       { input: 0,     output: 0     },  // OpenAI 오픈소스, Groq 경유
+  'gpt-oss-20b':                              { input: 0,     output: 0     },  // OpenAI 오픈소스, Groq 경유
   'qwen/qwen3-32b':                           { input: 0.29,  output: 0.59  },  // Groq 유료
   'qwen3-32b':                                { input: 0.29,  output: 0.59  },  // Groq 유료
   'meta-llama/llama-4-maverick-17b-128e-instruct': { input: 0, output: 0   },  // Groq 무료
@@ -170,7 +170,7 @@ async function _checkEmergencyLimits(cost) {
 
     // 시간당 누적
     const hrRow = await pgPool.get('reservation',
-      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at > NOW() - INTERVAL '1 hour'`
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::timestamptz > NOW() - INTERVAL '1 hour'`
     );
     const hourlyCost = parseFloat(hrRow?.t || 0);
     if (hourlyCost > EMERGENCY_LIMITS.hourly) {
@@ -188,11 +188,11 @@ async function _checkEmergencyLimits(cost) {
 
     // 10분 급등 (직전 10분 vs 그 이전 10분)
     const r10 = await pgPool.get('reservation',
-      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at > NOW() - INTERVAL '10 minutes'`
+      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::timestamptz > NOW() - INTERVAL '10 minutes'`
     );
     const p10 = await pgPool.get('reservation',
       `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
-       WHERE created_at BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`
+       WHERE created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`
     );
     const recent = parseFloat(r10?.t || 0);
     const prev   = parseFloat(p10?.t || 0);
