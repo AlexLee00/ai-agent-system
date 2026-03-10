@@ -51,16 +51,10 @@ module.exports = {
   // ─── 웹 소스 (RSS / HTML) ────────────────────────────────────────
   WEB_SOURCES: [
     {
-      id:     'anthropic-news',
-      label:  'Anthropic 뉴스',
-      type:   'rss',
-      url:    'https://www.anthropic.com/rss.xml',
-    },
-    {
       id:     'openai-blog',
-      label:  'OpenAI 블로그',
+      label:  'OpenAI 뉴스',
       type:   'rss',
-      url:    'https://openai.com/blog/rss.xml',
+      url:    'https://openai.com/blog/rss.xml',  // 307 → /news/rss.xml 리다이렉트
     },
     {
       id:     'huggingface-blog',
@@ -75,10 +69,16 @@ module.exports = {
       url:    'https://rss.arxiv.org/rss/cs.AI',
     },
     {
-      id:     'the-batch',
-      label:  'The Batch (DeepLearning.AI)',
+      id:     'simonwillison',
+      label:  'Simon Willison (LLM 트렌드)',
       type:   'rss',
-      url:    'https://www.deeplearning.ai/the-batch/feed/',
+      url:    'https://simonwillison.net/atom/everything/',
+    },
+    {
+      id:     'mit-tech-review-ai',
+      label:  'MIT Technology Review AI',
+      type:   'rss',
+      url:    'https://www.technologyreview.com/feed/',
     },
   ],
 
