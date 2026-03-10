@@ -194,7 +194,7 @@ async function buildBillingTrendSection() {
   try {
     // 최근 7일 일별 비용
     const rows = await pgPool.query('claude', `
-      SELECT date, provider, cost_usd
+      SELECT date::text, provider, cost_usd
       FROM billing_snapshots
       WHERE date >= CURRENT_DATE - 6
       ORDER BY date DESC, provider
