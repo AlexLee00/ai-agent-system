@@ -118,4 +118,10 @@ module.exports = {
     temperature: 0.3,
   },
 
+  // ─── 시크릿 파일 경로 (github_token 등) ─────────────────────────
+  SECRETS_PATHS: [
+    path.join(ROOT, 'bots', 'claude', 'secrets.json'),
+    path.join(HOME, '.openclaw', 'secrets.json'),
+  ],
+
 };
