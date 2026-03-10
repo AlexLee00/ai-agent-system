@@ -120,6 +120,9 @@ function getPool(schema) {
   if (!VALID_SCHEMAS.has(schema)) {
     throw new Error(`[pg-pool] 유효하지 않은 스키마: ${schema}`);
   }
+  if (!/^[a-z_]+$/.test(schema)) {
+    throw new Error(`[pg-pool] 스키마명 형식 오류: ${schema}`);
+  }
   if (_pools.has(schema)) return _pools.get(schema);
 
   const pool = new Pool({
