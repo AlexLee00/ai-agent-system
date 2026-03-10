@@ -31,7 +31,7 @@ const TEST_PROMPTS = [
 
 const ALL_MODELS = [
   { provider: 'openai', model: 'gpt-4o',                                    label: 'gpt-4o (기준)' },
-  { provider: 'groq',   model: 'openai/gpt-oss-20b',                        label: 'gpt-oss-20b' },
+  { provider: 'groq',   model: 'openai/gpt-oss-20b',                        label: 'gpt-oss-20b (OpenAI 오픈소스, Groq 경유)' },
   { provider: 'groq',   model: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'llama-4-scout' },
   { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash',        label: 'gemini-2.5-flash' },
 ];

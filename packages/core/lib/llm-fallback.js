@@ -8,7 +8,7 @@
  *
  * 지원 provider:
  *   anthropic — claude-sonnet-4-6 등 (Anthropic SDK)
- *   openai    — gpt-4o, gpt-oss-20b (Groq OpenAI-compat 포함)
+ *   openai    — gpt-4o
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
  *
@@ -43,7 +43,11 @@ function _extractText(resp, provider) {
     return resp?.choices?.[0]?.message?.content?.trim() || '';
   }
   if (provider === 'gemini') {
-    return resp?.text?.()?.trim() || resp?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    // SDK v0.21+ 응답 구조: resp.response.text()
+    return resp?.response?.text?.()?.trim()
+      || resp?.text?.()?.trim()
+      || resp?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      || '';
   }
   return '';
 }
@@ -86,20 +90,23 @@ async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, 
 async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
   const OpenAI = require('openai');
   const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
-  return client.chat.completions.create({
-    model: groqModel,
+  // gpt-oss-20b는 추론(reasoning) 모델 — reasoning_effort:low로 내부 추론 토큰 최소화
+  const isReasoning = groqModel.includes('gpt-oss-20b');
+  const params = {
+    model:      groqModel,
     max_tokens: maxTokens,
     temperature,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user',   content: userPrompt },
     ],
-  });
+  };
+  if (isReasoning) params.reasoning_effort = 'low';
+  return client.chat.completions.create(params);
 }
 
 async function _callGroq({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt }) {
-  // groq/ 외부 네임스페이스만 제거 (openai/는 Groq 모델 ID의 일부이므로 유지)
-  // 예: groq/openai/gpt-oss-20b → openai/gpt-oss-20b, openai/gpt-oss-20b → openai/gpt-oss-20b
+  // groq/ 외부 네임스페이스만 제거
   const groqModel  = model.replace(/^groq\//, '');
   const accounts   = getGroqAccounts();
 
@@ -143,7 +150,11 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
   const gemini = genai.getGenerativeModel({
     model: model.replace(/^google-gemini-cli\//, ''),
     systemInstruction: systemPrompt,
-    generationConfig: { maxOutputTokens: maxTokens, temperature },
+    generationConfig: {
+      maxOutputTokens: maxTokens,
+      temperature,
+      thinkingConfig: { thinkingBudget: 0 },  // thinking 비활성 (단순 생성 태스크)
+    },
   });
   return gemini.generateContent(userPrompt);
 }

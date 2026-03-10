@@ -10,7 +10,7 @@
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 보안 취약점이 발견된 패키지에 대한 업데이트가 필요합니다. HuggingFace의 새로운 AI 모델과 기술은 엣지 환경과 대규모 데이터 처리에 유용할 수 있습니다. LeRobot v0.5.0의 릴리스는 주목할 만한 발전입니다.",
+    "summary": "이번 주에는 @mapbox/node-pre-gyp와 tar 패키지의 보안 취약점이 발견되어 주의가 필요합니다. HuggingFace의 Granite 4.0 1B Speech와 Ulysses Sequence Parallelism은 우리 시스템에 적용 가능성이 있는 기술입니다. OpenAI의 Promptfoo 인수는 주목할 만한 소식입니다.",
     "patchCount": 0,
     "securityCount": 2,
     "llmApiCount": 0

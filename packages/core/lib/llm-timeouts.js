@@ -35,7 +35,7 @@ const DEFAULTS = {
   'meta-llama/llama-4-maverick-17b-128e-instruct': 8_000, // 8초 (1M ctx)
   'llama-4-scout-17b-16e-instruct':               5_000,
   'llama-4-maverick-17b-128e-instruct':           8_000,
-  'openai/gpt-oss-20b':                           5_000,  // Groq 경유
+  'openai/gpt-oss-20b':                           5_000,  // OpenAI 오픈소스, Groq 경유
   groq:                                           5_000,  // Groq 전체 기본값
 
   // ── Anthropic ────────────────────────────────────────────────────

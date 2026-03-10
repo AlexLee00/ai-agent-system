@@ -12,6 +12,7 @@
  */
 
 const { callGemini } = require('../../../packages/core/lib/chunked-llm');
+const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const https = require('https');
 const fs    = require('fs');
 const path  = require('path');
@@ -71,7 +72,7 @@ ${content.slice(0, 6000)}
  * @returns {string|null} — 저장된 파일 경로
  */
 async function generateInstaCard(summary, cardIndex, outputDir) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiKey();
   if (!apiKey) {
     console.warn('[소셜] GEMINI_API_KEY 없음 — 인스타 카드 생성 불가');
     return null;

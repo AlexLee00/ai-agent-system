@@ -13,7 +13,7 @@
  *       meta-llama/llama-4-maverick-17b-128e-instruct (1M ctx)
  *       moonshotai/kimi-k2-instruct (1T MoE, 256K ctx)
  *       qwen/qwen3-32b
- *       openai/gpt-oss-20b (1000 T/s, 최고속)
+ *       openai/gpt-oss-20b (OpenAI 오픈소스, Groq 경유)
  *   - Cerebras(영구 무료 티어)      → CEREBRAS_API_KEY
  *       llama3.1-8b / llama-3.3-70b
  *       llama-4-scout-17b-16e-instruct (~2600 T/s, 세계 최고속)

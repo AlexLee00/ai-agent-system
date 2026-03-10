@@ -23,13 +23,17 @@ async function callGemini(systemPrompt, userPrompt, maxTokens = 4096) {
   const body = JSON.stringify({
     contents: [{ parts: [{ text: userPrompt }] }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.75 },
+    generationConfig: {
+      maxOutputTokens: maxTokens,
+      temperature: 0.75,
+      thinkingConfig: { thinkingBudget: 0 },  // thinking 비활성 (단순 생성 태스크)
+    },
   });
 
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: 'generativelanguage.googleapis.com',
-      path:     `/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`,
+      path:     `/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       method:   'POST',
       headers:  { 'Content-Type': 'application/json' },
       timeout:  90000,
