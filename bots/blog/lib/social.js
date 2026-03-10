@@ -17,6 +17,10 @@ const OpenAI = require('openai');
 const fs   = require('fs');
 const path = require('path');
 
+// ── 저장 경로 (img-gen.js 패턴 동일) ────────────────────────────────
+const INSTA_DIR   = path.join(__dirname, '..', 'output', 'images', 'insta');
+const GDRIVE_DIR  = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost/insta';
+
 // ── N40: 문단별 요약 (insta-summarize) ──────────────────────────────
 
 const SUMMARIZE_SYSTEM = `
@@ -68,10 +72,10 @@ ${content.slice(0, 6000)}
  * 요약 텍스트 → 1024×1024 인스타 카드 (gpt-image-1)
  * @param {string} summary — 15~20자 요약 텍스트
  * @param {number} cardIndex — 카드 번호 (1, 2, 3)
- * @param {string} outputDir — 저장 디렉토리
+ * @param {string} slug — 파일명용 슬러그 (날짜_제목)
  * @returns {string|null} — 저장된 파일 경로
  */
-async function generateInstaCard(summary, cardIndex, outputDir) {
+async function generateInstaCard(summary, cardIndex, slug) {
   const apiKey = getOpenAIKey();
   if (!apiKey) {
     console.warn('[소셜] OPENAI_API_KEY 없음 — 인스타 카드 생성 불가');
@@ -102,11 +106,21 @@ async function generateInstaCard(summary, cardIndex, outputDir) {
       return null;
     }
 
-    const dir = path.join(outputDir, 'insta');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const filePath = path.join(dir, `insta_card_${cardIndex}.png`);
-    fs.writeFileSync(filePath, Buffer.from(imageData, 'base64'));
-    console.log(`  [소셜] 카드 ${cardIndex} 저장: ${filePath}`);
+    const buf      = Buffer.from(imageData, 'base64');
+    const filename = `${slug}_card${cardIndex}.png`;
+
+    // 로컬 저장
+    if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
+    const filePath = path.join(INSTA_DIR, filename);
+    fs.writeFileSync(filePath, buf);
+
+    // 구글드라이브 저장
+    try {
+      if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
+      fs.writeFileSync(path.join(GDRIVE_DIR, filename), buf);
+    } catch (_) {}
+
+    console.log(`  [소셜] 카드 ${cardIndex} 저장: images/insta/${filename}`);
     return filePath;
   } catch (e) {
     console.warn(`[소셜] 카드 ${cardIndex} 생성 실패: ${e.message}`);
@@ -189,20 +203,24 @@ ${content.slice(0, 3000)}
  * @param {string} content — 포스팅 본문
  * @param {string} title — 포스팅 제목
  * @param {string} category — 카테고리
- * @param {string} outputDir — 이미지 저장 디렉토리
  * @param {number} [cardCount] — 카드 수 (기본 3)
  * @returns {{ summaries, cards, caption, hashtags, cta, fullText, createdAt }}
  */
-async function createInstaContent(content, title, category, outputDir, cardCount = 3) {
+async function createInstaContent(content, title, category, cardCount = 3) {
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${cardCount}장)`);
+
+  // 파일명 슬러그: 날짜_제목
+  const today    = new Date().toISOString().slice(0, 10);
+  const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
+  const slug     = `${today}_${safeSlug}`;
 
   // N40 문단 요약
   const summaries = await summarizeForInsta(content, cardCount);
   console.log(`  요약 ${summaries.length}개 생성`);
 
-  // N41 카드 이미지 병렬 생성
+  // N41 카드 이미지 병렬 생성 (로컬 + 구글드라이브)
   const cardResults = await Promise.allSettled(
-    summaries.map((s, i) => generateInstaCard(s.summary, i + 1, outputDir))
+    summaries.map((s, i) => generateInstaCard(s.summary, i + 1, slug))
   );
   const cards = cardResults
     .map((r, i) => ({
@@ -217,15 +235,19 @@ async function createInstaContent(content, title, category, outputDir, cardCount
   const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
-  // 메타데이터 저장
-  const metaPath = path.join(outputDir, 'insta', 'insta-meta.json');
-  fs.mkdirSync(path.dirname(metaPath), { recursive: true });
+  // 메타데이터 저장 (로컬 + 구글드라이브)
   const meta = {
-    title, category, summaries, cards,
+    title, category, slug, summaries, cards,
     caption, hashtags, cta, fullText,
     createdAt: new Date().toISOString(),
   };
-  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+  const metaFilename = `${slug}_insta-meta.json`;
+  if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(INSTA_DIR, metaFilename), JSON.stringify(meta, null, 2));
+  try {
+    if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(GDRIVE_DIR, metaFilename), JSON.stringify(meta, null, 2));
+  } catch (_) {}
 
   console.log(`[소셜] 완성: 카드 ${cards.length}장 + 해시태그 ${hashtags.length}개`);
   return meta;
