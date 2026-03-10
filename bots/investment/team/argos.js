@@ -10,9 +10,34 @@
  */
 
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import https from 'https';
+import ccxt from 'ccxt';
+import yaml from 'js-yaml';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ─── 코어 종목 (항상 포함, 절대 제외 안됨) ──────────────────────────
+
+export const CORE_CRYPTO   = ['BTC/USDT', 'ETH/USDT'];
+export const CORE_KIS      = ['005930'];
+export const CORE_OVERSEAS = ['AAPL'];
+
+// ─── config.yaml 스크리닝 설정 로드 ─────────────────────────────────
+
+let _screeningCfg = {};
+try {
+  const cfg = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8'));
+  _screeningCfg = cfg?.screening || {};
+} catch { /* config 없으면 기본값 사용 */ }
+
+function _screenCfg(market, key, def) {
+  return _screeningCfg?.[market]?.[key] ?? def;
+}
 
 const SUBREDDITS = [
   { name: 'algotrading',    market: 'all',    limit: 10 },
@@ -139,6 +164,229 @@ export async function recommendStrategy(symbol, exchange = 'binance') {
   if (strategies.length === 0) return null;
   console.log(`  👁️ [아르고스] ${symbol} 추천 전략: ${strategies[0].strategy_name}`);
   return strategies[0];
+}
+
+// ─── 암호화폐 종목 스크리닝 (바이낸스 API) ──────────────────────────
+
+/**
+ * 바이낸스 24h 데이터 기반 동적 암호화폐 종목 선정
+ * 볼륨 상위 30 필터 + 모멘텀 점수 기반 상위 N개 반환
+ * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 3)
+ */
+export async function screenCryptoSymbols(maxDynamic) {
+  const max = maxDynamic ?? _screenCfg('crypto', 'max_dynamic', 3);
+  const minVol = _screenCfg('crypto', 'min_volume_usdt', 1_000_000);
+  const exchange = new ccxt.binance({ enableRateLimit: true });
+
+  try {
+    const tickers = await exchange.fetchTickers();
+
+    const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'PYUSD', 'USDP']);
+    const coreBase    = new Set(CORE_CRYPTO.map(s => s.split('/')[0]));
+
+    const candidates = Object.entries(tickers)
+      .filter(([sym]) => sym.endsWith('/USDT'))
+      .filter(([sym]) => {
+        const base = sym.split('/')[0];
+        if (STABLECOINS.has(base)) return false;
+        if (/UP$|DOWN$|BULL$|BEAR$|3[LS]$/.test(base)) return false;  // 레버리지 토큰 제외
+        if (coreBase.has(base)) return false;  // 코어 종목 제외
+        return true;
+      })
+      .map(([symbol, t]) => ({
+        symbol,
+        price:         t.last        || 0,
+        volume24h:     t.quoteVolume || 0,
+        changePercent: t.percentage  || 0,
+        high24h:       t.high        || 0,
+        low24h:        t.low         || 0,
+      }))
+      .filter(t => t.volume24h >= minVol)
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 30);
+
+    const scored = candidates.map(t => {
+      const absChange = Math.abs(t.changePercent);
+      const volScore  = Math.log10(Math.max(t.volume24h, 1));
+      const dirWeight = t.changePercent >= 0 ? 1.2 : 0.8;
+      const momentum  = absChange * volScore * dirWeight;
+      const range     = t.high24h - t.low24h;
+      const rangePos  = range > 0 ? (t.price - t.low24h) / range : 0.5;
+      return {
+        ...t,
+        momentum:   Math.round(momentum * 100) / 100,
+        rangePos:   Math.round(rangePos * 100) / 100,
+        finalScore: Math.round((momentum * 0.7 + volScore * 0.3) * 100) / 100,
+      };
+    });
+
+    const topDynamic     = scored.sort((a, b) => b.finalScore - a.finalScore).slice(0, max);
+    const dynamicSymbols = topDynamic.map(t => t.symbol);
+
+    console.log(`[아르고스] 암호화폐 스크리닝: 코어 ${CORE_CRYPTO.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+    topDynamic.forEach(t =>
+      console.log(`  ${t.symbol}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}% | ${(t.volume24h / 1e6).toFixed(0)}M USDT | 점수 ${t.finalScore}`)
+    );
+
+    return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: [...CORE_CRYPTO, ...dynamicSymbols], screening: topDynamic };
+  } catch (e) {
+    console.warn(`[아르고스] 암호화폐 스크리닝 실패: ${e.message} — 코어 종목만 반환`);
+    return { core: CORE_CRYPTO, dynamic: [], all: CORE_CRYPTO, screening: [], error: e.message };
+  }
+}
+
+// ─── 국내주식 종목 스크리닝 (네이버 증권 거래량 상위) ────────────────
+
+/**
+ * 네이버 증권 거래량 상위 종목 → 동적 국내주식 선정
+ * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
+ */
+export async function screenDomesticSymbols(maxDynamic) {
+  const max = maxDynamic ?? _screenCfg('domestic', 'max_dynamic', 2);
+
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const req = https.get(
+        'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=15',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 },
+        res => {
+          let body = '';
+          res.on('data', c => body += c);
+          res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
+    });
+
+    const stocks = data?.stocks || data?.result?.stocks || [];
+    if (!stocks.length) throw new Error('데이터 없음');
+
+    const coreSet    = new Set(CORE_KIS);
+    const candidates = stocks
+      .filter(s => s.stockCode && !coreSet.has(s.stockCode))
+      .slice(0, max)
+      .map(s => ({
+        symbol:     s.stockCode,
+        name:       s.stockName || s.name,
+        price:      parseInt(s.closePrice || s.price) || 0,
+        changeRate: parseFloat(s.fluctuationsRatio || s.changeRate) || 0,
+        volume:     parseInt(s.accumulatedTradingVolume || s.volume) || 0,
+      }));
+
+    const dynamicSymbols = candidates.map(c => c.symbol);
+    console.log(`[아르고스] 국내주식 스크리닝: 코어 ${CORE_KIS.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+    candidates.forEach(c =>
+      console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
+    );
+
+    return { core: CORE_KIS, dynamic: dynamicSymbols, all: [...CORE_KIS, ...dynamicSymbols], screening: candidates };
+  } catch (e) {
+    console.warn(`[아르고스] 국내주식 스크리닝 실패: ${e.message} — 코어만 반환`);
+    return { core: CORE_KIS, dynamic: [], all: CORE_KIS, screening: [], error: e.message };
+  }
+}
+
+// ─── 해외주식 종목 스크리닝 (Yahoo Finance Trending) ─────────────────
+
+/**
+ * Yahoo Finance Trending Tickers → 동적 해외주식 선정
+ * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
+ */
+export async function screenOverseasSymbols(maxDynamic) {
+  const max = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 2);
+
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const req = https.get(
+        'https://query1.finance.yahoo.com/v1/finance/trending/US?count=20',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 },
+        res => {
+          let body = '';
+          res.on('data', c => body += c);
+          res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
+    });
+
+    const trending = data?.finance?.result?.[0]?.quotes || [];
+    if (!trending.length) throw new Error('데이터 없음');
+
+    const coreSet    = new Set(CORE_OVERSEAS);
+    const candidates = trending
+      .filter(q => q.symbol && !q.symbol.includes('^') && !q.symbol.includes('='))
+      .filter(q => !coreSet.has(q.symbol))
+      .slice(0, max)
+      .map(q => ({ symbol: q.symbol, name: q.shortName || q.symbol }));
+
+    const dynamicSymbols = candidates.map(c => c.symbol);
+    console.log(`[아르고스] 해외주식 스크리닝: 코어 ${CORE_OVERSEAS.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+    candidates.forEach(c => console.log(`  ${c.symbol}(${c.name})`));
+
+    return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: [...CORE_OVERSEAS, ...dynamicSymbols], screening: candidates };
+  } catch (e) {
+    console.warn(`[아르고스] 해외주식 스크리닝 실패: ${e.message} — 코어만 반환`);
+    return { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [], error: e.message };
+  }
+}
+
+// ─── 통합 스크리닝 ───────────────────────────────────────────────────
+
+/**
+ * 전체 마켓 종목 한 번에 스크리닝
+ * @returns {Promise<{ crypto, domestic, overseas, timestamp }>}
+ */
+export async function screenAllMarkets() {
+  if (_screeningCfg?.enabled === false) {
+    console.log('[아르고스] 스크리닝 비활성화 — config.yaml screening.enabled=false');
+    return {
+      crypto:   { core: CORE_CRYPTO,   dynamic: [], all: CORE_CRYPTO,   screening: [] },
+      domestic: { core: CORE_KIS,      dynamic: [], all: CORE_KIS,      screening: [] },
+      overseas: { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [] },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  console.log('\n🔍 [아르고스] 전체 마켓 종목 스크리닝 시작...\n');
+
+  const [cryptoRes, domesticRes, overseasRes] = await Promise.allSettled([
+    screenCryptoSymbols(),
+    screenDomesticSymbols(),
+    screenOverseasSymbols(),
+  ]);
+
+  const result = {
+    crypto:    cryptoRes.status   === 'fulfilled' ? cryptoRes.value   : { core: CORE_CRYPTO,   dynamic: [], all: CORE_CRYPTO,   screening: [] },
+    domestic:  domesticRes.status === 'fulfilled' ? domesticRes.value : { core: CORE_KIS,      dynamic: [], all: CORE_KIS,      screening: [] },
+    overseas:  overseasRes.status === 'fulfilled' ? overseasRes.value : { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [] },
+    timestamp: new Date().toISOString(),
+  };
+
+  // DB 스크리닝 이력 저장
+  try {
+    await db.run(
+      `INSERT INTO screening_history (date, market, core_symbols, dynamic_symbols, screening_data)
+       VALUES (CURRENT_DATE, $1, $2, $3, $4)`,
+      [
+        'all',
+        JSON.stringify({ crypto: result.crypto.core, domestic: result.domestic.core, overseas: result.overseas.core }),
+        JSON.stringify({ crypto: result.crypto.dynamic, domestic: result.domestic.dynamic, overseas: result.overseas.dynamic }),
+        JSON.stringify(result),
+      ]
+    );
+  } catch (e) {
+    console.warn('[아르고스] 스크리닝 이력 저장 실패:', e.message);
+  }
+
+  const totalDynamic = result.crypto.dynamic.length + result.domestic.dynamic.length + result.overseas.dynamic.length;
+  console.log(`\n🔍 [아르고스] 스크리닝 완료: 동적 ${totalDynamic}개 종목 선정`);
+  console.log(`  암호화폐: ${result.crypto.all.join(', ')}`);
+  console.log(`  국내주식: ${result.domestic.all.join(', ')}`);
+  console.log(`  해외주식: ${result.overseas.all.join(', ')}\n`);
+
+  return result;
 }
 
 // CLI 실행
