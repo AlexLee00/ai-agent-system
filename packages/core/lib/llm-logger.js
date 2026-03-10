@@ -59,6 +59,12 @@ const PRICING = {
   'gemini-2.5-flash':                         { input: 0,     output: 0     },
   'gpt-4o':                                   { input: 2.50,  output: 10.00 },
   'gpt-4o-mini':                              { input: 0.15,  output: 0.60  },
+  'openai/gpt-oss-20b':                       { input: 0,     output: 0     },  // Groq 무료
+  'gpt-oss-20b':                              { input: 0,     output: 0     },  // Groq 무료
+  'qwen/qwen3-32b':                           { input: 0.29,  output: 0.59  },  // Groq 유료
+  'qwen3-32b':                                { input: 0.29,  output: 0.59  },  // Groq 유료
+  'meta-llama/llama-4-maverick-17b-128e-instruct': { input: 0, output: 0   },  // Groq 무료
+  'llama-3.3-70b-versatile':                  { input: 0,     output: 0     },  // Groq 무료
 };
 
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
@@ -230,7 +236,7 @@ async function buildDailyCostReport() {
   const totalCached = rows.reduce((s, r) => s + (parseInt(r.cache_hits)   || 0), 0);
   const savedPct    = totalCalls > 0 ? Math.round(totalCached / totalCalls * 100) : 0;
 
-  const TEAM_LABEL = { ska: '스카팀', claude: '클로드팀', luna: '루나팀' };
+  const TEAM_LABEL = { ska: '스카팀', claude: '클로드팀', luna: '루나팀', blog: '블로팀', worker: '워커팀' };
 
   const teamLines = rows.map(r => {
     const label = TEAM_LABEL[r.team] || r.team;

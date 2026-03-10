@@ -257,9 +257,9 @@ async function cleanOld(collection, days = 30) {
   const table = _validateCollection(collection);
   const rows = await pgPool.query(SCHEMA, `
     DELETE FROM ${SCHEMA}.${table}
-    WHERE created_at < now() - ($1 || ' days')::INTERVAL
+    WHERE created_at < now() - ($1 * INTERVAL '1 day')
     RETURNING id
-  `, [String(days)]);
+  `, [days]);
   return rows.length;
 }
 
