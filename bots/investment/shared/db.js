@@ -154,12 +154,63 @@ export async function initSchema() {
     try { await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
 
+  // ── screening_history (아르고스 동적 종목 스크리닝 이력) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS screening_history (
+      id              TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      date            DATE NOT NULL,
+      market          TEXT NOT NULL,
+      core_symbols    JSONB,
+      dynamic_symbols JSONB,
+      screening_data  JSONB,
+      created_at      TIMESTAMP DEFAULT now()
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_screening_date ON screening_history(date, market)`);
+
+  // ── dual_model_results (멀티 모델 경쟁 결과 상세 기록) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS dual_model_results (
+      id                  TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      agent               TEXT NOT NULL,
+      symbol              TEXT,
+      cycle_id            TEXT,
+      oss_response        TEXT,
+      oss_signal          TEXT,
+      oss_confidence      DOUBLE PRECISION,
+      oss_reasoning       TEXT,
+      oss_score           DOUBLE PRECISION,
+      oss_parseable       BOOLEAN DEFAULT false,
+      oss_latency_ms      INTEGER,
+      oss_input_tokens    INTEGER DEFAULT 0,
+      oss_output_tokens   INTEGER DEFAULT 0,
+      scout_response      TEXT,
+      scout_signal        TEXT,
+      scout_confidence    DOUBLE PRECISION,
+      scout_reasoning     TEXT,
+      scout_score         DOUBLE PRECISION,
+      scout_parseable     BOOLEAN DEFAULT false,
+      scout_latency_ms    INTEGER,
+      scout_input_tokens  INTEGER DEFAULT 0,
+      scout_output_tokens INTEGER DEFAULT 0,
+      winner              TEXT NOT NULL,
+      win_reason          TEXT,
+      score_diff          DOUBLE PRECISION,
+      signals_agree       BOOLEAN DEFAULT false,
+      created_at          TIMESTAMP DEFAULT now()
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_dual_agent    ON dual_model_results(agent, created_at)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_dual_winner   ON dual_model_results(winner, created_at)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_dual_symbol   ON dual_model_results(symbol, created_at)`);
+
   // 스키마 버전 기록
   try {
     for (const [v, name] of [
       [1, 'initial_schema'],
       [2, 'strategy_pool_risk_log_asset_snapshot'],
       [3, 'trades_tp_sl_columns'],
+      [4, 'screening_history_dual_model_results'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

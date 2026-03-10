@@ -83,11 +83,15 @@ export const PAPER_MODE = process.env.PAPER_MODE !== 'false' && _cfg.paper_mode 
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
 export const GROQ_SCOUT_MODEL  = 'meta-llama/llama-4-scout-17b-16e-instruct';
+export const GPT_OSS_20B_MODEL = 'openai/gpt-oss-20b';
 export const OPENAI_PERF_MODEL = _cfg.openai?.model || 'gpt-4o';
 export const HAIKU_MODEL       = 'claude-haiku-4-5-20251001';
 
-// 성능 우선 에이전트 — OpenAI gpt-4o 라우팅
+// 성능 우선 에이전트 — 멀티 모델 경쟁 (gpt-oss-20b vs llama-4-scout) 또는 OpenAI gpt-4o
 const OPENAI_AGENTS = new Set(['luna', 'nemesis', 'oracle', 'athena', 'zeus']);
+
+// 멀티 모델 경쟁 활성 여부 (기본: true)
+const DUAL_MODEL = process.env.LUNA_DUAL_MODEL !== 'false';
 
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
@@ -151,9 +155,11 @@ export function parseJSON(text) {
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512) {
-  // 성능 우선 에이전트 → OpenAI gpt-4o
+  // 성능 우선 에이전트 → 멀티 모델 경쟁 (활성) 또는 OpenAI gpt-4o (비활성)
   if (OPENAI_AGENTS.has(agentName)) {
-    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
+    return DUAL_MODEL
+      ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens)
+      : callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
   }
   // 속도 우선 에이전트 → Groq Scout
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
@@ -181,6 +187,136 @@ async function callWithRetry(fn, agentName, maxRetries = 3) {
     }
   }
 }
+
+// ─── 단건 Groq 호출 (모델 지정, 라운드로빈 1회) ─────────────────────
+
+async function callGroqModel(agentName, systemPrompt, userPrompt, maxTokens, model) {
+  const groq = nextGroqClient();
+  const t0   = Date.now();
+  const res  = await groq.chat.completions.create({
+    model,
+    max_tokens:      maxTokens,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user',   content: userPrompt   },
+    ],
+  });
+  return {
+    text:         res.choices[0]?.message?.content || '',
+    inputTokens:  res.usage?.prompt_tokens     || 0,
+    outputTokens: res.usage?.completion_tokens || 0,
+    latencyMs:    Date.now() - t0,
+  };
+}
+
+// ─── 응답 품질 점수 (0~10) ────────────────────────────────────────────
+
+function _scoreResponse(text) {
+  const json = parseJSON(text);
+  if (!json) return 0;
+  let score = 3;  // JSON 파싱 성공
+  if (['BUY', 'SELL', 'HOLD', 'STRONG_BUY', 'STRONG_SELL'].includes(json.signal)) score += 2;
+  if (typeof json.confidence === 'number' && json.confidence >= 0 && json.confidence <= 1) score += json.confidence * 2;
+  if (typeof json.reasoning === 'string') score += json.reasoning.length > 200 ? 2 : json.reasoning.length > 50 ? 1 : 0;
+  const fields = ['signal', 'confidence', 'reasoning', 'entry_price', 'stop_loss', 'take_profit'];
+  score += fields.filter(f => json[f] != null).length / fields.length;
+  return score;
+}
+
+function _buildWinReason(ossScore, scoutScore, ossJson, scoutJson) {
+  const reasons = [];
+  const diff = Math.abs(ossScore - scoutScore);
+  reasons.push(diff < 0.5 ? `점수근소(${diff.toFixed(1)})` : `점수차(${diff.toFixed(1)})`);
+  if (!ossJson && scoutJson)   reasons.push('oss JSON실패');
+  if (ossJson  && !scoutJson)  reasons.push('scout JSON실패');
+  if (ossJson?.signal && scoutJson?.signal) {
+    reasons.push(ossJson.signal === scoutJson.signal
+      ? `신호일치(${ossJson.signal})`
+      : `신호불일치(oss:${ossJson.signal} scout:${scoutJson.signal})`);
+  }
+  return reasons.join(' | ');
+}
+
+// ─── 멀티 모델 경쟁 (gpt-oss-20b vs llama-4-scout, 둘 다 무료) ──────
+
+async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 512) {
+  const t0 = Date.now();
+
+  const [ossResult, scoutResult] = await Promise.allSettled([
+    callGroqModel(agentName, systemPrompt, userPrompt, maxTokens, GPT_OSS_20B_MODEL),
+    callGroqModel(agentName, systemPrompt, userPrompt, maxTokens, GROQ_SCOUT_MODEL),
+  ]);
+
+  const ossOk   = ossResult.status   === 'fulfilled';
+  const scoutOk = scoutResult.status === 'fulfilled';
+
+  let winner, chosen, winnerData;
+
+  if (ossOk && scoutOk) {
+    const ossText   = ossResult.value.text;
+    const scoutText = scoutResult.value.text;
+    const ossScore  = _scoreResponse(ossText);
+    const scoutScore = _scoreResponse(scoutText);
+
+    winner    = ossScore >= scoutScore ? 'gpt-oss-20b' : 'llama-4-scout';
+    chosen    = winner === 'gpt-oss-20b' ? ossText : scoutText;
+    winnerData = winner === 'gpt-oss-20b' ? ossResult.value : scoutResult.value;
+
+    console.log(`  🏆 [${agentName}] 멀티모델: gpt-oss=${ossScore.toFixed(1)} vs scout=${scoutScore.toFixed(1)} → ${winner} 채택`);
+
+    // 경쟁 결과 DB 기록
+    const ossJson   = parseJSON(ossText);
+    const scoutJson = parseJSON(scoutText);
+    try {
+      const { createRequire } = await import('module');
+      const require = createRequire(import.meta.url);
+      const pg = require('../../../packages/core/lib/pg-pool');
+      await pg.run('investment', `
+        INSERT INTO dual_model_results (
+          agent, oss_response, oss_signal, oss_confidence, oss_reasoning,
+          oss_score, oss_parseable, oss_latency_ms, oss_input_tokens, oss_output_tokens,
+          scout_response, scout_signal, scout_confidence, scout_reasoning,
+          scout_score, scout_parseable, scout_latency_ms, scout_input_tokens, scout_output_tokens,
+          winner, win_reason, score_diff, signals_agree
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      `, [
+        agentName,
+        ossText.slice(0, 2000), ossJson?.signal, ossJson?.confidence, ossJson?.reasoning?.slice(0, 500),
+        ossScore, !!ossJson, ossResult.value.latencyMs, ossResult.value.inputTokens, ossResult.value.outputTokens,
+        scoutText.slice(0, 2000), scoutJson?.signal, scoutJson?.confidence, scoutJson?.reasoning?.slice(0, 500),
+        scoutScore, !!scoutJson, scoutResult.value.latencyMs, scoutResult.value.inputTokens, scoutResult.value.outputTokens,
+        winner, _buildWinReason(ossScore, scoutScore, ossJson, scoutJson),
+        Math.abs(ossScore - scoutScore), ossJson?.signal === scoutJson?.signal,
+      ]);
+    } catch { /* DB 없으면 무시 */ }
+  } else if (ossOk) {
+    winner     = 'gpt-oss-20b';
+    chosen     = ossResult.value.text;
+    winnerData = ossResult.value;
+    console.log(`  ℹ️ [${agentName}] scout 실패 → gpt-oss-20b 사용`);
+  } else if (scoutOk) {
+    winner     = 'llama-4-scout';
+    chosen     = scoutResult.value.text;
+    winnerData = scoutResult.value;
+    console.log(`  ℹ️ [${agentName}] gpt-oss 실패 → llama-4-scout 사용`);
+  } else {
+    // 둘 다 실패 → OpenAI 폴백
+    console.warn(`  ⚠️ [${agentName}] 무료 모델 전체 실패 → OpenAI gpt-4o 폴백`);
+    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+  }
+
+  const dur = Date.now() - t0;
+  const model = winner === 'gpt-oss-20b' ? GPT_OSS_20B_MODEL : GROQ_SCOUT_MODEL;
+  _trackTokens?.({ bot: agentName, team: 'investment', model, provider: 'groq',
+    taskType: 'trade_signal_dual', tokensIn: winnerData.inputTokens, tokensOut: winnerData.outputTokens, durationMs: dur });
+  _logLLMCall?.({ team: 'luna', bot: agentName, model, requestType: 'trade_signal_dual',
+    inputTokens: winnerData.inputTokens, outputTokens: winnerData.outputTokens, latencyMs: dur });
+
+  return chosen;
+}
+
+// ─── OpenAI 호출 ─────────────────────────────────────────────────────
 
 async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
   const t0 = Date.now();

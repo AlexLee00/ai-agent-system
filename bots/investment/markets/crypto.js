@@ -271,12 +271,27 @@ export async function runCryptoCycle(symbols) {
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args    = process.argv.slice(2);
-  const symArg  = args.find(a => a.startsWith('--symbols='));
-  const force   = args.includes('--force');
-  const symbols = symArg
-    ? symArg.split('=')[1].split(',').map(s => s.trim())
-    : getSymbols();
+  const args      = process.argv.slice(2);
+  const symArg    = args.find(a => a.startsWith('--symbols='));
+  const force     = args.includes('--force');
+  const noDynamic = args.includes('--no-dynamic');
+
+  let symbols;
+  if (symArg) {
+    symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+  } else if (noDynamic) {
+    symbols = getSymbols();
+  } else {
+    try {
+      const { screenCryptoSymbols } = await import('../team/argos.js');
+      const screening = await screenCryptoSymbols();
+      symbols = screening.all;
+      console.log(`🔍 [아르고스] 스크리닝 완료: ${symbols.join(', ')}`);
+    } catch (e) {
+      console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
+      symbols = getSymbols();
+    }
+  }
 
   if (isPaperMode()) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-A)');

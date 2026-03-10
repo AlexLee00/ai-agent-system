@@ -181,12 +181,27 @@ export async function runOverseasCycle(symbols) {
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const args    = process.argv.slice(2);
-  const symArg  = args.find(a => a.startsWith('--symbols='));
-  const force   = args.includes('--force');
-  const symbols = symArg
-    ? symArg.split('=')[1].split(',').map(s => s.trim())
-    : getKisOverseasSymbols();
+  const args      = process.argv.slice(2);
+  const symArg    = args.find(a => a.startsWith('--symbols='));
+  const force     = args.includes('--force');
+  const noDynamic = args.includes('--no-dynamic');
+
+  let symbols;
+  if (symArg) {
+    symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+  } else if (noDynamic) {
+    symbols = getKisOverseasSymbols();
+  } else {
+    try {
+      const { screenOverseasSymbols } = await import('../team/argos.js');
+      const screening = await screenOverseasSymbols();
+      symbols = screening.all;
+      console.log(`🔍 [아르고스] 해외주식 스크리닝: ${symbols.join(', ')}`);
+    } catch (e) {
+      console.warn(`⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
+      symbols = getKisOverseasSymbols();
+    }
+  }
 
   if (isPaperMode()) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-B)');
