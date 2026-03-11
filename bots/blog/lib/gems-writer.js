@@ -18,8 +18,8 @@ const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const GEMS_LLM_CHAIN = [
   { provider: 'openai', model: 'gpt-4o',                            maxTokens: 16000, temperature: 0.85 },
-  { provider: 'openai', model: 'gpt-4o-mini',                       maxTokens: 4096,  temperature: 0.85 },
-  { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096,  temperature: 0.75 },
+  { provider: 'openai', model: 'gpt-4o-mini',                       maxTokens: 16000, temperature: 0.85 },
+  { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
 ];
 
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────

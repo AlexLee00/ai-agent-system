@@ -220,12 +220,17 @@ async function createInstaContent(content, title, category, cardCount = 3) {
   fs.writeFileSync(path.join(INSTA_DIR, metaFilename), JSON.stringify(meta, null, 2));
 
   // ── HTML (아이폰 Safari — 이모지+서식 + 복사 버튼) ──
+  const escHtml = s => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
   const htmlContent = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>📸 ${title} — 인스타</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'">
+<title>📸 ${escHtml(title)} — 인스타</title>
 <style>
   body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; line-height: 1.8; color: #222; }
   h1 { font-size: 1.2rem; border-bottom: 2px solid #e1306c; padding-bottom: 8px; }
@@ -238,19 +243,19 @@ async function createInstaContent(content, title, category, cardCount = 3) {
 </style>
 </head>
 <body>
-<h1>📸 ${title}</h1>
+<h1>📸 ${escHtml(title)}</h1>
 
 <h2>📝 캡션</h2>
-<div class="caption" id="cap">${caption.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cap').innerText).then(()=>alert('캡션 복사됨!'))">캡션 복사</button>
+<div class="caption" id="cap">${escHtml(caption)}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cap').textContent).then(()=>alert('캡션 복사됨!'))">캡션 복사</button>
 
 <h2>#️⃣ 해시태그</h2>
-<div class="hashtags" id="tags">${hashtags.join(' ')}</div>
-<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('tags').innerText).then(()=>alert('해시태그 복사됨!'))">해시태그 복사</button>
+<div class="hashtags" id="tags">${escHtml(hashtags.join(' '))}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('tags').textContent).then(()=>alert('해시태그 복사됨!'))">해시태그 복사</button>
 
 <h2>📣 CTA</h2>
-<div class="caption" id="cta">${(cta || '').replace(/</g, '&lt;')}</div>
-<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cta').innerText).then(()=>alert('CTA 복사됨!'))">CTA 복사</button>
+<div class="caption" id="cta">${escHtml(cta || '')}</div>
+<button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('cta').textContent).then(()=>alert('CTA 복사됨!'))">CTA 복사</button>
 
 <h2>🖼️ 카드 목록 (${cards.length}장)</h2>
 ${cards.map((c, i) => `<div class="card-info">카드 ${i + 1}: ${c.summary || ''}</div>`).join('\n')}
