@@ -20,11 +20,11 @@
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 
-  <!-- KST 15:30 = UTC 06:30 -->
+  <!-- KST 15:30 (launchd 로컬 시간 기준) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>15</integer>
     <key>Minute</key>
     <integer>30</integer>
   </dict>
