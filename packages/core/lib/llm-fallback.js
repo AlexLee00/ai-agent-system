@@ -30,6 +30,7 @@
 const { getAnthropicKey, getOpenAIKey, getGeminiKey, getGroqAccounts } = require('./llm-keys');
 const { logLLMCall } = require('./llm-logger');
 const billingGuard = require('./billing-guard');
+const { trackTokens } = require('./token-tracker');
 
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
@@ -217,18 +218,31 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
 
       // LLM 사용 로깅
       if (logMeta.team) {
+        const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
+        const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;
         try {
           logLLMCall({
             team:         logMeta.team,
             bot:          logMeta.bot  || logMeta.team,
             model:        cfg.model,
             requestType:  logMeta.requestType,
-            inputTokens:  usage?.input_tokens  || usage?.prompt_tokens     || 0,
-            outputTokens: usage?.output_tokens || usage?.completion_tokens || 0,
+            inputTokens:  tokensIn,
+            outputTokens: tokensOut,
             latencyMs,
             success: true,
           });
         } catch { /* 로깅 실패 무시 */ }
+        // 토큰 트래커 (비용 통계)
+        trackTokens({
+          bot:       logMeta.bot  || logMeta.team,
+          team:      logMeta.team,
+          model:     cfg.model,
+          provider:  cfg.provider,
+          taskType:  logMeta.requestType || 'unknown',
+          tokensIn,
+          tokensOut,
+          durationMs: latencyMs,
+        }).catch(() => {});
       }
 
       if (i > 0) {

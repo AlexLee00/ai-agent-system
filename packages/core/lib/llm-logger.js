@@ -150,7 +150,7 @@ async function logLLMCall({
 
     // ★ 실시간 긴급 한도 체크 (성공 호출 + 비용 있을 때만, 비동기)
     if (success && cost > 0) {
-      _checkEmergencyLimits(cost).catch(() => {});
+      _checkEmergencyLimits(cost, team).catch(() => {});
     }
   } catch (e) {
     console.warn(`[llm-logger] 기록 실패 (${bot}): ${e.message}`);
@@ -159,7 +159,10 @@ async function logLLMCall({
 
 // ── 긴급 한도 체크 ────────────────────────────────────────────────────
 
-async function _checkEmergencyLimits(cost) {
+// 배치성 팀 — 하루 1회 실행이라 10분 급등이 정상. 스파이크 감지 제외
+const BATCH_TEAMS = new Set(['blog']);
+
+async function _checkEmergencyLimits(cost, team) {
   if (billingGuard.isBlocked()) return;
 
   try {
@@ -168,7 +171,7 @@ async function _checkEmergencyLimits(cost) {
       return _triggerEmergency(`단건 $${cost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.perCall}`, cost);
     }
 
-    // 시간당 누적
+    // 시간당 누적 (전체)
     const hrRow = await pgPool.get('reservation',
       `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::timestamptz > NOW() - INTERVAL '1 hour'`
     );
@@ -177,7 +180,7 @@ async function _checkEmergencyLimits(cost) {
       return _triggerEmergency(`시간당 $${hourlyCost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.hourly}`, hourlyCost);
     }
 
-    // 일일 누적
+    // 일일 누적 (전체)
     const dyRow = await pgPool.get('reservation',
       `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::date = CURRENT_DATE`
     );
@@ -186,18 +189,23 @@ async function _checkEmergencyLimits(cost) {
       return _triggerEmergency(`일일 $${dailyCost.toFixed(4)} > 한도 $${EMERGENCY_LIMITS.daily}`, dailyCost);
     }
 
-    // 10분 급등 (직전 10분 vs 그 이전 10분)
-    const r10 = await pgPool.get('reservation',
-      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log WHERE created_at::timestamptz > NOW() - INTERVAL '10 minutes'`
-    );
-    const p10 = await pgPool.get('reservation',
-      `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
-       WHERE created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`
-    );
-    const recent = parseFloat(r10?.t || 0);
-    const prev   = parseFloat(p10?.t || 0);
-    if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
-      _triggerEmergency(`10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent);
+    // 10분 급등 — 팀별 독립 감지 (배치 팀 제외)
+    if (!BATCH_TEAMS.has(team)) {
+      const r10 = await pgPool.get('reservation',
+        `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+         WHERE team = $1 AND created_at::timestamptz > NOW() - INTERVAL '10 minutes'`,
+        [team]
+      );
+      const p10 = await pgPool.get('reservation',
+        `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+         WHERE team = $1 AND created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`,
+        [team]
+      );
+      const recent = parseFloat(r10?.t || 0);
+      const prev   = parseFloat(p10?.t || 0);
+      if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
+        _triggerEmergency(`[${team}] 10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent);
+      }
     }
   } catch (e) {
     console.warn(`[llm-logger] 긴급 한도 체크 실패 (무시): ${e.message}`);
