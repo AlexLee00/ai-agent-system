@@ -1,7 +1,7 @@
 # 팀 제이 (Team Jay) 아키텍처
 
 > 전략문서 상세: team-jay-strategy.md 참조
-> 최종 업데이트: 2026-03-08
+> 최종 업데이트: 2026-03-11
 
 ## 명칭 체계
 
@@ -14,6 +14,15 @@
 | 시스템팀장 | 클로드 | 시스템 개선·유지보수 |
 | 투자팀장 | 루나 | 자동매매 (암호화폐 실투자, 국내외장 모의) |
 
+## 팀 제이 6대 원칙
+
+1. **자율과 통제의 균형** — 봇은 진화하되, 비용과 권한은 통제
+2. **감지와 판단의 분리** — 감지(덱스터)와 판단(팀장)을 분리
+3. **정합성 우선** — 실행은 빠르게, 데이터 정합성은 절대 보존
+4. **기록이 곧 진화** — 모든 판단을 추적. 기록 없이 개선 없음
+5. **비용 의식** — 무료 모델 최대 활용, 유료는 가치 있는 곳에만
+6. **노드 단위 업무 분리** — 모든 파이프라인을 노드로 분해. 결합도 0, RAG 간접 연결
+
 ## 3계층 에이전트 모델
 
 ```
@@ -22,13 +31,17 @@ Layer 2: 팀장 봇 (LLM) — 스카/클로드/루나, 자율 판단·조율
 Layer 1: 팀원 봇 (규칙) — 앤디/지미/덱스터/아리아 등, 실행·보고
 ```
 
-## 팀별 LLM 모델
+## 팀별 LLM 모델 (2026-03-11 확정)
 
-| 팀 | 팀장 모델 | 특징 |
-|----|----------|------|
-| 스카팀 | Groq 무료 | 예외 상황에서만 LLM (일 5-10회) |
-| 클로드팀 | Claude Sonnet | 기술 판단 (일 10-20회) |
-| 루나팀 | Sonnet + Opus(제한) | 깊은 분석·토론 (일 20-50회) |
+| 팀 | 메인 모델 | 폴백 | 특징 |
+|----|----------|------|------|
+| 루나팀 | Groq dual (oss-20b vs scout) | → gpt-4o (25만) | 무료 경쟁, 최종 폴백 유료 |
+| 블로팀 | gpt-4o (25만) | → gpt-4o-mini → flash | 품질 최우선 |
+| 클로드팀 | gpt-4o (25만) | → gpt-4o-mini → scout | Sonnet 제거, 무료화 |
+| 스카팀 | Groq 무료 | — | 예외 상황에서만 LLM |
+| 워커팀 | (미정) | — | 구현 전 |
+
+월 비용: 텍스트 $0 (전부 무료 한도 내) + 이미지 ~$8 = **~$8/월**
 
 ## 소통 구조
 
@@ -37,6 +50,12 @@ Layer 1: 팀원 봇 (규칙) — 앤디/지미/덱스터/아리아 등, 실행·
 | 마스터 ↔ 팀장 | 텔레그램 Forum Topic |
 | 팀장 ↔ 팀장 | OpenClaw sessions_send |
 | 팀장 ↔ 팀원 | State Bus (agent_events / agent_tasks) |
+
+### 의사소통 가드레일 (위반 시 거부)
+- Layer 1 → Layer 3 직접 보고 금지 (반드시 Layer 2 경유)
+- 팀 간 직접 통신 금지 (OpenClaw sessions_send 경유만 허용)
+- Layer 1이 LLM 직접 호출 금지 (팀장 경유만 허용)
+- 긴급 상황 시에만 Layer 1 → Layer 3 텔레그램 직접 알림 허용 (alert_level: 4 이상)
 
 ## State Bus 테이블 (state.db)
 
@@ -74,13 +93,52 @@ Day 1 추가 (2026-03-06):
 - 4주차: 루나팀 자본관리 + 시그널 융합 + 코어 인프라 강화 ✅ (현재)
 - 5~6주차: 전체 통합 안정화 + 맥미니 이관
 
-## LLM 최적화 원칙
+## LLM 모델 최적화 원칙 (2026-03-11 확정)
 
-- 지능형 모델 라우팅: 복잡도별 자동 분배 (단순→Groq, 복잡→Sonnet, 깊은→Opus)
-- 시맨틱 캐싱: SQLite 기반, 팀별 TTL 차등 (스카 30분, 클로드 6시간, 루나 5분)
-- Anthropic Prompt Caching: 시스템 프롬프트 캐싱으로 비용 절감
-- LLM 졸업: 반복 판단 패턴 → 규칙 전환 (로거가 추적, 마스터 승인 후 적용)
-- 모든 LLM 호출은 로거(Logger)를 경유하여 비용 추적
+### 무료 한도 활용
+- OpenAI 대형 (gpt-4o): 25만 토큰/일 무료 → 핵심 판단에만 사용
+- OpenAI 소형 (gpt-4o-mini): 250만 토큰/일 무료 → 분류/요약/보조에 사용
+- Groq (scout/oss-20b): 무료 무제한 → 루나팀 메인
+- Gemini (2.5-flash): 무료 → 3순위 폴백
+
+### 에이전트별 모델 라우팅
+| 그룹 | 에이전트 | 메인 | 폴백 |
+|------|----------|------|------|
+| 루나 전용 | luna | gpt-4o (25만) | → scout |
+| Groq 경쟁 | nemesis, oracle | dual (oss-20b vs scout) | → gpt-4o |
+| Mini 우선 | hermes, sophia, zeus, athena | gpt-4o-mini (250만) | → scout → gpt-4o |
+| 속도 우선 | argos 등 | scout (Groq) | → gpt-4o-mini |
+| 블로 메인 | 포스, 젬스 | gpt-4o (25만) | → gpt-4o-mini → flash |
+| 블로 보조 | 스타, 품질검증 | gpt-4o-mini (250만) | → flash |
+| 클로드 리드 | Claude Lead | gpt-4o (25만) | → gpt-4o-mini → scout |
+
+### 폴백 원칙
+- 모든 LLM 호출에 최소 2단계 폴백 체인 필수
+- 최종 폴백이 없는 throw 금지 (반드시 안전망 존재)
+- 폴백 시 logMeta에 fallback=true 기록
+
+### 이미지 생성
+- 메인: gpt-image-1 quality=medium (~$8/월)
+- 맥미니 도착 후: ComfyUI FLUX 셀프호스팅 ($0)
+
+### 비용 로깅
+- 모든 LLM 호출은 llm-logger.js 경유 (토큰/비용 DB 추적)
+- 긴급 차단: billing-guard.js (일$10/시$3/건$1 초과 시 전체 차단)
+
+## DB 단일화 원칙
+
+- 운영 DB: PostgreSQL (jay DB) 단일 — 별도 DB 추가 지양
+- 벡터 DB: pgvector 확장 (PostgreSQL 내) — 별도 벡터 DB(ChromaDB 등) 금지
+- 상태 파일: 가능하면 PostgreSQL 테이블로 전환 (JSON 파일 기반 지양)
+- 스키마 분리: `reservation` (스카), `investment` (루나), `blog` (블로), `claude` (클로드)
+
+## n8n 워크플로우 원칙
+
+- 스카팀: 이미 n8n 6개 워크플로우 운영
+- 블로팀: Phase 4에서 n8n 오케스트레이션 적용 예정
+- 루나팀/클로드팀: 노드화 후 n8n 전환 예정
+- n8n 아키텍처: fan-out 금지, 순차 체인 구조 사용 (n8n 2.x 안정성)
+- 노드 간 데이터 전달: RAG 중간 저장소 (pgvector) 경유
 
 ---
 
@@ -204,6 +262,35 @@ KST 시각을 그대로 `Hour` / `Minute`에 지정한다.
   <key>Minute</key><integer>0</integer>
 </dict>
 ```
+
+## 노드화 아키텍처 원칙 (6대 원칙 #6)
+
+모든 팀의 파이프라인은 노드 단위로 설계한다.
+
+### 핵심 규칙
+- 노드 간 결합도 0 — RAG 중간 저장소로만 간접 연결
+- 노드 단위 실패 격리 — 한 노드 실패해도 다른 노드 결과 보존
+- 실패한 노드만 재실행 (전체 파이프라인 재실행 금지)
+- 모든 노드 입출력을 RAG에 기록 (감사 추적)
+- 새 기능 추가 시 기존 노드에 끼워넣지 말고 독립 노드로 추가
+
+### 팀별 노드 현황
+| 팀 | 노드 수 | 상태 |
+|----|---------|------|
+| 블로팀 | 24개 (N01~N53) | 설계 완료 |
+| 루나팀 | 19개 (L01~L34) | 설계 완료 |
+| 클로드팀 | 16개 (C01~C24) | 설계 완료 |
+| 워커팀 | 12개 (W01~W23) | 설계 완료 |
+| 스카팀 | 5개 (S01~S05) | n8n 운영 중 |
+
+### RAG 중간 저장소 패턴
+```js
+await rag.store(namespace, content, metadata, botName);
+// namespace: 'blog_pipeline_store' | 'investment_pipeline_store' | 'monitor_pipeline_store' | 'worker_pipeline_store'
+// metadata 필수 필드: session_id, node_id, node_type, timestamp, status, duration_ms
+```
+
+→ 상세: 노션 "팀 제이 노드화 아키텍처" 페이지 참조
 
 ---
 
