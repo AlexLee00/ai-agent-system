@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * lib/reporter.js — 덱스터 리포트 포맷 + 텔레그램 발송
@@ -25,7 +26,7 @@ function printReport(results, { elapsed, full }) {
   console.log('\n╔══════════════════════════════════════════════════╗');
   console.log(`║  🤖 ${BOT_NAME} (Dexter) — 시스템 유지보수 리포트      ║`);
   console.log('╚══════════════════════════════════════════════════╝');
-  console.log(`  시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
+  console.log(`  시각: ${kst.toKST(new Date())}`);
   console.log(`  소요: ${elapsed}ms  |  모드: ${full ? '전체' : '기본'}`);
   console.log(`  종합: ${STATUS_ICON[overall]} ${overall.toUpperCase()}\n`);
 
@@ -62,7 +63,7 @@ function buildTelegramText(results, elapsed) {
 
   const lines = [];
   lines.push(`🤖 *${BOT_NAME} 유지보수 리포트* ${STATUS_ICON[overall]}`);
-  lines.push(`📅 ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
+  lines.push(`📅 ${kst.toKST(new Date())}`);
   lines.push('');
 
   for (const r of results) {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const kst = require('../../packages/core/lib/kst');
 
 /**
  * src/dexter-quickcheck.js — 덱스터 퀵체크 (5분 주기)
@@ -15,6 +16,7 @@
  */
 
 'use strict';
+const kst = require('../../packages/core/lib/kst');
 
 const fs   = require('fs');
 const os   = require('os');
@@ -51,7 +53,7 @@ const SERVICES = [
 // ── 유틸 ─────────────────────────────────────────────────────────────
 
 function kstNow() {
-  return new Date(Date.now() + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
+  return kst.datetimeStr();
 }
 
 function loadState() {

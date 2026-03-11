@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * publ.js (퍼블리셔) — 포스팅 파일 생성 + DB 기록
@@ -151,7 +152,7 @@ async function publishToFile(postData) {
   // output 디렉토리 보장
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  const today     = new Date().toISOString().slice(0, 10);
+  const today     = kst.today();
   const safeTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
   const filename  = `${today}_${postType}_${safeTitle}.html`;
   const filepath  = path.join(OUTPUT_DIR, filename);

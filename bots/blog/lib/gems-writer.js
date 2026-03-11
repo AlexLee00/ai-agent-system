@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * gems-writer.js (젬스 GEMS) — 일반 포스팅 작성
@@ -245,7 +246,7 @@ function _buildVariationBlock(variation = {}) {
  */
 async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
-  const cacheKey = `gems_general_${category}_${new Date().toISOString().slice(0, 10)}`;
+  const cacheKey = `gems_general_${category}_${kst.today()}`;
 
   // 캐시 확인
   const cached = await llmCache.getCached('blog', 'general_post', cacheKey);

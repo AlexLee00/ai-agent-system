@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * bots/blog/lib/schedule.js — 일자별 발행 스케줄 관리
@@ -29,7 +30,7 @@ const IS_TEST    = process.env.BLOG_TEST_MODE  === 'true';
 const RUN_DATE   = process.env.BLOG_RUN_DATE  || null;   // YYYY-MM-DD, 미설정 시 오늘
 
 function _today() {
-  return RUN_DATE || new Date().toISOString().slice(0, 10);
+  return RUN_DATE || kst.today();
 }
 
 // ─── 조회 ─────────────────────────────────────────────────────────────

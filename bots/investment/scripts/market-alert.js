@@ -9,17 +9,20 @@
  *   node scripts/market-alert.js --market=crypto    --event=daily
  *
  * launchd:
- *   ai.investment.market-alert-domestic-open   — KST 09:00 (UTC 00:00)
- *   ai.investment.market-alert-domestic-close  — KST 15:30 (UTC 06:30)
- *   ai.investment.market-alert-overseas-open   — KST 23:30 (UTC 14:30)
- *   ai.investment.market-alert-overseas-close  — KST 06:00 (UTC 21:00 전날)
- *   ai.investment.market-alert-crypto-daily    — KST 09:00 (UTC 00:00)
+ *   ai.investment.market-alert-domestic-open   — KST 09:00
+ *   ai.investment.market-alert-domestic-close  — KST 15:30
+ *   ai.investment.market-alert-overseas-open   — KST 23:30
+ *   ai.investment.market-alert-overseas-close  — KST 06:00
+ *   ai.investment.market-alert-crypto-daily    — KST 09:00
+ *   ⚠️ launchd는 로컬 시간(KST) 기준 — UTC 변환 불필요
  */
 
 import * as db from '../shared/db.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { loadPreScreened } from './pre-market-screen.js';
 import { getInvestmentProfile } from './investment-profile.js';
+import { createRequire } from 'module';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
 // ── 인수 파싱 ──────────────────────────────────────────────────────────
 
@@ -40,9 +43,7 @@ const EXCHANGE_MAP = {
 };
 
 // KST 기준 오늘 날짜
-function todayKST() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-}
+const todayKST = () => kst.today();
 
 // ── 메인 ──────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ async function sendOpenAlert(market, label) {
 
   const lines = [
     `📈 ${label} 장 시작!`,
-    `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
+    `시각: ${kst.toKST(new Date())}`,
     '',
     `[투자 성향]`,
     `  모드: ${profile.mode}`,
@@ -154,7 +155,7 @@ async function sendCloseReport(market, label) {
   const lines = [
     `📊 ${label} 장 마감 — 매매일지`,
     `날짜: ${today}`,
-    `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
+    `시각: ${kst.toKST(new Date())}`,
     '',
     `━━━━━━━━━━━━━━━━━━━━━`,
     `[투자 성향]`,
@@ -172,7 +173,7 @@ async function sendCloseReport(market, label) {
     lines.push('');
     lines.push(`[매매 내역] ${trades.length}건`);
     for (const t of trades) {
-      const time   = new Date(t.executed_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' });
+      const time   = kst.toKST(new Date(t.executed_at));
       const paper  = t.paper ? ' [PAPER]' : '';
       const total  = t.total_usdt ? ` ($${Number(t.total_usdt).toFixed(0)})` : '';
       lines.push(`  ${time} ${t.symbol} ${t.side} ${Number(t.amount).toFixed(4)}주 @${Number(t.price).toFixed(2)}${total}${paper}`);
@@ -241,7 +242,7 @@ async function sendCryptoDailyReport(label) {
   const lines = [
     `${label} 일일 보고`,
     `날짜: ${today}`,
-    `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
+    `시각: ${kst.toKST(new Date())}`,
     '',
     `[투자 성향]`,
     `  모드: ${profile.mode}`,
@@ -254,7 +255,7 @@ async function sendCryptoDailyReport(label) {
   if (trades.length > 0) {
     lines.push(`[24시간 매매] ${trades.length}건`);
     for (const t of trades) {
-      const time  = new Date(t.executed_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' });
+      const time  = kst.toKST(new Date(t.executed_at));
       const paper = t.paper ? ' [PAPER]' : '';
       lines.push(`  ${time} ${t.symbol} ${t.side} ${Number(t.amount).toFixed(6)} @${Number(t.price).toFixed(2)}${paper}`);
     }

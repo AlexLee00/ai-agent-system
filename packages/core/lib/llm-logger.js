@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('./kst');
 
 /**
  * packages/core/lib/llm-logger.js — 전체 팀 통합 LLM 사용 추적
@@ -79,11 +80,11 @@ const PRICING = {
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
 function _kstNow() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('Z', '+09:00');
+  return kst.datetimeStr();
 }
 
 function _kstDate() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+  return kst.today();
 }
 
 function _normalizeModel(model) {
@@ -229,7 +230,7 @@ function _triggerEmergency(reason, cost) {
           '',
           `사유: ${reason}`,
           `비용: $${cost.toFixed(4)}`,
-          `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST`,
+          `시각: ${kst.datetimeStr()} KST`,
           '',
           '⚠️ 모든 LLM 호출 즉시 중단됨',
           '해제: `rm .llm-emergency-stop` (마스터만)',
@@ -284,7 +285,7 @@ async function getDailyCost(team, dateKst) {
  */
 async function getCostBreakdown(team, days = 7) {
   await _ensureTable();
-  const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
+  const cutoff = new Date(Date.now() - days * 86400 * 1000)
     .toISOString().split('T')[0];
 
   if (team) {
@@ -357,9 +358,9 @@ async function buildDailyCostReport() {
 async function analyzeCostTrend(days = 14) {
   await _ensureTable();
   const half   = Math.floor(days / 2);
-  const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
+  const cutoff = new Date(Date.now() - days * 86400 * 1000)
     .toISOString().split('T')[0];
-  const midDate = new Date(Date.now() + 9 * 3600 * 1000 - half * 86400 * 1000)
+  const midDate = new Date(Date.now() - half * 86400 * 1000)
     .toISOString().split('T')[0];
 
   const rows = await pgPool.query('reservation', `
@@ -391,7 +392,7 @@ async function analyzeCostTrend(days = 14) {
  */
 async function analyzeModelEfficiency(days = 30) {
   await _ensureTable();
-  const cutoff = new Date(Date.now() + 9 * 3600 * 1000 - days * 86400 * 1000)
+  const cutoff = new Date(Date.now() - days * 86400 * 1000)
     .toISOString().split('T')[0];
 
   const models = await pgPool.query('reservation', `

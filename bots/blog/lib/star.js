@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * bots/blog/lib/star.js — 스타(STAR) 봇
@@ -167,7 +168,7 @@ async function createInstaContent(content, title, category, cardCount = 3) {
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${cardCount}장)`);
 
   // 파일명 슬러그: 날짜_제목
-  const today    = new Date().toISOString().slice(0, 10);
+  const today    = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30);
   const slug     = `${today}_${safeSlug}`;
 
