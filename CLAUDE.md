@@ -171,6 +171,42 @@ npm run patch:status        # 패치 현황 콘솔
 
 ---
 
+## 공통 유틸리티 — 반드시 사용 (신규 팀/봇 포함)
+
+### 시간 유틸리티: `packages/core/lib/kst.js`
+새 팀·봇·스크립트를 추가할 때 **시간/날짜 관련 코드는 반드시 kst.js를 사용**한다.
+
+```js
+// CJS (대부분의 봇)
+const kst = require('../../../packages/core/lib/kst');
+
+// ESM (루나팀 등)
+import { createRequire } from 'module';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
+```
+
+| 금지 패턴 | 대체 |
+|-----------|------|
+| `new Date().toISOString().slice(0,10)` | `kst.today()` |
+| `new Date(Date.now() + 9*3600*1000)` | `kst.today()` / `kst.datetimeStr()` |
+| `new Date().toLocaleString('ko-KR', {timeZone:'Asia/Seoul'})` | `kst.toKST(new Date())` |
+| `new Date().toLocaleTimeString(...)` | `kst.timeStr()` |
+
+### launchd plist 시간 규칙
+**macOS launchd `StartCalendarInterval`은 로컬 시간(KST) 기준** — UTC 변환 금지.
+KST 시각을 그대로 `Hour` / `Minute`에 지정한다.
+
+```xml
+<!-- KST 09:00 실행 예시 -->
+<key>StartCalendarInterval</key>
+<dict>
+  <key>Hour</key><integer>9</integer>      <!-- KST 09 그대로, UTC 00 아님 -->
+  <key>Minute</key><integer>0</integer>
+</dict>
+```
+
+---
+
 ## 절대 규칙 (변경 불가)
 
 - 시스템 기본 언어: **한국어** (코드 주석, 로그, 알림 포함)
