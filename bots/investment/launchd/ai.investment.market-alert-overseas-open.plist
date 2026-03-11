@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.investment.market-alert-overseas-open</string>
+
+  <!-- 해외장(미국) 시작 알림 — KST 23:30 (UTC 14:30) -->
+  <!-- 서머타임 적용 시 KST 22:30 (UTC 13:30) — plist 수동 조정 필요 -->
+  <!-- 설치: cp bots/investment/launchd/ai.investment.market-alert-overseas-open.plist ~/Library/LaunchAgents/ -->
+  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.market-alert-overseas-open.plist -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
+    <string>--market=overseas</string>
+    <string>--event=open</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+
+  <!-- KST 23:30 = UTC 14:30 (서머타임: KST 22:30 = UTC 13:30) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>14</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/investment-market-alert-overseas-open.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/investment-market-alert-overseas-open.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PAPER_MODE</key>
+    <string>true</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
