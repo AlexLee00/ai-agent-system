@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 'use strict';
-const kst = require('../../packages/core/lib/kst');
 
 /**
  * src/dexter-quickcheck.js — 덱스터 퀵체크 (5분 주기)
@@ -15,8 +14,7 @@ const kst = require('../../packages/core/lib/kst');
  *   node src/dexter-quickcheck.js --telegram --fix  # 알림 + 자동 재시작
  */
 
-'use strict';
-const kst = require('../../packages/core/lib/kst');
+const kst = require('../../../packages/core/lib/kst');
 
 const fs   = require('fs');
 const os   = require('os');

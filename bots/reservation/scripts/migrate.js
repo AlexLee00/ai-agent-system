@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * scripts/migrate.js — DB 스키마 마이그레이션 실행기
+ * scripts/migrate.js — DB 스키마 마이그레이션 실행기 (PostgreSQL)
  *
  * 사용법:
  *   node scripts/migrate.js            # 미적용 마이그레이션 전부 실행
@@ -13,9 +13,9 @@
  * migrations/ 디렉토리의 NNN_name.js 파일을 버전 순으로 실행.
  * 각 파일은 다음을 export해야 한다:
  *   exports.version  {number}    버전 번호 (정수, 고유)
- *   exports.name     {string}    마이그레이션 이름
- *   exports.up(db)   {function}  스키마 업그레이드 (db = lib/db 모듈)
- *   exports.down(db) {function}  스키마 롤백 (선택)
+ *   exports.name     {string}    마이브레이션 이름
+ *   exports.up()     {async fn}  스키마 업그레이드
+ *   exports.down()   {async fn}  스키마 롤백 (선택)
  *
  * ⚠️  스카봇이 실행 중이면 중단 후 실행할 것.
  */
@@ -50,10 +50,10 @@ function loadMigrationFiles() {
 
 // ─── 상태 출력 ─────────────────────────────────────────────────────
 
-function showStatus() {
+async function showStatus() {
   db.initMigrationsTable();
-  const ver     = db.getSchemaVersion();
-  const applied = db.getAppliedMigrations();
+  const ver     = await db.getSchemaVersion();
+  const applied = await db.getAppliedMigrations();
   const all     = loadMigrationFiles();
 
   console.log(`\n📦 스카봇 DB 마이그레이션 상태`);
@@ -75,9 +75,9 @@ function showStatus() {
 
 // ─── 마이그레이션 실행 ─────────────────────────────────────────────
 
-function runMigrations() {
+async function runMigrations() {
   db.initMigrationsTable();
-  const applied = db.getAppliedMigrations();
+  const applied = await db.getAppliedMigrations();
   const all     = loadMigrationFiles();
   const pending = all.filter(m => !applied.has(m.version));
 
@@ -91,8 +91,8 @@ function runMigrations() {
   for (const m of pending) {
     process.stdout.write(`  ▶ v${String(m.version).padStart(3, '0')} ${m.name} ... `);
     try {
-      m.up(db);
-      db.recordMigration(m.version, m.name);
+      await m.up();
+      await db.recordMigration(m.version, m.name);
       console.log('✅');
     } catch (e) {
       console.log(`❌\n     오류: ${e.message}`);
@@ -101,15 +101,15 @@ function runMigrations() {
     }
   }
 
-  const ver = db.getSchemaVersion();
+  const ver = await db.getSchemaVersion();
   console.log(`\n✅ 마이그레이션 완료 → 스키마 v${ver}`);
 }
 
 // ─── 롤백 ──────────────────────────────────────────────────────────
 
-function rollbackLast() {
+async function rollbackLast() {
   db.initMigrationsTable();
-  const applied = db.getAppliedMigrations();
+  const applied = await db.getAppliedMigrations();
 
   if (applied.size === 0) {
     console.log('⚠️  롤백할 마이그레이션 없음');
@@ -137,9 +137,9 @@ function rollbackLast() {
   while (Date.now() < end) { /* busy wait */ }
 
   try {
-    last.down(db);
-    db.getDb().prepare('DELETE FROM schema_migrations WHERE version = ?').run(last.version);
-    const newVer = db.getSchemaVersion();
+    await last.down();
+    await db.removeMigration(last.version);
+    const newVer = await db.getSchemaVersion();
     console.log(`✅ 롤백 완료 → 스키마 v${newVer}`);
   } catch (e) {
     console.error(`❌ 롤백 실패: ${e.message}`);
@@ -151,18 +151,21 @@ function rollbackLast() {
 
 const args = process.argv.slice(2);
 
-try {
-  if (args.includes('--status')) {
-    showStatus();
-  } else if (args.includes('--rollback')) {
-    rollbackLast();
-  } else if (args.includes('--version')) {
-    db.initMigrationsTable();
-    console.log(`v${db.getSchemaVersion()}`);
-  } else {
-    runMigrations();
+(async () => {
+  try {
+    if (args.includes('--status')) {
+      await showStatus();
+    } else if (args.includes('--rollback')) {
+      await rollbackLast();
+    } else if (args.includes('--version')) {
+      db.initMigrationsTable();
+      console.log(`v${await db.getSchemaVersion()}`);
+    } else {
+      await runMigrations();
+    }
+  } catch (e) {
+    console.error('❌ 오류:', e.message);
+    process.exit(1);
   }
-} catch (e) {
-  console.error('❌ 오류:', e.message);
-  process.exit(1);
-}
+  process.exit(0);
+})();

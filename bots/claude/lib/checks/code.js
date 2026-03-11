@@ -77,7 +77,29 @@ async function run() {
 
     if (!isFirstRun && stored[rel] && stored[rel] !== hash) {
       changed++;
-      items.push({ label: rel, status: 'warn', detail: `체크섬 변경 감지 (이전: ${stored[rel].slice(0,8)}… → 현재: ${hash.slice(0,8)}…)` });
+
+      // 마지막 git 커밋 확인 — Claude Code 외 수정이면 CRITICAL
+      let commitInfo = '';
+      let isSuspicious = false;
+      try {
+        const log = execSync(
+          `git -C "${cfg.ROOT}" log --oneline -1 -- "${rel}"`,
+          { encoding: 'utf8', timeout: 5000, shell: true }
+        ).trim();
+        commitInfo = log || '(커밋 없음 — 미커밋 수정)';
+        // 커밋이 없으면 → 봇이 직접 수정한 가능성 (가장 위험)
+        if (!log) isSuspicious = true;
+      } catch {
+        commitInfo = '(git 조회 실패)';
+      }
+
+      const status = isSuspicious ? 'error' : 'warn';
+      const prefix = isSuspicious ? '🚨 무단 수정 의심' : '체크섬 변경 감지';
+      items.push({
+        label:  rel,
+        status,
+        detail: `${prefix} (이전: ${stored[rel].slice(0,8)}… → 현재: ${hash.slice(0,8)}…) | 마지막 커밋: ${commitInfo}`,
+      });
     } else {
       items.push({ label: rel, status: 'ok', detail: hash.slice(0, 12) + '…' });
     }
@@ -89,7 +111,11 @@ async function run() {
   if (changed === 0) {
     items.unshift({ label: '체크섬', status: 'ok', detail: `핵심 파일 ${cfg.CRITICAL_FILES.length}개 무결` });
   } else {
-    items.unshift({ label: '체크섬', status: 'warn', detail: `${changed}개 파일 변경 감지` });
+    const suspicious = items.filter(i => i.status === 'error').length;
+    const summary = suspicious > 0
+      ? `🚨 ${suspicious}개 무단 수정 의심 (미커밋), ${changed}개 전체 변경`
+      : `${changed}개 파일 변경 감지`;
+    items.unshift({ label: '체크섬', status: suspicious > 0 ? 'error' : 'warn', detail: summary });
   }
 
   // 2. git 상태 (출력 제한으로 타임아웃 방지)

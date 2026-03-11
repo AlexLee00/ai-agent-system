@@ -19,6 +19,7 @@ const os       = require('os');
 const { execSync } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const rag      = require('../../../packages/core/lib/rag');
+const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -62,7 +63,7 @@ function acquireLock() {
     try { process.kill(Number(old), 0); console.error(`${BOT_NAME} 이미 실행 중 (PID: ${old})`); process.exit(1); }
     catch { fs.unlinkSync(LOCK_PATH); }
   }
-  fs.writeFileSync(LOCK_PATH, String(process.pid));
+  safeWriteFile(LOCK_PATH, String(process.pid), 'ska');
   process.on('exit', () => { try { fs.unlinkSync(LOCK_PATH); } catch {} });
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
 }
@@ -121,11 +122,11 @@ function checkSkaTeamIdentity() {
     // 2. 정체성 파일 체크 (없으면 생성, 30일 초과면 갱신)
     const idFile = path.join(BOT_ID_DIR, `${member.id}.json`);
     if (!fs.existsSync(idFile)) {
-      fs.writeFileSync(idFile, JSON.stringify({
+      safeWriteFile(idFile, JSON.stringify({
         name: member.name, team: member.team,
         role: member.role, mission: member.mission,
         launchd: member.launchd, updated_at: new Date().toISOString(),
-      }, null, 2));
+      }, null, 2), 'ska');
       trained = true;
       issues.push('→ 정체성 파일 생성');
     } else {
@@ -135,7 +136,7 @@ function checkSkaTeamIdentity() {
       if (missing.length > 0 || ageMs > 30 * 24 * 3600 * 1000) {
         if (missing.length > 0) issues.push(`누락 필드: ${missing.join(', ')}`);
         Object.assign(data, { name: member.name, team: member.team, role: member.role, mission: member.mission, updated_at: new Date().toISOString() });
-        fs.writeFileSync(idFile, JSON.stringify(data, null, 2));
+        safeWriteFile(idFile, JSON.stringify(data, null, 2), 'ska');
         trained = true;
         issues.push('→ 정체성 갱신');
       }

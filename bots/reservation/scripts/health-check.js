@@ -16,13 +16,10 @@
  * 자동: launchd ai.ska.health-check (10분마다)
  */
 
-const { execSync } = require('child_process');
 const fs = require('fs');
-const path = require('path');
+const { execSync } = require('child_process');
 const { publishToMainBot } = require('../lib/mainbot-client');
-
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const STATE_FILE = path.join(WORKSPACE, 'health-check-state.json');
+const hsm = require('../../../packages/core/lib/health-state-manager');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.naver-monitor'];
@@ -42,36 +39,15 @@ const ALL_SERVICES = [
 // 정상 종료 코드 (0: 성공, -15: SIGTERM, -9: KeepAlive 재시작)
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
-// 중복 알림 방지 간격 (30분)
-const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
-
 // naver-monitor 로그 staleness 체크
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000; // 15분 무활동 → 크래시루프 의심
 
-// ─── 상태 파일 ──────────────────────────────────────────────────
+// ─── 상태 파일 (공통 모듈 위임) ─────────────────────────────────
 
-function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveState(state) {
-  try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.error(`[헬스체크] 상태 저장 실패: ${e.message}`);
-  }
-}
-
-function canAlert(state, key) {
-  const last = state[key];
-  if (!last) return true;
-  return Date.now() - new Date(last).getTime() > ALERT_COOLDOWN_MS;
-}
+const loadState  = () => hsm.loadState();
+const saveState  = (state) => hsm.saveState(state);
+const canAlert   = (state, key) => hsm.canAlert(state, key);
 
 // ─── naver-monitor 로그 staleness ───────────────────────────────
 
@@ -107,8 +83,7 @@ function getLaunchctlStatus() {
 // ─── 메인 ───────────────────────────────────────────────────────
 
 function main() {
-  const now = new Date().toISOString();
-  console.log(`[헬스체크] 시작 — ${now}`);
+  console.log(`[헬스체크] 시작 — ${new Date().toISOString()}`);
 
   let status;
   try {
@@ -129,7 +104,7 @@ function main() {
     if (!svc) {
       const key = `unloaded:${label}`;
       if (canAlert(state, key)) {
-        issues.push({ key, msg: `🔴 [스카 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [스카 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
       }
       continue;
     }
@@ -149,7 +124,7 @@ function main() {
       if (!svc.running) {
         const key = `down:${label}`;
         if (canAlert(state, key)) {
-          issues.push({ key, msg: `🔴 [스카 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
+          issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [스카 헬스] ${shortName} 다운\nPID 없음 — launchd 재시작 실패 가능성` });
         }
       } else {
         // PID 회복 시 state 클리어 + 알림
@@ -169,7 +144,7 @@ function main() {
     if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (canAlert(state, key)) {
-        issues.push({ key, msg: `⚠️ [스카 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ [스카 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
       }
     } else {
       // exit code 정상(0) → 이전 오류 키 있으면 회복으로 판단
@@ -207,10 +182,10 @@ function main() {
   }
 
   // 알림 발송 + 상태 기록
-  for (const { key, msg } of issues) {
+  for (const { key, level, msg } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
-    publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: 3, message: msg });
-    state[key] = now;
+    publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: msg });
+    hsm.recordAlert(state, key);
   }
 
   // 이슈 유무 관계없이 state 저장 (회복 시 클리어된 키도 반영)

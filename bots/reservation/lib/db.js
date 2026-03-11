@@ -619,6 +619,10 @@ async function recordMigration(version, name) {
     [version, name]);
 }
 
+async function removeMigration(version) {
+  await pgPool.run(SCHEMA, 'DELETE FROM schema_migrations WHERE version = $1', [version]);
+}
+
 async function getFuturePickkoRegistered(fromDate) {
   const rows = await pgPool.query(SCHEMA,
     "SELECT * FROM reservations WHERE date >= $1 AND status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('cancelled','manual','time_elapsed'))",
@@ -633,7 +637,7 @@ async function getSchemaVersion() {
 
 module.exports = {
   // 마이그레이션
-  initMigrationsTable, getAppliedMigrations, recordMigration, getSchemaVersion,
+  initMigrationsTable, getAppliedMigrations, recordMigration, removeMigration, getSchemaVersion,
   // reservations
   isSeenId,
   markSeen,
