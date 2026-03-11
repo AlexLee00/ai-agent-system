@@ -145,12 +145,9 @@ export async function runOverseasCycle(symbols) {
     const results = await orchestrate(symbols, 'kis_overseas');
 
     // ── 단계 3: 한울 실행 (PAPER_MODE: 신호만 저장) ──
-    if (results.length > 0) {
-      console.log(`\n⚡ [실행 단계] 한울 ${results.length}개 신호 처리...`);
-      await processAllPendingKisOverseasSignals();
-    } else {
-      console.log('\n  ℹ️ [실행 단계] 실행할 신호 없음');
-    }
+    // 항상 실행 — 이전 사이클 pending 신호도 처리
+    console.log(`\n⚡ [실행 단계] 한울 실행 (이번 사이클: ${results.length}개 신호)...`);
+    await processAllPendingKisOverseasSignals();
 
     // ── 상태 저장 ──
     saveState({ lastCycleAt: Date.now() });
