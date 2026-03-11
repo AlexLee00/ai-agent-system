@@ -285,6 +285,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-03-05 | **예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정** | naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
 | 2026-03-05 | **스카 pickko-query/cancel-cmd 경로 누락 버그 수정** | CLAUDE_NOTES.md 명령 테이블 절대경로 수정 외 1건 |
 | 2026-03-06 | **미해결 알림 반복 + tool_code 누출 버그 수정** | pickko-alerts-resolve.js 신규 (수동 해결 CLI) 외 2건 |
+| 2026-03-11 | **제이 무응답 4종 버그 수정** | mainbot.js await 누락(items is not iterable) 외 3건 |
+<!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
 <!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
 <!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->

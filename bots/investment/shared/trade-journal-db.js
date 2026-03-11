@@ -201,7 +201,7 @@ export async function initJournalSchema() {
  */
 export async function generateTradeId() {
   await ensureInit();
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const dateStr = kst.today().replace(/-/g, '');
   const prefix  = `TRD-${dateStr}-`;
   const rows    = await query(
     `SELECT COUNT(*) AS cnt FROM trade_journal WHERE trade_id LIKE ?`,

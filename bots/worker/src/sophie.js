@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * bots/worker/src/sophie.js — 소피(Sophie) 급여봇

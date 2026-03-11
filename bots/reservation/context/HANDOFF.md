@@ -643,6 +643,15 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/manual/reports/pickko-alerts-resolve.js|bots/reservation/context/CLAUDE_NOTES.md`
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정:end -->
 
+<!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
+#### 2026-03-11 🔧 제이 무응답 4종 버그 수정
+- mainbot.js await 누락(items is not iterable)
+- groupAllowFrom 미설정(그룹 메시지 드롭)
+- OpenAI Groq rate limit → gemini 전환
+- OpenClaw requireMention 기본값 변경 대응(groups.*.requireMention=false)
+- 관련 파일: `bots/orchestrator/src/mainbot.js|.openclaw/openclaw.json`
+<!-- session-close:2026-03-11:제이-무응답-4종-버그-수정:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

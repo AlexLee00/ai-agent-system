@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 /**
  * bots/worker/src/emily.js — 에밀리 (문서총괄 봇)
  *

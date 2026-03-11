@@ -137,6 +137,13 @@
 - 스카팀 kickstart 재가동
 <!-- session-close:2026-03-11:전-팀-llm-최적화-스크리닝-rag-폴백-스카팀-재가 -->
 
+### 🔧 제이 무응답 4종 버그 수정
+- mainbot.js await 누락(items is not iterable)
+- groupAllowFrom 미설정(그룹 메시지 드롭)
+- OpenAI Groq rate limit → gemini 전환
+- OpenClaw requireMention 기본값 변경 대응(groups.*.requireMention=false)
+<!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
+
 ## 2026-03-10
 
 ### 블로그팀 장문 출력 극대화 5가지 방법 적용

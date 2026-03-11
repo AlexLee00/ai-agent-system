@@ -1,7 +1,7 @@
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 function log(msg) {
-  const ts = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const ts = kst.toKST(new Date());
   console.log(`[${ts}] ${msg}`);
 }
 

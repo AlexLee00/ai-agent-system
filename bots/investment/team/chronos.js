@@ -104,7 +104,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args      = process.argv.slice(2);
   const symbolArg = args.find(a => a.startsWith('--symbol='))?.split('=')[1] || 'BTC/USDT';
   const fromArg   = args.find(a => a.startsWith('--from='))?.split('=')[1]   || '2024-01-01';
-  const toArg     = args.find(a => a.startsWith('--to='))?.split('=')[1]     || new Date().toISOString().slice(0, 10);
+  const toArg     = args.find(a => a.startsWith('--to='))?.split('=')[1]     || kst.today();
 
   await db.initSchema();
   try {

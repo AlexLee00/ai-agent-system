@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 /**
  * bots/worker/src/noah.js — 노아 (인사 봇)
  *
@@ -35,7 +36,7 @@ async function getEmployeeByUserId({ companyId, userId }) {
 // ── 근태 ─────────────────────────────────────────────────────────────
 
 async function getTodayAttendance({ companyId }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
   return pgPool.query(SCHEMA,
     `SELECT e.name, a.check_in, a.check_out, a.status
      FROM worker.employees e
@@ -47,7 +48,7 @@ async function getTodayAttendance({ companyId }) {
 }
 
 async function checkIn({ companyId, employeeId }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
   const now   = new Date().toISOString();
 
   const existing = await pgPool.get(SCHEMA,
@@ -67,7 +68,7 @@ async function checkIn({ companyId, employeeId }) {
 }
 
 async function checkOut({ companyId, employeeId }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
   const now   = new Date().toISOString();
 
   const existing = await pgPool.get(SCHEMA,

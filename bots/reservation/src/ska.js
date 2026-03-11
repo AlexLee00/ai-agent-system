@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * src/ska.js — 스카 팀장 봇
@@ -195,7 +196,7 @@ async function storeAlertContext(issueType, detail, resolution) {
  * 오늘 예약 현황 조회
  */
 async function handleQueryReservations(args) {
-  const date = args.date || new Date().toISOString().slice(0, 10);
+  const date = args.date || kst.today();
   try {
     const rows = await pgPool.query('reservation', `
       SELECT name_enc, date, start_time, end_time, room, status
@@ -221,7 +222,7 @@ async function handleQueryReservations(args) {
  * 오늘 매출/예약수 조회
  */
 async function handleQueryTodayStats(args) {
-  const date = args.date || new Date().toISOString().slice(0, 10);
+  const date = args.date || kst.today();
   try {
     const summary = await pgPool.get('reservation', `
       SELECT total_amount, entries_count FROM daily_summary WHERE date = $1

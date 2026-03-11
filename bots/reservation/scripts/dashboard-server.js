@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * scripts/dashboard-server.js — 스카팀 실시간 예약 현황 대시보드
@@ -24,7 +25,7 @@ const HTML_FILE = path.join(__dirname, 'dashboard.html');
 // ─── 데이터 조회 ─────────────────────────────────────────────────────
 
 async function getTodayData() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
 
   const [reservations, summary, alerts] = await Promise.all([
     pgPool.query('reservation', `

@@ -82,7 +82,7 @@ function buildMessage(teamName, results, elapsed) {
                 : results.some(r => r.status === 'warn')  ? 'warn'
                 : 'ok';
 
-  const ts = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const ts = kst.toKST(new Date());
 
   const lines = [
     `🤖 덱스터 ${teamName} 점검 ${ICON[overall]}`,

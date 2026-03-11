@@ -18,6 +18,8 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { loadPreScreened, loadPreScreenedFallback, savePreScreened } from '../scripts/pre-market-screen.js';
 
+import { createRequire } from 'module';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
 import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
@@ -57,7 +59,7 @@ function shouldRunCycle(force = false) {
   }
   const remainMin = Math.ceil((CYCLE_INTERVAL - (now - state.lastCycleAt)) / 60000);
   const lastTime  = state.lastCycleAt > 0
-    ? new Date(state.lastCycleAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })
+    ? kst.toKST(new Date(state.lastCycleAt))
     : '없음';
   console.log(`⏳ 다음 사이클까지 ${remainMin}분 (마지막: ${lastTime})`);
   return { run: false, reason: `대기 중 (${remainMin}분 남음)` };
@@ -125,7 +127,7 @@ export async function runOverseasCycle(symbols) {
   const tag       = paperMode ? '[PAPER]' : '[LIVE]';
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`🗽 ${tag} 미국주식 사이클 시작 — ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
+  console.log(`🗽 ${tag} 미국주식 사이클 시작 — ${kst.toKST(new Date())}`);
   console.log(`   심볼: ${symbols.join(', ')}`);
   console.log(`${'═'.repeat(60)}`);
 

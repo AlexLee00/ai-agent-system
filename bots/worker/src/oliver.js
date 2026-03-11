@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 /**
  * bots/worker/src/oliver.js — 올리버 (매출 봇)
  *
@@ -18,7 +19,7 @@ const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 // ── 조회 ──────────────────────────────────────────────────────────────
 
 async function getTodaySales({ companyId }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
 
   const [summary, categories] = await Promise.all([
     pgPool.get(SCHEMA,
@@ -72,7 +73,7 @@ async function getSalesSummary({ companyId }) {
 // ── 등록 ──────────────────────────────────────────────────────────────
 
 async function registerSale({ companyId, amount, category, description, registeredBy, date }) {
-  const saleDate = date || new Date().toISOString().slice(0, 10);
+  const saleDate = date || kst.today();
   return pgPool.get(SCHEMA,
     `INSERT INTO worker.sales (company_id, date, amount, category, description, registered_by)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, date, amount, category`,

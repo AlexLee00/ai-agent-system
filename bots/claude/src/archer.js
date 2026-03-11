@@ -82,7 +82,7 @@ async function main() {
   try { teamBus.setStatus('archer', 'running', '기술 트렌드 수집 중'); } catch { /* DB 없으면 무시 */ }
 
   const start   = Date.now();
-  const runDate = new Date().toISOString().slice(0, 10);
+  const runDate = kst.today();
 
   try {
     // 1. 이전 결과 로드 (버전 diff 기준)

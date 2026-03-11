@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * lib/identity-checker.js — 팀장 정체성 점검·학습 모듈
@@ -16,7 +17,7 @@ const os   = require('os');
 const { execSync } = require('child_process');
 
 const PROJECT_ROOT = path.join(os.homedir(), 'projects', 'ai-agent-system');
-const TODAY        = () => new Date().toISOString().slice(0, 10);
+const TODAY        = () => kst.today();
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────
 

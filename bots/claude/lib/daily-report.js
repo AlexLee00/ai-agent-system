@@ -1,4 +1,5 @@
 'use strict';
+const kstUtil = require('../../../packages/core/lib/kst');
 
 /**
  * lib/daily-report.js — 덱스터 일일 보고
@@ -23,15 +24,11 @@ const TEAM_CLAUDE = '클로드팀';
 // ─── 날짜 유틸 ───────────────────────────────────────────────────────
 
 function todayKST() {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return kst.toISOString().slice(0, 10); // YYYY-MM-DD
+  return kstUtil.today();
 }
 
 function nowKST() {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000)
-    .toISOString()
-    .replace('T', ' ')
-    .slice(0, 16);
+  return kstUtil.datetimeStr().slice(0, 16);
 }
 
 // ─── 덱스터 로그 집계 ────────────────────────────────────────────────

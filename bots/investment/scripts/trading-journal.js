@@ -21,6 +21,7 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
+const kst     = require('../../../packages/core/lib/kst');
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
 
@@ -32,10 +33,9 @@ function toKST(utcStr) {
 }
 
 function kstDateRange(days) {
-  const now   = Date.now() + 9 * 3600 * 1000;
-  const today = new Date(now).toISOString().split('T')[0];
+  const today = kst.today();
   if (days <= 0) return { from: '2000-01-01', to: today, label: '전체 이력' };
-  const from  = new Date(now - (days - 1) * 86400_000).toISOString().split('T')[0];
+  const from  = kst.daysAgoStr(days - 1);
   const label = days === 1 ? `오늘 (${today})` : `최근 ${days}일 (${from} ~ ${today})`;
   return { from, to: today, label };
 }

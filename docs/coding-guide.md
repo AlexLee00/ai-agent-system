@@ -1429,6 +1429,8 @@ function parseJsonResponse(text) {
 | 2026-03-11 | **루나팀 국내외장 공격적 매매 전환 (2주 검증)** — luna.js MIN_CONFIDENCE/FUND_MIN_CONF 마켓별 객체 차등 외 9건 |
 | 2026-03-11 | **블로그팀 차기 강의 시리즈 자동 선정** — curriculum-planner.js 신규 (종료 7강 전 트리거, HN+GitHub 트렌드, LLM 후보 3개, generateCurriculum) 외 4건 |
 | 2026-03-11 | **전 팀 LLM 최적화 + 스크리닝 RAG 폴백 + 스카팀 재가동** — llm-client MINI_FIRST_AGENTS+callOpenAIMini 외 7건 |
+| 2026-03-11 | **제이 무응답 4종 버그 수정** — mainbot.js await 누락(items is not iterable) 외 3건 |
+<!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 <!-- session-close:2026-03-11:전-팀-llm-최적화-스크리닝-rag-폴백-스카팀-재가 -->
 <!-- session-close:2026-03-11:블로그팀-차기-강의-시리즈-자동-선정 -->
 <!-- session-close:2026-03-11:루나팀-국내외장-공격적-매매-전환-2주-검증 -->
