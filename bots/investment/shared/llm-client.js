@@ -383,9 +383,15 @@ async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { 
     return res.choices[0]?.message?.content || '';
   } catch (err) {
     if (skipFallback) throw err;
-    // gpt-4o-mini 실패 시 Groq Scout 폴백
+    // 1차 폴백: Groq Scout
     console.warn(`  ⚠️ [${agentName}] gpt-4o-mini 실패 (${err.message?.slice(0,60)}) → Groq Scout 폴백`);
-    return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+    try {
+      return await callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+    } catch (groqErr) {
+      // 2차 폴백: gpt-4o (최종 안전망)
+      console.warn(`  ⚠️ [${agentName}] Groq Scout도 실패 (${groqErr.message?.slice(0,60)}) → gpt-4o 최종 폴백`);
+      return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+    }
   }
 }
 
