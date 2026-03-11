@@ -25,7 +25,7 @@ import { tracker }  from './cost-tracker.js';
 let _trackTokens = null;
 try {
   const require = createRequire(import.meta.url);
-  const tt = require('../../orchestrator/lib/token-tracker.js');
+  const tt = require('../../../packages/core/lib/token-tracker.js');
   _trackTokens = tt.trackTokens;
 } catch {
   // 오케스트레이터 모듈 없는 환경에서는 무음 처리

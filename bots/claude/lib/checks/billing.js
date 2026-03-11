@@ -297,7 +297,7 @@ function _httpGet(url, headers) {
       hostname: u.hostname,
       path:     u.pathname + u.search,
       headers,
-      timeout:  15000,
+      timeout:  30000,
     }, res => {
       let body = '';
       res.on('data', c => body += c);
@@ -307,7 +307,7 @@ function _httpGet(url, headers) {
       });
     });
     req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃 (15s)')); });
+    req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃 (30s)')); });
   });
 }
 
