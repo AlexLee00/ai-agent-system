@@ -1430,6 +1430,10 @@ function parseJsonResponse(text) {
 | 2026-03-11 | **블로그팀 차기 강의 시리즈 자동 선정** — curriculum-planner.js 신규 (종료 7강 전 트리거, HN+GitHub 트렌드, LLM 후보 3개, generateCurriculum) 외 4건 |
 | 2026-03-11 | **전 팀 LLM 최적화 + 스크리닝 RAG 폴백 + 스카팀 재가동** — llm-client MINI_FIRST_AGENTS+callOpenAIMini 외 7건 |
 | 2026-03-11 | **제이 무응답 4종 버그 수정** — mainbot.js await 누락(items is not iterable) 외 3건 |
+| 2026-03-11 | **naver-monitor kst 누락 수정** — naver-monitor.js kst 임포트 누락 → 알람 전송 실패 수정 |
+| 2026-03-11 | **젬스/포스 이어쓰기 중복 방지 + 중복실행 early-exit** — gems-writer.js 이어쓰기 800자 tail + LLM 재시작 감지 외 2건 |
+<!-- session-close:2026-03-11:젬스포스-이어쓰기-중복-방지-중복실행-earlyexit -->
+<!-- session-close:2026-03-11:navermonitor-kst-누락-수정 -->
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 <!-- session-close:2026-03-11:전-팀-llm-최적화-스크리닝-rag-폴백-스카팀-재가 -->
 <!-- session-close:2026-03-11:블로그팀-차기-강의-시리즈-자동-선정 -->

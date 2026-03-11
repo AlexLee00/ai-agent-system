@@ -383,7 +383,13 @@ async function run() {
 
   // 4. 스케줄 기반으로 오늘 작성 목록 결정 (publish_schedule 우선, 없으면 자동 생성)
   const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = await getTodayContext();
-  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음'} / 일반: ${generalCtx?.category || '없음'}`);
+  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
+
+  // 이미 모두 발행된 경우 즉시 종료 (중복 실행 방지)
+  if (!lectureCtx && !generalCtx) {
+    console.log('[블로] ✅ 오늘 발행 항목이 모두 완료됨 — 중복 실행 건너뜀');
+    return [];
+  }
 
   const results = [];
 
