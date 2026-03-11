@@ -1432,6 +1432,8 @@ function parseJsonResponse(text) {
 | 2026-03-11 | **제이 무응답 4종 버그 수정** — mainbot.js await 누락(items is not iterable) 외 3건 |
 | 2026-03-11 | **naver-monitor kst 누락 수정** — naver-monitor.js kst 임포트 누락 → 알람 전송 실패 수정 |
 | 2026-03-11 | **젬스/포스 이어쓰기 중복 방지 + 중복실행 early-exit** — gems-writer.js 이어쓰기 800자 tail + LLM 재시작 감지 외 2건 |
+| 2026-03-11 | **취소감지4 오탐 수정 — 스캔 한도 300으로 상향** — 취소감지4 FUTURE_SCAN_LIMIT 50→300 (이영화 3/28 B룸 오탐 취소 원인) 외 4건 |
+<!-- session-close:2026-03-11:취소감지4-오탐-수정-스캔-한도-300으로-상향 -->
 <!-- session-close:2026-03-11:젬스포스-이어쓰기-중복-방지-중복실행-earlyexit -->
 <!-- session-close:2026-03-11:navermonitor-kst-누락-수정 -->
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
