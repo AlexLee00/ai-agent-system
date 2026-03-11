@@ -1403,16 +1403,17 @@ async function monitorBookings() {
                     ? `cancelid|${stale.booking_key}`
                     : `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
                   if (!await isCancelledKey(cancelKey)) {
-                    // completed 예약이라도 날짜가 오늘 이후면 네이버 취소 → 픽코 취소 필요
-                    // 날짜가 오늘 이전이면 이용 완료 후 확정 탭에서 사라진 정상 케이스 → 스킵
+                    // completed 예약이라도 슬롯 종료 시각이 미래면 네이버 취소 → 픽코 취소 필요
+                    // 슬롯 종료 시각이 현재 이전이면 이용 완료 후 확정 탭에서 사라진 정상 케이스 → 스킵
                     const existingRes = await getReservation(stale.booking_key);
                     if (existingRes && existingRes.status === 'completed') {
-                      const todayStr = new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
-                      if (stale.date < todayStr) {
-                        log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} — 이용 완료 후 정상 소멸 → 스킵`);
+                      const nowKST      = new Date(Date.now() + 9 * 3600 * 1000);
+                      const slotEndKST  = new Date(`${stale.date}T${stale.end_time}:00+09:00`);
+                      if (slotEndKST <= nowKST) {
+                        log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 이용 완료 후 정상 소멸 → 스킵`);
                         continue;
                       }
-                      log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — completed 예약이나 미래 날짜 → 네이버 취소로 판단, 픽코 취소 처리`);
+                      log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — completed 예약이나 미래 슬롯 → 네이버 취소로 판단, 픽코 취소 처리`);
                     }
                     log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} 사라짐 → 취소 처리`);
                     await addCancelledKey(cancelKey);
