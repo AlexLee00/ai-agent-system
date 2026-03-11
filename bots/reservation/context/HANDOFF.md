@@ -652,6 +652,12 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/orchestrator/src/mainbot.js|.openclaw/openclaw.json`
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정:end -->
 
+<!-- session-close:2026-03-11:navermonitor-kst-누락-수정 -->
+#### 2026-03-11 🔧 naver-monitor kst 누락 수정
+- naver-monitor.js kst 임포트 누락 → 알람 전송 실패 수정
+- 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
+<!-- session-close:2026-03-11:navermonitor-kst-누락-수정:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

@@ -144,6 +144,16 @@
 - OpenClaw requireMention 기본값 변경 대응(groups.*.requireMention=false)
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 
+### 🔧 naver-monitor kst 누락 수정
+- naver-monitor.js kst 임포트 누락 → 알람 전송 실패 수정
+<!-- session-close:2026-03-11:navermonitor-kst-누락-수정 -->
+
+### 🔧 젬스/포스 이어쓰기 중복 방지 + 중복실행 early-exit
+- gems-writer.js 이어쓰기 800자 tail + LLM 재시작 감지
+- pos-writer.js 동일 패턴 적용
+- blo.js 모두 발행 완료 시 early-exit
+<!-- session-close:2026-03-11:젬스포스-이어쓰기-중복-방지-중복실행-earlyexit -->
+
 ## 2026-03-10
 
 ### 블로그팀 장문 출력 극대화 5가지 방법 적용

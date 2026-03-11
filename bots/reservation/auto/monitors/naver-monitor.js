@@ -33,6 +33,7 @@ const { maskPhone, maskName } = require('../../lib/formatting');
 const { saveJson } = require('../../lib/files');
 const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
+const kst = require('../../../../packages/core/lib/kst');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
