@@ -18,6 +18,8 @@ import { join } from 'path';
 import https from 'https';
 import { fileURLToPath } from 'url';
 
+import { createRequire } from 'module';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
 import { getSymbols, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
@@ -101,7 +103,7 @@ async function shouldRunCycle(symbols) {
 
   const remainMin = Math.ceil((cycleMs - (now - state.lastCycleAt)) / 60000);
   const lastTime  = state.lastCycleAt > 0
-    ? new Date(state.lastCycleAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul' })
+    ? kst.toKST(new Date(state.lastCycleAt))
     : '없음';
   console.log(`⏳ [${params.mode}] 다음 사이클까지 ${remainMin}분 (마지막: ${lastTime})`);
   return { run: false, reason: `대기 중 (${remainMin}분 남음)` };
@@ -218,7 +220,7 @@ export async function runCryptoCycle(symbols) {
   const params    = getLunaParams();
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`🚀 ${tag} 암호화폐 사이클 시작 — ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
+  console.log(`🚀 ${tag} 암호화폐 사이클 시작 — ${kst.toKST(new Date())}`);
   console.log(`   심볼: ${symbols.join(', ')}`);
   console.log(`   시간대: ${params.mode} | 최소신호점수: ${params.minSignalScore} | 최대포지션: ${params.maxOpenPositions}개`);
   console.log(`${'═'.repeat(60)}`);

@@ -45,7 +45,7 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const bugReportCache = new Set();
 
 function autoBugReport({ title, desc, severity = 'high', category = 'reliability' }) {
-  const cacheKey = `${title.slice(0, 50)}:${new Date().toISOString().slice(0, 10)}`;
+  const cacheKey = `${title.slice(0, 50)}:${kst.today()}`;
   if (bugReportCache.has(cacheKey)) {
     log(`[버그리포트] 중복 방지 (오늘 이미 등록됨): ${title}`);
     return;
@@ -587,7 +587,7 @@ async function sendAlert(options) {
     
     // 📁 파일에 기록
     const logFile = path.join(WORKSPACE, 'monitor-alert.log');
-    const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    const timestamp = kst.toKST(new Date());
     fs.appendFileSync(logFile, `[${timestamp}] [${type.toUpperCase()}]\n${message}\n\n`);
     
     // 📱 텔레그램으로 알람 전송 (새 예약, 완료, 취소, 에러) — 24시간 즉시 발송
@@ -635,7 +635,7 @@ async function sendNotification(message) {
     
     // 파일에 기록
     const logFile = path.join(WORKSPACE, 'monitor-log.txt');
-    const timestamp = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    const timestamp = kst.toKST(new Date());
     fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
   } catch (err) {
     log(`⚠️ 알림 전송 실패: ${err.message}`);
@@ -1623,7 +1623,7 @@ async function updateBookingState(bookingId, booking, state = 'pending') {
         start:        booking.start,
         end:          booking.end,
         room:         booking.room,
-        detectedAt:   new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+        detectedAt:   kst.toKST(new Date()),
         status:       state,
         pickkoStatus: null,
         retries:      0,
@@ -1636,10 +1636,10 @@ async function updateBookingState(bookingId, booking, state = 'pending') {
       const updates = { status: state };
 
       if (state === 'processing') {
-        updates.pickkoStartTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        updates.pickkoStartTime = kst.toKST(new Date());
       } else if (state === 'completed') {
         updates.pickkoStatus       = 'paid';
-        updates.pickkoCompleteTime = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        updates.pickkoCompleteTime = kst.toKST(new Date());
         dailyStats.completed++;
       } else if (state === 'failed') {
         updates.retries = (existing.retries || 0) + 1;
@@ -2061,7 +2061,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             status:       'completed',
             pickkoStatus: 'time_elapsed',
             errorReason:  '시간 경과로 등록 불가',
-            pickkoCompleteTime: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }),
+            pickkoCompleteTime: kst.toKST(new Date()),
           });
           await markSeen(bookingId);
           await resolveAlertsByBooking(booking.phone, booking.date, booking.start);

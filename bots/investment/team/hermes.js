@@ -19,6 +19,10 @@ import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { loadSecrets }        from '../shared/secrets.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+
+const _require = createRequire(import.meta.url);
+const kst = _require('../../../packages/core/lib/kst');
 
 // ─── RSS 소스 ────────────────────────────────────────────────────────
 
@@ -161,8 +165,8 @@ async function fetchDartDisclosures(symbol) {
   const apiKey = s.dart_api_key;
   if (!apiKey) return [];
 
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const aWeek = new Date(Date.now() - 7 * 86400 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+  const today = kst.today().replace(/-/g, '');
+  const aWeek = kst.daysAgoStr(7).replace(/-/g, '');
   const path  = `/api/list.json?crtfc_key=${apiKey}&corp_code=${symbol}&bgn_de=${aWeek}&end_de=${today}&page_count=10`;
 
   try {

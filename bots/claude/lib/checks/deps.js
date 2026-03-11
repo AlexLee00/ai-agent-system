@@ -83,7 +83,7 @@ async function _createPatchTicket(vulnerability) {
       `보안 패치 필요: ${vulnerability.label}`,
       `심각도: ${vulnerability.severity || vulnerability.status}`,
       `상세: ${vulnerability.detail}`,
-      `발견일: ${new Date().toISOString().slice(0, 10)}`,
+      `발견일: ${kst.today()}`,
     ].join(' | ');
     await rag.store('tech', content, {
       category:  'patch_ticket',

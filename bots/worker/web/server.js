@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * bots/worker/web/server.js — 워커팀 REST API 서버 (포트 4000)
@@ -673,7 +674,7 @@ app.delete('/api/employees/:id', requireAuth, requireRole('master','admin'), aud
 
 app.get('/api/attendance', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
-  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const date = req.query.date || kst.today();
   try {
     const rows = await pgPool.query(SCHEMA,
       `SELECT a.*, e.name AS employee_name
@@ -687,7 +688,7 @@ app.get('/api/attendance', requireAuth, companyFilter, async (req, res) => {
 });
 
 app.post('/api/attendance/checkin', requireAuth, async (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
   const now   = new Date().toISOString();
   try {
     // user_id로 employee 조회
@@ -716,7 +717,7 @@ app.post('/api/attendance/checkin', requireAuth, async (req, res) => {
 });
 
 app.post('/api/attendance/checkout', requireAuth, async (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = kst.today();
   const now   = new Date().toISOString();
   try {
     const emp = await pgPool.get(SCHEMA,
@@ -741,7 +742,7 @@ app.post('/api/attendance/checkout', requireAuth, async (req, res) => {
 app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   const from = req.query.from || new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0,10);
-  const to   = req.query.to   || new Date().toISOString().slice(0, 10);
+  const to   = req.query.to   || kst.today();
   try {
     const rows = await pgPool.query(SCHEMA,
       `SELECT id,date,amount,category,description,registered_by,created_at
@@ -785,7 +786,7 @@ app.post('/api/sales',
   async (req, res) => {
     if (!validate(req, res)) return;
     const { amount, category, description, date } = req.body;
-    const saleDate = date || new Date().toISOString().slice(0, 10);
+    const saleDate = date || kst.today();
     try {
       const sale = await pgPool.get(SCHEMA,
         `INSERT INTO worker.sales (company_id,date,amount,category,description,registered_by)

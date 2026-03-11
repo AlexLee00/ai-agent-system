@@ -149,7 +149,7 @@ async function analyzeCorrelation() {
     await rag.initSchema();
     const topPattern = sorted.length > 0 ? sorted[0] : null;
     const ragSummary =
-      `[신호 상관관계 분석 ${new Date().toISOString().slice(0, 10)}] ` +
+      `[신호 상관관계 분석 ${kst.today()}] ` +
       `${trades.length}건 | ` +
       `최고 조합: ${topPattern?.pattern || 'N/A'} (기대값 ${topPattern?.expectancy || 'N/A'}%)`;
     await rag.store('trades', ragSummary, {

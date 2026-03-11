@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * src/mainbot.js — 메인봇 알람 큐 처리기
@@ -135,11 +136,11 @@ async function processQueue() {
 }
 
 async function runMorningBriefing() {
-  const kstHour = new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
+  const kstHour = kst.currentHour();
   if (!isBriefingTime(_lastBriefHour)) return;
   _lastBriefHour = kstHour;
 
-  const items = flushMorningQueue();
+  const items = await flushMorningQueue();
   if (items.length === 0) return;
 
   const brief = buildMorningBriefing(items);

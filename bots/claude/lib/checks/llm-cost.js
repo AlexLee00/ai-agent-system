@@ -14,6 +14,7 @@
  */
 
 const path = require('path');
+const kst  = require('../../../../packages/core/lib/kst');
 
 // 월간 예산 한도 (USD) — 마스터 승인 후 변경
 const MONTHLY_BUDGET_USD = 10;
@@ -31,12 +32,12 @@ function loadTokenTracker() {
 // ── KST 날짜 문자열 ────────────────────────────────────────────────
 
 function kstDate(offsetDays = 0) {
-  const d = new Date(Date.now() + 9 * 3600 * 1000 + offsetDays * 86400 * 1000);
-  return d.toISOString().split('T')[0];
+  if (offsetDays === 0) return kst.today();
+  return kst.daysAgoStr(-offsetDays);
 }
 
 function kstMonth() {
-  return kstDate().slice(0, 7);
+  return kst.today().slice(0, 7);
 }
 
 // ── 메인 run ──────────────────────────────────────────────────────

@@ -244,7 +244,7 @@ async function analyzeRR() {
   try {
     await rag.initSchema();
     const ragSummary =
-      `[R/R 분석 ${new Date().toISOString().slice(0, 10)}] ` +
+      `[R/R 분석 ${kst.today()}] ` +
       `총 ${total}건 | 승률 ${winRate}% | 실현 R/R ${currentRR} | ` +
       `평균승 +${avgWin.toFixed(3)}% 평균패 ${avgLoss.toFixed(3)}%`;
     await rag.store('trades', ragSummary, {

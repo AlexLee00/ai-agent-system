@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('./kst');
 
 /**
  * packages/core/lib/llm-cache.js — 시맨틱 캐시 (PostgreSQL 구현)
@@ -80,7 +81,7 @@ const STOP_WORDS = new Set([
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
 function _kstNow() {
-  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace('Z', '+09:00');
+  return kst.datetimeStr();
 }
 
 // ── 핵심 함수 ─────────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ async function setCache(team, requestType, input, response, model) {
     await _ensureTable();
     const key     = generateCacheKey(team, requestType, input);
     const ttl     = TTL_CONFIG[team] || 30;
-    const now     = new Date(Date.now() + 9 * 3600 * 1000);
+    const now     = new Date();
     const nowStr  = now.toISOString().replace('Z', '+09:00');
     const expires = new Date(now.getTime() + ttl * 60 * 1000)
       .toISOString().replace('Z', '+09:00');

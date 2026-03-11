@@ -10,7 +10,11 @@
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import * as db from '../shared/db.js';
+
+const _require = createRequire(import.meta.url);
+const kst = _require('../../../packages/core/lib/kst');
 import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
@@ -156,7 +160,7 @@ async function calcCorrelationFactor(symbol) {
 // ─── v2: 시간대 가드 ────────────────────────────────────────────────
 
 function calcTimeFactor() {
-  const kstHour = new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
+  const kstHour = kst.currentHour();
   if (kstHour >= 1 && kstHour < 7) return 0.50; // KST 01:00~07:00 저유동성
   return 1.0;
 }

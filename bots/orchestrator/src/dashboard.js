@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * src/dashboard.js — /status 대시보드 생성
@@ -54,7 +55,7 @@ async function getAgentStatuses() {
  */
 async function getQueueStats() {
   try {
-    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+    const today = kst.today();
     return await pgPool.get('claude', `
       SELECT
         COUNT(*) AS total,

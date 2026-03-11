@@ -56,7 +56,7 @@ try {
 
 // ─── 날짜 헬퍼 ───────────────────────────────────────────────────────
 
-function getKSTDate()  { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0]; }
+function getKSTDate()  { return kst.today(); }
 function getKSTMonth() { return getKSTDate().slice(0, 7); }
 
 // ─── CostTracker 클래스 ──────────────────────────────────────────────

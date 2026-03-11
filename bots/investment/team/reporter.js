@@ -25,6 +25,7 @@ import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
+const kst      = _require('../../../packages/core/lib/kst');
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
 
@@ -66,9 +67,8 @@ async function fetchBinanceBalance() {
 
 // ─── 날짜 헬퍼 ──────────────────────────────────────────────────────
 
-function kstNow() { return new Date(Date.now() + 9 * 3600 * 1000); }
-function kstStr(d) {
-  return d.toISOString().replace('T', ' ').slice(0, 19) + ' KST';
+function kstStr() {
+  return kst.datetimeStr() + ' KST';
 }
 
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
@@ -76,8 +76,7 @@ function kstStr(d) {
 export async function generateReport({ days = 30, telegram = false } = {}) {
   await db.initSchema();
 
-  const now   = kstNow();
-  const today = now.toISOString().slice(0, 10);
+  const today = kst.today();
 
   // ── 1. 신호 통계 ───────────────────────────────────────────────────
   const sigStats = await db.query(`
@@ -189,7 +188,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
 
   const lines = [
     `📊 *루나팀 투자 리포트*`,
-    `기준: ${kstStr(now)} | 최근 ${days}일`,
+    `기준: ${kstStr()} | 최근 ${days}일`,
     ``,
     `━━━ 운영 모드 ━━━`,
     `  암호화폐: 🔴 LIVE (PAPER_MODE=false)`,
