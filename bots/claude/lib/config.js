@@ -59,8 +59,8 @@ module.exports = {
   },
 
   // ─── DB 파일 ───────────────────────────────────────
+  // reservation: PostgreSQL (reservation 스키마) — SQLite 제거됨
   DBS: {
-    reservation: path.join(HOME, '.openclaw', 'workspace', 'state.db'),
     investment:  path.join(ROOT, 'bots', 'investment', 'db', 'investment.duckdb'),
     ska:         path.join(ROOT, 'bots', 'ska', 'db', 'ska.duckdb'),
   },

@@ -165,14 +165,15 @@ async function checkAndyLastSuccess(items) {
   }
 }
 
-// ── 체크 6: 완료 예약 허위 취소 감지 ───────────────────────────────
-// cancelled_keys에 등록된 항목 중 reservations.status='completed'인 건이 있으면
-// → 이용 완료된 예약이 취소 처리된 이상 케이스 (2026-03-10 발견·수정된 버그 재발 감지)
+// ── 체크 6: 완료 예약 취소 상태 감지 ───────────────────────────────
+// cancelled_keys에 등록된 항목 중 reservations.status='completed'인 건을 두 케이스로 분류:
+//   A) 미래 예약 + completed → 네이버 취소됐으나 Picco 취소 실패 (warn, 수동 처리 필요)
+//   B) 과거 예약 + completed → 이용 완료 후 정상 소멸인데 취소감지 오발동 (error)
 async function checkFalseCancellation(items) {
   let rows;
   try {
     rows = await pgPool.query(SCHEMA, `
-      SELECT ck.cancel_key, r.id, r.date, r.start_time, r.end_time, r.room, ck.cancelled_at
+      SELECT ck.cancel_key, r.id, r.date, r.start_time, r.end_time, r.room, r.phone, ck.cancelled_at
       FROM cancelled_keys ck
       JOIN reservations r
         ON ck.cancel_key = 'cancelid|' || r.id::text
@@ -181,20 +182,31 @@ async function checkFalseCancellation(items) {
       LIMIT 10
     `);
   } catch (e) {
-    items.push({ label: '완료 예약 허위 취소', status: 'warn', detail: `조회 실패: ${e.message}` });
+    items.push({ label: '완료 예약 취소 감지', status: 'warn', detail: `조회 실패: ${e.message}` });
     return;
   }
 
   if (rows && rows.length > 0) {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     for (const row of rows) {
-      items.push({
-        label:  '완료 예약 허위 취소',
-        status: 'error',
-        detail: `id=${row.id} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — completed 상태인데 cancelled_keys 등록됨 (취소감지4 오발동 의심)`,
-      });
+      if (row.date > today) {
+        // 케이스 A: 미래 예약 → 네이버 취소됐으나 Picco 취소 실패 (warn)
+        items.push({
+          label:  'Picco 취소 실패 (수동 처리 필요)',
+          status: 'warn',
+          detail: `${row.phone} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — 네이버 취소됐으나 Picco 미반영`,
+        });
+      } else {
+        // 케이스 B: 과거/당일 예약 → 이용 완료 후 취소감지 오발동 (error)
+        items.push({
+          label:  '완료 예약 허위 취소',
+          status: 'error',
+          detail: `id=${row.id} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — 이용 완료 예약이 취소감지에 걸림 (오발동)`,
+        });
+      }
     }
   } else {
-    items.push({ label: '완료 예약 허위 취소', status: 'ok', detail: '이상 없음' });
+    items.push({ label: '완료 예약 취소 감지', status: 'ok', detail: '이상 없음' });
   }
 }
 

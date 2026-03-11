@@ -20,9 +20,11 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname }                              from 'path';
 import { fileURLToPath }                              from 'url';
 import { homedir }                                    from 'os';
+import { createRequire }                              from 'module';
 import yaml                                           from 'js-yaml';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const COST_FILE = join(homedir(), '.openclaw', 'investment-cost.json');
 
 // claude-haiku-4-5 단가 ($ per 토큰)

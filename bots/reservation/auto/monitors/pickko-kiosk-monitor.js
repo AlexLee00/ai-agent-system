@@ -927,11 +927,13 @@ async function fillUnavailablePopup(page, date, start, end) {
 // 패널은 우측 고정 패널 (X > 1100) — bounding rect 기반으로 트리거 찾기
 async function selectTimeDropdown(page, timeStr, which) {
   // timeStr: "18:00", "19:50" → 오후 표시: "오후 6:00", "오후 7:50"
+  // 24:00(자정) → 네이버 드롭다운 텍스트 "자정 12:00"
   const [hh, mm] = timeStr.split(':').map(Number);
+  const isMidnight = hh === 24 || (hh === 0 && mm === 0);
   const isAM = hh < 12;
   const displayH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
   const ampm = isAM ? '오전' : '오후';
-  const timeDisplay = `${ampm} ${displayH}:${String(mm).padStart(2, '0')}`;
+  const timeDisplay = isMidnight ? '자정 12:00' : `${ampm} ${displayH}:${String(mm).padStart(2, '0')}`;
 
   log(`    드롭다운(${which}): "${timeStr}" → "${timeDisplay}"`);
 

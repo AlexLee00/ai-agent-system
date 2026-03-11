@@ -27,6 +27,42 @@ const bugReport = require('./bug-report');
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
 
+// ── 자동 수정 허용/차단 액션 분류 ────────────────────────────────
+const ALLOWED_AUTOFIX_ACTIONS = new Set([
+  'stale-lock',       // stale lock 파일 제거
+  'secrets-perm',     // secrets.json 권한 600
+  'log-rotation',     // 로그 로테이션 (백업 후 비움)
+  'checksums-update', // 체크섬 갱신 (git 커밋 변경만)
+  'openclaw-restart', // OpenClaw launchctl 재시작
+  'bug-report',       // 버그 레포트 DB 등록
+]);
+
+const BLOCKED_AUTOFIX_ACTIONS = new Set([
+  'source-modify',    // 소스코드(.js/.ts/.py/.sh) 수정
+  'git-commit',       // git commit/push
+  'npm-install',      // npm install/uninstall
+  'db-schema',        // DB 스키마 변경 (ALTER/DROP)
+  'config-modify',    // package.json/CLAUDE.md/secrets.json 수정
+]);
+
+/**
+ * 차단된 autofix 액션 시도 시 텔레그램 보고
+ * @param {string} action - BLOCKED_AUTOFIX_ACTIONS 키
+ * @param {string} target - 대상 파일·서비스 설명
+ * @param {Array}  fixes  - 결과 배열 (null 가능)
+ */
+function reportInsteadOfFix(action, target, fixes = null) {
+  const msg = `[${BOT_NAME}] 차단된 autofix 시도 — action=${action}, target=${target}`;
+  console.error('🚨', msg);
+  try {
+    const sender = require('../../../packages/core/lib/telegram-sender');
+    sender.sendCritical('general', `🚨 ${msg}\n→ 마스터 확인 필요`);
+  } catch { /* 텔레그램 발송 실패 무시 */ }
+  if (fixes) {
+    fixes.push({ label: `차단: ${action}`, status: 'error', detail: target });
+  }
+}
+
 // stale lock 제거
 function fixStaleLock(fixes) {
   for (const [name, lockPath] of Object.entries(cfg.LOCKS)) {
@@ -200,4 +236,4 @@ async function run(results) {
   return fixes;
 }
 
-module.exports = { run };
+module.exports = { run, reportInsteadOfFix, ALLOWED_AUTOFIX_ACTIONS, BLOCKED_AUTOFIX_ACTIONS };

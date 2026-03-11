@@ -23,7 +23,8 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { transformAndNormalizeData } = require('../../lib/validation');
-const { addReservation, updateReservation, getReservation, markSeen } = require('../../lib/db');
+const { addReservation, updateReservation, getReservation, markSeen, upsertKioskBlock } = require('../../lib/db');
+const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
 
 const ARGS = parseArgs(process.argv);
@@ -117,9 +118,16 @@ child.on('close', code => {
       // seen 기록 실패는 등록 성공에 영향 없음
     }
 
-    // 픽코 등록 성공(code 0) 시 네이버 예약불가 처리 (fire-and-forget)
-    // 결과는 텔레그램으로 별도 알림됨
+    // 픽코 등록 성공(code 0) 시 네이버 예약불가 처리
     if (code === 0) {
+      // 1. DB 선등록 (naverBlocked=false) — spawn 실패 시 kiosk-monitor Phase 2A가 자동 재시도
+      upsertKioskBlock(normalized.phone, normalized.date, normalized.start, {
+        name: customerName, date: normalized.date, start: normalized.start,
+        end: normalized.end, room: normalized.room, amount: 0,
+        naverBlocked: false, firstSeenAt: kst.datetimeStr(), blockedAt: null,
+      }).catch(e => process.stderr.write(`[pickko-register] kiosk_blocks 선등록 실패: ${e.message}\n`));
+
+      // 2. spawn으로 즉시 차단 시도 (빠른 경로, fire-and-forget)
       const blockArgs = [
         path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js'),
         '--block-slot',

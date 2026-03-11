@@ -1,5 +1,29 @@
 # 클로드팀 CLAUDE_NOTES
 
+## ⛔ 전 팀 공통 — 소스코드 수정 금지 (2026-03-11)
+
+> 이 규칙은 **모든 봇(팀장 포함)**에 적용된다. 예외 없음.
+
+**소스코드 수정 권한**: 마스터(Alex) + Claude Code만
+봇이 할 수 있는 것과 할 수 없는 것:
+
+| 허용 ✅ | 금지 ❌ |
+|---------|---------|
+| 설정 파일 읽기 | .js/.ts/.py/.sh 수정 |
+| DB·JSON 상태 읽기/쓰기 | package.json / CLAUDE.md 수정 |
+| 로그·산출물 파일 쓰기 | git commit / push 실행 |
+| 오류 감지 후 텔레그램 보고 | npm install/uninstall |
+| launchd kickstart (재시작) | 다른 봇의 코드·설정 수정 |
+
+**오류 발생 시 봇의 올바른 행동:**
+1. 오류 내용을 텔레그램으로 마스터에게 보고
+2. 자동 수정 시도 금지
+3. 재시작 가능한 경우 launchctl kickstart만 허용
+
+**`packages/core/lib/file-guard.js`**: 코드 레벨 방어 모듈 (safeWriteFile 사용 권장)
+
+---
+
 ## 팀 구성원
 
 | ID | 이름 | 역할 |

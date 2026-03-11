@@ -218,6 +218,18 @@ KST 시각을 그대로 `Hour` / `Minute`에 지정한다.
 - 팀 경계 침범 금지: 타 팀 DB 직접 접근 금지. State Bus의 agent_events/agent_tasks 경유만 허용
 - LLM 판단으로 OPS 데이터 직접 수정 금지: LLM 결과를 OPS DB에 직접 쓰기 금지, 규칙 기반 실행봇 경유 필수
 - DEV/OPS 데이터 격리: MODE=dev에서 OPS 데이터 접근 금지, MODE=ops에서 실험적 코드 실행 금지
+- **소스코드 접근 권한 제한** (2026-03-11):
+  - 소스코드(.js/.ts/.py/.sh) 수정 권한: **마스터(Alex)와 Claude Code만** — 모든 봇(팀장 포함) 절대 금지
+  - 봇이 오류를 감지하면 소스코드를 수정하지 말고 텔레그램으로 보고만 할 것
+  - `fs.writeFileSync`로 코드 파일 덮어쓰기 금지 (`packages/core/lib/file-guard.js` 참조)
+  - `exec`/`spawn`으로 `git commit/push` 실행 금지
+  - 허용: 설정 읽기, 데이터 파일 읽기/쓰기(JSON 상태·로그·DB), 산출물 쓰기(HTML·TXT·이미지)
+  - **덱스터(dexter) 예외**: `DEXTER_ALLOWED_PATTERNS` 화이트리스트 파일만 수정 허용
+    - `.checksums.json` 갱신 (git 커밋 변경 확인 후 `fixChecksums` 실행)
+    - `*.lock` 파일 삭제 (프로세스 종료 확인 후)
+    - `dexter-state.json` / `dexter-mode.json` (자기진단·모드 상태)
+    - 로그 파일(`*.log`) — 로테이션 시 비우기
+    - ALLOWED_AUTOFIX_ACTIONS 범위 외 수정 시도 → `reportInsteadOfFix()` 경고 발송
 
 ---
 
