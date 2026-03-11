@@ -1375,10 +1375,17 @@ async function monitorBookings() {
             log(`🔮 [취소감지4] 미래 예약 스캔 (${tomorrowStr}~${future60Str}) — 사이클 #${checkCount}`);
             await page.goto(futureUrl, { waitUntil: 'networkidle2', timeout: 20000 });
             await delay(1500);
-            const futureList = await scrapeNewestBookingsFromList(page, 50);
+            const FUTURE_SCAN_LIMIT = 300;
+            const futureList = await scrapeNewestBookingsFromList(page, FUTURE_SCAN_LIMIT);
             // client-side 필터: 미래 날짜 예약만 (date > 오늘) 스냅샷 저장
             const futureDateItems = futureList.filter(item => item.date && item.date > todaySeoul);
             log(`🔮 [취소감지4] ${futureList.length}건 확인 → 미래 날짜 ${futureDateItems.length}건 스냅샷`);
+
+            // ⚠️ 안전장치: 스캔 한도에 도달하면 스냅샷만 갱신하고 stale 감지는 스킵 (오탐 방지)
+            const hitScanLimit = futureList.length >= FUTURE_SCAN_LIMIT;
+            if (hitScanLimit) {
+              log(`⚠️ [취소감지4] 스캔 한도(${FUTURE_SCAN_LIMIT}건) 도달 — stale 감지 스킵 (오탐 방지)`);
+            }
 
             // upsert: 미래 날짜 예약만 → last_scan = checkCount으로 갱신
             for (const item of futureDateItems) {
@@ -1394,7 +1401,8 @@ async function monitorBookings() {
 
             // stale 감지: 갱신되지 않은 항목 = 네이버에서 사라짐 = 취소 가능성
             // ⚠️ futureList=0건이면 페이지 로딩 실패 가능성 → stale 처리 스킵
-            if (futureList.length > 0) {
+            // ⚠️ hitScanLimit이면 스캔 범위 밖의 예약이 있을 수 있음 → stale 처리 스킵
+            if (futureList.length > 0 && !hitScanLimit) {
               const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
               if (staleItems.length > 0) {
                 log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 더블체크 진행`);
@@ -1933,9 +1941,18 @@ async function scrapeNewestBookingsFromList(page, limit = 5) {
 
 function runPickkoCancel(booking, cancelKey = null) {
   return new Promise(async (resolve) => {
+    // ✅ 공통 중복 방지 키 (감지기 종류 무관) — phone+date+start 기준
+    const phoneRawForKey = (booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    const doneKey = `cancel_done|${phoneRawForKey}|${booking.date}|${booking.start}`;
+    if (await isCancelledKey(doneKey)) {
+      log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} (doneKey 존재)`);
+      resolve(0);
+      return;
+    }
+
     const args = [
       path.join(__dirname, '../../manual/reservation/pickko-cancel.js'),
-      `--phone=${booking.phoneRaw || booking.phone.replace(/\D/g, '')}`,
+      `--phone=${phoneRawForKey}`,
       `--date=${booking.date}`,
       `--start=${booking.start}`,
       `--end=${booking.end}`,
@@ -1951,6 +1968,8 @@ function runPickkoCancel(booking, cancelKey = null) {
 
     child.on('close', async (code) => {
       if (code === 0) {
+        // ✅ 공통 중복 방지 키 저장 — 다른 감지기가 같은 예약을 재시도하지 못하게 차단
+        await addCancelledKey(doneKey).catch(() => {});
         dailyStats.cancelled++;
         sendAlert({
           type: 'cancelled',

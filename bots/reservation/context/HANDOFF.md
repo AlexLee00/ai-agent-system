@@ -658,6 +658,16 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
 <!-- session-close:2026-03-11:navermonitor-kst-누락-수정:end -->
 
+<!-- session-close:2026-03-11:취소감지4-오탐-수정-스캔-한도-300으로-상향 -->
+#### 2026-03-11 🔧 취소감지4 오탐 수정 — 스캔 한도 300으로 상향
+- 취소감지4 FUTURE_SCAN_LIMIT 50→300 (이영화 3/28 B룸 오탐 취소 원인)
+- 스캔 한도 도달 시 stale 감지 스킵 안전장치 추가
+- 오탐 cancelled_key(cancelid
+- 1169988950) DB 삭제
+- 이영화 픽코 수동 재등록 완료
+- 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
+<!-- session-close:2026-03-11:취소감지4-오탐-수정-스캔-한도-300으로-상향:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`
