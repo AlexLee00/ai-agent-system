@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('./kst');
 
 /**
  * lib/token-tracker.js — 전체 봇 LLM 토큰 사용 통합 추적
@@ -38,7 +39,7 @@ async function trackTokens({ bot, team, model, provider, taskType = 'unknown', t
     const cost    = costUsd !== undefined ? costUsd
                   : ((tokensIn * p.input) + (tokensOut * p.output)) / 1_000_000;
 
-    const kstDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+    const kstDate = kst.today();
 
     await pgPool.run(SCHEMA, `
       INSERT INTO token_usage
@@ -54,7 +55,7 @@ async function trackTokens({ bot, team, model, provider, taskType = 'unknown', t
  * 일별 토큰 사용 요약
  */
 async function getDailySummary(dateKst) {
-  const date = dateKst || new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+  const date = dateKst || kst.today();
   return pgPool.query(SCHEMA, `
     SELECT
       bot_name, team, model, provider, is_free, task_type,
@@ -74,7 +75,7 @@ async function getDailySummary(dateKst) {
  * 월별 요약
  */
 async function getMonthlySummary(monthKst) {
-  const month = monthKst || new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+  const month = monthKst || kst.today().slice(0, 7);
   return pgPool.query(SCHEMA, `
     SELECT
       bot_name, team, model, provider, is_free,
@@ -92,7 +93,7 @@ async function getMonthlySummary(monthKst) {
  * /cost 명령용 텍스트 생성
  */
 async function buildCostReport() {
-  const today  = new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+  const today  = kst.today();
   const month  = today.slice(0, 7);
   const daily  = await getDailySummary(today);
   const monthly = await getMonthlySummary(month);

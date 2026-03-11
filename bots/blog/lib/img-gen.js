@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * img-gen.js — 블로그팀 이미지 생성
@@ -191,7 +192,7 @@ function _buildMidPrompt(title, postType, category) {
 async function generatePostImages({ title, postType, category }) {
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-  const today    = new Date().toISOString().slice(0, 10);
+  const today    = kst.today();
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug     = `${today}_${postType}_${safeSlug}`;
 

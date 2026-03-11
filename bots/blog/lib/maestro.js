@@ -1,4 +1,5 @@
 'use strict';
+const kst = require('../../../packages/core/lib/kst');
 
 /**
  * bots/blog/lib/maestro.js — 블로그팀 컨트롤타워
@@ -233,7 +234,7 @@ async function run(postType, directRunner = null) {
   await _ensureHistoryTable();
 
   // 세션 ID: 날짜_타입_4바이트난수
-  const sessionId = `${new Date().toISOString().slice(0, 10)}_${postType}_${crypto.randomBytes(4).toString('hex')}`;
+  const sessionId = `${kst.today()}_${postType}_${crypto.randomBytes(4).toString('hex')}`;
   const history   = await getRecentHistory(postType, 7);
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
 
@@ -264,7 +265,7 @@ async function run(postType, directRunner = null) {
 
   // 이력 저장 (실패 무시)
   await saveExecutionHistory(
-    new Date().toISOString().slice(0, 10),
+    kst.today(),
     postType,
     pipeline,
     variations

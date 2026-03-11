@@ -8,9 +8,13 @@
  * NIGHT_AUTO 00:00~06:00 KST — 자동 운영, 최소 포지션
  */
 
-// KST 시간 (0~23)
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const kst = _require('../../../packages/core/lib/kst');
+
+// KST 시간 (0~23) — kst.currentHour() 위임
 function getKSTHour() {
-  return new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
+  return kst.currentHour();
 }
 
 /**
