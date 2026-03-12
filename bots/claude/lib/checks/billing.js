@@ -279,10 +279,10 @@ async function run() {
     }
     // 실제로는 date별 1행이므로 단순 합산
     const monthlyRows = await pgPool.query('claude', `
-      SELECT provider, SUM(cost_usd) AS total
+      SELECT DISTINCT ON (provider) provider, cost_usd AS total
       FROM billing_snapshots
       WHERE date >= date_trunc('month', CURRENT_DATE)::date
-      GROUP BY provider
+      ORDER BY provider, date DESC
     `);
     let grandTotal = 0;
     for (const r of monthlyRows) grandTotal += parseFloat(r.total || 0);
