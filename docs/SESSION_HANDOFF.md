@@ -4,68 +4,58 @@
 
 ## 이번 세션 완료 내역 (2026-03-12)
 
-### 워커팀 웹 UI — Claude Code 채팅 모바일 버그 수정
+### 1. 스카팀 LLM 교체 완료
+- `bots/registry.json`: reservation/ska → `groq/llama-4-scout-17b-16e-instruct` + fallback `openai/gpt-4o-mini`
+- BOOT.md 반영 완료
 
-#### 1. 모바일 메뉴바 닫힘 문제 (`setCanvasLocked` ReferenceError)
-- `handleNewSession`에 `setCanvasLocked(false)` 호출이 있었으나 함수가 정의되지 않음
-- ReferenceError 발생 → 함수 중단 → `setSidebarOpen(false)` 미실행 → 메뉴 안 닫힘
-- **수정**: `setCanvasLocked(false)` 한 줄 제거
+### 2. dexter_error_log upsert 방식 전환
+- `bots/claude/lib/error-history.js`: ON CONFLICT DO UPDATE, occurrence_count 누적
+- DB dedup 완료 (106행 → 12행)
 
-#### 2. 세션 버튼 iOS 더블탭 문제
-- `div.group` + `opacity-0 group-hover:opacity-100` 삭제 버튼 패턴 → iOS가 그룹 전체를 hover 요소로 인식
-- 첫 탭 = hover 활성화, 두 번째 탭 = 클릭
-- **수정**:
-  - `group-hover:` 패턴 제거, 삭제 버튼 항상 표시
-  - `onTouchStart={() => {}}` 빈 핸들러 추가 (iOS 즉시 반응 강제)
-  - `hover:` → `active:` 클래스 변경
-  - `touch-manipulation` 클래스 추가
+### 3. dexter-quickcheck.js 알람 레벨 개선
+- 1회 실패: ⚠️ HIGH (alert_level 2)
+- 2회+ 연속: 🚨 CRITICAL (alert_level 4)
 
-#### 3. 세션 전환 시 내용 섞임
-- 세션 변경 시 `activeSessionRef.current`가 useEffect로만 업데이트 (비동기)
-- `loadMessages` 서버 데이터 수신 후 `messages` useEffect가 **이전 세션 ID로 `saveMsgs`** 실행 → 캐시 오염
-- **수정**:
-  - `handleSelectSession`에서 `activeSessionRef.current = id` 동기 업데이트
-  - localStorage 캐시 로직 완전 제거 (서버 직접 로드 방식으로 단순화)
-  - `loadMessages` = 서버 fetch only
+### 4. dexter.js 신규 오류만 텔레그램 발송
+- `getNewErrors(2, 7)` 활용: 최근 2시간 내 처음 등장 오류 + CRITICAL만 발송
+- 반복 오류는 더 이상 매시간 울리지 않음
 
-#### 4. 모바일 스크롤 간섭 (페이지 ↔ 채팅창)
-- **수정**: 메시지 목록에 `overscroll-contain` + `touchAction: 'pan-y'`
-- `body.overflow = 'hidden'` (드로어 열릴 때) — `Header.js` useEffect
+### 5. naver-monitor.js 버그 수정 (이전 세션 연속)
+- 취소 성공 시 DB status 미업데이트 수정
+- 취소감지4 OBSERVE_ONLY 필터 누락 수정
 
-#### 5. 앱 메뉴 드로어 스크롤 간섭
-- 드로어 wrapper `overflow-y-auto` + Sidebar 내부 nav `overflow-y-auto` 이중 스크롤
-- **수정**: 드로어 wrapper에서 `overflow-y-auto` 제거, Sidebar nav에만 `overscroll-contain` 추가
-
-#### 6. 앱 메뉴 드로어 — 메뉴 선택 시 닫힘
-- `Sidebar.js` 링크 클릭 시 `setDrawerOpen(false)` 없음
-- **수정**: `Header.js` 드로어에서 `<Sidebar />` 를 `onClick={() => setDrawerOpen(false)}` div로 래핑
-
-#### 7. 툴칩 레벨 정렬
-- 툴 메시지가 채팅창 왼쪽 경계보다 너무 왼쪽에 위치
-- **수정**: `pl-1` → `pl-9` (아바타 너비 36px에 맞춤)
-
-#### 8. 모바일 드로어 백드롭 터치 간섭
-- 드로어 backdrop이 `absolute inset-0`으로 드로어 영역도 덮음 → iOS 첫 터치 가로챔
-- **수정**: `absolute inset-0` → `flex-1` (사이드바이사이드 레이아웃)
+### 6. 체크섬 갱신
+- `bots/claude/.checksums.json` 42개 파일 갱신 (`--update-checksums`)
 
 ---
 
-## 수정 파일 목록
+## 미해결 이슈 (다음 세션 처리 필요)
 
-| 파일 | 변경 내용 |
-|------|-----------|
-| `bots/worker/web/app/ai/page.js` | handleNewSession/handleSelectSession 수정, 캐시 제거, 모바일 드로어 구조 개선, 버튼 터치 이벤트 |
-| `bots/worker/web/components/Header.js` | 드로어 닫힘 + body 스크롤 차단 + h-full 구조 |
-| `bots/worker/web/components/Sidebar.js` | nav에 overscroll-contain 추가 |
+### 🔴 naver-monitor SIGKILL
+- `ai.ska.naver-monitor` PID 16035, 상태 -9 (SIGKILL)
+- 재시작 필요: `launchctl kickstart -k gui/$(id -u)/ai.ska.naver-monitor`
+
+### 🟡 cancelled_keys 오탐 4건
+- 010-3397-3384 (03-28 B 13:30~17:30) — 픽코 미등록, 네이버 활성
+- 010-7184-8299 (03-28 A2 16:00~18:00) — 픽코 미등록, 네이버 활성
+- 010-2802-8575 2건 — 수동 처리 필요
+- 덱스터가 계속 "Picco 취소 실패"로 감지 중 → cancelled_keys 정리 필요
+
+### 🟡 LLM 속도 테스트 결과 반영 고려
+- 현재 스카팀: llama-4-scout (464ms, Groq 모델 중 가장 느림)
+- gpt-oss-20b (152ms) 또는 llama-3.1-8b (153ms)로 교체 고려
+
+### 🟡 pickko-pay-scan / today-audit exit 1
+- 오전 픽코 서버 타임아웃으로 오늘 실패 (하루 1회 스케줄)
+- 내일 자동 재실행 예정, 지속되면 Puppeteer 타임아웃 설정 검토
 
 ---
 
-## 현재 상태
+## 전체 팀 가동 현황 (세션 마감 시점)
 
-- 워커팀 웹 UI (포트 4001) 정상 운영 중
-- 체크섬 갱신 완료 (42개 파일)
-- 모든 모바일 버그 해결 확인
-
-## 다음 세션 예정 작업
-
-- 없음 (대기)
+| 팀 | 상태 | 비고 |
+|----|------|------|
+| 루나팀 | ✅ 정상 | 암호화폐 실투자 SLOWDOWN 중, 헬스체크 13개 이상 없음 |
+| 스카팀 | ⚠️ 주의 | commander 정상, naver-monitor -9, kiosk-monitor 정상 |
+| 클로드팀 | ✅ 정상 | commander 정상, dexter exit 1 (감지 결과), health-check 6개 이상 없음 |
+| 워커팀 | ✅ 정상 | web(52746)/nextjs(60934) 실행 중, health-check 2개 이상 없음 |

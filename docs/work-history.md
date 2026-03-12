@@ -4,6 +4,35 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 덱스터 알람 개선 + 스카팀 LLM 교체 (2026-03-12)
+
+**스카팀 LLM 교체**
+- `bots/registry.json`: reservation/ska 모델 `gemini-2.5-flash` → `groq/llama-4-scout-17b-16e-instruct`, fallback `openai/gpt-4o-mini`
+- deploy-context.js 재실행 → BOOT.md 반영 완료
+
+**dexter_error_log upsert 방식으로 변경**
+- `bots/claude/lib/error-history.js`: INSERT → ON CONFLICT DO UPDATE (occurrence_count 누적)
+- `getPatterns()`: COUNT(*) → occurrence_count 컬럼 기준으로 변경
+- DB 마이그레이션: 기존 106행 → unique constraint 추가 후 12행으로 정리
+
+**dexter-quickcheck.js 알람 레벨 개선**
+- failCount 기반 분기: 1회 실패 → ⚠️ alert_level 2 (경고), 2회+ 연속 → 🚨 alert_level 4 (CRITICAL)
+
+**dexter.js 신규 오류만 텔레그램 발송**
+- `bots/claude/src/dexter.js`: `hasIssue` → `hasCritical || newErrors.length > 0` 로 변경
+- `getNewErrors` import 추가
+- 효과: 반복 오류는 발송 안 하고, 최근 2시간 내 처음 등장한 오류 또는 CRITICAL만 알림
+
+**naver-monitor.js 버그 수정 (이전 세션 연속)**
+- 취소 성공 시 DB status 미업데이트 수정
+- 취소감지4 OBSERVE_ONLY 필터 누락 수정
+
+**체크섬 갱신**
+- `bots/claude/.checksums.json`: 42개 파일 갱신
+
+**LLM 속도 테스트 실행**
+- groq/gpt-oss-20b 152ms 🥇, llama-3.1-8b 153ms 🥈 (현재 스카팀 llama-4-scout는 464ms로 6위)
+
 ### 전 팀 LLM 모델 최적화 + 스카팀 재가동 (2026-03-11)
 
 **루나팀 llm-client.js v2.4 — 에이전트 라우팅 재배치**
@@ -158,6 +187,35 @@
 - 스크롤 간섭(overscroll-contain)
 - 체크섬 갱신 42개
 <!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정-완료 -->
+
+### ✨ 워커웹 UI개선 및 매출데이터 정합성 수정
+- DataTable 페이지네이션(10건/pageSize prop)
+- 매출데이터 90일치 날짜오프셋 수정(daily_summary 기준 재입력)
+- sales API TO_CHAR date 수정(KST오프셋 버그 해결)
+- 3/10~3/11 스카 매출 신규 입력
+- 문서관리 삭제버튼 btn-danger 통일
+- 사이드바/헤더 높이 h-16 정렬
+- DataTable 빈행 채우기 제거
+<!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정 -->
+
+### 🔧 스타봇 BLOG_INSTA_ENABLED opt-out 수정
+- blo.js BLOG_INSTA_ENABLED opt-in→opt-out(!=false) 수정
+- 수동 누락 포스트 42(37강)·43(성장과성공) 스타 카드 재실행 완료
+<!-- session-close:2026-03-12:스타봇-blog_insta_enabled-optout- -->
+
+### ✨ 젬스 분량 보완 — 뉴스 분석 섹션 + 보너스 확률 상향
+- IT 카테고리 뉴스 분석 섹션 추가(700자+, 최신IT트렌드·IT정보와분석·개발기획과컨설팅)
+- 보너스 인사이트 확률 상향(0개40%→20%, 2개25%→40%)
+- section-ratio body_1·body_2 기본값 1800→2000자
+- MIN_CHARS_GENERAL 7500→8000, 목표 8000→9000자
+- 시스템프롬프트 본론 최소글자 1500→2000자
+<!-- session-close:2026-03-12:젬스-분량-보완-뉴스-분석-섹션-보너스-확률-상향 -->
+
+### 🔧 워커웹 채팅 중복 메시지 수정
+- isSendingRef 추가(동기 중복 전송 방지)
+- loadMessages 경쟁 조건 수정(스트리밍 중 DB 덮어쓰기 방지)
+- 어시스턴트 메시지 key={i}→key={g.key} 버그 수정
+<!-- session-close:2026-03-12:워커웹-채팅-중복-메시지-수정 -->
 
 ## 2026-03-11
 ### ✨ 강의 인스타 페어링 + 캐시 실패방지 + launchd INSTA 환경변수 + 이미지 medium 품질
