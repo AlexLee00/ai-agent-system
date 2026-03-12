@@ -1440,6 +1440,14 @@ function parseJsonResponse(text) {
 | 2026-03-12 | **report.js absorb/liquidate 사이드 알림 포맷 추가** — notifyTrade absorb·liquidate·buy·sell 사이드 이모지 분기 외 1건 |
 | 2026-03-12 | **워커팀 웹 UI 모바일 버그 수정** — 모바일 메뉴바 닫힘(setCanvasLocked ReferenceError 제거) 외 5건 |
 | 2026-03-12 | **워커팀 웹 UI 모바일 버그 수정 완료** — setCanvasLocked ReferenceError 제거 외 4건 |
+| 2026-03-12 | **워커웹 UI개선 및 매출데이터 정합성 수정** — DataTable 페이지네이션(10건/pageSize prop) 외 6건 |
+| 2026-03-12 | **스타봇 BLOG_INSTA_ENABLED opt-out 수정** — blo.js BLOG_INSTA_ENABLED opt-in→opt-out(!=false) 수정 외 1건 |
+| 2026-03-12 | **젬스 분량 보완 — 뉴스 분석 섹션 + 보너스 확률 상향** — IT 카테고리 뉴스 분석 섹션 추가(700자+, 최신IT트렌드·IT정보와분석·개발기획과컨설팅) 외 4건 |
+| 2026-03-12 | **워커웹 채팅 중복 메시지 수정** — isSendingRef 추가(동기 중복 전송 방지) 외 2건 |
+<!-- session-close:2026-03-12:워커웹-채팅-중복-메시지-수정 -->
+<!-- session-close:2026-03-12:젬스-분량-보완-뉴스-분석-섹션-보너스-확률-상향 -->
+<!-- session-close:2026-03-12:스타봇-blog_insta_enabled-optout- -->
+<!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정 -->
 <!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정-완료 -->
 <!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정 -->
 <!-- session-close:2026-03-12:reportjs-absorbliquidate-사이드-알 -->

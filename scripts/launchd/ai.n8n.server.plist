@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.n8n.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/n8n</string>
+    <string>start</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DB_TYPE</key>
+    <string>postgresdb</string>
+    <key>DB_POSTGRESDB_HOST</key>
+    <string>localhost</string>
+    <key>DB_POSTGRESDB_PORT</key>
+    <string>5432</string>
+    <key>DB_POSTGRESDB_DATABASE</key>
+    <string>jay</string>
+    <key>DB_POSTGRESDB_SCHEMA</key>
+    <string>n8n</string>
+    <key>DB_POSTGRESDB_USER</key>
+    <string>alexlee</string>
+    <key>N8N_SECURE_COOKIE</key>
+    <string>false</string>
+    <key>N8N_PORT</key>
+    <string>5678</string>
+    <key>N8N_HOST</key>
+    <string>localhost</string>
+    <key>GENERIC_TIMEZONE</key>
+    <string>Asia/Seoul</string>
+    <key>N8N_LOG_LEVEL</key>
+    <string>warn</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/n8n.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/n8n.err</string>
+</dict>
+</plist>

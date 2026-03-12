@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.openclaw.model-sync</string>
+
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/alexlee/.openclaw/openclaw.json</string>
+  </array>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/deploy-context.js</string>
+    <string>--all</string>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/openclaw-model-sync.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/openclaw-model-sync.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
