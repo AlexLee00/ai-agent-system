@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.claude.dexter</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/dexter.js</string>
+    <string>--telegram</string>
+    <string>--fix</string>
+  </array>
+
+  <!-- 매 1시간마다 실행 -->
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/claude</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/claude/dexter.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/claude/dexter.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

@@ -748,7 +748,7 @@ app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
   const to   = req.query.to   || kst.today();
   try {
     const rows = await pgPool.query(SCHEMA,
-      `SELECT id,date,amount,category,description,registered_by,created_at
+      `SELECT id, TO_CHAR(date,'YYYY-MM-DD') AS date, amount, category, description, registered_by, created_at
        FROM worker.sales
        WHERE company_id=$1 AND date BETWEEN $2 AND $3 AND deleted_at IS NULL
        ORDER BY date DESC, created_at DESC LIMIT $4 OFFSET $5`,
@@ -759,13 +759,13 @@ app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
 
 app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
   try {
-    const [daily, weekly, monthly] = await Promise.all([
+    const [daily, weekly, monthly, daily30] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
          FROM worker.sales WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`,
         [req.companyId]),
       pgPool.query(SCHEMA,
-        `SELECT date, SUM(amount) AS total, COUNT(*) AS cnt
+        `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date, SUM(amount) AS total, COUNT(*) AS cnt
          FROM worker.sales WHERE company_id=$1 AND date>=CURRENT_DATE-6 AND deleted_at IS NULL
          GROUP BY date ORDER BY date`,
         [req.companyId]),
@@ -774,11 +774,17 @@ app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
          FROM worker.sales WHERE company_id=$1 AND date>=CURRENT_DATE-364 AND deleted_at IS NULL
          GROUP BY 1 ORDER BY 1`,
         [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date, SUM(amount) AS total, COUNT(*) AS cnt
+         FROM worker.sales WHERE company_id=$1 AND date>=CURRENT_DATE-29 AND deleted_at IS NULL
+         GROUP BY date ORDER BY date`,
+        [req.companyId]),
     ]);
     res.json({
       today:   { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
       weekly,
       monthly,
+      daily30,
     });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
@@ -1589,19 +1595,47 @@ async function dbSaveMessage(sessionId, role, content, toolName, toolInput) {
 // 세션별 실행 중인 Claude 프로세스 추적 (동시 실행 방지)
 const activeClaudeProcs = new Map(); // sessionId -> { proc, pid, startedAt }
 
+// Claude Code 파일 업로드 디렉토리 (CLAUDE_WORKDIR 내부 — Claude Code가 직접 접근 가능)
+const CLAUDE_UPLOAD_DIR = path.join(CLAUDE_WORKDIR, 'tmp', 'uploads');
+require('fs').mkdirSync(CLAUDE_UPLOAD_DIR, { recursive: true });
+
+const claudeUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, CLAUDE_UPLOAD_DIR),
+    filename: (req, file, cb) => {
+      const ext  = path.extname(file.originalname).toLowerCase();
+      const safe = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+      cb(null, `${Date.now()}-${safe}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+// POST /api/claude/upload — 파일 업로드 (Claude Code 작업 디렉토리 내 저장)
+app.post('/api/claude/upload', requireAuth, claudeUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '파일 없음' });
+  res.json({ ok: true, path: req.file.path, name: req.file.originalname, size: req.file.size });
+});
+
 // POST /api/claude/send — SSE 스트리밍
 app.post('/api/claude/send', requireAuth, async (req, res) => {
   const { text, sessionId } = req.body || {};
   if (!text?.trim()) return res.status(400).json({ error: '메시지가 필요합니다.' });
 
-  // 기존 세션에 실행 중인 프로세스가 있으면 거부
+  // 기존 세션에 실행 중인 프로세스가 있으면 거부 (stale 엔트리는 정리 후 통과)
   if (sessionId && activeClaudeProcs.has(sessionId)) {
     const active = activeClaudeProcs.get(sessionId);
-    return res.status(409).json({
-      error: 'Claude가 아직 작업 중입니다. 완료 후 메시지를 보내주세요.',
-      pid: active.pid,
-      startedAt: active.startedAt,
-    });
+    const isAlive = !active.proc.killed && active.proc.exitCode === null;
+    if (!isAlive) {
+      // 프로세스가 이미 종료됐는데 Map에 남아있는 stale 엔트리 정리
+      activeClaudeProcs.delete(sessionId);
+    } else {
+      return res.status(409).json({
+        error: 'Claude가 아직 작업 중입니다. 완료 후 메시지를 보내주세요.',
+        pid: active.pid,
+        startedAt: active.startedAt,
+      });
+    }
   }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -1670,6 +1704,14 @@ app.post('/api/claude/send', requireAuth, async (req, res) => {
 
   proc.stderr.on('data', chunk => {
     console.error('[claude/sse] stderr:', chunk.toString().slice(0, 200));
+  });
+
+  // 클라이언트 연결 끊김 (탭 닫기, 페이지 이탈, 스탑 버튼) → 프로세스 종료
+  req.on('close', () => {
+    if (!proc.killed) {
+      console.log('[claude/sse] client disconnected, killing pid:', proc.pid);
+      try { proc.kill(); } catch {}
+    }
   });
 
   proc.on('close', async code => {
@@ -1752,6 +1794,19 @@ app.delete('/api/claude/sessions/:id', requireAuth, async (req, res) => {
     res.json({ ok: true, sessions: [] });
   }
 });
+
+// ── Graceful Shutdown — 고아 프로세스 정리 ───────────────────────────
+function killAllClaudeProcs(signal) {
+  if (activeClaudeProcs.size === 0) return;
+  console.log(`[worker/server] ${signal}: 실행 중인 Claude 프로세스 ${activeClaudeProcs.size}개 종료`);
+  for (const [sid, { proc, pid }] of activeClaudeProcs) {
+    try { proc.kill(); console.log(`[worker/server] killed pid ${pid} (session ${sid})`); } catch {}
+  }
+  activeClaudeProcs.clear();
+}
+
+process.on('SIGTERM', () => { killAllClaudeProcs('SIGTERM'); process.exit(0); });
+process.on('SIGINT',  () => { killAllClaudeProcs('SIGINT');  process.exit(0); });
 
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {

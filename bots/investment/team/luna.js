@@ -62,9 +62,9 @@ const LUNA_SYSTEM_STOCK = `당신은 루나(Luna), 루나팀의 수석 오케스
 - 소규모 분할 진입으로 리스크 분산
 
 응답 형식 (JSON만, 다른 텍스트 없이):
-{"action":"BUY","amount_usdt":100,"confidence":0.5,"reasoning":"근거 60자 이내"}
+{"action":"BUY","amount_usdt":500,"confidence":0.5,"reasoning":"근거 60자 이내"}
 
-amount_usdt 범위: 50~300 USDT`.trim();
+amount_usdt 범위: 500~1000 USDT`.trim();
 
 function getLunaSystem(exchange) {
   if (exchange === 'kis' || exchange === 'kis_overseas') return LUNA_SYSTEM_STOCK;
@@ -84,7 +84,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
 ⚠️ 반드시 위 심볼 중에서만 결정을 내려야 합니다. 다른 심볼은 절대 포함하지 마세요.
 
 응답: JSON만 (코드블록 없음):
-{"decisions":[{"symbol":"${exampleSymbol}","action":"BUY","amount_usdt":100,"confidence":0.7,"reasoning":"판단 근거 (한국어 60자)"}],"portfolio_view":"전체 시황 평가 (80자)","risk_level":"LOW"|"MEDIUM"|"HIGH"}
+{"decisions":[{"symbol":"${exampleSymbol}","action":"BUY","amount_usdt":${isStock ? 500 : 100},"confidence":0.7,"reasoning":"판단 근거 (한국어 60자)"}],"portfolio_view":"전체 시황 평가 (80자)","risk_level":"LOW"|"MEDIUM"|"HIGH"}
 
 제약:
 - 단일 포지션: 총자산 ${maxPosPct} 이하
@@ -214,7 +214,8 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
         const action  = isStock
           ? (vote >= 0 && avgConf >= 0.3 ? ACTIONS.BUY : vote < -1 ? ACTIONS.SELL : ACTIONS.HOLD)
           : (vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD);
-        return { action, amount_usdt: 100, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
+        const fallbackAmt = isStock ? 500 : 100;
+        return { action, amount_usdt: fallbackAmt, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
       }
       return parsed;
     },
@@ -428,7 +429,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     const signalData = {
       symbol:          dec.symbol,
       action:          dec.action,
-      amountUsdt:      dec.amount_usdt || 100,
+      amountUsdt:      dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas' ? 500 : 100),
       confidence:      dec.confidence,
       reasoning:       `[루나] ${dec.reasoning}`,
       exchange:        dec.exchange || exchange,

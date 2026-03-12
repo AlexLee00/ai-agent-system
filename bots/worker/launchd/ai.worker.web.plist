@@ -7,8 +7,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js</string>
+    <string>/bin/bash</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/start-worker-web.sh</string>
   </array>
 
   <key>WorkingDirectory</key>

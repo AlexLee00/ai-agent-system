@@ -6,7 +6,7 @@
   <key>Label</key>
   <string>ai.investment.reporter</string>
 
-  <!-- 루나팀 일일 리포트 — 매일 08:00 KST (23:00 UTC) -->
+  <!-- 루나팀 일일 리포트 — 매일 08:00 KST -->
   <!-- 설치: cp launchd/ai.investment.reporter.plist ~/Library/LaunchAgents/ -->
   <!--        launchctl load ~/Library/LaunchAgents/ai.investment.reporter.plist -->
 
@@ -20,11 +20,11 @@
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 
-  <!-- 08:00 KST = 23:00 UTC (전날) -->
+  <!-- 08:00 KST -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>23</integer>
+    <integer>8</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>

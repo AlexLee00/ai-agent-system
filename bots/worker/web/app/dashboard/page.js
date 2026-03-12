@@ -27,10 +27,11 @@ function timeAgo(ts) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [summary,   setSummary]   = useState(null);
-  const [salesData, setSalesData] = useState([]);
-  const [activity,  setActivity]  = useState([]);
-  const [loading,   setLoading]   = useState(true);
+  const [summary,      setSummary]      = useState(null);
+  const [salesData,    setSalesData]    = useState([]);
+  const [monthlyData,  setMonthlyData]  = useState([]);
+  const [activity,     setActivity]     = useState([]);
+  const [loading,      setLoading]      = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -40,10 +41,24 @@ export default function DashboardPage() {
     ]).then(([sum, sales, act]) => {
       if (sum) setSummary(sum);
       if (sales?.weekly) {
-        setSalesData(sales.weekly.map(r => {
-          const d = new Date(r.date);
-          return { label: `${d.getMonth()+1}/${d.getDate()}(${WEEKDAY[d.getDay()]})`, total: Number(r.total) };
-        }));
+        const map = Object.fromEntries((sales.weekly).map(r => [r.date.slice(0,10), Number(r.total)]));
+        const rows = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(); d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0,10);
+          rows.push({ label: `${d.getMonth()+1}/${d.getDate()}(${WEEKDAY[d.getDay()]})`, total: map[key] ?? 0 });
+        }
+        setSalesData(rows);
+      }
+      if (sales?.daily30) {
+        const map = Object.fromEntries((sales.daily30).map(r => [r.date.slice(0,10), Number(r.total)]));
+        const rows = [];
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date(); d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0,10);
+          rows.push({ label: `${d.getMonth()+1}/${d.getDate()}`, total: map[key] ?? 0 });
+        }
+        setMonthlyData(rows);
       }
       if (act?.activities) setActivity(act.activities);
     }).finally(() => setLoading(false));
@@ -102,33 +117,26 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 주간 매출 차트 */}
+        {/* 월간 매출 차트 */}
         <div className="card lg:col-span-2">
-          <h2 className="font-semibold text-gray-800 mb-4">📊 주간 매출 (최근 7일)</h2>
-          {salesData.length > 0 ? (
-            <SalesBarChart data={salesData} />
+          <h2 className="font-semibold text-gray-800 mb-4">📈 월간 매출 (최근 30일)</h2>
+          {monthlyData.length > 0 ? (
+            <SalesBarChart data={monthlyData} />
           ) : (
             <div className="text-center py-10">
-              <p className="text-4xl mb-3">📊</p>
-              <p className="text-gray-500 text-sm mb-4">매출을 등록하면 차트가 표시됩니다</p>
-              <Link
-                href="/sales"
-                className="inline-flex items-center gap-1 text-sm text-indigo-600 font-medium hover:underline"
-              >
-                매출 등록하기 →
-              </Link>
+              <p className="text-4xl mb-3">📈</p>
+              <p className="text-gray-500 text-sm">매출 데이터가 없습니다</p>
             </div>
           )}
         </div>
 
-        {/* 최근 활동 피드 */}
-        <div className="card">
+        {/* 최근 활동 — 월간·주간 옆에 row-span-2 */}
+        <div className="card lg:row-span-2">
           <h2 className="font-semibold text-gray-800 mb-4">📋 최근 활동</h2>
           {activity.length === 0 ? (
             <p className="text-center text-gray-400 text-sm py-6">활동 내역 없음</p>
           ) : (
             <div className="relative">
-              {/* 수직 선 */}
               <div className="absolute left-3.5 top-0 bottom-0 w-px bg-gray-100" />
               <div className="space-y-4">
                 {activity.map((item, i) => (
@@ -143,6 +151,22 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* 주간 매출 차트 */}
+        <div className="card lg:col-span-2">
+          <h2 className="font-semibold text-gray-800 mb-4">📊 주간 매출 (최근 7일)</h2>
+          {salesData.length > 0 ? (
+            <SalesBarChart data={salesData} />
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-4xl mb-3">📊</p>
+              <p className="text-gray-500 text-sm mb-4">매출을 등록하면 차트가 표시됩니다</p>
+              <Link href="/sales" className="inline-flex items-center gap-1 text-sm text-indigo-600 font-medium hover:underline">
+                매출 등록하기 →
+              </Link>
             </div>
           )}
         </div>

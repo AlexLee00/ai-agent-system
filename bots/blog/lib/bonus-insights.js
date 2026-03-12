@@ -136,9 +136,12 @@ function selectBonusInsights(botType, recentHistory = []) {
              : botType === 'gems' ? GEMS_BONUS_POOL
              :                      STAR_BONUS_POOL;
 
-  // 0개: 40% / 1개: 35% / 2개: 25%
+  // gems: 0개=20% / 1개=40% / 2개=40% (분량 보완 상향)
+  // pos/star: 0개=40% / 1개=35% / 2개=25% (기존 유지)
   const rand  = Math.random();
-  const count = rand < 0.40 ? 0 : rand < 0.75 ? 1 : 2;
+  const count = botType === 'gems'
+    ? (rand < 0.20 ? 0 : rand < 0.60 ? 1 : 2)
+    : (rand < 0.40 ? 0 : rand < 0.75 ? 1 : 2);
   if (count === 0) return [];
 
   // 최근 사용된 것 제외

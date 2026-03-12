@@ -89,7 +89,7 @@ export default function AttendancePage() {
       <div className="card">
         {loading
           ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
-          : <DataTable columns={columns} data={records} emptyText="근태 기록 없음" />
+          : <DataTable columns={columns} data={records} pageSize={10} emptyText="근태 기록 없음" />
         }
       </div>
     </div>

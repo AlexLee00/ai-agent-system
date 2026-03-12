@@ -124,6 +124,7 @@ export default function AdminCompaniesPage() {
           <p className="text-center py-10 text-gray-400">로딩 중...</p>
         ) : (
           <DataTable
+              pageSize={10}
             columns={columns}
             data={companies}
             emptyNode={emptyNode}

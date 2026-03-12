@@ -5,7 +5,6 @@
 <dict>
   <key>Label</key>
   <string>ai.investment.crypto</string>
-
   <!-- Phase 3-A: 암호화폐 5분 사이클 (OPS_MODE — 2026-03-03 전환) -->
   <!-- 설치: cp launchd/ai.investment.crypto.plist ~/Library/LaunchAgents/ -->
   <!--        launchctl load ~/Library/LaunchAgents/ai.investment.crypto.plist -->
@@ -14,20 +13,15 @@
     <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/markets/crypto.js</string>
   </array>
-
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-
   <!-- 5분 주기 (암호화폐 실시간 사이클) -->
   <key>StartInterval</key>
   <integer>300</integer>
-
   <key>StandardOutPath</key>
   <string>/tmp/investment-crypto.log</string>
-
   <key>StandardErrorPath</key>
   <string>/tmp/investment-crypto.err.log</string>
-
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
@@ -39,11 +33,9 @@
     <key>PAPER_MODE</key>
     <string>false</string>
   </dict>
-
   <!-- 부팅 시 자동 실행 -->
   <key>RunAtLoad</key>
   <true/>
-
   <key>KeepAlive</key>
   <false/>
 </dict>

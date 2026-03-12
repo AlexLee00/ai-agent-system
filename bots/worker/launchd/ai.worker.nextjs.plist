@@ -10,6 +10,8 @@
         <string>/usr/local/bin/node</string>
         <string>node_modules/.bin/next</string>
         <string>start</string>
+        <string>-H</string>
+        <string>0.0.0.0</string>
         <string>-p</string>
         <string>4001</string>
     </array>

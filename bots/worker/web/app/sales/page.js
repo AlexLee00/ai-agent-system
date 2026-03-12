@@ -23,15 +23,16 @@ export default function SalesPage() {
   const load = () => {
     setLoading(true);
     Promise.all([
-      api.get('/sales').catch(() => ({ sales: [] })),
+      api.get('/sales?limit=200&from=2000-01-01').catch(() => ({ sales: [] })),
       api.get('/sales/summary').catch(() => null),
     ]).then(([list, sum]) => {
       setSales(list.sales || []);
       if (sum) {
         setSummary(sum);
         setChartData((sum.weekly || []).map(r => {
-          const d = new Date(r.date);
-          return { label: `${d.getMonth()+1}/${d.getDate()}(${WEEKDAY[d.getDay()]})`, total: Number(r.total) };
+          const [, m, d] = r.date.split('-').map(Number);
+          const dow = new Date(r.date + 'T00:00:00').getDay();
+          return { label: `${m}/${d}(${WEEKDAY[dow]})`, total: Number(r.total) };
         }));
       }
     }).finally(() => setLoading(false));
@@ -105,6 +106,7 @@ export default function SalesPage() {
             : <DataTable
                 columns={columns}
                 data={sales}
+                pageSize={10}
                 emptyNode={emptyNode}
                 actions={row => (
                   <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>

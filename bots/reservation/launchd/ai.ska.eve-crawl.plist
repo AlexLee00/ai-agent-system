@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.ska.eve-crawl</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python</string>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/src/eve_crawl.py</string>
+    </array>
+
+    <!-- 매주 일요일 04:30 — 큐넷+수능 크롤링 (Playwright, 주 1회로 충분) -->
+    <!-- launchd Weekday: 0=일 1=월 ... 6=토 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/ska-eve-crawl.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ska-eve-crawl.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/alexlee</string>
+        <key>PATH</key>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+</dict>
+</plist>

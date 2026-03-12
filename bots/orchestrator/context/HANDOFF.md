@@ -50,6 +50,18 @@
 - 관련 파일: `packages/core/lib/shadow-mode.js scripts/luna-transition-analysis.js scripts/run-graduation-analysis.js scripts/weekly-stability-report.js bots/orchestrator/src/router.js bots/claude/lib/reporter.js bots/claude/lib/claude-lead-brain.js bots/claude/src/dexter.js bots/reservation/scripts/backup-db.js bots/reservation/auto/scheduled/pickko-daily-audit.js`
 <!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장:end -->
 
+<!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정 -->
+#### 2026-03-12 ✨ 워커웹 UI개선 및 매출데이터 정합성 수정
+- DataTable 페이지네이션(10건/pageSize prop)
+- 매출데이터 90일치 날짜오프셋 수정(daily_summary 기준 재입력)
+- sales API TO_CHAR date 수정(KST오프셋 버그 해결)
+- 3/10~3/11 스카 매출 신규 입력
+- 문서관리 삭제버튼 btn-danger 통일
+- 사이드바/헤더 높이 h-16 정렬
+- DataTable 빈행 채우기 제거
+- 관련 파일: `bots/worker/web/components/DataTable.js`, `bots/worker/web/app/sales/page.js`, `bots/worker/web/app/documents/page.js`, `bots/worker/web/server.js`, `bots/worker/web/components/Sidebar.js`, `bots/worker/web/components/Header.js`, `bots/worker/web/app/_shell.js`
+<!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정:end -->
+
 ## 다음 작업 후보
 
 - 루나팀 Phase 3-B: KIS 국내/해외 주식 실거래 전환
