@@ -1412,19 +1412,20 @@ async function monitorBookings() {
                     ? `cancelid|${stale.booking_key}`
                     : `cancel|${stale.date}|${stale.start_time}|${stale.end_time}|${stale.room || ''}|${stale.phone_raw}`;
                   if (!await isCancelledKey(cancelKey)) {
-                    // completed 예약이라도 슬롯 종료 시각이 미래면 네이버 취소 → 픽코 취소 필요
-                    // 슬롯 종료 시각이 현재 이전이면 이용 완료 후 확정 탭에서 사라진 정상 케이스 → 스킵
-                    const existingRes = await getReservation(stale.booking_key);
-                    if (existingRes && existingRes.status === 'completed') {
-                      const nowKST      = new Date(Date.now() + 9 * 3600 * 1000);
-                      const slotEndKST  = new Date(`${stale.date}T${stale.end_time}:00+09:00`);
-                      if (slotEndKST <= nowKST) {
-                        log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 이용 완료 후 정상 소멸 → 스킵`);
-                        continue;
-                      }
+                    // ✅ 슬롯 종료 시각이 현재 이전이면 → 이미 이용 완료 or 노쇼 → status 무관하게 스킵
+                    // (status='paid'인 예약도 시간이 지나면 취소 불필요)
+                    const nowKST     = new Date(Date.now() + 9 * 3600 * 1000);
+                    const slotEndKST = new Date(`${stale.date}T${stale.end_time}:00+09:00`);
+                    if (slotEndKST <= nowKST) {
+                      log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 슬롯 종료됨 → 취소 스킵 (재감지 방지 등록)`);
+                      await addCancelledKey(cancelKey).catch(() => {});
+                      continue;
                     }
 
-                    // ✅ 더블체크: 2회 연속 stale 감지 시에만 취소 확정 (오발동 방지)
+                    // ✅ 5회 연속 + 최소 10분 경과 시에만 취소 확정 (오발동 방지)
+                    const STALE_CONFIRM_COUNT  = 5;
+                    const STALE_MIN_ELAPSED_MS = 10 * 60 * 1000;  // 최소 10분
+                    const STALE_EXPIRE_MS      = 30 * 60 * 1000;  // 30분 미감지 시 만료
                     const booking = {
                       phoneRaw: stale.phone_raw,
                       phone:    stale.phone_raw,
@@ -1435,23 +1436,31 @@ async function monitorBookings() {
                     };
                     if (pendingCancelMap.has(cancelKey)) {
                       const pending = pendingCancelMap.get(cancelKey);
-                      const elapsed = Date.now() - pending.detectedAt;
-                      if (elapsed < 30 * 60 * 1000) {
-                        // 2회 연속 stale → 취소 확정
-                        log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 2회 연속 stale → 취소 확정`);
-                        pendingCancelMap.delete(cancelKey);
-                        await addCancelledKey(cancelKey);
-                        await runPickkoCancel(booking, cancelKey);
-                      } else {
-                        // pending 만료 → 재등록 (30분 이내 재감지 없으면 오발동으로 간주)
-                        log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — pending 만료 → 재등록`);
-                        pendingCancelMap.set(cancelKey, { stale, detectedAt: Date.now() });
+                      const elapsed = Date.now() - pending.firstDetectedAt;
+                      if (elapsed > STALE_EXPIRE_MS) {
+                        // pending 만료 → 카운트 초기화 후 재등록
+                        log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — pending 만료(${Math.floor(elapsed/60000)}분) → 재등록`);
+                        pendingCancelMap.set(cancelKey, { stale, firstDetectedAt: Date.now(), count: 1 });
                         await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
+                      } else {
+                        const newCount = (pending.count || 1) + 1;
+                        if (newCount >= STALE_CONFIRM_COUNT && elapsed >= STALE_MIN_ELAPSED_MS) {
+                          // 5회 연속 + 10분 이상 → 취소 확정
+                          log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed/60000)}분 경과 → 취소 확정`);
+                          pendingCancelMap.delete(cancelKey);
+                          await addCancelledKey(cancelKey);
+                          await runPickkoCancel(booking, cancelKey);
+                        } else {
+                          // 누적 대기
+                          pendingCancelMap.set(cancelKey, { ...pending, count: newCount });
+                          log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 stale (${Math.floor(elapsed/60000)}분 경과) → 취소 대기 (${STALE_CONFIRM_COUNT}회/${Math.floor(STALE_MIN_ELAPSED_MS/60000)}분 필요)`);
+                          await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
+                        }
                       }
                     } else {
-                      // 1회 감지 → pending 등록, naver_future_confirmed last_scan 갱신 (다음 사이클 재감지를 위해 삭제 방지)
-                      log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 1회 stale 감지 → 다음 사이클 재확인 대기`);
-                      pendingCancelMap.set(cancelKey, { stale, detectedAt: Date.now() });
+                      // 1회 감지 → pending 등록
+                      log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 1회 stale 감지 → 대기 (${STALE_CONFIRM_COUNT}회 연속 필요)`);
+                      pendingCancelMap.set(cancelKey, { stale, firstDetectedAt: Date.now(), count: 1 });
                       await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
                     }
                   }

@@ -22,6 +22,7 @@ const patcher = require('../lib/archer/patcher');
 const store   = require('../lib/archer/store');
 const cfg     = require('../lib/archer/config');
 const teamBus = require('../lib/team-bus');
+const kst     = require('../../../packages/core/lib/kst');
 
 const ARGS       = process.argv.slice(2);
 const TELEGRAM   = ARGS.includes('--telegram');

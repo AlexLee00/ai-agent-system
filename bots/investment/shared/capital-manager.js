@@ -71,12 +71,54 @@ function getEx() {
 // ─── 잔고 / 자본 조회 ────────────────────────────────────────────────
 
 /**
- * 가용 USDT 잔고 (실잔고)
+ * 미추적 BTC의 USD 환산 가치
+ * - wallet BTC free − DB positions의 BTC 수량 = 봇 외부 보유 BTC
+ * - 이 BTC는 USDT 잔고와 동등하게 가용 자본으로 취급
  */
-export async function getAvailableBalance() {
+async function getUntrackedBtcUsd() {
+  try {
+    const ex = getEx();
+    const [walletBal, btcTicker, trackedPos] = await Promise.all([
+      ex.fetchBalance(),
+      ex.fetchTicker('BTC/USDT').catch(() => ({ last: 0 })),
+      pgPool.get(SCHEMA, 'SELECT amount FROM positions WHERE symbol = $1', ['BTC/USDT']).catch(() => null),
+    ]);
+    const walletBtc  = walletBal.free?.BTC  || 0;
+    const trackedBtc = parseFloat(trackedPos?.amount || 0);
+    const untracked  = Math.max(0, walletBtc - trackedBtc);
+    const usd        = untracked * (btcTicker.last || 0);
+    if (untracked > 0) console.log(`[capital] 미추적 BTC: ${untracked.toFixed(6)} (≈$${usd.toFixed(2)})`);
+    return usd;
+  } catch (e) {
+    console.warn('[capital] 미추적 BTC 조회 실패:', e.message);
+    return 0;
+  }
+}
+
+/**
+ * 순수 USDT 잔고 (리포팅·모니터링용)
+ */
+export async function getAvailableUSDT() {
   try {
     const bal = await getEx().fetchBalance();
     return bal.free?.USDT || 0;
+  } catch (e) {
+    console.warn('[capital] USDT 잔고 조회 실패:', e.message);
+    return 0;
+  }
+}
+
+/**
+ * 가용 자본 = USDT 잔고 + 미추적 BTC USD 환산
+ * - BTC를 USDT와 동등하게 취급 → preTradeCheck / sizeCalculation 기준
+ */
+export async function getAvailableBalance() {
+  try {
+    const [usdt, btcUsd] = await Promise.all([
+      getAvailableUSDT(),
+      getUntrackedBtcUsd(),
+    ]);
+    return usdt + btcUsd;
   } catch (e) {
     console.warn('[capital] 잔고 조회 실패:', e.message);
     return 0;
@@ -84,11 +126,11 @@ export async function getAvailableBalance() {
 }
 
 /**
- * 총 자본 = USDT 잔고 + 포지션 평가금액 (avg_price 기준)
+ * 총 자본 = USDT 잔고 + 미추적 BTC + 포지션 평가금액 (avg_price 기준)
  */
 export async function getTotalCapital() {
   try {
-    const balance   = await getAvailableBalance();
+    const balance   = await getAvailableBalance();  // USDT + 미추적 BTC
     const positions = await getOpenPositions();
     const posValue  = positions.reduce((s, p) => s + (p.amount || 0) * (p.avg_price || 0), 0);
     return balance + posValue;
@@ -325,20 +367,24 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice) {
 // ─── 자본 현황 요약 ──────────────────────────────────────────────────
 
 export async function getCapitalStatus() {
-  const [balance, openPositions, dailyPnL, weeklyPnL, dailyTradeCount, circuit] = await Promise.all([
-    getAvailableBalance(),
+  const [usdtBalance, btcUsd, openPositions, dailyPnL, weeklyPnL, dailyTradeCount, circuit] = await Promise.all([
+    getAvailableUSDT(),
+    getUntrackedBtcUsd(),
     getOpenPositions(),
     getDailyPnL(),
     getWeeklyPnL(),
     getDailyTradeCount(),
     checkCircuitBreaker(),
   ]);
+  const balance       = usdtBalance + btcUsd;
   const positionValue = openPositions.reduce((s, p) => s + (p.amount || 0) * (p.avg_price || 0), 0);
   const totalCapital  = balance + positionValue;
 
   return {
     totalCapital,
     availableBalance:   balance,
+    usdtBalance,                    // 순수 USDT
+    untrackedBtcUsd:    btcUsd,     // 미추적 BTC USD 환산
     positionValue,
     openPositionCount:  openPositions.length,
     openPositions,

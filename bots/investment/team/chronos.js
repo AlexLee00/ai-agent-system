@@ -9,7 +9,9 @@
  */
 
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import * as db from '../shared/db.js';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
 

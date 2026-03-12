@@ -7,7 +7,7 @@
 >
 > **언제 참조**: 새 기능 추가 / 버그 수정 / 신규 봇 개발 / 코드 리뷰 전 **반드시** 참조.
 >
-> 마지막 업데이트: 2026-03-11
+> 마지막 업데이트: 2026-03-12
 
 ---
 
@@ -1433,6 +1433,16 @@ function parseJsonResponse(text) {
 | 2026-03-11 | **naver-monitor kst 누락 수정** — naver-monitor.js kst 임포트 누락 → 알람 전송 실패 수정 |
 | 2026-03-11 | **젬스/포스 이어쓰기 중복 방지 + 중복실행 early-exit** — gems-writer.js 이어쓰기 800자 tail + LLM 재시작 감지 외 2건 |
 | 2026-03-11 | **취소감지4 오탐 수정 — 스캔 한도 300으로 상향** — 취소감지4 FUTURE_SCAN_LIMIT 50→300 (이영화 3/28 B룸 오탐 취소 원인) 외 4건 |
+| 2026-03-12 | **버그헌팅: 8건 수정 (취소감지4 오탐/중복/빌링/블로그)** — 블로그 이어쓰기 중복 방지 (800자 tail+재시작감지) 외 7건 |
+| 2026-03-12 | **종목 범위 확대: CoinGecko+ApeWisdom+KIS순위+FNG 연동** — CoinGecko Trending 병합 (크립토 트렌딩 보너스 20%) 외 6건 |
+| 2026-03-12 | **미추적 BTC 흡수·직접매수·USDT폴백 구현** — 미추적 BTC 흡수 (같은 심볼 BUY 신호) 외 4건 |
+| 2026-03-12 | **루나팀 BTC 자본 인식 대공사** — capital-manager: getUntrackedBtcUsd() 헬퍼 추가 외 7건 |
+| 2026-03-12 | **report.js absorb/liquidate 사이드 알림 포맷 추가** — notifyTrade absorb·liquidate·buy·sell 사이드 이모지 분기 외 1건 |
+<!-- session-close:2026-03-12:reportjs-absorbliquidate-사이드-알 -->
+<!-- session-close:2026-03-12:루나팀-btc-자본-인식-대공사 -->
+<!-- session-close:2026-03-12:미추적-btc-흡수직접매수usdt폴백-구현 -->
+<!-- session-close:2026-03-12:종목-범위-확대-coingeckoapewisdomkis -->
+<!-- session-close:2026-03-12:버그헌팅-8건-수정-취소감지4-오탐중복빌링블로그 -->
 <!-- session-close:2026-03-11:취소감지4-오탐-수정-스캔-한도-300으로-상향 -->
 <!-- session-close:2026-03-11:젬스포스-이어쓰기-중복-방지-중복실행-earlyexit -->
 <!-- session-close:2026-03-11:navermonitor-kst-누락-수정 -->

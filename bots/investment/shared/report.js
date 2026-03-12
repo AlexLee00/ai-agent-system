@@ -29,9 +29,13 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
   return sender.send('luna', msg);
 }
 
-export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo }) {
+export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
   const tag   = paper ? '[PAPER] ' : '';
-  const emoji = side === 'buy' ? '✅ 매수' : '✅ 매도';
+  const emoji = side === 'buy'       ? '✅ 매수'
+              : side === 'sell'      ? '✅ 매도'
+              : side === 'absorb'    ? '🔄 BTC 흡수'
+              : side === 'liquidate' ? '💱 미추적 청산'
+              : '✅ 체결';
   const lines = [
     `${tag}${emoji} 체결 — ${symbol}`,
     `수량: ${amount?.toFixed(6)} / 가격: $${price?.toLocaleString()}`,
@@ -44,6 +48,7 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
     const slPct     = ((slPrice / price - 1) * 100).toFixed(1);
     lines.push(`${dynTag} TP: $${tpPrice?.toLocaleString()} (+${tpPct}%) | SL: $${slPrice?.toLocaleString()} (${slPct}%)`);
   }
+  if (memo) lines.push(`📝 ${memo}`);
   if (capitalInfo) {
     lines.push('───────────────');
     if (capitalInfo.balance    != null) lines.push(`💰 가용 잔고: $${parseFloat(capitalInfo.balance).toFixed(2)}`);

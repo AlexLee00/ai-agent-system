@@ -95,6 +95,53 @@
 - 최신IT트렌드: AI와 최신 기술이 만들어가는 새로운 미래 (9,853자, DB ID:32, 이미지 2장)
 
 
+
+## 2026-03-12
+### 🔧 버그헌팅: 8건 수정 (취소감지4 오탐/중복/빌링/블로그)
+- 블로그 이어쓰기 중복 방지 (800자 tail+재시작감지)
+- blo.js 중복실행 early-exit
+- naver-monitor kst 임포트 누락 수정
+- FUTURE_SCAN_LIMIT 50→300 + 스킵 안전장치
+- 픽코 취소 중복 doneKey 통합
+- 완료예약 허위취소 슬롯종료시간 기준 변경
+- 빌링 API timeout DB캐시 폴백
+- 패턴이력 26건 삭제
+<!-- session-close:2026-03-12:버그헌팅-8건-수정-취소감지4-오탐중복빌링블로그 -->
+
+### ✨ 종목 범위 확대: CoinGecko+ApeWisdom+KIS순위+FNG 연동
+- CoinGecko Trending 병합 (크립토 트렌딩 보너스 20%)
+- ApeWisdom WSB 멘션 집계 (해외주식 보완)
+- KIS volume-rank API (국내주식 1순위 소스)
+- Alternative.me FNG 기반 max_dynamic 자동 조절
+- 후보 풀 확대: 크립토 30→50, 동적 3→7/5/5
+- 버그1 blo.js early-exit DB오류 오스킵 수정
+- 버그2 ska.js kst 미사용 수정
+<!-- session-close:2026-03-12:종목-범위-확대-coingeckoapewisdomkis -->
+
+### ✨ 미추적 BTC 흡수·직접매수·USDT폴백 구현
+- 미추적 BTC 흡수 (같은 심볼 BUY 신호)
+- BTC 직접 페어 매수 _tryBuyWithBtcPair (ETH/BTC 등)
+- USDT 폴백 _liquidateUntrackedForCapital
+- CoinGecko·ApeWisdom·FNG Rate Limit 처리 추가
+- 다음 세션: 자본관리 대공사 (BTC를 capital로 인식)
+<!-- session-close:2026-03-12:미추적-btc-흡수직접매수usdt폴백-구현 -->
+
+### ✨ 루나팀 BTC 자본 인식 대공사
+- capital-manager: getUntrackedBtcUsd() 헬퍼 추가
+- capital-manager: getAvailableBalance() = USDT + 미추적 BTC
+- capital-manager: getAvailableUSDT() 리포팅 전용 분리
+- capital-manager: getTotalCapital() BTC 포함
+- capital-manager: getCapitalStatus() BTC 내역 추가
+- hephaestos: 미추적 BTC 흡수 (같은 심볼)
+- hephaestos: _tryBuyWithBtcPair() BTC 직접 페어 매수
+- hephaestos: _liquidateUntrackedForCapital() USDT 폴백
+<!-- session-close:2026-03-12:루나팀-btc-자본-인식-대공사 -->
+
+### 🔧 report.js absorb/liquidate 사이드 알림 포맷 추가
+- notifyTrade absorb·liquidate·buy·sell 사이드 이모지 분기
+- memo 필드 텔레그램 출력 추가
+<!-- session-close:2026-03-12:reportjs-absorbliquidate-사이드-알 -->
+
 ## 2026-03-11
 ### ✨ 강의 인스타 페어링 + 캐시 실패방지 + launchd INSTA 환경변수 + 이미지 medium 품질
 - runLecturePost 강의 인스타 콘텐츠 페어링 추가 (BLOG_INSTA_ENABLED)

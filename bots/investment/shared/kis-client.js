@@ -462,6 +462,41 @@ export async function getDomesticBalance(paper) {
  * 해외주식 잔고 조회 (미국)
  * TR_ID: TTTS3012R (실전) / VTTS3012R (모의)
  */
+/**
+ * 국내주식 거래량 순위 조회 (최대 30종목)
+ * TR_ID: FHPST01710000
+ */
+export async function getVolumeRank(paper = false) {
+  try {
+    const data = await kisRequest('GET', '/uapi/domestic-stock/v1/ranking/volume', {
+      trId: 'FHPST01710000',
+      params: {
+        FID_COND_MRKT_DIV_CODE:  'J',
+        FID_COND_SCR_DIV_CODE:   '20171',
+        FID_INPUT_ISCD:          '0000',
+        FID_DIV_CLS_CODE:        '0',
+        FID_BLNG_CLS_CODE:       '0',
+        FID_TRGT_CLS_CODE:       '111111111',
+        FID_TRGT_EXLS_CLS_CODE:  '000000',
+        FID_INPUT_PRICE_1:       '',
+        FID_INPUT_PRICE_2:       '',
+        FID_VOL_CNT:             '',
+        FID_INPUT_DATE_1:        '',
+      },
+      paper,
+    });
+    return (data.output || []).map(r => ({
+      stockCode:  r.mksc_shrn_iscd,
+      stockName:  r.hts_kor_isnm,
+      volume:     parseInt(r.acml_vol  || '0', 10),
+      changeRate: parseFloat(r.prdy_ctrt || '0'),
+    }));
+  } catch (e) {
+    console.warn(`[KIS] 거래량 순위 조회 실패: ${e.message}`);
+    return [];
+  }
+}
+
 export async function getOverseasBalance(paper) {
   const usePaper = paper ?? isKisPaper();
   const { cano, prodCd } = parseAccount(usePaper);

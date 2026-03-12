@@ -10,6 +10,8 @@
  */
 
 import { query, run } from './db.js';
+import { createRequire } from 'module';
+const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
 // ─── 지연 초기화 (첫 호출 시 자동 실행) ────────────────────────────
 

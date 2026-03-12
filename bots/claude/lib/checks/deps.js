@@ -9,6 +9,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const cfg  = require('../config');
+const kst  = require('../../../../packages/core/lib/kst');
 
 function npmAudit(botDir, label) {
   try {

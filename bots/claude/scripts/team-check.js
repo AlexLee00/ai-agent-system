@@ -15,6 +15,7 @@
  */
 
 const { publishToMainBot } = require('../lib/mainbot-client');
+const kst = require('../../../packages/core/lib/kst');
 
 // ── 아이콘 ───────────────────────────────────────────────────────────
 const ICON = { ok: '✅', warn: '⚠️', error: '❌' };

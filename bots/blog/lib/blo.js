@@ -386,7 +386,9 @@ async function run() {
   console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
 
   // 이미 모두 발행된 경우 즉시 종료 (중복 실행 방지)
-  if (!lectureCtx && !generalCtx) {
+  // ※ lectureSchedule/generalSchedule이 null이면 DB 오류 — early-exit 금지
+  const scheduleExists = lectureSchedule || generalSchedule;
+  if (scheduleExists && !lectureCtx && !generalCtx) {
     console.log('[블로] ✅ 오늘 발행 항목이 모두 완료됨 — 중복 실행 건너뜀');
     return [];
   }

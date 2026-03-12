@@ -28,12 +28,26 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
-# ── 실행 ────────────────────────────────────────────────
+# ── 실행 (네트워크 오류 시 최대 3회 재시도, 5분 간격) ──────
 echo "" >> "$LOG_FILE"
 echo "[$(TS)] ━━━ pickko-verify 자동 실행 시작 ━━━" | tee -a "$LOG_FILE"
 
-MODE=ops "$NODE" "$SCRIPT_DIR/pickko-verify.js" >> "$LOG_FILE" 2>&1
-EXIT_CODE=$?
+MAX_RETRY=3
+RETRY_WAIT=300  # 5분
+EXIT_CODE=1
+
+for attempt in $(seq 1 $MAX_RETRY); do
+  if [ $attempt -gt 1 ]; then
+    echo "[$(TS)] 🔄 pickko-verify 재시도 ${attempt}/${MAX_RETRY} (${RETRY_WAIT}초 대기 후)" | tee -a "$LOG_FILE"
+    sleep $RETRY_WAIT
+  fi
+  MODE=ops "$NODE" "$SCRIPT_DIR/pickko-verify.js" >> "$LOG_FILE" 2>&1
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 0 ]; then
+    break
+  fi
+  echo "[$(TS)] ⚠️ pickko-verify 실패 (exit: $EXIT_CODE, 시도: ${attempt}/${MAX_RETRY})" | tee -a "$LOG_FILE"
+done
 
 echo "[$(TS)] ━━━ pickko-verify 완료 (exit: $EXIT_CODE) ━━━" | tee -a "$LOG_FILE"
 

@@ -12,6 +12,7 @@ import { createRequire } from 'module';
 import yaml from 'js-yaml';
 
 const _require = createRequire(import.meta.url);
+const kst     = _require('../../../packages/core/lib/kst');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
