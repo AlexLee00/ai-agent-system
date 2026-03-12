@@ -2,69 +2,70 @@
 
 > 다음 Claude Code 세션에서 이 파일을 먼저 읽어주세요.
 
-## 이번 세션 완료 내역 (2026-03-11)
+## 이번 세션 완료 내역 (2026-03-12)
 
-### 1. 전 팀 LLM 모델 최적화 (7개 변경)
+### 워커팀 웹 UI — Claude Code 채팅 모바일 버그 수정
 
-| 변경 | 파일 | 내용 |
-|------|------|------|
-| 1+2 | `llm-client.js` | GROQ_AGENTS→[nemesis,oracle] / MINI_FIRST_AGENTS 신규[hermes,sophia,zeus,athena] / callOpenAIMini() 추가 / callGroq 폴백 gpt-4o-mini |
-| 3 | `pos-writer.js`, `gems-writer.js` | 2순위 gpt-oss-20b → gpt-4o-mini |
-| 4 | `star.js` | gpt-4o-mini + scout 폴백 추가 |
-| 5 | `claude-lead-brain.js` | sonnet 제거 → gpt-4o → gpt-4o-mini → scout |
-| 6 | `archer/config.js` | gpt-4o → gpt-4o-mini |
-| 7 | `screening-monitor.js`(신규), `pre-market-screen.js`, 3개 market 파일 | RAG 폴백(24h) + 장애 알림 |
+#### 1. 모바일 메뉴바 닫힘 문제 (`setCanvasLocked` ReferenceError)
+- `handleNewSession`에 `setCanvasLocked(false)` 호출이 있었으나 함수가 정의되지 않음
+- ReferenceError 발생 → 함수 중단 → `setSidebarOpen(false)` 미실행 → 메뉴 안 닫힘
+- **수정**: `setCanvasLocked(false)` 한 줄 제거
 
-### 2. 루나팀 아르고스 RAG 폴백 인프라
+#### 2. 세션 버튼 iOS 더블탭 문제
+- `div.group` + `opacity-0 group-hover:opacity-100` 삭제 버튼 패턴 → iOS가 그룹 전체를 hover 요소로 인식
+- 첫 탭 = hover 활성화, 두 번째 탭 = 클릭
+- **수정**:
+  - `group-hover:` 패턴 제거, 삭제 버튼 항상 표시
+  - `onTouchStart={() => {}}` 빈 핸들러 추가 (iOS 즉시 반응 강제)
+  - `hover:` → `active:` 클래스 변경
+  - `touch-manipulation` 클래스 추가
 
-**흐름:**
-```
-아르고스 실시간 스크리닝
-  ✅ 성공 → savePreScreened() 저장 (캐시 갱신)
-  ❌ 실패 → loadPreScreenedFallback() (24h TTL)
-              ✅ 캐시 있음 → "📚 [RAG 폴백] 재사용 (N분 전)"
-              ❌ 없음     → 빈 배열 (domestic/overseas) or config.yaml 기본 (crypto)
-           → recordScreeningFailure() — 3회+ 시 텔레그램
-```
+#### 3. 세션 전환 시 내용 섞임
+- 세션 변경 시 `activeSessionRef.current`가 useEffect로만 업데이트 (비동기)
+- `loadMessages` 서버 데이터 수신 후 `messages` useEffect가 **이전 세션 ID로 `saveMsgs`** 실행 → 캐시 오염
+- **수정**:
+  - `handleSelectSession`에서 `activeSessionRef.current = id` 동기 업데이트
+  - localStorage 캐시 로직 완전 제거 (서버 직접 로드 방식으로 단순화)
+  - `loadMessages` = 서버 fetch only
 
-**신규 파일:** `bots/investment/scripts/screening-monitor.js`
-**변경 파일:** `pre-market-screen.js` (PRESCREENED_FILE에 crypto 추가, loadPreScreenedFallback 신규)
+#### 4. 모바일 스크롤 간섭 (페이지 ↔ 채팅창)
+- **수정**: 메시지 목록에 `overscroll-contain` + `touchAction: 'pan-y'`
+- `body.overflow = 'hidden'` (드로어 열릴 때) — `Header.js` useEffect
 
-### 3. 스카팀 완전 재가동
-- 이전 프로세스 정리 + Chrome SingletonLock 제거
-- kickstart: ska.commander(59200) / naver-monitor(59205) / kiosk-monitor(59390)
+#### 5. 앱 메뉴 드로어 스크롤 간섭
+- 드로어 wrapper `overflow-y-auto` + Sidebar 내부 nav `overflow-y-auto` 이중 스크롤
+- **수정**: 드로어 wrapper에서 `overflow-y-auto` 제거, Sidebar nav에만 `overscroll-contain` 추가
 
-### 4. 이전 세션에서 이어받은 완료 항목
-- KIS EXCD 코드 추가 (NIO 등 NYSE 12종목 + 자동 탐색 폴백)
-- 종목 기본값 제거 (config.yaml, secrets.js, domestic/overseas.js)
-- 제이 커맨드 curriculum_approve/curriculum_status 연동 (intent-parser.js, router.js)
-- img-gen.js: gpt-image-1 medium 메인 + Nano Banana 폴백
-- 루나팀 LLM 재배치 (luna→gpt-4o, nemesis/oracle→Groq dual)
+#### 6. 앱 메뉴 드로어 — 메뉴 선택 시 닫힘
+- `Sidebar.js` 링크 클릭 시 `setDrawerOpen(false)` 없음
+- **수정**: `Header.js` 드로어에서 `<Sidebar />` 를 `onClick={() => setDrawerOpen(false)}` div로 래핑
 
----
+#### 7. 툴칩 레벨 정렬
+- 툴 메시지가 채팅창 왼쪽 경계보다 너무 왼쪽에 위치
+- **수정**: `pl-1` → `pl-9` (아바타 너비 36px에 맞춤)
 
-## 다음 세션 할 일
-
-### 루나팀
-- [ ] 스크리닝 모니터링 결과 확인 (실제 아르고스 실패 시 RAG 폴백 동작 검증)
-- [ ] KIS domestic/overseas PAPER_MODE 30일 검증 지속
-
-### 블로그팀
-- [ ] 실제 운영 발행 결과 확인 (내부 링킹 Phase 1 동작 확인)
-- [ ] 도서리뷰 네이버 책 API 연동 (book-research.js 테스트)
-
-### 기타
-- [ ] 맥미니 M4 Pro 도착 예정: 4월 중순 (이관 준비)
+#### 8. 모바일 드로어 백드롭 터치 간섭
+- 드로어 backdrop이 `absolute inset-0`으로 드로어 영역도 덮음 → iOS 첫 터치 가로챔
+- **수정**: `absolute inset-0` → `flex-1` (사이드바이사이드 레이아웃)
 
 ---
 
-## 현재 시스템 상태 (2026-03-11 기준)
+## 수정 파일 목록
 
-| 팀 | 상태 | 주요 프로세스 |
-|----|------|-------------|
-| 제이팀 | ✅ OPS | OpenClaw 포트18789, 오케스트레이터, TG long-poll |
-| 스카팀 | ✅ OPS (재가동) | ska.commander(59200), naver-monitor(59289), kiosk-monitor(59398) |
-| 루나팀 | ✅ OPS (크립토) | ai.investment.crypto (PAPER_MODE=false), domestic/overseas PAPER |
-| 클로드팀 | ✅ OPS | ai.claude.dexter.quick(5분) + ai.claude.dexter(1h) |
-| 블로그팀 | ✅ OPS | ai.blog.daily (06:00 KST) |
-| 워커팀 | ✅ OPS | ai.worker.web (포트4000) |
+| 파일 | 변경 내용 |
+|------|-----------|
+| `bots/worker/web/app/ai/page.js` | handleNewSession/handleSelectSession 수정, 캐시 제거, 모바일 드로어 구조 개선, 버튼 터치 이벤트 |
+| `bots/worker/web/components/Header.js` | 드로어 닫힘 + body 스크롤 차단 + h-full 구조 |
+| `bots/worker/web/components/Sidebar.js` | nav에 overscroll-contain 추가 |
+
+---
+
+## 현재 상태
+
+- 워커팀 웹 UI (포트 4001) 정상 운영 중
+- 체크섬 갱신 완료 (42개 파일)
+- 모든 모바일 버그 해결 확인
+
+## 다음 세션 예정 작업
+
+- 없음 (대기)

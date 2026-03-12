@@ -142,6 +142,23 @@
 - memo 필드 텔레그램 출력 추가
 <!-- session-close:2026-03-12:reportjs-absorbliquidate-사이드-알 -->
 
+### 🔧 워커팀 웹 UI 모바일 버그 수정
+- 모바일 메뉴바 닫힘(setCanvasLocked ReferenceError 제거)
+- 세션 싱글탭(onTouchStart 빈핸들러+group-hover제거)
+- 세션 전환 내용 섞임(캐시제거+activeSessionRef동기화)
+- 페이지-드로어 스크롤 간섭(overscroll-contain+body.overflow)
+- 툴칩 레벨 정렬(pl-9)
+- 스크롤 이슈(overscroll-contain+touch-action)
+<!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정 -->
+
+### 🔧 워커팀 웹 UI 모바일 버그 수정 완료
+- setCanvasLocked ReferenceError 제거
+- iOS 싱글탭(onTouchStart+group-hover제거)
+- 세션전환 내용섞임(캐시제거+ref동기화)
+- 스크롤 간섭(overscroll-contain)
+- 체크섬 갱신 42개
+<!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정-완료 -->
+
 ## 2026-03-11
 ### ✨ 강의 인스타 페어링 + 캐시 실패방지 + launchd INSTA 환경변수 + 이미지 medium 품질
 - runLecturePost 강의 인스타 콘텐츠 페어링 추가 (BLOG_INSTA_ENABLED)
