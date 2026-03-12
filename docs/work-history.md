@@ -4,6 +4,39 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 빌링 버그 수정 + 오발동 수정 + 보안 업그레이드 (2026-03-13)
+
+**빌링 합산 버그 수정**
+- `bots/claude/lib/checks/billing.js`: API 누적값을 SUM으로 더해 $79.92 뻥튀기 → `DISTINCT ON (provider, date)`로 최신값만 합산
+- 실제 금액 확인: $19.98 (Anthropic $16.42 + OpenAI $3.56), 월말 예상 $47.65
+
+**완료 예약 허위 취소 오발동 수정**
+- `bots/claude/lib/checks/ska.js`: 이용 완료 후 `cancelled_keys`에 dedup 키가 잔류해 매 체크마다 오발동
+- 케이스 B(이용 완료 감지) 시 해당 키를 `cancelled_keys`에서 자동 정리하도록 수정
+
+**Picco 취소 재시도 추가**
+- `bots/reservation/auto/monitors/naver-monitor.js`: `runPickkoCancel` 실패 시 60초 후 1회 자동 재시도
+- Playwright 타임아웃으로 인한 일시적 실패 자가복구 가능
+
+**npm audit 워크스페이스 경로 + PATH 수정**
+- `bots/claude/lib/checks/deps.js`: 모노레포 하위 패키지에 lock 파일 없어 audit 스킵되던 문제 해결
+- 루트에서 `--workspace` 플래그로 실행, `execSync` env에 PATH 추가
+
+**오정은 (010-7184-8299) 3/29 예약 manual 처리**
+- `pickko_status`: `verified` → `manual` (픽코 수동 등록 완료)
+
+**보안 패키지 업그레이드**
+- ccxt 4.5.42 → 4.5.43
+- bcrypt 5.1.1 → 6.0.0 (tar / node-pre-gyp high 취약점 해결)
+- npm audit: 2 high → 0 vulnerabilities
+- groq-sdk: Breaking change로 업그레이드 보류
+
+**PATCH_REQUEST.md 처리 완료 후 삭제**
+
+**덱스터 최종 상태**: ❌ 0건 / ⚠️ 2건 (경미, 시간 지나면 소멸)
+
+---
+
 ### 덱스터 알람 개선 + 스카팀 LLM 교체 (2026-03-12)
 
 **스카팀 LLM 교체**
