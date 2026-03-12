@@ -50,7 +50,7 @@ const checks = {
 const { DexterMode } = require('../lib/dexter-mode');
 const dexterMode = new DexterMode();
 
-const { saveErrorItems, markResolved, cleanup: cleanupErrorHistory } = require('../lib/error-history');
+const { saveErrorItems, markResolved, getNewErrors, cleanup: cleanupErrorHistory } = require('../lib/error-history');
 const { analyzeWithAI } = require('../lib/ai-analyst');
 const { evaluateWithClaudeLead, pollAgentEvents } = require('../lib/claude-lead-brain');
 
@@ -218,12 +218,14 @@ async function main() {
   // 로그 기록
   writeLog(results, elapsed);
 
-  // 텔레그램: 오류/경고 있을 때만 발송
+  // 텔레그램: 신규 오류가 있을 때만 발송 (기존 반복 오류는 무시)
   let telegramSent = false;
   let telegramOk   = false;
   if (TELEGRAM) {
-    const hasIssue = results.some(r => r.status !== 'ok');
-    if (hasIssue) {
+    const hasCritical = results.some(r => r.status === 'critical');
+    const newErrors   = await getNewErrors(2, 7).catch(() => []);
+    const hasNewIssue = hasCritical || newErrors.length > 0;
+    if (hasNewIssue) {
       const text = buildTelegramText(results, elapsed);
       if (!SILENT) console.log('✅ 제이 큐 발행');
 

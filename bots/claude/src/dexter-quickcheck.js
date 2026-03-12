@@ -145,10 +145,14 @@ async function main() {
       const reAlert     = prev.status === 'down' && cooldownExpired(prev.alertedAt);
       const needAlert   = isNew || reAlert;
 
+      // 연속 실패 횟수 누적
+      const failCount = (prev.failCount || 0) + 1;
+
       // 상태 업데이트
       state.services[svc.id] = {
         status:       'down',
         exitCode:     info.exitCode,
+        failCount,
         downSince:    prev.downSince || now,
         alertedAt:    needAlert ? now : (prev.alertedAt || now),
         restartedAt:  prev.restartedAt  || null,
@@ -180,7 +184,15 @@ async function main() {
       }
 
       if (needAlert) {
-        alerts.push({ label: svc.label, detail: `비정상 종료 (exitCode: ${info.exitCode})`, restartable: svc.restartable, restarted });
+        alerts.push({
+          label:      svc.label,
+          detail:     failCount === 1
+            ? `일시 실패 (exitCode: ${info.exitCode})`
+            : `연속 ${failCount}회 실패 (exitCode: ${info.exitCode})`,
+          restartable: svc.restartable,
+          restarted,
+          failCount,
+        });
       }
 
     } else {
@@ -266,24 +278,33 @@ async function main() {
   if (!TELEGRAM) return;
 
   if (alerts.length > 0) {
+    // 1회 실패는 경고, 2회 이상 연속은 CRITICAL
+    const maxFail    = Math.max(...alerts.map(a => a.failCount || 1));
+    const isCritical = maxFail >= 2;
+    const header     = isCritical ? `🚨 덱스터 긴급 감지 (퀵체크)` : `⚠️ 덱스터 감지 (퀵체크)`;
+    const alertLevel = isCritical ? 4 : 2;
+
     const lines = [
-      `🚨 덱스터 긴급 감지 (퀵체크)`,
+      header,
       ...alerts.map(a => {
+        const icon = (a.failCount || 1) >= 2 ? '❌' : '⚠️';
         const restartLine = a.restarted
           ? '  → 🔄 자동 재시작 완료 — 상태 모니터링 중'
           : (FIX && a.restartable)
             ? '  → ❌ 재시작 실패 — 수동 확인 필요'
             : a.restartable
               ? '  → ⚠️ 수동 재시작 필요'
-              : '  → ⚠️ 자동 재시작 불가 (수동 확인)';
-        return `❌ ${a.label}: ${a.detail}\n${restartLine}`;
+              : (a.failCount || 1) >= 2
+                ? '  → ⚠️ 수동 확인 필요'
+                : '  → 다음 사이클에 자동 재시도';
+        return `${icon} ${a.label}: ${a.detail}\n${restartLine}`;
       }),
     ];
 
     publishToMainBot({
       from_bot:    'dexter',
       event_type:  'system',
-      alert_level: 4,
+      alert_level: alertLevel,
       message:     lines.join('\n'),
       payload:     { quickcheck: true, issue_count: alerts.length },
     });

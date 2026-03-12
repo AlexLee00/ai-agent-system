@@ -21,7 +21,7 @@ const PATTERN_SKIP_LABELS = ['git 상태'];
 const SKIP_CHECK_NAMES = ['오류 패턴 분석'];
 
 /**
- * 체크 결과에서 error/warn 항목을 모두 저장
+ * 체크 결과에서 error/warn 항목을 모두 저장 (upsert — 같은 패턴은 카운트만 증가)
  */
 async function saveErrorItems(results) {
   try {
@@ -31,8 +31,13 @@ async function saveErrorItems(results) {
         if (item.status === 'error' || item.status === 'warn') {
           if (PATTERN_SKIP_LABELS.includes(item.label.trim())) continue;
           await pgPool.run(SCHEMA, `
-            INSERT INTO dexter_error_log (check_name, label, status, detail)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO dexter_error_log (check_name, label, status, detail, occurrence_count, first_seen, detected_at)
+            VALUES ($1, $2, $3, $4, 1, to_char(now(), 'YYYY-MM-DD HH24:MI:SS'), to_char(now(), 'YYYY-MM-DD HH24:MI:SS'))
+            ON CONFLICT (check_name, label) DO UPDATE SET
+              status           = EXCLUDED.status,
+              detail           = EXCLUDED.detail,
+              occurrence_count = dexter_error_log.occurrence_count + 1,
+              detected_at      = EXCLUDED.detected_at
           `, [r.name, item.label.trim(), item.status, item.detail || '']);
         }
       }
@@ -50,15 +55,14 @@ async function getPatterns(days = 7, minCount = 3) {
       SELECT
         check_name,
         label,
-        COUNT(*)         AS cnt,
-        MAX(detected_at) AS last_seen,
-        MAX(CASE status WHEN 'error' THEN 2 WHEN 'warn' THEN 1 ELSE 0 END) AS severity
+        occurrence_count             AS cnt,
+        detected_at                  AS last_seen,
+        CASE status WHEN 'error' THEN 2 WHEN 'warn' THEN 1 ELSE 0 END AS severity
       FROM dexter_error_log
       WHERE detected_at > $1
         AND status IN ('error', 'warn')
-      GROUP BY check_name, label
-      HAVING COUNT(*) >= $2
-      ORDER BY severity DESC, cnt DESC
+        AND occurrence_count >= $2
+      ORDER BY severity DESC, occurrence_count DESC
       LIMIT 20
     `, [cutoff, minCount]);
   } catch { return []; }
