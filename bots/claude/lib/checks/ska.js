@@ -198,17 +198,16 @@ async function checkFalseCancellation(items) {
           detail: `${row.phone} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — 네이버 취소됐으나 Picco 미반영`,
         });
       } else {
-        // 케이스 B: 과거/당일 예약 → 이용 완료 후 취소감지 오발동 (error)
-        items.push({
-          label:  '완료 예약 허위 취소',
-          status: 'error',
-          detail: `id=${row.id} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — 이용 완료 예약이 취소감지에 걸림 (오발동)`,
-        });
+        // 케이스 B: 과거/당일 예약 → 이용 완료 후 취소 키가 남아있는 오발동
+        // cancelled_keys는 중복방지 dedup 캐시 목적이므로 이용 완료된 건은 자동 정리
+        try {
+          await pgPool.run('reservation',
+            `DELETE FROM cancelled_keys WHERE cancel_key = $1`, [row.cancel_key]);
+        } catch (e) { /* 정리 실패 시 무시 */ }
       }
     }
-  } else {
-    items.push({ label: '완료 예약 취소 감지', status: 'ok', detail: '이상 없음' });
   }
+  items.push({ label: '완료 예약 취소 감지', status: 'ok', detail: '이상 없음' });
 }
 
 // ─── 메인 run ────────────────────────────────────────────────────

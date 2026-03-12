@@ -263,21 +263,7 @@ async function run() {
 
   // ── 전체 합산 ──
   try {
-    const totals = await pgPool.query('claude', `
-      SELECT provider, cost_usd
-      FROM billing_snapshots
-      WHERE date >= date_trunc('month', CURRENT_DATE)::date
-        AND date <= CURRENT_DATE
-        AND provider IN ('anthropic','openai')
-      ORDER BY date DESC
-    `);
-    // provider별 최신 값 합산 (날짜별 upsert이므로 SUM이 월간 누적)
-    const monthlyMap = {};
-    for (const row of totals) {
-      if (!monthlyMap[row.provider]) monthlyMap[row.provider] = 0;
-      monthlyMap[row.provider] += parseFloat(row.cost_usd || 0);
-    }
-    // 실제로는 date별 1행이므로 단순 합산
+    // provider별 최신 스냅샷만 합산 (API가 누적값을 반환하므로 SUM 금지)
     const monthlyRows = await pgPool.query('claude', `
       SELECT DISTINCT ON (provider) provider, cost_usd AS total
       FROM billing_snapshots
