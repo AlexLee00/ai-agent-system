@@ -10,7 +10,6 @@
  *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
  *       llama-3.1-8b-instant / llama-3.3-70b-versatile
  *       meta-llama/llama-4-scout-17b-16e-instruct (750 T/s)
- *       meta-llama/llama-4-maverick-17b-128e-instruct (1M ctx)
  *       moonshotai/kimi-k2-instruct (1T MoE, 256K ctx)
  *       qwen/qwen3-32b
  *       openai/gpt-oss-20b (OpenAI 오픈소스, Groq 경유)
@@ -291,7 +290,7 @@ async function testGemini(modelId, accessToken) {
     project: projectId,
     request: {
       contents: [{ role: 'user', parts: [{ text: TEST_PROMPT }] }],
-      generationConfig: { maxOutputTokens: 20 },
+      generationConfig: { maxOutputTokens: 200, thinkingConfig: { thinkingBudget: 0 } },
     },
   };
 

@@ -44,7 +44,7 @@ export default function Sidebar() {
       </Link>
 
       {/* 네비 */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
         {visibleItems.map(item => {
           const active = pathname.startsWith(item.href);
           const Icon   = item.icon;

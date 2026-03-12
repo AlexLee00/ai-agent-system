@@ -1438,6 +1438,10 @@ function parseJsonResponse(text) {
 | 2026-03-12 | **미추적 BTC 흡수·직접매수·USDT폴백 구현** — 미추적 BTC 흡수 (같은 심볼 BUY 신호) 외 4건 |
 | 2026-03-12 | **루나팀 BTC 자본 인식 대공사** — capital-manager: getUntrackedBtcUsd() 헬퍼 추가 외 7건 |
 | 2026-03-12 | **report.js absorb/liquidate 사이드 알림 포맷 추가** — notifyTrade absorb·liquidate·buy·sell 사이드 이모지 분기 외 1건 |
+| 2026-03-12 | **워커팀 웹 UI 모바일 버그 수정** — 모바일 메뉴바 닫힘(setCanvasLocked ReferenceError 제거) 외 5건 |
+| 2026-03-12 | **워커팀 웹 UI 모바일 버그 수정 완료** — setCanvasLocked ReferenceError 제거 외 4건 |
+<!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정-완료 -->
+<!-- session-close:2026-03-12:워커팀-웹-ui-모바일-버그-수정 -->
 <!-- session-close:2026-03-12:reportjs-absorbliquidate-사이드-알 -->
 <!-- session-close:2026-03-12:루나팀-btc-자본-인식-대공사 -->
 <!-- session-close:2026-03-12:미추적-btc-흡수직접매수usdt폴백-구현 -->

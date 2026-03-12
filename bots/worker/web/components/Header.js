@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from './Sidebar';
@@ -7,6 +7,12 @@ import Sidebar from './Sidebar';
 export default function Header({ title }) {
   const { user } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // 드로어 열릴 때 body 스크롤 차단
+  useEffect(() => {
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen]);
 
   return (
     <>
@@ -33,8 +39,8 @@ export default function Header({ title }) {
       {/* 드로어 */}
       {drawerOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 bg-white shadow-xl flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
+          <div className="w-64 bg-white shadow-xl flex flex-col h-full">
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <span className="font-bold">메뉴</span>
               <button
                 onClick={() => setDrawerOpen(false)}
@@ -43,7 +49,9 @@ export default function Header({ title }) {
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            <Sidebar />
+            <div className="flex-1 min-h-0" onClick={() => setDrawerOpen(false)}>
+              <Sidebar />
+            </div>
           </div>
           <div
             className="flex-1 bg-black/40"

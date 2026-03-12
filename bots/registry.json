@@ -115,11 +115,9 @@
       "status": "ops",
       "contextPath": "bots/reservation/context",
       "model": {
-        "primary": "google-gemini-cli/gemini-2.5-flash",
+        "primary": "groq/llama-4-scout-17b-16e-instruct",
         "fallbacks": [
-          "google-gemini-cli/gemini-3-pro-preview",
-          "anthropic/claude-haiku-4-5",
-          "ollama/qwen2.5:7b"
+          "openai/gpt-4o-mini"
         ]
       },
       "deployTargets": [
@@ -167,8 +165,10 @@
       "contextPath": "bots/ska/context",
       "runtime": "python3.12",
       "model": {
-        "primary": "anthropic/claude-sonnet-4-6",
-        "fallbacks": []
+        "primary": "groq/llama-4-scout-17b-16e-instruct",
+        "fallbacks": [
+          "openai/gpt-4o-mini"
+        ]
       },
       "deployTargets": [],
       "ops": {

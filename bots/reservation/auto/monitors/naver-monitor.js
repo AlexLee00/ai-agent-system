@@ -1404,9 +1404,17 @@ async function monitorBookings() {
             // ⚠️ hitScanLimit이면 스캔 범위 밖의 예약이 있을 수 있음 → stale 처리 스킵
             if (futureList.length > 0 && !hitScanLimit) {
               const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
+              // ✅ OBSERVE_ONLY 필터 (취소감지1/2/2E와 동일 기준)
+              const _d4ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
+              const _d4ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
               if (staleItems.length > 0) {
                 log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 더블체크 진행`);
                 for (const stale of staleItems) {
+                  // ✅ OBSERVE_ONLY: 화이트리스트 번호만 취소 처리
+                  if (_d4ObserveOnly && !_d4ObservePhones.includes(String(stale.phone_raw || ''))) {
+                    log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} — OBSERVE_ONLY 필터 (화이트리스트 외) → 스킵`);
+                    continue;
+                  }
                   // ✅ booking_key가 숫자 ID이면 cancelid| 키 사용 (슬롯 재예약 충돌 방지)
                   const cancelKey = /^\d+$/.test(String(stale.booking_key))
                     ? `cancelid|${stale.booking_key}`
@@ -1427,12 +1435,13 @@ async function monitorBookings() {
                     const STALE_MIN_ELAPSED_MS = 10 * 60 * 1000;  // 최소 10분
                     const STALE_EXPIRE_MS      = 30 * 60 * 1000;  // 30분 미감지 시 만료
                     const booking = {
-                      phoneRaw: stale.phone_raw,
-                      phone:    stale.phone_raw,
-                      date:     stale.date,
-                      start:    stale.start_time,
-                      end:      stale.end_time,
-                      room:     stale.room || '',
+                      phoneRaw:  stale.phone_raw,
+                      phone:     stale.phone_raw,
+                      date:      stale.date,
+                      start:     stale.start_time,
+                      end:       stale.end_time,
+                      room:      stale.room || '',
+                      bookingId: /^\d+$/.test(String(stale.booking_key)) ? stale.booking_key : null,
                     };
                     if (pendingCancelMap.has(cancelKey)) {
                       const pending = pendingCancelMap.get(cancelKey);
@@ -1979,6 +1988,10 @@ function runPickkoCancel(booking, cancelKey = null) {
       if (code === 0) {
         // ✅ 공통 중복 방지 키 저장 — 다른 감지기가 같은 예약을 재시도하지 못하게 차단
         await addCancelledKey(doneKey).catch(() => {});
+        // ✅ reservations.status → 'cancelled' 업데이트 (덱스터 오탐 방지)
+        if (booking.bookingId) {
+          await updateBookingState(String(booking.bookingId), booking, 'cancelled').catch(() => {});
+        }
         dailyStats.cancelled++;
         sendAlert({
           type: 'cancelled',

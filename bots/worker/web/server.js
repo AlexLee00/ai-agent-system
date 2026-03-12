@@ -16,14 +16,17 @@ const kst = require('../../../packages/core/lib/kst');
  */
 
 const path        = require('path');
+const http        = require('http');
+const { spawn }   = require('child_process');
 const express     = require('express');
 const helmet      = require('helmet');
 const cors        = require('cors');
 const rateLimit   = require('express-rate-limit');
 const { body, query, param, validationResult } = require('express-validator');
+const { WebSocketServer } = require('ws');
 
 const pgPool  = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
-const { hashPassword, verifyPassword, generateToken, validatePasswordPolicy } = require('../lib/auth');
+const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy } = require('../lib/auth');
 const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard');
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { recalcProgress } = require('../src/ryan');
@@ -101,7 +104,7 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false, // Next.js 호환
 }));
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:4000', 'http://localhost:4001'] }));
+app.use(cors({ origin: true, credentials: true })); // 모든 origin 허용 (내부 서버)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -1548,13 +1551,215 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
 });
 
+// ── Claude Code (SSE 스트리밍 + DB 동기화) ───────────────────────────
+const NODE_BIN         = '/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node';
+const CLAUDE_CLI       = '/Users/alexlee/.nvm/versions/node/v24.13.1/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+const CLAUDE_WORKDIR   = '/Users/alexlee/projects/ai-agent-system';
+const CLAUDE_SPAWN_LOG = '/Users/alexlee/.openclaw/workspace/logs/claude-code-spawns.jsonl';
+
+function logClaudeSpawn(event) {
+  try { require('fs').appendFileSync(CLAUDE_SPAWN_LOG, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n'); } catch {}
+}
+
+function spawnClaude(sessionId, message) {
+  const args = [CLAUDE_CLI, '-p', message, '--output-format', 'stream-json', '--dangerously-skip-permissions', '--verbose', '--strict-mcp-config'];
+  if (sessionId) args.push('--resume', sessionId);
+  const childEnv = { ...process.env };
+  delete childEnv.CLAUDECODE;
+  delete childEnv.ANTHROPIC_API_KEY;    // API Key 과금 방지 — Claude Code CLI는 OAuth 구독 사용
+  delete childEnv.ANTHROPIC_AUTH_TOKEN;
+  return spawn(NODE_BIN, args, { cwd: CLAUDE_WORKDIR, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+// DB 헬퍼
+async function dbUpsertSession(id, title) {
+  await pgPool.run('worker', `
+    INSERT INTO claude_code_sessions (id, title, started_at, last_at)
+    VALUES ($1, $2, NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET last_at = NOW(), title = COALESCE(EXCLUDED.title, claude_code_sessions.title)
+  `, [id, title]);
+}
+async function dbSaveMessage(sessionId, role, content, toolName, toolInput) {
+  await pgPool.run('worker', `
+    INSERT INTO claude_code_messages (session_id, role, content, tool_name, tool_input)
+    VALUES ($1, $2, $3, $4, $5)
+  `, [sessionId, role, content || null, toolName || null, toolInput ?? null]);
+}
+
+// 세션별 실행 중인 Claude 프로세스 추적 (동시 실행 방지)
+const activeClaudeProcs = new Map(); // sessionId -> { proc, pid, startedAt }
+
+// POST /api/claude/send — SSE 스트리밍
+app.post('/api/claude/send', requireAuth, async (req, res) => {
+  const { text, sessionId } = req.body || {};
+  if (!text?.trim()) return res.status(400).json({ error: '메시지가 필요합니다.' });
+
+  // 기존 세션에 실행 중인 프로세스가 있으면 거부
+  if (sessionId && activeClaudeProcs.has(sessionId)) {
+    const active = activeClaudeProcs.get(sessionId);
+    return res.status(409).json({
+      error: 'Claude가 아직 작업 중입니다. 완료 후 메시지를 보내주세요.',
+      pid: active.pid,
+      startedAt: active.startedAt,
+    });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const sseWrite = (obj) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(obj)}\n\n`); };
+
+  const title       = text.length > 50 ? text.slice(0, 50) + '…' : text;
+  let curSessionId  = sessionId || null;
+  let assistantBuf  = ''; // 스트리밍 중 assistant 텍스트 누적
+  let userSaved     = false;
+
+  const proc = spawnClaude(curSessionId, text.trim());
+  logClaudeSpawn({ type: 'spawn', pid: proc.pid, sessionId: curSessionId, textLen: text.trim().length });
+  console.log('[claude/sse] spawned pid:', proc.pid, 'text:', text.slice(0, 30));
+
+  // 신규 세션은 system 이벤트에서 session_id 확정 후 등록 — 기존 세션은 즉시 등록
+  if (curSessionId) activeClaudeProcs.set(curSessionId, { proc, pid: proc.pid, startedAt: new Date().toISOString() });
+
+  let buf = '';
+  proc.stdout.on('data', chunk => {
+    buf += chunk.toString();
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const event = JSON.parse(t);
+
+        if (event.type === 'system' && event.session_id) {
+          curSessionId = event.session_id;
+          // 신규 세션 ID 확정 → Map 등록 (기존 세션은 이미 등록됨)
+          if (!activeClaudeProcs.has(curSessionId)) {
+            activeClaudeProcs.set(curSessionId, { proc, pid: proc.pid, startedAt: new Date().toISOString() });
+          }
+          // 세션 DB upsert + 유저 메시지 저장 (session_id 확정 후)
+          dbUpsertSession(curSessionId, title).catch(() => {});
+          if (!userSaved) {
+            userSaved = true;
+            dbSaveMessage(curSessionId, 'user', text.trim()).catch(() => {});
+          }
+        }
+
+        if (event.type === 'assistant') {
+          const content = event.message?.content || [];
+          for (const part of content) {
+            if (part.type === 'text' && part.text) {
+              assistantBuf += part.text;
+            } else if (part.type === 'tool_use') {
+              // tool_use는 즉시 저장
+              if (curSessionId) {
+                dbSaveMessage(curSessionId, 'tool', null, part.name, part.input).catch(() => {});
+              }
+            }
+          }
+        }
+
+        sseWrite({ type: 'event', event, sessionId: curSessionId });
+      } catch {}
+    }
+  });
+
+  proc.stderr.on('data', chunk => {
+    console.error('[claude/sse] stderr:', chunk.toString().slice(0, 200));
+  });
+
+  proc.on('close', async code => {
+    console.log('[claude/sse] closed, code:', code, 'sessionId:', curSessionId);
+    // 프로세스 추적 Map에서 제거
+    if (curSessionId) activeClaudeProcs.delete(curSessionId);
+
+    if (buf.trim()) { try { sseWrite({ type: 'event', event: JSON.parse(buf), sessionId: curSessionId }); } catch {} }
+
+    // assistant 누적 텍스트 DB 저장
+    if (curSessionId && assistantBuf) {
+      await dbSaveMessage(curSessionId, 'assistant', assistantBuf).catch(() => {});
+      await pgPool.run('worker', `UPDATE claude_code_sessions SET last_at = NOW() WHERE id = $1`, [curSessionId]).catch(() => {});
+    }
+
+    sseWrite({ type: 'done', code, sessionId: curSessionId });
+    if (!res.writableEnded) res.end();
+  });
+});
+
+// GET /api/claude/sessions — DB에서 조회
+app.get('/api/claude/sessions', requireAuth, async (req, res) => {
+  try {
+    const rows = await pgPool.query('worker', `
+      SELECT id, title,
+        to_char(started_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "startedAt",
+        to_char(last_at    AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "lastAt"
+      FROM claude_code_sessions
+      ORDER BY last_at DESC
+      LIMIT 100
+    `);
+    res.json({ sessions: rows });
+  } catch (e) {
+    res.json({ sessions: [] });
+  }
+});
+
+// GET /api/claude/sessions/:id/messages — 메시지 목록 (디바이스 동기화)
+app.get('/api/claude/sessions/:id/messages', requireAuth, async (req, res) => {
+  try {
+    const rows = await pgPool.query('worker', `
+      SELECT id, role, content, tool_name AS "toolName", tool_input AS "toolInput",
+        to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS "createdAt"
+      FROM claude_code_messages
+      WHERE session_id = $1
+      ORDER BY created_at ASC
+    `, [req.params.id]);
+    // 프론트엔드 형식으로 변환
+    const messages = rows.map(r => {
+      const time = r.createdAt ? (() => {
+        const d = new Date(r.createdAt.replace(' ', 'T') + '+09:00');
+        return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+      })() : null;
+      if (r.role === 'tool') return { role: 'tool', name: r.toolName, input: r.toolInput };
+      return { role: r.role, text: r.content || '', time };
+    });
+    res.json({ messages });
+  } catch (e) {
+    res.status(500).json({ messages: [] });
+  }
+});
+
+// DELETE /api/claude/sessions/:id
+app.delete('/api/claude/sessions/:id', requireAuth, async (req, res) => {
+  try {
+    // 실행 중인 Claude 프로세스 강제 종료
+    const active = activeClaudeProcs.get(req.params.id);
+    if (active) {
+      try { active.proc.kill(); } catch {}
+      activeClaudeProcs.delete(req.params.id);
+    }
+    await pgPool.run('worker', `DELETE FROM claude_code_sessions WHERE id = $1`, [req.params.id]);
+    const rows = await pgPool.query('worker', `
+      SELECT id, title,
+        to_char(last_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "lastAt"
+      FROM claude_code_sessions ORDER BY last_at DESC LIMIT 100
+    `);
+    res.json({ ok: true, sessions: rows });
+  } catch (e) {
+    res.json({ ok: true, sessions: [] });
+  }
+});
+
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
 
-  app.listen(PORT, '127.0.0.1', () => {
-    console.log(`[worker/server] API 서버 기동 — http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[worker/server] API 서버 기동 — http://0.0.0.0:${PORT}`);
   });
 }
 
