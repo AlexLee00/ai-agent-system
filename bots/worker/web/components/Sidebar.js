@@ -38,9 +38,9 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* 로고 */}
-      <Link href="/dashboard" className="p-6 border-b block hover:bg-gray-50 transition-colors">
-        <h1 className="text-xl font-bold text-primary">💼 워커</h1>
-        <p className="text-xs text-gray-500 mt-1">업무관리 시스템</p>
+      <Link href="/dashboard" className="h-16 px-6 border-b flex flex-col justify-center hover:bg-gray-50 transition-colors">
+        <h1 className="text-base font-bold text-primary leading-tight">💼 워커</h1>
+        <p className="text-xs text-gray-500">업무관리 시스템</p>
       </Link>
 
       {/* 네비 */}

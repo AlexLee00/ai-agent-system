@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
@@ -24,6 +23,8 @@ export default function JournalsPage() {
   const [filterCat,  setFilterCat]  = useState('');
   const [search,     setSearch]     = useState('');
   const [modal,      setModal]      = useState(false);
+  const [viewModal,  setViewModal]  = useState(false);
+  const [viewItem,   setViewItem]   = useState(null);
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [editId,     setEditId]     = useState(null);
   const [saving,     setSaving]     = useState(false);
@@ -130,12 +131,13 @@ export default function JournalsPage() {
         {loading
           ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
           : <DataTable
+              pageSize={10}
               columns={columns}
               data={journals}
               emptyNode={emptyNode}
               actions={row => (
                 <div className="flex gap-2">
-                  <Link href={`/journals/${row.id}`} className="btn-secondary text-xs px-3 py-1.5">보기</Link>
+                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => { setViewItem(row); setViewModal(true); }}>보기</button>
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
                   <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
                 </div>
@@ -143,6 +145,38 @@ export default function JournalsPage() {
             />
         }
       </div>
+
+      {/* 보기 모달 */}
+      <Modal open={viewModal} onClose={() => setViewModal(false)} title="업무일지 상세">
+        {viewItem && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-gray-500 text-xs mb-1">날짜</p>
+                <p className="font-medium">{viewItem.date?.slice(0, 10) || '-'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs mb-1">분류</p>
+                <p className="font-medium">{catLabel(viewItem.category)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs mb-1">작성자</p>
+                <p className="font-medium">{viewItem.employee_name || '-'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-gray-500 text-xs mb-1">내용</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 leading-relaxed">
+                {viewItem.content}
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button className="btn-secondary flex-1" onClick={() => setViewModal(false)}>닫기</button>
+              <button className="btn-primary flex-1" onClick={() => { setViewModal(false); openEdit(viewItem); }}>수정</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={modal} onClose={() => setModal(false)} title={editId ? '업무일지 수정' : '업무일지 등록'}>
         <form onSubmit={handleSave} className="space-y-4">

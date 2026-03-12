@@ -10,7 +10,7 @@ const kst = require('../../../packages/core/lib/kst');
  *   N42. 캡션 + 해시태그 자동 생성 (gpt-4o-mini, OpenAI)
  *
  * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI Medium 폴백 유료
- * 산출물: insta_content.html (Safari 복붙) + insta_content.txt (메모앱) + meta JSON
+ * 산출물: insta_content.html (Safari 복붙) + 카드 이미지 PNG
  */
 
 const { callWithFallback }  = require('../../../packages/core/lib/llm-fallback');
@@ -206,7 +206,7 @@ async function createInstaContent(content, title, category, cardCount = 3) {
   const { caption, hashtags, cta, fullText } = await generateInstaCaption(content, title, category);
   console.log(`  캡션 완료 (해시태그 ${hashtags.length}개)`);
 
-  // 메타데이터 저장 (로컬 + 구글드라이브)
+  // 메타데이터 (반환 전용 — 파일 저장 없음)
   const meta = {
     title, category, slug, summaries, cards,
     caption, hashtags, cta, fullText,
@@ -214,10 +214,6 @@ async function createInstaContent(content, title, category, cardCount = 3) {
   };
 
   if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
-
-  // ── JSON (기존 호환 — 프로그래밍 참조용) ──
-  const metaFilename = `${slug}_insta-meta.json`;
-  fs.writeFileSync(path.join(INSTA_DIR, metaFilename), JSON.stringify(meta, null, 2));
 
   // ── HTML (아이폰 Safari — 이모지+서식 + 복사 버튼) ──
   const escHtml = s => String(s)
@@ -266,41 +262,11 @@ ${cards.map((c, i) => `<div class="card-info">카드 ${i + 1}: ${c.summary || ''
   const htmlFilename = `${slug}_insta.html`;
   fs.writeFileSync(path.join(INSTA_DIR, htmlFilename), htmlContent, 'utf8');
 
-  // ── TXT (아이폰 메모 앱 — 플레인 텍스트 복붙용) ──
-  const txtContent = [
-    `📸 ${title}`,
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    '📝 캡션',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    caption,
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    '#️⃣ 해시태그',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    hashtags.join(' '),
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    '📣 CTA',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    cta || '',
-    '',
-    '━━━━━━━━━━━━━━━━━━━━━',
-    `🖼️ 카드 ${cards.length}장`,
-    ...cards.map((c, i) => `  카드 ${i + 1}: ${c.summary || ''}`),
-    '',
-    `생성: ${new Date().toLocaleString('ko-KR')}`,
-  ].join('\n');
-  const txtFilename = `${slug}_insta.txt`;
-  fs.writeFileSync(path.join(INSTA_DIR, txtFilename), txtContent, 'utf8');
-
-  // ── 구글드라이브 동기화 (html + txt + json) ──
+  // ── 구글드라이브 동기화 (html + 이미지) ──
   try {
     if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
-    fs.writeFileSync(path.join(GDRIVE_DIR, metaFilename), JSON.stringify(meta, null, 2));
     fs.writeFileSync(path.join(GDRIVE_DIR, htmlFilename), htmlContent, 'utf8');
-    fs.writeFileSync(path.join(GDRIVE_DIR, txtFilename), txtContent, 'utf8');
-    console.log(`  📱 [스타] 구글드라이브 동기화: html + txt + json`);
+    console.log(`  📱 [스타] 구글드라이브 동기화: html + 이미지 ${cards.length}장`);
   } catch (e) {
     console.warn(`  ⚠️ [스타] 구글드라이브 복사 실패: ${e.message}`);
   }

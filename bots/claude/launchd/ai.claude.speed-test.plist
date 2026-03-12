@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.claude.speed-test</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/daily-llm-check.sh</string>
+  </array>
+
+  <!-- 09:30 KST (무료 API 리셋 00:00 UTC = 09:00 KST 이후 30분) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/speed-test.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/speed-test.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

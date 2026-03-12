@@ -1,9 +1,58 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth-context';
 import DataTable from '@/components/DataTable';
 import { parseClaudeOutput, DynamicCanvas, CANVAS_LABELS } from './canvas';
+
+// ── 복사 버튼 ─────────────────────────────────────────────────────
+function CopyButton({ text, className = '' }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    const str = text || '';
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(str).then(done).catch(() => fallback(str, done));
+    } else {
+      fallback(str, done);
+    }
+  };
+  const fallback = (str, done) => {
+    const el = document.createElement('textarea');
+    el.value = str;
+    el.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(el);
+    el.focus(); el.select();
+    try { document.execCommand('copy'); done(); } catch {}
+    document.body.removeChild(el);
+  };
+  return (
+    <>
+      {copied && (
+        <div
+          className="fixed bottom-6 left-1/2 z-50 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl pointer-events-none"
+          style={{ transform: 'translateX(-50%)', animation: 'toastIn .18s ease' }}>
+          클립보드에 복사되었습니다.
+        </div>
+      )}
+      <button
+        onClick={handleCopy}
+        onTouchStart={() => {}}
+        title="복사"
+        className={`text-gray-400 hover:text-gray-600 active:text-gray-600 touch-manipulation transition-colors ${className}`}>
+        {copied
+          ? <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeLinejoin="round" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+        }
+      </button>
+    </>
+  );
+}
 
 // ── 마크다운 렌더러 ────────────────────────────────────────────────────
 function MarkdownRenderer({ text }) {
@@ -32,9 +81,10 @@ function MarkdownRenderer({ text }) {
         if (seg.type === 'code_block') {
           return (
             <div key={si} className="rounded-lg overflow-hidden border border-gray-100">
-              {seg.lang && (
-                <div className="px-3 py-1 bg-gray-100 text-[10px] text-gray-500 font-mono border-b border-gray-100">{seg.lang}</div>
-              )}
+              <div className="flex items-center justify-between px-3 py-1 bg-gray-100 border-b border-gray-100">
+                <span className="text-[10px] text-gray-500 font-mono">{seg.lang || ' '}</span>
+                <CopyButton text={seg.content} />
+              </div>
               <pre className="px-4 py-3 bg-gray-950 text-gray-200 text-xs font-mono overflow-x-auto leading-relaxed">
                 <code>{seg.content}</code>
               </pre>
@@ -219,11 +269,18 @@ function ClaudeCodeChat() {
   const [error,         setError]         = useState('');
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
+  const [attachedFiles,  setAttachedFiles]  = useState([]);  // 첨부 파일 목록
+  const [isUploading,    setIsUploading]    = useState(false);
+  const [showScrollBtn,  setShowScrollBtn]  = useState(false);
+
   const chatEndRef            = useRef(null);
+  const chatScrollRef         = useRef(null);  // 메시지 스크롤 컨테이너
   const abortRef              = useRef(null);
   const activeSessionRef      = useRef(activeSession);
   const textareaRef           = useRef(null);
+  const fileInputRef          = useRef(null);
   const assistantStreamRef    = useRef('');  // 스트리밍 중 assistant 텍스트 누적
+  const isSendingRef          = useRef(false); // 중복 전송 방지 + loadMessages 경쟁 조건 방지
 
   // activeSession 변경 시 ref + localStorage 동기화
   useEffect(() => {
@@ -239,7 +296,50 @@ function ClaudeCodeChat() {
     }
   }, [messages]);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  const prevMsgLenRef = useRef(0);
+  const scrollRAFRef  = useRef(null);
+
+  // 새 메시지 추가 시 → paint 전 즉시 보정 (엔터 점프 방지)
+  useLayoutEffect(() => {
+    if (messages.length === prevMsgLenRef.current) return;
+    prevMsgLenRef.current = messages.length;
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  // 툴 칩 등 DOM 레이아웃 안정 후 추가 스크롤 (50ms 지연)
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const timer = setTimeout(() => {
+      const el = chatScrollRef.current;
+      if (!el) return;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+      if (isNearBottom) el.scrollTop = el.scrollHeight;
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [messages.length]);
+
+  // 스트리밍 중 → RAF 스로틀로 부드럽게 따라가기
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (!isNearBottom) return;
+    if (scrollRAFRef.current) cancelAnimationFrame(scrollRAFRef.current);
+    scrollRAFRef.current = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  }, [messages]);
+
+  // 스크롤 위치 감지 → 하단 이동 버튼 표시
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 150);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   const apiBase = () => `http://${window.location.hostname}:4000`;
 
@@ -252,7 +352,7 @@ function ClaudeCodeChat() {
     );
   }
 
-  // 서버에서 메시지 로드
+  // 서버에서 메시지 로드 (스트리밍 중엔 덮어쓰지 않음 — 경쟁 조건 방지)
   const loadMessages = useCallback(async (sessionId) => {
     if (!sessionId) { setMessages([]); return; }
     try {
@@ -261,7 +361,7 @@ function ClaudeCodeChat() {
       });
       const data = await res.json();
       if (Array.isArray(data.messages)) {
-        setMessages(applyParsing(data.messages));
+        setMessages(prev => isSendingRef.current ? prev : applyParsing(data.messages));
       }
     } catch {}
   }, []);
@@ -318,96 +418,119 @@ function ClaudeCodeChat() {
     if (sid) loadMessages(sid);
   }, []);
 
-  const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || isSending) return;
+  const handleSend = async (overrideText = null) => {
+    const baseText = overrideText !== null ? overrideText : inputText.trim();
+    if (!baseText || isSendingRef.current) return;  // ref로 동기 중복 전송 방지
+
+    // 파일 첨부 경로 삽입 (재시도 시엔 파일 미포함)
+    const sendFiles = overrideText !== null ? [] : attachedFiles;
+    const text = sendFiles.length > 0
+      ? `[첨부파일]\n${sendFiles.map(f => `- ${f.path} (${f.name})`).join('\n')}\n\n${baseText}`
+      : baseText;
 
     const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
     const userMsg = { role: 'user', text, time: now };
     setMessages(prev => [...prev, userMsg]);
-    setInputText('');
+    if (overrideText === null) {
+      setInputText('');
+      setAttachedFiles([]);
+    }
+    isSendingRef.current = true;
     setIsSending(true);
     setError('');
     assistantStreamRef.current = ''; // 새 전송 시 누적 초기화
 
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
+    // XHR 기반 SSE 스트리밍 (모바일 Chrome fetch ReadableStream 버퍼링 우회)
     try {
-      const res = await fetch(`${apiBase()}/api/claude/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ text, sessionId: activeSessionRef.current }),
-        signal: ctrl.signal,
-      });
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        abortRef.current = { abort: () => { xhr.abort(); } };
 
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || '서버 오류');
-      }
+        let sseBuf = '';
+        let consumed = 0;
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let sseBuffer = '';
+        function processChunk() {
+          const newText = xhr.responseText.slice(consumed);
+          consumed = xhr.responseText.length;
+          sseBuf += newText;
+          const lines = sseBuf.split('\n');
+          sseBuf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'event') {
+                const ev = data.event;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split('\n');
-        sseBuffer = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === 'event') {
-              const ev = data.event;
+                if (ev.type === 'system' && ev.session_id) {
+                  const sid = ev.session_id;
+                  setActiveSession(sid);
+                  activeSessionRef.current = sid;
+                }
 
-              if (ev.type === 'system' && ev.session_id) {
-                const sid = ev.session_id;
-                setActiveSession(sid);
-                activeSessionRef.current = sid;
-              }
-
-              if (ev.type === 'assistant') {
-                const content = ev.message?.content || [];
-                for (const part of content) {
-                  if (part.type === 'text' && part.text) {
-                    assistantStreamRef.current += part.text; // 누적
-                    setMessages(prev => {
-                      const last = prev[prev.length - 1];
-                      if (last?.role === 'assistant' && last.streaming) {
-                        return [...prev.slice(0, -1), { ...last, text: last.text + part.text }];
-                      }
-                      return [...prev, { role: 'assistant', text: part.text, streaming: true }];
-                    });
-                  } else if (part.type === 'tool_use') {
-                    setMessages(prev => [...prev, { role: 'tool', name: part.name, input: part.input }]);
+                if (ev.type === 'assistant') {
+                  const content = ev.message?.content || [];
+                  for (const part of content) {
+                    if (part.type === 'text' && part.text) {
+                      assistantStreamRef.current += part.text;
+                      setMessages(prev => {
+                        const last = prev[prev.length - 1];
+                        if (last?.role === 'assistant' && last.streaming) {
+                          return [...prev.slice(0, -1), { ...last, text: last.text + part.text }];
+                        }
+                        return [...prev, { role: 'assistant', text: part.text, streaming: true }];
+                      });
+                    } else if (part.type === 'tool_use') {
+                      setMessages(prev => [...prev, { role: 'tool', name: part.name, input: part.input }]);
+                    }
                   }
                 }
-              }
 
-              if (ev.type === 'result') {
-                // 스트리밍 완료 → 파싱 후 ui_component 설정
-                const component = parseClaudeOutput(assistantStreamRef.current);
-                const doneTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
-                assistantStreamRef.current = '';
-                setMessages(prev => {
-                  if (!prev.length) return prev;
-                  const last = prev[prev.length - 1];
-                  if (last?.role !== 'assistant') return prev;
-                  return [...prev.slice(0, -1), { ...last, streaming: false, ui_component: component || null, time: doneTime }];
-                });
+                if (ev.type === 'result') {
+                  const component = parseClaudeOutput(assistantStreamRef.current);
+                  const doneTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+                  assistantStreamRef.current = '';
+                  setMessages(prev => {
+                    const idx = [...prev].map((m, i) => ({ m, i })).reverse().find(({ m }) => m.role === 'assistant')?.i ?? -1;
+                    if (idx === -1) return prev;
+                    const updated = { ...prev[idx], streaming: false, ui_component: component || null, time: doneTime };
+                    return [...prev.slice(0, idx), updated, ...prev.slice(idx + 1)];
+                  });
+                }
+              } else if (data.type === 'done') {
+                loadSessions().catch(() => {});
               }
-            } else if (data.type === 'done') {
-              await loadSessions();
-            }
-          } catch {}
+            } catch {}
+          }
         }
-      }
+
+        xhr.open('POST', `${apiBase()}/api/claude/send`, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Authorization', `Bearer ${getToken()}`);
+
+        xhr.onprogress = () => {
+          if (xhr.status === 200) processChunk();
+        };
+
+        xhr.onload = () => {
+          if (xhr.status !== 200) {
+            try { reject(new Error(JSON.parse(xhr.responseText).error || '서버 오류')); }
+            catch { reject(new Error('서버 오류')); }
+            return;
+          }
+          processChunk(); // 마지막 잔여 데이터 flush
+          resolve();
+        };
+
+        xhr.onerror = () => reject(new Error('서버 연결 오류'));
+        xhr.onabort = () => reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
+
+        xhr.send(JSON.stringify({ text, sessionId: activeSessionRef.current }));
+      });
     } catch (e) {
       if (e.name !== 'AbortError') setError(e.message);
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   };
@@ -416,7 +539,7 @@ function ClaudeCodeChat() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const handleStop = () => { abortRef.current?.abort(); setIsSending(false); };
+  const handleStop = () => { abortRef.current?.abort(); isSendingRef.current = false; setIsSending(false); };
 
   const handleNewSession = () => {
     setActiveSession(null);
@@ -463,6 +586,39 @@ function ClaudeCodeChat() {
         method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
       });
     } catch {}
+  };
+
+  const handleFileAttach = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setIsUploading(true);
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch(`${apiBase()}/api/claude/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.ok) setAttachedFiles(prev => [...prev, { name: data.name, path: data.path }]);
+      } catch {}
+    }
+    setIsUploading(false);
+    e.target.value = '';
+  };
+
+  const handleRegenerate = () => {
+    if (isSending) return;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUserIdx = i; break; }
+    }
+    if (lastUserIdx === -1) return;
+    const lastUserText = messages[lastUserIdx].text;
+    setMessages(prev => prev.slice(0, lastUserIdx)); // 마지막 유저 메시지 포함 이후 전부 제거
+    handleSend(lastUserText);
   };
 
   const currentTitle = sessions.find(s => s.id === activeSession)?.title || null;
@@ -597,7 +753,20 @@ function ClaudeCodeChat() {
         </div>
 
         {/* 메시지 목록 */}
-        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0" style={{ background: '#fafafa', touchAction: 'pan-y' }}>
+        <div className="flex-1 relative min-h-0">
+        {showScrollBtn && (
+          <button
+            onTouchStart={() => {}}
+            onClick={() => { const el = chatScrollRef.current; if (el) el.scrollTop = el.scrollHeight; }}
+            className="absolute bottom-3 left-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-full shadow-md text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 touch-manipulation transition-colors"
+            style={{ transform: 'translateX(-50%)' }}>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            아래로
+          </button>
+        )}
+        <div ref={chatScrollRef} className="h-full overflow-y-auto overscroll-contain" style={{ background: '#fafafa', touchAction: 'pan-y' }}>
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center px-6 py-12">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-5 shadow-lg">
@@ -627,25 +796,42 @@ function ClaudeCodeChat() {
                 let i = 0;
                 while (i < messages.length) {
                   if (messages[i].role === 'tool') {
+                    const startIdx = i;
                     const tools = [];
                     while (i < messages.length && messages[i].role === 'tool') tools.push(messages[i++]);
-                    groups.push({ type: 'tools', tools, key: `t${i}` });
+                    groups.push({ type: 'tools', tools, key: `t${startIdx}` });
                   } else {
                     groups.push({ type: 'msg', msg: messages[i], key: i });
                     i++;
                   }
                 }
-                return groups.map(g => {
-                  if (g.type === 'tools') return (
+                // 마지막 assistant 그룹 인덱스 (재시도 버튼 표시용)
+                let lastAssistantIdx = -1;
+                for (let j = groups.length - 1; j >= 0; j--) {
+                  if (groups[j].type === 'msg' && groups[j].msg.role === 'assistant') { lastAssistantIdx = j; break; }
+                }
+                return groups.map((g, gi) => {
+                  if (g.type === 'tools') {
+                    const isActive = isSending && gi === groups.length - 1;
+                    return (
                     <div key={g.key} className="pl-9">
                       {/* 1단계: 전체 그룹 */}
                       <details className="group/outer w-fit max-w-[90%]">
-                        <summary className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 hover:bg-gray-200 cursor-pointer text-[11px] text-gray-500 font-medium select-none transition-colors list-none">
-                          <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3" />
-                          </svg>
+                        <summary className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full cursor-pointer text-[11px] font-medium select-none transition-colors list-none ${
+                          isActive ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}>
+                          {isActive ? (
+                            <svg className="w-3 h-3 text-blue-400 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                              <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3" />
+                            </svg>
+                          )}
                           {g.tools.length === 1 ? g.tools[0].name : `${g.tools.length}개 작업 수행`}
-                          <svg className="w-2.5 h-2.5 text-gray-400 group-open/outer:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <svg className={`w-2.5 h-2.5 group-open/outer:rotate-180 transition-transform ${isActive ? 'text-blue-300' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                           </svg>
                         </summary>
@@ -654,7 +840,7 @@ function ClaudeCodeChat() {
                           {g.tools.map((t, ti) => (
                             <details key={ti} className="group/inner">
                               <summary className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md hover:bg-gray-100 cursor-pointer text-[11px] text-gray-400 select-none transition-colors list-none">
-                                <span className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+                                <span className={`w-1 h-1 rounded-full flex-shrink-0 ${isActive && ti === g.tools.length - 1 ? 'bg-blue-400 animate-pulse' : 'bg-gray-300'}`} />
                                 {t.name}
                                 <svg className="w-2 h-2 text-gray-300 group-open/inner:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -668,7 +854,7 @@ function ClaudeCodeChat() {
                         </div>
                       </details>
                     </div>
-                  );
+                  );};
 
                   const msg = g.msg;
                   if (msg.role === 'user') return (
@@ -677,13 +863,16 @@ function ClaudeCodeChat() {
                         <div className="bg-indigo-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 text-sm whitespace-pre-wrap break-words leading-relaxed">
                           {msg.text}
                         </div>
-                        {msg.time && <p className="text-[10px] text-gray-400 text-right mt-0.5 pr-0.5">{msg.time}</p>}
+                        <div className="flex items-center justify-end gap-2 mt-0.5 pr-0.5">
+                          {msg.time && <span className="text-xs text-gray-400">{msg.time}</span>}
+                          <CopyButton text={msg.text} />
+                        </div>
                       </div>
                     </div>
                   );
 
                 return (
-                  <div key={i} className="flex flex-col gap-2">
+                  <div key={g.key} className="flex flex-col gap-2">
                     <div className="flex justify-start gap-3">
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
                         <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -698,10 +887,11 @@ function ClaudeCodeChat() {
                             : <MarkdownRenderer text={msg.text} />
                           }
                           {msg.streaming && (
-                            <span className="inline-flex gap-0.5 ml-1 align-middle">
-                              <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            <span className="inline-flex items-center gap-[3px] ml-1.5 align-middle" style={{ height: '14px' }}>
+                              {[0, 0.18, 0.36, 0.18].map((d, i) => (
+                                <span key={i} className="w-[3px] h-3 bg-primary rounded-full origin-center"
+                                  style={{ animation: `thinking 1s ease-in-out infinite`, animationDelay: `${d}s` }} />
+                              ))}
                             </span>
                           )}
                         </div>
@@ -716,8 +906,19 @@ function ClaudeCodeChat() {
                         <DynamicCanvas component={msg.ui_component} onAction={handleCanvasAction} />
                       </div>
                     )}
-                    {msg.time && !msg.streaming && (
-                      <p className="text-[10px] text-gray-400 ml-10 mt-0.5">{msg.time}</p>
+                    {!msg.streaming && (
+                      <div className="flex items-center gap-3 ml-10 mt-0.5">
+                        {msg.time && <span className="text-xs text-gray-400">{msg.time}</span>}
+                        <CopyButton text={msg.text} />
+                        {gi === lastAssistantIdx && (
+                          <button
+                            onTouchStart={() => {}}
+                            onClick={handleRegenerate}
+                            className="text-xs text-gray-400 hover:text-gray-600 active:text-gray-600 touch-manipulation transition-colors">
+                            ↺ 재시도
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -727,6 +928,7 @@ function ClaudeCodeChat() {
               <div ref={chatEndRef} />
             </div>
           )}
+        </div>
         </div>
 
         {error && (
@@ -740,12 +942,40 @@ function ClaudeCodeChat() {
 
         {/* 입력 영역 */}
         <div className="px-4 py-3 bg-white border-t border-gray-100 flex-shrink-0">
+          {/* 첨부 파일 칩 */}
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {attachedFiles.map((f, i) => (
+                <span key={i} className="flex items-center gap-1 text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5 max-w-[180px]">
+                  <span className="truncate">📎 {f.name}</span>
+                  <button
+                    onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
+                    className="text-indigo-400 hover:text-indigo-600 flex-shrink-0 ml-0.5 leading-none">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileAttach} />
           <div className={`flex items-end gap-2 bg-gray-50 border rounded-2xl px-3 py-2 transition-colors ${
             isSending ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200 focus-within:border-gray-300 focus-within:bg-white'
           }`}>
+            {/* 파일 첨부 버튼 */}
+            <button
+              type="button"
+              onTouchStart={() => {}}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending || isUploading}
+              className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 active:text-gray-600 touch-manipulation transition-colors disabled:opacity-30 mb-0.5">
+              {isUploading
+                ? <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+              }
+            </button>
             <textarea
               ref={textareaRef}
-              className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none min-h-[36px] max-h-36 py-1 leading-relaxed"
+              className="flex-1 resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none max-h-36 py-2 leading-normal"
               rows={1}
               value={inputText}
               onChange={e => setInputText(e.target.value)}

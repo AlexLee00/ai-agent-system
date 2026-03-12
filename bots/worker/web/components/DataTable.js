@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 
 /**
  * 반응형 데이터 테이블
@@ -10,8 +11,11 @@
  *   actions?:  (row) => ReactNode
  *   emptyText?: string
  *   emptyNode?: ReactNode  — 커스텀 빈 상태 (CTA 포함 가능)
+ *   pageSize?:  number     — 페이지당 행 수 (기본값 없음 = 전체)
  */
-export default function DataTable({ columns, data, actions, emptyText = '데이터 없음', emptyNode }) {
+export default function DataTable({ columns, data, actions, emptyText = '데이터 없음', emptyNode, pageSize }) {
+  const [page, setPage] = useState(1);
+
   if (!data?.length) {
     if (emptyNode) return emptyNode;
     return (
@@ -21,6 +25,9 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
       </div>
     );
   }
+
+  const totalPages = pageSize ? Math.ceil(data.length / pageSize) : 1;
+  const paged = pageSize ? data.slice((page - 1) * pageSize, page * pageSize) : data;
 
   return (
     <>
@@ -38,7 +45,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
             </tr>
           </thead>
           <tbody>
-            {data.map((row, i) => (
+            {paged.map((row, i) => (
               <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
                 {columns.map(col => (
                   <td key={col.key} className="py-3 px-4 text-gray-700">
@@ -58,7 +65,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
 
       {/* 모바일 카드 */}
       <div className="md:hidden space-y-3">
-        {data.map((row, i) => (
+        {paged.map((row, i) => (
           <div key={i} className="card">
             {columns.map(col => (
               <div key={col.key} className="flex justify-between py-1.5 border-b last:border-0">
@@ -76,6 +83,49 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
           </div>
         ))}
       </div>
+
+      {/* 페이지네이션 */}
+      {pageSize && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4">
+          <p className="text-sm text-gray-500 text-center sm:text-left">
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, data.length)} / 총 {data.length}건
+          </p>
+          <div className="flex items-center justify-center gap-1">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="w-8 h-8 rounded flex items-center justify-center text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+            >«</button>
+            <button
+              onClick={() => setPage(p => p - 1)}
+              disabled={page === 1}
+              className="w-8 h-8 rounded flex items-center justify-center text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+            >‹</button>
+            {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+              const start = Math.max(1, Math.min(page - 1, totalPages - 2));
+              const p = start + i;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 rounded flex items-center justify-center text-sm font-medium
+                    ${p === page ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                >{p}</button>
+              );
+            })}
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={page === totalPages}
+              className="w-8 h-8 rounded flex items-center justify-center text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+            >›</button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              className="w-8 h-8 rounded flex items-center justify-center text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+            >»</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

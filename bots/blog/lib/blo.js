@@ -191,7 +191,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
     // ★ 강의 인스타 콘텐츠 (BLOG_INSTA_ENABLED=true 시)
     let instaContent = null;
-    if (process.env.BLOG_INSTA_ENABLED === 'true') {
+    if (process.env.BLOG_INSTA_ENABLED !== 'false') {
       instaContent = await createInstaContent(post.content, postTitle, 'Node.js강의').catch(e => {
         console.warn('[소셜] 강의 인스타 생성 실패 (무시):', e.message); return null;
       });
@@ -296,7 +296,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
 
     // ★ 소셜(SOCIAL) — 인스타 크로스 포스팅 (generalVariations.includeInsta 기반)
     let instaContent = null;
-    if (process.env.BLOG_INSTA_ENABLED === 'true') {
+    if (process.env.BLOG_INSTA_ENABLED !== 'false') {
       instaContent = await createInstaContent(post.content, genTitle, category).catch(e => {
         console.warn('[소셜] 인스타 생성 실패 (무시):', e.message); return null;
       });

@@ -16,7 +16,7 @@ export default function Header({ title }) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white border-b px-4 h-14 flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-white border-b px-4 h-16 flex items-center gap-3">
         {/* 햄버거 (모바일/태블릿) */}
         <button
           onClick={() => setDrawerOpen(true)}

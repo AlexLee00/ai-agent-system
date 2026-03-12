@@ -72,8 +72,6 @@ export default function DocumentsPage() {
         : v },
     { key: 'ai_summary', label: 'AI 요약',  render: v => v ? v.slice(0,40)+'...' : '-' },
     { key: 'created_at', label: '업로드일', render: v => v?.slice(0,10) || '-' },
-    { key: 'id', label: '', render: (v) =>
-        <button onClick={() => handleDelete(v)} className="text-xs text-red-500 hover:text-red-700">삭제</button> },
   ];
 
   return (
@@ -94,7 +92,11 @@ export default function DocumentsPage() {
       <div className="card">
         {loading
           ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
-          : <DataTable columns={columns} data={docs} emptyText="문서 없음" />
+          : <DataTable columns={columns} data={docs} pageSize={10} emptyText="문서 없음"
+              actions={row => (
+                <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+              )}
+            />
         }
       </div>
 

@@ -6,11 +6,7 @@
   <key>Label</key>
   <string>ai.investment.overseas</string>
 
-  <!-- Phase 3-B: 미국주식 — 장중 시간대만 30분 주기 -->
-  <!-- UTC 13:00~21:30 = KST 22:00~06:30 (DST: UTC 13:30~20:00 / 비DST: UTC 14:30~21:00) -->
-  <!-- 넓은 범위 적용, 내부 isKisOverseasMarketOpen()에서 정밀 체크 -->
-  <!-- 설치: cp bots/investment/launchd/ai.investment.overseas.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.overseas.plist -->
+  <!-- Phase 3-B: 미국주식 — NYSE 장중 KST 22:30~05:00 (서머타임, 로컬 시간 기준) -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
@@ -20,27 +16,23 @@
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 
-  <!-- UTC 13:00~21:30, 30분 간격 (내부 isKisOverseasMarketOpen 체크) -->
+  <!-- KST 22:30~05:00(서머타임 기준), 30분 간격 (내부 isKisOverseasMarketOpen 체크) -->
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
   </array>
 
   <key>StandardOutPath</key>
@@ -59,7 +51,6 @@
     <string>production</string>
     <key>PAPER_MODE</key>
     <string>false</string>
-    <!-- KIS 모의투자(kis.paper_trading=true) 활성화 — 사용자 승인 2026-03-05 -->
   </dict>
 
   <key>RunAtLoad</key>

@@ -103,6 +103,7 @@ export default function EmployeesPage() {
         {loading
           ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
           : <DataTable
+              pageSize={10}
               columns={columns}
               data={filtered}
               emptyNode={emptyNode}

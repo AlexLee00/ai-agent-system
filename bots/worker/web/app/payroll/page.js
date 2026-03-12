@@ -178,6 +178,7 @@ export default function PayrollPage() {
           <p className="text-center py-10 text-gray-400">로딩 중...</p>
         ) : (
           <DataTable
+              pageSize={10}
             columns={columns}
             data={rows}
             emptyText={`${yearMonth} 급여 데이터 없음 — 위 버튼으로 계산하세요`}

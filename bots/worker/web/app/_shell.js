@@ -48,7 +48,7 @@ export default function AppShell({ children }) {
       {/* 메인 영역 */}
       <div className="lg:pl-60">
         <Header />
-        <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-3.5rem)]">
+        <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-4rem)]">
           {children}
         </main>
       </div>

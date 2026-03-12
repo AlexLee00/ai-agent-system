@@ -6,9 +6,7 @@
   <key>Label</key>
   <string>ai.investment.domestic</string>
 
-  <!-- Phase 3-B: 국내주식 — 장중 시간대만 30분 주기 (KST 09:00~15:30 = UTC 00:00~06:30) -->
-  <!-- 설치: cp bots/investment/launchd/ai.investment.domestic.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.domestic.plist -->
+  <!-- Phase 3-B: 국내주식 — KOSPI 장중 KST 09:00~15:30 (로컬 시간 기준) -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
@@ -18,23 +16,23 @@
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 
-  <!-- KST 09:00~15:30 = UTC 00:00~06:30, 30분 간격 (내부 isKisMarketOpen 체크 + 주말 제외) -->
+  <!-- KST 09:00~15:30, 30분 간격 (내부 isKisMarketOpen 체크 + 주말 제외) -->
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
   </array>
 
   <key>StandardOutPath</key>
@@ -53,7 +51,7 @@
     <string>production</string>
     <key>PAPER_MODE</key>
     <string>false</string>
-    <!-- KIS 모의투자(kis.paper_trading=true) 활성화 — 사용자 승인 2026-03-05 -->
+    <!-- KIS 모의투자 API 사용 — PAPER_MODE=false 사용자 승인 2026-03-12 -->
   </dict>
 
   <key>RunAtLoad</key>
