@@ -1980,58 +1980,81 @@ function runPickkoCancel(booking, cancelKey = null) {
 
     log(`🗑️ 픽코 취소 실행: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
 
-    const child = spawn('node', args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.on('data', d => process.stdout.write(d.toString()));
-    child.stderr.on('data', d => process.stderr.write(d.toString()));
+    const onCancelSuccess = async (isRetry) => {
+      await addCancelledKey(doneKey).catch(() => {});
+      if (booking.bookingId) {
+        await updateBookingState(String(booking.bookingId), booking, 'cancelled').catch(() => {});
+      }
+      dailyStats.cancelled++;
+      sendAlert({
+        type: 'cancelled',
+        title: isRetry ? '🗑️ 픽코 예약 취소 완료! (재시도 성공)' : '🗑️ 픽코 예약 취소 완료!',
+        phone: booking.phone,
+        date: booking.date,
+        time: `${booking.start}~${booking.end}`,
+        room: booking.room,
+        action: isRetry ? '재시도 후 정상 취소 처리됨' : '정상 취소 처리됨',
+      });
+      ragSaveReservation(booking, isRetry ? '취소완료(재시도)' : '취소완료');
+    };
 
+    const onCancelFail = (code, firstCode) => {
+      const desc = firstCode != null
+        ? `고객:${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}룸 / 1차:${firstCode} 재시도:${code}`
+        : `고객:${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}룸 / exit code ${code}`;
+      sendAlert({
+        type: 'error',
+        title: firstCode != null ? '❌ 픽코 취소 실패 (재시도 포함)' : '❌ 픽코 취소 실패',
+        phone: booking.phone,
+        date: booking.date,
+        start: booking.start,
+        time: `${booking.start}~${booking.end}`,
+        room: booking.room,
+        reason: `exit code ${code}`,
+        action: '수동 취소 필요',
+      });
+      publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
+        `🚨 픽코 취소 실패 — 수동 처리 필요!\n\n` +
+        `📞 고객: ${booking.phone}\n` +
+        `📅 날짜: ${booking.date}\n` +
+        `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
+        `픽코에서 직접 취소해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
+      });
+      autoBugReport({
+        title: firstCode != null ? '픽코 자동 취소 실패 (재시도 포함)' : '픽코 자동 취소 실패',
+        desc,
+        severity: 'high',
+        category: 'reliability',
+      });
+    };
+
+    const spawnCancel = () => {
+      const child = spawn('node', args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout.on('data', d => process.stdout.write(d.toString()));
+      child.stderr.on('data', d => process.stderr.write(d.toString()));
+      return child;
+    };
+
+    const child = spawnCancel();
     child.on('close', async (code) => {
       if (code === 0) {
-        // ✅ 공통 중복 방지 키 저장 — 다른 감지기가 같은 예약을 재시도하지 못하게 차단
-        await addCancelledKey(doneKey).catch(() => {});
-        // ✅ reservations.status → 'cancelled' 업데이트 (덱스터 오탐 방지)
-        if (booking.bookingId) {
-          await updateBookingState(String(booking.bookingId), booking, 'cancelled').catch(() => {});
-        }
-        dailyStats.cancelled++;
-        sendAlert({
-          type: 'cancelled',
-          title: '🗑️ 픽코 예약 취소 완료!',
-          phone: booking.phone,
-          date: booking.date,
-          time: `${booking.start}~${booking.end}`,
-          room: booking.room,
-          action: '정상 취소 처리됨'
-        });
-        ragSaveReservation(booking, '취소완료');
-      } else {
-        sendAlert({
-          type: 'error',
-          title: '❌ 픽코 취소 실패',
-          phone: booking.phone,
-          date: booking.date,
-          start: booking.start,
-          time: `${booking.start}~${booking.end}`,
-          room: booking.room,
-          reason: `exit code ${code}`,
-          action: '수동 취소 필요'
-        });
-        // 즉시 수동 처리 요청
-        publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
-          `🚨 픽코 취소 실패 — 수동 처리 필요!\n\n` +
-          `📞 고객: ${booking.phone}\n` +
-          `📅 날짜: ${booking.date}\n` +
-          `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n\n` +
-          `픽코에서 직접 취소해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
-        });
-        // 자동 버그리포트 등록
-        autoBugReport({
-          title: '픽코 자동 취소 실패',
-          desc: `고객:${booking.phone} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}룸 / exit code ${code}`,
-          severity: 'high',
-          category: 'reliability',
-        });
+        await onCancelSuccess(false);
+        return resolve(0);
       }
-      resolve(code);
+      // 1회 재시도 (60초 후) — 픽코 사이트 일시적 지연/타임아웃 대응
+      log(`⚠️ 픽코 취소 실패 (exit ${code}) — 60초 후 1회 재시도: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
+      const firstCode = code;
+      setTimeout(() => {
+        const child2 = spawnCancel();
+        child2.on('close', async (code2) => {
+          if (code2 === 0) {
+            await onCancelSuccess(true);
+          } else {
+            onCancelFail(code2, firstCode);
+          }
+          resolve(code2);
+        });
+      }, 60000);
     });
   });
 }
