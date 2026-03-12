@@ -11,10 +11,14 @@ const path = require('path');
 const cfg  = require('../config');
 const kst  = require('../../../../packages/core/lib/kst');
 
-function npmAudit(botDir, label) {
+function npmAudit(botDir, label, workspace) {
+  const cmd = workspace
+    ? `npm audit --json --workspace=${workspace} 2>/dev/null`
+    : `npm audit --json 2>/dev/null`;
+  const env = { ...process.env, PATH: `/usr/local/bin:${process.env.PATH || ''}` };
   try {
-    const out = execSync(`npm audit --json 2>/dev/null`, {
-      cwd: botDir, encoding: 'utf8', timeout: 30000,
+    const out = execSync(cmd, {
+      cwd: botDir, encoding: 'utf8', timeout: 30000, env,
     });
     const report   = JSON.parse(out);
     const vulns    = report.metadata?.vulnerabilities || {};
@@ -102,13 +106,15 @@ async function _createPatchTicket(vulnerability) {
 async function run(full = false) {
   const items = [];
 
+  // 워크스페이스 모노레포 구조 — 루트에서 워크스페이스 단위로 audit
+  const ROOT = path.join(__dirname, '../../../../');
   const BOTS = [
-    { dir: cfg.BOTS.reservation, label: 'npm audit (스카팀)' },
-    { dir: cfg.BOTS.investment,  label: 'npm audit (루나팀)' },
+    { dir: ROOT, label: 'npm audit (스카팀)',  workspace: '@ai-agent/reservation' },
+    { dir: ROOT, label: 'npm audit (루나팀)',  workspace: '@ai-agent/investment'  },
   ];
 
-  for (const { dir, label } of BOTS) {
-    const result = npmAudit(dir, label);
+  for (const { dir, label, workspace } of BOTS) {
+    const result = npmAudit(dir, label, workspace);
     items.push(result);
     // critical/high 취약점 → 패치 티켓 자동 생성
     if (result.status === 'error' || result.status === 'warn') {
