@@ -12,6 +12,7 @@
  */
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const kst    = require('../../../../packages/core/lib/kst');
 const SCHEMA = 'reservation';
 
 // ── 체크 1: DB 연결 확인 ──────────────────────────────────────────
@@ -187,7 +188,7 @@ async function checkFalseCancellation(items) {
   }
 
   if (rows && rows.length > 0) {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const today = kst.today();
     for (const row of rows) {
       if (row.date > today) {
         // 케이스 A: 미래 예약 → 네이버 취소됐으나 Picco 취소 실패 (warn)

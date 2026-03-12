@@ -24,8 +24,23 @@ trap "rm -f '$LOCK_FILE'" EXIT
 
 echo "[$(date)] ▶ today-audit 시작" >> "$LOG_FILE"
 
-MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-kiosk-monitor.js" --audit-today >> "$LOG_FILE" 2>&1
-EXIT_CODE=$?
+# 네트워크 오류 시 최대 3회 재시도 (10분 간격)
+MAX_RETRY=3
+RETRY_WAIT=600  # 10분
+EXIT_CODE=1
+
+for attempt in $(seq 1 $MAX_RETRY); do
+  if [ $attempt -gt 1 ]; then
+    echo "[$(date)] 🔄 today-audit 재시도 ${attempt}/${MAX_RETRY} (${RETRY_WAIT}초 대기 후)" >> "$LOG_FILE"
+    sleep $RETRY_WAIT
+  fi
+  MODE=ops TELEGRAM_ENABLED=1 "$NODE" "$SCRIPT_DIR/pickko-kiosk-monitor.js" --audit-today >> "$LOG_FILE" 2>&1
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 0 ]; then
+    break
+  fi
+  echo "[$(date)] ⚠️ today-audit 실패 (exit: $EXIT_CODE, 시도: ${attempt}/${MAX_RETRY})" >> "$LOG_FILE"
+done
 
 echo "[$(date)] ⏹ today-audit 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"
 

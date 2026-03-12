@@ -197,7 +197,19 @@ async function run() {
     const parsed  = parseAnthropicCost(raw);
 
     if (parsed.error) {
-      items.push({ label: 'Anthropic 빌링 API', status: 'warn', detail: `API 오류: ${parsed.error}` });
+      // API 오류 시 DB 최근 스냅샷으로 폴백
+      const cached = await pgPool.query('claude',
+        `SELECT cost_usd, created_at FROM billing_snapshots
+         WHERE provider='anthropic' ORDER BY date DESC LIMIT 1`
+      ).catch(() => []);
+      if (cached?.[0]) {
+        const ageH = (Date.now() - new Date(cached[0].created_at).getTime()) / 3600000;
+        const st   = ageH < 24 ? 'ok' : 'warn';
+        items.push({ label: 'Anthropic 월간 비용', status: st,
+          detail: `$${Number(cached[0].cost_usd).toFixed(3)} (캐시 ${Math.round(ageH)}h 전, API 오류: ${parsed.error})` });
+      } else {
+        items.push({ label: 'Anthropic 빌링 API', status: 'warn', detail: `API 오류: ${parsed.error}` });
+      }
     } else {
       await saveBillingSnapshot('anthropic', parsed.cost, raw);
       items.push({
@@ -220,7 +232,19 @@ async function run() {
     const parsed = parseOpenAICost(raw);
 
     if (parsed.error) {
-      items.push({ label: 'OpenAI 빌링 API', status: 'warn', detail: `API 오류: ${parsed.error}` });
+      // API 오류 시 DB 최근 스냅샷으로 폴백 (24h 이내면 ok, 이후면 warn)
+      const cached = await pgPool.query('claude',
+        `SELECT cost_usd, created_at FROM billing_snapshots
+         WHERE provider='openai' ORDER BY date DESC LIMIT 1`
+      ).catch(() => []);
+      if (cached?.[0]) {
+        const ageH = (Date.now() - new Date(cached[0].created_at).getTime()) / 3600000;
+        const st   = ageH < 24 ? 'ok' : 'warn';
+        items.push({ label: 'OpenAI 월간 비용', status: st,
+          detail: `$${Number(cached[0].cost_usd).toFixed(3)} (캐시 ${Math.round(ageH)}h 전, API 오류: ${parsed.error})` });
+      } else {
+        items.push({ label: 'OpenAI 빌링 API', status: 'warn', detail: `API 오류: ${parsed.error}` });
+      }
     } else {
       await saveBillingSnapshot('openai', parsed.cost, raw);
       items.push({

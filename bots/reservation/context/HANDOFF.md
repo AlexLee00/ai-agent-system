@@ -668,6 +668,19 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/auto/monitors/naver-monitor.js`
 <!-- session-close:2026-03-11:취소감지4-오탐-수정-스캔-한도-300으로-상향:end -->
 
+<!-- session-close:2026-03-12:버그헌팅-8건-수정-취소감지4-오탐중복빌링블로그 -->
+#### 2026-03-12 🔧 버그헌팅: 8건 수정 (취소감지4 오탐/중복/빌링/블로그)
+- 블로그 이어쓰기 중복 방지 (800자 tail+재시작감지)
+- blo.js 중복실행 early-exit
+- naver-monitor kst 임포트 누락 수정
+- FUTURE_SCAN_LIMIT 50→300 + 스킵 안전장치
+- 픽코 취소 중복 doneKey 통합
+- 완료예약 허위취소 슬롯종료시간 기준 변경
+- 빌링 API timeout DB캐시 폴백
+- 패턴이력 26건 삭제
+- 관련 파일: `bots/blog/lib/gems-writer.js|bots/blog/lib/pos-writer.js|bots/blog/lib/blo.js|bots/reservation/auto/monitors/naver-monitor.js|bots/reservation/auto/monitors/run-today-audit.sh|bots/reservation/manual/admin/run-verify.sh|bots/claude/lib/checks/billing.js`
+<!-- session-close:2026-03-12:버그헌팅-8건-수정-취소감지4-오탐중복빌링블로그:end -->
+
 <!-- bug-tracker:maintenance:start -->
 - 🔧 `MAINT-008` [fix] **bug-report.js HANDOFF_FILE 경로 수정 (context/ 직접 참조)**
   2026. 2. 26. 19:57 · claude · `src/bug-report.js`

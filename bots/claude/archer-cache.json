@@ -1,13 +1,18 @@
 {
-  "lastRun": "2026-03-10",
+  "lastRun": "2026-03-12",
   "versions": {
     "@anthropic-ai/sdk": "0.78.0",
     "@modelcontextprotocol/sdk": "1.27.1",
-    "groq-sdk": "0.37.0",
+    "groq-sdk": "1.1.1",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.6.2",
-    "ccxt": "4.5.42",
+    "ccxt": "4.5.43",
     "playwright": "1.58.2"
   },
-  "lastAnalysis": null
+  "lastAnalysis": {
+    "summary": "이번 주에는 groq-sdk의 메이저 업그레이드와 보안 취약점에 대한 조치가 필요합니다. OpenAI의 AI 에이전트 설계 관련 뉴스는 보안성을 높이는 데 도움이 될 수 있습니다. Hugging Face의 새로운 기능은 데이터 관리에 유용할 것입니다.",
+    "patchCount": 3,
+    "securityCount": 2,
+    "llmApiCount": 1
+  }
 }
