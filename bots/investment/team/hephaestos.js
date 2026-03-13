@@ -99,7 +99,9 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
   if (!entry) return;
 
   const pnlAmount  = (exitValue || 0) - (entry.entry_value || 0);
-  const pnlPercent = entry.entry_value > 0 ? pnlAmount / entry.entry_value : null;
+  const pnlPercent = entry.entry_value > 0
+    ? journalDb.ratioToPercent(pnlAmount / entry.entry_value)
+    : null;
   await journalDb.closeJournalEntry(entry.trade_id, {
     exitPrice,
     exitValue,

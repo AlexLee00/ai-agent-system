@@ -133,7 +133,9 @@ async function backfillTradeJournal({ dryRun = false } = {}) {
       }
       if (!dryRun) {
         const pnlAmount = (trade.total_usdt || 0) - (openEntry.entry_value || 0);
-        const pnlPercent = openEntry.entry_value > 0 ? pnlAmount / openEntry.entry_value : null;
+        const pnlPercent = openEntry.entry_value > 0
+          ? journalDb.ratioToPercent(pnlAmount / openEntry.entry_value)
+          : null;
         await journalDb.closeJournalEntry(openEntry.trade_id, {
           exitTime: executedMs,
           exitPrice: trade.price || null,
