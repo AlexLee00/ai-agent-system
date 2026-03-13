@@ -326,7 +326,19 @@ export async function getPaperPosition(symbol) {
   return get(`SELECT * FROM positions WHERE symbol = $1 AND paper = true`, [symbol]);
 }
 
-export async function getAllPositions() {
+export async function getAllPositions(exchange = null, paper = null) {
+  if (exchange && paper !== null) {
+    return query(
+      `SELECT * FROM positions WHERE amount > 0 AND exchange = $1 AND paper = $2 ORDER BY symbol`,
+      [exchange, paper === true],
+    );
+  }
+  if (exchange) {
+    return query(`SELECT * FROM positions WHERE amount > 0 AND exchange = $1 ORDER BY symbol`, [exchange]);
+  }
+  if (paper !== null) {
+    return query(`SELECT * FROM positions WHERE amount > 0 AND paper = $1 ORDER BY symbol`, [paper === true]);
+  }
   return query(`SELECT * FROM positions WHERE amount > 0 ORDER BY symbol`);
 }
 
