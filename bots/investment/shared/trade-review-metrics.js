@@ -12,15 +12,30 @@ function getPublicExchange() {
 }
 
 async function fetchBinanceWindow(symbol, timeframe, sinceMs, limit = 1000, retries = 2) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await getPublicExchange().fetchOHLCV(symbol, timeframe, sinceMs, limit);
-    } catch (err) {
-      if (attempt >= retries) throw err;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+  const all = [];
+  let cursor = sinceMs;
+
+  while (all.length < 5000) {
+    let batch = [];
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        batch = await getPublicExchange().fetchOHLCV(symbol, timeframe, cursor, limit);
+        break;
+      } catch (err) {
+        if (attempt >= retries) throw err;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
     }
+
+    if (!batch.length) break;
+    all.push(...batch);
+
+    const lastTs = Number(batch[batch.length - 1]?.[0] || 0);
+    if (!lastTs || batch.length < limit) break;
+    cursor = lastTs + 1;
   }
-  return [];
+
+  return all;
 }
 
 function fetchYahooWindow(ticker, interval, startMs, endMs) {
@@ -83,11 +98,13 @@ function toYahooTicker(symbol, exchange) {
 
 function chooseIntervals(exchange, holdMs) {
   if (exchange === 'binance') {
-    if (holdMs <= 3 * 24 * 60 * 60 * 1000) return { provider: 'binance', interval: '15m' };
+    if (holdMs <= 24 * 60 * 60 * 1000) return { provider: 'binance', interval: '5m' };
+    if (holdMs <= 7 * 24 * 60 * 60 * 1000) return { provider: 'binance', interval: '15m' };
     if (holdMs <= 45 * 24 * 60 * 60 * 1000) return { provider: 'binance', interval: '1h' };
     return { provider: 'binance', interval: '4h' };
   }
 
+  if (holdMs <= 7 * 24 * 60 * 60 * 1000) return { provider: 'yahoo', interval: '5m' };
   if (holdMs <= 60 * 24 * 60 * 60 * 1000) return { provider: 'yahoo', interval: '60m' };
   return { provider: 'yahoo', interval: '1d' };
 }

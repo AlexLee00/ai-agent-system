@@ -243,27 +243,41 @@ export function notifyDailyJournal(date, records = []) {
 /**
  * 매매 청산 알림 — 포지션 종료 시 PnL 결산
  */
-export function notifySettlement({ symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper }) {
+export function notifySettlement({
+  symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper,
+  market = 'crypto', pnlPercent = null, maxFavorable = null, maxAdverse = null,
+  signalAccuracy = null, executionSpeed = null,
+}) {
   const SEP     = '═'.repeat(19);
   const sep     = '─'.repeat(19);
   const tag     = paper ? '[PAPER] ' : '';
   const dir     = side === 'buy' ? 'LONG' : 'SHORT';
   const pnlSign = (pnl || 0) >= 0 ? '+' : '';
+  const currency = market === 'domestic' ? '₩' : '$';
   const pricePct = (entryPrice && exitPrice)
     ? ` (${((exitPrice / entryPrice - 1) * 100).toFixed(1)}%)` : '';
 
   const lines = [
     `${tag}💰 ${symbol} ${dir} 체결`,
     sep,
-    `진입: $${Number(entryPrice).toLocaleString()}`,
-    `청산: $${Number(exitPrice).toLocaleString()}${pricePct}`,
-    `수익: ${pnlSign}${(pnl || 0).toFixed(2)} USDT`,
+    `진입: ${currency}${Number(entryPrice).toLocaleString()}`,
+    `청산: ${currency}${Number(exitPrice).toLocaleString()}${pricePct}`,
+    `수익: ${pnlSign}${currency}${Math.abs(pnl || 0).toFixed(2)}`,
   ];
   if (holdDuration) lines.push(`보유 시간: ${holdDuration}`);
+  if (pnlPercent != null) lines.push(`실현 수익률: ${pnlPercent >= 0 ? '+' : ''}${Number(pnlPercent).toFixed(2)}%`);
+  if (maxFavorable != null || maxAdverse != null) {
+    const mf = maxFavorable != null ? `MFE +${Number(maxFavorable).toFixed(2)}%` : 'MFE -';
+    const ma = maxAdverse != null ? `MAE ${Number(maxAdverse).toFixed(2)}%` : 'MAE -';
+    lines.push(`${mf} | ${ma}`);
+  }
+  if (signalAccuracy || executionSpeed) {
+    lines.push(`리뷰: ${signalAccuracy || '-'} / 실행속도 ${executionSpeed || '-'}`);
+  }
   lines.push(SEP);
   if (weeklyPnl != null) {
     const wSign = weeklyPnl >= 0 ? '+' : '';
-    lines.push(`누적 PnL: ${wSign}${weeklyPnl.toFixed(2)} USDT (이번 주)`);
+    lines.push(`누적 PnL: ${wSign}${currency}${Math.abs(weeklyPnl).toFixed(2)} (이번 주)`);
   }
   if (winRate != null && totalTrades != null) {
     lines.push(`승률: ${((winRate) * 100).toFixed(0)}% (${wins}/${totalTrades})`);

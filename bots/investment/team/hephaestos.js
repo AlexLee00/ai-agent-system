@@ -17,7 +17,7 @@ import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
-import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker } from '../shared/report.js';
+import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, config as cmConfig } from '../shared/capital-manager.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -110,6 +110,39 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
     pnlPercent,
   });
   await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
+  const review = await journalDb.getReviewByTradeId(entry.trade_id).catch(() => null);
+  const weekly = await db.get(`
+    SELECT
+      COALESCE(SUM(pnl_net), 0) AS pnl,
+      COUNT(*) AS total_trades,
+      COUNT(*) FILTER (WHERE pnl_net > 0) AS wins
+    FROM trade_journal
+    WHERE exchange = 'binance'
+      AND status = 'closed'
+      AND exit_time IS NOT NULL
+      AND exit_time >= ?
+  `, [Date.now() - 7 * 24 * 60 * 60 * 1000]).catch(() => null);
+  const settledAt = Date.now();
+  const holdHours = entry.entry_time ? Math.max(0, ((settledAt - Number(entry.entry_time)) / 3600000)) : null;
+  await notifySettlement({
+    symbol,
+    side: 'buy',
+    market: 'crypto',
+    entryPrice: entry.entry_price,
+    exitPrice,
+    pnl: pnlAmount,
+    pnlPercent,
+    holdDuration: holdHours != null ? `${holdHours.toFixed(1)}시간` : null,
+    weeklyPnl: weekly?.pnl != null ? Number(weekly.pnl) : null,
+    totalTrades: weekly?.total_trades != null ? Number(weekly.total_trades) : null,
+    wins: weekly?.wins != null ? Number(weekly.wins) : null,
+    winRate: weekly?.total_trades ? Number(weekly.wins || 0) / Number(weekly.total_trades) : null,
+    paper: isPaper,
+    maxFavorable: review?.max_favorable ?? null,
+    maxAdverse: review?.max_adverse ?? null,
+    signalAccuracy: review?.signal_accuracy ?? null,
+    executionSpeed: review?.execution_speed ?? null,
+  }).catch(() => {});
 }
 
 async function maybePromotePaperPositions() {

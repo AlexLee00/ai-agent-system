@@ -290,6 +290,47 @@ export async function getReviewByTradeId(tradeId) {
   return rows[0] || null;
 }
 
+export async function getTradeReviewInsight(symbol, exchange, days = 60) {
+  await ensureInit();
+  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+  const row = await get(`
+    SELECT
+      COUNT(*) AS closed_trades,
+      COUNT(*) FILTER (WHERE j.pnl_percent > 0) AS wins,
+      ROUND(AVG(j.pnl_percent)::numeric, 4) AS avg_pnl_percent,
+      ROUND(AVG(r.max_favorable)::numeric, 4) AS avg_max_favorable,
+      ROUND(AVG(r.max_adverse)::numeric, 4) AS avg_max_adverse,
+      ROUND(AVG(CASE WHEN r.aria_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS aria_accuracy,
+      ROUND(AVG(CASE WHEN r.sophia_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS sophia_accuracy,
+      ROUND(AVG(CASE WHEN r.oracle_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS oracle_accuracy,
+      ROUND(AVG(CASE WHEN r.hermes_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS hermes_accuracy
+    FROM trade_journal j
+    LEFT JOIN trade_review r ON r.trade_id = j.trade_id
+    WHERE j.symbol = ?
+      AND j.exchange = ?
+      AND j.status = 'closed'
+      AND j.exit_time IS NOT NULL
+      AND j.created_at >= ?
+  `, [symbol, exchange, since]);
+
+  const closedTrades = Number(row?.closed_trades ?? 0);
+  const wins = Number(row?.wins ?? 0);
+  return {
+    closedTrades,
+    wins,
+    winRate: closedTrades > 0 ? wins / closedTrades : null,
+    avgPnlPercent: row?.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null,
+    avgMaxFavorable: row?.avg_max_favorable != null ? Number(row.avg_max_favorable) : null,
+    avgMaxAdverse: row?.avg_max_adverse != null ? Number(row.avg_max_adverse) : null,
+    analystAccuracy: {
+      aria: row?.aria_accuracy != null ? Number(row.aria_accuracy) : null,
+      sophia: row?.sophia_accuracy != null ? Number(row.sophia_accuracy) : null,
+      oracle: row?.oracle_accuracy != null ? Number(row.oracle_accuracy) : null,
+      hermes: row?.hermes_accuracy != null ? Number(row.hermes_accuracy) : null,
+    },
+  };
+}
+
 function _deriveExecutionSpeed(signalToExecMs) {
   if (signalToExecMs == null) return null;
   if (signalToExecMs <= 30_000) return 'fast';
@@ -618,7 +659,7 @@ export default {
   initJournalSchema,
   ratioToPercent,
   generateTradeId,
-  insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getReviewByTradeId, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
+  insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getReviewByTradeId, getTradeReviewInsight, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
   insertRationale, linkRationaleToTrade,
   insertReview,
   upsertDailyPerformance, getDailyPerformance, getWeeklyPerformance,
