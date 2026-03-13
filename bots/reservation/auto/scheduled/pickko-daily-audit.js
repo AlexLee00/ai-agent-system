@@ -127,7 +127,7 @@ async function main() {
 
     // ──── RAG: 일간 예약 감사 요약 저장 ────
     try {
-      const rag = require('../../../../packages/core/lib/rag');
+      const rag = require('../../../../packages/core/lib/rag-safe');
       const ragSummary = `[일간 예약 감사 ${today}] ` +
         `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건 | ` +
         `이슈: ${manualCount > 0 ? `수동 ${manualCount}건 감지` : '없음'}`;

@@ -11,7 +11,7 @@
 
 const https  = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const rag    = require('../../../packages/core/lib/rag');
+const rag    = require('../../../packages/core/lib/rag-safe');
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────
 

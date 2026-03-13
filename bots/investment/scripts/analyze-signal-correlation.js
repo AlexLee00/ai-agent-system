@@ -13,7 +13,7 @@ import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 
 const _require = createRequire(import.meta.url);
-const rag      = _require('../../../packages/core/lib/rag');
+const rag      = _require('../../../packages/core/lib/rag-safe');
 
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));

@@ -293,7 +293,7 @@ async function pollDoctorTasks() {
         } catch { /* 이벤트 발행 실패 무시 */ }
         // RAG 저장: 복구 이력을 rag_operations에 학습 데이터로 기록
         try {
-          const rag     = require('../../../packages/core/lib/rag');
+          const rag     = require('../../../packages/core/lib/rag-safe');
           const content = [
             `장애 복구 성공: ${taskType}`,
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
@@ -312,7 +312,7 @@ async function pollDoctorTasks() {
         await stateBus.failTask(task.id, result.message);
         // RAG 저장: 복구 실패 이력 학습
         try {
-          const rag     = require('../../../packages/core/lib/rag');
+          const rag     = require('../../../packages/core/lib/rag-safe');
           const content = [
             `장애 복구 실패: ${taskType}`,
             `원인: ${params.original_issue?.detail || params.reason || ''}`,
@@ -342,7 +342,7 @@ async function pollDoctorTasks() {
  */
 async function getPastSuccessfulFix(issueType) {
   try {
-    const rag     = require('../../../packages/core/lib/rag');
+    const rag     = require('../../../packages/core/lib/rag-safe');
     const results = await rag.search('operations', `장애 복구 성공: ${issueType}`, {
       limit:     3,
       threshold: 0.6,

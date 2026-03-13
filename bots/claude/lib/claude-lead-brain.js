@@ -217,7 +217,7 @@ async function evaluateWithClaudeLead(results) {
   // RAG 검색: 유사 과거 장애/복구 사례 조회 → LLM 컨텍스트 보강
   let ragContext = '';
   try {
-    const rag      = require('../../../packages/core/lib/rag');
+    const rag      = require('../../../packages/core/lib/rag-safe');
     const ragQuery = issues.slice(0, 3).map(i => i.label).join(' ');
     const hits     = await rag.search('operations', ragQuery, { limit: 3, threshold: 0.7 });
     if (hits.length > 0) {
@@ -286,7 +286,7 @@ async function evaluateWithClaudeLead(results) {
 
   // RAG 저장: 이슈 분석 이력을 rag_operations에 학습 데이터로 기록
   try {
-    const rag     = require('../../../packages/core/lib/rag');
+    const rag     = require('../../../packages/core/lib/rag-safe');
     const content = [
       `클로드팀장 이슈 분석: ${issues.length}건`,
       `판단: ${ruleResult.decision}`,

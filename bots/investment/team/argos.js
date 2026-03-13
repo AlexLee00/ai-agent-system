@@ -12,21 +12,24 @@
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
+import { createRequire } from 'module';
 import https from 'https';
 import ccxt from 'ccxt';
 import yaml from 'js-yaml';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
+import { search as searchRag } from '../shared/rag-client.js';
 import { getVolumeRank } from '../shared/kis-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const _require = createRequire(import.meta.url);
 
-// ─── 코어 종목 (항상 포함, 절대 제외 안됨) ──────────────────────────
+// ─── 기본 코어 종목 비활성화 ────────────────────────────────────────
 
-export const CORE_CRYPTO   = ['BTC/USDT', 'ETH/USDT'];
-export const CORE_KIS      = ['005930'];
-export const CORE_OVERSEAS = ['AAPL'];
+export const CORE_CRYPTO   = [];
+export const CORE_KIS      = [];
+export const CORE_OVERSEAS = [];
 
 // ─── config.yaml 스크리닝 설정 로드 ─────────────────────────────────
 
@@ -47,6 +50,102 @@ const SUBREDDITS = [
 ];
 
 const MIN_QUALITY_SCORE = 0.5;  // 이 이상만 DB 저장
+const RAG_RERANK_LIMIT = 4;
+const INTEL_CACHE_TTL = 6 * 3600 * 1000;
+const INTEL_CACHE_MAX = 500;
+const _candidateIntelCache = new Map();
+
+function _screeningLabel(market) {
+  return market === 'crypto' ? '암호화폐' : market === 'domestic' ? '국내주식' : '해외주식';
+}
+
+function _cleanupIntelCache(now = Date.now()) {
+  for (const [key, value] of _candidateIntelCache.entries()) {
+    if ((now - value.ts) >= INTEL_CACHE_TTL) _candidateIntelCache.delete(key);
+  }
+  while (_candidateIntelCache.size > INTEL_CACHE_MAX) {
+    const oldestKey = _candidateIntelCache.keys().next().value;
+    if (!oldestKey) break;
+    _candidateIntelCache.delete(oldestKey);
+  }
+}
+
+async function _loadRecentScreeningWeights(market) {
+  try {
+    const rows = await db.query(`
+      SELECT dynamic_symbols
+      FROM screening_history
+      WHERE market = $1
+      ORDER BY created_at DESC
+      LIMIT 5
+    `, [market]);
+
+    const weights = new Map();
+    rows.forEach((row, idx) => {
+      const recencyWeight = Math.max(1, 5 - idx);
+      const symbols = Array.isArray(row.dynamic_symbols)
+        ? row.dynamic_symbols
+        : JSON.parse(row.dynamic_symbols || '[]');
+      symbols.forEach(sym => weights.set(sym, (weights.get(sym) || 0) + recencyWeight));
+    });
+    return weights;
+  } catch {
+    return new Map();
+  }
+}
+
+async function _applyCandidateIntelligence(candidates, market, max) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+
+  _cleanupIntelCache(Date.now());
+  const screeningWeights = await _loadRecentScreeningWeights(market);
+  const topForRag = candidates.slice(0, Math.min(candidates.length, Math.max(max * 2, RAG_RERANK_LIMIT)));
+
+  await Promise.all(topForRag.map(async (candidate) => {
+    candidate.screeningWeight = screeningWeights.get(candidate.symbol) || 0;
+    candidate.ragScore = 0;
+    const cacheKey = `${market}:${candidate.symbol}`;
+    const cached = _candidateIntelCache.get(cacheKey);
+    if (cached) {
+      candidate.ragScore = cached.ragScore;
+    } else {
+      try {
+        const hits = await searchRag(
+          'market_data',
+          `${candidate.symbol} ${market} momentum news sentiment`,
+          { limit: 2, threshold: 0.72, filter: { symbol: candidate.symbol } },
+          { sourceBot: 'argos' },
+        );
+        candidate.ragScore = hits.reduce((sum, hit) => sum + Number(hit.similarity || 0), 0);
+        _candidateIntelCache.set(cacheKey, { ragScore: candidate.ragScore, ts: Date.now() });
+      } catch {
+        candidate.ragScore = 0;
+      }
+    }
+
+    const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.volume ?? 0);
+    candidate.intelligenceScore = Math.round((baseScore + candidate.screeningWeight * 0.5 + candidate.ragScore * 10) * 100) / 100;
+  }));
+
+  candidates.forEach((candidate) => {
+    if (candidate.intelligenceScore == null) {
+      const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.volume ?? 0);
+      candidate.screeningWeight = screeningWeights.get(candidate.symbol) || 0;
+      candidate.ragScore = 0;
+      candidate.intelligenceScore = Math.round((baseScore + candidate.screeningWeight * 0.5) * 100) / 100;
+    }
+  });
+
+  const sorted = candidates.sort((a, b) => (b.intelligenceScore || 0) - (a.intelligenceScore || 0));
+  const selected = sorted.slice(0, max);
+
+  console.log(`[아르고스] ${_screeningLabel(market)} 후보 우선순위화 완료: ${candidates.length} → ${selected.length}`);
+  selected.forEach(c => {
+    console.log(`  ${c.symbol}: intel=${(c.intelligenceScore || 0).toFixed(2)} | hist=${c.screeningWeight || 0} | rag=${(c.ragScore || 0).toFixed(2)}`);
+  });
+
+  return selected;
+}
 
 // ─── Fear & Greed Index ─────────────────────────────────────────────
 
@@ -326,7 +425,6 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
     const cgSymbols = new Set(cgTrending.status === 'fulfilled' ? cgTrending.value : []);
 
     const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'PYUSD', 'USDP']);
-    const coreBase    = new Set(CORE_CRYPTO.map(s => s.split('/')[0]));
 
     const candidates = Object.entries(tickerMap)
       .filter(([sym]) => sym.endsWith('/USDT'))
@@ -334,7 +432,6 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
         const base = sym.split('/')[0];
         if (STABLECOINS.has(base)) return false;
         if (/UP$|DOWN$|BULL$|BEAR$|3[LS]$/.test(base)) return false;
-        if (coreBase.has(base)) return false;
         return true;
       })
       .map(([symbol, t]) => ({
@@ -366,18 +463,18 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       };
     });
 
-    const topDynamic     = scored.sort((a, b) => b.finalScore - a.finalScore).slice(0, max);
+    const topDynamic     = await _applyCandidateIntelligence(scored.sort((a, b) => b.finalScore - a.finalScore), 'crypto', max);
     const dynamicSymbols = topDynamic.map(t => t.symbol);
 
-    console.log(`[아르고스] 암호화폐 스크리닝: 코어 ${CORE_CRYPTO.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+    console.log(`[아르고스] 암호화폐 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
     topDynamic.forEach(t =>
-      console.log(`  ${t.symbol}${t.cgTrend ? '★' : ''}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}% | ${(t.volume24h / 1e6).toFixed(0)}M USDT | 점수 ${t.finalScore}`)
+      console.log(`  ${t.symbol}${t.cgTrend ? '★' : ''}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}% | ${(t.volume24h / 1e6).toFixed(0)}M USDT | 점수 ${t.intelligenceScore ?? t.finalScore}`)
     );
 
-    return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: [...CORE_CRYPTO, ...dynamicSymbols], screening: topDynamic, fng };
+    return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: dynamicSymbols, screening: topDynamic, fng };
   } catch (e) {
-    console.warn(`[아르고스] 암호화폐 스크리닝 실패: ${e.message} — 코어 종목만 반환`);
-    return { core: CORE_CRYPTO, dynamic: [], all: CORE_CRYPTO, screening: [], error: e.message, fng };
+    console.warn(`[아르고스] 암호화폐 스크리닝 실패: ${e.message}`);
+    return { core: CORE_CRYPTO, dynamic: [], all: [], screening: [], error: e.message, fng };
   }
 }
 
@@ -407,7 +504,7 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
 
   // 모두 실패 → 코어만 반환
   console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 코어만 반환');
-  return { core: CORE_KIS, dynamic: [], all: CORE_KIS, screening: [], error: 'all_apis_failed' };
+  return { core: CORE_KIS, dynamic: [], all: [], screening: [], error: 'all_apis_failed' };
 }
 
 /** KIS API 거래량 순위 기반 국내주식 스크리닝 */
@@ -445,10 +542,8 @@ function _fetchJSON(url, timeout = 10000) {
 
 /** 공통: 결과 빌드 */
 function _buildDomesticResult(stocks, max) {
-  const coreSet    = new Set(CORE_KIS);
   const candidates = stocks
-    .filter(s => s.stockCode && !coreSet.has(s.stockCode))
-    .slice(0, max)
+    .filter(s => s.stockCode)
     .map(s => ({
       symbol:     String(s.stockCode).padStart(6, '0'),
       name:       s.stockName || s.name || '',
@@ -459,12 +554,14 @@ function _buildDomesticResult(stocks, max) {
 
   if (!candidates.length) return null;
 
-  const dynamicSymbols = candidates.map(c => c.symbol);
-  console.log(`[아르고스] 국내주식 스크리닝: 코어 ${CORE_KIS.join(', ')} + 동적 ${dynamicSymbols.join(', ')}`);
-  candidates.forEach(c =>
-    console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
-  );
-  return { core: CORE_KIS, dynamic: dynamicSymbols, all: [...CORE_KIS, ...dynamicSymbols], screening: candidates };
+  return _applyCandidateIntelligence(candidates, 'domestic', max).then((ranked) => {
+    const dynamicSymbols = ranked.map(c => c.symbol);
+    console.log(`[아르고스] 국내주식 스크리닝: 동적 ${dynamicSymbols.join(', ')}`);
+    ranked.forEach(c =>
+      console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
+    );
+    return { core: CORE_KIS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked };
+  });
 }
 
 /** 대안 1: 네이버 모바일 상승률 API (불안정) */
@@ -523,8 +620,6 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
 
   if (fng !== 50) console.log(`[아르고스] 해외주식 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
 
-  const coreSet = new Set(CORE_OVERSEAS);
-
   // 두 소스 병렬 조회
   const [yahooRes, apeRes] = await Promise.allSettled([
     _fetchYahooTrending(),
@@ -535,25 +630,25 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   const apeTickers   = apeRes.status   === 'fulfilled' ? apeRes.value   : [];
 
   // Yahoo 우선 → ApeWisdom으로 보완 (중복·코어·ETF 제거)
-  const seen       = new Set(coreSet);
+  const seen       = new Set();
   const candidates = [];
 
   for (const sym of [...yahooTickers, ...apeTickers]) {
-    if (candidates.length >= max) break;
     if (seen.has(sym)) continue;
     if (sym.includes('^') || sym.includes('=') || sym.length > 6) continue;
     seen.add(sym);
     candidates.push({ symbol: sym, name: sym });
   }
 
-  const dynamicSymbols = candidates.map(c => c.symbol);
-  console.log(`[아르고스] 해외주식 스크리닝: 코어 ${CORE_OVERSEAS.join(', ')} + 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+  const ranked = await _applyCandidateIntelligence(candidates, 'overseas', max);
+  const dynamicSymbols = ranked.map(c => c.symbol);
+  console.log(`[아르고스] 해외주식 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
 
   if (!dynamicSymbols.length && yahooTickers.length === 0) {
-    return { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [], error: 'all_sources_failed' };
+    return { core: CORE_OVERSEAS, dynamic: [], all: [], screening: [], error: 'all_sources_failed' };
   }
 
-  return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: [...CORE_OVERSEAS, ...dynamicSymbols], screening: candidates, fng };
+  return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked, fng };
 }
 
 /** Yahoo Finance Trending US (심볼 목록만 반환) */
@@ -591,9 +686,9 @@ export async function screenAllMarkets() {
   if (_screeningCfg?.enabled === false) {
     console.log('[아르고스] 스크리닝 비활성화 — config.yaml screening.enabled=false');
     return {
-      crypto:   { core: CORE_CRYPTO,   dynamic: [], all: CORE_CRYPTO,   screening: [] },
-      domestic: { core: CORE_KIS,      dynamic: [], all: CORE_KIS,      screening: [] },
-      overseas: { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [] },
+      crypto:   { core: CORE_CRYPTO,   dynamic: [], all: [],            screening: [] },
+      domestic: { core: CORE_KIS,      dynamic: [], all: [],            screening: [] },
+      overseas: { core: CORE_OVERSEAS, dynamic: [], all: [],            screening: [] },
       timestamp: new Date().toISOString(),
     };
   }
@@ -610,9 +705,9 @@ export async function screenAllMarkets() {
   ]);
 
   const result = {
-    crypto:    cryptoRes.status   === 'fulfilled' ? cryptoRes.value   : { core: CORE_CRYPTO,   dynamic: [], all: CORE_CRYPTO,   screening: [] },
-    domestic:  domesticRes.status === 'fulfilled' ? domesticRes.value : { core: CORE_KIS,      dynamic: [], all: CORE_KIS,      screening: [] },
-    overseas:  overseasRes.status === 'fulfilled' ? overseasRes.value : { core: CORE_OVERSEAS, dynamic: [], all: CORE_OVERSEAS, screening: [] },
+    crypto:    cryptoRes.status   === 'fulfilled' ? cryptoRes.value   : { core: CORE_CRYPTO,   dynamic: [], all: [], screening: [] },
+    domestic:  domesticRes.status === 'fulfilled' ? domesticRes.value : { core: CORE_KIS,      dynamic: [], all: [], screening: [] },
+    overseas:  overseasRes.status === 'fulfilled' ? overseasRes.value : { core: CORE_OVERSEAS, dynamic: [], all: [], screening: [] },
     timestamp: new Date().toISOString(),
   };
 

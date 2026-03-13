@@ -21,6 +21,7 @@ import * as db from '../shared/db.js';
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.js';
+import { search as searchRag, store as storeRag } from '../shared/rag-client.js';
 import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.js';
 import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
@@ -186,8 +187,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   // RAG 검색: 과거 유사 신호 조회 (참고용 컨텍스트)
   let ragContext = '';
   try {
-    const rag  = _require('../../../packages/core/lib/rag');
-    const hits = await rag.search('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 });
+    const hits = await searchRag('trades', `${symbol} ${summary.slice(0, 100)}`, { limit: 3, threshold: 0.7 }, { sourceBot: 'luna' });
     if (hits.length > 0) {
       ragContext = '\n\n[과거 유사 신호]\n' + hits.map(h => {
         const m = h.metadata || {};
@@ -464,13 +464,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
     // RAG 저장: 투자 신호 이력을 rag_trades에 학습 데이터로 기록
     try {
-      const rag     = _require('../../../packages/core/lib/rag');
       const content = [
         `${dec.symbol} ${dec.action} 신호`,
         `신뢰도: ${dec.confidence || '?'}`,
         `판단: ${(dec.reasoning || '').slice(0, 100)}`,
       ].join(' | ');
-      await rag.store('trades', content, {
+      await storeRag('trades', content, {
         symbol:     dec.symbol,
         action:     dec.action,
         confidence: dec.confidence,

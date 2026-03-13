@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { getKisSymbols, getKisOverseasSymbols } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
+import { resolveSymbolsWithFallback } from '../shared/universe-fallback.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -132,22 +133,21 @@ async function main() {
 
   await db.initSchema();
 
-  let symbols;
-  try {
-    if (market === 'domestic') {
-      const { screenDomesticSymbols } = await import('../team/argos.js');
-      const result = await screenDomesticSymbols();
-      symbols = result.all;
-    } else {
+  const resolved = await resolveSymbolsWithFallback({
+    market,
+    screen: async () => {
+      if (market === 'domestic') {
+        const { screenDomesticSymbols } = await import('../team/argos.js');
+        return screenDomesticSymbols();
+      }
       const { screenOverseasSymbols } = await import('../team/argos.js');
-      const result = await screenOverseasSymbols();
-      symbols = result.all;
-    }
-    console.log(`  ✅ 아르고스 스크리닝 완료: ${symbols.join(', ')}`);
-  } catch (e) {
-    console.warn(`  ⚠️ 아르고스 스크리닝 실패 → config.yaml 종목 사용: ${e.message}`);
-    symbols = market === 'domestic' ? getKisSymbols() : getKisOverseasSymbols();
-  }
+      return screenOverseasSymbols();
+    },
+    defaultSymbols: market === 'domestic' ? getKisSymbols() : getKisOverseasSymbols(),
+    screenLabel: `장전 ${label} 스크리닝`,
+    cacheLabel: '캐시 폴백',
+  });
+  const symbols = resolved.symbols;
 
   savePreScreened(market, symbols, { label });
   console.log(`  💾 저장: ${PRESCREENED_FILE[market]}`);

@@ -10,7 +10,7 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const path   = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const rag    = require('../../../packages/core/lib/rag');
+const rag    = require('../../../packages/core/lib/rag-safe');
 
 const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
 const GDRIVE_DIR    = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost';
