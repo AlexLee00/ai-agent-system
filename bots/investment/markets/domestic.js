@@ -178,6 +178,43 @@ export async function runDomesticCycle(symbols) {
   }
 }
 
+export async function runDomesticResearchCycle(symbols) {
+  const startTime = Date.now();
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log(`📚 [RESEARCH] 국내주식 장외 분석 시작 — ${kst.toKST(new Date())}`);
+  console.log(`   심볼: ${symbols.join(', ')}`);
+  console.log(`${'═'.repeat(60)}`);
+
+  try {
+    console.log('\n📊 [연구 단계] 3개 분석가 병렬 실행...');
+    await Promise.allSettled([
+      runAria(symbols),
+      runHermes(symbols),
+      runSophia(symbols),
+    ]);
+
+    saveState({ lastCycleAt: Date.now() });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n✅ [RESEARCH] 국내주식 장외 분석 완료 — ${elapsed}초`);
+
+    publishToMainBot({
+      from_bot: 'luna',
+      event_type: 'report',
+      alert_level: 1,
+      message: `📚 국내주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n소요: ${elapsed}초`,
+    });
+
+    return [];
+  } catch (e) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.error(`\n❌ 국내주식 장외 연구 오류 (${elapsed}초): ${e.message}`);
+    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 2, message: `❌ 국내주식 장외 연구 오류\n${e.message}` });
+    throw e;
+  }
+}
+
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -226,9 +263,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // 현재 보유 포지션 심볼 추가 (놓치지 않도록)
   try {
     await db.initSchema();
-    const positions = await db.getAllPositions();
+    const positions = await db.getAllPositions('kis', false);
     const heldSymbols = positions
-      .filter(p => p.exchange === 'kis')
       .map(p => p.symbol)
       .filter(s => !symbols.includes(s));
     if (heldSymbols.length > 0) {
@@ -244,20 +280,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   // 장중 체크
-  if (!force && !isKisMarketOpen()) {
-    const now = kst.timeStr().slice(0,5);
-    console.log(`⏰ 장외 시간 (KST ${now}) — 스킵`);
-    process.exit(0);
-  }
-
-  // 공휴일 체크
-  if (!force) {
-    const holiday = await isKisHoliday();
-    if (holiday.isHoliday) {
-      console.log(`🎌 공휴일 (${holiday.name}) — 스킵`);
-      process.exit(0);
-    }
-  }
+  const holiday = !force ? await isKisHoliday() : { isHoliday: false, name: '' };
+  const marketOpen = isKisMarketOpen() && !holiday.isHoliday;
 
   // 30분 주기 체크
   const check = shouldRunCycle(force);
@@ -276,6 +300,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   await db.initSchema();
   try {
+    if (!force && !marketOpen) {
+      const reason = holiday.isHoliday ? `공휴일 (${holiday.name})` : `장외 시간 (KST ${kst.timeStr().slice(0, 5)})`;
+      console.log(`📚 ${reason} — 연구 모드 전환`);
+      await runDomesticResearchCycle(symbols);
+      process.exit(0);
+    }
+
     const r = await runDomesticCycle(symbols);
     console.log(`\n최종 결과: ${r.length}개 신호 승인`);
     process.exit(0);

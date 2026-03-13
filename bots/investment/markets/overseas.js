@@ -178,6 +178,43 @@ export async function runOverseasCycle(symbols) {
   }
 }
 
+export async function runOverseasResearchCycle(symbols) {
+  const startTime = Date.now();
+
+  console.log(`\n${'═'.repeat(60)}`);
+  console.log(`📚 [RESEARCH] 미국주식 장외 분석 시작 — ${kst.toKST(new Date())}`);
+  console.log(`   심볼: ${symbols.join(', ')}`);
+  console.log(`${'═'.repeat(60)}`);
+
+  try {
+    console.log('\n📊 [연구 단계] 3개 분석가 병렬 실행...');
+    await Promise.allSettled([
+      runAria(symbols),
+      runHermes(symbols),
+      runSophia(symbols),
+    ]);
+
+    saveState({ lastCycleAt: Date.now() });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n✅ [RESEARCH] 미국주식 장외 분석 완료 — ${elapsed}초`);
+
+    publishToMainBot({
+      from_bot: 'luna',
+      event_type: 'report',
+      alert_level: 1,
+      message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n소요: ${elapsed}초`,
+    });
+
+    return [];
+  } catch (e) {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.error(`\n❌ 미국주식 장외 연구 오류 (${elapsed}초): ${e.message}`);
+    publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 2, message: `❌ 미국주식 장외 연구 오류\n${e.message}` });
+    throw e;
+  }
+}
+
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -226,9 +263,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // 현재 보유 포지션 심볼 추가 (놓치지 않도록)
   try {
     await db.initSchema();
-    const positions = await db.getAllPositions();
+    const positions = await db.getAllPositions('kis_overseas', false);
     const heldSymbols = positions
-      .filter(p => p.exchange === 'kis_overseas')
       .map(p => p.symbol)
       .filter(s => !symbols.includes(s));
     if (heldSymbols.length > 0) {
@@ -243,12 +279,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('🔴 PAPER_MODE=false — 실주문 실행 모드 (주의!)');
   }
 
-  // 장중 체크
-  if (!force && !isKisOverseasMarketOpen()) {
-    const now = new Date().toISOString().slice(11, 16);
-    console.log(`⏰ 미국 장외 시간 (UTC ${now}) — 스킵`);
-    process.exit(0);
-  }
+  const marketOpen = isKisOverseasMarketOpen();
 
   // 30분 주기 체크
   const check = shouldRunCycle(force);
@@ -267,6 +298,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   await db.initSchema();
   try {
+    if (!force && !marketOpen) {
+      const now = new Date().toISOString().slice(11, 16);
+      console.log(`📚 미국 장외 시간 (UTC ${now}) — 연구 모드 전환`);
+      await runOverseasResearchCycle(symbols);
+      process.exit(0);
+    }
+
     const r = await runOverseasCycle(symbols);
     console.log(`\n최종 결과: ${r.length}개 신호 승인`);
     process.exit(0);

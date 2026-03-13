@@ -289,7 +289,11 @@ export async function collectStrategies() {
 }
 
 export async function recommendStrategy(symbol, exchange = 'binance') {
-  const market     = exchange === 'binance' ? 'crypto' : exchange === 'kis' ? 'stocks' : 'all';
+  const market = exchange === 'binance'
+    ? 'crypto'
+    : exchange === 'kis' || exchange === 'kis_overseas'
+      ? 'stocks'
+      : 'all';
   const strategies = await db.getActiveStrategies(market, 3);
   if (strategies.length === 0) return null;
   console.log(`  👁️ [아르고스] ${symbol} 추천 전략: ${strategies[0].strategy_name}`);
