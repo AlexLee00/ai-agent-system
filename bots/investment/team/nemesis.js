@@ -209,6 +209,38 @@ async function calcReviewAdjustment(symbol, exchange, amountUsdt) {
   }
 }
 
+function applyReviewTpslAdjustment(dynamicTPSL, reviewInsight, entryEstimate = null) {
+  if (!dynamicTPSL || !reviewInsight || reviewInsight.closedTrades < 3) return dynamicTPSL;
+
+  let tpPct = dynamicTPSL.tpPct;
+  let slPct = dynamicTPSL.slPct;
+
+  if (
+    reviewInsight.avgMaxFavorable != null &&
+    reviewInsight.avgMaxAdverse != null &&
+    reviewInsight.avgMaxFavorable > 0 &&
+    Math.abs(reviewInsight.avgMaxAdverse) > 0
+  ) {
+    const mfe = reviewInsight.avgMaxFavorable / 100;
+    const mae = Math.abs(reviewInsight.avgMaxAdverse) / 100;
+
+    if (mfe > tpPct * 1.4) tpPct = Math.min(tpPct * 1.15, mfe * 0.85, TPSL_LIMITS.max_tp);
+    if (mae < slPct * 0.6) slPct = Math.max(slPct * 0.85, mae * 1.15, TPSL_LIMITS.min_sl);
+    if (mae > slPct * 1.2) slPct = Math.min(slPct * 1.1, TPSL_LIMITS.max_sl);
+  }
+
+  if (!validateDynamicTPSL(tpPct, slPct)) return dynamicTPSL;
+
+  return {
+    ...dynamicTPSL,
+    tpPct,
+    slPct,
+    tpPrice: entryEstimate ? entryEstimate * (1 + tpPct) : dynamicTPSL.tpPrice,
+    slPrice: entryEstimate ? entryEstimate * (1 - slPct) : dynamicTPSL.slPrice,
+    source: `${dynamicTPSL.source}_review`,
+  };
+}
+
 // ─── v2: LLM 리스크 평가 ────────────────────────────────────────────
 
 async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange }) {
@@ -659,6 +691,9 @@ export async function evaluateSignal(signal, opts = {}) {
           applied: true,
         }
       : calculateDynamicTPSL(symbol, entryEstimate, opts.atrRatio);
+    if (reviewAdjustment.insight?.closedTrades >= 3) {
+      dynamicTPSL = applyReviewTpslAdjustment(dynamicTPSL, reviewAdjustment.insight, entryEstimate);
+    }
     const tpslTag = dynamicTPSL.applied ? '✅ 적용' : '⏸️ 미적용 (비활성화)';
     console.log(
       `  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}%` +
