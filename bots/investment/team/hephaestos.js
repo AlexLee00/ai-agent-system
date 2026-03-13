@@ -107,6 +107,7 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
     pnlAmount,
     pnlPercent,
   });
+  await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
 }
 
 async function maybePromotePaperPositions() {
