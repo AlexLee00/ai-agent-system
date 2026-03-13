@@ -8,9 +8,12 @@ import l10SignalFusion from './l10-signal-fusion.js';
 import l11BullDebate from './l11-bull-debate.js';
 import l12BearDebate from './l12-bear-debate.js';
 import l13FinalDecision from './l13-final-decision.js';
+import l14PortfolioDecision from './l14-portfolio-decision.js';
 import l21LlmRisk from './l21-llm-risk.js';
 import l30SignalSave from './l30-signal-save.js';
 import l31OrderExecute from './l31-order-execute.js';
+import l32Notify from './l32-notify.js';
+import l33RagStore from './l33-rag-store.js';
 import l34Journal from './l34-journal.js';
 
 export const INVESTMENT_NODES = [
@@ -24,9 +27,12 @@ export const INVESTMENT_NODES = [
   l11BullDebate,
   l12BearDebate,
   l13FinalDecision,
+  l14PortfolioDecision,
   l21LlmRisk,
   l30SignalSave,
   l31OrderExecute,
+  l32Notify,
+  l33RagStore,
   l34Journal,
 ];
 
