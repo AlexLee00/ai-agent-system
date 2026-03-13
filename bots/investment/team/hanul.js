@@ -153,7 +153,7 @@ export async function executeSignal(signal) {
         ? ((existing.amount * existing.avg_price) + amountKrw) / newQty
         : order.price || 0;
 
-      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0 });
+      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis' });
 
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);
@@ -244,7 +244,7 @@ export async function executeOverseasSignal(signal) {
         ? ((existing.amount * existing.avg_price) + amountUsd) / newQty
         : order.price || 0;
 
-      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0 });
+      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis_overseas' });
 
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);

@@ -81,7 +81,7 @@ async function getUntrackedBtcUsd() {
     const [walletBal, btcTicker, trackedPos] = await Promise.all([
       ex.fetchBalance(),
       ex.fetchTicker('BTC/USDT').catch(() => ({ last: 0 })),
-      pgPool.get(SCHEMA, 'SELECT amount FROM positions WHERE symbol = $1', ['BTC/USDT']).catch(() => null),
+      pgPool.get(SCHEMA, 'SELECT amount FROM investment.positions WHERE symbol = $1 AND paper = false', ['BTC/USDT']).catch(() => null),
     ]);
     const walletBtc  = walletBal.free?.BTC  || 0;
     const trackedBtc = parseFloat(trackedPos?.amount || 0);
@@ -142,9 +142,16 @@ export async function getTotalCapital() {
 
 // ─── 포지션 조회 ─────────────────────────────────────────────────────
 
-export async function getOpenPositions() {
+export async function getOpenPositions(exchange = null, paper = false) {
   try {
-    return pgPool.query(SCHEMA, 'SELECT * FROM positions WHERE amount > 0', []);
+    if (exchange) {
+      return pgPool.query(
+        SCHEMA,
+        'SELECT * FROM investment.positions WHERE amount > 0 AND exchange = $1 AND paper = $2',
+        [exchange, paper === true],
+      );
+    }
+    return pgPool.query(SCHEMA, 'SELECT * FROM investment.positions WHERE amount > 0 AND paper = $1', [paper === true]);
   } catch (e) {
     console.warn('[capital] 포지션 조회 실패:', e.message);
     return [];
@@ -269,9 +276,10 @@ export async function checkCircuitBreaker() {
  * @param {string} symbol       — 심볼 (BTC/USDT)
  * @param {string} direction    — 'BUY' | 'SELL'
  * @param {number} estimatedAmount — 예상 매매 금액 (USDT)
+ * @param {string|null} exchange   — 포지션 제한을 적용할 거래소 (예: 'binance')
  * @returns {{ allowed: boolean, reason?: string, balance?: number, dailyTrades?: number }}
  */
-export async function preTradeCheck(symbol, direction, estimatedAmount = 0) {
+export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
 
   // 1. 가용 잔고 (BUY만)
@@ -292,7 +300,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0) {
     }
 
     // 3. 동시 포지션 제한
-    const openPositions = await getOpenPositions();
+    const openPositions = await getOpenPositions(exchange);
     if (openPositions.length >= config.max_concurrent_positions) {
       return { allowed: false, reason: `최대 포지션 도달: ${openPositions.length}/${config.max_concurrent_positions}` };
     }
