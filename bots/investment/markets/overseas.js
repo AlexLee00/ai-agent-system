@@ -24,6 +24,7 @@ import * as db from '../shared/db.js';
 import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
+import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
 
 import { analyzeKisOverseasMTF }               from '../team/aria.js';
 import { analyzeNews }                         from '../team/hermes.js';
@@ -238,49 +239,36 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (noDynamic) {
     symbols = getKisOverseasSymbols();
   } else {
-    // 장전 스크리닝 파일 우선 사용 → 실시간 아르고스 폴백
     const preScreened = loadPreScreened('overseas');
     if (preScreened?.symbols?.length > 0) {
       symbols = preScreened.symbols;
       const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
       console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
     } else {
-      try {
-        const { screenOverseasSymbols } = await import('../team/argos.js');
-        const screening = await screenOverseasSymbols();
-        symbols = screening.all;
-        console.log(`🔍 [아르고스] 해외주식 실시간 스크리닝: ${symbols.join(', ')}`);
-        savePreScreened('overseas', symbols);  // RAG용 최신 결과 저장
+      const resolved = await resolveSymbolsWithFallback({
+        market: 'overseas',
+        screen: async () => {
+          const { screenOverseasSymbols } = await import('../team/argos.js');
+          return screenOverseasSymbols();
+        },
+        loadCache: () => loadPreScreenedFallback('overseas'),
+        defaultSymbols: getKisOverseasSymbols(),
+        screenLabel: '아르고스 해외주식 스크리닝',
+        cacheLabel: 'RAG 폴백',
+      });
+      symbols = resolved.symbols;
+      if (resolved.source === 'screening') {
+        savePreScreened('overseas', symbols);
         const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
         await recordScreeningSuccess('overseas');
-      } catch (e) {
-        console.warn(`⚠️ 아르고스 스크리닝 실패 — RAG 폴백 시도: ${e.message}`);
-        const rag = loadPreScreenedFallback('overseas');
-        if (rag?.symbols?.length > 0) {
-          symbols = rag.symbols;
-          const ageMin = Math.floor((Date.now() - rag.savedAt) / 60000);
-          console.log(`  📚 [RAG 폴백] 최근 스크리닝 재사용 (${ageMin}분 전): ${symbols.join(', ')}`);
-        } else {
-          symbols = [];  // 기본 종목 없음 — 보유 포지션은 아래 블록에서 추가
-        }
+      } else if (resolved.error) {
         const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
-        await recordScreeningFailure('overseas', e.message);
+        await recordScreeningFailure('overseas', resolved.error.message);
       }
     }
   }
 
-  // 현재 보유 포지션 심볼 추가 (놓치지 않도록)
-  try {
-    await db.initSchema();
-    const positions = await db.getAllPositions('kis_overseas', false);
-    const heldSymbols = positions
-      .map(p => p.symbol)
-      .filter(s => !symbols.includes(s));
-    if (heldSymbols.length > 0) {
-      console.log(`  📌 보유 포지션 추가: ${heldSymbols.join(', ')}`);
-      symbols = [...symbols, ...heldSymbols];
-    }
-  } catch { /* 무시 */ }
+  symbols = await appendHeldSymbols(symbols, 'kis_overseas');
 
   if (isPaperMode()) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-B)');

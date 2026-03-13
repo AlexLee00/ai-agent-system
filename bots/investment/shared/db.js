@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'investment';
+let _schemaInitPromise = null;
 
 // ─── 기본 쿼리 래퍼 (외부 호환 API 유지) ──────────────────────────────
 
@@ -32,6 +33,9 @@ export function get(sql, params = []) {
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
 
 export async function initSchema() {
+  if (_schemaInitPromise) return _schemaInitPromise;
+
+  _schemaInitPromise = (async () => {
   await run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
@@ -223,6 +227,15 @@ export async function initSchema() {
   } catch { /* 무시 */ }
 
   console.log(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
+  })();
+
+  try {
+    await _schemaInitPromise;
+    return _schemaInitPromise;
+  } catch (e) {
+    _schemaInitPromise = null;
+    throw e;
+  }
 }
 
 // ─── analysis ───────────────────────────────────────────────────────
@@ -375,6 +388,53 @@ export async function getTodayPnl() {
   return rows[0] || { pnl: 0, trade_count: 0 };
 }
 
+export async function insertScreeningHistory({ market, core = [], dynamic = [], screeningData = null }) {
+  await run(`
+    INSERT INTO screening_history (date, market, core_symbols, dynamic_symbols, screening_data)
+    VALUES (CURRENT_DATE, $1, $2, $3, $4)
+  `, [
+    market,
+    JSON.stringify(core),
+    JSON.stringify(dynamic),
+    screeningData ? JSON.stringify(screeningData) : null,
+  ]);
+}
+
+export async function getRecentScreeningSymbols(market, limit = 3) {
+  const rows = await query(`
+    SELECT market, dynamic_symbols, core_symbols, screening_data, created_at
+    FROM screening_history
+    WHERE market = $1 OR market = 'all'
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [market, limit]);
+
+  const symbols = [];
+  for (const row of rows) {
+    const screeningData = row.screening_data && typeof row.screening_data === 'object'
+      ? row.screening_data
+      : row.screening_data ? JSON.parse(row.screening_data) : null;
+
+    const dynamic = row.market === 'all'
+      ? (screeningData?.[market]?.dynamic || [])
+      : Array.isArray(row.dynamic_symbols)
+        ? row.dynamic_symbols
+        : JSON.parse(row.dynamic_symbols || '[]');
+    const core = row.market === 'all'
+      ? (screeningData?.[market]?.core || [])
+      : Array.isArray(row.core_symbols)
+        ? row.core_symbols
+        : row.core_symbols && typeof row.core_symbols === 'object'
+          ? Object.values(row.core_symbols).flat()
+          : JSON.parse(row.core_symbols || '[]');
+    for (const sym of [...dynamic, ...core]) {
+      if (sym && !symbols.includes(sym)) symbols.push(sym);
+    }
+  }
+
+  return symbols;
+}
+
 // ─── strategy_pool ───────────────────────────────────────────────────
 
 export async function upsertStrategy(s) {
@@ -455,6 +515,8 @@ export default {
   insertTrade, getTradeHistory,
   upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
   getTodayPnl,
+  insertScreeningHistory,
+  getRecentScreeningSymbols,
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,

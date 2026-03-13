@@ -70,6 +70,18 @@ const _fgCache   = { data: null, ts: 0 };  // Fear & Greed 캐시 (1시간)
 const _sentCache = new Map();               // 감성 결과 캐시 (5분, key: `exchange:symbol`)
 const FG_TTL     = 3_600_000;
 const SENT_TTL   = 300_000;
+const SENT_CACHE_MAX = 1000;
+
+function cleanupSentCache(now = Date.now()) {
+  for (const [key, value] of _sentCache.entries()) {
+    if ((now - value.ts) >= SENT_TTL) _sentCache.delete(key);
+  }
+  while (_sentCache.size > SENT_CACHE_MAX) {
+    const oldestKey = _sentCache.keys().next().value;
+    if (!oldestKey) break;
+    _sentCache.delete(oldestKey);
+  }
+}
 
 // ─── Fear & Greed Index (alternative.me) ─────────────────────────────
 
@@ -331,11 +343,13 @@ const PROMPTS = {
  */
 export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  const now = Date.now();
+  cleanupSentCache(now);
 
   // 5분 캐시 확인
   const cacheKey = `${exchange}:${symbol}`;
   const cached   = _sentCache.get(cacheKey);
-  if (cached && (Date.now() - cached.ts) < SENT_TTL) {
+  if (cached && (now - cached.ts) < SENT_TTL) {
     console.log(`  💾 [소피아] 캐시 히트 (${symbol} ${label})`);
     return cached.data;
   }
@@ -423,7 +437,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   console.log(`  ✅ [소피아] DB 저장 완료`);
 
   const result = { symbol, signal, confidence, reasoning, sentiment, combinedScore };
-  _sentCache.set(cacheKey, { data: result, ts: Date.now() });
+  _sentCache.set(cacheKey, { data: result, ts: now });
   return result;
 }
 

@@ -216,7 +216,7 @@ async function runLLMReview(tradeSummary) {
 
 async function storeReviewToRAG(summary, review, trades, rrSection = null) {
   try {
-    const rag     = require('../../../packages/core/lib/rag');
+    const rag     = require('../../../packages/core/lib/rag-safe');
     const rrStr   = rrSection?.currentRR != null ? ` | R/R ${rrSection.currentRR} 승률 ${rrSection.winRate}%` : '';
     const content = [
       `주간 리뷰 (${DAYS}일): 등급=${review.overall_grade}${rrStr}`,

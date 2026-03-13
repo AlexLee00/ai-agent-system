@@ -25,6 +25,7 @@ import { getSymbols, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
+import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
 
 import { analyzeCryptoMTF }         from '../team/aria.js';
 import { analyzeOnchain }           from '../team/oracle.js';
@@ -281,30 +282,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (noDynamic) {
     symbols = getSymbols();
   } else {
-    try {
-      const { screenCryptoSymbols } = await import('../team/argos.js');
-      const screening = await screenCryptoSymbols();
-      symbols = screening.all;
-      console.log(`🔍 [아르고스] 스크리닝 완료: ${symbols.join(', ')}`);
-      const { savePreScreened } = await import('../scripts/pre-market-screen.js');
-      savePreScreened('crypto', symbols);  // RAG용 최신 결과 저장
+    const { loadPreScreenedFallback, savePreScreened } = await import('../scripts/pre-market-screen.js');
+    const resolved = await resolveSymbolsWithFallback({
+      market: 'crypto',
+      screen: async () => {
+        const { screenCryptoSymbols } = await import('../team/argos.js');
+        return screenCryptoSymbols();
+      },
+      loadCache: () => loadPreScreenedFallback('crypto'),
+      defaultSymbols: getSymbols(),
+      screenLabel: '아르고스 스크리닝',
+      cacheLabel: 'RAG 폴백',
+    });
+    symbols = resolved.symbols;
+    if (resolved.source === 'screening') {
+      savePreScreened('crypto', symbols);
       const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
       await recordScreeningSuccess('crypto');
-    } catch (e) {
-      console.warn(`⚠️ 아르고스 스크리닝 실패 — RAG 폴백 시도: ${e.message}`);
-      const { loadPreScreenedFallback } = await import('../scripts/pre-market-screen.js');
-      const rag = loadPreScreenedFallback('crypto');
-      if (rag?.symbols?.length > 0) {
-        symbols = rag.symbols;
-        const ageMin = Math.floor((Date.now() - rag.savedAt) / 60000);
-        console.log(`  📚 [RAG 폴백] 최근 스크리닝 재사용 (${ageMin}분 전): ${symbols.join(', ')}`);
-      } else {
-        symbols = getSymbols();  // config.yaml 기본 종목 최후 폴백
-      }
+    } else if (resolved.error) {
       const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
-      await recordScreeningFailure('crypto', e.message);
+      await recordScreeningFailure('crypto', resolved.error.message);
     }
   }
+
+  symbols = await appendHeldSymbols(symbols, 'binance');
 
   if (isPaperMode()) {
     console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-A)');

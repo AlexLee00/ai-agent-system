@@ -83,7 +83,7 @@ function checkOutdated(botDir, label) {
 
 async function _createPatchTicket(vulnerability) {
   try {
-    const rag     = require('../../../../packages/core/lib/rag');
+    const rag     = require('../../../../packages/core/lib/rag-safe');
     const content = [
       `보안 패치 필요: ${vulnerability.label}`,
       `심각도: ${vulnerability.severity || vulnerability.status}`,

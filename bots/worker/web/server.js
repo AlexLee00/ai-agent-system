@@ -33,7 +33,7 @@ const { recalcProgress } = require('../src/ryan');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
-const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag'));
+const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables } = require('../lib/ai-helper');
 

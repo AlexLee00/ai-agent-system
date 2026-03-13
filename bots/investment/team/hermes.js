@@ -24,16 +24,23 @@ import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
 
+const _domesticMetaCache = new Map();
+let _dartCorpCodeMapPromise = null;
+const DOMESTIC_META_TTL = 6 * 3600 * 1000;
+const DOMESTIC_META_MAX = 500;
+
 // ─── RSS 소스 ────────────────────────────────────────────────────────
 
 const RSS_CRYPTO = [
   { name: 'CoinDesk',      hostname: 'www.coindesk.com',      path: '/arc/outboundfeeds/rss/' },
   { name: 'CoinTelegraph', hostname: 'cointelegraph.com',     path: '/rss' },
+  { name: 'Decrypt',       hostname: 'decrypt.co',            path: '/feed' },
 ];
 
 const RSS_US_GENERAL = [
   { name: 'MarketWatch',   hostname: 'feeds.marketwatch.com', path: '/marketwatch/topstories/' },
   { name: 'Yahoo Top',     hostname: 'finance.yahoo.com',     path: '/rss/topstories' },
+  { name: 'PRNewswire Tech', hostname: 'www.prnewswire.com',  path: '/rss/technology-latest-news/technology-latest-news-list.rss' },
 ];
 
 function getYahooSymbolRSS(symbol) {
@@ -96,6 +103,94 @@ function httpsGetRaw(hostname, path, headers = {}) {
   });
 }
 
+async function fetchDomesticSymbolName(symbol) {
+  try {
+    const { status, body } = await httpsGetRaw(
+      'finance.naver.com',
+      `/item/main.naver?code=${symbol}`,
+      {
+        'User-Agent': 'Mozilla/5.0 (compatible; HermesBot/1.0)',
+        'Referer': 'https://finance.naver.com/',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+      },
+    );
+    if (status !== 200) return null;
+
+    const title = /<title>\s*([^:<]+)\s*[:|-]/i.exec(body)?.[1]?.trim()
+      || /<div class="wrap_company">[\s\S]*?<h2[^>]*>\s*([^<]+)\s*</i.exec(body)?.[1]?.trim()
+      || '';
+
+    return title || null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadDartCorpCodeMap() {
+  if (_dartCorpCodeMapPromise) return _dartCorpCodeMapPromise;
+
+  _dartCorpCodeMapPromise = (async () => {
+    const s = loadSecrets();
+    if (!s.dart_api_key) return new Map();
+
+    try {
+      const { status, body } = await httpsGetRaw(
+        'engopendart.fss.or.kr',
+        `/engapi/corpCode.json?crtfc_key=${s.dart_api_key}`,
+      );
+      if (status !== 200) return new Map();
+
+      const data = JSON.parse(body);
+      const rows = Array.isArray(data?.list) ? data.list : [];
+      const map  = new Map();
+
+      for (const row of rows) {
+        const stockCode = String(row.stock_code || '').trim();
+        if (!stockCode) continue;
+        map.set(stockCode, {
+          corpCode: String(row.corp_code || '').trim(),
+          stockName: String(row.stock_name || row.corp_name || '').trim(),
+          corpName: String(row.corp_name || '').trim(),
+        });
+      }
+
+      return map;
+    } catch {
+      return new Map();
+    }
+  })();
+
+  return _dartCorpCodeMapPromise;
+}
+
+async function resolveDomesticMeta(symbol) {
+  const cached = _domesticMetaCache.get(symbol);
+  if (cached && (Date.now() - cached.ts) < DOMESTIC_META_TTL) return cached.value;
+  if (cached) _domesticMetaCache.delete(symbol);
+
+  let stockName = SYMBOL_NAME_KR[symbol] || '';
+  let corpCode  = '';
+
+  const dartMap = await loadDartCorpCodeMap();
+  const dartMeta = dartMap.get(symbol);
+  if (dartMeta) {
+    stockName ||= dartMeta.stockName || dartMeta.corpName || '';
+    corpCode = dartMeta.corpCode || '';
+  }
+
+  if (!stockName) {
+    stockName = await fetchDomesticSymbolName(symbol) || symbol;
+  }
+
+  const meta = { symbol, stockName, corpCode };
+  if (_domesticMetaCache.size >= DOMESTIC_META_MAX) {
+    const oldestKey = _domesticMetaCache.keys().next().value;
+    if (oldestKey) _domesticMetaCache.delete(oldestKey);
+  }
+  _domesticMetaCache.set(symbol, { value: meta, ts: Date.now() });
+  return meta;
+}
+
 // ─── RSS 파싱 ────────────────────────────────────────────────────────
 
 function parseRSS(xml) {
@@ -119,8 +214,22 @@ function filterRelevant(items, symbol, exchange) {
     ? (SYMBOL_KEYWORDS_US[symbol] || [symbol])
     : (SYMBOL_KEYWORDS_CRYPTO[symbol] || [symbol.split('/')[0]]);
   const commonKws = exchange === 'kis_overseas' ? COMMON_KWS_US : COMMON_KWS_CRYPTO;
-  const allKws    = [...symbolKws, ...commonKws];
 
+  if (exchange === 'kis_overseas') {
+    const strict = items.filter(item => {
+      const text = `${item.title} ${item.description}`.toUpperCase();
+      return symbolKws.some(kw => text.includes(kw));
+    });
+    if (strict.length >= 3) return strict.slice(0, 10);
+
+    const fallback = items.filter(item => {
+      const text = `${item.title} ${item.description}`.toUpperCase();
+      return symbolKws.some(kw => text.includes(kw)) || commonKws.some(kw => text.includes(kw));
+    });
+    return fallback.slice(0, 10);
+  }
+
+  const allKws = [...symbolKws, ...commonKws];
   return items
     .filter(item => {
       const text = `${item.title} ${item.description}`.toUpperCase();
@@ -131,14 +240,14 @@ function filterRelevant(items, symbol, exchange) {
 
 // ─── 네이버 뉴스 검색 API ───────────────────────────────────────────
 
-async function fetchNaverNews(symbol) {
+async function fetchNaverNews(symbol, stockName) {
   const s = loadSecrets();
   if (!s.naver_client_id || !s.naver_client_secret) {
     console.warn(`  ⚠️ [헤르메스] 네이버 API 키 없음 — 국내주식 뉴스 스킵`);
     return [];
   }
 
-  const query = encodeURIComponent(SYMBOL_NAME_KR[symbol] || symbol);
+  const query = encodeURIComponent(stockName || SYMBOL_NAME_KR[symbol] || symbol);
   const path  = `/v1/search/news.json?query=${query}&display=20&sort=date`;
 
   try {
@@ -160,14 +269,18 @@ async function fetchNaverNews(symbol) {
 
 // ─── DART 공시 조회 ──────────────────────────────────────────────────
 
-async function fetchDartDisclosures(symbol) {
+async function fetchDartDisclosures(symbol, corpCode) {
   const s      = loadSecrets();
   const apiKey = s.dart_api_key;
   if (!apiKey) return [];
+  if (!corpCode) {
+    console.warn(`  ⚠️ [헤르메스] DART corp_code 없음 — 공시 스킵 (${symbol})`);
+    return [];
+  }
 
   const today = kst.today().replace(/-/g, '');
   const aWeek = kst.daysAgoStr(7).replace(/-/g, '');
-  const path  = `/api/list.json?crtfc_key=${apiKey}&corp_code=${symbol}&bgn_de=${aWeek}&end_de=${today}&page_count=10`;
+  const path  = `/api/list.json?crtfc_key=${apiKey}&corp_code=${corpCode}&bgn_de=${aWeek}&end_de=${today}&page_count=10`;
 
   try {
     const { status, body } = await httpsGetRaw('opendart.fss.or.kr', path);
@@ -227,7 +340,9 @@ const PROMPTS = {
 
 export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
-  console.log(`\n📰 [헤르메스] ${symbol}(${label}) 뉴스 수집 중...`);
+  const domesticMeta = exchange === 'kis' ? await resolveDomesticMeta(symbol) : null;
+  const displaySymbol = domesticMeta?.stockName ? `${symbol}/${domesticMeta.stockName}` : symbol;
+  console.log(`\n📰 [헤르메스] ${displaySymbol}(${label}) 뉴스 수집 중...`);
 
   let rssSources;
   let extraItems = [];
@@ -237,8 +352,8 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   } else if (exchange === 'kis') {
     rssSources = [];
     extraItems = await Promise.all([
-      fetchNaverNews(symbol),
-      fetchDartDisclosures(symbol),
+      fetchNaverNews(symbol, domesticMeta?.stockName),
+      fetchDartDisclosures(symbol, domesticMeta?.corpCode),
     ]).then(([naver, dart]) => [...naver, ...dart]);
   } else {
     rssSources = RSS_CRYPTO;

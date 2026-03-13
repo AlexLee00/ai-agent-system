@@ -173,7 +173,7 @@ async function main() {
     // RAG 저장: 기술 분석 결과를 rag_tech에 학습 데이터로 기록
     if (analysis && !analysis.error) {
       try {
-        const rag       = require('../../../packages/core/lib/rag');
+        const rag       = require('../../../packages/core/lib/rag-safe');
         const techItems = [
           ...(analysis.patches  || []).slice(0, 3).map(p => `패치: ${p.name || p.package || p.title || '?'}`),
           ...(analysis.security || []).slice(0, 3).map(s => `보안: ${s.title || s.name || '?'}`),

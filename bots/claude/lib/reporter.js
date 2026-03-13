@@ -172,7 +172,7 @@ async function emitDexterEvent(results, elapsed) {
   // RAG 저장: ERROR/WARN 이슈를 rag_operations에 학습 데이터로 기록
   if (overall !== 'ok') {
     try {
-      const rag      = require('../../../packages/core/lib/rag');
+      const rag      = require('../../../packages/core/lib/rag-safe');
       const topItems = errors.concat(warns).slice(0, 5);
       const content  = [
         `덱스터 점검 ${overall.toUpperCase()}: 오류 ${errors.length}건, 경고 ${warns.length}건`,
