@@ -230,6 +230,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const symArg    = args.find(a => a.startsWith('--symbols='));
   const force     = args.includes('--force');
   const noDynamic = args.includes('--no-dynamic');
+  const researchOnly = args.includes('--research-only');
 
   let symbols;
   if (symArg) {
@@ -292,7 +293,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const marketOpen = isKisMarketOpen() && !holiday.isHoliday;
 
   // 30분 주기 체크
-  const check = shouldRunCycle(force);
+  const check = researchOnly
+    ? { run: true, reason: '--research-only 옵션' }
+    : shouldRunCycle(force);
   if (!check.run) {
     console.log(`⏳ 사이클 스킵: ${check.reason}`);
     process.exit(0);
@@ -308,6 +311,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   await db.initSchema();
   try {
+    if (researchOnly) {
+      console.log('🧪 강제 연구 모드 실행');
+      await runDomesticResearchCycle(symbols);
+      process.exit(0);
+    }
+
     if (!force && !marketOpen) {
       const reason = holiday.isHoliday ? `공휴일 (${holiday.name})` : `장외 시간 (KST ${kst.timeStr().slice(0, 5)})`;
       console.log(`📚 ${reason} — 연구 모드 전환`);

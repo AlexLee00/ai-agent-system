@@ -101,9 +101,10 @@ export function savePreScreened(market, symbols, meta = {}) {
 export function saveResearchWatchlist(market, symbols, meta = {}) {
   const current = loadPreScreenedFallback(market) || {};
   const mergedSymbols = [...new Set([...(current.symbols || []), ...symbols])];
+  const { symbols: _ignoredSymbols, savedAt: _ignoredSavedAt, ...restCurrent } = current;
 
   savePreScreened(market, mergedSymbols, {
-    ...current,
+    ...restCurrent,
     ...meta,
     research: {
       mode: 'off_hours',
