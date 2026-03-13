@@ -89,6 +89,7 @@ export async function initSchema() {
       amount         DOUBLE PRECISION DEFAULT 0,
       avg_price      DOUBLE PRECISION DEFAULT 0,
       unrealized_pnl DOUBLE PRECISION DEFAULT 0,
+      paper          BOOLEAN DEFAULT false,
       exchange       TEXT DEFAULT 'binance',
       updated_at     TIMESTAMP DEFAULT now()
     )
@@ -153,6 +154,8 @@ export async function initSchema() {
   ]) {
     try { await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
+
+  try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS paper BOOLEAN DEFAULT false`); } catch { /* 무시 */ }
 
   // ── screening_history (아르고스 동적 종목 스크리닝 이력) ──
   await run(`
@@ -296,17 +299,18 @@ export async function getTradeHistory(symbol, limit = 50) {
 
 // ─── positions ──────────────────────────────────────────────────────
 
-export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance' }) {
+export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false }) {
   await run(
-    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, exchange, updated_at)
-     VALUES ($1, $2, $3, $4, $5, now())
+    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, exchange, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, now())
      ON CONFLICT (symbol) DO UPDATE SET
        amount         = EXCLUDED.amount,
        avg_price      = EXCLUDED.avg_price,
        unrealized_pnl = EXCLUDED.unrealized_pnl,
+       paper          = EXCLUDED.paper,
        exchange       = EXCLUDED.exchange,
        updated_at     = EXCLUDED.updated_at`,
-    [symbol, amount, avgPrice, unrealizedPnl ?? 0, exchange],
+    [symbol, amount, avgPrice, unrealizedPnl ?? 0, paper === true, exchange],
   );
 }
 
@@ -314,8 +318,23 @@ export async function getPosition(symbol) {
   return get(`SELECT * FROM positions WHERE symbol = $1`, [symbol]);
 }
 
+export async function getLivePosition(symbol) {
+  return get(`SELECT * FROM positions WHERE symbol = $1 AND paper = false`, [symbol]);
+}
+
+export async function getPaperPosition(symbol) {
+  return get(`SELECT * FROM positions WHERE symbol = $1 AND paper = true`, [symbol]);
+}
+
 export async function getAllPositions() {
   return query(`SELECT * FROM positions WHERE amount > 0 ORDER BY symbol`);
+}
+
+export async function getPaperPositions(exchange = null) {
+  if (exchange) {
+    return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true AND exchange = $1 ORDER BY updated_at ASC`, [exchange]);
+  }
+  return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true ORDER BY updated_at ASC`);
 }
 
 export async function deletePosition(symbol) {
@@ -413,7 +432,7 @@ export default {
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, updateSignalAmount, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory,
-  upsertPosition, getPosition, getAllPositions, deletePosition,
+  upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
   getTodayPnl,
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   insertRiskLog,
