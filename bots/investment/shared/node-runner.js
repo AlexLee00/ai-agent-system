@@ -146,6 +146,52 @@ export async function runNode(node, ctx = {}) {
   }
 }
 
+export async function recordNodeResult(node, ctx = {}, result, status = 'completed') {
+  const {
+    sessionId,
+    market,
+    symbol = null,
+    inputRef = null,
+    attempt = 1,
+    meta = {},
+  } = ctx;
+
+  const nodeRunId = await pipelineDb.startNodeRun({
+    sessionId,
+    nodeId: node.id,
+    nodeType: node.type || 'node',
+    symbol,
+    inputRef,
+    attempt,
+    metadata: meta,
+  });
+
+  const artifact = await storeNodeArtifact({
+    sessionId,
+    nodeId: node.id,
+    nodeType: node.type || 'node',
+    market,
+    symbol,
+    status,
+    payload: result,
+    meta: {
+      input_ref: inputRef,
+      ...meta,
+    },
+  });
+
+  await pipelineDb.finishNodeRun(nodeRunId, {
+    status,
+    outputRef: artifact.ref,
+    metadata: {
+      result_summary: summarizeResult(result),
+      rag_artifact_stored: artifact.stored,
+    },
+  });
+
+  return { nodeRunId, outputRef: artifact.ref, artifactStored: artifact.stored, result };
+}
+
 function summarizeResult(result) {
   if (Array.isArray(result)) return { kind: 'array', count: result.length };
   if (result && typeof result === 'object') {
@@ -168,4 +214,5 @@ export default {
   storeNodeArtifact,
   fetchNodeArtifacts,
   runNode,
+  recordNodeResult,
 };

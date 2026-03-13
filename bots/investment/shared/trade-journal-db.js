@@ -9,7 +9,7 @@
  *       ? 플레이스홀더 → pg-pool이 $1/$2... 자동 변환.
  */
 
-import { query, run } from './db.js';
+import { get, query, run } from './db.js';
 import { computeTradeExcursions } from './trade-review-metrics.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
