@@ -44,6 +44,47 @@ async function fetchPrices(symbols) {
   return prices;
 }
 
+function summarizeTradesByModeAndExchange(trades = []) {
+  const inferExchange = (trade) => {
+    if (trade.exchange) return trade.exchange;
+    if (String(trade.symbol || '').includes('/')) return 'binance';
+    if (/^\d{6}$/.test(String(trade.symbol || ''))) return 'kis';
+    return 'kis_overseas';
+  };
+  const buckets = {};
+  for (const trade of trades) {
+    const mode = trade.paper ? 'paper' : 'live';
+    const exchange = inferExchange(trade);
+    const key = `${mode}:${exchange}`;
+    if (!buckets[key]) {
+      buckets[key] = { mode, exchange, count: 0, gross: 0 };
+    }
+    buckets[key].count += 1;
+    buckets[key].gross += Number(trade.total_usdt || 0);
+  }
+  return Object.values(buckets).sort((a, b) => a.mode.localeCompare(b.mode) || a.exchange.localeCompare(b.exchange));
+}
+
+function summarizePositionsByModeAndExchange(positions = [], prices = {}) {
+  const buckets = {};
+  for (const pos of positions) {
+    const mode = pos.paper ? 'paper' : 'live';
+    const exchange = pos.exchange || 'unknown';
+    const key = `${mode}:${exchange}`;
+    if (!buckets[key]) {
+      buckets[key] = { mode, exchange, positions: 0, costBasis: 0, marketValue: 0, unrealized: 0 };
+    }
+    const currentPrice = prices[pos.symbol] || pos.avg_price || 0;
+    const costBasis = Number(pos.amount || 0) * Number(pos.avg_price || 0);
+    const marketValue = Number(pos.amount || 0) * Number(currentPrice || 0);
+    buckets[key].positions += 1;
+    buckets[key].costBasis += costBasis;
+    buckets[key].marketValue += marketValue;
+    buckets[key].unrealized += marketValue - costBasis;
+  }
+  return Object.values(buckets).sort((a, b) => a.mode.localeCompare(b.mode) || a.exchange.localeCompare(b.exchange));
+}
+
 // ─── 바이낸스 실잔고 조회 ───────────────────────────────────────────
 
 async function fetchBinanceBalance() {
@@ -173,6 +214,8 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   `);
 
   const pnl = await db.getTodayPnl();
+  const tradeBreakdown = summarizeTradesByModeAndExchange(trades);
+  const positionBreakdown = summarizePositionsByModeAndExchange(positions, posPrices);
 
   // ── 7. 분석팀 정확도 ────────────────────────────────────────────────
   let accuracyReport = null;
@@ -275,6 +318,25 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       const dtStr = dt.toISOString().slice(5, 16).replace('T', ' ');
       const paper = t.paper ? '📄' : '🔴';
       lines.push(`  ${paper} ${dtStr} | ${t.symbol} ${t.side.toUpperCase()} ${t.amount?.toFixed(6)}개 @ $${t.price?.toLocaleString()} (≈$${t.total_usdt?.toFixed(0)})`);
+    }
+  }
+  lines.push(``);
+
+  lines.push(`━━━ 실거래/모의거래 분리 ━━━`);
+  if (tradeBreakdown.length === 0) {
+    lines.push(`  거래 없음`);
+  } else {
+    for (const row of tradeBreakdown) {
+      const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
+      lines.push(`  ${modeLabel} [${row.exchange}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`);
+    }
+  }
+  if (positionBreakdown.length > 0) {
+    lines.push(`  포지션:`);
+    for (const row of positionBreakdown) {
+      const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
+      const pnlSign = row.unrealized >= 0 ? '+' : '';
+      lines.push(`    ${modeLabel} [${row.exchange}]: ${row.positions}개 | 평가 $${row.marketValue.toFixed(2)} | 미실현 ${pnlSign}$${row.unrealized.toFixed(2)}`);
     }
   }
   lines.push(``);
