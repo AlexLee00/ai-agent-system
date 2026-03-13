@@ -22,6 +22,7 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
+import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -46,6 +47,25 @@ const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD:    10,
   MAX_ORDER_USD: 1_000,
 };
+
+function getInvestmentPoolStats() {
+  try {
+    return pgPool.getPoolStats('investment');
+  } catch {
+    return null;
+  }
+}
+
+function logHanulPhase(label, startedAt, extra = {}) {
+  const elapsedMs = Date.now() - startedAt;
+  const pool = getInvestmentPoolStats();
+  const payload = {
+    elapsed_ms: elapsedMs,
+    pool,
+    ...extra,
+  };
+  console.log(`[한울] ${label} ${JSON.stringify(payload)}`);
+}
 
 async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
@@ -413,14 +433,26 @@ export async function executeOverseasSignal(signal) {
  * 대기 중인 KIS 국내주식 신호 전체 처리
  */
 export async function processAllPendingKisSignals() {
+  const startedAt = Date.now();
+  console.log(`[한울] KIS 국내 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
   const signals = await db.getPendingSignals('kis');
+  logHanulPhase('KIS 국내 pending 조회 완료', startedAt, { signal_count: signals.length });
   if (signals.length === 0) { console.log('[한울] 대기 KIS 국내 신호 없음'); return []; }
   console.log(`[한울] ${signals.length}개 KIS 국내 신호 처리 시작`);
   const results = [];
   for (const signal of signals) {
+    const signalStartedAt = Date.now();
     results.push(await executeSignal(signal));
+    logHanulPhase(`KIS 국내 신호 처리 완료 ${signal.symbol}`, signalStartedAt, {
+      signal_id: signal.id,
+      action: signal.action,
+    });
     await new Promise(r => setTimeout(r, 500));
   }
+  logHanulPhase('KIS 국내 pending 전체 처리 완료', startedAt, {
+    signal_count: signals.length,
+    success_count: results.filter(r => r?.success).length,
+  });
   return results;
 }
 
@@ -428,14 +460,26 @@ export async function processAllPendingKisSignals() {
  * 대기 중인 KIS 해외주식 신호 전체 처리
  */
 export async function processAllPendingKisOverseasSignals() {
+  const startedAt = Date.now();
+  console.log(`[한울] KIS 해외 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
   const signals = await db.getPendingSignals('kis_overseas');
+  logHanulPhase('KIS 해외 pending 조회 완료', startedAt, { signal_count: signals.length });
   if (signals.length === 0) { console.log('[한울] 대기 KIS 해외 신호 없음'); return []; }
   console.log(`[한울] ${signals.length}개 KIS 해외 신호 처리 시작`);
   const results = [];
   for (const signal of signals) {
+    const signalStartedAt = Date.now();
     results.push(await executeOverseasSignal(signal));
+    logHanulPhase(`KIS 해외 신호 처리 완료 ${signal.symbol}`, signalStartedAt, {
+      signal_id: signal.id,
+      action: signal.action,
+    });
     await new Promise(r => setTimeout(r, 500));
   }
+  logHanulPhase('KIS 해외 pending 전체 처리 완료', startedAt, {
+    signal_count: signals.length,
+    success_count: results.filter(r => r?.success).length,
+  });
   return results;
 }
 

@@ -1,10 +1,11 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, BookOpen, DollarSign, CheckSquare, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpen, DollarSign, CheckSquare, Settings, Bot } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '홈' },
+  { href: '/chat',       icon: Bot,             label: 'AI' },
   { href: '/journals',   icon: BookOpen,        label: '일지' },
   { href: '/sales',      icon: DollarSign,      label: '매출' },
   { href: '/approvals',  icon: CheckSquare,     label: '승인' },

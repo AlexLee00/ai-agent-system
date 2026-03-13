@@ -36,6 +36,13 @@ const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables } = require('../lib/ai-helper');
+const {
+  ensureChatSchema,
+  handleChatMessage,
+  listSessions: listChatSessions,
+  listMessages: listChatMessages,
+  resolveEmployeeId,
+} = require('../lib/chat-agent');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -132,8 +139,10 @@ const aiLimiter = rateLimit({
 app.use('/api/ai/', aiLimiter);
 
 // ── 정적 파일 / 루트 리다이렉트 ──────────────────────────────────────
-app.get('/', (req, res) => res.redirect('http://localhost:4001'));
-app.use(express.static(path.join(__dirname, 'pages')));
+app.get('/', (req, res) => {
+  const uiBase = process.env.WORKER_WEB_URL || `${req.protocol}://${req.hostname}:4001`;
+  res.redirect(`${uiBase}/dashboard`);
+});
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
@@ -152,6 +161,10 @@ function pagination(req) {
   const sort  = /^\w+$/.test(req.query.sort || 'created_at') ? (req.query.sort || 'created_at') : 'created_at';
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
   return { page, limit, offset: (page - 1) * limit, sort, order };
+}
+
+async function getEmployeeIdForRequest(req) {
+  return resolveEmployeeId(req.user.id);
 }
 
 // ── 인증 API ──────────────────────────────────────────────────────────
@@ -354,11 +367,12 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
 // ── 업체 메뉴 설정 API (master 전용) ─────────────────────────────────
 
 const MENU_KEYS = [
-  'dashboard','employees','attendance','sales','payroll',
+  'dashboard','chat','employees','attendance','sales','payroll',
   'projects','schedules','journals','documents','approvals','settings','ai',
 ];
 const ALL_MENUS = [
   { key: 'dashboard',  label: '대시보드',  alwaysOn: true },
+  { key: 'chat',       label: 'AI 업무' },
   { key: 'employees',  label: '직원 관리' },
   { key: 'attendance', label: '근태 관리' },
   { key: 'sales',      label: '매출 관리' },
@@ -1342,6 +1356,7 @@ app.post('/api/schedules',
     if (!validate(req, res)) return;
     const { title, description, type, start_time, end_time, all_day, location, attendees, recurrence, reminder } = req.body;
     try {
+      const employeeId = await getEmployeeIdForRequest(req);
       const row = await pgPool.get(SCHEMA,
         `INSERT INTO worker.schedules
            (company_id, title, description, type, start_time, end_time, all_day,
@@ -1350,7 +1365,7 @@ app.post('/api/schedules',
         [req.companyId, title, description||null, type||'task',
          start_time, end_time||null, all_day||false,
          location||null, JSON.stringify(attendees||[]),
-         recurrence||null, reminder??30, req.user.id]);
+         recurrence||null, reminder??30, employeeId]);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
       rag.store('rag_schedule',
         `[일정] ${title} | ${start_time}${end_time ? '~' + end_time : ''} | ${type || 'task'}`,
@@ -1396,6 +1411,49 @@ app.delete('/api/schedules/:id', requireAuth, companyFilter, auditLog('DELETE', 
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
+// ── 자연어 업무 대화 API (Worker v2) ─────────────────────────────────
+
+app.get('/api/chat/sessions', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const sessions = await listChatSessions(req.companyId, req.user.id);
+    res.json({ sessions });
+  } catch {
+    res.status(500).json({ error: '대화 세션을 불러오지 못했습니다.', code: 'CHAT_SESSION_LOAD_FAILED' });
+  }
+});
+
+app.get('/api/chat/sessions/:id/messages', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const messages = await listChatMessages(req.params.id, req.companyId, req.user.id);
+    res.json({ messages });
+  } catch {
+    res.status(500).json({ error: '대화 메시지를 불러오지 못했습니다.', code: 'CHAT_MESSAGE_LOAD_FAILED' });
+  }
+});
+
+app.post('/api/chat/send',
+  requireAuth,
+  companyFilter,
+  body('message').isString().trim().isLength({ min: 1, max: 1000 }),
+  body('session_id').optional().isString().trim().isLength({ min: 8, max: 100 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const result = await handleChatMessage({
+        text: req.body.message,
+        sessionId: req.body.session_id || null,
+        user: req.user,
+        companyId: req.companyId,
+        channel: 'web',
+      });
+      res.json(result);
+    } catch (e) {
+      console.error('[worker/chat]', e.message);
+      res.status(500).json({ error: '대화 처리 중 오류가 발생했습니다.', code: 'CHAT_SEND_FAILED', detail: e.message });
+    }
+  }
+);
+
 // ── AI 질문 API ───────────────────────────────────────────────────────
 
 app.post('/api/ai/ask',
@@ -1417,7 +1475,7 @@ app.post('/api/ai/ask',
         'meta-llama/llama-4-maverick-17b-128e-instruct',
         '당신은 PostgreSQL 전문가입니다.',
         buildSQLPrompt(question, companyId), 512);
-      const sql = extractSQL(sqlText);
+      let sql = extractSQL(sqlText);
 
       // 2단계: 안전성 검증
       if (!isSelectOnly(sql)) {
@@ -1812,6 +1870,7 @@ process.on('SIGINT',  () => { killAllClaudeProcs('SIGINT');  process.exit(0); })
 if (require.main === module) {
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
+  ensureChatSchema().catch(e => console.error('[worker/chat] 스키마 초기화 실패:', e.message));
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[worker/server] API 서버 기동 — http://0.0.0.0:${PORT}`);

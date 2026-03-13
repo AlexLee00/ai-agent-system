@@ -10,6 +10,7 @@ import {
 
 const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
+  { href: '/chat',       icon: Bot,             label: 'AI 업무' },
   { href: '/employees',  icon: Users,           label: '직원 관리' },
   { href: '/attendance', icon: Clock,           label: '근태 관리' },
   { href: '/sales',      icon: DollarSign,      label: '매출 관리' },

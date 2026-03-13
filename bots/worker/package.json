@@ -8,6 +8,7 @@
     "start": "node src/worker-lead.js",
     "serve": "node web/server.js",
     "migrate": "node migrations/001-init-schema.js",
+    "migrate:chat": "node migrations/011-worker-chat.js",
     "setup": "node scripts/setup-worker.js"
   },
   "dependencies": {

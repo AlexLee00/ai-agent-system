@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 
 const ICON_MAP = {
   dashboard:  LayoutDashboard,
+  chat:       Bot,
   employees:  Users,
   attendance: Clock,
   sales:      DollarSign,

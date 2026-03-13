@@ -21,6 +21,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
+const kst     = require('../../../packages/core/lib/kst');
 
 const SCHEMA = 'investment';
 
@@ -42,10 +43,9 @@ const THRESHOLD_LOW  = 0.50;  // 50%- → 가중치 감소
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
 function _weekCutoff(weeksAgo = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() - (weeksAgo * 7 + d.getDay()));  // 이번 주 시작(일요일)
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();  // bigint (Unix ms) — trade_review.reviewed_at 타입 맞춤
+  const startOfTodayKst = new Date(`${kst.today()}T00:00:00+09:00`);
+  const kstDay = startOfTodayKst.getUTCDay();
+  return startOfTodayKst.getTime() - (weeksAgo * 7 + kstDay) * 86400000;
 }
 
 function _clamp(val, min, max) {

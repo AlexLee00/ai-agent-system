@@ -69,6 +69,30 @@ function _isConnError(err) {
     RECONNECT_MESSAGES.some(m => err.message?.includes(m));
 }
 
+function _snapshotPoolStats(pool, schema = 'unknown') {
+  if (!pool) {
+    return {
+      schema,
+      total: 0,
+      idle: 0,
+      waiting: 0,
+      active: 0,
+      utilization: '0%',
+    };
+  }
+  const active = pool.totalCount - pool.idleCount;
+  return {
+    schema,
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+    active,
+    utilization: pool.totalCount > 0
+      ? (active / pool.totalCount * 100).toFixed(1) + '%'
+      : '0%',
+  };
+}
+
 function _scheduleReconnect(schema, pool) {
   let state = _reconnectState.get(schema) || { timer: null, attempts: 0 };
   if (state.timer) return;  // 이미 재연결 진행 중
@@ -154,11 +178,15 @@ async function _safeQuery(pool, sql, params) {
       return await pool.query(sql, params);
     } catch (e) {
       lastErr = e;
+      const schema = pool?.options?.options?.match(/search_path=([^,]+)/)?.[1] || 'unknown';
+      const stats = _snapshotPoolStats(pool, schema);
       if (!_isConnError(e)) throw e;  // 연결 에러 아니면 즉시 throw
       if (attempt < MAX_ATTEMPTS - 1) {
         const wait = 1000 * (attempt + 1);
-        console.warn(`[pg-pool] 쿼리 재시도 ${attempt + 1}/${MAX_ATTEMPTS} (${wait}ms 대기): ${e.message}`);
+        console.warn(`[pg-pool:${schema}] 쿼리 재시도 ${attempt + 1}/${MAX_ATTEMPTS} (${wait}ms 대기): ${e.message} | pool=${JSON.stringify(stats)}`);
         await new Promise(r => setTimeout(r, wait));
+      } else {
+        console.error(`[pg-pool:${schema}] 쿼리 최종 실패: ${e.message} | pool=${JSON.stringify(stats)} | sql=${String(sql).slice(0, 140)}`);
       }
     }
   }

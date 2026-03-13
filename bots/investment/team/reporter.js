@@ -314,8 +314,7 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
     lines.push(`  거래 없음`);
   } else {
     for (const t of trades) {
-      const dt    = new Date(t.executed_at);
-      const dtStr = dt.toISOString().slice(5, 16).replace('T', ' ');
+      const dtStr = kst.toKST(new Date(t.executed_at));
       const paper = t.paper ? '📄' : '🔴';
       lines.push(`  ${paper} ${dtStr} | ${t.symbol} ${t.side.toUpperCase()} ${t.amount?.toFixed(6)}개 @ $${t.price?.toLocaleString()} (≈$${t.total_usdt?.toFixed(0)})`);
     }

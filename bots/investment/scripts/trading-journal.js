@@ -26,9 +26,8 @@ const kst     = require('../../../packages/core/lib/kst');
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
 
 function toKST(utcStr) {
-  return new Date(new Date(utcStr).getTime() + 9 * 3600 * 1000)
-    .toISOString()
-    .replace('T', ' ')
+  return new Date(utcStr)
+    .toLocaleString('sv-SE', { timeZone: kst.TZ })
     .slice(0, 16);
 }
 
