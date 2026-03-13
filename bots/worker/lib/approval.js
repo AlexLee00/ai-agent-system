@@ -56,6 +56,37 @@ async function createRequest({
   return { id: row.id, autoApproved: false };
 }
 
+async function attachTarget({ requestId, targetId }) {
+  return pgPool.get(SCHEMA,
+    `UPDATE worker.approval_requests
+     SET target_id=$2, updated_at=NOW()
+     WHERE id=$1
+     RETURNING id, target_id`,
+    [requestId, targetId]);
+}
+
+async function _syncTargetStatus(req, nextStatus) {
+  if (!req?.target_table || !req?.target_id) return;
+  if (req.target_table !== 'agent_tasks') return;
+
+  if (nextStatus === 'approved') {
+    await pgPool.run(SCHEMA,
+      `UPDATE worker.agent_tasks
+       SET status='queued', updated_at=NOW()
+       WHERE id=$1 AND approval_id=$2`,
+      [req.target_id, req.id]);
+    return;
+  }
+
+  if (nextStatus === 'rejected') {
+    await pgPool.run(SCHEMA,
+      `UPDATE worker.agent_tasks
+       SET status='rejected', updated_at=NOW(), completed_at=NOW()
+       WHERE id=$1 AND approval_id=$2`,
+      [req.target_id, req.id]);
+  }
+}
+
 // ── 승인 처리 ─────────────────────────────────────────────────────────
 
 async function approve({ requestId, approverId }) {
@@ -66,6 +97,7 @@ async function approve({ requestId, approverId }) {
     [requestId, approverId]);
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
+  await _syncTargetStatus(req, 'approved');
   return req;
 }
 
@@ -77,6 +109,7 @@ async function reject({ requestId, approverId, reason }) {
     [requestId, approverId, reason || '반려']);
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
+  await _syncTargetStatus(req, 'rejected');
   return req;
 }
 
@@ -173,7 +206,7 @@ async function handleCallback(callbackData, callbackUser) {
 
 module.exports = {
   getRequiredLevel,
-  createRequest, approve, reject,
+  createRequest, attachTarget, approve, reject,
   getPendingRequests,
   sendApprovalRequest, handleCallback,
 };

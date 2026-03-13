@@ -5,7 +5,7 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
-const { createRequest: createApprovalRequest } = require('./approval');
+const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
 
 const SCHEMA = 'worker';
 
@@ -449,8 +449,8 @@ async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
 
   const row = await pgPool.get(SCHEMA, `
     INSERT INTO worker.agent_tasks
-      (session_id, company_id, user_id, target_bot, task_type, title, description, payload, approval_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+      (session_id, company_id, user_id, target_bot, task_type, title, description, payload, status, approval_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
     RETURNING *
   `, [
     sessionId,
@@ -461,8 +461,13 @@ async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
     task.title,
     task.description,
     JSON.stringify(task.payload),
+    approvalId ? 'pending_approval' : 'queued',
     approvalId,
   ]);
+
+  if (approvalId) {
+    await attachApprovalTarget({ requestId: approvalId, targetId: row.id });
+  }
 
   return {
     task: row,
