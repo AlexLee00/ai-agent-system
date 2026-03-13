@@ -14,7 +14,7 @@ function isSuspiciousPercent(value) {
   return abs > 0 && abs < 1;
 }
 
-async function validateTradeReview({ days = 30, fix = false } = {}) {
+export async function validateTradeReview({ days = 30, fix = false } = {}) {
   await db.initSchema();
   await journalDb.initJournalSchema();
 
@@ -126,3 +126,7 @@ main().catch(err => {
   console.error('❌ trade_review 검증 실패:', err?.message || String(err));
   process.exit(1);
 });
+
+export default {
+  validateTradeReview,
+};
