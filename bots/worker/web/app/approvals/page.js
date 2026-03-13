@@ -67,6 +67,9 @@ export default function ApprovalsPage() {
                     </div>
                     <p className="font-medium text-gray-900">{a.action}</p>
                     <p className="text-sm text-gray-500">신청자: {a.requester_name || a.requester_id}</p>
+                    {a.task_title && (
+                      <p className="text-sm text-gray-500">업무: {a.task_title} ({a.target_bot || 'unknown'})</p>
+                    )}
                     {payload.date   && <p className="text-sm text-gray-500">날짜: {payload.date}</p>}
                     {payload.reason && <p className="text-sm text-gray-500">사유: {payload.reason}</p>}
                     <p className="text-xs text-gray-400 mt-1">{new Date(a.created_at).toLocaleString('ko-KR')}</p>

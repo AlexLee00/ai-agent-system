@@ -43,6 +43,7 @@ const {
   listMessages: listChatMessages,
   resolveEmployeeId,
 } = require('../lib/chat-agent');
+const { approve: approveApprovalRequest, reject: rejectApprovalRequest } = require('../lib/approval');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -557,7 +558,10 @@ app.get('/api/approvals', requireAuth, companyFilter, async (req, res) => {
   const cid = req.companyId;
   try {
     const rows = await pgPool.query(SCHEMA,
-      `SELECT * FROM worker.approval_requests
+      `SELECT ar.*, u.name AS requester_name, t.title AS task_title, t.target_bot
+       FROM worker.approval_requests ar
+       LEFT JOIN worker.users u ON u.id = ar.requester_id
+       LEFT JOIN worker.agent_tasks t ON t.id = ar.target_id AND ar.target_table='agent_tasks'
        WHERE (company_id=$1 OR $1 IS NULL) AND deleted_at IS NULL AND status='pending'
        ORDER BY priority DESC, created_at ASC LIMIT $2 OFFSET $3`,
       [cid, limit, offset]);
@@ -587,10 +591,7 @@ app.post('/api/approvals',
 
 app.put('/api/approvals/:id/approve', requireAuth, requireRole('master','admin'), auditLog('APPROVE', 'approval_requests'), async (req, res) => {
   try {
-    const approval = await pgPool.get(SCHEMA,
-      `UPDATE worker.approval_requests SET status='approved', approver_id=$1, approved_at=NOW(), updated_at=NOW()
-       WHERE id=$2 AND status='pending' RETURNING *`,
-      [req.user.id, req.params.id]);
+    const approval = await approveApprovalRequest({ requestId: req.params.id, approverId: req.user.id });
     if (!approval) return res.status(404).json({ error: '승인 요청을 찾을 수 없습니다.', code: 'NOT_FOUND' });
     res.json({ approval });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
@@ -602,10 +603,11 @@ app.put('/api/approvals/:id/reject',
   async (req, res) => {
     if (!validate(req, res)) return;
     try {
-      const approval = await pgPool.get(SCHEMA,
-        `UPDATE worker.approval_requests SET status='rejected', approver_id=$1, reject_reason=$2, rejected_at=NOW(), updated_at=NOW()
-         WHERE id=$3 AND status='pending' RETURNING *`,
-        [req.user.id, req.body.reason, req.params.id]);
+      const approval = await rejectApprovalRequest({
+        requestId: req.params.id,
+        approverId: req.user.id,
+        reason: req.body.reason,
+      });
       if (!approval) return res.status(404).json({ error: '승인 요청을 찾을 수 없습니다.', code: 'NOT_FOUND' });
       res.json({ approval });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }

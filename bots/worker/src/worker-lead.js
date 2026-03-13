@@ -22,7 +22,11 @@ const { getSecret } = require('../lib/secrets');
 const emily  = require('./emily');
 const noah   = require('./noah');
 const oliver = require('./oliver');
-const { handleCallback: handleApprovalCallback } = require('../lib/approval');
+const {
+  handleCallback: handleApprovalCallback,
+  approve: approveApprovalRequest,
+  reject: rejectApprovalRequest,
+} = require('../lib/approval');
 
 const SCHEMA = 'worker';
 const TOPIC  = getSecret('telegram_worker_topic_id') || null;
@@ -156,9 +160,7 @@ async function handleCommand(text, fromTelegramId) {
       if (parts[1]) {
         const id = parseInt(parts[1], 10);
         if (isNaN(id)) return '⚠️ 올바른 승인 ID를 입력하세요.';
-        const approval = await pgPool.get(SCHEMA,
-          `UPDATE worker.approval_requests SET status='approved', approver_id=$1, approved_at=NOW(), updated_at=NOW()
-           WHERE id=$2 AND status='pending' RETURNING *`, [user.id, id]);
+        const approval = await approveApprovalRequest({ requestId: id, approverId: user.id });
         if (!approval) return `⚠️ 승인 요청 #${id}을 찾을 수 없거나 이미 처리되었습니다.`;
         return `✅ 승인 완료 — #${id} [${approval.category}] ${approval.action}`;
       }
@@ -179,9 +181,7 @@ async function handleCommand(text, fromTelegramId) {
       const id     = parseInt(parts[1], 10);
       const reason = parts.slice(2).join(' ');
       if (isNaN(id) || !reason) return '⚠️ 사용법: <code>/reject {ID} {반려 사유}</code>';
-      const approval = await pgPool.get(SCHEMA,
-        `UPDATE worker.approval_requests SET status='rejected', approver_id=$1, reject_reason=$2, rejected_at=NOW(), updated_at=NOW()
-         WHERE id=$3 AND status='pending' RETURNING *`, [user.id, reason, id]);
+      const approval = await rejectApprovalRequest({ requestId: id, approverId: user.id, reason });
       if (!approval) return `⚠️ 승인 요청 #${id}을 찾을 수 없거나 이미 처리되었습니다.`;
       return `❌ 반려 완료 — #${id} [${approval.category}] ${approval.action}\n사유: ${reason}`;
     }
