@@ -1,13 +1,10 @@
 import { finishPipelineRun } from './pipeline-db.js';
 import { getInvestmentNode } from '../nodes/index.js';
-import { recordNodeResult, runNode } from './node-runner.js';
+import { runNode } from './node-runner.js';
 import * as db from './db.js';
-import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from './signal.js';
-import { getPortfolioDecision, getSymbolDecision, inspectPortfolioContext } from '../team/luna.js';
+import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
+import { getPortfolioDecision, inspectPortfolioContext } from '../team/luna.js';
 import { evaluateSignal } from '../team/nemesis.js';
-import { buildAnalysisSummary } from '../team/luna.js';
-import { runBullResearcher } from '../team/zeus.js';
-import { runBearResearcher } from '../team/athena.js';
 import { notifyError } from './report.js';
 
 const MAX_DEBATE_SYMBOLS = 2;
@@ -16,29 +13,6 @@ function getDecisionNode(id) {
   const node = getInvestmentNode(id);
   if (!node) throw new Error(`노드 없음: ${id}`);
   return node;
-}
-
-async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
-  if (!prevDebate) {
-    const [bull, bear] = await Promise.all([
-      runBullResearcher(symbol, summary, null, exchange),
-      runBearResearcher(symbol, summary, null, exchange),
-    ]);
-    return { bull, bear, round: 1 };
-  }
-
-  const bullCtx = prevDebate.bear
-    ? `${summary}\n\n[약세 주장 반박 요청]\n${prevDebate.bear.reasoning}`
-    : summary;
-  const bearCtx = prevDebate.bull
-    ? `${summary}\n\n[강세 주장 반박 요청]\n${prevDebate.bull.reasoning}`
-    : summary;
-
-  const [bull2, bear2] = await Promise.all([
-    runBullResearcher(symbol, bullCtx, null, exchange),
-    runBearResearcher(symbol, bearCtx, null, exchange),
-  ]);
-  return { bull: bull2, bear: bear2, round: 2 };
 }
 
 function buildAnalystSignals(analyses) {
@@ -60,6 +34,9 @@ export async function runDecisionExecutionPipeline({
   params = null,
 } = {}) {
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
+  const l10Node = getDecisionNode('L10');
+  const l11Node = getDecisionNode('L11');
+  const l12Node = getDecisionNode('L12');
   const l13Node = getDecisionNode('L13');
   const l21Node = getDecisionNode('L21');
   const l30Node = getDecisionNode('L30');
@@ -76,35 +53,42 @@ export async function runDecisionExecutionPipeline({
       if (analyses.length === 0) continue;
       symbolAnalysesMap.set(symbol, analyses);
 
-      let debate = null;
+      await runNode(l10Node, {
+        sessionId,
+        market: exchange,
+        symbol,
+        meta: { bridge: 'luna_orchestrate', stage: 'fusion' },
+      });
+
       if (debateCount < MAX_DEBATE_SYMBOLS) {
         try {
-          const summary = buildAnalysisSummary(analyses);
-          const r1 = await runDebateRound(symbol, summary, exchange, null);
-          const r2 = await runDebateRound(symbol, summary, exchange, r1);
-          debate = { bull: r2.bull, bear: r2.bear, r1 };
+          await runNode(l11Node, {
+            sessionId,
+            market: exchange,
+            symbol,
+            meta: { bridge: 'luna_orchestrate', stage: 'debate' },
+          });
+          await runNode(l12Node, {
+            sessionId,
+            market: exchange,
+            symbol,
+            meta: { bridge: 'luna_orchestrate', stage: 'debate' },
+          });
           debateCount++;
         } catch (err) {
-          console.warn(`  ⚠️ [노드 브리지] ${symbol} debate 실패: ${err.message}`);
+          console.warn(`  ⚠️ [노드 브리지] ${symbol} debate 노드 실패: ${err.message}`);
         }
       }
 
-      const decision = await getSymbolDecision(symbol, analyses, exchange, debate, analystWeights);
-      symbolDecisions.push({ symbol, exchange, ...decision });
-
-      await recordNodeResult(l13Node, {
+      const decisionResult = await runNode(l13Node, {
         sessionId,
         market: exchange,
         symbol,
         meta: { bridge: 'luna_orchestrate', stage: 'decision' },
-      }, {
-        symbol,
-        market: exchange,
-        source: 'bridge',
-        analyses_count: analyses.length,
-        decision,
-        debate,
       });
+      const decision = decisionResult.result?.decision;
+      if (!decision?.action) continue;
+      symbolDecisions.push({ symbol, exchange, ...decision });
     } catch (err) {
       console.error(`  ❌ [노드 브리지] ${symbol} 판단 실패: ${err.message}`);
       await notifyError(`루나 노드 브리지 - ${symbol}`, err);

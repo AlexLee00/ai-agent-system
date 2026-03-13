@@ -1,5 +1,5 @@
 import { getSymbolDecision } from '../team/luna.js';
-import { loadAnalysesForSession } from './helpers.js';
+import { loadAnalysesForSession, loadLatestNodePayload } from './helpers.js';
 
 const NODE_ID = 'L13';
 
@@ -19,12 +19,22 @@ async function run({ sessionId, market, symbol }) {
     };
   }
 
-  const decision = await getSymbolDecision(symbol, analyses, market, null);
+  const bullHit = await loadLatestNodePayload(sessionId, 'L11', symbol);
+  const bearHit = await loadLatestNodePayload(sessionId, 'L12', symbol);
+  const debate = (bullHit?.payload?.bull || bearHit?.payload?.bear)
+    ? {
+        bull: bullHit?.payload?.bull || null,
+        bear: bearHit?.payload?.bear || null,
+      }
+    : null;
+
+  const decision = await getSymbolDecision(symbol, analyses, market, debate);
   return {
     symbol,
     market,
     source,
     analyses_count: analyses.length,
+    debate,
     decision,
   };
 }
