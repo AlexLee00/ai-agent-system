@@ -297,6 +297,15 @@ function _deriveExecutionSpeed(signalToExecMs) {
   return 'slow';
 }
 
+function _ratioToPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return null;
+  return Number((Number(value) * 100).toFixed(4));
+}
+
+export function ratioToPercent(value) {
+  return _ratioToPercent(value);
+}
+
 function _buildAnalystAccuracy(analystSignals, pnlPercent) {
   if (!analystSignals || pnlPercent == null || pnlPercent === 0) {
     return {
@@ -382,7 +391,7 @@ export async function ensureAutoReview(tradeId, opts = {}) {
     entry_timing: entryTiming,
     exit_timing: exitTiming,
     signal_accuracy: signalAccuracy,
-    risk_managed: pnlPercent == null ? null : pnlPercent > -0.05,
+    risk_managed: pnlPercent == null ? null : pnlPercent > -5,
     tp_sl_protected: trade.tp_sl_set == null ? null : Boolean(trade.tp_sl_set),
     execution_speed: _deriveExecutionSpeed(trade.signal_to_exec_ms),
     max_favorable: maxFavorable,
@@ -607,6 +616,7 @@ export async function getUnresolvedIssues() {
 
 export default {
   initJournalSchema,
+  ratioToPercent,
   generateTradeId,
   insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getReviewByTradeId, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
   insertRationale, linkRationaleToTrade,
