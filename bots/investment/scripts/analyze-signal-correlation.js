@@ -169,6 +169,6 @@ async function analyzeCorrelation() {
 }
 
 analyzeCorrelation().catch(e => {
-  console.error('❌ 분석 실패:', e.message);
+  console.error('❌ 분석 실패:', e?.message || String(e));
   process.exit(1);
 });

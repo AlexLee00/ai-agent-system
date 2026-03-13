@@ -35,16 +35,16 @@ async function analyzeRR() {
   const sinceMs = Date.now() - DAYS * 24 * 60 * 60 * 1000;
 
   // ── 1. 전체 매매 현황 ─────────────────────────────────────────────────
-  const summary = db.get(`
+  const summary = await db.get(`
     SELECT
       COUNT(*)                                                    AS total_trades,
       COUNT(CASE WHEN pnl_percent > 0 THEN 1 END)                AS wins,
       COUNT(CASE WHEN pnl_percent <= 0 THEN 1 END)               AS losses,
-      ROUND(AVG(pnl_percent), 4)                                  AS avg_pnl,
-      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4) AS avg_win,
-      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END), 4) AS avg_loss,
-      ROUND(MAX(pnl_percent), 4)                                  AS best,
-      ROUND(MIN(pnl_percent), 4)                                  AS worst
+      ROUND(AVG(pnl_percent)::numeric, 4)                         AS avg_pnl,
+      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END)::numeric, 4) AS avg_win,
+      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END)::numeric, 4) AS avg_loss,
+      ROUND(MAX(pnl_percent)::numeric, 4)                         AS best,
+      ROUND(MIN(pnl_percent)::numeric, 4)                         AS worst
     FROM trade_journal
     WHERE status = 'closed' AND exit_time IS NOT NULL AND created_at >= ?
   `, [sinceMs]);
@@ -76,13 +76,13 @@ async function analyzeRR() {
   console.log('');
 
   // ── 2. 심볼별 분석 ────────────────────────────────────────────────────
-  const bySymbol = db.query(`
+  const bySymbol = await db.query(`
     SELECT
       symbol,
       COUNT(*)                                                     AS trades,
-      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END), 4) AS avg_win,
-      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END), 4) AS avg_loss,
-      ROUND(COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 100.0 / COUNT(*), 1) AS win_rate
+      ROUND(AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent END)::numeric, 4) AS avg_win,
+      ROUND(AVG(CASE WHEN pnl_percent <= 0 THEN pnl_percent END)::numeric, 4) AS avg_loss,
+      ROUND((COUNT(CASE WHEN pnl_percent > 0 THEN 1 END) * 100.0 / COUNT(*))::numeric, 1) AS win_rate
     FROM trade_journal
     WHERE status = 'closed' AND exit_time IS NOT NULL AND created_at >= ?
     GROUP BY symbol
@@ -103,7 +103,7 @@ async function analyzeRR() {
   }
 
   // ── 3. TP/SL 시뮬레이션 (trade_review max_favorable/max_adverse 기반) ──
-  const reviewedTrades = db.query(`
+  const reviewedTrades = await db.query(`
     SELECT
       j.trade_id,
       j.symbol,
@@ -194,13 +194,13 @@ async function analyzeRR() {
   }
 
   // ── 4. 봇 정확도 분석 ────────────────────────────────────────────────
-  const accuracy = db.get(`
+  const accuracy = await db.get(`
     SELECT
       COUNT(*)                                                               AS reviews,
-      ROUND(AVG(CASE WHEN aria_accurate    THEN 1.0 ELSE 0.0 END) * 100, 1) AS aria_acc,
-      ROUND(AVG(CASE WHEN sophia_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS sophia_acc,
-      ROUND(AVG(CASE WHEN oracle_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS oracle_acc,
-      ROUND(AVG(CASE WHEN hermes_accurate  THEN 1.0 ELSE 0.0 END) * 100, 1) AS hermes_acc
+      ROUND((AVG(CASE WHEN aria_accurate    THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS aria_acc,
+      ROUND((AVG(CASE WHEN sophia_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS sophia_acc,
+      ROUND((AVG(CASE WHEN oracle_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS oracle_acc,
+      ROUND((AVG(CASE WHEN hermes_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS hermes_acc
     FROM trade_review
     WHERE reviewed_at >= ?
   `, [sinceMs]);
@@ -264,6 +264,6 @@ async function analyzeRR() {
 }
 
 analyzeRR().catch(e => {
-  console.error('❌ 분석 실패:', e.message);
+  console.error('❌ 분석 실패:', e?.message || String(e));
   process.exit(1);
 });
