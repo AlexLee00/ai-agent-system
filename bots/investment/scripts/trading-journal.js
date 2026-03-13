@@ -165,7 +165,7 @@ function formatTrades(trades, pnlMap) {
     const sym    = t.symbol.padEnd(10);
     const price  = t.price >= 100 ? t.price.toLocaleString() : t.price.toFixed(4);
     const amt    = t.amount < 1 ? t.amount.toFixed(6) : t.amount.toFixed(2);
-    const isKis  = t.exchange === 'kis' || t.exchange === 'kis_overseas';
+    const isKis  = t.exchange === 'kis';
     const total  = isKis
       ? `₩${Math.round(t.total_usdt).toLocaleString()}`
       : `$${t.total_usdt.toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
