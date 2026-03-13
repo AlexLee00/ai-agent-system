@@ -15,13 +15,10 @@
 import ccxt  from 'ccxt';
 import https from 'https';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { store as storeRag } from '../shared/rag-client.js';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
 import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday, isNyseHoliday } from '../shared/secrets.js';
-
-const _require = createRequire(import.meta.url);
 
 // ─── 장 시간 체크 ────────────────────────────────────────────────────
 

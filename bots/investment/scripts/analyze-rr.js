@@ -21,6 +21,7 @@ import * as journalDb from '../shared/trade-journal-db.js';
 
 const _require = createRequire(import.meta.url);
 const rag      = _require('../../../packages/core/lib/rag-safe');
+const kst      = _require('../../../packages/core/lib/kst');
 
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
