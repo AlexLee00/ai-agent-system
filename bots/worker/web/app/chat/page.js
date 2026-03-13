@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth-context';
 
 const SUGGESTIONS = [
   '오늘 일정 보여줘',
@@ -80,8 +81,11 @@ export default function WorkerChatPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [latestUi, setLatestUi] = useState(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
+  const [liveStatus, setLiveStatus] = useState('연결 준비 중...');
   const bottomRef = useRef(null);
+  const wsRef = useRef(null);
+  const sessionRef = useRef(null);
 
   useEffect(() => {
     api.get('/chat/sessions')
@@ -106,6 +110,72 @@ export default function WorkerChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    sessionRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      setLiveStatus('로그인 후 실시간 연결');
+      return;
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${encodeURIComponent(token)}`);
+    wsRef.current = socket;
+
+    socket.onopen = () => setLiveStatus('실시간 연결됨');
+    socket.onclose = () => {
+      setLiveStatus('실시간 연결 끊김 - REST 폴백');
+      if (wsRef.current === socket) wsRef.current = null;
+    };
+    socket.onerror = () => setLiveStatus('실시간 연결 오류 - REST 폴백');
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'chat.status') {
+          setIsPending(true);
+          setLiveStatus(data.message || 'Worker가 응답 중입니다...');
+          return;
+        }
+        if (data.type === 'chat.result') {
+          setIsPending(false);
+          setLiveStatus('실시간 연결됨');
+          if (data.sessionId && data.sessionId !== sessionRef.current) {
+            setSessionId(data.sessionId);
+          }
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.reply,
+            createdAt: data.ts || new Date().toISOString(),
+            intent: data.intent,
+            metadata: { ui: data.ui || null },
+          }]);
+          setLatestUi(data.ui || null);
+          const sessionData = await api.get('/chat/sessions').catch(() => null);
+          if (sessionData?.sessions) setSessions(sessionData.sessions);
+          return;
+        }
+        if (data.type === 'chat.error') {
+          setIsPending(false);
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.message || '요청 처리 중 오류가 발생했습니다.',
+            createdAt: data.ts || new Date().toISOString(),
+          }]);
+        }
+      } catch {
+        /* 무시 */
+      }
+    };
+
+    return () => {
+      try { socket.close(); } catch {}
+      if (wsRef.current === socket) wsRef.current = null;
+    };
+  }, []);
+
   async function sendMessage(text) {
     const message = String(text || input).trim();
     if (!message || isPending) return;
@@ -113,32 +183,40 @@ export default function WorkerChatPage() {
     const optimistic = { role: 'user', content: message, createdAt: new Date().toISOString() };
     setMessages(prev => [...prev, optimistic]);
     setInput('');
+    setIsPending(true);
 
-    startTransition(() => {
-      api.post('/chat/send', { message, session_id: sessionId || undefined })
-        .then(async data => {
-          if (data.sessionId && data.sessionId !== sessionId) {
-            setSessionId(data.sessionId);
-            const sessionData = await api.get('/chat/sessions').catch(() => null);
-            if (sessionData?.sessions) setSessions(sessionData.sessions);
-          }
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.reply,
-            createdAt: new Date().toISOString(),
-            intent: data.intent,
-            metadata: { ui: data.ui || null },
-          }]);
-          setLatestUi(data.ui || null);
-        })
-        .catch(err => {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: err.message || '요청 처리 중 오류가 발생했습니다.',
-            createdAt: new Date().toISOString(),
-          }]);
-        });
-    });
+    const socket = wsRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'chat.send', message, sessionId: sessionId || null }));
+      return;
+    }
+
+    setLiveStatus('REST 폴백 사용 중');
+    api.post('/chat/send', { message, session_id: sessionId || undefined })
+      .then(async data => {
+        setIsPending(false);
+        if (data.sessionId && data.sessionId !== sessionId) {
+          setSessionId(data.sessionId);
+          const sessionData = await api.get('/chat/sessions').catch(() => null);
+          if (sessionData?.sessions) setSessions(sessionData.sessions);
+        }
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: data.reply,
+          createdAt: new Date().toISOString(),
+          intent: data.intent,
+          metadata: { ui: data.ui || null },
+        }]);
+        setLatestUi(data.ui || null);
+      })
+      .catch(err => {
+        setIsPending(false);
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: err.message || '요청 처리 중 오류가 발생했습니다.',
+          createdAt: new Date().toISOString(),
+        }]);
+      });
   }
 
   return (
@@ -174,6 +252,7 @@ export default function WorkerChatPage() {
         <div className="border-b pb-4 mb-4">
           <h2 className="text-base font-semibold text-gray-900">Worker 팀장 대화</h2>
           <p className="text-sm text-gray-500 mt-1">예: "내일 오전 10시 김대리 업체 미팅 잡아줘"</p>
+          <p className="text-xs font-medium text-indigo-700 mt-2">{liveStatus}</p>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto pr-1">
