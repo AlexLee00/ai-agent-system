@@ -142,6 +142,7 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
     signal,
     confidence,
     reasoning: `[온체인] ${reasoning}`,
+    exchange:  'binance',
     metadata:  {
       fearGreed:      fearGreed?.value,
       fgClass:        fearGreed?.classification,

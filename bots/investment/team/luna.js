@@ -340,7 +340,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
   for (const symbol of symbols) {
     try {
-      const analyses = await db.getRecentAnalysis(symbol, 70);
+      const analyses = await db.getRecentAnalysis(symbol, 70, exchange);
       if (analyses.length === 0) {
         console.log(`  ⚠️ [루나] ${symbol}: 분석 결과 없음 → 스킵`);
         continue;

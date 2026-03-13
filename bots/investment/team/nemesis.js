@@ -143,9 +143,9 @@ const CORRELATED_GROUPS = [
   ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
 ];
 
-async function calcCorrelationFactor(symbol) {
+async function calcCorrelationFactor(symbol, exchange = 'binance') {
   try {
-    const positions = await db.getAllPositions();
+    const positions = await db.getAllPositions(exchange, false);
     const held = new Set(positions.map(p => p.symbol));
     for (const group of CORRELATED_GROUPS) {
       if (!group.includes(symbol)) continue;
@@ -529,7 +529,7 @@ export async function evaluateSignal(signal, opts = {}) {
 
   let positionCount = 0;
   if (action === ACTIONS.BUY) {
-    const positions = await db.getAllPositions();
+    const positions = await db.getAllPositions(signal.exchange, false);
     positionCount   = positions.length;
     if (positionCount >= rules.MAX_OPEN_POSITIONS) {
       const reason = `최대 포지션 초과 (${positionCount}/${rules.MAX_OPEN_POSITIONS})`;
@@ -544,7 +544,7 @@ export async function evaluateSignal(signal, opts = {}) {
   if (action === ACTIONS.BUY) {
     const [volFactor, corrFactor] = await Promise.all([
       calcVolatilityFactor(symbol, opts.atrRatio),
-      calcCorrelationFactor(symbol),
+      calcCorrelationFactor(symbol, signal.exchange),
     ]);
     const timeFactor   = calcTimeFactor();
     const combinedFact = volFactor * corrFactor * timeFactor;
