@@ -287,6 +287,10 @@ export async function updateSignalAmount(id, amountUsdt) {
   await run(`UPDATE signals SET amount_usdt = $1 WHERE id = $2`, [amountUsdt, id]);
 }
 
+export async function getSignalById(id) {
+  return get(`SELECT * FROM signals WHERE id = $1`, [id]);
+}
+
 export async function getPendingSignals(exchange) {
   if (exchange) {
     return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = $1 ORDER BY created_at ASC`, [exchange]);
@@ -317,6 +321,10 @@ export async function getTradeHistory(symbol, limit = 50) {
     return query(`SELECT * FROM trades WHERE symbol = $1 ORDER BY executed_at DESC LIMIT $2`, [symbol, limit]);
   }
   return query(`SELECT * FROM trades ORDER BY executed_at DESC LIMIT $1`, [limit]);
+}
+
+export async function getLatestTradeBySignalId(signalId) {
+  return get(`SELECT * FROM trades WHERE signal_id = $1 ORDER BY executed_at DESC LIMIT 1`, [signalId]);
 }
 
 // ─── positions ──────────────────────────────────────────────────────
@@ -511,8 +519,8 @@ export function close() {
 export default {
   query, run, get, initSchema,
   insertAnalysis, getRecentAnalysis,
-  insertSignal, updateSignalStatus, updateSignalAmount, getPendingSignals, getApprovedSignals,
-  insertTrade, getTradeHistory,
+  insertSignal, updateSignalStatus, updateSignalAmount, getSignalById, getPendingSignals, getApprovedSignals,
+  insertTrade, getTradeHistory, getLatestTradeBySignalId,
   upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
   getTodayPnl,
   insertScreeningHistory,

@@ -1,0 +1,74 @@
+import * as db from '../shared/db.js';
+import { SIGNAL_STATUS } from '../shared/signal.js';
+import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.js';
+
+const NODE_ID = 'L30';
+
+async function run({ sessionId, market, symbol }) {
+  if (!sessionId) throw new Error('sessionId 필요');
+  if (!symbol) throw new Error('symbol 필요');
+
+  const decisionHit = await loadLatestNodePayload(sessionId, 'L13', symbol);
+  const riskHit = await loadLatestNodePayload(sessionId, 'L21', symbol);
+  const decision = decisionHit?.payload?.decision || null;
+  const risk = riskHit?.payload?.risk || null;
+
+  if (!decision?.action || decision.action === 'HOLD') {
+    return {
+      symbol,
+      market,
+      skipped: true,
+      reason: decision?.action === 'HOLD' ? 'HOLD 신호' : '최종 판단 없음',
+    };
+  }
+
+  const { analyses } = await loadAnalysesForSession(sessionId, symbol, market);
+  const analystSignals = buildAnalystSignals(analyses);
+  const amountUsdt = risk?.approved
+    ? (risk.adjustedAmount ?? decision.amount_usdt)
+    : (decision.amount_usdt ?? 0);
+
+  const signalId = await db.insertSignal({
+    symbol,
+    action: decision.action,
+    amountUsdt,
+    confidence: decision.confidence,
+    reasoning: `[노드:${NODE_ID}] ${decision.reasoning || ''}`.slice(0, 255),
+    exchange: market,
+    analystSignals,
+  });
+
+  let status = SIGNAL_STATUS.PENDING;
+  if (risk) {
+    if (risk.approved) {
+      status = SIGNAL_STATUS.APPROVED;
+      await db.updateSignalStatus(signalId, SIGNAL_STATUS.APPROVED);
+      if (risk.adjustedAmount != null) {
+        await db.updateSignalAmount(signalId, risk.adjustedAmount);
+      }
+    } else {
+      status = SIGNAL_STATUS.REJECTED;
+      await db.updateSignalStatus(signalId, SIGNAL_STATUS.REJECTED);
+      if (risk.reason) {
+        await db.run(`UPDATE signals SET block_reason = $1 WHERE id = $2`, [risk.reason, signalId]);
+      }
+    }
+  }
+
+  return {
+    symbol,
+    market,
+    signalId,
+    status,
+    decision,
+    risk,
+    analystSignals,
+  };
+}
+
+export default {
+  id: NODE_ID,
+  type: 'execute',
+  label: 'signal-save',
+  run,
+};

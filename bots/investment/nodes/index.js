@@ -7,6 +7,9 @@ import l06PortfolioContext from './l06-portfolio-context.js';
 import l10SignalFusion from './l10-signal-fusion.js';
 import l13FinalDecision from './l13-final-decision.js';
 import l21LlmRisk from './l21-llm-risk.js';
+import l30SignalSave from './l30-signal-save.js';
+import l31OrderExecute from './l31-order-execute.js';
+import l34Journal from './l34-journal.js';
 
 export const INVESTMENT_NODES = [
   l01PreScreen,
@@ -18,6 +21,9 @@ export const INVESTMENT_NODES = [
   l10SignalFusion,
   l13FinalDecision,
   l21LlmRisk,
+  l30SignalSave,
+  l31OrderExecute,
+  l34Journal,
 ];
 
 export const INVESTMENT_NODE_MAP = new Map(
