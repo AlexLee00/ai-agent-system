@@ -455,6 +455,7 @@ export async function analyzeCryptoMTF(symbol) {
       signal,
       confidence,
       reasoning: `[MTF] ${reasoning}`,
+      exchange:  'binance',
       metadata:  {
         weightedScore: normalizedScore,
         atrRatio,                // 네메시스 동적 TP/SL용
@@ -564,6 +565,7 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
       signal,
       confidence,
       reasoning: `[${exchange.toUpperCase()} MTF] ${reasoning}`,
+      exchange,
       metadata:  {
         weightedScore: normalizedScore,
         exchange,

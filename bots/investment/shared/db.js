@@ -236,7 +236,16 @@ export async function insertAnalysis({ symbol, analyst, signal, confidence, reas
   );
 }
 
-export async function getRecentAnalysis(symbol, minutesBack = 30) {
+export async function getRecentAnalysis(symbol, minutesBack = 30, exchange = null) {
+  if (exchange) {
+    return query(
+      `SELECT * FROM analysis
+       WHERE symbol = $1 AND exchange = $2
+         AND created_at > now() - INTERVAL '1 minute' * $3
+       ORDER BY created_at DESC`,
+      [symbol, exchange, minutesBack],
+    );
+  }
   return query(
     `SELECT * FROM analysis
      WHERE symbol = $1 AND created_at > now() - INTERVAL '1 minute' * $2
