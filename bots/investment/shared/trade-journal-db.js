@@ -10,6 +10,7 @@
  */
 
 import { query, run } from './db.js';
+import { computeTradeExcursions } from './trade-review-metrics.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -356,6 +357,26 @@ export async function ensureAutoReview(tradeId, opts = {}) {
     : pnlPercent > 0 ? 'good'
     : pnlPercent < 0 ? 'bad'
     : 'neutral';
+  let maxFavorable = opts.maxFavorable ?? null;
+  let maxAdverse = opts.maxAdverse ?? null;
+
+  if (maxFavorable == null || maxAdverse == null) {
+    try {
+      const excursions = await computeTradeExcursions({
+        symbol: trade.symbol,
+        exchange: trade.exchange,
+        entryTime: trade.entry_time,
+        exitTime: trade.exit_time,
+        entryPrice: trade.entry_price,
+        exitPrice: trade.exit_price,
+        direction: trade.direction || 'long',
+      });
+      if (maxFavorable == null) maxFavorable = excursions.maxFavorable ?? null;
+      if (maxAdverse == null) maxAdverse = excursions.maxAdverse ?? null;
+    } catch (err) {
+      console.warn(`[trade-journal] excursion 계산 실패 (${tradeId}):`, err.message);
+    }
+  }
 
   await insertReview(tradeId, {
     entry_timing: entryTiming,
@@ -364,8 +385,8 @@ export async function ensureAutoReview(tradeId, opts = {}) {
     risk_managed: pnlPercent == null ? null : pnlPercent > -0.05,
     tp_sl_protected: trade.tp_sl_set == null ? null : Boolean(trade.tp_sl_set),
     execution_speed: _deriveExecutionSpeed(trade.signal_to_exec_ms),
-    max_favorable: opts.maxFavorable ?? null,
-    max_adverse: opts.maxAdverse ?? null,
+    max_favorable: maxFavorable,
+    max_adverse: maxAdverse,
     ...analystAccuracy,
     luna_review: pnlPercent == null
       ? '자동 리뷰 대기'
