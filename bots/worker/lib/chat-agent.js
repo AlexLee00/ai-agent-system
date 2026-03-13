@@ -236,9 +236,11 @@ function parseRuleIntent(text, session) {
   }
 
   if (/(계약서|문서|파일|ocr|검토)/i.test(normalized)) return { intent: 'route_request', target: 'emily' };
-  if (/(채용|직원|휴가|출근|퇴근|인사)/.test(normalized)) return { intent: 'route_request', target: 'noah' };
-  if (/(급여|월급|명세서)/.test(normalized)) return { intent: 'route_request', target: 'ryan' };
-  if (/(매출|리포트|보고서)/.test(normalized)) return { intent: 'route_request', target: 'chloe' };
+  if (/(채용|직원|휴가|출근|퇴근|인사|근태)/.test(normalized)) return { intent: 'route_request', target: 'noah' };
+  if (/(급여|월급|명세서)/.test(normalized)) return { intent: 'route_request', target: 'sophie' };
+  if (/(매출|리포트|보고서|분석)/.test(normalized)) return { intent: 'route_request', target: 'oliver' };
+  if (/(프로젝트|마일스톤|일정표|로드맵)/.test(normalized)) return { intent: 'route_request', target: 'ryan' };
+  if (/(일정|캘린더|미팅|회의|리마인더)/.test(normalized)) return { intent: 'route_request', target: 'chloe' };
   if (/(세금|컴플라이언스|규정|신고)/.test(normalized)) return { intent: 'route_request', target: 'oliver' };
 
   return { intent: 'unknown' };

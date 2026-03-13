@@ -390,6 +390,9 @@ export default function WorkerChatPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">{task.target_bot} · 요청자 {task.user_name || task.user_id || '-'}</p>
+                  {task.payload?.result_summary && (
+                    <p className="text-xs text-emerald-700 mt-1 line-clamp-3">{task.payload.result_summary}</p>
+                  )}
                   {task.approval_id && (
                     <p className="text-xs text-amber-700 mt-1">Approval #{task.approval_id}</p>
                   )}
