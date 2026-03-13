@@ -62,6 +62,7 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
     pnlPercent,
     pnlNet: pnlAmount,
   });
+  await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
 }
 
 async function checkKisRisk(signal) {

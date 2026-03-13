@@ -277,6 +277,110 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
   );
 }
 
+export async function getJournalEntryByTradeId(tradeId) {
+  await ensureInit();
+  const rows = await query(`SELECT * FROM trade_journal WHERE trade_id = ? LIMIT 1`, [tradeId]);
+  return rows[0] || null;
+}
+
+export async function getReviewByTradeId(tradeId) {
+  await ensureInit();
+  const rows = await query(`SELECT * FROM trade_review WHERE trade_id = ? LIMIT 1`, [tradeId]);
+  return rows[0] || null;
+}
+
+function _deriveExecutionSpeed(signalToExecMs) {
+  if (signalToExecMs == null) return null;
+  if (signalToExecMs <= 30_000) return 'fast';
+  if (signalToExecMs <= 120_000) return 'normal';
+  return 'slow';
+}
+
+function _buildAnalystAccuracy(analystSignals, pnlPercent) {
+  if (!analystSignals || pnlPercent == null || pnlPercent === 0) {
+    return {
+      aria_accurate: null,
+      sophia_accurate: null,
+      oracle_accurate: null,
+      hermes_accurate: null,
+    };
+  }
+
+  const actual = pnlPercent > 0 ? 'B' : 'S';
+  const parts = String(analystSignals).split('|');
+  const signalMap = Object.fromEntries(parts.map(part => {
+    const [bot, sig] = part.split(':');
+    return [bot, sig];
+  }));
+  const toBool = (sig) => {
+    if (!sig || sig === 'N') return null;
+    return sig === actual;
+  };
+
+  return {
+    aria_accurate: toBool(signalMap.A),
+    sophia_accurate: toBool(signalMap.S),
+    oracle_accurate: toBool(signalMap.O),
+    hermes_accurate: toBool(signalMap.H),
+  };
+}
+
+export async function ensureAutoReview(tradeId, opts = {}) {
+  await ensureInit();
+
+  const existing = await getReviewByTradeId(tradeId);
+  if (existing) return existing;
+
+  const rows = await query(`
+    SELECT j.*, s.analyst_signals
+    FROM trade_journal j
+    LEFT JOIN signals s ON s.id = j.signal_id
+    WHERE j.trade_id = ?
+    LIMIT 1
+  `, [tradeId]);
+  const trade = rows[0] || null;
+  if (!trade || trade.status !== 'closed') return null;
+
+  const pnlPercent = trade.pnl_percent != null ? Number(trade.pnl_percent) : null;
+  const analystAccuracy = _buildAnalystAccuracy(trade.analyst_signals, pnlPercent);
+  const entryTiming = trade.signal_to_exec_ms == null
+    ? null
+    : trade.signal_to_exec_ms <= 30_000 ? 'good'
+    : trade.signal_to_exec_ms <= 120_000 ? 'normal'
+    : 'late';
+  const exitTiming = trade.exit_reason && ['tp_hit', 'sl_hit'].includes(trade.exit_reason)
+    ? 'rule_based'
+    : trade.exit_reason ? 'manual_or_signal' : null;
+  const signalAccuracy = pnlPercent == null
+    ? null
+    : pnlPercent > 0 ? 'good'
+    : pnlPercent < 0 ? 'bad'
+    : 'neutral';
+
+  await insertReview(tradeId, {
+    entry_timing: entryTiming,
+    exit_timing: exitTiming,
+    signal_accuracy: signalAccuracy,
+    risk_managed: pnlPercent == null ? null : pnlPercent > -0.05,
+    tp_sl_protected: trade.tp_sl_set == null ? null : Boolean(trade.tp_sl_set),
+    execution_speed: _deriveExecutionSpeed(trade.signal_to_exec_ms),
+    max_favorable: opts.maxFavorable ?? null,
+    max_adverse: opts.maxAdverse ?? null,
+    ...analystAccuracy,
+    luna_review: pnlPercent == null
+      ? '자동 리뷰 대기'
+      : pnlPercent > 0
+        ? '수익 실현 거래'
+        : pnlPercent < 0
+          ? '손실 종료 거래'
+          : '손익 보합 거래',
+    lessons_learned: trade.exit_reason ? `종료 사유: ${trade.exit_reason}` : (opts.lessonsLearned ?? null),
+    strategy_adjustment: opts.strategyAdjustment ?? null,
+  });
+
+  return getReviewByTradeId(tradeId);
+}
+
 export async function getOpenJournalEntries(market = null) {
   await ensureInit();
   if (market) {
@@ -483,7 +587,7 @@ export async function getUnresolvedIssues() {
 export default {
   initJournalSchema,
   generateTradeId,
-  insertJournalEntry, closeJournalEntry, getOpenJournalEntries, getJournalByDate,
+  insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getReviewByTradeId, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
   insertRationale, linkRationaleToTrade,
   insertReview,
   upsertDailyPerformance, getDailyPerformance, getWeeklyPerformance,
