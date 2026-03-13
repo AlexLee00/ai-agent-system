@@ -133,7 +133,7 @@ function getNyseHolidaySet(year) {
  * @returns {{ isHoliday: boolean, name: string|null }}
  */
 export function isNyseHoliday(date = new Date()) {
-  const dateStr = date.toISOString().slice(0, 10); // UTC 기준 (NYSE는 ET, 하루 단위로 충분)
+  const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'America/New_York' });
   const year    = date.getUTCFullYear();
   const set     = getNyseHolidaySet(year);
   if (set.has(dateStr)) {
@@ -155,8 +155,7 @@ export function isNyseHoliday(date = new Date()) {
  * @returns {Promise<{ isHoliday: boolean, name: string|null }>}
  */
 export async function isKisHoliday(date = new Date()) {
-  const kst     = new Date(date.getTime() + 9 * 3600 * 1000);
-  const dateStr = kst.toISOString().slice(0, 10);
+  const dateStr = date.toLocaleDateString('sv-SE', { timeZone: kst.TZ });
 
   if (_holidayCache.has(dateStr)) return _holidayCache.get(dateStr);
 
@@ -186,10 +185,8 @@ export async function isKisHoliday(date = new Date()) {
 
 export function isKisMarketOpen() {
   const now        = new Date();
-  const kstOffset  = 9 * 60;
-  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const kstMinutes = (utcMinutes + kstOffset) % (24 * 60);
-  const kstDay     = new Date(now.getTime() + kstOffset * 60000).getUTCDay();
+  const kstMinutes = kst.currentHour(now) * 60 + kst.currentMinute(now);
+  const kstDay     = new Date(`${now.toLocaleDateString('sv-SE', { timeZone: kst.TZ })}T00:00:00+09:00`).getUTCDay();
   if (kstDay === 0 || kstDay === 6) return false;
   return kstMinutes >= 9 * 60 && kstMinutes < 15 * 60 + 30;
 }

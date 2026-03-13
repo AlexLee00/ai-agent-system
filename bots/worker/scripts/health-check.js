@@ -16,10 +16,10 @@ const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 
 // 상시 실행 서비스 (PID 있어야 정상)
-const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs'];
+const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead'];
 
 // 감지할 전체 서비스
-const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs'];
+const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead'];
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
@@ -52,6 +52,15 @@ function getLaunchctlStatus() {
     };
   }
   return services;
+}
+
+async function checkHttp(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────
@@ -114,6 +123,27 @@ async function main() {
         await notify(`✅ [워커 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`, 1);
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
+    }
+  }
+
+  const httpChecks = [
+    { label: 'ai.worker.web', key: 'http:ai.worker.web', name: 'worker web', url: 'http://127.0.0.1:4000/api/health' },
+    { label: 'ai.worker.nextjs', key: 'http:ai.worker.nextjs', name: 'worker nextjs', url: 'http://127.0.0.1:4001' },
+  ];
+
+  for (const check of httpChecks) {
+    const ok = await checkHttp(check.url);
+    if (!ok) {
+      if (hsm.canAlert(state, check.key)) {
+        issues.push({
+          key: check.key,
+          level: hsm.getAlertLevel(check.label),
+          msg: `🔴 [워커 헬스] ${check.name} HTTP 실패\n${check.url} 응답 없음`,
+        });
+      }
+    } else if (state[check.key]) {
+      await notify(`✅ [워커 헬스] ${check.name} 회복\nHTTP 응답 정상 — 자동 감지`, 1);
+      hsm.clearAlert(state, check.key);
     }
   }
 

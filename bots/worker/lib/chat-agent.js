@@ -1,0 +1,488 @@
+'use strict';
+
+const { randomUUID } = require('crypto');
+const path = require('path');
+const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
+const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
+
+const SCHEMA = 'worker';
+
+async function ensureChatSchema() {
+  await pgPool.run(SCHEMA, `
+    CREATE TABLE IF NOT EXISTS worker.chat_sessions (
+      id           TEXT PRIMARY KEY,
+      company_id   TEXT NOT NULL REFERENCES worker.companies(id),
+      user_id      INTEGER NOT NULL REFERENCES worker.users(id),
+      title        TEXT NOT NULL DEFAULT '새 대화',
+      channel      TEXT NOT NULL DEFAULT 'web',
+      status       TEXT NOT NULL DEFAULT 'active',
+      last_intent  TEXT,
+      context      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      deleted_at   TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_chat_sessions_company_user
+      ON worker.chat_sessions(company_id, user_id, last_at DESC);
+  `);
+
+  await pgPool.run(SCHEMA, `
+    CREATE TABLE IF NOT EXISTS worker.chat_messages (
+      id           SERIAL PRIMARY KEY,
+      session_id   TEXT NOT NULL REFERENCES worker.chat_sessions(id) ON DELETE CASCADE,
+      company_id   TEXT NOT NULL REFERENCES worker.companies(id),
+      user_id      INTEGER REFERENCES worker.users(id),
+      role         TEXT NOT NULL,
+      content      TEXT,
+      intent       TEXT,
+      metadata     JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_chat_messages_session
+      ON worker.chat_messages(session_id, created_at);
+  `);
+}
+
+async function resolveEmployeeId(userId) {
+  const row = await pgPool.get(SCHEMA,
+    `SELECT id FROM worker.employees WHERE user_id=$1 AND deleted_at IS NULL`,
+    [userId]);
+  return row?.id || null;
+}
+
+async function createSession({ companyId, userId, title, channel = 'web' }) {
+  const id = randomUUID();
+  const row = await pgPool.get(SCHEMA, `
+    INSERT INTO worker.chat_sessions (id, company_id, user_id, title, channel)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING *
+  `, [id, companyId, userId, title || '새 대화', channel]);
+  return row;
+}
+
+async function getSession(sessionId, companyId, userId) {
+  return pgPool.get(SCHEMA, `
+    SELECT * FROM worker.chat_sessions
+    WHERE id=$1 AND company_id=$2 AND user_id=$3 AND deleted_at IS NULL
+  `, [sessionId, companyId, userId]);
+}
+
+async function listSessions(companyId, userId) {
+  return pgPool.query(SCHEMA, `
+    SELECT id, title, channel, status, last_intent,
+      to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "createdAt",
+      to_char(last_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "lastAt"
+    FROM worker.chat_sessions
+    WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL
+    ORDER BY last_at DESC
+    LIMIT 100
+  `, [companyId, userId]);
+}
+
+async function listMessages(sessionId, companyId, userId) {
+  return pgPool.query(SCHEMA, `
+    SELECT m.id, m.role, m.content, m.intent, m.metadata,
+      to_char(m.created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS "createdAt"
+    FROM worker.chat_messages m
+    JOIN worker.chat_sessions s ON s.id = m.session_id
+    WHERE m.session_id=$1 AND s.company_id=$2 AND s.user_id=$3
+    ORDER BY m.created_at ASC, m.id ASC
+  `, [sessionId, companyId, userId]);
+}
+
+async function saveMessage({ sessionId, companyId, userId, role, content, intent = null, metadata = {} }) {
+  return pgPool.run(SCHEMA, `
+    INSERT INTO worker.chat_messages (session_id, company_id, user_id, role, content, intent, metadata)
+    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+  `, [sessionId, companyId, userId || null, role, content || null, intent, JSON.stringify(metadata || {})]);
+}
+
+async function updateSession(sessionId, companyId, userId, patch = {}) {
+  return pgPool.get(SCHEMA, `
+    UPDATE worker.chat_sessions
+    SET title       = COALESCE($4, title),
+        status      = COALESCE($5, status),
+        last_intent = COALESCE($6, last_intent),
+        context     = COALESCE($7::jsonb, context),
+        updated_at  = NOW(),
+        last_at     = NOW()
+    WHERE id=$1 AND company_id=$2 AND user_id=$3 AND deleted_at IS NULL
+    RETURNING *
+  `, [
+    sessionId,
+    companyId,
+    userId,
+    patch.title || null,
+    patch.status || null,
+    patch.last_intent || null,
+    patch.context ? JSON.stringify(patch.context) : null,
+  ]);
+}
+
+function _extractTime(text) {
+  const hasMorning = /오전|아침/.test(text);
+  const hasAfternoon = /오후|저녁|밤/.test(text);
+  const match = text.match(/(\d{1,2})(?::(\d{2}))?\s*시(?:\s*(반|\d{1,2}\s*분))?/);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  let minute = match[2] ? parseInt(match[2], 10) : 0;
+  if (!match[2] && match[3]) {
+    minute = String(match[3]).includes('반') ? 30 : parseInt(String(match[3]).replace(/\D/g, ''), 10);
+  }
+  if (hasAfternoon && hour < 12) hour += 12;
+  if (hasMorning && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function _dateParts(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: kst.TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  return { year: Number(get('year')), month: Number(get('month')), day: Number(get('day')) };
+}
+
+function _composeKstDate(parts, time) {
+  const mm = String(parts.month).padStart(2, '0');
+  const dd = String(parts.day).padStart(2, '0');
+  const hh = String(time.hour).padStart(2, '0');
+  const mi = String(time.minute).padStart(2, '0');
+  return new Date(`${parts.year}-${mm}-${dd}T${hh}:${mi}:00+09:00`);
+}
+
+function _extractDate(text) {
+  const now = new Date();
+  const base = _dateParts(now);
+  if (/모레/.test(text)) {
+    const d = new Date(`${base.year}-${String(base.month).padStart(2, '0')}-${String(base.day).padStart(2, '0')}T00:00:00+09:00`);
+    d.setUTCDate(d.getUTCDate() + 2);
+    return _dateParts(d);
+  }
+  if (/내일/.test(text)) {
+    const d = new Date(`${base.year}-${String(base.month).padStart(2, '0')}-${String(base.day).padStart(2, '0')}T00:00:00+09:00`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return _dateParts(d);
+  }
+  if (/오늘/.test(text)) return base;
+
+  let m = text.match(/(\d{1,2})\/(\d{1,2})/);
+  if (m) return { year: base.year, month: Number(m[1]), day: Number(m[2]) };
+
+  m = text.match(/(\d{1,2})월\s*(\d{1,2})일/);
+  if (m) return { year: base.year, month: Number(m[1]), day: Number(m[2]) };
+
+  return base;
+}
+
+function _cleanTitle(text) {
+  return text
+    .replace(/(내일|오늘|모레)/g, '')
+    .replace(/(\d{1,2}\/\d{1,2}|\d{1,2}월\s*\d{1,2}일)/g, '')
+    .replace(/(오전|오후|아침|저녁|밤)?\s*\d{1,2}(?::\d{2})?\s*시(\s*(반|\d{1,2}\s*분))?/g, '')
+    .replace(/(잡아줘|등록해줘|만들어줘|추가해줘|일정|미팅|회의|약속|리마인더|로 변경|변경해줘|수정해줘|취소해줘|삭제해줘)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseRuleIntent(text, session) {
+  const normalized = String(text || '').trim();
+  const lowered = normalized.toLowerCase();
+  const hasScheduleWord = /(일정|미팅|회의|약속|리마인더)/.test(normalized);
+  const time = _extractTime(normalized);
+  const date = _extractDate(normalized);
+
+  if (/(오늘|내일|이번주|이번 주)?.*(일정|미팅|회의|약속).*(보여|알려|조회|확인)/.test(normalized) ||
+      /(오늘|내일).*(뭐 있어|뭐있어)/.test(normalized)) {
+    return { intent: 'list_schedule', scope: /내일/.test(normalized) ? 'tomorrow' : /이번\s*주/.test(normalized) ? 'week' : 'today' };
+  }
+
+  if ((/취소|삭제/.test(normalized)) && session?.context?.last_schedule_id) {
+    return { intent: 'cancel_last_schedule' };
+  }
+
+  if ((/변경|수정/.test(normalized) || /로\s*바꿔/.test(lowered)) && time && session?.context?.last_schedule_id) {
+    return { intent: 'update_last_schedule', time };
+  }
+
+  if ((hasScheduleWord || /잡아줘|등록해줘|만들어줘|추가해줘/.test(normalized)) && time) {
+    const type = /미팅|회의/.test(normalized) ? 'meeting' : /리마인더/.test(normalized) ? 'reminder' : 'task';
+    const title = _cleanTitle(normalized) || (type === 'meeting' ? '새 미팅' : '새 일정');
+    return { intent: 'create_schedule', type, title, date, time };
+  }
+
+  if (/(계약서|문서|파일|ocr|검토)/i.test(normalized)) return { intent: 'route_request', target: 'emily' };
+  if (/(채용|직원|휴가|출근|퇴근|인사)/.test(normalized)) return { intent: 'route_request', target: 'noah' };
+  if (/(급여|월급|명세서)/.test(normalized)) return { intent: 'route_request', target: 'ryan' };
+  if (/(매출|리포트|보고서)/.test(normalized)) return { intent: 'route_request', target: 'chloe' };
+  if (/(세금|컴플라이언스|규정|신고)/.test(normalized)) return { intent: 'route_request', target: 'oliver' };
+
+  return { intent: 'unknown' };
+}
+
+async function parseLlmIntent(text) {
+  const systemPrompt = [
+    '당신은 워커팀 자연어 업무 분류기다.',
+    '반드시 JSON만 반환한다.',
+    'intent는 create_schedule, list_schedule, update_last_schedule, cancel_last_schedule, route_request, unknown 중 하나다.',
+    'target는 emily, noah, ryan, chloe, oliver, sophie, marcus 중 하나 또는 null.',
+    'datetime은 ISO8601 +09:00 형식 또는 null.',
+  ].join('\n');
+  const userPrompt = `메시지: ${text}\n\nJSON 형식:\n{"intent":"...","title":null,"type":"task|meeting|reminder|null","datetime":null,"scope":"today|tomorrow|week|null","target":null}`;
+  try {
+    const result = await callWithFallback({
+      chain: [
+        { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
+      ],
+      systemPrompt,
+      userPrompt,
+      logMeta: { team: 'worker', bot: 'worker-chat', requestType: 'task_intake' },
+    });
+    const cleaned = result.text.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
+function _formatKst(date) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: kst.TZ,
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
+async function _createSchedule(intent, companyId, userId) {
+  const employeeId = await resolveEmployeeId(userId);
+  const startTime = _composeKstDate(intent.date, intent.time);
+  const row = await pgPool.get(SCHEMA, `
+    INSERT INTO worker.schedules
+      (company_id, title, description, type, start_time, all_day, attendees, reminder, created_by)
+    VALUES ($1, $2, $3, $4, $5, FALSE, '[]'::jsonb, 30, $6)
+    RETURNING *
+  `, [companyId, intent.title, 'AI 대화로 등록된 일정', intent.type || 'task', startTime.toISOString(), employeeId]);
+  return {
+    schedule: row,
+    reply: `${intent.type === 'meeting' ? '미팅' : '일정'}을 등록했습니다. ${_formatKst(startTime)}, ${row.title}입니다.`,
+    ui: {
+      type: 'schedule',
+      action: 'created',
+      schedule: {
+        id: row.id,
+        title: row.title,
+        type: row.type,
+        start_time: row.start_time,
+        location: row.location,
+      },
+    },
+    contextPatch: {
+      last_schedule_id: row.id,
+      last_schedule_title: row.title,
+      last_schedule_start_time: row.start_time,
+    },
+  };
+}
+
+async function _listSchedules(intent, companyId) {
+  let from;
+  let to;
+  const today = kst.today();
+  if (intent.scope === 'tomorrow') {
+    from = kst.daysAgoStr(-1);
+    to = from;
+  } else if (intent.scope === 'week') {
+    from = today;
+    to = kst.daysAgoStr(-6);
+  } else {
+    from = today;
+    to = today;
+  }
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT id, title, type, start_time, location
+    FROM worker.schedules
+    WHERE company_id=$1 AND deleted_at IS NULL AND start_time::date BETWEEN $2 AND $3
+    ORDER BY start_time ASC
+    LIMIT 20
+  `, [companyId, from, to]);
+  if (!rows.length) {
+    return { reply: `${intent.scope === 'tomorrow' ? '내일' : intent.scope === 'week' ? '이번 주' : '오늘'} 등록된 일정이 없습니다.`, ui: { type: 'schedule_list', items: [] } };
+  }
+  return {
+    reply: `${intent.scope === 'tomorrow' ? '내일' : intent.scope === 'week' ? '이번 주' : '오늘'} 일정 ${rows.length}건입니다.`,
+    ui: {
+      type: 'schedule_list',
+      items: rows.map(row => ({
+        id: row.id,
+        title: row.title,
+        type: row.type,
+        start_time: row.start_time,
+        location: row.location,
+      })),
+    },
+  };
+}
+
+async function _updateLastSchedule(intent, companyId, session) {
+  const row = await pgPool.get(SCHEMA, `
+    SELECT * FROM worker.schedules WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL
+  `, [session.context.last_schedule_id, companyId]);
+  if (!row) {
+    return { reply: '최근 대화에서 만든 일정을 찾지 못했습니다. 다시 일정 이름과 시간을 말씀해주세요.' };
+  }
+  const existing = new Date(row.start_time);
+  const parts = _dateParts(existing);
+  const nextTime = _composeKstDate(parts, intent.time);
+  const updated = await pgPool.get(SCHEMA, `
+    UPDATE worker.schedules
+    SET start_time=$1, updated_at=NOW()
+    WHERE id=$2 AND company_id=$3
+    RETURNING *
+  `, [nextTime.toISOString(), row.id, companyId]);
+  return {
+    reply: `시간을 ${_formatKst(nextTime)}로 변경했습니다.`,
+    ui: {
+      type: 'schedule',
+      action: 'updated',
+      schedule: {
+        id: updated.id,
+        title: updated.title,
+        type: updated.type,
+        start_time: updated.start_time,
+      },
+    },
+    contextPatch: {
+      last_schedule_id: updated.id,
+      last_schedule_title: updated.title,
+      last_schedule_start_time: updated.start_time,
+    },
+  };
+}
+
+async function _cancelLastSchedule(companyId, session) {
+  const row = await pgPool.get(SCHEMA, `
+    UPDATE worker.schedules
+    SET deleted_at=NOW(), updated_at=NOW()
+    WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL
+    RETURNING id, title, type
+  `, [session.context.last_schedule_id, companyId]);
+  if (!row) {
+    return { reply: '최근 대화에서 만든 일정을 찾지 못했습니다.' };
+  }
+  return {
+    reply: `${row.title} 일정을 취소했습니다.`,
+    ui: { type: 'schedule', action: 'cancelled', schedule: row },
+    contextPatch: {
+      last_schedule_id: null,
+      last_schedule_title: null,
+      last_schedule_start_time: null,
+    },
+  };
+}
+
+async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web' }) {
+  await ensureChatSchema();
+
+  let session = sessionId
+    ? await getSession(sessionId, companyId, user.id)
+    : null;
+
+  if (!session) {
+    session = await createSession({
+      companyId,
+      userId: user.id,
+      title: String(text || '').trim().slice(0, 40) || '새 대화',
+      channel,
+    });
+  }
+
+  await saveMessage({
+    sessionId: session.id,
+    companyId,
+    userId: user.id,
+    role: 'user',
+    content: text,
+  });
+
+  let intent = parseRuleIntent(text, session);
+  if (intent.intent === 'unknown') {
+    const llmIntent = await parseLlmIntent(text);
+    if (llmIntent?.intent && llmIntent.intent !== 'unknown') {
+      intent = llmIntent;
+      if (intent.datetime) {
+        const dt = new Date(intent.datetime);
+        intent.date = _dateParts(dt);
+        intent.time = { hour: Number(new Intl.DateTimeFormat('en-US', { timeZone: kst.TZ, hour: '2-digit', hour12: false }).format(dt)), minute: Number(new Intl.DateTimeFormat('en-US', { timeZone: kst.TZ, minute: '2-digit', hour12: false }).format(dt)) };
+      }
+    }
+  }
+
+  let result;
+  switch (intent.intent) {
+    case 'create_schedule':
+      result = await _createSchedule(intent, companyId, user.id);
+      break;
+    case 'list_schedule':
+      result = await _listSchedules(intent, companyId);
+      break;
+    case 'update_last_schedule':
+      result = await _updateLastSchedule(intent, companyId, session);
+      break;
+    case 'cancel_last_schedule':
+      result = await _cancelLastSchedule(companyId, session);
+      break;
+    case 'route_request':
+      result = {
+        reply: `${intent.target} 담당 업무로 분류했습니다. 이 유형의 자동 실행은 다음 단계에서 연결할 예정입니다.`,
+        ui: { type: 'route', target: intent.target, status: 'queued' },
+      };
+      break;
+    default:
+      result = {
+        reply: '지금은 일정 등록/조회/변경/취소 중심으로 지원하고 있습니다. 예: "내일 오전 10시 김대리 업체 미팅 잡아줘"',
+        ui: { type: 'hint', suggestions: ['오늘 일정 보여줘', '내일 오전 10시 미팅 잡아줘', '시간 11시로 변경해줘'] },
+      };
+      break;
+  }
+
+  const nextContext = { ...(session.context || {}), ...(result.contextPatch || {}) };
+  await updateSession(session.id, companyId, user.id, {
+    last_intent: intent.intent,
+    context: nextContext,
+  });
+
+  await saveMessage({
+    sessionId: session.id,
+    companyId,
+    userId: user.id,
+    role: 'assistant',
+    content: result.reply,
+    intent: intent.intent,
+    metadata: { ui: result.ui || null, target: intent.target || null },
+  });
+
+  return {
+    sessionId: session.id,
+    reply: result.reply,
+    intent: intent.intent,
+    ui: result.ui || null,
+  };
+}
+
+module.exports = {
+  ensureChatSchema,
+  createSession,
+  getSession,
+  listSessions,
+  listMessages,
+  saveMessage,
+  updateSession,
+  handleChatMessage,
+  resolveEmployeeId,
+};
