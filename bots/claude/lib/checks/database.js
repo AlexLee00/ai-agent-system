@@ -51,7 +51,7 @@ async function checkReservationPostgres(items) {
 }
 
 async function checkInvestmentPostgres(items) {
-  const REQUIRED = ['analysis', 'signals', 'trades', 'positions', 'schema_migrations'];
+  const REQUIRED = ['analysis', 'signals', 'trades', 'positions', 'schema_migrations', 'trade_journal', 'trade_review'];
 
   // DB 연결 확인
   try {
@@ -136,6 +136,75 @@ async function checkInvestmentPostgres(items) {
         }
       } catch (e) {
         items.push({ label: 'investment 신호 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });
+      }
+    }
+
+    if (tables.includes('trade_journal')) {
+      try {
+        const [closedTrades, missingReview, badPercentScale, badPercentMismatch, missingExcursions] = await Promise.all([
+          pgPool.get('investment',
+            "SELECT COUNT(*) AS cnt FROM trade_journal WHERE status = 'closed' AND exit_time IS NOT NULL"),
+          tables.includes('trade_review')
+            ? pgPool.get('investment', `
+                SELECT COUNT(*) AS cnt
+                FROM trade_journal j
+                LEFT JOIN trade_review r ON r.trade_id = j.trade_id
+                WHERE j.status = 'closed'
+                  AND j.exit_time IS NOT NULL
+                  AND r.trade_id IS NULL
+              `)
+            : Promise.resolve({ cnt: 0 }),
+          pgPool.get('investment', `
+            SELECT COUNT(*) AS cnt
+            FROM trade_journal
+            WHERE status = 'closed'
+              AND exit_time IS NOT NULL
+              AND pnl_percent IS NOT NULL
+              AND ABS(pnl_percent) > 0
+              AND ABS(pnl_percent) < 1
+          `),
+          pgPool.get('investment', `
+            SELECT COUNT(*) AS cnt
+            FROM trade_journal
+            WHERE status = 'closed'
+              AND exit_time IS NOT NULL
+              AND pnl_percent IS NOT NULL
+              AND entry_value > 0
+              AND pnl_amount IS NOT NULL
+              AND ABS(pnl_percent - ROUND(((pnl_amount / entry_value) * 100)::numeric, 4)) > 0.02
+          `),
+          tables.includes('trade_review')
+            ? pgPool.get('investment', `
+                SELECT COUNT(*) AS cnt
+                FROM trade_journal j
+                JOIN trade_review r ON r.trade_id = j.trade_id
+                WHERE j.status = 'closed'
+                  AND j.exit_time IS NOT NULL
+                  AND (r.max_favorable IS NULL OR r.max_adverse IS NULL)
+              `)
+            : Promise.resolve({ cnt: 0 }),
+        ]);
+
+        const totalClosed = Number(closedTrades?.cnt ?? 0);
+        const missingReviewCnt = Number(missingReview?.cnt ?? 0);
+        const badScaleCnt = Number(badPercentScale?.cnt ?? 0);
+        const badMismatchCnt = Number(badPercentMismatch?.cnt ?? 0);
+        const missingExcursionCnt = Number(missingExcursions?.cnt ?? 0);
+
+        if (totalClosed === 0) {
+          items.push({ label: 'investment trade_review 무결성', status: 'ok', detail: '종료 거래 없음' });
+        } else if (missingReviewCnt > 0 || badScaleCnt > 0 || badMismatchCnt > 0 || missingExcursionCnt > 0) {
+          const detail = [];
+          if (missingReviewCnt > 0) detail.push(`리뷰 누락 ${missingReviewCnt}건`);
+          if (missingExcursionCnt > 0) detail.push(`excursion 누락 ${missingExcursionCnt}건`);
+          if (badScaleCnt > 0) detail.push(`pnl_percent 스케일 이상 ${badScaleCnt}건`);
+          if (badMismatchCnt > 0) detail.push(`pnl_percent 불일치 ${badMismatchCnt}건`);
+          items.push({ label: 'investment trade_review 무결성', status: 'warn', detail: detail.join(', ') });
+        } else {
+          items.push({ label: 'investment trade_review 무결성', status: 'ok', detail: `종료 거래 ${totalClosed}건 정상` });
+        }
+      } catch (e) {
+        items.push({ label: 'investment trade_review 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });
       }
     }
 
