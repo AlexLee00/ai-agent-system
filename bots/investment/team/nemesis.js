@@ -574,13 +574,14 @@ export async function evaluateSignal(signal, opts = {}) {
   const totalUsdt  = opts.totalUsdt || 10000;
   const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
   const rules      = getRules(signal.exchange);
+  const persist    = opts.persist !== false;
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
     if (amountUsdt < rules.MIN_ORDER_USDT) {
       const reason = `최소 주문 미달 ($${amountUsdt} < $${rules.MIN_ORDER_USDT})`;
-      await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      await notifyRiskRejection({ symbol, action, reason });
+      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+      if (persist) await notifyRiskRejection({ symbol, action, reason });
       return { approved: false, reason };
     }
     if (amountUsdt > rules.MAX_ORDER_USDT) {
@@ -598,8 +599,8 @@ export async function evaluateSignal(signal, opts = {}) {
   const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
   if (lossPct >= rules.MAX_DAILY_LOSS_PCT) {
     const reason = `일일 손실 한도 초과 (${(lossPct * 100).toFixed(1)}%)`;
-    await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-    await notifyRiskRejection({ symbol, action, reason });
+    if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+    if (persist) await notifyRiskRejection({ symbol, action, reason });
     return { approved: false, reason };
   }
 
@@ -609,8 +610,8 @@ export async function evaluateSignal(signal, opts = {}) {
     positionCount   = positions.length;
     if (positionCount >= rules.MAX_OPEN_POSITIONS) {
       const reason = `최대 포지션 초과 (${positionCount}/${rules.MAX_OPEN_POSITIONS})`;
-      await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      await notifyRiskRejection({ symbol, action, reason });
+      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+      if (persist) await notifyRiskRejection({ symbol, action, reason });
       return { approved: false, reason };
     }
   }
@@ -635,16 +636,18 @@ export async function evaluateSignal(signal, opts = {}) {
     console.log(`  🤖 [네메시스 LLM] ${llm.decision}: ${llm.reasoning}`);
 
     if (llm.decision === 'REJECT') {
-      await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      await notifyRiskRejection({ symbol, action, reason: `[LLM] ${llm.reasoning}` });
-      await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
+      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+      if (persist) await notifyRiskRejection({ symbol, action, reason: `[LLM] ${llm.reasoning}` });
+      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
       return { approved: false, reason: llm.reasoning };
     }
     if (llm.decision === 'ADJUST' && llm.adjusted_amount) {
       amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(llm.adjusted_amount));
     }
 
-    await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
+    if (persist) {
+      await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
+    }
 
     // ── Phase 3: 동적 R/R 우선순위 체인 (레짐→가중→단순→ATR→고정) ──
     await ensureAtrColumn();
@@ -701,24 +704,28 @@ export async function evaluateSignal(signal, opts = {}) {
     );
 
     // ── 매매일지 판단 근거 기록 (승인/수정된 BUY만) ───────────────────
-    try {
-      await journalDb.insertRationale({
-        signal_id:             signal.id,
-        luna_decision:         'enter',
-        luna_reasoning:        signal.reasoning || '',
-        luna_confidence:       signal.confidence ?? null,
-        nemesis_verdict:       llm.decision === 'ADJUST' ? 'modified' : 'approved',
-        nemesis_notes:         llm.reasoning ?? null,
-        position_size_original: signal.amount_usdt,
-        position_size_approved: amountUsdt,
-      });
-    } catch (e) {
-      console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);
+    if (persist && signal.id) {
+      try {
+        await journalDb.insertRationale({
+          signal_id:             signal.id,
+          luna_decision:         'enter',
+          luna_reasoning:        signal.reasoning || '',
+          luna_confidence:       signal.confidence ?? null,
+          nemesis_verdict:       llm.decision === 'ADJUST' ? 'modified' : 'approved',
+          nemesis_notes:         llm.reasoning ?? null,
+          position_size_original: signal.amount_usdt,
+          position_size_approved: amountUsdt,
+        });
+      } catch (e) {
+        console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);
+      }
     }
   }
 
-  await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
-  await db.updateSignalAmount(signal.id, amountUsdt);
+  if (persist && signal.id) {
+    await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
+    await db.updateSignalAmount(signal.id, amountUsdt);
+  }
   console.log(`  ✅ [네메시스] ${symbol} ${action} $${amountUsdt} 승인`);
 
   // dynamicTPSL이 applied=true면 헤파이스토스에 전달할 tp/sl 가격 포함
