@@ -27,6 +27,8 @@ import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { isPaperMode } from '../shared/secrets.js';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.js';
+import * as journalDb from '../shared/trade-journal-db.js';
+import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.js';
 import { runBullResearcher } from './zeus.js';
 import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
@@ -110,7 +112,7 @@ const DIRECTION_MAP = { BUY: 1, SELL: -1, HOLD: 0 };
  * @param {Array} analyses  DB에서 읽은 분석 결과 배열
  * @returns {{ fusedScore, averageConfidence, hasConflict, recommendation }}
  */
-export function fuseSignals(analyses) {
+export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
   // 같은 타입이 여러 개면 첫 번째(최신)만 사용
   const byType = new Map();
   for (const a of analyses) {
@@ -120,7 +122,7 @@ export function fuseSignals(analyses) {
   let weightedScore = 0, totalWeight = 0;
   const directions = [];
   for (const [type, analysis] of byType) {
-    const weight    = ANALYST_WEIGHTS[type] ?? 0.05;
+    const weight    = weights[type] ?? 0.05;
     const direction = DIRECTION_MAP[analysis.signal] ?? 0;
     const conf      = Math.max(0, Math.min(1, analysis.confidence || 0.5));
     weightedScore  += direction * conf * weight;
@@ -141,6 +143,58 @@ export function fuseSignals(analyses) {
   return { fusedScore, averageConfidence, hasConflict, recommendation };
 }
 
+function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}) {
+  return normalizeWeights({
+    [ANALYST_TYPES.TA_MTF]: suggestedWeights.aria ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
+    [ANALYST_TYPES.ONCHAIN]: suggestedWeights.oracle ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.SENTIMENT]: suggestedWeights.sophia ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
+    [ANALYST_TYPES.NEWS]: suggestedWeights.hermes ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
+  });
+}
+
+async function loadAdaptiveAnalystWeights() {
+  try {
+    const report = await buildAccuracyReport({
+      aria: ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
+      sophia: ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
+      oracle: ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
+      hermes: ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
+    });
+    return {
+      weights: mapSuggestedWeightsToAnalystTypes(report.suggestedWeights),
+      report,
+    };
+  } catch (err) {
+    console.warn('[luna] adaptive analyst weights 실패 (기본값 사용):', err.message);
+    return { weights: { ...ANALYST_WEIGHTS }, report: null };
+  }
+}
+
+async function loadReviewConfidenceHint(symbol, exchange) {
+  try {
+    const insight = await journalDb.getTradeReviewInsight(symbol, exchange, 60);
+    if (!insight || insight.closedTrades < 3) return { insight, delta: 0, notes: [] };
+
+    let delta = 0;
+    const notes = [];
+    if (insight.winRate != null && insight.winRate >= 0.65) {
+      delta += 0.05;
+      notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
+    } else if (insight.winRate != null && insight.winRate < 0.4) {
+      delta -= 0.08;
+      notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
+    }
+    if (insight.avgPnlPercent != null && insight.avgPnlPercent < 0) {
+      delta -= 0.05;
+      notes.push(`평균 실현손익 ${insight.avgPnlPercent.toFixed(2)}%`);
+    }
+    return { insight, delta, notes };
+  } catch (err) {
+    console.warn('[luna] review confidence hint 실패 (무시):', err.message);
+    return { insight: null, delta: 0, notes: [] };
+  }
+}
+
 // ─── 분석 요약 빌더 ─────────────────────────────────────────────────
 
 export function buildAnalysisSummary(analyses) {
@@ -158,11 +212,14 @@ export function buildAnalysisSummary(analyses) {
 
 // ─── 개별 심볼 LLM 판단 ────────────────────────────────────────────
 
-export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null) {
+export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null, analystWeights = ANALYST_WEIGHTS) {
   const summary = buildAnalysisSummary(analyses);
   const label   = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
-  const fused   = fuseSignals(analyses);
+  const fused   = fuseSignals(analyses, analystWeights);
+  const reviewHint = await loadReviewConfidenceHint(symbol, exchange);
   const fusedSection = `\n\n[시그널 융합] 방향=${fused.recommendation} | 점수=${fused.fusedScore.toFixed(3)} | 평균확신도=${(fused.averageConfidence * 100).toFixed(0)}%${fused.hasConflict ? ' | ⚠️ 신호 충돌' : ''}`;
+  const reviewSection = reviewHint.notes.length > 0
+    ? `\n[리뷰 힌트] ${reviewHint.notes.join(' / ')}` : '';
 
   let debateSection = '';
   if (debate) {
@@ -196,7 +253,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     }
   } catch { /* RAG 검색 실패 시 무시 */ }
 
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
   const shadowResult = await shadow.evaluate({
@@ -222,7 +279,13 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     llmPrompt: getLunaSystem(exchange),
     mode:      'shadow',
   });
-  return shadowResult.action;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
+  const adjusted = { ...shadowResult.action };
+  const baseConfidence = Math.max(0, Math.min(1, adjusted.confidence ?? fused.averageConfidence ?? 0.5));
+  adjusted.confidence = Math.max(0, Math.min(1, baseConfidence + reviewHint.delta));
+  if (reviewHint.notes.length > 0) {
+    adjusted.reasoning = `${adjusted.reasoning || ''} | 리뷰:${reviewHint.notes.join(', ')}`.slice(0, 180);
+  }
+  return adjusted;  // ruleResult (기존 Groq 판단) 반환, shadow는 shadow_log에만 기록
 }
 
 // ─── 포트폴리오 판단 ───────────────────────────────────────────────
@@ -333,10 +396,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const results         = [];
   let debateCount          = 0;
   const portfolio          = await buildPortfolioContext(exchange);
+  const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights();
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 
   console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
+  console.log(`  ⚖️ [루나] 분석가 가중치: TA ${analystWeights[ANALYST_TYPES.TA_MTF].toFixed(2)} | 온체인 ${analystWeights[ANALYST_TYPES.ONCHAIN].toFixed(2)} | 감성 ${analystWeights[ANALYST_TYPES.SENTIMENT].toFixed(2)} | 뉴스 ${analystWeights[ANALYST_TYPES.NEWS].toFixed(2)}`);
 
   for (const symbol of symbols) {
     try {
@@ -374,7 +439,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       }
 
       console.log(`\n  🤖 [루나] ${symbol} 신호 판단 중...`);
-      const decision = await getSymbolDecision(symbol, analyses, exchange, debate);
+      const decision = await getSymbolDecision(symbol, analyses, exchange, debate, analystWeights);
       console.log(`  → ${decision.action} (${((decision.confidence || 0) * 100).toFixed(0)}%) | ${decision.reasoning}`);
 
       symbolDecisions.push({ symbol, exchange, ...decision });
@@ -408,6 +473,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     `${paperMode ? '[PAPER] ' : ''}🌙 루나 판단 (${label})`,
     `시황: ${portfolio_decision.portfolio_view}`,
     `리스크: ${portfolio_decision.risk_level}`,
+    accuracyReport?.totalWeight ? `가중치합: ${accuracyReport.totalWeight}` : '',
     '',
     ...(portfolio_decision.decisions || []).map(d => {
       const emoji = d.action === 'BUY' ? '🟢' : d.action === 'SELL' ? '🔴' : '⚪';
