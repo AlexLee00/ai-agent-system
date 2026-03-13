@@ -474,9 +474,13 @@ function ClaudeCodeChat() {
                     if (part.type === 'text' && part.text) {
                       assistantStreamRef.current += part.text;
                       setMessages(prev => {
-                        const last = prev[prev.length - 1];
-                        if (last?.role === 'assistant' && last.streaming) {
-                          return [...prev.slice(0, -1), { ...last, text: last.text + part.text }];
+                        // 마지막 스트리밍 assistant 찾기 (tool 메시지 사이여도 병합)
+                        for (let i = prev.length - 1; i >= 0; i--) {
+                          if (prev[i].role === 'assistant' && prev[i].streaming) {
+                            const updated = [...prev];
+                            updated[i] = { ...prev[i], text: prev[i].text + part.text };
+                            return updated;
+                          }
                         }
                         return [...prev, { role: 'assistant', text: part.text, streaming: true }];
                       });

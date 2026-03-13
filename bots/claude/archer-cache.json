@@ -1,5 +1,5 @@
 {
-  "lastRun": "2026-03-12",
+  "lastRun": "2026-03-13",
   "versions": {
     "@anthropic-ai/sdk": "0.78.0",
     "@modelcontextprotocol/sdk": "1.27.1",
@@ -10,9 +10,9 @@
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 groq-sdk의 메이저 업그레이드와 보안 취약점에 대한 조치가 필요합니다. OpenAI의 AI 에이전트 설계 관련 뉴스는 보안성을 높이는 데 도움이 될 수 있습니다. Hugging Face의 새로운 기능은 데이터 관리에 유용할 것입니다.",
-    "patchCount": 3,
-    "securityCount": 2,
-    "llmApiCount": 1
+    "summary": "이번 주에는 Anthropic과 OpenAI의 API 업데이트가 있었습니다. AI 기반 홍수 예측 기술과 GUI 에이전트 메모리 모델에 대한 연구가 주목받고 있습니다. Hugging Face의 새로운 스토리지 기능도 데이터 관리에 도움이 될 것입니다.",
+    "patchCount": 0,
+    "securityCount": 0,
+    "llmApiCount": 2
   }
 }
