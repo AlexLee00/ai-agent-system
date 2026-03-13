@@ -5,6 +5,8 @@ import l04Sentiment from './l04-sentiment.js';
 import l05Onchain from './l05-onchain.js';
 import l06PortfolioContext from './l06-portfolio-context.js';
 import l10SignalFusion from './l10-signal-fusion.js';
+import l11BullDebate from './l11-bull-debate.js';
+import l12BearDebate from './l12-bear-debate.js';
 import l13FinalDecision from './l13-final-decision.js';
 import l21LlmRisk from './l21-llm-risk.js';
 import l30SignalSave from './l30-signal-save.js';
@@ -19,6 +21,8 @@ export const INVESTMENT_NODES = [
   l05Onchain,
   l06PortfolioContext,
   l10SignalFusion,
+  l11BullDebate,
+  l12BearDebate,
   l13FinalDecision,
   l21LlmRisk,
   l30SignalSave,
