@@ -92,6 +92,16 @@ const SCHEMA = 'worker';
 const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
 
 const app = express();
+const wsClients = new Set();
+
+function sendWs(ws, payload) {
+  if (!ws || ws.readyState !== 1) return;
+  try {
+    ws.send(JSON.stringify(payload));
+  } catch {
+    /* 무시 */
+  }
+}
 
 // ── 보안 미들웨어 ─────────────────────────────────────────────────────
 app.set('trust proxy', 1);
@@ -1866,14 +1876,124 @@ function killAllClaudeProcs(signal) {
 process.on('SIGTERM', () => { killAllClaudeProcs('SIGTERM'); process.exit(0); });
 process.on('SIGINT',  () => { killAllClaudeProcs('SIGINT');  process.exit(0); });
 
+function setupChatWebSocket(server) {
+  const wss = new WebSocketServer({ server, path: '/ws/chat' });
+
+  wss.on('connection', async (ws, req) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const token = url.searchParams.get('token');
+      if (!token) {
+        sendWs(ws, { type: 'chat.error', code: 'WS_AUTH_REQUIRED', message: '인증 토큰이 필요합니다.' });
+        ws.close(4001, 'auth required');
+        return;
+      }
+
+      const user = verifyToken(token);
+      const dbUser = await pgPool.get(SCHEMA,
+        `SELECT id, company_id, username, role, name
+         FROM worker.users
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [user.id]);
+      if (!dbUser) {
+        sendWs(ws, { type: 'chat.error', code: 'WS_AUTH_FAILED', message: '사용자를 확인할 수 없습니다.' });
+        ws.close(4003, 'auth failed');
+        return;
+      }
+
+      ws.user = dbUser;
+      ws.companyId = dbUser.company_id;
+      wsClients.add(ws);
+      sendWs(ws, {
+        type: 'chat.connected',
+        user: { id: dbUser.id, role: dbUser.role, name: dbUser.name },
+        ts: new Date().toISOString(),
+      });
+
+      ws.on('message', async (raw) => {
+        let payload;
+        try {
+          payload = JSON.parse(String(raw));
+        } catch {
+          sendWs(ws, { type: 'chat.error', code: 'WS_BAD_PAYLOAD', message: 'JSON 형식이 올바르지 않습니다.' });
+          return;
+        }
+
+        if (payload.type === 'ping') {
+          sendWs(ws, { type: 'pong', ts: new Date().toISOString() });
+          return;
+        }
+
+        if (payload.type !== 'chat.send') {
+          sendWs(ws, { type: 'chat.error', code: 'WS_UNSUPPORTED_TYPE', message: '지원하지 않는 메시지 타입입니다.' });
+          return;
+        }
+
+        const text = String(payload.message || '').trim();
+        const sessionId = payload.sessionId ? String(payload.sessionId) : null;
+        if (!text || text.length > 1000) {
+          sendWs(ws, { type: 'chat.error', code: 'WS_INVALID_MESSAGE', message: '메시지는 1~1000자여야 합니다.' });
+          return;
+        }
+
+        sendWs(ws, {
+          type: 'chat.status',
+          phase: 'thinking',
+          message: 'Worker가 업무를 정리하고 있습니다...',
+          sessionId,
+          ts: new Date().toISOString(),
+        });
+
+        try {
+          const result = await handleChatMessage({
+            text,
+            sessionId,
+            user: ws.user,
+            companyId: ws.companyId,
+            channel: 'websocket',
+          });
+
+          sendWs(ws, {
+            type: 'chat.result',
+            sessionId: result.sessionId,
+            reply: result.reply,
+            intent: result.intent,
+            ui: result.ui || null,
+            ts: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error('[worker/ws/chat]', err.message);
+          sendWs(ws, {
+            type: 'chat.error',
+            code: 'WS_CHAT_FAILED',
+            message: err.message || '대화 처리 중 오류가 발생했습니다.',
+            ts: new Date().toISOString(),
+          });
+        }
+      });
+
+      ws.on('close', () => {
+        wsClients.delete(ws);
+      });
+    } catch (err) {
+      sendWs(ws, { type: 'chat.error', code: 'WS_CONNECT_FAILED', message: err.message || '연결 초기화 실패' });
+      try { ws.close(1011, 'connect failed'); } catch {}
+    }
+  });
+
+  return wss;
+}
+
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
   ensureChatSchema().catch(e => console.error('[worker/chat] 스키마 초기화 실패:', e.message));
-
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = http.createServer(app);
+  setupChatWebSocket(server);
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`[worker/server] API 서버 기동 — http://0.0.0.0:${PORT}`);
+    console.log(`[worker/server] WebSocket 채널 기동 — ws://0.0.0.0:${PORT}/ws/chat`);
   });
 }
 
