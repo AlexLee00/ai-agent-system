@@ -12,6 +12,7 @@
 
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
+import { validateTradeReview } from './validate-trade-review.js';
 
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
@@ -137,6 +138,32 @@ async function main() {
         recovers.push(`✅ [루나 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`);
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
+    }
+  }
+
+  try {
+    const validation = await validateTradeReview({ days: 90, fix: false });
+    if (validation.findings > 0) {
+      const key = 'trade-review-integrity';
+      if (hsm.canAlert(state, key)) {
+        issues.push({
+          key,
+          level: 2,
+          msg: `⚠️ [루나 헬스] trade_review 정합성 이상\n종료 거래 ${validation.closedTrades}건 중 ${validation.findings}건 점검 필요`,
+        });
+      }
+    } else if (state['trade-review-integrity']) {
+      recovers.push(`✅ [루나 헬스] trade_review 정합성 회복\n거래 리뷰 누락/불일치 없음 — 자동 감지`);
+      hsm.clearAlert(state, 'trade-review-integrity');
+    }
+  } catch (e) {
+    const key = 'trade-review-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 2,
+        msg: `⚠️ [루나 헬스] trade_review 점검 실패\n${e.message}`,
+      });
     }
   }
 
