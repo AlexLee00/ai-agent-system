@@ -8,7 +8,7 @@
  *   2. RAG — 과거 포스팅 참조 + 인기 패턴 검색
  *   3. 리처 수집 (IT뉴스/Node.js/날씨 + RAG 실전 사례/관련 포스팅)
  *   4. 포스/젬스 작성 (MessageEnvelope 구조화, trace_id 추적)
- *   5. 품질 검증 (실패 시 1회 재작성)
+ *   5. 품질 검증 (실패 시 초안 보정 1회)
  *   6. 퍼블리셔 파일 생성 + RAG 저장
  *   7. State Bus 이벤트 발행 (덱스터 감시용)
  *   8. 텔레그램 리포트 + AI 리라이팅 가이드 (mode-guard)
@@ -35,8 +35,16 @@ const {
   transitionSeries,
 }                                                   = require('./curriculum-planner');
 const richer                                        = require('./richer');
-const { writeLecturePost, writeLecturePostChunked } = require('./pos-writer');
-const { writeGeneralPost, writeGeneralPostChunked } = require('./gems-writer');
+const {
+  writeLecturePost,
+  writeLecturePostChunked,
+  repairLecturePostDraft,
+}                                                   = require('./pos-writer');
+const {
+  writeGeneralPost,
+  writeGeneralPostChunked,
+  repairGeneralPostDraft,
+}                                                   = require('./gems-writer');
 const { checkQuality }                              = require('./quality-checker');
 const { publishToFile }                             = require('./publ');
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
@@ -46,6 +54,7 @@ const { createMessage }                             = require('../../../packages
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
+const ragStore                                      = require('../../../packages/core/lib/blog-rag-store');
 
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
@@ -145,31 +154,65 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
     researchData.pastPosts = pastPosts;
   }
 
-  // BLOG_LLM_MODEL=gemini → 분할생성 (무료), 기본=gpt4o
-  const useChunked = (process.env.BLOG_LLM_MODEL === 'gemini');
-
-  // 작성
   return await withTrace(traceCtx, async () => {
-    let post    = useChunked
-      ? await writeLecturePostChunked(number, lectureTitle, researchData, sectionVariation)
-      : await writeLecturePost(number, lectureTitle, researchData, sectionVariation);
-    let quality = checkQuality(post.content, 'lecture');
-    console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
-    quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
+    const runLocalDraft = async variation => {
+      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+      let post = useChunked
+        ? await writeLecturePostChunked(number, lectureTitle, researchData, variation)
+        : await writeLecturePost(number, lectureTitle, researchData, variation);
+      let quality = checkQuality(post.content, 'lecture');
+      console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
+      quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
 
-    if (!quality.passed) {
-      console.log('[품질] 재작성 시도...');
-      const retry        = useChunked
-        ? await writeLecturePostChunked(number, lectureTitle, researchData, sectionVariation)
-        : await writeLecturePost(number, lectureTitle, researchData, sectionVariation);
-      const retryQuality = checkQuality(retry.content, 'lecture');
-      if (retryQuality.passed) {
-        post    = retry;
-        quality = retryQuality;
-        console.log('[품질] ✅ 재작성 통과');
-      } else {
-        console.log('[품질] ⚠️ 재작성도 미달 — 그대로 저장');
+      if (!quality.passed) {
+        console.log('[품질] 초안 보정 시도...');
+        const retry = await repairLecturePostDraft(
+          number,
+          lectureTitle,
+          researchData,
+          post,
+          quality,
+          variation
+        );
+        const retryQuality = checkQuality(retry.content, 'lecture');
+        if (retryQuality.passed) {
+          post    = retry;
+          quality = retryQuality;
+          console.log('[품질] ✅ 초안 보정 통과');
+        } else {
+          console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
+        }
       }
+
+      return { post, quality, sectionVariation: variation, source: 'direct' };
+    };
+
+    const execution = await maestro.run(
+      'lecture',
+      variation => runLocalDraft(variation || sectionVariation),
+      {
+        lectureNumber: number,
+        lectureTitle,
+        topic: lectureTitle,
+      }
+    );
+
+    let post;
+    let quality;
+    if (execution?.n8nTriggered) {
+      post = await ragStore.getNodeResult(execution.sessionId, 'write-lecture');
+      quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
+      if (post?.content && quality) {
+        console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
+      } else {
+        console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
+        const fallback = await runLocalDraft(execution.variations || sectionVariation);
+        post = fallback.post;
+        quality = fallback.quality;
+      }
+    } else {
+      post = execution.post;
+      quality = execution.quality;
     }
 
     const postTitle = `[Node.js ${number}강] ${lectureTitle}`;
@@ -180,6 +223,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
       postType:      'lecture',
       lectureNumber: number,
       charCount:     post.charCount,
+      scheduleId,
     });
 
     // 스케줄 상태 업데이트
@@ -265,28 +309,63 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     }
   }
 
-  // BLOG_LLM_MODEL=gemini → 분할생성 (무료), 기본=gpt4o
-  const useChunked = (process.env.BLOG_LLM_MODEL === 'gemini');
-
   return await withTrace(traceCtx, async () => {
-    let post    = useChunked
-      ? await writeGeneralPostChunked(category, data, sectionVariation)
-      : await writeGeneralPost(category, data, sectionVariation);
-    let quality = checkQuality(post.content, 'general');
-    console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
-    quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
+    const runLocalDraft = async variation => {
+      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+      let post = useChunked
+        ? await writeGeneralPostChunked(category, data, variation)
+        : await writeGeneralPost(category, data, variation);
+      let quality = checkQuality(post.content, 'general');
+      console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
+      quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
 
-    if (!quality.passed) {
-      console.log('[품질] 재작성 시도...');
-      const retry        = useChunked
-        ? await writeGeneralPostChunked(category, data, sectionVariation)
-        : await writeGeneralPost(category, data, sectionVariation);
-      const retryQuality = checkQuality(retry.content, 'general');
-      if (retryQuality.passed) {
-        post    = retry;
-        quality = retryQuality;
-        console.log('[품질] ✅ 재작성 통과');
+      if (!quality.passed) {
+        console.log('[품질] 초안 보정 시도...');
+        const retry = await repairGeneralPostDraft(
+          category,
+          data,
+          post,
+          quality,
+          variation
+        );
+        const retryQuality = checkQuality(retry.content, 'general');
+        if (retryQuality.passed) {
+          post    = retry;
+          quality = retryQuality;
+          console.log('[품질] ✅ 초안 보정 통과');
+        } else {
+          console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
+        }
       }
+
+      return { post, quality, sectionVariation: variation, source: 'direct' };
+    };
+
+    const execution = await maestro.run(
+      'general',
+      variation => runLocalDraft(variation || sectionVariation),
+      {
+        category,
+        topic: category,
+      }
+    );
+
+    let post;
+    let quality;
+    if (execution?.n8nTriggered) {
+      post = await ragStore.getNodeResult(execution.sessionId, 'write-general');
+      quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
+      if (post?.content && quality) {
+        console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
+      } else {
+        console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
+        const fallback = await runLocalDraft(execution.variations || sectionVariation);
+        post = fallback.post;
+        quality = fallback.quality;
+      }
+    } else {
+      post = execution.post;
+      quality = execution.quality;
     }
 
     const genTitle = post.title || `[${category}] 오늘의 포스팅`;
@@ -312,6 +391,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
       postType: 'general',
       charCount: post.charCount,
       images,
+      scheduleId,
     });
 
     // 스케줄 상태 업데이트
@@ -365,23 +445,12 @@ async function run() {
     traceId: traceCtx.trace_id,
   });
 
-  // 2. 마에스트로: 오늘의 변형 결정 (maestro 실패 시 빈 객체로 폴백)
-  let lectureVariations = {};
-  let generalVariations = {};
-  try {
-    lectureVariations = maestro.buildDynamicVariation('lecture', []);
-    generalVariations = maestro.buildDynamicVariation('general', []);
-    console.log(`[마에스트로] 강의 변형: ${lectureVariations.greetingStyle} / 일반 변형: ${generalVariations.greetingStyle}`);
-  } catch (e) {
-    console.warn('[블로] 마에스트로 변형 결정 실패 (기본값 사용):', e.message);
-  }
-
-  // 3. 리서치 수집 + RAG 실전 사례 + 관련 포스팅 + 인기 패턴
+  // 2. 리서치 수집 + RAG 실전 사례 + 관련 포스팅 + 인기 패턴
   const researchData    = await richer.research('general', false);
   const popularPatterns = await getPopularPatterns();
   if (popularPatterns) researchData.popularPatterns = popularPatterns;
 
-  // 4. 스케줄 기반으로 오늘 작성 목록 결정 (publish_schedule 우선, 없으면 자동 생성)
+  // 3. 스케줄 기반으로 오늘 작성 목록 결정 (publish_schedule 우선, 없으면 자동 생성)
   const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = await getTodayContext();
   console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
 
@@ -395,7 +464,7 @@ async function run() {
 
   const results = [];
 
-  // 5. 강의 포스팅
+  // 4. 강의 포스팅
   if (lectureCtx && config.lecture_count > 0) {
     try {
       if (await isSeriesComplete()) {
@@ -414,7 +483,6 @@ async function run() {
 
         const r = await runLecturePost(researchData, traceCtx, {
           number, seriesName, lectureTitle,
-          sectionVariation: lectureVariations,
         }, lectureSchedule?.id);
         results.push(r);
       }
@@ -425,7 +493,7 @@ async function run() {
     }
   }
 
-  // 6. 일반 포스팅
+  // 5. 일반 포스팅
   if (generalCtx && config.general_count > 0) {
     try {
       const { category, scheduleId, bookInfo } = generalCtx;
@@ -442,7 +510,6 @@ async function run() {
       const r = await runGeneralPost(researchData, traceCtx, {
         category,
         bookInfo,
-        sectionVariation: generalVariations,
       }, scheduleId);
       results.push(r);
     } catch (e) {

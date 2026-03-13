@@ -30,6 +30,7 @@ const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 
 // 수집 노드 목록 (셔플 대상)
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
+const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || 180000);
 
 // ─── 랜덤 헬퍼 ────────────────────────────────────────────────────────
 
@@ -227,10 +228,11 @@ function buildDynamicPipeline(postType, history) {
  * n8n 웹훅 트리거 → 실패 시 directRunner 폴백.
  *
  * @param {'lecture'|'general'} postType
- * @param {Function|null} directRunner - n8n 실패 시 직접 실행할 함수 (variations) => result
+ * @param {Function|null} directRunner - n8n 실패 시 직접 실행할 함수 (variations, payload) => result
+ * @param {object} payload - n8n 웹훅에 함께 전달할 실행 컨텍스트
  * @returns {Promise<object>}
  */
-async function run(postType, directRunner = null) {
+async function run(postType, directRunner = null, payload = {}) {
   await _ensureHistoryTable();
 
   // 세션 ID: 날짜_타입_4바이트난수
@@ -250,8 +252,8 @@ async function run(postType, directRunner = null) {
     const res = await fetch(n8nUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ postType, sessionId, pipeline, variations }),
-      signal:  AbortSignal.timeout(5000),
+      body:    JSON.stringify({ postType, sessionId, pipeline, variations, ...payload }),
+      signal:  AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
     });
     n8nOk = res.ok;
     if (n8nOk) {
@@ -274,7 +276,7 @@ async function run(postType, directRunner = null) {
   // n8n 실패 시 directRunner 폴백
   if (!n8nOk && directRunner) {
     console.log('  ↳ directRunner 실행');
-    return await directRunner(variations);
+    return await directRunner(variations, payload);
   }
 
   return { sessionId, pipeline, variations, n8nTriggered: n8nOk };

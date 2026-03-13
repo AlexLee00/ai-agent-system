@@ -448,6 +448,106 @@ ${_buildVariationBlock(sectionVariation)}
   return result;
 }
 
+// ─── 초안 보정 (전체 재작성 대체) ─────────────────────────────────────
+
+/**
+ * 품질 미달 초안을 "처음부터 다시 쓰기" 대신 필요한 부분만 보정한다.
+ * 젬스가 동일 포스팅을 두 번 새로 생성하는 현상을 줄이기 위한 경량 후처리 경로.
+ *
+ * @param {string} category
+ * @param {object} researchData
+ * @param {{ content:string, title?:string, charCount?:number }} draft
+ * @param {{ issues?:Array<{severity:string,msg:string}>, aiRisk?:object }} quality
+ * @param {object} sectionVariation
+ * @returns {Promise<{ content, charCount, model, title, fallbackUsed, repairedFromDraft: true }>}
+ */
+async function repairGeneralPostDraft(category, researchData, draft, quality, sectionVariation = {}) {
+  const content = String(draft?.content || '').trim();
+  if (!content) {
+    throw new Error('repairGeneralPostDraft: draft.content 비어 있음');
+  }
+
+  const weatherContext = _weatherToContext(researchData.weather || {});
+  const issueLines = (quality?.issues || [])
+    .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
+    .join('\n') || '1. [warn] 품질 보정 필요';
+
+  const bookReviewBlock = category === '도서리뷰'
+    ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
+    : '';
+
+  const newsAnalysisBlock = IT_NEWS_CATEGORIES.includes(category)
+    ? '\n' + _buildNewsAnalysisBlock(researchData.it_news || [], category) + '\n'
+    : '';
+
+  const repairPrompt = `
+다음은 이미 작성된 일반 포스팅 초안이다.
+이 글을 처음부터 다시 쓰지 말고, 기존 구조와 주제를 유지한 채 부족한 부분만 보정하라.
+
+[카테고리] ${category}
+[오늘 날씨 맥락] ${weatherContext}
+${bookReviewBlock}${newsAnalysisBlock}
+[품질 이슈]
+${issueLines}
+
+[중요 지시]
+1. 기존 글의 제목, 핵심 주장, 전개 순서를 최대한 유지하라.
+2. 부족한 섹션/해시태그/스터디카페 문단/개인 경험만 보강하라.
+3. 글자수가 부족하면 필요한 섹션만 확장하라. 이미 충분한 문단은 반복하지 말 것.
+4. 새 글을 처음부터 다시 작성하지 말 것.
+5. 마지막에는 전체 보정된 완성본만 출력하라. 설명문, 메모, 사족 금지.
+6. 모든 보정이 끝난 뒤 마지막 줄에 _THE_END_ 를 적어라.
+${_buildVariationBlock(sectionVariation)}
+
+[기존 초안 시작]
+${content}
+[기존 초안 끝]
+  `.trim();
+
+  const startTime = Date.now();
+  let usedModel = 'gpt-4o';
+  let fallbackUsed = false;
+  let repaired;
+
+  try {
+    const result = await callWithFallback({
+      chain:        GEMS_LLM_CHAIN,
+      systemPrompt: GEMS_SYSTEM_PROMPT,
+      userPrompt:   repairPrompt,
+      logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_repair' },
+    });
+    repaired     = result.text;
+    usedModel    = result.model;
+    fallbackUsed = result.attempt > 1;
+  } finally {
+    await toolLogger.logToolCall('llm', 'callWithFallback', {
+      bot: 'blog-gems',
+      success: !!repaired,
+      duration_ms: Date.now() - startTime,
+      metadata: {
+        model: usedModel,
+        category,
+        trace_id: getTraceId(),
+        fallback_used: fallbackUsed,
+        type: 'repair',
+      },
+    }).catch(() => {});
+  }
+
+  repaired = repaired.replace(/_THE_END_/g, '').trim();
+  const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
+  const title = firstLine.slice(0, 80).trim();
+
+  return {
+    content: repaired,
+    charCount: repaired.length,
+    model: usedModel,
+    title,
+    fallbackUsed,
+    repairedFromDraft: true,
+  };
+}
+
 // ─── 분할 생성 (Gemini Flash 무료) ──────────────────────────────────────
 
 /**
@@ -565,6 +665,7 @@ ${linkingBlock}
       model,
       contextCarry: 200,
       maxRetries:   1,
+      logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
       onChunkComplete: ({ id, charCount, index }) =>
         console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
     });
@@ -591,4 +692,9 @@ ${linkingBlock}
   return { content, charCount: result.charCount, model: `chunked-${model}`, title };
 }
 
-module.exports = { writeGeneralPost, writeGeneralPostChunked, GEMS_SYSTEM_PROMPT };
+module.exports = {
+  writeGeneralPost,
+  writeGeneralPostChunked,
+  repairGeneralPostDraft,
+  GEMS_SYSTEM_PROMPT,
+};

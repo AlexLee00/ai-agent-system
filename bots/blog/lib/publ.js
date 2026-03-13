@@ -143,11 +143,11 @@ ${finalBody}
 
 /**
  * 포스팅을 HTML 파일로 저장 + DB 기록
- * @param {{ title, content, category, postType, lectureNumber, charCount, hashtags, images }} postData
+ * @param {{ title, content, category, postType, lectureNumber, charCount, hashtags, images, scheduleId }} postData
  * @returns {{ filepath, postId, filename }}
  */
 async function publishToFile(postData) {
-  const { title, content, category, postType, lectureNumber, charCount, hashtags, images } = postData;
+  const { title, content, category, postType, lectureNumber, charCount, hashtags, images, scheduleId } = postData;
 
   // output 디렉토리 보장
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -156,6 +156,31 @@ async function publishToFile(postData) {
   const safeTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
   const filename  = `${today}_${postType}_${safeTitle}.html`;
   const filepath  = path.join(OUTPUT_DIR, filename);
+
+  if (scheduleId) {
+    try {
+      const existing = await pgPool.get('blog', `
+        SELECT id, metadata
+          FROM blog.posts
+         WHERE metadata->>'schedule_id' = $1
+           AND status IN ('ready', 'published')
+         ORDER BY created_at DESC
+         LIMIT 1
+      `, [String(scheduleId)]);
+      if (existing?.id) {
+        const existingFilename = existing.metadata?.filename || filename;
+        console.log(`[퍼블] 중복 발행 방지 — 기존 포스트 재사용 (scheduleId=${scheduleId}, postId=${existing.id})`);
+        return {
+          filepath: path.join(OUTPUT_DIR, existingFilename),
+          postId: existing.id,
+          filename: existingFilename,
+          reused: true,
+        };
+      }
+    } catch (e) {
+      console.warn('[퍼블] 기존 포스트 조회 실패 (계속 진행):', e.message);
+    }
+  }
 
   // HTML 변환 (이미지 포함)
   const htmlContent = _contentToHtml(content, title, images);
@@ -176,8 +201,8 @@ async function publishToFile(postData) {
   try {
     const rows = await pgPool.query('blog', `
       INSERT INTO blog.posts
-        (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags)
-      VALUES ($1, $2, $3, $4, CURRENT_DATE + 1, 'ready', $5, $6, $7)
+        (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags, metadata)
+      VALUES ($1, $2, $3, $4, CURRENT_DATE + 1, 'ready', $5, $6, $7, $8)
       RETURNING id
     `, [
       title,
@@ -187,6 +212,11 @@ async function publishToFile(postData) {
       charCount,
       content,
       hashtags || [],
+      {
+        schedule_id: scheduleId || null,
+        filename,
+        generated_on: today,
+      },
     ]);
     postId = rows[0]?.id;
     console.log(`[퍼블] 저장 완료: ${filename} (DB ID: ${postId})`);
