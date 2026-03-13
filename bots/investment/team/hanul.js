@@ -18,9 +18,10 @@
 
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
+import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
-import { notifyTrade, notifyError, notifyKisSignal, notifyKisOverseasSignal } from '../shared/report.js';
+import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal } from '../shared/report.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -45,6 +46,23 @@ const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD:    10,
   MAX_ORDER_USD: 1_000,
 };
+
+async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason) {
+  const openEntries = await journalDb.getOpenJournalEntries(market);
+  const entry = openEntries.find(e => e.symbol === symbol && Boolean(e.is_paper) === Boolean(isPaper));
+  if (!entry) return;
+
+  const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
+  const pnlPercent = entry.entry_value > 0 ? pnlAmount / entry.entry_value : null;
+  await journalDb.closeJournalEntry(entry.trade_id, {
+    exitPrice,
+    exitValue,
+    exitReason,
+    pnlAmount,
+    pnlPercent,
+    pnlNet: pnlAmount,
+  });
+}
 
 async function checkKisRisk(signal) {
   const { action, amount_usdt: amountKrw, symbol } = signal;
@@ -155,6 +173,38 @@ export async function executeSignal(signal) {
 
       await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis' });
 
+      try {
+        const execTime = Date.now();
+        const tradeId = await journalDb.generateTradeId();
+        await journalDb.insertJournalEntry({
+          trade_id: tradeId,
+          signal_id: signalId,
+          market: 'domestic',
+          exchange: 'kis',
+          symbol,
+          is_paper: paperMode,
+          entry_time: execTime,
+          entry_price: trade.price || 0,
+          entry_size: trade.amount || 0,
+          entry_value: trade.totalUsdt || 0,
+          direction: 'long',
+        });
+        await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
+        notifyJournalEntry({
+          tradeId,
+          symbol,
+          direction: 'long',
+          market: 'domestic',
+          entryPrice: trade.price,
+          entryValue: trade.totalUsdt,
+          isPaper: paperMode,
+          confidence: signal.confidence,
+          reasoning: signal.reasoning,
+        });
+      } catch (journalErr) {
+        console.warn(`  ⚠️ 국내주식 매매일지 기록 실패: ${journalErr.message}`);
+      }
+
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);
       const qty = position?.amount;
@@ -175,6 +225,7 @@ export async function executeSignal(signal) {
       };
 
       await db.deletePosition(symbol);
+      await closeOpenJournalForSymbol(symbol, 'domestic', paperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -246,6 +297,38 @@ export async function executeOverseasSignal(signal) {
 
       await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis_overseas' });
 
+      try {
+        const execTime = Date.now();
+        const tradeId = await journalDb.generateTradeId();
+        await journalDb.insertJournalEntry({
+          trade_id: tradeId,
+          signal_id: signalId,
+          market: 'overseas',
+          exchange: 'kis_overseas',
+          symbol,
+          is_paper: paperMode,
+          entry_time: execTime,
+          entry_price: trade.price || 0,
+          entry_size: trade.amount || 0,
+          entry_value: trade.totalUsdt || 0,
+          direction: 'long',
+        });
+        await journalDb.linkRationaleToTrade(tradeId, signalId).catch(() => {});
+        notifyJournalEntry({
+          tradeId,
+          symbol,
+          direction: 'long',
+          market: 'overseas',
+          entryPrice: trade.price,
+          entryValue: trade.totalUsdt,
+          isPaper: paperMode,
+          confidence: signal.confidence,
+          reasoning: signal.reasoning,
+        });
+      } catch (journalErr) {
+        console.warn(`  ⚠️ 해외주식 매매일지 기록 실패: ${journalErr.message}`);
+      }
+
     } else if (action === ACTIONS.SELL) {
       const position = await db.getPosition(symbol);
       const qty = position?.amount;
@@ -266,6 +349,7 @@ export async function executeOverseasSignal(signal) {
       };
 
       await db.deletePosition(symbol);
+      await closeOpenJournalForSymbol(symbol, 'overseas', paperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
