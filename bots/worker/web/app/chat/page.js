@@ -88,6 +88,7 @@ function ScheduleCard({ ui }) {
 
 export default function WorkerChatPage() {
   const [sessions, setSessions] = useState([]);
+  const [agentTasks, setAgentTasks] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -105,6 +106,9 @@ export default function WorkerChatPage() {
         setSessions(data.sessions || []);
         if (data.sessions?.[0]?.id) setSessionId(data.sessions[0].id);
       })
+      .catch(() => {});
+    api.get('/agent-tasks?limit=10')
+      .then(data => setAgentTasks(data.tasks || []))
       .catch(() => {});
   }, []);
 
@@ -178,6 +182,8 @@ export default function WorkerChatPage() {
             setLatestUi(data.ui || null);
             const sessionData = await api.get('/chat/sessions').catch(() => null);
             if (sessionData?.sessions) setSessions(sessionData.sessions);
+            const taskData = await api.get('/agent-tasks?limit=10').catch(() => null);
+            if (taskData?.tasks) setAgentTasks(taskData.tasks);
             return;
           }
           if (data.type === 'chat.error') {
@@ -245,6 +251,8 @@ export default function WorkerChatPage() {
           metadata: { ui: data.ui || null },
         }]);
         setLatestUi(data.ui || null);
+        const taskData = await api.get('/agent-tasks?limit=10').catch(() => null);
+        if (taskData?.tasks) setAgentTasks(taskData.tasks);
       })
       .catch(err => {
         setIsPending(false);
@@ -362,6 +370,31 @@ export default function WorkerChatPage() {
           {latestUi ? <ScheduleCard ui={latestUi} /> : (
             <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
               아직 표시할 결과가 없습니다.
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <h2 className="text-base font-semibold text-gray-900 mb-2">최근 업무 큐</h2>
+          {agentTasks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+              대기 중인 업무가 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {agentTasks.map(task => (
+                <div key={task.id} className="rounded-xl border border-gray-200 bg-white px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-gray-900">{task.title}</p>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-medium text-gray-700">
+                      {task.approval_status === 'pending' ? '승인 대기' : task.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{task.target_bot} · 요청자 {task.user_name || task.user_id || '-'}</p>
+                  {task.approval_id && (
+                    <p className="text-xs text-amber-700 mt-1">Approval #{task.approval_id}</p>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
