@@ -63,6 +63,16 @@ async function checkHttp(url) {
   }
 }
 
+async function fetchJson(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
@@ -145,6 +155,21 @@ async function main() {
       await notify(`✅ [워커 헬스] ${check.name} 회복\nHTTP 응답 정상 — 자동 감지`, 1);
       hsm.clearAlert(state, check.key);
     }
+  }
+
+  const apiHealth = await fetchJson('http://127.0.0.1:4000/api/health');
+  if (!apiHealth?.websocket?.enabled || !apiHealth?.websocket?.ready) {
+    const key = 'ws:ai.worker.web';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: hsm.getAlertLevel('ai.worker.web'),
+        msg: '⚠️ [워커 헬스] worker websocket 비정상\n/api/health 기준 WebSocket 준비 상태가 아닙니다.',
+      });
+    }
+  } else if (state['ws:ai.worker.web']) {
+    await notify('✅ [워커 헬스] worker websocket 회복\n실시간 채널 준비 상태 정상 — 자동 감지', 1);
+    hsm.clearAlert(state, 'ws:ai.worker.web');
   }
 
   // 알림 발송 + 상태 기록
