@@ -40,7 +40,7 @@ const DRY_RUN = args.includes('--dry-run');
  */
 async function fetchRecentTrades(days) {
   const since = Date.now() - days * 86_400_000;
-  const { rows } = await pgPool.query(`
+  const rows = await pgPool.query('investment', `
     SELECT
       symbol, exchange, direction, is_paper,
       entry_time, entry_price, entry_size, entry_value,
@@ -335,6 +335,6 @@ async function main() {
 }
 
 main().catch(e => {
-  console.error('❌ [주간 리뷰] 오류:', e.message);
+  console.error('❌ [주간 리뷰] 오류:', e?.message || String(e));
   process.exit(1);
 });
