@@ -8,8 +8,8 @@
  *
  * 실행: node bots/blog/api/node-server.js
  *
- * [의존성] express가 bots/blog/package.json에 없습니다.
- *   설치: cd bots/blog && npm install express --save
+ * [의존성] express 필요
+ *   미설치 시: cd bots/blog && npm install express --save
  */
 
 // express 미설치 시 명확한 오류 안내
@@ -148,6 +148,16 @@ app.post('/api/blog/node/write-lecture', async (req, res) => {
   const { sessionId, lectureNumber, lectureTitle, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
+    const existing = await ragStore.getNodeResult(sessionId, 'write-lecture');
+    if (existing && existing.content) {
+      return res.json({
+        ok: true,
+        charCount: existing.charCount || existing.content.length || 0,
+        model: existing.model || null,
+        cached: true,
+      });
+    }
+
     // 세션 전체 수집 결과를 researchData로 조합
     const sessionData = await ragStore.getSessionResults(sessionId);
     const researchData = {
@@ -158,17 +168,25 @@ app.post('/api/blog/node/write-lecture', async (req, res) => {
       relatedPosts:     sessionData['related-posts']    || [],
     };
 
-    const post = await posWriter.writeLecturePost(
-      lectureNumber,
-      lectureTitle,
-      researchData,
-      sectionVariation || {}
-    );
+    const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+    const post = useChunked
+      ? await posWriter.writeLecturePostChunked(
+        lectureNumber,
+        lectureTitle,
+        researchData,
+        sectionVariation || {}
+      )
+      : await posWriter.writeLecturePost(
+        lectureNumber,
+        lectureTitle,
+        researchData,
+        sectionVariation || {}
+      );
 
     // 생성 결과도 RAG 스토어에 저장
     await ragStore.storeNodeResult(sessionId, 'write-lecture', 'generate', post);
 
-    res.json({ ok: true, charCount: post.charCount, model: post.model });
+    res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
   } catch (e) {
     console.error('[노드서버] /write-lecture 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -184,6 +202,16 @@ app.post('/api/blog/node/write-general', async (req, res) => {
   const { sessionId, category, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
+    const existing = await ragStore.getNodeResult(sessionId, 'write-general');
+    if (existing && existing.content) {
+      return res.json({
+        ok: true,
+        charCount: existing.charCount || existing.content.length || 0,
+        model: existing.model || null,
+        cached: true,
+      });
+    }
+
     const sessionData = await ragStore.getSessionResults(sessionId);
     const researchData = {
       weather:         sessionData['weather']         || {},
@@ -192,15 +220,14 @@ app.post('/api/blog/node/write-general', async (req, res) => {
       relatedPosts:    sessionData['related-posts']   || [],
     };
 
-    const post = await gemsWriter.writeGeneralPost(
-      category,
-      researchData,
-      sectionVariation || {}
-    );
+    const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+    const post = useChunked
+      ? await gemsWriter.writeGeneralPostChunked(category, researchData, sectionVariation || {})
+      : await gemsWriter.writeGeneralPost(category, researchData, sectionVariation || {});
 
     await ragStore.storeNodeResult(sessionId, 'write-general', 'generate', post);
 
-    res.json({ ok: true, charCount: post.charCount, model: post.model });
+    res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
   } catch (e) {
     console.error('[노드서버] /write-general 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -218,6 +245,17 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
   const { sessionId, postType } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
+    const existing = await ragStore.getNodeResult(sessionId, 'quality-check');
+    if (existing && typeof existing === 'object' && existing.passed != null) {
+      return res.json({
+        ok: true,
+        passed: existing.passed,
+        charCount: existing.charCount || 0,
+        aiRisk: existing.aiRisk || null,
+        cached: true,
+      });
+    }
+
     // 생성된 포스팅 조회 (lecture 또는 general)
     const nodeId = postType === 'lecture' ? 'write-lecture' : 'write-general';
     const postData = await ragStore.getNodeResult(sessionId, nodeId);

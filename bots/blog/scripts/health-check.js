@@ -12,6 +12,7 @@
  */
 
 const { execSync } = require('child_process');
+const http   = require('http');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 
@@ -31,6 +32,7 @@ const CONTINUOUS = [];
 // 감지할 전체 서비스
 const ALL_SERVICES = [
   'ai.blog.daily',
+  'ai.blog.node-server',
 ];
 
 // 정상 종료 코드
@@ -52,6 +54,38 @@ function getLaunchctlStatus() {
     };
   }
   return services;
+}
+
+function checkNodeServerHealth() {
+  return new Promise(resolve => {
+    const req = http.request(
+      { hostname: 'localhost', port: 3100, path: '/health', method: 'GET', timeout: 3000 },
+      res => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(body);
+            if (json.ok === true) {
+              resolve({ ok: true, detail: `포트 ${json.port || 3100} 응답 정상` });
+            } else {
+              resolve({ ok: false, detail: `비정상 응답: ${body.slice(0, 80)}` });
+            }
+          } catch {
+            resolve({ ok: false, detail: `JSON 파싱 실패 (HTTP ${res.statusCode})` });
+          }
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, detail: '응답 없음 (3000ms 타임아웃)' });
+    });
+    req.on('error', e => {
+      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? '포트 3100 연결 거부' : e.message.slice(0, 80) });
+    });
+    req.end();
+  });
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────
@@ -101,6 +135,24 @@ async function main() {
         await notify(`✅ [블로그 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`, 1);
         prevKeys.forEach(k => hsm.clearAlert(state, k));
       }
+    }
+  }
+
+  // 블로그 node-server 추가 헬스체크
+  if (status['ai.blog.node-server']?.running) {
+    const nodeServer = await checkNodeServerHealth();
+    const key = 'node-server:http';
+    if (!nodeServer.ok) {
+      if (hsm.canAlert(state, key)) {
+        issues.push({
+          key,
+          level: 2,
+          msg: `⚠️ [블로그 헬스] node-server 비정상\n${nodeServer.detail}`,
+        });
+      }
+    } else if (state[key]) {
+      await notify(`✅ [블로그 헬스] node-server 회복\n${nodeServer.detail}`, 1);
+      hsm.clearAlert(state, key);
     }
   }
 
