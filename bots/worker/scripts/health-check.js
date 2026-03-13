@@ -16,10 +16,10 @@ const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 
 // 상시 실행 서비스 (PID 있어야 정상)
-const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead'];
+const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 
 // 감지할 전체 서비스
-const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead'];
+const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
