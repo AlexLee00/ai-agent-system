@@ -26,11 +26,8 @@ import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
+import { runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 
-import { analyzeCryptoMTF }         from '../team/aria.js';
-import { analyzeOnchain }           from '../team/oracle.js';
-import { analyzeNews }              from '../team/hermes.js';
-import { analyzeSentiment }         from '../team/sophia.js';
 import { orchestrate }              from '../team/luna.js';
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.js';
 
@@ -153,61 +150,6 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   process.exit(1);
 });
 
-// ─── 사이클 단계별 병렬 분석 ────────────────────────────────────────
-
-async function runAria(symbols) {
-  console.log(`\n🎵 [아리아] ${symbols.length}개 심볼 MTF TA 분석 시작`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeCryptoMTF(sym)));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      const v = r.value;
-      console.log(`  ✅ [아리아] ${symbols[i]}: ${v?.signal || 'HOLD'} (${((v?.confidence || 0) * 100).toFixed(0)}%)`);
-    } else {
-      console.warn(`  ⚠️ [아리아] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
-async function runOracle(symbols) {
-  console.log(`\n🔮 [오라클] 온체인·매크로 분석 시작`);
-  try {
-    const primary = symbols.find(s => s.startsWith('BTC')) || symbols[0];
-    const result  = await analyzeOnchain(primary, 'binance');
-    if (result) {
-      const fgDisplay = result.fearGreed
-        ? `${result.fearGreed.value} (${result.fearGreed.classification})`
-        : 'N/A';
-      console.log(`  ✅ [오라클] 공포탐욕지수: ${fgDisplay} | ${result.signal}`);
-    }
-  } catch (e) {
-    console.warn(`  ⚠️ [오라클] 분석 실패: ${e.message}`);
-  }
-}
-
-async function runHermes(symbols) {
-  console.log(`\n📰 [헤르메스] ${symbols.length}개 심볼 뉴스 분석 시작`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeNews(sym, 'binance')));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      console.log(`  ✅ [헤르메스] ${symbols[i]}: ${r.value?.signal || 'HOLD'}`);
-    } else {
-      console.warn(`  ⚠️ [헤르메스] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
-async function runSophia(symbols) {
-  console.log(`\n💭 [소피아] ${symbols.length}개 심볼 감성 분석 시작`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeSentiment(sym, 'binance')));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      console.log(`  ✅ [소피아] ${symbols[i]}: ${r.value?.signal || 'HOLD'}`);
-    } else {
-      console.warn(`  ⚠️ [소피아] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
 // ─── 메인 사이클 ────────────────────────────────────────────────────
 
 /**
@@ -227,14 +169,16 @@ export async function runCryptoCycle(symbols) {
   console.log(`${'═'.repeat(60)}`);
 
   try {
-    // ── 단계 1: 분석가 병렬 실행 (아리아·오라클·헤르메스·소피아) ──
-    console.log('\n📊 [분석 단계] 4개 분석가 병렬 실행...');
-    await Promise.allSettled([
-      runAria(symbols),
-      runOracle(symbols),
-      runHermes(symbols),
-      runSophia(symbols),
-    ]);
+    // ── 단계 1: 노드 기반 수집 실행 ──
+    console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
+    const collect = await runMarketCollectPipeline({
+      market: 'binance',
+      symbols,
+      triggerType: 'cycle',
+      meta: { market_script: 'crypto' },
+    });
+    console.log(`  🧩 [노드] session=${collect.sessionId}`);
+    console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');

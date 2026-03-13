@@ -25,10 +25,8 @@ import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
+import { runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 
-import { analyzeKisOverseasMTF }               from '../team/aria.js';
-import { analyzeNews }                         from '../team/hermes.js';
-import { analyzeSentiment }                    from '../team/sophia.js';
 import { orchestrate }                         from '../team/luna.js';
 import { processAllPendingKisOverseasSignals } from '../team/hanul.js';
 
@@ -77,45 +75,6 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   process.exit(1);
 });
 
-// ─── 분석가 래퍼 (미국주식) ──────────────────────────────────────────
-
-async function runAria(symbols) {
-  console.log(`\n🎵 [아리아] ${symbols.length}개 미국주식 TA 분석 (일봉/1h)`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeKisOverseasMTF(sym)));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      const v = r.value;
-      console.log(`  ✅ [아리아] ${symbols[i]}: ${v?.signal || 'HOLD'} (${((v?.confidence || 0) * 100).toFixed(0)}%)`);
-    } else {
-      console.warn(`  ⚠️ [아리아] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
-async function runHermes(symbols) {
-  console.log(`\n📰 [헤르메스] ${symbols.length}개 심볼 미국 주식 뉴스 분석`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeNews(sym, 'kis_overseas')));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      console.log(`  ✅ [헤르메스] ${symbols[i]}: ${r.value?.signal || 'HOLD'}`);
-    } else {
-      console.warn(`  ⚠️ [헤르메스] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
-async function runSophia(symbols) {
-  console.log(`\n💭 [소피아] ${symbols.length}개 심볼 Reddit 감성 분석`);
-  const results = await Promise.allSettled(symbols.map(sym => analyzeSentiment(sym, 'kis_overseas')));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      console.log(`  ✅ [소피아] ${symbols[i]}: ${r.value?.signal || 'HOLD'}`);
-    } else {
-      console.warn(`  ⚠️ [소피아] ${symbols[i]}: ${r.reason?.message}`);
-    }
-  });
-}
-
 // ─── 메인 사이클 ────────────────────────────────────────────────────
 
 /**
@@ -133,13 +92,16 @@ export async function runOverseasCycle(symbols) {
   console.log(`${'═'.repeat(60)}`);
 
   try {
-    // ── 단계 1: 분석가 병렬 실행 (아리아·헤르메스·소피아) ──
-    console.log('\n📊 [분석 단계] 3개 분석가 병렬 실행...');
-    await Promise.allSettled([
-      runAria(symbols),
-      runHermes(symbols),
-      runSophia(symbols),
-    ]);
+    // ── 단계 1: 노드 기반 수집 실행 ──
+    console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
+    const collect = await runMarketCollectPipeline({
+      market: 'kis_overseas',
+      symbols,
+      triggerType: 'cycle',
+      meta: { market_script: 'overseas' },
+    });
+    console.log(`  🧩 [노드] session=${collect.sessionId}`);
+    console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
@@ -188,12 +150,15 @@ export async function runOverseasResearchCycle(symbols) {
   console.log(`${'═'.repeat(60)}`);
 
   try {
-    console.log('\n📊 [연구 단계] 3개 분석가 병렬 실행...');
-    await Promise.allSettled([
-      runAria(symbols),
-      runHermes(symbols),
-      runSophia(symbols),
-    ]);
+    console.log('\n📊 [연구 단계] 노드 기반 수집 실행...');
+    const collect = await runMarketCollectPipeline({
+      market: 'kis_overseas',
+      symbols,
+      triggerType: 'research',
+      meta: { market_script: 'overseas', research_only: true },
+    });
+    console.log(`  🧩 [노드] session=${collect.sessionId}`);
+    console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
 
     saveResearchWatchlist('overseas', symbols, {
       label: '미국주식',
