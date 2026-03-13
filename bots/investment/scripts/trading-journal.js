@@ -74,6 +74,33 @@ async function fetchPositions() {
   `);
 }
 
+async function fetchClosedTradeReviews(fromDate, toDate) {
+  return db.query(`
+    SELECT
+      j.trade_id,
+      j.symbol,
+      j.exchange,
+      j.is_paper,
+      j.pnl_net,
+      j.pnl_percent,
+      r.max_favorable,
+      r.max_adverse,
+      r.signal_accuracy,
+      r.execution_speed,
+      r.aria_accurate,
+      r.sophia_accurate,
+      r.oracle_accurate,
+      r.hermes_accurate
+    FROM trade_journal j
+    LEFT JOIN trade_review r ON r.trade_id = j.trade_id
+    WHERE j.status = 'closed'
+      AND j.exit_time IS NOT NULL
+      AND CAST(to_timestamp(j.exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+          BETWEEN '${fromDate}' AND '${toDate}'
+    ORDER BY j.exit_time DESC
+  `);
+}
+
 // ─── 심볼별 P&L 계산 (FIFO) ─────────────────────────────────────────
 
 function calcPnl(trades) {
@@ -218,6 +245,40 @@ function formatPnl(pnlMap, positions) {
   return lines.join('\n');
 }
 
+function formatTradeReviewStats(reviewRows) {
+  if (reviewRows.length === 0) return '  종료 거래 리뷰 없음';
+
+  const groups = [
+    { key: 'live', label: '실거래', rows: reviewRows.filter(row => !row.is_paper) },
+    { key: 'paper', label: '모의거래', rows: reviewRows.filter(row => row.is_paper) },
+  ];
+
+  const lines = [];
+  for (const group of groups) {
+    if (group.rows.length === 0) continue;
+    const avg = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const mf = avg(group.rows.map(row => Number(row.max_favorable)).filter(v => !Number.isNaN(v)));
+    const ma = avg(group.rows.map(row => Number(row.max_adverse)).filter(v => !Number.isNaN(v)));
+    const pnl = avg(group.rows.map(row => Number(row.pnl_percent)).filter(v => !Number.isNaN(v)));
+    const speedFast = group.rows.filter(row => row.execution_speed === 'fast').length;
+    const goodSignals = group.rows.filter(row => row.signal_accuracy === 'good').length;
+    const analystCols = ['aria_accurate', 'sophia_accurate', 'oracle_accurate', 'hermes_accurate'];
+    const analystAcc = analystCols.map(col => {
+      const values = group.rows.map(row => row[col]).filter(v => v !== null && v !== undefined);
+      if (values.length === 0) return null;
+      return values.filter(Boolean).length / values.length;
+    }).filter(v => v != null);
+    const analystAvg = analystAcc.length ? (analystAcc.reduce((sum, value) => sum + value, 0) / analystAcc.length) : null;
+
+    lines.push(`  ■ ${group.label}: ${group.rows.length}건`);
+    if (pnl != null) lines.push(`    평균 실현수익률: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%`);
+    if (mf != null || ma != null) lines.push(`    평균 MFE/MAE: ${mf != null ? `+${mf.toFixed(2)}%` : '-'} / ${ma != null ? `${ma.toFixed(2)}%` : '-'}`);
+    lines.push(`    신호 적중: ${goodSignals}/${group.rows.length} | 실행 fast: ${speedFast}/${group.rows.length}`);
+    if (analystAvg != null) lines.push(`    분석팀 평균 정확도: ${(analystAvg * 100).toFixed(0)}%`);
+  }
+  return lines.join('\n');
+}
+
 function formatTokenUsage(usageRows) {
   if (usageRows.length === 0) return '  기록 없음';
   const lines = [];
@@ -246,9 +307,10 @@ async function main() {
 
   const { from, to, label } = kstDateRange(days);
 
-  const [trades, positions] = await Promise.all([
+  const [trades, positions, reviewRows] = await Promise.all([
     fetchTrades(from, to),
     fetchPositions(),
+    fetchClosedTradeReviews(from, to),
   ]);
 
   const pnlMap    = calcPnl(trades);
@@ -264,6 +326,9 @@ async function main() {
     ``,
     `━━ 손익 요약 ━━`,
     formatPnl(pnlMap, positions),
+    ``,
+    `━━ 청산 리뷰 요약 ━━`,
+    formatTradeReviewStats(reviewRows),
     ``,
     `━━ LLM 토큰 사용 ━━`,
     formatTokenUsage(tokenRows),
