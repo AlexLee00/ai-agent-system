@@ -25,13 +25,13 @@ import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared
 import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { isPaperMode } from '../shared/secrets.js';
+import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.js';
 import { runBullResearcher } from './zeus.js';
 import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
 import { recommendStrategy } from './argos.js';
 
 const MIN_CONFIDENCE     = { binance: 0.55, kis: 0.35, kis_overseas: 0.35 };
-const FUND_MIN_CONF      = { binance: 0.60, kis: 0.40, kis_overseas: 0.40 };
 const MAX_POS_COUNT      = 5;
 const MAX_DEBATE_SYMBOLS = 2;
 
@@ -75,7 +75,7 @@ function getLunaSystem(exchange) {
 function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const exampleSymbol = symbols[0] || 'SYMBOL';
   const isStock       = exchange === 'kis' || exchange === 'kis_overseas';
-  const minConf       = FUND_MIN_CONF[exchange] ?? 0.60;
+  const minConf       = MIN_CONFIDENCE[exchange] ?? 0.60;
   const maxPosPct     = isStock ? '30%' : '20%';
   const dailyLoss     = isStock ? '10%' : '5%';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ' (주식 — 공격적 모드)' : ''}
@@ -261,15 +261,28 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
 
 // ─── 포트폴리오 컨텍스트 ───────────────────────────────────────────
 
-async function buildPortfolioContext() {
-  const positions  = await db.getAllPositions();
+async function buildPortfolioContext(exchange = 'binance') {
+  const positions  = await db.getAllPositions(exchange, false);
   const todayPnl   = await db.getTodayPnl();
   const posValue   = positions.reduce((s, p) => s + (p.amount * p.avg_price), 0);
-  const usdtFree   = 10000;
-  const totalAsset = usdtFree + posValue;
+  const usdtFree   = exchange === 'binance'
+    ? await getAvailableUSDT().catch(() => 0)
+    : 0;
+  const availableBalance = exchange === 'binance'
+    ? await getAvailableBalance().catch(() => usdtFree)
+    : usdtFree;
+  const totalAsset = exchange === 'binance'
+    ? availableBalance + posValue
+    : usdtFree + posValue;
   // 사이클별 자산 스냅샷 기록 (드로우다운 추적용)
-  try { await db.insertAssetSnapshot(totalAsset, usdtFree); } catch {}
+  if (exchange === 'binance') {
+    try { await db.insertAssetSnapshot(totalAsset, usdtFree); } catch {}
+  }
   return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions };
+}
+
+export async function inspectPortfolioContext(exchange = 'binance') {
+  return buildPortfolioContext(exchange);
 }
 
 // ─── 2라운드 토론 ───────────────────────────────────────────────────
@@ -319,7 +332,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
   let debateCount          = 0;
-  const portfolio          = await buildPortfolioContext();
+  const portfolio          = await buildPortfolioContext(exchange);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 
@@ -378,6 +391,9 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
   console.log(`\n🏦 [루나] 포트폴리오 최종 판단...`);
   const portfolio_decision = await getPortfolioDecision(symbolDecisions, portfolio, exchange);
+  let approvedCount = 0;
+  let rejectedCount = 0;
+  let failedCount   = 0;
 
   if (!portfolio_decision) {
     console.log('  ⚠️ [루나] 포트폴리오 판단 실패');
@@ -402,7 +418,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
   for (const dec of (portfolio_decision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    const minConf = params?.minSignalScore ?? (FUND_MIN_CONF[exchange] ?? 0.60);
+    const minConf = params?.minSignalScore ?? (MIN_CONFIDENCE[exchange] ?? 0.60);
     if ((dec.confidence || 0) < minConf) {
       console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}% < ${(minConf * 100).toFixed(0)}%) → HOLD`);
       continue;
@@ -467,7 +483,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
     try {
       // 최근 TA 분석에서 atrRatio 추출 (아리아가 저장한 메타데이터)
-      const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
+      const taAnalysis = _symAnalyses.find(a => a.metadata?.atrRatio != null);
       const atrRatio   = taAnalysis?.metadata?.atrRatio ?? null;
       const currentPrice = taAnalysis?.metadata?.currentPrice ?? null;
 
@@ -478,6 +494,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       if (riskResult.approved) {
         console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
         await db.updateSignalStatus(signalId, 'approved');
+        approvedCount++;
         results.push({
           symbol: dec.symbol, signalId, ...dec,
           adjustedAmount: riskResult.adjustedAmount,
@@ -489,6 +506,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       } else {
         console.log(`  🚫 [네메시스] 거부: ${riskResult.reason}`);
         await db.updateSignalStatus(signalId, 'rejected');
+        rejectedCount++;
       }
     } catch (e) {
       console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 처리: ${e.message}`);
@@ -497,11 +515,11 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         'UPDATE signals SET block_reason = $1 WHERE id = $2',
         [`nemesis_error:${String(e.message || 'unknown').slice(0, 180)}`, signalId],
       ).catch(() => {});
-      results.push({ symbol: dec.symbol, signalId, ...dec });
+      failedCount++;
     }
   }
 
-  console.log(`\n✅ [루나] 완료 — ${results.length}개 신호 승인`);
+  console.log(`\n✅ [루나] 완료 — 승인 ${approvedCount}개 / 거부 ${rejectedCount}개 / 실패 ${failedCount}개`);
   return results;
 }
 
@@ -511,9 +529,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const symArg   = args.find(a => a.startsWith('--symbols='));
   const symbols  = symArg ? symArg.split('=')[1].split(',').map(s => s.trim()) : ['BTC/USDT'];
   const exchange = args.find(a => a.startsWith('--exchange='))?.split('=')[1] || 'binance';
+  const inspectContext = args.includes('--inspect-context');
 
   await db.initSchema();
   try {
+    if (inspectContext) {
+      const ctx = await inspectPortfolioContext(exchange);
+      console.log(`\n컨텍스트: ${JSON.stringify(ctx, null, 2)}`);
+      process.exit(0);
+    }
     const r = await orchestrate(symbols, exchange);
     console.log(`\n결과: ${r.length}개 신호`);
     process.exit(0);
