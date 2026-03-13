@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { loadPreScreened, loadPreScreenedFallback, savePreScreened } from '../scripts/pre-market-screen.js';
+import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearchWatchlist } from '../scripts/pre-market-screen.js';
 
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
@@ -194,6 +194,14 @@ export async function runOverseasResearchCycle(symbols) {
       runSophia(symbols),
     ]);
 
+    saveResearchWatchlist('overseas', symbols, {
+      label: '미국주식',
+      research: {
+        phase: 'analysis_only',
+        session: 'off_hours',
+      },
+    });
+
     saveState({ lastCycleAt: Date.now() });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -203,7 +211,7 @@ export async function runOverseasResearchCycle(symbols) {
       from_bot: 'luna',
       event_type: 'report',
       alert_level: 1,
-      message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n소요: ${elapsed}초`,
+      message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n다음 장 watchlist 갱신 완료\n소요: ${elapsed}초`,
     });
 
     return [];

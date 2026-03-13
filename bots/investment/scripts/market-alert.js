@@ -99,6 +99,11 @@ async function sendOpenAlert(market, label) {
     lines.push(`[장전 스크리닝] 종목 없음 (실시간 스크리닝 대기)`);
   }
 
+  if (prescreened?.research?.updatedAt) {
+    const updatedAt = kst.toKST(new Date(prescreened.research.updatedAt));
+    lines.push(`[장외 연구] ${updatedAt} 갱신 / ${prescreened.research.symbolCount || symbols.length}개 종목`);
+  }
+
   if (positions.length > 0) {
     lines.push('');
     lines.push(`[보유 포지션] ${positions.length}개`);

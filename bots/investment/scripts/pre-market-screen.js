@@ -90,6 +90,31 @@ export function savePreScreened(market, symbols, meta = {}) {
   }
 }
 
+/**
+ * 장외 연구 결과를 다음 장 시작에 재사용할 수 있도록 watchlist 메타 갱신
+ * - 기존 심볼 목록은 유지/병합
+ * - research 섹션만 최신 정보로 덮어씀
+ * @param {'domestic'|'overseas'} market
+ * @param {string[]} symbols
+ * @param {object} meta
+ */
+export function saveResearchWatchlist(market, symbols, meta = {}) {
+  const current = loadPreScreenedFallback(market) || {};
+  const mergedSymbols = [...new Set([...(current.symbols || []), ...symbols])];
+
+  savePreScreened(market, mergedSymbols, {
+    ...current,
+    ...meta,
+    research: {
+      mode: 'off_hours',
+      updatedAt: Date.now(),
+      symbolCount: mergedSymbols.length,
+      ...(current.research || {}),
+      ...(meta.research || {}),
+    },
+  });
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────────
 
 async function main() {
