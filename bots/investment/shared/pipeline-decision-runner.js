@@ -38,9 +38,12 @@ export async function runDecisionExecutionPipeline({
   const l11Node = getDecisionNode('L11');
   const l12Node = getDecisionNode('L12');
   const l13Node = getDecisionNode('L13');
+  const l14Node = getDecisionNode('L14');
   const l21Node = getDecisionNode('L21');
   const l30Node = getDecisionNode('L30');
   const l31Node = getDecisionNode('L31');
+  const l32Node = getDecisionNode('L32');
+  const l33Node = getDecisionNode('L33');
   const l34Node = getDecisionNode('L34');
 
   const symbolDecisions = [];
@@ -103,7 +106,14 @@ export async function runDecisionExecutionPipeline({
     return [];
   }
 
-  const portfolioDecision = await getPortfolioDecision(symbolDecisions, currentPortfolio, exchange);
+  const portfolioDecisionResult = await runNode(l14Node, {
+    sessionId,
+    market: exchange,
+    meta: { bridge: 'luna_orchestrate', stage: 'portfolio' },
+    symbolDecisions,
+    portfolio: currentPortfolio,
+  });
+  const portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
   if (!portfolioDecision) {
     await finishPipelineRun(sessionId, {
       status: 'failed',
@@ -171,6 +181,20 @@ export async function runDecisionExecutionPipeline({
       meta: { bridge: 'luna_orchestrate', stage: 'execute' },
     });
 
+    const ragStore = await runNode(l33Node, {
+      sessionId,
+      market: exchange,
+      symbol: dec.symbol,
+      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+    });
+
+    const notify = await runNode(l32Node, {
+      sessionId,
+      market: exchange,
+      symbol: dec.symbol,
+      meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+    });
+
     const execute = await runNode(l31Node, {
       sessionId,
       market: exchange,
@@ -192,6 +216,8 @@ export async function runDecisionExecutionPipeline({
       reasoning: dec.reasoning,
       adjustedAmount: riskResult?.approved ? riskResult.adjustedAmount : null,
       signalId: saved.result?.signalId ?? null,
+      notify: notify.result,
+      ragStore: ragStore.result,
       execution: execute.result,
       journal: journal.result,
     });
