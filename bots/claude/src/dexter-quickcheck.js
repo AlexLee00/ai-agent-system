@@ -14,7 +14,7 @@
  *   node src/dexter-quickcheck.js --telegram --fix  # 알림 + 자동 재시작
  */
 
-const kst = require('../../../packages/core/lib/kst');
+const kst = require('../../../packages/core/lib/kst.js');
 
 const fs   = require('fs');
 const os   = require('os');

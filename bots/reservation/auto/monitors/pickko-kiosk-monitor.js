@@ -61,6 +61,20 @@ function roundUpToHalfHour(timeStr) {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
 }
 
+function to24Hour(timeText) {
+  const text = (timeText || '').trim().replace(/\s+/g, ' ');
+  const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const [, meridiem, hourStr, minStr] = m;
+  let hour = Number(hourStr);
+  const minute = Number(minStr);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  if (meridiem === '자정') hour = 0;
+  else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
+  else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 
 
 // ─── Phase 3: 네이버 booking calendar 로그인 ──────────
@@ -195,20 +209,23 @@ async function blockNaverSlot(page, entry) {
     }
 
     // Step 4: 해당 룸의 예약가능 버튼 클릭
-    const slotClicked = await clickRoomAvailableSlot(page, room, start);
-    if (!slotClicked) {
+    const selectedStart = await clickRoomAvailableSlot(page, room, start);
+    if (!selectedStart) {
       log(`⚠️ 예약가능 슬롯 클릭 실패: room=${room}`);
       const ssPath = `/tmp/naver-block-${date}-slot.png`;
       await page.screenshot({ path: ssPath }).catch(() => null);
       log(`📸 스크린샷: ${ssPath}`);
       return false;
     }
+    if (selectedStart !== start) {
+      log(`  시작시간 조정: ${start} → ${selectedStart} (종료시간 ${end} 유지)`);
+    }
 
     // Step 5~9: 팝업에서 시간/상태 설정 + 설정변경
     // 네이버 드롭다운은 30분 단위 — 종료시간 올림 (19:50 → 20:00)
     const endRounded = roundUpToHalfHour(end);
     if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
-    const done = await fillUnavailablePopup(page, date, start, endRounded);
+    const done = await fillUnavailablePopup(page, date, selectedStart, endRounded);
     if (!done) {
       const ssPath = `/tmp/naver-block-${date}-popup.png`;
       await page.screenshot({ path: ssPath }).catch(() => null);
@@ -217,13 +234,13 @@ async function blockNaverSlot(page, entry) {
     }
 
     // Step 10: 시간박스에서 최종 확인 (예약가능 → 예약불가/차단 전환 확인)
-    const verified = await verifyBlockInGrid(page, room, start, end);
+    const verified = await verifyBlockInGrid(page, room, selectedStart, end);
     log(`  최종 확인: ${verified ? '✅ 차단 확인됨' : '⚠️ suspended 버튼 없음 — avail 소멸 보조 확인 시도'}`);
     if (!verified) {
       // 보조 확인: avail 버튼이 사라졌으면 "예약가능 설정" 방식으로 차단 성공
       // (suspended 버튼이 생기는 대신 avail 버튼이 빈칸으로 전환되는 방식)
       const roomType = (room || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || room;
-      const [hh, mm] = (start || '').split(':').map(Number);
+      const [hh, mm] = (selectedStart || '').split(':').map(Number);
       const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
       const hourMin = `${dispH}:${String(mm).padStart(2, '0')}`;
       const availGone = await page.evaluate((roomType, hourMin) => {
@@ -607,6 +624,13 @@ async function selectBookingDate(page, date) {
   return true;
 }
 
+async function isSettingsPanelVisible(page) {
+  return page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('button'));
+    return btns.some(b => (b.textContent || '').trim().includes('설정변경') && b.offsetParent !== null);
+  });
+}
+
 // Step 4: 해당 룸의 예약가능 버튼 클릭
 // calendar-btn 클래스 + 좌표 기반으로 정확한 셀 클릭
 async function clickRoomAvailableSlot(page, roomRaw, startTime) {
@@ -702,9 +726,26 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
       return { found: false, reason: 'no calendar-btn visible after scroll', targetY: Math.round(targetY), roomXRange };
     }
 
+    const timeMarkers = timeSpans.map(span => {
+      const r = span.getBoundingClientRect();
+      const raw = (span.parentElement?.textContent || span.textContent || '').replace(/\s+/g, ' ').trim();
+      return { y: r.top + r.height / 2, raw };
+    });
+
     const btnInfos = calBtns.map(b => {
       const r = b.getBoundingClientRect();
-      return { el: b, cx: r.left + r.width / 2, cy: r.top + r.height / 2, cls: b.className || '', text: (b.textContent || '').trim() };
+      const cy = r.top + r.height / 2;
+      const nearestTime = timeMarkers
+        .slice()
+        .sort((a, b) => Math.abs(a.y - cy) - Math.abs(b.y - cy))[0];
+      return {
+        el: b,
+        cx: r.left + r.width / 2,
+        cy,
+        cls: b.className || '',
+        text: (b.textContent || '').trim(),
+        slotTime: nearestTime ? nearestTime.raw : null,
+      };
     });
 
     // 5. 시간 Y 기준 필터 (±25px, 없으면 ±60px)
@@ -729,27 +770,62 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
       };
     }
 
-    // 8. 가장 Y좌표가 가까운 버튼 선택
-    const best = finalCandidates.sort((a, b) => Math.abs(a.cy - targetY) - Math.abs(b.cy - targetY))[0];
-
-    best.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    best.el.click();
+    // 8. 목표 시각 이후 슬롯을 우선 시도한다.
+    // 이미 지난 슬롯은 클릭이 되지 않거나 패널이 열리지 않을 수 있어,
+    // 같은 룸의 다음 가능한 슬롯으로 자연스럽게 진행한다.
+    const orderedCandidates = finalCandidates
+      .map(c => ({
+        ...c,
+        forward: c.cy >= targetY ? 0 : 1,
+        diff: Math.abs(c.cy - targetY),
+      }))
+      .sort((a, b) => {
+        if (a.forward !== b.forward) return a.forward - b.forward;
+        if (a.diff !== b.diff) return a.diff - b.diff;
+        return a.cy - b.cy;
+      })
+      .slice(0, 5);
 
     return {
-      found: true, clicked: true,
-      btnText: best.text, btnClass: best.cls.slice(0, 80),
-      pos: { cx: Math.round(best.cx), cy: Math.round(best.cy) },
+      found: true, clicked: orderedCandidates.length > 0,
+      btnText: orderedCandidates[0]?.text || '',
+      btnClass: (orderedCandidates[0]?.cls || '').slice(0, 80),
+      pos: orderedCandidates[0]
+        ? { cx: Math.round(orderedCandidates[0].cx), cy: Math.round(orderedCandidates[0].cy) }
+        : null,
       targetY: Math.round(targetY),
       roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
-      btnsNearTime: btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60).length
+      btnsNearTime: btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60).length,
+      fallbackCandidates: orderedCandidates.map(c => ({
+        cx: Math.round(c.cx),
+        cy: Math.round(c.cy),
+        text: c.text,
+        cls: (c.cls || '').slice(0, 80),
+        forward: c.forward === 0,
+        slotTime: c.slotTime || null,
+      })),
     };
   }, roomType, timeDisplay, ampm, hourMin);
 
   log(`  예약가능 버튼: ${JSON.stringify(result)}`);
   if (!result.found || !result.clicked) return false;
 
-  await delay(1500); // 팝업 열림 대기
-  return true;
+  const fallbacks = Array.isArray(result.fallbackCandidates) ? result.fallbackCandidates : [];
+  for (let i = 0; i < fallbacks.length; i++) {
+    const c = fallbacks[i];
+    if (c.cx <= 0 || c.cy <= 0) continue;
+    log(`  ↻ 슬롯 선택 시도 #${i + 1}: (${c.cx}, ${c.cy}) ${c.text}${c.forward ? ' [다음 슬롯 우선]' : ' [이전 슬롯]'}`);
+    await page.mouse.click(c.cx, c.cy);
+    await delay(1200);
+    if (await isSettingsPanelVisible(page)) {
+      const effectiveStart = to24Hour(c.slotTime) || startTime;
+      log(`  ✅ 설정 패널 열림 확인 (시도 #${i + 1})${c.slotTime ? ` → 시작시간 ${effectiveStart}` : ''}`);
+      return effectiveStart;
+    }
+  }
+
+  log('  ❌ 후보 슬롯들을 순차 시도했지만 설정 패널이 열리지 않음');
+  return null;
 }
 
 // Step 4 (해제용): 해당 룸의 suspended(예약불가) 버튼 클릭
