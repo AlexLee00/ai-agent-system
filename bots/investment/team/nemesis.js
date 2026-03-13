@@ -165,6 +165,50 @@ function calcTimeFactor() {
   return 1.0;
 }
 
+async function calcReviewAdjustment(symbol, exchange, amountUsdt) {
+  try {
+    const insight = await journalDb.getTradeReviewInsight(symbol, exchange, 60);
+    if (!insight || insight.closedTrades < 3) {
+      return { adjustedAmount: amountUsdt, factor: 1, notes: [], insight };
+    }
+
+    let factor = 1;
+    const notes = [];
+
+    if (insight.winRate != null && insight.winRate < 0.4) {
+      factor *= 0.75;
+      notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
+    }
+    if (insight.avgPnlPercent != null && insight.avgPnlPercent < 0) {
+      factor *= 0.85;
+      notes.push(`평균 실현손익 ${insight.avgPnlPercent.toFixed(2)}%`);
+    }
+    if (
+      insight.avgMaxFavorable != null &&
+      insight.avgMaxAdverse != null &&
+      Math.abs(insight.avgMaxAdverse) > Math.max(insight.avgMaxFavorable, 0.01)
+    ) {
+      factor *= 0.9;
+      notes.push(`불리구간 우세 (${insight.avgMaxAdverse.toFixed(2)}% vs ${insight.avgMaxFavorable.toFixed(2)}%)`);
+    }
+
+    const analystValues = Object.values(insight.analystAccuracy).filter(value => value != null);
+    if (analystValues.length > 0) {
+      const analystAvg = analystValues.reduce((sum, value) => sum + value, 0) / analystValues.length;
+      if (analystAvg < 0.5) {
+        factor *= 0.9;
+        notes.push(`분석팀 평균 정확도 ${(analystAvg * 100).toFixed(0)}%`);
+      }
+    }
+
+    const adjustedAmount = Math.max(getRules(exchange).MIN_ORDER_USDT, Math.floor(amountUsdt * factor));
+    return { adjustedAmount, factor, notes, insight };
+  } catch (err) {
+    console.warn('[nemesis] calcReviewAdjustment 실패 (무시):', err.message);
+    return { adjustedAmount: amountUsdt, factor: 1, notes: [], insight: null };
+  }
+}
+
 // ─── v2: LLM 리스크 평가 ────────────────────────────────────────────
 
 async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange }) {
@@ -594,6 +638,12 @@ export async function evaluateSignal(signal, opts = {}) {
         console.log(`  📐 [네메시스 켈리] $${amountUsdt} → $${kellyAmount} (Half Kelly ${(kellyPct * 100).toFixed(1)}%, R/R ${_rrData.rr_ratio}, 승률 ${_rrData.win_rate}%)`);
         amountUsdt = kellyAmount;
       }
+    }
+
+    const reviewAdjustment = await calcReviewAdjustment(symbol, signal.exchange, amountUsdt);
+    if (reviewAdjustment.factor < 1 && reviewAdjustment.adjustedAmount < amountUsdt) {
+      console.log(`  📐 [네메시스 리뷰] $${amountUsdt} → $${reviewAdjustment.adjustedAmount} (${reviewAdjustment.notes.join(', ')})`);
+      amountUsdt = reviewAdjustment.adjustedAmount;
     }
 
     // ── Phase 2: 동적 TP/SL 산출 (레짐/가중/단순 → ATR → 고정) ──
