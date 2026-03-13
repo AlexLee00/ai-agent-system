@@ -183,34 +183,18 @@ function buildDynamicVariation(postType, history) {
 // ─── 파이프라인 빌더 ──────────────────────────────────────────────────
 
 /**
- * 오늘의 파이프라인 동적 구성.
- * - 수집 노드 순서 셔플
- * - 20% 확률로 비필수 노드 1개 제외
- * - 40% 확률로 딥리서치 노드 추가
+ * 오늘의 파이프라인 구성.
+ * 현재 운영 경로(n8n/direct fallback)는 아래 고정 노드 집합을 공통으로 사용한다.
+ * 변형은 노드 조합이 아니라 variations에서만 준다.
  *
  * @param {'lecture'|'general'} postType
  * @param {Array} history
  * @returns {{ pipeline: string[], variations: object }}
  */
 function buildDynamicPipeline(postType, history) {
-  // 수집 노드 셔플
-  let nodes = _shuffle(RESEARCH_NODES);
-
-  // 20% 확률로 비필수 노드(날씨/nodejs-updates 중 하나) 제외
-  if (Math.random() < 0.2) {
-    const skipCandidates = ['weather', 'nodejs-updates'];
-    const skip = _pick(skipCandidates);
-    nodes = nodes.filter(n => n !== skip);
-    console.log(`[마에스트로] 노드 제외: ${skip}`);
-  }
-
-  // 40% 확률로 딥리서치 추가
-  if (Math.random() < 0.4) {
-    nodes.push('deep-research');
-  }
-
-  // RAG 사례 검색 (항상 포함)
-  nodes.push('rag-experiences', 'related-posts');
+  // 아직 n8n 워크플로우가 노드별 조건 분기를 해석하지 않으므로
+  // 실행 메타와 실제 수행 노드를 일치시키기 위해 고정 집합을 사용한다.
+  const nodes = [...RESEARCH_NODES, 'rag-experiences', 'related-posts'];
 
   // 글 생성 노드
   const writeNode = postType === 'lecture' ? 'write-lecture' : 'write-general';

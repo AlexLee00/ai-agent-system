@@ -658,30 +658,14 @@ ${linkingBlock}
     },
   ];
 
-  const startTime = Date.now();
-  let result;
-  try {
-    result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
-      model,
-      contextCarry: 200,
-      maxRetries:   1,
-      logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
-      onChunkComplete: ({ id, charCount, index }) =>
-        console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
-    });
-  } finally {
-    const latencyMs = Date.now() - startTime;
-    await llmLogger.logLLMCall({
-      team:         'blog',
-      bot:          'blog-gems',
-      model:        `${model}-chunked`,
-      requestType:  'general_post_chunked',
-      inputTokens:  result?.totalTokens?.input  || 0,
-      outputTokens: result?.totalTokens?.output || 0,
-      latencyMs,
-      success:      !!result,
-    });
-  }
+  const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
+    model,
+    contextCarry: 200,
+    maxRetries:   1,
+    logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
+    onChunkComplete: ({ id, charCount, index }) =>
+      console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
+  });
 
   const content   = result.content;
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
