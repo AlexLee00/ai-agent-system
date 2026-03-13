@@ -86,6 +86,7 @@ export default function WorkerChatPage() {
   const bottomRef = useRef(null);
   const wsRef = useRef(null);
   const sessionRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
 
   useEffect(() => {
     api.get('/chat/sessions')
@@ -121,57 +122,82 @@ export default function WorkerChatPage() {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${encodeURIComponent(token)}`);
-    wsRef.current = socket;
+    let stopped = false;
 
-    socket.onopen = () => setLiveStatus('실시간 연결됨');
-    socket.onclose = () => {
-      setLiveStatus('실시간 연결 끊김 - REST 폴백');
-      if (wsRef.current === socket) wsRef.current = null;
-    };
-    socket.onerror = () => setLiveStatus('실시간 연결 오류 - REST 폴백');
-    socket.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'chat.status') {
-          setIsPending(true);
-          setLiveStatus(data.message || 'Worker가 응답 중입니다...');
-          return;
+    const connect = () => {
+      if (stopped) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws/chat?token=${encodeURIComponent(token)}`);
+      wsRef.current = socket;
+
+      socket.onopen = () => setLiveStatus('실시간 연결됨');
+      socket.onclose = () => {
+        if (wsRef.current === socket) wsRef.current = null;
+        if (!stopped) {
+          setLiveStatus('실시간 연결 끊김 - 재연결 시도 중');
+          reconnectTimerRef.current = window.setTimeout(connect, 2000);
         }
-        if (data.type === 'chat.result') {
-          setIsPending(false);
-          setLiveStatus('실시간 연결됨');
-          if (data.sessionId && data.sessionId !== sessionRef.current) {
-            setSessionId(data.sessionId);
+      };
+      socket.onerror = () => setLiveStatus('실시간 연결 오류 - REST 폴백');
+      socket.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'chat.status') {
+            setIsPending(true);
+            setLiveStatus(data.message || 'Worker가 응답 중입니다...');
+            return;
           }
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.reply,
-            createdAt: data.ts || new Date().toISOString(),
-            intent: data.intent,
-            metadata: { ui: data.ui || null },
-          }]);
-          setLatestUi(data.ui || null);
-          const sessionData = await api.get('/chat/sessions').catch(() => null);
-          if (sessionData?.sessions) setSessions(sessionData.sessions);
-          return;
+          if (data.type === 'pong' || data.type === 'chat.connected') {
+            setLiveStatus('실시간 연결됨');
+            return;
+          }
+          if (data.type === 'chat.result') {
+            setIsPending(false);
+            setLiveStatus('실시간 연결됨');
+            if (data.sessionId && data.sessionId !== sessionRef.current) {
+              setSessionId(data.sessionId);
+            }
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: data.reply,
+              createdAt: data.ts || new Date().toISOString(),
+              intent: data.intent,
+              metadata: { ui: data.ui || null },
+            }]);
+            setLatestUi(data.ui || null);
+            const sessionData = await api.get('/chat/sessions').catch(() => null);
+            if (sessionData?.sessions) setSessions(sessionData.sessions);
+            return;
+          }
+          if (data.type === 'chat.error') {
+            setIsPending(false);
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: data.message || '요청 처리 중 오류가 발생했습니다.',
+              createdAt: data.ts || new Date().toISOString(),
+            }]);
+          }
+        } catch {
+          /* 무시 */
         }
-        if (data.type === 'chat.error') {
-          setIsPending(false);
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.message || '요청 처리 중 오류가 발생했습니다.',
-            createdAt: data.ts || new Date().toISOString(),
-          }]);
-        }
-      } catch {
-        /* 무시 */
-      }
+      };
     };
+
+    connect();
+
+    const pingTimer = window.setInterval(() => {
+      const socket = wsRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 20000);
 
     return () => {
-      try { socket.close(); } catch {}
+      stopped = true;
+      window.clearInterval(pingTimer);
+      if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
+      const socket = wsRef.current;
+      try { socket?.close(); } catch {}
       if (wsRef.current === socket) wsRef.current = null;
     };
   }, []);

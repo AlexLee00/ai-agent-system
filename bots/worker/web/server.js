@@ -93,6 +93,7 @@ const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
 
 const app = express();
 const wsClients = new Set();
+let chatWss = null;
 
 function sendWs(ws, payload) {
   if (!ws || ws.readyState !== 1) return;
@@ -1600,7 +1601,17 @@ ${dataStr}
 );
 
 // ── 헬스체크 ─────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ status: 'ok', port: PORT, ts: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({
+  status: 'ok',
+  port: PORT,
+  ts: new Date().toISOString(),
+  websocket: {
+    enabled: true,
+    path: '/ws/chat',
+    clients: wsClients.size,
+    ready: Boolean(chatWss),
+  },
+}));
 
 // ── multer 에러 핸들러 ────────────────────────────────────────────────
 app.use((err, req, res, next) => {
@@ -1878,6 +1889,7 @@ process.on('SIGINT',  () => { killAllClaudeProcs('SIGINT');  process.exit(0); })
 
 function setupChatWebSocket(server) {
   const wss = new WebSocketServer({ server, path: '/ws/chat' });
+  chatWss = wss;
 
   wss.on('connection', async (ws, req) => {
     try {
@@ -1903,6 +1915,7 @@ function setupChatWebSocket(server) {
 
       ws.user = dbUser;
       ws.companyId = dbUser.company_id;
+      ws.isAlive = true;
       wsClients.add(ws);
       sendWs(ws, {
         type: 'chat.connected',
@@ -1972,6 +1985,10 @@ function setupChatWebSocket(server) {
         }
       });
 
+      ws.on('pong', () => {
+        ws.isAlive = true;
+      });
+
       ws.on('close', () => {
         wsClients.delete(ws);
       });
@@ -1979,6 +1996,25 @@ function setupChatWebSocket(server) {
       sendWs(ws, { type: 'chat.error', code: 'WS_CONNECT_FAILED', message: err.message || '연결 초기화 실패' });
       try { ws.close(1011, 'connect failed'); } catch {}
     }
+  });
+
+  const heartbeat = setInterval(() => {
+    for (const client of wsClients) {
+      if (client.readyState !== 1) continue;
+      if (client.isAlive === false) {
+        try { client.terminate(); } catch {}
+        wsClients.delete(client);
+        continue;
+      }
+      client.isAlive = false;
+      try { client.ping(); } catch {}
+    }
+  }, 30000);
+  heartbeat.unref();
+
+  wss.on('close', () => {
+    clearInterval(heartbeat);
+    chatWss = null;
   });
 
   return wss;
