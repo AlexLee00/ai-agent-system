@@ -284,6 +284,15 @@ export async function getJournalEntryByTradeId(tradeId) {
   return rows[0] || null;
 }
 
+export async function getLatestJournalEntryBySignalId(signalId) {
+  await ensureInit();
+  const rows = await query(
+    `SELECT * FROM trade_journal WHERE signal_id = ? ORDER BY created_at DESC LIMIT 1`,
+    [signalId],
+  );
+  return rows[0] || null;
+}
+
 export async function getReviewByTradeId(tradeId) {
   await ensureInit();
   const rows = await query(`SELECT * FROM trade_review WHERE trade_id = ? LIMIT 1`, [tradeId]);
@@ -659,7 +668,7 @@ export default {
   initJournalSchema,
   ratioToPercent,
   generateTradeId,
-  insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getReviewByTradeId, getTradeReviewInsight, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
+  insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getLatestJournalEntryBySignalId, getReviewByTradeId, getTradeReviewInsight, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
   insertRationale, linkRationaleToTrade,
   insertReview,
   upsertDailyPerformance, getDailyPerformance, getWeeklyPerformance,

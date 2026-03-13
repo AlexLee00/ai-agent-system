@@ -1,4 +1,4 @@
-import { finishPipelineRun, getNodeRuns } from '../shared/pipeline-db.js';
+import { finishPipelineRun, getNodeRuns, initPipelineSchema } from '../shared/pipeline-db.js';
 import { createPipelineSession, runNode } from '../shared/node-runner.js';
 import { getInvestmentNode, INVESTMENT_NODES } from '../nodes/index.js';
 
@@ -48,17 +48,22 @@ async function main() {
     throw new Error(`${node.id}는 --symbol 필요`);
   }
 
-  const sessionId = await createPipelineSession({
-    pipeline: 'luna_pipeline',
-    market,
-    symbols: symbol ? [symbol] : symbols,
-    triggerType: args.trigger || 'manual',
-    triggerRef: args.trigger_ref || null,
-    meta: {
-      runner: 'run-pipeline-node',
-      requested_node: node.id,
-    },
-  });
+  let sessionId = args['session-id'] || args.session_id || null;
+  if (!sessionId) {
+    sessionId = await createPipelineSession({
+      pipeline: 'luna_pipeline',
+      market,
+      symbols: symbol ? [symbol] : symbols,
+      triggerType: args.trigger || 'manual',
+      triggerRef: args.trigger_ref || null,
+      meta: {
+        runner: 'run-pipeline-node',
+        requested_node: node.id,
+      },
+    });
+  } else {
+    await initPipelineSchema();
+  }
 
   let status = 'completed';
   try {
@@ -72,13 +77,15 @@ async function main() {
       },
     });
 
-    await finishPipelineRun(sessionId, {
-      status: 'completed',
-      meta: {
-        completed_node: node.id,
-        output_ref: result.outputRef,
-      },
-    });
+    if (!args['session-id'] && !args.session_id) {
+      await finishPipelineRun(sessionId, {
+        status: 'completed',
+        meta: {
+          completed_node: node.id,
+          output_ref: result.outputRef,
+        },
+      });
+    }
 
     const nodeRuns = await getNodeRuns(sessionId);
     console.log(JSON.stringify({
@@ -93,13 +100,15 @@ async function main() {
     }, null, 2));
   } catch (err) {
     status = 'failed';
-    await finishPipelineRun(sessionId, {
-      status,
-      meta: {
-        failed_node: node.id,
-        error: err.message,
-      },
-    });
+    if (!args['session-id'] && !args.session_id) {
+      await finishPipelineRun(sessionId, {
+        status,
+        meta: {
+          failed_node: node.id,
+          error: err.message,
+        },
+      });
+    }
     throw err;
   }
 }

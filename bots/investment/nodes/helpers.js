@@ -20,6 +20,11 @@ export async function loadNodePayloads(sessionId, nodeIds, symbol) {
   return results;
 }
 
+export async function loadLatestNodePayload(sessionId, nodeId, symbol) {
+  const hits = await fetchNodeArtifacts(sessionId, nodeId, { symbol, limit: 1 }).catch(() => []);
+  return hits[0] || null;
+}
+
 export async function loadAnalysesForSession(sessionId, symbol, market) {
   const artifacts = await loadNodePayloads(sessionId, ['L02', 'L03', 'L04', 'L05'], symbol);
   const fromArtifacts = artifacts
@@ -32,6 +37,17 @@ export async function loadAnalysesForSession(sessionId, symbol, market) {
 
   const analyses = await db.getRecentAnalysis(symbol, 70, market);
   return { analyses, source: 'db', artifacts: [] };
+}
+
+export function buildAnalystSignals(analyses = []) {
+  const byAnalyst = new Map(analyses.map(item => [item.analyst, item]));
+  const getChar = (signal) => !signal ? 'N' : signal.toUpperCase() === 'BUY' ? 'B' : signal.toUpperCase() === 'SELL' ? 'S' : 'N';
+  return [
+    `A:${getChar(byAnalyst.get(ANALYST_TYPES.TA_MTF)?.signal)}`,
+    `O:${getChar(byAnalyst.get(ANALYST_TYPES.ONCHAIN)?.signal)}`,
+    `H:${getChar(byAnalyst.get(ANALYST_TYPES.NEWS)?.signal)}`,
+    `S:${getChar(byAnalyst.get(ANALYST_TYPES.SENTIMENT)?.signal)}`,
+  ].join('|');
 }
 
 function normalizeAnalysisPayload(nodeId, payload, symbol, market) {
