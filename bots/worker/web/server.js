@@ -1197,6 +1197,32 @@ app.put('/api/payroll/:id', requireAuth, requireRole('master','admin'), auditLog
 
 // ── 프로젝트 API (라이언) ──────────────────────────────────────────────
 
+app.get('/api/agent-tasks', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const status = req.query.status || '';
+  const params = [req.companyId];
+  let where = 't.company_id=$1';
+  if (status) {
+    params.push(status);
+    where += ` AND t.status=$${params.length}`;
+  }
+  params.push(limit, offset);
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT t.*, u.name AS user_name, ar.status AS approval_status
+       FROM worker.agent_tasks t
+       LEFT JOIN worker.users u ON u.id = t.user_id
+       LEFT JOIN worker.approval_requests ar ON ar.id = t.approval_id
+       WHERE ${where}
+       ORDER BY t.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params);
+    res.json({ tasks: rows });
+  } catch {
+    res.status(500).json({ error: '업무 큐를 불러오지 못했습니다.', code: 'AGENT_TASK_LOAD_FAILED' });
+  }
+});
+
 app.get('/api/projects', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   const status = req.query.status || '';
