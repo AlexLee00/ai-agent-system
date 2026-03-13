@@ -26,8 +26,8 @@ import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
 import { runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
+import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
 
-import { orchestrate }                 from '../team/luna.js';
 import { processAllPendingKisSignals } from '../team/hanul.js';
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
@@ -105,7 +105,11 @@ export async function runDomesticCycle(symbols) {
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
-    const results = await orchestrate(symbols, 'kis');
+    const results = await runDecisionExecutionPipeline({
+      sessionId: collect.sessionId,
+      symbols,
+      exchange: 'kis',
+    });
 
     // ── 단계 3: 한울 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
