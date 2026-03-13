@@ -21,7 +21,7 @@ import * as db from '../shared/db.js';
 const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 import { callLLM, cachedCallLLM, parseJSON } from '../shared/llm-client.js';
-import { ACTIONS, ANALYST_TYPES, validateSignal } from '../shared/signal.js';
+import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.js';
 import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { isPaperMode } from '../shared/secrets.js';
@@ -491,7 +491,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         await db.updateSignalStatus(signalId, 'rejected');
       }
     } catch (e) {
-      console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 (신호만 저장): ${e.message}`);
+      console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 처리: ${e.message}`);
+      await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED).catch(() => {});
+      await db.run(
+        'UPDATE signals SET block_reason = $1 WHERE id = $2',
+        [`nemesis_error:${String(e.message || 'unknown').slice(0, 180)}`, signalId],
+      ).catch(() => {});
       results.push({ symbol: dec.symbol, signalId, ...dec });
     }
   }

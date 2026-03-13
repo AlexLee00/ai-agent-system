@@ -13,6 +13,8 @@
  * 자동: launchd ai.claude.health-check (10분마다)
  */
 
+const fs = require('fs');
+const path = require('path');
 const { execSync } = require('child_process');
 const { publishToMainBot } = require('../lib/mainbot-client');
 const hsm = require('../../../packages/core/lib/health-state-manager');
@@ -32,6 +34,31 @@ const ALL_SERVICES = [
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const CLAUDE_ROOT = path.join(__dirname, '..');
+
+function hasRecentDexterReport() {
+  try {
+    const logPath = path.join(CLAUDE_ROOT, 'dexter.log');
+    const stat = fs.statSync(logPath);
+    if (Date.now() - stat.mtimeMs > 90 * 60 * 1000) return false;
+
+    const tail = fs.readFileSync(logPath, 'utf8').split('\n').slice(-80).join('\n');
+    return (
+      tail.includes('📋 요약:') ||
+      tail.includes('🎉 모든 체크 통과') ||
+      tail.includes('이상 없음 — 텔레그램 발송 생략')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isExpectedExit(label, exitCode) {
+  if (label === 'ai.claude.dexter' && exitCode === 1) {
+    return hasRecentDexterReport();
+  }
+  return false;
+}
 
 // ─── launchctl 파싱 ──────────────────────────────────────────────
 
@@ -104,7 +131,11 @@ async function main() {
     }
 
     // 3. 비정상 종료 코드 감지
-    if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
+    if (
+      !NORMAL_EXIT_CODES.has(svc.exitCode) &&
+      !isExpectedExit(label, svc.exitCode) &&
+      !(CONTINUOUS.includes(label) && svc.running)
+    ) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
         issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ ${tag}[클로드 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
