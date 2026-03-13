@@ -5,6 +5,7 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
+const { createRequest: createApprovalRequest } = require('./approval');
 
 const SCHEMA = 'worker';
 
@@ -42,6 +43,27 @@ async function ensureChatSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_worker_chat_messages_session
       ON worker.chat_messages(session_id, created_at);
+  `);
+
+  await pgPool.run(SCHEMA, `
+    CREATE TABLE IF NOT EXISTS worker.agent_tasks (
+      id            SERIAL PRIMARY KEY,
+      session_id    TEXT REFERENCES worker.chat_sessions(id) ON DELETE SET NULL,
+      company_id    TEXT NOT NULL REFERENCES worker.companies(id),
+      user_id       INTEGER REFERENCES worker.users(id),
+      target_bot    TEXT NOT NULL,
+      task_type     TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      description   TEXT,
+      payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status        TEXT NOT NULL DEFAULT 'queued',
+      approval_id   INTEGER REFERENCES worker.approval_requests(id),
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at  TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_agent_tasks_company_status
+      ON worker.agent_tasks(company_id, status, created_at DESC);
   `);
 }
 
@@ -386,6 +408,88 @@ async function _cancelLastSchedule(companyId, session) {
   };
 }
 
+function _buildRoutedTask(text, intent) {
+  const title = _cleanTitle(text) || `${intent.target} 요청`;
+  return {
+    taskType: 'agent_request',
+    title,
+    description: text,
+    payload: {
+      source: 'chat',
+      target: intent.target,
+      raw_text: text,
+    },
+  };
+}
+
+function _needsApproval(target) {
+  return ['noah', 'ryan', 'oliver'].includes(target);
+}
+
+async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
+  const task = _buildRoutedTask(text, intent);
+  let approvalId = null;
+
+  if (_needsApproval(intent.target)) {
+    const approval = await createApprovalRequest({
+      companyId,
+      requesterId: userId,
+      category: 'agent_task',
+      action: `${intent.target}_request`,
+      targetTable: 'agent_tasks',
+      payload: {
+        target_bot: intent.target,
+        title: task.title,
+        description: task.description,
+      },
+      priority: intent.target === 'oliver' ? 'high' : 'normal',
+    });
+    approvalId = approval.id || null;
+  }
+
+  const row = await pgPool.get(SCHEMA, `
+    INSERT INTO worker.agent_tasks
+      (session_id, company_id, user_id, target_bot, task_type, title, description, payload, approval_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+    RETURNING *
+  `, [
+    sessionId,
+    companyId,
+    userId,
+    intent.target,
+    task.taskType,
+    task.title,
+    task.description,
+    JSON.stringify(task.payload),
+    approvalId,
+  ]);
+
+  return {
+    task: row,
+    approvalId,
+    reply: approvalId
+      ? `${intent.target} 담당 업무로 등록했습니다. 처리 대기열에 넣었고 승인 요청 #${approvalId}도 생성했습니다.`
+      : `${intent.target} 담당 업무로 등록했습니다. 처리 대기열에 넣었습니다.`,
+    ui: {
+      type: 'route',
+      target: intent.target,
+      status: approvalId ? 'pending_approval' : 'queued',
+      task: {
+        id: row.id,
+        title: row.title,
+        target_bot: row.target_bot,
+        status: row.status,
+        approval_id: approvalId,
+      },
+    },
+    contextPatch: {
+      last_agent_task_id: row.id,
+      last_agent_task_target: row.target_bot,
+      last_approval_id: approvalId,
+    },
+  };
+}
+
 async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web' }) {
   await ensureChatSchema();
 
@@ -438,10 +542,13 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
       result = await _cancelLastSchedule(companyId, session);
       break;
     case 'route_request':
-      result = {
-        reply: `${intent.target} 담당 업무로 분류했습니다. 이 유형의 자동 실행은 다음 단계에서 연결할 예정입니다.`,
-        ui: { type: 'route', target: intent.target, status: 'queued' },
-      };
+      result = await _queueAgentTask({
+        text,
+        intent,
+        companyId,
+        userId: user.id,
+        sessionId: session.id,
+      });
       break;
     default:
       result = {

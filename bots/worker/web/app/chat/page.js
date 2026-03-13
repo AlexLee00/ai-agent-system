@@ -54,7 +54,18 @@ function ScheduleCard({ ui }) {
     return (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-amber-900 mb-1">업무 라우팅</h3>
-        <p className="text-sm text-amber-800">{ui.target} 봇으로 분류되었습니다. 자동 실행 연결은 다음 단계에서 확장됩니다.</p>
+        <p className="text-sm text-amber-800">
+          {ui.target} 봇으로 전달되었습니다. 상태: {ui.status === 'pending_approval' ? '승인 대기' : '처리 대기'}
+        </p>
+        {ui.task && (
+          <div className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-sm text-amber-900">
+            <p className="font-semibold">{ui.task.title}</p>
+            <p className="text-xs mt-1">Task #{ui.task.id} · {ui.task.target_bot}</p>
+            {ui.task.approval_id && (
+              <p className="text-xs mt-1">Approval #{ui.task.approval_id}</p>
+            )}
+          </div>
+        )}
       </div>
     );
   }
