@@ -165,9 +165,7 @@
     "파이프라인 파싱": {
       "main": [
         [
-          { "node": "날씨 수집",              "type": "main", "index": 0 },
-          { "node": "IT뉴스 수집",            "type": "main", "index": 0 },
-          { "node": "Node.js 업데이트 수집",  "type": "main", "index": 0 }
+          { "node": "날씨 수집", "type": "main", "index": 0 }
         ]
       ]
     },

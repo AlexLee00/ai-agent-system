@@ -615,15 +615,6 @@ ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 
   console.log(`[포스] 분할생성 완료: 총 ${result.charCount}자 (${((Date.now() - startTime) / 1000).toFixed(1)}초)`);
 
-  await llmLogger.logLLMCall({
-    team: 'blog', bot: 'blog-pos',
-    model:        `${model}-chunked`,
-    requestType:  'lecture_post_chunked',
-    inputTokens:  result.totalTokens.input,
-    outputTokens: result.totalTokens.output,
-    latencyMs:    Date.now() - startTime,
-  }).catch(() => {});
-
   return {
     content:   result.content,
     charCount: result.charCount,
