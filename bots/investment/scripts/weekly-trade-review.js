@@ -20,6 +20,7 @@ import { createRequire } from 'module';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import * as db from '../shared/db.js';
+import { validateTradeReview } from './validate-trade-review.js';
 
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
@@ -289,6 +290,10 @@ async function main() {
   console.log(`\n📋 [주간 리뷰] 최근 ${DAYS}일 매매 분석 시작...`);
 
   await db.initSchema();
+  const validation = await validateTradeReview({ days: DAYS, fix: true });
+  if (validation.findings > 0) {
+    console.log(`  🩺 trade_review 정합성 보정: ${validation.findings}건 점검, ${validation.fixed}건 처리`);
+  }
 
   const [trades, signalStats] = await Promise.all([
     fetchRecentTrades(DAYS),

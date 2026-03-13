@@ -2,6 +2,7 @@
 
 import * as journalDb from '../shared/trade-journal-db.js';
 import * as db from '../shared/db.js';
+import { validateTradeReview } from './validate-trade-review.js';
 
 async function backfillTradeReview({ dryRun = false } = {}) {
   await db.initSchema();
@@ -40,7 +41,11 @@ async function backfillTradeReview({ dryRun = false } = {}) {
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const result = await backfillTradeReview({ dryRun });
-  console.log(JSON.stringify(result, null, 2));
+  const validation = await validateTradeReview({ days: 3650, fix: !dryRun });
+  console.log(JSON.stringify({
+    ...result,
+    validation,
+  }, null, 2));
 }
 
 main().catch(err => {
