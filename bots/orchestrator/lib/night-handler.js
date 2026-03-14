@@ -1,5 +1,7 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
+const path = require('path');
+const { spawn } = require('child_process');
 
 /**
  * lib/night-handler.js — 야간 자율 운영 관리
@@ -98,6 +100,100 @@ function buildMorningBriefing(items) {
   return lines.join('\n').trim();
 }
 
+async function runNodeScriptJson(script, timeoutMs = 60_000) {
+  const root = path.join(__dirname, '..', '..', '..');
+  return await new Promise((resolve) => {
+    const child = spawn('node', [script, '--json'], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve(null);
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', () => {});
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function buildOpsHealthAlertSnippet() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const scripts = [
+    { title: '루나', path: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js') },
+    { title: '워커', path: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js') },
+    { title: '클로드', path: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js') },
+    { title: '스카', path: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js') },
+  ];
+
+  const [luna, worker, claude, ska] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
+  const rows = [
+    {
+      title: '루나',
+      hasWarn: !luna || luna.serviceHealth.warnCount > 0,
+      summary: luna ? `서비스 경고 ${luna.serviceHealth.warnCount}건` : '조회 실패',
+    },
+    {
+      title: '워커',
+      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0,
+      summary: worker
+        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건`
+        : '조회 실패',
+    },
+    {
+      title: '클로드',
+      hasWarn: !claude || claude.serviceHealth.warnCount > 0 || claude.dashboardHealth.warnCount > 0,
+      summary: claude
+        ? `서비스 경고 ${claude.serviceHealth.warnCount}건 / 대시보드 경고 ${claude.dashboardHealth.warnCount}건`
+        : '조회 실패',
+    },
+    {
+      title: '스카',
+      hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0,
+      summary: ska
+        ? `서비스 경고 ${ska.serviceHealth.warnCount}건 / 모니터 경고 ${ska.monitorHealth.warnCount}건`
+        : '조회 실패',
+    },
+  ].filter((row) => row.hasWarn);
+
+  if (rows.length === 0) return null;
+
+  const lines = ['🚨 운영 헬스 경고', ''];
+  for (const row of rows) {
+    lines.push(`  • ${row.title}: ${row.summary}`);
+  }
+  lines.push('');
+  lines.push('상세 확인: /ops-health alerts');
+  return lines.join('\n');
+}
+
+async function buildMorningBriefingWithOps(items) {
+  const brief = buildMorningBriefing(items);
+  if (!brief) return null;
+  const opsSnippet = await buildOpsHealthAlertSnippet();
+  if (!opsSnippet) return brief;
+  return `${brief}\n\n${opsSnippet}`;
+}
+
 /**
  * 08:00 KST 기준 브리핑 타이밍인지 확인
  */
@@ -106,4 +202,13 @@ function isBriefingTime(lastBriefHour) {
   return h === 8 && lastBriefHour !== 8;
 }
 
-module.exports = { isNightTime, shouldDefer, deferToMorning, flushMorningQueue, buildMorningBriefing, isBriefingTime };
+module.exports = {
+  isNightTime,
+  shouldDefer,
+  deferToMorning,
+  flushMorningQueue,
+  buildMorningBriefing,
+  buildMorningBriefingWithOps,
+  buildOpsHealthAlertSnippet,
+  isBriefingTime,
+};

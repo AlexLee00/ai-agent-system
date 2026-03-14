@@ -96,7 +96,7 @@ async function flushPendingTelegrams() {
 const { processItem }       = require('./filter');
 const { cleanExpired: cleanMutes }   = require('../lib/mute-manager');
 const { cleanExpired: cleanConfirms }= require('../lib/confirm');
-const { isBriefingTime, flushMorningQueue, buildMorningBriefing } = require('../lib/night-handler');
+const { isBriefingTime, flushMorningQueue, buildMorningBriefingWithOps } = require('../lib/night-handler');
 const { runCommanderIdentityCheck, buildIdentityReport }          = require('../lib/identity-checker');
 
 let _lastBriefHour = -1;
@@ -143,7 +143,7 @@ async function runMorningBriefing() {
   const items = await flushMorningQueue();
   if (items.length === 0) return;
 
-  const brief = buildMorningBriefing(items);
+  const brief = await buildMorningBriefingWithOps(items);
   if (brief) await sendTelegram(brief);
 }
 
