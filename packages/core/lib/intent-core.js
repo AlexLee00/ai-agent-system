@@ -81,6 +81,28 @@ function getAutoPromoteThreshold(intent = '') {
   return AUTO_PROMOTE_THRESHOLDS[family] || AUTO_PROMOTE_THRESHOLDS.default;
 }
 
+function evaluateAutoPromoteDecision({
+  intent = '',
+  occurrenceCount = 0,
+  confidence = 0,
+  pattern = null,
+} = {}) {
+  const threshold = getAutoPromoteThreshold(intent);
+  if (occurrenceCount < threshold.minCount) {
+    return { allowed: false, reason: 'threshold_count', threshold };
+  }
+  if (!pattern) {
+    return { allowed: false, reason: 'missing_pattern', threshold };
+  }
+  if (confidence < threshold.minConfidence) {
+    return { allowed: false, reason: 'threshold_confidence', threshold };
+  }
+  if (!isSafeAutoPromoteIntent(intent)) {
+    return { allowed: false, reason: 'unsafe_intent', threshold };
+  }
+  return { allowed: true, reason: 'ok', threshold };
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -92,4 +114,5 @@ module.exports = {
   summarizeIntentFamily,
   isSafeAutoPromoteIntent,
   getAutoPromoteThreshold,
+  evaluateAutoPromoteDecision,
 };
