@@ -13,6 +13,9 @@ import sys
 import psycopg2
 from datetime import date as date_type, timedelta
 
+sys.path.insert(0, '/Users/alexlee/projects/ai-agent-system')
+from packages.core.lib.health_core import build_health_report, build_health_decision_section
+
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
 
@@ -231,70 +234,75 @@ def build_tuning_candidate(summary, weekday_bias):
 
 def format_text(report):
     summary = report['summary']
-    lines = [
-        '📊 스카 예측 헬스 리포트',
-        '─' * 18,
-        f'기간: 최근 {report["days"]}일',
-        '',
-    ]
-
     if summary['valid_count'] == 0:
-        lines.append('데이터 누적 중')
-        return '\n'.join(lines)
+        return build_health_report(
+            title='📊 스카 예측 헬스 리포트',
+            subtitle='기간: 최근 {}일'.format(report['days']),
+            sections=[{'title': '■ 상태', 'lines': ['데이터 누적 중']}],
+        )
 
     avg_bias = summary['avg_bias']
     bias_sign = '+' if avg_bias >= 0 else ''
-    lines.append('■ 전체 정확도')
-    lines.append(f'  평균 MAPE: {summary["avg_mape"]:.2f}%')
-    lines.append(f'  중앙 MAPE: {summary["median_mape"]:.2f}%')
-    lines.append(f'  평균 편향: {bias_sign}{avg_bias:,}원')
-    lines.append(f'  10% 이내 적중률: {summary["hit_rate_10"]:.1f}%')
-    lines.append(f'  20% 이내 적중률: {summary["hit_rate_20"]:.1f}%')
-    lines.append(f'  평균 확신도: {summary["avg_confidence"]*100:.0f}%')
-    lines.append('')
+    sections = [{
+        'title': '■ 전체 정확도',
+        'lines': [
+            f'  평균 MAPE: {summary["avg_mape"]:.2f}%',
+            f'  중앙 MAPE: {summary["median_mape"]:.2f}%',
+            f'  평균 편향: {bias_sign}{avg_bias:,}원',
+            f'  10% 이내 적중률: {summary["hit_rate_10"]:.1f}%',
+            f'  20% 이내 적중률: {summary["hit_rate_20"]:.1f}%',
+            f'  평균 확신도: {summary["avg_confidence"]*100:.0f}%',
+        ],
+    }]
 
     if report['weekday_bias']:
-        lines.append('■ 요일별 편향')
+        weekday_lines = []
         for item in report['weekday_bias']:
             bias = item['avg_bias']
             sign = '+' if bias >= 0 else ''
-            lines.append(
+            weekday_lines.append(
                 f'  {item["weekday"]}: MAPE {item["avg_mape"]:.1f}% / '
                 f'편향 {sign}{bias:,}원 / {item["count"]}건'
             )
-        lines.append('')
+        sections.append({'title': '■ 요일별 편향', 'lines': weekday_lines})
 
     if report['worst_cases']:
-        lines.append('■ 큰 오차 사례')
+        worst_lines = []
         for item in report['worst_cases']:
             d = date_type.fromisoformat(item['date'])
             sign = '+' if item['error'] >= 0 else ''
-            lines.append(
+            worst_lines.append(
                 f'  {d.month}/{d.day}({WEEKDAY_KO[d.weekday()]}) '
                 f'예측 {item["predicted"]:,} / 실제 {item["actual"]:,} / '
                 f'오차 {sign}{item["error"]:,}원 / MAPE {item["mape"]:.1f}%'
             )
+        sections.append({'title': '■ 큰 오차 사례', 'lines': worst_lines})
 
     recommendations = report.get('recommendations') or []
     if recommendations:
-        lines.append('')
-        lines.append('■ 개선 추천')
-        for rec in recommendations:
-            lines.append(f'  - {rec}')
+        sections.append({
+            'title': '■ 개선 추천',
+            'lines': [f'  - {rec}' for rec in recommendations],
+        })
 
     tuning_candidate = report.get('tuning_candidate')
     if tuning_candidate:
-        lines.append('')
-        lines.append('■ 튜닝 판단')
-        if tuning_candidate['recommended']:
-            badge = '🔧 즉시 검토' if tuning_candidate['level'] == 'high' else '🛠 검토 권장'
-            lines.append(f'  {badge}')
-        else:
-            lines.append('  ✅ 현재는 추가 튜닝보다 관찰 유지')
-        for reason in tuning_candidate.get('reasons', []):
-            lines.append(f'  - {reason}')
+        sections.append({
+            'title': None,
+            'lines': build_health_decision_section(
+                title='■ 튜닝 판단',
+                recommended=tuning_candidate['recommended'],
+                level=tuning_candidate['level'],
+                reasons=tuning_candidate.get('reasons', []),
+                ok_text='현재는 추가 튜닝보다 관찰 유지',
+            ),
+        })
 
-    return '\n'.join(lines)
+    return build_health_report(
+        title='📊 스카 예측 헬스 리포트',
+        subtitle='기간: 최근 {}일'.format(report['days']),
+        sections=sections,
+    )
 
 
 def run():
