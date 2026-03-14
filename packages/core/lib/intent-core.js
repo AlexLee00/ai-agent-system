@@ -480,7 +480,13 @@ function buildPromotionEventWhere(filters = {}) {
   };
 }
 
-function buildUnrecognizedReportQueries({ days = 7, candidateLimit = 20 } = {}) {
+function buildUnrecognizedReportQueries({
+  days = 7,
+  candidateLimit = 20,
+  unrecognizedTable = 'unrecognized_intents',
+  candidateTable = 'intent_promotion_candidates',
+  eventTable = 'intent_promotion_events',
+} = {}) {
   return {
     unrecognizedSql: `
       SELECT
@@ -489,7 +495,7 @@ function buildUnrecognizedReportQueries({ days = 7, candidateLimit = 20 } = {}) 
              MAX(llm_intent) as llm_intent,
              MAX(promoted_to) as promoted_to,
              MAX(created_at) as last_seen
-      FROM unrecognized_intents
+      FROM ${unrecognizedTable}
       WHERE created_at > NOW() - INTERVAL '${Number(days)} days'
       GROUP BY text
       ORDER BY cnt DESC, last_seen DESC
@@ -506,10 +512,10 @@ function buildUnrecognizedReportQueries({ days = 7, candidateLimit = 20 } = {}) 
         c.auto_applied,
         e.event_type AS latest_event_type,
         e.metadata AS latest_event_metadata
-      FROM intent_promotion_candidates c
+      FROM ${candidateTable} c
       LEFT JOIN LATERAL (
         SELECT event_type, metadata
-        FROM intent_promotion_events
+        FROM ${eventTable}
         WHERE candidate_id = c.id
         ORDER BY created_at DESC
         LIMIT 1
