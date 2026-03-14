@@ -71,6 +71,10 @@ const {
   buildHealthReport,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
+const {
+  getPromotionPendingHealth,
+  getPendingCommandHealth,
+} = require('../../../packages/core/lib/health-db');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
 let _curriculumPlanner = null;
@@ -1101,70 +1105,23 @@ async function runBlogHealthDirect() {
 }
 
 async function getWorkerIntentHealth() {
-  try {
-    const summary = await getPromotionSummary(pgPool, { schema: 'worker', filters: {} });
-    const pendingCount = Number(summary?.pending_count || 0);
-    const appliedCount = Number(summary?.applied_count || 0);
-    return {
-      pendingCount,
-      appliedCount,
-      hasWarn: pendingCount >= 5,
-      detail: `  인텐트 후보 pending ${pendingCount}건 / applied ${appliedCount}건`,
-      reasons: pendingCount >= 5 ? [`워커 인텐트 후보가 ${pendingCount}건 쌓여 있어 학습 검토가 필요합니다.`] : [],
-    };
-  } catch (error) {
-    if (/does not exist/i.test(String(error.message || ''))) {
-      return {
-        pendingCount: 0,
-        appliedCount: 0,
-        hasWarn: false,
-        detail: '  인텐트 후보 테이블 없음 (초기 상태)',
-        reasons: [],
-      };
-    }
-    return {
-      pendingCount: 0,
-      appliedCount: 0,
-      hasWarn: true,
-      detail: `  인텐트 후보 조회 실패: ${error.message}`,
-      reasons: ['워커 인텐트 후보 상태 조회에 실패했습니다.'],
-    };
-  }
+  return await getPromotionPendingHealth(pgPool, {
+    schema: 'worker',
+    pendingWarnThreshold: 5,
+    initialDetail: '  인텐트 후보 테이블 없음 (초기 상태)',
+    missingReason: '워커 인텐트 후보 상태 조회에 실패했습니다.',
+  });
 }
 
 async function getClaudeCommandHealth() {
-  try {
-    const row = await pgPool.get('claude', `
-      SELECT
-        COUNT(*)::int AS pending_count,
-        COALESCE(
-          MAX(EXTRACT(EPOCH FROM (NOW() - NULLIF(created_at, '')::timestamp)) / 60),
-          0
-        )::float AS oldest_minutes
-      FROM bot_commands
-      WHERE to_bot = 'claude-lead' AND status = 'pending'
-    `);
-    const pendingCount = Number(row?.pending_count || 0);
-    const oldestMinutes = Math.round(Number(row?.oldest_minutes || 0));
-    const hasWarn = pendingCount >= 3 || oldestMinutes >= 15;
-    return {
-      pendingCount,
-      oldestMinutes,
-      hasWarn,
-      detail: `  pending 명령 ${pendingCount}건 / oldest ${oldestMinutes}분`,
-      reasons: hasWarn
-        ? [`클로드 pending 명령 ${pendingCount}건이 ${oldestMinutes}분 이상 밀려 있습니다.`]
-        : [],
-    };
-  } catch (error) {
-    return {
-      pendingCount: 0,
-      oldestMinutes: 0,
-      hasWarn: true,
-      detail: `  pending 명령 조회 실패: ${error.message}`,
-      reasons: ['클로드 pending 명령 상태 조회에 실패했습니다.'],
-    };
-  }
+  return await getPendingCommandHealth(pgPool, {
+    dbName: 'claude',
+    table: 'bot_commands',
+    toBot: 'claude-lead',
+    pendingWarnThreshold: 3,
+    ageWarnThresholdMinutes: 15,
+    failureReason: '클로드 pending 명령 상태 조회에 실패했습니다.',
+  });
 }
 
 function getOpsHealthPriority(row) {
