@@ -39,9 +39,12 @@ from datetime import date as date_type, timedelta
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
     from bots.ska.lib.rag_client import RagClient as _RagClient
+    from bots.ska.lib.feature_store import ensure_training_feature_table, sync_training_feature_store
     _rag = _RagClient()
 except Exception:
     _rag = None
+    ensure_training_feature_table = None
+    sync_training_feature_store = None
 
 warnings.filterwarnings('ignore')  # Prophet Stan 경고 억제
 
@@ -1256,6 +1259,8 @@ def run(mode='daily', base_date_str=None, output_json=False):
     try:
         # forecast_results 테이블 보장
         ensure_forecast_results_table(con)
+        if ensure_training_feature_table:
+            ensure_training_feature_table(con)
 
         results = run_forecast(con, base_date, periods)
         saved   = save_forecast(con, results)
@@ -1266,6 +1271,9 @@ def run(mode='daily', base_date_str=None, output_json=False):
         if mode == 'daily' and results:
             save_forecast_result(con, results[0]['date'], results[0], mape=recent_mape)
             print(f'[FORECAST] ✅ forecast_results 저장 ({results[0]["date"]})')
+        if sync_training_feature_store:
+            synced = sync_training_feature_store(con, days=365)
+            print(f'[FORECAST] ✅ training_feature_daily 동기화 ({synced}행 대상)')
 
     except ValueError as e:
         print(f'[FORECAST] ❌ {e}')

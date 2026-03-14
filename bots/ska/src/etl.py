@@ -19,6 +19,9 @@ import psycopg2
 from psycopg2.extras import DictCursor
 from datetime import datetime, timedelta, date as date_type
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
+from bots.ska.lib.feature_store import ensure_training_feature_table, sync_training_feature_store
+
 PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
@@ -155,6 +158,8 @@ def run_etl(days_back=90):
     ska_con = psycopg2.connect(PG_SKA)
 
     try:
+        ensure_training_feature_table(ska_con)
+
         # daily_summary 로드 (dict-style row access)
         summary_rows = _dict_qry(res_con, """
             SELECT date, total_amount, pickko_total, pickko_study_room, general_revenue
@@ -212,12 +217,14 @@ def run_etl(days_back=90):
         # ska-009: 어제 MAPE 추적
         yesterday = today - timedelta(days=1)
         track_forecast_accuracy(res_con, ska_con, yesterday)
+        synced = sync_training_feature_store(ska_con, days=max(days_back, 365))
 
         # 결과 확인
         total_rows = _one(ska_con, "SELECT COUNT(*) FROM revenue_daily")[0]
         nonzero    = _one(ska_con, "SELECT COUNT(*) FROM revenue_daily WHERE actual_revenue > 0")[0]
         print(f'[ETL] ✅ 완료: {upserted}건 upsert (스킵 {skipped}건)')
         print(f'[ETL] revenue_daily 총 {total_rows}행 / 매출 기록 있는 날: {nonzero}일')
+        print(f'[ETL] training_feature_daily 동기화 완료 ({synced}행 대상)')
 
         # 최근 5일 미리보기
         preview = _qry(ska_con, """

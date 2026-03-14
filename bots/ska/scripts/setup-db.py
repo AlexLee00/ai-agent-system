@@ -4,6 +4,11 @@ ska-001: PostgreSQL ska 스키마 생성
 """
 import psycopg2
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
+
+from bots.ska.lib.feature_store import ensure_training_feature_table
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 
@@ -90,6 +95,8 @@ def setup():
         )
     """)
 
+    ensure_training_feature_table(con)
+
     con.commit()
     cur.close()
     con.close()
@@ -100,6 +107,7 @@ def setup():
     print('  - forecast')
     print('  - exam_events')
     print('  - forecast_accuracy')
+    print('  - training_feature_daily')
 
 
 if __name__ == '__main__':
