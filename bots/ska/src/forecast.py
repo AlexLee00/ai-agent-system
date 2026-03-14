@@ -51,6 +51,9 @@ MODEL_VERSION  = 'prophet-v3'
 TEMP_DEFAULT   = 15.0   # 기온 기본값 (°C) — 수집 누락 시
 MIN_TRAIN_DAYS = 14     # 최소 학습 데이터 일수
 WEEKDAY_KO     = ['월', '화', '수', '목', '금', '토', '일']
+CALIBRATION_LOOKBACK_DAYS = 56
+CALIBRATION_MAX_RATIO = 0.12
+RESERVATION_ADJUSTMENT_WEIGHT = 0.35
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -395,6 +398,116 @@ def get_reservation_count(con, target_date_str):
         return 0  # 조회 실패 시 무시
 
 
+def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
+    """최근 예측-실적 오차와 예약 패턴 기반 보정값 산출"""
+    rows = _qry(con, """
+        WITH latest_forecasts AS (
+            SELECT
+                fr.forecast_date,
+                fr.predictions,
+                ROW_NUMBER() OVER (
+                    PARTITION BY fr.forecast_date
+                    ORDER BY fr.created_at DESC, fr.id DESC
+                ) AS rn
+            FROM forecast_results fr
+            WHERE fr.forecast_date >= current_date - %s
+              AND fr.forecast_date < current_date
+        )
+        SELECT
+            lf.forecast_date,
+            EXTRACT(DOW FROM lf.forecast_date)::integer AS dow,
+            rd.actual_revenue,
+            (lf.predictions->>'yhat')::float AS predicted_revenue,
+            COALESCE(rd.total_reservations, 0) AS total_reservations
+        FROM latest_forecasts lf
+        JOIN revenue_daily rd
+          ON rd.date = lf.forecast_date
+        WHERE lf.rn = 1
+          AND rd.actual_revenue > 0
+    """, (days,))
+
+    weekday_bias = {}
+    reservation_baseline = {}
+    revenue_per_reservation = 0.0
+
+    if not rows:
+        return {
+            'weekday_bias': weekday_bias,
+            'reservation_baseline': reservation_baseline,
+            'revenue_per_reservation': revenue_per_reservation,
+        }
+
+    bias_buckets = {i: [] for i in range(7)}
+    reservation_buckets = {i: [] for i in range(7)}
+    revenue_per_reservation_samples = []
+
+    for row in rows:
+        dow = int(row[1] or 0)
+        actual = float(row[2] or 0.0)
+        predicted = float(row[3] or 0.0)
+        total_reservations = int(row[4] or 0)
+
+        bias_buckets[dow].append(actual - predicted)
+        reservation_buckets[dow].append(total_reservations)
+        if total_reservations > 0:
+            revenue_per_reservation_samples.append(actual / total_reservations)
+
+    for dow, values in bias_buckets.items():
+        if values:
+            weekday_bias[dow] = round(sum(values) / len(values))
+    for dow, values in reservation_buckets.items():
+        if values:
+            reservation_baseline[dow] = round(sum(values) / len(values), 2)
+    if revenue_per_reservation_samples:
+        revenue_per_reservation = sum(revenue_per_reservation_samples) / len(revenue_per_reservation_samples)
+
+    return {
+        'weekday_bias': weekday_bias,
+        'reservation_baseline': reservation_baseline,
+        'revenue_per_reservation': revenue_per_reservation,
+    }
+
+
+def _apply_result_calibration(result, calibration, target_date):
+    """최근 요일 오차와 예약 선행 지표로 보수적 보정"""
+    if not calibration:
+        result['calibration_adjustment'] = 0
+        result['calibration_notes'] = []
+        return result
+
+    dow = (target_date.weekday() + 1) % 7  # 0=일..6=토
+    weekday_bias = int(calibration.get('weekday_bias', {}).get(dow, 0) or 0)
+    reservation_baseline = float(calibration.get('reservation_baseline', {}).get(dow, 0.0) or 0.0)
+    revenue_per_reservation = float(calibration.get('revenue_per_reservation', 0.0) or 0.0)
+    reservation_count = int(result.get('reservation_count', 0) or 0)
+
+    reservation_adjustment = 0
+    if reservation_baseline > 0 and revenue_per_reservation > 0 and reservation_count > 0:
+        reservation_delta = reservation_count - reservation_baseline
+        reservation_adjustment = round(
+            reservation_delta * revenue_per_reservation * RESERVATION_ADJUSTMENT_WEIGHT
+        )
+
+    raw_adjustment = weekday_bias + reservation_adjustment
+    max_adjustment = round(max(0, result['yhat']) * CALIBRATION_MAX_RATIO)
+    bounded_adjustment = max(-max_adjustment, min(max_adjustment, raw_adjustment))
+
+    result['yhat'] = max(0, result['yhat'] + bounded_adjustment)
+    result['yhat_lower'] = max(0, result['yhat_lower'] + bounded_adjustment)
+    result['yhat_upper'] = max(result['yhat_lower'], result['yhat_upper'] + bounded_adjustment)
+    result['calibration_adjustment'] = bounded_adjustment
+
+    notes = []
+    if weekday_bias:
+        notes.append(f'weekday_bias:{weekday_bias:+,}')
+    if reservation_adjustment:
+        notes.append(f'reservation:{reservation_adjustment:+,}')
+    if raw_adjustment != bounded_adjustment:
+        notes.append(f'capped:{bounded_adjustment:+,}')
+    result['calibration_notes'] = notes
+    return result
+
+
 # ─── forecast_results 테이블 (n8n 연동) ──────────────────────────────────────
 
 def ensure_forecast_results_table(con):
@@ -465,6 +578,7 @@ def run_forecast(con, base_date, periods):
     returns: list of result dicts (yhat = 앙상블 최종값)
     """
     weekday_avg = load_weekday_avg(con)
+    calibration = _load_recent_calibration_stats(con)
     hist_df = load_history(con)
 
     if len(hist_df) < MIN_TRAIN_DAYS:
@@ -488,7 +602,10 @@ def run_forecast(con, base_date, periods):
                 'yhat_upper':       round(q['prediction'] * 1.2),
                 'is_fallback':      True,
                 'reservation_count': get_reservation_count(con, str(target_d)),
+                'calibration_adjustment': 0,
+                'calibration_notes': [],
             })
+            results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
         return results
 
     print(f'[FORECAST] 학습 데이터: {len(hist_df)}일 ({hist_df["ds"].min().date()}~{hist_df["ds"].max().date()})')
@@ -601,7 +718,11 @@ def run_forecast(con, base_date, periods):
             'yhat_upper':        yhat_upper,
             'is_fallback':       is_fallback,
             'reservation_count': res_cnt,
+            'calibration_adjustment': 0,
+            'calibration_notes': [],
         })
+
+        results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
 
     print(f'[FORECAST] 앙상블 예측 완료: {len(results)}일')
     return results
@@ -711,6 +832,12 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
         lines.append('  방학 중 📚')
     else:
         lines.append('  이벤트: 없음')
+
+    calibration_adjustment = r.get('calibration_adjustment', 0)
+    calibration_notes = r.get('calibration_notes') or []
+    if calibration_adjustment:
+        note_suffix = f" ({', '.join(calibration_notes)})" if calibration_notes else ''
+        lines.append(f'  최근 오차/예약 보정: {calibration_adjustment:+,}원{note_suffix}')
 
     lines.append('')
 
