@@ -50,7 +50,7 @@
     <key>NODE_ENV</key>
     <string>production</string>
     <key>PAPER_MODE</key>
-    <string>true</string>
+    <string>false</string>
   </dict>
 
   <key>RunAtLoad</key>
