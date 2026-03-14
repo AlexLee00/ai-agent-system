@@ -892,15 +892,20 @@ def ensure_forecast_results_table(con):
     cur.close()
 
 
-def save_forecast_result(con, forecast_date, result, mape=None):
+def save_forecast_result(con, forecast_date, result, mape=None, forecast_mode='daily'):
     """예측 결과를 ska.forecast_results에 저장 → n8n/레베카에서 조회 가능"""
     predictions = {
         'yhat':         result['yhat'],
         'yhat_prophet': result.get('yhat_prophet', result['yhat']),
         'yhat_sarima':  result.get('yhat_sarima'),
         'yhat_quick':   result.get('yhat_quick'),
+        'base_forecast': result.get('base_forecast'),
+        'env_score': result.get('env_score'),
+        'env_info': result.get('env_info'),
         'yhat_lower':   result['yhat_lower'],
         'yhat_upper':   result['yhat_upper'],
+        'confidence': result.get('confidence', _calc_confidence(result)),
+        'is_fallback': result.get('is_fallback', False),
         'reservation_count': result.get('reservation_count', 0),
         'reservation_booked_hours': result.get('reservation_booked_hours', 0.0),
         'reservation_density': result.get('reservation_density', 0.0),
@@ -911,8 +916,11 @@ def save_forecast_result(con, forecast_date, result, mape=None):
         'reservation_morning_count': result.get('reservation_morning_count', 0),
         'reservation_afternoon_count': result.get('reservation_afternoon_count', 0),
         'reservation_evening_count': result.get('reservation_evening_count', 0),
+        'calibration_adjustment': result.get('calibration_adjustment', 0),
+        'calibration_notes': result.get('calibration_notes', []),
     }
     params = _load_model_params()
+    params['forecast_mode'] = forecast_mode
     preds_json  = json.dumps(predictions)
     params_json = json.dumps(params)
     cur = con.cursor()
@@ -928,6 +936,15 @@ def save_forecast_result(con, forecast_date, result, mape=None):
     ))
     con.commit()
     cur.close()
+
+
+def save_forecast_results(con, results, forecast_mode='daily'):
+    """forecast_results를 단일 예측 원본으로 사용"""
+    saved = 0
+    for result in results:
+        save_forecast_result(con, result['date'], result, mape=None, forecast_mode=forecast_mode)
+        saved += 1
+    return saved
 
 
 def get_recent_mape(con, days=7):
@@ -1140,39 +1157,6 @@ def run_forecast(con, base_date, periods):
 
     print(f'[FORECAST] 앙상블 예측 완료: {len(results)}일')
     return results
-
-
-# ─── PostgreSQL 저장 ────────────────────────────────────────────────────────────
-
-def save_forecast(con, results):
-    """forecast 테이블에 저장 (target_date 기존 예측 교체)"""
-    target_dates = [str(r['date']) for r in results]
-    cur = con.cursor()
-
-    for d in target_dates:
-        cur.execute("DELETE FROM forecast WHERE target_date = %s", (d,))
-
-    for r in results:
-        confidence = 0.15 if r.get('is_fallback') else _calc_confidence(r)
-        cur.execute("""
-            INSERT INTO forecast
-              (target_date, predicted_revenue, base_forecast,
-               env_score, yhat_lower, yhat_upper, confidence, model_version)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            str(r['date']),
-            r['yhat'],
-            r['base_forecast'],
-            float(r['env_score']),
-            r['yhat_lower'],
-            r['yhat_upper'],
-            confidence,
-            MODEL_VERSION,
-        ))
-
-    cur.close()
-    con.commit()
-    return len(results)
 
 
 def _calc_confidence(r):
@@ -1715,14 +1699,8 @@ def run(mode='daily', base_date_str=None, output_json=False):
             ensure_training_feature_table(con)
 
         results = run_forecast(con, base_date, periods)
-        saved   = save_forecast(con, results)
-        print(f'[FORECAST] ✅ {saved}건 저장 → forecast 테이블')
-
-        # forecast_results에 저장 (n8n/레베카 연동용) — daily만
-        recent_mape = get_recent_mape(con)
-        if mode == 'daily' and results:
-            save_forecast_result(con, results[0]['date'], results[0], mape=recent_mape)
-            print(f'[FORECAST] ✅ forecast_results 저장 ({results[0]["date"]})')
+        saved   = save_forecast_results(con, results, forecast_mode=mode)
+        print(f'[FORECAST] ✅ {saved}건 저장 → forecast_results')
         if sync_training_feature_store:
             synced = sync_training_feature_store(con, days=365)
             print(f'[FORECAST] ✅ training_feature_daily 동기화 ({synced}행 대상)')

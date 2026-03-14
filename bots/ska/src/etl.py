@@ -90,14 +90,6 @@ def track_forecast_accuracy(res_con, ska_con, yesterday):
         LIMIT 1
     """, (yesterday_str,))
     if not forecast_row:
-        forecast_row = _one(ska_con, """
-            SELECT predicted_revenue, model_version
-            FROM forecast
-            WHERE target_date = %s
-            ORDER BY created_at DESC
-            LIMIT 1
-        """, (yesterday_str,))
-    if not forecast_row:
         print(f'[ETL] ⚠️ MAPE: 어제({yesterday_str}) 예측값 없음 — 스킵')
         return None
 
