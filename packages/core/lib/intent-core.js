@@ -336,6 +336,46 @@ function buildPromotionEventWhere(filters = {}) {
   };
 }
 
+function buildUnrecognizedReportQueries({ days = 7, candidateLimit = 20 } = {}) {
+  return {
+    unrecognizedSql: `
+      SELECT
+             text,
+             COUNT(*) as cnt,
+             MAX(llm_intent) as llm_intent,
+             MAX(promoted_to) as promoted_to,
+             MAX(created_at) as last_seen
+      FROM unrecognized_intents
+      WHERE created_at > NOW() - INTERVAL '${Number(days)} days'
+      GROUP BY text
+      ORDER BY cnt DESC, last_seen DESC
+      LIMIT 20
+    `,
+    candidatesSql: `
+      SELECT
+        c.id,
+        c.normalized_text,
+        c.sample_text,
+        c.suggested_intent,
+        c.occurrence_count,
+        c.confidence,
+        c.auto_applied,
+        e.event_type AS latest_event_type,
+        e.metadata AS latest_event_metadata
+      FROM intent_promotion_candidates c
+      LEFT JOIN LATERAL (
+        SELECT event_type, metadata
+        FROM intent_promotion_events
+        WHERE candidate_id = c.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) e ON true
+      ORDER BY c.last_seen_at DESC
+      LIMIT ${Number(candidateLimit)}
+    `,
+  };
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -367,4 +407,5 @@ module.exports = {
   buildPromotionCompactCandidateLine,
   buildPromotionCandidateWhere,
   buildPromotionEventWhere,
+  buildUnrecognizedReportQueries,
 };
