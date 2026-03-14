@@ -200,7 +200,7 @@ function _adjustMaxByFNG(baseMax, fng) {
 
 function _adjustPaperExploration(baseMax, market) {
   if (!isPaperMode()) return baseMax;
-  if (market === 'domestic' || market === 'overseas') return Math.max(baseMax + 3, Math.ceil(baseMax * 1.6));
+  if (market === 'domestic' || market === 'overseas') return Math.max(baseMax + 15, Math.ceil(baseMax * 2));
   if (market === 'crypto') return Math.max(baseMax + 1, Math.ceil(baseMax * 1.15));
   return baseMax;
 }
