@@ -17,6 +17,7 @@ const ROOT   = path.join(__dirname, '../../..');
 const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
 const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
 const { getSecret } = require('../lib/secrets');
+const { ensureChatSchema, handleChatMessage } = require('../lib/chat-agent');
 
 // ── Phase 2 봇 ────────────────────────────────────────────────────────
 const emily  = require('./emily');
@@ -97,6 +98,29 @@ async function _getUser(telegramId) {
     `SELECT * FROM worker.users WHERE telegram_id = $1 AND deleted_at IS NULL`, [telegramId]);
 }
 
+async function _getLatestTelegramSession(companyId, userId) {
+  return pgPool.get(SCHEMA,
+    `SELECT id
+     FROM worker.chat_sessions
+     WHERE company_id=$1 AND user_id=$2 AND channel='telegram' AND deleted_at IS NULL
+     ORDER BY last_at DESC
+     LIMIT 1`,
+    [companyId, userId]);
+}
+
+async function _handleNaturalLanguage(text, user) {
+  await ensureChatSchema();
+  const latest = await _getLatestTelegramSession(user.company_id, user.id);
+  const result = await handleChatMessage({
+    text,
+    sessionId: latest?.id || null,
+    user,
+    companyId: user.company_id,
+    channel: 'telegram',
+  });
+  return result?.reply || '요청을 처리했지만 응답을 생성하지 못했습니다.';
+}
+
 // ── 명령어 처리 ──────────────────────────────────────────────────────
 async function handleCommand(text, fromTelegramId) {
   const parts  = text.split(/\s+/);
@@ -128,10 +152,13 @@ async function handleCommand(text, fromTelegramId) {
     if (reply !== null) return reply;
   }
 
-  if (!['/worker','/companies','/users','/approve','/reject'].includes(cmd)) return null;
-
   const user = fromTelegramId ? await _getUser(fromTelegramId) : null;
   if (!user) return '⚠️ 등록되지 않은 사용자입니다.\n워커팀 웹(<code>http://localhost:4000</code>)에서 계정을 확인하세요.';
+
+  if (!['/worker','/companies','/users','/approve','/reject'].includes(cmd)) {
+    if (cmd.startsWith('/')) return null;
+    return _handleNaturalLanguage(text, user);
+  }
 
   try {
     if (cmd === '/worker') return _helpMessage(user);
@@ -233,6 +260,7 @@ function _helpMessage(user) {
   if (['master','admin'].includes(user.role)) lines.push(``, `  /users        — 사용자 목록`);
   if (user.role === 'master') lines.push(`  /companies    — 업체 목록`);
   lines.push(``, `🌐 웹: <code>http://localhost:4000</code> (API)`, `🌐 대시보드: <code>http://localhost:4001</code>`);
+  lines.push(``, `💬 자연어 예시:`, `  내일 오전 10시 김대리 업체 미팅 잡아줘`, `  오늘 일정 보여줘`, `  지난주 매출 보고서 만들어줘`);
   return lines.join('\n');
 }
 
