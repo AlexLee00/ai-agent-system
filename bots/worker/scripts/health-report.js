@@ -24,8 +24,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
-  checkHttp,
-  fetchJson,
+  buildHttpChecks,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -33,30 +32,39 @@ const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 
 async function buildEndpointHealth() {
-  const webOk = await checkHttp('http://127.0.0.1:4000/api/health');
-  const nextOk = await checkHttp('http://127.0.0.1:4001');
-  const apiHealth = await fetchJson('http://127.0.0.1:4000/api/health');
-  const websocketReady = Boolean(apiHealth?.websocket?.enabled && apiHealth?.websocket?.ready);
+  const checks = await buildHttpChecks([
+    {
+      label: 'workerWeb',
+      url: 'http://127.0.0.1:4000/api/health',
+      isOk: Boolean,
+      okText: '  worker web API: 정상',
+      warnText: '  worker web API: 응답 없음',
+    },
+    {
+      label: 'workerNext',
+      url: 'http://127.0.0.1:4001',
+      isOk: Boolean,
+      okText: '  worker nextjs: 정상',
+      warnText: '  worker nextjs: 응답 없음',
+    },
+    {
+      label: 'apiHealth',
+      url: 'http://127.0.0.1:4000/api/health',
+      expectJson: true,
+      isOk: (data) => Boolean(data?.websocket?.enabled && data?.websocket?.ready),
+      okText: (data) => `  websocket: 준비됨 (clients ${Number(data?.websocket?.clients || 0)})`,
+      warnText: '  websocket: 준비 안 됨',
+    },
+  ]);
+  const apiHealth = checks.results.apiHealth || null;
   const websocketClients = Number(apiHealth?.websocket?.clients || 0);
 
-  const ok = [];
-  const warn = [];
-
-  if (webOk) ok.push('  worker web API: 정상');
-  else warn.push('  worker web API: 응답 없음');
-
-  if (nextOk) ok.push('  worker nextjs: 정상');
-  else warn.push('  worker nextjs: 응답 없음');
-
-  if (websocketReady) ok.push(`  websocket: 준비됨 (clients ${websocketClients})`);
-  else warn.push('  websocket: 준비 안 됨');
-
   return {
-    ok,
-    warn,
-    webOk,
-    nextOk,
-    websocketReady,
+    ok: checks.ok,
+    warn: checks.warn,
+    webOk: Boolean(checks.results.workerWeb),
+    nextOk: Boolean(checks.results.workerNext),
+    websocketReady: Boolean(apiHealth?.websocket?.enabled && apiHealth?.websocket?.ready),
     websocketClients,
   };
 }

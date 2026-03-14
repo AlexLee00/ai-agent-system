@@ -23,7 +23,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
-  checkFileStaleness,
+  buildFileActivityHealth,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.ska.naver-monitor'];
@@ -41,30 +41,15 @@ const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 
-function checkNaverLogStaleness() {
-  return checkFileStaleness(NAVER_LOG, LOG_STALE_MS);
-}
-
-function buildMonitorHealth(logState) {
-  const ok = [];
-  const warn = [];
-
-  if (!logState.exists) {
-    warn.push('  naver-monitor 로그: 파일 없음');
-    return { ok, warn, minutesAgo: null };
-  }
-
-  if (logState.stale) {
-    warn.push(`  naver-monitor 로그: ${logState.minutesAgo}분 무활동`);
-  } else {
-    ok.push(`  naver-monitor 로그: 최근 ${logState.minutesAgo}분 이내 활동`);
-  }
-
-  return {
-    ok,
-    warn,
-    minutesAgo: logState.minutesAgo,
-  };
+function buildMonitorHealth() {
+  return buildFileActivityHealth({
+    label: 'naver-monitor 로그',
+    filePath: NAVER_LOG,
+    staleMs: LOG_STALE_MS,
+    missingText: '  naver-monitor 로그: 파일 없음',
+    staleText: (state) => `  naver-monitor 로그: ${state.minutesAgo}분 무활동`,
+    okText: (state) => `  naver-monitor 로그: 최근 ${state.minutesAgo}분 이내 활동`,
+  });
 }
 
 function buildDecision(serviceRows, monitorHealth) {
@@ -115,7 +100,7 @@ async function buildReport() {
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => label.replace('ai.ska.', ''),
   });
-  const monitorHealth = buildMonitorHealth(checkNaverLogStaleness());
+  const monitorHealth = buildMonitorHealth();
   const decision = buildDecision(serviceRows, monitorHealth);
 
   const report = {
