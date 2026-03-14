@@ -2,6 +2,11 @@
 
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const {
+  ensureChatSchema,
+  saveMessage,
+  updateSession,
+} = require('../lib/chat-agent');
 
 const emily = require('./emily');
 const noah = require('./noah');
@@ -53,6 +58,66 @@ async function finishTask(taskId, status, payload) {
         completed_at=CASE WHEN $4 THEN NOW() ELSE completed_at END
     WHERE id=$1
   `, [taskId, status, JSON.stringify(payload || {}), done]);
+}
+
+async function emitTaskEvent(task, status, summary, ui) {
+  const payload = {
+    companyId: task.company_id,
+    userId: task.user_id,
+    sessionId: task.session_id || null,
+    taskId: task.id,
+    targetBot: task.target_bot,
+    status,
+    reply: summary,
+    ui: ui || null,
+    ts: new Date().toISOString(),
+  };
+  await pgPool.run(SCHEMA, 'SELECT pg_notify($1, $2)', [
+    'worker_agent_task_events',
+    JSON.stringify(payload),
+  ]);
+}
+
+function buildTaskUi(task, status, summary) {
+  return {
+    type: 'route_result',
+    target: task.target_bot,
+    status,
+    summary,
+    task: {
+      id: task.id,
+      title: task.title,
+      target_bot: task.target_bot,
+      status,
+    },
+  };
+}
+
+async function publishTaskResult(task, status, summary, details = []) {
+  if (!task.session_id) return;
+  await ensureChatSchema();
+  const ui = buildTaskUi(task, status, summary);
+  await saveMessage({
+    sessionId: task.session_id,
+    companyId: task.company_id,
+    userId: task.user_id,
+    role: 'assistant',
+    content: summary,
+    intent: 'task_result',
+    metadata: {
+      ui,
+      task_result: {
+        id: task.id,
+        target_bot: task.target_bot,
+        status,
+        details,
+      },
+    },
+  });
+  await updateSession(task.session_id, task.company_id, task.user_id, {
+    last_intent: 'task_result',
+  });
+  await emitTaskEvent(task, status, summary, ui);
 }
 
 function summarizeList(prefix, items) {
@@ -208,6 +273,7 @@ async function processOne() {
       result_summary: result.summary,
       result_details: result.details || [],
     });
+    await publishTaskResult(task, 'completed', result.summary, result.details || []);
     console.log(`[worker-task-runner] completed #${task.id} ${task.target_bot}`);
   } catch (error) {
     await finishTask(task.id, 'failed', {
@@ -215,6 +281,7 @@ async function processOne() {
       handled_by: task.target_bot,
       error: error.message,
     });
+    await publishTaskResult(task, 'failed', `${task.target_bot} 업무 처리 중 오류가 발생했습니다: ${error.message}`);
     console.error(`[worker-task-runner] failed #${task.id} ${task.target_bot}: ${error.message}`);
   }
 

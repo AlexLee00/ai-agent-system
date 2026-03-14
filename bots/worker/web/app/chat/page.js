@@ -70,6 +70,31 @@ function ScheduleCard({ ui }) {
     );
   }
 
+  if (ui.type === 'route_result') {
+    return (
+      <div className={`rounded-2xl border p-4 shadow-sm ${
+        ui.status === 'completed'
+          ? 'border-emerald-200 bg-emerald-50'
+          : 'border-rose-200 bg-rose-50'
+      }`}>
+        <h3 className={`text-sm font-semibold mb-1 ${
+          ui.status === 'completed' ? 'text-emerald-900' : 'text-rose-900'
+        }`}>
+          업무 처리 {ui.status === 'completed' ? '완료' : '실패'}
+        </h3>
+        <p className={`text-sm ${
+          ui.status === 'completed' ? 'text-emerald-800' : 'text-rose-800'
+        }`}>
+          {ui.target} 봇이 응답했습니다.
+        </p>
+        <div className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-sm">
+          <p className="font-semibold text-gray-900">{ui.task?.title}</p>
+          {ui.summary && <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap">{ui.summary}</p>}
+        </div>
+      </div>
+    );
+  }
+
   if (ui.type === 'hint') {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -184,6 +209,24 @@ export default function WorkerChatPage() {
             if (sessionData?.sessions) setSessions(sessionData.sessions);
             const taskData = await api.get('/agent-tasks?limit=10').catch(() => null);
             if (taskData?.tasks) setAgentTasks(taskData.tasks);
+            return;
+          }
+          if (data.type === 'chat.task_result') {
+            setLiveStatus('실시간 연결됨');
+            const taskData = await api.get('/agent-tasks?limit=10').catch(() => null);
+            if (taskData?.tasks) setAgentTasks(taskData.tasks);
+            const sessionData = await api.get('/chat/sessions').catch(() => null);
+            if (sessionData?.sessions) setSessions(sessionData.sessions);
+            if (data.sessionId && data.sessionId === sessionRef.current) {
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: data.reply,
+                createdAt: data.ts || new Date().toISOString(),
+                intent: 'task_result',
+                metadata: { ui: data.ui || null },
+              }]);
+              setLatestUi(data.ui || null);
+            }
             return;
           }
           if (data.type === 'chat.error') {
