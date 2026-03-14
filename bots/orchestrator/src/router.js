@@ -162,6 +162,20 @@ let _unrecTableReady = false;
 const AUTO_PROMOTE_WINDOW_DAYS = 30;
 const AUTO_PROMOTE_MIN_COUNT = 5;
 const AUTO_PROMOTE_MIN_CONFIDENCE = 0.8;
+const AUTO_PROMOTE_THRESHOLDS = {
+  default:       { minCount: AUTO_PROMOTE_MIN_COUNT, minConfidence: AUTO_PROMOTE_MIN_CONFIDENCE },
+  luna_query:    { minCount: 4, minConfidence: 0.75 },
+  ska_query:     { minCount: 4, minConfidence: 0.75 },
+  claude_query:  { minCount: 4, minConfidence: 0.75 },
+  blog_query:    { minCount: 4, minConfidence: 0.75 },
+  worker_query:  { minCount: 4, minConfidence: 0.75 },
+  status:        { minCount: 3, minConfidence: 0.7 },
+  queue:         { minCount: 3, minConfidence: 0.7 },
+  brief:         { minCount: 3, minConfidence: 0.7 },
+  system_logs:   { minCount: 3, minConfidence: 0.7 },
+  telegram_status:{ minCount: 3, minConfidence: 0.7 },
+  speed_test:    { minCount: 3, minConfidence: 0.7 },
+};
 const SAFE_AUTO_PROMOTE_INTENTS = new Set([
   'status',
   'queue',
@@ -204,6 +218,14 @@ function isSafeAutoPromoteIntent(intent = '') {
   if (!value) return false;
   if (SAFE_AUTO_PROMOTE_INTENTS.has(value)) return true;
   return SAFE_AUTO_PROMOTE_PREFIXES.some(prefix => value === prefix || value.startsWith(`${prefix}/`));
+}
+
+function getAutoPromoteThreshold(intent = '') {
+  const value = String(intent || '').trim();
+  if (!value) return AUTO_PROMOTE_THRESHOLDS.default;
+  if (AUTO_PROMOTE_THRESHOLDS[value]) return AUTO_PROMOTE_THRESHOLDS[value];
+  const family = summarizeIntentFamily(value);
+  return AUTO_PROMOTE_THRESHOLDS[family] || AUTO_PROMOTE_THRESHOLDS.default;
 }
 
 async function _ensureUnrecTable() {
@@ -326,7 +348,7 @@ async function evaluateAutoPromotion(text) {
   `, [String(AUTO_PROMOTE_WINDOW_DAYS)]);
 
   const matching = rows.filter(r => normalizeIntentText(r.text) === normalized);
-  if (matching.length < AUTO_PROMOTE_MIN_COUNT) return null;
+  if (matching.length < 2) return null;
   if (matching.some(r => r.promoted_to)) return null;
 
   const counts = new Map();
@@ -337,6 +359,8 @@ async function evaluateAutoPromotion(text) {
   if (counts.size === 0) return null;
 
   const [suggestedIntent, dominantCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const threshold = getAutoPromoteThreshold(suggestedIntent);
+  if (matching.length < threshold.minCount) return null;
   const confidence = dominantCount / matching.length;
   const pattern = buildAutoLearnPattern(normalized);
   const sampleText = matching[0]?.text || normalized;
@@ -351,7 +375,7 @@ async function evaluateAutoPromotion(text) {
     learnedPattern: pattern,
   });
 
-  if (confidence < AUTO_PROMOTE_MIN_CONFIDENCE || !pattern) return null;
+  if (confidence < threshold.minConfidence || !pattern) return null;
   if (!isSafeAutoPromoteIntent(suggestedIntent)) {
     const candidate = await pgPool.get('claude', `
       SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
@@ -367,6 +391,7 @@ async function evaluateAutoPromotion(text) {
       metadata: {
         occurrenceCount: matching.length,
         confidence,
+        threshold,
         reason: 'unsafe_intent',
       },
     });
@@ -395,7 +420,7 @@ async function evaluateAutoPromotion(text) {
     eventType: 'auto_apply',
     learnedPattern: pattern,
     actor: 'system',
-    metadata: { occurrenceCount: matching.length, confidence },
+    metadata: { occurrenceCount: matching.length, confidence, threshold },
   });
   return { normalized, suggestedIntent, occurrenceCount: matching.length, confidence, autoApplied: true };
 }
@@ -705,7 +730,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('최근 변경: 없음');
     }
     lines.push('');
-    lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
+    lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일, intent family별 최소 반복/일치율 적용`);
     lines.push('안전정책: 자동반영은 query/status/report 성격만 허용, action 계열은 후보로만 유지');
     lines.push('조회: /promotions applied | /promotions pending | /promotions intent:luna_query');
     lines.push('요약: /promotions summary');
