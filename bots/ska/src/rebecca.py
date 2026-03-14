@@ -584,12 +584,45 @@ def get_weekly_kpi(week_start, week_end):
         }
 
 
+def build_accuracy_health(accuracy_list):
+    valid = [a for a in accuracy_list if a.get('mape') is not None]
+    if not valid:
+        return None
+
+    avg_bias = round(sum(a['error'] for a in valid) / len(valid))
+
+    weekday_buckets = {}
+    for item in valid:
+        wd = date_type.fromisoformat(item['date']).weekday()
+        weekday_buckets.setdefault(wd, []).append(item)
+
+    weekday_rows = []
+    for wd, items in sorted(weekday_buckets.items()):
+        weekday_rows.append({
+            'weekday': WEEKDAY_KO[wd],
+            'count': len(items),
+            'avg_mape': round(sum(i['mape'] for i in items) / len(items), 1),
+            'avg_bias': round(sum(i['error'] for i in items) / len(items)),
+        })
+
+    worst_cases = sorted(valid, key=lambda a: (-a['mape'], -abs(a['error'])))[:2]
+    worst_weekday = max(weekday_rows, key=lambda row: (row['avg_mape'], abs(row['avg_bias'])), default=None)
+
+    return {
+        'avg_bias': avg_bias,
+        'weekday_rows': weekday_rows,
+        'worst_weekday': worst_weekday,
+        'worst_cases': worst_cases,
+    }
+
+
 def format_weekly_review(report):
     """주간 회고 리포트 텔레그램 포맷"""
     w_start = date_type.fromisoformat(report['week_start'])
     w_end   = date_type.fromisoformat(report['week_end'])
     summary = report['summary']
     accuracy_list = report['accuracy']
+    accuracy_health = report.get('accuracy_health')
     next_events   = report['next_events']
 
     lines = [
@@ -630,6 +663,25 @@ def format_weekly_review(report):
                      else ('🟡 주의' if avg_mape <= 20
                            else '🔴 모델 검토 필요'))
             lines.append(f'   주간 평균 MAPE: {avg_mape:.1f}% {grade}')
+            if accuracy_health:
+                bias = accuracy_health['avg_bias']
+                bias_sign = '+' if bias >= 0 else ''
+                lines.append(f'   평균 편향: {bias_sign}{bias:,}원')
+                worst_weekday = accuracy_health.get('worst_weekday')
+                if worst_weekday:
+                    ww_bias = worst_weekday['avg_bias']
+                    ww_sign = '+' if ww_bias >= 0 else ''
+                    lines.append(
+                        f'   취약 요일: {worst_weekday["weekday"]} '
+                        f'(MAPE {worst_weekday["avg_mape"]:.1f}% / 편향 {ww_sign}{ww_bias:,}원)'
+                    )
+                worst_cases = accuracy_health.get('worst_cases') or []
+                if worst_cases:
+                    highlights = []
+                    for item in worst_cases:
+                        d = date_type.fromisoformat(item['date'])
+                        highlights.append(f'{d.month}/{d.day} {item["mape"]:.1f}%')
+                    lines.append('   큰 오차: ' + ' / '.join(highlights))
 
     elif report.get('forecast_mape'):
         mape_parts = []
@@ -700,6 +752,7 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
         'next_end':      str(next_end),
         'summary':       summary,
         'accuracy':      accuracy,
+        'accuracy_health': build_accuracy_health(accuracy),
         'forecast_mape': forecast_mape,
         'next_events':   next_events,
         'kpi':           kpi,
