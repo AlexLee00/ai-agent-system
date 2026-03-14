@@ -22,6 +22,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
+  fetchJson,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.claude.commander'];
@@ -64,16 +65,6 @@ function isExpectedExit(label, exitCode) {
     return hasRecentDexterReport();
   }
   return false;
-}
-
-async function fetchJson(url) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
 }
 
 async function buildDashboardHealth() {

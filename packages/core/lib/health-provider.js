@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const { execSync } = require('child_process');
 const hsm = require('./health-state-manager');
 
@@ -62,8 +63,45 @@ function buildServiceRows(status, {
   return { ok, warn };
 }
 
+async function checkHttp(url, timeoutMs = 5000) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchJson(url, timeoutMs = 5000) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function checkFileStaleness(filePath, staleMs) {
+  try {
+    const stat = fs.statSync(filePath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    return {
+      exists: true,
+      ageMs,
+      stale: ageMs > staleMs,
+      minutesAgo: Math.floor(ageMs / 60000),
+    };
+  } catch {
+    return { exists: false, ageMs: null, stale: false, minutesAgo: null };
+  }
+}
+
 module.exports = {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
+  checkHttp,
+  fetchJson,
+  checkFileStaleness,
 };
