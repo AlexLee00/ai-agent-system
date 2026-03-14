@@ -1064,7 +1064,8 @@ async function runSkaHealthDirect() {
   });
 }
 
-async function buildUnifiedOpsHealthReport() {
+async function buildUnifiedOpsHealthReport(options = {}) {
+  const mode = String(options.query || '').trim().toLowerCase();
   const root = path.join(__dirname, '..', '..', '..');
   const scripts = {
     luna: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
@@ -1127,6 +1128,24 @@ async function buildUnifiedOpsHealthReport() {
   const reasons = warnCount > 0
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
     : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+
+  if (mode === 'summary') {
+    const lines = ['🧭 통합 운영 헬스 요약', ''];
+    for (const row of rows) {
+      lines.push(`${row.hasWarn ? '⚠️' : '✅'} ${row.title}: ${row.summary}`);
+    }
+    lines.push('');
+    lines.push(...buildHealthDecisionSection({
+      title: '■ 운영 판단',
+      recommended: warnCount > 0,
+      level: warnCount >= 2 ? 'high' : 'medium',
+      reasons,
+      okText: '현재는 추가 조치보다 관찰 유지',
+    }));
+    lines.push('');
+    lines.push('상세: /ops-health');
+    return lines.join('\n');
+  }
 
   return buildHealthReport({
     title: '🧭 통합 운영 헬스 리포트',
@@ -1600,7 +1619,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'ops_health': {
       await notify('⏳ 통합 운영 헬스 확인 중...');
-      return await buildUnifiedOpsHealthReport();
+      return await buildUnifiedOpsHealthReport(args);
     }
 
     case 'luna_health': {
