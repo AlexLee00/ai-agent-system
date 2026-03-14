@@ -545,7 +545,26 @@ function _fetchJSON(url, timeout = 10000) {
     const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout }, res => {
       let body = '';
       res.on('data', c => body += c);
-      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('JSON 파싱 실패')); } });
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const trimmed = body.trim();
+        if (!trimmed) {
+          reject(new Error('빈 응답'));
+          return;
+        }
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+          reject(new Error(`비JSON 응답(${trimmed.slice(0, 40)})`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(trimmed));
+        } catch {
+          reject(new Error('JSON 파싱 실패'));
+        }
+      });
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
