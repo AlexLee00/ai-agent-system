@@ -321,6 +321,20 @@ async function getRecentUnrecognizedIntents(pgPool, {
   `, [String(windowDays)]);
 }
 
+async function getPromotedIntentExamples(pgPool, {
+  schema = 'claude',
+  limit = 30,
+} = {}) {
+  if (!pgPool) return [];
+  return pgPool.query(schema, `
+    SELECT DISTINCT ON (promoted_to) text, promoted_to
+    FROM unrecognized_intents
+    WHERE promoted_to IS NOT NULL
+    ORDER BY promoted_to, created_at DESC
+    LIMIT ${Number(limit)}
+  `);
+}
+
 async function findPromotionCandidateIdByNormalized(pgPool, {
   schema = 'claude',
   normalizedText,
@@ -400,6 +414,7 @@ module.exports = {
   findPromotionCandidate,
   getUnrecognizedReportRows,
   getRecentUnrecognizedIntents,
+  getPromotedIntentExamples,
   findPromotionCandidateIdByNormalized,
   clearPromotedUnrecognized,
   clearPromotionCandidateState,

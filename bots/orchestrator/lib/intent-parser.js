@@ -20,6 +20,7 @@ const {
 } = require('../../../packages/core/lib/intent-core');
 const {
   getIntentLearningPath,
+  getPromotedIntentExamples,
 } = require('../../../packages/core/lib/intent-store');
 
 // ─── 학습 패턴 로더 ─────────────────────────────────────────────────
@@ -37,13 +38,7 @@ const learnedPatternReloader = createLearnedPatternReloader({
 
 const loadDynamicExamples = createDynamicExampleLoader({
   ttlMs: 5 * 60 * 1000,
-  fetchRows: async () => pgPool.query('claude', `
-      SELECT DISTINCT ON (promoted_to) text, promoted_to
-      FROM unrecognized_intents
-      WHERE promoted_to IS NOT NULL
-      ORDER BY promoted_to, created_at DESC
-      LIMIT 30
-    `),
+  fetchRows: async () => getPromotedIntentExamples(pgPool, { schema: 'claude', limit: 30 }),
   formatRow: (r) => `사용자: "${String(r.text || '').slice(0, 60)}" → {"intent": "${r.promoted_to}", "args": {}, "confidence": 0.90}`,
 });
 
