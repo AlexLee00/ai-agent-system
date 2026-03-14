@@ -1081,6 +1081,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     runNodeScriptJson(scripts.ska, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
+  const skaForecast = await getSkaForecastHealthJson();
+  const skaForecastTuning = skaForecast?.tuning_candidate || null;
+  const skaForecastSummary = skaForecast?.summary || null;
+  const skaForecastHasWarn = Boolean(skaForecastTuning?.recommended);
 
   const rows = [
     {
@@ -1119,12 +1123,20 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     {
       title: '스카',
       summary: ska
-        ? `서비스 경고 ${ska.serviceHealth.warnCount}건 / 모니터 경고 ${ska.monitorHealth.warnCount}건`
+        ? `서비스 경고 ${ska.serviceHealth.warnCount}건 / 모니터 경고 ${ska.monitorHealth.warnCount}건${skaForecastHasWarn ? ' / 예측 경고 1건' : ''}`
         : '조회 실패',
       detail: ska
-        ? `  서비스 ${ska.serviceHealth.okCount}/${ska.serviceHealth.warnCount}, 모니터 ${ska.monitorHealth.okCount}/${ska.monitorHealth.warnCount}`
+        ? [
+          `  서비스 ${ska.serviceHealth.okCount}/${ska.serviceHealth.warnCount}, 모니터 ${ska.monitorHealth.okCount}/${ska.monitorHealth.warnCount}`,
+          ...(skaForecastHasWarn
+            ? [
+              `  예측 평균 MAPE ${Number(skaForecastSummary?.avg_mape || 0).toFixed(1)}% / 20% 적중률 ${Number(skaForecastSummary?.hit_rate_20 || 0).toFixed(1)}%`,
+              ...(skaForecastTuning.reasons || []).slice(0, 2).map((reason) => `  • ${reason}`),
+            ]
+            : []),
+        ].join('\n')
         : '  health-report 실행 실패',
-      hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0,
+      hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0 || skaForecastHasWarn,
     },
   ];
 
@@ -1134,6 +1146,9 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
   if (lunaRisk.hasWarn) {
     reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
+  }
+  if (skaForecastHasWarn) {
+    reasons.push(`스카 예측 리스크: ${(skaForecastTuning.reasons || []).slice(0, 2).join(', ')}`);
   }
 
   if (mode === 'alerts') {
