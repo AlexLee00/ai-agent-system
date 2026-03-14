@@ -9,7 +9,7 @@
 const { buildStatus }                    = require('./dashboard');
 const { parseIntent }                    = require('../lib/intent-parser');
 const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteByEvent } = require('../lib/mute-manager');
-const { flushMorningQueue, buildMorningBriefingWithOps }      = require('../lib/night-handler');
+const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
 
@@ -1080,17 +1080,21 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
   ]);
+  const lunaRisk = getLunaRiskSnapshot();
 
   const rows = [
     {
       title: '루나',
       summary: luna
-        ? `서비스 경고 ${luna.serviceHealth.warnCount}건`
+        ? `서비스 경고 ${luna.serviceHealth.warnCount}건${lunaRisk.hasWarn ? ` / 리스크 ${lunaRisk.reasons.length}건` : ''}`
         : '조회 실패',
       detail: luna
-        ? `  정상 ${luna.serviceHealth.okCount} / 경고 ${luna.serviceHealth.warnCount}`
+        ? [
+          `  정상 ${luna.serviceHealth.okCount} / 경고 ${luna.serviceHealth.warnCount}`,
+          ...lunaRisk.lines,
+        ].join('\n')
         : '  health-report 실행 실패',
-      hasWarn: !luna || luna.serviceHealth.warnCount > 0,
+      hasWarn: !luna || luna.serviceHealth.warnCount > 0 || lunaRisk.hasWarn,
     },
     {
       title: '워커',
@@ -1128,6 +1132,9 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const reasons = warnCount > 0
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
     : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+  if (lunaRisk.hasWarn) {
+    reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
+  }
 
   if (mode === 'alerts') {
     const alertRows = rows.filter((row) => row.hasWarn);

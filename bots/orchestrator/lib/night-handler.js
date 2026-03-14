@@ -267,19 +267,22 @@ function pushUniqueLine(lines, line) {
   if (!lines.includes(line)) lines.push(line);
 }
 
-async function buildLunaRiskAlertSnippet() {
+function getLunaRiskSnapshot() {
   const statePath = path.join(process.env.HOME || '', '.openclaw', 'investment-state.json');
   const costPath = path.join(process.env.HOME || '', '.openclaw', 'investment-cost.json');
   const state = readJsonFileSafe(statePath);
   const cost = readJsonFileSafe(costPath);
   const lines = [];
+  const reasons = [];
 
   if (!state?.lastCycleAt) {
     pushUniqueLine(lines, '  • 투자 상태 파일이 없거나 lastCycleAt이 비어 있음');
+    reasons.push('투자 상태 파일 누락');
   } else {
     const ageMinutes = Math.max(0, Math.floor((Date.now() - Number(state.lastCycleAt)) / 60_000));
     if (ageMinutes >= 60) {
       pushUniqueLine(lines, `  • 마지막 루나 사이클이 ${formatAgeMinutes(ageMinutes)} 전 상태로 멈춤`);
+      reasons.push(`사이클 stale ${formatAgeMinutes(ageMinutes)}`);
     }
   }
 
@@ -287,22 +290,36 @@ async function buildLunaRiskAlertSnippet() {
     const usdtAlertMinutes = Math.max(0, Math.floor((Date.now() - Number(state.lastUsdtAlertAt)) / 60_000));
     if (usdtAlertMinutes <= 24 * 60) {
       pushUniqueLine(lines, `  • 최근 USDT 잔고 경고가 ${formatAgeMinutes(usdtAlertMinutes)} 전에 발생`);
+      reasons.push(`USDT 경고 ${formatAgeMinutes(usdtAlertMinutes)} 전`);
     }
   }
 
   if (!cost?.date || !cost?.daily_budget) {
     pushUniqueLine(lines, '  • 비용 추적 상태를 읽지 못함');
+    reasons.push('비용 추적 상태 읽기 실패');
   } else {
     const budgetPct = Number(cost.usage || 0) / Number(cost.daily_budget || 1);
     const isToday = cost.date === kst.today();
     if (!isToday) {
       pushUniqueLine(lines, `  • 비용 스냅샷 날짜가 오래됨 (${cost.date})`);
+      reasons.push(`비용 스냅샷 stale (${cost.date})`);
     } else if (budgetPct >= 0.8) {
       pushUniqueLine(lines, `  • 일일 LLM 비용 사용률 ${(budgetPct * 100).toFixed(1)}%`);
+      reasons.push(`일일 비용 ${(budgetPct * 100).toFixed(1)}%`);
     }
   }
 
-  if (lines.length === 0) return null;
+  return {
+    hasWarn: lines.length > 0,
+    lines,
+    reasons,
+  };
+}
+
+async function buildLunaRiskAlertSnippet() {
+  const { hasWarn, lines } = getLunaRiskSnapshot();
+
+  if (!hasWarn) return null;
 
   return [
     '📈 루나 운영 경고',
@@ -341,6 +358,7 @@ module.exports = {
   buildMorningBriefingWithOps,
   buildOpsHealthAlertSnippet,
   buildSkaForecastAlertSnippet,
+  getLunaRiskSnapshot,
   buildLunaRiskAlertSnippet,
   isBriefingTime,
 };
