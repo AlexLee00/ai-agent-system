@@ -22,7 +22,7 @@ try {
   process.exit(1);
 }
 
-const ragStore       = require('../../../packages/core/lib/blog-rag-store');
+const pipelineStore  = require('../lib/pipeline-store');
 const richer         = require('../lib/richer');
 const posWriter      = require('../lib/pos-writer');
 const gemsWriter     = require('../lib/gems-writer');
@@ -35,7 +35,7 @@ app.use(express.json());
 // ─── 초기화 ───────────────────────────────────────────────────────────
 
 // 앱 시작 시 RAG 스토어 스키마 확인
-ragStore.ensureSchema().catch(e =>
+pipelineStore.ensureSchema().catch(e =>
   console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message)
 );
 
@@ -57,7 +57,7 @@ app.post('/api/blog/node/weather', async (req, res) => {
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchWeather();
-    await ragStore.storeNodeResult(sessionId, 'weather', 'research', result);
+    await pipelineStore.storeNodeResult(sessionId, 'weather', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {
     console.error('[노드서버] /weather 오류:', e.message);
@@ -75,7 +75,7 @@ app.post('/api/blog/node/it-news', async (req, res) => {
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchITNews(5);
-    await ragStore.storeNodeResult(sessionId, 'it-news', 'research', result);
+    await pipelineStore.storeNodeResult(sessionId, 'it-news', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {
     console.error('[노드서버] /it-news 오류:', e.message);
@@ -93,7 +93,7 @@ app.post('/api/blog/node/nodejs-updates', async (req, res) => {
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.fetchNodejsUpdates();
-    await ragStore.storeNodeResult(sessionId, 'nodejs-updates', 'research', result);
+    await pipelineStore.storeNodeResult(sessionId, 'nodejs-updates', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {
     console.error('[노드서버] /nodejs-updates 오류:', e.message);
@@ -111,7 +111,7 @@ app.post('/api/blog/node/rag-experiences', async (req, res) => {
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.searchRealExperiences(topic || '', postType || 'general');
-    await ragStore.storeNodeResult(sessionId, 'rag-experiences', 'research', result);
+    await pipelineStore.storeNodeResult(sessionId, 'rag-experiences', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {
     console.error('[노드서버] /rag-experiences 오류:', e.message);
@@ -129,7 +129,7 @@ app.post('/api/blog/node/related-posts', async (req, res) => {
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
     const result = await richer.searchRelatedPosts(topic || '', lectureNumber || null);  // ★ 전달
-    await ragStore.storeNodeResult(sessionId, 'related-posts', 'research', result);
+    await pipelineStore.storeNodeResult(sessionId, 'related-posts', 'research', result);
     res.json({ ok: true, result });
   } catch (e) {
     console.error('[노드서버] /related-posts 오류:', e.message);
@@ -148,7 +148,7 @@ app.post('/api/blog/node/write-lecture', async (req, res) => {
   const { sessionId, lectureNumber, lectureTitle, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const existing = await ragStore.getNodeResult(sessionId, 'write-lecture');
+    const existing = await pipelineStore.getNodeResult(sessionId, 'write-lecture');
     if (existing && existing.content) {
       return res.json({
         ok: true,
@@ -159,7 +159,7 @@ app.post('/api/blog/node/write-lecture', async (req, res) => {
     }
 
     // 세션 전체 수집 결과를 researchData로 조합
-    const sessionData = await ragStore.getSessionResults(sessionId);
+    const sessionData = await pipelineStore.getSessionResults(sessionId);
     const researchData = {
       weather:          sessionData['weather']          || {},
       it_news:          sessionData['it-news']          || [],
@@ -184,7 +184,7 @@ app.post('/api/blog/node/write-lecture', async (req, res) => {
       );
 
     // 생성 결과도 RAG 스토어에 저장
-    await ragStore.storeNodeResult(sessionId, 'write-lecture', 'generate', post);
+    await pipelineStore.storeNodeResult(sessionId, 'write-lecture', 'generate', post);
 
     res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
   } catch (e) {
@@ -202,7 +202,7 @@ app.post('/api/blog/node/write-general', async (req, res) => {
   const { sessionId, category, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const existing = await ragStore.getNodeResult(sessionId, 'write-general');
+    const existing = await pipelineStore.getNodeResult(sessionId, 'write-general');
     if (existing && existing.content) {
       return res.json({
         ok: true,
@@ -212,7 +212,7 @@ app.post('/api/blog/node/write-general', async (req, res) => {
       });
     }
 
-    const sessionData = await ragStore.getSessionResults(sessionId);
+    const sessionData = await pipelineStore.getSessionResults(sessionId);
     const researchData = {
       weather:         sessionData['weather']         || {},
       it_news:         sessionData['it-news']         || [],
@@ -225,7 +225,7 @@ app.post('/api/blog/node/write-general', async (req, res) => {
       ? await gemsWriter.writeGeneralPostChunked(category, researchData, sectionVariation || {})
       : await gemsWriter.writeGeneralPost(category, researchData, sectionVariation || {});
 
-    await ragStore.storeNodeResult(sessionId, 'write-general', 'generate', post);
+    await pipelineStore.storeNodeResult(sessionId, 'write-general', 'generate', post);
 
     res.json({ ok: true, charCount: post.charCount, model: post.model, mode: useChunked ? 'chunked' : 'single' });
   } catch (e) {
@@ -245,7 +245,7 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
   const { sessionId, postType } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const existing = await ragStore.getNodeResult(sessionId, 'quality-check');
+    const existing = await pipelineStore.getNodeResult(sessionId, 'quality-check');
     if (existing && typeof existing === 'object' && existing.passed != null) {
       return res.json({
         ok: true,
@@ -258,7 +258,7 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
 
     // 생성된 포스팅 조회 (lecture 또는 general)
     const nodeId = postType === 'lecture' ? 'write-lecture' : 'write-general';
-    const postData = await ragStore.getNodeResult(sessionId, nodeId);
+    const postData = await pipelineStore.getNodeResult(sessionId, nodeId);
     if (!postData) {
       return res.status(404).json({ ok: false, error: '생성된 포스팅이 없습니다' });
     }
@@ -267,7 +267,7 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
     const quality = qualityChecker.checkQuality(content, postType || 'general');
 
     // 검증 결과 저장
-    await ragStore.storeNodeResult(sessionId, 'quality-check', 'validate', quality);
+    await pipelineStore.storeNodeResult(sessionId, 'quality-check', 'validate', quality);
 
     res.json({
       ok:       true,
@@ -293,7 +293,7 @@ app.post('/api/blog/rag/store', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
   }
   try {
-    await ragStore.storeNodeResult(sessionId, nodeId, nodeGroup, data);
+    await pipelineStore.storeNodeResult(sessionId, nodeId, nodeGroup, data);
     res.json({ ok: true });
   } catch (e) {
     console.error('[노드서버] /rag/store 오류:', e.message);
@@ -310,7 +310,7 @@ app.get('/api/blog/rag/get', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
   }
   try {
-    const data = await ragStore.getNodeResult(sessionId, nodeId);
+    const data = await pipelineStore.getNodeResult(sessionId, nodeId);
     res.json({ ok: true, data });
   } catch (e) {
     console.error('[노드서버] /rag/get 오류:', e.message);
@@ -325,7 +325,7 @@ app.get('/api/blog/rag/session', async (req, res) => {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const data = await ragStore.getSessionResults(sessionId);
+    const data = await pipelineStore.getSessionResults(sessionId);
     res.json({ ok: true, data });
   } catch (e) {
     console.error('[노드서버] /rag/session 오류:', e.message);

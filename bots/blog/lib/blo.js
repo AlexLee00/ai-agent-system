@@ -54,7 +54,7 @@ const { createMessage }                             = require('../../../packages
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
-const ragStore                                      = require('../../../packages/core/lib/blog-rag-store');
+const pipelineStore                                 = require('./pipeline-store');
 
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
@@ -146,8 +146,8 @@ async function _resolvePipelineExecution(postType, sectionVariation, payload, ru
 
   if (execution?.n8nTriggered) {
     const writeNode = postType === 'lecture' ? 'write-lecture' : 'write-general';
-    const post = await ragStore.getNodeResult(execution.sessionId, writeNode);
-    const quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
+    const post = await pipelineStore.getNodeResult(execution.sessionId, writeNode);
+    const quality = await pipelineStore.getNodeResult(execution.sessionId, 'quality-check');
     if (post?.content && quality) {
       console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
       return { post, quality, source: 'n8n' };
