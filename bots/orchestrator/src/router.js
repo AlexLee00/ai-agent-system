@@ -554,13 +554,14 @@ async function buildUnrecognizedReport(query = '') {
 
 function parsePromotionQuery(raw = '') {
   const query = String(raw || '').trim().toLowerCase();
-  const filters = { applied: null, intent: null, eventsOnly: false, eventType: null, actor: null, summaryOnly: false };
+  const filters = { applied: null, intent: null, eventsOnly: false, eventType: null, actor: null, summaryOnly: false, thresholdsOnly: false };
   if (!query) return filters;
 
   if (/(applied|auto|자동|반영됨|반영된)/i.test(query)) filters.applied = true;
   if (/(pending|candidate|후보|대기)/i.test(query)) filters.applied = false;
   if (/(events|history|최근\s*변경|변경\s*이력|이력|로그)/i.test(query)) filters.eventsOnly = true;
   if (/(summary|요약|분포|그룹|grouped?)/i.test(query)) filters.summaryOnly = true;
+  if (/(threshold|기준|임계치|policy|정책)/i.test(query)) filters.thresholdsOnly = true;
 
   const intentMatch =
     query.match(/intent[:=]\s*([a-z0-9_./-]+)/i) ||
@@ -613,7 +614,7 @@ async function buildPromotionCandidateReport(query = '') {
       FROM intent_promotion_candidates
       ${whereSql}
     `, params);
-    const rows = (filters.eventsOnly || filters.summaryOnly) ? [] : await pgPool.query('claude', `
+    const rows = (filters.eventsOnly || filters.summaryOnly || filters.thresholdsOnly) ? [] : await pgPool.query('claude', `
       SELECT
         c.id,
         c.sample_text,
@@ -637,7 +638,7 @@ async function buildPromotionCandidateReport(query = '') {
       ORDER BY c.auto_applied DESC, c.updated_at DESC
       LIMIT 20
     `, params);
-    if (!filters.eventsOnly && !filters.summaryOnly && rows.length === 0) {
+    if (!filters.eventsOnly && !filters.summaryOnly && !filters.thresholdsOnly && rows.length === 0) {
       const suffix = query ? ` (${query})` : '';
       return `📝 자동 반영 후보 없음${suffix}`;
     }
@@ -651,8 +652,18 @@ async function buildPromotionCandidateReport(query = '') {
     if (filters.eventType) filterBits.push(`event=${filters.eventType}`);
     if (filters.actor) filterBits.push(`actor=${filters.actor}`);
     if (filters.summaryOnly) filterBits.push('요약만');
+    if (filters.thresholdsOnly) filterBits.push('기준만');
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
-    if (filters.summaryOnly) {
+    if (filters.thresholdsOnly) {
+      lines.push('자동 반영 기준:');
+      const rows = Object.entries(AUTO_PROMOTE_THRESHOLDS).map(([key, value]) => [key, value]);
+      for (const [key, value] of rows) {
+        lines.push(`  ${key}: ${value.minCount}회 / ${(value.minConfidence * 100).toFixed(0)}%`);
+      }
+      lines.push('');
+      lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
+      lines.push('차단 예시: *_action, 재시작, 승인, 송금');
+    } else if (filters.summaryOnly) {
       const baseRows = await pgPool.query('claude', `
         SELECT suggested_intent, auto_applied, occurrence_count
         FROM intent_promotion_candidates
@@ -711,7 +722,7 @@ async function buildPromotionCandidateReport(query = '') {
       eventClauses.push(`suggested_intent ILIKE $${eventParams.length}`);
     }
     const eventWhereSql = eventClauses.length > 0 ? `WHERE ${eventClauses.join(' AND ')}` : '';
-    const events = await pgPool.query('claude', `
+    const events = filters.thresholdsOnly ? [] : await pgPool.query('claude', `
       SELECT event_type, sample_text, suggested_intent, actor, created_at
       FROM intent_promotion_events
       ${eventWhereSql}
