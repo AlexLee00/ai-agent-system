@@ -186,12 +186,75 @@ async function buildOpsHealthAlertSnippet() {
   return lines.join('\n');
 }
 
+async function runPythonScriptJson(python, script, args = [], timeoutMs = 60_000) {
+  const root = path.join(__dirname, '..', '..', '..');
+  return await new Promise((resolve) => {
+    const child = spawn(python, [script, ...args], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve(null);
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', () => {});
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function buildSkaForecastAlertSnippet() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const python = path.join(root, 'bots', 'ska', 'venv', 'bin', 'python');
+  const script = path.join(root, 'bots', 'ska', 'src', 'forecast_health.py');
+  const report = await runPythonScriptJson(python, script, ['--days=30', '--json']);
+  const tuning = report?.tuning_candidate;
+  const summary = report?.summary;
+
+  if (!tuning?.recommended) return null;
+
+  const lines = ['📉 스카 예측 경고', ''];
+  if (summary?.avg_mape != null) {
+    lines.push(`  • 평균 MAPE: ${summary.avg_mape.toFixed(1)}%`);
+  }
+  if (summary?.hit_rate_20 != null) {
+    lines.push(`  • 20% 적중률: ${summary.hit_rate_20.toFixed(1)}%`);
+  }
+  for (const reason of (tuning.reasons || []).slice(0, 3)) {
+    lines.push(`  • ${reason}`);
+  }
+  lines.push('');
+  lines.push('상세 확인: /ska-forecast | /ska-review');
+  return lines.join('\n');
+}
+
 async function buildMorningBriefingWithOps(items) {
   const brief = buildMorningBriefing(items);
   if (!brief) return null;
   const opsSnippet = await buildOpsHealthAlertSnippet();
-  if (!opsSnippet) return brief;
-  return `${brief}\n\n${opsSnippet}`;
+  const forecastSnippet = await buildSkaForecastAlertSnippet();
+  const extras = [opsSnippet, forecastSnippet].filter(Boolean);
+  if (extras.length === 0) return brief;
+  return `${brief}\n\n${extras.join('\n\n')}`;
 }
 
 /**
@@ -210,5 +273,6 @@ module.exports = {
   buildMorningBriefing,
   buildMorningBriefingWithOps,
   buildOpsHealthAlertSnippet,
+  buildSkaForecastAlertSnippet,
   isBriefingTime,
 };
