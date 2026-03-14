@@ -37,6 +37,8 @@ const {
   buildUnrecognizedEntryLine,
   buildUnrecognizedCandidateLine,
   buildUnrecognizedCandidateStatusLine,
+  buildPromotionCandidateLine,
+  buildPromotionCandidateStatusLine,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -608,19 +610,9 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push(`요약: 전체 ${summary?.total_count ?? rows.length}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
       lines.push('');
       for (const r of rows) {
-        const badge = r.auto_applied ? '✅자동반영' : '🕓후보';
-        const conf = formatIntentConfidence(r.confidence);
-        const seen = String(r.updated_at).slice(0, 16);
-        lines.push(`  ${badge} [id=${r.id} | ${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
-        lines.push(`     최근: ${seen} KST`);
-        if (r.latest_event_type) {
-          const metadata = r.latest_event_metadata && typeof r.latest_event_metadata === 'object'
-            ? r.latest_event_metadata
-            : {};
-          const reasonValue = getPromotionEventReason(metadata);
-          const reason = reasonValue ? ` | reason=${reasonValue}` : '';
-          lines.push(`     상태: ${r.latest_event_type}${reason}`);
-        }
+        lines.push(...buildPromotionCandidateLine(r));
+        const statusLine = buildPromotionCandidateStatusLine(r);
+        if (statusLine) lines.push(statusLine);
       }
     }
 
