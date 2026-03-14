@@ -44,6 +44,7 @@ const {
   buildPromotionCompactCandidateLine,
   buildPromotionCandidateWhere,
   buildPromotionEventWhere,
+  buildUnrecognizedReportQueries,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -410,43 +411,11 @@ async function buildUnrecognizedReport(query = '') {
   try {
     await _ensureUnrecTable();
     const filters = parseUnrecognizedQuery(query);
-    const rows = await pgPool.query('claude', `
-      SELECT
-             text,
-             COUNT(*) as cnt,
-             MAX(llm_intent) as llm_intent,
-             MAX(promoted_to) as promoted_to,
-             MAX(created_at) as last_seen
-      FROM unrecognized_intents
-      WHERE created_at > NOW() - INTERVAL '7 days'
-      GROUP BY text
-      ORDER BY cnt DESC, last_seen DESC
-      LIMIT 20
-    `);
+    const unrecognizedQueries = buildUnrecognizedReportQueries();
+    const rows = await pgPool.query('claude', unrecognizedQueries.unrecognizedSql);
     if (rows.length === 0) return '✅ 최근 7일 미인식 명령 없음';
 
-    const candidates = await pgPool.query('claude', `
-      SELECT
-        c.id,
-        c.normalized_text,
-        c.sample_text,
-        c.suggested_intent,
-        c.occurrence_count,
-        c.confidence,
-        c.auto_applied,
-        e.event_type AS latest_event_type,
-        e.metadata AS latest_event_metadata
-      FROM intent_promotion_candidates c
-      LEFT JOIN LATERAL (
-        SELECT event_type, metadata
-        FROM intent_promotion_events
-        WHERE candidate_id = c.id
-        ORDER BY created_at DESC
-        LIMIT 1
-      ) e ON true
-      ORDER BY c.last_seen_at DESC
-      LIMIT 20
-    `);
+    const candidates = await pgPool.query('claude', unrecognizedQueries.candidatesSql);
     const candidateMap = new Map(
       candidates.map(c => [String(c.normalized_text || ''), c])
     );
