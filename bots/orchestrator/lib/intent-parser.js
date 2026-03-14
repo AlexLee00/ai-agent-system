@@ -128,6 +128,10 @@ function parseSlash(text) {
     const pattern  = parts.slice(2).join(' ');
     return { intent: 'promote_intent', args: { intent: toIntent, pattern }, source: 'slash' };
   }
+  if ((cmd === '/rollback' || cmd === '/forget') && parts.length >= 2) {
+    const target = parts.slice(1).join(' ');
+    return { intent: 'promotion_rollback', args: { target }, source: 'slash' };
+  }
 
   const mapped = SLASH_MAP[cmd];
   if (!mapped) return null;
@@ -236,6 +240,7 @@ const KEYWORD_PATTERNS = [
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
   { re: /자동.*(학습|반영).*(후보|목록|현황)|학습.*후보.*보여|promot(e|ion).*(candidate|list)|반영.*후보/i, intent: 'promotion_candidates' },
+  { re: /(자동|학습).*(반영|패턴).*(취소|삭제|롤백)|패턴.*(되돌려|지워|삭제해)|forget.*pattern|rollback.*promotion/i, intent: 'promotion_rollback' },
 
   // ── 봇/팀 명칭 (세부 명령 미매칭 시) ──
   { re: /루나|luna/i,     intent: 'luna' },

@@ -117,6 +117,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
 🧠 자동학습
   /unrec         → 미인식 명령 목록 조회
   /promotions    → 자동 반영 후보 조회
+  /rollback <문구> → 자동 반영 패턴 롤백
   /promote <인텐트> <패턴>  → 패턴 학습 등록
   예) /promote ska_query 오늘 방문객 몇 명이야
   반복 표현은 자동 후보로 누적되고, 조건 충족 시 learned pattern에 자동 반영됨
@@ -374,6 +375,57 @@ async function buildPromotionCandidateReport() {
   } catch (e) {
     return `⚠️ 자동 반영 후보 조회 실패: ${e.message}`;
   }
+}
+
+async function rollbackPromotionTarget(target = '') {
+  const normalized = normalizeIntentText(target);
+  if (!normalized) return '⚠️ 롤백할 문구가 필요합니다.\n예) /rollback 루나 지금 뭐하는 상황이야';
+
+  await _ensureUnrecTable();
+  const row = await pgPool.get('claude', `
+    SELECT normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
+    FROM intent_promotion_candidates
+    WHERE normalized_text = $1 OR sample_text = $2
+    LIMIT 1
+  `, [normalized, target]);
+  if (!row) return `⚠️ "${target}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
+
+  const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+  let learnings = [];
+  try {
+    if (fs.existsSync(learnPath)) learnings = JSON.parse(fs.readFileSync(learnPath, 'utf8'));
+  } catch {}
+
+  const before = learnings.length;
+  learnings = learnings.filter(item => {
+    if (row.learned_pattern && item.re === row.learned_pattern) return false;
+    if (item.re === row.sample_text) return false;
+    return true;
+  });
+  if (learnings.length !== before) {
+    fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
+  }
+
+  await pgPool.run('claude', `
+    UPDATE unrecognized_intents
+    SET promoted_to = NULL
+    WHERE promoted_to = $1
+      AND lower(regexp_replace(text, '[^[:alnum:][:space:]]', ' ', 'g')) LIKE '%' || $2 || '%'
+  `, [row.suggested_intent, normalized]);
+
+  await pgPool.run('claude', `
+    UPDATE intent_promotion_candidates
+    SET auto_applied = FALSE,
+        learned_pattern = NULL,
+        updated_at = NOW()
+    WHERE normalized_text = $1
+  `, [row.normalized_text]);
+
+  return [
+    `↩️ 자동 반영 롤백 완료`,
+    `문구: "${row.sample_text}"`,
+    `인텐트: ${row.suggested_intent}`,
+  ].join('\n');
 }
 
 async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
@@ -1477,6 +1529,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'promotion_candidates':
       return await buildPromotionCandidateReport();
+
+    case 'promotion_rollback':
+      return await rollbackPromotionTarget(args.target || msg.text || '');
 
     case 'promote_intent': {
       const { intent: toIntent, pattern, text: uText } = args;
