@@ -875,7 +875,59 @@ async function runSkaForecastHealthDirect() {
   });
 }
 
+async function getSkaForecastHealthJson() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const python = path.join(root, 'bots', 'ska', 'venv', 'bin', 'python');
+  const script = path.join(root, 'bots', 'ska', 'src', 'forecast_health.py');
+
+  return await new Promise((resolve) => {
+    const child = spawn(python, [script, '--days=30', '--json'], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve(null);
+    }, 60_000);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
 async function runSkaForecastReviewDirect() {
+  const health = await getSkaForecastHealthJson();
+  const tuningCandidate = health?.tuning_candidate || null;
+  if (tuningCandidate && !tuningCandidate.recommended) {
+    const lines = [
+      '✅ 현재는 스카 예측 튜닝보다 관찰 유지가 더 적절합니다.',
+      ...(tuningCandidate.reasons || []).map((reason) => `- ${reason}`),
+      '',
+      '필요하면 "스카 예측 헬스"로 상세 지표를 다시 확인해 주세요.',
+    ];
+    return lines.join('\n');
+  }
+
   const root = path.join(__dirname, '..', '..', '..');
   const python = path.join(root, 'bots', 'ska', 'venv', 'bin', 'python');
   const script = path.join(root, 'bots', 'ska', 'src', 'forecast.py');
@@ -908,7 +960,20 @@ async function runSkaForecastReviewDirect() {
         return;
       }
       const cleaned = stripAnsi(stdout).trim();
-      resolve(cleaned || 'ℹ️ 스카 예측 리뷰 결과가 비어 있습니다.');
+      if (!cleaned) {
+        resolve('ℹ️ 스카 예측 리뷰 결과가 비어 있습니다.');
+        return;
+      }
+      if (tuningCandidate?.recommended) {
+        const header = [
+          '🔧 스카 예측 리뷰 실행',
+          ...(tuningCandidate.reasons || []).map((reason) => `- ${reason}`),
+          '',
+        ].join('\n');
+        resolve(`${header}${cleaned}`);
+        return;
+      }
+      resolve(cleaned);
     });
   });
 }
