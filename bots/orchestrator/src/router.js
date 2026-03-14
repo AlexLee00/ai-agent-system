@@ -411,9 +411,17 @@ async function logUnrecognizedIntent(text, source, llmIntent) {
   } catch {}
 }
 
-async function buildUnrecognizedReport() {
+function parseUnrecognizedQuery(raw = '') {
+  const query = String(raw || '').trim().toLowerCase();
+  return {
+    summaryOnly: /(summary|요약|분포|그룹|grouped?)/i.test(query),
+  };
+}
+
+async function buildUnrecognizedReport(query = '') {
   try {
     await _ensureUnrecTable();
+    const filters = parseUnrecognizedQuery(query);
     const rows = await pgPool.query('claude', `
       SELECT
              text,
@@ -457,6 +465,32 @@ async function buildUnrecognizedReport() {
 
     const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
     const lines = [`❓ 미인식 명령 (최근 7일, ${rows.length}종 ${total}회)`];
+    if (filters.summaryOnly) {
+      const llmMap = new Map();
+      const statusMap = new Map();
+      for (const r of rows) {
+        const llmIntent = String(r.llm_intent || 'unknown');
+        llmMap.set(llmIntent, (llmMap.get(llmIntent) || 0) + Number(r.cnt || 0));
+        const candidate = candidateMap.get(normalizeIntentText(r.text || ''));
+        const status = candidate?.latest_event_type || (candidate?.auto_applied ? 'auto_applied' : candidate?.suggested_intent ? 'candidate' : 'unlinked');
+        statusMap.set(status, (statusMap.get(status) || 0) + Number(r.cnt || 0));
+      }
+      lines.push('');
+      lines.push('LLM 추정 분포:');
+      for (const [intent, count] of [...llmMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+        lines.push(`  ${intent}: ${count}회`);
+      }
+      lines.push('');
+      lines.push('후보 상태 분포:');
+      for (const [status, count] of [...statusMap.entries()].sort((a, b) => b[1] - a[1])) {
+        lines.push(`  ${status}: ${count}회`);
+      }
+      lines.push('');
+      lines.push('상세: /unrec');
+      lines.push('연결: /promotions pending | /promotions summary');
+      return lines.join('\n');
+    }
+
     for (const r of rows) {
       const promoted = r.promoted_to ? ` ✅→${r.promoted_to}` : '';
       const sample = String(r.text || '').slice(0, 50);
@@ -1861,7 +1895,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     // ── 미인식 명령 관리 ──────────────────────────────────────────────
 
     case 'unrecognized_report':
-      return await buildUnrecognizedReport();
+      return await buildUnrecognizedReport(args.query || msg.text || '');
 
     case 'promotion_candidates':
       return await buildPromotionCandidateReport(args.query || msg.text || '');
