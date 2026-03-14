@@ -67,6 +67,9 @@ const {
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
 } = require('../../../packages/core/lib/intent-core');
+const {
+  buildHealthReport,
+} = require('../../../packages/core/lib/health-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
 let _curriculumPlanner = null;
@@ -490,7 +493,7 @@ async function buildIntentEngineHealthReport() {
     { key: 'claude', schema: 'claude', title: '클로드', path: getNamedIntentLearningPath('jay') },
   ];
 
-  const lines = ['🩺 인텐트 엔진 상태'];
+  const summaryLines = [];
   for (const target of targets) {
     const learnings = readIntentLearnings(target.path);
     let summary = null;
@@ -499,15 +502,20 @@ async function buildIntentEngineHealthReport() {
     } catch {
       summary = null;
     }
-    lines.push(
+    summaryLines.push(
       `  ${target.title}: learned ${learnings.items.length}개 | 후보 ${summary?.pending_count ?? 0} | 자동 ${summary?.applied_count ?? 0}`
     );
   }
-
-  lines.push('');
-  lines.push('조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents');
-  lines.push('롤백: /rollback <id> | /luna-rollback <id> | /ska-rollback <id> | /claude-rollback <id>');
-  return lines.join('\n');
+  return buildHealthReport({
+    title: '🩺 인텐트 엔진 상태',
+    sections: [
+      { title: '■ 팀별 학습 현황', lines: summaryLines },
+    ],
+    footer: [
+      '조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents',
+      '롤백: /rollback <id> | /luna-rollback <id> | /ska-rollback <id> | /claude-rollback <id>',
+    ],
+  });
 }
 
 async function rollbackPromotionTarget(target = '', options = {}) {
