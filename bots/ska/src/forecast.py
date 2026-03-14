@@ -64,6 +64,8 @@ RESERVATION_ADJUSTMENT_WEIGHT = 0.35
 CONDITION_ADJUSTMENT_WEIGHT = 0.45
 CONDITION_MIN_SAMPLES = 3
 BOOKED_HOURS_ADJUSTMENT_WEIGHT = 0.30
+ROOM_SPREAD_ADJUSTMENT_WEIGHT = 0.20
+PEAK_OVERLAP_ADJUSTMENT_WEIGHT = 0.18
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -390,7 +392,7 @@ def _ensemble_val(prophet_val, sarima_val, quick_val, day_idx, weights=None):
 
 def _calc_booked_hours(rows):
     total_minutes = 0
-    for start_time, end_time in rows:
+    for start_time, end_time, _room in rows:
         try:
             sh, sm = str(start_time).split(':')
             eh, em = str(end_time).split(':')
@@ -403,23 +405,68 @@ def _calc_booked_hours(rows):
     return round(total_minutes / 60.0, 2)
 
 
+def _to_minutes(time_text):
+    try:
+        h, m = str(time_text).split(':')
+        return int(h) * 60 + int(m)
+    except Exception:
+        return None
+
+
+def _calc_peak_overlap(rows):
+    events = []
+    for start_time, end_time, _room in rows:
+        start_minutes = _to_minutes(start_time)
+        end_minutes = _to_minutes(end_time)
+        if start_minutes is None or end_minutes is None or end_minutes <= start_minutes:
+            continue
+        events.append((start_minutes, 1))
+        events.append((end_minutes, -1))
+
+    current = 0
+    peak = 0
+    for _minute, delta in sorted(events, key=lambda item: (item[0], item[1])):
+        current += delta
+        peak = max(peak, current)
+    return peak
+
+
+def _calc_avg_duration_hours(rows):
+    durations = []
+    for start_time, end_time, _room in rows:
+        start_minutes = _to_minutes(start_time)
+        end_minutes = _to_minutes(end_time)
+        if start_minutes is None or end_minutes is None or end_minutes <= start_minutes:
+            continue
+        durations.append((end_minutes - start_minutes) / 60.0)
+    if not durations:
+        return 0.0
+    return round(sum(durations) / len(durations), 2)
+
+
 def get_reservation_signal(con, target_date_str):
     """예측일 예약 건수 + 예약 시간 + 밀도 조회"""
     try:
         res_con = psycopg2.connect("dbname=jay options='-c search_path=reservation,public'")
         try:
             rows = _qry(res_con, """
-                SELECT start_time, end_time
+                SELECT start_time, end_time, room
                 FROM reservations
                 WHERE date = %s
                   AND status IN ('confirmed', 'pending', 'completed')
             """, (target_date_str,))
             count = len(rows)
             booked_hours = _calc_booked_hours(rows)
+            unique_rooms = len({str(row[2]).strip() for row in rows if row[2]})
+            peak_overlap = _calc_peak_overlap(rows)
+            avg_duration_hours = _calc_avg_duration_hours(rows)
             return {
                 'count': count,
                 'booked_hours': booked_hours,
                 'density': round(booked_hours / MAX_HOURS, 4) if MAX_HOURS > 0 else 0.0,
+                'unique_rooms': unique_rooms,
+                'peak_overlap': peak_overlap,
+                'avg_duration_hours': avg_duration_hours,
             }
         finally:
             res_con.close()
@@ -428,6 +475,9 @@ def get_reservation_signal(con, target_date_str):
             'count': 0,
             'booked_hours': 0.0,
             'density': 0.0,
+            'unique_rooms': 0,
+            'peak_overlap': 0,
+            'avg_duration_hours': 0.0,
         }
 
 
@@ -461,6 +511,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     revenue_per_reservation = 0.0
     booked_hours_baseline = {}
     revenue_per_booked_hour = 0.0
+    unique_rooms_baseline = {}
+    peak_overlap_baseline = {}
     condition_bias = {}
     sample_count = len(rows)
 
@@ -471,6 +523,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
             'revenue_per_reservation': revenue_per_reservation,
             'booked_hours_baseline': booked_hours_baseline,
             'revenue_per_booked_hour': revenue_per_booked_hour,
+            'unique_rooms_baseline': unique_rooms_baseline,
+            'peak_overlap_baseline': peak_overlap_baseline,
             'condition_bias': condition_bias,
             'sample_count': sample_count,
         }
@@ -478,6 +532,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     bias_buckets = {i: [] for i in range(1, 8)}
     reservation_buckets = {i: [] for i in range(1, 8)}
     booked_hours_buckets = {i: [] for i in range(1, 8)}
+    unique_rooms_buckets = {i: [] for i in range(1, 8)}
+    peak_overlap_buckets = {i: [] for i in range(1, 8)}
     revenue_per_reservation_samples = []
     revenue_per_booked_hour_samples = []
     condition_buckets = {
@@ -498,10 +554,14 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         occupancy_rate = float(row[5] or 0.0)
         error = float(row[12] or 0.0)
         booked_hours = occupancy_rate * MAX_HOURS
+        unique_rooms_est = min(NUM_ROOMS, max(1, round(total_reservations / 3))) if total_reservations > 0 else 0
+        peak_overlap_est = min(NUM_ROOMS, max(0, round(booked_hours / 4))) if booked_hours > 0 else 0
 
         bias_buckets[dow].append(error)
         reservation_buckets[dow].append(total_reservations)
         booked_hours_buckets[dow].append(booked_hours)
+        unique_rooms_buckets[dow].append(unique_rooms_est)
+        peak_overlap_buckets[dow].append(peak_overlap_est)
         global_bias_values.append(error)
         if total_reservations > 0:
             revenue_per_reservation_samples.append(actual / total_reservations)
@@ -531,6 +591,12 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     for dow, values in booked_hours_buckets.items():
         if values:
             booked_hours_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in unique_rooms_buckets.items():
+        if values:
+            unique_rooms_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in peak_overlap_buckets.items():
+        if values:
+            peak_overlap_baseline[dow] = round(sum(values) / len(values), 2)
     if revenue_per_reservation_samples:
         revenue_per_reservation = sum(revenue_per_reservation_samples) / len(revenue_per_reservation_samples)
     if revenue_per_booked_hour_samples:
@@ -545,6 +611,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         'revenue_per_reservation': revenue_per_reservation,
         'booked_hours_baseline': booked_hours_baseline,
         'revenue_per_booked_hour': revenue_per_booked_hour,
+        'unique_rooms_baseline': unique_rooms_baseline,
+        'peak_overlap_baseline': peak_overlap_baseline,
         'condition_bias': condition_bias,
         'sample_count': sample_count,
         'global_bias': global_bias,
@@ -564,8 +632,12 @@ def _apply_result_calibration(result, calibration, target_date):
     revenue_per_reservation = float(calibration.get('revenue_per_reservation', 0.0) or 0.0)
     booked_hours_baseline = float(calibration.get('booked_hours_baseline', {}).get(dow, 0.0) or 0.0)
     revenue_per_booked_hour = float(calibration.get('revenue_per_booked_hour', 0.0) or 0.0)
+    unique_rooms_baseline = float(calibration.get('unique_rooms_baseline', {}).get(dow, 0.0) or 0.0)
+    peak_overlap_baseline = float(calibration.get('peak_overlap_baseline', {}).get(dow, 0.0) or 0.0)
     reservation_count = int(result.get('reservation_count', 0) or 0)
     reservation_booked_hours = float(result.get('reservation_booked_hours', 0.0) or 0.0)
+    reservation_unique_rooms = int(result.get('reservation_unique_rooms', 0) or 0)
+    reservation_peak_overlap = int(result.get('reservation_peak_overlap', 0) or 0)
     env_info = result.get('env_info') or {}
 
     reservation_adjustment = 0
@@ -580,6 +652,20 @@ def _apply_result_calibration(result, calibration, target_date):
         booked_hours_delta = reservation_booked_hours - booked_hours_baseline
         booked_hours_adjustment = round(
             booked_hours_delta * revenue_per_booked_hour * BOOKED_HOURS_ADJUSTMENT_WEIGHT
+        )
+
+    room_spread_adjustment = 0
+    if unique_rooms_baseline > 0 and reservation_unique_rooms > 0 and revenue_per_reservation > 0:
+        room_spread_delta = reservation_unique_rooms - unique_rooms_baseline
+        room_spread_adjustment = round(
+            room_spread_delta * revenue_per_reservation * ROOM_SPREAD_ADJUSTMENT_WEIGHT
+        )
+
+    peak_overlap_adjustment = 0
+    if peak_overlap_baseline > 0 and reservation_peak_overlap > 0 and revenue_per_booked_hour > 0:
+        overlap_delta = reservation_peak_overlap - peak_overlap_baseline
+        peak_overlap_adjustment = round(
+            overlap_delta * revenue_per_booked_hour * PEAK_OVERLAP_ADJUSTMENT_WEIGHT
         )
 
     condition_adjustment = 0
@@ -598,7 +684,14 @@ def _apply_result_calibration(result, calibration, target_date):
         condition_adjustment += round(condition_bias['exam_high'] * CONDITION_ADJUSTMENT_WEIGHT)
         condition_notes.append(f"exam:{condition_bias['exam_high']:+,}")
 
-    raw_adjustment = weekday_bias + reservation_adjustment + booked_hours_adjustment + condition_adjustment
+    raw_adjustment = (
+        weekday_bias
+        + reservation_adjustment
+        + booked_hours_adjustment
+        + room_spread_adjustment
+        + peak_overlap_adjustment
+        + condition_adjustment
+    )
     max_adjustment = round(max(0, result['yhat']) * CALIBRATION_MAX_RATIO)
     bounded_adjustment = max(-max_adjustment, min(max_adjustment, raw_adjustment))
 
@@ -614,6 +707,10 @@ def _apply_result_calibration(result, calibration, target_date):
         notes.append(f'reservation:{reservation_adjustment:+,}')
     if booked_hours_adjustment:
         notes.append(f'booked_hours:{booked_hours_adjustment:+,}')
+    if room_spread_adjustment:
+        notes.append(f'rooms:{room_spread_adjustment:+,}')
+    if peak_overlap_adjustment:
+        notes.append(f'peak:{peak_overlap_adjustment:+,}')
     notes.extend(condition_notes)
     if raw_adjustment != bounded_adjustment:
         notes.append(f'capped:{bounded_adjustment:+,}')
@@ -655,6 +752,10 @@ def save_forecast_result(con, forecast_date, result, mape=None):
         'yhat_upper':   result['yhat_upper'],
         'reservation_count': result.get('reservation_count', 0),
         'reservation_booked_hours': result.get('reservation_booked_hours', 0.0),
+        'reservation_density': result.get('reservation_density', 0.0),
+        'reservation_unique_rooms': result.get('reservation_unique_rooms', 0),
+        'reservation_peak_overlap': result.get('reservation_peak_overlap', 0),
+        'reservation_avg_duration_hours': result.get('reservation_avg_duration_hours', 0.0),
     }
     params = _load_model_params()
     preds_json  = json.dumps(predictions)
@@ -721,6 +822,9 @@ def run_forecast(con, base_date, periods):
                 'reservation_count': reservation_signal['count'],
                 'reservation_booked_hours': reservation_signal['booked_hours'],
                 'reservation_density': reservation_signal['density'],
+                'reservation_unique_rooms': reservation_signal['unique_rooms'],
+                'reservation_peak_overlap': reservation_signal['peak_overlap'],
+                'reservation_avg_duration_hours': reservation_signal['avg_duration_hours'],
                 'calibration_adjustment': 0,
                 'calibration_notes': [],
             })
@@ -839,6 +943,9 @@ def run_forecast(con, base_date, periods):
             'reservation_count': reservation_signal['count'],
             'reservation_booked_hours': reservation_signal['booked_hours'],
             'reservation_density': reservation_signal['density'],
+            'reservation_unique_rooms': reservation_signal['unique_rooms'],
+            'reservation_peak_overlap': reservation_signal['peak_overlap'],
+            'reservation_avg_duration_hours': reservation_signal['avg_duration_hours'],
             'calibration_adjustment': 0,
             'calibration_notes': [],
         })
@@ -932,6 +1039,9 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
     env_score = r.get('env_score', 0)
     res_cnt   = r.get('reservation_count', 0)
     res_hours = r.get('reservation_booked_hours', 0.0)
+    res_rooms = r.get('reservation_unique_rooms', 0)
+    res_peak  = r.get('reservation_peak_overlap', 0)
+    res_avg_duration = r.get('reservation_avg_duration_hours', 0.0)
 
     lines.append('■ 보정 요인')
     lines.append(f'  요일({wd}): 주간 패턴 반영 📅')
@@ -944,7 +1054,8 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
         lines.append(f'  날씨(맑음 {temp:.0f}°C): 보정 없음 ☀️')
 
     if res_cnt > 0:
-        lines.append(f'  예약 현황: {res_cnt}건 / {res_hours:.1f}시간 📋')
+        lines.append(f'  예약 현황: {res_cnt}건 / {res_hours:.1f}시간 / {res_rooms}룸 📋')
+        lines.append(f'  예약 구조: 피크겹침 {res_peak}건 / 평균 {res_avg_duration:.1f}시간')
     else:
         lines.append('  예약 현황: 조회 없음')
 
