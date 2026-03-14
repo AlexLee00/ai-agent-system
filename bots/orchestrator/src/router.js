@@ -46,6 +46,8 @@ const {
   getPromotionCandidateStatus,
   getPromotionEventReason,
   buildPromotionFilterBits,
+  parseUnrecognizedQuery,
+  parsePromotionQuery,
   buildPromotionFamilySummary,
   buildPromotionEventLines,
   buildUnrecognizedSummary,
@@ -314,13 +316,6 @@ async function logUnrecognizedIntent(text, source, llmIntent) {
   } catch {}
 }
 
-function parseUnrecognizedQuery(raw = '') {
-  const query = String(raw || '').trim().toLowerCase();
-  return {
-    summaryOnly: /(summary|요약|분포|그룹|grouped?)/i.test(query),
-  };
-}
-
 async function buildUnrecognizedReport(query = '') {
   try {
     await _ensureUnrecTable();
@@ -377,36 +372,6 @@ async function buildUnrecognizedReport(query = '') {
   } catch (e) {
     return `⚠️ 미인식 이력 조회 실패: ${e.message}`;
   }
-}
-
-function parsePromotionQuery(raw = '') {
-  const query = String(raw || '').trim().toLowerCase();
-  const filters = { applied: null, intent: null, eventsOnly: false, eventType: null, actor: null, summaryOnly: false, thresholdsOnly: false };
-  if (!query) return filters;
-
-  if (/(applied|auto|자동|반영됨|반영된)/i.test(query)) filters.applied = true;
-  if (/(pending|candidate|후보|대기)/i.test(query)) filters.applied = false;
-  if (/(events|history|최근\s*변경|변경\s*이력|이력|로그)/i.test(query)) filters.eventsOnly = true;
-  if (/(summary|요약|분포|그룹|grouped?)/i.test(query)) filters.summaryOnly = true;
-  if (/(threshold|기준|임계치|policy|정책)/i.test(query)) filters.thresholdsOnly = true;
-
-  const intentMatch =
-    query.match(/intent[:=]\s*([a-z0-9_./-]+)/i) ||
-    query.match(/인텐트\s+([a-z0-9_./-]+)/i) ||
-    query.match(/의도\s+([a-z0-9_./-]+)/i);
-  if (intentMatch?.[1]) filters.intent = intentMatch[1].trim();
-
-  const eventTypeMatch =
-    query.match(/event[:=]\s*([a-z0-9_./-]+)/i) ||
-    query.match(/이벤트\s+([a-z0-9_./-]+)/i);
-  if (eventTypeMatch?.[1]) filters.eventType = eventTypeMatch[1].trim();
-
-  const actorMatch =
-    query.match(/actor[:=]\s*([a-z0-9_./-]+)/i) ||
-    query.match(/주체\s+([a-z0-9_./-]+)/i);
-  if (actorMatch?.[1]) filters.actor = actorMatch[1].trim();
-
-  return filters;
 }
 
 async function buildPromotionCandidateReport(query = '') {
