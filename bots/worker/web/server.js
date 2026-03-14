@@ -52,6 +52,15 @@ const {
   getPromotionRows,
   getPromotionEvents,
   getUnrecognizedReportRows,
+  findPromotionCandidate,
+  upsertPromotionCandidate,
+  clearPromotedUnrecognized,
+  clearPromotionCandidateState,
+  markUnrecognizedPromoted,
+  logPromotionEvent,
+  addLearnedPattern,
+  removeLearnedPatterns,
+  getNamedIntentLearningPath,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
 const {
   ensureChatSchema,
@@ -108,6 +117,7 @@ const upload = multer({
 
 const SCHEMA = 'worker';
 const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
+const WORKER_INTENT_LEARNINGS_PATH = getNamedIntentLearningPath('worker');
 
 const app = express();
 const wsClients = new Set();
@@ -1593,6 +1603,103 @@ app.get('/api/chat/promotions', requireAuth, requireRole('master'), async (req, 
     });
   } catch (e) {
     res.status(500).json({ error: '워커 인텐트 후보 리포트를 불러오지 못했습니다.', code: 'WORKER_INTENT_PROMOTIONS_FAILED', detail: e.message });
+  }
+});
+
+app.put('/api/chat/promotions/:id/apply', requireAuth, requireRole('master'), async (req, res) => {
+  try {
+    const candidate = await findPromotionCandidate(pgPool, {
+      schema: SCHEMA,
+      candidateId: Number(req.params.id),
+    });
+    if (!candidate) {
+      return res.status(404).json({ error: '워커 인텐트 후보를 찾을 수 없습니다.', code: 'WORKER_INTENT_CANDIDATE_NOT_FOUND' });
+    }
+
+    const learnedPattern = candidate.learned_pattern || candidate.sample_text;
+    addLearnedPattern({
+      pattern: learnedPattern,
+      intent: candidate.suggested_intent,
+      filePath: WORKER_INTENT_LEARNINGS_PATH,
+    });
+
+    await markUnrecognizedPromoted(pgPool, {
+      schema: SCHEMA,
+      intent: candidate.suggested_intent,
+      text: candidate.sample_text,
+    });
+
+    await upsertPromotionCandidate(pgPool, {
+      schema: SCHEMA,
+      normalizedText: candidate.normalized_text,
+      sampleText: candidate.sample_text,
+      suggestedIntent: candidate.suggested_intent,
+      occurrenceCount: candidate.occurrence_count || 1,
+      confidence: Number(candidate.confidence || 0.8),
+      autoApplied: true,
+      learnedPattern,
+    });
+
+    await logPromotionEvent(pgPool, {
+      schema: SCHEMA,
+      candidateId: candidate.id,
+      normalizedText: candidate.normalized_text,
+      sampleText: candidate.sample_text,
+      suggestedIntent: candidate.suggested_intent,
+      eventType: 'promote_manual',
+      learnedPattern,
+      actor: 'master',
+      metadata: { source: 'worker_web' },
+    });
+
+    res.json({ ok: true, candidateId: candidate.id, intent: candidate.suggested_intent, learnedPattern });
+  } catch (e) {
+    res.status(500).json({ error: '워커 인텐트 후보 반영에 실패했습니다.', code: 'WORKER_INTENT_APPLY_FAILED', detail: e.message });
+  }
+});
+
+app.put('/api/chat/promotions/:id/rollback', requireAuth, requireRole('master'), async (req, res) => {
+  try {
+    const candidate = await findPromotionCandidate(pgPool, {
+      schema: SCHEMA,
+      candidateId: Number(req.params.id),
+    });
+    if (!candidate) {
+      return res.status(404).json({ error: '워커 인텐트 후보를 찾을 수 없습니다.', code: 'WORKER_INTENT_CANDIDATE_NOT_FOUND' });
+    }
+
+    removeLearnedPatterns({
+      learnedPattern: candidate.learned_pattern,
+      sampleText: candidate.sample_text,
+      filePath: WORKER_INTENT_LEARNINGS_PATH,
+    });
+
+    await clearPromotedUnrecognized(pgPool, {
+      schema: SCHEMA,
+      suggestedIntent: candidate.suggested_intent,
+      normalizedText: normalizeIntentText(candidate.sample_text || ''),
+    });
+
+    await clearPromotionCandidateState(pgPool, {
+      schema: SCHEMA,
+      candidateId: candidate.id,
+    });
+
+    await logPromotionEvent(pgPool, {
+      schema: SCHEMA,
+      candidateId: candidate.id,
+      normalizedText: candidate.normalized_text,
+      sampleText: candidate.sample_text,
+      suggestedIntent: candidate.suggested_intent,
+      eventType: 'rollback',
+      learnedPattern: candidate.learned_pattern,
+      actor: 'master',
+      metadata: { source: 'worker_web' },
+    });
+
+    res.json({ ok: true, candidateId: candidate.id, intent: candidate.suggested_intent });
+  } catch (e) {
+    res.status(500).json({ error: '워커 인텐트 후보 롤백에 실패했습니다.', code: 'WORKER_INTENT_ROLLBACK_FAILED', detail: e.message });
   }
 });
 
