@@ -1048,6 +1048,25 @@ function buildTeamLogSummary(team = '') {
   return lines.join('\n');
 }
 
+async function buildTeamStatusSummary(team = '') {
+  const value = String(team || '').trim().toLowerCase();
+  if (value === 'luna') {
+    const raw = await sendBotCommand('luna', 'get_status');
+    return formatLunaResult('get_status', raw);
+  }
+  if (value === 'ska') {
+    const lines = ['🎯 스카 상태'];
+    lines.push(buildTeamLogSummary('ska').replace(/^🎯 스카 최근 로그\n?/, ''));
+    return lines.join('\n');
+  }
+  if (value === 'claude') {
+    const lines = ['🧠 클로드 상태'];
+    lines.push(buildTeamLogSummary('claude').replace(/^🧠 클로드 최근 로그\n?/, ''));
+    return lines.join('\n');
+  }
+  return '⚠️ 팀 상태 대상을 찾지 못했습니다. 루나, 스카, 클로드 중 하나를 지정해 주세요.';
+}
+
 async function runSpeedTestDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const node = process.execPath;
@@ -1429,6 +1448,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'team_logs':
       return buildTeamLogSummary(args.team || '');
+
+    case 'team_status':
+      return await buildTeamStatusSummary(args.team || '');
 
     case 'help':
       return HELP_TEXT;

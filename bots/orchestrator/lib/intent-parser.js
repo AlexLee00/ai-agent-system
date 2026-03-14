@@ -162,6 +162,8 @@ const KEYWORD_PATTERNS = [
   { re: /(루나|luna).*(오류|에러|로그|상태로그)|투자팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'luna' } },
   { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
   { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
+  { re: /(스카|ska).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|예약팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'ska' } },
+  { re: /(클로드|claude|덱스터).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|클로드팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'claude' } },
 
   // ── 스카팀 세부 명령 (일반 'ska'보다 먼저 매칭) ──
   { re: /앤디.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_andy' } },
