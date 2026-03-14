@@ -36,6 +36,7 @@ const {
   clearPromotedUnrecognized,
   clearPromotionCandidateState,
   markUnrecognizedPromoted,
+  getNamedIntentLearningPath,
   removeLearnedPatterns,
   addLearnedPattern,
 } = require('../../../packages/core/lib/intent-store');
@@ -469,38 +470,47 @@ async function buildTeamIntentReport(team = '', query = '') {
     unrecSummary,
     '',
     `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
+    `롤백 예시: /${normalized}-rollback <id>`,
   ].join('\n');
 }
 
-async function rollbackPromotionTarget(target = '') {
+async function rollbackPromotionTarget(target = '', options = {}) {
   const raw = String(target || '').trim();
   if (!raw) return '⚠️ 롤백할 문구 또는 id가 필요합니다.\n예) /rollback 12';
+  const schema = options.schema || 'claude';
+  const title = options.title || '자동 반영';
+  const learningPath = options.learningPath || getNamedIntentLearningPath('jay');
 
   const candidateId = Number.parseInt(raw, 10);
   const normalized = normalizeIntentText(raw);
 
   await _ensureUnrecTable();
   const row = await findPromotionCandidate(pgPool, {
+    schema,
     candidateId,
     normalizedText: normalized,
     rawText: raw,
   });
-  if (!row) return `⚠️ "${raw}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
+  if (!row) return `⚠️ "${raw}" 에 대한 ${title} 후보를 찾지 못했습니다.`;
 
   removeLearnedPatterns({
     learnedPattern: row.learned_pattern,
     sampleText: row.sample_text,
+    filePath: learningPath,
   });
 
   await clearPromotedUnrecognized(pgPool, {
+    schema,
     suggestedIntent: row.suggested_intent,
     normalizedText: normalized,
   });
 
   await clearPromotionCandidateState(pgPool, {
+    schema,
     candidateId: row.id,
   });
   await logPromotionEvent(pgPool, {
+    schema,
     candidateId: row.id,
     normalizedText: row.normalized_text,
     sampleText: row.sample_text,
@@ -512,11 +522,22 @@ async function rollbackPromotionTarget(target = '') {
   });
 
   return [
-    `↩️ 자동 반영 롤백 완료`,
+    `↩️ ${title} 롤백 완료`,
     `id: ${row.id}`,
     `문구: "${row.sample_text}"`,
     `인텐트: ${row.suggested_intent}`,
   ].join('\n');
+}
+
+async function rollbackTeamPromotionTarget(team = '', target = '') {
+  const normalized = String(team || '').trim().toLowerCase();
+  const teamMeta = {
+    luna: { schema: 'luna', title: '루나 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
+    ska: { schema: 'ska', title: '스카 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
+    claude: { schema: 'claude', title: '클로드 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
+  }[normalized];
+  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
+  return rollbackPromotionTarget(target, teamMeta);
 }
 
 async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
@@ -1679,6 +1700,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'promotion_rollback':
       return await rollbackPromotionTarget(args.target || msg.text || '');
+
+    case 'team_promotion_rollback':
+      return await rollbackTeamPromotionTarget(args.team || '', args.target || msg.text || '');
 
     case 'promote_intent': {
       const { intent: toIntent, pattern, text: uText } = args;

@@ -83,6 +83,9 @@ const SLASH_MAP = {
   '/luna-intents': { intent: 'team_intent_report', args: { team: 'luna' } },
   '/ska-intents':  { intent: 'team_intent_report', args: { team: 'ska' } },
   '/claude-intents': { intent: 'team_intent_report', args: { team: 'claude' } },
+  '/luna-rollback':   { intent: 'team_promotion_rollback', args: { team: 'luna' } },
+  '/ska-rollback':    { intent: 'team_promotion_rollback', args: { team: 'ska' } },
+  '/claude-rollback': { intent: 'team_promotion_rollback', args: { team: 'claude' } },
   '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
   '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
   '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
@@ -135,6 +138,22 @@ function parseSlash(text) {
     const target = parts.slice(1).join(' ');
     return { intent: 'promotion_rollback', args: { target }, source: 'slash' };
   }
+  if ((cmd === '/luna-rollback' || cmd === '/ska-rollback' || cmd === '/claude-rollback') && parts.length >= 2) {
+    const target = parts.slice(1).join(' ');
+    return {
+      intent: 'team_promotion_rollback',
+      args: {
+        team:
+          cmd === '/luna-rollback'
+            ? 'luna'
+            : cmd === '/ska-rollback'
+              ? 'ska'
+              : 'claude',
+        target,
+      },
+      source: 'slash',
+    };
+  }
 
   const mapped = SLASH_MAP[cmd];
   if (!mapped) return null;
@@ -160,6 +179,9 @@ const KEYWORD_PATTERNS = [
   { re: /(루나|luna).*(인텐트|학습|미인식|자동반영|패턴).*(현황|상태|후보|보여|조회)|투자팀.*(인텐트|학습).*(현황|후보)/i, intent: 'team_intent_report', args: { team: 'luna' } },
   { re: /(스카|ska).*(인텐트|학습|미인식|자동반영|패턴).*(현황|상태|후보|보여|조회)|예약팀.*(인텐트|학습).*(현황|후보)/i, intent: 'team_intent_report', args: { team: 'ska' } },
   { re: /(클로드|claude|덱스터).*(인텐트|학습|미인식|자동반영|패턴).*(현황|상태|후보|보여|조회)|클로드팀.*(인텐트|학습).*(현황|후보)/i, intent: 'team_intent_report', args: { team: 'claude' } },
+  { re: /(루나|luna).*(롤백|되돌려|삭제|취소)|투자팀.*(패턴|자동반영).*(롤백|되돌려|취소)/i, intent: 'team_promotion_rollback', args: { team: 'luna' } },
+  { re: /(스카|ska).*(롤백|되돌려|삭제|취소)|예약팀.*(패턴|자동반영).*(롤백|되돌려|취소)/i, intent: 'team_promotion_rollback', args: { team: 'ska' } },
+  { re: /(클로드|claude|덱스터).*(롤백|되돌려|삭제|취소)|클로드팀.*(패턴|자동반영).*(롤백|되돌려|취소)/i, intent: 'team_promotion_rollback', args: { team: 'claude' } },
   { re: /(스카|ska).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|예약팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'ska' } },
   { re: /(클로드|claude|덱스터).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|클로드팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'claude' } },
 
