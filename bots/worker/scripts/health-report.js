@@ -13,6 +13,7 @@
 
 const {
   buildHealthReport,
+  buildHealthDecision,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -59,27 +60,21 @@ async function buildEndpointHealth() {
 }
 
 function buildDecision(serviceRows, endpointHealth) {
-  const reasons = [];
-  let recommended = false;
-  let level = 'hold';
-
-  if (serviceRows.warn.length > 0) {
-    recommended = true;
-    level = 'high';
-    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 워커 서비스 점검이 필요합니다.`);
-  }
-
-  if (endpointHealth.warn.length > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push(`HTTP/WebSocket 경고 ${endpointHealth.warn.length}건이 있어 사용자 체감 이슈 가능성이 있습니다.`);
-  }
-
-  if (!recommended) {
-    reasons.push('워커 서비스와 실시간 채널이 현재는 안정 구간입니다.');
-  }
-
-  return { recommended, level, reasons };
+  return buildHealthDecision({
+    warnings: [
+      {
+        active: serviceRows.warn.length > 0,
+        level: 'high',
+        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 워커 서비스 점검이 필요합니다.`,
+      },
+      {
+        active: endpointHealth.warn.length > 0,
+        level: 'medium',
+        reason: `HTTP/WebSocket 경고 ${endpointHealth.warn.length}건이 있어 사용자 체감 이슈 가능성이 있습니다.`,
+      },
+    ],
+    okReason: '워커 서비스와 실시간 채널이 현재는 안정 구간입니다.',
+  });
 }
 
 function formatText(report) {
