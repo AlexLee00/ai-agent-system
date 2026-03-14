@@ -10,9 +10,6 @@
  * Groq 라운드로빈 (다중 키, 429 시 자동 다음 키)
  */
 
-import Anthropic    from '@anthropic-ai/sdk';
-import Groq         from 'groq-sdk';
-import OpenAI       from 'openai';
 import { createHash }   from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -68,6 +65,7 @@ try {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 // ─── 설정 로드 (config.yaml → secrets.json fallback) ─────────────────
 
@@ -111,10 +109,23 @@ const DUAL_MODEL = process.env.LUNA_DUAL_MODEL !== 'false';
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
 const _groqAccounts = (_cfg.groq?.accounts || []).filter(a => a.api_key);
-const _groqClients  = _groqAccounts.map(a => new Groq({ apiKey: a.api_key, timeout: _LLM_TIMEOUTS.groq, maxRetries: 1 }));
+let   _GroqClass    = null;
+let   _groqClients  = null;
 let   _groqIdx      = 0;
 
+function getGroqClass() {
+  if (_GroqClass) return _GroqClass;
+  const mod = require('groq-sdk');
+  _GroqClass = mod.default || mod;
+  return _GroqClass;
+}
+
 function nextGroqClient() {
+  if (!_groqClients) {
+    const GroqClass = getGroqClass();
+    _groqClients = _groqAccounts.map(a =>
+      new GroqClass({ apiKey: a.api_key, timeout: _LLM_TIMEOUTS.groq, maxRetries: 1 }));
+  }
   if (_groqClients.length === 0) throw new Error('Groq API 키 없음 — config.yaml groq.accounts 설정 필요');
   const client = _groqClients[_groqIdx % _groqClients.length];
   _groqIdx++;
@@ -124,11 +135,20 @@ function nextGroqClient() {
 // ─── Anthropic 클라이언트 (지연 초기화) ─────────────────────────────
 
 let _anthropic = null;
+let _AnthropicClass = null;
+function getAnthropicClass() {
+  if (_AnthropicClass) return _AnthropicClass;
+  const mod = require('@anthropic-ai/sdk');
+  _AnthropicClass = mod.default || mod;
+  return _AnthropicClass;
+}
+
 function getAnthropic() {
   if (_anthropic) return _anthropic;
   const apiKey = _cfg.anthropic?.api_key || '';
   if (!apiKey) throw new Error('Anthropic API 키 없음 — config.yaml anthropic.api_key 설정 필요');
-  _anthropic = new Anthropic({
+  const AnthropicClass = getAnthropicClass();
+  _anthropic = new AnthropicClass({
     apiKey,
     timeout:        _LLM_TIMEOUTS.sonnet,  // Sonnet 기본, Opus 호출 시 per-request 60s 오버라이드
     maxRetries:     2,
@@ -140,11 +160,20 @@ function getAnthropic() {
 // ─── OpenAI 클라이언트 (지연 초기화) ─────────────────────────────────
 
 let _openai = null;
+let _OpenAIClass = null;
+function getOpenAIClass() {
+  if (_OpenAIClass) return _OpenAIClass;
+  const mod = require('openai');
+  _OpenAIClass = mod.default || mod;
+  return _OpenAIClass;
+}
+
 function getOpenAI() {
   if (_openai) return _openai;
   const apiKey = _cfg.openai?.api_key || '';
   if (!apiKey) throw new Error('OpenAI API 키 없음 — config.yaml openai.api_key 설정 필요');
-  _openai = new OpenAI({ apiKey, timeout: _LLM_TIMEOUTS.openai, maxRetries: 1 });
+  const OpenAIClass = getOpenAIClass();
+  _openai = new OpenAIClass({ apiKey, timeout: _LLM_TIMEOUTS.openai, maxRetries: 1 });
   return _openai;
 }
 
