@@ -17,6 +17,16 @@ TRAINING_FEATURE_TABLE_SQL = """
         entries_count                INTEGER,
         occupancy_rate               DOUBLE PRECISION,
         total_reservations           INTEGER,
+        reservation_booked_hours     DOUBLE PRECISION,
+        reservation_unique_rooms     INTEGER,
+        reservation_peak_overlap     INTEGER,
+        reservation_avg_duration_hours DOUBLE PRECISION,
+        reservation_a1_count         INTEGER,
+        reservation_a2_count         INTEGER,
+        reservation_b_count          INTEGER,
+        reservation_morning_count    INTEGER,
+        reservation_afternoon_count  INTEGER,
+        reservation_evening_count    INTEGER,
         cancellation_count           INTEGER,
         studyroom_revenue            INTEGER,
         ska_general_revenue          INTEGER,
@@ -63,6 +73,22 @@ TRAINING_FEATURE_TABLE_SQL = """
 def ensure_training_feature_table(con):
     cur = con.cursor()
     cur.execute(TRAINING_FEATURE_TABLE_SQL)
+    alter_columns = [
+        ("reservation_booked_hours", "DOUBLE PRECISION"),
+        ("reservation_unique_rooms", "INTEGER"),
+        ("reservation_peak_overlap", "INTEGER"),
+        ("reservation_avg_duration_hours", "DOUBLE PRECISION"),
+        ("reservation_a1_count", "INTEGER"),
+        ("reservation_a2_count", "INTEGER"),
+        ("reservation_b_count", "INTEGER"),
+        ("reservation_morning_count", "INTEGER"),
+        ("reservation_afternoon_count", "INTEGER"),
+        ("reservation_evening_count", "INTEGER"),
+    ]
+    for column_name, column_type in alter_columns:
+        cur.execute(
+            f"ALTER TABLE ska.training_feature_daily ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
+        )
     con.commit()
     cur.close()
 
@@ -91,6 +117,64 @@ def sync_training_feature_store(con, days=365):
             FROM ska.forecast_results fr
             WHERE fr.forecast_date >= current_date - (%s::int - 1)
         ),
+        reservation_agg AS (
+            SELECT
+                NULLIF(r.date, '')::date AS date,
+                COUNT(*) AS reservation_count,
+                COALESCE(SUM(
+                    GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM ((NULLIF(r.end_time, '')::time) - (NULLIF(r.start_time, '')::time))) / 3600.0
+                    )
+                ), 0.0) AS reservation_booked_hours,
+                COUNT(DISTINCT r.room) FILTER (WHERE r.room IS NOT NULL AND r.room <> '') AS reservation_unique_rooms,
+                COALESCE(AVG(
+                    GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM ((NULLIF(r.end_time, '')::time) - (NULLIF(r.start_time, '')::time))) / 3600.0
+                    )
+                ), 0.0) AS reservation_avg_duration_hours,
+                COUNT(*) FILTER (WHERE UPPER(COALESCE(r.room, '')) = 'A1') AS reservation_a1_count,
+                COUNT(*) FILTER (WHERE UPPER(COALESCE(r.room, '')) = 'A2') AS reservation_a2_count,
+                COUNT(*) FILTER (WHERE UPPER(COALESCE(r.room, '')) = 'B') AS reservation_b_count,
+                COUNT(*) FILTER (WHERE NULLIF(r.start_time, '')::time < TIME '13:00') AS reservation_morning_count,
+                COUNT(*) FILTER (WHERE NULLIF(r.start_time, '')::time >= TIME '13:00' AND NULLIF(r.start_time, '')::time < TIME '18:00') AS reservation_afternoon_count,
+                COUNT(*) FILTER (WHERE NULLIF(r.start_time, '')::time >= TIME '18:00') AS reservation_evening_count
+            FROM reservation.reservations r
+            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+              AND r.status IN ('confirmed', 'pending', 'completed')
+            GROUP BY NULLIF(r.date, '')::date
+        ),
+        reservation_overlap_events AS (
+            SELECT NULLIF(r.date, '')::date AS date, NULLIF(r.start_time, '')::time AS event_time, 1 AS delta
+            FROM reservation.reservations r
+            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+              AND NULLIF(r.start_time, '') IS NOT NULL
+              AND r.status IN ('confirmed', 'pending', 'completed')
+            UNION ALL
+            SELECT NULLIF(r.date, '')::date AS date, NULLIF(r.end_time, '')::time AS event_time, -1 AS delta
+            FROM reservation.reservations r
+            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+              AND NULLIF(r.end_time, '') IS NOT NULL
+              AND r.status IN ('confirmed', 'pending', 'completed')
+        ),
+        reservation_overlap AS (
+            SELECT
+                date,
+                MAX(concurrent_count) AS reservation_peak_overlap
+            FROM (
+                SELECT
+                    date,
+                    event_time,
+                    SUM(delta) OVER (
+                        PARTITION BY date
+                        ORDER BY event_time, delta DESC
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS concurrent_count
+                FROM reservation_overlap_events
+            ) q
+            GROUP BY date
+        ),
         merged AS (
             SELECT
                 ds.date,
@@ -102,6 +186,16 @@ def sync_training_feature_store(con, days=365):
                 rds.entries_count,
                 rd.occupancy_rate,
                 rd.total_reservations,
+                ra.reservation_booked_hours,
+                ra.reservation_unique_rooms,
+                COALESCE(ro.reservation_peak_overlap, 0) AS reservation_peak_overlap,
+                ra.reservation_avg_duration_hours,
+                ra.reservation_a1_count,
+                ra.reservation_a2_count,
+                ra.reservation_b_count,
+                ra.reservation_morning_count,
+                ra.reservation_afternoon_count,
+                ra.reservation_evening_count,
                 rd.cancellation_count,
                 rd.studyroom_revenue,
                 rd.general_revenue AS ska_general_revenue,
@@ -178,12 +272,19 @@ def sync_training_feature_store(con, days=365):
             LEFT JOIN ska.revenue_daily rd
               ON rd.date = ds.date
             LEFT JOIN reservation.daily_summary rds
-              ON rds.date::date = ds.date
+              ON NULLIF(rds.date, '')::date = ds.date
+            LEFT JOIN reservation_agg ra
+              ON ra.date = ds.date
+            LEFT JOIN reservation_overlap ro
+              ON ro.date = ds.date
         )
         INSERT INTO ska.training_feature_daily (
             date, target_revenue, total_amount, pickko_total, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
-            cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
+            reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
+            reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
+            reservation_b_count, reservation_morning_count, reservation_afternoon_count,
+            reservation_evening_count, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
             predicted_prophet, predicted_sarima, predicted_quick, yhat_lower, yhat_upper,
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
@@ -195,7 +296,10 @@ def sync_training_feature_store(con, days=365):
         SELECT
             date, target_revenue, total_amount, pickko_total, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
-            cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
+            reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
+            reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
+            reservation_b_count, reservation_morning_count, reservation_afternoon_count,
+            reservation_evening_count, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
             predicted_prophet, predicted_sarima, predicted_quick, yhat_lower, yhat_upper,
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
@@ -213,6 +317,16 @@ def sync_training_feature_store(con, days=365):
             entries_count = EXCLUDED.entries_count,
             occupancy_rate = EXCLUDED.occupancy_rate,
             total_reservations = EXCLUDED.total_reservations,
+            reservation_booked_hours = EXCLUDED.reservation_booked_hours,
+            reservation_unique_rooms = EXCLUDED.reservation_unique_rooms,
+            reservation_peak_overlap = EXCLUDED.reservation_peak_overlap,
+            reservation_avg_duration_hours = EXCLUDED.reservation_avg_duration_hours,
+            reservation_a1_count = EXCLUDED.reservation_a1_count,
+            reservation_a2_count = EXCLUDED.reservation_a2_count,
+            reservation_b_count = EXCLUDED.reservation_b_count,
+            reservation_morning_count = EXCLUDED.reservation_morning_count,
+            reservation_afternoon_count = EXCLUDED.reservation_afternoon_count,
+            reservation_evening_count = EXCLUDED.reservation_evening_count,
             cancellation_count = EXCLUDED.cancellation_count,
             studyroom_revenue = EXCLUDED.studyroom_revenue,
             ska_general_revenue = EXCLUDED.ska_general_revenue,
@@ -252,7 +366,7 @@ def sync_training_feature_store(con, days=365):
             forecast_abs_error = EXCLUDED.forecast_abs_error,
             forecast_created_at = EXCLUDED.forecast_created_at,
             source_updated_at = NOW()
-    """, (days, days))
+    """, (days, days, days, days, days))
     rowcount = cur.rowcount
     con.commit()
     cur.close()
