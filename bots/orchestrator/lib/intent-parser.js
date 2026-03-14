@@ -188,6 +188,7 @@ const KEYWORD_PATTERNS = [
   { re: /(루나|luna).*(오류|에러|로그|상태로그)|투자팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'luna' } },
   { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
   { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
+  { re: /(전체|통합|운영).*(헬스|건강|상태).*(경고|알람|주의)|헬스.*(경고|알람|주의).*(전체|통합)|ops.*health.*alerts/i, intent: 'ops_health', args: { query: 'alerts' } },
   { re: /(전체|통합|운영).*(헬스|건강|상태).*(요약|브리핑|한눈)|헬스.*(요약|브리핑|한눈).*(전체|통합)|ops.*health.*summary/i, intent: 'ops_health', args: { query: 'summary' } },
   { re: /(전체|통합|운영).*(헬스|건강|상태|리포트|보고)|헬스.*(한번|한 번|전체로|통합)|ops.*health/i, intent: 'ops_health', args: {} },
   { re: /(루나|luna).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|투자팀.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'luna_health', args: {} },
