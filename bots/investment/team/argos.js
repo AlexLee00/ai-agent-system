@@ -902,11 +902,24 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
 
   const yahooTickers = yahooRes.status === 'fulfilled' ? yahooRes.value : [];
   const apeTickers   = apeRes.status   === 'fulfilled' ? apeRes.value   : [];
-  const candidates = _mergeOverseasSourceCandidates(yahooTickers, apeTickers);
+  const quoteUniverse = [...new Set([...yahooTickers, ...apeTickers])]
+    .filter(Boolean)
+    .slice(0, Math.max(max * 2, 20));
+  const quoteMap = quoteUniverse.length
+    ? await _fetchYahooQuoteMap(quoteUniverse)
+    : new Map();
+  const candidates = _mergeOverseasSourceCandidates(yahooTickers, apeTickers, quoteMap);
 
   const ranked = await _applyCandidateIntelligence(candidates, 'overseas', max);
   const dynamicSymbols = ranked.map(c => c.symbol);
   console.log(`[아르고스] 해외주식 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
+  ranked.forEach(c =>
+    console.log(
+      `  ${c.symbol}: ${c.changeRate > 0 ? '+' : ''}${(c.changeRate || 0).toFixed(2)}%`
+      + ` | 거래대금 ${(c.dollarVolume || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      + ` | 소스 ${c.sourceCount || 1}개 (${(c.sourceNames || []).join(', ')})`
+    )
+  );
 
   if (!dynamicSymbols.length && yahooTickers.length === 0) {
     const fallbackSymbols = getKisOverseasSymbols();
@@ -922,18 +935,23 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked, fng };
 }
 
-function _mergeOverseasSourceCandidates(yahooTickers, apeTickers) {
+function _mergeOverseasSourceCandidates(yahooTickers, apeTickers, quoteMap = new Map()) {
   const bucket = new Map();
   const addCandidate = (symbol, sourceName, rank, sourcePriorityBase) => {
     if (!symbol || symbol.includes('^') || symbol.includes('=') || symbol.length > 6) return;
     const normalized = symbol.toUpperCase();
+    const quote = quoteMap.get(normalized) || {};
     const rankBoost = Math.max(0.2, 1 - (rank * 0.03));
     const sourcePriority = Math.round((sourcePriorityBase * rankBoost) * 100) / 100;
     const existing = bucket.get(normalized);
     if (!existing) {
       bucket.set(normalized, {
         symbol: normalized,
-        name: normalized,
+        name: quote.name || normalized,
+        price: quote.price || 0,
+        volume: quote.volume || 0,
+        dollarVolume: quote.dollarVolume || 0,
+        changeRate: quote.changeRate || 0,
         sourceNames: [sourceName],
         sourceCount: 1,
         sourcePriority,
@@ -944,6 +962,16 @@ function _mergeOverseasSourceCandidates(yahooTickers, apeTickers) {
     if (!existing.sourceNames.includes(sourceName)) {
       existing.sourceNames.push(sourceName);
       existing.sourceCount = existing.sourceNames.length;
+    }
+    existing.name ||= quote.name || normalized;
+    existing.price ||= quote.price || 0;
+    existing.volume = Math.max(existing.volume || 0, quote.volume || 0);
+    existing.dollarVolume = Math.max(existing.dollarVolume || 0, quote.dollarVolume || 0);
+    if (quote.changeRate != null) {
+      const current = Number(existing.changeRate || 0);
+      if (Math.abs(Number(quote.changeRate || 0)) > Math.abs(current)) {
+        existing.changeRate = Number(quote.changeRate || 0);
+      }
     }
     existing.sourcePriority += sourcePriority;
     existing.finalScore += sourcePriority;
@@ -977,6 +1005,50 @@ async function _fetchYahooTrending() {
     );
     req.on('error', () => resolve([]));
     req.on('timeout', () => { req.destroy(); resolve([]); });
+  });
+}
+
+async function _fetchYahooQuoteMap(symbols) {
+  return new Promise((resolve) => {
+    if (!symbols.length) {
+      resolve(new Map());
+      return;
+    }
+
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}`;
+    const req = https.get(
+      url,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 },
+      res => {
+        let body = '';
+        res.on('data', c => body += c);
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            const results = data?.quoteResponse?.result || [];
+            const map = new Map();
+            results.forEach((item) => {
+              const symbol = String(item?.symbol || '').toUpperCase();
+              if (!symbol) return;
+              const price = Number(item?.regularMarketPrice || item?.postMarketPrice || 0);
+              const volume = Number(item?.regularMarketVolume || item?.averageDailyVolume3Month || 0);
+              map.set(symbol, {
+                name: item?.shortName || item?.longName || symbol,
+                price,
+                volume,
+                changeRate: Number(item?.regularMarketChangePercent || 0),
+                dollarVolume: price > 0 && volume > 0 ? price * volume : 0,
+              });
+            });
+            resolve(map);
+          } catch {
+            resolve(new Map());
+          }
+        });
+      },
+    );
+    req.on('error', () => resolve(new Map()));
+    req.on('timeout', () => { req.destroy(); resolve(new Map()); });
   });
 }
 
