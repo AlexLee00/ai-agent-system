@@ -50,8 +50,8 @@
     <key>NODE_ENV</key>
     <string>production</string>
     <key>PAPER_MODE</key>
-    <string>false</string>
-    <!-- KIS 모의투자 API 사용 — PAPER_MODE=false 사용자 승인 2026-03-12 -->
+    <string>true</string>
+    <!-- 국내장 paper 데이터 수집 모드 -->
   </dict>
 
   <key>RunAtLoad</key>

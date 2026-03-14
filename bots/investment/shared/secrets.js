@@ -46,6 +46,9 @@ export function loadSecrets() {
       kis_paper_trading:    c.kis?.paper_trading   !== false,
       kis_symbols:          c.kis?.symbols          || [],  // 아르고스 동적 선정
       kis_overseas_symbols: c.kis?.overseas_symbols || [],  // 아르고스 동적 선정
+      screening_domestic_core: c.screening?.domestic?.core || [],
+      screening_overseas_core: c.screening?.overseas?.core || [],
+      screening_crypto_core: c.screening?.crypto?.core || [],
       // LLM
       anthropic_api_key:    c.anthropic?.api_key   || '',
       groq_api_key:         c.groq?.accounts?.[0]?.api_key || '',
@@ -94,15 +97,30 @@ export function isTestnet() {
 // ─── 심볼 헬퍼 ─────────────────────────────────────────────────────
 
 export function getSymbols() {
-  return loadSecrets().binance_symbols || ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'];
+  const s = loadSecrets();
+  return s.binance_symbols?.length
+    ? s.binance_symbols
+    : s.screening_crypto_core?.length
+      ? s.screening_crypto_core
+      : ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'];
 }
 
 export function getKisSymbols() {
-  return loadSecrets().kis_symbols || ['005930', '000660'];
+  const s = loadSecrets();
+  return s.kis_symbols?.length
+    ? s.kis_symbols
+    : s.screening_domestic_core?.length
+      ? s.screening_domestic_core
+      : ['005930', '000660'];
 }
 
 export function getKisOverseasSymbols() {
-  return loadSecrets().kis_overseas_symbols || ['AAPL', 'TSLA', 'NVDA'];
+  const s = loadSecrets();
+  return s.kis_overseas_symbols?.length
+    ? s.kis_overseas_symbols
+    : s.screening_overseas_core?.length
+      ? s.screening_overseas_core
+      : ['AAPL', 'TSLA', 'NVDA'];
 }
 
 // ─── 공휴일 체크 (ska.environment_factors) ──────────────────────────
