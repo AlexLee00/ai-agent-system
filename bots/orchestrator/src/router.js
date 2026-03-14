@@ -162,6 +162,23 @@ let _unrecTableReady = false;
 const AUTO_PROMOTE_WINDOW_DAYS = 30;
 const AUTO_PROMOTE_MIN_COUNT = 5;
 const AUTO_PROMOTE_MIN_CONFIDENCE = 0.8;
+const SAFE_AUTO_PROMOTE_INTENTS = new Set([
+  'status',
+  'queue',
+  'brief',
+  'telegram_status',
+  'system_logs',
+  'speed_test',
+  'promotion_candidates',
+  'unrecognized_report',
+]);
+const SAFE_AUTO_PROMOTE_PREFIXES = [
+  'luna_query',
+  'ska_query',
+  'claude_query',
+  'blog_query',
+  'worker_query',
+];
 
 function normalizeIntentText(text = '') {
   return String(text)
@@ -180,6 +197,13 @@ function buildAutoLearnPattern(text = '') {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
   return normalized.split(' ').map(escapeRegex).join('\\s+');
+}
+
+function isSafeAutoPromoteIntent(intent = '') {
+  const value = String(intent || '').trim();
+  if (!value) return false;
+  if (SAFE_AUTO_PROMOTE_INTENTS.has(value)) return true;
+  return SAFE_AUTO_PROMOTE_PREFIXES.some(prefix => value === prefix || value.startsWith(`${prefix}/`));
 }
 
 async function _ensureUnrecTable() {
@@ -328,6 +352,26 @@ async function evaluateAutoPromotion(text) {
   });
 
   if (confidence < AUTO_PROMOTE_MIN_CONFIDENCE || !pattern) return null;
+  if (!isSafeAutoPromoteIntent(suggestedIntent)) {
+    const candidate = await pgPool.get('claude', `
+      SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
+    `, [normalized]);
+    await logPromotionEvent({
+      candidateId: candidate?.id || null,
+      normalizedText: normalized,
+      sampleText,
+      suggestedIntent,
+      eventType: 'auto_blocked',
+      learnedPattern: pattern,
+      actor: 'system',
+      metadata: {
+        occurrenceCount: matching.length,
+        confidence,
+        reason: 'unsafe_intent',
+      },
+    });
+    return { normalized, suggestedIntent, occurrenceCount: matching.length, confidence, autoApplied: false, blocked: true };
+  }
 
   const recordIds = matching.map(r => r.id);
   await promoteToIntent(normalized, suggestedIntent, pattern, recordIds);
@@ -531,6 +575,7 @@ async function buildPromotionCandidateReport(query = '') {
     }
     lines.push('');
     lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
+    lines.push('안전정책: 자동반영은 query/status/report 성격만 허용, action 계열은 후보로만 유지');
     lines.push('조회: /promotions applied | /promotions pending | /promotions intent:luna_query');
     lines.push('이력: /promotions events | /promotions event:rollback | /promotions actor:master');
     lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
