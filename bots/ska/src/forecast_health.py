@@ -176,6 +176,59 @@ def build_recommendations(summary, weekday_bias, worst_cases):
     return recs[:3]
 
 
+def build_tuning_candidate(summary, weekday_bias):
+    if not summary or summary.get('valid_count', 0) == 0:
+        return {
+            'recommended': False,
+            'level': 'hold',
+            'reasons': ['정확도 데이터가 아직 부족해 튜닝 판단을 보류합니다.'],
+        }
+
+    avg_mape = summary.get('avg_mape') or 0
+    hit_rate_20 = summary.get('hit_rate_20') or 0
+    avg_bias = summary.get('avg_bias') or 0
+    worst_weekday = max(weekday_bias, key=lambda item: (item['avg_mape'], abs(item['avg_bias'])), default=None)
+
+    reasons = []
+    level = 'hold'
+    recommended = False
+
+    if avg_mape > 20:
+        recommended = True
+        level = 'high'
+        reasons.append(f'평균 MAPE가 {avg_mape:.1f}%로 높습니다.')
+    elif avg_mape > 15:
+        recommended = True
+        level = 'medium'
+        reasons.append(f'평균 MAPE가 {avg_mape:.1f}%로 튜닝 검토 구간입니다.')
+
+    if hit_rate_20 < 70:
+        recommended = True
+        level = 'high' if level == 'high' else 'medium'
+        reasons.append(f'20% 이내 적중률이 {hit_rate_20:.1f}%로 낮습니다.')
+
+    if abs(avg_bias) >= 50000:
+        recommended = True
+        level = 'high' if level == 'high' else 'medium'
+        reasons.append(f'평균 편향이 {avg_bias:+,}원으로 큽니다.')
+
+    if worst_weekday and worst_weekday['avg_mape'] >= 25:
+        recommended = True
+        level = 'high' if level == 'high' else 'medium'
+        reasons.append(
+            f'{worst_weekday["weekday"]}요일 MAPE가 {worst_weekday["avg_mape"]:.1f}%로 높습니다.'
+        )
+
+    if not reasons:
+        reasons.append('현재 정확도 수준은 관찰 유지 구간입니다.')
+
+    return {
+        'recommended': recommended,
+        'level': level,
+        'reasons': reasons[:3],
+    }
+
+
 def format_text(report):
     summary = report['summary']
     lines = [
@@ -229,6 +282,18 @@ def format_text(report):
         for rec in recommendations:
             lines.append(f'  - {rec}')
 
+    tuning_candidate = report.get('tuning_candidate')
+    if tuning_candidate:
+        lines.append('')
+        lines.append('■ 튜닝 판단')
+        if tuning_candidate['recommended']:
+            badge = '🔧 즉시 검토' if tuning_candidate['level'] == 'high' else '🛠 검토 권장'
+            lines.append(f'  {badge}')
+        else:
+            lines.append('  ✅ 현재는 추가 튜닝보다 관찰 유지')
+        for reason in tuning_candidate.get('reasons', []):
+            lines.append(f'  - {reason}')
+
     return '\n'.join(lines)
 
 
@@ -248,12 +313,17 @@ def run():
         'weekday_bias': build_weekday_bias(rows),
         'worst_cases': build_worst_cases(rows),
         'recommendations': None,
+        'tuning_candidate': None,
         'rows': rows if output_json else None,
     }
     report['recommendations'] = build_recommendations(
         report['summary'],
         report['weekday_bias'],
         report['worst_cases'],
+    )
+    report['tuning_candidate'] = build_tuning_candidate(
+        report['summary'],
+        report['weekday_bias'],
     )
 
     if output_json:
