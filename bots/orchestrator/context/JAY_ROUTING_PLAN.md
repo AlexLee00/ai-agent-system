@@ -69,6 +69,9 @@
 - `제이 로그 보여줘`
 - `자동학습 후보 보여줘`
 - `자동 반영 후보 현황`
+- `/promotions applied`
+- `/promotions pending`
+- `/promotions intent:luna_query`
 - `자동 반영 취소해`
 - `/rollback <문구>`
 
