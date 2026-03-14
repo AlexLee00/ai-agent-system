@@ -205,6 +205,25 @@ function buildPromotionEventLines(events = []) {
   });
 }
 
+function buildUnrecognizedSummary(rows = [], resolveCandidate = () => null) {
+  const llmMap = new Map();
+  const statusMap = new Map();
+
+  for (const row of rows) {
+    const llmIntent = String(row.llm_intent || 'unknown');
+    llmMap.set(llmIntent, (llmMap.get(llmIntent) || 0) + Number(row.cnt || 0));
+
+    const candidate = resolveCandidate(row);
+    const status = getPromotionCandidateStatus(candidate || {});
+    statusMap.set(status, (statusMap.get(status) || 0) + Number(row.cnt || 0));
+  }
+
+  return {
+    llmIntentCounts: [...llmMap.entries()].sort((a, b) => b[1] - a[1]),
+    candidateStatusCounts: [...statusMap.entries()].sort((a, b) => b[1] - a[1]),
+  };
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -225,4 +244,5 @@ module.exports = {
   buildPromotionFilterBits,
   buildPromotionFamilySummary,
   buildPromotionEventLines,
+  buildUnrecognizedSummary,
 };

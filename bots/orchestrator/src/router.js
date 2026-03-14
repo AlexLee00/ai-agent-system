@@ -33,6 +33,7 @@ const {
   buildPromotionFilterBits,
   buildPromotionFamilySummary,
   buildPromotionEventLines,
+  buildUnrecognizedSummary,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -443,23 +444,18 @@ async function buildUnrecognizedReport(query = '') {
     const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
     const lines = [`❓ 미인식 명령 (최근 7일, ${rows.length}종 ${total}회)`];
     if (filters.summaryOnly) {
-      const llmMap = new Map();
-      const statusMap = new Map();
-      for (const r of rows) {
-        const llmIntent = String(r.llm_intent || 'unknown');
-        llmMap.set(llmIntent, (llmMap.get(llmIntent) || 0) + Number(r.cnt || 0));
-        const candidate = candidateMap.get(normalizeIntentText(r.text || ''));
-        const status = getPromotionCandidateStatus(candidate || {});
-        statusMap.set(status, (statusMap.get(status) || 0) + Number(r.cnt || 0));
-      }
+      const summary = buildUnrecognizedSummary(
+        rows,
+        (row) => candidateMap.get(normalizeIntentText(row.text || ''))
+      );
       lines.push('');
       lines.push('LLM 추정 분포:');
-      for (const [intent, count] of [...llmMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      for (const [intent, count] of summary.llmIntentCounts.slice(0, 8)) {
         lines.push(`  ${intent}: ${count}회`);
       }
       lines.push('');
       lines.push('후보 상태 분포:');
-      for (const [status, count] of [...statusMap.entries()].sort((a, b) => b[1] - a[1])) {
+      for (const [status, count] of summary.candidateStatusCounts) {
         lines.push(`  ${status}: ${count}회`);
       }
       lines.push('');
