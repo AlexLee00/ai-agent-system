@@ -35,8 +35,14 @@ import { evaluateSignal } from './nemesis.js';
 import { recommendStrategy } from './argos.js';
 
 const MIN_CONFIDENCE     = { binance: 0.55, kis: 0.35, kis_overseas: 0.35 };
+const PAPER_MIN_CONFIDENCE = { binance: 0.50, kis: 0.28, kis_overseas: 0.28 };
 const MAX_POS_COUNT      = 5;
 const MAX_DEBATE_SYMBOLS = 2;
+
+function getMinConfidence(exchange) {
+  if (isPaperMode()) return PAPER_MIN_CONFIDENCE[exchange] ?? MIN_CONFIDENCE[exchange] ?? 0.60;
+  return MIN_CONFIDENCE[exchange] ?? 0.60;
+}
 
 // ─── 시스템 프롬프트 ────────────────────────────────────────────────
 
@@ -78,7 +84,7 @@ function getLunaSystem(exchange) {
 function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const exampleSymbol = symbols[0] || 'SYMBOL';
   const isStock       = exchange === 'kis' || exchange === 'kis_overseas';
-  const minConf       = MIN_CONFIDENCE[exchange] ?? 0.60;
+  const minConf       = getMinConfidence(exchange);
   const maxPosPct     = isStock ? '30%' : '20%';
   const dailyLoss     = isStock ? '10%' : '5%';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ' (주식 — 공격적 모드)' : ''}
@@ -484,7 +490,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
   for (const dec of (portfolio_decision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    const minConf = params?.minSignalScore ?? (MIN_CONFIDENCE[exchange] ?? 0.60);
+    const minConf = params?.minSignalScore ?? getMinConfidence(exchange);
     if ((dec.confidence || 0) < minConf) {
       console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}% < ${(minConf * 100).toFixed(0)}%) → HOLD`);
       continue;

@@ -21,7 +21,7 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisSymbols, isKisMarketOpen, isKisHoliday, isPaperMode } from '../shared/secrets.js';
+import { getKisSymbols, getKisMarketStatus, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
@@ -246,8 +246,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   // 장중 체크
-  const holiday = !force ? await isKisHoliday() : { isHoliday: false, name: '' };
-  const marketOpen = isKisMarketOpen() && !holiday.isHoliday;
+  const marketStatus = !force
+    ? await getKisMarketStatus()
+    : { isOpen: true, reason: '--force 옵션', holiday: { isHoliday: false, name: '' } };
+  const marketOpen = marketStatus.isOpen;
 
   // 30분 주기 체크
   const check = researchOnly
@@ -275,8 +277,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
 
     if (!force && !marketOpen) {
-      const reason = holiday.isHoliday ? `공휴일 (${holiday.name})` : `장외 시간 (KST ${kst.timeStr().slice(0, 5)})`;
-      console.log(`📚 ${reason} — 연구 모드 전환`);
+      console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
       await runDomesticResearchCycle(symbols);
       process.exit(0);
     }
