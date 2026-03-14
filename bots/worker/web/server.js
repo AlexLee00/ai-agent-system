@@ -29,6 +29,7 @@ const pgPool  = require(path.join(__dirname, '../../../packages/core/lib/pg-pool
 const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy } = require('../lib/auth');
 const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard');
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
+const { getSecret } = require('../lib/secrets');
 const { recalcProgress } = require('../src/ryan');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
@@ -187,6 +188,20 @@ function pagination(req) {
 
 async function getEmployeeIdForRequest(req) {
   return resolveEmployeeId(req.user.id);
+}
+
+function requireWorkerWebhookSecret(req, res, next) {
+  const secret = getSecret('worker_webhook_secret');
+  if (!secret) {
+    return res.status(503).json({ error: 'worker webhook secret이 설정되지 않았습니다.', code: 'WEBHOOK_SECRET_MISSING' });
+  }
+  const provided = req.headers['x-worker-webhook-secret']
+    || req.headers['x-api-key']
+    || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (provided !== secret) {
+    return res.status(401).json({ error: '웹훅 인증에 실패했습니다.', code: 'WEBHOOK_AUTH_FAILED' });
+  }
+  next();
 }
 
 // ── 인증 API ──────────────────────────────────────────────────────────
@@ -1499,6 +1514,67 @@ app.post('/api/chat/send',
     } catch (e) {
       console.error('[worker/chat]', e.message);
       res.status(500).json({ error: '대화 처리 중 오류가 발생했습니다.', code: 'CHAT_SEND_FAILED', detail: e.message });
+    }
+  }
+);
+
+app.post('/api/webhooks/n8n/chat-intake',
+  requireWorkerWebhookSecret,
+  body('company_id').trim().notEmpty(),
+  body('user_id').isInt({ min: 1 }),
+  body('message').isString().trim().isLength({ min: 1, max: 1000 }),
+  body('session_id').optional().isString().trim().isLength({ min: 8, max: 100 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const user = await pgPool.get(SCHEMA,
+        `SELECT id, company_id, username, role, name
+         FROM worker.users
+         WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+        [req.body.user_id, req.body.company_id]);
+      if (!user) {
+        return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'USER_NOT_FOUND' });
+      }
+      const result = await handleChatMessage({
+        text: req.body.message,
+        sessionId: req.body.session_id || null,
+        user,
+        companyId: req.body.company_id,
+        channel: 'n8n',
+      });
+      res.json({
+        ok: true,
+        sessionId: result.sessionId,
+        reply: result.reply,
+        intent: result.intent,
+        ui: result.ui || null,
+      });
+    } catch (e) {
+      console.error('[worker/webhook/n8n]', e.message);
+      res.status(500).json({ error: 'n8n 웹훅 처리 중 오류가 발생했습니다.', code: 'N8N_CHAT_INTAKE_FAILED', detail: e.message });
+    }
+  }
+);
+
+app.get('/api/webhooks/n8n/agent-tasks/:id',
+  requireWorkerWebhookSecret,
+  param('id').isInt({ min: 1 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const task = await pgPool.get(SCHEMA,
+        `SELECT t.*, u.name AS user_name, ar.status AS approval_status
+         FROM worker.agent_tasks t
+         LEFT JOIN worker.users u ON u.id = t.user_id
+         LEFT JOIN worker.approval_requests ar ON ar.id = t.approval_id
+         WHERE t.id=$1`,
+        [req.params.id]);
+      if (!task) {
+        return res.status(404).json({ error: '업무를 찾을 수 없습니다.', code: 'TASK_NOT_FOUND' });
+      }
+      res.json({ ok: true, task });
+    } catch (e) {
+      res.status(500).json({ error: '업무 상태 조회 중 오류가 발생했습니다.', code: 'N8N_TASK_LOAD_FAILED', detail: e.message });
     }
   }
 );
