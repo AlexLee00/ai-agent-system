@@ -39,6 +39,8 @@ const {
   buildUnrecognizedCandidateStatusLine,
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
+  buildPromotionThresholdLines,
+  buildPromotionPolicyNoteLines,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -584,10 +586,7 @@ async function buildPromotionCandidateReport(query = '') {
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
     if (filters.thresholdsOnly) {
       lines.push('자동 반영 기준:');
-      const rows = Object.entries(AUTO_PROMOTE_THRESHOLDS).map(([key, value]) => [key, value]);
-      for (const [key, value] of rows) {
-        lines.push(`  ${key}: ${value.minCount}회 / ${formatIntentConfidence(value.minConfidence)}`);
-      }
+      lines.push(...buildPromotionThresholdLines(AUTO_PROMOTE_THRESHOLDS));
       lines.push('');
       lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
       lines.push('차단 예시: *_action, 재시작, 승인, 송금');
@@ -647,12 +646,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('최근 변경: 없음');
     }
     lines.push('');
-    lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일, intent family별 최소 반복/일치율 적용`);
-    lines.push('안전정책: 자동반영은 query/status/report 성격만 허용, action 계열은 후보로만 유지');
-    lines.push('조회: /promotions applied | /promotions pending | /promotions intent:luna_query');
-    lines.push('요약: /promotions summary');
-    lines.push('이력: /promotions events | /promotions event:rollback | /promotions actor:master');
-    lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
+    lines.push(...buildPromotionPolicyNoteLines(AUTO_PROMOTE_WINDOW_DAYS));
     return lines.join('\n');
   } catch (e) {
     return `⚠️ 자동 반영 후보 조회 실패: ${e.message}`;

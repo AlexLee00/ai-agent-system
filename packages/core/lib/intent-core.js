@@ -268,6 +268,23 @@ function buildPromotionCandidateStatusLine(candidate = {}) {
   return `     상태: ${candidate.latest_event_type}${reason}`;
 }
 
+function buildPromotionThresholdLines(thresholds = AUTO_PROMOTE_THRESHOLDS) {
+  return Object.entries(thresholds).map(([key, value]) => {
+    return `  ${key}: ${value.minCount}회 / ${formatIntentConfidence(value.minConfidence)}`;
+  });
+}
+
+function buildPromotionPolicyNoteLines(windowDays = AUTO_PROMOTE_DEFAULTS.windowDays) {
+  return [
+    `기준: 최근 ${windowDays}일, intent family별 최소 반복/일치율 적용`,
+    '안전정책: 자동반영은 query/status/report 성격만 허용, action 계열은 후보로만 유지',
+    '조회: /promotions applied | /promotions pending | /promotions intent:luna_query',
+    '요약: /promotions summary',
+    '이력: /promotions events | /promotions event:rollback | /promotions actor:master',
+    '롤백: /rollback <id> 또는 /rollback <문구>',
+  ];
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -294,4 +311,6 @@ module.exports = {
   buildUnrecognizedCandidateStatusLine,
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
+  buildPromotionThresholdLines,
+  buildPromotionPolicyNoteLines,
 };
