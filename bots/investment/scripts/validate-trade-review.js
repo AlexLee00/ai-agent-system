@@ -2,6 +2,7 @@
 
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
+import { pathToFileURL } from 'url';
 
 const args = process.argv.slice(2);
 const daysArg = args.find(arg => arg.startsWith('--days='));
@@ -122,10 +123,12 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch(err => {
-  console.error('❌ trade_review 검증 실패:', err?.message || String(err));
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(err => {
+    console.error('❌ trade_review 검증 실패:', err?.message || String(err));
+    process.exit(1);
+  });
+}
 
 export default {
   validateTradeReview,
