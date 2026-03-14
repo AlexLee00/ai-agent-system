@@ -10,6 +10,18 @@ const {
   buildUnrecognizedReportQueries,
 } = require('./intent-core');
 
+function safeSchema(schema = 'claude') {
+  const value = String(schema || 'claude').trim().toLowerCase();
+  if (!/^[a-z_][a-z0-9_]*$/.test(value)) {
+    throw new Error(`invalid_intent_schema:${schema}`);
+  }
+  return value;
+}
+
+function q(schema, table) {
+  return `${safeSchema(schema)}.${table}`;
+}
+
 function getIntentLearningPath(explicitPath = '') {
   if (explicitPath) return explicitPath;
   return path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
@@ -67,8 +79,11 @@ async function ensureIntentTables(pgPool, {
   schema = 'claude',
 } = {}) {
   if (!pgPool) return;
+  const unrecTable = q(schema, 'unrecognized_intents');
+  const candidateTable = q(schema, 'intent_promotion_candidates');
+  const eventTable = q(schema, 'intent_promotion_events');
   await pgPool.run(schema, `
-    CREATE TABLE IF NOT EXISTS unrecognized_intents (
+    CREATE TABLE IF NOT EXISTS ${unrecTable} (
       id           SERIAL PRIMARY KEY,
       text         TEXT NOT NULL,
       parse_source TEXT,
@@ -78,10 +93,10 @@ async function ensureIntentTables(pgPool, {
     )
   `);
   await pgPool.run(schema, `
-    CREATE INDEX IF NOT EXISTS idx_unrec_created ON unrecognized_intents(created_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_unrec_created_${safeSchema(schema)} ON ${unrecTable}(created_at DESC)
   `);
   await pgPool.run(schema, `
-    CREATE TABLE IF NOT EXISTS intent_promotion_candidates (
+    CREATE TABLE IF NOT EXISTS ${candidateTable} (
       id               SERIAL PRIMARY KEY,
       normalized_text  TEXT NOT NULL UNIQUE,
       sample_text      TEXT NOT NULL,
@@ -97,11 +112,11 @@ async function ensureIntentTables(pgPool, {
     )
   `);
   await pgPool.run(schema, `
-    CREATE INDEX IF NOT EXISTS idx_promotion_candidates_last_seen
-    ON intent_promotion_candidates(last_seen_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_promotion_candidates_last_seen_${safeSchema(schema)}
+    ON ${candidateTable}(last_seen_at DESC)
   `);
   await pgPool.run(schema, `
-    CREATE TABLE IF NOT EXISTS intent_promotion_events (
+    CREATE TABLE IF NOT EXISTS ${eventTable} (
       id               SERIAL PRIMARY KEY,
       candidate_id     INTEGER,
       normalized_text  TEXT,
@@ -115,8 +130,8 @@ async function ensureIntentTables(pgPool, {
     )
   `);
   await pgPool.run(schema, `
-    CREATE INDEX IF NOT EXISTS idx_promotion_events_created
-    ON intent_promotion_events(created_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_promotion_events_created_${safeSchema(schema)}
+    ON ${eventTable}(created_at DESC)
   `);
 }
 
@@ -133,7 +148,7 @@ async function logPromotionEvent(pgPool, {
 } = {}) {
   if (!pgPool || !eventType) return;
   await pgPool.run(schema, `
-    INSERT INTO intent_promotion_events (
+    INSERT INTO ${q(schema, 'intent_promotion_events')} (
       candidate_id, normalized_text, sample_text, suggested_intent,
       event_type, learned_pattern, actor, metadata
     )
@@ -162,7 +177,7 @@ async function upsertPromotionCandidate(pgPool, {
 } = {}) {
   if (!pgPool || !normalizedText || !suggestedIntent) return;
   await pgPool.run(schema, `
-    INSERT INTO intent_promotion_candidates (
+    INSERT INTO ${q(schema, 'intent_promotion_candidates')} (
       normalized_text, sample_text, suggested_intent, occurrence_count,
       confidence, auto_applied, learned_pattern, first_seen_at, last_seen_at, updated_at
     )
@@ -172,8 +187,8 @@ async function upsertPromotionCandidate(pgPool, {
         suggested_intent = EXCLUDED.suggested_intent,
         occurrence_count = EXCLUDED.occurrence_count,
         confidence       = EXCLUDED.confidence,
-        auto_applied     = intent_promotion_candidates.auto_applied OR EXCLUDED.auto_applied,
-        learned_pattern  = COALESCE(intent_promotion_candidates.learned_pattern, EXCLUDED.learned_pattern),
+        auto_applied     = ${q(schema, 'intent_promotion_candidates')}.auto_applied OR EXCLUDED.auto_applied,
+        learned_pattern  = COALESCE(${q(schema, 'intent_promotion_candidates')}.learned_pattern, EXCLUDED.learned_pattern),
         last_seen_at     = NOW(),
         updated_at       = NOW()
   `, [
@@ -195,7 +210,7 @@ async function insertUnrecognizedIntent(pgPool, {
 } = {}) {
   if (!pgPool || !text) return;
   await pgPool.run(schema, `
-    INSERT INTO unrecognized_intents (text, parse_source, llm_intent)
+    INSERT INTO ${q(schema, 'unrecognized_intents')} (text, parse_source, llm_intent)
     VALUES ($1, $2, $3)
   `, [
     String(text).slice(0, 500),
@@ -214,7 +229,7 @@ async function getPromotionSummary(pgPool, {
       COUNT(*)::int AS total_count,
       COUNT(*) FILTER (WHERE auto_applied = true)::int AS applied_count,
       COUNT(*) FILTER (WHERE auto_applied = false)::int AS pending_count
-    FROM intent_promotion_candidates
+    FROM ${q(schema, 'intent_promotion_candidates')}
     ${candidateWhere.whereSql}
   `, candidateWhere.params);
 }
@@ -236,10 +251,10 @@ async function getPromotionRows(pgPool, {
       c.updated_at,
       e.event_type AS latest_event_type,
       e.metadata AS latest_event_metadata
-    FROM intent_promotion_candidates c
+    FROM ${q(schema, 'intent_promotion_candidates')} c
     LEFT JOIN LATERAL (
       SELECT event_type, metadata
-      FROM intent_promotion_events
+      FROM ${q(schema, 'intent_promotion_events')}
       WHERE candidate_id = c.id
       ORDER BY created_at DESC
       LIMIT 1
@@ -258,7 +273,7 @@ async function getPromotionFamilyRows(pgPool, {
   const candidateWhere = buildPromotionCandidateWhere(filters);
   return pgPool.query(schema, `
     SELECT suggested_intent, auto_applied, occurrence_count
-    FROM intent_promotion_candidates
+    FROM ${q(schema, 'intent_promotion_candidates')}
     ${candidateWhere.whereSql}
     ORDER BY updated_at DESC
     LIMIT ${Number(limit)}
@@ -273,7 +288,7 @@ async function getPromotionEvents(pgPool, {
   const eventWhere = buildPromotionEventWhere(filters);
   return pgPool.query(schema, `
     SELECT event_type, sample_text, suggested_intent, actor, created_at
-    FROM intent_promotion_events
+    FROM ${q(schema, 'intent_promotion_events')}
     ${eventWhere.whereSql}
     ORDER BY created_at DESC
     LIMIT ${Number(limit)}
@@ -289,14 +304,14 @@ async function findPromotionCandidate(pgPool, {
   if (Number.isFinite(candidateId)) {
     return pgPool.get(schema, `
       SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
-      FROM intent_promotion_candidates
+      FROM ${q(schema, 'intent_promotion_candidates')}
       WHERE id = $1
       LIMIT 1
     `, [candidateId]);
   }
   return pgPool.get(schema, `
     SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
-    FROM intent_promotion_candidates
+    FROM ${q(schema, 'intent_promotion_candidates')}
     WHERE normalized_text = $1 OR sample_text = $2
     LIMIT 1
   `, [normalizedText, rawText]);
@@ -307,7 +322,13 @@ async function getUnrecognizedReportRows(pgPool, {
   days = 7,
   candidateLimit = 20,
 } = {}) {
-  const queries = buildUnrecognizedReportQueries({ days, candidateLimit });
+  const queries = buildUnrecognizedReportQueries({
+    days,
+    candidateLimit,
+    unrecognizedTable: q(schema, 'unrecognized_intents'),
+    candidateTable: q(schema, 'intent_promotion_candidates'),
+    eventTable: q(schema, 'intent_promotion_events'),
+  });
   const [rows, candidates] = await Promise.all([
     pgPool.query(schema, queries.unrecognizedSql),
     pgPool.query(schema, queries.candidatesSql),
@@ -322,7 +343,7 @@ async function getRecentUnrecognizedIntents(pgPool, {
 } = {}) {
   return pgPool.query(schema, `
     SELECT id, text, llm_intent, promoted_to
-    FROM unrecognized_intents
+    FROM ${q(schema, 'unrecognized_intents')}
     WHERE created_at > NOW() - ($1::text || ' days')::interval
     ORDER BY created_at DESC
     LIMIT ${Number(limit)}
@@ -336,7 +357,7 @@ async function getPromotedIntentExamples(pgPool, {
   if (!pgPool) return [];
   return pgPool.query(schema, `
     SELECT DISTINCT ON (promoted_to) text, promoted_to
-    FROM unrecognized_intents
+    FROM ${q(schema, 'unrecognized_intents')}
     WHERE promoted_to IS NOT NULL
     ORDER BY promoted_to, created_at DESC
     LIMIT ${Number(limit)}
@@ -349,7 +370,7 @@ async function findPromotionCandidateIdByNormalized(pgPool, {
 } = {}) {
   if (!pgPool || !normalizedText) return null;
   return pgPool.get(schema, `
-    SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
+    SELECT id FROM ${q(schema, 'intent_promotion_candidates')} WHERE normalized_text = $1 LIMIT 1
   `, [normalizedText]);
 }
 
@@ -360,7 +381,7 @@ async function clearPromotedUnrecognized(pgPool, {
 } = {}) {
   if (!pgPool || !suggestedIntent || !normalizedText) return;
   await pgPool.run(schema, `
-    UPDATE unrecognized_intents
+    UPDATE ${q(schema, 'unrecognized_intents')}
     SET promoted_to = NULL
     WHERE promoted_to = $1
       AND lower(regexp_replace(text, '[^[:alnum:][:space:]]', ' ', 'g')) LIKE '%' || $2 || '%'
@@ -373,7 +394,7 @@ async function clearPromotionCandidateState(pgPool, {
 } = {}) {
   if (!pgPool || !candidateId) return;
   await pgPool.run(schema, `
-    UPDATE intent_promotion_candidates
+    UPDATE ${q(schema, 'intent_promotion_candidates')}
     SET auto_applied = FALSE,
         learned_pattern = NULL,
         updated_at = NOW()
@@ -390,8 +411,8 @@ async function markUnrecognizedPromoted(pgPool, {
   if (!pgPool || !intent) return;
   if (Array.isArray(recordIds) && recordIds.length > 0) {
     await pgPool.run(schema, `
-      UPDATE unrecognized_intents
-      SET promoted_to = $1
+    UPDATE ${q(schema, 'unrecognized_intents')}
+    SET promoted_to = $1
       WHERE id = ANY($2::int[]) AND promoted_to IS NULL
     `, [intent, recordIds]);
     return;

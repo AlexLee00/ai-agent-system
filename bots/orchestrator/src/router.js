@@ -205,14 +205,15 @@ async function waitForCommandResult(id, timeoutMs = 30000) {
 
 // ─── 미인식 명령 추적 ─────────────────────────────────────────────────
 
-let _unrecTableReady = false;
+const _intentTableReadySchemas = new Set();
 const AUTO_PROMOTE_WINDOW_DAYS = AUTO_PROMOTE_DEFAULTS.windowDays;
 
-async function _ensureUnrecTable() {
-  if (_unrecTableReady) return;
+async function _ensureUnrecTable(schema = 'claude') {
+  const key = String(schema || 'claude').trim().toLowerCase() || 'claude';
+  if (_intentTableReadySchemas.has(key)) return;
   try {
-    await ensureIntentTables(pgPool);
-    _unrecTableReady = true;
+    await ensureIntentTables(pgPool, { schema: key });
+    _intentTableReadySchemas.add(key);
   } catch {}
 }
 
@@ -221,6 +222,7 @@ async function evaluateAutoPromotion(text) {
   if (!normalized) return null;
 
   const rows = await getRecentUnrecognizedIntents(pgPool, {
+    schema: 'claude',
     windowDays: AUTO_PROMOTE_WINDOW_DAYS,
     limit: 500,
   });
@@ -322,8 +324,8 @@ async function logUnrecognizedIntent(text, source, llmIntent) {
 
 async function buildUnrecognizedReport(query = '', options = {}) {
   try {
-    await _ensureUnrecTable();
     const schema = options.schema || 'claude';
+    await _ensureUnrecTable(schema);
     const title = options.title || '미인식 명령';
     const filters = parseUnrecognizedQuery(query);
     const { rows, candidates } = await getUnrecognizedReportRows(pgPool, { schema });
@@ -386,8 +388,8 @@ async function buildPromotionCandidateReport(query = '') {
 
 async function buildPromotionCandidateReportForSchema(query = '', options = {}) {
   try {
-    await _ensureUnrecTable();
     const schema = options.schema || 'claude';
+    await _ensureUnrecTable(schema);
     const title = options.title || '자동 반영 후보/이력';
     const filters = parsePromotionQuery(query);
     const summary = await getPromotionSummary(pgPool, { schema, filters });
