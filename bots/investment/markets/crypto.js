@@ -179,15 +179,18 @@ export async function runCryptoCycle(symbols) {
     });
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
+    logPipelineMetrics('암호화폐 수집', collect.metrics);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
-    const results = await runDecisionExecutionPipeline({
+    const decision = await runDecisionExecutionPipeline({
       sessionId: collect.sessionId,
       symbols,
       exchange: 'binance',
       params,
     });
+    const results = decision.results;
+    logPipelineMetrics('암호화폐 판단', decision.metrics);
 
     // ── 단계 3: 헤파이스토스 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
@@ -214,6 +217,24 @@ export async function runCryptoCycle(symbols) {
     console.error(e.stack);
     publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 3, message: `❌ 암호화폐 사이클 오류\n${e.message}` });
     throw e;
+  }
+}
+
+function logPipelineMetrics(label, metrics = {}) {
+  if (!metrics || typeof metrics !== 'object') return;
+  const parts = [
+    `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
+    metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
+    metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
+    metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
+    metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
+    metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
+    metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
+    metrics.savedExecutionWork != null ? `savedNodes=${metrics.savedExecutionWork}` : null,
+  ].filter(Boolean);
+  console.log(`  📈 [메트릭] ${label} | ${parts.join(' | ')}`);
+  if (metrics.warnings?.length) {
+    console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
   }
 }
 

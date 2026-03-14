@@ -99,6 +99,7 @@ export async function runNode(node, ctx = {}) {
     inputRef = null,
     attempt = 1,
     meta = {},
+    storeArtifact = true,
   } = ctx;
 
   const nodeRunId = await pipelineDb.startNodeRun({
@@ -114,18 +115,20 @@ export async function runNode(node, ctx = {}) {
   try {
     const startedAt = Date.now();
     const result = await node.run(ctx);
-    const artifact = await storeNodeArtifact({
-      sessionId,
-      nodeId: node.id,
-      nodeType: node.type || 'node',
-      market,
-      symbol,
-      payload: result,
-      meta: {
-        input_ref: inputRef,
-        duration_ms: Date.now() - startedAt,
-      },
-    });
+    const artifact = storeArtifact
+      ? await storeNodeArtifact({
+          sessionId,
+          nodeId: node.id,
+          nodeType: node.type || 'node',
+          market,
+          symbol,
+          payload: result,
+          meta: {
+            input_ref: inputRef,
+            duration_ms: Date.now() - startedAt,
+          },
+        })
+      : { ref: null, stored: false };
 
     await pipelineDb.finishNodeRun(nodeRunId, {
       status: 'completed',
@@ -133,6 +136,7 @@ export async function runNode(node, ctx = {}) {
       metadata: {
         result_summary: summarizeResult(result),
         rag_artifact_stored: artifact.stored,
+        artifact_mode: storeArtifact ? 'rag' : 'db_only',
       },
     });
 
@@ -154,6 +158,7 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
     inputRef = null,
     attempt = 1,
     meta = {},
+    storeArtifact = true,
   } = ctx;
 
   const nodeRunId = await pipelineDb.startNodeRun({
@@ -166,19 +171,21 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
     metadata: meta,
   });
 
-  const artifact = await storeNodeArtifact({
-    sessionId,
-    nodeId: node.id,
-    nodeType: node.type || 'node',
-    market,
-    symbol,
-    status,
-    payload: result,
-    meta: {
-      input_ref: inputRef,
-      ...meta,
-    },
-  });
+  const artifact = storeArtifact
+    ? await storeNodeArtifact({
+        sessionId,
+        nodeId: node.id,
+        nodeType: node.type || 'node',
+        market,
+        symbol,
+        status,
+        payload: result,
+        meta: {
+          input_ref: inputRef,
+          ...meta,
+        },
+      })
+    : { ref: null, stored: false };
 
   await pipelineDb.finishNodeRun(nodeRunId, {
     status,
@@ -186,6 +193,7 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
     metadata: {
       result_summary: summarizeResult(result),
       rag_artifact_stored: artifact.stored,
+      artifact_mode: storeArtifact ? 'rag' : 'db_only',
     },
   });
 

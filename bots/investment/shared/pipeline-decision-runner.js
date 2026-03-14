@@ -1,6 +1,6 @@
 import { finishPipelineRun } from './pipeline-db.js';
 import { getInvestmentNode } from '../nodes/index.js';
-import { runNode } from './node-runner.js';
+import { recordNodeResult, runNode } from './node-runner.js';
 import * as db from './db.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
 import { getDebateLimit, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.js';
@@ -31,6 +31,7 @@ export async function runDecisionExecutionPipeline({
   analystWeights,
   params = null,
 } = {}) {
+  const startedAt = Date.now();
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
   const l10Node = getDecisionNode('L10');
   const l11Node = getDecisionNode('L11');
@@ -48,6 +49,30 @@ export async function runDecisionExecutionPipeline({
   const symbolAnalysesMap = new Map();
   let debateCount = 0;
   const debateLimit = getDebateLimit(exchange);
+  let riskRejected = 0;
+  let weakSignalSkipped = 0;
+  let invalidSignalSkipped = 0;
+
+  const buildMetrics = (extra = {}) => ({
+    durationMs: Date.now() - startedAt,
+    inputSymbols: symbols.length,
+    decidedSymbols: symbolDecisions.length,
+    executedSymbols: extra.executedSymbols ?? 0,
+    debateCount,
+    debateLimit,
+    riskRejected,
+    weakSignalSkipped,
+    invalidSignalSkipped,
+    savedExecutionWork: riskRejected * 5,
+    warnings: buildDecisionWarnings({
+      symbols,
+      debateCount,
+      debateLimit,
+      riskRejected,
+      weakSignalSkipped,
+    }),
+    ...extra,
+  });
 
   for (const symbol of symbols) {
     try {
@@ -102,7 +127,13 @@ export async function runDecisionExecutionPipeline({
       status: 'completed',
       meta: { bridge_status: 'no_symbol_decisions' },
     });
-    return [];
+    return {
+      results: [],
+      metrics: buildMetrics({
+        bridgeStatus: 'no_symbol_decisions',
+        executedSymbols: 0,
+      }),
+    };
   }
 
   const portfolioDecisionResult = await runNode(l14Node, {
@@ -118,14 +149,23 @@ export async function runDecisionExecutionPipeline({
       status: 'failed',
       meta: { bridge_status: 'portfolio_decision_failed' },
     });
-    return [];
+    return {
+      results: [],
+      metrics: buildMetrics({
+        bridgeStatus: 'portfolio_decision_failed',
+        executedSymbols: 0,
+      }),
+    };
   }
 
   const results = [];
   for (const dec of (portfolioDecision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
     const minConf = params?.minSignalScore ?? getMinConfidence(exchange);
-    if ((dec.confidence || 0) < minConf) continue;
+    if ((dec.confidence || 0) < minConf) {
+      weakSignalSkipped++;
+      continue;
+    }
 
     const analyses = symbolAnalysesMap.get(dec.symbol) || [];
     const analystSignals = buildAnalystSignals(analyses);
@@ -139,7 +179,10 @@ export async function runDecisionExecutionPipeline({
       analystSignals,
     };
     const { valid } = validateSignal(signalData);
-    if (!valid) continue;
+    if (!valid) {
+      invalidSignalSkipped++;
+      continue;
+    }
 
     const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
     const riskResult = await evaluateSignal({
@@ -172,6 +215,22 @@ export async function runDecisionExecutionPipeline({
       },
       risk: riskResult,
     });
+
+    if (!riskResult?.approved) {
+      riskRejected++;
+      results.push({
+        symbol: dec.symbol,
+        action: dec.action,
+        confidence: dec.confidence,
+        reasoning: dec.reasoning,
+        adjustedAmount: null,
+        signalId: null,
+        skipped: true,
+        skipReason: riskResult?.reason || 'risk_rejected',
+        risk: riskResult,
+      });
+      continue;
+    }
 
     const saved = await runNode(l30Node, {
       sessionId,
@@ -227,15 +286,29 @@ export async function runDecisionExecutionPipeline({
     meta: {
       bridge_status: 'completed',
       decided_symbols: symbolDecisions.length,
-      executed_symbols: results.length,
+      executed_symbols: results.filter(item => !item.skipped).length,
       portfolio_view: portfolioDecision.portfolio_view,
       risk_level: portfolioDecision.risk_level,
     },
   });
 
-  return results;
+  return {
+    results,
+    metrics: buildMetrics({
+      bridgeStatus: 'completed',
+      executedSymbols: results.filter(item => !item.skipped).length,
+    }),
+  };
 }
 
 export default {
   runDecisionExecutionPipeline,
 };
+
+function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped }) {
+  const warnings = [];
+  if (symbols.length >= 20 && debateCount >= Math.max(1, debateLimit - 1)) warnings.push('debate_capacity_hot');
+  if (riskRejected >= 5) warnings.push('risk_reject_saved_work');
+  if (weakSignalSkipped >= 10) warnings.push('weak_signal_pressure');
+  return warnings;
+}
