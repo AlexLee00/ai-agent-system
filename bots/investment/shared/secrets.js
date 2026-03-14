@@ -127,6 +127,10 @@ function getNyseHolidaySet(year) {
   }
 }
 
+function getWeekdayInTimeZone(date, timeZone) {
+  return new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(date);
+}
+
 /**
  * 해당 날짜가 NYSE 휴장일인지 확인
  * @param {Date} [date]
@@ -186,9 +190,52 @@ export async function isKisHoliday(date = new Date()) {
 export function isKisMarketOpen() {
   const now        = new Date();
   const kstMinutes = kst.currentHour(now) * 60 + kst.currentMinute(now);
-  const kstDay     = new Date(`${now.toLocaleDateString('sv-SE', { timeZone: kst.TZ })}T00:00:00+09:00`).getUTCDay();
-  if (kstDay === 0 || kstDay === 6) return false;
+  const kstWeekday = getWeekdayInTimeZone(now, kst.TZ);
+  if (kstWeekday === 'Sun' || kstWeekday === 'Sat') return false;
   return kstMinutes >= 9 * 60 && kstMinutes < 15 * 60 + 30;
+}
+
+export async function getKisMarketStatus(date = new Date()) {
+  const dateStr    = date.toLocaleDateString('sv-SE', { timeZone: kst.TZ });
+  const kstMinutes = kst.currentHour(date) * 60 + kst.currentMinute(date);
+  const kstWeekday = getWeekdayInTimeZone(date, kst.TZ);
+  const holiday    = await isKisHoliday(date);
+
+  if (holiday.isHoliday) {
+    return {
+      isOpen: false,
+      reason: `공휴일 (${holiday.name || '공휴일'})`,
+      holiday,
+      isWeekend: false,
+      sessionDate: dateStr,
+    };
+  }
+  if (kstWeekday === 'Sun' || kstWeekday === 'Sat') {
+    return {
+      isOpen: false,
+      reason: `주말 (${kstWeekday === 'Sat' ? '토요일' : '일요일'})`,
+      holiday,
+      isWeekend: true,
+      sessionDate: dateStr,
+    };
+  }
+  if (kstMinutes < 9 * 60 || kstMinutes >= 15 * 60 + 30) {
+    return {
+      isOpen: false,
+      reason: `장외 시간 (KST ${kst.timeStr(date).slice(0, 5)})`,
+      holiday,
+      isWeekend: false,
+      sessionDate: dateStr,
+    };
+  }
+
+  return {
+    isOpen: true,
+    reason: `장중 (KST ${kst.timeStr(date).slice(0, 5)})`,
+    holiday,
+    isWeekend: false,
+    sessionDate: dateStr,
+  };
 }
 
 /**
@@ -215,13 +262,64 @@ function isUsDST(date) {
 export function isKisOverseasMarketOpen() {
   const now        = new Date();
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const utcDay     = now.getUTCDay();
-  if (utcDay === 0 || utcDay === 6) return false;
+  const nyWeekday  = getWeekdayInTimeZone(now, 'America/New_York');
+  if (nyWeekday === 'Sun' || nyWeekday === 'Sat') return false;
   if (isNyseHoliday(now).isHoliday)  return false;
   const isDST    = isUsDST(now);
   const openUtc  = isDST ? 13 * 60 + 30 : 14 * 60 + 30;
   const closeUtc = isDST ? 20 * 60       : 21 * 60;
   return utcMinutes >= openUtc && utcMinutes < closeUtc;
+}
+
+export function getKisOverseasMarketStatus(date = new Date()) {
+  const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const isDST      = isUsDST(date);
+  const openUtc    = isDST ? 13 * 60 + 30 : 14 * 60 + 30;
+  const closeUtc   = isDST ? 20 * 60       : 21 * 60;
+  const nyDate     = date.toLocaleDateString('sv-SE', { timeZone: 'America/New_York' });
+  const kstDate    = date.toLocaleDateString('sv-SE', { timeZone: kst.TZ });
+  const nyWeekday  = getWeekdayInTimeZone(date, 'America/New_York');
+  const holiday    = isNyseHoliday(date);
+
+  if (holiday.isHoliday) {
+    return {
+      isOpen: false,
+      reason: `NYSE 휴장 (${holiday.name || 'Holiday'})`,
+      holiday,
+      nyDate,
+      kstDate,
+      isWeekend: false,
+    };
+  }
+  if (nyWeekday === 'Sun' || nyWeekday === 'Sat') {
+    return {
+      isOpen: false,
+      reason: `미국 주말 (${nyWeekday === 'Sat' ? '토요일' : '일요일'}, ET 기준 ${nyDate})`,
+      holiday,
+      nyDate,
+      kstDate,
+      isWeekend: true,
+    };
+  }
+  if (utcMinutes < openUtc || utcMinutes >= closeUtc) {
+    return {
+      isOpen: false,
+      reason: `미국 장외 시간 (ET 기준 ${nyDate})`,
+      holiday,
+      nyDate,
+      kstDate,
+      isWeekend: false,
+    };
+  }
+
+  return {
+    isOpen: true,
+    reason: `미국 장중 (ET 기준 ${nyDate})`,
+    holiday,
+    nyDate,
+    kstDate,
+    isWeekend: false,
+  };
 }
 
 // ─── KIS 헬퍼 ───────────────────────────────────────────────────────

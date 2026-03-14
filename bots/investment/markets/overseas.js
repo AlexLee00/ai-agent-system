@@ -21,7 +21,7 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisOverseasSymbols, isKisOverseasMarketOpen, isPaperMode } from '../shared/secrets.js';
+import { getKisOverseasSymbols, getKisOverseasMarketStatus, isPaperMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
@@ -245,7 +245,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('🔴 PAPER_MODE=false — 실주문 실행 모드 (주의!)');
   }
 
-  const marketOpen = isKisOverseasMarketOpen();
+  const marketStatus = force
+    ? { isOpen: true, reason: '--force 옵션' }
+    : getKisOverseasMarketStatus();
+  const marketOpen = marketStatus.isOpen;
 
   // 30분 주기 체크
   const check = researchOnly
@@ -273,8 +276,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
 
     if (!force && !marketOpen) {
-      const now = new Date().toISOString().slice(11, 16);
-      console.log(`📚 미국 장외 시간 (UTC ${now}) — 연구 모드 전환`);
+      console.log(`📚 ${marketStatus.reason} — 연구 모드 전환`);
       await runOverseasResearchCycle(symbols);
       process.exit(0);
     }

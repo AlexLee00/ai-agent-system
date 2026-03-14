@@ -21,6 +21,7 @@ import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { search as searchRag } from '../shared/rag-client.js';
 import { getVolumeRank } from '../shared/kis-client.js';
+import { isPaperMode } from '../shared/secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -194,6 +195,13 @@ export async function fetchFearGreedIndex() {
 function _adjustMaxByFNG(baseMax, fng) {
   if (fng < 25) return Math.max(1, Math.floor(baseMax * 0.5));
   if (fng > 75) return Math.ceil(baseMax * 1.5);
+  return baseMax;
+}
+
+function _adjustPaperExploration(baseMax, market) {
+  if (!isPaperMode()) return baseMax;
+  if (market === 'domestic' || market === 'overseas') return Math.max(baseMax + 3, Math.ceil(baseMax * 1.6));
+  if (market === 'crypto') return Math.max(baseMax + 1, Math.ceil(baseMax * 1.15));
   return baseMax;
 }
 
@@ -407,11 +415,13 @@ export async function recommendStrategy(symbol, exchange = 'binance') {
  * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 3)
  */
 export async function screenCryptoSymbols(maxDynamic, fng = 50) {
-  const baseMax = maxDynamic ?? _screenCfg('crypto', 'max_dynamic', 7);
+  const configuredMax = maxDynamic ?? _screenCfg('crypto', 'max_dynamic', 7);
+  const baseMax = _adjustPaperExploration(configuredMax, 'crypto');
   const max     = _adjustMaxByFNG(baseMax, fng);
   const minVol  = _screenCfg('crypto', 'min_volume_usdt', 1_000_000);
 
   if (fng !== 50) console.log(`[아르고스] 크립토 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
+  if (isPaperMode() && baseMax !== configuredMax) console.log(`[아르고스] 크립토 PAPER 탐색 확장 ${configuredMax}→${baseMax}`);
 
   const exchange = new ccxt.binance({ enableRateLimit: true });
 
@@ -485,10 +495,12 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
  * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
  */
 export async function screenDomesticSymbols(maxDynamic, fng = 50) {
-  const baseMax = maxDynamic ?? _screenCfg('domestic', 'max_dynamic', 5);
+  const configuredMax = maxDynamic ?? _screenCfg('domestic', 'max_dynamic', 5);
+  const baseMax = _adjustPaperExploration(configuredMax, 'domestic');
   const max     = _adjustMaxByFNG(baseMax, fng);
 
   if (fng !== 50) console.log(`[아르고스] 국내주식 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
+  if (isPaperMode() && baseMax !== configuredMax) console.log(`[아르고스] 국내주식 PAPER 탐색 확장 ${configuredMax}→${baseMax}`);
 
   // 소스 1: KIS API 거래량 순위 (인증된 데이터, 최대 30종목)
   const r1 = await _tryKisVolumeRank(max);
@@ -568,7 +580,7 @@ function _buildDomesticResult(stocks, max) {
 async function _tryNaverMobile(max) {
   try {
     const data = await _fetchJSON(
-      'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=15', 5000
+      'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=30', 5000
     );
     // 응답 구조 자동 감지 (API 변경 대응)
     const stocks = data?.stocks
@@ -615,10 +627,12 @@ async function _tryNaverSise(max) {
  * @param {number} [maxDynamic] — 동적 종목 수 (기본: config.yaml 또는 2)
  */
 export async function screenOverseasSymbols(maxDynamic, fng = 50) {
-  const baseMax = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 5);
+  const configuredMax = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 5);
+  const baseMax = _adjustPaperExploration(configuredMax, 'overseas');
   const max     = _adjustMaxByFNG(baseMax, fng);
 
   if (fng !== 50) console.log(`[아르고스] 해외주식 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
+  if (isPaperMode() && baseMax !== configuredMax) console.log(`[아르고스] 해외주식 PAPER 탐색 확장 ${configuredMax}→${baseMax}`);
 
   // 두 소스 병렬 조회
   const [yahooRes, apeRes] = await Promise.allSettled([
@@ -655,7 +669,7 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
 async function _fetchYahooTrending() {
   return new Promise((resolve) => {
     const req = https.get(
-      'https://query1.finance.yahoo.com/v1/finance/trending/US?count=20',
+      'https://query1.finance.yahoo.com/v1/finance/trending/US?count=40',
       { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 },
       res => {
         let body = '';
