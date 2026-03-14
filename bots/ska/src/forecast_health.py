@@ -1,0 +1,220 @@
+"""
+ska-015: 포캐스트 헬스 리포트
+
+목적:
+  - forecast_results + revenue_daily 기준 최근 정확도 상태를 점검
+  - 최근 MAPE / bias / 요일 편향 / 큰 오차 사례를 한 번에 보여줌
+
+실행:
+  bots/ska/venv/bin/python bots/ska/src/forecast_health.py [--days=30] [--json]
+"""
+import json
+import sys
+import psycopg2
+from datetime import date as date_type, timedelta
+
+PG_SKA = "dbname=jay options='-c search_path=ska,public'"
+WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
+
+
+def _qry(con, sql, params=()):
+    cur = con.cursor()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close()
+    return rows
+
+
+def parse_args():
+    days = 30
+    output_json = False
+    for arg in sys.argv[1:]:
+        if arg.startswith('--days='):
+            days = max(7, int(arg.split('=', 1)[1]))
+        elif arg == '--json':
+            output_json = True
+    return days, output_json
+
+
+def load_accuracy_rows(con, start_date):
+    rows = _qry(con, """
+        WITH latest AS (
+            SELECT DISTINCT ON (fr.forecast_date)
+                fr.forecast_date,
+                fr.predictions,
+                fr.model_version,
+                fr.created_at
+            FROM ska.forecast_results fr
+            WHERE fr.forecast_date >= %s
+            ORDER BY fr.forecast_date, fr.created_at DESC
+        )
+        SELECT
+            latest.forecast_date,
+            rd.actual_revenue,
+            (latest.predictions->>'yhat')::int AS predicted_revenue,
+            ((latest.predictions->>'yhat')::int - rd.actual_revenue) AS error,
+            CASE
+                WHEN rd.actual_revenue > 0
+                THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                ELSE NULL
+            END AS mape,
+            COALESCE((latest.predictions->>'reservation_count')::int, 0) AS reservation_count,
+            COALESCE((latest.predictions->>'reservation_booked_hours')::float, 0.0) AS reservation_booked_hours,
+            COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence,
+            latest.model_version
+        FROM latest
+        JOIN ska.revenue_daily rd ON rd.date = latest.forecast_date
+        WHERE rd.actual_revenue IS NOT NULL
+        ORDER BY latest.forecast_date DESC
+    """, (str(start_date),))
+    return [
+        {
+            'date': str(r[0]),
+            'actual': int(r[1] or 0),
+            'predicted': int(r[2] or 0),
+            'error': int(r[3] or 0),
+            'mape': float(r[4]) if r[4] is not None else None,
+            'reservation_count': int(r[5] or 0),
+            'reservation_booked_hours': float(r[6] or 0.0),
+            'confidence': float(r[7] or 0.0),
+            'model_version': r[8] or '',
+        }
+        for r in rows
+    ]
+
+
+def build_summary(rows):
+    valid = [r for r in rows if r['mape'] is not None]
+    if not valid:
+        return {
+            'count': len(rows),
+            'valid_count': 0,
+            'avg_mape': None,
+            'median_mape': None,
+            'avg_bias': 0,
+            'hit_rate_10': 0,
+            'hit_rate_20': 0,
+            'avg_confidence': 0.0,
+        }
+
+    sorted_mapes = sorted(r['mape'] for r in valid)
+    mid = len(sorted_mapes) // 2
+    median = (
+        sorted_mapes[mid]
+        if len(sorted_mapes) % 2 == 1
+        else (sorted_mapes[mid - 1] + sorted_mapes[mid]) / 2
+    )
+    return {
+        'count': len(rows),
+        'valid_count': len(valid),
+        'avg_mape': round(sum(r['mape'] for r in valid) / len(valid), 2),
+        'median_mape': round(median, 2),
+        'avg_bias': round(sum(r['error'] for r in valid) / len(valid)),
+        'hit_rate_10': round(sum(1 for r in valid if r['mape'] <= 10) / len(valid) * 100, 1),
+        'hit_rate_20': round(sum(1 for r in valid if r['mape'] <= 20) / len(valid) * 100, 1),
+        'avg_confidence': round(sum(r['confidence'] for r in valid) / len(valid), 3),
+    }
+
+
+def build_weekday_bias(rows):
+    buckets = {}
+    for row in rows:
+        if row['mape'] is None:
+            continue
+        wd = date_type.fromisoformat(row['date']).weekday()
+        buckets.setdefault(wd, []).append(row)
+
+    result = []
+    for wd, items in sorted(buckets.items()):
+        avg_mape = sum(i['mape'] for i in items) / len(items)
+        avg_error = round(sum(i['error'] for i in items) / len(items))
+        result.append({
+            'weekday': WEEKDAY_KO[wd],
+            'count': len(items),
+            'avg_mape': round(avg_mape, 2),
+            'avg_bias': avg_error,
+        })
+    return result
+
+
+def build_worst_cases(rows, limit=5):
+    valid = [r for r in rows if r['mape'] is not None]
+    ranked = sorted(valid, key=lambda r: (-r['mape'], -abs(r['error'])))
+    return ranked[:limit]
+
+
+def format_text(report):
+    summary = report['summary']
+    lines = [
+        '📊 스카 예측 헬스 리포트',
+        '─' * 18,
+        f'기간: 최근 {report["days"]}일',
+        '',
+    ]
+
+    if summary['valid_count'] == 0:
+        lines.append('데이터 누적 중')
+        return '\n'.join(lines)
+
+    avg_bias = summary['avg_bias']
+    bias_sign = '+' if avg_bias >= 0 else ''
+    lines.append('■ 전체 정확도')
+    lines.append(f'  평균 MAPE: {summary["avg_mape"]:.2f}%')
+    lines.append(f'  중앙 MAPE: {summary["median_mape"]:.2f}%')
+    lines.append(f'  평균 편향: {bias_sign}{avg_bias:,}원')
+    lines.append(f'  10% 이내 적중률: {summary["hit_rate_10"]:.1f}%')
+    lines.append(f'  20% 이내 적중률: {summary["hit_rate_20"]:.1f}%')
+    lines.append(f'  평균 확신도: {summary["avg_confidence"]*100:.0f}%')
+    lines.append('')
+
+    if report['weekday_bias']:
+        lines.append('■ 요일별 편향')
+        for item in report['weekday_bias']:
+            bias = item['avg_bias']
+            sign = '+' if bias >= 0 else ''
+            lines.append(
+                f'  {item["weekday"]}: MAPE {item["avg_mape"]:.1f}% / '
+                f'편향 {sign}{bias:,}원 / {item["count"]}건'
+            )
+        lines.append('')
+
+    if report['worst_cases']:
+        lines.append('■ 큰 오차 사례')
+        for item in report['worst_cases']:
+            d = date_type.fromisoformat(item['date'])
+            sign = '+' if item['error'] >= 0 else ''
+            lines.append(
+                f'  {d.month}/{d.day}({WEEKDAY_KO[d.weekday()]}) '
+                f'예측 {item["predicted"]:,} / 실제 {item["actual"]:,} / '
+                f'오차 {sign}{item["error"]:,}원 / MAPE {item["mape"]:.1f}%'
+            )
+
+    return '\n'.join(lines)
+
+
+def run():
+    days, output_json = parse_args()
+    today = date_type.today()
+    start_date = today - timedelta(days=days)
+    con = psycopg2.connect(PG_SKA)
+    try:
+        rows = load_accuracy_rows(con, start_date)
+    finally:
+        con.close()
+
+    report = {
+        'days': days,
+        'summary': build_summary(rows),
+        'weekday_bias': build_weekday_bias(rows),
+        'worst_cases': build_worst_cases(rows),
+        'rows': rows if output_json else None,
+    }
+
+    if output_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(format_text(report))
+
+
+if __name__ == '__main__':
+    run()
