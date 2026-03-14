@@ -15,7 +15,7 @@ const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool           = require('../../../packages/core/lib/pg-pool');
 const {
-  loadLearnedPatternsFromFile,
+  createLearnedPatternReloader,
   createDynamicExampleLoader,
 } = require('../../../packages/core/lib/intent-core');
 const {
@@ -27,9 +27,10 @@ const {
 
 const NLP_LEARNINGS_PATH = getIntentLearningPath();
 
-let _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS_PATH);
-// 5분마다 리로드 (analyze_unknown이 새 패턴 추가 시 자동 반영)
-setInterval(() => { _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS_PATH); }, 5 * 60 * 1000);
+const learnedPatternReloader = createLearnedPatternReloader({
+  filePath: NLP_LEARNINGS_PATH,
+  intervalMs: 5 * 60 * 1000,
+});
 
 // ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
 // router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
@@ -286,7 +287,7 @@ function extractDuration(text) {
 
 function parseKeyword(text) {
   // 학습된 패턴 우선 확인
-  for (const p of _learnedPatterns) {
+  for (const p of learnedPatternReloader.getPatterns()) {
     if (p.re.test(text)) {
       return { intent: p.intent, args: p.args, source: 'learned' };
     }
