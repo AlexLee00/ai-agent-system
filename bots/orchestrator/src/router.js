@@ -985,7 +985,7 @@ function formatClaudeResult(command, rawResult) {
  * ska_query/ska_action 결과를 텍스트로 포맷
  */
 function formatSkaResult(command, rawResult) {
-  if (!rawResult) return '⏱ 스카 응답 없음 (30초 타임아웃)';
+  if (!rawResult) return '⏱ 스카 응답 없음 (45초 타임아웃)';
   let r;
   try { r = JSON.parse(rawResult); } catch { return rawResult; }
 
@@ -1228,7 +1228,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const command = args.command;
       if (!command) return '⚠️ 명령 파싱 오류';
       const cmdId = await insertBotCommand('ska', command, args);
-      const raw   = await waitForCommandResult(cmdId, 30000);
+      const raw   = await waitForCommandResult(cmdId, 45000);
       return formatSkaResult(command, raw);
     }
 
@@ -1262,26 +1262,26 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'upbit_balance': {
       const cmdId = await insertBotCommand('luna', 'get_upbit_balance', {});
-      const raw   = await waitForCommandResult(cmdId, 30000);
+      const raw   = await waitForCommandResult(cmdId, 45000);
       return formatUpbitBalance(raw);
     }
 
     case 'binance_balance': {
       const cmdId = await insertBotCommand('luna', 'get_binance_balance', {});
-      const raw   = await waitForCommandResult(cmdId, 30000);
+      const raw   = await waitForCommandResult(cmdId, 45000);
       return formatBinanceBalance(raw);
     }
 
     case 'crypto_price': {
       const cmdId = await insertBotCommand('luna', 'get_crypto_price', args || {});
-      const raw   = await waitForCommandResult(cmdId, 30000);
+      const raw   = await waitForCommandResult(cmdId, 45000);
       return formatCryptoPrice(raw);
     }
 
     case 'kis_domestic_balance': {
       await notify(`⏳ KIS 국내주식 잔고 조회 중...`);
       const cmdId = await insertBotCommand('luna', 'get_kis_domestic_balance', {});
-      const raw   = await waitForCommandResult(cmdId, 30000);
+      const raw   = await waitForCommandResult(cmdId, 45000);
       return formatKisBalance(raw, 'domestic');
     }
 

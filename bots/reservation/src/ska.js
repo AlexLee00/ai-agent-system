@@ -6,7 +6,7 @@ const kst = require('../../../packages/core/lib/kst');
  * src/ska.js — 스카 팀장 봇
  *
  * 역할:
- *   - bot_commands 테이블 폴링 (30초 간격)
+ *   - bot_commands 테이블 폴링 (5초 간격)
  *   - 명령 처리: query_reservations, query_today_stats, query_alerts, restart_andy, restart_jimmy
  *   - 결과를 bot_commands.status='done', result=JSON으로 업데이트
  *
@@ -54,7 +54,7 @@ let BOT_IDENTITY = {
   name:    '스카 커맨더',
   team:    '스카팀',
   role:    '스카팀 팀장 — 스터디카페 운영 관리 지휘',
-  mission: 'bot_commands 폴링(30초), 예약·매출·알람 조회, 앤디·지미 재시작, 팀원 정체성 점검',
+  mission: 'bot_commands 폴링(5초), 예약·매출·알람 조회, 앤디·지미 재시작, 팀원 정체성 점검',
 };
 
 function loadBotIdentity() {
@@ -455,7 +455,10 @@ async function handleStoreResolution(args) {
  */
 function handleRestartAndy() {
   try {
-    execSync(`launchctl kickstart -k gui/${process.getuid()} ai.ska.naver-monitor`, { timeout: 10000 });
+    execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.naver-monitor`], {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
     return { ok: true, message: '앤디 재시작 완료' };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -467,7 +470,10 @@ function handleRestartAndy() {
  */
 function handleRestartJimmy() {
   try {
-    execSync(`launchctl kickstart -k gui/${process.getuid()} ai.ska.kiosk-monitor`, { timeout: 10000 });
+    execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.kiosk-monitor`], {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
     return { ok: true, message: '지미 재시작 완료' };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -659,7 +665,8 @@ async function processCommands() {
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
-// 30초 루프 기준: 2 tick = 1분, 720 tick = 6시간
+const COMMAND_POLL_MS = 5000;
+// 5초 루프 기준: 12 tick = 1분, 4320 tick = 6시간
 let _identityCounter = 0;
 
 async function main() {
@@ -676,7 +683,7 @@ async function main() {
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;
-    if (_identityCounter % 720 === 2) {
+    if (_identityCounter % 4320 === 12) {
       try {
         loadBotIdentity(); // 정체성 리로드 (파일 변경 반영)
         console.log(`[스카] 역할 확인: ${BOT_IDENTITY.role}`);
@@ -684,7 +691,7 @@ async function main() {
       } catch (e) { console.error(`[스카] 정체성 점검 오류:`, e.message); }
     }
 
-    await new Promise(r => setTimeout(r, 30000)); // 30초 간격
+    await new Promise(r => setTimeout(r, COMMAND_POLL_MS));
   }
 }
 
