@@ -6,6 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "daily": "node scripts/run-daily.js",
+    "setup:n8n": "node n8n/setup-blog-workflows.js",
     "seed-curriculum": "node scripts/seed-curriculum.js",
     "seed-curriculum:dry": "node scripts/seed-curriculum.js --dry-run"
   },
