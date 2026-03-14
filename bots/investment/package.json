@@ -38,13 +38,13 @@
     "analyze-signals:30": "node scripts/analyze-signal-correlation.js --days=30"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "axios": "^1.6.0",
     "ccxt": "^4.5.42",
-    "groq-sdk": "^0.9.0",
+    "groq-sdk": "^1.1.1",
     "js-yaml": "^4.1.0",
     "nyse-holidays": "^1.2.0",
-    "openai": "^6.27.0",
+    "openai": "^6.29.0",
     "pg": "^8.20.0"
   }
 }
