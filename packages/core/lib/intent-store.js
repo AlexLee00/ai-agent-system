@@ -1,5 +1,11 @@
 'use strict';
 
+const {
+  buildPromotionCandidateWhere,
+  buildPromotionEventWhere,
+  buildUnrecognizedReportQueries,
+} = require('./intent-core');
+
 async function logPromotionEvent(pgPool, {
   schema = 'claude',
   candidateId = null,
@@ -84,8 +90,125 @@ async function insertUnrecognizedIntent(pgPool, {
   ]);
 }
 
+async function getPromotionSummary(pgPool, {
+  schema = 'claude',
+  filters = {},
+} = {}) {
+  const candidateWhere = buildPromotionCandidateWhere(filters);
+  return pgPool.get(schema, `
+    SELECT
+      COUNT(*)::int AS total_count,
+      COUNT(*) FILTER (WHERE auto_applied = true)::int AS applied_count,
+      COUNT(*) FILTER (WHERE auto_applied = false)::int AS pending_count
+    FROM intent_promotion_candidates
+    ${candidateWhere.whereSql}
+  `, candidateWhere.params);
+}
+
+async function getPromotionRows(pgPool, {
+  schema = 'claude',
+  filters = {},
+  limit = 20,
+} = {}) {
+  const candidateWhere = buildPromotionCandidateWhere(filters, { tableAlias: 'c' });
+  return pgPool.query(schema, `
+    SELECT
+      c.id,
+      c.sample_text,
+      c.suggested_intent,
+      c.occurrence_count,
+      c.confidence,
+      c.auto_applied,
+      c.updated_at,
+      e.event_type AS latest_event_type,
+      e.metadata AS latest_event_metadata
+    FROM intent_promotion_candidates c
+    LEFT JOIN LATERAL (
+      SELECT event_type, metadata
+      FROM intent_promotion_events
+      WHERE candidate_id = c.id
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) e ON true
+    ${candidateWhere.whereSql}
+    ORDER BY c.auto_applied DESC, c.updated_at DESC
+    LIMIT ${Number(limit)}
+  `, candidateWhere.params);
+}
+
+async function getPromotionFamilyRows(pgPool, {
+  schema = 'claude',
+  filters = {},
+  limit = 200,
+} = {}) {
+  const candidateWhere = buildPromotionCandidateWhere(filters);
+  return pgPool.query(schema, `
+    SELECT suggested_intent, auto_applied, occurrence_count
+    FROM intent_promotion_candidates
+    ${candidateWhere.whereSql}
+    ORDER BY updated_at DESC
+    LIMIT ${Number(limit)}
+  `, candidateWhere.params);
+}
+
+async function getPromotionEvents(pgPool, {
+  schema = 'claude',
+  filters = {},
+  limit = 10,
+} = {}) {
+  const eventWhere = buildPromotionEventWhere(filters);
+  return pgPool.query(schema, `
+    SELECT event_type, sample_text, suggested_intent, actor, created_at
+    FROM intent_promotion_events
+    ${eventWhere.whereSql}
+    ORDER BY created_at DESC
+    LIMIT ${Number(limit)}
+  `, eventWhere.params);
+}
+
+async function findPromotionCandidate(pgPool, {
+  schema = 'claude',
+  candidateId,
+  normalizedText,
+  rawText,
+} = {}) {
+  if (Number.isFinite(candidateId)) {
+    return pgPool.get(schema, `
+      SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
+      FROM intent_promotion_candidates
+      WHERE id = $1
+      LIMIT 1
+    `, [candidateId]);
+  }
+  return pgPool.get(schema, `
+    SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
+    FROM intent_promotion_candidates
+    WHERE normalized_text = $1 OR sample_text = $2
+    LIMIT 1
+  `, [normalizedText, rawText]);
+}
+
+async function getUnrecognizedReportRows(pgPool, {
+  schema = 'claude',
+  days = 7,
+  candidateLimit = 20,
+} = {}) {
+  const queries = buildUnrecognizedReportQueries({ days, candidateLimit });
+  const [rows, candidates] = await Promise.all([
+    pgPool.query(schema, queries.unrecognizedSql),
+    pgPool.query(schema, queries.candidatesSql),
+  ]);
+  return { rows, candidates };
+}
+
 module.exports = {
   logPromotionEvent,
   upsertPromotionCandidate,
   insertUnrecognizedIntent,
+  getPromotionSummary,
+  getPromotionRows,
+  getPromotionFamilyRows,
+  getPromotionEvents,
+  findPromotionCandidate,
+  getUnrecognizedReportRows,
 };
