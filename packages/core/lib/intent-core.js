@@ -188,6 +188,17 @@ function formatPromotedIntentExample(row = {}, {
   return `사용자: "${text}" → {"intent": "${intent}", "args": {}, "confidence": ${Number(confidence).toFixed(2)}}`;
 }
 
+function buildDynamicExampleSection(examples = []) {
+  if (!Array.isArray(examples) || examples.length === 0) return '';
+  return examples.filter(Boolean).join('\n');
+}
+
+function injectDynamicExamples(promptTemplate = '', examples = [], {
+  placeholder = '{DYNAMIC_EXAMPLES}',
+} = {}) {
+  return String(promptTemplate || '').replace(placeholder, buildDynamicExampleSection(examples));
+}
+
 function formatIntentConfidence(value, digits = 0) {
   const ratio = Number(value || 0);
   return `${(ratio * 100).toFixed(digits)}%`;
@@ -474,6 +485,8 @@ module.exports = {
   createDynamicExampleLoader,
   createPromotedIntentExampleLoader,
   formatPromotedIntentExample,
+  buildDynamicExampleSection,
+  injectDynamicExamples,
   formatIntentConfidence,
   getPromotionCandidateStatus,
   getPromotionEventReason,

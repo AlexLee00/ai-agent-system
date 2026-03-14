@@ -17,6 +17,7 @@ const pgPool           = require('../../../packages/core/lib/pg-pool');
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
+  injectDynamicExamples,
 } = require('../../../packages/core/lib/intent-core');
 const {
   getIntentLearningPath,
@@ -411,10 +412,7 @@ async function parseLLMFallback(text) {
 
   // 동적 Few-shot 예시 주입 (unrecognized_intents에서 승인된 예시)
   const dynamicExamples = await loadDynamicExamples();
-  const dynamicSection  = dynamicExamples.length > 0
-    ? dynamicExamples.join('\n')
-    : '';
-  const systemPrompt = SYSTEM_PROMPT_BASE.replace('{DYNAMIC_EXAMPLES}', dynamicSection);
+  const systemPrompt = injectDynamicExamples(SYSTEM_PROMPT_BASE, dynamicExamples);
 
   return new Promise((resolve) => {
     const body = Buffer.from(JSON.stringify({
