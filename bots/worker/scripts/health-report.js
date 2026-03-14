@@ -14,6 +14,8 @@
 const {
   buildHealthReport,
   buildHealthDecision,
+  buildHealthCountSection,
+  buildHealthSampleSection,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -81,27 +83,9 @@ function formatText(report) {
   return buildHealthReport({
     title: '🧰 워커 운영 헬스 리포트',
     sections: [
-      {
-        title: '■ 서비스 상태',
-        lines: [
-          `  정상 ${report.serviceHealth.okCount}건 / 경고 ${report.serviceHealth.warnCount}건`,
-          ...report.serviceHealth.warn.slice(0, 8),
-        ],
-      },
-      report.serviceHealth.ok.length > 0
-        ? {
-            title: '■ 정상 서비스 샘플',
-            lines: report.serviceHealth.ok.slice(0, 5),
-          }
-        : null,
-      {
-        title: '■ 엔드포인트 상태',
-        lines: [
-          `  정상 ${report.endpointHealth.okCount}건 / 경고 ${report.endpointHealth.warnCount}건`,
-          ...report.endpointHealth.warn.slice(0, 8),
-          ...report.endpointHealth.ok.slice(0, 3),
-        ],
-      },
+      buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
+      buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
+      buildHealthCountSection('■ 엔드포인트 상태', report.endpointHealth, { okLimit: 3 }),
       {
         title: null,
         lines: buildHealthDecisionSection({
