@@ -14,7 +14,7 @@
 const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const teamBus = require('../lib/team-bus');
 
@@ -73,16 +73,66 @@ const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nl
 // 텔레그램 메시지 최대 길이 (안전 마진 포함)
 const TG_MAX_CHARS = 3500;
 
-function runScript(script, flags = '') {
-  // dexter는 이슈 발견 시 exit(1) → execSync가 throw → status 확인 후 무시
+function runCommandAsync(command, args = [], opts = {}) {
+  const {
+    cwd = CWD,
+    timeout = 300000,
+    env = { ...process.env },
+    allowExitCodes = [0],
+  } = opts;
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+
+    const timer = setTimeout(() => {
+      if (finished) return;
+      child.kill('SIGTERM');
+      reject(new Error(`timeout ${timeout}ms`));
+    }, timeout);
+
+    child.stdout.on('data', chunk => { stdout += String(chunk); });
+    child.stderr.on('data', chunk => { stderr += String(chunk); });
+    child.on('error', err => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', code => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (allowExitCodes.includes(code)) {
+        resolve({ code, stdout, stderr });
+        return;
+      }
+      const err = new Error(stderr.trim() || stdout.trim() || `exit code ${code}`);
+      err.status = code;
+      err.stdout = stdout;
+      err.stderr = stderr;
+      reject(err);
+    });
+  });
+}
+
+async function runScript(script, flags = '') {
+  const args = [script, ...flags.trim().split(/\s+/).filter(Boolean)];
   try {
-    execSync(`${NODE} ${script} ${flags}`, {
-      cwd:     CWD,
-      timeout: 300000, // 최대 5분
-      env:     { ...process.env },
+    await runCommandAsync(NODE, args, {
+      cwd: CWD,
+      timeout: 300000,
+      env: { ...process.env },
+      allowExitCodes: [0, 1],
     });
   } catch (e) {
-    // exit code 1: 이슈 발견 (정상 동작). exit code 2+: 실제 오류
     if ((e.status ?? 1) >= 2) throw e;
   }
 }
@@ -92,9 +142,9 @@ function runScript(script, flags = '') {
 /**
  * 덱스터 기본 점검
  */
-function handleRunCheck() {
+async function handleRunCheck() {
   try {
-    runScript(DEXTER, '--telegram');
+    await runScript(DEXTER, '--telegram');
     return { ok: true, message: '덱스터 기본 점검 완료. 이상 시 텔레그램으로 보고됨.' };
   } catch (e) {
     return { ok: false, error: e.stderr?.toString()?.slice(0, 300) || e.message };
@@ -104,9 +154,9 @@ function handleRunCheck() {
 /**
  * 덱스터 전체 점검 (npm audit 포함)
  */
-function handleRunFull() {
+async function handleRunFull() {
   try {
-    runScript(DEXTER, '--full --telegram');
+    await runScript(DEXTER, '--full --telegram');
     return { ok: true, message: '덱스터 전체 점검 완료 (npm audit 포함).' };
   } catch (e) {
     return { ok: false, error: e.stderr?.toString()?.slice(0, 300) || e.message };
@@ -116,9 +166,9 @@ function handleRunFull() {
 /**
  * 덱스터 자동 수정
  */
-function handleRunFix() {
+async function handleRunFix() {
   try {
-    runScript(DEXTER, '--fix --telegram');
+    await runScript(DEXTER, '--fix --telegram');
     return { ok: true, message: '덱스터 자동 수정 완료. 결과 텔레그램으로 보고됨.' };
   } catch (e) {
     return { ok: false, error: e.stderr?.toString()?.slice(0, 300) || e.message };
@@ -128,9 +178,9 @@ function handleRunFix() {
 /**
  * 덱스터 일일 보고
  */
-function handleDailyReport() {
+async function handleDailyReport() {
   try {
-    runScript(DEXTER, '--daily-report --telegram');
+    await runScript(DEXTER, '--daily-report --telegram');
     return { ok: true, message: '일일 보고 텔레그램 발송 완료.' };
   } catch (e) {
     return { ok: false, error: e.stderr?.toString()?.slice(0, 300) || e.message };
@@ -140,9 +190,9 @@ function handleDailyReport() {
 /**
  * 아처 기술 소화 실행
  */
-function handleRunArcher() {
+async function handleRunArcher() {
   try {
-    runScript(ARCHER, '--telegram');
+    await runScript(ARCHER, '--telegram');
     return { ok: true, message: '아처 기술 소화 완료. 텔레그램으로 보고됨.' };
   } catch (e) {
     return { ok: false, error: e.stderr?.toString()?.slice(0, 300) || e.message };
@@ -153,21 +203,21 @@ function handleRunArcher() {
  * 클로드 AI에게 직접 질문 (claude -p 헤드리스 모드)
  * 제이 → bot_commands → 클로드 AI → 응답 → 텔레그램
  */
-function handleAskClaude(args) {
+async function handleAskClaude(args) {
   const query = (args.query || '').trim();
   if (!query) return { ok: false, error: '질문 내용 없음' };
 
-  const result = spawnSync('claude', ['-p', query, '--dangerously-skip-permissions'], {
-    cwd:      PROJECT_ROOT,
-    timeout:  280000, // 4분 40초 (커맨더 5분 내)
-    env:      { ...process.env },
-    encoding: 'utf8',
-  });
-
-  if (result.error) return { ok: false, error: result.error.message };
-  if (result.status !== 0) {
-    const errMsg = (result.stderr || '').trim().slice(0, 300);
-    return { ok: false, error: errMsg || `exit code ${result.status}` };
+  let result;
+  try {
+    result = await runCommandAsync('claude', ['-p', query, '--dangerously-skip-permissions'], {
+      cwd: PROJECT_ROOT,
+      timeout: 280000,
+      env: { ...process.env },
+      allowExitCodes: [0],
+    });
+  } catch (e) {
+    const errMsg = (e.stderr || '').trim().slice(0, 300);
+    return { ok: false, error: errMsg || e.message };
   }
 
   const response = (result.stdout || '').trim();
@@ -546,6 +596,9 @@ async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
   await teamBus.setStatus('claude-lead', 'idle', '커맨더 시작');
+  setInterval(() => {
+    teamBus.setStatus('claude-lead', 'idle', '명령 대기').catch(() => {});
+  }, 60000).unref();
   console.log(`🤖 ${BOT_NAME} 팀 커맨더 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
