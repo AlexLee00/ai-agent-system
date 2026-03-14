@@ -16,6 +16,7 @@ const path    = require('path');
 const os      = require('os');
 const { execSync, spawnSync } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const teamBus = require('../lib/team-bus');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '클로드';
@@ -481,6 +482,7 @@ const HANDLERS = {
 };
 
 async function processCommands() {
+  let processed = 0;
   try {
     const pending = await pgPool.query('claude', `
       SELECT * FROM bot_commands
@@ -489,7 +491,13 @@ async function processCommands() {
       LIMIT 3
     `, [BOT_ID]);
 
+    if (pending.length === 0) {
+      await teamBus.setStatus('claude-lead', 'idle', '명령 대기');
+      return 0;
+    }
+
     for (const cmd of pending) {
+      await teamBus.setStatus('claude-lead', 'running', `명령 처리: ${cmd.command}`);
       await pgPool.run('claude', `
         UPDATE bot_commands SET status = 'running' WHERE id = $1
       `, [cmd.id]);
@@ -514,11 +522,21 @@ async function processCommands() {
         WHERE id = $3
       `, [result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id]);
 
+      if (result.ok) {
+        await teamBus.markDone('claude-lead');
+      } else {
+        await teamBus.markError('claude-lead', result.error || '알 수 없는 오류');
+      }
+
       console.log(`[클로드] ${cmd.command} → ${result.ok ? 'done' : 'error'}`);
+      processed++;
     }
   } catch (e) {
+    await teamBus.markError('claude-lead', e.message);
     console.error(`[클로드] 명령 처리 오류:`, e.message);
   }
+
+  return processed;
 }
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
@@ -527,6 +545,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
+  await teamBus.setStatus('claude-lead', 'idle', '커맨더 시작');
   console.log(`🤖 ${BOT_NAME} 팀 커맨더 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
