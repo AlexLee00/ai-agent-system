@@ -446,8 +446,9 @@ async function buildTeamIntentReport(team = '', query = '') {
   const teamMeta = {
     luna: { schema: 'luna', title: '루나 인텐트 학습' },
     ska: { schema: 'ska', title: '스카 인텐트 학습' },
+    claude: { schema: 'claude', title: '클로드 인텐트 학습' },
   }[normalized];
-  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska)';
+  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
 
   const [promotions, unrecSummary] = await Promise.all([
     buildPromotionCandidateReportForSchema(query, {
