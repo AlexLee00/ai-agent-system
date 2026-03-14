@@ -263,6 +263,10 @@ function formatAgeMinutes(minutes) {
   return remain > 0 ? `${hours}시간 ${remain}분` : `${hours}시간`;
 }
 
+function pushUniqueLine(lines, line) {
+  if (!lines.includes(line)) lines.push(line);
+}
+
 async function buildLunaRiskAlertSnippet() {
   const statePath = path.join(process.env.HOME || '', '.openclaw', 'investment-state.json');
   const costPath = path.join(process.env.HOME || '', '.openclaw', 'investment-cost.json');
@@ -271,23 +275,30 @@ async function buildLunaRiskAlertSnippet() {
   const lines = [];
 
   if (!state?.lastCycleAt) {
-    lines.push('  • 투자 상태 파일이 없거나 lastCycleAt이 비어 있음');
+    pushUniqueLine(lines, '  • 투자 상태 파일이 없거나 lastCycleAt이 비어 있음');
   } else {
     const ageMinutes = Math.max(0, Math.floor((Date.now() - Number(state.lastCycleAt)) / 60_000));
     if (ageMinutes >= 60) {
-      lines.push(`  • 마지막 루나 사이클이 ${formatAgeMinutes(ageMinutes)} 전 상태로 멈춤`);
+      pushUniqueLine(lines, `  • 마지막 루나 사이클이 ${formatAgeMinutes(ageMinutes)} 전 상태로 멈춤`);
+    }
+  }
+
+  if (state?.lastUsdtAlertAt) {
+    const usdtAlertMinutes = Math.max(0, Math.floor((Date.now() - Number(state.lastUsdtAlertAt)) / 60_000));
+    if (usdtAlertMinutes <= 24 * 60) {
+      pushUniqueLine(lines, `  • 최근 USDT 잔고 경고가 ${formatAgeMinutes(usdtAlertMinutes)} 전에 발생`);
     }
   }
 
   if (!cost?.date || !cost?.daily_budget) {
-    lines.push('  • 비용 추적 상태를 읽지 못함');
+    pushUniqueLine(lines, '  • 비용 추적 상태를 읽지 못함');
   } else {
     const budgetPct = Number(cost.usage || 0) / Number(cost.daily_budget || 1);
     const isToday = cost.date === kst.today();
     if (!isToday) {
-      lines.push(`  • 비용 스냅샷 날짜가 오래됨 (${cost.date})`);
+      pushUniqueLine(lines, `  • 비용 스냅샷 날짜가 오래됨 (${cost.date})`);
     } else if (budgetPct >= 0.8) {
-      lines.push(`  • 일일 LLM 비용 사용률 ${(budgetPct * 100).toFixed(1)}%`);
+      pushUniqueLine(lines, `  • 일일 LLM 비용 사용률 ${(budgetPct * 100).toFixed(1)}%`);
     }
   }
 
