@@ -837,8 +837,10 @@ def _apply_result_calibration(result, calibration, target_date):
     bounded_adjustment = max(-max_adjustment, min(max_adjustment, raw_adjustment))
 
     result['yhat'] = max(0, result['yhat'] + bounded_adjustment)
-    result['yhat_lower'] = max(0, result['yhat_lower'] + bounded_adjustment)
-    result['yhat_upper'] = max(result['yhat_lower'], result['yhat_upper'] + bounded_adjustment)
+    adjusted_lower = max(0, result['yhat_lower'] + bounded_adjustment)
+    adjusted_upper = max(adjusted_lower, result['yhat_upper'] + bounded_adjustment)
+    result['yhat_lower'] = min(adjusted_lower, result['yhat'])
+    result['yhat_upper'] = max(adjusted_upper, result['yhat'])
     result['calibration_adjustment'] = bounded_adjustment
 
     notes = []
