@@ -36,6 +36,8 @@ const {
   clearPromotedUnrecognized,
   clearPromotionCandidateState,
   markUnrecognizedPromoted,
+  removeLearnedPatterns,
+  addLearnedPattern,
 } = require('../../../packages/core/lib/intent-store');
 const {
   AUTO_PROMOTE_DEFAULTS,
@@ -446,21 +448,10 @@ async function rollbackPromotionTarget(target = '') {
   });
   if (!row) return `⚠️ "${raw}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
 
-  const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
-  let learnings = [];
-  try {
-    if (fs.existsSync(learnPath)) learnings = JSON.parse(fs.readFileSync(learnPath, 'utf8'));
-  } catch {}
-
-  const before = learnings.length;
-  learnings = learnings.filter(item => {
-    if (row.learned_pattern && item.re === row.learned_pattern) return false;
-    if (item.re === row.sample_text) return false;
-    return true;
+  removeLearnedPatterns({
+    learnedPattern: row.learned_pattern,
+    sampleText: row.sample_text,
   });
-  if (learnings.length !== before) {
-    fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
-  }
 
   await clearPromotedUnrecognized(pgPool, {
     suggestedIntent: row.suggested_intent,
@@ -498,17 +489,8 @@ async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
       recordIds,
       text,
     });
-    // nlp-learnings.json에 패턴 추가 (intent-parser.js가 5분 내 자동 로드)
-    const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
-    let learnings = [];
-    try {
-      if (fs.existsSync(learnPath)) learnings = JSON.parse(fs.readFileSync(learnPath, 'utf8'));
-    } catch {}
     const re = pattern || text;
-    if (re && !learnings.some(l => l.re === re)) {
-      learnings.push({ re, intent: toIntent, args: {} });
-      fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
-    }
+    addLearnedPattern({ pattern: re, intent: toIntent });
     await logPromotionEvent(pgPool, {
       normalizedText: normalizeIntentText(text),
       sampleText: text,
