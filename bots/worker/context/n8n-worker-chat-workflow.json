@@ -22,7 +22,7 @@
           "parameters": [
             {
               "name": "x-worker-webhook-secret",
-              "value": "={{$env.WORKER_WEBHOOK_SECRET}}"
+              "value": "__WORKER_WEBHOOK_SECRET__"
             }
           ]
         },
