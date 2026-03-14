@@ -18,6 +18,7 @@ const {
   buildHealthReport,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
+const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
@@ -49,12 +50,6 @@ const ALL_SERVICES = [
 ];
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-
-function parseArgs() {
-  return {
-    outputJson: process.argv.includes('--json'),
-  };
-}
 
 async function loadTradeReviewHealth() {
   const modulePath = path.resolve(__dirname, './validate-trade-review.js');
@@ -132,8 +127,7 @@ function formatText(report) {
   });
 }
 
-async function main() {
-  const { outputJson } = parseArgs();
+async function buildReport() {
   const status = getLaunchctlStatus();
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
@@ -154,16 +148,11 @@ async function main() {
     tradeReview,
     decision,
   };
-
-  if (outputJson) {
-    console.log(JSON.stringify(report, null, 2));
-    return;
-  }
-
-  console.log(formatText(report));
+  return report;
 }
 
-main().catch((error) => {
-  console.error(`[루나 운영 헬스 리포트] 예외: ${error.message}`);
-  process.exit(1);
+runHealthCli({
+  buildReport,
+  formatText,
+  errorPrefix: '[루나 운영 헬스 리포트]',
 });

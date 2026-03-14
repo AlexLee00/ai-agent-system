@@ -15,6 +15,7 @@ const {
   buildHealthReport,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
+const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -36,12 +37,6 @@ const ALL_SERVICES = [
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
-
-function parseArgs() {
-  return {
-    outputJson: process.argv.includes('--json'),
-  };
-}
 
 function checkNaverLogStaleness() {
   return checkFileStaleness(NAVER_LOG, LOG_STALE_MS);
@@ -133,8 +128,7 @@ function formatText(report) {
   });
 }
 
-function main() {
-  const { outputJson } = parseArgs();
+async function buildReport() {
   const status = getLaunchctlStatus();
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
@@ -161,18 +155,11 @@ function main() {
     },
     decision,
   };
-
-  if (outputJson) {
-    console.log(JSON.stringify(report, null, 2));
-    return;
-  }
-
-  console.log(formatText(report));
+  return report;
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`[스카 운영 헬스 리포트] 예외: ${error.message}`);
-  process.exit(1);
-}
+runHealthCli({
+  buildReport,
+  formatText,
+  errorPrefix: '[스카 운영 헬스 리포트]',
+});
