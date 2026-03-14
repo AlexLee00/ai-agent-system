@@ -883,6 +883,42 @@ async function runSkaForecastHealthDirect() {
   });
 }
 
+async function runLunaHealthDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'investment', 'scripts', 'health-report.js');
+
+  return await new Promise((resolve) => {
+    const child = spawn('node', [script], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve('⏱ 루나 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
+    }, 60_000);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve(`⚠️ 루나 운영 헬스 실행 실패: ${err.message}`);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
+        resolve(`⚠️ 루나 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
+        return;
+      }
+      resolve(stripAnsi(stdout).trim() || 'ℹ️ 루나 운영 헬스 결과가 비어 있습니다.');
+    });
+  });
+}
+
 async function getSkaForecastHealthJson() {
   const root = path.join(__dirname, '..', '..', '..');
   const python = path.join(root, 'bots', 'ska', 'venv', 'bin', 'python');
@@ -1323,6 +1359,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'speed_test': {
       await notify('⏳ LLM 속도 테스트 실행 중...');
       return await runSpeedTestDirect();
+    }
+
+    case 'luna_health': {
+      await notify('⏳ 루나 운영 헬스 확인 중...');
+      return await runLunaHealthDirect();
     }
 
     case 'ska_forecast_health': {
