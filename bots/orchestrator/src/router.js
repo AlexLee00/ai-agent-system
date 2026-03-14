@@ -26,8 +26,7 @@ const {
   normalizeIntentText,
   buildAutoLearnPattern,
   summarizeIntentFamily,
-  isSafeAutoPromoteIntent,
-  getAutoPromoteThreshold,
+  evaluateAutoPromoteDecision,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -301,11 +300,16 @@ async function evaluateAutoPromotion(text) {
   if (counts.size === 0) return null;
 
   const [suggestedIntent, dominantCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-  const threshold = getAutoPromoteThreshold(suggestedIntent);
-  if (matching.length < threshold.minCount) return null;
   const confidence = dominantCount / matching.length;
   const pattern = buildAutoLearnPattern(normalized);
   const sampleText = matching[0]?.text || normalized;
+  const decision = evaluateAutoPromoteDecision({
+    intent: suggestedIntent,
+    occurrenceCount: matching.length,
+    confidence,
+    pattern,
+  });
+  const { threshold } = decision;
 
   await upsertPromotionCandidate({
     normalizedText: normalized,
@@ -317,8 +321,8 @@ async function evaluateAutoPromotion(text) {
     learnedPattern: pattern,
   });
 
-  if (confidence < threshold.minConfidence || !pattern) return null;
-  if (!isSafeAutoPromoteIntent(suggestedIntent)) {
+  if (!decision.allowed) {
+    if (decision.reason !== 'unsafe_intent') return null;
     const candidate = await pgPool.get('claude', `
       SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
     `, [normalized]);
@@ -334,7 +338,7 @@ async function evaluateAutoPromotion(text) {
         occurrenceCount: matching.length,
         confidence,
         threshold,
-        reason: 'unsafe_intent',
+        reason: decision.reason,
       },
     });
     return { normalized, suggestedIntent, occurrenceCount: matching.length, confidence, autoApplied: false, blocked: true };
