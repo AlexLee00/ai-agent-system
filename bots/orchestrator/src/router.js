@@ -410,18 +410,68 @@ async function buildUnrecognizedReport() {
   }
 }
 
-async function buildPromotionCandidateReport() {
+function parsePromotionQuery(raw = '') {
+  const query = String(raw || '').trim().toLowerCase();
+  const filters = { applied: null, intent: null };
+  if (!query) return filters;
+
+  if (/(applied|auto|자동|반영됨|반영된)/i.test(query)) filters.applied = true;
+  if (/(pending|candidate|후보|대기)/i.test(query)) filters.applied = false;
+
+  const intentMatch =
+    query.match(/intent[:=]\s*([a-z0-9_./-]+)/i) ||
+    query.match(/인텐트\s+([a-z0-9_./-]+)/i) ||
+    query.match(/의도\s+([a-z0-9_./-]+)/i);
+  if (intentMatch?.[1]) filters.intent = intentMatch[1].trim();
+
+  return filters;
+}
+
+async function buildPromotionCandidateReport(query = '') {
   try {
     await _ensureUnrecTable();
+    const filters = parsePromotionQuery(query);
+    const clauses = [];
+    const params = [];
+
+    if (typeof filters.applied === 'boolean') {
+      params.push(filters.applied);
+      clauses.push(`auto_applied = $${params.length}`);
+    }
+    if (filters.intent) {
+      params.push(`%${filters.intent}%`);
+      clauses.push(`suggested_intent ILIKE $${params.length}`);
+    }
+
+    const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const summary = await pgPool.get('claude', `
+      SELECT
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE auto_applied = true)::int AS applied_count,
+        COUNT(*) FILTER (WHERE auto_applied = false)::int AS pending_count
+      FROM intent_promotion_candidates
+      ${whereSql}
+    `, params);
     const rows = await pgPool.query('claude', `
       SELECT id, sample_text, suggested_intent, occurrence_count, confidence, auto_applied, updated_at
       FROM intent_promotion_candidates
+      ${whereSql}
       ORDER BY auto_applied DESC, updated_at DESC
       LIMIT 20
-    `);
-    if (rows.length === 0) return '📝 자동 반영 후보 없음';
+    `, params);
+    if (rows.length === 0) {
+      const suffix = query ? ` (${query})` : '';
+      return `📝 자동 반영 후보 없음${suffix}`;
+    }
 
     const lines = ['📝 자동 반영 후보/이력'];
+    const filterBits = [];
+    if (filters.applied === true) filterBits.push('자동반영만');
+    if (filters.applied === false) filterBits.push('후보만');
+    if (filters.intent) filterBits.push(`intent=${filters.intent}`);
+    if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
+    lines.push(`요약: 전체 ${summary?.total_count ?? rows.length}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
+    lines.push('');
     for (const r of rows) {
       const badge = r.auto_applied ? '✅자동반영' : '🕓후보';
       const conf = `${(Number(r.confidence) * 100).toFixed(0)}%`;
@@ -445,6 +495,7 @@ async function buildPromotionCandidateReport() {
     }
     lines.push('');
     lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
+    lines.push('조회: /promotions applied | /promotions pending | /promotions intent:luna_query');
     lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
     return lines.join('\n');
   } catch (e) {
@@ -1633,7 +1684,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       return await buildUnrecognizedReport();
 
     case 'promotion_candidates':
-      return await buildPromotionCandidateReport();
+      return await buildPromotionCandidateReport(args.query || msg.text || '');
 
     case 'promotion_rollback':
       return await rollbackPromotionTarget(args.target || msg.text || '');
