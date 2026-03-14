@@ -11,37 +11,25 @@
  *   node bots/worker/scripts/health-report.js [--json]
  */
 
-const { execSync } = require('child_process');
 const {
   buildHealthReport,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const {
+  DEFAULT_NORMAL_EXIT_CODES,
+  getLaunchctlStatus,
+  buildServiceRows,
+} = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
-const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 
 function parseArgs() {
   return {
     outputJson: process.argv.includes('--json'),
   };
-}
-
-function getLaunchctlStatus() {
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
-  const services = {};
-  for (const line of raw.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-    const [pid, exitCode, label] = parts;
-    services[label] = {
-      running: pid !== '-',
-      pid: pid !== '-' ? parseInt(pid, 10) : null,
-      exitCode: Number.parseInt(exitCode, 10) || 0,
-    };
-  }
-  return services;
 }
 
 async function checkHttp(url) {
@@ -61,35 +49,6 @@ async function fetchJson(url) {
   } catch {
     return null;
   }
-}
-
-function buildServiceRows(status) {
-  const ok = [];
-  const warn = [];
-
-  for (const label of ALL_SERVICES) {
-    const svc = status[label];
-    const shortName = hsm.shortLabel(label);
-    if (!svc) {
-      warn.push(`  ${shortName}: 미로드`);
-      continue;
-    }
-    if (CONTINUOUS.includes(label) && !svc.running) {
-      warn.push(`  ${shortName}: 다운 (PID 없음)`);
-      continue;
-    }
-    if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
-      warn.push(`  ${shortName}: exit ${svc.exitCode}`);
-      continue;
-    }
-    if (svc.running && svc.pid) {
-      ok.push(`  ${shortName}: 정상 (PID ${svc.pid})`);
-    } else {
-      ok.push(`  ${shortName}: 정상`);
-    }
-  }
-
-  return { ok, warn };
 }
 
 async function buildEndpointHealth() {
@@ -188,7 +147,12 @@ function formatText(report) {
 async function main() {
   const { outputJson } = parseArgs();
   const status = getLaunchctlStatus();
-  const serviceRows = buildServiceRows(status);
+  const serviceRows = buildServiceRows(status, {
+    labels: ALL_SERVICES,
+    continuous: CONTINUOUS,
+    normalExitCodes: NORMAL_EXIT_CODES,
+    shortLabel: (label) => hsm.shortLabel(label),
+  });
   const endpointHealth = await buildEndpointHealth();
   const decision = buildDecision(serviceRows, endpointHealth);
 
