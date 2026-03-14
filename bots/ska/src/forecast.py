@@ -67,6 +67,10 @@ BOOKED_HOURS_ADJUSTMENT_WEIGHT = 0.30
 ROOM_SPREAD_ADJUSTMENT_WEIGHT = 0.20
 PEAK_OVERLAP_ADJUSTMENT_WEIGHT = 0.18
 EVENING_PATTERN_ADJUSTMENT_WEIGHT = 0.14
+MORNING_PATTERN_ADJUSTMENT_WEIGHT = 0.08
+AFTERNOON_PATTERN_ADJUSTMENT_WEIGHT = 0.10
+RESERVATION_TREND_ADJUSTMENT_WEIGHT = 0.18
+BOOKED_HOURS_TREND_ADJUSTMENT_WEIGHT = 0.16
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -515,11 +519,18 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
             weekday,
             target_revenue,
             predicted_revenue,
+            COALESCE(reservation_count, total_reservations, 0) AS reservation_count,
             COALESCE(total_reservations, 0) AS total_reservations,
             COALESCE(reservation_booked_hours, 0.0) AS reservation_booked_hours,
             COALESCE(reservation_unique_rooms, 0) AS reservation_unique_rooms,
             COALESCE(reservation_peak_overlap, 0) AS reservation_peak_overlap,
+            COALESCE(reservation_morning_count, 0) AS reservation_morning_count,
+            COALESCE(reservation_afternoon_count, 0) AS reservation_afternoon_count,
             COALESCE(reservation_evening_count, 0) AS reservation_evening_count,
+            COALESCE(lag_reservation_count_1d, 0) AS lag_reservation_count_1d,
+            COALESCE(lag_reservation_count_3d, 0) AS lag_reservation_count_3d,
+            COALESCE(lag_reservation_hours_1d, 0.0) AS lag_reservation_hours_1d,
+            COALESCE(lag_reservation_hours_3d, 0.0) AS lag_reservation_hours_3d,
             COALESCE(holiday_flag, false) AS holiday_flag,
             COALESCE(vacation_flag, false) AS vacation_flag,
             COALESCE(festival_flag, false) AS festival_flag,
@@ -542,7 +553,11 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     revenue_per_booked_hour = 0.0
     unique_rooms_baseline = {}
     peak_overlap_baseline = {}
+    morning_count_baseline = {}
+    afternoon_count_baseline = {}
     evening_count_baseline = {}
+    reservation_trend_baseline = {}
+    booked_hours_trend_baseline = {}
     condition_bias = {}
     sample_count = len(rows)
 
@@ -565,7 +580,11 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     booked_hours_buckets = {i: [] for i in range(1, 8)}
     unique_rooms_buckets = {i: [] for i in range(1, 8)}
     peak_overlap_buckets = {i: [] for i in range(1, 8)}
+    morning_count_buckets = {i: [] for i in range(1, 8)}
+    afternoon_count_buckets = {i: [] for i in range(1, 8)}
     evening_count_buckets = {i: [] for i in range(1, 8)}
+    reservation_trend_buckets = {i: [] for i in range(1, 8)}
+    booked_hours_trend_buckets = {i: [] for i in range(1, 8)}
     revenue_per_reservation_samples = []
     revenue_per_booked_hour_samples = []
     condition_buckets = {
@@ -582,35 +601,54 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         dow = int(row[1] or 0)
         actual = float(row[2] or 0.0)
         predicted = float(row[3] or 0.0)
-        total_reservations = int(row[4] or 0)
-        booked_hours = float(row[5] or 0.0)
-        unique_rooms = int(row[6] or 0)
-        peak_overlap = int(row[7] or 0)
-        evening_count = int(row[8] or 0)
-        error = float(row[15] or 0.0)
+        reservation_count = int(row[4] or 0)
+        total_reservations = int(row[5] or 0)
+        booked_hours = float(row[6] or 0.0)
+        unique_rooms = int(row[7] or 0)
+        peak_overlap = int(row[8] or 0)
+        morning_count = int(row[9] or 0)
+        afternoon_count = int(row[10] or 0)
+        evening_count = int(row[11] or 0)
+        lag_reservation_count_1d = float(row[12] or 0.0)
+        lag_reservation_count_3d = float(row[13] or 0.0)
+        lag_reservation_hours_1d = float(row[14] or 0.0)
+        lag_reservation_hours_3d = float(row[15] or 0.0)
+        error = float(row[22] or 0.0)
+        recent_count_anchor = sum(v for v in [lag_reservation_count_1d, lag_reservation_count_3d] if v > 0)
+        recent_count_divisor = sum(1 for v in [lag_reservation_count_1d, lag_reservation_count_3d] if v > 0)
+        recent_hours_anchor = sum(v for v in [lag_reservation_hours_1d, lag_reservation_hours_3d] if v > 0)
+        recent_hours_divisor = sum(1 for v in [lag_reservation_hours_1d, lag_reservation_hours_3d] if v > 0)
+        reservation_trend = reservation_count - (recent_count_anchor / recent_count_divisor) if recent_count_divisor else 0.0
+        booked_hours_trend = booked_hours - (recent_hours_anchor / recent_hours_divisor) if recent_hours_divisor else 0.0
 
         bias_buckets[dow].append(error)
-        reservation_buckets[dow].append(total_reservations)
+        reservation_buckets[dow].append(reservation_count if reservation_count > 0 else total_reservations)
         booked_hours_buckets[dow].append(booked_hours)
         unique_rooms_buckets[dow].append(unique_rooms)
         peak_overlap_buckets[dow].append(peak_overlap)
+        morning_count_buckets[dow].append(morning_count)
+        afternoon_count_buckets[dow].append(afternoon_count)
         evening_count_buckets[dow].append(evening_count)
+        reservation_trend_buckets[dow].append(reservation_trend)
+        booked_hours_trend_buckets[dow].append(booked_hours_trend)
         global_bias_values.append(error)
-        if total_reservations > 0:
+        if reservation_count > 0:
+            revenue_per_reservation_samples.append(actual / reservation_count)
+        elif total_reservations > 0:
             revenue_per_reservation_samples.append(actual / total_reservations)
         if booked_hours > 0:
             revenue_per_booked_hour_samples.append(actual / booked_hours)
-        if row[9]:
+        if row[16]:
             condition_buckets['holiday'].append(error)
-        if row[10]:
+        if row[17]:
             condition_buckets['vacation'].append(error)
-        if row[11]:
+        if row[18]:
             condition_buckets['festival'].append(error)
-        if row[12]:
+        if row[19]:
             condition_buckets['bridge_holiday'].append(error)
-        if float(row[13] or 0.0) >= 0.4:
+        if float(row[20] or 0.0) >= 0.4:
             condition_buckets['rainy_day'].append(error)
-        if int(row[14] or 0) >= 5:
+        if int(row[21] or 0) >= 5:
             condition_buckets['exam_high'].append(error)
 
     global_bias = round(sum(global_bias_values) / len(global_bias_values)) if global_bias_values else 0
@@ -630,9 +668,21 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     for dow, values in peak_overlap_buckets.items():
         if values:
             peak_overlap_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in morning_count_buckets.items():
+        if values:
+            morning_count_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in afternoon_count_buckets.items():
+        if values:
+            afternoon_count_baseline[dow] = round(sum(values) / len(values), 2)
     for dow, values in evening_count_buckets.items():
         if values:
             evening_count_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in reservation_trend_buckets.items():
+        if values:
+            reservation_trend_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in booked_hours_trend_buckets.items():
+        if values:
+            booked_hours_trend_baseline[dow] = round(sum(values) / len(values), 2)
     if revenue_per_reservation_samples:
         revenue_per_reservation = sum(revenue_per_reservation_samples) / len(revenue_per_reservation_samples)
     if revenue_per_booked_hour_samples:
@@ -649,7 +699,11 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         'revenue_per_booked_hour': revenue_per_booked_hour,
         'unique_rooms_baseline': unique_rooms_baseline,
         'peak_overlap_baseline': peak_overlap_baseline,
+        'morning_count_baseline': morning_count_baseline,
+        'afternoon_count_baseline': afternoon_count_baseline,
         'evening_count_baseline': evening_count_baseline,
+        'reservation_trend_baseline': reservation_trend_baseline,
+        'booked_hours_trend_baseline': booked_hours_trend_baseline,
         'condition_bias': condition_bias,
         'sample_count': sample_count,
         'global_bias': global_bias,
@@ -671,13 +725,23 @@ def _apply_result_calibration(result, calibration, target_date):
     revenue_per_booked_hour = float(calibration.get('revenue_per_booked_hour', 0.0) or 0.0)
     unique_rooms_baseline = float(calibration.get('unique_rooms_baseline', {}).get(dow, 0.0) or 0.0)
     peak_overlap_baseline = float(calibration.get('peak_overlap_baseline', {}).get(dow, 0.0) or 0.0)
+    morning_count_baseline = float(calibration.get('morning_count_baseline', {}).get(dow, 0.0) or 0.0)
+    afternoon_count_baseline = float(calibration.get('afternoon_count_baseline', {}).get(dow, 0.0) or 0.0)
     evening_count_baseline = float(calibration.get('evening_count_baseline', {}).get(dow, 0.0) or 0.0)
+    reservation_trend_baseline = float(calibration.get('reservation_trend_baseline', {}).get(dow, 0.0) or 0.0)
+    booked_hours_trend_baseline = float(calibration.get('booked_hours_trend_baseline', {}).get(dow, 0.0) or 0.0)
     reservation_count = int(result.get('reservation_count', 0) or 0)
     reservation_booked_hours = float(result.get('reservation_booked_hours', 0.0) or 0.0)
     reservation_unique_rooms = int(result.get('reservation_unique_rooms', 0) or 0)
     reservation_peak_overlap = int(result.get('reservation_peak_overlap', 0) or 0)
+    reservation_morning_count = int(result.get('reservation_morning_count', 0) or 0)
+    reservation_afternoon_count = int(result.get('reservation_afternoon_count', 0) or 0)
     reservation_evening_count = int(result.get('reservation_evening_count', 0) or 0)
     env_info = result.get('env_info') or {}
+    recent_count_anchor_values = [v for v in [reservation_baseline, reservation_trend_baseline + reservation_baseline] if v > 0]
+    recent_hours_anchor_values = [v for v in [booked_hours_baseline, booked_hours_trend_baseline + booked_hours_baseline] if v > 0]
+    live_reservation_trend = reservation_count - (sum(recent_count_anchor_values) / len(recent_count_anchor_values)) if recent_count_anchor_values else 0.0
+    live_booked_hours_trend = reservation_booked_hours - (sum(recent_hours_anchor_values) / len(recent_hours_anchor_values)) if recent_hours_anchor_values else 0.0
 
     reservation_adjustment = 0
     if reservation_baseline > 0 and revenue_per_reservation > 0 and reservation_count > 0:
@@ -707,11 +771,37 @@ def _apply_result_calibration(result, calibration, target_date):
             overlap_delta * revenue_per_booked_hour * PEAK_OVERLAP_ADJUSTMENT_WEIGHT
         )
 
+    morning_adjustment = 0
+    if morning_count_baseline > 0 and reservation_morning_count > 0 and revenue_per_reservation > 0:
+        morning_delta = reservation_morning_count - morning_count_baseline
+        morning_adjustment = round(
+            morning_delta * revenue_per_reservation * MORNING_PATTERN_ADJUSTMENT_WEIGHT
+        )
+
+    afternoon_adjustment = 0
+    if afternoon_count_baseline > 0 and reservation_afternoon_count > 0 and revenue_per_reservation > 0:
+        afternoon_delta = reservation_afternoon_count - afternoon_count_baseline
+        afternoon_adjustment = round(
+            afternoon_delta * revenue_per_reservation * AFTERNOON_PATTERN_ADJUSTMENT_WEIGHT
+        )
+
     evening_adjustment = 0
     if evening_count_baseline > 0 and reservation_evening_count > 0 and revenue_per_reservation > 0:
         evening_delta = reservation_evening_count - evening_count_baseline
         evening_adjustment = round(
             evening_delta * revenue_per_reservation * EVENING_PATTERN_ADJUSTMENT_WEIGHT
+        )
+
+    reservation_trend_adjustment = 0
+    if revenue_per_reservation > 0 and live_reservation_trend:
+        reservation_trend_adjustment = round(
+            live_reservation_trend * revenue_per_reservation * RESERVATION_TREND_ADJUSTMENT_WEIGHT
+        )
+
+    booked_hours_trend_adjustment = 0
+    if revenue_per_booked_hour > 0 and live_booked_hours_trend:
+        booked_hours_trend_adjustment = round(
+            live_booked_hours_trend * revenue_per_booked_hour * BOOKED_HOURS_TREND_ADJUSTMENT_WEIGHT
         )
 
     condition_adjustment = 0
@@ -736,7 +826,11 @@ def _apply_result_calibration(result, calibration, target_date):
         + booked_hours_adjustment
         + room_spread_adjustment
         + peak_overlap_adjustment
+        + morning_adjustment
+        + afternoon_adjustment
         + evening_adjustment
+        + reservation_trend_adjustment
+        + booked_hours_trend_adjustment
         + condition_adjustment
     )
     max_adjustment = round(max(0, result['yhat']) * CALIBRATION_MAX_RATIO)
@@ -758,8 +852,16 @@ def _apply_result_calibration(result, calibration, target_date):
         notes.append(f'rooms:{room_spread_adjustment:+,}')
     if peak_overlap_adjustment:
         notes.append(f'peak:{peak_overlap_adjustment:+,}')
+    if morning_adjustment:
+        notes.append(f'morning:{morning_adjustment:+,}')
+    if afternoon_adjustment:
+        notes.append(f'afternoon:{afternoon_adjustment:+,}')
     if evening_adjustment:
         notes.append(f'evening:{evening_adjustment:+,}')
+    if reservation_trend_adjustment:
+        notes.append(f'res_trend:{reservation_trend_adjustment:+,}')
+    if booked_hours_trend_adjustment:
+        notes.append(f'hour_trend:{booked_hours_trend_adjustment:+,}')
     notes.extend(condition_notes)
     if raw_adjustment != bounded_adjustment:
         notes.append(f'capped:{bounded_adjustment:+,}')
