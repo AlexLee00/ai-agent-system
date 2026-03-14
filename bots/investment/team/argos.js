@@ -55,6 +55,8 @@ const RAG_RERANK_LIMIT = 4;
 const INTEL_CACHE_TTL = 6 * 3600 * 1000;
 const INTEL_CACHE_MAX = 500;
 const _candidateIntelCache = new Map();
+const EXTERNAL_WARN_TTL = 6 * 3600 * 1000;
+const _externalWarnCache = new Map();
 
 function _screeningLabel(market) {
   return market === 'crypto' ? '암호화폐' : market === 'domestic' ? '국내주식' : '해외주식';
@@ -69,6 +71,14 @@ function _cleanupIntelCache(now = Date.now()) {
     if (!oldestKey) break;
     _candidateIntelCache.delete(oldestKey);
   }
+}
+
+function _warnExternalOnce(key, message, ttl = EXTERNAL_WARN_TTL) {
+  const now = Date.now();
+  const last = _externalWarnCache.get(key) || 0;
+  if ((now - last) < ttl) return;
+  _externalWarnCache.set(key, now);
+  console.warn(message);
 }
 
 async function _loadRecentScreeningWeights(market) {
@@ -369,12 +379,20 @@ async function fetchRedditPosts(subreddit, limit = 10) {
       headers: { 'User-Agent': 'luna-argos/1.0 (investment bot)' },
       signal:  AbortSignal.timeout(10000),
     });
+    if (res.status === 403) {
+      _warnExternalOnce(`reddit403:${subreddit}`, `  ⚠️ [아르고스] r/${subreddit} 접근 거부(403) — 전략 수집 소스에서 일시 제외`);
+      return [];
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return (data?.data?.children || [])
       .map(c => c.data)
       .filter(p => p.score >= 20 && !p.stickied);
   } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError' || /timed out/i.test(e.message || '')) {
+      _warnExternalOnce(`reddit-timeout:${subreddit}`, `  ⚠️ [아르고스] r/${subreddit} 수집 타임아웃 — 이번 사이클 스킵`);
+      return [];
+    }
     console.warn(`  ⚠️ [아르고스] r/${subreddit} 수집 실패: ${e.message}`);
     return [];
   }
@@ -426,6 +444,10 @@ export async function collectStrategies() {
         summary.push(`• [${(strategy.quality_score * 10).toFixed(0)}점] ${strategy.strategy_name}: ${strategy.summary}`);
         console.log(`  ✅ 저장: ${strategy.strategy_name} (점수: ${strategy.quality_score.toFixed(2)})`);
       } catch (e) {
+        if (e.name === 'TimeoutError' || e.name === 'AbortError' || /timed out/i.test(e.message || '')) {
+          _warnExternalOnce(`argos-eval-timeout:${market}`, `  ⚠️ [아르고스] 전략 평가 타임아웃 — 일부 포스트 스킵`);
+          continue;
+        }
         console.warn(`  ⚠️ [아르고스] 평가 실패: ${e.message}`);
       }
     }
