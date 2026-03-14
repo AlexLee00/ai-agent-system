@@ -17,6 +17,8 @@ const require = createRequire(import.meta.url);
 const {
   buildHealthReport,
   buildHealthDecision,
+  buildHealthCountSection,
+  buildHealthSampleSection,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -82,13 +84,7 @@ function buildDecision(serviceRows, tradeReview) {
 
 function formatText(report) {
   const sections = [
-    {
-      title: '■ 서비스 상태',
-      lines: [
-        `  정상 ${report.serviceHealth.okCount}건 / 경고 ${report.serviceHealth.warnCount}건`,
-        ...report.serviceHealth.warn.slice(0, 8),
-      ],
-    },
+    buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
     {
       title: '■ trade_review 정합성',
       lines: [
@@ -108,12 +104,8 @@ function formatText(report) {
     },
   ];
 
-  if (report.serviceHealth.ok.length > 0) {
-    sections.splice(1, 0, {
-      title: '■ 정상 서비스 샘플',
-      lines: report.serviceHealth.ok.slice(0, 5),
-    });
-  }
+  const sampleSection = buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth);
+  if (sampleSection) sections.splice(1, 0, sampleSection);
 
   return buildHealthReport({
     title: '📊 루나 운영 헬스 리포트',

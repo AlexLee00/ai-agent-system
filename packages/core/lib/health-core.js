@@ -55,6 +55,29 @@ function buildHealthDecision({
   return { recommended, level, reasons };
 }
 
+function buildHealthCountSection(title, health, {
+  warnLimit = 8,
+  okLimit = 0,
+} = {}) {
+  if (!health) return null;
+  const lines = [
+    `  정상 ${Number(health.okCount || 0)}건 / 경고 ${Number(health.warnCount || 0)}건`,
+    ...((health.warn || []).slice(0, warnLimit)),
+  ];
+  if (okLimit > 0) {
+    lines.push(...((health.ok || []).slice(0, okLimit)));
+  }
+  return { title, lines };
+}
+
+function buildHealthSampleSection(title, health, limit = 5) {
+  if (!health || !Array.isArray(health.ok) || health.ok.length === 0) return null;
+  return {
+    title,
+    lines: health.ok.slice(0, limit),
+  };
+}
+
 function buildHealthReport({ title, subtitle = '', sections = [], footer = [] }) {
   const lines = [...buildHealthHeader(title, subtitle)];
   for (const section of sections) {
@@ -75,6 +98,8 @@ module.exports = {
   buildHealthHeader,
   buildHealthSection,
   buildHealthDecision,
+  buildHealthCountSection,
+  buildHealthSampleSection,
   buildHealthDecisionSection,
   buildHealthReport,
 };
