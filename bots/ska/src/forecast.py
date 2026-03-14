@@ -931,28 +931,24 @@ def save_forecast_result(con, forecast_date, result, mape=None):
 
 
 def get_recent_mape(con, days=7):
-    """최근 N일 평균 MAPE 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
+    """최근 N일 평균 MAPE 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
     try:
         row = _one(con, """
             WITH latest AS (
                 SELECT DISTINCT ON (fr.forecast_date)
                     fr.forecast_date,
-                    fr.predictions,
-                    fr.mape
+                    fr.predictions
                 FROM ska.forecast_results fr
                 WHERE fr.forecast_date >= current_date - %s
                 ORDER BY fr.forecast_date, fr.created_at DESC
             )
             SELECT AVG(
-                COALESCE(
-                    latest.mape,
-                    CASE
-                        WHEN rd.actual_revenue > 0
-                         AND (latest.predictions->>'yhat') IS NOT NULL
-                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
-                        ELSE NULL
-                    END
-                )
+                CASE
+                    WHEN rd.actual_revenue > 0
+                     AND (latest.predictions->>'yhat') IS NOT NULL
+                    THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                    ELSE NULL
+                END
             )
             FROM latest
             JOIN revenue_daily rd ON rd.date = latest.forecast_date
@@ -1343,15 +1339,14 @@ def format_monthly(results, base_date):
 # ─── 월간 모델 진단 (ska-011/013) ────────────────────────────────────────────
 
 def _get_accuracy_history(con, days=90):
-    """최근 N일 정확도 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
+    """최근 N일 정확도 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
     try:
         rows = _qry(con, """
             WITH latest AS (
                 SELECT DISTINCT ON (fr.forecast_date)
                     fr.forecast_date,
                     fr.model_version,
-                    fr.predictions,
-                    fr.mape
+                    fr.predictions
                 FROM ska.forecast_results fr
                 WHERE fr.forecast_date >= current_date - %s
                 ORDER BY fr.forecast_date, fr.created_at DESC
@@ -1361,14 +1356,11 @@ def _get_accuracy_history(con, days=90):
                 rd.actual_revenue,
                 (latest.predictions->>'yhat')::int AS predicted_revenue,
                 rd.actual_revenue - (latest.predictions->>'yhat')::int AS error,
-                COALESCE(
-                    latest.mape,
-                    CASE
-                        WHEN rd.actual_revenue > 0
-                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
-                        ELSE NULL
-                    END
-                ) AS mape,
+                CASE
+                    WHEN rd.actual_revenue > 0
+                    THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                    ELSE NULL
+                END AS mape,
                 latest.model_version
             FROM latest
             JOIN revenue_daily rd ON rd.date = latest.forecast_date

@@ -370,15 +370,14 @@ def get_week_summary(con, week_start, week_end):
 
 
 def get_weekly_accuracy(con, week_start, week_end):
-    """전주 예측 정확도 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
+    """전주 예측 정확도 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
     try:
         rows = _qry(con, """
             WITH latest AS (
                 SELECT DISTINCT ON (fr.forecast_date)
                     fr.forecast_date,
                     fr.model_version,
-                    fr.predictions,
-                    fr.mape
+                    fr.predictions
                 FROM ska.forecast_results fr
                 WHERE fr.forecast_date >= %s AND fr.forecast_date <= %s
                 ORDER BY fr.forecast_date, fr.created_at DESC
@@ -388,14 +387,11 @@ def get_weekly_accuracy(con, week_start, week_end):
                 rd.actual_revenue,
                 (latest.predictions->>'yhat')::int AS predicted_revenue,
                 rd.actual_revenue - (latest.predictions->>'yhat')::int AS error,
-                COALESCE(
-                    latest.mape,
-                    CASE
-                        WHEN rd.actual_revenue > 0
-                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
-                        ELSE NULL
-                    END
-                ) AS mape,
+                CASE
+                    WHEN rd.actual_revenue > 0
+                    THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                    ELSE NULL
+                END AS mape,
                 latest.model_version
             FROM latest
             JOIN revenue_daily rd ON rd.date = latest.forecast_date
@@ -417,14 +413,24 @@ def get_weekly_accuracy(con, week_start, week_end):
 
 
 def get_weekly_forecast_mape(con, week_start, week_end):
-    """forecast_results에서 주간 일별 MAPE 조회 (ska-014, forecast_accuracy 없을 때 폴백)"""
+    """forecast_results + revenue_daily 기준 주간 일별 실제 MAPE 조회"""
     try:
         rows = _qry(con, """
-            SELECT DISTINCT ON (forecast_date) forecast_date, mape
-            FROM ska.forecast_results
-            WHERE forecast_date >= %s AND forecast_date <= %s
-              AND mape IS NOT NULL
-            ORDER BY forecast_date, created_at DESC
+            WITH latest AS (
+                SELECT DISTINCT ON (fr.forecast_date)
+                    fr.forecast_date,
+                    fr.predictions
+                FROM ska.forecast_results fr
+                WHERE fr.forecast_date >= %s AND fr.forecast_date <= %s
+                ORDER BY fr.forecast_date, fr.created_at DESC
+            )
+            SELECT
+                latest.forecast_date,
+                ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / NULLIF(rd.actual_revenue, 0)) * 100 AS mape
+            FROM latest
+            JOIN revenue_daily rd ON rd.date = latest.forecast_date
+            WHERE rd.actual_revenue > 0
+            ORDER BY latest.forecast_date
         """, (str(week_start), str(week_end)))
         return [{'date': str(r[0]), 'mape': float(r[1])} for r in rows]
     except Exception:
