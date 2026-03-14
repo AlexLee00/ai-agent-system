@@ -15,6 +15,7 @@ const {
   buildHealthReport,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
+const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
@@ -27,12 +28,6 @@ const {
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-
-function parseArgs() {
-  return {
-    outputJson: process.argv.includes('--json'),
-  };
-}
 
 async function buildEndpointHealth() {
   const webOk = await checkHttp('http://127.0.0.1:4000/api/health');
@@ -127,8 +122,7 @@ function formatText(report) {
   });
 }
 
-async function main() {
-  const { outputJson } = parseArgs();
+async function buildReport() {
   const status = getLaunchctlStatus();
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
@@ -155,16 +149,11 @@ async function main() {
     },
     decision,
   };
-
-  if (outputJson) {
-    console.log(JSON.stringify(report, null, 2));
-    return;
-  }
-
-  console.log(formatText(report));
+  return report;
 }
 
-main().catch((error) => {
-  console.error(`[워커 운영 헬스 리포트] 예외: ${error.message}`);
-  process.exit(1);
+runHealthCli({
+  buildReport,
+  formatText,
+  errorPrefix: '[워커 운영 헬스 리포트]',
 });
