@@ -16,8 +16,27 @@ const fs = require('fs');
 const EMAIL = '***REMOVED***';
 const PASSWORD = 'TeamJay2026!';
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-worker-chat-workflow.json');
+const SECRETS_PATH = path.join(__dirname, '../secrets.json');
 
 let cookie = '';
+
+function loadSecrets() {
+  return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+}
+
+function applyWorkerSecrets(workflow, secrets) {
+  const cloned = JSON.parse(JSON.stringify(workflow));
+  for (const node of cloned.nodes || []) {
+    const headers = node.parameters?.headerParameters?.parameters;
+    if (!Array.isArray(headers)) continue;
+    for (const header of headers) {
+      if (header.value === '__WORKER_WEBHOOK_SECRET__') {
+        header.value = secrets.worker_webhook_secret || '';
+      }
+    }
+  }
+  return cloned;
+}
 
 function request(method, urlPath, body) {
   return new Promise((resolve, reject) => {
@@ -83,6 +102,30 @@ async function activateWorkflow(id, versionId, name) {
   console.log(`  ⚠️ 활성화 응답 확인 필요: "${name}"`);
 }
 
+async function deactivateWorkflow(id, name) {
+  const res = await request('POST', `/rest/workflows/${id}/deactivate`);
+  if (res.status !== 200) {
+    throw new Error(`워크플로우 비활성화 실패: ${JSON.stringify(res.body)}`);
+  }
+  console.log(`  ⏸️ 워크플로우 비활성화: "${name}" (id: ${id})`);
+}
+
+async function archiveWorkflow(id, name) {
+  const res = await request('POST', `/rest/workflows/${id}/archive`);
+  if (res.status !== 200) {
+    throw new Error(`워크플로우 아카이브 실패: ${JSON.stringify(res.body)}`);
+  }
+  console.log(`  📦 워크플로우 아카이브: "${name}" (id: ${id})`);
+}
+
+async function deleteWorkflow(id, name) {
+  const res = await request('DELETE', `/rest/workflows/${id}`);
+  if (res.status !== 200) {
+    throw new Error(`워크플로우 삭제 실패: ${JSON.stringify(res.body)}`);
+  }
+  console.log(`  🗑️ 기존 워크플로우 삭제: "${name}" (id: ${id})`);
+}
+
 async function createOrUpdateWorkflow(workflow) {
   const existing = (await listWorkflows()).find(item => item.name === workflow.name);
 
@@ -98,26 +141,29 @@ async function createOrUpdateWorkflow(workflow) {
     return;
   }
 
-  const detail = await getWorkflow(existing.id);
-  const updated = await request('PUT', `/rest/workflows/${existing.id}`, {
-    ...detail,
-    ...workflow,
-    id: existing.id,
-  });
-  if (updated.status !== 200) {
-    throw new Error(`워크플로우 업데이트 실패: ${JSON.stringify(updated.body)}`);
+  await deactivateWorkflow(existing.id, workflow.name);
+  await archiveWorkflow(existing.id, workflow.name);
+  await deleteWorkflow(existing.id, workflow.name);
+  const created = await request('POST', '/rest/workflows', workflow);
+  if (created.status !== 200) {
+    throw new Error(`워크플로우 재생성 실패: ${JSON.stringify(created.body)}`);
   }
-  const updatedData = updated.body?.data || updated.body;
-  console.log(`  ✅ 워크플로우 업데이트: "${workflow.name}" (id: ${existing.id})`);
-  const fresh = await getWorkflow(existing.id);
-  await activateWorkflow(existing.id, fresh.versionId || updatedData?.versionId, workflow.name);
+  const createdData = created.body?.data || created.body;
+  console.log(`  ✅ 워크플로우 재생성: "${workflow.name}" (id: ${createdData?.id})`);
+  const detail = await getWorkflow(createdData.id);
+  await activateWorkflow(createdData.id, detail.versionId, workflow.name);
 }
 
 async function main() {
   console.log('\n💼 워커팀 n8n 워크플로우 설정 시작\n');
   await login();
   const workflow = JSON.parse(fs.readFileSync(WORKFLOW_PATH, 'utf8'));
-  await createOrUpdateWorkflow(workflow);
+  const secrets = loadSecrets();
+  const hydratedWorkflow = applyWorkerSecrets(workflow, secrets);
+  if (!secrets.worker_webhook_secret) {
+    throw new Error('worker_webhook_secret 누락');
+  }
+  await createOrUpdateWorkflow(hydratedWorkflow);
   console.log('\n✅ 워커팀 n8n 워크플로우 설정 완료\n');
 }
 
