@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, CheckSquare, Settings,
-  Building2, UserCog, FolderKanban, Calendar, Bot,
+  Building2, UserCog, FolderKanban, Calendar, Bot, BrainCircuit,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -69,6 +69,7 @@ export default function Sidebar() {
             </div>
             {[
               ...(showAI ? [{ href: '/ai', icon: Bot, label: 'AI 분석' }] : []),
+              ...(user?.role === 'master' ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
               ...(showWorkforce ? [{ href: '/admin/workforce', icon: Users, label: '직원/급여 관리' }] : []),
               ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
               ...(user?.role === 'master' ? [
