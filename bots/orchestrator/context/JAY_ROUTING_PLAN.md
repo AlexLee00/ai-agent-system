@@ -87,6 +87,10 @@
 - 자동 반영은 `query/status/report/logs` 성격 인텐트만 허용
 - `*_action`, 재시작, 송금, 승인 같은 실행형 명령은 반복되어도 후보로만 남김
 - 실행형 표현은 `/promotions pending`에서 확인 후 필요하면 수동 반영
+- 자동 반영 임계치는 intent 계열별로 다름
+  - `status/queue/brief/logs`: 3회 / 70%
+  - `*_query`: 4회 / 75%
+  - 기본값: 5회 / 80%
 
 ## 다음 우선순위
 
