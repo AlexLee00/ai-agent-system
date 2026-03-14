@@ -1,0 +1,223 @@
+'use strict';
+
+/**
+ * scripts/health-report.js — 워커팀 운영자용 헬스 리포트
+ *
+ * 목적:
+ *   - launchd 서비스 / HTTP / WebSocket 상태를 사람이 읽기 쉽게 요약
+ *   - 공용 health-core 포맷을 사용하는 운영 리포트
+ *
+ * 실행:
+ *   node bots/worker/scripts/health-report.js [--json]
+ */
+
+const { execSync } = require('child_process');
+const {
+  buildHealthReport,
+  buildHealthDecisionSection,
+} = require('../../../packages/core/lib/health-core');
+const hsm = require('../../../packages/core/lib/health-state-manager');
+
+const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
+const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
+const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+
+function parseArgs() {
+  return {
+    outputJson: process.argv.includes('--json'),
+  };
+}
+
+function getLaunchctlStatus() {
+  const raw = execSync('launchctl list', { encoding: 'utf-8' });
+  const services = {};
+  for (const line of raw.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 3) continue;
+    const [pid, exitCode, label] = parts;
+    services[label] = {
+      running: pid !== '-',
+      pid: pid !== '-' ? parseInt(pid, 10) : null,
+      exitCode: Number.parseInt(exitCode, 10) || 0,
+    };
+  }
+  return services;
+}
+
+async function checkHttp(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchJson(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function buildServiceRows(status) {
+  const ok = [];
+  const warn = [];
+
+  for (const label of ALL_SERVICES) {
+    const svc = status[label];
+    const shortName = hsm.shortLabel(label);
+    if (!svc) {
+      warn.push(`  ${shortName}: 미로드`);
+      continue;
+    }
+    if (CONTINUOUS.includes(label) && !svc.running) {
+      warn.push(`  ${shortName}: 다운 (PID 없음)`);
+      continue;
+    }
+    if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
+      warn.push(`  ${shortName}: exit ${svc.exitCode}`);
+      continue;
+    }
+    if (svc.running && svc.pid) {
+      ok.push(`  ${shortName}: 정상 (PID ${svc.pid})`);
+    } else {
+      ok.push(`  ${shortName}: 정상`);
+    }
+  }
+
+  return { ok, warn };
+}
+
+async function buildEndpointHealth() {
+  const webOk = await checkHttp('http://127.0.0.1:4000/api/health');
+  const nextOk = await checkHttp('http://127.0.0.1:4001');
+  const apiHealth = await fetchJson('http://127.0.0.1:4000/api/health');
+  const websocketReady = Boolean(apiHealth?.websocket?.enabled && apiHealth?.websocket?.ready);
+  const websocketClients = Number(apiHealth?.websocket?.clients || 0);
+
+  const ok = [];
+  const warn = [];
+
+  if (webOk) ok.push('  worker web API: 정상');
+  else warn.push('  worker web API: 응답 없음');
+
+  if (nextOk) ok.push('  worker nextjs: 정상');
+  else warn.push('  worker nextjs: 응답 없음');
+
+  if (websocketReady) ok.push(`  websocket: 준비됨 (clients ${websocketClients})`);
+  else warn.push('  websocket: 준비 안 됨');
+
+  return {
+    ok,
+    warn,
+    webOk,
+    nextOk,
+    websocketReady,
+    websocketClients,
+  };
+}
+
+function buildDecision(serviceRows, endpointHealth) {
+  const reasons = [];
+  let recommended = false;
+  let level = 'hold';
+
+  if (serviceRows.warn.length > 0) {
+    recommended = true;
+    level = 'high';
+    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 워커 서비스 점검이 필요합니다.`);
+  }
+
+  if (endpointHealth.warn.length > 0) {
+    recommended = true;
+    level = level === 'high' ? 'high' : 'medium';
+    reasons.push(`HTTP/WebSocket 경고 ${endpointHealth.warn.length}건이 있어 사용자 체감 이슈 가능성이 있습니다.`);
+  }
+
+  if (!recommended) {
+    reasons.push('워커 서비스와 실시간 채널이 현재는 안정 구간입니다.');
+  }
+
+  return { recommended, level, reasons };
+}
+
+function formatText(report) {
+  return buildHealthReport({
+    title: '🧰 워커 운영 헬스 리포트',
+    sections: [
+      {
+        title: '■ 서비스 상태',
+        lines: [
+          `  정상 ${report.serviceHealth.okCount}건 / 경고 ${report.serviceHealth.warnCount}건`,
+          ...report.serviceHealth.warn.slice(0, 8),
+        ],
+      },
+      report.serviceHealth.ok.length > 0
+        ? {
+            title: '■ 정상 서비스 샘플',
+            lines: report.serviceHealth.ok.slice(0, 5),
+          }
+        : null,
+      {
+        title: '■ 엔드포인트 상태',
+        lines: [
+          `  정상 ${report.endpointHealth.okCount}건 / 경고 ${report.endpointHealth.warnCount}건`,
+          ...report.endpointHealth.warn.slice(0, 8),
+          ...report.endpointHealth.ok.slice(0, 3),
+        ],
+      },
+      {
+        title: null,
+        lines: buildHealthDecisionSection({
+          title: '■ 운영 판단',
+          recommended: report.decision.recommended,
+          level: report.decision.level,
+          reasons: report.decision.reasons,
+          okText: '현재는 추가 조치보다 관찰 유지',
+        }),
+      },
+    ].filter(Boolean),
+    footer: ['실행: node bots/worker/scripts/health-report.js --json'],
+  });
+}
+
+async function main() {
+  const { outputJson } = parseArgs();
+  const status = getLaunchctlStatus();
+  const serviceRows = buildServiceRows(status);
+  const endpointHealth = await buildEndpointHealth();
+  const decision = buildDecision(serviceRows, endpointHealth);
+
+  const report = {
+    serviceHealth: {
+      okCount: serviceRows.ok.length,
+      warnCount: serviceRows.warn.length,
+      ok: serviceRows.ok,
+      warn: serviceRows.warn,
+    },
+    endpointHealth: {
+      okCount: endpointHealth.ok.length,
+      warnCount: endpointHealth.warn.length,
+      ok: endpointHealth.ok,
+      warn: endpointHealth.warn,
+      websocketClients: endpointHealth.websocketClients,
+    },
+    decision,
+  };
+
+  if (outputJson) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(formatText(report));
+}
+
+main().catch((error) => {
+  console.error(`[워커 운영 헬스 리포트] 예외: ${error.message}`);
+  process.exit(1);
+});
