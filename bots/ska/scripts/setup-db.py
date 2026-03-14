@@ -81,20 +81,6 @@ def setup():
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS forecast_accuracy (
-            id                SERIAL PRIMARY KEY,
-            target_date       DATE NOT NULL,
-            actual_revenue    INTEGER NOT NULL,
-            predicted_revenue INTEGER NOT NULL,
-            error             INTEGER,
-            abs_error         INTEGER,
-            mape              DOUBLE PRECISION,
-            model_version     TEXT,
-            created_at        TIMESTAMP DEFAULT now()
-        )
-    """)
-
     ensure_training_feature_table(con)
 
     con.commit()
@@ -106,7 +92,6 @@ def setup():
     print('  - environment_factors')
     print('  - forecast')
     print('  - exam_events')
-    print('  - forecast_accuracy')
     print('  - training_feature_daily')
 
 
