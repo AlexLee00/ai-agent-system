@@ -24,6 +24,12 @@ const {
   logPromotionEvent,
   upsertPromotionCandidate,
   insertUnrecognizedIntent,
+  getPromotionSummary,
+  getPromotionRows,
+  getPromotionFamilyRows,
+  getPromotionEvents,
+  findPromotionCandidate,
+  getUnrecognizedReportRows,
 } = require('../../../packages/core/lib/intent-store');
 const {
   AUTO_PROMOTE_DEFAULTS,
@@ -47,9 +53,6 @@ const {
   buildPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
-  buildPromotionCandidateWhere,
-  buildPromotionEventWhere,
-  buildUnrecognizedReportQueries,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -368,11 +371,8 @@ async function buildUnrecognizedReport(query = '') {
   try {
     await _ensureUnrecTable();
     const filters = parseUnrecognizedQuery(query);
-    const unrecognizedQueries = buildUnrecognizedReportQueries();
-    const rows = await pgPool.query('claude', unrecognizedQueries.unrecognizedSql);
+    const { rows, candidates } = await getUnrecognizedReportRows(pgPool);
     if (rows.length === 0) return '✅ 최근 7일 미인식 명령 없음';
-
-    const candidates = await pgPool.query('claude', unrecognizedQueries.candidatesSql);
     const candidateMap = new Map(
       candidates.map(c => [String(c.normalized_text || ''), c])
     );
@@ -459,40 +459,10 @@ async function buildPromotionCandidateReport(query = '') {
   try {
     await _ensureUnrecTable();
     const filters = parsePromotionQuery(query);
-    const candidateWhere = buildPromotionCandidateWhere(filters);
-    const { whereSql, params } = candidateWhere;
-    const summary = await pgPool.get('claude', `
-      SELECT
-        COUNT(*)::int AS total_count,
-        COUNT(*) FILTER (WHERE auto_applied = true)::int AS applied_count,
-        COUNT(*) FILTER (WHERE auto_applied = false)::int AS pending_count
-      FROM intent_promotion_candidates
-      ${whereSql}
-    `, params);
-    const rows = (filters.eventsOnly || filters.summaryOnly || filters.thresholdsOnly) ? [] : await pgPool.query('claude', `
-      SELECT
-        c.id,
-        c.sample_text,
-        c.suggested_intent,
-        c.occurrence_count,
-        c.confidence,
-        c.auto_applied,
-        c.updated_at,
-        e.event_type AS latest_event_type,
-        e.metadata AS latest_event_metadata
-      FROM intent_promotion_candidates
-      c
-      LEFT JOIN LATERAL (
-        SELECT event_type, metadata
-        FROM intent_promotion_events
-        WHERE candidate_id = c.id
-        ORDER BY created_at DESC
-        LIMIT 1
-      ) e ON true
-      ${buildPromotionCandidateWhere(filters, { tableAlias: 'c' }).whereSql}
-      ORDER BY c.auto_applied DESC, c.updated_at DESC
-      LIMIT 20
-    `, params);
+    const summary = await getPromotionSummary(pgPool, { filters });
+    const rows = (filters.eventsOnly || filters.summaryOnly || filters.thresholdsOnly)
+      ? []
+      : await getPromotionRows(pgPool, { filters, limit: 20 });
     if (!filters.eventsOnly && !filters.summaryOnly && !filters.thresholdsOnly && rows.length === 0) {
       const suffix = query ? ` (${query})` : '';
       return `📝 자동 반영 후보 없음${suffix}`;
@@ -508,13 +478,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
       lines.push('차단 예시: *_action, 재시작, 승인, 송금');
     } else if (filters.summaryOnly) {
-      const baseRows = await pgPool.query('claude', `
-        SELECT suggested_intent, auto_applied, occurrence_count
-        FROM intent_promotion_candidates
-        ${whereSql}
-        ORDER BY updated_at DESC
-        LIMIT 200
-      `, params);
+      const baseRows = await getPromotionFamilyRows(pgPool, { filters, limit: 200 });
       const familyRows = buildPromotionFamilySummary(baseRows);
       lines.push(`요약: 전체 ${summary?.total_count ?? 0}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
       lines.push('');
@@ -532,15 +496,7 @@ async function buildPromotionCandidateReport(query = '') {
       }
     }
 
-    const eventWhere = buildPromotionEventWhere(filters);
-    const { whereSql: eventWhereSql, params: eventParams } = eventWhere;
-    const events = filters.thresholdsOnly ? [] : await pgPool.query('claude', `
-      SELECT event_type, sample_text, suggested_intent, actor, created_at
-      FROM intent_promotion_events
-      ${eventWhereSql}
-      ORDER BY created_at DESC
-      LIMIT 10
-    `, eventParams);
+    const events = filters.thresholdsOnly ? [] : await getPromotionEvents(pgPool, { filters, limit: 10 });
     if (events.length > 0) {
       lines.push('');
       lines.push('최근 변경:');
@@ -565,19 +521,11 @@ async function rollbackPromotionTarget(target = '') {
   const normalized = normalizeIntentText(raw);
 
   await _ensureUnrecTable();
-  const row = Number.isFinite(candidateId)
-    ? await pgPool.get('claude', `
-        SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
-        FROM intent_promotion_candidates
-        WHERE id = $1
-        LIMIT 1
-      `, [candidateId])
-    : await pgPool.get('claude', `
-        SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
-        FROM intent_promotion_candidates
-        WHERE normalized_text = $1 OR sample_text = $2
-        LIMIT 1
-      `, [normalized, raw]);
+  const row = await findPromotionCandidate(pgPool, {
+    candidateId,
+    normalizedText: normalized,
+    rawText: raw,
+  });
   if (!row) return `⚠️ "${raw}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
 
   const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
