@@ -10,13 +10,12 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
 import { isPaperMode } from '../shared/secrets.js';
+import { getMinConfidence } from '../team/luna.js';
 
 const require   = createRequire(import.meta.url);
 const jsYaml    = require('js-yaml');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// luna.js와 동일한 상수
-const MIN_CONFIDENCE = { binance: 0.55, kis: 0.35, kis_overseas: 0.35 };
 const FUND_MIN_CONF  = { binance: 0.60, kis: 0.40, kis_overseas: 0.40 };
 
 const EXCHANGE_MAP = {
@@ -59,7 +58,7 @@ export async function getInvestmentProfile(market) {
     riskLevel:        RISK_LABEL[market] || 'moderate',
     maxPositions:     rules.MAX_OPEN_POSITIONS,
     riskPerTrade:     (capMgmt.risk_per_trade || 0.02) * 100,   // % 표시
-    minConfidence:    MIN_CONFIDENCE[exchange],
+    minConfidence:    getMinConfidence(exchange),
     fundMinConf:      FUND_MIN_CONF[exchange],
     stopLossPct:      rules.STOP_LOSS_PCT * 100,
     maxOrderUsdt:     rules.MAX_ORDER_USDT,
