@@ -10,7 +10,8 @@
     "serve": "node web/server.js",
     "migrate": "node migrations/001-init-schema.js",
     "migrate:chat": "node migrations/011-worker-chat.js",
-    "setup": "node scripts/setup-worker.js"
+    "setup": "node scripts/setup-worker.js",
+    "setup:n8n": "node n8n/setup-worker-workflows.js"
   },
   "dependencies": {
     "@ai-agent/core": "*",
