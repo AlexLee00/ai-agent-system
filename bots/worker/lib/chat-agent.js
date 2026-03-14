@@ -9,12 +9,18 @@ const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
   injectDynamicExamples,
+  normalizeIntentText,
+  buildAutoLearnPattern,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-core'));
 const {
   ensureIntentTables,
   insertUnrecognizedIntent,
   getPromotedIntentExamples,
   getNamedIntentLearningPath,
+  getRecentUnrecognizedIntents,
+  upsertPromotionCandidate,
+  logPromotionEvent,
+  findPromotionCandidateIdByNormalized,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
 const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
 
@@ -536,6 +542,56 @@ async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
   };
 }
 
+async function recordWorkerIntentCandidate(text, llmIntent) {
+  if (!llmIntent?.intent || llmIntent.intent === 'unknown') return;
+
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return;
+
+  const rows = await getRecentUnrecognizedIntents(pgPool, {
+    schema: SCHEMA,
+    windowDays: 30,
+    limit: 500,
+  });
+
+  const matching = rows.filter(row =>
+    normalizeIntentText(row.text) === normalized &&
+    String(row.llm_intent || '') === String(llmIntent.intent || '')
+  );
+
+  const pattern = buildAutoLearnPattern(normalized);
+  await upsertPromotionCandidate(pgPool, {
+    schema: SCHEMA,
+    normalizedText: normalized,
+    sampleText: text,
+    suggestedIntent: llmIntent.intent,
+    occurrenceCount: matching.length,
+    confidence: Number(llmIntent.confidence || 0.8),
+    autoApplied: false,
+    learnedPattern: pattern,
+  });
+
+  const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
+    schema: SCHEMA,
+    normalizedText: normalized,
+  });
+
+  await logPromotionEvent(pgPool, {
+    schema: SCHEMA,
+    candidateId: candidate?.id || null,
+    normalizedText: normalized,
+    sampleText: text,
+    suggestedIntent: llmIntent.intent,
+    eventType: 'candidate_seen',
+    learnedPattern: pattern,
+    actor: 'worker-chat',
+    metadata: {
+      occurrenceCount: matching.length,
+      confidence: Number(llmIntent.confidence || 0.8),
+    },
+  });
+}
+
 async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web' }) {
   await ensureChatSchema();
 
@@ -565,6 +621,13 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
   if (intent.intent === 'unknown') {
     llmIntent = await parseLlmIntent(text);
     if (llmIntent?.intent && llmIntent.intent !== 'unknown') {
+      await insertUnrecognizedIntent(pgPool, {
+        schema: SCHEMA,
+        text,
+        parseSource: 'worker_chat_llm',
+        llmIntent: llmIntent.intent,
+      });
+      await recordWorkerIntentCandidate(text, llmIntent);
       intent = llmIntent;
       if (intent.datetime) {
         const dt = new Date(intent.datetime);
