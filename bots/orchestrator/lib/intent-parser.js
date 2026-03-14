@@ -158,6 +158,11 @@ function parseSlash(text) {
 // ─── 2단계: 키워드 패턴 ──────────────────────────────────────────────
 
 const KEYWORD_PATTERNS = [
+  // ── 팀별 로그 direct route (넓은 query/log 패턴보다 먼저) ──
+  { re: /(루나|luna).*(오류|에러|로그|상태로그)|투자팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'luna' } },
+  { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
+  { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
+
   // ── 스카팀 세부 명령 (일반 'ska'보다 먼저 매칭) ──
   { re: /앤디.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_andy' } },
   { re: /지미.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_jimmy' } },
@@ -244,7 +249,6 @@ const KEYWORD_PATTERNS = [
   { re: /속도.*(체크|테스트|측정|확인)|speed.*(check|test)|제일.*빠른.*모델|빠른.*모델.*뭐/i, intent: 'speed_test' },
   { re: /(최근|최신)?.*(오류|에러|로그).*(보여|확인|요약)|log.*(check|summary|error)|로그.*(확인|체크)|최근.*오류.*보여/i, intent: 'system_logs' },
   { re: /(mainbot|메인봇|제이|오픈클로|게이트웨이|gateway).*(오류|에러|로그)|오픈클로.*(무슨\s*문제|문제\s*있|에러)|제이.*로그/i, intent: 'system_logs' },
-
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
   { re: /자동.*(학습|반영).*(후보|목록|현황)|학습.*후보.*보여|promot(e|ion).*(candidate|list)|반영.*후보/i, intent: 'promotion_candidates' },
