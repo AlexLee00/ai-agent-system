@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+
 const AUTO_PROMOTE_DEFAULTS = {
   windowDays: 30,
   minCount: 5,
@@ -103,6 +105,22 @@ function evaluateAutoPromoteDecision({
   return { allowed: true, reason: 'ok', threshold };
 }
 
+function loadLearnedPatternsFromFile(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return [];
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return raw
+      .filter(item => item?.re && item?.intent)
+      .map(item => ({
+        re: new RegExp(item.re, 'i'),
+        intent: item.intent,
+        args: item.args || {},
+      }));
+  } catch {
+    return [];
+  }
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -115,4 +133,5 @@ module.exports = {
   isSafeAutoPromoteIntent,
   getAutoPromoteThreshold,
   evaluateAutoPromoteDecision,
+  loadLearnedPatternsFromFile,
 };

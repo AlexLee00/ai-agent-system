@@ -17,29 +17,16 @@ const os    = require('os');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool           = require('../../../packages/core/lib/pg-pool');
+const { loadLearnedPatternsFromFile } = require('../../../packages/core/lib/intent-core');
 
 // ─── 학습 패턴 로더 ─────────────────────────────────────────────────
 // claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
 
 const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
 
-function loadLearnedPatterns() {
-  try {
-    if (!fs.existsSync(NLP_LEARNINGS_PATH)) return [];
-    const raw = JSON.parse(fs.readFileSync(NLP_LEARNINGS_PATH, 'utf8'));
-    return raw
-      .filter(l => l.re && l.intent)
-      .map(l => ({
-        re:     new RegExp(l.re, 'i'),
-        intent: l.intent,
-        args:   l.args || {},
-      }));
-  } catch { return []; }
-}
-
-let _learnedPatterns = loadLearnedPatterns();
+let _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS_PATH);
 // 5분마다 리로드 (analyze_unknown이 새 패턴 추가 시 자동 반영)
-setInterval(() => { _learnedPatterns = loadLearnedPatterns(); }, 5 * 60 * 1000);
+setInterval(() => { _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS_PATH); }, 5 * 60 * 1000);
 
 // ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
 // router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
