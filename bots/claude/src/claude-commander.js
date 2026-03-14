@@ -17,6 +17,18 @@ const os      = require('os');
 const { execSync, spawn } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const teamBus = require('../lib/team-bus');
+const {
+  normalizeIntentText,
+  buildAutoLearnPattern,
+} = require('../../../packages/core/lib/intent-core');
+const {
+  ensureIntentTables,
+  addLearnedPattern,
+  getNamedIntentLearningPath,
+  upsertPromotionCandidate,
+  logPromotionEvent,
+  findPromotionCandidateIdByNormalized,
+} = require('../../../packages/core/lib/intent-store');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '클로드';
@@ -68,7 +80,7 @@ const DEXTER             = path.join(__dirname, 'dexter.js');
 const ARCHER             = path.join(__dirname, 'archer.js');
 const CWD                = path.join(__dirname, '..');
 const PROJECT_ROOT       = path.join(os.homedir(), 'projects', 'ai-agent-system');
-const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 
 // 텔레그램 메시지 최대 길이 (안전 마진 포함)
 const TG_MAX_CHARS = 3500;
@@ -234,16 +246,49 @@ async function handleAskClaude(args) {
 /**
  * NLP 학습 패턴 저장 (nlp-learnings.json)
  */
-function saveLearning(entry) {
+async function saveLearning(entry) {
   try {
-    let learnings = [];
-    if (fs.existsSync(NLP_LEARNINGS_PATH)) {
-      learnings = JSON.parse(fs.readFileSync(NLP_LEARNINGS_PATH, 'utf8'));
-    }
-    // 중복 패턴 방지
-    if (!learnings.some(l => l.re === entry.re)) {
-      learnings.push({ ...entry, added_at: new Date().toISOString() });
-      fs.writeFileSync(NLP_LEARNINGS_PATH, JSON.stringify(learnings, null, 2));
+    const patternResult = addLearnedPattern({
+      pattern: entry.re,
+      intent: entry.intent,
+      filePath: NLP_LEARNINGS_PATH,
+    });
+
+    const normalizedText = normalizeIntentText(entry.original_text || entry.re || '');
+    const learnedPattern = entry.re || buildAutoLearnPattern(normalizedText);
+
+    await upsertPromotionCandidate(pgPool, {
+      schema: 'claude',
+      normalizedText,
+      sampleText: entry.original_text || entry.re,
+      suggestedIntent: entry.intent,
+      occurrenceCount: 1,
+      confidence: 0.95,
+      autoApplied: true,
+      learnedPattern,
+    });
+
+    const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
+      schema: 'claude',
+      normalizedText,
+    });
+
+    await logPromotionEvent(pgPool, {
+      schema: 'claude',
+      candidateId: candidate?.id || null,
+      normalizedText,
+      sampleText: entry.original_text || entry.re,
+      suggestedIntent: entry.intent,
+      eventType: patternResult.changed ? 'auto_apply' : 'candidate_seen',
+      learnedPattern,
+      actor: 'claude-commander',
+      metadata: {
+        reason: entry.reason || '',
+        source: 'analyze_unknown',
+      },
+    });
+
+    if (patternResult.changed) {
       console.log(`[클로드] NLP 패턴 학습: /${entry.re}/ → ${entry.intent}`);
     }
   } catch (e) {
@@ -257,7 +302,7 @@ function saveLearning(entry) {
  * 2) 제안된 패턴을 nlp-learnings.json에 저장
  * 3) intent-parser.js가 5분마다 리로드해서 자동 적용
  */
-function handleAnalyzeUnknown(args) {
+async function handleAnalyzeUnknown(args) {
   const text = (args.text || '').trim();
   if (!text) return { ok: false, error: '분석할 텍스트 없음' };
 
@@ -334,7 +379,7 @@ function handleAnalyzeUnknown(args) {
   if (parsed.pattern && parsed.intent && parsed.intent !== 'unknown') {
     try {
       new RegExp(parsed.pattern); // 유효성 검증
-      saveLearning({
+      await saveLearning({
         re:            parsed.pattern,
         intent:        parsed.intent,
         args:          parsed.args || {},
@@ -595,6 +640,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
+  await ensureIntentTables(pgPool, { schema: 'claude' });
   await teamBus.setStatus('claude-lead', 'idle', '커맨더 시작');
   setInterval(() => {
     teamBus.setStatus('claude-lead', 'idle', '명령 대기').catch(() => {});
