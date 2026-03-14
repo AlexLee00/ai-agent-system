@@ -143,6 +143,39 @@ def build_worst_cases(rows, limit=5):
     return ranked[:limit]
 
 
+def build_recommendations(summary, weekday_bias, worst_cases):
+    if not summary or summary.get('valid_count', 0) == 0:
+        return []
+
+    recs = []
+    avg_mape = summary.get('avg_mape') or 0
+    avg_bias = summary.get('avg_bias') or 0
+
+    if avg_mape >= 25:
+        recs.append('최근 오차가 커서 예측식 재학습 또는 보정 강도 점검이 필요합니다.')
+    elif avg_mape >= 15:
+        recs.append('중간 수준 오차가 이어지고 있어 예약 구조/환경변수 가중치를 재점검하는 편이 좋습니다.')
+
+    if avg_bias <= -30000:
+        recs.append('전반적으로 과소예측 경향이 있어 예약 선행신호와 고매출일 보정치를 더 키우는 것이 좋습니다.')
+    elif avg_bias >= 30000:
+        recs.append('전반적으로 과대예측 경향이 있어 피크 예약/시험일 가산치를 보수적으로 줄이는 것이 좋습니다.')
+
+    if weekday_bias:
+        worst_weekday = max(weekday_bias, key=lambda item: (item['avg_mape'], abs(item['avg_bias'])))
+        if worst_weekday['avg_mape'] >= 20:
+            recs.append(
+                f'{worst_weekday["weekday"]}요일 편향이 커서 요일별 calibration baseline을 우선 점검하는 것이 좋습니다.'
+            )
+
+    if worst_cases:
+        top = worst_cases[0]
+        if top['reservation_count'] <= 5 and top['mape'] >= 30:
+            recs.append('예약이 적은 날의 오차가 커서 저예약일 fallback 또는 하한선 규칙을 보강하는 것이 좋습니다.')
+
+    return recs[:3]
+
+
 def format_text(report):
     summary = report['summary']
     lines = [
@@ -189,6 +222,13 @@ def format_text(report):
                 f'오차 {sign}{item["error"]:,}원 / MAPE {item["mape"]:.1f}%'
             )
 
+    recommendations = report.get('recommendations') or []
+    if recommendations:
+        lines.append('')
+        lines.append('■ 개선 추천')
+        for rec in recommendations:
+            lines.append(f'  - {rec}')
+
     return '\n'.join(lines)
 
 
@@ -207,8 +247,14 @@ def run():
         'summary': build_summary(rows),
         'weekday_bias': build_weekday_bias(rows),
         'worst_cases': build_worst_cases(rows),
+        'recommendations': None,
         'rows': rows if output_json else None,
     }
+    report['recommendations'] = build_recommendations(
+        report['summary'],
+        report['weekday_bias'],
+        report['worst_cases'],
+    )
 
     if output_json:
         print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
