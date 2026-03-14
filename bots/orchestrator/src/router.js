@@ -116,6 +116,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
 
 🧠 자동학습
   /unrec         → 미인식 명령 목록 조회
+  /promotions    → 자동 반영 후보 조회
   /promote <인텐트> <패턴>  → 패턴 학습 등록
   예) /promote ska_query 오늘 방문객 몇 명이야
   반복 표현은 자동 후보로 누적되고, 조건 충족 시 learned pattern에 자동 반영됨
@@ -345,6 +346,33 @@ async function buildUnrecognizedReport() {
     return lines.join('\n');
   } catch (e) {
     return `⚠️ 미인식 이력 조회 실패: ${e.message}`;
+  }
+}
+
+async function buildPromotionCandidateReport() {
+  try {
+    await _ensureUnrecTable();
+    const rows = await pgPool.query('claude', `
+      SELECT sample_text, suggested_intent, occurrence_count, confidence, auto_applied, updated_at
+      FROM intent_promotion_candidates
+      ORDER BY auto_applied DESC, updated_at DESC
+      LIMIT 20
+    `);
+    if (rows.length === 0) return '📝 자동 반영 후보 없음';
+
+    const lines = ['📝 자동 반영 후보/이력'];
+    for (const r of rows) {
+      const badge = r.auto_applied ? '✅자동반영' : '🕓후보';
+      const conf = `${(Number(r.confidence) * 100).toFixed(0)}%`;
+      const seen = String(r.updated_at).slice(0, 16);
+      lines.push(`  ${badge} [${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
+      lines.push(`     최근: ${seen} KST`);
+    }
+    lines.push('');
+    lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
+    return lines.join('\n');
+  } catch (e) {
+    return `⚠️ 자동 반영 후보 조회 실패: ${e.message}`;
   }
 }
 
@@ -1446,6 +1474,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'unrecognized_report':
       return await buildUnrecognizedReport();
+
+    case 'promotion_candidates':
+      return await buildPromotionCandidateReport();
 
     case 'promote_intent': {
       const { intent: toIntent, pattern, text: uText } = args;
