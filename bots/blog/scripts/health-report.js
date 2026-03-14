@@ -3,6 +3,7 @@
 const path = require('path');
 const {
   buildHealthReport,
+  buildHealthDecision,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -65,33 +66,26 @@ function buildDailyRunHealth() {
 }
 
 function buildDecision(serviceRows, nodeHealth, dailyRunHealth) {
-  const reasons = [];
-  let recommended = false;
-  let level = 'hold';
-
-  if (serviceRows.warn.length > 0) {
-    recommended = true;
-    level = 'high';
-    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 블로팀 서비스 점검이 필요합니다.`);
-  }
-
-  if (nodeHealth.warn.length > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push(`node-server/n8n 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`);
-  }
-
-  if (dailyRunHealth.warn.length > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push('daily run 로그 활동성이 오래돼 최근 자동 실행 상태 확인이 필요합니다.');
-  }
-
-  if (!recommended) {
-    reasons.push('블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.');
-  }
-
-  return { recommended, level, reasons };
+  return buildHealthDecision({
+    warnings: [
+      {
+        active: serviceRows.warn.length > 0,
+        level: 'high',
+        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 블로팀 서비스 점검이 필요합니다.`,
+      },
+      {
+        active: nodeHealth.warn.length > 0,
+        level: 'medium',
+        reason: `node-server/n8n 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`,
+      },
+      {
+        active: dailyRunHealth.warn.length > 0,
+        level: 'medium',
+        reason: 'daily run 로그 활동성이 오래돼 최근 자동 실행 상태 확인이 필요합니다.',
+      },
+    ],
+    okReason: '블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.',
+  });
 }
 
 function formatText(report) {

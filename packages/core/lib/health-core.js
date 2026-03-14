@@ -32,6 +32,29 @@ function buildHealthDecisionSection({
   return lines;
 }
 
+function buildHealthDecision({
+  warnings = [],
+  okReason = '현재는 안정 구간입니다.',
+} = {}) {
+  const reasons = [];
+  let recommended = false;
+  let level = 'hold';
+
+  for (const warning of warnings || []) {
+    if (!warning || !warning.active) continue;
+    recommended = true;
+    if (warning.level === 'high') level = 'high';
+    else if (level !== 'high' && warning.level === 'medium') level = 'medium';
+    if (warning.reason) reasons.push(warning.reason);
+  }
+
+  if (!recommended && okReason) {
+    reasons.push(okReason);
+  }
+
+  return { recommended, level, reasons };
+}
+
 function buildHealthReport({ title, subtitle = '', sections = [], footer = [] }) {
   const lines = [...buildHealthHeader(title, subtitle)];
   for (const section of sections) {
@@ -51,6 +74,7 @@ function buildHealthReport({ title, subtitle = '', sections = [], footer = [] })
 module.exports = {
   buildHealthHeader,
   buildHealthSection,
+  buildHealthDecision,
   buildHealthDecisionSection,
   buildHealthReport,
 };

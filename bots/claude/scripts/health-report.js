@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   buildHealthReport,
+  buildHealthDecision,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -98,27 +99,21 @@ async function buildDashboardHealth() {
 }
 
 function buildDecision(serviceRows, dashboardHealth) {
-  const reasons = [];
-  let recommended = false;
-  let level = 'hold';
-
-  if (serviceRows.warn.length > 0) {
-    recommended = true;
-    level = 'high';
-    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 클로드 서비스 점검이 필요합니다.`);
-  }
-
-  if (dashboardHealth.warn.length > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push(`health-dashboard 경고 ${dashboardHealth.warn.length}건이 있어 리드 모드/그림자 상태 확인이 필요합니다.`);
-  }
-
-  if (!recommended) {
-    reasons.push('클로드 핵심 서비스와 health-dashboard가 현재는 안정 구간입니다.');
-  }
-
-  return { recommended, level, reasons };
+  return buildHealthDecision({
+    warnings: [
+      {
+        active: serviceRows.warn.length > 0,
+        level: 'high',
+        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 클로드 서비스 점검이 필요합니다.`,
+      },
+      {
+        active: dashboardHealth.warn.length > 0,
+        level: 'medium',
+        reason: `health-dashboard 경고 ${dashboardHealth.warn.length}건이 있어 리드 모드/그림자 상태 확인이 필요합니다.`,
+      },
+    ],
+    okReason: '클로드 핵심 서비스와 health-dashboard가 현재는 안정 구간입니다.',
+  });
 }
 
 function formatText(report) {

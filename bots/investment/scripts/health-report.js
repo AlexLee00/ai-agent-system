@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const require = createRequire(import.meta.url);
 const {
   buildHealthReport,
+  buildHealthDecision,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -62,27 +63,21 @@ async function loadTradeReviewHealth() {
 }
 
 function buildDecision(serviceRows, tradeReview) {
-  const reasons = [];
-  let recommended = false;
-  let level = 'hold';
-
-  if (serviceRows.warn.length > 0) {
-    recommended = true;
-    level = 'high';
-    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 서비스 상태 점검이 필요합니다.`);
-  }
-
-  if (tradeReview.findings > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push(`trade_review 정합성 이슈 ${tradeReview.findings}건이 남아 있습니다.`);
-  }
-
-  if (!recommended) {
-    reasons.push('핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.');
-  }
-
-  return { recommended, level, reasons };
+  return buildHealthDecision({
+    warnings: [
+      {
+        active: serviceRows.warn.length > 0,
+        level: 'high',
+        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 서비스 상태 점검이 필요합니다.`,
+      },
+      {
+        active: tradeReview.findings > 0,
+        level: 'medium',
+        reason: `trade_review 정합성 이슈 ${tradeReview.findings}건이 남아 있습니다.`,
+      },
+    ],
+    okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
+  });
 }
 
 function formatText(report) {

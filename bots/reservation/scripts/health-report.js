@@ -13,6 +13,7 @@
 
 const {
   buildHealthReport,
+  buildHealthDecision,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
@@ -65,27 +66,21 @@ function buildMonitorHealth(logState) {
 }
 
 function buildDecision(serviceRows, monitorHealth) {
-  const reasons = [];
-  let recommended = false;
-  let level = 'hold';
-
-  if (serviceRows.warn.length > 0) {
-    recommended = true;
-    level = 'high';
-    reasons.push(`launchd 경고 ${serviceRows.warn.length}건이 있어 스카 서비스 점검이 필요합니다.`);
-  }
-
-  if (monitorHealth.warn.length > 0) {
-    recommended = true;
-    level = level === 'high' ? 'high' : 'medium';
-    reasons.push('naver-monitor 로그 활동성이 멈춰 크래시루프 가능성을 확인해야 합니다.');
-  }
-
-  if (!recommended) {
-    reasons.push('스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.');
-  }
-
-  return { recommended, level, reasons };
+  return buildHealthDecision({
+    warnings: [
+      {
+        active: serviceRows.warn.length > 0,
+        level: 'high',
+        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 스카 서비스 점검이 필요합니다.`,
+      },
+      {
+        active: monitorHealth.warn.length > 0,
+        level: 'medium',
+        reason: 'naver-monitor 로그 활동성이 멈춰 크래시루프 가능성을 확인해야 합니다.',
+      },
+    ],
+    okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
+  });
 }
 
 function formatText(report) {
