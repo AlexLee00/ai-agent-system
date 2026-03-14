@@ -39,6 +39,21 @@ const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
+  parseUnrecognizedQuery,
+  parsePromotionQuery,
+  buildUnrecognizedSummary,
+  buildPromotionFamilySummary,
+  getPromotionCandidateStatus,
+  getPromotionEventReason,
+  normalizeIntentText,
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-core'));
+const {
+  getPromotionSummary,
+  getPromotionRows,
+  getPromotionEvents,
+  getUnrecognizedReportRows,
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
+const {
   ensureChatSchema,
   handleChatMessage,
   listSessions: listChatSessions,
@@ -1529,6 +1544,55 @@ app.get('/api/chat/sessions/:id/messages', requireAuth, companyFilter, async (re
     res.json({ messages });
   } catch {
     res.status(500).json({ error: '대화 메시지를 불러오지 못했습니다.', code: 'CHAT_MESSAGE_LOAD_FAILED' });
+  }
+});
+
+app.get('/api/chat/unrec', requireAuth, requireRole('master'), async (req, res) => {
+  try {
+    const filters = parseUnrecognizedQuery(req.query.q || '');
+    const { rows, candidates } = await getUnrecognizedReportRows(pgPool, { schema: SCHEMA });
+    const candidateMap = new Map(candidates.map(row => [normalizeIntentText(row.sample_text || ''), row]));
+    const summary = buildUnrecognizedSummary(
+      rows,
+      (row) => candidateMap.get(normalizeIntentText(row.text || '')),
+    );
+    res.json({
+      summaryOnly: !!filters.summaryOnly,
+      summary,
+      rows: filters.summaryOnly ? [] : rows,
+      candidates: filters.summaryOnly ? [] : candidates.map((candidate) => ({
+        ...candidate,
+        status: getPromotionCandidateStatus(candidate),
+        reason: getPromotionEventReason(candidate.latest_event_metadata),
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: '워커 인텐트 미인식 리포트를 불러오지 못했습니다.', code: 'WORKER_INTENT_UNREC_FAILED', detail: e.message });
+  }
+});
+
+app.get('/api/chat/promotions', requireAuth, requireRole('master'), async (req, res) => {
+  try {
+    const filters = parsePromotionQuery(req.query.q || '');
+    const summary = await getPromotionSummary(pgPool, { schema: SCHEMA, filters });
+    const rows = (filters.summaryOnly || filters.thresholdsOnly)
+      ? []
+      : await getPromotionRows(pgPool, { schema: SCHEMA, filters, limit: 20 });
+    const events = filters.thresholdsOnly ? [] : await getPromotionEvents(pgPool, { schema: SCHEMA, filters, limit: 10 });
+    const families = buildPromotionFamilySummary(rows);
+    res.json({
+      filters,
+      summary,
+      families,
+      candidates: rows.map((candidate) => ({
+        ...candidate,
+        status: getPromotionCandidateStatus(candidate),
+        reason: getPromotionEventReason(candidate.latest_event_metadata),
+      })),
+      events,
+    });
+  } catch (e) {
+    res.status(500).json({ error: '워커 인텐트 후보 리포트를 불러오지 못했습니다.', code: 'WORKER_INTENT_PROMOTIONS_FAILED', detail: e.message });
   }
 });
 
