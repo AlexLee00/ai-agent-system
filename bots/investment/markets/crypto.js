@@ -281,9 +281,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       savePreScreened('crypto', symbols);
       const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
       await recordScreeningSuccess('crypto');
-    } else if (resolved.error) {
+    } else if (resolved.error && resolved.shouldCountFailure !== false) {
       const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
       await recordScreeningFailure('crypto', resolved.error.message);
+    } else if (symbols.length > 0) {
+      const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
+      await recordScreeningSuccess('crypto');
     }
   }
 

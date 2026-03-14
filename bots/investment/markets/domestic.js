@@ -265,9 +265,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         savePreScreened('domestic', symbols);
         const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
         await recordScreeningSuccess('domestic');
-      } else if (resolved.error) {
+      } else if (resolved.error && resolved.shouldCountFailure !== false) {
         const { recordScreeningFailure } = await import('../scripts/screening-monitor.js');
         await recordScreeningFailure('domestic', resolved.error.message);
+      } else if (symbols.length > 0) {
+        const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
+        await recordScreeningSuccess('domestic');
       }
     }
   }

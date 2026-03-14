@@ -28,15 +28,16 @@ export async function resolveSymbolsWithFallback({
       screeningData: screening,
     });
     console.log(`🔍 [${screenLabel}] ${symbols.join(', ')}`);
-    return { symbols, source: 'screening', screening };
+    return { symbols, source: 'screening', screening, shouldCountFailure: false };
   } catch (e) {
+    const isEmptyResult = e?.message === 'empty_screening_result';
     console.warn(`⚠️ ${screenLabel} 실패 — 다단계 폴백 시도: ${e.message}`);
 
     const cached = loadCache?.();
     if (cached?.symbols?.length > 0) {
       const ageMin = Math.floor((Date.now() - (cached.savedAt || 0)) / 60000);
       console.log(`  📚 [${cacheLabel}] 최근 스크리닝 재사용 (${ageMin}분 전): ${cached.symbols.join(', ')}`);
-      return { symbols: cached.symbols, source: 'cache', error: e };
+      return { symbols: cached.symbols, source: 'cache', error: e, shouldCountFailure: !isEmptyResult };
     }
 
     try {
@@ -44,12 +45,12 @@ export async function resolveSymbolsWithFallback({
       const recent = await db.getRecentScreeningSymbols(market, 3);
       if (recent.length > 0) {
         console.log(`  🗃️ [히스토리 폴백] 최근 스크리닝 재사용: ${recent.join(', ')}`);
-        return { symbols: recent, source: 'history', error: e };
+        return { symbols: recent, source: 'history', error: e, shouldCountFailure: !isEmptyResult };
       }
     } catch { /* 무시 */ }
 
     console.log(`  ⚙️ [설정 폴백] config 기본 종목 사용: ${defaultSymbols.join(', ')}`);
-    return { symbols: defaultSymbols, source: 'default', error: e };
+    return { symbols: defaultSymbols, source: 'default', error: e, shouldCountFailure: !isEmptyResult };
   }
 }
 
