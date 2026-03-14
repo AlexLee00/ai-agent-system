@@ -128,6 +128,10 @@ function parseSlash(text) {
     const pattern  = parts.slice(2).join(' ');
     return { intent: 'promote_intent', args: { intent: toIntent, pattern }, source: 'slash' };
   }
+  if (cmd === '/unrec' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'unrecognized_report', args: { query }, source: 'slash' };
+  }
   if (cmd === '/promotions' && parts.length >= 2) {
     const query = parts.slice(1).join(' ').trim();
     return { intent: 'promotion_candidates', args: { query }, source: 'slash' };
