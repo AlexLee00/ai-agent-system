@@ -27,6 +27,9 @@ const {
   buildAutoLearnPattern,
   summarizeIntentFamily,
   evaluateAutoPromoteDecision,
+  formatIntentConfidence,
+  getPromotionCandidateStatus,
+  getPromotionEventReason,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -443,7 +446,7 @@ async function buildUnrecognizedReport(query = '') {
         const llmIntent = String(r.llm_intent || 'unknown');
         llmMap.set(llmIntent, (llmMap.get(llmIntent) || 0) + Number(r.cnt || 0));
         const candidate = candidateMap.get(normalizeIntentText(r.text || ''));
-        const status = candidate?.latest_event_type || (candidate?.auto_applied ? 'auto_applied' : candidate?.suggested_intent ? 'candidate' : 'unlinked');
+        const status = getPromotionCandidateStatus(candidate || {});
         statusMap.set(status, (statusMap.get(status) || 0) + Number(r.cnt || 0));
       }
       lines.push('');
@@ -470,14 +473,15 @@ async function buildUnrecognizedReport(query = '') {
       if (r.llm_intent && !r.promoted_to) lines.push(`         LLM 추정: ${r.llm_intent}`);
       if (candidate?.suggested_intent) {
         const badge = candidate.auto_applied ? '✅자동반영' : '🕓후보';
-        const conf = `${(Number(candidate.confidence || 0) * 100).toFixed(0)}%`;
+        const conf = formatIntentConfidence(candidate.confidence);
         lines.push(`         ${badge}: ${candidate.suggested_intent} (${candidate.occurrence_count}회 / ${conf})`);
       }
       if (candidate?.latest_event_type) {
         const metadata = candidate.latest_event_metadata && typeof candidate.latest_event_metadata === 'object'
           ? candidate.latest_event_metadata
           : {};
-        const reason = metadata.reason ? ` | reason=${metadata.reason}` : '';
+        const reasonValue = getPromotionEventReason(metadata);
+        const reason = reasonValue ? ` | reason=${reasonValue}` : '';
         lines.push(`         상태: ${candidate.latest_event_type}${reason}`);
       }
     }
@@ -486,7 +490,7 @@ async function buildUnrecognizedReport(query = '') {
       lines.push('🤖 자동 반영/후보');
       for (const c of candidates) {
         const badge = c.auto_applied ? '✅자동반영' : '📝후보';
-        lines.push(`  ${badge} [${c.occurrence_count}회 / ${(Number(c.confidence) * 100).toFixed(0)}%] "${String(c.sample_text).slice(0, 40)}" → ${c.suggested_intent}`);
+        lines.push(`  ${badge} [${c.occurrence_count}회 / ${formatIntentConfidence(c.confidence)}] "${String(c.sample_text).slice(0, 40)}" → ${c.suggested_intent}`);
       }
     }
     lines.push('');
@@ -597,7 +601,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('자동 반영 기준:');
       const rows = Object.entries(AUTO_PROMOTE_THRESHOLDS).map(([key, value]) => [key, value]);
       for (const [key, value] of rows) {
-        lines.push(`  ${key}: ${value.minCount}회 / ${(value.minConfidence * 100).toFixed(0)}%`);
+        lines.push(`  ${key}: ${value.minCount}회 / ${formatIntentConfidence(value.minConfidence)}`);
       }
       lines.push('');
       lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
@@ -632,7 +636,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('');
       for (const r of rows) {
         const badge = r.auto_applied ? '✅자동반영' : '🕓후보';
-        const conf = `${(Number(r.confidence) * 100).toFixed(0)}%`;
+        const conf = formatIntentConfidence(r.confidence);
         const seen = String(r.updated_at).slice(0, 16);
         lines.push(`  ${badge} [id=${r.id} | ${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
         lines.push(`     최근: ${seen} KST`);
@@ -640,7 +644,8 @@ async function buildPromotionCandidateReport(query = '') {
           const metadata = r.latest_event_metadata && typeof r.latest_event_metadata === 'object'
             ? r.latest_event_metadata
             : {};
-          const reason = metadata.reason ? ` | reason=${metadata.reason}` : '';
+          const reasonValue = getPromotionEventReason(metadata);
+          const reason = reasonValue ? ` | reason=${reasonValue}` : '';
           lines.push(`     상태: ${r.latest_event_type}${reason}`);
         }
       }

@@ -144,6 +144,29 @@ function createDynamicExampleLoader({
   };
 }
 
+function formatIntentConfidence(value, digits = 0) {
+  const ratio = Number(value || 0);
+  return `${(ratio * 100).toFixed(digits)}%`;
+}
+
+function getPromotionCandidateStatus(candidate = {}) {
+  if (candidate.latest_event_type) {
+    return candidate.latest_event_type;
+  }
+  if (candidate.auto_applied) {
+    return 'auto_applied';
+  }
+  if (candidate.suggested_intent) {
+    return 'candidate';
+  }
+  return 'unlinked';
+}
+
+function getPromotionEventReason(metadata = {}) {
+  if (!metadata || typeof metadata !== 'object') return '';
+  return metadata.reason ? String(metadata.reason) : '';
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -158,4 +181,7 @@ module.exports = {
   evaluateAutoPromoteDecision,
   loadLearnedPatternsFromFile,
   createDynamicExampleLoader,
+  formatIntentConfidence,
+  getPromotionCandidateStatus,
+  getPromotionEventReason,
 };
