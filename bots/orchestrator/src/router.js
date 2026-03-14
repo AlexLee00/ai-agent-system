@@ -1064,6 +1064,73 @@ async function runSkaHealthDirect() {
   });
 }
 
+async function getWorkerIntentHealth() {
+  try {
+    const summary = await getPromotionSummary(pgPool, { schema: 'worker', filters: {} });
+    const pendingCount = Number(summary?.pending_count || 0);
+    const appliedCount = Number(summary?.applied_count || 0);
+    return {
+      pendingCount,
+      appliedCount,
+      hasWarn: pendingCount >= 5,
+      detail: `  인텐트 후보 pending ${pendingCount}건 / applied ${appliedCount}건`,
+      reasons: pendingCount >= 5 ? [`워커 인텐트 후보가 ${pendingCount}건 쌓여 있어 학습 검토가 필요합니다.`] : [],
+    };
+  } catch (error) {
+    if (/does not exist/i.test(String(error.message || ''))) {
+      return {
+        pendingCount: 0,
+        appliedCount: 0,
+        hasWarn: false,
+        detail: '  인텐트 후보 테이블 없음 (초기 상태)',
+        reasons: [],
+      };
+    }
+    return {
+      pendingCount: 0,
+      appliedCount: 0,
+      hasWarn: true,
+      detail: `  인텐트 후보 조회 실패: ${error.message}`,
+      reasons: ['워커 인텐트 후보 상태 조회에 실패했습니다.'],
+    };
+  }
+}
+
+async function getClaudeCommandHealth() {
+  try {
+    const row = await pgPool.get('claude', `
+      SELECT
+        COUNT(*)::int AS pending_count,
+        COALESCE(
+          MAX(EXTRACT(EPOCH FROM (NOW() - NULLIF(created_at, '')::timestamp)) / 60),
+          0
+        )::float AS oldest_minutes
+      FROM bot_commands
+      WHERE to_bot = 'claude-lead' AND status = 'pending'
+    `);
+    const pendingCount = Number(row?.pending_count || 0);
+    const oldestMinutes = Math.round(Number(row?.oldest_minutes || 0));
+    const hasWarn = pendingCount >= 3 || oldestMinutes >= 15;
+    return {
+      pendingCount,
+      oldestMinutes,
+      hasWarn,
+      detail: `  pending 명령 ${pendingCount}건 / oldest ${oldestMinutes}분`,
+      reasons: hasWarn
+        ? [`클로드 pending 명령 ${pendingCount}건이 ${oldestMinutes}분 이상 밀려 있습니다.`]
+        : [],
+    };
+  } catch (error) {
+    return {
+      pendingCount: 0,
+      oldestMinutes: 0,
+      hasWarn: true,
+      detail: `  pending 명령 조회 실패: ${error.message}`,
+      reasons: ['클로드 pending 명령 상태 조회에 실패했습니다.'],
+    };
+  }
+}
+
 async function buildUnifiedOpsHealthReport(options = {}) {
   const mode = String(options.query || '').trim().toLowerCase();
   const root = path.join(__dirname, '..', '..', '..');
@@ -1081,6 +1148,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     runNodeScriptJson(scripts.ska, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
+  const [workerIntent, claudeCommands] = await Promise.all([
+    getWorkerIntentHealth(),
+    getClaudeCommandHealth(),
+  ]);
   const skaForecast = await getSkaForecastHealthJson();
   const skaForecastTuning = skaForecast?.tuning_candidate || null;
   const skaForecastSummary = skaForecast?.summary || null;
@@ -1103,22 +1174,28 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     {
       title: '워커',
       summary: worker
-        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건`
+        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건${workerIntent.hasWarn ? ` / 인텐트 후보 ${workerIntent.pendingCount}건` : ''}`
         : '조회 실패',
       detail: worker
-        ? `  서비스 ${worker.serviceHealth.okCount}/${worker.serviceHealth.warnCount}, 엔드포인트 ${worker.endpointHealth.okCount}/${worker.endpointHealth.warnCount}`
+        ? [
+          `  서비스 ${worker.serviceHealth.okCount}/${worker.serviceHealth.warnCount}, 엔드포인트 ${worker.endpointHealth.okCount}/${worker.endpointHealth.warnCount}`,
+          workerIntent.detail,
+        ].join('\n')
         : '  health-report 실행 실패',
-      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0,
+      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0 || workerIntent.hasWarn,
     },
     {
       title: '클로드',
       summary: claude
-        ? `서비스 경고 ${claude.serviceHealth.warnCount}건 / 대시보드 경고 ${claude.dashboardHealth.warnCount}건`
+        ? `서비스 경고 ${claude.serviceHealth.warnCount}건 / 대시보드 경고 ${claude.dashboardHealth.warnCount}건${claudeCommands.hasWarn ? ` / pending ${claudeCommands.pendingCount}건` : ''}`
         : '조회 실패',
       detail: claude
-        ? `  서비스 ${claude.serviceHealth.okCount}/${claude.serviceHealth.warnCount}, dashboard ${claude.dashboardHealth.okCount}/${claude.dashboardHealth.warnCount}`
+        ? [
+          `  서비스 ${claude.serviceHealth.okCount}/${claude.serviceHealth.warnCount}, dashboard ${claude.dashboardHealth.okCount}/${claude.dashboardHealth.warnCount}`,
+          claudeCommands.detail,
+        ].join('\n')
         : '  health-report 실행 실패',
-      hasWarn: !claude || claude.serviceHealth.warnCount > 0 || claude.dashboardHealth.warnCount > 0,
+      hasWarn: !claude || claude.serviceHealth.warnCount > 0 || claude.dashboardHealth.warnCount > 0 || claudeCommands.hasWarn,
     },
     {
       title: '스카',
@@ -1146,6 +1223,12 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
   if (lunaRisk.hasWarn) {
     reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
+  }
+  if (workerIntent.hasWarn) {
+    reasons.push(...workerIntent.reasons);
+  }
+  if (claudeCommands.hasWarn) {
+    reasons.push(...claudeCommands.reasons);
   }
   if (skaForecastHasWarn) {
     reasons.push(`스카 예측 리스크: ${(skaForecastTuning.reasons || []).slice(0, 2).join(', ')}`);
