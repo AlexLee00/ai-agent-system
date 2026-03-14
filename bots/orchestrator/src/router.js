@@ -42,6 +42,8 @@ const {
   buildPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
+  buildPromotionCandidateWhere,
+  buildPromotionEventWhere,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -531,19 +533,8 @@ async function buildPromotionCandidateReport(query = '') {
   try {
     await _ensureUnrecTable();
     const filters = parsePromotionQuery(query);
-    const clauses = [];
-    const params = [];
-
-    if (typeof filters.applied === 'boolean') {
-      params.push(filters.applied);
-      clauses.push(`auto_applied = $${params.length}`);
-    }
-    if (filters.intent) {
-      params.push(`%${filters.intent}%`);
-      clauses.push(`suggested_intent ILIKE $${params.length}`);
-    }
-
-    const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const candidateWhere = buildPromotionCandidateWhere(filters);
+    const { whereSql, params } = candidateWhere;
     const summary = await pgPool.get('claude', `
       SELECT
         COUNT(*)::int AS total_count,
@@ -572,7 +563,7 @@ async function buildPromotionCandidateReport(query = '') {
         ORDER BY created_at DESC
         LIMIT 1
       ) e ON true
-      ${whereSql.replace(/auto_applied/g, 'c.auto_applied').replace(/suggested_intent/g, 'c.suggested_intent')}
+      ${buildPromotionCandidateWhere(filters, { tableAlias: 'c' }).whereSql}
       ORDER BY c.auto_applied DESC, c.updated_at DESC
       LIMIT 20
     `, params);
@@ -615,21 +606,8 @@ async function buildPromotionCandidateReport(query = '') {
       }
     }
 
-    const eventClauses = [];
-    const eventParams = [];
-    if (filters.eventType) {
-      eventParams.push(filters.eventType);
-      eventClauses.push(`event_type = $${eventParams.length}`);
-    }
-    if (filters.actor) {
-      eventParams.push(filters.actor);
-      eventClauses.push(`actor = $${eventParams.length}`);
-    }
-    if (filters.intent) {
-      eventParams.push(`%${filters.intent}%`);
-      eventClauses.push(`suggested_intent ILIKE $${eventParams.length}`);
-    }
-    const eventWhereSql = eventClauses.length > 0 ? `WHERE ${eventClauses.join(' AND ')}` : '';
+    const eventWhere = buildPromotionEventWhere(filters);
+    const { whereSql: eventWhereSql, params: eventParams } = eventWhere;
     const events = filters.thresholdsOnly ? [] : await pgPool.query('claude', `
       SELECT event_type, sample_text, suggested_intent, actor, created_at
       FROM intent_promotion_events

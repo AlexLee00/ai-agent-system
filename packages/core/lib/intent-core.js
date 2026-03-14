@@ -291,6 +291,51 @@ function buildPromotionCompactCandidateLine(candidate = {}) {
   return `  ${badge} [${candidate.occurrence_count}회 / ${formatIntentConfidence(candidate.confidence)}] "${String(candidate.sample_text || '').slice(0, 40)}" → ${candidate.suggested_intent}`;
 }
 
+function buildPromotionCandidateWhere(filters = {}, { tableAlias = '' } = {}) {
+  const clauses = [];
+  const params = [];
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+
+  if (typeof filters.applied === 'boolean') {
+    params.push(filters.applied);
+    clauses.push(`${prefix}auto_applied = $${params.length}`);
+  }
+  if (filters.intent) {
+    params.push(`%${filters.intent}%`);
+    clauses.push(`${prefix}suggested_intent ILIKE $${params.length}`);
+  }
+
+  return {
+    clauses,
+    params,
+    whereSql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+  };
+}
+
+function buildPromotionEventWhere(filters = {}) {
+  const clauses = [];
+  const params = [];
+
+  if (filters.eventType) {
+    params.push(filters.eventType);
+    clauses.push(`event_type = $${params.length}`);
+  }
+  if (filters.actor) {
+    params.push(filters.actor);
+    clauses.push(`actor = $${params.length}`);
+  }
+  if (filters.intent) {
+    params.push(`%${filters.intent}%`);
+    clauses.push(`suggested_intent ILIKE $${params.length}`);
+  }
+
+  return {
+    clauses,
+    params,
+    whereSql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+  };
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -320,4 +365,6 @@ module.exports = {
   buildPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
+  buildPromotionCandidateWhere,
+  buildPromotionEventWhere,
 };
