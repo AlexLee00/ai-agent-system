@@ -17,6 +17,7 @@ TRAINING_FEATURE_TABLE_SQL = """
         entries_count                INTEGER,
         occupancy_rate               DOUBLE PRECISION,
         total_reservations           INTEGER,
+        reservation_count            INTEGER,
         reservation_booked_hours     DOUBLE PRECISION,
         reservation_unique_rooms     INTEGER,
         reservation_peak_overlap     INTEGER,
@@ -53,6 +54,10 @@ TRAINING_FEATURE_TABLE_SQL = """
         month                        INTEGER,
         day_of_month                 INTEGER,
         is_weekend                   BOOLEAN DEFAULT false,
+        lag_reservation_count_1d     INTEGER,
+        lag_reservation_count_3d     INTEGER,
+        lag_reservation_hours_1d     DOUBLE PRECISION,
+        lag_reservation_hours_3d     DOUBLE PRECISION,
         lag_revenue_1d               INTEGER,
         lag_revenue_7d               INTEGER,
         lag_revenue_14d              INTEGER,
@@ -74,6 +79,7 @@ def ensure_training_feature_table(con):
     cur = con.cursor()
     cur.execute(TRAINING_FEATURE_TABLE_SQL)
     alter_columns = [
+        ("reservation_count", "INTEGER"),
         ("reservation_booked_hours", "DOUBLE PRECISION"),
         ("reservation_unique_rooms", "INTEGER"),
         ("reservation_peak_overlap", "INTEGER"),
@@ -84,6 +90,10 @@ def ensure_training_feature_table(con):
         ("reservation_morning_count", "INTEGER"),
         ("reservation_afternoon_count", "INTEGER"),
         ("reservation_evening_count", "INTEGER"),
+        ("lag_reservation_count_1d", "INTEGER"),
+        ("lag_reservation_count_3d", "INTEGER"),
+        ("lag_reservation_hours_1d", "DOUBLE PRECISION"),
+        ("lag_reservation_hours_3d", "DOUBLE PRECISION"),
     ]
     for column_name, column_type in alter_columns:
         cur.execute(
@@ -186,6 +196,7 @@ def sync_training_feature_store(con, days=365):
                 rds.entries_count,
                 rd.occupancy_rate,
                 rd.total_reservations,
+                ra.reservation_count,
                 ra.reservation_booked_hours,
                 ra.reservation_unique_rooms,
                 COALESCE(ro.reservation_peak_overlap, 0) AS reservation_peak_overlap,
@@ -222,6 +233,10 @@ def sync_training_feature_store(con, days=365):
                 EXTRACT(MONTH FROM ds.date)::int AS month,
                 EXTRACT(DAY FROM ds.date)::int AS day_of_month,
                 (EXTRACT(ISODOW FROM ds.date)::int >= 6) AS is_weekend,
+                LAG(COALESCE(ra.reservation_count, rd.total_reservations), 1) OVER (ORDER BY ds.date) AS lag_reservation_count_1d,
+                LAG(COALESCE(ra.reservation_count, rd.total_reservations), 3) OVER (ORDER BY ds.date) AS lag_reservation_count_3d,
+                LAG(COALESCE(ra.reservation_booked_hours, 0.0), 1) OVER (ORDER BY ds.date) AS lag_reservation_hours_1d,
+                LAG(COALESCE(ra.reservation_booked_hours, 0.0), 3) OVER (ORDER BY ds.date) AS lag_reservation_hours_3d,
                 LAG(rd.actual_revenue, 1) OVER (ORDER BY ds.date) AS lag_revenue_1d,
                 LAG(rd.actual_revenue, 7) OVER (ORDER BY ds.date) AS lag_revenue_7d,
                 LAG(rd.actual_revenue, 14) OVER (ORDER BY ds.date) AS lag_revenue_14d,
@@ -281,6 +296,7 @@ def sync_training_feature_store(con, days=365):
         INSERT INTO ska.training_feature_daily (
             date, target_revenue, total_amount, pickko_total, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
+            reservation_count,
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
             reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
             reservation_b_count, reservation_morning_count, reservation_afternoon_count,
@@ -289,6 +305,7 @@ def sync_training_feature_store(con, days=365):
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
             festival_name, bridge_holiday_flag, weekday, month, day_of_month, is_weekend,
+            lag_reservation_count_1d, lag_reservation_count_3d, lag_reservation_hours_1d, lag_reservation_hours_3d,
             lag_revenue_1d, lag_revenue_7d, lag_revenue_14d, rolling_mean_7d, rolling_mean_14d,
             rolling_sum_7d, same_weekday_mean_4, revenue_mix_study_ratio, revenue_mix_general_ratio,
             forecast_error, forecast_abs_error, forecast_created_at, source_updated_at
@@ -296,6 +313,7 @@ def sync_training_feature_store(con, days=365):
         SELECT
             date, target_revenue, total_amount, pickko_total, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
+            reservation_count,
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
             reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
             reservation_b_count, reservation_morning_count, reservation_afternoon_count,
@@ -304,6 +322,7 @@ def sync_training_feature_store(con, days=365):
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
             festival_name, bridge_holiday_flag, weekday, month, day_of_month, is_weekend,
+            lag_reservation_count_1d, lag_reservation_count_3d, lag_reservation_hours_1d, lag_reservation_hours_3d,
             lag_revenue_1d, lag_revenue_7d, lag_revenue_14d, rolling_mean_7d, rolling_mean_14d,
             rolling_sum_7d, same_weekday_mean_4, revenue_mix_study_ratio, revenue_mix_general_ratio,
             forecast_error, forecast_abs_error, forecast_created_at, NOW()
@@ -317,6 +336,7 @@ def sync_training_feature_store(con, days=365):
             entries_count = EXCLUDED.entries_count,
             occupancy_rate = EXCLUDED.occupancy_rate,
             total_reservations = EXCLUDED.total_reservations,
+            reservation_count = EXCLUDED.reservation_count,
             reservation_booked_hours = EXCLUDED.reservation_booked_hours,
             reservation_unique_rooms = EXCLUDED.reservation_unique_rooms,
             reservation_peak_overlap = EXCLUDED.reservation_peak_overlap,
@@ -353,6 +373,10 @@ def sync_training_feature_store(con, days=365):
             month = EXCLUDED.month,
             day_of_month = EXCLUDED.day_of_month,
             is_weekend = EXCLUDED.is_weekend,
+            lag_reservation_count_1d = EXCLUDED.lag_reservation_count_1d,
+            lag_reservation_count_3d = EXCLUDED.lag_reservation_count_3d,
+            lag_reservation_hours_1d = EXCLUDED.lag_reservation_hours_1d,
+            lag_reservation_hours_3d = EXCLUDED.lag_reservation_hours_3d,
             lag_revenue_1d = EXCLUDED.lag_revenue_1d,
             lag_revenue_7d = EXCLUDED.lag_revenue_7d,
             lag_revenue_14d = EXCLUDED.lag_revenue_14d,
