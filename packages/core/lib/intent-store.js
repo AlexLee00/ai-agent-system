@@ -258,6 +258,30 @@ async function getUnrecognizedReportRows(pgPool, {
   return { rows, candidates };
 }
 
+async function getRecentUnrecognizedIntents(pgPool, {
+  schema = 'claude',
+  windowDays = 30,
+  limit = 500,
+} = {}) {
+  return pgPool.query(schema, `
+    SELECT id, text, llm_intent, promoted_to
+    FROM unrecognized_intents
+    WHERE created_at > NOW() - ($1::text || ' days')::interval
+    ORDER BY created_at DESC
+    LIMIT ${Number(limit)}
+  `, [String(windowDays)]);
+}
+
+async function findPromotionCandidateIdByNormalized(pgPool, {
+  schema = 'claude',
+  normalizedText,
+} = {}) {
+  if (!pgPool || !normalizedText) return null;
+  return pgPool.get(schema, `
+    SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
+  `, [normalizedText]);
+}
+
 async function clearPromotedUnrecognized(pgPool, {
   schema = 'claude',
   suggestedIntent,
@@ -321,6 +345,8 @@ module.exports = {
   getPromotionEvents,
   findPromotionCandidate,
   getUnrecognizedReportRows,
+  getRecentUnrecognizedIntents,
+  findPromotionCandidateIdByNormalized,
   clearPromotedUnrecognized,
   clearPromotionCandidateState,
   markUnrecognizedPromoted,
