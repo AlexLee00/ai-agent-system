@@ -508,10 +508,27 @@ async function buildPromotionCandidateReport(query = '') {
       ${whereSql}
     `, params);
     const rows = filters.eventsOnly ? [] : await pgPool.query('claude', `
-      SELECT id, sample_text, suggested_intent, occurrence_count, confidence, auto_applied, updated_at
+      SELECT
+        c.id,
+        c.sample_text,
+        c.suggested_intent,
+        c.occurrence_count,
+        c.confidence,
+        c.auto_applied,
+        c.updated_at,
+        e.event_type AS latest_event_type,
+        e.metadata AS latest_event_metadata
       FROM intent_promotion_candidates
-      ${whereSql}
-      ORDER BY auto_applied DESC, updated_at DESC
+      c
+      LEFT JOIN LATERAL (
+        SELECT event_type, metadata
+        FROM intent_promotion_events
+        WHERE candidate_id = c.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) e ON true
+      ${whereSql.replace(/auto_applied/g, 'c.auto_applied').replace(/suggested_intent/g, 'c.suggested_intent')}
+      ORDER BY c.auto_applied DESC, c.updated_at DESC
       LIMIT 20
     `, params);
     if (!filters.eventsOnly && rows.length === 0) {
@@ -537,6 +554,13 @@ async function buildPromotionCandidateReport(query = '') {
         const seen = String(r.updated_at).slice(0, 16);
         lines.push(`  ${badge} [id=${r.id} | ${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
         lines.push(`     최근: ${seen} KST`);
+        if (r.latest_event_type) {
+          const metadata = r.latest_event_metadata && typeof r.latest_event_metadata === 'object'
+            ? r.latest_event_metadata
+            : {};
+          const reason = metadata.reason ? ` | reason=${metadata.reason}` : '';
+          lines.push(`     상태: ${r.latest_event_type}${reason}`);
+        }
       }
     }
 
