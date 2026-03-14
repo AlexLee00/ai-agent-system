@@ -285,6 +285,12 @@ function buildPromotionPolicyNoteLines(windowDays = AUTO_PROMOTE_DEFAULTS.window
   ];
 }
 
+function buildPromotionCompactCandidateLine(candidate = {}) {
+  if (!candidate || !candidate.suggested_intent) return '';
+  const badge = candidate.auto_applied ? '✅자동반영' : '📝후보';
+  return `  ${badge} [${candidate.occurrence_count}회 / ${formatIntentConfidence(candidate.confidence)}] "${String(candidate.sample_text || '').slice(0, 40)}" → ${candidate.suggested_intent}`;
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -313,4 +319,5 @@ module.exports = {
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
+  buildPromotionCompactCandidateLine,
 };
