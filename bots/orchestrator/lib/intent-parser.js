@@ -16,8 +16,7 @@ const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool           = require('../../../packages/core/lib/pg-pool');
 const {
   createLearnedPatternReloader,
-  createDynamicExampleLoader,
-  formatPromotedIntentExample,
+  createPromotedIntentExampleLoader,
 } = require('../../../packages/core/lib/intent-core');
 const {
   getIntentLearningPath,
@@ -37,10 +36,11 @@ const learnedPatternReloader = createLearnedPatternReloader({
 // ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
 // router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
 
-const loadDynamicExamples = createDynamicExampleLoader({
+const loadDynamicExamples = createPromotedIntentExampleLoader({
   ttlMs: 5 * 60 * 1000,
   fetchRows: async () => getPromotedIntentExamples(pgPool, { schema: 'claude', limit: 30 }),
-  formatRow: (r) => formatPromotedIntentExample(r, { maxTextLength: 60, confidence: 0.9 }),
+  maxTextLength: 60,
+  confidence: 0.9,
 });
 
 // ─── LLM 폴백 설정 ───────────────────────────────────────────────────
