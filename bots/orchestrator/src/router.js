@@ -258,7 +258,7 @@ async function delegateToTeamLead(team, text) {
     case 'claude': {
       // 클로드 AI에 직접 질문
       const cmdId = await insertBotCommand('claude', 'ask_claude', { query: text });
-      const raw = await waitForCommandResult(cmdId, 60000);
+      const raw = await waitForCommandResult(cmdId, 300000);
       if (!raw) return null;
       try { const r = JSON.parse(raw); return r.ok ? r.message : null; } catch { return null; }
     }
@@ -444,7 +444,7 @@ function formatLunaResult(command, rawResult) {
  * claude_action 결과를 텍스트로 포맷
  */
 function formatClaudeResult(command, rawResult) {
-  if (!rawResult) return '⏱ 클로드팀 응답 없음 (5분 타임아웃)';
+  if (!rawResult) return '⏱ 클로드팀 응답 지연 (타임아웃). 팀장 비정상으로 단정하진 않습니다.';
   let r;
   try { r = JSON.parse(rawResult); } catch { return rawResult; }
   if (!r.ok) return `⚠️ 클로드팀 오류: ${r.error || '알 수 없음'}`;
@@ -896,7 +896,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       await notify(`⏳ 클로드가 생각 중...`);
       const cmdId = await insertBotCommand('claude', 'ask_claude', { query });
       const raw   = await waitForCommandResult(cmdId, 300000);
-      if (!raw) return '⏱ 클로드 응답 없음 (5분 타임아웃)';
+      if (!raw) return '⏱ 클로드 응답 지연 (타임아웃). 팀장 비정상으로 단정하진 않습니다.';
       let r;
       try { r = JSON.parse(raw); } catch { return raw; }
       if (!r.ok) return `⚠️ 클로드 오류: ${r.error || '알 수 없음'}`;
@@ -1091,7 +1091,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'dexter_quickcheck': {
       await notify(`⏳ 덱스터 퀵체크 실행 중...`);
       const cmdId = await insertBotCommand('claude', 'quick_check', {});
-      const raw   = await waitForCommandResult(cmdId, 60000);
+      const raw   = await waitForCommandResult(cmdId, 180000);
       return formatClaudeResult('quick_check', raw);
     }
 
