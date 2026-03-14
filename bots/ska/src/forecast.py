@@ -57,6 +57,8 @@ WEEKDAY_KO     = ['월', '화', '수', '목', '금', '토', '일']
 CALIBRATION_LOOKBACK_DAYS = 56
 CALIBRATION_MAX_RATIO = 0.12
 RESERVATION_ADJUSTMENT_WEIGHT = 0.35
+CONDITION_ADJUSTMENT_WEIGHT = 0.45
+CONDITION_MIN_SAMPLES = 3
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -402,72 +404,103 @@ def get_reservation_count(con, target_date_str):
 
 
 def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
-    """최근 예측-실적 오차와 예약 패턴 기반 보정값 산출"""
+    """training_feature_daily 기반 최근 오차/예약/조건 보정값 산출"""
     rows = _qry(con, """
-        WITH latest_forecasts AS (
-            SELECT
-                fr.forecast_date,
-                fr.predictions,
-                ROW_NUMBER() OVER (
-                    PARTITION BY fr.forecast_date
-                    ORDER BY fr.created_at DESC, fr.id DESC
-                ) AS rn
-            FROM forecast_results fr
-            WHERE fr.forecast_date >= current_date - %s
-              AND fr.forecast_date < current_date
-        )
         SELECT
-            lf.forecast_date,
-            EXTRACT(DOW FROM lf.forecast_date)::integer AS dow,
-            rd.actual_revenue,
-            (lf.predictions->>'yhat')::float AS predicted_revenue,
-            COALESCE(rd.total_reservations, 0) AS total_reservations
-        FROM latest_forecasts lf
-        JOIN revenue_daily rd
-          ON rd.date = lf.forecast_date
-        WHERE lf.rn = 1
-          AND rd.actual_revenue > 0
+            date,
+            weekday,
+            target_revenue,
+            predicted_revenue,
+            COALESCE(total_reservations, 0) AS total_reservations,
+            COALESCE(holiday_flag, false) AS holiday_flag,
+            COALESCE(vacation_flag, false) AS vacation_flag,
+            COALESCE(festival_flag, false) AS festival_flag,
+            COALESCE(bridge_holiday_flag, false) AS bridge_holiday_flag,
+            COALESCE(rain_prob, 0.0) AS rain_prob,
+            COALESCE(exam_score, 0) AS exam_score,
+            COALESCE(forecast_error, target_revenue - predicted_revenue) AS forecast_error
+        FROM training_feature_daily
+        WHERE date >= current_date - %s
+          AND date < current_date
+          AND target_revenue IS NOT NULL
+          AND predicted_revenue IS NOT NULL
+          AND target_revenue > 0
     """, (days,))
 
     weekday_bias = {}
     reservation_baseline = {}
     revenue_per_reservation = 0.0
+    condition_bias = {}
+    sample_count = len(rows)
 
     if not rows:
         return {
             'weekday_bias': weekday_bias,
             'reservation_baseline': reservation_baseline,
             'revenue_per_reservation': revenue_per_reservation,
+            'condition_bias': condition_bias,
+            'sample_count': sample_count,
         }
 
-    bias_buckets = {i: [] for i in range(7)}
-    reservation_buckets = {i: [] for i in range(7)}
+    bias_buckets = {i: [] for i in range(1, 8)}
+    reservation_buckets = {i: [] for i in range(1, 8)}
     revenue_per_reservation_samples = []
+    condition_buckets = {
+        'holiday': [],
+        'vacation': [],
+        'festival': [],
+        'bridge_holiday': [],
+        'rainy_day': [],
+        'exam_high': [],
+    }
+    global_bias_values = []
 
     for row in rows:
         dow = int(row[1] or 0)
         actual = float(row[2] or 0.0)
         predicted = float(row[3] or 0.0)
         total_reservations = int(row[4] or 0)
+        error = float(row[11] or 0.0)
 
-        bias_buckets[dow].append(actual - predicted)
+        bias_buckets[dow].append(error)
         reservation_buckets[dow].append(total_reservations)
+        global_bias_values.append(error)
         if total_reservations > 0:
             revenue_per_reservation_samples.append(actual / total_reservations)
+        if row[5]:
+            condition_buckets['holiday'].append(error)
+        if row[6]:
+            condition_buckets['vacation'].append(error)
+        if row[7]:
+            condition_buckets['festival'].append(error)
+        if row[8]:
+            condition_buckets['bridge_holiday'].append(error)
+        if float(row[9] or 0.0) >= 0.4:
+            condition_buckets['rainy_day'].append(error)
+        if int(row[10] or 0) >= 5:
+            condition_buckets['exam_high'].append(error)
+
+    global_bias = round(sum(global_bias_values) / len(global_bias_values)) if global_bias_values else 0
 
     for dow, values in bias_buckets.items():
         if values:
-            weekday_bias[dow] = round(sum(values) / len(values))
+            weekday_bias[dow] = round((sum(values) / len(values)) * 0.7 + global_bias * 0.3)
     for dow, values in reservation_buckets.items():
         if values:
             reservation_baseline[dow] = round(sum(values) / len(values), 2)
     if revenue_per_reservation_samples:
         revenue_per_reservation = sum(revenue_per_reservation_samples) / len(revenue_per_reservation_samples)
+    for key, values in condition_buckets.items():
+        if len(values) >= CONDITION_MIN_SAMPLES:
+            condition_bias[key] = round(sum(values) / len(values))
 
     return {
         'weekday_bias': weekday_bias,
         'reservation_baseline': reservation_baseline,
         'revenue_per_reservation': revenue_per_reservation,
+        'condition_bias': condition_bias,
+        'sample_count': sample_count,
+        'global_bias': global_bias,
     }
 
 
@@ -483,6 +516,7 @@ def _apply_result_calibration(result, calibration, target_date):
     reservation_baseline = float(calibration.get('reservation_baseline', {}).get(dow, 0.0) or 0.0)
     revenue_per_reservation = float(calibration.get('revenue_per_reservation', 0.0) or 0.0)
     reservation_count = int(result.get('reservation_count', 0) or 0)
+    env_info = result.get('env_info') or {}
 
     reservation_adjustment = 0
     if reservation_baseline > 0 and revenue_per_reservation > 0 and reservation_count > 0:
@@ -491,7 +525,23 @@ def _apply_result_calibration(result, calibration, target_date):
             reservation_delta * revenue_per_reservation * RESERVATION_ADJUSTMENT_WEIGHT
         )
 
-    raw_adjustment = weekday_bias + reservation_adjustment
+    condition_adjustment = 0
+    condition_notes = []
+    condition_bias = calibration.get('condition_bias', {})
+    if env_info.get('bridge_holiday') and condition_bias.get('bridge_holiday'):
+        condition_adjustment += round(condition_bias['bridge_holiday'] * CONDITION_ADJUSTMENT_WEIGHT)
+        condition_notes.append(f"bridge:{condition_bias['bridge_holiday']:+,}")
+    if env_info.get('vacation_flag') and condition_bias.get('vacation'):
+        condition_adjustment += round(condition_bias['vacation'] * CONDITION_ADJUSTMENT_WEIGHT)
+        condition_notes.append(f"vacation:{condition_bias['vacation']:+,}")
+    if env_info.get('rain_prob', 0.0) >= 0.4 and condition_bias.get('rainy_day'):
+        condition_adjustment += round(condition_bias['rainy_day'] * CONDITION_ADJUSTMENT_WEIGHT)
+        condition_notes.append(f"rain:{condition_bias['rainy_day']:+,}")
+    if env_info.get('exam_score', 0) >= 5 and condition_bias.get('exam_high'):
+        condition_adjustment += round(condition_bias['exam_high'] * CONDITION_ADJUSTMENT_WEIGHT)
+        condition_notes.append(f"exam:{condition_bias['exam_high']:+,}")
+
+    raw_adjustment = weekday_bias + reservation_adjustment + condition_adjustment
     max_adjustment = round(max(0, result['yhat']) * CALIBRATION_MAX_RATIO)
     bounded_adjustment = max(-max_adjustment, min(max_adjustment, raw_adjustment))
 
@@ -505,8 +555,11 @@ def _apply_result_calibration(result, calibration, target_date):
         notes.append(f'weekday_bias:{weekday_bias:+,}')
     if reservation_adjustment:
         notes.append(f'reservation:{reservation_adjustment:+,}')
+    notes.extend(condition_notes)
     if raw_adjustment != bounded_adjustment:
         notes.append(f'capped:{bounded_adjustment:+,}')
+    if calibration.get('sample_count'):
+        notes.append(f"samples:{calibration['sample_count']}")
     result['calibration_notes'] = notes
     return result
 
