@@ -79,6 +79,7 @@ const SLASH_MAP = {
   '/status':      { intent: 'status',              args: {} },
   '/help':        { intent: 'help',                args: {} },
   '/cost':        { intent: 'cost',                args: {} },
+  '/speed':       { intent: 'speed_test',          args: {} },
   '/mute':        { intent: 'mute',                args: {} },
   '/unmute':      { intent: 'unmute',              args: {} },
   '/mutes':       { intent: 'mutes',               args: {} },
@@ -218,6 +219,7 @@ const KEYWORD_PATTERNS = [
   // ── 시스템 안정성·텔레그램 ──
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
   { re: /텔레그램.*(상태|연결|폴링|봇.*상태)|telegram.*(status|connected|polling)/i,       intent: 'telegram_status' },
+  { re: /속도.*(체크|테스트|측정|확인)|speed.*(check|test)|제일.*빠른.*모델|빠른.*모델.*뭐/i, intent: 'speed_test' },
 
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
