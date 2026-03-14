@@ -415,7 +415,9 @@ async function buildUnrecognizedReport() {
   try {
     await _ensureUnrecTable();
     const rows = await pgPool.query('claude', `
-      SELECT text, COUNT(*) as cnt,
+      SELECT
+             text,
+             COUNT(*) as cnt,
              MAX(llm_intent) as llm_intent,
              MAX(promoted_to) as promoted_to,
              MAX(created_at) as last_seen
@@ -426,19 +428,54 @@ async function buildUnrecognizedReport() {
       LIMIT 20
     `);
     if (rows.length === 0) return '✅ 최근 7일 미인식 명령 없음';
+
+    const candidates = await pgPool.query('claude', `
+      SELECT
+        c.id,
+        c.normalized_text,
+        c.sample_text,
+        c.suggested_intent,
+        c.occurrence_count,
+        c.confidence,
+        c.auto_applied,
+        e.event_type AS latest_event_type,
+        e.metadata AS latest_event_metadata
+      FROM intent_promotion_candidates c
+      LEFT JOIN LATERAL (
+        SELECT event_type, metadata
+        FROM intent_promotion_events
+        WHERE candidate_id = c.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) e ON true
+      ORDER BY c.last_seen_at DESC
+      LIMIT 20
+    `);
+    const candidateMap = new Map(
+      candidates.map(c => [String(c.normalized_text || ''), c])
+    );
+
     const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
     const lines = [`❓ 미인식 명령 (최근 7일, ${rows.length}종 ${total}회)`];
     for (const r of rows) {
       const promoted = r.promoted_to ? ` ✅→${r.promoted_to}` : '';
-      lines.push(`  [${r.cnt}회] "${r.text.slice(0, 50)}"${promoted}`);
+      const sample = String(r.text || '').slice(0, 50);
+      const candidate = candidateMap.get(normalizeIntentText(r.text || ''));
+      lines.push(`  [${r.cnt}회] "${sample}"${promoted}`);
       if (r.llm_intent && !r.promoted_to) lines.push(`         LLM 추정: ${r.llm_intent}`);
+      if (candidate?.suggested_intent) {
+        const badge = candidate.auto_applied ? '✅자동반영' : '🕓후보';
+        const conf = `${(Number(candidate.confidence || 0) * 100).toFixed(0)}%`;
+        lines.push(`         ${badge}: ${candidate.suggested_intent} (${candidate.occurrence_count}회 / ${conf})`);
+      }
+      if (candidate?.latest_event_type) {
+        const metadata = candidate.latest_event_metadata && typeof candidate.latest_event_metadata === 'object'
+          ? candidate.latest_event_metadata
+          : {};
+        const reason = metadata.reason ? ` | reason=${metadata.reason}` : '';
+        lines.push(`         상태: ${candidate.latest_event_type}${reason}`);
+      }
     }
-    const candidates = await pgPool.query('claude', `
-      SELECT sample_text, suggested_intent, occurrence_count, confidence, auto_applied
-      FROM intent_promotion_candidates
-      ORDER BY last_seen_at DESC
-      LIMIT 10
-    `);
     if (candidates.length > 0) {
       lines.push('');
       lines.push('🤖 자동 반영/후보');
@@ -447,7 +484,9 @@ async function buildUnrecognizedReport() {
         lines.push(`  ${badge} [${c.occurrence_count}회 / ${(Number(c.confidence) * 100).toFixed(0)}%] "${String(c.sample_text).slice(0, 40)}" → ${c.suggested_intent}`);
       }
     }
-    lines.push('\n/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.');
+    lines.push('');
+    lines.push('조회: /promotions pending | /promotions applied');
+    lines.push('/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.');
     return lines.join('\n');
   } catch (e) {
     return `⚠️ 미인식 이력 조회 실패: ${e.message}`;
