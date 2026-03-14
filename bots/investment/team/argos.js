@@ -484,6 +484,12 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
 
     const tickerMap = tickers.status === 'fulfilled' ? tickers.value : {};
     const cgSymbols = new Set(cgTrending.status === 'fulfilled' ? cgTrending.value : []);
+    const btcTicker = tickerMap['BTC/USDT'] || null;
+    const ethTicker = tickerMap['ETH/USDT'] || null;
+    const ethBtcTicker = tickerMap['ETH/BTC'] || null;
+    const btcChange = Number(btcTicker?.percentage || 0);
+    const ethChange = Number(ethTicker?.percentage || 0);
+    const ethBtcMomentum = Number(ethBtcTicker?.percentage || 0);
 
     const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'PYUSD', 'USDP']);
 
@@ -516,11 +522,29 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       const range     = t.high24h - t.low24h;
       const rangePos  = range > 0 ? (t.price - t.low24h) / range : 0.5;
       const cgBonus   = t.cgTrend ? 1.2 : 1.0;  // CoinGecko 트렌딩 시 20% 보너스
+      const relToBtc  = t.changePercent - btcChange;
+      const relToEth  = t.changePercent - ethChange;
+      const base = t.symbol.split('/')[0];
+      const pullbackScore = _computeCryptoPullbackScore(t.changePercent, rangePos);
+      const regimeBonus = _computeCryptoRegimeBonus({
+        symbol: base,
+        relToBtc,
+        relToEth,
+        ethBtcMomentum,
+      });
+      const overheatPenalty = _computeCryptoOverheatPenalty(t.changePercent, rangePos);
       return {
         ...t,
         momentum:   Math.round(momentum * 100) / 100,
         rangePos:   Math.round(rangePos * 100) / 100,
-        finalScore: Math.round((momentum * 0.7 + volScore * 0.3) * cgBonus * 100) / 100,
+        relToBtc:   Math.round(relToBtc * 100) / 100,
+        relToEth:   Math.round(relToEth * 100) / 100,
+        finalScore: Math.round((
+          (momentum * 0.55 + volScore * 0.25)
+          + pullbackScore
+          + regimeBonus
+          - overheatPenalty
+        ) * cgBonus * 100) / 100,
       };
     });
 
@@ -529,7 +553,12 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
 
     console.log(`[아르고스] 암호화폐 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
     topDynamic.forEach(t =>
-      console.log(`  ${t.symbol}${t.cgTrend ? '★' : ''}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}% | ${(t.volume24h / 1e6).toFixed(0)}M USDT | 점수 ${t.intelligenceScore ?? t.finalScore}`)
+      console.log(
+        `  ${t.symbol}${t.cgTrend ? '★' : ''}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}%`
+        + ` | BTC대비 ${t.relToBtc >= 0 ? '+' : ''}${(t.relToBtc || 0).toFixed(1)}%`
+        + ` | ${(t.volume24h / 1e6).toFixed(0)}M USDT`
+        + ` | 점수 ${t.intelligenceScore ?? t.finalScore}`
+      )
     );
 
     return { core: CORE_CRYPTO, dynamic: dynamicSymbols, all: dynamicSymbols, screening: topDynamic, fng };
@@ -537,6 +566,35 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
     console.warn(`[아르고스] 암호화폐 스크리닝 실패: ${e.message}`);
     return { core: CORE_CRYPTO, dynamic: [], all: [], screening: [], error: e.message, fng };
   }
+}
+
+function _computeCryptoPullbackScore(changePercent, rangePos) {
+  const change = Number(changePercent || 0);
+  const pos = Number(rangePos || 0.5);
+  if (change >= 3 && change <= 10 && pos >= 0.45 && pos <= 0.75) return 1.4;
+  if (change >= 1 && change < 3 && pos >= 0.35 && pos <= 0.65) return 0.9;
+  if (change <= -8 && pos < 0.25) return -0.8;
+  return 0;
+}
+
+function _computeCryptoOverheatPenalty(changePercent, rangePos) {
+  const change = Number(changePercent || 0);
+  const pos = Number(rangePos || 0.5);
+  if (change >= 18) return 1.8;
+  if (change >= 12 && pos > 0.85) return 1.2;
+  if (change >= 8 && pos > 0.92) return 0.7;
+  return 0;
+}
+
+function _computeCryptoRegimeBonus({ symbol, relToBtc, relToEth, ethBtcMomentum }) {
+  const safeSymbol = String(symbol || '').toUpperCase();
+  let bonus = 0;
+  if (relToBtc >= 2) bonus += 0.7;
+  if (relToEth >= 1.5) bonus += 0.4;
+  if (safeSymbol !== 'BTC' && safeSymbol !== 'ETH' && ethBtcMomentum > 0) bonus += 0.25;
+  if (safeSymbol === 'ETH' && ethBtcMomentum > 0) bonus += 0.4;
+  if (safeSymbol === 'BTC') bonus += relToEth > 0 ? 0.2 : 0;
+  return Math.round(bonus * 100) / 100;
 }
 
 // ─── 국내주식 종목 스크리닝 (네이버 증권 거래량 상위) ────────────────
