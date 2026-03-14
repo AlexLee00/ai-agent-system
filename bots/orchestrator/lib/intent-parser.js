@@ -11,9 +11,6 @@
  */
 
 const https = require('https');
-const fs    = require('fs');
-const path  = require('path');
-const os    = require('os');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool           = require('../../../packages/core/lib/pg-pool');
@@ -21,11 +18,14 @@ const {
   loadLearnedPatternsFromFile,
   createDynamicExampleLoader,
 } = require('../../../packages/core/lib/intent-core');
+const {
+  getIntentLearningPath,
+} = require('../../../packages/core/lib/intent-store');
 
 // ─── 학습 패턴 로더 ─────────────────────────────────────────────────
 // claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
 
-const NLP_LEARNINGS_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+const NLP_LEARNINGS_PATH = getIntentLearningPath();
 
 let _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS_PATH);
 // 5분마다 리로드 (analyze_unknown이 새 패턴 추가 시 자동 반영)
