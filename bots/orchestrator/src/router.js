@@ -50,6 +50,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /status   또는 "시스템 상태", "전체 현황"
   /cost     또는 "비용 얼마야", "토큰 사용량"
   /speed    또는 "속도 체크", "모델 속도 테스트"
+  /logs     또는 "최근 오류 보여줘", "로그 확인"
   /queue    또는 "알람 큐 확인"
   /mutes    또는 "무음 목록"
   /brief    또는 "야간 브리핑"
@@ -336,6 +337,55 @@ function summarizeSpeedTestOutput(stdout = '') {
     out.push('결과를 요약하지 못했습니다. /tmp/speed-test.log 를 확인하세요.');
   }
   return out.join('\n');
+}
+
+function tailFileSafe(filePath, limit = 40) {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const raw = fs.readFileSync(filePath, 'utf8');
+    return raw.split('\n').filter(Boolean).slice(-limit);
+  } catch {
+    return [];
+  }
+}
+
+function summarizeLogLines(lines = []) {
+  if (!lines.length) return '정상';
+  const joined = lines.join('\n');
+  if (/API rate limit reached/i.test(joined)) return 'API rate limit';
+  if (/stale-socket/i.test(joined)) return 'stale-socket 재시작';
+  if (/ECONNREFUSED/i.test(joined)) return 'DB/네트워크 연결 실패';
+  if (/items is not iterable/i.test(joined)) return '반복 처리 오류';
+  return lines[lines.length - 1].slice(0, 120);
+}
+
+function buildSystemLogSummary(rawText = '') {
+  const target = /gateway|게이트웨이|telegram|텔레그램/i.test(rawText)
+    ? 'gateway'
+    : /mainbot|제이|orchestrator|오케스트레이터/i.test(rawText)
+      ? 'mainbot'
+      : 'all';
+
+  const targets = target === 'all'
+    ? [
+        { label: '제이 mainbot', out: path.join(os.homedir(), '.openclaw/logs/mainbot.log'), err: path.join(os.homedir(), '.openclaw/logs/mainbot-error.log') },
+        { label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') },
+      ]
+    : target === 'gateway'
+      ? [{ label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') }]
+      : [{ label: '제이 mainbot', out: path.join(os.homedir(), '.openclaw/logs/mainbot.log'), err: path.join(os.homedir(), '.openclaw/logs/mainbot-error.log') }];
+
+  const lines = ['🧾 최근 시스템 로그'];
+  for (const item of targets) {
+    const outLines = tailFileSafe(item.out, 40);
+    const errLines = tailFileSafe(item.err, 40);
+    const summary = errLines.length ? summarizeLogLines(errLines) : '정상';
+    lines.push(`${item.label}: ${summary}`);
+    if (!errLines.length && outLines.length) {
+      lines.push(`  최근 출력: ${outLines[outLines.length - 1].slice(0, 120)}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 async function runSpeedTestDirect() {
@@ -713,6 +763,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       await notify('⏳ LLM 속도 테스트 실행 중...');
       return await runSpeedTestDirect();
     }
+
+    case 'system_logs':
+      return buildSystemLogSummary(msg.text || '');
 
     case 'help':
       return HELP_TEXT;

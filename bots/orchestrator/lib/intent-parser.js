@@ -80,6 +80,7 @@ const SLASH_MAP = {
   '/help':        { intent: 'help',                args: {} },
   '/cost':        { intent: 'cost',                args: {} },
   '/speed':       { intent: 'speed_test',          args: {} },
+  '/logs':        { intent: 'system_logs',         args: {} },
   '/mute':        { intent: 'mute',                args: {} },
   '/unmute':      { intent: 'unmute',              args: {} },
   '/mutes':       { intent: 'mutes',               args: {} },
@@ -220,6 +221,7 @@ const KEYWORD_PATTERNS = [
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
   { re: /텔레그램.*(상태|연결|폴링|봇.*상태)|telegram.*(status|connected|polling)/i,       intent: 'telegram_status' },
   { re: /속도.*(체크|테스트|측정|확인)|speed.*(check|test)|제일.*빠른.*모델|빠른.*모델.*뭐/i, intent: 'speed_test' },
+  { re: /(최근|최신)?.*(오류|에러|로그).*(보여|확인|요약)|log.*(check|summary|error)|로그.*(확인|체크)|최근.*오류.*보여/i, intent: 'system_logs' },
 
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
