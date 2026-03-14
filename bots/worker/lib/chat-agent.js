@@ -11,6 +11,7 @@ const {
   injectDynamicExamples,
   normalizeIntentText,
   buildAutoLearnPattern,
+  evaluateAutoPromoteDecision,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-core'));
 const {
   ensureIntentTables,
@@ -21,6 +22,8 @@ const {
   upsertPromotionCandidate,
   logPromotionEvent,
   findPromotionCandidateIdByNormalized,
+  markUnrecognizedPromoted,
+  addLearnedPattern,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
 const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
 
@@ -586,6 +589,72 @@ async function recordWorkerIntentCandidate(text, llmIntent) {
     learnedPattern: pattern,
     actor: 'worker-chat',
     metadata: {
+      occurrenceCount: matching.length,
+      confidence: Number(llmIntent.confidence || 0.8),
+    },
+  });
+
+  const decision = evaluateAutoPromoteDecision({
+    intent: llmIntent.intent,
+    occurrenceCount: matching.length,
+    confidence: Number(llmIntent.confidence || 0.8),
+    pattern,
+  });
+
+  if (!decision.allowed || !candidate?.id) {
+    if (decision.reason !== 'threshold_count' && decision.reason !== 'threshold_confidence') {
+      await logPromotionEvent(pgPool, {
+        schema: SCHEMA,
+        candidateId: candidate?.id || null,
+        normalizedText: normalized,
+        sampleText: text,
+        suggestedIntent: llmIntent.intent,
+        eventType: 'auto_blocked',
+        learnedPattern: pattern,
+        actor: 'worker-chat',
+        metadata: {
+          reason: decision.reason,
+          threshold: decision.threshold,
+        },
+      });
+    }
+    return;
+  }
+
+  addLearnedPattern({
+    pattern,
+    intent: llmIntent.intent,
+    filePath: WORKER_INTENT_LEARNINGS_PATH,
+  });
+
+  await markUnrecognizedPromoted(pgPool, {
+    schema: SCHEMA,
+    intent: llmIntent.intent,
+    text,
+  });
+
+  await upsertPromotionCandidate(pgPool, {
+    schema: SCHEMA,
+    normalizedText: normalized,
+    sampleText: text,
+    suggestedIntent: llmIntent.intent,
+    occurrenceCount: matching.length,
+    confidence: Number(llmIntent.confidence || 0.8),
+    autoApplied: true,
+    learnedPattern: pattern,
+  });
+
+  await logPromotionEvent(pgPool, {
+    schema: SCHEMA,
+    candidateId: candidate.id,
+    normalizedText: normalized,
+    sampleText: text,
+    suggestedIntent: llmIntent.intent,
+    eventType: 'auto_apply',
+    learnedPattern: pattern,
+    actor: 'worker-chat',
+    metadata: {
+      threshold: decision.threshold,
       occurrenceCount: matching.length,
       confidence: Number(llmIntent.confidence || 0.8),
     },
