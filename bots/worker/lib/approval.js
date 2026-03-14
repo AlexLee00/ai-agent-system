@@ -89,24 +89,36 @@ async function _syncTargetStatus(req, nextStatus) {
 
 // ── 승인 처리 ─────────────────────────────────────────────────────────
 
-async function approve({ requestId, approverId }) {
+async function approve({ requestId, approverId, approverRole = 'member', approverCompanyId = null }) {
+  const params = [requestId, approverId];
+  let where = 'id=$1 AND status=\'pending\'';
+  if (approverRole !== 'master') {
+    params.push(approverCompanyId);
+    where += ` AND company_id=$${params.length}`;
+  }
   const req = await pgPool.get(SCHEMA,
     `UPDATE worker.approval_requests
      SET status='approved', approver_id=$2, approved_at=NOW(), updated_at=NOW()
-     WHERE id=$1 AND status='pending' RETURNING *`,
-    [requestId, approverId]);
+     WHERE ${where} RETURNING *`,
+    params);
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
   await _syncTargetStatus(req, 'approved');
   return req;
 }
 
-async function reject({ requestId, approverId, reason }) {
+async function reject({ requestId, approverId, reason, approverRole = 'member', approverCompanyId = null }) {
+  const params = [requestId, approverId, reason || '반려'];
+  let where = 'id=$1 AND status=\'pending\'';
+  if (approverRole !== 'master') {
+    params.push(approverCompanyId);
+    where += ` AND company_id=$${params.length}`;
+  }
   const req = await pgPool.get(SCHEMA,
     `UPDATE worker.approval_requests
      SET status='rejected', approver_id=$2, reject_reason=$3, rejected_at=NOW(), updated_at=NOW()
-     WHERE id=$1 AND status='pending' RETURNING *`,
-    [requestId, approverId, reason || '반려']);
+     WHERE ${where} RETURNING *`,
+    params);
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
   await _syncTargetStatus(req, 'rejected');
@@ -190,11 +202,22 @@ async function handleCallback(callbackData, callbackUser) {
 
   try {
     if (action === 'approve') {
-      await approve({ requestId, approverId: callbackUser.id });
+      await approve({
+        requestId,
+        approverId: callbackUser.id,
+        approverRole: callbackUser.role,
+        approverCompanyId: callbackUser.company_id,
+      });
       return `✅ 승인 완료 #${requestId}`;
     }
     if (action === 'reject') {
-      await reject({ requestId, approverId: callbackUser.id, reason: '반려' });
+      await reject({
+        requestId,
+        approverId: callbackUser.id,
+        reason: '반려',
+        approverRole: callbackUser.role,
+        approverCompanyId: callbackUser.company_id,
+      });
       return `❌ 반려 완료 #${requestId}`;
     }
   } catch (e) {

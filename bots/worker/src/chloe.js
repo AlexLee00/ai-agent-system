@@ -17,8 +17,18 @@
 
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 
 const SCHEMA = 'worker';
+
+function buildKstDayRange(offsetDays = 0) {
+  const dayStr = kst.daysAgoStr(offsetDays * -1);
+  const nextStr = kst.daysAgoStr((offsetDays + 1) * -1);
+  return {
+    start: `${dayStr}T00:00:00+09:00`,
+    end: `${nextStr}T00:00:00+09:00`,
+  };
+}
 
 const TYPE_LABEL = {
   meeting:  '📅 미팅',
@@ -38,9 +48,7 @@ function formatSchedule(r) {
  * 오늘 일정 조회
  */
 async function getTodaySchedules(companyId) {
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-  const end   = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
+  const { start, end } = buildKstDayRange(0);
   return pgPool.query(SCHEMA,
     `SELECT * FROM worker.schedules
      WHERE company_id=$1 AND deleted_at IS NULL
@@ -53,10 +61,7 @@ async function getTodaySchedules(companyId) {
  * 내일 일정 조회
  */
 async function getTomorrowSchedules(companyId) {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const start = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate()).toISOString();
-  const end   = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate() + 1).toISOString();
+  const { start, end } = buildKstDayRange(1);
   return pgPool.query(SCHEMA,
     `SELECT * FROM worker.schedules
      WHERE company_id=$1 AND deleted_at IS NULL
@@ -69,7 +74,7 @@ async function getTomorrowSchedules(companyId) {
  * 30분 이내 시작 일정 조회 (알림용)
  */
 async function getUpcomingReminders(companyId) {
-  const now  = new Date().toISOString();
+  const now = new Date().toISOString();
   const soon = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   return pgPool.query(SCHEMA,
     `SELECT * FROM worker.schedules
