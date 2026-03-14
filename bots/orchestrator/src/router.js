@@ -1129,6 +1129,36 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
     : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
 
+  if (mode === 'alerts') {
+    const alertRows = rows.filter((row) => row.hasWarn);
+    if (alertRows.length === 0) {
+      return [
+        '🧭 통합 운영 헬스 경고',
+        '',
+        '✅ 현재 경고 중인 팀이 없습니다.',
+        '',
+        '상세: /ops-health',
+      ].join('\n');
+    }
+
+    const lines = ['🧭 통합 운영 헬스 경고', ''];
+    for (const row of alertRows) {
+      lines.push(`⚠️ ${row.title}: ${row.summary}`);
+      lines.push(row.detail);
+      lines.push('');
+    }
+    lines.push(...buildHealthDecisionSection({
+      title: '■ 운영 판단',
+      recommended: true,
+      level: alertRows.length >= 2 ? 'high' : 'medium',
+      reasons,
+      okText: '현재는 추가 조치보다 관찰 유지',
+    }));
+    lines.push('');
+    lines.push('상세: /ops-health | 요약: /ops-health summary');
+    return lines.join('\n');
+  }
+
   if (mode === 'summary') {
     const lines = ['🧭 통합 운영 헬스 요약', ''];
     for (const row of rows) {
