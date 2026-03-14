@@ -103,6 +103,7 @@ const SLASH_MAP = {
   '/journal':     { intent: 'trade_journal',       args: {} },
   '/performance': { intent: 'performance',         args: {} },
   '/unrec':       { intent: 'unrecognized_report', args: {} },
+  '/promotions':  { intent: 'promotion_candidates', args: {} },
   '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
   '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
   '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
@@ -234,6 +235,7 @@ const KEYWORD_PATTERNS = [
 
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
+  { re: /자동.*(학습|반영).*(후보|목록|현황)|학습.*후보.*보여|promot(e|ion).*(candidate|list)|반영.*후보/i, intent: 'promotion_candidates' },
 
   // ── 봇/팀 명칭 (세부 명령 미매칭 시) ──
   { re: /루나|luna/i,     intent: 'luna' },
