@@ -80,6 +80,8 @@ const SLASH_MAP = {
   '/performance': { intent: 'performance',         args: {} },
   '/unrec':       { intent: 'unrecognized_report', args: {} },
   '/promotions':  { intent: 'promotion_candidates', args: {} },
+  '/luna-intents': { intent: 'team_intent_report', args: { team: 'luna' } },
+  '/ska-intents':  { intent: 'team_intent_report', args: { team: 'ska' } },
   '/dynamic_tpsl_on':     { intent: 'dynamic_tpsl_on',     args: {} },
   '/dynamic_tpsl_off':    { intent: 'dynamic_tpsl_off',    args: {} },
   '/dynamic_tpsl_status': { intent: 'dynamic_tpsl_status', args: {} },
@@ -112,6 +114,14 @@ function parseSlash(text) {
     const query = parts.slice(1).join(' ').trim();
     return { intent: 'promotion_candidates', args: { query }, source: 'slash' };
   }
+  if ((cmd === '/luna-intents' || cmd === '/ska-intents') && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return {
+      intent: 'team_intent_report',
+      args: { team: cmd === '/luna-intents' ? 'luna' : 'ska', query },
+      source: 'slash',
+    };
+  }
   if ((cmd === '/rollback' || cmd === '/forget') && parts.length >= 2) {
     const target = parts.slice(1).join(' ');
     return { intent: 'promotion_rollback', args: { target }, source: 'slash' };
@@ -138,6 +148,8 @@ const KEYWORD_PATTERNS = [
   { re: /(루나|luna).*(오류|에러|로그|상태로그)|투자팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'luna' } },
   { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
   { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
+  { re: /(루나|luna).*(인텐트|학습|미인식|자동반영|패턴).*(현황|상태|후보|보여|조회)|투자팀.*(인텐트|학습).*(현황|후보)/i, intent: 'team_intent_report', args: { team: 'luna' } },
+  { re: /(스카|ska).*(인텐트|학습|미인식|자동반영|패턴).*(현황|상태|후보|보여|조회)|예약팀.*(인텐트|학습).*(현황|후보)/i, intent: 'team_intent_report', args: { team: 'ska' } },
   { re: /(스카|ska).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|예약팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'ska' } },
   { re: /(클로드|claude|덱스터).*(상태|현황|어때|잘\s*돌아|괜찮|살아)|클로드팀.*(상태|현황|어때)/i, intent: 'team_status', args: { team: 'claude' } },
 

@@ -317,18 +317,20 @@ async function logUnrecognizedIntent(text, source, llmIntent) {
   } catch {}
 }
 
-async function buildUnrecognizedReport(query = '') {
+async function buildUnrecognizedReport(query = '', options = {}) {
   try {
     await _ensureUnrecTable();
+    const schema = options.schema || 'claude';
+    const title = options.title || '미인식 명령';
     const filters = parseUnrecognizedQuery(query);
-    const { rows, candidates } = await getUnrecognizedReportRows(pgPool);
-    if (rows.length === 0) return '✅ 최근 7일 미인식 명령 없음';
+    const { rows, candidates } = await getUnrecognizedReportRows(pgPool, { schema });
+    if (rows.length === 0) return `✅ 최근 7일 ${title} 없음`;
     const candidateMap = new Map(
       candidates.map(c => [String(c.normalized_text || ''), c])
     );
 
     const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
-    const lines = [`❓ 미인식 명령 (최근 7일, ${rows.length}종 ${total}회)`];
+    const lines = [`❓ ${title} (최근 7일, ${rows.length}종 ${total}회)`];
     if (filters.summaryOnly) {
       const summary = buildUnrecognizedSummary(
         rows,
@@ -376,19 +378,25 @@ async function buildUnrecognizedReport(query = '') {
 }
 
 async function buildPromotionCandidateReport(query = '') {
+  return buildPromotionCandidateReportForSchema(query, {});
+}
+
+async function buildPromotionCandidateReportForSchema(query = '', options = {}) {
   try {
     await _ensureUnrecTable();
+    const schema = options.schema || 'claude';
+    const title = options.title || '자동 반영 후보/이력';
     const filters = parsePromotionQuery(query);
-    const summary = await getPromotionSummary(pgPool, { filters });
+    const summary = await getPromotionSummary(pgPool, { schema, filters });
     const rows = (filters.eventsOnly || filters.summaryOnly || filters.thresholdsOnly)
       ? []
-      : await getPromotionRows(pgPool, { filters, limit: 20 });
+      : await getPromotionRows(pgPool, { schema, filters, limit: 20 });
     if (!filters.eventsOnly && !filters.summaryOnly && !filters.thresholdsOnly && rows.length === 0) {
       const suffix = query ? ` (${query})` : '';
-      return `📝 자동 반영 후보 없음${suffix}`;
+      return `📝 ${title} 없음${suffix}`;
     }
 
-    const lines = ['📝 자동 반영 후보/이력'];
+    const lines = [`📝 ${title}`];
     const filterBits = buildPromotionFilterBits(filters);
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
     if (filters.thresholdsOnly) {
@@ -398,7 +406,7 @@ async function buildPromotionCandidateReport(query = '') {
       lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
       lines.push('차단 예시: *_action, 재시작, 승인, 송금');
     } else if (filters.summaryOnly) {
-      const baseRows = await getPromotionFamilyRows(pgPool, { filters, limit: 200 });
+      const baseRows = await getPromotionFamilyRows(pgPool, { schema, filters, limit: 200 });
       const familyRows = buildPromotionFamilySummary(baseRows);
       lines.push(`요약: 전체 ${summary?.total_count ?? 0}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
       lines.push('');
@@ -416,7 +424,7 @@ async function buildPromotionCandidateReport(query = '') {
       }
     }
 
-    const events = filters.thresholdsOnly ? [] : await getPromotionEvents(pgPool, { filters, limit: 10 });
+    const events = filters.thresholdsOnly ? [] : await getPromotionEvents(pgPool, { schema, filters, limit: 10 });
     if (events.length > 0) {
       lines.push('');
       lines.push('최근 변경:');
@@ -431,6 +439,36 @@ async function buildPromotionCandidateReport(query = '') {
   } catch (e) {
     return `⚠️ 자동 반영 후보 조회 실패: ${e.message}`;
   }
+}
+
+async function buildTeamIntentReport(team = '', query = '') {
+  const normalized = String(team || '').trim().toLowerCase();
+  const teamMeta = {
+    luna: { schema: 'luna', title: '루나 인텐트 학습' },
+    ska: { schema: 'ska', title: '스카 인텐트 학습' },
+  }[normalized];
+  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska)';
+
+  const [promotions, unrecSummary] = await Promise.all([
+    buildPromotionCandidateReportForSchema(query, {
+      schema: teamMeta.schema,
+      title: `${teamMeta.title} 후보/이력`,
+    }),
+    buildUnrecognizedReport('summary', {
+      schema: teamMeta.schema,
+      title: `${teamMeta.title} 미인식`,
+    }),
+  ]);
+
+  return [
+    `🧠 ${teamMeta.title}`,
+    '',
+    promotions,
+    '',
+    unrecSummary,
+    '',
+    `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
+  ].join('\n');
 }
 
 async function rollbackPromotionTarget(target = '') {
@@ -1634,6 +1672,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'promotion_candidates':
       return await buildPromotionCandidateReport(args.query || msg.text || '');
+
+    case 'team_intent_report':
+      return await buildTeamIntentReport(args.team || '', args.query || '');
 
     case 'promotion_rollback':
       return await rollbackPromotionTarget(args.target || msg.text || '');
