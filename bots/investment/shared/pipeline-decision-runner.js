@@ -3,11 +3,9 @@ import { getInvestmentNode } from '../nodes/index.js';
 import { runNode } from './node-runner.js';
 import * as db from './db.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
-import { getMinConfidence, getPortfolioDecision, inspectPortfolioContext } from '../team/luna.js';
+import { getDebateLimit, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.js';
 import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
-
-const MAX_DEBATE_SYMBOLS = 2;
 
 function getDecisionNode(id) {
   const node = getInvestmentNode(id);
@@ -49,6 +47,7 @@ export async function runDecisionExecutionPipeline({
   const symbolDecisions = [];
   const symbolAnalysesMap = new Map();
   let debateCount = 0;
+  const debateLimit = getDebateLimit(exchange);
 
   for (const symbol of symbols) {
     try {
@@ -63,7 +62,7 @@ export async function runDecisionExecutionPipeline({
         meta: { bridge: 'luna_orchestrate', stage: 'fusion' },
       });
 
-      if (debateCount < MAX_DEBATE_SYMBOLS) {
+      if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
         try {
           await runNode(l11Node, {
             sessionId,

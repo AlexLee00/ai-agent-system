@@ -45,6 +45,46 @@ export function getMinConfidence(exchange) {
   return MIN_CONFIDENCE[exchange] ?? 0.60;
 }
 
+export function getDebateLimit(exchange) {
+  if (!isPaperMode()) return MAX_DEBATE_SYMBOLS;
+  if (exchange === 'kis' || exchange === 'kis_overseas') return 1;
+  return MAX_DEBATE_SYMBOLS;
+}
+
+export function shouldDebateForSymbol(analyses, exchange, analystWeights = ANALYST_WEIGHTS) {
+  const fused = fuseSignals(analyses, analystWeights);
+  if (fused.hasConflict) return true;
+  if (exchange === 'kis' || exchange === 'kis_overseas') {
+    if (isPaperMode()) return fused.averageConfidence < 0.62 || Math.abs(fused.fusedScore) < 0.45;
+    return fused.averageConfidence < 0.68 || Math.abs(fused.fusedScore) < 0.50;
+  }
+  return fused.averageConfidence < 0.70 || Math.abs(fused.fusedScore) < 0.40;
+}
+
+function buildFastPathDecision(fused, exchange) {
+  const isStock = exchange === 'kis' || exchange === 'kis_overseas';
+  if (!isPaperMode() || !isStock || fused.hasConflict) return null;
+  if (fused.averageConfidence < 0.5 || Math.abs(fused.fusedScore) < 0.35) return null;
+
+  if (fused.recommendation === 'LONG') {
+    return {
+      action: ACTIONS.BUY,
+      amount_usdt: fused.averageConfidence >= 0.7 ? 700 : 500,
+      confidence: Math.max(0.35, Math.min(0.75, fused.averageConfidence)),
+      reasoning: '분석가 합의 기반 fast-path 진입',
+    };
+  }
+  if (fused.recommendation === 'SHORT') {
+    return {
+      action: ACTIONS.SELL,
+      amount_usdt: 500,
+      confidence: Math.max(0.35, Math.min(0.7, fused.averageConfidence)),
+      reasoning: '분석가 합의 기반 fast-path 청산',
+    };
+  }
+  return null;
+}
+
 // ─── 시스템 프롬프트 ────────────────────────────────────────────────
 
 const LUNA_SYSTEM_CRYPTO = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다.
@@ -266,6 +306,27 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     regimeSection = `\n\n${formatMarketRegime(regime)}`;
   } catch { /* 시장 레짐 실패 시 무시 */ }
 
+  if (!fused.hasConflict && fused.averageConfidence < 0.4 && Math.abs(fused.fusedScore) < 0.12) {
+    return {
+      action: ACTIONS.HOLD,
+      amount_usdt: exchange === 'kis' || exchange === 'kis_overseas' ? 500 : 100,
+      confidence: Math.max(0.2, fused.averageConfidence),
+      reasoning: '약한 신호 구간 — 저비용 HOLD',
+    };
+  }
+
+  const fastPath = buildFastPathDecision(fused, exchange);
+  if (fastPath) {
+    const boostedConfidence = Math.max(0, Math.min(1, (fastPath.confidence || fused.averageConfidence) + reviewHint.delta));
+    return {
+      ...fastPath,
+      confidence: boostedConfidence,
+      reasoning: reviewHint.notes.length > 0
+        ? `${fastPath.reasoning} | 리뷰:${reviewHint.notes.join(', ')}`.slice(0, 180)
+        : fastPath.reasoning,
+    };
+  }
+
   const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
@@ -436,7 +497,8 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       console.log(`  📋 [루나] ${symbol}: ${analyses.length}개 분석 결과`);
 
       let debate = null;
-      if (debateCount < MAX_DEBATE_SYMBOLS) {
+      const debateLimit = getDebateLimit(exchange);
+      if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
         try {
           const summary = buildAnalysisSummary(analyses);
 
@@ -456,7 +518,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
           console.warn(`  ⚠️ [루나] ${symbol} 리서처 실패: ${e.message}`);
         }
       } else {
-        console.log(`  ⏭️ [루나] ${symbol}: debate 한도 도달 → 스킵`);
+        console.log(`  ⏭️ [루나] ${symbol}: debate 생략 (명확 신호 또는 한도 도달)`);
       }
 
       console.log(`\n  🤖 [루나] ${symbol} 신호 판단 중...`);
