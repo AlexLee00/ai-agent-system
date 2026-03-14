@@ -16,6 +16,7 @@ const { invalidate }                     = require('../lib/response-cache');
 const path     = require('path');
 const os       = require('os');
 const fs       = require('fs');
+const { spawn } = require('child_process');
 const pgPool        = require('../../../packages/core/lib/pg-pool');
 const shadowMode    = require('../../../packages/core/lib/shadow-mode');
 const llmGraduation = require('../../../packages/core/lib/llm-graduation');
@@ -48,6 +49,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
 📊 시스템 조회
   /status   또는 "시스템 상태", "전체 현황"
   /cost     또는 "비용 얼마야", "토큰 사용량"
+  /speed    또는 "속도 체크", "모델 속도 테스트"
   /queue    또는 "알람 큐 확인"
   /mutes    또는 "무음 목록"
   /brief    또는 "야간 브리핑"
@@ -306,6 +308,71 @@ async function handleChatFallback(text) {
   const resp = await geminiChatFallback(text);
   if (resp) return `💬 ${resp}`;
   return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
+}
+
+function stripAnsi(text = '') {
+  return text.replace(/\x1B\[[0-9;]*m/g, '');
+}
+
+function summarizeSpeedTestOutput(stdout = '') {
+  const plain   = stripAnsi(stdout);
+  const lines   = plain.split('\n').map(line => line.trimEnd());
+  const current = lines.find(line => line.includes('현재 primary:'))?.replace(/^.*현재 primary:\s*/, '').trim();
+  const fastest = lines.find(line => line.includes('최고 속도:'))?.replace(/^.*최고 속도:\s*/, '').trim();
+  const start   = lines.findIndex(line => line.includes('📊 결과 (TTFT 기준 정렬)'));
+  const topRows = start >= 0
+    ? lines.slice(start + 2).filter(line => line.trim()).filter(line => !/^─+$/.test(line.trim())).slice(0, 3)
+    : [];
+
+  const out = ['🚀 LLM 속도 테스트 결과'];
+  if (current) out.push(`현재 primary: ${current}`);
+  if (fastest) out.push(`최고 속도: ${fastest}`);
+  if (topRows.length > 0) {
+    out.push('');
+    out.push('상위 결과:');
+    out.push(...topRows.map(line => `  ${line}`));
+  }
+  if (!current && !fastest && topRows.length === 0) {
+    out.push('결과를 요약하지 못했습니다. /tmp/speed-test.log 를 확인하세요.');
+  }
+  return out.join('\n');
+}
+
+async function runSpeedTestDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const node = process.execPath;
+  const script = path.join(root, 'scripts', 'speed-test.js');
+
+  return await new Promise((resolve) => {
+    const child = spawn(node, [script, '--runs=1'], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve('⏱ 속도 테스트가 90초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
+    }, 90_000);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve(`⚠️ 속도 테스트 실행 실패: ${err.message}`);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-4).join('\n');
+        resolve(`⚠️ 속도 테스트 실패${msg ? `\n${msg}` : ''}`);
+        return;
+      }
+      resolve(summarizeSpeedTestOutput(stdout));
+    });
+  });
 }
 
 /**
@@ -641,6 +708,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'cost':
       return await buildCostReport();
+
+    case 'speed_test': {
+      await notify('⏳ LLM 속도 테스트 실행 중...');
+      return await runSpeedTestDirect();
+    }
 
     case 'help':
       return HELP_TEXT;
