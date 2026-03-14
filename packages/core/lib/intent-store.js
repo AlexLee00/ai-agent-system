@@ -6,6 +6,63 @@ const {
   buildUnrecognizedReportQueries,
 } = require('./intent-core');
 
+async function ensureIntentTables(pgPool, {
+  schema = 'claude',
+} = {}) {
+  if (!pgPool) return;
+  await pgPool.run(schema, `
+    CREATE TABLE IF NOT EXISTS unrecognized_intents (
+      id           SERIAL PRIMARY KEY,
+      text         TEXT NOT NULL,
+      parse_source TEXT,
+      llm_intent   TEXT,
+      promoted_to  TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pgPool.run(schema, `
+    CREATE INDEX IF NOT EXISTS idx_unrec_created ON unrecognized_intents(created_at DESC)
+  `);
+  await pgPool.run(schema, `
+    CREATE TABLE IF NOT EXISTS intent_promotion_candidates (
+      id               SERIAL PRIMARY KEY,
+      normalized_text  TEXT NOT NULL UNIQUE,
+      sample_text      TEXT NOT NULL,
+      suggested_intent TEXT NOT NULL,
+      occurrence_count INTEGER NOT NULL DEFAULT 0,
+      confidence       NUMERIC(5,4) NOT NULL DEFAULT 0,
+      auto_applied     BOOLEAN NOT NULL DEFAULT FALSE,
+      learned_pattern  TEXT,
+      first_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pgPool.run(schema, `
+    CREATE INDEX IF NOT EXISTS idx_promotion_candidates_last_seen
+    ON intent_promotion_candidates(last_seen_at DESC)
+  `);
+  await pgPool.run(schema, `
+    CREATE TABLE IF NOT EXISTS intent_promotion_events (
+      id               SERIAL PRIMARY KEY,
+      candidate_id     INTEGER,
+      normalized_text  TEXT,
+      sample_text      TEXT,
+      suggested_intent TEXT,
+      event_type       TEXT NOT NULL,
+      learned_pattern  TEXT,
+      actor            TEXT NOT NULL DEFAULT 'system',
+      metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pgPool.run(schema, `
+    CREATE INDEX IF NOT EXISTS idx_promotion_events_created
+    ON intent_promotion_events(created_at DESC)
+  `);
+}
+
 async function logPromotionEvent(pgPool, {
   schema = 'claude',
   candidateId = null,
@@ -254,6 +311,7 @@ async function markUnrecognizedPromoted(pgPool, {
 }
 
 module.exports = {
+  ensureIntentTables,
   logPromotionEvent,
   upsertPromotionCandidate,
   insertUnrecognizedIntent,
