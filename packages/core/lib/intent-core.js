@@ -23,6 +23,36 @@ const AUTO_PROMOTE_THRESHOLDS = {
   speed_test:     { minCount: 3, minConfidence: 0.7 },
 };
 
+const AUTO_PROMOTE_TEAM_PROFILES = {
+  default: {},
+  jay: {},
+  worker: {
+    list_schedule: { minCount: 4, minConfidence: 0.8 },
+  },
+  commander: {
+    default:      { minCount: 6, minConfidence: 0.85 },
+    luna_query:   { minCount: 5, minConfidence: 0.8 },
+    ska_query:    { minCount: 5, minConfidence: 0.8 },
+    claude_query: { minCount: 5, minConfidence: 0.8 },
+    status:       { minCount: 4, minConfidence: 0.75 },
+  },
+  luna: {
+    default:      { minCount: 6, minConfidence: 0.85 },
+    luna_query:   { minCount: 5, minConfidence: 0.8 },
+    status:       { minCount: 4, minConfidence: 0.75 },
+  },
+  ska: {
+    default:    { minCount: 6, minConfidence: 0.85 },
+    ska_query:  { minCount: 5, minConfidence: 0.8 },
+    status:     { minCount: 4, minConfidence: 0.75 },
+  },
+  claude: {
+    default:      { minCount: 6, minConfidence: 0.85 },
+    claude_query: { minCount: 5, minConfidence: 0.8 },
+    status:       { minCount: 4, minConfidence: 0.75 },
+  },
+};
+
 const SAFE_AUTO_PROMOTE_INTENTS = new Set([
   'status',
   'queue',
@@ -76,11 +106,21 @@ function isSafeAutoPromoteIntent(intent = '') {
   return SAFE_AUTO_PROMOTE_PREFIXES.some(prefix => value === prefix || value.startsWith(`${prefix}/`));
 }
 
-function getAutoPromoteThreshold(intent = '') {
+function getAutoPromoteThreshold(intent = '', options = {}) {
   const value = String(intent || '').trim();
+  const family = summarizeIntentFamily(value);
+  const team = String(options.team || options.profile || '').trim();
+
+  if (team && AUTO_PROMOTE_TEAM_PROFILES[team]) {
+    const profile = AUTO_PROMOTE_TEAM_PROFILES[team];
+    if (!value && profile.default) return profile.default;
+    if (value && profile[value]) return profile[value];
+    if (family && profile[family]) return profile[family];
+    if (profile.default) return profile.default;
+  }
+
   if (!value) return AUTO_PROMOTE_THRESHOLDS.default;
   if (AUTO_PROMOTE_THRESHOLDS[value]) return AUTO_PROMOTE_THRESHOLDS[value];
-  const family = summarizeIntentFamily(value);
   return AUTO_PROMOTE_THRESHOLDS[family] || AUTO_PROMOTE_THRESHOLDS.default;
 }
 
@@ -89,8 +129,10 @@ function evaluateAutoPromoteDecision({
   occurrenceCount = 0,
   confidence = 0,
   pattern = null,
+  team = '',
+  profile = '',
 } = {}) {
-  const threshold = getAutoPromoteThreshold(intent);
+  const threshold = getAutoPromoteThreshold(intent, { team, profile });
   if (occurrenceCount < threshold.minCount) {
     return { allowed: false, reason: 'threshold_count', threshold };
   }
@@ -367,6 +409,15 @@ function buildPromotionThresholdLines(thresholds = AUTO_PROMOTE_THRESHOLDS) {
   });
 }
 
+function buildTeamPromotionThresholdLines(team = '') {
+  const profile = AUTO_PROMOTE_TEAM_PROFILES[String(team || '').trim()] || {};
+  const rows = Object.entries(profile);
+  if (rows.length === 0) return [];
+  return rows.map(([key, value]) => {
+    return `  ${key}: ${value.minCount}회 / ${formatIntentConfidence(value.minConfidence)}`;
+  });
+}
+
 function buildPromotionPolicyNoteLines(windowDays = AUTO_PROMOTE_DEFAULTS.windowDays) {
   return [
     `기준: 최근 ${windowDays}일, intent family별 최소 반복/일치율 적용`,
@@ -472,6 +523,7 @@ function buildUnrecognizedReportQueries({ days = 7, candidateLimit = 20 } = {}) 
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
+  AUTO_PROMOTE_TEAM_PROFILES,
   SAFE_AUTO_PROMOTE_INTENTS,
   SAFE_AUTO_PROMOTE_PREFIXES,
   normalizeIntentText,
@@ -503,6 +555,7 @@ module.exports = {
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
+  buildTeamPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
   buildPromotionCandidateWhere,

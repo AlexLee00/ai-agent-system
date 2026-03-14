@@ -253,6 +253,7 @@ async function saveLearning(entry) {
       occurrenceCount: matching.length,
       confidence,
       pattern: learnedPattern,
+      team: 'ska',
     });
 
     const candidate = await findPromotionCandidateIdByNormalized(pgPool, {

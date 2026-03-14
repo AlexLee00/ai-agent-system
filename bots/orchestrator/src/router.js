@@ -62,6 +62,7 @@ const {
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
+  buildTeamPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
 } = require('../../../packages/core/lib/intent-core');
@@ -445,9 +446,9 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
 async function buildTeamIntentReport(team = '', query = '') {
   const normalized = String(team || '').trim().toLowerCase();
   const teamMeta = {
-    luna: { schema: 'luna', title: '루나 인텐트 학습' },
-    ska: { schema: 'ska', title: '스카 인텐트 학습' },
-    claude: { schema: 'claude', title: '클로드 인텐트 학습' },
+    luna: { schema: 'luna', title: '루나 인텐트 학습', thresholdTeam: 'luna' },
+    ska: { schema: 'ska', title: '스카 인텐트 학습', thresholdTeam: 'ska' },
+    claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude' },
   }[normalized];
   if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
 
@@ -468,6 +469,9 @@ async function buildTeamIntentReport(team = '', query = '') {
     promotions,
     '',
     unrecSummary,
+    '',
+    '자동 반영 기준:',
+    ...buildTeamPromotionThresholdLines(teamMeta.thresholdTeam),
     '',
     `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
     `롤백 예시: /${normalized}-rollback <id>`,

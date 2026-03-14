@@ -599,6 +599,7 @@ async function recordWorkerIntentCandidate(text, llmIntent) {
     occurrenceCount: matching.length,
     confidence: Number(llmIntent.confidence || 0.8),
     pattern,
+    team: 'worker',
   });
 
   if (!decision.allowed || !candidate?.id) {
