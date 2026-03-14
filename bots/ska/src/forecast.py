@@ -948,7 +948,7 @@ def save_forecast_results(con, results, forecast_mode='daily'):
 
 
 def get_recent_mape(con, days=7):
-    """최근 N일 평균 MAPE 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
+    """최근 N일 평균 MAPE 조회 (forecast_results + revenue_daily 기준)"""
     try:
         row = _one(con, """
             WITH latest AS (
@@ -971,14 +971,7 @@ def get_recent_mape(con, days=7):
             JOIN revenue_daily rd ON rd.date = latest.forecast_date
             WHERE rd.actual_revenue > 0
         """, (days,))
-        if row and row[0] is not None:
-            return round(float(row[0]), 1)
-        row = _one(con, """
-            SELECT AVG(mape) FROM forecast_accuracy
-            WHERE target_date >= current_date - %s
-              AND mape IS NOT NULL
-        """, (days,))
-        return round(float(row[0]), 1) if row and row[0] else None
+        return round(float(row[0]), 1) if row and row[0] is not None else None
     except Exception:
         return None
 
@@ -1323,7 +1316,7 @@ def format_monthly(results, base_date):
 # ─── 월간 모델 진단 (ska-011/013) ────────────────────────────────────────────
 
 def _get_accuracy_history(con, days=90):
-    """최근 N일 정확도 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
+    """최근 N일 정확도 조회 (forecast_results + revenue_daily 기준)"""
     try:
         rows = _qry(con, """
             WITH latest AS (
@@ -1351,14 +1344,6 @@ def _get_accuracy_history(con, days=90):
             WHERE rd.actual_revenue IS NOT NULL
             ORDER BY latest.forecast_date
         """, (days,))
-        if not rows:
-            rows = _qry(con, """
-                SELECT target_date, actual_revenue, predicted_revenue,
-                       error, mape, model_version
-                FROM forecast_accuracy
-                WHERE target_date >= current_date - %s
-                ORDER BY target_date
-            """, (days,))
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model': r[5]}
                 for r in rows]

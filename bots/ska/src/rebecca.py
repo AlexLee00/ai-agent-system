@@ -370,7 +370,7 @@ def get_week_summary(con, week_start, week_end):
 
 
 def get_weekly_accuracy(con, week_start, week_end):
-    """전주 예측 정확도 조회 (실제 매출 기준 계산, legacy forecast_accuracy 폴백)"""
+    """전주 예측 정확도 조회 (forecast_results + revenue_daily 기준)"""
     try:
         rows = _qry(con, """
             WITH latest AS (
@@ -398,13 +398,6 @@ def get_weekly_accuracy(con, week_start, week_end):
             WHERE rd.actual_revenue IS NOT NULL
             ORDER BY latest.forecast_date
         """, (str(week_start), str(week_end)))
-        if not rows:
-            rows = _qry(con, """
-                SELECT target_date, actual_revenue, predicted_revenue, error, mape, model_version
-                FROM forecast_accuracy
-                WHERE target_date >= %s AND target_date <= %s
-                ORDER BY target_date
-            """, (str(week_start), str(week_end)))
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model_version': r[5]}
                 for r in rows]
@@ -558,7 +551,6 @@ def format_weekly_review(report):
             lines.append(f'   주간 평균 MAPE: {avg_mape:.1f}% {grade}')
 
     elif report.get('forecast_mape'):
-        # forecast_results 폴백 (forecast_accuracy 없을 때)
         mape_parts = []
         for item in report['forecast_mape']:
             d  = date_type.fromisoformat(item['date'])
@@ -613,7 +605,7 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
 
         summary       = get_week_summary(con, week_start, week_end)
         accuracy      = get_weekly_accuracy(con, week_start, week_end)
-        forecast_mape = get_weekly_forecast_mape(con, week_start, week_end)  # ska-014 폴백
+        forecast_mape = get_weekly_forecast_mape(con, week_start, week_end)
         next_events   = get_next_week_events(con, next_start, next_end)
     finally:
         con.close()
@@ -627,7 +619,7 @@ def run_rebecca_weekly(target_date_str=None, output_json=False):
         'next_end':      str(next_end),
         'summary':       summary,
         'accuracy':      accuracy,
-        'forecast_mape': forecast_mape,  # ska-014: forecast_results 기반 MAPE 폴백
+        'forecast_mape': forecast_mape,
         'next_events':   next_events,
         'kpi':           kpi,
     }
