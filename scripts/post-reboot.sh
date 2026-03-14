@@ -66,6 +66,24 @@ append_report() {
   REPORT_LINES+=("$1")
 }
 
+has_recent_dexter_report() {
+  local log_path="$PROJECT_DIR/bots/claude/dexter.log"
+  if [ ! -f "$log_path" ]; then
+    return 1
+  fi
+
+  local now_ts mtime age tail_text
+  now_ts=$(date +%s)
+  mtime=$(stat -f %m "$log_path" 2>/dev/null || echo 0)
+  age=$((now_ts - mtime))
+  if [ "$age" -gt 5400 ]; then
+    return 1
+  fi
+
+  tail_text=$(tail -n 80 "$log_path" 2>/dev/null || true)
+  [[ "$tail_text" == *"📋 요약:"* || "$tail_text" == *"🎉 모든 체크 통과"* || "$tail_text" == *"이상 없음 — 텔레그램 발송 생략"* ]]
+}
+
 check_svc() {
   local svc="$1"
   local label="$2"
@@ -109,6 +127,10 @@ check_periodic() {
   elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
     log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
     append_report "⏳ ${label} 대기중"
+    ((OK++)) || true
+  elif [ "$svc" = "ai.claude.dexter" ] && [ "$exit_code" = "1" ] && has_recent_dexter_report; then
+    log "   ✅ ${label} (최근 점검 결과 존재, exit=1 허용)"
+    append_report "✅ ${label} (최근 점검 결과 있음)"
     ((OK++)) || true
   else
     log "   ❌ ${label} (exit=${exit_raw:-unknown})"
