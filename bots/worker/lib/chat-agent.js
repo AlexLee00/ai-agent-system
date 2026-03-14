@@ -5,11 +5,35 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
+const {
+  createLearnedPatternReloader,
+  createPromotedIntentExampleLoader,
+  injectDynamicExamples,
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-core'));
+const {
+  ensureIntentTables,
+  insertUnrecognizedIntent,
+  getPromotedIntentExamples,
+  getNamedIntentLearningPath,
+} = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
 const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
 
 const SCHEMA = 'worker';
+const WORKER_INTENT_LEARNINGS_PATH = getNamedIntentLearningPath('worker');
+const learnedPatternReloader = createLearnedPatternReloader({
+  filePath: WORKER_INTENT_LEARNINGS_PATH,
+  intervalMs: 5 * 60 * 1000,
+});
+const loadDynamicExamples = createPromotedIntentExampleLoader({
+  ttlMs: 5 * 60 * 1000,
+  fetchRows: async () => getPromotedIntentExamples(pgPool, { schema: SCHEMA, limit: 20 }),
+  maxTextLength: 60,
+  confidence: 0.9,
+});
 
 async function ensureChatSchema() {
+  await ensureIntentTables(pgPool, { schema: SCHEMA });
+
   await pgPool.run(SCHEMA, `
     CREATE TABLE IF NOT EXISTS worker.chat_sessions (
       id           TEXT PRIMARY KEY,
@@ -216,6 +240,16 @@ function parseRuleIntent(text, session) {
   const time = _extractTime(normalized);
   const date = _extractDate(normalized);
 
+  for (const pattern of learnedPatternReloader.getPatterns()) {
+    if (pattern.re.test(normalized)) {
+      return {
+        intent: pattern.intent,
+        ...(pattern.args || {}),
+        source: 'learned',
+      };
+    }
+  }
+
   if (/(오늘|내일|이번주|이번 주)?.*(일정|미팅|회의|약속).*(보여|알려|조회|확인)/.test(normalized) ||
       /(오늘|내일).*(뭐 있어|뭐있어)/.test(normalized)) {
     return { intent: 'list_schedule', scope: /내일/.test(normalized) ? 'tomorrow' : /이번\s*주/.test(normalized) ? 'week' : 'today' };
@@ -247,15 +281,20 @@ function parseRuleIntent(text, session) {
 }
 
 async function parseLlmIntent(text) {
-  const systemPrompt = [
+  const baseSystemPrompt = [
     '당신은 워커팀 자연어 업무 분류기다.',
     '반드시 JSON만 반환한다.',
     'intent는 create_schedule, list_schedule, update_last_schedule, cancel_last_schedule, route_request, unknown 중 하나다.',
     'target는 emily, noah, ryan, chloe, oliver, sophie, marcus 중 하나 또는 null.',
     'datetime은 ISO8601 +09:00 형식 또는 null.',
+    '',
+    '승인된 예시:',
+    '{DYNAMIC_EXAMPLES}',
   ].join('\n');
   const userPrompt = `메시지: ${text}\n\nJSON 형식:\n{"intent":"...","title":null,"type":"task|meeting|reminder|null","datetime":null,"scope":"today|tomorrow|week|null","target":null}`;
   try {
+    const dynamicExamples = await loadDynamicExamples();
+    const systemPrompt = injectDynamicExamples(baseSystemPrompt, dynamicExamples);
     const result = await callWithFallback({
       chain: [
         { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
@@ -522,8 +561,9 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
   });
 
   let intent = parseRuleIntent(text, session);
+  let llmIntent = null;
   if (intent.intent === 'unknown') {
-    const llmIntent = await parseLlmIntent(text);
+    llmIntent = await parseLlmIntent(text);
     if (llmIntent?.intent && llmIntent.intent !== 'unknown') {
       intent = llmIntent;
       if (intent.datetime) {
@@ -532,6 +572,15 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
         intent.time = { hour: Number(new Intl.DateTimeFormat('en-US', { timeZone: kst.TZ, hour: '2-digit', hour12: false }).format(dt)), minute: Number(new Intl.DateTimeFormat('en-US', { timeZone: kst.TZ, minute: '2-digit', hour12: false }).format(dt)) };
       }
     }
+  }
+
+  if (intent.intent === 'unknown') {
+    await insertUnrecognizedIntent(pgPool, {
+      schema: SCHEMA,
+      text,
+      parseSource: intent.source || 'worker_chat',
+      llmIntent: llmIntent?.intent || null,
+    });
   }
 
   let result;

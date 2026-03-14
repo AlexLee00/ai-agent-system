@@ -15,6 +15,14 @@ function getIntentLearningPath(explicitPath = '') {
   return path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
 }
 
+function getNamedIntentLearningPath(name = 'jay') {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (!normalized || normalized === 'jay' || normalized === 'default') {
+    return getIntentLearningPath();
+  }
+  return path.join(os.homedir(), '.openclaw', 'workspace', `${normalized}-nlp-learnings.json`);
+}
+
 function readIntentLearnings(filePath = '') {
   const targetPath = getIntentLearningPath(filePath);
   try {
@@ -399,6 +407,7 @@ async function markUnrecognizedPromoted(pgPool, {
 
 module.exports = {
   getIntentLearningPath,
+  getNamedIntentLearningPath,
   readIntentLearnings,
   writeIntentLearnings,
   removeLearnedPatterns,
