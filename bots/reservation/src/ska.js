@@ -16,7 +16,7 @@ const kst = require('../../../packages/core/lib/kst');
 const fs       = require('fs');
 const path     = require('path');
 const os       = require('os');
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const rag      = require('../../../packages/core/lib/rag-safe');
 const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
@@ -447,6 +447,45 @@ function handleRestartJimmy() {
   }
 }
 
+function runClaudeAnalyzePrompt(prompt, {
+  cwd = PROJECT_ROOT,
+  timeout = 120000,
+} = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+      cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let finished = false;
+
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      child.kill('SIGTERM');
+      reject(new Error(`timeout ${timeout}ms`));
+    }, timeout);
+
+    child.stdout.on('data', chunk => { stdout += String(chunk); });
+    child.stderr.on('data', chunk => { stderr += String(chunk); });
+    child.on('error', err => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', code => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
 async function handleAnalyzeUnknown(args) {
   const text = (args.text || '').trim();
   if (!text) return { ok: false, error: '분석할 텍스트 없음' };
@@ -498,17 +537,15 @@ async function handleAnalyzeUnknown(args) {
   "reason": "판단 근거 한 줄"
 }`;
 
-  const result = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+  const result = await runClaudeAnalyzePrompt(prompt, {
     cwd: PROJECT_ROOT,
     timeout: 120000,
-    env: { ...process.env },
-    encoding: 'utf8',
   });
+  if (result.code !== 0) {
+    return { ok: false, error: String(result.stderr || '').slice(0, 300) || `exit code ${result.code}` };
+  }
 
-  if (result.error) return { ok: false, error: result.error.message };
-  if (result.status !== 0) return { ok: false, error: (result.stderr || '').slice(0, 300) };
-
-  const output = (result.stdout || '').trim();
+  const output = String(result.stdout || '').trim();
   let parsed;
   try {
     const jsonMatch = output.match(/\{[\s\S]*\}/);
