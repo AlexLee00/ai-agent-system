@@ -1131,6 +1131,11 @@ async function getClaudeCommandHealth() {
   }
 }
 
+function getOpsHealthPriority(row) {
+  if (!row?.hasWarn) return 0;
+  return Number(row.priority || 1);
+}
+
 async function buildUnifiedOpsHealthReport(options = {}) {
   const mode = String(options.query || '').trim().toLowerCase();
   const root = path.join(__dirname, '..', '..', '..');
@@ -1170,6 +1175,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         ].join('\n')
         : '  health-report 실행 실패',
       hasWarn: !luna || luna.serviceHealth.warnCount > 0 || lunaRisk.hasWarn,
+      priority: !luna ? 5 : Math.max(
+        luna?.serviceHealth?.warnCount > 0 ? 3 : 0,
+        lunaRisk.hasWarn ? Math.min(4, 1 + lunaRisk.reasons.length) : 0,
+      ),
     },
     {
       title: '워커',
@@ -1183,6 +1192,11 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         ].join('\n')
         : '  health-report 실행 실패',
       hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0 || workerIntent.hasWarn,
+      priority: !worker ? 5 : Math.max(
+        worker?.serviceHealth?.warnCount > 0 ? 3 + worker.serviceHealth.warnCount : 0,
+        worker?.endpointHealth?.warnCount > 0 ? 2 + worker.endpointHealth.warnCount : 0,
+        workerIntent.hasWarn ? 2 + Math.ceil(workerIntent.pendingCount / 5) : 0,
+      ),
     },
     {
       title: '클로드',
@@ -1196,6 +1210,11 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         ].join('\n')
         : '  health-report 실행 실패',
       hasWarn: !claude || claude.serviceHealth.warnCount > 0 || claude.dashboardHealth.warnCount > 0 || claudeCommands.hasWarn,
+      priority: !claude ? 5 : Math.max(
+        claude?.serviceHealth?.warnCount > 0 ? 3 + claude.serviceHealth.warnCount : 0,
+        claude?.dashboardHealth?.warnCount > 0 ? 2 + claude.dashboardHealth.warnCount : 0,
+        claudeCommands.hasWarn ? 2 + Math.ceil(claudeCommands.pendingCount / 3) + (claudeCommands.oldestMinutes >= 30 ? 1 : 0) : 0,
+      ),
     },
     {
       title: '스카',
@@ -1214,6 +1233,11 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         ].join('\n')
         : '  health-report 실행 실패',
       hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0 || skaForecastHasWarn,
+      priority: !ska ? 5 : Math.max(
+        ska?.serviceHealth?.warnCount > 0 ? 3 + ska.serviceHealth.warnCount : 0,
+        ska?.monitorHealth?.warnCount > 0 ? 2 + ska.monitorHealth.warnCount : 0,
+        skaForecastHasWarn ? 3 : 0,
+      ),
     },
   ];
 
@@ -1235,7 +1259,9 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   }
 
   if (mode === 'briefing') {
-    const alertRows = rows.filter((row) => row.hasWarn);
+    const alertRows = rows
+      .filter((row) => row.hasWarn)
+      .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'));
     if (alertRows.length === 0) {
       return [
         '🧭 통합 운영 헬스 브리핑',
@@ -1272,7 +1298,9 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   }
 
   if (mode === 'alerts') {
-    const alertRows = rows.filter((row) => row.hasWarn);
+    const alertRows = rows
+      .filter((row) => row.hasWarn)
+      .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'));
     if (alertRows.length === 0) {
       return [
         '🧭 통합 운영 헬스 경고',
@@ -1303,7 +1331,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
 
   if (mode === 'summary') {
     const lines = ['🧭 통합 운영 헬스 요약', ''];
-    for (const row of rows) {
+    for (const row of [...rows].sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))) {
       lines.push(`${row.hasWarn ? '⚠️' : '✅'} ${row.title}: ${row.summary}`);
     }
     lines.push('');
@@ -1324,11 +1352,16 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     sections: [
       {
         title: '■ 팀별 요약',
-        lines: rows.map((row) => `  ${row.title}: ${row.summary}`),
+        lines: [...rows]
+          .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))
+          .map((row) => `  ${row.title}: ${row.summary}`),
       },
       {
         title: '■ 상세',
-        lines: rows.map((row) => `${row.title}\n${row.detail}`).flatMap((line) => line.split('\n')),
+        lines: [...rows]
+          .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))
+          .map((row) => `${row.title}\n${row.detail}`)
+          .flatMap((line) => line.split('\n')),
       },
       {
         title: null,
