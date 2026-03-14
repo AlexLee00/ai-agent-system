@@ -111,26 +111,96 @@ function _buildRewriteGuide(aiRisk) {
   ].join('\n');
 }
 
-// ─── 강의 포스팅 ──────────────────────────────────────────────────────
+function _logQualityResult(quality, charCount) {
+  console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
+  quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
+}
 
-async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+async function _runQualityRepair(kind, context, draft, variation, repairFn) {
+  let post = draft;
+  let quality = checkQuality(post.content, kind);
+  _logQualityResult(quality, post.charCount);
+
+  if (!quality.passed) {
+    console.log('[품질] 초안 보정 시도...');
+    const retry = await repairFn(context, post, quality, variation);
+    const retryQuality = checkQuality(retry.content, kind);
+    if (retryQuality.passed) {
+      post = retry;
+      quality = retryQuality;
+      console.log('[품질] ✅ 초안 보정 통과');
+    } else {
+      console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
+    }
+  }
+
+  return { post, quality, sectionVariation: variation, source: 'direct' };
+}
+
+async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft) {
+  const execution = await maestro.run(
+    postType,
+    variation => runLocalDraft(variation || sectionVariation),
+    payload
+  );
+
+  if (execution?.n8nTriggered) {
+    const writeNode = postType === 'lecture' ? 'write-lecture' : 'write-general';
+    const post = await ragStore.getNodeResult(execution.sessionId, writeNode);
+    const quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
+    if (post?.content && quality) {
+      console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
+      return { post, quality, source: 'n8n' };
+    }
+
+    console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
+    return await runLocalDraft(execution.variations || sectionVariation);
+  }
+
+  return execution;
+}
+
+async function _createInstaContentSafe(content, title, category, label) {
+  if (process.env.BLOG_INSTA_ENABLED === 'false') return null;
+  const instaContent = await createInstaContent(content, title, category).catch(e => {
+    console.warn(`[소셜] ${label} 생성 실패 (무시):`, e.message);
+    return null;
+  });
+  if (instaContent) {
+    console.log(`[소셜] ${label} 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
+  }
+  return instaContent;
+}
+
+async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail) {
+  const published = await publishToFile(postData);
+
+  if (scheduleId) {
+    await updateScheduleStatus(scheduleId, 'published', published.postId);
+  }
+
+  await _emitEvent(eventDetail.type === 'lecture' ? 'post_completed' : 'post_completed', {
+    ...eventDetail,
+    traceId: traceCtx.trace_id,
+  });
+
+  return published;
+}
+
+async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   if (await isSeriesComplete()) {
-    // 차기 planned 시리즈가 있으면 자동 전환
     const next = await transitionSeries();
     if (!next) {
       const msg = '⚠️ [블로그팀] 강의 시리즈 완료!\n다음 시리즈가 아직 준비되지 않았습니다.\n텔레그램으로 승인 번호를 보내주세요.';
       console.log('[블로]', msg);
       await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 텔레그램 생략'));
-      return { type: 'lecture', skipped: true, reason: '시리즈 완료 — 차기 준비 중' };
+      return { skipped: true, result: { type: 'lecture', skipped: true, reason: '시리즈 완료 — 차기 준비 중' } };
     }
-    // 전환 성공: 1강부터 다시 시작 (category_rotation은 별도 초기화 필요)
     console.log(`[블로] 🔄 시리즈 전환 완료 → ${next.series_name} 1강부터 시작`);
-    return { type: 'lecture', skipped: true, reason: `시리즈 전환: ${next.series_name}` };
+    return { skipped: true, result: { type: 'lecture', skipped: true, reason: `시리즈 전환: ${next.series_name}` } };
   }
 
-  // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
   const sectionVariation = preloaded.sectionVariation || {};
-
   const { number, seriesName } = preloaded.number
     ? preloaded
     : await getNextLectureNumber();
@@ -138,8 +208,6 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
     || (await getLectureTitle(number, seriesName)) || `제${number}강`;
 
   console.log(`\n[포스] ${number}강: ${lectureTitle}`);
-
-  // MessageEnvelope — 블로 → 포스 작성 요청 (로깅용)
   const writeReq = createMessage('task_request', 'blog-blo', 'blog-pos', {
     lectureNumber: number,
     lectureTitle,
@@ -147,160 +215,53 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   });
   console.log(`[블로] MessageEnvelope → 포스 (${writeReq.message_id.slice(0, 8)})`);
 
-  // 과거 유사 포스팅 중복 체크
+  const preparedResearch = { ...researchData };
   const pastPosts = await searchPastPosts(lectureTitle);
   if (pastPosts.length > 0) {
     console.log(`[블로] 유사 과거 포스팅 ${pastPosts.length}건 발견 — 차별화 데이터 포함`);
-    researchData.pastPosts = pastPosts;
+    preparedResearch.pastPosts = pastPosts;
   }
 
-  return await withTrace(traceCtx, async () => {
-    const runLocalDraft = async variation => {
-      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
-      let post = useChunked
-        ? await writeLecturePostChunked(number, lectureTitle, researchData, variation)
-        : await writeLecturePost(number, lectureTitle, researchData, variation);
-      let quality = checkQuality(post.content, 'lecture');
-      console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
-      quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
-
-      if (!quality.passed) {
-        console.log('[품질] 초안 보정 시도...');
-        const retry = await repairLecturePostDraft(
-          number,
-          lectureTitle,
-          researchData,
-          post,
-          quality,
-          variation
-        );
-        const retryQuality = checkQuality(retry.content, 'lecture');
-        if (retryQuality.passed) {
-          post    = retry;
-          quality = retryQuality;
-          console.log('[품질] ✅ 초안 보정 통과');
-        } else {
-          console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
-        }
-      }
-
-      return { post, quality, sectionVariation: variation, source: 'direct' };
-    };
-
-    const execution = await maestro.run(
-      'lecture',
-      variation => runLocalDraft(variation || sectionVariation),
-      {
-        lectureNumber: number,
-        lectureTitle,
-        topic: lectureTitle,
-      }
-    );
-
-    let post;
-    let quality;
-    if (execution?.n8nTriggered) {
-      post = await ragStore.getNodeResult(execution.sessionId, 'write-lecture');
-      quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
-      if (post?.content && quality) {
-        console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
-      } else {
-        console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
-        const fallback = await runLocalDraft(execution.variations || sectionVariation);
-        post = fallback.post;
-        quality = fallback.quality;
-      }
-    } else {
-      post = execution.post;
-      quality = execution.quality;
-    }
-
-    const postTitle = `[Node.js ${number}강] ${lectureTitle}`;
-    const published = await publishToFile({
-      title:         postTitle,
-      content:       post.content,
-      category:      'Node.js강의',
-      postType:      'lecture',
-      lectureNumber: number,
-      charCount:     post.charCount,
-      scheduleId,
-    });
-
-    // 스케줄 상태 업데이트
-    if (scheduleId) {
-      await updateScheduleStatus(scheduleId, 'published', published.postId);
-    }
-
-    await advanceLectureNumber();
-
-    // ★ 강의 인스타 콘텐츠 (BLOG_INSTA_ENABLED=true 시)
-    let instaContent = null;
-    if (process.env.BLOG_INSTA_ENABLED !== 'false') {
-      instaContent = await createInstaContent(post.content, postTitle, 'Node.js강의').catch(e => {
-        console.warn('[소셜] 강의 인스타 생성 실패 (무시):', e.message); return null;
-      });
-      if (instaContent) {
-        console.log(`[소셜] 강의 인스타 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
-      }
-    }
-
-    await _emitEvent('post_completed', {
-      type: 'lecture', number, title: lectureTitle, charCount: post.charCount,
-      traceId: traceCtx.trace_id,
-    });
-
-    return {
-      type:         'lecture',
+  return {
+    skipped: false,
+    context: {
       number,
-      title:        lectureTitle,
-      instaContent: instaContent || null,
-      charCount: post.charCount,
-      quality:   quality.passed,
-      aiRisk:    quality.aiRisk,
-      filename:  published.filename,
-      postId:    published.postId,
-    };
-  });
+      seriesName,
+      lectureTitle,
+      sectionVariation,
+      researchData: preparedResearch,
+    },
+  };
 }
 
-// ─── 일반 포스팅 ──────────────────────────────────────────────────────
-
-async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null) {
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
-  // 마에스트로 변형 — preloaded에서 우선 사용, 없으면 빈 객체
   const sectionVariation = preloaded.sectionVariation || {};
-  const needsBook    = category === '도서리뷰';
+  const needsBook = category === '도서리뷰';
 
   console.log(`\n[젬스] 일반 포스팅: ${category}`);
-
-  // MessageEnvelope — 블로 → 젬스 작성 요청
   const writeReq = createMessage('task_request', 'blog-blo', 'blog-gems', {
     category,
     traceId: traceCtx.trace_id,
   });
   console.log(`[블로] MessageEnvelope → 젬스 (${writeReq.message_id.slice(0, 8)})`);
 
-  // 도서리뷰: book-research.js로 실제 도서 정보 수집 (스케줄 도서 정보 우선)
-  let data = researchData;
+  let preparedResearch = { ...researchData };
   if (needsBook) {
-    data = { ...researchData };
     const scheduledBook = preloaded.bookInfo;
     if (scheduledBook?.book_title) {
-      // 스케줄에 이미 도서 정보 있으면 그대로 사용
-      data.book_info = scheduledBook;
+      preparedResearch.book_info = scheduledBook;
       console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title}`);
     } else {
-      // 없으면 book-research.js로 수집
       try {
         const book = await researchBook();
-        data.book_info = book;
-        // 스케줄에 도서 정보 저장 (다음 실행 시 재사용)
+        preparedResearch.book_info = book;
         if (scheduleId && book?.title) {
           const { updateBookInfo } = require('./schedule');
           await updateBookInfo(scheduleId, {
-            book_title:  book.title,
+            book_title: book.title,
             book_author: book.author,
-            book_isbn:   book.isbn,
+            book_isbn: book.isbn,
           });
         }
       } catch (e) {
@@ -309,114 +270,176 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     }
   }
 
+  return {
+    category,
+    sectionVariation,
+    researchData: preparedResearch,
+  };
+}
+
+async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx) {
+  const postTitle = `[Node.js ${context.number}강] ${context.lectureTitle}`;
+  const published = await _publishAndTrack({
+    title:         postTitle,
+    content:       post.content,
+    category:      'Node.js강의',
+    postType:      'lecture',
+    lectureNumber: context.number,
+    charCount:     post.charCount,
+    scheduleId,
+  }, scheduleId, traceCtx, {
+    type: 'lecture',
+    number: context.number,
+    title: context.lectureTitle,
+    charCount: post.charCount,
+  });
+
+  await advanceLectureNumber();
+
+  const instaContent = await _createInstaContentSafe(
+    post.content,
+    postTitle,
+    'Node.js강의',
+    '강의 인스타'
+  );
+
+  return {
+    type:         'lecture',
+    number:       context.number,
+    title:        context.lectureTitle,
+    instaContent: instaContent || null,
+    charCount:    post.charCount,
+    quality:      quality.passed,
+    aiRisk:       quality.aiRisk,
+    filename:     published.filename,
+    postId:       published.postId,
+  };
+}
+
+async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx) {
+  const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+  const images = await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
+    console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
+  });
+
+  const instaContent = await _createInstaContentSafe(
+    post.content,
+    genTitle,
+    context.category,
+    '인스타'
+  );
+
+  const published = await _publishAndTrack({
+    title:     genTitle,
+    content:   post.content,
+    category:  context.category,
+    postType:  'general',
+    charCount: post.charCount,
+    images,
+    scheduleId,
+  }, scheduleId, traceCtx, {
+    type: 'general',
+    category: context.category,
+    title: post.title,
+    charCount: post.charCount,
+  });
+
+  await advanceGeneralCategory();
+
+  return {
+    type:         'general',
+    category:     context.category,
+    title:        post.title || `[${context.category}]`,
+    charCount:    post.charCount,
+    quality:      quality.passed,
+    aiRisk:       quality.aiRisk,
+    filename:     published.filename,
+    postId:       published.postId,
+    instaContent: instaContent || null,
+  };
+}
+
+// ─── 강의 포스팅 ──────────────────────────────────────────────────────
+
+async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+  const prepared = await _prepareLectureContext(researchData, traceCtx, preloaded);
+  if (prepared.skipped) return prepared.result;
+  const context = prepared.context;
+
   return await withTrace(traceCtx, async () => {
     const runLocalDraft = async variation => {
       const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
-      let post = useChunked
-        ? await writeGeneralPostChunked(category, data, variation)
-        : await writeGeneralPost(category, data, variation);
-      let quality = checkQuality(post.content, 'general');
-      console.log(`[품질] ${quality.passed ? '✅' : '❌'} ${post.charCount}자, AI리스크: ${quality.aiRisk?.riskLevel || '-'}, 이슈 ${quality.issues.length}건`);
-      quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
-
-      if (!quality.passed) {
-        console.log('[품질] 초안 보정 시도...');
-        const retry = await repairGeneralPostDraft(
-          category,
-          data,
-          post,
+      const post = useChunked
+        ? await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation)
+        : await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
+      return _runQualityRepair(
+        'lecture',
+        context,
+        post,
+        variation,
+        async (ctx, currentPost, quality) => repairLecturePostDraft(
+          ctx.number,
+          ctx.lectureTitle,
+          ctx.researchData,
+          currentPost,
           quality,
           variation
-        );
-        const retryQuality = checkQuality(retry.content, 'general');
-        if (retryQuality.passed) {
-          post    = retry;
-          quality = retryQuality;
-          console.log('[품질] ✅ 초안 보정 통과');
-        } else {
-          console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
-        }
-      }
-
-      return { post, quality, sectionVariation: variation, source: 'direct' };
+        )
+      );
     };
 
-    const execution = await maestro.run(
-      'general',
-      variation => runLocalDraft(variation || sectionVariation),
+    const { post, quality } = await _resolvePipelineExecution(
+      'lecture',
+      context.sectionVariation,
       {
-        category,
-        topic: category,
-      }
+        lectureNumber: context.number,
+        lectureTitle: context.lectureTitle,
+        topic: context.lectureTitle,
+      },
+      runLocalDraft
     );
 
-    let post;
-    let quality;
-    if (execution?.n8nTriggered) {
-      post = await ragStore.getNodeResult(execution.sessionId, 'write-general');
-      quality = await ragStore.getNodeResult(execution.sessionId, 'quality-check');
-      if (post?.content && quality) {
-        console.log(`[블로] n8n 결과 회수 완료 — session=${execution.sessionId}`);
-      } else {
-        console.warn('[블로] n8n 결과 회수 실패 — 로컬 생성 폴백');
-        const fallback = await runLocalDraft(execution.variations || sectionVariation);
-        post = fallback.post;
-        quality = fallback.quality;
-      }
-    } else {
-      post = execution.post;
-      quality = execution.quality;
-    }
+    return _finalizeLecturePost(post, quality, context, scheduleId, traceCtx);
+  });
+}
 
-    const genTitle = post.title || `[${category}] 오늘의 포스팅`;
-    const images = await generatePostImages({ title: genTitle, postType: 'general', category }).catch(e => {
-      console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
-    });
+// ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
-    // ★ 소셜(SOCIAL) — 인스타 크로스 포스팅 (generalVariations.includeInsta 기반)
-    let instaContent = null;
-    if (process.env.BLOG_INSTA_ENABLED !== 'false') {
-      instaContent = await createInstaContent(post.content, genTitle, category).catch(e => {
-        console.warn('[소셜] 인스타 생성 실패 (무시):', e.message); return null;
-      });
-      if (instaContent) {
-        console.log(`[소셜] 인스타 완료: 카드 ${instaContent.cards?.length}장 + 해시태그 ${instaContent.hashtags?.length}개`);
-      }
-    }
+async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
+  const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
 
-    const published = await publishToFile({
-      title:    genTitle,
-      content:  post.content,
-      category,
-      postType: 'general',
-      charCount: post.charCount,
-      images,
-      scheduleId,
-    });
-
-    // 스케줄 상태 업데이트
-    if (scheduleId) {
-      await updateScheduleStatus(scheduleId, 'published', published.postId);
-    }
-
-    await advanceGeneralCategory();
-
-    await _emitEvent('post_completed', {
-      type: 'general', category, title: post.title, charCount: post.charCount,
-      traceId: traceCtx.trace_id,
-    });
-
-    return {
-      type:         'general',
-      category,
-      title:        post.title || `[${category}]`,
-      charCount:    post.charCount,
-      quality:      quality.passed,
-      aiRisk:       quality.aiRisk,
-      filename:     published.filename,
-      postId:       published.postId,
-      instaContent: instaContent || null,
+  return await withTrace(traceCtx, async () => {
+    const runLocalDraft = async variation => {
+      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+      const post = useChunked
+        ? await writeGeneralPostChunked(context.category, context.researchData, variation)
+        : await writeGeneralPost(context.category, context.researchData, variation);
+      return _runQualityRepair(
+        'general',
+        { category: context.category, data: context.researchData },
+        post,
+        variation,
+        async (ctx, currentPost, quality) => repairGeneralPostDraft(
+          ctx.category,
+          ctx.data,
+          currentPost,
+          quality,
+          variation
+        )
+      );
     };
+
+    const { post, quality } = await _resolvePipelineExecution(
+      'general',
+      context.sectionVariation,
+      {
+        category: context.category,
+        topic: context.category,
+      },
+      runLocalDraft
+    );
+
+    return _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx);
   });
 }
 
