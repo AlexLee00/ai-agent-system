@@ -16,13 +16,28 @@
 const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const pgPool       = require('../../packages/core/lib/pg-pool');
+const {
+  normalizeIntentText,
+  buildAutoLearnPattern,
+} = require('../../packages/core/lib/intent-core');
+const {
+  ensureIntentTables,
+  addLearnedPattern,
+  getNamedIntentLearningPath,
+  upsertPromotionCandidate,
+  logPromotionEvent,
+  findPromotionCandidateIdByNormalized,
+} = require('../../packages/core/lib/intent-store');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '루나';
 const BOT_ID         = 'luna';
 const IDENTITY_FILE  = path.join(__dirname, 'context/COMMANDER_IDENTITY.md');
+const PROJECT_ROOT   = path.join(os.homedir(), 'projects', 'ai-agent-system');
+const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
+const TG_MAX_CHARS = 3500;
 
 // ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
 let BOT_IDENTITY = {
@@ -81,6 +96,56 @@ async function publishAlert(message, level = 1) {
     console.log(`[루나] 마스터 알람 발행 (level ${level})`);
   } catch (e) {
     console.error(`[루나] 알람 발행 실패:`, e.message);
+  }
+}
+
+async function saveLearning(entry) {
+  try {
+    const patternResult = addLearnedPattern({
+      pattern: entry.re,
+      intent: entry.intent,
+      filePath: NLP_LEARNINGS_PATH,
+    });
+
+    const normalizedText = normalizeIntentText(entry.original_text || entry.re || '');
+    const learnedPattern = entry.re || buildAutoLearnPattern(normalizedText);
+
+    await upsertPromotionCandidate(pgPool, {
+      schema: 'luna',
+      normalizedText,
+      sampleText: entry.original_text || entry.re,
+      suggestedIntent: entry.intent,
+      occurrenceCount: 1,
+      confidence: 0.95,
+      autoApplied: true,
+      learnedPattern,
+    });
+
+    const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
+      schema: 'luna',
+      normalizedText,
+    });
+
+    await logPromotionEvent(pgPool, {
+      schema: 'luna',
+      candidateId: candidate?.id || null,
+      normalizedText,
+      sampleText: entry.original_text || entry.re,
+      suggestedIntent: entry.intent,
+      eventType: patternResult.changed ? 'auto_apply' : 'candidate_seen',
+      learnedPattern,
+      actor: 'luna-commander',
+      metadata: {
+        reason: entry.reason || '',
+        source: 'analyze_unknown',
+      },
+    });
+
+    if (patternResult.changed) {
+      console.log(`[루나] NLP 패턴 학습: /${entry.re}/ → ${entry.intent}`);
+    }
+  } catch (e) {
+    console.error(`[루나] NLP 학습 저장 실패:`, e.message);
   }
 }
 
@@ -439,6 +504,99 @@ function handleGetStatus() {
   }
 }
 
+async function handleAnalyzeUnknown(args) {
+  const text = (args.text || '').trim();
+  if (!text) return { ok: false, error: '분석할 텍스트 없음' };
+
+  const prompt = `너는 AI 봇 시스템 제이(Jay)의 NLP 개선 담당이다.
+제이가 처리하지 못한 사용자 메시지: "${text}"
+
+사용 가능한 인텐트 목록:
+- status              : 전체 시스템 현황 조회
+- ska_query  command=query_reservations : 오늘 예약 현황·목록
+- ska_query  command=query_today_stats  : 오늘 매출·입장 통계
+- ska_query  command=query_alerts       : 미해결 알람 목록
+- ska_action command=restart_andy       : 앤디(네이버 모니터) 재시작
+- ska_action command=restart_jimmy      : 지미(키오스크 모니터) 재시작
+- luna_action command=pause_trading     : 거래 일시정지
+- luna_action command=resume_trading    : 거래 재개
+- luna_query  command=force_report      : 투자 리포트 즉시 발송
+- luna_query  command=get_status        : 루나팀 상태·잔고 조회
+- claude_action command=run_check       : 덱스터 기본 점검
+- claude_action command=run_full        : 덱스터 전체 점검
+- claude_action command=run_fix         : 덱스터 자동 수정
+- claude_action command=daily_report    : 덱스터 일일 보고
+- claude_action command=run_archer      : 아처 기술 트렌드 분석
+- claude_ask  query=<질문내용>           : 클로드 AI에게 직접 질문
+- cost    : LLM 비용·토큰 사용량
+- brief   : 야간 보류 알람 브리핑
+- queue   : 알람 큐 최근 10건
+- mute    : 무음 설정 (target, duration)
+- unmute  : 무음 해제
+- mutes   : 무음 목록
+- help    : 도움말
+- unknown : 어디에도 해당 없음
+
+할 일:
+1. 사용자 메시지의 의도를 파악한다.
+2. 가장 적합한 인텐트를 선택한다. 없으면 null.
+3. 사용자에게 전달할 자연스러운 한국어 응답을 작성한다.
+4. 향후 유사한 메시지를 자동 처리할 수 있는 JavaScript 정규식 패턴을 제안한다.
+   - 패턴은 new RegExp(pattern, 'i') 형태로 검증 가능해야 한다.
+   - 너무 포괄적이면 오탐 발생하므로 구체적으로 작성한다.
+   - 명확한 패턴이 없으면 null.
+
+반드시 JSON 한 블록만 출력 (다른 텍스트 없이):
+{
+  "user_response": "사용자에게 보낼 메시지 (한국어)",
+  "intent": "인텐트명 또는 null",
+  "args": {},
+  "pattern": "정규식 문자열 또는 null",
+  "reason": "판단 근거 한 줄"
+}`;
+
+  const result = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+    cwd: PROJECT_ROOT,
+    timeout: 120000,
+    env: { ...process.env },
+    encoding: 'utf8',
+  });
+
+  if (result.error) return { ok: false, error: result.error.message };
+  if (result.status !== 0) return { ok: false, error: (result.stderr || '').slice(0, 300) };
+
+  const output = (result.stdout || '').trim();
+  let parsed;
+  try {
+    const jsonMatch = output.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+  }
+
+  if (parsed.pattern && parsed.intent && parsed.intent !== 'unknown') {
+    try {
+      new RegExp(parsed.pattern);
+      await saveLearning({
+        re: parsed.pattern,
+        intent: parsed.intent,
+        args: parsed.args || {},
+        original_text: text,
+        reason: parsed.reason || '',
+      });
+    } catch {
+      console.warn(`[루나] 잘못된 정규식 패턴 무시: ${parsed.pattern}`);
+    }
+  }
+
+  const userMsg = (parsed.user_response || output).slice(0, TG_MAX_CHARS);
+  const patternAdded = (parsed.pattern && parsed.intent && parsed.intent !== 'unknown')
+    ? `\n\n💡 패턴 학습: \`${parsed.pattern}\` → ${parsed.intent}` : '';
+
+  return { ok: true, message: userMsg + patternAdded };
+}
+
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -453,6 +611,7 @@ const HANDLERS = {
   get_crypto_price:          handleGetCryptoPrice,
   get_kis_domestic_balance:  handleGetKisDomesticBalance,
   get_kis_overseas_balance:  handleGetKisOverseasBalance,
+  analyze_unknown:           handleAnalyzeUnknown,
 };
 
 async function processCommands() {
@@ -502,6 +661,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
+  await ensureIntentTables(pgPool, { schema: 'luna' });
   console.log(`🌙 ${BOT_NAME} 팀장봇 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
