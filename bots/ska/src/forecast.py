@@ -54,11 +54,16 @@ MODEL_VERSION  = 'prophet-v3'
 TEMP_DEFAULT   = 15.0   # 기온 기본값 (°C) — 수집 누락 시
 MIN_TRAIN_DAYS = 14     # 최소 학습 데이터 일수
 WEEKDAY_KO     = ['월', '화', '수', '목', '금', '토', '일']
+BIZ_START_H    = 9
+BIZ_END_H      = 22
+NUM_ROOMS      = 3
+MAX_HOURS      = (BIZ_END_H - BIZ_START_H) * NUM_ROOMS
 CALIBRATION_LOOKBACK_DAYS = 56
 CALIBRATION_MAX_RATIO = 0.12
 RESERVATION_ADJUSTMENT_WEIGHT = 0.35
 CONDITION_ADJUSTMENT_WEIGHT = 0.45
 CONDITION_MIN_SAMPLES = 3
+BOOKED_HOURS_ADJUSTMENT_WEIGHT = 0.30
 
 # 자동 튜닝 파라미터 저장 경로 (review 모드에서 갱신)
 _MODEL_PARAMS_FILE = os.path.join(os.path.dirname(__file__), '..', 'db', 'model_params.json')
@@ -383,24 +388,47 @@ def _ensemble_val(prophet_val, sarima_val, quick_val, day_idx, weights=None):
 
 # ─── 예약 선행 지표 (ska-014) ─────────────────────────────────────────────────
 
-def get_reservation_count(con, target_date_str):
-    """특정 날짜의 확정 예약 건수 조회 (reservation 스키마)
-    reservation 스키마 연결이 필요하므로 별도 con 필요 시 내부 처리
-    """
+def _calc_booked_hours(rows):
+    total_minutes = 0
+    for start_time, end_time in rows:
+        try:
+            sh, sm = str(start_time).split(':')
+            eh, em = str(end_time).split(':')
+            start_minutes = int(sh) * 60 + int(sm)
+            end_minutes = int(eh) * 60 + int(em)
+            if end_minutes > start_minutes:
+                total_minutes += end_minutes - start_minutes
+        except Exception:
+            continue
+    return round(total_minutes / 60.0, 2)
+
+
+def get_reservation_signal(con, target_date_str):
+    """예측일 예약 건수 + 예약 시간 + 밀도 조회"""
     try:
         res_con = psycopg2.connect("dbname=jay options='-c search_path=reservation,public'")
         try:
-            row = _one(res_con, """
-                SELECT COUNT(*) AS cnt
+            rows = _qry(res_con, """
+                SELECT start_time, end_time
                 FROM reservations
                 WHERE date = %s
                   AND status IN ('confirmed', 'pending', 'completed')
             """, (target_date_str,))
-            return int(row[0]) if row and row[0] else 0
+            count = len(rows)
+            booked_hours = _calc_booked_hours(rows)
+            return {
+                'count': count,
+                'booked_hours': booked_hours,
+                'density': round(booked_hours / MAX_HOURS, 4) if MAX_HOURS > 0 else 0.0,
+            }
         finally:
             res_con.close()
     except Exception:
-        return 0  # 조회 실패 시 무시
+        return {
+            'count': 0,
+            'booked_hours': 0.0,
+            'density': 0.0,
+        }
 
 
 def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
@@ -412,6 +440,7 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
             target_revenue,
             predicted_revenue,
             COALESCE(total_reservations, 0) AS total_reservations,
+            COALESCE(occupancy_rate, 0.0) AS occupancy_rate,
             COALESCE(holiday_flag, false) AS holiday_flag,
             COALESCE(vacation_flag, false) AS vacation_flag,
             COALESCE(festival_flag, false) AS festival_flag,
@@ -430,6 +459,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     weekday_bias = {}
     reservation_baseline = {}
     revenue_per_reservation = 0.0
+    booked_hours_baseline = {}
+    revenue_per_booked_hour = 0.0
     condition_bias = {}
     sample_count = len(rows)
 
@@ -438,13 +469,17 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
             'weekday_bias': weekday_bias,
             'reservation_baseline': reservation_baseline,
             'revenue_per_reservation': revenue_per_reservation,
+            'booked_hours_baseline': booked_hours_baseline,
+            'revenue_per_booked_hour': revenue_per_booked_hour,
             'condition_bias': condition_bias,
             'sample_count': sample_count,
         }
 
     bias_buckets = {i: [] for i in range(1, 8)}
     reservation_buckets = {i: [] for i in range(1, 8)}
+    booked_hours_buckets = {i: [] for i in range(1, 8)}
     revenue_per_reservation_samples = []
+    revenue_per_booked_hour_samples = []
     condition_buckets = {
         'holiday': [],
         'vacation': [],
@@ -460,24 +495,29 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         actual = float(row[2] or 0.0)
         predicted = float(row[3] or 0.0)
         total_reservations = int(row[4] or 0)
-        error = float(row[11] or 0.0)
+        occupancy_rate = float(row[5] or 0.0)
+        error = float(row[12] or 0.0)
+        booked_hours = occupancy_rate * MAX_HOURS
 
         bias_buckets[dow].append(error)
         reservation_buckets[dow].append(total_reservations)
+        booked_hours_buckets[dow].append(booked_hours)
         global_bias_values.append(error)
         if total_reservations > 0:
             revenue_per_reservation_samples.append(actual / total_reservations)
-        if row[5]:
-            condition_buckets['holiday'].append(error)
+        if booked_hours > 0:
+            revenue_per_booked_hour_samples.append(actual / booked_hours)
         if row[6]:
-            condition_buckets['vacation'].append(error)
+            condition_buckets['holiday'].append(error)
         if row[7]:
-            condition_buckets['festival'].append(error)
+            condition_buckets['vacation'].append(error)
         if row[8]:
+            condition_buckets['festival'].append(error)
+        if row[9]:
             condition_buckets['bridge_holiday'].append(error)
-        if float(row[9] or 0.0) >= 0.4:
+        if float(row[10] or 0.0) >= 0.4:
             condition_buckets['rainy_day'].append(error)
-        if int(row[10] or 0) >= 5:
+        if int(row[11] or 0) >= 5:
             condition_buckets['exam_high'].append(error)
 
     global_bias = round(sum(global_bias_values) / len(global_bias_values)) if global_bias_values else 0
@@ -488,8 +528,13 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
     for dow, values in reservation_buckets.items():
         if values:
             reservation_baseline[dow] = round(sum(values) / len(values), 2)
+    for dow, values in booked_hours_buckets.items():
+        if values:
+            booked_hours_baseline[dow] = round(sum(values) / len(values), 2)
     if revenue_per_reservation_samples:
         revenue_per_reservation = sum(revenue_per_reservation_samples) / len(revenue_per_reservation_samples)
+    if revenue_per_booked_hour_samples:
+        revenue_per_booked_hour = sum(revenue_per_booked_hour_samples) / len(revenue_per_booked_hour_samples)
     for key, values in condition_buckets.items():
         if len(values) >= CONDITION_MIN_SAMPLES:
             condition_bias[key] = round(sum(values) / len(values))
@@ -498,6 +543,8 @@ def _load_recent_calibration_stats(con, days=CALIBRATION_LOOKBACK_DAYS):
         'weekday_bias': weekday_bias,
         'reservation_baseline': reservation_baseline,
         'revenue_per_reservation': revenue_per_reservation,
+        'booked_hours_baseline': booked_hours_baseline,
+        'revenue_per_booked_hour': revenue_per_booked_hour,
         'condition_bias': condition_bias,
         'sample_count': sample_count,
         'global_bias': global_bias,
@@ -515,7 +562,10 @@ def _apply_result_calibration(result, calibration, target_date):
     weekday_bias = int(calibration.get('weekday_bias', {}).get(dow, 0) or 0)
     reservation_baseline = float(calibration.get('reservation_baseline', {}).get(dow, 0.0) or 0.0)
     revenue_per_reservation = float(calibration.get('revenue_per_reservation', 0.0) or 0.0)
+    booked_hours_baseline = float(calibration.get('booked_hours_baseline', {}).get(dow, 0.0) or 0.0)
+    revenue_per_booked_hour = float(calibration.get('revenue_per_booked_hour', 0.0) or 0.0)
     reservation_count = int(result.get('reservation_count', 0) or 0)
+    reservation_booked_hours = float(result.get('reservation_booked_hours', 0.0) or 0.0)
     env_info = result.get('env_info') or {}
 
     reservation_adjustment = 0
@@ -523,6 +573,13 @@ def _apply_result_calibration(result, calibration, target_date):
         reservation_delta = reservation_count - reservation_baseline
         reservation_adjustment = round(
             reservation_delta * revenue_per_reservation * RESERVATION_ADJUSTMENT_WEIGHT
+        )
+
+    booked_hours_adjustment = 0
+    if booked_hours_baseline > 0 and revenue_per_booked_hour > 0 and reservation_booked_hours > 0:
+        booked_hours_delta = reservation_booked_hours - booked_hours_baseline
+        booked_hours_adjustment = round(
+            booked_hours_delta * revenue_per_booked_hour * BOOKED_HOURS_ADJUSTMENT_WEIGHT
         )
 
     condition_adjustment = 0
@@ -541,7 +598,7 @@ def _apply_result_calibration(result, calibration, target_date):
         condition_adjustment += round(condition_bias['exam_high'] * CONDITION_ADJUSTMENT_WEIGHT)
         condition_notes.append(f"exam:{condition_bias['exam_high']:+,}")
 
-    raw_adjustment = weekday_bias + reservation_adjustment + condition_adjustment
+    raw_adjustment = weekday_bias + reservation_adjustment + booked_hours_adjustment + condition_adjustment
     max_adjustment = round(max(0, result['yhat']) * CALIBRATION_MAX_RATIO)
     bounded_adjustment = max(-max_adjustment, min(max_adjustment, raw_adjustment))
 
@@ -555,6 +612,8 @@ def _apply_result_calibration(result, calibration, target_date):
         notes.append(f'weekday_bias:{weekday_bias:+,}')
     if reservation_adjustment:
         notes.append(f'reservation:{reservation_adjustment:+,}')
+    if booked_hours_adjustment:
+        notes.append(f'booked_hours:{booked_hours_adjustment:+,}')
     notes.extend(condition_notes)
     if raw_adjustment != bounded_adjustment:
         notes.append(f'capped:{bounded_adjustment:+,}')
@@ -595,6 +654,7 @@ def save_forecast_result(con, forecast_date, result, mape=None):
         'yhat_lower':   result['yhat_lower'],
         'yhat_upper':   result['yhat_upper'],
         'reservation_count': result.get('reservation_count', 0),
+        'reservation_booked_hours': result.get('reservation_booked_hours', 0.0),
     }
     params = _load_model_params()
     preds_json  = json.dumps(predictions)
@@ -646,6 +706,7 @@ def run_forecast(con, base_date, periods):
             q = quick_forecast_sma(hist_df, target_d)
             duck_dow = (target_d.weekday() + 1) % 7
             base = weekday_avg.get(duck_dow, q['prediction'])
+            reservation_signal = get_reservation_signal(con, str(target_d))
             results.append({
                 'date':             target_d,
                 'yhat':             q['prediction'],
@@ -657,7 +718,9 @@ def run_forecast(con, base_date, periods):
                 'yhat_lower':       round(q['prediction'] * 0.8),
                 'yhat_upper':       round(q['prediction'] * 1.2),
                 'is_fallback':      True,
-                'reservation_count': get_reservation_count(con, str(target_d)),
+                'reservation_count': reservation_signal['count'],
+                'reservation_booked_hours': reservation_signal['booked_hours'],
+                'reservation_density': reservation_signal['density'],
                 'calibration_adjustment': 0,
                 'calibration_notes': [],
             })
@@ -759,7 +822,7 @@ def run_forecast(con, base_date, periods):
         yhat_final = _ensemble_val(yhat_prophet_final, yhat_sarima, yhat_quick, i, dynamic_weights)
 
         # ── 예약 선행 지표 ──
-        res_cnt = get_reservation_count(con, d_str)
+        reservation_signal = get_reservation_signal(con, d_str)
 
         results.append({
             'date':              target_d,
@@ -773,7 +836,9 @@ def run_forecast(con, base_date, periods):
             'yhat_lower':        yhat_lower,
             'yhat_upper':        yhat_upper,
             'is_fallback':       is_fallback,
-            'reservation_count': res_cnt,
+            'reservation_count': reservation_signal['count'],
+            'reservation_booked_hours': reservation_signal['booked_hours'],
+            'reservation_density': reservation_signal['density'],
             'calibration_adjustment': 0,
             'calibration_notes': [],
         })
@@ -866,6 +931,7 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
     env = r.get('env_info', {})
     env_score = r.get('env_score', 0)
     res_cnt   = r.get('reservation_count', 0)
+    res_hours = r.get('reservation_booked_hours', 0.0)
 
     lines.append('■ 보정 요인')
     lines.append(f'  요일({wd}): 주간 패턴 반영 📅')
@@ -878,7 +944,7 @@ def format_daily(result, base_date, recent_mape=None, weather_impact=None):
         lines.append(f'  날씨(맑음 {temp:.0f}°C): 보정 없음 ☀️')
 
     if res_cnt > 0:
-        lines.append(f'  예약 현황: {res_cnt}건 확정 📋')
+        lines.append(f'  예약 현황: {res_cnt}건 / {res_hours:.1f}시간 📋')
     else:
         lines.append('  예약 현황: 조회 없음')
 
