@@ -218,8 +218,55 @@ async function _ensureUnrecTable() {
       CREATE INDEX IF NOT EXISTS idx_promotion_candidates_last_seen
       ON intent_promotion_candidates(last_seen_at DESC)
     `);
+    await pgPool.run('claude', `
+      CREATE TABLE IF NOT EXISTS intent_promotion_events (
+        id               SERIAL PRIMARY KEY,
+        candidate_id     INTEGER,
+        normalized_text  TEXT,
+        sample_text      TEXT,
+        suggested_intent TEXT,
+        event_type       TEXT NOT NULL,
+        learned_pattern  TEXT,
+        actor            TEXT NOT NULL DEFAULT 'system',
+        metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgPool.run('claude', `
+      CREATE INDEX IF NOT EXISTS idx_promotion_events_created
+      ON intent_promotion_events(created_at DESC)
+    `);
     _unrecTableReady = true;
   } catch {}
+}
+
+async function logPromotionEvent({
+  candidateId = null,
+  normalizedText = null,
+  sampleText = null,
+  suggestedIntent = null,
+  eventType,
+  learnedPattern = null,
+  actor = 'system',
+  metadata = {},
+}) {
+  if (!eventType) return;
+  await pgPool.run('claude', `
+    INSERT INTO intent_promotion_events (
+      candidate_id, normalized_text, sample_text, suggested_intent,
+      event_type, learned_pattern, actor, metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+  `, [
+    candidateId,
+    normalizedText,
+    sampleText,
+    suggestedIntent,
+    eventType,
+    learnedPattern,
+    actor,
+    JSON.stringify(metadata || {}),
+  ]);
 }
 
 async function upsertPromotionCandidate({ normalizedText, sampleText, suggestedIntent, occurrenceCount, confidence, autoApplied, learnedPattern }) {
@@ -284,6 +331,9 @@ async function evaluateAutoPromotion(text) {
 
   const recordIds = matching.map(r => r.id);
   await promoteToIntent(normalized, suggestedIntent, pattern, recordIds);
+  const candidate = await pgPool.get('claude', `
+    SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
+  `, [normalized]);
   await upsertPromotionCandidate({
     normalizedText: normalized,
     sampleText,
@@ -292,6 +342,16 @@ async function evaluateAutoPromotion(text) {
     confidence,
     autoApplied: true,
     learnedPattern: pattern,
+  });
+  await logPromotionEvent({
+    candidateId: candidate?.id || null,
+    normalizedText: normalized,
+    sampleText,
+    suggestedIntent,
+    eventType: 'auto_apply',
+    learnedPattern: pattern,
+    actor: 'system',
+    metadata: { occurrenceCount: matching.length, confidence },
   });
   return { normalized, suggestedIntent, occurrenceCount: matching.length, confidence, autoApplied: true };
 }
@@ -369,6 +429,20 @@ async function buildPromotionCandidateReport() {
       lines.push(`  ${badge} [id=${r.id} | ${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
       lines.push(`     최근: ${seen} KST`);
     }
+    const events = await pgPool.query('claude', `
+      SELECT event_type, sample_text, suggested_intent, actor, created_at
+      FROM intent_promotion_events
+      ORDER BY created_at DESC
+      LIMIT 5
+    `);
+    if (events.length > 0) {
+      lines.push('');
+      lines.push('최근 변경:');
+      for (const e of events) {
+        const when = String(e.created_at).slice(0, 16);
+        lines.push(`  ${when} KST | ${e.event_type} | "${String(e.sample_text || '').slice(0, 28)}" → ${e.suggested_intent || '-'} (${e.actor})`);
+      }
+    }
     lines.push('');
     lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
     lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
@@ -431,6 +505,16 @@ async function rollbackPromotionTarget(target = '') {
         updated_at = NOW()
     WHERE id = $1
   `, [row.id]);
+  await logPromotionEvent({
+    candidateId: row.id,
+    normalizedText: row.normalized_text,
+    sampleText: row.sample_text,
+    suggestedIntent: row.suggested_intent,
+    eventType: 'rollback',
+    learnedPattern: row.learned_pattern,
+    actor: 'master',
+    metadata: { rollbackTarget: raw },
+  });
 
   return [
     `↩️ 자동 반영 롤백 완료`,
@@ -468,6 +552,15 @@ async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
       learnings.push({ re, intent: toIntent, args: {} });
       fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
     }
+    await logPromotionEvent({
+      normalizedText: normalizeIntentText(text),
+      sampleText: text,
+      suggestedIntent: toIntent,
+      eventType: recordIds.length > 0 ? 'promote_batch' : 'promote_manual',
+      learnedPattern: re,
+      actor: recordIds.length > 0 ? 'system' : 'master',
+      metadata: { recordCount: recordIds.length || 1 },
+    });
   } catch {}
 }
 
