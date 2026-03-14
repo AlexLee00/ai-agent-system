@@ -21,6 +21,11 @@ const pgPool        = require('../../../packages/core/lib/pg-pool');
 const shadowMode    = require('../../../packages/core/lib/shadow-mode');
 const llmGraduation = require('../../../packages/core/lib/llm-graduation');
 const {
+  logPromotionEvent,
+  upsertPromotionCandidate,
+  insertUnrecognizedIntent,
+} = require('../../../packages/core/lib/intent-store');
+const {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
   normalizeIntentText,
@@ -245,55 +250,6 @@ async function _ensureUnrecTable() {
   } catch {}
 }
 
-async function logPromotionEvent({
-  candidateId = null,
-  normalizedText = null,
-  sampleText = null,
-  suggestedIntent = null,
-  eventType,
-  learnedPattern = null,
-  actor = 'system',
-  metadata = {},
-}) {
-  if (!eventType) return;
-  await pgPool.run('claude', `
-    INSERT INTO intent_promotion_events (
-      candidate_id, normalized_text, sample_text, suggested_intent,
-      event_type, learned_pattern, actor, metadata
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-  `, [
-    candidateId,
-    normalizedText,
-    sampleText,
-    suggestedIntent,
-    eventType,
-    learnedPattern,
-    actor,
-    JSON.stringify(metadata || {}),
-  ]);
-}
-
-async function upsertPromotionCandidate({ normalizedText, sampleText, suggestedIntent, occurrenceCount, confidence, autoApplied, learnedPattern }) {
-  if (!normalizedText || !suggestedIntent) return;
-  await pgPool.run('claude', `
-    INSERT INTO intent_promotion_candidates (
-      normalized_text, sample_text, suggested_intent, occurrence_count,
-      confidence, auto_applied, learned_pattern, first_seen_at, last_seen_at, updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), NOW())
-    ON CONFLICT (normalized_text) DO UPDATE
-    SET sample_text      = EXCLUDED.sample_text,
-        suggested_intent = EXCLUDED.suggested_intent,
-        occurrence_count = EXCLUDED.occurrence_count,
-        confidence       = EXCLUDED.confidence,
-        auto_applied     = intent_promotion_candidates.auto_applied OR EXCLUDED.auto_applied,
-        learned_pattern  = COALESCE(intent_promotion_candidates.learned_pattern, EXCLUDED.learned_pattern),
-        last_seen_at     = NOW(),
-        updated_at       = NOW()
-  `, [normalizedText, sampleText, suggestedIntent, occurrenceCount, confidence, !!autoApplied, learnedPattern || null]);
-}
-
 async function evaluateAutoPromotion(text) {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
@@ -329,7 +285,7 @@ async function evaluateAutoPromotion(text) {
   });
   const { threshold } = decision;
 
-  await upsertPromotionCandidate({
+  await upsertPromotionCandidate(pgPool, {
     normalizedText: normalized,
     sampleText,
     suggestedIntent,
@@ -344,7 +300,7 @@ async function evaluateAutoPromotion(text) {
     const candidate = await pgPool.get('claude', `
       SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
     `, [normalized]);
-    await logPromotionEvent({
+    await logPromotionEvent(pgPool, {
       candidateId: candidate?.id || null,
       normalizedText: normalized,
       sampleText,
@@ -367,7 +323,7 @@ async function evaluateAutoPromotion(text) {
   const candidate = await pgPool.get('claude', `
     SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
   `, [normalized]);
-  await upsertPromotionCandidate({
+  await upsertPromotionCandidate(pgPool, {
     normalizedText: normalized,
     sampleText,
     suggestedIntent,
@@ -376,7 +332,7 @@ async function evaluateAutoPromotion(text) {
     autoApplied: true,
     learnedPattern: pattern,
   });
-  await logPromotionEvent({
+  await logPromotionEvent(pgPool, {
     candidateId: candidate?.id || null,
     normalizedText: normalized,
     sampleText,
@@ -392,10 +348,11 @@ async function evaluateAutoPromotion(text) {
 async function logUnrecognizedIntent(text, source, llmIntent) {
   try {
     await _ensureUnrecTable();
-    await pgPool.run('claude', `
-      INSERT INTO unrecognized_intents (text, parse_source, llm_intent)
-      VALUES ($1, $2, $3)
-    `, [text.slice(0, 500), source || 'unknown', llmIntent || null]);
+    await insertUnrecognizedIntent(pgPool, {
+      text,
+      parseSource: source,
+      llmIntent,
+    });
     await evaluateAutoPromotion(text);
   } catch {}
 }
@@ -653,7 +610,7 @@ async function rollbackPromotionTarget(target = '') {
         updated_at = NOW()
     WHERE id = $1
   `, [row.id]);
-  await logPromotionEvent({
+  await logPromotionEvent(pgPool, {
     candidateId: row.id,
     normalizedText: row.normalized_text,
     sampleText: row.sample_text,
@@ -700,7 +657,7 @@ async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
       learnings.push({ re, intent: toIntent, args: {} });
       fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
     }
-    await logPromotionEvent({
+    await logPromotionEvent(pgPool, {
       normalizedText: normalizeIntentText(text),
       sampleText: text,
       suggestedIntent: toIntent,
