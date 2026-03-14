@@ -32,6 +32,7 @@ const SAFE_AUTO_PROMOTE_INTENTS = new Set([
   'speed_test',
   'promotion_candidates',
   'unrecognized_report',
+  'list_schedule',
 ]);
 
 const SAFE_AUTO_PROMOTE_PREFIXES = [
