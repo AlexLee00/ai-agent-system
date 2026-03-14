@@ -359,6 +359,79 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   };
 }
 
+async function _prepareDailyRun(traceCtx) {
+  await ensureSchema();
+
+  const config = await getConfig();
+  if (!config.active) {
+    return { inactive: true, results: [] };
+  }
+
+  console.log(`[블로] 오늘 발행: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
+
+  await _emitEvent('daily_start', {
+    lecture_count: config.lecture_count,
+    general_count: config.general_count,
+    traceId: traceCtx.trace_id,
+  });
+
+  const researchData = await richer.research('general', false);
+  const popularPatterns = await getPopularPatterns();
+  if (popularPatterns) researchData.popularPatterns = popularPatterns;
+
+  const scheduleContext = await getTodayContext();
+  const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
+  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
+
+  const scheduleExists = lectureSchedule || generalSchedule;
+  if (scheduleExists && !lectureCtx && !generalCtx) {
+    return { complete: true, results: [] };
+  }
+
+  return {
+    inactive: false,
+    complete: false,
+    config,
+    researchData,
+    ...scheduleContext,
+  };
+}
+
+async function _sendDailyReport(results, traceCtx) {
+  const hasErrors = results.some(r => r.error);
+  const reportLines = [
+    '📝 [블로그팀] 일간 작업 완료',
+    `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
+    '',
+    ...results.map(r => {
+      if (r.error) return `❌ ${r.type}: ${r.error.slice(0, 60)}`;
+      if (r.skipped) return `⏭ ${r.type}: ${r.reason}`;
+      const label = r.type === 'lecture' ? `강의 ${r.number}강` : `일반[${r.category}]`;
+      return `${r.quality ? '✅' : '⚠️'} ${label}: ${r.title?.slice(0, 30)} (${r.charCount}자)`;
+    }),
+    '',
+    ...results.filter(r => !r.error && !r.skipped).map(r =>
+      `${r.type === 'lecture' ? `[${r.number}강]` : `[${r.category}]`} ${_buildRewriteGuide(r.aiRisk)}`
+    ),
+    '',
+    '📁 파일 위치: bots/blog/output/',
+    '📅 예약 발행: 내일 오전 07:00',
+  ];
+
+  await runIfOps('blog-tg',
+    () => tg.send('blog', reportLines.join('\n')),
+    () => console.log('[DEV] 텔레그램 생략\n' + reportLines.join('\n'))
+  ).catch(e => console.warn('[블로] 텔레그램 발송 실패:', e.message));
+
+  if (hasErrors) {
+    const errMsg = `⚠️ [블로팀] 포스팅 실패 발생 — trace: ${traceCtx.trace_id.slice(0, 8)}`;
+    await runIfOps('blog-tg-err',
+      () => tg.send('claude', errMsg),
+      () => {}
+    ).catch(() => {});
+  }
+}
+
 // ─── 강의 포스팅 ──────────────────────────────────────────────────────
 
 async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
@@ -447,47 +520,31 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
 
 async function run() {
   console.log('\n📝 [블로] 블로그팀 일간 작업 시작\n');
-  await ensureSchema();
 
-  // trace 시작
   const traceCtx = startTrace({ bot: 'blog-blo', action: 'daily_run' });
   console.log(`[블로] trace_id: ${traceCtx.trace_id}`);
 
-  // 1. 설정 읽기
-  const config = await getConfig();
-  if (!config.active) {
+  const daily = await _prepareDailyRun(traceCtx);
+  if (daily.inactive) {
     console.log('[블로] 일시 정지 상태. 종료.');
     return [];
   }
-  console.log(`[블로] 오늘 발행: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
-
-  // State Bus — 일간 작업 시작 이벤트
-  await _emitEvent('daily_start', {
-    lecture_count: config.lecture_count,
-    general_count: config.general_count,
-    traceId: traceCtx.trace_id,
-  });
-
-  // 2. 리서치 수집 + RAG 실전 사례 + 관련 포스팅 + 인기 패턴
-  const researchData    = await richer.research('general', false);
-  const popularPatterns = await getPopularPatterns();
-  if (popularPatterns) researchData.popularPatterns = popularPatterns;
-
-  // 3. 스케줄 기반으로 오늘 작성 목록 결정 (publish_schedule 우선, 없으면 자동 생성)
-  const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = await getTodayContext();
-  console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
-
-  // 이미 모두 발행된 경우 즉시 종료 (중복 실행 방지)
-  // ※ lectureSchedule/generalSchedule이 null이면 DB 오류 — early-exit 금지
-  const scheduleExists = lectureSchedule || generalSchedule;
-  if (scheduleExists && !lectureCtx && !generalCtx) {
+  if (daily.complete) {
     console.log('[블로] ✅ 오늘 발행 항목이 모두 완료됨 — 중복 실행 건너뜀');
     return [];
   }
 
+  const {
+    config,
+    researchData,
+    lectureCtx,
+    generalCtx,
+    lectureSchedule,
+    generalSchedule,
+  } = daily;
+
   const results = [];
 
-  // 4. 강의 포스팅
   if (lectureCtx && config.lecture_count > 0) {
     try {
       if (await isSeriesComplete()) {
@@ -516,7 +573,6 @@ async function run() {
     }
   }
 
-  // 5. 일반 포스팅
   if (generalCtx && config.general_count > 0) {
     try {
       const { category, scheduleId, bookInfo } = generalCtx;
@@ -542,43 +598,8 @@ async function run() {
     }
   }
 
-  // 6. 텔레그램 리포트 (mode-guard 적용)
-  const hasErrors = results.some(r => r.error);
-  const reportLines = [
-    '📝 [블로그팀] 일간 작업 완료',
-    `🔖 trace: ${traceCtx.trace_id.slice(0, 8)}`,
-    '',
-    ...results.map(r => {
-      if (r.error)   return `❌ ${r.type}: ${r.error.slice(0, 60)}`;
-      if (r.skipped) return `⏭ ${r.type}: ${r.reason}`;
-      const label = r.type === 'lecture' ? `강의 ${r.number}강` : `일반[${r.category}]`;
-      return `${r.quality ? '✅' : '⚠️'} ${label}: ${r.title?.slice(0, 30)} (${r.charCount}자)`;
-    }),
-    '',
-    // 리라이팅 가이드 (AI 탐지 리스크 기준)
-    ...results.filter(r => !r.error && !r.skipped).map(r =>
-      `${r.type === 'lecture' ? `[${r.number}강]` : `[${r.category}]`} ${_buildRewriteGuide(r.aiRisk)}`
-    ),
-    '',
-    `📁 파일 위치: bots/blog/output/`,
-    `📅 예약 발행: 내일 오전 07:00`,
-  ];
+  await _sendDailyReport(results, traceCtx);
 
-  await runIfOps('blog-tg',
-    () => tg.send('blog', reportLines.join('\n')),
-    () => console.log('[DEV] 텔레그램 생략\n' + reportLines.join('\n'))
-  ).catch(e => console.warn('[블로] 텔레그램 발송 실패:', e.message));
-
-  // 에러 있으면 system 토픽으로도 발송
-  if (hasErrors) {
-    const errMsg = `⚠️ [블로팀] 포스팅 실패 발생 — trace: ${traceCtx.trace_id.slice(0, 8)}`;
-    await runIfOps('blog-tg-err',
-      () => tg.send('claude', errMsg),
-      () => {}
-    ).catch(() => {});
-  }
-
-  // 강의 시리즈 종료 임박 체크 (7강 전 트리거 → 텔레그램 후보 제안)
   await dailyCurriculumCheck().catch(e =>
     console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
   );
