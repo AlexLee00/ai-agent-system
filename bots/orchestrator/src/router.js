@@ -9,7 +9,7 @@
 const { buildStatus }                    = require('./dashboard');
 const { parseIntent }                    = require('../lib/intent-parser');
 const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteByEvent } = require('../lib/mute-manager');
-const { flushMorningQueue, buildMorningBriefing }      = require('../lib/night-handler');
+const { flushMorningQueue, buildMorningBriefingWithOps }      = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
 
@@ -1983,7 +1983,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'brief': {
       const items = await flushMorningQueue();
       if (items.length === 0) return '🌅 야간 보류 알람 없음';
-      return buildMorningBriefing(items) || '브리핑 생성 실패';
+      return await buildMorningBriefingWithOps(items) || '브리핑 생성 실패';
     }
 
     case 'queue':
