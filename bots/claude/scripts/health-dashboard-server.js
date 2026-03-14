@@ -198,6 +198,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (error) => {
+  if (error?.code === 'EADDRINUSE') {
+    console.log(`[클로드팀 헬스 대시보드] 포트 ${PORT}는 이미 사용 중입니다. 기존 인스턴스를 유지합니다.`);
+    process.exit(0);
+  }
+  console.error('[클로드팀 헬스 대시보드] 서버 오류:', error.message);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`[클로드팀 헬스 대시보드] 서버 시작: http://localhost:${PORT}`);
   console.log(`  헬스 API: http://localhost:${PORT}/api/health`);
