@@ -121,6 +121,27 @@ function loadLearnedPatternsFromFile(filePath) {
   }
 }
 
+function createLearnedPatternReloader({
+  filePath = '',
+  intervalMs = 5 * 60 * 1000,
+} = {}) {
+  let patterns = loadLearnedPatternsFromFile(filePath);
+
+  const reload = () => {
+    patterns = loadLearnedPatternsFromFile(filePath);
+    return patterns;
+  };
+
+  const timer = setInterval(reload, intervalMs);
+  if (typeof timer?.unref === 'function') timer.unref();
+
+  return {
+    getPatterns: () => patterns,
+    reload,
+    stop: () => clearInterval(timer),
+  };
+}
+
 function createDynamicExampleLoader({
   ttlMs = 5 * 60 * 1000,
   fetchRows,
@@ -426,6 +447,7 @@ module.exports = {
   getAutoPromoteThreshold,
   evaluateAutoPromoteDecision,
   loadLearnedPatternsFromFile,
+  createLearnedPatternReloader,
   createDynamicExampleLoader,
   formatIntentConfidence,
   getPromotionCandidateStatus,
