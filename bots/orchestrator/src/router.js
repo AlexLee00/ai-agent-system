@@ -30,6 +30,8 @@ const {
   formatIntentConfidence,
   getPromotionCandidateStatus,
   getPromotionEventReason,
+  buildPromotionFilterBits,
+  buildPromotionFamilySummary,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -587,15 +589,7 @@ async function buildPromotionCandidateReport(query = '') {
     }
 
     const lines = ['📝 자동 반영 후보/이력'];
-    const filterBits = [];
-    if (filters.applied === true) filterBits.push('자동반영만');
-    if (filters.applied === false) filterBits.push('후보만');
-    if (filters.intent) filterBits.push(`intent=${filters.intent}`);
-    if (filters.eventsOnly) filterBits.push('최근변경만');
-    if (filters.eventType) filterBits.push(`event=${filters.eventType}`);
-    if (filters.actor) filterBits.push(`actor=${filters.actor}`);
-    if (filters.summaryOnly) filterBits.push('요약만');
-    if (filters.thresholdsOnly) filterBits.push('기준만');
+    const filterBits = buildPromotionFilterBits(filters);
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
     if (filters.thresholdsOnly) {
       lines.push('자동 반영 기준:');
@@ -614,22 +608,12 @@ async function buildPromotionCandidateReport(query = '') {
         ORDER BY updated_at DESC
         LIMIT 200
       `, params);
-      const familyMap = new Map();
-      for (const row of baseRows) {
-        const family = summarizeIntentFamily(row.suggested_intent);
-        const entry = familyMap.get(family) || { total: 0, applied: 0, pending: 0, occurrences: 0 };
-        entry.total += 1;
-        entry.occurrences += Number(row.occurrence_count || 0);
-        if (row.auto_applied) entry.applied += 1;
-        else entry.pending += 1;
-        familyMap.set(family, entry);
-      }
+      const familyRows = buildPromotionFamilySummary(baseRows);
       lines.push(`요약: 전체 ${summary?.total_count ?? 0}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
       lines.push('');
       lines.push('의도 계열 분포:');
-      const familyRows = [...familyMap.entries()].sort((a, b) => b[1].total - a[1].total);
-      for (const [family, stats] of familyRows) {
-        lines.push(`  ${family}: ${stats.total}건 (자동 ${stats.applied} / 후보 ${stats.pending} / 누적 ${stats.occurrences}회)`);
+      for (const stats of familyRows) {
+        lines.push(`  ${stats.family}: ${stats.total}건 (자동 ${stats.applied} / 후보 ${stats.pending} / 누적 ${stats.occurrences}회)`);
       }
     } else if (!filters.eventsOnly) {
       lines.push(`요약: 전체 ${summary?.total_count ?? rows.length}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
