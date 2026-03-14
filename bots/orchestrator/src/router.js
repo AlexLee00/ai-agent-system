@@ -41,6 +41,7 @@ const {
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
+  buildPromotionCompactCandidateLine,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -484,8 +485,7 @@ async function buildUnrecognizedReport(query = '') {
       lines.push('');
       lines.push('🤖 자동 반영/후보');
       for (const c of candidates) {
-        const badge = c.auto_applied ? '✅자동반영' : '📝후보';
-        lines.push(`  ${badge} [${c.occurrence_count}회 / ${formatIntentConfidence(c.confidence)}] "${String(c.sample_text).slice(0, 40)}" → ${c.suggested_intent}`);
+        lines.push(buildPromotionCompactCandidateLine(c));
       }
     }
     lines.push('');
