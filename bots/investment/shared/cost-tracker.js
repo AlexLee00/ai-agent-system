@@ -22,6 +22,7 @@ import { fileURLToPath }                              from 'url';
 import { homedir }                                    from 'os';
 import { createRequire }                              from 'module';
 import yaml                                           from 'js-yaml';
+import { getTradingMode }                             from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
@@ -38,7 +39,6 @@ export const HAIKU_PRICING = {
 // ─── config.yaml에서 예산 로드 ────────────────────────────────────────
 
 let _budgets = {
-  paper_mode:     true,
   daily_paper:    0.05,
   daily_live:     0.20,
   monthly_paper:  1.00,
@@ -53,7 +53,6 @@ try {
     _budgets.monthly_paper = c.cost.monthly_budget_paper ?? _budgets.monthly_paper;
     _budgets.monthly_live  = c.cost.monthly_budget_live  ?? _budgets.monthly_live;
   }
-  if (c?.paper_mode !== undefined) _budgets.paper_mode = c.paper_mode !== false;
 } catch { /* config.yaml 없으면 기본값 사용 */ }
 
 // ─── 날짜 헬퍼 ───────────────────────────────────────────────────────
@@ -66,7 +65,7 @@ function getKSTMonth() { return getKSTDate().slice(0, 7); }
 class CostTracker extends EventEmitter {
   constructor() {
     super();
-    const paperMode    = process.env.PAPER_MODE !== 'false' && _budgets.paper_mode !== false;
+    const paperMode    = getTradingMode() === 'paper';
     this.paperMode     = paperMode;
     this.dailyBudget   = paperMode ? _budgets.daily_paper   : _budgets.daily_live;
     this.monthlyBudget = paperMode ? _budgets.monthly_paper : _budgets.monthly_live;

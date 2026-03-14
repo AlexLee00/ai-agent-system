@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml         from 'js-yaml';
 import { tracker }  from './cost-tracker.js';
+import { getTradingMode } from './secrets.js';
 
 // CJS 토큰 트래커 (orchestrator 공용)
 let _trackTokens = null;
@@ -76,16 +77,17 @@ try {
   try {
     const s = JSON.parse(readFileSync(join(__dirname, '..', 'secrets.json'), 'utf8'));
     _cfg = {
+      trading_mode: s.trading_mode,
       paper_mode: s.paper_mode,
       anthropic: { api_key: s.anthropic_api_key || '' },
       groq: { accounts: (s.groq_api_keys || [s.groq_api_key]).filter(Boolean).map(k => ({ api_key: k })) },
     };
   } catch {
-    _cfg = { paper_mode: true, anthropic: { api_key: '' }, groq: { accounts: [] } };
+    _cfg = { trading_mode: 'paper', paper_mode: true, anthropic: { api_key: '' }, groq: { accounts: [] } };
   }
 }
 
-export const PAPER_MODE = process.env.PAPER_MODE !== 'false' && _cfg.paper_mode !== false;
+export const PAPER_MODE = getTradingMode() === 'paper';
 
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 

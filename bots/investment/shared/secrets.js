@@ -18,6 +18,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let _secrets = null;
 
+function normalizeMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'paper' || normalized === 'live' || normalized === 'inherit') return normalized;
+  return null;
+}
+
 export function loadSecrets() {
   if (_secrets) return _secrets;
 
@@ -63,6 +69,9 @@ export function loadSecrets() {
       cryptopanic_api_key:  c.news?.cryptopanic_api_key || '',
       alpha_vantage_api_key:c.news?.alpha_vantage_api_key || '',
       // 모드
+      trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),
+      binance_mode: normalizeMode(c.binance_mode) || 'inherit',
+      kis_mode: normalizeMode(c.kis_mode) || 'inherit',
       paper_mode: c.paper_mode !== false,
     };
     return _secrets;
@@ -74,19 +83,34 @@ export function loadSecrets() {
     return _secrets;
   } catch {
     console.warn('⚠️ config.yaml / secrets.json 없음 — PAPER_MODE=true 기본값');
-    _secrets = { paper_mode: true, binance_symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'] };
+    _secrets = {
+      trading_mode: 'paper',
+      binance_mode: 'inherit',
+      kis_mode: 'inherit',
+      paper_mode: true,
+      binance_symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
+    };
     return _secrets;
   }
 }
 
 // ─── PAPER_MODE ─────────────────────────────────────────────────────
 
-export function isPaperMode() {
-  if (process.env.PAPER_MODE === 'false') return false;
-  if (process.env.PAPER_MODE === 'true')  return true;
+export function getTradingMode() {
+  if (process.env.PAPER_MODE === 'false') return 'live';
+  if (process.env.PAPER_MODE === 'true')  return 'paper';
   const s = loadSecrets();
-  if (s.paper_mode === false) return false;
-  return true;
+  return normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
+}
+
+function resolveBrokerMode(overrideMode) {
+  const mode = normalizeMode(overrideMode);
+  if (mode && mode !== 'inherit') return mode;
+  return getTradingMode();
+}
+
+export function isPaperMode() {
+  return getTradingMode() === 'paper';
 }
 
 export function isTestnet() {
@@ -343,7 +367,14 @@ export function getKisOverseasMarketStatus(date = new Date()) {
 // ─── KIS 헬퍼 ───────────────────────────────────────────────────────
 
 export function isKisPaper() {
-  return loadSecrets().kis_paper_trading !== false;
+  const s = loadSecrets();
+  if (s.kis_paper_trading === true) return true;
+  if (s.kis_paper_trading === false) return false;
+  return resolveBrokerMode(s.kis_mode) === 'paper';
+}
+
+export function isBinancePaper() {
+  return resolveBrokerMode(loadSecrets().binance_mode) === 'paper';
 }
 
 export function getKisAccount() {
