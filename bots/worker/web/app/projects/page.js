@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const STATUS_CONFIG = {
   planning:    { label: '기획',   color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-500' },
@@ -111,16 +112,65 @@ export default function ProjectsPage() {
     if (tab === 'completed') return p.status === 'completed';
     return true;
   });
+  const activeCount = projects.filter(p => p.status !== 'completed').length;
+  const completedCount = projects.filter(p => p.status === 'completed').length;
+  const avgProgress = projects.length
+    ? Math.round(projects.reduce((sum, item) => sum + Number(item.progress || 0), 0) / projects.length)
+    : 0;
 
   return (
     <div className="space-y-4">
+      <WorkerAIWorkspace
+        title="프로젝트 AI 업무대화"
+        description="프로젝트 진행 상황, 마일스톤, 담당자 요청을 자연어로 정리하고 실행 큐로 보냅니다."
+        suggestions={['진행 중인 프로젝트 보여줘', '프로젝트 상태 요약해줘', '새 프로젝트 초안 만들어줘']}
+        allowUpload
+      />
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">📋 프로젝트</h1>
+        <h1 className="text-xl font-bold text-gray-900">📋 프로젝트 관리</h1>
         <button className="btn-primary text-sm" onClick={() => setShowCreate(true)}>+ 새 프로젝트</button>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">프로젝트 운영 요약</p>
+          <div className="grid gap-3 sm:grid-cols-3 mt-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">진행 중</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{activeCount}건</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">완료</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{completedCount}건</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">평균 진행률</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{avgProgress}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">보기 전환</p>
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl w-fit mt-4">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                className={`px-3 py-1.5 text-sm rounded-2xl font-medium transition-colors ${
+                  tab === t.key ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
+                onClick={() => setTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-sm text-slate-500 mt-4">진행 상태에 따라 프로젝트 목록을 빠르게 전환합니다.</p>
+        </div>
+      </div>
+
       {/* 탭 */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="hidden">
         {TABS.map(t => (
           <button
             key={t.key}

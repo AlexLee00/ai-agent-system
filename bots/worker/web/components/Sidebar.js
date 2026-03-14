@@ -4,22 +4,17 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
-  BookOpen, FileText, CheckSquare, Settings,
-  Building2, UserCog, Wallet, FolderKanban, Calendar, Bot,
+  BookOpen, CheckSquare, Settings,
+  Building2, UserCog, FolderKanban, Calendar, Bot,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
-  { href: '/chat',       icon: Bot,             label: 'AI 업무' },
-  { href: '/employees',  icon: Users,           label: '직원 관리' },
   { href: '/attendance', icon: Clock,           label: '근태 관리' },
-  { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
-  { href: '/payroll',    icon: Wallet,          label: '급여 관리' },
-  { href: '/projects',   icon: FolderKanban,    label: '프로젝트' },
   { href: '/schedules',  icon: Calendar,        label: '일정 관리' },
-  { href: '/journals',   icon: BookOpen,        label: '업무일지' },
-  { href: '/documents',  icon: FileText,        label: '문서 관리' },
-  { href: '/approvals',  icon: CheckSquare,     label: '승인 관리' },
+  { href: '/journals',   icon: BookOpen,        label: '업무 관리' },
+  { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
+  { href: '/projects',   icon: FolderKanban,    label: '프로젝트 관리' },
   { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 
@@ -33,15 +28,17 @@ export default function Sidebar() {
   const visibleItems  = isMaster || !enabledMenus
     ? NAV_ITEMS
     : NAV_ITEMS.filter(item => enabledMenus.includes(item.href.replace('/', '')));
-  const showAI = (user?.role === 'admin' || user?.role === 'master') &&
-    (isMaster || !enabledMenus || enabledMenus.includes('ai'));
+  const showAdminGroup = user?.role === 'admin' || user?.role === 'master';
+  const showAI = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('ai'));
+  const showWorkforce = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('workforce'));
+  const showApprovals = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('approvals'));
 
   return (
     <div className="flex flex-col h-full">
       {/* 로고 */}
-      <Link href="/dashboard" className="h-16 px-6 border-b flex flex-col justify-center hover:bg-gray-50 transition-colors">
-        <h1 className="text-base font-bold text-primary leading-tight">💼 워커</h1>
-        <p className="text-xs text-gray-500">업무관리 시스템</p>
+      <Link href="/dashboard" className="h-16 px-6 border-b border-slate-200 flex flex-col justify-center hover:bg-slate-50 transition-colors">
+        <h1 className="text-base font-bold text-slate-900 leading-tight">워커</h1>
+        <p className="text-xs text-slate-500">대화형 업무 운영 시스템</p>
       </Link>
 
       {/* 네비 */}
@@ -65,31 +62,19 @@ export default function Sidebar() {
           );
         })}
 
-        {/* AI 분석 — admin/master 전용 + 메뉴 설정에 따라 표시 */}
-        {showAI && (() => {
-          const active = pathname.startsWith('/ai');
-          return (
-            <Link
-              href="/ai"
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <Bot className={`w-5 h-5 shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
-              AI 분석
-            </Link>
-          );
-        })()}
-
-        {/* 마스터 전용 메뉴 */}
-        {user?.role === 'master' && (
+        {showAdminGroup && (
           <>
             <div className="pt-3 pb-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-3">관리자</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-3">관리자</p>
             </div>
             {[
-              { href: '/admin/companies', icon: Building2, label: '업체 관리' },
-              { href: '/admin/users',     icon: UserCog,   label: '사용자 관리' },
+              ...(showAI ? [{ href: '/ai', icon: Bot, label: 'AI 분석' }] : []),
+              ...(showWorkforce ? [{ href: '/admin/workforce', icon: Users, label: '직원/급여 관리' }] : []),
+              ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
+              ...(user?.role === 'master' ? [
+                { href: '/admin/companies', icon: Building2, label: '업체 관리' },
+                { href: '/admin/users', icon: UserCog, label: '사용자 관리' },
+              ] : []),
             ].map(item => {
               const active = pathname.startsWith(item.href);
               const Icon   = item.icon;
@@ -99,11 +84,11 @@ export default function Sidebar() {
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     active
-                      ? 'bg-purple-50 text-purple-700'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-purple-600' : 'text-gray-400'}`} />
+                  <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
                   {item.label}
                 </Link>
               );

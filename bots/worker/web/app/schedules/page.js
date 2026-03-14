@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const TYPE_CONFIG = {
   meeting:  { label: '미팅',     color: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
@@ -225,16 +226,66 @@ export default function SchedulesPage() {
 
   // 리스트뷰용 정렬
   const sorted = [...schedules].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  const upcomingCount = sorted.filter(item => new Date(item.start_time) >= new Date()).length;
+  const meetingCount = schedules.filter(item => item.type === 'meeting').length;
 
   return (
     <div className="space-y-4">
+      <WorkerAIWorkspace
+        title="일정 AI 업무대화"
+        description="미팅, 리마인더, 일정 수정 요청을 자연어로 보내면 바로 등록 흐름으로 연결됩니다."
+        suggestions={['오늘 일정 보여줘', '내일 오전 10시 업체 미팅 잡아줘', '방금 일정 11시로 변경해줘']}
+        allowUpload
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📅 일정 관리</h1>
         <button className="btn-primary text-sm" onClick={() => setShowAdd(true)}>+ 일정 추가</button>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">월간 일정 요약</p>
+          <div className="grid gap-3 sm:grid-cols-3 mt-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">전체 일정</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{schedules.length}건</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">예정 일정</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{upcomingCount}건</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">미팅</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{meetingCount}건</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">현재 보기</p>
+          <div className="flex items-center gap-3 mt-4">
+            <button className="btn-secondary px-2 py-1 text-sm" onClick={prevMonth}>‹</button>
+            <span className="font-semibold text-slate-800 min-w-[92px] text-center">{year}년 {month + 1}월</span>
+            <button className="btn-secondary px-2 py-1 text-sm" onClick={nextMonth}>›</button>
+            <div className="ml-auto flex gap-1 bg-slate-100 p-1 rounded-2xl">
+              {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
+                <button
+                  key={v.k}
+                  className={`px-3 py-1.5 text-xs rounded-2xl font-medium transition-colors ${
+                    view === v.k ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  onClick={() => setView(v.k)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* 월 내비 + 뷰 전환 */}
-      <div className="flex items-center gap-3">
+      <div className="hidden">
         <button className="btn-secondary px-2 py-1 text-sm" onClick={prevMonth}>‹</button>
         <span className="font-semibold text-gray-800 min-w-[80px] text-center">{year}년 {month + 1}월</span>
         <button className="btn-secondary px-2 py-1 text-sm" onClick={nextMonth}>›</button>

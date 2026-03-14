@@ -680,19 +680,20 @@ function ClaudeCodeChat() {
   );
 
   return (
-    <div className="flex gap-0 rounded-xl overflow-hidden border border-gray-200 shadow-sm"
-      style={{ height: 'calc(100vh - 200px)', minHeight: '520px' }}>
+    <div
+      className="flex gap-0 overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_20px_60px_-32px_rgba(15,23,42,0.28)]"
+      style={{ height: 'calc(100vh - 240px)', minHeight: '560px' }}>
 
 
       {/* ── 데스크탑 사이드바 ── */}
-      <div className="hidden md:flex w-52 flex-shrink-0 flex-col p-3 gap-1 bg-white border-r border-gray-100">
-        <div className="flex items-center gap-2 px-1 py-2 mb-1">
-          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+      <div className="hidden w-56 flex-shrink-0 flex-col gap-1 border-r border-slate-200/80 bg-slate-50/90 p-3 md:flex">
+        <div className="mb-1 flex items-center gap-2 px-1 py-2">
+          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-900">
             <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
             </svg>
           </div>
-          <span className="text-gray-800 font-semibold text-sm tracking-tight">Claude Code</span>
+          <span className="text-sm font-semibold tracking-tight text-slate-800">Claude Code</span>
         </div>
         {sidebarContent}
       </div>
@@ -726,10 +727,10 @@ function ClaudeCodeChat() {
       )}
 
       {/* ── 채팅 영역 ── */}
-      <div className="flex-1 flex flex-col bg-white min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col bg-white">
 
         {/* 헤더 */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-shrink-0 bg-white">
+        <div className="flex flex-shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-5 py-4">
           {/* 모바일: 햄버거 */}
           <button
             className="md:hidden p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -740,16 +741,16 @@ function ClaudeCodeChat() {
           </button>
 
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800 truncate">
+            <p className="truncate text-sm font-semibold text-slate-800">
               {currentTitle || (activeSession ? 'Claude Code' : '새 채팅')}
             </p>
             {activeSession && (
-              <p className="text-[11px] text-gray-400 mt-px font-mono">{activeSession.slice(0, 12)}…</p>
+              <p className="mt-px font-mono text-[11px] text-slate-400">{activeSession.slice(0, 12)}…</p>
             )}
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className="hidden sm:flex items-center gap-1 text-xs text-primary bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+            <span className="hidden items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 sm:flex">
               <span className="w-1.5 h-1.5 bg-green-400 rounded-full inline-block"></span>
               claude-code
             </span>
@@ -770,30 +771,30 @@ function ClaudeCodeChat() {
             아래로
           </button>
         )}
-        <div ref={chatScrollRef} className="h-full overflow-y-auto overscroll-contain" style={{ background: '#fafafa', touchAction: 'pan-y' }}>
+        <div ref={chatScrollRef} className="h-full overflow-y-auto overscroll-contain bg-slate-50/70" style={{ touchAction: 'pan-y' }}>
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-5 shadow-lg">
+              <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[22px] bg-slate-900 shadow-lg">
                 <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Claude Code</h3>
-              <p className="text-sm text-gray-400 text-center max-w-xs">
+              <h3 className="mb-1 text-lg font-semibold text-slate-800">Claude Code</h3>
+              <p className="max-w-xs text-center text-sm text-slate-500">
                 코드 작성, 버그 수정, 파일 편집, 시스템 분석 등 무엇이든 물어보세요
               </p>
               <div className="mt-6 flex flex-wrap gap-2 justify-center">
                 {['코드 리뷰해줘', '버그 찾아줘', '파일 목록 보여줘', '시스템 상태 확인'].map(q => (
                   <button key={q}
                     onClick={() => { setInputText(q); textareaRef.current?.focus(); }}
-                    className="text-xs px-3 py-1.5 bg-white border border-gray-200 text-gray-500 rounded-full hover:border-primary hover:text-primary transition-colors shadow-sm">
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900">
                     {q}
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="px-4 py-4 space-y-4 max-w-3xl mx-auto">
+            <div className="mx-auto max-w-3xl space-y-4 px-4 py-5">
               {(() => {
                 // 연속된 tool 메시지 그룹핑
                 const groups = [];
@@ -945,7 +946,7 @@ function ClaudeCodeChat() {
         )}
 
         {/* 입력 영역 */}
-        <div className="px-4 py-3 bg-white border-t border-gray-100 flex-shrink-0">
+        <div className="flex-shrink-0 border-t border-slate-200/80 bg-white px-4 py-3">
           {/* 첨부 파일 칩 */}
           {attachedFiles.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -1055,97 +1056,179 @@ export default function AIPage() {
     : [];
 
   return (
-    <div className="space-y-4 max-w-6xl">
-      <h1 className="text-xl font-bold text-gray-900">AI 분석</h1>
+    <div className="max-w-7xl space-y-6">
+      <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.18),_transparent_36%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] p-6 shadow-[0_18px_60px_-34px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl space-y-3">
+            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Admin Intelligence
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                AI 분석과 Claude Code를 한 화면에서 운영합니다
+              </h1>
+              <p className="max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
+                운영 데이터를 자연어로 질의하고, 예측을 확인하고, 필요하면 Claude Code와 바로 이어서 점검할 수 있는 관리자 분석 허브입니다.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[340px]">
+            {[
+              { label: '분석 모드', value: activeTab === 'ai' ? '활성' : '대기', tone: 'text-slate-900' },
+              { label: 'Claude Code', value: activeTab === 'claude' ? '연결됨' : '준비됨', tone: 'text-slate-900' },
+              { label: '데이터 흐름', value: '실시간', tone: 'text-emerald-700' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">{item.label}</p>
+                <p className={`mt-2 text-sm font-semibold ${item.tone}`}>{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-      <div className="flex gap-1 border-b border-gray-200">
-        {[{ id: 'ai', label: 'AI 분석' }, { id: 'claude', label: '🤖 Claude Code' }].map(t => (
-          <button key={t.id} onClick={() => { setActiveTab(t.id); try { localStorage.setItem('worker_ai_tab', t.id); } catch {} }}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+      <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100/80 p-1">
+        {[{ id: 'ai', label: 'AI 분석' }, { id: 'claude', label: 'Claude Code' }].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => { setActiveTab(t.id); try { localStorage.setItem('worker_ai_tab', t.id); } catch {} }}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+              activeTab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}>
             {t.label}
           </button>
         ))}
       </div>
 
       {activeTab === 'ai' && (
-        <div className="space-y-6 max-w-3xl">
-          <div className="card space-y-4">
-            <h2 className="font-semibold text-gray-800">자연어 질문</h2>
-            <p className="text-sm text-gray-500">업무 데이터에 대해 자유롭게 질문하세요.</p>
-            <form onSubmit={handleAsk} className="flex gap-2">
-              <input className="input-base flex-1" value={question} onChange={e => setQuestion(e.target.value)}
-                placeholder="예: 이번 달 매출 합계는?" disabled={asking} />
-              <button className="btn-primary px-5" type="submit" disabled={asking || !question.trim()}>
-                {asking ? '분석 중...' : '질문'}
-              </button>
-            </form>
-            <div className="flex flex-wrap gap-2">
-              {['이번 달 매출 합계는?', '지각 횟수가 가장 많은 직원은?', '완료되지 않은 프로젝트 목록', '3월 급여 총액은 얼마인가요?'].map(q => (
-                <button key={q} onClick={() => setQuestion(q)}
-                  className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 rounded-full transition-colors">{q}</button>
-              ))}
-            </div>
-            {askError && <p className="text-red-500 text-sm">{askError}</p>}
-            {askResult && (
-              <div className="space-y-3">
-                <div className="bg-indigo-50 rounded-lg p-4">
-                  <p className="text-sm font-medium text-indigo-900 whitespace-pre-wrap">{sanitizeText(askResult.answer)}</p>
-                </div>
-                <div className="flex gap-3 text-xs text-gray-400">
-                  <span>조회 {askResult.rowCount}건</span>
-                  {askResult.ragUsed && <span className="text-indigo-500">RAG 문서 참조</span>}
-                </div>
-                {askResult.data?.length > 0 && (
-                  <div><p className="text-xs font-medium text-gray-500 mb-2">원본 데이터 (최대 50건)</p>
-                    <div className="overflow-x-auto"><DataTable columns={dataColumns} data={askResult.data} emptyText="데이터 없음" /></div>
-                  </div>
-                )}
-                <details className="text-xs">
-                  <summary className="cursor-pointer text-gray-400 hover:text-gray-600">실행된 SQL 보기</summary>
-                  <pre className="mt-2 bg-gray-50 rounded p-3 overflow-x-auto text-gray-700 text-xs">{askResult.sql}</pre>
-                </details>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="space-y-6">
+            <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.3)]">
+              <div className="mb-5 flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">자연어 질문</h2>
+                <p className="text-sm leading-6 text-slate-500">업무 데이터를 그대로 물어보면 SQL과 답변이 함께 정리됩니다.</p>
               </div>
-            )}
+              <form onSubmit={handleAsk} className="flex gap-2">
+                <input className="input-base flex-1" value={question} onChange={e => setQuestion(e.target.value)}
+                  placeholder="예: 이번 달 매출 합계는?" disabled={asking} />
+                <button className="btn-primary px-5" type="submit" disabled={asking || !question.trim()}>
+                  {asking ? '분석 중...' : '질문'}
+                </button>
+              </form>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {['이번 달 매출 합계는?', '지각 횟수가 가장 많은 직원은?', '완료되지 않은 프로젝트 목록', '3월 급여 총액은 얼마인가요?'].map(q => (
+                  <button key={q} onClick={() => setQuestion(q)}
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-slate-900">{q}</button>
+                ))}
+              </div>
+              {askError && <p className="mt-4 text-sm text-red-500">{askError}</p>}
+              {askResult && (
+                <div className="mt-5 space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-800">{sanitizeText(askResult.answer)}</p>
+                  </div>
+                  <div className="flex gap-3 text-xs text-slate-400">
+                    <span>조회 {askResult.rowCount}건</span>
+                    {askResult.ragUsed && <span className="text-sky-600">RAG 문서 참조</span>}
+                  </div>
+                  {askResult.data?.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-slate-500">원본 데이터 (최대 50건)</p>
+                      <div className="overflow-x-auto"><DataTable columns={dataColumns} data={askResult.data} emptyText="데이터 없음" /></div>
+                    </div>
+                  )}
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-slate-400 hover:text-slate-700">실행된 SQL 보기</summary>
+                    <pre className="mt-2 overflow-x-auto rounded-2xl bg-slate-950 p-3 text-xs text-slate-100">{askResult.sql}</pre>
+                  </details>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.3)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">매출 AI 예측</h2>
+                  <p className="mt-1 text-sm text-slate-500">최근 90일 매출 데이터 기반 30일 예측</p>
+                </div>
+                <button className="btn-primary text-sm" onClick={handleForecast} disabled={forecasting}>
+                  {forecasting ? '예측 중...' : '예측 실행'}
+                </button>
+              </div>
+              {fcError && <p className="mt-4 text-sm text-red-500">{fcError}</p>}
+              {forecast && (
+                <div className="mt-5">
+                  {forecast.message ? (
+                    <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-600">{forecast.message}</p>
+                  ) : forecast.forecast && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className="rounded-2xl bg-slate-50 p-3 text-center"><p className="mb-1 text-xs text-slate-500">트렌드</p><TrendBadge trend={forecast.forecast.trend} /></div>
+                        <div className="rounded-2xl bg-slate-50 p-3 text-center"><p className="mb-1 text-xs text-slate-500">신뢰도</p><ConfidenceBadge confidence={forecast.forecast.confidence} /></div>
+                        <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-900 p-3 text-center">
+                          <p className="mb-1 text-xs text-slate-400">30일 예상 매출</p>
+                          <p className="font-bold text-white">₩{Number(forecast.forecast.forecast_30d_total || 0).toLocaleString()}</p>
+                          <p className="text-xs text-slate-400">일평균 ₩{Number(forecast.forecast.forecast_30d_daily_avg || 0).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2 rounded-2xl bg-slate-50 p-4 text-sm">
+                        <p className="text-slate-700">{sanitizeText(forecast.forecast.analysis)}</p>
+                        {forecast.forecast.weekly_pattern && <p className="text-xs text-slate-500">{sanitizeText(forecast.forecast.weekly_pattern)}</p>}
+                        {forecast.forecast.warnings && <p className="text-xs text-amber-600">{sanitizeText(forecast.forecast.warnings)}</p>}
+                      </div>
+                      <p className="text-xs text-slate-400">분석 기간: {forecast.period?.from} ~ {forecast.period?.to} ({forecast.dataPoints}일)</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="card space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-gray-800">매출 AI 예측</h2>
-                <p className="text-sm text-gray-500 mt-0.5">최근 90일 매출 데이터 기반 30일 예측</p>
-              </div>
-              <button className="btn-primary text-sm" onClick={handleForecast} disabled={forecasting}>
-                {forecasting ? '예측 중...' : '예측 실행'}
-              </button>
-            </div>
-            {fcError && <p className="text-red-500 text-sm">{fcError}</p>}
-            {forecast && (
-              <>
-                {forecast.message ? (
-                  <p className="text-sm text-amber-600 bg-amber-50 rounded-lg p-3">{forecast.message}</p>
-                ) : forecast.forecast && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="bg-gray-50 rounded-lg p-3 text-center"><p className="text-xs text-gray-500 mb-1">트렌드</p><TrendBadge trend={forecast.forecast.trend} /></div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-center"><p className="text-xs text-gray-500 mb-1">신뢰도</p><ConfidenceBadge confidence={forecast.forecast.confidence} /></div>
-                      <div className="bg-indigo-50 rounded-lg p-3 text-center col-span-2">
-                        <p className="text-xs text-gray-500 mb-1">30일 예상 매출</p>
-                        <p className="font-bold text-indigo-700">₩{Number(forecast.forecast.forecast_30d_total || 0).toLocaleString()}</p>
-                        <p className="text-xs text-gray-400">일평균 ₩{Number(forecast.forecast.forecast_30d_daily_avg || 0).toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-                      <p className="text-gray-700">{sanitizeText(forecast.forecast.analysis)}</p>
-                      {forecast.forecast.weekly_pattern && <p className="text-gray-500 text-xs">{sanitizeText(forecast.forecast.weekly_pattern)}</p>}
-                      {forecast.forecast.warnings && <p className="text-amber-600 text-xs">{sanitizeText(forecast.forecast.warnings)}</p>}
-                    </div>
-                    <p className="text-xs text-gray-400">분석 기간: {forecast.period?.from} ~ {forecast.period?.to} ({forecast.dataPoints}일)</p>
+          <aside className="space-y-6">
+            <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.28)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Analysis Guide</p>
+              <div className="mt-4 space-y-4">
+                {[
+                  {
+                    title: '자연어 질의',
+                    body: '매출, 근태, 프로젝트, 급여 데이터를 사람 말투 그대로 질문하면 SQL과 함께 정리합니다.',
+                  },
+                  {
+                    title: '예측',
+                    body: '최근 90일 흐름을 바탕으로 30일 매출을 빠르게 확인할 수 있습니다.',
+                  },
+                  {
+                    title: 'Claude Code',
+                    body: '운영 이슈나 코드 점검이 필요하면 바로 옆 탭으로 넘어가 세션 단위로 이어서 작업할 수 있습니다.',
+                  },
+                ].map((item) => (
+                  <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="text-sm font-semibold text-slate-900">{item.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">{item.body}</p>
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[26px] border border-slate-200 bg-slate-900 p-6 text-white shadow-[0_18px_50px_-34px_rgba(15,23,42,0.45)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Recommended Prompts</p>
+              <div className="mt-4 space-y-2">
+                {[
+                  '이번 주 근태 이상 징후를 요약해줘',
+                  '이번 달 부서별 매출 비교표를 보여줘',
+                  '지연 중인 프로젝트와 담당자를 정리해줘',
+                  '승인 대기 중인 업무가 얼마나 있는지 알려줘',
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setQuestion(prompt)}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-left text-sm text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700">
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
         </div>
       )}
 

@@ -66,15 +66,61 @@ export default function DashboardPage() {
 
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
 
+  const quickLinks = [
+    { label: '근태 확인', desc: '오늘 출근 인원과 상태를 확인합니다.', href: '/attendance' },
+    { label: '일정 등록', desc: '회의와 리마인더를 바로 추가합니다.', href: '/schedules' },
+    { label: '업무 관리', desc: 'AI 대화와 문서 업로드를 시작합니다.', href: '/journals' },
+    { label: '매출 입력', desc: '오늘 매출과 주간 흐름을 바로 기록합니다.', href: '/sales' },
+  ];
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-gray-900">대시보드</h1>
+      <section className="card overflow-hidden bg-gradient-to-br from-white to-slate-100/80">
+        <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">오늘의 운영 요약</p>
+              <h1 className="text-2xl font-semibold text-slate-900 mt-1">워커 운영 대시보드</h1>
+              <p className="text-sm text-slate-500 mt-2">
+                AI 업무대화, 승인 흐름, 매출과 일정 상태를 한 번에 확인할 수 있습니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>업무 관리 열기</button>
+              <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>일정 관리 열기</button>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm text-slate-500">대기 승인</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.pending_approvals ?? 0}건</p>
+              <p className="text-xs text-slate-400 mt-2">관리자 확인이 필요한 업무</p>
+            </div>
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm text-slate-500">오늘 일정</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.today_schedules ?? 0}건</p>
+              <p className="text-xs text-slate-400 mt-2">등록된 일정과 미팅</p>
+            </div>
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm text-slate-500">출근 인원</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.checked_in ?? 0}명</p>
+              <p className="text-xs text-slate-400 mt-2">실시간 근태 집계</p>
+            </div>
+            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm text-slate-500">오늘 매출</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">₩{(summary?.today_sales ?? 0).toLocaleString()}</p>
+              <p className="text-xs text-slate-400 mt-2">당일 등록 기준</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <Card
           title="오늘 매출"
           value={`₩${(summary?.today_sales ?? 0).toLocaleString()}`}
+          subtitle="매출 관리로 이동"
           icon="💰"
           color="blue"
           onClick={() => router.push('/sales')}
@@ -82,6 +128,7 @@ export default function DashboardPage() {
         <Card
           title="출근 인원"
           value={`${summary?.checked_in ?? 0}명`}
+          subtitle="근태 관리로 이동"
           icon="👥"
           color="green"
           onClick={() => router.push('/attendance')}
@@ -89,13 +136,15 @@ export default function DashboardPage() {
         <Card
           title="미처리 문서"
           value={`${summary?.pending_docs ?? 0}건`}
+          subtitle="업무 관리에서 처리"
           icon="📋"
           color="yellow"
-          onClick={() => router.push('/documents')}
+          onClick={() => router.push('/journals')}
         />
         <Card
           title="대기 승인"
           value={`${summary?.pending_approvals ?? 0}건`}
+          subtitle="승인 관리로 이동"
           icon="✅"
           color="red"
           onClick={() => router.push('/approvals')}
@@ -103,6 +152,7 @@ export default function DashboardPage() {
         <Card
           title="진행 중 프로젝트"
           value={`${summary?.active_projects ?? 0}건`}
+          subtitle="프로젝트 관리로 이동"
           icon="📋"
           color="blue"
           onClick={() => router.push('/projects')}
@@ -110,43 +160,57 @@ export default function DashboardPage() {
         <Card
           title="오늘 일정"
           value={`${summary?.today_schedules ?? 0}건`}
+          subtitle="일정 관리로 이동"
           icon="📅"
           color="green"
           onClick={() => router.push('/schedules')}
         />
       </div>
 
+      <section className="grid gap-4 lg:grid-cols-4">
+        {quickLinks.map((item) => (
+          <button
+            key={item.href}
+            onClick={() => router.push(item.href)}
+            className="card text-left hover:shadow-md transition-shadow bg-white"
+          >
+            <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+            <p className="text-sm text-slate-500 mt-2">{item.desc}</p>
+          </button>
+        ))}
+      </section>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 월간 매출 차트 */}
         <div className="card lg:col-span-2">
-          <h2 className="font-semibold text-gray-800 mb-4">📈 월간 매출 (최근 30일)</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">📈 월간 매출 (최근 30일)</h2>
           {monthlyData.length > 0 ? (
             <SalesBarChart data={monthlyData} />
           ) : (
             <div className="text-center py-10">
               <p className="text-4xl mb-3">📈</p>
-              <p className="text-gray-500 text-sm">매출 데이터가 없습니다</p>
+              <p className="text-slate-500 text-sm">매출 데이터가 없습니다</p>
             </div>
           )}
         </div>
 
         {/* 최근 활동 — 월간·주간 옆에 row-span-2 */}
         <div className="card lg:row-span-2">
-          <h2 className="font-semibold text-gray-800 mb-4">📋 최근 활동</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">📋 최근 활동</h2>
           {activity.length === 0 ? (
-            <p className="text-center text-gray-400 text-sm py-6">활동 내역 없음</p>
+            <p className="text-center text-slate-400 text-sm py-6">활동 내역 없음</p>
           ) : (
             <div className="relative">
-              <div className="absolute left-3.5 top-0 bottom-0 w-px bg-gray-100" />
+              <div className="absolute left-3.5 top-0 bottom-0 w-px bg-slate-100" />
               <div className="space-y-4">
                 {activity.map((item, i) => (
                   <div key={i} className="flex gap-3 items-start relative">
-                    <div className="w-7 h-7 rounded-full bg-indigo-50 flex items-center justify-center text-sm shrink-0 z-10">
+                    <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-sm shrink-0 z-10">
                       {ACTIVITY_ICONS[item.type] || '🔔'}
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
-                      <p className="text-sm text-gray-700 leading-snug">{item.detail}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{timeAgo(item.created_at)}</p>
+                      <p className="text-sm text-slate-700 leading-snug">{item.detail}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{timeAgo(item.created_at)}</p>
                     </div>
                   </div>
                 ))}
@@ -157,14 +221,14 @@ export default function DashboardPage() {
 
         {/* 주간 매출 차트 */}
         <div className="card lg:col-span-2">
-          <h2 className="font-semibold text-gray-800 mb-4">📊 주간 매출 (최근 7일)</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">📊 주간 매출 (최근 7일)</h2>
           {salesData.length > 0 ? (
             <SalesBarChart data={salesData} />
           ) : (
             <div className="text-center py-10">
               <p className="text-4xl mb-3">📊</p>
-              <p className="text-gray-500 text-sm mb-4">매출을 등록하면 차트가 표시됩니다</p>
-              <Link href="/sales" className="inline-flex items-center gap-1 text-sm text-indigo-600 font-medium hover:underline">
+              <p className="text-slate-500 text-sm mb-4">매출을 등록하면 차트가 표시됩니다</p>
+              <Link href="/sales" className="inline-flex items-center gap-1 text-sm text-slate-900 font-medium hover:underline">
                 매출 등록하기 →
               </Link>
             </div>
