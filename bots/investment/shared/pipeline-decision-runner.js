@@ -3,7 +3,7 @@ import { getInvestmentNode } from '../nodes/index.js';
 import { runNode } from './node-runner.js';
 import * as db from './db.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
-import { getPortfolioDecision, inspectPortfolioContext } from '../team/luna.js';
+import { getMinConfidence, getPortfolioDecision, inspectPortfolioContext } from '../team/luna.js';
 import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
 
@@ -125,7 +125,7 @@ export async function runDecisionExecutionPipeline({
   const results = [];
   for (const dec of (portfolioDecision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    const minConf = params?.minSignalScore ?? (exchange === 'binance' ? 0.55 : 0.35);
+    const minConf = params?.minSignalScore ?? getMinConfidence(exchange);
     if ((dec.confidence || 0) < minConf) continue;
 
     const analyses = symbolAnalysesMap.get(dec.symbol) || [];

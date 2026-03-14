@@ -29,6 +29,7 @@ import { isPaperMode } from '../shared/secrets.js';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.js';
+import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.js';
 import { runBullResearcher } from './zeus.js';
 import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
@@ -39,7 +40,7 @@ const PAPER_MIN_CONFIDENCE = { binance: 0.50, kis: 0.28, kis_overseas: 0.28 };
 const MAX_POS_COUNT      = 5;
 const MAX_DEBATE_SYMBOLS = 2;
 
-function getMinConfidence(exchange) {
+export function getMinConfidence(exchange) {
   if (isPaperMode()) return PAPER_MIN_CONFIDENCE[exchange] ?? MIN_CONFIDENCE[exchange] ?? 0.60;
   return MIN_CONFIDENCE[exchange] ?? 0.60;
 }
@@ -259,7 +260,13 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     }
   } catch { /* RAG 검색 실패 시 무시 */ }
 
-  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}\n\n최종 매매 신호:`;
+  let regimeSection = '';
+  try {
+    const regime = await getMarketRegime(exchange);
+    regimeSection = `\n\n${formatMarketRegime(regime)}`;
+  } catch { /* 시장 레짐 실패 시 무시 */ }
+
+  const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
   const shadowResult = await shadow.evaluate({
@@ -304,12 +311,20 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     .map(s => `${s.symbol}: ${s.action} | 확신도 ${((s.confidence || 0) * 100).toFixed(0)}% | ${s.reasoning}`)
     .join('\n');
 
+  let regimeSection = '';
+  try {
+    const regime = await getMarketRegime(exchange);
+    regimeSection = formatMarketRegime(regime);
+  } catch { /* 시장 레짐 실패 시 무시 */ }
+
   const userMsg = [
     `=== 포트폴리오 현황 ===`,
     `USDT 가용: $${portfolio.usdtFree.toFixed(2)} | 총자산: $${portfolio.totalAsset.toFixed(2)}`,
     `현재 포지션: ${portfolio.positionCount}/${MAX_POS_COUNT}개`,
     `오늘 P&L: ${(portfolio.todayPnl?.pnl || 0) >= 0 ? '+' : ''}$${(portfolio.todayPnl?.pnl || 0).toFixed(2)}`,
     ``,
+    regimeSection,
+    regimeSection ? `` : '',
     `=== 분석가 신호 (${symbols.join(', ')}) ===`,
     signalLines,
     ``,
