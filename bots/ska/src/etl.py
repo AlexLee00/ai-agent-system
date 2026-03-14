@@ -81,12 +81,22 @@ def track_forecast_accuracy(res_con, ska_con, yesterday):
     actual_rev = int(actual_row[0])
 
     forecast_row = _one(ska_con, """
-        SELECT predicted_revenue, model_version
-        FROM forecast
-        WHERE target_date = %s
+        SELECT
+            COALESCE((predictions->>'yhat')::int, 0) AS predicted_revenue,
+            model_version
+        FROM ska.forecast_results
+        WHERE forecast_date = %s
         ORDER BY created_at DESC
         LIMIT 1
     """, (yesterday_str,))
+    if not forecast_row:
+        forecast_row = _one(ska_con, """
+            SELECT predicted_revenue, model_version
+            FROM forecast
+            WHERE target_date = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (yesterday_str,))
     if not forecast_row:
         print(f'[ETL] ⚠️ MAPE: 어제({yesterday_str}) 예측값 없음 — 스킵')
         return

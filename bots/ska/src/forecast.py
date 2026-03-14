@@ -452,51 +452,50 @@ def _calc_avg_duration_hours(rows):
 def get_reservation_signal(con, target_date_str):
     """예측일 예약 건수 + 예약 시간 + 밀도 조회"""
     try:
-        res_con = psycopg2.connect("dbname=jay options='-c search_path=reservation,public'")
-        try:
-            rows = _qry(res_con, """
-                SELECT start_time, end_time, room
-                FROM reservations
-                WHERE date = %s
-                  AND status IN ('confirmed', 'pending', 'completed')
-            """, (target_date_str,))
-            count = len(rows)
-            booked_hours = _calc_booked_hours(rows)
-            unique_rooms = len({str(row[2]).strip() for row in rows if row[2]})
-            peak_overlap = _calc_peak_overlap(rows)
-            avg_duration_hours = _calc_avg_duration_hours(rows)
-            room_counts = {'A1': 0, 'A2': 0, 'B': 0}
-            morning_count = 0
-            afternoon_count = 0
-            evening_count = 0
-            for start_time, _end_time, room in rows:
-                room_key = str(room or '').strip().upper()
-                if room_key in room_counts:
-                    room_counts[room_key] += 1
-                start_minutes = _to_minutes(start_time)
-                if start_minutes is None:
-                    continue
-                if start_minutes < 13 * 60:
-                    morning_count += 1
-                elif start_minutes < 18 * 60:
-                    afternoon_count += 1
-                else:
-                    evening_count += 1
-            return {
-                'count': count,
-                'booked_hours': booked_hours,
-                'density': round(booked_hours / MAX_HOURS, 4) if MAX_HOURS > 0 else 0.0,
-                'unique_rooms': unique_rooms,
-                'peak_overlap': peak_overlap,
-                'avg_duration_hours': avg_duration_hours,
-                'room_counts': room_counts,
-                'morning_count': morning_count,
-                'afternoon_count': afternoon_count,
-                'evening_count': evening_count,
-            }
-        finally:
-            res_con.close()
-    except Exception:
+        # Same DB, different schema: reuse the active connection so forecast does not
+        # silently diverge from the runtime DB state.
+        rows = _qry(con, """
+            SELECT start_time, end_time, room
+            FROM reservation.reservations
+            WHERE date = %s
+              AND status IN ('confirmed', 'pending', 'completed')
+        """, (target_date_str,))
+        count = len(rows)
+        booked_hours = _calc_booked_hours(rows)
+        unique_rooms = len({str(row[2]).strip() for row in rows if row[2]})
+        peak_overlap = _calc_peak_overlap(rows)
+        avg_duration_hours = _calc_avg_duration_hours(rows)
+        room_counts = {'A1': 0, 'A2': 0, 'B': 0}
+        morning_count = 0
+        afternoon_count = 0
+        evening_count = 0
+        for start_time, _end_time, room in rows:
+            room_key = str(room or '').strip().upper()
+            if room_key in room_counts:
+                room_counts[room_key] += 1
+            start_minutes = _to_minutes(start_time)
+            if start_minutes is None:
+                continue
+            if start_minutes < 13 * 60:
+                morning_count += 1
+            elif start_minutes < 18 * 60:
+                afternoon_count += 1
+            else:
+                evening_count += 1
+        return {
+            'count': count,
+            'booked_hours': booked_hours,
+            'density': round(booked_hours / MAX_HOURS, 4) if MAX_HOURS > 0 else 0.0,
+            'unique_rooms': unique_rooms,
+            'peak_overlap': peak_overlap,
+            'avg_duration_hours': avg_duration_hours,
+            'room_counts': room_counts,
+            'morning_count': morning_count,
+            'afternoon_count': afternoon_count,
+            'evening_count': evening_count,
+        }
+    except Exception as e:
+        print(f'[FORECAST] ⚠️ 예약 신호 조회 실패 ({target_date_str}): {e}')
         return {
             'count': 0,
             'booked_hours': 0.0,
@@ -717,7 +716,8 @@ def _apply_result_calibration(result, calibration, target_date):
         result['calibration_notes'] = []
         return result
 
-    dow = (target_date.weekday() + 1) % 7  # 0=일..6=토
+    # ISO weekday to match training_feature_daily.weekday (1=월 ... 7=일)
+    dow = target_date.isoweekday()
     weekday_bias = int(calibration.get('weekday_bias', {}).get(dow, 0) or 0)
     reservation_baseline = float(calibration.get('reservation_baseline', {}).get(dow, 0.0) or 0.0)
     revenue_per_reservation = float(calibration.get('revenue_per_reservation', 0.0) or 0.0)
