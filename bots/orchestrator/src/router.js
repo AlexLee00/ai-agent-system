@@ -30,6 +30,9 @@ const {
   getPromotionEvents,
   findPromotionCandidate,
   getUnrecognizedReportRows,
+  clearPromotedUnrecognized,
+  clearPromotionCandidateState,
+  markUnrecognizedPromoted,
 } = require('../../../packages/core/lib/intent-store');
 const {
   AUTO_PROMOTE_DEFAULTS,
@@ -544,20 +547,14 @@ async function rollbackPromotionTarget(target = '') {
     fs.writeFileSync(learnPath, JSON.stringify(learnings, null, 2));
   }
 
-  await pgPool.run('claude', `
-    UPDATE unrecognized_intents
-    SET promoted_to = NULL
-    WHERE promoted_to = $1
-      AND lower(regexp_replace(text, '[^[:alnum:][:space:]]', ' ', 'g')) LIKE '%' || $2 || '%'
-  `, [row.suggested_intent, normalized]);
+  await clearPromotedUnrecognized(pgPool, {
+    suggestedIntent: row.suggested_intent,
+    normalizedText: normalized,
+  });
 
-  await pgPool.run('claude', `
-    UPDATE intent_promotion_candidates
-    SET auto_applied = FALSE,
-        learned_pattern = NULL,
-        updated_at = NOW()
-    WHERE id = $1
-  `, [row.id]);
+  await clearPromotionCandidateState(pgPool, {
+    candidateId: row.id,
+  });
   await logPromotionEvent(pgPool, {
     candidateId: row.id,
     normalizedText: row.normalized_text,
@@ -581,19 +578,11 @@ async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
   try {
     await _ensureUnrecTable();
     // DB에 promoted_to 기록
-    if (recordIds.length > 0) {
-      await pgPool.run('claude', `
-        UPDATE unrecognized_intents
-        SET promoted_to = $1
-        WHERE id = ANY($2::int[]) AND promoted_to IS NULL
-      `, [toIntent, recordIds]);
-    } else if (text) {
-      await pgPool.run('claude', `
-        UPDATE unrecognized_intents
-        SET promoted_to = $1
-        WHERE text = $2 AND promoted_to IS NULL
-      `, [toIntent, text]);
-    }
+    await markUnrecognizedPromoted(pgPool, {
+      intent: toIntent,
+      recordIds,
+      text,
+    });
     // nlp-learnings.json에 패턴 추가 (intent-parser.js가 5분 내 자동 로드)
     const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
     let learnings = [];

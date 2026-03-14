@@ -201,6 +201,58 @@ async function getUnrecognizedReportRows(pgPool, {
   return { rows, candidates };
 }
 
+async function clearPromotedUnrecognized(pgPool, {
+  schema = 'claude',
+  suggestedIntent,
+  normalizedText,
+} = {}) {
+  if (!pgPool || !suggestedIntent || !normalizedText) return;
+  await pgPool.run(schema, `
+    UPDATE unrecognized_intents
+    SET promoted_to = NULL
+    WHERE promoted_to = $1
+      AND lower(regexp_replace(text, '[^[:alnum:][:space:]]', ' ', 'g')) LIKE '%' || $2 || '%'
+  `, [suggestedIntent, normalizedText]);
+}
+
+async function clearPromotionCandidateState(pgPool, {
+  schema = 'claude',
+  candidateId,
+} = {}) {
+  if (!pgPool || !candidateId) return;
+  await pgPool.run(schema, `
+    UPDATE intent_promotion_candidates
+    SET auto_applied = FALSE,
+        learned_pattern = NULL,
+        updated_at = NOW()
+    WHERE id = $1
+  `, [candidateId]);
+}
+
+async function markUnrecognizedPromoted(pgPool, {
+  schema = 'claude',
+  intent,
+  recordIds = [],
+  text,
+} = {}) {
+  if (!pgPool || !intent) return;
+  if (Array.isArray(recordIds) && recordIds.length > 0) {
+    await pgPool.run(schema, `
+      UPDATE unrecognized_intents
+      SET promoted_to = $1
+      WHERE id = ANY($2::int[]) AND promoted_to IS NULL
+    `, [intent, recordIds]);
+    return;
+  }
+  if (text) {
+    await pgPool.run(schema, `
+      UPDATE unrecognized_intents
+      SET promoted_to = $1
+      WHERE text = $2 AND promoted_to IS NULL
+    `, [intent, text]);
+  }
+}
+
 module.exports = {
   logPromotionEvent,
   upsertPromotionCandidate,
@@ -211,4 +263,7 @@ module.exports = {
   getPromotionEvents,
   findPromotionCandidate,
   getUnrecognizedReportRows,
+  clearPromotedUnrecognized,
+  clearPromotionCandidateState,
+  markUnrecognizedPromoted,
 };
