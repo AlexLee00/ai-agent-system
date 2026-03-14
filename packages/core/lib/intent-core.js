@@ -167,6 +167,33 @@ function getPromotionEventReason(metadata = {}) {
   return metadata.reason ? String(metadata.reason) : '';
 }
 
+function buildPromotionFilterBits(filters = {}) {
+  const bits = [];
+  if (filters.applied === true) bits.push('자동반영만');
+  if (filters.applied === false) bits.push('후보만');
+  if (filters.intent) bits.push(`intent=${filters.intent}`);
+  if (filters.eventsOnly) bits.push('최근변경만');
+  if (filters.eventType) bits.push(`event=${filters.eventType}`);
+  if (filters.actor) bits.push(`actor=${filters.actor}`);
+  if (filters.summaryOnly) bits.push('요약만');
+  if (filters.thresholdsOnly) bits.push('기준만');
+  return bits;
+}
+
+function buildPromotionFamilySummary(rows = []) {
+  const familyMap = new Map();
+  for (const row of rows) {
+    const family = summarizeIntentFamily(row.suggested_intent);
+    const entry = familyMap.get(family) || { family, total: 0, applied: 0, pending: 0, occurrences: 0 };
+    entry.total += 1;
+    entry.occurrences += Number(row.occurrence_count || 0);
+    if (row.auto_applied) entry.applied += 1;
+    else entry.pending += 1;
+    familyMap.set(family, entry);
+  }
+  return [...familyMap.values()].sort((a, b) => b.total - a.total);
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -184,4 +211,6 @@ module.exports = {
   formatIntentConfidence,
   getPromotionCandidateStatus,
   getPromotionEventReason,
+  buildPromotionFilterBits,
+  buildPromotionFamilySummary,
 };
