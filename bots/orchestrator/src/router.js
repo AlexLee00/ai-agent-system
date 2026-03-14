@@ -31,6 +31,8 @@ const {
   getPromotionEvents,
   findPromotionCandidate,
   getUnrecognizedReportRows,
+  getRecentUnrecognizedIntents,
+  findPromotionCandidateIdByNormalized,
   clearPromotedUnrecognized,
   clearPromotionCandidateState,
   markUnrecognizedPromoted,
@@ -213,13 +215,10 @@ async function evaluateAutoPromotion(text) {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
 
-  const rows = await pgPool.query('claude', `
-    SELECT id, text, llm_intent, promoted_to
-    FROM unrecognized_intents
-    WHERE created_at > NOW() - ($1::text || ' days')::interval
-    ORDER BY created_at DESC
-    LIMIT 500
-  `, [String(AUTO_PROMOTE_WINDOW_DAYS)]);
+  const rows = await getRecentUnrecognizedIntents(pgPool, {
+    windowDays: AUTO_PROMOTE_WINDOW_DAYS,
+    limit: 500,
+  });
 
   const matching = rows.filter(r => normalizeIntentText(r.text) === normalized);
   if (matching.length < 2) return null;
@@ -256,9 +255,9 @@ async function evaluateAutoPromotion(text) {
 
   if (!decision.allowed) {
     if (decision.reason !== 'unsafe_intent') return null;
-    const candidate = await pgPool.get('claude', `
-      SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
-    `, [normalized]);
+    const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
+      normalizedText: normalized,
+    });
     await logPromotionEvent(pgPool, {
       candidateId: candidate?.id || null,
       normalizedText: normalized,
@@ -279,9 +278,9 @@ async function evaluateAutoPromotion(text) {
 
   const recordIds = matching.map(r => r.id);
   await promoteToIntent(normalized, suggestedIntent, pattern, recordIds);
-  const candidate = await pgPool.get('claude', `
-    SELECT id FROM intent_promotion_candidates WHERE normalized_text = $1 LIMIT 1
-  `, [normalized]);
+  const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
+    normalizedText: normalized,
+  });
   await upsertPromotionCandidate(pgPool, {
     normalizedText: normalized,
     sampleText,
