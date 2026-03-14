@@ -1234,6 +1234,43 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     reasons.push(`스카 예측 리스크: ${(skaForecastTuning.reasons || []).slice(0, 2).join(', ')}`);
   }
 
+  if (mode === 'briefing') {
+    const alertRows = rows.filter((row) => row.hasWarn);
+    if (alertRows.length === 0) {
+      return [
+        '🧭 통합 운영 헬스 브리핑',
+        '',
+        '✅ 지금 바로 조치할 운영 경고가 없습니다.',
+        '',
+        '상세: /ops-health summary',
+      ].join('\n');
+    }
+
+    const actionMap = {
+      '루나': '/luna-health',
+      '워커': '/worker-health',
+      '클로드': '/claude-health',
+      '스카': '/ska-health | /ska-forecast',
+    };
+
+    const lines = ['🧭 통합 운영 헬스 브리핑', ''];
+    for (const row of alertRows) {
+      lines.push(`⚠️ ${row.title}: ${row.summary}`);
+      lines.push(`   확인: ${actionMap[row.title] || '/ops-health'}`);
+    }
+    lines.push('');
+    lines.push(...buildHealthDecisionSection({
+      title: '■ 우선 조치',
+      recommended: true,
+      level: alertRows.length >= 2 ? 'high' : 'medium',
+      reasons,
+      okText: '현재는 추가 조치보다 관찰 유지',
+    }));
+    lines.push('');
+    lines.push('상세: /ops-health alerts | 요약: /ops-health summary');
+    return lines.join('\n');
+  }
+
   if (mode === 'alerts') {
     const alertRows = rows.filter((row) => row.hasWarn);
     if (alertRows.length === 0) {
