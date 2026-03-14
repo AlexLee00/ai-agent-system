@@ -88,6 +88,38 @@ function checkNodeServerHealth() {
   });
 }
 
+function checkN8nHealth() {
+  return new Promise(resolve => {
+    const req = http.request(
+      { hostname: 'localhost', port: 5678, path: '/healthz', method: 'GET', timeout: 2500 },
+      res => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(body);
+            if (json.status === 'ok') {
+              resolve({ ok: true, detail: 'n8n healthz 정상' });
+            } else {
+              resolve({ ok: false, detail: `비정상 응답: ${body.slice(0, 80)}` });
+            }
+          } catch {
+            resolve({ ok: false, detail: `JSON 파싱 실패 (HTTP ${res.statusCode})` });
+          }
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, detail: '응답 없음 (2500ms 타임아웃)' });
+    });
+    req.on('error', e => {
+      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? '포트 5678 연결 거부' : e.message.slice(0, 80) });
+    });
+    req.end();
+  });
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
@@ -154,6 +186,22 @@ async function main() {
       await notify(`✅ [블로그 헬스] node-server 회복\n${nodeServer.detail}`, 1);
       hsm.clearAlert(state, key);
     }
+  }
+
+  // n8n은 직접 실행 폴백이 있으므로 경고 레벨만 낮게 유지
+  const n8nHealth = await checkN8nHealth();
+  const n8nKey = 'n8n:http';
+  if (!n8nHealth.ok) {
+    if (hsm.canAlert(state, n8nKey)) {
+      issues.push({
+        key: n8nKey,
+        level: 1,
+        msg: `⚠️ [블로그 헬스] n8n 비정상\n${n8nHealth.detail}\n직접 실행 폴백은 가능하지만 웹훅 경로를 점검하세요.`,
+      });
+    }
+  } else if (state[n8nKey]) {
+    await notify(`✅ [블로그 헬스] n8n 회복\n${n8nHealth.detail}`, 1);
+    hsm.clearAlert(state, n8nKey);
   }
 
   // 알림 발송 + 상태 기록
