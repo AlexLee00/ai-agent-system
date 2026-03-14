@@ -31,6 +31,12 @@ const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 // 수집 노드 목록 (셔플 대상)
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || 180000);
+const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || 2500);
+
+const _n8nCircuit = {
+  disabledUntil: 0,
+  reason: '',
+};
 
 // ─── 랜덤 헬퍼 ────────────────────────────────────────────────────────
 
@@ -205,6 +211,43 @@ function buildDynamicPipeline(postType, history) {
   return { pipeline: nodes, variations };
 }
 
+function _getDefaultWebhookCandidates() {
+  const configured = process.env.N8N_BLOG_WEBHOOK;
+  const candidates = configured
+    ? [configured]
+    : [
+        'http://localhost:5678/webhook/blog-pipeline',
+        'http://localhost:5678/webhook-test/blog-pipeline',
+      ];
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+async function _probeN8nHealth() {
+  try {
+    const res = await fetch('http://localhost:5678/healthz', {
+      method: 'GET',
+      signal: AbortSignal.timeout(N8N_HEALTH_TIMEOUT_MS),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function _isCircuitOpen() {
+  return _n8nCircuit.disabledUntil > Date.now();
+}
+
+function _openCircuit(reason) {
+  _n8nCircuit.disabledUntil = Date.now() + (30 * 60 * 1000);
+  _n8nCircuit.reason = reason;
+}
+
+function _resetCircuit() {
+  _n8nCircuit.disabledUntil = 0;
+  _n8nCircuit.reason = '';
+}
+
 // ─── 메인 ─────────────────────────────────────────────────────────────
 
 /**
@@ -228,25 +271,48 @@ async function run(postType, directRunner = null, payload = {}) {
   console.log(`  노드: ${pipeline.join(' → ')}`);
   console.log(`  인사말: ${variations.greetingStyle}, 이미지: ${variations.imageCount}장`);
 
-  // n8n 웹훅 트리거 시도
-  const n8nUrl = process.env.N8N_BLOG_WEBHOOK || 'http://localhost:5678/webhook/blog-pipeline';
   let n8nOk = false;
+  const body = JSON.stringify({ postType, sessionId, pipeline, variations, ...payload });
 
-  try {
-    const res = await fetch(n8nUrl, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ postType, sessionId, pipeline, variations, ...payload }),
-      signal:  AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
-    });
-    n8nOk = res.ok;
-    if (n8nOk) {
-      console.log('  ↳ n8n 트리거 성공');
-    } else {
-      console.warn(`  ⚠️ n8n 응답 오류 (${res.status}) — 직접 실행 폴백`);
+  if (_isCircuitOpen()) {
+    console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
+  } else if (!(await _probeN8nHealth())) {
+    _openCircuit('health_unreachable');
+    console.warn('  ⚠️ n8n 헬스체크 실패 — 직접 실행 폴백');
+  } else {
+    for (const n8nUrl of _getDefaultWebhookCandidates()) {
+      try {
+        const res = await fetch(n8nUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          signal:  AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
+        });
+
+        if (res.ok) {
+          n8nOk = true;
+          _resetCircuit();
+          console.log(`  ↳ n8n 트리거 성공 (${n8nUrl})`);
+          break;
+        }
+
+        if (res.status === 404) {
+          console.warn(`  ⚠️ n8n 웹훅 없음 (${n8nUrl}) — 다음 후보 확인`);
+          continue;
+        }
+
+        console.warn(`  ⚠️ n8n 응답 오류 (${res.status}, ${n8nUrl}) — 직접 실행 폴백`);
+        _openCircuit(`http_${res.status}`);
+        break;
+      } catch (e) {
+        console.warn(`  ⚠️ n8n 트리거 실패 (${e.message}, ${n8nUrl})`);
+      }
     }
-  } catch (e) {
-    console.warn(`  ⚠️ n8n 트리거 실패 (${e.message}) — 직접 실행 폴백`);
+
+    if (!n8nOk && !_isCircuitOpen()) {
+      _openCircuit('webhook_unavailable');
+      console.warn('  ⚠️ n8n 유효 웹훅 미확인 — 직접 실행 폴백');
+    }
   }
 
   // 이력 저장 (실패 무시)
