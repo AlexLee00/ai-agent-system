@@ -6,6 +6,7 @@ import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
 import { getDebateLimit, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.js';
 import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
+import { loadAnalysesForSession } from '../nodes/helpers.js';
 
 function getDecisionNode(id) {
   const node = getInvestmentNode(id);
@@ -76,7 +77,8 @@ export async function runDecisionExecutionPipeline({
 
   for (const symbol of symbols) {
     try {
-      const analyses = await db.getRecentAnalysis(symbol, 70, exchange);
+      const analysisLoad = await loadAnalysesForSession(sessionId, symbol, exchange);
+      const analyses = analysisLoad.analyses || [];
       if (analyses.length === 0) continue;
       symbolAnalysesMap.set(symbol, analyses);
 
