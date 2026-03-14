@@ -309,7 +309,7 @@ async function checkSkaDuckDB(items) {
     return;
   }
 
-  const REQUIRED = ['revenue_daily', 'environment_factors', 'forecast_accuracy'];
+  const REQUIRED = ['revenue_daily', 'environment_factors', 'forecast_results'];
 
   try {
     const tableRows = skaDuckdbQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='main'");
@@ -339,11 +339,27 @@ async function checkSkaDuckDB(items) {
       } catch { /* 쿼리 실패는 무시 */ }
     }
 
-    // MAPE 경보 (forecast_accuracy 최근 7일 평균)
-    if (tables.includes('forecast_accuracy')) {
+    // MAPE 경보 (forecast_results + revenue_daily 기준 최근 7일 실제 오차)
+    if (tables.includes('forecast_results') && tables.includes('revenue_daily')) {
       try {
         const mapeRow = skaDuckdbQuery(
-          "SELECT AVG(mape) as avg_mape FROM forecast_accuracy WHERE forecast_date >= current_date - INTERVAL '7 days'"
+          `WITH latest AS (
+             SELECT forecast_date, predictions, ROW_NUMBER() OVER (
+               PARTITION BY forecast_date ORDER BY created_at DESC
+             ) AS rn
+             FROM forecast_results
+             WHERE forecast_date >= current_date - INTERVAL '7 days'
+           )
+           SELECT AVG(
+             ABS(
+               (CAST(json_extract_string(latest.predictions, '$.yhat') AS DOUBLE) - revenue_daily.actual_revenue)
+               / NULLIF(revenue_daily.actual_revenue, 0)
+             ) * 100
+           ) AS avg_mape
+           FROM latest
+           JOIN revenue_daily ON revenue_daily.date = latest.forecast_date
+           WHERE latest.rn = 1
+             AND revenue_daily.actual_revenue > 0`
         );
         const mape = mapeRow[0]?.avg_mape;
         if (mape !== null && mape !== undefined) {
