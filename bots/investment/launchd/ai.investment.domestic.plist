@@ -50,8 +50,7 @@
     <key>NODE_ENV</key>
     <string>production</string>
     <key>PAPER_MODE</key>
-    <string>true</string>
-    <!-- 국내장 paper 데이터 수집 모드 -->
+    <string>false</string>
   </dict>
 
   <key>RunAtLoad</key>
