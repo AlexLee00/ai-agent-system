@@ -16,6 +16,8 @@ BOT_DIR="$(cd ../.. && pwd)"
 LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
 SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
+NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
+NAVER_MONITOR_SCRIPT="$BOT_DIR/auto/monitors/naver-monitor.js"
 
 NODE_BIN="$HOME/.nvm/versions/node/v24.13.1/bin/node"
 [ ! -f "$NODE_BIN" ] && NODE_BIN=$(which node)
@@ -121,7 +123,7 @@ cleanup_old() {
   fi
 
   # 잔존 naver-monitor 프로세스 정리
-  STALE_PIDS=$(pgrep -f "node naver-monitor.js" 2>/dev/null)
+  STALE_PIDS=$(pgrep -f "$NAVER_MONITOR_SCRIPT" 2>/dev/null)
   if [ -n "$STALE_PIDS" ]; then
     log "  🔍 잔존 프로세스 발견 (PID: $STALE_PIDS) → 종료"
     echo "$STALE_PIDS" | xargs kill 2>/dev/null
@@ -129,7 +131,7 @@ cleanup_old() {
   fi
 
   # naver-profile Chromium 잔존 프로세스 정리 (SingletonLock 해제)
-  CHROME_PIDS=$(pgrep -f "naver-profile" 2>/dev/null)
+  CHROME_PIDS=$(pgrep -f "$NAVER_PROFILE" 2>/dev/null)
   if [ -n "$CHROME_PIDS" ]; then
     log "  🌐 Chromium 잔존 프로세스 종료 (naver-profile 락 해제)"
     echo "$CHROME_PIDS" | xargs kill 2>/dev/null
@@ -137,7 +139,6 @@ cleanup_old() {
   fi
 
   # SingletonLock 삭제 (frame detach 원인 방지)
-  NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
   rm -f "$NAVER_PROFILE/SingletonLock" "$NAVER_PROFILE/SingletonCookie" "$NAVER_PROFILE/SingletonSocket" 2>/dev/null
   log "  🔓 Chrome SingletonLock 제거 완료"
 
