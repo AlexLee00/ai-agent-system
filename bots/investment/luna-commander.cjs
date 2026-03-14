@@ -19,16 +19,21 @@ const os      = require('os');
 const { execSync, spawnSync } = require('child_process');
 const pgPool       = require('../../packages/core/lib/pg-pool');
 const {
+  AUTO_PROMOTE_DEFAULTS,
   normalizeIntentText,
   buildAutoLearnPattern,
+  evaluateAutoPromoteDecision,
 } = require('../../packages/core/lib/intent-core');
 const {
   ensureIntentTables,
   addLearnedPattern,
   getNamedIntentLearningPath,
+  insertUnrecognizedIntent,
+  getRecentUnrecognizedIntents,
   upsertPromotionCandidate,
   logPromotionEvent,
   findPromotionCandidateIdByNormalized,
+  markUnrecognizedPromoted,
 } = require('../../packages/core/lib/intent-store');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
@@ -101,24 +106,46 @@ async function publishAlert(message, level = 1) {
 
 async function saveLearning(entry) {
   try {
-    const patternResult = addLearnedPattern({
-      pattern: entry.re,
-      intent: entry.intent,
-      filePath: NLP_LEARNINGS_PATH,
-    });
-
     const normalizedText = normalizeIntentText(entry.original_text || entry.re || '');
     const learnedPattern = entry.re || buildAutoLearnPattern(normalizedText);
+    const intent = entry.intent;
+    const confidence = Number(entry.confidence || 0.95);
+    if (!normalizedText || !intent || !learnedPattern) return;
+
+    await insertUnrecognizedIntent(pgPool, {
+      schema: 'luna',
+      text: entry.original_text || entry.re,
+      parseSource: 'llm',
+      llmIntent: intent,
+    });
+
+    const rows = await getRecentUnrecognizedIntents(pgPool, {
+      schema: 'luna',
+      windowDays: AUTO_PROMOTE_DEFAULTS.windowDays,
+      limit: 500,
+    });
+
+    const matching = rows.filter(row =>
+      normalizeIntentText(row.text) === normalizedText &&
+      String(row.llm_intent || '') === String(intent)
+    );
 
     await upsertPromotionCandidate(pgPool, {
       schema: 'luna',
       normalizedText,
       sampleText: entry.original_text || entry.re,
-      suggestedIntent: entry.intent,
-      occurrenceCount: 1,
-      confidence: 0.95,
-      autoApplied: true,
+      suggestedIntent: intent,
+      occurrenceCount: matching.length,
+      confidence,
+      autoApplied: false,
       learnedPattern,
+    });
+
+    const decision = evaluateAutoPromoteDecision({
+      intent,
+      occurrenceCount: matching.length,
+      confidence,
+      pattern: learnedPattern,
     });
 
     const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
@@ -126,23 +153,70 @@ async function saveLearning(entry) {
       normalizedText,
     });
 
+    if (!decision.allowed) {
+      await logPromotionEvent(pgPool, {
+        schema: 'luna',
+        candidateId: candidate?.id || null,
+        normalizedText,
+        sampleText: entry.original_text || entry.re,
+        suggestedIntent: intent,
+        eventType: decision.reason === 'unsafe_intent' ? 'auto_blocked' : 'candidate_seen',
+        learnedPattern,
+        actor: 'luna-commander',
+        metadata: {
+          reason: decision.reason,
+          threshold: decision.threshold,
+          occurrenceCount: matching.length,
+          confidence,
+          source: 'analyze_unknown',
+        },
+      });
+      return;
+    }
+
+    const patternResult = addLearnedPattern({
+      pattern: entry.re,
+      intent,
+      filePath: NLP_LEARNINGS_PATH,
+    });
+
+    await markUnrecognizedPromoted(pgPool, {
+      schema: 'luna',
+      intent,
+      text: entry.original_text || entry.re,
+    });
+
+    await upsertPromotionCandidate(pgPool, {
+      schema: 'luna',
+      normalizedText,
+      sampleText: entry.original_text || entry.re,
+      suggestedIntent: intent,
+      occurrenceCount: matching.length,
+      confidence,
+      autoApplied: true,
+      learnedPattern,
+    });
+
     await logPromotionEvent(pgPool, {
       schema: 'luna',
       candidateId: candidate?.id || null,
       normalizedText,
       sampleText: entry.original_text || entry.re,
-      suggestedIntent: entry.intent,
+      suggestedIntent: intent,
       eventType: patternResult.changed ? 'auto_apply' : 'candidate_seen',
       learnedPattern,
       actor: 'luna-commander',
       metadata: {
         reason: entry.reason || '',
         source: 'analyze_unknown',
+        threshold: decision.threshold,
+        occurrenceCount: matching.length,
+        confidence,
       },
     });
 
     if (patternResult.changed) {
-      console.log(`[루나] NLP 패턴 학습: /${entry.re}/ → ${entry.intent}`);
+      console.log(`[루나] NLP 패턴 학습: /${entry.re}/ → ${intent}`);
     }
   } catch (e) {
     console.error(`[루나] NLP 학습 저장 실패:`, e.message);
@@ -584,6 +658,7 @@ async function handleAnalyzeUnknown(args) {
         args: parsed.args || {},
         original_text: text,
         reason: parsed.reason || '',
+        confidence: 0.95,
       });
     } catch {
       console.warn(`[루나] 잘못된 정규식 패턴 무시: ${parsed.pattern}`);
