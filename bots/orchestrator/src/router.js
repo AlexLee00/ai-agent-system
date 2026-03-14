@@ -37,6 +37,7 @@ const {
   clearPromotionCandidateState,
   markUnrecognizedPromoted,
   getNamedIntentLearningPath,
+  readIntentLearnings,
   removeLearnedPatterns,
   addLearnedPattern,
 } = require('../../../packages/core/lib/intent-store');
@@ -476,6 +477,35 @@ async function buildTeamIntentReport(team = '', query = '') {
     `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
     `롤백 예시: /${normalized}-rollback <id>`,
   ].join('\n');
+}
+
+async function buildIntentEngineHealthReport() {
+  const targets = [
+    { key: 'jay', schema: 'claude', title: '제이', path: getNamedIntentLearningPath('jay') },
+    { key: 'worker', schema: 'worker', title: '워커', path: getNamedIntentLearningPath('worker') },
+    { key: 'luna', schema: 'luna', title: '루나', path: getNamedIntentLearningPath('jay') },
+    { key: 'ska', schema: 'ska', title: '스카', path: getNamedIntentLearningPath('jay') },
+    { key: 'claude', schema: 'claude', title: '클로드', path: getNamedIntentLearningPath('jay') },
+  ];
+
+  const lines = ['🩺 인텐트 엔진 상태'];
+  for (const target of targets) {
+    const learnings = readIntentLearnings(target.path);
+    let summary = null;
+    try {
+      summary = await getPromotionSummary(pgPool, { schema: target.schema, filters: {} });
+    } catch {
+      summary = null;
+    }
+    lines.push(
+      `  ${target.title}: learned ${learnings.items.length}개 | 후보 ${summary?.pending_count ?? 0} | 자동 ${summary?.applied_count ?? 0}`
+    );
+  }
+
+  lines.push('');
+  lines.push('조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents');
+  lines.push('롤백: /rollback <id> | /luna-rollback <id> | /ska-rollback <id> | /claude-rollback <id>');
+  return lines.join('\n');
 }
 
 async function rollbackPromotionTarget(target = '', options = {}) {
@@ -1698,6 +1728,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'promotion_candidates':
       return await buildPromotionCandidateReport(args.query || msg.text || '');
+
+    case 'intent_engine_health':
+      return await buildIntentEngineHealthReport();
 
     case 'team_intent_report':
       return await buildTeamIntentReport(args.team || '', args.query || '');
