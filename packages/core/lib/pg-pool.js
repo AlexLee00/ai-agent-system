@@ -395,7 +395,11 @@ const _monitorTimer = setInterval(() => {
     const total = pool.totalCount;
     if (total > 0) {
       const active = total - pool.idleCount;
-      if (active / total > 0.8) {
+      const highUtilization = active / total > 0.8;
+      // total=1 또는 2에서는 짧은 정상 사용도 경고가 과도하게 찍힐 수 있다.
+      // 실제 운영 노이즈를 줄이기 위해 어느 정도 풀 크기가 생기거나 대기열이 있을 때만 경고한다.
+      const shouldWarn = highUtilization && (total >= 3 || pool.waitingCount > 0 || active >= 2);
+      if (shouldWarn) {
         console.warn(`[pg-pool:${schema}] ⚠️ 커넥션 풀 80%+ 사용: ${active}/${total} (대기: ${pool.waitingCount})`);
       }
     }
