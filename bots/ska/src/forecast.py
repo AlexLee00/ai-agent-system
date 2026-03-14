@@ -931,8 +931,35 @@ def save_forecast_result(con, forecast_date, result, mape=None):
 
 
 def get_recent_mape(con, days=7):
-    """최근 N일 평균 MAPE 조회 (forecast_accuracy 테이블)"""
+    """최근 N일 평균 MAPE 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
     try:
+        row = _one(con, """
+            WITH latest AS (
+                SELECT DISTINCT ON (fr.forecast_date)
+                    fr.forecast_date,
+                    fr.predictions,
+                    fr.mape
+                FROM ska.forecast_results fr
+                WHERE fr.forecast_date >= current_date - %s
+                ORDER BY fr.forecast_date, fr.created_at DESC
+            )
+            SELECT AVG(
+                COALESCE(
+                    latest.mape,
+                    CASE
+                        WHEN rd.actual_revenue > 0
+                         AND (latest.predictions->>'yhat') IS NOT NULL
+                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                        ELSE NULL
+                    END
+                )
+            )
+            FROM latest
+            JOIN revenue_daily rd ON rd.date = latest.forecast_date
+            WHERE rd.actual_revenue > 0
+        """, (days,))
+        if row and row[0] is not None:
+            return round(float(row[0]), 1)
         row = _one(con, """
             SELECT AVG(mape) FROM forecast_accuracy
             WHERE target_date >= current_date - %s
@@ -1316,15 +1343,46 @@ def format_monthly(results, base_date):
 # ─── 월간 모델 진단 (ska-011/013) ────────────────────────────────────────────
 
 def _get_accuracy_history(con, days=90):
-    """forecast_accuracy 최근 N일 조회"""
+    """최근 N일 정확도 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
     try:
-        rows = _qry(con, f"""
-            SELECT target_date, actual_revenue, predicted_revenue,
-                   error, mape, model_version
-            FROM forecast_accuracy
-            WHERE target_date >= current_date - INTERVAL '{int(days)} days'
-            ORDER BY target_date
-        """)
+        rows = _qry(con, """
+            WITH latest AS (
+                SELECT DISTINCT ON (fr.forecast_date)
+                    fr.forecast_date,
+                    fr.model_version,
+                    fr.predictions,
+                    fr.mape
+                FROM ska.forecast_results fr
+                WHERE fr.forecast_date >= current_date - %s
+                ORDER BY fr.forecast_date, fr.created_at DESC
+            )
+            SELECT
+                latest.forecast_date,
+                rd.actual_revenue,
+                (latest.predictions->>'yhat')::int AS predicted_revenue,
+                rd.actual_revenue - (latest.predictions->>'yhat')::int AS error,
+                COALESCE(
+                    latest.mape,
+                    CASE
+                        WHEN rd.actual_revenue > 0
+                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                        ELSE NULL
+                    END
+                ) AS mape,
+                latest.model_version
+            FROM latest
+            JOIN revenue_daily rd ON rd.date = latest.forecast_date
+            WHERE rd.actual_revenue IS NOT NULL
+            ORDER BY latest.forecast_date
+        """, (days,))
+        if not rows:
+            rows = _qry(con, """
+                SELECT target_date, actual_revenue, predicted_revenue,
+                       error, mape, model_version
+                FROM forecast_accuracy
+                WHERE target_date >= current_date - %s
+                ORDER BY target_date
+            """, (days,))
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model': r[5]}
                 for r in rows]

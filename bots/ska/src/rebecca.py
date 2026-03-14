@@ -370,14 +370,45 @@ def get_week_summary(con, week_start, week_end):
 
 
 def get_weekly_accuracy(con, week_start, week_end):
-    """전주 예측 정확도 조회 (forecast_accuracy 테이블)"""
+    """전주 예측 정확도 조회 (forecast_results 우선, legacy forecast_accuracy 폴백)"""
     try:
         rows = _qry(con, """
-            SELECT target_date, actual_revenue, predicted_revenue, error, mape, model_version
-            FROM forecast_accuracy
-            WHERE target_date >= %s AND target_date <= %s
-            ORDER BY target_date
+            WITH latest AS (
+                SELECT DISTINCT ON (fr.forecast_date)
+                    fr.forecast_date,
+                    fr.model_version,
+                    fr.predictions,
+                    fr.mape
+                FROM ska.forecast_results fr
+                WHERE fr.forecast_date >= %s AND fr.forecast_date <= %s
+                ORDER BY fr.forecast_date, fr.created_at DESC
+            )
+            SELECT
+                latest.forecast_date,
+                rd.actual_revenue,
+                (latest.predictions->>'yhat')::int AS predicted_revenue,
+                rd.actual_revenue - (latest.predictions->>'yhat')::int AS error,
+                COALESCE(
+                    latest.mape,
+                    CASE
+                        WHEN rd.actual_revenue > 0
+                        THEN ABS(((latest.predictions->>'yhat')::float - rd.actual_revenue) / rd.actual_revenue) * 100
+                        ELSE NULL
+                    END
+                ) AS mape,
+                latest.model_version
+            FROM latest
+            JOIN revenue_daily rd ON rd.date = latest.forecast_date
+            WHERE rd.actual_revenue IS NOT NULL
+            ORDER BY latest.forecast_date
         """, (str(week_start), str(week_end)))
+        if not rows:
+            rows = _qry(con, """
+                SELECT target_date, actual_revenue, predicted_revenue, error, mape, model_version
+                FROM forecast_accuracy
+                WHERE target_date >= %s AND target_date <= %s
+                ORDER BY target_date
+            """, (str(week_start), str(week_end)))
         return [{'date': str(r[0]), 'actual': r[1], 'predicted': r[2],
                  'error': r[3], 'mape': r[4], 'model_version': r[5]}
                 for r in rows]
