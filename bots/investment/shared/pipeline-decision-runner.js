@@ -251,6 +251,7 @@ export async function runDecisionExecutionPipeline({
       market: exchange,
       symbol: dec.symbol,
       meta: { bridge: 'luna_orchestrate', stage: 'execute' },
+      storeArtifact: false,
     });
 
     const execute = await runNode(l31Node, {
@@ -265,6 +266,7 @@ export async function runDecisionExecutionPipeline({
       market: exchange,
       symbol: dec.symbol,
       meta: { bridge: 'luna_orchestrate', stage: 'journal' },
+      storeArtifact: false,
     });
 
     results.push({

@@ -162,6 +162,18 @@ export async function getNodeRuns(sessionId) {
   return query(`SELECT * FROM pipeline_node_runs WHERE session_id = ? ORDER BY started_at`, [sessionId]);
 }
 
+export async function getNodeRunsForSymbol(sessionId, symbol, nodeIds = []) {
+  await ensurePipelineSchema();
+  if (!symbol) return [];
+  const rows = await query(
+    `SELECT * FROM pipeline_node_runs WHERE session_id = ? AND symbol = ? ORDER BY started_at`,
+    [sessionId, symbol],
+  );
+  if (!Array.isArray(nodeIds) || nodeIds.length === 0) return rows;
+  const allowed = new Set(nodeIds);
+  return rows.filter(row => allowed.has(row.node_id));
+}
+
 export default {
   initPipelineSchema,
   createPipelineRun,
@@ -170,4 +182,5 @@ export default {
   finishNodeRun,
   getPipelineRun,
   getNodeRuns,
+  getNodeRunsForSymbol,
 };

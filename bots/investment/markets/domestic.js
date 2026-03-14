@@ -102,7 +102,7 @@ export async function runDomesticCycle(symbols) {
     });
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
-    logPipelineMetrics('국내주식 수집', collect.metrics);
+    await logPipelineMetrics('국내주식 수집', collect.metrics);
 
     // ── 단계 2: 루나 오케스트레이터 ──
     console.log('\n🌙 [판단 단계] 루나 오케스트레이터 실행...');
@@ -112,7 +112,7 @@ export async function runDomesticCycle(symbols) {
       exchange: 'kis',
     });
     const results = decision.results;
-    logPipelineMetrics('국내주식 판단', decision.metrics);
+    await logPipelineMetrics('국내주식 판단', decision.metrics);
 
     // ── 단계 3: 한울 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
@@ -166,7 +166,7 @@ export async function runDomesticResearchCycle(symbols) {
     });
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
-    logPipelineMetrics('국내주식 연구수집', collect.metrics);
+    await logPipelineMetrics('국내주식 연구수집', collect.metrics);
 
     saveResearchWatchlist('domestic', symbols, {
       label: '국내주식',
@@ -197,7 +197,7 @@ export async function runDomesticResearchCycle(symbols) {
   }
 }
 
-function logPipelineMetrics(label, metrics = {}) {
+async function logPipelineMetrics(label, metrics = {}) {
   if (!metrics || typeof metrics !== 'object') return;
   const parts = [
     `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
@@ -212,6 +212,18 @@ function logPipelineMetrics(label, metrics = {}) {
   console.log(`  📈 [메트릭] ${label} | ${parts.join(' | ')}`);
   if (metrics.warnings?.length) {
     console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
+    const escalated = metrics.warnings.filter(w =>
+      ['collect_overload_detected', 'collect_failure_rate_high', 'debate_capacity_hot', 'weak_signal_pressure'].includes(w),
+    );
+    if (escalated.length) {
+      await publishToMainBot({
+        from_bot: 'argos',
+        event_type: 'alert',
+        alert_level: 2,
+        message: `📈 루나 메트릭 경고 — ${label}\n${escalated.join(', ')}`,
+        payload: metrics,
+      });
+    }
   }
 }
 

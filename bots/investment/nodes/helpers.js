@@ -1,5 +1,6 @@
 import * as db from '../shared/db.js';
 import { fetchNodeArtifacts } from '../shared/node-runner.js';
+import { getNodeRunsForSymbol, getPipelineRun } from '../shared/pipeline-db.js';
 import { ANALYST_TYPES } from '../shared/signal.js';
 
 const ANALYST_BY_NODE = {
@@ -8,6 +9,10 @@ const ANALYST_BY_NODE = {
   L04: ANALYST_TYPES.SENTIMENT,
   L05: ANALYST_TYPES.ONCHAIN,
 };
+
+const COLLECT_NODE_IDS = ['L02', 'L03', 'L04', 'L05'];
+const _pipelineRunCache = new Map();
+const _sessionCollectCache = new Map();
 
 export async function loadNodePayloads(sessionId, nodeIds, symbol) {
   const results = [];
@@ -33,6 +38,27 @@ export async function loadAnalysesForSession(sessionId, symbol, market) {
 
   if (fromArtifacts.length > 0) {
     return { analyses: fromArtifacts, source: 'artifacts', artifacts };
+  }
+
+  const sessionCollect = await getSessionCollectState(sessionId, symbol);
+  if (sessionCollect.hasCollectRuns) {
+    const analyses = await db.query(
+      `SELECT * FROM analysis
+       WHERE symbol = $1 AND exchange = $2
+         AND created_at >= to_timestamp($3 / 1000.0)
+       ORDER BY created_at DESC`,
+      [symbol, market, sessionCollect.startedAt],
+    );
+
+    if (analyses.length > 0) {
+      return { analyses, source: 'db_current_session', artifacts: [] };
+    }
+
+    return {
+      analyses: [],
+      source: sessionCollect.hasFailedCollectRuns ? 'session_collect_failed' : 'session_collect_empty',
+      artifacts: [],
+    };
   }
 
   const analyses = await db.getRecentAnalysis(symbol, 70, market);
@@ -87,4 +113,28 @@ function extractMetadata(nodeId, payload) {
     };
   }
   return {};
+}
+
+async function getSessionCollectState(sessionId, symbol) {
+  const cacheKey = `${sessionId}:${symbol}`;
+  if (_sessionCollectCache.has(cacheKey)) return _sessionCollectCache.get(cacheKey);
+
+  const [pipelineRun, nodeRuns] = await Promise.all([
+    getCachedPipelineRun(sessionId),
+    getNodeRunsForSymbol(sessionId, symbol, COLLECT_NODE_IDS),
+  ]);
+  const state = {
+    startedAt: Number(pipelineRun?.started_at || Date.now()),
+    hasCollectRuns: nodeRuns.length > 0,
+    hasFailedCollectRuns: nodeRuns.some(row => row.status === 'failed'),
+  };
+  _sessionCollectCache.set(cacheKey, state);
+  return state;
+}
+
+async function getCachedPipelineRun(sessionId) {
+  if (_pipelineRunCache.has(sessionId)) return _pipelineRunCache.get(sessionId);
+  const row = await getPipelineRun(sessionId).catch(() => null);
+  _pipelineRunCache.set(sessionId, row);
+  return row;
 }
