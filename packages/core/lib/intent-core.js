@@ -194,6 +194,17 @@ function buildPromotionFamilySummary(rows = []) {
   return [...familyMap.values()].sort((a, b) => b.total - a.total);
 }
 
+function buildPromotionEventLines(events = []) {
+  if (!Array.isArray(events) || events.length === 0) return [];
+  return events.map((event) => {
+    const when = String(event.created_at || '').slice(0, 16);
+    const sample = String(event.sample_text || '').slice(0, 28);
+    const suggestedIntent = event.suggested_intent || '-';
+    const actor = event.actor || 'system';
+    return `  ${when} KST | ${event.event_type} | "${sample}" → ${suggestedIntent} (${actor})`;
+  });
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -213,4 +224,5 @@ module.exports = {
   getPromotionEventReason,
   buildPromotionFilterBits,
   buildPromotionFamilySummary,
+  buildPromotionEventLines,
 };

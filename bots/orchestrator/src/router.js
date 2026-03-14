@@ -32,6 +32,7 @@ const {
   getPromotionEventReason,
   buildPromotionFilterBits,
   buildPromotionFamilySummary,
+  buildPromotionEventLines,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -660,10 +661,7 @@ async function buildPromotionCandidateReport(query = '') {
     if (events.length > 0) {
       lines.push('');
       lines.push('최근 변경:');
-      for (const e of events) {
-        const when = String(e.created_at).slice(0, 16);
-        lines.push(`  ${when} KST | ${e.event_type} | "${String(e.sample_text || '').slice(0, 28)}" → ${e.suggested_intent || '-'} (${e.actor})`);
-      }
+      lines.push(...buildPromotionEventLines(events));
     } else if (filters.eventsOnly || filters.eventType || filters.actor) {
       lines.push('');
       lines.push('최근 변경: 없음');
