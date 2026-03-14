@@ -10,7 +10,7 @@ ska-004/009: 레베카(REBECCA) — 일간·주간 현황 리포트
 
 분석 항목 (--mode=weekly, ska-009):
   - 전주 매출 집계
-  - 전주 예측 정확도 (MAPE) — forecast_accuracy 테이블
+  - 전주 예측 정확도 (MAPE) — forecast_results + revenue_daily
   - 이번 주 주요 이벤트 예고
 
 출력:

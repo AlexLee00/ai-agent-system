@@ -1,14 +1,14 @@
 """
 ska-002: PostgreSQL reservation → PostgreSQL ska ETL 모듈
-ska-009: forecast_accuracy 테이블 관리 + MAPE 추적 추가
+ska-009: realized MAPE 추적 및 feature store 동기화
 
 소스: PostgreSQL jay DB, reservation 스키마
   - daily_summary: 일별 매출 집계
   - reservations:  예약 건수·가동률 계산용
 
 타겟: PostgreSQL jay DB, ska 스키마
-  - revenue_daily:       일별 매출·가동률 집계
-  - forecast_accuracy:   예측 vs 실제 오차 추적 (ska-009)
+  - revenue_daily:          일별 매출·가동률 집계
+  - training_feature_daily: 학습/보정용 feature store
 
 실행: bots/ska/venv/bin/python bots/ska/src/etl.py [--days=90]
 launchd: 매일 00:30 (ai.ska.etl)
@@ -69,14 +69,14 @@ def _run(con, sql, params=()):
 # ─── MAPE 추적 ──────────────────────────────────────────────────────────────────
 
 def track_forecast_accuracy(res_con, ska_con, yesterday):
-    """어제의 forecast vs actual 비교 → forecast_accuracy 저장 (피드백 루프)"""
+    """어제의 forecast vs actual 비교 → 요약 반환 (중복 테이블 저장 없음)"""
     yesterday_str = str(yesterday)
 
     actual_row = _one(ska_con,
         "SELECT actual_revenue FROM revenue_daily WHERE date = %s", (yesterday_str,))
     if not actual_row or actual_row[0] is None:
         print(f'[ETL] ⚠️ MAPE: 어제({yesterday_str}) 실제 매출 없음 — 스킵')
-        return
+        return None
 
     actual_rev = int(actual_row[0])
 
@@ -99,7 +99,7 @@ def track_forecast_accuracy(res_con, ska_con, yesterday):
         """, (yesterday_str,))
     if not forecast_row:
         print(f'[ETL] ⚠️ MAPE: 어제({yesterday_str}) 예측값 없음 — 스킵')
-        return
+        return None
 
     predicted = int(forecast_row[0])
     model_ver = forecast_row[1]
@@ -107,21 +107,19 @@ def track_forecast_accuracy(res_con, ska_con, yesterday):
     abs_error = abs(error)
     mape      = round(abs_error / actual_rev * 100, 2) if actual_rev > 0 else None
 
-    # 기존 레코드 교체 (같은 날짜+모델 버전)
-    _run(ska_con,
-        "DELETE FROM forecast_accuracy WHERE target_date = %s AND model_version = %s",
-        (yesterday_str, model_ver))
-    _run(ska_con, """
-        INSERT INTO forecast_accuracy
-          (target_date, actual_revenue, predicted_revenue,
-           error, abs_error, mape, model_version)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (yesterday_str, actual_rev, predicted, error, abs_error, mape, model_ver))
-
     sign   = '+' if error >= 0 else ''
     mape_s = f'{mape:.1f}%' if mape is not None else 'N/A'
     warn   = '  ⚠️ 15% 초과!' if mape is not None and mape > 15 else ''
     print(f'[ETL] 📊 MAPE: {yesterday_str}  예측={predicted:,}  실제={actual_rev:,}  오차={sign}{error:,}원  MAPE={mape_s}{warn}')
+    return {
+        'target_date': yesterday_str,
+        'actual_revenue': actual_rev,
+        'predicted_revenue': predicted,
+        'error': error,
+        'abs_error': abs_error,
+        'mape': mape,
+        'model_version': model_ver,
+    }
 
 
 def parse_days_arg():
