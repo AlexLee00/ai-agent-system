@@ -196,7 +196,10 @@ def sync_training_feature_store(con, days=365):
                 rds.entries_count,
                 rd.occupancy_rate,
                 rd.total_reservations,
-                ra.reservation_count,
+                CASE
+                    WHEN ds.date < current_date THEN rd.total_reservations
+                    ELSE COALESCE(ra.reservation_count, rd.total_reservations)
+                END AS reservation_count,
                 ra.reservation_booked_hours,
                 ra.reservation_unique_rooms,
                 COALESCE(ro.reservation_peak_overlap, 0) AS reservation_peak_overlap,
@@ -233,8 +236,20 @@ def sync_training_feature_store(con, days=365):
                 EXTRACT(MONTH FROM ds.date)::int AS month,
                 EXTRACT(DAY FROM ds.date)::int AS day_of_month,
                 (EXTRACT(ISODOW FROM ds.date)::int >= 6) AS is_weekend,
-                LAG(COALESCE(ra.reservation_count, rd.total_reservations), 1) OVER (ORDER BY ds.date) AS lag_reservation_count_1d,
-                LAG(COALESCE(ra.reservation_count, rd.total_reservations), 3) OVER (ORDER BY ds.date) AS lag_reservation_count_3d,
+                LAG(
+                    CASE
+                        WHEN ds.date < current_date THEN rd.total_reservations
+                        ELSE COALESCE(ra.reservation_count, rd.total_reservations)
+                    END,
+                    1
+                ) OVER (ORDER BY ds.date) AS lag_reservation_count_1d,
+                LAG(
+                    CASE
+                        WHEN ds.date < current_date THEN rd.total_reservations
+                        ELSE COALESCE(ra.reservation_count, rd.total_reservations)
+                    END,
+                    3
+                ) OVER (ORDER BY ds.date) AS lag_reservation_count_3d,
                 LAG(COALESCE(ra.reservation_booked_hours, 0.0), 1) OVER (ORDER BY ds.date) AS lag_reservation_hours_1d,
                 LAG(COALESCE(ra.reservation_booked_hours, 0.0), 3) OVER (ORDER BY ds.date) AS lag_reservation_hours_3d,
                 LAG(rd.actual_revenue, 1) OVER (ORDER BY ds.date) AS lag_revenue_1d,
