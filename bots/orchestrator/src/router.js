@@ -1064,6 +1064,42 @@ async function runSkaHealthDirect() {
   });
 }
 
+async function runBlogHealthDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'blog', 'scripts', 'health-report.js');
+
+  return await new Promise((resolve) => {
+    const child = spawn('node', [script], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve('⏱ 블로 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
+    }, 60_000);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve(`⚠️ 블로 운영 헬스 실행 실패: ${err.message}`);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
+        resolve(`⚠️ 블로 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
+        return;
+      }
+      resolve(stripAnsi(stdout).trim() || 'ℹ️ 블로 운영 헬스 결과가 비어 있습니다.');
+    });
+  });
+}
+
 async function getWorkerIntentHealth() {
   try {
     const summary = await getPromotionSummary(pgPool, { schema: 'worker', filters: {} });
@@ -1144,13 +1180,15 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     worker: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js'),
     claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
     ska: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
+    blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
   };
 
-  const [luna, worker, claude, ska] = await Promise.all([
+  const [luna, worker, claude, ska, blog] = await Promise.all([
     runNodeScriptJson(scripts.luna, ['--json']),
     runNodeScriptJson(scripts.worker, ['--json']),
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
+    runNodeScriptJson(scripts.blog, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
   const [workerIntent, claudeCommands] = await Promise.all([
@@ -1239,6 +1277,25 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         skaForecastHasWarn ? 3 : 0,
       ),
     },
+    {
+      title: '블로',
+      summary: blog
+        ? `서비스 경고 ${blog.serviceHealth.warnCount}건 / 백엔드 경고 ${blog.nodeHealth.warnCount}건 / daily 경고 ${blog.dailyRunHealth.warnCount}건`
+        : '조회 실패',
+      detail: blog
+        ? [
+          `  서비스 ${blog.serviceHealth.okCount}/${blog.serviceHealth.warnCount}, 백엔드 ${blog.nodeHealth.okCount}/${blog.nodeHealth.warnCount}, daily ${blog.dailyRunHealth.okCount}/${blog.dailyRunHealth.warnCount}`,
+          ...blog.nodeHealth.warn.slice(0, 2),
+          ...blog.dailyRunHealth.warn.slice(0, 2),
+        ].join('\n')
+        : '  health-report 실행 실패',
+      hasWarn: !blog || blog.serviceHealth.warnCount > 0 || blog.nodeHealth.warnCount > 0 || blog.dailyRunHealth.warnCount > 0,
+      priority: !blog ? 5 : Math.max(
+        blog?.serviceHealth?.warnCount > 0 ? 3 + blog.serviceHealth.warnCount : 0,
+        blog?.nodeHealth?.warnCount > 0 ? 2 + blog.nodeHealth.warnCount : 0,
+        blog?.dailyRunHealth?.warnCount > 0 ? 2 + blog.dailyRunHealth.warnCount : 0,
+      ),
+    },
   ];
 
   const warnCount = rows.filter((row) => row.hasWarn).length;
@@ -1277,6 +1334,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       '워커': '/worker-health',
       '클로드': '/claude-health',
       '스카': '/ska-health | /ska-forecast',
+      '블로': '/blog-health',
     };
 
     const lines = ['🧭 통합 운영 헬스 브리핑', ''];
@@ -1376,6 +1434,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     ],
     footer: [
       '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
+      '블로 조회: /blog-health',
     ],
   });
 }
@@ -1845,6 +1904,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'ska_health': {
       await notify('⏳ 스카 운영 헬스 확인 중...');
       return await runSkaHealthDirect();
+    }
+
+    case 'blog_health': {
+      await notify('⏳ 블로 운영 헬스 확인 중...');
+      return await runBlogHealthDirect();
     }
 
     case 'ska_forecast_health': {
