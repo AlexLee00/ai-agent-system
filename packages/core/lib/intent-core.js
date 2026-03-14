@@ -121,6 +121,29 @@ function loadLearnedPatternsFromFile(filePath) {
   }
 }
 
+function createDynamicExampleLoader({
+  ttlMs = 5 * 60 * 1000,
+  fetchRows,
+  formatRow = (row) => row,
+} = {}) {
+  let cache = [];
+  let lastLoadedAt = 0;
+
+  return async function loadDynamicExamples() {
+    const now = Date.now();
+    if (now - lastLoadedAt < ttlMs) return cache;
+    if (typeof fetchRows !== 'function') return cache;
+    try {
+      const rows = await fetchRows();
+      cache = Array.isArray(rows) ? rows.map(formatRow).filter(Boolean) : [];
+      lastLoadedAt = now;
+    } catch {
+      cache = [];
+    }
+    return cache;
+  };
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -134,4 +157,5 @@ module.exports = {
   getAutoPromoteThreshold,
   evaluateAutoPromoteDecision,
   loadLearnedPatternsFromFile,
+  createDynamicExampleLoader,
 };

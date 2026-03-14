@@ -17,7 +17,10 @@ const os    = require('os');
 const { trackTokens }  = require('./token-tracker');
 const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool           = require('../../../packages/core/lib/pg-pool');
-const { loadLearnedPatternsFromFile } = require('../../../packages/core/lib/intent-core');
+const {
+  loadLearnedPatternsFromFile,
+  createDynamicExampleLoader,
+} = require('../../../packages/core/lib/intent-core');
 
 // ─── 학습 패턴 로더 ─────────────────────────────────────────────────
 // claude-commander analyze_unknown이 저장한 NLP 학습 패턴을 주기적으로 로드
@@ -31,29 +34,17 @@ setInterval(() => { _learnedPatterns = loadLearnedPatternsFromFile(NLP_LEARNINGS
 // ─── 동적 Few-shot 예시 로더 (unrecognized_intents.promoted_to) ──────
 // router.js의 promoteToIntent()가 승인한 예시를 LLM 프롬프트에 동적 추가
 
-let _dynamicExamples    = [];
-let _dynamicExamplesAge = 0;
-
-async function loadDynamicExamples() {
-  const now = Date.now();
-  if (now - _dynamicExamplesAge < 5 * 60 * 1000) return _dynamicExamples; // 5분 캐시
-  try {
-    const rows = await pgPool.query('claude', `
+const loadDynamicExamples = createDynamicExampleLoader({
+  ttlMs: 5 * 60 * 1000,
+  fetchRows: async () => pgPool.query('claude', `
       SELECT DISTINCT ON (promoted_to) text, promoted_to
       FROM unrecognized_intents
       WHERE promoted_to IS NOT NULL
       ORDER BY promoted_to, created_at DESC
       LIMIT 30
-    `);
-    _dynamicExamples = rows.map(r =>
-      `사용자: "${r.text.slice(0, 60)}" → {"intent": "${r.promoted_to}", "args": {}, "confidence": 0.90}`
-    );
-    _dynamicExamplesAge = now;
-  } catch {
-    _dynamicExamples = [];
-  }
-  return _dynamicExamples;
-}
+    `),
+  formatRow: (r) => `사용자: "${String(r.text || '').slice(0, 60)}" → {"intent": "${r.promoted_to}", "args": {}, "confidence": 0.90}`,
+});
 
 // ─── LLM 폴백 설정 ───────────────────────────────────────────────────
 
