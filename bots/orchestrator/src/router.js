@@ -495,12 +495,13 @@ async function buildUnrecognizedReport() {
 
 function parsePromotionQuery(raw = '') {
   const query = String(raw || '').trim().toLowerCase();
-  const filters = { applied: null, intent: null, eventsOnly: false, eventType: null, actor: null };
+  const filters = { applied: null, intent: null, eventsOnly: false, eventType: null, actor: null, summaryOnly: false };
   if (!query) return filters;
 
   if (/(applied|auto|자동|반영됨|반영된)/i.test(query)) filters.applied = true;
   if (/(pending|candidate|후보|대기)/i.test(query)) filters.applied = false;
   if (/(events|history|최근\s*변경|변경\s*이력|이력|로그)/i.test(query)) filters.eventsOnly = true;
+  if (/(summary|요약|분포|그룹|grouped?)/i.test(query)) filters.summaryOnly = true;
 
   const intentMatch =
     query.match(/intent[:=]\s*([a-z0-9_./-]+)/i) ||
@@ -519,6 +520,13 @@ function parsePromotionQuery(raw = '') {
   if (actorMatch?.[1]) filters.actor = actorMatch[1].trim();
 
   return filters;
+}
+
+function summarizeIntentFamily(intent = '') {
+  const value = String(intent || '').trim();
+  if (!value) return 'unknown';
+  const [head] = value.split(/[/:]/);
+  return head || 'unknown';
 }
 
 async function buildPromotionCandidateReport(query = '') {
@@ -546,7 +554,7 @@ async function buildPromotionCandidateReport(query = '') {
       FROM intent_promotion_candidates
       ${whereSql}
     `, params);
-    const rows = filters.eventsOnly ? [] : await pgPool.query('claude', `
+    const rows = (filters.eventsOnly || filters.summaryOnly) ? [] : await pgPool.query('claude', `
       SELECT
         c.id,
         c.sample_text,
@@ -570,7 +578,7 @@ async function buildPromotionCandidateReport(query = '') {
       ORDER BY c.auto_applied DESC, c.updated_at DESC
       LIMIT 20
     `, params);
-    if (!filters.eventsOnly && rows.length === 0) {
+    if (!filters.eventsOnly && !filters.summaryOnly && rows.length === 0) {
       const suffix = query ? ` (${query})` : '';
       return `📝 자동 반영 후보 없음${suffix}`;
     }
@@ -583,8 +591,34 @@ async function buildPromotionCandidateReport(query = '') {
     if (filters.eventsOnly) filterBits.push('최근변경만');
     if (filters.eventType) filterBits.push(`event=${filters.eventType}`);
     if (filters.actor) filterBits.push(`actor=${filters.actor}`);
+    if (filters.summaryOnly) filterBits.push('요약만');
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
-    if (!filters.eventsOnly) {
+    if (filters.summaryOnly) {
+      const baseRows = await pgPool.query('claude', `
+        SELECT suggested_intent, auto_applied, occurrence_count
+        FROM intent_promotion_candidates
+        ${whereSql}
+        ORDER BY updated_at DESC
+        LIMIT 200
+      `, params);
+      const familyMap = new Map();
+      for (const row of baseRows) {
+        const family = summarizeIntentFamily(row.suggested_intent);
+        const entry = familyMap.get(family) || { total: 0, applied: 0, pending: 0, occurrences: 0 };
+        entry.total += 1;
+        entry.occurrences += Number(row.occurrence_count || 0);
+        if (row.auto_applied) entry.applied += 1;
+        else entry.pending += 1;
+        familyMap.set(family, entry);
+      }
+      lines.push(`요약: 전체 ${summary?.total_count ?? 0}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
+      lines.push('');
+      lines.push('의도 계열 분포:');
+      const familyRows = [...familyMap.entries()].sort((a, b) => b[1].total - a[1].total);
+      for (const [family, stats] of familyRows) {
+        lines.push(`  ${family}: ${stats.total}건 (자동 ${stats.applied} / 후보 ${stats.pending} / 누적 ${stats.occurrences}회)`);
+      }
+    } else if (!filters.eventsOnly) {
       lines.push(`요약: 전체 ${summary?.total_count ?? rows.length}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
       lines.push('');
       for (const r of rows) {
@@ -640,6 +674,7 @@ async function buildPromotionCandidateReport(query = '') {
     lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
     lines.push('안전정책: 자동반영은 query/status/report 성격만 허용, action 계열은 후보로만 유지');
     lines.push('조회: /promotions applied | /promotions pending | /promotions intent:luna_query');
+    lines.push('요약: /promotions summary');
     lines.push('이력: /promotions events | /promotions event:rollback | /promotions actor:master');
     lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
     return lines.join('\n');
