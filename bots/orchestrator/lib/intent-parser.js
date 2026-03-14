@@ -148,6 +148,7 @@ const KEYWORD_PATTERNS = [
   // ── 스카팀 세부 명령 (일반 'ska'보다 먼저 매칭) ──
   { re: /앤디.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_andy' } },
   { re: /지미.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_jimmy' } },
+  { re: /(앤디|지미).*(살려|올려|켜|다시\s*띄워|다시\s*올려)/i,               intent: 'ska_action', args: (m) => ({ command: /앤디/.test(m[0]) ? 'restart_andy' : 'restart_jimmy' }) },
   { re: /예약.*(현황|목록|오늘|확인|조회|몇|있어)/i,          intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /오늘.*(예약|방문|입장)/i,                            intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계/i,    intent: 'ska_query', args: { command: 'query_today_stats' } },
@@ -186,7 +187,9 @@ const KEYWORD_PATTERNS = [
   { re: /루나.*(정지|멈춰|pause|중지|꺼|stop)|거래.*(정지|중지|멈춰|stop)|매매.*(멈춰|정지|중지|stop)|투자.*(멈춰|정지|중지)/i, intent: 'luna_action', args: { command: 'pause_trading' } },
   { re: /루나.*(재개|시작|resume|켜|다시)|거래.*(재개|다시|resume)|매매.*(재개|다시|시작)|투자.*(재개|다시)/i,                  intent: 'luna_action', args: { command: 'resume_trading' } },
   { re: /루나.*(리포트|보고|보여|report)|투자.*(리포트|보고|현황|report)|포트폴리오.*(보여|알려|현황)|수익률.*(알려|보여)/i,    intent: 'luna_query',  args: { command: 'force_report' } },
+  { re: /(투자|매매).*(요약|브리핑)|루나.*(브리핑|정리해줘)|오늘.*(투자|매매).*(정리|요약)/i,                              intent: 'luna_query',  args: { command: 'force_report' } },
   { re: /루나.*(상태|현황|어때|잔고|포지션)|투자.*(상태|현황|어때)|잔고.*(얼마|어때)|USDT.*(얼마|있어)/i,                      intent: 'luna_query',  args: { command: 'get_status' } },
+  { re: /(루나|luna).*(지금|현재).*(어때|상태|현황|뭐\s*해|뭐하는)|루나.*(무슨\s*상황|무슨\s*일|잘\s*돌아|돌고\s*있)/i,         intent: 'luna_query',  args: { command: 'get_status' } },
 
   // ── 투자 분석 세부 ──
   { re: /애널리스트.*(정확도|정확성|accuracy)|분석가.*(정확도|성과|적중)/i,       intent: 'analyst_accuracy' },
@@ -201,8 +204,11 @@ const KEYWORD_PATTERNS = [
   { re: /덱스터.*(전체|full|풀|완전).*점검|(전체|full|풀|완전).*점검|npm.*audit/i,                                       intent: 'claude_action', args: { command: 'run_full' } },
   { re: /덱스터.*(수정|fix|패치|고쳐)|자동.*(수정|fix|패치)/i,                                                           intent: 'claude_action', args: { command: 'run_fix' } },
   { re: /덱스터.*(퀵|빠른|quick|5분|단기)|퀵.*체크|quick.*check/i,                                                       intent: 'dexter_quickcheck' },
+  { re: /덱스터.*(빠르게|간단히|짧게)|간단.*점검|빠른.*점검/i,                                                           intent: 'dexter_quickcheck' },
   { re: /덱스터.*(일일|daily|보고서|리포트)|일일.*(보고|리포트)|daily.*(report|보고)|오늘.*보고서/i,                       intent: 'dexter_report' },
+  { re: /오늘.*(점검|시스템).*(요약|보고)|덱스터.*(요약|브리핑)|점검.*(요약|브리핑)/i,                                     intent: 'dexter_report' },
   { re: /덱스터.*(점검|체크|check|괜찮|확인|살아)|시스템.*(점검|체크|check|괜찮)|서버.*(점검|체크|괜찮|확인)|보안.*점검/i, intent: 'claude_action', args: { command: 'run_check' } },
+  { re: /덱스터.*(지금.*봐|바로.*봐|지금.*점검)|바로.*덱스터.*(돌려|실행)|즉시.*점검/i,                                     intent: 'claude_action', args: { command: 'run_check' } },
   { re: /점검.*(이력|히스토리|기록)|에러.*(이력|log|기록)|오류.*(이력|기록)/i,                                            intent: 'doctor_history' },
 
   // ── 스카팀 점검 ──
