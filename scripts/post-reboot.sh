@@ -8,20 +8,42 @@ set -uo pipefail
 
 PROJECT_DIR="$HOME/projects/ai-agent-system"
 LOG_FILE="/tmp/post-reboot.log"
-CHAT_ID=***REMOVED***
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
+DRY_RUN=0
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+if [ "${1:-}" = "--dry-run" ]; then
+  DRY_RUN=1
+fi
+
+log() {
+  local line="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+  printf '%s\n' "$line" >> "$LOG_FILE"
+  if [ -t 1 ]; then
+    printf '%s\n' "$line"
+  fi
+}
 
 send_telegram() {
   local msg_file="$1"
-  /Users/alexlee/.nvm/versions/node/v24.13.1/bin/node -e "
-    const fs = require('fs');
-    const sender = require('$PROJECT_DIR/packages/core/lib/telegram-sender');
-    const text = fs.readFileSync('$msg_file', 'utf-8');
-    sender.send('claude-lead', text).catch(() => {});
-    setTimeout(() => {}, 3000);
-  " 2>/dev/null || true
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "🧪 dry-run 모드 — 텔레그램 발송 생략"
+    log "🧾 메시지 미리보기:"
+    while IFS= read -r line; do
+      log "   $line"
+    done < "$msg_file"
+    return 0
+  fi
+
+  PROJECT_DIR_ENV="$PROJECT_DIR" MSG_FILE_ENV="$msg_file" \
+  /Users/alexlee/.nvm/versions/node/v24.13.1/bin/node - <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+const sender = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/telegram-sender');
+
+(async () => {
+  const text = fs.readFileSync(process.env.MSG_FILE_ENV, 'utf-8');
+  await sender.send('claude-lead', text);
+})().catch(() => {});
+NODE
 }
 
 # ── 시스템 안정화 대기 ────────────────────────────────────
@@ -36,9 +58,13 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 sleep 20
 
 # ── 서비스 상태 확인 ──────────────────────────────────────
-REPORT=""
+REPORT_LINES=()
 OK=0
 FAIL=0
+
+append_report() {
+  REPORT_LINES+=("$1")
+}
 
 check_svc() {
   local svc="$1"
@@ -47,13 +73,11 @@ check_svc() {
   pid=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s {print $1}')
   if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" != "0" ]; then
     log "   ✅ ${label} (PID: ${pid})"
-    REPORT="${REPORT}✅ ${label}
-"
+    append_report "✅ ${label}"
     ((OK++)) || true
   else
     log "   ❌ ${label} 미실행"
-    REPORT="${REPORT}❌ ${label} 미실행
-"
+    append_report "❌ ${label} 미실행"
     ((FAIL++)) || true
   fi
 }
@@ -62,35 +86,33 @@ check_svc() {
 check_periodic() {
   local svc="$1"
   local label="$2"
-  local info runs exit_code
+  local info runs exit_raw exit_code
   info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null)
   runs=$(echo "$info" | awk '/	runs =/ {print $3}')
-  exit_code=$(echo "$info" | awk '/	last exit code =/ {print $5}')
+  exit_raw=$(echo "$info" | sed -n 's/^[[:space:]]*last exit code = \(.*\)$/\1/p' | head -n 1)
 
   # exit_code가 숫자가 아니면(never 등) 빈 값으로 처리
-  if ! [[ "$exit_code" =~ ^[0-9]+$ ]]; then
+  if [[ "$exit_raw" =~ ^[0-9]+$ ]]; then
+    exit_code="$exit_raw"
+  else
     exit_code=""
   fi
 
   if [ -z "$runs" ]; then
     log "   ⚠️  ${label} (서비스 미등록)"
-    REPORT="${REPORT}⚠️ ${label} 미등록
-"
+    append_report "⚠️ ${label} 미등록"
     ((FAIL++)) || true
   elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
     log "   ✅ ${label} (${runs}회 실행, exit=0)"
-    REPORT="${REPORT}✅ ${label}
-"
+    append_report "✅ ${label}"
     ((OK++)) || true
-  elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ]; then
+  elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
     log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
-    REPORT="${REPORT}⏳ ${label} 대기중
-"
+    append_report "⏳ ${label} 대기중"
     ((OK++)) || true
   else
-    log "   ❌ ${label} (exit=${exit_code})"
-    REPORT="${REPORT}❌ ${label} 오류 (exit=${exit_code})
-"
+    log "   ❌ ${label} (exit=${exit_raw:-unknown})"
+    append_report "❌ ${label} 오류 (exit=${exit_raw:-unknown})"
     ((FAIL++)) || true
   fi
 }
@@ -136,11 +158,16 @@ else
 fi
 
 MSG_FILE="/tmp/post-reboot-msg.txt"
+REPORT_TEXT=""
+if [ "${#REPORT_LINES[@]}" -gt 0 ]; then
+  REPORT_TEXT=$(printf '%s\n' "${REPORT_LINES[@]}")
+fi
+
 cat > "$MSG_FILE" << EOF
 🖥️ <b>맥북 재부팅 완료</b> (${BOOT_TIME})
 ${STATUS_ICON} ${STATUS_TEXT}
 
-${REPORT}
+${REPORT_TEXT}
 마지막 커밋: ${LAST_COMMIT}
 EOF
 send_telegram "$MSG_FILE"
