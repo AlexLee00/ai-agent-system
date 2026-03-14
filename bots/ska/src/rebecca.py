@@ -226,6 +226,54 @@ def get_yesterday_forecast(con, date_str):
         return None
 
 
+def get_forecast_context(con, date_str):
+    """특정 날짜 최신 forecast_results의 설명용 컨텍스트 조회"""
+    try:
+        row = _one(con, """
+            SELECT predictions
+            FROM ska.forecast_results
+            WHERE forecast_date = %s
+            ORDER BY created_at DESC LIMIT 1
+        """, (date_str,))
+        if not row or not row[0]:
+            return None
+
+        payload = row[0]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if not isinstance(payload, dict):
+            return None
+
+        room_counts = payload.get('reservation_room_counts') or {}
+        if isinstance(room_counts, str):
+            try:
+                room_counts = json.loads(room_counts)
+            except Exception:
+                room_counts = {}
+
+        return {
+            'yhat': int(payload.get('yhat') or 0),
+            'yhat_lower': int(payload.get('yhat_lower') or 0),
+            'yhat_upper': int(payload.get('yhat_upper') or 0),
+            'confidence': float(payload.get('confidence') or 0.0),
+            'reservation_count': int(payload.get('reservation_count') or 0),
+            'reservation_booked_hours': float(payload.get('reservation_booked_hours') or 0.0),
+            'reservation_density': float(payload.get('reservation_density') or 0.0),
+            'reservation_unique_rooms': int(payload.get('reservation_unique_rooms') or 0),
+            'reservation_peak_overlap': int(payload.get('reservation_peak_overlap') or 0),
+            'reservation_avg_duration_hours': float(payload.get('reservation_avg_duration_hours') or 0.0),
+            'reservation_room_counts': room_counts if isinstance(room_counts, dict) else {},
+            'reservation_morning_count': int(payload.get('reservation_morning_count') or 0),
+            'reservation_afternoon_count': int(payload.get('reservation_afternoon_count') or 0),
+            'reservation_evening_count': int(payload.get('reservation_evening_count') or 0),
+            'calibration_adjustment': int(payload.get('calibration_adjustment') or 0),
+            'calibration_notes': payload.get('calibration_notes') or [],
+            'env_info': payload.get('env_info') or {},
+        }
+    except Exception:
+        return None
+
+
 # ─── 텔레그램 포맷 ─────────────────────────────────────────────────────────────
 
 def pct_str(new, base):
@@ -253,6 +301,7 @@ def format_telegram(report):
     mon = report['monthly']
     env_today = report.get('env_today')
     env_tomorrow = report.get('env_tomorrow')
+    tomorrow_forecast = report.get('tomorrow_forecast')
     bars  = report['recent_bars']
     anomalies = report['anomalies']
 
@@ -347,6 +396,38 @@ def format_telegram(report):
         lines.append('   ' + ('  '.join(parts) if parts else '데이터 없음'))
     else:
         lines.append('   데이터 없음 (이브 미수집)')
+
+    if tomorrow_forecast:
+        tf = tomorrow_forecast
+        conf_pct = round((tf.get('confidence') or 0.0) * 100)
+        room_counts = tf.get('reservation_room_counts') or {}
+        room_bits = [
+            f'A1 {room_counts.get("A1", 0)}',
+            f'A2 {room_counts.get("A2", 0)}',
+            f'B {room_counts.get("B", 0)}',
+        ]
+        lines.append('')
+        lines.append('🔮 내일 예측')
+        lines.append(f'   예상 매출: {tf["yhat"]:,}원  ({tf["yhat_lower"]:,}~{tf["yhat_upper"]:,}원)')
+        lines.append(
+            f'   예약 기준: {tf["reservation_count"]}건 / {tf["reservation_booked_hours"]:.1f}h'
+            f' / 밀도 {tf["reservation_density"]*100:.0f}% / 확신도 {conf_pct}%'
+        )
+        if tf['reservation_unique_rooms'] > 0 or tf['reservation_peak_overlap'] > 0:
+            lines.append(
+                f'   구조: {tf["reservation_unique_rooms"]}룸 / 피크겹침 {tf["reservation_peak_overlap"]}건'
+                f' / 평균 {tf["reservation_avg_duration_hours"]:.1f}h'
+            )
+        if any(room_counts.values()):
+            lines.append(f'   룸 분포: {" / ".join(room_bits)}')
+        if tf['reservation_morning_count'] or tf['reservation_afternoon_count'] or tf['reservation_evening_count']:
+            lines.append(
+                f'   시간대: 오전 {tf["reservation_morning_count"]} /'
+                f' 오후 {tf["reservation_afternoon_count"]} / 저녁 {tf["reservation_evening_count"]}'
+            )
+        if tf['calibration_adjustment']:
+            note_suffix = f' ({", ".join(tf["calibration_notes"])})' if tf['calibration_notes'] else ''
+            lines.append(f'   최근 오차/예약 보정: {tf["calibration_adjustment"]:+,}원{note_suffix}')
 
     return '\n'.join(lines)
 
@@ -684,6 +765,7 @@ def run_rebecca(target_date_str=None, output_json=False):
         bars      = get_recent_bars(con, date_str, n=7)
         anomalies = detect_anomalies(today_data, avg_7d, env_today)
         prev_forecast = get_yesterday_forecast(con, date_str)  # ska-014
+        tomorrow_forecast = get_forecast_context(con, tomorrow_str)
     finally:
         con.close()
 
@@ -699,6 +781,7 @@ def run_rebecca(target_date_str=None, output_json=False):
         'recent_bars':   bars,
         'anomalies':     anomalies,
         'prev_forecast': prev_forecast,  # ska-014: 어제 예측값
+        'tomorrow_forecast': tomorrow_forecast,
     }
 
     # RAG: 이상 감지 시 과거 유사 사례 검색
