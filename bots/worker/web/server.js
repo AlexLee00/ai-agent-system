@@ -95,6 +95,7 @@ const PORT   = parseInt(process.env.WORKER_PORT || '4000', 10);
 const app = express();
 const wsClients = new Set();
 let chatWss = null;
+let taskEventClient = null;
 
 function sendWs(ws, payload) {
   if (!ws || ws.readyState !== 1) return;
@@ -102,6 +103,15 @@ function sendWs(ws, payload) {
     ws.send(JSON.stringify(payload));
   } catch {
     /* 무시 */
+  }
+}
+
+function broadcastTaskEvent(event) {
+  for (const ws of wsClients) {
+    if (ws.readyState !== 1 || !ws.user) continue;
+    if (event.companyId && ws.companyId !== event.companyId) continue;
+    if (event.userId && Number(ws.user.id) !== Number(event.userId)) continue;
+    sendWs(ws, { type: 'chat.task_result', ...event });
   }
 }
 
@@ -1915,6 +1925,25 @@ function killAllClaudeProcs(signal) {
 process.on('SIGTERM', () => { killAllClaudeProcs('SIGTERM'); process.exit(0); });
 process.on('SIGINT',  () => { killAllClaudeProcs('SIGINT');  process.exit(0); });
 
+async function setupTaskEventListener() {
+  if (taskEventClient) return taskEventClient;
+  const client = await pgPool.getClient(SCHEMA);
+  await client.query('LISTEN worker_agent_task_events');
+  client.on('notification', (msg) => {
+    if (msg.channel !== 'worker_agent_task_events' || !msg.payload) return;
+    try {
+      broadcastTaskEvent(JSON.parse(msg.payload));
+    } catch (error) {
+      console.error('[worker/task-events] payload parse 실패:', error.message);
+    }
+  });
+  client.on('error', (error) => {
+    console.error('[worker/task-events] listener 오류:', error.message);
+  });
+  taskEventClient = client;
+  return client;
+}
+
 function setupChatWebSocket(server) {
   const wss = new WebSocketServer({ server, path: '/ws/chat' });
   chatWss = wss;
@@ -2053,6 +2082,7 @@ if (require.main === module) {
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
   ensureChatSchema().catch(e => console.error('[worker/chat] 스키마 초기화 실패:', e.message));
+  setupTaskEventListener().catch(e => console.error('[worker/task-events] listener 초기화 실패:', e.message));
   const server = http.createServer(app);
   setupChatWebSocket(server);
   server.listen(PORT, '0.0.0.0', () => {
