@@ -17,6 +17,7 @@ const pgPool           = require('../../../packages/core/lib/pg-pool');
 const {
   createLearnedPatternReloader,
   createDynamicExampleLoader,
+  formatPromotedIntentExample,
 } = require('../../../packages/core/lib/intent-core');
 const {
   getIntentLearningPath,
@@ -39,7 +40,7 @@ const learnedPatternReloader = createLearnedPatternReloader({
 const loadDynamicExamples = createDynamicExampleLoader({
   ttlMs: 5 * 60 * 1000,
   fetchRows: async () => getPromotedIntentExamples(pgPool, { schema: 'claude', limit: 30 }),
-  formatRow: (r) => `사용자: "${String(r.text || '').slice(0, 60)}" → {"intent": "${r.promoted_to}", "args": {}, "confidence": 0.90}`,
+  formatRow: (r) => formatPromotedIntentExample(r, { maxTextLength: 60, confidence: 0.9 }),
 });
 
 // ─── LLM 폴백 설정 ───────────────────────────────────────────────────

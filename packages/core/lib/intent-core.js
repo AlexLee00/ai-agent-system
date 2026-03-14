@@ -165,6 +165,16 @@ function createDynamicExampleLoader({
   };
 }
 
+function formatPromotedIntentExample(row = {}, {
+  maxTextLength = 60,
+  confidence = 0.9,
+} = {}) {
+  const text = String(row.text || '').slice(0, maxTextLength);
+  const intent = String(row.promoted_to || '').trim();
+  if (!text || !intent) return '';
+  return `사용자: "${text}" → {"intent": "${intent}", "args": {}, "confidence": ${Number(confidence).toFixed(2)}}`;
+}
+
 function formatIntentConfidence(value, digits = 0) {
   const ratio = Number(value || 0);
   return `${(ratio * 100).toFixed(digits)}%`;
@@ -449,6 +459,7 @@ module.exports = {
   loadLearnedPatternsFromFile,
   createLearnedPatternReloader,
   createDynamicExampleLoader,
+  formatPromotedIntentExample,
   formatIntentConfidence,
   getPromotionCandidateStatus,
   getPromotionEventReason,
