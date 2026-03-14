@@ -155,10 +155,18 @@ async function runCleanup() {
   try {
     await cleanMutes();
     await cleanConfirms();
-    // 5분 초과 pending bot_commands → error 처리
+    // bot_commands timeout 처리
     await pgPool.run('claude', `
-      UPDATE bot_commands SET status='error', result='{"error":"timeout"}'
-      WHERE status='pending' AND created_at < to_char(now() - INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS')
+      UPDATE bot_commands
+      SET status='error',
+          result='{"error":"timeout"}',
+          done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+      WHERE status='pending'
+        AND (
+          (to_bot = 'claude' AND created_at < to_char(now() - INTERVAL '15 minutes', 'YYYY-MM-DD HH24:MI:SS'))
+          OR
+          (to_bot <> 'claude' AND created_at < to_char(now() - INTERVAL '5 minutes', 'YYYY-MM-DD HH24:MI:SS'))
+        )
     `);
     // 1시간 초과 batched mainbot_queue → sent 처리
     await pgPool.run('claude', `
