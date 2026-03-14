@@ -449,7 +449,7 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
 async function buildTeamIntentReport(team = '', query = '') {
   const normalized = String(team || '').trim().toLowerCase();
   const teamMeta = {
-    luna: { schema: 'luna', title: '루나 인텐트 학습', thresholdTeam: 'luna' },
+    luna: { schema: 'investment', title: '루나 인텐트 학습', thresholdTeam: 'luna' },
     ska: { schema: 'ska', title: '스카 인텐트 학습', thresholdTeam: 'ska' },
     claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude' },
   }[normalized];
@@ -485,7 +485,7 @@ async function buildIntentEngineHealthReport() {
   const targets = [
     { key: 'jay', schema: 'claude', title: '제이', path: getNamedIntentLearningPath('jay') },
     { key: 'worker', schema: 'worker', title: '워커', path: getNamedIntentLearningPath('worker') },
-    { key: 'luna', schema: 'luna', title: '루나', path: getNamedIntentLearningPath('jay') },
+    { key: 'luna', schema: 'investment', title: '루나', path: getNamedIntentLearningPath('jay') },
     { key: 'ska', schema: 'ska', title: '스카', path: getNamedIntentLearningPath('jay') },
     { key: 'claude', schema: 'claude', title: '클로드', path: getNamedIntentLearningPath('jay') },
   ];
@@ -568,7 +568,7 @@ async function rollbackPromotionTarget(target = '', options = {}) {
 async function rollbackTeamPromotionTarget(team = '', target = '') {
   const normalized = String(team || '').trim().toLowerCase();
   const teamMeta = {
-    luna: { schema: 'luna', title: '루나 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
+    luna: { schema: 'investment', title: '루나 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
     ska: { schema: 'ska', title: '스카 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
     claude: { schema: 'claude', title: '클로드 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
   }[normalized];

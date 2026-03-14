@@ -43,6 +43,7 @@ const IDENTITY_FILE  = path.join(__dirname, 'context/COMMANDER_IDENTITY.md');
 const PROJECT_ROOT   = path.join(os.homedir(), 'projects', 'ai-agent-system');
 const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 const TG_MAX_CHARS = 3500;
+const INTENT_SCHEMA = 'investment';
 
 // ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
 let BOT_IDENTITY = {
@@ -113,14 +114,14 @@ async function saveLearning(entry) {
     if (!normalizedText || !intent || !learnedPattern) return;
 
     await insertUnrecognizedIntent(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       text: entry.original_text || entry.re,
       parseSource: 'llm',
       llmIntent: intent,
     });
 
     const rows = await getRecentUnrecognizedIntents(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       windowDays: AUTO_PROMOTE_DEFAULTS.windowDays,
       limit: 500,
     });
@@ -131,7 +132,7 @@ async function saveLearning(entry) {
     );
 
     await upsertPromotionCandidate(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       normalizedText,
       sampleText: entry.original_text || entry.re,
       suggestedIntent: intent,
@@ -150,13 +151,13 @@ async function saveLearning(entry) {
     });
 
     const candidate = await findPromotionCandidateIdByNormalized(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       normalizedText,
     });
 
     if (!decision.allowed) {
       await logPromotionEvent(pgPool, {
-        schema: 'luna',
+        schema: INTENT_SCHEMA,
         candidateId: candidate?.id || null,
         normalizedText,
         sampleText: entry.original_text || entry.re,
@@ -182,13 +183,13 @@ async function saveLearning(entry) {
     });
 
     await markUnrecognizedPromoted(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       intent,
       text: entry.original_text || entry.re,
     });
 
     await upsertPromotionCandidate(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       normalizedText,
       sampleText: entry.original_text || entry.re,
       suggestedIntent: intent,
@@ -199,7 +200,7 @@ async function saveLearning(entry) {
     });
 
     await logPromotionEvent(pgPool, {
-      schema: 'luna',
+      schema: INTENT_SCHEMA,
       candidateId: candidate?.id || null,
       normalizedText,
       sampleText: entry.original_text || entry.re,
@@ -737,7 +738,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
-  await ensureIntentTables(pgPool, { schema: 'luna' });
+  await ensureIntentTables(pgPool, { schema: INTENT_SCHEMA });
   console.log(`🌙 ${BOT_NAME} 팀장봇 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
