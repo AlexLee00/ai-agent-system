@@ -1,10 +1,59 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
 const {
   buildPromotionCandidateWhere,
   buildPromotionEventWhere,
   buildUnrecognizedReportQueries,
 } = require('./intent-core');
+
+function getIntentLearningPath(explicitPath = '') {
+  if (explicitPath) return explicitPath;
+  return path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+}
+
+function readIntentLearnings(filePath = '') {
+  const targetPath = getIntentLearningPath(filePath);
+  try {
+    if (!fs.existsSync(targetPath)) return { path: targetPath, items: [] };
+    return { path: targetPath, items: JSON.parse(fs.readFileSync(targetPath, 'utf8')) };
+  } catch {
+    return { path: targetPath, items: [] };
+  }
+}
+
+function writeIntentLearnings(items = [], filePath = '') {
+  const targetPath = getIntentLearningPath(filePath);
+  fs.writeFileSync(targetPath, JSON.stringify(items, null, 2));
+  return targetPath;
+}
+
+function removeLearnedPatterns({ learnedPattern, sampleText, filePath = '' } = {}) {
+  const { path: targetPath, items } = readIntentLearnings(filePath);
+  const nextItems = items.filter(item => {
+    if (learnedPattern && item.re === learnedPattern) return false;
+    if (sampleText && item.re === sampleText) return false;
+    return true;
+  });
+  if (nextItems.length !== items.length) {
+    writeIntentLearnings(nextItems, targetPath);
+  }
+  return { changed: nextItems.length !== items.length, path: targetPath, items: nextItems };
+}
+
+function addLearnedPattern({ pattern, intent, filePath = '' } = {}) {
+  if (!pattern || !intent) return { changed: false, path: getIntentLearningPath(filePath) };
+  const { path: targetPath, items } = readIntentLearnings(filePath);
+  if (items.some(item => item.re === pattern)) {
+    return { changed: false, path: targetPath, items };
+  }
+  const nextItems = [...items, { re: pattern, intent, args: {} }];
+  writeIntentLearnings(nextItems, targetPath);
+  return { changed: true, path: targetPath, items: nextItems };
+}
 
 async function ensureIntentTables(pgPool, {
   schema = 'claude',
@@ -335,6 +384,11 @@ async function markUnrecognizedPromoted(pgPool, {
 }
 
 module.exports = {
+  getIntentLearningPath,
+  readIntentLearnings,
+  writeIntentLearnings,
+  removeLearnedPatterns,
+  addLearnedPattern,
   ensureIntentTables,
   logPromotionEvent,
   upsertPromotionCandidate,
