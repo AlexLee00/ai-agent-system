@@ -127,7 +127,17 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}) 
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await res.json();
+  const raw = await res.text();
+  if (!raw || !raw.trim()) {
+    throw new Error(`KIS 빈 응답 (${res.status})`);
+  }
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`KIS JSON 파싱 실패 (${res.status})`);
+  }
 
   if (data.rt_cd !== '0') {
     throw new Error(`KIS API 오류 [${data.msg_cd}]: ${data.msg1 || JSON.stringify(data)}`);
@@ -466,10 +476,10 @@ export async function getDomesticBalance(paper) {
  * 국내주식 거래량 순위 조회 (최대 30종목)
  * TR_ID: FHPST01710000
  */
-export async function getVolumeRank(paper = false) {
+export async function getDomesticRanking(endpoint, trId, params = {}, paper = false) {
   try {
-    const data = await kisRequest('GET', '/uapi/domestic-stock/v1/ranking/volume', {
-      trId: 'FHPST01710000',
+    const data = await kisRequest('GET', endpoint, {
+      trId,
       params: {
         FID_COND_MRKT_DIV_CODE:  'J',
         FID_COND_SCR_DIV_CODE:   '20171',
@@ -482,19 +492,30 @@ export async function getVolumeRank(paper = false) {
         FID_INPUT_PRICE_2:       '',
         FID_VOL_CNT:             '',
         FID_INPUT_DATE_1:        '',
+        ...params,
       },
       paper,
     });
-    return (data.output || []).map(r => ({
-      stockCode:  r.mksc_shrn_iscd,
-      stockName:  r.hts_kor_isnm,
-      volume:     parseInt(r.acml_vol  || '0', 10),
-      changeRate: parseFloat(r.prdy_ctrt || '0'),
-    }));
+    return data.output || [];
   } catch (e) {
-    console.warn(`[KIS] 거래량 순위 조회 실패: ${e.message}`);
+    console.warn(`[KIS] 국내 순위 조회 실패 (${trId}): ${e.message}`);
     return [];
   }
+}
+
+export async function getVolumeRank(paper = false) {
+  const rows = await getDomesticRanking(
+    '/uapi/domestic-stock/v1/ranking/volume',
+    'FHPST01710000',
+    {},
+    paper,
+  );
+  return rows.map(r => ({
+    stockCode:  r.mksc_shrn_iscd,
+    stockName:  r.hts_kor_isnm,
+    volume:     parseInt(r.acml_vol || '0', 10),
+    changeRate: parseFloat(r.prdy_ctrt || '0'),
+  }));
 }
 
 export async function getOverseasBalance(paper) {

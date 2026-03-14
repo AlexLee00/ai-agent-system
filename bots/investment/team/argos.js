@@ -20,7 +20,7 @@ import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { search as searchRag } from '../shared/rag-client.js';
-import { getVolumeRank } from '../shared/kis-client.js';
+import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.js';
 import { isPaperMode } from '../shared/secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -124,16 +124,52 @@ async function _applyCandidateIntelligence(candidates, market, max) {
       }
     }
 
-    const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.volume ?? 0);
-    candidate.intelligenceScore = Math.round((baseScore + candidate.screeningWeight * 0.5 + candidate.ragScore * 10) * 100) / 100;
+    const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.changePercent ?? candidate.volume ?? 0);
+    const liquidityBase = Number(
+      candidate.dollarVolume
+      ?? candidate.volume24h
+      ?? ((candidate.price || 0) * (candidate.volume || 0))
+      ?? candidate.volume
+      ?? 0
+    );
+    const liquidityScore = liquidityBase > 0 ? Math.log10(Math.max(liquidityBase, 1)) : 0;
+    const momentumBase = Number(candidate.changeRate ?? candidate.changePercent ?? 0);
+    const sourceBonus = Number(candidate.sourceCount || 1) * 0.35;
+    const pullbackBonus = _computePullbackScore(momentumBase, market);
+
+    candidate.intelligenceScore = Math.round((
+      baseScore
+      + candidate.screeningWeight * 0.5
+      + candidate.ragScore * 10
+      + liquidityScore * 0.35
+      + sourceBonus
+      + pullbackBonus
+    ) * 100) / 100;
   }));
 
   candidates.forEach((candidate) => {
     if (candidate.intelligenceScore == null) {
-      const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.volume ?? 0);
+      const baseScore = Number(candidate.finalScore ?? candidate.changeRate ?? candidate.changePercent ?? candidate.volume ?? 0);
+      const liquidityBase = Number(
+        candidate.dollarVolume
+        ?? candidate.volume24h
+        ?? ((candidate.price || 0) * (candidate.volume || 0))
+        ?? candidate.volume
+        ?? 0
+      );
+      const liquidityScore = liquidityBase > 0 ? Math.log10(Math.max(liquidityBase, 1)) : 0;
+      const momentumBase = Number(candidate.changeRate ?? candidate.changePercent ?? 0);
+      const sourceBonus = Number(candidate.sourceCount || 1) * 0.35;
+      const pullbackBonus = _computePullbackScore(momentumBase, market);
       candidate.screeningWeight = screeningWeights.get(candidate.symbol) || 0;
       candidate.ragScore = 0;
-      candidate.intelligenceScore = Math.round((baseScore + candidate.screeningWeight * 0.5) * 100) / 100;
+      candidate.intelligenceScore = Math.round((
+        baseScore
+        + candidate.screeningWeight * 0.5
+        + liquidityScore * 0.35
+        + sourceBonus
+        + pullbackBonus
+      ) * 100) / 100;
     }
   });
 
@@ -146,6 +182,21 @@ async function _applyCandidateIntelligence(candidates, market, max) {
   });
 
   return selected;
+}
+
+function _computePullbackScore(changePct, market) {
+  const change = Number(changePct || 0);
+  if (market === 'crypto') {
+    if (change >= 2 && change <= 8) return 1.1;
+    if (change > 12 || change < -10) return -0.8;
+    return 0;
+  }
+
+  if (change >= 1 && change <= 5) return 1.2;
+  if (change > 8) return -0.9;
+  if (change >= -3 && change < 1) return 0.5;
+  if (change < -7) return -0.7;
+  return 0;
 }
 
 // ─── Fear & Greed Index ─────────────────────────────────────────────
@@ -502,17 +553,18 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
   if (fng !== 50) console.log(`[아르고스] 국내주식 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
   if (isPaperMode() && baseMax !== configuredMax) console.log(`[아르고스] 국내주식 PAPER 탐색 확장 ${configuredMax}→${baseMax}`);
 
-  // 소스 1: KIS API 거래량 순위 (인증된 데이터, 최대 30종목)
-  const r1 = await _tryKisVolumeRank(max);
-  if (r1) return r1;
+  const sourceResults = await Promise.all([
+    _tryKisVolumeRank(),
+    _tryKisPlaceholderRank(),
+    _tryNaverMobile(),
+    _tryNaverSise(),
+    _tryNaverRiseHtml(),
+  ]);
 
-  // 소스 2: 네이버 모바일 상승률 상위 API
-  const r2 = await _tryNaverMobile(max);
-  if (r2) return r2;
-
-  // 소스 3: 네이버 증권 시세 API (더 안정적)
-  const r3 = await _tryNaverSise(max);
-  if (r3) return r3;
+  const merged = _mergeDomesticSourceCandidates(sourceResults);
+  if (merged.length) {
+    return _finalizeDomesticResult(merged, max);
+  }
 
   // 모두 실패 → 코어만 반환
   console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 코어만 반환');
@@ -520,23 +572,58 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
 }
 
 /** KIS API 거래량 순위 기반 국내주식 스크리닝 */
-async function _tryKisVolumeRank(max) {
+async function _tryKisVolumeRank() {
   try {
-    const ranks = await getVolumeRank(false);
-    if (!ranks.length) return null;
-    return _buildDomesticResult(
-      ranks.map(r => ({
-        stockCode:               r.stockCode,
-        stockName:               r.stockName,
-        fluctuationsRatio:       r.changeRate,
-        accumulatedTradingVolume: r.volume,
-      })),
-      max
-    );
+    const ranks = await getVolumeRank();
+    if (!ranks.length) return [];
+    return ranks.map(r => ({
+      stockCode:                 r.stockCode,
+      stockName:                 r.stockName,
+      fluctuationsRatio:         r.changeRate,
+      accumulatedTradingVolume:  r.volume,
+      sourceName:                'kis_volume_rank',
+      sourcePriority:            1.3,
+    }));
   } catch (e) {
     console.warn(`[아르고스] KIS 거래량 순위 실패: ${e.message}`);
-    return null;
+    return [];
   }
+}
+
+/**
+ * 추가 KIS 순위분석 API를 붙일 자리.
+ * 세부 TR/파라미터를 공식 문서에서 확정하면 여기에 같은 형태로 추가한다.
+ */
+async function _tryKisPlaceholderRank() {
+  const specs = [];
+  const results = await Promise.all(specs.map(async (spec) => {
+    const rows = await getDomesticRanking(spec.endpoint, spec.trId, spec.params || {});
+    return rows.map(spec.mapRow);
+  }));
+  return results.flat();
+}
+
+function _fetchText(url, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const trimmed = body.trim();
+        if (!trimmed) {
+          reject(new Error('빈 응답'));
+          return;
+        }
+        resolve(trimmed);
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('타임아웃')); });
+  });
 }
 
 /** 공통: JSON fetch 유틸 */
@@ -572,8 +659,8 @@ function _fetchJSON(url, timeout = 10000) {
 }
 
 /** 공통: 결과 빌드 */
-function _buildDomesticResult(stocks, max) {
-  const candidates = stocks
+function _normalizeDomesticCandidates(stocks) {
+  return stocks
     .filter(s => s.stockCode)
     .map(s => ({
       symbol:     String(s.stockCode).padStart(6, '0'),
@@ -581,7 +668,46 @@ function _buildDomesticResult(stocks, max) {
       price:      parseInt(s.closePrice || s.price) || 0,
       changeRate: parseFloat(s.fluctuationsRatio || s.changeRate) || 0,
       volume:     parseInt(s.accumulatedTradingVolume || s.volume) || 0,
+      sourceName: s.sourceName || 'unknown',
+      sourcePriority: Number(s.sourcePriority || 1),
     }));
+}
+
+function _mergeDomesticSourceCandidates(sourceResults) {
+  const bucket = new Map();
+  const flattened = sourceResults.flatMap(result => _normalizeDomesticCandidates(result || []));
+
+  for (const candidate of flattened) {
+    if (!candidate.symbol) continue;
+    const existing = bucket.get(candidate.symbol);
+    if (!existing) {
+      bucket.set(candidate.symbol, {
+        ...candidate,
+        sourceNames: new Set([candidate.sourceName]),
+        sourceVotes: candidate.sourcePriority,
+        finalScore: Number(candidate.changeRate || 0) + (candidate.sourcePriority * 0.8),
+      });
+      continue;
+    }
+
+    existing.name ||= candidate.name;
+    existing.price ||= candidate.price;
+    existing.volume = Math.max(existing.volume || 0, candidate.volume || 0);
+    existing.changeRate = Math.max(existing.changeRate || 0, candidate.changeRate || 0);
+    existing.sourceNames.add(candidate.sourceName);
+    existing.sourceVotes += candidate.sourcePriority;
+    existing.finalScore = Math.max(existing.finalScore || 0, Number(candidate.changeRate || 0))
+      + (existing.sourceVotes * 0.8);
+  }
+
+  return [...bucket.values()].map(candidate => ({
+    ...candidate,
+    sourceNames: [...candidate.sourceNames],
+    sourceCount: candidate.sourceNames.size,
+  }));
+}
+
+function _finalizeDomesticResult(candidates, max) {
 
   if (!candidates.length) return null;
 
@@ -589,14 +715,17 @@ function _buildDomesticResult(stocks, max) {
     const dynamicSymbols = ranked.map(c => c.symbol);
     console.log(`[아르고스] 국내주식 스크리닝: 동적 ${dynamicSymbols.join(', ')}`);
     ranked.forEach(c =>
-      console.log(`  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`)
+      console.log(
+        `  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`
+        + ` | 소스 ${c.sourceCount || 1}개 (${(c.sourceNames || []).join(', ')})`
+      )
     );
     return { core: CORE_KIS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked };
   });
 }
 
 /** 대안 1: 네이버 모바일 상승률 API (불안정) */
-async function _tryNaverMobile(max) {
+async function _tryNaverMobile() {
   try {
     const data = await _fetchJSON(
       'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=30', 5000
@@ -607,35 +736,61 @@ async function _tryNaverMobile(max) {
       || data?.data?.stocks
       || data?.result?.data
       || [];
-    if (!stocks.length || !stocks[0]?.stockCode) return null;
-    return _buildDomesticResult(stocks, max);
+    if (!stocks.length || !stocks[0]?.stockCode) return [];
+    return stocks.map(stock => ({ ...stock, sourceName: 'naver_mobile_up', sourcePriority: 1.1 }));
   } catch (e) {
     console.warn(`[아르고스] 네이버 모바일 API 실패: ${e.message}`);
-    return null;
+    return [];
   }
 }
 
 /** 대안 2: 네이버 증권 시세 API (더 안정적) */
-async function _tryNaverSise(max) {
+async function _tryNaverSise() {
   try {
     // 네이버 증권 국내주식 상승률 상위
     const data = await _fetchJSON(
       'https://finance.naver.com/api/sise/siseList.nhn?sosok=0&page=1&type=up', 5000
     );
     const items = data?.result?.itemList || data?.itemList || data?.result || [];
-    if (!Array.isArray(items) || !items.length) return null;
+    if (!Array.isArray(items) || !items.length) return [];
 
-    const normalized = items.map(s => ({
+    return items.map(s => ({
       stockCode:                 s.cd   || s.itemcode || s.code,
       stockName:                 s.nm   || s.itemname || s.name,
       closePrice:                s.nv   || s.now      || s.closePrice,
       fluctuationsRatio:         s.cr   || s.changeRate,
       accumulatedTradingVolume:  s.aq   || s.quant    || s.volume,
+      sourceName:                'naver_sise_up',
+      sourcePriority:            1.15,
     }));
-    return _buildDomesticResult(normalized, max);
   } catch (e) {
     console.warn(`[아르고스] 네이버 시세 API 실패: ${e.message}`);
-    return null;
+    return [];
+  }
+}
+
+/** 대안 3: 네이버 상승 종목 HTML 파싱 */
+async function _tryNaverRiseHtml() {
+  try {
+    const html = await _fetchText('https://finance.naver.com/sise/sise_rise.naver?sosok=0', 5000);
+    const matches = [...html.matchAll(/href="\/item\/main\.naver\?code=(\d{6})"[^>]*>([^<]+)<\/a>/g)];
+    const seen = new Set();
+    const stocks = [];
+
+    for (const match of matches) {
+      const stockCode = match[1];
+      const stockName = match[2]?.trim();
+      if (!stockCode || !stockName || seen.has(stockCode)) continue;
+      seen.add(stockCode);
+      stocks.push({ stockCode, stockName });
+      if (stocks.length >= Math.max(max * 2, 20)) break;
+    }
+
+    if (!stocks.length) return [];
+    return stocks.map(stock => ({ ...stock, sourceName: 'naver_rise_html', sourcePriority: 0.9 }));
+  } catch (e) {
+    console.warn(`[아르고스] 네이버 상승 HTML 실패: ${e.message}`);
+    return [];
   }
 }
 
@@ -661,17 +816,7 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
 
   const yahooTickers = yahooRes.status === 'fulfilled' ? yahooRes.value : [];
   const apeTickers   = apeRes.status   === 'fulfilled' ? apeRes.value   : [];
-
-  // Yahoo 우선 → ApeWisdom으로 보완 (중복·코어·ETF 제거)
-  const seen       = new Set();
-  const candidates = [];
-
-  for (const sym of [...yahooTickers, ...apeTickers]) {
-    if (seen.has(sym)) continue;
-    if (sym.includes('^') || sym.includes('=') || sym.length > 6) continue;
-    seen.add(sym);
-    candidates.push({ symbol: sym, name: sym });
-  }
+  const candidates = _mergeOverseasSourceCandidates(yahooTickers, apeTickers);
 
   const ranked = await _applyCandidateIntelligence(candidates, 'overseas', max);
   const dynamicSymbols = ranked.map(c => c.symbol);
@@ -682,6 +827,39 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   }
 
   return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked, fng };
+}
+
+function _mergeOverseasSourceCandidates(yahooTickers, apeTickers) {
+  const bucket = new Map();
+  const addCandidate = (symbol, sourceName, rank, sourcePriorityBase) => {
+    if (!symbol || symbol.includes('^') || symbol.includes('=') || symbol.length > 6) return;
+    const normalized = symbol.toUpperCase();
+    const rankBoost = Math.max(0.2, 1 - (rank * 0.03));
+    const sourcePriority = Math.round((sourcePriorityBase * rankBoost) * 100) / 100;
+    const existing = bucket.get(normalized);
+    if (!existing) {
+      bucket.set(normalized, {
+        symbol: normalized,
+        name: normalized,
+        sourceNames: [sourceName],
+        sourceCount: 1,
+        sourcePriority,
+        finalScore: sourcePriority,
+      });
+      return;
+    }
+    if (!existing.sourceNames.includes(sourceName)) {
+      existing.sourceNames.push(sourceName);
+      existing.sourceCount = existing.sourceNames.length;
+    }
+    existing.sourcePriority += sourcePriority;
+    existing.finalScore += sourcePriority;
+  };
+
+  yahooTickers.forEach((sym, idx) => addCandidate(sym, 'yahoo_trending', idx, 1.1));
+  apeTickers.forEach((sym, idx) => addCandidate(sym, 'apewisdom', idx, 1.0));
+
+  return [...bucket.values()];
 }
 
 /** Yahoo Finance Trending US (심볼 목록만 반환) */
