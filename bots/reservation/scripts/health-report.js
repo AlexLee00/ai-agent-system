@@ -11,7 +11,6 @@
  *   node bots/reservation/scripts/health-report.js [--json]
  */
 
-const fs = require('fs');
 const {
   buildHealthReport,
   buildHealthDecisionSection,
@@ -20,6 +19,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
+  checkFileStaleness,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.ska.naver-monitor'];
@@ -44,18 +44,7 @@ function parseArgs() {
 }
 
 function checkNaverLogStaleness() {
-  try {
-    const stat = fs.statSync(NAVER_LOG);
-    const ageMs = Date.now() - stat.mtimeMs;
-    return {
-      exists: true,
-      ageMs,
-      stale: ageMs > LOG_STALE_MS,
-      minutesAgo: Math.floor(ageMs / 60000),
-    };
-  } catch {
-    return { exists: false, ageMs: null, stale: false, minutesAgo: null };
-  }
+  return checkFileStaleness(NAVER_LOG, LOG_STALE_MS);
 }
 
 function buildMonitorHealth(logState) {
