@@ -31,13 +31,27 @@ const {
 
 const SCHEMA = 'worker';
 const TOPIC  = getSecret('telegram_worker_topic_id') || null;
+const DEFAULT_POLL_MS = 2000;
+const NO_TOKEN_POLL_MS = 30000;
 
 // ── 텔레그램 폴링 ─────────────────────────────────────────────────────
 let _offset = 0;
+let _missingTokenLogged = false;
 
 async function _poll() {
   const token = getSecret('telegram_bot_token');
-  if (!token) { console.warn('[worker-lead] telegram_bot_token 없음 — 폴링 스킵'); return; }
+  if (!token) {
+    if (!_missingTokenLogged) {
+      console.log('[worker-lead] telegram_bot_token 없음 — 텔레그램 폴링 비활성');
+      _missingTokenLogged = true;
+    }
+    return { sleepMs: NO_TOKEN_POLL_MS };
+  }
+
+  if (_missingTokenLogged) {
+    console.log('[worker-lead] telegram_bot_token 감지 — 텔레그램 폴링 재개');
+    _missingTokenLogged = false;
+  }
 
   try {
     const res  = await fetch(
@@ -79,6 +93,8 @@ async function _poll() {
       if (reply) await _sendReply(token, msg.chat.id, reply, msg.message_thread_id);
     }
   } catch { /* 폴링 오류 무시 */ }
+
+  return { sleepMs: DEFAULT_POLL_MS };
 }
 
 async function _sendReply(token, chatId, text, threadId) {
@@ -187,7 +203,12 @@ async function handleCommand(text, fromTelegramId) {
       if (parts[1]) {
         const id = parseInt(parts[1], 10);
         if (isNaN(id)) return '⚠️ 올바른 승인 ID를 입력하세요.';
-        const approval = await approveApprovalRequest({ requestId: id, approverId: user.id });
+        const approval = await approveApprovalRequest({
+          requestId: id,
+          approverId: user.id,
+          approverRole: user.role,
+          approverCompanyId: user.company_id,
+        });
         if (!approval) return `⚠️ 승인 요청 #${id}을 찾을 수 없거나 이미 처리되었습니다.`;
         return `✅ 승인 완료 — #${id} [${approval.category}] ${approval.action}`;
       }
@@ -208,7 +229,13 @@ async function handleCommand(text, fromTelegramId) {
       const id     = parseInt(parts[1], 10);
       const reason = parts.slice(2).join(' ');
       if (isNaN(id) || !reason) return '⚠️ 사용법: <code>/reject {ID} {반려 사유}</code>';
-      const approval = await rejectApprovalRequest({ requestId: id, approverId: user.id, reason });
+      const approval = await rejectApprovalRequest({
+        requestId: id,
+        approverId: user.id,
+        reason,
+        approverRole: user.role,
+        approverCompanyId: user.company_id,
+      });
       if (!approval) return `⚠️ 승인 요청 #${id}을 찾을 수 없거나 이미 처리되었습니다.`;
       return `❌ 반려 완료 — #${id} [${approval.category}] ${approval.action}\n사유: ${reason}`;
     }
@@ -269,8 +296,9 @@ async function main() {
   console.log('[worker-lead] 워커팀장 봇 가동');
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    await _poll();
-    await new Promise(r => setTimeout(r, 2000));
+    const result = await _poll();
+    const sleepMs = result?.sleepMs || DEFAULT_POLL_MS;
+    await new Promise(r => setTimeout(r, sleepMs));
   }
 }
 

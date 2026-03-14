@@ -2,6 +2,7 @@
 
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const {
   ensureChatSchema,
   saveMessage,
@@ -182,7 +183,7 @@ async function runNoah(companyId, task) {
 async function runSophie(companyId, task) {
   const payload = parsePayload(task.payload);
   const raw = String(payload.raw_text || task.description || '').trim();
-  const yearMonth = new Date().toISOString().slice(0, 7);
+  const yearMonth = kst.today().slice(0, 7);
 
   if (/계산|정산/.test(raw)) {
     const rows = await sophie.calculatePayroll(companyId, yearMonth);

@@ -89,4 +89,19 @@ function hasOnlyAllowedTables(sql) {
   return true;
 }
 
-module.exports = { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables };
+function hasCompanyFilter(sql, companyId) {
+  if (!sql || !companyId) return false;
+  const escaped = String(companyId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const companyFilterPattern = new RegExp(`\\bcompany_id\\b\\s*=\\s*['"]${escaped}['"]`, 'i');
+  return companyFilterPattern.test(sql);
+}
+
+module.exports = {
+  buildSQLPrompt,
+  buildSummaryPrompt,
+  extractSQL,
+  isSelectOnly,
+  isSafeQuestion,
+  hasOnlyAllowedTables,
+  hasCompanyFilter,
+};

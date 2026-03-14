@@ -24,6 +24,7 @@ const cors        = require('cors');
 const rateLimit   = require('express-rate-limit');
 const { body, query, param, validationResult } = require('express-validator');
 const { WebSocketServer } = require('ws');
+const fs = require('fs');
 
 const pgPool  = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy } = require('../lib/auth');
@@ -36,7 +37,7 @@ const { recalcProgress } = require('../src/ryan');
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
-const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables } = require('../lib/ai-helper');
+const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
   ensureChatSchema,
   handleChatMessage,
@@ -49,7 +50,7 @@ const { approve: approveApprovalRequest, reject: rejectApprovalRequest } = requi
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
 const UPLOAD_DIR = path.join(__dirname, '../uploads');
-require('fs').mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_EXTENSIONS = [
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
@@ -166,7 +167,6 @@ app.get('/', (req, res) => {
   const uiBase = process.env.WORKER_WEB_URL || `${req.protocol}://${req.hostname}:4001`;
   res.redirect(`${uiBase}/dashboard`);
 });
-app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 function validate(req, res) {
@@ -176,6 +176,19 @@ function validate(req, res) {
     return false;
   }
   return true;
+}
+
+function getKstToday() {
+  return kst.today();
+}
+
+function getEndOfMonthStr(yearMonth) {
+  const [year, month] = String(yearMonth || '').split('-').map(Number);
+  if (!year || !month) return null;
+  const first = new Date(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00+09:00`);
+  first.setUTCMonth(first.getUTCMonth() + 1);
+  first.setUTCDate(0);
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(first.getUTCDate()).padStart(2, '0')}`;
 }
 
 function pagination(req) {
@@ -575,7 +588,7 @@ app.post('/api/users/:id/reset-pw',
 
 // ── 승인 API ──────────────────────────────────────────────────────────
 
-app.get('/api/approvals', requireAuth, companyFilter, async (req, res) => {
+app.get('/api/approvals', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   const cid = req.companyId;
   try {
@@ -613,7 +626,12 @@ app.post('/api/approvals',
 
 app.put('/api/approvals/:id/approve', requireAuth, requireRole('master','admin'), auditLog('APPROVE', 'approval_requests'), async (req, res) => {
   try {
-    const approval = await approveApprovalRequest({ requestId: req.params.id, approverId: req.user.id });
+    const approval = await approveApprovalRequest({
+      requestId: req.params.id,
+      approverId: req.user.id,
+      approverRole: req.user.role,
+      approverCompanyId: req.user.company_id,
+    });
     if (!approval) return res.status(404).json({ error: '승인 요청을 찾을 수 없습니다.', code: 'NOT_FOUND' });
     res.json({ approval });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
@@ -629,6 +647,8 @@ app.put('/api/approvals/:id/reject',
         requestId: req.params.id,
         approverId: req.user.id,
         reason: req.body.reason,
+        approverRole: req.user.role,
+        approverCompanyId: req.user.company_id,
       });
       if (!approval) return res.status(404).json({ error: '승인 요청을 찾을 수 없습니다.', code: 'NOT_FOUND' });
       res.json({ approval });
@@ -901,7 +921,7 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
       `SELECT id,category,filename,ai_summary,uploaded_by,created_at FROM worker.documents
        WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
       params);
-    res.json({ documents: rows });
+    res.json({ documents: rows.map(row => ({ ...row, download_url: `/api/documents/${row.id}/download` })) });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
@@ -942,6 +962,27 @@ app.post('/api/documents/upload',
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
+
+app.get('/api/documents/:id/download', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT id, filename, file_path
+       FROM worker.documents
+       WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!row?.file_path) return res.status(404).json({ error: '문서를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    const storedName = path.basename(String(row.file_path));
+    const absolutePath = path.join(UPLOAD_DIR, storedName);
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({ error: '저장된 파일을 찾을 수 없습니다.', code: 'FILE_NOT_FOUND' });
+    }
+
+    return res.download(absolutePath, row.filename);
+  } catch {
+    res.status(500).json({ error: '문서 다운로드 중 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+  }
+});
 
 app.delete('/api/documents/:id', requireAuth, companyFilter, auditLog('DELETE', 'documents'), async (req, res) => {
   try {
@@ -1383,12 +1424,11 @@ app.get('/api/schedules', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   let from, to;
   if (req.query.year_month) {
-    const [y, m] = req.query.year_month.split('-').map(Number);
     from = `${req.query.year_month}-01`;
-    to   = new Date(y, m, 0).toISOString().slice(0, 10); // 해당 월 마지막 날
+    to   = getEndOfMonthStr(req.query.year_month);
   } else {
-    from = req.query.from || new Date().toISOString().slice(0,10);
-    to   = req.query.to   || new Date(Date.now() + 30*24*3600*1000).toISOString().slice(0,10);
+    from = req.query.from || getKstToday();
+    to   = req.query.to   || kst.daysAgoStr(-30);
   }
   try {
     const rows = await pgPool.query(SCHEMA,
@@ -1610,7 +1650,7 @@ app.post('/api/ai/ask',
       }
 
       // 2-2단계: company_id 강제 검증 (업체 격리 확인)
-      if (!sql.includes(companyId)) {
+      if (!hasCompanyFilter(sql, companyId)) {
         return res.status(400).json({ error: '쿼리에 업체 필터가 누락되었습니다.', code: 'MISSING_COMPANY_FILTER' });
       }
 
