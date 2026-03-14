@@ -29,8 +29,28 @@ const gemsWriter     = require('../lib/gems-writer');
 const qualityChecker = require('../lib/quality-checker');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
+const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
 const app  = express();
 app.use(express.json());
+
+function _getRemoteIp(req) {
+  return String(
+    req.headers['x-forwarded-for']
+    || req.socket?.remoteAddress
+    || req.ip
+    || ''
+  ).split(',')[0].trim();
+}
+
+function _isLocalRequest(req) {
+  const ip = _getRemoteIp(req);
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function requireLocalNodeAccess(req, res, next) {
+  if (_isLocalRequest(req)) return next();
+  return res.status(403).json({ ok: false, error: '로컬 노드 접근만 허용됩니다.' });
+}
 
 // ─── 초기화 ───────────────────────────────────────────────────────────
 
@@ -287,7 +307,7 @@ app.post('/api/blog/node/quality-check', async (req, res) => {
  * POST /api/blog/rag/store
  * body: { sessionId, nodeId, nodeGroup, data }
  */
-app.post('/api/blog/rag/store', async (req, res) => {
+app.post('/api/blog/rag/store', requireLocalNodeAccess, async (req, res) => {
   const { sessionId, nodeId, nodeGroup, data } = req.body;
   if (!sessionId || !nodeId) {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
@@ -304,7 +324,7 @@ app.post('/api/blog/rag/store', async (req, res) => {
 /**
  * GET /api/blog/rag/get?sessionId=&nodeId=
  */
-app.get('/api/blog/rag/get', async (req, res) => {
+app.get('/api/blog/rag/get', requireLocalNodeAccess, async (req, res) => {
   const { sessionId, nodeId } = req.query;
   if (!sessionId || !nodeId) {
     return res.status(400).json({ ok: false, error: 'sessionId, nodeId 필수' });
@@ -321,7 +341,7 @@ app.get('/api/blog/rag/get', async (req, res) => {
 /**
  * GET /api/blog/rag/session?sessionId=
  */
-app.get('/api/blog/rag/session', async (req, res) => {
+app.get('/api/blog/rag/session', requireLocalNodeAccess, async (req, res) => {
   const { sessionId } = req.query;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
@@ -335,9 +355,9 @@ app.get('/api/blog/rag/session', async (req, res) => {
 
 // ─── 서버 시작 ────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`[노드서버] 블로그 노드 API 서버 기동 — 포트 ${PORT}`);
-  console.log(`  헬스체크: http://localhost:${PORT}/health`);
+app.listen(PORT, HOST, () => {
+  console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
+  console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
 });
 
 module.exports = app;
