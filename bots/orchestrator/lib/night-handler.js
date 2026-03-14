@@ -1,6 +1,7 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 /**
@@ -247,12 +248,67 @@ async function buildSkaForecastAlertSnippet() {
   return lines.join('\n');
 }
 
+function readJsonFileSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function formatAgeMinutes(minutes) {
+  if (minutes < 60) return `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  const remain = minutes % 60;
+  return remain > 0 ? `${hours}시간 ${remain}분` : `${hours}시간`;
+}
+
+async function buildLunaRiskAlertSnippet() {
+  const statePath = path.join(process.env.HOME || '', '.openclaw', 'investment-state.json');
+  const costPath = path.join(process.env.HOME || '', '.openclaw', 'investment-cost.json');
+  const state = readJsonFileSafe(statePath);
+  const cost = readJsonFileSafe(costPath);
+  const lines = [];
+
+  if (!state?.lastCycleAt) {
+    lines.push('  • 투자 상태 파일이 없거나 lastCycleAt이 비어 있음');
+  } else {
+    const ageMinutes = Math.max(0, Math.floor((Date.now() - Number(state.lastCycleAt)) / 60_000));
+    if (ageMinutes >= 60) {
+      lines.push(`  • 마지막 루나 사이클이 ${formatAgeMinutes(ageMinutes)} 전 상태로 멈춤`);
+    }
+  }
+
+  if (!cost?.date || !cost?.daily_budget) {
+    lines.push('  • 비용 추적 상태를 읽지 못함');
+  } else {
+    const budgetPct = Number(cost.usage || 0) / Number(cost.daily_budget || 1);
+    const isToday = cost.date === kst.today();
+    if (!isToday) {
+      lines.push(`  • 비용 스냅샷 날짜가 오래됨 (${cost.date})`);
+    } else if (budgetPct >= 0.8) {
+      lines.push(`  • 일일 LLM 비용 사용률 ${(budgetPct * 100).toFixed(1)}%`);
+    }
+  }
+
+  if (lines.length === 0) return null;
+
+  return [
+    '📈 루나 운영 경고',
+    '',
+    ...lines,
+    '',
+    '상세 확인: /luna-health',
+  ].join('\n');
+}
+
 async function buildMorningBriefingWithOps(items) {
   const brief = buildMorningBriefing(items);
   if (!brief) return null;
   const opsSnippet = await buildOpsHealthAlertSnippet();
   const forecastSnippet = await buildSkaForecastAlertSnippet();
-  const extras = [opsSnippet, forecastSnippet].filter(Boolean);
+  const lunaSnippet = await buildLunaRiskAlertSnippet();
+  const extras = [opsSnippet, forecastSnippet, lunaSnippet].filter(Boolean);
   if (extras.length === 0) return brief;
   return `${brief}\n\n${extras.join('\n\n')}`;
 }
@@ -274,5 +330,6 @@ module.exports = {
   buildMorningBriefingWithOps,
   buildOpsHealthAlertSnippet,
   buildSkaForecastAlertSnippet,
+  buildLunaRiskAlertSnippet,
   isBriefingTime,
 };
