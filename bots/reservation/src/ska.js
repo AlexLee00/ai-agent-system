@@ -16,7 +16,7 @@ const kst = require('../../../packages/core/lib/kst');
 const fs       = require('fs');
 const path     = require('path');
 const os       = require('os');
-const { execSync, spawn } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const rag      = require('../../../packages/core/lib/rag-safe');
 const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
@@ -123,6 +123,30 @@ const SKA_TEAM = [
   },
 ];
 
+function inspectLaunchdService(label) {
+  try {
+    const service = `gui/${process.getuid()}/${label}`;
+    const out = execFileSync('launchctl', ['print', service], {
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    const stateMatch = out.match(/^\s*state = ([^\n]+)$/m);
+    const exitMatch = out.match(/^\s*last exit code = ([^\n]+)$/m);
+    const pidMatch = out.match(/^\s*pid = ([^\n]+)$/m);
+    return {
+      ok: true,
+      state: stateMatch?.[1]?.trim() || 'unknown',
+      lastExitCode: exitMatch?.[1]?.trim() || '',
+      pid: pidMatch?.[1]?.trim() || '',
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message,
+    };
+  }
+}
+
 function checkSkaTeamIdentity() {
   if (!fs.existsSync(BOT_ID_DIR)) fs.mkdirSync(BOT_ID_DIR, { recursive: true });
 
@@ -133,10 +157,13 @@ function checkSkaTeamIdentity() {
 
     // 1. 프로세스 상태 (launchd 서비스 있는 봇만)
     if (member.launchd) {
-      try {
-        const out = execSync(`launchctl list ${member.launchd} 2>&1`, { encoding: 'utf8', timeout: 5000 });
-        if (out.includes('Could not find')) issues.push('프로세스 미실행');
-      } catch { issues.push('프로세스 상태 확인 실패'); }
+      const inspected = inspectLaunchdService(member.launchd);
+      if (!inspected.ok) {
+        issues.push('프로세스 상태 확인 실패');
+      } else if (inspected.state !== 'running') {
+        const exitInfo = inspected.lastExitCode ? ` (exit=${inspected.lastExitCode})` : '';
+        issues.push(`프로세스 비실행${exitInfo}`);
+      }
     }
 
     // 2. 정체성 파일 체크 (없으면 생성, 30일 초과면 갱신)
