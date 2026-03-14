@@ -354,7 +354,7 @@ async function buildPromotionCandidateReport() {
   try {
     await _ensureUnrecTable();
     const rows = await pgPool.query('claude', `
-      SELECT sample_text, suggested_intent, occurrence_count, confidence, auto_applied, updated_at
+      SELECT id, sample_text, suggested_intent, occurrence_count, confidence, auto_applied, updated_at
       FROM intent_promotion_candidates
       ORDER BY auto_applied DESC, updated_at DESC
       LIMIT 20
@@ -366,11 +366,12 @@ async function buildPromotionCandidateReport() {
       const badge = r.auto_applied ? '✅자동반영' : '🕓후보';
       const conf = `${(Number(r.confidence) * 100).toFixed(0)}%`;
       const seen = String(r.updated_at).slice(0, 16);
-      lines.push(`  ${badge} [${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
+      lines.push(`  ${badge} [id=${r.id} | ${r.occurrence_count}회 / ${conf}] "${String(r.sample_text).slice(0, 40)}" → ${r.suggested_intent}`);
       lines.push(`     최근: ${seen} KST`);
     }
     lines.push('');
     lines.push(`기준: 최근 ${AUTO_PROMOTE_WINDOW_DAYS}일 ${AUTO_PROMOTE_MIN_COUNT}회+, 일치율 ${Math.round(AUTO_PROMOTE_MIN_CONFIDENCE * 100)}%+`);
+    lines.push('롤백: /rollback <id> 또는 /rollback <문구>');
     return lines.join('\n');
   } catch (e) {
     return `⚠️ 자동 반영 후보 조회 실패: ${e.message}`;
@@ -378,17 +379,27 @@ async function buildPromotionCandidateReport() {
 }
 
 async function rollbackPromotionTarget(target = '') {
-  const normalized = normalizeIntentText(target);
-  if (!normalized) return '⚠️ 롤백할 문구가 필요합니다.\n예) /rollback 루나 지금 뭐하는 상황이야';
+  const raw = String(target || '').trim();
+  if (!raw) return '⚠️ 롤백할 문구 또는 id가 필요합니다.\n예) /rollback 12';
+
+  const candidateId = Number.parseInt(raw, 10);
+  const normalized = normalizeIntentText(raw);
 
   await _ensureUnrecTable();
-  const row = await pgPool.get('claude', `
-    SELECT normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
-    FROM intent_promotion_candidates
-    WHERE normalized_text = $1 OR sample_text = $2
-    LIMIT 1
-  `, [normalized, target]);
-  if (!row) return `⚠️ "${target}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
+  const row = Number.isFinite(candidateId)
+    ? await pgPool.get('claude', `
+        SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
+        FROM intent_promotion_candidates
+        WHERE id = $1
+        LIMIT 1
+      `, [candidateId])
+    : await pgPool.get('claude', `
+        SELECT id, normalized_text, sample_text, suggested_intent, learned_pattern, auto_applied
+        FROM intent_promotion_candidates
+        WHERE normalized_text = $1 OR sample_text = $2
+        LIMIT 1
+      `, [normalized, raw]);
+  if (!row) return `⚠️ "${raw}" 에 대한 자동 반영 후보를 찾지 못했습니다.`;
 
   const learnPath = path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
   let learnings = [];
@@ -418,11 +429,12 @@ async function rollbackPromotionTarget(target = '') {
     SET auto_applied = FALSE,
         learned_pattern = NULL,
         updated_at = NOW()
-    WHERE normalized_text = $1
-  `, [row.normalized_text]);
+    WHERE id = $1
+  `, [row.id]);
 
   return [
     `↩️ 자동 반영 롤백 완료`,
+    `id: ${row.id}`,
     `문구: "${row.sample_text}"`,
     `인텐트: ${row.suggested_intent}`,
   ].join('\n');
