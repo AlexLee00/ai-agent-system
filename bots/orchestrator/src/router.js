@@ -34,6 +34,9 @@ const {
   buildPromotionFamilySummary,
   buildPromotionEventLines,
   buildUnrecognizedSummary,
+  buildUnrecognizedEntryLine,
+  buildUnrecognizedCandidateLine,
+  buildUnrecognizedCandidateStatusLine,
 } = require('../../../packages/core/lib/intent-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -465,24 +468,13 @@ async function buildUnrecognizedReport(query = '') {
     }
 
     for (const r of rows) {
-      const promoted = r.promoted_to ? ` ✅→${r.promoted_to}` : '';
-      const sample = String(r.text || '').slice(0, 50);
       const candidate = candidateMap.get(normalizeIntentText(r.text || ''));
-      lines.push(`  [${r.cnt}회] "${sample}"${promoted}`);
+      lines.push(buildUnrecognizedEntryLine(r));
       if (r.llm_intent && !r.promoted_to) lines.push(`         LLM 추정: ${r.llm_intent}`);
-      if (candidate?.suggested_intent) {
-        const badge = candidate.auto_applied ? '✅자동반영' : '🕓후보';
-        const conf = formatIntentConfidence(candidate.confidence);
-        lines.push(`         ${badge}: ${candidate.suggested_intent} (${candidate.occurrence_count}회 / ${conf})`);
-      }
-      if (candidate?.latest_event_type) {
-        const metadata = candidate.latest_event_metadata && typeof candidate.latest_event_metadata === 'object'
-          ? candidate.latest_event_metadata
-          : {};
-        const reasonValue = getPromotionEventReason(metadata);
-        const reason = reasonValue ? ` | reason=${reasonValue}` : '';
-        lines.push(`         상태: ${candidate.latest_event_type}${reason}`);
-      }
+      const candidateLine = buildUnrecognizedCandidateLine(candidate || {});
+      if (candidateLine) lines.push(candidateLine);
+      const candidateStatusLine = buildUnrecognizedCandidateStatusLine(candidate || {});
+      if (candidateStatusLine) lines.push(candidateStatusLine);
     }
     if (candidates.length > 0) {
       lines.push('');
