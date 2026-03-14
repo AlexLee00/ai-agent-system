@@ -80,6 +80,7 @@ const SLASH_MAP = {
   '/performance': { intent: 'performance',         args: {} },
   '/unrec':       { intent: 'unrecognized_report', args: {} },
   '/promotions':  { intent: 'promotion_candidates', args: {} },
+  '/intent-health': { intent: 'intent_engine_health', args: {} },
   '/luna-intents': { intent: 'team_intent_report', args: { team: 'luna' } },
   '/ska-intents':  { intent: 'team_intent_report', args: { team: 'ska' } },
   '/claude-intents': { intent: 'team_intent_report', args: { team: 'claude' } },
@@ -274,6 +275,7 @@ const KEYWORD_PATTERNS = [
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
   { re: /자동.*(학습|반영).*(후보|목록|현황)|학습.*후보.*보여|promot(e|ion).*(candidate|list)|반영.*후보/i, intent: 'promotion_candidates' },
+  { re: /(인텐트|학습|패턴).*(엔진|헬스|상태|점검)|intent.*(engine|health|status)/i, intent: 'intent_engine_health' },
   { re: /(자동|학습).*(반영|패턴).*(취소|삭제|롤백)|패턴.*(되돌려|지워|삭제해)|forget.*pattern|rollback.*promotion/i, intent: 'promotion_rollback' },
 
   // ── 봇/팀 명칭 (세부 명령 미매칭 시) ──
