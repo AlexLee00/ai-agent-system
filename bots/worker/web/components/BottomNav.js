@@ -1,14 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, BookOpen, DollarSign, CheckSquare, Settings, Bot } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Calendar, Clock, Settings } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',  icon: LayoutDashboard, label: '홈' },
-  { href: '/chat',       icon: Bot,             label: 'AI' },
-  { href: '/journals',   icon: BookOpen,        label: '일지' },
-  { href: '/sales',      icon: DollarSign,      label: '매출' },
-  { href: '/approvals',  icon: CheckSquare,     label: '승인' },
+  { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
+  { href: '/attendance', icon: Clock,           label: '근태' },
+  { href: '/schedules',  icon: Calendar,        label: '일정' },
+  { href: '/journals',   icon: BookOpen,        label: '업무' },
   { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 

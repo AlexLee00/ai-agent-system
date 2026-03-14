@@ -16,7 +16,7 @@ export default function Header({ title }) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white border-b px-4 h-16 flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200 px-4 h-16 flex items-center gap-3">
         {/* 햄버거 (모바일/태블릿) */}
         <button
           onClick={() => setDrawerOpen(true)}
@@ -25,11 +25,11 @@ export default function Header({ title }) {
           <Menu className="w-5 h-5 text-gray-600" />
         </button>
 
-        <h2 className="font-semibold text-gray-800 flex-1">{title || '워커 업무관리'}</h2>
+        <h2 className="font-semibold text-slate-800 flex-1">{title || '워커 업무 운영'}</h2>
 
         {user && (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-sm font-bold">
+            <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center text-white text-sm font-bold">
               {(user.name || user.username).charAt(0)}
             </div>
           </div>

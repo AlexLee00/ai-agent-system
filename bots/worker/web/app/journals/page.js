@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const CATEGORIES = [
   { value: 'general', label: '일반' },
@@ -71,6 +72,16 @@ export default function JournalsPage() {
   };
 
   const catLabel = (v) => CATEGORIES.find(c => c.value === v)?.label || v;
+  const todayDate = today();
+  const todayCount = journals.filter(item => (item.date || '').slice(0, 10) === todayDate).length;
+  const categorySummary = CATEGORIES
+    .filter(item => item.value)
+    .map(item => ({
+      label: item.label,
+      count: journals.filter(row => row.category === item.value).length,
+    }))
+    .filter(item => item.count > 0)
+    .slice(0, 4);
 
   const columns = [
     { key: 'date',          label: '날짜',   render: v => v?.slice(0, 10) || '-' },
@@ -91,9 +102,51 @@ export default function JournalsPage() {
 
   return (
     <div className="space-y-4">
+      <WorkerAIWorkspace
+        title="업무 AI 업무대화"
+        description="업무 기록, 보고 요청, 문서 업로드를 하나의 작업 공간에서 처리합니다."
+        suggestions={['오늘 해야 할 일 정리해줘', '지난 업무일지 요약해줘', '프로젝트 보고 초안 만들어줘']}
+        allowUpload
+      />
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">📝 업무일지</h1>
+        <h1 className="text-xl font-bold text-gray-900">📝 업무 관리</h1>
         <button className="btn-primary text-sm" onClick={openNew}>+ 등록</button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">오늘의 업무 흐름</p>
+          <div className="grid gap-3 sm:grid-cols-3 mt-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">전체 기록</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{journals.length}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">오늘 작성</p>
+              <p className="text-2xl font-semibold text-slate-900 mt-1">{todayCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs text-slate-500">현재 필터</p>
+              <p className="text-sm font-semibold text-slate-900 mt-2">
+                {[filterDate && '날짜', filterCat && catLabel(filterCat), search && '검색어'].filter(Boolean).join(' · ') || '전체'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">카테고리 분포</p>
+          <div className="space-y-2 mt-4">
+            {categorySummary.length === 0 ? (
+              <p className="text-sm text-slate-400">아직 집계할 업무 분류가 없습니다.</p>
+            ) : categorySummary.map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                <span className="text-sm font-semibold text-slate-900">{item.count}건</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* 필터 */}

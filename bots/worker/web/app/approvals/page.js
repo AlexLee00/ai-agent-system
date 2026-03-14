@@ -39,12 +39,25 @@ export default function ApprovalsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-gray-900">✅ 승인 관리</h1>
+      <div className="card bg-gradient-to-br from-white to-slate-100/80">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">✅ 승인 관리</h1>
+            <p className="text-sm text-slate-500 mt-2">민감한 업무 요청과 관리자 확인이 필요한 작업을 여기서 처리합니다.</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 min-w-[180px]">
+            <p className="text-xs text-slate-500">대기 승인</p>
+            <p className="text-2xl font-semibold text-slate-900 mt-1">
+              {approvals.filter(item => item.status === 'pending').length}건
+            </p>
+          </div>
+        </div>
+      </div>
 
       {loading ? (
-        <p className="text-center py-20 text-gray-400">로딩 중...</p>
+        <p className="text-center py-20 text-slate-400">로딩 중...</p>
       ) : approvals.length === 0 ? (
-        <div className="card text-center py-12 text-gray-400">
+        <div className="card text-center py-12 text-slate-400">
           <p className="text-4xl mb-2">✅</p>
           <p>대기 중인 승인 요청 없음</p>
         </div>
@@ -60,19 +73,19 @@ export default function ApprovalsPage() {
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[a.status]}`}>
                         {STATUS_LABELS[a.status]}
                       </span>
-                      <span className="text-xs text-gray-500">#{a.id}</span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-slate-500">#{a.id}</span>
+                      <span className="text-xs text-slate-500">
                         {a.priority === 'urgent' ? '🚨 긴급' : '📋 일반'}
                       </span>
                     </div>
-                    <p className="font-medium text-gray-900">{a.action}</p>
-                    <p className="text-sm text-gray-500">신청자: {a.requester_name || a.requester_id}</p>
+                    <p className="font-medium text-slate-900">{a.action}</p>
+                    <p className="text-sm text-slate-500">신청자: {a.requester_name || a.requester_id}</p>
                     {a.task_title && (
-                      <p className="text-sm text-gray-500">업무: {a.task_title} ({a.target_bot || 'unknown'})</p>
+                      <p className="text-sm text-slate-500">업무: {a.task_title} ({a.target_bot || 'unknown'})</p>
                     )}
-                    {payload.date   && <p className="text-sm text-gray-500">날짜: {payload.date}</p>}
-                    {payload.reason && <p className="text-sm text-gray-500">사유: {payload.reason}</p>}
-                    <p className="text-xs text-gray-400 mt-1">{new Date(a.created_at).toLocaleString('ko-KR')}</p>
+                    {payload.date   && <p className="text-sm text-slate-500">날짜: {payload.date}</p>}
+                    {payload.reason && <p className="text-sm text-slate-500">사유: {payload.reason}</p>}
+                    <p className="text-xs text-slate-400 mt-1">{new Date(a.created_at).toLocaleString('ko-KR')}</p>
                   </div>
 
                   {a.status === 'pending' && (

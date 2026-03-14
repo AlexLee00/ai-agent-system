@@ -404,23 +404,20 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
 // ── 업체 메뉴 설정 API (master 전용) ─────────────────────────────────
 
 const MENU_KEYS = [
-  'dashboard','chat','employees','attendance','sales','payroll',
-  'projects','schedules','journals','documents','approvals','settings','ai',
+  'dashboard','attendance','sales','projects','schedules',
+  'journals','settings','ai','approvals','workforce',
 ];
 const ALL_MENUS = [
   { key: 'dashboard',  label: '대시보드',  alwaysOn: true },
-  { key: 'chat',       label: 'AI 업무' },
-  { key: 'employees',  label: '직원 관리' },
   { key: 'attendance', label: '근태 관리' },
   { key: 'sales',      label: '매출 관리' },
-  { key: 'payroll',    label: '급여 관리' },
-  { key: 'projects',   label: '프로젝트' },
+  { key: 'projects',   label: '프로젝트 관리' },
   { key: 'schedules',  label: '일정 관리' },
-  { key: 'journals',   label: '업무일지' },
-  { key: 'documents',  label: '문서 관리' },
-  { key: 'approvals',  label: '승인 관리' },
+  { key: 'journals',   label: '업무 관리' },
   { key: 'settings',   label: '설정',     alwaysOn: true },
   { key: 'ai',         label: 'AI 분석' },
+  { key: 'approvals',  label: '승인 관리' },
+  { key: 'workforce',  label: '직원/급여 관리' },
 ];
 
 // GET /api/companies/:id/menus — 업체 메뉴 설정 조회

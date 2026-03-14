@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
@@ -79,6 +80,12 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-4">
+      <WorkerAIWorkspace
+        title="매출 AI 업무대화"
+        description="매출 요약, 분석 요청, 보고서 초안을 대화형으로 만들고 업무 큐로 넘길 수 있습니다."
+        suggestions={['오늘 매출 요약해줘', '지난주 대비 매출 분석해줘', '이번 달 보고서 초안 만들어줘']}
+        allowUpload
+      />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">💰 매출 관리</h1>
         <button className="btn-primary text-sm" onClick={openModal}>
@@ -86,17 +93,26 @@ export default function SalesPage() {
         </button>
       </div>
 
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <Card title="오늘 매출"  value={`₩${(summary?.today?.total ?? 0).toLocaleString()}`}  icon="📅" color="blue" />
-        <Card title="주간 매출"  value={`₩${chartData.reduce((s,r)=>s+r.total,0).toLocaleString()}`} icon="📊" color="green" />
-        <Card title="월간 매출"  value={`₩${(summary?.monthly?.reduce?.((s,r)=>s+Number(r.total),0)??0).toLocaleString()}`} icon="📈" color="yellow" />
-      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">매출 운영 요약</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+            <Card title="오늘 매출" value={`₩${(summary?.today?.total ?? 0).toLocaleString()}`} icon="📅" color="blue" />
+            <Card title="주간 매출" value={`₩${chartData.reduce((s,r)=>s+r.total,0).toLocaleString()}`} icon="📊" color="green" />
+            <Card title="월간 매출" value={`₩${(summary?.monthly?.reduce?.((s,r)=>s+Number(r.total),0)??0).toLocaleString()}`} icon="📈" color="yellow" />
+          </div>
+        </div>
 
-      {/* 탭 */}
-      <div className="flex gap-2">
-        <button className={`px-4 py-2 rounded-lg text-sm font-medium ${tab==='list'?'bg-primary text-white':'bg-gray-100 text-gray-600'}`} onClick={()=>setTab('list')}>목록</button>
-        <button className={`px-4 py-2 rounded-lg text-sm font-medium ${tab==='chart'?'bg-primary text-white':'bg-gray-100 text-gray-600'}`} onClick={()=>setTab('chart')}>차트</button>
+        <div className="card">
+          <p className="text-sm font-medium text-slate-500">보기 전환</p>
+          <div className="flex gap-2 mt-4">
+            <button className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab==='list'?'bg-slate-900 text-white':'bg-slate-100 text-slate-600'}`} onClick={()=>setTab('list')}>목록</button>
+            <button className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab==='chart'?'bg-slate-900 text-white':'bg-slate-100 text-slate-600'}`} onClick={()=>setTab('chart')}>차트</button>
+          </div>
+          <p className="text-sm text-slate-500 mt-4">
+            등록과 분석을 같은 화면에서 빠르게 전환할 수 있습니다.
+          </p>
+        </div>
       </div>
 
       {tab === 'list' ? (

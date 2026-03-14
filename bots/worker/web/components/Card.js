@@ -2,10 +2,10 @@
 
 export default function Card({ title, value, subtitle, icon, color = 'blue', onClick }) {
   const colors = {
-    blue:   'bg-blue-50  text-blue-600',
-    green:  'bg-green-50 text-green-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-    red:    'bg-red-50   text-red-600',
+    blue:   'bg-sky-50 text-sky-700',
+    green:  'bg-emerald-50 text-emerald-700',
+    yellow: 'bg-amber-50 text-amber-700',
+    red:    'bg-rose-50 text-rose-700',
   };
 
   return (
@@ -17,12 +17,12 @@ export default function Card({ title, value, subtitle, icon, color = 'blue', onC
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-gray-500 font-medium">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value ?? '-'}</p>
-          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+          <p className="text-sm text-slate-500 font-medium">{title}</p>
+          <p className="text-2xl font-semibold text-slate-900 mt-1">{value ?? '-'}</p>
+          {subtitle && <p className="text-xs text-slate-400 mt-2">{subtitle}</p>}
         </div>
         {icon && (
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${colors[color]}`}>
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${colors[color]}`}>
             {icon}
           </div>
         )}

@@ -5,6 +5,32 @@ const AuthContext = createContext(null);
 
 const API_BASE = '/api';
 
+function normalizeEnabledMenus(enabledMenus) {
+  if (!Array.isArray(enabledMenus)) return enabledMenus ?? null;
+  const mapped = enabledMenus.flatMap((key) => {
+    switch (key) {
+      case 'chat':
+        return ['journals'];
+      case 'employees':
+      case 'payroll':
+        return ['workforce'];
+      case 'documents':
+        return ['journals'];
+      default:
+        return [key];
+    }
+  });
+  return [...new Set(mapped)];
+}
+
+function normalizeUser(user) {
+  if (!user) return user;
+  return {
+    ...user,
+    enabled_menus: normalizeEnabledMenus(user.enabled_menus),
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -15,7 +41,7 @@ export function AuthProvider({ children }) {
 
     fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.user) setUser(data.user); else localStorage.removeItem('worker_token'); })
+      .then(data => { if (data?.user) setUser(normalizeUser(data.user)); else localStorage.removeItem('worker_token'); })
       .catch(() => localStorage.removeItem('worker_token'))
       .finally(() => setLoading(false));
   }, []);
@@ -29,7 +55,7 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '로그인 실패');
     localStorage.setItem('worker_token', data.token);
-    setUser({ ...data.user, must_change_pw: !!data.must_change_pw });
+    setUser(normalizeUser({ ...data.user, must_change_pw: !!data.must_change_pw }));
     return data;
   };
 
@@ -38,7 +64,7 @@ export function AuthProvider({ children }) {
     if (!token) return;
     const res  = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
     const data = res.ok ? await res.json() : null;
-    if (data?.user) setUser(data.user);
+    if (data?.user) setUser(normalizeUser(data.user));
   };
 
   const logout = () => {

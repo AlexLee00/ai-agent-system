@@ -2,25 +2,40 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, LayoutDashboard, Users, Clock, DollarSign, Wallet, FolderKanban, Calendar, BookOpen, FileText, CheckSquare, Settings, Bot, Save } from 'lucide-react';
+import { ArrowLeft, LayoutDashboard, Users, Clock, DollarSign, FolderKanban, Calendar, BookOpen, CheckSquare, Settings, Bot, Save } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 const ICON_MAP = {
   dashboard:  LayoutDashboard,
-  chat:       Bot,
-  employees:  Users,
   attendance: Clock,
   sales:      DollarSign,
-  payroll:    Wallet,
   projects:   FolderKanban,
   schedules:  Calendar,
   journals:   BookOpen,
-  documents:  FileText,
   approvals:  CheckSquare,
   settings:   Settings,
   ai:         Bot,
+  workforce:  Users,
 };
+
+function normalizeEnabledMenus(enabledMenus, allMenus) {
+  if (!Array.isArray(enabledMenus)) return new Set((allMenus || []).map(m => m.key));
+  const mapped = enabledMenus.flatMap((key) => {
+    switch (key) {
+      case 'chat':
+        return ['journals'];
+      case 'employees':
+      case 'payroll':
+        return ['workforce'];
+      case 'documents':
+        return ['journals'];
+      default:
+        return [key];
+    }
+  });
+  return new Set(mapped);
+}
 
 export default function CompanyMenusPage() {
   const { id }     = useParams();
@@ -45,10 +60,7 @@ export default function CompanyMenusPage() {
       .then(data => {
         setCompany(data.company);
         setAllMenus(data.allMenus);
-        // null이면 전체 선택, 아니면 저장된 값
-        const keys = data.company.enabled_menus
-          ? new Set(data.company.enabled_menus)
-          : new Set(data.allMenus.map(m => m.key));
+        const keys = normalizeEnabledMenus(data.company.enabled_menus, data.allMenus);
         setSelected(keys);
       })
       .catch(e => setError(e.message))
