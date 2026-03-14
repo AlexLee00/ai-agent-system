@@ -21,6 +21,7 @@ import * as db from '../shared/db.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { loadPreScreened } from './pre-market-screen.js';
 import { getInvestmentProfile } from './investment-profile.js';
+import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -42,6 +43,18 @@ const EXCHANGE_MAP = {
   crypto:   'binance',
 };
 
+async function getMarketAlertStatus(market) {
+  if (market === 'domestic') return getKisMarketStatus();
+  if (market === 'overseas') return getKisOverseasMarketStatus();
+  return { open: true, reason: '24/7 market' };
+}
+
+function shouldSkipMarketAlert(status) {
+  if (!status || status.open) return false;
+  const reason = String(status.reason || '');
+  return /주말|휴장|holiday|Weekend/i.test(reason);
+}
+
 // KST 기준 오늘 날짜
 const todayKST = () => kst.today();
 
@@ -52,6 +65,14 @@ async function main() {
   if (!label) {
     console.error('--market=domestic|overseas|crypto 필수');
     process.exit(1);
+  }
+
+  if (market !== 'crypto') {
+    const status = await getMarketAlertStatus(market);
+    if (shouldSkipMarketAlert(status)) {
+      console.log(`[market-alert] ${label} 알림 스킵 — ${status.reason}`);
+      process.exit(0);
+    }
   }
 
   if (market === 'crypto' && event === 'daily') {
