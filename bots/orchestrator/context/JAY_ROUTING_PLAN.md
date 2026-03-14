@@ -72,6 +72,9 @@
 - `/promotions applied`
 - `/promotions pending`
 - `/promotions intent:luna_query`
+- `/promotions events`
+- `/promotions event:rollback`
+- `/promotions actor:master`
 - `자동 반영 취소해`
 - `/rollback <문구>`
 
