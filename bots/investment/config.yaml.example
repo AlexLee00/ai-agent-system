@@ -2,6 +2,9 @@
 # ⚠️ config.yaml은 .gitignore에 포함 — 절대 커밋 금지
 # 사용법: cp config.yaml.example config.yaml → 실제 키 입력
 
+trading_mode: paper
+binance_mode: inherit
+kis_mode: inherit
 paper_mode: true
 
 anthropic:
