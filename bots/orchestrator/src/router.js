@@ -1012,6 +1012,42 @@ function buildSystemLogSummary(rawText = '') {
   return lines.join('\n');
 }
 
+function buildTeamLogSummary(team = '') {
+  const value = String(team || '').trim().toLowerCase();
+  const targets = value === 'luna'
+    ? [
+        { label: '루나 argos', out: '/tmp/investment-argos.log', err: '/tmp/investment-argos.err.log' },
+        { label: '루나 국내장', out: '/tmp/investment-domestic.log', err: '/tmp/investment-domestic.err.log' },
+        { label: '루나 해외장', out: '/tmp/investment-overseas.log', err: '/tmp/investment-overseas.err.log' },
+        { label: '루나 크립토', out: '/tmp/investment-crypto.log', err: '/tmp/investment-crypto.err.log' },
+      ]
+    : value === 'ska'
+      ? [
+          { label: '스카 commander', out: path.join(os.homedir(), '.openclaw/workspace/logs/ska-commander.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/ska-commander-error.log') },
+        ]
+      : value === 'claude'
+        ? [
+            { label: '클로드 commander', out: path.join(os.homedir(), '.openclaw/workspace/logs/claude-commander.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/claude-commander-error.log') },
+            { label: '클로드 dashboard', out: path.join(os.homedir(), '.openclaw/workspace/logs/claude-health-dashboard.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/claude-health-dashboard-error.log') },
+          ]
+        : [];
+
+  if (targets.length === 0) return '⚠️ 팀 로그 대상을 찾지 못했습니다. 루나, 스카, 클로드 중 하나를 지정해 주세요.';
+
+  const title = value === 'luna' ? '📈 루나 최근 로그' : value === 'ska' ? '🎯 스카 최근 로그' : '🧠 클로드 최근 로그';
+  const lines = [title];
+  for (const item of targets) {
+    const outLines = tailFileSafe(item.out, 40);
+    const errLines = tailFileSafe(item.err, 40);
+    const summary = errLines.length ? summarizeLogLines(errLines) : '정상';
+    lines.push(`${item.label}: ${summary}`);
+    if (!errLines.length && outLines.length) {
+      lines.push(`  최근 출력: ${outLines[outLines.length - 1].slice(0, 120)}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 async function runSpeedTestDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const node = process.execPath;
@@ -1390,6 +1426,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'system_logs':
       return buildSystemLogSummary(msg.text || '');
+
+    case 'team_logs':
+      return buildTeamLogSummary(args.team || '');
 
     case 'help':
       return HELP_TEXT;
