@@ -54,21 +54,6 @@ def setup():
     """)
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS forecast (
-            id                SERIAL PRIMARY KEY,
-            target_date       DATE NOT NULL,
-            predicted_revenue INTEGER,
-            base_forecast     INTEGER,
-            env_score         DOUBLE PRECISION,
-            yhat_lower        INTEGER,
-            yhat_upper        INTEGER,
-            confidence        DOUBLE PRECISION,
-            model_version     TEXT DEFAULT 'baseline-v1',
-            created_at        TIMESTAMP DEFAULT now()
-        )
-    """)
-
-    cur.execute("""
         CREATE TABLE IF NOT EXISTS exam_events (
             id           SERIAL PRIMARY KEY,
             date         DATE NOT NULL,
@@ -90,7 +75,6 @@ def setup():
     print('[ska-DB] 스키마 생성 완료')
     print('  - revenue_daily')
     print('  - environment_factors')
-    print('  - forecast')
     print('  - exam_events')
     print('  - training_feature_daily')
 
