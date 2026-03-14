@@ -165,6 +165,19 @@ function createDynamicExampleLoader({
   };
 }
 
+function createPromotedIntentExampleLoader({
+  ttlMs = 5 * 60 * 1000,
+  fetchRows,
+  maxTextLength = 60,
+  confidence = 0.9,
+} = {}) {
+  return createDynamicExampleLoader({
+    ttlMs,
+    fetchRows,
+    formatRow: (row) => formatPromotedIntentExample(row, { maxTextLength, confidence }),
+  });
+}
+
 function formatPromotedIntentExample(row = {}, {
   maxTextLength = 60,
   confidence = 0.9,
@@ -459,6 +472,7 @@ module.exports = {
   loadLearnedPatternsFromFile,
   createLearnedPatternReloader,
   createDynamicExampleLoader,
+  createPromotedIntentExampleLoader,
   formatPromotedIntentExample,
   formatIntentConfidence,
   getPromotionCandidateStatus,
