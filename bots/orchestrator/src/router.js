@@ -69,6 +69,7 @@ const {
 } = require('../../../packages/core/lib/intent-core');
 const {
   buildHealthReport,
+  buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -883,6 +884,42 @@ async function runSkaForecastHealthDirect() {
   });
 }
 
+async function runNodeScriptJson(script, args = [], timeoutMs = 60_000) {
+  const root = path.join(__dirname, '..', '..', '..');
+  return await new Promise((resolve) => {
+    const child = spawn('node', [script, ...args], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      resolve(null);
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', () => {});
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
 async function runLunaHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'investment', 'scripts', 'health-report.js');
@@ -1024,6 +1061,98 @@ async function runSkaHealthDirect() {
       }
       resolve(stripAnsi(stdout).trim() || 'ℹ️ 스카 운영 헬스 결과가 비어 있습니다.');
     });
+  });
+}
+
+async function buildUnifiedOpsHealthReport() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const scripts = {
+    luna: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
+    worker: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js'),
+    claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
+    ska: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
+  };
+
+  const [luna, worker, claude, ska] = await Promise.all([
+    runNodeScriptJson(scripts.luna, ['--json']),
+    runNodeScriptJson(scripts.worker, ['--json']),
+    runNodeScriptJson(scripts.claude, ['--json']),
+    runNodeScriptJson(scripts.ska, ['--json']),
+  ]);
+
+  const rows = [
+    {
+      title: '루나',
+      summary: luna
+        ? `서비스 경고 ${luna.serviceHealth.warnCount}건`
+        : '조회 실패',
+      detail: luna
+        ? `  정상 ${luna.serviceHealth.okCount} / 경고 ${luna.serviceHealth.warnCount}`
+        : '  health-report 실행 실패',
+      hasWarn: !luna || luna.serviceHealth.warnCount > 0,
+    },
+    {
+      title: '워커',
+      summary: worker
+        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건`
+        : '조회 실패',
+      detail: worker
+        ? `  서비스 ${worker.serviceHealth.okCount}/${worker.serviceHealth.warnCount}, 엔드포인트 ${worker.endpointHealth.okCount}/${worker.endpointHealth.warnCount}`
+        : '  health-report 실행 실패',
+      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0,
+    },
+    {
+      title: '클로드',
+      summary: claude
+        ? `서비스 경고 ${claude.serviceHealth.warnCount}건 / 대시보드 경고 ${claude.dashboardHealth.warnCount}건`
+        : '조회 실패',
+      detail: claude
+        ? `  서비스 ${claude.serviceHealth.okCount}/${claude.serviceHealth.warnCount}, dashboard ${claude.dashboardHealth.okCount}/${claude.dashboardHealth.warnCount}`
+        : '  health-report 실행 실패',
+      hasWarn: !claude || claude.serviceHealth.warnCount > 0 || claude.dashboardHealth.warnCount > 0,
+    },
+    {
+      title: '스카',
+      summary: ska
+        ? `서비스 경고 ${ska.serviceHealth.warnCount}건 / 모니터 경고 ${ska.monitorHealth.warnCount}건`
+        : '조회 실패',
+      detail: ska
+        ? `  서비스 ${ska.serviceHealth.okCount}/${ska.serviceHealth.warnCount}, 모니터 ${ska.monitorHealth.okCount}/${ska.monitorHealth.warnCount}`
+        : '  health-report 실행 실패',
+      hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0,
+    },
+  ];
+
+  const warnCount = rows.filter((row) => row.hasWarn).length;
+  const reasons = warnCount > 0
+    ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
+    : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+
+  return buildHealthReport({
+    title: '🧭 통합 운영 헬스 리포트',
+    sections: [
+      {
+        title: '■ 팀별 요약',
+        lines: rows.map((row) => `  ${row.title}: ${row.summary}`),
+      },
+      {
+        title: '■ 상세',
+        lines: rows.map((row) => `${row.title}\n${row.detail}`).flatMap((line) => line.split('\n')),
+      },
+      {
+        title: null,
+        lines: buildHealthDecisionSection({
+          title: '■ 운영 판단',
+          recommended: warnCount > 0,
+          level: warnCount >= 2 ? 'high' : 'medium',
+          reasons,
+          okText: '현재는 추가 조치보다 관찰 유지',
+        }),
+      },
+    ],
+    footer: [
+      '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
+    ],
   });
 }
 
@@ -1467,6 +1596,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'speed_test': {
       await notify('⏳ LLM 속도 테스트 실행 중...');
       return await runSpeedTestDirect();
+    }
+
+    case 'ops_health': {
+      await notify('⏳ 통합 운영 헬스 확인 중...');
+      return await buildUnifiedOpsHealthReport();
     }
 
     case 'luna_health': {
