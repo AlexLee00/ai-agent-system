@@ -21,7 +21,7 @@ import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { search as searchRag } from '../shared/rag-client.js';
 import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.js';
-import { isPaperMode } from '../shared/secrets.js';
+import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -625,8 +625,15 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
   }
 
   // 모두 실패 → 코어만 반환
-  console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 코어만 반환');
-  return { core: CORE_KIS, dynamic: [], all: [], screening: [], error: 'all_apis_failed' };
+  const fallbackSymbols = getKisSymbols();
+  console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 기본 종목 반환');
+  return {
+    core: fallbackSymbols,
+    dynamic: [],
+    all: fallbackSymbols,
+    screening: fallbackSymbols.map(symbol => ({ symbol, name: symbol, sourceNames: ['config_core'], sourceCount: 1 })),
+    error: 'all_apis_failed',
+  };
 }
 
 /** KIS API 거래량 순위 기반 국내주식 스크리닝 */
@@ -880,7 +887,14 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   console.log(`[아르고스] 해외주식 스크리닝: 동적 ${dynamicSymbols.join(', ') || '없음'}`);
 
   if (!dynamicSymbols.length && yahooTickers.length === 0) {
-    return { core: CORE_OVERSEAS, dynamic: [], all: [], screening: [], error: 'all_sources_failed' };
+    const fallbackSymbols = getKisOverseasSymbols();
+    return {
+      core: fallbackSymbols,
+      dynamic: [],
+      all: fallbackSymbols,
+      screening: fallbackSymbols.map(symbol => ({ symbol, name: symbol, sourceNames: ['config_core'], sourceCount: 1 })),
+      error: 'all_sources_failed',
+    };
   }
 
   return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked, fng };
