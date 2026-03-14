@@ -224,6 +224,29 @@ function buildUnrecognizedSummary(rows = [], resolveCandidate = () => null) {
   };
 }
 
+function buildUnrecognizedEntryLine(row = {}) {
+  const promoted = row.promoted_to ? ` ✅→${row.promoted_to}` : '';
+  const sample = String(row.text || '').slice(0, 50);
+  return `  [${row.cnt}회] "${sample}"${promoted}`;
+}
+
+function buildUnrecognizedCandidateLine(candidate = {}) {
+  if (!candidate || !candidate.suggested_intent) return '';
+  const badge = candidate.auto_applied ? '✅자동반영' : '🕓후보';
+  const conf = formatIntentConfidence(candidate.confidence);
+  return `         ${badge}: ${candidate.suggested_intent} (${candidate.occurrence_count}회 / ${conf})`;
+}
+
+function buildUnrecognizedCandidateStatusLine(candidate = {}) {
+  if (!candidate || !candidate.latest_event_type) return '';
+  const metadata = candidate.latest_event_metadata && typeof candidate.latest_event_metadata === 'object'
+    ? candidate.latest_event_metadata
+    : {};
+  const reasonValue = getPromotionEventReason(metadata);
+  const reason = reasonValue ? ` | reason=${reasonValue}` : '';
+  return `         상태: ${candidate.latest_event_type}${reason}`;
+}
+
 module.exports = {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -245,4 +268,7 @@ module.exports = {
   buildPromotionFamilySummary,
   buildPromotionEventLines,
   buildUnrecognizedSummary,
+  buildUnrecognizedEntryLine,
+  buildUnrecognizedCandidateLine,
+  buildUnrecognizedCandidateStatusLine,
 };
