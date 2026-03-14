@@ -112,11 +112,12 @@ export async function runOverseasCycle(symbols) {
       exchange: 'kis_overseas',
     });
     const results = decision.results;
+    const executedResults = results.filter(item => !item.skipped);
     await logPipelineMetrics('미국주식 판단', decision.metrics);
 
     // ── 단계 3: 한울 실행 (PAPER_MODE: 신호만 저장) ──
     // 항상 실행 — 이전 사이클 pending 신호도 처리
-    console.log(`\n⚡ [실행 단계] 한울 실행 (이번 사이클: ${results.length}개 신호)...`);
+    console.log(`\n⚡ [실행 단계] 한울 실행 (이번 사이클: ${executedResults.length}개 신호)...`);
     await processAllPendingKisOverseasSignals();
 
     // ── 상태 저장 ──
@@ -125,15 +126,15 @@ export async function runOverseasCycle(symbols) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`✅ ${tag} 미국주식 사이클 완료 — ${elapsed}초 | ${results.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
+    console.log(`✅ ${tag} 미국주식 사이클 완료 — ${elapsed}초 | ${executedResults.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
     console.log(`${'═'.repeat(60)}\n`);
 
     // ── 사이클 요약 알람 (신호 있을 때만) ──
-    if (results.length > 0) {
-      const signalLines = results.map(r => `  • ${r.symbol} ${r.action} (${((r.confidence || 0) * 100).toFixed(0)}%)`).join('\n');
+    if (executedResults.length > 0) {
+      const signalLines = executedResults.map(r => `  • ${r.symbol} ${r.action} (${((r.confidence || 0) * 100).toFixed(0)}%)`).join('\n');
       publishToMainBot({
         from_bot: 'luna', event_type: 'trade', alert_level: 2,
-        message: `🗽 ${tag} 미국주식 사이클\n심볼: ${symbols.join(', ')}\n신호: ${results.length}개\n${signalLines}`,
+        message: `🗽 ${tag} 미국주식 사이클\n심볼: ${symbols.join(', ')}\n신호: ${executedResults.length}개\n${signalLines}`,
       });
     }
 
