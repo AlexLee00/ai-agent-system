@@ -149,6 +149,7 @@ const KEYWORD_PATTERNS = [
   { re: /앤디.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_andy' } },
   { re: /지미.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_jimmy' } },
   { re: /(앤디|지미).*(살려|올려|켜|다시\s*띄워|다시\s*올려)/i,               intent: 'ska_action', args: (m) => ({ command: /앤디/.test(m[0]) ? 'restart_andy' : 'restart_jimmy' }) },
+  { re: /알람.*큐|queue|대기.*알람|쌓인.*알람/i,                              intent: 'queue'  },
   { re: /예약.*(현황|목록|오늘|확인|조회|몇|있어)/i,          intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /오늘.*(예약|방문|입장)/i,                            intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계/i,    intent: 'ska_query', args: { command: 'query_today_stats' } },
@@ -226,8 +227,10 @@ const KEYWORD_PATTERNS = [
   // ── 시스템 안정성·텔레그램 ──
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
   { re: /텔레그램.*(상태|연결|폴링|봇.*상태)|telegram.*(status|connected|polling)/i,       intent: 'telegram_status' },
+  { re: /(오픈클로|openclaw|게이트웨이|gateway).*(상태|연결|어때|괜찮|살아)|제이.*(텔레그램|연결).*(어때|상태)/i,              intent: 'telegram_status' },
   { re: /속도.*(체크|테스트|측정|확인)|speed.*(check|test)|제일.*빠른.*모델|빠른.*모델.*뭐/i, intent: 'speed_test' },
   { re: /(최근|최신)?.*(오류|에러|로그).*(보여|확인|요약)|log.*(check|summary|error)|로그.*(확인|체크)|최근.*오류.*보여/i, intent: 'system_logs' },
+  { re: /(mainbot|메인봇|제이|오픈클로|게이트웨이|gateway).*(오류|에러|로그)|오픈클로.*(무슨\s*문제|문제\s*있|에러)|제이.*로그/i, intent: 'system_logs' },
 
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
@@ -255,7 +258,7 @@ const KEYWORD_PATTERNS = [
 
   // ── 기타 제이 직접 처리 ──
   { re: /브리핑|briefing|아침.*알람|야간.*보류/i, intent: 'brief'  },
-  { re: /큐|queue/i,                              intent: 'queue'  },
+  { re: /브리핑|briefing|아침.*알람|야간.*보류|아침.*브리핑|보류.*알람.*보여/i, intent: 'brief'  },
   { re: /무음\s*(해제|off|cancel)/i,              intent: 'unmute', args: (m, t) => ({ target: extractTarget(t) }) },
   { re: /무음|mute|조용히/i,                      intent: 'mute',   args: (m, t) => ({ target: extractTarget(t), duration: extractDuration(t) }) },
   { re: /비용|cost|토큰|token/i,                  intent: 'cost'   },
@@ -266,7 +269,7 @@ const KEYWORD_PATTERNS = [
   { re: /예약|스터디|카페|손님/i,             intent: 'ska'  },
 
   // ── 마지막: 일반 상태 ──
-  { re: /상태|현황|status|다들.*살아|모두.*어때/i, intent: 'status' },
+  { re: /제이.*(상태|현황|어때)|오픈클로.*(상태|현황|어때)|상태|현황|status|다들.*살아|모두.*어때/i, intent: 'status' },
 ];
 
 function extractTarget(text) {
