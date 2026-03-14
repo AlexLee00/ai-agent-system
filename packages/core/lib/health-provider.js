@@ -7,7 +7,12 @@ const hsm = require('./health-state-manager');
 const DEFAULT_NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
 function getLaunchctlStatus() {
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
+  let raw = '';
+  try {
+    raw = execSync('launchctl list', { encoding: 'utf-8' });
+  } catch {
+    return {};
+  }
   const services = {};
   for (const line of raw.split('\n')) {
     const parts = line.trim().split(/\s+/);
