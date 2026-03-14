@@ -754,8 +754,7 @@ function _mergeDomesticSourceCandidates(sourceResults) {
     existing.changeRate = Math.max(existing.changeRate || 0, candidate.changeRate || 0);
     existing.sourceNames.add(candidate.sourceName);
     existing.sourceVotes += candidate.sourcePriority;
-    existing.finalScore = Math.max(existing.finalScore || 0, Number(candidate.changeRate || 0))
-      + (existing.sourceVotes * 0.8);
+    existing.finalScore = Number(existing.changeRate || 0) + (existing.sourceVotes * 0.8);
   }
 
   return [...bucket.values()].map(candidate => ({
@@ -828,7 +827,7 @@ async function _tryNaverSise() {
 }
 
 /** 대안 3: 네이버 상승 종목 HTML 파싱 */
-async function _tryNaverRiseHtml() {
+async function _tryNaverRiseHtml(max = 10) {
   try {
     const html = await _fetchText('https://finance.naver.com/sise/sise_rise.naver?sosok=0', 5000);
     const matches = [...html.matchAll(/href="\/item\/main\.naver\?code=(\d{6})"[^>]*>([^<]+)<\/a>/g)];
