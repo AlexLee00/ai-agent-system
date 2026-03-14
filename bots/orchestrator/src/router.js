@@ -118,6 +118,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /unrec         → 미인식 명령 목록 조회
   /promote <인텐트> <패턴>  → 패턴 학습 등록
   예) /promote ska_query 오늘 방문객 몇 명이야
+  반복 표현은 자동 후보로 누적되고, 조건 충족 시 learned pattern에 자동 반영됨
 
 💬 자유 대화
   그 외 모든 텍스트 → 팀 키워드 감지 후 위임 또는 AI 자유 대화`;
@@ -156,6 +157,28 @@ async function waitForCommandResult(id, timeoutMs = 30000) {
 // ─── 미인식 명령 추적 ─────────────────────────────────────────────────
 
 let _unrecTableReady = false;
+const AUTO_PROMOTE_WINDOW_DAYS = 30;
+const AUTO_PROMOTE_MIN_COUNT = 5;
+const AUTO_PROMOTE_MIN_CONFIDENCE = 0.8;
+
+function normalizeIntentText(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
+function escapeRegex(text = '') {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildAutoLearnPattern(text = '') {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+  return normalized.split(' ').map(escapeRegex).join('\\s+');
+}
 
 async function _ensureUnrecTable() {
   if (_unrecTableReady) return;
@@ -173,8 +196,102 @@ async function _ensureUnrecTable() {
     await pgPool.run('claude', `
       CREATE INDEX IF NOT EXISTS idx_unrec_created ON unrecognized_intents(created_at DESC)
     `);
+    await pgPool.run('claude', `
+      CREATE TABLE IF NOT EXISTS intent_promotion_candidates (
+        id               SERIAL PRIMARY KEY,
+        normalized_text  TEXT NOT NULL UNIQUE,
+        sample_text      TEXT NOT NULL,
+        suggested_intent TEXT NOT NULL,
+        occurrence_count INTEGER NOT NULL DEFAULT 0,
+        confidence       NUMERIC(5,4) NOT NULL DEFAULT 0,
+        auto_applied     BOOLEAN NOT NULL DEFAULT FALSE,
+        learned_pattern  TEXT,
+        first_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgPool.run('claude', `
+      CREATE INDEX IF NOT EXISTS idx_promotion_candidates_last_seen
+      ON intent_promotion_candidates(last_seen_at DESC)
+    `);
     _unrecTableReady = true;
   } catch {}
+}
+
+async function upsertPromotionCandidate({ normalizedText, sampleText, suggestedIntent, occurrenceCount, confidence, autoApplied, learnedPattern }) {
+  if (!normalizedText || !suggestedIntent) return;
+  await pgPool.run('claude', `
+    INSERT INTO intent_promotion_candidates (
+      normalized_text, sample_text, suggested_intent, occurrence_count,
+      confidence, auto_applied, learned_pattern, first_seen_at, last_seen_at, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), NOW())
+    ON CONFLICT (normalized_text) DO UPDATE
+    SET sample_text      = EXCLUDED.sample_text,
+        suggested_intent = EXCLUDED.suggested_intent,
+        occurrence_count = EXCLUDED.occurrence_count,
+        confidence       = EXCLUDED.confidence,
+        auto_applied     = intent_promotion_candidates.auto_applied OR EXCLUDED.auto_applied,
+        learned_pattern  = COALESCE(intent_promotion_candidates.learned_pattern, EXCLUDED.learned_pattern),
+        last_seen_at     = NOW(),
+        updated_at       = NOW()
+  `, [normalizedText, sampleText, suggestedIntent, occurrenceCount, confidence, !!autoApplied, learnedPattern || null]);
+}
+
+async function evaluateAutoPromotion(text) {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+
+  const rows = await pgPool.query('claude', `
+    SELECT id, text, llm_intent, promoted_to
+    FROM unrecognized_intents
+    WHERE created_at > NOW() - ($1::text || ' days')::interval
+    ORDER BY created_at DESC
+    LIMIT 500
+  `, [String(AUTO_PROMOTE_WINDOW_DAYS)]);
+
+  const matching = rows.filter(r => normalizeIntentText(r.text) === normalized);
+  if (matching.length < AUTO_PROMOTE_MIN_COUNT) return null;
+  if (matching.some(r => r.promoted_to)) return null;
+
+  const counts = new Map();
+  for (const row of matching) {
+    if (!row.llm_intent) continue;
+    counts.set(row.llm_intent, (counts.get(row.llm_intent) || 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  const [suggestedIntent, dominantCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const confidence = dominantCount / matching.length;
+  const pattern = buildAutoLearnPattern(normalized);
+  const sampleText = matching[0]?.text || normalized;
+
+  await upsertPromotionCandidate({
+    normalizedText: normalized,
+    sampleText,
+    suggestedIntent,
+    occurrenceCount: matching.length,
+    confidence,
+    autoApplied: false,
+    learnedPattern: pattern,
+  });
+
+  if (confidence < AUTO_PROMOTE_MIN_CONFIDENCE || !pattern) return null;
+
+  const recordIds = matching.map(r => r.id);
+  await promoteToIntent(normalized, suggestedIntent, pattern, recordIds);
+  await upsertPromotionCandidate({
+    normalizedText: normalized,
+    sampleText,
+    suggestedIntent,
+    occurrenceCount: matching.length,
+    confidence,
+    autoApplied: true,
+    learnedPattern: pattern,
+  });
+  return { normalized, suggestedIntent, occurrenceCount: matching.length, confidence, autoApplied: true };
 }
 
 async function logUnrecognizedIntent(text, source, llmIntent) {
@@ -184,6 +301,7 @@ async function logUnrecognizedIntent(text, source, llmIntent) {
       INSERT INTO unrecognized_intents (text, parse_source, llm_intent)
       VALUES ($1, $2, $3)
     `, [text.slice(0, 500), source || 'unknown', llmIntent || null]);
+    await evaluateAutoPromotion(text);
   } catch {}
 }
 
@@ -209,6 +327,20 @@ async function buildUnrecognizedReport() {
       lines.push(`  [${r.cnt}회] "${r.text.slice(0, 50)}"${promoted}`);
       if (r.llm_intent && !r.promoted_to) lines.push(`         LLM 추정: ${r.llm_intent}`);
     }
+    const candidates = await pgPool.query('claude', `
+      SELECT sample_text, suggested_intent, occurrence_count, confidence, auto_applied
+      FROM intent_promotion_candidates
+      ORDER BY last_seen_at DESC
+      LIMIT 10
+    `);
+    if (candidates.length > 0) {
+      lines.push('');
+      lines.push('🤖 자동 반영/후보');
+      for (const c of candidates) {
+        const badge = c.auto_applied ? '✅자동반영' : '📝후보';
+        lines.push(`  ${badge} [${c.occurrence_count}회 / ${(Number(c.confidence) * 100).toFixed(0)}%] "${String(c.sample_text).slice(0, 40)}" → ${c.suggested_intent}`);
+      }
+    }
     lines.push('\n/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.');
     return lines.join('\n');
   } catch (e) {
@@ -216,11 +348,17 @@ async function buildUnrecognizedReport() {
   }
 }
 
-async function promoteToIntent(text, toIntent, pattern) {
+async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
   try {
     await _ensureUnrecTable();
     // DB에 promoted_to 기록
-    if (text) {
+    if (recordIds.length > 0) {
+      await pgPool.run('claude', `
+        UPDATE unrecognized_intents
+        SET promoted_to = $1
+        WHERE id = ANY($2::int[]) AND promoted_to IS NULL
+      `, [toIntent, recordIds]);
+    } else if (text) {
       await pgPool.run('claude', `
         UPDATE unrecognized_intents
         SET promoted_to = $1
