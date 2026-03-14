@@ -72,6 +72,7 @@
 - `/promotions applied`
 - `/promotions pending`
 - `/promotions intent:luna_query`
+- `/promotions summary`
 - `/promotions events`
 - `/promotions event:rollback`
 - `/promotions actor:master`
