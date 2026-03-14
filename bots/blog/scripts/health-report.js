@@ -13,9 +13,8 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
-  checkHttp,
-  fetchJson,
-  checkFileStaleness,
+  buildHttpChecks,
+  buildFileActivityHealth,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.blog.node-server'];
@@ -26,45 +25,43 @@ const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
 const DAILY_LOG_STALE_MS = 36 * 60 * 60 * 1000;
 
 async function buildNodeHealth() {
-  const apiOk = await checkHttp('http://127.0.0.1:3100/health');
-  const apiJson = await fetchJson('http://127.0.0.1:3100/health');
-  const n8nJson = await fetchJson('http://127.0.0.1:5678/healthz', 2500);
-
-  const ok = [];
-  const warn = [];
-
-  if (apiOk && apiJson?.ok) ok.push(`  node-server API: 정상 (port ${apiJson.port || 3100})`);
-  else warn.push('  node-server API: 응답 없음');
-
-  if (n8nJson?.status === 'ok') ok.push('  n8n healthz: 정상');
-  else warn.push('  n8n healthz: 응답 없음');
+  const checks = await buildHttpChecks([
+    {
+      label: 'nodeServer',
+      url: 'http://127.0.0.1:3100/health',
+      expectJson: true,
+      isOk: (data) => Boolean(data?.ok),
+      okText: (data) => `  node-server API: 정상 (port ${data.port || 3100})`,
+      warnText: '  node-server API: 응답 없음',
+    },
+    {
+      label: 'n8n',
+      url: 'http://127.0.0.1:5678/healthz',
+      expectJson: true,
+      timeoutMs: 2500,
+      isOk: (data) => data?.status === 'ok',
+      okText: '  n8n healthz: 정상',
+      warnText: '  n8n healthz: 응답 없음',
+    },
+  ]);
 
   return {
-    ok,
-    warn,
-    nodeServerOk: apiOk && Boolean(apiJson?.ok),
-    n8nOk: n8nJson?.status === 'ok',
+    ok: checks.ok,
+    warn: checks.warn,
+    nodeServerOk: Boolean(checks.results.nodeServer?.ok),
+    n8nOk: checks.results.n8n?.status === 'ok',
   };
 }
 
 function buildDailyRunHealth() {
-  const logState = checkFileStaleness(DAILY_LOG, DAILY_LOG_STALE_MS);
-  const ok = [];
-  const warn = [];
-
-  if (!logState.exists) {
-    warn.push('  daily log: 파일 없음');
-  } else if (logState.stale) {
-    warn.push(`  daily log: ${logState.minutesAgo}분 무활동`);
-  } else {
-    ok.push(`  daily log: 최근 ${logState.minutesAgo}분 이내 활동`);
-  }
-
-  return {
-    ok,
-    warn,
-    minutesAgo: logState.minutesAgo,
-  };
+  return buildFileActivityHealth({
+    label: 'daily log',
+    filePath: DAILY_LOG,
+    staleMs: DAILY_LOG_STALE_MS,
+    missingText: '  daily log: 파일 없음',
+    staleText: (state) => `  daily log: ${state.minutesAgo}분 무활동`,
+    okText: (state) => `  daily log: 최근 ${state.minutesAgo}분 이내 활동`,
+  });
 }
 
 function buildDecision(serviceRows, nodeHealth, dailyRunHealth) {

@@ -26,7 +26,7 @@ const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
-  fetchJson,
+  buildHttpChecks,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.claude.commander'];
@@ -66,15 +66,22 @@ function isExpectedExit(label, exitCode) {
 }
 
 async function buildDashboardHealth() {
-  const data = await fetchJson('http://127.0.0.1:3032/api/health');
-  const ok = [];
-  const warn = [];
+  const checks = await buildHttpChecks([
+    {
+      label: 'dashboard',
+      url: 'http://127.0.0.1:3032/api/health',
+      expectJson: true,
+      isOk: Boolean,
+      okText: '  health-dashboard API: 정상',
+      warnText: '  health-dashboard API: 응답 없음',
+    },
+  ]);
+  const data = checks.results.dashboard || null;
 
   if (!data) {
-    warn.push('  health-dashboard API: 응답 없음');
     return {
-      ok,
-      warn,
+      ok: checks.ok,
+      warn: checks.warn,
       leadMode: null,
       runningBots: 0,
       totalBots: 0,
@@ -82,20 +89,18 @@ async function buildDashboardHealth() {
     };
   }
 
+  const ok = [...checks.ok];
+  const warn = [...checks.warn];
   const leadMode = data.lead_mode || 'unknown';
   const runningBots = Number(data.bot_summary?.running || 0);
   const totalBots = Number(data.bot_summary?.total || 0);
   const mismatched = Number(data.shadow_stats?.mismatched || 0);
 
-  ok.push(`  health-dashboard API: 정상`);
   ok.push(`  lead mode: ${leadMode}`);
   ok.push(`  bot summary: ${runningBots}/${totalBots} running`);
 
-  if (mismatched > 0) {
-    warn.push(`  shadow mismatch: ${mismatched}건`);
-  } else {
-    ok.push('  shadow mismatch: 없음');
-  }
+  if (mismatched > 0) warn.push(`  shadow mismatch: ${mismatched}건`);
+  else ok.push('  shadow mismatch: 없음');
 
   return { ok, warn, leadMode, runningBots, totalBots, mismatched };
 }
