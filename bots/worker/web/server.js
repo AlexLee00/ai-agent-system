@@ -51,6 +51,10 @@ const {
   buildEmployeeProposal,
   normalizeEmployeeProposal,
 } = require('../lib/employee-ai');
+const {
+  buildPayrollProposal,
+  normalizePayrollProposal,
+} = require('../lib/payroll-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1759,6 +1763,122 @@ app.get('/api/payroll/:id', requireAuth, companyFilter, async (req, res) => {
     if (!row) return res.status(404).json({ error: '급여 정보 없음', code: 'NOT_FOUND' });
     res.json({ payroll: row });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/payroll/proposals', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildPayrollProposal({
+      prompt,
+      now: new Date(),
+    });
+    const sourceRefId = `payroll-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'payroll_prompt',
+      sourceRefType: 'payroll_proposal',
+      sourceRefId,
+      flowCode: 'payroll_calculate',
+      actionCode: 'calculate_payroll',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.summary,
+      aiInputPayload: {
+        prompt,
+        year_month: proposal.year_month,
+      },
+      aiOutputType: 'payroll_batch',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'payroll_calculate',
+      actionCode: 'calculate_payroll',
+      query: `${prompt || proposal.summary} ${proposal.year_month}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '급여 제안을 생성하지 못했습니다.', code: 'PAYROLL_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/payroll/proposals/:id/confirm', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '급여 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizePayrollProposal(req.body.proposal || session.original_snapshot_json || {});
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'payroll_confirm' },
+    });
+    const { calculatePayroll } = require('../src/sophie');
+    const results = await calculatePayroll(req.companyId, proposal.year_month);
+    const totalNet = results.reduce((sum, row) => sum + Number(row.net_salary || 0), 0);
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: {
+        source: 'payroll_confirm',
+        year_month: proposal.year_month,
+        result_count: results.length,
+      },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      result_count: results.length,
+      total_net_salary: totalNet,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: {
+        source: 'payroll_confirm',
+        year_month: proposal.year_month,
+        result_count: results.length,
+      },
+    });
+    res.json({
+      ok: true,
+      count: results.length,
+      year_month: proposal.year_month,
+      proposal: committedSnapshot,
+      message: `${proposal.year_month} 급여 계산이 완료되었습니다.`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '급여 확정 처리 중 오류가 발생했습니다.', code: 'PAYROLL_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/payroll/proposals/:id/reject', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '급여 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'payroll_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '급여 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 app.post('/api/payroll/calculate', requireAuth, requireRole('master','admin'), companyFilter, auditLog('CALCULATE', 'payroll'), async (req, res) => {
