@@ -1,9 +1,9 @@
 'use strict';
 const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
-  register: true,
+  register: false,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
+  disable: true,
   workboxOptions: { disableDevLogs: true },
 });
 
