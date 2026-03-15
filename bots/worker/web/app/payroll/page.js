@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 
@@ -205,6 +206,8 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
       <h1 className="text-xl font-bold text-gray-900">💰 급여 관리</h1>
 
       {canManage && (

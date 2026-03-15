@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
@@ -155,6 +156,8 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">👥 직원 관리</h1>
         <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateEmployees}>+ 직원 추가</button>
