@@ -71,6 +71,7 @@
 - reservation mainbot/telegram → severity 기반 queue/n8n 및 telegram/n8n 라우팅
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
+- orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 
 ## Next Moves
 
