@@ -1603,38 +1603,14 @@ async function monitorBookings() {
   }
 }
 
-// ======================== RAG 연동 ========================
-const RAG_API = process.env.RAG_API_URL || 'http://localhost:8100';
-
 async function ragSaveReservation(booking, status = '신규') {
   try {
-    const name = booking.raw?.name || '고객';
-    const text = [
-      `예약자: ${name}`,
-      `날짜: ${booking.date}`,
-      `시간: ${booking.start}~${booking.end}`,
-      `공간: ${booking.room}`,
-      `전화: ${booking.phone}`,
-      `상태: ${status}`,
-    ].join(' | ');
-
-    const meta = {
-      type: 'reservation',
-      date: String(booking.date || ''),
-      status: String(status),
-      room: String(booking.room || ''),
-      phone: String(booking.phone || ''),
-      bookingId: String(booking.bookingId || booking._key || ''),
-      savedAt: new Date().toISOString(),
-    };
-
-    const res = await fetch(`${RAG_API}/add`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ collection: 'reservations', texts: [text], metadatas: [meta] }),
+    const rag = require('../../../../packages/core/lib/rag-safe');
+    const { storeReservationEvent } = require('../../../../packages/core/lib/reservation-rag');
+    await storeReservationEvent(rag, booking, {
+      status,
+      sourceBot: 'naver-monitor',
     });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     log(`📚 [RAG] 저장 완료: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} (${status})`);
   } catch (err) {
     log(`⚠️ [RAG] 저장 실패(무시): ${err.message}`);
@@ -2253,4 +2229,3 @@ monitorBookings()
     await rollbackProcessingEntries();
     process.exit(1);
   });
-

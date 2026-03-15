@@ -3,6 +3,10 @@
 const { execFileSync } = require('child_process');
 const kst = require('../../../packages/core/lib/kst');
 const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
+const {
+  searchReservationCases,
+  storeReservationResolution,
+} = require('../../../packages/core/lib/reservation-rag');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
@@ -32,33 +36,6 @@ function createSkaCommandHandlers({ pgPool, rag }) {
       directRunner,
       logger: console,
     });
-  }
-
-  async function searchPastCases(issueType, detail) {
-    try {
-      const query = `${issueType} ${detail}`.slice(0, 200);
-      const hits = await rag.search('reservations', query, { limit: 3, threshold: 0.6 });
-      if (!hits || hits.length === 0) return null;
-      return hits.map((hit) => ({
-        content: (hit.content || '').slice(0, 150),
-        date: hit.created_at ? new Date(hit.created_at).toLocaleDateString('ko-KR') : '',
-      }));
-    } catch {
-      return null;
-    }
-  }
-
-  async function storeAlertContext(issueType, detail, resolution) {
-    try {
-      await rag.store(
-        'reservations',
-        `[알람 처리] ${issueType} | ${detail} | 조치: ${resolution}`,
-        { type: issueType, detail, resolution },
-        'ska-commander',
-      );
-    } catch {
-      // RAG 저장 실패는 운영 흐름을 막지 않음
-    }
   }
 
   async function runLocalQueryReservations(args = {}) {
@@ -125,7 +102,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
 
       let pastCases = null;
       if (rows.length > 0) {
-        pastCases = await searchPastCases(rows[0].type || '알람', rows[0].title || '');
+        pastCases = await searchReservationCases(rag, rows[0].type || '알람', rows[0].title || '');
       }
 
       return { ok: true, count: rows.length, alerts: rows, past_cases: pastCases };
@@ -141,7 +118,12 @@ function createSkaCommandHandlers({ pgPool, rag }) {
   async function handleStoreResolution(args = {}) {
     const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
     try {
-      await storeAlertContext(issueType, detail, resolution);
+      await storeReservationResolution(rag, {
+        issueType,
+        detail,
+        resolution,
+        sourceBot: 'ska-commander',
+      });
       return { ok: true, message: 'RAG 저장 완료' };
     } catch (e) {
       return { ok: false, error: e.message };
