@@ -271,6 +271,11 @@ async function buildUserResponse(user) {
   };
 }
 
+async function resolveRuntimeAiPolicy(user) {
+  const company = user.role === 'master' ? null : await getCompanyAiPolicy(user.company_id);
+  return resolveAiPolicy({ user, company });
+}
+
 async function getEmployeeIdForRequest(req) {
   return resolveEmployeeId(req.user.id);
 }
@@ -1006,13 +1011,24 @@ app.get('/api/attendance', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   const date = req.query.date || kst.today();
   try {
+    let employeeFilter = '';
+    const params = [req.companyId, date, limit, offset];
+    if (req.user.role === 'member') {
+      const employeeId = await getEmployeeIdForRequest(req);
+      if (!employeeId) {
+        return res.json({ attendance: [] });
+      }
+      employeeFilter = ' AND a.employee_id=$5';
+      params.push(employeeId);
+    }
     const rows = await pgPool.query(SCHEMA,
       `SELECT a.*, e.name AS employee_name
        FROM worker.attendance a
        JOIN worker.employees e ON e.id=a.employee_id
        WHERE a.company_id=$1 AND a.date=$2
+       ${employeeFilter}
        ORDER BY e.name LIMIT $3 OFFSET $4`,
-      [req.companyId, date, limit, offset]);
+      params);
     res.json({ attendance: rows });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
@@ -2067,12 +2083,14 @@ app.post('/api/chat/send',
   async (req, res) => {
     if (!validate(req, res)) return;
     try {
+      const aiPolicy = await resolveRuntimeAiPolicy(req.user);
       const result = await handleChatMessage({
         text: req.body.message,
         sessionId: req.body.session_id || null,
         user: req.user,
         companyId: req.companyId,
         channel: 'web',
+        aiPolicy,
       });
       res.json(result);
     } catch (e) {
@@ -2099,12 +2117,14 @@ app.post('/api/webhooks/n8n/chat-intake',
       if (!user) {
         return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'USER_NOT_FOUND' });
       }
+      const aiPolicy = await resolveRuntimeAiPolicy(user);
       const result = await handleChatMessage({
         text: req.body.message,
         sessionId: req.body.session_id || null,
         user,
         companyId: req.body.company_id,
         channel: 'n8n',
+        aiPolicy,
       });
       res.json({
         ok: true,
@@ -2612,11 +2632,13 @@ function setupChatWebSocket(server) {
 
       ws.user = dbUser;
       ws.companyId = dbUser.company_id;
+      ws.aiPolicy = await resolveRuntimeAiPolicy(dbUser);
       ws.isAlive = true;
       wsClients.add(ws);
       sendWs(ws, {
         type: 'chat.connected',
         user: { id: dbUser.id, role: dbUser.role, name: dbUser.name },
+        ai_policy: ws.aiPolicy,
         ts: new Date().toISOString(),
       });
 
@@ -2661,6 +2683,7 @@ function setupChatWebSocket(server) {
             user: ws.user,
             companyId: ws.companyId,
             channel: 'websocket',
+            aiPolicy: ws.aiPolicy || null,
           });
 
           sendWs(ws, {
@@ -2669,6 +2692,7 @@ function setupChatWebSocket(server) {
             reply: result.reply,
             intent: result.intent,
             ui: result.ui || null,
+            ai_policy: result.aiPolicy || ws.aiPolicy || null,
             ts: new Date().toISOString(),
           });
         } catch (err) {

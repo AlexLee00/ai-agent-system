@@ -711,7 +711,7 @@ async function recordWorkerIntentCandidate(text, llmIntent) {
   });
 }
 
-async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web' }) {
+async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web', aiPolicy = null }) {
   await ensureChatSchema();
 
   let session = sessionId
@@ -737,7 +737,8 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
 
   let intent = parseRuleIntent(text, session);
   let llmIntent = null;
-  if (intent.intent === 'unknown') {
+  const allowLlmAssist = aiPolicy?.llm_mode !== 'off';
+  if (intent.intent === 'unknown' && allowLlmAssist) {
     llmIntent = await parseLlmIntent(text);
     if (llmIntent?.intent && llmIntent.intent !== 'unknown') {
       await insertUnrecognizedIntent(pgPool, {
@@ -809,7 +810,12 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
     role: 'assistant',
     content: result.reply,
     intent: intent.intent,
-    metadata: { ui: result.ui || null, target: intent.target || null },
+    metadata: {
+      ui: result.ui || null,
+      target: intent.target || null,
+      llm_mode: aiPolicy?.llm_mode || null,
+      llm_used: Boolean(llmIntent?.intent && allowLlmAssist),
+    },
   });
 
   return {
@@ -817,6 +823,7 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
     reply: result.reply,
     intent: intent.intent,
     ui: result.ui || null,
+    aiPolicy: aiPolicy || null,
   };
 }
 
