@@ -7,8 +7,9 @@
 #   2. forecast --mode=review   (LLM 모델 진단 텔레그램 전송)
 
 PYTHON=/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python
+NODE=/usr/bin/env node
 FORECAST=/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py
-SENDER=/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/send-telegram.py
+PUBLISHER=/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST MONTHLY 시작"
 
@@ -18,7 +19,17 @@ TMPFILE=$(mktemp /tmp/ska-forecast-monthly-XXXX.txt)
 EXIT1=$?
 cat "$TMPFILE"
 if [ $EXIT1 -eq 0 ]; then
-    "$PYTHON" "$SENDER" < "$TMPFILE"
+    "$NODE" "$PUBLISHER" \
+      --fromBot=forecast \
+      --team=reservation \
+      --topicTeam=ska \
+      --eventType=report \
+      --alertLevel=1 \
+      --title="스카 예측 monthly 리포트" \
+      --action="상세 확인: /ska-forecast | /ska-review" \
+      --links="예측 헬스::/ska-forecast|튜닝 검토::/ska-review" \
+      --footer="상세 명령: /ska-forecast | /ska-review" \
+      < "$TMPFILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST MONTHLY 예측 완료"
 else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ FORECAST MONTHLY 예측 오류 (exit: $EXIT1)"
@@ -32,7 +43,17 @@ TMPFILE2=$(mktemp /tmp/ska-forecast-review-XXXX.txt)
 EXIT2=$?
 cat "$TMPFILE2"
 if [ $EXIT2 -eq 0 ]; then
-    "$PYTHON" "$SENDER" < "$TMPFILE2"
+    "$NODE" "$PUBLISHER" \
+      --fromBot=forecast-review \
+      --team=reservation \
+      --topicTeam=ska \
+      --eventType=report \
+      --alertLevel=2 \
+      --title="스카 예측 리뷰 리포트" \
+      --action="상세 확인: /ska-review | /ska-forecast" \
+      --links="튜닝 검토::/ska-review|예측 헬스::/ska-forecast" \
+      --footer="상세 명령: /ska-review | /ska-forecast" \
+      < "$TMPFILE2"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST REVIEW 완료"
 else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ FORECAST REVIEW 오류 (exit: $EXIT2)"

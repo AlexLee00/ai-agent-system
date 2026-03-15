@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const sender = require('../../../packages/core/lib/telegram-sender');
+const sender = require('../lib/telegram-sender');
 const {
   buildEventPayload,
   normalizeEvent,
@@ -11,23 +11,21 @@ const {
   renderReportEvent,
   publishEventPipeline,
   buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
+} = require('../lib/reporting-hub');
 
 function readStdin() {
   return fs.readFileSync(0, 'utf8').trim();
 }
 
 function parseArgs() {
-  const modeArg = process.argv.find((arg) => arg.startsWith('--mode='));
-  return {
-    mode: modeArg ? modeArg.split('=')[1] : 'daily',
-  };
-}
-
-function getHeader(mode) {
-  return mode === 'weekly'
-    ? '레베카 주간 리포트'
-    : '레베카 일간 리포트';
+  const args = process.argv.slice(2);
+  const map = {};
+  for (const arg of args) {
+    if (!arg.startsWith('--')) continue;
+    const [key, value = 'true'] = arg.slice(2).split('=');
+    map[key] = value;
+  }
+  return map;
 }
 
 function splitTextSections(text) {
@@ -39,39 +37,55 @@ function splitTextSections(text) {
   return { title, summary, details };
 }
 
-async function main() {
-  const { mode } = parseArgs();
-  const text = readStdin();
+function parseLinks(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [label, href = ''] = part.split('::');
+      return {
+        label: String(label || '').trim(),
+        href: String(href || '').trim(),
+      };
+    })
+    .filter((link) => link.label);
+}
 
+async function main() {
+  const args = parseArgs();
+  const text = readStdin();
   if (!text) {
-    console.log('[REBECCA] ⚠️ 발행할 리포트 없음 — 스킵');
+    console.log('[python-report] ⚠️ 발행할 리포트 없음 — 스킵');
     return;
   }
 
+  const fromBot = args.fromBot || 'python-report';
+  const team = args.team || 'reservation';
+  const topicTeam = args.topicTeam || 'general';
+  const eventType = args.eventType || 'report';
+  const titleFallback = args.title || 'Python 리포트';
+  const footer = args.footer || '';
+  const action = args.action || '';
+  const links = parseLinks(args.links);
+  const alertLevel = Number.isFinite(Number(args.alertLevel)) ? Number(args.alertLevel) : 1;
+
   const parsed = splitTextSections(text);
-  const title = parsed.title || getHeader(mode);
-  const summary = parsed.summary || getHeader(mode);
+  const title = parsed.title || titleFallback;
+  const summary = parsed.summary || titleFallback;
   const event = normalizeEvent({
-    from_bot: 'rebecca',
-    team: 'reservation',
-    event_type: 'report',
-    alert_level: 1,
+    from_bot: fromBot,
+    team,
+    event_type: eventType,
+    alert_level: alertLevel,
     message: text,
     payload: buildEventPayload({
       title,
       summary,
       details: parsed.details,
-      action: mode === 'weekly'
-        ? '상세 확인: /ska-health | /ska-forecast'
-        : '상세 확인: /ska-health',
-      links: mode === 'weekly'
-        ? [
-          { label: '스카 헬스', href: '/ska-health' },
-          { label: '예측 헬스', href: '/ska-forecast' },
-        ]
-        : [
-          { label: '스카 헬스', href: '/ska-health' },
-        ],
+      action,
+      links,
     }),
   });
 
@@ -85,9 +99,7 @@ async function main() {
     sections: [
       { title: '', lines: parsed.details },
     ],
-    footer: mode === 'weekly'
-      ? '상세 명령: /ska-health | /ska-forecast'
-      : '상세 명령: /ska-health',
+    footer,
     payload: event.payload,
   }));
 
@@ -103,7 +115,7 @@ async function main() {
     targets: buildSeverityTargets({
       event,
       sender,
-      topicTeam: 'ska',
+      topicTeam,
       telegramPrefix: '',
       includeQueue: false,
       includeTelegram: true,
@@ -112,14 +124,14 @@ async function main() {
   });
 
   if (!results.ok) {
-    console.error('[REBECCA] ⚠️ reporting-hub 발행 실패');
+    console.error('[python-report] ⚠️ reporting-hub 발행 실패');
     process.exit(1);
   }
 
-  console.log('[REBECCA] ✅ reporting-hub 발행 완료');
+  console.log('[python-report] ✅ reporting-hub 발행 완료');
 }
 
 main().catch((error) => {
-  console.error(`[REBECCA] ⚠️ 발행 오류: ${error.message}`);
+  console.error(`[python-report] ⚠️ 발행 오류: ${error.message}`);
   process.exit(1);
 });
