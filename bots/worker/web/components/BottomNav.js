@@ -1,6 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { listVisibleMenus } from '@/lib/menu-access';
 import { LayoutDashboard, BookOpen, Calendar, Clock, Settings } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -13,10 +15,12 @@ const NAV_ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const visibleItems = listVisibleMenus(user, NAV_ITEMS);
 
   return (
     <div className="flex items-center justify-around h-16 px-2">
-      {NAV_ITEMS.map(item => {
+      {visibleItems.map(item => {
         const active = pathname.startsWith(item.href);
         const Icon   = item.icon;
         return (

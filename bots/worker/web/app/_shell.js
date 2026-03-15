@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
 import Header from '@/components/Header';
+import { canAccessMenu } from '@/lib/menu-access';
 
 const PUBLIC_PATHS = ['/login', '/change-password'];
 
@@ -21,6 +22,10 @@ export default function AppShell({ children }) {
     // 비밀번호 강제 변경 가드
     if (user?.must_change_pw && !pathname.startsWith('/change-password')) {
       router.push('/change-password');
+    }
+    const topLevelMenu = pathname.split('/')[1];
+    if (user && topLevelMenu && !isPublic && !canAccessMenu(user, topLevelMenu)) {
+      router.push('/dashboard');
     }
   }, [user, loading, pathname, router]);
 
