@@ -4,7 +4,7 @@
  *
  * 스카팀 매출 n8n 워크플로우 3개 생성
  *   SKA-WF-01: 일간 매출 요약 + AI 분석      (매일 22:00)
- *   SKA-WF-02: 매출 이상 감지 (시간별)        (매시간, 영업시간 09~22)
+ *   SKA-WF-02: 예약 매출 선행 감지            (매일 09:05)
  *   SKA-WF-03: 주간 매출 트렌드 + AI 예측    (매주 월 09:00)
  *
  * ⚠️ 기존 launchd 스크립트 수정 없음 — SELECT 전용
@@ -307,27 +307,30 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
   });
 
   // ════════════════════════════════════════════════════════════════════════
-  // SKA-WF-02: 매출 이상 감지 (매시간, 영업시간 09~22)
-  // 오늘 room_revenue 누적 vs 전주 동요일 daily_summary 시간 보정 비교
+  // SKA-WF-02: 예약 매출 선행 감지 (매일 09:05)
+  // 오늘 daily_summary 예약금액 vs 전주 동요일 daily_summary 비교
+  // 주의: 실매출이 아니라 예약 선행 신호이므로 "매출 급감" 표현 금지
   // ════════════════════════════════════════════════════════════════════════
   await createWorkflow({
-    name: 'SKA-WF-02 매출 이상 감지',
+    name: 'SKA-WF-02 예약 매출 선행 감지',
     active: true,
     nodes: [
       {
         id: 'ska02-trigger',
-        name: '매시간',
+        name: '매일 09:05',
         type: 'n8n-nodes-base.scheduleTrigger',
         typeVersion: 1.2,
         position: [240, 300],
         parameters: {
-          rule: { interval: [{ field: 'hours', hoursInterval: 1 }] },
+          rule: { interval: [{ field: 'hours', hoursInterval: 24 }] },
+          triggerAtHour: 9,
+          triggerAtMinute: 5,
           timezone: 'Asia/Seoul',
         },
       },
       {
         id: 'ska02-biz-check',
-        name: '영업시간 체크',
+        name: '비교 기준 준비',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
         position: [460, 300],
@@ -335,36 +338,27 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
           jsCode: `
 const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 const hour = now.getHours();
-
-// 영업시간(09~22) 외에는 빈 배열 반환 → 이후 노드 실행 안 됨
-if (hour < 9 || hour > 22) {
-  return [];
-}
-
-// 영업 경과 비율 (9시=0%, 22시=100%)
-const elapsed = (hour - 9) / 13;
-
-return [{ json: { hour, elapsed } }];
+return [{ json: { hour, compareMode: 'reservation_lead' } }];
           `.trim(),
         },
       },
       {
         id: 'ska02-today',
-        name: '오늘 누적 매출',
+        name: '오늘 예약 금액',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
         position: [680, 300],
         parameters: {
           operation: 'executeQuery',
-          query: `SELECT COALESCE(SUM(amount), 0) AS current_total
-FROM reservation.room_revenue
+          query: `SELECT COALESCE(total_amount, 0) AS current_total
+FROM reservation.daily_summary
 WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')`,
         },
         credentials: { postgres: { id: pgCredId, name: 'Team Jay PostgreSQL' } },
       },
       {
         id: 'ska02-baseline',
-        name: '전주 동요일 기준선',
+        name: '전주 동요일 예약 기준선',
         type: 'n8n-nodes-base.postgres',
         typeVersion: 2.5,
         position: [900, 300],
@@ -384,24 +378,20 @@ WHERE date = TO_CHAR(CURRENT_DATE - 7, 'YYYY-MM-DD')`,
         position: [1120, 300],
         parameters: {
           jsCode: `
-const current  = Number($('오늘 누적 매출').first().json.current_total)  || 0;
-const baseline = Number($('전주 동요일 기준선').first().json.baseline_total) || 0;
-const elapsed  = Number($('영업시간 체크').first().json.elapsed) || 0.01;
+const current  = Number($('오늘 예약 금액').first().json.current_total) || 0;
+const baseline = Number($('전주 동요일 예약 기준선').first().json.baseline_total) || 0;
 
-// 기준선 없으면 스킵
-if (baseline === 0) return [];
+// 오늘 예약금액 집계가 아직 없거나 기준선이 없으면 스킵
+if (baseline === 0 || current === 0) return [];
 
-// 시간 비율로 보정한 예상 매출
-const expected = baseline * elapsed;
-
-// 예상치 대비 실제 비율
-const ratio = expected > 0 ? current / expected : 1;
+// 예약 선행 비율 (실매출 아님)
+const ratio = baseline > 0 ? current / baseline : 1;
 
 let severity = null;
-if (ratio < 0.2 && elapsed > 0.3) {
-  severity = 'critical';   // 예상의 20% 미만 + 영업 30% 경과
-} else if (ratio < 0.5 && elapsed > 0.4) {
-  severity = 'warning';    // 예상의 50% 미만 + 영업 40% 경과
+if (ratio < 0.3) {
+  severity = 'critical';
+} else if (ratio < 0.6) {
+  severity = 'warning';
 }
 
 if (!severity) return [];
@@ -409,9 +399,9 @@ if (!severity) return [];
 return [{
   json: {
     severity,
-    current, baseline, expected: Math.round(expected),
+    current, baseline, expected: baseline,
     ratio: (ratio * 100).toFixed(0),
-    elapsed: (elapsed * 100).toFixed(0),
+    compareMode: 'reservation_lead',
   }
 }];
           `.trim(),
@@ -441,8 +431,9 @@ return [{
         parameters: {
           chatId: CHAT_ID,
           text: buildSafeRevenueExpression({
-            title: '🚨 <b>스카팀 매출 급감 긴급 경보</b>',
-            suffix: '⚠️ 즉시 확인 필요!',
+            title: '🚨 <b>스카팀 예약 매출 선행 경고</b>',
+            includeElapsed: false,
+            suffix: '⚠️ 예약 흐름 점검 필요!',
           }),
           additionalFields: {
             parse_mode: 'HTML',
@@ -460,7 +451,8 @@ return [{
         parameters: {
           chatId: CHAT_ID,
           text: buildSafeRevenueExpression({
-            title: '⚠️ <b>스카팀 매출 감소 감지</b>',
+            title: '⚠️ <b>스카팀 예약 매출 선행 이상</b>',
+            includeElapsed: false,
             suffix: '',
           }),
           additionalFields: {
@@ -472,10 +464,10 @@ return [{
       },
     ],
     connections: {
-      '매시간':             { main: [[{ node: '영업시간 체크',     type: 'main', index: 0 }]] },
-      '영업시간 체크':      { main: [[{ node: '오늘 누적 매출',    type: 'main', index: 0 }]] },
-      '오늘 누적 매출':     { main: [[{ node: '전주 동요일 기준선', type: 'main', index: 0 }]] },
-      '전주 동요일 기준선': { main: [[{ node: '이상 판단',          type: 'main', index: 0 }]] },
+      '매일 09:05':            { main: [[{ node: '비교 기준 준비',         type: 'main', index: 0 }]] },
+      '비교 기준 준비':        { main: [[{ node: '오늘 예약 금액',         type: 'main', index: 0 }]] },
+      '오늘 예약 금액':        { main: [[{ node: '전주 동요일 예약 기준선', type: 'main', index: 0 }]] },
+      '전주 동요일 예약 기준선': { main: [[{ node: '이상 판단',             type: 'main', index: 0 }]] },
       '이상 판단':          { main: [[{ node: 'CRITICAL 여부',      type: 'main', index: 0 }]] },
       'CRITICAL 여부':      { main: [
         [{ node: '🚨 스카 긴급 경보',   type: 'main', index: 0 }],
@@ -716,7 +708,7 @@ return [{ json: { report } }];
 
   console.log('\n✅ 스카팀 n8n 워크플로우 3개 설정 완료\n');
   console.log('  SKA-WF-01: 일간 매출 요약 + AI 분석  (매일 22:00)');
-  console.log('  SKA-WF-02: 매출 이상 감지             (매시간, 영업시간)');
+  console.log('  SKA-WF-02: 예약 매출 선행 감지       (매일 09:05)');
   console.log('  SKA-WF-03: 주간 매출 트렌드 + Gemini  (매주 월 09:00)');
   console.log('\n📌 테이블: reservation.daily_summary + reservation.room_revenue (SELECT 전용)');
 }
