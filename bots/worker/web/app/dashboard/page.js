@@ -67,24 +67,35 @@ export default function DashboardPage() {
   const pendingApprovals = summary?.pending_approvals ?? 0;
   const priorityItems = [
     canUsePromptWorkspace && pendingApprovals > 0
-      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose', prompt: '대기 승인 업무 보여줘', bot: 'worker' }
+      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose', prompt: '대기 승인 업무 보여줘', bot: 'worker', severity: 'high', badge: '즉시 확인' }
       : null,
     canUsePromptWorkspace && (alerts?.unchecked_in_count ?? 0) > 0
-      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber', prompt: '오늘 미출근 직원 보여줘', bot: 'noah' }
+      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber', prompt: '오늘 미출근 직원 보여줘', bot: 'noah', severity: 'high', badge: '주의 필요' }
       : null,
     (summary?.today_schedules ?? 0) > 0
-      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue', prompt: '오늘 일정 요약해줘', bot: 'chloe' }
+      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue', prompt: '오늘 일정 요약해줘', bot: 'chloe', severity: 'medium', badge: '운영 확인' }
       : null,
     (summary?.today_sales ?? 0) === 0
-      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘', bot: 'oliver' }
+      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘', bot: 'oliver', severity: 'medium', badge: '등록 필요' }
       : null,
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .sort((a, b) => {
+      const severityOrder = { high: 0, medium: 1, low: 2 };
+      return (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9);
+    });
 
   const toneClasses = {
-    rose: 'border-rose-200 bg-rose-50',
-    amber: 'border-amber-200 bg-amber-50',
-    blue: 'border-sky-200 bg-sky-50',
-    emerald: 'border-emerald-200 bg-emerald-50',
+    rose: 'border-rose-200 bg-rose-50/90 shadow-[0_8px_24px_-18px_rgba(225,29,72,0.45)]',
+    amber: 'border-amber-200 bg-amber-50/90 shadow-[0_8px_24px_-18px_rgba(217,119,6,0.4)]',
+    blue: 'border-sky-200 bg-sky-50/90 shadow-[0_8px_24px_-18px_rgba(2,132,199,0.35)]',
+    emerald: 'border-emerald-200 bg-emerald-50/90 shadow-[0_8px_24px_-18px_rgba(5,150,105,0.35)]',
+  };
+  const badgeClasses = {
+    rose: 'bg-rose-100 text-rose-700',
+    amber: 'bg-amber-100 text-amber-700',
+    blue: 'bg-sky-100 text-sky-700',
+    emerald: 'bg-emerald-100 text-emerald-700',
   };
 
   const activityTypeLabel = {
@@ -301,6 +312,9 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm font-medium text-slate-500">운영 캔버스</p>
               <h2 className="mt-1 text-lg font-semibold text-slate-900">지금 바로 확인할 항목</h2>
+              <p className="mt-1 text-xs text-slate-400">
+                우선순위가 높은 항목부터 위쪽에 정렬됩니다.
+              </p>
             </div>
             {!isMember && (
               <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/chat')}>
@@ -318,7 +332,14 @@ export default function DashboardPage() {
                 key={`${item.href}-${item.title}`}
                 className={`rounded-3xl border px-5 py-4 text-left ${toneClasses[item.tone] || toneClasses.blue}`}
               >
-                <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                  {item.badge ? (
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeClasses[item.tone] || badgeClasses.blue}`}>
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
                 <div className="mt-4">
                   <ProposalFlowActions
