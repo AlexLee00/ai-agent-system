@@ -2,8 +2,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
-
-const API_BASE = '/api';
+const REQUEST_TIMEOUT_MS = 5000;
 
 function normalizeEnabledMenus(enabledMenus) {
   if (!Array.isArray(enabledMenus)) return enabledMenus ?? null;
@@ -26,6 +25,45 @@ function normalizeUser(user) {
   };
 }
 
+function getApiBases() {
+  if (typeof window === 'undefined') return ['/api'];
+  return [
+    '/api',
+    `http://${window.location.hostname}:4000/api`,
+  ];
+}
+
+async function fetchJsonWithFallback(path, options = {}) {
+  let lastError = null;
+
+  for (const apiBase of getApiBases()) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${apiBase}${path}`, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      return { response, data };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('API 요청 실패');
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,21 +72,22 @@ export function AuthProvider({ children }) {
     const token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
     if (!token) { setLoading(false); return; }
 
-    fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.user) setUser(normalizeUser(data.user)); else localStorage.removeItem('worker_token'); })
+    fetchJsonWithFallback('/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(({ response, data }) => {
+        if (response.ok && data?.user) setUser(normalizeUser(data.user));
+        else localStorage.removeItem('worker_token');
+      })
       .catch(() => localStorage.removeItem('worker_token'))
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (username, password) => {
-    const res  = await fetch(`${API_BASE}/auth/login`, {
+    const { response, data } = await fetchJsonWithFallback('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '로그인 실패');
+    if (!response.ok) throw new Error(data?.error || '로그인 실패');
     localStorage.setItem('worker_token', data.token);
     setUser(normalizeUser({ ...data.user, must_change_pw: !!data.must_change_pw }));
     return data;
@@ -57,9 +96,10 @@ export function AuthProvider({ children }) {
   const refreshUser = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
     if (!token) return;
-    const res  = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = res.ok ? await res.json() : null;
-    if (data?.user) setUser(normalizeUser(data.user));
+    const { response, data } = await fetchJsonWithFallback('/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok && data?.user) setUser(normalizeUser(data.user));
   };
 
   const logout = () => {
