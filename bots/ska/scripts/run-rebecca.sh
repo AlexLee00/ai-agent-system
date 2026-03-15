@@ -6,8 +6,9 @@
 # 사용법: run-rebecca.sh [daily|weekly]
 
 PYTHON=/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python
+NODE=/usr/bin/env node
 REBECCA=/Users/alexlee/projects/ai-agent-system/bots/ska/src/rebecca.py
-SENDER=/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/send-telegram.py
+PUBLISHER=/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/publish-rebecca-report.js
 
 MODE="${1:-daily}"
 
@@ -23,8 +24,8 @@ EXIT_CODE=$?
 cat "$TMPFILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    # 텔레그램 전송
-    "$PYTHON" "$SENDER" < "$TMPFILE"
+    # reporting-hub 경유 발송
+    "$NODE" "$PUBLISHER" --mode="$MODE" < "$TMPFILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] REBECCA 완료 (mode=${MODE})"
 else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ REBECCA 오류 (exit: $EXIT_CODE, mode=${MODE})"
