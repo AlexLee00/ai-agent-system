@@ -302,6 +302,28 @@ export default function AttendancePage() {
             <p className="mt-1"><span className="font-semibold text-slate-900">피드백 수집</span> 승인 시 품질이 좋았는지, 수정 후 승인했는지 자동 기록됩니다.</p>
           </div>
 
+          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+              <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+              <p className="text-xs text-violet-700 mt-1">
+                수정 없이 확정된 과거 사례를 참고해 현재 제안을 빠르게 판단할 수 있습니다.
+              </p>
+              <div className="mt-3 space-y-2">
+                {proposal.similar_cases.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{item.summary || '유사 근태 사례'}</p>
+                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                        유사도 {(item.similarity * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
