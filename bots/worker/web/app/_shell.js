@@ -53,8 +53,7 @@ export default function AppShell({ children }) {
   if (!user) return null;
 
   const workspace = getWorkspaceConfig(pathname, user);
-  const hideGlobalWorkspaceMenus = new Set(['dashboard', 'attendance', 'schedules', 'journals', 'sales', 'projects', 'employees', 'payroll']);
-  const hideGlobalWorkspace = hideGlobalWorkspaceMenus.has(workspace.menuKey);
+  const showGlobalWorkspace = workspace.menuKey === 'ai';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -67,7 +66,7 @@ export default function AppShell({ children }) {
       <div className="lg:pl-60">
         <Header />
         <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-4rem)]">
-          {!hideGlobalWorkspace && (
+          {showGlobalWorkspace && (
             <div className="mb-6">
               <WorkerAIWorkspace
                 menuKey={workspace.menuKey}
