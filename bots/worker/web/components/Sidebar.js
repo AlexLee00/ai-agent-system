@@ -29,6 +29,8 @@ export default function Sidebar() {
   const showAdminGroup = user?.role === 'admin' || user?.role === 'master';
   const showAI = showAdminGroup && canAccessMenu(user, 'ai');
   const showWorkforce = showAdminGroup && canAccessMenu(user, 'workforce');
+  const showEmployees = showAdminGroup && canAccessMenu(user, 'employees');
+  const showPayroll = showAdminGroup && canAccessMenu(user, 'payroll');
   const showApprovals = showAdminGroup && canAccessMenu(user, 'approvals');
 
   return (
@@ -68,6 +70,8 @@ export default function Sidebar() {
             {[
               ...(showAI ? [{ href: '/ai', icon: Bot, label: 'AI 분석' }] : []),
               ...(user?.role === 'master' ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
+              ...(showEmployees ? [{ href: '/employees', icon: Users, label: '직원 관리' }] : []),
+              ...(showPayroll ? [{ href: '/payroll', icon: DollarSign, label: '급여 관리' }] : []),
               ...(showWorkforce ? [{ href: '/admin/workforce', icon: Users, label: '직원/급여 관리' }] : []),
               ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
               ...(user?.role === 'master' ? [
