@@ -68,7 +68,7 @@ function checkNaverLogStaleness() {
 
 // ─── 메인 ───────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   console.log(`[헬스체크] 시작 — ${new Date().toISOString()}`);
 
   let status;
@@ -102,7 +102,7 @@ function main() {
     // 미로드 → 회복 시 state 클리어 + 알림
     if (isCoreService && state[`unloaded:${label}`]) {
       console.log(`[헬스체크] ${shortName} 로드 회복 확인`);
-      publishToMainBot({
+      await publishToMainBot({
         from_bot: 'ska', event_type: 'health_check', alert_level: 1,
         message: `✅ [스카 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`,
       });
@@ -120,7 +120,7 @@ function main() {
         // PID 회복 시 state 클리어 + 알림
         if (state[`down:${label}`]) {
           console.log(`[헬스체크] ${shortName} PID 회복 확인`);
-          publishToMainBot({
+          await publishToMainBot({
             from_bot: 'ska', event_type: 'health_check', alert_level: 1,
             message: `✅ [스카 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`,
           });
@@ -141,7 +141,7 @@ function main() {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));
       if (prevKeys.length > 0) {
         console.log(`[헬스체크] ${shortName} 회복 확인 (exit code → 0)`);
-        publishToMainBot({
+        await publishToMainBot({
           from_bot: 'ska', event_type: 'health_check', alert_level: 1,
           message: `✅ [스카 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`,
         });
@@ -163,7 +163,7 @@ function main() {
     // 로그 정상화 시 state 클리어 + 알림
     if (state['stale:ai.ska.naver-monitor']) {
       console.log('[헬스체크] naver-monitor 로그 활동 재개 확인');
-      publishToMainBot({
+      await publishToMainBot({
         from_bot: 'ska', event_type: 'health_check', alert_level: 1,
         message: `✅ [스카 헬스] naver-monitor 회복\n로그 활동 재개 — 자동 감지`,
       });
@@ -174,7 +174,7 @@ function main() {
   // 알림 발송 + 상태 기록
   for (const { key, level, msg } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
-    publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: msg });
+    await publishToMainBot({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: msg });
     hsm.recordAlert(state, key);
   }
 
@@ -187,7 +187,10 @@ function main() {
 }
 
 try {
-  main();
+  main().catch((e) => {
+    console.error(`[헬스체크] 예외: ${e.message}`);
+    process.exit(1);
+  });
 } catch (e) {
   console.error(`[헬스체크] 예외: ${e.message}`);
   process.exit(1);
