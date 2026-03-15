@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "webhook-trigger",
-      "name": "Webhook 수신",
+      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [240, 300],
@@ -157,7 +157,7 @@
     }
   ],
   "connections": {
-    "Webhook 수신": {
+    "Webhook": {
       "main": [
         [{ "node": "파이프라인 파싱", "type": "main", "index": 0 }]
       ]
