@@ -10,6 +10,7 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const cfg    = require('./config');
 const sender = require('../../../packages/core/lib/telegram-sender');
+const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 
@@ -89,7 +90,17 @@ function buildTelegramText(results, elapsed) {
  * 덱스터 리포트 발송 — 🔧 클로드 Forum Topic 경유
  */
 function sendTelegram(text) {
-  return sender.send('claude-lead', text);
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'report',
+      alert_level: 1,
+      message: text,
+    },
+  }).then((result) => result.ok);
 }
 
 // ─── 로그 파일 기록 ─────────────────────────────────────────────────
@@ -208,7 +219,17 @@ function sendWarning({ service, status, action }) {
     `조치: ${action || '모니터링 중 (자동 복구 대기)'}`,
     SEP_DOUBLE,
   ];
-  return sender.send('claude-lead', lines.join('\n'));
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'alert',
+      alert_level: 2,
+      message: lines.join('\n'),
+    },
+  }).then((result) => result.ok);
 }
 
 /**
@@ -228,7 +249,17 @@ function sendCriticalAlert({ service, status, impact, taskId }) {
     lines.push(`태스크 ID: #${taskId}`);
   }
   lines.push(SEP_DOUBLE);
-  return sender.sendCritical('claude-lead', lines.join('\n'));
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'alert',
+      alert_level: 4,
+      message: lines.join('\n'),
+    },
+  }).then((result) => result.ok);
 }
 
 /**
@@ -244,7 +275,17 @@ function sendEmergencyAlert({ reason }) {
     '복귀 시 자동 Normal 전환',
     SEP_DOUBLE,
   ];
-  return sender.sendCritical('claude-lead', lines.join('\n'));
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'alert',
+      alert_level: 4,
+      message: lines.join('\n'),
+    },
+  }).then((result) => result.ok);
 }
 
 /**
@@ -258,7 +299,17 @@ function sendNormalModeRestore({ durationMin }) {
     `Emergency 해제 (${durationMin}분간 유지)`,
     SEP_DOUBLE,
   ];
-  return sender.send('claude-lead', lines.join('\n'));
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'report',
+      alert_level: 1,
+      message: lines.join('\n'),
+    },
+  }).then((result) => result.ok);
 }
 
 /**
@@ -274,7 +325,17 @@ function sendRecoveryComplete({ service, method, durationSec, taskId }) {
   if (durationSec != null) lines.push(`소요: ${durationSec}초`);
   if (taskId)              lines.push(`태스크 ID: #${taskId}`);
   lines.push(SEP_DOUBLE);
-  return sender.send('claude-lead', lines.join('\n'));
+  return publishToTelegram({
+    sender,
+    topicTeam: 'claude-lead',
+    event: {
+      from_bot: 'dexter',
+      team: 'claude',
+      event_type: 'report',
+      alert_level: 1,
+      message: lines.join('\n'),
+    },
+  }).then((result) => result.ok);
 }
 
 module.exports = {

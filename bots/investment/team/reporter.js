@@ -26,6 +26,7 @@ const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 const kst      = _require('../../../packages/core/lib/kst');
+const { publishEventPipeline } = _require('../../../packages/core/lib/reporting-hub.js');
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
 
@@ -371,13 +372,35 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
         }
       }
       alertLines.push('', '⚠️ 자동 변경 없음 — 마스터 승인 후 적용');
-      publishToMainBot({ from_bot: 'luna', event_type: 'accuracy_alert', alert_level: 2, message: alertLines.join('\n') });
+      await publishEventPipeline({
+        event: {
+          from_bot: 'luna',
+          team: 'investment',
+          event_type: 'accuracy_alert',
+          alert_level: 2,
+          message: alertLines.join('\n'),
+        },
+        targets: [
+          { type: 'queue', pgPool, schema: 'claude' },
+        ],
+      });
       console.log('\n📊 가중치 조정 알림 발송 완료');
     }
   }
 
   if (telegram) {
-    publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: report });
+    await publishEventPipeline({
+      event: {
+        from_bot: 'luna',
+        team: 'investment',
+        event_type: 'report',
+        alert_level: 1,
+        message: report,
+      },
+      targets: [
+        { type: 'queue', pgPool, schema: 'claude' },
+      ],
+    });
     console.log('\n📱 제이 큐 발송 완료');
   }
 
