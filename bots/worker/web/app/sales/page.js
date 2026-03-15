@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
@@ -33,6 +33,9 @@ export default function SalesPage() {
   const [originalProposal, setOriginalProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [attachedFileName, setAttachedFileName] = useState('');
+  const fileRef = useRef(null);
 
   const load = () => {
     setLoading(true);
@@ -136,6 +139,35 @@ export default function SalesPage() {
     }
   };
 
+  const handleUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    setError('');
+    try {
+      const token = getToken();
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
+      const filename = data.document?.filename || file.name;
+      const summary = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      setAttachedFileName(filename);
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summary}`.trim());
+      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const columns = [
     { key: 'date',        label: '날짜',     render: v => v?.slice(0,10) || '-' },
     { key: 'amount',      label: '금액',     render: v => `₩${Number(v).toLocaleString()}` },
@@ -193,15 +225,26 @@ export default function SalesPage() {
         </div>
 
         <div className="flex flex-col gap-3">
+          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
           <textarea
             className="input-base min-h-[92px]"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="매출 등록 요청을 자연어로 입력하세요."
           />
+          {attachedFileName && (
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+                첨부됨: {attachedFileName}
+              </span>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
             <button type="button" className="btn-primary" onClick={createProposal} disabled={!canCreateSales || proposalLoading || !prompt.trim()}>
               {proposalLoading ? '제안 생성 중...' : '매출 제안 만들기'}
+            </button>
+            <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!canCreateSales || uploading}>
+              {uploading ? '업로드 중...' : '파일 첨부'}
             </button>
             <button type="button" className="btn-secondary" onClick={openModal} disabled={!canCreateSales}>
               직접 입력 모달 열기
