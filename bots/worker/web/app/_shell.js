@@ -34,9 +34,9 @@ export default function AppShell({ children }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    setDraft(params.get('prompt') || '');
-  }, [pathname]);
+    const nextDraft = new URLSearchParams(window.location.search).get('prompt') || '';
+    setDraft((prev) => (prev === nextDraft ? prev : nextDraft));
+  });
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
 
