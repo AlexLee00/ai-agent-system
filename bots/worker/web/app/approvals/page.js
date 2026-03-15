@@ -22,6 +22,7 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [processing, setProc] = useState(null);
   const [drafts, setDrafts] = useState({});
+  const [activeTab, setActiveTab] = useState('pending');
 
   const load = () => {
     setLoading(true);
@@ -47,6 +48,18 @@ export default function ApprovalsPage() {
   const pendingCount = useMemo(
     () => approvals.filter(item => item.status === 'pending').length,
     [approvals]
+  );
+  const approvedCount = useMemo(
+    () => approvals.filter(item => item.status === 'approved').length,
+    [approvals]
+  );
+  const rejectedCount = useMemo(
+    () => approvals.filter(item => item.status === 'rejected').length,
+    [approvals]
+  );
+  const visibleApprovals = useMemo(
+    () => approvals.filter(item => activeTab === 'all' ? true : item.status === activeTab),
+    [approvals, activeTab]
   );
 
   const handleDraftChange = (id, key, value) => {
@@ -101,31 +114,80 @@ export default function ApprovalsPage() {
     }
   };
 
+  const tabItems = [
+    { key: 'pending', label: '대기', count: pendingCount },
+    { key: 'approved', label: '승인', count: approvedCount },
+    { key: 'rejected', label: '반려', count: rejectedCount },
+    { key: 'all', label: '전체', count: approvals.length },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="card bg-gradient-to-br from-white to-slate-100/80">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900">✅ 승인 관리</h1>
-            <p className="text-sm text-slate-500 mt-2">AI가 만든 업무 초안을 검토하고, 필요하면 수정한 뒤 승인 또는 반려합니다.</p>
+            <p className="text-sm text-slate-500 mt-2">AI가 만든 업무 초안을 검토하고, 필요하면 수정한 뒤 승인 또는 반려하는 전체 inbox입니다.</p>
           </div>
           <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 min-w-[180px]">
-            <p className="text-xs text-slate-500">대기 승인</p>
+            <p className="text-xs text-slate-500">현재 우선 확인</p>
             <p className="text-2xl font-semibold text-slate-900 mt-1">{pendingCount}건</p>
+            <p className="text-xs text-slate-400 mt-2">대기 승인 inbox</p>
           </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-4">
+            <p className="text-xs text-amber-700">대기</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{pendingCount}건</p>
+            <p className="mt-2 text-xs text-amber-800">지금 처리할 승인 요청</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-emerald-200 bg-emerald-50 px-4 py-4">
+            <p className="text-xs text-emerald-700">승인 완료</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{approvedCount}건</p>
+            <p className="mt-2 text-xs text-emerald-800">최근 승인 처리</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-rose-200 bg-rose-50 px-4 py-4">
+            <p className="text-xs text-rose-700">반려</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{rejectedCount}건</p>
+            <p className="mt-2 text-xs text-rose-800">사유 확인 필요</p>
+          </div>
+          <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+            <p className="text-xs text-slate-500">전체</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{approvals.length}건</p>
+            <p className="mt-2 text-xs text-slate-400">누적 승인 흐름</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card bg-white">
+        <div className="flex flex-wrap gap-2">
+          {tabItems.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {tab.label} {tab.count}건
+            </button>
+          ))}
         </div>
       </div>
 
       {loading ? (
         <p className="text-center py-20 text-slate-400">로딩 중...</p>
-      ) : approvals.length === 0 ? (
+      ) : visibleApprovals.length === 0 ? (
         <div className="card text-center py-12 text-slate-400">
           <p className="text-4xl mb-2">✅</p>
-          <p>대기 중인 승인 요청 없음</p>
+          <p>{activeTab === 'pending' ? '대기 중인 승인 요청 없음' : '선택한 상태의 승인 요청이 없습니다.'}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {approvals.map(approval => {
+          {visibleApprovals.map(approval => {
             const payload = typeof approval.payload === 'string' ? JSON.parse(approval.payload) : (approval.payload || {});
             const draft = drafts[approval.id] || normalizeDraft(approval);
             const canReview = approval.status === 'pending' && approval.target_table === 'agent_tasks';
