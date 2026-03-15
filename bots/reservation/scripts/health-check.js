@@ -4,10 +4,9 @@
  * scripts/health-check.js — launchd 서비스 헬스체크
  *
  * 감지 대상:
- *   - naver-monitor (KeepAlive): PID 없으면 다운으로 판단
+ *   - 핵심 서비스 (commander/naver-monitor/kiosk-monitor/health-check): 미로드·다운 감지
  *   - naver-monitor 로그 staleness: 15분 이상 무활동 → 크래시루프 감지
- *   - 전체 서비스: launchctl list에서 사라지면 미로드 경고
- *   - 스케줄 서비스: LastExitStatus 비정상(≠0) 감지
+ *   - 스케줄 서비스: 비정상 종료 코드 감지
  *
  * 중복 알림 방지: ~/.openclaw/workspace/health-check-state.json
  *   - 같은 서비스 경고는 30분 내 재발송 안 함
