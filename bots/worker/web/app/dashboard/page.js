@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Card from '@/components/Card';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
 
 export default function DashboardPage() {
@@ -116,6 +117,33 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {canUsePromptWorkspace && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-500">운영 대화</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">대시보드에서 바로 질의와 지시를 시작합니다</h2>
+            </div>
+            <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/chat')}>
+              전체 대화 화면 열기
+            </button>
+          </div>
+          <WorkerAIWorkspace
+            menuKey="dashboard"
+            title="대시보드 운영 프롬프트"
+            description="승인 대기, 미출근 직원, 오늘 일정, 운영 예외를 한 곳에서 질의하고 바로 처리 흐름으로 연결합니다."
+            suggestions={[
+              '오늘 미출근 직원 보여줘',
+              '대기 승인 업무 보여줘',
+              '오늘 일정 요약해줘',
+              '오늘 매출 상태 알려줘',
+            ]}
+            allowUpload={false}
+            agentName={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
+          />
+        </section>
+      )}
 
       {canUsePromptWorkspace && (
         <section className="grid gap-4 xl:grid-cols-3">
