@@ -3,6 +3,7 @@
 const fs = require('fs');
 const { execSync } = require('child_process');
 const hsm = require('./health-state-manager');
+const { resolveProductionWebhookUrl } = require('./n8n-webhook-registry');
 
 const DEFAULT_NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
@@ -254,6 +255,52 @@ function buildFileActivityHealth({
   };
 }
 
+async function buildResolvedWebhookHealth({
+  workflowName,
+  pathSuffix,
+  method = 'POST',
+  healthUrl = 'http://127.0.0.1:5678/healthz',
+  defaultWebhookUrl = '',
+  probeBody = {},
+  timeoutMs = 5000,
+  okLabel = 'webhook',
+  warnLabel = 'webhook',
+} = {}) {
+  const ok = [];
+  const warn = [];
+  const n8nHealthy = await checkHttp(healthUrl, 2500);
+  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+    workflowName,
+    method,
+    pathSuffix,
+  });
+  const webhookUrl = resolvedWebhookUrl || defaultWebhookUrl;
+  const webhook = await checkWebhookRegistration(webhookUrl, probeBody, { timeoutMs });
+
+  if (n8nHealthy) ok.push('  n8n healthz: 정상');
+  else warn.push('  n8n healthz: 응답 없음');
+
+  if (!webhook.healthy) {
+    warn.push(`  ${warnLabel}: 미도달 (${webhook.error || webhook.reason})`);
+  } else if (!webhook.registered) {
+    warn.push(`  ${warnLabel}: 미등록 (${webhook.reason}, status ${webhook.status})`);
+  } else {
+    ok.push(`  ${okLabel}: 등록됨 (${webhook.reason}, status ${webhook.status})`);
+  }
+
+  return {
+    ok,
+    warn,
+    n8nHealthy,
+    webhookRegistered: webhook.registered,
+    webhookReason: webhook.reason,
+    webhookStatus: webhook.status,
+    webhookHealthy: webhook.healthy,
+    webhookUrl,
+    resolvedWebhookUrl,
+  };
+}
+
 module.exports = {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -265,4 +312,5 @@ module.exports = {
   checkFileStaleness,
   buildHttpChecks,
   buildFileActivityHealth,
+  buildResolvedWebhookHealth,
 };
