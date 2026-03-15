@@ -120,7 +120,7 @@ send_telegram "🚀 [스카봇 배포 시작] OPS 재시작 중..."
 
 # naver-monitor 재시작 (KeepAlive라 kickstart -k 로 즉시 재시작)
 log "  naver-monitor 재시작..."
-if launchctl kickstart -k "gui/$UID/ai.ska.naver-monitor" 2>&1 | tee -a "$LOG_FILE"; then
+if launchctl kickstart -k "gui/$(id -u)/ai.ska.naver-monitor" 2>&1 | tee -a "$LOG_FILE"; then
   log_ok "naver-monitor kickstart 완료"
 else
   log_err "naver-monitor kickstart 실패"
@@ -130,7 +130,7 @@ fi
 
 # kiosk-monitor 재시작
 log "  kiosk-monitor 재시작..."
-launchctl kickstart -k "gui/$UID/ai.ska.kiosk-monitor" 2>&1 | tee -a "$LOG_FILE" || \
+launchctl kickstart -k "gui/$(id -u)/ai.ska.kiosk-monitor" 2>&1 | tee -a "$LOG_FILE" || \
   log "  ⚠️  kiosk-monitor kickstart 실패 (무시하고 진행)"
 
 # ── 4. 재시작 확인 (최대 60초, 5초 간격 재시도) ──────────────────
