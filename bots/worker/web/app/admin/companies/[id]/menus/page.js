@@ -26,6 +26,8 @@ function normalizeEnabledMenus(enabledMenus, allMenus) {
     switch (key) {
       case 'chat':
         return ['journals'];
+      case 'documents':
+        return ['schedules', 'journals', 'sales', 'projects'];
       case 'workforce':
         return ['employees', 'payroll'];
       default:
