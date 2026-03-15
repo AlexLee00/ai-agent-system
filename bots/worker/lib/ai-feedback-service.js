@@ -207,6 +207,29 @@ async function markWorkerFeedbackCommitted(params) {
   return updated;
 }
 
+async function markWorkerFeedbackSubmitted(params) {
+  const updated = await markWorkerFeedbackStatus({
+    ...params,
+    nextStatus: FEEDBACK_STATUSES.SUBMITTED,
+    eventType: FEEDBACK_EVENT_TYPES.SUBMITTED,
+  });
+  try {
+    const events = await listFeedbackEvents(pgPool, {
+      schema: SCHEMA,
+      feedbackSessionId: updated.id,
+    });
+    await publishFeedbackSessionToRag(rag, {
+      schema: SCHEMA,
+      session: updated,
+      events,
+      sourceBot: 'worker-feedback',
+    });
+  } catch (error) {
+    console.warn(`[worker-feedback] feedback RAG publish skipped: ${error.message}`);
+  }
+  return updated;
+}
+
 module.exports = {
   ensureWorkerFeedbackTables,
   createWorkerProposalFeedbackSession,
@@ -216,6 +239,7 @@ module.exports = {
   replaceWorkerFeedbackEdits,
   markWorkerFeedbackConfirmed,
   markWorkerFeedbackRejected,
+  markWorkerFeedbackSubmitted,
   markWorkerFeedbackCommitted,
 };
 
