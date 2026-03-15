@@ -19,27 +19,54 @@ const ALERT_LEVEL_ICONS = {
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 
-function normalizePayload(payload = null) {
-  if (payload == null) return null;
+function validatePayloadSchema(payload = null) {
+  if (payload == null) {
+    return { payload: null, warnings: [] };
+  }
+
+  const warnings = [];
   if (typeof payload !== 'object' || Array.isArray(payload)) {
-    return { value: payload };
+    return {
+      payload: { value: payload },
+      warnings: ['payload_object_expected'],
+    };
   }
 
   const normalized = {
     ...payload,
   };
-  if (normalized.title != null) normalized.title = String(normalized.title).trim();
-  if (normalized.summary != null) normalized.summary = String(normalized.summary).trim();
-  if (normalized.action != null) normalized.action = String(normalized.action).trim();
-  if (normalized.detail != null) normalized.detail = String(normalized.detail).trim();
-  if (Array.isArray(normalized.details)) {
+
+  for (const key of ['title', 'summary', 'action', 'detail']) {
+    if (normalized[key] != null) {
+      if (typeof normalized[key] !== 'string') warnings.push(`${key}_coerced_to_string`);
+      normalized[key] = String(normalized[key]).trim();
+    }
+  }
+
+  if (normalized.details != null) {
+    if (!Array.isArray(normalized.details)) {
+      warnings.push('details_coerced_to_array');
+      normalized.details = [normalized.details];
+    }
     normalized.details = normalized.details.map((line) => String(line || '').trim()).filter(Boolean);
   }
-  if (Array.isArray(normalized.links)) {
+
+  if (normalized.links != null) {
+    if (!Array.isArray(normalized.links)) {
+      warnings.push('links_coerced_to_array');
+      normalized.links = [normalized.links];
+    }
     normalized.links = normalized.links
       .map((link) => {
         if (!link) return null;
-        if (typeof link === 'string') return { label: link.trim(), href: '' };
+        if (typeof link === 'string') {
+          warnings.push('link_string_coerced_to_object');
+          return { label: link.trim(), href: '' };
+        }
+        if (typeof link !== 'object') {
+          warnings.push('link_invalid_dropped');
+          return null;
+        }
         return {
           label: String(link.label || '').trim(),
           href: String(link.href || '').trim(),
@@ -47,7 +74,19 @@ function normalizePayload(payload = null) {
       })
       .filter((link) => link && link.label);
   }
-  return normalized;
+
+  return {
+    payload: normalized,
+    warnings,
+  };
+}
+
+function normalizePayload(payload = null) {
+  const validated = validatePayloadSchema(payload);
+  if (validated.warnings.length > 0) {
+    console.warn(`[reporting-hub] payload normalized with warnings: ${validated.warnings.join(', ')}`);
+  }
+  return validated.payload;
 }
 
 function buildEventPayload({
@@ -661,6 +700,7 @@ function buildSeverityTargets({
 
 module.exports = {
   normalizeEvent,
+  validatePayloadSchema,
   normalizePayload,
   buildEventPayload,
   publishToQueue,

@@ -44,6 +44,7 @@
 - [packages/core/lib/reporting-hub.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.js)
   - event normalization
   - payload normalization (`title/summary/details/action/links`)
+  - payload validation warning (`validatePayloadSchema`)
   - queue publish
   - telegram publish
   - rag publish
