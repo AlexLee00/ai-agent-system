@@ -1036,6 +1036,7 @@ export default function AIPage() {
   const [asking,    setAsking]    = useState(false);
   const [askResult, setAskResult] = useState(null);
   const [askError,  setAskError]  = useState('');
+  const [analysisFocus, setAnalysisFocus] = useState('ops');
 
   const [forecasting, setForecasting] = useState(false);
   const [forecast,    setForecast]    = useState(null);
@@ -1060,32 +1061,173 @@ export default function AIPage() {
   const dataColumns = askResult?.data?.length > 0
     ? Object.keys(askResult.data[0]).map(k => ({ key: k, label: k }))
     : [];
-  const linkedActions = [
-    {
-      title: '근태 이상 징후 확인',
-      body: '지각, 미출근, 휴가 대기 같은 운영 예외를 바로 질의합니다.',
-      prompt: '이번 주 근태 이상 징후를 요약해줘',
-      href: '/attendance',
-    },
-    {
-      title: '부서별 매출 비교',
-      body: '이번 달 매출을 비교하고 바로 매출 관리 메뉴로 넘어갑니다.',
-      prompt: '이번 달 부서별 매출 비교표를 보여줘',
-      href: '/sales',
-    },
-    {
-      title: '지연 프로젝트 점검',
-      body: '마감 임박 프로젝트와 담당자를 정리해서 바로 이어봅니다.',
-      prompt: '지연 중인 프로젝트와 담당자를 정리해줘',
-      href: '/projects',
-    },
-    {
-      title: '승인 대기 흐름 확인',
-      body: '누적 승인 대기와 병목 상태를 보고 승인 inbox로 이동합니다.',
-      prompt: '승인 대기 중인 업무가 얼마나 있는지 알려줘',
-      href: '/approvals',
-    },
+  const analysisFocusOptions = [
+    { key: 'ops', label: '운영 종합' },
+    { key: 'attendance', label: '근태' },
+    { key: 'sales', label: '매출' },
+    { key: 'projects', label: '프로젝트' },
+    { key: 'approvals', label: '승인' },
+    { key: 'payroll', label: '급여' },
   ];
+  const analysisFocusConfig = {
+    ops: {
+      title: '운영 종합 분석',
+      body: '운영 우선순위와 병목을 한 번에 점검하는 기본 분석 축입니다.',
+      prompts: [
+        '이번 주 운영 예외를 우선순위대로 정리해줘',
+        '지금 바로 확인할 병목을 요약해줘',
+        '근태, 승인, 매출 흐름을 한 번에 비교해줘',
+        '오늘 운영 상태를 종합해서 알려줘',
+      ],
+      actions: [
+        {
+          title: '근태 이상 징후 확인',
+          body: '지각, 미출근, 휴가 대기 같은 운영 예외를 바로 질의합니다.',
+          prompt: '이번 주 근태 이상 징후를 요약해줘',
+          href: '/attendance',
+        },
+        {
+          title: '부서별 매출 비교',
+          body: '이번 달 매출을 비교하고 바로 매출 관리 메뉴로 넘어갑니다.',
+          prompt: '이번 달 부서별 매출 비교표를 보여줘',
+          href: '/sales',
+        },
+        {
+          title: '지연 프로젝트 점검',
+          body: '마감 임박 프로젝트와 담당자를 정리해서 바로 이어봅니다.',
+          prompt: '지연 중인 프로젝트와 담당자를 정리해줘',
+          href: '/projects',
+        },
+        {
+          title: '승인 대기 흐름 확인',
+          body: '누적 승인 대기와 병목 상태를 보고 승인 inbox로 이동합니다.',
+          prompt: '승인 대기 중인 업무가 얼마나 있는지 알려줘',
+          href: '/approvals',
+        },
+      ],
+    },
+    attendance: {
+      title: '근태 분석',
+      body: '출근, 지각, 휴가 흐름과 예외를 빠르게 점검합니다.',
+      prompts: [
+        '이번 주 근태 이상 징후를 요약해줘',
+        '지각 횟수가 가장 많은 직원을 알려줘',
+        '미출근 직원과 휴가 대기 내역을 같이 보여줘',
+        '부서별 출근 현황을 정리해줘',
+      ],
+      actions: [
+        {
+          title: '미출근 직원 확인',
+          body: '당일 미출근 직원과 상태를 바로 확인합니다.',
+          prompt: '오늘 미출근 직원 보여줘',
+          href: '/attendance',
+        },
+        {
+          title: '휴가 대기 점검',
+          body: '승인 대기 중인 휴가 요청을 확인합니다.',
+          prompt: '휴가 승인 대기 내역을 보여줘',
+          href: '/approvals',
+        },
+      ],
+    },
+    sales: {
+      title: '매출 분석',
+      body: '일간/주간 매출 흐름과 누락 항목을 점검합니다.',
+      prompts: [
+        '이번 달 부서별 매출 비교표를 보여줘',
+        '오늘 매출 미등록 항목이 있는지 알려줘',
+        '지난주 대비 이번 주 매출 추이를 보여줘',
+        '카테고리별 매출 비중을 분석해줘',
+      ],
+      actions: [
+        {
+          title: '매출 누락 확인',
+          body: '입력되지 않은 당일 매출을 빠르게 점검합니다.',
+          prompt: '오늘 매출 미등록 항목을 확인해줘',
+          href: '/sales',
+        },
+        {
+          title: '주간 매출 비교',
+          body: '주간 단위로 매출 흐름을 비교합니다.',
+          prompt: '이번 주와 지난주 매출을 비교해줘',
+          href: '/sales',
+        },
+      ],
+    },
+    projects: {
+      title: '프로젝트 분석',
+      body: '지연, 마감 임박, 완료 회고 관점에서 프로젝트를 봅니다.',
+      prompts: [
+        '지연 중인 프로젝트와 담당자를 정리해줘',
+        '마감 임박 프로젝트를 우선순위대로 보여줘',
+        '완료 프로젝트 회고 포인트를 정리해줘',
+        '프로젝트 병목 원인을 요약해줘',
+      ],
+      actions: [
+        {
+          title: '지연 프로젝트 점검',
+          body: '현재 지연된 프로젝트와 담당자를 바로 확인합니다.',
+          prompt: '지연 중인 프로젝트와 담당자를 정리해줘',
+          href: '/projects',
+        },
+        {
+          title: '마감 임박 확인',
+          body: '기한이 가까운 프로젝트를 모아서 봅니다.',
+          prompt: '마감 임박 프로젝트를 보여줘',
+          href: '/projects',
+        },
+      ],
+    },
+    approvals: {
+      title: '승인 흐름 분석',
+      body: '대기, 승인 완료, 반려 흐름과 병목을 분석합니다.',
+      prompts: [
+        '승인 대기 중인 업무가 얼마나 있는지 알려줘',
+        '반려가 많은 승인 유형을 분석해줘',
+        '승인 처리 시간이 오래 걸리는 흐름을 보여줘',
+        '최근 승인 병목을 요약해줘',
+      ],
+      actions: [
+        {
+          title: '승인 대기 확인',
+          body: '현재 쌓여 있는 승인 대기 업무를 바로 확인합니다.',
+          prompt: '대기 승인 업무를 보여줘',
+          href: '/approvals',
+        },
+        {
+          title: '반려 흐름 점검',
+          body: '반려가 많은 항목을 찾아봅니다.',
+          prompt: '최근 반려가 많은 승인 유형을 보여줘',
+          href: '/approvals',
+        },
+      ],
+    },
+    payroll: {
+      title: '급여 분석',
+      body: '급여 계산, 재계산, 이상 징후를 빠르게 점검합니다.',
+      prompts: [
+        '이번 달 급여 총액은 얼마인지 알려줘',
+        '급여 계산 대기 항목을 보여줘',
+        '이전 월과 비교해 급여 이상치를 찾아줘',
+        '부서별 급여 분포를 요약해줘',
+      ],
+      actions: [
+        {
+          title: '급여 점검',
+          body: '이번 달 급여 흐름을 바로 확인합니다.',
+          prompt: '이번 달 급여 계산 상태를 보여줘',
+          href: '/payroll',
+        },
+        {
+          title: '재계산 검토',
+          body: '이전 월 재계산이 필요한 항목을 확인합니다.',
+          prompt: '이전 월 재계산 검토 항목을 알려줘',
+          href: '/payroll',
+        },
+      ],
+    },
+  };
+  const currentFocus = analysisFocusConfig[analysisFocus] || analysisFocusConfig.ops;
 
   function fillQuestion(prompt) {
     setQuestion(prompt);
@@ -1128,6 +1270,29 @@ export default function AIPage() {
                 <h2 className="text-lg font-semibold text-slate-900">자연어 질문</h2>
                 <p className="text-sm leading-6 text-slate-500">업무 데이터를 그대로 물어보면 SQL과 답변이 함께 정리됩니다.</p>
               </div>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {analysisFocusOptions.map((item) => {
+                  const active = analysisFocus === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setAnalysisFocus(item.key)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        active
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{currentFocus.title}</p>
+                <p className="mt-1 text-sm text-slate-600">{currentFocus.body}</p>
+              </div>
               <form onSubmit={handleAsk} className="flex gap-2">
                 <input className="input-base flex-1" value={question} onChange={e => setQuestion(e.target.value)}
                   placeholder="예: 이번 달 매출 합계는?" disabled={asking} />
@@ -1136,7 +1301,7 @@ export default function AIPage() {
                 </button>
               </form>
               <div className="mt-4 flex flex-wrap gap-2">
-                {['이번 달 매출 합계는?', '지각 횟수가 가장 많은 직원은?', '완료되지 않은 프로젝트 목록', '3월 급여 총액은 얼마인가요?'].map(q => (
+                {currentFocus.prompts.map(q => (
                   <button key={q} onClick={() => setQuestion(q)}
                     className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 hover:bg-white hover:text-slate-900">{q}</button>
                 ))}
@@ -1209,7 +1374,7 @@ export default function AIPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Prompt Flows</p>
               <div className="mt-4">
                 <AdminQuickFlowGrid
-                  items={linkedActions.map((item) => ({
+                  items={currentFocus.actions.map((item) => ({
                     title: item.title,
                     body: item.body,
                     onPromptFill: () => fillQuestion(item.prompt),
@@ -1247,12 +1412,7 @@ export default function AIPage() {
             <div className="rounded-[26px] border border-slate-200 bg-slate-900 p-6 text-white shadow-[0_18px_50px_-34px_rgba(15,23,42,0.45)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Recommended Prompts</p>
               <div className="mt-4 space-y-2">
-                {[
-                  '이번 주 근태 이상 징후를 요약해줘',
-                  '이번 달 부서별 매출 비교표를 보여줘',
-                  '지연 중인 프로젝트와 담당자를 정리해줘',
-                  '승인 대기 중인 업무가 얼마나 있는지 알려줘',
-                ].map((prompt) => (
+                {currentFocus.prompts.map((prompt) => (
                   <button
                     key={prompt}
                     onClick={() => fillQuestion(prompt)}
