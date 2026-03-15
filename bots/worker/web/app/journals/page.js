@@ -16,6 +16,12 @@ const CATEGORIES = [
 
 const today = () => new Date().toISOString().slice(0, 10);
 const EMPTY_FORM = { date: today(), content: '', category: 'general' };
+const EMPTY_PROPOSAL = { date: today(), content: '', category: 'general' };
+
+function proposalChanged(original, proposal) {
+  if (!original || !proposal) return false;
+  return ['date', 'category', 'content'].some((key) => (original[key] || '') !== (proposal[key] || ''));
+}
 
 export default function JournalsPage() {
   const [journals,   setJournals]   = useState([]);
@@ -30,6 +36,12 @@ export default function JournalsPage() {
   const [editId,     setEditId]     = useState(null);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [proposal, setProposal] = useState(null);
+  const [originalProposal, setOriginalProposal] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalActionLoading, setProposalActionLoading] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const load = (kw) => {
     setLoading(true);
@@ -69,6 +81,56 @@ export default function JournalsPage() {
     if (!confirm('정말 삭제하시겠습니까?')) return;
     await api.delete(`/journals/${id}`).catch(() => {});
     load();
+  };
+
+  const createProposal = async () => {
+    if (!prompt.trim()) return;
+    setProposalLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const data = await api.post('/journals/proposals', { prompt });
+      setProposal(data.proposal || EMPTY_PROPOSAL);
+      setOriginalProposal(data.proposal || EMPTY_PROPOSAL);
+      setPrompt('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const confirmProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalActionLoading(true);
+    setError('');
+    try {
+      await api.post(`/journals/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      setNotice('업무일지를 등록했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalActionLoading(false);
+    }
+  };
+
+  const rejectProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalActionLoading(true);
+    setError('');
+    try {
+      await api.post(`/journals/proposals/${proposal.feedback_session_id}/reject`);
+      setNotice('업무일지 제안을 반려했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalActionLoading(false);
+    }
   };
 
   const catLabel = (v) => CATEGORIES.find(c => c.value === v)?.label || v;
@@ -112,6 +174,107 @@ export default function JournalsPage() {
         <h1 className="text-xl font-bold text-gray-900">📝 업무 관리</h1>
         <button className="btn-primary text-sm" onClick={openNew}>+ 등록</button>
       </div>
+
+      <div className="card space-y-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">자연어로 업무일지 초안 만들기</p>
+          <p className="text-sm text-slate-500 mt-1">입력한 내용을 먼저 확인한 뒤 등록합니다. 수정 내용은 피드백 데이터로 쌓입니다.</p>
+        </div>
+        <div className="flex flex-col gap-3 lg:flex-row">
+          <textarea
+            className="input-base min-h-[104px] flex-1"
+            placeholder="예: 오늘 오전 김대리 업체 미팅 후 후속 견적 요청 사항을 정리해줘"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn-primary lg:w-40"
+            disabled={proposalLoading || !prompt.trim()}
+            onClick={createProposal}
+          >
+            {proposalLoading ? '초안 생성 중...' : '초안 만들기'}
+          </button>
+        </div>
+        {notice && <p className="text-sm text-emerald-600">{notice}</p>}
+        {error && <p className="text-sm text-red-500">{error}</p>}
+      </div>
+
+      {proposal && (
+        <div className="card space-y-4 border border-indigo-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">업무일지 확인 결과</p>
+              <p className="text-sm text-slate-500 mt-1">
+                {proposal.summary || '업무일지 제안'} · {proposal.confidence === 'high' ? '높은 확신' : '검토 필요'}
+              </p>
+            </div>
+            {proposalChanged(originalProposal, proposal) && (
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">수정됨</span>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">날짜</label>
+              <input
+                type="date"
+                className="input-base"
+                value={proposal.date || ''}
+                onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+              <select
+                className="input-base"
+                value={proposal.category || 'general'}
+                onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value }))}
+              >
+                {CATEGORIES.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">내용</label>
+            <textarea
+              className="input-base min-h-[144px]"
+              value={proposal.content || ''}
+              onChange={(e) => setProposal((prev) => ({ ...prev, content: e.target.value }))}
+            />
+          </div>
+          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-800">유사 확정 사례</p>
+              <div className="mt-3 space-y-3">
+                {proposal.similar_cases.map((item) => (
+                  <div key={item.id} className="rounded-xl bg-white px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-900">{item.summary || `${item.flow_code}/${item.action_code}`}</p>
+                      <span className="text-xs text-slate-400">{Math.round((item.similarity || 0) * 100)}%</span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
+              반려
+            </button>
+            <button
+              type="button"
+              className="btn-primary flex-1"
+              disabled={proposalActionLoading || !String(proposal.content || '').trim()}
+              onClick={confirmProposal}
+            >
+              {proposalActionLoading ? '처리 중...' : '확정'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="card">

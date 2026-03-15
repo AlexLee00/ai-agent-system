@@ -63,6 +63,10 @@ const {
   buildProjectProposal,
   normalizeProjectProposal,
 } = require('../lib/project-ai');
+const {
+  buildJournalProposal,
+  normalizeJournalProposal,
+} = require('../lib/journal-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1756,6 +1760,139 @@ app.get('/api/journals/:id', requireAuth, companyFilter, async (req, res) => {
     if (!row) return res.status(404).json({ error: '업무일지를 찾을 수 없습니다.', code: 'NOT_FOUND' });
     res.json({ journal: row });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/journals/proposals', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    let emp = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+      [req.companyId, req.user.id]);
+    const employeeId = emp?.id ||
+      (req.body.employee_id && ['admin', 'master'].includes(req.user.role) ? Number(req.body.employee_id) : null);
+    if (!employeeId) {
+      return res.status(404).json({ error: '연결된 직원 정보가 없습니다. 관리자에게 문의하세요.', code: 'NOT_FOUND' });
+    }
+
+    const proposal = buildJournalProposal({ prompt });
+    const sourceRefId = `journal-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'journal_prompt',
+      sourceRefType: 'journal_proposal',
+      sourceRefId,
+      flowCode: 'journal_create',
+      actionCode: 'create_journal',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.summary,
+      aiInputPayload: {
+        prompt,
+        employee_id: employeeId,
+        date: proposal.date,
+        category: proposal.category,
+      },
+      aiOutputType: 'work_journal',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'journal_create',
+      actionCode: 'create_journal',
+      query: `${prompt || proposal.summary} ${proposal.category} ${proposal.content}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        employee_id: employeeId,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '업무일지 제안을 생성하지 못했습니다.', code: 'JOURNAL_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/journals/proposals/:id/confirm', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '업무일지 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+
+    let emp = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.employees WHERE company_id=$1 AND user_id=$2 AND deleted_at IS NULL`,
+      [req.companyId, req.user.id]);
+    const employeeId = emp?.id ||
+      (req.body.employee_id && ['admin', 'master'].includes(req.user.role) ? Number(req.body.employee_id) : null);
+    if (!employeeId) {
+      return res.status(404).json({ error: '연결된 직원 정보가 없습니다. 관리자에게 문의하세요.', code: 'NOT_FOUND' });
+    }
+
+    const proposal = normalizeJournalProposal(req.body.proposal || session.original_snapshot_json || {});
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'journal_confirm' },
+    });
+
+    const journal = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.work_journals (company_id, employee_id, date, content, category)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING *`,
+      [req.companyId, employeeId, proposal.date, proposal.content, proposal.category || 'general']);
+
+    rag.store('rag_work_docs', `[업무일지] ${proposal.content.slice(0, 500)}`,
+      { company_id: req.companyId, journal_id: journal.id, category: proposal.category || 'general' }, 'emily'
+    ).catch(() => {});
+
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'journal_confirm', journal_id: journal.id },
+    });
+
+    const committedSnapshot = {
+      ...proposal,
+      journal_id: journal.id,
+      status: 'committed',
+    };
+
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'journal_confirm', journal_id: journal.id },
+    });
+
+    res.json({ ok: true, journal, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '업무일지 확정 처리 중 오류가 발생했습니다.', code: 'JOURNAL_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/journals/proposals/:id/reject', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '업무일지 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'journal_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '업무일지 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 app.post('/api/journals',
