@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import Link from 'next/link';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -92,7 +93,7 @@ function DetailModal({ row, onClose }) {
 
 export default function PayrollPage() {
   const { user } = useAuth();
-  const canManage = ['admin', 'master'].includes(user?.role);
+  const canManage = canPerformMenuOperation(user, 'payroll', 'create') || canPerformMenuOperation(user, 'workforce', 'create');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const [yearMonth,    setYearMonth]  = useState(thisMonth);
   const [rows,         setRows]       = useState([]);
@@ -248,7 +249,7 @@ export default function PayrollPage() {
                 type="button"
                 className="btn-primary"
                 onClick={createProposal}
-                disabled={proposalLoading || !prompt.trim()}
+                disabled={!canManage || proposalLoading || !prompt.trim()}
               >
                 {proposalLoading ? '제안 생성 중...' : '급여 제안 만들기'}
               </button>
@@ -256,7 +257,7 @@ export default function PayrollPage() {
                 type="button"
                 className="btn-secondary"
                 onClick={handleCalculate}
-                disabled={calculating || empCount === 0}
+                disabled={!canManage || calculating || empCount === 0}
               >
                 직접 계산 실행
               </button>
