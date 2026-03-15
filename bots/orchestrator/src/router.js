@@ -130,6 +130,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /ops-health 또는 "통합 운영 헬스"
   /orchestrator-health 또는 /jay-health 또는 "제이 헬스"
   /reporting-health 또는 "리포팅 헬스"
+  /reporting-health summary 또는 "리포팅 헬스 요약"
   /luna-health | /worker-health | /claude-health | /ska-health | /blog-health
 
 🔇 무음 제어
@@ -888,6 +889,7 @@ async function runNodeScriptJson(script, args = [], timeoutMs = 60_000) {
 }
 
 async function runNodeScriptText(script, {
+  args = [],
   timeoutMs = 60_000,
   timeoutText = '⏱ 스크립트 실행이 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
   errorPrefix = '⚠️ 스크립트 실행 실패',
@@ -896,7 +898,7 @@ async function runNodeScriptText(script, {
 } = {}) {
   const root = path.join(__dirname, '..', '..', '..');
   return await new Promise((resolve) => {
-    const child = spawn('node', [script], {
+    const child = spawn('node', [script, ...args], {
       cwd: root,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -949,10 +951,11 @@ async function runOrchestratorHealthDirect() {
   });
 }
 
-async function runReportingHealthDirect() {
+async function runReportingHealthDirect(query = '') {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.js');
   return await runNodeScriptText(script, {
+    args: String(query || '').trim().toLowerCase() === 'summary' ? ['--summary'] : [],
     timeoutText: '⏱ reporting 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ reporting 헬스 실행 실패',
     failPrefix: '⚠️ reporting 헬스 실패',
@@ -1776,7 +1779,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'reporting_health': {
       await notify('⏳ 리포팅 파이프라인 헬스 확인 중...');
-      return await runReportingHealthDirect();
+      return await runReportingHealthDirect(args.query);
     }
 
     case 'luna_health': {
