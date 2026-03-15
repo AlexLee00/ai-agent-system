@@ -43,6 +43,7 @@ export default function DashboardPage() {
   ];
   const uncheckedPreview = alerts?.unchecked_in_preview || [];
   const upcomingSchedules = alerts?.upcoming_schedules || [];
+  const dueProjects = alerts?.due_projects_preview || [];
   const pendingApprovals = summary?.pending_approvals ?? 0;
   const priorityItems = [
     canUsePromptWorkspace && pendingApprovals > 0
@@ -187,7 +188,7 @@ export default function DashboardPage() {
       )}
 
       {canUsePromptWorkspace && (
-        <section className="grid gap-4 xl:grid-cols-3">
+        <section className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
           <div className="card bg-white">
             <p className="text-sm font-medium text-slate-500">출근까지 남은 시간</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
@@ -243,6 +244,47 @@ export default function DashboardPage() {
               </div>
             ) : (
               <p className="mt-3 text-sm text-slate-500">가까운 일정이 없습니다.</p>
+            )}
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-500">문서 처리 적체</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.pending_docs_count ?? 0}건</p>
+              </div>
+              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/journals')}>
+                업무 열기
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-slate-500">
+              AI 요약이 아직 없는 문서 수입니다. 적체가 길어지면 업무 관리에서 먼저 정리하는 것이 좋습니다.
+            </p>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-500">마감 임박 프로젝트</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.due_projects_count ?? 0}건</p>
+              </div>
+              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/projects')}>
+                프로젝트 열기
+              </button>
+            </div>
+            {dueProjects.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {dueProjects.map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                    <p className="text-xs text-slate-500">
+                      마감 {item.end_date} · {item.status || 'planning'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-emerald-600">7일 내 마감 프로젝트가 없습니다.</p>
             )}
           </div>
         </section>

@@ -2308,7 +2308,7 @@ app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) =
 
 app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), companyFilter, async (req, res) => {
   try {
-    const [pendingApprovalsRow, uncheckedRows, upcomingSchedules] = await Promise.all([
+    const [pendingApprovalsRow, uncheckedRows, upcomingSchedules, pendingDocsRow, dueProjects] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COUNT(*) AS cnt FROM worker.approval_requests
          WHERE company_id=$1 AND status='pending' AND deleted_at IS NULL`,
@@ -2337,6 +2337,24 @@ app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), co
          ORDER BY start_time ASC
          LIMIT 3`,
         [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt
+         FROM worker.documents
+         WHERE company_id=$1
+           AND ai_summary IS NULL
+           AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT id, name, status, end_date
+         FROM worker.projects
+         WHERE company_id=$1
+           AND deleted_at IS NULL
+           AND status IN ('planning','in_progress','review')
+           AND end_date IS NOT NULL
+           AND end_date <= CURRENT_DATE + INTERVAL '7 days'
+         ORDER BY end_date ASC
+         LIMIT 3`,
+        [req.companyId]),
     ]);
 
     const nowKst = kst.now();
@@ -2351,6 +2369,9 @@ app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), co
       unchecked_in_preview: uncheckedRows,
       minutes_until_checkin: minutesUntilCheckIn,
       upcoming_schedules: upcomingSchedules,
+      pending_docs_count: Number(pendingDocsRow?.cnt ?? 0),
+      due_projects_count: dueProjects.length,
+      due_projects_preview: dueProjects,
       generated_at: new Date().toISOString(),
     });
   } catch {
