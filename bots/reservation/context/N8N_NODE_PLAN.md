@@ -58,6 +58,8 @@
 ## 공용 레이어 적용 포인트
 - n8n:
   - `packages/core/lib/n8n-runner.js`
+- reservation RAG:
+  - `packages/core/lib/reservation-rag.js`
 - 인텐트:
   - `packages/core/lib/intent-core.js`
   - `packages/core/lib/intent-store.js`
