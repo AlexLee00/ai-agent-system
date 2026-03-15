@@ -34,6 +34,7 @@ const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { getSecret } = require('../lib/secrets');
 const { recalcProgress } = require('../src/ryan');
 const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
+const { getMenuPolicyForRole } = require('../lib/menu-policy');
 const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
@@ -288,11 +289,13 @@ async function getCompanyAiPolicy(companyId) {
 async function buildUserResponse(user) {
   const company = user.role === 'master' ? null : await getCompanyAiPolicy(user.company_id);
   const ai_policy = resolveAiPolicy({ user, company });
+  const menu_policy = getMenuPolicyForRole(user.role);
 
   return {
     ...user,
     enabled_menus: user.role === 'master' ? null : (company?.enabled_menus ?? null),
     ai_policy,
+    menu_policy,
   };
 }
 
