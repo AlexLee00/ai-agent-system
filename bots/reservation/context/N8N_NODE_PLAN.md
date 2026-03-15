@@ -16,6 +16,9 @@
 - 운영 모니터:
   - `auto/monitors/naver-monitor.js`
   - `auto/monitors/pickko-kiosk-monitor.js`
+- n8n draft:
+  - `context/n8n-ska-command-workflow.json`
+  - `n8n/setup-ska-command-workflow.js`
 
 ## 1차 노드화 대상
 - `query_reservations`
