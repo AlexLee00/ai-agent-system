@@ -77,11 +77,22 @@ function splitMessage(text) {
  * 텔레그램 발송 — 📌 일반 Forum Topic 경유
  * 4096자 초과 시 분할 전송
  */
-async function sendTelegram(text) {
+async function sendTelegram(input) {
+  const message = typeof input === 'string' ? { text: input } : (input || {});
+  const text = String(message.text || '').trim();
+  if (!text) return false;
+
   const chunks = splitMessage(text);
   let allOk = true;
-  for (const chunk of chunks) {
-    const ok = await sender.send('general', chunk);
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    const isSingleChunk = chunks.length === 1;
+    const ok = isSingleChunk && message.replyMarkup
+      ? await sender.sendWithOptions('general', chunk, {
+        replyMarkup: message.replyMarkup,
+        disableWebPagePreview: true,
+      })
+      : await sender.send('general', chunk);
     if (!ok) allOk = false;
     if (chunks.length > 1) await new Promise(r => setTimeout(r, 1100));
   }

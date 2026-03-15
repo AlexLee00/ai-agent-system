@@ -12,6 +12,7 @@ const {
   renderNoticeEvent,
   buildSnippetEvent,
   renderSnippetEvent,
+  parseEventPayload,
   getEventHeadline,
   getEventDetailLines,
   getEventAction,
@@ -42,6 +43,35 @@ function formatSingle(item) {
     action,
     footer: '필요 시 /ops-health 또는 팀별 헬스 명령으로 추가 점검',
   }));
+}
+
+function buildSingleDelivery(item) {
+  const payload = parseEventPayload(item?.payload);
+  const links = Array.isArray(payload?.links)
+    ? payload.links
+      .map((link) => ({
+        label: String(link?.label || '').trim(),
+        href: String(link?.href || '').trim(),
+      }))
+      .filter((link) => link.label && link.href)
+      .slice(0, 2)
+    : [];
+
+  const replyMarkup = links.length > 0
+    ? {
+      inline_keyboard: [
+        links.map((link) => ({
+          text: link.label.slice(0, 32),
+          url: link.href,
+        })),
+      ],
+    }
+    : null;
+
+  return {
+    text: formatSingle(item),
+    replyMarkup,
+  };
 }
 
 /**
@@ -137,4 +167,4 @@ function eventSummary(eventType, count) {
   return labels[eventType] || `${eventType} ${count}건`;
 }
 
-module.exports = { formatSingle, formatBatch, formatMultiBot, eventSummary };
+module.exports = { formatSingle, formatBatch, formatMultiBot, buildSingleDelivery, eventSummary };

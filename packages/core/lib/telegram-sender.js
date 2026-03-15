@@ -105,13 +105,17 @@ const _batchBuffer = new Map();
 /**
  * @returns {{ ok: boolean, code: number, retryAfter: number }}
  */
-async function _trySend(text, threadId) {
+async function _trySend(text, threadId, options = {}) {
   const token  = _token();
   const chatId = _chatId();
   if (!token || !chatId) return { ok: false, code: 0, retryAfter: 0 };
 
   const body = { chat_id: chatId, text, parse_mode: 'HTML' };
   if (threadId) body.message_thread_id = threadId;
+  if (options.replyMarkup) body.reply_markup = options.replyMarkup;
+  if (typeof options.disableWebPagePreview === 'boolean') {
+    body.disable_web_page_preview = options.disableWebPagePreview;
+  }
 
   try {
     const res  = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -139,7 +143,7 @@ async function _trySend(text, threadId) {
  * 429 발생 시 retry_after 준수, 기타 실패 시 3초 간격 재시도.
  * @returns {Promise<boolean>}
  */
-async function _doSend(text, threadId) {
+async function _doSend(text, threadId, options = {}) {
   // Throttle: 마지막 발송으로부터 MIN_INTERVAL_MS 확보
   const now  = Date.now();
   const wait = _lastSentAt + MIN_INTERVAL_MS - now;
@@ -148,7 +152,7 @@ async function _doSend(text, threadId) {
   const MAX_TRIES = 3;
   for (let i = 1; i <= MAX_TRIES; i++) {
     _lastSentAt = Date.now();
-    const { ok, code, retryAfter } = await _trySend(text, threadId);
+    const { ok, code, retryAfter } = await _trySend(text, threadId, options);
     if (ok) return true;
 
     if (code === 429 && retryAfter > 0) {
@@ -226,6 +230,23 @@ async function send(team, message) {
   return true;  // 배치 버퍼 추가 성공
 }
 
+async function sendWithOptions(team, message, options = {}) {
+  if (process.env.TELEGRAM_ENABLED === '0') return true;
+
+  if (_isFilenameLeak(message)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${message.slice(0, 60)}`);
+    return false;
+  }
+
+  const threadId = _getThreadId(team);
+  const text = message.slice(0, TG_MAX);
+  const ok = await _doSend(text, threadId, options);
+  if (ok) return true;
+  console.warn(`⚠️ [telegram-sender] 옵션 메시지 발송 최종 실패 — 대기큐 저장 (team=${team})`);
+  _savePending(team, message);
+  return false;
+}
+
 /**
  * CRITICAL 알림 — 🚨 긴급 Topic + 해당 팀 Topic 이중 발송
  * @param {string} team    발신 팀
@@ -272,4 +293,4 @@ async function flushPending() {
   } catch { /* 무시 */ }
 }
 
-module.exports = { send, sendCritical, flushPending };
+module.exports = { send, sendWithOptions, sendCritical, flushPending };
