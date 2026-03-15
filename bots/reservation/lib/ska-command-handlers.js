@@ -13,6 +13,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     const scoped = process.env[`N8N_SKA_WEBHOOK_${String(command || '').toUpperCase()}`];
     const shared = process.env.N8N_SKA_COMMAND_WEBHOOK;
     const defaults = [
+      'http://localhost:3031/api/webhooks/n8n/ska-command',
       'http://localhost:5678/webhook/ska-command',
       'http://localhost:5678/webhook-test/ska-command',
     ];

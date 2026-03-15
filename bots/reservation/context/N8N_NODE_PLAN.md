@@ -61,6 +61,10 @@
 ## 공용 레이어 적용 포인트
 - n8n:
   - `packages/core/lib/n8n-runner.js`
+  - 스카 기본 후보:
+    - `http://localhost:3031/api/webhooks/n8n/ska-command`
+    - `http://localhost:5678/webhook/ska-command`
+    - `http://localhost:5678/webhook-test/ska-command`
 - reservation RAG:
   - `packages/core/lib/reservation-rag.js`
 - 인텐트:
