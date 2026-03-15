@@ -87,6 +87,111 @@ async function fetchJson(url, timeoutMs = 5000) {
   }
 }
 
+async function postJson(url, body = {}, {
+  timeoutMs = 5000,
+  headers = {},
+} = {}) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = null;
+    }
+    return {
+      ok: res.ok,
+      status: res.status,
+      text,
+      json,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      text: '',
+      json: null,
+      error: String(error?.message || 'request_failed'),
+    };
+  }
+}
+
+async function checkWebhookRegistration(url, body = {}, options = {}) {
+  if (!url) {
+    return {
+      healthy: false,
+      registered: false,
+      status: 0,
+      reason: 'missing_url',
+    };
+  }
+
+  const result = await postJson(url, body, options);
+  if (result.error) {
+    return {
+      healthy: false,
+      registered: false,
+      status: 0,
+      reason: 'unreachable',
+      error: result.error,
+    };
+  }
+
+  const text = String(result.text || '').toLowerCase();
+  if (result.status === 404 && text.includes('not registered')) {
+    return {
+      healthy: true,
+      registered: false,
+      status: result.status,
+      reason: 'not_registered',
+    };
+  }
+
+  if (result.status === 404) {
+    return {
+      healthy: true,
+      registered: false,
+      status: result.status,
+      reason: 'missing_route',
+    };
+  }
+
+  if (result.status === 403) {
+    return {
+      healthy: true,
+      registered: true,
+      status: result.status,
+      reason: 'forbidden',
+    };
+  }
+
+  if (result.status >= 500) {
+    return {
+      healthy: true,
+      registered: true,
+      status: result.status,
+      reason: 'handler_failed',
+    };
+  }
+
+  return {
+    healthy: true,
+    registered: result.ok,
+    status: result.status,
+    reason: result.ok ? 'ok' : `http_${result.status}`,
+    body: result.json,
+  };
+}
+
 function checkFileStaleness(filePath, staleMs) {
   try {
     const stat = fs.statSync(filePath);
@@ -155,6 +260,8 @@ module.exports = {
   buildServiceRows,
   checkHttp,
   fetchJson,
+  postJson,
+  checkWebhookRegistration,
   checkFileStaleness,
   buildHttpChecks,
   buildFileActivityHealth,

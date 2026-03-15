@@ -24,6 +24,8 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
   buildFileActivityHealth,
+  checkHttp,
+  checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
 
 const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
@@ -44,6 +46,8 @@ const SCHEDULED_SERVICES = [
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
+const N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
 
 function buildMonitorHealth() {
   return buildFileActivityHealth({
@@ -56,7 +60,40 @@ function buildMonitorHealth() {
   });
 }
 
-function buildDecision(coreServiceRows, monitorHealth) {
+async function buildN8nCommandHealth() {
+  const ok = [];
+  const warn = [];
+  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
+  const webhook = await checkWebhookRegistration(N8N_WEBHOOK_URL, {
+    command: 'query_today_stats',
+    args: { date: new Date().toISOString().slice(0, 10) },
+  }, {
+    timeoutMs: 5000,
+  });
+
+  if (n8nHealthy) ok.push('  n8n healthz: 정상');
+  else warn.push('  n8n healthz: 응답 없음');
+
+  if (!webhook.healthy) {
+    warn.push(`  ska command webhook: 미도달 (${webhook.error || webhook.reason})`);
+  } else if (!webhook.registered) {
+    warn.push(`  ska command webhook: 미등록 (${webhook.reason}, status ${webhook.status})`);
+  } else {
+    ok.push(`  ska command webhook: 등록됨 (${webhook.reason}, status ${webhook.status})`);
+  }
+
+  return {
+    ok,
+    warn,
+    n8nHealthy,
+    webhookRegistered: webhook.registered,
+    webhookReason: webhook.reason,
+    webhookStatus: webhook.status,
+    webhookHealthy: webhook.healthy,
+  };
+}
+
+function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -68,6 +105,16 @@ function buildDecision(coreServiceRows, monitorHealth) {
         active: monitorHealth.warn.length > 0,
         level: 'medium',
         reason: 'naver-monitor 로그 활동성이 멈춰 크래시루프 가능성을 확인해야 합니다.',
+      },
+      {
+        active: !n8nCommandHealth.n8nHealthy,
+        level: 'medium',
+        reason: 'n8n healthz 응답이 없어 스카 command 노드 경로를 사용할 수 없습니다.',
+      },
+      {
+        active: n8nCommandHealth.n8nHealthy && !n8nCommandHealth.webhookRegistered,
+        level: 'medium',
+        reason: `n8n은 살아 있지만 ska command webhook이 미등록 상태입니다 (${n8nCommandHealth.webhookReason}).`,
       },
     ],
     okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
@@ -82,6 +129,7 @@ function formatText(report) {
       buildHealthSampleSection('■ 핵심 서비스 샘플', report.coreServiceHealth),
       buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ n8n 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
       {
         title: null,
         lines: buildHealthDecisionSection({
@@ -112,7 +160,8 @@ async function buildReport() {
     shortLabel: (label) => label.replace('ai.ska.', ''),
   });
   const monitorHealth = buildMonitorHealth();
-  const decision = buildDecision(coreServiceRows, monitorHealth);
+  const n8nCommandHealth = await buildN8nCommandHealth();
+  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth);
 
   const report = {
     coreServiceHealth: {
@@ -133,6 +182,16 @@ async function buildReport() {
       ok: monitorHealth.ok,
       warn: monitorHealth.warn,
       minutesAgo: monitorHealth.minutesAgo,
+    },
+    n8nCommandHealth: {
+      okCount: n8nCommandHealth.ok.length,
+      warnCount: n8nCommandHealth.warn.length,
+      ok: n8nCommandHealth.ok,
+      warn: n8nCommandHealth.warn,
+      n8nHealthy: n8nCommandHealth.n8nHealthy,
+      webhookRegistered: n8nCommandHealth.webhookRegistered,
+      webhookReason: n8nCommandHealth.webhookReason,
+      webhookStatus: n8nCommandHealth.webhookStatus,
     },
     decision,
   };
