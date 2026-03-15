@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [activities,   setActivities]   = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [workspaceDraft, setWorkspaceDraft] = useState('');
+  const [workspaceBot, setWorkspaceBot] = useState('worker');
   const [workspaceDraftVersion, setWorkspaceDraftVersion] = useState(0);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
@@ -64,16 +65,16 @@ export default function DashboardPage() {
   const pendingApprovals = summary?.pending_approvals ?? 0;
   const priorityItems = [
     canUsePromptWorkspace && pendingApprovals > 0
-      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose', prompt: '대기 승인 업무 보여줘' }
+      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose', prompt: '대기 승인 업무 보여줘', bot: 'worker' }
       : null,
     canUsePromptWorkspace && (alerts?.unchecked_in_count ?? 0) > 0
-      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber', prompt: '오늘 미출근 직원 보여줘' }
+      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber', prompt: '오늘 미출근 직원 보여줘', bot: 'noah' }
       : null,
     (summary?.today_schedules ?? 0) > 0
-      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue', prompt: '오늘 일정 요약해줘' }
+      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue', prompt: '오늘 일정 요약해줘', bot: 'chloe' }
       : null,
     (summary?.today_sales ?? 0) === 0
-      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘' }
+      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘', bot: 'oliver' }
       : null,
   ].filter(Boolean);
 
@@ -92,10 +93,10 @@ export default function DashboardPage() {
   };
 
   const activityActionMap = {
-    attendance: { href: '/attendance', prompt: '최근 근태 처리 내역 요약해줘' },
-    sales: { href: '/sales', prompt: '최근 매출 처리 내역 요약해줘' },
-    journal: { href: '/journals', prompt: '최근 업무일지 처리 내역 요약해줘' },
-    approval: { href: '/approvals', prompt: '최근 승인 처리 흐름 요약해줘' },
+    attendance: { href: '/attendance', prompt: '최근 근태 처리 내역 요약해줘', bot: 'noah' },
+    sales: { href: '/sales', prompt: '최근 매출 처리 내역 요약해줘', bot: 'oliver' },
+    journal: { href: '/journals', prompt: '최근 업무일지 처리 내역 요약해줘', bot: 'worker' },
+    approval: { href: '/approvals', prompt: '최근 승인 처리 흐름 요약해줘', bot: 'worker' },
   };
 
   function handlePriorityAction(item) {
@@ -103,6 +104,7 @@ export default function DashboardPage() {
       router.push(item.href);
       return;
     }
+    setWorkspaceBot(item.bot || 'worker');
     setWorkspaceDraft(item.prompt);
     setWorkspaceDraftVersion((prev) => prev + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -118,6 +120,7 @@ export default function DashboardPage() {
       router.push(config.href);
       return;
     }
+    setWorkspaceBot(config.bot || 'worker');
     setWorkspaceDraft(config.prompt);
     setWorkspaceDraftVersion((prev) => prev + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -196,6 +199,7 @@ export default function DashboardPage() {
             agentName={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
             botOptions={dashboardBotOptions}
             defaultBotKey="worker"
+            externalSelectedBot={workspaceBot}
             compact
             showCanvasPanel={false}
             showQueuePanel={false}

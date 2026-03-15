@@ -131,6 +131,7 @@ export default function WorkerAIWorkspace({
   draftVersion = 0,
   botOptions = [],
   defaultBotKey = 'worker',
+  externalSelectedBot = null,
 }) {
   const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
@@ -207,6 +208,11 @@ export default function WorkerAIWorkspace({
   useEffect(() => {
     setSelectedBot(defaultBotKey);
   }, [defaultBotKey]);
+
+  useEffect(() => {
+    if (!externalSelectedBot) return;
+    setSelectedBot(externalSelectedBot);
+  }, [externalSelectedBot, draftVersion]);
 
   useEffect(() => {
     sessionRef.current = sessionId;
