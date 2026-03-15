@@ -83,6 +83,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {canUsePromptWorkspace && (
         <WorkerAIWorkspace
+          menuKey="dashboard"
           title={user?.role === 'master' ? '마스터 대시보드 업무대화' : '관리자 대시보드 업무대화'}
           description={user?.role === 'master'
             ? '왼쪽 프롬프트창에서 자연어로 지시하고, 오른쪽 결과창에서 동적 캔버스와 최근 업무 큐를 확인합니다.'

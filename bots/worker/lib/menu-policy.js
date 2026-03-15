@@ -75,6 +75,46 @@ const SETTINGS_POLICY = {
   },
 };
 
+const CHAT_POLICY = {
+  member: {
+    menu: 'chat',
+    scope: 'self',
+    prompt_enabled: true,
+    result_canvas_enabled: false,
+    operations: ['read', 'prompt'],
+  },
+  admin: {
+    menu: 'chat',
+    scope: 'team',
+    prompt_enabled: true,
+    result_canvas_enabled: true,
+    operations: ['read', 'prompt', 'dynamic_result'],
+  },
+  master: {
+    menu: 'chat',
+    scope: 'global',
+    prompt_enabled: true,
+    result_canvas_enabled: true,
+    operations: ['read', 'prompt', 'dynamic_result', 'system_overview'],
+  },
+};
+
+const ADMIN_ONLY_POLICY = {
+  member: { operations: [] },
+  admin: {
+    scope: 'team',
+    prompt_enabled: true,
+    result_canvas_enabled: true,
+    operations: ['read', 'prompt', 'dynamic_result'],
+  },
+  master: {
+    scope: 'global',
+    prompt_enabled: true,
+    result_canvas_enabled: true,
+    operations: ['read', 'prompt', 'dynamic_result', 'system_overview'],
+  },
+};
+
 function buildCrudPolicy(menu) {
   return {
     member: { menu, ...CRUD_ALL_POLICY.member },
@@ -83,14 +123,26 @@ function buildCrudPolicy(menu) {
   };
 }
 
+function buildAdminOnlyPolicy(menu) {
+  return {
+    member: { menu, ...ADMIN_ONLY_POLICY.member },
+    admin: { menu, ...ADMIN_ONLY_POLICY.admin },
+    master: { menu, ...ADMIN_ONLY_POLICY.master },
+  };
+}
+
 const MENU_POLICY = {
   dashboard: DASHBOARD_POLICY,
   attendance: ATTENDANCE_POLICY,
+  chat: CHAT_POLICY,
   schedules: buildCrudPolicy('schedules'),
   sales: buildCrudPolicy('sales'),
   projects: buildCrudPolicy('projects'),
   journals: buildCrudPolicy('journals'),
   settings: SETTINGS_POLICY,
+  ai: buildAdminOnlyPolicy('ai'),
+  workforce: buildAdminOnlyPolicy('workforce'),
+  approvals: buildAdminOnlyPolicy('approvals'),
 };
 
 function getMenuPolicyForRole(role = 'member') {

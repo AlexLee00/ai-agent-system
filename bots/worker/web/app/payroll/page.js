@@ -201,6 +201,7 @@ export default function PayrollPage() {
     <div className="space-y-4">
       {canManage && (
         <WorkerAIWorkspace
+          menuKey="payroll"
           title="급여 AI 업무대화"
           description="급여 계산 요청을 자연어로 입력하고, 확인 결과 창에서 대상 월을 점검한 뒤 실행할 수 있습니다."
           suggestions={['이번 달 급여 계산해줘', '지난달 급여 다시 계산해줘', '2026년 2월 급여 계산해줘']}

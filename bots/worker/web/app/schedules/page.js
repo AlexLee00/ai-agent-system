@@ -316,6 +316,7 @@ export default function SchedulesPage() {
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
+        menuKey="schedules"
         title="일정 AI 업무대화"
         description="미팅, 리마인더, 일정 수정 요청을 자연어로 보내면 바로 등록 흐름으로 연결됩니다."
         suggestions={['오늘 일정 보여줘', '내일 오전 10시 업체 미팅 잡아줘', '방금 일정 11시로 변경해줘']}
