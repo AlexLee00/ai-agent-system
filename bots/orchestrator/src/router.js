@@ -102,6 +102,14 @@ function _getCP() {
   return _curriculumPlanner;
 }
 
+let _blogFeedback = null;
+function _getBlogFeedback() {
+  if (!_blogFeedback) {
+    try { _blogFeedback = require('../../blog/lib/ai-feedback'); } catch { /* 미설치 */ }
+  }
+  return _blogFeedback;
+}
+
 // 허가된 chat_id (secrets에서 로드) — 개인 채팅 + 그룹 채팅 모두 허용
 let _allowedChatIds = null;
 function isAuthorized(chatId) {
@@ -2439,7 +2447,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       if (!isNaN(num) && num >= 1 && num <= 3) {
         try {
           const candidates = await pgPool.query('blog', `
-            SELECT id, series_name, total_lectures, proposed_at
+            SELECT id, series_name, total_lectures, proposed_at, feedback_session_id
             FROM blog.curriculum_series
             WHERE status = 'candidate'
             ORDER BY proposed_at DESC
@@ -2450,6 +2458,16 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
           }
           const chosen = candidates[num - 1];
           if (!chosen) return `⚠️ ${num}번 후보가 없습니다. (후보 수: ${candidates.length})`;
+
+          const blogFeedback = _getBlogFeedback();
+          if (blogFeedback && chosen.feedback_session_id) {
+            await blogFeedback.markCurriculumProposalConfirmed({
+              sessionId: chosen.feedback_session_id,
+              chosenTopic: chosen.series_name,
+              chosenRank: num,
+              totalLectures: chosen.total_lectures || 100,
+            });
+          }
 
           await notify(`⏳ "${chosen.series_name}" 커리큘럼 생성 중... (최대 2분)`);
           await cp.generateCurriculum(chosen.series_name, chosen.total_lectures || 100);
@@ -2473,6 +2491,16 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
         const isSlashOnly = input === '/curriculum_approve';
         if (!isSlashOnly) {
           try {
+            const blogFeedback = _getBlogFeedback();
+            if (blogFeedback) {
+              const latestSession = await blogFeedback.getLatestPendingCurriculumProposalSession();
+              if (latestSession?.id) {
+                await blogFeedback.markCurriculumProposalRejected({
+                  sessionId: latestSession.id,
+                  manualTopic: input,
+                });
+              }
+            }
             await notify(`⏳ "${input}" 커리큘럼 생성 중... (최대 2분)`);
             await cp.generateCurriculum(input, 100);
             await cp.transitionSeries();

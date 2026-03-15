@@ -1,40 +1,104 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 
 const STATUS_LABELS = { pending: '대기', approved: '승인', rejected: '반려' };
 const STATUS_COLORS = {
   pending:  'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100  text-green-800',
-  rejected: 'bg-red-100    text-red-800',
+  approved: 'bg-green-100 text-green-800',
+  rejected: 'bg-red-100 text-red-800',
 };
+
+function normalizeDraft(approval) {
+  const payload = typeof approval.payload === 'string' ? JSON.parse(approval.payload) : (approval.payload || {});
+  return {
+    title: payload.title || approval.task_title || '',
+    description: payload.description || approval.task_description || '',
+  };
+}
 
 export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [processing, setProc]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProc] = useState(null);
+  const [drafts, setDrafts] = useState({});
 
   const load = () => {
     setLoading(true);
-    api.get('/approvals').then(d => setApprovals(d.approvals || [])).finally(() => setLoading(false));
+    api.get('/approvals')
+      .then(data => {
+        const rows = data.approvals || [];
+        setApprovals(rows);
+        setDrafts(prev => {
+          const next = { ...prev };
+          for (const approval of rows) {
+            if (!next[approval.id]) {
+              next[approval.id] = normalizeDraft(approval);
+            }
+          }
+          return next;
+        });
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
+  const pendingCount = useMemo(
+    () => approvals.filter(item => item.status === 'pending').length,
+    [approvals]
+  );
+
+  const handleDraftChange = (id, key, value) => {
+    setDrafts(prev => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleReviewSave = async (approval) => {
+    const draft = drafts[approval.id] || normalizeDraft(approval);
+    setProc(`review:${approval.id}`);
+    try {
+      await api.put(`/approvals/${approval.id}/review`, {
+        title: draft.title,
+        description: draft.description,
+      });
+      load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setProc(null);
+    }
+  };
+
   const handleApprove = async (id) => {
-    setProc(id);
-    try { await api.put(`/approvals/${id}/approve`); load(); }
-    catch (e) { alert(e.message); }
-    finally { setProc(null); }
+    setProc(`approve:${id}`);
+    try {
+      await api.put(`/approvals/${id}/approve`);
+      load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setProc(null);
+    }
   };
 
   const handleReject = async (id) => {
     const reason = prompt('반려 사유를 입력하세요:');
     if (!reason) return;
-    setProc(id);
-    try { await api.put(`/approvals/${id}/reject`, { reason }); load(); }
-    catch (e) { alert(e.message); }
-    finally { setProc(null); }
+    setProc(`reject:${id}`);
+    try {
+      await api.put(`/approvals/${id}/reject`, { reason });
+      load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setProc(null);
+    }
   };
 
   return (
@@ -43,13 +107,11 @@ export default function ApprovalsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900">✅ 승인 관리</h1>
-            <p className="text-sm text-slate-500 mt-2">민감한 업무 요청과 관리자 확인이 필요한 작업을 여기서 처리합니다.</p>
+            <p className="text-sm text-slate-500 mt-2">AI가 만든 업무 초안을 검토하고, 필요하면 수정한 뒤 승인 또는 반려합니다.</p>
           </div>
           <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 min-w-[180px]">
             <p className="text-xs text-slate-500">대기 승인</p>
-            <p className="text-2xl font-semibold text-slate-900 mt-1">
-              {approvals.filter(item => item.status === 'pending').length}건
-            </p>
+            <p className="text-2xl font-semibold text-slate-900 mt-1">{pendingCount}건</p>
           </div>
         </div>
       </div>
@@ -63,44 +125,92 @@ export default function ApprovalsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {approvals.map(a => {
-            const payload = typeof a.payload === 'string' ? JSON.parse(a.payload) : (a.payload || {});
+          {approvals.map(approval => {
+            const payload = typeof approval.payload === 'string' ? JSON.parse(approval.payload) : (approval.payload || {});
+            const draft = drafts[approval.id] || normalizeDraft(approval);
+            const canReview = approval.status === 'pending' && approval.target_table === 'agent_tasks';
+
             return (
-              <div key={a.id} className="card">
+              <div key={approval.id} className="card">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[a.status]}`}>
-                        {STATUS_LABELS[a.status]}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[approval.status]}`}>
+                        {STATUS_LABELS[approval.status]}
                       </span>
-                      <span className="text-xs text-slate-500">#{a.id}</span>
+                      <span className="text-xs text-slate-500">#{approval.id}</span>
                       <span className="text-xs text-slate-500">
-                        {a.priority === 'urgent' ? '🚨 긴급' : '📋 일반'}
+                        {approval.priority === 'urgent' ? '🚨 긴급' : '📋 일반'}
                       </span>
                     </div>
-                    <p className="font-medium text-slate-900">{a.action}</p>
-                    <p className="text-sm text-slate-500">신청자: {a.requester_name || a.requester_id}</p>
-                    {a.task_title && (
-                      <p className="text-sm text-slate-500">업무: {a.task_title} ({a.target_bot || 'unknown'})</p>
+                    <p className="font-medium text-slate-900">{approval.action}</p>
+                    <p className="text-sm text-slate-500">신청자: {approval.requester_name || approval.requester_id}</p>
+                    {approval.target_bot && (
+                      <p className="text-sm text-slate-500">대상 봇: {approval.target_bot}</p>
                     )}
-                    {payload.date   && <p className="text-sm text-slate-500">날짜: {payload.date}</p>}
-                    {payload.reason && <p className="text-sm text-slate-500">사유: {payload.reason}</p>}
-                    <p className="text-xs text-slate-400 mt-1">{new Date(a.created_at).toLocaleString('ko-KR')}</p>
+
+                    {canReview ? (
+                      <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">업무 제목</label>
+                          <input
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            value={draft.title}
+                            onChange={(e) => handleDraftChange(approval.id, 'title', e.target.value)}
+                            placeholder="AI가 제안한 업무 제목"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">업무 설명</label>
+                          <textarea
+                            className="w-full min-h-[96px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            value={draft.description}
+                            onChange={(e) => handleDraftChange(approval.id, 'description', e.target.value)}
+                            placeholder="승인 전에 설명을 다듬을 수 있습니다."
+                          />
+                        </div>
+                        <div className="rounded-xl bg-white px-3 py-3 text-xs text-slate-500">
+                          <p>원본 요청: {payload.description || approval.task_description || '-'}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {approval.task_title && (
+                          <p className="text-sm text-slate-500 mt-2">업무: {approval.task_title}</p>
+                        )}
+                        {payload.description && (
+                          <p className="text-sm text-slate-500 mt-1 whitespace-pre-wrap">{payload.description}</p>
+                        )}
+                        {payload.date && <p className="text-sm text-slate-500 mt-1">날짜: {payload.date}</p>}
+                        {payload.reason && <p className="text-sm text-slate-500 mt-1">사유: {payload.reason}</p>}
+                      </>
+                    )}
+
+                    <p className="text-xs text-slate-400 mt-3">{new Date(approval.created_at).toLocaleString('ko-KR')}</p>
                   </div>
 
-                  {a.status === 'pending' && (
+                  {approval.status === 'pending' && (
                     <div className="flex flex-col gap-2 shrink-0">
+                      {canReview && (
+                        <button
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+                          disabled={processing === `review:${approval.id}`}
+                          onClick={() => handleReviewSave(approval)}
+                        >
+                          💾 수정 저장
+                        </button>
+                      )}
                       <button
                         className="btn-primary text-sm px-4 py-2"
-                        disabled={processing === a.id}
-                        onClick={() => handleApprove(a.id)}
+                        disabled={processing === `approve:${approval.id}`}
+                        onClick={() => handleApprove(approval.id)}
                       >
                         ✅ 승인
                       </button>
                       <button
                         className="btn-danger text-sm px-4 py-2"
-                        disabled={processing === a.id}
-                        onClick={() => handleReject(a.id)}
+                        disabled={processing === `reject:${approval.id}`}
+                        onClick={() => handleReject(approval.id)}
                       >
                         ❌ 반려
                       </button>

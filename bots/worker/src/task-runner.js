@@ -8,6 +8,10 @@ const {
   saveMessage,
   updateSession,
 } = require('../lib/chat-agent');
+const {
+  getWorkerFeedbackSessionForTask,
+  markWorkerFeedbackCommitted,
+} = require('../lib/ai-feedback-service');
 
 const emily = require('./emily');
 const noah = require('./noah');
@@ -268,12 +272,25 @@ async function processOne() {
   const payload = parsePayload(task.payload);
   try {
     const result = await executeTask(task);
-    await finishTask(task.id, 'completed', {
+    const completedPayload = {
       ...payload,
       handled_by: task.target_bot,
       result_summary: result.summary,
       result_details: result.details || [],
-    });
+    };
+    await finishTask(task.id, 'completed', completedPayload);
+    const feedbackSession = await getWorkerFeedbackSessionForTask(task.id);
+    if (feedbackSession?.id) {
+      await markWorkerFeedbackCommitted({
+        sessionId: feedbackSession.id,
+        submittedSnapshot: completedPayload,
+        eventMeta: {
+          task_id: task.id,
+          target_bot: task.target_bot,
+          final_status: 'completed',
+        },
+      });
+    }
     await publishTaskResult(task, 'completed', result.summary, result.details || []);
     console.log(`[worker-task-runner] completed #${task.id} ${task.target_bot}`);
   } catch (error) {

@@ -69,7 +69,11 @@ const {
   listMessages: listChatMessages,
   resolveEmployeeId,
 } = require('../lib/chat-agent');
-const { approve: approveApprovalRequest, reject: rejectApprovalRequest } = require('../lib/approval');
+const {
+  approve: approveApprovalRequest,
+  reject: rejectApprovalRequest,
+  review: reviewApprovalRequest,
+} = require('../lib/approval');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -661,6 +665,28 @@ app.put('/api/approvals/:id/approve', requireAuth, requireRole('master','admin')
     res.json({ approval });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
+
+app.put('/api/approvals/:id/review',
+  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'approval_requests'),
+  body('title').optional({ values: 'falsy' }).trim(),
+  body('description').optional({ values: 'falsy' }).trim(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const approval = await reviewApprovalRequest({
+        requestId: req.params.id,
+        approverRole: req.user.role,
+        approverCompanyId: req.user.company_id,
+        title: req.body.title,
+        description: req.body.description,
+      });
+      if (!approval) return res.status(404).json({ error: '승인 요청을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      res.json({ approval });
+    } catch (e) {
+      res.status(400).json({ error: e.message || '승인 요청 수정에 실패했습니다.', code: 'APPROVAL_REVIEW_FAILED' });
+    }
+  }
+);
 
 app.put('/api/approvals/:id/reject',
   requireAuth, requireRole('master','admin'), auditLog('REJECT', 'approval_requests'),
