@@ -136,17 +136,37 @@ launchctl kickstart -k "gui/$(id -u)/ai.ska.kiosk-monitor" 2>&1 | tee -a "$LOG_F
 # ── 4. 재시작 확인 (최대 60초, 5초 간격 재시도) ──────────────────
 log "━━━ [4단계] 재시작 확인 (최대 60초 대기) ━━━━━━━━━━━━━━━━━━"
 # start-ops.sh가 1중+2중+3중 체크를 완료하는 데 30~40초 소요됨
+
+get_launchd_pid() {
+  local label="$1"
+  local service="gui/$(id -u)/$label"
+  local out=""
+  out=$(launchctl print "$service" 2>/dev/null || true)
+  if [ -z "$out" ]; then
+    return 1
+  fi
+  local state
+  state=$(printf '%s\n' "$out" | awk -F'= ' '/^[[:space:]]*state = / {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')
+  local pid
+  pid=$(printf '%s\n' "$out" | awk -F'= ' '/^[[:space:]]*pid = / {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')
+  if [ "$state" = "running" ] && [ -n "$pid" ]; then
+    printf '%s\n' "$pid"
+    return 0
+  fi
+  return 1
+}
+
 MONITOR_PID=""
 for i in $(seq 1 12); do
   sleep 5
-  MONITOR_PID=$(launchctl list | awk '/ai.ska.naver-monitor/ {print $1}')
-  if [ -n "$MONITOR_PID" ] && [ "$MONITOR_PID" != "-" ]; then
+  MONITOR_PID=$(get_launchd_pid "ai.ska.naver-monitor" || true)
+  if [ -n "$MONITOR_PID" ]; then
     break
   fi
   log "  ⏳ 대기 중... (${i}/12, ${MONITOR_PID:-시작 중})"
 done
 
-if [ -n "$MONITOR_PID" ] && [ "$MONITOR_PID" != "-" ]; then
+if [ -n "$MONITOR_PID" ]; then
   log_ok "naver-monitor 정상 실행 중 (PID: $MONITOR_PID)"
 else
   log_err "naver-monitor 실행 확인 실패 (60초 초과)"
