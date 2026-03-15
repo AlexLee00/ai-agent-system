@@ -73,6 +73,10 @@ const {
   normalizeDocumentProposal,
   detectDocumentCategory,
 } = require('../lib/document-ai');
+const {
+  buildLeaveProposal,
+  normalizeLeaveProposal,
+} = require('../lib/leave-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -117,6 +121,7 @@ const {
   replaceWorkerFeedbackEdits,
   markWorkerFeedbackConfirmed,
   markWorkerFeedbackRejected,
+  markWorkerFeedbackSubmitted,
   markWorkerFeedbackCommitted,
 } = require('../lib/ai-feedback-service');
 
@@ -1450,6 +1455,130 @@ app.post('/api/attendance/proposals/:id/reject', requireAuth, async (req, res) =
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: '근태 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.post('/api/leave/proposals', requireAuth, async (req, res) => {
+  try {
+    const employee = await resolveAttendanceEmployee(req, req.body.employee_id || null);
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildLeaveProposal({ prompt, employee });
+    const sourceRefId = `leave-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'leave_prompt',
+      sourceRefType: 'leave_proposal',
+      sourceRefId,
+      flowCode: 'attendance_leave_request',
+      actionCode: 'leave_request',
+      proposalId: sourceRefId,
+      aiInputText: prompt,
+      aiInputPayload: { prompt, employee_id: employee.id },
+      aiOutputType: 'leave_request',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'attendance_leave_request',
+      actionCode: 'leave_request',
+      query: `${prompt} ${proposal.leave_type_label} ${proposal.reason}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '휴가 제안을 생성하지 못했습니다.', code: 'LEAVE_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/leave/proposals/:id/confirm', requireAuth, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '휴가 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+
+    const employee = await resolveAttendanceEmployee(req);
+    const proposal = normalizeLeaveProposal(req.body.proposal || session.original_snapshot_json || {}, employee);
+
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'leave_confirm' },
+    });
+
+    const approval = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.approval_requests (
+        company_id, requester_id, category, action, target_table, payload, status, priority
+      ) VALUES ($1, $2, 'leave', 'leave_request', 'attendance', $3::jsonb, 'pending', 'normal')
+      RETURNING *`,
+      [
+        req.user.company_id,
+        req.user.id,
+        JSON.stringify({
+          employee_id: proposal.employee_id,
+          employee_name: proposal.employee_name,
+          leave_date: proposal.leave_date,
+          leave_type: proposal.leave_type,
+          leave_type_label: proposal.leave_type_label,
+          reason: proposal.reason,
+          feedback_session_id: session.id,
+        }),
+      ],
+    );
+
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'leave_confirm', approval_id: approval.id },
+    });
+
+    const submittedSnapshot = {
+      ...proposal,
+      approval_id: approval.id,
+      status: 'submitted',
+    };
+
+    await markWorkerFeedbackSubmitted({
+      sessionId: session.id,
+      submittedSnapshot,
+      eventMeta: { source: 'leave_confirm', approval_id: approval.id },
+    });
+
+    res.json({ ok: true, approval, proposal: submittedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '휴가 신청을 접수하지 못했습니다.', code: 'LEAVE_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/leave/proposals/:id/reject', requireAuth, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '휴가 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'leave_reject' },
+    });
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '휴가 제안을 반려하지 못했습니다.', code: 'LEAVE_REJECT_FAILED' });
   }
 });
 
