@@ -18,6 +18,7 @@ const migrations = [
   '../migrations/009-trace-id.js',
   '../migrations/010-claude-code-chat.js',
   '../migrations/011-worker-chat.js',
+  '../migrations/012-ai-feedback.js',
 ];
 
 async function main() {

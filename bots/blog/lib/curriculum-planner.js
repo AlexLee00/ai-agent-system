@@ -23,6 +23,11 @@ const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
+const {
+  ensureBlogFeedbackTables,
+  createCurriculumProposalSession,
+  markCurriculumProposalCommitted,
+} = require('./ai-feedback');
 
 const DAYS_BEFORE_END = 7;   // 종료 7강 전 트리거
 const MIN_LECTURES    = 100; // 최소 강의 수
@@ -217,6 +222,7 @@ ${trendSummary}
 
 async function proposeToMaster(candidates, currentSeries, remainingLectures) {
   if (!candidates?.candidates?.length) return;
+  await ensureBlogFeedbackTables();
 
   const nums = ['1️⃣', '2️⃣', '3️⃣'];
   const lines = [
@@ -273,13 +279,19 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
     () => console.log('[DEV] 텔레그램 생략\n' + rendered)
   );
 
+  const feedbackSession = await createCurriculumProposalSession({
+    currentSeries,
+    remainingLectures,
+    candidates: candidates.candidates,
+  });
+
   // DB에 후보 임시 저장 (candidate 상태)
   for (const c of candidates.candidates) {
     try {
       await pgPool.run('blog', `
-        INSERT INTO blog.curriculum_series (series_name, total_lectures, status)
-        VALUES ($1, $2, 'candidate')
-      `, [c.topic, c.estimated_lectures || MIN_LECTURES]);
+        INSERT INTO blog.curriculum_series (series_name, total_lectures, status, feedback_session_id)
+        VALUES ($1, $2, 'candidate', $3)
+      `, [c.topic, c.estimated_lectures || MIN_LECTURES, feedbackSession.id]);
     } catch { /* 무시 */ }
   }
 
@@ -306,6 +318,17 @@ const CURRICULUM_SYSTEM = `당신은 IT 교육 커리큘럼 설계 전문가입�
  * @param {number} [lectureCount=100]
  */
 async function generateCurriculum(topic, lectureCount = 100) {
+  await ensureBlogFeedbackTables();
+  const candidateSeries = await pgPool.get('blog', `
+    SELECT feedback_session_id
+    FROM blog.curriculum_series
+    WHERE status='candidate'
+      AND series_name=$1
+      AND feedback_session_id IS NOT NULL
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [topic]);
+
   const userPrompt = `"${topic}" 주제로 ${lectureCount}강 블로그 커리큘럼을 생성하라.
 
 구조:
@@ -342,10 +365,10 @@ async function generateCurriculum(topic, lectureCount = 100) {
 
   // DB 저장: 시리즈 (planned 상태)
   const seriesRows = await pgPool.query('blog', `
-    INSERT INTO blog.curriculum_series (series_name, total_lectures, status)
-    VALUES ($1, $2, 'planned')
+    INSERT INTO blog.curriculum_series (series_name, total_lectures, status, feedback_session_id)
+    VALUES ($1, $2, 'planned', $3)
     RETURNING id
-  `, [topic, parsed.curriculum.length]);
+  `, [topic, parsed.curriculum.length, candidateSeries?.feedback_session_id || null]);
   const seriesId = seriesRows[0].id;
 
   // DB 저장: 개별 강의
@@ -392,6 +415,15 @@ async function generateCurriculum(topic, lectureCount = 100) {
     }),
     () => {}
   );
+
+  if (candidateSeries?.feedback_session_id) {
+    await markCurriculumProposalCommitted({
+      sessionId: candidateSeries.feedback_session_id,
+      topic,
+      lectureCount: parsed.curriculum.length,
+      seriesId,
+    });
+  }
 
   return { seriesId, lectureCount: parsed.curriculum.length };
 }

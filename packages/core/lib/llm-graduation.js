@@ -18,6 +18,16 @@
  */
 
 const pgPool = require('./pg-pool');
+const {
+  ensureAiFeedbackTables,
+  createFeedbackSession,
+  updateFeedbackSession,
+  addFeedbackEvent,
+} = require('./ai-feedback-store');
+const {
+  FEEDBACK_EVENT_TYPES,
+  FEEDBACK_STATUSES,
+} = require('./ai-feedback-core');
 
 const SCHEMA        = 'claude';
 const SHADOW_SCHEMA = 'reservation';
@@ -27,6 +37,7 @@ let _tableReady = false;
 
 async function _ensureTable() {
   if (_tableReady) return;
+  await ensureAiFeedbackTables(pgPool, { schema: SCHEMA });
   await pgPool.run(SCHEMA, `
     CREATE TABLE IF NOT EXISTS graduation_candidates (
       id                  SERIAL PRIMARY KEY,
@@ -45,9 +56,75 @@ async function _ensureTable() {
     )
   `);
   await pgPool.run(SCHEMA, `
+    ALTER TABLE graduation_candidates
+      ADD COLUMN IF NOT EXISTS feedback_session_id BIGINT REFERENCES ai_feedback_sessions(id)
+  `);
+  await pgPool.run(SCHEMA, `
     CREATE INDEX IF NOT EXISTS idx_grad_team_ctx ON graduation_candidates(team, context, status)
   `);
+  await pgPool.run(SCHEMA, `
+    CREATE INDEX IF NOT EXISTS idx_grad_feedback_session ON graduation_candidates(feedback_session_id)
+  `);
   _tableReady = true;
+}
+
+async function _ensureFeedbackSessionForCandidate(candidate) {
+  if (candidate.feedback_session_id) return candidate.feedback_session_id;
+
+  const session = await createFeedbackSession(pgPool, {
+    schema: SCHEMA,
+    session: {
+      companyId: 'claude',
+      userId: null,
+      sourceType: 'llm_graduation',
+      sourceRefType: 'graduation_candidate',
+      sourceRefId: candidate.id,
+      flowCode: 'llm_graduation',
+      actionCode: 'candidate_detection',
+      proposalId: String(candidate.id),
+      aiInputText: candidate.context,
+      aiInputPayload: {
+        team: candidate.team,
+        context: candidate.context,
+      },
+      aiOutputType: 'graduation_candidate',
+      originalSnapshot: {
+        candidate_id: candidate.id,
+        team: candidate.team,
+        context: candidate.context,
+        predicted_decision: candidate.predicted_decision,
+        sample_count: candidate.sample_count,
+        match_rate: candidate.match_rate,
+        status: candidate.status,
+      },
+      feedbackStatus: FEEDBACK_STATUSES.PENDING,
+    },
+  });
+
+  await addFeedbackEvent(pgPool, {
+    schema: SCHEMA,
+    event: {
+      feedbackSessionId: session.id,
+      eventType: FEEDBACK_EVENT_TYPES.PROPOSAL_GENERATED,
+      afterValue: {
+        predicted_decision: candidate.predicted_decision,
+        sample_count: candidate.sample_count,
+        match_rate: candidate.match_rate,
+      },
+      eventMeta: {
+        team: candidate.team,
+        context: candidate.context,
+      },
+    },
+  });
+
+  await pgPool.run(SCHEMA, `
+    UPDATE graduation_candidates
+    SET feedback_session_id=$2
+    WHERE id=$1
+  `, [candidate.id, session.id]);
+
+  return session.id;
 }
 
 // ── 졸업 후보 탐색 ────────────────────────────────────────────────────
@@ -91,7 +168,7 @@ async function findGraduationCandidates(team, minSamples = 20, minMatchRate = 0.
     if (matchRate < minMatchRate) continue;
 
     // graduation_candidates에 등록 or 업데이트
-    await pgPool.run(SCHEMA, `
+    const candidate = await pgPool.get(SCHEMA, `
       INSERT INTO graduation_candidates
         (team, context, pattern, predicted_decision, sample_count, match_rate, status, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, 'candidate', NOW())
@@ -100,6 +177,7 @@ async function findGraduationCandidates(team, minSamples = 20, minMatchRate = 0.
         match_rate   = EXCLUDED.match_rate,
         updated_at   = NOW()
       WHERE graduation_candidates.status = 'candidate'
+      RETURNING *
     `, [
       row.team,
       row.context,
@@ -108,6 +186,10 @@ async function findGraduationCandidates(team, minSamples = 20, minMatchRate = 0.
       total,
       matchRate,
     ]);
+
+    if (candidate) {
+      await _ensureFeedbackSessionForCandidate(candidate);
+    }
 
     candidates.push({
       team:      row.team,
@@ -165,11 +247,59 @@ async function approveGraduation(candidateId, approvedBy = 'master') {
     throw new Error(`승인 불가 상태: ${row.status}`);
   }
 
+  const feedbackSessionId = await _ensureFeedbackSessionForCandidate(row);
+
   await pgPool.run(SCHEMA, `
     UPDATE graduation_candidates
     SET status = 'graduated', approved_by = $1, updated_at = NOW()
     WHERE id = $2
   `, [approvedBy, candidateId]);
+
+  if (feedbackSessionId) {
+    await addFeedbackEvent(pgPool, {
+      schema: SCHEMA,
+      event: {
+        feedbackSessionId,
+        eventType: FEEDBACK_EVENT_TYPES.CONFIRMED,
+        afterValue: {
+          candidate_id: candidateId,
+          status: 'graduated',
+        },
+        eventMeta: {
+          approved_by: approvedBy,
+        },
+      },
+    });
+    await addFeedbackEvent(pgPool, {
+      schema: SCHEMA,
+      event: {
+        feedbackSessionId,
+        eventType: FEEDBACK_EVENT_TYPES.COMMITTED,
+        afterValue: {
+          candidate_id: candidateId,
+          status: 'graduated',
+        },
+        eventMeta: {
+          approved_by: approvedBy,
+        },
+      },
+    });
+    await updateFeedbackSession(pgPool, {
+      schema: SCHEMA,
+      sessionId: feedbackSessionId,
+      patch: {
+        feedbackStatus: FEEDBACK_STATUSES.COMMITTED,
+        acceptedWithoutEdit: true,
+        submittedSnapshot: {
+          candidate_id: candidateId,
+          team: row.team,
+          context: row.context,
+          predicted_decision: row.predicted_decision,
+          status: 'graduated',
+        },
+      },
+    });
+  }
 
   return { id: candidateId, graduated: true, approvedBy };
 }

@@ -18,6 +18,11 @@ const {
   renderNoticeEvent,
   publishEventPipeline,
 } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
+const {
+  markWorkerFeedbackConfirmed,
+  markWorkerFeedbackRejected,
+  replaceWorkerFeedbackEdits,
+} = require('./ai-feedback-service');
 
 const SCHEMA     = 'worker';
 const SEP_SINGLE = '───────────────';
@@ -109,6 +114,23 @@ async function approve({ requestId, approverId, approverRole = 'member', approve
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
   await _syncTargetStatus(req, 'approved');
+  if (req.feedback_session_id) {
+    await markWorkerFeedbackConfirmed({
+      sessionId: req.feedback_session_id,
+      submittedSnapshot: {
+        approval_id: req.id,
+        target_id: req.target_id,
+        target_table: req.target_table,
+        status: 'approved',
+        approved_at: req.approved_at,
+      },
+      eventMeta: {
+        approval_id: req.id,
+        approver_id: approverId,
+        approver_role: approverRole,
+      },
+    });
+  }
   return req;
 }
 
@@ -127,7 +149,108 @@ async function reject({ requestId, approverId, reason, approverRole = 'member', 
 
   if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
   await _syncTargetStatus(req, 'rejected');
+  if (req.feedback_session_id) {
+    await markWorkerFeedbackRejected({
+      sessionId: req.feedback_session_id,
+      submittedSnapshot: {
+        approval_id: req.id,
+        target_id: req.target_id,
+        target_table: req.target_table,
+        status: 'rejected',
+        reject_reason: req.reject_reason,
+        rejected_at: req.rejected_at,
+      },
+      eventMeta: {
+        approval_id: req.id,
+        approver_id: approverId,
+        approver_role: approverRole,
+        reject_reason: reason || '반려',
+      },
+    });
+  }
   return req;
+}
+
+async function review({
+  requestId,
+  approverRole = 'member',
+  approverCompanyId = null,
+  title,
+  description,
+}) {
+  const params = [requestId];
+  let where = 'ar.id=$1 AND ar.status=\'pending\'';
+  if (approverRole !== 'master') {
+    params.push(approverCompanyId);
+    where += ` AND ar.company_id=$${params.length}`;
+  }
+
+  const req = await pgPool.get(SCHEMA, `
+    SELECT ar.*, t.title AS task_title, t.description AS task_description, t.payload AS task_payload, t.target_bot
+    FROM worker.approval_requests ar
+    LEFT JOIN worker.agent_tasks t ON t.id = ar.target_id AND ar.target_table='agent_tasks'
+    WHERE ${where}
+  `, params);
+
+  if (!req) throw new Error('요청을 찾을 수 없거나 이미 처리됨');
+  if (req.target_table !== 'agent_tasks' || !req.target_id) {
+    throw new Error('리뷰 가능한 AI 업무 요청이 아닙니다.');
+  }
+
+  const nextTitle = String(title || '').trim() || req.task_title || req.action;
+  const nextDescription = String(description || '').trim() || req.task_description || '';
+  const nextApprovalPayload = {
+    ...(typeof req.payload === 'string' ? JSON.parse(req.payload) : (req.payload || {})),
+    title: nextTitle,
+    description: nextDescription,
+  };
+  const nextTaskPayload = {
+    ...(typeof req.task_payload === 'string' ? JSON.parse(req.task_payload) : (req.task_payload || {})),
+  };
+
+  await pgPool.run(SCHEMA, `
+    UPDATE worker.agent_tasks
+    SET title=$2,
+        description=$3,
+        payload=$4::jsonb,
+        updated_at=NOW()
+    WHERE id=$1
+  `, [req.target_id, nextTitle, nextDescription, JSON.stringify(nextTaskPayload)]);
+
+  const updated = await pgPool.get(SCHEMA, `
+    UPDATE worker.approval_requests
+    SET payload=$2::jsonb,
+        updated_at=NOW()
+    WHERE id=$1
+    RETURNING *
+  `, [req.id, JSON.stringify(nextApprovalPayload)]);
+
+  if (req.feedback_session_id) {
+    await replaceWorkerFeedbackEdits({
+      sessionId: req.feedback_session_id,
+      submittedSnapshot: {
+        task_id: req.target_id,
+        target_bot: req.target_bot,
+        task_type: 'agent_request',
+        title: nextTitle,
+        description: nextDescription,
+        payload: nextTaskPayload,
+        status: 'pending_approval',
+        approval_id: req.id,
+      },
+      eventMeta: {
+        approval_id: req.id,
+        review_stage: 'pending_approval',
+      },
+    });
+  }
+
+  return {
+    ...updated,
+    task_title: nextTitle,
+    task_description: nextDescription,
+    target_bot: req.target_bot,
+  };
 }
 
 // ── 대기 목록 ─────────────────────────────────────────────────────────
@@ -272,7 +395,7 @@ async function handleCallback(callbackData, callbackUser) {
 
 module.exports = {
   getRequiredLevel,
-  createRequest, attachTarget, approve, reject,
+  createRequest, attachTarget, approve, reject, review,
   getPendingRequests,
   sendApprovalRequest, handleCallback,
 };

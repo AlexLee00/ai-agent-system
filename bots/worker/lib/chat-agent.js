@@ -26,6 +26,10 @@ const {
   addLearnedPattern,
 } = require(path.join(__dirname, '../../../packages/core/lib/intent-store'));
 const { createRequest: createApprovalRequest, attachTarget: attachApprovalTarget } = require('./approval');
+const {
+  ensureWorkerFeedbackTables,
+  createWorkerProposalFeedbackSession,
+} = require('./ai-feedback-service');
 
 const SCHEMA = 'worker';
 const WORKER_INTENT_LEARNINGS_PATH = getNamedIntentLearningPath('worker');
@@ -42,6 +46,7 @@ const loadDynamicExamples = createPromotedIntentExampleLoader({
 
 async function ensureChatSchema() {
   await ensureIntentTables(pgPool, { schema: SCHEMA });
+  await ensureWorkerFeedbackTables();
 
   await pgPool.run(SCHEMA, `
     CREATE TABLE IF NOT EXISTS worker.chat_sessions (
@@ -517,6 +522,50 @@ async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
 
   if (approvalId) {
     await attachApprovalTarget({ requestId: approvalId, targetId: row.id });
+
+    const feedbackSession = await createWorkerProposalFeedbackSession({
+      companyId,
+      userId,
+      sourceType: 'worker_chat',
+      sourceRefType: 'agent_task',
+      sourceRefId: row.id,
+      flowCode: 'worker_chat_route',
+      actionCode: `${intent.target}_request`,
+      proposalId: String(approvalId),
+      aiInputText: text,
+      aiInputPayload: {
+        raw_text: text,
+        parsed_intent: intent,
+        session_id: sessionId,
+      },
+      aiOutputType: 'agent_task',
+      originalSnapshot: {
+        task_id: row.id,
+        target_bot: row.target_bot,
+        task_type: row.task_type,
+        title: row.title,
+        description: row.description,
+        payload: task.payload,
+        status: row.status,
+        approval_id: approvalId,
+      },
+      eventMeta: {
+        session_id: sessionId,
+        target_bot: row.target_bot,
+        approval_id: approvalId,
+      },
+    });
+
+    await pgPool.run(SCHEMA, `
+      UPDATE worker.agent_tasks
+      SET feedback_session_id=$2
+      WHERE id=$1
+    `, [row.id, feedbackSession.id]);
+    await pgPool.run(SCHEMA, `
+      UPDATE worker.approval_requests
+      SET feedback_session_id=$2
+      WHERE id=$1
+    `, [approvalId, feedbackSession.id]);
   }
 
   return {
