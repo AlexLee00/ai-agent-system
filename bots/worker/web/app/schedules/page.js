@@ -589,7 +589,7 @@ export default function SchedulesPage() {
               <div className="flex flex-wrap gap-3">
                 <ProposalFlowActions
                   onPromptFill={() => refillPrompt(`일정 등록 제안을 다시 정리해줘\n제목: ${proposal.title || ''}\n시작: ${proposal.start_time || ''}\n장소: ${proposal.location || ''}`.trim())}
-                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}

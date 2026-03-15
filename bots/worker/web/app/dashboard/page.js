@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import Card from '@/components/Card';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { useAuth } from '@/lib/auth-context';
 
 export default function DashboardPage() {
@@ -272,19 +273,12 @@ export default function DashboardPage() {
               >
                 <p className="text-sm font-semibold text-slate-900">{item.title}</p>
                 <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handlePriorityAction(item)}
-                    className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                  >
-                    프롬프트에 채우기
-                  </button>
-                  <button
-                    onClick={() => router.push(item.href)}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    메뉴 열기
-                  </button>
+                <div className="mt-4">
+                  <ProposalFlowActions
+                    onPromptFill={() => handlePriorityAction(item)}
+                    onSecondary={() => router.push(item.href)}
+                    secondaryLabel="메뉴 열기"
+                  />
                 </div>
               </div>
             ))}
@@ -316,19 +310,12 @@ export default function DashboardPage() {
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
                 {item.actor && <p className="mt-1 text-xs text-slate-400">담당: {item.actor}</p>}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleActivityAction(item)}
-                    className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                  >
-                    프롬프트에 채우기
-                  </button>
-                  <button
-                    onClick={() => router.push(activityActionMap[item.type]?.href || '/journals')}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    메뉴 열기
-                  </button>
+                <div className="mt-4">
+                  <ProposalFlowActions
+                    onPromptFill={() => handleActivityAction(item)}
+                    onSecondary={() => router.push(activityActionMap[item.type]?.href || '/journals')}
+                    secondaryLabel="메뉴 열기"
+                  />
                 </div>
               </div>
             ))}

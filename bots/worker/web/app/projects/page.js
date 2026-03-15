@@ -457,7 +457,7 @@ export default function ProjectsPage() {
               <div className="flex flex-wrap gap-3">
                 <ProposalFlowActions
                   onPromptFill={() => refillPrompt(`프로젝트 생성 제안을 다시 정리해줘\n이름: ${proposal.name || ''}\n시작일: ${proposal.start_date || ''}\n종료일: ${proposal.end_date || ''}`.trim())}
-                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}

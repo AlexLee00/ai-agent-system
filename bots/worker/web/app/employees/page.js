@@ -316,7 +316,7 @@ export default function EmployeesPage() {
               <div className="flex flex-wrap gap-3">
                 <ProposalFlowActions
                   onPromptFill={() => refillPrompt(`직원 등록 제안을 다시 정리해줘\n이름: ${proposal.name || ''}\n부서: ${proposal.department || ''}\n직급: ${proposal.position || ''}`.trim())}
-                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}

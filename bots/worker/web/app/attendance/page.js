@@ -535,7 +535,7 @@ export default function AttendancePage() {
                 <div className="flex flex-wrap gap-3">
                   <ProposalFlowActions
                     onPromptFill={() => refillPrompt(`근태 기록 제안을 다시 정리해줘\n유형: ${proposal.action === 'checkout' ? '퇴근' : '출근'}\n시각: ${proposal.occurred_at || ''}\n메모: ${proposal.note || ''}`.trim())}
-                    onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                   />
                   <button
                     type="button"
@@ -675,7 +675,7 @@ export default function AttendancePage() {
                 <div className="flex flex-wrap gap-3">
                   <ProposalFlowActions
                     onPromptFill={() => refillPrompt(`휴가 신청 제안을 다시 정리해줘\n날짜: ${leaveProposal.leave_date || ''}\n유형: ${leaveProposal.leave_type_label || ''}\n사유: ${leaveProposal.reason || ''}`.trim())}
-                    onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                   />
                   <button
                     type="button"

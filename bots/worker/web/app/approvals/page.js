@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const STATUS_LABELS = { pending: '대기', approved: '승인', rejected: '반려' };
 const STATUS_COLORS = {
@@ -288,19 +289,12 @@ export default function ApprovalsPage() {
                     )}
 
                     <p className="text-xs text-slate-400 mt-3">{new Date(approval.created_at).toLocaleString('ko-KR')}</p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        onClick={() => openPrompt(approval)}
-                        className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                      >
-                        프롬프트에 채우기
-                      </button>
-                      <button
-                        onClick={() => openMenu(approval)}
-                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        관련 메뉴 열기
-                      </button>
+                    <div className="mt-4">
+                      <ProposalFlowActions
+                        onPromptFill={() => openPrompt(approval)}
+                        onSecondary={() => openMenu(approval)}
+                        secondaryLabel="관련 메뉴 열기"
+                      />
                     </div>
                   </div>
 
