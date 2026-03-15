@@ -131,6 +131,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /orchestrator-health 또는 /jay-health 또는 "제이 헬스"
   /reporting-health 또는 "리포팅 헬스"
   /reporting-health summary 또는 "리포팅 헬스 요약"
+  /reporting-health producers 또는 "리포팅 프로듀서 랭킹"
   /luna-health | /worker-health | /claude-health | /ska-health | /blog-health
 
 🔇 무음 제어
@@ -954,8 +955,14 @@ async function runOrchestratorHealthDirect() {
 async function runReportingHealthDirect(query = '') {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.js');
+  const normalizedQuery = String(query || '').trim().toLowerCase();
   return await runNodeScriptText(script, {
-    args: String(query || '').trim().toLowerCase() === 'summary' ? ['--summary'] : [],
+    args:
+      normalizedQuery === 'summary'
+        ? ['--summary']
+        : normalizedQuery === 'producers'
+          ? ['--producers']
+          : [],
     timeoutText: '⏱ reporting 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ reporting 헬스 실행 실패',
     failPrefix: '⚠️ reporting 헬스 실패',

@@ -13,6 +13,7 @@ const {
 } = require('../../../packages/core/lib/reporting-hub');
 
 const SUMMARY_MODE = process.argv.includes('--summary');
+const PRODUCER_MODE = process.argv.includes('--producers');
 
 function buildPayloadHealth(summary) {
   if (!summary || summary.count === 0) {
@@ -37,6 +38,40 @@ function buildPayloadHealth(summary) {
       `  최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`,
     ],
   };
+}
+
+function buildProducerRows(entries = []) {
+  const grouped = new Map();
+  for (const entry of entries) {
+    const key = `${entry.team || 'general'}/${entry.from_bot || 'unknown'}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        producer: key,
+        count: 0,
+        warnings: new Map(),
+        latest: entry.ts || '',
+      });
+    }
+    const row = grouped.get(key);
+    row.count += 1;
+    row.latest = entry.ts || row.latest;
+    for (const warning of (entry.warnings || [])) {
+      row.warnings.set(warning, (row.warnings.get(warning) || 0) + 1);
+    }
+  }
+
+  return [...grouped.values()]
+    .sort((a, b) => b.count - a.count || String(b.latest).localeCompare(String(a.latest)))
+    .map((row) => ({
+      producer: row.producer,
+      count: row.count,
+      latest: row.latest,
+      warningSummary: [...row.warnings.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, count]) => `${name} ${count}건`)
+        .join(', '),
+    }));
 }
 
 function buildSummaryLines(report) {
@@ -67,6 +102,36 @@ function buildSummaryLines(report) {
   return lines.join('\n');
 }
 
+function buildProducerLines(report) {
+  if (!Array.isArray(report.producerRows) || report.producerRows.length === 0) {
+    return [
+      '🧾 reporting producer 랭킹',
+      '',
+      '✅ 최근 24시간 payload 스키마 경고 producer가 없습니다.',
+      '',
+      '상세: /reporting-health',
+    ].join('\n');
+  }
+
+  const lines = [
+    '🧾 reporting producer 랭킹',
+    '',
+  ];
+
+  for (const [index, row] of report.producerRows.slice(0, 5).entries()) {
+    lines.push(`${index + 1}. ${row.producer} — ${row.count}건`);
+    if (row.warningSummary) lines.push(`   ${row.warningSummary}`);
+  }
+
+  if (report.latestLine) {
+    lines.push('');
+    lines.push(report.latestLine);
+  }
+  lines.push('');
+  lines.push('상세: /reporting-health');
+  return lines.join('\n');
+}
+
 function buildActionLines(report) {
   if (report.payloadHealth.warnCount === 0) {
     return ['  - 현재는 관찰 유지. 상세 확인이 필요하면 /orchestrator-health 참고'];
@@ -78,6 +143,9 @@ function buildActionLines(report) {
 }
 
 function formatText(report) {
+  if (report.mode === 'producers') {
+    return buildProducerLines(report);
+  }
   if (report.mode === 'summary') {
     return buildSummaryLines(report);
   }
@@ -107,6 +175,7 @@ function formatText(report) {
 async function buildReport() {
   const entries = getRecentPayloadWarnings({ withinHours: 24, limit: 50 });
   const summary = summarizePayloadWarnings(entries);
+  const producerRows = buildProducerRows(entries);
   const payloadHealth = buildPayloadHealth(summary);
   const latestWarning = Array.isArray(summary.latest?.warnings) && summary.latest.warnings.length > 0
     ? summary.latest.warnings.join(', ')
@@ -123,9 +192,10 @@ async function buildReport() {
   });
 
   return {
-    mode: SUMMARY_MODE ? 'summary' : 'full',
+    mode: PRODUCER_MODE ? 'producers' : SUMMARY_MODE ? 'summary' : 'full',
     payloadHealth,
     topProducers: summary.topProducers,
+    producerRows,
     latestLine: summary.latest
       ? `최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`
       : '',

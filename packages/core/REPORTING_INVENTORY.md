@@ -80,6 +80,7 @@
 - orchestrator health → reporting payload schema warning 노출
 - reporting health direct view → `/reporting-health`
 - reporting health summary view → `/reporting-health summary`
+- reporting producer ranking view → `/reporting-health producers`
 - morning briefing extras → reporting payload warning snippet 포함
 
 ## Next Moves
