@@ -414,7 +414,7 @@ return [{
         position: [1560, 200],
         parameters: {
           chatId: CHAT_ID,
-          text: `={{ '🚨 <b>스카팀 매출 급감 CRITICAL</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)\\n\\n⚠️ 즉시 확인 필요!' }}`,
+          text: `={{ '🚨 <b>스카팀 매출 급감 긴급 경보</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)\\n\\n⚠️ 즉시 확인 필요!' }}`,
           additionalFields: {
             parse_mode: 'HTML',
             message_thread_id: EMRG_TOPIC || SKA_TOPIC,
