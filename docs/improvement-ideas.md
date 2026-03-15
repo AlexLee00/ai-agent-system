@@ -1,210 +1,315 @@
-# 시스템 개선 아이디어 & 개발 백로그
+# 플랫폼 개발 추적 문서
 
-> 최종 업데이트: 2026-03-04
-> 맥미니 M4 Pro 64GB 주문 완료 (2026-03-03) — 약 6주 후 도착 예정 (4월 중순)
-
----
-
-## 🔴 지금 당장 할 수 있는 것
-
-| # | 항목 | 내용 | 비고 |
-|---|------|------|------|
-| LU-KIS | KIS 모의투자 장 시간 체결 확인 | kis-client.js 구현 완료, API 연결 검증 완료 (2026-03-03). 내일 09:00~15:30 KST에 실행 필요 | 매수: `PAPER_MODE=false node team/hanul.js --symbol=005930 --action=BUY --amount=200000` |
-| CL-008 | 아처 루나 성과 통합 | fetchLunaPerformance() 구현됨, 승률 데이터 30일 누적 대기 중 | 90% 완료 |
+> 마지막 업데이트: 2026-03-15
+> 목적: 로컬 문서, 실제 코드 구현 상태, 최근 커밋 이력을 기준으로 플랫폼 개발 진행 상황을 누적 추적한다.
 
 ---
 
-## 🟠 중기 개선 (언제든 진행 가능)
+## 1. 문서 사용 원칙
 
-### RAG 통합 로드맵 (우선순위: 스카 → 제이 → 루나)
-
-> RAG 서버: `localhost:8100` (FastAPI 래퍼, ChromaDB PersistentClient)
-> OpenClaw 통합 방법: ①SKILL.md (즉시) ②TypeScript Plugin tool (고도화)
-> 연구 완료: 2026-03-05
-
-#### 스카팀 RAG (ROI 최고 — 레베카·이브 데이터 직접 활용)
-
-| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
-|---|------|------|-----------|-----------|
-| SKA-RAG-01 | **레베카 예측 정확도 개선** | 과거 예약 패턴을 ChromaDB `ska_reservations` 컬렉션에 벡터 저장. Prophet 예측 시 유사 날짜 패턴(공휴일 전날, 시험기간 등) 참조 → MAPE 15%→8% 목표. `bots/ska/src/rebecca.py`에 `POST /search` 호출 추가 | 1단계: ChromaDB 컬렉션 생성 + 예약 데이터 임베딩 / 2단계: 레베카 예측 루프에 RAG 컨텍스트 주입 | 예측 정확도 ↑, 덱스터 MAPE 경보 감소 |
-| SKA-RAG-02 | **이브 환경 데이터 장기 벡터화** | 이브가 수집하는 날씨·공휴일·학사일정·축제를 ChromaDB `ska_environment` 컬렉션에 누적. 레베카가 예측 시 "작년 같은 날씨·이벤트 조합" 검색 → 계절성 패턴 자동 반영. `bots/ska/src/eve.py` 수집 루프에 `POST /ingest` 추가 | 1단계: 이브 수집 루프에 벡터 저장 / 2단계: 레베카 RAG 쿼리에 환경 컬렉션 포함 | 계절·이벤트 예측 정확도 ↑ |
-
-#### 제이팀 RAG (즉시 적용 가능)
-
-| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
-|---|------|------|-----------|-----------|
-| ~~JY-RAG-01~~ | ~~**SKILL.md RAG 연동**~~ | ✅ **2026-03-05 완료** — TOOLS.md RAG 검색 섹션 추가, system_docs 12건 임베딩 (TOOLS.md·DEV_SUMMARY·SYSTEM_DESIGN) | - | - |
-| JY-RAG-02 | **OpenClaw Plugin RAG tool** | TypeScript로 RAG Plugin 등록 (`~/.openclaw/plugins/rag-search/`). SKILL.md보다 정밀한 컨텍스트 윈도우 제어 가능. `tool_call` 형태로 호출 → 응답 스트리밍 지원 | 1단계: JY-RAG-01 완료 후 / 2단계: Plugin 등록 + 컬렉션 멀티 쿼리 | 다중 컬렉션 동시 검색, 팀별 답변 통합 |
-
-#### 루나팀 RAG (중장기 — 30일 데이터 누적 후)
-
-| # | 항목 | 내용 | 구현 단계 | 예상 효과 |
-|---|------|------|-----------|-----------|
-| LU-RAG-01 | **매매 이력 → 아리아 신호 보조** | 바이낸스 실거래 결과(진입가·청산가·수익률·시장상황)를 ChromaDB `luna_trades` 컬렉션에 저장. 아리아 신호 생성 시 "이 조합에서 과거 승률" 검색 → LLM 프롬프트 컨텍스트 추가. `bots/investment/src/analysts/signal-aggregator.js`에 RAG 쿼리 추가 | 1단계: 사이클 완료 시 trade record 벡터화 / 2단계: 아리아 LLM 호출 전 RAG 컨텍스트 주입 | 과거 실패 패턴 재방지, 신호 정확도 ↑ |
-| LU-RAG-02 | **뉴스·공시 벡터화 → 오라클 강화** | 오라클이 수집하는 뉴스/공시를 ChromaDB `luna_news` 컬렉션에 임베딩. 동일 이슈 반복 감지 (중복 알람 제거) + 과거 유사 뉴스 시장반응 참조. `team/oracle.js` Groq 분석 전 RAG 검색 추가 | 1단계: 뉴스 수집 시 벡터 저장 / 2단계: 오라클 분석 프롬프트에 유사 뉴스 이력 포함 | 뉴스 분석 정확도 ↑, 중복 알람 ↓ |
-
-| # | 항목 | 내용 |
-|---|------|------|
+- 이 문서는 `아이디어 메모`가 아니라 `개발 추적 문서`다.
+- 항목은 아래 3가지로 구분한다.
+  - `완료`: 코드와 문서 기준으로 실제 반영이 확인된 상태
+  - `진행 중`: 구조는 올라왔지만 일부 핵심 연결이나 운영 검증이 남은 상태
+  - `미완료`: 설계 또는 다음 작업만 정의된 상태
+- 날짜는 가능한 한 `마지막 구현일` 기준으로 적는다.
+- 세부 근거는 관련 문서나 실제 코드 경로를 함께 적는다.
 
 ---
 
-## 🟠 맥미니 도착 전 (맥북에서 준비)
+## 2. 수집 근거
 
-| # | 항목 | 내용 |
-|---|------|------|
-| Phase 2 준비 | 맥미니 이전 체크리스트 | state.db / secrets.json / config.yaml / launchd plist 이전 절차 문서화 |
-| LU-039 | ChromaDB 학습 루프 | 30일 드라이런 데이터 누적 후 진행 — 매매 신호 패턴 벡터 저장 |
-| CL-006 | 전체 코드 리팩토링 | coding-guide.md 기준 소급 적용 — 기능 변경 없이 구조 개선 |
-| ska-002 | 스카 ETL 추가 검증 | SQLite→DuckDB 파이프라인 실데이터 검증 |
+### 로컬 문서
 
----
+- [README.md](/Users/alexlee/projects/ai-agent-system/README.md)
+- [docs/SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
+- [docs/coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
+- [docs/team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
+- [docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md](/Users/alexlee/projects/ai-agent-system/docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md)
+- [packages/core/HEALTH_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/HEALTH_ENGINE_PLAN.md)
+- [packages/core/INTENT_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/INTENT_ENGINE_PLAN.md)
+- [packages/core/REPORTING_HUB_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/REPORTING_HUB_PLAN.md)
+- [packages/core/REPORTING_INVENTORY.md](/Users/alexlee/projects/ai-agent-system/packages/core/REPORTING_INVENTORY.md)
+- [bots/reservation/context/N8N_NODE_PLAN.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/N8N_NODE_PLAN.md)
+- [bots/reservation/context/N8N_COMMAND_CONTRACT.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/N8N_COMMAND_CONTRACT.md)
+- [bots/orchestrator/context/DEV_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/DEV_SUMMARY.md)
 
-## 🟢 맥미니 도착 후 (Phase 2~4)
+### 로컬 구현 상태
 
-| # | 항목 | 내용 |
-|---|------|------|
-| Phase 2 | 전체 시스템 맥미니 이전 | 봇 전부 맥미니로 이전 + Tailscale 재설정 + 맥북은 개발 전용 |
-| LT-003 | 신규 팀 구축 | main창: 메인봇/비서봇/업무봇 / research창: 학술봇/판례봇 |
-| CL-005 | GUI 대시보드 | Grafana+Loki or 커스텀 Express+SSE — 봇 활동 시각화 |
-| LU-025 | 루나 OPS 전환 | 바이낸스 실거래 전환 (맥미니 안정화 후) |
-| LU-039 | ChromaDB 학습 루프 | 맥미니 로컬 LLM(ollama) 연동 가능해지면 고도화 |
-| DX-001 | 덱스터 패턴 벡터화 | dexter_error_log → ChromaDB 벡터 저장 → 유사 오류 사전 감지 (단기 SQL 패턴 이후) |
-| LT-002 | Playwright → 네이버 API | UI 변경 취약점 근본 해결 — 장기 검토 |
-| LT-004 | RAG 도입 | ChromaDB 봇별 컬렉션 분리 — 예약 패턴 벡터 저장 |
+- `bots/`, `packages/core/`, `docs/` 하위 실제 코드와 스크립트
+- `git log --since=2026-03-04` 기준 최근 구현 커밋
 
----
+### 노션 페이지 수집 상태
 
-## ✅ 완료 이력 (2026-03-04 기준)
-
-### 스카팀
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| 기본 OPS 구축 | 2026-02-24 | naver-monitor + pickko 자동화 전체 |
-| 픽코 자동화 전체 | 2026-02-24~27 | 등록/취소/조회/티켓/멤버/이름수정 CLI 9종 |
-| 텔레그램 자연어 27케이스 | 2026-02-26 | E2E 100% 통과 |
-| pickko↔네이버 이름 동기화 | 2026-02-26 | syncMemberNameIfNeeded() |
-| 텔레그램 pending-queue | 2026-02-26 | 3회 재시도 + jsonl 대기큐 |
-| 키오스크→네이버 자동 해제 | 2026-02-26 | pickko-kiosk-monitor Phase 2B+3B |
-| 공유 인프라 | 2026-02-27 | packages/core + playwright-utils + _template |
-| lib/ 공용 라이브러리 | 2026-02-27 | cli/args/utils/secrets/telegram/browser/pickko |
-| pre-commit hook | 2026-02-27 | 보안 파일 커밋 차단 |
-| 헬스체크 / 로그rotation | 2026-02-27 | health-check.js + log-rotate.sh |
-| ska-001~008 매출예측 | 2026-02-27 | DuckDB + 이브 공공API + 레베카 + Prophet |
-| SKA-P01~P08 루나 패턴 이식 | 2026-03-02 | DB마이그레이션/Secrets폴백/Preflight/에러트래커/E2E/모드분리/상태파일 |
-| SKA-N01 결제대기 자동화 | 2026-03-02 | pickko-pay-scan 09:30 launchd |
-| SKA-N02 VIP 고객 인식 | 2026-03-02 | lib/vip.js 3등급 + 텔레그램 배지 |
-| SKA-N03 주간 KPI 리포트 | 2026-03-02 | rebecca.py weekly_report() 월요일 09:00 |
-| 취소 감지 교차검증 | 2026-03-02 | currentCancelledList 비교 + 이용완료 추정 스킵 |
-| 앤디 에러 캡처 | 2026-03-02 | outputBuf → error_reason DB 저장 |
-| 스카팀 고도화 v3.0 | 2026-03-03 | 폴더 재편(auto/manual) + state-bus + 덱스터 연동 |
-| OBSERVE_ONLY 수정 | 2026-03-03 | 하드코딩 → `${OBSERVE_ONLY:-0}` 환경변수 우선 |
-| reload-monitor.sh | 2026-03-03 | 빠른 재시작 (문법체크→정지→시작→확인, E2E 없음) |
-| pickko-verify 경로 수정 | 2026-03-03 | v3.0 폴더 재편 후 경로 불일치 수정 |
-| 스카팀 완전 OPS 전환 | 2026-03-03 | OBSERVE_ONLY 제거, 전체 OPS |
-
-### 루나팀
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| Phase 0 드라이런 | 2026-03-01 | LU-001~015 BTC/ETH/SOL/BNB DRY_RUN |
-| 제이슨 v2 TA 고도화 | 2026-03-02 | 6지표 + 다중 심볼 |
-| 감성/온체인/뉴스 분석가 | 2026-03-02 | LU-032~034 Groq 기반 |
-| 강세/약세 리서처 | 2026-03-02 | LU-035 debate 엔진 |
-| 리스크 매니저 v2 | 2026-03-02 | LU-036 ATR+상관관계+시간대+LLM 4단계 |
-| 백테스팅 엔진 | 2026-03-02 | LU-037 4심볼 1d/4h 텔레그램 리포트 |
-| 몰리 v2 TP/SL | 2026-03-02 | LU-038 ±3% 자동 청산 |
-| 루나 펀드매니저 | 2026-03-02 | LU-030 claude-haiku-4-5 |
-| reporter.js 성과 리포트 | 2026-03-02 | 일/주/월 매매 성과 텔레그램 |
-| Phase 3-A 크립토 사이클 | 2026-03-02 | bots/investment/ ESM + PAPER_MODE |
-| Phase 3-B 국내외주식 | 2026-03-02 | aria KIS Yahoo OHLCV + domestic/overseas |
-| Phase 3 E2E 전체 통과 | 2026-03-02 | 3사이클 8.4s/4.3s/5.9s |
-| 크립토 OPS 전환 | 2026-03-03 | PAPER_MODE=false, $138 USDT 실거래 자금 |
-| Groq 9키 라운드로빈 | 2026-03-03 | 4→9키 확장, 429 분산 |
-
-### 공통 인프라 / LLM 키 통합
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| LLM API 키 통합 | 2026-03-04 | packages/core/lib/llm-keys.js 공용 로더 — config.yaml 단일 소스 |
-| secrets.json LLM 키 제거 | 2026-03-04 | investment/secrets.json 중복 키 삭제 (anthropic/groq/cerebras/sambanova/xai) |
-| launchd 하드코딩 제거 | 2026-03-04 | ai.investment.crypto.plist ANTHROPIC_API_KEY 삭제 |
-| openai/gemini config 추가 | 2026-03-04 | config.yaml에 openai/gemini 섹션 추가 (사용자 키 입력 대기) |
-
-### 클로드팀
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| 코딩가이드 초판 | 2026-02-27 | 기술스택/모델/OpenClaw/보안 패턴 |
-| 덱스터 구축 | 2026-03-01 | 8체크 + 자동수정 + 버그레포트 + 일일보고 |
-| 아처 v1 구축 | 2026-03-01 | 주간 기술동향 리포트 |
-| 클로드팀 고도화 v2.0 | 2026-03-03 | team-bus + 아처 v2 재정의 + PATCH_REQUEST.md |
-| 덱스터 메모리 오탐 수정 | 2026-03-03 | os.freemem() → vm_stat (macOS Inactive 고려) |
-| team-features.md | 2026-03-03 | 팀별 기능 목록 문서 |
-| team-profiles.md | 2026-03-03 | 팀별 프로필 문서 |
-| pre-commit yaml 검사 | 2026-03-03 | .yaml/.yml/.sh/.env 파일까지 시크릿 검사 확장 |
-| config.yaml git 정리 | 2026-03-03 | filter-repo로 전체 이력 제거 + .gitignore 등록 |
-| 코딩가이드 v3 | 2026-03-03 | §0보안/§11재시작/§14OBSERVE_ONLY/§17클로드팀/보안사고 반영 |
-
-### 메인봇 (오케스트레이터 / 제이)
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| 메인봇 구현 | 2026-03-04 | mainbot.js/router/filter/dashboard + launchd ai.orchestrator |
-| 팀별 publishToMainBot | 2026-03-04 | 스카(CJS) + 루나(ESM) + 클로드(CJS) 클라이언트 |
-| sendTelegram 전면 교체 | 2026-03-04 | 전체 봇 → publishToMainBot (mainbot_queue 경유) |
-| time-mode.js 연동 | 2026-03-04 | 루나팀 사이클/minScore 시간대별 자동 조정 |
-| parse_mode HTML | 2026-03-04 | telegram.js + mainbot.js 포매팅 버그 수정 |
-| 4096자 분할 전송 | 2026-03-04 | mainbot.js splitMessage() |
-| docs/MAINBOT.md | 2026-03-04 | 설계/아키텍처/명령체계/6주 안정화 계획 |
-| LLM_DOCS.md §8·§9 신규 | 2026-03-04 | Telegram Bot API 9.5 + OpenClaw 섹션 추가 |
-
-### OpenClaw / 인프라
-
-| 항목 | 완료일 | 내용 |
-|------|--------|------|
-| OC-001~009 전체 | 2026-03-02 | 보안/denyCommands/SecretRef/세션초기화/dmScope 등 |
-| BOOT 속도 최적화 | 2026-02-27 | 7분→54초 (8.4× 개선) |
-| CL-004 Dev/OPS 분리 | 2026-03-02 | mode.js + switch-to-ops.sh |
+- 대상 링크:
+  - [기존 노션 링크](https://www.notion.so/Team-Jay-31fff93a809a81468d84c5f74b3485e4?source=copy_link)
+  - [퍼블릭 사이트 링크](https://sour-pipe-122.notion.site/Team-Jay-31fff93a809a81468d84c5f74b3485e4?source=copy_link)
+- 2026-03-15 기준 CLI 수집 결과:
+  - 공개 페이지 셸 HTML은 확인됨
+  - 본문 데이터는 JavaScript 기반으로만 로드되어 자동 추출이 실패함
+- 따라서 이번 반영은 `로컬 문서 + 실제 구현 + 커밋 이력`을 기준으로 우선 정리했고, 노션 본문은 추후 수동 대조가 필요한 상태로 남긴다.
 
 ---
 
-## 🗂️ 아키텍처 개선 아이디어 (미결)
+## 3. 현재 플랫폼 개발 상태 요약
 
-### 맥미니 이전 후 검토
+### 전체 판단
 
-| # | 아이디어 | 내용 | 우선순위 |
-|---|---------|------|---------|
-| A1 | 로컬 LLM 전략 | 맥미니 M4 Pro 64GB → ollama/qwen2.5:32b, deepseek-r1:32b 운용 가능 | 맥미니 도착 후 |
-| A2 | Grafana + Loki | 봇별 메트릭 시각화 — 지금은 텔레그램+로그로 충분 | Phase 2 이후 |
-| A3 | KIS 웹소켓 실시간 | 현재 polling → 웹소켓 전환 시 지연 개선 | LU-KIS 이후 |
-| A4 | Playwright → API | 네이버 UI 변경 취약점 근본 해결 — 공식 API 가능 여부 확인 필요 | 장기 |
-| A5 | n8n 트리거 활용 | DART 공시 polling → n8n 스케줄 트리거로 구현 | Phase 2 이후 |
+- 공용화 축은 크게 진척됐다.
+  - `health engine`
+  - `intent engine`
+  - `reporting hub`
+  - `AI feedback layer`
+- 운영 안정화도 많이 올라왔다.
+  - 통합 헬스
+  - 브리핑
+  - n8n live webhook 경로 점검
+  - 스카 운영 알람/프로세스 안정화
+- 지금부터의 핵심은 `새 축 확장`보다 `기존 축의 실제 업무 연결 마무리`다.
 
-### 스카팀 장기 기능
+### 지금 가장 중요한 개발 축
 
-| # | 아이디어 | 우선순위 |
-|---|---------|---------|
-| IS-001 | 네이버 세션/쿠키 만료 자동 재개 | 낮음 (현재 자동 재시작 루프로 커버) |
-| LT-002 | Playwright → 네이버 API 직접 호출 | 낮음 (장기 검토) |
+1. 워커 확인창 기반 AI 피드백 UX 완성
+2. 피드백 데이터의 RAG 연결
+3. 스카 n8n node화 2차와 write/ops 계열 고도화
+4. 스카 RAG의 retrieval-first 활용 강화
+5. 권한별 LLM 정책의 실제 런타임 반영
 
 ---
 
-## 📌 다음 세션 추천 작업 (2026-03-05 기준)
+## 4. 완료된 개발 축
 
-**루나팀 OPS 운영 중** — 맥미니 도착(4월 중순)까지:
+### 4.1 공용 Health Engine
 
-1. **바이낸스 USDT 입금** → 실주문 활성화 ($100 이상 권장)
-2. **수익률 데이터 누적** — 30일 후 `npm run report`로 신호 정확도 평가
-3. **KIS 실계좌 전환 시점 판단** — 암호화폐 성과 검토 후 결정
-4. **맥미니 이전 체크리스트 문서화** (이전 당일 빠르게 진행하기 위해)
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-15 | 공용 health 포맷 | JS/Python 공용 health formatter 정리 | [packages/core/HEALTH_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/HEALTH_ENGINE_PLAN.md) |
+| 완료 | 2026-03-15 | 공용 provider/adapter | launchd, HTTP, file staleness, DB health adapter 공용화 | [packages/core/lib/health-provider.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/health-provider.js), [packages/core/lib/health-db.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/health-db.js) |
+| 완료 | 2026-03-15 | 팀별 헬스 리포트 | 루나, 워커, 클로드, 스카, 블로, 오케스트레이터 헬스 라우팅 완료 | [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js) |
+| 완료 | 2026-03-15 | 통합 운영 헬스 | `/ops-health`, `summary`, `alerts`, `briefing`까지 구축 | [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js) |
+| 완료 | 2026-03-15 | false warning 정리 | 클로드 shadow mismatch, 스카 scheduled job 경고 완화 | [bots/claude/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js), [bots/reservation/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js) |
 
-### 루나팀 차기 개선 아이디어 (Phase 3-C 이후)
+### 4.2 공용 Intent Engine
 
-| # | 아이디어 | 우선순위 |
-|---|---------|---------|
-| ~~LU-001~~ | ~~reporter.js launchd 일일 자동 발송~~ | ✅ 완료 (2026-03-05) |
-| ~~LU-002~~ | ~~asset_snapshot 주기적 기록 → 자산 곡선 추이~~ | ✅ 완료 (2026-03-05) |
-| LU-003 | 신호 정확도 백테스트 (chronos.js Phase 3-D) | 중간 |
-| ~~LU-004~~ | ~~USDT 잔고 부족 시 자동 텔레그램 알림~~ | ✅ 완료 (2026-03-05) |
-| LU-005 | KIS 실계좌 전환 (kis_paper_trading=false) | 낮음 (성과 검증 후) |
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-14 | shared intent core/store | 팀 공용 메타, promotion, unrecognized, report frame 공용화 | [packages/core/INTENT_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/INTENT_ENGINE_PLAN.md) |
+| 완료 | 2026-03-14 | 팀 연결 | worker, ska, claude, luna를 shared intent store에 연결 | [packages/core/lib/intent-core.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/intent-core.js) |
+| 완료 | 2026-03-15 | direct routing 운영화 | 팀 인텐트 보고/롤백/헬스가 제이에서 직접 조회 가능 | [bots/orchestrator/lib/intent-parser.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/intent-parser.js) |
+
+### 4.3 공용 Reporting Hub
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-15 | reporting-hub 코어 | payload 표준화, validation, telemetry, fanout, delivery policy 구축 | [packages/core/lib/reporting-hub.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.js) |
+| 완료 | 2026-03-15 | producer 이관 | reservation, investment, claude, worker, blog 주요 알림/리포트가 허브 경유 | [packages/core/REPORTING_INVENTORY.md](/Users/alexlee/projects/ai-agent-system/packages/core/REPORTING_INVENTORY.md) |
+| 완료 | 2026-03-15 | mainbot consumer 고도화 | payload title/summary/action/links를 소비 단계에서 활용 | [bots/orchestrator/lib/batch-formatter.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/batch-formatter.js) |
+| 완료 | 2026-03-15 | reporting health | `/reporting-health`, summary, producers, 브리핑 연동 | [bots/orchestrator/scripts/reporting-health.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/reporting-health.js) |
+| 완료 | 2026-03-15 | Python reporting bridge | 레베카/forecast 계열 stdout을 reporting-hub로 연결 | [packages/core/scripts/publish-python-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js) |
+
+### 4.4 AI Feedback Layer
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-15 | 공용 feedback core/store | `ai_feedback_sessions`, `ai_feedback_events` 공용 레이어 구축 | [packages/core/lib/ai-feedback-core.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/ai-feedback-core.js), [packages/core/lib/ai-feedback-store.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/ai-feedback-store.js) |
+| 완료 | 2026-03-15 | 워커 연결 | AI 업무 제안 → review 수정 → 승인/반려 → committed 연결 | [bots/worker/lib/ai-feedback-service.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-feedback-service.js), [bots/worker/lib/approval.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/approval.js) |
+| 완료 | 2026-03-15 | 블로 연결 | 커리큘럼 후보 생성 → 선택/직접 입력 → committed 연결 | [bots/blog/lib/ai-feedback.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/ai-feedback.js) |
+| 완료 | 2026-03-15 | 클로드 연결 | LLM 졸업 후보 생성/승인 흐름에 feedback session 연결 | [packages/core/lib/llm-graduation.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/llm-graduation.js) |
+| 완료 | 2026-03-15 | 운영 조회/리포트 | `/feedback-health`, feedback report CLI, CSV export 지원 | [bots/orchestrator/scripts/feedback-health.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/feedback-health.js), [packages/core/scripts/feedback-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/feedback-report.js) |
+
+### 4.5 워커 AI 정책/권한 기반 UX 토대
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-15 | AI 정책 테이블 | 회사 기본값 + 사용자 override 컬럼 추가 | [bots/worker/migrations/013-ai-policy.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/013-ai-policy.sql) |
+| 완료 | 2026-03-15 | 정책 계산 헬퍼 | `ui_mode`, `llm_mode`, `confirmation_mode`, toggle 여부 계산 | [bots/worker/lib/ai-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-policy.js) |
+| 완료 | 2026-03-15 | 설정 API/UI | `/api/settings/ai-policy`와 워커 설정 화면 반영 | [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js), [bots/worker/web/app/settings/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/settings/page.js) |
+
+### 4.6 스카팀 예측/운영/명령 고도화
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-14~15 | 예측 feature store | `training_feature_daily` 구축, reservation 구조/모멘텀 feature 추가 | [bots/ska/lib/feature_store.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/feature_store.py) |
+| 완료 | 2026-03-15 | 예측 원본 정리 | `forecast_results`를 source of truth로 정리, legacy accuracy/forecast 정리 | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py) |
+| 완료 | 2026-03-15 | forecast health | 예측 상태/추천/튜닝 우선순위 리포트와 제이 라우팅 구축 | [bots/ska/src/forecast_health.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast_health.py) |
+| 완료 | 2026-03-15 | 스카 운영 안정화 | dev-mode 알람 스팸 방지, pending 재처리, kiosk bootstrap, launchd health 안정화 | [bots/reservation/auto/monitors/naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js), [bots/reservation/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js) |
+| 완료 | 2026-03-15 | 스카 n8n read 경로 | read 명령용 bridge, workflow draft, webhook registry path 해결 | [bots/reservation/context/N8N_NODE_PLAN.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/N8N_NODE_PLAN.md), [bots/reservation/lib/ska-read-service.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-read-service.js) |
+
+### 4.7 n8n 운영/경로 안정화
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-15 | setup client 공용화 | 블로/워커/오케스트레이터/스카 워크플로우 재생성 로직 공용화 | [packages/core/lib/n8n-setup-client.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/n8n-setup-client.js) |
+| 완료 | 2026-03-15 | live webhook resolver | registry 기준 production path 해석 | [packages/core/lib/n8n-webhook-registry.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/n8n-webhook-registry.js) |
+| 완료 | 2026-03-15 | critical webhook 진단 | 오케스트레이터/클로드 헬스에 critical webhook 상태 노출 | [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js), [bots/claude/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js) |
+| 완료 | 2026-03-15 | 알림 템플릿 정리 | critical 알림 health probe 차단, 한글화, 개인 DM 제거 | [bots/orchestrator/n8n/setup-n8n.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/n8n/setup-n8n.js), [bots/orchestrator/n8n/setup-ska-workflows.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/n8n/setup-ska-workflows.js) |
+
+---
+
+## 5. 진행 중인 개발 축
+
+| 상태 | 마지막 구현일 | 항목 | 현재 상태 | 남은 일 |
+|---|---|---|---|---|
+| 진행 중 | 2026-03-15 | 워커 확인 결과 창 UX | 정책 테이블, feedback layer, review 저장은 준비됨 | attendance/leave 등 정형 업무에 실제 확인창 연결 |
+| 진행 중 | 2026-03-15 | 워커 권한별 화면 분기 | 정책 저장과 설정 UI는 있음 | `prompt_only`, `prompt_plus_dashboard`, `full_master_console`를 실제 메인 화면에 반영 |
+| 진행 중 | 2026-03-15 | feedback analytics 운영화 | CLI, direct routing, 브리핑 요약까지 있음 | 주간 자동 리포트와 품질 경보 기준 튜닝 |
+| 진행 중 | 2026-03-15 | reporting-hub 이관 마무리 | 주요 producer 대부분 이관 | team-bus/잔여 직결 발송 경로 전수 점검 |
+| 진행 중 | 2026-03-15 | 스카 n8n node화 | read 명령과 bridge, workflow draft는 완료 | write/ops 계열 `store_resolution`, `analyze_unknown`, restart 계열 보수적 이관 |
+| 진행 중 | 2026-03-15 | 스카 RAG 활용 | 저장/조회 adapter는 정리됨 | retrieval-first 운영 힌트, 실패 복구 사례 검색 연결 |
+
+---
+
+## 6. 미완료 개발 축
+
+### 6.1 워커 / AI 입력 UX
+
+| 상태 | 목표 | 비고 |
+|---|---|---|
+| 미완료 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)에 확인 결과 창 추가 | [docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md](/Users/alexlee/projects/ai-agent-system/docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md) 1순위 항목 |
+| 미완료 | 일반사용자/관리자/마스터 화면 차등 적용 | 현재는 정책만 저장되고 실제 화면 분기는 제한적 |
+| 미완료 | 관리자 현황 위젯 강화 | 미출근, 출근 예정, 승인 대기, 예외 감지 등을 카드로 노출 필요 |
+| 미완료 | LLM ON/OFF 정책의 런타임 반영 | 현재는 설정 저장 중심, 실제 라우팅 정책 반영은 후속 작업 |
+
+### 6.2 피드백 + RAG / 학습 데이터
+
+| 상태 | 목표 | 비고 |
+|---|---|---|
+| 미완료 | feedback session → `feedback_cases` RAG artifact adapter | committed/submitted 세션만 파생 인덱스로 저장 권장 |
+| 미완료 | accepted_without_edit 기반 품질 랭킹 자동화 | 일별/주별 추이 리포트 가능 |
+| 미완료 | 블로/클로드 세부 수정 diff 심화 | 현재는 승인/채택 중심, `field_edited`는 워커가 가장 깊음 |
+| 미완료 | training/export 자동화 | analytics export는 준비됐지만 training dataset 연결은 아직 없음 |
+
+### 6.3 스카팀 고도화
+
+| 상태 | 목표 | 비고 |
+|---|---|---|
+| 미완료 | 스카 n8n node화 2차 | `store_resolution`, `analyze_unknown` 이관 |
+| 미완료 | 스카 운영 명령 공용화 마감 | restart/launchd 계열은 로컬 fallback 유지하며 더 표준화 가능 |
+| 미완료 | 스카 RAG retrieval 활용 강화 | 실패 복구/과거 해결사례 검색을 커맨더 의사결정에 반영 |
+| 미완료 | 스카 예측 데이터셋 학습 루프 | feedback/RAG와 연결한 장기 품질 개선은 아직 후순위 |
+
+### 6.4 플랫폼 장기 항목
+
+| 상태 | 목표 | 비고 |
+|---|---|---|
+| 미완료 | 맥미니 이전 후 로컬 LLM 전략 | 기존 문서의 장기 로드맵 유지 |
+| 미완료 | Grafana/Loki 또는 커스텀 시각화 대시보드 | 현재는 헬스/브리핑/텔레그램 중심 |
+| 미완료 | KIS 실계좌 전환 판단 | 루나 성과 축적 후 결정 |
+| 미완료 | Playwright 기반 업무 일부의 API 전환 | 스카 네이버/픽코 계열 장기 검토 |
+
+---
+
+## 7. 분야별 현재 평가
+
+### 워커
+
+- 상태: `진행 중`
+- 올라온 것:
+  - 웹 워크스페이스
+  - 승인형 AI task flow
+  - feedback layer 연결
+  - AI 정책 저장/조회
+- 남은 핵심:
+  - 근태 확인 결과 창
+  - 권한별 화면 차등
+  - 실제 llm_mode 런타임 반영
+
+### 스카
+
+- 상태: `진행 중`
+- 올라온 것:
+  - 예측 엔진/feature store
+  - 운영 안정화
+  - read 명령 n8n bridge
+  - forecast health
+- 남은 핵심:
+  - write/ops 계열 node화
+  - retrieval-first 운영 보조
+  - 장기적으로 feedback/RAG/forecast 연결
+
+### 루나
+
+- 상태: `운영 안정화 + 중기 고도화 대기`
+- 올라온 것:
+  - health/reporting 통합
+  - n8n node 초안
+  - 리스크/거래 리뷰 체계
+- 남은 핵심:
+  - 성과 누적 기반 학습 루프
+  - 실계좌 전환 판단
+
+### 블로
+
+- 상태: `운영화 + 공용화 진행`
+- 올라온 것:
+  - n8n pipeline
+  - curriculum planner
+  - feedback layer 2차 연결
+  - reporting-hub 연결
+- 남은 핵심:
+  - 세부 수정 피드백 심화
+  - 장문 생성 품질/후속 QA 자동화
+
+### 클로드 / 오케스트레이터
+
+- 상태: `운영 안정 구간`
+- 올라온 것:
+  - health, reporting, feedback, n8n critical webhook 운영 경로
+  - unified ops health / briefing / reporting health
+- 남은 핵심:
+  - team-bus와 운영 리포팅 경계 정리
+  - feedback export를 장기 학습 루프와 연결
+
+---
+
+## 8. 다음 우선순위 추천
+
+### 1순위
+
+1. 워커 근태 확인 결과 창 구현
+2. 근태 흐름을 `proposal_generated -> field_edited -> confirmed -> committed`로 연결
+3. WorkerAIWorkspace 권한별 분기 적용
+
+### 2순위
+
+1. feedback → RAG adapter 추가
+2. 스카 n8n node화 2차
+3. 스카 RAG retrieval-first 활용 연결
+
+### 3순위
+
+1. feedback 주간 품질 자동화
+2. reporting-hub 잔여 producer 정리
+3. 플랫폼 장기 항목의 환경 전환 준비
+
+---
+
+## 9. 최근 구현 타임라인
+
+### 2026-03-15
+
+- shared health engine 마감과 통합 ops health/briefing 고도화
+- reporting-hub fanout, payload schema, reporting health 구축
+- 스카 운영 안정화와 n8n command/live webhook 경로 정리
+- AI feedback layer를 worker/blog/claude 흐름에 실제 연결
+- worker AI 정책 테이블/설정 UI 추가
+
+### 2026-03-14
+
+- shared intent engine 확장
+- worker chat/approval/n8n 축 고도화
+- 스카 예측 feature store 및 calibration 고도화
+
+### 2026-03-04 이전
+
+- 기존 문서의 초기 Phase 기반 구축은 유지한다.
+- 다만 2026-03-15 이후의 실제 구현이 훨씬 많이 누적되어, 현재 기준 우선순위 판단은 본 문서를 기준으로 삼는 것이 맞다.
+
+---
+
+## 10. 유지 규칙
+
+- 이후 세션에서는 새 기능을 구현할 때 이 문서에 반드시 반영한다.
+- `완료` 항목은 날짜와 근거 파일을 남긴다.
+- `진행 중` 항목은 “무엇이 올라왔고 무엇이 남았는지”를 함께 적는다.
+- 노션 본문을 추후 수동 확인하면, 이 문서의 `수집 근거` 섹션과 관련 항목에 대조 반영한다.
