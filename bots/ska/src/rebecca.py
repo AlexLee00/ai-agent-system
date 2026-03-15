@@ -36,6 +36,8 @@ try:
 except Exception:
     _rag = None
 
+from packages.core.lib.reporting_core import build_report
+
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 
@@ -313,71 +315,89 @@ def format_telegram(report):
     prev_week = report.get('prev_week')
     prev_forecast = report.get('prev_forecast')  # 어제 예측값
 
-    lines = [
-        f'📊 레베카 일간 현황 리포트',
-        f'{"─"*15}',
-        f'📅 {m}월 {day}일 ({wd})',
-        '',
-    ]
-
-    lines.append(f'💰 매출: {d["revenue"]:,}원')
+    revenue_lines = [f'💰 매출: {d["revenue"]:,}원']
     if prev_day:
         prev_wd = WEEKDAY_KO[date_type.fromisoformat(prev_day['date']).weekday()]
-        lines.append(f'   ↕ 전일({prev_wd}):    {pct_str(d["revenue"], prev_day["revenue"])}')
+        revenue_lines.append(f'↕ 전일({prev_wd}): {pct_str(d["revenue"], prev_day["revenue"])}')
     if prev_week:
-        lines.append(f'   ↕ 전주({wd}):    {pct_str(d["revenue"], prev_week["revenue"])}')
+        revenue_lines.append(f'↕ 전주({wd}): {pct_str(d["revenue"], prev_week["revenue"])}')
     if avg['avg_revenue'] > 0:
-        lines.append(f'   ↕ 7일 평균:    {pct_str(d["revenue"], avg["avg_revenue"])}  (평균 {avg["avg_revenue"]:,}원)')
-    lines.append('')
+        revenue_lines.append(f'↕ 7일 평균: {pct_str(d["revenue"], avg["avg_revenue"])} (평균 {avg["avg_revenue"]:,}원)')
+
+    sections = [
+        {
+            'title': '━━━ 매출 현황 ━━━',
+            'lines': revenue_lines,
+        }
+    ]
 
     # 어제 예측 정확도 (ska-014: forecast_results 연동)
     if prev_forecast and d['revenue'] > 0:
         mape = abs(prev_forecast - d['revenue']) / d['revenue'] * 100
         flag = '✅' if mape < 10 else ('🟡' if mape < 20 else '🔴')
-        lines.append('🎯 어제 예측 정확도')
-        lines.append(f'   예측: {int(prev_forecast):,}원 → 실제: {d["revenue"]:,}원')
-        lines.append(f'   MAPE: {mape:.1f}% {flag}')
-        lines.append('')
+        sections.append({
+            'title': '━━━ 어제 예측 정확도 ━━━',
+            'lines': [
+                f'예측: {int(prev_forecast):,}원 → 실제: {d["revenue"]:,}원',
+                f'MAPE: {mape:.1f}% {flag}',
+            ],
+        })
 
     occ_pct = d['occupancy_rate'] * 100
     booked_h = d['occupancy_rate'] * 39
-    lines.append(f'🏠 가동률: {occ_pct:.1f}%  ({booked_h:.1f}h / 39h)')
-    lines.append(f'📋 예약: {d["total_reservations"]}건')
+    operations_lines = [
+        f'🏠 가동률: {occ_pct:.1f}% ({booked_h:.1f}h / 39h)',
+        f'📋 예약: {d["total_reservations"]}건',
+    ]
 
     st_rev = d['studyroom_revenue']
     ge_rev = d['general_revenue']
     if st_rev + ge_rev > 0:
-        lines.append(f'   스터디룸 {st_rev:,}원  /  일반이용 {ge_rev:,}원')
-    lines.append('')
+        operations_lines.append(f'매출 구성: 스터디룸 {st_rev:,}원 / 일반이용 {ge_rev:,}원')
+    sections.append({
+        'title': '━━━ 운영 현황 ━━━',
+        'lines': operations_lines,
+    })
 
     if bars:
         max_rev = max(b['revenue'] for b in bars) or 1
-        lines.append('📉 최근 7일 매출')
+        bar_lines = []
         for b in bars:
             bd = date_type.fromisoformat(b['date'])
             bwd = WEEKDAY_KO[bd.weekday()]
             bar = revenue_bar(b['revenue'], max_rev)
             marker = '◀' if b['date'] == d['date'] else ' '
-            lines.append(f'  {bd.month}/{bd.day}({bwd}) {bar} {b["revenue"]:,}원{marker}')
-    lines.append('')
+            bar_lines.append(f'{bd.month}/{bd.day}({bwd}) {bar} {b["revenue"]:,}원{marker}')
+        sections.append({
+            'title': '━━━ 최근 7일 매출 ━━━',
+            'lines': bar_lines,
+        })
 
     elapsed = mon['elapsed']
-    lines.append(f'📅 {mon["ym"][5:7]}월 현황 ({elapsed}일 경과 / {mon["days_in_month"]}일)')
-    lines.append(f'   월 매출:  {mon["total"]:,}원')
-    lines.append(f'   일 평균:  {mon["daily_avg"]:,}원')
-    lines.append(f'   예상 마감: ~{mon["projected"]:,}원')
-    lines.append('')
+    sections.append({
+        'title': f'━━━ {mon["ym"][5:7]}월 현황 ━━━',
+        'lines': [
+            f'경과: {elapsed}일 / {mon["days_in_month"]}일',
+            f'월 매출: {mon["total"]:,}원',
+            f'일 평균: {mon["daily_avg"]:,}원',
+            f'예상 마감: ~{mon["projected"]:,}원',
+        ],
+    })
 
     if anomalies:
-        for a in anomalies:
-            lines.append(a)
+        sections.append({
+            'title': '━━━ 이상 감지 ━━━',
+            'lines': anomalies,
+        })
     else:
-        lines.append('✅ 이상 없음')
-    lines.append('')
+        sections.append({
+            'title': '━━━ 이상 감지 ━━━',
+            'lines': ['✅ 이상 없음'],
+        })
 
     tomorrow = target_date + timedelta(days=1)
     tmr_wd = WEEKDAY_KO[tomorrow.weekday()]
-    lines.append(f'🌤️ 내일 환경 ({tomorrow.month}/{tomorrow.day} {tmr_wd})')
+    env_lines = []
     if env_tomorrow:
         parts = []
         if env_tomorrow['holiday_flag']:
@@ -393,9 +413,9 @@ def format_telegram(report):
             parts.append(f'📚 시험 점수 +{env_tomorrow["exam_score"]}')
         if env_tomorrow['festival_flag']:
             parts.append(f'🎪 {env_tomorrow["festival_name"]}')
-        lines.append('   ' + ('  '.join(parts) if parts else '데이터 없음'))
+        env_lines.append('  '.join(parts) if parts else '데이터 없음')
     else:
-        lines.append('   데이터 없음 (이브 미수집)')
+        env_lines.append('데이터 없음 (이브 미수집)')
 
     if tomorrow_forecast:
         tf = tomorrow_forecast
@@ -406,30 +426,39 @@ def format_telegram(report):
             f'A2 {room_counts.get("A2", 0)}',
             f'B {room_counts.get("B", 0)}',
         ]
-        lines.append('')
-        lines.append('🔮 내일 예측')
-        lines.append(f'   예상 매출: {tf["yhat"]:,}원  ({tf["yhat_lower"]:,}~{tf["yhat_upper"]:,}원)')
-        lines.append(
-            f'   예약 기준: {tf["reservation_count"]}건 / {tf["reservation_booked_hours"]:.1f}h'
+        env_lines.append('')
+        env_lines.append(
+            f'예상 매출: {tf["yhat"]:,}원 ({tf["yhat_lower"]:,}~{tf["yhat_upper"]:,}원)'
+        )
+        env_lines.append(
+            f'예약 기준: {tf["reservation_count"]}건 / {tf["reservation_booked_hours"]:.1f}h'
             f' / 밀도 {tf["reservation_density"]*100:.0f}% / 확신도 {conf_pct}%'
         )
         if tf['reservation_unique_rooms'] > 0 or tf['reservation_peak_overlap'] > 0:
-            lines.append(
-                f'   구조: {tf["reservation_unique_rooms"]}룸 / 피크겹침 {tf["reservation_peak_overlap"]}건'
+            env_lines.append(
+                f'구조: {tf["reservation_unique_rooms"]}룸 / 피크겹침 {tf["reservation_peak_overlap"]}건'
                 f' / 평균 {tf["reservation_avg_duration_hours"]:.1f}h'
             )
         if any(room_counts.values()):
-            lines.append(f'   룸 분포: {" / ".join(room_bits)}')
+            env_lines.append(f'룸 분포: {" / ".join(room_bits)}')
         if tf['reservation_morning_count'] or tf['reservation_afternoon_count'] or tf['reservation_evening_count']:
-            lines.append(
-                f'   시간대: 오전 {tf["reservation_morning_count"]} /'
+            env_lines.append(
+                f'시간대: 오전 {tf["reservation_morning_count"]} /'
                 f' 오후 {tf["reservation_afternoon_count"]} / 저녁 {tf["reservation_evening_count"]}'
             )
         if tf['calibration_adjustment']:
             note_suffix = f' ({", ".join(tf["calibration_notes"])})' if tf['calibration_notes'] else ''
-            lines.append(f'   최근 오차/예약 보정: {tf["calibration_adjustment"]:+,}원{note_suffix}')
+            env_lines.append(f'최근 오차/예약 보정: {tf["calibration_adjustment"]:+,}원{note_suffix}')
+    sections.append({
+        'title': f'━━━ 내일 환경 ({tomorrow.month}/{tomorrow.day} {tmr_wd}) ━━━',
+        'lines': env_lines,
+    })
 
-    return '\n'.join(lines)
+    return build_report(
+        '📊 레베카 일간 현황 리포트',
+        summary=f'📅 {m}월 {day}일 ({wd})',
+        sections=sections,
+    )
 
 
 # ─── 주간 회고 (ska-009) ──────────────────────────────────────────────────────
@@ -625,20 +654,17 @@ def format_weekly_review(report):
     accuracy_health = report.get('accuracy_health')
     next_events   = report['next_events']
 
-    lines = [
-        f'📊 레베카 주간 회고 리포트',
-        f'{"─" * 15}',
-        f'📅 {w_start.month}/{w_start.day}(월) ~ {w_end.month}/{w_end.day}(일)',
-        '',
-    ]
-
-    lines.append(f'💰 주간 매출: {summary["total"]:,}원')
-    lines.append(f'   일 평균:  {summary["avg"]:,}원 ({summary["days"]}영업일)')
-    lines.append(f'   총 예약:  {summary["reservations"]}건')
-    lines.append('')
+    sections = [{
+        'title': '━━━ 주간 매출 ━━━',
+        'lines': [
+            f'💰 주간 매출: {summary["total"]:,}원',
+            f'일 평균: {summary["avg"]:,}원 ({summary["days"]}영업일)',
+            f'총 예약: {summary["reservations"]}건',
+        ],
+    }]
 
     # 📊 이번 주 예측 정확도 (작업 7-2: 컴팩트 MAPE 블록)
-    lines.append('📊 이번 주 예측 정확도')
+    accuracy_lines = []
     if accuracy_list:
         valid = [a for a in accuracy_list if a['mape'] is not None]
 
@@ -654,7 +680,7 @@ def format_weekly_review(report):
             else:
                 mape_parts.append(f'{wd} N/A')
         if mape_parts:
-            lines.append('   일별 MAPE: ' + ' / '.join(mape_parts))
+            accuracy_lines.append('일별 MAPE: ' + ' / '.join(mape_parts))
 
         # 주간 평균 MAPE
         if valid:
@@ -662,17 +688,17 @@ def format_weekly_review(report):
             grade = ('✅ 양호' if avg_mape <= 10
                      else ('🟡 주의' if avg_mape <= 20
                            else '🔴 모델 검토 필요'))
-            lines.append(f'   주간 평균 MAPE: {avg_mape:.1f}% {grade}')
+            accuracy_lines.append(f'주간 평균 MAPE: {avg_mape:.1f}% {grade}')
             if accuracy_health:
                 bias = accuracy_health['avg_bias']
                 bias_sign = '+' if bias >= 0 else ''
-                lines.append(f'   평균 편향: {bias_sign}{bias:,}원')
+                accuracy_lines.append(f'평균 편향: {bias_sign}{bias:,}원')
                 worst_weekday = accuracy_health.get('worst_weekday')
                 if worst_weekday:
                     ww_bias = worst_weekday['avg_bias']
                     ww_sign = '+' if ww_bias >= 0 else ''
-                    lines.append(
-                        f'   취약 요일: {worst_weekday["weekday"]} '
+                    accuracy_lines.append(
+                        f'취약 요일: {worst_weekday["weekday"]} '
                         f'(MAPE {worst_weekday["avg_mape"]:.1f}% / 편향 {ww_sign}{ww_bias:,}원)'
                     )
                 worst_cases = accuracy_health.get('worst_cases') or []
@@ -681,7 +707,7 @@ def format_weekly_review(report):
                     for item in worst_cases:
                         d = date_type.fromisoformat(item['date'])
                         highlights.append(f'{d.month}/{d.day} {item["mape"]:.1f}%')
-                    lines.append('   큰 오차: ' + ' / '.join(highlights))
+                    accuracy_lines.append('큰 오차: ' + ' / '.join(highlights))
 
     elif report.get('forecast_mape'):
         mape_parts = []
@@ -692,34 +718,52 @@ def format_weekly_review(report):
             flag = '✅' if m < 10 else ('🟡' if m < 20 else '🔴')
             mape_parts.append(f'{wd} {m:.1f}%{flag}')
         if mape_parts:
-            lines.append('   일별 MAPE: ' + ' / '.join(mape_parts))
+            accuracy_lines.append('일별 MAPE: ' + ' / '.join(mape_parts))
     else:
-        lines.append('   데이터 누적 중 (forecast 실행 후 익일부터 집계)')
-    lines.append('')
+        accuracy_lines.append('데이터 누적 중 (forecast 실행 후 익일부터 집계)')
+    sections.append({
+        'title': '━━━ 이번 주 예측 정확도 ━━━',
+        'lines': accuracy_lines,
+    })
 
     kpi = report.get('kpi', {})
     if kpi:
-        lines.append('👥 고객 KPI')
-        lines.append(f'   완료 예약: {kpi["total_completed"]}건 ({kpi["unique_visitors"]}명)')
-        lines.append(f'   재방문율: {kpi["revisit_rate"]}% ({kpi["revisit_count"]}/{kpi["unique_visitors"]}명)')
+        kpi_lines = [
+            f'완료 예약: {kpi["total_completed"]}건 ({kpi["unique_visitors"]}명)',
+            f'재방문율: {kpi["revisit_rate"]}% ({kpi["revisit_count"]}/{kpi["unique_visitors"]}명)',
+        ]
         revisit_flag = '✅' if kpi['revisit_rate'] >= 30 else ('🟡' if kpi['revisit_rate'] >= 15 else '📉')
-        lines[-1] += f'  {revisit_flag}'
+        kpi_lines[-1] += f'  {revisit_flag}'
         success_flag = '✅' if kpi['success_rate'] >= 95 else ('🟡' if kpi['success_rate'] >= 80 else '🔴')
-        lines.append(f'   자동등록 성공률: {kpi["success_rate"]}% ({kpi["total_completed"]}/{kpi["total_completed"]+kpi["failed"]}건)  {success_flag}')
-        lines.append('')
+        kpi_lines.append(
+            f'자동등록 성공률: {kpi["success_rate"]}% ({kpi["total_completed"]}/{kpi["total_completed"]+kpi["failed"]}건)  {success_flag}'
+        )
+        sections.append({
+            'title': '━━━ 고객 KPI ━━━',
+            'lines': kpi_lines,
+        })
 
     next_start = date_type.fromisoformat(report['next_start'])
     next_end   = date_type.fromisoformat(report['next_end'])
-    lines.append(f'🔮 이번주 주요 이벤트 ({next_start.month}/{next_start.day}~{next_end.month}/{next_end.day})')
+    event_lines = []
     if next_events:
         for e in next_events:
             d  = date_type.fromisoformat(e['date'])
             wd = WEEKDAY_KO[d.weekday()]
-            lines.append(f'  📚 {d.month}/{d.day}({wd}) {e["name"]}  (+{e["score"]}점)')
+            event_lines.append(f'📚 {d.month}/{d.day}({wd}) {e["name"]} (+{e["score"]}점)')
     else:
-        lines.append('  특이사항 없음')
+        event_lines.append('특이사항 없음')
 
-    return '\n'.join(lines)
+    sections.append({
+        'title': f'━━━ 이번주 주요 이벤트 ({next_start.month}/{next_start.day}~{next_end.month}/{next_end.day}) ━━━',
+        'lines': event_lines,
+    })
+
+    return build_report(
+        '📊 레베카 주간 회고 리포트',
+        summary=f'📅 {w_start.month}/{w_start.day}(월) ~ {w_end.month}/{w_end.day}(일)',
+        sections=sections,
+    )
 
 
 def run_rebecca_weekly(target_date_str=None, output_json=False):
