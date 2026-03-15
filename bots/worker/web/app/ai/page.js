@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth-context';
 import DataTable from '@/components/DataTable';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { parseClaudeOutput, DynamicCanvas, CANVAS_LABELS } from './canvas';
 
 // ── 복사 버튼 ─────────────────────────────────────────────────────
@@ -1017,6 +1019,7 @@ function ClaudeCodeChat() {
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────
 export default function AIPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('ai');
   // SSR 이후 클라이언트에서 저장된 탭 복원 (localStorage는 서버에서 미지원)
   useEffect(() => {
@@ -1054,6 +1057,37 @@ export default function AIPage() {
   const dataColumns = askResult?.data?.length > 0
     ? Object.keys(askResult.data[0]).map(k => ({ key: k, label: k }))
     : [];
+  const linkedActions = [
+    {
+      title: '근태 이상 징후 확인',
+      body: '지각, 미출근, 휴가 대기 같은 운영 예외를 바로 질의합니다.',
+      prompt: '이번 주 근태 이상 징후를 요약해줘',
+      href: '/attendance',
+    },
+    {
+      title: '부서별 매출 비교',
+      body: '이번 달 매출을 비교하고 바로 매출 관리 메뉴로 넘어갑니다.',
+      prompt: '이번 달 부서별 매출 비교표를 보여줘',
+      href: '/sales',
+    },
+    {
+      title: '지연 프로젝트 점검',
+      body: '마감 임박 프로젝트와 담당자를 정리해서 바로 이어봅니다.',
+      prompt: '지연 중인 프로젝트와 담당자를 정리해줘',
+      href: '/projects',
+    },
+    {
+      title: '승인 대기 흐름 확인',
+      body: '누적 승인 대기와 병목 상태를 보고 승인 inbox로 이동합니다.',
+      prompt: '승인 대기 중인 업무가 얼마나 있는지 알려줘',
+      href: '/approvals',
+    },
+  ];
+
+  function fillQuestion(prompt) {
+    setQuestion(prompt);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div className="max-w-7xl space-y-6">
@@ -1186,6 +1220,25 @@ export default function AIPage() {
 
           <aside className="space-y-6">
             <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.28)]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Prompt Flows</p>
+              <div className="mt-4 space-y-4">
+                {linkedActions.map((item) => (
+                  <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="text-sm font-semibold text-slate-900">{item.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">{item.body}</p>
+                    <div className="mt-3">
+                      <ProposalFlowActions
+                        onPromptFill={() => fillQuestion(item.prompt)}
+                        onSecondary={() => router.push(item.href)}
+                        secondaryLabel="관련 메뉴 열기"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.28)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Analysis Guide</p>
               <div className="mt-4 space-y-4">
                 {[
@@ -1221,7 +1274,7 @@ export default function AIPage() {
                 ].map((prompt) => (
                   <button
                     key={prompt}
-                    onClick={() => setQuestion(prompt)}
+                    onClick={() => fillQuestion(prompt)}
                     className="w-full rounded-2xl border border-slate-700 bg-slate-800 px-4 py-3 text-left text-sm text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700">
                     {prompt}
                   </button>
