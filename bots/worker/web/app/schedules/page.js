@@ -22,6 +22,23 @@ function fmtDatetime(ts) {
   return new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
+function toDateTimeLocal(ts) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDateTimeLocal(value) {
+  if (!value) return null;
+  return new Date(value).toISOString();
+}
+
+function proposalChanged(original, proposal) {
+  if (!original || !proposal) return false;
+  return ['title', 'type', 'start_time', 'location', 'description'].some((key) => (original[key] || '') !== (proposal[key] || ''));
+}
+
 // ── 캘린더 뷰 ──────────────────────────────────────────────────────
 
 function CalendarView({ year, month, schedules }) {
@@ -194,6 +211,12 @@ export default function SchedulesPage() {
   const [schedules, setSchedules] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [showAdd,   setShowAdd]   = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [proposal, setProposal] = useState(null);
+  const [originalProposal, setOriginalProposal] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
 
@@ -214,6 +237,60 @@ export default function SchedulesPage() {
   const nextMonth = () => {
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
+  };
+
+  const createProposal = async (payload) => {
+    setProposalLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const data = await api.post('/schedules/proposals', payload);
+      setProposal(data.proposal || null);
+      setOriginalProposal(data.proposal || null);
+      if (payload.prompt) setPrompt('');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handlePromptSubmit = async () => {
+    if (!prompt.trim()) return;
+    await createProposal({ prompt });
+  };
+
+  const handleConfirmProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalLoading(true);
+    setError('');
+    try {
+      await api.post(`/schedules/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      setNotice('일정 제안을 확정했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handleRejectProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalLoading(true);
+    setError('');
+    try {
+      await api.post(`/schedules/proposals/${proposal.feedback_session_id}/reject`, {});
+      setNotice('일정 제안을 반려했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setProposalLoading(false);
+    }
   };
 
   const deleteSchedule = async (scheduleId) => {
@@ -237,6 +314,184 @@ export default function SchedulesPage() {
         suggestions={['오늘 일정 보여줘', '내일 오전 10시 업체 미팅 잡아줘', '방금 일정 11시로 변경해줘']}
         allowUpload
       />
+      <div className="card space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-slate-500">일정 자연어 입력</p>
+            <p className="text-sm text-slate-600 mt-1">
+              예: `내일 오전 10시 업체 미팅 잡아줘`, `오늘 오후 3시 리마인더 추가해줘`
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            확인 결과 창 기반 피드백 수집
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {['오늘 오후 3시 팀 회의 잡아줘', '내일 오전 10시 업체 미팅 잡아줘', '모레 오후 1시 리마인더 추가해줘'].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setPrompt(item)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <textarea
+            className="input-base min-h-[92px]"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
+          />
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handlePromptSubmit}
+              disabled={proposalLoading || !prompt.trim()}
+            >
+              {proposalLoading ? '제안 생성 중...' : '일정 제안 만들기'}
+            </button>
+            <button className="btn-secondary" type="button" onClick={() => setShowAdd(true)}>
+              직접 입력 모달 열기
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {notice}
+          </div>
+        )}
+      </div>
+
+      {proposal && (
+        <div className="card space-y-4 border-sky-200 bg-sky-50/40">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-sky-700">확인 결과 창</p>
+              <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
+              <p className="text-sm text-slate-600 mt-1">
+                자연어 입력을 일정 제안으로 해석했습니다. 제목, 시간, 장소를 확인한 뒤 확정하세요.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 text-right">
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
+              </span>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs font-semibold text-slate-500">제목</span>
+              <input
+                className="input-base"
+                value={proposal.title || ''}
+                onChange={(e) => setProposal((prev) => ({ ...prev, title: e.target.value, summary: `${e.target.value} · ${fmtDatetime(prev.start_time)}` }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">유형</span>
+              <select
+                className="input-base"
+                value={proposal.type}
+                onChange={(e) => setProposal((prev) => ({ ...prev, type: e.target.value }))}
+              >
+                {Object.entries(TYPE_CONFIG).map(([key, value]) => (
+                  <option key={key} value={key}>{value.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">시작 일시</span>
+              <input
+                type="datetime-local"
+                className="input-base"
+                value={toDateTimeLocal(proposal.start_time)}
+                onChange={(e) => setProposal((prev) => ({
+                  ...prev,
+                  start_time: fromDateTimeLocal(e.target.value),
+                  summary: `${prev.title} · ${fmtDatetime(fromDateTimeLocal(e.target.value))}`,
+                }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">장소</span>
+              <input
+                className="input-base"
+                value={proposal.location || ''}
+                onChange={(e) => setProposal((prev) => ({ ...prev, location: e.target.value }))}
+                placeholder="장소"
+              />
+            </label>
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs font-semibold text-slate-500">설명</span>
+              <textarea
+                className="input-base min-h-[88px]"
+                value={proposal.description || ''}
+                onChange={(e) => setProposal((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="필요하면 일정 설명을 남길 수 있습니다."
+              />
+            </label>
+          </div>
+
+          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+              <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+              <div className="mt-3 space-y-2">
+                {proposal.similar_cases.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{item.summary || '유사 일정 사례'}</p>
+                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                        유사도 {(item.similarity * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
+              {proposalLoading ? '확정 중...' : '이대로 확정'}
+            </button>
+            <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
+              제안 반려
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setProposal(null);
+                setOriginalProposal(null);
+                setError('');
+              }}
+              disabled={proposalLoading}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📅 일정 관리</h1>
         <button className="btn-primary text-sm" onClick={() => setShowAdd(true)}>+ 일정 추가</button>
