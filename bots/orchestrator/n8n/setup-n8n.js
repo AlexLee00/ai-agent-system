@@ -91,18 +91,31 @@ async function createCredential(name, type, data) {
 // ─── 워크플로우 생성 ────────────────────────────────────────────────────────
 
 async function createWorkflow(workflow) {
-  // 이름 중복 체크
   const list = await request('GET', '/rest/workflows');
-  if (list.body?.data?.find(w => w.name === workflow.name)) {
-    console.log(`  ⏭️  워크플로우 "${workflow.name}" 이미 존재 — 스킵`);
-    return;
+  const existing = list.body?.data?.find(w => w.name === workflow.name);
+
+  if (existing?.id) {
+    const deactivated = await request('POST', `/rest/workflows/${existing.id}/deactivate`);
+    if (deactivated.status === 200) {
+      console.log(`  ⏸️  워크플로우 비활성화: "${workflow.name}" (id: ${existing.id})`);
+    }
+
+    const archived = await request('POST', `/rest/workflows/${existing.id}/archive`);
+    if (archived.status === 200) {
+      console.log(`  📦 워크플로우 아카이브: "${workflow.name}" (id: ${existing.id})`);
+    }
+
+    const deleted = await request('DELETE', `/rest/workflows/${existing.id}`);
+    if (deleted.status !== 200) {
+      throw new Error(`기존 워크플로우 삭제 실패: ${JSON.stringify(deleted.body)}`);
+    }
+    console.log(`  🗑️  기존 워크플로우 삭제: "${workflow.name}" (id: ${existing.id})`);
   }
 
   const r = await request('POST', '/rest/workflows', workflow);
   if (r.status !== 200) throw new Error(`워크플로우 생성 실패: ${JSON.stringify(r.body)}`);
   console.log(`  ✅ 워크플로우 생성: "${workflow.name}" (id: ${r.body.data?.id})`);
 
-  // 워크플로우 활성화 (versionId 필요 — n8n 2.x)
   const id = r.body.data?.id;
   if (id) {
     const det = await request('GET', `/rest/workflows/${id}`);
@@ -311,7 +324,7 @@ return [{
         position: [680, 200],
         parameters: {
           chatId: CHAT_ID,
-          text:   '🚨 <b>CRITICAL 에스컬레이션</b>\\n───────────────────\\n서비스: {{ $json.body?.service || $json.body?.label || "미상" }}\\n상태: {{ $json.body?.status || $json.body?.message || "이슈 발생" }}\\n감지: {{ new Date().toLocaleTimeString("ko-KR", {timeZone:"Asia/Seoul"}) }}\\n{{ $json.body?.detail || "" }}\\n───────────────────\\n자동 복구: 독터에게 지시 완료',
+          text:   '={{ ["🚨 <b>CRITICAL 알림</b>", ($json.body?.message || $json.body?.status || $json.body?.label || "이슈 발생"), ($json.body?.detail || ""), ("서비스: " + ($json.body?.service || $json.body?.label || "미상")), ("감지: " + (new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" })))].filter(Boolean).join("\\n\\n") }}',
           additionalFields: {
             parse_mode:       'HTML',
             message_thread_id: String(TOPICS.emergency || TOPICS.claude_lead || ''),
