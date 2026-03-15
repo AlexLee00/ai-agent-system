@@ -69,6 +69,10 @@ const {
 } = require('../../../packages/core/lib/intent-core');
 const {
   buildHealthReport,
+  sortHealthRows,
+  buildHealthSummaryLines,
+  buildHealthDetailLines,
+  buildHealthBriefingLines,
   buildHealthDecisionSection,
 } = require('../../../packages/core/lib/health-core');
 const {
@@ -1272,10 +1276,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     reasons.push(`스카 예측 리스크: ${(skaForecastTuning.reasons || []).slice(0, 2).join(', ')}`);
   }
 
+  const sortedRows = sortHealthRows(rows, getOpsHealthPriority);
+  const alertRows = sortedRows.filter((row) => row.hasWarn);
+
   if (mode === 'briefing') {
-    const alertRows = rows
-      .filter((row) => row.hasWarn)
-      .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'));
     if (alertRows.length === 0) {
       return [
         '🧭 통합 운영 헬스 브리핑',
@@ -1295,10 +1299,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     };
 
     const lines = ['🧭 통합 운영 헬스 브리핑', ''];
-    for (const row of alertRows) {
-      lines.push(`⚠️ ${row.title}: ${row.summary}`);
-      lines.push(`   확인: ${actionMap[row.title] || '/ops-health'}`);
-    }
+    lines.push(...buildHealthBriefingLines(alertRows, actionMap, '/ops-health'));
     lines.push('');
     lines.push(...buildHealthDecisionSection({
       title: '■ 우선 조치',
@@ -1313,9 +1314,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   }
 
   if (mode === 'alerts') {
-    const alertRows = rows
-      .filter((row) => row.hasWarn)
-      .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'));
     if (alertRows.length === 0) {
       return [
         '🧭 통합 운영 헬스 경고',
@@ -1327,11 +1325,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     }
 
     const lines = ['🧭 통합 운영 헬스 경고', ''];
-    for (const row of alertRows) {
-      lines.push(`⚠️ ${row.title}: ${row.summary}`);
-      lines.push(row.detail);
-      lines.push('');
-    }
+    lines.push(...buildHealthSummaryLines(alertRows));
+    lines.push('');
+    lines.push(...buildHealthDetailLines(alertRows));
+    lines.push('');
     lines.push(...buildHealthDecisionSection({
       title: '■ 운영 판단',
       recommended: true,
@@ -1346,9 +1343,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
 
   if (mode === 'summary') {
     const lines = ['🧭 통합 운영 헬스 요약', ''];
-    for (const row of [...rows].sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))) {
-      lines.push(`${row.hasWarn ? '⚠️' : '✅'} ${row.title}: ${row.summary}`);
-    }
+    lines.push(...buildHealthSummaryLines(sortedRows));
     lines.push('');
     lines.push(...buildHealthDecisionSection({
       title: '■ 운영 판단',
@@ -1367,16 +1362,11 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     sections: [
       {
         title: '■ 팀별 요약',
-        lines: [...rows]
-          .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))
-          .map((row) => `  ${row.title}: ${row.summary}`),
+        lines: sortedRows.map((row) => `  ${row.title}: ${row.summary}`),
       },
       {
         title: '■ 상세',
-        lines: [...rows]
-          .sort((a, b) => getOpsHealthPriority(b) - getOpsHealthPriority(a) || a.title.localeCompare(b.title, 'ko'))
-          .map((row) => `${row.title}\n${row.detail}`)
-          .flatMap((line) => line.split('\n')),
+        lines: buildHealthDetailLines(sortedRows),
       },
       {
         title: null,
