@@ -3241,6 +3241,7 @@ app.post('/api/chat/send',
   companyFilter,
   body('message').isString().trim().isLength({ min: 1, max: 1000 }),
   body('session_id').optional().isString().trim().isLength({ min: 8, max: 100 }),
+  body('selected_bot').optional().isString().trim().isIn(['worker', 'emily', 'noah', 'ryan', 'chloe', 'oliver', 'sophie', 'marcus']),
   async (req, res) => {
     if (!validate(req, res)) return;
     try {
@@ -3252,6 +3253,9 @@ app.post('/api/chat/send',
         companyId: req.companyId,
         channel: 'web',
         aiPolicy,
+        agentContext: {
+          selectedBot: req.body.selected_bot || null,
+        },
       });
       res.json(result);
     } catch (e) {
@@ -3286,6 +3290,9 @@ app.post('/api/webhooks/n8n/chat-intake',
         companyId: req.body.company_id,
         channel: 'n8n',
         aiPolicy,
+        agentContext: {
+          selectedBot: req.body.selected_bot || null,
+        },
       });
       res.json({
         ok: true,
@@ -3824,6 +3831,7 @@ function setupChatWebSocket(server) {
 
         const text = String(payload.message || '').trim();
         const sessionId = payload.sessionId ? String(payload.sessionId) : null;
+        const selectedBot = payload.selectedBot ? String(payload.selectedBot).trim().toLowerCase() : null;
         if (!text || text.length > 1000) {
           sendWs(ws, { type: 'chat.error', code: 'WS_INVALID_MESSAGE', message: '메시지는 1~1000자여야 합니다.' });
           return;
@@ -3845,6 +3853,9 @@ function setupChatWebSocket(server) {
             companyId: ws.companyId,
             channel: 'websocket',
             aiPolicy: ws.aiPolicy || null,
+            agentContext: {
+              selectedBot,
+            },
           });
 
           sendWs(ws, {

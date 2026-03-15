@@ -129,6 +129,8 @@ export default function WorkerAIWorkspace({
   showMasterSignalsPanel,
   externalDraft = '',
   draftVersion = 0,
+  botOptions = [],
+  defaultBotKey = 'worker',
 }) {
   const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
@@ -139,6 +141,7 @@ export default function WorkerAIWorkspace({
   const [isPending, setIsPending] = useState(false);
   const [liveStatus, setLiveStatus] = useState('연결 준비 중...');
   const [uploading, setUploading] = useState(false);
+  const [selectedBot, setSelectedBot] = useState(defaultBotKey);
   const bottomRef = useRef(null);
   const wsRef = useRef(null);
   const sessionRef = useRef(null);
@@ -164,6 +167,9 @@ export default function WorkerAIWorkspace({
   const emptyMessage = llmMode === 'off'
     ? '정형 업무 중심으로 빠르게 처리할 수 있습니다. 일정 조회/등록, 직원/매출 요청처럼 명확한 표현을 추천합니다.'
     : '일정, 매출, 인사, 문서 요청을 자연어로 보내면 됩니다.';
+  const availableBots = Array.isArray(botOptions) ? botOptions.filter(Boolean) : [];
+  const resolvedSelectedBot = availableBots.find((item) => item.key === selectedBot) || availableBots[0] || null;
+  const displayAgentName = resolvedSelectedBot?.label || agentName;
 
   useEffect(() => {
     api.get('/chat/sessions')
@@ -197,6 +203,10 @@ export default function WorkerAIWorkspace({
       textareaRef.current?.focus();
     });
   }, [externalDraft, draftVersion]);
+
+  useEffect(() => {
+    setSelectedBot(defaultBotKey);
+  }, [defaultBotKey]);
 
   useEffect(() => {
     sessionRef.current = sessionId;
@@ -320,12 +330,21 @@ export default function WorkerAIWorkspace({
 
     const socket = wsRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'chat.send', message, sessionId: sessionId || null }));
+      socket.send(JSON.stringify({
+        type: 'chat.send',
+        message,
+        sessionId: sessionId || null,
+        selectedBot: resolvedSelectedBot?.key || null,
+      }));
       return;
     }
 
     setLiveStatus('REST 폴백 사용 중');
-    api.post('/chat/send', { message, session_id: sessionId || undefined })
+    api.post('/chat/send', {
+      message,
+      session_id: sessionId || undefined,
+      selected_bot: resolvedSelectedBot?.key || undefined,
+    })
       .then(async data => {
         setIsPending(false);
         if (data.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
@@ -406,7 +425,7 @@ export default function WorkerAIWorkspace({
                   {roleProfile === 'master' ? '마스터' : roleProfile === 'admin' ? '관리자' : '일반사용자'}
                 </span>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-                  {agentName}
+                  {displayAgentName}
                 </span>
                 <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 border border-sky-200">
                   {uiMode === 'prompt_only'
@@ -435,6 +454,27 @@ export default function WorkerAIWorkspace({
                   {item}
                 </button>
               ))}
+            </div>
+          )}
+          {availableBots.length > 1 && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              {availableBots.map((bot) => {
+                const active = (resolvedSelectedBot?.key || defaultBotKey) === bot.key;
+                return (
+                  <button
+                    key={bot.key}
+                    type="button"
+                    onClick={() => setSelectedBot(bot.key)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      active
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {bot.label}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

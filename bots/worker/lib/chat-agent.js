@@ -594,6 +594,35 @@ async function _queueAgentTask({ text, intent, companyId, userId, sessionId }) {
   };
 }
 
+const SUPPORTED_AGENT_TARGETS = new Set([
+  'worker',
+  'emily',
+  'noah',
+  'ryan',
+  'chloe',
+  'oliver',
+  'sophie',
+  'marcus',
+]);
+
+function normalizeSelectedBot(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!SUPPORTED_AGENT_TARGETS.has(normalized)) return null;
+  return normalized;
+}
+
+function applySelectedBotPreference(intent, selectedBot) {
+  if (!selectedBot || selectedBot === 'worker') return intent;
+  if (!intent || typeof intent !== 'object') return { intent: 'route_request', target: selectedBot };
+  if (intent.intent === 'route_request') {
+    return { ...intent, target: selectedBot, source: intent.source || 'selected_bot' };
+  }
+  if (intent.intent === 'unknown') {
+    return { intent: 'route_request', target: selectedBot, source: 'selected_bot' };
+  }
+  return intent;
+}
+
 async function recordWorkerIntentCandidate(text, llmIntent) {
   if (!llmIntent?.intent || llmIntent.intent === 'unknown') return;
 
@@ -711,7 +740,7 @@ async function recordWorkerIntentCandidate(text, llmIntent) {
   });
 }
 
-async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web', aiPolicy = null }) {
+async function handleChatMessage({ text, sessionId, user, companyId, channel = 'web', aiPolicy = null, agentContext = null }) {
   await ensureChatSchema();
 
   let session = sessionId
@@ -738,6 +767,7 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
   let intent = parseRuleIntent(text, session);
   let llmIntent = null;
   const allowLlmAssist = aiPolicy?.llm_mode !== 'off';
+  const selectedBot = normalizeSelectedBot(agentContext?.selectedBot);
   if (intent.intent === 'unknown' && allowLlmAssist) {
     llmIntent = await parseLlmIntent(text);
     if (llmIntent?.intent && llmIntent.intent !== 'unknown') {
@@ -765,6 +795,8 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
       llmIntent: llmIntent?.intent || null,
     });
   }
+
+  intent = applySelectedBotPreference(intent, selectedBot);
 
   let result;
   switch (intent.intent) {
@@ -810,9 +842,10 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
     role: 'assistant',
     content: result.reply,
     intent: intent.intent,
-    metadata: {
+      metadata: {
       ui: result.ui || null,
       target: intent.target || null,
+      selected_bot: selectedBot,
       llm_mode: aiPolicy?.llm_mode || null,
       llm_used: Boolean(llmIntent?.intent && allowLlmAssist),
     },
@@ -824,6 +857,7 @@ async function handleChatMessage({ text, sessionId, user, companyId, channel = '
     intent: intent.intent,
     ui: result.ui || null,
     aiPolicy: aiPolicy || null,
+    selectedBot,
   };
 }
 
