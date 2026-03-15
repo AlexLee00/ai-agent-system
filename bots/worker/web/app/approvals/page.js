@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
 const STATUS_LABELS = { pending: '대기', approved: '승인', rejected: '반려' };
@@ -17,7 +18,35 @@ function normalizeDraft(approval) {
   };
 }
 
+function resolveApprovalAction(approval) {
+  const payload = typeof approval.payload === 'string' ? JSON.parse(approval.payload) : (approval.payload || {});
+  const category = approval.category || '';
+  const action = approval.action || '';
+
+  if (category === 'leave_request') {
+    return { href: '/attendance', prompt: '대기 중인 휴가 신청 내역 보여줘' };
+  }
+  if (category === 'employee_create' || action.includes('직원')) {
+    return { href: '/employees', prompt: '대기 중인 직원 등록 요청 요약해줘' };
+  }
+  if (category === 'payroll' || action.includes('급여')) {
+    return { href: '/payroll', prompt: '대기 중인 급여 관련 승인 요청 보여줘' };
+  }
+  if (approval.target_table === 'agent_tasks') {
+    if (approval.target_bot === 'Noah') return { href: '/attendance', prompt: '대기 중인 근태/인사 승인 요청 보여줘' };
+    if (approval.target_bot === 'Sophie') return { href: '/payroll', prompt: '대기 중인 급여 승인 요청 보여줘' };
+    if (approval.target_bot === 'Chloe') return { href: '/schedules', prompt: '대기 중인 일정 승인 요청 보여줘' };
+    if (approval.target_bot === 'Oliver') return { href: '/sales', prompt: '대기 중인 매출 승인 요청 보여줘' };
+    if (approval.target_bot === 'Ryan') return { href: '/projects', prompt: '대기 중인 프로젝트/업무 승인 요청 보여줘' };
+  }
+  if (payload.date || payload.reason) {
+    return { href: '/attendance', prompt: '대기 중인 근태 관련 승인 요청 보여줘' };
+  }
+  return { href: '/chat', prompt: '대기 중인 승인 요청 요약해줘' };
+}
+
 export default function ApprovalsPage() {
+  const router = useRouter();
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProc] = useState(null);
@@ -120,6 +149,16 @@ export default function ApprovalsPage() {
     { key: 'rejected', label: '반려', count: rejectedCount },
     { key: 'all', label: '전체', count: approvals.length },
   ];
+
+  const openPrompt = (approval) => {
+    const action = resolveApprovalAction(approval);
+    const query = new URLSearchParams({ prompt: action.prompt }).toString();
+    router.push(`${action.href}?${query}`);
+  };
+
+  const openMenu = (approval) => {
+    router.push(resolveApprovalAction(approval).href);
+  };
 
   return (
     <div className="space-y-4">
@@ -249,6 +288,20 @@ export default function ApprovalsPage() {
                     )}
 
                     <p className="text-xs text-slate-400 mt-3">{new Date(approval.created_at).toLocaleString('ko-KR')}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => openPrompt(approval)}
+                        className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                      >
+                        프롬프트에 채우기
+                      </button>
+                      <button
+                        onClick={() => openMenu(approval)}
+                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        관련 메뉴 열기
+                      </button>
+                    </div>
                   </div>
 
                   {approval.status === 'pending' && (

@@ -1,6 +1,6 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
@@ -15,6 +15,7 @@ export default function AppShell({ children }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
+  const [draft, setDraft] = useState('');
 
   useEffect(() => {
     if (loading) return;
@@ -30,6 +31,12 @@ export default function AppShell({ children }) {
       router.push('/dashboard');
     }
   }, [user, loading, pathname, router]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setDraft(params.get('prompt') || '');
+  }, [pathname]);
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
 
@@ -69,6 +76,8 @@ export default function AppShell({ children }) {
                 suggestions={workspace.suggestions}
                 allowUpload={workspace.allowUpload}
                 agentName={workspace.agentName}
+                externalDraft={draft}
+                draftVersion={draft ? draft.length : 0}
               />
             </div>
           )}
