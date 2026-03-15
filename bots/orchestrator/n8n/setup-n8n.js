@@ -187,9 +187,11 @@ const llmCalls = parseInt(llmRow?.calls || 0);
 const trades   = parseInt(tradeRow?.trades || 0);
 const pnl      = parseFloat(tradeRow?.total_pnl || 0).toFixed(2);
 const pnlSign  = parseFloat(pnl) >= 0 ? '+' : '';
+const statusMap = { ok: '정상', warn: '경고', error: '오류', critical: '긴급 장애' };
+const sysLabel = statusMap[String(sysStatus).toLowerCase()] || sysStatus || '미상';
 const sysIcon  = sysStatus === 'ok' ? '✅' : sysStatus === 'warn' ? '⚠️' : '❌';
 const issueStr = errCnt + warnCnt > 0
-  ? \` (WARN \${warnCnt} / CRITICAL \${errCnt})\`
+  ? \` (경고 \${warnCnt} / 긴급 \${errCnt})\`
   : ' — 이상 없음';
 
 return [{
@@ -198,7 +200,7 @@ return [{
           \`───────────────────\\n\` +
           \`📅 \${now}\\n\\n\` +
           \`<b>■ 시스템</b>\\n\` +
-          \`\${sysIcon} 덱스터: \${sysStatus.toUpperCase()}\${issueStr}\\n\\n\` +
+          \`\${sysIcon} 덱스터: \${sysLabel}\${issueStr}\\n\\n\` +
           \`<b>■ LLM 비용 (24h)</b>\\n\` +
           \`합계: $\${llmCost} (\${llmCalls}건)\\n\\n\` +
           \`<b>■ 루나 매매</b>\\n\` +
