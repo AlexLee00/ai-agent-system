@@ -47,6 +47,10 @@ const {
   buildScheduleProposal,
   normalizeScheduleProposal,
 } = require('../lib/schedule-ai');
+const {
+  buildEmployeeProposal,
+  normalizeEmployeeProposal,
+} = require('../lib/employee-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -975,6 +979,116 @@ app.post('/api/employees',
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
+
+app.post('/api/employees/proposals', requireAuth, requireRole('master', 'admin'), async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildEmployeeProposal({ prompt });
+    const sourceRefId = `employee-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'employee_prompt',
+      sourceRefType: 'employee_proposal',
+      sourceRefId,
+      flowCode: 'employee_create',
+      actionCode: 'create_employee',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.name,
+      aiInputPayload: { prompt },
+      aiOutputType: 'employee_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'employee_create',
+      actionCode: 'create_employee',
+      query: `${prompt} ${proposal.name} ${proposal.department} ${proposal.position}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '직원 제안을 생성하지 못했습니다.', code: 'EMPLOYEE_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/employees/proposals/:id/confirm', requireAuth, requireRole('master', 'admin'), async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '직원 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizeEmployeeProposal(req.body.proposal || session.original_snapshot_json || {});
+    if (!proposal.name) {
+      return res.status(400).json({ error: '이름은 필수입니다.', code: 'INVALID_EMPLOYEE_PROPOSAL' });
+    }
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'employee_confirm' },
+    });
+    const row = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.employees (company_id,user_id,name,phone,position,department,hire_date,status,base_salary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING id,company_id,user_id,name,phone,position,department,hire_date,status,base_salary`,
+      [
+        req.user.company_id,
+        null,
+        proposal.name,
+        proposal.phone || null,
+        proposal.position || null,
+        proposal.department || null,
+        proposal.hire_date || null,
+        proposal.status || 'active',
+        proposal.base_salary ? Number(proposal.base_salary) : null,
+      ]);
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'employee_confirm', employee_id: row.id },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      employee_id: row.id,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'employee_confirm', employee_id: row.id },
+    });
+    res.json({ ok: true, employee: row, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '직원 확정 처리 중 오류가 발생했습니다.', code: 'EMPLOYEE_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/employees/proposals/:id/reject', requireAuth, requireRole('master', 'admin'), async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '직원 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'employee_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '직원 제안을 반려하지 못했습니다.', code: 'EMPLOYEE_REJECT_FAILED' });
+  }
+});
 
 app.put('/api/employees/:id',
   requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'employees'),
