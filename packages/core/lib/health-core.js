@@ -78,6 +78,32 @@ function buildHealthSampleSection(title, health, limit = 5) {
   };
 }
 
+function sortHealthRows(rows = [], getPriority = (row) => Number(row?.priority || 0), locale = 'ko') {
+  return [...rows].sort((a, b) => getPriority(b) - getPriority(a) || String(a?.title || '').localeCompare(String(b?.title || ''), locale));
+}
+
+function buildHealthSummaryLines(rows = [], {
+  warnIcon = '⚠️',
+  okIcon = '✅',
+} = {}) {
+  return rows.map((row) => `${row.hasWarn ? warnIcon : okIcon} ${row.title}: ${row.summary}`);
+}
+
+function buildHealthDetailLines(rows = []) {
+  return rows
+    .map((row) => `${row.title}\n${row.detail}`)
+    .flatMap((line) => line.split('\n'));
+}
+
+function buildHealthBriefingLines(rows = [], actionMap = {}, fallbackAction = '/ops-health') {
+  const lines = [];
+  for (const row of rows) {
+    lines.push(`⚠️ ${row.title}: ${row.summary}`);
+    lines.push(`   확인: ${actionMap[row.title] || fallbackAction}`);
+  }
+  return lines;
+}
+
 function buildHealthReport({ title, subtitle = '', sections = [], footer = [] }) {
   const lines = [...buildHealthHeader(title, subtitle)];
   for (const section of sections) {
@@ -100,6 +126,10 @@ module.exports = {
   buildHealthDecision,
   buildHealthCountSection,
   buildHealthSampleSection,
+  sortHealthRows,
+  buildHealthSummaryLines,
+  buildHealthDetailLines,
+  buildHealthBriefingLines,
   buildHealthDecisionSection,
   buildHealthReport,
 };
