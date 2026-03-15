@@ -32,6 +32,9 @@ export default function Sidebar() {
   const showEmployees = showAdminGroup && canAccessMenu(user, 'employees');
   const showPayroll = showAdminGroup && canAccessMenu(user, 'payroll');
   const showApprovals = showAdminGroup && canAccessMenu(user, 'approvals');
+  const showIntents = user?.role === 'master' && canAccessMenu(user, 'intents');
+  const showCompanies = user?.role === 'master' && canAccessMenu(user, 'companies');
+  const showUsers = user?.role === 'master' && canAccessMenu(user, 'users');
 
   return (
     <div className="flex flex-col h-full">
@@ -69,15 +72,13 @@ export default function Sidebar() {
             </div>
             {[
               ...(showAI ? [{ href: '/ai', icon: Bot, label: 'AI 분석' }] : []),
-              ...(user?.role === 'master' ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
+              ...(showIntents ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
               ...(showEmployees ? [{ href: '/employees', icon: Users, label: '직원 관리' }] : []),
               ...(showPayroll ? [{ href: '/payroll', icon: DollarSign, label: '급여 관리' }] : []),
               ...(showWorkforce ? [{ href: '/admin/workforce', icon: Users, label: '직원/급여 관리' }] : []),
               ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
-              ...(user?.role === 'master' ? [
-                { href: '/admin/companies', icon: Building2, label: '업체 관리' },
-                { href: '/admin/users', icon: UserCog, label: '사용자 관리' },
-              ] : []),
+              ...(showCompanies ? [{ href: '/admin/companies', icon: Building2, label: '업체 관리' }] : []),
+              ...(showUsers ? [{ href: '/admin/users', icon: UserCog, label: '사용자 관리' }] : []),
             ].map(item => {
               const active = pathname.startsWith(item.href);
               const Icon   = item.icon;

@@ -133,6 +133,17 @@ const ADMIN_CRUD_POLICY = {
   },
 };
 
+const MASTER_ONLY_POLICY = {
+  member: { operations: [] },
+  admin: { operations: [] },
+  master: {
+    scope: 'global',
+    prompt_enabled: true,
+    result_canvas_enabled: true,
+    operations: ['read', 'prompt', 'dynamic_result', 'system_overview'],
+  },
+};
+
 function buildCrudPolicy(menu) {
   return {
     member: { menu, ...CRUD_ALL_POLICY.member },
@@ -157,6 +168,14 @@ function buildAdminCrudPolicy(menu) {
   };
 }
 
+function buildMasterOnlyPolicy(menu) {
+  return {
+    member: { menu, ...MASTER_ONLY_POLICY.member },
+    admin: { menu, ...MASTER_ONLY_POLICY.admin },
+    master: { menu, ...MASTER_ONLY_POLICY.master },
+  };
+}
+
 const MENU_POLICY = {
   dashboard: DASHBOARD_POLICY,
   attendance: ATTENDANCE_POLICY,
@@ -169,6 +188,9 @@ const MENU_POLICY = {
   settings: SETTINGS_POLICY,
   employees: buildAdminCrudPolicy('employees'),
   payroll: buildAdminCrudPolicy('payroll'),
+  intents: buildMasterOnlyPolicy('intents'),
+  companies: buildMasterOnlyPolicy('companies'),
+  users: buildMasterOnlyPolicy('users'),
   ai: buildAdminOnlyPolicy('ai'),
   workforce: buildAdminOnlyPolicy('workforce'),
   approvals: buildAdminOnlyPolicy('approvals'),
