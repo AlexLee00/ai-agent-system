@@ -253,82 +253,6 @@ export default function JournalsPage() {
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
 
-      {proposal && (
-        <div className="card space-y-4 border border-indigo-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">업무일지 확인 결과</p>
-              <p className="text-sm text-slate-500 mt-1">
-                {proposal.summary || '업무일지 제안'} · {proposal.confidence === 'high' ? '높은 확신' : '검토 필요'}
-              </p>
-            </div>
-            {proposalChanged(originalProposal, proposal) && (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">수정됨</span>
-            )}
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">날짜</label>
-              <input
-                type="date"
-                className="input-base"
-                value={proposal.date || ''}
-                onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
-              <select
-                className="input-base"
-                value={proposal.category || 'general'}
-                onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value }))}
-              >
-                {CATEGORIES.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">내용</label>
-            <textarea
-              className="input-base min-h-[144px]"
-              value={proposal.content || ''}
-              onChange={(e) => setProposal((prev) => ({ ...prev, content: e.target.value }))}
-            />
-          </div>
-          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-800">유사 확정 사례</p>
-              <div className="mt-3 space-y-3">
-                {proposal.similar_cases.map((item) => (
-                  <div key={item.id} className="rounded-xl bg-white px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900">{item.summary || `${item.flow_code}/${item.action_code}`}</p>
-                      <span className="text-xs text-slate-400">{Math.round((item.similarity || 0) * 100)}%</span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="flex gap-3">
-            <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
-              반려
-            </button>
-            <button
-              type="button"
-              className="btn-primary flex-1"
-              disabled={proposalActionLoading || !String(proposal.content || '').trim()}
-              onClick={confirmProposal}
-            >
-              {proposalActionLoading ? '처리 중...' : '확정'}
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="card">
           <p className="text-sm font-medium text-slate-500">오늘의 업무 흐름</p>
@@ -414,6 +338,78 @@ export default function JournalsPage() {
             />
         }
       </div>
+
+      {(proposal || notice) && (
+        <div className="card space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기</p>
+              <p className="text-sm text-slate-600 mt-1">업무일지 초안을 아래 리스트에서 검토하고 확정하거나 반려합니다.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {proposal ? '대기 중 1건' : '최근 처리 완료'}
+            </span>
+          </div>
+
+          {proposal && (
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/30 px-4 py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">업무일지 제안</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {proposal.summary || '업무일지 제안'} · {proposal.confidence === 'high' ? '높은 확신' : '검토 필요'}
+                  </p>
+                </div>
+                {proposalChanged(originalProposal, proposal) && (
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">수정됨</span>
+                )}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">날짜</label>
+                  <input type="date" className="input-base" value={proposal.date || ''} onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+                  <select className="input-base" value={proposal.category || 'general'} onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value }))}>
+                    {CATEGORIES.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">내용</label>
+                <textarea className="input-base min-h-[144px]" value={proposal.content || ''} onChange={(e) => setProposal((prev) => ({ ...prev, content: e.target.value }))} />
+              </div>
+              {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-800">유사 확정 사례</p>
+                  <div className="mt-3 space-y-3">
+                    {proposal.similar_cases.map((item) => (
+                      <div key={item.id} className="rounded-xl bg-white px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-slate-900">{item.summary || `${item.flow_code}/${item.action_code}`}</p>
+                          <span className="text-xs text-slate-400">{Math.round((item.similarity || 0) * 100)}%</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
+                  반려
+                </button>
+                <button type="button" className="btn-primary flex-1" disabled={proposalActionLoading || !String(proposal.content || '').trim()} onClick={confirmProposal}>
+                  {proposalActionLoading ? '처리 중...' : '확정'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 보기 모달 */}
       <Modal open={viewModal} onClose={() => setViewModal(false)} title="업무일지 상세">

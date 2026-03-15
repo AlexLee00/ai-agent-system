@@ -256,115 +256,6 @@ export default function SalesPage() {
         {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
       </div>
 
-      {proposal && (
-        <div className="card space-y-4 border-sky-200 bg-sky-50/40">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-sky-700">확인 결과 창</p>
-              <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
-              <p className="text-sm text-slate-600 mt-1">
-                자연어 입력을 매출 등록 제안으로 해석했습니다. 금액과 카테고리, 날짜를 확인한 뒤 확정하세요.
-              </p>
-            </div>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
-              ? 'border-amber-200 bg-amber-50 text-amber-700'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-              {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
-            </span>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">금액</span>
-              <input
-                className="input-base"
-                type="number"
-                min="1"
-                value={proposal.amount || ''}
-                onChange={(e) => setProposal((prev) => ({
-                  ...prev,
-                  amount: e.target.value,
-                  summary: `${prev.date} ${prev.category || '기타'} 매출 ₩${Number(e.target.value || 0).toLocaleString()} 등록 제안`,
-                }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">카테고리</span>
-              <input
-                className="input-base"
-                value={proposal.category || ''}
-                onChange={(e) => setProposal((prev) => ({
-                  ...prev,
-                  category: e.target.value,
-                  summary: `${prev.date} ${e.target.value || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안`,
-                }))}
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">날짜</span>
-              <input
-                className="input-base"
-                type="date"
-                value={proposal.date || ''}
-                onChange={(e) => setProposal((prev) => ({
-                  ...prev,
-                  date: e.target.value,
-                  summary: `${e.target.value} ${prev.category || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안`,
-                }))}
-              />
-            </label>
-            <label className="space-y-1 md:col-span-2">
-              <span className="text-xs font-semibold text-slate-500">메모</span>
-              <input
-                className="input-base"
-                value={proposal.description || ''}
-                onChange={(e) => setProposal((prev) => ({ ...prev, description: e.target.value }))}
-              />
-            </label>
-          </div>
-
-          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
-              <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
-              <div className="mt-3 space-y-2">
-                {proposal.similar_cases.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium text-slate-900">{item.summary || '유사 매출 등록 사례'}</p>
-                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
-                        유사도 {(item.similarity * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
-              {proposalLoading ? '확정 중...' : '이대로 확정'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
-              제안 반려
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setProposal(null);
-                setOriginalProposal(null);
-                setError('');
-              }}
-              disabled={proposalLoading}
-            >
-              닫기
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="card">
           <p className="text-sm font-medium text-slate-500">매출 운영 요약</p>
@@ -417,6 +308,87 @@ export default function SalesPage() {
               <button onClick={openModal} className="btn-primary text-sm" disabled={!canCreateSales}>
                 + 매출 등록하기
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(proposal || notice) && (
+        <div className="card space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기</p>
+              <p className="text-sm text-slate-600 mt-1">매출 등록 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {proposal ? '대기 중 1건' : '최근 처리 완료'}
+            </span>
+          </div>
+
+          {proposal && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-sky-700">매출 등록 제안</p>
+                  <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
+                  <p className="text-sm text-slate-600 mt-1">자연어 입력을 매출 등록 제안으로 해석했습니다. 금액과 카테고리, 날짜를 확인한 뒤 확정하세요.</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                  {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+                </span>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">금액</span>
+                  <input className="input-base" type="number" min="1" value={proposal.amount || ''} onChange={(e) => setProposal((prev) => ({ ...prev, amount: e.target.value, summary: `${prev.date} ${prev.category || '기타'} 매출 ₩${Number(e.target.value || 0).toLocaleString()} 등록 제안` }))} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">카테고리</span>
+                  <input className="input-base" value={proposal.category || ''} onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value, summary: `${prev.date} ${e.target.value || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안` }))} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">날짜</span>
+                  <input className="input-base" type="date" value={proposal.date || ''} onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value, summary: `${e.target.value} ${prev.category || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안` }))} />
+                </label>
+                <label className="space-y-1 md:col-span-2">
+                  <span className="text-xs font-semibold text-slate-500">메모</span>
+                  <input className="input-base" value={proposal.description || ''} onChange={(e) => setProposal((prev) => ({ ...prev, description: e.target.value }))} />
+                </label>
+              </div>
+
+              {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+                  <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+                  <div className="mt-3 space-y-2">
+                    {proposal.similar_cases.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-slate-900">{item.summary || '유사 매출 등록 사례'}</p>
+                          <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                            유사도 {(item.similarity * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
+                  {proposalLoading ? '확정 중...' : '이대로 확정'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
+                  제안 반려
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => { setProposal(null); setOriginalProposal(null); setError(''); }} disabled={proposalLoading}>
+                  닫기
+                </button>
+              </div>
             </div>
           )}
         </div>
