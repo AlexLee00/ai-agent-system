@@ -88,3 +88,5 @@
 - 결과 JSON shape는 기존과 호환
 - launchd/restart 계열은 로컬 fallback 반드시 유지
 - `n8n` 장애 시 커맨더 전체가 멈추면 안 됨
+- 현재 로컬 `n8n`은 `healthz`는 정상이지만 production webhook registry가 404일 수 있으므로,
+  bridge endpoint를 1순위 후보로 유지한다.
