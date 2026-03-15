@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const TYPE_CONFIG = {
@@ -103,7 +105,7 @@ function CalendarView({ year, month, schedules }) {
 
 // ── 리스트 뷰 ─────────────────────────────────────────────────────
 
-function ListView({ schedules, onDelete }) {
+function ListView({ schedules, onDelete, canDelete }) {
   if (!schedules.length) return (
     <div className="text-center py-16 text-gray-400">
       <p className="text-4xl mb-3">📅</p>
@@ -125,10 +127,12 @@ function ListView({ schedules, onDelete }) {
               </div>
               <p className="text-xs text-gray-500 mt-0.5">{fmtDatetime(s.start_time)}{s.location ? ` · ${s.location}` : ''}</p>
             </div>
-            <button
-              className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              onClick={() => onDelete(s.id)}
-            >✕</button>
+            {canDelete && (
+              <button
+                className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                onClick={() => onDelete(s.id)}
+              >✕</button>
+            )}
           </div>
         );
       })}
@@ -204,6 +208,7 @@ function AddModal({ onClose, onAdded }) {
 // ── 메인 페이지 ───────────────────────────────────────────────────
 
 export default function SchedulesPage() {
+  const { user } = useAuth();
   const now = new Date();
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-based
@@ -305,6 +310,8 @@ export default function SchedulesPage() {
   const sorted = [...schedules].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
   const upcomingCount = sorted.filter(item => new Date(item.start_time) >= new Date()).length;
   const meetingCount = schedules.filter(item => item.type === 'meeting').length;
+  const canCreateSchedules = canPerformMenuOperation(user, 'schedules', 'create');
+  const canDeleteSchedules = canPerformMenuOperation(user, 'schedules', 'delete');
 
   return (
     <div className="space-y-4">
@@ -352,11 +359,11 @@ export default function SchedulesPage() {
               type="button"
               className="btn-primary"
               onClick={handlePromptSubmit}
-              disabled={proposalLoading || !prompt.trim()}
+              disabled={!canCreateSchedules || proposalLoading || !prompt.trim()}
             >
               {proposalLoading ? '제안 생성 중...' : '일정 제안 만들기'}
             </button>
-            <button className="btn-secondary" type="button" onClick={() => setShowAdd(true)}>
+            <button className="btn-secondary" type="button" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>
               직접 입력 모달 열기
             </button>
           </div>
@@ -494,7 +501,7 @@ export default function SchedulesPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📅 일정 관리</h1>
-        <button className="btn-primary text-sm" onClick={() => setShowAdd(true)}>+ 일정 추가</button>
+        <button className="btn-primary text-sm" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>+ 일정 추가</button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
@@ -564,10 +571,10 @@ export default function SchedulesPage() {
       ) : view === 'calendar' ? (
         <CalendarView year={year} month={month} schedules={schedules} />
       ) : (
-        <ListView schedules={sorted} onDelete={deleteSchedule} />
+        <ListView schedules={sorted} onDelete={deleteSchedule} canDelete={canDeleteSchedules} />
       )}
 
-      {showAdd && <AddModal onClose={() => setShowAdd(false)} onAdded={load} />}
+      {showAdd && canCreateSchedules && <AddModal onClose={() => setShowAdd(false)} onAdded={load} />}
     </div>
   );
 }

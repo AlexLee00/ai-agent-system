@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
@@ -14,6 +16,7 @@ function proposalChanged(original, proposal) {
 }
 
 export default function EmployeesPage() {
+  const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading]    = useState(true);
   const [search, setSearch]      = useState('');
@@ -140,6 +143,10 @@ export default function EmployeesPage() {
     </div>
   );
 
+  const canCreateEmployees = canPerformMenuOperation(user, 'employees', 'create') || canPerformMenuOperation(user, 'workforce', 'create');
+  const canUpdateEmployees = canPerformMenuOperation(user, 'employees', 'update') || canPerformMenuOperation(user, 'workforce', 'update');
+  const canDeleteEmployees = canPerformMenuOperation(user, 'employees', 'delete') || canPerformMenuOperation(user, 'workforce', 'delete');
+
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
@@ -150,7 +157,7 @@ export default function EmployeesPage() {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">👥 직원 관리</h1>
-        <button className="btn-primary text-sm" onClick={openNew}>+ 직원 추가</button>
+        <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateEmployees}>+ 직원 추가</button>
       </div>
 
       <div className="card space-y-4">
@@ -187,10 +194,10 @@ export default function EmployeesPage() {
             placeholder="직원 등록 요청을 자연어로 입력하세요."
           />
           <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={createProposal} disabled={proposalLoading || !prompt.trim()}>
+            <button type="button" className="btn-primary" onClick={createProposal} disabled={!canCreateEmployees || proposalLoading || !prompt.trim()}>
               {proposalLoading ? '제안 생성 중...' : '직원 제안 만들기'}
             </button>
-            <button type="button" className="btn-secondary" onClick={openNew}>
+            <button type="button" className="btn-secondary" onClick={openNew} disabled={!canCreateEmployees}>
               직접 입력 모달 열기
             </button>
           </div>
@@ -300,8 +307,8 @@ export default function EmployeesPage() {
               emptyNode={emptyNode}
               actions={row => (
                 <div className="flex gap-2">
-                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
-                  <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+                  {canUpdateEmployees && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
+                  {canDeleteEmployees && <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
                 </div>
               )}
             />

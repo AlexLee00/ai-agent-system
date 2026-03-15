@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
@@ -24,6 +26,7 @@ function proposalChanged(original, proposal) {
 }
 
 export default function JournalsPage() {
+  const { user } = useAuth();
   const [journals,   setJournals]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [filterDate, setFilterDate] = useState('');
@@ -162,6 +165,10 @@ export default function JournalsPage() {
     </div>
   );
 
+  const canCreateJournals = canPerformMenuOperation(user, 'journals', 'create');
+  const canUpdateJournals = canPerformMenuOperation(user, 'journals', 'update');
+  const canDeleteJournals = canPerformMenuOperation(user, 'journals', 'delete');
+
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
@@ -172,7 +179,7 @@ export default function JournalsPage() {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📝 업무 관리</h1>
-        <button className="btn-primary text-sm" onClick={openNew}>+ 등록</button>
+        <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateJournals}>+ 등록</button>
       </div>
 
       <div className="card space-y-4">
@@ -190,7 +197,7 @@ export default function JournalsPage() {
           <button
             type="button"
             className="btn-primary lg:w-40"
-            disabled={proposalLoading || !prompt.trim()}
+            disabled={!canCreateJournals || proposalLoading || !prompt.trim()}
             onClick={createProposal}
           >
             {proposalLoading ? '초안 생성 중...' : '초안 만들기'}
@@ -354,8 +361,8 @@ export default function JournalsPage() {
               actions={row => (
                 <div className="flex gap-2">
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => { setViewItem(row); setViewModal(true); }}>보기</button>
-                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
-                  <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+                  {canUpdateJournals && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
+                  {canDeleteJournals && <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
                 </div>
               )}
             />
@@ -388,7 +395,7 @@ export default function JournalsPage() {
             </div>
             <div className="flex gap-3 pt-2">
               <button className="btn-secondary flex-1" onClick={() => setViewModal(false)}>닫기</button>
-              <button className="btn-primary flex-1" onClick={() => { setViewModal(false); openEdit(viewItem); }}>수정</button>
+              {canUpdateJournals && <button className="btn-primary flex-1" onClick={() => { setViewModal(false); openEdit(viewItem); }}>수정</button>}
             </div>
           </div>
         )}
