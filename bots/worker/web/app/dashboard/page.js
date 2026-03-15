@@ -248,8 +248,8 @@ export default function DashboardPage() {
               <p className="text-sm font-medium text-slate-500">운영 대화</p>
               <h2 className="mt-1 text-lg font-semibold text-slate-900">대시보드에서 바로 질의와 지시를 시작합니다</h2>
             </div>
-            <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/chat')}>
-              전체 대화 화면 열기
+            <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/ai')}>
+              AI 분석 열기
             </button>
           </div>
           <WorkerAIWorkspace
@@ -392,8 +392,11 @@ export default function DashboardPage() {
               </p>
             </div>
             {!isMember && (
-              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/chat')}>
-                대화 시작
+              <button
+                className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              >
+                운영 프롬프트로 이동
               </button>
             )}
           </div>
