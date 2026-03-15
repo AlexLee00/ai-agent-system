@@ -5,8 +5,9 @@
 # launchd ai.ska.forecast-weekly (매주 금요일 18:00)
 
 PYTHON=/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python
+NODE=/usr/bin/env node
 FORECAST=/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py
-SENDER=/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/send-telegram.py
+PUBLISHER=/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js
 
 MODE="${1:-daily}"
 
@@ -20,7 +21,17 @@ EXIT_CODE=$?
 cat "$TMPFILE"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    "$PYTHON" "$SENDER" < "$TMPFILE"
+    "$NODE" "$PUBLISHER" \
+      --fromBot=forecast \
+      --team=reservation \
+      --topicTeam=ska \
+      --eventType=report \
+      --alertLevel=1 \
+      --title="스카 예측 ${MODE} 리포트" \
+      --action="상세 확인: /ska-forecast | /ska-review" \
+      --links="예측 헬스::/ska-forecast|튜닝 검토::/ska-review" \
+      --footer="상세 명령: /ska-forecast | /ska-review" \
+      < "$TMPFILE"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] FORECAST (${MODE}) 완료"
 else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ FORECAST (${MODE}) 오류 (exit: $EXIT_CODE)"

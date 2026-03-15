@@ -38,6 +38,7 @@
 - [bots/orchestrator/lib/night-handler.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/night-handler.js)
 - [bots/claude/lib/reporter.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/reporter.js)
 - [bots/investment/team/reporter.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/reporter.js)
+- [packages/core/scripts/publish-python-report.js](/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js)
 
 ## Current Shared Pipeline Layer
 
@@ -70,6 +71,7 @@
 - luna queue report/accuracy alert → reporting-hub notice/report format
 - rebecca daily/weekly text report → shared python report format
 - rebecca daily/weekly delivery → reporting-hub telegram fanout bridge
+- ska forecast/review delivery → shared python reporting bridge
 - reservation/claude/investment 기본 cooldown 정책 적용
 - claude 저우선 안내 quiet-hours 정책 적용
 - claude alert fanout → severity 기반 telegram/n8n 라우팅
