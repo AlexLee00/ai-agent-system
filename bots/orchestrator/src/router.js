@@ -61,7 +61,6 @@ const {
   parseUnrecognizedQuery,
   parsePromotionQuery,
   buildPromotionFamilySummary,
-  buildPromotionEventLines,
   buildUnrecognizedSummary,
   buildUnrecognizedEntryLine,
   buildUnrecognizedCandidateLine,
@@ -70,6 +69,9 @@ const {
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdSection,
   buildPromotionPolicyNoteLines,
+  buildPromotionSummaryLine,
+  buildPromotionFamilySection,
+  buildPromotionEventSection,
   buildUnrecognizedSummaryReport,
   buildUnrecognizedDetailFooter,
   buildPromotionCompactCandidateLine,
@@ -413,14 +415,9 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
     } else if (filters.summaryOnly) {
       const baseRows = await getPromotionFamilyRows(pgPool, { schema, filters, limit: 200 });
       const familyRows = buildPromotionFamilySummary(baseRows);
-      lines.push(`요약: 전체 ${summary?.total_count ?? 0}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
-      lines.push('');
-      lines.push('의도 계열 분포:');
-      for (const stats of familyRows) {
-        lines.push(`  ${stats.family}: ${stats.total}건 (자동 ${stats.applied} / 후보 ${stats.pending} / 누적 ${stats.occurrences}회)`);
-      }
+      lines.push(...buildPromotionFamilySection(familyRows, summary));
     } else if (!filters.eventsOnly) {
-      lines.push(`요약: 전체 ${summary?.total_count ?? rows.length}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`);
+      lines.push(buildPromotionSummaryLine(summary, rows.length));
       lines.push('');
       for (const r of rows) {
         lines.push(...buildPromotionCandidateLine(r));
@@ -430,14 +427,9 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
     }
 
     const events = filters.thresholdsOnly ? [] : await getPromotionEvents(pgPool, { schema, filters, limit: 10 });
-    if (events.length > 0) {
-      lines.push('');
-      lines.push('최근 변경:');
-      lines.push(...buildPromotionEventLines(events));
-    } else if (filters.eventsOnly || filters.eventType || filters.actor) {
-      lines.push('');
-      lines.push('최근 변경: 없음');
-    }
+    lines.push(...buildPromotionEventSection(events, {
+      showEmpty: filters.eventsOnly || filters.eventType || filters.actor,
+    }));
     lines.push('');
     lines.push(...buildPromotionPolicyNoteLines(AUTO_PROMOTE_WINDOW_DAYS));
     return lines.join('\n');
