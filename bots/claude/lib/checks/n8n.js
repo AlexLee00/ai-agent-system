@@ -1,64 +1,50 @@
 'use strict';
 /**
- * checks/n8n.js — n8n 워크플로우 서버 헬스체크
+ * checks/n8n.js — n8n 워크플로우 서버/critical webhook 헬스체크
  */
 
-const http = require('http');
+const {
+  checkHttp,
+  buildResolvedWebhookHealth,
+} = require('../../../../packages/core/lib/health-provider');
 
-const N8N_PORT = 5678;
-const N8N_HOST = 'localhost';
-const TIMEOUT_MS = 5000;
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
+const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 
-/**
- * n8n /healthz 응답 확인
- * @returns {Promise<{ status, label, detail }>}
- */
-function checkN8nHealth() {
-  return new Promise(resolve => {
-    const start = Date.now();
-    const req = http.request(
-      { hostname: N8N_HOST, port: N8N_PORT, path: '/healthz', method: 'GET', timeout: TIMEOUT_MS },
-      res => {
-        let body = '';
-        res.on('data', d => body += d);
-        res.on('end', () => {
-          const ms = Date.now() - start;
-          try {
-            const json = JSON.parse(body);
-            if (json.status === 'ok' && res.statusCode === 200) {
-              resolve({ status: 'ok', label: 'n8n 워크플로우 서버', detail: `응답 ${ms}ms (HTTP 200)` });
-            } else {
-              resolve({ status: 'warn', label: 'n8n 워크플로우 서버', detail: `비정상 응답: ${body.slice(0, 80)}` });
-            }
-          } catch {
-            resolve({ status: 'warn', label: 'n8n 워크플로우 서버', detail: `JSON 파싱 실패 (HTTP ${res.statusCode})` });
-          }
-        });
-      }
-    );
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({ status: 'warn', label: 'n8n 워크플로우 서버', detail: `응답 없음 (${TIMEOUT_MS}ms 타임아웃)` });
-    });
-    req.on('error', e => {
-      const detail = e.code === 'ECONNREFUSED'
-        ? '서버 미실행 (포트 5678 연결 거부)'
-        : e.message.slice(0, 80);
-      resolve({ status: 'warn', label: 'n8n 워크플로우 서버', detail });
-    });
-    req.end();
-  });
-}
-
-/**
- * 덱스터 체크 인터페이스
- */
 async function run() {
-  const result = await checkN8nHealth();
+  const items = [];
+
+  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 5000);
+  items.push({
+    status: n8nHealthy ? 'ok' : 'warn',
+    label: 'n8n 워크플로우 서버',
+    detail: n8nHealthy ? 'healthz 정상' : 'healthz 응답 없음',
+  });
+
+  const criticalWebhook = await buildResolvedWebhookHealth({
+    workflowName: 'CRITICAL 알림 에스컬레이션',
+    pathSuffix: 'critical',
+    defaultUrl: DEFAULT_CRITICAL_WEBHOOK_URL,
+    label: 'n8n critical webhook',
+    body: {
+      severity: 'critical',
+      service: 'claude-health-check',
+      status: 'probe',
+      detail: 'n8n critical webhook health probe',
+    },
+    timeoutMs: 5000,
+  });
+
+  items.push({
+    status: criticalWebhook.warn.length ? 'warn' : 'ok',
+    label: 'n8n critical webhook',
+    detail: criticalWebhook.warn[0] || criticalWebhook.ok[0] || '상태 확인 불가',
+  });
+
   return {
     name: 'n8n 워크플로우',
-    status: result.status,
-    items: [result],
+    status: items.some((item) => item.status === 'warn') ? 'warn' : 'ok',
+    items,
   };
 }
 

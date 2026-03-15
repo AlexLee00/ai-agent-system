@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/mainbot.js",
-    "migrate": "node migrations/002_mainbot.js"
+    "migrate": "node migrations/002_mainbot.js",
+    "check:n8n-critical": "node scripts/check-n8n-critical-path.js"
   },
   "dependencies": {
     "js-yaml": "*"
