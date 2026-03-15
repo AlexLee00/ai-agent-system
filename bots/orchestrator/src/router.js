@@ -47,7 +47,7 @@ const {
   INTENT_HEALTH_TARGETS,
   getTeamIntentMeta,
   buildTeamIntentReportFrame,
-  buildIntentEngineHealthLines,
+  buildIntentEngineHealthReportFrame,
   normalizeIntentText,
   buildAutoLearnPattern,
   summarizeIntentFamily,
@@ -501,16 +501,7 @@ async function buildIntentEngineHealthReport() {
       appliedCount: summary?.applied_count ?? 0,
     };
   }
-  return buildHealthReport({
-    title: '🩺 인텐트 엔진 상태',
-    sections: [
-      { title: '■ 팀별 학습 현황', lines: buildIntentEngineHealthLines(INTENT_HEALTH_TARGETS, summaries) },
-    ],
-    footer: [
-      '조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents',
-      '롤백: /rollback <id> | /luna-rollback <id> | /ska-rollback <id> | /claude-rollback <id>',
-    ],
-  });
+  return buildHealthReport(buildIntentEngineHealthReportFrame(INTENT_HEALTH_TARGETS, summaries));
 }
 
 async function rollbackPromotionTarget(target = '', options = {}) {
