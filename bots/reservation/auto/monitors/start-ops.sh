@@ -156,7 +156,7 @@ cleanup_old() {
 log "🚀 ━━━ OPS 모드 자동 재시작 루프 시작 ━━━━━━━━━━━━━━━━━━━━"
 
 # 픽코 키오스크 모니터 킥스타트 (launchd 30분 주기 + 즉시 1회)
-launchctl kickstart -k gui/$UID/ai.ska.kiosk-monitor 2>/dev/null && \
+launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor 2>/dev/null && \
   log "  🔄 픽코 키오스크 모니터 킥스타트" || \
   log "  ⚠️  픽코 키오스크 모니터 킥스타트 실패 (launchd 미등록?)"
 
