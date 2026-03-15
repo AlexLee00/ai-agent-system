@@ -112,16 +112,17 @@ async function processQueue() {
 
     for (const item of pending) {
       const result = await processItem(item, async (message, processedItems) => {
-        await sendTelegram(message);
+        const ok = await sendTelegram(message);
         try {
           const ids = Array.isArray(processedItems)
             ? processedItems.map(i => i.id)
             : [processedItems.id];
           await pgPool.run('claude', `
-            UPDATE mainbot_queue SET status = 'sent', processed_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+            UPDATE mainbot_queue SET status = $2, processed_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
             WHERE id = ANY($1::int[])
-          `, [ids]);
+          `, [ids, ok ? 'sent' : 'error']);
         } catch {}
+        return ok;
       });
 
       try {
