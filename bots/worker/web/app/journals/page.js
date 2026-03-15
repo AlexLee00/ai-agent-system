@@ -4,6 +4,9 @@ import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
@@ -206,13 +209,43 @@ export default function JournalsPage() {
   const canCreateJournals = canPerformMenuOperation(user, 'journals', 'create');
   const canUpdateJournals = canPerformMenuOperation(user, 'journals', 'update');
   const canDeleteJournals = canPerformMenuOperation(user, 'journals', 'delete');
+  const quickFlows = [
+    {
+      title: '오늘 업무일지 점검',
+      body: '오늘 작성된 업무일지와 누락된 기록을 다시 점검합니다.',
+      onPromptFill: () => refillPrompt('오늘 작성된 업무일지와 누락된 기록을 요약해줘'),
+      onSecondary: () => setFilterDate(todayDate),
+      secondaryLabel: '오늘 필터 적용',
+    },
+    {
+      title: '미팅/보고 정리',
+      body: '미팅, 보고 카테고리 위주로 중요한 기록을 다시 모읍니다.',
+      onPromptFill: () => refillPrompt('최근 미팅과 보고 업무일지를 중심으로 정리해줘'),
+      onSecondary: () => setFilterCat('meeting'),
+      secondaryLabel: '미팅 필터 적용',
+    },
+  ];
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
+      <AdminPageHero
+        title="업무 관리"
+        description="업무일지 초안, 카테고리 필터, 검색과 상세 열람을 한 화면에서 운영합니다."
+        stats={[
+          { label: '전체 기록', value: journals.length || 0, caption: '현재 조회 기준' },
+          { label: '오늘 기록', value: todayCount || 0, caption: todayDate },
+          { label: '분류 수', value: categorySummary.length || 0, caption: '표시된 카테고리' },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">📝 업무 관리</h1>
+        <p className="text-sm font-medium text-slate-600">업무일지 운영 작업</p>
         <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateJournals}>+ 등록</button>
       </div>
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
       <div className="card space-y-4">
         <div>
