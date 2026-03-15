@@ -3,7 +3,7 @@
 const { execFileSync } = require('child_process');
 const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
-const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { createSkaReadService } = require('./ska-read-service');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
@@ -13,20 +13,17 @@ function createSkaCommandHandlers({ pgPool, rag }) {
   async function getCommandWebhookCandidates(command) {
     const scoped = process.env[`N8N_SKA_WEBHOOK_${String(command || '').toUpperCase()}`];
     const shared = process.env.N8N_SKA_COMMAND_WEBHOOK;
-    let resolved = null;
-    try {
-      resolved = await resolveProductionWebhookUrl({
-        workflowName: '스카팀 읽기 명령 intake',
-        method: 'POST',
-        pathSuffix: 'ska-command',
-      });
-    } catch {}
-    const defaults = [
+    return buildWebhookCandidates({
+      workflowName: '스카팀 읽기 명령 intake',
+      method: 'POST',
+      pathSuffix: 'ska-command',
+      configured: [scoped, shared],
+      defaults: [
       'http://localhost:3031/api/webhooks/n8n/ska-command',
       'http://localhost:5678/webhook/ska-command',
       'http://localhost:5678/webhook-test/ska-command',
-    ];
-    return [...new Set([scoped, shared, resolved, ...defaults].filter(Boolean))];
+      ],
+    });
   }
 
   async function runCommandWithN8n(command, args, directRunner) {

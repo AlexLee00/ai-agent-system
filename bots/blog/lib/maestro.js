@@ -13,6 +13,7 @@ const kst = require('../../../packages/core/lib/kst');
 
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 // ─── 상수 ─────────────────────────────────────────────────────────────
 
@@ -211,15 +212,18 @@ function buildDynamicPipeline(postType, history) {
   return { pipeline: nodes, variations };
 }
 
-function _getDefaultWebhookCandidates() {
+async function _getDefaultWebhookCandidates() {
   const configured = process.env.N8N_BLOG_WEBHOOK;
-  const candidates = configured
-    ? [configured]
-    : [
-        'http://localhost:5678/webhook/blog-pipeline',
-        'http://localhost:5678/webhook-test/blog-pipeline',
-      ];
-  return [...new Set(candidates.filter(Boolean))];
+  return buildWebhookCandidates({
+    workflowName: '블로그팀 동적 포스팅',
+    method: 'POST',
+    pathSuffix: 'blog-pipeline',
+    configured: configured ? [configured] : [],
+    defaults: [
+      'http://localhost:5678/webhook/blog-pipeline',
+      'http://localhost:5678/webhook-test/blog-pipeline',
+    ],
+  });
 }
 
 async function _probeN8nHealth() {
@@ -280,7 +284,7 @@ async function run(postType, directRunner = null, payload = {}) {
     _openCircuit('health_unreachable');
     console.warn('  ⚠️ n8n 헬스체크 실패 — 직접 실행 폴백');
   } else {
-    for (const n8nUrl of _getDefaultWebhookCandidates()) {
+    for (const n8nUrl of await _getDefaultWebhookCandidates()) {
       try {
         const res = await fetch(n8nUrl, {
           method:  'POST',

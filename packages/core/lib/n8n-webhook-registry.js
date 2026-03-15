@@ -29,6 +29,30 @@ async function resolveProductionWebhookUrl({
   return `${String(baseUrl).replace(/\/+$/, '')}/webhook/${String(row.webhookPath).replace(/^\/+/, '')}`;
 }
 
+async function buildWebhookCandidates({
+  workflowName,
+  method = 'POST',
+  pathSuffix = '',
+  configured = [],
+  defaults = [],
+} = {}) {
+  let resolved = null;
+  try {
+    resolved = await resolveProductionWebhookUrl({
+      workflowName,
+      method,
+      pathSuffix,
+    });
+  } catch {}
+
+  return [...new Set([
+    ...(Array.isArray(configured) ? configured : [configured]),
+    resolved,
+    ...(Array.isArray(defaults) ? defaults : [defaults]),
+  ].filter(Boolean))];
+}
+
 module.exports = {
   resolveProductionWebhookUrl,
+  buildWebhookCandidates,
 };
