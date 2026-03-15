@@ -6,7 +6,9 @@ import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import Card from '@/components/Card';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
+import { getWorkspaceConfig } from '@/lib/workspace-config';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -17,6 +19,7 @@ export default function DashboardPage() {
   const [loading,      setLoading]      = useState(true);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
+  const workspace = getWorkspaceConfig('/dashboard', user);
 
   useEffect(() => {
     const requests = [
@@ -157,6 +160,21 @@ export default function DashboardPage() {
           일정 관리 열기
         </button>
       </div>
+
+      {canUsePromptWorkspace && (
+        <WorkerAIWorkspace
+          menuKey="dashboard"
+          title={workspace.title}
+          description={workspace.description}
+          suggestions={workspace.suggestions}
+          allowUpload={false}
+          agentName={workspace.agentName}
+          compact
+          showCanvasPanel={false}
+          showQueuePanel={false}
+          showMasterSignalsPanel={false}
+        />
+      )}
 
       {canUsePromptWorkspace && (
         <section className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">

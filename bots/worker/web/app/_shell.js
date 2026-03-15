@@ -53,7 +53,7 @@ export default function AppShell({ children }) {
   if (!user) return null;
 
   const workspace = getWorkspaceConfig(pathname, user);
-  const showGlobalWorkspace = ['ai', 'dashboard'].includes(workspace.menuKey);
+  const showGlobalWorkspace = workspace.menuKey === 'ai';
 
   return (
     <div className="min-h-screen bg-gray-50">
