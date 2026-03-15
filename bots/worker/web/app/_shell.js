@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
 import Header from '@/components/Header';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
-import { canAccessMenu } from '@/lib/menu-access';
+import { canAccessMenu, resolveMenuKey } from '@/lib/menu-access';
 import { getWorkspaceConfig } from '@/lib/workspace-config';
 
 const PUBLIC_PATHS = ['/login', '/change-password'];
@@ -26,8 +26,8 @@ export default function AppShell({ children }) {
     if (user?.must_change_pw && !pathname.startsWith('/change-password')) {
       router.push('/change-password');
     }
-    const topLevelMenu = pathname.split('/')[1];
-    if (user && topLevelMenu && !isPublic && !canAccessMenu(user, topLevelMenu)) {
+    const resolvedMenuKey = resolveMenuKey(pathname);
+    if (user && resolvedMenuKey && !isPublic && !canAccessMenu(user, resolvedMenuKey)) {
       router.push('/dashboard');
     }
   }, [user, loading, pathname, router]);

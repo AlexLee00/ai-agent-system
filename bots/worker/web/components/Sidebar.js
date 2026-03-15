@@ -27,7 +27,6 @@ export default function Sidebar() {
   const visibleItems = listVisibleMenus(user, NAV_ITEMS);
   const showAdminGroup = user?.role === 'admin' || user?.role === 'master';
   const showAI = showAdminGroup && canAccessMenu(user, 'ai');
-  const showWorkforce = showAdminGroup && canAccessMenu(user, 'workforce');
   const showEmployees = showAdminGroup && canAccessMenu(user, 'employees');
   const showPayroll = showAdminGroup && canAccessMenu(user, 'payroll');
   const showApprovals = showAdminGroup && canAccessMenu(user, 'approvals');
@@ -74,7 +73,6 @@ export default function Sidebar() {
               ...(showIntents ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
               ...(showEmployees ? [{ href: '/employees', icon: Users, label: '직원 관리' }] : []),
               ...(showPayroll ? [{ href: '/payroll', icon: DollarSign, label: '급여 관리' }] : []),
-              ...(showWorkforce ? [{ href: '/admin/workforce', icon: Users, label: '직원/급여 관리' }] : []),
               ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
               ...(showCompanies ? [{ href: '/admin/companies', icon: Building2, label: '업체 관리' }] : []),
               ...(showUsers ? [{ href: '/admin/users', icon: UserCog, label: '사용자 관리' }] : []),
