@@ -32,6 +32,7 @@ const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess }
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { getSecret } = require('../lib/secrets');
 const { recalcProgress } = require('../src/ryan');
+const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
@@ -228,6 +229,35 @@ function pagination(req) {
   return { page, limit, offset: (page - 1) * limit, sort, order };
 }
 
+async function getCompanyAiPolicy(companyId) {
+  if (!companyId) return null;
+  return pgPool.get(SCHEMA, `
+    SELECT
+      id,
+      enabled_menus,
+      ai_member_ui_mode,
+      ai_admin_ui_mode,
+      ai_member_llm_mode,
+      ai_admin_llm_mode,
+      ai_confirmation_mode,
+      ai_allow_admin_llm_toggle
+    FROM worker.companies
+    WHERE id = $1
+      AND deleted_at IS NULL
+  `, [companyId]);
+}
+
+async function buildUserResponse(user) {
+  const company = user.role === 'master' ? null : await getCompanyAiPolicy(user.company_id);
+  const ai_policy = resolveAiPolicy({ user, company });
+
+  return {
+    ...user,
+    enabled_menus: user.role === 'master' ? null : (company?.enabled_menus ?? null),
+    ai_policy,
+  };
+}
+
 async function getEmployeeIdForRequest(req) {
   return resolveEmployeeId(req.user.id);
 }
@@ -296,7 +326,8 @@ app.post('/api/auth/login',
 
       const token = generateToken(user);
       const { password_hash: _, ...safeUser } = user;
-      res.json({ token, user: safeUser, must_change_pw: !!user.must_change_pw });
+      const hydratedUser = await buildUserResponse(safeUser);
+      res.json({ token, user: hydratedUser, must_change_pw: !!user.must_change_pw });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
@@ -334,19 +365,13 @@ app.post('/api/auth/register',
 app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
     const user = await pgPool.get(SCHEMA,
-      `SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at FROM worker.users WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+              ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+       FROM worker.users
+       WHERE id = $1 AND deleted_at IS NULL`,
       [req.user.id]);
     if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
-
-    // 업체별 메뉴 설정 포함 (master는 항상 전체 메뉴 → null 반환)
-    let enabled_menus = null;
-    if (user.role !== 'master' && user.company_id) {
-      const comp = await pgPool.get(SCHEMA,
-        `SELECT enabled_menus FROM worker.companies WHERE id = $1`, [user.company_id]);
-      enabled_menus = comp?.enabled_menus ?? null;
-    }
-
-    res.json({ user: { ...user, enabled_menus } });
+    res.json({ user: await buildUserResponse(user) });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
@@ -373,6 +398,73 @@ app.post('/api/auth/change-password',
         [hash, req.user.id]);
       res.json({ ok: true });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+// GET /api/settings/ai-policy
+app.get('/api/settings/ai-policy', requireAuth, async (req, res) => {
+  try {
+    const user = await pgPool.get(SCHEMA, `
+      SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+             ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+      FROM worker.users
+      WHERE id = $1 AND deleted_at IS NULL
+    `, [req.user.id]);
+    if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    const company = await getCompanyAiPolicy(user.company_id);
+    res.json({
+      ai_policy: resolveAiPolicy({ user, company }),
+      company_policy: company ? {
+        ai_member_ui_mode: company.ai_member_ui_mode,
+        ai_admin_ui_mode: company.ai_admin_ui_mode,
+        ai_member_llm_mode: company.ai_member_llm_mode,
+        ai_admin_llm_mode: company.ai_admin_llm_mode,
+        ai_confirmation_mode: company.ai_confirmation_mode,
+        ai_allow_admin_llm_toggle: company.ai_allow_admin_llm_toggle,
+      } : null,
+    });
+  } catch {
+    res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+// PUT /api/settings/ai-policy
+app.put('/api/settings/ai-policy',
+  requireAuth,
+  body('llm_mode').isIn(['off', 'assist', 'full']),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const user = await pgPool.get(SCHEMA, `
+        SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+               ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+        FROM worker.users
+        WHERE id = $1 AND deleted_at IS NULL
+      `, [req.user.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+      const company = await getCompanyAiPolicy(user.company_id);
+      const decision = validateLlmModeForUser(user, company, req.body.llm_mode);
+      if (!decision.ok) {
+        return res.status(403).json({ error: decision.error, code: 'FORBIDDEN' });
+      }
+
+      await pgPool.run(SCHEMA, `
+        UPDATE worker.users
+        SET ai_llm_mode_override = $1,
+            updated_at = NOW()
+        WHERE id = $2
+      `, [decision.llmMode, user.id]);
+
+      const updatedUser = { ...user, ai_llm_mode_override: decision.llmMode };
+      res.json({
+        success: true,
+        ai_policy: resolveAiPolicy({ user: updatedUser, company }),
+      });
+    } catch {
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
   }
 );
 
