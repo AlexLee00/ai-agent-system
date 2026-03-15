@@ -16,7 +16,6 @@ const ICON_MAP = {
   approvals:  CheckSquare,
   settings:   Settings,
   ai:         Bot,
-  workforce:  Users,
 };
 
 function normalizeEnabledMenus(enabledMenus, allMenus) {
@@ -25,9 +24,6 @@ function normalizeEnabledMenus(enabledMenus, allMenus) {
     switch (key) {
       case 'chat':
         return ['journals'];
-      case 'employees':
-      case 'payroll':
-        return ['workforce'];
       case 'documents':
         return ['journals'];
       default:

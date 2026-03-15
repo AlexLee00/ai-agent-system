@@ -94,7 +94,7 @@ function DetailModal({ row, onClose }) {
 
 export default function PayrollPage() {
   const { user } = useAuth();
-  const canManage = canPerformMenuOperation(user, 'payroll', 'create') || canPerformMenuOperation(user, 'workforce', 'create');
+  const canManage = canPerformMenuOperation(user, 'payroll', 'create');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const [yearMonth,    setYearMonth]  = useState(thisMonth);
   const [rows,         setRows]       = useState([]);

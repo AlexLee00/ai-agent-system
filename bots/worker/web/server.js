@@ -746,7 +746,7 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
 
 const MENU_KEYS = [
   'dashboard','attendance','sales','projects','schedules',
-  'journals','settings','ai','approvals','workforce',
+  'journals','settings','ai','approvals',
 ];
 const ALL_MENUS = [
   { key: 'dashboard',  label: '대시보드',  alwaysOn: true },
@@ -758,7 +758,6 @@ const ALL_MENUS = [
   { key: 'settings',   label: '설정',     alwaysOn: true },
   { key: 'ai',         label: 'AI 분석' },
   { key: 'approvals',  label: '승인 관리' },
-  { key: 'workforce',  label: '직원/급여 관리' },
 ];
 
 // GET /api/companies/:id/menus — 업체 메뉴 설정 조회

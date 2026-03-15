@@ -149,9 +149,9 @@ export default function EmployeesPage() {
     </div>
   );
 
-  const canCreateEmployees = canPerformMenuOperation(user, 'employees', 'create') || canPerformMenuOperation(user, 'workforce', 'create');
-  const canUpdateEmployees = canPerformMenuOperation(user, 'employees', 'update') || canPerformMenuOperation(user, 'workforce', 'update');
-  const canDeleteEmployees = canPerformMenuOperation(user, 'employees', 'delete') || canPerformMenuOperation(user, 'workforce', 'delete');
+  const canCreateEmployees = canPerformMenuOperation(user, 'employees', 'create');
+  const canUpdateEmployees = canPerformMenuOperation(user, 'employees', 'update');
+  const canDeleteEmployees = canPerformMenuOperation(user, 'employees', 'delete');
 
   return (
     <div className="space-y-4">
