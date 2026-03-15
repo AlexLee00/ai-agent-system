@@ -1255,6 +1255,51 @@ app.post('/api/attendance/checkout', requireAuth, async (req, res) => {
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
+app.put('/api/attendance/:id',
+  requireAuth, requireRole('master','admin'), companyFilter, auditLog('UPDATE', 'attendance'),
+  async (req, res) => {
+    try {
+      const target = await pgPool.get(SCHEMA,
+        `SELECT company_id FROM worker.attendance WHERE id=$1`,
+        [req.params.id]);
+      if (!target) return res.status(404).json({ error: '근태 기록을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (!await assertCompanyAccess(req, res, target.company_id)) return;
+
+      const { check_in, check_out, status, note } = req.body;
+      const attendance = await pgPool.get(SCHEMA,
+        `UPDATE worker.attendance
+         SET check_in = COALESCE($1, check_in),
+             check_out = COALESCE($2, check_out),
+             status = COALESCE($3, status),
+             note = COALESCE($4, note),
+             updated_at = NOW()
+         WHERE id = $5
+         RETURNING *`,
+        [check_in || null, check_out || null, status || null, note ?? null, req.params.id]);
+      res.json({ attendance });
+    } catch {
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
+  }
+);
+
+app.delete('/api/attendance/:id',
+  requireAuth, requireRole('master','admin'), companyFilter, auditLog('DELETE', 'attendance'),
+  async (req, res) => {
+    try {
+      const target = await pgPool.get(SCHEMA,
+        `SELECT company_id FROM worker.attendance WHERE id=$1`,
+        [req.params.id]);
+      if (!target) return res.status(404).json({ error: '근태 기록을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (!await assertCompanyAccess(req, res, target.company_id)) return;
+      await pgPool.run(SCHEMA, `DELETE FROM worker.attendance WHERE id=$1`, [req.params.id]);
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
+  }
+);
+
 app.post('/api/attendance/proposals', requireAuth, async (req, res) => {
   try {
     const employee = await resolveAttendanceEmployee(req, req.body.employee_id || null);

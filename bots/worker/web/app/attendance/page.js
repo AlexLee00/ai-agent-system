@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
+import Modal from '@/components/Modal';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -50,6 +51,9 @@ export default function AttendancePage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [editRow, setEditRow] = useState(null);
+  const [editForm, setEditForm] = useState({ check_in: '', check_out: '', status: 'present', note: '' });
+  const [editSaving, setEditSaving] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -121,6 +125,50 @@ export default function AttendancePage() {
       setError(e.message);
     } finally {
       setProposalLoading(false);
+    }
+  };
+
+  const openEdit = (row) => {
+    setEditRow(row);
+    setEditForm({
+      check_in: toDateTimeLocal(row.check_in),
+      check_out: toDateTimeLocal(row.check_out),
+      status: row.status || 'present',
+      note: row.note || '',
+    });
+    setError('');
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editRow) return;
+    setEditSaving(true);
+    setError('');
+    try {
+      await api.put(`/attendance/${editRow.id}`, {
+        check_in: fromDateTimeLocal(editForm.check_in),
+        check_out: fromDateTimeLocal(editForm.check_out),
+        status: editForm.status,
+        note: editForm.note,
+      });
+      setNotice('근태 기록을 수정했습니다.');
+      setEditRow(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async (row) => {
+    if (!confirm(`${row.employee_name} 근태 기록을 삭제하시겠습니까?`)) return;
+    try {
+      await api.delete(`/attendance/${row.id}`);
+      setNotice('근태 기록을 삭제했습니다.');
+      load();
+    } catch (e) {
+      setError(e.message);
     }
   };
 
@@ -424,9 +472,70 @@ export default function AttendancePage() {
       <div className="card">
         {loading
           ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
-          : <DataTable columns={columns} data={records} pageSize={10} emptyText="근태 기록 없음" />
+          : <DataTable
+              columns={columns}
+              data={records}
+              pageSize={10}
+              emptyText="근태 기록 없음"
+              actions={!isMember ? (row) => (
+                <>
+                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
+                  <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDeleteRecord(row)}>삭제</button>
+                </>
+              ) : undefined}
+            />
         }
       </div>
+
+      <Modal open={!!editRow} onClose={() => setEditRow(null)} title="근태 기록 수정">
+        <form onSubmit={handleSaveEdit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">출근 시각</label>
+            <input
+              type="datetime-local"
+              className="input-base"
+              value={editForm.check_in}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, check_in: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">퇴근 시각</label>
+            <input
+              type="datetime-local"
+              className="input-base"
+              value={editForm.check_out}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, check_out: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">상태</label>
+            <select
+              className="input-base"
+              value={editForm.status}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))}
+            >
+              <option value="present">출근</option>
+              <option value="late">지각</option>
+              <option value="absent">결근</option>
+              <option value="leave">휴가</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">메모</label>
+            <textarea
+              className="input-base min-h-[88px]"
+              value={editForm.note}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, note: e.target.value }))}
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" className="btn-secondary flex-1" onClick={() => setEditRow(null)}>취소</button>
+            <button type="submit" className="btn-primary flex-1" disabled={editSaving}>
+              {editSaving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
