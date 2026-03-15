@@ -3,6 +3,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 
@@ -348,11 +351,49 @@ export default function SchedulesPage() {
   const sorted = [...schedules].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
   const upcomingCount = sorted.filter(item => new Date(item.start_time) >= new Date()).length;
   const meetingCount = schedules.filter(item => item.type === 'meeting').length;
+  const reminderCount = schedules.filter(item => item.type === 'reminder').length;
   const canCreateSchedules = canPerformMenuOperation(user, 'schedules', 'create');
   const canDeleteSchedules = canPerformMenuOperation(user, 'schedules', 'delete');
+  const quickFlows = [
+    {
+      title: '오늘 일정 요약',
+      body: '오늘 등록된 일정과 빠진 미팅 항목을 다시 점검합니다.',
+      onPromptFill: () => refillPrompt('오늘 일정과 빠진 미팅 항목을 요약해줘'),
+      onSecondary: () => setView('list'),
+      secondaryLabel: '리스트 보기',
+    },
+    {
+      title: '월간 일정 검토',
+      body: '이번 달 일정 밀도와 리마인더 누락 가능성을 확인합니다.',
+      onPromptFill: () => refillPrompt(`${yearMonth} 일정 밀도와 리마인더 누락 가능성을 알려줘`),
+      onSecondary: () => setView('calendar'),
+      secondaryLabel: '캘린더 보기',
+    },
+  ];
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
+      <AdminPageHero
+        title="일정 관리"
+        description="캘린더와 리스트를 오가며 일정, 미팅, 리마인더를 관리합니다."
+        stats={[
+          { label: '이달 일정', value: schedules.length || 0, caption: yearMonth },
+          { label: '미팅', value: meetingCount || 0, caption: 'type=meeting' },
+          { label: '리마인더', value: reminderCount || 0, caption: 'type=reminder' },
+        ]}
+      />
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-slate-600">일정 운영 작업</p>
+        <button className="btn-primary text-sm" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>
+          + 일정 추가
+        </button>
+      </div>
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
+
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
