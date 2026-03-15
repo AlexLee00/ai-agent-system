@@ -22,6 +22,17 @@ export function canAccessMenu(user, key) {
   return isMenuEnabled(user, key) && hasPolicy(user, key);
 }
 
+export function getMenuPolicy(user, key) {
+  if (!user) return null;
+  const normalized = normalizeMenuKey(key);
+  return user?.menu_policy?.[normalized] || null;
+}
+
+export function canPerformMenuOperation(user, key, operation) {
+  const policy = getMenuPolicy(user, key);
+  return Boolean(policy && Array.isArray(policy.operations) && policy.operations.includes(operation));
+}
+
 export function listVisibleMenus(user, items = []) {
   return items.filter((item) => canAccessMenu(user, item.href || item.key));
 }
