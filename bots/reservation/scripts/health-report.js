@@ -27,6 +27,7 @@ const {
   checkHttp,
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
+const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
 const CORE_SERVICES = [
@@ -47,7 +48,7 @@ const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
 
 function buildMonitorHealth() {
   return buildFileActivityHealth({
@@ -64,7 +65,13 @@ async function buildN8nCommandHealth() {
   const ok = [];
   const warn = [];
   const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
-  const webhook = await checkWebhookRegistration(N8N_WEBHOOK_URL, {
+  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+    workflowName: '스카팀 읽기 명령 intake',
+    method: 'POST',
+    pathSuffix: 'ska-command',
+  });
+  const webhookUrl = resolvedWebhookUrl || DEFAULT_N8N_WEBHOOK_URL;
+  const webhook = await checkWebhookRegistration(webhookUrl, {
     command: 'query_today_stats',
     args: { date: new Date().toISOString().slice(0, 10) },
   }, {
@@ -86,6 +93,8 @@ async function buildN8nCommandHealth() {
     ok,
     warn,
     n8nHealthy,
+    webhookUrl,
+    resolvedWebhookUrl,
     webhookRegistered: webhook.registered,
     webhookReason: webhook.reason,
     webhookStatus: webhook.status,
@@ -192,6 +201,8 @@ async function buildReport() {
       webhookRegistered: n8nCommandHealth.webhookRegistered,
       webhookReason: n8nCommandHealth.webhookReason,
       webhookStatus: n8nCommandHealth.webhookStatus,
+      webhookUrl: n8nCommandHealth.webhookUrl,
+      resolvedWebhookUrl: n8nCommandHealth.resolvedWebhookUrl,
     },
     decision,
   };
