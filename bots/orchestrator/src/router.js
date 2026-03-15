@@ -123,6 +123,9 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /mutes    또는 "무음 목록"
   /brief    또는 "야간 브리핑"
   /stability 또는 "시스템 안정성 현황"
+  /ops-health 또는 "통합 운영 헬스"
+  /orchestrator-health 또는 /jay-health 또는 "제이 헬스"
+  /luna-health | /worker-health | /claude-health | /ska-health | /blog-health
 
 🔇 무음 제어
   /mute <대상> <시간>   예) /mute luna 1h
