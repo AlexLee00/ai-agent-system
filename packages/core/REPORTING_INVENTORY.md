@@ -55,10 +55,11 @@
 - investment mainbot queue path → reporting-hub
 - claude telegram alert path → reporting-hub
 - reservation direct telegram path → reporting-hub
+- rag-safe degraded/recovered queue alerts → reporting-hub
 
 ## Next Moves
 
-1. `rag-safe` degraded/recovered 알림을 reporting-hub로 이관
-2. `night-handler` 브리핑 스니펫 생성 전에 reporting-hub event contract 사용
-3. `dexter/rebecca/luna reporter`의 발행 경로를 reporting-hub fanout으로 통일
-4. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
+1. `night-handler` 브리핑 스니펫 생성 전에 reporting-hub event contract 사용
+2. `dexter/rebecca/luna reporter`의 발행 경로를 reporting-hub fanout으로 통일
+3. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
+4. reservation/blog/investment RAG 저장도 reporting-hub target 조합으로 흡수
