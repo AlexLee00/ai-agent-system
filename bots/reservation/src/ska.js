@@ -25,6 +25,7 @@ const {
 const { checkSkaTeamIdentity } = require('../lib/ska-team');
 const { createSkaCommandHandlers } = require('../lib/ska-command-handlers');
 const { createSkaIntentLearning } = require('../lib/ska-intent-learning');
+const { createSkaCommandQueue } = require('../lib/ska-command-queue');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -95,47 +96,13 @@ const HANDLERS = {
   ...createSkaCommandHandlers({ pgPool, rag }),
   analyze_unknown:    handleAnalyzeUnknown,
 };
-
-async function processCommands() {
-  try {
-    const pending = await pgPool.query('claude', `
-      SELECT * FROM bot_commands
-      WHERE to_bot = $1 AND status = 'pending'
-      ORDER BY created_at ASC
-      LIMIT 5
-    `, [BOT_ID]);
-
-    for (const cmd of pending) {
-      await pgPool.run('claude', `
-        UPDATE bot_commands SET status = 'running' WHERE id = $1
-      `, [cmd.id]);
-
-      let result;
-      try {
-        const args = JSON.parse(cmd.args || '{}');
-        const handler = HANDLERS[cmd.command];
-
-        if (!handler) {
-          result = { ok: false, error: `알 수 없는 명령: ${cmd.command}` };
-        } else {
-          result = await Promise.resolve(handler(args));
-        }
-      } catch (e) {
-        result = { ok: false, error: e.message };
-      }
-
-      await pgPool.run('claude', `
-        UPDATE bot_commands
-        SET status = $1, result = $2, done_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
-        WHERE id = $3
-      `, [result.ok ? 'done' : 'error', JSON.stringify(result), cmd.id]);
-
-      console.log(`[스카] ${cmd.command} → ${result.ok ? 'done' : 'error'}`);
-    }
-  } catch (e) {
-    console.error(`[스카] 명령 처리 오류:`, e.message);
-  }
-}
+const commandQueue = createSkaCommandQueue({
+  pgPool,
+  botId: BOT_ID,
+  handlers: HANDLERS,
+  schema: 'claude',
+  limit: 5,
+});
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
 const COMMAND_POLL_MS = 5000;
@@ -151,7 +118,12 @@ async function main() {
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
   while (true) {
-    try { await processCommands(); }
+    try {
+      const processed = await commandQueue.processPendingCommands();
+      for (const row of processed) {
+        console.log(`[스카] ${row.command} → ${row.ok ? 'done' : 'error'}`);
+      }
+    }
     catch (e) { console.error(`[스카] 루프 오류:`, e.message); }
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
