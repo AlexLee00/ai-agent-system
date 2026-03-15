@@ -88,6 +88,7 @@
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
+- archer patch report payload → 표준 `title/summary/details/action/links` 키 적용
 - orchestrator health → reporting payload schema warning 노출
 - reporting health direct view → `/reporting-health`
 - reporting health summary view → `/reporting-health summary`

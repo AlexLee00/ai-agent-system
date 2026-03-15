@@ -214,7 +214,23 @@ function sendTelegram(analysis, runDate) {
   lines.push(`📄 PATCH_REQUEST.md 생성됨 (${totalItems}건 항목)`);
 
   const level = criticalSecurity.length > 0 ? 3 : criticalPatches.length > 0 ? 3 : 2;
-  publishToMainBot({ from_bot: 'archer', event_type: 'report', alert_level: level, message: lines.join('\n') });
+  publishToMainBot({
+    from_bot: 'archer',
+    event_type: 'report',
+    alert_level: level,
+    message: lines.join('\n'),
+    payload: {
+      title: `아처 주간 패치 리포트 (${runDate})`,
+      summary: analysis.summary || `패치 ${patches.length}건 · 보안 ${security.length}건 · LLM ${llmApi.length}건`,
+      details: lines.slice(2),
+      action: '상세 확인: /claude-health',
+      links: [
+        { label: '클로드 헬스', href: '/claude-health' },
+        { label: '운영 헬스', href: '/ops-health alerts' },
+      ],
+      detail: `runDate=${runDate}`,
+    },
+  });
   console.log('  📲 [아처] 제이 큐 발행 완료');
 }
 
