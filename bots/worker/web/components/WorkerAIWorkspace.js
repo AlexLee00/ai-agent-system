@@ -127,6 +127,8 @@ export default function WorkerAIWorkspace({
   showCanvasPanel,
   showQueuePanel,
   showMasterSignalsPanel,
+  externalDraft = '',
+  draftVersion = 0,
 }) {
   const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
@@ -142,6 +144,7 @@ export default function WorkerAIWorkspace({
   const sessionRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const fileRef = useRef(null);
+  const textareaRef = useRef(null);
   const aiPolicy = user?.ai_policy || null;
   const menuPolicy = getMenuPolicy(user, menuKey);
   const uiMode = aiPolicy?.ui_mode || 'prompt_only';
@@ -186,6 +189,14 @@ export default function WorkerAIWorkspace({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isPending]);
+
+  useEffect(() => {
+    if (!externalDraft) return;
+    setInput(externalDraft);
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [externalDraft, draftVersion]);
 
   useEffect(() => {
     sessionRef.current = sessionId;
@@ -473,6 +484,7 @@ export default function WorkerAIWorkspace({
           )}
           <div className="flex gap-3">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
