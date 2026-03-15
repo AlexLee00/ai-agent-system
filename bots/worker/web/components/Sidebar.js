@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { canAccessMenu, listVisibleMenus } from '@/lib/menu-access';
 import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, CheckSquare, Settings,
@@ -22,16 +23,12 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
-  // 업체별 메뉴 필터링 (master는 항상 전체, null이면 전체)
-  const isMaster      = user?.role === 'master';
-  const enabledMenus  = user?.enabled_menus;  // null = 전체
-  const visibleItems  = isMaster || !enabledMenus
-    ? NAV_ITEMS
-    : NAV_ITEMS.filter(item => enabledMenus.includes(item.href.replace('/', '')));
+  const isMaster = user?.role === 'master';
+  const visibleItems = listVisibleMenus(user, NAV_ITEMS);
   const showAdminGroup = user?.role === 'admin' || user?.role === 'master';
-  const showAI = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('ai'));
-  const showWorkforce = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('workforce'));
-  const showApprovals = showAdminGroup && (isMaster || !enabledMenus || enabledMenus.includes('approvals'));
+  const showAI = showAdminGroup && canAccessMenu(user, 'ai');
+  const showWorkforce = showAdminGroup && canAccessMenu(user, 'workforce');
+  const showApprovals = showAdminGroup && canAccessMenu(user, 'approvals');
 
   return (
     <div className="flex flex-col h-full">
