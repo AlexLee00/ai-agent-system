@@ -267,98 +267,6 @@ export default function PayrollPage() {
         </div>
       )}
 
-      {proposal && (
-        <div className="card space-y-4 border-sky-200 bg-sky-50/40">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-sky-700">확인 결과 창</p>
-              <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
-              <p className="text-sm text-slate-600 mt-1">
-                자연어 입력을 급여 계산 제안으로 해석했습니다. 대상 월을 확인한 뒤 계산을 실행하세요.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 text-right">
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
-                {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
-              </span>
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
-                ? 'border-amber-200 bg-amber-50 text-amber-700'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">작업</span>
-              <input className="input-base bg-slate-50" value={proposal.action_label || '급여 계산'} disabled />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-slate-500">대상 월</span>
-              <input
-                type="month"
-                className="input-base"
-                value={proposal.year_month || ''}
-                onChange={(e) => setProposal((prev) => ({
-                  ...prev,
-                  year_month: e.target.value,
-                  summary: `${e.target.value} 급여 계산 제안`,
-                }))}
-              />
-            </label>
-          </div>
-
-          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
-              <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
-              <div className="mt-3 space-y-2">
-                {proposal.similar_cases.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium text-slate-900">{item.summary || '유사 급여 계산 사례'}</p>
-                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
-                        유사도 {(item.similarity * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-4 text-sm text-slate-700">
-            <p className="font-medium text-slate-900">실행 안내</p>
-            <p className="mt-1">
-              확정하면 <strong>{fmtMonth(proposal.year_month)}</strong> 기준으로 재직 직원 급여를 다시 계산하고,
-              해당 월의 급여 테이블을 갱신합니다.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
-              {proposalLoading ? '확정 중...' : '이대로 계산 실행'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
-              제안 반려
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setProposal(null);
-                setOriginalProposal(null);
-                setError('');
-              }}
-              disabled={proposalLoading}
-            >
-              닫기
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 월 선택 + 계산 버튼 */}
       <div className="card flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <div>
@@ -422,6 +330,114 @@ export default function PayrollPage() {
           />
         )}
       </div>
+
+      {(proposal || notice) && (
+        <div className="card space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기</p>
+              <p className="text-sm text-slate-600 mt-1">
+                급여 계산 제안을 아래 리스트에서 검토하고 실행하거나 반려합니다.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+              {proposal ? '대기 중 1건' : '최근 처리 완료'}
+            </span>
+          </div>
+
+          {proposal && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-sky-700">급여 계산 제안</p>
+                  <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
+                  <p className="text-sm text-slate-600 mt-1">
+                    자연어 입력을 급여 계산 제안으로 해석했습니다. 대상 월을 확인한 뒤 계산을 실행하세요.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 text-right">
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                    {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
+                  </span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">작업</span>
+                  <input className="input-base bg-slate-50" value={proposal.action_label || '급여 계산'} disabled />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">대상 월</span>
+                  <input
+                    type="month"
+                    className="input-base"
+                    value={proposal.year_month || ''}
+                    onChange={(e) => setProposal((prev) => ({
+                      ...prev,
+                      year_month: e.target.value,
+                      summary: `${e.target.value} 급여 계산 제안`,
+                    }))}
+                  />
+                </label>
+              </div>
+
+              {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+                  <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+                  <div className="mt-3 space-y-2">
+                    {proposal.similar_cases.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-slate-900">{item.summary || '유사 급여 계산 사례'}</p>
+                          <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                            유사도 {(item.similarity * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-4 text-sm text-slate-700">
+                <p className="font-medium text-slate-900">실행 안내</p>
+                <p className="mt-1">
+                  확정하면 <strong>{fmtMonth(proposal.year_month)}</strong> 기준으로 재직 직원 급여를 다시 계산하고,
+                  해당 월의 급여 테이블을 갱신합니다.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
+                  {proposalLoading ? '확정 중...' : '이대로 계산 실행'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
+                  제안 반려
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setProposal(null);
+                    setOriginalProposal(null);
+                    setError('');
+                  }}
+                  disabled={proposalLoading}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <DetailModal row={selected} onClose={() => setSelected(null)} />
     </div>
