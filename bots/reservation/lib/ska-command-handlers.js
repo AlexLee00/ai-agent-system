@@ -2,8 +2,38 @@
 
 const { execFileSync } = require('child_process');
 const kst = require('../../../packages/core/lib/kst');
+const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
+  const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
+
+  function getCommandWebhookCandidates(command) {
+    const scoped = process.env[`N8N_SKA_WEBHOOK_${String(command || '').toUpperCase()}`];
+    const shared = process.env.N8N_SKA_COMMAND_WEBHOOK;
+    const defaults = [
+      'http://localhost:5678/webhook/ska-command',
+      'http://localhost:5678/webhook-test/ska-command',
+    ];
+    return [...new Set([scoped, shared, ...defaults].filter(Boolean))];
+  }
+
+  async function runCommandWithN8n(command, args, directRunner) {
+    return runWithN8nFallback({
+      circuitName: `ska:${command}`,
+      webhookCandidates: getCommandWebhookCandidates(command),
+      healthUrl: N8N_HEALTH_URL,
+      body: {
+        team: 'ska',
+        command,
+        args: args || {},
+        source: 'ska-commander',
+        requestedAt: new Date().toISOString(),
+      },
+      directRunner,
+      logger: console,
+    });
+  }
+
   async function searchPastCases(issueType, detail) {
     try {
       const query = `${issueType} ${detail}`.slice(0, 200);
@@ -31,7 +61,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     }
   }
 
-  async function handleQueryReservations(args = {}) {
+  async function runLocalQueryReservations(args = {}) {
     const date = args.date || kst.today();
     try {
       const rows = await pgPool.query('reservation', `
@@ -52,7 +82,11 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     }
   }
 
-  async function handleQueryTodayStats(args = {}) {
+  async function handleQueryReservations(args = {}) {
+    return runCommandWithN8n('query_reservations', args, () => runLocalQueryReservations(args));
+  }
+
+  async function runLocalQueryTodayStats(args = {}) {
     const date = args.date || kst.today();
     try {
       const summary = await pgPool.get('reservation', `
@@ -74,7 +108,11 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     }
   }
 
-  async function handleQueryAlerts(args = {}) {
+  async function handleQueryTodayStats(args = {}) {
+    return runCommandWithN8n('query_today_stats', args, () => runLocalQueryTodayStats(args));
+  }
+
+  async function runLocalQueryAlerts(args = {}) {
     try {
       const limit = args.limit || 10;
       const rows = await pgPool.query('reservation', `
@@ -94,6 +132,10 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  }
+
+  async function handleQueryAlerts(args = {}) {
+    return runCommandWithN8n('query_alerts', args, () => runLocalQueryAlerts(args));
   }
 
   async function handleStoreResolution(args = {}) {
