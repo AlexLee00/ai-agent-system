@@ -18,6 +18,12 @@ const https = require('https');
 const kst    = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const sender = require('../../../packages/core/lib/telegram-sender');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 const SPAWN_LOG   = '/Users/alexlee/.openclaw/workspace/logs/claude-code-spawns.jsonl';
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
@@ -154,11 +160,45 @@ async function main() {
 
   if (hasAlert) lines.unshift(`🚨 *임계값 초과 감지!*`, ``);
 
-  const msg = lines.join('\n');
+  const baseMsg = lines.join('\n');
+  const alertLevel = hasAlert ? 3 : 1;
+  const notice = buildNoticeEvent({
+    from_bot: 'worker-monitor',
+    team: 'claude',
+    event_type: hasAlert ? 'alert' : 'report',
+    alert_level: alertLevel,
+    title: '🔍 Claude API 사용량 모니터',
+    summary: hasAlert
+      ? `최근 1분 사용량이 임계값을 넘었습니다. spawn=${spawns}, cost=$${dbCost.toFixed(4)}`
+      : `최근 1분 사용량 정상. spawn=${spawns}, cost=$${dbCost.toFixed(4)}`,
+    details: lines.filter(Boolean),
+    action: hasAlert ? '토큰 사용량과 Claude Code spawn 급증 원인을 확인하세요.' : '',
+    payload: {
+      title: 'Claude API 사용량 모니터',
+      summary: hasAlert
+        ? `임계 초과: spawn=${spawns}, cost=$${dbCost.toFixed(4)}`
+        : `정상: spawn=${spawns}, cost=$${dbCost.toFixed(4)}`,
+      details: lines.filter(Boolean),
+      action: hasAlert ? '/claude-health | /reporting-health 확인' : '',
+    },
+  });
+  const msg = renderNoticeEvent(notice) || baseMsg;
   console.log(msg);
 
   try {
-    await sender.send('claude_lead', msg);
+    await publishEventPipeline({
+      event: notice,
+      targets: buildSeverityTargets({
+        event: notice,
+        sender,
+        topicTeam: 'claude-lead',
+        includeQueue: false,
+      }),
+      policy: {
+        cooldownMs: hasAlert ? 5 * 60_000 : 30 * 60_000,
+        quietHours: hasAlert ? null : { startHour: 23, endHour: 8, timezone: 'KST', maxAlertLevel: 2 },
+      },
+    });
   } catch (e) {
     console.error('[claude-monitor] 텔레그램 전송 실패:', e.message);
   }
