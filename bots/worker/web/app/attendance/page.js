@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import { useAuth } from '@/lib/auth-context';
+import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import Modal from '@/components/Modal';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import PendingReviewSection from '@/components/PendingReviewSection';
@@ -249,6 +252,22 @@ export default function AttendancePage() {
   const isMember = user?.role === 'member';
   const canCreateTodayOnly = canPerformMenuOperation(user, 'attendance', 'create_today_only');
   const canManageAttendance = canPerformMenuOperation(user, 'attendance', 'update');
+  const quickFlows = [
+    {
+      title: '미출근 직원 확인',
+      body: '오늘 미출근 직원과 지각 가능성을 바로 점검합니다.',
+      onPromptFill: () => refillPrompt('오늘 미출근 직원과 지각 가능성이 있는 직원을 보여줘'),
+      onSecondary: () => load(),
+      secondaryLabel: '현재 목록 새로고침',
+    },
+    {
+      title: '휴가 대기 확인',
+      body: '휴가 신청과 예외 근태 요청을 빠르게 다시 검토합니다.',
+      onPromptFill: () => refillPrompt('대기 중인 휴가 신청과 예외 근태 요청을 요약해줘'),
+      onSecondary: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+      secondaryLabel: '입력 위치로 이동',
+    },
+  ];
   const columns = [
     { key: 'employee_name', label: '이름' },
     { key: 'check_in',      label: '출근', render: v => fmtTime(v) },
@@ -260,7 +279,20 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-gray-900">⏰ 근태 관리</h1>
+      {!isMember && <AdminQuickNav />}
+
+      <AdminPageHero
+        title="근태 관리"
+        description="출근, 퇴근, 휴가 신청과 예외 근태를 한 화면에서 확인하고 처리합니다."
+        stats={[
+          { label: '출근', value: `${checkedIn}명`, caption: '오늘 기준' },
+          { label: '퇴근', value: `${checkedOut}명`, caption: '오늘 기준' },
+          { label: '지각', value: `${lateCount}건`, caption: 'status=late' },
+          { label: '승인 대기', value: `${(proposal ? 1 : 0) + (leaveProposal ? 1 : 0)}건`, caption: '근태/휴가 제안' },
+        ]}
+      />
+
+      {!isMember && <AdminQuickFlowGrid items={quickFlows} />}
 
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">
