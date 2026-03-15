@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Paperclip, UploadCloud } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { getToken } from '@/lib/auth-context';
 
 const API_BASE = '/api';
@@ -120,6 +121,7 @@ export default function WorkerAIWorkspace({
   suggestions = [],
   allowUpload = true,
 }) {
+  const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -133,6 +135,19 @@ export default function WorkerAIWorkspace({
   const sessionRef = useRef(null);
   const reconnectTimerRef = useRef(null);
   const fileRef = useRef(null);
+  const aiPolicy = user?.ai_policy || null;
+  const uiMode = aiPolicy?.ui_mode || 'prompt_only';
+  const llmMode = aiPolicy?.llm_mode || 'assist';
+  const roleProfile = aiPolicy?.role_profile || (user?.role === 'master' ? 'master' : user?.role === 'admin' ? 'admin' : 'member');
+  const showCanvas = uiMode !== 'prompt_only';
+  const showQueue = uiMode !== 'prompt_only';
+  const showMasterSignals = uiMode === 'full_master_console';
+  const promptPlaceholder = llmMode === 'off'
+    ? '정형 업무를 자연어로 입력하세요. 예: 오늘 일정 보여줘'
+    : '업무를 자연어로 입력하세요';
+  const emptyMessage = llmMode === 'off'
+    ? '정형 업무 중심으로 빠르게 처리할 수 있습니다. 일정 조회/등록, 직원/매출 요청처럼 명확한 표현을 추천합니다.'
+    : '일정, 매출, 인사, 문서 요청을 자연어로 보내면 됩니다.';
 
   useEffect(() => {
     api.get('/chat/sessions')
@@ -196,6 +211,9 @@ export default function WorkerAIWorkspace({
           }
           if (data.type === 'pong' || data.type === 'chat.connected') {
             setLiveStatus('실시간 연결됨');
+            if (data.ai_policy?.llm_mode === 'off') {
+              setLiveStatus('실시간 연결됨 · LLM 보조 OFF');
+            }
             return;
           }
           if (data.type === 'chat.result') {
@@ -350,13 +368,28 @@ export default function WorkerAIWorkspace({
   }
 
   return (
-    <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)] gap-5">
+    <section className={`grid gap-5 ${showCanvas ? 'grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]' : 'grid-cols-1'}`}>
       <div className="card min-h-[36rem] flex flex-col bg-white/95 backdrop-blur-sm">
         <div className="border-b border-slate-200 pb-4 mb-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="panel-title">{title}</h2>
               <p className="panel-subtitle mt-1">{description}</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                  {roleProfile === 'master' ? '마스터' : roleProfile === 'admin' ? '관리자' : '일반사용자'}
+                </span>
+                <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 border border-sky-200">
+                  {uiMode === 'prompt_only'
+                    ? '프롬프트 전용'
+                    : uiMode === 'prompt_plus_dashboard'
+                      ? '프롬프트 + 현황'
+                      : '마스터 콘솔'}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                  LLM {llmMode === 'off' ? 'OFF' : llmMode === 'full' ? 'FULL' : '보조'}
+                </span>
+              </div>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
               {liveStatus}
@@ -381,7 +414,7 @@ export default function WorkerAIWorkspace({
           {messages.length === 0 ? (
             <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-gradient-to-br from-white to-slate-50 p-6">
               <p className="text-sm font-semibold text-slate-900 mb-1">대화로 바로 업무를 시작하세요</p>
-              <p className="text-sm text-slate-500">일정, 매출, 인사, 문서 요청을 자연어로 보내면 됩니다.</p>
+              <p className="text-sm text-slate-500">{emptyMessage}</p>
             </div>
           ) : messages.map((message, index) => (
             <div key={`${message.createdAt || 'm'}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -431,7 +464,7 @@ export default function WorkerAIWorkspace({
                 }
               }}
               rows={3}
-              placeholder="업무를 자연어로 입력하세요"
+              placeholder={promptPlaceholder}
               className="flex-1 rounded-[1.35rem] border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-300"
             />
             <button
@@ -445,47 +478,72 @@ export default function WorkerAIWorkspace({
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="card bg-white/95 backdrop-blur-sm">
-          <h3 className="panel-title">업무 캔버스</h3>
-          <p className="panel-subtitle mt-1 mb-4">대화 결과와 다음 액션을 카드 형태로 보여줍니다.</p>
-          {latestUi ? (
-            <CanvasCard ui={latestUi} />
-          ) : (
-            <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
-              아직 표시할 결과가 없습니다.
-            </div>
-          )}
-        </div>
-
-        <div className="card bg-white/95 backdrop-blur-sm">
-          <h3 className="panel-title">최근 업무 큐</h3>
-          <p className="panel-subtitle mt-1 mb-4">방금 대화로 생성된 업무와 승인 흐름을 확인합니다.</p>
-          {agentTasks.length === 0 ? (
-            <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-              대기 중인 업무가 없습니다.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {agentTasks.map(task => (
-                <div key={task.id} className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
-                      {task.approval_status === 'pending' ? '승인 대기' : task.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">{task.target_bot} · 요청자 {task.user_name || task.user_id || '-'}</p>
-                  {task.payload?.result_summary && (
-                    <p className="text-xs text-emerald-700 mt-1 line-clamp-3">{task.payload.result_summary}</p>
-                  )}
-                  {task.approval_id && <p className="text-xs text-amber-700 mt-1">Approval #{task.approval_id}</p>}
+      {showCanvas && (
+        <div className="space-y-4">
+          {showMasterSignals && (
+            <div className="card bg-white/95 backdrop-blur-sm">
+              <h3 className="panel-title">마스터 신호</h3>
+              <p className="panel-subtitle mt-1 mb-4">실시간 연결, 세션, 큐 상태를 한 번에 봅니다.</p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs text-slate-500">세션</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-1">{sessionId ? '연결됨' : '대기'}</p>
                 </div>
-              ))}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs text-slate-500">대기 업무</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-1">{agentTasks.length}건</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs text-slate-500">입력 정책</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-1">{llmMode === 'full' ? '풀 LLM' : llmMode === 'assist' ? '보조 LLM' : '룰 기반'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="card bg-white/95 backdrop-blur-sm">
+            <h3 className="panel-title">업무 캔버스</h3>
+            <p className="panel-subtitle mt-1 mb-4">대화 결과와 다음 액션을 카드 형태로 보여줍니다.</p>
+            {latestUi ? (
+              <CanvasCard ui={latestUi} />
+            ) : (
+              <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                아직 표시할 결과가 없습니다.
+              </div>
+            )}
+          </div>
+
+          {showQueue && (
+            <div className="card bg-white/95 backdrop-blur-sm">
+              <h3 className="panel-title">최근 업무 큐</h3>
+              <p className="panel-subtitle mt-1 mb-4">방금 대화로 생성된 업무와 승인 흐름을 확인합니다.</p>
+              {agentTasks.length === 0 ? (
+                <div className="rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  대기 중인 업무가 없습니다.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {agentTasks.map(task => (
+                    <div key={task.id} className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-slate-900">{task.title}</p>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+                          {task.approval_status === 'pending' ? '승인 대기' : task.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{task.target_bot} · 요청자 {task.user_name || task.user_id || '-'}</p>
+                      {task.payload?.result_summary && (
+                        <p className="text-xs text-emerald-700 mt-1 line-clamp-3">{task.payload.result_summary}</p>
+                      )}
+                      {task.approval_id && <p className="text-xs text-amber-700 mt-1">Approval #{task.approval_id}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div>
+      )}
     </section>
   );
 }

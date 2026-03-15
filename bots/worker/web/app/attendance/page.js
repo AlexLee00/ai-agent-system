@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
+import { useAuth } from '@/lib/auth-context';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -38,6 +39,7 @@ function buildProposalSummary(proposal) {
 }
 
 export default function AttendancePage() {
+  const { user } = useAuth();
   const [records, setRecords]     = useState([]);
   const [date, setDate]           = useState(new Date().toISOString().slice(0,10));
   const [loading, setLoading]     = useState(true);
@@ -125,6 +127,7 @@ export default function AttendancePage() {
   const checkedIn  = records.filter(r => r.check_in).length;
   const checkedOut = records.filter(r => r.check_out).length;
   const lateCount = records.filter(r => r.status === 'late').length;
+  const isMember = user?.role === 'member';
   const columns = [
     { key: 'employee_name', label: '이름' },
     { key: 'check_in',      label: '출근', render: v => fmtTime(v) },
@@ -138,8 +141,12 @@ export default function AttendancePage() {
     <div className="space-y-4">
       <WorkerAIWorkspace
         title="근태 AI 업무대화"
-        description="출근 현황, 휴가, 직원 요청을 대화로 처리하고 결과를 캔버스에서 바로 확인합니다."
-        suggestions={['오늘 근태 현황 보여줘', '오늘 출근 안 한 직원 알려줘', '이번 주 휴가자 정리해줘']}
+        description={isMember
+          ? '출근과 퇴근을 자연어로 입력하고 확인 결과를 승인할 수 있습니다.'
+          : '출근 현황, 휴가, 직원 요청을 대화로 처리하고 결과를 캔버스에서 바로 확인합니다.'}
+        suggestions={isMember
+          ? ['출근했어요', '퇴근합니다', '오늘 내 근태 보여줘']
+          : ['오늘 근태 현황 보여줘', '오늘 출근 안 한 직원 알려줘', '이번 주 휴가자 정리해줘']}
         allowUpload
       />
       <h1 className="text-xl font-bold text-gray-900">⏰ 근태 관리</h1>
@@ -329,26 +336,28 @@ export default function AttendancePage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">오늘의 근태 요약</p>
-          <div className="grid gap-3 sm:grid-cols-3 mt-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">출근 완료</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedIn}명</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">퇴근 완료</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedOut}명</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">지각</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{lateCount}명</p>
+        {!isMember && (
+          <div className="card">
+            <p className="text-sm font-medium text-slate-500">오늘의 근태 요약</p>
+            <div className="grid gap-3 sm:grid-cols-3 mt-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-xs text-slate-500">출근 완료</p>
+                <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedIn}명</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-xs text-slate-500">퇴근 완료</p>
+                <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedOut}명</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-xs text-slate-500">지각</p>
+                <p className="text-2xl font-semibold text-slate-900 mt-1">{lateCount}명</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="card">
-          <p className="text-sm font-medium text-slate-500">빠른 실행</p>
+          <p className="text-sm font-medium text-slate-500">{isMember ? '내 근태 빠른 실행' : '빠른 실행'}</p>
           <div className="grid grid-cols-2 gap-3 mt-4">
             <button
               className="btn-primary h-16 text-base gap-2"
@@ -385,8 +394,8 @@ export default function AttendancePage() {
           />
         </div>
         <div className="flex gap-4 text-sm">
-          <div><span className="text-slate-500">총 출근</span> <strong>{checkedIn}명</strong></div>
-          <div><span className="text-slate-500">전체</span> <strong>{records.length}명</strong></div>
+          <div><span className="text-slate-500">{isMember ? '내 출근 기록' : '총 출근'}</span> <strong>{checkedIn}명</strong></div>
+          <div><span className="text-slate-500">{isMember ? '내 기록 수' : '전체'}</span> <strong>{records.length}{isMember ? '건' : '명'}</strong></div>
         </div>
       </div>
 
