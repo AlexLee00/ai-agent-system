@@ -13,7 +13,7 @@
 
 const { isAlertMuted, isEventMuted } = require('../lib/mute-manager');
 const { shouldDefer, deferToMorning } = require('../lib/night-handler');
-const { formatSingle, formatBatch }   = require('../lib/batch-formatter');
+const { formatBatch, buildSingleDelivery }   = require('../lib/batch-formatter');
 const { getEventHeadline } = require('../../../packages/core/lib/reporting-hub');
 
 const DEDUP_WINDOW_MS = 60_000; // 1분 내 같은 봇+이벤트타입 중복 배치
@@ -80,8 +80,8 @@ async function processItem(item, onSend) {
   }
 
   // 4. 즉시 발송 (HIGH/CRITICAL)
-  const msg = formatSingle(item);
-  const ok = await onSend(msg, item);
+  const delivery = buildSingleDelivery(item);
+  const ok = await onSend(delivery, item);
   return ok ? 'sent' : 'error';
 }
 
