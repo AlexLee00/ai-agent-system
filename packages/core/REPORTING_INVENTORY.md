@@ -75,6 +75,7 @@
 - reservation mainbot/telegram → severity 기반 queue/n8n 및 telegram/n8n 라우팅
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
+- worker claude-api-monitor alerts → reporting-hub notice + severity fanout
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
