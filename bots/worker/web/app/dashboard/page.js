@@ -104,6 +104,30 @@ export default function DashboardPage() {
     sales: '매출',
     approval: '승인',
   };
+  const activityTypeTone = {
+    journal: 'slate',
+    attendance: 'amber',
+    sales: 'emerald',
+    approval: 'rose',
+  };
+  const activityTypeBadge = {
+    journal: '기록',
+    attendance: '근태',
+    sales: '매출',
+    approval: '승인',
+  };
+  const activityToneClasses = {
+    rose: 'border-rose-200 bg-rose-50/80',
+    amber: 'border-amber-200 bg-amber-50/80',
+    emerald: 'border-emerald-200 bg-emerald-50/80',
+    slate: 'border-slate-200 bg-slate-50',
+  };
+  const activityBadgeClasses = {
+    rose: 'bg-rose-100 text-rose-700',
+    amber: 'bg-amber-100 text-amber-700',
+    emerald: 'bg-emerald-100 text-emerald-700',
+    slate: 'bg-slate-200 text-slate-700',
+  };
 
   const activityActionMap = {
     attendance: { href: '/attendance', prompt: '최근 근태 처리 내역 요약해줘', bot: 'noah' },
@@ -358,6 +382,9 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm font-medium text-slate-500">최근 업무 큐</p>
               <h2 className="mt-1 text-lg font-semibold text-slate-900">최신 처리 흐름</h2>
+              <p className="mt-1 text-xs text-slate-400">
+                처리 유형별 배지와 최신 시각을 기준으로 흐름을 빠르게 읽을 수 있습니다.
+              </p>
             </div>
             <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/journals')}>
               업무 관리 열기
@@ -369,9 +396,21 @@ export default function DashboardPage() {
                 최근 활동이 없습니다.
               </div>
             ) : activities.slice(0, 6).map((item, index) => (
-              <div key={`${item.type}-${item.created_at}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div
+                key={`${item.type}-${item.created_at}-${index}`}
+                className={`rounded-3xl border px-4 py-4 ${activityToneClasses[activityTypeTone[item.type] || 'slate']}`}
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-900">{activityTypeLabel[item.type] || item.type}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-900">{activityTypeLabel[item.type] || item.type}</p>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        activityBadgeClasses[activityTypeTone[item.type] || 'slate']
+                      }`}
+                    >
+                      {activityTypeBadge[item.type] || '활동'}
+                    </span>
+                  </div>
                   <span className="text-xs text-slate-400">
                     {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
                   </span>
