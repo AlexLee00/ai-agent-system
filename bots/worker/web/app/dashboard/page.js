@@ -10,6 +10,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
   const [alerts,       setAlerts]       = useState(null);
+  const [activities,   setActivities]   = useState([]);
   const [loading,      setLoading]      = useState(true);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
@@ -18,11 +19,13 @@ export default function DashboardPage() {
     const requests = [
       api.get('/dashboard/summary').catch(() => null),
       canUsePromptWorkspace ? api.get('/dashboard/alerts').catch(() => null) : Promise.resolve(null),
+      api.get('/activity').catch(() => ({ activities: [] })),
     ];
 
-    Promise.all(requests).then(([sum, alertData]) => {
+    Promise.all(requests).then(([sum, alertData, activityData]) => {
       if (sum) setSummary(sum);
       if (alertData) setAlerts(alertData);
+      setActivities(activityData?.activities || []);
     }).finally(() => setLoading(false));
   }, [canUsePromptWorkspace]);
 
@@ -36,6 +39,35 @@ export default function DashboardPage() {
   ];
   const uncheckedPreview = alerts?.unchecked_in_preview || [];
   const upcomingSchedules = alerts?.upcoming_schedules || [];
+  const pendingApprovals = summary?.pending_approvals ?? 0;
+  const priorityItems = [
+    canUsePromptWorkspace && pendingApprovals > 0
+      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose' }
+      : null,
+    canUsePromptWorkspace && (alerts?.unchecked_in_count ?? 0) > 0
+      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber' }
+      : null,
+    (summary?.today_schedules ?? 0) > 0
+      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue' }
+      : null,
+    (summary?.today_sales ?? 0) === 0
+      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald' }
+      : null,
+  ].filter(Boolean);
+
+  const toneClasses = {
+    rose: 'border-rose-200 bg-rose-50',
+    amber: 'border-amber-200 bg-amber-50',
+    blue: 'border-sky-200 bg-sky-50',
+    emerald: 'border-emerald-200 bg-emerald-50',
+  };
+
+  const activityTypeLabel = {
+    journal: '업무일지',
+    attendance: '근태',
+    sales: '매출',
+    approval: '승인',
+  };
 
   return (
     <div className="space-y-6">
@@ -146,6 +178,68 @@ export default function DashboardPage() {
           </div>
         </section>
       )}
+
+      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="card">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500">운영 캔버스</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">지금 바로 확인할 항목</h2>
+            </div>
+            {!isMember && (
+              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/chat')}>
+                대화 시작
+              </button>
+            )}
+          </div>
+          <div className="mt-4 grid gap-3">
+            {priorityItems.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                현재 즉시 조치가 필요한 항목이 없습니다.
+              </div>
+            ) : priorityItems.map((item) => (
+              <button
+                key={`${item.href}-${item.title}`}
+                onClick={() => router.push(item.href)}
+                className={`rounded-3xl border px-5 py-4 text-left transition-colors hover:shadow-sm ${toneClasses[item.tone] || toneClasses.blue}`}
+              >
+                <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500">최근 업무 큐</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">최신 처리 흐름</h2>
+            </div>
+            <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/journals')}>
+              업무 관리 열기
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {activities.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                최근 활동이 없습니다.
+              </div>
+            ) : activities.slice(0, 6).map((item, index) => (
+              <div key={`${item.type}-${item.created_at}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{activityTypeLabel[item.type] || item.type}</p>
+                  <span className="text-xs text-slate-400">
+                    {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
+                {item.actor && <p className="mt-1 text-xs text-slate-400">담당: {item.actor}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -258,6 +352,12 @@ export default function DashboardPage() {
               <p className="text-sm font-medium text-slate-900">진행 중 프로젝트</p>
               <p className="text-xs text-slate-500 mt-1">{summary?.active_projects ?? 0}건</p>
             </div>
+            {canUsePromptWorkspace && (
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-sm font-medium text-slate-900">미출근 직원</p>
+                <p className="text-xs text-slate-500 mt-1">{alerts?.unchecked_in_count ?? 0}명</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
