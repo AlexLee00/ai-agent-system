@@ -37,6 +37,32 @@ const EMRG_TOPIC = String(TOPICS.emergency || '');
 const GEMINI_KEY = investCfg.gemini?.api_key || '';
 const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
 
+function buildSafeRevenueExpression({
+  title,
+  currentExpr = '$json.current',
+  expectedExpr = '$json.expected',
+  ratioExpr = '$json.ratio',
+  elapsedExpr = '$json.elapsed',
+  includeElapsed = true,
+  suffix = '',
+}) {
+  return `={{
+(() => {
+  const current = Number(${currentExpr});
+  const expected = Number(${expectedExpr});
+  const ratio = Number(${ratioExpr});
+  const elapsed = Number(${elapsedExpr});
+  const currentText = Number.isFinite(current) ? current.toLocaleString('ko-KR') + '원' : '집계 중';
+  const expectedText = Number.isFinite(expected) ? expected.toLocaleString('ko-KR') + '원' : '계산 불가';
+  const ratioText = Number.isFinite(ratio) ? ratio.toFixed(0) + '%' : '계산 불가';
+  const elapsedText = Number.isFinite(elapsed) ? elapsed.toFixed(0) + '%' : '계산 불가';
+  return '${title}\\n═══════════════════\\n오늘 누적: ' + currentText +
+    '\\n전주 동시간 예상: ' + expectedText +
+    '\\n달성률: ' + ratioText${includeElapsed ? " + '  (영업 ' + elapsedText + ' 경과)'" : ''}${suffix ? ` + '\\n\\n${suffix}'` : ''};
+})()
+}}`;
+}
+
 // ── HTTP 유틸 ──────────────────────────────────────────────────────────────
 let _cookie = '';
 
@@ -408,30 +434,20 @@ return [{
       },
       {
         id: 'ska02-tg-critical',
-        name: '🚨 긴급 + 마스터 DM',
+        name: '🚨 스카 긴급 경보',
         type: 'n8n-nodes-base.telegram',
         typeVersion: 1.2,
         position: [1560, 200],
         parameters: {
           chatId: CHAT_ID,
-          text: `={{ '🚨 <b>스카팀 매출 급감 긴급 경보</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)\\n\\n⚠️ 즉시 확인 필요!' }}`,
+          text: buildSafeRevenueExpression({
+            title: '🚨 <b>스카팀 매출 급감 긴급 경보</b>',
+            suffix: '⚠️ 즉시 확인 필요!',
+          }),
           additionalFields: {
             parse_mode: 'HTML',
             message_thread_id: EMRG_TOPIC || SKA_TOPIC,
           },
-        },
-        credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
-      },
-      {
-        id: 'ska02-dm',
-        name: '마스터 DM',
-        type: 'n8n-nodes-base.telegram',
-        typeVersion: 1.2,
-        position: [1780, 200],
-        parameters: {
-          chatId: '***REMOVED***',
-          text: `={{ '🚨 <b>[스카] 매출 급감</b>\\n오늘: ' + Number($json.current).toLocaleString('ko-KR') + '원 / 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원 (' + $json.ratio + '%)' }}`,
-          additionalFields: { parse_mode: 'HTML' },
         },
         credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
       },
@@ -443,7 +459,10 @@ return [{
         position: [1560, 400],
         parameters: {
           chatId: CHAT_ID,
-          text: `={{ '⚠️ <b>스카팀 매출 감소 감지</b>\\n═══════════════════\\n오늘 누적: ' + Number($json.current).toLocaleString('ko-KR') + '원\\n전주 동시간 예상: ' + Number($json.expected).toLocaleString('ko-KR') + '원\\n달성률: ' + $json.ratio + '%  (영업 ' + $json.elapsed + '% 경과)' }}`,
+          text: buildSafeRevenueExpression({
+            title: '⚠️ <b>스카팀 매출 감소 감지</b>',
+            suffix: '',
+          }),
           additionalFields: {
             parse_mode: 'HTML',
             message_thread_id: SKA_TOPIC,
@@ -459,10 +478,9 @@ return [{
       '전주 동요일 기준선': { main: [[{ node: '이상 판단',          type: 'main', index: 0 }]] },
       '이상 판단':          { main: [[{ node: 'CRITICAL 여부',      type: 'main', index: 0 }]] },
       'CRITICAL 여부':      { main: [
-        [{ node: '🚨 긴급 + 마스터 DM', type: 'main', index: 0 }],
+        [{ node: '🚨 스카 긴급 경보',   type: 'main', index: 0 }],
         [{ node: '⚠️ 스카 경고',        type: 'main', index: 0 }],
       ]},
-      '🚨 긴급 + 마스터 DM': { main: [[{ node: '마스터 DM', type: 'main', index: 0 }]] },
     },
     settings: {},
   });
