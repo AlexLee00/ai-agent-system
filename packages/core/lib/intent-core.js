@@ -120,6 +120,22 @@ function buildIntentEngineHealthLines(targets = [], summaries = {}) {
   });
 }
 
+function buildIntentEngineHealthReportFrame(targets = [], summaries = {}) {
+  return {
+    title: '🩺 인텐트 엔진 상태',
+    sections: [
+      {
+        title: '■ 팀별 학습 현황',
+        lines: buildIntentEngineHealthLines(targets, summaries),
+      },
+    ],
+    footer: [
+      '조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents',
+      '롤백: /rollback <id> | /luna-rollback <id> | /ska-rollback <id> | /claude-rollback <id>',
+    ],
+  };
+}
+
 function normalizeIntentText(text = '') {
   return String(text)
     .toLowerCase()
@@ -584,6 +600,7 @@ module.exports = {
   getTeamIntentMeta,
   buildTeamIntentReportFrame,
   buildIntentEngineHealthLines,
+  buildIntentEngineHealthReportFrame,
   normalizeIntentText,
   escapeRegex,
   buildAutoLearnPattern,
