@@ -42,6 +42,7 @@ const {
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
+const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1115,12 +1116,22 @@ app.post('/api/attendance/proposals', requireAuth, async (req, res) => {
       eventMeta: proposal.parser_meta,
     });
 
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: proposal.action === 'checkout' ? 'attendance_checkout' : 'attendance_checkin',
+      actionCode: proposal.action,
+      query: `${prompt || proposal.summary} ${proposal.action_label} ${proposal.note || ''}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+
     res.json({
       ok: true,
       session_id: session.id,
       proposal: {
         ...proposal,
         feedback_session_id: session.id,
+        similar_cases: similarCases,
       },
     });
   } catch (error) {

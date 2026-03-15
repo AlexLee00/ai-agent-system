@@ -57,6 +57,52 @@ function buildFeedbackCaseDocument({ schema, session, events = [] }) {
   return lines.join('\n');
 }
 
+function formatFeedbackCaseHits(hits = []) {
+  if (!Array.isArray(hits) || hits.length === 0) return [];
+  return hits.map((hit) => ({
+    id: hit.id,
+    summary: String(hit?.metadata?.summary || hit?.metadata?.title || '').trim(),
+    flow_code: String(hit?.metadata?.flow_code || ''),
+    action_code: String(hit?.metadata?.action_code || ''),
+    accepted_without_edit: Boolean(hit?.metadata?.accepted_without_edit),
+    edited_fields: Array.isArray(hit?.metadata?.edited_fields) ? hit.metadata.edited_fields : [],
+    similarity: Number(hit?.similarity || 0),
+    preview: String(hit?.content || '').slice(0, 220),
+    created_at: hit?.created_at || null,
+  }));
+}
+
+async function searchFeedbackCases(rag, {
+  schema,
+  flowCode = null,
+  actionCode = null,
+  query,
+  limit = 3,
+  threshold = 0.45,
+  acceptedWithoutEditOnly = false,
+  sourceBot = 'worker-feedback',
+} = {}) {
+  if (!rag || typeof rag.search !== 'function' || !schema || !query) return [];
+  try {
+    const filter = {
+      schema,
+      feedback_status: 'committed',
+      ...(flowCode ? { flow_code: flowCode } : {}),
+      ...(actionCode ? { action_code: actionCode } : {}),
+      ...(acceptedWithoutEditOnly ? { accepted_without_edit: true } : {}),
+    };
+    const hits = await rag.search('feedback_cases', String(query).slice(0, 240), {
+      limit,
+      threshold,
+      filter,
+      sourceBot,
+    });
+    return formatFeedbackCaseHits(hits);
+  } catch {
+    return [];
+  }
+}
+
 async function publishFeedbackSessionToRag(rag, {
   schema,
   session,
@@ -127,6 +173,7 @@ async function publishFeedbackSessionToRag(rag, {
 
 module.exports = {
   buildFeedbackCaseDocument,
+  formatFeedbackCaseHits,
   publishFeedbackSessionToRag,
+  searchFeedbackCases,
 };
-
