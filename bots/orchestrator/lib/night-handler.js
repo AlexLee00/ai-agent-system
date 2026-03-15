@@ -151,9 +151,10 @@ async function buildOpsHealthAlertSnippet() {
     { title: '워커', path: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js') },
     { title: '클로드', path: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js') },
     { title: '스카', path: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js') },
+    { title: 'AI 피드백', path: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js') },
   ];
 
-  const [orchestrator, luna, worker, claude, ska] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
+  const [orchestrator, luna, worker, claude, ska, feedback] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
   const rows = [
     {
       title: '오케스트레이터',
@@ -186,6 +187,13 @@ async function buildOpsHealthAlertSnippet() {
       hasWarn: !ska || ska.serviceHealth.warnCount > 0 || ska.monitorHealth.warnCount > 0,
       summary: ska
         ? `서비스 경고 ${ska.serviceHealth.warnCount}건 / 모니터 경고 ${ska.monitorHealth.warnCount}건`
+        : '조회 실패',
+    },
+    {
+      title: 'AI 피드백',
+      hasWarn: !feedback || Boolean(feedback.decision?.recommended),
+      summary: feedback
+        ? `세션 ${feedback.totalSessions}건 / rejected ${feedback.totalRejected}건${feedback.decision?.recommended ? ' / 품질 점검 필요' : ''}`
         : '조회 실패',
     },
   ].filter((row) => row.hasWarn);
