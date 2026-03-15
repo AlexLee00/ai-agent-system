@@ -122,6 +122,7 @@ export default function WorkerAIWorkspace({
   description = '자연어로 요청하면 Worker 팀장이 업무를 정리하고 실행으로 연결합니다.',
   suggestions = [],
   allowUpload = true,
+  agentName = 'Worker 팀장',
 }) {
   const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
@@ -385,6 +386,9 @@ export default function WorkerAIWorkspace({
               <div className="flex flex-wrap gap-2 mt-3">
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
                   {roleProfile === 'master' ? '마스터' : roleProfile === 'admin' ? '관리자' : '일반사용자'}
+                </span>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                  {agentName}
                 </span>
                 <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 border border-sky-200">
                   {uiMode === 'prompt_only'

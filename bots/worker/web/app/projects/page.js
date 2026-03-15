@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const STATUS_CONFIG = {
   planning:    { label: '기획',   color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-500' },
@@ -212,13 +211,6 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <WorkerAIWorkspace
-        menuKey="projects"
-        title="프로젝트 AI 업무대화"
-        description="프로젝트 진행 상황, 마일스톤, 담당자 요청을 자연어로 정리하고 실행 큐로 보냅니다."
-        suggestions={['진행 중인 프로젝트 보여줘', '프로젝트 상태 요약해줘', '새 프로젝트 초안 만들어줘']}
-        allowUpload
-      />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📋 프로젝트 관리</h1>
         <button className="btn-primary text-sm" onClick={() => setShowCreate(true)} disabled={!canCreateProjects}>+ 새 프로젝트</button>

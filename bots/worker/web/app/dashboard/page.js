@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
@@ -87,20 +86,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {canUsePromptWorkspace && (
-        <WorkerAIWorkspace
-          menuKey="dashboard"
-          title={user?.role === 'master' ? '마스터 대시보드 업무대화' : '관리자 대시보드 업무대화'}
-          description={user?.role === 'master'
-            ? '왼쪽 프롬프트창에서 자연어로 지시하고, 오른쪽 결과창에서 동적 캔버스와 최근 업무 큐를 확인합니다.'
-            : '왼쪽 프롬프트창에서 운영 요청을 입력하고, 오른쪽 결과창에서 동적 렌더링과 처리 결과를 확인합니다.'}
-          suggestions={user?.role === 'master'
-            ? ['오늘 운영 현황 요약해줘', '미승인 업무 보여줘', '이번 주 매출 흐름 정리해줘']
-            : ['오늘 미출근 직원 보여줘', '오늘 일정 요약해줘', '대기 승인 업무 보여줘']}
-          allowUpload={false}
-        />
-      )}
-
       <section className="card overflow-hidden bg-gradient-to-br from-white to-slate-100/80">
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-3">

@@ -5,7 +5,9 @@ import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
 import Header from '@/components/Header';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { canAccessMenu } from '@/lib/menu-access';
+import { getWorkspaceConfig } from '@/lib/workspace-config';
 
 const PUBLIC_PATHS = ['/login', '/change-password'];
 
@@ -43,6 +45,8 @@ export default function AppShell({ children }) {
 
   if (!user) return null;
 
+  const workspace = getWorkspaceConfig(pathname, user);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* PC 사이드바 */}
@@ -54,6 +58,16 @@ export default function AppShell({ children }) {
       <div className="lg:pl-60">
         <Header />
         <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-4rem)]">
+          <div className="mb-6">
+            <WorkerAIWorkspace
+              menuKey={workspace.menuKey}
+              title={workspace.title}
+              description={workspace.description}
+              suggestions={workspace.suggestions}
+              allowUpload={workspace.allowUpload}
+              agentName={workspace.agentName}
+            />
+          </div>
           {children}
         </main>
       </div>

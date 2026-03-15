@@ -5,7 +5,6 @@ import { Search, Upload, Download, Trash2, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth, getToken } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import DataTable from '@/components/DataTable';
 
 const CATEGORY_OPTIONS = ['기타', '계약서', '견적서', '세금계산서', '보고서', '회의자료'];
@@ -194,14 +193,6 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-4">
-      <WorkerAIWorkspace
-        menuKey="documents"
-        title="문서 AI 업무대화"
-        description="문서 업로드 요청을 자연어로 정리하고, 카테고리와 검토 목적을 확인한 뒤 에밀리 흐름으로 넘깁니다."
-        suggestions={['이 계약서 업로드하고 검토 요청으로 등록해줘', '세금계산서 파일 올리고 분류해줘', '보고서 자료 업로드 후 요약 대상에 넣어줘']}
-        allowUpload
-      />
-
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📎 문서 관리</h1>
         <label className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium ${canCreateDocuments ? 'bg-indigo-600 text-white cursor-pointer' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}>
