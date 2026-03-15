@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { parseClaudeOutput, DynamicCanvas, CANVAS_LABELS } from './canvas';
@@ -1094,35 +1096,16 @@ export default function AIPage() {
     <div className="max-w-7xl space-y-6">
       <AdminQuickNav />
 
-      <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.18),_transparent_36%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] p-6 shadow-[0_18px_60px_-34px_rgba(15,23,42,0.35)]">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-3">
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-              Admin Intelligence
-            </div>
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                AI 분석과 Claude Code를 한 화면에서 운영합니다
-              </h1>
-              <p className="max-w-2xl text-sm leading-6 text-slate-600 sm:text-[15px]">
-                운영 데이터를 자연어로 질의하고, 예측을 확인하고, 필요하면 Claude Code와 바로 이어서 점검할 수 있는 관리자 분석 허브입니다.
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[340px]">
-            {[
-              { label: '분석 모드', value: activeTab === 'ai' ? '활성' : '대기', tone: 'text-slate-900' },
-              { label: 'Claude Code', value: activeTab === 'claude' ? '연결됨' : '준비됨', tone: 'text-slate-900' },
-              { label: '데이터 흐름', value: '실시간', tone: 'text-emerald-700' },
-            ].map((item) => (
-              <div key={item.label} className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">{item.label}</p>
-                <p className={`mt-2 text-sm font-semibold ${item.tone}`}>{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <AdminPageHero
+        title="AI 분석과 Claude Code를 한 화면에서 운영합니다"
+        description="운영 데이터를 자연어로 질의하고, 예측을 확인하고, 필요하면 Claude Code와 바로 이어서 점검할 수 있는 관리자 분석 허브입니다."
+        badge="ADMIN INTELLIGENCE"
+        stats={[
+          { label: '분석 모드', value: activeTab === 'ai' ? '활성' : '대기' },
+          { label: 'Claude Code', value: activeTab === 'claude' ? '연결됨' : '준비됨' },
+          { label: '데이터 흐름', value: '실시간', caption: '운영 데이터 기준' },
+        ]}
+      />
 
       <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100/80 p-1">
         {[{ id: 'ai', label: 'AI 분석' }, { id: 'claude', label: 'Claude Code' }].map((t) => (
@@ -1224,20 +1207,15 @@ export default function AIPage() {
           <aside className="space-y-6">
             <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.28)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Prompt Flows</p>
-              <div className="mt-4 space-y-4">
-                {linkedActions.map((item) => (
-                  <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <h3 className="text-sm font-semibold text-slate-900">{item.title}</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">{item.body}</p>
-                    <div className="mt-3">
-                      <ProposalFlowActions
-                        onPromptFill={() => fillQuestion(item.prompt)}
-                        onSecondary={() => router.push(item.href)}
-                        secondaryLabel="관련 메뉴 열기"
-                      />
-                    </div>
-                  </div>
-                ))}
+              <div className="mt-4">
+                <AdminQuickFlowGrid
+                  items={linkedActions.map((item) => ({
+                    title: item.title,
+                    body: item.body,
+                    onPromptFill: () => fillQuestion(item.prompt),
+                    onSecondary: () => router.push(item.href),
+                  }))}
+                />
               </div>
             </div>
 

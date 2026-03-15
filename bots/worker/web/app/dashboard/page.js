@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
 import Card from '@/components/Card';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
@@ -131,51 +132,29 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {canUsePromptWorkspace && <AdminQuickNav title="관리 화면 바로가기" />}
 
-      <section className="card overflow-hidden bg-gradient-to-br from-white to-slate-100/80">
-        <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium text-slate-500">오늘의 운영 요약</p>
-              <h1 className="text-2xl font-semibold text-slate-900 mt-1">워커 운영 대시보드</h1>
-              <p className="text-sm text-slate-500 mt-2">
-                {isMember
-                  ? '내 업무와 운영 내역을 읽기 전용으로 빠르게 확인할 수 있습니다.'
-                  : '프롬프트 입력과 운영 요약, 매출과 일정 상태를 한 번에 확인할 수 있습니다.'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>
-                {isMember ? '업무 내역 열기' : '업무 관리 열기'}
-              </button>
-              <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>
-                일정 관리 열기
-              </button>
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
-              <p className="text-sm text-slate-500">대기 승인</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.pending_approvals ?? 0}건</p>
-              <p className="text-xs text-slate-400 mt-2">관리자 확인이 필요한 업무</p>
-            </div>
-            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
-              <p className="text-sm text-slate-500">오늘 일정</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.today_schedules ?? 0}건</p>
-              <p className="text-xs text-slate-400 mt-2">등록된 일정과 미팅</p>
-            </div>
-            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
-              <p className="text-sm text-slate-500">출근 인원</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{summary?.checked_in ?? 0}명</p>
-              <p className="text-xs text-slate-400 mt-2">실시간 근태 집계</p>
-            </div>
-            <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
-              <p className="text-sm text-slate-500">오늘 매출</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">₩{(summary?.today_sales ?? 0).toLocaleString()}</p>
-              <p className="text-xs text-slate-400 mt-2">당일 등록 기준</p>
-            </div>
-          </div>
-        </div>
-      </section>
+      <AdminPageHero
+        title="워커 운영 대시보드"
+        description={
+          isMember
+            ? '내 업무와 운영 내역을 읽기 전용으로 빠르게 확인할 수 있습니다.'
+            : '프롬프트 입력과 운영 요약, 매출과 일정 상태를 한 번에 확인할 수 있습니다.'
+        }
+        stats={[
+          { label: '대기 승인', value: `${summary?.pending_approvals ?? 0}건`, caption: '관리자 확인이 필요한 업무' },
+          { label: '오늘 일정', value: `${summary?.today_schedules ?? 0}건`, caption: '등록된 일정과 미팅' },
+          { label: '출근 인원', value: `${summary?.checked_in ?? 0}명`, caption: '실시간 근태 집계' },
+          { label: '오늘 매출', value: `₩${(summary?.today_sales ?? 0).toLocaleString()}`, caption: '당일 등록 기준' },
+        ]}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>
+          {isMember ? '업무 내역 열기' : '업무 관리 열기'}
+        </button>
+        <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>
+          일정 관리 열기
+        </button>
+      </div>
 
       {canUsePromptWorkspace && (
         <section className="space-y-4">
