@@ -85,6 +85,7 @@ const SLASH_MAP = {
   '/jay-health': { intent: 'orchestrator_health', args: {} },
   '/openclaw-health': { intent: 'orchestrator_health', args: {} },
   '/reporting-health': { intent: 'reporting_health', args: {} },
+  '/feedback-health': { intent: 'feedback_health', args: {} },
   '/intent-health': { intent: 'intent_engine_health', args: {} },
   '/luna-health': { intent: 'luna_health', args: {} },
   '/worker-health': { intent: 'worker_health', args: {} },
@@ -138,6 +139,10 @@ function parseSlash(text) {
   if (cmd === '/reporting-health' && parts.length >= 2) {
     const query = parts.slice(1).join(' ').trim();
     return { intent: 'reporting_health', args: { query }, source: 'slash' };
+  }
+  if (cmd === '/feedback-health' && parts.length >= 2) {
+    const query = parts.slice(1).join(' ').trim();
+    return { intent: 'feedback_health', args: { query }, source: 'slash' };
   }
   if ((cmd === '/luna-intents' || cmd === '/ska-intents' || cmd === '/claude-intents') && parts.length >= 2) {
     const query = parts.slice(1).join(' ').trim();
@@ -201,6 +206,11 @@ const KEYWORD_PATTERNS = [
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(프로듀서|봇별|랭킹|순위)|payload.*(프로듀서|랭킹|순위)/i, intent: 'reporting_health', args: { query: 'producers' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(요약|한눈|브리핑)|payload.*(요약|한눈)/i, intent: 'reporting_health', args: { query: 'summary' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(헬스|건강|상태|리포트|보고)|payload.*(경고|헬스|상태)/i, intent: 'reporting_health', args: {} },
+  { re: /(워커|worker).*(피드백|feedback).*(헬스|상태|리포트|보고)|피드백.*(워커|worker).*(헬스|상태|리포트|보고)/i, intent: 'feedback_health', args: { query: 'worker' } },
+  { re: /(블로|blog|블로그).*(피드백|feedback).*(헬스|상태|리포트|보고)|피드백.*(블로|blog|블로그).*(헬스|상태|리포트|보고)/i, intent: 'feedback_health', args: { query: 'blog' } },
+  { re: /(클로드|claude).*(피드백|feedback).*(헬스|상태|리포트|보고)|피드백.*(클로드|claude).*(헬스|상태|리포트|보고)/i, intent: 'feedback_health', args: { query: 'claude' } },
+  { re: /(AI|에이아이)?.*(피드백|feedback).*(요약|한눈|브리핑)|피드백.*(요약|한눈|브리핑)/i, intent: 'feedback_health', args: { query: 'summary' } },
+  { re: /(AI|에이아이)?.*(피드백|feedback).*(헬스|건강|상태|리포트|보고)|피드백.*(헬스|건강|상태|리포트|보고)/i, intent: 'feedback_health', args: {} },
   { re: /(루나|luna).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|투자팀.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'luna_health', args: {} },
   { re: /(워커|worker).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|업무팀.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'worker_health', args: {} },
   { re: /(클로드|claude|덱스터).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|클로드팀.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'claude_health', args: {} },

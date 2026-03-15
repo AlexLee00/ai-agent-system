@@ -140,6 +140,8 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /reporting-health 또는 "리포팅 헬스"
   /reporting-health summary 또는 "리포팅 헬스 요약"
   /reporting-health producers 또는 "리포팅 프로듀서 랭킹"
+  /feedback-health 또는 "AI 피드백 헬스"
+  /feedback-health summary 또는 "피드백 헬스 요약"
   /luna-health | /worker-health | /claude-health | /ska-health | /blog-health
 
 🔇 무음 제어
@@ -978,6 +980,36 @@ async function runReportingHealthDirect(query = '') {
   });
 }
 
+async function runFeedbackHealthDirect(query = '') {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js');
+  const tokens = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const args = [];
+  if (tokens.includes('summary') || tokens.includes('요약')) {
+    args.push('--summary');
+  }
+  const schemaToken = tokens.find((token) => ['worker', 'blog', 'claude', '워커', '블로', '블로그', '클로드'].includes(token));
+  const schemaMap = {
+    worker: 'worker',
+    '워커': 'worker',
+    blog: 'blog',
+    '블로': 'blog',
+    '블로그': 'blog',
+    claude: 'claude',
+    '클로드': 'claude',
+  };
+  if (schemaToken && schemaMap[schemaToken]) {
+    args.push('--schema', schemaMap[schemaToken]);
+  }
+  return await runNodeScriptText(script, {
+    args,
+    timeoutText: '⏱ AI 피드백 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ AI 피드백 헬스 실행 실패',
+    failPrefix: '⚠️ AI 피드백 헬스 실패',
+    emptyText: 'ℹ️ AI 피드백 헬스 결과가 비어 있습니다.',
+  });
+}
+
 async function runWorkerHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'worker', 'scripts', 'health-report.js');
@@ -1795,6 +1827,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'reporting_health': {
       await notify('⏳ 리포팅 파이프라인 헬스 확인 중...');
       return await runReportingHealthDirect(args.query);
+    }
+
+    case 'feedback_health': {
+      await notify('⏳ AI 피드백 헬스 확인 중...');
+      return await runFeedbackHealthDirect(args.query);
     }
 
     case 'luna_health': {
