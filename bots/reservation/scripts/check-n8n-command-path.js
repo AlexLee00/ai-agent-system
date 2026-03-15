@@ -5,13 +5,20 @@ const {
   checkHttp,
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
+const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+const DEFAULT_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
 
 async function main() {
+  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+    workflowName: '스카팀 읽기 명령 intake',
+    method: 'POST',
+    pathSuffix: 'ska-command',
+  });
+  const webhookUrl = resolvedWebhookUrl || DEFAULT_WEBHOOK_URL;
   const healthOk = await checkHttp(HEALTH_URL, 2500);
-  const webhook = await checkWebhookRegistration(WEBHOOK_URL, {
+  const webhook = await checkWebhookRegistration(webhookUrl, {
     command: 'query_today_stats',
     args: { date: new Date().toISOString().slice(0, 10) },
   }, {
@@ -20,7 +27,9 @@ async function main() {
 
   const report = {
     healthUrl: HEALTH_URL,
-    webhookUrl: WEBHOOK_URL,
+    webhookUrl,
+    resolvedWebhookUrl,
+    defaultWebhookUrl: DEFAULT_WEBHOOK_URL,
     n8nHealthy: healthOk,
     webhookRegistered: webhook.registered,
     webhookStatus: webhook.status,
