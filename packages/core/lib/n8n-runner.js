@@ -57,6 +57,7 @@ async function triggerWebhookCandidates({
   timeoutMs = DEFAULT_WEBHOOK_TIMEOUT_MS,
   headers = { 'Content-Type': 'application/json' },
 }) {
+  const failures = [];
   for (const url of [...new Set((candidates || []).filter(Boolean))]) {
     try {
       const res = await fetch(url, {
@@ -74,16 +75,24 @@ async function triggerWebhookCandidates({
       }
 
       if (res.status === 404) {
+        failures.push({ url, status: res.status, reason: 'not_registered' });
         continue;
       }
 
-      return { ok: false, url, status: res.status, reason: `http_${res.status}` };
+      failures.push({ url, status: res.status, reason: `http_${res.status}` });
+      return { ok: false, url, status: res.status, reason: `http_${res.status}`, failures };
     } catch (e) {
+      failures.push({ url, reason: String(e?.message || 'request_failed') });
       // 다음 후보로 진행
     }
   }
 
-  return { ok: false, reason: 'webhook_unavailable' };
+  const onlyNotRegistered = failures.length > 0 && failures.every(item => item.reason === 'not_registered');
+  return {
+    ok: false,
+    reason: onlyNotRegistered ? 'webhook_not_registered' : 'webhook_unavailable',
+    failures,
+  };
 }
 
 async function runWithN8nFallback({
@@ -128,7 +137,10 @@ async function runWithN8nFallback({
   }
 
   openCircuit(circuitName, triggered.reason || 'webhook_failed', backoffMs);
-  logger.warn(`[n8n] 웹훅 실패 (${circuitName}: ${triggered.reason || 'unknown'}) — direct fallback`);
+  const detail = Array.isArray(triggered.failures) && triggered.failures.length > 0
+    ? ` [${triggered.failures.map(item => `${item.url}:${item.reason}`).join(', ')}]`
+    : '';
+  logger.warn(`[n8n] 웹훅 실패 (${circuitName}: ${triggered.reason || 'unknown'})${detail} — direct fallback`);
   return directRunner();
 }
 
