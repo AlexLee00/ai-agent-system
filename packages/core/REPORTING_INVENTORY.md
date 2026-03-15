@@ -63,6 +63,7 @@
 - night-handler briefing snippets → reporting-hub event contract
 - dexter alert/recovery wording → reporting-hub notice format
 - luna queue report/accuracy alert → reporting-hub notice/report format
+- rebecca daily/weekly text report → shared python report format
 
 ## Next Moves
 
