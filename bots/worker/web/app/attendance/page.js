@@ -519,6 +519,13 @@ export default function AttendancePage() {
                             </span>
                           </div>
                           <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                          <button
+                            type="button"
+                            className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                            onClick={() => refillPrompt(`이 사례를 참고해서 근태 기록 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
+                          >
+                            이 사례로 다시 작성
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -652,6 +659,13 @@ export default function AttendancePage() {
                             </span>
                           </div>
                           <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                          <button
+                            type="button"
+                            className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                            onClick={() => refillPrompt(`이 사례를 참고해서 휴가 신청 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
+                          >
+                            이 사례로 다시 작성
+                          </button>
                         </div>
                       ))}
                     </div>

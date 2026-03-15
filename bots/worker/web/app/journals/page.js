@@ -393,6 +393,13 @@ export default function JournalsPage() {
                           <span className="text-xs text-slate-400">{Math.round((item.similarity || 0) * 100)}%</span>
                         </div>
                         <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                        <button
+                          type="button"
+                          className="mt-3 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                          onClick={() => refillPrompt(`이 사례를 참고해서 업무일지 초안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
+                        >
+                          이 사례로 다시 작성
+                        </button>
                       </div>
                     ))}
                   </div>
