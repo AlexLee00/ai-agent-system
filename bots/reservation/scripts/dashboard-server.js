@@ -15,12 +15,16 @@ const http   = require('http');
 const fs     = require('fs');
 const path   = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const rag = require('../../../packages/core/lib/rag-safe');
+const { createSkaReadService } = require('../lib/ska-read-service');
 
 const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
 const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3031;
 
 const HTML_FILE = path.join(__dirname, 'dashboard.html');
+const readService = createSkaReadService({ pgPool, rag });
+const WEBHOOK_SECRET = process.env.SKA_WEBHOOK_SECRET || '';
 
 // ─── 데이터 조회 ─────────────────────────────────────────────────────
 
@@ -68,6 +72,47 @@ async function getTodayData() {
   };
 }
 
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function isLocalRequest(req) {
+  const remote = req.socket?.remoteAddress || '';
+  return remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+}
+
+function isWebhookAuthorized(req) {
+  if (!isLocalRequest(req)) return false;
+  if (!WEBHOOK_SECRET) return true;
+  return String(req.headers['x-ska-webhook-secret'] || '') === WEBHOOK_SECRET;
+}
+
+async function runWebhookCommand(payload = {}) {
+  const command = String(payload.command || '');
+  const args = payload.args || {};
+  switch (command) {
+    case 'query_reservations':
+      return readService.queryReservations(args);
+    case 'query_today_stats':
+      return readService.queryTodayStats(args);
+    case 'query_alerts':
+      return readService.queryAlerts(args);
+    default:
+      return { ok: false, error: `지원하지 않는 명령: ${command}` };
+  }
+}
+
 // ─── HTTP 서버 ────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
@@ -82,6 +127,21 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
+    }
+  } else if (req.method === 'POST' && req.url === '/api/webhooks/n8n/ska-command') {
+    if (!isWebhookAuthorized(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
+      return;
+    }
+    try {
+      const payload = await readJsonBody(req);
+      const result = await runWebhookCommand(payload);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ...result, source: result.source || 'ska-webhook' }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: e.message, code: 'SKA_WEBHOOK_FAILED' }));
     }
   } else if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
     try {
@@ -101,5 +161,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`[스카 대시보드] 서버 시작: http://localhost:${PORT}`);
   console.log(`  예약 현황 API: http://localhost:${PORT}/api/today`);
+  console.log(`  n8n Webhook API: http://localhost:${PORT}/api/webhooks/n8n/ska-command`);
   console.log('  종료: Ctrl+C');
 });

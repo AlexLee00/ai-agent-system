@@ -17,8 +17,17 @@ const fs = require('fs');
 const EMAIL = '***REMOVED***';
 const PASSWORD = 'TeamJay2026!';
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-ska-command-workflow.json');
+const SECRETS_PATH = path.join(__dirname, '../secrets.json');
 
 let cookie = '';
+
+function loadSecrets() {
+  try {
+    return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
 
 function request(method, urlPath, body) {
   return new Promise((resolve, reject) => {
@@ -85,9 +94,19 @@ async function getCredentialId(name) {
 
 function applyCredentialIds(workflow, postgresCredentialId) {
   const cloned = JSON.parse(JSON.stringify(workflow));
+  const secrets = loadSecrets();
+  const webhookSecret = process.env.SKA_WEBHOOK_SECRET || secrets.ska_webhook_secret || '';
   for (const node of cloned.nodes || []) {
     if (node.credentials?.postgres?.id === '__POSTGRES_CREDENTIAL_ID__') {
       node.credentials.postgres.id = postgresCredentialId;
+    }
+    const headers = node.parameters?.headerParameters?.parameters;
+    if (Array.isArray(headers)) {
+      for (const header of headers) {
+        if (header.value === '__SKA_WEBHOOK_SECRET__') {
+          header.value = webhookSecret;
+        }
+      }
     }
   }
   return cloned;

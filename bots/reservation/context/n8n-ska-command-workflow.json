@@ -25,6 +25,30 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3031/api/webhooks/n8n/ska-command",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-ska-webhook-secret",
+              "value": "__SKA_WEBHOOK_SECRET__"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { command: $json.command, args: $json.rawArgs } }}",
+        "options": {}
+      },
+      "id": "HTTP_LocalBridge",
+      "name": "스카 로컬 브리지",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 80]
+    },
+    {
+      "parameters": {
         "conditions": {
           "string": [
             {
@@ -229,7 +253,23 @@
       "main": [
         [
           {
+            "node": "스카 로컬 브리지",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "예약 조회?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "스카 로컬 브리지": {
+      "main": [
+        [
+          {
+            "node": "예약 응답",
             "type": "main",
             "index": 0
           }
