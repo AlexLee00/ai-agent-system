@@ -8,6 +8,7 @@
  */
 
 const sender = require('../../../packages/core/lib/telegram-sender');
+const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * 클로드팀 알람 발행 → 텔레그램 Forum Topic 직접 라우팅
@@ -21,17 +22,12 @@ const sender = require('../../../packages/core/lib/telegram-sender');
  */
 async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_level = 2, message, payload }) {
   const topicTeam = team === 'claude' ? 'claude-lead' : team;
-  try {
-    if (alert_level >= 3) {
-      await sender.sendCritical(topicTeam, message);  // 🚨 긴급 + 🔧 클로드 이중 발송
-    } else {
-      await sender.send(topicTeam, message);
-    }
-    return true;
-  } catch (e) {
-    console.warn(`[mainbot-client] 발송 실패: ${e.message}`);
-    return false;
-  }
+  const result = await publishToTelegram({
+    sender,
+    topicTeam,
+    event: { from_bot, team, event_type, alert_level, message, payload },
+  });
+  return result.ok;
 }
 
 module.exports = { publishToMainBot };

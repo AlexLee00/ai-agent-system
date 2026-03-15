@@ -16,6 +16,7 @@ const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
 const sender = require('../../../packages/core/lib/telegram-sender');
+const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
 
 // ── 팀 이름 (변경 시 이 상수만 수정)
 const TEAM_NAME = '스카팀';
@@ -109,8 +110,19 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
     return false;
   }
 
-  // telegram-sender 경유 — 🏢 스카 Forum Topic으로 라우팅
-  const ok = await sender.send('ska', `🔔 ${TEAM_NAME}\n\n${message}`);
+  const result = await publishToTelegram({
+    sender,
+    topicTeam: 'ska',
+    event: {
+      from_bot: 'ska',
+      team: 'reservation',
+      event_type: 'alert',
+      alert_level: 2,
+      message,
+    },
+    prefix: `🔔 ${TEAM_NAME}\n\n`,
+  });
+  const ok = result.ok;
   if (ok) log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
   return ok;
 }

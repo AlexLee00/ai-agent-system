@@ -8,6 +8,7 @@ import { createRequire } from 'module';
 
 const require  = createRequire(import.meta.url);
 const pgPool   = require('../../../packages/core/lib/pg-pool');
+const { publishToQueue } = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * 메인봇 큐에 알람 발행
@@ -20,14 +21,10 @@ const pgPool   = require('../../../packages/core/lib/pg-pool');
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
 export async function publishToMainBot({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }) {
-  try {
-    await pgPool.run('claude', `
-      INSERT INTO mainbot_queue (from_bot, team, event_type, alert_level, message, payload)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [from_bot, team, event_type, alert_level, message, payload ? JSON.stringify(payload) : null]);
-    return true;
-  } catch (e) {
-    console.warn(`[mainbot-client] 큐 삽입 실패: ${e.message}`);
-    return false;
-  }
+  const result = await publishToQueue({
+    pgPool,
+    schema: 'claude',
+    event: { from_bot, team, event_type, alert_level, message, payload },
+  });
+  return result.ok;
 }
