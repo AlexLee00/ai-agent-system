@@ -117,7 +117,7 @@ export default function DashboardPage() {
 
   function handlePriorityAction(item) {
     if (!canUsePromptWorkspace || !item.prompt) return router.push(item.href);
-    router.push(`/ai?prompt=${encodeURIComponent(item.prompt)}`);
+    router.push(`/dashboard?prompt=${encodeURIComponent(item.prompt)}`);
   }
 
   function handleActivityAction(item) {
@@ -127,7 +127,7 @@ export default function DashboardPage() {
       return;
     }
     if (!canUsePromptWorkspace || !config.prompt) return router.push(config.href);
-    router.push(`/ai?prompt=${encodeURIComponent(config.prompt)}`);
+    router.push(`/dashboard?prompt=${encodeURIComponent(config.prompt)}`);
   }
 
   return (
