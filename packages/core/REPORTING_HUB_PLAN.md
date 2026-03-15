@@ -9,6 +9,7 @@
 
 - [reporting-hub.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.js)
   - `normalizeEvent()`
+  - `validatePayloadSchema()`
   - `publishToQueue()`
   - `publishToTelegram()`
   - `publishToRag()`
@@ -16,6 +17,7 @@
   - `publishEventPipeline()`
   - shared notice/report/snippet formatting
   - delivery policy (`dedupe`, `cooldown`, `quietHours`)
+  - payload schema normalization / warning
 
 ## Applied So Far
 
