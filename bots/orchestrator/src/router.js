@@ -44,8 +44,10 @@ const {
 const {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
+  INTENT_HEALTH_TARGETS,
   getTeamIntentMeta,
   buildTeamIntentReportFrame,
+  buildIntentEngineHealthLines,
   normalizeIntentText,
   buildAutoLearnPattern,
   summarizeIntentFamily,
@@ -484,31 +486,25 @@ async function buildTeamIntentReport(team = '', query = '') {
 }
 
 async function buildIntentEngineHealthReport() {
-  const targets = [
-    { key: 'jay', schema: 'claude', title: '제이', path: getNamedIntentLearningPath('jay') },
-    { key: 'worker', schema: 'worker', title: '워커', path: getNamedIntentLearningPath('worker') },
-    { key: 'luna', schema: 'investment', title: '루나', path: getNamedIntentLearningPath('jay') },
-    { key: 'ska', schema: 'ska', title: '스카', path: getNamedIntentLearningPath('jay') },
-    { key: 'claude', schema: 'claude', title: '클로드', path: getNamedIntentLearningPath('jay') },
-  ];
-
-  const summaryLines = [];
-  for (const target of targets) {
-    const learnings = readIntentLearnings(target.path);
+  const summaries = {};
+  for (const target of INTENT_HEALTH_TARGETS) {
+    const learnings = readIntentLearnings(getNamedIntentLearningPath(target.learningProfile || 'jay'));
     let summary = null;
     try {
       summary = await getPromotionSummary(pgPool, { schema: target.schema, filters: {} });
     } catch {
       summary = null;
     }
-    summaryLines.push(
-      `  ${target.title}: learned ${learnings.items.length}개 | 후보 ${summary?.pending_count ?? 0} | 자동 ${summary?.applied_count ?? 0}`
-    );
+    summaries[target.key] = {
+      learnedCount: learnings.items.length,
+      pendingCount: summary?.pending_count ?? 0,
+      appliedCount: summary?.applied_count ?? 0,
+    };
   }
   return buildHealthReport({
     title: '🩺 인텐트 엔진 상태',
     sections: [
-      { title: '■ 팀별 학습 현황', lines: summaryLines },
+      { title: '■ 팀별 학습 현황', lines: buildIntentEngineHealthLines(INTENT_HEALTH_TARGETS, summaries) },
     ],
     footer: [
       '조회: /promotions summary | /luna-intents | /ska-intents | /claude-intents',
