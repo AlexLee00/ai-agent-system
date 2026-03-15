@@ -320,6 +320,60 @@ function renderNoticeEvent(event) {
   return lines.join('\n').trim();
 }
 
+function buildReportEvent({
+  from_bot = 'reporting-hub',
+  team = 'general',
+  event_type = 'report',
+  alert_level = 1,
+  title = '',
+  summary = '',
+  sections = [],
+  footer = '',
+  payload = null,
+} = {}) {
+  const normalized = normalizeEvent({
+    from_bot,
+    team,
+    event_type,
+    alert_level,
+    message: title || summary,
+    payload,
+  });
+  return {
+    ...normalized,
+    title: String(title || '').trim(),
+    summary: String(summary || '').trim(),
+    sections: (sections || []).map((section) => ({
+      title: String(section?.title || '').trim(),
+      lines: (section?.lines || []).map((line) => String(line || '').trim()).filter(Boolean),
+    })).filter((section) => section.title || section.lines.length > 0),
+    footer: String(footer || '').trim(),
+  };
+}
+
+function renderReportEvent(event) {
+  if (!event) return '';
+  const normalized = buildReportEvent(event);
+  const lines = [];
+  if (normalized.title) lines.push(normalized.title);
+  if (normalized.summary) {
+    if (lines.length > 0) lines.push('');
+    lines.push(normalized.summary);
+  }
+  for (const section of normalized.sections) {
+    if (lines.length > 0) lines.push('');
+    if (section.title) lines.push(section.title);
+    for (const line of section.lines) {
+      lines.push(`  ${line}`);
+    }
+  }
+  if (normalized.footer) {
+    if (lines.length > 0) lines.push('');
+    lines.push(normalized.footer);
+  }
+  return lines.join('\n').trim();
+}
+
 module.exports = {
   normalizeEvent,
   publishToQueue,
@@ -331,4 +385,6 @@ module.exports = {
   renderSnippetEvent,
   buildNoticeEvent,
   renderNoticeEvent,
+  buildReportEvent,
+  renderReportEvent,
 };

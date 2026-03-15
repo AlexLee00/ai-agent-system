@@ -26,7 +26,13 @@ const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 const kst      = _require('../../../packages/core/lib/kst');
-const { publishEventPipeline } = _require('../../../packages/core/lib/reporting-hub.js');
+const {
+  publishEventPipeline,
+  buildNoticeEvent,
+  renderNoticeEvent,
+  buildReportEvent,
+  renderReportEvent,
+} = _require('../../../packages/core/lib/reporting-hub.js');
 
 // ─── 바이낸스 현재가 일괄 조회 ──────────────────────────────────────
 
@@ -111,6 +117,13 @@ async function fetchBinanceBalance() {
 
 function kstStr() {
   return kst.datetimeStr() + ' KST';
+}
+
+function buildSection(title, lines) {
+  return {
+    title,
+    lines: (lines || []).filter(Boolean),
+  };
 }
 
 // ─── 리포트 생성 ─────────────────────────────────────────────────────
@@ -362,23 +375,31 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       a => (a.action !== 'maintain' && a.action !== 'insufficient_data') || a.needsReview
     );
     if (needsAlert) {
-      const alertLines = ['📊 분석팀 가중치 조정 제안 (마스터 승인 필요)'];
+      const detailLines = [];
       for (const adj of accuracyReport.adjustments) {
         if (adj.action !== 'maintain' && adj.action !== 'insufficient_data') {
-          alertLines.push(`  ${adj.botName}: ${adj.currentWeight} → ${adj.suggestedWeight} (${adj.reason})`);
+          detailLines.push(`${adj.botName}: ${adj.currentWeight} → ${adj.suggestedWeight} (${adj.reason})`);
         }
         if (adj.needsReview) {
-          alertLines.push(`  ⚠️ ${adj.botName} 3주 연속 50% 미만 — 역할 재검토 필요`);
+          detailLines.push(`검토 필요: ${adj.botName} 3주 연속 50% 미만`);
         }
       }
-      alertLines.push('', '⚠️ 자동 변경 없음 — 마스터 승인 후 적용');
       await publishEventPipeline({
         event: {
           from_bot: 'luna',
           team: 'investment',
           event_type: 'accuracy_alert',
           alert_level: 2,
-          message: alertLines.join('\n'),
+          message: renderNoticeEvent(buildNoticeEvent({
+            from_bot: 'luna',
+            team: 'investment',
+            event_type: 'accuracy_alert',
+            alert_level: 2,
+            title: '분석팀 가중치 조정 제안',
+            summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
+            details: detailLines,
+            action: '자동 변경 없이 마스터 승인 후 반영',
+          })),
         },
         targets: [
           { type: 'queue', pgPool, schema: 'claude' },
@@ -389,13 +410,46 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   }
 
   if (telegram) {
+    const reportMessage = renderReportEvent(buildReportEvent({
+      from_bot: 'luna',
+      team: 'investment',
+      event_type: 'report',
+      alert_level: 1,
+      title: '📊 루나팀 투자 리포트',
+      summary: `기준: ${kstStr()} | 최근 ${days}일`,
+      sections: [
+        buildSection('━━━ 운영 모드 ━━━', [
+          '암호화폐: 🔴 LIVE (PAPER_MODE=false)',
+          '국내주식: 📄 PAPER (모의투자)',
+          '미국주식: 📄 PAPER (모의투자)',
+        ]),
+        buildSection('━━━ 실거래/모의거래 분리 ━━━', tradeBreakdown.length === 0
+          ? ['거래 없음']
+          : tradeBreakdown.map((row) => {
+              const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
+              return `${modeLabel} [${row.exchange}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
+            })),
+        buildSection('━━━ 자산/비용 요약 ━━━', [
+          `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
+          `총 자산(추정): $${equity.toFixed(2)}`,
+          `오늘 LLM 비용: $${cost.usage.toFixed(4)} / $${cost.dailyBudget.toFixed(2)}`,
+          `이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
+        ]),
+        buildSection(`━━━ 신호 통계 (최근 ${days}일) ━━━`, [
+          `총 신호: ${sigTotal}개`,
+          `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`,
+          ...(sigTotal > 0 ? [`실행률: ${((sigExec / sigTotal) * 100).toFixed(1)}%`] : []),
+        ]),
+      ],
+      footer: '상세 원문은 콘솔 출력 리포트를 참고하세요.',
+    }));
     await publishEventPipeline({
       event: {
         from_bot: 'luna',
         team: 'investment',
         event_type: 'report',
         alert_level: 1,
-        message: report,
+        message: reportMessage,
       },
       targets: [
         { type: 'queue', pgPool, schema: 'claude' },
