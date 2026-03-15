@@ -82,6 +82,8 @@ const SLASH_MAP = {
   '/promotions':  { intent: 'promotion_candidates', args: {} },
   '/ops-health': { intent: 'ops_health', args: {} },
   '/orchestrator-health': { intent: 'orchestrator_health', args: {} },
+  '/jay-health': { intent: 'orchestrator_health', args: {} },
+  '/openclaw-health': { intent: 'orchestrator_health', args: {} },
   '/intent-health': { intent: 'intent_engine_health', args: {} },
   '/luna-health': { intent: 'luna_health', args: {} },
   '/worker-health': { intent: 'worker_health', args: {} },
