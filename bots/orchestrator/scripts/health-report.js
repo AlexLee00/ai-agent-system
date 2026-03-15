@@ -21,6 +21,10 @@ const {
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const {
+  getRecentPayloadWarnings,
+  summarizePayloadWarnings,
+} = require('../../../packages/core/lib/reporting-hub');
+const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
   buildServiceRows,
@@ -50,7 +54,7 @@ async function buildCriticalWebhookHealth() {
   });
 }
 
-function buildDecision(serviceRows, criticalWebhookHealth) {
+function buildDecision(serviceRows, criticalWebhookHealth, payloadWarningHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -68,9 +72,39 @@ function buildDecision(serviceRows, criticalWebhookHealth) {
         level: 'high',
         reason: `n8n은 살아 있지만 critical webhook이 비정상입니다 (${criticalWebhookHealth.webhookReason}).`,
       },
+      {
+        active: payloadWarningHealth.warnCount > 0,
+        level: 'medium',
+        reason: `reporting payload 스키마 경고 ${payloadWarningHealth.warnCount}건이 있어 producer 규격 점검이 필요합니다.`,
+      },
     ],
     okReason: '오케스트레이터 서비스와 critical 알림 경로가 현재는 안정 구간입니다.',
   });
+}
+
+function buildPayloadWarningHealth(summary) {
+  if (!summary || summary.count === 0) {
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: ['  reporting payload 스키마 경고 없음'],
+      warn: [],
+    };
+  }
+
+  const latestWarning = Array.isArray(summary.latest?.warnings) && summary.latest.warnings.length > 0
+    ? summary.latest.warnings.join(', ')
+    : 'latest_unknown';
+  return {
+    okCount: 0,
+    warnCount: summary.count,
+    ok: [],
+    warn: [
+      `  reporting payload 스키마 경고 ${summary.count}건`,
+      ...summary.topProducers,
+      `  최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`,
+    ],
+  };
 }
 
 function buildActionLines(report) {
@@ -84,6 +118,9 @@ function buildActionLines(report) {
   }
   if (report.criticalWebhookHealth.n8nHealthy && !report.criticalWebhookHealth.webhookRegistered) {
     lines.push('  - critical webhook 재설치: node bots/orchestrator/n8n/setup-n8n.js');
+  }
+  if (report.payloadWarningHealth.warnCount > 0) {
+    lines.push('  - reporting producer payload 스키마 점검: title/summary/details/action 규격 확인');
   }
   if (lines.length === 0) {
     lines.push('  - 현재는 관찰 유지. 상세 점검이 필요하면 /ops-health alerts 확인');
@@ -99,6 +136,7 @@ function formatText(report) {
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ critical 알림 경로', report.criticalWebhookHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ reporting payload 경고', report.payloadWarningHealth, { okLimit: 2 }),
       {
         title: '■ 권장 조치',
         lines: buildActionLines(report),
@@ -127,7 +165,10 @@ async function buildReport() {
     shortLabel: (label) => hsm.shortLabel(label),
   });
   const criticalWebhookHealth = await buildCriticalWebhookHealth();
-  const decision = buildDecision(serviceRows, criticalWebhookHealth);
+  const payloadWarnings = getRecentPayloadWarnings({ withinHours: 24, limit: 50 });
+  const payloadWarningSummary = summarizePayloadWarnings(payloadWarnings);
+  const payloadWarningHealth = buildPayloadWarningHealth(payloadWarningSummary);
+  const decision = buildDecision(serviceRows, criticalWebhookHealth, payloadWarningHealth);
 
   return {
     serviceHealth: {
@@ -148,6 +189,7 @@ async function buildReport() {
       webhookUrl: criticalWebhookHealth.webhookUrl,
       resolvedWebhookUrl: criticalWebhookHealth.resolvedWebhookUrl,
     },
+    payloadWarningHealth,
     decision,
   };
 }

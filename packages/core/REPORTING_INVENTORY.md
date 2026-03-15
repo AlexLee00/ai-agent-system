@@ -45,6 +45,7 @@
   - event normalization
   - payload normalization (`title/summary/details/action/links`)
   - payload validation warning (`validatePayloadSchema`)
+  - payload warning telemetry (`/tmp/reporting-payload-warnings.jsonl`)
   - queue publish
   - telegram publish
   - rag publish
@@ -76,6 +77,7 @@
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
+- orchestrator health → reporting payload schema warning 노출
 
 ## Next Moves
 
