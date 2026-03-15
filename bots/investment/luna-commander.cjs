@@ -35,6 +35,9 @@ const {
   findPromotionCandidateIdByNormalized,
   markUnrecognizedPromoted,
 } = require('../../packages/core/lib/intent-store');
+const {
+  publishToQueue,
+} = require('../../packages/core/lib/reporting-hub');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '루나';
@@ -86,7 +89,7 @@ function acquireLock() {
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
 }
 
-// ─── 메인봇 알람 발행 (mainbot_queue 직접 INSERT) ───────────────────
+// ─── 메인봇 알람 발행 ────────────────────────────────────────────────
 
 /**
  * 마스터에게 텔레그램 알람 발행
@@ -95,11 +98,24 @@ function acquireLock() {
  */
 async function publishAlert(message, level = 1) {
   try {
-    await pgPool.run('claude', `
-      INSERT INTO mainbot_queue (from_bot, event_type, alert_level, message, payload, status)
-      VALUES ($1, 'system', $2, $3, '{}', 'pending')
-    `, [BOT_ID, level, message]);
-    console.log(`[루나] 마스터 알람 발행 (level ${level})`);
+    const result = await publishToQueue({
+      pgPool,
+      schema: 'claude',
+      event: {
+        from_bot: BOT_ID,
+        team: 'investment',
+        event_type: 'system',
+        alert_level: level,
+        message,
+        payload: {},
+      },
+      policy: {
+        cooldownMs: 2 * 60_000,
+      },
+    });
+    if (result.ok && !result.skipped) {
+      console.log(`[루나] 마스터 알람 발행 (level ${level})`);
+    }
   } catch (e) {
     console.error(`[루나] 알람 발행 실패:`, e.message);
   }

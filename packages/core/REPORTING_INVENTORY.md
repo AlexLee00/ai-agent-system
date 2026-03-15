@@ -59,6 +59,7 @@
 
 - reservation mainbot queue path → reporting-hub
 - investment mainbot queue path → reporting-hub
+- luna-commander queue alerts → reporting-hub
 - claude telegram alert path → reporting-hub
 - reservation direct telegram path → reporting-hub
 - rag-safe degraded/recovered queue alerts → reporting-hub
