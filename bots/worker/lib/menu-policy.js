@@ -144,6 +144,12 @@ const MASTER_ONLY_POLICY = {
   },
 };
 
+const HIDDEN_POLICY = {
+  member: { operations: [] },
+  admin: { operations: [] },
+  master: { operations: [] },
+};
+
 function buildCrudPolicy(menu) {
   return {
     member: { menu, ...CRUD_ALL_POLICY.member },
@@ -176,12 +182,20 @@ function buildMasterOnlyPolicy(menu) {
   };
 }
 
+function buildHiddenPolicy(menu) {
+  return {
+    member: { menu, ...HIDDEN_POLICY.member },
+    admin: { menu, ...HIDDEN_POLICY.admin },
+    master: { menu, ...HIDDEN_POLICY.master },
+  };
+}
+
 const MENU_POLICY = {
   dashboard: DASHBOARD_POLICY,
   attendance: ATTENDANCE_POLICY,
   chat: CHAT_POLICY,
   schedules: buildCrudPolicy('schedules'),
-  documents: buildCrudPolicy('documents'),
+  documents: buildHiddenPolicy('documents'),
   sales: buildCrudPolicy('sales'),
   projects: buildCrudPolicy('projects'),
   journals: buildCrudPolicy('journals'),
