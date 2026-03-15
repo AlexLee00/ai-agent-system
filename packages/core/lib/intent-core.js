@@ -100,10 +100,10 @@ function buildUnsupportedTeamIntentMessage() {
 function buildTeamIntentReportFrame(team = '', teamMeta, {
   promotions = '',
   unrecSummary = '',
-  thresholdLines = [],
 } = {}) {
   const normalized = String(team || '').trim().toLowerCase();
-  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
+  if (!teamMeta) return buildUnsupportedTeamIntentMessage();
+  const thresholdLines = buildTeamPromotionThresholdLines(teamMeta.thresholdTeam);
   return [
     `🧠 ${teamMeta.title}`,
     '',
