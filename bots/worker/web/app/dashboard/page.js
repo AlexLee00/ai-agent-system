@@ -13,6 +13,8 @@ export default function DashboardPage() {
   const [alerts,       setAlerts]       = useState(null);
   const [activities,   setActivities]   = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [workspaceDraft, setWorkspaceDraft] = useState('');
+  const [workspaceDraftVersion, setWorkspaceDraftVersion] = useState(0);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
 
@@ -43,16 +45,16 @@ export default function DashboardPage() {
   const pendingApprovals = summary?.pending_approvals ?? 0;
   const priorityItems = [
     canUsePromptWorkspace && pendingApprovals > 0
-      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose' }
+      ? { title: '승인 대기 확인', detail: `${pendingApprovals}건의 승인 요청이 쌓여 있습니다.`, href: '/approvals', tone: 'rose', prompt: '대기 승인 업무 보여줘' }
       : null,
     canUsePromptWorkspace && (alerts?.unchecked_in_count ?? 0) > 0
-      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber' }
+      ? { title: '미출근 직원 확인', detail: `${alerts.unchecked_in_count}명의 직원이 아직 출근하지 않았습니다.`, href: '/attendance', tone: 'amber', prompt: '오늘 미출근 직원 보여줘' }
       : null,
     (summary?.today_schedules ?? 0) > 0
-      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue' }
+      ? { title: '오늘 일정 점검', detail: `${summary.today_schedules}건의 일정이 등록되어 있습니다.`, href: '/schedules', tone: 'blue', prompt: '오늘 일정 요약해줘' }
       : null,
     (summary?.today_sales ?? 0) === 0
-      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald' }
+      ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘' }
       : null,
   ].filter(Boolean);
 
@@ -69,6 +71,16 @@ export default function DashboardPage() {
     sales: '매출',
     approval: '승인',
   };
+
+  function handlePriorityAction(item) {
+    if (!canUsePromptWorkspace || !item.prompt) {
+      router.push(item.href);
+      return;
+    }
+    setWorkspaceDraft(item.prompt);
+    setWorkspaceDraftVersion((prev) => prev + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div className="space-y-6">
@@ -145,6 +157,8 @@ export default function DashboardPage() {
             showCanvasPanel={false}
             showQueuePanel={false}
             showMasterSignalsPanel={false}
+            externalDraft={workspaceDraft}
+            draftVersion={workspaceDraftVersion}
           />
         </section>
       )}
@@ -230,14 +244,27 @@ export default function DashboardPage() {
                 현재 즉시 조치가 필요한 항목이 없습니다.
               </div>
             ) : priorityItems.map((item) => (
-              <button
+              <div
                 key={`${item.href}-${item.title}`}
-                onClick={() => router.push(item.href)}
-                className={`rounded-3xl border px-5 py-4 text-left transition-colors hover:shadow-sm ${toneClasses[item.tone] || toneClasses.blue}`}
+                className={`rounded-3xl border px-5 py-4 text-left ${toneClasses[item.tone] || toneClasses.blue}`}
               >
                 <p className="text-sm font-semibold text-slate-900">{item.title}</p>
                 <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
-              </button>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handlePriorityAction(item)}
+                    className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                  >
+                    프롬프트에 채우기
+                  </button>
+                  <button
+                    onClick={() => router.push(item.href)}
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    메뉴 열기
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </div>
