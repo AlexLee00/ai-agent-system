@@ -70,6 +70,7 @@
 - claude alert fanout → severity 기반 telegram/n8n 라우팅
 - reservation mainbot/telegram → severity 기반 queue/n8n 및 telegram/n8n 라우팅
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
+- blog health-check alerts → severity 기반 telegram/n8n 라우팅
 
 ## Next Moves
 
