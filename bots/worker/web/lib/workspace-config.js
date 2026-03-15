@@ -41,7 +41,7 @@ const MENU_CONFIG = {
     title: '일정 공용 프롬프트',
     description: '일정 등록, 수정, 조회를 하나의 프롬프트 창에서 시작하고 아래 리스트에서 확정합니다.',
     suggestions: ['내일 오전 10시 미팅 잡아줘', '오늘 일정 보여줘', '이번 주 일정 요약해줘'],
-    allowUpload: false,
+    allowUpload: true,
     agentLabel: {
       member: 'Chloe 일정 에이전트',
       admin: 'Chloe 일정 운영 에이전트',
@@ -74,7 +74,7 @@ const MENU_CONFIG = {
     title: '매출 관리 공용 프롬프트',
     description: '매출 등록과 조회를 하나의 프롬프트 창에서 시작하고 아래 리스트에서 확정합니다.',
     suggestions: ['오늘 상품판매 5만원 매출 등록해줘', '이번 주 매출 요약해줘', '어제 매출 내역 보여줘'],
-    allowUpload: false,
+    allowUpload: true,
     agentLabel: {
       member: 'Oliver 매출 에이전트',
       admin: 'Oliver 매출 운영 에이전트',
@@ -85,7 +85,7 @@ const MENU_CONFIG = {
     title: '프로젝트 공용 프롬프트',
     description: '프로젝트 생성, 수정, 상태 조회를 하나의 프롬프트 창에서 시작합니다.',
     suggestions: ['신규 프로젝트 만들어줘', '진행 중 프로젝트 보여줘', '이번 주 마일스톤 정리해줘'],
-    allowUpload: false,
+    allowUpload: true,
     agentLabel: {
       member: 'Ryan 프로젝트 에이전트',
       admin: 'Ryan 프로젝트 운영 에이전트',
@@ -96,22 +96,11 @@ const MENU_CONFIG = {
     title: '업무일지 공용 프롬프트',
     description: '업무 기록, 보고 초안, 회고 요청을 하나의 프롬프트 창에서 처리합니다.',
     suggestions: ['오늘 업무일지 작성해줘', '지난주 업무 요약해줘', '회의 내용 정리해줘'],
-    allowUpload: false,
+    allowUpload: true,
     agentLabel: {
       member: 'Ryan 업무일지 에이전트',
       admin: 'Ryan 업무 운영 에이전트',
       master: 'Ryan 업무 오케스트레이터',
-    },
-  },
-  documents: {
-    title: '문서 관리 공용 프롬프트',
-    description: '문서 업로드 후 분석, 요약, 분류 요청을 하나의 프롬프트 창에서 처리합니다.',
-    suggestions: ['계약서 검토해줘', '이 문서 요약해줘', '업로드한 문서 분류해줘'],
-    allowUpload: true,
-    agentLabel: {
-      member: 'Emily 문서 에이전트',
-      admin: 'Emily 문서 운영 에이전트',
-      master: 'Emily 문서 오케스트레이터',
     },
   },
   chat: {
