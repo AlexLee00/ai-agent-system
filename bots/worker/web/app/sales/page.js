@@ -10,6 +10,11 @@ import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
 
+function proposalChanged(original, proposal) {
+  if (!original || !proposal) return false;
+  return ['amount', 'category', 'description', 'date'].some((key) => String(original[key] || '') !== String(proposal[key] || ''));
+}
+
 export default function SalesPage() {
   const [sales, setSales]     = useState([]);
   const [summary, setSummary] = useState(null);
@@ -17,9 +22,15 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
   const [form, setForm]       = useState(EMPTY_FORM);
+  const [editId, setEditId]   = useState(null);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [tab, setTab]         = useState('list');
+  const [prompt, setPrompt] = useState('');
+  const [proposal, setProposal] = useState(null);
+  const [originalProposal, setOriginalProposal] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -41,7 +52,18 @@ export default function SalesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const openModal = () => { setForm(EMPTY_FORM); setError(''); setModal(true); };
+  const openModal = () => { setForm(EMPTY_FORM); setEditId(null); setError(''); setModal(true); };
+  const openEdit = (row) => {
+    setForm({
+      amount: String(row.amount || ''),
+      category: row.category || '',
+      description: row.description || '',
+      date: row.date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    });
+    setEditId(row.id);
+    setError('');
+    setModal(true);
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -49,7 +71,8 @@ export default function SalesPage() {
     if (!amount || amount <= 0) { setError('올바른 금액을 입력하세요'); return; }
     setSaving(true); setError('');
     try {
-      await api.post('/sales', { ...form, amount });
+      if (editId) await api.put(`/sales/${editId}`, { ...form, amount });
+      else await api.post('/sales', { ...form, amount });
       setModal(false); setForm(EMPTY_FORM); load();
     } catch (err) { setError(err.message); }
     finally { setSaving(false); }
@@ -59,6 +82,56 @@ export default function SalesPage() {
     if (!confirm('삭제하시겠습니까?')) return;
     await api.delete(`/sales/${id}`).catch(() => {});
     load();
+  };
+
+  const createProposal = async () => {
+    if (!prompt.trim()) return;
+    setProposalLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const data = await api.post('/sales/proposals', { prompt });
+      setProposal(data.proposal || null);
+      setOriginalProposal(data.proposal || null);
+      setPrompt('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handleConfirmProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalLoading(true);
+    setError('');
+    try {
+      await api.post(`/sales/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      setNotice('매출 등록 제안을 확정했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handleRejectProposal = async () => {
+    if (!proposal?.feedback_session_id) return;
+    setProposalLoading(true);
+    setError('');
+    try {
+      await api.post(`/sales/proposals/${proposal.feedback_session_id}/reject`, {});
+      setNotice('매출 등록 제안을 반려했습니다.');
+      setProposal(null);
+      setOriginalProposal(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setProposalLoading(false);
+    }
   };
 
   const columns = [
@@ -93,6 +166,162 @@ export default function SalesPage() {
         </button>
       </div>
 
+      <div className="card space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-slate-500">매출 자연어 등록</p>
+            <p className="text-sm text-slate-600 mt-1">
+              예: `오늘 상품판매 5만원 매출 등록해줘`, `어제 서비스 매출 12만원 기록해줘`
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            확인 결과 창 기반 피드백 수집
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {['오늘 상품판매 5만원 매출 등록해줘', '어제 서비스 매출 12만원 기록해줘', '3월 14일 광고 매출 8만원 추가해줘'].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setPrompt(item)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <textarea
+            className="input-base min-h-[92px]"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="매출 등록 요청을 자연어로 입력하세요."
+          />
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="btn-primary" onClick={createProposal} disabled={proposalLoading || !prompt.trim()}>
+              {proposalLoading ? '제안 생성 중...' : '매출 제안 만들기'}
+            </button>
+            <button type="button" className="btn-secondary" onClick={openModal}>
+              직접 입력 모달 열기
+            </button>
+          </div>
+        </div>
+
+        {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+        {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
+      </div>
+
+      {proposal && (
+        <div className="card space-y-4 border-sky-200 bg-sky-50/40">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-sky-700">확인 결과 창</p>
+              <h2 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h2>
+              <p className="text-sm text-slate-600 mt-1">
+                자연어 입력을 매출 등록 제안으로 해석했습니다. 금액과 카테고리, 날짜를 확인한 뒤 확정하세요.
+              </p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+              ? 'border-amber-200 bg-amber-50 text-amber-700'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+              {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+            </span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">금액</span>
+              <input
+                className="input-base"
+                type="number"
+                min="1"
+                value={proposal.amount || ''}
+                onChange={(e) => setProposal((prev) => ({
+                  ...prev,
+                  amount: e.target.value,
+                  summary: `${prev.date} ${prev.category || '기타'} 매출 ₩${Number(e.target.value || 0).toLocaleString()} 등록 제안`,
+                }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">카테고리</span>
+              <input
+                className="input-base"
+                value={proposal.category || ''}
+                onChange={(e) => setProposal((prev) => ({
+                  ...prev,
+                  category: e.target.value,
+                  summary: `${prev.date} ${e.target.value || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안`,
+                }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-500">날짜</span>
+              <input
+                className="input-base"
+                type="date"
+                value={proposal.date || ''}
+                onChange={(e) => setProposal((prev) => ({
+                  ...prev,
+                  date: e.target.value,
+                  summary: `${e.target.value} ${prev.category || '기타'} 매출 ₩${Number(prev.amount || 0).toLocaleString()} 등록 제안`,
+                }))}
+              />
+            </label>
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs font-semibold text-slate-500">메모</span>
+              <input
+                className="input-base"
+                value={proposal.description || ''}
+                onChange={(e) => setProposal((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </label>
+          </div>
+
+          {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+              <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+              <div className="mt-3 space-y-2">
+                {proposal.similar_cases.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{item.summary || '유사 매출 등록 사례'}</p>
+                      <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                        유사도 {(item.similarity * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
+              {proposalLoading ? '확정 중...' : '이대로 확정'}
+            </button>
+            <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
+              제안 반려
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setProposal(null);
+                setOriginalProposal(null);
+                setError('');
+              }}
+              disabled={proposalLoading}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="card">
           <p className="text-sm font-medium text-slate-500">매출 운영 요약</p>
@@ -125,7 +354,10 @@ export default function SalesPage() {
                 pageSize={10}
                 emptyNode={emptyNode}
                 actions={row => (
-                  <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+                  <>
+                    <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
+                    <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+                  </>
                 )}
               />
           }
@@ -147,7 +379,7 @@ export default function SalesPage() {
         </div>
       )}
 
-      <Modal open={modal} onClose={() => setModal(false)} title="매출 등록">
+      <Modal open={modal} onClose={() => setModal(false)} title={editId ? '매출 수정' : '매출 등록'}>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">금액 (원) *</label>
@@ -168,7 +400,7 @@ export default function SalesPage() {
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">
             <button type="button" className="btn-secondary flex-1" onClick={() => setModal(false)}>취소</button>
-            <button type="submit"  className="btn-primary flex-1"  disabled={saving}>{saving ? '저장 중...' : '등록'}</button>
+            <button type="submit"  className="btn-primary flex-1"  disabled={saving}>{saving ? '저장 중...' : editId ? '수정' : '등록'}</button>
           </div>
         </form>
       </Modal>
