@@ -68,8 +68,10 @@ const {
   buildUnrecognizedCandidateStatusLine,
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
-  buildPromotionThresholdLines,
+  buildPromotionThresholdSection,
   buildPromotionPolicyNoteLines,
+  buildUnrecognizedSummaryReport,
+  buildUnrecognizedDetailFooter,
   buildPromotionCompactCandidateLine,
 } = require('../../../packages/core/lib/intent-core');
 const {
@@ -358,20 +360,7 @@ async function buildUnrecognizedReport(query = '', options = {}) {
         rows,
         (row) => candidateMap.get(normalizeIntentText(row.text || ''))
       );
-      lines.push('');
-      lines.push('LLM 추정 분포:');
-      for (const [intent, count] of summary.llmIntentCounts.slice(0, 8)) {
-        lines.push(`  ${intent}: ${count}회`);
-      }
-      lines.push('');
-      lines.push('후보 상태 분포:');
-      for (const [status, count] of summary.candidateStatusCounts) {
-        lines.push(`  ${status}: ${count}회`);
-      }
-      lines.push('');
-      lines.push('상세: /unrec');
-      lines.push('연결: /promotions pending | /promotions summary');
-      return lines.join('\n');
+      return buildUnrecognizedSummaryReport(`${title} (최근 7일, ${rows.length}종 ${total}회)`, summary);
     }
 
     for (const r of rows) {
@@ -390,9 +379,7 @@ async function buildUnrecognizedReport(query = '', options = {}) {
         lines.push(buildPromotionCompactCandidateLine(c));
       }
     }
-    lines.push('');
-    lines.push('조회: /promotions pending | /promotions applied');
-    lines.push('/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.');
+    lines.push(...buildUnrecognizedDetailFooter());
     return lines.join('\n');
   } catch (e) {
     return `⚠️ 미인식 이력 조회 실패: ${e.message}`;
@@ -422,11 +409,7 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
     const filterBits = buildPromotionFilterBits(filters);
     if (filterBits.length > 0) lines.push(`필터: ${filterBits.join(' | ')}`);
     if (filters.thresholdsOnly) {
-      lines.push('자동 반영 기준:');
-      lines.push(...buildPromotionThresholdLines(AUTO_PROMOTE_THRESHOLDS));
-      lines.push('');
-      lines.push('안전 허용: query/status/report/logs 계열만 자동 반영');
-      lines.push('차단 예시: *_action, 재시작, 승인, 송금');
+      lines.push(...buildPromotionThresholdSection(AUTO_PROMOTE_THRESHOLDS));
     } else if (filters.summaryOnly) {
       const baseRows = await getPromotionFamilyRows(pgPool, { schema, filters, limit: 200 });
       const familyRows = buildPromotionFamilySummary(baseRows);

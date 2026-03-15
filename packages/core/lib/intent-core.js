@@ -487,6 +487,16 @@ function buildPromotionThresholdLines(thresholds = AUTO_PROMOTE_THRESHOLDS) {
   });
 }
 
+function buildPromotionThresholdSection(thresholds = AUTO_PROMOTE_THRESHOLDS) {
+  return [
+    '자동 반영 기준:',
+    ...buildPromotionThresholdLines(thresholds),
+    '',
+    '안전 허용: query/status/report/logs 계열만 자동 반영',
+    '차단 예시: *_action, 재시작, 승인, 송금',
+  ];
+}
+
 function buildTeamPromotionThresholdLines(team = '') {
   const profile = AUTO_PROMOTE_TEAM_PROFILES[String(team || '').trim()] || {};
   const rows = Object.entries(profile);
@@ -504,6 +514,32 @@ function buildPromotionPolicyNoteLines(windowDays = AUTO_PROMOTE_DEFAULTS.window
     '요약: /promotions summary',
     '이력: /promotions events | /promotions event:rollback | /promotions actor:master',
     '롤백: /rollback <id> 또는 /rollback <문구>',
+  ];
+}
+
+function buildUnrecognizedSummaryReport(title = '미인식 명령', summary = { llmIntentCounts: [], candidateStatusCounts: [] }) {
+  const lines = [`❓ ${title}`];
+  lines.push('');
+  lines.push('LLM 추정 분포:');
+  for (const [intent, count] of summary.llmIntentCounts.slice(0, 8)) {
+    lines.push(`  ${intent}: ${count}회`);
+  }
+  lines.push('');
+  lines.push('후보 상태 분포:');
+  for (const [status, count] of summary.candidateStatusCounts) {
+    lines.push(`  ${status}: ${count}회`);
+  }
+  lines.push('');
+  lines.push('상세: /unrec');
+  lines.push('연결: /promotions pending | /promotions summary');
+  return lines.join('\n');
+}
+
+function buildUnrecognizedDetailFooter() {
+  return [
+    '',
+    '조회: /promotions pending | /promotions applied',
+    '/promote <인텐트> <패턴> 으로 학습시킬 수 있습니다.',
   ];
 }
 
@@ -648,8 +684,11 @@ module.exports = {
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
+  buildPromotionThresholdSection,
   buildTeamPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
+  buildUnrecognizedSummaryReport,
+  buildUnrecognizedDetailFooter,
   buildPromotionCompactCandidateLine,
   buildPromotionCandidateWhere,
   buildPromotionEventWhere,
