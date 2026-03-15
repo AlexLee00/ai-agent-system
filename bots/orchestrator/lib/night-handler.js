@@ -140,14 +140,22 @@ async function runNodeScriptJson(script, timeoutMs = 60_000) {
 async function buildOpsHealthAlertSnippet() {
   const root = path.join(__dirname, '..', '..', '..');
   const scripts = [
+    { title: '오케스트레이터', path: path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.js') },
     { title: '루나', path: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js') },
     { title: '워커', path: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js') },
     { title: '클로드', path: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js') },
     { title: '스카', path: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js') },
   ];
 
-  const [luna, worker, claude, ska] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
+  const [orchestrator, luna, worker, claude, ska] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
   const rows = [
+    {
+      title: '오케스트레이터',
+      hasWarn: !orchestrator || orchestrator.serviceHealth.warnCount > 0 || orchestrator.criticalWebhookHealth.warnCount > 0,
+      summary: orchestrator
+        ? `서비스 경고 ${orchestrator.serviceHealth.warnCount}건 / critical 경고 ${orchestrator.criticalWebhookHealth.warnCount}건`
+        : '조회 실패',
+    },
     {
       title: '루나',
       hasWarn: !luna || luna.serviceHealth.warnCount > 0,
@@ -183,7 +191,7 @@ async function buildOpsHealthAlertSnippet() {
     lines.push(`  • ${row.title}: ${row.summary}`);
   }
   lines.push('');
-  lines.push('상세 확인: /ops-health alerts');
+  lines.push('상세 확인: /ops-health alerts | /orchestrator-health');
   return lines.join('\n');
 }
 
