@@ -503,6 +503,50 @@ function renderReportEvent(event) {
   return lines.join('\n').trim();
 }
 
+function parseEventPayload(payload) {
+  if (!payload) return null;
+  if (typeof payload === 'object') return payload;
+  if (typeof payload !== 'string') return null;
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getEventHeadline(event) {
+  const payload = parseEventPayload(event?.payload);
+  const fromPayload = [
+    payload?.title,
+    payload?.summary,
+    payload?.detail,
+  ].find((value) => typeof value === 'string' && value.trim());
+  if (fromPayload) return String(fromPayload).trim();
+
+  const message = String(event?.message || '').trim();
+  if (!message) return '';
+  return message.split('\n').map((line) => line.trim()).find(Boolean) || '';
+}
+
+function getEventDetailLines(event) {
+  const payload = parseEventPayload(event?.payload);
+  const payloadDetails = [];
+  if (Array.isArray(payload?.details)) {
+    payloadDetails.push(...payload.details.map((line) => String(line || '').trim()).filter(Boolean));
+  }
+  if (typeof payload?.action === 'string' && payload.action.trim()) {
+    payloadDetails.push(`조치: ${payload.action.trim()}`);
+  }
+  const messageLines = String(event?.message || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const headline = getEventHeadline(event);
+  const filteredMessageLines = messageLines.filter((line, index) => !(index === 0 && line === headline));
+  return [...payloadDetails, ...filteredMessageLines];
+}
+
 function buildSeverityTargets({
   event,
   pgPool,
@@ -577,5 +621,8 @@ module.exports = {
   renderNoticeEvent,
   buildReportEvent,
   renderReportEvent,
+  parseEventPayload,
+  getEventHeadline,
+  getEventDetailLines,
   buildSeverityTargets,
 };
