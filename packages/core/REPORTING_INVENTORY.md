@@ -62,6 +62,7 @@
 - luna reporter queue fanout → reporting-hub
 - night-handler briefing snippets → reporting-hub event contract
 - dexter alert/recovery wording → reporting-hub notice format
+- luna queue report/accuracy alert → reporting-hub notice/report format
 
 ## Next Moves
 
