@@ -136,7 +136,17 @@ async function checkWebhookRegistration(url, body = {}, options = {}) {
     };
   }
 
-  const result = await postJson(url, body, options);
+  const probeBody = {
+    _healthProbe: true,
+    ...body,
+  };
+  const result = await postJson(url, probeBody, {
+    ...options,
+    headers: {
+      'x-health-probe': '1',
+      ...(options.headers || {}),
+    },
+  });
   if (result.error) {
     return {
       healthy: false,
