@@ -127,7 +127,7 @@ function formatText(report) {
 }
 
 async function buildReport() {
-  const status = getLaunchctlStatus();
+  const status = getLaunchctlStatus([...CORE_SERVICES, ...SCHEDULED_SERVICES]);
   const coreServiceRows = buildServiceRows(status, {
     labels: CORE_SERVICES,
     continuous: CONTINUOUS,
