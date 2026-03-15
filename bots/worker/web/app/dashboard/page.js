@@ -38,6 +38,56 @@ export default function DashboardPage() {
         { key: 'chloe', label: 'Chloe (일정)' },
         { key: 'oliver', label: 'Oliver (매출/리포트)' },
       ];
+  const dashboardBotSuggestions = {
+    worker: [
+      '오늘 운영 우선순위 정리해줘',
+      '대기 승인 업무 보여줘',
+      '지금 바로 확인할 예외 요약해줘',
+      '오늘 업무 흐름 점검해줘',
+    ],
+    noah: [
+      '오늘 미출근 직원 보여줘',
+      '휴가 승인 대기 내역 보여줘',
+      '근태 이상 징후 정리해줘',
+      '출근 현황 요약해줘',
+    ],
+    chloe: [
+      '오늘 일정 요약해줘',
+      '가까운 미팅 일정 보여줘',
+      '월간 일정 충돌 점검해줘',
+      '리마인더 필요한 일정 알려줘',
+    ],
+    oliver: [
+      '오늘 매출 상태 알려줘',
+      '주간 매출 비교해줘',
+      '매출 미등록 항목 점검해줘',
+      '부서별 매출 흐름 보여줘',
+    ],
+    ryan: [
+      '지연 프로젝트 점검해줘',
+      '마감 임박 프로젝트 보여줘',
+      '완료 프로젝트 회고 항목 정리해줘',
+      '프로젝트 우선순위 다시 잡아줘',
+    ],
+    sophie: [
+      '이번 달 급여 점검해줘',
+      '급여 계산 대기 항목 보여줘',
+      '이전 월 재계산 검토해줘',
+      '급여 이상 징후 정리해줘',
+    ],
+    emily: [
+      '문서 처리 적체 보여줘',
+      'OCR 대기 문서 점검해줘',
+      '문서 요약 누락 항목 알려줘',
+      '최근 업로드 문서 상태 정리해줘',
+    ],
+    marcus: [
+      '운영 데이터 이상 징후 분석해줘',
+      '최근 흐름 기반으로 리스크 정리해줘',
+      '주간 지표 비교해줘',
+      '성과와 병목을 함께 요약해줘',
+    ],
+  };
 
   useEffect(() => {
     const requests = [
@@ -212,6 +262,7 @@ export default function DashboardPage() {
               '오늘 일정 요약해줘',
               '오늘 매출 상태 알려줘',
             ]}
+            botSuggestionsMap={dashboardBotSuggestions}
             allowUpload={false}
             agentName={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
             botOptions={dashboardBotOptions}
