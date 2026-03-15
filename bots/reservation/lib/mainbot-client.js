@@ -8,7 +8,10 @@
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { publishToQueue } = require('../../../packages/core/lib/reporting-hub');
+const {
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * 메인봇 큐에 알람 발행
@@ -21,13 +24,20 @@ const { publishToQueue } = require('../../../packages/core/lib/reporting-hub');
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
 async function publishToMainBot({ from_bot, team = 'reservation', event_type, alert_level = 2, message, payload }) {
-  const result = await publishToQueue({
-    pgPool,
-    schema: 'claude',
-    event: { from_bot, team, event_type, alert_level, message, payload },
+  const event = { from_bot, team, event_type, alert_level, message, payload };
+  const result = await publishEventPipeline({
+    event,
     policy: {
       cooldownMs: 2 * 60_000,
     },
+    targets: buildSeverityTargets({
+      event,
+      pgPool,
+      schema: 'claude',
+      includeQueue: true,
+      includeTelegram: false,
+      includeN8n: true,
+    }),
   });
   return result.ok;
 }

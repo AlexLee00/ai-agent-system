@@ -8,11 +8,51 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
+const {
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
+
+function publishLunaMessage({
+  message,
+  eventType = 'report',
+  alertLevel = 1,
+  payload = null,
+}) {
+  const event = {
+    from_bot: 'luna',
+    team: 'investment',
+    event_type: eventType,
+    alert_level: alertLevel,
+    message,
+    payload,
+  };
+  return publishEventPipeline({
+    event,
+    policy: {
+      cooldownMs: alertLevel >= 3 ? 60_000 : 5 * 60_000,
+      quietHours: {
+        timezone: 'KST',
+        startHour: 23,
+        endHour: 8,
+        maxAlertLevel: 1,
+      },
+    },
+    targets: buildSeverityTargets({
+      event,
+      sender,
+      topicTeam: 'luna',
+      includeQueue: false,
+      includeTelegram: true,
+      includeN8n: true,
+    }),
+  }).then((result) => result.ok);
+}
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────
 
 export function sendTelegram(message) {
-  return sender.send('luna', message);
+  return publishLunaMessage({ message, eventType: 'report', alertLevel: 1 });
 }
 
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
@@ -26,7 +66,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sender.send('luna', msg);
+  return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
 export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
@@ -55,7 +95,7 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
     if (capitalInfo.openPositions != null) lines.push(`📊 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions}`);
     if (capitalInfo.dailyPnL   != null) lines.push(`🛡️ 일간 PnL: ${capitalInfo.dailyPnL >= 0 ? '+' : ''}${capitalInfo.dailyPnL.toFixed(2)} USDT`);
   }
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'trade', alertLevel: 1 });
 }
 
 export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
@@ -67,7 +107,7 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sender.send('luna', msg);
+  return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
 export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
@@ -79,12 +119,12 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
     reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
   ].filter(Boolean).join('\n');
-  return sender.send('luna', msg);
+  return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
 
 export function notifyRiskRejection({ symbol, action, reason }) {
   const msg = `🚫 [리스크 거부] ${action} ${symbol}\n사유: ${reason}`;
-  return sender.send('luna', msg);
+  return publishLunaMessage({ message: msg, eventType: 'alert', alertLevel: 2 });
 }
 
 export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions, confidence }) {
@@ -99,7 +139,7 @@ export function notifyTradeSkip({ symbol, action, reason, balance, openPositions
   if (balance !== undefined) lines.push(`💰 가용 잔고: $${parseFloat(balance).toFixed(2)}`);
   if (openPositions !== undefined) lines.push(`📋 동시 포지션: ${openPositions}/${maxPositions}`);
   lines.push(SEP);
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 2 });
 }
 
 export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
@@ -121,12 +161,12 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
   lines.push(sep);
   lines.push('재개: /resume_trading (마스터만)');
   lines.push(SEP);
-  return sender.sendCritical('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 4 });
 }
 
 export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
-  return sender.sendCritical('luna', msg);  // 🚨 긴급 + 💰 루나 이중 발송
+  return publishLunaMessage({ message: msg, eventType: 'alert', alertLevel: 4 });
 }
 
 // ─── 매매일지 알림 ───────────────────────────────────────────────────
@@ -188,7 +228,7 @@ export function notifyJournalEntry({
   if (reasoning)     lines.push(`근거: ${String(reasoning).slice(0, 100)}`);
   if (signalToExecMs) lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
 
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'trade', alertLevel: 1 });
 }
 
 /**
@@ -237,7 +277,7 @@ export function notifyDailyJournal(date, records = []) {
     lines.push(`  헤르메스: ${acc(allRec.hermes_accuracy)} ${trend(allRec.hermes_accuracy)}`);
   }
 
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
 /**
@@ -283,7 +323,7 @@ export function notifySettlement({
     lines.push(`승률: ${((winRate) * 100).toFixed(0)}% (${wins}/${totalTrades})`);
   }
   lines.push(SEP);
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
 /**
@@ -312,7 +352,7 @@ export function notifyCapitalStatus({ totalCapital, balance, positionValue, rese
     `🛡️ 서킷 브레이커: ${circuitOn ? 'ON 🔴' : 'OFF ✅'}`,
     SEP,
   ];
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
 /**
@@ -345,7 +385,7 @@ export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losse
     if (lossAnalysis.caution) lines.push(`  ⚠️ 주의: ${lossAnalysis.caution}`);
   }
   lines.push(SEP);
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
 export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
@@ -365,5 +405,5 @@ export function notifyCycleSummary({ cycle, symbols, results, paperMode, duratio
   } else {
     lines.push('신호: HOLD (모든 심볼)');
   }
-  return sender.send('luna', lines.join('\n'));
+  return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }

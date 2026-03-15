@@ -68,6 +68,8 @@
 - reservation/claude/investment 기본 cooldown 정책 적용
 - claude 저우선 안내 quiet-hours 정책 적용
 - claude alert fanout → severity 기반 telegram/n8n 라우팅
+- reservation mainbot/telegram → severity 기반 queue/n8n 및 telegram/n8n 라우팅
+- luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 
 ## Next Moves
 

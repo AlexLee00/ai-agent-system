@@ -16,7 +16,10 @@ const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
 const sender = require('../../../packages/core/lib/telegram-sender');
-const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
+const {
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 // ── 팀 이름 (변경 시 이 상수만 수정)
 const TEAM_NAME = '스카팀';
@@ -110,20 +113,27 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
     return false;
   }
 
-  const result = await publishToTelegram({
-    sender,
-    topicTeam: 'ska',
-    event: {
-      from_bot: 'ska',
-      team: 'reservation',
-      event_type: 'alert',
-      alert_level: 2,
-      message,
-    },
-    prefix: `🔔 ${TEAM_NAME}\n\n`,
+  const event = {
+    from_bot: 'ska',
+    team: 'reservation',
+    event_type: 'alert',
+    alert_level: 2,
+    message,
+  };
+  const result = await publishEventPipeline({
+    event,
     policy: {
       cooldownMs: 5 * 60_000,
     },
+    targets: buildSeverityTargets({
+      event,
+      sender,
+      topicTeam: 'ska',
+      telegramPrefix: `🔔 ${TEAM_NAME}\n\n`,
+      includeQueue: false,
+      includeTelegram: true,
+      includeN8n: true,
+    }),
   });
   const ok = result.ok;
   if (ok) log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
