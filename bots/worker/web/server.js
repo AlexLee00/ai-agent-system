@@ -542,6 +542,47 @@ app.post('/api/auth/change-password',
   }
 );
 
+// PUT /api/settings/profile
+app.put('/api/settings/profile',
+  requireAuth,
+  body('name').optional().trim().notEmpty(),
+  body('email').optional({ values: 'falsy' }).isEmail(),
+  body('telegram_id').optional({ values: 'falsy' }).trim(),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    if (req.user.role === 'member') {
+      return res.status(403).json({ error: '멤버 계정은 개인정보를 직접 수정할 수 없습니다.', code: 'FORBIDDEN' });
+    }
+    try {
+      const { name, email, telegram_id } = req.body;
+      await pgPool.run(SCHEMA, `
+        UPDATE worker.users
+        SET name = COALESCE($1, name),
+            email = COALESCE($2, email),
+            telegram_id = COALESCE($3, telegram_id),
+            updated_at = NOW()
+        WHERE id = $4
+      `, [
+        name || null,
+        email || null,
+        telegram_id ?? null,
+        req.user.id,
+      ]);
+
+      const user = await pgPool.get(SCHEMA,
+        `SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+                ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+         FROM worker.users
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [req.user.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      res.json({ user: await buildUserResponse(user) });
+    } catch {
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
+  }
+);
+
 // GET /api/settings/ai-policy
 app.get('/api/settings/ai-policy', requireAuth, async (req, res) => {
   try {

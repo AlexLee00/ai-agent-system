@@ -7,6 +7,10 @@ import PasswordRuleChecker from '@/components/PasswordRuleChecker';
 
 export default function SettingsPage() {
   const { user, refreshUser } = useAuth();
+  const canEditProfile = ['admin', 'master'].includes(user?.role);
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', telegram_id: '' });
+  const [profileMsg, setProfileMsg] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
   const [msg, setMsg]       = useState('');
   const [saving, setSaving] = useState(false);
@@ -22,6 +26,14 @@ export default function SettingsPage() {
     assist: '보조',
     full: 'FULL',
   };
+
+  useEffect(() => {
+    setProfileForm({
+      name: user?.name || '',
+      email: user?.email || '',
+      telegram_id: user?.telegram_id || '',
+    });
+  }, [user?.name, user?.email, user?.telegram_id]);
 
   const handlePwChange = async (e) => {
     e.preventDefault();
@@ -72,6 +84,26 @@ export default function SettingsPage() {
     }
   };
 
+  const handleProfileSave = async (e) => {
+    e.preventDefault();
+    if (!canEditProfile) return;
+    setProfileSaving(true);
+    setProfileMsg('');
+    try {
+      await api.put('/settings/profile', {
+        name: profileForm.name,
+        email: profileForm.email,
+        telegram_id: profileForm.telegram_id,
+      });
+      await refreshUser();
+      setProfileMsg('✅ 개인정보를 수정했습니다.');
+    } catch (err) {
+      setProfileMsg(`❌ ${err.message}`);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-lg">
       <div className="card bg-gradient-to-br from-white to-slate-100/80">
@@ -88,6 +120,56 @@ export default function SettingsPage() {
           <div><span className="text-slate-500">역할</span><span className={`badge-${user?.role}`}>{user?.role}</span></div>
           <div><span className="text-slate-500">이메일</span><p className="font-medium">{user?.email || '-'}</p></div>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="mb-4">
+          <h2 className="font-semibold text-slate-800">개인정보 수정</h2>
+          <p className="text-sm text-slate-500 mt-1">
+            {canEditProfile
+              ? '관리자와 마스터는 이름, 이메일, 텔레그램 ID를 수정할 수 있습니다.'
+              : '멤버 계정은 개인정보를 직접 수정할 수 없습니다. 비밀번호만 변경할 수 있습니다.'}
+          </p>
+        </div>
+
+        <form onSubmit={handleProfileSave} className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">이름</label>
+            <input
+              className="input-base"
+              value={profileForm.name}
+              onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
+              disabled={!canEditProfile || profileSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">이메일</label>
+            <input
+              type="email"
+              className="input-base"
+              value={profileForm.email}
+              onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
+              disabled={!canEditProfile || profileSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">텔레그램 ID</label>
+            <input
+              className="input-base"
+              value={profileForm.telegram_id}
+              onChange={(e) => setProfileForm((prev) => ({ ...prev, telegram_id: e.target.value }))}
+              disabled={!canEditProfile || profileSaving}
+            />
+          </div>
+          {profileMsg && <p className={`text-sm ${profileMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{profileMsg}</p>}
+          <button
+            type="submit"
+            className="btn-primary w-full"
+            disabled={!canEditProfile || profileSaving || !profileForm.name.trim()}
+          >
+            {profileSaving ? '저장 중...' : '개인정보 저장'}
+          </button>
+        </form>
       </div>
 
       <div className="card space-y-4">
