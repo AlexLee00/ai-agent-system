@@ -45,6 +45,7 @@ const {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
   getTeamIntentMeta,
+  buildTeamIntentReportFrame,
   normalizeIntentText,
   buildAutoLearnPattern,
   summarizeIntentFamily,
@@ -475,19 +476,11 @@ async function buildTeamIntentReport(team = '', query = '') {
     }),
   ]);
 
-  return [
-    `🧠 ${teamMeta.title}`,
-    '',
+  return buildTeamIntentReportFrame(normalized, teamMeta, {
     promotions,
-    '',
     unrecSummary,
-    '',
-    '자동 반영 기준:',
-    ...buildTeamPromotionThresholdLines(teamMeta.thresholdTeam),
-    '',
-    `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
-    `롤백 예시: /${normalized}-rollback <id>`,
-  ].join('\n');
+    thresholdLines: buildTeamPromotionThresholdLines(teamMeta.thresholdTeam),
+  });
 }
 
 async function buildIntentEngineHealthReport() {
