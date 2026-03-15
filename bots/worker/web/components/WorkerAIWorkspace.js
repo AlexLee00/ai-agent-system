@@ -5,6 +5,7 @@ import { Paperclip, UploadCloud } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { getToken } from '@/lib/auth-context';
+import { getMenuPolicy } from '@/lib/menu-access';
 
 const API_BASE = '/api';
 
@@ -116,6 +117,7 @@ function CanvasCard({ ui }) {
 }
 
 export default function WorkerAIWorkspace({
+  menuKey = 'journals',
   title = 'AI 업무 대화',
   description = '자연어로 요청하면 Worker 팀장이 업무를 정리하고 실행으로 연결합니다.',
   suggestions = [],
@@ -136,12 +138,15 @@ export default function WorkerAIWorkspace({
   const reconnectTimerRef = useRef(null);
   const fileRef = useRef(null);
   const aiPolicy = user?.ai_policy || null;
+  const menuPolicy = getMenuPolicy(user, menuKey);
   const uiMode = aiPolicy?.ui_mode || 'prompt_only';
   const llmMode = aiPolicy?.llm_mode || 'assist';
   const roleProfile = aiPolicy?.role_profile || (user?.role === 'master' ? 'master' : user?.role === 'admin' ? 'admin' : 'member');
-  const showCanvas = uiMode !== 'prompt_only';
-  const showQueue = uiMode !== 'prompt_only';
+  const promptEnabled = menuPolicy?.prompt_enabled !== false;
+  const showCanvas = uiMode !== 'prompt_only' && menuPolicy?.result_canvas_enabled !== false;
+  const showQueue = uiMode !== 'prompt_only' && menuPolicy?.result_canvas_enabled !== false;
   const showMasterSignals = uiMode === 'full_master_console';
+  const uploadEnabled = allowUpload && promptEnabled;
   const promptPlaceholder = llmMode === 'off'
     ? '정형 업무를 자연어로 입력하세요. 예: 오늘 일정 보여줘'
     : '업무를 자연어로 입력하세요';
@@ -284,7 +289,7 @@ export default function WorkerAIWorkspace({
 
   async function sendMessage(text) {
     const message = String(text || input).trim();
-    if (!message || isPending) return;
+    if (!promptEnabled || !message || isPending) return;
 
     setMessages(prev => [...prev, {
       role: 'user',
@@ -326,6 +331,7 @@ export default function WorkerAIWorkspace({
   }
 
   async function handleUpload(event) {
+    if (!uploadEnabled) return;
     const file = event.target.files?.[0];
     if (!file) return;
     const token = getToken();
@@ -368,6 +374,7 @@ export default function WorkerAIWorkspace({
   }
 
   return (
+    !promptEnabled ? null :
     <section className={`grid gap-5 ${showCanvas ? 'grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]' : 'grid-cols-1'}`}>
       <div className="card min-h-[36rem] flex flex-col bg-white/95 backdrop-blur-sm">
         <div className="border-b border-slate-200 pb-4 mb-4">
@@ -438,7 +445,7 @@ export default function WorkerAIWorkspace({
         </div>
 
         <div className="border-t border-slate-200 pt-4 mt-4 space-y-3">
-          {allowUpload && (
+          {uploadEnabled && (
             <div className="flex flex-wrap items-center gap-3">
               <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
               <button

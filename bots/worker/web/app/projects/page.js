@@ -213,6 +213,7 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
+        menuKey="projects"
         title="프로젝트 AI 업무대화"
         description="프로젝트 진행 상황, 마일스톤, 담당자 요청을 자연어로 정리하고 실행 큐로 보냅니다."
         suggestions={['진행 중인 프로젝트 보여줘', '프로젝트 상태 요약해줘', '새 프로젝트 초안 만들어줘']}

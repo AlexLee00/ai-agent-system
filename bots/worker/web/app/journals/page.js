@@ -172,6 +172,7 @@ export default function JournalsPage() {
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
+        menuKey="journals"
         title="업무 AI 업무대화"
         description="업무 기록, 보고 요청, 문서 업로드를 하나의 작업 공간에서 처리합니다."
         suggestions={['오늘 해야 할 일 정리해줘', '지난 업무일지 요약해줘', '프로젝트 보고 초안 만들어줘']}

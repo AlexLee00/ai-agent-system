@@ -191,6 +191,7 @@ export default function AttendancePage() {
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
+        menuKey="attendance"
         title="근태 AI 업무대화"
         description={isMember
           ? '출근과 퇴근을 자연어로 입력하고 확인 결과를 승인할 수 있습니다.'

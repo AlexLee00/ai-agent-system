@@ -150,6 +150,7 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
+        menuKey="employees"
         title="직원 AI 업무대화"
         description="직원 등록, 인사 요청, 부서/직급 관련 업무를 자연어로 정리하고 확인 흐름으로 넘깁니다."
         suggestions={['김민수 대리 영업팀 직원 등록해줘', '이번 달 입사자 정리해줘', '퇴직 처리 필요한 직원 보여줘']}
