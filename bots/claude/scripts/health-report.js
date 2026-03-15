@@ -95,15 +95,33 @@ async function buildDashboardHealth() {
   const leadMode = data.lead_mode || 'unknown';
   const runningBots = Number(data.bot_summary?.running || 0);
   const totalBots = Number(data.bot_summary?.total || 0);
+  const shadowTotal = Number(data.shadow_stats?.total || 0);
   const mismatched = Number(data.shadow_stats?.mismatched || 0);
+  const mismatchRate = shadowTotal > 0 ? (mismatched / shadowTotal) * 100 : 0;
 
   ok.push(`  lead mode: ${leadMode}`);
   ok.push(`  bot summary: ${runningBots}/${totalBots} running`);
 
-  if (mismatched > 0) warn.push(`  shadow mismatch: ${mismatched}건`);
-  else ok.push('  shadow mismatch: 없음');
+  if (mismatched <= 0) {
+    ok.push('  shadow mismatch: 없음');
+  } else if (shadowTotal < 5) {
+    ok.push(`  shadow mismatch: ${mismatched}건 (표본 ${shadowTotal}건, 관찰 유지)`);
+  } else if (mismatchRate >= 20 || mismatched >= 3) {
+    warn.push(`  shadow mismatch: ${mismatched}/${shadowTotal}건 (${mismatchRate.toFixed(1)}%)`);
+  } else {
+    ok.push(`  shadow mismatch: ${mismatched}/${shadowTotal}건 (${mismatchRate.toFixed(1)}%, 관찰 유지)`);
+  }
 
-  return { ok, warn, leadMode, runningBots, totalBots, mismatched };
+  return {
+    ok,
+    warn,
+    leadMode,
+    runningBots,
+    totalBots,
+    shadowTotal,
+    mismatched,
+    mismatchRate,
+  };
 }
 
 async function buildN8nHealth() {
@@ -201,7 +219,9 @@ async function buildReport() {
       leadMode: dashboardHealth.leadMode,
       runningBots: dashboardHealth.runningBots,
       totalBots: dashboardHealth.totalBots,
+      shadowTotal: dashboardHealth.shadowTotal,
       mismatched: dashboardHealth.mismatched,
+      mismatchRate: dashboardHealth.mismatchRate,
     },
     n8nHealth: {
       okCount: n8nHealth.ok.length,
