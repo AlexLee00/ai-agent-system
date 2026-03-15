@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import PendingReviewSection from '@/components/PendingReviewSection';
 
 const STATUS_CONFIG = {
   planning:    { label: '기획',   color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-500' },
@@ -374,17 +375,10 @@ export default function ProjectsPage() {
       )}
 
       {(proposal || notice) && (
-        <div className="card space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기</p>
-              <p className="text-sm text-slate-600 mt-1">프로젝트 생성 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다.</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {proposal ? '대기 중 1건' : '최근 처리 완료'}
-            </span>
-          </div>
-
+        <PendingReviewSection
+          hasPending={Boolean(proposal)}
+          description="프로젝트 생성 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다."
+        >
           {proposal && (
             <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -460,7 +454,7 @@ export default function ProjectsPage() {
               </div>
             </div>
           )}
-        </div>
+        </PendingReviewSection>
       )}
 
       {showCreate && canCreateProjects && <CreateModal onClose={() => setShowCreate(false)} onCreated={load} />}

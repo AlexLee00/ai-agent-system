@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import PendingReviewSection from '@/components/PendingReviewSection';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -332,19 +333,10 @@ export default function PayrollPage() {
       </div>
 
       {(proposal || notice) && (
-        <div className="card space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기</p>
-              <p className="text-sm text-slate-600 mt-1">
-                급여 계산 제안을 아래 리스트에서 검토하고 실행하거나 반려합니다.
-              </p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {proposal ? '대기 중 1건' : '최근 처리 완료'}
-            </span>
-          </div>
-
+        <PendingReviewSection
+          hasPending={Boolean(proposal)}
+          description="급여 계산 제안을 아래 리스트에서 검토하고 실행하거나 반려합니다."
+        >
           {proposal && (
             <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -436,7 +428,7 @@ export default function PayrollPage() {
               </div>
             </div>
           )}
-        </div>
+        </PendingReviewSection>
       )}
 
       <DetailModal row={selected} onClose={() => setSelected(null)} />
