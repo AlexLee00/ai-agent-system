@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import AdminQuickNav from '@/components/AdminQuickNav';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
+import AdminPageHero from '@/components/AdminPageHero';
 
 const STATUS_LABELS = { pending: '대기', approved: '승인', rejected: '반려' };
 const STATUS_COLORS = {
@@ -165,43 +165,17 @@ export default function ApprovalsPage() {
   return (
     <div className="space-y-4">
       <AdminQuickNav />
-
-      <div className="card bg-gradient-to-br from-white to-slate-100/80">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">✅ 승인 관리</h1>
-            <p className="text-sm text-slate-500 mt-2">AI가 만든 업무 초안을 검토하고, 필요하면 수정한 뒤 승인 또는 반려하는 전체 inbox입니다.</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 min-w-[180px]">
-            <p className="text-xs text-slate-500">현재 우선 확인</p>
-            <p className="text-2xl font-semibold text-slate-900 mt-1">{pendingCount}건</p>
-            <p className="text-xs text-slate-400 mt-2">대기 승인 inbox</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
-          <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-4">
-            <p className="text-xs text-amber-700">대기</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{pendingCount}건</p>
-            <p className="mt-2 text-xs text-amber-800">지금 처리할 승인 요청</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-emerald-200 bg-emerald-50 px-4 py-4">
-            <p className="text-xs text-emerald-700">승인 완료</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{approvedCount}건</p>
-            <p className="mt-2 text-xs text-emerald-800">최근 승인 처리</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-rose-200 bg-rose-50 px-4 py-4">
-            <p className="text-xs text-rose-700">반려</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{rejectedCount}건</p>
-            <p className="mt-2 text-xs text-rose-800">사유 확인 필요</p>
-          </div>
-          <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
-            <p className="text-xs text-slate-500">전체</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{approvals.length}건</p>
-            <p className="mt-2 text-xs text-slate-400">누적 승인 흐름</p>
-          </div>
-        </div>
-      </div>
+      <AdminPageHero
+        title="승인 관리"
+        tone="amber"
+        description="AI가 만든 업무 초안을 검토하고, 필요하면 수정한 뒤 승인 또는 반려하는 전체 inbox입니다."
+        stats={[
+          { label: '대기', value: `${pendingCount}건`, caption: '지금 처리할 승인 요청' },
+          { label: '승인 완료', value: `${approvedCount}건`, caption: '최근 승인 처리' },
+          { label: '반려', value: `${rejectedCount}건`, caption: '사유 확인 필요' },
+          { label: '전체', value: `${approvals.length}건`, caption: '누적 승인 흐름' },
+        ]}
+      />
 
       <div className="card bg-white">
         <div className="flex flex-wrap gap-2">
