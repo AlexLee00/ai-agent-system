@@ -1025,18 +1025,36 @@ async function monitorBookings() {
               .map(b => ({ ...b, _key: toKey(b) }));
             const _seenFlags = await Promise.all(_baseItems.map(b => isSeenId(b._key)));
             const _existingRows = await Promise.all(_baseItems.map(b => getReservation(b._key)));
-            const candidates = _baseItems.filter((_, i) => !_seenFlags[i] && !_existingRows[i]);
+            const _entries = _baseItems.map((booking, i) => ({
+              booking,
+              seen: _seenFlags[i],
+              existing: _existingRows[i],
+            }));
+            const _unseenEntries = _entries.filter(entry => !entry.seen);
+            const _newCandidates = _unseenEntries
+              .filter(entry => !entry.existing)
+              .map(entry => entry.booking);
+            const candidates = _unseenEntries
+              .filter((entry) => !entry.existing || entry.existing.status === 'pending' || entry.existing.status === 'failed')
+              .map(entry => entry.booking);
 
             if (candidates.length === 0) {
-              log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
+              log('ℹ️ 실행 후보 없음(이미 처리했거나 파싱 실패)');
             } else {
-              log(`✅ 신규 후보 ${candidates.length}건 발견.`);
+              log(`✅ 실행 후보 ${candidates.length}건 발견.`);
+              if (_newCandidates.length > 0) {
+                log(`   🆕 신규 감지 ${_newCandidates.length}건`);
+              }
+              const _retries = candidates.length - _newCandidates.length;
+              if (_retries > 0) {
+                log(`   🔁 재처리 후보 ${_retries}건 (pending/failed)`);
+              }
 
               const devTestPhone = (process.env.DEV_TEST_PHONE || '01035000586').replace(/\D/g, '');
               const allowDevPickko = (process.env.DEV_PICKKO_TEST === '1');
               
               // 🆕 신규 예약 감지 알람
-              for (const booking of candidates) {
+              for (const booking of _newCandidates) {
                 const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
                 const state = await updateBookingState(bookingId, booking, 'pending');
 
