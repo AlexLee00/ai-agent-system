@@ -23,6 +23,13 @@ const path = require('path');
 const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
+const sender = require('../../../packages/core/lib/telegram-sender');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  buildSeverityTargets,
+  publishEventPipeline,
+} = require('../../../packages/core/lib/reporting-hub');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -55,8 +62,37 @@ function reportInsteadOfFix(action, target, fixes = null) {
   const msg = `[${BOT_NAME}] 차단된 autofix 시도 — action=${action}, target=${target}`;
   console.error('🚨', msg);
   try {
-    const sender = require('../../../packages/core/lib/telegram-sender');
-    sender.sendCritical('general', `🚨 ${msg}\n→ 마스터 확인 필요`);
+    const event = buildNoticeEvent({
+      from_bot: 'dexter-autofix',
+      team: 'claude',
+      event_type: 'alert',
+      alert_level: 4,
+      title: '차단된 autofix 시도',
+      summary: msg,
+      details: ['마스터 확인 필요'],
+      action: '상세 점검: /claude-health',
+      payload: {
+        title: '차단된 autofix 시도',
+        summary: msg,
+        details: ['마스터 확인 필요'],
+        action: '상세 점검: /claude-health',
+      },
+    });
+    publishEventPipeline({
+      event: {
+        ...event,
+        message: renderNoticeEvent(event),
+      },
+      targets: buildSeverityTargets({
+        event,
+        sender,
+        topicTeam: 'claude-lead',
+        includeQueue: false,
+      }),
+      policy: {
+        dedupe: false,
+      },
+    }).catch(() => {});
   } catch { /* 텔레그램 발송 실패 무시 */ }
   if (fixes) {
     fixes.push({ label: `차단: ${action}`, status: 'error', detail: target });

@@ -17,6 +17,12 @@ import { validateTradeReview } from './validate-trade-review.js';
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
 const hsm     = require('../../../packages/core/lib/health-state-manager');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  buildSeverityTargets,
+  publishEventPipeline,
+} = require('../../../packages/core/lib/reporting-hub');
 
 // 상시 실행 서비스 (PID 있어야 정상) — KeepAlive=true인 데몬만
 const CONTINUOUS = [
@@ -51,11 +57,35 @@ const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
 async function notify(msg, level = 3) {
   try {
-    if (level >= 3) {
-      await sender.sendCritical('luna', msg);
-    } else {
-      await sender.send('luna', msg);
-    }
+    const event = buildNoticeEvent({
+      from_bot: 'luna-health-check',
+      team: 'luna',
+      event_type: 'alert',
+      alert_level: level,
+      title: '루나 헬스 알림',
+      summary: msg.split('\n')[0] || '루나 헬스 알림',
+      details: msg.split('\n').slice(1).filter(Boolean),
+      payload: {
+        title: '루나 헬스 알림',
+        summary: msg.split('\n')[0] || '루나 헬스 알림',
+        details: msg.split('\n').slice(1).filter(Boolean),
+      },
+    });
+    await publishEventPipeline({
+      event: {
+        ...event,
+        message: renderNoticeEvent(event),
+      },
+      targets: buildSeverityTargets({
+        event,
+        sender,
+        topicTeam: 'luna',
+        includeQueue: false,
+      }),
+      policy: {
+        cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,
+      },
+    });
   } catch { /* 무시 */ }
 }
 

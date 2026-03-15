@@ -14,6 +14,12 @@
 const { execSync } = require('child_process');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  buildSeverityTargets,
+  publishEventPipeline,
+} = require('../../../packages/core/lib/reporting-hub');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -28,11 +34,35 @@ const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
 async function notify(msg, level = 3) {
   try {
-    if (level >= 3) {
-      await sender.sendCritical('general', msg);
-    } else {
-      await sender.send('general', msg);
-    }
+    const event = buildNoticeEvent({
+      from_bot: 'worker-health-check',
+      team: 'worker',
+      event_type: 'alert',
+      alert_level: level,
+      title: '워커 헬스 알림',
+      summary: msg.split('\n')[0] || '워커 헬스 알림',
+      details: msg.split('\n').slice(1).filter(Boolean),
+      payload: {
+        title: '워커 헬스 알림',
+        summary: msg.split('\n')[0] || '워커 헬스 알림',
+        details: msg.split('\n').slice(1).filter(Boolean),
+      },
+    });
+    await publishEventPipeline({
+      event: {
+        ...event,
+        message: renderNoticeEvent(event),
+      },
+      targets: buildSeverityTargets({
+        event,
+        sender,
+        topicTeam: 'general',
+        includeQueue: false,
+      }),
+      policy: {
+        cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,
+      },
+    });
   } catch { /* 무시 */ }
 }
 

@@ -75,8 +75,11 @@
 - reservation mainbot/telegram → severity 기반 queue/n8n 및 telegram/n8n 라우팅
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
+- luna health-check alerts → reporting-hub notice + severity fanout
+- worker health-check alerts → reporting-hub notice + severity fanout
 - worker claude-api-monitor alerts → reporting-hub notice + severity fanout
 - worker approval request telegram alerts → reporting-hub telegram_api target
+- dexter autofix blocked-action alerts → reporting-hub notice + severity fanout
 - reservation RAG writes → reporting-hub rag target
 - luna L33 trade RAG write → reporting-hub rag target
 - blog curriculum notices → reporting-hub notice + severity fanout
@@ -89,6 +92,7 @@
 - reporting health summary view → `/reporting-health summary`
 - reporting producer ranking view → `/reporting-health producers`
 - morning briefing extras → reporting payload warning snippet 포함
+- mainbot single alerts → payload link inline buttons 지원
 
 ## Next Moves
 
