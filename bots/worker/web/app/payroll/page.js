@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 
@@ -110,6 +112,22 @@ export default function PayrollPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const quickFlows = [
+    {
+      title: '이번 달 급여 점검',
+      body: '이번 달 급여 계산 상태와 누락 직원을 바로 점검합니다.',
+      onPromptFill: () => refillPrompt('이번 달 급여 계산 상태와 누락 직원을 요약해줘'),
+      onSecondary: () => setYearMonth(thisMonth),
+      secondaryLabel: '이번 달로 이동',
+    },
+    {
+      title: '이전 월 재계산 검토',
+      body: '과거 월 급여 재계산이 필요한 항목을 바로 확인합니다.',
+      onPromptFill: () => refillPrompt(`${yearMonth} 급여 재계산이 필요한 항목이 있는지 알려줘`),
+      onSecondary: () => load(),
+      secondaryLabel: '현재 목록 새로고침',
+    },
+  ];
 
   const refillPrompt = (text) => {
     setPrompt(text);
@@ -208,7 +226,17 @@ export default function PayrollPage() {
     <div className="space-y-4">
       {user?.role !== 'member' && <AdminQuickNav />}
 
-      <h1 className="text-xl font-bold text-gray-900">💰 급여 관리</h1>
+      <AdminPageHero
+        title="급여 관리"
+        description="월별 급여 계산, 지급 상태, 성과 등급과 실수령액 흐름을 관리합니다."
+        stats={[
+          { label: '대상 월', value: fmtMonth(yearMonth), caption: yearMonth },
+          { label: '급여 행 수', value: rows.length || 0, caption: '조회 기준' },
+          { label: '활성 직원', value: empCount ?? '-', caption: '계산 대상' },
+        ]}
+      />
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
       {canManage && (
         <div className="card space-y-4">
