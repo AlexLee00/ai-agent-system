@@ -517,6 +517,28 @@ function buildPromotionPolicyNoteLines(windowDays = AUTO_PROMOTE_DEFAULTS.window
   ];
 }
 
+function buildPromotionSummaryLine(summary = {}, fallbackTotal = 0) {
+  return `요약: 전체 ${summary?.total_count ?? fallbackTotal}건 | 자동반영 ${summary?.applied_count ?? 0}건 | 후보 ${summary?.pending_count ?? 0}건`;
+}
+
+function buildPromotionFamilySection(familyRows = [], summary = {}) {
+  const lines = [buildPromotionSummaryLine(summary, 0), '', '의도 계열 분포:'];
+  for (const stats of familyRows) {
+    lines.push(`  ${stats.family}: ${stats.total}건 (자동 ${stats.applied} / 후보 ${stats.pending} / 누적 ${stats.occurrences}회)`);
+  }
+  return lines;
+}
+
+function buildPromotionEventSection(events = [], options = {}) {
+  if (events.length > 0) {
+    return ['', '최근 변경:', ...buildPromotionEventLines(events)];
+  }
+  if (options.showEmpty) {
+    return ['', '최근 변경: 없음'];
+  }
+  return [];
+}
+
 function buildUnrecognizedSummaryReport(title = '미인식 명령', summary = { llmIntentCounts: [], candidateStatusCounts: [] }) {
   const lines = [`❓ ${title}`];
   lines.push('');
@@ -687,6 +709,9 @@ module.exports = {
   buildPromotionThresholdSection,
   buildTeamPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
+  buildPromotionSummaryLine,
+  buildPromotionFamilySection,
+  buildPromotionEventSection,
   buildUnrecognizedSummaryReport,
   buildUnrecognizedDetailFooter,
   buildPromotionCompactCandidateLine,
