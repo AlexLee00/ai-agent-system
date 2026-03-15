@@ -44,6 +44,7 @@ const {
 const {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
+  getTeamIntentMeta,
   normalizeIntentText,
   buildAutoLearnPattern,
   summarizeIntentFamily,
@@ -460,11 +461,7 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
 
 async function buildTeamIntentReport(team = '', query = '') {
   const normalized = String(team || '').trim().toLowerCase();
-  const teamMeta = {
-    luna: { schema: 'investment', title: '루나 인텐트 학습', thresholdTeam: 'luna' },
-    ska: { schema: 'ska', title: '스카 인텐트 학습', thresholdTeam: 'ska' },
-    claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude' },
-  }[normalized];
+  const teamMeta = getTeamIntentMeta(normalized);
   if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
 
   const [promotions, unrecSummary] = await Promise.all([
@@ -584,13 +581,13 @@ async function rollbackPromotionTarget(target = '', options = {}) {
 
 async function rollbackTeamPromotionTarget(team = '', target = '') {
   const normalized = String(team || '').trim().toLowerCase();
-  const teamMeta = {
-    luna: { schema: 'investment', title: '루나 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
-    ska: { schema: 'ska', title: '스카 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
-    claude: { schema: 'claude', title: '클로드 인텐트 학습', learningPath: getNamedIntentLearningPath('jay') },
-  }[normalized];
+  const teamMeta = getTeamIntentMeta(normalized);
   if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
-  return rollbackPromotionTarget(target, teamMeta);
+  return rollbackPromotionTarget(target, {
+    schema: teamMeta.schema,
+    title: teamMeta.title,
+    learningPath: getNamedIntentLearningPath(teamMeta.learningProfile || 'jay'),
+  });
 }
 
 async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
