@@ -17,6 +17,12 @@ const pgPool                 = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback }   = require('../../../packages/core/lib/llm-fallback');
 const tg                     = require('../../../packages/core/lib/telegram-sender');
 const { runIfOps }           = require('../../../packages/core/lib/mode-guard');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 const DAYS_BEFORE_END = 7;   // 종료 7강 전 트리거
 const MIN_LECTURES    = 100; // 최소 강의 수
@@ -232,7 +238,40 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
   lines.push('또는 직접 주제를 입력해주세요.');
 
   const msg = lines.join('\n');
-  await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 텔레그램 생략\n' + msg));
+  const notice = buildNoticeEvent({
+    from_bot: 'blog-richer',
+    team: 'blog',
+    event_type: 'proposal',
+    alert_level: 2,
+    title: '차기 강의 시리즈 제안',
+    summary: `현재 ${currentSeries.series_name}, 잔여 ${remainingLectures}강`,
+    details: candidates.candidates.map((c, i) =>
+      `${nums[i]} ${c.topic} | ${c.difficulty} | ${c.estimated_lectures}강`
+    ),
+    action: '텔레그램에서 1/2/3 또는 직접 주제를 회신하세요.',
+    payload: {
+      title: '차기 강의 시리즈 제안',
+      summary: `현재 ${currentSeries.series_name}, 잔여 ${remainingLectures}강`,
+      details: candidates.candidates.map((c, i) => `${nums[i]} ${c.topic} — ${c.subtitle}`),
+      action: '1/2/3 또는 직접 주제 회신',
+    },
+  });
+  const rendered = renderNoticeEvent(notice) || msg;
+  await runIfOps(
+    'blog-tg',
+    () => publishEventPipeline({
+      event: { ...notice, message: rendered },
+      targets: buildSeverityTargets({
+        event: notice,
+        sender: tg,
+        topicTeam: 'blog',
+        includeQueue: false,
+        includeN8n: false,
+      }),
+      policy: { cooldownMs: 30 * 60_000 },
+    }),
+    () => console.log('[DEV] 텔레그램 생략\n' + rendered)
+  );
 
   // DB에 후보 임시 저장 (candidate 상태)
   for (const c of candidates.candidates) {
@@ -323,7 +362,36 @@ async function generateCurriculum(topic, lectureCount = 100) {
 
   const msg = `📚 [커리큘럼 생성 완료]\n${topic} ${parsed.curriculum.length}강\n\n샘플:\n${parsed.curriculum.slice(0, 5).map(l => `  ${l.lecture}강: ${l.title}`).join('\n')}`;
   console.log('[커리큘럼] ✅', msg.replace(/\n/g, ' | '));
-  await runIfOps('blog-tg', () => tg.send('blog', msg), () => {});
+  const createdNotice = buildNoticeEvent({
+    from_bot: 'blog-richer',
+    team: 'blog',
+    event_type: 'report',
+    alert_level: 1,
+    title: '커리큘럼 생성 완료',
+    summary: `${topic} ${parsed.curriculum.length}강`,
+    details: parsed.curriculum.slice(0, 5).map(l => `${l.lecture}강: ${l.title}`),
+    action: 'planned 시리즈로 저장되었습니다.',
+    payload: {
+      title: '커리큘럼 생성 완료',
+      summary: `${topic} ${parsed.curriculum.length}강`,
+      details: parsed.curriculum.slice(0, 5).map(l => `${l.lecture}강: ${l.title}`),
+    },
+  });
+  await runIfOps(
+    'blog-tg',
+    () => publishEventPipeline({
+      event: { ...createdNotice, message: renderNoticeEvent(createdNotice) || msg },
+      targets: buildSeverityTargets({
+        event: createdNotice,
+        sender: tg,
+        topicTeam: 'blog',
+        includeQueue: false,
+        includeN8n: false,
+      }),
+      policy: { cooldownMs: 30 * 60_000 },
+    }),
+    () => {}
+  );
 
   return { seriesId, lectureCount: parsed.curriculum.length };
 }
@@ -355,7 +423,35 @@ async function transitionSeries() {
       const n = next[0];
       console.log(`[커리큘럼] 🔄 시리즈 전환: ${n.series_name} ${n.total_lectures}강 시작!`);
       const msg = `🔄 [시리즈 전환]\n새 시리즈: ${n.series_name} (${n.total_lectures}강)\n오늘부터 1강 시작!`;
-      await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 시리즈 전환 생략'));
+      const transitionNotice = buildNoticeEvent({
+        from_bot: 'blog-richer',
+        team: 'blog',
+        event_type: 'report',
+        alert_level: 2,
+        title: '시리즈 전환',
+        summary: `새 시리즈: ${n.series_name} (${n.total_lectures}강)`,
+        details: ['오늘부터 1강 시작'],
+        payload: {
+          title: '시리즈 전환',
+          summary: `새 시리즈: ${n.series_name} (${n.total_lectures}강)`,
+          details: ['오늘부터 1강 시작'],
+        },
+      });
+      await runIfOps(
+        'blog-tg',
+        () => publishEventPipeline({
+          event: { ...transitionNotice, message: renderNoticeEvent(transitionNotice) || msg },
+          targets: buildSeverityTargets({
+            event: transitionNotice,
+            sender: tg,
+            topicTeam: 'blog',
+            includeQueue: false,
+            includeN8n: false,
+          }),
+          policy: { cooldownMs: 30 * 60_000 },
+        }),
+        () => console.log('[DEV] 시리즈 전환 생략')
+      );
       return n;
     }
 

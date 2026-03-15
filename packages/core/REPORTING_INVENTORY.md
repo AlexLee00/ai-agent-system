@@ -79,6 +79,8 @@
 - worker approval request telegram alerts → reporting-hub telegram_api target
 - reservation RAG writes → reporting-hub rag target
 - luna L33 trade RAG write → reporting-hub rag target
+- blog curriculum notices → reporting-hub notice + severity fanout
+- blog daily report and failure notice → reporting-hub report/notice format
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
