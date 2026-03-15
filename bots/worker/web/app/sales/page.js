@@ -8,6 +8,7 @@ import Modal from '@/components/Modal';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
@@ -37,6 +38,11 @@ export default function SalesPage() {
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
   const fileRef = useRef(null);
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const load = () => {
     setLoading(true);
@@ -373,6 +379,10 @@ export default function SalesPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`매출 등록 제안을 다시 정리해줘\n금액: ${proposal.amount || ''}\n카테고리: ${proposal.category || ''}\n날짜: ${proposal.date || ''}`.trim())}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>

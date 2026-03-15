@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const TYPE_CONFIG = {
   meeting:  { label: '미팅',     color: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
@@ -224,6 +225,11 @@ export default function SchedulesPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const fileRef = useRef(null);
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -574,6 +580,10 @@ export default function SchedulesPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`일정 등록 제안을 다시 정리해줘\n제목: ${proposal.title || ''}\n시작: ${proposal.start_time || ''}\n장소: ${proposal.location || ''}`.trim())}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>
