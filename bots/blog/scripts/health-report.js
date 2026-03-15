@@ -15,10 +15,8 @@ const {
   buildServiceRows,
   buildHttpChecks,
   buildFileActivityHealth,
-  checkHttp,
-  checkWebhookRegistration,
+  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
-const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -70,45 +68,20 @@ function buildDailyRunHealth() {
 }
 
 async function buildN8nPipelineHealth() {
-  const ok = [];
-  const warn = [];
-  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
-  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+  return buildResolvedWebhookHealth({
     workflowName: '블로그팀 동적 포스팅',
-    method: 'POST',
     pathSuffix: 'blog-pipeline',
+    healthUrl: N8N_HEALTH_URL,
+    defaultWebhookUrl: DEFAULT_BLOG_WEBHOOK_URL,
+    probeBody: {
+      postType: 'general',
+      sessionId: 'n8n-blog-health-probe',
+      pipeline: ['weather'],
+      variations: {},
+    },
+    okLabel: 'blog pipeline webhook',
+    warnLabel: 'blog pipeline webhook',
   });
-  const webhookUrl = resolvedWebhookUrl || DEFAULT_BLOG_WEBHOOK_URL;
-  const webhook = await checkWebhookRegistration(webhookUrl, {
-    postType: 'general',
-    sessionId: 'n8n-blog-health-probe',
-    pipeline: ['weather'],
-    variations: {},
-  }, {
-    timeoutMs: 5000,
-  });
-
-  if (n8nHealthy) ok.push('  n8n healthz: 정상');
-  else warn.push('  n8n healthz: 응답 없음');
-
-  if (!webhook.healthy) {
-    warn.push(`  blog pipeline webhook: 미도달 (${webhook.error || webhook.reason})`);
-  } else if (!webhook.registered) {
-    warn.push(`  blog pipeline webhook: 미등록 (${webhook.reason}, status ${webhook.status})`);
-  } else {
-    ok.push(`  blog pipeline webhook: 등록됨 (${webhook.reason}, status ${webhook.status})`);
-  }
-
-  return {
-    ok,
-    warn,
-    n8nHealthy,
-    webhookRegistered: webhook.registered,
-    webhookReason: webhook.reason,
-    webhookStatus: webhook.status,
-    webhookUrl,
-    resolvedWebhookUrl,
-  };
 }
 
 function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth) {

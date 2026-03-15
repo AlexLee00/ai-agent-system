@@ -25,10 +25,8 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
   buildHttpChecks,
-  checkHttp,
-  checkWebhookRegistration,
+  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
-const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
@@ -75,44 +73,19 @@ async function buildEndpointHealth() {
 }
 
 async function buildN8nIntakeHealth() {
-  const ok = [];
-  const warn = [];
-  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
-  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+  return buildResolvedWebhookHealth({
     workflowName: '워커팀 자연어 업무 intake',
-    method: 'POST',
     pathSuffix: 'worker-chat-intake',
+    healthUrl: N8N_HEALTH_URL,
+    defaultWebhookUrl: DEFAULT_WORKER_WEBHOOK_URL,
+    probeBody: {
+      company_id: 'master',
+      user_id: 1,
+      message: 'n8n intake health probe',
+    },
+    okLabel: 'worker intake webhook',
+    warnLabel: 'worker intake webhook',
   });
-  const webhookUrl = resolvedWebhookUrl || DEFAULT_WORKER_WEBHOOK_URL;
-  const webhook = await checkWebhookRegistration(webhookUrl, {
-    company_id: 'master',
-    user_id: 1,
-    message: 'n8n intake health probe',
-  }, {
-    timeoutMs: 5000,
-  });
-
-  if (n8nHealthy) ok.push('  n8n healthz: 정상');
-  else warn.push('  n8n healthz: 응답 없음');
-
-  if (!webhook.healthy) {
-    warn.push(`  worker intake webhook: 미도달 (${webhook.error || webhook.reason})`);
-  } else if (!webhook.registered) {
-    warn.push(`  worker intake webhook: 미등록 (${webhook.reason}, status ${webhook.status})`);
-  } else {
-    ok.push(`  worker intake webhook: 등록됨 (${webhook.reason}, status ${webhook.status})`);
-  }
-
-  return {
-    ok,
-    warn,
-    n8nHealthy,
-    webhookRegistered: webhook.registered,
-    webhookReason: webhook.reason,
-    webhookStatus: webhook.status,
-    webhookUrl,
-    resolvedWebhookUrl,
-  };
 }
 
 function buildDecision(serviceRows, endpointHealth, n8nIntakeHealth) {

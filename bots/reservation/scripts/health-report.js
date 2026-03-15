@@ -24,10 +24,8 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
   buildFileActivityHealth,
-  checkHttp,
-  checkWebhookRegistration,
+  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
-const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
 const CORE_SERVICES = [
@@ -62,44 +60,18 @@ function buildMonitorHealth() {
 }
 
 async function buildN8nCommandHealth() {
-  const ok = [];
-  const warn = [];
-  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
-  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+  return buildResolvedWebhookHealth({
     workflowName: '스카팀 읽기 명령 intake',
-    method: 'POST',
     pathSuffix: 'ska-command',
+    healthUrl: N8N_HEALTH_URL,
+    defaultWebhookUrl: DEFAULT_N8N_WEBHOOK_URL,
+    probeBody: {
+      command: 'query_today_stats',
+      args: { date: new Date().toISOString().slice(0, 10) },
+    },
+    okLabel: 'ska command webhook',
+    warnLabel: 'ska command webhook',
   });
-  const webhookUrl = resolvedWebhookUrl || DEFAULT_N8N_WEBHOOK_URL;
-  const webhook = await checkWebhookRegistration(webhookUrl, {
-    command: 'query_today_stats',
-    args: { date: new Date().toISOString().slice(0, 10) },
-  }, {
-    timeoutMs: 5000,
-  });
-
-  if (n8nHealthy) ok.push('  n8n healthz: 정상');
-  else warn.push('  n8n healthz: 응답 없음');
-
-  if (!webhook.healthy) {
-    warn.push(`  ska command webhook: 미도달 (${webhook.error || webhook.reason})`);
-  } else if (!webhook.registered) {
-    warn.push(`  ska command webhook: 미등록 (${webhook.reason}, status ${webhook.status})`);
-  } else {
-    ok.push(`  ska command webhook: 등록됨 (${webhook.reason}, status ${webhook.status})`);
-  }
-
-  return {
-    ok,
-    warn,
-    n8nHealthy,
-    webhookUrl,
-    resolvedWebhookUrl,
-    webhookRegistered: webhook.registered,
-    webhookReason: webhook.reason,
-    webhookStatus: webhook.status,
-    webhookHealthy: webhook.healthy,
-  };
 }
 
 function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth) {
