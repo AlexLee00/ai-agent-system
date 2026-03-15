@@ -17,6 +17,7 @@ const ALERT_LEVEL_ICONS = {
 };
 
 const DELIVERY_STATE = new Map();
+const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 
 function getDefaultCooldownMs(alertLevel) {
   if (alertLevel >= 4) return 0;
@@ -502,6 +503,67 @@ function renderReportEvent(event) {
   return lines.join('\n').trim();
 }
 
+function buildSeverityTargets({
+  event,
+  pgPool,
+  schema = 'claude',
+  table,
+  sender,
+  topicTeam,
+  telegramPrefix = '',
+  includeQueue = true,
+  includeTelegram = true,
+  includeN8n = true,
+  criticalWebhookUrl = DEFAULT_CRITICAL_WEBHOOK_URL,
+} = {}) {
+  const normalized = normalizeEvent(event);
+  const targets = [];
+
+  if (includeQueue && pgPool) {
+    targets.push({
+      type: 'queue',
+      pgPool,
+      schema,
+      table,
+    });
+  }
+
+  const wantsTelegram = includeTelegram && sender && topicTeam && (
+    normalized.event_type === 'alert' ||
+    normalized.alert_level >= 2 ||
+    normalized.event_type === 'accuracy_alert'
+  );
+  if (wantsTelegram) {
+    targets.push({
+      type: 'telegram',
+      sender,
+      topicTeam,
+      prefix: telegramPrefix,
+    });
+  }
+
+  if (includeN8n && normalized.alert_level >= 4 && criticalWebhookUrl) {
+    targets.push({
+      type: 'n8n',
+      webhookCandidates: [criticalWebhookUrl],
+      healthUrl: 'http://127.0.0.1:5678/healthz',
+      bodyBuilder: (payloadEvent) => ({
+        severity: 'critical',
+        service: payloadEvent.team || payloadEvent.from_bot,
+        message: payloadEvent.message,
+        detail: payloadEvent.payload?.detail || payloadEvent.payload?.summary || '',
+        source_bot: payloadEvent.from_bot,
+        event_type: payloadEvent.event_type,
+      }),
+      policy: {
+        dedupe: false,
+      },
+    });
+  }
+
+  return targets;
+}
+
 module.exports = {
   normalizeEvent,
   publishToQueue,
@@ -515,4 +577,5 @@ module.exports = {
   renderNoticeEvent,
   buildReportEvent,
   renderReportEvent,
+  buildSeverityTargets,
 };

@@ -8,7 +8,10 @@
  */
 
 const sender = require('../../../packages/core/lib/telegram-sender');
-const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
+const {
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * 클로드팀 알람 발행 → 텔레그램 Forum Topic 직접 라우팅
@@ -22,10 +25,9 @@ const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub'
  */
 async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_level = 2, message, payload }) {
   const topicTeam = team === 'claude' ? 'claude-lead' : team;
-  const result = await publishToTelegram({
-    sender,
-    topicTeam,
-    event: { from_bot, team, event_type, alert_level, message, payload },
+  const event = { from_bot, team, event_type, alert_level, message, payload };
+  const result = await publishEventPipeline({
+    event,
     policy: {
       cooldownMs: alert_level >= 3 ? 60_000 : 5 * 60_000,
       quietHours: {
@@ -35,6 +37,14 @@ async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_l
         maxAlertLevel: 1,
       },
     },
+    targets: buildSeverityTargets({
+      event,
+      sender,
+      topicTeam,
+      includeQueue: false,
+      includeTelegram: true,
+      includeN8n: true,
+    }),
   });
   return result.ok;
 }
