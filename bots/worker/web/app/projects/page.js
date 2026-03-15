@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const STATUS_CONFIG = {
@@ -127,6 +129,7 @@ function CreateModal({ onClose, onCreated }) {
 }
 
 export default function ProjectsPage() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState('active');
@@ -205,6 +208,7 @@ export default function ProjectsPage() {
   const avgProgress = projects.length
     ? Math.round(projects.reduce((sum, item) => sum + Number(item.progress || 0), 0) / projects.length)
     : 0;
+  const canCreateProjects = canPerformMenuOperation(user, 'projects', 'create');
 
   return (
     <div className="space-y-4">
@@ -216,7 +220,7 @@ export default function ProjectsPage() {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">📋 프로젝트 관리</h1>
-        <button className="btn-primary text-sm" onClick={() => setShowCreate(true)}>+ 새 프로젝트</button>
+        <button className="btn-primary text-sm" onClick={() => setShowCreate(true)} disabled={!canCreateProjects}>+ 새 프로젝트</button>
       </div>
 
       <div className="card space-y-4">
@@ -253,10 +257,10 @@ export default function ProjectsPage() {
             placeholder="프로젝트 생성 요청을 자연어로 입력하세요."
           />
           <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={createProposal} disabled={proposalLoading || !prompt.trim()}>
+            <button type="button" className="btn-primary" onClick={createProposal} disabled={!canCreateProjects || proposalLoading || !prompt.trim()}>
               {proposalLoading ? '제안 생성 중...' : '프로젝트 제안 만들기'}
             </button>
-            <button type="button" className="btn-secondary" onClick={() => setShowCreate(true)}>
+            <button type="button" className="btn-secondary" onClick={() => setShowCreate(true)} disabled={!canCreateProjects}>
               직접 입력 모달 열기
             </button>
           </div>
@@ -420,7 +424,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onCreated={load} />}
+      {showCreate && canCreateProjects && <CreateModal onClose={() => setShowCreate(false)} onCreated={load} />}
     </div>
   );
 }

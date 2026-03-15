@@ -2,12 +2,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation, getMenuPolicy } from '@/lib/menu-access';
 import { validatePassword } from '@/lib/password-validator';
 import PasswordRuleChecker from '@/components/PasswordRuleChecker';
 
 export default function SettingsPage() {
   const { user, refreshUser } = useAuth();
-  const canEditProfile = ['admin', 'master'].includes(user?.role);
+  const settingsPolicy = getMenuPolicy(user, 'settings');
+  const canEditProfile = Boolean(settingsPolicy?.profile_edit_enabled) && canPerformMenuOperation(user, 'settings', 'update_profile');
   const [profileForm, setProfileForm] = useState({ name: '', email: '', telegram_id: '' });
   const [profileMsg, setProfileMsg] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);

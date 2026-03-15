@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
 import Modal from '@/components/Modal';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -176,6 +177,8 @@ export default function AttendancePage() {
   const checkedOut = records.filter(r => r.check_out).length;
   const lateCount = records.filter(r => r.status === 'late').length;
   const isMember = user?.role === 'member';
+  const canCreateTodayOnly = canPerformMenuOperation(user, 'attendance', 'create_today_only');
+  const canManageAttendance = canPerformMenuOperation(user, 'attendance', 'update');
   const columns = [
     { key: 'employee_name', label: '이름' },
     { key: 'check_in',      label: '출근', render: v => fmtTime(v) },
@@ -245,7 +248,7 @@ export default function AttendancePage() {
               type="button"
               className="btn-secondary"
               onClick={handleCheckIn}
-              disabled={proposalLoading || !!checking}
+              disabled={!canCreateTodayOnly || proposalLoading || !!checking}
             >
               {checking === 'in' ? '처리 중...' : '지금 출근 제안'}
             </button>
@@ -253,7 +256,7 @@ export default function AttendancePage() {
               type="button"
               className="btn-secondary"
               onClick={handleCheckOut}
-              disabled={proposalLoading || !!checking}
+              disabled={!canCreateTodayOnly || proposalLoading || !!checking}
             >
               {checking === 'out' ? '처리 중...' : '지금 퇴근 제안'}
             </button>
@@ -477,7 +480,7 @@ export default function AttendancePage() {
               data={records}
               pageSize={10}
               emptyText="근태 기록 없음"
-              actions={!isMember ? (row) => (
+              actions={canManageAttendance ? (row) => (
                 <>
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
                   <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDeleteRecord(row)}>삭제</button>

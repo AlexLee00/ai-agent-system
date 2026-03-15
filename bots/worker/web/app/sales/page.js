@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import Card from '@/components/Card';
@@ -16,6 +18,7 @@ function proposalChanged(original, proposal) {
 }
 
 export default function SalesPage() {
+  const { user } = useAuth();
   const [sales, setSales]     = useState([]);
   const [summary, setSummary] = useState(null);
   const [chartData, setChartData] = useState([]);
@@ -151,6 +154,10 @@ export default function SalesPage() {
     </div>
   );
 
+  const canCreateSales = canPerformMenuOperation(user, 'sales', 'create');
+  const canUpdateSales = canPerformMenuOperation(user, 'sales', 'update');
+  const canDeleteSales = canPerformMenuOperation(user, 'sales', 'delete');
+
   return (
     <div className="space-y-4">
       <WorkerAIWorkspace
@@ -161,7 +168,7 @@ export default function SalesPage() {
       />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">💰 매출 관리</h1>
-        <button className="btn-primary text-sm" onClick={openModal}>
+        <button className="btn-primary text-sm" onClick={openModal} disabled={!canCreateSales}>
           + 매출 등록
         </button>
       </div>
@@ -200,10 +207,10 @@ export default function SalesPage() {
             placeholder="매출 등록 요청을 자연어로 입력하세요."
           />
           <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={createProposal} disabled={proposalLoading || !prompt.trim()}>
+            <button type="button" className="btn-primary" onClick={createProposal} disabled={!canCreateSales || proposalLoading || !prompt.trim()}>
               {proposalLoading ? '제안 생성 중...' : '매출 제안 만들기'}
             </button>
-            <button type="button" className="btn-secondary" onClick={openModal}>
+            <button type="button" className="btn-secondary" onClick={openModal} disabled={!canCreateSales}>
               직접 입력 모달 열기
             </button>
           </div>
@@ -355,8 +362,8 @@ export default function SalesPage() {
                 emptyNode={emptyNode}
                 actions={row => (
                   <>
-                    <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
-                    <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>
+                    {canUpdateSales && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
+                    {canDeleteSales && <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
                   </>
                 )}
               />
@@ -371,7 +378,7 @@ export default function SalesPage() {
             <div className="text-center py-10">
               <p className="text-4xl mb-3">📊</p>
               <p className="text-gray-500 text-sm mb-4">매출 데이터가 없습니다</p>
-              <button onClick={openModal} className="btn-primary text-sm">
+              <button onClick={openModal} className="btn-primary text-sm" disabled={!canCreateSales}>
                 + 매출 등록하기
               </button>
             </div>
