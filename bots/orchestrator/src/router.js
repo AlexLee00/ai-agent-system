@@ -1008,14 +1008,16 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
     ska: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
     blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
+    critical: path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
   };
 
-  const [luna, worker, claude, ska, blog] = await Promise.all([
+  const [luna, worker, claude, ska, blog, criticalPath] = await Promise.all([
     runNodeScriptJson(scripts.luna, ['--json']),
     runNodeScriptJson(scripts.worker, ['--json']),
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
     runNodeScriptJson(scripts.blog, ['--json']),
+    runNodeScriptJson(scripts.critical),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
   const [workerIntent, claudeCommands] = await Promise.all([
@@ -1028,6 +1030,24 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const skaForecastHasWarn = Boolean(skaForecastTuning?.recommended);
 
   const rows = [
+    {
+      title: '오케스트레이터',
+      summary: criticalPath
+        ? `n8n ${criticalPath.n8nHealthy ? '정상' : '경고'} / critical webhook ${criticalPath.webhookRegistered ? '등록됨' : '이상'}`
+        : '조회 실패',
+      detail: criticalPath
+        ? [
+          `  n8n healthz: ${criticalPath.n8nHealthy ? '정상' : '응답 없음'}`,
+          `  critical webhook: ${criticalPath.webhookRegistered ? `등록됨 (status ${criticalPath.webhookStatus})` : `경고 (${criticalPath.webhookReason || 'unknown'}, status ${criticalPath.webhookStatus || 0})`}`,
+          ...(criticalPath.resolvedWebhookUrl ? [`  resolved: ${criticalPath.resolvedWebhookUrl}`] : []),
+        ].join('\n')
+        : '  critical webhook 진단 실행 실패',
+      hasWarn: !criticalPath || !criticalPath.n8nHealthy || !criticalPath.webhookRegistered,
+      priority: !criticalPath ? 5 : Math.max(
+        criticalPath.n8nHealthy ? 0 : 4,
+        criticalPath.webhookRegistered ? 0 : 4,
+      ),
+    },
     {
       title: '루나',
       summary: luna
@@ -1128,7 +1148,10 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const warnCount = rows.filter((row) => row.hasWarn).length;
   const reasons = warnCount > 0
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
-    : ['루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+    : ['오케스트레이터, 루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+  if (!criticalPath || !criticalPath.n8nHealthy || !criticalPath.webhookRegistered) {
+    reasons.push(`오케스트레이터 critical webhook: ${criticalPath ? `${criticalPath.webhookReason || 'unknown'} (status ${criticalPath.webhookStatus || 0})` : '조회 실패'}`);
+  }
   if (lunaRisk.hasWarn) {
     reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
   }
@@ -1157,6 +1180,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     }
 
     const actionMap = {
+      '오케스트레이터': '/ops-health',
       '루나': '/luna-health',
       '워커': '/worker-health',
       '클로드': '/claude-health',
@@ -1246,6 +1270,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       },
     ],
     footer: [
+      '오케스트레이터: /ops-health',
       '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
       '블로 조회: /blog-health',
     ],
