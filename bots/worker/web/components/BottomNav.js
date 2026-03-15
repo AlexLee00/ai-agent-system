@@ -3,12 +3,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { listVisibleMenus } from '@/lib/menu-access';
-import { LayoutDashboard, BookOpen, Calendar, Clock, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Calendar, Clock, Settings, FileText } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
   { href: '/attendance', icon: Clock,           label: '근태' },
   { href: '/schedules',  icon: Calendar,        label: '일정' },
+  { href: '/documents',  icon: FileText,        label: '문서' },
   { href: '/journals',   icon: BookOpen,        label: '업무' },
   { href: '/settings',   icon: Settings,        label: '설정' },
 ];

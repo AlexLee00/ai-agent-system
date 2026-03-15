@@ -14,8 +14,6 @@ function normalizeEnabledMenus(enabledMenus) {
       case 'employees':
       case 'payroll':
         return ['workforce'];
-      case 'documents':
-        return ['journals'];
       default:
         return [key];
     }

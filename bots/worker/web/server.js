@@ -68,6 +68,11 @@ const {
   buildJournalProposal,
   normalizeJournalProposal,
 } = require('../lib/journal-ai');
+const {
+  buildDocumentProposal,
+  normalizeDocumentProposal,
+  detectDocumentCategory,
+} = require('../lib/document-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1669,17 +1674,9 @@ app.post('/api/documents/upload',
     const category  = req.body?.category || '';
 
     // 규칙 기반 분류 (Gemini 없이)
-    const CATEGORY_KW = {
-      '계약서':   ['계약','협약','약정'],
-      '견적서':   ['견적','estimate','quote'],
-      '세금계산서': ['세금계산서','invoice','tax'],
-    };
     let detectedCategory = category || '기타';
     if (!category) {
-      const lower = filename.toLowerCase();
-      for (const [cat, kws] of Object.entries(CATEGORY_KW)) {
-        if (kws.some(k => lower.includes(k))) { detectedCategory = cat; break; }
-      }
+      detectedCategory = detectDocumentCategory(filename, '기타');
     }
 
     try {
@@ -1725,6 +1722,162 @@ app.delete('/api/documents/:id', requireAuth, companyFilter, auditLog('DELETE', 
     if (!row) return res.status(404).json({ error: '문서 없음', code: 'NOT_FOUND' });
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/documents/proposals', requireAuth, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const filename = String(req.body.filename || '').trim();
+    const proposal = buildDocumentProposal({ prompt, filename });
+    const sourceRefId = `document-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'document_prompt',
+      sourceRefType: 'document_proposal',
+      sourceRefId,
+      flowCode: 'document_upload',
+      actionCode: 'upload_document',
+      proposalId: sourceRefId,
+      aiInputText: prompt,
+      aiInputPayload: {
+        prompt,
+        filename,
+      },
+      aiOutputType: 'document_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'document_upload',
+      actionCode: 'upload_document',
+      query: `${prompt} ${filename} ${proposal.category} ${proposal.request_summary}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    const code = error.code || 'BAD_REQUEST';
+    const status = code === 'BAD_REQUEST' ? 400 : 500;
+    res.status(status).json({ error: error.message || '문서 제안을 생성하지 못했습니다.', code });
+  }
+});
+
+app.post('/api/documents/proposals/:id/confirm',
+  requireAuth,
+  upload.single('file'),
+  auditLog('UPLOAD', 'documents'),
+  async (req, res) => {
+    try {
+      const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+      if (!session || String(session.user_id) !== String(req.user.id)) {
+        return res.status(404).json({ error: '문서 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      }
+
+      const rawProposal = req.body.proposal ? JSON.parse(req.body.proposal) : (session.original_snapshot_json || {});
+      const uploadedName = req.file?.originalname ? Buffer.from(req.file.originalname, 'latin1').toString('utf8') : '';
+      const proposal = normalizeDocumentProposal({
+        ...rawProposal,
+        filename: rawProposal?.filename || uploadedName,
+      });
+
+      if (!req.file) {
+        return res.status(400).json({ error: '업로드할 파일을 선택해주세요.', code: 'NO_FILE' });
+      }
+
+      await replaceWorkerFeedbackEdits({
+        sessionId: session.id,
+        submittedSnapshot: proposal,
+        eventMeta: {
+          source: 'document_confirm',
+        },
+      });
+
+      await markWorkerFeedbackConfirmed({
+        sessionId: session.id,
+        submittedSnapshot: proposal,
+        eventMeta: {
+          source: 'document_confirm',
+        },
+      });
+
+      const filePath = `/uploads/${req.file.filename}`;
+      const document = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by,ai_summary)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         RETURNING id,category,filename,ai_summary,uploaded_by,created_at`,
+        [
+          req.user.company_id,
+          proposal.category || '기타',
+          proposal.filename || uploadedName || '업로드 문서',
+          filePath,
+          req.user.id,
+          proposal.request_summary || null,
+        ]);
+
+      rag.store('rag_work_docs', `[${proposal.category || '기타'}] ${document.filename}\n${proposal.request_summary || ''}`.trim(),
+        {
+          company_id: req.user.company_id,
+          document_id: document.id,
+          category: proposal.category || '기타',
+          feedback_session_id: session.id,
+        },
+        'emily'
+      ).catch(() => {});
+
+      await markWorkerFeedbackCommitted({
+        sessionId: session.id,
+        submittedSnapshot: {
+          ...proposal,
+          document_id: document.id,
+        },
+        eventMeta: {
+          source: 'document_confirm',
+          document_id: document.id,
+        },
+      });
+
+      res.status(201).json({
+        ok: true,
+        document: {
+          ...document,
+          download_url: `/api/documents/${document.id}/download`,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message || '문서 업로드를 완료하지 못했습니다.', code: 'SERVER_ERROR' });
+    }
+  }
+);
+
+app.post('/api/documents/proposals/:id/reject', requireAuth, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '문서 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: {
+        source: 'document_reject',
+      },
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '문서 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 // ── 업무일지 API (에밀리 확장) ───────────────────────────────────────

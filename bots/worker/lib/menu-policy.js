@@ -136,6 +136,7 @@ const MENU_POLICY = {
   attendance: ATTENDANCE_POLICY,
   chat: CHAT_POLICY,
   schedules: buildCrudPolicy('schedules'),
+  documents: buildCrudPolicy('documents'),
   sales: buildCrudPolicy('sales'),
   projects: buildCrudPolicy('projects'),
   journals: buildCrudPolicy('journals'),
