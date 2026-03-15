@@ -3,6 +3,7 @@ const kst = require('../../../packages/core/lib/kst');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { buildSnippetEvent, renderSnippetEvent } = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * lib/night-handler.js — 야간 자율 운영 관리
@@ -186,13 +187,16 @@ async function buildOpsHealthAlertSnippet() {
 
   if (rows.length === 0) return null;
 
-  const lines = ['🚨 운영 헬스 경고', ''];
-  for (const row of rows) {
-    lines.push(`  • ${row.title}: ${row.summary}`);
-  }
-  lines.push('');
-  lines.push('상세 확인: /ops-health alerts | /orchestrator-health');
-  return lines.join('\n');
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: 'mainbot',
+    team: 'system',
+    event_type: 'briefing_alert',
+    alert_level: 3,
+    title: '🚨 운영 헬스 경고',
+    lines: rows.map((row) => `${row.title}: ${row.summary}`),
+    detailHint: '/ops-health alerts | /orchestrator-health',
+    payload: { kind: 'ops_health', rows },
+  }));
 }
 
 async function runPythonScriptJson(python, script, args = [], timeoutMs = 60_000) {
@@ -241,19 +245,26 @@ async function buildSkaForecastAlertSnippet() {
 
   if (!tuning?.recommended) return null;
 
-  const lines = ['📉 스카 예측 경고', ''];
+  const lines = [];
   if (summary?.avg_mape != null) {
-    lines.push(`  • 평균 MAPE: ${summary.avg_mape.toFixed(1)}%`);
+    lines.push(`평균 MAPE: ${summary.avg_mape.toFixed(1)}%`);
   }
   if (summary?.hit_rate_20 != null) {
-    lines.push(`  • 20% 적중률: ${summary.hit_rate_20.toFixed(1)}%`);
+    lines.push(`20% 적중률: ${summary.hit_rate_20.toFixed(1)}%`);
   }
   for (const reason of (tuning.reasons || []).slice(0, 3)) {
-    lines.push(`  • ${reason}`);
+    lines.push(reason);
   }
-  lines.push('');
-  lines.push('상세 확인: /ska-forecast | /ska-review');
-  return lines.join('\n');
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: 'rebecca',
+    team: 'reservation',
+    event_type: 'forecast_alert',
+    alert_level: 2,
+    title: '📉 스카 예측 경고',
+    lines,
+    detailHint: '/ska-forecast | /ska-review',
+    payload: { kind: 'ska_forecast', tuning, summary },
+  }));
 }
 
 function readJsonFileSafe(filePath) {
@@ -329,13 +340,16 @@ async function buildLunaRiskAlertSnippet() {
 
   if (!hasWarn) return null;
 
-  return [
-    '📈 루나 운영 경고',
-    '',
-    ...lines,
-    '',
-    '상세 확인: /luna-health',
-  ].join('\n');
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: 'luna',
+    team: 'investment',
+    event_type: 'risk_alert',
+    alert_level: 2,
+    title: '📈 루나 운영 경고',
+    lines: lines.map((line) => line.replace(/^•\s*/, '').replace(/^-\s*/, '').replace(/^\s*•\s*/, '').trim()),
+    detailHint: '/luna-health',
+    payload: { kind: 'luna_risk' },
+  }));
 }
 
 async function buildMorningBriefingWithOps(items) {

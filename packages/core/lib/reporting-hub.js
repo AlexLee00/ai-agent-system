@@ -203,6 +203,47 @@ async function publishEventPipeline({
   };
 }
 
+function buildSnippetEvent({
+  from_bot = 'reporting-hub',
+  team = 'general',
+  event_type = 'report',
+  alert_level = 2,
+  title = '',
+  lines = [],
+  detailHint = '',
+  payload = null,
+} = {}) {
+  const normalized = normalizeEvent({
+    from_bot,
+    team,
+    event_type,
+    alert_level,
+    message: title,
+    payload,
+  });
+  return {
+    ...normalized,
+    title: String(title || normalized.message || '').trim(),
+    lines: (lines || []).map((line) => String(line || '').trim()).filter(Boolean),
+    detailHint: String(detailHint || '').trim(),
+  };
+}
+
+function renderSnippetEvent(event) {
+  if (!event) return '';
+  const normalized = buildSnippetEvent(event);
+  const lines = [normalized.title];
+  if (normalized.lines.length > 0) {
+    lines.push('');
+    for (const line of normalized.lines) lines.push(`  • ${line}`);
+  }
+  if (normalized.detailHint) {
+    lines.push('');
+    lines.push(`상세 확인: ${normalized.detailHint}`);
+  }
+  return lines.join('\n');
+}
+
 module.exports = {
   normalizeEvent,
   publishToQueue,
@@ -210,4 +251,6 @@ module.exports = {
   publishToRag,
   publishToN8n,
   publishEventPipeline,
+  buildSnippetEvent,
+  renderSnippetEvent,
 };
