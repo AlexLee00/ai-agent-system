@@ -930,6 +930,17 @@ async function runLunaHealthDirect() {
   });
 }
 
+async function runOrchestratorHealthDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.js');
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 오케스트레이터 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 오케스트레이터 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 오케스트레이터 운영 헬스 실패',
+    emptyText: 'ℹ️ 오케스트레이터 운영 헬스 결과가 비어 있습니다.',
+  });
+}
+
 async function runWorkerHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'worker', 'scripts', 'health-report.js');
@@ -1180,7 +1191,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     }
 
     const actionMap = {
-      '오케스트레이터': '/ops-health',
+      '오케스트레이터': '/orchestrator-health',
       '루나': '/luna-health',
       '워커': '/worker-health',
       '클로드': '/claude-health',
@@ -1270,7 +1281,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       },
     ],
     footer: [
-      '오케스트레이터: /ops-health',
+      '오케스트레이터: /orchestrator-health',
       '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
       '블로 조회: /blog-health',
     ],
@@ -1722,6 +1733,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'ops_health': {
       await notify('⏳ 통합 운영 헬스 확인 중...');
       return await buildUnifiedOpsHealthReport(args);
+    }
+
+    case 'orchestrator_health': {
+      await notify('⏳ 오케스트레이터 운영 헬스 확인 중...');
+      return await runOrchestratorHealthDirect();
     }
 
     case 'luna_health': {
