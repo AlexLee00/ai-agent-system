@@ -928,10 +928,14 @@ async function runNodeScriptJson(script, args = [], timeoutMs = 60_000) {
   });
 }
 
-async function runLunaHealthDirect() {
+async function runNodeScriptText(script, {
+  timeoutMs = 60_000,
+  timeoutText = '⏱ 스크립트 실행이 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+  errorPrefix = '⚠️ 스크립트 실행 실패',
+  failPrefix = '⚠️ 스크립트 실행 실패',
+  emptyText = 'ℹ️ 스크립트 결과가 비어 있습니다.',
+} = {}) {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'investment', 'scripts', 'health-report.js');
-
   return await new Promise((resolve) => {
     const child = spawn('node', [script], {
       cwd: root,
@@ -943,168 +947,79 @@ async function runLunaHealthDirect() {
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      resolve('⏱ 루나 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
-    }, 60_000);
+      resolve(timeoutText);
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve(`⚠️ 루나 운영 헬스 실행 실패: ${err.message}`);
+      resolve(`${errorPrefix}: ${err.message}`);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
         const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
-        resolve(`⚠️ 루나 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
+        resolve(`${failPrefix}${msg ? `\n${msg}` : ''}`);
         return;
       }
-      resolve(stripAnsi(stdout).trim() || 'ℹ️ 루나 운영 헬스 결과가 비어 있습니다.');
+      resolve(stripAnsi(stdout).trim() || emptyText);
     });
+  });
+}
+
+async function runLunaHealthDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'investment', 'scripts', 'health-report.js');
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 루나 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 루나 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 루나 운영 헬스 실패',
+    emptyText: 'ℹ️ 루나 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
 async function runWorkerHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'worker', 'scripts', 'health-report.js');
-
-  return await new Promise((resolve) => {
-    const child = spawn('node', [script], {
-      cwd: root,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve('⏱ 워커 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
-    }, 60_000);
-
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve(`⚠️ 워커 운영 헬스 실행 실패: ${err.message}`);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
-        resolve(`⚠️ 워커 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
-        return;
-      }
-      resolve(stripAnsi(stdout).trim() || 'ℹ️ 워커 운영 헬스 결과가 비어 있습니다.');
-    });
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 워커 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 워커 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 워커 운영 헬스 실패',
+    emptyText: 'ℹ️ 워커 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
 async function runClaudeHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'claude', 'scripts', 'health-report.js');
-
-  return await new Promise((resolve) => {
-    const child = spawn('node', [script], {
-      cwd: root,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve('⏱ 클로드 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
-    }, 60_000);
-
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve(`⚠️ 클로드 운영 헬스 실행 실패: ${err.message}`);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
-        resolve(`⚠️ 클로드 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
-        return;
-      }
-      resolve(stripAnsi(stdout).trim() || 'ℹ️ 클로드 운영 헬스 결과가 비어 있습니다.');
-    });
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 클로드 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 클로드 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 클로드 운영 헬스 실패',
+    emptyText: 'ℹ️ 클로드 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
 async function runSkaHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js');
-
-  return await new Promise((resolve) => {
-    const child = spawn('node', [script], {
-      cwd: root,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve('⏱ 스카 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
-    }, 60_000);
-
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve(`⚠️ 스카 운영 헬스 실행 실패: ${err.message}`);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
-        resolve(`⚠️ 스카 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
-        return;
-      }
-      resolve(stripAnsi(stdout).trim() || 'ℹ️ 스카 운영 헬스 결과가 비어 있습니다.');
-    });
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 스카 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 스카 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 스카 운영 헬스 실패',
+    emptyText: 'ℹ️ 스카 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
 async function runBlogHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'blog', 'scripts', 'health-report.js');
-
-  return await new Promise((resolve) => {
-    const child = spawn('node', [script], {
-      cwd: root,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      resolve('⏱ 블로 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.');
-    }, 60_000);
-
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      resolve(`⚠️ 블로 운영 헬스 실행 실패: ${err.message}`);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const msg = stripAnsi(stderr || stdout).trim().split('\n').filter(Boolean).slice(-6).join('\n');
-        resolve(`⚠️ 블로 운영 헬스 실패${msg ? `\n${msg}` : ''}`);
-        return;
-      }
-      resolve(stripAnsi(stdout).trim() || 'ℹ️ 블로 운영 헬스 결과가 비어 있습니다.');
-    });
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ 블로 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ 블로 운영 헬스 실행 실패',
+    failPrefix: '⚠️ 블로 운영 헬스 실패',
+    emptyText: 'ℹ️ 블로 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
