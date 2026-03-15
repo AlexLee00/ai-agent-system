@@ -121,6 +121,9 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
       message,
     },
     prefix: `🔔 ${TEAM_NAME}\n\n`,
+    policy: {
+      cooldownMs: 5 * 60_000,
+    },
   });
   const ok = result.ok;
   if (ok) log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);

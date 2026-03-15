@@ -65,6 +65,8 @@
 - dexter alert/recovery wording → reporting-hub notice format
 - luna queue report/accuracy alert → reporting-hub notice/report format
 - rebecca daily/weekly text report → shared python report format
+- reservation/claude/investment 기본 cooldown 정책 적용
+- claude 저우선 안내 quiet-hours 정책 적용
 
 ## Next Moves
 

@@ -26,6 +26,15 @@ async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_l
     sender,
     topicTeam,
     event: { from_bot, team, event_type, alert_level, message, payload },
+    policy: {
+      cooldownMs: alert_level >= 3 ? 60_000 : 5 * 60_000,
+      quietHours: {
+        timezone: 'KST',
+        startHour: 23,
+        endHour: 8,
+        maxAlertLevel: 1,
+      },
+    },
   });
   return result.ok;
 }

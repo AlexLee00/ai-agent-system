@@ -238,6 +238,15 @@ function publishDexterNotice({
       alert_level: level,
       message,
     },
+    policy: {
+      cooldownMs: level >= 4 ? 60_000 : 5 * 60_000,
+      quietHours: {
+        timezone: 'KST',
+        startHour: 23,
+        endHour: 8,
+        maxAlertLevel: 1,
+      },
+    },
   }).then((result) => result.ok);
 }
 
