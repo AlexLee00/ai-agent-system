@@ -15,6 +15,7 @@ const {
   publishEventPipeline,
   publishToTelegram,
   buildNoticeEvent,
+  buildEventPayload,
   renderNoticeEvent,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
@@ -236,12 +237,13 @@ function publishDexterNotice({
       action,
       footer,
     })),
-    payload: {
+    payload: buildEventPayload({
       title,
       summary,
-      detail: details.join(' | '),
+      details,
       action,
-    },
+      detail: details.join(' | '),
+    }),
   };
   return publishEventPipeline({
     event,

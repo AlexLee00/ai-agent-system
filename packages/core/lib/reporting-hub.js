@@ -19,6 +19,57 @@ const ALERT_LEVEL_ICONS = {
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 
+function normalizePayload(payload = null) {
+  if (payload == null) return null;
+  if (typeof payload !== 'object' || Array.isArray(payload)) {
+    return { value: payload };
+  }
+
+  const normalized = {
+    ...payload,
+  };
+  if (normalized.title != null) normalized.title = String(normalized.title).trim();
+  if (normalized.summary != null) normalized.summary = String(normalized.summary).trim();
+  if (normalized.action != null) normalized.action = String(normalized.action).trim();
+  if (normalized.detail != null) normalized.detail = String(normalized.detail).trim();
+  if (Array.isArray(normalized.details)) {
+    normalized.details = normalized.details.map((line) => String(line || '').trim()).filter(Boolean);
+  }
+  if (Array.isArray(normalized.links)) {
+    normalized.links = normalized.links
+      .map((link) => {
+        if (!link) return null;
+        if (typeof link === 'string') return { label: link.trim(), href: '' };
+        return {
+          label: String(link.label || '').trim(),
+          href: String(link.href || '').trim(),
+        };
+      })
+      .filter((link) => link && link.label);
+  }
+  return normalized;
+}
+
+function buildEventPayload({
+  title = '',
+  summary = '',
+  details = [],
+  action = '',
+  links = [],
+  detail = '',
+  extra = {},
+} = {}) {
+  return normalizePayload({
+    title,
+    summary,
+    details,
+    action,
+    links,
+    detail,
+    ...extra,
+  });
+}
+
 function getDefaultCooldownMs(alertLevel) {
   if (alertLevel >= 4) return 0;
   if (alertLevel >= 3) return 60_000;
@@ -110,7 +161,7 @@ function normalizeEvent({
     event_type: String(event_type || 'report'),
     alert_level: Number.isFinite(Number(alert_level)) ? Number(alert_level) : 2,
     message: String(message || '').trim(),
-    payload: payload == null ? null : payload,
+    payload: normalizePayload(payload),
   };
 }
 
@@ -505,11 +556,11 @@ function renderReportEvent(event) {
 
 function parseEventPayload(payload) {
   if (!payload) return null;
-  if (typeof payload === 'object') return payload;
+  if (typeof payload === 'object') return normalizePayload(payload);
   if (typeof payload !== 'string') return null;
   try {
     const parsed = JSON.parse(payload);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    return parsed && typeof parsed === 'object' ? normalizePayload(parsed) : null;
   } catch {
     return null;
   }
@@ -610,6 +661,8 @@ function buildSeverityTargets({
 
 module.exports = {
   normalizeEvent,
+  normalizePayload,
+  buildEventPayload,
   publishToQueue,
   publishToTelegram,
   publishToRag,
