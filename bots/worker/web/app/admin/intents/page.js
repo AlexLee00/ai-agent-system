@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 function CandidateCard({ candidate, busyId, onApply, onRollback }) {
   const statusTone = candidate.status === 'auto_applied'
@@ -51,6 +53,7 @@ function CandidateCard({ candidate, busyId, onApply, onRollback }) {
 }
 
 export default function WorkerIntentAdminPage() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +84,18 @@ export default function WorkerIntentAdminPage() {
     () => (unrec?.rows || []).reduce((sum, row) => sum + Number(row.cnt || 0), 0),
     [unrec],
   );
+  const quickFlows = [
+    {
+      title: '미인식 표현 점검',
+      body: '최근 미인식 표현을 검토하고 워커 대화 흐름으로 바로 이어집니다.',
+      promptHref: '/chat?prompt=' + encodeURIComponent('최근 미인식 워커 표현을 요약해줘'),
+    },
+    {
+      title: '승격 후보 확인',
+      body: '자동 승격 전 반복 패턴과 위험도를 빠르게 검토합니다.',
+      promptHref: '/chat?prompt=' + encodeURIComponent('승격 대기 인텐트 후보를 요약해줘'),
+    },
+  ];
 
   const handleApply = async (id) => {
     setBusyId(id);
@@ -154,6 +169,22 @@ export default function WorkerIntentAdminPage() {
             초기화
           </button>
         </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {quickFlows.map((item) => (
+          <div key={item.title} className="card space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">{item.title}</h2>
+              <p className="mt-1 text-sm text-slate-500">{item.body}</p>
+            </div>
+            <ProposalFlowActions
+              onPromptFill={() => router.push(item.promptHref)}
+              onSecondary={() => load(query)}
+              secondaryLabel="현재 목록 새로고침"
+            />
+          </div>
+        ))}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">

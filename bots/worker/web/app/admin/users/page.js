@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -35,6 +36,20 @@ export default function AdminUsersPage() {
   const [resetPw,    setResetPw]    = useState('');
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const quickFlows = [
+    {
+      title: '권한 분포 점검',
+      body: '관리자/멤버 비중과 최근 로그인 현황을 바로 질의합니다.',
+      promptHref: '/chat?prompt=' + encodeURIComponent('현재 사용자 권한 분포와 최근 로그인 현황을 요약해줘'),
+      route: '/dashboard',
+    },
+    {
+      title: '연동 누락 사용자 찾기',
+      body: '텔레그램 미연동, 비밀번호 변경 필요 사용자를 빠르게 찾습니다.',
+      promptHref: '/chat?prompt=' + encodeURIComponent('텔레그램 미연동 또는 비밀번호 변경이 필요한 사용자를 요약해줘'),
+      route: '/settings',
+    },
+  ];
 
   useEffect(() => {
     if (user && user.role !== 'master') router.push('/dashboard');
@@ -180,6 +195,22 @@ export default function AdminUsersPage() {
           </button>
         )}
         <span className="ml-auto text-sm text-gray-500 self-center">{users.length}명</span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {quickFlows.map((item) => (
+          <div key={item.title} className="card space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">{item.title}</h2>
+              <p className="mt-1 text-sm text-slate-500">{item.body}</p>
+            </div>
+            <ProposalFlowActions
+              onPromptFill={() => router.push(item.promptHref)}
+              onSecondary={() => router.push(item.route)}
+              secondaryLabel="관련 화면 열기"
+            />
+          </div>
+        ))}
       </div>
 
       <div className="card overflow-x-auto">
