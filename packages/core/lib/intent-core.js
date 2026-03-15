@@ -79,6 +79,8 @@ const TEAM_INTENT_META = {
   claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude', learningProfile: 'jay' },
 };
 
+const SUPPORTED_TEAM_INTENTS = Object.keys(TEAM_INTENT_META);
+
 const INTENT_HEALTH_TARGETS = [
   { key: 'jay', schema: 'claude', title: '제이', learningProfile: 'jay' },
   { key: 'worker', schema: 'worker', title: '워커', learningProfile: 'worker' },
@@ -89,6 +91,10 @@ const INTENT_HEALTH_TARGETS = [
 
 function getTeamIntentMeta(team = '') {
   return TEAM_INTENT_META[String(team || '').trim().toLowerCase()] || null;
+}
+
+function buildUnsupportedTeamIntentMessage() {
+  return `⚠️ 지원하지 않는 팀입니다. (${SUPPORTED_TEAM_INTENTS.join(', ')})`;
 }
 
 function buildTeamIntentReportFrame(team = '', teamMeta, {
@@ -111,6 +117,15 @@ function buildTeamIntentReportFrame(team = '', teamMeta, {
     `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
     `롤백 예시: /${normalized}-rollback <id>`,
   ].join('\n');
+}
+
+function buildTeamRollbackOptions(team = '', teamMeta, getLearningPath) {
+  if (!teamMeta) return null;
+  return {
+    schema: teamMeta.schema,
+    title: teamMeta.title,
+    learningPath: getLearningPath(teamMeta.learningProfile || 'jay'),
+  };
 }
 
 function buildIntentEngineHealthLines(targets = [], summaries = {}) {
@@ -596,9 +611,12 @@ module.exports = {
   SAFE_AUTO_PROMOTE_INTENTS,
   SAFE_AUTO_PROMOTE_PREFIXES,
   TEAM_INTENT_META,
+  SUPPORTED_TEAM_INTENTS,
   INTENT_HEALTH_TARGETS,
   getTeamIntentMeta,
+  buildUnsupportedTeamIntentMessage,
   buildTeamIntentReportFrame,
+  buildTeamRollbackOptions,
   buildIntentEngineHealthLines,
   buildIntentEngineHealthReportFrame,
   normalizeIntentText,

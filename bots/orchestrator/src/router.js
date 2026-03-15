@@ -46,7 +46,9 @@ const {
   AUTO_PROMOTE_THRESHOLDS,
   INTENT_HEALTH_TARGETS,
   getTeamIntentMeta,
+  buildUnsupportedTeamIntentMessage,
   buildTeamIntentReportFrame,
+  buildTeamRollbackOptions,
   buildIntentEngineHealthReportFrame,
   normalizeIntentText,
   buildAutoLearnPattern,
@@ -465,7 +467,7 @@ async function buildPromotionCandidateReportForSchema(query = '', options = {}) 
 async function buildTeamIntentReport(team = '', query = '') {
   const normalized = String(team || '').trim().toLowerCase();
   const teamMeta = getTeamIntentMeta(normalized);
-  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
+  if (!teamMeta) return buildUnsupportedTeamIntentMessage();
 
   const [promotions, unrecSummary] = await Promise.all([
     buildPromotionCandidateReportForSchema(query, {
@@ -562,12 +564,11 @@ async function rollbackPromotionTarget(target = '', options = {}) {
 async function rollbackTeamPromotionTarget(team = '', target = '') {
   const normalized = String(team || '').trim().toLowerCase();
   const teamMeta = getTeamIntentMeta(normalized);
-  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
-  return rollbackPromotionTarget(target, {
-    schema: teamMeta.schema,
-    title: teamMeta.title,
-    learningPath: getNamedIntentLearningPath(teamMeta.learningProfile || 'jay'),
-  });
+  if (!teamMeta) return buildUnsupportedTeamIntentMessage();
+  return rollbackPromotionTarget(
+    target,
+    buildTeamRollbackOptions(normalized, teamMeta, getNamedIntentLearningPath)
+  );
 }
 
 async function promoteToIntent(text, toIntent, pattern, recordIds = []) {
