@@ -53,6 +53,14 @@ const rag                                           = require('../../../packages
 const { createMessage }                             = require('../../../packages/core/lib/message-envelope');
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
+const {
+  buildReportEvent,
+  renderReportEvent,
+  buildNoticeEvent,
+  renderNoticeEvent,
+  publishEventPipeline,
+  buildSeverityTargets,
+}                                                   = require('../../../packages/core/lib/reporting-hub');
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
 const pipelineStore                                 = require('./pipeline-store');
 
@@ -193,7 +201,35 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
     if (!next) {
       const msg = '⚠️ [블로그팀] 강의 시리즈 완료!\n다음 시리즈가 아직 준비되지 않았습니다.\n텔레그램으로 승인 번호를 보내주세요.';
       console.log('[블로]', msg);
-      await runIfOps('blog-tg', () => tg.send('blog', msg), () => console.log('[DEV] 텔레그램 생략'));
+      const notice = buildNoticeEvent({
+        from_bot: 'blog-blo',
+        team: 'blog',
+        event_type: 'alert',
+        alert_level: 2,
+        title: '강의 시리즈 완료',
+        summary: '다음 시리즈가 아직 준비되지 않았습니다.',
+        action: '텔레그램에서 승인 번호를 회신하세요.',
+        payload: {
+          title: '강의 시리즈 완료',
+          summary: '다음 시리즈가 아직 준비되지 않았습니다.',
+          action: '승인 번호 회신',
+        },
+      });
+      await runIfOps(
+        'blog-tg',
+        () => publishEventPipeline({
+          event: { ...notice, message: renderNoticeEvent(notice) || msg },
+          targets: buildSeverityTargets({
+            event: notice,
+            sender: tg,
+            topicTeam: 'blog',
+            includeQueue: false,
+            includeN8n: false,
+          }),
+          policy: { cooldownMs: 30 * 60_000 },
+        }),
+        () => console.log('[DEV] 텔레그램 생략')
+      );
       return { skipped: true, result: { type: 'lecture', skipped: true, reason: '시리즈 완료 — 차기 준비 중' } };
     }
     console.log(`[블로] 🔄 시리즈 전환 완료 → ${next.series_name} 1강부터 시작`);
@@ -418,15 +454,82 @@ async function _sendDailyReport(results, traceCtx) {
     '📅 예약 발행: 내일 오전 07:00',
   ];
 
-  await runIfOps('blog-tg',
-    () => tg.send('blog', reportLines.join('\n')),
-    () => console.log('[DEV] 텔레그램 생략\n' + reportLines.join('\n'))
+  const reportEvent = buildReportEvent({
+    from_bot: 'blog-blo',
+    team: 'blog',
+    event_type: 'report',
+    alert_level: hasErrors ? 2 : 1,
+    title: '블로그팀 일간 작업 완료',
+    summary: `trace ${traceCtx.trace_id.slice(0, 8)} | ${results.length}건`,
+    sections: [
+      {
+        title: '결과',
+        lines: results.map(r => {
+          if (r.error) return `❌ ${r.type}: ${r.error.slice(0, 60)}`;
+          if (r.skipped) return `⏭ ${r.type}: ${r.reason}`;
+          const label = r.type === 'lecture' ? `강의 ${r.number}강` : `일반[${r.category}]`;
+          return `${r.quality ? '✅' : '⚠️'} ${label}: ${r.title?.slice(0, 30)} (${r.charCount}자)`;
+        }),
+      },
+      {
+        title: '리라이팅 가이드',
+        lines: results.filter(r => !r.error && !r.skipped).map(r =>
+          `${r.type === 'lecture' ? `[${r.number}강]` : `[${r.category}]`} ${_buildRewriteGuide(r.aiRisk)}`
+        ),
+      },
+    ],
+    footer: '파일 위치: bots/blog/output/ | 예약 발행: 내일 오전 07:00',
+    payload: {
+      title: '블로그팀 일간 작업 완료',
+      summary: `trace ${traceCtx.trace_id.slice(0, 8)} | ${results.length}건`,
+      details: reportLines,
+    },
+  });
+  const renderedReport = renderReportEvent(reportEvent) || reportLines.join('\n');
+  await runIfOps(
+    'blog-tg',
+    () => publishEventPipeline({
+      event: { ...reportEvent, message: renderedReport },
+      targets: buildSeverityTargets({
+        event: reportEvent,
+        sender: tg,
+        topicTeam: 'blog',
+        includeQueue: false,
+        includeN8n: false,
+      }),
+      policy: { cooldownMs: 30 * 60_000 },
+    }),
+    () => console.log('[DEV] 텔레그램 생략\n' + renderedReport)
   ).catch(e => console.warn('[블로] 텔레그램 발송 실패:', e.message));
 
   if (hasErrors) {
     const errMsg = `⚠️ [블로팀] 포스팅 실패 발생 — trace: ${traceCtx.trace_id.slice(0, 8)}`;
-    await runIfOps('blog-tg-err',
-      () => tg.send('claude', errMsg),
+    const errNotice = buildNoticeEvent({
+      from_bot: 'blog-blo',
+      team: 'blog',
+      event_type: 'alert',
+      alert_level: 3,
+      title: '블로그팀 포스팅 실패 발생',
+      summary: `trace ${traceCtx.trace_id.slice(0, 8)}`,
+      action: '/claude-health 또는 /reporting-health 확인',
+      payload: {
+        title: '블로그팀 포스팅 실패 발생',
+        summary: `trace ${traceCtx.trace_id.slice(0, 8)}`,
+        action: '/claude-health 또는 /reporting-health 확인',
+      },
+    });
+    await runIfOps(
+      'blog-tg-err',
+      () => publishEventPipeline({
+        event: { ...errNotice, message: renderNoticeEvent(errNotice) || errMsg },
+        targets: buildSeverityTargets({
+          event: errNotice,
+          sender: tg,
+          topicTeam: 'claude-lead',
+          includeQueue: false,
+        }),
+        policy: { cooldownMs: 10 * 60_000 },
+      }),
       () => {}
     ).catch(() => {});
   }
