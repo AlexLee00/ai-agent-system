@@ -28,13 +28,13 @@ export default function AdminCompaniesPage() {
     {
       title: '업체별 메뉴 점검',
       body: '업체 메뉴 노출 상태를 검토하고 메뉴 설정 화면으로 이어집니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('업체별 메뉴 노출 상태를 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('업체별 메뉴 노출 상태를 요약해줘'),
       route: '/admin/companies',
     },
     {
       title: '운영 이슈 업체 찾기',
       body: '미등록, 미연동, 비활성 업체 흐름을 빠르게 점검합니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('운영 점검이 필요한 업체를 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('운영 점검이 필요한 업체를 요약해줘'),
       route: '/admin/companies',
     },
   ];
