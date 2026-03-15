@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/lib/auth-context';
 import AppShell from './_shell';
+import ServiceWorkerReset from '@/components/ServiceWorkerReset';
 
 export const metadata = {
   title: '워커 업무관리',
@@ -26,6 +27,7 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-title" content="워커" />
       </head>
       <body>
+        <ServiceWorkerReset />
         <AuthProvider>
           <AppShell>{children}</AppShell>
         </AuthProvider>
