@@ -1,0 +1,375 @@
+{
+  "name": "스카팀 읽기 명령 intake",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ska-command",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "Webhook_1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json || {};\nreturn [{ json: {\n  command: String(payload.command || ''),\n  date: String((payload.args && payload.args.date) || new Date().toISOString().slice(0, 10)),\n  limit: Number((payload.args && payload.args.limit) || 10),\n  rawArgs: payload.args || {},\n} }];"
+      },
+      "id": "Code_1",
+      "name": "명령 정규화",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.command}}",
+              "operation": "equal",
+              "value2": "query_reservations"
+            }
+          ]
+        }
+      },
+      "id": "IF_Reservations",
+      "name": "예약 조회?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{`SELECT name_enc, date, start_time, end_time, room, status FROM reservation.reservations WHERE date = '${$json.date}' ORDER BY start_time`}}"
+      },
+      "id": "PG_Reservations",
+      "name": "예약 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [920, 160],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "Team Jay PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\nconst date = $('명령 정규화').first().json.date;\nif (rows.length === 0) {\n  return [{ json: { ok: true, date, count: 0, message: `${date} 예약 없음`, source: 'n8n' } }];\n}\nconst reservations = rows.map((row) => `${row.start_time}~${row.end_time} [${row.room}] ${row.status}`);\nreturn [{ json: { ok: true, date, count: rows.length, reservations, source: 'n8n' } }];"
+      },
+      "id": "Code_Reservations",
+      "name": "예약 결과 포맷",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.command}}",
+              "operation": "equal",
+              "value2": "query_today_stats"
+            }
+          ]
+        }
+      },
+      "id": "IF_TodayStats",
+      "name": "오늘 통계 조회?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 380]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{`SELECT total_amount, entries_count FROM reservation.daily_summary WHERE date = '${$json.date}' LIMIT 1`}}"
+      },
+      "id": "PG_TodayStats",
+      "name": "오늘 통계 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1160, 320],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "Team Jay PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\nconst date = $('명령 정규화').first().json.date;\nif (rows.length === 0) {\n  return [{ json: { ok: true, date, message: `${date} 매출 데이터 없음`, source: 'n8n' } }];\n}\nconst row = rows[0];\nreturn [{ json: { ok: true, date, total_amount: row.total_amount, entries_count: row.entries_count, source: 'n8n' } }];"
+      },
+      "id": "Code_TodayStats",
+      "name": "오늘 통계 포맷",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.command}}",
+              "operation": "equal",
+              "value2": "query_alerts"
+            }
+          ]
+        }
+      },
+      "id": "IF_Alerts",
+      "name": "알람 조회?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1160, 540]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{`SELECT type, title, message, timestamp FROM reservation.alerts WHERE resolved = 0 ORDER BY timestamp DESC LIMIT ${$json.limit}`}}"
+      },
+      "id": "PG_Alerts",
+      "name": "알람 조회",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1400, 480],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "Team Jay PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\nreturn [{ json: { ok: true, count: rows.length, alerts: rows, past_cases: null, source: 'n8n' } }];"
+      },
+      "id": "Code_Alerts",
+      "name": "알람 결과 포맷",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ok: false, error: `n8n 미지원 명령: ${$json.command || 'unknown'}`, source: 'n8n' } }];"
+      },
+      "id": "Code_Unknown",
+      "name": "미지원 명령",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 680]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "Respond_Reservations",
+      "name": "예약 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1380, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "Respond_TodayStats",
+      "name": "오늘 통계 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1620, 320]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "Respond_Alerts",
+      "name": "알람 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1860, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "Respond_Unknown",
+      "name": "미지원 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1640, 680]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "명령 정규화",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "명령 정규화": {
+      "main": [
+        [
+          {
+            "node": "예약 조회?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "예약 조회?": {
+      "main": [
+        [
+          {
+            "node": "예약 조회",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "오늘 통계 조회?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "예약 조회": {
+      "main": [
+        [
+          {
+            "node": "예약 결과 포맷",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "예약 결과 포맷": {
+      "main": [
+        [
+          {
+            "node": "예약 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오늘 통계 조회?": {
+      "main": [
+        [
+          {
+            "node": "오늘 통계 조회",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "알람 조회?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오늘 통계 조회": {
+      "main": [
+        [
+          {
+            "node": "오늘 통계 포맷",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오늘 통계 포맷": {
+      "main": [
+        [
+          {
+            "node": "오늘 통계 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "알람 조회?": {
+      "main": [
+        [
+          {
+            "node": "알람 조회",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "미지원 명령",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "알람 조회": {
+      "main": [
+        [
+          {
+            "node": "알람 결과 포맷",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "알람 결과 포맷": {
+      "main": [
+        [
+          {
+            "node": "알람 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "미지원 명령": {
+      "main": [
+        [
+          {
+            "node": "미지원 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {},
+  "versionId": "ska-command-intake-draft"
+}
