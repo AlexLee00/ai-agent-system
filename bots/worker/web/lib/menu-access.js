@@ -9,7 +9,7 @@ export function resolveMenuKey(key = '') {
   if (segments[1] === 'intents') return 'intents';
   if (segments[1] === 'companies') return 'companies';
   if (segments[1] === 'users') return 'users';
-  if (segments[1] === 'workforce') return 'workforce';
+  if (segments[1] === 'workforce') return 'employees';
   return 'admin';
 }
 
