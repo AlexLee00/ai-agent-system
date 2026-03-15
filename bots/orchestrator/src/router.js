@@ -1089,15 +1089,17 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     ska: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
     blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
     critical: path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
+    feedback: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
   };
 
-  const [luna, worker, claude, ska, blog, criticalPath] = await Promise.all([
+  const [luna, worker, claude, ska, blog, criticalPath, feedback] = await Promise.all([
     runNodeScriptJson(scripts.luna, ['--json']),
     runNodeScriptJson(scripts.worker, ['--json']),
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
     runNodeScriptJson(scripts.blog, ['--json']),
     runNodeScriptJson(scripts.critical),
+    runNodeScriptJson(scripts.feedback, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
   const [workerIntent, claudeCommands] = await Promise.all([
@@ -1233,6 +1235,23 @@ async function buildUnifiedOpsHealthReport(options = {}) {
         blog?.dailyRunHealth?.warnCount > 0 ? 2 + blog.dailyRunHealth.warnCount : 0,
       ),
     },
+    {
+      title: 'AI 피드백',
+      summary: feedback
+        ? `세션 ${feedback.totalSessions}건 / committed ${feedback.totalCommitted} / rejected ${feedback.totalRejected}건${feedback.decision?.recommended ? ' / 품질 점검 필요' : ''}`
+        : '조회 실패',
+      detail: feedback
+        ? [
+          `  최근 ${feedback.sinceDays}일 세션 ${feedback.totalSessions}건 / committed ${feedback.totalCommitted} / rejected ${feedback.totalRejected}`,
+          `  수정 없이 채택 ${feedback.totalAcceptedWithoutEdit}건`,
+          ...((feedback.targets || []).map((target) =>
+            `  ${target.title}: 세션 ${target.summary?.totalSessions || 0}건 · rejected ${target.summary?.rejectedSessions || 0} · no-edit ${target.summary?.acceptedWithoutEditSessions || 0}`
+          )),
+        ].join('\n')
+        : '  feedback-health 실행 실패',
+      hasWarn: !feedback || Boolean(feedback.decision?.recommended),
+      priority: !feedback ? 5 : (feedback.decision?.recommended ? 3 : 0),
+    },
   ];
 
   const warnCount = rows.filter((row) => row.hasWarn).length;
@@ -1244,6 +1263,11 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   }
   if (reportingWarningSummary.count > 0) {
     reasons.push(`reporting payload 경고: ${reportingWarningSummary.count}건`);
+  }
+  if (!feedback) {
+    reasons.push('AI 피드백 헬스 조회 실패');
+  } else if (feedback.decision?.recommended) {
+    reasons.push(...(feedback.decision.reasons || []).slice(0, 2));
   }
   if (lunaRisk.hasWarn) {
     reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
@@ -1280,6 +1304,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       '클로드': '/claude-health',
       '스카': '/ska-health | /ska-forecast',
       '블로': '/blog-health',
+      'AI 피드백': '/feedback-health',
     };
 
     const lines = ['🧭 통합 운영 헬스 브리핑', ''];
@@ -1366,6 +1391,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     footer: [
       '오케스트레이터: /orchestrator-health',
       '리포팅: /reporting-health',
+      '피드백: /feedback-health',
       '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
       '블로 조회: /blog-health',
     ],
