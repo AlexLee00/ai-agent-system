@@ -72,12 +72,34 @@ export default function DashboardPage() {
     approval: '승인',
   };
 
+  const activityActionMap = {
+    attendance: { href: '/attendance', prompt: '최근 근태 처리 내역 요약해줘' },
+    sales: { href: '/sales', prompt: '최근 매출 처리 내역 요약해줘' },
+    journal: { href: '/journals', prompt: '최근 업무일지 처리 내역 요약해줘' },
+    approval: { href: '/approvals', prompt: '최근 승인 처리 흐름 요약해줘' },
+  };
+
   function handlePriorityAction(item) {
     if (!canUsePromptWorkspace || !item.prompt) {
       router.push(item.href);
       return;
     }
     setWorkspaceDraft(item.prompt);
+    setWorkspaceDraftVersion((prev) => prev + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function handleActivityAction(item) {
+    const config = activityActionMap[item.type];
+    if (!config) {
+      router.push('/journals');
+      return;
+    }
+    if (!canUsePromptWorkspace || !config.prompt) {
+      router.push(config.href);
+      return;
+    }
+    setWorkspaceDraft(config.prompt);
     setWorkspaceDraftVersion((prev) => prev + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -294,6 +316,20 @@ export default function DashboardPage() {
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
                 {item.actor && <p className="mt-1 text-xs text-slate-400">담당: {item.actor}</p>}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleActivityAction(item)}
+                    className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                  >
+                    프롬프트에 채우기
+                  </button>
+                  <button
+                    onClick={() => router.push(activityActionMap[item.type]?.href || '/journals')}
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    메뉴 열기
+                  </button>
+                </div>
               </div>
             ))}
           </div>
