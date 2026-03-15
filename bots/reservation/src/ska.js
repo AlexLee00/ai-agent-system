@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 'use strict';
-const kst = require('../../../packages/core/lib/kst');
 
 /**
  * src/ska.js — 스카 팀장 봇
@@ -13,12 +12,12 @@ const kst = require('../../../packages/core/lib/kst');
  * NOTE: Telegram 수신/발신 없음. 제이(Jay, OpenClaw)의 명령을 받아 실행.
  */
 
-const fs       = require('fs');
-const path     = require('path');
-const os       = require('os');
-const { execSync, execFileSync, spawn } = require('child_process');
-const pgPool   = require('../../../packages/core/lib/pg-pool');
-const rag      = require('../../../packages/core/lib/rag-safe');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const rag = require('../../../packages/core/lib/rag-safe');
 const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
 const {
   AUTO_PROMOTE_DEFAULTS,
@@ -37,6 +36,8 @@ const {
   findPromotionCandidateIdByNormalized,
   markUnrecognizedPromoted,
 } = require('../../../packages/core/lib/intent-store');
+const { checkSkaTeamIdentity } = require('../lib/ska-team');
+const { createSkaCommandHandlers } = require('../lib/ska-command-handlers');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -91,156 +92,6 @@ function acquireLock() {
 // ─── DB ──────────────────────────────────────────────────────────────
 // claude 스키마: bot_commands (제이팀)
 // reservation 스키마: reservations, daily_summary, alerts (Phase 3에서 마이그레이션 완료)
-
-// ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
-
-const BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
-
-const SKA_TEAM = [
-  {
-    id: 'andy', name: '앤디', launchd: 'ai.ska.naver-monitor',
-    team: '스카팀',
-    role: '네이버 스마트플레이스 모니터링',
-    mission: '5분마다 예약 현황 수집 및 이상 감지 알람 발송',
-    continuous: true,
-  },
-  {
-    id: 'jimmy', name: '지미', launchd: 'ai.ska.kiosk-monitor',
-    team: '스카팀',
-    role: '픽코 키오스크 예약 모니터링',
-    mission: '키오스크 신규 예약 감지 및 알람 발송',
-    continuous: false,
-  },
-  {
-    id: 'rebecca', name: '레베카', launchd: null,
-    team: '스카팀',
-    role: '매출 예측 분석',
-    mission: '과거 데이터 기반 매출·입장수 예측 모델 실행',
-  },
-  {
-    id: 'eve', name: '이브', launchd: null,
-    team: '스카팀',
-    role: '공공API 환경요소 수집',
-    mission: '공휴일·날씨·학사·축제 데이터 수집 및 저장',
-  },
-];
-
-function inspectLaunchdService(label) {
-  try {
-    const service = `gui/${process.getuid()}/${label}`;
-    const out = execFileSync('launchctl', ['print', service], {
-      encoding: 'utf8',
-      timeout: 5000,
-    });
-    const stateMatch = out.match(/^\s*state = ([^\n]+)$/m);
-    const exitMatch = out.match(/^\s*last exit code = ([^\n]+)$/m);
-    const pidMatch = out.match(/^\s*pid = ([^\n]+)$/m);
-    return {
-      ok: true,
-      state: stateMatch?.[1]?.trim() || 'unknown',
-      lastExitCode: exitMatch?.[1]?.trim() || '',
-      pid: pidMatch?.[1]?.trim() || '',
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e.message,
-    };
-  }
-}
-
-function checkSkaTeamIdentity() {
-  if (!fs.existsSync(BOT_ID_DIR)) fs.mkdirSync(BOT_ID_DIR, { recursive: true });
-
-  const results = [];
-  for (const member of SKA_TEAM) {
-    const issues  = [];
-    let   trained = false;
-
-    // 1. 프로세스 상태 (launchd 서비스 있는 봇만)
-    if (member.launchd) {
-      const inspected = inspectLaunchdService(member.launchd);
-      if (!inspected.ok) {
-        issues.push('프로세스 상태 확인 실패');
-      } else if (member.continuous && inspected.state !== 'running') {
-        const exitInfo = inspected.lastExitCode ? ` (exit=${inspected.lastExitCode})` : '';
-        issues.push(`프로세스 비실행${exitInfo}`);
-      } else if (!member.continuous && inspected.lastExitCode && !['0', '-9', '-15', '(never)'].includes(inspected.lastExitCode)) {
-        issues.push(`최근 실행 비정상 종료 (exit=${inspected.lastExitCode})`);
-      }
-    }
-
-    // 2. 정체성 파일 체크 (없으면 생성, 30일 초과면 갱신)
-    const idFile = path.join(BOT_ID_DIR, `${member.id}.json`);
-    if (!fs.existsSync(idFile)) {
-      safeWriteFile(idFile, JSON.stringify({
-        name: member.name, team: member.team,
-        role: member.role, mission: member.mission,
-        launchd: member.launchd, updated_at: new Date().toISOString(),
-      }, null, 2), 'ska');
-      trained = true;
-      issues.push('→ 정체성 파일 생성');
-    } else {
-      const data    = JSON.parse(fs.readFileSync(idFile, 'utf8'));
-      const ageMs   = Date.now() - new Date(data.updated_at || 0).getTime();
-      const missing = ['name', 'role', 'mission'].filter(f => !data[f]);
-      if (missing.length > 0 || ageMs > 30 * 24 * 3600 * 1000) {
-        if (missing.length > 0) issues.push(`누락 필드: ${missing.join(', ')}`);
-        Object.assign(data, { name: member.name, team: member.team, role: member.role, mission: member.mission, updated_at: new Date().toISOString() });
-        safeWriteFile(idFile, JSON.stringify(data, null, 2), 'ska');
-        trained = true;
-        issues.push('→ 정체성 갱신');
-      }
-    }
-
-    results.push({ name: member.name, issues, trained });
-  }
-
-  // 콘솔 요약
-  const problems = results.filter(r => r.issues.some(i => !i.startsWith('→')));
-  if (problems.length > 0) {
-    console.log(`[스카] 팀원 정체성 점검: ${problems.length}건 이슈`);
-    for (const r of problems) console.log(`  ${r.name}: ${r.issues.filter(i => !i.startsWith('→')).join(' | ')}`);
-  } else {
-    console.log(`[스카] 팀원 정체성 점검: 정상`);
-  }
-  return results;
-}
-
-// ─── RAG 유틸 ────────────────────────────────────────────────────────
-
-/**
- * 예약 이상 발생 시 과거 유사 사례 검색
- * @param {string} issueType — 알람 타입 (예: 'mismatch', 'sync_error')
- * @param {string} detail    — 이슈 상세 키워드
- */
-async function searchPastCases(issueType, detail) {
-  try {
-    const query = `${issueType} ${detail}`.slice(0, 200);
-    const hits  = await rag.search('reservations', query, { limit: 3, threshold: 0.6 });
-    if (!hits || hits.length === 0) return null;
-    return hits.map(h => ({
-      content: (h.content || '').slice(0, 150),
-      date:    h.created_at ? new Date(h.created_at).toLocaleDateString('ko-KR') : '',
-    }));
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 알람 처리 결과를 RAG에 기록 (향후 유사 사례 검색에 활용)
- */
-async function storeAlertContext(issueType, detail, resolution) {
-  try {
-    await rag.store(
-      'reservations',
-      `[알람 처리] ${issueType} | ${detail} | 조치: ${resolution}`,
-      { type: issueType, detail, resolution },
-      'ska-commander',
-    );
-  } catch { /* 무시 */ }
-}
 
 async function saveLearning(entry) {
   try {
@@ -359,128 +210,6 @@ async function saveLearning(entry) {
     }
   } catch (e) {
     console.error(`[스카] NLP 학습 저장 실패:`, e.message);
-  }
-}
-
-// ─── 명령 핸들러 ─────────────────────────────────────────────────────
-
-/**
- * 오늘 예약 현황 조회
- */
-async function handleQueryReservations(args) {
-  const date = args.date || kst.today();
-  try {
-    const rows = await pgPool.query('reservation', `
-      SELECT name_enc, date, start_time, end_time, room, status
-      FROM reservations
-      WHERE date = $1
-      ORDER BY start_time
-    `, [date]);
-
-    if (rows.length === 0) {
-      return { ok: true, date, count: 0, message: `${date} 예약 없음` };
-    }
-
-    const list = rows.map(r =>
-      `${r.start_time}~${r.end_time} [${r.room}] ${r.status}`
-    );
-    return { ok: true, date, count: rows.length, reservations: list };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-/**
- * 오늘 매출/예약수 조회
- */
-async function handleQueryTodayStats(args) {
-  const date = args.date || kst.today();
-  try {
-    const summary = await pgPool.get('reservation', `
-      SELECT total_amount, entries_count FROM daily_summary WHERE date = $1
-    `, [date]);
-
-    if (!summary) {
-      return { ok: true, date, message: `${date} 매출 데이터 없음` };
-    }
-
-    return {
-      ok: true,
-      date,
-      total_amount: summary.total_amount,
-      entries_count: summary.entries_count,
-    };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-/**
- * 미해결 알람 조회 (RAG 과거 사례 포함)
- */
-async function handleQueryAlerts(args) {
-  try {
-    const limit = args.limit || 10;
-    const rows = await pgPool.query('reservation', `
-      SELECT type, title, message, timestamp
-      FROM alerts
-      WHERE resolved = 0
-      ORDER BY timestamp DESC
-      LIMIT $1
-    `, [limit]);
-
-    // RAG: 첫 번째 알람과 유사한 과거 사례 검색
-    let pastCases = null;
-    if (rows.length > 0) {
-      pastCases = await searchPastCases(rows[0].type || '알람', rows[0].title || '');
-    }
-
-    return { ok: true, count: rows.length, alerts: rows, past_cases: pastCases };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-/**
- * 알람 해결 결과 RAG 저장 (제이가 처리 완료 보고 시 호출)
- */
-async function handleStoreResolution(args) {
-  const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
-  try {
-    await storeAlertContext(issueType, detail, resolution);
-    return { ok: true, message: 'RAG 저장 완료' };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-/**
- * 앤디 (네이버 모니터) 재시작
- */
-function handleRestartAndy() {
-  try {
-    execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.naver-monitor`], {
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    return { ok: true, message: '앤디 재시작 완료' };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-/**
- * 지미 (키오스크 모니터) 재시작
- */
-function handleRestartJimmy() {
-  try {
-    execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.kiosk-monitor`], {
-      encoding: 'utf8',
-      timeout: 30000,
-    });
-    return { ok: true, message: '지미 재시작 완료' };
-  } catch (e) {
-    return { ok: false, error: e.message };
   }
 }
 
@@ -618,12 +347,7 @@ async function handleAnalyzeUnknown(args) {
 // ─── 명령 디스패처 ────────────────────────────────────────────────────
 
 const HANDLERS = {
-  query_reservations: handleQueryReservations,
-  query_today_stats:  handleQueryTodayStats,
-  query_alerts:       handleQueryAlerts,
-  restart_andy:       handleRestartAndy,
-  restart_jimmy:      handleRestartJimmy,
-  store_resolution:   handleStoreResolution,
+  ...createSkaCommandHandlers({ pgPool, rag }),
   analyze_unknown:    handleAnalyzeUnknown,
 };
 
