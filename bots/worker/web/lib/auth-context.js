@@ -10,6 +10,8 @@ function normalizeEnabledMenus(enabledMenus) {
     switch (key) {
       case 'chat':
         return ['journals'];
+      case 'workforce':
+        return ['employees', 'payroll'];
       default:
         return [key];
     }
