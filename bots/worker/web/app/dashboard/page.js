@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import AdminQuickNav from '@/components/AdminQuickNav';
 import Card from '@/components/Card';
 import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
@@ -128,6 +129,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {canUsePromptWorkspace && <AdminQuickNav title="관리 화면 바로가기" />}
+
       <section className="card overflow-hidden bg-gradient-to-br from-white to-slate-100/80">
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-3">
