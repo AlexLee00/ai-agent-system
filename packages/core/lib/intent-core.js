@@ -83,6 +83,28 @@ function getTeamIntentMeta(team = '') {
   return TEAM_INTENT_META[String(team || '').trim().toLowerCase()] || null;
 }
 
+function buildTeamIntentReportFrame(team = '', teamMeta, {
+  promotions = '',
+  unrecSummary = '',
+  thresholdLines = [],
+} = {}) {
+  const normalized = String(team || '').trim().toLowerCase();
+  if (!teamMeta) return '⚠️ 지원하지 않는 팀입니다. (luna, ska, claude)';
+  return [
+    `🧠 ${teamMeta.title}`,
+    '',
+    promotions,
+    '',
+    unrecSummary,
+    '',
+    '자동 반영 기준:',
+    ...thresholdLines,
+    '',
+    `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
+    `롤백 예시: /${normalized}-rollback <id>`,
+  ].join('\n');
+}
+
 function normalizeIntentText(text = '') {
   return String(text)
     .toLowerCase()
@@ -544,6 +566,7 @@ module.exports = {
   SAFE_AUTO_PROMOTE_PREFIXES,
   TEAM_INTENT_META,
   getTeamIntentMeta,
+  buildTeamIntentReportFrame,
   normalizeIntentText,
   escapeRegex,
   buildAutoLearnPattern,
