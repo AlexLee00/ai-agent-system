@@ -388,7 +388,7 @@ export default function SalesPage() {
               <div className="flex flex-wrap gap-3">
                 <ProposalFlowActions
                   onPromptFill={() => refillPrompt(`매출 등록 제안을 다시 정리해줘\n금액: ${proposal.amount || ''}\n카테고리: ${proposal.category || ''}\n날짜: ${proposal.date || ''}`.trim())}
-                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}

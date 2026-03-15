@@ -408,7 +408,7 @@ export default function JournalsPage() {
               <div className="flex flex-wrap gap-3">
                 <ProposalFlowActions
                   onPromptFill={() => refillPrompt(`업무일지 초안을 다시 정리해줘\n날짜: ${proposal.date || ''}\n카테고리: ${proposal.category || ''}\n내용: ${proposal.content || ''}`.trim())}
-                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 />
                 <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
                   반려
