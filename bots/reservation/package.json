@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "monitor": "node src/naver-monitor.js",
     "dashboard": "node scripts/dashboard-server.js",
-    "setup:n8n-command": "node n8n/setup-ska-command-workflow.js"
+    "setup:n8n-command": "node n8n/setup-ska-command-workflow.js",
+    "check:n8n-command": "node scripts/check-n8n-command-path.js"
   },
   "dependencies": {
     "@ai-agent/core": "*",

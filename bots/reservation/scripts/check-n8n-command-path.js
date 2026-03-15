@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+'use strict';
+
+const {
+  checkHttp,
+  checkWebhookRegistration,
+} = require('../../../packages/core/lib/health-provider');
+
+const HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
+const WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+
+async function main() {
+  const healthOk = await checkHttp(HEALTH_URL, 2500);
+  const webhook = await checkWebhookRegistration(WEBHOOK_URL, {
+    command: 'query_today_stats',
+    args: { date: new Date().toISOString().slice(0, 10) },
+  }, {
+    timeoutMs: 5000,
+  });
+
+  const report = {
+    healthUrl: HEALTH_URL,
+    webhookUrl: WEBHOOK_URL,
+    n8nHealthy: healthOk,
+    webhookRegistered: webhook.registered,
+    webhookStatus: webhook.status,
+    webhookReason: webhook.reason,
+    webhookHealthy: webhook.healthy,
+    webhookError: webhook.error || null,
+  };
+
+  console.log(JSON.stringify(report, null, 2));
+}
+
+main().catch((error) => {
+  console.error(`[ska n8n command path] ${error.message}`);
+  process.exit(1);
+});
