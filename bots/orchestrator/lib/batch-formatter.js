@@ -7,8 +7,15 @@
  * LLM 없이 템플릿으로만 처리.
  */
 
-const ALERT_ICONS = { 1: '🔵', 2: '🟡', 3: '🟠', 4: '🔴' };
-const ALERT_LABELS = { 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH', 4: 'CRITICAL' };
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  buildSnippetEvent,
+  renderSnippetEvent,
+} = require('../../../packages/core/lib/reporting-hub');
+
+const ALERT_ICONS = { 1: 'ℹ️', 2: '⚠️', 3: '🟠', 4: '🚨' };
+const ALERT_LABELS = { 1: '안내', 2: '경고', 3: '높음', 4: '긴급 장애' };
 
 /**
  * 단일 알람 포맷
@@ -17,8 +24,17 @@ const ALERT_LABELS = { 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH', 4: 'CRITICAL' };
 function formatSingle(item) {
   const icon   = ALERT_ICONS[item.alert_level] || '⚪';
   const label  = ALERT_LABELS[item.alert_level] || '?';
-  const botTag = `[${item.from_bot}]`;
-  return `${icon} ${label} ${botTag}\n${item.message}`;
+  return renderNoticeEvent(buildNoticeEvent({
+    from_bot: item.from_bot,
+    team: item.team,
+    event_type: item.event_type,
+    alert_level: item.alert_level,
+    title: `${icon} ${item.from_bot} 알림`,
+    summary: `${label} · ${item.event_type}`,
+    details: item.message.split('\n').filter(Boolean),
+    action: '상세 내용 확인',
+    footer: '필요 시 /ops-health 또는 팀별 헬스 명령으로 추가 점검',
+  }));
 }
 
 /**
@@ -32,21 +48,24 @@ function formatBatch(botName, items) {
   const maxLevel = Math.max(...items.map(i => i.alert_level));
   const icon     = ALERT_ICONS[maxLevel] || '⚪';
   const eventTypes = [...new Set(items.map(i => i.event_type))].join(', ');
+  const lines = items.slice(0, 5).map((item) => {
+    const lvl = ALERT_ICONS[item.alert_level] || '•';
+    return `${lvl} ${item.message.split('\n')[0].slice(0, 80)}`;
+  });
+  if (items.length > 5) lines.push(`... 외 ${items.length - 5}건`);
 
-  const lines = [
-    `${icon} [${botName}] ${items.length}건 알람 (${eventTypes})`,
-    ``,
-  ];
-
-  for (const item of items.slice(0, 5)) {
-    const lvl = ALERT_ICONS[item.alert_level];
-    lines.push(`${lvl} ${item.message.split('\n')[0].slice(0, 80)}`);
-  }
-  if (items.length > 5) {
-    lines.push(`... 외 ${items.length - 5}건`);
-  }
-
-  return lines.join('\n');
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: botName,
+    team: items[0]?.team || 'general',
+    event_type: 'batch_alert',
+    alert_level: maxLevel,
+    title: `${icon} ${botName} 집약 알림`,
+    lines: [
+      `건수: ${items.length}건`,
+      `유형: ${eventTypes}`,
+      ...lines,
+    ],
+  }));
 }
 
 /**
@@ -68,17 +87,27 @@ function formatMultiBot(items) {
   const icon     = ALERT_ICONS[maxLevel] || '⚪';
   const botCount = Object.keys(byBot).length;
 
-  const lines = [`${icon} 알람 집약 (${botCount}개 봇, ${items.length}건)`, ``];
+  const lines = [
+    `봇 수: ${botCount}개`,
+    `총 건수: ${items.length}건`,
+  ];
 
   for (const [bot, botItems] of Object.entries(byBot)) {
     lines.push(`【${bot}】 ${botItems.length}건`);
     for (const item of botItems.slice(0, 2)) {
-      lines.push(`  • ${item.message.split('\n')[0].slice(0, 60)}`);
+      lines.push(`• ${item.message.split('\n')[0].slice(0, 60)}`);
     }
-    if (botItems.length > 2) lines.push(`  • ...`);
+    if (botItems.length > 2) lines.push('• ...');
   }
 
-  return lines.join('\n');
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: 'mainbot',
+    team: 'system',
+    event_type: 'multi_bot_alert',
+    alert_level: maxLevel,
+    title: `${icon} 통합 알림 집약`,
+    lines,
+  }));
 }
 
 /**
