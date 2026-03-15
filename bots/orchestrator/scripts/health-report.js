@@ -73,6 +73,25 @@ function buildDecision(serviceRows, criticalWebhookHealth) {
   });
 }
 
+function buildActionLines(report) {
+  const lines = [];
+
+  if (report.serviceHealth.warnCount > 0) {
+    lines.push('  - launchd 경고 서비스 확인: launchctl list | rg "ai\\.(orchestrator|openclaw\\.gateway|n8n\\.server)"');
+  }
+  if (!report.criticalWebhookHealth.n8nHealthy) {
+    lines.push('  - n8n 서버 상태 확인: /ops-health alerts 또는 launchctl print gui/$(id -u)/ai.n8n.server');
+  }
+  if (report.criticalWebhookHealth.n8nHealthy && !report.criticalWebhookHealth.webhookRegistered) {
+    lines.push('  - critical webhook 재설치: node bots/orchestrator/n8n/setup-n8n.js');
+  }
+  if (lines.length === 0) {
+    lines.push('  - 현재는 관찰 유지. 상세 점검이 필요하면 /ops-health alerts 확인');
+  }
+
+  return lines;
+}
+
 function formatText(report) {
   return buildHealthReport({
     title: '🧭 오케스트레이터 운영 헬스 리포트',
@@ -80,6 +99,10 @@ function formatText(report) {
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ critical 알림 경로', report.criticalWebhookHealth, { okLimit: 3 }),
+      {
+        title: '■ 권장 조치',
+        lines: buildActionLines(report),
+      },
       {
         title: null,
         lines: buildHealthDecisionSection({
