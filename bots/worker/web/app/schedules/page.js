@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 
 const TYPE_CONFIG = {
@@ -221,6 +221,9 @@ export default function SchedulesPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [attachedFileName, setAttachedFileName] = useState('');
+  const fileRef = useRef(null);
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
 
@@ -297,6 +300,35 @@ export default function SchedulesPage() {
     }
   };
 
+  const handleUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    setError('');
+    try {
+      const token = getToken();
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
+      const filename = data.document?.filename || file.name;
+      const summary = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      setAttachedFileName(filename);
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summary}`.trim());
+      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const deleteSchedule = async (scheduleId) => {
     if (!confirm('일정을 삭제하시겠습니까?')) return;
     try {
@@ -347,7 +379,15 @@ export default function SchedulesPage() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
           />
+          {attachedFileName && (
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+                첨부됨: {attachedFileName}
+              </span>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
+            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
             <button
               type="button"
               className="btn-primary"
@@ -355,6 +395,9 @@ export default function SchedulesPage() {
               disabled={!canCreateSchedules || proposalLoading || !prompt.trim()}
             >
               {proposalLoading ? '제안 생성 중...' : '일정 제안 만들기'}
+            </button>
+            <button className="btn-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              {uploading ? '업로드 중...' : '파일 첨부'}
             </button>
             <button className="btn-secondary" type="button" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>
               직접 입력 모달 열기

@@ -46,7 +46,8 @@ export default function AppShell({ children }) {
   if (!user) return null;
 
   const workspace = getWorkspaceConfig(pathname, user);
-  const hideGlobalWorkspace = workspace.menuKey === 'attendance';
+  const hideGlobalWorkspaceMenus = new Set(['attendance', 'schedules', 'journals', 'sales', 'projects']);
+  const hideGlobalWorkspace = hideGlobalWorkspaceMenus.has(workspace.menuKey);
 
   return (
     <div className="min-h-screen bg-gray-50">

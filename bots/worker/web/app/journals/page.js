@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
@@ -44,6 +44,9 @@ export default function JournalsPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalActionLoading, setProposalActionLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [attachedFileName, setAttachedFileName] = useState('');
+  const fileRef = useRef(null);
 
   const load = (kw) => {
     setLoading(true);
@@ -135,6 +138,35 @@ export default function JournalsPage() {
     }
   };
 
+  const handleUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    setError('');
+    try {
+      const token = getToken();
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
+      const filename = data.document?.filename || file.name;
+      const summary = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      setAttachedFileName(filename);
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summary}`.trim());
+      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const catLabel = (v) => CATEGORIES.find(c => c.value === v)?.label || v;
   const todayDate = today();
   const todayCount = journals.filter(item => (item.date || '').slice(0, 10) === todayDate).length;
@@ -181,12 +213,18 @@ export default function JournalsPage() {
           <p className="text-sm text-slate-500 mt-1">입력한 내용을 먼저 확인한 뒤 등록합니다. 수정 내용은 피드백 데이터로 쌓입니다.</p>
         </div>
         <div className="flex flex-col gap-3 lg:flex-row">
+          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
           <textarea
             className="input-base min-h-[104px] flex-1"
             placeholder="예: 오늘 오전 김대리 업체 미팅 후 후속 견적 요청 사항을 정리해줘"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
+          {attachedFileName && (
+            <div className="lg:hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 w-fit">
+              첨부됨: {attachedFileName}
+            </div>
+          )}
           <button
             type="button"
             className="btn-primary lg:w-40"
@@ -195,7 +233,22 @@ export default function JournalsPage() {
           >
             {proposalLoading ? '초안 생성 중...' : '초안 만들기'}
           </button>
+          <button
+            type="button"
+            className="btn-secondary lg:w-32"
+            disabled={!canCreateJournals || uploading}
+            onClick={() => fileRef.current?.click()}
+          >
+            {uploading ? '업로드 중...' : '파일 첨부'}
+          </button>
         </div>
+        {attachedFileName && (
+          <div className="hidden lg:flex">
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+              첨부됨: {attachedFileName}
+            </span>
+          </div>
+        )}
         {notice && <p className="text-sm text-emerald-600">{notice}</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
