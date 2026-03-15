@@ -2,6 +2,7 @@
 
 const rag = require('./rag');
 const pgPool = require('./pg-pool');
+const { publishEventPipeline } = require('./reporting-hub');
 
 const RAG_BACKOFF_MS = 2 * 3600 * 1000;
 const RAG_ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
@@ -36,14 +37,23 @@ function _isCapacityError(error) {
 }
 
 async function _publish(message, payload, fromBot = 'rag') {
-  try {
-    await pgPool.run('claude', `
-      INSERT INTO mainbot_queue (from_bot, team, event_type, alert_level, message, payload)
-      VALUES ($1, 'system', 'system', $2, $3, $4)
-    `, [fromBot, payload?.status === 'recovered' ? 1 : 2, message, JSON.stringify(payload || {})]);
-  } catch {
-    // 메인봇 큐 실패는 무시
-  }
+  await publishEventPipeline({
+    event: {
+      from_bot: fromBot,
+      team: 'system',
+      event_type: 'system',
+      alert_level: payload?.status === 'recovered' ? 1 : 2,
+      message,
+      payload: payload || {},
+    },
+    targets: [
+      {
+        type: 'queue',
+        pgPool,
+        schema: 'claude',
+      },
+    ],
+  });
 }
 
 async function _notifyDegraded(reason, operation, collection, sourceBot = 'rag') {
