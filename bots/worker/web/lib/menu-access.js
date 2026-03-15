@@ -1,7 +1,20 @@
 'use client';
 
+function resolveMenuKey(key = '') {
+  const path = String(key || '').replace(/^\//, '');
+  const segments = path.split('/').filter(Boolean);
+  if (segments.length === 0) return '';
+  if (segments[0] !== 'admin') return segments[0];
+
+  if (segments[1] === 'intents') return 'intents';
+  if (segments[1] === 'companies') return 'companies';
+  if (segments[1] === 'users') return 'users';
+  if (segments[1] === 'workforce') return 'workforce';
+  return 'admin';
+}
+
 function normalizeMenuKey(key = '') {
-  return String(key || '').replace(/^\//, '').split('/')[0];
+  return resolveMenuKey(key);
 }
 
 function isMenuEnabled(user, key) {
