@@ -16,6 +16,85 @@ const ALERT_LEVEL_ICONS = {
   4: '🚨',
 };
 
+const DELIVERY_STATE = new Map();
+
+function getDefaultCooldownMs(alertLevel) {
+  if (alertLevel >= 4) return 0;
+  if (alertLevel >= 3) return 60_000;
+  if (alertLevel >= 2) return 10 * 60_000;
+  return 30 * 60_000;
+}
+
+function getKstHour() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
+}
+
+function buildPolicyKey(channel, normalized, policy = {}) {
+  if (policy.key) return String(policy.key);
+  return [
+    channel,
+    normalized.team,
+    normalized.from_bot,
+    normalized.event_type,
+    normalized.alert_level,
+    normalized.message,
+  ].join('::');
+}
+
+function resolvePolicy(channel, normalized, policy = {}) {
+  return {
+    dedupe: policy.dedupe !== false,
+    cooldownMs: Number.isFinite(Number(policy.cooldownMs))
+      ? Number(policy.cooldownMs)
+      : getDefaultCooldownMs(normalized.alert_level),
+    quietHours: policy.quietHours || null,
+    channel,
+  };
+}
+
+function shouldQuietHoursSuppress(normalized, quietHours) {
+  if (!quietHours) return false;
+  const maxAlertLevel = Number.isFinite(Number(quietHours.maxAlertLevel))
+    ? Number(quietHours.maxAlertLevel)
+    : 2;
+  if (normalized.alert_level > maxAlertLevel) return false;
+
+  const hour = quietHours.timezone === 'KST' || !quietHours.timezone
+    ? getKstHour()
+    : new Date().getHours();
+  const startHour = Number.isFinite(Number(quietHours.startHour)) ? Number(quietHours.startHour) : 23;
+  const endHour = Number.isFinite(Number(quietHours.endHour)) ? Number(quietHours.endHour) : 8;
+  const inQuietHours = startHour > endHour
+    ? hour >= startHour || hour < endHour
+    : hour >= startHour && hour < endHour;
+  return inQuietHours;
+}
+
+function evaluateDeliveryPolicy(channel, normalized, policy = {}) {
+  const resolved = resolvePolicy(channel, normalized, policy);
+  if (shouldQuietHoursSuppress(normalized, resolved.quietHours)) {
+    return { allowed: false, reason: 'quiet_hours', policy: resolved };
+  }
+  if (!resolved.dedupe || resolved.cooldownMs <= 0) {
+    return { allowed: true, reason: 'allowed', policy: resolved };
+  }
+
+  const key = buildPolicyKey(channel, normalized, policy);
+  const now = Date.now();
+  const prev = DELIVERY_STATE.get(key);
+  if (prev && now - prev.sentAt < resolved.cooldownMs) {
+    return {
+      allowed: false,
+      reason: 'deduped',
+      policy: resolved,
+      dedupeKey: key,
+      retryAfterMs: resolved.cooldownMs - (now - prev.sentAt),
+    };
+  }
+  DELIVERY_STATE.set(key, { sentAt: now });
+  return { allowed: true, reason: 'allowed', policy: resolved, dedupeKey: key };
+}
+
 function normalizeEvent({
   from_bot,
   team = 'general',
@@ -39,8 +118,19 @@ async function publishToQueue({
   schema = 'claude',
   table = 'mainbot_queue',
   event,
+  policy,
 }) {
   const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('queue', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'queue',
+      event: normalized,
+    };
+  }
   try {
     await pgPool.run(schema, `
       INSERT INTO ${table} (from_bot, team, event_type, alert_level, message, payload)
@@ -65,8 +155,19 @@ async function publishToTelegram({
   topicTeam,
   event,
   prefix = '',
+  policy,
 }) {
   const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('telegram', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'telegram',
+      event: normalized,
+    };
+  }
   const finalMessage = `${prefix || ''}${normalized.message}`.trim();
 
   try {
@@ -87,8 +188,19 @@ async function publishToRag({
   event,
   metadata = {},
   contentBuilder,
+  policy,
 }) {
   const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('rag', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'rag',
+      event: normalized,
+    };
+  }
   if (!ragStore || typeof ragStore.store !== 'function') {
     return { ok: false, channel: 'rag', event: normalized, error: 'missing_rag_store' };
   }
@@ -125,8 +237,19 @@ async function publishToN8n({
   event,
   bodyBuilder,
   directResult = { ok: false, source: 'direct_bypass' },
+  policy,
 }) {
   const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('n8n', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'n8n',
+      event: normalized,
+    };
+  }
   if (!Array.isArray(webhookCandidates) || webhookCandidates.length === 0) {
     return { ok: false, channel: 'n8n', event: normalized, error: 'missing_webhook_candidates' };
   }
@@ -155,6 +278,7 @@ async function publishToN8n({
 async function publishEventPipeline({
   event,
   targets = [],
+  policy = {},
 } = {}) {
   const normalized = normalizeEvent(event);
   const results = [];
@@ -169,6 +293,7 @@ async function publishEventPipeline({
           schema: target.schema,
           table: target.table,
           event: normalized,
+          policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
       case 'telegram':
@@ -177,6 +302,7 @@ async function publishEventPipeline({
           topicTeam: target.topicTeam,
           event: normalized,
           prefix: target.prefix,
+          policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
       case 'rag':
@@ -187,6 +313,7 @@ async function publishEventPipeline({
           event: normalized,
           metadata: target.metadata,
           contentBuilder: target.contentBuilder,
+          policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
       case 'n8n':
@@ -197,6 +324,7 @@ async function publishEventPipeline({
           event: normalized,
           bodyBuilder: target.bodyBuilder,
           directResult: target.directResult,
+          policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
       default:

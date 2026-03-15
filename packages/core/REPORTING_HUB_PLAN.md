@@ -11,6 +11,11 @@
   - `normalizeEvent()`
   - `publishToQueue()`
   - `publishToTelegram()`
+  - `publishToRag()`
+  - `publishToN8n()`
+  - `publishEventPipeline()`
+  - shared notice/report/snippet formatting
+  - delivery policy (`dedupe`, `cooldown`, `quietHours`)
 
 ## Applied So Far
 
@@ -44,6 +49,7 @@
 4. delivery policy
 - severity별 채널
 - dedupe/throttle
+- quiet-hours suppression
 - retry/fallback
 
 ## Desired End State
