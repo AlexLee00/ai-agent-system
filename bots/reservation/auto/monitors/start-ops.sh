@@ -18,6 +18,7 @@ SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
 NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
 NAVER_MONITOR_SCRIPT="$BOT_DIR/auto/monitors/naver-monitor.js"
+KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 
 NODE_BIN="$HOME/.nvm/versions/node/v24.13.1/bin/node"
 [ ! -f "$NODE_BIN" ] && NODE_BIN=$(which node)
@@ -31,6 +32,23 @@ log_err() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] ❌ $1"
   echo "$msg" >&2
   echo "$msg" >> "$LOG_FILE"
+}
+
+ensure_launchd_service() {
+  local label="$1"
+  local plist="$2"
+  local service="gui/$(id -u)/$label"
+
+  if launchctl print "$service" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ ! -f "$plist" ]; then
+    log_err "launchd plist 없음: $plist"
+    return 1
+  fi
+
+  launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1
 }
 
 # ================================================================
@@ -156,9 +174,12 @@ cleanup_old() {
 log "🚀 ━━━ OPS 모드 자동 재시작 루프 시작 ━━━━━━━━━━━━━━━━━━━━"
 
 # 픽코 키오스크 모니터 킥스타트 (launchd 30분 주기 + 즉시 1회)
-launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor 2>/dev/null && \
-  log "  🔄 픽코 키오스크 모니터 킥스타트" || \
-  log "  ⚠️  픽코 키오스크 모니터 킥스타트 실패 (launchd 미등록?)"
+if ensure_launchd_service "ai.ska.kiosk-monitor" "$KIOSK_PLIST" && \
+  launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor 2>/dev/null; then
+  log "  🔄 픽코 키오스크 모니터 킥스타트"
+else
+  log "  ⚠️  픽코 키오스크 모니터 킥스타트 실패"
+fi
 
 while true; do
   cleanup_old

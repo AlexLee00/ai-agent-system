@@ -26,6 +26,8 @@ NODE_BIN="$HOME/.nvm/versions/node/v24.13.1/bin/node"
 [ ! -f "$NODE_BIN" ] && NODE_BIN=$(which node)
 
 DEXTER_SCRIPT="$HOME/projects/ai-agent-system/bots/claude/src/dexter.js"
+NAVER_PLIST="$HOME/Library/LaunchAgents/ai.ska.naver-monitor.plist"
+KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 
 # ── 플래그 파싱 ──────────────────────────────────────────────────
 AUTO_YES=0
@@ -49,6 +51,29 @@ log_err() {
   echo "$msg" >> "$LOG_FILE"
 }
 log_ok() { log "✅ $1"; }
+
+ensure_launchd_service() {
+  local label="$1"
+  local plist="$2"
+  local service="gui/$(id -u)/$label"
+
+  if launchctl print "$service" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ ! -f "$plist" ]; then
+    log_err "$label plist 없음: $plist"
+    return 1
+  fi
+
+  if launchctl bootstrap "gui/$(id -u)" "$plist" 2>&1 | tee -a "$LOG_FILE"; then
+    log "  $label bootstrap 완료"
+    return 0
+  fi
+
+  log_err "$label bootstrap 실패"
+  return 1
+}
 
 # ── 텔레그램 알림 헬퍼 ─────────────────────────────────────────
 send_telegram() {
@@ -120,7 +145,8 @@ send_telegram "🚀 [스카봇 배포 시작] OPS 재시작 중..."
 
 # naver-monitor 재시작 (KeepAlive라 kickstart -k 로 즉시 재시작)
 log "  naver-monitor 재시작..."
-if launchctl kickstart -k "gui/$(id -u)/ai.ska.naver-monitor" 2>&1 | tee -a "$LOG_FILE"; then
+if ensure_launchd_service "ai.ska.naver-monitor" "$NAVER_PLIST" && \
+  launchctl kickstart -k "gui/$(id -u)/ai.ska.naver-monitor" 2>&1 | tee -a "$LOG_FILE"; then
   log_ok "naver-monitor kickstart 완료"
 else
   log_err "naver-monitor kickstart 실패"
@@ -130,6 +156,7 @@ fi
 
 # kiosk-monitor 재시작
 log "  kiosk-monitor 재시작..."
+ensure_launchd_service "ai.ska.kiosk-monitor" "$KIOSK_PLIST" && \
 launchctl kickstart -k "gui/$(id -u)/ai.ska.kiosk-monitor" 2>&1 | tee -a "$LOG_FILE" || \
   log "  ⚠️  kiosk-monitor kickstart 실패 (무시하고 진행)"
 
