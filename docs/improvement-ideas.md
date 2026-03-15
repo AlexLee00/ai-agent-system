@@ -189,8 +189,8 @@
 
 | 상태 | 마지막 구현일 | 항목 | 현재 상태 | 남은 일 |
 |---|---|---|---|---|
-| 진행 중 | 2026-03-15 | 워커 확인 결과 창 UX | 정책 테이블, feedback layer, review 저장은 준비됨 | attendance/leave 등 정형 업무에 실제 확인창 연결 |
-| 진행 중 | 2026-03-15 | 워커 권한별 화면 분기 | 정책 저장과 설정 UI는 있음 | `prompt_only`, `prompt_plus_dashboard`, `full_master_console`를 실제 메인 화면에 반영 |
+| 진행 중 | 2026-03-15 | 워커 확인 결과 창 UX | attendance, schedules, employees, payroll, sales, projects, journals에 자연어 제안/수정/확정 흐름 연결 완료 | leave/documents 등 남은 메뉴 확장, 동적 캔버스 고도화 |
+| 진행 중 | 2026-03-15 | 워커 권한별 화면 분기 | dashboard 역할 분기, 공용 채팅의 메뉴별 prompt/canvas 정책, 페이지 액션 정책까지 반영됨 | 마스터용 봇 대화 경험과 관리자용 현황 위젯 심화 |
 | 진행 중 | 2026-03-15 | feedback analytics 운영화 | CLI, direct routing, 브리핑 요약까지 있음 | 주간 자동 리포트와 품질 경보 기준 튜닝 |
 | 진행 중 | 2026-03-15 | reporting-hub 이관 마무리 | 주요 producer 대부분 이관 | team-bus/잔여 직결 발송 경로 전수 점검 |
 | 진행 중 | 2026-03-15 | 스카 n8n node화 | read 명령과 bridge, workflow draft는 완료 | write/ops 계열 `store_resolution`, `analyze_unknown`, restart 계열 보수적 이관 |
@@ -204,19 +204,19 @@
 
 | 상태 | 목표 | 비고 |
 |---|---|---|
-| 미완료 | 자연어 대화형 업무 등록 메인 UX | 노션의 워커 v2 핵심 컨셉. 웹 폼은 보조, 대화 기반 등록/수정/조회가 메인이어야 함 |
-| 미완료 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)에 확인 결과 창 추가 | [docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md](/Users/alexlee/projects/ai-agent-system/docs/AI_FEEDBACK_CONFIRMATION_ARCHITECTURE.md) 1순위 항목 |
-| 미완료 | 일반사용자/관리자/마스터 화면 차등 적용 | 현재는 정책만 저장되고 실제 화면 분기는 제한적 |
+| 진행 중 | 자연어 대화형 업무 등록 메인 UX | 근태, 일정, 직원, 급여, 매출, 프로젝트, 업무일지에 확인 결과 창 기반 자연어 등록이 연결됨. 남은 것은 `chat + canvas`를 더 기본 경험으로 끌어올리는 일 |
+| 완료 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)에 확인 결과 창 추가 | 자연어 제안, 수정, 승인/반려, 유사 사례 조회, feedback 기록까지 구현 완료 |
+| 진행 중 | 일반사용자/관리자/마스터 화면 차등 적용 | dashboard 역할 분기, menu_policy 기반 메뉴 노출/접근/액션 제어는 반영됨. 마스터 전용 운영 대화 경험은 추가 고도화 여지 있음 |
 | 미완료 | 관리자 현황 위젯 강화 | 미출근, 출근 예정, 승인 대기, 예외 감지 등을 카드로 노출 필요 |
-| 미완료 | LLM ON/OFF 정책의 런타임 반영 | 현재는 설정 저장 중심, 실제 라우팅 정책 반영은 후속 작업 |
-| 미완료 | 채팅 + 캔버스 레이아웃 정착 | 노션의 `왼쪽 대화 / 오른쪽 업무 캔버스` 패턴을 워커 UI에 반영 필요 |
+| 완료 | LLM ON/OFF 정책의 런타임 반영 | `llm_mode=off|assist|full`이 chat-agent와 워커 공용 채팅 런타임에 적용됨 |
+| 진행 중 | 채팅 + 캔버스 레이아웃 정착 | dashboard와 공용 채팅에서 메뉴별 result canvas 정책이 반영됐고, 남은 것은 전 메뉴 공통 동적 캔버스 경험의 일관화 |
 | 미완료 | 봇 대화 API의 역할별 확장 | 마스터는 팀장 봇 대화, 관리자/멤버는 제한된 범위의 대화 UX 필요 |
 
 ### 6.2 피드백 + RAG / 학습 데이터
 
 | 상태 | 목표 | 비고 |
 |---|---|---|
-| 미완료 | feedback session → `feedback_cases` RAG artifact adapter | committed/submitted 세션만 파생 인덱스로 저장 권장 |
+| 완료 | feedback session → `feedback_cases` RAG artifact adapter | committed/submitted 세션을 정제해 `feedback_cases`로 적재하고, 워커 정형 업무 확인창에서 유사 사례 조회까지 연결됨 |
 | 미완료 | accepted_without_edit 기반 품질 랭킹 자동화 | 일별/주별 추이 리포트 가능 |
 | 미완료 | 블로/클로드 세부 수정 diff 심화 | 현재는 승인/채택 중심, `field_edited`는 워커가 가장 깊음 |
 | 미완료 | training/export 자동화 | analytics export는 준비됐지만 training dataset 연결은 아직 없음 |
@@ -256,19 +256,21 @@
 
 ### 워커
 
-- 상태: `진행 중`
+- 상태: `핵심 UX 1차 구현 완료, 2차 고도화 진행 중`
 - 올라온 것:
   - 웹 워크스페이스
   - 승인형 AI task flow
   - feedback layer 연결
   - AI 정책 저장/조회
   - 자연어 채팅 기반 작업 intake
+  - attendance/schedules/employees/payroll/sales/projects/journals 확인 결과 창
+  - feedback -> RAG 적재와 유사 사례 retrieval
+  - menu_policy 기반 메뉴 노출, 경로 접근, 페이지 액션, 공용 채팅 정책
 - 남은 핵심:
-  - 자연어 대화가 메인인 UX로 전환
-  - 근태 확인 결과 창
-  - 권한별 화면 차등
-  - 채팅 + 캔버스 패턴 정착
-  - 실제 llm_mode 런타임 반영
+  - 대화형 입력을 워커 기본 진입 UX로 더 끌어올리기
+  - 관리자 현황 위젯과 마스터 봇 대화 고도화
+  - documents/leave 등 남은 메뉴 확장
+  - 채팅 + 캔버스 패턴 시각적 완성도 향상
 
 ### 스카
 
@@ -335,11 +337,11 @@
 
 ### P1. 3월 즉시 실행
 
-1. 워커 자연어 대화형 입력을 메인 UX로 정리
-2. 채팅 + 캔버스 패턴의 확인 결과 창 구현
-3. 근태 흐름을 `proposal_generated -> field_edited -> confirmed -> committed`로 연결
-4. WorkerAIWorkspace 권한별 분기 적용
-5. LLM ON/OFF 정책의 실제 런타임 반영
+1. 워커 자연어 대화형 입력을 메인 UX로 더 전면화
+2. 채팅 + 캔버스 패턴의 동적 렌더링 품질 향상
+3. leave/documents 등 남은 메뉴에 확인 결과 창 확장
+4. 관리자 현황 위젯과 마스터 전용 봇 대화 경험 고도화
+5. 메뉴 정책을 문서/운영 가이드와 완전히 동기화
 
 이유:
 - 노션의 워커 v2 방향과 가장 직접적으로 연결됨
