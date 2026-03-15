@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
@@ -32,6 +34,23 @@ export default function EmployeesPage() {
   const [originalProposal, setOriginalProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const activeEmployees = employees.filter((item) => item.status === 'active').length;
+  const quickFlows = [
+    {
+      title: '신규 직원 후보 점검',
+      body: '최근 등록 요청과 누락 정보를 프롬프트로 바로 이어봅니다.',
+      onPromptFill: () => refillPrompt('최근 등록이 필요한 직원 후보를 정리해줘'),
+      onSecondary: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+      secondaryLabel: '입력 위치로 이동',
+    },
+    {
+      title: '부서 인력 분포 확인',
+      body: '현재 부서별 인력 현황을 확인하고 필요한 보강을 점검합니다.',
+      onPromptFill: () => refillPrompt('현재 부서별 인력 분포를 요약해줘'),
+      onSecondary: () => setSearch(''),
+      secondaryLabel: '필터 초기화',
+    },
+  ];
 
   const refillPrompt = (text) => {
     setPrompt(text);
@@ -158,10 +177,22 @@ export default function EmployeesPage() {
     <div className="space-y-4">
       {user?.role !== 'member' && <AdminQuickNav />}
 
+      <AdminPageHero
+        title="직원 관리"
+        description="직원 등록, 인사 기본정보, 부서/직급 현황을 한 화면에서 운영합니다."
+        stats={[
+          { label: '전체 직원', value: employees.length || 0, caption: '조회 기준' },
+          { label: '재직', value: activeEmployees || 0, caption: 'active 상태' },
+          { label: '검색 결과', value: filtered.length || 0, caption: search || '필터 없음' },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">👥 직원 관리</h1>
+        <p className="text-sm font-medium text-slate-600">직원 운영 작업</p>
         <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateEmployees}>+ 직원 추가</button>
       </div>
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">
