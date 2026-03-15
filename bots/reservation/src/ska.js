@@ -102,12 +102,14 @@ const SKA_TEAM = [
     team: '스카팀',
     role: '네이버 스마트플레이스 모니터링',
     mission: '5분마다 예약 현황 수집 및 이상 감지 알람 발송',
+    continuous: true,
   },
   {
     id: 'jimmy', name: '지미', launchd: 'ai.ska.kiosk-monitor',
     team: '스카팀',
     role: '픽코 키오스크 예약 모니터링',
     mission: '키오스크 신규 예약 감지 및 알람 발송',
+    continuous: false,
   },
   {
     id: 'rebecca', name: '레베카', launchd: null,
@@ -160,9 +162,11 @@ function checkSkaTeamIdentity() {
       const inspected = inspectLaunchdService(member.launchd);
       if (!inspected.ok) {
         issues.push('프로세스 상태 확인 실패');
-      } else if (inspected.state !== 'running') {
+      } else if (member.continuous && inspected.state !== 'running') {
         const exitInfo = inspected.lastExitCode ? ` (exit=${inspected.lastExitCode})` : '';
         issues.push(`프로세스 비실행${exitInfo}`);
+      } else if (!member.continuous && inspected.lastExitCode && !['0', '-9', '-15', '(never)'].includes(inspected.lastExitCode)) {
+        issues.push(`최근 실행 비정상 종료 (exit=${inspected.lastExitCode})`);
       }
     }
 

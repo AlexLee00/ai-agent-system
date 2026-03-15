@@ -26,10 +26,14 @@ const {
   buildFileActivityHealth,
 } = require('../../../packages/core/lib/health-provider');
 
-const CONTINUOUS = ['ai.ska.naver-monitor'];
-const ALL_SERVICES = [
+const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
+const CORE_SERVICES = [
+  'ai.ska.commander',
   'ai.ska.naver-monitor',
   'ai.ska.kiosk-monitor',
+  'ai.ska.health-check',
+];
+const SCHEDULED_SERVICES = [
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',
   'ai.ska.pickko-daily-summary',
@@ -52,13 +56,13 @@ function buildMonitorHealth() {
   });
 }
 
-function buildDecision(serviceRows, monitorHealth) {
+function buildDecision(coreServiceRows, monitorHealth) {
   return buildHealthDecision({
     warnings: [
       {
-        active: serviceRows.warn.length > 0,
+        active: coreServiceRows.warn.length > 0,
         level: 'high',
-        reason: `launchd 경고 ${serviceRows.warn.length}건이 있어 스카 서비스 점검이 필요합니다.`,
+        reason: `핵심 스카 서비스 경고 ${coreServiceRows.warn.length}건이 있어 점검이 필요합니다.`,
       },
       {
         active: monitorHealth.warn.length > 0,
@@ -74,8 +78,9 @@ function formatText(report) {
   return buildHealthReport({
     title: '📅 스카 운영 헬스 리포트',
     sections: [
-      buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
-      buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
+      buildHealthCountSection('■ 핵심 서비스 상태', report.coreServiceHealth),
+      buildHealthSampleSection('■ 핵심 서비스 샘플', report.coreServiceHealth),
+      buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
       {
         title: null,
@@ -94,21 +99,33 @@ function formatText(report) {
 
 async function buildReport() {
   const status = getLaunchctlStatus();
-  const serviceRows = buildServiceRows(status, {
-    labels: ALL_SERVICES,
+  const coreServiceRows = buildServiceRows(status, {
+    labels: CORE_SERVICES,
     continuous: CONTINUOUS,
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => label.replace('ai.ska.', ''),
   });
+  const scheduledServiceRows = buildServiceRows(status, {
+    labels: SCHEDULED_SERVICES,
+    continuous: [],
+    normalExitCodes: NORMAL_EXIT_CODES,
+    shortLabel: (label) => label.replace('ai.ska.', ''),
+  });
   const monitorHealth = buildMonitorHealth();
-  const decision = buildDecision(serviceRows, monitorHealth);
+  const decision = buildDecision(coreServiceRows, monitorHealth);
 
   const report = {
-    serviceHealth: {
-      okCount: serviceRows.ok.length,
-      warnCount: serviceRows.warn.length,
-      ok: serviceRows.ok,
-      warn: serviceRows.warn,
+    coreServiceHealth: {
+      okCount: coreServiceRows.ok.length,
+      warnCount: coreServiceRows.warn.length,
+      ok: coreServiceRows.ok,
+      warn: coreServiceRows.warn,
+    },
+    scheduledServiceHealth: {
+      okCount: scheduledServiceRows.ok.length,
+      warnCount: scheduledServiceRows.warn.length,
+      ok: scheduledServiceRows.ok,
+      warn: scheduledServiceRows.warn,
     },
     monitorHealth: {
       okCount: monitorHealth.ok.length,
