@@ -38,37 +38,48 @@ The current system already includes:
 
 Those are intent-engine concerns, not Jay-only concerns.
 
-## Proposed Package Shape
+## Current Shared Shape
 
-Create a new reusable layer inside `packages/core`, ideally as:
+The shared layer now lives in two concrete modules:
 
-- `packages/core/lib/intent-core/parse.js`
-- `packages/core/lib/intent-core/learned-store.js`
-- `packages/core/lib/intent-core/promotion-policy.js`
-- `packages/core/lib/intent-core/promotion-store.js`
-- `packages/core/lib/intent-core/reporting.js`
-- `packages/core/lib/intent-core/types.js`
+- [packages/core/lib/intent-core.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/intent-core.js)
+- [packages/core/lib/intent-store.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/intent-store.js)
+
+This is already in active use by:
+
+- Jay orchestrator
+- Worker chat / admin workspace
+- Luna commander
+- Ska commander
+- Claude commander
+
+So the question is no longer "whether to extract", but "how far to keep reducing app-level orchestration".
 
 ## Boundary Split
 
-### Move To Core
+### Already In Core
 
-The following logic is generic enough to extract:
+The following logic is already shared:
 
-1. Slash parsing helpers
-2. Keyword pattern evaluation engine
-3. Learned pattern loading / reload
-4. Unknown phrase normalization
-5. Auto-promotion threshold policy
-6. Safe auto-promotion gating
-7. Promotion candidate persistence
-8. Promotion event persistence
-9. Reporting helpers for:
-   - unrecognized
-   - promotion candidates
-   - promotion history
-   - thresholds
-10. Rollback helpers for learned patterns and candidate state
+1. Unknown phrase normalization and regex helpers
+2. Learned pattern loading / reload helpers
+3. Dynamic promoted-example loading
+4. Auto-promotion threshold policy
+5. Safe auto-promotion gating
+6. Team-specific threshold metadata
+7. Team intent metadata
+8. Promotion candidate persistence
+9. Promotion event persistence
+10. Unknown phrase persistence
+11. Reporting helpers for:
+   - unrecognized summary/detail
+   - promotion thresholds
+   - promotion summary/family/event sections
+   - team intent report frames
+   - intent engine health frames
+12. Rollback helpers for learned patterns and candidate state
+13. Query builder helpers for promotions/unrecognized
+14. Learned pattern file read/write helpers
 
 ### Keep In Jay
 
@@ -83,150 +94,105 @@ The following should remain Jay-specific:
    - Luna/Ska/Claude logs
    - speed-test execution
 5. Jay bot command execution
-6. Jay operational wording in Telegram responses
+6. Cross-team orchestration:
+   - which shared report to call
+   - which team command to wait for
+   - which direct route to choose
+7. Jay operational wording in Telegram responses
 
-## Interfaces
+## Shared Modules
 
-### Intent Parser Core
+### intent-core
 
-Suggested API:
+Owns:
 
-```js
-const result = await parseIntentWithCore({
-  text,
-  slashMap,
-  keywordPatterns,
-  learnedPatterns,
-  llmFallback,
-});
-```
+1. Policy:
+   - threshold lookup
+   - safe-intent checks
+   - auto-promotion decision
+2. Parser helpers:
+   - normalization
+   - regex pattern building
+   - query parsing
+3. Metadata:
+   - team intent metadata
+   - intent health targets
+4. Reporting:
+   - summary/detail line builders
+   - report frames
+   - section templates
 
-Returns:
+### intent-store
 
-```js
-{
-  intent,
-  args,
-  source,      // slash | keyword | learned | llm | failed
-  confidence,
-  metadata,
-}
-```
+Owns:
 
-### Promotion Policy
+1. Table bootstrap
+2. Promotion/unrecognized reads
+3. Promotion/unrecognized writes
+4. Promotion state updates / rollback helpers
+5. Learned pattern file storage
+6. Example query helpers
 
-Suggested API:
+## Storage Contract
 
-```js
-const decision = evaluatePromotionPolicy({
-  suggestedIntent,
-  occurrenceCount,
-  confidence,
-  thresholds,
-  safeIntents,
-  safePrefixes,
-});
-```
-
-Returns:
-
-```js
-{
-  allowed,
-  reason,      // threshold | unsafe_intent | ok
-  threshold,
-}
-```
-
-### Reporting
-
-Suggested API:
-
-```js
-await buildUnrecognizedReport({ mode, store });
-await buildPromotionReport({ mode, filters, store });
-```
-
-## Storage Split
-
-Keep the storage contract generic:
+The shared storage contract is now stable around:
 
 - `unrecognized_intents`
 - `intent_promotion_candidates`
 - `intent_promotion_events`
 
-But remove Jay naming from helper code.
+The important shared rule is:
 
-The core should accept a storage adapter:
-
-```js
-{
-  logUnrecognized(),
-  listUnrecognized(),
-  upsertCandidate(),
-  listCandidates(),
-  logPromotionEvent(),
-  rollbackCandidate(),
-}
-```
-
-That makes future migration easier if another bot uses a different schema.
+- table names stay generic
+- schema names stay bot-specific
+- file-based learned pattern storage stays profile-specific
 
 ## Reuse Targets
 
 ### Jay
 
-First adopter. Replace internal helper blocks with `intent-core`.
+Primary orchestrator and the most feature-rich adopter.
 
 ### Worker
 
-Later candidate:
+Now connected:
 
 - natural-language task intake
-- repeated operator phrases
-- safe promotion of workflow queries
+- unknown phrase capture
+- candidate/event persistence
+- admin apply/rollback
+- safe auto-promotion for selected intents
 
-Important reminder:
+Reminder:
 
-- Worker `n8n/RAG` common-layer review is planned after Monday unit tests.
+- Worker `n8n/RAG` common-layer review is still planned after Monday unit tests.
 
-### Future Team Bots
+### Team Commanders
 
-Potential reuse:
+Now connected:
 
-- Ska operator chat
-- Claude ops shortcuts
-- Blog admin control surface
+- Ska operator commander
+- Luna commander
+- Claude commander
+
+They already use the shared candidate/event policy and safe promotion gating.
 
 ## Migration Plan
 
-### Phase 1
+### Completed
 
-Extract pure helpers only:
+1. Pure helper extraction
+2. Learned-pattern and file-store extraction
+3. Promotion store extraction
+4. Reporting helper extraction
+5. Team metadata extraction
+6. Worker / commander adoption
 
-- normalize / regex / threshold / safety helpers
+### Remaining
 
-Low risk because these are stateless.
-
-### Phase 2
-
-Extract learned-pattern and promotion-store helpers.
-
-Keep Jay as caller.
-
-### Phase 3
-
-Extract reporting builders.
-
-Jay still owns wording, but data assembly comes from core.
-
-### Phase 4
-
-Extract parsing engine and wire Jay to use it.
-
-### Phase 5
-
-Adopt in Worker or another bot if needed.
+1. Reduce Jay `router.js` orchestration further where worthwhile
+2. Decide whether slash/keyword parsing should also be lifted into a reusable runtime helper
+3. Decide whether a separate `intent-report.js` module is worth introducing, or whether `intent-core.js` is sufficient
 
 ## Non-Goals
 
@@ -238,17 +204,14 @@ Do not move these yet:
 - launchd/service control
 - Telegram response formatting
 
-Those remain app-level concerns.
+Those remain app-level concerns and should not be forced into the shared engine unless multiple adopters really need them.
 
-## Immediate Next Step
+## Recommended Next Step
 
-When starting extraction, begin with:
+Treat the shared intent engine as "operationally established".
 
-1. `normalizeIntentText`
-2. `escapeRegex`
-3. `buildAutoLearnPattern`
-4. `summarizeIntentFamily`
-5. `isSafeAutoPromoteIntent`
-6. `getAutoPromoteThreshold`
+The best next move is:
 
-These are the cleanest first slice and have minimal integration risk.
+1. keep using it for new bots/features
+2. only extract more if Jay orchestration becomes noisy again
+3. avoid splitting `intent-core.js` prematurely unless file size or ownership actually becomes painful
