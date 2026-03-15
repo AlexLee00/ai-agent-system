@@ -90,12 +90,12 @@ export default function WorkerIntentAdminPage() {
     {
       title: '미인식 표현 점검',
       body: '최근 미인식 표현을 검토하고 워커 대화 흐름으로 바로 이어집니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('최근 미인식 워커 표현을 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('최근 미인식 워커 표현을 요약해줘'),
     },
     {
       title: '승격 후보 확인',
       body: '자동 승격 전 반복 패턴과 위험도를 빠르게 검토합니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('승격 대기 인텐트 후보를 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('승격 대기 인텐트 후보를 요약해줘'),
     },
   ];
 

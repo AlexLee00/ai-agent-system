@@ -42,13 +42,13 @@ export default function AdminUsersPage() {
     {
       title: '권한 분포 점검',
       body: '관리자/멤버 비중과 최근 로그인 현황을 바로 질의합니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('현재 사용자 권한 분포와 최근 로그인 현황을 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('현재 사용자 권한 분포와 최근 로그인 현황을 요약해줘'),
       route: '/admin/users',
     },
     {
       title: '연동 누락 사용자 찾기',
       body: '텔레그램 미연동, 비밀번호 변경 필요 사용자를 빠르게 찾습니다.',
-      promptHref: '/chat?prompt=' + encodeURIComponent('텔레그램 미연동 또는 비밀번호 변경이 필요한 사용자를 요약해줘'),
+      promptHref: '/dashboard?prompt=' + encodeURIComponent('텔레그램 미연동 또는 비밀번호 변경이 필요한 사용자를 요약해줘'),
       route: '/admin/users',
     },
   ];

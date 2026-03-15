@@ -44,7 +44,7 @@ function resolveApprovalAction(approval) {
   if (payload.date || payload.reason) {
     return { href: '/attendance', prompt: '대기 중인 근태 관련 승인 요청 보여줘' };
   }
-  return { href: '/chat', prompt: '대기 중인 승인 요청 요약해줘' };
+  return { href: '/dashboard', prompt: '대기 중인 승인 요청 요약해줘' };
 }
 
 export default function ApprovalsPage() {
