@@ -82,6 +82,13 @@ async function getWorkerFeedbackSessionForTask(taskId) {
   });
 }
 
+async function getWorkerFeedbackSessionById(sessionId) {
+  return getFeedbackSessionById(pgPool, {
+    schema: SCHEMA,
+    id: sessionId,
+  });
+}
+
 async function recordWorkerFeedbackEdits({ sessionId, originalSnapshot, submittedSnapshot, eventMeta = {} }) {
   // TODO: 승인 UI에서 payload 수정이 가능해지면 이 함수를 review-save 시점에 연결한다.
   await clearFeedbackEditEvents(pgPool, {
@@ -185,6 +192,7 @@ module.exports = {
   ensureWorkerFeedbackTables,
   createWorkerProposalFeedbackSession,
   getWorkerFeedbackSessionForTask,
+  getWorkerFeedbackSessionById,
   recordWorkerFeedbackEdits,
   replaceWorkerFeedbackEdits,
   markWorkerFeedbackConfirmed,
