@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -108,6 +109,11 @@ export default function PayrollPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const load = () => {
     setLoading(true);
@@ -407,6 +413,10 @@ export default function PayrollPage() {
               </div>
 
               <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`${proposal.year_month || yearMonth} 급여 계산 제안을 다시 정리해줘`)}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 계산 실행'}
                 </button>

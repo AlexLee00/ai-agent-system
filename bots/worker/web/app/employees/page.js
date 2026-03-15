@@ -7,6 +7,7 @@ import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const EMPTY_FORM = { name: '', position: '', department: '', phone: '', hire_date: '', status: 'active', base_salary: '' };
 
@@ -30,6 +31,11 @@ export default function EmployeesPage() {
   const [originalProposal, setOriginalProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const load = () => {
     setLoading(true);
@@ -301,6 +307,10 @@ export default function EmployeesPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`직원 등록 제안을 다시 정리해줘\n이름: ${proposal.name || ''}\n부서: ${proposal.department || ''}\n직급: ${proposal.position || ''}`.trim())}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>

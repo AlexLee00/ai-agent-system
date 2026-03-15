@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const STATUS_CONFIG = {
   planning:    { label: '기획',   color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-500' },
@@ -142,6 +143,11 @@ export default function ProjectsPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const fileRef = useRef(null);
 
   const load = () => {
@@ -442,6 +448,10 @@ export default function ProjectsPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`프로젝트 생성 제안을 다시 정리해줘\n이름: ${proposal.name || ''}\n시작일: ${proposal.start_date || ''}\n종료일: ${proposal.end_date || ''}`.trim())}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>

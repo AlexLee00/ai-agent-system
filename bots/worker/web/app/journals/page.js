@@ -7,6 +7,7 @@ import { canPerformMenuOperation } from '@/lib/menu-access';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
+import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const CATEGORIES = [
   { value: 'general', label: '일반' },
@@ -48,6 +49,11 @@ export default function JournalsPage() {
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
   const fileRef = useRef(null);
+
+  const refillPrompt = (text) => {
+    setPrompt(text);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const load = (kw) => {
     setLoading(true);
@@ -392,7 +398,11 @@ export default function JournalsPage() {
                   </div>
                 </div>
               )}
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
+                <ProposalFlowActions
+                  onPromptFill={() => refillPrompt(`업무일지 초안을 다시 정리해줘\n날짜: ${proposal.date || ''}\n카테고리: ${proposal.category || ''}\n내용: ${proposal.content || ''}`.trim())}
+                  onJumpToInput={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                />
                 <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
                   반려
                 </button>
