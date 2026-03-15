@@ -3,6 +3,40 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 10~11주차 (2026-03-11 ~ 2026-03-15) — 228 커밋
+
+### 신규 기능 (feat)
+- KST 시간 유틸리티 (packages/core/lib/kst.js) + 전 팀 적용
+- 소스코드 접근 제한 (file-guard.js + autofix 범위 제한)
+- 루나 노드화 파이프라인 (L10~L34 스캐폴딩)
+- 루나 매매일지 자동 리뷰 + 엑스커전 메트릭
+- 루나 장외시간 리서치 모드 + 워치리스트
+- 스카 예측 캘리브레이션 + 피처스토어 + 모멘텀
+- 워커 WebSocket 실시간 채팅 + 태스크 큐 + 승인
+- 제이 인텐트 자동 프로모션 + 롤백 + 감사 추적
+- 통합 OPS 헬스 대시보드 (전체 팀 현황)
+- 팀별 헬스 리포트 (루나/스카/클로드/워커/블로)
+
+### 버그 수정 (fix)
+- KNOWN ISSUES 5개 (mini 폴백 + screening DB + XSS + gemini maxTokens)
+- launchd plist UTC→KST 로컬 시간 수정 (블로그 Hour=21→6)
+- 루나 스크리닝 폴백 + 신선도 체크
+- 스카 예측 정합성 + 정확도 중복 제거
+- 제이 인텐트 스키마 정합 + 팀간 안정화
+- 워커 웹 모바일 버그 4종 (SSE→XHR, 툴칩, 채팅 중복, 스크롤)
+- 워커 웹 채팅 메시지 버블 병합 (tool 사이여도 단일 버블)
+
+### 문서 (docs)
+- CLAUDE.md 공통 원칙 8개 추가
+- kst.js 사용 규칙 + launchd 시간 규칙
+
+### 리팩터링 (refactor)
+- 공유 헬퍼 통합 (헬스리포트 + 프로바이더 + 포맷터)
+- 인텐트 스토어 공유 (전 팀 커맨더 연결)
+- 스카 레거시 코드 정리
+
+---
+
 ## [2026-03-11] — 전 팀 LLM 모델 최적화 + 스크리닝 장애 대응
 
 ### Added
