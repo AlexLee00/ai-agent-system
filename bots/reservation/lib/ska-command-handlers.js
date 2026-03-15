@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
@@ -9,6 +10,28 @@ const { createSkaReadService } = require('./ska-read-service');
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
   const readService = createSkaReadService({ pgPool, rag });
+  const uid = process.getuid();
+
+  function ensureLaunchdLoaded(label, plistPath) {
+    const service = `gui/${uid}/${label}`;
+    try {
+      execFileSync('launchctl', ['print', service], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 10000,
+      });
+      return;
+    } catch (_) {
+      if (!fs.existsSync(plistPath)) {
+        throw new Error(`launchd plist 없음: ${plistPath}`);
+      }
+      execFileSync('launchctl', ['bootstrap', `gui/${uid}`, plistPath], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 10000,
+      });
+    }
+  }
 
   async function getCommandWebhookCandidates(command) {
     const scoped = process.env[`N8N_SKA_WEBHOOK_${String(command || '').toUpperCase()}`];
@@ -72,7 +95,8 @@ function createSkaCommandHandlers({ pgPool, rag }) {
 
   function handleRestartAndy() {
     try {
-      execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.naver-monitor`], {
+      ensureLaunchdLoaded('ai.ska.naver-monitor', `${process.env.HOME}/Library/LaunchAgents/ai.ska.naver-monitor.plist`);
+      execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/ai.ska.naver-monitor`], {
         encoding: 'utf8',
         timeout: 30000,
       });
@@ -84,7 +108,8 @@ function createSkaCommandHandlers({ pgPool, rag }) {
 
   function handleRestartJimmy() {
     try {
-      execFileSync('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/ai.ska.kiosk-monitor`], {
+      ensureLaunchdLoaded('ai.ska.kiosk-monitor', `${process.env.HOME}/Library/LaunchAgents/ai.ska.kiosk-monitor.plist`);
+      execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/ai.ska.kiosk-monitor`], {
         encoding: 'utf8',
         timeout: 30000,
       });
