@@ -77,6 +77,8 @@
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
 - worker claude-api-monitor alerts → reporting-hub notice + severity fanout
 - worker approval request telegram alerts → reporting-hub telegram_api target
+- reservation RAG writes → reporting-hub rag target
+- luna L33 trade RAG write → reporting-hub rag target
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작

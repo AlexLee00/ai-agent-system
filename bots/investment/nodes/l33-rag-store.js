@@ -1,6 +1,10 @@
 import * as db from '../shared/db.js';
 import { store as storeRag } from '../shared/rag-client.js';
 import { loadLatestNodePayload } from './helpers.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { publishToRag } = require('../../../packages/core/lib/reporting-hub');
 
 const NODE_ID = 'L33';
 
@@ -26,16 +30,37 @@ async function run({ sessionId, market, symbol }) {
     `상태: ${signal.status}`,
   ].join(' | ');
 
-  await storeRag('trades', content, {
-    signal_id: signal.id,
-    symbol: signal.symbol,
-    action: signal.action,
-    confidence: signal.confidence,
-    exchange: market,
-    status: signal.status,
-    session_id: sessionId,
-    paper_mode: true,
-  }, 'luna');
+  await publishToRag({
+    ragStore: {
+      async store(collection, ragContent, metadata = {}, sourceBot = 'luna') {
+        return storeRag(collection, ragContent, metadata, sourceBot);
+      },
+    },
+    collection: 'trades',
+    sourceBot: 'luna',
+    event: {
+      from_bot: 'luna',
+      team: 'investment',
+      event_type: 'trade_rag',
+      alert_level: 1,
+      message: content,
+      payload: {
+        title: `${signal.symbol} ${signal.action} 신호`,
+        summary: `신뢰도 ${signal.confidence ?? '?'} | 상태 ${signal.status}`,
+        details: [`판단: ${(signal.reasoning || '').slice(0, 100)}`],
+      },
+    },
+    metadata: {
+      signal_id: signal.id,
+      symbol: signal.symbol,
+      action: signal.action,
+      confidence: signal.confidence,
+      exchange: market,
+      status: signal.status,
+      session_id: sessionId,
+      paper_mode: true,
+    },
+  });
 
   return {
     symbol,

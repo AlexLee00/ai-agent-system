@@ -1,11 +1,21 @@
 'use strict';
 
+const { publishToRag } = require('./reporting-hub');
+
 function formatReservationCaseHits(hits = []) {
   if (!hits || hits.length === 0) return null;
   return hits.map((hit) => ({
     content: (hit.content || '').slice(0, 150),
     date: hit.created_at ? new Date(hit.created_at).toLocaleDateString('ko-KR') : '',
   }));
+}
+
+function createRagStoreAdapter(rag) {
+  return {
+    async store(collection, content, metadata = {}, sourceBot = 'unknown') {
+      return rag.store(collection, content, metadata, sourceBot);
+    },
+  };
 }
 
 async function searchReservationCases(rag, issueType, detail, {
@@ -32,12 +42,25 @@ async function storeReservationResolution(rag, {
   resolution = '처리 완료',
   sourceBot = 'ska-commander',
 }) {
-  return rag.store(
-    'reservations',
-    `[알람 처리] ${issueType} | ${detail} | 조치: ${resolution}`,
-    { type: issueType, detail, resolution },
+  const result = await publishToRag({
+    ragStore: createRagStoreAdapter(rag),
+    collection: 'reservations',
     sourceBot,
-  );
+    event: {
+      from_bot: sourceBot,
+      team: 'reservation',
+      event_type: 'resolution',
+      alert_level: 1,
+      message: `[알람 처리] ${issueType} | ${detail} | 조치: ${resolution}`,
+      payload: {
+        title: issueType,
+        summary: detail,
+        action: resolution,
+      },
+    },
+    metadata: { type: issueType, detail, resolution },
+  });
+  return result.id;
 }
 
 async function storeReservationAuditSummary(rag, {
@@ -49,13 +72,31 @@ async function storeReservationAuditSummary(rag, {
 }) {
   const summary = `[일간 예약 감사 ${date}] 총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건 | ` +
     `이슈: ${manualCount > 0 ? `수동 ${manualCount}건 감지` : '없음'}`;
-  return rag.store('reservations', summary, {
-    date,
-    type: 'daily_audit',
-    total,
-    auto_count: autoCount,
-    manual_count: manualCount,
-  }, sourceBot);
+  const result = await publishToRag({
+    ragStore: createRagStoreAdapter(rag),
+    collection: 'reservations',
+    sourceBot,
+    event: {
+      from_bot: sourceBot,
+      team: 'reservation',
+      event_type: 'report',
+      alert_level: 1,
+      message: summary,
+      payload: {
+        title: `일간 예약 감사 ${date}`,
+        summary: `총 ${total}건 | auto ${autoCount}건 | 수동 ${manualCount}건`,
+        details: [manualCount > 0 ? `수동 ${manualCount}건 감지` : '이슈 없음'],
+      },
+    },
+    metadata: {
+      date,
+      type: 'daily_audit',
+      total,
+      auto_count: autoCount,
+      manual_count: manualCount,
+    },
+  });
+  return result.id;
 }
 
 async function storeReservationEvent(rag, booking, {
@@ -72,15 +113,36 @@ async function storeReservationEvent(rag, booking, {
     `상태: ${status}`,
   ].join(' | ');
 
-  return rag.store('reservations', content, {
-    type: 'reservation',
-    date: String(booking?.date || ''),
-    status: String(status || ''),
-    room: String(booking?.room || ''),
-    phone: String(booking?.phone || ''),
-    bookingId: String(booking?.bookingId || booking?._key || ''),
-    savedAt: new Date().toISOString(),
-  }, sourceBot);
+  const result = await publishToRag({
+    ragStore: createRagStoreAdapter(rag),
+    collection: 'reservations',
+    sourceBot,
+    event: {
+      from_bot: sourceBot,
+      team: 'reservation',
+      event_type: 'reservation',
+      alert_level: 1,
+      message: content,
+      payload: {
+        title: `예약 상태: ${status}`,
+        summary: `${name} / ${booking?.date || ''} / ${booking?.room || ''}`,
+        details: [
+          `시간: ${booking?.start || ''}~${booking?.end || ''}`,
+          `전화: ${booking?.phone || ''}`,
+        ],
+      },
+    },
+    metadata: {
+      type: 'reservation',
+      date: String(booking?.date || ''),
+      status: String(status || ''),
+      room: String(booking?.room || ''),
+      phone: String(booking?.phone || ''),
+      bookingId: String(booking?.bookingId || booking?._key || ''),
+      savedAt: new Date().toISOString(),
+    },
+  });
+  return result.id;
 }
 
 module.exports = {
