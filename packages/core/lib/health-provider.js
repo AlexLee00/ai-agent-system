@@ -7,12 +7,29 @@ const { resolveProductionWebhookUrl } = require('./n8n-webhook-registry');
 
 const DEFAULT_NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
-function getLaunchctlStatus() {
+function getLaunchctlPrintStatus(label) {
+  try {
+    const raw = execSync(`launchctl print gui/$(id -u)/${label} 2>/dev/null`, { encoding: 'utf-8' });
+    const running = /^\s*state = running$/m.test(raw);
+    const pidMatch = raw.match(/^\s*pid = (\d+)$/m);
+    const exitMatch = raw.match(/^\s*last exit code = (?:\((?:never exited)\)|(-?\d+))/m);
+    return {
+      running,
+      pid: pidMatch ? Number.parseInt(pidMatch[1], 10) : null,
+      exitCode: exitMatch && exitMatch[1] ? Number.parseInt(exitMatch[1], 10) : 0,
+      loaded: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getLaunchctlStatus(labels = []) {
   let raw = '';
   try {
     raw = execSync('launchctl list', { encoding: 'utf-8' });
   } catch {
-    return {};
+    raw = '';
   }
   const services = {};
   for (const line of raw.split('\n')) {
@@ -24,6 +41,13 @@ function getLaunchctlStatus() {
       pid: pid !== '-' ? parseInt(pid, 10) : null,
       exitCode: Number.parseInt(exitCode, 10) || 0,
     };
+  }
+  for (const label of labels) {
+    if (!label || services[label]) continue;
+    const detailed = getLaunchctlPrintStatus(label);
+    if (detailed) {
+      services[label] = detailed;
+    }
   }
   return services;
 }
