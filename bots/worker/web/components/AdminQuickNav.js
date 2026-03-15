@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 const DEFAULT_ITEMS = [
   { href: '/approvals', label: '승인 관리' },
   { href: '/ai', label: 'AI 분석' },
+  { href: '/employees', label: '직원 관리' },
+  { href: '/payroll', label: '급여 관리' },
   { href: '/admin/intents', label: '인텐트 학습' },
   { href: '/admin/companies', label: '업체 관리' },
   { href: '/admin/users', label: '사용자 관리' },
