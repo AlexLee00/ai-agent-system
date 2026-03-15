@@ -1,5 +1,7 @@
 'use strict';
 
+const { runWithN8nFallback } = require('./n8n-runner');
+
 function normalizeEvent({
   from_bot,
   team = 'general',
@@ -64,8 +66,148 @@ async function publishToTelegram({
   }
 }
 
+async function publishToRag({
+  ragStore,
+  collection = 'operations',
+  sourceBot,
+  event,
+  metadata = {},
+  contentBuilder,
+}) {
+  const normalized = normalizeEvent(event);
+  if (!ragStore || typeof ragStore.store !== 'function') {
+    return { ok: false, channel: 'rag', event: normalized, error: 'missing_rag_store' };
+  }
+
+  const content = typeof contentBuilder === 'function'
+    ? contentBuilder(normalized)
+    : normalized.message;
+
+  try {
+    const id = await ragStore.store(
+      collection,
+      content,
+      {
+        team: normalized.team,
+        event_type: normalized.event_type,
+        alert_level: normalized.alert_level,
+        from_bot: normalized.from_bot,
+        ...(normalized.payload && typeof normalized.payload === 'object' ? normalized.payload : {}),
+        ...metadata,
+      },
+      sourceBot || normalized.from_bot,
+    );
+    return { ok: true, channel: 'rag', event: normalized, id };
+  } catch (error) {
+    console.warn(`[reporting-hub] rag publish failed: ${error.message}`);
+    return { ok: false, channel: 'rag', event: normalized, error: error.message };
+  }
+}
+
+async function publishToN8n({
+  circuitName,
+  webhookCandidates,
+  healthUrl,
+  event,
+  bodyBuilder,
+  directResult = { ok: false, source: 'direct_bypass' },
+}) {
+  const normalized = normalizeEvent(event);
+  if (!Array.isArray(webhookCandidates) || webhookCandidates.length === 0) {
+    return { ok: false, channel: 'n8n', event: normalized, error: 'missing_webhook_candidates' };
+  }
+
+  try {
+    const result = await runWithN8nFallback({
+      circuitName: circuitName || `reporting:${normalized.team}:${normalized.event_type}`,
+      webhookCandidates,
+      healthUrl,
+      body: typeof bodyBuilder === 'function' ? bodyBuilder(normalized) : normalized,
+      directRunner: async () => directResult,
+      logger: console,
+    });
+    return {
+      ok: Boolean(result?.ok || result?.source === 'n8n'),
+      channel: 'n8n',
+      event: normalized,
+      result,
+    };
+  } catch (error) {
+    console.warn(`[reporting-hub] n8n publish failed: ${error.message}`);
+    return { ok: false, channel: 'n8n', event: normalized, error: error.message };
+  }
+}
+
+async function publishEventPipeline({
+  event,
+  targets = [],
+} = {}) {
+  const normalized = normalizeEvent(event);
+  const results = [];
+
+  for (const target of targets) {
+    if (!target || !target.type) continue;
+
+    switch (target.type) {
+      case 'queue':
+        results.push(await publishToQueue({
+          pgPool: target.pgPool,
+          schema: target.schema,
+          table: target.table,
+          event: normalized,
+        }));
+        break;
+      case 'telegram':
+        results.push(await publishToTelegram({
+          sender: target.sender,
+          topicTeam: target.topicTeam,
+          event: normalized,
+          prefix: target.prefix,
+        }));
+        break;
+      case 'rag':
+        results.push(await publishToRag({
+          ragStore: target.ragStore,
+          collection: target.collection,
+          sourceBot: target.sourceBot,
+          event: normalized,
+          metadata: target.metadata,
+          contentBuilder: target.contentBuilder,
+        }));
+        break;
+      case 'n8n':
+        results.push(await publishToN8n({
+          circuitName: target.circuitName,
+          webhookCandidates: target.webhookCandidates,
+          healthUrl: target.healthUrl,
+          event: normalized,
+          bodyBuilder: target.bodyBuilder,
+          directResult: target.directResult,
+        }));
+        break;
+      default:
+        results.push({
+          ok: false,
+          channel: String(target.type),
+          event: normalized,
+          error: 'unsupported_target',
+        });
+        break;
+    }
+  }
+
+  return {
+    ok: results.every((item) => item.ok),
+    event: normalized,
+    results,
+  };
+}
+
 module.exports = {
   normalizeEvent,
   publishToQueue,
   publishToTelegram,
+  publishToRag,
+  publishToN8n,
+  publishEventPipeline,
 };
