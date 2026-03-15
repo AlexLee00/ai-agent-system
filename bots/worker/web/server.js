@@ -55,6 +55,10 @@ const {
   buildPayrollProposal,
   normalizePayrollProposal,
 } = require('../lib/payroll-ai');
+const {
+  buildSalesProposal,
+  normalizeSalesProposal,
+} = require('../lib/sales-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1405,8 +1409,110 @@ app.post('/api/sales',
   }
 );
 
+app.post('/api/sales/proposals', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildSalesProposal({ prompt });
+    const sourceRefId = `sales-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'sales_prompt',
+      sourceRefType: 'sales_proposal',
+      sourceRefId,
+      flowCode: 'sales_create',
+      actionCode: 'create_sale',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.summary,
+      aiInputPayload: {
+        prompt,
+        amount: proposal.amount,
+        category: proposal.category,
+        date: proposal.date,
+      },
+      aiOutputType: 'sales_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'sales_create',
+      actionCode: 'create_sale',
+      query: `${prompt || proposal.summary} ${proposal.category} ${proposal.amount}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '매출 제안을 생성하지 못했습니다.', code: 'SALES_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/sales/proposals/:id/confirm', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '매출 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizeSalesProposal(req.body.proposal || session.original_snapshot_json || {});
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'sales_confirm' },
+    });
+    const sale = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.sales (company_id,date,amount,category,description,registered_by)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id,date,amount,category,description`,
+      [req.user.company_id, proposal.date, proposal.amount, proposal.category || '기타', proposal.description || null, req.user.id]);
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'sales_confirm', sale_id: sale.id },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      sale_id: sale.id,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'sales_confirm', sale_id: sale.id },
+    });
+    res.json({ ok: true, sale, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '매출 확정 처리 중 오류가 발생했습니다.', code: 'SALES_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/sales/proposals/:id/reject', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '매출 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'sales_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '매출 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
 app.put('/api/sales/:id',
-  requireAuth, requireRole('master','admin'), auditLog('UPDATE', 'sales'),
+  requireAuth, companyFilter, auditLog('UPDATE', 'sales'),
   body('amount').optional().isInt({ min: 1 }),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -1426,7 +1532,7 @@ app.put('/api/sales/:id',
   }
 );
 
-app.delete('/api/sales/:id', requireAuth, requireRole('master','admin'), auditLog('DELETE', 'sales'), async (req, res) => {
+app.delete('/api/sales/:id', requireAuth, companyFilter, auditLog('DELETE', 'sales'), async (req, res) => {
   try {
     const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.sales WHERE id=$1`, [req.params.id]);
     if (target && !await assertCompanyAccess(req, res, target.company_id)) return;
