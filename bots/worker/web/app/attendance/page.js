@@ -53,7 +53,6 @@ export default function AttendancePage() {
   const [prompt, setPrompt]       = useState('');
   const [proposal, setProposal]   = useState(null);
   const [originalProposal, setOriginalProposal] = useState(null);
-  const [leavePrompt, setLeavePrompt] = useState('');
   const [leaveProposal, setLeaveProposal] = useState(null);
   const [originalLeaveProposal, setOriginalLeaveProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
@@ -86,16 +85,17 @@ export default function AttendancePage() {
     }
   };
 
-  const createLeaveProposal = async () => {
-    if (!leavePrompt.trim()) return;
+  const createLeaveProposal = async (promptText) => {
+    const nextPrompt = (promptText || prompt || '').trim();
+    if (!nextPrompt) return;
     setProposalLoading(true);
     setError('');
     setNotice('');
     try {
-      const data = await api.post('/leave/proposals', { prompt: leavePrompt });
+      const data = await api.post('/leave/proposals', { prompt: nextPrompt });
       setLeaveProposal(data.proposal || null);
       setOriginalLeaveProposal(data.proposal || null);
-      setLeavePrompt('');
+      setPrompt('');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -116,8 +116,14 @@ export default function AttendancePage() {
   };
 
   const handlePromptSubmit = async () => {
-    if (!prompt.trim()) return;
-    await createProposal({ prompt });
+    const nextPrompt = prompt.trim();
+    if (!nextPrompt) return;
+    const isLeavePrompt = /(연차|반차|외근|휴가)/.test(nextPrompt);
+    if (isLeavePrompt) {
+      await createLeaveProposal(nextPrompt);
+      return;
+    }
+    await createProposal({ prompt: nextPrompt });
   };
 
   const handleConfirmProposal = async () => {
@@ -252,18 +258,18 @@ export default function AttendancePage() {
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-slate-500">근태 자연어 입력</p>
+            <p className="text-sm font-medium text-slate-500">근태 공용 프롬프트</p>
             <p className="text-sm text-slate-600 mt-1">
-              예: `출근했어요`, `퇴근합니다`, `내일 오전 9시 출근으로 기록해줘`
+              출근, 퇴근, 휴가, 근태 현황 요청을 하나의 프롬프트 창에서 처리합니다.
             </p>
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            확인 결과 창 기반 피드백 수집
+            Noah 근태 {user?.role === 'master' ? '오케스트레이터' : user?.role === 'admin' ? '운영 에이전트' : '에이전트'}
           </span>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {['출근했어요', '퇴근합니다', '오늘 오전 9시 출근으로 수정해줘'].map((item) => (
+          {['출근했어요', '퇴근합니다', '내일 연차 신청', '오늘 오전 9시 출근으로 수정해줘'].map((item) => (
             <button
               key={item}
               type="button"
@@ -280,7 +286,7 @@ export default function AttendancePage() {
             className="input-base min-h-[92px]"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="출근이나 퇴근 요청을 자연어로 입력하세요."
+            placeholder="출근, 퇴근, 연차, 반차, 외근 요청을 자연어로 입력하세요."
           />
           <div className="flex flex-wrap gap-3">
             <button
@@ -320,52 +326,6 @@ export default function AttendancePage() {
             {notice}
           </div>
         )}
-      </div>
-
-      <div className="card space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-500">휴가 신청 자연어 입력</p>
-            <p className="text-sm text-slate-600 mt-1">
-              예: `내일 연차 신청`, `오늘 오후 반차 신청`, `모레 외근 신청`
-            </p>
-          </div>
-          <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700">
-            승인 대기형 피드백 수집
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {['내일 연차 신청', '오늘 오후 반차 신청', '모레 외근 신청'].map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setLeavePrompt(item)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <textarea
-            className="input-base min-h-[88px]"
-            value={leavePrompt}
-            onChange={(e) => setLeavePrompt(e.target.value)}
-            placeholder="휴가, 반차, 외근 신청을 자연어로 입력하세요."
-          />
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={createLeaveProposal}
-              disabled={proposalLoading || !leavePrompt.trim()}
-            >
-              {proposalLoading ? '제안 생성 중...' : '휴가 신청 확인창 만들기'}
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
