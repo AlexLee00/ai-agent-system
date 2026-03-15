@@ -198,6 +198,7 @@ const KEYWORD_PATTERNS = [
   { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
   { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
   { re: /(오케스트레이터|제이|jay).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|오픈클로.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'orchestrator_health', args: {} },
+  { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(프로듀서|봇별|랭킹|순위)|payload.*(프로듀서|랭킹|순위)/i, intent: 'reporting_health', args: { query: 'producers' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(요약|한눈|브리핑)|payload.*(요약|한눈)/i, intent: 'reporting_health', args: { query: 'summary' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(헬스|건강|상태|리포트|보고)|payload.*(경고|헬스|상태)/i, intent: 'reporting_health', args: {} },
   { re: /(루나|luna).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|투자팀.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'luna_health', args: {} },
