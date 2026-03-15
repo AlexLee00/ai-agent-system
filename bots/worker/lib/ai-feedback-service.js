@@ -2,6 +2,7 @@
 
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
+const rag = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
 const {
   FEEDBACK_EVENT_TYPES,
   FEEDBACK_STATUSES,
@@ -18,6 +19,9 @@ const {
   getFeedbackSessionById,
   getFeedbackSessionBySource,
 } = require(path.join(__dirname, '../../../packages/core/lib/ai-feedback-store'));
+const {
+  publishFeedbackSessionToRag,
+} = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 
 const SCHEMA = 'worker';
 
@@ -181,11 +185,26 @@ async function markWorkerFeedbackRejected(params) {
 }
 
 async function markWorkerFeedbackCommitted(params) {
-  return markWorkerFeedbackStatus({
+  const updated = await markWorkerFeedbackStatus({
     ...params,
     nextStatus: FEEDBACK_STATUSES.COMMITTED,
     eventType: FEEDBACK_EVENT_TYPES.COMMITTED,
   });
+  try {
+    const events = await listFeedbackEvents(pgPool, {
+      schema: SCHEMA,
+      feedbackSessionId: updated.id,
+    });
+    await publishFeedbackSessionToRag(rag, {
+      schema: SCHEMA,
+      session: updated,
+      events,
+      sourceBot: 'worker-feedback',
+    });
+  } catch (error) {
+    console.warn(`[worker-feedback] feedback RAG publish skipped: ${error.message}`);
+  }
+  return updated;
 }
 
 module.exports = {
