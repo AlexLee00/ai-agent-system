@@ -69,7 +69,6 @@ const {
   buildPromotionCandidateLine,
   buildPromotionCandidateStatusLine,
   buildPromotionThresholdLines,
-  buildTeamPromotionThresholdLines,
   buildPromotionPolicyNoteLines,
   buildPromotionCompactCandidateLine,
 } = require('../../../packages/core/lib/intent-core');
@@ -483,7 +482,6 @@ async function buildTeamIntentReport(team = '', query = '') {
   return buildTeamIntentReportFrame(normalized, teamMeta, {
     promotions,
     unrecSummary,
-    thresholdLines: buildTeamPromotionThresholdLines(teamMeta.thresholdTeam),
   });
 }
 
