@@ -13,6 +13,11 @@
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { getSecret } = require('./secrets');
+const {
+  buildNoticeEvent,
+  renderNoticeEvent,
+  publishEventPipeline,
+} = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 
 const SCHEMA     = 'worker';
 const SEP_SINGLE = '───────────────';
@@ -174,19 +179,57 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
   const token = getSecret('telegram_bot_token');
   if (!token || !chatId) return;
 
-  const text = _buildApprovalText(requestId, action, requesterName, payload);
   const keyboard = {
     inline_keyboard: [[
       { text: '✅ 승인', callback_data: `approve:${requestId}` },
       { text: '❌ 반려', callback_data: `reject:${requestId}` },
     ]],
   };
+  const label = ACTION_LABELS[action] || action;
+  const rawPayload = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+  const detailLines = action === 'leave_request'
+    ? [
+        rawPayload.date ? `날짜: ${rawPayload.date}` : '',
+        rawPayload.reason ? `사유: ${rawPayload.reason}` : '',
+      ].filter(Boolean)
+    : Object.entries(rawPayload)
+      .filter(([k, v]) => !k.startsWith('_') && v != null)
+      .map(([k, v]) => `${k}: ${v}`);
+  const notice = buildNoticeEvent({
+    from_bot: 'worker-approval',
+    team: 'worker',
+    event_type: 'approval_request',
+    alert_level: 2,
+    title: `${label} 승인 요청 #${requestId}`,
+    summary: `신청자: ${requesterName || '알 수 없음'}`,
+    details: detailLines,
+    action: '인라인 버튼으로 승인 또는 반려',
+    payload: {
+      title: `${label} 승인 요청 #${requestId}`,
+      summary: `신청자: ${requesterName || '알 수 없음'}`,
+      details: detailLines,
+      action: '승인/반려 버튼 확인',
+    },
+  });
+  const text = renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload);
 
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', reply_markup: keyboard }),
+    await publishEventPipeline({
+      event: {
+        ...notice,
+        message: text,
+      },
+      targets: [{
+        type: 'telegram_api',
+        token,
+        chatId,
+        parseMode: 'HTML',
+        replyMarkup: keyboard,
+        policy: {
+          cooldownMs: 30 * 1000,
+          key: `worker-approval:${requestId}`,
+        },
+      }],
     });
   } catch (e) {
     console.warn('[approval] 텔레그램 발송 실패:', e.message);

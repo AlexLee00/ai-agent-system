@@ -352,6 +352,63 @@ async function publishToTelegram({
   }
 }
 
+async function publishToTelegramApi({
+  token,
+  chatId,
+  threadId = null,
+  event,
+  parseMode = 'HTML',
+  replyMarkup = null,
+  disableWebPagePreview = true,
+  policy,
+}) {
+  const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('telegram', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'telegram_api',
+      event: normalized,
+    };
+  }
+  if (!token || !chatId) {
+    return { ok: false, channel: 'telegram_api', event: normalized, error: 'missing_telegram_credentials' };
+  }
+
+  const body = {
+    chat_id: chatId,
+    text: normalized.message,
+    parse_mode: parseMode,
+    disable_web_page_preview: disableWebPagePreview,
+  };
+  if (threadId) body.message_thread_id = threadId;
+  if (replyMarkup) body.reply_markup = replyMarkup;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok) {
+      return { ok: true, channel: 'telegram_api', event: normalized };
+    }
+    return {
+      ok: false,
+      channel: 'telegram_api',
+      event: normalized,
+      error: data?.description || `telegram_api_status_${res.status}`,
+    };
+  } catch (error) {
+    console.warn(`[reporting-hub] telegram api publish failed: ${error.message}`);
+    return { ok: false, channel: 'telegram_api', event: normalized, error: error.message };
+  }
+}
+
 async function publishToRag({
   ragStore,
   collection = 'operations',
@@ -473,6 +530,18 @@ async function publishEventPipeline({
           topicTeam: target.topicTeam,
           event: normalized,
           prefix: target.prefix,
+          policy: { ...policy, ...(target.policy || {}) },
+        }));
+        break;
+      case 'telegram_api':
+        results.push(await publishToTelegramApi({
+          token: target.token,
+          chatId: target.chatId,
+          threadId: target.threadId,
+          event: normalized,
+          parseMode: target.parseMode,
+          replyMarkup: target.replyMarkup,
+          disableWebPagePreview: target.disableWebPagePreview,
           policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
@@ -785,6 +854,7 @@ module.exports = {
   buildEventPayload,
   publishToQueue,
   publishToTelegram,
+  publishToTelegramApi,
   publishToRag,
   publishToN8n,
   publishEventPipeline,
