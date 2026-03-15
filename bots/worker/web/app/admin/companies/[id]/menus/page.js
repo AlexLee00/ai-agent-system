@@ -13,6 +13,8 @@ const ICON_MAP = {
   projects:   FolderKanban,
   schedules:  Calendar,
   journals:   BookOpen,
+  employees:  Users,
+  payroll:    DollarSign,
   approvals:  CheckSquare,
   settings:   Settings,
   ai:         Bot,
@@ -24,6 +26,8 @@ function normalizeEnabledMenus(enabledMenus, allMenus) {
     switch (key) {
       case 'chat':
         return ['journals'];
+      case 'workforce':
+        return ['employees', 'payroll'];
       default:
         return [key];
     }
