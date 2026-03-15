@@ -3,6 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import Card from '@/components/Card';
@@ -38,6 +41,23 @@ export default function SalesPage() {
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
   const fileRef = useRef(null);
+  const totalSales = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const quickFlows = [
+    {
+      title: '오늘 매출 누락 점검',
+      body: '당일 누락된 매출이나 비정상 흐름을 바로 확인합니다.',
+      onPromptFill: () => refillPrompt('오늘 누락된 매출이나 비정상 매출 흐름이 있는지 알려줘'),
+      onSecondary: () => setTab('list'),
+      secondaryLabel: '목록 보기',
+    },
+    {
+      title: '주간 매출 비교',
+      body: '주간 흐름을 비교하고 바로 차트 탭에서 이어봅니다.',
+      onPromptFill: () => refillPrompt('이번 주와 지난주 매출 흐름을 비교해줘'),
+      onSecondary: () => setTab('chart'),
+      secondaryLabel: '차트 보기',
+    },
+  ];
 
   const refillPrompt = (text) => {
     setPrompt(text);
@@ -198,12 +218,26 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
+      <AdminPageHero
+        title="매출 관리"
+        description="매출 등록, 주간 흐름, 카테고리별 내역을 한 화면에서 관리합니다."
+        stats={[
+          { label: '매출 건수', value: sales.length || 0, caption: '조회 기준' },
+          { label: '누적 금액', value: `₩${totalSales.toLocaleString()}`, caption: '현재 목록 합계' },
+          { label: '오늘 매출', value: `₩${Number(summary?.today?.total ?? 0).toLocaleString()}`, caption: 'summary 기준' },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">💰 매출 관리</h1>
+        <p className="text-sm font-medium text-slate-600">매출 운영 작업</p>
         <button className="btn-primary text-sm" onClick={openModal} disabled={!canCreateSales}>
           + 매출 등록
         </button>
       </div>
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">

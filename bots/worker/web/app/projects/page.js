@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 
@@ -247,13 +250,43 @@ export default function ProjectsPage() {
     ? Math.round(projects.reduce((sum, item) => sum + Number(item.progress || 0), 0) / projects.length)
     : 0;
   const canCreateProjects = canPerformMenuOperation(user, 'projects', 'create');
+  const quickFlows = [
+    {
+      title: '지연 프로젝트 점검',
+      body: '마감이 임박하거나 진행이 느린 프로젝트를 바로 점검합니다.',
+      onPromptFill: () => refillPrompt('지연 중이거나 마감이 임박한 프로젝트를 요약해줘'),
+      onSecondary: () => setTab('active'),
+      secondaryLabel: '진행 중 보기',
+    },
+    {
+      title: '완료 프로젝트 회고',
+      body: '완료된 프로젝트를 다시 보고 회고나 보고서 흐름으로 이어갑니다.',
+      onPromptFill: () => refillPrompt('최근 완료된 프로젝트를 회고용으로 정리해줘'),
+      onSecondary: () => setTab('completed'),
+      secondaryLabel: '완료 보기',
+    },
+  ];
 
   return (
     <div className="space-y-4">
+      {user?.role !== 'member' && <AdminQuickNav />}
+
+      <AdminPageHero
+        title="프로젝트 관리"
+        description="프로젝트 생성, 진행률, 마감 상태와 제안 흐름을 한 화면에서 관리합니다."
+        stats={[
+          { label: '진행 중', value: activeCount || 0, caption: 'completed 제외' },
+          { label: '완료', value: completedCount || 0, caption: 'status=completed' },
+          { label: '평균 진행률', value: `${avgProgress}%`, caption: '전체 프로젝트 기준' },
+        ]}
+      />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">📋 프로젝트 관리</h1>
+        <p className="text-sm font-medium text-slate-600">프로젝트 운영 작업</p>
         <button className="btn-primary text-sm" onClick={() => setShowCreate(true)} disabled={!canCreateProjects}>+ 새 프로젝트</button>
       </div>
+
+      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-4">
