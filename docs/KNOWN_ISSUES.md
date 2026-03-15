@@ -23,6 +23,9 @@
 | KI-005 | 스카팀 kiosk-monitor | Navigation timeout (Puppeteer) 간헐적 발생 | 2026-03-11 | exit 1 → launchd 재기동으로 자동 복구 중 |
 | KI-006 | 스카팀 naver-monitor | launchd PID 16035 SIGKILL(-9) 상태 유지 | 2026-03-12 | 재시작 필요 (수동 또는 다음 세션) |
 | KI-007 | 스카팀 cancelled_keys | 010-3397-3384, 010-7184-8299, 010-2802-8575 2건 — Picco 취소 실패로 계속 감지됨 | 2026-03-12 | 실제는 픽코 미등록 건. cancelled_keys 정리 필요 |
+| KI-008 | loadPreScreenedFallback | 파일 기반 폴백 → RAG 전환 미완료 | 2026-03-11 | 보류 — 루나 노드화 Phase에서 처리 예정 |
+| KI-009 | groq-sdk | Breaking change로 업그레이드 보류 중 | 2026-03-13 | 사용자 확인 후 별도 세션 처리 필요 |
+| KI-010 | 스카팀 LLM | llama-4-scout 464ms — gpt-oss-20b 152ms 대비 3배 느림 | 2026-03-12 | 교체 검토 중 (gpt-oss-20b 또는 llama-3.1-8b) |
 
 ---
 
@@ -40,3 +43,7 @@
 | KI-F08 | run-forecast.sh | macOS mktemp `.txt` 확장자 고정 파일명 버그 | 2026-03-07 | `XXXXXX` 패턴으로 수정 |
 | KI-F09 | archer/analyzer.js | logLLMCall 미연동 → 아처 LLM 비용 미추적 | 2026-03-07 | logLLMCall 연동 추가 |
 | KI-F10 | 전체 | DuckDB npm 취약점 (KI-003) + SQLite/DuckDB 2종 DB 분산 운영 복잡성 | 2026-03-07 | PostgreSQL 17 단일 DB로 통합 (4개 스키마: claude/reservation/investment/ska) |
+| KI-F11 | llm-client.js | callOpenAIMini() 최종 폴백 누락 → 폴백 체인 미완성 | 2026-03-11 | ✅ 수정 완료 (2026-03-12) — 폴백 체인 완성 |
+| KI-F12 | screening-monitor.js | 파일 기반 상태 관리 → DB 기반으로 전환 필요 | 2026-03-11 | ✅ 수정 완료 (2026-03-13) — DB 기반으로 전환 |
+| KI-F13 | star.js | XSS escapeHtml 미적용 — 블로그 HTML 출력 취약 | 2026-03-11 | ✅ 수정 완료 (2026-03-13) — escapeHtml 적용 |
+| KI-F14 | gemini 클라이언트 | maxTokens 4096 하드코딩 — 장문 출력 제한 | 2026-03-11 | ✅ 수정 완료 (2026-03-13) — 12000으로 수정 |

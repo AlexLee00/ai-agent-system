@@ -949,3 +949,25 @@ _작성: 2026-03-04_
 ---
 
 _최초 작성: 2026-02-27 | 작성자: 클로드 (Claude Code) + 사용자_
+
+### 2026-03-11~15 — 대규모 안정화 + 신규 기능
+
+핵심 결정:
+- 워커팀 v2 피벗: 폼 기반 → 자연어 대화 기반
+- 웹 대시보드 UI: Claude Code 채팅 + 동적 캔버스 패턴 채택
+- 실시간 통신: SSE → XHR+onprogress (모바일 Chrome 버퍼링 우회)
+- 동적 렌더링: Claude Code 응답 → 15종 UI 컴포넌트 자동 매칭
+- DB 전략: Phase 1~3 RAG 불필요, Phase 4+ RAG 도입
+- 인프라: 로컬 IP 접속 → 추후 Cloudflare Tunnel
+- KST 유틸리티 중앙화로 UTC/KST 변환 실수 근절
+
+인사이트:
+- 클로드코드 채팅 메시지 분할 문제: tool_use 이벤트 사이에 새 assistant 텍스트가 오면 새 버블을 생성하는 버그. 수정: 역방향으로 마지막 streaming assistant 버블 찾아서 병합
+- 제이 인텐트 자동 프로모션 = 봇이 스스로 학습하는 구조
+- 통합 OPS 헬스 = 마스터가 한눈에 전체 시스템 파악 가능
+- file-guard.js = 봇의 소스코드 수정 물리적 차단
+- launchd StartCalendarInterval = 로컬시간(KST) 기준, UTC 변환 절대 금지 (확인된 실수 패턴)
+
+_작성: 2026-03-15_
+
+---

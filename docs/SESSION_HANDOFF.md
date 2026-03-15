@@ -2,33 +2,62 @@
 
 > 다음 Claude Code 세션에서 이 파일을 먼저 읽어주세요.
 
-## 이번 세션 완료 내역 (2026-03-13)
+## 이번 세션 완료 내역 (2026-03-11 ~ 2026-03-15)
 
-### 1. 빌링 합산 버그 수정
-- `bots/claude/lib/checks/billing.js`: API 누적값을 SUM으로 더해 $79.92 뻥튀기 → `DISTINCT ON (provider, date)`로 최신값만 합산
-- 실제 금액: $19.98 (Anthropic $16.42 + OpenAI $3.56), 월말 예상 $47.65
+### 1. KST 시간 유틸리티 중앙화
+- `packages/core/lib/kst.js` 신규 — 전 팀 시간/날짜 관련 코드 통일
+- 기존 `new Date().toISOString()` 직접 사용 코드 전수 교체
+- launchd plist UTC 오기재 수정 (블로그팀 Hour=21 → KST 기준 Hour=6)
+- CLAUDE.md에 kst.js 사용 규칙 + launchd 시간 규칙 공식 등재
 
-### 2. 완료 예약 허위 취소 오발동 수정
-- `bots/claude/lib/checks/ska.js`: 이용 완료 후 `cancelled_keys` dedup 키 잔류로 매 체크마다 오발동
-- 케이스 B(이용 완료 감지) 시 해당 키를 `cancelled_keys`에서 자동 정리하도록 수정
+### 2. KNOWN ISSUES 5개 수정
+- `callOpenAIMini()` 최종 폴백 누락 → ✅ 수정 완료
+- screening-monitor 파일 기반 → DB 기반으로 전환 → ✅ 수정 완료
+- `star.js` XSS escapeHtml 미적용 → ✅ 수정 완료
+- gemini maxTokens 4096 하드코딩 → 12000으로 수정 → ✅ 수정 완료
+- loadPreScreenedFallback 파일→RAG 전환 → 보류 (루나 노드화 Phase에서 처리)
 
-### 3. Picco 취소 재시도 추가
-- `bots/reservation/auto/monitors/naver-monitor.js`: `runPickkoCancel` 실패 시 60초 후 1회 자동 재시도
-- Playwright 타임아웃으로 인한 일시적 실패 자가복구 가능
+### 3. CLAUDE.md 공통 원칙 8개 추가
+- 팀 제이 6대 원칙, 노드화 아키텍처, LLM 모델 라우팅, 소스코드 보안 규칙
+- kst.js 사용 강제 규칙, launchd 시간 규칙
+- 세션 시작/마무리 루틴, 개발 문서 목적표
 
-### 4. npm audit 워크스페이스 경로 + PATH 수정
-- `bots/claude/lib/checks/deps.js`: 모노레포 하위 패키지 lock 파일 없어 audit 스킵 문제 해결
-- 루트에서 `--workspace` 플래그로 실행, `execSync` env에 PATH 추가
+### 4. 소스코드 접근 권한 제한
+- `packages/core/lib/file-guard.js` 신규 — 봇의 소스코드 수정 물리적 차단
+- 덱스터 `DEXTER_ALLOWED_PATTERNS` 화이트리스트 정의 (checksums, lock, state, log)
+- autofix 범위 화이트리스트 외 수정 시도 → `reportInsteadOfFix()` 경고 발송
 
-### 5. 오정은 (010-7184-8299) 3/29 예약 manual 처리
-- `pickko_status`: `verified` → `manual` (픽코 수동 등록 완료)
+### 5. 루나팀 노드화 파이프라인 스캐폴딩 (L10~L34)
+- debate 노드, decision 노드, risk 노드, execution 노드 골격 구현
+- 루나 스크리닝 강화: 해외주식 + 암호화폐 휴리스틱 추가
+- 매매일지 자동 리뷰 + 엑스커전(Excursion) 메트릭 + 리스크 연동
+- 장외시간 리서치 모드 + 워치리스트 관리
 
-### 6. 보안 패키지 업그레이드
-- ccxt 4.5.42 → 4.5.43
-- bcrypt 5.1.1 → 6.0.0 (tar / node-pre-gyp high 취약점 해결)
-- npm audit: 2 high → **0 vulnerabilities**
+### 6. 스카팀 예측 고도화
+- 예측 캘리브레이션 (Platt Scaling)
+- 피처스토어 (Feature Store) 구축
+- 모멘텀 지표 연동
 
-### 7. PATCH_REQUEST.md 처리 완료 후 삭제
+### 7. 워커팀 WebSocket 채팅 + 태스크 큐 + 승인 플로우
+- WebSocket 기반 실시간 채팅 구현 (SSE 대체)
+- 태스크 러너 (Task Runner) + 태스크 큐
+- 승인 플로우 (Approval Flow) — 위험 작업 마스터 확인 체계
+- 클로드코드 채팅 메시지 버블 병합 수정 완료 (tool 메시지 사이여도 마지막 streaming assistant 찾아서 병합)
+
+### 8. 제이 인텐트 자동 프로모션 시스템
+- 미인식 명령 → DB 누적 → 자동 승격 + 롤백 + 감사 추적
+- 인텐트 스토어 공유 (전 팀 커맨더 연결)
+
+### 9. 통합 OPS 헬스 대시보드
+- 루나 리스크 + 스카 예측 + 클로드 품질 + 워커 상태 통합 뷰
+- 팀별 개별 헬스 리포트: 루나/스카/클로드/워커/블로
+
+### 10. 공유 헬퍼 리팩터링
+- 헬스리포트 + 프로바이더 + 포맷터 42개 공통 함수 통합
+
+### 11. 블로그팀 안정화
+- plist Hour 수정 (UTC 21 → KST 6)
+- 수동 발행: 38강 + 홈페이지와App 카테고리
 
 ---
 
@@ -36,37 +65,33 @@
 
 ### 🟡 groq-sdk 업그레이드 보류
 - Breaking change 존재 → 사용자 확인 후 별도 세션에서 처리 필요
-- 업그레이드 시 groq 관련 코드(루나팀 llm-client.js, 스카팀 registry 설정 등) 영향 범위 사전 파악 필요
+
+### 🟡 loadPreScreenedFallback 파일→RAG 전환
+- 루나 노드화 Phase에서 처리 예정
 
 ### 🟡 LLM 속도 테스트 결과 반영 고려 (이월)
-- 현재 스카팀: llama-4-scout (464ms, Groq 모델 중 가장 느림)
-- gpt-oss-20b (152ms) 또는 llama-3.1-8b (153ms)로 교체 고려
+- 스카팀: llama-4-scout (464ms) → gpt-oss-20b (152ms) 교체 검토
 
 ---
 
 ## 현재 시스템 상태
 
-### 덱스터 최종 상태 (2026-03-13 세션 마감)
-- ❌ CRITICAL: **0건**
-- ⚠️ WARNING: **2건** (경미, 시간 지나면 자동 소멸 예상)
-
 ### 전체 팀 가동 현황
 
 | 팀 | 상태 | 비고 |
 |----|------|------|
-| 루나팀 | ✅ 정상 | 암호화폐 실투자 운영 중, TP/SL OCO 설정 유지 |
-| 스카팀 | ✅ 정상 | commander / naver-monitor / kiosk-monitor 정상, 오발동 수정 완료 |
-| 클로드팀 | ✅ 정상 | billing 버그 수정 완료, 덱스터 ❌ 0건 |
-| 워커팀 | ✅ 정상 | web / nextjs 실행 중 |
-
-### 보안 현황
-- npm audit: **0 vulnerabilities** (bcrypt 6.0.0 업그레이드로 해결)
-- groq-sdk 업그레이드: **보류** (Breaking change)
+| 루나팀 | ✅ 정상 | 암호화폐 실투자, 노드화 파이프라인 L10~L34 스캐폴딩 완료 |
+| 스카팀 | ✅ 정상 | 예측 캘리브레이션 + 피처스토어 완료 |
+| 클로드팀 | ✅ 정상 | KNOWN ISSUES 4건 수정, file-guard.js 적용 |
+| 워커팀 | ✅ 정상 | WebSocket 채팅 + 태스크 큐 + 승인 플로우 운영 중 |
+| 블로그팀 | ✅ 정상 | plist KST 수정 완료, 매일 06:00 KST 자동 발행 |
 
 ---
 
-## 다음 세션 참고 사항
+## 다음 세션 할 일
 
-1. groq-sdk Breaking change 내용 확인 후 업그레이드 여부 결정
-2. 덱스터 ⚠️ 2건 자연 소멸 여부 확인 (launchd 5분 주기 quickcheck)
-3. 스카팀 LLM 속도 최적화 (llama-4-scout → gpt-oss-20b 교체) 검토
+1. **오류 해결 집중** — 누적 WARNING 이슈 정리
+2. **워커웹 동적 렌더링** — Claude Code 응답 → 15종 UI 컴포넌트 자동 매칭
+3. **외부 IP 접속** — Cloudflare Tunnel 설정 (로컬 IP 대체)
+4. **groq-sdk Breaking change** 내용 확인 후 업그레이드 여부 결정
+5. **스카팀 LLM 속도 최적화** — llama-4-scout → gpt-oss-20b 교체 검토
