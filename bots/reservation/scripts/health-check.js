@@ -17,17 +17,23 @@
  */
 
 const fs = require('fs');
-const { execSync } = require('child_process');
 const { publishToMainBot } = require('../lib/mainbot-client');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
 
 // 상시 실행 서비스 (PID 있어야 정상)
-const CONTINUOUS = ['ai.ska.naver-monitor'];
+const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];
 
-// 감지할 전체 서비스
-const ALL_SERVICES = [
+// 핵심 서비스: 미로드/다운 자체가 바로 운영 경고
+const CORE_SERVICES = [
+  'ai.ska.commander',
   'ai.ska.naver-monitor',
   'ai.ska.kiosk-monitor',
+  'ai.ska.health-check',
+];
+
+// 스케줄 작업: 비정상 종료는 보되, 미로드 자체는 경고로 보지 않음
+const SCHEDULED_SERVICES = [
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',
   'ai.ska.pickko-daily-summary',
@@ -36,8 +42,8 @@ const ALL_SERVICES = [
   'ai.ska.log-rotate',
 ];
 
-// 정상 종료 코드 (0: 성공, -15: SIGTERM, -9: KeepAlive 재시작)
-const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const ALL_SERVICES = [...CORE_SERVICES, ...SCHEDULED_SERVICES];
+const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 
 // naver-monitor 로그 staleness 체크
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
@@ -61,25 +67,6 @@ function checkNaverLogStaleness() {
   }
 }
 
-// ─── launchctl 파싱 ──────────────────────────────────────────────
-
-function getLaunchctlStatus() {
-  // 출력 형식: PID  LastExitStatus  Label
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
-  const services = {};
-  for (const line of raw.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-    const [pid, exitCode, label] = parts;
-    services[label] = {
-      running: pid !== '-',
-      pid: pid !== '-' ? parseInt(pid) : null,
-      exitCode: parseInt(exitCode) || 0,
-    };
-  }
-  return services;
-}
-
 // ─── 메인 ───────────────────────────────────────────────────────
 
 function main() {
@@ -100,17 +87,21 @@ function main() {
     const svc = status[label];
     const shortName = label.replace('ai.ska.', '');
 
-    // 1. 미로드 감지 (launchctl list에 없음)
+    const isCoreService = CORE_SERVICES.includes(label);
+
+    // 1. 핵심 서비스 미로드 감지
     if (!svc) {
-      const key = `unloaded:${label}`;
-      if (canAlert(state, key)) {
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [스카 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
+      if (isCoreService) {
+        const key = `unloaded:${label}`;
+        if (canAlert(state, key)) {
+          issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [스카 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요` });
+        }
       }
       continue;
     }
 
     // 미로드 → 회복 시 state 클리어 + 알림
-    if (state[`unloaded:${label}`]) {
+    if (isCoreService && state[`unloaded:${label}`]) {
       console.log(`[헬스체크] ${shortName} 로드 회복 확인`);
       publishToMainBot({
         from_bot: 'ska', event_type: 'health_check', alert_level: 1,
@@ -192,7 +183,7 @@ function main() {
   saveState(state);
 
   if (issues.length === 0) {
-    console.log(`[헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);
+    console.log(`[헬스체크] 정상 — 핵심 ${CORE_SERVICES.length}개 + 스케줄 ${SCHEDULED_SERVICES.length}개 이상 없음`);
   }
 }
 
