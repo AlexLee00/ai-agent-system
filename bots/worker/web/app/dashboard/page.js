@@ -18,6 +18,23 @@ export default function DashboardPage() {
   const [workspaceDraftVersion, setWorkspaceDraftVersion] = useState(0);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
+  const dashboardBotOptions = user?.role === 'master'
+    ? [
+        { key: 'worker', label: 'Worker 마스터 오케스트레이터' },
+        { key: 'noah', label: 'Noah (근태/인사)' },
+        { key: 'chloe', label: 'Chloe (일정)' },
+        { key: 'oliver', label: 'Oliver (매출/리포트)' },
+        { key: 'ryan', label: 'Ryan (프로젝트)' },
+        { key: 'sophie', label: 'Sophie (급여)' },
+        { key: 'emily', label: 'Emily (문서/OCR)' },
+        { key: 'marcus', label: 'Marcus (분석)' },
+      ]
+    : [
+        { key: 'worker', label: 'Worker 운영 에이전트' },
+        { key: 'noah', label: 'Noah (근태/인사)' },
+        { key: 'chloe', label: 'Chloe (일정)' },
+        { key: 'oliver', label: 'Oliver (매출/리포트)' },
+      ];
 
   useEffect(() => {
     const requests = [
@@ -177,6 +194,8 @@ export default function DashboardPage() {
             ]}
             allowUpload={false}
             agentName={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
+            botOptions={dashboardBotOptions}
+            defaultBotKey="worker"
             compact
             showCanvasPanel={false}
             showQueuePanel={false}
