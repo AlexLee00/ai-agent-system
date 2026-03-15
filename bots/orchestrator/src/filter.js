@@ -14,6 +14,7 @@
 const { isAlertMuted, isEventMuted } = require('../lib/mute-manager');
 const { shouldDefer, deferToMorning } = require('../lib/night-handler');
 const { formatSingle, formatBatch }   = require('../lib/batch-formatter');
+const { getEventHeadline } = require('../../../packages/core/lib/reporting-hub');
 
 const DEDUP_WINDOW_MS = 60_000; // 1분 내 같은 봇+이벤트타입 중복 배치
 
@@ -39,7 +40,7 @@ async function processItem(item, onSend) {
 
   // 2. 야간 보류 체크
   if (shouldDefer(item.alert_level)) {
-    await deferToMorning(item.id, item.message.split('\n')[0].slice(0, 60), [item.from_bot]);
+    await deferToMorning(item.id, getEventHeadline(item).slice(0, 60), [item.from_bot]);
     return 'deferred';
   }
 

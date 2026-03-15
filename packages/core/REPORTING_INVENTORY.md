@@ -72,6 +72,7 @@
 - luna direct telegram alerts/reports → severity 기반 telegram/n8n 라우팅
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
+- orchestrator queue consumer → payload headline/detail 우선 사용
 
 ## Next Moves
 
