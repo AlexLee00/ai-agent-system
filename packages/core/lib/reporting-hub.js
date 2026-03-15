@@ -2,6 +2,20 @@
 
 const { runWithN8nFallback } = require('./n8n-runner');
 
+const ALERT_LEVEL_LABELS = {
+  1: '안내',
+  2: '경고',
+  3: '높음',
+  4: '긴급 장애',
+};
+
+const ALERT_LEVEL_ICONS = {
+  1: 'ℹ️',
+  2: '⚠️',
+  3: '🟠',
+  4: '🚨',
+};
+
 function normalizeEvent({
   from_bot,
   team = 'general',
@@ -244,6 +258,68 @@ function renderSnippetEvent(event) {
   return lines.join('\n');
 }
 
+function buildNoticeEvent({
+  from_bot = 'reporting-hub',
+  team = 'general',
+  event_type = 'alert',
+  alert_level = 2,
+  title = '',
+  summary = '',
+  details = [],
+  action = '',
+  actionLabel = '조치',
+  footer = '',
+  payload = null,
+} = {}) {
+  const normalized = normalizeEvent({
+    from_bot,
+    team,
+    event_type,
+    alert_level,
+    message: title || summary,
+    payload,
+  });
+  return {
+    ...normalized,
+    title: String(title || '').trim(),
+    summary: String(summary || '').trim(),
+    details: (details || []).map((line) => String(line || '').trim()).filter(Boolean),
+    action: String(action || '').trim(),
+    actionLabel: String(actionLabel || '조치').trim(),
+    footer: String(footer || '').trim(),
+  };
+}
+
+function renderNoticeEvent(event) {
+  if (!event) return '';
+  const normalized = buildNoticeEvent(event);
+  const levelLabel = ALERT_LEVEL_LABELS[normalized.alert_level] || '알림';
+  const levelIcon = ALERT_LEVEL_ICONS[normalized.alert_level] || 'ℹ️';
+  const lines = [
+    `${levelIcon} ${levelLabel}`,
+  ];
+
+  if (normalized.title) {
+    lines.push('');
+    lines.push(normalized.title);
+  }
+  if (normalized.summary) {
+    lines.push('');
+    lines.push(`요약: ${normalized.summary}`);
+  }
+  for (const detail of normalized.details) {
+    lines.push(detail);
+  }
+  if (normalized.action) {
+    lines.push(`${normalized.actionLabel}: ${normalized.action}`);
+  }
+  if (normalized.footer) {
+    lines.push('');
+    lines.push(normalized.footer);
+  }
+  return lines.join('\n').trim();
+}
+
 module.exports = {
   normalizeEvent,
   publishToQueue,
@@ -253,4 +329,6 @@ module.exports = {
   publishEventPipeline,
   buildSnippetEvent,
   renderSnippetEvent,
+  buildNoticeEvent,
+  renderNoticeEvent,
 };

@@ -10,7 +10,11 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const cfg    = require('./config');
 const sender = require('../../../packages/core/lib/telegram-sender');
-const { publishToTelegram } = require('../../../packages/core/lib/reporting-hub');
+const {
+  publishToTelegram,
+  buildNoticeEvent,
+  renderNoticeEvent,
+} = require('../../../packages/core/lib/reporting-hub');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 
@@ -204,138 +208,127 @@ async function emitDexterEvent(results, elapsed) {
 
 // ─── 심각도별 구조화 알림 ────────────────────────────────────────────
 
-const SEP_DOUBLE = '═'.repeat(19);
-const SEP_SINGLE = '─'.repeat(19);
-
-/**
- * ⚠️ WARNING 알림 — 🔧 클로드 Topic
- */
-function sendWarning({ service, status, action }) {
-  const lines = [
-    '⚠️ 시스템 경고',
-    SEP_SINGLE,
-    `서비스: ${service}`,
-    `상태: ${status}`,
-    `조치: ${action || '모니터링 중 (자동 복구 대기)'}`,
-    SEP_DOUBLE,
-  ];
+function publishDexterNotice({
+  eventType = 'alert',
+  level = 2,
+  title = '',
+  summary = '',
+  details = [],
+  action = '',
+  footer = '',
+}) {
+  const message = renderNoticeEvent(buildNoticeEvent({
+    from_bot: 'dexter',
+    team: 'claude',
+    event_type: eventType,
+    alert_level: level,
+    title,
+    summary,
+    details,
+    action,
+    footer,
+  }));
   return publishToTelegram({
     sender,
     topicTeam: 'claude-lead',
     event: {
       from_bot: 'dexter',
       team: 'claude',
-      event_type: 'alert',
-      alert_level: 2,
-      message: lines.join('\n'),
+      event_type: eventType,
+      alert_level: level,
+      message,
     },
   }).then((result) => result.ok);
+}
+
+/**
+ * ⚠️ WARNING 알림 — 🔧 클로드 Topic
+ */
+function sendWarning({ service, status, action }) {
+  return publishDexterNotice({
+    eventType: 'alert',
+    level: 2,
+    title: '시스템 경고',
+    summary: `${service} 상태 확인 필요`,
+    details: [
+      `서비스: ${service}`,
+      `상태: ${status}`,
+    ],
+    action: action || '모니터링 유지 및 자동 복구 대기',
+  });
 }
 
 /**
  * 🚨 CRITICAL 알림 — 🚨 긴급 Topic + 마스터 DM (sendCritical 경유)
  */
 function sendCriticalAlert({ service, status, impact, taskId }) {
-  const lines = [
-    '🚨 CRITICAL — 서비스 장애',
-    SEP_SINGLE,
-    `서비스: ${service}`,
-    `상태: ${status}`,
-  ];
-  if (impact) lines.push(`영향: ${impact}`);
-  if (taskId) {
-    lines.push(SEP_SINGLE);
-    lines.push('자동 복구: 독터에게 지시 완료');
-    lines.push(`태스크 ID: #${taskId}`);
-  }
-  lines.push(SEP_DOUBLE);
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: 'alert',
-      alert_level: 4,
-      message: lines.join('\n'),
-    },
-  }).then((result) => result.ok);
+  return publishDexterNotice({
+    eventType: 'alert',
+    level: 4,
+    title: '서비스 장애',
+    summary: `${service}에 긴급 대응이 필요합니다`,
+    details: [
+      `서비스: ${service}`,
+      `상태: ${status}`,
+      ...(impact ? [`영향: ${impact}`] : []),
+      ...(taskId ? [`태스크 ID: #${taskId}`] : []),
+    ],
+    action: taskId
+      ? '독터 자동 복구 태스크를 확인하고 후속 조치를 진행'
+      : '긴급 점검 및 복구 경로 확인',
+  });
 }
 
 /**
  * 🚨 Emergency 모드 전환 알림
  */
 function sendEmergencyAlert({ reason }) {
-  const lines = [
-    '🚨 Emergency 모드 전환!',
-    SEP_SINGLE,
-    `원인: ${reason}`,
-    '조치: 덱스터 직접 복구 모드 활성화',
-    SEP_SINGLE,
-    '복귀 시 자동 Normal 전환',
-    SEP_DOUBLE,
-  ];
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: 'alert',
-      alert_level: 4,
-      message: lines.join('\n'),
-    },
-  }).then((result) => result.ok);
+  return publishDexterNotice({
+    eventType: 'alert',
+    level: 4,
+    title: 'Emergency 모드 전환',
+    summary: '덱스터 직접 복구 모드가 활성화되었습니다',
+    details: [
+      `원인: ${reason}`,
+    ],
+    action: '긴급 복구 진행 상황을 확인하고 정상 모드 복귀를 추적',
+    footer: '복구가 완료되면 자동으로 Normal 모드로 전환됩니다.',
+  });
 }
 
 /**
  * ✅ Normal 모드 복귀 알림 — Emergency 해제 후
  */
 function sendNormalModeRestore({ durationMin }) {
-  const lines = [
-    '✅ Normal 모드 복귀',
-    SEP_SINGLE,
-    '클로드 팀장 응답 확인',
-    `Emergency 해제 (${durationMin}분간 유지)`,
-    SEP_DOUBLE,
-  ];
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: 'report',
-      alert_level: 1,
-      message: lines.join('\n'),
-    },
-  }).then((result) => result.ok);
+  return publishDexterNotice({
+    eventType: 'report',
+    level: 1,
+    title: 'Normal 모드 복귀',
+    summary: '클로드 팀장 응답이 정상으로 돌아왔습니다',
+    details: [
+      `Emergency 유지 시간: ${durationMin}분`,
+    ],
+    action: '관찰 유지',
+  });
 }
 
 /**
  * ✅ 복구 완료 알림 — 독터 처리 완료 후
  */
 function sendRecoveryComplete({ service, method, durationSec, taskId }) {
-  const lines = [
-    '✅ 복구 완료',
-    SEP_SINGLE,
-    `서비스: ${service}`,
-    `방법: ${method}`,
-  ];
-  if (durationSec != null) lines.push(`소요: ${durationSec}초`);
-  if (taskId)              lines.push(`태스크 ID: #${taskId}`);
-  lines.push(SEP_DOUBLE);
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: 'report',
-      alert_level: 1,
-      message: lines.join('\n'),
-    },
-  }).then((result) => result.ok);
+  return publishDexterNotice({
+    eventType: 'report',
+    level: 1,
+    title: '복구 완료',
+    summary: `${service} 복구가 완료되었습니다`,
+    details: [
+      `서비스: ${service}`,
+      `방법: ${method}`,
+      ...(durationSec != null ? [`소요: ${durationSec}초`] : []),
+      ...(taskId ? [`태스크 ID: #${taskId}`] : []),
+    ],
+    action: '후속 경고 재발 여부 관찰',
+  });
 }
 
 module.exports = {
