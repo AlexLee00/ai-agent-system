@@ -1024,12 +1024,16 @@ async function monitorBookings() {
               .filter(b => b.phone && b.date && b.start && b.end && b.room)
               .map(b => ({ ...b, _key: toKey(b) }));
             const _seenFlags = await Promise.all(_baseItems.map(b => isSeenId(b._key)));
-            const candidates = _baseItems.filter((_, i) => !_seenFlags[i]);
+            const _existingRows = await Promise.all(_baseItems.map(b => getReservation(b._key)));
+            const candidates = _baseItems.filter((_, i) => !_seenFlags[i] && !_existingRows[i]);
 
             if (candidates.length === 0) {
               log('ℹ️ 신규 후보 없음(이미 처리했거나 파싱 실패)');
             } else {
               log(`✅ 신규 후보 ${candidates.length}건 발견.`);
+
+              const devTestPhone = (process.env.DEV_TEST_PHONE || '01035000586').replace(/\D/g, '');
+              const allowDevPickko = (process.env.DEV_PICKKO_TEST === '1');
               
               // 🆕 신규 예약 감지 알람
               for (const booking of candidates) {
@@ -1037,16 +1041,28 @@ async function monitorBookings() {
                 const state = await updateBookingState(bookingId, booking, 'pending');
 
                 const vipBadge = formatVipBadge(booking.phone);
+                const isDevMode = MODE === 'dev';
+                const isDevTestTarget = allowDevPickko && String(booking.phoneRaw) === devTestPhone;
+                const alertType = isDevMode ? 'info' : 'new';
+                const alertTitle = isDevMode
+                  ? `🧪 DEV 신규 예약 감지${vipBadge ? ' ' + vipBadge.trim() : ''}`
+                  : `🆕 신규 예약 감지!${vipBadge ? ' ' + vipBadge.trim() : ''}`;
+                const alertAction = isDevMode
+                  ? (isDevTestTarget
+                    ? 'DEV 테스트 번호 감지 — Pickko 테스트 실행 대기'
+                    : 'DEV 모드 — 운영 Pickko 자동 등록 건너뜀')
+                  : 'Pickko 자동 등록 준비 중...';
+
                 await sendAlert({
-                  type: 'new',
-                  title: `🆕 신규 예약 감지!${vipBadge ? ' ' + vipBadge.trim() : ''}`,
+                  type: alertType,
+                  title: alertTitle,
                   customer: booking.raw?.name || '고객',
                   phone: booking.phone,
                   date: booking.date,
                   time: `${booking.start}~${booking.end}`,
                   room: booking.room,
                   status: 'pending',
-                  action: 'Pickko 자동 등록 준비 중...'
+                  action: alertAction
                 });
 
                 // 📚 RAG: 신규 예약 저장
@@ -1059,9 +1075,6 @@ async function monitorBookings() {
               // ✅ 실행 조건
               // - DEV: DEV_PICKKO_TEST=1 이고, DEV_TEST_PHONE(기본 01035000586)만 픽코 실행 허용
               // - OPS: PICKKO_ENABLE=1 일 때만 픽코 실행
-              const devTestPhone = (process.env.DEV_TEST_PHONE || '01035000586').replace(/\D/g, '');
-              const allowDevPickko = (process.env.DEV_PICKKO_TEST === '1');
-
               if (MODE === 'dev') {
                 if (!allowDevPickko) {
                   log(`🧷 MODE=dev, DEV_PICKKO_TEST!=1 → 픽코 실행은 건너뜁니다(파싱만 확인).`);
