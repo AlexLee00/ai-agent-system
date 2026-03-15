@@ -3,6 +3,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth-context';
+import AdminQuickNav from '@/components/AdminQuickNav';
 import DataTable from '@/components/DataTable';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { parseClaudeOutput, DynamicCanvas, CANVAS_LABELS } from './canvas';
@@ -1091,6 +1092,8 @@ export default function AIPage() {
 
   return (
     <div className="max-w-7xl space-y-6">
+      <AdminQuickNav />
+
       <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.18),_transparent_36%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] p-6 shadow-[0_18px_60px_-34px_rgba(15,23,42,0.35)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl space-y-3">

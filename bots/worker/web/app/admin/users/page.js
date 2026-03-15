@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import AdminQuickNav from '@/components/AdminQuickNav';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
@@ -160,6 +161,8 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
+      <AdminQuickNav />
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <UserCog className="w-6 h-6 text-indigo-600" />
