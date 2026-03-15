@@ -89,9 +89,24 @@ async function getCredentialId(name) {
 // ── 워크플로우 생성 ────────────────────────────────────────────────────────
 async function createWorkflow(workflow) {
   const list = await request('GET', '/rest/workflows');
-  if (list.body?.data?.find(w => w.name === workflow.name)) {
-    console.log(`  ⏭️  워크플로우 "${workflow.name}" 이미 존재 — 스킵`);
-    return;
+  const existing = list.body?.data?.find(w => w.name === workflow.name);
+
+  if (existing?.id) {
+    const deactivated = await request('POST', `/rest/workflows/${existing.id}/deactivate`);
+    if (deactivated.status === 200) {
+      console.log(`  ⏸️  워크플로우 비활성화: "${workflow.name}" (id: ${existing.id})`);
+    }
+
+    const archived = await request('POST', `/rest/workflows/${existing.id}/archive`);
+    if (archived.status === 200) {
+      console.log(`  📦 워크플로우 아카이브: "${workflow.name}" (id: ${existing.id})`);
+    }
+
+    const deleted = await request('DELETE', `/rest/workflows/${existing.id}`);
+    if (deleted.status !== 200) {
+      throw new Error(`기존 워크플로우 삭제 실패: ${JSON.stringify(deleted.body)}`);
+    }
+    console.log(`  🗑️  기존 워크플로우 삭제: "${workflow.name}" (id: ${existing.id})`);
   }
 
   const r = await request('POST', '/rest/workflows', workflow);
