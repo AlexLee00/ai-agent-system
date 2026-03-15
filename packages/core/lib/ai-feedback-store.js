@@ -257,6 +257,24 @@ async function getFeedbackSessions(pgPool, {
   `, [String(sinceDays), Number(limit)]);
 }
 
+async function getFeedbackDailyStats(pgPool, {
+  schema,
+  sinceDays = 30,
+}) {
+  return pgPool.query(schema, `
+    SELECT
+      TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD') AS day,
+      COUNT(*)::int AS session_count,
+      COUNT(*) FILTER (WHERE feedback_status='committed')::int AS committed_count,
+      COUNT(*) FILTER (WHERE feedback_status='rejected')::int AS rejected_count,
+      COUNT(*) FILTER (WHERE accepted_without_edit=true)::int AS accepted_without_edit_count
+    FROM ${schema}.ai_feedback_sessions
+    WHERE created_at >= NOW() - ($1::text || ' days')::interval
+    GROUP BY DATE_TRUNC('day', created_at)
+    ORDER BY DATE_TRUNC('day', created_at) ASC
+  `, [String(sinceDays)]);
+}
+
 module.exports = {
   ensureAiFeedbackTables,
   createFeedbackSession,
@@ -269,4 +287,5 @@ module.exports = {
   getFeedbackSessionSummary,
   getFeedbackFieldStats,
   getFeedbackSessions,
+  getFeedbackDailyStats,
 };
