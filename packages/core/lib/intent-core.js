@@ -73,6 +73,16 @@ const SAFE_AUTO_PROMOTE_PREFIXES = [
   'worker_query',
 ];
 
+const TEAM_INTENT_META = {
+  luna: { schema: 'investment', title: '루나 인텐트 학습', thresholdTeam: 'luna', learningProfile: 'jay' },
+  ska: { schema: 'ska', title: '스카 인텐트 학습', thresholdTeam: 'ska', learningProfile: 'jay' },
+  claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude', learningProfile: 'jay' },
+};
+
+function getTeamIntentMeta(team = '') {
+  return TEAM_INTENT_META[String(team || '').trim().toLowerCase()] || null;
+}
+
 function normalizeIntentText(text = '') {
   return String(text)
     .toLowerCase()
@@ -532,6 +542,8 @@ module.exports = {
   AUTO_PROMOTE_TEAM_PROFILES,
   SAFE_AUTO_PROMOTE_INTENTS,
   SAFE_AUTO_PROMOTE_PREFIXES,
+  TEAM_INTENT_META,
+  getTeamIntentMeta,
   normalizeIntentText,
   escapeRegex,
   buildAutoLearnPattern,
