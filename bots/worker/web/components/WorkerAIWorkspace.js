@@ -121,6 +121,7 @@ export default function WorkerAIWorkspace({
   title = 'AI 업무 대화',
   description = '자연어로 요청하면 Worker 팀장이 업무를 정리하고 실행으로 연결합니다.',
   suggestions = [],
+  botSuggestionsMap = {},
   allowUpload = true,
   agentName = 'Worker 팀장',
   compact = false,
@@ -171,6 +172,11 @@ export default function WorkerAIWorkspace({
   const availableBots = Array.isArray(botOptions) ? botOptions.filter(Boolean) : [];
   const resolvedSelectedBot = availableBots.find((item) => item.key === selectedBot) || availableBots[0] || null;
   const displayAgentName = resolvedSelectedBot?.label || agentName;
+  const activeSuggestions = (
+    (resolvedSelectedBot?.key && Array.isArray(botSuggestionsMap?.[resolvedSelectedBot.key]) && botSuggestionsMap[resolvedSelectedBot.key].length > 0)
+      ? botSuggestionsMap[resolvedSelectedBot.key]
+      : suggestions
+  ).filter(Boolean);
 
   useEffect(() => {
     api.get('/chat/sessions')
@@ -449,9 +455,9 @@ export default function WorkerAIWorkspace({
               {liveStatus}
             </span>
           </div>
-          {suggestions.length > 0 && (
+          {activeSuggestions.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-4">
-              {suggestions.map(item => (
+              {activeSuggestions.map(item => (
                 <button
                   key={item}
                   onClick={() => sendMessage(item)}
