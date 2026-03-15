@@ -79,6 +79,7 @@
 - dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
 - orchestrator health → reporting payload schema warning 노출
 - reporting health direct view → `/reporting-health`
+- reporting health summary view → `/reporting-health summary`
 - morning briefing extras → reporting payload warning snippet 포함
 
 ## Next Moves

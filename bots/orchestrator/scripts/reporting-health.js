@@ -12,6 +12,8 @@ const {
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
 
+const SUMMARY_MODE = process.argv.includes('--summary');
+
 function buildPayloadHealth(summary) {
   if (!summary || summary.count === 0) {
     return {
@@ -37,6 +39,34 @@ function buildPayloadHealth(summary) {
   };
 }
 
+function buildSummaryLines(report) {
+  if (report.payloadHealth.warnCount === 0) {
+    return [
+      '🧾 reporting 파이프라인 요약',
+      '',
+      '✅ 최근 24시간 payload 스키마 경고가 없습니다.',
+      '',
+      '상세: /reporting-health',
+    ].join('\n');
+  }
+
+  const lines = [
+    '🧾 reporting 파이프라인 요약',
+    '',
+    `최근 24시간 payload 경고 ${report.payloadHealth.warnCount}건`,
+  ];
+  for (const producer of report.topProducers) {
+    lines.push(producer);
+  }
+  if (report.latestLine) {
+    lines.push('');
+    lines.push(report.latestLine);
+  }
+  lines.push('');
+  lines.push('상세: /reporting-health');
+  return lines.join('\n');
+}
+
 function buildActionLines(report) {
   if (report.payloadHealth.warnCount === 0) {
     return ['  - 현재는 관찰 유지. 상세 확인이 필요하면 /orchestrator-health 참고'];
@@ -48,6 +78,9 @@ function buildActionLines(report) {
 }
 
 function formatText(report) {
+  if (report.mode === 'summary') {
+    return buildSummaryLines(report);
+  }
   return buildHealthReport({
     title: '🧾 reporting 파이프라인 헬스 리포트',
     sections: [
@@ -75,6 +108,9 @@ async function buildReport() {
   const entries = getRecentPayloadWarnings({ withinHours: 24, limit: 50 });
   const summary = summarizePayloadWarnings(entries);
   const payloadHealth = buildPayloadHealth(summary);
+  const latestWarning = Array.isArray(summary.latest?.warnings) && summary.latest.warnings.length > 0
+    ? summary.latest.warnings.join(', ')
+    : 'latest_unknown';
   const decision = buildHealthDecision({
     warnings: [
       {
@@ -87,7 +123,12 @@ async function buildReport() {
   });
 
   return {
+    mode: SUMMARY_MODE ? 'summary' : 'full',
     payloadHealth,
+    topProducers: summary.topProducers,
+    latestLine: summary.latest
+      ? `최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`
+      : '',
     decision,
   };
 }
