@@ -29,6 +29,7 @@ const kst      = _require('../../../packages/core/lib/kst');
 const {
   publishEventPipeline,
   buildNoticeEvent,
+  buildEventPayload,
   renderNoticeEvent,
   buildReportEvent,
   renderReportEvent,
@@ -400,6 +401,12 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
             details: detailLines,
             action: '자동 변경 없이 마스터 승인 후 반영',
           })),
+          payload: buildEventPayload({
+            title: '분석팀 가중치 조정 제안',
+            summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
+            details: detailLines,
+            action: '자동 변경 없이 마스터 승인 후 반영',
+          }),
         },
         targets: [
           { type: 'queue', pgPool, schema: 'claude' },
@@ -450,6 +457,16 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
         event_type: 'report',
         alert_level: 1,
         message: reportMessage,
+        payload: buildEventPayload({
+          title: '루나팀 투자 리포트',
+          summary: `기준: ${kstStr()} | 최근 ${days}일`,
+          details: [
+            `총 신호: ${sigTotal}개`,
+            `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
+            `총 자산(추정): $${equity.toFixed(2)}`,
+          ],
+          action: '상세 원문은 콘솔 출력 리포트를 참고',
+        }),
       },
       targets: [
         { type: 'queue', pgPool, schema: 'claude' },

@@ -43,6 +43,7 @@
 
 - [packages/core/lib/reporting-hub.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.js)
   - event normalization
+  - payload normalization (`title/summary/details/action/links`)
   - queue publish
   - telegram publish
   - rag publish
@@ -73,6 +74,7 @@
 - blog health-check alerts → severity 기반 telegram/n8n 라우팅
 - orchestrator batch formatter → 공용 notice/snippet 서식 정렬
 - orchestrator queue consumer → payload headline/detail 우선 사용
+- dexter/luna producer payload → 표준 `title/summary/details/action` 키 적용 시작
 
 ## Next Moves
 

@@ -67,6 +67,19 @@
 }
 ```
 
+권장 `payload` 표준 키:
+
+```js
+{
+  title,      // 짧은 제목
+  summary,    // 한 줄 요약
+  details,    // 상세 라인 배열
+  action,     // 권장 조치
+  links,      // [{ label, href }]
+  detail      // 단일 상세 문자열 (legacy 호환)
+}
+```
+
 그리고 허브가
 - queue
 - telegram
