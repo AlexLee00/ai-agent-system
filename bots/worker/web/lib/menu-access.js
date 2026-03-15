@@ -1,6 +1,6 @@
 'use client';
 
-function resolveMenuKey(key = '') {
+export function resolveMenuKey(key = '') {
   const path = String(key || '').replace(/^\//, '');
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0) return '';

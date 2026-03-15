@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
 import Modal from '@/components/Modal';
 import { canPerformMenuOperation } from '@/lib/menu-access';
@@ -248,17 +247,6 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-4">
-      <WorkerAIWorkspace
-        menuKey="attendance"
-        title="근태 AI 업무대화"
-        description={isMember
-          ? '출근과 퇴근을 자연어로 입력하고 확인 결과를 승인할 수 있습니다.'
-          : '출근 현황, 휴가, 직원 요청을 대화로 처리하고 결과를 캔버스에서 바로 확인합니다.'}
-        suggestions={isMember
-          ? ['출근했어요', '퇴근합니다', '오늘 내 근태 보여줘']
-          : ['오늘 근태 현황 보여줘', '오늘 출근 안 한 직원 알려줘', '이번 주 휴가자 정리해줘']}
-        allowUpload
-      />
       <h1 className="text-xl font-bold text-gray-900">⏰ 근태 관리</h1>
 
       <div className="card space-y-4">

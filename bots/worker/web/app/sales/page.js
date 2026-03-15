@@ -7,7 +7,6 @@ import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
@@ -160,13 +159,6 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-4">
-      <WorkerAIWorkspace
-        menuKey="sales"
-        title="매출 AI 업무대화"
-        description="매출 요약, 분석 요청, 보고서 초안을 대화형으로 만들고 업무 큐로 넘길 수 있습니다."
-        suggestions={['오늘 매출 요약해줘', '지난주 대비 매출 분석해줘', '이번 달 보고서 초안 만들어줘']}
-        allowUpload
-      />
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">💰 매출 관리</h1>
         <button className="btn-primary text-sm" onClick={openModal} disabled={!canCreateSales}>

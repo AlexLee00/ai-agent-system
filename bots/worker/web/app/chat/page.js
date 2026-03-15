@@ -1,20 +1,13 @@
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
-
-const SUGGESTIONS = [
-  '오늘 일정 보여줘',
-  '내일 오전 10시 김대리 업체 미팅 잡아줘',
-  '이번 주 매출 요약해줘',
-  '직원 목록 보여줘',
-];
-
 export default function WorkerChatPage() {
   return (
-    <WorkerAIWorkspace
-      menuKey="chat"
-      title="AI 업무 대화"
-      description="Worker 팀장과 자연어로 대화하며 업무를 등록하고 실행 흐름으로 연결합니다."
-      suggestions={SUGGESTIONS}
-      allowUpload
-    />
+    <div className="space-y-4">
+      <section className="card bg-white">
+        <h1 className="text-xl font-bold text-slate-900">AI 업무 대화</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          상단 공용 프롬프트 창에서 하나의 입력으로 모든 업무를 시작합니다.
+          이 화면에서는 최근 대화 결과와 처리 흐름을 확인하면 됩니다.
+        </p>
+      </section>
+    </div>
   );
 }
