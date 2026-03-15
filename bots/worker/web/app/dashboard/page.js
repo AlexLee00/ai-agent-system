@@ -31,18 +31,25 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
+  const [alerts,       setAlerts]       = useState(null);
   const [salesData,    setSalesData]    = useState([]);
   const [monthlyData,  setMonthlyData]  = useState([]);
   const [activity,     setActivity]     = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
+  const isMember = user?.role === 'member';
 
   useEffect(() => {
-    Promise.all([
+    const requests = [
       api.get('/dashboard/summary').catch(() => null),
       api.get('/sales/summary').catch(() => null),
       api.get('/activity').catch(() => null),
-    ]).then(([sum, sales, act]) => {
+      canUsePromptWorkspace ? api.get('/dashboard/alerts').catch(() => null) : Promise.resolve(null),
+    ];
+
+    Promise.all(requests).then(([sum, sales, act, alertData]) => {
       if (sum) setSummary(sum);
+      if (alertData) setAlerts(alertData);
       if (sales?.weekly) {
         const map = Object.fromEntries((sales.weekly).map(r => [r.date.slice(0,10), Number(r.total)]));
         const rows = [];
@@ -65,12 +72,9 @@ export default function DashboardPage() {
       }
       if (act?.activities) setActivity(act.activities);
     }).finally(() => setLoading(false));
-  }, []);
+  }, [canUsePromptWorkspace]);
 
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
-
-  const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
-  const isMember = user?.role === 'member';
 
   const quickLinks = [
     { label: '근태 확인', desc: '오늘 출근 인원과 상태를 확인합니다.', href: '/attendance' },
@@ -78,6 +82,8 @@ export default function DashboardPage() {
     { label: '업무 관리', desc: 'AI 대화와 문서 업로드를 시작합니다.', href: '/journals' },
     { label: '매출 입력', desc: '오늘 매출과 주간 흐름을 바로 기록합니다.', href: '/sales' },
   ];
+  const uncheckedPreview = alerts?.unchecked_in_preview || [];
+  const upcomingSchedules = alerts?.upcoming_schedules || [];
 
   return (
     <div className="space-y-6">
@@ -140,6 +146,68 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {canUsePromptWorkspace && (
+        <section className="grid gap-4 xl:grid-cols-3">
+          <div className="card bg-white">
+            <p className="text-sm font-medium text-slate-500">출근까지 남은 시간</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {alerts?.minutes_until_checkin > 0 ? `${alerts.minutes_until_checkin}분` : '도래'}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">기준 출근 시각 09:00</p>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-500">아직 출근하지 않은 직원</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.unchecked_in_count ?? 0}명</p>
+              </div>
+              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/attendance')}>
+                근태 열기
+              </button>
+            </div>
+            {uncheckedPreview.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {uncheckedPreview.map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                    <p className="text-xs text-slate-500">{item.department || '부서 미지정'} · {item.position || '직급 미지정'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-emerald-600">오늘 기준 미출근 직원이 없습니다.</p>
+            )}
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-500">가까운 일정 / 승인</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.pending_approvals ?? 0}건</p>
+              </div>
+              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/approvals')}>
+                승인 열기
+              </button>
+            </div>
+            {upcomingSchedules.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {upcomingSchedules.map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
+                    <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                    <p className="text-xs text-slate-500">
+                      {new Date(item.start_time).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · {item.type || 'task'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">가까운 일정이 없습니다.</p>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">

@@ -214,7 +214,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false,
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => (
+    req.path === '/api/health'
+    || req.path === '/api/auth/me'
+    || req.path === '/api/auth/login'
+  ),
   handler: (req, res) => res.status(429).json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.', code: 'RATE_LIMIT' }),
 });
 app.use('/api/', limiter);
@@ -2167,6 +2175,58 @@ app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) =
       today_schedules:   Number(schedulesRow?.cnt   ?? 0),
     });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), companyFilter, async (req, res) => {
+  try {
+    const [pendingApprovalsRow, uncheckedRows, upcomingSchedules] = await Promise.all([
+      pgPool.get(SCHEMA,
+        `SELECT COUNT(*) AS cnt FROM worker.approval_requests
+         WHERE company_id=$1 AND status='pending' AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT e.id, e.name, e.department, e.position
+         FROM worker.employees e
+         LEFT JOIN worker.attendance a
+           ON a.employee_id=e.id
+          AND a.company_id=e.company_id
+          AND a.date=CURRENT_DATE
+         WHERE e.company_id=$1
+           AND e.deleted_at IS NULL
+           AND COALESCE(e.status, 'active')='active'
+           AND a.check_in IS NULL
+         ORDER BY e.name ASC
+         LIMIT 5`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT id, title, start_time, type
+         FROM worker.schedules
+         WHERE company_id=$1
+           AND deleted_at IS NULL
+           AND start_time >= NOW()
+           AND start_time < NOW() + INTERVAL '6 hours'
+         ORDER BY start_time ASC
+         LIMIT 3`,
+        [req.companyId]),
+    ]);
+
+    const nowKst = kst.now();
+    const [hourStr = '0', minuteStr = '0'] = nowKst.time.split(':');
+    const nowMinutes = (Number(hourStr) * 60) + Number(minuteStr);
+    const workdayStartMinutes = 9 * 60;
+    const minutesUntilCheckIn = Math.max(workdayStartMinutes - nowMinutes, 0);
+
+    res.json({
+      pending_approvals: Number(pendingApprovalsRow?.cnt ?? 0),
+      unchecked_in_count: uncheckedRows.length,
+      unchecked_in_preview: uncheckedRows,
+      minutes_until_checkin: minutesUntilCheckIn,
+      upcoming_schedules: upcomingSchedules,
+      generated_at: new Date().toISOString(),
+    });
+  } catch {
+    res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 // ── 최근 활동 피드 ────────────────────────────────────────────────────
