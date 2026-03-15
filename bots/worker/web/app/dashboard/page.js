@@ -141,6 +141,10 @@ export default function DashboardPage() {
             ]}
             allowUpload={false}
             agentName={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
+            compact
+            showCanvasPanel={false}
+            showQueuePanel={false}
+            showMasterSignalsPanel={false}
           />
         </section>
       )}

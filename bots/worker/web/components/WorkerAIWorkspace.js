@@ -123,6 +123,10 @@ export default function WorkerAIWorkspace({
   suggestions = [],
   allowUpload = true,
   agentName = 'Worker 팀장',
+  compact = false,
+  showCanvasPanel,
+  showQueuePanel,
+  showMasterSignalsPanel,
 }) {
   const { user } = useAuth();
   const [agentTasks, setAgentTasks] = useState([]);
@@ -144,9 +148,12 @@ export default function WorkerAIWorkspace({
   const llmMode = aiPolicy?.llm_mode || 'assist';
   const roleProfile = aiPolicy?.role_profile || (user?.role === 'master' ? 'master' : user?.role === 'admin' ? 'admin' : 'member');
   const promptEnabled = menuPolicy?.prompt_enabled !== false;
-  const showCanvas = uiMode !== 'prompt_only' && menuPolicy?.result_canvas_enabled !== false;
-  const showQueue = uiMode !== 'prompt_only' && menuPolicy?.result_canvas_enabled !== false;
-  const showMasterSignals = uiMode === 'full_master_console';
+  const defaultShowCanvas = uiMode !== 'prompt_only' && menuPolicy?.result_canvas_enabled !== false;
+  const showCanvas = typeof showCanvasPanel === 'boolean' ? showCanvasPanel : defaultShowCanvas;
+  const showQueue = typeof showQueuePanel === 'boolean' ? showQueuePanel : defaultShowCanvas;
+  const showMasterSignals = typeof showMasterSignalsPanel === 'boolean'
+    ? showMasterSignalsPanel
+    : uiMode === 'full_master_console';
   const uploadEnabled = allowUpload && promptEnabled;
   const promptPlaceholder = llmMode === 'off'
     ? '정형 업무를 자연어로 입력하세요. 예: 오늘 일정 보여줘'
@@ -377,7 +384,7 @@ export default function WorkerAIWorkspace({
   return (
     !promptEnabled ? null :
     <section className={`grid gap-5 ${showCanvas ? 'grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]' : 'grid-cols-1'}`}>
-      <div className="card min-h-[36rem] flex flex-col bg-white/95 backdrop-blur-sm">
+      <div className={`card flex flex-col bg-white/95 backdrop-blur-sm ${compact ? 'min-h-[28rem]' : 'min-h-[36rem]'}`}>
         <div className="border-b border-slate-200 pb-4 mb-4">
           <div className="flex items-start justify-between gap-4">
             <div>
