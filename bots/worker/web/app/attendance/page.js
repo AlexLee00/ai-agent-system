@@ -5,6 +5,7 @@ import DataTable from '@/components/DataTable';
 import { useAuth } from '@/lib/auth-context';
 import Modal from '@/components/Modal';
 import { canPerformMenuOperation } from '@/lib/menu-access';
+import PendingReviewSection from '@/components/PendingReviewSection';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -411,20 +412,12 @@ export default function AttendancePage() {
       </div>
 
       {(proposal || leaveProposal) && (
-        <div className="card space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">확인 및 승인 대기 리스트</p>
-              <h2 className="text-lg font-semibold text-slate-900 mt-1">입력 결과를 아래 항목에서 검토하세요</h2>
-              <p className="text-sm text-slate-600 mt-1">
-                프롬프트 입력은 위에서 한 번만 하고, 실제 확정/신청/반려는 아래 처리 리스트에서 진행합니다.
-              </p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {proposal && leaveProposal ? '2건 대기 중' : '1건 대기 중'}
-            </span>
-          </div>
-
+        <PendingReviewSection
+          title="확인 및 승인 대기 리스트"
+          description="프롬프트 입력은 위에서 한 번만 하고, 실제 확정/신청/반려는 아래 처리 리스트에서 진행합니다."
+          hasPending={Boolean(proposal || leaveProposal)}
+          badgeLabel={proposal && leaveProposal ? '2건 대기 중' : '1건 대기 중'}
+        >
           <div className="space-y-3">
             {proposal && (
               <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-4">
@@ -688,7 +681,7 @@ export default function AttendancePage() {
               </div>
             )}
           </div>
-        </div>
+        </PendingReviewSection>
       )}
 
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="근태 기록 수정">
