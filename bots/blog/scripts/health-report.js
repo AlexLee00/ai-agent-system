@@ -15,7 +15,10 @@ const {
   buildServiceRows,
   buildHttpChecks,
   buildFileActivityHealth,
+  checkHttp,
+  checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
+const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -23,6 +26,8 @@ const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const BLOG_ROOT = path.join(__dirname, '..');
 const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
 const DAILY_LOG_STALE_MS = 36 * 60 * 60 * 1000;
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
+const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 
 async function buildNodeHealth() {
   const checks = await buildHttpChecks([
@@ -64,7 +69,49 @@ function buildDailyRunHealth() {
   });
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth) {
+async function buildN8nPipelineHealth() {
+  const ok = [];
+  const warn = [];
+  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 2500);
+  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+    workflowName: '블로그팀 동적 포스팅',
+    method: 'POST',
+    pathSuffix: 'blog-pipeline',
+  });
+  const webhookUrl = resolvedWebhookUrl || DEFAULT_BLOG_WEBHOOK_URL;
+  const webhook = await checkWebhookRegistration(webhookUrl, {
+    postType: 'general',
+    sessionId: 'n8n-blog-health-probe',
+    pipeline: ['weather'],
+    variations: {},
+  }, {
+    timeoutMs: 5000,
+  });
+
+  if (n8nHealthy) ok.push('  n8n healthz: 정상');
+  else warn.push('  n8n healthz: 응답 없음');
+
+  if (!webhook.healthy) {
+    warn.push(`  blog pipeline webhook: 미도달 (${webhook.error || webhook.reason})`);
+  } else if (!webhook.registered) {
+    warn.push(`  blog pipeline webhook: 미등록 (${webhook.reason}, status ${webhook.status})`);
+  } else {
+    ok.push(`  blog pipeline webhook: 등록됨 (${webhook.reason}, status ${webhook.status})`);
+  }
+
+  return {
+    ok,
+    warn,
+    n8nHealthy,
+    webhookRegistered: webhook.registered,
+    webhookReason: webhook.reason,
+    webhookStatus: webhook.status,
+    webhookUrl,
+    resolvedWebhookUrl,
+  };
+}
+
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -82,6 +129,16 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth) {
         level: 'medium',
         reason: 'daily run 로그 활동성이 오래돼 최근 자동 실행 상태 확인이 필요합니다.',
       },
+      {
+        active: !n8nPipelineHealth.n8nHealthy,
+        level: 'medium',
+        reason: 'n8n healthz 응답이 없어 블로 pipeline 워크플로우 경로를 사용할 수 없습니다.',
+      },
+      {
+        active: n8nPipelineHealth.n8nHealthy && !n8nPipelineHealth.webhookRegistered,
+        level: 'medium',
+        reason: `n8n은 살아 있지만 blog pipeline webhook이 미등록 상태입니다 (${n8nPipelineHealth.webhookReason}).`,
+      },
     ],
     okReason: '블로팀 실행기와 daily run 상태가 현재는 안정 구간입니다.',
   });
@@ -94,6 +151,7 @@ function formatText(report) {
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
+      buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
       {
         title: null,
@@ -120,7 +178,8 @@ async function buildReport() {
   });
   const nodeHealth = await buildNodeHealth();
   const dailyRunHealth = buildDailyRunHealth();
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth);
+  const n8nPipelineHealth = await buildN8nPipelineHealth();
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth);
 
   return {
     serviceHealth: {
@@ -141,6 +200,17 @@ async function buildReport() {
       ok: dailyRunHealth.ok,
       warn: dailyRunHealth.warn,
       minutesAgo: dailyRunHealth.minutesAgo,
+    },
+    n8nPipelineHealth: {
+      okCount: n8nPipelineHealth.ok.length,
+      warnCount: n8nPipelineHealth.warn.length,
+      ok: n8nPipelineHealth.ok,
+      warn: n8nPipelineHealth.warn,
+      webhookRegistered: n8nPipelineHealth.webhookRegistered,
+      webhookReason: n8nPipelineHealth.webhookReason,
+      webhookStatus: n8nPipelineHealth.webhookStatus,
+      webhookUrl: n8nPipelineHealth.webhookUrl,
+      resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
     },
     decision,
   };

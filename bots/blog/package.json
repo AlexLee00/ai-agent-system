@@ -7,6 +7,7 @@
   "scripts": {
     "daily": "node scripts/run-daily.js",
     "setup:n8n": "node n8n/setup-blog-workflows.js",
+    "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.js",
     "seed-curriculum": "node scripts/seed-curriculum.js",
     "seed-curriculum:dry": "node scripts/seed-curriculum.js --dry-run"
   },
