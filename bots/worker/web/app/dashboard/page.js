@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
+import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
+import { useAuth } from '@/lib/auth-context';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 
@@ -26,6 +28,7 @@ function timeAgo(ts) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
   const [salesData,    setSalesData]    = useState([]);
@@ -66,6 +69,9 @@ export default function DashboardPage() {
 
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
 
+  const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
+  const isMember = user?.role === 'member';
+
   const quickLinks = [
     { label: '근태 확인', desc: '오늘 출근 인원과 상태를 확인합니다.', href: '/attendance' },
     { label: '일정 등록', desc: '회의와 리마인더를 바로 추가합니다.', href: '/schedules' },
@@ -75,6 +81,19 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {canUsePromptWorkspace && (
+        <WorkerAIWorkspace
+          title={user?.role === 'master' ? '마스터 대시보드 업무대화' : '관리자 대시보드 업무대화'}
+          description={user?.role === 'master'
+            ? '왼쪽 프롬프트창에서 자연어로 지시하고, 오른쪽 결과창에서 동적 캔버스와 최근 업무 큐를 확인합니다.'
+            : '왼쪽 프롬프트창에서 운영 요청을 입력하고, 오른쪽 결과창에서 동적 렌더링과 처리 결과를 확인합니다.'}
+          suggestions={user?.role === 'master'
+            ? ['오늘 운영 현황 요약해줘', '미승인 업무 보여줘', '이번 주 매출 흐름 정리해줘']
+            : ['오늘 미출근 직원 보여줘', '오늘 일정 요약해줘', '대기 승인 업무 보여줘']}
+          allowUpload={false}
+        />
+      )}
+
       <section className="card overflow-hidden bg-gradient-to-br from-white to-slate-100/80">
         <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-3">
@@ -82,12 +101,18 @@ export default function DashboardPage() {
               <p className="text-sm font-medium text-slate-500">오늘의 운영 요약</p>
               <h1 className="text-2xl font-semibold text-slate-900 mt-1">워커 운영 대시보드</h1>
               <p className="text-sm text-slate-500 mt-2">
-                AI 업무대화, 승인 흐름, 매출과 일정 상태를 한 번에 확인할 수 있습니다.
+                {isMember
+                  ? '내 업무와 운영 내역을 읽기 전용으로 빠르게 확인할 수 있습니다.'
+                  : '프롬프트 입력과 운영 요약, 매출과 일정 상태를 한 번에 확인할 수 있습니다.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>업무 관리 열기</button>
-              <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>일정 관리 열기</button>
+              <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>
+                {isMember ? '업무 내역 열기' : '업무 관리 열기'}
+              </button>
+              <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>
+                일정 관리 열기
+              </button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -144,7 +169,7 @@ export default function DashboardPage() {
         <Card
           title="대기 승인"
           value={`${summary?.pending_approvals ?? 0}건`}
-          subtitle="승인 관리로 이동"
+          subtitle={isMember ? '운영 참고용' : '승인 관리로 이동'}
           icon="✅"
           color="red"
           onClick={() => router.push('/approvals')}
