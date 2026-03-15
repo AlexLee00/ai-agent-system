@@ -101,6 +101,12 @@ export default function ProjectDetailPage() {
   const [loading, setLoading]     = useState(true);
   const [status,  setStatus]      = useState('');
   const [saving,  setSaving]      = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    start_date: '',
+    end_date: '',
+  });
 
   const load = async () => {
     try {
@@ -110,6 +116,12 @@ export default function ProjectDetailPage() {
       ]);
       setProject(pRes.project);
       setStatus(pRes.project?.status || '');
+      setForm({
+        name: pRes.project?.name || '',
+        description: pRes.project?.description || '',
+        start_date: pRes.project?.start_date?.slice(0, 10) || '',
+        end_date: pRes.project?.end_date?.slice(0, 10) || '',
+      });
       setMsls(mRes.milestones || []);
     } catch (e) {
       alert(e.message);
@@ -129,6 +141,29 @@ export default function ProjectDetailPage() {
     finally { setSaving(false); }
   };
 
+  const saveProject = async () => {
+    setSaving(true);
+    try {
+      const res = await api.put(`/projects/${id}`, {
+        name: form.name,
+        description: form.description,
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
+      });
+      setProject((prev) => ({ ...prev, ...res.project }));
+      alert('프로젝트 정보를 저장했습니다.');
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteProject = async () => {
+    if (!confirm('프로젝트를 삭제하시겠습니까?')) return;
+    try {
+      await api.delete(`/projects/${id}`);
+      router.push('/projects');
+    } catch (e) { alert(e.message); }
+  };
+
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
   if (!project) return null;
 
@@ -145,6 +180,25 @@ export default function ProjectDetailPage() {
 
       <div className="card space-y-4">
         <h1 className="text-xl font-bold text-gray-900">{project.name}</h1>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium text-gray-700">프로젝트명</span>
+            <input className="input-base" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
+          </label>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-sm font-medium text-gray-700">설명</span>
+            <textarea className="input-base min-h-[88px]" value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">시작일</span>
+            <input type="date" className="input-base" value={form.start_date} onChange={(e) => setForm((prev) => ({ ...prev, start_date: e.target.value }))} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">마감일</span>
+            <input type="date" className="input-base" value={form.end_date} onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))} />
+          </label>
+        </div>
 
         {/* 프로젝트 상태 변경 */}
         <div>
@@ -182,6 +236,15 @@ export default function ProjectDetailPage() {
         {project.end_date && (
           <p className="text-sm text-gray-500">📅 마감: {project.end_date.slice(0, 10)}</p>
         )}
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          <button type="button" className="btn-primary" onClick={saveProject} disabled={saving || !form.name.trim()}>
+            {saving ? '저장 중...' : '프로젝트 저장'}
+          </button>
+          <button type="button" className="btn-danger" onClick={deleteProject} disabled={saving}>
+            삭제
+          </button>
+        </div>
       </div>
 
       {/* 마일스톤 */}

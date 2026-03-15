@@ -59,6 +59,10 @@ const {
   buildSalesProposal,
   normalizeSalesProposal,
 } = require('../lib/sales-ai');
+const {
+  buildProjectProposal,
+  normalizeProjectProposal,
+} = require('../lib/project-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -2074,6 +2078,105 @@ app.post('/api/projects',
   }
 );
 
+app.post('/api/projects/proposals', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildProjectProposal({ prompt });
+    const sourceRefId = `project-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'project_prompt',
+      sourceRefType: 'project_proposal',
+      sourceRefId,
+      flowCode: 'project_create',
+      actionCode: 'create_project',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.summary,
+      aiInputPayload: {
+        prompt,
+        name: proposal.name,
+      },
+      aiOutputType: 'project_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'project_create',
+      actionCode: 'create_project',
+      query: `${prompt || proposal.summary} ${proposal.name}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '프로젝트 제안을 생성하지 못했습니다.', code: 'PROJECT_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/projects/proposals/:id/confirm', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '프로젝트 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizeProjectProposal(req.body.proposal || session.original_snapshot_json || {});
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'project_confirm' },
+    });
+    const row = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.projects (company_id, name, description, status, start_date, end_date)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [req.companyId, proposal.name, proposal.description || null, proposal.status || 'planning', proposal.start_date || null, proposal.end_date || null]);
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'project_confirm', project_id: row.id },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      project_id: row.id,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'project_confirm', project_id: row.id },
+    });
+    res.json({ ok: true, project: row, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '프로젝트 확정 처리 중 오류가 발생했습니다.', code: 'PROJECT_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/projects/proposals/:id/reject', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '프로젝트 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'project_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '프로젝트 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
 app.get('/api/projects/:id', requireAuth, companyFilter, async (req, res) => {
   try {
     const row = await pgPool.get(SCHEMA,
@@ -2087,7 +2190,7 @@ app.get('/api/projects/:id', requireAuth, companyFilter, async (req, res) => {
 });
 
 app.put('/api/projects/:id',
-  requireAuth, companyFilter, requireRole('master','admin'), auditLog('UPDATE', 'projects'),
+  requireAuth, companyFilter, auditLog('UPDATE', 'projects'),
   body('name').optional().trim().notEmpty(),
   async (req, res) => {
     if (!validate(req, res)) return;
@@ -2109,7 +2212,7 @@ app.put('/api/projects/:id',
   }
 );
 
-app.delete('/api/projects/:id', requireAuth, requireRole('master','admin'), auditLog('DELETE', 'projects'), async (req, res) => {
+app.delete('/api/projects/:id', requireAuth, companyFilter, auditLog('DELETE', 'projects'), async (req, res) => {
   try {
     await pgPool.run(SCHEMA,
       `UPDATE worker.projects SET deleted_at=NOW() WHERE id=$1 AND company_id=$2`,
