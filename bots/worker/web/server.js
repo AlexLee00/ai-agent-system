@@ -43,6 +43,10 @@ const {
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
 const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
+const {
+  buildScheduleProposal,
+  normalizeScheduleProposal,
+} = require('../lib/schedule-ai');
 const { callLLM, callLLMWithFallback } = require('../lib/ai-client');
 const { buildSQLPrompt, buildSummaryPrompt, extractSQL, isSelectOnly, isSafeQuestion, hasOnlyAllowedTables, hasCompanyFilter } = require('../lib/ai-helper');
 const {
@@ -1884,6 +1888,120 @@ app.post('/api/schedules',
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
+
+app.post('/api/schedules/proposals', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const fallbackType = String(req.body.type || '').trim();
+    const proposal = buildScheduleProposal({
+      prompt,
+      fallbackType,
+      now: new Date(),
+    });
+    const sourceRefId = `schedule-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'schedule_prompt',
+      sourceRefType: 'schedule_proposal',
+      sourceRefId,
+      flowCode: 'schedule_create',
+      actionCode: 'create_schedule',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.title,
+      aiInputPayload: {
+        prompt,
+        type: fallbackType || proposal.type,
+      },
+      aiOutputType: 'schedule_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'schedule_create',
+      actionCode: 'create_schedule',
+      query: `${prompt || proposal.summary} ${proposal.title} ${proposal.type}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '일정 제안을 생성하지 못했습니다.', code: 'SCHEDULE_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/schedules/proposals/:id/confirm', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '일정 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizeScheduleProposal(req.body.proposal || session.original_snapshot_json || {});
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'schedule_confirm' },
+    });
+    const employeeId = await getEmployeeIdForRequest(req);
+    const row = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.schedules
+         (company_id, title, description, type, start_time, end_time, all_day,
+          location, attendees, recurrence, reminder, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [req.companyId, proposal.title, proposal.description || null, proposal.type || 'task',
+        proposal.start_time, proposal.end_time || null, proposal.all_day || false,
+        proposal.location || null, JSON.stringify(proposal.attendees || []),
+        proposal.recurrence || null, proposal.reminder ?? 30, employeeId]);
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'schedule_confirm', schedule_id: row.id },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      schedule_id: row.id,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'schedule_confirm', schedule_id: row.id },
+    });
+    rag.store('rag_schedule',
+      `[일정] ${proposal.title} | ${proposal.start_time}${proposal.end_time ? `~${proposal.end_time}` : ''} | ${proposal.type || 'task'}`,
+      { company_id: req.companyId, schedule_id: row.id, type: proposal.type || 'task' }, 'chloe'
+    ).catch(() => {});
+    res.json({ ok: true, schedule: row, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '일정 확정 처리 중 오류가 발생했습니다.', code: 'SCHEDULE_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/schedules/proposals/:id/reject', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '일정 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'schedule_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '일정 제안을 반려하지 못했습니다.', code: 'SCHEDULE_REJECT_FAILED' });
+  }
+});
 
 app.put('/api/schedules/:id',
   requireAuth, companyFilter, auditLog('UPDATE', 'schedules'),
