@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const { runWithN8nFallback } = require('./n8n-runner');
 
 const ALERT_LEVEL_LABELS = {
@@ -18,6 +19,79 @@ const ALERT_LEVEL_ICONS = {
 
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
+const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
+const MAX_WARNING_LOG_BYTES = 512 * 1024;
+
+function appendPayloadWarning(entry) {
+  try {
+    if (fs.existsSync(PAYLOAD_WARNING_LOG)) {
+      const stat = fs.statSync(PAYLOAD_WARNING_LOG);
+      if (stat.size > MAX_WARNING_LOG_BYTES) {
+        fs.truncateSync(PAYLOAD_WARNING_LOG, 0);
+      }
+    }
+    fs.appendFileSync(PAYLOAD_WARNING_LOG, `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[reporting-hub] payload warning log failed: ${error.message}`);
+  }
+}
+
+function recordPayloadWarnings(event, warnings) {
+  if (!Array.isArray(warnings) || warnings.length === 0) return;
+  appendPayloadWarning({
+    ts: new Date().toISOString(),
+    from_bot: String(event?.from_bot || 'unknown'),
+    team: String(event?.team || 'general'),
+    event_type: String(event?.event_type || 'report'),
+    alert_level: Number.isFinite(Number(event?.alert_level)) ? Number(event.alert_level) : 2,
+    warnings,
+  });
+}
+
+function getRecentPayloadWarnings({
+  limit = 50,
+  withinHours = 24,
+} = {}) {
+  try {
+    if (!fs.existsSync(PAYLOAD_WARNING_LOG)) return [];
+    const minTs = Date.now() - (withinHours * 60 * 60 * 1000);
+    const raw = fs.readFileSync(PAYLOAD_WARNING_LOG, 'utf8').trim();
+    if (!raw) return [];
+    const lines = raw.split('\n');
+    const entries = [];
+    for (let index = lines.length - 1; index >= 0 && entries.length < limit; index -= 1) {
+      try {
+        const parsed = JSON.parse(lines[index]);
+        const ts = Date.parse(parsed.ts || '');
+        if (!Number.isFinite(ts) || ts < minTs) continue;
+        entries.push(parsed);
+      } catch {
+        continue;
+      }
+    }
+    return entries.reverse();
+  } catch (error) {
+    console.warn(`[reporting-hub] payload warning read failed: ${error.message}`);
+    return [];
+  }
+}
+
+function summarizePayloadWarnings(entries = []) {
+  const producerCounts = new Map();
+  for (const entry of entries) {
+    const key = `${entry.team || 'general'}/${entry.from_bot || 'unknown'}`;
+    producerCounts.set(key, (producerCounts.get(key) || 0) + 1);
+  }
+  const topProducers = [...producerCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([producer, count]) => `  ${producer}: ${count}건`);
+  return {
+    count: entries.length,
+    topProducers,
+    latest: entries.length > 0 ? entries[entries.length - 1] : null,
+  };
+}
 
 function validatePayloadSchema(payload = null) {
   if (payload == null) {
@@ -194,14 +268,20 @@ function normalizeEvent({
   message = '',
   payload = null,
 } = {}) {
-  return {
+  const validated = validatePayloadSchema(payload);
+  if (validated.warnings.length > 0) {
+    console.warn(`[reporting-hub] payload normalized with warnings: ${validated.warnings.join(', ')}`);
+  }
+  const normalized = {
     from_bot: String(from_bot || 'unknown'),
     team: String(team || 'general'),
     event_type: String(event_type || 'report'),
     alert_level: Number.isFinite(Number(alert_level)) ? Number(alert_level) : 2,
     message: String(message || '').trim(),
-    payload: normalizePayload(payload),
+    payload: validated.payload,
   };
+  recordPayloadWarnings(normalized, validated.warnings);
+  return normalized;
 }
 
 async function publishToQueue({
@@ -718,4 +798,6 @@ module.exports = {
   getEventHeadline,
   getEventDetailLines,
   buildSeverityTargets,
+  getRecentPayloadWarnings,
+  summarizePayloadWarnings,
 };
