@@ -2,9 +2,8 @@
 /**
  * bots/orchestrator/n8n/setup-ska-workflows.js
  *
- * 스카팀 매출 n8n 워크플로우 3개 생성
+ * 스카팀 매출 n8n 워크플로우 2개 생성
  *   SKA-WF-01: 일간 매출 요약 + AI 분석      (매일 22:00)
- *   SKA-WF-02: 예약 매출 선행 감지            (매일 09:05)
  *   SKA-WF-03: 주간 매출 트렌드 + AI 예측    (매주 월 09:00)
  *
  * ⚠️ 기존 launchd 스크립트 수정 없음 — SELECT 전용
@@ -32,36 +31,9 @@ const CHAT_ID    = String(secrets.telegram_group_id);
 const TOPICS     = secrets.telegram_topic_ids || {};
 const SKA_TOPIC  = String(TOPICS.ska  || '');
 const GEN_TOPIC  = String(TOPICS.general || TOPICS.claude_lead || '');
-const EMRG_TOPIC = String(TOPICS.emergency || '');
 
 const GEMINI_KEY = investCfg.gemini?.api_key || '';
 const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
-
-function buildSafeRevenueExpression({
-  title,
-  currentExpr = '$json.current',
-  expectedExpr = '$json.expected',
-  ratioExpr = '$json.ratio',
-  elapsedExpr = '$json.elapsed',
-  includeElapsed = true,
-  suffix = '',
-}) {
-  return `={{
-(() => {
-  const current = Number(${currentExpr});
-  const expected = Number(${expectedExpr});
-  const ratio = Number(${ratioExpr});
-  const elapsed = Number(${elapsedExpr});
-  const currentText = Number.isFinite(current) ? current.toLocaleString('ko-KR') + '원' : '집계 중';
-  const expectedText = Number.isFinite(expected) ? expected.toLocaleString('ko-KR') + '원' : '계산 불가';
-  const ratioText = Number.isFinite(ratio) ? ratio.toFixed(0) + '%' : '계산 불가';
-  const elapsedText = Number.isFinite(elapsed) ? elapsed.toFixed(0) + '%' : '계산 불가';
-  return '${title}\\n═══════════════════\\n오늘 누적: ' + currentText +
-    '\\n전주 동시간 예상: ' + expectedText +
-    '\\n달성률: ' + ratioText${includeElapsed ? " + '  (영업 ' + elapsedText + ' 경과)'" : ''}${suffix ? ` + '\\n\\n${suffix}'` : ''};
-})()
-}}`;
-}
 
 // ── HTTP 유틸 ──────────────────────────────────────────────────────────────
 let _cookie = '';
@@ -114,6 +86,28 @@ async function createWorkflow(workflow) {
   await client.createOrReplaceWorkflow(workflow);
 }
 
+async function removeWorkflowByName(name) {
+  const existing = (await client.listWorkflows()).find((item) => item.name === name);
+  if (!existing?.id) return false;
+
+  const deactivate = await client.request('POST', `/rest/workflows/${existing.id}/deactivate`);
+  if (deactivate.status === 200) {
+    console.log(`  ⏸️ 워크플로우 비활성화: "${name}" (id: ${existing.id})`);
+  }
+
+  const archive = await client.request('POST', `/rest/workflows/${existing.id}/archive`);
+  if (archive.status === 200) {
+    console.log(`  📦 워크플로우 아카이브: "${name}" (id: ${existing.id})`);
+  }
+
+  const removed = await client.request('DELETE', `/rest/workflows/${existing.id}`);
+  if (removed.status !== 200) {
+    throw new Error(`워크플로우 삭제 실패: ${name}`);
+  }
+  console.log(`  🗑️ 기존 워크플로우 삭제: "${name}" (id: ${existing.id})`);
+  return true;
+}
+
 // ── 메인 ──────────────────────────────────────────────────────────────────
 async function main() {
   console.log('\n🏢 스카팀 매출 n8n 워크플로우 설정 시작\n');
@@ -126,6 +120,10 @@ async function main() {
   const tgCredId = await getCredentialId('Team Jay Telegram');
 
   console.log('\n[2] 워크플로우 생성...');
+
+  console.log('\n[2-A] 불필요한 매출 급감 경보 워크플로우 정리...');
+  await removeWorkflowByName('SKA-WF-02 예약 매출 선행 감지');
+  await removeWorkflowByName('SKA-WF-02 매출 이상 감지');
 
   // ════════════════════════════════════════════════════════════════════════
   // SKA-WF-01: 일간 매출 요약 + AI 분석 (매일 22:00)
@@ -301,177 +299,6 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
       '이상 여부':        { main: [
         [{ node: '🏢 스카 이상 알림',   type: 'main', index: 0 }],
         [{ node: '🏢 스카 일반 리포트', type: 'main', index: 0 }],
-      ]},
-    },
-    settings: {},
-  });
-
-  // ════════════════════════════════════════════════════════════════════════
-  // SKA-WF-02: 예약 매출 선행 감지 (매일 09:05)
-  // 오늘 daily_summary 예약금액 vs 전주 동요일 daily_summary 비교
-  // 주의: 실매출이 아니라 예약 선행 신호이므로 "매출 급감" 표현 금지
-  // ════════════════════════════════════════════════════════════════════════
-  await createWorkflow({
-    name: 'SKA-WF-02 예약 매출 선행 감지',
-    active: true,
-    nodes: [
-      {
-        id: 'ska02-trigger',
-        name: '매일 09:05',
-        type: 'n8n-nodes-base.scheduleTrigger',
-        typeVersion: 1.2,
-        position: [240, 300],
-        parameters: {
-          rule: { interval: [{ field: 'hours', hoursInterval: 24 }] },
-          triggerAtHour: 9,
-          triggerAtMinute: 5,
-          timezone: 'Asia/Seoul',
-        },
-      },
-      {
-        id: 'ska02-biz-check',
-        name: '비교 기준 준비',
-        type: 'n8n-nodes-base.code',
-        typeVersion: 2,
-        position: [460, 300],
-        parameters: {
-          jsCode: `
-const now  = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-const hour = now.getHours();
-return [{ json: { hour, compareMode: 'reservation_lead' } }];
-          `.trim(),
-        },
-      },
-      {
-        id: 'ska02-today',
-        name: '오늘 예약 금액',
-        type: 'n8n-nodes-base.postgres',
-        typeVersion: 2.5,
-        position: [680, 300],
-        parameters: {
-          operation: 'executeQuery',
-          query: `SELECT COALESCE(total_amount, 0) AS current_total
-FROM reservation.daily_summary
-WHERE date = TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')`,
-        },
-        credentials: { postgres: { id: pgCredId, name: 'Team Jay PostgreSQL' } },
-      },
-      {
-        id: 'ska02-baseline',
-        name: '전주 동요일 예약 기준선',
-        type: 'n8n-nodes-base.postgres',
-        typeVersion: 2.5,
-        position: [900, 300],
-        parameters: {
-          operation: 'executeQuery',
-          query: `SELECT COALESCE(total_amount, 0) AS baseline_total
-FROM reservation.daily_summary
-WHERE date = TO_CHAR(CURRENT_DATE - 7, 'YYYY-MM-DD')`,
-        },
-        credentials: { postgres: { id: pgCredId, name: 'Team Jay PostgreSQL' } },
-      },
-      {
-        id: 'ska02-judge',
-        name: '이상 판단',
-        type: 'n8n-nodes-base.code',
-        typeVersion: 2,
-        position: [1120, 300],
-        parameters: {
-          jsCode: `
-const current  = Number($('오늘 예약 금액').first().json.current_total) || 0;
-const baseline = Number($('전주 동요일 예약 기준선').first().json.baseline_total) || 0;
-
-// 오늘 예약금액 집계가 아직 없거나 기준선이 없으면 스킵
-if (baseline === 0 || current === 0) return [];
-
-// 예약 선행 비율 (실매출 아님)
-const ratio = baseline > 0 ? current / baseline : 1;
-
-let severity = null;
-if (ratio < 0.3) {
-  severity = 'critical';
-} else if (ratio < 0.6) {
-  severity = 'warning';
-}
-
-if (!severity) return [];
-
-return [{
-  json: {
-    severity,
-    current, baseline, expected: baseline,
-    ratio: (ratio * 100).toFixed(0),
-    compareMode: 'reservation_lead',
-  }
-}];
-          `.trim(),
-        },
-      },
-      {
-        id: 'ska02-if',
-        name: 'CRITICAL 여부',
-        type: 'n8n-nodes-base.if',
-        typeVersion: 2,
-        position: [1340, 300],
-        parameters: {
-          conditions: {
-            options: { caseSensitive: false },
-            conditions: [
-              { leftValue: '={{ $json.severity }}', operator: { type: 'string', operation: 'equals' }, rightValue: 'critical' },
-            ],
-          },
-        },
-      },
-      {
-        id: 'ska02-tg-critical',
-        name: '🚨 스카 긴급 경보',
-        type: 'n8n-nodes-base.telegram',
-        typeVersion: 1.2,
-        position: [1560, 200],
-        parameters: {
-          chatId: CHAT_ID,
-          text: buildSafeRevenueExpression({
-            title: '🚨 <b>스카팀 예약 매출 선행 경고</b>',
-            includeElapsed: false,
-            suffix: '⚠️ 예약 흐름 점검 필요!',
-          }),
-          additionalFields: {
-            parse_mode: 'HTML',
-            message_thread_id: EMRG_TOPIC || SKA_TOPIC,
-          },
-        },
-        credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
-      },
-      {
-        id: 'ska02-tg-warning',
-        name: '⚠️ 스카 경고',
-        type: 'n8n-nodes-base.telegram',
-        typeVersion: 1.2,
-        position: [1560, 400],
-        parameters: {
-          chatId: CHAT_ID,
-          text: buildSafeRevenueExpression({
-            title: '⚠️ <b>스카팀 예약 매출 선행 이상</b>',
-            includeElapsed: false,
-            suffix: '',
-          }),
-          additionalFields: {
-            parse_mode: 'HTML',
-            message_thread_id: SKA_TOPIC,
-          },
-        },
-        credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
-      },
-    ],
-    connections: {
-      '매일 09:05':            { main: [[{ node: '비교 기준 준비',         type: 'main', index: 0 }]] },
-      '비교 기준 준비':        { main: [[{ node: '오늘 예약 금액',         type: 'main', index: 0 }]] },
-      '오늘 예약 금액':        { main: [[{ node: '전주 동요일 예약 기준선', type: 'main', index: 0 }]] },
-      '전주 동요일 예약 기준선': { main: [[{ node: '이상 판단',             type: 'main', index: 0 }]] },
-      '이상 판단':          { main: [[{ node: 'CRITICAL 여부',      type: 'main', index: 0 }]] },
-      'CRITICAL 여부':      { main: [
-        [{ node: '🚨 스카 긴급 경보',   type: 'main', index: 0 }],
-        [{ node: '⚠️ 스카 경고',        type: 'main', index: 0 }],
       ]},
     },
     settings: {},
@@ -706,9 +533,8 @@ return [{ json: { report } }];
     settings: {},
   });
 
-  console.log('\n✅ 스카팀 n8n 워크플로우 3개 설정 완료\n');
+  console.log('\n✅ 스카팀 n8n 워크플로우 2개 설정 완료\n');
   console.log('  SKA-WF-01: 일간 매출 요약 + AI 분석  (매일 22:00)');
-  console.log('  SKA-WF-02: 예약 매출 선행 감지       (매일 09:05)');
   console.log('  SKA-WF-03: 주간 매출 트렌드 + Gemini  (매주 월 09:00)');
   console.log('\n📌 테이블: reservation.daily_summary + reservation.room_revenue (SELECT 전용)');
 }
