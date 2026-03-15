@@ -139,6 +139,8 @@ async function buildReport() {
     continuous: [],
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => label.replace('ai.ska.', ''),
+    treatMissingAsOk: true,
+    missingOkText: (name) => `  ${name}: 대기 (다음 스케줄 실행 전)`,
   });
   const monitorHealth = buildMonitorHealth();
   const n8nCommandHealth = await buildN8nCommandHealth();

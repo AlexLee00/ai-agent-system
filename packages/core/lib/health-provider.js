@@ -58,6 +58,8 @@ function buildServiceRows(status, {
   normalExitCodes = DEFAULT_NORMAL_EXIT_CODES,
   shortLabel = (label) => hsm.shortLabel(label),
   isExpectedExit = () => false,
+  treatMissingAsOk = false,
+  missingOkText = (name) => `  ${name}: 대기`,
 } = {}) {
   const ok = [];
   const warn = [];
@@ -66,7 +68,8 @@ function buildServiceRows(status, {
     const svc = status[label];
     const name = shortLabel(label);
     if (!svc) {
-      warn.push(`  ${name}: 미로드`);
+      if (treatMissingAsOk) ok.push(missingOkText(name, label));
+      else warn.push(`  ${name}: 미로드`);
       continue;
     }
     if (continuous.includes(label) && !svc.running) {
