@@ -774,9 +774,6 @@ function getEventDetailLines(event) {
   if (Array.isArray(payload?.details)) {
     payloadDetails.push(...payload.details.map((line) => String(line || '').trim()).filter(Boolean));
   }
-  if (typeof payload?.action === 'string' && payload.action.trim()) {
-    payloadDetails.push(`조치: ${payload.action.trim()}`);
-  }
   const messageLines = String(event?.message || '')
     .split('\n')
     .map((line) => line.trim())
@@ -784,6 +781,27 @@ function getEventDetailLines(event) {
   const headline = getEventHeadline(event);
   const filteredMessageLines = messageLines.filter((line, index) => !(index === 0 && line === headline));
   return [...payloadDetails, ...filteredMessageLines];
+}
+
+function getEventAction(event) {
+  const payload = parseEventPayload(event?.payload);
+  if (typeof payload?.action === 'string' && payload.action.trim()) {
+    return payload.action.trim();
+  }
+  return '';
+}
+
+function getEventLinkLines(event) {
+  const payload = parseEventPayload(event?.payload);
+  if (!Array.isArray(payload?.links)) return [];
+  return payload.links
+    .map((link) => {
+      const label = String(link?.label || '').trim();
+      const href = String(link?.href || '').trim();
+      if (!label) return '';
+      return href ? `${label}: ${href}` : label;
+    })
+    .filter(Boolean);
 }
 
 function buildSeverityTargets({
@@ -867,6 +885,8 @@ module.exports = {
   parseEventPayload,
   getEventHeadline,
   getEventDetailLines,
+  getEventAction,
+  getEventLinkLines,
   buildSeverityTargets,
   getRecentPayloadWarnings,
   summarizePayloadWarnings,

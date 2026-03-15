@@ -14,6 +14,8 @@ const {
   renderSnippetEvent,
   getEventHeadline,
   getEventDetailLines,
+  getEventAction,
+  getEventLinkLines,
 } = require('../../../packages/core/lib/reporting-hub');
 
 const ALERT_ICONS = { 1: 'ℹ️', 2: '⚠️', 3: '🟠', 4: '🚨' };
@@ -27,6 +29,8 @@ function formatSingle(item) {
   const icon   = ALERT_ICONS[item.alert_level] || '⚪';
   const label  = ALERT_LABELS[item.alert_level] || '?';
   const headline = getEventHeadline(item);
+  const action = getEventAction(item) || '상세 내용 확인';
+  const linkLines = getEventLinkLines(item);
   return renderNoticeEvent(buildNoticeEvent({
     from_bot: item.from_bot,
     team: item.team,
@@ -34,8 +38,8 @@ function formatSingle(item) {
     alert_level: item.alert_level,
     title: `${icon} ${item.from_bot} 알림`,
     summary: headline ? `${label} · ${headline}` : `${label} · ${item.event_type}`,
-    details: getEventDetailLines(item),
-    action: '상세 내용 확인',
+    details: [...getEventDetailLines(item), ...linkLines],
+    action,
     footer: '필요 시 /ops-health 또는 팀별 헬스 명령으로 추가 점검',
   }));
 }
@@ -55,7 +59,11 @@ function formatBatch(botName, items) {
     const lvl = ALERT_ICONS[item.alert_level] || '•';
     return `${lvl} ${getEventHeadline(item).slice(0, 80)}`;
   });
+  const actions = [...new Set(items.map((item) => getEventAction(item)).filter(Boolean))];
+  const links = [...new Set(items.flatMap((item) => getEventLinkLines(item)).filter(Boolean))];
   if (items.length > 5) lines.push(`... 외 ${items.length - 5}건`);
+  if (actions.length > 0) lines.push(`조치: ${actions.slice(0, 2).join(' | ')}`);
+  if (links.length > 0) lines.push(`참고: ${links.slice(0, 2).join(' | ')}`);
 
   return renderSnippetEvent(buildSnippetEvent({
     from_bot: botName,
@@ -100,6 +108,8 @@ function formatMultiBot(items) {
     for (const item of botItems.slice(0, 2)) {
       lines.push(`• ${getEventHeadline(item).slice(0, 60)}`);
     }
+    const botActions = [...new Set(botItems.map((item) => getEventAction(item)).filter(Boolean))];
+    if (botActions.length > 0) lines.push(`• 조치: ${botActions[0]}`);
     if (botItems.length > 2) lines.push('• ...');
   }
 
