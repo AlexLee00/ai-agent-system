@@ -25,6 +25,9 @@ async function publishToMainBot({ from_bot, team = 'reservation', event_type, al
     pgPool,
     schema: 'claude',
     event: { from_bot, team, event_type, alert_level, message, payload },
+    policy: {
+      cooldownMs: 2 * 60_000,
+    },
   });
   return result.ok;
 }
