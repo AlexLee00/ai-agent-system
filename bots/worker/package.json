@@ -11,7 +11,8 @@
     "migrate": "node migrations/001-init-schema.js",
     "migrate:chat": "node migrations/011-worker-chat.js",
     "setup": "node scripts/setup-worker.js",
-    "setup:n8n": "node n8n/setup-worker-workflows.js"
+    "setup:n8n": "node n8n/setup-worker-workflows.js",
+    "check:n8n-intake": "node scripts/check-n8n-intake-path.js"
   },
   "dependencies": {
     "@ai-agent/core": "*",
