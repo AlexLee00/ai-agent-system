@@ -50,6 +50,7 @@
   - multi-target pipeline fanout
   - shared snippet formatting
   - shared notice formatting
+  - shared delivery policy (dedupe/throttle/quiet-hours)
 
 ## Applied So Far
 
