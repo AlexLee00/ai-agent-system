@@ -56,6 +56,8 @@
    - 필요 시 `promotion_events`
 
 ## 공용 레이어 적용 포인트
+- n8n:
+  - `packages/core/lib/n8n-runner.js`
 - 인텐트:
   - `packages/core/lib/intent-core.js`
   - `packages/core/lib/intent-store.js`
@@ -68,7 +70,7 @@
 
 ## 구현 순서
 1. 커맨더에서 queue/orchestration 분리
-2. 읽기 전용 명령에 `n8n handler adapter` 추가
+2. 읽기 전용 명령에 공용 `n8n handler adapter` 추가
 3. `RAG` 저장 노드 공통화
 4. 운영 제어 명령은 마지막에 이관
 
