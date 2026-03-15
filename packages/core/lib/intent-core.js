@@ -79,6 +79,14 @@ const TEAM_INTENT_META = {
   claude: { schema: 'claude', title: '클로드 인텐트 학습', thresholdTeam: 'claude', learningProfile: 'jay' },
 };
 
+const INTENT_HEALTH_TARGETS = [
+  { key: 'jay', schema: 'claude', title: '제이', learningProfile: 'jay' },
+  { key: 'worker', schema: 'worker', title: '워커', learningProfile: 'worker' },
+  { key: 'luna', schema: 'investment', title: '루나', learningProfile: 'jay' },
+  { key: 'ska', schema: 'ska', title: '스카', learningProfile: 'jay' },
+  { key: 'claude', schema: 'claude', title: '클로드', learningProfile: 'jay' },
+];
+
 function getTeamIntentMeta(team = '') {
   return TEAM_INTENT_META[String(team || '').trim().toLowerCase()] || null;
 }
@@ -103,6 +111,13 @@ function buildTeamIntentReportFrame(team = '', teamMeta, {
     `조회 예시: /${normalized}-intents pending | /${normalized}-intents summary | /${normalized}-intents events`,
     `롤백 예시: /${normalized}-rollback <id>`,
   ].join('\n');
+}
+
+function buildIntentEngineHealthLines(targets = [], summaries = {}) {
+  return targets.map((target) => {
+    const summary = summaries[target.key] || {};
+    return `  ${target.title}: learned ${summary.learnedCount ?? 0}개 | 후보 ${summary.pendingCount ?? 0} | 자동 ${summary.appliedCount ?? 0}`;
+  });
 }
 
 function normalizeIntentText(text = '') {
@@ -565,8 +580,10 @@ module.exports = {
   SAFE_AUTO_PROMOTE_INTENTS,
   SAFE_AUTO_PROMOTE_PREFIXES,
   TEAM_INTENT_META,
+  INTENT_HEALTH_TARGETS,
   getTeamIntentMeta,
   buildTeamIntentReportFrame,
+  buildIntentEngineHealthLines,
   normalizeIntentText,
   escapeRegex,
   buildAutoLearnPattern,
