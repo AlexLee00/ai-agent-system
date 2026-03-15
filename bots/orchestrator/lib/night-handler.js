@@ -3,7 +3,12 @@ const kst = require('../../../packages/core/lib/kst');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { buildSnippetEvent, renderSnippetEvent } = require('../../../packages/core/lib/reporting-hub');
+const {
+  buildSnippetEvent,
+  renderSnippetEvent,
+  getRecentPayloadWarnings,
+  summarizePayloadWarnings,
+} = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * lib/night-handler.js — 야간 자율 운영 관리
@@ -352,13 +357,41 @@ async function buildLunaRiskAlertSnippet() {
   }));
 }
 
+async function buildReportingHealthAlertSnippet() {
+  const summary = summarizePayloadWarnings(
+    getRecentPayloadWarnings({ withinHours: 24, limit: 50 })
+  );
+
+  if (!summary || summary.count === 0) return null;
+
+  const latestWarning = Array.isArray(summary.latest?.warnings) && summary.latest.warnings.length > 0
+    ? summary.latest.warnings.join(', ')
+    : 'latest_unknown';
+
+  return renderSnippetEvent(buildSnippetEvent({
+    from_bot: 'reporting-hub',
+    team: 'system',
+    event_type: 'reporting_alert',
+    alert_level: 2,
+    title: '🧾 리포팅 파이프라인 경고',
+    lines: [
+      `최근 24시간 payload 경고 ${summary.count}건`,
+      ...summary.topProducers.map((line) => line.trim()),
+      `최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`,
+    ],
+    detailHint: '/reporting-health | /orchestrator-health',
+    payload: { kind: 'reporting_health', summary },
+  }));
+}
+
 async function buildMorningBriefingWithOps(items) {
   const brief = buildMorningBriefing(items);
   if (!brief) return null;
   const opsSnippet = await buildOpsHealthAlertSnippet();
   const forecastSnippet = await buildSkaForecastAlertSnippet();
   const lunaSnippet = await buildLunaRiskAlertSnippet();
-  const extras = [opsSnippet, forecastSnippet, lunaSnippet].filter(Boolean);
+  const reportingSnippet = await buildReportingHealthAlertSnippet();
+  const extras = [opsSnippet, forecastSnippet, lunaSnippet, reportingSnippet].filter(Boolean);
   if (extras.length === 0) return brief;
   return `${brief}\n\n${extras.join('\n\n')}`;
 }
@@ -382,5 +415,6 @@ module.exports = {
   buildSkaForecastAlertSnippet,
   getLunaRiskSnapshot,
   buildLunaRiskAlertSnippet,
+  buildReportingHealthAlertSnippet,
   isBriefingTime,
 };
