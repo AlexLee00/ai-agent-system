@@ -69,16 +69,39 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let alive = true;
+    const releaseTimer = setTimeout(() => {
+      if (!alive) return;
+      setLoading(false);
+    }, REQUEST_TIMEOUT_MS + 1500);
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
-    if (!token) { setLoading(false); return; }
+    if (!token) {
+      clearTimeout(releaseTimer);
+      setLoading(false);
+      return () => {
+        alive = false;
+        clearTimeout(releaseTimer);
+      };
+    }
 
     fetchJsonWithFallback('/auth/me', { headers: { Authorization: `Bearer ${token}` } })
       .then(({ response, data }) => {
+        if (!alive) return;
         if (response.ok && data?.user) setUser(normalizeUser(data.user));
         else localStorage.removeItem('worker_token');
       })
       .catch(() => localStorage.removeItem('worker_token'))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!alive) return;
+        clearTimeout(releaseTimer);
+        setLoading(false);
+      });
+
+    return () => {
+      alive = false;
+      clearTimeout(releaseTimer);
+    };
   }, []);
 
   const login = async (username, password) => {
