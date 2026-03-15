@@ -15,6 +15,7 @@ const http = require('http');
 const path = require('path');
 const fs   = require('fs');
 const yaml = require('js-yaml');
+const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
 const N8N_BASE = 'http://localhost:5678';
 const EMAIL    = '***REMOVED***';
@@ -34,6 +35,7 @@ const GEN_TOPIC  = String(TOPICS.general || TOPICS.claude_lead || '');
 const EMRG_TOPIC = String(TOPICS.emergency || '');
 
 const GEMINI_KEY = investCfg.gemini?.api_key || '';
+const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
 
 // ── HTTP 유틸 ──────────────────────────────────────────────────────────────
 let _cookie = '';
@@ -69,61 +71,21 @@ function request(method, urlPath, body) {
 
 // ── 로그인 ─────────────────────────────────────────────────────────────────
 async function login() {
-  const r = await request('POST', '/rest/login', {
-    emailOrLdapLoginId: EMAIL,
-    password: PASSWORD,
-  });
-  if (r.status !== 200) throw new Error(`로그인 실패: ${JSON.stringify(r.body)}`);
-  console.log('  ✅ n8n 로그인 성공');
+  await client.login();
 }
 
 // ── 기존 자격증명 ID 조회 ──────────────────────────────────────────────────
 async function getCredentialId(name) {
-  const list = await request('GET', '/rest/credentials');
-  const found = list.body?.data?.find(c => c.name === name);
-  if (!found) throw new Error(`자격증명 "${name}" 없음 — setup-n8n.js 먼저 실행`);
-  console.log(`  ✅ 자격증명 "${name}" (id: ${found.id})`);
-  return found.id;
+  try {
+    return await client.getCredentialId(name);
+  } catch {
+    throw new Error(`자격증명 "${name}" 없음 — setup-n8n.js 먼저 실행`);
+  }
 }
 
 // ── 워크플로우 생성 ────────────────────────────────────────────────────────
 async function createWorkflow(workflow) {
-  const list = await request('GET', '/rest/workflows');
-  const existing = list.body?.data?.find(w => w.name === workflow.name);
-
-  if (existing?.id) {
-    const deactivated = await request('POST', `/rest/workflows/${existing.id}/deactivate`);
-    if (deactivated.status === 200) {
-      console.log(`  ⏸️  워크플로우 비활성화: "${workflow.name}" (id: ${existing.id})`);
-    }
-
-    const archived = await request('POST', `/rest/workflows/${existing.id}/archive`);
-    if (archived.status === 200) {
-      console.log(`  📦 워크플로우 아카이브: "${workflow.name}" (id: ${existing.id})`);
-    }
-
-    const deleted = await request('DELETE', `/rest/workflows/${existing.id}`);
-    if (deleted.status !== 200) {
-      throw new Error(`기존 워크플로우 삭제 실패: ${JSON.stringify(deleted.body)}`);
-    }
-    console.log(`  🗑️  기존 워크플로우 삭제: "${workflow.name}" (id: ${existing.id})`);
-  }
-
-  const r = await request('POST', '/rest/workflows', workflow);
-  if (r.status !== 200) throw new Error(`워크플로우 생성 실패: ${JSON.stringify(r.body)}`);
-  console.log(`  ✅ 워크플로우 생성: "${workflow.name}" (id: ${r.body.data?.id})`);
-
-  const id = r.body.data?.id;
-  if (id) {
-    const det = await request('GET', `/rest/workflows/${id}`);
-    const versionId = det.body?.data?.versionId;
-    const ar = await request('POST', `/rest/workflows/${id}/activate`, { versionId });
-    if (ar.body?.data?.active) {
-      console.log(`  ✅ 워크플로우 활성화: "${workflow.name}"`);
-    } else {
-      console.log(`  ⚠️  활성화 응답 확인 필요: "${workflow.name}"`);
-    }
-  }
+  await client.createOrReplaceWorkflow(workflow);
 }
 
 // ── 메인 ──────────────────────────────────────────────────────────────────

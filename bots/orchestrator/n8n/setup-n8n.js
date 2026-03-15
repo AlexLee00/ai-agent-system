@@ -13,10 +13,12 @@ const http   = require('http');
 const https  = require('https');
 const path   = require('path');
 const fs     = require('fs');
+const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
 const N8N_BASE = 'http://localhost:5678';
 const EMAIL    = '***REMOVED***';
 const PASSWORD = 'TeamJay2026!';
+const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
 
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
 const secrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
@@ -63,70 +65,19 @@ function request(method, path, body) {
 // ─── 로그인 ──────────────────────────────────────────────────────────────────
 
 async function login() {
-  const r = await request('POST', '/rest/login', {
-    emailOrLdapLoginId: EMAIL,
-    password: PASSWORD,
-  });
-  if (r.status !== 200) throw new Error(`로그인 실패: ${JSON.stringify(r.body)}`);
-  console.log('  ✅ n8n 로그인 성공');
+  await client.login();
 }
 
 // ─── 자격증명 생성 ─────────────────────────────────────────────────────────
 
 async function createCredential(name, type, data) {
-  // 이미 있으면 스킵
-  const list = await request('GET', '/rest/credentials');
-  if (list.body?.data?.find(c => c.name === name)) {
-    console.log(`  ⏭️  자격증명 "${name}" 이미 존재 — 스킵`);
-    const existing = list.body.data.find(c => c.name === name);
-    return existing.id;
-  }
-
-  const r = await request('POST', '/rest/credentials', { name, type, data });
-  if (r.status !== 200) throw new Error(`자격증명 생성 실패: ${JSON.stringify(r.body)}`);
-  console.log(`  ✅ 자격증명 생성: "${name}" (id: ${r.body.data?.id})`);
-  return r.body.data?.id;
+  return client.createCredential(name, type, data);
 }
 
 // ─── 워크플로우 생성 ────────────────────────────────────────────────────────
 
 async function createWorkflow(workflow) {
-  const list = await request('GET', '/rest/workflows');
-  const existing = list.body?.data?.find(w => w.name === workflow.name);
-
-  if (existing?.id) {
-    const deactivated = await request('POST', `/rest/workflows/${existing.id}/deactivate`);
-    if (deactivated.status === 200) {
-      console.log(`  ⏸️  워크플로우 비활성화: "${workflow.name}" (id: ${existing.id})`);
-    }
-
-    const archived = await request('POST', `/rest/workflows/${existing.id}/archive`);
-    if (archived.status === 200) {
-      console.log(`  📦 워크플로우 아카이브: "${workflow.name}" (id: ${existing.id})`);
-    }
-
-    const deleted = await request('DELETE', `/rest/workflows/${existing.id}`);
-    if (deleted.status !== 200) {
-      throw new Error(`기존 워크플로우 삭제 실패: ${JSON.stringify(deleted.body)}`);
-    }
-    console.log(`  🗑️  기존 워크플로우 삭제: "${workflow.name}" (id: ${existing.id})`);
-  }
-
-  const r = await request('POST', '/rest/workflows', workflow);
-  if (r.status !== 200) throw new Error(`워크플로우 생성 실패: ${JSON.stringify(r.body)}`);
-  console.log(`  ✅ 워크플로우 생성: "${workflow.name}" (id: ${r.body.data?.id})`);
-
-  const id = r.body.data?.id;
-  if (id) {
-    const det = await request('GET', `/rest/workflows/${id}`);
-    const versionId = det.body?.data?.versionId;
-    const ar = await request('POST', `/rest/workflows/${id}/activate`, { versionId });
-    if (ar.body?.data?.active) {
-      console.log(`  ✅ 워크플로우 활성화: "${workflow.name}"`);
-    } else {
-      console.log(`  ⚠️ 활성화 응답 확인 필요: "${workflow.name}"`);
-    }
-  }
+  await client.createOrReplaceWorkflow(workflow);
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
