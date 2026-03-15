@@ -268,6 +268,22 @@ return [{
         },
       },
       {
+        id: 'check-health-probe',
+        name: '헬스 probe?',
+        type: 'n8n-nodes-base.if',
+        typeVersion: 2,
+        position: [460, 180],
+        parameters: {
+          conditions: {
+            options: { caseSensitive: false },
+            conditions: [{
+              leftValue: '={{ $json.body?._healthProbe || $json.headers?.["x-health-probe"] || "" }}',
+              operator: { type: 'string', operation: 'notEmpty' },
+            }],
+          },
+        },
+      },
+      {
         id: 'send-emergency',
         name: '🚨 긴급 토픽 발송',
         type: 'n8n-nodes-base.telegram',
@@ -338,7 +354,11 @@ return [{
       },
     ],
     connections: {
-      'CRITICAL 웹훅':     { main: [[{ node: 'CRITICAL 여부',    type: 'main', index: 0 }]] },
+      'CRITICAL 웹훅':     { main: [[{ node: '헬스 probe?',      type: 'main', index: 0 }]] },
+      '헬스 probe?':       { main: [
+        [{ node: '응답',              type: 'main', index: 0 }],
+        [{ node: 'CRITICAL 여부',      type: 'main', index: 0 }],
+      ]},
       'CRITICAL 여부':     { main: [
         [{ node: '🚨 긴급 토픽 발송', type: 'main', index: 0 }],
         [{ node: '응답',              type: 'main', index: 0 }],
