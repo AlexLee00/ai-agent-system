@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import AdminQuickNav from '@/components/AdminQuickNav';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 
 function CandidateCard({ candidate, busyId, onApply, onRollback }) {
   const statusTone = candidate.status === 'auto_applied'
@@ -125,31 +126,15 @@ export default function WorkerIntentAdminPage() {
   return (
     <div className="space-y-5">
       <AdminQuickNav />
-
-      <div className="card bg-gradient-to-br from-white to-slate-100/90">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">인텐트 학습</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              워커 자연어 대화에서 반복되는 표현을 보고, learned pattern으로 수동 반영하거나 롤백할 수 있습니다.
-            </p>
-          </div>
-          <div className="grid min-w-[260px] grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">미인식</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{unrecCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">대기 후보</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{pendingCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">표시 후보</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">{candidateCount}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AdminPageHero
+        title="인텐트 학습"
+        description="워커 자연어 대화에서 반복되는 표현을 보고, learned pattern으로 수동 반영하거나 롤백할 수 있습니다."
+        stats={[
+          { label: '미인식', value: unrecCount },
+          { label: '대기 후보', value: pendingCount },
+          { label: '표시 후보', value: candidateCount },
+        ]}
+      />
 
       <div className="card">
         <div className="flex flex-wrap items-center gap-3">
@@ -174,21 +159,15 @@ export default function WorkerIntentAdminPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {quickFlows.map((item) => (
-          <div key={item.title} className="card space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">{item.title}</h2>
-              <p className="mt-1 text-sm text-slate-500">{item.body}</p>
-            </div>
-            <ProposalFlowActions
-              onPromptFill={() => router.push(item.promptHref)}
-              onSecondary={() => load(query)}
-              secondaryLabel="현재 목록 새로고침"
-            />
-          </div>
-        ))}
-      </div>
+      <AdminQuickFlowGrid
+        items={quickFlows.map((item) => ({
+          title: item.title,
+          body: item.body,
+          onPromptFill: () => router.push(item.promptHref),
+          onSecondary: () => load(query),
+          secondaryLabel: '현재 목록 새로고침',
+        }))}
+      />
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
         <section className="space-y-3">

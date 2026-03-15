@@ -5,9 +5,10 @@ import { UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -162,12 +163,21 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-4">
       <AdminQuickNav />
+      <AdminPageHero
+        title="사용자 관리"
+        badge="MASTER"
+        tone="indigo"
+        description="권한 분포, 소속 업체, 텔레그램 연동 상태를 보며 사용자 계정을 운영합니다."
+        stats={[
+          { label: '조회 사용자', value: users.length || 0, caption: '필터 기준' },
+          { label: '업체 수', value: companies.length || 0, caption: '등록 업체 기준' },
+        ]}
+      />
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <UserCog className="w-6 h-6 text-indigo-600" />
-          <h1 className="text-xl font-bold text-gray-900">사용자 관리</h1>
-          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">MASTER</span>
+        <div className="flex items-center gap-2 text-slate-600">
+          <UserCog className="h-5 w-5 text-indigo-600" />
+          <p className="text-sm font-medium">사용자 운영 작업</p>
         </div>
         <button className="btn-primary text-sm" onClick={openNew}>+ 사용자 등록</button>
       </div>
@@ -200,21 +210,14 @@ export default function AdminUsersPage() {
         <span className="ml-auto text-sm text-gray-500 self-center">{users.length}명</span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {quickFlows.map((item) => (
-          <div key={item.title} className="card space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">{item.title}</h2>
-              <p className="mt-1 text-sm text-slate-500">{item.body}</p>
-            </div>
-            <ProposalFlowActions
-              onPromptFill={() => router.push(item.promptHref)}
-              onSecondary={() => router.push(item.route)}
-              secondaryLabel="관련 화면 열기"
-            />
-          </div>
-        ))}
-      </div>
+      <AdminQuickFlowGrid
+        items={quickFlows.map((item) => ({
+          title: item.title,
+          body: item.body,
+          onPromptFill: () => router.push(item.promptHref),
+          onSecondary: () => router.push(item.route),
+        }))}
+      />
 
       <div className="card overflow-x-auto">
         {loading ? (

@@ -6,9 +6,10 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import AdminPageHero from '@/components/AdminPageHero';
+import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
 
 const EMPTY_FORM = { id: '', name: '', owner: '', phone: '', biz_number: '', memo: '' };
 
@@ -114,12 +115,21 @@ export default function AdminCompaniesPage() {
   return (
     <div className="space-y-4">
       <AdminQuickNav />
+      <AdminPageHero
+        title="업체 관리"
+        badge="MASTER"
+        tone="indigo"
+        description="업체 등록, 메뉴 노출 정책, 운영 이슈 업체 점검을 한 화면에서 관리합니다."
+        stats={[
+          { label: '등록 업체', value: companies.length || 0, caption: '현재 조회 기준' },
+          { label: '검색어', value: search ? '적용' : '전체', caption: search || '필터 없음' },
+        ]}
+      />
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Building2 className="w-6 h-6 text-indigo-600" />
-          <h1 className="text-xl font-bold text-gray-900">업체 관리</h1>
-          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">MASTER</span>
+        <div className="flex items-center gap-2 text-slate-600">
+          <Building2 className="h-5 w-5 text-indigo-600" />
+          <p className="text-sm font-medium">업체 운영 작업</p>
         </div>
         <button className="btn-primary text-sm" onClick={openNew}>+ 업체 등록</button>
       </div>
@@ -137,21 +147,14 @@ export default function AdminCompaniesPage() {
         {search && <button className="btn-secondary text-sm" onClick={() => { setSearch(''); load(''); }}>초기화</button>}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {quickFlows.map((item) => (
-          <div key={item.title} className="card space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">{item.title}</h2>
-              <p className="mt-1 text-sm text-slate-500">{item.body}</p>
-            </div>
-            <ProposalFlowActions
-              onPromptFill={() => router.push(item.promptHref)}
-              onSecondary={() => router.push(item.route)}
-              secondaryLabel="관련 화면 열기"
-            />
-          </div>
-        ))}
-      </div>
+      <AdminQuickFlowGrid
+        items={quickFlows.map((item) => ({
+          title: item.title,
+          body: item.body,
+          onPromptFill: () => router.push(item.promptHref),
+          onSecondary: () => router.push(item.route),
+        }))}
+      />
 
       <div className="card">
         {loading ? (
