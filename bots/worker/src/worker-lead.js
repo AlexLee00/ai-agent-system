@@ -70,7 +70,7 @@ async function _poll() {
         if (user) {
           const reply = await handleApprovalCallback(cb.data, user);
           if (reply) {
-            await _sendReply(token, cb.message.chat.id, reply, cb.message.message_thread_id);
+            await _sendReply(cb.message.chat.id, reply, cb.message.message_thread_id);
           }
         }
         // 콜백 응답 (버튼 로딩 해제)
@@ -90,20 +90,19 @@ async function _poll() {
       const fromId = msg.from?.id;
       const text   = msg.text.trim();
       const reply  = await handleCommand(text, fromId);
-      if (reply) await _sendReply(token, msg.chat.id, reply, msg.message_thread_id);
+      if (reply) await _sendReply(msg.chat.id, reply, msg.message_thread_id);
     }
   } catch { /* 폴링 오류 무시 */ }
 
   return { sleepMs: DEFAULT_POLL_MS };
 }
 
-async function _sendReply(token, chatId, text, threadId) {
-  const body = { chat_id: chatId, text, parse_mode: 'HTML' };
-  if (threadId) body.message_thread_id = threadId;
+async function _sendReply(chatId, text, threadId) {
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(8000),
+    await sender.sendDirect(chatId, text, {
+      threadId,
+      parseMode: 'HTML',
+      disableWebPagePreview: true,
     });
   } catch { /* 무시 */ }
 }

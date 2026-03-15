@@ -107,7 +107,7 @@ const _batchBuffer = new Map();
  */
 async function _trySend(text, threadId, options = {}) {
   const token  = _token();
-  const chatId = _chatId();
+  const chatId = options.chatId || _chatId();
   if (!token || !chatId) return { ok: false, code: 0, retryAfter: 0 };
 
   const body = { chat_id: chatId, text, parse_mode: 'HTML' };
@@ -247,6 +247,23 @@ async function sendWithOptions(team, message, options = {}) {
   return false;
 }
 
+async function sendDirect(chatId, message, options = {}) {
+  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  if (!chatId) return false;
+
+  if (_isFilenameLeak(message)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (chat=${chatId}): ${message.slice(0, 60)}`);
+    return false;
+  }
+
+  const text = String(message || '').slice(0, TG_MAX);
+  const ok = await _doSend(text, options.threadId || null, {
+    ...options,
+    chatId,
+  });
+  return ok;
+}
+
 /**
  * CRITICAL 알림 — 🚨 긴급 Topic + 해당 팀 Topic 이중 발송
  * @param {string} team    발신 팀
@@ -293,4 +310,4 @@ async function flushPending() {
   } catch { /* 무시 */ }
 }
 
-module.exports = { send, sendWithOptions, sendCritical, flushPending };
+module.exports = { send, sendWithOptions, sendDirect, sendCritical, flushPending };
