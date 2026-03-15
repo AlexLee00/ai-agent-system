@@ -10,10 +10,13 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const cfg    = require('./config');
 const sender = require('../../../packages/core/lib/telegram-sender');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
+  publishEventPipeline,
   publishToTelegram,
   buildNoticeEvent,
   renderNoticeEvent,
+  buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
@@ -217,27 +220,31 @@ function publishDexterNotice({
   action = '',
   footer = '',
 }) {
-  const message = renderNoticeEvent(buildNoticeEvent({
+  const event = {
     from_bot: 'dexter',
     team: 'claude',
     event_type: eventType,
     alert_level: level,
-    title,
-    summary,
-    details,
-    action,
-    footer,
-  }));
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
+    message: renderNoticeEvent(buildNoticeEvent({
       from_bot: 'dexter',
       team: 'claude',
       event_type: eventType,
       alert_level: level,
-      message,
+      title,
+      summary,
+      details,
+      action,
+      footer,
+    })),
+    payload: {
+      title,
+      summary,
+      detail: details.join(' | '),
+      action,
     },
+  };
+  return publishEventPipeline({
+    event,
     policy: {
       cooldownMs: level >= 4 ? 60_000 : 5 * 60_000,
       quietHours: {
@@ -247,6 +254,16 @@ function publishDexterNotice({
         maxAlertLevel: 1,
       },
     },
+    targets: buildSeverityTargets({
+      event,
+      pgPool,
+      schema: 'claude',
+      sender,
+      topicTeam: 'claude-lead',
+      includeQueue: false,
+      includeTelegram: true,
+      includeN8n: true,
+    }),
   }).then((result) => result.ok);
 }
 
