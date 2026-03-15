@@ -17,6 +17,7 @@ const kst = require('../../../packages/core/lib/kst');
 
 const path        = require('path');
 const http        = require('http');
+const { randomUUID } = require('crypto');
 const { spawn }   = require('child_process');
 const express     = require('express');
 const helmet      = require('helmet');
@@ -33,6 +34,10 @@ const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { getSecret } = require('../lib/secrets');
 const { recalcProgress } = require('../src/ryan');
 const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
+const {
+  buildAttendanceProposal,
+  normalizeAttendanceProposal,
+} = require('../lib/attendance-ai');
 
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
@@ -75,6 +80,14 @@ const {
   reject: rejectApprovalRequest,
   review: reviewApprovalRequest,
 } = require('../lib/approval');
+const {
+  createWorkerProposalFeedbackSession,
+  getWorkerFeedbackSessionById,
+  replaceWorkerFeedbackEdits,
+  markWorkerFeedbackConfirmed,
+  markWorkerFeedbackRejected,
+  markWorkerFeedbackCommitted,
+} = require('../lib/ai-feedback-service');
 
 // ── 파일 업로드 (multer) ──────────────────────────────────────────────
 const multer = require('multer');
@@ -260,6 +273,108 @@ async function buildUserResponse(user) {
 
 async function getEmployeeIdForRequest(req) {
   return resolveEmployeeId(req.user.id);
+}
+
+async function resolveAttendanceEmployee(req, employeeId = null) {
+  if (employeeId && req.user.role !== 'member') {
+    const target = await pgPool.get(SCHEMA, `
+      SELECT id, company_id, name
+      FROM worker.employees
+      WHERE id=$1
+        AND deleted_at IS NULL
+    `, [employeeId]);
+    if (!target || String(target.company_id) !== String(req.user.company_id)) {
+      throw new Error('직원 정보를 찾을 수 없습니다.');
+    }
+    return { id: target.id, name: target.name };
+  }
+
+  const emp = await pgPool.get(SCHEMA, `
+    SELECT id, name
+    FROM worker.employees
+    WHERE company_id=$1
+      AND user_id=$2
+      AND deleted_at IS NULL
+  `, [req.user.company_id, req.user.id]);
+
+  if (!emp) throw new Error('연결된 직원 정보가 없습니다.');
+  return emp;
+}
+
+function getAttendanceStatusForCheckin(occurredAt) {
+  const date = new Date(occurredAt);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find(part => part.type === 'hour')?.value || '0');
+  const minute = Number(parts.find(part => part.type === 'minute')?.value || '0');
+  if (hour > 9 || (hour === 9 && minute > 0)) return 'late';
+  return 'present';
+}
+
+async function applyAttendanceProposal({ companyId, proposal }) {
+  if (proposal.action === 'checkin') {
+    const existing = await pgPool.get(SCHEMA, `
+      SELECT *
+      FROM worker.attendance
+      WHERE employee_id=$1
+        AND date=$2
+    `, [proposal.employee_id, proposal.date]);
+
+    if (existing?.check_in) {
+      const err = new Error('이미 출근 체크됨');
+      err.code = 'DUPLICATE';
+      throw err;
+    }
+
+    return pgPool.get(SCHEMA, `
+      INSERT INTO worker.attendance (company_id, employee_id, date, check_in, status, note)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (employee_id, date)
+      DO UPDATE SET
+        check_in = EXCLUDED.check_in,
+        status = EXCLUDED.status,
+        note = EXCLUDED.note
+      RETURNING *
+    `, [
+      companyId,
+      proposal.employee_id,
+      proposal.date,
+      proposal.occurred_at,
+      getAttendanceStatusForCheckin(proposal.occurred_at),
+      proposal.note || null,
+    ]);
+  }
+
+  const existing = await pgPool.get(SCHEMA, `
+    SELECT *
+    FROM worker.attendance
+    WHERE employee_id=$1
+      AND date=$2
+  `, [proposal.employee_id, proposal.date]);
+
+  if (!existing?.check_in) {
+    const err = new Error('출근 기록이 없습니다');
+    err.code = 'NOT_CHECKED_IN';
+    throw err;
+  }
+
+  return pgPool.get(SCHEMA, `
+    UPDATE worker.attendance
+    SET check_out=$1,
+        note=COALESCE($2, note)
+    WHERE employee_id=$3
+      AND date=$4
+    RETURNING *
+  `, [
+    proposal.occurred_at,
+    proposal.note || null,
+    proposal.employee_id,
+    proposal.date,
+  ]);
 }
 
 function requireWorkerWebhookSecret(req, res, next) {
@@ -950,6 +1065,129 @@ app.post('/api/attendance/checkout', requireAuth, async (req, res) => {
       [now, empId, today]);
     res.json({ ok: true, check_out: now });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/attendance/proposals', requireAuth, async (req, res) => {
+  try {
+    const employee = await resolveAttendanceEmployee(req, req.body.employee_id || null);
+    const prompt = String(req.body.prompt || '').trim();
+    const fallbackAction = req.body.action || '';
+    const proposal = buildAttendanceProposal({
+      prompt,
+      fallbackAction,
+      employee,
+      now: new Date(),
+    });
+    const sourceRefId = `attendance-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'attendance_prompt',
+      sourceRefType: 'attendance_proposal',
+      sourceRefId,
+      flowCode: proposal.action === 'checkout' ? 'attendance_checkout' : 'attendance_checkin',
+      actionCode: proposal.action,
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.action_label,
+      aiInputPayload: {
+        prompt,
+        action: fallbackAction || proposal.action,
+        employee_id: employee.id,
+      },
+      aiOutputType: 'attendance_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+      },
+    });
+  } catch (error) {
+    const code = error.code || 'BAD_REQUEST';
+    const status = code === 'BAD_REQUEST' ? 400 : 500;
+    res.status(status).json({ error: error.message || '근태 제안을 생성하지 못했습니다.', code });
+  }
+});
+
+app.post('/api/attendance/proposals/:id/confirm', requireAuth, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '근태 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+
+    const employee = await resolveAttendanceEmployee(req);
+    const proposal = normalizeAttendanceProposal(req.body.proposal || session.original_snapshot_json || {}, employee);
+
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: {
+        source: 'attendance_confirm',
+      },
+    });
+
+    const attendance = await applyAttendanceProposal({
+      companyId: req.user.company_id,
+      proposal,
+    });
+
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: {
+        source: 'attendance_confirm',
+      },
+    });
+
+    const committedSnapshot = {
+      ...proposal,
+      attendance_id: attendance.id,
+      status: 'committed',
+      attendance_status: attendance.status,
+    };
+
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: {
+        source: 'attendance_confirm',
+        attendance_id: attendance.id,
+      },
+    });
+
+    res.json({ ok: true, attendance, proposal: committedSnapshot });
+  } catch (error) {
+    const code = error.code || 'SERVER_ERROR';
+    const status = code === 'DUPLICATE' ? 409 : code === 'NOT_CHECKED_IN' ? 400 : 500;
+    res.status(status).json({ error: error.message || '근태 확정 처리 중 오류가 발생했습니다.', code });
+  }
+});
+
+app.post('/api/attendance/proposals/:id/reject', requireAuth, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '근태 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: {
+        source: 'attendance_reject',
+      },
+    });
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '근태 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 // ── 매출 API (올리버) ──────────────────────────────────────────────────
