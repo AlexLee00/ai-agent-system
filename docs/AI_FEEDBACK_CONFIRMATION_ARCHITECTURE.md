@@ -70,7 +70,7 @@
 ### 일반사용자
 
 - 표시 UI
-  - 프롬프트 입력창
+  - 메뉴 정책이 허용한 프롬프트 입력창
   - 본인 기록 조회
 - 숨김 UI
   - 운영 알림
@@ -91,6 +91,7 @@
 
 - 표시 UI
   - 프롬프트 입력창
+  - 결과 캔버스
   - 현황 위젯
   - 특정 주의/알림
 - 선택 옵션
@@ -110,6 +111,7 @@
   - 전체 메뉴
   - LLM 풀 기능
   - 운영/분석/예외 처리 콘솔
+  - 팀장 봇 대화 확장 여지
 - 기본 동작
   - 현재 제이/Jay 스타일의 자유형 LLM 오케스트레이션 유지
   - 확인창은 정형 업무에서는 유지하되, 일부 운영 질의는 바로 실행 가능
@@ -325,14 +327,23 @@
 ### 1차 대상 화면
 
 - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)
-- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/ai/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/ai/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/schedules/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/schedules/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/employees/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/employees/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/payroll/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/payroll/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/sales/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/sales/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/projects/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/projects/page.js)
+- [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/journals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/journals/page.js)
 - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js)
 
 ### 1차 업무
 
-- 출근
-- 퇴근
-- 휴가 신청
+- 출근 / 퇴근
+- 일정 등록
+- 직원 등록
+- 급여 계산 요청
+- 매출 등록
+- 프로젝트 생성
+- 업무일지 작성
 - 간단한 승인 요청
 
 ### 1차 이유
@@ -348,15 +359,16 @@
 
 ### Phase A
 
-- attendance/leave 정형 업무에 `확인 결과 창` 추가
+- attendance, schedules, employees, payroll, sales, projects, journals에 `확인 결과 창` 연결
 - 사용자가 승인 전 top-level field를 수정 가능하게 함
-- 현재 `ai_feedback_sessions/events`에 그대로 저장
+- 현재 `ai_feedback_sessions/events`와 `feedback_cases` RAG에 저장
 
 ### Phase B
 
 - 역할별 메뉴 노출 분기
 - 대표/담당자용 `LLM 보조 ON/OFF`
 - `ui_mode`, `llm_mode`, `confirmation_mode` 설정 저장
+- `menu_policy` 기반 페이지 접근/액션/공용 채팅 노출 제어
 
 ### Phase C
 
