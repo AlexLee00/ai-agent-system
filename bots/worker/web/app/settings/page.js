@@ -1,18 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { validatePassword } from '@/lib/password-validator';
 import PasswordRuleChecker from '@/components/PasswordRuleChecker';
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
   const [msg, setMsg]       = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiPolicy, setAiPolicy] = useState(user?.ai_policy || null);
+  const [aiMsg, setAiMsg] = useState('');
+  const [aiSaving, setAiSaving] = useState(false);
 
   const validation   = validatePassword(pwForm.next);
   const confirmMatch = pwForm.confirm ? pwForm.next === pwForm.confirm : null;
+
+  const llmModeLabels = {
+    off: 'OFF',
+    assist: '보조',
+    full: 'FULL',
+  };
 
   const handlePwChange = async (e) => {
     e.preventDefault();
@@ -31,6 +40,38 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   };
 
+  const loadAiPolicy = async () => {
+    try {
+      const data = await api.get('/settings/ai-policy');
+      setAiPolicy(data.ai_policy || null);
+    } catch {
+      setAiPolicy(user?.ai_policy || null);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.ai_policy) {
+      setAiPolicy(user.ai_policy);
+      return;
+    }
+    loadAiPolicy();
+  }, [user?.ai_policy]);
+
+  const handleLlmModeChange = async (nextMode) => {
+    setAiSaving(true);
+    setAiMsg('');
+    try {
+      const data = await api.put('/settings/ai-policy', { llm_mode: nextMode });
+      setAiPolicy(data.ai_policy || null);
+      await refreshUser();
+      setAiMsg('✅ AI 보조 모드가 변경되었습니다.');
+    } catch (err) {
+      setAiMsg(`❌ ${err.message}`);
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-lg">
       <div className="card bg-gradient-to-br from-white to-slate-100/80">
@@ -47,6 +88,71 @@ export default function SettingsPage() {
           <div><span className="text-slate-500">역할</span><span className={`badge-${user?.role}`}>{user?.role}</span></div>
           <div><span className="text-slate-500">이메일</span><p className="font-medium">{user?.email || '-'}</p></div>
         </div>
+      </div>
+
+      <div className="card space-y-4">
+        <div>
+          <h2 className="font-semibold text-slate-800">AI 입력 모드</h2>
+          <p className="text-sm text-slate-500 mt-1">권한에 따라 다른 프롬프트 화면과 확인 정책이 적용됩니다.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-slate-500">UI 모드</span>
+            <p className="font-medium">
+              {aiPolicy?.ui_mode === 'prompt_only'
+                ? '프롬프트 전용'
+                : aiPolicy?.ui_mode === 'prompt_plus_dashboard'
+                  ? '프롬프트 + 현황'
+                  : '마스터 콘솔'}
+            </p>
+          </div>
+          <div>
+            <span className="text-slate-500">확인 정책</span>
+            <p className="font-medium">{aiPolicy?.confirmation_mode === 'optional' ? '선택 확인' : '결과 확인 필수'}</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <p className="text-xs text-slate-500">현재 LLM 모드</p>
+          <p className="text-lg font-semibold text-slate-900 mt-1">{llmModeLabels[aiPolicy?.llm_mode] || '-'}</p>
+          <p className="text-xs text-slate-500 mt-2">
+            {aiPolicy?.source === 'master_fixed'
+              ? '마스터 기본 정책이 적용되고 있습니다.'
+              : aiPolicy?.source === 'user_override'
+                ? '개인 override 정책이 적용되고 있습니다.'
+                : '업체 기본 정책이 적용되고 있습니다.'}
+          </p>
+        </div>
+
+        {aiPolicy?.can_toggle_llm ? (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-slate-700">LLM 보조 모드 변경</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(llmModeLabels)
+                .filter(([key]) => aiPolicy?.role_profile === 'master' || key !== 'full')
+                .map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={aiSaving || aiPolicy?.llm_mode === key}
+                    onClick={() => handleLlmModeChange(key)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-medium ${
+                      aiPolicy?.llm_mode === key
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-300 bg-white text-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+            </div>
+            <p className="text-xs text-slate-500">관리자/마스터만 이 설정을 변경할 수 있습니다.</p>
+            {aiMsg && <p className={`text-sm ${aiMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{aiMsg}</p>}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">현재 계정은 AI 보조 모드를 직접 변경할 수 없습니다.</p>
+        )}
       </div>
 
       {/* 비밀번호 변경 */}

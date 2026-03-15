@@ -19,6 +19,7 @@ const migrations = [
   '../migrations/010-claude-code-chat.js',
   '../migrations/011-worker-chat.js',
   '../migrations/012-ai-feedback.js',
+  '../migrations/013-ai-policy.js',
 ];
 
 async function main() {
