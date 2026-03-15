@@ -15,14 +15,40 @@ const { execSync } = require('child_process');
 const http   = require('http');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
+const {
+  publishEventPipeline,
+  buildSeverityTargets,
+} = require('../../../packages/core/lib/reporting-hub');
 
 async function notify(msg, level = 3) {
   try {
-    if (level >= 3) {
-      await sender.sendCritical('blog', msg);
-    } else {
-      await sender.send('blog', msg);
-    }
+    const event = {
+      from_bot: 'blog-health',
+      team: 'blog',
+      event_type: 'health_alert',
+      alert_level: level,
+      message: msg,
+    };
+    await publishEventPipeline({
+      event,
+      policy: {
+        cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,
+        quietHours: {
+          timezone: 'KST',
+          startHour: 23,
+          endHour: 8,
+          maxAlertLevel: 1,
+        },
+      },
+      targets: buildSeverityTargets({
+        event,
+        sender,
+        topicTeam: 'blog',
+        includeQueue: false,
+        includeTelegram: true,
+        includeN8n: true,
+      }),
+    });
   } catch { /* 무시 */ }
 }
 
