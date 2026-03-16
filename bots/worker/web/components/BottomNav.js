@@ -19,7 +19,7 @@ export default function BottomNav() {
   const visibleItems = listVisibleMenus(user, NAV_ITEMS);
 
   return (
-    <div className="flex items-center justify-around h-16 px-2">
+    <div className="flex h-[calc(4rem+env(safe-area-inset-bottom))] items-center justify-around px-1 pb-[env(safe-area-inset-bottom)] pt-1">
       {visibleItems.map(item => {
         const active = pathname.startsWith(item.href);
         const Icon   = item.icon;
@@ -27,12 +27,12 @@ export default function BottomNav() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg min-w-[44px] transition-colors ${
+            className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-2 py-2 transition-colors ${
               active ? 'text-indigo-600' : 'text-gray-400'
             }`}
           >
-            <Icon className="w-5 h-5" />
-            <span className="text-xs font-medium">{item.label}</span>
+            <Icon className="h-5 w-5 shrink-0" />
+            <span className="max-w-full truncate text-[11px] font-medium leading-tight">{item.label}</span>
           </Link>
         );
       })}

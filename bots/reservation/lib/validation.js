@@ -212,6 +212,11 @@ function validateTimeRange(start, end) {
 }
 
 module.exports = {
+  transformPhoneNumber,
+  transformDate,
+  transformTime,
+  transformRoom,
+  transformBookingId,
   transformAndNormalizeData,
   validateTimeRange,
 };

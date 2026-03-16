@@ -33,7 +33,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
     <>
       {/* PC 테이블 */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b">
               {columns.map(col => (
@@ -48,7 +48,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
             {paged.map((row, i) => (
               <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
                 {columns.map(col => (
-                  <td key={col.key} className="py-3 px-4 text-gray-700">
+                  <td key={col.key} className="py-3 px-4 align-top text-gray-700 break-keep">
                     {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
                   </td>
                 ))}
@@ -66,17 +66,17 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
       {/* 모바일 카드 */}
       <div className="md:hidden space-y-3">
         {paged.map((row, i) => (
-          <div key={i} className="card">
+          <div key={i} className="card overflow-hidden">
             {columns.map(col => (
-              <div key={col.key} className="flex justify-between py-1.5 border-b last:border-0">
-                <span className="text-xs text-gray-500 font-medium">{col.label}</span>
-                <span className="text-sm text-gray-800 text-right">
+              <div key={col.key} className="flex flex-col gap-1 border-b py-2 last:border-0 sm:flex-row sm:items-start sm:justify-between">
+                <span className="text-xs font-medium text-gray-500">{col.label}</span>
+                <span className="text-left text-sm text-gray-800 break-keep sm:max-w-[60%] sm:text-right">
                   {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
                 </span>
               </div>
             ))}
             {actions && (
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
                 {actions(row)}
               </div>
             )}

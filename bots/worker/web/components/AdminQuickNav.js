@@ -17,8 +17,8 @@ export default function AdminQuickNav({ items = DEFAULT_ITEMS, title = '운영 �
   const pathname = usePathname();
 
   return (
-    <div className="card bg-white">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="card bg-white lg:hidden">
+      <div className="flex flex-col gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{title}</p>
           <p className="mt-1 text-xs text-slate-400">관리자 운영 화면을 빠르게 오갈 수 있습니다.</p>

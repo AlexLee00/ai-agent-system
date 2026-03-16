@@ -18,6 +18,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag = require('../../../packages/core/lib/rag-safe');
 const { createSkaReadService } = require('../lib/ska-read-service');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
+const { runManualReservationRegistration } = require('../lib/manual-reservation');
 
 const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
@@ -117,6 +118,8 @@ async function runWebhookCommand(payload = {}) {
         sourceBot: 'ska-webhook',
       });
       return { ok: true, message: 'RAG 저장 완료' };
+    case 'register_reservation':
+      return runManualReservationRegistration(args);
     default:
       return { ok: false, error: `지원하지 않는 명령: ${command}` };
   }

@@ -6,6 +6,7 @@ const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { createSkaReadService } = require('./ska-read-service');
+const { runManualReservationRegistration } = require('./manual-reservation');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
@@ -93,6 +94,10 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     }
   }
 
+  async function handleRegisterReservation(args = {}) {
+    return runCommandWithN8n('register_reservation', args, () => runManualReservationRegistration(args));
+  }
+
   function handleRestartAndy() {
     try {
       ensureLaunchdLoaded('ai.ska.naver-monitor', `${process.env.HOME}/Library/LaunchAgents/ai.ska.naver-monitor.plist`);
@@ -126,6 +131,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     restart_andy: handleRestartAndy,
     restart_jimmy: handleRestartJimmy,
     store_resolution: handleStoreResolution,
+    register_reservation: handleRegisterReservation,
   };
 }
 

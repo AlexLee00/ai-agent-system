@@ -1,14 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
-import Card from '@/components/Card';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { useAuth } from '@/lib/auth-context';
-import { getWorkspaceConfig } from '@/lib/workspace-config';
+import PromptAdvisor from '@/components/PromptAdvisor';
+import { parseClaudeOutput } from '../ai/canvas';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -17,9 +16,17 @@ export default function DashboardPage() {
   const [alerts,       setAlerts]       = useState(null);
   const [activities,   setActivities]   = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [prompt,       setPrompt]       = useState('');
+  const [advisorResult, setAdvisorResult] = useState(null);
+  const [attachedFileName, setAttachedFileName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const fileRef = useRef(null);
+  const promptRef = useRef(null);
+  const advisorSectionRef = useRef(null);
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
-  const workspace = getWorkspaceConfig('/dashboard', user);
 
   useEffect(() => {
     const requests = [
@@ -35,14 +42,23 @@ export default function DashboardPage() {
     }).finally(() => setLoading(false));
   }, [canUsePromptWorkspace]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const nextPrompt = new URLSearchParams(window.location.search).get('prompt') || '';
+    setPrompt((prev) => (prev === nextPrompt ? prev : nextPrompt));
+  }, []);
+
+  useEffect(() => {
+    const node = promptRef.current;
+    if (!node) return;
+    const baseHeight = 24;
+    node.style.height = `${baseHeight}px`;
+    const nextHeight = node.scrollHeight <= 28 ? baseHeight : node.scrollHeight;
+    node.style.height = `${nextHeight}px`;
+  }, [prompt]);
+
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
 
-  const quickLinks = [
-    { label: '근태 확인', desc: '오늘 출근 인원과 상태를 확인합니다.', href: '/attendance' },
-    { label: '일정 등록', desc: '회의와 리마인더를 바로 추가합니다.', href: '/schedules' },
-    { label: '업무 관리', desc: 'AI 대화와 문서 업로드를 시작합니다.', href: '/journals' },
-    { label: '매출 입력', desc: '오늘 매출과 주간 흐름을 바로 기록합니다.', href: '/sales' },
-  ];
   const uncheckedPreview = alerts?.unchecked_in_preview || [];
   const upcomingSchedules = alerts?.upcoming_schedules || [];
   const dueProjects = alerts?.due_projects_preview || [];
@@ -59,6 +75,12 @@ export default function DashboardPage() {
       : null,
     (summary?.today_sales ?? 0) === 0
       ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘', bot: 'oliver', severity: 'medium', badge: '등록 필요' }
+      : null,
+    (alerts?.pending_docs_count ?? 0) > 0
+      ? { title: '문서 적체 확인', detail: `AI 요약이 없는 문서 ${alerts.pending_docs_count}건이 남아 있습니다.`, href: '/journals', tone: 'blue', prompt: '문서 적체와 업무 상태 점검해줘', bot: 'worker', severity: 'medium', badge: '우선 정리' }
+      : null,
+    (alerts?.due_projects_count ?? 0) > 0
+      ? { title: '프로젝트 마감 확인', detail: `${alerts.due_projects_count}건의 프로젝트가 7일 내 마감 예정입니다.`, href: '/projects', tone: 'amber', prompt: '마감 임박 프로젝트 점검해줘', bot: 'ryan', severity: 'medium', badge: '일정 주의' }
       : null,
   ]
     .filter(Boolean)
@@ -83,20 +105,38 @@ export default function DashboardPage() {
   const activityTypeLabel = {
     journal: '업무일지',
     attendance: '근태',
+    schedule: '일정',
     sales: '매출',
+    document: '문서',
+    project: '프로젝트',
     approval: '승인',
   };
   const activityTypeTone = {
     journal: 'slate',
     attendance: 'amber',
+    schedule: 'blue',
     sales: 'emerald',
+    document: 'blue',
+    project: 'blue',
     approval: 'rose',
   };
   const activityTypeBadge = {
     journal: '기록',
     attendance: '근태',
+    schedule: '일정',
     sales: '매출',
+    document: '문서',
+    project: '프로젝트',
     approval: '승인',
+  };
+  const activityPriorityBadge = {
+    approval: { label: '즉시 확인', className: 'bg-rose-100 text-rose-700' },
+    attendance: { label: '주의 필요', className: 'bg-amber-100 text-amber-700' },
+    schedule: { label: '일정 확인', className: 'bg-sky-100 text-sky-700' },
+    sales: { label: '등록 확인', className: 'bg-emerald-100 text-emerald-700' },
+    document: { label: '적체 확인', className: 'bg-sky-100 text-sky-700' },
+    project: { label: '마감 확인', className: 'bg-sky-100 text-sky-700' },
+    journal: { label: '운영 기록', className: 'bg-slate-200 text-slate-700' },
   };
   const activityToneClasses = {
     rose: 'border-rose-200 bg-rose-50/80',
@@ -111,30 +151,262 @@ export default function DashboardPage() {
     slate: 'bg-slate-200 text-slate-700',
   };
 
-  const activityActionMap = {
-    attendance: { href: '/attendance', prompt: '최근 근태 처리 내역 요약해줘', bot: 'noah' },
-    sales: { href: '/sales', prompt: '최근 매출 처리 내역 요약해줘', bot: 'oliver' },
-    journal: { href: '/journals', prompt: '최근 업무일지 처리 내역 요약해줘', bot: 'worker' },
-    approval: { href: '/approvals', prompt: '최근 승인 처리 흐름 요약해줘', bot: 'worker' },
-  };
+  const miniActionClass =
+    'inline-flex shrink-0 whitespace-nowrap items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100';
+  const overviewCards = [
+    {
+      label: '근태 상태',
+      value: `${alerts?.unchecked_in_count ?? 0}명`,
+      caption: `출근까지 ${alerts?.minutes_until_checkin > 0 ? `${alerts.minutes_until_checkin}분` : '도래'} · 기준 09:00`,
+      body: uncheckedPreview.length > 0
+        ? `미출근: ${uncheckedPreview.slice(0, 2).map((item) => item.name).join(', ')}`
+        : '오늘 기준 미출근 직원이 없습니다.',
+      actionLabel: '근태 열기',
+      actionHref: '/attendance',
+    },
+    {
+      label: '오늘 일정',
+      value: `${summary?.today_schedules ?? 0}건`,
+      caption: '등록된 일정과 미팅',
+      body: '오늘 일정과 미팅 흐름을 점검합니다.',
+      actionLabel: '일정 열기',
+      actionHref: '/schedules',
+    },
+    {
+      label: '업무 상태',
+      value: `${alerts?.pending_docs_count ?? 0}건`,
+      caption: 'AI 요약이 아직 없는 문서 기준',
+      body: '업무 관리에서 먼저 정리할 항목입니다.',
+      actionLabel: '업무 열기',
+      actionHref: '/journals',
+    },
+    {
+      label: '오늘 매출',
+      value: `₩${(summary?.today_sales ?? 0).toLocaleString()}`,
+      caption: '당일 등록 기준',
+      body: '현재 등록된 매출 기준으로 집계합니다.',
+      actionLabel: '매출 열기',
+      actionHref: '/sales',
+    },
+    {
+      label: '프로젝트 마감 임박',
+      value: `${alerts?.due_projects_count ?? 0}건`,
+      caption: '7일 이내 마감 예정 프로젝트 기준입니다.',
+      body: '7일 내 마감 프로젝트가 없습니다.',
+      actionLabel: '프로젝트 열기',
+      actionHref: '/projects',
+    },
+    {
+      label: '대기 승인',
+      value: `${summary?.pending_approvals ?? 0}건`,
+      caption: '관리자 확인이 필요한 업무',
+      body: '승인 요청 흐름을 먼저 확인하세요.',
+      actionLabel: '승인 열기',
+      actionHref: '/approvals',
+    },
+  ];
+
+  function renderOverviewCard(item, key = item.label) {
+    return (
+      <div key={key} className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-500">{item.label}</p>
+            <p className="mt-2 text-xl font-semibold text-slate-900 sm:text-2xl">{item.value}</p>
+          </div>
+          <button className={miniActionClass} onClick={() => router.push(item.actionHref)}>
+            {item.actionLabel}
+          </button>
+        </div>
+        <div className="mt-3 space-y-3">
+          <p className="text-xs leading-relaxed text-slate-400 break-keep">{item.caption}</p>
+          <p className="text-sm leading-relaxed text-slate-500 break-keep">{item.body}</p>
+        </div>
+      </div>
+    );
+  }
 
   function handlePriorityAction(item) {
     if (!canUsePromptWorkspace || !item.prompt) return router.push(item.href);
-    router.push(`/dashboard?prompt=${encodeURIComponent(item.prompt)}`);
+    setPrompt(item.prompt);
+    setAdvisorResult(buildDashboardAdvisorResult(item.prompt));
+    advisorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function handleActivityAction(item) {
-    const config = activityActionMap[item.type];
-    if (!config) {
-      router.push('/journals');
-      return;
+  function buildDashboardAdvisorResult(input) {
+    const normalized = input.toLowerCase();
+    const result = {
+      title: '운영 요약 추천',
+      summary: '현재 대시보드 기준으로 바로 확인할 항목을 묶어서 안내합니다.',
+      markdown: '',
+      uiComponent: null,
+      actionLabel: 'AI 분석 열기',
+      actionHref: '/ai',
+    };
+
+    if (normalized.includes('미출근') || normalized.includes('출근') || normalized.includes('근태')) {
+      result.title = '근태 상태 추천';
+      result.summary = `${alerts?.unchecked_in_count ?? 0}명의 미출근 직원을 먼저 확인하는 흐름이 적합합니다.`;
+      result.markdown = [
+        '## 근태 상태 추천',
+        '',
+        `- 출근 기준 시각은 **09:00**이고 현재 상태는 **${alerts?.minutes_until_checkin > 0 ? `${alerts.minutes_until_checkin}분 전` : '도래'}**입니다.`,
+        uncheckedPreview.length > 0
+          ? `- 미출근 직원: **${uncheckedPreview.slice(0, 3).map((item) => item.name).join(', ')}**`
+          : '- 현재 미출근 직원은 없습니다.',
+        '- 근태 메뉴에서 출근/휴가/수정 흐름을 이어서 확인하면 좋습니다.',
+      ].join('\n');
+      result.actionLabel = '근태 열기';
+      result.actionHref = '/attendance';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
     }
-    if (!canUsePromptWorkspace || !config.prompt) return router.push(config.href);
-    router.push(`/dashboard?prompt=${encodeURIComponent(config.prompt)}`);
+
+    if (normalized.includes('승인')) {
+      result.title = '승인 흐름 추천';
+      result.summary = `현재 대기 승인 ${summary?.pending_approvals ?? 0}건 기준으로 우선순위를 확인하는 것이 좋습니다.`;
+      result.markdown = [
+        '## 승인 흐름 추천',
+        '',
+        summary?.pending_approvals
+          ? `- 승인 요청 **${summary.pending_approvals}건**이 대기 중입니다.`
+          : '- 현재 대기 승인 요청은 없습니다.',
+        '- 승인 메뉴에서 상태 탭 기준으로 대기/완료/반려를 같이 점검할 수 있습니다.',
+        '- 필요하면 관련 메뉴로 이동해 세부 내용을 다시 확인하세요.',
+      ].join('\n');
+      result.actionLabel = '승인 열기';
+      result.actionHref = '/approvals';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
+    }
+
+    if (normalized.includes('일정')) {
+      result.title = '일정 점검 추천';
+      result.summary = `오늘 일정 ${summary?.today_schedules ?? 0}건 기준으로 일정 흐름을 확인하는 것이 적합합니다.`;
+      result.markdown = [
+        '## 일정 점검 추천',
+        '',
+        summary?.today_schedules
+          ? `- 등록된 일정은 **${summary.today_schedules}건**입니다.`
+          : '- 오늘 등록된 일정은 없습니다.',
+        upcomingSchedules.length > 0
+          ? `- 가까운 일정: **${upcomingSchedules.slice(0, 2).map((item) => item.title).join(', ')}**`
+          : '- 가까운 일정 미리보기는 아직 비어 있습니다.',
+        '- 일정 메뉴에서 일정 생성/수정/확정 흐름을 이어서 볼 수 있습니다.',
+      ].join('\n');
+      result.actionLabel = '일정 열기';
+      result.actionHref = '/schedules';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
+    }
+
+    if (normalized.includes('매출')) {
+      result.title = '매출 상태 추천';
+      result.summary = `오늘 매출은 ₩${(summary?.today_sales ?? 0).toLocaleString()} 기준으로 집계됩니다.`;
+      result.markdown = [
+        '## 매출 상태 추천',
+        '',
+        (summary?.today_sales ?? 0) > 0
+          ? '- 오늘 등록된 매출이 있습니다.'
+          : '- 오늘 매출이 아직 등록되지 않았습니다.',
+        '- 매출 메뉴에서 입력 누락 여부와 최근 처리 내역을 함께 확인하세요.',
+        '- 필요하면 자연어 입력으로 새 매출 제안을 바로 만들 수 있습니다.',
+      ].join('\n');
+      result.actionLabel = '매출 열기';
+      result.actionHref = '/sales';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
+    }
+
+    if (normalized.includes('프로젝트') || normalized.includes('마감')) {
+      result.title = '프로젝트 마감 추천';
+      result.summary = `${alerts?.due_projects_count ?? 0}건의 마감 임박 프로젝트를 기준으로 점검을 추천합니다.`;
+      result.markdown = [
+        '## 프로젝트 마감 추천',
+        '',
+        dueProjects.length > 0
+          ? `- 우선 확인 프로젝트: **${dueProjects.slice(0, 2).map((item) => item.name || item.title).join(', ')}**`
+          : '- 7일 내 마감 임박 프로젝트는 없습니다.',
+        '- 프로젝트 메뉴에서 지연/마감 흐름을 먼저 확인하면 좋습니다.',
+        '- 필요하면 프로젝트별 회고나 일정 조정도 바로 이어서 볼 수 있습니다.',
+      ].join('\n');
+      result.actionLabel = '프로젝트 열기';
+      result.actionHref = '/projects';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
+    }
+
+    if (normalized.includes('문서') || normalized.includes('업무')) {
+      result.title = '업무 적체 추천';
+      result.summary = `${alerts?.pending_docs_count ?? 0}건의 문서 적체를 먼저 점검하는 흐름이 적합합니다.`;
+      result.markdown = [
+        '## 업무 적체 추천',
+        '',
+        (alerts?.pending_docs_count ?? 0) > 0
+          ? `- AI 요약이 없는 문서 **${alerts.pending_docs_count}건**이 남아 있습니다.`
+          : '- 현재 문서 적체는 없습니다.',
+        '- 업무 관리 메뉴에서 우선 정리할 문서/기록을 확인하세요.',
+        '- 업무일지와 문서 흐름을 같이 보면 누락된 처리도 찾기 쉽습니다.',
+      ].join('\n');
+      result.actionLabel = '업무 열기';
+      result.actionHref = '/journals';
+      result.uiComponent = parseClaudeOutput(result.markdown);
+      return result;
+    }
+
+    result.markdown = [
+      '## 운영 요약 추천',
+      '',
+      `- 대기 승인 **${summary?.pending_approvals ?? 0}건**, 오늘 일정 **${summary?.today_schedules ?? 0}건**, 오늘 매출 **₩${(summary?.today_sales ?? 0).toLocaleString()}** 상태입니다.`,
+      `- 미출근 직원 **${alerts?.unchecked_in_count ?? 0}명**, 문서 적체 **${alerts?.pending_docs_count ?? 0}건**을 함께 확인할 수 있습니다.`,
+      '- 대시보드에서 방향을 잡고, 필요한 메뉴로 이동해 세부 점검을 이어가면 좋습니다.',
+    ].join('\n');
+    result.actionLabel = 'AI 분석 열기';
+    result.actionHref = '/ai';
+    result.uiComponent = parseClaudeOutput(result.markdown);
+    return result;
+  }
+
+  function handleDashboardPromptSubmit() {
+    const nextPrompt = prompt.trim();
+    if (!nextPrompt) return;
+    setError('');
+    setAdvisorResult(buildDashboardAdvisorResult(nextPrompt));
+  }
+
+  async function handleUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    setError('');
+    setNotice('');
+    try {
+      const token = getToken();
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
+      const filename = data.document?.filename || file.name;
+      const summaryText = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      setAttachedFileName(filename);
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summaryText}`.trim());
+      setAdvisorResult(null);
+      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {canUsePromptWorkspace && <AdminQuickNav title="관리 화면 바로가기" />}
 
       <AdminPageHero
@@ -144,159 +416,67 @@ export default function DashboardPage() {
             ? '내 업무와 운영 내역을 읽기 전용으로 빠르게 확인할 수 있습니다.'
             : '프롬프트 입력과 운영 요약, 매출과 일정 상태를 한 번에 확인할 수 있습니다.'
         }
-        stats={[
-          { label: '대기 승인', value: `${summary?.pending_approvals ?? 0}건`, caption: '관리자 확인이 필요한 업무' },
-          { label: '오늘 일정', value: `${summary?.today_schedules ?? 0}건`, caption: '등록된 일정과 미팅' },
-          { label: '출근 인원', value: `${summary?.checked_in ?? 0}명`, caption: '실시간 근태 집계' },
-          { label: '오늘 매출', value: `₩${(summary?.today_sales ?? 0).toLocaleString()}`, caption: '당일 등록 기준' },
-        ]}
-      />
-
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-primary text-sm" onClick={() => router.push('/journals')}>
-          {isMember ? '업무 내역 열기' : '업무 관리 열기'}
-        </button>
-        <button className="btn-secondary text-sm" onClick={() => router.push('/schedules')}>
-          일정 관리 열기
-        </button>
-      </div>
+      >
+        {canUsePromptWorkspace && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {overviewCards.map((item) => renderOverviewCard(item))}
+          </div>
+        )}
+      </AdminPageHero>
 
       {canUsePromptWorkspace && (
-        <WorkerAIWorkspace
-          menuKey="dashboard"
-          title={workspace.title}
-          description={workspace.description}
-          suggestions={workspace.suggestions}
-          allowUpload={false}
-          agentName={workspace.agentName}
-          compact
-          showCanvasPanel={false}
-          showQueuePanel={false}
-          showMasterSignalsPanel={false}
-        />
-      )}
-
-      {canUsePromptWorkspace && (
-        <section className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
-          <div className="card bg-white">
-            <p className="text-sm font-medium text-slate-500">출근까지 남은 시간</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {alerts?.minutes_until_checkin > 0 ? `${alerts.minutes_until_checkin}분` : '도래'}
-            </p>
-            <p className="mt-2 text-xs text-slate-400">기준 출근 시각 09:00</p>
+        <>
+          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+          <div ref={advisorSectionRef}>
+            <PromptAdvisor
+              title="프롬프트 어드바이저"
+              description="운영 질문을 먼저 정리하고, 대시보드 안에서 바로 추천 결과를 확인합니다."
+              badge={user?.role === 'master' ? 'Worker 마스터 오케스트레이터' : 'Worker 운영 에이전트'}
+              suggestions={[
+                '오늘 미출근 직원 보여줘',
+                '대기 승인과 오늘 일정 같이 요약해줘',
+                '오늘 매출 상태 알려줘',
+                '문서 적체와 프로젝트 마감 점검해줘',
+              ]}
+              helperText="운영 요약, 승인 대기, 미출근, 일정, 매출, 프로젝트, 문서 적체처럼 대시보드에서 바로 판단할 질문에 적합합니다."
+              prompt={prompt}
+              onPromptChange={(value) => {
+                setPrompt(value);
+                setAdvisorResult(null);
+              }}
+              promptRef={promptRef}
+              placeholder="메시지 입력"
+              onFileClick={() => fileRef.current?.click()}
+              uploading={uploading}
+              attachedFileName={attachedFileName}
+              onReset={() => {
+                setPrompt('');
+                setAdvisorResult(null);
+                setAttachedFileName('');
+                setNotice('');
+                setError('');
+              }}
+              onSubmit={handleDashboardPromptSubmit}
+              submitDisabled={!prompt.trim()}
+              error={error}
+              notice={notice}
+              result={advisorResult}
+              onResultAction={() => router.push(advisorResult.actionHref)}
+            />
           </div>
-
-          <div className="card bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">아직 출근하지 않은 직원</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.unchecked_in_count ?? 0}명</p>
-              </div>
-              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/attendance')}>
-                근태 열기
-              </button>
-            </div>
-            {uncheckedPreview.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {uncheckedPreview.map((item) => (
-                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
-                    <p className="text-sm font-medium text-slate-900">{item.name}</p>
-                    <p className="text-xs text-slate-500">{item.department || '부서 미지정'} · {item.position || '직급 미지정'}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-emerald-600">오늘 기준 미출근 직원이 없습니다.</p>
-            )}
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">가까운 일정 / 승인</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.pending_approvals ?? 0}건</p>
-              </div>
-              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/approvals')}>
-                승인 열기
-              </button>
-            </div>
-            {upcomingSchedules.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {upcomingSchedules.map((item) => (
-                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
-                    <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {new Date(item.start_time).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · {item.type || 'task'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">가까운 일정이 없습니다.</p>
-            )}
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">문서 처리 적체</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.pending_docs_count ?? 0}건</p>
-              </div>
-              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/journals')}>
-                업무 열기
-              </button>
-            </div>
-            <p className="mt-3 text-sm text-slate-500">
-              AI 요약이 아직 없는 문서 수입니다. 적체가 길어지면 업무 관리에서 먼저 정리하는 것이 좋습니다.
-            </p>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">마감 임박 프로젝트</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900">{alerts?.due_projects_count ?? 0}건</p>
-              </div>
-              <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/projects')}>
-                프로젝트 열기
-              </button>
-            </div>
-            {dueProjects.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {dueProjects.map((item) => (
-                  <div key={item.id} className="rounded-2xl bg-slate-50 px-3 py-2">
-                    <p className="text-sm font-medium text-slate-900">{item.name}</p>
-                    <p className="text-xs text-slate-500">
-                      마감 {item.end_date} · {item.status || 'planning'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-emerald-600">7일 내 마감 프로젝트가 없습니다.</p>
-            )}
-          </div>
-        </section>
+        </>
       )}
 
       <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="card">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-3">
+            <div className="min-w-0">
               <p className="text-sm font-medium text-slate-500">운영 캔버스</p>
               <h2 className="mt-1 text-lg font-semibold text-slate-900">지금 바로 확인할 항목</h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs leading-relaxed text-slate-400 break-keep">
                 우선순위가 높은 항목부터 위쪽에 정렬됩니다.
               </p>
             </div>
-            {!isMember && (
-              <button
-                className="text-xs font-medium text-slate-600 hover:text-slate-900"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              >
-                운영 프롬프트로 이동
-              </button>
-            )}
           </div>
           <div className="mt-4 grid gap-3">
             {priorityItems.length === 0 ? (
@@ -304,204 +484,75 @@ export default function DashboardPage() {
                 현재 즉시 조치가 필요한 항목이 없습니다.
               </div>
             ) : priorityItems.map((item) => (
-              <div
+              <button
+                type="button"
                 key={`${item.href}-${item.title}`}
-                className={`rounded-3xl border px-5 py-4 text-left ${toneClasses[item.tone] || toneClasses.blue}`}
+                onClick={() => handlePriorityAction(item)}
+                className={`w-full rounded-3xl border px-5 py-4 text-left transition hover:-translate-y-0.5 ${toneClasses[item.tone] || toneClasses.blue}`}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <p className="text-sm font-semibold text-slate-900">{item.title}</p>
                   {item.badge ? (
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeClasses[item.tone] || badgeClasses.blue}`}>
+                    <span className={`self-start rounded-full px-2.5 py-1 text-[11px] font-semibold ${badgeClasses[item.tone] || badgeClasses.blue}`}>
                       {item.badge}
                     </span>
                   ) : null}
                 </div>
-                <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
-                <div className="mt-4">
-                  <ProposalFlowActions
-                    onPromptFill={() => handlePriorityAction(item)}
-                    onSecondary={() => router.push(item.href)}
-                    secondaryLabel="메뉴 열기"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-slate-500">최근 업무 큐</p>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">최신 처리 흐름</h2>
-              <p className="mt-1 text-xs text-slate-400">
-                처리 유형별 배지와 최신 시각을 기준으로 흐름을 빠르게 읽을 수 있습니다.
-              </p>
-            </div>
-            <button className="text-xs font-medium text-slate-600 hover:text-slate-900" onClick={() => router.push('/journals')}>
-              업무 관리 열기
-            </button>
-          </div>
-          <div className="mt-4 space-y-3">
-            {activities.length === 0 ? (
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
-                최근 활동이 없습니다.
-              </div>
-            ) : activities.slice(0, 6).map((item, index) => (
-              <div
-                key={`${item.type}-${item.created_at}-${index}`}
-                className={`rounded-3xl border px-4 py-4 ${activityToneClasses[activityTypeTone[item.type] || 'slate']}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{activityTypeLabel[item.type] || item.type}</p>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                        activityBadgeClasses[activityTypeTone[item.type] || 'slate']
-                      }`}
-                    >
-                      {activityTypeBadge[item.type] || '활동'}
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-400">
-                    {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
-                {item.actor && <p className="mt-1 text-xs text-slate-400">담당: {item.actor}</p>}
-                <div className="mt-4">
-                  <ProposalFlowActions
-                    onPromptFill={() => handleActivityAction(item)}
-                    onSecondary={() => router.push(activityActionMap[item.type]?.href || '/journals')}
-                    secondaryLabel="메뉴 열기"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card
-          title="오늘 매출"
-          value={`₩${(summary?.today_sales ?? 0).toLocaleString()}`}
-          subtitle="매출 관리로 이동"
-          icon="💰"
-          color="blue"
-          onClick={() => router.push('/sales')}
-        />
-        <Card
-          title="출근 인원"
-          value={`${summary?.checked_in ?? 0}명`}
-          subtitle="근태 관리로 이동"
-          icon="👥"
-          color="green"
-          onClick={() => router.push('/attendance')}
-        />
-        <Card
-          title="미처리 문서"
-          value={`${summary?.pending_docs ?? 0}건`}
-          subtitle="업무 관리에서 처리"
-          icon="📋"
-          color="yellow"
-          onClick={() => router.push('/journals')}
-        />
-        <Card
-          title="대기 승인"
-          value={`${summary?.pending_approvals ?? 0}건`}
-          subtitle={isMember ? '운영 참고용' : '승인 관리로 이동'}
-          icon="✅"
-          color="red"
-          onClick={() => router.push('/approvals')}
-        />
-        <Card
-          title="진행 중 프로젝트"
-          value={`${summary?.active_projects ?? 0}건`}
-          subtitle="프로젝트 관리로 이동"
-          icon="📋"
-          color="blue"
-          onClick={() => router.push('/projects')}
-        />
-        <Card
-          title="오늘 일정"
-          value={`${summary?.today_schedules ?? 0}건`}
-          subtitle="일정 관리로 이동"
-          icon="📅"
-          color="green"
-          onClick={() => router.push('/schedules')}
-        />
-      </div>
-
-      <section className="grid gap-4 lg:grid-cols-4">
-        {quickLinks.map((item) => (
-          <button
-            key={item.href}
-            onClick={() => router.push(item.href)}
-            className="card text-left hover:shadow-md transition-shadow bg-white"
-          >
-            <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-            <p className="text-sm text-slate-500 mt-2">{item.desc}</p>
-          </button>
-        ))}
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="card">
-          <h2 className="font-semibold text-slate-800 mb-4">📈 운영 메모</h2>
-          <div className="space-y-3">
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-sm font-medium text-slate-900">오늘 매출</p>
-              <p className="text-xs text-slate-500 mt-1">현재 등록 기준으로 집계됩니다.</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-sm font-medium text-slate-900">근태/일정 점검</p>
-              <p className="text-xs text-slate-500 mt-1">근태와 일정 메뉴에서 바로 상세 확인이 가능합니다.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <h2 className="font-semibold text-slate-800 mb-4">🧭 바로 가기</h2>
-          <div className="space-y-2">
-            {quickLinks.map((item) => (
-              <button
-                key={item.href}
-                onClick={() => router.push(item.href)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:bg-slate-50"
-              >
-                <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                <p className="text-xs text-slate-500 mt-1">{item.desc}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600 break-keep">{item.detail}</p>
               </button>
             ))}
           </div>
         </div>
 
         <div className="card">
-          <h2 className="font-semibold text-slate-800 mb-4">📌 상태 요약</h2>
-          <div className="space-y-3">
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-sm font-medium text-slate-900">대기 승인</p>
-              <p className="text-xs text-slate-500 mt-1">{summary?.pending_approvals ?? 0}건</p>
+          <div className="flex flex-col gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-500">최근 업무 큐</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">최신 처리 흐름</h2>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400 break-keep">
+                처리 유형별 배지와 최신 시각을 기준으로 흐름을 빠르게 읽을 수 있습니다.
+              </p>
             </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-sm font-medium text-slate-900">오늘 일정</p>
-              <p className="text-xs text-slate-500 mt-1">{summary?.today_schedules ?? 0}건</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <p className="text-sm font-medium text-slate-900">진행 중 프로젝트</p>
-              <p className="text-xs text-slate-500 mt-1">{summary?.active_projects ?? 0}건</p>
-            </div>
-            {canUsePromptWorkspace && (
-              <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                <p className="text-sm font-medium text-slate-900">미출근 직원</p>
-                <p className="text-xs text-slate-500 mt-1">{alerts?.unchecked_in_count ?? 0}명</p>
+          </div>
+          <div className="mt-4 max-h-[44rem] space-y-3 overflow-y-auto pr-1">
+            {activities.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                최근 활동이 없습니다.
               </div>
-            )}
+            ) : activities.slice(0, 10).map((item, index) => (
+              <div
+                key={`${item.type}-${item.created_at}-${index}`}
+                className={`rounded-3xl border px-4 py-4 ${activityToneClasses[activityTypeTone[item.type] || 'slate']}`}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-900">{activityTypeLabel[item.type] || item.type}</p>
+                    <span
+                      className={`self-start rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        activityBadgeClasses[activityTypeTone[item.type] || 'slate']
+                      }`}
+                    >
+                      {activityTypeBadge[item.type] || '활동'}
+                    </span>
+                    {activityPriorityBadge[item.type] ? (
+                      <span
+                        className={`self-start rounded-full px-2.5 py-1 text-[11px] font-semibold ${activityPriorityBadge[item.type].className}`}
+                      >
+                        {activityPriorityBadge[item.type].label}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="text-xs leading-relaxed text-slate-400 break-keep">
+                    {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600 break-keep">{item.detail}</p>
+                {item.actor && <p className="mt-1 text-xs text-slate-400">담당: {item.actor}</p>}
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -16,20 +16,20 @@ export default function Header({ title }) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200 px-4 h-16 flex items-center gap-3">
+      <header className="safe-area-pt sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:h-16 sm:gap-3 sm:px-4">
         {/* 햄버거 (모바일/태블릿) */}
         <button
           onClick={() => setDrawerOpen(true)}
-          className="lg:hidden p-2 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="lg:hidden flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 hover:bg-gray-100"
         >
           <Menu className="w-5 h-5 text-gray-600" />
         </button>
 
-        <h2 className="font-semibold text-slate-800 flex-1">{title || '워커 업무 운영'}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-800 sm:text-xl">{title || '워커 업무 운영'}</h2>
 
         {user && (
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center text-white text-sm font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white sm:h-9 sm:w-9">
               {(user.name || user.username).charAt(0)}
             </div>
           </div>
@@ -39,12 +39,12 @@ export default function Header({ title }) {
       {/* 드로어 */}
       {drawerOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-64 bg-white shadow-xl flex flex-col h-full">
+          <div className="flex h-full w-[min(18rem,86vw)] flex-col bg-white shadow-xl">
             <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <span className="font-bold">메뉴</span>
               <button
                 onClick={() => setDrawerOpen(false)}
-                className="p-2 rounded-lg hover:bg-gray-100 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 hover:bg-gray-100"
               >
                 <X className="w-5 h-5 text-gray-600" />
               </button>
