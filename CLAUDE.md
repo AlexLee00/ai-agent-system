@@ -324,10 +324,11 @@ await rag.store(namespace, content, metadata, botName);
 
 ### 세션 시작 루틴
 1. CLAUDE.md 읽기 (프로젝트 규칙)
-2. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
-3. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
-4. team-jay-strategy.md 해당 섹션 확인 (오늘 할 일)
-5. git status로 현재 상태 확인
+2. docs/SESSION_CONTEXT_INDEX.md 읽기 (공통 문서/팀별 진입점 인덱스)
+3. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
+4. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
+5. docs/improvement-ideas.md 확인 (현재 구현 상태와 빠른 찾기)
+6. git status로 현재 상태 확인
 
 ### 세션 마무리 루틴
 1. Git 커밋 (미커밋 변경사항 정리)
@@ -350,6 +351,7 @@ await rag.store(namespace, content, metadata, botName);
 |------|------|----------|
 | work-history.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과) | 매 작업 완료 즉시 |
 | dev-journal.md | 왜 이렇게 결정했는가 (연구/논문/발표용) | 중요 결정/인사이트 시 |
+| SESSION_CONTEXT_INDEX.md | 공통 규칙/진입점/운영 설정 인덱스 | 공통 구조 변경 시 |
 | SESSION_HANDOFF.md | 다음 세션에 전달할 맥락 (기억 이전) | 매 세션 종료 시 |
 | TEST_RESULTS.md | 테스트 결과 누적 | 테스트 실행 시 |
 | CHANGELOG.md | 버전별 변경 이력 | 기능 변경 시 |
@@ -357,6 +359,7 @@ await rag.store(namespace, content, metadata, botName);
 
 ### 기억 이전 체계
 - **즉시** (같은 날): SESSION_HANDOFF.md → 다음 세션이 읽음
+- **공통 인덱스**: SESSION_CONTEXT_INDEX.md → 세션 시작 시 반드시 읽음
 - **단기** (1주): work-history.md, KNOWN_ISSUES.md
-- **장기** (영구): dev-journal.md, CHANGELOG.md, team-jay-strategy.md, CLAUDE.md
+- **장기** (영구): dev-journal.md, CHANGELOG.md, improvement-ideas.md, CLAUDE.md
 - **전략 기억**: claude.ai (전략 담당)가 메모리로 장기 기억 유지

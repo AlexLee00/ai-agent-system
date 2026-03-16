@@ -1,6 +1,7 @@
 # 세션 핸드오프
 
 > 다음 Claude Code 세션에서 이 파일을 먼저 읽어주세요.
+> 단, 공통 규칙/팀별 진입점은 먼저 [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 확인한 뒤 이 문서를 읽는 것을 권장합니다.
 
 ## 이번 세션 완료 내역 (2026-03-11 ~ 2026-03-15)
 
