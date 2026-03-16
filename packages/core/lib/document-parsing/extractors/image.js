@@ -3,6 +3,7 @@
 const os = require('os');
 const path = require('path');
 const { WARNING_CODES } = require('../constants');
+const { evaluateImageOcrQuality } = require('../image-quality');
 const {
   buildSection,
   createBaseMetadata,
@@ -52,13 +53,20 @@ async function extractImageDocument({ filePath }) {
 
   warnings.push(...(result.warnings || []));
   const sourceConfidence = typeof result.confidence === 'number' ? Number(result.confidence.toFixed(4)) : null;
+  const quality = evaluateImageOcrQuality({
+    text: result.text || '',
+    width: result.width || null,
+    height: result.height || null,
+    confidence: sourceConfidence,
+    warnings,
+  });
   return finalizeExtraction({
     text: result.text || '',
     metadata: createBaseMetadata({
       sourceFileType: 'image',
       extractionMethod: 'image_ocr',
       equivalentCount: 1,
-      extractionWarnings: warnings,
+      extractionWarnings: quality.imageOcrWarnings,
       chunkStrategy: 'image_block',
       sourceConfidence,
       sections: [
@@ -71,6 +79,7 @@ async function extractImageDocument({ filePath }) {
         imageOcrUsed: true,
         imageCount: 1,
         ocrConfidence: sourceConfidence,
+        ...quality,
       },
     }),
   });
@@ -82,5 +91,6 @@ module.exports = {
   extract: extractImageDocument,
   _private: {
     runImageOcr,
+    evaluateImageOcrQuality,
   },
 };

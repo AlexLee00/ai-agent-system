@@ -2,6 +2,8 @@
 
 const textExtractor = require('./extractors/text');
 const xlsxExtractor = require('./extractors/xlsx');
+const docxExtractor = require('./extractors/docx');
+const docExtractor = require('./extractors/doc');
 const pptxExtractor = require('./extractors/pptx');
 const imageExtractor = require('./extractors/image');
 const pdfExtractor = require('./extractors/pdf');
@@ -11,6 +13,8 @@ function createExtractorRegistry() {
     pdfExtractor,
     textExtractor,
     xlsxExtractor,
+    docxExtractor,
+    docExtractor,
     pptxExtractor,
     imageExtractor,
   ];

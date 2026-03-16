@@ -38,6 +38,8 @@ function detectFileType({ filePath = '', originalName = '', mimeType = '' } = {}
   }
   if (/^image\//.test(normalizedMime)) return 'image';
   if (normalizedMime.includes('pdf')) return 'pdf';
+  if (normalizedMime.includes('wordprocessingml')) return 'docx';
+  if (normalizedMime.includes('msword')) return 'doc';
   if (normalizedMime.includes('presentation')) return 'pptx';
   if (normalizedMime.includes('sheet') || normalizedMime.includes('excel')) return 'xlsx';
   if (normalizedMime.startsWith('text/')) return 'txt';
