@@ -64,6 +64,18 @@
 2. [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
    - 현재 팀별 운영 설정 빠른 조회
 
+### 2.5 팀별 참조 문서
+
+1. [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
+   - 팀별 참조 문서 인덱스
+2. 팀별 상세 문서
+   - [워커](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_WORKER_REFERENCE.md)
+   - [루나](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_INVESTMENT_REFERENCE.md)
+   - [스카](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_SKA_REFERENCE.md)
+   - [클로드](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_CLAUDE_REFERENCE.md)
+   - [제이](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_ORCHESTRATOR_REFERENCE.md)
+   - [블로](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_BLOG_REFERENCE.md)
+
 ---
 
 ## 3. 공통 레이어별 핵심 진입점
