@@ -168,6 +168,11 @@
 | 완료 | 2026-03-15 | AI 정책 테이블 | 회사 기본값 + 사용자 override 컬럼 추가 | [bots/worker/migrations/013-ai-policy.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/013-ai-policy.sql) |
 | 완료 | 2026-03-15 | 정책 계산 헬퍼 | `ui_mode`, `llm_mode`, `confirmation_mode`, toggle 여부 계산 | [bots/worker/lib/ai-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-policy.js) |
 | 완료 | 2026-03-15 | 설정 API/UI | `/api/settings/ai-policy`와 워커 설정 화면 반영 | [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js), [bots/worker/web/app/settings/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/settings/page.js) |
+| 완료 | 2026-03-16 | 권한 기반 메뉴/액션 제어 | `menu_policy` 기반으로 메뉴 노출, 경로 접근, 페이지 액션, 프롬프트 노출 정책까지 연결 | [bots/worker/lib/menu-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/menu-policy.js), [bots/worker/web/lib/menu-access.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/menu-access.js) |
+| 완료 | 2026-03-16 | PromptAdvisor 공용화 | 대시보드 공용 프롬프트 패턴을 attendance와 주요 업무 화면으로 재사용 가능하게 정리 | [bots/worker/web/components/PromptAdvisor.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/PromptAdvisor.js), [bots/worker/web/app/dashboard/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js) |
+| 완료 | 2026-03-16 | 승인/근태 권한 흐름 정리 | 근태 현황/휴가/휴가 승인 탭, 멤버/관리자/마스터 노출 범위, 승인 후 상태 반영까지 정리 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js), [bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js) |
+| 완료 | 2026-03-16 | 문서 업로드 기반 AI 입력 확장 | 업로드 문서를 파싱해 프롬프트에 주입하고, 주요 업무 화면에서 구조 추출에 재사용 가능하게 연결 | [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js), [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js) |
+| 완료 | 2026-03-16 | OCR 테스트 운영 화면 | 관리자용 `OCR 테스트` 메뉴와 파싱 metadata/추출 텍스트 확인 화면 구축 | [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js), [bots/worker/web/components/Sidebar.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/Sidebar.js) |
 
 ### 4.6 스카팀 예측/운영/명령 고도화
 
@@ -215,6 +220,8 @@
 |---|---|---|---|---|
 | 진행 중 | 2026-03-16 | 워커 확인 결과 창 UX | attendance, leave, schedules, employees, payroll, sales, projects, journals에 자연어 제안/수정/확정 흐름 연결 완료. 주요 메뉴는 `메뉴 내부 프롬프트 1개 + 하단 승인 리스트` 구조로 통일됨. 승인 카드와 유사 사례 카드도 프롬프트 재사용 흐름으로 연결되며, 관리자/마스터 메뉴는 상단 요약 헤더와 빠른 액션 카드까지 공통 톤으로 정리됨 | 대시보드 운영 캔버스 시각 톤 마감 |
 | 진행 중 | 2026-03-16 | 워커 권한별 화면 분기 | dashboard 역할 분기, menu_policy 기반 메뉴 노출/접근/액션 제어, 메뉴별 프롬프트 노출 정책까지 반영됨. 마스터/관리자 대시보드 프롬프트는 대상 봇 선택까지 연결됐고, 관리자 운영 화면은 공통 `운영 바로가기`와 공통 헤더 축으로 묶였음 | 관리자 현황 위젯 심화 |
+| 완료 | 2026-03-16 | 워커 문서 파싱/업로드 흐름 | `pdf/txt/doc/docx/xlsx/pptx/image` 업로드, 파싱 결과 저장, 추출 텍스트 조회 API, OCR 테스트 화면까지 연결 | [packages/core/lib/document-parser.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/document-parser.js), [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js), [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js) |
+| 완료 | 2026-03-17 | 워커 운영 설정 외부화 | worker lead / intake / health timeout과 web auth timeout / reconnect delay를 설정 파일에서 조정 가능하게 정리 | [bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json), [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js), [bots/worker/web/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/runtime-config.js) |
 | 진행 중 | 2026-03-15 | feedback analytics 운영화 | CLI, direct routing, 브리핑 요약까지 있음 | 주간 자동 리포트와 품질 경보 기준 튜닝 |
 | 진행 중 | 2026-03-15 | reporting-hub 이관 마무리 | 주요 producer 대부분 이관 | team-bus/잔여 직결 발송 경로 전수 점검 |
 | 진행 중 | 2026-03-15 | 스카 n8n node화 | read 명령과 bridge, workflow draft는 완료 | write/ops 계열 `store_resolution`, `analyze_unknown`, restart 계열 보수적 이관 |
@@ -232,10 +239,14 @@
 | 진행 중 | 자연어 대화형 업무 등록 메인 UX | 근태, 일정, 직원, 급여, 매출, 프로젝트, 업무일지에 확인 결과 창 기반 자연어 등록이 연결됨. 현재는 핵심 메뉴가 `메뉴 내부 프롬프트 1개 + 하단 승인 리스트` 구조까지 정리됐고, 승인 카드/유사 사례/대시보드/승인 inbox/AI 분석/관리 화면이 같은 프롬프트 흐름으로 연결됨. 대시보드의 기존 공용 프롬프트는 `PromptAdvisor` 공용 컴포넌트로 대체됨 |
 | 완료 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)에 확인 결과 창 추가 | 자연어 제안, 수정, 승인/반려, 유사 사례 조회, feedback 기록까지 구현 완료. leave도 attendance 내부 흐름으로 통합 |
 | 진행 중 | 일반사용자/관리자/마스터 화면 차등 적용 | dashboard 역할 분기, menu_policy 기반 메뉴 노출/접근/액션 제어, 메뉴별 프롬프트 노출 정책까지 반영됨. 마스터는 대시보드 운영 프롬프트에서 팀장 봇 선택 가능 |
+| 완료 | 문서 업로드 → 파싱 → 프롬프트 주입 | 주요 업무 화면에서 업로드 문서를 파싱해 구조 추출 프롬프트에 주입하고, 추출 텍스트/metadata를 저장하도록 연결됨 |
+| 완료 | OCR 테스트 운영 화면 | 관리자 메뉴에서 `OCR 테스트`를 통해 파싱 결과와 metadata를 바로 확인 가능 |
 | 진행 중 | 관리자 현황 위젯 강화 | 미출근, 출근 예정, 승인 대기, 문서 적체, 마감 임박 프로젝트까지 카드화됨. 다음은 우선순위 색상/경보 밀도 조정과 액션 연결 정교화 |
 | 완료 | LLM ON/OFF 정책의 런타임 반영 | `llm_mode=off|assist|full`이 chat-agent와 워커 공용 채팅 런타임에 적용됨 |
+| 완료 | 근태/휴가 권한 흐름 | 멤버는 본인 현황만, 관리자/마스터는 회사 전체 현황과 휴가 승인 탭까지 보도록 정리됨 |
 | 진행 중 | 채팅 + 캔버스 레이아웃 정착 | dashboard는 `프롬프트 + 운영 캔버스 + 최근 업무 큐`, 정형 메뉴는 `로컬 프롬프트 + 승인 리스트 + 상단 요약 헤더` 구조로 정리됨. 남은 것은 시각적 일관화와 마스터 캔버스 심화 |
 | 진행 중 | 봇 대화 API의 역할별 확장 | 마스터/관리자 대시보드 프롬프트에서 대상 봇 선택과 권장 봇 자동 선택이 연결됨. AI 분석, 승인 inbox, 관리 화면도 같은 프롬프트 재사용 흐름으로 연결됨. 남은 것은 메뉴별 전문 봇 시나리오 심화 |
+| 진행 중 | 문서 분석 결과의 실제 업무 재사용 | OCR 테스트/추출 저장은 완료. 다음은 문서 상세 화면, 승인 흐름, adaptive routing 재사용 강화가 남음 |
 
 ### 6.2 피드백 + RAG / 학습 데이터
 
@@ -293,11 +304,14 @@
   - attendance/schedules/employees/payroll/sales/projects/journals 확인 결과 창
   - feedback -> RAG 적재와 유사 사례 retrieval
   - menu_policy 기반 메뉴 노출, 경로 접근, 페이지 액션, 공용 채팅 정책
+  - 문서 업로드 파싱(`pdf/txt/doc/docx/xlsx/pptx/image`)과 OCR 테스트 화면
+  - PromptAdvisor 공용화, 근태/휴가 승인 흐름 정리, worker/web runtime config 외부화
 - 남은 핵심:
   - 대화형 입력을 워커 기본 진입 UX로 더 끌어올리기
   - 관리자 현황 위젯과 마스터 봇 대화 고도화
   - 승인 리스트 시각적 완성도 향상
   - 채팅 + 캔버스 패턴 시각적 완성도 향상
+  - 문서 분석 결과를 실제 상세 화면과 정책 라우팅에 더 깊게 연결
 
 ### 스카
 
@@ -371,7 +385,7 @@
 
 1. 워커 자연어 대화형 입력을 메인 UX로 더 전면화
 2. 채팅 + 캔버스 패턴의 동적 렌더링 품질 향상
-3. leave/documents 등 남은 메뉴에 확인 결과 창 확장
+3. documents 상세/재사용 흐름과 adaptive prompt 연결 강화
 4. 관리자 현황 위젯과 마스터 전용 봇 대화 경험 고도화
 5. 메뉴 정책을 문서/운영 가이드와 완전히 동기화
 6. worker/orchestrator/claude/blog 설정값 변경 이력 관찰 루프 구축
