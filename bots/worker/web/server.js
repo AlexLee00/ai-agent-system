@@ -2358,9 +2358,7 @@ app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), co
         [req.companyId]),
     ]);
 
-    const nowKst = kst.now();
-    const [hourStr = '0', minuteStr = '0'] = nowKst.time.split(':');
-    const nowMinutes = (Number(hourStr) * 60) + Number(minuteStr);
+    const nowMinutes = (kst.currentHour() * 60) + kst.currentMinute();
     const workdayStartMinutes = 9 * 60;
     const minutesUntilCheckIn = Math.max(workdayStartMinutes - nowMinutes, 0);
 
@@ -2384,35 +2382,98 @@ app.get('/api/dashboard/alerts', requireAuth, requireRole('master', 'admin'), co
 app.get('/api/activity', requireAuth, companyFilter, async (req, res) => {
   try {
     const rows = await pgPool.query(SCHEMA, `
-      SELECT type, created_at, actor, detail FROM (
-        SELECT 'journal' AS type, j.created_at, e.name AS actor,
-               CONCAT(COALESCE(e.name,'직원'), '이(가) 업무일지를 작성했습니다') AS detail
-        FROM worker.work_journals j
-        LEFT JOIN worker.employees e ON e.id = j.employee_id
-        WHERE j.company_id = $1 AND j.deleted_at IS NULL
+      SELECT type, created_at, actor, detail, priority_rank FROM (
+        SELECT 'approval' AS type,
+               COALESCE(ar.updated_at, ar.created_at) AS created_at,
+               COALESCE(u.name, '승인 대기') AS actor,
+               CONCAT(
+                 CASE
+                   WHEN ar.category = 'leave_request' THEN '휴가'
+                   WHEN ar.category = 'attendance' THEN '근태'
+                   WHEN ar.category = 'employee' THEN '직원'
+                   WHEN ar.category = 'payroll' THEN '급여'
+                   WHEN ar.category = 'schedule' THEN '일정'
+                   WHEN ar.category = 'sales' THEN '매출'
+                   WHEN ar.category = 'project' THEN '프로젝트'
+                   ELSE COALESCE(ar.category, '업무')
+                 END,
+                 ' ',
+                 CASE
+                   WHEN ar.status = 'pending' THEN '승인 대기 중입니다'
+                   WHEN ar.status = 'approved' THEN '승인되었습니다'
+                   WHEN ar.status = 'rejected' THEN '반려되었습니다'
+                   ELSE '상태가 갱신되었습니다'
+                 END
+               ) AS detail,
+               CASE WHEN ar.status = 'pending' THEN 1 ELSE 2 END AS priority_rank
+        FROM worker.approval_requests ar
+        LEFT JOIN worker.users u ON u.id = ar.approver_id
+        WHERE ar.company_id = $1 AND ar.deleted_at IS NULL
         UNION ALL
         SELECT 'attendance' AS type,
                COALESCE(a.check_out, a.created_at) AS created_at,
                e.name AS actor,
-               CONCAT(COALESCE(e.name,'직원'), '이(가) ',
+               CONCAT(
+                 COALESCE(e.name,'직원'),
+                 '이(가) ',
                  CASE WHEN a.check_out IS NOT NULL THEN '퇴근' ELSE '출근' END,
-               ' 체크했습니다') AS detail
+                 ' 체크했습니다'
+               ) AS detail,
+               2 AS priority_rank
         FROM worker.attendance a
         LEFT JOIN worker.employees e ON e.id = a.employee_id
         WHERE a.company_id = $1
         UNION ALL
+        SELECT 'schedule' AS type,
+               COALESCE(s.updated_at, s.created_at) AS created_at,
+               NULL AS actor,
+               CONCAT(COALESCE(s.title, '일정'), ' 일정이 등록되거나 갱신되었습니다') AS detail,
+               CASE
+                 WHEN s.start_time::date = (NOW() AT TIME ZONE 'Asia/Seoul')::date THEN 2
+                 ELSE 3
+               END AS priority_rank
+        FROM worker.schedules s
+        WHERE s.company_id = $1 AND s.deleted_at IS NULL
+        UNION ALL
         SELECT 'sales' AS type, s.created_at, NULL AS actor,
-               CONCAT('₩', TO_CHAR(s.amount, 'FM999,999,999'), ' 매출이 등록되었습니다') AS detail
+               CONCAT('₩', TO_CHAR(s.amount, 'FM999,999,999'), ' 매출이 등록되었습니다') AS detail,
+               3 AS priority_rank
         FROM worker.sales s
         WHERE s.company_id = $1 AND s.deleted_at IS NULL
         UNION ALL
-        SELECT 'approval' AS type, ar.updated_at AS created_at, u.name AS actor,
-               CONCAT(ar.action, ' ',
-                 CASE WHEN ar.status = 'approved' THEN '승인됨' ELSE '반려됨' END) AS detail
-        FROM worker.approval_requests ar
-        LEFT JOIN worker.users u ON u.id = ar.approver_id
-        WHERE ar.company_id = $1 AND ar.status != 'pending' AND ar.deleted_at IS NULL
-      ) t ORDER BY created_at DESC LIMIT 10
+        SELECT 'document' AS type,
+               d.created_at,
+               COALESCE(u.name, '업무 시스템') AS actor,
+               CONCAT(COALESCE(d.filename, '문서'), ' 문서가 업로드되었습니다') AS detail,
+               CASE WHEN COALESCE(NULLIF(TRIM(d.ai_summary), ''), '') = '' THEN 2 ELSE 3 END AS priority_rank
+        FROM worker.documents d
+        LEFT JOIN worker.users u ON u.id = d.uploaded_by
+        WHERE d.company_id = $1 AND d.deleted_at IS NULL
+        UNION ALL
+        SELECT 'project' AS type,
+               COALESCE(p.updated_at, p.created_at) AS created_at,
+               e.name AS actor,
+               CONCAT(COALESCE(p.name, '프로젝트'), ' 진행 상태가 갱신되었습니다') AS detail,
+               CASE
+                 WHEN p.status IN ('planning', 'in_progress', 'review')
+                      AND p.end_date IS NOT NULL
+                      AND p.end_date <= ((NOW() AT TIME ZONE 'Asia/Seoul')::date + INTERVAL '7 days')::date
+                   THEN 2
+                 ELSE 3
+               END AS priority_rank
+        FROM worker.projects p
+        LEFT JOIN worker.employees e ON e.id = p.owner_id
+        WHERE p.company_id = $1 AND p.deleted_at IS NULL
+        UNION ALL
+        SELECT 'journal' AS type, j.created_at, e.name AS actor,
+               CONCAT(COALESCE(e.name,'직원'), '이(가) 업무일지를 작성했습니다') AS detail
+               , 4 AS priority_rank
+        FROM worker.work_journals j
+        LEFT JOIN worker.employees e ON e.id = j.employee_id
+        WHERE j.company_id = $1 AND j.deleted_at IS NULL
+      ) t
+      ORDER BY priority_rank ASC, created_at DESC
+      LIMIT 10
     `, [req.companyId]);
     res.json({ activities: rows });
   } catch (e) {

@@ -37,7 +37,7 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* 로고 */}
-      <Link href="/dashboard" className="h-16 px-6 border-b border-slate-200 flex flex-col justify-center hover:bg-slate-50 transition-colors">
+      <Link href="/dashboard" className="flex h-16 flex-col justify-center border-b border-slate-200 px-5 transition-colors hover:bg-slate-50">
         <h1 className="text-base font-bold text-slate-900 leading-tight">워커</h1>
         <p className="text-xs text-slate-500">대화형 업무 운영 시스템</p>
       </Link>
@@ -58,7 +58,7 @@ export default function Sidebar() {
               }`}
             >
               <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
-              {item.label}
+              <span className="min-w-0 truncate">{item.label}</span>
             </Link>
           );
         })}
@@ -90,7 +90,7 @@ export default function Sidebar() {
                   }`}
                 >
                   <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
-                  {item.label}
+                  <span className="min-w-0 truncate">{item.label}</span>
                 </Link>
               );
             })}
@@ -102,11 +102,11 @@ export default function Sidebar() {
       {user && (
         <div className="p-4 border-t">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white text-sm font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
               {(user.name || user.username).charAt(0)}
             </div>
             <div>
-              <p className="text-sm font-medium">{user.name || user.username}</p>
+              <p className="max-w-[10rem] truncate text-sm font-medium">{user.name || user.username}</p>
               <span className={`badge-${user.role}`}>{user.role}</span>
             </div>
           </div>

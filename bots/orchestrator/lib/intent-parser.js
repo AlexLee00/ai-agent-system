@@ -236,6 +236,18 @@ const KEYWORD_PATTERNS = [
   { re: /지미.*(재시작|다시|restart|안\s*돼|죽|오류|에러)/i,  intent: 'ska_action', args: { command: 'restart_jimmy' } },
   { re: /(앤디|지미).*(살려|올려|켜|다시\s*띄워|다시\s*올려)/i,               intent: 'ska_action', args: (m) => ({ command: /앤디/.test(m[0]) ? 'restart_andy' : 'restart_jimmy' }) },
   { re: /알람.*큐|queue|대기.*알람|쌓인.*알람/i,                              intent: 'queue'  },
+  {
+    re: /(픽코.*)?(예약해줘|예약\s*등록|예약.*(잡아줘|넣어줘|해줘)|등록해줘|대리예약|결제해줘)|(\d+\s*건).*(예약|등록)/i,
+    intent: 'ska_action',
+    args: (_, text) => {
+      const batchCount = Number(String(text || '').match(/(\d+)\s*건/)?.[1] || 1);
+      return {
+        command: 'register_reservation',
+        raw_text: text,
+        batch_count: batchCount,
+      };
+    },
+  },
   { re: /예약.*(현황|목록|오늘|확인|조회|몇|있어)/i,          intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /오늘.*(예약|방문|입장)/i,                            intent: 'ska_query',  args: { command: 'query_reservations' } },
   { re: /매출|수익|오늘.*얼마|얼마.*벌|오늘.*손님|입장.*통계/i,    intent: 'ska_query', args: { command: 'query_today_stats' } },

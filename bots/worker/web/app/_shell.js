@@ -1,42 +1,39 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
 import Header from '@/components/Header';
-import WorkerAIWorkspace from '@/components/WorkerAIWorkspace';
 import { canAccessMenu, resolveMenuKey } from '@/lib/menu-access';
-import { getWorkspaceConfig } from '@/lib/workspace-config';
 
 const PUBLIC_PATHS = ['/login', '/change-password'];
+const ROLE_FALLBACK_ROUTE = {
+  member: '/attendance',
+  admin: '/dashboard',
+  master: '/dashboard',
+};
 
 export default function AppShell({ children }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
-  const [draft, setDraft] = useState('');
 
   useEffect(() => {
     if (loading) return;
     const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
     if (!user && !isPublic) router.push('/login');
-    if (user  && pathname === '/login') router.push('/dashboard');
+    const fallbackRoute = ROLE_FALLBACK_ROUTE[user?.role] || '/attendance';
+    if (user  && pathname === '/login') router.push(fallbackRoute);
     // 비밀번호 강제 변경 가드
     if (user?.must_change_pw && !pathname.startsWith('/change-password')) {
       router.push('/change-password');
     }
     const resolvedMenuKey = resolveMenuKey(pathname);
     if (user && resolvedMenuKey && !isPublic && !canAccessMenu(user, resolvedMenuKey)) {
-      router.push('/dashboard');
+      router.push(fallbackRoute);
     }
   }, [user, loading, pathname, router]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const nextDraft = new URLSearchParams(window.location.search).get('prompt') || '';
-    setDraft((prev) => (prev === nextDraft ? prev : nextDraft));
-  });
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
 
@@ -51,35 +48,17 @@ export default function AppShell({ children }) {
   if (isPublic) return <>{children}</>;
 
   if (!user) return null;
-
-  const workspace = getWorkspaceConfig(pathname, user);
-  const showGlobalWorkspace = workspace.menuKey === 'ai';
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen overflow-x-clip bg-gray-50">
       {/* PC 사이드바 */}
       <aside className="hidden lg:fixed lg:flex lg:flex-col lg:inset-y-0 lg:w-60 bg-white border-r shadow-sm z-30">
         <Sidebar />
       </aside>
 
       {/* 메인 영역 */}
-      <div className="lg:pl-60">
+      <div className="min-w-0 lg:pl-60">
         <Header />
-        <main className="p-4 pb-24 lg:pb-6 min-h-[calc(100vh-4rem)]">
-          {showGlobalWorkspace && (
-            <div className="mb-6">
-              <WorkerAIWorkspace
-                menuKey={workspace.menuKey}
-                title={workspace.title}
-                description={workspace.description}
-                suggestions={workspace.suggestions}
-                allowUpload={workspace.allowUpload}
-                agentName={workspace.agentName}
-                externalDraft={draft}
-                draftVersion={draft ? draft.length : 0}
-              />
-            </div>
-          )}
+        <main className="min-h-[calc(100vh-3.5rem)] px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-4 lg:min-h-[calc(100vh-4rem)] lg:px-4 lg:py-4 lg:pb-6">
           {children}
         </main>
       </div>

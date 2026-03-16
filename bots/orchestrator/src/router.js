@@ -8,6 +8,10 @@
 
 const { buildStatus }                    = require('./dashboard');
 const { parseIntent }                    = require('../lib/intent-parser');
+const {
+  buildReservationIntentText,
+  clearReservationDraft,
+} = require('../lib/reservation-draft-cache');
 const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteByEvent } = require('../lib/mute-manager');
 const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
@@ -1671,6 +1675,15 @@ function formatSkaResult(command, rawResult) {
       }
       return lines.join('\n');
     }
+    case 'register_reservation':
+      if (r.ok) return `✅ ${r.message || '예약 등록 완료'}`;
+      if (r.code === 'MISSING_FIELDS' || /필요한 정보가 부족/.test(r.error || '')) {
+        return `⚠️ ${r.error || '예약 등록에 필요한 정보가 부족합니다.'}`;
+      }
+      if (/로그인/.test(r.error || '')) {
+        return `⚠️ 픽코 관리자 로그인 상태를 먼저 확인해야 합니다.\n상세: ${r.error}`;
+      }
+      return `⚠️ 스카 오류: ${r.error || '예약 등록 실패'}`;
     case 'restart_andy':
     case 'restart_jimmy':
       return `✅ ${r.message}`;
@@ -1947,7 +1960,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       if (!command) return '⚠️ 명령 파싱 오류';
       const cmdId = await insertBotCommand('ska', command, args);
       const raw   = await waitForCommandResult(cmdId, 45000);
-      return formatSkaResult(command, raw);
+      const formatted = formatSkaResult(command, raw);
+      if (command === 'register_reservation' && /^✅/.test(formatted)) {
+        clearReservationDraft(msg.chat?.id);
+      }
+      return formatted;
     }
 
     case 'upbit_withdraw': {
@@ -2637,7 +2654,11 @@ async function route(msg, sendReply) {
 
   const start = Date.now();
   try {
-    const parsed   = await parseIntent(msg.text);
+    const preparedText = buildReservationIntentText(msg.chat?.id, msg.text);
+    const parsed   = await parseIntent(preparedText);
+    if (parsed?.intent === 'ska_action' && parsed?.args?.command === 'register_reservation') {
+      parsed.args.raw_text = preparedText;
+    }
     const response = await handleIntent(parsed, msg, sendReply);
 
     // command_history 응답 시간 업데이트

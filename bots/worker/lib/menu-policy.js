@@ -6,7 +6,7 @@ const DASHBOARD_POLICY = {
     scope: 'self',
     prompt_enabled: false,
     result_canvas_enabled: false,
-    operations: ['read'],
+    operations: [],
   },
   admin: {
     menu: 'dashboard',

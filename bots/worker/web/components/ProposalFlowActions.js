@@ -15,13 +15,15 @@ export default function ProposalFlowActions({
       >
         {primaryLabel}
       </button>
-      <button
-        type="button"
-        onClick={onSecondary}
-        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-      >
-        {secondaryLabel}
-      </button>
+      {onSecondary ? (
+        <button
+          type="button"
+          onClick={onSecondary}
+          className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {secondaryLabel}
+        </button>
+      ) : null}
     </div>
   );
 }
