@@ -12,6 +12,76 @@ const fs   = require('fs');
 const { execSync } = require('child_process');
 const cfg  = require('../config');
 
+function parsePsLine(line = '') {
+  const trimmed = String(line || '').trim();
+  const match = trimmed.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
+  if (!match) return null;
+  return {
+    pid: Number(match[1]),
+    ppid: Number(match[2]),
+    etime: match[3],
+    command: match[4],
+  };
+}
+
+function etimeToMinutes(etime = '') {
+  const value = String(etime || '').trim();
+  if (!value) return 0;
+  const dayParts = value.split('-');
+  let days = 0;
+  let timePart = value;
+  if (dayParts.length === 2) {
+    days = parseInt(dayParts[0], 10) || 0;
+    timePart = dayParts[1];
+  }
+  const segments = timePart.split(':').map((part) => parseInt(part, 10) || 0);
+  let hours = 0;
+  let minutes = 0;
+  let seconds = 0;
+  if (segments.length === 3) {
+    [hours, minutes, seconds] = segments;
+  } else if (segments.length === 2) {
+    [minutes, seconds] = segments;
+  } else if (segments.length === 1) {
+    seconds = segments[0];
+  }
+  return (days * 24 * 60) + (hours * 60) + minutes + (seconds / 60);
+}
+
+function getKnownLaunchdPids() {
+  try {
+    const raw = execSync('launchctl list', { encoding: 'utf8', timeout: 5000 });
+    const pids = new Set();
+    for (const line of raw.split('\n')) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 3) continue;
+      const pid = Number(parts[0]);
+      if (Number.isFinite(pid) && pid > 0) pids.add(pid);
+    }
+    return pids;
+  } catch {
+    return new Set();
+  }
+}
+
+function isAllowedNodeCommand(command = '') {
+  const cmd = String(command || '');
+  const ALLOWED_PATTERNS = [
+    ' n8n start',
+    'node_modules/.bin/next start',
+    'bots/worker/web/server.js',
+    'bots/worker/scripts/',
+    'bots/claude/src/dexter.js',
+    'bots/claude/src/dexter-quickcheck.js',
+    'bots/orchestrator/',
+    'bots/investment/',
+    'bots/reservation/',
+    'bots/blog/',
+    'scripts/reviews/',
+  ];
+  return ALLOWED_PATTERNS.some((pattern) => cmd.includes(pattern));
+}
+
 // launchd 서비스 상태
 function launchdStatus(label) {
   try {
@@ -116,24 +186,38 @@ function checkZombies(items) {
 // ppid=1 고아 Node.js 프로세스 감지 (launchd 외 비정상 고아)
 function checkOrphanProcesses(items) {
   try {
-    // macOS: ps -eo pid,ppid,comm에서 ppid=1이고 node인 프로세스 확인
-    const out = execSync('ps -eo pid,ppid,comm | awk \'$2==1 && /node/ {print $1,$3}\'',
+    const out = execSync('ps -eo pid,ppid,etime,args | awk \'$2==1 && /node/ {print}\'',
       { encoding: 'utf8', timeout: 5000 }).trim();
     if (!out) {
       items.push({ label: '고아 Node 프로세스 (ppid=1)', status: 'ok', detail: '없음' });
       return;
     }
-    const lines = out.split('\n').filter(Boolean);
-    // launchd 자식은 정상이므로 수 기준으로만 판단 (8개 초과 시 warn)
-    // 정상 launchd 서비스: claude-commander, ska, luna-commander, mainbot, n8n, worker-web 등
-    if (lines.length > 8) {
+    const launchdPids = getKnownLaunchdPids();
+    const lines = out
+      .split('\n')
+      .map(parsePsLine)
+      .filter(Boolean);
+
+    const suspicious = lines.filter((proc) => {
+      if (launchdPids.has(proc.pid)) return false;
+      if (isAllowedNodeCommand(proc.command)) return false;
+      return etimeToMinutes(proc.etime) >= 10;
+    });
+
+    if (suspicious.length > 2) {
       items.push({
         label:  '고아 Node 프로세스 (ppid=1)',
         status: 'warn',
-        detail: `${lines.length}개 — 비정상 프로세스 의심 (launchd 직계 제외)`,
+        detail: `${suspicious.length}개 — 비정상 프로세스 의심 (launchd/정상 서비스 제외)`,
       });
     } else {
-      items.push({ label: '고아 Node 프로세스 (ppid=1)', status: 'ok', detail: `${lines.length}개 (정상 범위)` });
+      items.push({
+        label: '고아 Node 프로세스 (ppid=1)',
+        status: 'ok',
+        detail: suspicious.length > 0
+          ? `${suspicious.length}개 (관찰 범위)`
+          : `${lines.length}개 중 모두 정상 서비스/최근 프로세스로 판단`,
+      });
     }
   } catch {
     items.push({ label: '고아 Node 프로세스', status: 'ok', detail: '확인 스킵' });

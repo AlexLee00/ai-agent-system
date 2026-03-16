@@ -309,7 +309,7 @@ async function checkSkaDuckDB(items) {
     return;
   }
 
-  const REQUIRED = ['revenue_daily', 'environment_factors', 'forecast_results'];
+  const REQUIRED = ['revenue_daily', 'environment_factors'];
 
   try {
     const tableRows = skaDuckdbQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='main'");
@@ -320,6 +320,14 @@ async function checkSkaDuckDB(items) {
       items.push({ label: 'DuckDB 테이블 (스카)', status: 'warn', detail: `누락: ${missing.join(', ')} (ETL 필요)` });
     } else {
       items.push({ label: 'DuckDB 테이블 (스카)', status: 'ok', detail: `${tables.length}개 확인` });
+    }
+
+    if (!tables.includes('forecast_results')) {
+      items.push({
+        label: '예측 테이블 (스카)',
+        status: 'ok',
+        detail: 'forecast_results 없음 (예측 엔진 미구축 또는 미실행)',
+      });
     }
 
     // ETL 최신 데이터 확인 (revenue_daily 마지막 날짜)

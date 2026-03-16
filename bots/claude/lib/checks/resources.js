@@ -13,6 +13,20 @@ const fs   = require('fs');
 const { execSync } = require('child_process');
 const cfg  = require('../config');
 
+function getAvailableMemoryGB() {
+  try {
+    const vmstat = execSync('vm_stat', { encoding: 'utf8', timeout: 3000 });
+    const page   = 16384;
+    const get    = key => {
+      const m = vmstat.match(new RegExp(key + ':\\s+(\\d+)'));
+      return m ? parseInt(m[1], 10) * page / 1073741824 : 0;
+    };
+    return get('Pages free') + get('Pages inactive') + get('Pages speculative');
+  } catch {
+    return os.freemem() / 1073741824;
+  }
+}
+
 function diskFree(dirPath) {
   try {
     const out = execSync(`df -k "${dirPath}"`, { encoding: 'utf8', timeout: 5000 });
@@ -44,24 +58,7 @@ function checkDisk(items) {
 
 function checkMemory(items) {
   const totalGB = os.totalmem() / 1073741824;
-
-  // macOS는 Inactive 메모리를 즉시 반환 가능한 여유 메모리로 사용
-  // os.freemem()은 Free 페이지만 반환해 97%+ 오탐 발생 → vm_stat 기준으로 계산
-  let freeGB;
-  try {
-    const vmstat = execSync('vm_stat', { encoding: 'utf8', timeout: 3000 });
-    const page   = 16384; // Apple Silicon 16KB 페이지
-    const get    = key => {
-      const m = vmstat.match(new RegExp(key + ':\\s+(\\d+)'));
-      return m ? parseInt(m[1], 10) * page / 1073741824 : 0;
-    };
-    // 활동 모니터 기준: Free + Inactive = 실제 사용 가능한 여유 메모리
-    freeGB = get('Pages free') + get('Pages inactive') + get('Pages speculative');
-  } catch {
-    // vm_stat 실패 시 os.freemem() 폴백
-    freeGB = os.freemem() / 1073741824;
-  }
-
+  const freeGB = getAvailableMemoryGB();
   const usedPct = ((totalGB - freeGB) / totalGB * 100).toFixed(1);
 
   if (freeGB < cfg.THRESHOLDS.memMinFreeGB) {
@@ -120,10 +117,11 @@ function checkSwap(items) {
       return;
     }
     const usedMB = parseFloat(usedM[1]);
-    if (usedMB > 1024) {
+    const freeGB = getAvailableMemoryGB();
+    if (usedMB > 4096 || (usedMB > 1024 && freeGB < cfg.THRESHOLDS.memMinFreeGB)) {
       items.push({ label: 'Swap', status: 'warn', detail: `${(usedMB / 1024).toFixed(1)}GB 사용 중 — 메모리 압박 의심` });
     } else if (usedMB > 0) {
-      items.push({ label: 'Swap', status: 'ok', detail: `${usedMB.toFixed(0)}MB 사용` });
+      items.push({ label: 'Swap', status: 'ok', detail: `${usedMB.toFixed(0)}MB 사용 (여유 메모리 ${freeGB.toFixed(1)}GB)` });
     } else {
       items.push({ label: 'Swap', status: 'ok', detail: '미사용' });
     }
