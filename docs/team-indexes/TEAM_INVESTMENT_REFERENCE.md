@@ -35,9 +35,17 @@
 - [bots/investment/shared/secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
 - [bots/investment/shared/report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/report.js)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js --days=1
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js --dry-run
+node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
+```
+
 ## 관련 문서
 
 - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
 - [COMMUNITY_DRIVEN_AUTOTRADING_IMPROVEMENTS_2026-03-16.md](/Users/alexlee/projects/ai-agent-system/docs/COMMUNITY_DRIVEN_AUTOTRADING_IMPROVEMENTS_2026-03-16.md)
 - [improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
-

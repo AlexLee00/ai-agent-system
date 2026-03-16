@@ -24,9 +24,16 @@
 - [bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)
 - [bots/orchestrator/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/runtime-config.js)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
+```
+
 ## 관련 문서
 
 - [bots/orchestrator/context/DEV_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/DEV_SUMMARY.md)
 - [bots/orchestrator/context/HANDOFF.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/HANDOFF.md)
 - [bots/orchestrator/context/TEAMS.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/TEAMS.md)
-

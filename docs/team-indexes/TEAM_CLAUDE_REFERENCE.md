@@ -30,9 +30,17 @@
 - [bots/claude/config.json](/Users/alexlee/projects/ai-agent-system/bots/claude/config.json)
 - [bots/claude/lib/config.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/config.js)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js --json
+cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter
+cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:quick
+cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksums
+```
+
 ## 관련 문서
 
 - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
 - [bots/claude/CLAUDE_NOTES.md](/Users/alexlee/projects/ai-agent-system/bots/claude/CLAUDE_NOTES.md)
 - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
-
