@@ -17,6 +17,26 @@ function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function renderCheckoutText(ts) {
+  if (!ts) return '미퇴근';
+  return `${fmtTime(ts)} 퇴근`;
+}
+
+function fmtDate(value) {
+  if (!value) return '-';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    const [year, month, day] = String(value).split('-');
+    return `${year}.${month}.${day}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).replace(/\.\s/g, '.').replace(/\.$/, '');
+}
+
 function toDateTimeLocal(ts) {
   if (!ts) return '';
   const date = new Date(ts);
@@ -53,7 +73,12 @@ function leaveProposalChanged(original, proposal) {
 export default function AttendancePage() {
   const { user } = useAuth();
   const [records, setRecords]     = useState([]);
-  const [date, setDate]           = useState(new Date().toISOString().slice(0,10));
+  const [leaveRecords, setLeaveRecords] = useState([]);
+  const [leaveApprovals, setLeaveApprovals] = useState([]);
+  const today = new Date().toISOString().slice(0,10);
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate]     = useState(today);
+  const [activeTab, setActiveTab] = useState('attendance');
   const [loading, setLoading]     = useState(true);
   const [checking, setChecking]   = useState('');
   const [prompt, setPrompt]       = useState('');
@@ -67,6 +92,7 @@ export default function AttendancePage() {
   const [editRow, setEditRow] = useState(null);
   const [editForm, setEditForm] = useState({ check_in: '', check_out: '', status: 'present', note: '' });
   const [editSaving, setEditSaving] = useState(false);
+  const [approvalProcessing, setApprovalProcessing] = useState('');
   const promptRef = useRef(null);
 
   useEffect(() => {
@@ -83,12 +109,28 @@ export default function AttendancePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const load = () => {
+  const load = (nextStartDate = startDate, nextEndDate = endDate) => {
     setLoading(true);
-    api.get(`/attendance?date=${date}`).then(d => setRecords(d.attendance || [])).finally(() => setLoading(false));
+    const params = new URLSearchParams({
+      start_date: nextStartDate,
+      end_date: nextEndDate,
+    });
+    Promise.all([
+      api.get(`/attendance?${params.toString()}`).catch(() => ({ attendance: [] })),
+      api.get(`/attendance/leave-status?${params.toString()}`).catch(() => ({ leave_requests: [] })),
+      canManageAttendance
+        ? api.get('/attendance/leave-approvals').catch(() => ({ leave_approvals: [] }))
+        : Promise.resolve({ leave_approvals: [] }),
+    ])
+      .then(([attendanceData, leaveData, leaveApprovalData]) => {
+        setRecords(attendanceData.attendance || []);
+        setLeaveRecords(leaveData.leave_requests || []);
+        setLeaveApprovals(leaveApprovalData.leave_approvals || []);
+      })
+      .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [date]);
+  useEffect(() => { load(startDate, endDate); }, [startDate, endDate]);
 
   const createProposal = async (payload) => {
     setProposalLoading(true);
@@ -98,6 +140,8 @@ export default function AttendancePage() {
       const data = await api.post('/attendance/proposals', payload);
       setProposal(data.proposal || null);
       setOriginalProposal(data.proposal || null);
+      setLeaveProposal(null);
+      setOriginalLeaveProposal(null);
       if (payload.prompt) setPrompt('');
     } catch (e) {
       setError(e.message);
@@ -116,6 +160,8 @@ export default function AttendancePage() {
       const data = await api.post('/leave/proposals', { prompt: nextPrompt });
       setLeaveProposal(data.proposal || null);
       setOriginalLeaveProposal(data.proposal || null);
+      setProposal(null);
+      setOriginalProposal(null);
       setPrompt('');
     } catch (e) {
       setError(e.message);
@@ -263,30 +309,508 @@ export default function AttendancePage() {
   const isMember = user?.role === 'member';
   const canCreateTodayOnly = canPerformMenuOperation(user, 'attendance', 'create_today_only');
   const canManageAttendance = canPerformMenuOperation(user, 'attendance', 'update');
+  const pendingLeaveCount = canManageAttendance
+    ? leaveApprovals.length
+    : leaveRecords.filter((row) => row.status === 'pending').length;
+
+  useEffect(() => {
+    if (activeTab === 'leave-approvals' && !canManageAttendance) {
+      setActiveTab('attendance');
+    }
+  }, [activeTab, canManageAttendance]);
   const quickFlows = [];
   const columns = [
+    { key: 'date', label: '날짜', render: (value) => fmtDate(value) },
     { key: 'employee_name', label: '이름' },
     { key: 'check_in',      label: '출근', render: v => fmtTime(v) },
-    { key: 'check_out',     label: '퇴근', render: v => fmtTime(v) },
+    { key: 'check_out',     label: '퇴근', render: v => renderCheckoutText(v) },
     { key: 'status',        label: '상태', render: v => ({
       present: '✅ 출근', late: '⚠️ 지각', absent: '❌ 결근', leave: '🏖️ 휴가',
     }[v] || v) },
   ];
+  const leaveColumns = [
+    { key: 'leave_date', label: '휴가 날짜', render: (value) => fmtDate(value) },
+    { key: 'employee_name', label: '이름' },
+    { key: 'leave_type_label', label: '유형' },
+    { key: 'reason', label: '사유', render: (value) => value || '-' },
+    {
+      key: 'status',
+      label: '상태',
+      render: (value) => ({
+        pending: '📝 검토중',
+        approved: '✅ 승인',
+        rejected: '❌ 반려',
+      }[value] || value || '-'),
+    },
+  ];
+  const leaveApprovalColumns = [
+    { key: 'employee_name', label: '이름' },
+    { key: 'leave_date', label: '휴가 날짜', render: (value) => fmtDate(value) },
+    { key: 'leave_type_label', label: '유형' },
+    { key: 'reason', label: '사유', render: (value) => value || '-' },
+  ];
+
+  const handleApproveLeave = async (row) => {
+    setApprovalProcessing(`approve:${row.id}`);
+    setError('');
+    setNotice('');
+    try {
+      await api.put(`/approvals/${row.id}/approve`);
+      setNotice(`${row.employee_name}님의 휴가 신청을 승인했습니다.`);
+      if (row.leave_date) {
+        setStartDate(row.leave_date);
+        setEndDate(row.leave_date);
+        setActiveTab('leave');
+        load(row.leave_date, row.leave_date);
+      } else {
+        load();
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setApprovalProcessing('');
+    }
+  };
+
+  const handleRejectLeave = async (row) => {
+    const reason = window.prompt(`${row.employee_name}님의 휴가 신청 반려 사유를 입력하세요.`);
+    if (!reason) return;
+    setApprovalProcessing(`reject:${row.id}`);
+    setError('');
+    setNotice('');
+    try {
+      await api.put(`/approvals/${row.id}/reject`, { reason });
+      setNotice(`${row.employee_name}님의 휴가 신청을 반려했습니다.`);
+      if (row.leave_date) {
+        setStartDate(row.leave_date);
+        setEndDate(row.leave_date);
+        setActiveTab('leave');
+        load(row.leave_date, row.leave_date);
+      } else {
+        load();
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setApprovalProcessing('');
+    }
+  };
+  const pendingReviewSection = (proposal || leaveProposal) ? (
+    <PendingReviewSection
+      title="확인 및 승인 대기 리스트"
+      description="프롬프트 입력은 위에서 한 번만 하고, 실제 확정/신청/반려는 아래 처리 리스트에서 진행합니다."
+      hasPending={Boolean(proposal || leaveProposal)}
+      badgeLabel={proposal && leaveProposal ? '2건 대기 중' : '1건 대기 중'}
+    >
+      <div className="space-y-3">
+        {proposal && (
+          <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-sky-700">근태 확인 항목</p>
+                <h3 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  AI가 자연어 입력을 근태 기록으로 해석했습니다. 그대로 확정하거나 수정 후 확정하세요.
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-2 text-right">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                  {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
+                </span>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                  {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">업무 유형</span>
+                <select
+                  className="input-base"
+                  value={proposal.action}
+                  onChange={(e) => setProposal((prev) => ({
+                    ...prev,
+                    action: e.target.value,
+                    action_label: e.target.value === 'checkout' ? '퇴근' : '출근',
+                    summary: buildProposalSummary({
+                      ...prev,
+                      action: e.target.value,
+                    }),
+                  }))}
+                >
+                  <option value="checkin">출근</option>
+                  <option value="checkout">퇴근</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">기록 시각</span>
+                <input
+                  type="datetime-local"
+                  className="input-base"
+                  value={toDateTimeLocal(proposal.occurred_at)}
+                  onChange={(e) => setProposal((prev) => ({
+                    ...prev,
+                    occurred_at: fromDateTimeLocal(e.target.value),
+                    summary: buildProposalSummary({
+                      ...prev,
+                      occurred_at: fromDateTimeLocal(e.target.value),
+                    }),
+                  }))}
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 h-full">
+                <p><span className="font-semibold text-slate-900">대상</span> {proposal.employee_name}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">예정 기록</span> {proposal.summary}</p>
+              </div>
+              <label className="space-y-1 h-full flex flex-col">
+                <span className="text-xs font-semibold text-slate-500">메모</span>
+                <textarea
+                  className="input-base min-h-[88px] h-full"
+                  value={proposal.note || ''}
+                  onChange={(e) => setProposal((prev) => ({
+                    ...prev,
+                    note: e.target.value,
+                  }))}
+                  placeholder="필요하면 메모를 남길 수 있습니다."
+                />
+              </label>
+            </div>
+
+            {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+                <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+                <p className="text-xs text-violet-700 mt-1">
+                  수정 없이 확정된 과거 사례를 참고해 현재 제안을 빠르게 판단할 수 있습니다.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {proposal.similar_cases.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-slate-900">{item.summary || '유사 근태 사례'}</p>
+                        <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                          유사도 {(item.similarity * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      <button
+                        type="button"
+                        className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                        onClick={() => refillPrompt(`이 사례를 참고해서 근태 기록 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
+                      >
+                        이 사례로 다시 작성
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirmProposal}
+                disabled={proposalLoading}
+              >
+                {proposalLoading ? '제출 중...' : '제출하기'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleRejectProposal}
+                disabled={proposalLoading}
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        )}
+
+        {leaveProposal && (
+          <div className="rounded-3xl border border-violet-200 bg-violet-50/40 px-5 py-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-violet-700">휴가 신청 확인 항목</p>
+                <h3 className="text-lg font-semibold text-slate-900 mt-1">{leaveProposal.summary}</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  자연어 입력을 휴가 신청서로 해석했습니다. 수정 후 접수하거나 반려할 수 있습니다.
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-2 text-right">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                  {leaveProposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
+                </span>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${leaveProposalChanged(originalLeaveProposal, leaveProposal)
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                  {leaveProposalChanged(originalLeaveProposal, leaveProposal) ? '수정 있음' : '수정 없음'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">유형</span>
+                <select
+                  className="input-base"
+                  value={leaveProposal.leave_type}
+                  onChange={(e) => setLeaveProposal((prev) => {
+                    const nextType = e.target.value;
+                    const nextLabel = nextType === 'half_day' ? '반차' : nextType === 'field_work' ? '외근' : '연차';
+                    return {
+                      ...prev,
+                      leave_type: nextType,
+                      leave_type_label: nextLabel,
+                      summary: `${prev.leave_date} ${nextLabel} 신청`,
+                    };
+                  })}
+                >
+                  <option value="annual_leave">연차</option>
+                  <option value="half_day">반차</option>
+                  <option value="field_work">외근</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">휴가 날짜</span>
+                <input
+                  type="date"
+                  className="input-base"
+                  value={leaveProposal.leave_date}
+                  onChange={(e) => setLeaveProposal((prev) => ({
+                    ...prev,
+                    leave_date: e.target.value,
+                    summary: `${e.target.value} ${prev.leave_type_label} 신청`,
+                  }))}
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 h-full">
+                <p><span className="font-semibold text-slate-900">신청자</span> {leaveProposal.employee_name}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">신청 내용</span> {leaveProposal.summary}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">처리 방식</span> 접수 후 관리자 승인 대기 상태로 넘어갑니다.</p>
+              </div>
+              <label className="space-y-1 h-full flex flex-col">
+                <span className="text-xs font-semibold text-slate-500">사유</span>
+                <textarea
+                  className="input-base min-h-[88px] h-full"
+                  value={leaveProposal.reason || ''}
+                  onChange={(e) => setLeaveProposal((prev) => ({
+                    ...prev,
+                    reason: e.target.value,
+                  }))}
+                  placeholder="휴가 사유를 입력하세요."
+                />
+              </label>
+            </div>
+
+            {Array.isArray(leaveProposal.similar_cases) && leaveProposal.similar_cases.length > 0 && (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+                <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+                <div className="mt-3 space-y-2">
+                  {leaveProposal.similar_cases.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-slate-900">{item.summary || '유사 휴가 사례'}</p>
+                        <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                          유사도 {(item.similarity * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      <button
+                        type="button"
+                        className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
+                        onClick={() => refillPrompt(`이 사례를 참고해서 휴가 신청 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
+                      >
+                        이 사례로 다시 작성
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirmLeaveProposal}
+                disabled={proposalLoading}
+              >
+                {proposalLoading ? '제출 중...' : '제출하기'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleRejectLeaveProposal}
+                disabled={proposalLoading}
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </PendingReviewSection>
+  ) : null;
+
+  const tabItems = [
+    { key: 'attendance', label: '근태현황' },
+    { key: 'leave', label: '휴가' },
+    ...(canManageAttendance ? [{ key: 'leave-approvals', label: `휴가 승인(${pendingLeaveCount}명)` }] : []),
+  ];
+
+  const activeSummary = activeTab === 'leave'
+    ? (
+      <>
+        <div><span className="text-slate-500">승인 대기</span> <strong>{pendingLeaveCount}건</strong></div>
+        <div><span className="text-slate-500">전체</span> <strong>{leaveRecords.length}건</strong></div>
+      </>
+    ) : activeTab === 'leave-approvals'
+      ? (
+        <>
+          <div><span className="text-slate-500">승인 대기</span> <strong>{leaveApprovals.length}건</strong></div>
+          <div><span className="text-slate-500">회사 전체</span> <strong>{leaveApprovals.length}건</strong></div>
+        </>
+      )
+      : (
+        <>
+          <div><span className="text-slate-500">총 출근</span> <strong>{checkedIn}명</strong></div>
+          <div><span className="text-slate-500">전체</span> <strong>{records.length}명</strong></div>
+        </>
+      );
+
+  let activeTable = (
+    <DataTable
+      columns={columns}
+      data={records}
+      pageSize={10}
+      emptyText="근태 기록 없음"
+      mobileRowRender={(row, rowActions) => (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-500">날짜</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{fmtDate(row.date)}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-500">이름</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{row.employee_name || '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-500">출근</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{fmtTime(row.check_in)}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-500">퇴근</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{renderCheckoutText(row.check_out)}</p>
+            </div>
+          </div>
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-3 py-3">
+            <p className="text-[11px] font-medium text-slate-500">상태</p>
+            <p className="mt-1 text-sm font-medium text-slate-900">{({
+              present: '✅ 출근', late: '⚠️ 지각', absent: '❌ 결근', leave: '🏖️ 휴가',
+            }[row.status] || row.status || '-')}</p>
+          </div>
+          {rowActions ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {rowActions(row)}
+            </div>
+          ) : null}
+        </>
+      )}
+      actions={canManageAttendance ? (row) => (
+        <>
+          <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
+          <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDeleteRecord(row)}>삭제</button>
+        </>
+      ) : undefined}
+    />
+  );
+
+  if (activeTab === 'leave') {
+    activeTable = (
+      <DataTable
+        columns={leaveColumns}
+        data={leaveRecords}
+        pageSize={10}
+        emptyText="휴가 신청 기록 없음"
+      />
+    );
+  }
+
+  if (activeTab === 'leave-approvals') {
+    activeTable = (
+      <DataTable
+        columns={leaveApprovalColumns}
+        data={leaveApprovals}
+        pageSize={10}
+        emptyText="승인 대기 중인 휴가 신청 없음"
+        actions={(row) => (
+          <>
+            <button
+              className="btn-primary text-xs px-3 py-1.5"
+              disabled={approvalProcessing === `approve:${row.id}`}
+              onClick={() => handleApproveLeave(row)}
+            >
+              승인
+            </button>
+            <button
+              className="btn-danger text-xs px-3 py-1.5"
+              disabled={approvalProcessing === `reject:${row.id}`}
+              onClick={() => handleRejectLeave(row)}
+            >
+              반려
+            </button>
+          </>
+        )}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
       {!isMember && <AdminQuickNav />}
 
-      <AdminPageHero
-        title="근태 관리"
-        description="출근, 퇴근, 휴가 신청과 예외 근태를 한 화면에서 확인하고 처리합니다."
-        stats={[
-          { label: '출근', value: `${checkedIn}명`, caption: '오늘 기준' },
-          { label: '퇴근', value: `${checkedOut}명`, caption: '오늘 기준' },
-          { label: '지각', value: `${lateCount}건`, caption: 'status=late' },
-          { label: '승인 대기', value: `${(proposal ? 1 : 0) + (leaveProposal ? 1 : 0)}건`, caption: '근태/휴가 제안' },
-        ]}
-      />
+      {!isMember && (
+        <AdminPageHero
+          title="근태 관리"
+          description="출근, 퇴근, 휴가 신청과 예외 근태를 한 화면에서 확인하고 처리합니다."
+          stats={[
+            {
+              label: '출근',
+              value: `${checkedIn}명`,
+              caption: '오늘 기준',
+              body: '오늘 출근 처리된 인원 기준으로 집계합니다.',
+            },
+            {
+              label: '퇴근',
+              value: `${checkedOut}명`,
+              caption: '오늘 기준',
+              body: '오늘 퇴근 처리된 인원 기준으로 집계합니다.',
+            },
+            {
+              label: '지각',
+              value: `${lateCount}건`,
+              caption: 'status=late',
+              body: '지각 상태로 기록된 근태 건수를 먼저 확인합니다.',
+            },
+            {
+              label: '승인 대기',
+              value: `${pendingLeaveCount}건`,
+              caption: '휴가 승인 요청',
+              body: '관리자 확인이 필요한 휴가 승인 대기 건수입니다.',
+            },
+          ]}
+        />
+      )}
 
       {!isMember && <AdminQuickFlowGrid items={quickFlows} />}
 
@@ -317,382 +841,62 @@ export default function AttendancePage() {
         notice={notice}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        {!isMember && (
-          <div className="card">
-            <p className="text-sm font-medium text-slate-500">오늘의 근태 요약</p>
-            <div className="grid gap-3 sm:grid-cols-3 mt-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-xs text-slate-500">출근 완료</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedIn}명</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-xs text-slate-500">퇴근 완료</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">{checkedOut}명</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-xs text-slate-500">지각</p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1">{lateCount}명</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">{isMember ? '내 근태 빠른 실행' : '빠른 실행'}</p>
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <button
-              className="btn-primary h-16 text-base gap-2"
-              onClick={handleCheckIn}
-              disabled={!!checking}
-            >
-              <span className="text-2xl">🟢</span>
-              {checking === 'in' ? '처리 중...' : '출근 제안'}
-            </button>
-            <button
-              className="btn-secondary h-16 text-base gap-2"
-              onClick={handleCheckOut}
-              disabled={!!checking || proposalLoading}
-            >
-              <span className="text-2xl">🔴</span>
-              {checking === 'out' ? '처리 중...' : '퇴근 제안'}
-            </button>
-          </div>
-          <p className="text-xs text-slate-500 mt-3">
-            버튼을 누르면 바로 저장하지 않고, 먼저 확인 결과 창을 띄웁니다.
-          </p>
-        </div>
-      </div>
-
-      {/* 날짜 선택 + 통계 */}
-      <div className="card flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div>
-          <label className="text-sm font-medium text-slate-700 block mb-1">조회 날짜</label>
-          <input
-            type="date"
-            className="input-base w-auto"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-4 text-sm">
-          <div><span className="text-slate-500">{isMember ? '내 출근 기록' : '총 출근'}</span> <strong>{checkedIn}명</strong></div>
-          <div><span className="text-slate-500">{isMember ? '내 기록 수' : '전체'}</span> <strong>{records.length}{isMember ? '건' : '명'}</strong></div>
-        </div>
-      </div>
+      {pendingReviewSection}
 
       <div className="card">
-        {loading
-          ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
-          : <DataTable
-              columns={columns}
-              data={records}
-              pageSize={10}
-              emptyText="근태 기록 없음"
-              actions={canManageAttendance ? (row) => (
-                <>
-                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
-                  <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDeleteRecord(row)}>삭제</button>
-                </>
-              ) : undefined}
-            />
-        }
-      </div>
-
-      {(proposal || leaveProposal) && (
-        <PendingReviewSection
-          title="확인 및 승인 대기 리스트"
-          description="프롬프트 입력은 위에서 한 번만 하고, 실제 확정/신청/반려는 아래 처리 리스트에서 진행합니다."
-          hasPending={Boolean(proposal || leaveProposal)}
-          badgeLabel={proposal && leaveProposal ? '2건 대기 중' : '1건 대기 중'}
-        >
-          <div className="space-y-3">
-            {proposal && (
-              <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-sky-700">근태 확인 항목</p>
-                    <h3 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary}</h3>
-                    <p className="text-sm text-slate-600 mt-1">
-                      AI가 자연어 입력을 근태 기록으로 해석했습니다. 그대로 확정하거나 수정 후 확정하세요.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2 text-right">
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
-                      {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
-                    </span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
-                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                      {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-500">업무 유형</span>
-                    <select
-                      className="input-base"
-                      value={proposal.action}
-                      onChange={(e) => setProposal((prev) => ({
-                        ...prev,
-                        action: e.target.value,
-                        action_label: e.target.value === 'checkout' ? '퇴근' : '출근',
-                        summary: buildProposalSummary({
-                          ...prev,
-                          action: e.target.value,
-                        }),
-                      }))}
-                    >
-                      <option value="checkin">출근</option>
-                      <option value="checkout">퇴근</option>
-                    </select>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-500">기록 시각</span>
-                    <input
-                      type="datetime-local"
-                      className="input-base"
-                      value={toDateTimeLocal(proposal.occurred_at)}
-                      onChange={(e) => setProposal((prev) => ({
-                        ...prev,
-                        occurred_at: fromDateTimeLocal(e.target.value),
-                        summary: buildProposalSummary({
-                          ...prev,
-                          occurred_at: fromDateTimeLocal(e.target.value),
-                        }),
-                      }))}
-                    />
-                  </label>
-                  <label className="space-y-1 md:col-span-2">
-                    <span className="text-xs font-semibold text-slate-500">메모</span>
-                    <textarea
-                      className="input-base min-h-[88px]"
-                      value={proposal.note || ''}
-                      onChange={(e) => setProposal((prev) => ({
-                        ...prev,
-                        note: e.target.value,
-                      }))}
-                      placeholder="필요하면 메모를 남길 수 있습니다."
-                    />
-                  </label>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
-                  <p><span className="font-semibold text-slate-900">대상</span> {proposal.employee_name}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">예정 기록</span> {proposal.summary}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">피드백 수집</span> 승인 시 품질이 좋았는지, 수정 후 승인했는지 자동 기록됩니다.</p>
-                </div>
-
-                {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
-                  <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
-                    <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
-                    <p className="text-xs text-violet-700 mt-1">
-                      수정 없이 확정된 과거 사례를 참고해 현재 제안을 빠르게 판단할 수 있습니다.
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {proposal.similar_cases.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="font-medium text-slate-900">{item.summary || '유사 근태 사례'}</p>
-                            <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
-                              유사도 {(item.similarity * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                          <button
-                            type="button"
-                            className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
-                            onClick={() => refillPrompt(`이 사례를 참고해서 근태 기록 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
-                          >
-                            이 사례로 다시 작성
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-3">
-                  <ProposalFlowActions
-                    onPromptFill={() => refillPrompt(`근태 기록 제안을 다시 정리해줘\n유형: ${proposal.action === 'checkout' ? '퇴근' : '출근'}\n시각: ${proposal.occurred_at || ''}\n메모: ${proposal.note || ''}`.trim())}
-                    onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  />
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={handleConfirmProposal}
-                    disabled={proposalLoading}
-                  >
-                    {proposalLoading ? '확정 중...' : '이대로 확정'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={handleRejectProposal}
-                    disabled={proposalLoading}
-                  >
-                    제안 반려
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setProposal(null);
-                      setOriginalProposal(null);
-                      setError('');
-                    }}
-                    disabled={proposalLoading}
-                  >
-                    닫기
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {leaveProposal && (
-              <div className="rounded-3xl border border-violet-200 bg-violet-50/40 px-5 py-5 space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-violet-700">휴가 신청 확인 항목</p>
-                    <h3 className="text-lg font-semibold text-slate-900 mt-1">{leaveProposal.summary}</h3>
-                    <p className="text-sm text-slate-600 mt-1">
-                      자연어 입력을 휴가 신청서로 해석했습니다. 수정 후 접수하거나 반려할 수 있습니다.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-2 text-right">
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
-                      {leaveProposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
-                    </span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${leaveProposalChanged(originalLeaveProposal, leaveProposal)
-                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                      {leaveProposalChanged(originalLeaveProposal, leaveProposal) ? '수정 있음' : '수정 없음'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-500">휴가 날짜</span>
-                    <input
-                      type="date"
-                      className="input-base"
-                      value={leaveProposal.leave_date}
-                      onChange={(e) => setLeaveProposal((prev) => ({
-                        ...prev,
-                        leave_date: e.target.value,
-                        summary: `${e.target.value} ${prev.leave_type_label} 신청`,
-                      }))}
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-500">유형</span>
-                    <select
-                      className="input-base"
-                      value={leaveProposal.leave_type}
-                      onChange={(e) => setLeaveProposal((prev) => {
-                        const nextType = e.target.value;
-                        const nextLabel = nextType === 'half_day' ? '반차' : nextType === 'field_work' ? '외근' : '연차';
-                        return {
-                          ...prev,
-                          leave_type: nextType,
-                          leave_type_label: nextLabel,
-                          summary: `${prev.leave_date} ${nextLabel} 신청`,
-                        };
-                      })}
-                    >
-                      <option value="annual_leave">연차</option>
-                      <option value="half_day">반차</option>
-                      <option value="field_work">외근</option>
-                    </select>
-                  </label>
-                  <label className="space-y-1 md:col-span-2">
-                    <span className="text-xs font-semibold text-slate-500">사유</span>
-                    <textarea
-                      className="input-base min-h-[88px]"
-                      value={leaveProposal.reason || ''}
-                      onChange={(e) => setLeaveProposal((prev) => ({
-                        ...prev,
-                        reason: e.target.value,
-                      }))}
-                      placeholder="휴가 사유를 입력하세요."
-                    />
-                  </label>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
-                  <p><span className="font-semibold text-slate-900">신청자</span> {leaveProposal.employee_name}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">신청 내용</span> {leaveProposal.summary}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">처리 방식</span> 접수 후 관리자 승인 대기 상태로 넘어갑니다.</p>
-                </div>
-
-                {Array.isArray(leaveProposal.similar_cases) && leaveProposal.similar_cases.length > 0 && (
-                  <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
-                    <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
-                    <div className="mt-3 space-y-2">
-                      {leaveProposal.similar_cases.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="font-medium text-slate-900">{item.summary || '유사 휴가 사례'}</p>
-                            <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
-                              유사도 {(item.similarity * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                          <button
-                            type="button"
-                            className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
-                            onClick={() => refillPrompt(`이 사례를 참고해서 휴가 신청 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
-                          >
-                            이 사례로 다시 작성
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-3">
-                  <ProposalFlowActions
-                    onPromptFill={() => refillPrompt(`휴가 신청 제안을 다시 정리해줘\n날짜: ${leaveProposal.leave_date || ''}\n유형: ${leaveProposal.leave_type_label || ''}\n사유: ${leaveProposal.reason || ''}`.trim())}
-                    onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                  />
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={handleConfirmLeaveProposal}
-                    disabled={proposalLoading}
-                  >
-                    {proposalLoading ? '접수 중...' : '이대로 신청 접수'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={handleRejectLeaveProposal}
-                    disabled={proposalLoading}
-                  >
-                    제안 반려
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setLeaveProposal(null);
-                      setOriginalLeaveProposal(null);
-                      setError('');
-                    }}
-                    disabled={proposalLoading}
-                  >
-                    닫기
-                  </button>
-                </div>
-              </div>
-            )}
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+            <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
+              <span className="w-14 shrink-0 text-xs font-semibold text-slate-500">시작날짜</span>
+              <input
+                type="date"
+                className="input-base w-[calc(100%-4.25rem)] sm:min-w-[150px] sm:w-auto"
+                value={startDate}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setStartDate(value);
+                  if (value > endDate) setEndDate(value);
+                }}
+              />
+            </label>
+            <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
+              <span className="w-14 shrink-0 text-xs font-semibold text-slate-500">종료날짜</span>
+              <input
+                type="date"
+                className="input-base w-[calc(100%-4.25rem)] sm:min-w-[150px] sm:w-auto"
+                value={endDate}
+                min={startDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </label>
           </div>
-        </PendingReviewSection>
-      )}
+          <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:w-auto sm:justify-end">
+            {activeSummary}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {tabItems.map((tab) => (
+            <button
+              type="button"
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                activeTab === tab.key
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5 sm:mt-4">
+        {loading
+          ? <p className="py-10 text-center text-gray-400">로딩 중...</p>
+          : activeTable
+        }
+        </div>
+      </div>
 
       <Modal open={!!editRow} onClose={() => setEditRow(null)} title="근태 기록 수정">
         <form onSubmit={handleSaveEdit} className="space-y-4">

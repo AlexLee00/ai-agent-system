@@ -25,7 +25,7 @@ function resolveApprovalAction(approval) {
   const category = approval.category || '';
   const action = approval.action || '';
 
-  if (category === 'leave_request') {
+  if (category === 'leave' || action === 'leave_request') {
     return { href: '/attendance', prompt: '대기 중인 휴가 신청 내역 보여줘' };
   }
   if (category === 'employee_create' || action.includes('직원')) {
@@ -41,7 +41,7 @@ function resolveApprovalAction(approval) {
     if (approval.target_bot === 'Oliver') return { href: '/sales', prompt: '대기 중인 매출 승인 요청 보여줘' };
     if (approval.target_bot === 'Ryan') return { href: '/projects', prompt: '대기 중인 프로젝트/업무 승인 요청 보여줘' };
   }
-  if (payload.date || payload.reason) {
+  if (payload.leave_date || payload.date || payload.reason) {
     return { href: '/attendance', prompt: '대기 중인 근태 관련 승인 요청 보여줘' };
   }
   return { href: '/dashboard', prompt: '대기 중인 승인 요청 요약해줘' };
@@ -260,7 +260,12 @@ export default function ApprovalsPage() {
                         {payload.description && (
                           <p className="text-sm text-slate-500 mt-1 whitespace-pre-wrap">{payload.description}</p>
                         )}
-                        {payload.date && <p className="text-sm text-slate-500 mt-1">날짜: {payload.date}</p>}
+                        {(payload.leave_date || payload.date) && (
+                          <p className="text-sm text-slate-500 mt-1">날짜: {payload.leave_date || payload.date}</p>
+                        )}
+                        {(payload.leave_type_label || payload.leave_type) && (
+                          <p className="text-sm text-slate-500 mt-1">유형: {payload.leave_type_label || payload.leave_type}</p>
+                        )}
                         {payload.reason && <p className="text-sm text-slate-500 mt-1">사유: {payload.reason}</p>}
                       </>
                     )}

@@ -12,10 +12,13 @@ const {
   buildReservationIntentText,
   clearReservationDraft,
 } = require('../lib/reservation-draft-cache');
+const { isRetryRegistrationRequest } = require('../../reservation/lib/manual-reservation');
 const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteByEvent } = require('../lib/mute-manager');
 const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
+const { trackTokens }                    = require('../lib/token-tracker');
+const llmLogger                          = require('../../../packages/core/lib/llm-logger');
 
 const path     = require('path');
 const os       = require('os');
@@ -624,6 +627,7 @@ async function delegateToTeamLead(team, text) {
 }
 
 async function geminiChatFallback(text) {
+  const startedAt = Date.now();
   try {
     const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
     const key = getGeminiKey();
@@ -643,6 +647,36 @@ async function geminiChatFallback(text) {
       signal: AbortSignal.timeout(15000),
     });
     const data = await res.json();
+    const usage = data.usage || {};
+    const inputTokens = usage.prompt_tokens || 0;
+    const outputTokens = usage.completion_tokens || 0;
+    const latencyMs = Date.now() - startedAt;
+
+    await Promise.allSettled([
+      trackTokens({
+        bot: '제이',
+        team: 'orchestrator',
+        model: 'gemini-2.5-flash',
+        provider: 'google',
+        taskType: 'chat_fallback',
+        tokensIn: inputTokens,
+        tokensOut: outputTokens,
+        durationMs: latencyMs,
+      }),
+      llmLogger.logLLMCall({
+        team: 'orchestrator',
+        bot: 'jay',
+        model: 'gemini-2.5-flash',
+        requestType: 'chat_fallback',
+        inputTokens,
+        outputTokens,
+        latencyMs,
+        success: !data.error,
+        errorMsg: data.error?.message || null,
+      }),
+    ]);
+
+    if (data.error) return null;
     return data.choices?.[0]?.message?.content?.trim() || null;
   } catch { return null; }
 }
@@ -2665,6 +2699,7 @@ async function route(msg, sendReply) {
     const parsed   = await parseIntent(preparedText);
     if (parsed?.intent === 'ska_action' && parsed?.args?.command === 'register_reservation') {
       parsed.args.raw_text = preparedText;
+      parsed.args.manual_retry = isRetryRegistrationRequest({ raw_text: preparedText });
     }
     const response = await handleIntent(parsed, msg, sendReply);
 

@@ -208,6 +208,7 @@ const MENU_POLICY = {
   ai: buildAdminOnlyPolicy('ai'),
   workforce: buildAdminOnlyPolicy('workforce'),
   approvals: buildAdminOnlyPolicy('approvals'),
+  ocrtest: buildAdminOnlyPolicy('ocrtest'),
 };
 
 function getMenuPolicyForRole(role = 'member') {

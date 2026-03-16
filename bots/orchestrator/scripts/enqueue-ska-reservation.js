@@ -2,7 +2,7 @@
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { parseReservationCommand } = require('../../reservation/lib/manual-reservation');
+const { parseReservationCommand, isRetryRegistrationRequest } = require('../../reservation/lib/manual-reservation');
 
 function parseArgs(argv) {
   const out = {};
@@ -45,10 +45,13 @@ async function main() {
     process.exit(1);
   }
 
+  const manualRetry = isRetryRegistrationRequest({ raw_text: rawText });
+
   const commandArgs = {
     command: 'register_reservation',
     raw_text: rawText,
     source: 'openclaw_exec',
+    manual_retry: manualRetry,
     reservation: parsed.reservation || null,
     reservations: parsed.reservations || null,
     batch: parsed.mode === 'batch',
@@ -72,6 +75,7 @@ async function main() {
     reservation: parsed.reservation || null,
     reservations: parsed.reservations || null,
     batch: parsed.mode === 'batch',
+    manual_retry: manualRetry,
   }));
 }
 

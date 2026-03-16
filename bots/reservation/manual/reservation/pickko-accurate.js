@@ -16,9 +16,10 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
-const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
+const { loginToPickko } = require('../../lib/pickko');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
+const { publishToMainBot } = require('../../lib/mainbot-client');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -60,6 +61,11 @@ const END_TIME = normalized.end;
 const ROOM = normalized.room;
 
 const MODE = (process.env.MODE || 'dev').toLowerCase();
+const ENABLE_NAME_SYNC = process.env.ENABLE_NAME_SYNC === '1';
+const SKIP_NAME_SYNC =
+  process.env.SKIP_NAME_SYNC === '1' ||
+  process.env.MANUAL_RETRY === '1' ||
+  !ENABLE_NAME_SYNC;
 // 테스트 전용: 결제금액을 0으로 변경하지 않고 실제 금액으로 결제
 // SKIP_PRICE_ZERO=1 node src/pickko-accurate.js ...
 const SKIP_PRICE_ZERO = process.env.SKIP_PRICE_ZERO === '1';
@@ -144,125 +150,51 @@ async function sendErrorNotification(errorMsg, context = {}) {
   log(`📋 컨텍스트: ${JSON.stringify(context)}`);
 }
 
-// ======================== 회원 이름 동기화 (1.5단계) ========================
-async function syncMemberNameIfNeeded(page, phoneRaw, naverName) {
-  // 가드: 유효하지 않은 naverName이면 스킵
+// ======================== 기존회원 이름 비교/알림 (4.5단계) ========================
+async function notifyMemberNameMismatch(phoneRaw, pickkoName, naverName, mbNo = null) {
   if (!naverName || naverName === '고객' || naverName.length < 2) {
     return { skipped: true, reason: 'invalid_naver_name' };
   }
+  const normalizedNaverName = String(naverName || '').trim();
+  const normalizedPickkoName = String(pickkoName || '').trim();
+  log(`[4.5단계] 픽코 이름: "${normalizedPickkoName}" | 네이버 이름: "${normalizedNaverName}"`);
 
-  // 1. study/write.html 모달로 회원 검색 (lib/pickko.findPickkoMember 공통 함수)
-  const result = await findPickkoMember(page, phoneRaw, delay);
-  log(`[1.5단계] 회원 검색 결과: ${JSON.stringify(result)}`);
-
-  if (!result.found || !result.mbNo) {
-    log(`[1.5단계] 회원 없음 또는 mb_no 미추출 → 스킵`);
-    return { skipped: true, reason: 'member_not_found' };
+  if (!normalizedPickkoName || normalizedPickkoName === normalizedNaverName) {
+    log('[4.5단계] ✅ 이름 일치 → 추가 조치 없음');
+    return { matched: true, mbNo, pickkoName: normalizedPickkoName, naverName: normalizedNaverName };
   }
 
-  const pickkoName = result.name;
-  log(`[1.5단계] 픽코 이름: "${pickkoName}" | 네이버 이름: "${naverName}"`);
+  const alertMessage =
+    `⚠️ 픽코 회원 이름 불일치 감지\n\n` +
+    `📞 번호: ${maskPhone(phoneRaw)}\n` +
+    `🧾 픽코 이름: ${normalizedPickkoName}\n` +
+    `📝 네이버 이름: ${normalizedNaverName}\n\n` +
+    `예약은 계속 진행합니다.\n` +
+    `회원 정보 수정이 필요하면 마스터가 수동으로 확인해 주세요.`;
 
-  if (pickkoName === naverName) {
-    log(`[1.5단계] ✅ 이름 일치 → 동기화 불필요`);
-    return { updated: false };
-  }
-
-  log(`[1.5단계] ⚠️ 이름 불일치 → 수정 시작`);
-
-  // 3. member/view 페이지로 이동
-  await page.goto(`https://pickkoadmin.com/member/view/${result.mbNo}.html`, {
-    waitUntil: 'domcontentloaded'
+  log(`[4.5단계] ⚠️ 이름 불일치 감지 → 자동 수정 없이 알림만 발송`);
+  await publishToMainBot({
+    from_bot: 'andy',
+    event_type: 'alert',
+    alert_level: 2,
+    message: alertMessage,
+    payload: {
+      type: 'member_name_mismatch',
+      phone: phoneRaw,
+      pickkoName: normalizedPickkoName,
+      naverName: normalizedNaverName,
+      mbNo,
+    },
+  }).catch((error) => {
+    log(`[4.5단계] 이름 불일치 알림 발송 실패: ${error.message}`);
   });
-  await delay(1500);
-
-  // 3-A. 통합 타입 감지 (view 페이지)
-  // 통합 회원은 외부 연동 계정으로 픽코 웹에서 이름 수정 불가
-  // 감지 조건 1: "준비중" 텍스트 (통합 회원 view 페이지가 준비중으로 표시됨)
-  // 감지 조건 2: 전화번호 옆 "통합" 배지
-  const isIntegrated = await page.evaluate(() => {
-    const bodyText = document.body?.innerText || document.body?.textContent || '';
-
-    // 조건 1: 페이지 본문에 "준비중" 포함
-    if (bodyText.includes('준비중')) return true;
-
-    // 조건 2: "통합" 배지 요소
-    const candidates = document.querySelectorAll(
-      'td, th, span, small, label, b, strong, ' +
-      '[class*="badge"], [class*="type"], [class*="tag"], [class*="label"]'
-    );
-    for (const el of candidates) {
-      if (el.children.length === 0 && el.textContent.trim() === '통합') return true;
-    }
-    return false;
-  });
-
-  if (isIntegrated) {
-    log(`[1.5단계] 통합 회원 감지 (view 페이지 "준비중" 또는 "통합" 타입) → 웹 수정 불가, 스킵`);
-    return { skipped: true, reason: 'integrated_member' };
-  }
-
-  // 4. "회원 정보 수정" 버튼 클릭 (view 페이지에서 실제 수정 폼으로 이동)
-  const editBtnClicked = await page.evaluate(() => {
-    const candidates = document.querySelectorAll('button, a, input[type="button"], input[type="submit"]');
-    for (const el of candidates) {
-      const t = (el.textContent || el.value || '').trim();
-      if (t.includes('회원 정보 수정') || t === '수정' || t === '수정하기' || t === '편집') {
-        el.click();
-        return true;
-      }
-    }
-    return false;
-  });
-
-  if (!editBtnClicked) {
-    log(`[1.5단계] ⚠️ 수정 버튼 없음 → 스킵`);
-    return { skipped: true, reason: 'edit_button_not_found' };
-  }
-
-  await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-  await delay(1500);
-
-  // 5. 이름 필드 수정
-  const nameInput = await page.$('input[name="mb_name"]');
-  if (!nameInput) {
-    log(`[1.5단계] ⚠️ 이름 필드 없음 → 스킵`);
-    return { skipped: true, reason: 'name_input_not_found' };
-  }
-
-  // 5-A. 이름 필드 disabled/readonly 체크 (통합 write 페이지 안전망)
-  const nameInputLocked = await page.evaluate(() => {
-    const inp = document.querySelector('input[name="mb_name"]');
-    return inp ? (inp.disabled || inp.readOnly) : false;
-  });
-  if (nameInputLocked) {
-    log(`[1.5단계] 이름 필드 수정 불가 (disabled/readonly) → 통합 회원으로 스킵`);
-    return { skipped: true, reason: 'integrated_member' };
-  }
-
-  await nameInput.click({ clickCount: 3 });
-  await nameInput.type(naverName, { delay: 50 });
-  await delay(300);
-
-  // 6. 저장 (form.submit())
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
-    page.evaluate(() => {
-      const form = document.querySelector('form#memberFrom, form');
-      if (form) HTMLFormElement.prototype.submit.call(form);
-    })
-  ]);
-  await delay(1000);
-
-  const afterUrl = page.url();
-  const success = afterUrl.includes('/member/view/');
-  log(`[1.5단계] ${success ? '✅' : '⚠️'} 이름 저장 결과: ${afterUrl}`);
 
   return {
-    updated: success,
-    mbNo: result.mbNo,
-    oldName: pickkoName,
-    newName: naverName
+    matched: false,
+    mbNo,
+    pickkoName: normalizedPickkoName,
+    naverName: normalizedNaverName,
+    mismatchNotified: true,
   };
 }
 
@@ -384,22 +316,6 @@ async function main() {
     log('\n[1단계] 로그인');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log('✅ 로그인 완료');
-
-    // ======================== 1.5단계: 회원 이름 동기화 ========================
-    log('\n[1.5단계] 회원 이름 동기화 확인');
-    try {
-      const syncResult = await syncMemberNameIfNeeded(page, PHONE_NOHYPHEN, CUSTOMER_NAME);
-      if (syncResult.updated) {
-        log(`✅ [1.5단계] 이름 업데이트: "${syncResult.oldName}" → "${syncResult.newName}"`);
-      } else if (syncResult.skipped) {
-        log(`[1.5단계] 스킵 (${syncResult.reason})`);
-      } else {
-        log(`[1.5단계] 이름 일치 → 변경 불필요`);
-      }
-    } catch (e) {
-      log(`⚠️ [1.5단계] 이름 동기화 오류 (예약 계속 진행): ${e.message}`);
-      // 비치명적 오류 → 계속 진행
-    }
 
     // ✅ 시간 범위 변환 확인 (로그인 후)
     const timeRangeCheck = validateTimeRange(START_TIME, END_TIME);
@@ -544,8 +460,7 @@ async function main() {
       
       if (!memberInfo) {
         log(`⚠️ 회원정보 추출 실패 (시도 ${retryCount + 1}/5)`);
-        await verifyMemberInfo(retryCount + 1);
-        return;
+        return await verifyMemberInfo(retryCount + 1);
       }
       
       log(`📋 선택된 회원: ${maskName(memberInfo.name)}(${maskPhone(memberInfo.phone)})`);
@@ -560,17 +475,43 @@ async function main() {
         log(`   선택: ${formatPhoneForComparison(selectedPhoneNoHyphen)}`);
         log(`⏳ 회원 선택 다시 수행... (시도 ${retryCount + 1}/5)`);
         
-        await verifyMemberInfo(retryCount + 1);
-        return;
+        return await verifyMemberInfo(retryCount + 1);
       }
       
       log(`✅ 회원정보 검증 완료 (시도 ${retryCount + 1}/5)`);
       log(`   이름: ${maskName(memberInfo.name)}`);
       log(`   전화: ${maskPhone(memberInfo.phone)}`);
+      return memberInfo;
     };
     
     // 회원 선택 및 검증 실행
-    await verifyMemberInfo();
+    const selectedMemberInfo = await verifyMemberInfo();
+
+    // ======================== 4.5단계: 기존회원 이름 비교 ========================
+    log('\n[4.5단계] 기존회원 이름 비교');
+    try {
+      if (SKIP_NAME_SYNC) {
+        log(`[4.5단계] 이름 비교 알림 생략 (ENABLE_NAME_SYNC=${ENABLE_NAME_SYNC ? '1' : '0'})`);
+      } else if (!selectedMemberInfo) {
+        log('[4.5단계] 선택된 기존회원 정보 없음 → 비교 생략');
+      } else {
+        const nameCheckResult = await notifyMemberNameMismatch(
+          PHONE_NOHYPHEN,
+          selectedMemberInfo.name,
+          CUSTOMER_NAME,
+          null
+        );
+        if (nameCheckResult.skipped) {
+          log(`[4.5단계] 스킵 (${nameCheckResult.reason})`);
+        } else if (nameCheckResult.mismatchNotified) {
+          log('[4.5단계] 이름 불일치 알림 발송 완료');
+        } else {
+          log('[4.5단계] 이름 일치 → 변경 불필요');
+        }
+      }
+    } catch (e) {
+      log(`⚠️ [4.5단계] 이름 비교 오류 (예약 계속 진행): ${e.message}`);
+    }
     
     // ======================== 5단계: 날짜 확인 ✅ (검증 추가됨) ========================
     log('\n[5단계] 날짜 확인');

@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { getToken } from '@/lib/auth-context';
 import { getMenuPolicy } from '@/lib/menu-access';
+import { buildDocumentUploadNotice } from '@/lib/document-attachment';
 
 const API_BASE = '/api';
 
@@ -401,12 +402,12 @@ export default function WorkerAIWorkspace({
         type: 'document_upload',
         filename: data.document?.filename || file.name,
         category: data.document?.category || '',
-        summary: data.document?.ai_summary || '문서가 업로드되었습니다. 이어서 분석 요청을 보낼 수 있습니다.',
+        summary: data.document?.extracted_text_preview || data.document?.ai_summary || '문서가 업로드되었습니다. 이어서 분석 요청을 보낼 수 있습니다.',
       };
       setLatestUi(ui);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `문서 업로드가 완료되었습니다. "${file.name}"을 바탕으로 이어서 요청할 수 있습니다.`,
+        content: buildDocumentUploadNotice(data.document, file.name),
         createdAt: new Date().toISOString(),
         intent: 'document_upload',
         metadata: { ui },

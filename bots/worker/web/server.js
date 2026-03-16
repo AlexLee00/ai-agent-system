@@ -43,6 +43,7 @@ const {
 // ── AI 모듈 ───────────────────────────────────────────────────────────
 const llmRouter   = require(path.join(__dirname, '../../../packages/core/lib/llm-router'));
 const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag-safe'));
+const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser'));
 const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 const {
   buildScheduleProposal,
@@ -177,6 +178,54 @@ const app = express();
 const wsClients = new Set();
 let chatWss = null;
 let taskEventClient = null;
+
+async function extractUploadedDocument({ absolutePath, filename, mimeType }) {
+  try {
+    return await extractDocument({
+      filePath: absolutePath,
+      originalName: filename,
+      mimeType,
+    });
+  } catch (error) {
+    return {
+      text: '',
+      metadata: {
+        extractionMethod: 'extractor_failed',
+        pageCount: 0,
+        extractedTextLength: 0,
+        extractionWarnings: ['extractor_failed'],
+        sourceFileType: path.extname(filename || '').replace(/^\./, '') || 'unknown',
+        chunkStrategy: 'document',
+        chunkWarnings: [String(error.message || error)],
+        analysisReadyTextLength: 0,
+        sourceConfidence: 0,
+      },
+    };
+  }
+}
+
+function buildDocumentRagText({ category, filename, summary, extractionText }) {
+  const parts = [`[${category || '기타'}] ${filename}`];
+  if (summary) parts.push(summary);
+  if (extractionText) parts.push(String(extractionText).slice(0, 12000));
+  return parts.filter(Boolean).join('\n\n').trim();
+}
+
+function buildExtractionPreview(text = '', maxLength = 4000) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}\n...(중략)`;
+}
+
+function buildDeterministicSummary(extraction = {}) {
+  const lines = String(extraction.text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  return lines.join(' / ').slice(0, 240);
+}
 
 function sendWs(ws, payload) {
   if (!ws || ws.readyState !== 1) return;
@@ -1207,28 +1256,92 @@ app.delete('/api/employees/:id', requireAuth, requireRole('master','admin'), aud
 
 app.get('/api/attendance', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
-  const date = req.query.date || kst.today();
+  const startDate = req.query.start_date || req.query.date || kst.today();
+  const endDate = req.query.end_date || req.query.date || startDate;
   try {
     let employeeFilter = '';
-    const params = [req.companyId, date, limit, offset];
+    const params = [req.companyId, startDate, endDate, limit, offset];
     if (req.user.role === 'member') {
       const employeeId = await getEmployeeIdForRequest(req);
       if (!employeeId) {
         return res.json({ attendance: [] });
       }
-      employeeFilter = ' AND a.employee_id=$5';
+      employeeFilter = ' AND a.employee_id=$6';
       params.push(employeeId);
     }
     const rows = await pgPool.query(SCHEMA,
       `SELECT a.*, e.name AS employee_name
        FROM worker.attendance a
        JOIN worker.employees e ON e.id=a.employee_id
-       WHERE a.company_id=$1 AND a.date=$2
+       WHERE a.company_id=$1 AND a.date BETWEEN $2 AND $3
        ${employeeFilter}
-       ORDER BY e.name LIMIT $3 OFFSET $4`,
+       ORDER BY a.date DESC, e.name LIMIT $4 OFFSET $5`,
       params);
     res.json({ attendance: rows });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/attendance/leave-status', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req);
+  const startDate = req.query.start_date || req.query.date || kst.today();
+  const endDate = req.query.end_date || req.query.date || startDate;
+  try {
+    let requesterFilter = '';
+    const params = [req.companyId, startDate, endDate, limit, offset];
+    if (req.user.role === 'member') {
+      requesterFilter = ' AND ar.requester_id=$6';
+      params.push(req.user.id);
+    }
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT
+         ar.id,
+         ar.status,
+         ar.created_at,
+         ar.updated_at,
+         ar.payload,
+         COALESCE(ar.payload->>'employee_name', u.name, '직원') AS employee_name,
+         COALESCE(ar.payload->>'leave_date', '') AS leave_date,
+         COALESCE(ar.payload->>'leave_type_label', ar.payload->>'leave_type', '휴가') AS leave_type_label,
+         COALESCE(ar.payload->>'reason', '') AS reason
+       FROM worker.approval_requests ar
+       LEFT JOIN worker.users u ON u.id=ar.requester_id
+       WHERE ar.company_id=$1
+         AND ar.category='leave'
+         AND COALESCE(ar.payload->>'leave_date', '') BETWEEN $2 AND $3
+         ${requesterFilter}
+       ORDER BY COALESCE(ar.payload->>'leave_date', '') DESC, ar.created_at DESC
+       LIMIT $4 OFFSET $5`,
+      params);
+    res.json({ leave_requests: rows });
+  } catch {
+    res.status(500).json({ error: '휴가 현황을 불러오지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.get('/api/attendance/leave-approvals', requireAuth, requireRole('master','admin'), companyFilter, async (req, res) => {
+  try {
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT
+         ar.id,
+         ar.status,
+         ar.created_at,
+         ar.updated_at,
+         ar.payload,
+         COALESCE(ar.payload->>'employee_name', u.name, '직원') AS employee_name,
+         COALESCE(ar.payload->>'leave_date', '') AS leave_date,
+         COALESCE(ar.payload->>'leave_type_label', ar.payload->>'leave_type', '휴가') AS leave_type_label,
+         COALESCE(ar.payload->>'reason', '') AS reason
+       FROM worker.approval_requests ar
+       LEFT JOIN worker.users u ON u.id=ar.requester_id
+       WHERE ar.company_id=$1
+         AND ar.category='leave'
+         AND ar.status='pending'
+       ORDER BY COALESCE(ar.payload->>'leave_date', '') ASC, ar.created_at ASC`,
+      [req.companyId]);
+    res.json({ leave_approvals: rows });
+  } catch {
+    res.status(500).json({ error: '휴가 승인 현황을 불러오지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 app.post('/api/attendance/checkin', requireAuth, async (req, res) => {
@@ -1519,6 +1632,31 @@ app.post('/api/leave/proposals/:id/confirm', requireAuth, async (req, res) => {
       submittedSnapshot: proposal,
       eventMeta: { source: 'leave_confirm' },
     });
+
+    const duplicateLeave = await pgPool.get(SCHEMA,
+      `SELECT id, status
+       FROM worker.approval_requests
+       WHERE company_id = $1
+         AND category = 'leave'
+         AND status IN ('pending', 'approved')
+         AND COALESCE(payload->>'employee_id', '') = $2
+         AND COALESCE(payload->>'leave_date', '') = $3
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [
+        req.user.company_id,
+        String(proposal.employee_id || ''),
+        proposal.leave_date,
+      ],
+    );
+
+    if (duplicateLeave) {
+      const statusLabel = duplicateLeave.status === 'approved' ? '이미 승인된' : '이미 신청 중인';
+      return res.status(409).json({
+        error: `${proposal.leave_date}에는 ${statusLabel} 휴가가 있습니다.`,
+        code: 'DUPLICATE_LEAVE_REQUEST',
+      });
+    }
 
     const approval = await pgPool.get(SCHEMA,
       `INSERT INTO worker.approval_requests (
@@ -1818,15 +1956,44 @@ app.post('/api/documents/upload',
     }
 
     try {
+      const absolutePath = req.file ? path.join(UPLOAD_DIR, path.basename(req.file.filename)) : null;
+      const extraction = absolutePath
+        ? await extractUploadedDocument({
+            absolutePath,
+            filename,
+            mimeType: req.file?.mimetype || '',
+          })
+        : { text: '', metadata: {} };
+      const deterministicSummary = buildDeterministicSummary(extraction);
       const doc = await pgPool.get(SCHEMA,
-        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id,category,filename,created_at`,
-        [req.user.company_id, detectedCategory, filename, file_path||null, req.user.id]);
+        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by,ai_summary,extracted_text,extraction_metadata,extracted_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,category,filename,ai_summary,created_at`,
+        [
+          req.user.company_id,
+          detectedCategory,
+          filename,
+          file_path || null,
+          req.user.id,
+          deterministicSummary || null,
+          extraction.text || null,
+          JSON.stringify(extraction.metadata || {}),
+          extraction.text ? kst.now() : null,
+        ]);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
-      rag.store('rag_work_docs', `[${detectedCategory}] ${filename}`,
+      rag.store('rag_work_docs', buildDocumentRagText({
+        category: detectedCategory,
+        filename,
+        extractionText: extraction.text,
+      }),
         { company_id: req.user.company_id, document_id: doc.id, category: detectedCategory }, 'emily'
       ).catch(() => {});
-      res.status(201).json({ document: doc });
+      res.status(201).json({
+        document: {
+          ...doc,
+          extraction_metadata: extraction.metadata,
+          extracted_text_preview: buildExtractionPreview(extraction.text),
+        },
+      });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
   }
 );
@@ -1849,6 +2016,31 @@ app.get('/api/documents/:id/download', requireAuth, companyFilter, async (req, r
     return res.download(absolutePath, row.filename);
   } catch {
     res.status(500).json({ error: '문서 다운로드 중 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.get('/api/documents/:id/extraction', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT id, filename, extracted_text, extraction_metadata, extracted_at
+       FROM worker.documents
+       WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '문서를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    res.json({
+      ok: true,
+      document: {
+        id: row.id,
+        filename: row.filename,
+        extracted_text: row.extracted_text || '',
+        extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
+        extraction_metadata: row.extraction_metadata || {},
+        extracted_at: row.extracted_at,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: '문서 파싱 결과를 불러오지 못했습니다.', code: 'SERVER_ERROR' });
   }
 });
 
@@ -1951,9 +2143,15 @@ app.post('/api/documents/proposals/:id/confirm',
       });
 
       const filePath = `/uploads/${req.file.filename}`;
+      const absolutePath = path.join(UPLOAD_DIR, path.basename(req.file.filename));
+      const extraction = await extractUploadedDocument({
+        absolutePath,
+        filename: proposal.filename || uploadedName || '업로드 문서',
+        mimeType: req.file?.mimetype || '',
+      });
       const document = await pgPool.get(SCHEMA,
-        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by,ai_summary)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by,ai_summary,extracted_text,extraction_metadata,extracted_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING id,category,filename,ai_summary,uploaded_by,created_at`,
         [
           req.user.company_id,
@@ -1962,9 +2160,17 @@ app.post('/api/documents/proposals/:id/confirm',
           filePath,
           req.user.id,
           proposal.request_summary || null,
+          extraction.text || null,
+          JSON.stringify(extraction.metadata || {}),
+          extraction.text ? kst.now() : null,
         ]);
 
-      rag.store('rag_work_docs', `[${proposal.category || '기타'}] ${document.filename}\n${proposal.request_summary || ''}`.trim(),
+      rag.store('rag_work_docs', buildDocumentRagText({
+        category: proposal.category || '기타',
+        filename: document.filename,
+        summary: proposal.request_summary || '',
+        extractionText: extraction.text,
+      }),
         {
           company_id: req.user.company_id,
           document_id: document.id,
@@ -1991,6 +2197,8 @@ app.post('/api/documents/proposals/:id/confirm',
         document: {
           ...document,
           download_url: `/api/documents/${document.id}/download`,
+          extraction_metadata: extraction.metadata,
+          extracted_text_preview: buildExtractionPreview(extraction.text),
         },
       });
     } catch (error) {
@@ -2388,7 +2596,7 @@ app.get('/api/activity', requireAuth, companyFilter, async (req, res) => {
                COALESCE(u.name, '승인 대기') AS actor,
                CONCAT(
                  CASE
-                   WHEN ar.category = 'leave_request' THEN '휴가'
+                   WHEN ar.category = 'leave' OR ar.action = 'leave_request' THEN '휴가'
                    WHEN ar.category = 'attendance' THEN '근태'
                    WHEN ar.category = 'employee' THEN '직원'
                    WHEN ar.category = 'payroll' THEN '급여'

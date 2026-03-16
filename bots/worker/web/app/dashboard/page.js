@@ -8,6 +8,7 @@ import AdminPageHero from '@/components/AdminPageHero';
 import { useAuth } from '@/lib/auth-context';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import { parseClaudeOutput } from '../ai/canvas';
+import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -392,11 +393,11 @@ export default function DashboardPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
       const filename = data.document?.filename || file.name;
-      const summaryText = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      const appendix = buildDocumentPromptAppendix(data.document, file.name);
       setAttachedFileName(filename);
-      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summaryText}`.trim());
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}${appendix}`.trim());
       setAdvisorResult(null);
-      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+      setNotice(buildDocumentUploadNotice(data.document, file.name));
     } catch (err) {
       setError(err.message);
     } finally {

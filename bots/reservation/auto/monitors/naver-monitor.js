@@ -30,6 +30,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { maskPhone, maskName } = require('../../lib/formatting');
+const { buildReservationId, buildReservationCompositeKey } = require('../../lib/reservation-key');
 const { saveJson } = require('../../lib/files');
 const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
@@ -998,7 +999,7 @@ async function monitorBookings() {
               log(`🧪 리스트 디버그: ${JSON.stringify(dbg)}`);
             }
 
-            const toKey = (b) => b.bookingId || `${b.date}|${b.start}|${b.end}|${b.room}|${b.phone}`;
+            const toKey = (b) => b.bookingId || buildReservationCompositeKey(b.phoneRaw || b.phone, b.date, b.start, b.end, b.room);
 
             // ✅ 완료/수동처리 건 사전 seen 마킹 (재감지 루프 방지)
             let autoMarked = 0;
@@ -1006,7 +1007,7 @@ async function monitorBookings() {
               const key = toKey(b);
               if (await isSeenId(key)) continue;
               const existing = await getReservation(key);
-              if (existing && (existing.status === 'completed' || existing.pickkoStatus === 'manual')) {
+              if (existing && (existing.status === 'completed' || ['manual', 'manual_retry'].includes(existing.pickkoStatus))) {
                 await markSeen(key);
                 autoMarked++;
                 log(`🔄 [자동마킹] ${maskPhone(existing.phone || b.phone)} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seen 처리`);
@@ -1055,7 +1056,7 @@ async function monitorBookings() {
               
               // 🆕 신규 예약 감지 알람
               for (const booking of _newCandidates) {
-                const bookingId = booking._key || `${booking.phoneRaw}-${booking.date}-${booking.start}`;
+                const bookingId = booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start);
                 const state = await updateBookingState(bookingId, booking, 'pending');
 
                 const vipBadge = formatVipBadge(booking.phone);
@@ -1115,7 +1116,7 @@ async function monitorBookings() {
 
                 // DEV: 성공(code=0)일 때만 마킹 (실패면 재시도 가능)
                 for (const b of onlyMine) {
-                  const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
+                  const bookingId = b._key || buildReservationId(b.phoneRaw, b.date, b.start);
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
                     await markSeen(b._key);
@@ -1172,7 +1173,7 @@ async function monitorBookings() {
               }
               // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0) 또는 재시도 한도 초과(code=99) 시 seen 마킹
               for (const b of observeFiltered) {
-                const bookingId = b._key || `${b.phoneRaw}-${b.date}-${b.start}`;
+                const bookingId = b._key || buildReservationId(b.phoneRaw, b.date, b.start);
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
                   await markSeen(b._key);
@@ -2095,6 +2096,15 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
     if (bookingId) {
       const currentEntry = await getReservation(bookingId);
       const currentRetries = currentEntry?.retries || 0;
+      if (currentEntry && (
+        currentEntry.status === 'completed' ||
+        ['manual', 'manual_retry', 'verified', 'time_elapsed'].includes(currentEntry.pickkoStatus)
+      )) {
+        log(`✅ [건너뜀] 이미 수동/완료 처리됨: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
+        await markSeen(bookingId);
+        await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+        return resolve(0);
+      }
       if (currentRetries >= MAX_RETRIES) {
         log(`⛔ [건너뜀] 최대 재시도 초과 (${currentRetries}회): ${maskPhone(booking.phone)} ${booking.date}`);
         publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message:
