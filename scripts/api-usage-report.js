@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 /**
- * scripts/api-usage-report.js — LLM API 사용량 리포트
+ * scripts/api-usage-report.js — 레거시 OpenClaw API 로그 리포트
+ *
+ * 범위:
+ *   - ~/.openclaw/api-usage.jsonl 기반
+ *   - provider/model 단위 일일 사용량
+ *   - Jay 전체 세션 사용량이나 DB 통합 로그는 포함하지 않음
+ *
+ * 참고:
+ *   - Jay 전용 세션 리포트: scripts/reviews/jay-llm-usage-report.js
+ *   - 전체 봇 통합 리포트: scripts/llm-usage-unified-report.js
  *
  * 기능:
  *   1. 오늘(KST) API 호출 내역 집계
@@ -10,7 +19,7 @@
  * 사용법:
  *   node scripts/api-usage-report.js
  *   node scripts/api-usage-report.js --telegram
- *   node scripts/api-usage-report.js --date=2026-03-02  # 특정 날짜
+ *   node scripts/api-usage-report.js --date=2026-03-02
  */
 
 'use strict';
@@ -121,7 +130,7 @@ async function main() {
   const totalCalls  = entries.reduce((s, e) => s + e.calls, 0);
   const totalTokens = entries.reduce((s, e) => s + e.totalTokens, 0);
 
-  log(bold(`\n📊 LLM API 사용량 리포트 — ${todayKST} (KST)`));
+  log(bold(`\n📊 OpenClaw API 로그 리포트 — ${todayKST} (KST)`));
   log(dim('─'.repeat(70)));
 
   if (entries.length === 0) {

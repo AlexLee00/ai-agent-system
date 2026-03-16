@@ -64,7 +64,7 @@ export default function OcrTestPage() {
 
       <AdminPageHero
         title="OCR 테스트"
-        description="지원 문서를 업로드하고, 파싱 결과와 metadata를 바로 확인하는 내부 테스트 화면입니다."
+        description="지원 문서(pdf, txt, doc, docx, xlsx, pptx, 이미지)를 업로드하고, 파싱 결과와 metadata를 바로 확인하는 내부 테스트 화면입니다."
         stats={[
           { label: '최근 문서', value: documentInfo?.filename || '-', caption: '업로드 기준' },
           { label: '추출 방식', value: metadata.extractionMethod || '-', caption: 'metadata 기준' },
@@ -76,10 +76,16 @@ export default function OcrTestPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-900">파일 업로드</p>
-            <p className="mt-1 text-sm text-slate-500">`pdf`, `txt`, `docx`, `xlsx`, `pptx`, `png/jpg/jpeg/webp` 파일을 바로 테스트할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-slate-500">`pdf`, `txt`, `doc`, `docx`, `xlsx`, `pptx`, `png/jpg/jpeg/webp` 파일을 바로 테스트할 수 있습니다.</p>
           </div>
           <div className="flex gap-2">
-            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.txt,.doc,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp"
+              className="hidden"
+              onChange={handleUpload}
+            />
             <button
               type="button"
               className="btn-primary"
@@ -119,6 +125,22 @@ export default function OcrTestPage() {
               <p className="text-xs font-medium text-slate-500">신뢰도</p>
               <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.sourceConfidence ?? '-'}</p>
             </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">이미지 품질 severity</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageQualitySeverity || '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">이미지 OCR confidence</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageOcrConfidence ?? metadata.ocrConfidence ?? '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">희소 텍스트 여부</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{String(Boolean(metadata.imageEstimatedSparseText))}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">보수 처리 적용 여부</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{String(Boolean(metadata.imageConservativeHandling))}</p>
+            </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
@@ -129,6 +151,27 @@ export default function OcrTestPage() {
                   {warning}
                 </span>
               ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">이미지 크기</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {metadata.imageWidth && metadata.imageHeight ? `${metadata.imageWidth} x ${metadata.imageHeight}` : '-'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">품질 점수</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageOcrQualityScore ?? '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">텍스트 밀도</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageTextDensity ?? '-'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">라인 밀도</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageLineDensity ?? '-'}</p>
             </div>
           </div>
         </div>

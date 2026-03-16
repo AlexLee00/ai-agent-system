@@ -54,7 +54,7 @@ function normalizeDocumentProposal(proposal = {}) {
     category,
     request_summary: requestSummary,
     analysis_goal: analysisGoal,
-    requested_at: String(proposal.requested_at || proposal.requestedAt || kst.now()).trim(),
+    requested_at: String(proposal.requested_at || proposal.requestedAt || kst.datetimeStr()).trim(),
     summary: buildSummary({
       filename,
       category,
@@ -78,7 +78,7 @@ function buildDocumentProposal({ prompt = '', filename = '' }) {
     category: inferredCategory,
     request_summary: requestSummary,
     analysis_goal: /검토|분석|요약/.test(normalizedPrompt) ? requestSummary : '',
-    requested_at: kst.now(),
+    requested_at: kst.datetimeStr(),
     confidence: filename ? 'high' : 'medium',
     parser_meta: {
       parser: 'rule-based-document',

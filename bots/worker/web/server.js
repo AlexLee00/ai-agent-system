@@ -2005,7 +2005,7 @@ app.post('/api/documents/upload',
           deterministicSummary || null,
           extraction.text || null,
           JSON.stringify(extraction.metadata || {}),
-          extraction.text ? kst.now() : null,
+          extraction.text ? new Date() : null,
         ]);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
       rag.store('rag_work_docs', buildDocumentRagText({
@@ -2193,7 +2193,7 @@ app.post('/api/documents/proposals/:id/confirm',
           proposal.request_summary || null,
           extraction.text || null,
           JSON.stringify(extraction.metadata || {}),
-          extraction.text ? kst.now() : null,
+          extraction.text ? new Date() : null,
         ]);
 
       rag.store('rag_work_docs', buildDocumentRagText({
