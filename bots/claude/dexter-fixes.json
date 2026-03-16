@@ -952,5 +952,11 @@
     "label": "버그 레포트 등록: 핵심 파일 체크섬 변경 감지",
     "status": "warn",
     "detail": "ID: DXT-300739"
+  },
+  {
+    "ts": "2026-03-16T17:59:49.007Z",
+    "label": "OpenClaw 자동 재시작",
+    "status": "ok",
+    "detail": "ai.openclaw.gateway 재시작 완료 — 원인: 누수 추세 — 6h +311MB 증가"
   }
 ]
