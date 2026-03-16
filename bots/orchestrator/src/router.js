@@ -17,8 +17,7 @@ const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteB
 const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
-const { trackTokens }                    = require('../lib/token-tracker');
-const llmLogger                          = require('../../../packages/core/lib/llm-logger');
+const { callWithFallback }               = require('../../../packages/core/lib/llm-fallback');
 
 const path     = require('path');
 const os       = require('os');
@@ -627,57 +626,17 @@ async function delegateToTeamLead(team, text) {
 }
 
 async function geminiChatFallback(text) {
-  const startedAt = Date.now();
   try {
-    const { getGeminiKey } = require('../../../packages/core/lib/llm-keys');
-    const key = getGeminiKey();
-    if (!key) return null;
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        model: 'gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: '너는 AI 봇 시스템의 총괄 허브 제이(Jay)야. 마스터(Alex)가 운영하는 스카팀(스터디카페 관리), 루나팀(암호화폐 자동매매), 클로드팀(시스템 유지보수) 에이전트들을 관리해. 친근하고 간결하게 한국어로 답해. 명령 처리 외의 일반 대화에 짧게 응답해.' },
-          { role: 'user',   content: text },
-        ],
-        max_tokens:  300,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(15000),
+    const { text: responseText } = await callWithFallback({
+      chain: [
+        { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+      ],
+      systemPrompt: '너는 AI 봇 시스템의 총괄 허브 제이(Jay)야. 마스터(Alex)가 운영하는 스카팀(스터디카페 관리), 루나팀(암호화폐 자동매매), 클로드팀(시스템 유지보수) 에이전트들을 관리해. 친근하고 간결한 한국어로 답해. 명령 처리 외의 일반 대화에 짧게 응답해. 과장하지 말고, 모르면 모른다고 말해.',
+      userPrompt: text,
+      logMeta: { team: 'orchestrator', bot: 'jay', requestType: 'chat_fallback' },
     });
-    const data = await res.json();
-    const usage = data.usage || {};
-    const inputTokens = usage.prompt_tokens || 0;
-    const outputTokens = usage.completion_tokens || 0;
-    const latencyMs = Date.now() - startedAt;
-
-    await Promise.allSettled([
-      trackTokens({
-        bot: '제이',
-        team: 'orchestrator',
-        model: 'gemini-2.5-flash',
-        provider: 'google',
-        taskType: 'chat_fallback',
-        tokensIn: inputTokens,
-        tokensOut: outputTokens,
-        durationMs: latencyMs,
-      }),
-      llmLogger.logLLMCall({
-        team: 'orchestrator',
-        bot: 'jay',
-        model: 'gemini-2.5-flash',
-        requestType: 'chat_fallback',
-        inputTokens,
-        outputTokens,
-        latencyMs,
-        success: !data.error,
-        errorMsg: data.error?.message || null,
-      }),
-    ]);
-
-    if (data.error) return null;
-    return data.choices?.[0]?.message?.content?.trim() || null;
+    return responseText?.trim() || null;
   } catch { return null; }
 }
 

@@ -76,7 +76,7 @@ export default function OcrTestPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-900">파일 업로드</p>
-            <p className="mt-1 text-sm text-slate-500">`pdf`, `txt`, `xlsx`, `pptx`, `png/jpg/jpeg/webp` 파일을 바로 테스트할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-slate-500">`pdf`, `txt`, `docx`, `xlsx`, `pptx`, `png/jpg/jpeg/webp` 파일을 바로 테스트할 수 있습니다.</p>
           </div>
           <div className="flex gap-2">
             <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
