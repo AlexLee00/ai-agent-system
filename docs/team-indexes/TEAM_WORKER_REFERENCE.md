@@ -1,0 +1,50 @@
+# 워커 참조 문서
+
+## 역할
+
+- 대화형 업무 운영 시스템
+- 승인형 AI 제안, 권한 기반 화면, 문서 파싱/OCR 테스트 포함
+
+## 핵심 기능
+
+- 대시보드/승인/근태/일정/직원/급여/매출/프로젝트/업무일지 운영
+- `PromptAdvisor` 기반 자연어 입력
+- 메뉴 권한/AI 정책/승인 흐름
+- 문서 업로드 파싱과 OCR 테스트
+
+## 핵심 진입점
+
+- 서버/API
+  - [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
+  - [bots/worker/src/worker-lead.js](/Users/alexlee/projects/ai-agent-system/bots/worker/src/worker-lead.js)
+- 화면
+  - [bots/worker/web/app/dashboard/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/dashboard/page.js)
+  - [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)
+  - [bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js)
+  - [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js)
+
+## 공용 정책/구조
+
+- [bots/worker/lib/ai-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-policy.js)
+- [bots/worker/lib/menu-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/menu-policy.js)
+- [bots/worker/web/lib/menu-access.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/menu-access.js)
+- [bots/worker/web/components/PromptAdvisor.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/PromptAdvisor.js)
+- [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js)
+
+## 운영 스크립트
+
+- [bots/worker/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js)
+- [bots/worker/scripts/health-check.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.js)
+- [bots/worker/scripts/check-n8n-intake-path.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js)
+
+## 운영 설정
+
+- [bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json)
+- [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
+- [bots/worker/web/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/runtime-config.js)
+
+## 관련 문서
+
+- [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+- [improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+
