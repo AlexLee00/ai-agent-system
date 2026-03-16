@@ -7,9 +7,6 @@
  * 실행: node team/nemesis.js (단독 실행 불가 — luna.js에서 호출)
  */
 
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 
@@ -19,32 +16,11 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
-
-// ─── config.yaml 로드 (dynamic_tp_sl_enabled) ────────────────────────
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
-
-function loadConfig() {
-  try {
-    const raw  = readFileSync(resolve(__dirname, '../config.yaml'), 'utf8');
-    const yaml = Object.fromEntries(
-      raw.split('\n')
-        .filter(l => l.includes(':') && !l.trim().startsWith('#'))
-        .map(l => {
-          const idx = l.indexOf(':');
-          const key = l.slice(0, idx).trim();
-          const val = l.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
-          return [key, val];
-        })
-    );
-    return yaml;
-  } catch { return {}; }
-}
+import { getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
+const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
 
 function isDynamicTPSLEnabled() {
-  const cfg = loadConfig();
-  return String(cfg.dynamic_tp_sl_enabled).toLowerCase() === 'true';
+  return isDynamicTpSlEnabled();
 }
 
 // ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
@@ -52,18 +28,18 @@ function isDynamicTPSLEnabled() {
 const NEMESIS_SYSTEM_CRYPTO = `
 당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다.
 
-핵심 가치: 수익 극대화가 아니라 손실 최소화.
-의심스러우면 REJECT. 확신 없으면 ADJUST. APPROVE는 엄격하게.
+핵심 가치: 손실 통제는 유지하되, 과도한 보수성으로 기회를 놓치지 않는다.
+의심스러우면 ADJUST. REJECT는 명백한 위험에만 사용한다.
 
 REJECT 조건 (하나라도 해당하면 즉시 REJECT):
 1. 리스크 점수 7 이상
 2. 수익/손실 비율 2:1 미만
-3. 확신도(confidence) 0.55 미만
+3. 확신도(confidence) 0.50 미만
 4. KST 01:00~07:00 심야 시간 + 포지션 크기 > 5%
-5. 포지션 한도(5개) 도달 + 신규 BUY 신호
+5. 포지션 한도(6개) 도달 + 신규 BUY 신호
 
 ADJUST 조건:
-- 포지션 크기가 5% 초과 → 5%로 축소
+- 포지션 크기가 6% 초과 → 6%로 축소
 - 심야 시간 → 포지션 크기 50% 강제 축소
 - 동일 방향 상관 포지션 2개 이상 → 신규 크기 50% 축소
 
@@ -75,15 +51,16 @@ const NEMESIS_SYSTEM_STOCK = `
 당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다. (국내/해외 주식 — 공격적 모드)
 
 핵심 가치: 기본적으로 APPROVE. 명백한 위험만 차단한다.
-소규모 신호($200 이하)는 자동 APPROVE. 심각한 위험만 REJECT.
+소규모 신호는 자동 APPROVE. 심각한 위험만 REJECT.
 
 REJECT 조건 (명백한 위험만):
 1. 리스크 점수 9 이상 (극도의 위험만)
-2. 확신도(confidence) 0.25 미만 (매우 낮은 확신도만)
-3. 포지션 한도(5개) 도달 + 신규 BUY 신호
+2. 확신도(confidence) 0.20 미만 (매우 낮은 확신도만)
+3. 포지션 한도(6개) 도달 + 신규 BUY 신호
 
 APPROVE 우선 원칙:
-- 소규모 신호($200 이하): 별도 검토 없이 자동 APPROVE
+- 국내장 소규모 신호(300000 KRW 이하): 별도 검토 없이 자동 APPROVE
+- 해외장 소규모 신호(300 USD 이하): 별도 검토 없이 자동 APPROVE
 - 리스크 점수 9 미만: 기본 APPROVE
 - 분할 진입 권장: 큰 금액은 절반으로 나눠 ADJUST
 
@@ -103,28 +80,38 @@ function getNemesisSystem(exchange) {
 // ─── 하드 규칙 (마켓별 분기) ─────────────────────────────────────────
 
 const RULES_CRYPTO = {
-  MAX_SINGLE_POSITION_PCT: 0.20,  // 단일 포지션 최대 20%
-  MAX_DAILY_LOSS_PCT:      0.05,  // 일일 손실 한도 5%
-  MAX_OPEN_POSITIONS:      5,     // 최대 동시 포지션
-  STOP_LOSS_PCT:           0.03,  // 손절 3%
-  MIN_ORDER_USDT:          10,    // 최소 주문 $10
-  MAX_ORDER_USDT:          1000,  // 최대 주문 $1000
+  MAX_SINGLE_POSITION_PCT: NEMESIS_RUNTIME.crypto.maxSinglePositionPct,
+  MAX_DAILY_LOSS_PCT:      NEMESIS_RUNTIME.crypto.maxDailyLossPct,
+  MAX_OPEN_POSITIONS:      NEMESIS_RUNTIME.crypto.maxOpenPositions,
+  STOP_LOSS_PCT:           NEMESIS_RUNTIME.crypto.stopLossPct,
+  MIN_ORDER_USDT:          NEMESIS_RUNTIME.crypto.minOrderUsdt,
+  MAX_ORDER_USDT:          NEMESIS_RUNTIME.crypto.maxOrderUsdt,
 };
 
-const RULES_STOCK = {
-  MAX_SINGLE_POSITION_PCT: 0.30,  // 단일 포지션 최대 30% (공격적)
-  MAX_DAILY_LOSS_PCT:      0.10,  // 일일 손실 한도 10% (공격적)
-  MAX_OPEN_POSITIONS:      5,     // 최대 동시 포지션
-  STOP_LOSS_PCT:           0.05,  // 손절 5%
-  MIN_ORDER_USDT:          10,    // 최소 주문 $10
-  MAX_ORDER_USDT:          2000,  // 최대 주문 $2000 (공격적)
+const RULES_STOCK_DOMESTIC = {
+  MAX_SINGLE_POSITION_PCT: NEMESIS_RUNTIME.stockDomestic.maxSinglePositionPct,
+  MAX_DAILY_LOSS_PCT:      NEMESIS_RUNTIME.stockDomestic.maxDailyLossPct,
+  MAX_OPEN_POSITIONS:      NEMESIS_RUNTIME.stockDomestic.maxOpenPositions,
+  STOP_LOSS_PCT:           NEMESIS_RUNTIME.stockDomestic.stopLossPct,
+  MIN_ORDER_USDT:          NEMESIS_RUNTIME.stockDomestic.minOrderUsdt,
+  MAX_ORDER_USDT:          NEMESIS_RUNTIME.stockDomestic.maxOrderUsdt,
+};
+
+const RULES_STOCK_OVERSEAS = {
+  MAX_SINGLE_POSITION_PCT: NEMESIS_RUNTIME.stockOverseas.maxSinglePositionPct,
+  MAX_DAILY_LOSS_PCT:      NEMESIS_RUNTIME.stockOverseas.maxDailyLossPct,
+  MAX_OPEN_POSITIONS:      NEMESIS_RUNTIME.stockOverseas.maxOpenPositions,
+  STOP_LOSS_PCT:           NEMESIS_RUNTIME.stockOverseas.stopLossPct,
+  MIN_ORDER_USDT:          NEMESIS_RUNTIME.stockOverseas.minOrderUsdt,
+  MAX_ORDER_USDT:          NEMESIS_RUNTIME.stockOverseas.maxOrderUsdt,
 };
 
 // 하위 호환성 — 암호화폐 기본값
 export const RULES = RULES_CRYPTO;
 
 function getRules(exchange) {
-  if (exchange === 'kis' || exchange === 'kis_overseas') return RULES_STOCK;
+  if (exchange === 'kis') return RULES_STOCK_DOMESTIC;
+  if (exchange === 'kis_overseas') return RULES_STOCK_OVERSEAS;
   return RULES_CRYPTO;
 }
 

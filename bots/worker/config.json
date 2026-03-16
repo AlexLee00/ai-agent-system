@@ -1,0 +1,24 @@
+{
+  "runtime_config": {
+    "lead": {
+      "defaultPollMs": 2000,
+      "noTokenPollMs": 30000,
+      "telegramLongPollSeconds": 10,
+      "telegramRequestTimeoutMs": 15000
+    },
+    "health": {
+      "httpTimeoutMs": 5000
+    },
+    "n8n": {
+      "healthUrl": "http://127.0.0.1:5678/healthz",
+      "workerWebhookUrl": "http://127.0.0.1:5678/webhook/worker-chat-intake",
+      "healthTimeoutMs": 2500,
+      "webhookTimeoutMs": 5000
+    },
+    "web": {
+      "authRequestTimeoutMs": 5000,
+      "authReleaseBufferMs": 1500,
+      "wsReconnectDelayMs": 2000
+    }
+  }
+}

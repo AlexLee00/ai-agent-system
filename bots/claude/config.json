@@ -1,0 +1,30 @@
+{
+  "runtime_config": {
+    "thresholds": {
+      "diskMinMB": 500,
+      "logMaxMB": 50,
+      "errorRateWarn": 10,
+      "errorRateCrit": 30,
+      "memMinFreeGB": 2,
+      "npmAuditLevel": "high"
+    },
+    "patterns": {
+      "patternDays": 7,
+      "newErrorHours": 8,
+      "errorThreshold": 5,
+      "warnThreshold": 3,
+      "cleanupDays": 30
+    },
+    "n8n": {
+      "healthUrl": "http://127.0.0.1:5678/healthz",
+      "criticalWebhookUrl": "http://127.0.0.1:5678/webhook/critical",
+      "timeoutMs": 5000
+    },
+    "quickcheck": {
+      "alertCooldownMs": 3600000,
+      "restartCooldownMs": 1800000,
+      "maxRestarts": 3,
+      "diskCriticalPercent": 90
+    }
+  }
+}

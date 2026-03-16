@@ -12,19 +12,21 @@
  */
 
 const { getPatterns, getNewErrors, cleanup } = require('../error-history');
+const cfg = require('../config');
 
-const PATTERN_DAYS   = 7;
-const NEW_ERROR_HOURS = 8; // 8시간 내 첫 등장 → 신규 감지 (24h는 노이즈 과다)
-const ERROR_THRESH   = 5;  // 5회 이상 → error
-const WARN_THRESH    = 3;  // 3회 이상 → warn
+const PATTERN_DAYS = Number(cfg.RUNTIME?.patterns?.patternDays || 7);
+const NEW_ERROR_HOURS = Number(cfg.RUNTIME?.patterns?.newErrorHours || 8);
+const ERROR_THRESH = Number(cfg.RUNTIME?.patterns?.errorThreshold || 5);
+const WARN_THRESH = Number(cfg.RUNTIME?.patterns?.warnThreshold || 3);
+const CLEANUP_DAYS = Number(cfg.RUNTIME?.patterns?.cleanupDays || 30);
 
 async function run() {
   const items = [];
 
   // 오래된 이력 정리 (30일)
-  const deleted = await cleanup(30);
+  const deleted = await cleanup(CLEANUP_DAYS);
   if (deleted > 0) {
-    items.push({ label: '이력 정리', status: 'ok', detail: `${deleted}건 삭제 (30일 초과)` });
+    items.push({ label: '이력 정리', status: 'ok', detail: `${deleted}건 삭제 (${CLEANUP_DAYS}일 초과)` });
   }
 
   // 1. 반복 오류 패턴 분석

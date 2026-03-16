@@ -28,6 +28,16 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function getMarketBucket(exchange) {
+  if (exchange === 'kis') return 'domestic';
+  if (exchange === 'kis_overseas') return 'overseas';
+  return 'crypto';
+}
+
+function getMarketLabel(bucket) {
+  return bucket === 'domestic' ? '국내장' : bucket === 'overseas' ? '해외장' : '암호화폐';
+}
+
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
 
 function toKST(utcStr) {
@@ -109,34 +119,37 @@ async function fetchSignalFunnel(fromDate, toDate) {
   const [signalRows, blockRows, analysisRows] = await Promise.all([
     db.query(`
       SELECT
+        exchange,
         action,
         status,
         COUNT(*) AS cnt
       FROM signals
       WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
-      GROUP BY action, status
-      ORDER BY action, status
+      GROUP BY exchange, action, status
+      ORDER BY exchange, action, status
     `).catch(() => []),
     db.query(`
       SELECT
+        exchange,
         COALESCE(NULLIF(block_reason, ''), 'none') AS reason,
         COUNT(*) AS cnt
       FROM signals
       WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
         AND status IN ('failed', 'rejected', 'expired')
-      GROUP BY 1
-      ORDER BY cnt DESC
+      GROUP BY exchange, 2
+      ORDER BY exchange, cnt DESC
       LIMIT 8
     `).catch(() => []),
     db.query(`
       SELECT
+        exchange,
         analyst,
         signal,
         COUNT(*) AS cnt
       FROM analysis
       WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
-      GROUP BY analyst, signal
-      ORDER BY analyst, signal
+      GROUP BY exchange, analyst, signal
+      ORDER BY exchange, analyst, signal
     `).catch(() => []),
   ]);
 
@@ -352,54 +365,72 @@ function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
   if (!signalRows.length && !blockRows.length && !analysisRows.length) return '  기록 없음';
 
   const lines = [];
-  const byAction = new Map();
-  for (const row of signalRows) {
-    const action = row.action || 'UNKNOWN';
-    const bucket = byAction.get(action) || { total: 0, statuses: new Map() };
-    const count = Number(row.cnt || 0);
-    bucket.total += count;
-    bucket.statuses.set(row.status || 'unknown', count);
-    byAction.set(action, bucket);
-  }
+  const buckets = ['crypto', 'domestic', 'overseas'];
 
-  if (byAction.size > 0) {
-    lines.push('  ■ 저장된 신호');
-    for (const [action, bucket] of byAction) {
-      const statusText = [...bucket.statuses.entries()]
-        .map(([status, count]) => `${status} ${count}건`)
-        .join(' / ');
-      lines.push(`    ${action}: 총 ${bucket.total}건 (${statusText})`);
+  for (const market of buckets) {
+    const marketSignalRows = signalRows.filter(row => getMarketBucket(row.exchange) === market);
+    const marketBlockRows = blockRows.filter(row => getMarketBucket(row.exchange) === market);
+    const marketAnalysisRows = analysisRows.filter(row => getMarketBucket(row.exchange) === market);
+
+    lines.push(`  ■ ${getMarketLabel(market)}`);
+
+    if (!marketSignalRows.length && !marketBlockRows.length && !marketAnalysisRows.length) {
+      lines.push('    기록 없음');
+      lines.push('');
+      continue;
     }
-  }
 
-  if (analysisRows.length > 0) {
-    const byAnalyst = new Map();
-    for (const row of analysisRows) {
-      const analyst = row.analyst || 'unknown';
-      const bucket = byAnalyst.get(analyst) || { total: 0, signals: new Map() };
+    const byAction = new Map();
+    for (const row of marketSignalRows) {
+      const action = row.action || 'UNKNOWN';
+      const bucket = byAction.get(action) || { total: 0, statuses: new Map() };
       const count = Number(row.cnt || 0);
       bucket.total += count;
-      bucket.signals.set(row.signal || 'UNKNOWN', count);
-      byAnalyst.set(analyst, bucket);
+      bucket.statuses.set(row.status || 'unknown', count);
+      byAction.set(action, bucket);
     }
 
-    lines.push('', '  ■ 분석가 판단 분포');
-    for (const [analyst, bucket] of byAnalyst) {
-      const signalText = [...bucket.signals.entries()]
-        .map(([signal, count]) => `${signal} ${count}`)
-        .join(' / ');
-      lines.push(`    ${analyst}: 총 ${bucket.total}건 (${signalText})`);
+    if (byAction.size > 0) {
+      lines.push('    저장된 신호');
+      for (const [action, bucket] of byAction) {
+        const statusText = [...bucket.statuses.entries()]
+          .map(([status, count]) => `${status} ${count}건`)
+          .join(' / ');
+        lines.push(`      ${action}: 총 ${bucket.total}건 (${statusText})`);
+      }
     }
+
+    if (marketAnalysisRows.length > 0) {
+      const byAnalyst = new Map();
+      for (const row of marketAnalysisRows) {
+        const analyst = row.analyst || 'unknown';
+        const bucket = byAnalyst.get(analyst) || { total: 0, signals: new Map() };
+        const count = Number(row.cnt || 0);
+        bucket.total += count;
+        bucket.signals.set(row.signal || 'UNKNOWN', count);
+        byAnalyst.set(analyst, bucket);
+      }
+
+      lines.push('    분석가 판단 분포');
+      for (const [analyst, bucket] of byAnalyst) {
+        const signalText = [...bucket.signals.entries()]
+          .map(([signal, count]) => `${signal} ${count}`)
+          .join(' / ');
+        lines.push(`      ${analyst}: 총 ${bucket.total}건 (${signalText})`);
+      }
+    }
+
+    if (marketBlockRows.length > 0) {
+      lines.push('    주요 차단/실패 사유');
+      for (const row of marketBlockRows) {
+        lines.push(`      ${row.reason}: ${Number(row.cnt || 0)}건`);
+      }
+    }
+
+    lines.push('');
   }
 
-  if (blockRows.length > 0) {
-    lines.push('', '  ■ 주요 차단/실패 사유');
-    for (const row of blockRows) {
-      lines.push(`    ${row.reason}: ${Number(row.cnt || 0)}건`);
-    }
-  }
-
-  return lines.join('\n');
+  return lines.join('\n').trimEnd();
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────────

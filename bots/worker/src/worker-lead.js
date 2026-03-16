@@ -17,6 +17,7 @@ const ROOT   = path.join(__dirname, '../../..');
 const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
 const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
 const { getSecret } = require('../lib/secrets');
+const { getWorkerLeadRuntimeConfig } = require('../lib/runtime-config');
 const { ensureChatSchema, handleChatMessage } = require('../lib/chat-agent');
 
 // ── Phase 2 봇 ────────────────────────────────────────────────────────
@@ -31,8 +32,11 @@ const {
 
 const SCHEMA = 'worker';
 const TOPIC  = getSecret('telegram_worker_topic_id') || null;
-const DEFAULT_POLL_MS = 2000;
-const NO_TOKEN_POLL_MS = 30000;
+const leadRuntimeConfig = getWorkerLeadRuntimeConfig();
+const DEFAULT_POLL_MS = Number(leadRuntimeConfig.defaultPollMs || 2000);
+const NO_TOKEN_POLL_MS = Number(leadRuntimeConfig.noTokenPollMs || 30000);
+const TELEGRAM_LONG_POLL_SECONDS = Number(leadRuntimeConfig.telegramLongPollSeconds || 10);
+const TELEGRAM_REQUEST_TIMEOUT_MS = Number(leadRuntimeConfig.telegramRequestTimeoutMs || 15000);
 
 // ── 텔레그램 폴링 ─────────────────────────────────────────────────────
 let _offset = 0;
@@ -55,8 +59,8 @@ async function _poll() {
 
   try {
     const res  = await fetch(
-      `https://api.telegram.org/bot${token}/getUpdates?offset=${_offset}&timeout=10&allowed_updates=["message","callback_query"]`,
-      { signal: AbortSignal.timeout(15000) });
+      `https://api.telegram.org/bot${token}/getUpdates?offset=${_offset}&timeout=${TELEGRAM_LONG_POLL_SECONDS}&allowed_updates=["message","callback_query"]`,
+      { signal: AbortSignal.timeout(TELEGRAM_REQUEST_TIMEOUT_MS) });
     const data = await res.json();
     if (!data.ok) return;
 

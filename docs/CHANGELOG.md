@@ -3,6 +3,46 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-16 ~ 2026-03-17) — 운영 변수 외부화 + 분석 자동화 정리
+
+### 신규 기능 (feat)
+- 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
+  - investment / reservation / ska / worker / orchestrator / claude / blog
+- 팀별 운영 설정 조회 스크립트 추가
+  - `scripts/show-runtime-configs.js`
+- 팀 운영 설정 가이드 문서 추가
+  - `docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md`
+- 스카 매출 예측 일일/주간 리뷰 스크립트 운영 기준 외부화
+- 워커 웹 프론트 timeout/runtime 설정 외부화
+  - auth timeout / release buffer / ws reconnect delay
+
+### 변경 사항 (changed)
+- 루나팀 실행 모드 / `[PAPER]` 태그 / 브로커 표현을 공용 헬퍼 기준으로 통합
+  - 암호화폐와 국내외장은 분리 유지하되 한 곳에서 관리
+- 국내/해외장 로그 문구를 실제 KIS 모의투자 상태 기준으로 정리
+- 자동매매 일지와 주간 리뷰에 `암호화폐 / 국내장 / 해외장` 섹션 강제 분리
+- 블로그 생성 임계치와 maestro 관련 timeout/cooldown을 설정 파일에서 조정 가능하게 변경
+
+### 버그 수정 (fix)
+- KIS 국내/해외장 주문 금액 단위 보정
+  - 국내는 `KRW`, 해외는 `USD` 기준으로 clamp
+- 국내/해외 모의투자 경로에서 장외 시간/최소 주문 수량 검증 흐름 점검
+- 덱스터 false positive 완화
+  - `고아 Node` 판정 오탐 축소
+  - `Swap` 경고 기준 현실화
+  - `forecast_results` 누락을 필수 오류에서 분리
+
+### 문서 (docs)
+- 팀 운영 변수 관리 체계 문서화
+- 운영 중 조정 가능한 값과 추가 개발 후보 정리
+
+### 추가 개발 후보
+- `runtime_config` 변경 후보를 일일/주간으로 제안하는 자동화 고도화
+- `worker`, `orchestrator`, `claude` 운영 설정 변경 이력 추적
+- 제이/전체 운영 분석 리포트와 설정 튜닝 제안의 통합 정리
+
+---
+
 ## 10~11주차 (2026-03-11 ~ 2026-03-15) — 228 커밋
 
 ### 신규 기능 (feat)

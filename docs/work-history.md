@@ -1647,6 +1647,50 @@
 
 ---
 
+## 2026-03-17
+
+### 팀별 운영 변수 외부화 정리
+- `investment`
+  - `runtime_config` 기반으로 루나/네메시스/time-mode 운영 임계치 외부화
+  - 암호화폐와 국내외장 실행 모드는 분리 유지, 공용 헬퍼에서 통합 관리
+- `reservation`
+  - 브라우저 launch 재시도, timeout, stale 판정, monitor 재시도 한도 외부화
+- `ska`
+  - forecast / rebecca / 리뷰 스크립트 운영 기준 외부화
+  - Python/Node가 같은 설정 파일을 읽도록 정리
+- `worker`
+  - worker lead / n8n intake / health timeout 외부화
+  - web client auth timeout / reconnect delay 외부화
+- `orchestrator`
+  - critical path URL, timeout, payload warning 기준 외부화
+- `claude`
+  - dexter-quickcheck / n8n / pattern 체크 임계치 외부화
+- `blog`
+  - health/n8n timeout + generation length/retry/continue token 기준 외부화
+
+### 운영 문서/도구 정리
+- `docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md` 작성
+- `scripts/show-runtime-configs.js` 추가
+- 운영자가 코드 대신 설정 파일을 먼저 확인하도록 팀별 관리 포인트 문서화
+
+### 루나팀 운영 보정
+- 국내/해외장을 모의투자 기준으로 다시 정렬
+- 국내/해외 주문 금액 clamp 기준 보정
+- 자동매매 일지/주간 리뷰를 `암호화폐 / 국내장 / 해외장` 섹션으로 분리
+- 로그의 `[PAPER]` / `KIS PAPER=true` 표현을 실제 실행 상태와 맞춤
+
+### 덱스터 false positive 완화
+- 고아 Node 프로세스 오탐 축소
+- Swap 경고 기준 완화
+- `forecast_results` 누락을 경고에서 분리
+
+### 추가 개발 메모
+- `runtime_config` 후보값을 일일/주간 분석해서 변경 제안하는 자동화 필요
+- 제이 전용 LLM 리뷰는 유지하고, 전체 LLM 리뷰는 운영 분석 리포트와 중복 축소 가능
+- 다음 운영 단계는 “추가 외부화”보다 “실제 운영 중 바꾸는 값 수집”이 더 중요
+
+---
+
 ## 2026-03-04
 
 ### 긴급 — claude remote-control 세션 폭발 사고 (2,407건)

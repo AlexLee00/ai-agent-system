@@ -24,6 +24,7 @@ const {
   getRecentPayloadWarnings,
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
+const { getOrchestratorHealthConfig } = require('../lib/runtime-config');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -34,8 +35,9 @@ const {
 const CONTINUOUS = ['ai.orchestrator', 'ai.openclaw.gateway', 'ai.n8n.server'];
 const ALL_SERVICES = ['ai.orchestrator', 'ai.openclaw.gateway', 'ai.n8n.server'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
+const ORCHESTRATOR_HEALTH_CONFIG = getOrchestratorHealthConfig();
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || ORCHESTRATOR_HEALTH_CONFIG.n8nHealthUrl;
+const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || ORCHESTRATOR_HEALTH_CONFIG.criticalWebhookUrl;
 
 async function buildCriticalWebhookHealth() {
   return buildResolvedWebhookHealth({
@@ -165,7 +167,10 @@ async function buildReport() {
     shortLabel: (label) => hsm.shortLabel(label),
   });
   const criticalWebhookHealth = await buildCriticalWebhookHealth();
-  const payloadWarnings = getRecentPayloadWarnings({ withinHours: 24, limit: 50 });
+  const payloadWarnings = getRecentPayloadWarnings({
+    withinHours: ORCHESTRATOR_HEALTH_CONFIG.payloadWarningWithinHours,
+    limit: ORCHESTRATOR_HEALTH_CONFIG.payloadWarningLimit,
+  });
   const payloadWarningSummary = summarizePayloadWarnings(payloadWarnings);
   const payloadWarningHealth = buildPayloadWarningHealth(payloadWarningSummary);
   const decision = buildDecision(serviceRows, criticalWebhookHealth, payloadWarningHealth);

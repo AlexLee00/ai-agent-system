@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getSymbols, isPaperMode } from '../shared/secrets.js';
+import { getSymbols, getMarketExecutionModeInfo } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
@@ -157,9 +157,8 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * @param {string[]} symbols  ex) ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
  */
 export async function runCryptoCycle(symbols) {
-  const paperMode = isPaperMode();
+  const { paper: paperMode, tag } = getMarketExecutionModeInfo('crypto', '암호화폐');
   const startTime = Date.now();
-  const tag       = paperMode ? '[PAPER]' : '[LIVE]';
   const params    = getLunaParams();
 
   console.log(`\n${'═'.repeat(60)}`);
@@ -292,11 +291,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   symbols = await appendHeldSymbols(symbols, 'binance');
 
-  if (isPaperMode()) {
-    console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-A)');
-  } else {
-    console.log('🔴 PAPER_MODE=false — 실주문 실행 모드 (주의!)');
-  }
+  console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
 
   // 거래 일시정지 플래그 확인 (luna-commander가 제어)
   const PAUSE_FLAG = join(homedir(), '.openclaw', 'workspace', 'luna-paused.flag');

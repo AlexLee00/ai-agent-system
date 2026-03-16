@@ -17,31 +17,35 @@ const {
   buildFileActivityHealth,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const BLOG_ROOT = path.join(__dirname, '..');
 const DAILY_LOG = path.join(BLOG_ROOT, 'blog-daily.log');
-const DAILY_LOG_STALE_MS = 36 * 60 * 60 * 1000;
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || 'http://127.0.0.1:5678/webhook/blog-pipeline';
+const runtimeConfig = getBlogHealthRuntimeConfig();
+const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
+const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
+const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 
 async function buildNodeHealth() {
   const checks = await buildHttpChecks([
     {
       label: 'nodeServer',
-      url: 'http://127.0.0.1:3100/health',
+      url: NODE_SERVER_HEALTH_URL,
       expectJson: true,
+      timeoutMs: Number(runtimeConfig.nodeServerTimeoutMs || 3000),
       isOk: (data) => Boolean(data?.ok),
       okText: (data) => `  node-server API: 정상 (port ${data.port || 3100})`,
       warnText: '  node-server API: 응답 없음',
     },
     {
       label: 'n8n',
-      url: 'http://127.0.0.1:5678/healthz',
+      url: N8N_HEALTH_URL,
       expectJson: true,
-      timeoutMs: 2500,
+      timeoutMs: Number(runtimeConfig.n8nHealthTimeoutMs || 2500),
       isOk: (data) => data?.status === 'ok',
       okText: '  n8n healthz: 정상',
       warnText: '  n8n healthz: 응답 없음',
@@ -81,6 +85,7 @@ async function buildN8nPipelineHealth() {
     },
     okLabel: 'blog pipeline webhook',
     warnLabel: 'blog pipeline webhook',
+    timeoutMs: Number(runtimeConfig.webhookTimeoutMs || 5000),
   });
 }
 

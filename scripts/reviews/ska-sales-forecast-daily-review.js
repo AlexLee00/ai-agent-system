@@ -2,10 +2,12 @@
 'use strict';
 
 const pgPool = require('../../packages/core/lib/pg-pool');
+const { getSkaReviewConfig } = require('../../bots/ska/lib/runtime-config.js');
+const DAILY_REVIEW_CONFIG = getSkaReviewConfig().daily;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
-  const days = Math.max(7, Number(daysArg?.split('=')[1] || 30));
+  const days = Math.max(DAILY_REVIEW_CONFIG.minDays, Number(daysArg?.split('=')[1] || DAILY_REVIEW_CONFIG.defaultDays));
   return { days, json: argv.includes('--json') };
 }
 
@@ -123,29 +125,29 @@ function buildRecommendations(summary, latest) {
   if (summary.avgMape == null) {
     return ['- 아직 정확도 누적 데이터가 부족합니다.'];
   }
-  if (summary.avgMape >= 20) {
+  if (summary.avgMape >= DAILY_REVIEW_CONFIG.avgMapeWarn) {
     lines.push(`- 최근 평균 MAPE가 ${summary.avgMape}%로 높아 예측 엔진 보정이 필요합니다.`);
-  } else if (summary.avgMape >= 12) {
+  } else if (summary.avgMape >= DAILY_REVIEW_CONFIG.avgMapeNotice) {
     lines.push(`- 최근 평균 MAPE가 ${summary.avgMape}%라서 중간 수준 튜닝 후보입니다.`);
   } else {
     lines.push(`- 최근 평균 MAPE ${summary.avgMape}%로 비교적 안정적입니다.`);
   }
 
-  if (summary.avgBias <= -30000) {
+  if (summary.avgBias <= -DAILY_REVIEW_CONFIG.avgBiasWarn) {
     lines.push('- 전반적으로 과소예측 성향이 있어 예약 선행지표 가중치를 조금 키우는 쪽이 좋습니다.');
-  } else if (summary.avgBias >= 30000) {
+  } else if (summary.avgBias >= DAILY_REVIEW_CONFIG.avgBiasWarn) {
     lines.push('- 전반적으로 과대예측 성향이 있어 피크일 가산치나 상한 보정을 줄이는 게 좋습니다.');
   }
 
-  if (summary.hitRate20 < 70) {
+  if (summary.hitRate20 < DAILY_REVIEW_CONFIG.hitRate20Warn) {
     lines.push(`- 20% 이내 적중률이 ${summary.hitRate20}%로 낮아 요일/환경 변수 가중치 재점검이 필요합니다.`);
   }
 
-  if (summary.avgReservationGap >= 5) {
+  if (summary.avgReservationGap >= DAILY_REVIEW_CONFIG.avgReservationGapWarn) {
     lines.push(`- 예약건수 오차 평균이 ${summary.avgReservationGap}건이라 예약 선행지표 보정이 필요해 보입니다.`);
   }
 
-  if (latest && latest.confidence != null && Number(latest.confidence) < 0.4) {
+  if (latest && latest.confidence != null && Number(latest.confidence) < DAILY_REVIEW_CONFIG.confidenceWarn) {
     lines.push(`- 최신 예측 확신도가 ${(Number(latest.confidence) * 100).toFixed(0)}%로 낮아 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
@@ -156,7 +158,7 @@ async function main() {
   const { days, json } = parseArgs();
   const [accuracyRows, upcomingRows] = await Promise.all([
     loadAccuracyRows(days),
-    loadUpcomingForecasts(3),
+    loadUpcomingForecasts(DAILY_REVIEW_CONFIG.upcomingDays),
   ]);
 
   const latestActual = accuracyRows[0] || null;

@@ -22,6 +22,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const { publishToMainBot } = require('../lib/mainbot-client');
+const cfg = require('../lib/config');
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads');
@@ -30,10 +31,10 @@ const teamLeadsCheck = require('../lib/checks/team-leads');
 // ── 상수 ─────────────────────────────────────────────────────────────
 
 const STATE_FILE    = path.join(os.homedir(), '.openclaw', 'workspace', 'quickcheck-state.json');
-const ALERT_CD_MS   = 60 * 60 * 1000;   // 동일 이슈 재알림 쿨다운: 1시간
-const RESTART_CD_MS = 30 * 60 * 1000;   // 재시작 쿨다운: 30분
-const MAX_RESTARTS  = 3;                 // 최대 자동 재시작 횟수 (회복 전까지)
-const DISK_CRITICAL = 90;               // 디스크 사용률 위기 임계값 (%)
+const ALERT_CD_MS = Number(cfg.RUNTIME?.quickcheck?.alertCooldownMs || (60 * 60 * 1000));
+const RESTART_CD_MS = Number(cfg.RUNTIME?.quickcheck?.restartCooldownMs || (30 * 60 * 1000));
+const MAX_RESTARTS = Number(cfg.RUNTIME?.quickcheck?.maxRestarts || 3);
+const DISK_CRITICAL = Number(cfg.RUNTIME?.quickcheck?.diskCriticalPercent || 90);
 
 // ── 핵심 서비스 목록 ──────────────────────────────────────────────────
 // restartable: Playwright 기반 서비스는 zombie chrome 위험으로 false

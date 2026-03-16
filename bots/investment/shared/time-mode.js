@@ -11,6 +11,7 @@
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
+import { getTimeModeRuntimeConfig } from './runtime-config.js';
 
 // KST 시간 (0~23) — kst.currentHour() 위임
 function getKSTHour() {
@@ -42,6 +43,7 @@ export function isNightTime() {
  */
 export function getLunaParams() {
   const mode = getTimeMode();
+  const runtime = getTimeModeRuntimeConfig();
 
   const base = {
     mode,
@@ -52,31 +54,19 @@ export function getLunaParams() {
     case 'ACTIVE':
       return {
         ...base,
-        maxPositionPct:    0.15,   // 포트폴리오 대비 최대 포지션 15%
-        maxOpenPositions:  3,      // 최대 동시 오픈 포지션
-        minSignalScore:    0.58,   // 최소 신호 점수 (소폭 완화)
-        cycleSec:          1800,   // 30분 사이클
-        emergencyTrigger:  true,   // BTC ±3% 긴급 트리거 활성
+        ...runtime.ACTIVE,
       };
 
     case 'SLOWDOWN':
       return {
         ...base,
-        maxPositionPct:    0.08,
-        maxOpenPositions:  2,
-        minSignalScore:    0.72,   // 더 높은 신뢰도 요구
-        cycleSec:          3600,   // 60분 사이클
-        emergencyTrigger:  true,
+        ...runtime.SLOWDOWN,
       };
 
     case 'NIGHT_AUTO':
       return {
         ...base,
-        maxPositionPct:    0.05,
-        maxOpenPositions:  1,
-        minSignalScore:    0.80,   // 야간 고신뢰도만
-        cycleSec:          3600,
-        emergencyTrigger:  false,  // 야간 긴급 트리거 비활성
+        ...runtime.NIGHT_AUTO,
       };
 
     default:

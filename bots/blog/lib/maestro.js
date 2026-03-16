@@ -14,6 +14,7 @@ const kst = require('../../../packages/core/lib/kst');
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
 
 // ─── 상수 ─────────────────────────────────────────────────────────────
 
@@ -31,8 +32,10 @@ const BRIDGE_INTERVALS = [800, 1000, 1200, 1500];
 
 // 수집 노드 목록 (셔플 대상)
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
-const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || 180000);
-const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || 2500);
+const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
+const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
+const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
+const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
 
 const _n8nCircuit = {
   disabledUntil: 0,
@@ -243,7 +246,7 @@ function _isCircuitOpen() {
 }
 
 function _openCircuit(reason) {
-  _n8nCircuit.disabledUntil = Date.now() + (30 * 60 * 1000);
+  _n8nCircuit.disabledUntil = Date.now() + N8N_CIRCUIT_COOLDOWN_MS;
   _n8nCircuit.reason = reason;
 }
 

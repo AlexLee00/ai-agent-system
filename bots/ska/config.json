@@ -1,0 +1,43 @@
+{
+  "runtime_config": {
+    "forecast": {
+      "conditionAdjustmentWeight": 0.45,
+      "sarimaPeriods": 7,
+      "sarimaMaxIter": 200,
+      "perModelAccuracyDays": 30,
+      "minimumModelWeight": 0.1,
+      "llmDiagnosisRagThreshold": 0.6,
+      "monthlyReviewGradeGood": 12,
+      "monthlyReviewGradeWarn": 22,
+      "weekdayBiasAlertAmount": 30000
+    },
+    "rebecca": {
+      "weeklyGradeGood": 10,
+      "weeklyGradeWarn": 20,
+      "anomalyRagThreshold": 0.55
+    },
+    "reviews": {
+      "daily": {
+        "minDays": 7,
+        "defaultDays": 30,
+        "avgMapeWarn": 20,
+        "avgMapeNotice": 12,
+        "avgBiasWarn": 30000,
+        "hitRate20Warn": 70,
+        "avgReservationGapWarn": 5,
+        "confidenceWarn": 0.4,
+        "upcomingDays": 3
+      },
+      "weekly": {
+        "minDays": 14,
+        "defaultDays": 56,
+        "avgMapeWarn": 20,
+        "avgMapeNotice": 12,
+        "avgBiasWarn": 150000,
+        "confidenceWarn": 0.4,
+        "weekdayMapeWarn": 20,
+        "upcomingDays": 7
+      }
+    }
+  }
+}

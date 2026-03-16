@@ -7,14 +7,16 @@ const {
   checkHttp,
   buildResolvedWebhookHealth,
 } = require('../../../../packages/core/lib/health-provider');
+const cfg = require('../config');
 
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || cfg.RUNTIME?.n8n?.healthUrl || 'http://127.0.0.1:5678/healthz';
+const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || cfg.RUNTIME?.n8n?.criticalWebhookUrl || 'http://127.0.0.1:5678/webhook/critical';
+const N8N_TIMEOUT_MS = Number(cfg.RUNTIME?.n8n?.timeoutMs || 5000);
 
 async function run() {
   const items = [];
 
-  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, 5000);
+  const n8nHealthy = await checkHttp(N8N_HEALTH_URL, N8N_TIMEOUT_MS);
   items.push({
     status: n8nHealthy ? 'ok' : 'warn',
     label: 'n8n 워크플로우 서버',
@@ -32,7 +34,7 @@ async function run() {
       status: 'probe',
       detail: 'n8n critical webhook health probe',
     },
-    timeoutMs: 5000,
+    timeoutMs: N8N_TIMEOUT_MS,
   });
 
   items.push({

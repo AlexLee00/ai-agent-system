@@ -34,6 +34,7 @@ import warnings
 import psycopg2
 import pandas as pd
 from datetime import date as date_type, timedelta
+from runtime_config import get_forecast_config
 
 # RAG 클라이언트 (실패해도 예측 기능에 영향 없음)
 try:
@@ -58,10 +59,11 @@ BIZ_START_H    = 9
 BIZ_END_H      = 22
 NUM_ROOMS      = 3
 MAX_HOURS      = (BIZ_END_H - BIZ_START_H) * NUM_ROOMS
+FORECAST_RUNTIME = get_forecast_config()
 CALIBRATION_LOOKBACK_DAYS = 56
 CALIBRATION_MAX_RATIO = 0.12
 RESERVATION_ADJUSTMENT_WEIGHT = 0.35
-CONDITION_ADJUSTMENT_WEIGHT = 0.45
+CONDITION_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME['conditionAdjustmentWeight']
 CONDITION_MIN_SAMPLES = 3
 BOOKED_HOURS_ADJUSTMENT_WEIGHT = 0.30
 ROOM_SPREAD_ADJUSTMENT_WEIGHT = 0.20
@@ -255,10 +257,11 @@ def fill_future_regressors(future_df, env_map):
 
 # ─── SARIMA 앙상블 (ska-014) ──────────────────────────────────────────────────
 
-def forecast_sarima(df, periods=7):
+def forecast_sarima(df, periods=None):
     """SARIMA(1,1,1)(1,1,1,7) 단기 예측 — 주간 계절성 반영
     statsmodels 미설치 시 None 반환 (Prophet 폴백)
     """
+    periods = periods or FORECAST_RUNTIME['sarimaPeriods']
     if not _SARIMA_AVAILABLE:
         return None
     try:
@@ -271,7 +274,7 @@ def forecast_sarima(df, periods=7):
         )
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            result = model.fit(disp=False, maxiter=200)
+            result = model.fit(disp=False, maxiter=FORECAST_RUNTIME['sarimaMaxIter'])
         forecast = result.forecast(steps=periods)
         return [max(0.0, float(v)) for v in forecast.values]
     except Exception as e:
@@ -305,7 +308,7 @@ def quick_forecast_sma(df, target_date):
     }
 
 
-def get_per_model_accuracy(con, days=30):
+def get_per_model_accuracy(con, days=None):
     """최근 N일 모델별 MAPE 조회 (forecast_results × revenue_daily JOIN)
     반환: {'prophet': 8.5, 'sarima': 12.3, 'quick': 15.0}  — 데이터 없으면 {}
     """
@@ -344,7 +347,7 @@ def calculate_dynamic_weights(accuracy):
     if not accuracy or len(accuracy) < 2:
         return None
 
-    MIN_WEIGHT = 0.10
+    MIN_WEIGHT = FORECAST_RUNTIME['minimumModelWeight']
     inv = {}
     for model, mape in accuracy.items():
         inv[model] = 1.0 / mape if (mape and mape > 0) else 0.1  # 기본 10% MAPE 가정
@@ -1488,7 +1491,7 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
     rag_context = ''
     if _rag:
         try:
-            hits = _rag.search('operations', '매출 예측 오류 MAPE 패턴', limit=3, threshold=0.6)
+            hits = _rag.search('operations', '매출 예측 오류 MAPE 패턴', limit=3, threshold=FORECAST_RUNTIME['llmDiagnosisRagThreshold'])
             if hits:
                 rag_context = '\n\n[RAG: 과거 유사 예측 이슈]\n' + '\n'.join(
                     f'- {h["content"][:200]}' for h in hits
@@ -1552,7 +1555,7 @@ def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, ll
 
     if cv_metrics:
         mape = cv_metrics['mape']
-        grade = '✅ 양호' if mape <= 12 else ('🟡 주의' if mape <= 22 else '🔴 개선 필요')
+        grade = '✅ 양호' if mape <= FORECAST_RUNTIME['monthlyReviewGradeGood'] else ('🟡 주의' if mape <= FORECAST_RUNTIME['monthlyReviewGradeWarn'] else '🔴 개선 필요')
         lines += [
             f'📊 교차검증 ({cv_metrics["n_folds"]}폴드)',
             f'   MAPE: {mape:.1f}%  {grade}',
@@ -1568,7 +1571,7 @@ def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, ll
         for wd in range(7):
             if wd in weekday_bias:
                 bias = weekday_bias[wd]
-                flag = '  ⚠️' if abs(bias) > 30000 else '  '
+                flag = '  ⚠️' if abs(bias) > FORECAST_RUNTIME['weekdayBiasAlertAmount'] else '  '
                 direction = '과소' if bias > 0 else '과대'
                 lines.append(f'  {flag}{wd_names[wd]}: {bias:+,}원 ({direction}예측)')
         lines.append('')
@@ -1732,3 +1735,4 @@ if __name__ == '__main__':
         run_monthly_review(base_date)
     else:
         run(mode, base_date, output_json)
+    days = days or FORECAST_RUNTIME['perModelAccuracyDays']

@@ -34,6 +34,7 @@ const { buildReservationId, buildReservationCompositeKey } = require('../../lib/
 const { saveJson } = require('../../lib/files');
 const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
+const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
 const kst = require('../../../../packages/core/lib/kst');
 
 // 인증 정보 (secrets.json에서 로드)
@@ -79,6 +80,7 @@ const MODE = (process.env.MODE || 'dev').toLowerCase();
 const SAFE_DEV_FALLBACK = (process.env.SAFE_DEV_FALLBACK || '1') === '1';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10); // ops=5분, dev=2분 기본
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
+const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
 
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
@@ -94,7 +96,7 @@ let lastHeartbeatTime = Date.now(); // 시작 직후 0분 Heartbeat 방지 (1시
 // 일일 마감 요약 통계
 let dailyStats          = { date: '', detected: 0, completed: 0, cancelled: 0, failed: 0 };
 let lastDailyReportDate = '';
-const MAX_RETRIES = 5; // 최대 재시도 횟수 (초과 시 수동 처리 알람 후 건너뜀)
+const MAX_RETRIES = NAVER_MONITOR_RUNTIME.maxRetries; // 최대 재시도 횟수 (초과 시 수동 처리 알람 후 건너뜀)
 
 // ✅ 데이터 검증은 lib/validation.js에서 import함
 // (중복 제거 및 라이브러리 일관성)
@@ -682,7 +684,7 @@ async function monitorBookings() {
   const startTime = Date.now();
   let checkCount = 0;
   let detachRetryCount = 0; // detached Frame 재시도 카운터
-  const errorTracker = createErrorTracker({ label: 'naver-monitor', threshold: 3 });
+  const errorTracker = createErrorTracker({ label: 'naver-monitor', threshold: NAVER_MONITOR_RUNTIME.errorTrackerThreshold });
 
   try {
     printModeBanner('naver-monitor');
@@ -1463,9 +1465,9 @@ async function monitorBookings() {
                     }
 
                     // ✅ 5회 연속 + 최소 10분 경과 시에만 취소 확정 (오발동 방지)
-                    const STALE_CONFIRM_COUNT  = 5;
-                    const STALE_MIN_ELAPSED_MS = 10 * 60 * 1000;  // 최소 10분
-                    const STALE_EXPIRE_MS      = 30 * 60 * 1000;  // 30분 미감지 시 만료
+                    const STALE_CONFIRM_COUNT  = NAVER_MONITOR_RUNTIME.staleConfirmCount;
+                    const STALE_MIN_ELAPSED_MS = NAVER_MONITOR_RUNTIME.staleMinElapsedMs;
+                    const STALE_EXPIRE_MS      = NAVER_MONITOR_RUNTIME.staleExpireMs;
                     const booking = {
                       phoneRaw:  stale.phone_raw,
                       phone:     stale.phone_raw,

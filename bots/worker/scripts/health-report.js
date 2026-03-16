@@ -20,6 +20,7 @@ const {
 } = require('../../../packages/core/lib/health-core');
 const { runHealthCli } = require('../../../packages/core/lib/health-runner');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const { getWorkerHealthRuntimeConfig, getWorkerN8nRuntimeConfig } = require('../lib/runtime-config');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -31,14 +32,18 @@ const {
 const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_WORKER_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || 'http://127.0.0.1:5678/webhook/worker-chat-intake';
+const healthRuntimeConfig = getWorkerHealthRuntimeConfig();
+const n8nRuntimeConfig = getWorkerN8nRuntimeConfig();
+const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || n8nRuntimeConfig.healthUrl;
+const DEFAULT_WORKER_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || n8nRuntimeConfig.workerWebhookUrl;
+const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
 
 async function buildEndpointHealth() {
   const checks = await buildHttpChecks([
     {
       label: 'workerWeb',
       url: 'http://127.0.0.1:4000/api/health',
+      timeoutMs: HTTP_TIMEOUT_MS,
       isOk: Boolean,
       okText: '  worker web API: 정상',
       warnText: '  worker web API: 응답 없음',
@@ -46,6 +51,7 @@ async function buildEndpointHealth() {
     {
       label: 'workerNext',
       url: 'http://127.0.0.1:4001',
+      timeoutMs: HTTP_TIMEOUT_MS,
       isOk: Boolean,
       okText: '  worker nextjs: 정상',
       warnText: '  worker nextjs: 응답 없음',
@@ -53,6 +59,7 @@ async function buildEndpointHealth() {
     {
       label: 'apiHealth',
       url: 'http://127.0.0.1:4000/api/health',
+      timeoutMs: HTTP_TIMEOUT_MS,
       expectJson: true,
       isOk: (data) => Boolean(data?.websocket?.enabled && data?.websocket?.ready),
       okText: (data) => `  websocket: 준비됨 (clients ${Number(data?.websocket?.clients || 0)})`,

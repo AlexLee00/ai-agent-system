@@ -6,9 +6,11 @@ const {
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
 
-const HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || 'http://127.0.0.1:5678/webhook/blog-pipeline';
+const runtimeConfig = getBlogHealthRuntimeConfig();
+const HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
+const DEFAULT_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 
 async function main() {
   const resolvedWebhookUrl = await resolveProductionWebhookUrl({
@@ -17,14 +19,14 @@ async function main() {
     pathSuffix: 'blog-pipeline',
   });
   const webhookUrl = resolvedWebhookUrl || DEFAULT_WEBHOOK_URL;
-  const healthOk = await checkHttp(HEALTH_URL, 2500);
+  const healthOk = await checkHttp(HEALTH_URL, Number(runtimeConfig.n8nHealthTimeoutMs || 2500));
   const webhook = await checkWebhookRegistration(webhookUrl, {
     postType: 'general',
     sessionId: 'n8n-blog-health-probe',
     pipeline: ['weather'],
     variations: {},
   }, {
-    timeoutMs: 5000,
+    timeoutMs: Number(runtimeConfig.webhookTimeoutMs || 5000),
   });
 
   console.log(JSON.stringify({

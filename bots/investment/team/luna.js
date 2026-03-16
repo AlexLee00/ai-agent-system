@@ -27,6 +27,8 @@ import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { isPaperMode } from '../shared/secrets.js';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.js';
+import { getDomesticBalance } from '../shared/kis-client.js';
+import { getLunaRuntimeConfig } from '../shared/runtime-config.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.js';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.js';
@@ -35,10 +37,24 @@ import { runBearResearcher } from './athena.js';
 import { evaluateSignal } from './nemesis.js';
 import { recommendStrategy } from './argos.js';
 
-const MIN_CONFIDENCE     = { binance: 0.52, kis: 0.35, kis_overseas: 0.35 };
-const PAPER_MIN_CONFIDENCE = { binance: 0.48, kis: 0.28, kis_overseas: 0.28 };
-const MAX_POS_COUNT      = 5;
-const MAX_DEBATE_SYMBOLS = 2;
+const LUNA_RUNTIME = getLunaRuntimeConfig();
+const MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.live;
+const PAPER_MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.paper;
+const MAX_POS_COUNT = LUNA_RUNTIME.maxPosCount;
+const MAX_DEBATE_SYMBOLS = LUNA_RUNTIME.maxDebateSymbols;
+const STOCK_ORDER_DEFAULTS = LUNA_RUNTIME.stockOrderDefaults;
+
+function getStockOrderSpec(exchange) {
+  return STOCK_ORDER_DEFAULTS[exchange] || null;
+}
+
+function normalizeDecisionAmount(exchange, action, amount) {
+  const spec = getStockOrderSpec(exchange);
+  if (!spec) return amount;
+  const fallback = action === ACTIONS.SELL ? spec.sellDefault : spec.buyDefault;
+  const numeric = Number.isFinite(Number(amount)) ? Number(amount) : fallback;
+  return Math.max(spec.min, Math.min(spec.max, Math.round(numeric)));
+}
 
 export function getMinConfidence(exchange) {
   if (isPaperMode()) return PAPER_MIN_CONFIDENCE[exchange] ?? MIN_CONFIDENCE[exchange] ?? 0.60;
@@ -55,30 +71,39 @@ export function shouldDebateForSymbol(analyses, exchange, analystWeights = ANALY
   const fused = fuseSignals(analyses, analystWeights);
   if (fused.hasConflict) return true;
   if (exchange === 'kis' || exchange === 'kis_overseas') {
-    if (isPaperMode()) return fused.averageConfidence < 0.62 || Math.abs(fused.fusedScore) < 0.45;
-    return fused.averageConfidence < 0.68 || Math.abs(fused.fusedScore) < 0.50;
+    const threshold = isPaperMode()
+      ? LUNA_RUNTIME.debateThresholds.stocksPaper
+      : LUNA_RUNTIME.debateThresholds.stocksLive;
+    return fused.averageConfidence < threshold.minAverageConfidence || Math.abs(fused.fusedScore) < threshold.minAbsScore;
   }
-  return fused.averageConfidence < 0.70 || Math.abs(fused.fusedScore) < 0.40;
+  return fused.averageConfidence < LUNA_RUNTIME.debateThresholds.crypto.minAverageConfidence
+    || Math.abs(fused.fusedScore) < LUNA_RUNTIME.debateThresholds.crypto.minAbsScore;
 }
 
 function buildFastPathDecision(fused, exchange) {
   const isStock = exchange === 'kis' || exchange === 'kis_overseas';
   if (!isPaperMode() || !isStock || fused.hasConflict) return null;
-  if (fused.averageConfidence < 0.5 || Math.abs(fused.fusedScore) < 0.35) return null;
+  if (
+    fused.averageConfidence < LUNA_RUNTIME.fastPathThresholds.minAverageConfidence ||
+    Math.abs(fused.fusedScore) < LUNA_RUNTIME.fastPathThresholds.minAbsScore
+  ) return null;
+  const spec = getStockOrderSpec(exchange);
 
   if (fused.recommendation === 'LONG') {
     return {
       action: ACTIONS.BUY,
-      amount_usdt: fused.averageConfidence >= 0.7 ? 700 : 500,
-      confidence: Math.max(0.35, Math.min(0.75, fused.averageConfidence)),
+      amount_usdt: spec
+        ? (fused.averageConfidence >= 0.7 ? spec.max : spec.buyDefault)
+        : (fused.averageConfidence >= 0.7 ? 700 : 500),
+      confidence: Math.max(LUNA_RUNTIME.fastPathThresholds.minStockConfidence, Math.min(0.80, fused.averageConfidence)),
       reasoning: '분석가 합의 기반 fast-path 진입',
     };
   }
   if (fused.recommendation === 'SHORT') {
     return {
       action: ACTIONS.SELL,
-      amount_usdt: 500,
-      confidence: Math.max(0.35, Math.min(0.7, fused.averageConfidence)),
+      amount_usdt: spec?.sellDefault ?? 500,
+      confidence: Math.max(LUNA_RUNTIME.fastPathThresholds.minStockConfidence, Math.min(0.75, fused.averageConfidence)),
       reasoning: '분석가 합의 기반 fast-path 청산',
     };
   }
@@ -91,15 +116,15 @@ const LUNA_SYSTEM_CRYPTO = `당신은 루나(Luna), 루나팀의 수석 오케�
 멀티타임프레임 TA·온체인·뉴스·감성·강세/약세 2라운드 토론 결과를 종합해 최종 매매 신호를 결정한다.
 
 핵심 원칙:
-- 불확실할 때는 HOLD — 확신이 없으면 진입하지 않는다
+- 기본은 진입 검토 — HOLD는 명확한 충돌 신호가 있을 때만
 - 장기(4h)와 단기(1h) 방향이 일치할 때만 BUY/SELL
-- 2라운드 토론 후 강세가 약세를 충분히 반박하지 못하면 HOLD
-- confidence 0.52 미만이면 반드시 HOLD
+- 2라운드 토론 후에도 우세 신호가 약하면 HOLD
+- confidence 0.50 미만이면 HOLD 우선, 단 강한 합의면 BUY 검토 가능
 
 응답 형식 (JSON만, 다른 텍스트 없이):
 {"action":"HOLD","amount_usdt":100,"confidence":0.6,"reasoning":"근거 60자 이내"}
 
-amount_usdt 범위: 50~300 USDT`.trim();
+amount_usdt 범위: 80~400 USDT`.trim();
 
 const LUNA_SYSTEM_STOCK = `당신은 루나(Luna), 루나팀의 수석 오케스트레이터다. (국내/해외 주식 — 공격적 모드)
 멀티타임프레임 TA·뉴스·감성·강세/약세 2라운드 토론 결과를 종합해 최종 매매 신호를 결정한다.
@@ -108,13 +133,17 @@ const LUNA_SYSTEM_STOCK = `당신은 루나(Luna), 루나팀의 수석 오케스
 - 기본 전략은 진입 — HOLD는 명확한 반대 신호가 있을 때만
 - 단기(1h) 방향이 긍정적이면 BUY 검토, 명확한 하락 추세일 때만 SELL/HOLD
 - 2라운드 토론 후 강세가 약세보다 설득력 있으면 BUY
-- confidence 0.30 이상이면 진입 검토 (0.30 미만만 HOLD)
+- confidence 0.25 이상이면 진입 검토 (0.25 미만만 HOLD)
 - 소규모 분할 진입으로 리스크 분산
 
 응답 형식 (JSON만, 다른 텍스트 없이):
-{"action":"BUY","amount_usdt":500,"confidence":0.5,"reasoning":"근거 60자 이내"}
+{"action":"BUY","amount_usdt":300000,"confidence":0.5,"reasoning":"근거 60자 이내"}
 
-amount_usdt 범위: 500~1000 USDT`.trim();
+중요:
+- exchange='kis'면 amount_usdt는 KRW 주문금액으로 해석한다
+- exchange='kis_overseas'면 amount_usdt는 USD 주문금액으로 해석한다
+- 국내주식(kis) amount_usdt 범위: 100000~1000000
+- 해외주식(kis_overseas) amount_usdt 범위: 50~1000`.trim();
 
 function getLunaSystem(exchange) {
   if (exchange === 'kis' || exchange === 'kis_overseas') return LUNA_SYSTEM_STOCK;
@@ -128,20 +157,28 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const minConf       = getMinConfidence(exchange);
   const maxPosPct     = isStock ? '30%' : '20%';
   const dailyLoss     = isStock ? '10%' : '5%';
+  const stockSpec     = getStockOrderSpec(exchange);
+  const exampleAmount = isStock ? (stockSpec?.buyDefault ?? 500) : 100;
+  const amountRule    = isStock
+    ? exchange === 'kis'
+      ? 'amount_usdt는 KRW 주문금액이며 100000~1000000 범위'
+      : 'amount_usdt는 USD 주문금액이며 50~1000 범위'
+    : 'amount_usdt는 USDT 주문금액';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ' (주식 — 공격적 모드)' : ''}
 
 분석 대상 심볼: ${symbols.join(', ')}
 ⚠️ 반드시 위 심볼 중에서만 결정을 내려야 합니다. 다른 심볼은 절대 포함하지 마세요.
 
 응답: JSON만 (코드블록 없음):
-{"decisions":[{"symbol":"${exampleSymbol}","action":"BUY","amount_usdt":${isStock ? 500 : 100},"confidence":0.7,"reasoning":"판단 근거 (한국어 60자)"}],"portfolio_view":"전체 시황 평가 (80자)","risk_level":"LOW"|"MEDIUM"|"HIGH"}
+{"decisions":[{"symbol":"${exampleSymbol}","action":"BUY","amount_usdt":${exampleAmount},"confidence":0.7,"reasoning":"판단 근거 (한국어 60자)"}],"portfolio_view":"전체 시황 평가 (80자)","risk_level":"LOW"|"MEDIUM"|"HIGH"}
 
 제약:
 - 단일 포지션: 총자산 ${maxPosPct} 이하
 - 동시 포지션: 최대 ${MAX_POS_COUNT}개
 - 일손실 한도: ${dailyLoss}
 - confidence ${minConf} 미만: HOLD
-- USDT 잔고 초과 매수 금지`;
+- ${amountRule}
+- 가용 현금 범위를 초과하는 매수 금지`;
 }
 
 // ─── 시그널 융합 ─────────────────────────────────────────────────────
@@ -345,8 +382,13 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
         const action  = isStock
           ? (vote >= 0 && avgConf >= 0.3 ? ACTIONS.BUY : vote < -1 ? ACTIONS.SELL : ACTIONS.HOLD)
           : (vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD);
-        const fallbackAmt = isStock ? 500 : 100;
+        const fallbackAmt = isStock
+          ? normalizeDecisionAmount(exchange, action, getStockOrderSpec(exchange)?.buyDefault)
+          : 100;
         return { action, amount_usdt: fallbackAmt, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
+      }
+      if (exchange === 'kis' || exchange === 'kis_overseas') {
+        parsed.amount_usdt = normalizeDecisionAmount(exchange, parsed.action, parsed.amount_usdt);
       }
       return parsed;
     },
@@ -400,6 +442,12 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
   if (parsed.decisions) {
     const allowed = new Set(symbols);
     parsed.decisions = parsed.decisions.filter(d => allowed.has(d.symbol));
+    if (exchange === 'kis' || exchange === 'kis_overseas') {
+      parsed.decisions = parsed.decisions.map(d => ({
+        ...d,
+        amount_usdt: normalizeDecisionAmount(exchange, d.action, d.amount_usdt),
+      }));
+    }
   }
   return parsed;
 }
@@ -412,7 +460,9 @@ async function buildPortfolioContext(exchange = 'binance') {
   const posValue   = positions.reduce((s, p) => s + (p.amount * p.avg_price), 0);
   const usdtFree   = exchange === 'binance'
     ? await getAvailableUSDT().catch(() => 0)
-    : 0;
+    : exchange === 'kis'
+      ? await getDomesticBalance().then(b => Number(b?.dnca_tot_amt || 0)).catch(() => 0)
+      : 0;
   const availableBalance = exchange === 'binance'
     ? await getAvailableBalance().catch(() => usdtFree)
     : usdtFree;
@@ -594,12 +644,17 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     const signalData = {
       symbol:          dec.symbol,
       action:          dec.action,
-      amountUsdt:      dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas' ? 500 : 100),
+      amountUsdt:      dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas'
+        ? getStockOrderSpec(exchange)?.buyDefault
+        : 100),
       confidence:      dec.confidence,
       reasoning:       `[루나] ${dec.reasoning}`,
       exchange:        dec.exchange || exchange,
       analystSignals,
     };
+    if (exchange === 'kis' || exchange === 'kis_overseas') {
+      signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);
+    }
 
     const { valid, errors } = validateSignal(signalData);
     if (!valid) {

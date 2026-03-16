@@ -1,0 +1,22 @@
+{
+  "runtime_config": {
+    "health": {
+      "nodeServerHealthUrl": "http://127.0.0.1:3100/health",
+      "n8nHealthUrl": "http://127.0.0.1:5678/healthz",
+      "blogWebhookUrl": "http://127.0.0.1:5678/webhook/blog-pipeline",
+      "nodeServerTimeoutMs": 3000,
+      "n8nHealthTimeoutMs": 2500,
+      "webhookTimeoutMs": 5000,
+      "dailyLogStaleMs": 129600000
+    },
+    "generation": {
+      "gemsMinChars": 8000,
+      "posMinChars": 7000,
+      "continueMaxTokens": 8000,
+      "writerMaxRetries": 1,
+      "maestroWebhookTimeoutMs": 180000,
+      "maestroHealthTimeoutMs": 2500,
+      "maestroCircuitCooldownMs": 1800000
+    }
+  }
+}

@@ -113,6 +113,10 @@ export function isPaperMode() {
   return getTradingMode() === 'paper';
 }
 
+export function formatExecutionTag(paper) {
+  return paper ? '[PAPER] ' : '';
+}
+
 export function isTestnet() {
   const s = loadSecrets();
   return s.binance_testnet === true || process.env.BINANCE_TESTNET === 'true';
@@ -371,6 +375,26 @@ export function isKisPaper() {
   if (s.kis_paper_trading === true) return true;
   if (s.kis_paper_trading === false) return false;
   return resolveBrokerMode(s.kis_mode) === 'paper';
+}
+
+export function getKisExecutionModeInfo(marketLabel = '주식') {
+  return getMarketExecutionModeInfo('stocks', marketLabel);
+}
+
+export function getMarketExecutionModeInfo(marketType = 'crypto', marketLabel = '시장') {
+  const normalized = String(marketType || 'crypto').trim().toLowerCase();
+  const isStockMarket = normalized === 'kis' || normalized === 'kis_overseas' || normalized === 'stock' || normalized === 'stocks';
+  const broker = isStockMarket ? 'KIS' : 'BINANCE';
+  const paper = isStockMarket ? isKisPaper() : isBinancePaper();
+  return {
+    marketType: isStockMarket ? 'stocks' : 'crypto',
+    broker,
+    paper,
+    tag: paper ? '[PAPER]' : '[LIVE]',
+    logLine: paper
+      ? `📄 ${broker} PAPER=true — 모의투자 실행 모드 (${marketLabel})`
+      : `🔴 ${broker} PAPER=false — 실전 주문 실행 모드 (${marketLabel})`,
+  };
 }
 
 export function isBinancePaper() {
