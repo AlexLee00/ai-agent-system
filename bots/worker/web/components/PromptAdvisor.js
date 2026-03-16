@@ -151,6 +151,8 @@ export default function PromptAdvisor({
   uploading = false,
   attachedFileName = '',
   onReset,
+  showFileButton = true,
+  showResetButton = true,
   onSubmit,
   submitDisabled = false,
   error = '',
@@ -211,22 +213,26 @@ export default function PromptAdvisor({
 
           <div className="mt-4 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={onFileClick}
-                disabled={uploading}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 sm:h-10 sm:w-10"
-                aria-label="파일 추가"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onReset}
-                className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
-              >
-                초기화
-              </button>
+              {showFileButton && (
+                <button
+                  type="button"
+                  onClick={onFileClick}
+                  disabled={uploading}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 sm:h-10 sm:w-10"
+                  aria-label="파일 추가"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+              )}
+              {showResetButton && (
+                <button
+                  type="button"
+                  onClick={onReset}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
+                >
+                  초기화
+                </button>
+              )}
             </div>
 
             <button

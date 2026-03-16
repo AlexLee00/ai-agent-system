@@ -346,7 +346,7 @@ function ClaudeCodeChat() {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  const apiBase = () => `http://${window.location.hostname}:4000`;
+  const apiBase = () => '';
 
   // 메시지 배열에 ui_component 파싱 적용
   function applyParsing(msgs) {

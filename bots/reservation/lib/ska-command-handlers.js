@@ -95,7 +95,9 @@ function createSkaCommandHandlers({ pgPool, rag }) {
   }
 
   async function handleRegisterReservation(args = {}) {
-    return runCommandWithN8n('register_reservation', args, () => runManualReservationRegistration(args));
+    // Reservation registration is a write path that must return the real
+    // Pickko/Naver outcome, not just an n8n webhook acceptance.
+    return runManualReservationRegistration(args);
   }
 
   function handleRestartAndy() {

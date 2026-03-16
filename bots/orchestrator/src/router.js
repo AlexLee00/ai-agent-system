@@ -1676,7 +1676,14 @@ function formatSkaResult(command, rawResult) {
       return lines.join('\n');
     }
     case 'register_reservation':
+      if (r.batch && r.summary) {
+        const prefix = r.ok ? '✅' : (r.code === 'PARTIAL_SUCCESS' ? '⚠️' : '❌');
+        return `${prefix} ${r.message || '다중예약 처리 결과'}\n${r.summary}`;
+      }
       if (r.ok) return `✅ ${r.message || '예약 등록 완료'}`;
+      if (r.code === 'PARTIAL_SUCCESS') {
+        return `⚠️ ${r.message || '일부 예약만 완료되었습니다.'}\n${r.summary || ''}`.trim();
+      }
       if (r.code === 'MISSING_FIELDS' || /필요한 정보가 부족/.test(r.error || '')) {
         return `⚠️ ${r.error || '예약 등록에 필요한 정보가 부족합니다.'}`;
       }

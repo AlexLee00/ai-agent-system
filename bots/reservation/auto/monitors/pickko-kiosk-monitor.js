@@ -185,37 +185,51 @@ async function blockNaverSlot(page, entry) {
   const { name, phoneRaw, date, start, end, room } = entry;
   log(`\n[Phase 3] 네이버 차단 시도: ${maskName(name)} ${date} ${start}~${end} ${room}`);
 
+  async function capture(stage) {
+    const safeStage = String(stage || 'stage').replace(/[^a-z0-9_-]+/gi, '-');
+    const ssPath = `/tmp/naver-block-${date}-${safeStage}.png`;
+    await page.screenshot({ path: ssPath, fullPage: false }).catch(() => null);
+    log(`📸 [${safeStage}] 스크린샷: ${ssPath}`);
+    return ssPath;
+  }
+
   try {
     // 예약 캘린더 페이지로 이동
     await page.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
     await delay(2000);
+    await capture('calendar-open');
 
     // Step 2~3: 날짜 선택 + 적용
     const dateSelected = await selectBookingDate(page, date);
     if (!dateSelected) {
       log(`⚠️ 날짜 선택 실패: ${date}`);
-      const ssPath = `/tmp/naver-block-${date}-datesel.png`;
-      await page.screenshot({ path: ssPath }).catch(() => null);
-      log(`📸 스크린샷: ${ssPath}`);
-      return false;
+      await capture('date-select-failed');
+      return { ok: false, applied: false, reason: 'date_select_failed' };
     }
-
-    // [Step 3.5] 이미 차단된 상태인지 사전 확인 — 이미 suspended이면 재등록 생략
-    const alreadyBlocked = await verifyBlockInGrid(page, room, start, end);
-    if (alreadyBlocked) {
-      log(`  ✅ [이미 차단됨] ${room} ${start}~${end} 이미 예약불가 상태 → 차단 완료 처리`);
-      return true;
-    }
+    await capture('date-selected');
 
     // Step 4: 해당 룸의 예약가능 버튼 클릭
-    const selectedStart = await clickRoomAvailableSlot(page, room, start);
+    let selectedStart = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      selectedStart = await clickRoomAvailableSlot(page, room, start);
+      if (selectedStart) {
+        await capture(`slot-clicked-${attempt}`);
+        break;
+      }
+      log(`⚠️ 예약가능 슬롯 클릭 실패 (시도 ${attempt}/2): room=${room}`);
+      await capture(`slot-click-failed-${attempt}`);
+      if (attempt < 2) {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+        await page.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
+        await delay(1500);
+        const reselected = await selectBookingDate(page, date);
+        log(`↻ 슬롯 클릭 재시도 전 날짜 재선택: ${reselected ? '성공' : '실패'}`);
+        await capture(`slot-retry-ready-${attempt}`);
+      }
+    }
     if (!selectedStart) {
-      log(`⚠️ 예약가능 슬롯 클릭 실패: room=${room}`);
-      const ssPath = `/tmp/naver-block-${date}-slot.png`;
-      await page.screenshot({ path: ssPath }).catch(() => null);
-      log(`📸 스크린샷: ${ssPath}`);
-      return false;
+      return { ok: false, applied: false, reason: 'slot_click_failed' };
     }
     if (selectedStart !== start) {
       log(`  시작시간 조정: ${start} → ${selectedStart} (종료시간 ${end} 유지)`);
@@ -225,85 +239,56 @@ async function blockNaverSlot(page, entry) {
     // 네이버 드롭다운은 30분 단위 — 종료시간 올림 (19:50 → 20:00)
     const endRounded = roundUpToHalfHour(end);
     if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
-    const done = await fillUnavailablePopup(page, date, selectedStart, endRounded);
+    let done = false;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      done = await fillUnavailablePopup(page, date, selectedStart, endRounded);
+      if (done) {
+        await capture(`popup-applied-${attempt}`);
+        break;
+      }
+      log(`⚠️ 예약불가 팝업 적용 실패 (시도 ${attempt}/2)`);
+      await capture(`popup-failed-${attempt}`);
+      if (attempt < 2) {
+        const reopenedStart = await clickRoomAvailableSlot(page, room, selectedStart);
+        if (reopenedStart) {
+          log(`↻ 팝업 재시도용 슬롯 재오픈 성공: ${reopenedStart}`);
+          await capture(`popup-retry-ready-${attempt}`);
+        } else {
+          log('⚠️ 팝업 재시도용 슬롯 재오픈 실패');
+        }
+      }
+    }
     if (!done) {
-      const ssPath = `/tmp/naver-block-${date}-popup.png`;
-      await page.screenshot({ path: ssPath }).catch(() => null);
-      log(`📸 스크린샷: ${ssPath}`);
-      return false;
+      return { ok: false, applied: false, reason: 'popup_apply_failed' };
     }
 
-    // Step 10: 시간박스에서 최종 확인 (예약가능 → 예약불가/차단 전환 확인)
-    const verified = await verifyBlockInGrid(page, room, selectedStart, end);
-    log(`  최종 확인: ${verified ? '✅ 차단 확인됨' : '⚠️ suspended 버튼 없음 — avail 소멸 보조 확인 시도'}`);
+    // 설정변경 후 같은 화면을 바로 믿지 않고 날짜를 다시 불러와 최종 상태를 확인한다.
+    await page.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+    await page.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
+    await delay(1500);
+    await capture('calendar-reloaded');
+    const reselected = await selectBookingDate(page, date);
+    if (!reselected) {
+      log(`⚠️ 저장 후 날짜 재선택 실패: ${date}`);
+      await capture('date-reselect-failed');
+      return { ok: false, applied: true, reason: 'date_reselect_failed' };
+    }
+    await capture('date-reselected');
+
+    // Step 10: 시간박스에서 최종 확인 (요청 구간 전체 슬롯 확인)
+    const verified = await verifyBlockInGrid(page, room, selectedStart, endRounded);
+    log(`  최종 확인: ${verified ? '✅ 차단 확인됨' : '❌ 차단 확인 실패'}`);
+    await capture('verify-after-popup');
     if (!verified) {
-      // 보조 확인: avail 버튼이 사라졌으면 "예약가능 설정" 방식으로 차단 성공
-      // (suspended 버튼이 생기는 대신 avail 버튼이 빈칸으로 전환되는 방식)
-      const roomType = (room || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || room;
-      const [hh, mm] = (selectedStart || '').split(':').map(Number);
-      const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
-      const hourMin = `${dispH}:${String(mm).padStart(2, '0')}`;
-      const availGone = await page.evaluate((roomType, hourMin) => {
-        // 시작시간 Y 좌표
-        let targetY = null;
-        for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
-          const txt = (el.textContent || '').trim();
-          if (txt === hourMin) {
-            el.scrollIntoView({ block: 'center' });
-            const r = el.getBoundingClientRect();
-            targetY = r.top + r.height / 2;
-            break;
-          }
-        }
-        if (targetY === null) return null; // 시간 레이블 자체 없음
-
-        // 룸 컬럼 X 범위
-        let roomXRange = null;
-        const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
-        for (const el of Array.from(document.querySelectorAll('*')).filter(e => {
-          if (!e.offsetParent || e.children.length > 0) return false;
-          const r = e.getBoundingClientRect();
-          return r.top >= 0 && r.top < 450 && r.width > 20;
-        })) {
-          const txt = (el.textContent || '').trim();
-          if (pattern.test(txt) || txt === roomType) {
-            const r = el.getBoundingClientRect();
-            if (!roomXRange || r.left < roomXRange.left)
-              roomXRange = { left: r.left, right: r.right };
-          }
-        }
-        if (!roomXRange) return null; // 룸 헤더 못 찾음
-
-        // avail 버튼 존재 여부 확인
-        const calBtns = Array.from(document.querySelectorAll('.calendar-btn, [class*="calendar-btn"]'))
-          .filter(b => b.offsetParent !== null);
-        for (const btn of calBtns) {
-          const cls = btn.className || '';
-          if (!cls.includes('avail')) continue;
-          const r = btn.getBoundingClientRect();
-          if (Math.abs((r.top + r.height / 2) - targetY) > 120) continue;
-          const cx = r.left + r.width / 2;
-          if (cx < roomXRange.left - 20 || cx > roomXRange.right + 20) continue;
-          return false; // avail 버튼 여전히 존재 → 차단 실패
-        }
-        return true; // avail 버튼 없음 → 차단 성공 (빈칸 전환)
-      }, roomType, hourMin);
-
-      log(`  보조 확인 (avail 소멸): ${availGone === true ? '✅ avail 버튼 소멸 → 차단 성공' : availGone === false ? '❌ avail 버튼 여전히 존재 → 차단 실패' : '⚠️ 시간/룸 탐색 불가'}`);
-      if (availGone === true) return true; // "예약가능 설정" 방식 차단 성공
-      const ssPath = `/tmp/naver-block-${date}-verify.png`;
-      await page.screenshot({ path: ssPath }).catch(() => null);
-      log(`📸 최종 확인 스크린샷: ${ssPath}`);
-      return false; // 네이버 실제 차단 미확인 → DB에 false positive 방지
+      await capture('verify-failed');
+      return { ok: false, applied: true, reason: 'verify_failed' };
     }
-    return true;
+    return { ok: true, applied: true, reason: 'verified' };
 
   } catch (e) {
     log(`❌ 네이버 차단 중 오류: ${e.message}`);
-    const ssPath = `/tmp/naver-block-${date}-error.png`;
-    await page.screenshot({ path: ssPath }).catch(() => null);
-    log(`📸 스크린샷: ${ssPath}`);
-    return false;
+    await capture('error');
+    return { ok: false, applied: false, reason: 'exception', error: e.message };
   }
 }
 
@@ -480,6 +465,9 @@ async function selectBookingDate(page, date) {
   const targetYear = parseInt(yearStr);
   const targetMonth = parseInt(monthStr);
   const targetDay = parseInt(date.split('-')[2]);
+  const targetMonthKey = targetYear * 12 + targetMonth;
+  const [todayYearStr, todayMonthStr] = getTodayKST().split('-');
+  const currentMonthKey = parseInt(todayYearStr) * 12 + parseInt(todayMonthStr);
   // 헤더 텍스트 형식: "2026.3" (leading zero 없음)
   const headerText = `${targetYear}.${targetMonth}`;
 
@@ -515,7 +503,8 @@ async function selectBookingDate(page, date) {
       let targetContainer = null;
       for (const c of document.querySelectorAll('[class*="DatePeriodCalendar__monthly"]')) {
         const topEl = c.querySelector('[class*="Calendar__monthly-top"]');
-        if (topEl && (topEl.textContent || '').trim() === headerText) {
+        const topText = (topEl?.textContent || c.textContent || '').replace(/\s+/g, '');
+        if (topText.includes(headerText.replace(/\s+/g, ''))) {
           targetContainer = c;
           break;
         }
@@ -559,46 +548,101 @@ async function selectBookingDate(page, date) {
       break;
     }
 
-    // 목표 월이 안 보이면 picker 내 > 버튼으로 다음 달로 이동
-    // > 버튼 위치: 오른쪽 캘린더의 마지막 위치 (picker 오른쪽 끝)
-    const navCoords = await page.evaluate((headerText) => {
-      // 현재 보이는 마지막(오른쪽) 월 헤더 기준으로 > 버튼 좌표 탐색
-      const allEls = Array.from(document.querySelectorAll('*'));
-      const headers = allEls.filter(el => {
+    // 목표 월이 안 보이면 picker 내 prev/next 버튼으로 이동
+    const navCoords = await page.evaluate((targetMonthKey, currentMonthKey) => {
+      const monthKey = (text) => {
+        const m = String(text || '').trim().match(/^(\d{4})\.(\d{1,2})$/);
+        if (!m) return null;
+        return Number(m[1]) * 12 + Number(m[2]);
+      };
+
+      const monthlyContainers = Array.from(document.querySelectorAll('[class*="DatePeriodCalendar__monthly"]'))
+        .filter((el) => el.offsetParent !== null);
+
+      const headers = Array.from(document.querySelectorAll('*')).filter((el) => {
         if (el.offsetParent === null) return false;
         const txt = (el.textContent || '').trim();
         if (!/^\d{4}\.\d{1,2}$/.test(txt)) return false;
         const r = el.getBoundingClientRect();
-        return r.width < 300 && r.height < 60 && r.width > 0;
-      });
-      if (headers.length === 0) return { found: false, reason: 'no month headers' };
-      const lastHeader = headers[headers.length - 1];
-      const lhRect = lastHeader.getBoundingClientRect();
-      // 헤더 오른쪽 영역에서 버튼 탐색
-      const btns = Array.from(document.querySelectorAll('button'));
-      for (const btn of btns) {
-        if (btn.offsetParent === null) continue;
-        const br = btn.getBoundingClientRect();
-        if (br.left >= lhRect.right + 5 && br.width > 0 && br.height > 0) {
-          return { found: true, x: br.left + br.width / 2, y: br.top + br.height / 2, via: 'right-of-header' };
-        }
-      }
-      // fallback: 오른쪽 상단 어딘가에 있는 small 버튼
-      const pickRight = Math.max(...headers.map(h => h.getBoundingClientRect().right));
-      for (const btn of btns) {
-        if (btn.offsetParent === null) continue;
-        const br = btn.getBoundingClientRect();
-        if (br.left >= pickRight - 40 && br.width < 60) {
-          return { found: true, x: br.left + br.width / 2, y: br.top + br.height / 2, via: 'picker-far-right' };
-        }
-      }
-      return { found: false };
-    }, headerText);
+        return r.width > 0 && r.width < 300 && r.height > 0 && r.height < 60;
+      }).map((el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          text: (el.textContent || '').trim(),
+          key: monthKey(el.textContent || ''),
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        };
+      }).filter((h) => Number.isFinite(h.key)).sort((a, b) => a.left - b.left);
 
-    log(`  → 다음 달 이동 (attempt ${attempt + 1}): ${JSON.stringify(navCoords)}`);
+      const popupRoot = monthlyContainers.length > 0
+        ? monthlyContainers[0].parentElement
+        : null;
+
+      if (headers.length === 0) {
+        const prevBtn = popupRoot?.querySelector('button[class*="DatePeriodCalendar__prev"]');
+        const nextBtn = popupRoot?.querySelector('button[class*="DatePeriodCalendar__next"]');
+        const direction = targetMonthKey >= currentMonthKey ? 'next' : 'prev';
+        const exactBtn = popupRoot?.querySelector(
+          direction === 'next'
+            ? 'button[class*="DatePeriodCalendar__next"]'
+            : 'button[class*="DatePeriodCalendar__prev"]'
+        );
+        if (exactBtn && exactBtn.offsetParent !== null) {
+          const r = exactBtn.getBoundingClientRect();
+          return {
+            found: true,
+            x: r.left + r.width / 2,
+            y: r.top + r.height / 2,
+            direction,
+            via: 'popup-month-button-no-headers',
+            hasPrev: Boolean(prevBtn),
+            hasNext: Boolean(nextBtn),
+          };
+        }
+        return {
+          found: false,
+          reason: 'no month headers',
+          direction,
+          hasPrev: Boolean(prevBtn),
+          hasNext: Boolean(nextBtn),
+        };
+      }
+
+      const minKey = headers[0].key;
+      const maxKey = headers[headers.length - 1].key;
+      const direction = targetMonthKey > maxKey ? 'next' : targetMonthKey < minKey ? 'prev' : 'next';
+      const exactBtn = popupRoot?.querySelector(
+        direction === 'next'
+          ? 'button[class*="DatePeriodCalendar__next"]'
+          : 'button[class*="DatePeriodCalendar__prev"]'
+      );
+      if (exactBtn && exactBtn.offsetParent !== null) {
+        const r = exactBtn.getBoundingClientRect();
+        return {
+          found: true,
+          x: r.left + r.width / 2,
+          y: r.top + r.height / 2,
+          direction,
+          via: 'date-period-button',
+          visibleMonths: headers.map((h) => h.text),
+        };
+      }
+
+      return {
+        found: false,
+        reason: 'nav button not found',
+        direction,
+        visibleMonths: headers.map((h) => h.text),
+      };
+    }, targetMonthKey, currentMonthKey);
+
+    log(`  → 달 이동 (attempt ${attempt + 1}): ${JSON.stringify(navCoords)}`);
     if (!navCoords.found) break;
     await page.mouse.click(navCoords.x, navCoords.y);
-    await delay(600);
+    await delay(800);
   }
 
   if (!found) {
@@ -629,6 +673,16 @@ async function isSettingsPanelVisible(page) {
     const btns = Array.from(document.querySelectorAll('button'));
     return btns.some(b => (b.textContent || '').trim().includes('설정변경') && b.offsetParent !== null);
   });
+}
+
+async function waitForSettingsPanelClosed(page, timeoutMs = 8000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const visible = await isSettingsPanelVisible(page);
+    if (!visible) return true;
+    await delay(250);
+  }
+  return false;
 }
 
 // Step 4: 해당 룸의 예약가능 버튼 클릭
@@ -773,13 +827,16 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     // 8. 목표 시각 이후 슬롯을 우선 시도한다.
     // 이미 지난 슬롯은 클릭이 되지 않거나 패널이 열리지 않을 수 있어,
     // 같은 룸의 다음 가능한 슬롯으로 자연스럽게 진행한다.
+    const normalizedTarget = `${ampm}${hourMin}`;
     const orderedCandidates = finalCandidates
       .map(c => ({
         ...c,
+        exact: String(c.slotTime || '').replace(/\s+/g, '') === normalizedTarget ? 0 : 1,
         forward: c.cy >= targetY ? 0 : 1,
         diff: Math.abs(c.cy - targetY),
       }))
       .sort((a, b) => {
+        if (a.exact !== b.exact) return a.exact - b.exact;
         if (a.forward !== b.forward) return a.forward - b.forward;
         if (a.diff !== b.diff) return a.diff - b.diff;
         return a.cy - b.cy;
@@ -994,8 +1051,14 @@ async function fillUnavailablePopup(page, date, start, end) {
   log(`  설정변경 클릭: ${JSON.stringify(saved)}`);
   if (!saved.clicked) return false;
 
-  await delay(2500); // 설정변경 후 팝업 닫히고 시간박스 갱신 대기
-  log('  ✅ 설정변경 완료');
+  const panelClosed = await waitForSettingsPanelClosed(page, 8000);
+  if (!panelClosed) {
+    log('  ⚠️ 설정 패널이 닫히지 않음 — 반영 실패 가능성');
+    return false;
+  }
+
+  await delay(2500); // 설정변경 후 시간박스/캘린더 갱신 대기
+  log('  ✅ 설정변경 완료 (패널 닫힘 확인)');
   return true;
 }
 
@@ -1411,33 +1474,86 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
   const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
   log(`  🔍 차단 최종 확인: room=${roomType} ${start}~${end}`);
 
-  // 시작시간 표시 변환 (24h → 오전/오후)
-  const [hh, mm] = (start || '').split(':').map(Number);
-  const isAM = hh < 12;
-  const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
-  const ampm = isAM ? '오전' : '오후';
-  const hourMin = `${dispH}:${String(mm).padStart(2, '0')}`;
-
-  const result = await page.evaluate((roomType, ampm, hourMin) => {
-    // 1. 시작시간 레이블 Y 좌표 찾기 (scrollIntoView 후 getBoundingClientRect)
-    let targetTimeEl = null;
-    for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
-      if ((el.textContent || '').trim() === hourMin) {
-        const parentText = (el.parentElement?.textContent || '').trim();
-        if (parentText.includes(ampm)) { targetTimeEl = el; break; }
-      }
+  function buildRequestedSlots(startTime, endTime) {
+    const [sh, sm] = String(startTime || '').split(':').map(Number);
+    const [eh, em] = String(endTime || '').split(':').map(Number);
+    if ([sh, sm, eh, em].some(Number.isNaN)) return [];
+    const startMinutes = sh * 60 + sm;
+    const endMinutes = eh * 60 + em;
+    const slots = [];
+    for (let minute = startMinutes; minute < endMinutes; minute += 30) {
+      slots.push(`${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`);
     }
-    // ampm 무시 fallback
-    if (!targetTimeEl) {
+    return slots;
+  }
+
+  const requestedSlots = buildRequestedSlots(start, end);
+  if (requestedSlots.length === 0) {
+    log('  ⚠️ 차단 검증 슬롯 계산 실패');
+    return false;
+  }
+
+  const result = await page.evaluate((roomType, requestedSlots) => {
+    function toDisplayToken(time24) {
+      const [hh, mm] = String(time24 || '').split(':').map(Number);
+      if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+      const isAM = hh < 12;
+      const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+      return {
+        ampm: isAM ? '오전' : '오후',
+        hourMin: `${dispH}:${String(mm).padStart(2, '0')}`,
+      };
+    }
+
+    function findTargetY(time24) {
+      const token = toDisplayToken(time24);
+      if (!token) return null;
+      let targetTimeEl = null;
       for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
-        if ((el.textContent || '').trim() === hourMin) { targetTimeEl = el; break; }
+        if ((el.textContent || '').trim() === token.hourMin) {
+          const parentText = (el.parentElement?.textContent || '').trim();
+          if (parentText.includes(token.ampm)) { targetTimeEl = el; break; }
+        }
       }
+      if (!targetTimeEl) {
+        for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
+          if ((el.textContent || '').trim() === token.hourMin) { targetTimeEl = el; break; }
+        }
+      }
+      if (!targetTimeEl) return null;
+      targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const rect = targetTimeEl.getBoundingClientRect();
+      return rect.top + rect.height / 2;
     }
-    if (!targetTimeEl) return { verified: false, reason: `time "${hourMin}" not found` };
 
-    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
-    const timeRect = targetTimeEl.getBoundingClientRect();
-    const targetY = timeRect.top + timeRect.height / 2;
+    function parseSlotState(btn) {
+      const cls = String(btn.className || '');
+      const title = String(btn.getAttribute('title') || '').trim();
+      const txt = String(btn.textContent || '').trim().replace(/\s+/g, '');
+
+      const isBlocked =
+        cls.includes('suspended') ||
+        cls.includes('btn-danger') ||
+        title === '예약불가' ||
+        txt.includes('예약불가');
+
+      const isAvailable =
+        cls.includes('avail') ||
+        cls.includes('btn-info') ||
+        title === '예약가능' ||
+        txt.includes('예약가능');
+
+      let state = 'unknown';
+      if (isBlocked) state = 'blocked';
+      else if (isAvailable) state = 'available';
+
+      return {
+        state,
+        cls,
+        title,
+        txt,
+      };
+    }
 
     // 2. 룸 컬럼 X 범위 (헤더 영역 Y < 450)
     let roomXRange = null;
@@ -1455,34 +1571,58 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       }
     }
 
-    // 3. calendar-btn 중 suspended 클래스 찾기 (예약불가 = class includes "suspended")
+    // 3. calendar-btn 상태 파싱 (class/title/text 기준)
     const calBtns = Array.from(document.querySelectorAll(
       '.calendar-btn, [class*="calendar-btn"]'
     )).filter(b => b.offsetParent !== null);
 
-    let foundSuspended = null;
-    for (const btn of calBtns) {
-      const cls = btn.className || '';
-      if (!cls.includes('suspended') && !cls.includes('btn-danger')) continue;
-      const r = btn.getBoundingClientRect();
-      // Y 범위: targetY ±120px (넉넉하게)
-      if (Math.abs((r.top + r.height / 2) - targetY) > 120) continue;
-      // 룸 X 범위
-      if (roomXRange) {
-        const cx = r.left + r.width / 2;
-        if (cx < roomXRange.left - 20 || cx > roomXRange.right + 20) continue;
+    const matchedSlots = [];
+    const missingSlots = [];
+    for (const slot of requestedSlots) {
+      const targetY = findTargetY(slot);
+      if (targetY === null) {
+        missingSlots.push({ slot, reason: 'time_not_found' });
+        continue;
       }
-      foundSuspended = { cls: cls.slice(0, 80), x: Math.round(r.left), y: Math.round(r.top), txt: (btn.textContent || '').trim() };
-      break;
+      let foundSuspended = null;
+      for (const btn of calBtns) {
+        const slotState = parseSlotState(btn);
+        if (slotState.state !== 'blocked') continue;
+        const r = btn.getBoundingClientRect();
+        if (Math.abs((r.top + r.height / 2) - targetY) > 40) continue;
+        if (roomXRange) {
+          const cx = r.left + r.width / 2;
+          if (cx < roomXRange.left - 20 || cx > roomXRange.right + 20) continue;
+        }
+        const buttonKey = `${Math.round(r.left)}:${Math.round(r.top)}:${Math.round(r.width)}:${Math.round(r.height)}`;
+        const cy = r.top + r.height / 2;
+        const halfHeight = r.height / 2;
+        const coversTargetSlot = Math.abs(cy - targetY) <= Math.max(40, halfHeight + 8);
+        if (!coversTargetSlot) continue;
+        foundSuspended = {
+          slot,
+          key: buttonKey,
+          cls: slotState.cls.slice(0, 80),
+          title: slotState.title,
+          x: Math.round(r.left),
+          y: Math.round(r.top),
+          h: Math.round(r.height),
+          txt: slotState.txt,
+        };
+        break;
+      }
+      if (foundSuspended) matchedSlots.push(foundSuspended);
+      else missingSlots.push({ slot, reason: 'suspended_not_found' });
     }
 
     return {
-      verified: !!foundSuspended,
-      suspendedBtn: foundSuspended,
-      targetY: Math.round(targetY),
+      verified: missingSlots.length === 0,
+      requestedSlots,
+      matchedSlots,
+      missingSlots,
       roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
     };
-  }, roomType, ampm, hourMin);
+  }, roomType, requestedSlots);
 
   log(`  확인 결과: ${JSON.stringify(result)}`);
   return result.verified;
@@ -1806,6 +1946,7 @@ async function blockSlotOnly(entry) {
 
   let naverBrowser = null;
   let naverPg = null;
+  let exitCode = 1;
   try {
     naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
     log('✅ CDP 연결 성공');
@@ -1826,9 +1967,11 @@ async function blockSlotOnly(entry) {
     } else {
       // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
       let blocked = false;
+      let blockResult = { ok: false, applied: false, reason: 'not_started' };
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          blocked = await blockNaverSlot(naverPg, entry);
+          blockResult = await blockNaverSlot(naverPg, entry);
+          blocked = Boolean(blockResult?.ok);
           break;
         } catch (err) {
           if (err.message.includes('detached Frame') && attempt === 1) {
@@ -1852,9 +1995,18 @@ async function blockSlotOnly(entry) {
         blockedAt:    blocked ? nowKST() : null,
       });
 
+      if (!blocked) {
+        blocked = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-recheck' });
+        log(`  🔁 대리등록 후 독립 재검증: ${blocked ? '✅ 차단 확인' : '❌ 차단 미확인'}`);
+      }
+
       if (blocked) {
         log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸` });
+      } else if (blockResult?.applied) {
+        log(`⚠️ 네이버 차단 검증 불확실 — 화면 확인 권장`);
+        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `⚠️ [대리등록] 네이버 차단 검증 불확실 — 화면 확인 권장\n${name} ${date} ${start}~${end} ${room}룸` });
+        blocked = true;
       } else {
         log(`⚠️ 네이버 차단 실패 — 수동 확인 필요`);
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });
@@ -2155,6 +2307,77 @@ async function unblockSlotOnly(entry) {
   process.exit(exitCode);
 }
 
+async function verifyBlockStateInFreshPage(naverBrowser, entry, options = {}) {
+  const { date, start, end, room } = entry;
+  const { capturePrefix = null } = options;
+  const verifyPage = await naverBrowser.newPage();
+  try {
+    verifyPage.setDefaultTimeout(30000);
+    await verifyPage.setViewport({ width: 1920, height: 1080 });
+
+    const capture = async (stage) => {
+      if (!capturePrefix) return null;
+      const safeStage = String(stage || 'stage').replace(/[^a-z0-9_-]+/gi, '-');
+      const ssPath = `/tmp/${capturePrefix}-${date}-${safeStage}.png`;
+      await verifyPage.screenshot({ path: ssPath, fullPage: false }).catch(() => null);
+      log(`📸 [${safeStage}] 스크린샷: ${ssPath}`);
+      return ssPath;
+    };
+
+    const verifyLoggedIn = await naverBookingLogin(verifyPage);
+    if (!verifyLoggedIn) {
+      await capture('login-failed');
+      return false;
+    }
+
+    await verifyPage.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+    await verifyPage.waitForNetworkIdle({ idleTime: 800, timeout: 15000 }).catch(() => null);
+    await delay(1200);
+    await capture('calendar-open');
+    const dateSelected = await selectBookingDate(verifyPage, date);
+    if (!dateSelected) {
+      log(`⚠️ 검증용 날짜 선택 실패: ${date}`);
+      await capture('date-select-failed');
+      return false;
+    }
+    await capture('date-selected');
+    const verified = await verifyBlockInGrid(verifyPage, room, start, roundUpToHalfHour(end));
+    await capture(verified ? 'verified' : 'verify-failed');
+    return verified;
+  } finally {
+    try { await verifyPage.close(); } catch {}
+  }
+}
+
+// ─── verify-slot 단독 모드 (네이버 상태 검증 전용, 변경 없음) ───────────────
+// 사용: node pickko-kiosk-monitor.js --verify-slot --date=2026-03-03 --start=10:00 --end=12:00 --room=A1
+
+async function verifySlotOnly(entry) {
+  const { date, start, end, room, name = '고객' } = entry;
+  log(`\n🔎 [verify-slot 모드] 네이버 상태 검증: ${name} ${date} ${start}~${end} ${room}`);
+
+  let wsEndpoint = null;
+  try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
+  if (!wsEndpoint) {
+    log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 검증 불가');
+    process.exit(1);
+  }
+
+  let naverBrowser = null;
+  let exitCode = 1;
+  try {
+    naverBrowser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+    log('✅ CDP 연결 성공');
+    const verified = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-verify' });
+    log(`✅ [verify-slot 결과] ${verified ? '차단 확인됨' : '차단 확인 실패'}: ${date} ${start}~${end} ${room}`);
+    exitCode = verified ? 0 : 1;
+  } finally {
+    if (naverBrowser) { try { naverBrowser.disconnect(); } catch {} }
+  }
+
+  process.exit(exitCode);
+}
+
 if (KIOSK_ARGS['block-slot']) {
   // 대리등록 후 네이버 차단 단독 모드
   blockSlotOnly({
@@ -2166,6 +2389,18 @@ if (KIOSK_ARGS['block-slot']) {
     room:     KIOSK_ARGS.room,
   }).catch(err => {
     log(`❌ block-slot 오류: ${err.message}`);
+    process.exit(1);
+  });
+} else if (KIOSK_ARGS['verify-slot']) {
+  // 네이버 상태 검증 전용 모드 (변경 없음)
+  verifySlotOnly({
+    name: KIOSK_ARGS.name || '고객',
+    date: KIOSK_ARGS.date,
+    start: KIOSK_ARGS.start,
+    end: KIOSK_ARGS.end,
+    room: KIOSK_ARGS.room,
+  }).catch(err => {
+    log(`❌ verify-slot 오류: ${err.message}`);
     process.exit(1);
   });
 } else if (KIOSK_ARGS['unblock-slot']) {

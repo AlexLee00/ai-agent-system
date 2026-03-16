@@ -14,6 +14,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
 import https from 'https';
+import { execFile } from 'child_process';
 import ccxt from 'ccxt';
 import yaml from 'js-yaml';
 import * as db from '../shared/db.js';
@@ -57,6 +58,18 @@ const INTEL_CACHE_MAX = 500;
 const _candidateIntelCache = new Map();
 const EXTERNAL_WARN_TTL = 6 * 3600 * 1000;
 const _externalWarnCache = new Map();
+
+function execCurl(args) {
+  return new Promise((resolve, reject) => {
+    execFile('curl', args, { maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || stdout?.trim() || error.message));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
 
 function _screeningLabel(market) {
   return market === 'crypto' ? '암호화폐' : market === 'domestic' ? '국내주식' : '해외주식';
@@ -238,6 +251,19 @@ export async function fetchFearGreedIndex() {
     console.log(`[아르고스] 공포탐욕지수(FNG): ${val} — ${cls}`);
     return val;
   } catch (e) {
+    if (e.name !== 'TimeoutError' && e.name !== 'AbortError') {
+      try {
+        const raw = await execCurl(['-sS', '-m', '10', 'https://api.alternative.me/fng/?limit=1']);
+        const data = JSON.parse(raw);
+        const val  = parseInt(data?.data?.[0]?.value ?? '50', 10);
+        const cls  = data?.data?.[0]?.value_classification || 'Neutral';
+        console.log(`[아르고스] 공포탐욕지수(FNG/curl): ${val} — ${cls}`);
+        return val;
+      } catch (fallbackError) {
+        console.warn(`[아르고스] FNG 조회 실패: ${fallbackError.message} — 50(중립) 사용`);
+        return 50;
+      }
+    }
     if (e.name === 'TimeoutError' || e.name === 'AbortError') {
       console.warn('[아르고스] FNG 타임아웃 — 50(중립) 사용');
     } else {

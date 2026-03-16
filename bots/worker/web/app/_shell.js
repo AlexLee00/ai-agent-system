@@ -1,6 +1,6 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
@@ -18,6 +18,11 @@ export default function AppShell({ children }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -36,6 +41,10 @@ export default function AppShell({ children }) {
   }, [user, loading, pathname, router]);
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
+
+  if (!mounted) {
+    return <div className="min-h-screen bg-gray-50" />;
+  }
 
   if (loading) {
     return (

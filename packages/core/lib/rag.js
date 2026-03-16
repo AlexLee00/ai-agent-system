@@ -22,12 +22,48 @@
  */
 
 const https  = require('https');
+const { execFile } = require('child_process');
 const pgPool = require('./pg-pool');
 const { getOpenAIKey } = require('./llm-keys');
 
 const SCHEMA = 'reservation';
 const EMBED_MODEL = 'text-embedding-3-small';
 const EMBED_DIM   = 1536;
+
+function execCurl(args) {
+  return new Promise((resolve, reject) => {
+    execFile('curl', args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        const detail = stderr?.trim() || stdout?.trim() || error.message;
+        reject(new Error(detail));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+async function createEmbeddingViaCurl(text, apiKey) {
+  const payload = JSON.stringify({
+    model: EMBED_MODEL,
+    input: text.slice(0, 8000),
+  });
+  const raw = await execCurl([
+    '-sS',
+    '-m', '20',
+    'https://api.openai.com/v1/embeddings',
+    '-H', `Authorization: Bearer ${apiKey}`,
+    '-H', 'Content-Type: application/json',
+    '-d', payload,
+  ]);
+  const resp = JSON.parse(raw);
+  if (resp.error) throw new Error(resp.error.message);
+  const vec = resp.data?.[0]?.embedding;
+  if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
+    throw new Error(`임베딩 차원 오류: ${vec?.length ?? '없음'}`);
+  }
+  return vec;
+}
 
 // 허용 컬렉션 (SQL Injection 방지용 화이트리스트)
 // 기존 rag-system(ChromaDB) 컬렉션 대응 포함
@@ -138,7 +174,18 @@ async function createEmbedding(text) {
       });
     });
 
-    req.on('error', reject);
+    req.on('error', async (error) => {
+      if (!['ENOTFOUND', 'EAI_AGAIN'].includes(error?.code)) {
+        reject(error);
+        return;
+      }
+      try {
+        const vec = await createEmbeddingViaCurl(text, apiKey);
+        resolve(vec);
+      } catch (fallbackError) {
+        reject(fallbackError);
+      }
+    });
     req.setTimeout(15000, () => { req.destroy(); reject(new Error('임베딩 타임아웃')); });
     req.write(body);
     req.end();

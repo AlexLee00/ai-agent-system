@@ -13,6 +13,12 @@ const COLLECT_CONCURRENCY_LIMIT = {
   kis_overseas: 4,
 };
 
+const COLLECT_WARNING_THRESHOLDS = {
+  overloadTasks: 60,
+  guardedTasks: 45,
+  wideUniverseSymbols: 20,
+};
+
 export async function runMarketCollectPipeline({
   market,
   symbols,
@@ -91,7 +97,7 @@ export async function runMarketCollectPipeline({
     failureRate: totalTasks > 0 ? failedTasks / totalTasks : 0,
     concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
     ragArtifactsSkipped: tasks.length,
-    overloadDetected: tasks.length >= 40,
+    overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
     warnings: buildCollectWarnings({
       tasks,
       symbols,
@@ -136,9 +142,9 @@ async function runWithConcurrencyLimit(tasks, limit) {
 
 function buildCollectWarnings({ tasks, symbols, failedTasks, totalTasks, limit }) {
   const warnings = [];
-  if (symbols.length >= 20) warnings.push('wide_universe');
-  if (tasks.length >= 40) warnings.push('collect_overload_detected');
-  if (limit <= 4 && tasks.length >= 30) warnings.push('concurrency_guard_active');
+  if (symbols.length >= COLLECT_WARNING_THRESHOLDS.wideUniverseSymbols) warnings.push('wide_universe');
+  if (tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks) warnings.push('collect_overload_detected');
+  if (limit <= 4 && tasks.length >= COLLECT_WARNING_THRESHOLDS.guardedTasks) warnings.push('concurrency_guard_active');
   if (failedTasks > 0 && totalTasks > 0 && failedTasks / totalTasks >= 0.2) warnings.push('collect_failure_rate_high');
   return warnings;
 }
