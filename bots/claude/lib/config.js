@@ -6,6 +6,20 @@ const path = require('path');
 
 const HOME    = os.homedir();
 const ROOT    = path.join(HOME, 'projects', 'ai-agent-system');
+const RUNTIME_CONFIG_PATH = path.join(ROOT, 'bots', 'claude', 'config.json');
+
+function _mergeDeep(base, override) {
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return base;
+  const next = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) {
+      next[key] = _mergeDeep(base[key], value);
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
 
 // 팀별 lib/ 디렉토리에서 .js 파일을 자동 수집 (신규 팀 추가 시 자동 포함)
 function _scanBotFiles() {
@@ -98,13 +112,50 @@ module.exports = {
     anthropic:{ host: 'api.anthropic.com',          path: '/v1/models',             label: 'Anthropic API' },
   },
 
-  // ─── 임계값 ────────────────────────────────────────
-  THRESHOLDS: {
-    diskMinMB:       500,    // 최소 여유 디스크 (MB)
-    logMaxMB:        50,     // 로그 파일 최대 크기 (MB)
-    errorRateWarn:   10,     // 최근 100줄 중 오류 경고 기준 (%)
-    errorRateCrit:   30,     // 최근 100줄 중 오류 위험 기준 (%)
-    memMinFreeGB:    2,      // 최소 여유 메모리 (GB)
-    npmAuditLevel:   'high', // npm audit 경고 수준 이상
-  },
+  // ─── 임계값 / 런타임 설정 ──────────────────────────
+  THRESHOLDS: (() => {
+    const defaults = {
+      diskMinMB:       500,
+      logMaxMB:        50,
+      errorRateWarn:   10,
+      errorRateCrit:   30,
+      memMinFreeGB:    2,
+      npmAuditLevel:   'high',
+    };
+    try {
+      const parsed = JSON.parse(fs.readFileSync(RUNTIME_CONFIG_PATH, 'utf8'));
+      return _mergeDeep(defaults, parsed?.runtime_config?.thresholds || {});
+    } catch {
+      return defaults;
+    }
+  })(),
+
+  RUNTIME: (() => {
+    const defaults = {
+      patterns: {
+        patternDays: 7,
+        newErrorHours: 8,
+        errorThreshold: 5,
+        warnThreshold: 3,
+        cleanupDays: 30,
+      },
+      n8n: {
+        healthUrl: 'http://127.0.0.1:5678/healthz',
+        criticalWebhookUrl: 'http://127.0.0.1:5678/webhook/critical',
+        timeoutMs: 5000,
+      },
+      quickcheck: {
+        alertCooldownMs: 60 * 60 * 1000,
+        restartCooldownMs: 30 * 60 * 1000,
+        maxRestarts: 3,
+        diskCriticalPercent: 90,
+      },
+    };
+    try {
+      const parsed = JSON.parse(fs.readFileSync(RUNTIME_CONFIG_PATH, 'utf8'));
+      return _mergeDeep(defaults, parsed?.runtime_config || {});
+    } catch {
+      return defaults;
+    }
+  })(),
 };

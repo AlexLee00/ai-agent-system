@@ -14,6 +14,7 @@
 const { execSync } = require('child_process');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
+const { getWorkerHealthRuntimeConfig } = require('../lib/runtime-config');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -29,6 +30,8 @@ const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai
 
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const healthRuntimeConfig = getWorkerHealthRuntimeConfig();
+const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
 
 // ─── 알림 발송 (general 토픽) ────────────────────────────────────
 
@@ -86,7 +89,7 @@ function getLaunchctlStatus() {
 
 async function checkHttp(url) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     return res.ok;
   } catch {
     return false;
@@ -95,7 +98,7 @@ async function checkHttp(url) {
 
 async function fetchJson(url) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
     if (!res.ok) return null;
     return await res.json();
   } catch {

@@ -958,5 +958,17 @@
     "label": "OpenClaw 자동 재시작",
     "status": "ok",
     "detail": "ai.openclaw.gateway 재시작 완료 — 원인: 누수 추세 — 6h +311MB 증가"
+  },
+  {
+    "ts": "2026-03-16T22:01:43.153Z",
+    "label": "체크섬 자동 갱신",
+    "status": "ok",
+    "detail": "git 변경 파일 7개 → 62개 갱신"
+  },
+  {
+    "ts": "2026-03-16T22:01:43.153Z",
+    "label": "버그 레포트 등록: 핵심 파일 체크섬 변경 감지",
+    "status": "warn",
+    "detail": "ID: DXT-300739"
   }
 ]

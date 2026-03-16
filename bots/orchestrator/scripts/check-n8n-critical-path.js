@@ -6,9 +6,11 @@ const {
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { getOrchestratorHealthConfig } = require('../lib/runtime-config');
 
-const HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
+const ORCHESTRATOR_HEALTH_CONFIG = getOrchestratorHealthConfig();
+const HEALTH_URL = process.env.N8N_HEALTH_URL || ORCHESTRATOR_HEALTH_CONFIG.n8nHealthUrl;
+const DEFAULT_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || ORCHESTRATOR_HEALTH_CONFIG.criticalWebhookUrl;
 
 async function main() {
   const resolvedWebhookUrl = await resolveProductionWebhookUrl({
@@ -17,14 +19,14 @@ async function main() {
     pathSuffix: 'critical',
   });
   const webhookUrl = resolvedWebhookUrl || DEFAULT_WEBHOOK_URL;
-  const healthOk = await checkHttp(HEALTH_URL, 2500);
+  const healthOk = await checkHttp(HEALTH_URL, ORCHESTRATOR_HEALTH_CONFIG.httpTimeoutMs);
   const webhook = await checkWebhookRegistration(webhookUrl, {
     severity: 'critical',
     service: 'health-check',
     status: 'probe',
     detail: 'n8n critical webhook health probe',
   }, {
-    timeoutMs: 5000,
+    timeoutMs: ORCHESTRATOR_HEALTH_CONFIG.webhookTimeoutMs,
   });
 
   console.log(JSON.stringify({

@@ -25,6 +25,16 @@ import { validateTradeReview } from './validate-trade-review.js';
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 
+function getMarketBucket(exchange) {
+  if (exchange === 'kis') return 'domestic';
+  if (exchange === 'kis_overseas') return 'overseas';
+  return 'crypto';
+}
+
+function getMarketLabel(bucket) {
+  return bucket === 'domestic' ? '국내장' : bucket === 'overseas' ? '해외장' : '암호화폐';
+}
+
 // ─── 설정 ────────────────────────────────────────────────────────────
 
 const args   = process.argv.slice(2);
@@ -89,13 +99,13 @@ async function fetchSignalStats(days) {
   try {
     const since = Date.now() - days * 86_400_000;
     const rows  = await db.query(
-      `SELECT action, COUNT(*) AS cnt FROM investment.signals
-       WHERE created_at >= ? GROUP BY action`,
+      `SELECT exchange, action, COUNT(*) AS cnt FROM investment.signals
+       WHERE created_at >= ? GROUP BY exchange, action`,
       [since]
     );
-    return rows.reduce((m, r) => ({ ...m, [r.action]: Number(r.cnt) }), {});
+    return rows;
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -145,10 +155,34 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
     ...Object.entries(byReason).map(([r, n]) => `  ${r}: ${n}건`),
   ];
 
-  if (Object.keys(signalStats).length > 0) {
-    lines.push(``, `신호 생성 (전체):`,
-      ...Object.entries(signalStats).map(([a, n]) => `  ${a}: ${n}건`)
-    );
+  const marketBuckets = ['crypto', 'domestic', 'overseas'];
+  const byMarket = Object.fromEntries(marketBuckets.map(bucket => [bucket, trades.filter(t => getMarketBucket(t.exchange) === bucket)]));
+  lines.push('', '시장별 거래 요약:');
+  for (const bucket of marketBuckets) {
+    const rows = byMarket[bucket];
+    if (rows.length === 0) {
+      lines.push(`  ${getMarketLabel(bucket)}: 거래 없음`);
+      continue;
+    }
+    const pnl = rows.reduce((sum, row) => sum + (row.pnl_net ?? 0), 0);
+    const winsInMarket = rows.filter(row => (row.pnl_net ?? 0) > 0).length;
+    const wrInMarket = ((winsInMarket / rows.length) * 100).toFixed(1);
+    lines.push(`  ${getMarketLabel(bucket)}: ${rows.length}건 | 승률 ${wrInMarket}% | 손익 $${pnl.toFixed(2)}`);
+  }
+
+  if (signalStats.length > 0) {
+    lines.push(``, `신호 생성 (시장별):`);
+    for (const bucket of marketBuckets) {
+      const rows = signalStats.filter(row => getMarketBucket(row.exchange) === bucket);
+      if (rows.length === 0) {
+        lines.push(`  ${getMarketLabel(bucket)}: 기록 없음`);
+        continue;
+      }
+      const text = rows
+        .map(row => `${row.action}: ${Number(row.cnt)}건`)
+        .join(' / ');
+      lines.push(`  ${getMarketLabel(bucket)}: ${text}`);
+    }
   }
 
   if (rrSection?.text) {

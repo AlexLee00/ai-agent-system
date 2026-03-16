@@ -22,6 +22,7 @@ const { createErrorTracker } = require('../../lib/error-tracker');
 const { getKioskBlock, upsertKioskBlock, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
+const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -33,6 +34,7 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 // naver-monitor.js가 저장하는 CDP 엔드포인트 파일 (새 탭 연결용)
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
+const KIOSK_MONITOR_RUNTIME = getReservationKioskMonitorConfig();
 
 // ─── 유틸 ───────────────────────────────────────────────
 
@@ -2224,7 +2226,7 @@ const KIOSK_ARGS = process.argv.slice(2).reduce((acc, arg) => {
   return acc;
 }, {});
 
-const kioskErrorTracker = createErrorTracker({ label: 'kiosk-monitor', threshold: 3, persist: true });
+const kioskErrorTracker = createErrorTracker({ label: 'kiosk-monitor', threshold: KIOSK_MONITOR_RUNTIME.errorTrackerThreshold, persist: true });
 
 // ─── unblock-slot 단독 모드 (취소 후 네이버 해제 전용) ──────────────────
 // pickko-cancel-cmd.js가 픽코 취소 완료 후 이 모드로 호출

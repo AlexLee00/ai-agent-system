@@ -1,11 +1,13 @@
 const puppeteer = require('puppeteer');
+const { getReservationBrowserConfig } = require('./runtime-config');
 
 function getPickkoLaunchOptions() {
+  const runtime = getReservationBrowserConfig();
   const headless = process.env.PICKKO_HEADLESS === '1';
   return {
     headless,
     defaultViewport: headless ? { width: 1920, height: 1080 } : null,
-    protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || '180000', 10),
+    protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || String(runtime.pickkoProtocolTimeoutMs), 10),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -24,26 +26,26 @@ function setupDialogHandler(page, log) {
   });
 }
 
-const MAX_RETRIES = 3;
-
 /**
  * 브라우저 실행 (최대 3회 재시도 + 2초 대기)
  * @returns {Promise<import('puppeteer').Browser>}
  */
 async function launchBrowserWithRetry() {
+  const runtime = getReservationBrowserConfig();
+  const maxRetries = runtime.launchRetries;
   const opts = getPickkoLaunchOptions();
-  for (let i = 0; i < MAX_RETRIES; i++) {
+  for (let i = 0; i < maxRetries; i++) {
     try {
       const browser = await puppeteer.launch(opts);
       return browser;
     } catch (e) {
-      console.warn(`[browser] 브라우저 실행 실패 (${i + 1}/${MAX_RETRIES}):`, e.message);
-      if (i < MAX_RETRIES - 1) {
-        await new Promise(r => setTimeout(r, 2000));
+      console.warn(`[browser] 브라우저 실행 실패 (${i + 1}/${maxRetries}):`, e.message);
+      if (i < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, runtime.launchRetryDelayMs));
       }
     }
   }
-  throw new Error('[browser] 브라우저 실행 불가 — 3회 재시도 실패');
+  throw new Error(`[browser] 브라우저 실행 불가 — ${maxRetries}회 재시도 실패`);
 }
 
 /**
@@ -53,8 +55,9 @@ async function launchBrowserWithRetry() {
  * @param {number} [timeout=30000]
  */
 async function navigateWithTimeout(page, url, timeout = 30000) {
+  const runtime = getReservationBrowserConfig();
   try {
-    await page.goto(url, { timeout, waitUntil: 'networkidle2' });
+    await page.goto(url, { timeout: timeout || runtime.navigationTimeoutMs, waitUntil: 'networkidle2' });
   } catch (e) {
     if (e.name === 'TimeoutError' || e.message.includes('timeout')) {
       console.warn('[browser] 페이지 로드 타임아웃:', url);

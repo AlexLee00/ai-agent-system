@@ -6,9 +6,11 @@ const {
   checkWebhookRegistration,
 } = require('../../../packages/core/lib/health-provider');
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { getWorkerN8nRuntimeConfig } = require('../lib/runtime-config');
 
-const HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || 'http://127.0.0.1:5678/webhook/worker-chat-intake';
+const runtimeConfig = getWorkerN8nRuntimeConfig();
+const HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.healthUrl;
+const DEFAULT_WEBHOOK_URL = process.env.N8N_WORKER_WEBHOOK || runtimeConfig.workerWebhookUrl;
 
 async function main() {
   const resolvedWebhookUrl = await resolveProductionWebhookUrl({
@@ -17,13 +19,13 @@ async function main() {
     pathSuffix: 'worker-chat-intake',
   });
   const webhookUrl = resolvedWebhookUrl || DEFAULT_WEBHOOK_URL;
-  const healthOk = await checkHttp(HEALTH_URL, 2500);
+  const healthOk = await checkHttp(HEALTH_URL, Number(runtimeConfig.healthTimeoutMs || 2500));
   const webhook = await checkWebhookRegistration(webhookUrl, {
     company_id: 'master',
     user_id: 1,
     message: 'n8n intake health probe',
   }, {
-    timeoutMs: 5000,
+    timeoutMs: Number(runtimeConfig.webhookTimeoutMs || 5000),
   });
 
   console.log(JSON.stringify({

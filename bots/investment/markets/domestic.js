@@ -21,7 +21,7 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisSymbols, getKisMarketStatus, isPaperMode } from '../shared/secrets.js';
+import { getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
@@ -82,9 +82,8 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * @param {string[]} symbols  ex) ['005930', '000660']
  */
 export async function runDomesticCycle(symbols) {
-  const paperMode = isPaperMode();
+  const { paper: paperMode, tag } = getKisExecutionModeInfo('국내주식');
   const startTime = Date.now();
-  const tag       = paperMode ? '[PAPER]' : '[LIVE]';
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`🏦 ${tag} 국내주식 사이클 시작 — ${kst.toKST(new Date())}`);
@@ -277,11 +276,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   symbols = await appendHeldSymbols(symbols, 'kis');
 
-  if (isPaperMode()) {
-    console.log('📄 PAPER_MODE=true — 실주문 없이 신호 생성만 (Phase 3-B)');
-  } else {
-    console.log('🔴 PAPER_MODE=false — 실주문 실행 모드 (주의!)');
-  }
+  console.log(getKisExecutionModeInfo('국내주식').logLine);
 
   // 장중 체크
   const marketStatus = !force

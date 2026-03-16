@@ -14,6 +14,9 @@ const llmCache            = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
+
+const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const GEMS_LLM_CHAIN = [
@@ -392,7 +395,7 @@ ${_buildVariationBlock(sectionVariation)}
     }).catch(() => {});
   }
 
-  const MIN_CHARS_GENERAL = 8000;
+  const MIN_CHARS_GENERAL = Number(generationRuntimeConfig.gemsMinChars || 8000);
 
   // ── Continue 이어쓰기: 글자수 부족 시 2차 호출 (_THE_END_ 여부 무관) ──
   if (content.length < MIN_CHARS_GENERAL) {
@@ -401,7 +404,7 @@ ${_buildVariationBlock(sectionVariation)}
     // 마지막 800자만 컨텍스트로 전달 (전체 내용 전달 시 LLM이 새 글을 시작하는 문제 방지)
     const tailContext    = content.slice(-800);
     const continuePrompt = `[이전 내용 끝부분 (이미 작성됨 — 절대 반복 금지)]\n${tailContext}\n\n[지시] 위 내용이 끊긴 부분에서 바로 이어서 작성하라. 앞 내용은 이미 완성되었으므로 반드시 끊긴 지점부터 시작하라. 새 글을 처음부터 쓰지 말 것. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
-    const GEMS_CONTINUE_CHAIN = GEMS_LLM_CHAIN.map(c => ({ ...c, maxTokens: 8000 }));
+    const GEMS_CONTINUE_CHAIN = GEMS_LLM_CHAIN.map(c => ({ ...c, maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000) }));
     try {
       const cont = await callWithFallback({
         chain:        GEMS_CONTINUE_CHAIN,
@@ -661,7 +664,7 @@ ${linkingBlock}
   const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
     model,
     contextCarry: 200,
-    maxRetries:   1,
+    maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
     logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
     onChunkComplete: ({ id, charCount, index }) =>
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),

@@ -7,8 +7,11 @@ import { useAuth } from '@/lib/auth-context';
 import { getToken } from '@/lib/auth-context';
 import { getMenuPolicy } from '@/lib/menu-access';
 import { buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { getWorkerWebRuntimeConfig } from '@/lib/runtime-config';
 
 const API_BASE = '/api';
+const webRuntimeConfig = getWorkerWebRuntimeConfig();
+const WS_RECONNECT_DELAY_MS = Number(webRuntimeConfig.wsReconnectDelayMs || 2000);
 
 function CanvasCard({ ui }) {
   if (!ui) return null;
@@ -244,7 +247,7 @@ export default function WorkerAIWorkspace({
         if (wsRef.current === socket) wsRef.current = null;
         if (!stopped) {
           setLiveStatus('실시간 연결 끊김 - 재연결 시도 중');
-          reconnectTimerRef.current = window.setTimeout(connect, 2000);
+          reconnectTimerRef.current = window.setTimeout(connect, WS_RECONNECT_DELAY_MS);
         }
       };
       socket.onerror = () => setLiveStatus('실시간 연결 오류 - REST 폴백');

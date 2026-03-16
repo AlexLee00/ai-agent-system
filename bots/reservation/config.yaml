@@ -1,0 +1,14 @@
+runtime_config:
+  browser:
+    launchRetries: 3
+    launchRetryDelayMs: 2000
+    navigationTimeoutMs: 30000
+    pickkoProtocolTimeoutMs: 180000
+  naverMonitor:
+    maxRetries: 5
+    errorTrackerThreshold: 3
+    staleConfirmCount: 5
+    staleMinElapsedMs: 600000
+    staleExpireMs: 1800000
+  kioskMonitor:
+    errorTrackerThreshold: 3

@@ -27,6 +27,7 @@ import os
 import json
 import psycopg2
 from datetime import date as date_type, timedelta
+from runtime_config import get_rebecca_config
 
 # RAG 클라이언트 (실패해도 리포트 기능에 영향 없음)
 try:
@@ -42,6 +43,7 @@ PG_SKA = "dbname=jay options='-c search_path=ska,public'"
 PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
+REBECCA_RUNTIME = get_rebecca_config()
 
 
 # ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
@@ -685,8 +687,8 @@ def format_weekly_review(report):
         # 주간 평균 MAPE
         if valid:
             avg_mape = sum(a['mape'] for a in valid) / len(valid)
-            grade = ('✅ 양호' if avg_mape <= 10
-                     else ('🟡 주의' if avg_mape <= 20
+            grade = ('✅ 양호' if avg_mape <= REBECCA_RUNTIME['weeklyGradeGood']
+                     else ('🟡 주의' if avg_mape <= REBECCA_RUNTIME['weeklyGradeWarn']
                            else '🔴 모델 검토 필요'))
             accuracy_lines.append(f'주간 평균 MAPE: {avg_mape:.1f}% {grade}')
             if accuracy_health:
@@ -886,7 +888,7 @@ def run_rebecca(target_date_str=None, output_json=False):
     if anomalies and _rag:
         try:
             query = ' '.join(anomalies)[:200]
-            hits = _rag.search('operations', query, limit=3, threshold=0.55)
+            hits = _rag.search('operations', query, limit=3, threshold=REBECCA_RUNTIME['anomalyRagThreshold'])
             if hits:
                 rag_past_cases = '\n\n[과거 유사 사례]\n' + '\n'.join(
                     f'- {h["content"][:180]}' for h in hits

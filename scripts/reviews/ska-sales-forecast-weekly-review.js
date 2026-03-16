@@ -2,10 +2,12 @@
 'use strict';
 
 const pgPool = require('../../packages/core/lib/pg-pool');
+const { getSkaReviewConfig } = require('../../bots/ska/lib/runtime-config.js');
+const WEEKLY_REVIEW_CONFIG = getSkaReviewConfig().weekly;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
-  const days = Math.max(14, Number(daysArg?.split('=')[1] || 56));
+  const days = Math.max(WEEKLY_REVIEW_CONFIG.minDays, Number(daysArg?.split('=')[1] || WEEKLY_REVIEW_CONFIG.defaultDays));
   return { days, json: argv.includes('--json') };
 }
 
@@ -176,10 +178,10 @@ function buildRecommendations(weekly, weekdayBias, upcomingRisk) {
   if (recent) {
     if (recent.avgMape != null && recent.avgMape >= 20) {
       lines.push(`- 최근 주간 평균 MAPE가 ${recent.avgMape}%라서 예측 엔진 보정이 시급합니다.`);
-    } else if (recent.avgMape != null && recent.avgMape >= 12) {
+    } else if (recent.avgMape != null && recent.avgMape >= WEEKLY_REVIEW_CONFIG.avgMapeNotice) {
       lines.push(`- 최근 주간 평균 MAPE ${recent.avgMape}%로, 다음 주 보정 실험을 해볼 만합니다.`);
     }
-    if (Math.abs(recent.bias) >= 150000) {
+    if (Math.abs(recent.bias) >= WEEKLY_REVIEW_CONFIG.avgBiasWarn) {
       lines.push(`- 최근 주간 편향이 ${biasLabel(recent.bias)} 수준이라 주간 가산/감산 로직을 점검하는 게 좋습니다.`);
     }
   }
@@ -188,11 +190,11 @@ function buildRecommendations(weekly, weekdayBias, upcomingRisk) {
     lines.push(`- 전주 대비 MAPE가 ${prev.avgMape}% → ${recent.avgMape}%로 악화되어, 최근 데이터/환경 변수 품질을 다시 점검해야 합니다.`);
   }
 
-  if (weekdayBias[0] && weekdayBias[0].avgMape >= 20) {
+  if (weekdayBias[0] && weekdayBias[0].avgMape >= WEEKLY_REVIEW_CONFIG.weekdayMapeWarn) {
     lines.push(`- ${weekdayBias[0].weekday}요일 편향이 커서 요일별 보정 계수를 우선 손보는 게 좋습니다.`);
   }
 
-  if (upcomingRisk[0] && upcomingRisk[0].confidence < 0.4) {
+  if (upcomingRisk[0] && upcomingRisk[0].confidence < WEEKLY_REVIEW_CONFIG.confidenceWarn) {
     lines.push(`- ${upcomingRisk[0].date} 예측 확신도가 ${(upcomingRisk[0].confidence * 100).toFixed(0)}%라 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
@@ -203,7 +205,7 @@ async function main() {
   const { days, json } = parseArgs();
   const [rows, upcomingRows] = await Promise.all([
     loadRows(days),
-    loadUpcomingForecasts(),
+    loadUpcomingForecasts(WEEKLY_REVIEW_CONFIG.upcomingDays),
   ]);
 
   const weekly = buildWeeklySummary(rows);

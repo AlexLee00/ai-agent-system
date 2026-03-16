@@ -15,10 +15,17 @@ const { execSync } = require('child_process');
 const http   = require('http');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
+const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
 const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
+
+const runtimeConfig = getBlogHealthRuntimeConfig();
+const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
+const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
+const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
+const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
 
 async function notify(msg, level = 3) {
   try {
@@ -85,7 +92,13 @@ function getLaunchctlStatus() {
 function checkNodeServerHealth() {
   return new Promise(resolve => {
     const req = http.request(
-      { hostname: 'localhost', port: 3100, path: '/health', method: 'GET', timeout: 3000 },
+      {
+        hostname: NODE_SERVER_HEALTH_URL.hostname,
+        port: Number(NODE_SERVER_HEALTH_URL.port || 80),
+        path: `${NODE_SERVER_HEALTH_URL.pathname}${NODE_SERVER_HEALTH_URL.search}`,
+        method: 'GET',
+        timeout: NODE_SERVER_TIMEOUT_MS,
+      },
       res => {
         let body = '';
         res.on('data', d => body += d);
@@ -105,10 +118,10 @@ function checkNodeServerHealth() {
     );
     req.on('timeout', () => {
       req.destroy();
-      resolve({ ok: false, detail: '응답 없음 (3000ms 타임아웃)' });
+      resolve({ ok: false, detail: `응답 없음 (${NODE_SERVER_TIMEOUT_MS}ms 타임아웃)` });
     });
     req.on('error', e => {
-      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? '포트 3100 연결 거부' : e.message.slice(0, 80) });
+      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? `포트 ${NODE_SERVER_HEALTH_URL.port || 80} 연결 거부` : e.message.slice(0, 80) });
     });
     req.end();
   });
@@ -117,7 +130,13 @@ function checkNodeServerHealth() {
 function checkN8nHealth() {
   return new Promise(resolve => {
     const req = http.request(
-      { hostname: 'localhost', port: 5678, path: '/healthz', method: 'GET', timeout: 2500 },
+      {
+        hostname: N8N_HEALTH_URL.hostname,
+        port: Number(N8N_HEALTH_URL.port || 80),
+        path: `${N8N_HEALTH_URL.pathname}${N8N_HEALTH_URL.search}`,
+        method: 'GET',
+        timeout: N8N_HEALTH_TIMEOUT_MS,
+      },
       res => {
         let body = '';
         res.on('data', d => body += d);
@@ -137,10 +156,10 @@ function checkN8nHealth() {
     );
     req.on('timeout', () => {
       req.destroy();
-      resolve({ ok: false, detail: '응답 없음 (2500ms 타임아웃)' });
+      resolve({ ok: false, detail: `응답 없음 (${N8N_HEALTH_TIMEOUT_MS}ms 타임아웃)` });
     });
     req.on('error', e => {
-      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? '포트 5678 연결 거부' : e.message.slice(0, 80) });
+      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? `포트 ${N8N_HEALTH_URL.port || 80} 연결 거부` : e.message.slice(0, 80) });
     });
     req.end();
   });

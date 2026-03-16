@@ -8,6 +8,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
+import { formatExecutionTag } from './secrets.js';
 const {
   publishEventPipeline,
   buildSeverityTargets,
@@ -58,7 +59,7 @@ export function sendTelegram(message) {
 // ─── 신호 포매터 ─────────────────────────────────────────────────────
 
 export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
-  const tag   = paper ? '[PAPER] ' : '';
+  const tag   = formatExecutionTag(paper);
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} ${action} 신호 — ${symbol}`,
@@ -70,7 +71,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
 }
 
 export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpPrice, slPrice, tpslSource, capitalInfo, memo }) {
-  const tag   = paper ? '[PAPER] ' : '';
+  const tag   = formatExecutionTag(paper);
   const emoji = side === 'buy'       ? '✅ 매수'
               : side === 'sell'      ? '✅ 매도'
               : side === 'absorb'    ? '🔄 BTC 흡수'
@@ -99,7 +100,7 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
 }
 
 export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoning, paper }) {
-  const tag   = paper ? '[PAPER] ' : '';
+  const tag   = formatExecutionTag(paper);
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} [국내주식] ${action} 신호 — ${symbol}`,
@@ -111,7 +112,7 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
 }
 
 export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence, reasoning, paper }) {
-  const tag   = paper ? '[PAPER] ' : '';
+  const tag   = formatExecutionTag(paper);
   const emoji = action === 'BUY' ? '🟢' : action === 'SELL' ? '🔴' : '🟡';
   const msg   = [
     `${tag}${emoji} [미국주식] ${action} 신호 — ${symbol}`,
@@ -185,7 +186,7 @@ export function notifyJournalEntry({
 }) {
   const SEP      = '═'.repeat(19);
   const sep      = '─'.repeat(19);
-  const tag      = isPaper ? '[PAPER] ' : '';
+  const tag      = formatExecutionTag(isPaper);
   const dir      = direction === 'long' ? 'LONG' : 'SHORT';
   const currency = market === 'domestic' ? '₩' : '$';
   const fmtPrice = (v) => v != null ? `${currency}${Number(v).toLocaleString()}` : '-';
@@ -290,7 +291,7 @@ export function notifySettlement({
 }) {
   const SEP     = '═'.repeat(19);
   const sep     = '─'.repeat(19);
-  const tag     = paper ? '[PAPER] ' : '';
+  const tag     = formatExecutionTag(paper);
   const dir     = side === 'buy' ? 'LONG' : 'SHORT';
   const pnlSign = (pnl || 0) >= 0 ? '+' : '';
   const currency = market === 'domestic' ? '₩' : '$';
@@ -389,7 +390,7 @@ export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losse
 }
 
 export function notifyCycleSummary({ cycle, symbols, results, paperMode, durationMs }) {
-  const tag   = paperMode ? '[PAPER] ' : '';
+  const tag   = formatExecutionTag(paperMode);
   const lines = [
     `${tag}🔄 ${cycle} 사이클 완료`,
     `심볼: ${symbols.join(', ')}`,

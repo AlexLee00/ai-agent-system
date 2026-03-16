@@ -1,8 +1,11 @@
 'use client';
 import { createContext, useContext, useState, useEffect } from 'react';
+import { getWorkerWebRuntimeConfig } from '@/lib/runtime-config';
 
 const AuthContext = createContext(null);
-const REQUEST_TIMEOUT_MS = 5000;
+const webRuntimeConfig = getWorkerWebRuntimeConfig();
+const REQUEST_TIMEOUT_MS = Number(webRuntimeConfig.authRequestTimeoutMs || 5000);
+const AUTH_RELEASE_BUFFER_MS = Number(webRuntimeConfig.authReleaseBufferMs || 1500);
 
 function normalizeEnabledMenus(enabledMenus) {
   if (!Array.isArray(enabledMenus)) return enabledMenus ?? null;
@@ -80,7 +83,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('worker_token');
       } catch {}
       setLoading(false);
-    }, REQUEST_TIMEOUT_MS + 1500);
+    }, REQUEST_TIMEOUT_MS + AUTH_RELEASE_BUFFER_MS);
 
     let token = null;
     try {
