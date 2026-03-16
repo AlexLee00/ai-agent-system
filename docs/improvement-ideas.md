@@ -1,6 +1,6 @@
 # 플랫폼 개발 추적 문서
 
-> 마지막 업데이트: 2026-03-16
+> 마지막 업데이트: 2026-03-17
 > 목적: 로컬 문서, 실제 코드 구현 상태, 최근 커밋 이력을 기준으로 플랫폼 개발 진행 상황을 누적 추적한다.
 
 ---
@@ -71,6 +71,10 @@
   - 브리핑
   - n8n live webhook 경로 점검
   - 스카 운영 알람/프로세스 안정화
+- 운영 중 변경 가능한 값의 외부화도 큰 축으로 올라왔다.
+  - 팀별 `runtime_config`
+  - 설정 조회 스크립트
+  - 운영 가이드 문서
 - 지금부터의 핵심은 `새 축 확장`보다 `기존 축의 실제 업무 연결 마무리`다.
 
 ### 지금 가장 중요한 개발 축
@@ -80,6 +84,7 @@
 3. 스카 n8n node화 2차와 write/ops 계열 고도화
 4. 스카 RAG의 retrieval-first 활용 강화
 5. 권한별 LLM 정책의 실제 런타임 반영
+6. 팀별 운영 설정 튜닝 루프 자동화
 
 ### 노션 기준 제품 방향 반영
 
@@ -183,6 +188,25 @@
 | 완료 | 2026-03-15 | critical webhook 진단 | 오케스트레이터/클로드 헬스에 critical webhook 상태 노출 | [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js), [bots/claude/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js) |
 | 완료 | 2026-03-15 | 알림 템플릿 정리 | critical 알림 health probe 차단, 한글화, 개인 DM 제거 | [bots/orchestrator/n8n/setup-n8n.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/n8n/setup-n8n.js), [bots/orchestrator/n8n/setup-ska-workflows.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/n8n/setup-ska-workflows.js) |
 
+### 4.8 팀별 운영 변수 외부화
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-17 | investment runtime config | 루나/네메시스/time-mode 임계치와 주문 운영값을 `config.yaml` + 공용 loader로 외부화 | [bots/investment/shared/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/runtime-config.js), [bots/investment/config.yaml](/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml) |
+| 완료 | 2026-03-17 | reservation runtime config | browser launch retry, timeout, stale 판정, monitor 재시도 한도를 `config.yaml`로 외부화 | [bots/reservation/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/runtime-config.js), [bots/reservation/config.yaml](/Users/alexlee/projects/ai-agent-system/bots/reservation/config.yaml) |
+| 완료 | 2026-03-17 | ska runtime config | forecast / rebecca / 리뷰 스크립트 임계치를 Python/Node 공용 설정 파일로 외부화 | [bots/ska/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/runtime-config.js), [bots/ska/src/runtime_config.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/runtime_config.py), [bots/ska/config.json](/Users/alexlee/projects/ai-agent-system/bots/ska/config.json) |
+| 완료 | 2026-03-17 | worker/orchestrator runtime config | worker lead, n8n intake, health timeout, orchestrator critical path timeout을 설정 파일에서 조정 가능하게 정리 | [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js), [bots/orchestrator/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/runtime-config.js) |
+| 완료 | 2026-03-17 | claude/blog runtime config | dexter quickcheck/n8n/pattern 기준과 blog generation/runtime threshold를 외부화 | [bots/claude/lib/config.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/config.js), [bots/blog/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/runtime-config.js) |
+| 완료 | 2026-03-17 | 운영 설정 조회/가이드 | 팀별 설정 위치와 의미를 한 번에 확인하는 스크립트와 가이드 문서 추가 | [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js), [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md) |
+
+### 4.9 운영 분석 자동화 축 정리
+
+| 상태 | 마지막 구현일 | 항목 | 내용 | 근거 |
+|---|---|---|---|---|
+| 완료 | 2026-03-17 | 제이/운영/스카 리뷰 체계 | 제이 LLM, 일일 운영 분석, 스카 매출 예측 일일/주간 리뷰 자동화 기준 정리 | [scripts/reviews](/Users/alexlee/projects/ai-agent-system/scripts/reviews), [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md) |
+| 완료 | 2026-03-17 | 자동매매 시장 분리 리뷰 | 일일/주간 자동매매 리뷰가 `암호화폐 / 국내장 / 해외장`을 강제로 분리해 보도록 정리 | [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js), [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js) |
+| 진행 중 | 2026-03-17 | 설정값 변경 제안 자동화 | 운영 분석 결과를 바탕으로 `runtime_config` 변경 후보를 제안하는 자동화는 설계 완료, 실제 운영 축적 후 고도화 필요 | [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md) |
+
 ---
 
 ## 5. 진행 중인 개발 축
@@ -195,6 +219,7 @@
 | 진행 중 | 2026-03-15 | reporting-hub 이관 마무리 | 주요 producer 대부분 이관 | team-bus/잔여 직결 발송 경로 전수 점검 |
 | 진행 중 | 2026-03-15 | 스카 n8n node화 | read 명령과 bridge, workflow draft는 완료 | write/ops 계열 `store_resolution`, `analyze_unknown`, restart 계열 보수적 이관 |
 | 진행 중 | 2026-03-15 | 스카 RAG 활용 | 저장/조회 adapter는 정리됨 | retrieval-first 운영 힌트, 실패 복구 사례 검색 연결 |
+| 진행 중 | 2026-03-17 | 운영 설정 기반 튜닝 루프 | 팀별 runtime config 외부화는 완료. 다음은 일일/주간 분석에서 실제 변경 후보를 제안하는 루프 구축 | 운영 데이터 누적 후 변경 제안 자동화 고도화 |
 
 ---
 
@@ -220,6 +245,7 @@
 | 미완료 | accepted_without_edit 기반 품질 랭킹 자동화 | 일별/주별 추이 리포트 가능 |
 | 미완료 | 블로/클로드 세부 수정 diff 심화 | 현재는 승인/채택 중심, `field_edited`는 워커가 가장 깊음 |
 | 미완료 | training/export 자동화 | analytics export는 준비됐지만 training dataset 연결은 아직 없음 |
+| 진행 중 | 설정 변경 이력/튜닝 근거 축적 | 어떤 `runtime_config` 값을 왜 바꿨는지 운영 근거를 남기는 루프가 필요 |
 
 ### 6.3 스카팀 고도화
 
@@ -229,6 +255,7 @@
 | 미완료 | 스카 운영 명령 공용화 마감 | restart/launchd 계열은 로컬 fallback 유지하며 더 표준화 가능 |
 | 미완료 | 스카 RAG retrieval 활용 강화 | 실패 복구/과거 해결사례 검색을 커맨더 의사결정에 반영 |
 | 미완료 | 스카 예측 데이터셋 학습 루프 | feedback/RAG와 연결한 장기 품질 개선은 아직 후순위 |
+| 진행 중 | 스카 예측 운영 튜닝 루프 | 일일/주간 예측 리뷰는 올라왔고, 다음은 실제 threshold 조정 근거 자동 제안 |
 
 ### 6.4 플랫폼 장기 항목
 
@@ -292,9 +319,13 @@
   - health/reporting 통합
   - n8n node 초안
   - 리스크/거래 리뷰 체계
+  - 국내/해외 모의투자 기준 재정렬
+  - 시장별(`암호화폐 / 국내장 / 해외장`) 일일/주간 리뷰 분리
+  - 실행 모드 / 브로커 / `[PAPER]` 표현 공용화
 - 남은 핵심:
   - 성과 누적 기반 학습 루프
   - 실계좌 전환 판단
+  - runtime config 기반 공격성/보수성 조정 자동 제안
 
 ### 블로
 
@@ -304,6 +335,7 @@
   - curriculum planner
   - feedback layer 2차 연결
   - reporting-hub 연결
+  - generation/runtime threshold 외부화
 - 남은 핵심:
   - 세부 수정 피드백 심화
   - 장문 생성 품질/후속 QA 자동화
@@ -342,6 +374,7 @@
 3. leave/documents 등 남은 메뉴에 확인 결과 창 확장
 4. 관리자 현황 위젯과 마스터 전용 봇 대화 경험 고도화
 5. 메뉴 정책을 문서/운영 가이드와 완전히 동기화
+6. worker/orchestrator/claude/blog 설정값 변경 이력 관찰 루프 구축
 
 이유:
 - 노션의 워커 v2 방향과 가장 직접적으로 연결됨
@@ -356,6 +389,7 @@
 4. feedback 주간 품질 자동화
 5. reporting-hub 잔여 producer 전수 마감
 6. team-bus와 운영 리포팅 경계 정리
+7. `runtime_config` 변경 후보 자동 제안
 
 이유:
 - 현재 구조를 더 똑똑하게 만드는 고도화 작업
@@ -370,6 +404,7 @@
 4. Agent-to-UI / Generative UI 실험 범위 정의
 5. Grafana/Loki 또는 커스텀 시각화 대시보드 설계
 6. Playwright 기반 업무의 API 전환 범위 정리
+7. 설정 변경 이력 / 성과 상관관계 추적 방식 정의
 
 이유:
 - 장비 도착 전까지 문서와 절차를 고정해야 실제 전환이 빨라짐
