@@ -43,8 +43,15 @@
 - [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
 - [bots/worker/web/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/runtime-config.js)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js
+cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run build
+```
+
 ## 관련 문서
 
 - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
 - [improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
-

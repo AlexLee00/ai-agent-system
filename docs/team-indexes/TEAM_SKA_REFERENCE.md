@@ -33,9 +33,17 @@
 - [bots/ska/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/runtime-config.js)
 - [bots/ska/src/runtime_config.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/runtime_config.py)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js --days=28
+bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh
+```
+
 ## 관련 문서
 
 - [bots/reservation/context/DEV_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/DEV_SUMMARY.md)
 - [bots/reservation/context/HANDOFF.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/HANDOFF.md)
 - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
-

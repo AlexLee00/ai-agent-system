@@ -24,6 +24,13 @@
 - [bots/blog/config.json](/Users/alexlee/projects/ai-agent-system/bots/blog/config.json)
 - [bots/blog/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/runtime-config.js)
 
+## 자주 쓰는 명령어
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipeline-path.js
+```
+
 ## 관련 문서
 
 - [team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
