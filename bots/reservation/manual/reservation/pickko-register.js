@@ -24,6 +24,7 @@ const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { transformAndNormalizeData } = require('../../lib/validation');
 const { addReservation, updateReservation, getReservation, markSeen, upsertKioskBlock } = require('../../lib/db');
+const { buildReservationId } = require('../../lib/reservation-key');
 const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
 
@@ -31,6 +32,9 @@ const ARGS = parseArgs(process.argv);
 
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = process.env.MODE || 'ops';
+const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
+const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS.skipNameSync);
+const SKIP_NAVER_BLOCK = IS_MANUAL_RETRY || Boolean(ARGS['skip-naver-block'] || ARGS.skipNaverBlock);
 
 // ── 필수 인자 검증 ──
 const required = ['date', 'start', 'end', 'room', 'phone'];
@@ -74,7 +78,12 @@ const childArgs = [
 
 const child = spawn('node', childArgs, {
   cwd: __dirname,
-  env: { ...process.env, MODE: process.env.MODE || 'ops' },
+  env: {
+    ...process.env,
+    MODE: process.env.MODE || 'ops',
+    SKIP_NAME_SYNC: SKIP_NAME_SYNC ? '1' : '0',
+    MANUAL_RETRY: IS_MANUAL_RETRY ? '1' : '0',
+  },
   // child stdout/stderr → 부모의 stderr (로그용), 부모 stdout은 JSON 전용
   stdio: ['ignore', process.stderr, process.stderr]
 });
@@ -83,21 +92,21 @@ child.on('error', err => {
   fail(`pickko-accurate.js 실행 실패: ${err.message}`);
 });
 
-child.on('close', code => {
-  const key = `manual-${normalized.phone}-${normalized.date}-${normalized.start.replace(':', '')}`;
+child.on('close', async (code) => {
+  const key = buildReservationId(normalized.phone, normalized.date, normalized.start);
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
   if (code === 0 || code === 2) {
     // DB에 항목 기록 (code 0: manual 완료, code 2: 시간 경과 완료)
-    const pickkoStatus = code === 2 ? 'time_elapsed' : 'manual';
+    const pickkoStatus = code === 2 ? 'time_elapsed' : (IS_MANUAL_RETRY ? 'manual_retry' : 'manual');
     const errorReason  = code === 2 ? '시간 경과로 등록 불가' : null;
     try {
-      const existing = getReservation(key);
+      const existing = await getReservation(key);
       if (existing) {
-        updateReservation(key, { status: 'completed', pickkoStatus, errorReason, pickkoStartTime: now });
+        await updateReservation(key, { status: 'completed', pickkoStatus, errorReason, pickkoStartTime: now });
       } else {
-        addReservation(key, {
-          compositeKey: `${normalized.phone}-${normalized.date}-${normalized.start}`,
+        await addReservation(key, {
+          compositeKey: key,
           name: customerName,
           phone: normalized.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3'),
           phoneRaw: normalized.phone,
@@ -113,13 +122,13 @@ child.on('close', code => {
           pickkoStartTime: now,
         });
       }
-      markSeen(key);
+      await markSeen(key);
     } catch (e) {
-      // seen 기록 실패는 등록 성공에 영향 없음
+      process.stderr.write(`[pickko-register] 예약 상태 반영 실패 (${key}): ${e.message}\n`);
     }
 
     // 픽코 등록 성공(code 0) 시 네이버 예약불가 처리
-    if (code === 0) {
+    if (code === 0 && !SKIP_NAVER_BLOCK) {
       // 1. DB 선등록 (naverBlocked=false) — spawn 실패 시 kiosk-monitor Phase 2A가 자동 재시도
       upsertKioskBlock(normalized.phone, normalized.date, normalized.start, {
         name: customerName, date: normalized.date, start: normalized.start,
@@ -149,7 +158,9 @@ child.on('close', code => {
 
     const message = code === 2
       ? `시간 경과로 픽코 등록 생략: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — 픽코에서 직접 확인 필요`
-      : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 중`;
+      : SKIP_NAVER_BLOCK
+        ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
+        : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 중`;
     process.stdout.write(JSON.stringify({ success: true, message }) + '\n');
     process.exit(0);
   } else {

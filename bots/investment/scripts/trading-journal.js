@@ -23,6 +23,11 @@ const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
 
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
 
 function toKST(utcStr) {
@@ -98,6 +103,44 @@ async function fetchClosedTradeReviews(fromDate, toDate) {
           BETWEEN '${fromDate}' AND '${toDate}'
     ORDER BY j.exit_time DESC
   `);
+}
+
+async function fetchSignalFunnel(fromDate, toDate) {
+  const [signalRows, blockRows, analysisRows] = await Promise.all([
+    db.query(`
+      SELECT
+        action,
+        status,
+        COUNT(*) AS cnt
+      FROM signals
+      WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+      GROUP BY action, status
+      ORDER BY action, status
+    `).catch(() => []),
+    db.query(`
+      SELECT
+        COALESCE(NULLIF(block_reason, ''), 'none') AS reason,
+        COUNT(*) AS cnt
+      FROM signals
+      WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+        AND status IN ('failed', 'rejected', 'expired')
+      GROUP BY 1
+      ORDER BY cnt DESC
+      LIMIT 8
+    `).catch(() => []),
+    db.query(`
+      SELECT
+        analyst,
+        signal,
+        COUNT(*) AS cnt
+      FROM analysis
+      WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+      GROUP BY analyst, signal
+      ORDER BY analyst, signal
+    `).catch(() => []),
+  ]);
+
+  return { signalRows, blockRows, analysisRows };
 }
 
 // ─── 심볼별 P&L 계산 (FIFO) ─────────────────────────────────────────
@@ -187,14 +230,18 @@ function formatTrades(trades, pnlMap) {
     }
     const side   = (t.side === 'buy' || t.side === 'BUY') ? '🟢 매수' : '🔴 매도';
     const paper  = t.paper ? '[모의]' : '[실거래]';
-    const conf   = t.confidence != null ? ` 신뢰도 ${(t.confidence * 100).toFixed(0)}%` : '';
+    const confValue = toNumber(t.confidence, null);
+    const conf   = confValue != null ? ` 신뢰도 ${(confValue * 100).toFixed(0)}%` : '';
     const sym    = t.symbol.padEnd(10);
-    const price  = t.price >= 100 ? t.price.toLocaleString() : t.price.toFixed(4);
-    const amt    = t.amount < 1 ? t.amount.toFixed(6) : t.amount.toFixed(2);
+    const priceValue = toNumber(t.price);
+    const amountValue = toNumber(t.amount);
+    const totalValue = toNumber(t.total_usdt);
+    const price  = priceValue >= 100 ? priceValue.toLocaleString() : priceValue.toFixed(4);
+    const amt    = amountValue < 1 ? amountValue.toFixed(6) : amountValue.toFixed(2);
     const isKis  = t.exchange === 'kis';
     const total  = isKis
-      ? `₩${Math.round(t.total_usdt).toLocaleString()}`
-      : `$${t.total_usdt.toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
+      ? `₩${Math.round(totalValue).toLocaleString()}`
+      : `$${totalValue.toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
     lines.push(`  ${side} ${sym} ${amt} @ ${price} = ${total} ${paper}${conf}`);
   }
   return lines.join('\n');
@@ -225,12 +272,15 @@ function formatPnl(pnlMap, positions) {
     lines.push('');
     lines.push('  📊 미결 포지션:');
     for (const pos of positions) {
-      totalUnrealized += (pos.unrealized_pnl || 0);
-      const upnl = (pos.unrealized_pnl || 0) >= 0
-        ? `+$${(pos.unrealized_pnl || 0).toFixed(4)}`
-        : `-$${Math.abs(pos.unrealized_pnl || 0).toFixed(4)}`;
-      const amt   = pos.amount < 1 ? pos.amount.toFixed(6) : pos.amount.toFixed(2);
-      lines.push(`  • ${pos.symbol.padEnd(12)} ${amt}개 @ $${pos.avg_price.toFixed(2)} | 미실현: ${upnl} [${pos.exchange}]`);
+      const unrealized = toNumber(pos.unrealized_pnl);
+      const amount = toNumber(pos.amount);
+      const avgPrice = toNumber(pos.avg_price);
+      totalUnrealized += unrealized;
+      const upnl = unrealized >= 0
+        ? `+$${unrealized.toFixed(4)}`
+        : `-$${Math.abs(unrealized).toFixed(4)}`;
+      const amt   = amount < 1 ? amount.toFixed(6) : amount.toFixed(2);
+      lines.push(`  • ${pos.symbol.padEnd(12)} ${amt}개 @ $${avgPrice.toFixed(2)} | 미실현: ${upnl} [${pos.exchange}]`);
     }
   }
 
@@ -283,13 +333,72 @@ function formatTokenUsage(usageRows) {
   const lines = [];
   let totalCost = 0, totalTokens = 0;
   for (const r of usageRows) {
-    totalCost   += r.total_cost || 0;
-    totalTokens += r.total_tokens || 0;
-    const tag    = r.is_free ? '무료' : `$${(r.total_cost || 0).toFixed(4)}`;
-    const avgMs  = r.avg_ms != null && r.avg_ms > 0 ? `${r.avg_ms.toFixed(0)}ms` : '-';
-    lines.push(`  • ${r.bot_name} [${r.model.split('/').pop()}] ${r.total_tokens.toLocaleString()}tok | 호출${r.call_count}회 | avg${avgMs} | ${tag}`);
+    const totalCostValue = toNumber(r.total_cost);
+    const totalTokensValue = toNumber(r.total_tokens);
+    const avgMsValue = toNumber(r.avg_ms, null);
+    const callCount = toNumber(r.call_count);
+    const modelName = String(r.model || 'unknown').split('/').pop();
+    totalCost   += totalCostValue;
+    totalTokens += totalTokensValue;
+    const tag    = r.is_free ? '무료' : `$${totalCostValue.toFixed(4)}`;
+    const avgMs  = avgMsValue != null && avgMsValue > 0 ? `${avgMsValue.toFixed(0)}ms` : '-';
+    lines.push(`  • ${r.bot_name} [${modelName}] ${totalTokensValue.toLocaleString()}tok | 호출${callCount}회 | avg${avgMs} | ${tag}`);
   }
   lines.push(`\n  합계: ${totalTokens.toLocaleString()}토큰 | 비용: $${totalCost.toFixed(4)}`);
+  return lines.join('\n');
+}
+
+function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
+  if (!signalRows.length && !blockRows.length && !analysisRows.length) return '  기록 없음';
+
+  const lines = [];
+  const byAction = new Map();
+  for (const row of signalRows) {
+    const action = row.action || 'UNKNOWN';
+    const bucket = byAction.get(action) || { total: 0, statuses: new Map() };
+    const count = Number(row.cnt || 0);
+    bucket.total += count;
+    bucket.statuses.set(row.status || 'unknown', count);
+    byAction.set(action, bucket);
+  }
+
+  if (byAction.size > 0) {
+    lines.push('  ■ 저장된 신호');
+    for (const [action, bucket] of byAction) {
+      const statusText = [...bucket.statuses.entries()]
+        .map(([status, count]) => `${status} ${count}건`)
+        .join(' / ');
+      lines.push(`    ${action}: 총 ${bucket.total}건 (${statusText})`);
+    }
+  }
+
+  if (analysisRows.length > 0) {
+    const byAnalyst = new Map();
+    for (const row of analysisRows) {
+      const analyst = row.analyst || 'unknown';
+      const bucket = byAnalyst.get(analyst) || { total: 0, signals: new Map() };
+      const count = Number(row.cnt || 0);
+      bucket.total += count;
+      bucket.signals.set(row.signal || 'UNKNOWN', count);
+      byAnalyst.set(analyst, bucket);
+    }
+
+    lines.push('', '  ■ 분석가 판단 분포');
+    for (const [analyst, bucket] of byAnalyst) {
+      const signalText = [...bucket.signals.entries()]
+        .map(([signal, count]) => `${signal} ${count}`)
+        .join(' / ');
+      lines.push(`    ${analyst}: 총 ${bucket.total}건 (${signalText})`);
+    }
+  }
+
+  if (blockRows.length > 0) {
+    lines.push('', '  ■ 주요 차단/실패 사유');
+    for (const row of blockRows) {
+      lines.push(`    ${row.reason}: ${Number(row.cnt || 0)}건`);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -314,6 +423,7 @@ async function main() {
 
   const pnlMap    = calcPnl(trades);
   const tokenRows = await fetchTokenUsage(from, to);
+  const funnel    = await fetchSignalFunnel(from, to);
 
   // ─── 출력 조립 ───
   const lines = [
@@ -328,6 +438,9 @@ async function main() {
     ``,
     `━━ 청산 리뷰 요약 ━━`,
     formatTradeReviewStats(reviewRows),
+    ``,
+    `━━ 신호 퍼널 / 판단 품질 ━━`,
+    formatSignalFunnel(funnel),
     ``,
     `━━ LLM 토큰 사용 ━━`,
     formatTokenUsage(tokenRows),
@@ -357,6 +470,6 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(e => {
-  console.error('❌ 거래 일지 오류:', e.message);
+  console.error('❌ 거래 일지 오류:', e?.stack || e?.message || e);
   process.exit(1);
 });

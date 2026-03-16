@@ -163,7 +163,7 @@ async function getPendingReservations() {
  */
 async function getUnverifiedCompletedReservations() {
   const rows = await pgPool.query(SCHEMA,
-    "SELECT * FROM reservations WHERE status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('verified','manual','time_elapsed'))");
+    "SELECT * FROM reservations WHERE status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('verified','manual','manual_retry','time_elapsed'))");
   return rows.map(_decryptRow);
 }
 
@@ -625,7 +625,7 @@ async function removeMigration(version) {
 
 async function getFuturePickkoRegistered(fromDate) {
   const rows = await pgPool.query(SCHEMA,
-    "SELECT * FROM reservations WHERE date >= $1 AND status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('cancelled','manual','time_elapsed'))",
+    "SELECT * FROM reservations WHERE date >= $1 AND status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('cancelled','manual','manual_retry','time_elapsed'))",
     [fromDate]);
   return rows.map(_decryptRow);
 }

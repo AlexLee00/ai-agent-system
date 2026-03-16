@@ -54,7 +54,7 @@ export function getLunaParams() {
         ...base,
         maxPositionPct:    0.15,   // 포트폴리오 대비 최대 포지션 15%
         maxOpenPositions:  3,      // 최대 동시 오픈 포지션
-        minSignalScore:    0.6,    // 최소 신호 점수
+        minSignalScore:    0.58,   // 최소 신호 점수 (소폭 완화)
         cycleSec:          1800,   // 30분 사이클
         emergencyTrigger:  true,   // BTC ±3% 긴급 트리거 활성
       };

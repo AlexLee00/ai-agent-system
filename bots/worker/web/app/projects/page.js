@@ -9,6 +9,7 @@ import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
+import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
 
 const STATUS_CONFIG = {
   planning:    { label: '기획',   color: 'bg-blue-50 text-blue-700 border-blue-200',   dot: 'bg-blue-500' },
@@ -227,10 +228,10 @@ export default function ProjectsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || '파일 업로드 실패');
       const filename = data.document?.filename || file.name;
-      const summary = data.document?.ai_summary ? `\n참고 요약: ${data.document.ai_summary}` : '';
+      const appendix = buildDocumentPromptAppendix(data.document, file.name);
       setAttachedFileName(filename);
-      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}[첨부 파일: ${filename}]${summary}`.trim());
-      setNotice(`"${filename}" 파일을 프롬프트에 첨부했습니다.`);
+      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}${appendix}`.trim());
+      setNotice(buildDocumentUploadNotice(data.document, file.name));
     } catch (e) {
       setError(e.message);
     } finally {

@@ -285,7 +285,8 @@ function _buildApprovalText(requestId, action, requesterName, payload) {
 
   // 휴가 신청 전용 상세
   if (action === 'leave_request') {
-    if (p.date)   lines.push(`날짜: ${p.date}`);
+    if (p.leave_date || p.date) lines.push(`날짜: ${p.leave_date || p.date}`);
+    if (p.leave_type_label || p.leave_type) lines.push(`유형: ${p.leave_type_label || p.leave_type}`);
     if (p.reason) lines.push(`사유: ${p.reason}`);
   } else {
     // 일반: payload 키-값 표시
@@ -312,7 +313,8 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
   const rawPayload = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
   const detailLines = action === 'leave_request'
     ? [
-        rawPayload.date ? `날짜: ${rawPayload.date}` : '',
+        (rawPayload.leave_date || rawPayload.date) ? `날짜: ${rawPayload.leave_date || rawPayload.date}` : '',
+        (rawPayload.leave_type_label || rawPayload.leave_type) ? `유형: ${rawPayload.leave_type_label || rawPayload.leave_type}` : '',
         rawPayload.reason ? `사유: ${rawPayload.reason}` : '',
       ].filter(Boolean)
     : Object.entries(rawPayload)

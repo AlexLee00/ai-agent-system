@@ -13,7 +13,7 @@ import { useState } from 'react';
  *   emptyNode?: ReactNode  — 커스텀 빈 상태 (CTA 포함 가능)
  *   pageSize?:  number     — 페이지당 행 수 (기본값 없음 = 전체)
  */
-export default function DataTable({ columns, data, actions, emptyText = '데이터 없음', emptyNode, pageSize }) {
+export default function DataTable({ columns, data, actions, emptyText = '데이터 없음', emptyNode, pageSize, mobileRowRender }) {
   const [page, setPage] = useState(1);
 
   if (!data?.length) {
@@ -41,7 +41,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
                   {col.label}
                 </th>
               ))}
-              {actions && <th className="text-right py-3 px-4 font-medium text-gray-500">작업</th>}
+              {actions && <th className="text-left py-3 px-4 font-medium text-gray-500">관리</th>}
             </tr>
           </thead>
           <tbody>
@@ -53,8 +53,10 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
                   </td>
                 ))}
                 {actions && (
-                  <td className="py-3 px-4 text-right">
-                    {actions(row)}
+                  <td className="py-3 px-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {actions(row)}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -67,18 +69,24 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
       <div className="md:hidden space-y-3">
         {paged.map((row, i) => (
           <div key={i} className="card overflow-hidden">
-            {columns.map(col => (
-              <div key={col.key} className="flex flex-col gap-1 border-b py-2 last:border-0 sm:flex-row sm:items-start sm:justify-between">
-                <span className="text-xs font-medium text-gray-500">{col.label}</span>
-                <span className="text-left text-sm text-gray-800 break-keep sm:max-w-[60%] sm:text-right">
-                  {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
-                </span>
-              </div>
-            ))}
-            {actions && (
-              <div className="mt-3 flex flex-wrap justify-end gap-2">
-                {actions(row)}
-              </div>
+            {mobileRowRender ? (
+              mobileRowRender(row, actions)
+            ) : (
+              <>
+                {columns.map(col => (
+                  <div key={col.key} className="flex flex-col gap-1 border-b py-2 last:border-0 sm:flex-row sm:items-start sm:justify-between">
+                    <span className="text-xs font-medium text-gray-500">{col.label}</span>
+                    <span className="text-left text-sm text-gray-800 break-keep sm:max-w-[60%] sm:text-right">
+                      {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
+                    </span>
+                  </div>
+                ))}
+                {actions && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {actions(row)}
+                  </div>
+                )}
+              </>
             )}
           </div>
         ))}

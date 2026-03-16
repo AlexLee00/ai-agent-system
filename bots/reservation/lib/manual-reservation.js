@@ -111,7 +111,7 @@ function parseNameFromText(text) {
     .replace(/\d{1,2}:\d{2}/g, ' ')
     .replace(/\b(A1|A2|B)\b\s*룸?/gi, ' ')
     .replace(/\d+\s*건/g, ' ')
-    .replace(/픽코|예약|등록|결제|차단|네이버|수동|대리예약|잡아줘|해줘|넣어줘|부탁해|처리해줘|요청/gi, ' ')
+    .replace(/픽코|예약|등록|결제|차단|네이버|수동|대리예약|잡아줘|해줘|넣어줘|부탁해|처리해줘|요청|다시|재등록|재시도|재처리/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -136,6 +136,12 @@ function parseBatchCount(text, explicitCount) {
   }
   const matched = String(text || '').match(/(\d+)\s*건/);
   return matched ? Number(matched[1]) : 1;
+}
+
+function isRetryRegistrationRequest(args = {}) {
+  const rawText = String(args.raw_text || args.text || '').trim();
+  if (args.manual_retry === true || args.manual_retry === 'true') return true;
+  return /다시\s*등록|재등록|다시\s*해봐|다시\s*시도|반영이\s*되(지\s*않|지않)|실패했|실패했어|재처리/.test(rawText);
 }
 
 function extractBatchReservations(args = {}) {
@@ -285,7 +291,7 @@ function parseReservationRequest(args = {}) {
     date: parseDateFromText(rawText),
     room: parseRoomFromText(rawText),
     phone: transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]),
-    name: (args.name || parseNameFromText(rawText) || '고객').trim(),
+    name: (args.name || parseSharedName(rawText) || parseNameFromText(rawText) || '고객').trim(),
     ...parseTimeRangeFromText(rawText),
   };
 
@@ -302,7 +308,7 @@ function parseReservationRequest(args = {}) {
   return { ok: true, reservation };
 }
 
-function runSingleReservationRegistration(reservation) {
+function runSingleReservationRegistration(reservation, options = {}) {
   const scriptPath = path.join(__dirname, '../manual/reservation/pickko-register.js');
   const childArgs = [
     scriptPath,
@@ -313,6 +319,12 @@ function runSingleReservationRegistration(reservation) {
     `--phone=${reservation.phone}`,
     `--name=${reservation.name}`,
   ];
+
+  if (options.manualRetry) {
+    childArgs.push('--manual-retry');
+    childArgs.push('--skip-name-sync');
+    childArgs.push('--skip-naver-block');
+  }
 
   const result = spawnSync('node', childArgs, {
     cwd: path.dirname(scriptPath),
@@ -352,13 +364,14 @@ function runSingleReservationRegistration(reservation) {
 function runManualReservationRegistration(args = {}) {
   const parsed = parseReservationCommand(args);
   if (!parsed.ok) return parsed;
+  const manualRetry = isRetryRegistrationRequest(args);
 
   if (parsed.mode === 'single') {
-    return runSingleReservationRegistration(parsed.reservation);
+    return runSingleReservationRegistration(parsed.reservation, { manualRetry });
   }
 
   const results = parsed.reservations.map((reservation, index) => {
-    const result = runSingleReservationRegistration(reservation);
+    const result = runSingleReservationRegistration(reservation, { manualRetry });
     return {
       index: index + 1,
       reservation,
@@ -383,6 +396,7 @@ function runManualReservationRegistration(args = {}) {
     ok: failureCount === 0,
     code: failureCount > 0 && successCount > 0 ? 'PARTIAL_SUCCESS' : failureCount > 0 ? 'BATCH_FAILED' : null,
     batch: true,
+    manualRetry,
     successCount,
     failureCount,
     totalCount: results.length,
@@ -393,6 +407,7 @@ function runManualReservationRegistration(args = {}) {
 }
 
 module.exports = {
+  isRetryRegistrationRequest,
   parseReservationCommand,
   parseReservationRequest,
   runManualReservationRegistration,
