@@ -119,6 +119,17 @@ function parseNameFromText(text) {
   return matches.length > 0 ? matches[matches.length - 1] : null;
 }
 
+function parseSharedName(text) {
+  const raw = String(text || '').trim();
+  const phoneMatch = raw.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/);
+  if (phoneMatch) {
+    const beforePhone = raw.slice(0, phoneMatch.index).trim();
+    const directName = (beforePhone.match(/[가-힣]{2,10}/g) || []).pop();
+    if (directName) return directName;
+  }
+  return parseNameFromText(raw);
+}
+
 function parseBatchCount(text, explicitCount) {
   if (Number.isFinite(Number(explicitCount)) && Number(explicitCount) > 0) {
     return Number(explicitCount);
@@ -127,32 +138,85 @@ function parseBatchCount(text, explicitCount) {
   return matched ? Number(matched[1]) : 1;
 }
 
-function parseReservationRequest(args = {}) {
+function extractBatchReservations(args = {}) {
   const rawText = String(args.raw_text || args.text || '').trim();
-  const batchCount = parseBatchCount(rawText, args.batch_count);
+  const lines = rawText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  if (batchCount > 1) {
-    return {
-      ok: false,
-      code: 'BATCH_NOT_SUPPORTED',
-      error: `다건 예약 등록은 아직 지원하지 않습니다. 지금은 단건만 가능합니다. (${batchCount}건 감지)`,
+  const sharedPhone = transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]);
+  const identityLine = lines.find((line) => /01\d[- ]?\d{3,4}[- ]?\d{4}/.test(line)) || rawText;
+  const sharedName = (args.name || parseSharedName(identityLine) || parseSharedName(rawText) || '고객').trim();
+  const allExplicitDates = lines
+    .map((line) => parseDateFromText(line))
+    .filter(Boolean);
+  const fallbackDate = allExplicitDates.length === 1 ? allExplicitDates[0] : null;
+
+  let currentDate = fallbackDate;
+  const reservations = [];
+
+  for (const line of lines) {
+    const explicitDate = parseDateFromText(line);
+    if (explicitDate) currentDate = explicitDate;
+
+    const { start, end } = parseTimeRangeFromText(line);
+    const room = parseRoomFromText(line);
+
+    if (!start || !end) {
+      continue;
+    }
+
+    const reservation = {
+      date: explicitDate || currentDate || fallbackDate,
+      start,
+      end,
+      room,
+      phone: sharedPhone,
+      name: sharedName,
+      raw_line: line,
     };
+    reservations.push(reservation);
   }
 
-  const reservation = {
-    date: parseDateFromText(rawText),
-    room: parseRoomFromText(rawText),
-    phone: transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]),
-    name: (args.name || parseNameFromText(rawText) || '고객').trim(),
-    ...parseTimeRangeFromText(rawText),
-  };
+  if (reservations.length > 1) {
+    return reservations;
+  }
 
-  const missing = ['date', 'start', 'end', 'room', 'phone'].filter(key => !reservation[key]);
+  // OpenClaw/Telegram 경로에서 여러 줄이 한 줄로 합쳐질 수 있으므로,
+  // 날짜+시간+룸 패턴을 전체 문장 기준으로 다시 추출한다.
+  const normalized = rawText
+    .replace(/\s+/g, ' ')
+    .replace(/\b(a1|a2|b)\b/gi, (m) => m.toUpperCase());
+
+  const pattern = /((?:20\d{2}[./-]\s*\d{1,2}[./-]\s*\d{1,2})|(?:\d{1,2}월\s*\d{1,2}일)|오늘|내일|모레)\s+((?:오전|오후)?\s*\d{1,2}(?::\d{2}|시(?:\s*\d{1,2}분?)?)\s*(?:~|-)\s*(?:오전|오후)?\s*\d{1,2}(?::\d{2}|시(?:\s*\d{1,2}분?)?))\s+(A1|A2|B)\b/gi;
+
+  const extracted = [];
+  let match;
+  while ((match = pattern.exec(normalized)) !== null) {
+    const fragment = `${match[1]} ${match[2]} ${match[3]}`;
+    const { start, end } = parseTimeRangeFromText(match[2]);
+    extracted.push({
+      date: parseDateFromText(match[1]),
+      start,
+      end,
+      room: parseRoomFromText(match[3]),
+      phone: sharedPhone,
+      name: sharedName,
+      raw_line: fragment,
+    });
+  }
+
+  return extracted.length > reservations.length ? extracted : reservations;
+}
+
+function validateReservation(reservation) {
+  const missing = ['date', 'start', 'end', 'room', 'phone'].filter((key) => !reservation[key]);
   if (missing.length > 0) {
     return {
       ok: false,
       code: 'MISSING_FIELDS',
-      error: `예약 등록에 필요한 정보가 부족합니다: ${missing.join(', ')}. 예: "내일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"`,
+      error: `예약 등록에 필요한 정보가 부족합니다: ${missing.join(', ')}.`,
       missing,
     };
   }
@@ -166,15 +230,80 @@ function parseReservationRequest(args = {}) {
     };
   }
 
+  return { ok: true };
+}
+
+function parseReservationCommand(args = {}) {
+  const rawText = String(args.raw_text || args.text || '').trim();
+  const explicitBatchCount = parseBatchCount(rawText, args.batch_count);
+  const extractedReservations = extractBatchReservations(args);
+  const shouldTreatAsBatch = explicitBatchCount > 1 || extractedReservations.length > 1;
+
+  if (shouldTreatAsBatch) {
+    if (extractedReservations.length === 0) {
+      return {
+        ok: false,
+        code: 'MISSING_FIELDS',
+        error: '다건 예약 등록 형식을 해석하지 못했습니다. 예: "민경수 010-2792-2221\\n3월 20일 12:00-14:00 A1\\n3월 20일 14:00-15:00 A1\\n예약 추가해줘"',
+      };
+    }
+
+    const invalid = extractedReservations
+      .map((reservation, index) => ({ index, reservation, check: validateReservation(reservation) }))
+      .filter((entry) => !entry.check.ok);
+
+    if (invalid.length > 0) {
+      const first = invalid[0];
+      const missing = first.check.missing?.length ? first.check.missing.join(', ') : first.check.error;
+      return {
+        ok: false,
+        code: first.check.code || 'MISSING_FIELDS',
+        error: `${first.index + 1}번째 예약 정보가 부족합니다: ${missing}. 예: "민경수 010-2792-2221\\n3월 20일 12:00-14:00 A1\\n3월 20일 14:00-15:00 A1\\n예약 추가해줘"`,
+      };
+    }
+
+    return {
+      ok: true,
+      mode: 'batch',
+      reservations: extractedReservations,
+    };
+  }
+
+  const single = parseReservationRequest(args);
+  if (!single.ok) return single;
+  return {
+    ok: true,
+    mode: 'single',
+    reservation: single.reservation,
+  };
+}
+
+function parseReservationRequest(args = {}) {
+  const rawText = String(args.raw_text || args.text || '').trim();
+
+  const reservation = {
+    date: parseDateFromText(rawText),
+    room: parseRoomFromText(rawText),
+    phone: transformPhoneNumber(args.phone || rawText.match(/01\d[- ]?\d{3,4}[- ]?\d{4}/)?.[0]),
+    name: (args.name || parseNameFromText(rawText) || '고객').trim(),
+    ...parseTimeRangeFromText(rawText),
+  };
+
+  const check = validateReservation(reservation);
+  if (!check.ok) {
+    return {
+      ...check,
+      error: check.code === 'MISSING_FIELDS'
+        ? `예약 등록에 필요한 정보가 부족합니다: ${check.missing.join(', ')}. 예: "내일 오후 3시~5시 A1 010-1234-5678 홍길동 예약해줘"`
+        : check.error,
+    };
+  }
+
   return { ok: true, reservation };
 }
 
-function runManualReservationRegistration(args = {}) {
-  const parsed = parseReservationRequest(args);
-  if (!parsed.ok) return parsed;
-
+function runSingleReservationRegistration(reservation) {
   const scriptPath = path.join(__dirname, '../manual/reservation/pickko-register.js');
-  const reservation = parsed.reservation;
   const childArgs = [
     scriptPath,
     `--date=${reservation.date}`,
@@ -220,7 +349,51 @@ function runManualReservationRegistration(args = {}) {
   };
 }
 
+function runManualReservationRegistration(args = {}) {
+  const parsed = parseReservationCommand(args);
+  if (!parsed.ok) return parsed;
+
+  if (parsed.mode === 'single') {
+    return runSingleReservationRegistration(parsed.reservation);
+  }
+
+  const results = parsed.reservations.map((reservation, index) => {
+    const result = runSingleReservationRegistration(reservation);
+    return {
+      index: index + 1,
+      reservation,
+      ok: Boolean(result.ok),
+      message: result.message || result.error || '',
+      code: result.code || null,
+      error: result.error || null,
+      exitCode: result.exitCode,
+    };
+  });
+
+  const successCount = results.filter((item) => item.ok).length;
+  const failureCount = results.length - successCount;
+  const summary = results
+    .map((item) => {
+      const label = `${item.reservation.date} ${item.reservation.start}~${item.reservation.end} ${item.reservation.room}`;
+      return `${item.ok ? '✅' : '❌'} ${item.index}. ${label}${item.message ? ` — ${item.message}` : ''}`;
+    })
+    .join('\n');
+
+  return {
+    ok: failureCount === 0,
+    code: failureCount > 0 && successCount > 0 ? 'PARTIAL_SUCCESS' : failureCount > 0 ? 'BATCH_FAILED' : null,
+    batch: true,
+    successCount,
+    failureCount,
+    totalCount: results.length,
+    message: `다중예약 처리 완료 (${successCount}/${results.length} 성공)`,
+    summary,
+    results,
+  };
+}
+
 module.exports = {
+  parseReservationCommand,
   parseReservationRequest,
   runManualReservationRegistration,
 };

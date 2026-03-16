@@ -33,7 +33,7 @@ function getApiBases() {
   if (typeof window === 'undefined') return ['/api'];
   return [
     '/api',
-    `http://${window.location.hostname}:4000/api`,
+    `${window.location.protocol}//${window.location.hostname}:4000/api`,
   ];
 }
 
@@ -76,10 +76,18 @@ export function AuthProvider({ children }) {
     let alive = true;
     const releaseTimer = setTimeout(() => {
       if (!alive) return;
+      try {
+        localStorage.removeItem('worker_token');
+      } catch {}
       setLoading(false);
     }, REQUEST_TIMEOUT_MS + 1500);
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
+    let token = null;
+    try {
+      token = typeof window !== 'undefined' ? localStorage.getItem('worker_token') : null;
+    } catch {
+      token = null;
+    }
     if (!token) {
       clearTimeout(releaseTimer);
       setLoading(false);
@@ -93,9 +101,17 @@ export function AuthProvider({ children }) {
       .then(({ response, data }) => {
         if (!alive) return;
         if (response.ok && data?.user) setUser(normalizeUser(data.user));
-        else localStorage.removeItem('worker_token');
+        else {
+          try {
+            localStorage.removeItem('worker_token');
+          } catch {}
+        }
       })
-      .catch(() => localStorage.removeItem('worker_token'))
+      .catch(() => {
+        try {
+          localStorage.removeItem('worker_token');
+        } catch {}
+      })
       .finally(() => {
         if (!alive) return;
         clearTimeout(releaseTimer);
@@ -130,7 +146,9 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem('worker_token');
+    try {
+      localStorage.removeItem('worker_token');
+    } catch {}
     setUser(null);
   };
 

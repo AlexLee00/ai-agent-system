@@ -13,6 +13,7 @@
  */
 
 import https from 'https';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
@@ -72,6 +73,18 @@ const FG_TTL     = 3_600_000;
 const SENT_TTL   = 300_000;
 const SENT_CACHE_MAX = 1000;
 
+function execCurl(args) {
+  return new Promise((resolve, reject) => {
+    execFile('curl', args, { maxBuffer: 2 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || stdout?.trim() || error.message));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
 function cleanupSentCache(now = Date.now()) {
   for (const [key, value] of _sentCache.entries()) {
     if ((now - value.ts) >= SENT_TTL) _sentCache.delete(key);
@@ -99,8 +112,23 @@ async function fetchFearGreedIndex() {
     console.log(`  📊 [소피아] Fear & Greed Index: ${value} (${json?.data?.[0]?.value_classification})`);
     return value;
   } catch (e) {
-    console.warn(`  ⚠️ [소피아] Fear & Greed 조회 실패: ${e.message}`);
-    return null;
+    if (!['ENOTFOUND', 'EAI_AGAIN'].includes(e?.code)) {
+      console.warn(`  ⚠️ [소피아] Fear & Greed 조회 실패: ${e.message}`);
+      return null;
+    }
+    try {
+      const raw = await execCurl(['-sS', '-m', '10', 'https://api.alternative.me/fng/?limit=1']);
+      const json = JSON.parse(raw);
+      const value = parseInt(json?.data?.[0]?.value ?? '-1', 10);
+      if (isNaN(value) || value < 0 || value > 100) return null;
+      _fgCache.data = value;
+      _fgCache.ts = now;
+      console.log(`  📊 [소피아] Fear & Greed Index(curl): ${value} (${json?.data?.[0]?.value_classification})`);
+      return value;
+    } catch (fallbackError) {
+      console.warn(`  ⚠️ [소피아] Fear & Greed 조회 실패: ${fallbackError.message}`);
+      return null;
+    }
   }
 }
 
