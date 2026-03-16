@@ -218,6 +218,35 @@ function buildExtractionPreview(text = '', maxLength = 4000) {
   return `${normalized.slice(0, maxLength)}\n...(중략)`;
 }
 
+function scoreUploadedFilename(value = '') {
+  const text = String(value || '');
+  if (!text) return -100;
+  let score = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if ((code >= 0xac00 && code <= 0xd7a3) || /[A-Za-z0-9._()[\]\- ]/.test(ch)) {
+      score += 2;
+    } else if (code < 32 || code === 0xfffd) {
+      score -= 6;
+    } else {
+      score -= 1;
+    }
+  }
+  return score;
+}
+
+function normalizeUploadedFilename(rawName) {
+  const original = String(rawName || '').trim();
+  if (!original) return '';
+  try {
+    const decoded = Buffer.from(original, 'latin1').toString('utf8').trim();
+    if (!decoded || decoded.includes('\uFFFD')) return original;
+    return scoreUploadedFilename(decoded) >= scoreUploadedFilename(original) ? decoded : original;
+  } catch {
+    return original;
+  }
+}
+
 function buildDeterministicSummary(extraction = {}) {
   const lines = String(extraction.text || '')
     .split('\n')
@@ -1942,9 +1971,8 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
 app.post('/api/documents/upload',
   requireAuth, upload.single('file'), auditLog('UPLOAD', 'documents'),
   async (req, res) => {
-    // multer는 파일명을 latin1로 디코딩 — 한글 등 UTF-8 파일명 복원
     const rawName   = req.file?.originalname || req.body?.filename;
-    const filename  = rawName ? Buffer.from(rawName, 'latin1').toString('utf8') : null;
+    const filename  = normalizeUploadedFilename(rawName);
     if (!filename?.trim()) return res.status(400).json({ error: '파일이 없습니다.', code: 'NO_FILE' });
     const file_path = req.file ? `/uploads/${req.file.filename}` : req.body?.file_path || null;
     const category  = req.body?.category || '';
@@ -1994,7 +2022,10 @@ app.post('/api/documents/upload',
           extracted_text_preview: buildExtractionPreview(extraction.text),
         },
       });
-    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+    } catch (error) {
+      console.error('[worker/documents/upload] 실패:', error?.stack || error?.message || error);
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
   }
 );
 
@@ -2116,7 +2147,7 @@ app.post('/api/documents/proposals/:id/confirm',
       }
 
       const rawProposal = req.body.proposal ? JSON.parse(req.body.proposal) : (session.original_snapshot_json || {});
-      const uploadedName = req.file?.originalname ? Buffer.from(req.file.originalname, 'latin1').toString('utf8') : '';
+      const uploadedName = normalizeUploadedFilename(req.file?.originalname || '');
       const proposal = normalizeDocumentProposal({
         ...rawProposal,
         filename: rawProposal?.filename || uploadedName,
@@ -2202,6 +2233,7 @@ app.post('/api/documents/proposals/:id/confirm',
         },
       });
     } catch (error) {
+      console.error('[worker/documents/confirm] 실패:', error?.stack || error?.message || error);
       res.status(500).json({ error: error.message || '문서 업로드를 완료하지 못했습니다.', code: 'SERVER_ERROR' });
     }
   }
