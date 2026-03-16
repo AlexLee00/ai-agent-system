@@ -78,6 +78,66 @@
 
 ---
 
+## 2.6 상황별 빠른 경로
+
+### 기능을 찾고 싶을 때
+
+- 전체 구현 상태 먼저 확인
+  - [docs/improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+- 팀별 실제 파일/스크립트/설정 위치 찾기
+  - [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
+
+### 운영 설정을 바꾸고 싶을 때
+
+- 운영 변수 위치/의미 확인
+  - [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+- 현재 값 빠르게 조회
+  - [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
+
+### 헬스/장애를 보고 싶을 때
+
+- 공통 구조
+  - [packages/core/HEALTH_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/HEALTH_ENGINE_PLAN.md)
+- 팀별 health script는 각 팀 참조 문서의 `자주 쓰는 명령어` 섹션 우선 확인
+
+### 세션 인수인계를 받고 싶을 때
+
+- 직전 세션 맥락
+  - [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+- 장기 구현 맥락
+  - [docs/work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+  - [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
+
+### 왜 이렇게 설계됐는지 보고 싶을 때
+
+- 전체 구조
+  - [docs/SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
+- 코딩/운영 원칙
+  - [docs/coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
+- 연구/결정 배경
+  - [docs/dev-journal.md](/Users/alexlee/projects/ai-agent-system/docs/dev-journal.md)
+
+### 문서 파싱/OCR 흐름을 보고 싶을 때
+
+- 공용 파서 진입점
+  - [packages/core/lib/document-parser.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/document-parser.js)
+  - [packages/core/lib/document-parsing/registry.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/document-parsing/registry.js)
+- 워커 운영 화면
+  - [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js)
+
+### 자동화/리뷰 흐름을 보고 싶을 때
+
+- 자동매매 리뷰
+  - [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
+  - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
+- 스카 예측 리뷰
+  - [scripts/reviews/ska-sales-forecast-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js)
+  - [scripts/reviews/ska-sales-forecast-weekly-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js)
+- 제이/운영 리뷰
+  - [scripts/reviews/jay-llm-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js)
+
+---
+
 ## 3. 공통 레이어별 핵심 진입점
 
 ### health
