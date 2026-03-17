@@ -9,7 +9,7 @@
  */
 
 const puppeteer = require('puppeteer');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { transformAndNormalizeData } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
@@ -81,6 +81,35 @@ const SAFE_DEV_FALLBACK = (process.env.SAFE_DEV_FALLBACK || '1') === '1';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10); // ops=5분, dev=2분 기본
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
+
+function runStartupPickkoVerification() {
+  if (!NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReport) return;
+
+  try {
+    const verifyScript = path.join(__dirname, '../../manual/admin/pickko-verify.js');
+    log('🔎 [시작 검증] 미해결 알림 보고 전 pickko-verify 실행');
+    const result = spawnSync('node', [verifyScript], {
+      cwd: path.join(__dirname, '../../manual/admin'),
+      env: process.env,
+      encoding: 'utf8',
+      timeout: NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReportTimeoutMs,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+
+    if (result.error) {
+      log(`⚠️ [시작 검증] pickko-verify 실행 실패: ${result.error.message}`);
+      return;
+    }
+    if (result.status !== 0) {
+      log(`⚠️ [시작 검증] pickko-verify 비정상 종료 (exit=${result.status})`);
+      if (result.stderr) log(result.stderr.trim().slice(0, 400));
+      return;
+    }
+    log('✅ [시작 검증] pickko-verify 완료');
+  } catch (err) {
+    log(`⚠️ [시작 검증] pickko-verify 예외: ${err.message}`);
+  }
+}
 
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
@@ -693,6 +722,9 @@ async function monitorBookings() {
 
     // ⚠️ 시작 시 이전 세션 미전송 알림 재발송 (네트워크 단절 등으로 유실된 메시지)
     await flushPendingTelegrams();
+
+    // ⚠️ 시작 시 수동 완료/직접 등록 건을 먼저 픽코 기준으로 재검증
+    runStartupPickkoVerification();
 
     // ⚠️ 시작 시 미해결 오류 알림 확인 (이전 세션에서 미처리된 건 보고)
     await reportUnresolvedAlerts();

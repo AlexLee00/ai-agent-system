@@ -10,5 +10,7 @@ runtime_config:
     staleConfirmCount: 5
     staleMinElapsedMs: 600000
     staleExpireMs: 1800000
+    verifyBeforeUnresolvedReport: true
+    verifyBeforeUnresolvedReportTimeoutMs: 240000
   kioskMonitor:
     errorTrackerThreshold: 3

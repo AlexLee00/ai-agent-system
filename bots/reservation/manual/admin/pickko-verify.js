@@ -153,19 +153,19 @@ async function searchPickko(page, entry) {
 // ──────────────────────────────────────────────
 // 상태 업데이트 (DB 기반)
 // ──────────────────────────────────────────────
-function markCompleted(source, id, entry) {
+async function markCompleted(source, id, entry) {
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
-  const existing = getReservation(id);
+  const existing = await getReservation(id);
   if (existing) {
-    updateReservation(id, {
+    await updateReservation(id, {
       status:          'completed',
       pickkoStatus:    'verified',
       errorReason:     null,
       pickkoStartTime: now,
     });
   } else {
-    addReservation(id, {
+    await addReservation(id, {
       compositeKey:    entry.compositeKey || `${(entry.phoneRaw||entry.phone||'').replace(/\D/g,'')}`,
       name:            entry.name || entry.raw?.name || null,
       phone:           entry.phone,
@@ -181,7 +181,7 @@ function markCompleted(source, id, entry) {
       pickkoStartTime: now,
     });
   }
-  markSeen(id);
+  await markSeen(id);
 }
 
 // ──────────────────────────────────────────────
@@ -288,21 +288,21 @@ async function main() {
         }
 
         if (viewHref) {
-          markCompleted(source, id, entry);
+          await markCompleted(source, id, entry);
           results.found.push(id);
         } else {
           log(`  ⚠️ 픽코 미등록 → 자동 등록 시작`);
           results.notFound.push(id);
           const code = await runPickko(entry);
           if (code === 0) {
-            markCompleted(source, id, entry);
+            await markCompleted(source, id, entry);
             log(`  ✅ 등록 완료 → completed/auto`);
             // pickkoStatus를 auto로 업데이트
-            updateReservation(id, { pickkoStatus: 'auto' });
+            await updateReservation(id, { pickkoStatus: 'auto' });
           } else if (code === 2) {
             log(`  ⏰ 시간 경과로 등록 생략 → completed/time_elapsed`);
-            markCompleted(source, id, entry);
-            updateReservation(id, {
+            await markCompleted(source, id, entry);
+            await updateReservation(id, {
               pickkoStatus: 'time_elapsed',
               errorReason:  '시간 경과로 등록 불가',
             });
@@ -310,8 +310,8 @@ async function main() {
             log(`  ❌ 등록 실패 (exit: ${code})`);
             results.error.push(id);
             // retries 증가
-            const cur = getReservation(id);
-            updateReservation(id, { retries: (cur?.retries || 0) + 1 });
+            const cur = await getReservation(id);
+            await updateReservation(id, { retries: (cur?.retries || 0) + 1 });
           }
         }
       } catch (err) {
