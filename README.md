@@ -116,6 +116,13 @@ ai-agent-system/
 - 운영 설정: [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
 - 세션 기록/연구 맥락: [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
+세션 시작 문서에서 제외하는 문서:
+- `bots/blog/output/*.md` 같은 생성 산출물
+- `bots/ska/venv/**` 같은 외부 패키지 문서
+- `skills/**` 같은 코덱 로컬 skill 문서
+
+이 문서들은 저장소 안에는 있지만, 프로젝트의 현재 상태를 이해하기 위한 핵심 문서에는 포함하지 않는다.
+
 ---
 
 ## 클로드팀 운영 명령

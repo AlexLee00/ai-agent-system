@@ -34,6 +34,31 @@
   를 먼저 파악한다.
 - 새 기능을 구현했는데 “다음 세션도 알아야 하는 공통 규칙/구조/진입점”이 생기면 이 문서에 반영한다.
 
+### 1.1 문서 범주 구분
+
+- `세션 핵심 문서`
+  - 다음 세션이 반드시 먼저 읽어야 하는 문서
+- `구조/기준 문서`
+  - 시스템 설계, 개발 원칙, 공용 레이어 기준
+- `팀 참조 문서`
+  - 실제 코드 위치와 운영 스크립트를 찾기 위한 문서
+- `운영/튜닝 문서`
+  - runtime config, 리뷰 스크립트, 운영 자동화 관련 문서
+- `기록 문서`
+  - 사실 이력, 기능 변경 이력, 테스트 결과, 연구/회고
+- `세션 제외 문서`
+  - generated output, vendor 문서, 외부 패키지 README/LICENSE, skill 내부 문서
+
+### 1.2 세션 제외 원칙
+
+- 아래 문서는 저장소 안에 있어도 세션 시작 문서로 읽지 않는다.
+  - `bots/blog/output/*.md`
+  - `bots/ska/venv/**`
+  - `skills/**`
+  - 외부 패키지의 `README.md`, `LICENSE.md`, API reference
+- 이유:
+  - 실행 산출물, 외부 의존성 문서, 코덱 로컬 skill 문서는 프로젝트 컨텍스트 문서가 아니기 때문이다.
+
 ---
 
 ## 2. 세션 시작 시 우선 읽기
@@ -77,6 +102,22 @@
   - [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
 - 장기 연구 / 설계 배경
   - [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+### 2.2.1 세션에서 꼭 필요한 최소 문서 묶음
+
+1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
+2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+3. [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+5. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+6. [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+이 6개를 읽으면:
+- 지금 시스템이 어디까지 왔는지
+- 오늘 뭘 이어야 하는지
+- 왜 그렇게 설계됐는지
+- 코드 어디서 시작해야 하는지
+를 대부분 파악할 수 있다.
 
 ### 2.3 현재 구현 상태 추적
 
@@ -173,6 +214,22 @@
   - [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
 - 장기 의사결정 / 회고
   - [docs/RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+### 세션 문서 흐름이 실제로 이어지는지 점검하고 싶을 때
+
+아래 순서로만 읽어서 현재 상태가 이해되면 문서 흐름은 정상이다.
+
+1. `CLAUDE.md`
+2. `SESSION_CONTEXT_INDEX.md`
+3. `SESSION_HANDOFF.md`
+4. `PLATFORM_IMPLEMENTATION_TRACKER.md`
+5. `WORK_HISTORY.md`
+6. `RESEARCH_JOURNAL.md`
+
+이 순서에서 막히는 지점이 있으면:
+- 진입 문서에 링크가 빠졌거나
+- 현재 상태가 handoff에 충분히 안 적혔거나
+- 팀 참조 문서가 실제 코드와 어긋난 것이다.
 
 ### 문서 파싱/OCR 흐름을 보고 싶을 때
 
