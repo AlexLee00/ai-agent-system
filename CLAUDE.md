@@ -325,23 +325,21 @@ await rag.store(namespace, content, metadata, botName);
 ### 세션 시작 루틴
 1. CLAUDE.md 읽기 (프로젝트 규칙)
 2. docs/SESSION_CONTEXT_INDEX.md 읽기 (공통 문서/팀별 진입점 인덱스)
-3. docs/DOCUMENTATION_SYSTEM.md 읽기 (문서 체계/읽는 순서/업데이트 규칙)
-4. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
-5. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
-6. docs/PLATFORM_IMPLEMENTATION_TRACKER.md 확인 (현재 구현 상태와 빠른 찾기)
+3. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
+4. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
+5. docs/PLATFORM_IMPLEMENTATION_TRACKER.md 확인 (현재 구현 상태와 빠른 찾기)
+6. docs/WORK_HISTORY.md / docs/RESEARCH_JOURNAL.md 확인 (최근 사실 기록과 연구 맥락)
 7. git status로 현재 상태 확인
 
 ### 세션 마무리 루틴
 1. Git 커밋 (미커밋 변경사항 정리)
 2. docs/WORK_HISTORY.md 업데이트 (오늘 한 일 — 사실 중심)
-3. docs/DEV_LOG.md 업데이트 (세션 요약 — 맥락 중심)
-4. docs/DEV_VLOG.md 업데이트 (연구/회고 — 서술형)
-5. docs/RESEARCH_JOURNAL.md 업데이트 (중요 결정/인사이트 — 장기 연구용)
-6. docs/TEST_RESULTS.md 업데이트 (테스트 실행했다면)
-7. docs/CHANGELOG.md 업데이트 (기능 추가/변경이 있었다면)
-8. docs/KNOWN_ISSUES.md 업데이트 (새로 발견된 이슈가 있다면)
-9. docs/SESSION_HANDOFF.md 작성 (다음 세션에 전달할 컨텍스트)
-10. Git 최종 커밋 + push — 커밋 메시지: `docs: 세션 마감 문서 업데이트 (YYYY-MM-DD)`
+3. docs/RESEARCH_JOURNAL.md 업데이트 (중요 결정/회고 — 장기 연구용)
+4. docs/TEST_RESULTS.md 업데이트 (테스트 실행했다면)
+5. docs/CHANGELOG.md 업데이트 (기능 추가/변경이 있었다면)
+6. docs/KNOWN_ISSUES.md 업데이트 (새로 발견된 이슈가 있다면)
+7. docs/SESSION_HANDOFF.md 작성 (다음 세션에 전달할 컨텍스트)
+8. Git 최종 커밋 + push — 커밋 메시지: `docs: 세션 마감 문서 업데이트 (YYYY-MM-DD)`
 
 ### 작업 중 규칙
 - 의미 있는 단위로 자주 Git 커밋 (한 번에 몰아서 ❌)
@@ -352,13 +350,10 @@ await rag.store(namespace, content, metadata, botName);
 
 | 문서 | 목적 | 작성 시점 |
 |------|------|----------|
-| WORK_HISTORY.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과) | 매 작업 완료 즉시 |
-| RESEARCH_JOURNAL.md | 왜 이렇게 결정했는가 (연구/논문/발표용) | 중요 결정/인사이트 시 |
+| WORK_HISTORY.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과, 세션 맥락) | 매 작업 완료 즉시 |
+| RESEARCH_JOURNAL.md | 왜 이렇게 결정했는가 (연구/회고/장기 판단) | 중요 결정/인사이트 시 |
 | SESSION_CONTEXT_INDEX.md | 공통 규칙/진입점/운영 설정 인덱스 | 공통 구조 변경 시 |
-| DOCUMENTATION_SYSTEM.md | 문서 역할/읽는 순서/통폐합 기준 | 문서 체계 변경 시 |
 | SESSION_HANDOFF.md | 다음 세션에 전달할 맥락 (기억 이전) | 매 세션 종료 시 |
-| DEV_LOG.md | 세션 단위 사실+맥락 기록 | 매 세션 종료 시 |
-| DEV_VLOG.md | 세션 단위 서술형 연구/회고 | 매 세션 종료 시 |
 | TEST_RESULTS.md | 테스트 결과 누적 | 테스트 실행 시 |
 | CHANGELOG.md | 버전별 변경 이력 | 기능 변경 시 |
 | KNOWN_ISSUES.md | 알려진 이슈 추적 | 이슈 발견 시 |
@@ -366,7 +361,7 @@ await rag.store(namespace, content, metadata, botName);
 ### 기억 이전 체계
 - **즉시** (같은 날): SESSION_HANDOFF.md → 다음 세션이 읽음
 - **공통 인덱스**: SESSION_CONTEXT_INDEX.md → 세션 시작 시 반드시 읽음
-- **문서 체계**: DOCUMENTATION_SYSTEM.md → 문서 역할과 업데이트 기준 고정
-- **단기** (1주): WORK_HISTORY.md, KNOWN_ISSUES.md, DEV_LOG.md, DEV_VLOG.md
+- **문서 체계**: SESSION_CONTEXT_INDEX.md 안의 문서 역할/읽기 순서 섹션 참고
+- **단기** (1주): WORK_HISTORY.md, KNOWN_ISSUES.md
 - **장기** (영구): RESEARCH_JOURNAL.md, CHANGELOG.md, PLATFORM_IMPLEMENTATION_TRACKER.md, CLAUDE.md
 - **전략 기억**: claude.ai (전략 담당)가 메모리로 장기 기억 유지

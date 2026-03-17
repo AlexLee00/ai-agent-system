@@ -11,15 +11,14 @@
 - 세션 시작 시 가장 먼저 볼 문서는
   - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
   - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-  - [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
   - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
   순서다.
-- “문서가 각각 무슨 역할이지?”는 [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)를 먼저 본다.
+- “문서가 각각 무슨 역할이지?”는 이 문서의 `2. 문서 체계와 역할`을 먼저 본다.
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
 - “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
-- “오늘 세션의 실제 작업 맥락과 연구 기록”은 [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md), [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)를 본다.
+- “오늘 세션의 실제 작업 맥락과 연구 기록”은 [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)를 본다.
 - “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
 
 ---
@@ -48,17 +47,38 @@
 2. [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
    - 공통 문서 인덱스
    - 팀별 진입점 안내
-3. [docs/DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
-   - 문서 역할
-   - 읽는 순서
-   - 세션 종료 시 갱신 기준
-4. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+3. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
    - 직전 세션 맥락
    - 지금 바로 이어야 할 작업
-5. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
+4. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
    - 현재 알려진 문제
 
-### 2.2 현재 구현 상태 추적
+### 2.2 문서 체계와 역할
+
+- 정책 / 세션 규칙
+  - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
+- 세션 시작 인덱스
+  - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+- 현재 상태 / 다음 작업
+  - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+  - [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+- 구조 / 기준 설계
+  - [README.md](/Users/alexlee/projects/ai-agent-system/README.md)
+  - [SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
+  - [coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
+- 팀별 구현 위치 안내
+  - [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
+- 운영 설정 / 튜닝
+  - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+- 사실 기반 작업 기록
+  - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+  - [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
+  - [TEST_RESULTS.md](/Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md)
+  - [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
+- 장기 연구 / 설계 배경
+  - [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+### 2.3 현재 구현 상태 추적
 
 1. [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
    - 전체 플랫폼 구현 상태
@@ -68,12 +88,10 @@
    - 실제 작업 사실 기록
 3. [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
    - 기능 변경 이력
-4. [docs/DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md)
-   - 세션 단위 작업 요약
-5. [docs/DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
-   - 세션 단위 연구/회고 기록
+4. [docs/RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+   - 장기 의사결정, 연구 맥락, 세션 회고 기록
 
-### 2.3 공통 구조 문서
+### 2.4 공통 구조 문서
 
 1. [README.md](/Users/alexlee/projects/ai-agent-system/README.md)
    - 저장소 전체 구조
@@ -84,14 +102,14 @@
 4. [docs/team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
    - 팀별 기능 개요
 
-### 2.4 운영 설정/튜닝 문서
+### 2.5 운영 설정/튜닝 문서
 
 1. [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
    - 팀별 `runtime_config` 위치와 조정값
 2. [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
    - 현재 팀별 운영 설정 빠른 조회
 
-### 2.5 팀별 참조 문서
+### 2.6 팀별 참조 문서
 
 1. [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
    - 팀별 참조 문서 인덱스
@@ -105,7 +123,7 @@
 
 ---
 
-## 2.6 상황별 빠른 경로
+## 2.7 상황별 빠른 경로
 
 ### 기능을 찾고 싶을 때
 
@@ -142,6 +160,18 @@
 - 코딩/운영 원칙
   - [docs/coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
 - 연구/결정 배경
+  - [docs/RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+### 세션 종료 시 무엇을 갱신해야 하는지 보고 싶을 때
+
+- 현재 상태 / 다음 작업
+  - [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+- 사실 기록
+  - [docs/WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+  - [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
+  - [docs/TEST_RESULTS.md](/Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md)
+  - [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
+- 장기 의사결정 / 회고
   - [docs/RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 ### 문서 파싱/OCR 흐름을 보고 싶을 때

@@ -32,6 +32,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 스카 일일/주간 예측 리뷰가 `primary vs shadow` 비교와 promotion 판단을 읽도록 확장
 - 일일 운영 분석 리포트 입력 스크립트를 `daily-ops-report.js` 기준으로 정리
 - 구현 추적 문서 이름을 `PLATFORM_IMPLEMENTATION_TRACKER.md`로 정리하고 세션 인덱스/팀 문서 링크를 갱신
+- 세션 문서 체계를 기존 문서 중심으로 재정리
+  - `SESSION_CONTEXT_INDEX.md`
+  - `WORK_HISTORY.md`
+  - `RESEARCH_JOURNAL.md`
 
 ### 버그 수정 (fix)
 - KIS 국내/해외장 주문 금액 단위 보정
@@ -48,11 +52,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신
-- 문서 체계 운영 가이드 추가
-  - `docs/DOCUMENTATION_SYSTEM.md`
-- 세션 지속성 문서 추가
-  - `docs/DEV_LOG.md`
-  - `docs/DEV_VLOG.md`
+- 세션 문서 역할 재정리 및 링크 정합성 갱신
 
 ### 추가 개발 후보
 - `runtime_config` 변경 후보를 일일/주간으로 제안하는 자동화 고도화

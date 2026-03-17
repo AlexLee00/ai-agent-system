@@ -14,8 +14,17 @@
 - 워커 문서 재사용 흐름에 문서 상세, 재사용 이벤트, 생성 결과 연결, 전환율 요약 추가
 - 일일 운영 분석 리포트 입력 스크립트 `scripts/reviews/daily-ops-report.js` 추가 및 fallback 과장 진단 완화
 - 구현 추적 문서를 `docs/PLATFORM_IMPLEMENTATION_TRACKER.md`로 이름 변경하고 세션 인덱스/팀 문서 링크 정리
-- 문서 체계 운영 가이드 `docs/DOCUMENTATION_SYSTEM.md` 추가
-- 세션 단위 기록 문서 `docs/DEV_LOG.md`, `docs/DEV_VLOG.md` 추가
+- 세션 시작/종료 문서 흐름을 `SESSION_CONTEXT_INDEX.md`, `WORK_HISTORY.md`, `RESEARCH_JOURNAL.md` 중심으로 재정리
+
+세션 맥락:
+- 스카는 기존 엔진을 교체하지 않고 `shadow`로만 비교를 시작했다.
+- 워커는 문서 파싱 기능을 넘어서 실제 업무 생성 결과와 성과를 추적하는 단계로 넘어갔다.
+- 운영 분석은 과한 추론보다 보수적 판단을 우선하는 방향으로 입력 구조를 조정했다.
+
+의사결정 이유:
+- 스카는 내부 MVP와 운영 안정성을 위해 `대체`보다 `shadow 비교`가 맞다.
+- 워커는 새 레이어를 만들기보다 기존 문서 저장/업무 confirm 흐름을 확장하는 것이 더 안전하다.
+- 세션 문서는 같은 성격을 나누기보다 기존 문서에 흡수해 읽는 순서를 줄이는 것이 맞다.
 
 검증:
 - `python3 -m py_compile bots/ska/src/runtime_config.py bots/ska/src/forecast.py`
