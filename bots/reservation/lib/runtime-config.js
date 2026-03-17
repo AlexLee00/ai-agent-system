@@ -15,6 +15,8 @@ const DEFAULT_RUNTIME_CONFIG = {
     staleConfirmCount: 5,
     staleMinElapsedMs: 10 * 60 * 1000,
     staleExpireMs: 30 * 60 * 1000,
+    verifyBeforeUnresolvedReport: true,
+    verifyBeforeUnresolvedReportTimeoutMs: 4 * 60 * 1000,
   },
   kioskMonitor: {
     errorTrackerThreshold: 3,
