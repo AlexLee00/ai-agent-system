@@ -25,6 +25,13 @@ function ShortcutCard({ href, icon: Icon, title, description }) {
   );
 }
 
+function formatReuseSummary(document) {
+  const total = Number(document.total_reuse_count || 0);
+  const linked = Number(document.linked_reuse_count || 0);
+  if (total <= 0) return '재사용 이력 없음';
+  return `재사용 ${total}회 · 연결 ${linked}건`;
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState([]);
 
@@ -104,6 +111,9 @@ export default function DocumentsPage() {
                     </div>
                     <p className="mt-2 text-xs text-slate-500">
                       {document.category || '기타'} · {document.created_at || '-'}
+                    </p>
+                    <p className="mt-2 text-xs font-medium text-sky-700">
+                      {formatReuseSummary(document)}
                     </p>
                     {document.ai_summary ? (
                       <p className="mt-2 line-clamp-2 text-sm text-slate-600">{document.ai_summary}</p>

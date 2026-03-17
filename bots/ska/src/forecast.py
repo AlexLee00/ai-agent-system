@@ -30,6 +30,7 @@ launchd: 매일 18:00 (ai.ska.forecast)
 import sys
 import os
 import json
+import math
 import warnings
 import psycopg2
 import pandas as pd
@@ -62,7 +63,7 @@ MAX_HOURS      = (BIZ_END_H - BIZ_START_H) * NUM_ROOMS
 FORECAST_RUNTIME = get_forecast_config()
 CALIBRATION_LOOKBACK_DAYS = 56
 CALIBRATION_MAX_RATIO = 0.12
-RESERVATION_ADJUSTMENT_WEIGHT = 0.35
+RESERVATION_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME['reservationAdjustmentWeight']
 CONDITION_ADJUSTMENT_WEIGHT = FORECAST_RUNTIME['conditionAdjustmentWeight']
 CONDITION_MIN_SAMPLES = 3
 BOOKED_HOURS_ADJUSTMENT_WEIGHT = 0.30
@@ -899,6 +900,7 @@ def ensure_forecast_results_table(con):
 
 def save_forecast_result(con, forecast_date, result, mape=None, forecast_mode='daily'):
     """예측 결과를 ska.forecast_results에 저장 → n8n/레베카에서 조회 가능"""
+    shadow_model = result.get('shadow_model') or {}
     predictions = {
         'yhat':         result['yhat'],
         'yhat_prophet': result.get('yhat_prophet', result['yhat']),
@@ -923,6 +925,15 @@ def save_forecast_result(con, forecast_date, result, mape=None, forecast_mode='d
         'reservation_evening_count': result.get('reservation_evening_count', 0),
         'calibration_adjustment': result.get('calibration_adjustment', 0),
         'calibration_notes': result.get('calibration_notes', []),
+        'shadow_model_name': shadow_model.get('model_name'),
+        'shadow_yhat': shadow_model.get('yhat'),
+        'shadow_confidence': shadow_model.get('confidence'),
+        'shadow_family': shadow_model.get('family'),
+        'shadow_neighbors': shadow_model.get('neighbor_count'),
+        'shadow_avg_distance': shadow_model.get('avg_distance'),
+        'shadow_models': {
+            shadow_model.get('model_name'): shadow_model,
+        } if shadow_model.get('model_name') else {},
     }
     params = _load_model_params()
     params['forecast_mode'] = forecast_mode
@@ -1026,6 +1037,7 @@ def run_forecast(con, base_date, periods):
                 'calibration_notes': [],
             })
             results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
+            results[-1]['shadow_model'] = _run_shadow_knn_prediction(con, target_d, results[-1])
         return results
 
     print(f'[FORECAST] 학습 데이터: {len(hist_df)}일 ({hist_df["ds"].min().date()}~{hist_df["ds"].max().date()})')
@@ -1152,6 +1164,7 @@ def run_forecast(con, base_date, periods):
         })
 
         results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
+        results[-1]['shadow_model'] = _run_shadow_knn_prediction(con, target_d, results[-1])
 
     print(f'[FORECAST] 앙상블 예측 완료: {len(results)}일')
     return results
@@ -1164,6 +1177,190 @@ def _calc_confidence(r):
     spread = r['yhat_upper'] - r['yhat_lower']
     ratio  = spread / r['yhat']
     return max(0.0, round(1.0 - ratio / 2, 3))
+
+
+SHADOW_FEATURE_COLUMNS = [
+    'weekday',
+    'month',
+    'day_of_month',
+    'is_weekend',
+    'reservation_count',
+    'reservation_booked_hours',
+    'reservation_unique_rooms',
+    'reservation_peak_overlap',
+    'reservation_morning_count',
+    'reservation_afternoon_count',
+    'reservation_evening_count',
+    'exam_score',
+    'rain_prob',
+    'temperature',
+    'vacation_flag',
+    'bridge_holiday_flag',
+]
+
+
+def _load_shadow_training_rows(con, days=None):
+    lookback_days = days or int(FORECAST_RUNTIME['perModelAccuracyDays'])
+    try:
+        rows = _qry(con, """
+            SELECT
+                date,
+                target_revenue,
+                weekday,
+                month,
+                day_of_month,
+                COALESCE(is_weekend, false) AS is_weekend,
+                COALESCE(reservation_count, total_reservations, 0) AS reservation_count,
+                COALESCE(reservation_booked_hours, 0.0) AS reservation_booked_hours,
+                COALESCE(reservation_unique_rooms, 0) AS reservation_unique_rooms,
+                COALESCE(reservation_peak_overlap, 0) AS reservation_peak_overlap,
+                COALESCE(reservation_morning_count, 0) AS reservation_morning_count,
+                COALESCE(reservation_afternoon_count, 0) AS reservation_afternoon_count,
+                COALESCE(reservation_evening_count, 0) AS reservation_evening_count,
+                COALESCE(exam_score, 0) AS exam_score,
+                COALESCE(rain_prob, 0.0) AS rain_prob,
+                COALESCE(temperature, %s) AS temperature,
+                COALESCE(vacation_flag, false) AS vacation_flag,
+                COALESCE(bridge_holiday_flag, false) AS bridge_holiday_flag
+            FROM ska.training_feature_daily
+            WHERE date >= current_date - %s
+              AND date < current_date
+              AND target_revenue IS NOT NULL
+              AND target_revenue > 0
+            ORDER BY date
+        """, (TEMP_DEFAULT, lookback_days))
+        return rows
+    except Exception as e:
+        print(f'[FORECAST] ⚠️ shadow 학습 데이터 조회 실패: {e}')
+        return []
+
+
+def _build_shadow_feature_row(target_date, result):
+    env_info = result.get('env_info') or {}
+    return {
+        'weekday': target_date.isoweekday(),
+        'month': target_date.month,
+        'day_of_month': target_date.day,
+        'is_weekend': 1 if target_date.weekday() >= 5 else 0,
+        'reservation_count': int(result.get('reservation_count', 0) or 0),
+        'reservation_booked_hours': float(result.get('reservation_booked_hours', 0.0) or 0.0),
+        'reservation_unique_rooms': int(result.get('reservation_unique_rooms', 0) or 0),
+        'reservation_peak_overlap': int(result.get('reservation_peak_overlap', 0) or 0),
+        'reservation_morning_count': int(result.get('reservation_morning_count', 0) or 0),
+        'reservation_afternoon_count': int(result.get('reservation_afternoon_count', 0) or 0),
+        'reservation_evening_count': int(result.get('reservation_evening_count', 0) or 0),
+        'exam_score': int(env_info.get('exam_score', 0) or 0),
+        'rain_prob': float(env_info.get('rain_prob', 0.0) or 0.0),
+        'temperature': float(env_info.get('temperature', TEMP_DEFAULT) or TEMP_DEFAULT),
+        'vacation_flag': 1 if env_info.get('vacation_flag') else 0,
+        'bridge_holiday_flag': 1 if env_info.get('bridge_holiday') else 0,
+    }
+
+
+def _normalize_shadow_dataset(training_rows):
+    data = []
+    for row in training_rows:
+        data.append({
+            'target_revenue': float(row[1] or 0.0),
+            'features': {
+                'weekday': float(row[2] or 0),
+                'month': float(row[3] or 0),
+                'day_of_month': float(row[4] or 0),
+                'is_weekend': 1.0 if row[5] else 0.0,
+                'reservation_count': float(row[6] or 0),
+                'reservation_booked_hours': float(row[7] or 0.0),
+                'reservation_unique_rooms': float(row[8] or 0),
+                'reservation_peak_overlap': float(row[9] or 0),
+                'reservation_morning_count': float(row[10] or 0),
+                'reservation_afternoon_count': float(row[11] or 0),
+                'reservation_evening_count': float(row[12] or 0),
+                'exam_score': float(row[13] or 0),
+                'rain_prob': float(row[14] or 0.0),
+                'temperature': float(row[15] or TEMP_DEFAULT),
+                'vacation_flag': 1.0 if row[16] else 0.0,
+                'bridge_holiday_flag': 1.0 if row[17] else 0.0,
+            },
+        })
+    return data
+
+
+def _shadow_feature_stats(dataset):
+    stats = {}
+    for key in SHADOW_FEATURE_COLUMNS:
+        values = [float(item['features'][key]) for item in dataset]
+        if not values:
+            stats[key] = {'mean': 0.0, 'std': 1.0}
+            continue
+        mean_val = sum(values) / len(values)
+        variance = sum((value - mean_val) ** 2 for value in values) / len(values)
+        stats[key] = {
+            'mean': mean_val,
+            'std': math.sqrt(variance) or 1.0,
+        }
+    return stats
+
+
+def _scaled_distance(a, b, stats):
+    total = 0.0
+    for key in SHADOW_FEATURE_COLUMNS:
+        std = stats[key]['std'] or 1.0
+        delta = (float(a.get(key, 0.0)) - float(b.get(key, 0.0))) / std
+        total += delta * delta
+    return math.sqrt(total)
+
+
+def _run_shadow_knn_prediction(con, target_date, result):
+    if not FORECAST_RUNTIME.get('shadowModelEnabled', True):
+        return None
+
+    training_rows = _load_shadow_training_rows(con)
+    min_rows = int(FORECAST_RUNTIME.get('shadowMinimumTrainRows', 28) or 28)
+    if len(training_rows) < min_rows:
+        return None
+
+    dataset = _normalize_shadow_dataset(training_rows)
+    stats = _shadow_feature_stats(dataset)
+    target_features = _build_shadow_feature_row(target_date, result)
+
+    distances = []
+    for item in dataset:
+        dist = _scaled_distance(item['features'], target_features, stats)
+        distances.append((dist, item['target_revenue']))
+    distances.sort(key=lambda entry: entry[0])
+
+    neighbor_count = max(3, int(FORECAST_RUNTIME.get('shadowNeighborCount', 7) or 7))
+    neighbors = distances[:neighbor_count]
+    if not neighbors:
+        return None
+
+    weighted_sum = 0.0
+    weight_total = 0.0
+    neighbor_targets = []
+    for distance, target_revenue in neighbors:
+        weight = 1.0 / max(distance, 0.25)
+        weighted_sum += target_revenue * weight
+        weight_total += weight
+        neighbor_targets.append(target_revenue)
+
+    if weight_total <= 0:
+        return None
+
+    yhat = round(weighted_sum / weight_total)
+    spread = max(neighbor_targets) - min(neighbor_targets) if len(neighbor_targets) > 1 else 0.0
+    base = max(yhat, 1)
+    spread_ratio = spread / base
+    avg_distance = sum(distance for distance, _ in neighbors) / len(neighbors)
+    confidence = max(0.0, min(0.95, round(0.82 - min(0.45, spread_ratio * 0.35) - min(0.25, avg_distance * 0.03), 3)))
+
+    return {
+        'model_name': FORECAST_RUNTIME.get('shadowModelName', 'knn-shadow-v1'),
+        'family': 'knn_regressor',
+        'yhat': max(0, yhat),
+        'neighbor_count': len(neighbors),
+        'avg_distance': round(avg_distance, 3),
+        'confidence': confidence,
+        'feature_keys': SHADOW_FEATURE_COLUMNS,
+    }
 
 
 # ─── 텔레그램 포맷 ────────────────────────────────────────────────────────────
@@ -1694,6 +1891,7 @@ def run(mode='daily', base_date_str=None, output_json=False):
         if sync_training_feature_store:
             synced = sync_training_feature_store(con, days=365)
             print(f'[FORECAST] ✅ training_feature_daily 동기화 ({synced}행 대상)')
+        recent_mape = get_recent_mape(con, days=7)
 
     except ValueError as e:
         print(f'[FORECAST] ❌ {e}')
@@ -1735,4 +1933,3 @@ if __name__ == '__main__':
         run_monthly_review(base_date)
     else:
         run(mode, base_date, output_json)
-    days = days or FORECAST_RUNTIME['perModelAccuracyDays']

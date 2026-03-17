@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 스카 shadow 비교 + 워커 문서 재사용 추적
+
+핵심 구현:
+- 스카 예측 엔진에 `knn-shadow-v1` shadow 비교 모델 추가
+- `forecast_results.predictions`에 `shadow_model_name`, `shadow_yhat`, `shadow_confidence` 저장
+- 스카 일일/주간 리뷰가 `primary vs shadow` 비교를 읽도록 확장
+- 스카 자동화 프롬프트를 shadow 관찰/승격 판단 기준으로 갱신
+- 워커 문서 재사용 흐름에 문서 상세, 재사용 이벤트, 생성 결과 연결, 전환율 요약 추가
+- 일일 운영 분석 리포트 입력 스크립트 `scripts/reviews/daily-ops-report.js` 추가 및 fallback 과장 진단 완화
+- 구현 추적 문서를 `docs/PLATFORM_IMPLEMENTATION_TRACKER.md`로 이름 변경하고 세션 인덱스/팀 문서 링크 정리
+
+검증:
+- `python3 -m py_compile bots/ska/src/runtime_config.py bots/ska/src/forecast.py`
+- `node --check scripts/reviews/daily-ops-report.js`
+- `node --check scripts/reviews/ska-sales-forecast-daily-review.js`
+- `node --check scripts/reviews/ska-sales-forecast-weekly-review.js`
+- `cd bots/worker/web && npm run build`
+
 ### 10~11주차 (3/11~3/15) — 228개 커밋
 
 핵심 구현:

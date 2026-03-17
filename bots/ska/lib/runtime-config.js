@@ -5,7 +5,13 @@ const path = require('path');
 
 const DEFAULT_RUNTIME_CONFIG = {
   forecast: {
-    conditionAdjustmentWeight: 0.45,
+    conditionAdjustmentWeight: 0.50,
+    reservationAdjustmentWeight: 0.42,
+    shadowModelEnabled: true,
+    shadowModelName: 'knn-shadow-v1',
+    shadowNeighborCount: 7,
+    shadowMinimumTrainRows: 21,
+    shadowPromotionMapeGap: 2.0,
     sarimaPeriods: 7,
     sarimaMaxIter: 200,
     perModelAccuracyDays: 30,
@@ -13,7 +19,7 @@ const DEFAULT_RUNTIME_CONFIG = {
     llmDiagnosisRagThreshold: 0.6,
     monthlyReviewGradeGood: 12,
     monthlyReviewGradeWarn: 22,
-    weekdayBiasAlertAmount: 30000,
+    weekdayBiasAlertAmount: 20000,
   },
   rebecca: {
     weeklyGradeGood: 10,
