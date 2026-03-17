@@ -97,7 +97,7 @@
 
 ### 4.9 사실 기반 작업 기록
 
-- [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+- [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
   - 날짜별 사실 기록
 - [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
   - 기능 변경 이력
@@ -112,7 +112,7 @@
   - 세션 단위 사실+맥락 기록
 - [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
   - 세션 단위 서술형 연구/회고 기록
-- [dev-journal.md](/Users/alexlee/projects/ai-agent-system/docs/dev-journal.md)
+- [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
   - 장기 연구/의사결정 저널
 
 ---
@@ -137,7 +137,7 @@
   - [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
 - 변경사항 커밋 시
   - [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
-  - [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+  - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
 
 ---
 
@@ -159,7 +159,7 @@
 - 내용이 `세션 인수인계`면
   - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)로 모은다
 - 내용이 `장기 연구/방법론`이면
-  - [dev-journal.md](/Users/alexlee/projects/ai-agent-system/docs/dev-journal.md)로 모은다
+  - [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)로 모은다
 - 내용이 `특정 기능의 깊은 설계/운영 지식`이면
   - 개별 기능 문서를 유지한다
 
@@ -181,4 +181,3 @@
 - 다만 아래 원칙은 유지해야 한다.
   - 새 기능을 만들면 먼저 팀 참조 문서와 구현 추적 문서를 갱신
   - 세션 종료 전에는 반드시 handoff/log/vlog를 갱신
-

@@ -18,7 +18,7 @@
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
-- “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
+- “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
 - “오늘 세션의 실제 작업 맥락과 연구 기록”은 [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md), [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)를 본다.
 - “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
 
@@ -64,7 +64,7 @@
    - 전체 플랫폼 구현 상태
    - 팀별 완료/진행 중/미완료
    - 팀별 빠른 찾기
-2. [docs/work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+2. [docs/WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
    - 실제 작업 사실 기록
 3. [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
    - 기능 변경 이력
@@ -132,7 +132,7 @@
 - 직전 세션 맥락
   - [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
 - 장기 구현 맥락
-  - [docs/work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+  - [docs/WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
   - [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
 
 ### 왜 이렇게 설계됐는지 보고 싶을 때
@@ -142,7 +142,7 @@
 - 코딩/운영 원칙
   - [docs/coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
 - 연구/결정 배경
-  - [docs/dev-journal.md](/Users/alexlee/projects/ai-agent-system/docs/dev-journal.md)
+  - [docs/RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 ### 문서 파싱/OCR 흐름을 보고 싶을 때
 

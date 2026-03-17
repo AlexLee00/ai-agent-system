@@ -91,7 +91,7 @@ ai-agent-system/
 │   ├── core/                     # @ai-agent/core
 │   └── playwright-utils/         # @ai-agent/playwright-utils
 └── docs/
-    ├── work-history.md            # 날짜별 작업 타임라인
+    ├── WORK_HISTORY.md            # 날짜별 작업 타임라인
     ├── coding-guide.md            # 개발 가이드 (P0~P4)
     ├── SYSTEM_DESIGN.md           # 전체 설계서
     └── LLM_DOCS.md               # LLM API 참조

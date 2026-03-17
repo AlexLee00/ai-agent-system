@@ -333,10 +333,10 @@ await rag.store(namespace, content, metadata, botName);
 
 ### 세션 마무리 루틴
 1. Git 커밋 (미커밋 변경사항 정리)
-2. docs/work-history.md 업데이트 (오늘 한 일 — 사실 중심)
+2. docs/WORK_HISTORY.md 업데이트 (오늘 한 일 — 사실 중심)
 3. docs/DEV_LOG.md 업데이트 (세션 요약 — 맥락 중심)
 4. docs/DEV_VLOG.md 업데이트 (연구/회고 — 서술형)
-5. docs/dev-journal.md 업데이트 (중요 결정/인사이트 — 장기 연구용)
+5. docs/RESEARCH_JOURNAL.md 업데이트 (중요 결정/인사이트 — 장기 연구용)
 6. docs/TEST_RESULTS.md 업데이트 (테스트 실행했다면)
 7. docs/CHANGELOG.md 업데이트 (기능 추가/변경이 있었다면)
 8. docs/KNOWN_ISSUES.md 업데이트 (새로 발견된 이슈가 있다면)
@@ -352,8 +352,8 @@ await rag.store(namespace, content, metadata, botName);
 
 | 문서 | 목적 | 작성 시점 |
 |------|------|----------|
-| work-history.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과) | 매 작업 완료 즉시 |
-| dev-journal.md | 왜 이렇게 결정했는가 (연구/논문/발표용) | 중요 결정/인사이트 시 |
+| WORK_HISTORY.md | 무엇을 했는가 (사실, 변경 파일, 테스트 결과) | 매 작업 완료 즉시 |
+| RESEARCH_JOURNAL.md | 왜 이렇게 결정했는가 (연구/논문/발표용) | 중요 결정/인사이트 시 |
 | SESSION_CONTEXT_INDEX.md | 공통 규칙/진입점/운영 설정 인덱스 | 공통 구조 변경 시 |
 | DOCUMENTATION_SYSTEM.md | 문서 역할/읽는 순서/통폐합 기준 | 문서 체계 변경 시 |
 | SESSION_HANDOFF.md | 다음 세션에 전달할 맥락 (기억 이전) | 매 세션 종료 시 |
@@ -367,6 +367,6 @@ await rag.store(namespace, content, metadata, botName);
 - **즉시** (같은 날): SESSION_HANDOFF.md → 다음 세션이 읽음
 - **공통 인덱스**: SESSION_CONTEXT_INDEX.md → 세션 시작 시 반드시 읽음
 - **문서 체계**: DOCUMENTATION_SYSTEM.md → 문서 역할과 업데이트 기준 고정
-- **단기** (1주): work-history.md, KNOWN_ISSUES.md, DEV_LOG.md, DEV_VLOG.md
-- **장기** (영구): dev-journal.md, CHANGELOG.md, PLATFORM_IMPLEMENTATION_TRACKER.md, CLAUDE.md
+- **단기** (1주): WORK_HISTORY.md, KNOWN_ISSUES.md, DEV_LOG.md, DEV_VLOG.md
+- **장기** (영구): RESEARCH_JOURNAL.md, CHANGELOG.md, PLATFORM_IMPLEMENTATION_TRACKER.md, CLAUDE.md
 - **전략 기억**: claude.ai (전략 담당)가 메모리로 장기 기억 유지
