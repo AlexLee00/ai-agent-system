@@ -1,9 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
+import { api } from '@/lib/api';
+import { buildDocumentReusePackage } from '@/lib/document-attachment';
 
 function formatWarnings(warnings = []) {
   if (!Array.isArray(warnings) || warnings.length === 0) return ['없음'];
@@ -13,10 +15,44 @@ function formatWarnings(warnings = []) {
 export default function OcrTestPage() {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [loadingExtractionId, setLoadingExtractionId] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [recentDocuments, setRecentDocuments] = useState([]);
   const [documentInfo, setDocumentInfo] = useState(null);
   const [extraction, setExtraction] = useState(null);
+
+  useEffect(() => {
+    setLoadingDocuments(true);
+    api.get('/documents?limit=8')
+      .then((data) => setRecentDocuments(data.documents || []))
+      .catch(() => setRecentDocuments([]))
+      .finally(() => setLoadingDocuments(false));
+  }, []);
+
+  async function fetchExtraction(documentId) {
+    setLoadingExtractionId(documentId);
+    setError('');
+    try {
+      const token = getToken();
+      const extractionRes = await fetch(`/api/documents/${documentId}/extraction`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const extractionData = await extractionRes.json().catch(() => ({}));
+      if (!extractionRes.ok) throw new Error(extractionData.error || '파싱 결과 조회 실패');
+      setExtraction(extractionData.document || null);
+      const selectedDocument = recentDocuments.find((item) => String(item.id) === String(documentId));
+      setDocumentInfo(selectedDocument || extractionData.document || null);
+      if (selectedDocument?.filename) {
+        setNotice(`"${selectedDocument.filename}" 문서 파싱 결과를 다시 불러왔습니다.`);
+      }
+    } catch (err) {
+      setError(err.message || '문서 파싱 결과를 불러오지 못했습니다.');
+    } finally {
+      setLoadingExtractionId(null);
+    }
+  }
 
   async function handleUpload(event) {
     const file = event.target.files?.[0];
@@ -39,14 +75,11 @@ export default function OcrTestPage() {
       if (!uploadRes.ok) throw new Error(uploadData.error || '파일 업로드 실패');
 
       setDocumentInfo(uploadData.document || null);
-
-      const extractionRes = await fetch(`/api/documents/${uploadData.document.id}/extraction`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      await fetchExtraction(uploadData.document.id);
+      setRecentDocuments((prev) => {
+        const next = [uploadData.document, ...prev.filter((item) => String(item.id) !== String(uploadData.document.id))];
+        return next.slice(0, 8);
       });
-      const extractionData = await extractionRes.json().catch(() => ({}));
-      if (!extractionRes.ok) throw new Error(extractionData.error || '파싱 결과 조회 실패');
-
-      setExtraction(extractionData.document || null);
       setNotice(`"${uploadData.document.filename}" 문서를 업로드하고 파싱 결과를 불러왔습니다.`);
     } catch (err) {
       setError(err.message || 'OCR 테스트 중 오류가 발생했습니다.');
@@ -57,6 +90,17 @@ export default function OcrTestPage() {
   }
 
   const metadata = extraction?.extraction_metadata || {};
+  const reusePackage = extraction ? buildDocumentReusePackage(extraction, documentInfo?.filename || '') : null;
+
+  async function copyReusePrompt() {
+    if (!reusePackage?.appendix) return;
+    try {
+      await navigator.clipboard.writeText(reusePackage.appendix);
+      setNotice(`"${reusePackage.filename}" 재사용 프롬프트를 클립보드에 복사했습니다.`);
+    } catch {
+      setError('재사용 프롬프트를 복사하지 못했습니다.');
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -99,6 +143,34 @@ export default function OcrTestPage() {
 
         {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
         {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
+
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">최근 문서 다시 불러오기</p>
+              <p className="mt-1 text-xs text-slate-500">업로드했던 문서를 다시 열어 파싱 결과와 재사용 프롬프트를 확인합니다.</p>
+            </div>
+          </div>
+          {loadingDocuments ? (
+            <p className="mt-3 text-sm text-slate-500">문서 목록을 불러오는 중...</p>
+          ) : recentDocuments.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">최근 문서가 없습니다.</p>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {recentDocuments.map((document) => (
+                <button
+                  key={document.id}
+                  type="button"
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                  onClick={() => fetchExtraction(document.id)}
+                  disabled={loadingExtractionId === document.id}
+                >
+                  {loadingExtractionId === document.id ? '불러오는 중...' : document.filename}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -174,6 +246,32 @@ export default function OcrTestPage() {
               <p className="mt-2 text-sm font-semibold text-slate-900">{metadata.imageLineDensity ?? '-'}</p>
             </div>
           </div>
+
+          {reusePackage && (
+            <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-slate-500">업무 재사용 프롬프트</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{reusePackage.filename}</p>
+                </div>
+                <button type="button" className="btn-secondary text-xs" onClick={copyReusePrompt}>
+                  프롬프트 복사
+                </button>
+              </div>
+              {reusePackage.hints.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {reusePackage.hints.map((hint) => (
+                    <span key={hint} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                      {hint}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-slate-200 bg-slate-950 px-3 py-3 text-[11px] leading-6 text-slate-100">
+                {reusePackage.appendix}
+              </pre>
+            </div>
+          )}
         </div>
 
         <div className="card space-y-4">

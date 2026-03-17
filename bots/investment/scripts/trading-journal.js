@@ -205,7 +205,7 @@ function calcPnl(trades) {
 
 async function fetchTokenUsage(fromDate, toDate) {
   try {
-    return await pgPool.query('claude', `
+    const tokenUsageRows = await pgPool.query('claude', `
       SELECT
         bot_name,
         model,
@@ -220,9 +220,74 @@ async function fetchTokenUsage(fromDate, toDate) {
         COUNT(*)        AS call_count
       FROM token_usage
       WHERE team = 'investment' AND date_kst BETWEEN $1 AND $2
-      GROUP BY bot_name, model, task_type
+      GROUP BY bot_name, model, provider, is_free, task_type
       ORDER BY total_tokens DESC
     `, [fromDate, toDate]);
+
+    const llmLogRows = await pgPool.query('reservation', `
+      SELECT
+        bot AS bot_name,
+        model,
+        provider,
+        false AS is_free,
+        request_type AS task_type,
+        SUM(input_tokens) AS total_in,
+        SUM(output_tokens) AS total_out,
+        SUM(input_tokens + output_tokens) AS total_tokens,
+        AVG(latency_ms) AS avg_ms,
+        0 AS total_cost,
+        COUNT(*) AS call_count
+      FROM llm_usage_log
+      WHERE team = 'luna'
+        AND DATE(created_at AT TIME ZONE 'Asia/Seoul') BETWEEN $1::date AND $2::date
+      GROUP BY bot, model, provider, request_type
+      ORDER BY total_tokens DESC
+    `, [fromDate, toDate]).catch(() => []);
+
+    const merged = new Map();
+    const rows = [...tokenUsageRows, ...llmLogRows];
+    for (const row of rows) {
+      const key = [row.bot_name || 'unknown', row.model || 'unknown', row.provider || 'unknown', row.task_type || 'general'].join('|');
+      const existing = merged.get(key) || {
+        bot_name: row.bot_name || 'unknown',
+        model: row.model || 'unknown',
+        provider: row.provider || 'unknown',
+        is_free: row.is_free === true,
+        task_type: row.task_type || 'general',
+        total_in: 0,
+        total_out: 0,
+        total_tokens: 0,
+        avg_ms_weighted: 0,
+        total_cost: 0,
+        call_count: 0,
+      };
+      const callCount = toNumber(row.call_count);
+      const avgMs = toNumber(row.avg_ms);
+      existing.is_free = existing.is_free || row.is_free === true;
+      existing.total_in += toNumber(row.total_in);
+      existing.total_out += toNumber(row.total_out);
+      existing.total_tokens += toNumber(row.total_tokens);
+      existing.total_cost += toNumber(row.total_cost);
+      existing.call_count += callCount;
+      existing.avg_ms_weighted += avgMs * callCount;
+      merged.set(key, existing);
+    }
+
+    return [...merged.values()]
+      .map(row => ({
+        bot_name: row.bot_name,
+        model: row.model,
+        provider: row.provider,
+        is_free: row.is_free,
+        task_type: row.task_type,
+        total_in: row.total_in,
+        total_out: row.total_out,
+        total_tokens: row.total_tokens,
+        avg_ms: row.call_count > 0 ? row.avg_ms_weighted / row.call_count : 0,
+        total_cost: row.total_cost,
+        call_count: row.call_count,
+      }))
+      .sort((a, b) => toNumber(b.total_tokens) - toNumber(a.total_tokens));
   } catch { return []; }
 }
 

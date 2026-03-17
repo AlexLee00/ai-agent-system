@@ -43,6 +43,7 @@ const PAPER_MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.paper;
 const MAX_POS_COUNT = LUNA_RUNTIME.maxPosCount;
 const MAX_DEBATE_SYMBOLS = LUNA_RUNTIME.maxDebateSymbols;
 const STOCK_ORDER_DEFAULTS = LUNA_RUNTIME.stockOrderDefaults;
+const ANALYST_WEIGHT_CONFIG = LUNA_RUNTIME.analystWeights || {};
 
 function getStockOrderSpec(exchange) {
   return STOCK_ORDER_DEFAULTS[exchange] || null;
@@ -54,6 +55,21 @@ function normalizeDecisionAmount(exchange, action, amount) {
   const fallback = action === ACTIONS.SELL ? spec.sellDefault : spec.buyDefault;
   const numeric = Number.isFinite(Number(amount)) ? Number(amount) : fallback;
   return Math.max(spec.min, Math.min(spec.max, Math.round(numeric)));
+}
+
+function buildAnalystWeights(exchange = 'binance') {
+  const isStock = exchange === 'kis' || exchange === 'kis_overseas';
+  const profile = isStock
+    ? (isPaperMode() ? ANALYST_WEIGHT_CONFIG.stocksPaper : ANALYST_WEIGHT_CONFIG.stocksLive)
+    : ANALYST_WEIGHT_CONFIG.crypto;
+  const fallback = ANALYST_WEIGHT_CONFIG.default || {};
+
+  return normalizeWeights({
+    [ANALYST_TYPES.TA_MTF]: profile?.taMtf ?? fallback.taMtf ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
+    [ANALYST_TYPES.ONCHAIN]: profile?.onchain ?? fallback.onchain ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.SENTIMENT]: profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
+    [ANALYST_TYPES.NEWS]: profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
+  });
 }
 
 export function getMinConfidence(exchange) {
@@ -82,7 +98,10 @@ export function shouldDebateForSymbol(analyses, exchange, analystWeights = ANALY
 
 function buildFastPathDecision(fused, exchange) {
   const isStock = exchange === 'kis' || exchange === 'kis_overseas';
-  if (!isPaperMode() || !isStock || fused.hasConflict) return null;
+  const isCrypto = exchange === 'binance';
+  if (fused.hasConflict) return null;
+  if (isStock && !isPaperMode()) return null;
+  if (!isStock && !isCrypto) return null;
   if (
     fused.averageConfidence < LUNA_RUNTIME.fastPathThresholds.minAverageConfidence ||
     Math.abs(fused.fusedScore) < LUNA_RUNTIME.fastPathThresholds.minAbsScore
@@ -93,17 +112,23 @@ function buildFastPathDecision(fused, exchange) {
     return {
       action: ACTIONS.BUY,
       amount_usdt: spec
-        ? (fused.averageConfidence >= 0.7 ? spec.max : spec.buyDefault)
-        : (fused.averageConfidence >= 0.7 ? 700 : 500),
-      confidence: Math.max(LUNA_RUNTIME.fastPathThresholds.minStockConfidence, Math.min(0.80, fused.averageConfidence)),
+        ? (fused.averageConfidence >= 0.68 ? spec.max : spec.buyDefault)
+        : (fused.averageConfidence >= 0.62 ? 180 : 120),
+      confidence: Math.max(
+        isStock ? LUNA_RUNTIME.fastPathThresholds.minStockConfidence : LUNA_RUNTIME.fastPathThresholds.minCryptoConfidence,
+        Math.min(isStock ? 0.80 : 0.74, fused.averageConfidence),
+      ),
       reasoning: '분석가 합의 기반 fast-path 진입',
     };
   }
   if (fused.recommendation === 'SHORT') {
     return {
       action: ACTIONS.SELL,
-      amount_usdt: spec?.sellDefault ?? 500,
-      confidence: Math.max(LUNA_RUNTIME.fastPathThresholds.minStockConfidence, Math.min(0.75, fused.averageConfidence)),
+      amount_usdt: spec?.sellDefault ?? 100,
+      confidence: Math.max(
+        isStock ? LUNA_RUNTIME.fastPathThresholds.minStockConfidence : LUNA_RUNTIME.fastPathThresholds.minCryptoConfidence,
+        Math.min(isStock ? 0.75 : 0.70, fused.averageConfidence),
+      ),
       reasoning: '분석가 합의 기반 fast-path 청산',
     };
   }
@@ -227,30 +252,31 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
   return { fusedScore, averageConfidence, hasConflict, recommendation };
 }
 
-function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}) {
+function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}, fallbackWeights = ANALYST_WEIGHTS) {
   return normalizeWeights({
-    [ANALYST_TYPES.TA_MTF]: suggestedWeights.aria ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
-    [ANALYST_TYPES.ONCHAIN]: suggestedWeights.oracle ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
-    [ANALYST_TYPES.SENTIMENT]: suggestedWeights.sophia ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
-    [ANALYST_TYPES.NEWS]: suggestedWeights.hermes ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
+    [ANALYST_TYPES.TA_MTF]: suggestedWeights.aria ?? fallbackWeights[ANALYST_TYPES.TA_MTF],
+    [ANALYST_TYPES.ONCHAIN]: suggestedWeights.oracle ?? fallbackWeights[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.SENTIMENT]: suggestedWeights.sophia ?? fallbackWeights[ANALYST_TYPES.SENTIMENT],
+    [ANALYST_TYPES.NEWS]: suggestedWeights.hermes ?? fallbackWeights[ANALYST_TYPES.NEWS],
   });
 }
 
-async function loadAdaptiveAnalystWeights() {
+async function loadAdaptiveAnalystWeights(exchange = 'binance') {
+  const baseWeights = buildAnalystWeights(exchange);
   try {
     const report = await buildAccuracyReport({
-      aria: ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
-      sophia: ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
-      oracle: ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
-      hermes: ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
+      aria: baseWeights[ANALYST_TYPES.TA_MTF],
+      sophia: baseWeights[ANALYST_TYPES.SENTIMENT],
+      oracle: baseWeights[ANALYST_TYPES.ONCHAIN],
+      hermes: baseWeights[ANALYST_TYPES.NEWS],
     });
     return {
-      weights: mapSuggestedWeightsToAnalystTypes(report.suggestedWeights),
+      weights: mapSuggestedWeightsToAnalystTypes(report.suggestedWeights, baseWeights),
       report,
     };
   } catch (err) {
     console.warn('[luna] adaptive analyst weights 실패 (기본값 사용):', err.message);
-    return { weights: { ...ANALYST_WEIGHTS }, report: null };
+    return { weights: { ...baseWeights }, report: null };
   }
 }
 
@@ -343,7 +369,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
     regimeSection = `\n\n${formatMarketRegime(regime)}`;
   } catch { /* 시장 레짐 실패 시 무시 */ }
 
-  if (!fused.hasConflict && fused.averageConfidence < 0.4 && Math.abs(fused.fusedScore) < 0.12) {
+  if (!fused.hasConflict && fused.averageConfidence < 0.32 && Math.abs(fused.fusedScore) < 0.08) {
     return {
       action: ACTIONS.HOLD,
       amount_usdt: exchange === 'kis' || exchange === 'kis_overseas' ? 500 : 100,
@@ -528,7 +554,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const results         = [];
   let debateCount          = 0;
   const portfolio          = await buildPortfolioContext(exchange);
-  const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights();
+  const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 

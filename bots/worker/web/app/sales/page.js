@@ -13,6 +13,7 @@ import { SalesBarChart } from '@/components/Chart';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
@@ -41,6 +42,7 @@ export default function SalesPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [reusedDocument, setReusedDocument] = useState(null);
   const fileRef = useRef(null);
   const totalSales = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const quickFlows = [
@@ -84,6 +86,13 @@ export default function SalesPage() {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const reusedDraft = consumeDocumentReuseDraft('sales');
+    if (reusedDraft?.draft) {
+      setPrompt(reusedDraft.draft);
+      setReusedDocument(reusedDraft);
+    }
+  }, []);
 
   const openModal = () => { setForm(EMPTY_FORM); setEditId(null); setError(''); setModal(true); };
   const openEdit = (row) => {
@@ -139,10 +148,14 @@ export default function SalesPage() {
     setProposalLoading(true);
     setError('');
     try {
-      await api.post(`/sales/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      await api.post(`/sales/proposals/${proposal.feedback_session_id}/confirm`, {
+        proposal,
+        reuse_event_id: reusedDocument?.reuseEventId || null,
+      });
       setNotice('매출 등록 제안을 확정했습니다.');
       setProposal(null);
       setOriginalProposal(null);
+      setReusedDocument(null);
       load();
     } catch (err) {
       setError(err.message);
@@ -274,6 +287,17 @@ export default function SalesPage() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="매출 등록 요청을 자연어로 입력하세요."
           />
+          {reusedDocument ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+              <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 매출 등록 초안이 채워졌습니다.</p>
+              {reusedDocument.documentId ? (
+                <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+                  문서 상세 보기
+                </a>
+              ) : null}
+            </div>
+          ) : null}
           {attachedFileName && (
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">

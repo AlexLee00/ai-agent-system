@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Calendar, DollarSign, FolderKanban } from 'lucide-react';
+import { ArrowRight, BookOpen, Calendar, DollarSign, FileText, FolderKanban } from 'lucide-react';
+import { api } from '@/lib/api';
 
 function ShortcutCard({ href, icon: Icon, title, description }) {
   return (
@@ -24,6 +26,14 @@ function ShortcutCard({ href, icon: Icon, title, description }) {
 }
 
 export default function DocumentsPage() {
+  const [documents, setDocuments] = useState([]);
+
+  useEffect(() => {
+    api.get('/documents?limit=6')
+      .then((data) => setDocuments(data.documents || []))
+      .catch(() => setDocuments([]));
+  }, []);
+
   return (
     <div className="space-y-5">
       <div className="space-y-1">
@@ -63,6 +73,48 @@ export default function DocumentsPage() {
           title="프로젝트 관리"
           description="기획안, 산출물 파일을 첨부해 프로젝트 생성과 수정 흐름으로 이어갑니다."
         />
+      </div>
+
+      <div className="card space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">최근 문서</p>
+            <p className="mt-1 text-sm text-slate-500">최근 업로드한 문서를 열어 파싱 결과와 재사용 프롬프트를 확인합니다.</p>
+          </div>
+        </div>
+        {documents.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+            아직 업로드된 문서가 없습니다.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {documents.map((document) => (
+              <Link
+                key={document.id}
+                href={`/documents/${document.id}`}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-4 transition hover:border-slate-300 hover:shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <p className="truncate text-sm font-semibold text-slate-900">{document.filename}</p>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {document.category || '기타'} · {document.created_at || '-'}
+                    </p>
+                    {document.ai_summary ? (
+                      <p className="mt-2 line-clamp-2 text-sm text-slate-600">{document.ai_summary}</p>
+                    ) : null}
+                  </div>
+                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
