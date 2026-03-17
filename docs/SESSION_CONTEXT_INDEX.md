@@ -16,6 +16,8 @@
 - “문서가 각각 무슨 역할이지?”는 이 문서의 `2. 문서 체계와 역할`을 먼저 본다.
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
+- “DB가 어디에 어떻게 저장되지?”는 [DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)를 먼저 본다.
+- “장애가 났을 때 어떤 순서로 점검하지?”는 [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
 - “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
 - “오늘 세션의 실제 작업 맥락과 연구 기록”은 [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)를 본다.
@@ -91,10 +93,12 @@
   - [README.md](/Users/alexlee/projects/ai-agent-system/README.md)
   - [SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
   - [coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
+  - [DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)
 - 팀별 구현 위치 안내
   - [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
 - 운영 설정 / 튜닝
   - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+  - [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)
 - 사실 기반 작업 기록
   - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
   - [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
@@ -140,14 +144,18 @@
    - 아키텍처와 팀 구조
 3. [docs/coding-guide.md](/Users/alexlee/projects/ai-agent-system/docs/coding-guide.md)
    - 코드 규칙과 운영 원칙
-4. [docs/team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
+4. [docs/DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)
+   - PostgreSQL/SQLite/DuckDB와 팀별 주요 테이블 인덱스
+5. [docs/team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
    - 팀별 기능 개요
 
 ### 2.5 운영 설정/튜닝 문서
 
 1. [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
    - 팀별 `runtime_config` 위치와 조정값
-2. [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
+2. [docs/OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)
+   - 재시작, health check, 장애 대응 순서
+3. [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
    - 현재 팀별 운영 설정 빠른 조회
 
 ### 2.6 팀별 참조 문서
@@ -180,10 +188,17 @@
 - 현재 값 빠르게 조회
   - [scripts/show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)
 
+### DB/스키마를 보고 싶을 때
+
+- 공통 DB 종류와 팀별 스키마/테이블 위치 확인
+  - [docs/DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)
+
 ### 헬스/장애를 보고 싶을 때
 
 - 공통 구조
   - [packages/core/HEALTH_ENGINE_PLAN.md](/Users/alexlee/projects/ai-agent-system/packages/core/HEALTH_ENGINE_PLAN.md)
+- 실운영 점검/재시작 순서
+  - [docs/OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)
 - 팀별 health script는 각 팀 참조 문서의 `자주 쓰는 명령어` 섹션 우선 확인
 
 ### 세션 인수인계를 받고 싶을 때

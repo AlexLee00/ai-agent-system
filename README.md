@@ -92,6 +92,8 @@ ai-agent-system/
 │   └── playwright-utils/         # @ai-agent/playwright-utils
 └── docs/
     ├── WORK_HISTORY.md            # 날짜별 작업 타임라인
+    ├── DATABASE_SCHEMA_INDEX.md   # DB/스키마/테이블 인덱스
+    ├── OPERATIONS_RUNBOOK.md      # 운영 점검/재시작/장애 대응 런북
     ├── coding-guide.md            # 개발 가이드 (P0~P4)
     ├── SYSTEM_DESIGN.md           # 전체 설계서
     └── LLM_DOCS.md               # LLM API 참조
@@ -112,8 +114,10 @@ ai-agent-system/
 역할별 상세 문서는 아래를 본다.
 
 - 구조/아키텍처: [SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
+- 데이터 구조/저장소: [DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)
 - 팀별 구현 위치: [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
 - 운영 설정: [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+- 운영 점검/장애 대응: [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)
 - 세션 기록/연구 맥락: [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 세션 시작 문서에서 제외하는 문서:
