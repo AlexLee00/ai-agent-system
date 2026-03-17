@@ -1,6 +1,6 @@
-# 플랫폼 개발 추적 문서
+# 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-03-17
+> 마지막 업데이트: 2026-03-18
 > 목적: 로컬 문서, 실제 코드 구현 상태, 최근 커밋 이력을 기준으로 플랫폼 개발 진행 상황을 누적 추적한다.
 
 ---
@@ -14,7 +14,7 @@
   - 암호화폐/국내/해외장 체결 증가 여부를 실제 리뷰 데이터로 튜닝
   - `runtime_config` 변경 제안 자동화까지 닫기
 - 스카
-  - 예측 엔진의 과소예측 편향 보정
+  - shadow 모델 비교 데이터 누적 후 `ensemble experiment` 승격 여부 판단
   - 예약 모니터와 예측 리뷰 간 피드백 루프 강화
 - 공통
   - 팀별 `runtime_config` 변경 이력/추천 자동화
@@ -328,6 +328,8 @@
 |---|---|---|---|---|
 | 완료 | 2026-03-14~15 | 예측 feature store | `training_feature_daily` 구축, reservation 구조/모멘텀 feature 추가 | [bots/ska/lib/feature_store.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/feature_store.py) |
 | 완료 | 2026-03-15 | 예측 원본 정리 | `forecast_results`를 source of truth로 정리, legacy accuracy/forecast 정리 | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py) |
+| 완료 | 2026-03-18 | shadow 비교 모델 추가 | `knn-shadow-v1`를 `forecast_results.predictions`에 별도 저장하고 기존 엔진과 독립 비교 가능한 shadow 구조를 추가 | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py), [bots/ska/config.json](/Users/alexlee/projects/ai-agent-system/bots/ska/config.json) |
+| 완료 | 2026-03-18 | shadow 비교 리뷰/자동화 연결 | 일일/주간 매출 예측 리뷰가 `primary vs shadow` 비교를 읽도록 확장하고 자동화 프롬프트도 shadow 관찰 기준으로 갱신 | [scripts/reviews/ska-sales-forecast-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js), [scripts/reviews/ska-sales-forecast-weekly-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js) |
 | 완료 | 2026-03-15 | forecast health | 예측 상태/추천/튜닝 우선순위 리포트와 제이 라우팅 구축 | [bots/ska/src/forecast_health.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast_health.py) |
 | 완료 | 2026-03-15 | 스카 운영 안정화 | dev-mode 알람 스팸 방지, pending 재처리, kiosk bootstrap, launchd health 안정화 | [bots/reservation/auto/monitors/naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js), [bots/reservation/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js) |
 | 완료 | 2026-03-15 | 스카 n8n read 경로 | read 명령용 bridge, workflow draft, webhook registry path 해결 | [bots/reservation/context/N8N_NODE_PLAN.md](/Users/alexlee/projects/ai-agent-system/bots/reservation/context/N8N_NODE_PLAN.md), [bots/reservation/lib/ska-read-service.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-read-service.js) |
@@ -359,6 +361,7 @@
 | 완료 | 2026-03-17 | 제이/운영/스카 리뷰 체계 | 제이 LLM, 일일 운영 분석, 스카 매출 예측 일일/주간 리뷰 자동화 기준 정리 | [scripts/reviews](/Users/alexlee/projects/ai-agent-system/scripts/reviews), [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md) |
 | 완료 | 2026-03-17 | 자동매매 시장 분리 리뷰 | 일일/주간 자동매매 리뷰가 `암호화폐 / 국내장 / 해외장`을 강제로 분리해 보도록 정리 | [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js), [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js) |
 | 진행 중 | 2026-03-17 | 설정값 변경 제안 자동화 | 운영 분석 결과를 바탕으로 `runtime_config` 변경 후보를 제안하는 자동화는 설계 완료, 실제 운영 축적 후 고도화 필요 | [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md) |
+| 완료 | 2026-03-18 | 스카 shadow 비교 자동화 반영 | 스카 일일/주간 예측 자동화가 shadow 모델 관찰과 promotion 판단을 함께 보도록 수정 | [scripts/reviews/ska-sales-forecast-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js), [scripts/reviews/ska-sales-forecast-weekly-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js) |
 
 ---
 
@@ -375,6 +378,7 @@
 | 진행 중 | 2026-03-15 | 스카 n8n node화 | read 명령과 bridge, workflow draft는 완료 | write/ops 계열 `store_resolution`, `analyze_unknown`, restart 계열 보수적 이관 |
 | 진행 중 | 2026-03-15 | 스카 RAG 활용 | 저장/조회 adapter는 정리됨 | retrieval-first 운영 힌트, 실패 복구 사례 검색 연결 |
 | 진행 중 | 2026-03-17 | 운영 설정 기반 튜닝 루프 | 팀별 runtime config 외부화는 완료. 다음은 일일/주간 분석에서 실제 변경 후보를 제안하는 루프 구축 | 운영 데이터 누적 후 변경 제안 자동화 고도화 |
+| 진행 중 | 2026-03-18 | 스카 shadow 관찰 루프 | shadow 저장과 리뷰 연결은 완료. 다음은 actual 누적 후 `MAPE gap`, `weekday bias`, `promotion threshold` 기준으로 ensemble 편입 판단 | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py), [bots/ska/config.json](/Users/alexlee/projects/ai-agent-system/bots/ska/config.json) |
 
 ---
 
@@ -414,7 +418,7 @@
 | 미완료 | 스카 운영 명령 공용화 마감 | restart/launchd 계열은 로컬 fallback 유지하며 더 표준화 가능 |
 | 미완료 | 스카 RAG retrieval 활용 강화 | 실패 복구/과거 해결사례 검색을 커맨더 의사결정에 반영 |
 | 미완료 | 스카 예측 데이터셋 학습 루프 | feedback/RAG와 연결한 장기 품질 개선은 아직 후순위 |
-| 진행 중 | 스카 예측 운영 튜닝 루프 | 일일/주간 예측 리뷰는 올라왔고, 다음은 실제 threshold 조정 근거 자동 제안 |
+| 진행 중 | 스카 예측 운영 튜닝 루프 | 일일/주간 예측 리뷰와 shadow 비교 저장은 올라왔고, 다음은 실제 threshold 조정 근거 자동 제안과 shadow promotion 판단 |
 
 ### 6.4 플랫폼 장기 항목
 

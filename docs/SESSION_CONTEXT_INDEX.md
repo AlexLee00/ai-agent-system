@@ -1,6 +1,6 @@
 # 세션 컨텍스트 인덱스
 
-> 마지막 업데이트: 2026-03-17
+> 마지막 업데이트: 2026-03-18
 > 목적: 세션이 바뀌어도 반드시 읽어야 할 공통 문서와, 팀별로 어디서부터 코드를 읽어야 하는지를 한 장에서 안내한다.
 
 ---
@@ -15,7 +15,7 @@
   순서다.
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
-- “지금 무엇이 구현됐지?”는 [improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)를 먼저 본다.
+- “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
 - “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
 - “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
 
@@ -53,7 +53,7 @@
 
 ### 2.2 현재 구현 상태 추적
 
-1. [docs/improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+1. [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
    - 전체 플랫폼 구현 상태
    - 팀별 완료/진행 중/미완료
    - 팀별 빠른 찾기
@@ -99,7 +99,7 @@
 ### 기능을 찾고 싶을 때
 
 - 전체 구현 상태 먼저 확인
-  - [docs/improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+  - [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
 - 팀별 실제 파일/스크립트/설정 위치 찾기
   - [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
 
@@ -295,7 +295,7 @@
   1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
   2. [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
   3. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
-  4. [docs/improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+  4. [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
 - 새 기능을 구현했을 때 아래 중 하나에 해당하면 이 문서도 같이 갱신한다.
   - 여러 팀이 공통으로 알아야 하는 규칙
   - 세션이 바뀌어도 다시 찾아야 하는 진입점
@@ -306,7 +306,7 @@
 
 ## 6. 관련 문서
 
-- [docs/improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)
+- [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
 - [docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
 - [docs/team-features.md](/Users/alexlee/projects/ai-agent-system/docs/team-features.md)
 - [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)

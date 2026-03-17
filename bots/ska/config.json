@@ -1,7 +1,13 @@
 {
   "runtime_config": {
     "forecast": {
-      "conditionAdjustmentWeight": 0.45,
+      "conditionAdjustmentWeight": 0.5,
+      "reservationAdjustmentWeight": 0.42,
+      "shadowModelEnabled": true,
+      "shadowModelName": "knn-shadow-v1",
+      "shadowNeighborCount": 7,
+      "shadowMinimumTrainRows": 21,
+      "shadowPromotionMapeGap": 2,
       "sarimaPeriods": 7,
       "sarimaMaxIter": 200,
       "perModelAccuracyDays": 30,
@@ -9,7 +15,7 @@
       "llmDiagnosisRagThreshold": 0.6,
       "monthlyReviewGradeGood": 12,
       "monthlyReviewGradeWarn": 22,
-      "weekdayBiasAlertAmount": 30000
+      "weekdayBiasAlertAmount": 20000
     },
     "rebecca": {
       "weeklyGradeGood": 10,

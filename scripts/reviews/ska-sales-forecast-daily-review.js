@@ -2,8 +2,9 @@
 'use strict';
 
 const pgPool = require('../../packages/core/lib/pg-pool');
-const { getSkaReviewConfig } = require('../../bots/ska/lib/runtime-config.js');
+const { getSkaReviewConfig, getSkaForecastConfig } = require('../../bots/ska/lib/runtime-config.js');
 const DAILY_REVIEW_CONFIG = getSkaReviewConfig().daily;
+const FORECAST_CONFIG = getSkaForecastConfig();
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -51,6 +52,9 @@ async function loadAccuracyRows(days) {
       rds.total_amount,
       rds.entries_count,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
+      (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue,
+      COALESCE((latest.predictions->>'shadow_confidence')::float, 0.0) AS shadow_confidence,
+      latest.predictions->>'shadow_model_name' AS shadow_model_name,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       rd.total_reservations AS actual_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence,
@@ -120,7 +124,37 @@ function buildSummary(rows) {
   };
 }
 
-function buildRecommendations(summary, latest) {
+function buildShadowComparison(rows) {
+  const valid = rows.filter(row => row.mape != null && row.shadow_predicted_revenue != null);
+  if (!valid.length) {
+    return {
+      availableDays: 0,
+      shadowModelName: FORECAST_CONFIG.shadowModelName,
+      primaryAvgMape: null,
+      shadowAvgMape: null,
+      avgMapeGap: null,
+      betterModel: null,
+    };
+  }
+
+  const primaryAvgMape = Number((valid.reduce((sum, row) => sum + Number(row.mape || 0), 0) / valid.length).toFixed(2));
+  const shadowAvgMape = Number((valid.reduce((sum, row) => {
+    if (!row.actual_revenue) return sum;
+    return sum + (Math.abs(Number(row.shadow_predicted_revenue || 0) - Number(row.actual_revenue || 0)) / Number(row.actual_revenue || 1) * 100);
+  }, 0) / valid.length).toFixed(2));
+  const avgMapeGap = Number((shadowAvgMape - primaryAvgMape).toFixed(2));
+
+  return {
+    availableDays: valid.length,
+    shadowModelName: valid[0].shadow_model_name || FORECAST_CONFIG.shadowModelName,
+    primaryAvgMape,
+    shadowAvgMape,
+    avgMapeGap,
+    betterModel: avgMapeGap < 0 ? 'shadow' : 'primary',
+  };
+}
+
+function buildRecommendations(summary, latest, shadowComparison) {
   const lines = [];
   if (summary.avgMape == null) {
     return ['- 아직 정확도 누적 데이터가 부족합니다.'];
@@ -151,6 +185,14 @@ function buildRecommendations(summary, latest) {
     lines.push(`- 최신 예측 확신도가 ${(Number(latest.confidence) * 100).toFixed(0)}%로 낮아 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
+  if (shadowComparison.availableDays >= 3) {
+    if (shadowComparison.avgMapeGap <= -FORECAST_CONFIG.shadowPromotionMapeGap) {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})이 평균 MAPE ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되어 앙상블 편입 후보입니다.`);
+    } else if (shadowComparison.avgMapeGap >= FORECAST_CONFIG.shadowPromotionMapeGap) {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 기존 엔진보다 약해 shadow 비교만 유지하는 게 좋습니다.`);
+    }
+  }
+
   return lines.slice(0, 4);
 }
 
@@ -163,7 +205,8 @@ async function main() {
 
   const latestActual = accuracyRows[0] || null;
   const summary = buildSummary(accuracyRows);
-  const recommendations = buildRecommendations(summary, upcomingRows[0] || latestActual);
+  const shadowComparison = buildShadowComparison(accuracyRows);
+  const recommendations = buildRecommendations(summary, upcomingRows[0] || latestActual, shadowComparison);
 
   const report = {
     periodDays: days,
@@ -171,6 +214,9 @@ async function main() {
       date: toDateString(latestActual.date),
       actualRevenue: Number(latestActual.actual_revenue || 0),
       predictedRevenue: Number(latestActual.predicted_revenue || 0),
+      shadowPredictedRevenue: latestActual.shadow_predicted_revenue == null ? null : Number(latestActual.shadow_predicted_revenue),
+      shadowConfidence: Number(latestActual.shadow_confidence || 0),
+      shadowModelName: latestActual.shadow_model_name || '',
       actualReservations: Number(latestActual.actual_reservations || 0),
       predictedReservations: Number(latestActual.predicted_reservations || 0),
       totalAmount: Number(latestActual.total_amount || 0),
@@ -181,6 +227,7 @@ async function main() {
       modelVersion: latestActual.model_version || '',
     } : null,
     summary,
+    shadowComparison,
     upcomingForecasts: upcomingRows.map(row => ({
       date: toDateString(row.date),
       predictedRevenue: Number(row.predicted_revenue || 0),
@@ -217,6 +264,16 @@ async function main() {
   lines.push(`- 20% 이내 적중률: ${report.summary.hitRate20}%`);
   lines.push(`- 평균 편향: ${biasLabel(report.summary.avgBias)}`);
   lines.push(`- 예약건수 평균 오차: ${report.summary.avgReservationGap}건`);
+
+  if (report.shadowComparison.availableDays > 0) {
+    lines.push('');
+    lines.push('Shadow 비교:');
+    lines.push(`- 모델: ${report.shadowComparison.shadowModelName}`);
+    lines.push(`- 비교일수: ${report.shadowComparison.availableDays}일`);
+    lines.push(`- 기존 평균 MAPE: ${report.shadowComparison.primaryAvgMape}%`);
+    lines.push(`- shadow 평균 MAPE: ${report.shadowComparison.shadowAvgMape}%`);
+    lines.push(`- 차이(shadow-primary): ${report.shadowComparison.avgMapeGap}%p`);
+  }
 
   if (report.upcomingForecasts.length) {
     lines.push('');

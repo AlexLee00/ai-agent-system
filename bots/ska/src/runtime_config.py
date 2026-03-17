@@ -4,7 +4,13 @@ from copy import deepcopy
 
 DEFAULT_RUNTIME_CONFIG = {
     "forecast": {
-        "conditionAdjustmentWeight": 0.45,
+        "conditionAdjustmentWeight": 0.50,
+        "reservationAdjustmentWeight": 0.42,
+        "shadowModelEnabled": True,
+        "shadowModelName": "knn-shadow-v1",
+        "shadowNeighborCount": 7,
+        "shadowMinimumTrainRows": 21,
+        "shadowPromotionMapeGap": 2.0,
         "sarimaPeriods": 7,
         "sarimaMaxIter": 200,
         "perModelAccuracyDays": 30,
@@ -12,7 +18,7 @@ DEFAULT_RUNTIME_CONFIG = {
         "llmDiagnosisRagThreshold": 0.60,
         "monthlyReviewGradeGood": 12,
         "monthlyReviewGradeWarn": 22,
-        "weekdayBiasAlertAmount": 30000,
+        "weekdayBiasAlertAmount": 20000,
     },
     "rebecca": {
         "weeklyGradeGood": 10,

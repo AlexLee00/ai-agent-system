@@ -327,7 +327,7 @@ await rag.store(namespace, content, metadata, botName);
 2. docs/SESSION_CONTEXT_INDEX.md 읽기 (공통 문서/팀별 진입점 인덱스)
 3. docs/SESSION_HANDOFF.md 읽기 (이전 세션 컨텍스트)
 4. docs/KNOWN_ISSUES.md 확인 (현재 알려진 문제)
-5. docs/improvement-ideas.md 확인 (현재 구현 상태와 빠른 찾기)
+5. docs/PLATFORM_IMPLEMENTATION_TRACKER.md 확인 (현재 구현 상태와 빠른 찾기)
 6. git status로 현재 상태 확인
 
 ### 세션 마무리 루틴
@@ -361,5 +361,5 @@ await rag.store(namespace, content, metadata, botName);
 - **즉시** (같은 날): SESSION_HANDOFF.md → 다음 세션이 읽음
 - **공통 인덱스**: SESSION_CONTEXT_INDEX.md → 세션 시작 시 반드시 읽음
 - **단기** (1주): work-history.md, KNOWN_ISSUES.md
-- **장기** (영구): dev-journal.md, CHANGELOG.md, improvement-ideas.md, CLAUDE.md
+- **장기** (영구): dev-journal.md, CHANGELOG.md, PLATFORM_IMPLEMENTATION_TRACKER.md, CLAUDE.md
 - **전략 기억**: claude.ai (전략 담당)가 메모리로 장기 기억 유지

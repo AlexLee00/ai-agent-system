@@ -1969,8 +1969,24 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
   params.push(limit, offset);
   try {
     const rows = await pgPool.query(SCHEMA,
-      `SELECT id,category,filename,ai_summary,uploaded_by,created_at FROM worker.documents
-       WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+      `SELECT d.id,
+              d.category,
+              d.filename,
+              d.ai_summary,
+              d.uploaded_by,
+              d.created_at,
+              COALESCE(rs.total_reuse_count, 0) AS total_reuse_count,
+              COALESCE(rs.linked_reuse_count, 0) AS linked_reuse_count
+         FROM worker.documents d
+         LEFT JOIN (
+           SELECT document_id,
+                  COUNT(*) AS total_reuse_count,
+                  COUNT(*) FILTER (WHERE linked_entity_type IS NOT NULL AND linked_entity_id IS NOT NULL) AS linked_reuse_count
+             FROM worker.document_reuse_events
+            WHERE company_id = $1
+            GROUP BY document_id
+         ) rs ON rs.document_id = d.id
+       WHERE ${where.replace(/company_id/g, 'd.company_id')} ORDER BY d.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
       params);
     res.json({ documents: rows.map(row => ({ ...row, download_url: `/api/documents/${row.id}/download` })) });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }

@@ -93,6 +93,25 @@ export default function DocumentDetailPage() {
       ai_summary: documentInfo?.ai_summary || '',
     });
   }, [documentInfo, extraction, metadata]);
+  const reuseSummary = useMemo(() => {
+    const total = reuseEvents.length;
+    const linked = reuseEvents.filter((event) => event.linked_entity_type && event.linked_entity_id).length;
+    const pending = Math.max(0, total - linked);
+    const byTarget = reuseEvents.reduce((acc, event) => {
+      const key = event.target_menu || 'unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const topTargetEntry = Object.entries(byTarget).sort((a, b) => b[1] - a[1])[0] || null;
+    const conversionRate = total > 0 ? Math.round((linked / total) * 100) : 0;
+    return {
+      total,
+      linked,
+      pending,
+      conversionRate,
+      topTarget: topTargetEntry ? `${topTargetEntry[0]} (${topTargetEntry[1]}건)` : '-',
+    };
+  }, [reuseEvents]);
 
   async function copyReusePrompt() {
     if (!reusePackage?.appendix) return;
@@ -193,6 +212,20 @@ export default function DocumentDetailPage() {
             <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-xs font-medium text-slate-500">AI 요약</p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{documentInfo?.ai_summary || '저장된 요약이 없습니다.'}</p>
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">문서 재사용 성과</p>
+              <p className="mt-1 text-sm text-slate-500">이 문서가 실제 업무 생성으로 얼마나 이어졌는지 빠르게 확인합니다.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetadataCard label="재사용 횟수" value={reuseSummary.total} caption="전달된 업무 화면 기준" />
+              <MetadataCard label="실제 연결 수" value={reuseSummary.linked} caption="확정 후 생성 결과 연결" />
+              <MetadataCard label="미확정 건수" value={reuseSummary.pending} caption="아직 확정되지 않은 재사용" />
+              <MetadataCard label="전환율" value={`${reuseSummary.conversionRate}%`} caption="linked / total" />
+              <MetadataCard label="가장 많이 보낸 곳" value={reuseSummary.topTarget} />
             </div>
           </div>
 

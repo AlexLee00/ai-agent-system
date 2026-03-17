@@ -2,8 +2,9 @@
 'use strict';
 
 const pgPool = require('../../packages/core/lib/pg-pool');
-const { getSkaReviewConfig } = require('../../bots/ska/lib/runtime-config.js');
+const { getSkaReviewConfig, getSkaForecastConfig } = require('../../bots/ska/lib/runtime-config.js');
 const WEEKLY_REVIEW_CONFIG = getSkaReviewConfig().weekly;
+const FORECAST_CONFIG = getSkaForecastConfig();
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -49,6 +50,9 @@ async function loadRows(days) {
       latest.forecast_date AS date,
       rd.actual_revenue,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
+      (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue,
+      COALESCE((latest.predictions->>'shadow_confidence')::float, 0.0) AS shadow_confidence,
+      latest.predictions->>'shadow_model_name' AS shadow_model_name,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       rd.total_reservations AS actual_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence,
@@ -158,6 +162,36 @@ function buildWeekdayBias(rows) {
   })).sort((a, b) => b.avgMape - a.avgMape);
 }
 
+function buildShadowComparison(rows) {
+  const valid = rows.filter(row => row.mape != null && row.shadow_predicted_revenue != null);
+  if (!valid.length) {
+    return {
+      availableDays: 0,
+      shadowModelName: FORECAST_CONFIG.shadowModelName,
+      primaryAvgMape: null,
+      shadowAvgMape: null,
+      avgMapeGap: null,
+      betterModel: null,
+    };
+  }
+
+  const primaryAvgMape = Number((valid.reduce((sum, row) => sum + Number(row.mape || 0), 0) / valid.length).toFixed(2));
+  const shadowAvgMape = Number((valid.reduce((sum, row) => {
+    if (!row.actual_revenue) return sum;
+    return sum + (Math.abs(Number(row.shadow_predicted_revenue || 0) - Number(row.actual_revenue || 0)) / Number(row.actual_revenue || 1) * 100);
+  }, 0) / valid.length).toFixed(2));
+  const avgMapeGap = Number((shadowAvgMape - primaryAvgMape).toFixed(2));
+
+  return {
+    availableDays: valid.length,
+    shadowModelName: valid[0].shadow_model_name || FORECAST_CONFIG.shadowModelName,
+    primaryAvgMape,
+    shadowAvgMape,
+    avgMapeGap,
+    betterModel: avgMapeGap < 0 ? 'shadow' : 'primary',
+  };
+}
+
 function buildUpcomingRisk(upcomingRows) {
   return upcomingRows
     .map(row => ({
@@ -170,7 +204,7 @@ function buildUpcomingRisk(upcomingRows) {
     .slice(0, 3);
 }
 
-function buildRecommendations(weekly, weekdayBias, upcomingRisk) {
+function buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison) {
   const lines = [];
   const recent = weekly[weekly.length - 1];
   const prev = weekly[weekly.length - 2];
@@ -198,6 +232,14 @@ function buildRecommendations(weekly, weekdayBias, upcomingRisk) {
     lines.push(`- ${upcomingRisk[0].date} 예측 확신도가 ${(upcomingRisk[0].confidence * 100).toFixed(0)}%라 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
+  if (shadowComparison.availableDays >= 5) {
+    if (shadowComparison.avgMapeGap <= -FORECAST_CONFIG.shadowPromotionMapeGap) {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})이 최근 ${shadowComparison.availableDays}일 기준 더 좋아, 다음 주 앙상블 편입 실험 후보입니다.`);
+    } else if (shadowComparison.avgMapeGap >= FORECAST_CONFIG.shadowPromotionMapeGap) {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 기존 엔진보다 약해 비교 관찰만 유지하는 편이 좋습니다.`);
+    }
+  }
+
   return lines.slice(0, 4);
 }
 
@@ -210,13 +252,15 @@ async function main() {
 
   const weekly = buildWeeklySummary(rows);
   const weekdayBias = buildWeekdayBias(rows);
+  const shadowComparison = buildShadowComparison(rows);
   const upcomingRisk = buildUpcomingRisk(upcomingRows);
-  const recommendations = buildRecommendations(weekly, weekdayBias, upcomingRisk);
+  const recommendations = buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison);
 
   const report = {
     periodDays: days,
     weekly,
     weekdayBias,
+    shadowComparison,
     upcomingRisk,
     recommendations,
   };
@@ -243,6 +287,16 @@ async function main() {
     for (const row of weekdayBias.slice(0, 4)) {
       lines.push(`- ${row.weekday}요일: 평균 MAPE ${row.avgMape}% / ${biasLabel(row.avgBias)} / ${row.count}건`);
     }
+  }
+
+  if (report.shadowComparison.availableDays > 0) {
+    lines.push('');
+    lines.push('Shadow 비교:');
+    lines.push(`- 모델: ${report.shadowComparison.shadowModelName}`);
+    lines.push(`- 비교일수: ${report.shadowComparison.availableDays}일`);
+    lines.push(`- 기존 평균 MAPE: ${report.shadowComparison.primaryAvgMape}%`);
+    lines.push(`- shadow 평균 MAPE: ${report.shadowComparison.shadowAvgMape}%`);
+    lines.push(`- 차이(shadow-primary): ${report.shadowComparison.avgMapeGap}%p`);
   }
 
   if (upcomingRisk.length) {
