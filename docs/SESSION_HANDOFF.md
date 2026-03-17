@@ -1,6 +1,6 @@
 # 세션 핸드오프
 
-> 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)와 [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)를 읽고 이 문서를 보세요.
+> 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 읽고 이 문서를 보세요.
 
 ---
 
@@ -18,10 +18,10 @@
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.
 - 문서 체계
   - 구현 추적 문서는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)로 이름이 바뀌었다.
-  - 세션 지속성용 문서 체계가 정리됐다.
-    - [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
-    - [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md)
-    - [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
+  - 세션 지속성용 문서 체계는 기존 문서 중심으로 정리됐다.
+    - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+    - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+    - [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 ---
 
@@ -73,6 +73,7 @@
 - 워커 문서 흐름은 새 레이어를 만들기보다 기존 confirm/result 흐름을 확장한다.
 - 운영 리포트는 `근거 약한 추론`보다 `보수적 hold`가 우선이다.
 - 문서 체계는 `정책 / 인덱스 / 구조 / 현재 상태 / 팀 참조 / 로그 / 브이로그 / handoff`로 역할을 분리한다.
+- 다만 같은 성격의 기록은 새 파일을 만들지 않고 기존 문서에 흡수한다.
 
 ---
 
@@ -82,8 +83,9 @@
 
 1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
 2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-3. [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
-4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+3. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+4. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+5. [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 ### 이어서 볼 문서
 
@@ -107,4 +109,3 @@
   - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js)
 - 운영 분석
   - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js)
-

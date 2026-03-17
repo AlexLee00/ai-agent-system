@@ -105,16 +105,16 @@ ai-agent-system/
 
 1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
 2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-3. [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
-4. [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
-5. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+3. [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+5. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
 
 역할별 상세 문서는 아래를 본다.
 
 - 구조/아키텍처: [SYSTEM_DESIGN.md](/Users/alexlee/projects/ai-agent-system/docs/SYSTEM_DESIGN.md)
 - 팀별 구현 위치: [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
 - 운영 설정: [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
-- 세션 기록: [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md), [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
+- 세션 기록/연구 맥락: [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
 
 ---
 

@@ -27,6 +27,5 @@
 ## 읽는 순서
 
 1. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-2. [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
-3. 해당 팀 참조 문서
-4. [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+2. 해당 팀 참조 문서
+3. [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
