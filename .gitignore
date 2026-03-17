@@ -56,3 +56,6 @@ RC_CONTEXT.md
 bots/worker/secrets.json
 bots/blog/output/
 .llm-emergency-stop
+
+# 덱스터 운영 이력 파일
+bots/claude/dexter-fixes.json
