@@ -40,7 +40,7 @@
   - [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
   - [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
   - [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
-  - [docs/work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md)
+  - [docs/WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
   - [docs/TEST_RESULTS.md](/Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md)
   - [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
   - [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)
@@ -85,4 +85,3 @@
 - `node --check /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js`
 - `cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run build`
 - 스카 예측 실행 및 `forecast_results.predictions`에 shadow 필드 저장 확인
-

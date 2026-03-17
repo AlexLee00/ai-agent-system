@@ -228,7 +228,7 @@ function printUsage() {
   플래그:
     --auto          git log에서 title/items 자동 추출
     --git-commit    완료 후 자동 git commit
-    --journal-entry="..." dev-journal.md에 결정사항 추가
+    --journal-entry="..." RESEARCH_JOURNAL.md에 결정사항 추가
     --deploy-only   문서 패치 없이 배포만 실행
     --dry-run       변경 없이 패치 내용 미리보기
     --all           전체 봇 대상 (--deploy-only 필요)

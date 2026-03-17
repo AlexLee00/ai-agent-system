@@ -1,5 +1,5 @@
 /**
- * doc-patcher.js - HANDOFF.md·DEV_SUMMARY.md·MEMORY.md·work-history·coding-guide·dev-journal 자동 패치
+ * doc-patcher.js - HANDOFF.md·DEV_SUMMARY.md·MEMORY.md·WORK_HISTORY·coding-guide·RESEARCH_JOURNAL 자동 패치
  *
  * 멱등성 보장: 각 패치 전 <!-- session-close:DATE:SLUG --> 마커 확인,
  * 이미 있으면 스킵 (재실행 safe).
@@ -36,10 +36,10 @@ function patchDocs(botId, note, opts) {
   const memoryPath = path.join(claudeMemoryDir, 'MEMORY.md');
   results.push(patchMemory(memoryPath, note, dryRun));
 
-  // 4. work-history.md 패치 (docs/ 또는 memory/ 경유)
+  // 4. WORK_HISTORY.md 패치 (docs/ 또는 memory/ 경유)
   const workHistoryPath = docsDir
-    ? path.join(docsDir, 'work-history.md')
-    : path.join(claudeMemoryDir, 'work-history.md');
+    ? path.join(docsDir, 'WORK_HISTORY.md')
+    : path.join(claudeMemoryDir, 'WORK_HISTORY.md');
   results.push(patchWorkHistory(workHistoryPath, note, dryRun));
 
   // 5. coding-guide.md 변경 이력 패치
@@ -48,9 +48,9 @@ function patchDocs(botId, note, opts) {
     : path.join(claudeMemoryDir, 'coding-guide.md');
   results.push(patchCodingGuide(codingGuidePath, note, dryRun));
 
-  // 6. dev-journal.md 패치 (journalEntry 있을 때만)
+  // 6. RESEARCH_JOURNAL.md 패치 (journalEntry 있을 때만)
   if (note.journalEntry) {
-    const devJournalPath = path.join(claudeMemoryDir, 'dev-journal.md');
+    const devJournalPath = path.join(claudeMemoryDir, 'RESEARCH_JOURNAL.md');
     results.push(patchDevJournal(devJournalPath, note, dryRun));
   }
 
@@ -200,19 +200,19 @@ function patchMemory(filePath, note, dryRun) {
   return { file: 'MEMORY.md', status: 'patched', detail: '파일 끝에 추가 (폴백)' };
 }
 
-// ─── work-history.md 패치 ────────────────────────────────────────────────
+// ─── WORK_HISTORY.md 패치 ────────────────────────────────────────────────
 function patchWorkHistory(filePath, note, dryRun) {
   const { title, type, items, date, slug } = note;
   const marker = `<!-- session-close:${date}:${slug} -->`;
 
   if (!fs.existsSync(filePath)) {
-    return { file: 'work-history.md', status: 'error', detail: '파일 없음' };
+    return { file: 'WORK_HISTORY.md', status: 'error', detail: '파일 없음' };
   }
 
   let content = fs.readFileSync(filePath, 'utf-8');
 
   if (content.includes(marker)) {
-    return { file: 'work-history.md', status: 'skipped', detail: '이미 패치됨' };
+    return { file: 'WORK_HISTORY.md', status: 'skipped', detail: '이미 패치됨' };
   }
 
   const typeEmoji = { feature: '✨', fix: '🔧', refactor: '♻️', ops: '⚙️', config: '⚙️' }[type] || '📝';
@@ -221,8 +221,8 @@ function patchWorkHistory(filePath, note, dryRun) {
   const dateHeader = `## ${date}`;
 
   if (dryRun) {
-    console.log('\n[dry-run] work-history.md 삽입 예정:\n' + newBlock);
-    return { file: 'work-history.md', status: 'dry', detail: `${dateHeader} 섹션에 추가` };
+    console.log('\n[dry-run] WORK_HISTORY.md 삽입 예정:\n' + newBlock);
+    return { file: 'WORK_HISTORY.md', status: 'dry', detail: `${dateHeader} 섹션에 추가` };
   }
 
   if (content.includes(dateHeader)) {
@@ -243,7 +243,7 @@ function patchWorkHistory(filePath, note, dryRun) {
   }
 
   fs.writeFileSync(filePath, content);
-  return { file: 'work-history.md', status: 'patched', detail: `${dateHeader} 섹션에 추가` };
+  return { file: 'WORK_HISTORY.md', status: 'patched', detail: `${dateHeader} 섹션에 추가` };
 }
 
 // ─── coding-guide.md 변경 이력 패치 ─────────────────────────────────────
@@ -296,9 +296,9 @@ function patchCodingGuide(filePath, note, dryRun) {
   return { file: 'coding-guide.md', status: 'patched', detail: '변경 이력 테이블 + 날짜 갱신' };
 }
 
-// ─── dev-journal.md 패치 ─────────────────────────────────────────────────
+// ─── RESEARCH_JOURNAL.md 패치 ────────────────────────────────────────────
 /**
- * dev-journal.md에 결정사항(DEC-NNN) 엔트리 추가
+ * RESEARCH_JOURNAL.md에 결정사항(DEC-NNN) 엔트리 추가
  * note.journalEntry: 사전 포맷된 저널 텍스트 (없으면 스킵)
  */
 function patchDevJournal(filePath, note, dryRun) {
@@ -306,17 +306,17 @@ function patchDevJournal(filePath, note, dryRun) {
   const marker = `<!-- session-close:${date}:${slug}:journal -->`;
 
   if (!journalEntry) {
-    return { file: 'dev-journal.md', status: 'skipped', detail: 'journalEntry 없음' };
+    return { file: 'RESEARCH_JOURNAL.md', status: 'skipped', detail: 'journalEntry 없음' };
   }
 
   if (!fs.existsSync(filePath)) {
-    return { file: 'dev-journal.md', status: 'error', detail: '파일 없음' };
+    return { file: 'RESEARCH_JOURNAL.md', status: 'error', detail: '파일 없음' };
   }
 
   let content = fs.readFileSync(filePath, 'utf-8');
 
   if (content.includes(marker)) {
-    return { file: 'dev-journal.md', status: 'skipped', detail: '이미 패치됨' };
+    return { file: 'RESEARCH_JOURNAL.md', status: 'skipped', detail: '이미 패치됨' };
   }
 
   // DEC 번호 자동 증가
@@ -337,8 +337,8 @@ function patchDevJournal(filePath, note, dryRun) {
   const block = `\n---\n\n${entryText}\n\n${marker}\n`;
 
   if (dryRun) {
-    console.log('\n[dry-run] dev-journal.md 삽입 예정:\n' + block);
-    return { file: 'dev-journal.md', status: 'dry', detail: `DEC-${decId} 엔트리 추가 예정` };
+    console.log('\n[dry-run] RESEARCH_JOURNAL.md 삽입 예정:\n' + block);
+    return { file: 'RESEARCH_JOURNAL.md', status: 'dry', detail: `DEC-${decId} 엔트리 추가 예정` };
   }
 
   // 삽입 위치: "_최초 작성:" 줄 바로 앞 (파일 푸터)
@@ -350,7 +350,7 @@ function patchDevJournal(filePath, note, dryRun) {
   }
 
   fs.writeFileSync(filePath, content);
-  return { file: 'dev-journal.md', status: 'patched', detail: `DEC-${decId} 엔트리 추가` };
+  return { file: 'RESEARCH_JOURNAL.md', status: 'patched', detail: `DEC-${decId} 엔트리 추가` };
 }
 
 module.exports = { patchDocs, patchDevJournal };
