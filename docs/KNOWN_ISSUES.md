@@ -26,6 +26,9 @@
 | KI-008 | loadPreScreenedFallback | 파일 기반 폴백 → RAG 전환 미완료 | 2026-03-11 | 보류 — 루나 노드화 Phase에서 처리 예정 |
 | KI-009 | groq-sdk | Breaking change로 업그레이드 보류 중 | 2026-03-13 | 사용자 확인 후 별도 세션 처리 필요 |
 | KI-010 | 스카팀 LLM | llama-4-scout 464ms — gpt-oss-20b 152ms 대비 3배 느림 | 2026-03-12 | 교체 검토 중 (gpt-oss-20b 또는 llama-3.1-8b) |
+| KI-011 | 스카 shadow 비교 | `forecast_results`에 shadow 저장은 시작됐지만 actual 누적이 부족해 `shadowComparison.availableDays = 0` | 2026-03-18 | 며칠간 관찰 후 `primary vs shadow` 비교 시작 |
+| KI-012 | 일일 운영 분석 자동화 | 일부 자동화 런타임에서 `health-report.js` 직접 실행 실패로 `fallback_probe_unavailable`이 발생 | 2026-03-18 | `daily-ops-report.js`로 보수 처리 중, 입력 안정화 추가 필요 |
+| KI-013 | 워커 문서 재사용 품질 | 문서 재사용 이력과 결과 연결은 완료됐지만 수정량/품질 점수는 아직 없음 | 2026-03-18 | 재사용 후 수정량/확정률 분석 단계 예정 |
 
 ---
 

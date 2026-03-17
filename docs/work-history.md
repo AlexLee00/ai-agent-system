@@ -14,6 +14,8 @@
 - 워커 문서 재사용 흐름에 문서 상세, 재사용 이벤트, 생성 결과 연결, 전환율 요약 추가
 - 일일 운영 분석 리포트 입력 스크립트 `scripts/reviews/daily-ops-report.js` 추가 및 fallback 과장 진단 완화
 - 구현 추적 문서를 `docs/PLATFORM_IMPLEMENTATION_TRACKER.md`로 이름 변경하고 세션 인덱스/팀 문서 링크 정리
+- 문서 체계 운영 가이드 `docs/DOCUMENTATION_SYSTEM.md` 추가
+- 세션 단위 기록 문서 `docs/DEV_LOG.md`, `docs/DEV_VLOG.md` 추가
 
 검증:
 - `python3 -m py_compile bots/ska/src/runtime_config.py bots/ska/src/forecast.py`
