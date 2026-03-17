@@ -1,98 +1,110 @@
 # 세션 핸드오프
 
-> 다음 Claude Code 세션에서 이 파일을 먼저 읽어주세요.
-> 단, 공통 규칙/팀별 진입점은 먼저 [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 확인한 뒤 이 문서를 읽는 것을 권장합니다.
-
-## 이번 세션 완료 내역 (2026-03-11 ~ 2026-03-15)
-
-### 1. KST 시간 유틸리티 중앙화
-- `packages/core/lib/kst.js` 신규 — 전 팀 시간/날짜 관련 코드 통일
-- 기존 `new Date().toISOString()` 직접 사용 코드 전수 교체
-- launchd plist UTC 오기재 수정 (블로그팀 Hour=21 → KST 기준 Hour=6)
-- CLAUDE.md에 kst.js 사용 규칙 + launchd 시간 규칙 공식 등재
-
-### 2. KNOWN ISSUES 5개 수정
-- `callOpenAIMini()` 최종 폴백 누락 → ✅ 수정 완료
-- screening-monitor 파일 기반 → DB 기반으로 전환 → ✅ 수정 완료
-- `star.js` XSS escapeHtml 미적용 → ✅ 수정 완료
-- gemini maxTokens 4096 하드코딩 → 12000으로 수정 → ✅ 수정 완료
-- loadPreScreenedFallback 파일→RAG 전환 → 보류 (루나 노드화 Phase에서 처리)
-
-### 3. CLAUDE.md 공통 원칙 8개 추가
-- 팀 제이 6대 원칙, 노드화 아키텍처, LLM 모델 라우팅, 소스코드 보안 규칙
-- kst.js 사용 강제 규칙, launchd 시간 규칙
-- 세션 시작/마무리 루틴, 개발 문서 목적표
-
-### 4. 소스코드 접근 권한 제한
-- `packages/core/lib/file-guard.js` 신규 — 봇의 소스코드 수정 물리적 차단
-- 덱스터 `DEXTER_ALLOWED_PATTERNS` 화이트리스트 정의 (checksums, lock, state, log)
-- autofix 범위 화이트리스트 외 수정 시도 → `reportInsteadOfFix()` 경고 발송
-
-### 5. 루나팀 노드화 파이프라인 스캐폴딩 (L10~L34)
-- debate 노드, decision 노드, risk 노드, execution 노드 골격 구현
-- 루나 스크리닝 강화: 해외주식 + 암호화폐 휴리스틱 추가
-- 매매일지 자동 리뷰 + 엑스커전(Excursion) 메트릭 + 리스크 연동
-- 장외시간 리서치 모드 + 워치리스트 관리
-
-### 6. 스카팀 예측 고도화
-- 예측 캘리브레이션 (Platt Scaling)
-- 피처스토어 (Feature Store) 구축
-- 모멘텀 지표 연동
-
-### 7. 워커팀 WebSocket 채팅 + 태스크 큐 + 승인 플로우
-- WebSocket 기반 실시간 채팅 구현 (SSE 대체)
-- 태스크 러너 (Task Runner) + 태스크 큐
-- 승인 플로우 (Approval Flow) — 위험 작업 마스터 확인 체계
-- 클로드코드 채팅 메시지 버블 병합 수정 완료 (tool 메시지 사이여도 마지막 streaming assistant 찾아서 병합)
-
-### 8. 제이 인텐트 자동 프로모션 시스템
-- 미인식 명령 → DB 누적 → 자동 승격 + 롤백 + 감사 추적
-- 인텐트 스토어 공유 (전 팀 커맨더 연결)
-
-### 9. 통합 OPS 헬스 대시보드
-- 루나 리스크 + 스카 예측 + 클로드 품질 + 워커 상태 통합 뷰
-- 팀별 개별 헬스 리포트: 루나/스카/클로드/워커/블로
-
-### 10. 공유 헬퍼 리팩터링
-- 헬스리포트 + 프로바이더 + 포맷터 42개 공통 함수 통합
-
-### 11. 블로그팀 안정화
-- plist Hour 수정 (UTC 21 → KST 6)
-- 수동 발행: 38강 + 홈페이지와App 카테고리
+> 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)와 [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)를 읽고 이 문서를 보세요.
 
 ---
 
-## 미완료 / 보류 항목
+## 1. 현재 시스템 상태 요약
 
-### 🟡 groq-sdk 업그레이드 보류
-- Breaking change 존재 → 사용자 확인 후 별도 세션에서 처리 필요
-
-### 🟡 loadPreScreenedFallback 파일→RAG 전환
-- 루나 노드화 Phase에서 처리 예정
-
-### 🟡 LLM 속도 테스트 결과 반영 고려 (이월)
-- 스카팀: llama-4-scout (464ms) → gpt-oss-20b (152ms) 교체 검토
-
----
-
-## 현재 시스템 상태
-
-### 전체 팀 가동 현황
-
-| 팀 | 상태 | 비고 |
-|----|------|------|
-| 루나팀 | ✅ 정상 | 암호화폐 실투자, 노드화 파이프라인 L10~L34 스캐폴딩 완료 |
-| 스카팀 | ✅ 정상 | 예측 캘리브레이션 + 피처스토어 완료 |
-| 클로드팀 | ✅ 정상 | KNOWN ISSUES 4건 수정, file-guard.js 적용 |
-| 워커팀 | ✅ 정상 | WebSocket 채팅 + 태스크 큐 + 승인 플로우 운영 중 |
-| 블로그팀 | ✅ 정상 | plist KST 수정 완료, 매일 06:00 KST 자동 발행 |
+- 워커
+  - 문서 업로드/파싱/OCR/문서 상세/재사용 이력/생성 결과 연결까지 한 사이클이 닫혔다.
+  - `/documents`, `/documents/[id]`에서 문서 재사용 성과를 확인할 수 있다.
+- 스카
+  - 기존 예측 엔진은 유지되고 있다.
+  - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
+  - 일일/주간 예측 리뷰와 자동화는 shadow 비교를 읽도록 확장됐다.
+- 운영 분석
+  - `daily-ops-report.js`가 도입됐다.
+  - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.
+- 문서 체계
+  - 구현 추적 문서는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)로 이름이 바뀌었다.
+  - 세션 지속성용 문서 체계가 정리됐다.
+    - [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
+    - [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md)
+    - [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
 
 ---
 
-## 다음 세션 할 일
+## 2. 현재 진행 Phase
 
-1. **오류 해결 집중** — 누적 WARNING 이슈 정리
-2. **워커웹 동적 렌더링** — Claude Code 응답 → 15종 UI 컴포넌트 자동 매칭
-3. **외부 IP 접속** — Cloudflare Tunnel 설정 (로컬 IP 대체)
-4. **groq-sdk Breaking change** 내용 확인 후 업그레이드 여부 결정
-5. **스카팀 LLM 속도 최적화** — llama-4-scout → gpt-oss-20b 교체 검토
+### 플랫폼 관점
+
+- `운영 데이터 신뢰성 강화 + 세션 지속성 문서 체계 정리` 단계
+
+### 워커 관점
+
+- `문서 파싱 → 문서 재사용 → 실제 업무 생성 결과 추적` 단계 완료
+- 다음은 `문서 재사용 품질 분석` 단계
+
+### 스카 관점
+
+- `기존 엔진 유지 + shadow 비교 모델 관찰` 단계
+- 다음은 `primary vs shadow` 실제 비교 누적 단계
+
+---
+
+## 3. 다음 작업 목표
+
+1. 스카 shadow 비교 actual 누적 관찰
+   - `availableDays > 0`가 생기기 시작하면
+   - `primaryAvgMape vs shadowAvgMape`를 읽고 promotion 후보 여부 판단
+2. 워커 문서 재사용 품질 분석
+   - 재사용 후 실제 수정량
+   - 확정률
+   - 저품질 OCR 문서의 전환율
+3. 일일 운영 분석 리포트의 health 입력 안정화
+   - 자동화 런타임에서 팀별 `health-report.js` 직접 수집 성공률 개선
+
+---
+
+## 4. 현재 열린 이슈
+
+- 스카 shadow 비교는 저장은 정상이나 아직 actual 누적이 부족해서 비교 일수는 `0`
+- 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
+- 워커 문서 재사용은 추적선은 완성됐지만, “좋은 문서인지”를 평가하는 품질 지표는 아직 없음
+
+자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
+
+---
+
+## 5. 중요 설계 포인트
+
+- 스카 새 모델은 `교체`가 아니라 `shadow 비교`로만 시작한다.
+- 워커 문서 흐름은 새 레이어를 만들기보다 기존 confirm/result 흐름을 확장한다.
+- 운영 리포트는 `근거 약한 추론`보다 `보수적 hold`가 우선이다.
+- 문서 체계는 `정책 / 인덱스 / 구조 / 현재 상태 / 팀 참조 / 로그 / 브이로그 / handoff`로 역할을 분리한다.
+
+---
+
+## 6. 이어서 작업할 때 필요한 최소 컨텍스트
+
+### 반드시 먼저 읽기
+
+1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
+2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+3. [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
+4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+
+### 이어서 볼 문서
+
+- 워커 문서 흐름
+  - [TEAM_WORKER_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_WORKER_REFERENCE.md)
+- 스카 예측
+  - [TEAM_SKA_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_SKA_REFERENCE.md)
+  - [scripts/reviews/README.md](/Users/alexlee/projects/ai-agent-system/scripts/reviews/README.md)
+- 운영 설정
+  - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+
+### 핵심 코드 진입점
+
+- 스카 예측
+  - [/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py)
+  - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js)
+  - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js)
+- 워커 문서 흐름
+  - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/page.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js)
+- 운영 분석
+  - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js)
+

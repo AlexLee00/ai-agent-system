@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-03-18
+
+### 스카 shadow 비교 모델 + 운영 리뷰 입력 구조
+
+| 테스트 | 결과 |
+|--------|------|
+| `python3 -m py_compile bots/ska/src/runtime_config.py bots/ska/src/forecast.py` | ✅ |
+| `node --check scripts/reviews/daily-ops-report.js` | ✅ |
+| `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ |
+| `node --check scripts/reviews/ska-sales-forecast-weekly-review.js` | ✅ |
+| 스카 daily forecast 실행 | ✅ |
+| `forecast_results.predictions.shadow_model_name = knn-shadow-v1` 저장 확인 | ✅ |
+| `forecast_results.predictions.shadow_yhat / shadow_confidence` 저장 확인 | ✅ |
+
+### 워커 문서 재사용 상세/성과 추적
+
+| 테스트 | 결과 |
+|--------|------|
+| `cd bots/worker/web && npm run build` | ✅ |
+| `/documents` 목록 빌드 | ✅ |
+| `/documents/[id]` 상세 빌드 | ✅ |
+| 문서 재사용 이력/성과 카드 렌더링 경로 빌드 | ✅ |
+
+### 문서 체계 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `SESSION_CONTEXT_INDEX.md`에서 새 문서 체계 링크 확인 | ✅ |
+| `README.md` 문서 시작 순서 반영 확인 | ✅ |
+| `PLATFORM_IMPLEMENTATION_TRACKER.md` rename 후 링크 경로 확인 | ✅ |
+
+---
+
 ## 2026-03-08
 
 ### RAG 활용 완성 테스트 (커밋: 7630fc8)

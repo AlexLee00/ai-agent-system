@@ -11,12 +11,15 @@
 - 세션 시작 시 가장 먼저 볼 문서는
   - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
   - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+  - [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
   - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
   순서다.
+- “문서가 각각 무슨 역할이지?”는 [DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)를 먼저 본다.
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
 - “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
+- “오늘 세션의 실제 작업 맥락과 연구 기록”은 [DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md), [DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)를 본다.
 - “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
 
 ---
@@ -45,10 +48,14 @@
 2. [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
    - 공통 문서 인덱스
    - 팀별 진입점 안내
-3. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+3. [docs/DOCUMENTATION_SYSTEM.md](/Users/alexlee/projects/ai-agent-system/docs/DOCUMENTATION_SYSTEM.md)
+   - 문서 역할
+   - 읽는 순서
+   - 세션 종료 시 갱신 기준
+4. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
    - 직전 세션 맥락
    - 지금 바로 이어야 할 작업
-4. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
+5. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
    - 현재 알려진 문제
 
 ### 2.2 현재 구현 상태 추적
@@ -61,6 +68,10 @@
    - 실제 작업 사실 기록
 3. [docs/CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
    - 기능 변경 이력
+4. [docs/DEV_LOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_LOG.md)
+   - 세션 단위 작업 요약
+5. [docs/DEV_VLOG.md](/Users/alexlee/projects/ai-agent-system/docs/DEV_VLOG.md)
+   - 세션 단위 연구/회고 기록
 
 ### 2.3 공통 구조 문서
 

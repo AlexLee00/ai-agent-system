@@ -48,6 +48,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신
+- 문서 체계 운영 가이드 추가
+  - `docs/DOCUMENTATION_SYSTEM.md`
+- 세션 지속성 문서 추가
+  - `docs/DEV_LOG.md`
+  - `docs/DEV_VLOG.md`
 
 ### 추가 개발 후보
 - `runtime_config` 변경 후보를 일일/주간으로 제안하는 자동화 고도화
