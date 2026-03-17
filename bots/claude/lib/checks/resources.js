@@ -59,9 +59,10 @@ function checkDisk(items) {
 function checkMemory(items) {
   const totalGB = os.totalmem() / 1073741824;
   const freeGB = getAvailableMemoryGB();
-  const usedPct = ((totalGB - freeGB) / totalGB * 100).toFixed(1);
+  const usedPctNum = ((totalGB - freeGB) / totalGB * 100);
+  const usedPct = usedPctNum.toFixed(1);
 
-  if (freeGB < cfg.THRESHOLDS.memMinFreeGB) {
+  if (freeGB < Math.max(2, cfg.THRESHOLDS.memMinFreeGB / 2) || (freeGB < cfg.THRESHOLDS.memMinFreeGB && usedPctNum >= 90)) {
     items.push({ label: '시스템 메모리', status: 'warn', detail: `여유 ${freeGB.toFixed(1)}GB / ${totalGB.toFixed(0)}GB (사용 ${usedPct}%)` });
   } else {
     items.push({ label: '시스템 메모리', status: 'ok', detail: `여유 ${freeGB.toFixed(1)}GB / ${totalGB.toFixed(0)}GB (사용 ${usedPct}%)` });
@@ -118,8 +119,8 @@ function checkSwap(items) {
     }
     const usedMB = parseFloat(usedM[1]);
     const freeGB = getAvailableMemoryGB();
-    if (usedMB > 4096 || (usedMB > 1024 && freeGB < cfg.THRESHOLDS.memMinFreeGB)) {
-      items.push({ label: 'Swap', status: 'warn', detail: `${(usedMB / 1024).toFixed(1)}GB 사용 중 — 메모리 압박 의심` });
+    if (usedMB > 8192 || (usedMB > 2048 && freeGB < cfg.THRESHOLDS.memMinFreeGB)) {
+      items.push({ label: 'Swap', status: 'warn', detail: `${(usedMB / 1024).toFixed(1)}GB 사용 중 — 메모리 여유와 함께 확인 필요` });
     } else if (usedMB > 0) {
       items.push({ label: 'Swap', status: 'ok', detail: `${usedMB.toFixed(0)}MB 사용 (여유 메모리 ${freeGB.toFixed(1)}GB)` });
     } else {

@@ -5,6 +5,22 @@
 
 ---
 
+## 0. 5분 요약
+
+- 이 저장소는 `worker`, `investment`, `reservation/ska`, `claude`, `orchestrator`, `blog` 여섯 축으로 보면 된다.
+- 세션 시작 시 가장 먼저 볼 문서는
+  - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
+  - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
+  - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+  순서다.
+- “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
+- “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
+- “지금 무엇이 구현됐지?”는 [improvement-ideas.md](/Users/alexlee/projects/ai-agent-system/docs/improvement-ideas.md)를 먼저 본다.
+- “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [work-history.md](/Users/alexlee/projects/ai-agent-system/docs/work-history.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
+- “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
+
+---
+
 ## 1. 사용 원칙
 
 - 이 문서는 `세션 시작 인덱스`다.
