@@ -20,6 +20,9 @@ const migrations = [
   '../migrations/011-worker-chat.js',
   '../migrations/012-ai-feedback.js',
   '../migrations/013-ai-policy.js',
+  '../migrations/014-document-extraction.js',
+  '../migrations/015-document-reuse-events.js',
+  '../migrations/016-document-reuse-linking.js',
 ];
 
 async function main() {

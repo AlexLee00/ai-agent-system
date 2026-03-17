@@ -1870,6 +1870,7 @@ app.post('/api/sales/proposals/:id/confirm', requireAuth, companyFilter, async (
       return res.status(404).json({ error: '매출 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
     }
     const proposal = normalizeSalesProposal(req.body.proposal || session.original_snapshot_json || {});
+    const reuseEventId = Number(req.body?.reuse_event_id || 0) || null;
     await replaceWorkerFeedbackEdits({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -1880,6 +1881,13 @@ app.post('/api/sales/proposals/:id/confirm', requireAuth, companyFilter, async (
        VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING id,date,amount,category,description`,
       [req.user.company_id, proposal.date, proposal.amount, proposal.category || '기타', proposal.description || null, req.user.id]);
+    await linkDocumentReuseEvent({
+      reuseEventId,
+      feedbackSessionId: session.id,
+      entityType: 'sales',
+      entityId: sale.id,
+      companyId: req.companyId,
+    });
     await markWorkerFeedbackConfirmed({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -2049,6 +2057,97 @@ app.get('/api/documents/:id/download', requireAuth, companyFilter, async (req, r
     res.status(500).json({ error: '문서 다운로드 중 오류가 발생했습니다.', code: 'SERVER_ERROR' });
   }
 });
+
+app.get('/api/documents/:id', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const row = await pgPool.get(SCHEMA,
+      `SELECT id, category, filename, file_path, ai_summary, uploaded_by, created_at,
+              extracted_text, extraction_metadata, extracted_at
+       FROM worker.documents
+       WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!row) return res.status(404).json({ error: '문서를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    res.json({
+      ok: true,
+      document: {
+        id: row.id,
+        category: row.category,
+        filename: row.filename,
+        ai_summary: row.ai_summary || '',
+        uploaded_by: row.uploaded_by,
+        created_at: row.created_at,
+        extracted_at: row.extracted_at,
+        extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
+        extraction_metadata: row.extraction_metadata || {},
+        download_url: `/api/documents/${row.id}/download`,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: '문서 정보를 불러오지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.get('/api/documents/:id/reuse-events', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const target = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.documents WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!target) return res.status(404).json({ error: '문서를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT e.id, e.target_menu, e.prompt_length, e.reused_by, e.created_at,
+              e.feedback_session_id, e.linked_entity_type, e.linked_entity_id, e.committed_at,
+              u.name AS reused_by_name
+       FROM worker.document_reuse_events e
+       LEFT JOIN worker.users u ON u.id = e.reused_by
+       WHERE e.document_id=$1 AND e.company_id=$2
+       ORDER BY e.created_at DESC
+       LIMIT 20`,
+      [req.params.id, req.companyId]);
+    res.json({ ok: true, events: rows });
+  } catch {
+    res.status(500).json({ error: '문서 재사용 이력을 불러오지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.post('/api/documents/:id/reuse-events', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const targetMenu = String(req.body?.target_menu || '').trim();
+    const promptLength = Math.max(0, Number(req.body?.prompt_length || 0));
+    if (!targetMenu) {
+      return res.status(400).json({ error: '대상 메뉴가 필요합니다.', code: 'INVALID_TARGET_MENU' });
+    }
+    const target = await pgPool.get(SCHEMA,
+      `SELECT id FROM worker.documents WHERE id=$1 AND company_id=$2 AND deleted_at IS NULL`,
+      [req.params.id, req.companyId]);
+    if (!target) return res.status(404).json({ error: '문서를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    const event = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.document_reuse_events (document_id, company_id, target_menu, prompt_length, reused_by)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING id, document_id, target_menu, prompt_length, reused_by, created_at`,
+      [req.params.id, req.companyId, targetMenu, promptLength, req.user.id]);
+    res.status(201).json({ ok: true, event });
+  } catch {
+    res.status(500).json({ error: '문서 재사용 이력을 저장하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+async function linkDocumentReuseEvent({ reuseEventId, feedbackSessionId, entityType, entityId, companyId }) {
+  if (!reuseEventId || !companyId) return;
+  await pgPool.query(SCHEMA,
+    `UPDATE worker.document_reuse_events
+        SET feedback_session_id = COALESCE($3, feedback_session_id),
+            linked_entity_type = COALESCE($4, linked_entity_type),
+            linked_entity_id = COALESCE($5, linked_entity_id),
+            committed_at = CASE
+              WHEN $4 IS NOT NULL AND $5 IS NOT NULL THEN NOW()
+              ELSE committed_at
+            END
+      WHERE id = $1 AND company_id = $2`,
+    [reuseEventId, companyId, feedbackSessionId || null, entityType || null, entityId || null]);
+}
 
 app.get('/api/documents/:id/extraction', requireAuth, companyFilter, async (req, res) => {
   try {
@@ -2372,6 +2471,7 @@ app.post('/api/journals/proposals/:id/confirm', requireAuth, companyFilter, asyn
     }
 
     const proposal = normalizeJournalProposal(req.body.proposal || session.original_snapshot_json || {});
+    const reuseEventId = Number(req.body?.reuse_event_id || 0) || null;
     await replaceWorkerFeedbackEdits({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -2383,6 +2483,13 @@ app.post('/api/journals/proposals/:id/confirm', requireAuth, companyFilter, asyn
        VALUES ($1,$2,$3,$4,$5)
        RETURNING *`,
       [req.companyId, employeeId, proposal.date, proposal.content, proposal.category || 'general']);
+    await linkDocumentReuseEvent({
+      reuseEventId,
+      feedbackSessionId: session.id,
+      entityType: 'journals',
+      entityId: journal.id,
+      companyId: req.companyId,
+    });
 
     rag.store('rag_work_docs', `[업무일지] ${proposal.content.slice(0, 500)}`,
       { company_id: req.companyId, journal_id: journal.id, category: proposal.category || 'general' }, 'emily'
@@ -3021,6 +3128,7 @@ app.post('/api/projects/proposals/:id/confirm', requireAuth, companyFilter, asyn
       return res.status(404).json({ error: '프로젝트 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
     }
     const proposal = normalizeProjectProposal(req.body.proposal || session.original_snapshot_json || {});
+    const reuseEventId = Number(req.body?.reuse_event_id || 0) || null;
     await replaceWorkerFeedbackEdits({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -3030,6 +3138,13 @@ app.post('/api/projects/proposals/:id/confirm', requireAuth, companyFilter, asyn
       `INSERT INTO worker.projects (company_id, name, description, status, start_date, end_date)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [req.companyId, proposal.name, proposal.description || null, proposal.status || 'planning', proposal.start_date || null, proposal.end_date || null]);
+    await linkDocumentReuseEvent({
+      reuseEventId,
+      feedbackSessionId: session.id,
+      entityType: 'projects',
+      entityId: row.id,
+      companyId: req.companyId,
+    });
     await markWorkerFeedbackConfirmed({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -3280,6 +3395,7 @@ app.post('/api/schedules/proposals/:id/confirm', requireAuth, companyFilter, asy
       return res.status(404).json({ error: '일정 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
     }
     const proposal = normalizeScheduleProposal(req.body.proposal || session.original_snapshot_json || {});
+    const reuseEventId = Number(req.body?.reuse_event_id || 0) || null;
     await replaceWorkerFeedbackEdits({
       sessionId: session.id,
       submittedSnapshot: proposal,
@@ -3295,6 +3411,13 @@ app.post('/api/schedules/proposals/:id/confirm', requireAuth, companyFilter, asy
         proposal.start_time, proposal.end_time || null, proposal.all_day || false,
         proposal.location || null, JSON.stringify(proposal.attendees || []),
         proposal.recurrence || null, proposal.reminder ?? 30, employeeId]);
+    await linkDocumentReuseEvent({
+      reuseEventId,
+      feedbackSessionId: session.id,
+      entityType: 'schedules',
+      entityId: row.id,
+      companyId: req.companyId,
+    });
     await markWorkerFeedbackConfirmed({
       sessionId: session.id,
       submittedSnapshot: proposal,

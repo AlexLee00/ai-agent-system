@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import { parseClaudeOutput } from '../ai/canvas';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ export default function DashboardPage() {
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [reusedDocument, setReusedDocument] = useState(null);
   const fileRef = useRef(null);
   const promptRef = useRef(null);
   const advisorSectionRef = useRef(null);
@@ -46,7 +48,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const nextPrompt = new URLSearchParams(window.location.search).get('prompt') || '';
-    setPrompt((prev) => (prev === nextPrompt ? prev : nextPrompt));
+    const reusedDraft = consumeDocumentReuseDraft('dashboard');
+    if (reusedDraft?.documentId || reusedDraft?.filename) setReusedDocument(reusedDraft);
+    const reusedText = reusedDraft?.draft || '';
+    const merged = [nextPrompt, reusedText].filter(Boolean).join(nextPrompt && reusedText ? '\n\n' : '');
+    setPrompt((prev) => (prev === merged ? prev : merged));
   }, []);
 
   useEffect(() => {
@@ -464,6 +470,17 @@ export default function DashboardPage() {
               result={advisorResult}
               onResultAction={() => router.push(advisorResult.actionHref)}
             />
+            {reusedDocument ? (
+              <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+                <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'}에서 가져온 내용을 기반으로 프롬프트가 채워졌습니다.</p>
+                {reusedDocument.documentId ? (
+                  <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+                    문서 상세 보기
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </>
       )}

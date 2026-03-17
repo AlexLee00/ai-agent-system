@@ -12,6 +12,7 @@ import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 
 const CATEGORIES = [
   { value: 'general', label: '일반' },
@@ -52,6 +53,7 @@ export default function JournalsPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [reusedDocument, setReusedDocument] = useState(null);
   const fileRef = useRef(null);
 
   const refillPrompt = (text) => {
@@ -71,6 +73,13 @@ export default function JournalsPage() {
   };
 
   useEffect(() => { load(); }, [filterDate, filterCat]); // eslint-disable-line
+  useEffect(() => {
+    const reusedDraft = consumeDocumentReuseDraft('journals');
+    if (reusedDraft?.draft) {
+      setPrompt(reusedDraft.draft);
+      setReusedDocument(reusedDraft);
+    }
+  }, []);
 
   const openNew  = () => { setForm(EMPTY_FORM); setEditId(null); setError(''); setModal(true); };
   const openEdit = (j) => {
@@ -121,10 +130,14 @@ export default function JournalsPage() {
     setProposalActionLoading(true);
     setError('');
     try {
-      await api.post(`/journals/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      await api.post(`/journals/proposals/${proposal.feedback_session_id}/confirm`, {
+        proposal,
+        reuse_event_id: reusedDocument?.reuseEventId || null,
+      });
       setNotice('업무일지를 등록했습니다.');
       setProposal(null);
       setOriginalProposal(null);
+      setReusedDocument(null);
       load();
     } catch (err) {
       setError(err.message);
@@ -283,6 +296,17 @@ export default function JournalsPage() {
             {uploading ? '업로드 중...' : '파일 첨부'}
           </button>
         </div>
+        {reusedDocument ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+            <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 업무일지 초안이 채워졌습니다.</p>
+            {reusedDocument.documentId ? (
+              <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+                문서 상세 보기
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         {attachedFileName && (
           <div className="hidden lg:flex">
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">

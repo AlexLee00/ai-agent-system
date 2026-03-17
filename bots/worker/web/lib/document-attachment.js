@@ -76,3 +76,28 @@ export function buildDocumentUploadNotice(document = {}, fallbackName = '') {
   }
   return `"${filename}" 파일을 프롬프트에 첨부했습니다.`;
 }
+
+export function buildDocumentReusePackage(document = {}, fallbackName = '') {
+  const filename = String(document.filename || fallbackName || '').trim() || '첨부 문서';
+  const metadata = document.extraction_metadata || {};
+  const qualitySeverity = String(metadata.imageQualitySeverity || 'none').trim();
+  const routingBias = String(metadata.imageRoutingBias || 'default').trim();
+  const conservative = Boolean(metadata.imageConservativeHandling);
+  const appendix = buildDocumentPromptAppendix(document, fallbackName);
+  const notice = conservative
+    ? `"${filename}" 문서를 다시 불러와 보수 해석 규칙과 함께 프롬프트에 첨부했습니다.`
+    : `"${filename}" 문서를 다시 불러와 프롬프트에 첨부했습니다.`;
+
+  const hints = [];
+  if (qualitySeverity !== 'none') hints.push(`이미지 severity ${qualitySeverity}`);
+  if (routingBias !== 'default') hints.push(`권장 라우팅 ${routingBias}`);
+  if (metadata.analysisReadyTextLength) hints.push(`텍스트 ${metadata.analysisReadyTextLength}자`);
+
+  return {
+    filename,
+    notice,
+    appendix,
+    hints,
+    conservative,
+  };
+}

@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { getToken } from '@/lib/auth-context';
 import { getMenuPolicy } from '@/lib/menu-access';
-import { buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { buildDocumentReusePackage, buildDocumentUploadNotice } from '@/lib/document-attachment';
 import { getWorkerWebRuntimeConfig } from '@/lib/runtime-config';
 
 const API_BASE = '/api';
@@ -147,6 +147,9 @@ export default function WorkerAIWorkspace({
   const [isPending, setIsPending] = useState(false);
   const [liveStatus, setLiveStatus] = useState('연결 준비 중...');
   const [uploading, setUploading] = useState(false);
+  const [recentDocuments, setRecentDocuments] = useState([]);
+  const [loadingRecentDocuments, setLoadingRecentDocuments] = useState(false);
+  const [reusingDocumentId, setReusingDocumentId] = useState(null);
   const [selectedBot, setSelectedBot] = useState(defaultBotKey);
   const bottomRef = useRef(null);
   const wsRef = useRef(null);
@@ -192,6 +195,15 @@ export default function WorkerAIWorkspace({
       .then(data => setAgentTasks(data.tasks || []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!uploadEnabled) return;
+    setLoadingRecentDocuments(true);
+    api.get('/documents?limit=6')
+      .then(data => setRecentDocuments(data.documents || []))
+      .catch(() => setRecentDocuments([]))
+      .finally(() => setLoadingRecentDocuments(false));
+  }, [uploadEnabled]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -427,6 +439,46 @@ export default function WorkerAIWorkspace({
     }
   }
 
+  async function reuseDocument(documentId) {
+    if (!documentId || isPending) return;
+    setReusingDocumentId(documentId);
+    try {
+      const data = await api.get(`/documents/${documentId}/extraction`);
+      const document = data.document || null;
+      if (!document) throw new Error('문서 파싱 결과를 찾을 수 없습니다.');
+      const reusePackage = buildDocumentReusePackage(document);
+      setInput((prev) => {
+        const normalized = String(prev || '').trim();
+        return normalized
+          ? `${normalized}\n\n${reusePackage.appendix}`
+          : reusePackage.appendix;
+      });
+      setLatestUi({
+        type: 'document_upload',
+        filename: reusePackage.filename,
+        category: recentDocuments.find((item) => String(item.id) === String(documentId))?.category || '',
+        summary: reusePackage.hints.length
+          ? reusePackage.hints.join(' · ')
+          : '문서 파싱 텍스트를 프롬프트 입력창에 다시 붙였습니다.',
+      });
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: reusePackage.notice,
+        createdAt: new Date().toISOString(),
+        intent: 'document_reuse',
+      }]);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: error.message || '문서를 다시 불러오는 중 오류가 발생했습니다.',
+        createdAt: new Date().toISOString(),
+      }]);
+    } finally {
+      setReusingDocumentId(null);
+    }
+  }
+
   return (
     !promptEnabled ? null :
     <section className={`grid gap-5 ${showCanvas ? 'grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]' : 'grid-cols-1'}`}>
@@ -524,18 +576,45 @@ export default function WorkerAIWorkspace({
 
         <div className="border-t border-slate-200 pt-4 mt-4 space-y-3">
           {uploadEnabled && (
-            <div className="flex flex-wrap items-center gap-3">
-              <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="btn-secondary text-sm gap-2"
-              >
-                {uploading ? <UploadCloud className="w-4 h-4" /> : <Paperclip className="w-4 h-4" />}
-                {uploading ? '업로드 중...' : '파일 업로드'}
-              </button>
-              <p className="text-xs text-slate-500">문서 관리는 AI 대화에 통합됩니다.</p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="btn-secondary text-sm gap-2"
+                >
+                  {uploading ? <UploadCloud className="w-4 h-4" /> : <Paperclip className="w-4 h-4" />}
+                  {uploading ? '업로드 중...' : '파일 업로드'}
+                </button>
+                <p className="text-xs text-slate-500">문서 관리는 AI 대화에 통합됩니다.</p>
+              </div>
+              <div className="rounded-[1.15rem] border border-slate-200 bg-slate-50/80 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-slate-700">최근 문서 재사용</p>
+                  <span className="text-[11px] text-slate-500">프롬프트에 다시 첨부</span>
+                </div>
+                {loadingRecentDocuments ? (
+                  <p className="mt-2 text-xs text-slate-500">문서 목록을 불러오는 중...</p>
+                ) : recentDocuments.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">재사용할 최근 문서가 없습니다.</p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {recentDocuments.map((document) => (
+                      <button
+                        key={document.id}
+                        type="button"
+                        onClick={() => reuseDocument(document.id)}
+                        disabled={reusingDocumentId === document.id}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {reusingDocumentId === document.id ? '불러오는 중...' : document.filename}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <div className="flex gap-3">

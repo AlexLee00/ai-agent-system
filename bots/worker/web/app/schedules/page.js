@@ -9,6 +9,7 @@ import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 
 const TYPE_CONFIG = {
   meeting:  { label: '미팅',     color: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
@@ -229,6 +230,7 @@ export default function SchedulesPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [reusedDocument, setReusedDocument] = useState(null);
 
   const refillPrompt = (text) => {
     setPrompt(text);
@@ -247,6 +249,13 @@ export default function SchedulesPage() {
   };
 
   useEffect(() => { load(); }, [yearMonth]);
+  useEffect(() => {
+    const reusedDraft = consumeDocumentReuseDraft('schedules');
+    if (reusedDraft?.draft) {
+      setPrompt(reusedDraft.draft);
+      setReusedDocument(reusedDraft);
+    }
+  }, []);
 
   const prevMonth = () => {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
@@ -283,10 +292,14 @@ export default function SchedulesPage() {
     setProposalLoading(true);
     setError('');
     try {
-      await api.post(`/schedules/proposals/${proposal.feedback_session_id}/confirm`, { proposal });
+      await api.post(`/schedules/proposals/${proposal.feedback_session_id}/confirm`, {
+        proposal,
+        reuse_event_id: reusedDocument?.reuseEventId || null,
+      });
       setNotice('일정 제안을 확정했습니다.');
       setProposal(null);
       setOriginalProposal(null);
+      setReusedDocument(null);
       load();
     } catch (e) {
       setError(e.message);
@@ -428,6 +441,17 @@ export default function SchedulesPage() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
           />
+          {reusedDocument ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+              <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 일정 초안이 채워졌습니다.</p>
+              {reusedDocument.documentId ? (
+                <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+                  문서 상세 보기
+                </a>
+              ) : null}
+            </div>
+          ) : null}
           {attachedFileName && (
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
