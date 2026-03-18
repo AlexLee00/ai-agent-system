@@ -8,7 +8,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
-import { formatExecutionTag } from './secrets.js';
+import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.js';
 const {
   publishEventPipeline,
   buildSeverityTargets,
@@ -245,7 +245,11 @@ export function notifyDailyJournal(date, records = []) {
   ];
 
   const marketLabel = { crypto: '암호화폐', domestic: '국내장', overseas: '국외장', all: '전체' };
-  const marketTag   = { crypto: 'LIVE / REAL 🔴', domestic: 'LIVE / MOCK 🔵', overseas: 'LIVE / MOCK 🔵' };
+  const marketTag = {
+    crypto: `${getMarketExecutionModeInfo('crypto', '암호화폐').executionMode.toUpperCase()} / ${getMarketExecutionModeInfo('crypto', '암호화폐').brokerAccountMode.toUpperCase()} 🔴`,
+    domestic: `${getMarketExecutionModeInfo('stocks', '국내주식').executionMode.toUpperCase()} / ${getMarketExecutionModeInfo('stocks', '국내주식').brokerAccountMode.toUpperCase()} 🔵`,
+    overseas: `${getMarketExecutionModeInfo('stocks', '미국주식').executionMode.toUpperCase()} / ${getMarketExecutionModeInfo('stocks', '미국주식').brokerAccountMode.toUpperCase()} 🔵`,
+  };
 
   const mainRecords = records.filter(r => r.market !== 'all');
 

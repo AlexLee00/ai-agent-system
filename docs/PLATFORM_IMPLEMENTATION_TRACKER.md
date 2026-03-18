@@ -486,9 +486,9 @@
   - health/reporting 통합
   - n8n node 초안
   - 리스크/거래 리뷰 체계
-  - 국내/해외 모의투자 기준 재정렬
+  - 국내/해외 `live/mock` 기준 재정렬
   - 시장별(`암호화폐 / 국내장 / 해외장`) 일일/주간 리뷰 분리
-  - 실행 모드 / 브로커 / `[PAPER]` 표현 공용화
+  - `executionMode` / `brokerAccountMode` / `[PAPER]` 표현 공용화
 - 남은 핵심:
   - 성과 누적 기반 학습 루프
   - 실계좌 전환 판단

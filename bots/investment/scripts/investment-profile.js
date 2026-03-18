@@ -9,7 +9,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
-import { isPaperMode } from '../shared/secrets.js';
+import { getMarketExecutionModeInfo } from '../shared/secrets.js';
 import { getMinConfidence } from '../team/luna.js';
 
 const require   = createRequire(import.meta.url);
@@ -44,17 +44,19 @@ export async function getInvestmentProfile(market) {
     cfg = jsYaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
   } catch { /* config 없으면 기본값 */ }
 
-  const paperMode = isPaperMode();
   const exchange  = EXCHANGE_MAP[market] || 'binance';
   const isCrypto  = market === 'crypto';
   const rules     = isCrypto ? RULES_CRYPTO : RULES_STOCK;
   const capMgmt   = cfg.capital_management || {};
   const dualModel = process.env.LUNA_DUAL_MODEL !== 'false';
+  const modeInfo  = getMarketExecutionModeInfo(isCrypto ? 'crypto' : 'stocks', market);
 
   return {
     market,
     exchange,
-    mode:             paperMode ? '📄 PAPER / 주문 차단' : '🔴 LIVE / 주문 실행',
+    mode:             `${modeInfo.executionMode.toUpperCase()} / ${modeInfo.brokerAccountMode.toUpperCase()}`,
+    executionMode:    modeInfo.executionMode,
+    brokerAccountMode: modeInfo.brokerAccountMode,
     riskLevel:        RISK_LABEL[market] || 'moderate',
     maxPositions:     rules.MAX_OPEN_POSITIONS,
     riskPerTrade:     (capMgmt.risk_per_trade || 0.02) * 100,   // % 표시
@@ -65,6 +67,6 @@ export async function getInvestmentProfile(market) {
     dailyLossLimit:   rules.MAX_DAILY_LOSS_PCT * 100,
     cashReserve:      (capMgmt.reserve_ratio || 0.10) * 100,
     dualModel,
-    paperMode,
+    paperMode:        modeInfo.paper,
   };
 }

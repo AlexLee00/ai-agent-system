@@ -41,11 +41,14 @@
   - `paper`: 실제 주문 차단
 - `brokerAccountMode`
   - `real`: 실계좌
-  - `mock`: 모의투자 계좌
+  - `mock`: 주식용 모의투자 계좌
+- 시장별 적용 원칙
+  - 암호화폐: `brokerAccountMode=real`만 사용
+  - 국내/해외주식: `brokerAccountMode=mock/real` 사용 가능
 - 레거시 설정 매핑
   - `PAPER_MODE` / `trading_mode`: `executionMode`
   - `kis.paper_trading`: 주식 `brokerAccountMode`
-  - `binance_testnet`: 암호화폐 `brokerAccountMode`
+  - `binance_testnet`: 레거시 실험 플래그 (현재 운영 분류에는 미사용)
 
 ## 자주 쓰는 명령어
 

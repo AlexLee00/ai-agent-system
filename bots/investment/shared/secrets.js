@@ -130,7 +130,10 @@ export function getBrokerAccountMode(marketType = 'crypto') {
   const normalized = String(marketType || 'crypto').trim().toLowerCase();
   const isStockMarket = normalized === 'kis' || normalized === 'kis_overseas' || normalized === 'stock' || normalized === 'stocks';
   if (isStockMarket) return isKisPaper() ? 'mock' : 'real';
-  return isTestnet() ? 'mock' : 'real';
+  // 현재 시스템 기준 암호화폐는 real 계정만 사용한다.
+  // binance_testnet / BINANCE_TESTNET은 레거시 실험용 플래그로 남아 있어도
+  // execution/broker mode 분류에는 더 이상 사용하지 않는다.
+  return 'real';
 }
 
 export function describeModePair({ executionMode, brokerAccountMode, marketLabel = '시장' }) {

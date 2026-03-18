@@ -79,7 +79,7 @@
   - `live`: 주문 실행
 - `brokerAccountMode`
   - `real`: 일반 바이낸스 계정
-  - `mock`: testnet 계정
+- 현재 시스템은 암호화폐에 `brokerAccountMode=real`만 사용
 - Phase 3-C에서 실주문 활성화
 
 ### 한울 (Hanul) — KIS 실행봇
