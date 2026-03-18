@@ -61,6 +61,9 @@
 - `signals.block_meta`
   - `exchange`, `symbol`, `action`, `amount` 등 실행 맥락
 - 자동매매 일지는 시장별 `실패 코드 요약`과 `사람 읽기용 사유`를 함께 보여준다.
+- `runtime_config_suggestion_log`
+  - 최근 설정 제안 스냅샷 저장
+  - `market_summary`, `suggestions`, `actionable_count`, `review_status`, `review_note` 보존
 - 대표 코드
   - `risk_rejected`
   - `safety_gate_blocked`
@@ -85,6 +88,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-jou
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js --dry-run
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js --days=30
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js --days=14
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js --days=14 --write
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 

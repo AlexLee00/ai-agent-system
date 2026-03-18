@@ -12,7 +12,11 @@ import { getInvestmentRuntimeConfig } from '../shared/runtime-config.js';
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
   const days = Math.max(7, Number(daysArg?.split('=')[1] || 14));
-  return { days, json: argv.includes('--json') };
+  return {
+    days,
+    json: argv.includes('--json'),
+    write: argv.includes('--write'),
+  };
 }
 
 function round(value, digits = 2) {
@@ -229,7 +233,7 @@ function printHuman(report) {
 }
 
 async function main() {
-  const { days, json } = parseArgs();
+  const { days, json, write } = parseArgs();
   await db.initSchema();
   const { fromDate, toDate } = buildDateRange(days);
   const [signalRows, blockRows, analysisRows] = await Promise.all([
@@ -246,11 +250,27 @@ async function main() {
   const suggestions = buildSuggestions(config, summaries);
   const report = buildReport(days, summaries, suggestions);
 
+  let saved = null;
+  if (write) {
+    saved = await db.insertRuntimeConfigSuggestionLog({
+      periodDays: report.periodDays,
+      actionableCount: report.actionableSuggestions,
+      marketSummary: report.marketSummary,
+      suggestions: report.suggestions,
+    });
+    report.saved = saved;
+  }
+
   if (json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     return;
   }
-  process.stdout.write(`${printHuman(report)}\n`);
+  const human = printHuman(report);
+  if (!saved) {
+    process.stdout.write(`${human}\n`);
+    return;
+  }
+  process.stdout.write(`${human}\n\n저장:\n- suggestion_log_id: ${saved.id}\n- captured_at: ${saved.captured_at}\n`);
 }
 
 main().catch((error) => {
