@@ -59,6 +59,7 @@ export default function WorkerMonitoringPage() {
   const changeHistory = payload?.change_history || [];
   const changeImpact = payload?.change_impact || [];
   const selectorSummary = payload?.selector_summary || [];
+  const globalSelectorSummary = payload?.global_selector_summary || null;
 
   async function handleSaveProvider() {
     setSaving(true);
@@ -500,6 +501,56 @@ export default function WorkerMonitoringPage() {
                   아직 전후 비교를 계산할 만큼 최근 변경 이력이 없습니다.
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-violet-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">전 팀 selector 개요</p>
+                <p className="text-xs text-slate-500">현재 시스템 전체 LLM primary / fallback 체인을 한 화면에서 요약합니다.</p>
+              </div>
+            </div>
+
+            {globalSelectorSummary?.speed_test ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                최근 speed-test {new Date(globalSelectorSummary.speed_test.captured_at).toLocaleString('ko-KR')}
+                {` · current ${globalSelectorSummary.speed_test.current || '-'}`}
+                {` · recommended ${globalSelectorSummary.speed_test.recommended || '-'}`}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                최근 speed-test 스냅샷이 없습니다.
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {(globalSelectorSummary?.groups || []).map((group) => (
+                <div key={group.title} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-sm font-semibold text-slate-900">{group.title}</p>
+                  <div className="mt-3 space-y-3">
+                    {(group.entries || []).map((entry) => (
+                      <div key={entry.key} className="rounded-xl bg-slate-50 px-3 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{entry.label}</p>
+                            <p className="mt-1 font-mono text-[11px] text-slate-500">{entry.key}</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 space-y-1">
+                          {(entry.chain || []).map((chainEntry) => (
+                            <p key={`${entry.key}-${chainEntry.role}`} className="break-all text-[11px] text-slate-600">
+                              <span className="font-semibold uppercase tracking-wide text-slate-500">{chainEntry.role}</span>
+                              {` · ${chainEntry.provider} / ${chainEntry.model}`}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
