@@ -2494,6 +2494,7 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 speed-test 실행과 speed review를 일일 러너로 묶을 수 있게 정리
 - 블로그 `publ.js`에 내부 링킹 Phase 2 후처리를 추가해 발행 시점에 과거 `published + naver_url` 포스트를 조회하고 제목 플레이스홀더를 실제 링크로 치환할 수 있게 정리
 - `packages/core/lib/naver-blog-url.js`와 `scripts/parse-naver-blog-url.js`를 추가해 네이버 블로그 URL 파싱/정규화 유틸과 CLI를 마련
+- `bots/blog/scripts/mark-published-url.js`를 추가해 수동 발행 직후 `postId/scheduleId + naverUrl`을 검증하고 `blog.posts.naver_url`에 canonical URL로 기록할 수 있게 정리
 
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
