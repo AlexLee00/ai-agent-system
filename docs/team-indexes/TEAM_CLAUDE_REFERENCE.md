@@ -29,6 +29,13 @@
 - [bots/claude/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js)
 - [bots/claude/config.json](/Users/alexlee/projects/ai-agent-system/bots/claude/config.json)
 - [bots/claude/lib/config.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/config.js)
+- [bots/claude/lib/archer/config.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/archer/config.js)
+
+아처 LLM 체인:
+- primary: `anthropic / claude-sonnet-4-6`
+- fallback: `openai / gpt-4o-mini`
+- final fallback: `groq / llama-4-scout-17b-16e-instruct`
+- 폴백 순서는 [bots/claude/lib/archer/config.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/archer/config.js)의 `LLM_CHAIN`에서 조정한다.
 
 ## 자주 쓰는 명령어
 

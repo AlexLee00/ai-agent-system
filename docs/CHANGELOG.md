@@ -409,6 +409,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
 # 2026-03-18
 
+- 클로드/아처
+  - 아처 LLM 폴백 순서를 `anthropic/claude-sonnet-4-6 -> openai/gpt-4o-mini -> groq/llama-4-scout-17b-16e-instruct`로 재정렬
+  - `bots/claude/lib/archer/config.js`에 `LLM_CHAIN`을 추가해 아처 전용 모델 우선순위를 설정 레이어로 승격
 - 투자
   - 루나 주식 공격적 매매를 `runtime_config` 기반 전략 프로필(`stockStrategyMode`, `stockStrategyProfiles`)로 실제 연결
   - 네메시스가 `stockRejectConfidence`, `stockAutoApproveDomestic`, `stockAutoApproveOverseas`를 하드 규칙으로 사용하도록 보강
