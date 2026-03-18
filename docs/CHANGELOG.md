@@ -11,6 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `worker.system_preferences` 테이블로 선택값 저장
   - 최근 24시간 호출 통계와 기본 API 변경 이력까지 확인 가능
   - provider별/경로별 성공률과 평균 응답시간까지 확인 가능
+  - provider 변경 사유(note)까지 이력에 함께 저장 가능
 - 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
   - investment / reservation / ska / worker / orchestrator / claude / blog
 - 팀별 운영 설정 조회 스크립트 추가
@@ -70,7 +71,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ### 문서 (docs)
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
-- 워커 모니터링 운영 지표와 `018-monitoring-history` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
+- 워커 모니터링 운영 지표와 `018-monitoring-history`, `019-monitoring-change-notes` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
 - 투자팀 참조 문서에 `legacy_order_rejected`, `legacy_executor_failed` 코드와 백필 스크립트 경로 반영
 - 제이 모델 정책 확인 순서를 런북/세션 인덱스/팀 참조 문서에 반영
 - 팀 운영 변수 관리 체계 문서화

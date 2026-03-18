@@ -51,6 +51,30 @@
 - `node --check bots/worker/web/app/admin/monitoring/page.js`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 변경 사유(note) 추가
+
+핵심 구현:
+- 워커 기본 LLM API 저장 시 변경 사유(note)를 함께 입력하도록 `/admin/monitoring` 화면 확장
+- `worker.system_preference_events.change_note` 컬럼 추가
+- 변경 이력 카드에서 `이전 API → 다음 API`와 함께 변경 사유까지 조회 가능하게 정리
+- `019-monitoring-change-notes` 마이그레이션 추가 및 실제 DB 반영
+
+세션 맥락:
+- 워커 모니터링은 이미 호출량, 성공률, 응답시간까지 읽을 수 있게 됐다.
+- 이번 단계에서는 “왜 바꿨는지”를 남겨, 설정 변경과 운영 결과를 사람도 AI도 같이 해석할 수 있는 감사 추적 흐름을 완성했다.
+
+의사결정 이유:
+- 새로운 운영 노트 테이블을 만들기보다 기존 `worker.system_preference_events`를 확장하는 것이 내부 MVP와 데이터 일관성에 더 유리하다.
+- 변경 사유 메모는 추후 SaaS 환경에서 관리자 감사 추적과 설정 변경 분석의 기본 데이터가 된다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `node --check bots/worker/scripts/setup-worker.js`
+- `cd bots/worker/web && npm run build`
+- `node bots/worker/migrations/019-monitoring-change-notes.js`
+
 ### 12주차 후속 (2026-03-18) — 투자 실패 이력 구조화 백필
 
 핵심 구현:
