@@ -44,6 +44,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `SESSION_CONTEXT_INDEX.md`
   - `WORK_HISTORY.md`
   - `RESEARCH_JOURNAL.md`
+- 제이 모델 정책을 `orchestrator/config.json > runtime_config.jayModels`와 연결
+  - OpenClaw 기본 모델과 제이 앱 커스텀 모델을 운영 설정 문맥에서도 분리
 
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장
@@ -67,6 +69,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
 - 워커 모니터링 운영 지표와 `018-monitoring-history` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
 - 투자팀 참조 문서에 `legacy_order_rejected`, `legacy_executor_failed` 코드와 백필 스크립트 경로 반영
+- 제이 모델 정책 확인 순서를 런북/세션 인덱스/팀 참조 문서에 반영
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신

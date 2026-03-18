@@ -50,6 +50,27 @@
 - `node bots/investment/scripts/backfill-signal-block-reasons.js --days=30`
 - `node bots/investment/scripts/trading-journal.js --days=7`
 
+### 12주차 후속 (2026-03-18) — 제이 모델 정책 운영 설정 연결
+
+핵심 구현:
+- `orchestrator/config.json`에 `runtime_config.jayModels` 추가
+- `jay-model-policy.js`가 하드코딩 상수 대신 runtime config를 읽도록 확장
+- `intent-parser.js`가 `buildIntentParsePolicy()`를 사용하도록 정리
+- 런북과 세션 인덱스에 “제이 모델은 어디서 읽는가” 경로를 명시
+
+세션 맥락:
+- 제이 모델 정책은 이미 코드상 분리돼 있었지만, 운영자가 설정 파일과 문서에서 바로 찾을 수 있는 상태는 아니었다.
+- 이번 단계에서 OpenClaw 기본 모델과 제이 앱 커스텀 모델을 구분한 채, 운영 오버라이드 값을 한 곳에서 보이게 만들었다.
+
+의사결정 이유:
+- gateway primary를 즉시 바꾸기보다, 먼저 운영 설정과 문서에서 같은 언어로 읽히게 만드는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 추후 SaaS 확장 시 tenant/workspace별 모델 정책을 올릴 수 있는 최소 기반으로 `runtime_config` 연결이 더 적합하다.
+
+검증:
+- `node --check bots/orchestrator/lib/runtime-config.js`
+- `node --check bots/orchestrator/lib/jay-model-policy.js`
+- `node --check bots/orchestrator/lib/intent-parser.js`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:

@@ -19,14 +19,15 @@
   - 현재 primary: `google-gemini-cli/gemini-2.5-flash`
 - 제이 명령 해석 모델
   - 파일: [intent-parser.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/intent-parser.js)
-  - primary: `gpt-5-mini`
-  - fallback: `gemini-2.5-flash`
+  - 기본값: `gpt-5-mini`
+  - fallback 기본값: `gemini-2.5-flash`
 - 제이 자유대화 fallback 체인
   - 파일: [router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)
-  - chain: `groq/openai/gpt-oss-20b -> google-gemini-cli/gemini-2.5-flash`
+  - 기본 chain: `groq/openai/gpt-oss-20b -> google-gemini-cli/gemini-2.5-flash`
 - 정책 집약 파일
   - [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - 의미: OpenClaw 기본 모델과 별개로, 제이 앱 레벨 커스텀 모델 정책을 한 곳에서 관리
+  - 실제 운영값은 [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`에서 오버라이드 가능
 
 ## 핵심 진입점
 
