@@ -2495,6 +2495,8 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 블로그 `publ.js`에 내부 링킹 Phase 2 후처리를 추가해 발행 시점에 과거 `published + naver_url` 포스트를 조회하고 제목 플레이스홀더를 실제 링크로 치환할 수 있게 정리
 - `packages/core/lib/naver-blog-url.js`와 `scripts/parse-naver-blog-url.js`를 추가해 네이버 블로그 URL 파싱/정규화 유틸과 CLI를 마련
 - `bots/blog/scripts/mark-published-url.js`를 추가해 수동 발행 직후 `postId/scheduleId + naverUrl`을 검증하고 `blog.posts.naver_url`에 canonical URL로 기록할 수 있게 정리
+- 워커웹 모니터링 하위에 `/admin/monitoring/blog-links` 페이지를 추가해 최근 블로그 글을 보면서 네이버 발행 URL을 직접 입력하고 저장할 수 있게 정리
+- 워커 서버에 `/api/admin/monitoring/blog-published-urls` GET/POST를 추가해 블로그 URL 입력 화면에서 recent post 조회와 canonical URL 저장을 바로 처리할 수 있게 정리
 
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약

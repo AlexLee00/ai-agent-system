@@ -656,6 +656,8 @@
 - 블로그 내부 링킹을 Phase 2로 확장해 퍼블리셔가 `→ [제목] ← 여기에 링크 삽입` 플레이스홀더를 실제 `published + naver_url` 과거 글 링크로 치환할 수 있게 정리
 - `packages/core/lib/naver-blog-url.js`를 추가해 네이버 블로그 URL에서 `blogId`, `logNo`, canonical/mobile URL을 정규화할 수 있게 정리
 - `bots/blog/scripts/mark-published-url.js`를 추가해 `postId` 또는 `scheduleId` 기준으로 발행 완료 URL을 canonical 네이버 블로그 URL로 검증/저장할 수 있게 정리
+- 워커웹 `/admin/monitoring/blog-links`를 추가해 최근 블로그 글 목록을 보면서 네이버 발행 URL을 직접 입력/저장할 수 있게 정리
+- 워커 API `/api/admin/monitoring/blog-published-urls`를 추가해 최근 blog post 조회와 canonical 네이버 URL 저장을 운영 화면에서 바로 처리할 수 있게 정리
 
 ### 2026-03-14
 
