@@ -75,6 +75,29 @@
 - `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --json`
 - `node bots/investment/scripts/runtime-config-suggestions.js --days=14`
 
+### 12주차 후속 (2026-03-18) — 투자 runtime_config 제안 이력 저장
+
+핵심 구현:
+- `investment.runtime_config_suggestion_log` 테이블 추가
+- `bots/investment/shared/db.js`에 제안 스냅샷 저장/조회 헬퍼 추가
+- `runtime-config-suggestions.js`에 `--write` 옵션 추가
+- 제안 리포트를 화면 출력과 동시에 운영 이력으로 남길 수 있게 정리
+
+세션 맥락:
+- 투자팀은 최근 운영 데이터 기반 `current -> suggested` 제안까지는 가능했지만, 어떤 제안이 언제 나왔는지 누적 이력이 없었다.
+- 이번 단계에서 자동 적용 없이도 제안 스냅샷을 저장해 승인/보류/반려 흐름의 기반을 먼저 만들었다.
+
+의사결정 이유:
+- 자산 연결 값은 자동 변경보다 운영 검토와 이력 보존이 더 중요하다.
+- 새 리뷰 엔진을 만들기보다 기존 제안 스크립트에 `--write`를 붙이고 DB 로그 테이블을 얇게 추가하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 구조는 추후 `review_status`, `review_note`, `applied_at` 같은 승인 이력과 SaaS tenant별 설정 감사 추적으로 자연스럽게 확장 가능하다.
+
+검증:
+- `node --check bots/investment/shared/db.js`
+- `node --check bots/investment/scripts/runtime-config-suggestions.js`
+- `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --json`
+- `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --write`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:

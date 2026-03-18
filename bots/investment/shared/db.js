@@ -3,7 +3,8 @@
  *
  * 위치: PostgreSQL jay DB, investment 스키마
  * 테이블: analysis, signals, trades, positions,
- *         strategy_pool, risk_log, asset_snapshot, schema_migrations
+ *         strategy_pool, risk_log, asset_snapshot,
+ *         runtime_config_suggestion_log, schema_migrations
  */
 
 import { createRequire } from 'module';
@@ -141,6 +142,23 @@ export async function initSchema() {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS runtime_config_suggestion_log (
+      id                TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      period_days       INTEGER NOT NULL,
+      actionable_count  INTEGER DEFAULT 0,
+      market_summary    JSONB NOT NULL,
+      suggestions       JSONB NOT NULL,
+      review_status     TEXT DEFAULT 'pending',
+      review_note       TEXT,
+      captured_at       TIMESTAMP DEFAULT now()
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_runtime_config_suggestion_log_captured_at
+    ON runtime_config_suggestion_log(captured_at DESC)
+  `);
+
   // signals 컬럼 추가 (없으면 추가)
   for (const [col, type] of [
     ['trace_id',        'TEXT'],
@@ -220,6 +238,7 @@ export async function initSchema() {
       [2, 'strategy_pool_risk_log_asset_snapshot'],
       [3, 'trades_tp_sl_columns'],
       [4, 'screening_history_dual_model_results'],
+      [5, 'runtime_config_suggestion_log'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -547,6 +566,49 @@ export async function getEquityHistory(limit = 200) {
   return query(`SELECT equity, snapped_at FROM asset_snapshot ORDER BY snapped_at ASC LIMIT $1`, [limit]);
 }
 
+// ─── runtime_config_suggestion_log ───────────────────────────────────
+
+export async function insertRuntimeConfigSuggestionLog({
+  periodDays,
+  actionableCount = 0,
+  marketSummary,
+  suggestions,
+  reviewStatus = 'pending',
+  reviewNote = null,
+}) {
+  const row = await get(
+    `INSERT INTO runtime_config_suggestion_log (
+       period_days,
+       actionable_count,
+       market_summary,
+       suggestions,
+       review_status,
+       review_note
+     )
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, captured_at`,
+    [
+      periodDays,
+      actionableCount,
+      JSON.stringify(marketSummary ?? {}),
+      JSON.stringify(suggestions ?? []),
+      reviewStatus,
+      reviewNote,
+    ],
+  );
+  return row || null;
+}
+
+export async function getRecentRuntimeConfigSuggestionLogs(limit = 10) {
+  return query(
+    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, captured_at
+     FROM runtime_config_suggestion_log
+     ORDER BY captured_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+}
+
 export function close() {
   // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
 }
@@ -563,5 +625,6 @@ export default {
   upsertStrategy, getActiveStrategies, recordStrategyResult,
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
+  insertRuntimeConfigSuggestionLog, getRecentRuntimeConfigSuggestionLogs,
   close,
 };
