@@ -48,6 +48,9 @@
 - gateway 일일 실행 스크립트
   - [jay-gateway-experiment-daily.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js)
   - 의미: 스냅샷 기록과 리뷰 생성을 한 번에 수행하는 자동화 진입점
+- gateway 전환 전후 비교
+  - [jay-gateway-change-compare.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-change-compare.js)
+  - 의미: 실제 primary 변경 시점을 기준으로 전 24시간 / 후 24시간 비교 리포트를 생성
 
 ## 핵심 진입점
 
@@ -70,6 +73,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js --hours=24 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js --hours=24 --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js --days=7 --json
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-change-compare.js --pivot=2026-03-18T23:30:00Z --before-hours=24 --after-hours=24
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
 # /jay-models

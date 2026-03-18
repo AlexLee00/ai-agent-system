@@ -29,6 +29,7 @@
   - 제이 gateway 전환용 스냅샷 로그를 남겨 rate limit, health, usage를 같은 기준으로 비교 가능하게 만들기
   - 제이 gateway 스냅샷을 `일일 리뷰`로 읽어 전환 권장 판단을 자동화에 연결하기
   - `jay-gateway-experiment-daily.js`를 자동화 진입점으로 사용해 기록과 리뷰를 한 번에 수행하기
+  - 실제 primary 전환 시 `jay-gateway-change-compare.js`로 전후 24시간 개선 여부를 판정하기
 
 ---
 
