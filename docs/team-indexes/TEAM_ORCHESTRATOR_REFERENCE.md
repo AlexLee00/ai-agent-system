@@ -38,6 +38,10 @@
     - `compare`: rate limit 재발, fallback 의존 증가, 체감 응답속도 불만 누적 시 후보 비교
     - `switch`: 비교 로그에서 더 낮은 rate limit, 더 나은 응답시간, 더 안정적 성공률이 확인되면 전환
   - 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화 가능
+- gateway 실험 로그 스냅샷
+  - [log-jay-gateway-experiment.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js)
+  - 의미: gateway 로그, 제이 usage, health-report, primary 정합성을 한 번에 스냅샷으로 저장
+  - 기본 저장 위치: `~/.openclaw/workspace/jay-gateway-experiments.jsonl`
 
 ## 핵심 진입점
 
@@ -57,6 +61,7 @@
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js --hours=24 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
 # /jay-models
