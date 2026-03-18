@@ -148,11 +148,14 @@ async function main() {
     cacheLabel: '캐시 폴백',
   });
   const symbols = resolved.symbols;
+  const summarizedSymbols = symbols.length <= 6
+    ? symbols.join(', ')
+    : `${symbols.slice(0, 6).join(', ')} 외 ${symbols.length - 6}개`;
 
   savePreScreened(market, symbols, { label });
   console.log(`  💾 저장: ${PRESCREENED_FILE[market]}`);
 
-  const msg = `🔍 장전 스크리닝 완료 (${label})\n심볼: ${symbols.join(', ')}\n저장: ${kst.timeStr()}`;
+  const msg = `🔍 장전 스크리닝 완료 (${label})\n심볼: ${summarizedSymbols}\n저장: ${kst.timeStr()}`;
   publishToMainBot({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: msg });
 
   console.log(`\n✅ [장전 스크리닝] ${label} 완료 — ${symbols.length}개 종목`);
