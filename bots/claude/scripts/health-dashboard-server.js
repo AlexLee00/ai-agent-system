@@ -64,22 +64,65 @@ async function getRecentIssues() {
   }
 }
 
+function extractDecision(result) {
+  if (!result || typeof result !== 'object') return '';
+  return String(result.decision || result.action || '').toLowerCase().trim();
+}
+
+function isLowRiskIntegritySummary(summary = '') {
+  const text = String(summary || '').toLowerCase();
+  return text.length > 0 && (
+    text.includes('코드 무결성') ||
+    text.includes('git 무결성') ||
+    text.includes('git 상태') ||
+    text.includes('git 변경사항') ||
+    text.includes('체크섬')
+  );
+}
+
+function isSoftShadowMatchRow(row) {
+  if (!row) return false;
+  const ruleDecision = extractDecision(row.rule_result);
+  const llmDecision = extractDecision(row.llm_result);
+  if (!ruleDecision || !llmDecision) return false;
+  if (ruleDecision === llmDecision) return true;
+  if (!isLowRiskIntegritySummary(row.input_summary)) return false;
+  const soft = new Set(['ignore', 'monitor']);
+  return soft.has(ruleDecision) && soft.has(llmDecision);
+}
+
 async function getShadowStats() {
   try {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const row = await pgPool.get('reservation', `
+    const rows = await pgPool.query('reservation', `
       SELECT
-        COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE match = true)  AS matched,
-        COUNT(*) FILTER (WHERE match = false) AS mismatched,
-        AVG(elapsed_ms) AS avg_ms,
-        MAX(mode) AS mode
+        match,
+        rule_result,
+        llm_result,
+        input_summary,
+        elapsed_ms,
+        mode,
+        created_at
       FROM shadow_log
       WHERE team = 'claude-lead' AND created_at > $1
+      ORDER BY created_at DESC
+      LIMIT 200
     `, [cutoff]);
-    return row || { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow' };
+    if (!rows || rows.length === 0) {
+      return { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow', soft_adjusted: 0 };
+    }
+    const total = rows.length;
+    const matched = rows.filter(isSoftShadowMatchRow).length;
+    const mismatched = Math.max(0, total - matched);
+    const elapsedValues = rows.map(row => Number(row.elapsed_ms)).filter(v => Number.isFinite(v));
+    const avgMs = elapsedValues.length
+      ? elapsedValues.reduce((sum, value) => sum + value, 0) / elapsedValues.length
+      : 0;
+    const softAdjusted = rows.filter(row => row?.match === false && isSoftShadowMatchRow(row)).length;
+    const mode = rows[0]?.mode || 'shadow';
+    return { total, matched, mismatched, avg_ms: avgMs, mode, soft_adjusted: softAdjusted };
   } catch (e) {
-    return { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow' };
+    return { total: 0, matched: 0, mismatched: 0, avg_ms: 0, mode: 'shadow', soft_adjusted: 0 };
   }
 }
 

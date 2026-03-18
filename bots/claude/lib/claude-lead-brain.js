@@ -55,6 +55,35 @@ function _getLeadMode() {
   return LEAD_MODES.includes(mode) ? mode : 'shadow';
 }
 
+function isLowRiskCodeIntegrityIssue(issue) {
+  const check = String(issue?.checkName || '').toLowerCase();
+  const label = String(issue?.label || '').toLowerCase();
+  return (
+    check.includes('코드 무결성') ||
+    check.includes('git 무결성') ||
+    label.includes('git 상태') ||
+    label.includes('git 변경사항') ||
+    label.includes('체크섬')
+  );
+}
+
+function isSoftShadowMatch(issues, ruleResult, llmResult) {
+  const ruleDecision = String(ruleResult?.decision || '').toLowerCase();
+  const llmDecision = String(llmResult?.decision || '').toLowerCase();
+  if (!ruleDecision || !llmDecision) return false;
+  if (ruleDecision === llmDecision) return true;
+
+  const onlyLowRiskIntegrity = Array.isArray(issues) && issues.length > 0
+    && issues.every(isLowRiskCodeIntegrityIssue);
+
+  if (onlyLowRiskIntegrity) {
+    const soft = new Set(['ignore', 'monitor']);
+    return soft.has(ruleDecision) && soft.has(llmDecision);
+  }
+
+  return false;
+}
+
 function _isLowRisk(issues) {
   // 이슈가 모두 warn 이하이고 critical/error 없으면 저위험
   const hasCritical = issues.some(i => i.status === 'critical');
@@ -252,7 +281,7 @@ async function evaluateWithClaudeLead(results) {
 
   // 4. 일치 여부
   const match = llmResult
-    ? (llmResult.decision === ruleResult.decision)
+    ? isSoftShadowMatch(issues, ruleResult, llmResult)
     : null;
 
   // 5. shadow_log 기록
