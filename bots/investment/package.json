@@ -24,6 +24,7 @@
     "review": "node scripts/weekly-trade-review.js",
     "review:dry": "node scripts/weekly-trade-review.js --dry-run",
     "review:2w": "node scripts/weekly-trade-review.js --days=14",
+    "runtime-suggest": "node scripts/runtime-config-suggestions.js",
     "node:run": "node scripts/run-pipeline-node.js",
     "node:l01": "node scripts/run-pipeline-node.js --node=L01 --market=binance",
     "node:l06": "node scripts/run-pipeline-node.js --node=L06 --market=binance",
