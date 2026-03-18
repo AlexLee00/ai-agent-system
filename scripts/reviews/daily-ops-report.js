@@ -51,7 +51,7 @@ function extractJson(output) {
 }
 
 function runNodeJson(script, args = []) {
-  const result = spawnSync('node', [script, ...args], {
+  const result = spawnSync(process.execPath, [script, ...args], {
     encoding: 'utf8',
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -161,15 +161,15 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
       team,
       ok: true,
       data: {
-        source: hasLaunchdSignal ? 'fallback_launchctl' : 'fallback_probe_unavailable',
+        source: hasLaunchdSignal ? 'health_report_failed_launchctl' : 'health_report_failed_probe_unavailable',
         serviceHealth: hasLaunchdSignal ? launchdHealth : { okCount: 0, warnCount: 0, ok: [], warn: [] },
         decision: {
           level: launchdHealth.warnCount > 0 ? 'medium' : 'hold',
           recommended: launchdHealth.warnCount > 0,
           reasons: [
             hasLaunchdSignal
-              ? 'launchctl 기준 서비스 상태를 요약했습니다. 상세 health-report는 현재 런타임에서 생략되었습니다.'
-              : '전용 endpoint probe가 없어 팀 상태를 과장 없이 보류합니다.',
+              ? `health-report 실행 실패로 launchctl 기준 서비스 상태를 요약했습니다.${healthError ? ` (${healthError})` : ''}`
+              : `전용 endpoint probe가 없어 팀 상태를 과장 없이 보류합니다.${healthError ? ` (${healthError})` : ''}`,
           ],
         },
         healthError,
@@ -190,7 +190,7 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
       team,
       ok: true,
       data: {
-        source: hasLaunchdSignal ? 'fallback_launchctl' : 'fallback_probe_unavailable',
+        source: hasLaunchdSignal ? 'health_report_failed_launchctl' : 'health_report_failed_probe_unavailable',
         serviceHealth: hasLaunchdSignal
           ? launchdHealth
           : {
@@ -204,8 +204,8 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
           recommended: launchdHealth.warnCount > 0,
           reasons: [
             hasLaunchdSignal
-              ? 'endpoint probe는 비었지만 launchctl 기준 서비스 상태를 보수적으로 사용했습니다.'
-              : 'fallback probe가 현재 런타임에서 응답을 확인하지 못해 팀 상태를 과장 없이 보류합니다.',
+              ? `endpoint probe는 비었지만 launchctl 기준 서비스 상태를 보수적으로 사용했습니다.${healthError ? ` (${healthError})` : ''}`
+              : `fallback probe가 현재 런타임에서 응답을 확인하지 못해 팀 상태를 과장 없이 보류합니다.${healthError ? ` (${healthError})` : ''}`,
           ],
         },
         healthError,
@@ -249,6 +249,7 @@ function toSummaryLine(team, data) {
     okCount: Number(service.okCount || 0),
     warnCount: Number(service.warnCount || 0),
     reasons: Array.isArray(decision.reasons) ? decision.reasons : [],
+    healthError: data?.healthError || null,
   };
 }
 
@@ -288,6 +289,7 @@ function buildTextReport(report) {
   for (const item of report.teamSummaries) {
     lines.push(`- ${item.team}: source=${item.source}, level=${item.level}, ok=${item.okCount}, warn=${item.warnCount}`);
     if (item.reasons[0]) lines.push(`  사유: ${item.reasons[0]}`);
+    if (item.healthError) lines.push(`  입력 오류: ${item.healthError}`);
   }
   lines.push('');
   lines.push('보조 입력 상태:');

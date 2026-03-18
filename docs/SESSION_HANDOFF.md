@@ -27,15 +27,20 @@
   - `daily-ops-report.js`가 도입됐다.
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.
   - `error-log-daily-review.js`는 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리해, 이미 종료된 반복 오류를 현재 장애처럼 과장하지 않도록 보정됐다.
+  - `daily-ops-report.js`는 이제 `health_report_failed_launchctl / health_report_failed_probe_unavailable`와 `healthError`를 함께 보여줘 입력 실패 원인을 더 명확히 읽을 수 있다.
 - 투자
   - `executionMode=live/paper`, `brokerAccountMode=real/mock` 기준이 코드/리포트/문서에 반영됐다.
   - 실패 원인 저장은 `block_reason + block_code + block_meta` 구조로 확장됐다.
   - `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어가 추가돼 `PEPEUSDT Invalid time value` 로그 노이즈가 줄었다.
   - `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44`가 실제 운영 `config.yaml`에 반영됐다.
   - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`는 `applied` 상태이며, 현재 판단은 `observe`다.
+  - `trading-journal.js`는 거래 없음 대비 분석비용이 큰 날 `no-trade high-cost` 경고를 출력하도록 보강됐다.
 - 제이 / 오케스트레이터
   - OpenClaw gateway 기본 모델과 제이 앱 레벨 커스텀 모델 정책을 분리해서 읽도록 정리됐다.
   - `jay-model-policy.js`가 추가되어 `intent parse`와 `chat fallback` 모델 체인을 한 곳에서 관리한다.
+  - `jay-gateway-experiment-daily.js`는 새 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기준 review를 계속 출력하도록 보강됐다.
+- 스카
+  - `ska-sales-forecast-daily-review.js`는 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 즉시 조치 항목으로 제공한다.
 - 클로드/덱스터
   - 저위험 코드 무결성 이슈는 `soft match`로 재해석되어 shadow mismatch 과장 경고가 정리됐다.
 - 문서 체계
@@ -81,9 +86,14 @@
    - 현재 전사 현황은 Jay / Worker / Claude / Blog / Investment까지만 포함
    - 내일은 `OpenClaw`를 조회 전용 그룹으로 붙여 전사 LLM 현황 범위를 확장
 5. 남은 자동화 확정
-   - 스카 shadow 일일/주간
-   - 워커 문서 효율 일일/주간
-   - 투자 설정 제안 일일/주간
+  - 스카 shadow 일일/주간
+  - 워커 문서 효율 일일/주간
+  - 투자 설정 제안 일일/주간
+6. 자동화 리포트 운영 데이터 관찰
+   - 제이 Gateway `persisted` 상태
+   - 일일 운영 분석의 `healthError` 축적 패턴
+   - 투자 `no-trade high-cost` 경고 발생 여부
+   - 스카 `actionItems`가 실제 튜닝 판단에 충분한지 확인
 
 ---
 
@@ -92,6 +102,7 @@
 - 스카 shadow 비교는 저장은 정상이나 아직 actual 누적이 부족해서 비교 일수는 `0`
 - 스카 일일/주간 리뷰는 이제 `shadowDecision`으로 현재 단계(`collecting / observe / promotion_candidate / primary_hold`)를 명시
 - 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
+- 제이 Gateway 자동화는 review 강인성은 올라갔지만, `~/.openclaw/workspace` 쓰기 권한 문제로 `persisted=false`가 남을 수 있어 운영 환경에서 재확인 필요
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다
