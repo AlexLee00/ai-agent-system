@@ -46,6 +46,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `RESEARCH_JOURNAL.md`
 - 제이 모델 정책을 `orchestrator/config.json > runtime_config.jayModels`와 연결
   - OpenClaw 기본 모델과 제이 앱 커스텀 모델을 운영 설정 문맥에서도 분리
+  - `/jay-models`와 자연어 질의로 현재 모델 체계를 바로 조회 가능하게 추가
 
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장

@@ -47,6 +47,9 @@
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
+# 제이 명령으로 조회:
+# /jay-models
+# "제이 지금 무슨 모델 써?"
 ```
 
 ## 관련 문서

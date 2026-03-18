@@ -57,6 +57,7 @@
 - `orchestrator/config.json`에 `runtime_config.jayModels` 추가
 - `jay-model-policy.js`가 하드코딩 상수 대신 runtime config를 읽도록 확장
 - `intent-parser.js`가 `buildIntentParsePolicy()`를 사용하도록 정리
+- `/jay-models`, "제이 지금 무슨 모델 써?" 질의로 현재 gateway / intent / chat fallback 정책을 조회 가능하게 추가
 - 런북과 세션 인덱스에 “제이 모델은 어디서 읽는가” 경로를 명시
 
 세션 맥락:

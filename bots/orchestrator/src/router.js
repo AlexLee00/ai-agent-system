@@ -18,7 +18,11 @@ const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = 
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
 const { callWithFallback }               = require('../../../packages/core/lib/llm-fallback');
-const { buildJayChatFallbackChain }      = require('../lib/jay-model-policy');
+const {
+  buildJayChatFallbackChain,
+  buildIntentParsePolicy,
+  getGatewayPrimaryModel,
+} = require('../lib/jay-model-policy');
 
 const path     = require('path');
 const os       = require('os');
@@ -201,6 +205,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /shadow       또는 "섀도 리포트" → LLM vs 규칙 비교 리포트
   "섀도 불일치"              → 불일치 케이스 목록
   /graduation   또는 "LLM 졸업 현황" → 규칙 자동전환 후보
+  /jay-models   또는 "제이 지금 무슨 모델 써?" → gateway / intent / chat fallback 정책
   "캐시 통계"                → LLM 캐시 적중률
   "LLM 비용 상세"            → 팀별·모델별 비용
   "텔레그램 상태"            → 폴링 연결 상태
@@ -504,6 +509,36 @@ async function buildIntentEngineHealthReport() {
     };
   }
   return buildHealthReport(buildIntentEngineHealthReportFrame(INTENT_HEALTH_TARGETS, summaries));
+}
+
+function buildJayModelPolicyReport() {
+  const gatewayPrimary = getGatewayPrimaryModel();
+  const intentPolicy = buildIntentParsePolicy();
+  const chatChain = buildJayChatFallbackChain();
+
+  return [
+    '🤖 제이 모델 정책',
+    '',
+    '1. OpenClaw gateway 기본 모델',
+    `  primary: ${gatewayPrimary}`,
+    '  기준 파일: ~/.openclaw/openclaw.json',
+    '',
+    '2. 제이 명령 해석(intent parse)',
+    `  primary: ${intentPolicy.primary.provider} / ${intentPolicy.primary.model}`,
+    `  fallback: ${intentPolicy.fallback.provider} / ${intentPolicy.fallback.model}`,
+    '',
+    '3. 제이 자유대화 fallback 체인',
+    ...chatChain.map((item, index) =>
+      `  ${index + 1}) ${item.provider} / ${item.model} | maxTokens=${item.maxTokens} | temperature=${item.temperature}`),
+    '',
+    '운영 설정 위치:',
+    '  - bots/orchestrator/config.json > runtime_config.jayModels',
+    '  - bots/orchestrator/lib/jay-model-policy.js',
+    '',
+    '해석 원칙:',
+    '  - gateway 기본 모델과 제이 앱 커스텀 정책은 별도 축입니다.',
+    '  - intent parse와 chat fallback은 운영 목적이 달라 분리 유지합니다.',
+  ].join('\n');
 }
 
 async function rollbackPromotionTarget(target = '', options = {}) {
@@ -2282,6 +2317,9 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
         return reports.length > 0 ? reports.join('\n\n') : '✅ LLM 졸업 후보 없음';
       } catch (e) { return `⚠️ 졸업 현황 오류: ${e.message}`; }
     }
+
+    case 'jay_model_policy':
+      return buildJayModelPolicyReport();
 
     case 'graduation_scan': {
       try {

@@ -80,6 +80,7 @@ const SLASH_MAP = {
   // ── 신규 슬래시 명령 ──
   '/shadow':      { intent: 'shadow_report',       args: {} },
   '/graduation':  { intent: 'llm_graduation',      args: {} },
+  '/jay-models':  { intent: 'jay_model_policy',    args: {} },
   '/stability':   { intent: 'stability',           args: {} },
   '/journal':     { intent: 'trade_journal',       args: {} },
   '/performance': { intent: 'performance',         args: {} },
@@ -326,6 +327,7 @@ const KEYWORD_PATTERNS = [
   { re: /캐시.*(현황|통계|적중|조회|hit)|cache.*(stats|현황|적중|통계)/i,      intent: 'cache_stats' },
   { re: /LLM.*(비용.*상세|팀별.*비용|cost.*detail)|토큰.*(상세|팀별|breakdown)/i, intent: 'llm_cost' },
   { re: /졸업.*(현황|후보|리포트|목록)|LLM.*졸업|graduation.*(현황|report)/i,  intent: 'llm_graduation' },
+  { re: /(제이|jay).*(모델|LLM|API|primary|fallback)|(오픈클로|openclaw).*(모델|primary|fallback)|무슨\s*모델\s*써|어떤\s*모델\s*써/i, intent: 'jay_model_policy' },
 
   // ── 시스템 안정성·텔레그램 ──
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
@@ -479,6 +481,7 @@ const SYSTEM_PROMPT_BASE = `너는 AI 봇 시스템 제이(Jay)의 명령 분류
 - llm_cost         : LLM 비용 상세 분석 (팀별·모델별)
 - cache_stats      : LLM 캐시 적중률 통계
 - llm_graduation   : LLM 졸업 현황 (자동 규칙 전환 후보)
+- jay_model_policy : 제이 모델 정책 조회 (gateway / intent / chat fallback)
 
 [제이 직접 처리]
 - status : 전체 시스템 현황 ("/status", "다들 어때", "전체 상태")
@@ -498,6 +501,7 @@ const SYSTEM_PROMPT_BASE = `너는 AI 봇 시스템 제이(Jay)의 명령 분류
 사용자: "루나 상태 어때?" → {"intent": "luna_query", "args": {"command": "get_status"}, "confidence": 0.95}
 사용자: "시스템 섀도 리포트 보여줘" → {"intent": "shadow_report", "args": {}, "confidence": 0.92}
 사용자: "LLM 졸업 현황" → {"intent": "llm_graduation", "args": {}, "confidence": 0.95}
+사용자: "제이 지금 무슨 모델 써?" → {"intent": "jay_model_policy", "args": {}, "confidence": 0.95}
 사용자: "캐시 통계 보여줘" → {"intent": "cache_stats", "args": {}, "confidence": 0.90}
 사용자: "매매일지 최근 10건" → {"intent": "trade_journal", "args": {}, "confidence": 0.93}
 사용자: "TP SL 설정 어떻게 돼있어?" → {"intent": "tp_sl_status", "args": {}, "confidence": 0.92}
