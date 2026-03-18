@@ -28,6 +28,10 @@
   - [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - 의미: OpenClaw 기본 모델과 별개로, 제이 앱 레벨 커스텀 모델 정책을 한 곳에서 관리
   - 실제 운영값은 [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`에서 오버라이드 가능
+- gateway 정합성 점검/동기화
+  - [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
+  - 의미: `runtime_config.jayModels.gatewayPrimary`와 `~/.openclaw/openclaw.json`의 실제 primary 일치 여부를 확인
+  - 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화 가능
 
 ## 핵심 진입점
 
@@ -46,6 +50,7 @@
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
+node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
 # /jay-models

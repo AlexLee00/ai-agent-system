@@ -23,6 +23,7 @@ const {
   buildIntentParsePolicy,
   getGatewayPrimaryModel,
 } = require('../lib/jay-model-policy');
+const { getOpenClawGatewayModelState } = require('../lib/openclaw-config');
 
 const path     = require('path');
 const os       = require('os');
@@ -513,15 +514,19 @@ async function buildIntentEngineHealthReport() {
 
 function buildJayModelPolicyReport() {
   const gatewayPrimary = getGatewayPrimaryModel();
+  const gatewayState = getOpenClawGatewayModelState();
   const intentPolicy = buildIntentParsePolicy();
   const chatChain = buildJayChatFallbackChain();
+  const aligned = gatewayState.ok && gatewayState.primary === gatewayPrimary;
 
   return [
     '🤖 제이 모델 정책',
     '',
     '1. OpenClaw gateway 기본 모델',
-    `  primary: ${gatewayPrimary}`,
-    '  기준 파일: ~/.openclaw/openclaw.json',
+    `  runtime_config 기준: ${gatewayPrimary}`,
+    `  openclaw.json 실제값: ${gatewayState.primary || '확인 불가'}`,
+    `  정합성: ${aligned ? '일치' : '불일치'}`,
+    `  기준 파일: ${gatewayState.filePath || '~/.openclaw/openclaw.json'}`,
     '',
     '2. 제이 명령 해석(intent parse)',
     `  primary: ${intentPolicy.primary.provider} / ${intentPolicy.primary.model}`,
@@ -534,10 +539,12 @@ function buildJayModelPolicyReport() {
     '운영 설정 위치:',
     '  - bots/orchestrator/config.json > runtime_config.jayModels',
     '  - bots/orchestrator/lib/jay-model-policy.js',
+    '  - bots/orchestrator/scripts/check-jay-gateway-primary.js',
     '',
     '해석 원칙:',
     '  - gateway 기본 모델과 제이 앱 커스텀 정책은 별도 축입니다.',
     '  - intent parse와 chat fallback은 운영 목적이 달라 분리 유지합니다.',
+    '  - gateway primary 변경 전에는 runtime_config와 openclaw.json 정합성을 먼저 확인합니다.',
   ].join('\n');
 }
 
