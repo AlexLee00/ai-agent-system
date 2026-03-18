@@ -21,11 +21,18 @@ function getOpenClawGatewayModelState() {
     const fallbacks = Array.isArray(config?.agents?.defaults?.model?.fallbacks)
       ? config.agents.defaults.model.fallbacks
       : [];
+    const authProfiles = config?.auth?.profiles || {};
+    const availableProviders = Array.from(new Set(
+      Object.values(authProfiles)
+        .map((item) => item?.provider)
+        .filter(Boolean),
+    ));
     return {
       ok: true,
       filePath,
       primary,
       fallbacks,
+      availableProviders,
     };
   } catch (error) {
     return {
@@ -33,6 +40,7 @@ function getOpenClawGatewayModelState() {
       filePath: getOpenClawConfigPath(),
       primary: null,
       fallbacks: [],
+      availableProviders: [],
       error: error.message,
     };
   }

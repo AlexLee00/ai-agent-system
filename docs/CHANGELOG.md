@@ -51,6 +51,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - OpenClaw 기본 모델과 제이 앱 커스텀 모델을 운영 설정 문맥에서도 분리
   - `/jay-models`와 자연어 질의로 현재 모델 체계를 바로 조회 가능하게 추가
   - `check-jay-gateway-primary.js`로 `runtime_config`와 실제 `openclaw.json` primary 정합성 점검 가능하게 추가
+  - gateway primary 후보 프로필과 현재 권장 판단(hold/sync_first)까지 운영 스크립트에서 바로 확인 가능하게 추가
 
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장

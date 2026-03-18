@@ -31,6 +31,8 @@
 - gateway 정합성 점검/동기화
   - [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
   - 의미: `runtime_config.jayModels.gatewayPrimary`와 `~/.openclaw/openclaw.json`의 실제 primary 일치 여부를 확인
+  - 후보 프로필: Gemini 유지 / Groq GPT-OSS / Anthropic Haiku
+  - 현재 권장: 정합성이 맞고 헬스가 안정이면 Gemini Flash 유지, 변경은 비교 근거가 쌓인 뒤 검토
   - 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화 가능
 
 ## 핵심 진입점
