@@ -118,6 +118,8 @@
   - 최근 speed-test 스냅샷 기준으로 `hold / compare / switch_candidate / observe` 추천을 생성하는 얇은 판단 레이어 추가
   - 워커 `/admin/monitoring` advisor 노출
   - worker 개별 chain과 전 팀 selector 개요에 advisor 판단을 직접 표시
+  - `llm-selector-override-suggestions.js`
+  - advisor 결과를 실제 `runtime_config` override 후보로 변환하는 추천 리포트 레이어 추가
 
 ### 지금 가장 중요한 개발 축
 

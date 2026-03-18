@@ -17,6 +17,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `llm-selector-report.js` 텍스트/JSON 출력에 `advice` 포함
 - 워커 `/admin/monitoring`에 selector advisor 표시 추가
   - worker 개별 chain과 전 팀 selector 개요에 `hold / compare / switch_candidate / observe` 판단과 근거를 함께 노출
+- `llm-selector-override-suggestions.js` 추가
+  - selector advisor 결과를 `runtime_config` override 후보 추천으로 변환
+  - config 파일 / path / suggested chain을 함께 출력
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장
