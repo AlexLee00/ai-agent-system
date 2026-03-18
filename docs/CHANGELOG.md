@@ -438,6 +438,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `packages/core/lib/llm-selector-advisor.js`를 추가해 speed-test 기준 selector 추천(`hold / compare / switch_candidate / observe`)을 생성하고 워커 모니터링 UI에 표시
   - `scripts/llm-selector-override-suggestions.js`를 추가해 advisor 결과를 runtime_config override 후보로 정리하고 `--write` 저장까지 지원
   - `scripts/review-llm-selector-override-suggestion.js`를 추가해 저장된 selector override 추천을 `pending / hold / approved / rejected / applied` 상태로 검토 가능하게 정리
+  - `scripts/apply-llm-selector-override-suggestion.js`를 추가해 승인된 selector override 추천을 실제 `config.json` 경로에 반영하고 applied 이력을 남길 수 있게 정리
   - `scripts/speed-test.js`가 최신 스냅샷 외에 `llm-speed-test-history.jsonl` 히스토리를 누적하도록 보강
   - `scripts/reviews/llm-selector-speed-review.js`를 추가해 최근 N일 speed-test 히스토리 기반 selector 추천 근거를 리뷰 가능하게 정리
   - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 speed-test 실행과 review를 일일 러너로 묶어 자동화 진입점을 정리

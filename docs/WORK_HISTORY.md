@@ -2488,6 +2488,7 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `packages/core/lib/llm-selector-advisor.js`를 추가해 speed-test 기준 selector 추천(`hold / compare / switch_candidate / observe`)을 생성
 - `scripts/llm-selector-override-suggestions.js --write`로 selector override 추천 스냅샷을 워커 DB에 저장할 수 있게 정리
 - `scripts/review-llm-selector-override-suggestion.js`를 추가해 저장된 selector override 추천의 승인/보류/반려/적용 상태를 관리할 수 있게 정리
+- `scripts/apply-llm-selector-override-suggestion.js`를 추가해 승인된 selector override 추천을 실제 `config.json` 경로에 반영하고 applied 상태까지 연결할 수 있게 정리
 - `scripts/speed-test.js`가 최신 스냅샷과 별도로 `llm-speed-test-history.jsonl` 히스토리를 누적하도록 보강
 - `scripts/reviews/llm-selector-speed-review.js`를 추가해 최근 speed-test 히스토리의 top model, current/recommended, recommendation을 요약할 수 있게 정리
 - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 speed-test 실행과 speed review를 일일 러너로 묶을 수 있게 정리
