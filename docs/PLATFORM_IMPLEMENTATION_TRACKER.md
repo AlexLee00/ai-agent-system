@@ -18,7 +18,8 @@
 - 투자
   - 루나 공격적 매매 전략을 별도 실험축으로 구현
   - Argos Yahoo API 대안과 장전 스크리닝 launchd 등록
-  - 현재 적용된 threshold 실험은 3~7일 observe 후 추가 판단
+  - 현재 적용된 바이낸스 crypto 보수성 완화(`max_dynamic=12`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`)는 3~7일 observe 후 추가 판단
+  - `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준 부분 보완안 vs 재설계안 비교 착수
 - 스카
   - RAG 연동을 전략문서 기준 미완료 항목으로 다시 올림
   - shadow 모델 비교 데이터 누적 후 `ensemble experiment` 승격 여부 판단
@@ -146,6 +147,10 @@
   - `telegram-sender` / `reporting-hub` / 루나 direct report가 15자 구분선과 본문 축약 규칙으로 정렬됐고, queued notice 알림의 헤더 중복이 줄었다
   - 자동화 리포트 운영 해석성 보강
   - no-trade 주간 투자 요약, 스카 주간 `requested/effective days`, 제이 `partial + session fallback`, 일일 운영 분석 섹션 분리까지 반영됐다
+  - 루나 decision 퍼널 계측 보강
+  - `pipeline_runs.meta`에 `decision / BUY / SELL / HOLD / executed / weak / risk / savedExecutionWork`를 저장하고, 일지/주간 리뷰에서 시장별 병목을 직접 조회할 수 있게 확장했다
+  - 루나 재점검 Phase 문서화
+  - `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md`, `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md`를 추가해 진단 범위/불변식/산출물/실행 프롬프트를 분리 정리했다
 
 ### 지금 가장 중요한 개발 축
 

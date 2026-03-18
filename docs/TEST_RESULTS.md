@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-03-19
+
+### 루나 퍼널 계측 + 바이낸스 보수성 조정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/pipeline-decision-runner.js` | ✅ |
+| `node --check bots/investment/team/luna.js` | ✅ |
+| `node --check bots/investment/scripts/trading-journal.js` | ✅ |
+| `node --check bots/investment/scripts/weekly-trade-review.js` | ✅ |
+| `node --input-type=module -e "...getLunaRuntimeConfig(), getLunaParams()..."` | ✅ `binance live minConfidence=0.44`, `crypto debate=0.56/0.18`, `fastPath minCryptoConfidence=0.40` 확인 |
+| `node bots/investment/scripts/trading-journal.js --days=1` | ✅ `decision 퍼널 병목` 섹션에 시장별 `BUY / SELL / HOLD / executed / weak / risk / saved` 출력 확인 |
+| `node bots/investment/scripts/weekly-trade-review.js --dry-run` | ✅ `의사결정 퍼널 병목` 섹션에 시장별 `BUY / SELL / HOLD / executed / weak / risk / saved` 출력 확인 |
+
 ## 2026-03-18
 
 ### 자동화 리포트 개선

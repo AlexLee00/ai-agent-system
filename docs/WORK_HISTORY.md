@@ -2627,6 +2627,21 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `daily-ops-report.js`에 `sourceMode`를 추가해 팀 health source를 `unavailable / local_fallback / auxiliary_review` 기준으로 표준화
 - `investment / reservation`은 `db_sandbox_restricted`이지만 `local fallback 활동 신호`가 살아 있는 팀으로 분리해 읽을 수 있게 정리
 - `orchestrator / worker / claude / blog`는 현재 `sourceMode=unavailable`로 표시돼, 실제 health 관측 공백이 더 큰 축이라는 점을 운영 리포트에서 바로 읽을 수 있게 정리
+
+## 2026-03-19
+
+### 루나 퍼널 계측 강화 + 바이낸스 전환 보수성 완화
+- `pipeline-decision-runner.js`가 `pipeline_runs.meta`에 `buy_decisions / sell_decisions / hold_decisions`를 함께 저장하도록 확장
+- `trading-journal.js`, `weekly-trade-review.js`에 시장별 `decision / BUY / SELL / HOLD / executed / weak / risk / saved` 퍼널 병목 섹션 추가
+- 현재 관측 결과는 `weak/risk`보다 `portfolio decision` 쪽 병목 가능성이 크다는 점을 더 직접적으로 보여주기 시작
+- `config.yaml`에서 `screening.crypto.max_dynamic=12`, `min_volume_usdt=750000`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40` 반영
+- `luna.js` crypto 프롬프트에 분산 진입, HOLD 남발 억제, 재진입 가능한 추세 종목 선호를 명시
+- 바이낸스는 최종 signal 저장 단계에서 `timeMode.minSignalScore`가 runtime crypto 기준보다 더 보수적일 때 runtime 기준을 우선 적용하도록 정리
+
+### 루나 시스템 재점검 Phase 준비
+- `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 작성
+- `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md` 작성
+- 부분 보완이 충분한지, 재설계가 필요한지 판단하기 위한 진단 범위, 핵심 질문, 산출물, 구현 경계를 문서로 고정
 - global `error-review`는 `sourceMode=auxiliary_review`로 표시해 보조 운영 신호와 팀 health source를 같은 축으로 혼동하지 않게 정리
 
 ### 스카팀 취소 루틴 버그 수정

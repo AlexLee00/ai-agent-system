@@ -53,6 +53,17 @@ export async function runDecisionExecutionPipeline({
   let riskRejected = 0;
   let weakSignalSkipped = 0;
   let invalidSignalSkipped = 0;
+  let portfolioDecision = null;
+
+  function countDecisionActions() {
+    const counts = { buy: 0, sell: 0, hold: 0 };
+    for (const decision of (portfolioDecision?.decisions || [])) {
+      if (decision.action === ACTIONS.BUY) counts.buy += 1;
+      else if (decision.action === ACTIONS.SELL) counts.sell += 1;
+      else counts.hold += 1;
+    }
+    return counts;
+  }
 
   const buildMetrics = (extra = {}) => ({
     durationMs: Date.now() - startedAt,
@@ -125,16 +136,32 @@ export async function runDecisionExecutionPipeline({
   }
 
   if (symbolDecisions.length === 0) {
+    const metrics = buildMetrics({
+      bridgeStatus: 'no_symbol_decisions',
+      executedSymbols: 0,
+    });
     await finishPipelineRun(sessionId, {
       status: 'completed',
-      meta: { bridge_status: 'no_symbol_decisions' },
+      meta: {
+        bridge_status: 'no_symbol_decisions',
+        decided_symbols: 0,
+        executed_symbols: 0,
+        decision_count: 0,
+        buy_decisions: 0,
+        sell_decisions: 0,
+        hold_decisions: 0,
+        debate_count: metrics.debateCount,
+        debate_limit: metrics.debateLimit,
+        risk_rejected: metrics.riskRejected,
+        weak_signal_skipped: metrics.weakSignalSkipped,
+        invalid_signal_skipped: metrics.invalidSignalSkipped,
+        saved_execution_work: metrics.savedExecutionWork,
+        warnings: metrics.warnings,
+      },
     });
     return {
       results: [],
-      metrics: buildMetrics({
-        bridgeStatus: 'no_symbol_decisions',
-        executedSymbols: 0,
-      }),
+      metrics,
     };
   }
 
@@ -145,25 +172,46 @@ export async function runDecisionExecutionPipeline({
     symbolDecisions,
     portfolio: currentPortfolio,
   });
-  const portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
+  portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
   if (!portfolioDecision) {
+    const metrics = buildMetrics({
+      bridgeStatus: 'portfolio_decision_failed',
+      executedSymbols: 0,
+    });
     await finishPipelineRun(sessionId, {
       status: 'failed',
-      meta: { bridge_status: 'portfolio_decision_failed' },
+      meta: {
+        bridge_status: 'portfolio_decision_failed',
+        decided_symbols: symbolDecisions.length,
+        executed_symbols: 0,
+        decision_count: 0,
+        buy_decisions: 0,
+        sell_decisions: 0,
+        hold_decisions: 0,
+        debate_count: metrics.debateCount,
+        debate_limit: metrics.debateLimit,
+        risk_rejected: metrics.riskRejected,
+        weak_signal_skipped: metrics.weakSignalSkipped,
+        invalid_signal_skipped: metrics.invalidSignalSkipped,
+        saved_execution_work: metrics.savedExecutionWork,
+        warnings: metrics.warnings,
+      },
     });
     return {
       results: [],
-      metrics: buildMetrics({
-        bridgeStatus: 'portfolio_decision_failed',
-        executedSymbols: 0,
-      }),
+      metrics,
     };
   }
+
+  const actionCounts = countDecisionActions();
 
   const results = [];
   for (const dec of (portfolioDecision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
-    const minConf = params?.minSignalScore ?? getMinConfidence(exchange);
+    const runtimeMinConf = getMinConfidence(exchange);
+    const minConf = exchange === 'binance'
+      ? Math.min(params?.minSignalScore ?? runtimeMinConf, runtimeMinConf)
+      : (params?.minSignalScore ?? runtimeMinConf);
     if ((dec.confidence || 0) < minConf) {
       weakSignalSkipped++;
       continue;
@@ -285,23 +333,35 @@ export async function runDecisionExecutionPipeline({
     });
   }
 
+  const completedMetrics = buildMetrics({
+    bridgeStatus: 'completed',
+    executedSymbols: results.filter(item => !item.skipped).length,
+  });
   await finishPipelineRun(sessionId, {
     status: 'completed',
     meta: {
       bridge_status: 'completed',
       decided_symbols: symbolDecisions.length,
+      decision_count: (portfolioDecision.decisions || []).length,
+      buy_decisions: actionCounts.buy,
+      sell_decisions: actionCounts.sell,
+      hold_decisions: actionCounts.hold,
       executed_symbols: results.filter(item => !item.skipped).length,
       portfolio_view: portfolioDecision.portfolio_view,
       risk_level: portfolioDecision.risk_level,
+      debate_count: completedMetrics.debateCount,
+      debate_limit: completedMetrics.debateLimit,
+      risk_rejected: completedMetrics.riskRejected,
+      weak_signal_skipped: completedMetrics.weakSignalSkipped,
+      invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
+      saved_execution_work: completedMetrics.savedExecutionWork,
+      warnings: completedMetrics.warnings,
     },
   });
 
   return {
     results,
-    metrics: buildMetrics({
-      bridgeStatus: 'completed',
-      executedSymbols: results.filter(item => !item.skipped).length,
-    }),
+    metrics: completedMetrics,
   };
 }
 

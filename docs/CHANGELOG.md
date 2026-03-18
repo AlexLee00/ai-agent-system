@@ -3,6 +3,30 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-19) — 루나 퍼널 계측 강화 + 재점검 Phase 준비
+
+### 신규 기능 (feat)
+- 루나 `decision 퍼널 병목` 계측 고도화
+  - `pipeline-decision-runner.js`가 `pipeline_runs.meta`에 `buy_decisions / sell_decisions / hold_decisions`를 함께 저장하도록 확장
+  - `trading-journal.js`, `weekly-trade-review.js`가 시장별 `decision / BUY / SELL / HOLD / executed / weak / risk / saved`를 직접 보여주도록 확장
+- 루나 재점검 Phase 문서 추가
+  - `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md`
+  - `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md`
+
+### 변경 사항 (changed)
+- 바이낸스 수익 파이프라인 다변화 목표에 맞춰 crypto 종목 선정/판단 기준을 완화
+  - `screening.crypto.max_dynamic: 7 -> 12`
+  - `screening.crypto.min_volume_usdt: 1000000 -> 750000`
+  - `runtime_config.luna.minConfidence.live.binance: 0.50 -> 0.44`
+  - `runtime_config.luna.minConfidence.paper.binance: 0.45 -> 0.40`
+  - `runtime_config.luna.debateThresholds.crypto: 0.64/0.32 -> 0.56/0.18`
+  - `runtime_config.luna.fastPathThresholds.minAverageConfidence: 0.42 -> 0.34`
+  - `runtime_config.luna.fastPathThresholds.minAbsScore: 0.25 -> 0.16`
+  - `runtime_config.luna.fastPathThresholds.minCryptoConfidence: 0.44 -> 0.40`
+- `luna.js` crypto 프롬프트에 분산 진입, HOLD 남발 억제, 재진입 가능한 추세 종목 선호를 명시
+- 바이낸스는 최종 signal 저장 전 confidence 기준을 `timeMode.minSignalScore`보다 runtime crypto 기준이 더 낮을 경우 runtime 기준을 우선 사용하도록 정리
+- `pipeline-decision-runner.js`도 동일한 바이낸스 confidence gating 규칙으로 맞췄다
+
 ## 12주차 (2026-03-16 ~ 2026-03-18) — 운영 변수 외부화 + 분석 자동화 정리
 
 ### 신규 기능 (feat)
