@@ -25,6 +25,26 @@
       "restartCooldownMs": 1800000,
       "maxRestarts": 3,
       "diskCriticalPercent": 90
+    },
+    "llmSelectorOverrides": {
+      "claude.archer.tech_analysis": {
+        "chain": [
+          { "provider": "anthropic", "model": "claude-sonnet-4-6", "maxTokens": 4096, "temperature": 0.2 },
+          { "provider": "openai", "model": "gpt-4o-mini", "maxTokens": 4096, "temperature": 0.3 },
+          { "provider": "groq", "model": "llama-4-scout-17b-16e-instruct", "maxTokens": 4096, "temperature": 0.3 }
+        ]
+      },
+      "claude.lead.system_issue_triage": {
+        "chain": [
+          { "provider": "openai", "model": "gpt-4o", "maxTokens": 300, "temperature": 0.1 },
+          { "provider": "openai", "model": "gpt-4o-mini", "maxTokens": 300, "temperature": 0.1 },
+          { "provider": "groq", "model": "meta-llama/llama-4-scout-17b-16e-instruct", "maxTokens": 300, "temperature": 0.1 }
+        ]
+      },
+      "claude.dexter.ai_analyst": {
+        "lowModel": "gpt-4o-mini",
+        "highModel": "gpt-4o"
+      }
     }
   }
 }

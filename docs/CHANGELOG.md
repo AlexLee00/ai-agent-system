@@ -415,6 +415,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 오케스트레이터 `runtime_config.llmSelectorOverrides`와 투자 `runtime_config.llmPolicies`를 추가해 selector 기본값 위에 운영 override를 얹는 2차 통합 진행
   - 워커 `runtime_config.llmSelectorOverrides`를 추가해 `worker.ai.fallback`, `worker.chat.task_intake` 경로를 selector override로 운영 제어 가능하게 정리
   - 블로그 `runtime_config.llmSelectorOverrides`를 추가해 writer/social/star/curriculum 경로를 selector override로 운영 제어 가능하게 정리
+  - 클로드 `runtime_config.llmSelectorOverrides`를 추가해 아처·클로드 리드·덱스터 경로를 selector override로 운영 제어 가능하게 정리
 - 클로드/아처
   - 아처 LLM 폴백 순서를 `anthropic/claude-sonnet-4-6 -> openai/gpt-4o-mini -> groq/llama-4-scout-17b-16e-instruct`로 재정렬
   - `bots/claude/lib/archer/config.js`에 `LLM_CHAIN`을 추가해 아처 전용 모델 우선순위를 설정 레이어로 승격

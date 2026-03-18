@@ -9,6 +9,7 @@
 const path = require('path');
 const os   = require('os');
 const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const sharedConfig = require('../config');
 
 const HOME = os.homedir();
 const ROOT = path.join(HOME, 'projects', 'ai-agent-system');
@@ -193,7 +194,9 @@ module.exports = {
   // ─── Archer LLM 체인 ────────────────────────────────────────────
   // 문서 기준 아처는 Claude Sonnet 급 분석 품질을 우선한다.
   // 따라서 primary는 Anthropic, 비용/가용성 fallback은 OpenAI → Groq 순으로 둔다.
-  LLM_CHAIN: selectLLMChain('claude.archer.tech_analysis'),
+  LLM_CHAIN: selectLLMChain('claude.archer.tech_analysis', {
+    policyOverride: sharedConfig.RUNTIME?.llmSelectorOverrides?.['claude.archer.tech_analysis'],
+  }),
 
   // 하위 호환성 유지 — 기존 참조가 있더라도 OpenAI fallback 설정값은 계속 노출
   OPENAI: {

@@ -22,11 +22,14 @@ const pgPool    = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const stateBus  = require('../../reservation/lib/state-bus');
+const cfg = require('./config');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → llama-4-scout (무료)
-const LLM_CHAIN = selectLLMChain('claude.lead.system_issue_triage');
+const LLM_CHAIN = selectLLMChain('claude.lead.system_issue_triage', {
+  policyOverride: cfg.RUNTIME?.llmSelectorOverrides?.['claude.lead.system_issue_triage'],
+});
 const MODEL   = LLM_CHAIN[0].model;  // 로그 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
