@@ -518,6 +518,9 @@ function buildJayModelPolicyReport() {
   const intentPolicy = buildIntentParsePolicy();
   const chatChain = buildJayChatFallbackChain();
   const aligned = gatewayState.ok && gatewayState.primary === gatewayPrimary;
+  const recommendation = aligned
+    ? '현재는 Gemini Flash 유지가 기본 권장입니다. 변경보다 비교 데이터 축적이 우선입니다.'
+    : '먼저 runtime_config와 openclaw.json primary를 일치시키는 것이 우선입니다.';
 
   return [
     '🤖 제이 모델 정책',
@@ -545,6 +548,8 @@ function buildJayModelPolicyReport() {
     '  - gateway 기본 모델과 제이 앱 커스텀 정책은 별도 축입니다.',
     '  - intent parse와 chat fallback은 운영 목적이 달라 분리 유지합니다.',
     '  - gateway primary 변경 전에는 runtime_config와 openclaw.json 정합성을 먼저 확인합니다.',
+    '',
+    `권장 판단: ${recommendation}`,
   ].join('\n');
 }
 

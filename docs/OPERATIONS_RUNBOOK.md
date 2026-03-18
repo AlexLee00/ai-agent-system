@@ -159,6 +159,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - 제이 앱 레벨 모델 정책: [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - 운영 오버라이드 값: [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`
   - 정합성 점검 스크립트: [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
+  - 변경 원칙: 정합성이 맞고 헬스가 안정이면 즉시 변경보다 유지가 우선, 전환은 비교 근거 확보 후 진행
 
 ### Claude / Dexter
 

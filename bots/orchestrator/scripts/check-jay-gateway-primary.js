@@ -9,13 +9,52 @@ const {
 function buildPayload() {
   const runtimePrimary = getGatewayPrimaryModel();
   const gatewayState = getOpenClawGatewayModelState();
+  const candidateProfiles = [
+    {
+      key: 'gemini_stable',
+      model: 'google-gemini-cli/gemini-2.5-flash',
+      label: 'Gemini Flash 유지',
+      pros: ['무료 OAuth 기반', '현재 운영 primary와 동일', '현재 정합성 점검 결과와 잘 맞음'],
+      cons: ['rate limit burst 이력 존재', '제이 intent 모델과 공급자 축이 다름'],
+      configured: gatewayState.availableProviders.includes('google-gemini-cli'),
+    },
+    {
+      key: 'groq_speed',
+      model: 'groq/openai/gpt-oss-20b',
+      label: 'Groq GPT-OSS 전환',
+      pros: ['자유대화 fallback 체인과 축이 맞음', '응답속도 개선 가능성'],
+      cons: ['gateway 전역 primary 변경 영향 범위 큼', '명령형 GPT 분리 구조와는 별도 검증 필요'],
+      configured: gatewayState.availableProviders.includes('groq'),
+    },
+    {
+      key: 'anthropic_safe',
+      model: 'anthropic/claude-haiku-4-5',
+      label: 'Anthropic Haiku 전환',
+      pros: ['짧은 운영 질의에 안정적', '비상용 품질 안전판 역할 가능'],
+      cons: ['유료 호출', '현재 primary/fallback 체계와 비용 구조가 달라짐'],
+      configured: gatewayState.availableProviders.includes('anthropic'),
+    },
+  ];
+  const aligned = gatewayState.ok ? gatewayState.primary === runtimePrimary : false;
+  const recommendation = aligned
+    ? {
+        action: 'hold',
+        reason: '현재 runtime_config와 openclaw.json이 일치하고, 오케스트레이터 헬스도 안정 구간입니다. primary 변경보다 비교 기준을 더 쌓는 것이 우선입니다.',
+      }
+    : {
+        action: 'sync_first',
+        reason: '현재 기준값과 실제 OpenClaw primary가 다릅니다. 모델 변경 실험 전에 먼저 정합성을 맞춰야 합니다.',
+      };
   return {
     runtimePrimary,
     openclawConfigReadable: gatewayState.ok,
     openclawPath: gatewayState.filePath,
     openclawPrimary: gatewayState.primary,
     openclawFallbackCount: gatewayState.fallbacks.length,
-    aligned: gatewayState.ok ? gatewayState.primary === runtimePrimary : false,
+    availableProviders: gatewayState.availableProviders,
+    aligned,
+    recommendation,
+    candidateProfiles,
     error: gatewayState.error || null,
   };
 }
@@ -28,10 +67,22 @@ function printHuman(payload) {
     `openclaw.json 기준: ${payload.openclawPrimary || '확인 불가'}`,
     `fallback 개수: ${payload.openclawFallbackCount}`,
     `정합성: ${payload.aligned ? '일치' : '불일치'}`,
+    `사용 가능 provider: ${payload.availableProviders.length ? payload.availableProviders.join(', ') : '확인 불가'}`,
     `설정 파일: ${payload.openclawPath}`,
   ];
   if (payload.error) {
     lines.push(`오류: ${payload.error}`);
+  }
+  lines.push('');
+  lines.push(`권장 판단: ${payload.recommendation.action}`);
+  lines.push(`- ${payload.recommendation.reason}`);
+  lines.push('');
+  lines.push('후보 프로필:');
+  for (const profile of payload.candidateProfiles) {
+    lines.push(`- ${profile.label} (${profile.model})`);
+    lines.push(`  configured: ${profile.configured ? 'yes' : 'no'}`);
+    lines.push(`  pros: ${profile.pros.join(' / ')}`);
+    lines.push(`  cons: ${profile.cons.join(' / ')}`);
   }
   if (!payload.aligned) {
     lines.push('');

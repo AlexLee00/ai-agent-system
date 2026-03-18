@@ -25,6 +25,7 @@
   - 세션 인덱스와 팀 문서의 지속 업데이트
   - 제이 모델 체계를 `OpenClaw 기본`과 `제이 앱 커스텀`으로 명확히 분리하고 운영 설정과 연결
   - 제이 gateway primary는 변경 전 `runtime_config ↔ openclaw.json` 정합성 점검을 거치도록 운영 절차 고정
+  - 제이 gateway primary는 현 시점 Gemini 유지가 기본 권장이고, 전환은 비교 데이터가 쌓인 뒤 검토
 
 ---
 

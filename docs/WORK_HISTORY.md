@@ -163,6 +163,28 @@
 - `node --check bots/orchestrator/src/router.js`
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js --json`
 
+### 12주차 후속 (2026-03-18) — 제이 gateway primary 후보/권장 판단 추가
+
+핵심 구현:
+- `check-jay-gateway-primary.js`가 단순 정합성 체크를 넘어서 후보 프로필과 권장 판단까지 출력하도록 확장
+- 후보 프로필을 `Gemini Flash 유지 / Groq GPT-OSS / Anthropic Haiku` 3종으로 정리
+- 현재 상태가 정합성 일치 + 헬스 안정이면 `hold`를 기본 권장으로 보여주도록 보강
+- `/jay-models` 응답에도 “지금은 유지가 기본 권장”이라는 운영 해석 문구 추가
+
+세션 맥락:
+- gateway primary를 바꿀 수 있는 도구는 이미 준비됐지만, 내부 MVP 단계에서는 바꾸는 것보다 언제 바꾸지 말아야 하는지를 명확히 하는 것이 더 중요했다.
+- 이번 단계에서 운영자가 모델 변경을 감으로 하지 않도록, 후보와 권장 판단을 같은 점검 레이어에 넣었다.
+
+의사결정 이유:
+- 현재는 runtime_config와 openclaw.json이 일치하고 오케스트레이터 헬스도 안정 구간이라, 즉시 전환보다 유지가 더 합리적이다.
+- 후보 프로필을 미리 정리해 두면 추후 SaaS 확장 시 workspace별 모델 정책도 같은 구조로 비교 가능하다.
+
+검증:
+- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
+- `node --check bots/orchestrator/src/router.js`
+- `node bots/orchestrator/scripts/check-jay-gateway-primary.js`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:
