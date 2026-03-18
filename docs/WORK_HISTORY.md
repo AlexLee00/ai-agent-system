@@ -2264,6 +2264,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 네메시스가 `stockRejectConfidence`, `stockAutoApproveDomestic`, `stockAutoApproveOverseas`를 실제 하드 규칙으로 사용하도록 연결
 - 소규모 주식 BUY는 공격적 모드에서 자동 승인되고, 매우 낮은 확신도는 조기 REJECT되도록 불변식 회복
 
+### 아처 폴백 순서 변경
+- 아처 LLM 분석 체인을 `gpt-4o-mini` 단일 호출에서 `Anthropic Sonnet → OpenAI gpt-4o-mini → Groq Scout` 순서로 재구성
+- `lib/archer/config.js`의 `LLM_CHAIN`으로 외부화해 이후 우선순위 변경을 설정 레이어에서 처리 가능하게 정리
+- 문서상 “아처는 Claude Sonnet 급 분석 품질 우선”이라는 기존 가이드와 실제 코드 경로를 다시 일치시킴
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

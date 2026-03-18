@@ -189,8 +189,31 @@ module.exports = {
     logFile:          '/tmp/archer.log',
   },
 
-  // ─── OpenAI API ─────────────────────────────────────────────────
-  // maxTokens: 소스 10개 확대에 따라 2048 → 4096으로 증가
+  // ─── Archer LLM 체인 ────────────────────────────────────────────
+  // 문서 기준 아처는 Claude Sonnet 급 분석 품질을 우선한다.
+  // 따라서 primary는 Anthropic, 비용/가용성 fallback은 OpenAI → Groq 순으로 둔다.
+  LLM_CHAIN: [
+    {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      maxTokens: 4096,
+      temperature: 0.2,
+    },
+    {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      maxTokens: 4096,
+      temperature: 0.3,
+    },
+    {
+      provider: 'groq',
+      model: 'llama-4-scout-17b-16e-instruct',
+      maxTokens: 4096,
+      temperature: 0.3,
+    },
+  ],
+
+  // 하위 호환성 유지 — 기존 참조가 있더라도 OpenAI fallback 설정값은 계속 노출
   OPENAI: {
     model:       'gpt-4o-mini',
     maxTokens:   4096,

@@ -133,9 +133,11 @@ function buildContext({ github, npm, webSources, audit, cache }) {
   return lines.join('\n');
 }
 
-// ─── LLM 체인: gpt-4o 전용 (소스 10개로 확대 — 컨텍스트 충분한 모델 필요) ───
-// ★ 2026-03-10: 수집 소스 5→10개로 확대, 분석 품질 안정성을 위해 gpt-4o 단일 사용
-const ARCHER_CHAIN = [
+// ─── LLM 체인 ──────────────────────────────────────────────────────
+// 아처는 문서 기준 Claude Sonnet 급 분석 품질을 우선하고,
+// OpenAI/Groq는 가용성·비용 fallback으로 사용한다.
+const ARCHER_CHAIN = config.LLM_CHAIN || [
+  { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.2 },
   { provider: 'openai', model: config.OPENAI.model, maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
 ];
 
