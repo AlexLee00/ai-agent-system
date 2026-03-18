@@ -32,14 +32,36 @@ function formatReuseSummary(document) {
   return `재사용 ${total}회 · 연결 ${linked}건`;
 }
 
+function QualityBadge({ summary }) {
+  const status = String(summary?.status || 'good');
+  const label = summary?.label || '재사용 양호';
+  const map = {
+    good: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    watch: 'border-amber-200 bg-amber-50 text-amber-700',
+    needs_review: 'border-rose-200 bg-rose-50 text-rose-700',
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${map[status] || map.good}`}>
+      {label}
+    </span>
+  );
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState([]);
+  const [qualityFilter, setQualityFilter] = useState('all');
+  const [sort, setSort] = useState('recent');
 
   useEffect(() => {
-    api.get('/documents?limit=6')
+    const params = new URLSearchParams({
+      limit: '20',
+      quality_status: qualityFilter,
+      sort,
+    });
+    api.get(`/documents?${params.toString()}`)
       .then((data) => setDocuments(data.documents || []))
       .catch(() => setDocuments([]));
-  }, []);
+  }, [qualityFilter, sort]);
 
   return (
     <div className="space-y-5">
@@ -86,7 +108,30 @@ export default function DocumentsPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">최근 문서</p>
-            <p className="mt-1 text-sm text-slate-500">최근 업로드한 문서를 열어 파싱 결과와 재사용 프롬프트를 확인합니다.</p>
+            <p className="mt-1 text-sm text-slate-500">최근 업로드한 문서를 열어 파싱 결과, 재사용 전환율, 품질 신호를 함께 확인합니다.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={qualityFilter}
+              onChange={(event) => setQualityFilter(event.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <option value="all">전체 품질</option>
+              <option value="needs_review">검토 필요</option>
+              <option value="watch">재사용 주의</option>
+              <option value="good">재사용 양호</option>
+            </select>
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <option value="recent">최신순</option>
+              <option value="quality">품질 검토 우선</option>
+              <option value="conversion">전환율 높은 순</option>
+              <option value="reuse">재사용 많은 순</option>
+              <option value="linked">연결 많은 순</option>
+            </select>
           </div>
         </div>
         {documents.length === 0 ? (
@@ -115,6 +160,12 @@ export default function DocumentsPage() {
                     <p className="mt-2 text-xs font-medium text-sky-700">
                       {formatReuseSummary(document)}
                     </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <QualityBadge summary={document.quality_summary} />
+                      {document.quality_summary?.reasons?.[0] ? (
+                        <p className="text-xs text-slate-500">{document.quality_summary.reasons[0]}</p>
+                      ) : null}
+                    </div>
                     {document.ai_summary ? (
                       <p className="mt-2 line-clamp-2 text-sm text-slate-600">{document.ai_summary}</p>
                     ) : null}

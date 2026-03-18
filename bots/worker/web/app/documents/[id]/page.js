@@ -19,6 +19,21 @@ function MetadataCard({ label, value, caption }) {
   );
 }
 
+function QualityBadge({ summary }) {
+  const status = String(summary?.status || 'good');
+  const label = summary?.label || '재사용 양호';
+  const map = {
+    good: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    watch: 'border-amber-200 bg-amber-50 text-amber-700',
+    needs_review: 'border-rose-200 bg-rose-50 text-rose-700',
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${map[status] || map.good}`}>
+      {label}
+    </span>
+  );
+}
+
 function getLinkedEntityInfo(event) {
   const type = String(event?.linked_entity_type || '');
   const entityId = event?.linked_entity_id;
@@ -83,6 +98,7 @@ export default function DocumentDetailPage() {
   }, [id]);
 
   const metadata = extraction?.extraction_metadata || documentInfo?.extraction_metadata || {};
+  const qualitySummary = extraction?.quality_summary || documentInfo?.quality_summary || null;
   const reusePackage = useMemo(() => {
     if (!documentInfo && !extraction) return null;
     return buildDocumentReusePackage({
@@ -227,6 +243,42 @@ export default function DocumentDetailPage() {
               <MetadataCard label="전환율" value={`${reuseSummary.conversionRate}%`} caption="linked / total" />
               <MetadataCard label="가장 많이 보낸 곳" value={reuseSummary.topTarget} />
             </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">문서 품질 신호</p>
+              <p className="mt-1 text-sm text-slate-500">재사용 전에 원문 확인이 필요한 문서를 빠르게 구분합니다.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <QualityBadge summary={qualitySummary} />
+              {qualitySummary?.sourceFileType ? (
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                  유형 {qualitySummary.sourceFileType}
+                </span>
+              ) : null}
+              {qualitySummary?.textLength >= 0 ? (
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                  텍스트 {qualitySummary.textLength}자
+                </span>
+              ) : null}
+            </div>
+            {qualitySummary?.reasons?.length ? (
+              <div className="space-y-2">
+                {qualitySummary.reasons.map((reason) => (
+                  <div
+                    key={reason}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                  >
+                    {reason}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                현재 메타데이터 기준으로는 재사용 전 추가 확인이 필요한 품질 경고가 없습니다.
+              </div>
+            )}
           </div>
 
           <div className="card space-y-4">
