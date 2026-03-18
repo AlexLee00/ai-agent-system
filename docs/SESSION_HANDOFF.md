@@ -64,6 +64,12 @@
     - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
     - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
     - [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+- 재부팅 절차
+  - `scripts/pre-reboot.sh`는 기본 실행 시 준비/대기만 수행하고, `--drain-now`에서만 ai-agent-system 서비스 정지 신호를 보낸다.
+  - 재부팅 전에는 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER` 최신성 점검이 필수 게이트다.
+  - `scripts/post-reboot.sh`는 현재 전사 운영 구조 기준으로 worker / investment / blog / claude / orchestrator / ska / n8n 복구 상태를 넓게 확인한다.
+  - 재부팅 후에는 `/tmp/post-reboot-followup.txt`를 확인하고, 상태 변화가 있으면 문서와 세션 인수인계를 다시 갱신해야 한다.
+  - 최근 dry-run 기준 현재 로컬 launchd 상태는 `OK 5 / WARN 16 / FAIL 12`로 보고되어, 실제 재부팅 후에는 팀별 `health-report --json` 2차 확인이 필수다.
 
 ---
 
@@ -117,6 +123,11 @@
 8. 루나 시스템 재점검 Phase 착수 여부 판단
    - 현재는 퍼널 계측과 crypto 보수성 완화까지 반영된 상태
    - 다음은 `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준으로 부분 보완안 vs 재설계안 비교에 들어갈 수 있음
+9. 재부팅 후 운영 검증
+   - `bash /Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh --dry-run`
+   - `/tmp/post-reboot.log`
+   - `/tmp/post-reboot-followup.txt`
+   - worker / orchestrator / investment / blog health-report 재확인
 
 ---
 
@@ -140,6 +151,7 @@
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 - 텔레그램 알림 포맷은 구분선/헤더/본문 압축까지 반영됐지만, 잔여 producer 미세 조정은 실제 운영 알림이 더 쌓인 뒤 확인하는 편이 안전하다
 - 제이 일일 리뷰는 실제 운영 컨텍스트에서는 `dbSource=db`, 샌드박스 안에서는 `dbSource=snapshot_fallback`으로 동작해 live + fallback 이중화는 확보된 상태다
+- 재부팅 절차는 개편됐지만, post-reboot 최종 판정은 아직 launchd 중심이며 팀별 `health-report --json` 2차 자동 판정까지는 붙지 않았다
 
 자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
 

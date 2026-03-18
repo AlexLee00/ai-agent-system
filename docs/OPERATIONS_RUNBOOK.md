@@ -242,6 +242,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 - 먼저 `health-report --json`으로 현재 상태를 남긴다.
 - known issue인지 신규 이슈인지 확인한다.
 - 설정값 문제면 재시작보다 `runtime_config` 점검을 우선한다.
+- 노트북에는 `ai-agent-system` 외 다른 시스템도 있을 수 있으므로, 재부팅 스크립트는 **ai-agent-system 준비/정리까지만 수행**하고 최종 OS 재시작은 사용자가 직접 결정한다.
 
 ### 6.2 재시작 우선순위
 
@@ -249,7 +250,58 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 2. launchd kickstart/reload
 3. 직접 프로세스 재기동
 
-### 6.3 대표 재시작 경로
+### 6.3 노트북 재부팅 표준 절차
+
+1. 준비 단계
+   - `bash /Users/alexlee/projects/ai-agent-system/scripts/pre-reboot.sh`
+   - 이 단계는 아래만 수행한다.
+     - Git 상태 확인
+     - 현재 `ai.*` launchd 스냅샷 저장
+     - 필수 문서 최신성 점검
+       - `SESSION_HANDOFF.md`
+       - `WORK_HISTORY.md`
+       - `CHANGELOG.md`
+       - `TEST_RESULTS.md`
+       - `PLATFORM_IMPLEMENTATION_TRACKER.md`
+     - 재부팅 준비 로그/텔레그램 기록
+   - **이 단계에서는 서비스 정지나 OS 종료를 자동으로 하지 않는다.**
+   - 문서/세션 인수인계가 최신 상태가 아니면 재부팅 직전 정리 단계로 넘어가지 않는다.
+
+2. 재부팅 직전 정리 단계
+   - 사용자가 실제 재부팅하기 직전에만 실행
+   - `bash /Users/alexlee/projects/ai-agent-system/scripts/pre-reboot.sh --drain-now`
+   - 이 단계는 `ai-agent-system` 관련 서비스만 정지 신호를 보내고 대기한다.
+   - 다른 로컬 시스템은 이 스크립트가 건드리지 않는다.
+
+3. 사용자의 최종 재시작
+   - Apple 메뉴 또는 사용자가 선택한 방식으로 직접 재시작
+   - Codex나 스크립트가 자동 종료를 실행하지 않는다.
+
+4. 부팅 후 자동 점검
+   - `ai.agent.post-reboot` launchd가 [post-reboot.sh](/Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh)를 자동 실행한다.
+   - 점검 대상은 현재 운영 기준으로 아래를 포함한다.
+     - orchestrator / OpenClaw / n8n
+     - worker web / nextjs / lead / task-runner
+     - investment commander / markets / reporter / argos / alerts / prescreen
+     - blog node-server / daily / health-check
+     - claude commander / dexter / archer / health-dashboard
+     - ska monitors
+
+5. 수동 후속 검증
+   - `/tmp/post-reboot.log`
+   - `/tmp/post-reboot.err.log`
+   - `/tmp/post-reboot-followup.txt`
+   - 필요 시
+     - `bash /Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh --dry-run`
+     - 팀별 `health-report --json`
+   - 재부팅 후 상태 변화나 복구 조치가 있으면 반드시 아래 문서를 다시 갱신한다.
+     - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+     - [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+     - [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)
+     - [TEST_RESULTS.md](/Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md)
+     - [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+
+### 6.4 대표 재시작 경로
 
 - Reservation/Ska monitor
   - `bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh`
@@ -260,7 +312,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - quickcheck/dexter 결과를 본 뒤 필요한 경우만 재시작
   - `launchctl kickstart -k gui/$(id -u)/ai.claude.dexter`
 - Orchestrator/OpenClaw
-  - `launchctl kickstart -k gui/$(id -u)/ai.orchestrator.mainbot`
+  - `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
   - `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`
 - Blog node server
   - `launchctl kickstart -k gui/$(id -u)/ai.blog.node-server`

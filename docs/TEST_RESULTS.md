@@ -6,6 +6,15 @@
 
 ## 2026-03-19
 
+### 재부팅 절차 개편
+
+| 테스트 | 결과 |
+|--------|------|
+| `bash -n scripts/pre-reboot.sh` | ✅ |
+| `bash -n scripts/post-reboot.sh` | ✅ |
+| `bash scripts/post-reboot.sh --dry-run` | ✅ 드라이런 종료, `/tmp/post-reboot-followup.txt` 생성 및 전사 launchd 점검 흐름 확인 |
+| `tail -n 80 /tmp/post-reboot.log` | ✅ 현재 로컬 상태 기준 `OK 5 / WARN 16 / FAIL 12`로 보고, 후속 `health-report --json` 재확인 필요 메시지 확인 |
+
 ### 루나 퍼널 계측 + 바이낸스 보수성 조정
 
 | 테스트 | 결과 |

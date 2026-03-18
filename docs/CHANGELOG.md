@@ -3,6 +3,39 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-19) — 재부팅 절차를 문서/핸드오프 게이트로 고도화
+
+### 변경 사항 (changed)
+- `scripts/pre-reboot.sh`를 승인 대기형 절차로 재설계
+  - 기본 실행은 `준비/대기`만 수행
+  - 실제 ai-agent-system 서비스 정지는 `--drain-now`에서만 수행
+  - 스크립트가 OS 종료/재시작을 직접 실행하지 않도록 정리
+- 재부팅 전 필수 문서 최신성 게이트 추가
+  - `SESSION_HANDOFF.md`
+  - `WORK_HISTORY.md`
+  - `CHANGELOG.md`
+  - `TEST_RESULTS.md`
+  - `PLATFORM_IMPLEMENTATION_TRACKER.md`
+  - 위 문서 상태가 기준을 통과하지 않으면 `pre-reboot.sh --drain-now`가 중단되도록 보강
+- `scripts/post-reboot.sh`를 현재 운영 구조 기준 전사 점검형으로 확장
+  - orchestrator / OpenClaw / n8n
+  - worker web / nextjs / lead / task-runner
+  - investment commander / markets / reporter / argos / alerts / prescreen
+  - blog node-server / daily / health-check
+  - claude commander / dexter / archer / health-dashboard
+  - ska monitors
+  를 재부팅 후 점검 대상에 포함
+- 재부팅 후 문서/세션 후속 체크리스트 추가
+  - `/tmp/post-reboot-followup.txt`에 재부팅 후 갱신해야 할 문서와 핸드오프 규칙을 기록
+  - post-reboot 텔레그램 보고에도 문서 갱신 필요 조건을 함께 남기도록 보강
+- `docs/OPERATIONS_RUNBOOK.md`에 노트북 재부팅 표준 절차 추가
+  - 준비 단계
+  - 문서/핸드오프 게이트
+  - 재부팅 직전 정리 단계
+  - 사용자 직접 재시작
+  - 부팅 후 자동 점검
+  - 수동 후속 검증
+
 ## 12주차 (2026-03-19) — 루나 퍼널 계측 강화 + 재점검 Phase 준비
 
 ### 신규 기능 (feat)

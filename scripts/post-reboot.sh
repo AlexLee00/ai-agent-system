@@ -8,7 +8,9 @@ set -uo pipefail
 
 PROJECT_DIR="$HOME/projects/ai-agent-system"
 LOG_FILE="/tmp/post-reboot.log"
+FOLLOWUP_FILE="/tmp/post-reboot-followup.txt"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
+TELEGRAM_NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
 DRY_RUN=0
 
 if [ "${1:-}" = "--dry-run" ]; then
@@ -27,7 +29,6 @@ send_telegram() {
   local msg_file="$1"
   if [ "$DRY_RUN" -eq 1 ]; then
     log "🧪 dry-run 모드 — 텔레그램 발송 생략"
-    log "🧾 메시지 미리보기:"
     while IFS= read -r line; do
       log "   $line"
     done < "$msg_file"
@@ -35,7 +36,7 @@ send_telegram() {
   fi
 
   PROJECT_DIR_ENV="$PROJECT_DIR" MSG_FILE_ENV="$msg_file" \
-  /Users/alexlee/.nvm/versions/node/v24.13.1/bin/node - <<'NODE' 2>/dev/null || true
+  "$TELEGRAM_NODE" - <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 const sender = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/telegram-sender');
 
@@ -46,20 +47,17 @@ const sender = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/telegra
 NODE
 }
 
-# ── 시스템 안정화 대기 ────────────────────────────────────
 log "🚀 재부팅 후 시작 루틴 시작 (시스템 안정화 대기 45초)..."
 sleep 45
 
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log "🔍 서비스 상태 점검 시작"
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# KeepAlive 서비스들이 자동 재시작될 때까지 추가 대기
 sleep 20
 
-# ── 서비스 상태 확인 ──────────────────────────────────────
 REPORT_LINES=()
 OK=0
+WARN=0
 FAIL=0
 
 append_report() {
@@ -100,16 +98,14 @@ check_svc() {
   fi
 }
 
-# 주기 태스크 점검: runs≥1+exit0=정상 / runs=0=대기중(오류아님) / exit≠0=실패
 check_periodic() {
   local svc="$1"
   local label="$2"
   local info runs exit_raw exit_code
-  info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null)
+  info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
   runs=$(echo "$info" | awk '/	runs =/ {print $3}')
   exit_raw=$(echo "$info" | sed -n 's/^[[:space:]]*last exit code = \(.*\)$/\1/p' | head -n 1)
 
-  # exit_code가 숫자가 아니면(never 등) 빈 값으로 처리
   if [[ "$exit_raw" =~ ^[0-9]+$ ]]; then
     exit_code="$exit_raw"
   else
@@ -119,7 +115,7 @@ check_periodic() {
   if [ -z "$runs" ]; then
     log "   ⚠️  ${label} (서비스 미등록)"
     append_report "⚠️ ${label} 미등록"
-    ((FAIL++)) || true
+    ((WARN++)) || true
   elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
     log "   ✅ ${label} (${runs}회 실행, exit=0)"
     append_report "✅ ${label}"
@@ -127,7 +123,7 @@ check_periodic() {
   elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
     log "   ⏳ ${label} (등록됨, 첫 트리거 대기 중)"
     append_report "⏳ ${label} 대기중"
-    ((OK++)) || true
+    ((WARN++)) || true
   elif [ "$svc" = "ai.claude.dexter" ] && [ "$exit_code" = "1" ] && has_recent_dexter_report; then
     log "   ✅ ${label} (최근 점검 결과 존재, exit=1 허용)"
     append_report "✅ ${label} (최근 점검 결과 있음)"
@@ -139,44 +135,80 @@ check_periodic() {
   fi
 }
 
-log "📡 OpenClaw / 스카팀:"
+log "🧠 오케스트레이터 / OpenClaw / n8n"
+check_svc      "ai.orchestrator"        "오케스트레이터"
 check_svc      "ai.openclaw.gateway"    "OpenClaw 게이트웨이"
+check_svc      "ai.n8n.server"          "n8n 워크플로우 서버"
+
+log "🧩 워커팀"
+check_svc      "ai.worker.web"          "워커 웹"
+check_svc      "ai.worker.nextjs"       "워커 Next.js"
+check_svc      "ai.worker.lead"         "워커 lead"
+check_svc      "ai.worker.task-runner"  "워커 task-runner"
+
+log "💹 투자팀"
+check_svc      "ai.investment.commander"             "루나 커맨더"
+check_periodic "ai.investment.crypto"                "루나 크립토 사이클"
+check_periodic "ai.investment.domestic"              "루나 국내주식 사이클"
+check_periodic "ai.investment.overseas"              "루나 해외주식 사이클"
+check_periodic "ai.investment.argos"                 "아르고스"
+check_periodic "ai.investment.reporter"              "투자 리포터"
+check_periodic "ai.investment.market-alert-domestic-open"   "국내장 오픈 알림"
+check_periodic "ai.investment.market-alert-domestic-close"  "국내장 마감 알림"
+check_periodic "ai.investment.market-alert-overseas-open"   "해외장 오픈 알림"
+check_periodic "ai.investment.market-alert-overseas-close"  "해외장 마감 알림"
+check_periodic "ai.investment.market-alert-crypto-daily"    "크립토 일일 알림"
+check_periodic "ai.investment.prescreen-domestic"           "국내장 prescreen"
+check_periodic "ai.investment.prescreen-overseas"           "해외장 prescreen"
+
+log "📝 블로그팀"
+check_svc      "ai.blog.node-server"    "블로그 node-server"
+check_periodic "ai.blog.daily"          "블로그 daily"
+check_periodic "ai.blog.health-check"   "블로그 health-check"
+
+log "🛎️  클로드팀"
+check_svc      "ai.claude.commander"        "클로드 커맨더"
+check_svc      "ai.claude.health-dashboard" "클로드 health-dashboard"
+check_periodic "ai.claude.dexter.quick"     "덱스터 quick"
+check_periodic "ai.claude.dexter"           "덱스터"
+check_periodic "ai.claude.dexter.daily"     "덱스터 daily"
+check_periodic "ai.claude.archer"           "아처"
+
+log "🏪 예약/Ska"
 check_svc      "ai.ska.naver-monitor"   "앤디 (네이버 모니터)"
-check_periodic "ai.ska.kiosk-monitor"   "지미 (키오스크 모니터, 10분)"
+check_periodic "ai.ska.kiosk-monitor"   "지미 (키오스크 모니터)"
 
-log "💹 루나팀:"
-check_periodic "ai.investment.crypto"   "루나 크립토 사이클 (5분)"
-check_periodic "ai.investment.domestic" "루나 국내주식 사이클 (5분)"
-check_periodic "ai.investment.overseas" "루나 해외주식 사이클 (5분)"
-
-log "🤖 클로드팀:"
-check_periodic "ai.claude.dexter"       "덱스터 (시스템 점검, 1시간)"
-
-log "🔄 공통 에이전트:"
+log "🔄 공통 에이전트"
 check_periodic "ai.agent.auto-commit"   "auto-commit"
 check_periodic "ai.agent.nightly-sync"  "nightly-sync"
 
-log "⚙️  n8n:"
-check_svc      "ai.n8n.server"          "n8n 워크플로우 서버 (포트 5678)"
-
-# ── 전체 launchd 서비스 목록 저장 ────────────────────────
 launchctl list 2>/dev/null | grep "	ai\." | sort > /tmp/post-reboot-services.txt
 log "💾 전체 서비스 목록 저장 → /tmp/post-reboot-services.txt"
 
-# ── 재부팅 전 마지막 커밋 확인 ───────────────────────────
+cat > "$FOLLOWUP_FILE" <<EOF
+post_reboot_at=$(date '+%Y-%m-%dT%H:%M:%S%z')
+required_followups:
+- /Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md
+- /Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md
+- /Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md
+- /Users/alexlee/projects/ai-agent-system/docs/TEST_RESULTS.md
+- /Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md
+rule=재부팅 후 상태 변화 또는 장애/복구 조치가 있으면 위 문서와 세션 인수인계를 갱신
+EOF
+log "📝 재부팅 후 문서/세션 후속 체크리스트 저장 → $FOLLOWUP_FILE"
+
 LAST_COMMIT=$(git -C "$PROJECT_DIR" log --oneline -1 2>/dev/null || echo "알 수 없음")
 BOOT_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 
-# ── 텔레그램 최종 보고 ────────────────────────────────────
-if [ "$FAIL" -eq 0 ]; then
+if [ "$FAIL" -eq 0 ] && [ "$WARN" -eq 0 ]; then
   STATUS_ICON="✅"
   STATUS_TEXT="전체 정상"
-elif [ "$FAIL" -le 2 ]; then
+elif [ "$FAIL" -eq 0 ]; then
   STATUS_ICON="⚠️"
-  STATUS_TEXT="${FAIL}개 서비스 확인 필요"
+  STATUS_TEXT="치명 오류 없음, 일부 대기/미등록 ${WARN}건"
 else
   STATUS_ICON="❌"
-  STATUS_TEXT="${FAIL}개 서비스 미실행"
+  STATUS_TEXT="오류 ${FAIL}건, 대기/미등록 ${WARN}건"
 fi
 
 MSG_FILE="/tmp/post-reboot-msg.txt"
@@ -185,19 +217,24 @@ if [ "${#REPORT_LINES[@]}" -gt 0 ]; then
   REPORT_TEXT=$(printf '%s\n' "${REPORT_LINES[@]}")
 fi
 
-cat > "$MSG_FILE" << EOF
+cat > "$MSG_FILE" <<EOF
 🖥️ <b>맥북 재부팅 완료</b> (${BOOT_TIME})
 ${STATUS_ICON} ${STATUS_TEXT}
 
 ${REPORT_TEXT}
 마지막 커밋: ${LAST_COMMIT}
+
+[수동 후속 권장]
+• worker / orchestrator / investment / blog health-report --json 재확인
+• 필요 시 bash $PROJECT_DIR/scripts/post-reboot.sh --dry-run
+• 상태 변화가 있으면 SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER 갱신
 EOF
 send_telegram "$MSG_FILE"
 
 log ""
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-log "✅ 재부팅 후 시작 루틴 완료 (OK: ${OK}, FAIL: ${FAIL})"
-if [ "$FAIL" -gt 0 ]; then
-  log "⚠️  일부 서비스 미실행 — skastatus 명령으로 수동 확인 필요"
+log "✅ 재부팅 후 시작 루틴 완료 (OK: ${OK}, WARN: ${WARN}, FAIL: ${FAIL})"
+if [ "$FAIL" -gt 0 ] || [ "$WARN" -gt 0 ]; then
+  log "⚠️  launchd 상태와 팀별 health-report를 함께 재확인하세요."
 fi
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

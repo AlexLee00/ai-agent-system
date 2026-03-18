@@ -29,6 +29,7 @@
   - 클로드팀 Phase 2~3 업그레이드
   - 1호 업체 파일럿 준비
   - 테스트/안정화 항목(스트레스/장애복구/E2E/Shadow/KPI/TP-SL) 실행 계획 구체화
+  - 재부팅 절차의 팀별 `health-report --json` 2차 판정 결합
   - `LLM API 현황`에 `OpenClaw` 조회 전용 그룹 추가
     - 현재 전사 화면은 Jay / Worker / Claude / Blog / Investment까지만 표시
     - 내일은 `OpenClaw`의 primary / fallback을 조회 전용으로 붙여 전사 LLM 운영 범위를 넓힌다
@@ -149,8 +150,13 @@
   - no-trade 주간 투자 요약, 스카 주간 `requested/effective days`, 제이 `partial + session fallback`, 일일 운영 분석 섹션 분리까지 반영됐다
   - 루나 decision 퍼널 계측 보강
   - `pipeline_runs.meta`에 `decision / BUY / SELL / HOLD / executed / weak / risk / savedExecutionWork`를 저장하고, 일지/주간 리뷰에서 시장별 병목을 직접 조회할 수 있게 확장했다
-  - 루나 재점검 Phase 문서화
+- 루나 재점검 Phase 문서화
   - `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md`, `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md`를 추가해 진단 범위/불변식/산출물/실행 프롬프트를 분리 정리했다
+- 재부팅 절차도 운영 이벤트 기준으로 보강됐다.
+  - `pre-reboot.sh`는 기본 실행 시 준비/대기만 수행하고, `--drain-now`에서만 ai-agent-system 서비스 정지 신호를 보낸다.
+  - 재부팅 전에는 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER` 최신성 점검이 필수 게이트다.
+  - `post-reboot.sh`는 현재 전사 운영 구조(워커/투자/블로그/클로드/오케스트레이터/Ska/n8n) 기준으로 launchd 복구를 넓게 확인한다.
+  - 재부팅 후에는 `/tmp/post-reboot-followup.txt`를 통해 문서/세션 후속 갱신 체크리스트를 남긴다.
 
 ### 지금 가장 중요한 개발 축
 
