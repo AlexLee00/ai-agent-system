@@ -20,6 +20,7 @@ const { getOpenAIKey }              = require('../../../packages/core/lib/llm-ke
 const { getTimeout }                = require('../../../packages/core/lib/llm-timeouts');
 const { selectLLMPolicy }           = require('../../../packages/core/lib/llm-model-selector');
 const { getPatterns, getNewErrors } = require('./error-history');
+const cfg = require('./config');
 
 const INSIGHTS_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-insights.json');
 const MAX_INSIGHTS  = 20;
@@ -156,7 +157,15 @@ async function analyzeWithAI(results, elapsed, level) {
     return null;
   }
 
-  const policy = selectLLMPolicy('claude.dexter.ai_analyst', { level });
+  const policyOverride = cfg.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'];
+  const policy = selectLLMPolicy('claude.dexter.ai_analyst', {
+    level,
+    policyOverride: policyOverride
+      ? {
+          model: level >= 4 ? (policyOverride.highModel || 'gpt-4o') : (policyOverride.lowModel || 'gpt-4o-mini'),
+        }
+      : null,
+  });
   const model  = policy.model;
   const client = new OpenAI({ apiKey, timeout: getTimeout(model), maxRetries: 1 });
 

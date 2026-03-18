@@ -2290,6 +2290,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 블로그 생성 계열은 writer/social/curriculum/stage별로 selector key를 유지하고, 실제 모델 체인은 config override로만 바꾸는 구조로 경계 정리
 - 이후 블로그 발행 실험이나 품질 튜닝 시 개별 파일 하드코딩 수정 없이 `config.json` 우선 조정이 가능해짐
 
+### 공용 LLM 모델 셀렉터 5차 통합
+- 클로드 `runtime_config.llmSelectorOverrides`를 추가해 `claude.archer.tech_analysis`, `claude.lead.system_issue_triage`, `claude.dexter.ai_analyst` 경로를 운영 설정으로 제어 가능하게 정리
+- 아처/클로드 리드는 chain override, 덱스터는 alert level별 low/high 모델 override를 받는 구조로 역할을 분리
+- 이로써 주요 텍스트 생성 경로의 공용 selector + 팀별 runtime override 패턴이 제이/투자/워커/블로그/클로드까지 거의 닫힘
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

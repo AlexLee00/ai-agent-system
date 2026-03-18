@@ -628,6 +628,7 @@
 - 오케스트레이터 `runtime_config.llmSelectorOverrides`와 투자 `runtime_config.llmPolicies`를 추가해 selector 기본값 위에 운영 override를 얹을 수 있게 정리
 - 워커 `runtime_config.llmSelectorOverrides`를 추가해 `worker.ai.fallback`, `worker.chat.task_intake` 경로도 selector override로 운영 제어 가능하게 정리
 - 블로그 `runtime_config.llmSelectorOverrides`를 추가해 writer/social/star/curriculum 경로를 selector override로 운영 제어 가능하게 정리
+- 클로드 `runtime_config.llmSelectorOverrides`를 추가해 아처·클로드 리드·덱스터 경로를 selector override로 운영 제어 가능하게 정리
 
 ### 2026-03-14
 
