@@ -58,9 +58,14 @@ async function ensureSystemPreferencesTable() {
       preference_key TEXT NOT NULL,
       previous_value JSONB,
       next_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      change_note TEXT,
       changed_by INTEGER REFERENCES worker.users(id),
       changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await pgPool.run(SCHEMA, `
+    ALTER TABLE worker.system_preference_events
+    ADD COLUMN IF NOT EXISTS change_note TEXT
   `);
   await pgPool.run(SCHEMA, `
     CREATE INDEX IF NOT EXISTS idx_worker_system_preference_events_key_changed_at
@@ -102,9 +107,10 @@ async function getWorkerMonitoringPreference() {
   return normalizeApi(row?.value?.selected_api);
 }
 
-async function setWorkerMonitoringPreference(selectedApi, updatedBy = null) {
+async function setWorkerMonitoringPreference(selectedApi, updatedBy = null, changeNote = null) {
   await ensureSystemPreferencesTable();
   const api = normalizeApi(selectedApi);
+  const normalizedNote = String(changeNote || '').trim().slice(0, 300) || null;
   const current = await pgPool.get(SCHEMA, `
     SELECT value
     FROM worker.system_preferences
@@ -125,12 +131,13 @@ async function setWorkerMonitoringPreference(selectedApi, updatedBy = null) {
   if (previousApi !== api) {
     await pgPool.run(SCHEMA, `
       INSERT INTO worker.system_preference_events
-        (preference_key, previous_value, next_value, changed_by, changed_at)
-      VALUES ($1, $2::jsonb, $3::jsonb, $4, NOW())
+        (preference_key, previous_value, next_value, change_note, changed_by, changed_at)
+      VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, NOW())
     `, [
       PREFERENCE_KEY,
       JSON.stringify(previousValue),
       JSON.stringify({ selected_api: api }),
+      normalizedNote,
       updatedBy,
     ]);
   }
@@ -146,6 +153,7 @@ async function getWorkerMonitoringChangeHistory(limit = 10) {
       e.preference_key,
       e.previous_value,
       e.next_value,
+      e.change_note,
       e.changed_at,
       u.id AS changed_by_id,
       COALESCE(NULLIF(u.name, ''), u.username, '알 수 없음') AS changed_by_name,

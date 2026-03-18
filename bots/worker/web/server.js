@@ -399,6 +399,7 @@ async function buildWorkerMonitoringPayload(user) {
         next_api: nextApi || null,
         previous_api_label: API_CATALOG[previousApi]?.label || previousApi || '초기값',
         next_api_label: API_CATALOG[nextApi]?.label || nextApi || '-',
+        change_note: item.change_note || '',
         changed_at: item.changed_at,
         changed_by_name: item.changed_by_name,
         changed_by_role: item.changed_by_role,
@@ -825,6 +826,7 @@ app.put('/api/admin/monitoring/llm-api',
   requireAuth,
   requireRole('admin', 'master'),
   body('provider').isIn(ALLOWED_APIS),
+  body('note').optional({ values: 'falsy' }).trim().isLength({ max: 300 }),
   async (req, res) => {
     if (!validate(req, res)) return;
     try {
@@ -836,7 +838,7 @@ app.put('/api/admin/monitoring/llm-api',
       `, [req.user.id]);
       if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
 
-      await setWorkerMonitoringPreference(req.body.provider, user.id);
+      await setWorkerMonitoringPreference(req.body.provider, user.id, req.body.note);
       res.json({
         success: true,
         message: `${API_CATALOG[req.body.provider]?.label || req.body.provider} API를 워커 웹 기본 분석 경로로 저장했습니다.`,

@@ -19,6 +19,7 @@ export default function WorkerMonitoringPage() {
   const [notice, setNotice] = useState('');
   const [payload, setPayload] = useState(null);
   const [selectedProvider, setSelectedProvider] = useState('groq');
+  const [changeNote, setChangeNote] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -27,6 +28,7 @@ export default function WorkerMonitoringPage() {
       const data = await api.get('/admin/monitoring/llm-api');
       setPayload(data);
       setSelectedProvider(data.selected_api || 'groq');
+      setChangeNote('');
     } catch (err) {
       setError(err.message || '워커 모니터링 정보를 불러오지 못했습니다.');
     } finally {
@@ -61,9 +63,11 @@ export default function WorkerMonitoringPage() {
     setNotice('');
     setError('');
     try {
-      const data = await api.put('/admin/monitoring/llm-api', { provider: selectedProvider });
+      const requestBody = { provider: selectedProvider, note: changeNote.trim() || undefined };
+      const data = await api.put('/admin/monitoring/llm-api', requestBody);
       setPayload(data);
       setSelectedProvider(data.selected_api || selectedProvider);
+      setChangeNote('');
       setNotice(data.message || '워커 웹 기본 분석 API를 저장했습니다.');
     } catch (err) {
       setError(err.message || 'LLM API 설정을 저장하지 못했습니다.');
@@ -127,6 +131,20 @@ export default function WorkerMonitoringPage() {
               <p className="mt-2 text-xs text-slate-500">
                 {selectedOption?.description || '사용할 LLM API를 선택하면 워커 웹 관리자 분석 경로의 기본 공급자를 바꿉니다.'}
               </p>
+              <div className="mt-4">
+                <label className="block text-xs font-semibold text-slate-500">변경 사유</label>
+                <textarea
+                  className="input-base mt-2 min-h-[92px]"
+                  value={changeNote}
+                  onChange={(event) => setChangeNote(event.target.value)}
+                  placeholder="예: 응답시간 비교를 위해 Groq에서 OpenAI로 전환"
+                  maxLength={300}
+                  disabled={loading || saving}
+                />
+                <p className="mt-2 text-[11px] text-slate-500">
+                  변경 이유를 남겨두면 호출량/성공률 변화와 함께 나중에 판단하기 쉽습니다. {changeNote.length}/300
+                </p>
+              </div>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <div className="text-xs text-slate-500">
                   현재 선택 모델: <span className="font-mono text-slate-700">{selectedOption?.primaryModel || '-'}</span>
@@ -350,6 +368,11 @@ export default function WorkerMonitoringPage() {
                           <p className="mt-1 text-xs text-slate-500">
                             {item.changed_by_name} · {item.changed_by_role || 'role-unknown'}
                           </p>
+                          {item.change_note ? (
+                            <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                              사유: {item.change_note}
+                            </p>
+                          ) : null}
                         </div>
                         <p className="text-xs text-slate-500">{new Date(item.changed_at).toLocaleString('ko-KR')}</p>
                       </div>
