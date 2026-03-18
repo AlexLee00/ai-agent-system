@@ -44,6 +44,30 @@
 - `node --check bots/orchestrator/src/router.js`
 - `/llm-selectors`, `LLM 체인 보여줘` 인텐트 매핑 확인
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 UI에 selector 체인 카드 추가
+
+핵심 구현:
+- `/api/admin/monitoring/llm-api` payload에 `selector_summary` 추가
+- 워커 모니터링 페이지에서
+  - `worker.ai.fallback`
+  - `worker.chat.task_intake`
+  의 primary / fallback chain을 카드 형태로 노출
+- DB 선호 provider와 runtime_config override가 실제로 어떤 체인으로 해석되는지 운영자가 화면에서 바로 확인 가능하게 정리
+
+세션 맥락:
+- 공용 selector 중앙화와 제이 명령 조회까지는 끝났지만, 워커 관리자 화면에서는 아직 실제 chain이 보이지 않았다.
+- 이번 단계에서 기존 `/admin/monitoring`을 재사용해 운영자가 provider 선택과 실제 fallback 체인을 한 화면에서 같이 보게 만들었다.
+
+의사결정 이유:
+- 새 관리 화면을 만드는 것보다 기존 워커 모니터링 화면에 selector 상태를 붙이는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 패턴은 추후 블로그/클로드/제이 운영 UI로 확장할 때도 같은 payload 구조를 재사용할 수 있다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:

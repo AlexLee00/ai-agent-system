@@ -43,6 +43,7 @@ const {
   getWorkerMonitoringChangeImpact,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
+  getWorkerSelectorSummary,
   getWorkerMonitoringUsageSummary,
   setWorkerMonitoringPreference,
 } = require('../lib/llm-api-monitoring');
@@ -526,6 +527,7 @@ async function buildWorkerMonitoringPayload(user) {
     options: buildProviderOptions(),
     ai_policy: aiPolicy,
     application_summary: getWorkerLlmApplicationSummary(selectedApi),
+    selector_summary: getWorkerSelectorSummary(selectedApi),
     change_history: changeHistory.map((item) => {
       const previousApi = String(item.previous_value?.selected_api || '').trim().toLowerCase();
       const nextApi = String(item.next_value?.selected_api || '').trim().toLowerCase();
