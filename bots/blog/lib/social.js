@@ -1,5 +1,6 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 /**
  * bots/blog/lib/social.js — 소셜(SOCIAL) 봇
@@ -56,7 +57,7 @@ ${content.slice(0, 6000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: [{ provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024 }],
+    chain: selectLLMChain('blog.social.summarize'),
     systemPrompt: SUMMARIZE_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_summarize' },
@@ -116,7 +117,7 @@ ${content.slice(0, 3000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: [{ provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024 }],
+    chain: selectLLMChain('blog.social.caption'),
     systemPrompt: CAPTION_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_caption' },

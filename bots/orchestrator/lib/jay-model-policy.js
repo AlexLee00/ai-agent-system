@@ -1,6 +1,7 @@
 'use strict';
 
 const { getJayModelConfig } = require('./runtime-config');
+const { selectLLMPolicy, selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 /**
  * lib/jay-model-policy.js
@@ -18,32 +19,17 @@ function getGatewayPrimaryModel() {
 
 function buildIntentParsePolicy() {
   const config = getJayModelConfig();
-  return {
-    primary: {
-      provider: 'openai',
-      model: config.intentPrimary || 'gpt-5-mini',
-    },
-    fallback: {
-      provider: 'google',
-      model: config.intentFallback || 'gemini-2.5-flash',
-    },
-  };
+  return selectLLMPolicy('orchestrator.jay.intent', {
+    intentPrimary: config.intentPrimary,
+    intentFallback: config.intentFallback,
+  });
 }
 
 function buildJayChatFallbackChain() {
   const config = getJayModelConfig();
-  if (Array.isArray(config.chatFallbackChain) && config.chatFallbackChain.length > 0) {
-    return config.chatFallbackChain.map((item) => ({
-      provider: item.provider,
-      model: item.model,
-      maxTokens: item.maxTokens ?? 300,
-      temperature: item.temperature ?? 0.5,
-    }));
-  }
-  return [
-    { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-    { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
-  ];
+  return selectLLMChain('orchestrator.jay.chat_fallback', {
+    chatFallbackChain: config.chatFallbackChain,
+  });
 }
 
 module.exports = {

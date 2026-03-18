@@ -5,6 +5,7 @@ const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
+const { selectLLMChain } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -310,10 +311,7 @@ async function parseLlmIntent(text) {
     const dynamicExamples = await loadDynamicExamples();
     const systemPrompt = injectDynamicExamples(baseSystemPrompt, dynamicExamples);
     const result = await callWithFallback({
-      chain: [
-        { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
-      ],
+      chain: selectLLMChain('worker.chat.task_intake'),
       systemPrompt,
       userPrompt,
       logMeta: { team: 'worker', bot: 'worker-chat', requestType: 'task_intake' },

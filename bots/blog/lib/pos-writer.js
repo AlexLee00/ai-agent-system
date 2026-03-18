@@ -12,16 +12,13 @@ const toolLogger = require('../../../packages/core/lib/tool-logger');
 const llmCache   = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
-const POS_LLM_CHAIN = [
-  { provider: 'openai', model: 'gpt-4o',                                  maxTokens: 16000, temperature: 0.82 },
-  { provider: 'openai', model: 'gpt-4o-mini',                             maxTokens: 16000, temperature: 0.82 },
-  { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash',       maxTokens: 12000, temperature: 0.75 },
-];
+const POS_LLM_CHAIN = selectLLMChain('blog.pos.writer');
 
 // ─── ai-agent-system 프로젝트 컨텍스트 (AI 탐지 우회용) ─────────────
 
