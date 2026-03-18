@@ -68,6 +68,27 @@
 - `node --check bots/worker/web/app/admin/monitoring/page.js`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 UI에 전 팀 selector 개요 추가
+
+핵심 구현:
+- `/api/admin/monitoring/llm-api` payload에 `global_selector_summary` 추가
+- 서버가 `scripts/llm-selector-report.js --json` 결과를 읽어 Jay / Worker / Claude / Blog / Investment chain을 그룹별로 요약
+- 워커 `/admin/monitoring` 화면에서 전 팀 selector primary / fallback 체인을 한 번에 확인 가능하게 확장
+- 최근 speed-test 스냅샷의 `capturedAt / current / recommended`도 화면 상단에 함께 노출
+
+세션 맥락:
+- 제이 명령과 워커 개별 selector 카드는 이미 있었지만, 운영자가 시스템 전체 LLM 체인을 한 번에 보는 화면은 아직 없었다.
+- 이번 단계에서 기존 워커 모니터링 화면을 공용 운영 대시보드의 시작점으로 확장했다.
+
+의사결정 이유:
+- 새 운영 페이지를 추가하기보다 기존 `/admin/monitoring`에 전 팀 개요를 붙이는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 구조는 이후 SaaS 관리자 화면에서도 selector 상태 카드와 speed-test 요약을 같은 payload 형태로 재사용할 수 있다.
+
+검증:
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:

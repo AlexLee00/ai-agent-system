@@ -10,6 +10,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 텔레그램/자연어 질의로 바로 조회 가능
 - 워커 `/admin/monitoring`에 selector 상태 카드 추가
   - `worker.ai.fallback`, `worker.chat.task_intake`의 primary/fallback chain을 관리자 화면에서 바로 조회 가능
+- 워커 `/admin/monitoring`에 전 팀 selector 개요 추가
+  - Jay / Worker / Claude / Blog / Investment의 primary/fallback chain과 최근 speed-test 스냅샷을 한 화면에서 조회 가능
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장

@@ -520,6 +520,7 @@ async function buildWorkerMonitoringPayload(user) {
     getWorkerMonitoringUsageSummary().catch(() => emptyUsageSummary),
     getWorkerMonitoringChangeImpact(3, 12).catch(() => []),
   ]);
+  const globalSelectorSummary = await getGlobalSelectorSummary().catch(() => null);
 
   return {
     selected_api: selectedApi,
@@ -528,6 +529,7 @@ async function buildWorkerMonitoringPayload(user) {
     ai_policy: aiPolicy,
     application_summary: getWorkerLlmApplicationSummary(selectedApi),
     selector_summary: getWorkerSelectorSummary(selectedApi),
+    global_selector_summary: globalSelectorSummary,
     change_history: changeHistory.map((item) => {
       const previousApi = String(item.previous_value?.selected_api || '').trim().toLowerCase();
       const nextApi = String(item.next_value?.selected_api || '').trim().toLowerCase();
@@ -559,6 +561,89 @@ async function buildWorkerMonitoringPayload(user) {
       after: item.after,
     })),
     usage_summary: usageSummary,
+  };
+}
+
+function summarizeSelectorDescription(description) {
+  if (!description) return [];
+  if (description.kind === 'chain') {
+    return (description.chain || []).map((entry, index) => ({
+      role: index === 0 ? 'primary' : `fallback${index}`,
+      provider: entry.provider,
+      model: entry.model,
+    }));
+  }
+  const policy = description.policy || {};
+  const chain = [];
+  if (policy.primary) {
+    chain.push({
+      role: 'primary',
+      provider: policy.primary.provider,
+      model: policy.primary.model,
+    });
+  }
+  for (const [index, entry] of (policy.fallbacks || []).entries()) {
+    chain.push({
+      role: `fallback${index + 1}`,
+      provider: entry.provider,
+      model: entry.model,
+    });
+  }
+  return chain;
+}
+
+function buildSelectorGroup(title, entries) {
+  return {
+    title,
+    entries: entries.map((entry) => ({
+      key: entry.key,
+      label: entry.label,
+      chain: summarizeSelectorDescription(entry.description),
+    })),
+  };
+}
+
+async function getGlobalSelectorSummary() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'scripts', 'llm-selector-report.js');
+  const payload = await runNodeScriptJson(script, ['--json'], 60_000);
+  if (!payload) return null;
+
+  return {
+    speed_test: payload.speedTest
+      ? {
+          captured_at: payload.speedTest.capturedAt || null,
+          current: payload.speedTest.current || null,
+          recommended: payload.speedTest.recommended || null,
+        }
+      : null,
+    groups: [
+      buildSelectorGroup('Jay', [
+        { key: 'orchestrator.jay.intent', label: 'Intent', description: payload.jay?.intent },
+        { key: 'orchestrator.jay.chat_fallback', label: 'Chat Fallback', description: payload.jay?.chatFallback },
+      ]),
+      buildSelectorGroup('Worker', [
+        { key: 'worker.ai.fallback', label: 'AI Fallback', description: payload.worker?.aiFallback },
+        { key: 'worker.chat.task_intake', label: 'Task Intake', description: payload.worker?.taskIntake },
+      ]),
+      buildSelectorGroup('Claude', [
+        { key: 'claude.archer.tech_analysis', label: 'Archer', description: payload.claude?.archer },
+        { key: 'claude.lead.system_issue_triage', label: 'Lead', description: payload.claude?.lead },
+        { key: 'claude.dexter.ai_analyst.warn', label: 'Dexter Warn', description: payload.claude?.dexterWarn },
+        { key: 'claude.dexter.ai_analyst.critical', label: 'Dexter Critical', description: payload.claude?.dexterCritical },
+      ]),
+      buildSelectorGroup('Blog', [
+        { key: 'blog.pos.writer', label: 'POS Writer', description: payload.blog?.pos },
+        { key: 'blog.gems.writer', label: 'GEMS Writer', description: payload.blog?.gems },
+        { key: 'blog.social.summarize', label: 'Social Summarize', description: payload.blog?.socialSummarize },
+        { key: 'blog.social.caption', label: 'Social Caption', description: payload.blog?.socialCaption },
+      ]),
+      buildSelectorGroup('Investment', Object.entries(payload.investment || {}).map(([agent, description]) => ({
+        key: `investment.${agent}`,
+        label: agent,
+        description,
+      }))),
+    ],
   };
 }
 
