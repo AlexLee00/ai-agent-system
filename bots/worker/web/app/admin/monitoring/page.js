@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, BrainCircuit, Cpu, RefreshCcw } from 'lucide-react';
 import AdminQuickNav from '@/components/AdminQuickNav';
@@ -23,11 +22,12 @@ const adviceTone = {
 export default function WorkerMonitoringPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [speedRunning, setSpeedRunning] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [payload, setPayload] = useState(null);
-  const [selectedProvider, setSelectedProvider] = useState('groq');
-  const [changeNote, setChangeNote] = useState('');
+  const [selectorEdits, setSelectorEdits] = useState({});
+  const [selectorSavingKey, setSelectorSavingKey] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -35,8 +35,6 @@ export default function WorkerMonitoringPage() {
     try {
       const data = await api.get('/admin/monitoring/llm-api');
       setPayload(data);
-      setSelectedProvider(data.selected_api || 'groq');
-      setChangeNote('');
     } catch (err) {
       setError(err.message || '워커 모니터링 정보를 불러오지 못했습니다.');
     } finally {
@@ -47,11 +45,6 @@ export default function WorkerMonitoringPage() {
   useEffect(() => {
     load();
   }, []);
-
-  const selectedOption = useMemo(
-    () => (payload?.options || []).find((option) => option.key === selectedProvider),
-    [payload?.options, selectedProvider],
-  );
   const usageSummary = payload?.usage_summary || {
     periodHours: 24,
     totalCalls: 0,
@@ -66,24 +59,170 @@ export default function WorkerMonitoringPage() {
   };
   const changeHistory = payload?.change_history || [];
   const changeImpact = payload?.change_impact || [];
-  const selectorSummary = payload?.selector_summary || [];
   const globalSelectorSummary = payload?.global_selector_summary || null;
+  const selectorEditors = payload?.selector_editors || {};
+  const speedTestConsole = payload?.speed_test_console || {
+    targets: [],
+    latest: null,
+    review: null,
+    results: [],
+    summary: { targetCount: 0, resultCount: 0, successCount: 0, failedCount: 0 },
+  };
+  const agentModelSummary = useMemo(
+    () => (globalSelectorSummary?.groups || []).map((group) => ({
+      title: group.title,
+      entries: (group.entries || []).map((entry) => {
+        const chain = entry.chain || [];
+        const primary = chain.find((item) => item.role === 'primary') || null;
+        const fallbacks = chain.filter((item) => item.role !== 'primary');
+        return {
+          key: entry.key,
+          label: entry.label,
+          primaryProvider: primary?.provider || null,
+          primaryModel: primary?.model || null,
+          fallbackCount: fallbacks.length,
+          fallbackText: fallbacks.length
+            ? fallbacks.map((item) => `${item.provider} / ${item.model}`).join(' -> ')
+            : 'fallback 없음',
+          hasModel: Boolean(primary),
+        };
+      }),
+    })),
+    [globalSelectorSummary],
+  );
+  const agentModelTotals = useMemo(() => {
+    const entries = agentModelSummary.flatMap((group) => group.entries || []);
+    return {
+      total: entries.length,
+      withModel: entries.filter((entry) => entry.hasModel).length,
+      withoutModel: entries.filter((entry) => !entry.hasModel).length,
+    };
+  }, [agentModelSummary]);
+  const allAgentRows = useMemo(
+    () => agentModelSummary.flatMap((group) =>
+      (group.entries || []).map((entry) => ({
+        team: group.title,
+        key: entry.key,
+        label: entry.label,
+        hasModel: entry.hasModel,
+        primaryText: entry.hasModel
+          ? `${entry.primaryProvider} / ${entry.primaryModel}`
+          : '미적용',
+        fallbackText: entry.hasModel
+          ? entry.fallbackText
+          : '미적용',
+        statusText: entry.hasModel
+          ? `적용됨 · fallback ${entry.fallbackCount}`
+          : '미적용',
+      })),
+    ),
+    [agentModelSummary],
+  );
+  const globalSuggestionCount = Number(globalSelectorSummary?.override_suggestions?.count || 0);
 
-  async function handleSaveProvider() {
+  useEffect(() => {
+    const keys = Object.keys(selectorEditors);
+    if (!keys.length) return;
+    setSelectorEdits((prev) => {
+      const next = { ...prev };
+      for (const key of keys) {
+        const editor = selectorEditors[key];
+        const selectedRole = next[key]?.role || editor.roleOptions?.[0]?.role || 'primary';
+        const selectedRoleMeta = (editor.roleOptions || []).find((item) => item.role === selectedRole) || editor.roleOptions?.[0] || null;
+        const currentProvider = next[key]?.provider || selectedRoleMeta?.provider || editor.currentProvider || editor.providerOptions?.[0]?.key || 'openai';
+        const modelOptions = editor.modelOptionsByProvider?.[currentProvider] || [];
+        const nextModel = modelOptions.some((item) => item.model === next[key]?.model)
+          ? next[key].model
+          : (selectedRoleMeta?.model && modelOptions.some((item) => item.model === selectedRoleMeta.model)
+            ? selectedRoleMeta.model
+            : (modelOptions[0]?.model || ''));
+        next[key] = {
+          role: selectedRole,
+          provider: currentProvider,
+          model: nextModel,
+        };
+      }
+      return next;
+    });
+  }, [selectorEditors]);
+
+  function handleSelectorRoleChange(key, role) {
+    const editor = selectorEditors[key];
+    const roleMeta = (editor?.roleOptions || []).find((item) => item.role === role) || null;
+    const provider = roleMeta?.provider || editor?.providerOptions?.[0]?.key || 'openai';
+    const modelOptions = editor?.modelOptionsByProvider?.[provider] || [];
+    const model = roleMeta?.model && modelOptions.some((item) => item.model === roleMeta.model)
+      ? roleMeta.model
+      : (modelOptions[0]?.model || '');
+    setSelectorEdits((prev) => ({
+      ...prev,
+      [key]: {
+        role,
+        provider,
+        model,
+      },
+    }));
+  }
+
+  function handleSelectorProviderChange(key, provider) {
+    const editor = selectorEditors[key];
+    const modelOptions = editor?.modelOptionsByProvider?.[provider] || [];
+    setSelectorEdits((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        provider,
+        model: modelOptions[0]?.model || '',
+      },
+    }));
+  }
+
+  function handleSelectorModelChange(key, model) {
+    setSelectorEdits((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        model,
+      },
+    }));
+  }
+
+  async function handleSaveSelector(key) {
+    const draft = selectorEdits[key];
+    if (!draft?.provider || !draft?.model) return;
+    setSelectorSavingKey(key);
     setSaving(true);
     setNotice('');
     setError('');
     try {
-      const requestBody = { provider: selectedProvider, note: changeNote.trim() || undefined };
-      const data = await api.put('/admin/monitoring/llm-api', requestBody);
+      const data = await api.put('/admin/monitoring/llm-api/selector', {
+        key,
+        role: draft.role || 'primary',
+        provider: draft.provider,
+        model: draft.model,
+      });
       setPayload(data);
-      setSelectedProvider(data.selected_api || selectedProvider);
-      setChangeNote('');
-      setNotice(data.message || '워커 웹 기본 분석 API를 저장했습니다.');
+      setNotice(data.message || 'selector 설정을 저장했습니다.');
     } catch (err) {
-      setError(err.message || 'LLM API 설정을 저장하지 못했습니다.');
+      setError(err.message || 'selector 설정을 저장하지 못했습니다.');
     } finally {
+      setSelectorSavingKey('');
       setSaving(false);
+    }
+  }
+
+  async function handleRunSpeedTest() {
+    setSpeedRunning(true);
+    setError('');
+    setNotice('');
+    try {
+      const data = await api.post('/admin/monitoring/llm-api/speed-test', {});
+      setPayload(data);
+      setNotice(data.message || '속도 테스트를 실행했습니다.');
+    } catch (err) {
+      setError(err.message || '속도 테스트를 실행하지 못했습니다.');
+    } finally {
+      setSpeedRunning(false);
     }
   }
 
@@ -92,122 +231,316 @@ export default function WorkerMonitoringPage() {
       <AdminQuickNav />
 
       <AdminPageHero
-        title="워커 모니터링"
+        title="LLM API 현황"
         badge="ADMIN"
         tone="slate"
-        description="워커 웹에서 현재 어떤 LLM API 경로를 쓰는지 확인하고, 관리자 분석 경로의 기본 API를 안전하게 선택합니다."
+        description="시스템 전체 LLM primary / fallback / advisor 상태를 확인하고, 같은 화면 안에서 팀별 selector 컨트롤을 점진적으로 관리합니다."
         stats={[
-          { label: '기본 API', value: payload?.selected_api_label || '-', caption: '관리자 AI 분석 기준' },
-          { label: 'LLM 모드', value: llmModeLabels[payload?.ai_policy?.llm_mode] || '-', caption: '현재 로그인 사용자 기준' },
-          { label: '설정 가능 API', value: payload?.options?.length || 0, caption: '연동 상태 포함' },
+          { label: '전사 체인', value: agentModelTotals.total || 0, caption: '전 팀 에이전트 기준' },
+          { label: '추천 후보', value: globalSuggestionCount, caption: 'override 후보 수' },
+          { label: '편집 방식', value: '리스트 기반', caption: 'provider → model 2단계 변경' },
         ]}
       />
 
       {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
-
-      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="card space-y-4">
+        <div className="flex items-center gap-2">
+          <Cpu className="h-5 w-5 text-violet-600" />
           <div>
-            <p className="text-sm font-semibold text-slate-900">운영 입력 도구</p>
-            <p className="mt-1 text-sm text-slate-500">수동 발행 후 네이버 블로그 URL을 기록해 내부 링킹과 발행 상태를 실제 URL 기준으로 맞출 수 있습니다.</p>
+            <p className="text-sm font-semibold text-slate-900">ai-agent-system 전체 에이전트 리스트</p>
+            <p className="text-xs text-slate-500">전 에이전트를 팀별로 모두 나열하고, primary / fallback 적용 여부를 한 줄에서 바로 확인합니다. LLM 체인이 없으면 `미적용`으로 표시합니다.</p>
           </div>
-          <Link
-            href="/admin/monitoring/blog-links"
-            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">에이전트/체인</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{agentModelTotals.total}</p>
+            <p className="mt-1 text-xs text-slate-500">전 팀 selector 기준</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">모델 연결됨</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{agentModelTotals.withModel}</p>
+            <p className="mt-1 text-xs text-slate-500">primary 모델 확인 가능</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">미적용</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{agentModelTotals.withoutModel}</p>
+            <p className="mt-1 text-xs text-slate-500">LLM 체인 정보 없음</p>
+          </div>
+        </div>
+
+        {allAgentRows.length ? (
+          <div className="rounded-2xl border border-slate-200 bg-white">
+            <div className="divide-y divide-slate-100">
+              {allAgentRows.map((item) => (
+                <div key={`all-agent-top-${item.key}`} className="px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {item.team}
+                        </span>
+                        <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                      </div>
+                      <p className="mt-1 font-mono text-[11px] text-slate-500">{item.key}</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        item.hasModel ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {item.statusText}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <div className="rounded-xl bg-slate-50 px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Primary</p>
+                      <p className={`mt-1 break-all font-mono text-[11px] ${item.hasModel ? 'text-slate-700' : 'text-slate-400'}`}>
+                        {item.primaryText}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fallback</p>
+                      <p className={`mt-1 break-all text-[11px] ${item.hasModel ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {item.fallbackText}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+                    {selectorEditors[item.key]?.editable ? (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-slate-700">LLM API 변경</p>
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                            직접 편집 가능
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">대상 체인</label>
+                            <select
+                              className="input-base mt-1"
+                              value={selectorEdits[item.key]?.role || selectorEditors[item.key]?.roleOptions?.[0]?.role || 'primary'}
+                              onChange={(event) => handleSelectorRoleChange(item.key, event.target.value)}
+                              disabled={loading || saving}
+                            >
+                              {(selectorEditors[item.key]?.roleOptions || []).map((option) => (
+                                <option key={`${item.key}-${option.role}`} value={option.role}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">1단계 · API 제공업체</label>
+                            <select
+                              className="input-base mt-1"
+                              value={selectorEdits[item.key]?.provider || selectorEditors[item.key]?.currentProvider || ''}
+                              onChange={(event) => handleSelectorProviderChange(item.key, event.target.value)}
+                              disabled={loading || saving}
+                            >
+                              {(selectorEditors[item.key]?.providerOptions || []).map((option) => (
+                                <option key={`${item.key}-${option.key}`} value={option.key}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">2단계 · 모델</label>
+                            <select
+                              className="input-base mt-1"
+                              value={selectorEdits[item.key]?.model || ''}
+                              onChange={(event) => handleSelectorModelChange(item.key, event.target.value)}
+                              disabled={loading || saving}
+                            >
+                              {((selectorEditors[item.key]?.modelOptionsByProvider?.[selectorEdits[item.key]?.provider || selectorEditors[item.key]?.currentProvider]) || []).map((option) => (
+                                <option key={`${item.key}-${option.model}`} value={option.model}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              className="btn-primary text-sm"
+                              onClick={() => handleSaveSelector(item.key)}
+                              disabled={loading || saving || selectorSavingKey === item.key || !selectorEdits[item.key]?.provider || !selectorEdits[item.key]?.model}
+                            >
+                              {selectorSavingKey === item.key ? '저장 중...' : '적용'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          `대상 체인`에서 Primary 또는 Fallback을 고르면, 현재 그 역할에 적용된 provider / model 값으로 자동 동기화됩니다.
+                        </p>
+                      </>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">LLM API 변경</p>
+                          <p className="mt-1 text-[11px] text-slate-500">현재 이 에이전트는 전역 현황 조회만 지원합니다. 직접 변경 경로는 아직 연결되지 않았습니다.</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          읽기 전용
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            전체 에이전트 리스트를 아직 불러오지 못했습니다.
+          </div>
+        )}
+      </div>
+
+      <div className="card space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-indigo-600" />
+            <div>
+              <p className="text-sm font-semibold text-slate-900">속도 테스트</p>
+              <p className="text-xs text-slate-500">속도 테스트 실행 버튼, API 대상 목록, 최신 측정 결과를 같은 카드에서 확인합니다. 전사 selector 추천의 운영 근거로 사용됩니다.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-primary text-sm"
+            onClick={handleRunSpeedTest}
+            disabled={loading || speedRunning}
           >
-            블로그 URL 입력 페이지
-          </Link>
+            {speedRunning ? '속도 테스트 실행 중...' : '속도 테스트 실행'}
+          </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">API 대상</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{speedTestConsole.summary?.targetCount || 0}</p>
+            <p className="mt-1 text-xs text-slate-500">openclaw.json 기준</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">측정 결과</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{speedTestConsole.summary?.resultCount || 0}</p>
+            <p className="mt-1 text-xs text-slate-500">최근 스냅샷 결과 수</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">성공 / 실패</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">
+              {speedTestConsole.summary?.successCount || 0} / {speedTestConsole.summary?.failedCount || 0}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">최근 실행 기준</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium text-slate-500">추천 상태</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900">{speedTestConsole.review?.recommendation || 'observe'}</p>
+            <p className="mt-1 text-xs text-slate-500">최근 7일 review 기준</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">API 대상 목록</p>
+              <p className="mt-1 text-xs text-slate-500">속도 테스트가 순회하는 provider / model 목록입니다.</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {speedTestConsole.targets?.length ? (
+                speedTestConsole.targets.map((item) => (
+                  <div key={`speed-target-${item.modelId}`} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                        {item.provider}
+                      </span>
+                      <p className="break-all font-mono text-[11px] text-slate-500">{item.modelId}</p>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{item.label}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-5 text-sm text-slate-500">등록된 속도 테스트 대상 목록을 아직 불러오지 못했습니다.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-semibold text-slate-900">속도 측정 요약</p>
+              {speedTestConsole.latest ? (
+                <div className="mt-3 space-y-2 text-xs text-slate-600">
+                  <p>최근 실행: {speedTestConsole.latest.capturedAt ? new Date(speedTestConsole.latest.capturedAt).toLocaleString('ko-KR') : '-'}</p>
+                  <p>현재 primary: {speedTestConsole.latest.current || '-'}</p>
+                  <p>추천 모델: {speedTestConsole.latest.recommended || '-'}</p>
+                  <p>반복 횟수: {speedTestConsole.latest.runs || 0}</p>
+                  <p>최근 7일 스냅샷: {speedTestConsole.review?.snapshotCount || 0}건</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">아직 속도 테스트 스냅샷이 없습니다. 실행 버튼으로 첫 측정을 시작할 수 있습니다.</p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-900">속도 측정 결과</p>
+                <p className="mt-1 text-xs text-slate-500">최근 스냅샷의 provider / model별 TTFT와 총 응답시간입니다.</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {speedTestConsole.results?.length ? (
+                  speedTestConsole.results.map((item) => (
+                    <div key={`speed-result-${item.modelId}`} className="px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                              {item.provider}
+                            </span>
+                            <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                          </div>
+                          <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.modelId}</p>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {item.ok ? `성공 · #${item.rank}` : '실패'}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">TTFT</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{item.ttft != null ? `${item.ttft}ms` : '측정 실패'}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">총 응답시간</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{item.total != null ? `${item.total}ms` : '측정 실패'}</p>
+                        </div>
+                      </div>
+                      {!item.ok && item.error ? (
+                        <p className="mt-2 text-xs text-rose-600">{item.error}</p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-4 py-5 text-sm text-slate-500">속도 측정 결과가 아직 없습니다.</div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
         <div className="space-y-6">
           <div className="card space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">LLM API 선택</p>
-                <p className="mt-1 text-sm text-slate-500">관리자용 AI 질문과 매출 예측 보조 분석에 사용할 기본 API를 선택합니다.</p>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary text-sm"
-                onClick={load}
-                disabled={loading}
-              >
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                새로고침
-              </button>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <label className="block text-xs font-semibold text-slate-500">기본 LLM API</label>
-              <select
-                className="input-base mt-2"
-                value={selectedProvider}
-                onChange={(event) => setSelectedProvider(event.target.value)}
-                disabled={loading || saving}
-              >
-                {(payload?.options || []).map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label} {option.configured ? '' : '(미연동)'}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs text-slate-500">
-                {selectedOption?.description || '사용할 LLM API를 선택하면 워커 웹 관리자 분석 경로의 기본 공급자를 바꿉니다.'}
-              </p>
-              <div className="mt-4">
-                <label className="block text-xs font-semibold text-slate-500">변경 사유</label>
-                <textarea
-                  className="input-base mt-2 min-h-[92px]"
-                  value={changeNote}
-                  onChange={(event) => setChangeNote(event.target.value)}
-                  placeholder="예: 응답시간 비교를 위해 Groq에서 OpenAI로 전환"
-                  maxLength={300}
-                  disabled={loading || saving}
-                />
-                <p className="mt-2 text-[11px] text-slate-500">
-                  변경 이유를 남겨두면 호출량/성공률 변화와 함께 나중에 판단하기 쉽습니다. {changeNote.length}/300
-                </p>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-xs text-slate-500">
-                  현재 선택 모델: <span className="font-mono text-slate-700">{selectedOption?.primaryModel || '-'}</span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-primary text-sm"
-                  onClick={handleSaveProvider}
-                  disabled={loading || saving || !selectedProvider}
-                >
-                  {saving ? '저장 중...' : '기본 API 저장'}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(payload?.options || []).map((option) => (
-                <div key={option.key} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{option.label}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${option.configured ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {option.configured ? '연동됨' : '미연동'}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">{option.description}</p>
-                  <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-700">{option.primaryModel}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card space-y-4">
             <div className="flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-indigo-600" />
               <div>
-                <p className="text-sm font-semibold text-slate-900">현재 적용 정책</p>
-                <p className="text-xs text-slate-500">로그인 사용자 기준 AI 정책과 이번 페이지의 기본 API 선택은 별도 축으로 관리됩니다.</p>
+                <p className="text-sm font-semibold text-slate-900">현재 로그인 정책</p>
+                <p className="text-xs text-slate-500">이 값은 마스터 사용자에게 적용되는 AI UI/LLM 정책입니다. 전사 selector 체인과는 별도 축으로 관리됩니다.</p>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -230,8 +563,8 @@ export default function WorkerMonitoringPage() {
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-emerald-600" />
               <div>
-                <p className="text-sm font-semibold text-slate-900">최근 {usageSummary.periodHours}시간 호출 통계</p>
-                <p className="text-xs text-slate-500">워커 웹 관리자 분석 경로에서 실제로 어떤 API와 경로가 얼마나 호출됐는지 보여줍니다.</p>
+                <p className="text-sm font-semibold text-slate-900">현재 활성 컨트롤 운영 데이터</p>
+                <p className="text-xs text-slate-500">현재는 Worker 팀 컨트롤 경로에 대해서만 호출량, 성공률, 응답시간, 비용을 집계합니다. 전사 단일 화면 안에서 현재 실제 운영 데이터가 연결된 범위를 명확히 보여줍니다.</p>
               </div>
             </div>
 
@@ -274,7 +607,7 @@ export default function WorkerMonitoringPage() {
             <div className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-white">
                 <div className="border-b border-slate-200 px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-900">API별 사용량</p>
+                  <p className="text-sm font-semibold text-slate-900">Worker provider별 사용량</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {usageSummary.byProvider.length ? (
@@ -303,7 +636,7 @@ export default function WorkerMonitoringPage() {
 
               <div className="rounded-2xl border border-slate-200 bg-white">
                 <div className="border-b border-slate-200 px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-900">경로별 사용량</p>
+                  <p className="text-sm font-semibold text-slate-900">Worker 경로별 사용량</p>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {usageSummary.byRoute.length ? (
@@ -331,117 +664,13 @@ export default function WorkerMonitoringPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="card space-y-4">
-            <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-slate-900" />
-              <div>
-                <p className="text-sm font-semibold text-slate-900">현재 LLM API 적용 내용</p>
-                <p className="text-xs text-slate-500">워커 내부에서 실제로 어떤 API 경로가 적용되는지 운영 설명을 함께 제공합니다.</p>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
-                워커 모니터링 정보를 불러오는 중입니다...
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {(payload?.application_summary || []).map((item) => (
-                  <div key={`${item.area}-${item.route}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{item.area}</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500">{item.route}</p>
-                      </div>
-                      <Activity className="h-4 w-4 text-slate-400" />
-                    </div>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">API</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.currentApi}</p>
-                      </div>
-                      <div className="rounded-xl bg-white px-3 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">모델/체인</p>
-                        <p className="mt-1 break-all font-mono text-xs text-slate-700">{item.currentModel}</p>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="card space-y-4">
-            <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-indigo-600" />
-              <div>
-                <p className="text-sm font-semibold text-slate-900">현재 selector / fallback 체인</p>
-                <p className="text-xs text-slate-500">워커 내부에서 실제 primary와 fallback이 어떤 순서로 적용되는지 보여줍니다.</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {selectorSummary.length ? (
-                selectorSummary.map((selector) => (
-                  <div key={selector.key} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{selector.label}</p>
-                        <p className="mt-1 font-mono text-[11px] text-slate-500">{selector.route}</p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{selector.key}</span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">{selector.description}</p>
-                    {selector.advice ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${adviceTone[selector.advice.decision] || adviceTone.observe}`}>
-                            {selector.advice.decision}
-                          </span>
-                          {selector.advice.candidate ? (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">
-                              candidate {selector.advice.candidate}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 text-xs text-slate-600">{selector.advice.reason}</p>
-                      </div>
-                    ) : null}
-                    <div className="mt-3 space-y-2">
-                      {(selector.chain || []).map((entry) => (
-                        <div key={`${selector.key}-${entry.role}`} className="rounded-xl bg-slate-50 px-3 py-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{entry.role}</p>
-                            <p className="text-xs text-slate-500">{entry.provider}</p>
-                          </div>
-                          <p className="mt-1 break-all font-mono text-[11px] text-slate-700">{entry.model}</p>
-                          {(entry.maxTokens || entry.temperature !== null) && (
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {entry.maxTokens ? `maxTokens ${entry.maxTokens}` : ''}
-                              {entry.maxTokens && entry.temperature !== null ? ' · ' : ''}
-                              {entry.temperature !== null ? `temperature ${entry.temperature}` : ''}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                  selector 체인 정보를 불러오지 못했습니다.
-                </div>
-              )}
-            </div>
-          </div>
 
           <div className="card space-y-4">
             <div className="flex items-center gap-2">
               <RefreshCcw className="h-5 w-5 text-amber-600" />
               <div>
-                <p className="text-sm font-semibold text-slate-900">기본 API 변경 이력</p>
-                <p className="text-xs text-slate-500">누가 언제 워커 웹 기본 분석 API를 바꿨는지 최근 이력을 보여줍니다.</p>
+                <p className="text-sm font-semibold text-slate-900">현재 활성 컨트롤 변경 이력</p>
+                <p className="text-xs text-slate-500">현재는 Worker 팀 컨트롤에 대해서만 누가 언제 preferred provider를 바꿨는지 이력을 보여줍니다.</p>
               </div>
             </div>
 
@@ -470,7 +699,7 @@ export default function WorkerMonitoringPage() {
                   ))}
                 </div>
               ) : (
-                <div className="px-4 py-5 text-sm text-slate-500">아직 기본 API 변경 이력이 없습니다.</div>
+                <div className="px-4 py-5 text-sm text-slate-500">아직 활성 컨트롤 변경 이력이 없습니다.</div>
               )}
             </div>
           </div>
@@ -479,8 +708,8 @@ export default function WorkerMonitoringPage() {
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-sky-600" />
               <div>
-                <p className="text-sm font-semibold text-slate-900">최근 변경 전후 품질 비교</p>
-                <p className="text-xs text-slate-500">최근 변경 기준 전후 {changeImpact[0]?.window_hours || 12}시간의 성공률과 평균 응답시간을 비교합니다.</p>
+                <p className="text-sm font-semibold text-slate-900">현재 활성 컨트롤 변경 전후 비교</p>
+                <p className="text-xs text-slate-500">현재는 Worker 팀 컨트롤 변경을 기준으로, 전후 {changeImpact[0]?.window_hours || 12}시간의 성공률과 평균 응답시간을 비교합니다.</p>
               </div>
             </div>
 
@@ -536,7 +765,7 @@ export default function WorkerMonitoringPage() {
                 ))
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                  아직 전후 비교를 계산할 만큼 최근 변경 이력이 없습니다.
+                  아직 활성 컨트롤 전후 비교를 계산할 만큼 최근 변경 이력이 없습니다.
                 </div>
               )}
             </div>
@@ -546,22 +775,10 @@ export default function WorkerMonitoringPage() {
             <div className="flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-violet-600" />
               <div>
-                <p className="text-sm font-semibold text-slate-900">전 팀 selector 개요</p>
-                <p className="text-xs text-slate-500">현재 시스템 전체 LLM primary / fallback 체인을 한 화면에서 요약합니다.</p>
+                <p className="text-sm font-semibold text-slate-900">전 팀 selector 상세</p>
+                <p className="text-xs text-slate-500">시스템 전체 LLM primary / fallback 체인, advisor, override 후보를 팀별로 더 자세히 확인합니다.</p>
               </div>
             </div>
-
-            {globalSelectorSummary?.speed_test ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                최근 speed-test {new Date(globalSelectorSummary.speed_test.captured_at).toLocaleString('ko-KR')}
-                {` · current ${globalSelectorSummary.speed_test.current || '-'}`}
-                {` · recommended ${globalSelectorSummary.speed_test.recommended || '-'}`}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                최근 speed-test 스냅샷이 없습니다.
-              </div>
-            )}
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
               <div className="flex items-center justify-between gap-3">

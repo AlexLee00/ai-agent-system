@@ -6,6 +6,19 @@
 
 ## 2026-03-18
 
+### 워커 웹 `LLM API 현황` / `블로그 URL 입력` 운영 콘솔 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/server.js` | ✅ |
+| `node --check bots/worker/web/app/admin/monitoring/page.js` | ✅ |
+| `node --check bots/worker/web/app/admin/monitoring/blog-links/page.js` | ✅ |
+| `node --check bots/worker/web/components/Sidebar.js` | ✅ |
+| `node --check bots/worker/web/components/AdminQuickNav.js` | ✅ |
+| `cd bots/worker/web && npm run build` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ |
+
 ### 워커 모니터링 + LLM API 선택
 
 | 테스트 | 결과 |

@@ -24,6 +24,11 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
+  const isActivePath = (href) => {
+    if (href === '/admin/monitoring') return pathname === href;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   const isMaster = user?.role === 'master';
   const visibleItems = listVisibleMenus(user, NAV_ITEMS);
   const showAdminGroup = user?.role === 'admin' || user?.role === 'master';
@@ -36,6 +41,7 @@ export default function Sidebar() {
   const showCompanies = user?.role === 'master' && canAccessMenu(user, 'companies');
   const showUsers = user?.role === 'master' && canAccessMenu(user, 'users');
   const showMonitoring = showAdminGroup && canAccessMenu(user, 'monitoring');
+  const showMasterGroup = user?.role === 'master';
 
   return (
     <div className="flex flex-col h-full">
@@ -48,7 +54,7 @@ export default function Sidebar() {
       {/* 네비 */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
         {visibleItems.map(item => {
-          const active = pathname.startsWith(item.href);
+          const active = isActivePath(item.href);
           const Icon   = item.icon;
           return (
             <Link
@@ -73,16 +79,15 @@ export default function Sidebar() {
             </div>
             {[
               ...(showAI ? [{ href: '/ai', icon: Bot, label: 'AI 분석' }] : []),
-              ...(showIntents ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
               ...(showEmployees ? [{ href: '/employees', icon: Users, label: '직원 관리' }] : []),
               ...(showPayroll ? [{ href: '/payroll', icon: DollarSign, label: '급여 관리' }] : []),
               ...(showApprovals ? [{ href: '/approvals', icon: CheckSquare, label: '승인 관리' }] : []),
               ...(showOcrTest ? [{ href: '/admin/ocr-test', icon: BrainCircuit, label: 'OCR 테스트' }] : []),
               ...(showCompanies ? [{ href: '/admin/companies', icon: Building2, label: '업체 관리' }] : []),
               ...(showUsers ? [{ href: '/admin/users', icon: UserCog, label: '사용자 관리' }] : []),
-              ...(showMonitoring ? [{ href: '/admin/monitoring', icon: Activity, label: '워커 모니터링' }] : []),
+              ...(showIntents ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
             ].map(item => {
-              const active = pathname.startsWith(item.href);
+              const active = isActivePath(item.href);
               const Icon   = item.icon;
               return (
                 <Link
@@ -99,6 +104,35 @@ export default function Sidebar() {
                 </Link>
               );
             })}
+
+            {showMasterGroup && showMonitoring && (
+              <>
+                <div className="pt-3 pb-1">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-3">마스터</p>
+                </div>
+                {[
+                  { href: '/admin/monitoring', icon: Activity, label: 'LLM API 현황' },
+                  { href: '/admin/monitoring/blog-links', icon: Activity, label: '블로그 URL 입력' },
+                ].map(item => {
+                  const active = isActivePath(item.href);
+                  const Icon   = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        active
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+                      <span className="min-w-0 truncate">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </>
+            )}
           </>
         )}
       </nav>

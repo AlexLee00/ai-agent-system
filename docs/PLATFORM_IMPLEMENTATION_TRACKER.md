@@ -28,6 +28,9 @@
   - 클로드팀 Phase 2~3 업그레이드
   - 1호 업체 파일럿 준비
   - 테스트/안정화 항목(스트레스/장애복구/E2E/Shadow/KPI/TP-SL) 실행 계획 구체화
+  - `LLM API 현황`에 `OpenClaw` 조회 전용 그룹 추가
+    - 현재 전사 화면은 Jay / Worker / Claude / Blog / Investment까지만 표시
+    - 내일은 `OpenClaw`의 primary / fallback을 조회 전용으로 붙여 전사 LLM 운영 범위를 넓힌다
 
 ---
 
@@ -122,6 +125,12 @@
   - advisor 결과를 실제 `runtime_config` override 후보로 변환하는 추천 리포트 레이어 추가
   - 제이 `/llm-selectors` + 워커 `/admin/monitoring`
   - override 후보 추천을 실제 운영 명령/화면에 함께 노출
+  - 워커 웹 `LLM API 현황`
+  - `ai-agent-system 전체 에이전트 리스트`에서 팀별 primary / fallback / 미적용 조회와 selector별 `primary / fallback` 역할 기준 `provider -> model` 2단계 변경을 지원
+  - 워커 웹 `속도 테스트`
+  - 실행 버튼, 대상 목록, 최신 측정 결과, 최근 7일 review를 `LLM API 현황`에 통합
+  - 워커 웹 `블로그 URL 입력`
+  - 마스터 메뉴 아래에서 실제 네이버 블로그 URL 기록, 테스트 글 제외, `published` / `ready` 상태 분리 운영을 지원
 
 ### 지금 가장 중요한 개발 축
 

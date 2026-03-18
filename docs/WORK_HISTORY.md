@@ -4,6 +4,35 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 워커 웹 `LLM API 현황` / `블로그 URL 입력` 운영 콘솔 정리
+
+핵심 구현:
+- 워커 웹 관리자 메뉴를 `마스터` 그룹으로 재정리하고 `LLM API 현황`, `블로그 URL 입력`을 마스터 전용 진입점으로 분리
+- `/admin/monitoring/blog-links` 페이지를 추가해 최근 블로그 글 조회, 네이버 블로그 canonical URL 기록, 테스트 글 `34/36/38` 제외, `published + naver_url 없음`과 `ready + naver_url 없음` 상태 분리를 지원
+- `/admin/monitoring`을 전사 `LLM API 현황` 콘솔로 재구성
+  - `ai-agent-system 전체 에이전트 리스트`
+  - 팀별 primary / fallback / 미적용 표시
+  - selector별 `provider -> model` 2단계 편집
+  - `primary / fallback` 역할 선택 후 현재 적용된 provider / model로 자동 동기화
+  - `speed-test` 실행 버튼, 대상 목록, 최근 측정 결과, 최근 7일 review 요약 표시
+- 전역 selector 현황은 외부 스크립트 실행 대신 워커 서버가 직접 `describeLLMSelector()`와 팀별 runtime override를 조합해 payload를 생성하도록 안정화
+
+세션 맥락:
+- 기존 워커 모니터링 화면은 전사 LLM 현황과 워커 전용 제어가 섞여 있어 운영 개념이 모호했다.
+- 블로그 발행 URL 기록도 CLI로만 가능해 내부 링킹과 실제 발행 상태 관리가 운영 화면과 분리돼 있었다.
+
+의사결정 이유:
+- 내부 MVP 기준으로는 새 운영 센터를 따로 만들기보다, 기존 워커 웹을 마스터 운영 콘솔로 확장하는 편이 빠르고 안정적이다.
+- selector, speed-test, 블로그 URL 기록을 한 화면/메뉴 체계 안에 모으는 것이 이후 SaaS 운영센터 UX로 확장하기 쉽다.
+
+검증:
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `node --check bots/worker/web/app/admin/monitoring/blog-links/page.js`
+- `npm --prefix bots/worker/web run build`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+
 ### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합
 
 핵심 구현:

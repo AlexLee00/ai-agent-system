@@ -13,7 +13,9 @@
 - 워커
   - 문서 업로드/파싱/OCR/문서 상세/재사용 이력/생성 결과 연결까지 한 사이클이 닫혔다.
   - `/documents`, `/documents/[id]`에서 문서 재사용 성과를 확인할 수 있다.
-  - `/admin/monitoring`에서 현재 워커 웹의 LLM API 적용 내용과 기본 provider 선택값을 확인/변경할 수 있다.
+  - `/admin/monitoring`은 `LLM API 현황`으로 재정리돼, ai-agent-system 전체 에이전트의 primary / fallback / 미적용 상태와 speed-test 결과를 한 화면에서 본다.
+  - 같은 화면에서 Jay / Worker / Claude / Blog selector는 `primary / fallback` 역할 선택 후 `provider -> model` 2단계로 변경할 수 있다.
+  - `/admin/monitoring/blog-links`가 추가돼 실제 네이버 블로그 URL 기록과 발행 후처리를 마스터 화면에서 처리할 수 있다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -51,7 +53,7 @@
 ### 워커 관점
 
 - `문서 파싱 → 문서 재사용 → 실제 업무 생성 결과 추적 → 품질/효율 분석 → 개선 후보 리뷰` 단계까지 확장
-- 다음은 실제 후보 데이터가 쌓이는지 관찰하는 단계
+- `LLM API 현황`과 `블로그 URL 입력`이 마스터 운영 콘솔에 올라왔고, 다음은 `OpenClaw` 조회 전용 그룹을 추가해 전사 LLM 현황 범위를 넓히는 단계
 
 ### 스카 관점
 
@@ -72,7 +74,10 @@
    - `availableDays > 0`가 생기기 시작하면 `collecting -> observe` 진입 여부 판단
 3. 워커 문서 효율 후보 관찰
    - 개선 후보 문서 / 템플릿 후보 / OCR 재검토 후보가 실제로 생기는지 확인
-4. 남은 자동화 확정
+4. `LLM API 현황`에 OpenClaw 조회 전용 그룹 추가
+   - 현재 전사 현황은 Jay / Worker / Claude / Blog / Investment까지만 포함
+   - 내일은 `OpenClaw`를 조회 전용 그룹으로 붙여 전사 LLM 현황 범위를 확장
+5. 남은 자동화 확정
    - 스카 shadow 일일/주간
    - 워커 문서 효율 일일/주간
    - 투자 설정 제안 일일/주간
@@ -85,7 +90,7 @@
 - 스카 일일/주간 리뷰는 이제 `shadowDecision`으로 현재 단계(`collecting / observe / promotion_candidate / primary_hold`)를 명시
 - 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
-- 워커 모니터링의 LLM API 선택 변경 이력과 note 저장은 이미 반영됐고, 다음은 더 긴 추세 보기와 운영 비교 고도화
+- 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 

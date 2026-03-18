@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ## 12주차 (2026-03-16 ~ 2026-03-18) — 운영 변수 외부화 + 분석 자동화 정리
 
 ### 신규 기능 (feat)
+- 워커 웹 `마스터` 메뉴 아래 `LLM API 현황`, `블로그 URL 입력` 운영 콘솔 추가
+  - `블로그 URL 입력`에서 최근 블로그 글의 실제 네이버 URL을 canonical 형태로 기록 가능
+  - 테스트 글 `34`, `36`, `38` 제외
+  - `published + naver_url 없음`과 `ready + naver_url 없음`을 분리해 표시
+- 워커 `LLM API 현황`을 전사 LLM 운영 콘솔로 재구성
+  - `ai-agent-system 전체 에이전트 리스트` 추가
+  - Jay / Worker / Claude / Blog / Investment의 primary / fallback / 미적용 상태를 한 화면에서 조회 가능
+  - selector별 `primary / fallback` 역할 선택 후 `provider -> model` 2단계로 직접 변경 가능
+  - 역할 선택 시 현재 적용된 provider / model 값으로 자동 동기화
+- 워커 `LLM API 현황`에 `속도 테스트` 운영 카드 추가
+  - 속도 테스트 실행 버튼
+  - API 대상 목록
+  - 최신 측정 결과(TTFT / 총 응답시간 / 성공/실패)
+  - 최근 7일 review 요약
 - 제이에 `/llm-selectors` 운영 조회 명령 추가
   - 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 텔레그램/자연어 질의로 바로 조회 가능
 - 워커 `/admin/monitoring`에 selector 상태 카드 추가
@@ -59,6 +73,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `validate-runtime-config-apply.js`로 적용 직후 suggestion 상태, health, 최근 실행 흐름을 함께 검증 가능
 
 ### 변경 사항 (changed)
+- 워커 웹 사이드바를 `관리자` / `마스터` 그룹으로 재정리하고, 시스템 전체 모니터링성 메뉴를 마스터 그룹으로 이동
+- 워커 `LLM API 현황`의 전역 selector payload 생성을 외부 report 스크립트 호출 대신 서버 내부 직접 조합 방식으로 안정화
+- `LLM API 현황` 화면에서 중복되던 워커 특화 카드와 중복 설명 문구를 정리하고, 전체 에이전트 리스트 중심 구조로 재배치
 - `speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `llm-selector-report.js`가 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 함께 출력하도록 확장
 - 투자팀 운영 모드 용어 정리
@@ -112,6 +129,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 일일 운영 분석 리포트가 `fallback_probe_unavailable`을 장애처럼 다루지 않도록 보정
 
 ### 문서 (docs)
+- 개발계획에 `OpenClaw`를 `LLM API 현황` 조회 전용 그룹으로 추가하는 후속 작업을 내일 진행할 항목으로 기록
+- 워커 팀 참조 문서에 `LLM API 현황`, `블로그 URL 입력`, 속도 테스트 콘솔 반영
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
 - 워커 모니터링 운영 지표와 `018-monitoring-history`, `019-monitoring-change-notes` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
 - 투자팀 참조 문서에 `legacy_order_rejected`, `legacy_executor_failed` 코드와 백필 스크립트 경로 반영
