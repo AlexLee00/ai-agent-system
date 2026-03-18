@@ -145,6 +145,8 @@ export async function initSchema() {
   for (const [col, type] of [
     ['trace_id',        'TEXT'],
     ['block_reason',    'TEXT'],
+    ['block_code',      'TEXT'],
+    ['block_meta',      'JSONB'],
     ['analyst_signals', 'TEXT'],  // 분석 봇 4인 신호 패턴 (예: "A:B|O:B|H:N|S:B")
   ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
@@ -285,6 +287,39 @@ export async function updateSignalStatus(id, status) {
 
 export async function updateSignalAmount(id, amountUsdt) {
   await run(`UPDATE signals SET amount_usdt = $1 WHERE id = $2`, [amountUsdt, id]);
+}
+
+export async function updateSignalBlock(id, {
+  status = null,
+  reason = null,
+  code = null,
+  meta = null,
+} = {}) {
+  if (!id) return;
+
+  const sets = [];
+  const params = [];
+
+  if (status) {
+    params.push(status);
+    sets.push(`status = $${params.length}`);
+  }
+  if (reason !== null) {
+    params.push(reason);
+    sets.push(`block_reason = $${params.length}`);
+  }
+  if (code !== null) {
+    params.push(code);
+    sets.push(`block_code = $${params.length}`);
+  }
+  if (meta !== null) {
+    params.push(meta ? JSON.stringify(meta) : null);
+    sets.push(`block_meta = $${params.length}`);
+  }
+  if (sets.length === 0) return;
+
+  params.push(id);
+  await run(`UPDATE signals SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
 }
 
 export async function getSignalById(id) {
@@ -519,7 +554,7 @@ export function close() {
 export default {
   query, run, get, initSchema,
   insertAnalysis, getRecentAnalysis,
-  insertSignal, updateSignalStatus, updateSignalAmount, getSignalById, getPendingSignals, getApprovedSignals,
+  insertSignal, updateSignalStatus, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory, getLatestTradeBySignalId,
   upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
   getTodayPnl,

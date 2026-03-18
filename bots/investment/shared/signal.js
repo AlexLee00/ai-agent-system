@@ -192,9 +192,21 @@ export async function executeSignal(signal) {
     console.warn(`[GUARD:${traceId}] 차단 — ${guard.reason}`);
     const guardMsg = `🛡️ 안전장치 발동\n사유: ${guard.reason}\n신호: ${signal.symbol} ${signal.action}`;
     publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: guardMsg, payload: { reason: guard.reason, signal } });
+    await db.updateSignalBlock(signal.id ?? '', {
+      status: 'blocked',
+      reason: guard.reason,
+      code: 'safety_gate_blocked',
+      meta: {
+        traceId,
+        exchange: signal.exchange,
+        symbol: signal.symbol,
+        action: signal.action,
+        amount: signal.amount_usdt,
+      },
+    }).catch(() => {});
     await db.run(
-      `UPDATE signals SET trace_id = ?, block_reason = ?, status = 'blocked' WHERE id = ?`,
-      [traceId, guard.reason, signal.id ?? ''],
+      `UPDATE signals SET trace_id = ? WHERE id = ?`,
+      [traceId, signal.id ?? ''],
     ).catch(() => {});
     return { executed: false, mode: 'blocked', reason: guard.reason, traceId };
   }

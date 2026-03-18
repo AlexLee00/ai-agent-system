@@ -72,12 +72,39 @@ function logHanulPhase(label, startedAt, extra = {}) {
 }
 
 async function markSignalFailed(signalId, reason) {
-  await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED).catch(() => {});
-  if (!signalId || !reason) return;
-  await db.run(
-    'UPDATE signals SET block_reason = $1 WHERE id = $2',
-    [String(reason).slice(0, 180), signalId],
-  ).catch(() => {});
+  return markSignalFailedDetailed(signalId, { reason });
+}
+
+function inferHanulBlockCode(reason = '', market = 'domestic') {
+  if (!reason) return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
+  if (reason.includes('최소 주문금액 미달')) return 'min_order_notional';
+  if (reason.includes('최대 주문금액 초과')) return 'max_order_notional';
+  if (reason.includes('포지션 없음')) return 'missing_position';
+  if (reason.includes('심볼 아님')) return 'invalid_symbol';
+  return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
+}
+
+async function markSignalFailedDetailed(signalId, {
+  reason = null,
+  market = 'domestic',
+  symbol = null,
+  action = null,
+  amount = null,
+  error = null,
+} = {}) {
+  const normalizedReason = reason ? String(reason).slice(0, 180) : null;
+  await db.updateSignalBlock(signalId, {
+    status: SIGNAL_STATUS.FAILED,
+    reason: normalizedReason,
+    code: inferHanulBlockCode(normalizedReason || '', market),
+    meta: {
+      market,
+      symbol,
+      action,
+      amount,
+      error: error ? String(error).slice(0, 240) : null,
+    },
+  }).catch(() => {});
 }
 
 async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason) {
@@ -211,7 +238,13 @@ export async function executeSignal(signal) {
     const risk = await checkKisRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
-      await markSignalFailed(signalId, risk.reason);
+      await markSignalFailedDetailed(signalId, {
+        reason: risk.reason,
+        market: 'domestic',
+        symbol,
+        action,
+        amount: amountKrw,
+      });
       return { success: false, reason: risk.reason };
     }
 
@@ -280,7 +313,13 @@ export async function executeSignal(signal) {
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
-        await markSignalFailed(signalId, '포지션 없음');
+        await markSignalFailedDetailed(signalId, {
+          reason: '포지션 없음',
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
         return { success: false, reason: '포지션 없음' };
       }
 
@@ -312,7 +351,14 @@ export async function executeSignal(signal) {
 
   } catch (e) {
     console.error(`  ❌ 실행 오류: ${e.message}`);
-    await markSignalFailed(signalId, e.message);
+    await markSignalFailedDetailed(signalId, {
+      reason: e.message,
+      market: 'domestic',
+      symbol,
+      action,
+      amount: amountKrw,
+      error: e.message,
+    });
     await notifyError(`한울(KIS) - ${symbol} ${action}`, e);
     return { success: false, error: e.message };
   }
@@ -336,7 +382,13 @@ export async function executeOverseasSignal(signal) {
     const risk = await checkKisOverseasRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
-      await markSignalFailed(signalId, risk.reason);
+      await markSignalFailedDetailed(signalId, {
+        reason: risk.reason,
+        market: 'overseas',
+        symbol,
+        action,
+        amount: amountUsd,
+      });
       return { success: false, reason: risk.reason };
     }
 
@@ -404,7 +456,13 @@ export async function executeOverseasSignal(signal) {
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 해외 포지션 없음 — SELL 스킵`);
-        await markSignalFailed(signalId, '해외 포지션 없음');
+        await markSignalFailedDetailed(signalId, {
+          reason: '해외 포지션 없음',
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
         return { success: false, reason: '해외 포지션 없음' };
       }
 
@@ -436,7 +494,14 @@ export async function executeOverseasSignal(signal) {
 
   } catch (e) {
     console.error(`  ❌ 해외 실행 오류: ${e.message}`);
-    await markSignalFailed(signalId, e.message);
+    await markSignalFailedDetailed(signalId, {
+      reason: e.message,
+      market: 'overseas',
+      symbol,
+      action,
+      amount: amountUsd,
+      error: e.message,
+    });
     await notifyError(`한울(KIS해외) - ${symbol} ${action}`, e);
     return { success: false, error: e.message };
   }

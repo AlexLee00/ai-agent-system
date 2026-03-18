@@ -446,6 +446,23 @@ export async function executeSignal(signal) {
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
   let effectivePaperMode = globalPaperMode;
+  const persistFailure = async (reason, {
+    code = 'broker_execution_error',
+    meta = {},
+  } = {}) => {
+    await db.updateSignalBlock(signalId, {
+      status: SIGNAL_STATUS.FAILED,
+      reason: reason ? String(reason).slice(0, 180) : null,
+      code,
+      meta: {
+        exchange: 'binance',
+        symbol,
+        action,
+        amount: amountUsdt,
+        ...meta,
+      },
+    }).catch(() => {});
+  };
 
   if (!isBinanceSymbol(symbol)) {
     return { success: false, reason: `바이낸스 심볼이 아님: ${symbol}` };
@@ -473,7 +490,10 @@ export async function executeSignal(signal) {
       const circuit = await checkCircuitBreaker();
       if (circuit.triggered) {
         console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+        await persistFailure(circuit.reason, {
+          code: 'capital_circuit_breaker',
+          meta: { circuitType: circuit.type ?? null },
+        });
         notifyCircuitBreaker({ reason: circuit.reason, type: circuit.type }).catch(() => {});
         return { success: false, reason: circuit.reason };
       }
@@ -481,7 +501,13 @@ export async function executeSignal(signal) {
       if (openPositionsSafe.length >= cmConfig.max_concurrent_positions) {
         const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${cmConfig.max_concurrent_positions}`;
         console.log(`  ⛔ [자본관리] ${reason}`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+        await persistFailure(reason, {
+          code: 'capital_guard_rejected',
+          meta: {
+            openPositions: openPositionsSafe.length,
+            maxPositions: cmConfig.max_concurrent_positions,
+          },
+        });
         notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: cmConfig.max_concurrent_positions }).catch(() => {});
         return { success: false, reason };
       }
@@ -489,7 +515,13 @@ export async function executeSignal(signal) {
       if (dailyTradesSafe >= cmConfig.max_daily_trades) {
         const reason = `일간 매매 한도: ${dailyTradesSafe}/${cmConfig.max_daily_trades}`;
         console.log(`  ⛔ [자본관리] ${reason}`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+        await persistFailure(reason, {
+          code: 'capital_guard_rejected',
+          meta: {
+            dailyTrades: dailyTradesSafe,
+            maxDailyTrades: cmConfig.max_daily_trades,
+          },
+        });
         notifyTradeSkip({ symbol, action, reason }).catch(() => {});
         return { success: false, reason };
       }
@@ -586,12 +618,26 @@ export async function executeSignal(signal) {
         if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
           effectivePaperMode = true;
           console.log(`  📄 [자본관리] 실잔고 부족 → PAPER 폴백: ${check.reason}`);
-          await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [`paper_fallback:${check.reason}`, signalId]);
+          await db.updateSignalBlock(signalId, {
+            reason: `paper_fallback:${check.reason}`,
+            code: 'paper_fallback',
+            meta: {
+              exchange: 'binance',
+              symbol,
+              action,
+              amount: amountUsdt,
+            },
+          });
           notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}` }).catch(() => {});
         } else {
           console.log(`  ⛔ [자본관리] 매매 스킵: ${check.reason}`);
-          await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
-          await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [check.reason, signalId]);
+          await persistFailure(check.reason, {
+            code: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
+            meta: {
+              circuit: Boolean(check.circuit),
+              circuitType: check.circuitType ?? null,
+            },
+          });
           if (check.circuit) {
             notifyCircuitBreaker({ reason: check.reason, type: check.circuitType }).catch(() => {});
           } else {
@@ -608,8 +654,15 @@ export async function executeSignal(signal) {
       const sizing  = await calculatePositionSize(symbol, currentPrice, slPrice);
       if (sizing.skip && !effectivePaperMode) {
         console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
-        await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [sizing.reason, signalId]);
+        await persistFailure(sizing.reason, {
+          code: 'position_sizing_rejected',
+          meta: {
+            currentPrice,
+            slPrice,
+            capitalPct: sizing.capitalPct ?? null,
+            riskPercent: sizing.riskPercent ?? null,
+          },
+        });
         notifyTradeSkip({ symbol, action, reason: sizing.reason }).catch(() => {});
         return { success: false, reason: sizing.reason };
       }
@@ -636,8 +689,13 @@ export async function executeSignal(signal) {
       if (effectivePaperMode && existing && existing.paper === false) {
         const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
         console.log(`  ⛔ [자본관리] ${reason}`);
-        await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
-        await db.run('UPDATE signals SET block_reason = $1 WHERE id = $2', [reason, signalId]);
+        await persistFailure(reason, {
+          code: 'position_mode_conflict',
+          meta: {
+            existingPaper: existing.paper,
+            requestedPaper: effectivePaperMode,
+          },
+        });
         notifyTradeSkip({ symbol, action, reason }).catch(() => {});
         return { success: false, reason };
       }
@@ -698,7 +756,10 @@ export async function executeSignal(signal) {
         amount = bal.free[base] || 0;
         if (amount <= 0) {
           console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
-          await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED);
+          await persistFailure('보유량 없음', {
+            code: 'missing_position',
+            meta: { sellPaperMode },
+          });
           return { success: false, reason: '보유량 없음' };
         }
         console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${base}`);
@@ -798,7 +859,12 @@ export async function executeSignal(signal) {
 
   } catch (e) {
     console.error(`  ❌ 실행 오류: ${e.message}`);
-    await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED).catch(() => {});
+    await persistFailure(e.message, {
+      code: 'broker_execution_error',
+      meta: {
+        error: String(e.message).slice(0, 240),
+      },
+    });
     await notifyError(`헤파이스토스 - ${symbol} ${action}`, e);
     return { success: false, error: e.message };
   }

@@ -739,11 +739,18 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       }
     } catch (e) {
       console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 처리: ${e.message}`);
-      await db.updateSignalStatus(signalId, SIGNAL_STATUS.FAILED).catch(() => {});
-      await db.run(
-        'UPDATE signals SET block_reason = $1 WHERE id = $2',
-        [`nemesis_error:${String(e.message || 'unknown').slice(0, 180)}`, signalId],
-      ).catch(() => {});
+      await db.updateSignalBlock(signalId, {
+        status: SIGNAL_STATUS.FAILED,
+        reason: `nemesis_error:${String(e.message || 'unknown').slice(0, 180)}`,
+        code: 'nemesis_error',
+        meta: {
+          exchange,
+          symbol: dec.symbol,
+          action: dec.action,
+          amount: dec.amount_usdt,
+          confidence: dec.confidence,
+        },
+      }).catch(() => {});
       failedCount++;
     }
   }

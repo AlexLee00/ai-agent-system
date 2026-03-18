@@ -48,10 +48,18 @@ async function run({ sessionId, market, symbol }) {
       }
     } else {
       status = SIGNAL_STATUS.REJECTED;
-      await db.updateSignalStatus(signalId, SIGNAL_STATUS.REJECTED);
-      if (risk.reason) {
-        await db.run(`UPDATE signals SET block_reason = $1 WHERE id = $2`, [risk.reason, signalId]);
-      }
+      await db.updateSignalBlock(signalId, {
+        status: SIGNAL_STATUS.REJECTED,
+        reason: risk.reason || null,
+        code: 'risk_rejected',
+        meta: {
+          market,
+          symbol,
+          action: decision.action,
+          amount: decision.amount_usdt,
+          adjustedAmount: risk.adjustedAmount ?? null,
+        },
+      });
     }
   }
 

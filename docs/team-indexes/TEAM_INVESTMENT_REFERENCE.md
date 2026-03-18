@@ -50,6 +50,27 @@
   - `kis.paper_trading`: 주식 `brokerAccountMode`
   - `binance_testnet`: 레거시 실험 플래그 (현재 운영 분류에는 미사용)
 
+실패 원인 저장 기준:
+- `signals.block_reason`
+  - 사람 읽기용 사유 문자열
+- `signals.block_code`
+  - 운영/분석 자동화용 구조화 코드
+- `signals.block_meta`
+  - `exchange`, `symbol`, `action`, `amount` 등 실행 맥락
+- 대표 코드
+  - `risk_rejected`
+  - `safety_gate_blocked`
+  - `nemesis_error`
+  - `min_order_notional`
+  - `max_order_notional`
+  - `missing_position`
+  - `capital_guard_rejected`
+  - `capital_circuit_breaker`
+  - `position_sizing_rejected`
+  - `position_mode_conflict`
+  - `paper_fallback`
+  - `broker_execution_error`
+
 ## 자주 쓰는 명령어
 
 ```bash

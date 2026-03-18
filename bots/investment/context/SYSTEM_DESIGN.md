@@ -124,7 +124,7 @@ bots/investment/
 analyses (id, symbol, exchange, analyst, signal, confidence, reasoning, metadata, created_at)
 
 -- 신호 (루나 최종 판단)
-signals (id, symbol, exchange, action, amount_usdt, confidence, reasoning, status, trace_id, block_reason, created_at)
+signals (id, symbol, exchange, action, amount_usdt, confidence, reasoning, status, trace_id, block_reason, block_code, block_meta, created_at)
 
 -- 체결 내역
 trades (id, signal_id, symbol, exchange, side, amount, price, total_usdt, paper, executed_at)
