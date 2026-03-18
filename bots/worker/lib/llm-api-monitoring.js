@@ -52,6 +52,20 @@ async function ensureSystemPreferencesTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pgPool.run(SCHEMA, `
+    CREATE TABLE IF NOT EXISTS worker.system_preference_events (
+      id BIGSERIAL PRIMARY KEY,
+      preference_key TEXT NOT NULL,
+      previous_value JSONB,
+      next_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      changed_by INTEGER REFERENCES worker.users(id),
+      changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pgPool.run(SCHEMA, `
+    CREATE INDEX IF NOT EXISTS idx_worker_system_preference_events_key_changed_at
+    ON worker.system_preference_events (preference_key, changed_at DESC)
+  `);
   ensured = true;
 }
 
@@ -91,6 +105,14 @@ async function getWorkerMonitoringPreference() {
 async function setWorkerMonitoringPreference(selectedApi, updatedBy = null) {
   await ensureSystemPreferencesTable();
   const api = normalizeApi(selectedApi);
+  const current = await pgPool.get(SCHEMA, `
+    SELECT value
+    FROM worker.system_preferences
+    WHERE key = $1
+  `, [PREFERENCE_KEY]);
+  const previousValue = current?.value || {};
+  const previousApi = normalizeApi(previousValue?.selected_api);
+
   await pgPool.run(SCHEMA, `
     INSERT INTO worker.system_preferences (key, value, updated_by, updated_at)
     VALUES ($1, $2::jsonb, $3, NOW())
@@ -99,7 +121,136 @@ async function setWorkerMonitoringPreference(selectedApi, updatedBy = null) {
         updated_by = EXCLUDED.updated_by,
         updated_at = NOW()
   `, [PREFERENCE_KEY, JSON.stringify({ selected_api: api }), updatedBy]);
+
+  if (previousApi !== api) {
+    await pgPool.run(SCHEMA, `
+      INSERT INTO worker.system_preference_events
+        (preference_key, previous_value, next_value, changed_by, changed_at)
+      VALUES ($1, $2::jsonb, $3::jsonb, $4, NOW())
+    `, [
+      PREFERENCE_KEY,
+      JSON.stringify(previousValue),
+      JSON.stringify({ selected_api: api }),
+      updatedBy,
+    ]);
+  }
+
   return api;
+}
+
+async function getWorkerMonitoringChangeHistory(limit = 10) {
+  await ensureSystemPreferencesTable();
+  return pgPool.query(SCHEMA, `
+    SELECT
+      e.id,
+      e.preference_key,
+      e.previous_value,
+      e.next_value,
+      e.changed_at,
+      u.id AS changed_by_id,
+      COALESCE(NULLIF(u.name, ''), u.username, '알 수 없음') AS changed_by_name,
+      u.role AS changed_by_role
+    FROM worker.system_preference_events e
+    LEFT JOIN worker.users u ON u.id = e.changed_by
+    WHERE e.preference_key = $1
+    ORDER BY e.changed_at DESC
+    LIMIT $2
+  `, [PREFERENCE_KEY, limit]);
+}
+
+function providerFromModel(model = '') {
+  if (model.startsWith('claude-')) return 'anthropic';
+  if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
+  if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini';
+  if (model.startsWith('groq/') || model.startsWith('meta-llama/') || model.startsWith('llama-') || model.startsWith('qwen/')) return 'groq';
+  return 'unknown';
+}
+
+function summarizeUsageRows(rows = []) {
+  const summary = {
+    periodHours: 24,
+    totalCalls: 0,
+    successCalls: 0,
+    failedCalls: 0,
+    totalCostUsd: 0,
+    latestCallAt: null,
+    byProvider: [],
+    byRoute: [],
+  };
+
+  const providerMap = new Map();
+  const routeMap = new Map();
+
+  for (const row of rows) {
+    const provider = providerFromModel(String(row.model || ''));
+    const route = row.request_type === 'revenue_forecast' ? '/api/ai/revenue-forecast' : '/api/ai/ask';
+    const success = Number(row.success) === 1;
+    const cost = Number(row.cost_usd || 0);
+
+    summary.totalCalls += 1;
+    if (success) summary.successCalls += 1;
+    else summary.failedCalls += 1;
+    summary.totalCostUsd += cost;
+    if (!summary.latestCallAt || new Date(row.created_at) > new Date(summary.latestCallAt)) {
+      summary.latestCallAt = row.created_at;
+    }
+
+    if (!providerMap.has(provider)) {
+      providerMap.set(provider, {
+        provider,
+        label: API_CATALOG[provider]?.label || provider,
+        calls: 0,
+        successCalls: 0,
+        failedCalls: 0,
+        totalCostUsd: 0,
+        latestModel: null,
+      });
+    }
+    const providerItem = providerMap.get(provider);
+    providerItem.calls += 1;
+    if (success) providerItem.successCalls += 1;
+    else providerItem.failedCalls += 1;
+    providerItem.totalCostUsd += cost;
+    providerItem.latestModel = row.model || providerItem.latestModel;
+
+    if (!routeMap.has(route)) {
+      routeMap.set(route, {
+        route,
+        calls: 0,
+        successCalls: 0,
+        failedCalls: 0,
+        latestCallAt: null,
+      });
+    }
+    const routeItem = routeMap.get(route);
+    routeItem.calls += 1;
+    if (success) routeItem.successCalls += 1;
+    else routeItem.failedCalls += 1;
+    if (!routeItem.latestCallAt || new Date(row.created_at) > new Date(routeItem.latestCallAt)) {
+      routeItem.latestCallAt = row.created_at;
+    }
+  }
+
+  summary.totalCostUsd = Number(summary.totalCostUsd.toFixed(4));
+  summary.byProvider = Array.from(providerMap.values())
+    .map((item) => ({ ...item, totalCostUsd: Number(item.totalCostUsd.toFixed(4)) }))
+    .sort((a, b) => b.calls - a.calls);
+  summary.byRoute = Array.from(routeMap.values()).sort((a, b) => b.calls - a.calls);
+  return summary;
+}
+
+async function getWorkerMonitoringUsageSummary() {
+  const rows = await pgPool.query('reservation', `
+    SELECT model, request_type, success, cost_usd, created_at
+    FROM llm_usage_log
+    WHERE team = 'worker'
+      AND bot = 'ai-client'
+      AND request_type IN ('ai_question', 'revenue_forecast')
+      AND created_at::timestamptz > NOW() - INTERVAL '24 hours'
+    ORDER BY created_at DESC
+    LIMIT 500
+  `);
+  return summarizeUsageRows(rows);
 }
 
 function getWorkerLlmApplicationSummary(selectedApi) {
@@ -143,8 +294,10 @@ module.exports = {
   API_CATALOG,
   buildProviderOptions,
   ensureSystemPreferencesTable,
+  getWorkerMonitoringChangeHistory,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
+  getWorkerMonitoringUsageSummary,
   isProviderConfigured,
   normalizeApi,
   setWorkerMonitoringPreference,

@@ -42,6 +42,17 @@ export default function WorkerMonitoringPage() {
     () => (payload?.options || []).find((option) => option.key === selectedProvider),
     [payload?.options, selectedProvider],
   );
+  const usageSummary = payload?.usage_summary || {
+    periodHours: 24,
+    totalCalls: 0,
+    successCalls: 0,
+    failedCalls: 0,
+    totalCostUsd: 0,
+    latestCallAt: null,
+    byProvider: [],
+    byRoute: [],
+  };
+  const changeHistory = payload?.change_history || [];
 
   async function handleSaveProvider() {
     setSaving(true);
@@ -168,47 +179,168 @@ export default function WorkerMonitoringPage() {
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="card space-y-4">
-          <div className="flex items-center gap-2">
-            <Cpu className="h-5 w-5 text-slate-900" />
-            <div>
-              <p className="text-sm font-semibold text-slate-900">현재 LLM API 적용 내용</p>
-              <p className="text-xs text-slate-500">워커 내부에서 실제로 어떤 API 경로가 적용되는지 운영 설명을 함께 제공합니다.</p>
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-emerald-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">최근 {usageSummary.periodHours}시간 호출 통계</p>
+                <p className="text-xs text-slate-500">워커 웹 관리자 분석 경로에서 실제로 어떤 API와 경로가 얼마나 호출됐는지 보여줍니다.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">총 호출</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">{usageSummary.totalCalls}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">성공 / 실패</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {usageSummary.successCalls} / {usageSummary.failedCalls}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">추정 비용</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">${Number(usageSummary.totalCostUsd || 0).toFixed(4)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">마지막 호출</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  {usageSummary.latestCallAt ? new Date(usageSummary.latestCallAt).toLocaleString('ko-KR') : '기록 없음'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">API별 사용량</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {usageSummary.byProvider.length ? (
+                    usageSummary.byProvider.map((item) => (
+                      <div key={item.provider} className="px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                            <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.latestModel || '-'}</p>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">{item.calls}회</p>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">
+                          성공 {item.successCalls} / 실패 {item.failedCalls} · 비용 ${Number(item.totalCostUsd || 0).toFixed(4)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-slate-500">최근 24시간 API 호출 기록이 없습니다.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">경로별 사용량</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {usageSummary.byRoute.length ? (
+                    usageSummary.byRoute.map((item) => (
+                      <div key={item.route} className="px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="break-all font-mono text-xs text-slate-700">{item.route}</p>
+                          <p className="text-sm font-semibold text-slate-900">{item.calls}회</p>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">
+                          성공 {item.successCalls} / 실패 {item.failedCalls}
+                          {item.latestCallAt ? ` · 마지막 ${new Date(item.latestCallAt).toLocaleString('ko-KR')}` : ''}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-slate-500">최근 24시간 경로별 호출 기록이 없습니다.</div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
-          {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
-              워커 모니터링 정보를 불러오는 중입니다...
+        <div className="space-y-6">
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-5 w-5 text-slate-900" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">현재 LLM API 적용 내용</p>
+                <p className="text-xs text-slate-500">워커 내부에서 실제로 어떤 API 경로가 적용되는지 운영 설명을 함께 제공합니다.</p>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {(payload?.application_summary || []).map((item) => (
-                <div key={`${item.area}-${item.route}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{item.area}</p>
-                      <p className="mt-1 text-xs font-medium text-slate-500">{item.route}</p>
+
+            {loading ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                워커 모니터링 정보를 불러오는 중입니다...
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(payload?.application_summary || []).map((item) => (
+                  <div key={`${item.area}-${item.route}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{item.area}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">{item.route}</p>
+                      </div>
+                      <Activity className="h-4 w-4 text-slate-400" />
                     </div>
-                    <Activity className="h-4 w-4 text-slate-400" />
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-white px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">API</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.currentApi}</p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">모델/체인</p>
+                        <p className="mt-1 break-all font-mono text-xs text-slate-700">{item.currentModel}</p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{item.description}</p>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl bg-white px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">API</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">{item.currentApi}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <RefreshCcw className="h-5 w-5 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">기본 API 변경 이력</p>
+                <p className="text-xs text-slate-500">누가 언제 워커 웹 기본 분석 API를 바꿨는지 최근 이력을 보여줍니다.</p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              {changeHistory.length ? (
+                <div className="divide-y divide-slate-100">
+                  {changeHistory.map((item) => (
+                    <div key={item.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {item.previous_api_label} → {item.next_api_label}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {item.changed_by_name} · {item.changed_by_role || 'role-unknown'}
+                          </p>
+                        </div>
+                        <p className="text-xs text-slate-500">{new Date(item.changed_at).toLocaleString('ko-KR')}</p>
+                      </div>
                     </div>
-                    <div className="rounded-xl bg-white px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">모델/체인</p>
-                      <p className="mt-1 break-all font-mono text-xs text-slate-700">{item.currentModel}</p>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{item.description}</p>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <div className="px-4 py-5 text-sm text-slate-500">아직 기본 API 변경 이력이 없습니다.</div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

@@ -39,8 +39,10 @@ const {
   ALLOWED_APIS,
   API_CATALOG,
   buildProviderOptions,
+  getWorkerMonitoringChangeHistory,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
+  getWorkerMonitoringUsageSummary,
   setWorkerMonitoringPreference,
 } = require('../lib/llm-api-monitoring');
 const {
@@ -368,6 +370,19 @@ async function buildWorkerMonitoringPayload(user) {
   const selectedApi = await getWorkerMonitoringPreference();
   const company = user?.company_id ? await getCompanyAiPolicy(user.company_id) : null;
   const aiPolicy = resolveAiPolicy({ user, company });
+  const [changeHistory, usageSummary] = await Promise.all([
+    getWorkerMonitoringChangeHistory(8),
+    getWorkerMonitoringUsageSummary().catch(() => ({
+      periodHours: 24,
+      totalCalls: 0,
+      successCalls: 0,
+      failedCalls: 0,
+      totalCostUsd: 0,
+      latestCallAt: null,
+      byProvider: [],
+      byRoute: [],
+    })),
+  ]);
 
   return {
     selected_api: selectedApi,
@@ -375,6 +390,21 @@ async function buildWorkerMonitoringPayload(user) {
     options: buildProviderOptions(),
     ai_policy: aiPolicy,
     application_summary: getWorkerLlmApplicationSummary(selectedApi),
+    change_history: changeHistory.map((item) => {
+      const previousApi = String(item.previous_value?.selected_api || '').trim().toLowerCase();
+      const nextApi = String(item.next_value?.selected_api || '').trim().toLowerCase();
+      return {
+        id: item.id,
+        previous_api: previousApi || null,
+        next_api: nextApi || null,
+        previous_api_label: API_CATALOG[previousApi]?.label || previousApi || '초기값',
+        next_api_label: API_CATALOG[nextApi]?.label || nextApi || '-',
+        changed_at: item.changed_at,
+        changed_by_name: item.changed_by_name,
+        changed_by_role: item.changed_by_role,
+      };
+    }),
+    usage_summary: usageSummary,
   };
 }
 

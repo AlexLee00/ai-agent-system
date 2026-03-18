@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장
+  - 최근 24시간 호출 통계와 기본 API 변경 이력까지 확인 가능
 - 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
   - investment / reservation / ska / worker / orchestrator / claude / blog
 - 팀별 운영 설정 조회 스크립트 추가
@@ -63,6 +64,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ### 문서 (docs)
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
+- 워커 모니터링 운영 지표와 `018-monitoring-history` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신
