@@ -57,6 +57,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `jay-gateway-experiment-review.js`로 누적 스냅샷 기반 권장 판단 리뷰 경로 추가
   - `jay-gateway-experiment-daily.js`로 스냅샷 기록과 리뷰를 한 번에 실행하는 자동화 진입점 추가
   - `jay-gateway-change-compare.js`로 실제 primary 전환 시점의 전후 비교 리포트 경로 추가
+  - `prepare-jay-gateway-switch.js`로 후보 모델 전환 사전 계획과 롤백 기준 출력 경로 추가
 
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장

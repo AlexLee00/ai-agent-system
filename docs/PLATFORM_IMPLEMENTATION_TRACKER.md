@@ -30,6 +30,7 @@
   - 제이 gateway 스냅샷을 `일일 리뷰`로 읽어 전환 권장 판단을 자동화에 연결하기
   - `jay-gateway-experiment-daily.js`를 자동화 진입점으로 사용해 기록과 리뷰를 한 번에 수행하기
   - 실제 primary 전환 시 `jay-gateway-change-compare.js`로 전후 24시간 개선 여부를 판정하기
+  - 실제 전환 전에는 `prepare-jay-gateway-switch.js`로 후보별 사전 점검과 롤백 기준을 먼저 확인하기
 
 ---
 

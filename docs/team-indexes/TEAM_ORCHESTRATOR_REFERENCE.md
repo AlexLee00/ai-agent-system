@@ -51,6 +51,9 @@
 - gateway 전환 전후 비교
   - [jay-gateway-change-compare.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-change-compare.js)
   - 의미: 실제 primary 변경 시점을 기준으로 전 24시간 / 후 24시간 비교 리포트를 생성
+- gateway 전환 준비 계획
+  - [prepare-jay-gateway-switch.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/prepare-jay-gateway-switch.js)
+  - 의미: 후보 모델별 사전 점검, 실행 절차, 롤백 기준을 한 번에 출력
 
 ## 핵심 진입점
 
@@ -74,6 +77,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-g
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js --hours=24 --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-change-compare.js --pivot=2026-03-18T23:30:00Z --before-hours=24 --after-hours=24
+node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/prepare-jay-gateway-switch.js --candidate=groq_speed --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
 # /jay-models

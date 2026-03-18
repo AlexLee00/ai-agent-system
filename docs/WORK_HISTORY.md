@@ -197,6 +197,7 @@
 - `jay-gateway-experiment-review.js`를 추가해 누적 스냅샷을 `hold / compare / sync_first` 권장 판단으로 읽을 수 있게 정리
 - `jay-gateway-experiment-daily.js`를 추가해 기록과 리뷰를 한 번에 실행하는 일일 운영 진입점을 고정
 - `jay-gateway-change-compare.js`를 추가해 실제 전환 시점을 기준으로 전/후 24시간 개선 여부를 `improved / neutral / regressed`로 판정할 수 있게 정리
+- `prepare-jay-gateway-switch.js`를 추가해 후보 모델별 사전 점검, 실행 절차, 롤백 기준을 계획 형태로 바로 출력할 수 있게 정리
 
 세션 맥락:
 - 이전 단계까지는 “현재 기준값과 실제값이 맞는지”를 확인하는 레이어를 만들었다.
