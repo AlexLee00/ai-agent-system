@@ -33,7 +33,7 @@ telegram:
 binance:
   api_key: "YOUR_BINANCE_API_KEY"
   api_secret: "YOUR_BINANCE_API_SECRET"
-  testnet: true
+  testnet: true   # 레거시 실험용 플래그. 현재 운영 분류의 brokerAccountMode에는 사용하지 않음
   symbols:
     - "BTC/USDT"
     - "ETH/USDT"

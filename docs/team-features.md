@@ -173,7 +173,7 @@ bash scripts/reload-monitor.sh
 
 | 서비스명 | 주기 | 역할 |
 |---------|------|------|
-| `ai.investment.crypto` | 5분 (내부 30분 throttle) | 암호화폐 사이클 — PAPER_MODE=false (OPS) |
+| `ai.investment.crypto` | 5분 (내부 30분 throttle) | 암호화폐 사이클 — executionMode=live / brokerAccountMode=real |
 | `ai.investment.domestic` | 5분 (내부 30분 throttle) | 국내주식 사이클 |
 | `ai.investment.overseas` | 5분 (내부 30분 throttle) | 미국주식 사이클 |
 
@@ -282,7 +282,7 @@ npm run patch:status        # 패치 현황 콘솔
 |------|------|------|
 | `MODE` | `dev` | `ops`이어야 실제 실행 |
 | `DRY_RUN` | `true` | `false`이어야 실제 주문 |
-| `PAPER_MODE` | `true` | `false`이어야 루나팀 실거래 |
+| `PAPER_MODE` | `true` | `executionMode` 레거시 제어값. `false`이면 주문 실행, `true`이면 주문 차단 |
 | `OBSERVE_ONLY` | `0` | `1`이면 스카팀 화이트리스트 관찰 모드 |
 | `TELEGRAM_ENABLED` | `1` | `0`이면 텔레그램 발송 차단 |
 

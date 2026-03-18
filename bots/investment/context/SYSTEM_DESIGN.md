@@ -15,7 +15,7 @@
   - `paper`: 실제 주문 차단
   - `live`: 실제 주문 실행
 - `brokerAccountMode`
-  - `mock`: 모의투자 계좌/테스트 계정
+  - `mock`: 주식용 모의 계좌
   - `real`: 실계좌
 
 ### 조합 의미
@@ -24,8 +24,16 @@
 |------|------------------|------|
 | `paper` | `mock` | 모의투자 계좌 연결, 실제 주문 차단 |
 | `paper` | `real` | 실계좌 연결, 실제 주문 차단 |
-| `live` | `mock` | 모의투자용 계좌를 이용해 주문 실행 |
+| `live` | `mock` | 모의 계좌를 이용해 주문 실행 (현재는 주식만 해당) |
 | `live` | `real` | 실제 투자 |
+
+### 시장별 적용 원칙
+
+- 암호화폐
+  - `brokerAccountMode=real`만 사용
+  - `executionMode=paper/live`만 운영상 판단 기준
+- 국내/해외주식
+  - `brokerAccountMode=mock/real` 모두 사용 가능
 
 ### 레거시 설정 매핑
 
@@ -34,7 +42,8 @@
 - `kis.paper_trading`
   - 주식 시장의 `brokerAccountMode`를 결정
 - `binance_testnet`
-  - 암호화폐 시장의 `brokerAccountMode`를 결정
+  - 레거시 실험용 플래그
+  - 현재 운영 기준의 `brokerAccountMode` 분류에는 사용하지 않음
 
 ---
 
