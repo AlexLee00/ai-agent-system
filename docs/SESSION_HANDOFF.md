@@ -44,12 +44,13 @@
 
 ### 워커 관점
 
-- `문서 파싱 → 문서 재사용 → 실제 업무 생성 결과 추적` 단계 완료
-- 다음은 `문서 재사용 품질 분석` 단계
+- `문서 파싱 → 문서 재사용 → 실제 업무 생성 결과 추적 → 품질/효율 분석` 단계까지 확장
+- 다음은 `문서 목록의 효율 정렬` 또는 `저품질 OCR 전용 리포트` 단계
 
 ### 스카 관점
 
 - `기존 엔진 유지 + shadow 비교 모델 관찰` 단계
+- 현재 `shadowDecision.stage = collecting`
 - 다음은 `primary vs shadow` 실제 비교 누적 단계
 
 ---
@@ -57,12 +58,14 @@
 ## 3. 다음 작업 목표
 
 1. 스카 shadow 비교 actual 누적 관찰
+   - 현재 `availableDays = 0`
+   - 일일 최소 3일 / 주간 최소 5일 누적이 필요
    - `availableDays > 0`가 생기기 시작하면
    - `primaryAvgMape vs shadowAvgMape`를 읽고 promotion 후보 여부 판단
 2. 워커 문서 재사용 품질 분석
-   - 재사용 후 실제 수정량
-   - 확정률
-   - 저품질 OCR 문서의 전환율
+   - 목록 기준 효율 정렬
+   - 저품질 OCR 문서 전용 리포트
+   - 이후 수정량/확정률 기반 효율 점수 확장
 3. 일일 운영 분석 리포트의 health 입력 안정화
    - 자동화 런타임에서 팀별 `health-report.js` 직접 수집 성공률 개선
 4. 제이 모델 정책 정리 후속
@@ -73,9 +76,10 @@
 ## 4. 현재 열린 이슈
 
 - 스카 shadow 비교는 저장은 정상이나 아직 actual 누적이 부족해서 비교 일수는 `0`
+- 스카 일일/주간 리뷰는 이제 `shadowDecision`으로 현재 단계(`collecting / observe / promotion_candidate / primary_hold`)를 명시
 - 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
-- 워커 문서 재사용은 추적선은 완성됐지만, “좋은 문서인지”를 평가하는 품질 지표는 아직 없음
-- 워커 모니터링의 LLM API 선택 변경 이력은 아직 저장하지 않는다
+- 워커 문서 재사용은 품질/효율 지표까지 붙었지만, 목록의 효율 정렬과 저품질 OCR 전용 리포트는 아직 없음
+- 워커 모니터링의 LLM API 선택 변경 이력과 note 저장은 이미 반영됐고, 다음은 더 긴 추세 보기와 운영 비교 고도화
 - 투자 과거 `legacy_*` 실패 이력은 일부만 구조화되어 있어 백필 확장이 남아 있다
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 

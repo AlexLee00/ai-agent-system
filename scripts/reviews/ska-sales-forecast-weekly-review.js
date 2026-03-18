@@ -192,6 +192,53 @@ function buildShadowComparison(rows) {
   };
 }
 
+function buildShadowDecision(shadowComparison) {
+  const requiredDays = 5;
+  const gapThreshold = Number(FORECAST_CONFIG.shadowPromotionMapeGap || 0);
+
+  if (shadowComparison.availableDays < requiredDays) {
+    return {
+      stage: 'collecting',
+      label: '데이터 수집 단계',
+      requiredDays,
+      gapThreshold,
+      recommendation: '주간 비교 데이터 누적 유지',
+      reason: `shadow actual 비교일이 ${shadowComparison.availableDays}일이라 최소 ${requiredDays}일 누적이 더 필요합니다.`,
+    };
+  }
+
+  if (shadowComparison.avgMapeGap <= -gapThreshold) {
+    return {
+      stage: 'promotion_candidate',
+      label: '앙상블 실험 후보',
+      requiredDays,
+      gapThreshold,
+      recommendation: '다음 주 앙상블 편입 실험 검토',
+      reason: `shadow 평균 MAPE가 기존 대비 ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되었습니다.`,
+    };
+  }
+
+  if (shadowComparison.avgMapeGap >= gapThreshold) {
+    return {
+      stage: 'primary_hold',
+      label: '기존 엔진 유지',
+      requiredDays,
+      gapThreshold,
+      recommendation: 'shadow 비교만 유지',
+      reason: `shadow 평균 MAPE가 기존보다 ${shadowComparison.avgMapeGap}%p 높습니다.`,
+    };
+  }
+
+  return {
+    stage: 'observe',
+    label: '비교 관찰 단계',
+    requiredDays,
+    gapThreshold,
+    recommendation: '추가 주간 데이터 관찰',
+    reason: `평균 MAPE 차이 ${shadowComparison.avgMapeGap}%p로 승격 판단 기준(${gapThreshold}%p)에 아직 못 미칩니다.`,
+  };
+}
+
 function buildUpcomingRisk(upcomingRows) {
   return upcomingRows
     .map(row => ({
@@ -204,7 +251,7 @@ function buildUpcomingRisk(upcomingRows) {
     .slice(0, 3);
 }
 
-function buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison) {
+function buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison, shadowDecision) {
   const lines = [];
   const recent = weekly[weekly.length - 1];
   const prev = weekly[weekly.length - 2];
@@ -232,11 +279,15 @@ function buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowCompariso
     lines.push(`- ${upcomingRisk[0].date} 예측 확신도가 ${(upcomingRisk[0].confidence * 100).toFixed(0)}%라 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
-  if (shadowComparison.availableDays >= 5) {
+  if (shadowDecision.stage === 'collecting') {
+    lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 ${shadowComparison.availableDays}일치만 누적되어 ${shadowDecision.recommendation} 단계입니다.`);
+  } else if (shadowComparison.availableDays >= 5) {
     if (shadowComparison.avgMapeGap <= -FORECAST_CONFIG.shadowPromotionMapeGap) {
       lines.push(`- shadow 모델(${shadowComparison.shadowModelName})이 최근 ${shadowComparison.availableDays}일 기준 더 좋아, 다음 주 앙상블 편입 실험 후보입니다.`);
     } else if (shadowComparison.avgMapeGap >= FORECAST_CONFIG.shadowPromotionMapeGap) {
       lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 기존 엔진보다 약해 비교 관찰만 유지하는 편이 좋습니다.`);
+    } else {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 비교 관찰 단계이며 주간 데이터가 더 필요합니다.`);
     }
   }
 
@@ -253,14 +304,16 @@ async function main() {
   const weekly = buildWeeklySummary(rows);
   const weekdayBias = buildWeekdayBias(rows);
   const shadowComparison = buildShadowComparison(rows);
+  const shadowDecision = buildShadowDecision(shadowComparison);
   const upcomingRisk = buildUpcomingRisk(upcomingRows);
-  const recommendations = buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison);
+  const recommendations = buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison, shadowDecision);
 
   const report = {
     periodDays: days,
     weekly,
     weekdayBias,
     shadowComparison,
+    shadowDecision,
     upcomingRisk,
     recommendations,
   };
@@ -288,6 +341,12 @@ async function main() {
       lines.push(`- ${row.weekday}요일: 평균 MAPE ${row.avgMape}% / ${biasLabel(row.avgBias)} / ${row.count}건`);
     }
   }
+
+  lines.push('');
+  lines.push('Shadow 판단:');
+  lines.push(`- 단계: ${report.shadowDecision.label}`);
+  lines.push(`- 권장: ${report.shadowDecision.recommendation}`);
+  lines.push(`- 근거: ${report.shadowDecision.reason}`);
 
   if (report.shadowComparison.availableDays > 0) {
     lines.push('');

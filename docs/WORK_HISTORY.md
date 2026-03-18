@@ -29,6 +29,31 @@
 - `node --check 'bots/worker/web/app/documents/[id]/page.js'`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — 스카 shadow 판단 레이어 명시화
+
+핵심 구현:
+- 스카 일일/주간 예측 리뷰에 `shadowDecision` 추가
+- 단계:
+  - `데이터 수집 단계`
+  - `비교 관찰 단계`
+  - `앙상블 편입 후보/실험 후보`
+  - `기존 엔진 유지`
+- `availableDays`, `requiredDays`, `gapThreshold`, `recommendation`, `reason`를 JSON과 텍스트 출력에 함께 반영
+
+세션 맥락:
+- shadow 비교 저장과 리뷰 연결은 이미 되어 있었지만, `availableDays = 0`일 때 운영자가 “지금 무엇을 기다리는지”를 바로 읽기 어려웠다.
+- 이번 단계에서 리포트가 스스로 현재 shadow 관찰 단계를 설명하게 만들어, 스카 운영 판단을 더 명확히 했다.
+
+의사결정 이유:
+- 새 자동화 레이어를 만들기보다 기존 일일/주간 리뷰 출력에 판단 객체를 추가하는 것이 내부 MVP와 운영 해석성에 더 유리하다.
+- 이 판단 객체는 추후 shadow 승격 자동화, 앙상블 실험 승인, SaaS tenant별 예측 엔진 비교에도 그대로 재사용할 수 있다.
+
+검증:
+- `node --check scripts/reviews/ska-sales-forecast-daily-review.js`
+- `node --check scripts/reviews/ska-sales-forecast-weekly-review.js`
+- `node scripts/reviews/ska-sales-forecast-daily-review.js --days=14 --json`
+- `node scripts/reviews/ska-sales-forecast-weekly-review.js --days=42 --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
