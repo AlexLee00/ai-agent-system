@@ -12,6 +12,22 @@
 - n8n critical path 점검
 - 인텐트/피드백/리포팅 조회
 
+## 모델 체계
+
+- OpenClaw gateway 기본 모델
+  - 외부 설정 파일: [openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
+  - 현재 primary: `google-gemini-cli/gemini-2.5-flash`
+- 제이 명령 해석 모델
+  - 파일: [intent-parser.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/intent-parser.js)
+  - primary: `gpt-5-mini`
+  - fallback: `gemini-2.5-flash`
+- 제이 자유대화 fallback 체인
+  - 파일: [router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)
+  - chain: `groq/openai/gpt-oss-20b -> google-gemini-cli/gemini-2.5-flash`
+- 정책 집약 파일
+  - [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
+  - 의미: OpenClaw 기본 모델과 별개로, 제이 앱 레벨 커스텀 모델 정책을 한 곳에서 관리
+
 ## 핵심 진입점
 
 - [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)

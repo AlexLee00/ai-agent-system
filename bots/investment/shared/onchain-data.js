@@ -36,12 +36,19 @@ function httpsGet(hostname, path) {
 export async function getFundingRate(symbol) {
   try {
     const data = await httpsGet(FAPI_HOST, `/fapi/v1/premiumIndex?symbol=${symbol}`);
+    const fundingRate = parseFloat(data.lastFundingRate);
+    const markPrice = parseFloat(data.markPrice);
+    const nextFundingTimeMs = Number(data.nextFundingTime);
+    const nextFundingTime = Number.isFinite(nextFundingTimeMs) && nextFundingTimeMs > 0
+      ? new Date(nextFundingTimeMs).toISOString()
+      : null;
+
     return {
       symbol:          data.symbol,
-      fundingRate:     parseFloat(data.lastFundingRate),
-      fundingRatePct:  (parseFloat(data.lastFundingRate) * 100).toFixed(4),
-      nextFundingTime: new Date(data.nextFundingTime).toISOString(),
-      markPrice:       parseFloat(data.markPrice),
+      fundingRate,
+      fundingRatePct:  Number.isFinite(fundingRate) ? (fundingRate * 100).toFixed(4) : null,
+      nextFundingTime,
+      markPrice,
     };
   } catch (e) {
     console.warn(`[onchain] 펀딩레이트 조회 실패 (${symbol}):`, e.message);

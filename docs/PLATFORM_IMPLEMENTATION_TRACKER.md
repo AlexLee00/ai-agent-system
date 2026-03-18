@@ -20,6 +20,7 @@
 - 공통
   - 팀별 `runtime_config` 변경 이력/추천 자동화
   - 세션 인덱스와 팀 문서의 지속 업데이트
+  - 제이 모델 체계를 `OpenClaw 기본`과 `제이 앱 커스텀`으로 명확히 분리
 
 ---
 
@@ -234,6 +235,7 @@
 - 진입 코드
   - [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)
   - [bots/orchestrator/lib/intent-parser.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/intent-parser.js)
+  - [bots/orchestrator/lib/jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
 - 운영 체크
   - [bots/orchestrator/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js)
   - [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js)
@@ -242,6 +244,7 @@
   - [bots/orchestrator/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/runtime-config.js)
   - [bots/orchestrator/context/DEV_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/DEV_SUMMARY.md)
   - [bots/orchestrator/context/HANDOFF.md](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/context/HANDOFF.md)
+  - 외부 OpenClaw 설정: [openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
 
 ### 블로
 
