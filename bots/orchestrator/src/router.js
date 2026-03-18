@@ -207,6 +207,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   "섀도 불일치"              → 불일치 케이스 목록
   /graduation   또는 "LLM 졸업 현황" → 규칙 자동전환 후보
   /jay-models   또는 "제이 지금 무슨 모델 써?" → gateway / intent / chat fallback 정책
+  /llm-selectors 또는 "LLM 체인 보여줘" → 전 팀 selector / fallback / 최근 speed-test
   "캐시 통계"                → LLM 캐시 적중률
   "LLM 비용 상세"            → 팀별·모델별 비용
   "텔레그램 상태"            → 폴링 연결 상태
@@ -1001,6 +1002,17 @@ async function runOrchestratorHealthDirect() {
     errorPrefix: '⚠️ 오케스트레이터 운영 헬스 실행 실패',
     failPrefix: '⚠️ 오케스트레이터 운영 헬스 실패',
     emptyText: 'ℹ️ 오케스트레이터 운영 헬스 결과가 비어 있습니다.',
+  });
+}
+
+async function runLLMSelectorReportDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'scripts', 'llm-selector-report.js');
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ LLM selector 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ LLM selector 조회 실패',
+    failPrefix: '⚠️ LLM selector 실행 실패',
+    emptyText: 'ℹ️ LLM selector 결과가 비어 있습니다.',
   });
 }
 
@@ -1896,6 +1908,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'speed_test': {
       await notify('⏳ LLM 속도 테스트 실행 중...');
       return await runSpeedTestDirect();
+    }
+
+    case 'llm_selector_report': {
+      await notify('⏳ LLM selector / fallback 체인 조회 중...');
+      return await runLLMSelectorReportDirect();
     }
 
     case 'ops_health': {

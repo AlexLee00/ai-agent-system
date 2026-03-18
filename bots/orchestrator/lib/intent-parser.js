@@ -81,6 +81,7 @@ const SLASH_MAP = {
   '/shadow':      { intent: 'shadow_report',       args: {} },
   '/graduation':  { intent: 'llm_graduation',      args: {} },
   '/jay-models':  { intent: 'jay_model_policy',    args: {} },
+  '/llm-selectors': { intent: 'llm_selector_report', args: {} },
   '/stability':   { intent: 'stability',           args: {} },
   '/journal':     { intent: 'trade_journal',       args: {} },
   '/performance': { intent: 'performance',         args: {} },
@@ -328,6 +329,7 @@ const KEYWORD_PATTERNS = [
   { re: /LLM.*(비용.*상세|팀별.*비용|cost.*detail)|토큰.*(상세|팀별|breakdown)/i, intent: 'llm_cost' },
   { re: /졸업.*(현황|후보|리포트|목록)|LLM.*졸업|graduation.*(현황|report)/i,  intent: 'llm_graduation' },
   { re: /(제이|jay).*(모델|LLM|API|primary|fallback)|(오픈클로|openclaw).*(모델|primary|fallback)|무슨\s*모델\s*써|어떤\s*모델\s*써/i, intent: 'jay_model_policy' },
+  { re: /(LLM|모델).*(셀렉터|selector|체인|fallback|폴백).*(보여|조회|리포트|현황)|selector.*(report|show|status)|현재.*(LLM|모델).*(체인|폴백)/i, intent: 'llm_selector_report' },
 
   // ── 시스템 안정성·텔레그램 ──
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
