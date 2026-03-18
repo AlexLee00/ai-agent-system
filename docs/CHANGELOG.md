@@ -87,9 +87,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 투자 성향 / 매매 내역 / 보유 포지션 / 신호 요약 줄 수를 줄여 한 화면 가독성을 높였다
 - 자동화 리포트 출력을 운영 액션 중심으로 보강
   - `jay-gateway-experiment-daily.js`는 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기준 리뷰를 계속 출력하도록 강인성을 높였다
+  - `log-jay-gateway-experiment.js` / `jay-gateway-experiment-daily.js`는 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장으로 기록을 유지한다
   - `daily-ops-report.js`는 `health_report_failed_probe_unavailable`와 실제 `healthError`를 함께 노출해 입력 실패 원인을 더 명확히 구분한다
+  - `daily-ops-report.js`는 `현재 활성 이슈 / 누적 반복 이슈 / 입력 실패`를 분리해 시스템 문제와 리포트 입력 실패를 구분해서 본다
   - `ska-sales-forecast-daily-review.js`는 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 바로 읽을 수 있게 정리했다
+  - `ska-sales-forecast-weekly-review.js`도 `requestedDays / effectiveDays`와 `actionItems`를 추가해 일일/주간 리포트 판단 포맷을 통일했다
   - `trading-journal.js`는 거래 없음 대비 분석 비용이 큰 경우 `no-trade high-cost` 경고를 추가하도록 보강했다
+  - `weekly-trade-review.js`는 종료 거래가 없어도 미결 포지션/주간 usage/다음 조치를 남기며, `date_kst::date` 비교로 주간 usage 0 버그를 수정했다
+  - `jay-llm-daily-review.js`는 DB 접근 실패 시 `dbStatsStatus=partial`, `dbSourceErrors`, `session_usage_fallback` 기반 모델별 사용량을 함께 보여준다
 - `speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `llm-selector-report.js`가 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 함께 출력하도록 확장
 - 투자팀 운영 모드 용어 정리

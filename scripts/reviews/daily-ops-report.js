@@ -281,21 +281,113 @@ function buildRecommendations(teamSummaries, auxiliary) {
   return lines;
 }
 
+function buildActiveIssues(teamSummaries, auxiliary) {
+  const items = [];
+
+  for (const item of teamSummaries) {
+    if ((item.warnCount || 0) > 0 || item.recommended) {
+      items.push({
+        team: item.team,
+        level: item.level,
+        source: item.source,
+        summary: item.reasons[0] || '원인 확인 필요',
+      });
+    }
+  }
+
+  const repeated = auxiliary.errorReview?.ok
+    ? auxiliary.errorReview.data?.repeated?.[0]
+    : null;
+  if (repeated) {
+    items.push({
+      team: 'global',
+      level: 'medium',
+      source: 'error-review',
+      summary: `반복 오류 상위: ${repeated.label} / ${repeated.categoryLabel} ${Number(repeated.count || 0).toLocaleString()}회`,
+    });
+  }
+
+  return items;
+}
+
+function buildHistoricalIssues(auxiliary) {
+  const items = [];
+  const repeated = auxiliary.errorReview?.ok
+    ? auxiliary.errorReview.data?.repeated || []
+    : [];
+
+  for (const row of repeated.slice(0, 5)) {
+    items.push({
+      label: row.label,
+      category: row.categoryLabel,
+      count: Number(row.count || 0),
+      sample: row.sample || null,
+    });
+  }
+
+  return items;
+}
+
+function buildInputFailures(teamSummaries, auxiliary) {
+  const teamFailures = teamSummaries
+    .filter((item) => item.healthError || String(item.source || '').includes('failed'))
+    .map((item) => ({
+      kind: 'team_health',
+      target: item.team,
+      source: item.source,
+      error: item.healthError || item.reasons[0] || '입력 실패',
+    }));
+
+  const auxiliaryFailures = Object.entries(auxiliary)
+    .filter(([, value]) => !value.ok)
+    .map(([key, value]) => ({
+      kind: 'auxiliary',
+      target: key,
+      source: 'auxiliary_review_failed',
+      error: value.error || '입력 실패',
+    }));
+
+  return [...teamFailures, ...auxiliaryFailures];
+}
+
 function buildTextReport(report) {
   const lines = [];
-  lines.push('📙 일일 운영 분석 입력 요약');
+  lines.push('📙 일일 운영 분석');
   lines.push('');
-  lines.push('팀 헬스 요약:');
-  for (const item of report.teamSummaries) {
-    lines.push(`- ${item.team}: source=${item.source}, level=${item.level}, ok=${item.okCount}, warn=${item.warnCount}`);
-    if (item.reasons[0]) lines.push(`  사유: ${item.reasons[0]}`);
-    if (item.healthError) lines.push(`  입력 오류: ${item.healthError}`);
+
+  lines.push('현재 활성 이슈:');
+  if (report.activeIssues.length === 0) {
+    lines.push('- 없음');
+  } else {
+    for (const item of report.activeIssues) {
+      lines.push(`- ${item.team}: level=${item.level}, source=${item.source}`);
+      lines.push(`  사유: ${item.summary}`);
+    }
   }
+
   lines.push('');
-  lines.push('보조 입력 상태:');
-  for (const [key, value] of Object.entries(report.auxiliary)) {
-    lines.push(`- ${key}: ${value.ok ? 'ok' : `failed (${value.error})`}`);
+
+  lines.push('누적 반복 이슈:');
+  if (report.historicalIssues.length === 0) {
+    lines.push('- 없음');
+  } else {
+    for (const item of report.historicalIssues) {
+      lines.push(`- ${item.label} / ${item.category}: ${item.count}회`);
+      if (item.sample) lines.push(`  예시: ${item.sample}`);
+    }
   }
+
+  lines.push('');
+  lines.push('입력 실패:');
+  if (report.inputFailures.length === 0) {
+    lines.push('- 없음');
+  } else {
+    for (const item of report.inputFailures) {
+      lines.push(`- ${item.target}: source=${item.source}`);
+      lines.push(`  오류: ${item.error}`);
+    }
+  }
+
   lines.push('');
   lines.push('추천:');
   for (const line of report.recommendations) lines.push(line);
@@ -322,12 +414,18 @@ async function main() {
   }
 
   const teamSummaries = teamResults.filter((item) => item.ok).map((item) => toSummaryLine(item.team, item.data));
+  const activeIssues = buildActiveIssues(teamSummaries, auxiliary);
+  const historicalIssues = buildHistoricalIssues(auxiliary);
+  const inputFailures = buildInputFailures(teamSummaries, auxiliary);
   const report = {
     generatedAt: new Date().toISOString(),
     sourcePriority: ['health-report', 'fallback_probe', 'auxiliary_review'],
     teamResults,
     auxiliary,
     teamSummaries,
+    activeIssues,
+    historicalIssues,
+    inputFailures,
     recommendations: buildRecommendations(teamSummaries, auxiliary),
   };
 
@@ -343,3 +441,16 @@ main().catch((error) => {
   process.stderr.write(`❌ ${error?.stack || error?.message || String(error)}\n`);
   process.exit(1);
 });
+
+module.exports = {
+  parseArgs,
+  runNodeJson,
+  runSafeNodeJson,
+  buildFallbackTeamResult,
+  toSummaryLine,
+  buildRecommendations,
+  buildActiveIssues,
+  buildHistoricalIssues,
+  buildInputFailures,
+  buildTextReport,
+};

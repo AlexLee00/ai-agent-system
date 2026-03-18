@@ -10,12 +10,22 @@
 
 | 테스트 | 결과 |
 |--------|------|
+| `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ |
 | `node --check scripts/reviews/jay-gateway-experiment-daily.js` | ✅ |
 | `node --check scripts/reviews/daily-ops-report.js` | ✅ |
 | `node --check bots/investment/scripts/trading-journal.js` | ✅ |
+| `node --check bots/investment/scripts/weekly-trade-review.js` | ✅ |
+| `node --check scripts/reviews/jay-llm-daily-review.js` | ✅ |
+| `node --check scripts/reviews/ska-sales-forecast-weekly-review.js` | ✅ |
 | `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ |
-| `node scripts/reviews/jay-gateway-experiment-daily.js --json` | ✅ `snapshotError / persisted / review` 동시 출력 확인 |
-| `node scripts/reviews/daily-ops-report.js --json` | ✅ 팀별 `healthError` 노출 확인 |
+| `node scripts/reviews/jay-gateway-experiment-daily.js --json` | ✅ fallback 저장 보강 후 `snapshot / persisted / fallbackUsed / review` 확인 |
+| `node -e "const {buildRun}=require('./scripts/reviews/jay-gateway-experiment-daily.js'); ..."` | ✅ `persisted=true`, `fallbackUsed=true`, `tmp/jay-gateway-experiments.jsonl` 확인 |
+| `node scripts/reviews/daily-ops-report.js --json` | ✅ `activeIssues / historicalIssues / inputFailures` 분리 확인 |
+| `node scripts/reviews/daily-ops-report.js` | ✅ 텍스트 리포트 섹션 분리 확인 |
+| `node scripts/reviews/jay-llm-daily-review.js --json` | ✅ `dbStatsStatus=partial`, `dbSourceErrors`, `llmUsageSource=session_usage_fallback` 확인 |
+| `node scripts/reviews/jay-llm-daily-review.js` | ✅ partial 상태와 fallback 모델별 사용량 출력 확인 |
+| `node bots/investment/scripts/weekly-trade-review.js --dry-run` | ✅ no-trade 운영 요약 + 주간 usage / 비용 경고 출력 확인 |
+| `node scripts/reviews/ska-sales-forecast-weekly-review.js --days=7 --json` | ✅ `requestedDays / effectiveDays` 및 `actionItems` 확인 |
 | `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` | ✅ `actionItems` 출력 확인 |
 
 ### 모바일 알림 UX 정리

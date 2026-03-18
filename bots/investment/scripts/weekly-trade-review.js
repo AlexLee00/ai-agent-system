@@ -20,6 +20,10 @@ import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import * as db from '../shared/db.js';
 import { validateTradeReview } from './validate-trade-review.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 function getMarketBucket(exchange) {
   if (exchange === 'kis') return 'domestic';
@@ -103,6 +107,106 @@ async function fetchSignalStats(days) {
   } catch {
     return [];
   }
+}
+
+async function fetchOpenPositions() {
+  try {
+    return await db.query(`
+      SELECT symbol, exchange, amount, avg_price, unrealized_pnl
+      FROM positions
+      WHERE amount > 0
+      ORDER BY exchange, symbol
+    `);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTokenUsage(days) {
+  try {
+    const [tokenUsageRows, llmLogRows] = await Promise.all([
+      pgPool.query('claude', `
+      SELECT
+        SUM(tokens_in + tokens_out) AS total_tokens,
+        SUM(cost_usd) AS total_cost
+      FROM token_usage
+      WHERE team = 'investment'
+          AND date_kst::date >= CURRENT_DATE - ($1::int - 1)
+      `, [days]),
+      pgPool.query('reservation', `
+        SELECT
+          SUM(input_tokens + output_tokens) AS total_tokens,
+          0 AS total_cost
+        FROM llm_usage_log
+        WHERE team = 'luna'
+          AND DATE(created_at AT TIME ZONE 'Asia/Seoul') >= CURRENT_DATE - ($1::int - 1)
+      `, [days]).catch(() => []),
+    ]);
+
+    const totalTokens = Number(tokenUsageRows?.[0]?.total_tokens || 0) + Number(llmLogRows?.[0]?.total_tokens || 0);
+    const totalCost = Number(tokenUsageRows?.[0]?.total_cost || 0) + Number(llmLogRows?.[0]?.total_cost || 0);
+    return {
+      totalTokens,
+      totalCost,
+    };
+  } catch {
+    return {
+      totalTokens: 0,
+      totalCost: 0,
+    };
+  }
+}
+
+function buildNoTradeSummary(days, positions, tokenUsage) {
+  const marketBuckets = ['crypto', 'domestic', 'overseas'];
+  const positionLines = marketBuckets.map((bucket) => {
+    const rows = positions.filter((row) => getMarketBucket(row.exchange) === bucket);
+    const pnl = rows.reduce((sum, row) => sum + Number(row.unrealized_pnl || 0), 0);
+    if (rows.length === 0) return `- ${getMarketLabel(bucket)}: 미결 포지션 없음`;
+    return `- ${getMarketLabel(bucket)}: 미결 ${rows.length}개 | 평가손익 $${pnl.toFixed(2)}`;
+  });
+
+  const actionLines = [];
+  if (tokenUsage.totalCost >= 1) {
+    actionLines.push(`- 거래 없음 대비 분석 비용이 $${tokenUsage.totalCost.toFixed(4)} 발생해 no-trade high-cost 경로를 점검해야 합니다.`);
+  } else {
+    actionLines.push('- 종료 거래는 없지만, 다음 주 실거래 대비 시그널/분석 효율만 유지 관찰하면 됩니다.');
+  }
+
+  if (positions.length > 0) {
+    actionLines.push('- 미결 포지션이 남아 있어 주간 손익보다 포지션 관리와 강제 종료 기준 점검이 우선입니다.');
+  } else {
+    actionLines.push('- 미결 포지션이 없어 다음 주 진입 조건과 체결 전략 품질 점검에 집중할 수 있습니다.');
+  }
+
+  return [
+    `📘 루나 주간 운영 요약 (${days}일)`,
+    `- 종료 거래: 0건`,
+    `- 미결 포지션: ${positions.length}개`,
+    `- LLM 사용량: ${tokenUsage.totalTokens.toLocaleString()} tokens / $${tokenUsage.totalCost.toFixed(4)}`,
+    '',
+    '시장별 미결 현황:',
+    ...positionLines,
+    '',
+    '다음 조치:',
+    ...actionLines,
+  ].join('\n');
+}
+
+function buildNoTradeTelegramMessage(days, positions, tokenUsage) {
+  const lines = [
+    `📘 루나 주간 리뷰 (${days}일)`,
+    `📊 종료 거래 없음 | 미결 ${positions.length}개 | 비용 $${tokenUsage.totalCost.toFixed(4)}`,
+  ];
+  if (positions.length > 0) {
+    lines.push('🔍 이번 주는 체결보다 미결 포지션 관리와 강제 종료 기준 점검이 우선입니다.');
+  } else {
+    lines.push('🔍 이번 주는 종료 거래가 없어, 다음 주 진입 조건과 시그널 효율 점검이 우선입니다.');
+  }
+  if (tokenUsage.totalCost >= 1) {
+    lines.push(`⚠️ 거래 없음 대비 분석 비용 $${tokenUsage.totalCost.toFixed(4)} 발생`);
+  }
+  return lines.join('\n');
 }
 
 // ─── 분석 요약 생성 ───────────────────────────────────────────────────
@@ -422,7 +526,27 @@ async function main() {
   console.log(`  📊 종료 거래 ${trades.length}건 조회`);
 
   if (trades.length === 0) {
-    console.log('  ℹ️ 분석할 거래 없음 — 종료');
+    const [positions, tokenUsage] = await Promise.all([
+      fetchOpenPositions(),
+      fetchTokenUsage(DAYS),
+    ]);
+    const noTradeSummary = buildNoTradeSummary(DAYS, positions, tokenUsage);
+    console.log('\n' + noTradeSummary);
+
+    if (!DRY_RUN) {
+      publishToMainBot({
+        from_bot: 'luna',
+        event_type: 'weekly_review',
+        alert_level: 1,
+        message: buildNoTradeTelegramMessage(DAYS, positions, tokenUsage),
+      });
+      console.log('  ✅ 텔레그램 발송 완료');
+    } else {
+      console.log('\n--- 텔레그램 미리보기 (dry-run) ---');
+      console.log(buildNoTradeTelegramMessage(DAYS, positions, tokenUsage));
+    }
+
+    console.log('\n✅ [주간 리뷰] 완료 (거래 없음 요약)');
     process.exit(0);
   }
 
