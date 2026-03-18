@@ -17,6 +17,21 @@ function _clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function _isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function _deepMerge(base, override) {
+  if (!_isObject(base) || !_isObject(override)) return override ?? base;
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = _isObject(value) && _isObject(base[key])
+      ? _deepMerge(base[key], value)
+      : _clone(value);
+  }
+  return merged;
+}
+
 function inferProviderFromModel(model = '') {
   if (!model) return 'anthropic';
   if (model.startsWith('groq/')) return 'groq';
@@ -49,6 +64,19 @@ function _applyChainOverrides(chain, options = {}) {
     maxTokens: maxTokens ?? entry.maxTokens,
     temperature: temperature ?? entry.temperature,
   }));
+}
+
+function _applyPolicyOverride(resolved, policyOverride, options = {}) {
+  if (!policyOverride) return Array.isArray(resolved) ? _applyChainOverrides(resolved, options) : resolved;
+  if (Array.isArray(resolved)) {
+    if (Array.isArray(policyOverride)) return _applyChainOverrides(_clone(policyOverride), options);
+    if (Array.isArray(policyOverride.chain)) return _applyChainOverrides(_clone(policyOverride.chain), options);
+    return _applyChainOverrides(resolved, options);
+  }
+  if (_isObject(resolved) && _isObject(policyOverride)) {
+    return _deepMerge(resolved, policyOverride);
+  }
+  return policyOverride;
 }
 
 function _resolvePreferredProvider(preferredApi, groqModel, maxTokens) {
@@ -191,12 +219,20 @@ function _buildSelectorRegistry() {
       { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
     ],
 
-    'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-4o' } = {}) => {
-      const route =
-        agentName === 'luna' ? 'openai_perf'
-          : ['nemesis', 'oracle'].includes(agentName) ? 'dual_groq'
-            : ['hermes', 'sophia', 'zeus', 'athena'].includes(agentName) ? 'openai_mini'
-              : 'groq_scout';
+    'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-4o', policyOverride } = {}) => {
+      const defaultRoutes = {
+        luna: 'openai_perf',
+        nemesis: 'dual_groq',
+        oracle: 'dual_groq',
+        hermes: 'openai_mini',
+        sophia: 'openai_mini',
+        zeus: 'openai_mini',
+        athena: 'openai_mini',
+      };
+      const configuredRoutes = _isObject(policyOverride?.agentRoutes)
+        ? { ...defaultRoutes, ...policyOverride.agentRoutes }
+        : defaultRoutes;
+      const route = configuredRoutes[agentName] || 'groq_scout';
       return {
         route,
         openaiPerfModel,
@@ -218,8 +254,7 @@ function selectLLMPolicy(key, options = {}) {
   const entry = SELECTOR_REGISTRY[key];
   if (!entry) throw new Error(`알 수 없는 LLM selector key: ${key}`);
   const resolved = typeof entry === 'function' ? entry(options) : _clone(entry);
-  if (Array.isArray(resolved)) return _applyChainOverrides(resolved, options);
-  return resolved;
+  return _applyPolicyOverride(resolved, options.policyOverride, options);
 }
 
 function selectLLMChain(key, options = {}) {

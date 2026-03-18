@@ -18,6 +18,7 @@ import { createRequire } from 'module';
 import yaml         from 'js-yaml';
 import { tracker }  from './cost-tracker.js';
 import { getTradingMode } from './secrets.js';
+import { getInvestmentLLMPolicyConfig } from './runtime-config.js';
 
 // CJS 토큰 트래커 (orchestrator 공용)
 let _trackTokens = null;
@@ -93,11 +94,15 @@ const {
   selectLLMPolicy,
 } = require('../../../packages/core/lib/llm-model-selector.js');
 
+const INVESTMENT_LLM_POLICIES = getInvestmentLLMPolicyConfig();
+const INVESTMENT_AGENT_POLICY_OVERRIDE = INVESTMENT_LLM_POLICIES.investmentAgentPolicy || null;
+
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
 const DEFAULT_INVESTMENT_POLICY = selectLLMPolicy('investment.agent_policy', {
   agentName: 'luna',
   openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
+  policyOverride: INVESTMENT_AGENT_POLICY_OVERRIDE,
 });
 export const GROQ_SCOUT_MODEL  = DEFAULT_INVESTMENT_POLICY.groqScoutModel;
 export const GPT_OSS_20B_MODEL = DEFAULT_INVESTMENT_POLICY.groqCompetitionModels[0];
@@ -209,6 +214,7 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
   const agentPolicy = selectLLMPolicy('investment.agent_policy', {
     agentName,
     openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
+    policyOverride: INVESTMENT_AGENT_POLICY_OVERRIDE,
   });
   if (agentPolicy.route === 'openai_perf') {
     return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);

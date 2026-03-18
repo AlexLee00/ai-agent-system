@@ -2275,6 +2275,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 팀별 고유 정책은 유지하되, 체인 상수와 기본 모델 우선순위는 공용 selector에서 조회하도록 정리
 - 이후 운영상 모델 변경 시 개별 파일 하드코딩보다 selector 레이어 우선 수정이 가능해짐
 
+### 공용 LLM 모델 셀렉터 2차 통합
+- 오케스트레이터 `runtime_config.llmSelectorOverrides`를 추가해 제이 intent/chat fallback 체인을 selector override로 운영 제어 가능하게 정리
+- 투자 `runtime_config.llmPolicies.investmentAgentPolicy`를 추가해 agent별 route와 주요 모델 상수를 selector override로 관리 가능하게 정리
+- 공용 selector는 기본 체인을 보유하고, 팀 runtime_config는 override만 담당하는 구조로 역할 경계를 분명히 함
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

@@ -623,6 +623,9 @@
 - payload.details가 있는 알림은 원문 전체 본문 대신 요약 detail 우선 사용
 - telegram-sender에서 긴 구분선/과도한 공백을 발송 직전 정규화
 - 루나 실시간 알림과 주간 리뷰 메시지의 긴 구분선/장문 근거를 축약
+- `packages/core/lib/llm-model-selector.js`를 공용 실행 체인 레지스트리로 추가
+- 제이/아처/클로드/워커/블로그/투자 LLM 호출 경로를 selector key로 1차 통합
+- 오케스트레이터 `runtime_config.llmSelectorOverrides`와 투자 `runtime_config.llmPolicies`를 추가해 selector 기본값 위에 운영 override를 얹을 수 있게 정리
 
 ### 2026-03-14
 
