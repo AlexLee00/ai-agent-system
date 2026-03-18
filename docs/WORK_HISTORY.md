@@ -2555,6 +2555,13 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 세션 종료 문서(SESSION_HANDOFF / RESEARCH_JOURNAL / TEST_RESULTS / CHANGELOG) 갱신
 - 덱스터 체크섬 베이스라인 갱신 완료 (`bots/claude/.checksums.json`, 65개 파일)
 
+### 자동화 리포트 해석력 보강
+- `jay-llm-daily-review.js`에 `dbSourceStatus`를 추가해 `EPERM` 기반 실패를 `sandbox_restricted`로 분류하고, 현재 실행 컨텍스트 제한 가능성을 리포트에서 직접 읽을 수 있게 정리
+- `packages/core/lib/health-runner.js`를 보강해 team health script가 빈 `예외:` 대신 `[EPERM] at ...` 같은 실제 실패 힌트를 stderr에 남기도록 정리
+- `ska-sales-forecast-daily-review.js`에 `requestedDays / effectiveDays`를 추가해 주간 리뷰와 같은 기간 해석 규칙을 적용
+- `daily-ops-report.js`에 `localFallback` 메타를 추가해 investment / reservation 팀이 `health_report_failed_local_fallback + local fallback 활동 신호 1건`으로 읽히도록 정리
+- `daily-ops-report.js` 추천 문구를 `db_sandbox_restricted`와 `local fallback 활동 신호`를 구분하는 방식으로 보강해, “DB 제한은 있지만 팀 활동은 있음”을 운영자가 바로 해석할 수 있게 정리
+
 ### 전략 백로그 재정렬 + 루나 공격적 매매 실구현
 - `PLATFORM_IMPLEMENTATION_TRACKER`에서 이미 완료된 `워커웹 로컬/외부 IP 접속`을 PENDING 최우선 과제에서 제거
 - 루나 주식 전략을 단순 문구가 아니라 `runtime_config` 기반 `stockStrategyMode / stockStrategyProfiles`로 승격

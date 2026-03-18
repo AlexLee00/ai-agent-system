@@ -296,3 +296,16 @@
 |--------|------|
 | 세션 문서 업데이트 (`SESSION_HANDOFF`, `WORK_HISTORY`, `RESEARCH_JOURNAL`, `CHANGELOG`) | ✅ |
 | `node bots/claude/src/dexter.js --update-checksums` | ✅ 65개 파일 갱신 |
+
+### 자동화 리포트 해석력 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check scripts/reviews/jay-llm-daily-review.js` | ✅ |
+| `node --check packages/core/lib/health-runner.js` | ✅ |
+| `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ |
+| `node --check scripts/reviews/daily-ops-report.js` | ✅ |
+| `node scripts/reviews/jay-llm-daily-review.js --json` | ✅ `dbSourceStatus`에 `sandbox_restricted` 노출 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` | ✅ `requestedDays=5`, `effectiveDays=7` 확인 |
+| `node scripts/reviews/daily-ops-report.js --json` | ✅ investment / reservation `localFallback.enabled=true` 확인 |
+| `node scripts/reviews/daily-ops-report.js` | ✅ `보조 신호: local fallback 활동 신호 1건` 텍스트 출력 확인 |

@@ -8,8 +8,9 @@ const FORECAST_CONFIG = getSkaForecastConfig();
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
-  const days = Math.max(DAILY_REVIEW_CONFIG.minDays, Number(daysArg?.split('=')[1] || DAILY_REVIEW_CONFIG.defaultDays));
-  return { days, json: argv.includes('--json') };
+  const requestedDays = Number(daysArg?.split('=')[1] || DAILY_REVIEW_CONFIG.defaultDays);
+  const effectiveDays = Math.max(DAILY_REVIEW_CONFIG.minDays, requestedDays);
+  return { requestedDays, effectiveDays, json: argv.includes('--json') };
 }
 
 function fmt(n) {
@@ -269,9 +270,9 @@ function buildActionItems(summary, latest, shadowComparison, shadowDecision) {
 }
 
 async function main() {
-  const { days, json } = parseArgs();
+  const { requestedDays, effectiveDays, json } = parseArgs();
   const [accuracyRows, upcomingRows] = await Promise.all([
-    loadAccuracyRows(days),
+    loadAccuracyRows(effectiveDays),
     loadUpcomingForecasts(DAILY_REVIEW_CONFIG.upcomingDays),
   ]);
 
@@ -282,7 +283,9 @@ async function main() {
   const recommendations = buildRecommendations(summary, upcomingRows[0] || latestActual, shadowComparison, shadowDecision);
 
   const report = {
-    periodDays: days,
+    requestedDays,
+    effectiveDays,
+    periodDays: effectiveDays,
     latestActual: latestActual ? {
       date: toDateString(latestActual.date),
       actualRevenue: Number(latestActual.actual_revenue || 0),
@@ -319,7 +322,10 @@ async function main() {
   }
 
   const lines = [];
-  lines.push(`📊 스카 매출·예측 일일 리뷰 (${days}일)`);
+  lines.push(`📊 스카 매출·예측 일일 리뷰 (${effectiveDays}일)`);
+  if (requestedDays !== effectiveDays) {
+    lines.push(`- 요청 기간 ${requestedDays}일 → 최소 운영 기준 ${effectiveDays}일로 확장`);
+  }
 
   if (report.latestActual) {
     lines.push('');
