@@ -44,6 +44,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 자동매매 일지와 주간 리뷰에 `암호화폐 / 국내장 / 해외장` 섹션 강제 분리
 - 블로그 생성 임계치와 maestro 관련 timeout/cooldown을 설정 파일에서 조정 가능하게 변경
 - 스카 일일/주간 예측 리뷰가 `primary vs shadow` 비교와 promotion 판단을 읽도록 확장
+- 스카 일일/주간 예측 리뷰에 `shadowDecision` 추가
+  - `데이터 수집 / 비교 관찰 / 앙상블 후보 / 기존 유지` 단계 명시
+  - `availableDays`, `requiredDays`, `gapThreshold`, `reason` 함께 출력
 - 일일 운영 분석 리포트 입력 스크립트를 `daily-ops-report.js` 기준으로 정리
 - 구현 추적 문서 이름을 `PLATFORM_IMPLEMENTATION_TRACKER.md`로 정리하고 세션 인덱스/팀 문서 링크를 갱신
 - 세션 문서 체계를 기존 문서 중심으로 재정리

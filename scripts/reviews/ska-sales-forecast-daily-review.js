@@ -154,7 +154,54 @@ function buildShadowComparison(rows) {
   };
 }
 
-function buildRecommendations(summary, latest, shadowComparison) {
+function buildShadowDecision(shadowComparison) {
+  const requiredDays = 3;
+  const gapThreshold = Number(FORECAST_CONFIG.shadowPromotionMapeGap || 0);
+
+  if (shadowComparison.availableDays < requiredDays) {
+    return {
+      stage: 'collecting',
+      label: '데이터 수집 단계',
+      requiredDays,
+      gapThreshold,
+      recommendation: 'actual 누적 후 비교 유지',
+      reason: `shadow actual 비교일이 ${shadowComparison.availableDays}일이라 최소 ${requiredDays}일 누적이 더 필요합니다.`,
+    };
+  }
+
+  if (shadowComparison.avgMapeGap <= -gapThreshold) {
+    return {
+      stage: 'promotion_candidate',
+      label: '앙상블 편입 후보',
+      requiredDays,
+      gapThreshold,
+      recommendation: '다음 운영 사이클에서 앙상블 실험 검토',
+      reason: `shadow 평균 MAPE가 기존 대비 ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되었습니다.`,
+    };
+  }
+
+  if (shadowComparison.avgMapeGap >= gapThreshold) {
+    return {
+      stage: 'primary_hold',
+      label: '기존 엔진 유지',
+      requiredDays,
+      gapThreshold,
+      recommendation: 'shadow 비교만 유지',
+      reason: `shadow 평균 MAPE가 기존보다 ${shadowComparison.avgMapeGap}%p 높습니다.`,
+    };
+  }
+
+  return {
+    stage: 'observe',
+    label: '비교 관찰 단계',
+    requiredDays,
+    gapThreshold,
+    recommendation: '추가 데이터 관찰',
+    reason: `평균 MAPE 차이 ${shadowComparison.avgMapeGap}%p로 승격 판단 기준(${gapThreshold}%p)에 아직 못 미칩니다.`,
+  };
+}
+
+function buildRecommendations(summary, latest, shadowComparison, shadowDecision) {
   const lines = [];
   if (summary.avgMape == null) {
     return ['- 아직 정확도 누적 데이터가 부족합니다.'];
@@ -185,11 +232,15 @@ function buildRecommendations(summary, latest, shadowComparison) {
     lines.push(`- 최신 예측 확신도가 ${(Number(latest.confidence) * 100).toFixed(0)}%로 낮아 수동 검토 우선순위를 올리는 게 좋습니다.`);
   }
 
-  if (shadowComparison.availableDays >= 3) {
+  if (shadowDecision.stage === 'collecting') {
+    lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 ${shadowComparison.availableDays}일치만 쌓여 ${shadowDecision.recommendation} 상태입니다.`);
+  } else if (shadowComparison.availableDays >= 3) {
     if (shadowComparison.avgMapeGap <= -FORECAST_CONFIG.shadowPromotionMapeGap) {
       lines.push(`- shadow 모델(${shadowComparison.shadowModelName})이 평균 MAPE ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되어 앙상블 편입 후보입니다.`);
     } else if (shadowComparison.avgMapeGap >= FORECAST_CONFIG.shadowPromotionMapeGap) {
       lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 아직 기존 엔진보다 약해 shadow 비교만 유지하는 게 좋습니다.`);
+    } else {
+      lines.push(`- shadow 모델(${shadowComparison.shadowModelName})은 비교 관찰 단계이며 추가 데이터 누적이 더 필요합니다.`);
     }
   }
 
@@ -206,7 +257,8 @@ async function main() {
   const latestActual = accuracyRows[0] || null;
   const summary = buildSummary(accuracyRows);
   const shadowComparison = buildShadowComparison(accuracyRows);
-  const recommendations = buildRecommendations(summary, upcomingRows[0] || latestActual, shadowComparison);
+  const shadowDecision = buildShadowDecision(shadowComparison);
+  const recommendations = buildRecommendations(summary, upcomingRows[0] || latestActual, shadowComparison, shadowDecision);
 
   const report = {
     periodDays: days,
@@ -228,6 +280,7 @@ async function main() {
     } : null,
     summary,
     shadowComparison,
+    shadowDecision,
     upcomingForecasts: upcomingRows.map(row => ({
       date: toDateString(row.date),
       predictedRevenue: Number(row.predicted_revenue || 0),
@@ -264,6 +317,12 @@ async function main() {
   lines.push(`- 20% 이내 적중률: ${report.summary.hitRate20}%`);
   lines.push(`- 평균 편향: ${biasLabel(report.summary.avgBias)}`);
   lines.push(`- 예약건수 평균 오차: ${report.summary.avgReservationGap}건`);
+
+  lines.push('');
+  lines.push('Shadow 판단:');
+  lines.push(`- 단계: ${report.shadowDecision.label}`);
+  lines.push(`- 권장: ${report.shadowDecision.recommendation}`);
+  lines.push(`- 근거: ${report.shadowDecision.reason}`);
 
   if (report.shadowComparison.availableDays > 0) {
     lines.push('');
