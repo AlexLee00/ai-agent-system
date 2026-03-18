@@ -22,6 +22,7 @@
   - 최근 14일 신호/실행/실패 코드 기준 `current -> suggested` 제안 리포트를 운영 루틴에 편입
   - 제안 리포트를 `runtime_config_suggestion_log`에 저장해 apply/hold/reject 이력을 남길 기반 만들기
   - 저장된 제안 이력을 `pending / hold / approved / rejected / applied`로 검토 갱신하고 시점을 추적하기
+  - 승인된 제안을 `config.yaml`에 반영하면서 `applied_at`까지 자동 갱신하는 안전한 적용 경로 유지
   - `legacy_*` 실패 이력을 구조화 코드 기준으로 더 줄이기
 - 스카
   - shadow 모델 비교 데이터 누적 후 `ensemble experiment` 승격 여부 판단

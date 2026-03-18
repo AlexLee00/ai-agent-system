@@ -120,6 +120,28 @@
 - `node bots/investment/scripts/review-runtime-config-suggestion.js --list --json`
 - `node bots/investment/scripts/review-runtime-config-suggestion.js --id=<suggestion_log_id> --status=hold --note='운영 검토 유지' --json`
 
+### 12주차 후속 (2026-03-18) — 투자 runtime_config 승인안 적용 경로 추가
+
+핵심 구현:
+- `apply-runtime-config-suggestion.js` 추가
+- 승인된 제안 스냅샷을 `config.yaml > runtime_config`에 반영하는 미리보기/실반영 경로 추가
+- 반영 성공 시 suggestion log를 `applied`로 올리고 `applied_at` 자동 기록
+- 부분 반영을 위한 `--keys` 선택과 안전한 기본값(`미리보기`) 유지
+- 임시 `--config=/tmp/...` 테스트는 실제 운영 반영으로 보지 않고 DB 상태를 올리지 않도록 경계 고정
+
+세션 맥락:
+- 제안 생성, 저장, 검토 상태 갱신까지는 닫혔지만 실제 운영에서는 승인된 제안을 설정 파일에 반영하고 이력을 `applied`로 연결하는 마지막 고리가 필요했다.
+- 이번 단계에서 자동 적용을 남발하지 않고, 승인 상태와 `--write`가 함께 있을 때만 반영되는 안전 경로를 붙였다.
+
+의사결정 이유:
+- 자산 연결 설정은 UI보다 스크립트 경로가 먼저 안전하고, 기본 동작을 미리보기로 두는 것이 운영 안정성에 더 적합하다.
+- 기존 suggestion log와 `config.yaml` 구조를 재사용해 “승인 → 적용 → applied_at 기록”만 추가하는 것이 내부 MVP와 추후 SaaS 감사 추적 모두에 유리하다.
+
+검증:
+- `node --check bots/investment/scripts/apply-runtime-config-suggestion.js`
+- `node bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id> --config=/tmp/investment-config-test.yaml --json`
+- `node bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id> --config=/tmp/investment-config-test.yaml --write --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
