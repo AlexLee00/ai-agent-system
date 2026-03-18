@@ -12,6 +12,7 @@
 - 메뉴 권한/AI 정책/승인 흐름
 - 문서 업로드 파싱과 OCR 테스트
 - 워커 모니터링과 기본 LLM API 선택
+- 최근 24시간 LLM 호출 통계와 기본 API 변경 이력 확인
 
 ## 핵심 진입점
 
@@ -33,6 +34,7 @@
 - [bots/worker/web/components/PromptAdvisor.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/PromptAdvisor.js)
 - [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js)
 - [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
+- [bots/worker/migrations/018-monitoring-history.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.sql)
 
 ## 운영 스크립트
 
@@ -46,6 +48,7 @@
 - [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
 - [bots/worker/web/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/runtime-config.js)
 - [bots/worker/migrations/017-system-preferences.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.sql)
+- [bots/worker/migrations/018-monitoring-history.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.sql)
 
 ## 자주 쓰는 명령어
 
@@ -53,6 +56,7 @@
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js
 node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js
+node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.js
 cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run build
 ```
 

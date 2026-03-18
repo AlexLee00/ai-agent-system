@@ -4,6 +4,31 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
+
+핵심 구현:
+- `/admin/monitoring` 페이지에 최근 24시간 LLM 호출 통계 카드 추가
+- API별 사용량, 경로별 사용량, 마지막 호출 시각을 한 화면에서 확인 가능하게 정리
+- 기본 API 변경 이력을 `worker.system_preference_events`에 저장하도록 확장
+- 누가 언제 `Groq/Anthropic/OpenAI/Gemini`로 바꿨는지 최근 이력을 관리자 화면에 노출
+- `018-monitoring-history` 마이그레이션 추가 및 실제 DB 반영
+
+세션 맥락:
+- 워커 모니터링은 기존에 “무슨 API를 쓸지”만 바꾸는 관리 화면이었다.
+- 운영자 관점에서는 변경 이력과 실제 호출량이 함께 있어야 설정 변경의 효과를 판단할 수 있어서, 이번 단계에서 운영 지표를 닫았다.
+
+의사결정 이유:
+- 새로운 로그 저장소를 만들기보다 기존 `reservation.llm_usage_log`와 워커 전용 설정 테이블을 재사용하는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- provider 변경 이력은 단순 현재값보다 훨씬 중요한 운영 데이터라 별도 이벤트 테이블로 남기는 것이 추후 SaaS 감사 추적에도 맞다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/scripts/setup-worker.js`
+- `cd bots/worker/web && npm run build`
+- `node bots/worker/migrations/018-monitoring-history.js`
+- `node bots/worker/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:

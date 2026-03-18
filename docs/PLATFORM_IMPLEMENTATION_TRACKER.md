@@ -10,7 +10,7 @@
 - 워커
   - 자연어 중심 업무 UX와 확인창 흐름을 더 자연스럽게 연결
   - 문서 파싱 결과의 실제 업무 화면 재사용 범위를 더 넓히기
-  - 워커 모니터링의 LLM API 선택 변경 이력과 호출 통계까지 연결
+  - 워커 모니터링의 provider 변경 이력과 호출 통계를 운영 지표로 다듬기
 - 투자
   - 암호화폐/국내/해외장 체결 증가 여부를 실제 리뷰 데이터로 튜닝
   - `runtime_config` 변경 제안 자동화까지 닫기
@@ -169,6 +169,7 @@
 - 운영 모니터링
   - [bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js)
   - [bots/worker/migrations/017-system-preferences.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.sql)
+  - [bots/worker/migrations/018-monitoring-history.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.sql)
 - 운영 설정
   - [bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json)
   - [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
@@ -329,6 +330,7 @@
 | 완료 | 2026-03-16 | 승인/근태 권한 흐름 정리 | 근태 현황/휴가/휴가 승인 탭, 멤버/관리자/마스터 노출 범위, 승인 후 상태 반영까지 정리 | [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js), [bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js) |
 | 완료 | 2026-03-16 | 문서 업로드 기반 AI 입력 확장 | 업로드 문서를 파싱해 프롬프트에 주입하고, 주요 업무 화면에서 구조 추출에 재사용 가능하게 연결 | [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js), [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js) |
 | 완료 | 2026-03-16 | OCR 테스트 운영 화면 | 관리자용 `OCR 테스트` 메뉴와 파싱 metadata/추출 텍스트 확인 화면 구축 | [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js), [bots/worker/web/components/Sidebar.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/Sidebar.js) |
+| 완료 | 2026-03-18 | 워커 모니터링 운영 지표 | 기본 LLM API 선택에 더해 최근 24시간 호출 통계와 provider 변경 이력을 `/admin/monitoring`에서 확인 가능하게 정리 | [bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js), [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js), [bots/worker/migrations/018-monitoring-history.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.sql) |
 
 ### 4.6 스카팀 예측/운영/명령 고도화
 

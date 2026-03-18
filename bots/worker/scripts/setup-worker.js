@@ -24,6 +24,7 @@ const migrations = [
   '../migrations/015-document-reuse-events.js',
   '../migrations/016-document-reuse-linking.js',
   '../migrations/017-system-preferences.js',
+  '../migrations/018-monitoring-history.js',
 ];
 
 async function main() {
