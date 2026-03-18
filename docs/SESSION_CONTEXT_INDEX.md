@@ -16,6 +16,7 @@
 - “문서가 각각 무슨 역할이지?”는 이 문서의 `2. 문서 체계와 역할`을 먼저 본다.
 - “기능이 어디 있지?”는 [docs/team-indexes/README.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/README.md)에서 팀 문서로 들어가면 된다.
 - “운영 중 바꿀 값이 어디 있지?”는 [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)와 [show-runtime-configs.js](/Users/alexlee/projects/ai-agent-system/scripts/show-runtime-configs.js)를 먼저 본다.
+- “제이는 왜 Gemini와 GPT를 같이 쓰지?”는 [TEAM_ORCHESTRATOR_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_ORCHESTRATOR_REFERENCE.md)와 `bots/orchestrator/config.json > runtime_config.jayModels`를 먼저 본다.
 - “DB가 어디에 어떻게 저장되지?”는 [DATABASE_SCHEMA_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/DATABASE_SCHEMA_INDEX.md)를 먼저 본다.
 - “장애가 났을 때 어떤 순서로 점검하지?”는 [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.

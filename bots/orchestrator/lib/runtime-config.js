@@ -12,6 +12,15 @@ const DEFAULT_RUNTIME_CONFIG = {
     payloadWarningWithinHours: 24,
     payloadWarningLimit: 50,
   },
+  jayModels: {
+    gatewayPrimary: 'google-gemini-cli/gemini-2.5-flash',
+    intentPrimary: 'gpt-5-mini',
+    intentFallback: 'gemini-2.5-flash',
+    chatFallbackChain: [
+      { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
+      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+    ],
+  },
 };
 
 let cachedConfig = null;
@@ -47,7 +56,12 @@ function getOrchestratorHealthConfig() {
   return loadOrchestratorRuntimeConfig().health;
 }
 
+function getJayModelConfig() {
+  return loadOrchestratorRuntimeConfig().jayModels;
+}
+
 module.exports = {
   loadOrchestratorRuntimeConfig,
   getOrchestratorHealthConfig,
+  getJayModelConfig,
 };

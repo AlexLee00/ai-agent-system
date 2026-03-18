@@ -15,7 +15,7 @@ const { trackTokens } = require('./token-tracker');
 const logger = require('../../../packages/core/lib/llm-logger');
 const { getGeminiKey, getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { JAY_INTENT_PARSE_POLICY } = require('./jay-model-policy');
+const { buildIntentParsePolicy } = require('./jay-model-policy');
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -48,10 +48,11 @@ const loadDynamicExamples = createPromotedIntentExampleLoader({
 
 // ─── LLM 폴백 설정 ───────────────────────────────────────────────────
 
-const INTENT_PRIMARY_MODEL = JAY_INTENT_PARSE_POLICY.primary.model;
-const INTENT_PRIMARY_PROVIDER = JAY_INTENT_PARSE_POLICY.primary.provider;
-const INTENT_FALLBACK_MODEL = JAY_INTENT_PARSE_POLICY.fallback.model;
-const INTENT_FALLBACK_PROVIDER = JAY_INTENT_PARSE_POLICY.fallback.provider;
+const INTENT_POLICY = buildIntentParsePolicy();
+const INTENT_PRIMARY_MODEL = INTENT_POLICY.primary.model;
+const INTENT_PRIMARY_PROVIDER = INTENT_POLICY.primary.provider;
+const INTENT_FALLBACK_MODEL = INTENT_POLICY.fallback.model;
+const INTENT_FALLBACK_PROVIDER = INTENT_POLICY.fallback.provider;
 
 // ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
 

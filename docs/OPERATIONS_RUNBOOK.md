@@ -154,6 +154,10 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 - critical path와 webhook은 config 기준으로 점검
   - [bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)
   - [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js)
+- 제이 모델 정책 확인 순서
+  - OpenClaw gateway 기본 모델: [openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
+  - 제이 앱 레벨 모델 정책: [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
+  - 운영 오버라이드 값: [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`
 
 ### Claude / Dexter
 
