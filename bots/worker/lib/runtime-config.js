@@ -21,6 +21,22 @@ const DEFAULTS = {
     healthTimeoutMs: 2500,
     webhookTimeoutMs: 5000,
   },
+  llmSelectorOverrides: {
+    'worker.ai.fallback': {
+      providerModels: {
+        groq: 'llama-4-scout-17b-16e-instruct',
+        anthropic: 'claude-haiku-4-5-20251001',
+        openai: 'gpt-4o-mini',
+        gemini: 'gemini-2.5-flash',
+      },
+    },
+    'worker.chat.task_intake': {
+      chain: [
+        { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
+      ],
+    },
+  },
 };
 
 function mergeDeep(base, override) {
@@ -58,8 +74,13 @@ function getWorkerN8nRuntimeConfig() {
   return loadRuntimeConfig().n8n;
 }
 
+function getWorkerLLMSelectorOverrides() {
+  return loadRuntimeConfig().llmSelectorOverrides || {};
+}
+
 module.exports = {
   getWorkerLeadRuntimeConfig,
   getWorkerHealthRuntimeConfig,
   getWorkerN8nRuntimeConfig,
+  getWorkerLLMSelectorOverrides,
 };

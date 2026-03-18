@@ -92,6 +92,10 @@ function _resolvePreferredProvider(preferredApi, groqModel, maxTokens) {
   return { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 };
 }
 
+function _stripGroqPrefix(model = '') {
+  return model.startsWith('groq/') ? model.slice(5) : model;
+}
+
 function _dedupeByProvider(chain) {
   return chain.filter((entry, index, array) =>
     array.findIndex((candidate) => candidate.provider === entry.provider) === index
@@ -150,14 +154,24 @@ function _buildSelectorRegistry() {
       preferredApi = 'groq',
       configuredProviders = ['groq', 'anthropic', 'gemini', 'openai'],
       maxTokens = 1024,
+      policyOverride = null,
     } = {}) => {
       const configured = new Set(configuredProviders || []);
-      const primary = _resolvePreferredProvider(preferredApi, groqModel, maxTokens);
+      const providerModels = {
+        groq: _stripGroqPrefix(policyOverride?.providerModels?.groq || groqModel),
+        anthropic: policyOverride?.providerModels?.anthropic || 'claude-haiku-4-5-20251001',
+        gemini: policyOverride?.providerModels?.gemini || 'gemini-2.5-flash',
+        openai: policyOverride?.providerModels?.openai || 'gpt-4o-mini',
+      };
+      const primary = _resolvePreferredProvider(preferredApi, providerModels.groq, maxTokens);
+      if (preferredApi === 'anthropic') primary.model = providerModels.anthropic;
+      if (preferredApi === 'openai') primary.model = providerModels.openai;
+      if (preferredApi === 'gemini') primary.model = providerModels.gemini;
       const fallback = [
-        { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 },
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 },
-        { provider: 'gemini', model: 'gemini-2.5-flash', maxTokens, temperature: 0.1 },
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 },
+        { provider: 'groq', model: `groq/${providerModels.groq}`, maxTokens, temperature: 0.1 },
+        { provider: 'anthropic', model: providerModels.anthropic, maxTokens, temperature: 0.1 },
+        { provider: 'gemini', model: providerModels.gemini, maxTokens, temperature: 0.1 },
+        { provider: 'openai', model: providerModels.openai, maxTokens, temperature: 0.1 },
       ].filter((entry) => configured.has(entry.provider));
       const chain = configured.has(primary.provider) ? [primary, ...fallback] : fallback;
       return _dedupeByProvider(chain);
