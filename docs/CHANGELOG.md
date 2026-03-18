@@ -477,6 +477,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 - 자동화 리포트
   - `jay-llm-daily-review.js`가 `dbSourceStatus`를 추가해 `sandbox_restricted / permission_denied / db_unreachable` 등 source별 실패 상태를 구분해 노출하도록 보강
+  - `jay-llm-daily-review.js`가 `tmp/jay-llm-daily-review-db-snapshot.json` fallback 저장을 지원해, live DB query가 막혀도 최근 DB 집계를 snapshot 기준으로 계속 읽을 수 있게 정리
   - `packages/core/lib/health-runner.js`가 빈 `예외:` 대신 `[EPERM] ...` 형태의 실제 실패 힌트를 stderr에 남기도록 보강
   - `ska-sales-forecast-daily-review.js`가 `requestedDays / effectiveDays`를 함께 출력해 일일/주간 리포트 해석 규칙을 통일
   - `daily-ops-report.js`가 `inputFailures.code`를 세분화하고 `investment / reservation`에는 `local fallback 활동 신호`를 함께 표시해 health-report 실패와 팀 활동 신호를 분리해서 읽을 수 있게 정리

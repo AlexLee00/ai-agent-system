@@ -684,6 +684,7 @@
 - 워커 API `/api/admin/monitoring/blog-published-urls`를 추가해 최근 blog post 조회와 canonical 네이버 URL 저장을 운영 화면에서 바로 처리할 수 있게 정리
 - 자동화 리포트 해석력 보강
   - `jay-llm-daily-review.js`에 `dbSourceStatus`를 추가해 `sandbox_restricted` 등 source별 실패 상태를 구분하도록 정리
+  - `jay-llm-daily-review.js`가 `tmp/jay-llm-daily-review-db-snapshot.json` fallback 저장을 지원해 live DB query가 막혀도 최근 DB 집계를 계속 읽도록 정리
   - `packages/core/lib/health-runner.js`가 실제 stderr 힌트를 남기도록 보강돼, team health 실패 원인을 더 정확히 읽을 수 있게 정리
   - `ska-sales-forecast-daily-review.js`도 `requestedDays / effectiveDays`를 함께 출력하도록 맞춰 일일/주간 포맷을 통일
   - `daily-ops-report.js`가 `localFallback` 메타를 추가해 investment / reservation의 활동 신호를 별도 축으로 읽을 수 있게 정리

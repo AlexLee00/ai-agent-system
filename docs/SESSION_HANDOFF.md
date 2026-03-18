@@ -44,6 +44,7 @@
   - `jay-gateway-experiment-daily.js`는 새 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기준 review를 계속 출력하도록 보강됐다.
   - `log-jay-gateway-experiment.js`와 `jay-gateway-experiment-daily.js`는 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장으로 계속 기록을 남긴다.
   - `jay-llm-daily-review.js`는 DB 접근 실패 시에도 `session_usage_fallback` 기준 모델별 사용량을 유지하고, `dbStatsStatus=partial`, `dbSourceErrors`, `dbSourceStatus`를 함께 노출해 현재 실행 컨텍스트 제한과 실제 DB 장애를 더 명확히 구분한다.
+  - `jay-llm-daily-review.js`는 DB 읽기가 가능한 실행 컨텍스트에서는 `tmp/jay-llm-daily-review-db-snapshot.json`에 최근 DB 집계를 저장하고, 이후 DB 접근이 막혀도 snapshot fallback으로 리뷰를 계속 유지하도록 보강됐다.
 - 스카
   - `ska-sales-forecast-daily-review.js`는 `requestedDays / effectiveDays`와 `actionItems`를 제공해 일일/주간 리포트 해석 규칙을 맞췄다.
   - `ska-sales-forecast-weekly-review.js`도 `requestedDays / effectiveDays`와 `actionItems`를 제공해 일일/주간 리포트 해석 규칙을 맞췄다.
@@ -97,6 +98,7 @@
   - 투자 설정 제안 일일/주간
 6. 자동화 리포트 운영 데이터 관찰
   - 제이 Gateway `persisted` 상태
+  - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴
   - investment / reservation `local fallback 활동 신호`가 실제 운영 상태를 안정적으로 대변하는지
   - 투자 `no-trade high-cost` 경고 발생 여부
@@ -116,6 +118,7 @@
 - 제이 Gateway 자동화는 repo 내부 fallback 저장으로 기록은 남기지만, 운영 기본 경로(`~/.openclaw/workspace`) 쓰기 권한은 여전히 재확인 필요
 - `jay-llm-daily-review.js`는 더 이상 완전 degraded가 아니라 `partial`로 동작하지만, DB source(`llmUsage`, `parseHistory`)는 아직 `EPERM`으로 실패한다
 - `daily-ops-report.js`는 investment / reservation에 대해 `local fallback 활동 신호`를 보이지만, 여전히 원본 `health-report`의 DB 접근 제한은 별도 복구가 필요하다
+- `jay-llm-daily-review.js`는 이제 snapshot fallback으로 운영 리포트 연속성은 확보했지만, live DB query 자체의 `EPERM` 원인은 아직 별도 운영 컨텍스트 복구가 필요하다
 - 투자 주간 리뷰 usage는 복구됐지만, 주간/일간 usage 집계 로직을 공용 함수로 통합하면 중복 유지보수를 더 줄일 수 있다
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정

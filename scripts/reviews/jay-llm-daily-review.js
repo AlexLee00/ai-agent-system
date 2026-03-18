@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const pgPool = require('../../packages/core/lib/pg-pool');
 const { parseArgs, collectJayUsage } = require('./lib/jay-usage');
+
+const SNAPSHOT_PATH = path.join(__dirname, '..', '..', 'tmp', 'jay-llm-daily-review-db-snapshot.json');
 
 function fmt(n) {
   return Number(n || 0).toLocaleString();
@@ -26,6 +30,46 @@ function classifySourceError(errorText) {
   if (text.includes('econnrefused') || text.includes('connection refused')) return 'db_unreachable';
   if (text.includes('timeout')) return 'db_timeout';
   return 'db_failed';
+}
+
+function ensureSnapshotDir() {
+  fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
+}
+
+function persistDbSnapshot(days, data) {
+  try {
+    ensureSnapshotDir();
+    fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify({
+      capturedAt: new Date().toISOString(),
+      periodDays: days,
+      data,
+    }, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function loadDbSnapshot(days) {
+  try {
+    if (!fs.existsSync(SNAPSHOT_PATH)) return null;
+    const parsed = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || !parsed.data) return null;
+    return {
+      capturedAt: parsed.capturedAt || null,
+      periodDays: Number(parsed.periodDays || days),
+      stale: Number(parsed.periodDays || days) !== Number(days),
+      data: parsed.data,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildDbSnapshotAgeHours(capturedAt) {
+  const ts = new Date(capturedAt || '').getTime();
+  if (!Number.isFinite(ts)) return null;
+  return Number(((Date.now() - ts) / (1000 * 60 * 60)).toFixed(1));
 }
 
 async function getJayDbStats(days) {
@@ -84,11 +128,18 @@ async function getJayDbStats(days) {
   };
 }
 
-function buildRecommendation({ jayUsage, dbStats, dbStatsError }) {
+function buildRecommendation({ jayUsage, dbStats, dbStatsError, dbAccessError, snapshotFallback }) {
   if (dbStatsError) {
     return [
       '- DB 기반 제이 usage 집계가 실패해 세션 usage만 기준으로 관찰합니다.',
       '- PostgreSQL 접근 권한 또는 자동화 실행 컨텍스트를 먼저 복구하세요.',
+    ];
+  }
+
+  if (snapshotFallback) {
+    return [
+      '- live DB query는 실패했지만 최근 snapshot을 읽어 제이 usage/parse history를 유지했습니다.',
+      `- 현재 실패 상태는 \`${classifySourceError(dbAccessError)}\`로 보이며, 운영 런타임 DB 접근을 복구하면 snapshot fallback 의존을 줄일 수 있습니다.`,
     ];
   }
 
@@ -168,15 +219,60 @@ function buildFallbackLlmUsage(jayUsage) {
 
 async function getJayDbStatsSafe(days) {
   try {
+    const data = await getJayDbStats(days);
+    const allDbSourcesFailed = Boolean(data.errors?.llmUsage) && Boolean(data.errors?.parseHistory);
+    if (allDbSourcesFailed) {
+      const snapshot = loadDbSnapshot(days);
+      if (snapshot) {
+        return {
+          ok: true,
+          data: snapshot.data,
+          error: data.errors.llmUsage || data.errors.parseHistory,
+          source: 'snapshot_fallback',
+          snapshotPersisted: false,
+          snapshotFallback: true,
+          snapshotMeta: {
+            capturedAt: snapshot.capturedAt,
+            ageHours: buildDbSnapshotAgeHours(snapshot.capturedAt),
+            stale: snapshot.stale,
+          },
+        };
+      }
+    }
+    const persisted = persistDbSnapshot(days, data);
     return {
       ok: true,
-      data: await getJayDbStats(days),
+      data,
+      source: 'db',
+      snapshotPersisted: persisted,
+      snapshotFallback: false,
+      snapshotMeta: null,
     };
   } catch (error) {
+    const snapshot = loadDbSnapshot(days);
+    if (snapshot) {
+      return {
+        ok: true,
+        data: snapshot.data,
+        error: error?.stack || error?.message || String(error),
+        source: 'snapshot_fallback',
+        snapshotPersisted: false,
+        snapshotFallback: true,
+        snapshotMeta: {
+          capturedAt: snapshot.capturedAt,
+          ageHours: buildDbSnapshotAgeHours(snapshot.capturedAt),
+          stale: snapshot.stale,
+        },
+      };
+    }
     return {
       ok: false,
       error: error?.stack || error?.message || String(error),
       data: { rows: [], history: [], errors: {} },
+      source: 'degraded',
+      snapshotPersisted: false,
+      snapshotFallback: false,
+      snapshotMeta: null,
     };
   }
 }
@@ -198,12 +294,23 @@ async function main() {
       ? (Object.keys(dbStats.errors || {}).length ? 'partial' : 'ok')
       : 'degraded',
     dbStatsError: dbStatsResult.ok ? null : dbStatsResult.error,
+    dbAccessError: dbStatsResult.ok && dbStatsResult.snapshotFallback ? dbStatsResult.error : null,
+    dbSource: dbStatsResult.source || 'degraded',
+    dbSnapshotFallback: Boolean(dbStatsResult.snapshotFallback),
+    dbSnapshotPersisted: Boolean(dbStatsResult.snapshotPersisted),
+    dbSnapshotMeta: dbStatsResult.snapshotMeta || null,
     dbSourceErrors: dbStats.errors || {},
     dbSourceStatus: dbStats.errorCodes || {},
     llmUsageSource: dbStats.rows.length ? 'db' : 'session_usage_fallback',
     llmUsage: llmUsage,
     parseHistory: dbStats.history,
-    recommendations: buildRecommendation({ jayUsage, dbStats, dbStatsError: dbStatsResult.ok ? null : dbStatsResult.error }),
+    recommendations: buildRecommendation({
+      jayUsage,
+      dbStats,
+      dbStatsError: dbStatsResult.ok ? null : dbStatsResult.error,
+      dbAccessError: dbStatsResult.ok && dbStatsResult.snapshotFallback ? dbStatsResult.error : null,
+      snapshotFallback: Boolean(dbStatsResult.snapshotFallback),
+    }),
   };
 
   if (json) {
@@ -223,6 +330,13 @@ async function main() {
     lines.push('');
     lines.push('DB 집계 상태: degraded');
     lines.push(`- ${report.dbStatsError}`);
+  } else if (report.dbSnapshotFallback) {
+    lines.push('');
+    lines.push('DB 집계 상태: partial (snapshot_fallback)');
+    if (report.dbAccessError) lines.push(`- live query 실패: ${classifySourceError(report.dbAccessError)}`);
+    if (report.dbSnapshotMeta?.capturedAt) lines.push(`- snapshot capturedAt: ${report.dbSnapshotMeta.capturedAt}`);
+    if (report.dbSnapshotMeta?.ageHours != null) lines.push(`- snapshot age: ${report.dbSnapshotMeta.ageHours}h`);
+    if (report.dbSnapshotMeta?.stale) lines.push('- snapshot 기간이 현재 요청 일수와 달라 해석 시 주의가 필요합니다.');
   } else if (report.dbStatsStatus === 'partial') {
     lines.push('');
     lines.push('DB 집계 상태: partial');
