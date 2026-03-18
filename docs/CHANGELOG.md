@@ -54,6 +54,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - gateway primary 후보 프로필과 현재 권장 판단(hold/sync_first)까지 운영 스크립트에서 바로 확인 가능하게 추가
   - gateway 전환 실험 기준을 `hold / compare / switch` 3단계로 문서화
   - `log-jay-gateway-experiment.js`로 gateway 로그 / 제이 usage / health-report를 함께 기록하는 실험 스냅샷 경로 추가
+  - `jay-gateway-experiment-review.js`로 누적 스냅샷 기반 권장 판단 리뷰 경로 추가
 
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장
