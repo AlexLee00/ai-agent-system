@@ -29,6 +29,29 @@
 - `node --check 'bots/worker/web/app/documents/[id]/page.js'`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — 워커 문서 개선 대상 리뷰 추가
+
+핵심 구현:
+- `bots/worker/scripts/document-efficiency-review.js` 추가
+- 종합 효율 점수를 바탕으로
+  - 개선 우선 문서
+  - 좋은 템플릿 후보
+  - OCR 재검토 우선 문서
+  를 자동으로 요약
+- 새 저장소 없이 기존 문서/재사용/피드백/OCR 메타데이터 집계를 재사용
+
+세션 맥락:
+- 워커 문서 흐름은 품질, 전환율, 수정량, 효율 점수까지 올라왔지만, 운영자가 “무엇부터 개선할지”를 한 번에 읽는 리포트는 아직 없었다.
+- 이번 단계에서 점수와 품질 신호를 실제 운영 우선순위 리뷰로 연결했다.
+
+의사결정 이유:
+- UI를 더 늘리기보다 먼저 스크립트형 리뷰로 개선 우선순위를 확인하는 것이 내부 MVP에 더 적합하다.
+- 이 구조는 추후 주간 운영 리포트, 문서 개선 백로그, SaaS 문서 자산 개선 리포트로 그대로 확장할 수 있다.
+
+검증:
+- `node --check bots/worker/scripts/document-efficiency-review.js`
+- `node bots/worker/scripts/document-efficiency-review.js --company-id=1 --limit=5 --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 종합 효율 점수 추가
 
 핵심 구현:

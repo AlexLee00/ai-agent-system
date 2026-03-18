@@ -54,6 +54,7 @@
 - [bots/worker/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js)
 - [bots/worker/scripts/health-check.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.js)
 - [bots/worker/scripts/check-n8n-intake-path.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js)
+- [bots/worker/scripts/document-efficiency-review.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/document-efficiency-review.js)
 
 ## 운영 설정
 
@@ -69,6 +70,7 @@
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js
+node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/document-efficiency-review.js --company-id=1 --limit=5
 node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js
 node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/018-monitoring-history.js
 node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/019-monitoring-change-notes.js
