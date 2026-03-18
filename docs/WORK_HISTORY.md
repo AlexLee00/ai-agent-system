@@ -2295,6 +2295,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 아처/클로드 리드는 chain override, 덱스터는 alert level별 low/high 모델 override를 받는 구조로 역할을 분리
 - 이로써 주요 텍스트 생성 경로의 공용 selector + 팀별 runtime override 패턴이 제이/투자/워커/블로그/클로드까지 거의 닫힘
 
+### 공용 LLM 모델 셀렉터 fallback 표준화
+- `describeLLMSelector()`를 추가해 selector 결과를 `primary + fallbacks + chain` 형식으로 표준화
+- 투자처럼 route 기반 경로도 `fallbackChain`을 명시적으로 반환해 운영 관점에서 실제 폴백 순서를 볼 수 있게 정리
+- `scripts/llm-selector-report.js`를 추가해 현재 시스템 전체 LLM selector 상태를 텍스트/JSON으로 한 번에 조회 가능하게 만듦
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

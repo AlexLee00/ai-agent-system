@@ -629,6 +629,7 @@
 - 워커 `runtime_config.llmSelectorOverrides`를 추가해 `worker.ai.fallback`, `worker.chat.task_intake` 경로도 selector override로 운영 제어 가능하게 정리
 - 블로그 `runtime_config.llmSelectorOverrides`를 추가해 writer/social/star/curriculum 경로를 selector override로 운영 제어 가능하게 정리
 - 클로드 `runtime_config.llmSelectorOverrides`를 추가해 아처·클로드 리드·덱스터 경로를 selector override로 운영 제어 가능하게 정리
+- `scripts/llm-selector-report.js`를 추가해 현재 selector의 `primary + fallbacks` 체인을 운영 보고용으로 한 번에 조회 가능하게 정리
 
 ### 2026-03-14
 
