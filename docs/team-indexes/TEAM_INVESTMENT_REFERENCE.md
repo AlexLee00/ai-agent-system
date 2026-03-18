@@ -31,6 +31,7 @@
 - [bots/investment/scripts/runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)
 - [bots/investment/scripts/review-runtime-config-suggestion.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runtime-config-suggestion.js)
 - [bots/investment/scripts/apply-runtime-config-suggestion.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/apply-runtime-config-suggestion.js)
+- [bots/investment/scripts/validate-runtime-config-apply.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-runtime-config-apply.js)
 
 ## 운영 설정
 
@@ -69,6 +70,7 @@
   - `reviewed_at`, `applied_at`으로 검토/반영 시점 추적
   - 승인된 제안은 `apply-runtime-config-suggestion.js`로 `config.yaml` 반영과 `applied` 상태 갱신을 함께 수행
   - 단, 임시 `--config=/tmp/...` 테스트는 미리보기/파일 반영만 하고 DB 상태는 올리지 않음
+  - 적용 후에는 `validate-runtime-config-apply.js`로 health와 최근 실행 흐름까지 묶어 재검증 가능
 - 대표 코드
   - `risk_rejected`
   - `safety_gate_blocked`
@@ -98,6 +100,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runt
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runtime-config-suggestion.js --id=<suggestion_log_id> --status=approved --note='다음 주 재검토'
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id>
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id> --write
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-runtime-config-apply.js --id=<suggestion_log_id> --days=7
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 

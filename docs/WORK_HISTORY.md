@@ -142,6 +142,25 @@
 - `node bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id> --config=/tmp/investment-config-test.yaml --json`
 - `node bots/investment/scripts/apply-runtime-config-suggestion.js --id=<suggestion_log_id> --config=/tmp/investment-config-test.yaml --write --json`
 
+### 12주차 후속 (2026-03-18) — 투자 runtime_config 적용 후 검증 리포트 추가
+
+핵심 구현:
+- `validate-runtime-config-apply.js` 추가
+- suggestion log 상태, 최근 N일 시장별 실행 요약, 투자팀 health-report를 한 번에 묶는 검증 리포트 경로 추가
+- 적용 직후 “상태는 applied인데 health 경고가 있는지”, “최근 BUY 대비 실행이 여전히 0건인지”를 바로 읽을 수 있게 정리
+
+세션 맥락:
+- 제안 생성/저장/검토/적용까지는 닫혔지만, 실제 운영에서는 적용 직후에 설정 효과를 확인하는 마지막 점검이 필요했다.
+- 이번 단계에서 새 평가 엔진을 만들지 않고 기존 health-report와 signals 집계를 재사용해 얇은 검증 레이어를 붙였다.
+
+의사결정 이유:
+- 내부 MVP에서는 적용 직후 빠르게 읽을 수 있는 검증 보고가 중요하고, 추후 SaaS에서도 tenant별 설정 변경 효과 검증에 그대로 재사용 가능하다.
+- 기본 health와 최근 실행률을 먼저 묶어보는 것이 가장 안전하고, 이후에만 더 정교한 PnL/체결 분석으로 확장하는 것이 맞다.
+
+검증:
+- `node --check bots/investment/scripts/validate-runtime-config-apply.js`
+- `node bots/investment/scripts/validate-runtime-config-apply.js --id=<suggestion_log_id> --days=7 --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
