@@ -6,6 +6,22 @@
 
 ## 2026-03-18
 
+### 모바일 알림 UX 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/telegram-sender.js` | ✅ |
+| `node --check packages/core/lib/reporting-hub.js` | ✅ |
+| `node --check bots/investment/shared/report.js` | ✅ |
+| `node --check bots/orchestrator/lib/batch-formatter.js` | ✅ |
+| `node --check bots/investment/scripts/market-alert.js` | ✅ |
+| `node --check bots/investment/scripts/pre-market-screen.js` | ✅ |
+| 개인 Telegram 직접 전송 `ok=true` | ✅ |
+| 그룹 Telegram 직접 전송 `ok=true` | ✅ |
+| 루나 토픽 15 직접 전송 `ok=true` | ✅ |
+| 실제 수신 화면에서 15자 구분선 1줄 유지 확인 | ✅ |
+| 실제 수신 화면에서 테스트 메시지 헤더 중복 제거 확인 | ✅ |
+
 ### 워커 웹 `LLM API 현황` / `블로그 URL 입력` 운영 콘솔 정리
 
 | 테스트 | 결과 |
