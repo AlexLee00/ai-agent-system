@@ -58,6 +58,7 @@ export default function WorkerMonitoringPage() {
   };
   const changeHistory = payload?.change_history || [];
   const changeImpact = payload?.change_impact || [];
+  const selectorSummary = payload?.selector_summary || [];
 
   async function handleSaveProvider() {
     setSaving(true);
@@ -345,6 +346,55 @@ export default function WorkerMonitoringPage() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-5 w-5 text-indigo-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">현재 selector / fallback 체인</p>
+                <p className="text-xs text-slate-500">워커 내부에서 실제 primary와 fallback이 어떤 순서로 적용되는지 보여줍니다.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {selectorSummary.length ? (
+                selectorSummary.map((selector) => (
+                  <div key={selector.key} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{selector.label}</p>
+                        <p className="mt-1 font-mono text-[11px] text-slate-500">{selector.route}</p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{selector.key}</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">{selector.description}</p>
+                    <div className="mt-3 space-y-2">
+                      {(selector.chain || []).map((entry) => (
+                        <div key={`${selector.key}-${entry.role}`} className="rounded-xl bg-slate-50 px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{entry.role}</p>
+                            <p className="text-xs text-slate-500">{entry.provider}</p>
+                          </div>
+                          <p className="mt-1 break-all font-mono text-[11px] text-slate-700">{entry.model}</p>
+                          {(entry.maxTokens || entry.temperature !== null) && (
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {entry.maxTokens ? `maxTokens ${entry.maxTokens}` : ''}
+                              {entry.maxTokens && entry.temperature !== null ? ' · ' : ''}
+                              {entry.temperature !== null ? `temperature ${entry.temperature}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                  selector 체인 정보를 불러오지 못했습니다.
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="card space-y-4">

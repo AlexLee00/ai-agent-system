@@ -110,6 +110,8 @@
   - selector의 `primary/fallback chain`에 최근 `speed-test` 스냅샷을 함께 붙여 운영자가 체인과 속도 근거를 한 번에 조회 가능하게 확장
   - 오케스트레이터 `/llm-selectors`
   - 제이 텔레그램 명령/자연어 질의로 현재 selector + fallback + 최근 속도 스냅샷을 바로 조회 가능하게 확장
+  - 워커 `/admin/monitoring`
+  - 운영 UI에서 worker selector의 primary/fallback chain을 직접 확인 가능하게 확장
 
 ### 지금 가장 중요한 개발 축
 

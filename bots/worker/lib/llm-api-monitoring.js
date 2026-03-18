@@ -8,6 +8,8 @@ const {
   getGeminiKey,
   getGroqAccounts,
 } = require(path.join(__dirname, '../../../packages/core/lib/llm-keys'));
+const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
 
 const SCHEMA = 'worker';
 const PREFERENCE_KEY = 'worker_monitoring_llm_api';
@@ -400,6 +402,76 @@ function getWorkerLlmApplicationSummary(selectedApi) {
   ];
 }
 
+function buildSelectorChainSummary(description) {
+  if (!description) return [];
+  if (description.kind === 'chain') {
+    return (description.chain || []).map((entry, index) => ({
+      role: index === 0 ? 'primary' : `fallback${index}`,
+      provider: entry.provider,
+      model: entry.model,
+      maxTokens: entry.maxTokens || null,
+      temperature: entry.temperature ?? null,
+    }));
+  }
+
+  const policy = description.policy || {};
+  const chain = [];
+  if (policy.primary) {
+    chain.push({
+      role: 'primary',
+      provider: policy.primary.provider,
+      model: policy.primary.model,
+      maxTokens: policy.primary.maxTokens || null,
+      temperature: policy.primary.temperature ?? null,
+    });
+  }
+  for (const [index, entry] of (policy.fallbacks || []).entries()) {
+    chain.push({
+      role: `fallback${index + 1}`,
+      provider: entry.provider,
+      model: entry.model,
+      maxTokens: entry.maxTokens || null,
+      temperature: entry.temperature ?? null,
+    });
+  }
+  return chain;
+}
+
+function getWorkerSelectorSummary(selectedApi) {
+  const normalizedApi = normalizeApi(selectedApi);
+  const overrides = getWorkerLLMSelectorOverrides();
+  const selectorEntries = [
+    {
+      key: 'worker.ai.fallback',
+      label: '관리자 AI 질문 / 매출 예측 보조 분석',
+      route: '/api/ai/ask, /api/ai/revenue-forecast',
+      description: 'DB 선호 provider와 runtime_config override를 함께 반영한 워커 기본 분석 체인입니다.',
+      detail: describeLLMSelector('worker.ai.fallback', {
+        preferredApi: normalizedApi,
+        configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
+        policyOverride: overrides['worker.ai.fallback'],
+      }),
+    },
+    {
+      key: 'worker.chat.task_intake',
+      label: '대화형 업무 인텐트 파싱',
+      route: 'worker-chat',
+      description: '대화형 업무 등록과 태스크 인테이크에서 사용하는 고정 fallback 체인입니다.',
+      detail: describeLLMSelector('worker.chat.task_intake', {
+        policyOverride: overrides['worker.chat.task_intake'],
+      }),
+    },
+  ];
+
+  return selectorEntries.map((item) => ({
+    key: item.key,
+    label: item.label,
+    route: item.route,
+    description: item.description,
+    chain: buildSelectorChainSummary(item.detail),
+  }));
+}
+
 module.exports = {
   ALLOWED_APIS,
   API_CATALOG,
@@ -409,6 +481,7 @@ module.exports = {
   getWorkerMonitoringChangeImpact,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
+  getWorkerSelectorSummary,
   getWorkerMonitoringUsageSummary,
   isProviderConfigured,
   normalizeApi,
