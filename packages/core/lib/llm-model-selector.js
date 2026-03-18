@@ -247,22 +247,66 @@ function _buildSelectorRegistry() {
         ? { ...defaultRoutes, ...policyOverride.agentRoutes }
         : defaultRoutes;
       const route = configuredRoutes[agentName] || 'groq_scout';
+      const openaiMiniModel = policyOverride?.openaiMiniModel || 'gpt-4o-mini';
+      const groqScoutModel = policyOverride?.groqScoutModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
+      const groqCompetitionModels = Array.isArray(policyOverride?.groqCompetitionModels) && policyOverride.groqCompetitionModels.length > 0
+        ? _clone(policyOverride.groqCompetitionModels)
+        : [
+            'openai/gpt-oss-20b',
+            'meta-llama/llama-4-scout-17b-16e-instruct',
+          ];
+      const anthropicModel = policyOverride?.anthropicModel || 'claude-haiku-4-5-20251001';
+      const routeChains = {
+        openai_perf: [
+          { provider: 'openai', model: openaiPerfModel },
+          { provider: 'groq', model: groqScoutModel },
+        ],
+        dual_groq: [
+          { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
+          { provider: 'groq', model: groqCompetitionModels[1] || groqScoutModel },
+          { provider: 'openai', model: openaiPerfModel },
+        ],
+        openai_mini: [
+          { provider: 'openai', model: openaiMiniModel },
+          { provider: 'groq', model: groqScoutModel },
+          { provider: 'openai', model: openaiPerfModel },
+        ],
+        groq_scout: [
+          { provider: 'groq', model: groqScoutModel },
+          { provider: 'openai', model: openaiMiniModel },
+        ],
+      };
       return {
         route,
         openaiPerfModel,
-        openaiMiniModel: 'gpt-4o-mini',
-        groqScoutModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        groqCompetitionModels: [
-          'openai/gpt-oss-20b',
-          'meta-llama/llama-4-scout-17b-16e-instruct',
-        ],
-        anthropicModel: 'claude-haiku-4-5-20251001',
+        openaiMiniModel,
+        groqScoutModel,
+        groqCompetitionModels,
+        anthropicModel,
+        primary: routeChains[route][0] || null,
+        fallbacks: routeChains[route].slice(1),
+        fallbackChain: routeChains[route],
       };
     },
   };
 }
 
 const SELECTOR_REGISTRY = _buildSelectorRegistry();
+
+function _normalizeChainFromPolicy(policy) {
+  if (Array.isArray(policy)) return _clone(policy);
+  if (Array.isArray(policy?.fallbackChain)) return _clone(policy.fallbackChain);
+  if (_isObject(policy?.primary)) {
+    const chain = [_clone(policy.primary)];
+    if (_isObject(policy.fallback)) chain.push(_clone(policy.fallback));
+    if (Array.isArray(policy.fallbacks)) chain.push(..._clone(policy.fallbacks));
+    return chain;
+  }
+  if (_isObject(policy) && typeof policy.model === 'string') {
+    return [_clone(policy)];
+  }
+  return null;
+}
 
 function selectLLMPolicy(key, options = {}) {
   const entry = SELECTOR_REGISTRY[key];
@@ -273,10 +317,34 @@ function selectLLMPolicy(key, options = {}) {
 
 function selectLLMChain(key, options = {}) {
   const resolved = selectLLMPolicy(key, options);
-  if (!Array.isArray(resolved)) {
+  const normalizedChain = _normalizeChainFromPolicy(resolved);
+  if (!normalizedChain) {
     throw new Error(`LLM selector key ${key} 는 chain이 아닙니다`);
   }
-  return resolved;
+  return normalizedChain;
+}
+
+function describeLLMSelector(key, options = {}) {
+  const resolved = selectLLMPolicy(key, options);
+  const chain = _normalizeChainFromPolicy(resolved);
+  if (chain) {
+    return {
+      key,
+      kind: 'chain',
+      primary: chain[0] || null,
+      fallbacks: chain.slice(1),
+      chain,
+    };
+  }
+  return {
+    key,
+    kind: 'policy',
+    policy: resolved,
+  };
+}
+
+function listLLMSelectorKeys() {
+  return Object.keys(SELECTOR_REGISTRY).sort();
 }
 
 module.exports = {
@@ -284,4 +352,6 @@ module.exports = {
   buildSingleChain,
   selectLLMPolicy,
   selectLLMChain,
+  describeLLMSelector,
+  listLLMSelectorKeys,
 };
