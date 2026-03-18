@@ -28,6 +28,7 @@
     "runtime-suggest:write": "node scripts/runtime-config-suggestions.js --write",
     "runtime-suggest:review": "node scripts/review-runtime-config-suggestion.js",
     "runtime-suggest:apply": "node scripts/apply-runtime-config-suggestion.js",
+    "runtime-suggest:validate": "node scripts/validate-runtime-config-apply.js",
     "node:run": "node scripts/run-pipeline-node.js",
     "node:l01": "node scripts/run-pipeline-node.js --node=L01 --market=binance",
     "node:l06": "node scripts/run-pipeline-node.js --node=L06 --market=binance",
