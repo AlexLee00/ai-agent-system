@@ -106,6 +106,8 @@
 - 최근 공용화 축:
   - `packages/core/lib/llm-model-selector.js`
   - 팀별로 흩어진 LLM chain/model 상수를 공용 selector key 기준으로 통합 중
+  - `scripts/llm-selector-report.js`
+  - selector의 `primary/fallback chain`에 최근 `speed-test` 스냅샷을 함께 붙여 운영자가 체인과 속도 근거를 한 번에 조회 가능하게 확장
 
 ### 지금 가장 중요한 개발 축
 

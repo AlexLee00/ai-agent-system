@@ -4,6 +4,26 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합
+
+핵심 구현:
+- `scripts/speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
+- `scripts/llm-selector-report.js`가 selector의 `primary/fallback chain`과 최근 속도 스냅샷을 함께 출력하도록 확장
+- 텍스트 출력에서는 각 체인 항목 옆에 `TTFT/총응답시간` 또는 실패 사유를 붙이고, JSON 출력에는 `speedTest` 스냅샷을 포함
+
+세션 맥락:
+- 공용 selector는 이미 주요 텍스트 LLM 경로를 중앙화했지만, 운영자가 실제 fallback 체인의 속도 근거까지 한 번에 보기는 어려웠다.
+- 이번 단계에서 selector는 정책 레이어로 유지하고, speed-test는 관측 레이어로 분리한 채 최신 스냅샷만 느슨하게 연결했다.
+
+의사결정 이유:
+- selector와 speed-test를 완전히 한 코드로 섞지 않고, 최신 스냅샷 파일을 매개로 연결하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 구조는 추후 SaaS에서도 tenant별 모델 체인 정책과 최근 성능 데이터를 함께 비교하는 기반으로 확장 가능하다.
+
+검증:
+- `node --check scripts/speed-test.js`
+- `node --check scripts/llm-selector-report.js`
+- `node scripts/llm-selector-report.js`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:
