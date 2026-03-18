@@ -59,6 +59,7 @@
   - 운영/분석 자동화용 구조화 코드
 - `signals.block_meta`
   - `exchange`, `symbol`, `action`, `amount` 등 실행 맥락
+- 자동매매 일지는 시장별 `실패 코드 요약`과 `사람 읽기용 사유`를 함께 보여준다.
 - 대표 코드
   - `risk_rejected`
   - `safety_gate_blocked`

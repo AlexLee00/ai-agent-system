@@ -116,7 +116,7 @@ async function fetchClosedTradeReviews(fromDate, toDate) {
 }
 
 async function fetchSignalFunnel(fromDate, toDate) {
-  const [signalRows, blockRows, analysisRows] = await Promise.all([
+  const [signalRows, blockRows, blockCodeRows, analysisRows] = await Promise.all([
     db.query(`
       SELECT
         exchange,
@@ -144,6 +144,18 @@ async function fetchSignalFunnel(fromDate, toDate) {
     db.query(`
       SELECT
         exchange,
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COUNT(*) AS cnt
+      FROM signals
+      WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+        AND status IN ('failed', 'rejected', 'expired')
+      GROUP BY exchange, 2
+      ORDER BY exchange, cnt DESC
+      LIMIT 12
+    `).catch(() => []),
+    db.query(`
+      SELECT
+        exchange,
         analyst,
         signal,
         COUNT(*) AS cnt
@@ -154,7 +166,7 @@ async function fetchSignalFunnel(fromDate, toDate) {
     `).catch(() => []),
   ]);
 
-  return { signalRows, blockRows, analysisRows };
+  return { signalRows, blockRows, blockCodeRows, analysisRows };
 }
 
 // ─── 심볼별 P&L 계산 (FIFO) ─────────────────────────────────────────
@@ -427,8 +439,8 @@ function formatTokenUsage(usageRows) {
   return lines.join('\n');
 }
 
-function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
-  if (!signalRows.length && !blockRows.length && !analysisRows.length) return '  기록 없음';
+function formatSignalFunnel({ signalRows, blockRows, blockCodeRows, analysisRows }) {
+  if (!signalRows.length && !blockRows.length && !blockCodeRows.length && !analysisRows.length) return '  기록 없음';
 
   const lines = [];
   const buckets = ['crypto', 'domestic', 'overseas'];
@@ -436,11 +448,12 @@ function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
   for (const market of buckets) {
     const marketSignalRows = signalRows.filter(row => getMarketBucket(row.exchange) === market);
     const marketBlockRows = blockRows.filter(row => getMarketBucket(row.exchange) === market);
+    const marketBlockCodeRows = blockCodeRows.filter(row => getMarketBucket(row.exchange) === market);
     const marketAnalysisRows = analysisRows.filter(row => getMarketBucket(row.exchange) === market);
 
     lines.push(`  ■ ${getMarketLabel(market)}`);
 
-    if (!marketSignalRows.length && !marketBlockRows.length && !marketAnalysisRows.length) {
+    if (!marketSignalRows.length && !marketBlockRows.length && !marketBlockCodeRows.length && !marketAnalysisRows.length) {
       lines.push('    기록 없음');
       lines.push('');
       continue;
@@ -483,6 +496,13 @@ function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
           .map(([signal, count]) => `${signal} ${count}`)
           .join(' / ');
         lines.push(`      ${analyst}: 총 ${bucket.total}건 (${signalText})`);
+      }
+    }
+
+    if (marketBlockCodeRows.length > 0) {
+      lines.push('    실패 코드 요약');
+      for (const row of marketBlockCodeRows) {
+        lines.push(`      ${row.block_code}: ${Number(row.cnt || 0)}건`);
       }
     }
 
