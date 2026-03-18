@@ -174,7 +174,7 @@ export function notifyError(context, error) {
 
 /**
  * 실시간 진입 알림 (trade_journal 기록 후 호출)
- * 실투자 🔴 / 모의투자 🔵 구분 표시
+ * executionMode 기준 `[LIVE]` / `[PAPER]` 구분 표시
  */
 export function notifyJournalEntry({
   tradeId, symbol, direction = 'long', market = 'crypto',
@@ -245,7 +245,7 @@ export function notifyDailyJournal(date, records = []) {
   ];
 
   const marketLabel = { crypto: '암호화폐', domestic: '국내장', overseas: '국외장', all: '전체' };
-  const marketTag   = { crypto: '실투자 🔴', domestic: '모의투자 🔵', overseas: '모의투자 🔵' };
+  const marketTag   = { crypto: 'LIVE / REAL 🔴', domestic: 'LIVE / MOCK 🔵', overseas: 'LIVE / MOCK 🔵' };
 
   const mainRecords = records.filter(r => r.market !== 'all');
 
