@@ -114,6 +114,8 @@
   - 운영 UI에서 worker selector의 primary/fallback chain을 직접 확인 가능하게 확장
   - 워커 `/admin/monitoring` 전 팀 개요
   - Jay / Worker / Claude / Blog / Investment selector chain을 운영 화면에서 한 번에 확인 가능하게 확장
+  - selector advisor
+  - 최근 speed-test 스냅샷 기준으로 `hold / compare / switch_candidate / observe` 추천을 생성하는 얇은 판단 레이어 추가
 
 ### 지금 가장 중요한 개발 축
 

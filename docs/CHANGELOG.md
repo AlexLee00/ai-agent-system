@@ -12,6 +12,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `worker.ai.fallback`, `worker.chat.task_intake`의 primary/fallback chain을 관리자 화면에서 바로 조회 가능
 - 워커 `/admin/monitoring`에 전 팀 selector 개요 추가
   - Jay / Worker / Claude / Blog / Investment의 primary/fallback chain과 최근 speed-test 스냅샷을 한 화면에서 조회 가능
+- `llm-selector-advisor.js` 추가
+  - 최근 speed-test 스냅샷 기준으로 selector별 `hold / compare / switch_candidate / observe` 추천을 생성
+  - `llm-selector-report.js` 텍스트/JSON 출력에 `advice` 포함
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장

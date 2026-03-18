@@ -89,6 +89,31 @@
 - `node --check bots/worker/web/app/admin/monitoring/page.js`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — speed-test 기반 selector 추천 레이어 추가
+
+핵심 구현:
+- `packages/core/lib/llm-selector-advisor.js` 추가
+- selector chain과 최근 speed-test 스냅샷을 비교해
+  - `hold`
+  - `compare`
+  - `switch_candidate`
+  - `observe`
+  판단을 생성
+- `scripts/llm-selector-report.js` 텍스트/JSON 출력에 `advice`를 포함
+
+세션 맥락:
+- 중앙 selector, fallback, speed-test 스냅샷, 운영 조회 경로까지는 이미 닫혔지만, “그래서 지금 무엇을 해야 하는가”를 자동으로 말해주는 판단 레이어는 없었다.
+- 이번 단계에서 speed-test는 관측 레이어로 그대로 두고, selector 위에 얇은 advisor만 추가해 운영 해석성을 높였다.
+
+의사결정 이유:
+- selector가 speed 결과를 즉시 자동 반영하게 만들기보다, 먼저 `추천`만 제공하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 구조는 나중에 runtime override 추천, 운영 승인 플로우, SaaS tenant별 정책 추천으로 자연스럽게 확장 가능하다.
+
+검증:
+- `node --check packages/core/lib/llm-selector-advisor.js`
+- `node --check scripts/llm-selector-report.js`
+- `node scripts/llm-selector-report.js --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:

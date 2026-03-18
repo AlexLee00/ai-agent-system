@@ -6,6 +6,10 @@ const { pathToFileURL } = require('url');
 const {
   describeLLMSelector,
 } = require(path.join(__dirname, '../packages/core/lib/llm-model-selector'));
+const {
+  buildSpeedLookup,
+  buildSelectorAdvice,
+} = require(path.join(__dirname, '../packages/core/lib/llm-selector-advisor'));
 
 const orchestratorRuntime = require(path.join(__dirname, '../bots/orchestrator/lib/runtime-config'));
 const workerRuntime = require(path.join(__dirname, '../bots/worker/lib/runtime-config'));
@@ -42,16 +46,6 @@ function loadLatestSpeedSnapshot() {
   }
 }
 
-function buildSpeedLookup(snapshot) {
-  const lookup = new Map();
-  for (const item of snapshot?.results || []) {
-    if (item?.modelId) lookup.set(item.modelId, item);
-    const short = String(item?.modelId || '').split('/').pop();
-    if (short) lookup.set(short, item);
-  }
-  return lookup;
-}
-
 function attachSpeed(entry, speedLookup) {
   const speed = speedLookup?.get(entry.model) || null;
   return speed ? { ...entry, speed } : entry;
@@ -65,10 +59,12 @@ function formatChainEntry(entry, index) {
 }
 
 function formatSelectorBlock(title, description, speedLookup) {
+  const advice = buildSelectorAdvice(description, speedLookup);
   if (description.kind === 'chain') {
     return [
       `## ${title}`,
       ...description.chain.map((entry, index) => formatChainEntry(attachSpeed(entry, speedLookup), index)),
+      `advice: ${advice.decision}${advice.candidate ? ` | candidate=${advice.candidate}` : ''} | ${advice.reason}`,
       '',
     ].join('\n');
   }
@@ -84,6 +80,7 @@ function formatSelectorBlock(title, description, speedLookup) {
     if (!policy.primary && !Array.isArray(policy.fallbacks)) {
       lines.push(JSON.stringify(policy, null, 2));
     }
+    lines.push(`advice: ${advice.decision}${advice.candidate ? ` | candidate=${advice.candidate}` : ''} | ${advice.reason}`);
     lines.push('');
     return lines.join('\n');
   }
@@ -187,6 +184,7 @@ async function main() {
   const workerPreferredApi = await getWorkerPreferredApiSafe();
   const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
   const speedSnapshot = loadLatestSpeedSnapshot();
+  const speedLookup = buildSpeedLookup(speedSnapshot);
   const payload = {
     speedTest: speedSnapshot,
     jay: {
@@ -241,6 +239,35 @@ async function main() {
     investment: Object.fromEntries(
       ['luna', 'nemesis', 'oracle', 'hermes', 'sophia', 'zeus', 'athena', 'argos']
         .map((agent) => [agent, describeLLMSelector('investment.agent_policy', { agentName: agent, policyOverride: investmentPolicyOverride })])
+    ),
+  };
+  payload.advice = {
+    jay: {
+      intent: buildSelectorAdvice(payload.jay.intent, speedLookup),
+      chatFallback: buildSelectorAdvice(payload.jay.chatFallback, speedLookup),
+    },
+    worker: {
+      aiFallback: buildSelectorAdvice(payload.worker.aiFallback, speedLookup),
+      taskIntake: buildSelectorAdvice(payload.worker.taskIntake, speedLookup),
+    },
+    claude: {
+      archer: buildSelectorAdvice(payload.claude.archer, speedLookup),
+      lead: buildSelectorAdvice(payload.claude.lead, speedLookup),
+      dexterWarn: buildSelectorAdvice(payload.claude.dexterWarn, speedLookup),
+      dexterCritical: buildSelectorAdvice(payload.claude.dexterCritical, speedLookup),
+    },
+    blog: {
+      pos: buildSelectorAdvice(payload.blog.pos, speedLookup),
+      gems: buildSelectorAdvice(payload.blog.gems, speedLookup),
+      socialSummarize: buildSelectorAdvice(payload.blog.socialSummarize, speedLookup),
+      socialCaption: buildSelectorAdvice(payload.blog.socialCaption, speedLookup),
+      starSummarize: buildSelectorAdvice(payload.blog.starSummarize, speedLookup),
+      starCaption: buildSelectorAdvice(payload.blog.starCaption, speedLookup),
+      curriculumRecommend: buildSelectorAdvice(payload.blog.curriculumRecommend, speedLookup),
+      curriculumGenerate: buildSelectorAdvice(payload.blog.curriculumGenerate, speedLookup),
+    },
+    investment: Object.fromEntries(
+      Object.entries(payload.investment).map(([agent, description]) => [agent, buildSelectorAdvice(description, speedLookup)])
     ),
   };
   console.log(JSON.stringify(payload, null, 2));
