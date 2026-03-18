@@ -1016,6 +1016,17 @@ async function runLLMSelectorReportDirect() {
   });
 }
 
+async function runLLMSelectorOverrideSuggestionsDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'scripts', 'llm-selector-override-suggestions.js');
+  return await runNodeScriptText(script, {
+    timeoutText: '⏱ LLM override 추천 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
+    errorPrefix: '⚠️ LLM override 추천 조회 실패',
+    failPrefix: '⚠️ LLM override 추천 실행 실패',
+    emptyText: 'ℹ️ LLM override 추천 결과가 비어 있습니다.',
+  });
+}
+
 async function runReportingHealthDirect(query = '') {
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.js');
@@ -1912,7 +1923,11 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
 
     case 'llm_selector_report': {
       await notify('⏳ LLM selector / fallback 체인 조회 중...');
-      return await runLLMSelectorReportDirect();
+      const [report, suggestions] = await Promise.all([
+        runLLMSelectorReportDirect(),
+        runLLMSelectorOverrideSuggestionsDirect(),
+      ]);
+      return [report, '', suggestions].join('\n').trim();
     }
 
     case 'ops_health': {

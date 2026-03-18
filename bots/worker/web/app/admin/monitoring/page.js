@@ -547,6 +547,41 @@ export default function WorkerMonitoringPage() {
               </div>
             )}
 
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">override 추천 후보</p>
+                  <p className="mt-1 text-xs text-slate-500">advisor 기준으로 compare / switch_candidate 대상만 추려 보여줍니다.</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                  {globalSelectorSummary?.override_suggestions?.count || 0}건
+                </span>
+              </div>
+              {(globalSelectorSummary?.override_suggestions?.suggestions || []).length ? (
+                <div className="mt-3 space-y-2">
+                  {globalSelectorSummary.override_suggestions.suggestions.map((item) => (
+                    <div key={`${item.key}-${item.candidate}`} className="rounded-xl bg-white px-3 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${adviceTone[item.decision] || adviceTone.observe}`}>
+                          {item.decision}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                      </div>
+                      <p className="mt-2 text-[11px] text-slate-600">
+                        current {item.currentPrimary || '-'} → candidate {item.candidate || '-'}
+                      </p>
+                      <p className="mt-1 break-all font-mono text-[11px] text-slate-500">
+                        {item.config || '-'} · {item.path || '-'}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-600">{item.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">현재 speed-test 기준으로 추천 후보가 없습니다.</p>
+              )}
+            </div>
+
             <div className="space-y-4">
               {(globalSelectorSummary?.groups || []).map((group) => (
                 <div key={group.title} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">

@@ -20,6 +20,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `llm-selector-override-suggestions.js` 추가
   - selector advisor 결과를 `runtime_config` override 후보 추천으로 변환
   - config 파일 / path / suggested chain을 함께 출력
+- 제이 `/llm-selectors`와 워커 `/admin/monitoring`에 override 추천 노출 추가
+  - 스크립트 실행 없이 운영자가 추천 후보를 바로 확인 가능
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장
