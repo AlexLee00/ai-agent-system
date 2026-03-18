@@ -113,6 +113,10 @@ export default function DocumentDetailPage() {
     const total = reuseEvents.length;
     const linked = reuseEvents.filter((event) => event.linked_entity_type && event.linked_entity_id).length;
     const pending = Math.max(0, total - linked);
+    const reviewed = reuseEvents.filter((event) => event.feedback_session_id).length;
+    const acceptedWithoutEdit = reuseEvents.filter((event) => event.accepted_without_edit).length;
+    const editedSessions = reuseEvents.filter((event) => Number(event.edit_count || 0) > 0).length;
+    const totalEditCount = reuseEvents.reduce((sum, event) => sum + Number(event.edit_count || 0), 0);
     const byTarget = reuseEvents.reduce((acc, event) => {
       const key = event.target_menu || 'unknown';
       acc[key] = (acc[key] || 0) + 1;
@@ -120,10 +124,17 @@ export default function DocumentDetailPage() {
     }, {});
     const topTargetEntry = Object.entries(byTarget).sort((a, b) => b[1] - a[1])[0] || null;
     const conversionRate = total > 0 ? Math.round((linked / total) * 100) : 0;
+    const acceptedWithoutEditRate = reviewed > 0 ? Math.round((acceptedWithoutEdit / reviewed) * 100) : 0;
+    const avgEditCount = reviewed > 0 ? (totalEditCount / reviewed).toFixed(1) : '0.0';
     return {
       total,
       linked,
       pending,
+      reviewed,
+      acceptedWithoutEdit,
+      editedSessions,
+      acceptedWithoutEditRate,
+      avgEditCount,
       conversionRate,
       topTarget: topTargetEntry ? `${topTargetEntry[0]} (${topTargetEntry[1]}건)` : '-',
     };
@@ -242,6 +253,20 @@ export default function DocumentDetailPage() {
               <MetadataCard label="미확정 건수" value={reuseSummary.pending} caption="아직 확정되지 않은 재사용" />
               <MetadataCard label="전환율" value={`${reuseSummary.conversionRate}%`} caption="linked / total" />
               <MetadataCard label="가장 많이 보낸 곳" value={reuseSummary.topTarget} />
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">문서 재사용 효율</p>
+              <p className="mt-1 text-sm text-slate-500">AI 확인창 이후 얼마나 수정 없이 확정됐는지 함께 봅니다.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetadataCard label="AI 확인 세션" value={reuseSummary.reviewed} caption="feedback_session_id 연결 기준" />
+              <MetadataCard label="무수정 확정" value={reuseSummary.acceptedWithoutEdit} caption="accepted_without_edit" />
+              <MetadataCard label="무수정 확정률" value={`${reuseSummary.acceptedWithoutEditRate}%`} caption="accepted_without_edit / reviewed" />
+              <MetadataCard label="수정 발생 세션" value={reuseSummary.editedSessions} caption="edit_count > 0" />
+              <MetadataCard label="평균 수정 필드 수" value={reuseSummary.avgEditCount} caption="reviewed 세션 평균" />
             </div>
           </div>
 

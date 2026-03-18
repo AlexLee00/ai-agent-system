@@ -2317,9 +2317,21 @@ app.get('/api/documents/:id/reuse-events', requireAuth, companyFilter, async (re
     const rows = await pgPool.query(SCHEMA,
       `SELECT e.id, e.target_menu, e.prompt_length, e.reused_by, e.created_at,
               e.feedback_session_id, e.linked_entity_type, e.linked_entity_id, e.committed_at,
-              u.name AS reused_by_name
+              u.name AS reused_by_name,
+              s.feedback_status,
+              s.accepted_without_edit,
+              COALESCE(fe.edit_count, 0) AS edit_count
        FROM worker.document_reuse_events e
        LEFT JOIN worker.users u ON u.id = e.reused_by
+       LEFT JOIN worker.ai_feedback_sessions s ON s.id = e.feedback_session_id
+       LEFT JOIN (
+         SELECT feedback_session_id,
+                COUNT(*) FILTER (
+                  WHERE event_type IN ('field_edited', 'field_added', 'field_removed')
+                )::int AS edit_count
+         FROM worker.ai_feedback_events
+         GROUP BY feedback_session_id
+       ) fe ON fe.feedback_session_id = e.feedback_session_id
        WHERE e.document_id=$1 AND e.company_id=$2
        ORDER BY e.created_at DESC
        LIMIT 20`,
