@@ -445,6 +445,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 블로그 `publ.js`가 내부 링킹 플레이스홀더를 실제 `published + naver_url` 과거 포스트 링크로 치환하고 Markdown 링크를 HTML anchor로 변환하도록 보강
   - `packages/core/lib/naver-blog-url.js`, `scripts/parse-naver-blog-url.js`를 추가해 네이버 블로그 URL 파싱/정규화 경로를 공용 유틸로 정리
   - `bots/blog/scripts/mark-published-url.js`를 추가해 수동 발행 후 `postId/scheduleId` 기준으로 canonical 네이버 블로그 URL을 저장하고 `published` 상태를 기록할 수 있게 정리
+  - 워커웹 `/admin/monitoring/blog-links`와 `/api/admin/monitoring/blog-published-urls`를 추가해 최근 블로그 글을 운영 화면에서 조회하고 네이버 발행 URL을 직접 입력/저장할 수 있게 정리
 - 클로드/아처
   - 아처 LLM 폴백 순서를 `anthropic/claude-sonnet-4-6 -> openai/gpt-4o-mini -> groq/llama-4-scout-17b-16e-instruct`로 재정렬
   - `bots/claude/lib/archer/config.js`에 `LLM_CHAIN`을 추가해 아처 전용 모델 우선순위를 설정 레이어로 승격

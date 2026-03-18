@@ -47,6 +47,8 @@ const {
   getWorkerMonitoringUsageSummary,
   setWorkerMonitoringPreference,
 } = require('../lib/llm-api-monitoring');
+const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
+const { markPublished } = require(path.join(__dirname, '../../blog/lib/publ'));
 const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
@@ -561,6 +563,31 @@ async function buildWorkerMonitoringPayload(user) {
       after: item.after,
     })),
     usage_summary: usageSummary,
+  };
+}
+
+async function buildBlogPublishedUrlPayload(limit = 20) {
+  const rows = await pgPool.query('blog', `
+    SELECT id, title, status, naver_url, created_at
+    FROM blog.posts
+    ORDER BY created_at DESC
+    LIMIT $1
+  `, [limit]);
+
+  return {
+    rows: rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      naver_url: row.naver_url,
+      created_at: row.created_at,
+      needs_url: !row.naver_url,
+    })),
+    summary: {
+      total: rows.length,
+      missingUrl: rows.filter((row) => !row.naver_url).length,
+      published: rows.filter((row) => row.status === 'published').length,
+    },
   };
 }
 
@@ -1097,6 +1124,73 @@ app.put('/api/admin/monitoring/llm-api',
       });
     } catch (error) {
       res.status(500).json({ error: '워커 모니터링 설정을 저장하지 못했습니다.', code: 'WORKER_MONITORING_SAVE_FAILED', detail: error.message });
+    }
+  }
+);
+
+app.get('/api/admin/monitoring/blog-published-urls',
+  requireAuth,
+  requireRole('admin', 'master'),
+  async (req, res) => {
+    try {
+      res.json(await buildBlogPublishedUrlPayload(20));
+    } catch (error) {
+      res.status(500).json({
+        error: '블로그 발행 URL 목록을 불러오지 못했습니다.',
+        code: 'BLOG_PUBLISHED_URL_LOAD_FAILED',
+        detail: error.message,
+      });
+    }
+  }
+);
+
+app.post('/api/admin/monitoring/blog-published-urls',
+  requireAuth,
+  requireRole('admin', 'master'),
+  body('post_id').isInt({ min: 1 }),
+  body('url').isString().trim().isLength({ min: 10, max: 500 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const parsed = parseNaverBlogUrl(req.body.url);
+      if (!parsed.ok) {
+        return res.status(400).json({
+          error: `유효한 네이버 블로그 URL이 아닙니다: ${parsed.reason}`,
+          code: 'INVALID_BLOG_URL',
+        });
+      }
+
+      const post = await pgPool.get('blog', `
+        SELECT id, title, status, naver_url, created_at
+        FROM blog.posts
+        WHERE id = $1
+      `, [req.body.post_id]);
+
+      if (!post) {
+        return res.status(404).json({ error: '대상 블로그 글을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      }
+
+      await markPublished(post.id, parsed.canonicalUrl);
+
+      res.json({
+        success: true,
+        message: `블로그 URL을 기록했습니다: ${post.title}`,
+        saved: {
+          post_id: post.id,
+          title: post.title,
+          status: 'published',
+          naver_url: parsed.canonicalUrl,
+          blog_id: parsed.blogId,
+          log_no: parsed.logNo,
+        },
+        ...(await buildBlogPublishedUrlPayload(20)),
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: '블로그 발행 URL을 저장하지 못했습니다.',
+        code: 'BLOG_PUBLISHED_URL_SAVE_FAILED',
+        detail: error.message,
+      });
     }
   }
 );

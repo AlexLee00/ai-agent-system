@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, BrainCircuit, Cpu, RefreshCcw } from 'lucide-react';
 import AdminQuickNav from '@/components/AdminQuickNav';
@@ -104,6 +105,21 @@ export default function WorkerMonitoringPage() {
 
       {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
+
+      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">운영 입력 도구</p>
+            <p className="mt-1 text-sm text-slate-500">수동 발행 후 네이버 블로그 URL을 기록해 내부 링킹과 발행 상태를 실제 URL 기준으로 맞출 수 있습니다.</p>
+          </div>
+          <Link
+            href="/admin/monitoring/blog-links"
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            블로그 URL 입력 페이지
+          </Link>
+        </div>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
         <div className="space-y-6">
