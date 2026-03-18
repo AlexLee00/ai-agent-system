@@ -29,6 +29,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `/documents`, `/documents/[id]` 상세
   - 문서 재사용 이벤트 저장
   - 업무 생성 결과 연결 및 문서별 재사용 성과 집계
+  - 문서 목록/상세에서 OCR 품질, 추출 실패, 짧은 텍스트 기반 품질 신호 표시
+  - 문서 목록에서 품질 상태와 전환율 기준 정렬/필터 지원
 
 ### 변경 사항 (changed)
 - 투자팀 운영 모드 용어 정리

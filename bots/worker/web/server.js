@@ -267,6 +267,77 @@ function buildDeterministicSummary(extraction = {}) {
   return lines.join(' / ').slice(0, 240);
 }
 
+function buildDocumentQualitySummary(metadata = {}) {
+  const sourceFileType = String(metadata.sourceFileType || '').trim();
+  const extractionMethod = String(metadata.extractionMethod || '').trim();
+  const textLength = Math.max(0, Number(metadata.analysisReadyTextLength || 0));
+  const qualitySeverity = String(metadata.imageQualitySeverity || 'none').trim();
+  const conservative = Boolean(metadata.imageConservativeHandling);
+  const sparse = Boolean(metadata.imageEstimatedSparseText);
+  const lowQuality = Boolean(metadata.imageEstimatedLowQuality);
+  const warnings = Array.isArray(metadata.imageOcrWarnings) && metadata.imageOcrWarnings.length
+    ? metadata.imageOcrWarnings
+    : Array.isArray(metadata.extractionWarnings) ? metadata.extractionWarnings : [];
+  const reasons = [];
+
+  let status = 'good';
+  let label = '재사용 양호';
+
+  if (extractionMethod === 'extractor_failed' || textLength <= 0) {
+    status = 'needs_review';
+    label = '검토 필요';
+    reasons.push('파싱 텍스트가 없거나 추출이 실패했습니다.');
+  } else if (sourceFileType === 'image' && (qualitySeverity === 'high' || lowQuality)) {
+    status = 'needs_review';
+    label = '검토 필요';
+    reasons.push('이미지 OCR 품질이 낮아 재사용 전 원문 확인이 필요합니다.');
+  } else if (
+    textLength < 80
+    || (sourceFileType === 'image' && (qualitySeverity === 'medium' || qualitySeverity === 'low' || conservative || sparse))
+  ) {
+    status = 'watch';
+    label = '재사용 주의';
+    if (textLength < 80) reasons.push('추출 텍스트가 짧아 업무 초안 품질이 낮을 수 있습니다.');
+    if (sourceFileType === 'image' && (qualitySeverity === 'medium' || qualitySeverity === 'low' || conservative || sparse)) {
+      reasons.push('이미지 문서라 보수적 해석 규칙을 함께 확인하는 것이 좋습니다.');
+    }
+  }
+
+  if (!reasons.length && warnings.length) {
+    reasons.push(`추출 경고: ${warnings.join(', ')}`);
+  }
+
+  return {
+    status,
+    label,
+    reasons: reasons.slice(0, 2),
+    textLength,
+    sourceFileType: sourceFileType || 'unknown',
+    extractionMethod: extractionMethod || 'unknown',
+    imageQualitySeverity: qualitySeverity,
+    conservative,
+  };
+}
+
+function compareDocumentRows(a, b, sort = 'recent') {
+  const createdDiff = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  const totalA = Number(a.total_reuse_count || 0);
+  const totalB = Number(b.total_reuse_count || 0);
+  const linkedA = Number(a.linked_reuse_count || 0);
+  const linkedB = Number(b.linked_reuse_count || 0);
+  const conversionA = totalA > 0 ? linkedA / totalA : 0;
+  const conversionB = totalB > 0 ? linkedB / totalB : 0;
+  const qualityRank = { needs_review: 3, watch: 2, good: 1 };
+  const qualityA = qualityRank[String(a.quality_summary?.status || 'good')] || 0;
+  const qualityB = qualityRank[String(b.quality_summary?.status || 'good')] || 0;
+
+  if (sort === 'reuse') return totalB - totalA || createdDiff;
+  if (sort === 'linked') return linkedB - linkedA || createdDiff;
+  if (sort === 'conversion') return conversionB - conversionA || linkedB - linkedA || createdDiff;
+  if (sort === 'quality') return qualityB - qualityA || createdDiff;
+  return createdDiff;
+}
+
 function sendWs(ws, payload) {
   if (!ws || ws.readyState !== 1) return;
   try {
@@ -2080,11 +2151,12 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
   const { limit, offset } = pagination(req);
   const keyword  = req.query.keyword  || '';
   const category = req.query.category || '';
+  const qualityStatus = String(req.query.quality_status || 'all').trim();
+  const sort = String(req.query.sort || 'recent').trim();
   const params   = [req.companyId];
   let where = `company_id=$1 AND deleted_at IS NULL`;
   if (keyword)  { params.push(`%${keyword}%`);  where += ` AND (filename ILIKE $${params.length} OR ai_summary ILIKE $${params.length})`; }
   if (category) { params.push(category); where += ` AND category=$${params.length}`; }
-  params.push(limit, offset);
   try {
     const rows = await pgPool.query(SCHEMA,
       `SELECT d.id,
@@ -2093,6 +2165,7 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
               d.ai_summary,
               d.uploaded_by,
               d.created_at,
+              d.extraction_metadata,
               COALESCE(rs.total_reuse_count, 0) AS total_reuse_count,
               COALESCE(rs.linked_reuse_count, 0) AS linked_reuse_count
          FROM worker.documents d
@@ -2104,9 +2177,20 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
             WHERE company_id = $1
             GROUP BY document_id
          ) rs ON rs.document_id = d.id
-       WHERE ${where.replace(/company_id/g, 'd.company_id')} ORDER BY d.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+       WHERE ${where.replace(/company_id/g, 'd.company_id')} ORDER BY d.created_at DESC`,
       params);
-    res.json({ documents: rows.map(row => ({ ...row, download_url: `/api/documents/${row.id}/download` })) });
+    const documents = rows.map((row) => ({
+      ...row,
+      quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
+      download_url: `/api/documents/${row.id}/download`,
+    }));
+    const filtered = qualityStatus === 'all'
+      ? documents
+      : documents.filter((document) => String(document.quality_summary?.status || 'good') === qualityStatus);
+    const sorted = filtered.sort((a, b) => compareDocumentRows(a, b, sort));
+    res.json({
+      documents: sorted.slice(offset, offset + limit),
+    });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
 
@@ -2214,6 +2298,7 @@ app.get('/api/documents/:id', requireAuth, companyFilter, async (req, res) => {
         extracted_at: row.extracted_at,
         extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
         extraction_metadata: row.extraction_metadata || {},
+        quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
         download_url: `/api/documents/${row.id}/download`,
       },
     });
@@ -2300,6 +2385,7 @@ app.get('/api/documents/:id/extraction', requireAuth, companyFilter, async (req,
         extracted_text: row.extracted_text || '',
         extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
         extraction_metadata: row.extraction_metadata || {},
+        quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
         extracted_at: row.extracted_at,
       },
     });

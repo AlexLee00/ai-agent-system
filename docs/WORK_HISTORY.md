@@ -4,6 +4,29 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
+
+핵심 구현:
+- `/documents` 목록에 문서별 `재사용 양호 / 재사용 주의 / 검토 필요` 품질 배지 추가
+- `/documents` 목록에 `전체 품질 / 최신순 / 품질 검토 우선 / 전환율 높은 순 / 재사용 많은 순 / 연결 많은 순` 필터/정렬 추가
+- `/documents/[id]` 상세에 `문서 품질 신호` 카드 추가
+- 서버가 `extraction_metadata`를 바탕으로 품질 상태와 사유를 공통 계산하도록 정리
+- 저품질 이미지 OCR, 추출 실패, 짧은 텍스트 문서를 재사용 전 빠르게 구분 가능하게 확장
+
+세션 맥락:
+- 워커 문서 흐름은 이미 업로드, 재사용 이력, 연결 결과, 전환율까지 올라와 있었다.
+- 이번 단계에서는 “왜 어떤 문서가 실제 업무 재사용에서 약한지”를 운영자가 바로 읽을 수 있도록, 품질 신호를 목록과 상세에 붙였다.
+
+의사결정 이유:
+- 새 평가 테이블을 만들기보다 기존 `extraction_metadata`와 `document_reuse_events`를 조합하는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 품질 신호는 추후 SaaS 확장 시 문서 품질 분석, OCR 정책 튜닝, 재사용 효율 비교의 기반 데이터로 재사용할 수 있다.
+
+검증:
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/documents/page.js`
+- `node --check 'bots/worker/web/app/documents/[id]/page.js'`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
