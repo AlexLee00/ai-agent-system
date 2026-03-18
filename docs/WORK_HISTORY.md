@@ -4,6 +4,43 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-19) — 재부팅 절차를 문서/세션 게이트로 재정리
+
+핵심 구현:
+- `scripts/pre-reboot.sh`를 `준비/대기`와 `--drain-now`로 분리
+  - 기본 실행은 Git 상태 확인, `ai.*` launchd 스냅샷 저장, 문서 최신성 점검, 텔레그램 보고만 수행
+  - `--drain-now`에서만 ai-agent-system 서비스 정지 신호를 보내고 사용자 최종 재시작을 기다리도록 정리
+- 재부팅 전 필수 문서 게이트 추가
+  - `SESSION_HANDOFF.md`
+  - `WORK_HISTORY.md`
+  - `CHANGELOG.md`
+  - `TEST_RESULTS.md`
+  - `PLATFORM_IMPLEMENTATION_TRACKER.md`
+  - 위 문서가 최신 상태가 아니면 drain 단계가 중단되도록 보강
+- `scripts/post-reboot.sh`를 현재 운영 구조 기준 전사 복구 점검형으로 확장
+  - orchestrator / OpenClaw / n8n
+  - worker web / nextjs / lead / task-runner
+  - investment commander / markets / reporter / argos / alerts / prescreen
+  - blog node-server / daily / health-check
+  - claude commander / dexter / archer / health-dashboard
+  - ska monitors
+  까지 확인
+- `/tmp/post-reboot-followup.txt`를 추가해 재부팅 후 상태 변화가 있으면 문서/핸드오프를 반드시 갱신하도록 체크리스트를 남김
+- `docs/OPERATIONS_RUNBOOK.md`에 현재 운영 구조 기준 재부팅 표준 절차를 문서화
+
+세션 맥락:
+- 노트북에는 `ai-agent-system` 외 다른 시스템도 함께 돌아가므로, ai-agent-system 스크립트가 사용자 판단 없이 OS 종료를 실행하면 안 되는 상태였다.
+- 기존 pre/post reboot 스크립트는 일부 팀 중심 절차라 현재 전사 운영 구조와 문서/핸드오프 요구사항을 모두 반영하지 못했다.
+
+의사결정 이유:
+- 내부 MVP 운영에서도 재부팅은 단순 시스템 이벤트가 아니라 운영 이벤트이므로, 서비스 정리보다 문서 업데이트와 세션 인수인계가 먼저 닫혀야 한다.
+- 최종 재시작은 항상 사용자가 직접 실행하도록 남겨두는 편이 다른 로컬 시스템과의 충돌을 피하고 운영 안정성에 더 적합하다.
+
+검증:
+- `bash -n scripts/pre-reboot.sh`
+- `bash -n scripts/post-reboot.sh`
+- `bash scripts/post-reboot.sh --dry-run`
+
 ### 12주차 후속 (2026-03-18) — 워커 웹 `LLM API 현황` / `블로그 URL 입력` 운영 콘솔 정리
 
 핵심 구현:
