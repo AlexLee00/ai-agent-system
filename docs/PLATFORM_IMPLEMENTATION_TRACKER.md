@@ -655,6 +655,7 @@
 - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 `speed-test 실행 + speed review`를 일일 러너로 한 번에 묶을 수 있게 정리
 - 블로그 내부 링킹을 Phase 2로 확장해 퍼블리셔가 `→ [제목] ← 여기에 링크 삽입` 플레이스홀더를 실제 `published + naver_url` 과거 글 링크로 치환할 수 있게 정리
 - `packages/core/lib/naver-blog-url.js`를 추가해 네이버 블로그 URL에서 `blogId`, `logNo`, canonical/mobile URL을 정규화할 수 있게 정리
+- `bots/blog/scripts/mark-published-url.js`를 추가해 `postId` 또는 `scheduleId` 기준으로 발행 완료 URL을 canonical 네이버 블로그 URL로 검증/저장할 수 있게 정리
 
 ### 2026-03-14
 
