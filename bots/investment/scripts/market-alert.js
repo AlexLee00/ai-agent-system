@@ -177,6 +177,31 @@ async function sendCloseReport(market, label) {
   // 현재 보유 포지션
   const allPositions = await db.getAllPositions();
   const positions    = allPositions.filter(p => p.exchange === exchange && p.amount > 0);
+  const summarizeSymbols = (items = [], limit = 5) => {
+    const values = items.filter(Boolean);
+    if (values.length <= limit) return values.join(', ');
+    return `${values.slice(0, limit).join(', ')} 외 ${values.length - limit}개`;
+  };
+  const summarizeTrades = (rows = [], limit = 3) => {
+    if (rows.length === 0) return ['거래 없음'];
+    const mapped = rows.slice(0, limit).map((t) => {
+      const time = kst.toKST(new Date(t.executed_at)).split(' ').pop();
+      return `${time} ${t.symbol} ${t.side}`;
+    });
+    if (rows.length > limit) mapped.push(`외 ${rows.length - limit}건`);
+    return mapped;
+  };
+  const summarizePositions = (rows = [], limit = 3) => {
+    if (rows.length === 0) return ['없음'];
+    const mapped = rows.slice(0, limit).map((p) => {
+      const pnl = p.unrealized_pnl != null
+        ? ` ${p.unrealized_pnl >= 0 ? '+' : ''}${Number(p.unrealized_pnl).toFixed(1)}%`
+        : '';
+      return `${p.symbol} ${Number(p.amount).toFixed(4)}주${pnl}`;
+    });
+    if (rows.length > limit) mapped.push(`외 ${rows.length - limit}개`);
+    return mapped;
+  };
 
   const lines = [
     `📊 ${label} 장 마감 — 매매일지`,
@@ -185,53 +210,31 @@ async function sendCloseReport(market, label) {
     '',
     `━━━━━━━━━━━━━━━━━━━━━`,
     `[투자 성향]`,
-    `  모드: ${profile.mode}`,
-    `  리스크 레벨: ${profile.riskLevel}`,
-    `  MIN_CONF: ${profile.minConfidence}`,
-    `  손절: ${profile.stopLossPct}%`,
-    `  최대 주문: $${profile.maxOrderUsdt}`,
-    `  듀얼 모델: ${profile.dualModel ? 'ON' : 'OFF'}`,
+    `  ${profile.mode} · ${profile.riskLevel} · MIN_CONF ${profile.minConfidence}`,
+    `  손절 ${profile.stopLossPct}% · 최대 $${profile.maxOrderUsdt} · 듀얼 ${profile.dualModel ? 'ON' : 'OFF'}`,
     `━━━━━━━━━━━━━━━━━━━━━`,
   ];
 
   // 매매 내역
-  if (trades.length > 0) {
-    lines.push('');
-    lines.push(`[매매 내역] ${trades.length}건`);
-    for (const t of trades) {
-      const time   = kst.toKST(new Date(t.executed_at));
-      const paper  = t.paper ? ' [PAPER]' : '';
-      const total  = t.total_usdt ? ` ($${Number(t.total_usdt).toFixed(0)})` : '';
-      lines.push(`  ${time} ${t.symbol} ${t.side} ${Number(t.amount).toFixed(4)}주 @${Number(t.price).toFixed(2)}${total}${paper}`);
-    }
-  } else {
-    lines.push('');
-    lines.push(`[매매 내역] 거래 없음`);
-  }
+  lines.push('');
+  lines.push(`[매매 내역] ${trades.length > 0 ? `${trades.length}건` : '거래 없음'}`);
+  for (const line of summarizeTrades(trades)) lines.push(`  ${line}`);
 
   // 신호 요약
   if (signals.length > 0) {
     const buyCount  = signals.filter(s => ['BUY', 'STRONG_BUY'].includes(s.action)).length;
     const sellCount = signals.filter(s => ['SELL', 'STRONG_SELL'].includes(s.action)).length;
     const holdCount = signals.filter(s => s.action === 'HOLD').length;
+    const signalSymbols = summarizeSymbols([...new Set(signals.map((s) => s.symbol))]);
     lines.push('');
     lines.push(`[신호 요약] 총 ${signals.length}건 — BUY ${buyCount} / SELL ${sellCount} / HOLD ${holdCount}`);
+    lines.push(`  심볼: ${signalSymbols}`);
   }
 
   // 보유 포지션 현황
-  if (positions.length > 0) {
-    lines.push('');
-    lines.push(`[보유 포지션] ${positions.length}개 (익일 이월)`);
-    for (const p of positions) {
-      const pnl = p.unrealized_pnl != null
-        ? ` (${p.unrealized_pnl >= 0 ? '+' : ''}${Number(p.unrealized_pnl).toFixed(2)}%)`
-        : '';
-      lines.push(`  ${p.symbol}: ${Number(p.amount).toFixed(4)}주${pnl}`);
-    }
-  } else {
-    lines.push('');
-    lines.push(`[보유 포지션] 없음`);
-  }
+  lines.push('');
+  lines.push(`[보유 포지션] ${positions.length > 0 ? `${positions.length}개 (익일 이월)` : '없음'}`);
+  for (const line of summarizePositions(positions)) lines.push(`  ${line}`);
 
   lines.push('');
   lines.push(`━━━━━━━━━━━━━━━━━━━━━`);
