@@ -2,8 +2,10 @@
  * shared/kis-client.js — KIS 한국투자증권 API 클라이언트
  *
  * 역할: 국내주식(KOSPI/KOSDAQ) + 해외주식(미국) 시장가 주문
- * 모의투자: config.yaml kis.paper_trading: true (기본값)
- * 실전:    config.yaml kis.paper_trading: false
+ * brokerAccountMode:
+ *   - mock: config.yaml kis.paper_trading: true (기본값)
+ *   - real: config.yaml kis.paper_trading: false
+ * executionMode는 별도이며, 실제 주문 차단 여부는 PAPER_MODE / trading_mode가 결정한다.
  *
  * API 문서: https://apiportal.koreainvestment.com/
  */
@@ -249,7 +251,7 @@ function parseAccount(paper) {
  */
 export async function marketBuy(symbol, amountKrw, dryRun = false) {
   const paper = isKisPaper();
-  const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
+  const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
   const currentPrice = await getDomesticPrice(symbol, paper);
   const qty          = Math.floor(amountKrw / currentPrice);
@@ -296,7 +298,7 @@ export async function marketBuy(symbol, amountKrw, dryRun = false) {
  */
 export async function marketSell(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
-  const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
+  const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
   const currentPrice = await getDomesticPrice(symbol, paper);
   console.log(`  📊 [KIS] ${symbol} 현재가 ${currentPrice.toLocaleString()}원 → 매도 ${qty}주 ${tag}`);
@@ -337,7 +339,7 @@ export async function marketSell(symbol, qty, dryRun = false) {
  */
 export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
   const paper = isKisPaper();
-  const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
+  const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
   const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   const qty = Math.floor(amountUsd / currentPrice);
@@ -386,7 +388,7 @@ export async function marketBuyOverseas(symbol, amountUsd, dryRun = false) {
  */
 export async function marketSellOverseas(symbol, qty, dryRun = false) {
   const paper = isKisPaper();
-  const tag   = dryRun ? '[PAPER]' : paper ? '[모의투자]' : '[실전]';
+  const tag   = dryRun ? '[PAPER]' : paper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
 
   const { price: currentPrice, excd } = await getOverseasPrice(symbol);
   console.log(`  📊 [KIS] ${symbol} 현재가 $${currentPrice} → 매도 ${qty}주 ${tag}`);

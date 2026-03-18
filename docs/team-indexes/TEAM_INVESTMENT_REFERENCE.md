@@ -35,6 +35,18 @@
 - [bots/investment/shared/secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
 - [bots/investment/shared/report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/report.js)
 
+모드 기준:
+- `executionMode`
+  - `live`: 실제 주문 실행
+  - `paper`: 실제 주문 차단
+- `brokerAccountMode`
+  - `real`: 실계좌
+  - `mock`: 모의투자 계좌
+- 레거시 설정 매핑
+  - `PAPER_MODE` / `trading_mode`: `executionMode`
+  - `kis.paper_trading`: 주식 `brokerAccountMode`
+  - `binance_testnet`: 암호화폐 `brokerAccountMode`
+
 ## 자주 쓰는 명령어
 
 ```bash

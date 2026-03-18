@@ -9,22 +9,42 @@
 
 ## 운영 모드
 
-| 모드 | PAPER_MODE | kis.paper_trading | 설명 |
-|------|-----------|------------------|------|
-| 완전 PAPER | `true` | - | 신호 생성·DB·텔레그램만 (실주문 없음) |
-| KIS 모의투자 | `false` | `true` | KIS API → 모의투자 계좌 실주문 |
-| 암호화폐 실전 | `false` | - | Binance 실주문 |
-| 전체 실전 | `false` | `false` | KIS+Binance 실주문 (최종 승인 후) |
+### 용어 기준
+
+- `executionMode`
+  - `paper`: 실제 주문 차단
+  - `live`: 실제 주문 실행
+- `brokerAccountMode`
+  - `mock`: 모의투자 계좌/테스트 계정
+  - `real`: 실계좌
+
+### 조합 의미
+
+| executionMode | brokerAccountMode | 설명 |
+|------|------------------|------|
+| `paper` | `mock` | 모의투자 계좌 연결, 실제 주문 차단 |
+| `paper` | `real` | 실계좌 연결, 실제 주문 차단 |
+| `live` | `mock` | 모의투자용 계좌를 이용해 주문 실행 |
+| `live` | `real` | 실제 투자 |
+
+### 레거시 설정 매핑
+
+- `PAPER_MODE` / `trading_mode`
+  - `executionMode`를 결정하는 레거시 입력
+- `kis.paper_trading`
+  - 주식 시장의 `brokerAccountMode`를 결정
+- `binance_testnet`
+  - 암호화폐 시장의 `brokerAccountMode`를 결정
 
 ---
 
 ## 현재 운영 상태 (2026-03-05)
 
-| 서비스 | 모드 | 상태 |
+| 서비스 | executionMode / brokerAccountMode | 상태 |
 |-------|------|------|
-| ai.investment.crypto (5분) | PAPER_MODE=false (실전) | ✅ OPS |
-| ai.investment.domestic (30분) | PAPER_MODE=false + kis.paper_trading=true (모의) | ✅ OPS |
-| ai.investment.overseas (30분) | PAPER_MODE=false + kis.paper_trading=true (모의) | ✅ OPS |
+| ai.investment.crypto (5분) | `live / real` | ✅ OPS |
+| ai.investment.domestic (30분) | `live / mock` | ✅ OPS |
+| ai.investment.overseas (30분) | `live / mock` | ✅ OPS |
 | ai.investment.commander | bot_commands 폴링 | ✅ OPS |
 
 ---
@@ -154,11 +174,11 @@ npm run journal:tg       # 텔레그램 전송
 
 ## launchd 서비스
 
-| 서비스 | 주기 | PAPER_MODE | 상태 |
+| 서비스 | 주기 | executionMode / brokerAccountMode | 상태 |
 |-------|------|-----------|------|
-| ai.investment.crypto | 5분 | false (실전) | ✅ OPS |
-| ai.investment.domestic | KST 09:00~15:30 30분 | false+모의투자 | ✅ OPS |
-| ai.investment.overseas | KST 23:30~06:00 30분 | false+모의투자 | ✅ OPS |
+| ai.investment.crypto | 5분 | `live / real` | ✅ OPS |
+| ai.investment.domestic | KST 09:00~15:30 30분 | `live / mock` | ✅ OPS |
+| ai.investment.overseas | KST 23:30~06:00 30분 | `live / mock` | ✅ OPS |
 | ai.investment.commander | KeepAlive | - | ✅ OPS |
 
 ---

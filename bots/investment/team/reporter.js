@@ -17,7 +17,7 @@ import ccxt            from 'ccxt';
 import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.js';
-import { loadSecrets, isPaperMode } from '../shared/secrets.js';
+import { loadSecrets, getMarketExecutionModeInfo } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker }      from '../shared/cost-tracker.js';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
@@ -53,6 +53,8 @@ async function fetchPrices(symbols) {
 }
 
 function summarizeTradesByModeAndExchange(trades = []) {
+  const getBrokerAccountModeForExchange = (exchange) =>
+    getMarketExecutionModeInfo(exchange === 'binance' ? 'crypto' : 'stocks', exchange).brokerAccountMode;
   const inferExchange = (trade) => {
     if (trade.exchange) return trade.exchange;
     if (String(trade.symbol || '').includes('/')) return 'binance';
@@ -63,9 +65,10 @@ function summarizeTradesByModeAndExchange(trades = []) {
   for (const trade of trades) {
     const mode = trade.paper ? 'paper' : 'live';
     const exchange = inferExchange(trade);
-    const key = `${mode}:${exchange}`;
+    const brokerAccountMode = getBrokerAccountModeForExchange(exchange);
+    const key = `${mode}:${exchange}:${brokerAccountMode}`;
     if (!buckets[key]) {
-      buckets[key] = { mode, exchange, count: 0, gross: 0 };
+      buckets[key] = { mode, exchange, brokerAccountMode, count: 0, gross: 0 };
     }
     buckets[key].count += 1;
     buckets[key].gross += Number(trade.total_usdt || 0);
@@ -74,13 +77,16 @@ function summarizeTradesByModeAndExchange(trades = []) {
 }
 
 function summarizePositionsByModeAndExchange(positions = [], prices = {}) {
+  const getBrokerAccountModeForExchange = (exchange) =>
+    getMarketExecutionModeInfo(exchange === 'binance' ? 'crypto' : 'stocks', exchange).brokerAccountMode;
   const buckets = {};
   for (const pos of positions) {
     const mode = pos.paper ? 'paper' : 'live';
     const exchange = pos.exchange || 'unknown';
-    const key = `${mode}:${exchange}`;
+    const brokerAccountMode = getBrokerAccountModeForExchange(exchange);
+    const key = `${mode}:${exchange}:${brokerAccountMode}`;
     if (!buckets[key]) {
-      buckets[key] = { mode, exchange, positions: 0, costBasis: 0, marketValue: 0, unrealized: 0 };
+      buckets[key] = { mode, exchange, brokerAccountMode, positions: 0, costBasis: 0, marketValue: 0, unrealized: 0 };
     }
     const currentPrice = prices[pos.symbol] || pos.avg_price || 0;
     const costBasis = Number(pos.amount || 0) * Number(pos.avg_price || 0);
@@ -241,17 +247,18 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   }
 
   // ─── 리포트 조립 ──────────────────────────────────────────────────
-  const paperMode = isPaperMode();
-  const modeTag   = paperMode ? '📄 PAPER' : '🔴 LIVE';
+  const cryptoMode = getMarketExecutionModeInfo('crypto', '암호화폐');
+  const domesticMode = getMarketExecutionModeInfo('stocks', '국내주식');
+  const overseasMode = getMarketExecutionModeInfo('stocks', '미국주식');
 
   const lines = [
     `📊 *루나팀 투자 리포트*`,
     `기준: ${kstStr()} | 최근 ${days}일`,
     ``,
     `━━━ 운영 모드 ━━━`,
-    `  암호화폐: 🔴 LIVE (PAPER_MODE=false)`,
-    `  국내주식:  📄 PAPER (모의투자)`,
-    `  미국주식:  📄 PAPER (모의투자)`,
+    `  ${cryptoMode.executionMode.toUpperCase()} / ${cryptoMode.brokerAccountMode.toUpperCase()} — 암호화폐`,
+    `  ${domesticMode.executionMode.toUpperCase()} / ${domesticMode.brokerAccountMode.toUpperCase()} — 국내주식`,
+    `  ${overseasMode.executionMode.toUpperCase()} / ${overseasMode.brokerAccountMode.toUpperCase()} — 미국주식`,
     ``,
   ];
 
@@ -336,21 +343,21 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
   }
   lines.push(``);
 
-  lines.push(`━━━ 실거래/모의거래 분리 ━━━`);
+  lines.push(`━━━ 실행 모드 분리 ━━━`);
   if (tradeBreakdown.length === 0) {
     lines.push(`  거래 없음`);
   } else {
     for (const row of tradeBreakdown) {
-      const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
-      lines.push(`  ${modeLabel} [${row.exchange}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`);
+      const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
+      lines.push(`  ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`);
     }
   }
   if (positionBreakdown.length > 0) {
     lines.push(`  포지션:`);
     for (const row of positionBreakdown) {
-      const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
+      const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
       const pnlSign = row.unrealized >= 0 ? '+' : '';
-      lines.push(`    ${modeLabel} [${row.exchange}]: ${row.positions}개 | 평가 $${row.marketValue.toFixed(2)} | 미실현 ${pnlSign}$${row.unrealized.toFixed(2)}`);
+      lines.push(`    ${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.positions}개 | 평가 $${row.marketValue.toFixed(2)} | 미실현 ${pnlSign}$${row.unrealized.toFixed(2)}`);
     }
   }
   lines.push(``);
@@ -426,15 +433,15 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       summary: `기준: ${kstStr()} | 최근 ${days}일`,
       sections: [
         buildSection('━━━ 운영 모드 ━━━', [
-          '암호화폐: 🔴 LIVE (PAPER_MODE=false)',
-          '국내주식: 📄 PAPER (모의투자)',
-          '미국주식: 📄 PAPER (모의투자)',
+          `${cryptoMode.executionMode.toUpperCase()} / ${cryptoMode.brokerAccountMode.toUpperCase()} — 암호화폐`,
+          `${domesticMode.executionMode.toUpperCase()} / ${domesticMode.brokerAccountMode.toUpperCase()} — 국내주식`,
+          `${overseasMode.executionMode.toUpperCase()} / ${overseasMode.brokerAccountMode.toUpperCase()} — 미국주식`,
         ]),
-        buildSection('━━━ 실거래/모의거래 분리 ━━━', tradeBreakdown.length === 0
+        buildSection('━━━ 실행 모드 분리 ━━━', tradeBreakdown.length === 0
           ? ['거래 없음']
           : tradeBreakdown.map((row) => {
-              const modeLabel = row.mode === 'live' ? '실거래' : '모의거래';
-              return `${modeLabel} [${row.exchange}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
+              const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
+              return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
             })),
         buildSection('━━━ 자산/비용 요약 ━━━', [
           `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,

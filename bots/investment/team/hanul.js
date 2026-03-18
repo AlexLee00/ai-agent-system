@@ -5,7 +5,11 @@
  *   - 국내주식 (KOSPI/KOSDAQ, exchange='kis')
  *   - 해외주식 (미국 NYSE/NASDAQ, exchange='kis_overseas')
  * LLM: 없음 (규칙 기반)
- * PAPER_MODE: true → 모의투자 (실주문 없음, DB + 텔레그램만)
+ * executionMode / brokerAccountMode 기준:
+ *   - PAPER_MODE=true  → executionMode=paper (실제 주문 차단)
+ *   - PAPER_MODE=false → executionMode=live  (브로커 계좌로 주문 실행)
+ *   - kis.paper_trading=true  → brokerAccountMode=mock
+ *   - kis.paper_trading=false → brokerAccountMode=real
  *
  * ⚠️ 업비트는 거래 대상이 아님.
  *    업비트는 KRW↔암호화폐 입출금 게이트웨이 전용 (바이낸스 자금 이동).
@@ -200,7 +204,7 @@ export async function executeSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
 
-  const tag = paperMode ? '[PAPER]' : kisPaper ? '[모의투자]' : '[실전]';
+  const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
 
   try {
@@ -220,7 +224,7 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      // paperMode=true → dryRun(API 호출 없음) / false → 모의투자 또는 실전 API 호출
+      // paperMode=true → dryRun(API 호출 없음) / false → brokerAccountMode(mock/real)에 따라 실제 주문 API 호출
       const order = await kis.marketBuy(symbol, amountKrw, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
@@ -325,7 +329,7 @@ export async function executeOverseasSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
 
-  const tag = paperMode ? '[PAPER]' : kisPaper ? '[모의투자]' : '[실전]';
+  const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
 
   try {

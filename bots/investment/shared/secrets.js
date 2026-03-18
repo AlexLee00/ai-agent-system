@@ -82,7 +82,7 @@ export function loadSecrets() {
     _secrets = JSON.parse(readFileSync(join(__dirname, '..', 'secrets.json'), 'utf8'));
     return _secrets;
   } catch {
-    console.warn('⚠️ config.yaml / secrets.json 없음 — PAPER_MODE=true 기본값');
+    console.warn('⚠️ config.yaml / secrets.json 없음 — executionMode=paper 기본값');
     _secrets = {
       trading_mode: 'paper',
       binance_mode: 'inherit',
@@ -94,7 +94,7 @@ export function loadSecrets() {
   }
 }
 
-// ─── PAPER_MODE ─────────────────────────────────────────────────────
+// ─── executionMode / legacy PAPER_MODE ──────────────────────────────
 
 export function getTradingMode() {
   if (process.env.PAPER_MODE === 'false') return 'live';
@@ -117,9 +117,33 @@ export function formatExecutionTag(paper) {
   return paper ? '[PAPER] ' : '';
 }
 
+export function getExecutionMode() {
+  return isPaperMode() ? 'paper' : 'live';
+}
+
 export function isTestnet() {
   const s = loadSecrets();
   return s.binance_testnet === true || process.env.BINANCE_TESTNET === 'true';
+}
+
+export function getBrokerAccountMode(marketType = 'crypto') {
+  const normalized = String(marketType || 'crypto').trim().toLowerCase();
+  const isStockMarket = normalized === 'kis' || normalized === 'kis_overseas' || normalized === 'stock' || normalized === 'stocks';
+  if (isStockMarket) return isKisPaper() ? 'mock' : 'real';
+  return isTestnet() ? 'mock' : 'real';
+}
+
+export function describeModePair({ executionMode, brokerAccountMode, marketLabel = '시장' }) {
+  if (executionMode === 'paper' && brokerAccountMode === 'mock') {
+    return `${marketLabel}: 📄 PAPER / MOCK (모의투자 계좌 연결, 실제 주문 차단)`;
+  }
+  if (executionMode === 'paper' && brokerAccountMode === 'real') {
+    return `${marketLabel}: 📄 PAPER / REAL (실계좌 연결, 실제 주문 차단)`;
+  }
+  if (executionMode === 'live' && brokerAccountMode === 'mock') {
+    return `${marketLabel}: 🔴 LIVE / MOCK (모의투자용 계좌로 주문 실행)`;
+  }
+  return `${marketLabel}: 🔴 LIVE / REAL (실제 투자)`;
 }
 
 // ─── 심볼 헬퍼 ─────────────────────────────────────────────────────
@@ -385,15 +409,17 @@ export function getMarketExecutionModeInfo(marketType = 'crypto', marketLabel = 
   const normalized = String(marketType || 'crypto').trim().toLowerCase();
   const isStockMarket = normalized === 'kis' || normalized === 'kis_overseas' || normalized === 'stock' || normalized === 'stocks';
   const broker = isStockMarket ? 'KIS' : 'BINANCE';
-  const paper = isStockMarket ? isKisPaper() : isBinancePaper();
+  const executionMode = getExecutionMode();
+  const brokerAccountMode = getBrokerAccountMode(isStockMarket ? 'stocks' : 'crypto');
+  const paper = executionMode === 'paper';
   return {
     marketType: isStockMarket ? 'stocks' : 'crypto',
     broker,
+    executionMode,
+    brokerAccountMode,
     paper,
     tag: paper ? '[PAPER]' : '[LIVE]',
-    logLine: paper
-      ? `📄 ${broker} PAPER=true — 모의투자 실행 모드 (${marketLabel})`
-      : `🔴 ${broker} PAPER=false — 실전 주문 실행 모드 (${marketLabel})`,
+    logLine: `${describeModePair({ executionMode, brokerAccountMode, marketLabel })} | broker=${broker}`,
   };
 }
 

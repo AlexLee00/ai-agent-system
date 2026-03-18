@@ -307,7 +307,7 @@ function formatTrades(trades, pnlMap) {
       lastDate = date;
     }
     const side   = (t.side === 'buy' || t.side === 'BUY') ? '🟢 매수' : '🔴 매도';
-    const paper  = t.paper ? '[모의]' : '[실거래]';
+    const paper  = t.paper ? '[PAPER]' : '[LIVE]';
     const confValue = toNumber(t.confidence, null);
     const conf   = confValue != null ? ` 신뢰도 ${(confValue * 100).toFixed(0)}%` : '';
     const sym    = t.symbol.padEnd(10);
@@ -376,8 +376,8 @@ function formatTradeReviewStats(reviewRows) {
   if (reviewRows.length === 0) return '  종료 거래 리뷰 없음';
 
   const groups = [
-    { key: 'live', label: '실거래', rows: reviewRows.filter(row => !row.is_paper) },
-    { key: 'paper', label: '모의거래', rows: reviewRows.filter(row => row.is_paper) },
+    { key: 'live', label: 'LIVE', rows: reviewRows.filter(row => !row.is_paper) },
+    { key: 'paper', label: 'PAPER', rows: reviewRows.filter(row => row.is_paper) },
   ];
 
   const lines = [];

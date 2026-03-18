@@ -114,8 +114,8 @@ async function fetchSignalStats(days) {
 function buildTradeSummary(trades, signalStats, rrSection = null) {
   if (trades.length === 0) return '해당 기간 종료 거래 없음';
 
-  const closed   = trades.filter(t => !t.is_paper);
-  const paper    = trades.filter(t => t.is_paper);
+  const live   = trades.filter(t => !t.is_paper);
+  const paper  = trades.filter(t => t.is_paper);
   const wins     = trades.filter(t => (t.pnl_net ?? 0) > 0).length;
   const losses   = trades.filter(t => (t.pnl_net ?? 0) <= 0).length;
   const winRate  = trades.length > 0 ? ((wins / trades.length) * 100).toFixed(1) : '0.0';
@@ -141,7 +141,7 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
 
   const lines = [
     `=== 최근 ${DAYS}일 매매 요약 ===`,
-    `총 거래: ${trades.length}건 (실투자 ${closed.length}건 / 모의 ${paper.length}건)`,
+    `총 거래: ${trades.length}건 (LIVE ${live.length}건 / PAPER ${paper.length}건)`,
     `승률: ${winRate}% (${wins}승 ${losses}패)`,
     `총 손익(net): $${totalPnl.toFixed(2)}`,
     `평균 보유시간: ${avgHoldH}시간`,
@@ -196,8 +196,8 @@ function buildReviewSection(reviewRows) {
   if (reviewRows.length === 0) return '';
 
   const groups = [
-    { label: '실거래', rows: reviewRows.filter(row => !row.is_paper) },
-    { label: '모의거래', rows: reviewRows.filter(row => row.is_paper) },
+    { label: 'LIVE', rows: reviewRows.filter(row => !row.is_paper) },
+    { label: 'PAPER', rows: reviewRows.filter(row => row.is_paper) },
   ].filter(group => group.rows.length > 0);
 
   const lines = ['=== trade_review 요약 ==='];

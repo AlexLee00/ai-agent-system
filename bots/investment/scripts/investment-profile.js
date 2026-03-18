@@ -54,7 +54,7 @@ export async function getInvestmentProfile(market) {
   return {
     market,
     exchange,
-    mode:             paperMode ? '🟡 모의투자 (PAPER)' : '🔴 실투자 (LIVE)',
+    mode:             paperMode ? '📄 PAPER / 주문 차단' : '🔴 LIVE / 주문 실행',
     riskLevel:        RISK_LABEL[market] || 'moderate',
     maxPositions:     rules.MAX_OPEN_POSITIONS,
     riskPerTrade:     (capMgmt.risk_per_trade || 0.02) * 100,   // % 표시

@@ -74,7 +74,12 @@
 
 ### 헤파이스토스 (Hephaestos) — 바이낸스 실행봇
 - 승인된 암호화폐 신호 실행 (Binance Spot)
-- PAPER_MODE: 모의 주문 (DB + 텔레그램만)
+- `executionMode`
+  - `paper`: 실제 주문 차단 (DB + 텔레그램만)
+  - `live`: 주문 실행
+- `brokerAccountMode`
+  - `real`: 일반 바이낸스 계정
+  - `mock`: testnet 계정
 - Phase 3-C에서 실주문 활성화
 
 ### 한울 (Hanul) — KIS 실행봇
@@ -82,7 +87,12 @@
   - 국내주식: KOSPI/KOSDAQ 현물 (KRW 기준)
   - 해외주식: NYSE/NASDAQ 현물 (USD 기준)
 - **⚠️ 업비트**: 자동매매 대상 아님 — KRW↔암호화폐 입출금 게이트웨이 전용
-- PAPER_MODE: 모의투자 (KIS API 모의투자 환경)
+- `executionMode`
+  - `paper`: 실제 주문 차단
+  - `live`: KIS 계좌로 주문 실행
+- `brokerAccountMode`
+  - `mock`: KIS 모의투자 계좌
+  - `real`: KIS 실계좌
 
 ### 크로노스 (Chronos) — 백테스팅
 - 과거 데이터 기반 전략 성과 검증 (Phase 3-D 예정)
