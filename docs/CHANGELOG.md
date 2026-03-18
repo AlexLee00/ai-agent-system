@@ -475,6 +475,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
 # 2026-03-18
 
+- 자동화 리포트
+  - `jay-llm-daily-review.js`가 `dbSourceStatus`를 추가해 `sandbox_restricted / permission_denied / db_unreachable` 등 source별 실패 상태를 구분해 노출하도록 보강
+  - `packages/core/lib/health-runner.js`가 빈 `예외:` 대신 `[EPERM] ...` 형태의 실제 실패 힌트를 stderr에 남기도록 보강
+  - `ska-sales-forecast-daily-review.js`가 `requestedDays / effectiveDays`를 함께 출력해 일일/주간 리포트 해석 규칙을 통일
+  - `daily-ops-report.js`가 `inputFailures.code`를 세분화하고 `investment / reservation`에는 `local fallback 활동 신호`를 함께 표시해 health-report 실패와 팀 활동 신호를 분리해서 읽을 수 있게 정리
+  - `daily-ops-report.js` 추천 문구가 `db_sandbox_restricted`와 `local fallback` 상태를 구분해 운영 액션으로 직접 이어지도록 보강
+
 - 공통 LLM
   - `packages/core/lib/llm-model-selector.js` 추가
   - 제이/아처/클로드 리드/워커/블로그/공용 chunked-llm/투자 agent 정책의 모델·폴백 기준을 공용 selector key 기반으로 1차 통합

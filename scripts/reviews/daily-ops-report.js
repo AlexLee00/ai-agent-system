@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execFileSync, spawnSync } = require('child_process');
+const fs = require('fs');
+const { execFileSync, execSync, spawnSync } = require('child_process');
 const path = require('path');
 
 const ROOT = '/Users/alexlee/projects/ai-agent-system';
@@ -31,6 +32,19 @@ const FALLBACK_LAUNCHD_LABELS = {
   blog: ['ai.blog.node-server'],
   investment: ['ai.investment.commander', 'ai.investment.crypto', 'ai.investment.domestic', 'ai.investment.overseas', 'ai.investment.argos', 'ai.investment.reporter'],
   reservation: ['ai.ska.commander', 'ai.ska.naver-monitor', 'ai.ska.kiosk-monitor'],
+};
+
+const FALLBACK_FILE_ACTIVITY = {
+  investment: {
+    filePath: '/tmp/investment-health-check.log',
+    staleMs: 30 * 60 * 1000,
+    label: 'investment health-check log',
+  },
+  reservation: {
+    filePath: '/tmp/naver-ops-mode.log',
+    staleMs: 20 * 60 * 1000,
+    label: 'naver-monitor log',
+  },
 };
 
 const AUXILIARY_COMMANDS = [
@@ -84,6 +98,28 @@ function runSafeNodeJson(script, args = []) {
   }
 }
 
+function classifyHealthError(errorText, source = '') {
+  const text = String(errorText || '').toLowerCase();
+  const sourceText = String(source || '').toLowerCase();
+  if (!text) {
+    if (sourceText.includes('probe_unavailable')) return 'probe_unavailable';
+    return 'unknown_error';
+  }
+  if (text.includes('eperm')) {
+    if (text.includes('pg-pool') || text.includes('node_modules/pg-pool')) return 'db_sandbox_restricted';
+    if (text.includes('launchctl')) return 'launchctl_sandbox_restricted';
+    if (text.includes('curl') || text.includes('healthz') || text.includes('127.0.0.1')) return 'probe_sandbox_restricted';
+    return 'sandbox_restricted';
+  }
+  if (text.includes('econnrefused') || text.includes('connection refused')) return 'service_unreachable';
+  if (text.includes('json payload not found')) return 'json_payload_missing';
+  if (text.includes('timed out') || text.includes('timeout')) return 'timeout';
+  if (text.includes('launchctl')) return 'launchctl_failed';
+  if (text.includes('healthz') || text.includes('127.0.0.1') || text.includes('probe')) return 'probe_unavailable';
+  if (sourceText.includes('probe_unavailable')) return 'probe_unavailable';
+  return 'script_failed';
+}
+
 async function checkHttpOk(url) {
   try {
     const output = execFileSync('curl', ['-s', url], {
@@ -100,7 +136,7 @@ async function checkHttpOk(url) {
 function loadLaunchctlState() {
   let output = '';
   try {
-    output = execFileSync('launchctl', ['list'], {
+    output = execSync('launchctl list', {
       encoding: 'utf8',
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -152,23 +188,93 @@ function buildLaunchdTeamHealth(team, launchctlRows) {
   };
 }
 
+function buildFileActivityTeamHealth(team) {
+  const config = FALLBACK_FILE_ACTIVITY[team];
+  if (!config) {
+    return { okCount: 0, warnCount: 0, ok: [], warn: [] };
+  }
+
+  try {
+    const stat = fs.statSync(config.filePath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    const minutesAgo = Math.floor(ageMs / 60000);
+    if (ageMs > config.staleMs) {
+      return {
+        okCount: 0,
+        warnCount: 1,
+        ok: [],
+        warn: [`  ${config.label}: ${minutesAgo}분 무활동`],
+      };
+    }
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: [`  ${config.label}: 최근 ${minutesAgo}분 이내 활동`],
+      warn: [],
+    };
+  } catch {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  ${config.label}: 파일 없음`],
+    };
+  }
+}
+
+function mergeHealthSignals(...signals) {
+  return signals.reduce((acc, signal) => ({
+    okCount: acc.okCount + Number(signal?.okCount || 0),
+    warnCount: acc.warnCount + Number(signal?.warnCount || 0),
+    ok: [...acc.ok, ...(signal?.ok || [])],
+    warn: [...acc.warn, ...(signal?.warn || [])],
+  }), { okCount: 0, warnCount: 0, ok: [], warn: [] });
+}
+
+function buildLocalFallbackMeta(mergedHealth, hasFallbackSignal) {
+  if (!hasFallbackSignal) {
+    return {
+      enabled: false,
+      status: 'missing',
+      summary: 'local fallback 신호 없음',
+    };
+  }
+
+  const status = mergedHealth.warnCount > 0 ? 'warn' : 'active';
+  return {
+    enabled: true,
+    status,
+    okCount: mergedHealth.okCount,
+    warnCount: mergedHealth.warnCount,
+    summary: status === 'warn'
+      ? `local fallback 경고 ${mergedHealth.warnCount}건`
+      : `local fallback 활동 신호 ${mergedHealth.okCount}건`,
+  };
+}
+
 async function buildFallbackTeamResult(team, healthError = null, launchctlRows = {}) {
   const launchdHealth = buildLaunchdTeamHealth(team, launchctlRows);
+  const fileHealth = buildFileActivityTeamHealth(team);
   const endpoints = FALLBACK_TEAM_PROBES[team] || [];
+  const failureCode = classifyHealthError(healthError, endpoints.length ? 'health_report_failed_probe_unavailable' : 'health_report_failed_no_probe');
   if (!endpoints.length) {
-    const hasLaunchdSignal = launchdHealth.okCount > 0 || launchdHealth.warnCount > 0;
+    const mergedHealth = mergeHealthSignals(launchdHealth, fileHealth);
+    const hasFallbackSignal = mergedHealth.okCount > 0 || mergedHealth.warnCount > 0;
+    const localFallback = buildLocalFallbackMeta(mergedHealth, hasFallbackSignal);
     return {
       team,
       ok: true,
       data: {
-        source: hasLaunchdSignal ? 'health_report_failed_launchctl' : 'health_report_failed_probe_unavailable',
-        serviceHealth: hasLaunchdSignal ? launchdHealth : { okCount: 0, warnCount: 0, ok: [], warn: [] },
+        source: hasFallbackSignal ? 'health_report_failed_local_fallback' : 'health_report_failed_probe_unavailable',
+        failureCode: hasFallbackSignal ? failureCode : 'no_probe_configured',
+        localFallback,
+        serviceHealth: hasFallbackSignal ? mergedHealth : { okCount: 0, warnCount: 0, ok: [], warn: [] },
         decision: {
-          level: launchdHealth.warnCount > 0 ? 'medium' : 'hold',
-          recommended: launchdHealth.warnCount > 0,
+          level: mergedHealth.warnCount > 0 ? 'medium' : 'hold',
+          recommended: mergedHealth.warnCount > 0,
           reasons: [
-            hasLaunchdSignal
-              ? `health-report 실행 실패로 launchctl 기준 서비스 상태를 요약했습니다.${healthError ? ` (${healthError})` : ''}`
+            hasFallbackSignal
+              ? `health-report 실행 실패로 로컬 fallback 신호(launchd/log activity) 기준 상태를 요약했습니다.${healthError ? ` (${healthError})` : ''}`
               : `전용 endpoint probe가 없어 팀 상태를 과장 없이 보류합니다.${healthError ? ` (${healthError})` : ''}`,
           ],
         },
@@ -185,14 +291,18 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
   const warnCount = endpoints.length - okCount;
 
   if (okCount === 0) {
-    const hasLaunchdSignal = launchdHealth.okCount > 0 || launchdHealth.warnCount > 0;
+    const mergedHealth = mergeHealthSignals(launchdHealth, fileHealth);
+    const hasFallbackSignal = mergedHealth.okCount > 0 || mergedHealth.warnCount > 0;
+    const localFallback = buildLocalFallbackMeta(mergedHealth, hasFallbackSignal);
     return {
       team,
       ok: true,
       data: {
-        source: hasLaunchdSignal ? 'health_report_failed_launchctl' : 'health_report_failed_probe_unavailable',
-        serviceHealth: hasLaunchdSignal
-          ? launchdHealth
+        source: hasFallbackSignal ? 'health_report_failed_local_fallback' : 'health_report_failed_probe_unavailable',
+        failureCode: hasFallbackSignal ? failureCode : failureCode,
+        localFallback,
+        serviceHealth: hasFallbackSignal
+          ? mergedHealth
           : {
               okCount: 0,
               warnCount: 0,
@@ -200,11 +310,11 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
               warn: [],
             },
         decision: {
-          level: launchdHealth.warnCount > 0 ? 'medium' : 'hold',
-          recommended: launchdHealth.warnCount > 0,
+          level: mergedHealth.warnCount > 0 ? 'medium' : 'hold',
+          recommended: mergedHealth.warnCount > 0,
           reasons: [
-            hasLaunchdSignal
-              ? `endpoint probe는 비었지만 launchctl 기준 서비스 상태를 보수적으로 사용했습니다.${healthError ? ` (${healthError})` : ''}`
+            hasFallbackSignal
+              ? `endpoint probe는 비었지만 로컬 fallback 신호(launchd/log activity)를 보수적으로 사용했습니다.${healthError ? ` (${healthError})` : ''}`
               : `fallback probe가 현재 런타임에서 응답을 확인하지 못해 팀 상태를 과장 없이 보류합니다.${healthError ? ` (${healthError})` : ''}`,
           ],
         },
@@ -218,6 +328,11 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
     ok: true,
     data: {
       source: 'fallback_probe',
+      localFallback: {
+        enabled: false,
+        status: 'not_used',
+        summary: 'endpoint probe 사용',
+      },
       serviceHealth: {
         okCount,
         warnCount,
@@ -250,12 +365,30 @@ function toSummaryLine(team, data) {
     warnCount: Number(service.warnCount || 0),
     reasons: Array.isArray(decision.reasons) ? decision.reasons : [],
     healthError: data?.healthError || null,
+    failureCode: data?.failureCode || null,
+    localFallback: data?.localFallback || null,
   };
 }
 
 function buildRecommendations(teamSummaries, auxiliary) {
   const lines = [];
   const warnedTeams = teamSummaries.filter((item) => item.warnCount > 0 || item.recommended);
+  const dbSandboxTeams = teamSummaries.filter((item) => item.failureCode === 'db_sandbox_restricted');
+  const dbSandboxWithFallbackTeams = dbSandboxTeams.filter((item) => item.localFallback?.enabled);
+  const dbSandboxWithoutFallbackTeams = dbSandboxTeams.filter((item) => !item.localFallback?.enabled);
+  const noProbeTeams = teamSummaries.filter((item) => item.failureCode === 'no_probe_configured');
+
+  if (dbSandboxWithFallbackTeams.length) {
+    lines.push(`- ${dbSandboxWithFallbackTeams.map((item) => item.team).join(', ')} 팀은 health-report DB 제한이 있지만 local fallback 활동 신호는 살아 있습니다. 운영 런타임 DB 제한 해소 전까지는 fallback 신호를 보조 기준으로 보세요.`);
+  }
+
+  if (dbSandboxWithoutFallbackTeams.length) {
+    lines.push(`- ${dbSandboxWithoutFallbackTeams.map((item) => item.team).join(', ')} 팀은 health-report 실행 자체보다 현재 실행 컨텍스트의 DB 제한을 먼저 풀어야 합니다.`);
+  }
+
+  if (noProbeTeams.length) {
+    lines.push(`- ${noProbeTeams.map((item) => item.team).join(', ')} 팀은 fallback probe가 없어 관측 공백이 큽니다. launchd 외 대체 신호를 설계하는 편이 좋습니다.`);
+  }
 
   for (const team of warnedTeams) {
     if (team.team === 'orchestrator') {
@@ -335,7 +468,9 @@ function buildInputFailures(teamSummaries, auxiliary) {
       kind: 'team_health',
       target: item.team,
       source: item.source,
+      code: item.failureCode || classifyHealthError(item.healthError || item.source, item.source),
       error: item.healthError || item.reasons[0] || '입력 실패',
+      fallbackStatus: item.localFallback?.enabled ? item.localFallback.summary : null,
     }));
 
   const auxiliaryFailures = Object.entries(auxiliary)
@@ -344,6 +479,7 @@ function buildInputFailures(teamSummaries, auxiliary) {
       kind: 'auxiliary',
       target: key,
       source: 'auxiliary_review_failed',
+      code: classifyHealthError(value.error, 'auxiliary_review_failed'),
       error: value.error || '입력 실패',
     }));
 
@@ -383,8 +519,9 @@ function buildTextReport(report) {
     lines.push('- 없음');
   } else {
     for (const item of report.inputFailures) {
-      lines.push(`- ${item.target}: source=${item.source}`);
+      lines.push(`- ${item.target}: source=${item.source}, code=${item.code || 'unknown_error'}`);
       lines.push(`  오류: ${item.error}`);
+      if (item.fallbackStatus) lines.push(`  보조 신호: ${item.fallbackStatus}`);
     }
   }
 
@@ -452,5 +589,6 @@ module.exports = {
   buildActiveIssues,
   buildHistoricalIssues,
   buildInputFailures,
+  classifyHealthError,
   buildTextReport,
 };

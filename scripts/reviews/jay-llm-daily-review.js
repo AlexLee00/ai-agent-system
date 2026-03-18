@@ -18,6 +18,16 @@ function kstDateDaysAgo(days) {
   return new Date(now - ((days - 1) * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 }
 
+function classifySourceError(errorText) {
+  const text = String(errorText || '').toLowerCase();
+  if (!text) return 'unknown_error';
+  if (text.includes('eperm')) return 'sandbox_restricted';
+  if (text.includes('permission denied')) return 'permission_denied';
+  if (text.includes('econnrefused') || text.includes('connection refused')) return 'db_unreachable';
+  if (text.includes('timeout')) return 'db_timeout';
+  return 'db_failed';
+}
+
 async function getJayDbStats(days) {
   const fromDate = kstDateDaysAgo(days);
   const [usageResult, historyResult] = await Promise.allSettled([
@@ -67,6 +77,10 @@ async function getJayDbStats(days) {
     rows,
     history,
     errors,
+    errorCodes: {
+      llmUsage: errors.llmUsage ? classifySourceError(errors.llmUsage) : 'ok',
+      parseHistory: errors.parseHistory ? classifySourceError(errors.parseHistory) : 'ok',
+    },
   };
 }
 
@@ -82,9 +96,13 @@ function buildRecommendation({ jayUsage, dbStats, dbStatsError }) {
   const historyFailed = Boolean(dbStats.errors?.parseHistory);
 
   if (usageFailed && historyFailed) {
+    const llmUsageCode = dbStats.errorCodes?.llmUsage || 'db_failed';
+    const parseHistoryCode = dbStats.errorCodes?.parseHistory || 'db_failed';
     return [
-      '- 제이 DB 집계 소스(llmUsage, parseHistory)가 모두 실패해 세션 usage만 기준으로 관찰합니다.',
-      '- PostgreSQL 접근 권한 또는 자동화 실행 컨텍스트를 먼저 복구하세요.',
+      `- 제이 DB 집계 소스(llmUsage=${llmUsageCode}, parseHistory=${parseHistoryCode})가 모두 실패해 세션 usage만 기준으로 관찰합니다.`,
+      llmUsageCode === 'sandbox_restricted' && parseHistoryCode === 'sandbox_restricted'
+        ? '- 현재 실행 컨텍스트 제한 가능성이 커서, 운영 런타임 또는 샌드박스 밖 실행 결과를 함께 확인하세요.'
+        : '- PostgreSQL 접근 권한 또는 자동화 실행 컨텍스트를 먼저 복구하세요.',
     ];
   }
 
@@ -181,6 +199,7 @@ async function main() {
       : 'degraded',
     dbStatsError: dbStatsResult.ok ? null : dbStatsResult.error,
     dbSourceErrors: dbStats.errors || {},
+    dbSourceStatus: dbStats.errorCodes || {},
     llmUsageSource: dbStats.rows.length ? 'db' : 'session_usage_fallback',
     llmUsage: llmUsage,
     parseHistory: dbStats.history,
@@ -207,8 +226,8 @@ async function main() {
   } else if (report.dbStatsStatus === 'partial') {
     lines.push('');
     lines.push('DB 집계 상태: partial');
-    if (report.dbSourceErrors.llmUsage) lines.push('- llmUsage: failed');
-    if (report.dbSourceErrors.parseHistory) lines.push('- parseHistory: failed');
+    if (report.dbSourceErrors.llmUsage) lines.push(`- llmUsage: ${report.dbSourceStatus.llmUsage || 'failed'}`);
+    if (report.dbSourceErrors.parseHistory) lines.push(`- parseHistory: ${report.dbSourceStatus.parseHistory || 'failed'}`);
   }
 
   if (dbStats.rows.length) {
