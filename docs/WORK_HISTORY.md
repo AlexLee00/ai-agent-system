@@ -114,6 +114,27 @@
 - `node --check scripts/llm-selector-report.js`
 - `node scripts/llm-selector-report.js --json`
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 UI에 selector advisor 표시
+
+핵심 구현:
+- worker 개별 selector 카드에 `hold / compare / switch_candidate / observe` 배지와 근거 문구 추가
+- 전 팀 selector 개요 카드에도 같은 advisor 판단과 candidate를 함께 노출
+- 최근 speed-test 스냅샷이 없을 때는 대부분 `observe`로 표시되도록 운영 보수성을 유지
+
+세션 맥락:
+- selector advisor는 이미 계산되었지만, 운영자가 실제 화면에서 바로 읽을 수는 없었다.
+- 이번 단계에서 워커 모니터링 화면이 “현재 chain 조회”를 넘어 “현재 추천 판단”까지 읽는 운영 대시보드 역할을 하게 됐다.
+
+의사결정 이유:
+- 새 판단 UI를 만들기보다 기존 워커 모니터링 화면에 추천 배지를 붙이는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 구조는 추후 제이/클로드/블로그 운영 화면에도 동일한 advice 패턴으로 확장하기 쉽다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:

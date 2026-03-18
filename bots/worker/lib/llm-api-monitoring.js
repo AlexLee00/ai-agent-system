@@ -9,11 +9,16 @@ const {
   getGroqAccounts,
 } = require(path.join(__dirname, '../../../packages/core/lib/llm-keys'));
 const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
+const {
+  buildSpeedLookup,
+  buildSelectorAdvice,
+} = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
 const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
 
 const SCHEMA = 'worker';
 const PREFERENCE_KEY = 'worker_monitoring_llm_api';
 const ALLOWED_APIS = ['groq', 'anthropic', 'openai', 'gemini'];
+const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
 
 const API_CATALOG = {
   groq: {
@@ -97,6 +102,16 @@ function buildProviderOptions() {
 function normalizeApi(value) {
   const key = String(value || '').trim().toLowerCase();
   return ALLOWED_APIS.includes(key) ? key : 'groq';
+}
+
+function loadLatestSpeedSnapshot() {
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(SPEED_TEST_LATEST_FILE)) return null;
+    return JSON.parse(fs.readFileSync(SPEED_TEST_LATEST_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 async function getWorkerMonitoringPreference() {
@@ -440,6 +455,8 @@ function buildSelectorChainSummary(description) {
 function getWorkerSelectorSummary(selectedApi) {
   const normalizedApi = normalizeApi(selectedApi);
   const overrides = getWorkerLLMSelectorOverrides();
+  const speedSnapshot = loadLatestSpeedSnapshot();
+  const speedLookup = buildSpeedLookup(speedSnapshot);
   const selectorEntries = [
     {
       key: 'worker.ai.fallback',
@@ -469,6 +486,7 @@ function getWorkerSelectorSummary(selectedApi) {
     route: item.route,
     description: item.description,
     chain: buildSelectorChainSummary(item.detail),
+    advice: buildSelectorAdvice(item.detail, speedLookup),
   }));
 }
 

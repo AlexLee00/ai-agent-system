@@ -599,6 +599,7 @@ function buildSelectorGroup(title, entries) {
       key: entry.key,
       label: entry.label,
       chain: summarizeSelectorDescription(entry.description),
+      advice: entry.advice || null,
     })),
   };
 }
@@ -619,29 +620,30 @@ async function getGlobalSelectorSummary() {
       : null,
     groups: [
       buildSelectorGroup('Jay', [
-        { key: 'orchestrator.jay.intent', label: 'Intent', description: payload.jay?.intent },
-        { key: 'orchestrator.jay.chat_fallback', label: 'Chat Fallback', description: payload.jay?.chatFallback },
+        { key: 'orchestrator.jay.intent', label: 'Intent', description: payload.jay?.intent, advice: payload.advice?.jay?.intent || null },
+        { key: 'orchestrator.jay.chat_fallback', label: 'Chat Fallback', description: payload.jay?.chatFallback, advice: payload.advice?.jay?.chatFallback || null },
       ]),
       buildSelectorGroup('Worker', [
-        { key: 'worker.ai.fallback', label: 'AI Fallback', description: payload.worker?.aiFallback },
-        { key: 'worker.chat.task_intake', label: 'Task Intake', description: payload.worker?.taskIntake },
+        { key: 'worker.ai.fallback', label: 'AI Fallback', description: payload.worker?.aiFallback, advice: payload.advice?.worker?.aiFallback || null },
+        { key: 'worker.chat.task_intake', label: 'Task Intake', description: payload.worker?.taskIntake, advice: payload.advice?.worker?.taskIntake || null },
       ]),
       buildSelectorGroup('Claude', [
-        { key: 'claude.archer.tech_analysis', label: 'Archer', description: payload.claude?.archer },
-        { key: 'claude.lead.system_issue_triage', label: 'Lead', description: payload.claude?.lead },
-        { key: 'claude.dexter.ai_analyst.warn', label: 'Dexter Warn', description: payload.claude?.dexterWarn },
-        { key: 'claude.dexter.ai_analyst.critical', label: 'Dexter Critical', description: payload.claude?.dexterCritical },
+        { key: 'claude.archer.tech_analysis', label: 'Archer', description: payload.claude?.archer, advice: payload.advice?.claude?.archer || null },
+        { key: 'claude.lead.system_issue_triage', label: 'Lead', description: payload.claude?.lead, advice: payload.advice?.claude?.lead || null },
+        { key: 'claude.dexter.ai_analyst.warn', label: 'Dexter Warn', description: payload.claude?.dexterWarn, advice: payload.advice?.claude?.dexterWarn || null },
+        { key: 'claude.dexter.ai_analyst.critical', label: 'Dexter Critical', description: payload.claude?.dexterCritical, advice: payload.advice?.claude?.dexterCritical || null },
       ]),
       buildSelectorGroup('Blog', [
-        { key: 'blog.pos.writer', label: 'POS Writer', description: payload.blog?.pos },
-        { key: 'blog.gems.writer', label: 'GEMS Writer', description: payload.blog?.gems },
-        { key: 'blog.social.summarize', label: 'Social Summarize', description: payload.blog?.socialSummarize },
-        { key: 'blog.social.caption', label: 'Social Caption', description: payload.blog?.socialCaption },
+        { key: 'blog.pos.writer', label: 'POS Writer', description: payload.blog?.pos, advice: payload.advice?.blog?.pos || null },
+        { key: 'blog.gems.writer', label: 'GEMS Writer', description: payload.blog?.gems, advice: payload.advice?.blog?.gems || null },
+        { key: 'blog.social.summarize', label: 'Social Summarize', description: payload.blog?.socialSummarize, advice: payload.advice?.blog?.socialSummarize || null },
+        { key: 'blog.social.caption', label: 'Social Caption', description: payload.blog?.socialCaption, advice: payload.advice?.blog?.socialCaption || null },
       ]),
       buildSelectorGroup('Investment', Object.entries(payload.investment || {}).map(([agent, description]) => ({
         key: `investment.${agent}`,
         label: agent,
         description,
+        advice: payload.advice?.investment?.[agent] || null,
       }))),
     ],
   };

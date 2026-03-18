@@ -15,6 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `llm-selector-advisor.js` 추가
   - 최근 speed-test 스냅샷 기준으로 selector별 `hold / compare / switch_candidate / observe` 추천을 생성
   - `llm-selector-report.js` 텍스트/JSON 출력에 `advice` 포함
+- 워커 `/admin/monitoring`에 selector advisor 표시 추가
+  - worker 개별 chain과 전 팀 selector 개요에 `hold / compare / switch_candidate / observe` 판단과 근거를 함께 노출
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장
