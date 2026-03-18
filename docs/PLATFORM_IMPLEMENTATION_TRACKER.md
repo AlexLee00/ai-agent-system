@@ -646,6 +646,9 @@
 - 블로그 `runtime_config.llmSelectorOverrides`를 추가해 writer/social/star/curriculum 경로를 selector override로 운영 제어 가능하게 정리
 - 클로드 `runtime_config.llmSelectorOverrides`를 추가해 아처·클로드 리드·덱스터 경로를 selector override로 운영 제어 가능하게 정리
 - `scripts/llm-selector-report.js`를 추가해 현재 selector의 `primary + fallbacks` 체인을 운영 보고용으로 한 번에 조회 가능하게 정리
+- `packages/core/lib/llm-selector-advisor.js`를 추가해 speed-test 기준의 `hold / compare / switch_candidate / observe` 추천을 selector 리포트에 함께 표시
+- `scripts/llm-selector-override-suggestions.js`를 추가해 advisor 결과를 runtime_config override 후보로 정리하고, `--write`로 워커 schema에 추천 스냅샷을 저장할 수 있게 정리
+- `scripts/review-llm-selector-override-suggestion.js`를 추가해 저장된 selector override 추천을 `pending / hold / approved / rejected / applied` 상태로 검토할 수 있게 정리
 
 ### 2026-03-14
 

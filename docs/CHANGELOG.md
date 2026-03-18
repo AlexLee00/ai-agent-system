@@ -435,6 +435,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 블로그 `runtime_config.llmSelectorOverrides`를 추가해 writer/social/star/curriculum 경로를 selector override로 운영 제어 가능하게 정리
   - 클로드 `runtime_config.llmSelectorOverrides`를 추가해 아처·클로드 리드·덱스터 경로를 selector override로 운영 제어 가능하게 정리
   - `describeLLMSelector()`와 `scripts/llm-selector-report.js`를 추가해 현재 selector의 primary/fallback 체인을 텍스트/JSON으로 조회 가능하게 정리
+  - `packages/core/lib/llm-selector-advisor.js`를 추가해 speed-test 기준 selector 추천(`hold / compare / switch_candidate / observe`)을 생성하고 워커 모니터링 UI에 표시
+  - `scripts/llm-selector-override-suggestions.js`를 추가해 advisor 결과를 runtime_config override 후보로 정리하고 `--write` 저장까지 지원
+  - `scripts/review-llm-selector-override-suggestion.js`를 추가해 저장된 selector override 추천을 `pending / hold / approved / rejected / applied` 상태로 검토 가능하게 정리
 - 클로드/아처
   - 아처 LLM 폴백 순서를 `anthropic/claude-sonnet-4-6 -> openai/gpt-4o-mini -> groq/llama-4-scout-17b-16e-instruct`로 재정렬
   - `bots/claude/lib/archer/config.js`에 `LLM_CHAIN`을 추가해 아처 전용 모델 우선순위를 설정 레이어로 승격

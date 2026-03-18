@@ -3,6 +3,9 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
+  insertSelectorOverrideSuggestionLog,
+} = require(path.join(__dirname, '../bots/worker/lib/llm-api-monitoring'));
+const {
   normalizeChain,
 } = require(path.join(__dirname, '../packages/core/lib/llm-selector-advisor'));
 
@@ -167,37 +170,58 @@ function formatSuggestion(item) {
 
 function main() {
   const asJson = process.argv.includes('--json');
+  const shouldWrite = process.argv.includes('--write');
   const report = runSelectorReportJson();
   const suggestions = collectSuggestions(report);
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    speedTest: report.speedTest || null,
-    count: suggestions.length,
-    suggestions,
-  };
+  return Promise.resolve().then(async () => {
+    const saved = [];
+    if (shouldWrite) {
+      for (const item of suggestions) {
+        // 운영 승인 전 단계이므로 추천 스냅샷만 저장한다.
+        saved.push(await insertSelectorOverrideSuggestionLog(item));
+      }
+    }
 
-  if (asJson) {
-    console.log(JSON.stringify(payload, null, 2));
-    return;
-  }
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      speedTest: report.speedTest || null,
+      count: suggestions.length,
+      write: shouldWrite,
+      savedCount: saved.length,
+      saved,
+      suggestions,
+    };
 
-  if (!suggestions.length) {
-    console.log('LLM selector override 추천 없음\n- 현재 speed-test 기준으로 compare/switch_candidate 대상이 없습니다.');
-    return;
-  }
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
 
-  console.log([
-    'LLM selector override 추천',
-    report.speedTest
-      ? `- 최근 speed-test: ${report.speedTest.capturedAt} | current=${report.speedTest.current || '-'} | recommended=${report.speedTest.recommended || '-'}`
-      : '- 최근 speed-test: 없음',
-    '',
-    ...suggestions.map(formatSuggestion),
-  ].join('\n'));
+    if (!suggestions.length) {
+      console.log('LLM selector override 추천 없음\n- 현재 speed-test 기준으로 compare/switch_candidate 대상이 없습니다.');
+      return;
+    }
+
+    const savedSummary = shouldWrite
+      ? [`- 저장됨: ${saved.length}건`, ...saved.map((item) => `  - #${item.id} ${item.selector_key} (${item.review_status})`), '']
+      : [];
+
+    console.log([
+      'LLM selector override 추천',
+      report.speedTest
+        ? `- 최근 speed-test: ${report.speedTest.capturedAt} | current=${report.speedTest.current || '-'} | recommended=${report.speedTest.recommended || '-'}`
+        : '- 최근 speed-test: 없음',
+      ...savedSummary,
+      ...suggestions.map(formatSuggestion),
+    ].join('\n'));
+  });
 }
 
 try {
-  main();
+  Promise.resolve(main()).catch((error) => {
+    console.error('[llm-selector-override-suggestions] 실패:', error.message);
+    process.exit(1);
+  });
 } catch (error) {
   console.error('[llm-selector-override-suggestions] 실패:', error.message);
   process.exit(1);
