@@ -24,6 +24,55 @@ const DEFAULTS = {
     maestroHealthTimeoutMs: 2500,
     maestroCircuitCooldownMs: 30 * 60 * 1000,
   },
+  llmSelectorOverrides: {
+    'blog.pos.writer': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.82 },
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.82 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+      ],
+    },
+    'blog.gems.writer': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.85 },
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.85 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+      ],
+    },
+    'blog.social.summarize': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'blog.social.caption': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'blog.star.summarize': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'blog.star.caption': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'blog.curriculum.recommend': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o', maxTokens: 2000, temperature: 0.7 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2000, temperature: 0.7 },
+      ],
+    },
+    'blog.curriculum.generate': {
+      chain: [
+        { provider: 'openai', model: 'gpt-4o', maxTokens: 8000, temperature: 0.5 },
+      ],
+    },
+  },
 };
 
 function mergeDeep(base, override) {
@@ -57,7 +106,12 @@ function getBlogGenerationRuntimeConfig() {
   return loadRuntimeConfig().generation;
 }
 
+function getBlogLLMSelectorOverrides() {
+  return loadRuntimeConfig().llmSelectorOverrides || {};
+}
+
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
+  getBlogLLMSelectorOverrides,
 };
