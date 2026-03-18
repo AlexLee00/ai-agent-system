@@ -1,0 +1,139 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const HISTORY_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-history.jsonl');
+
+function parseArgs(argv = process.argv.slice(2)) {
+  const days = Math.max(1, Number(argv.find((arg) => arg.startsWith('--days='))?.split('=')[1] || 7));
+  const input = argv.find((arg) => arg.startsWith('--input='))?.split('=')[1] || HISTORY_FILE;
+  return {
+    days,
+    input,
+    json: argv.includes('--json'),
+  };
+}
+
+function readHistory(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function buildModelStats(entries) {
+  const stats = new Map();
+  for (const snapshot of entries) {
+    for (const result of snapshot.results || []) {
+      if (!result?.modelId) continue;
+      if (!stats.has(result.modelId)) {
+        stats.set(result.modelId, {
+          modelId: result.modelId,
+          provider: result.provider || 'unknown',
+          okRuns: 0,
+          failedRuns: 0,
+          ttftTotal: 0,
+          totalTotal: 0,
+          lastSeenAt: snapshot.capturedAt || null,
+        });
+      }
+      const item = stats.get(result.modelId);
+      if (result.ok === true) {
+        item.okRuns += 1;
+        item.ttftTotal += Number(result.ttft || 0);
+        item.totalTotal += Number(result.total || 0);
+      } else {
+        item.failedRuns += 1;
+      }
+      if (!item.lastSeenAt || new Date(snapshot.capturedAt) > new Date(item.lastSeenAt)) {
+        item.lastSeenAt = snapshot.capturedAt;
+      }
+    }
+  }
+  return Array.from(stats.values())
+    .map((item) => ({
+      ...item,
+      avgTtft: item.okRuns ? Math.round(item.ttftTotal / item.okRuns) : null,
+      avgTotal: item.okRuns ? Math.round(item.totalTotal / item.okRuns) : null,
+      successRatePct: item.okRuns + item.failedRuns
+        ? Number(((item.okRuns / (item.okRuns + item.failedRuns)) * 100).toFixed(1))
+        : 0,
+    }))
+    .sort((a, b) => {
+      if (a.avgTtft == null && b.avgTtft == null) return 0;
+      if (a.avgTtft == null) return 1;
+      if (b.avgTtft == null) return -1;
+      return a.avgTtft - b.avgTtft;
+    });
+}
+
+function buildReview(entries, days) {
+  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  const filtered = entries.filter((entry) => {
+    const captured = new Date(entry.capturedAt || 0).getTime();
+    return Number.isFinite(captured) && captured >= cutoff;
+  });
+  const latest = filtered[filtered.length - 1] || null;
+  const modelStats = buildModelStats(filtered);
+  const top = modelStats.slice(0, 5);
+
+  return {
+    days,
+    historyFile: HISTORY_FILE,
+    snapshotCount: filtered.length,
+    latestCapturedAt: latest?.capturedAt || null,
+    currentPrimary: latest?.current || null,
+    latestRecommended: latest?.recommended || null,
+    topModels: top,
+    recommendation: latest?.recommended && latest?.current && latest.recommended !== latest.current
+      ? 'compare'
+      : latest?.current
+        ? 'hold'
+        : 'observe',
+  };
+}
+
+function printReview(review) {
+  if (!review.snapshotCount) {
+    process.stdout.write('LLM speed review\n- 최근 speed-test 히스토리가 없습니다.\n');
+    return;
+  }
+  const lines = [
+    'LLM speed review',
+    `- 기간: 최근 ${review.days}일`,
+    `- 스냅샷: ${review.snapshotCount}건`,
+    `- latest: ${review.latestCapturedAt || '-'}`,
+    `- current: ${review.currentPrimary || '-'}`,
+    `- latest recommended: ${review.latestRecommended || '-'}`,
+    `- recommendation: ${review.recommendation}`,
+    '',
+    '상위 속도 모델',
+    ...review.topModels.map((item, index) =>
+      `${index + 1}. ${item.modelId} | avg ttft ${item.avgTtft ?? '-'}ms | avg total ${item.avgTotal ?? '-'}ms | success ${item.successRatePct}%`),
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
+}
+
+function main() {
+  const { days, input, json } = parseArgs();
+  const entries = readHistory(input);
+  const review = buildReview(entries, days);
+  if (json) {
+    process.stdout.write(`${JSON.stringify(review, null, 2)}\n`);
+    return;
+  }
+  printReview(review);
+}
+
+main();
