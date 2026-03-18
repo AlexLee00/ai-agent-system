@@ -319,6 +319,63 @@ function buildDocumentQualitySummary(metadata = {}) {
   };
 }
 
+function buildDocumentEfficiencySummary(document = {}) {
+  const qualitySummary = document.quality_summary || buildDocumentQualitySummary(document.extraction_metadata || {});
+  const totalReuseCount = Math.max(0, Number(document.total_reuse_count || 0));
+  const linkedReuseCount = Math.max(0, Number(document.linked_reuse_count || 0));
+  const reviewedCount = Math.max(0, Number(document.reviewed_reuse_count || 0));
+  const acceptedWithoutEditCount = Math.max(0, Number(document.accepted_without_edit_count || 0));
+  const editedSessionCount = Math.max(0, Number(document.edited_session_count || 0));
+  const avgEditCount = reviewedCount > 0
+    ? Number(document.avg_edit_count || 0)
+    : 0;
+  const conversionRate = totalReuseCount > 0 ? linkedReuseCount / totalReuseCount : 0;
+  const acceptedWithoutEditRate = reviewedCount > 0 ? acceptedWithoutEditCount / reviewedCount : 0;
+
+  let score = 50;
+  if (qualitySummary.status === 'good') score += 18;
+  else if (qualitySummary.status === 'watch') score += 6;
+  else score -= 18;
+
+  score += conversionRate * 20;
+  score += acceptedWithoutEditRate * 18;
+  score += Math.min(totalReuseCount, 10) * 1.2;
+  score -= Math.min(avgEditCount, 8) * 3;
+  score -= editedSessionCount > 0 ? Math.min(editedSessionCount, 6) * 1.2 : 0;
+
+  const normalized = Math.max(0, Math.min(100, Math.round(score)));
+  let status = 'strong';
+  let label = '효율 높음';
+  if (normalized < 45) {
+    status = 'improve';
+    label = '개선 필요';
+  } else if (normalized < 70) {
+    status = 'watch';
+    label = '효율 보통';
+  }
+
+  const reasons = [];
+  if (qualitySummary.status === 'needs_review') reasons.push('품질 경고가 있어 재사용 효율 상한이 낮습니다.');
+  if (acceptedWithoutEditRate >= 0.7 && reviewedCount > 0) reasons.push('무수정 확정률이 높아 실무 전환이 안정적입니다.');
+  if (avgEditCount >= 2.5 && reviewedCount > 0) reasons.push('확정 전 수정량이 커서 템플릿 보강이 필요합니다.');
+  if (conversionRate >= 0.6 && totalReuseCount >= 3) reasons.push('재사용이 실제 업무 연결로 잘 이어지고 있습니다.');
+  if (!reasons.length && totalReuseCount === 0) reasons.push('아직 재사용 표본이 충분하지 않습니다.');
+
+  return {
+    score: normalized,
+    status,
+    label,
+    totalReuseCount,
+    linkedReuseCount,
+    reviewedCount,
+    acceptedWithoutEditCount,
+    acceptedWithoutEditRate: Math.round(acceptedWithoutEditRate * 100),
+    conversionRate: Math.round(conversionRate * 100),
+    avgEditCount: reviewedCount > 0 ? Number(avgEditCount.toFixed(1)) : 0,
+    reasons: reasons.slice(0, 2),
+  };
+}
+
 function compareDocumentRows(a, b, sort = 'recent') {
   const createdDiff = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
   const totalA = Number(a.total_reuse_count || 0);
@@ -330,11 +387,14 @@ function compareDocumentRows(a, b, sort = 'recent') {
   const qualityRank = { needs_review: 3, watch: 2, good: 1 };
   const qualityA = qualityRank[String(a.quality_summary?.status || 'good')] || 0;
   const qualityB = qualityRank[String(b.quality_summary?.status || 'good')] || 0;
+  const efficiencyA = Number(a.efficiency_summary?.score || 0);
+  const efficiencyB = Number(b.efficiency_summary?.score || 0);
 
   if (sort === 'reuse') return totalB - totalA || createdDiff;
   if (sort === 'linked') return linkedB - linkedA || createdDiff;
   if (sort === 'conversion') return conversionB - conversionA || linkedB - linkedA || createdDiff;
   if (sort === 'quality') return qualityB - qualityA || createdDiff;
+  if (sort === 'efficiency') return efficiencyB - efficiencyA || conversionB - conversionA || createdDiff;
   return createdDiff;
 }
 
@@ -2167,21 +2227,42 @@ app.get('/api/documents', requireAuth, companyFilter, async (req, res) => {
               d.created_at,
               d.extraction_metadata,
               COALESCE(rs.total_reuse_count, 0) AS total_reuse_count,
-              COALESCE(rs.linked_reuse_count, 0) AS linked_reuse_count
+              COALESCE(rs.linked_reuse_count, 0) AS linked_reuse_count,
+              COALESCE(rs.reviewed_reuse_count, 0) AS reviewed_reuse_count,
+              COALESCE(rs.accepted_without_edit_count, 0) AS accepted_without_edit_count,
+              COALESCE(rs.edited_session_count, 0) AS edited_session_count,
+              COALESCE(rs.avg_edit_count, 0) AS avg_edit_count
          FROM worker.documents d
          LEFT JOIN (
-           SELECT document_id,
+           SELECT e.document_id,
                   COUNT(*) AS total_reuse_count,
-                  COUNT(*) FILTER (WHERE linked_entity_type IS NOT NULL AND linked_entity_id IS NOT NULL) AS linked_reuse_count
-             FROM worker.document_reuse_events
-            WHERE company_id = $1
-            GROUP BY document_id
+                  COUNT(*) FILTER (WHERE linked_entity_type IS NOT NULL AND linked_entity_id IS NOT NULL) AS linked_reuse_count,
+                  COUNT(*) FILTER (WHERE feedback_session_id IS NOT NULL) AS reviewed_reuse_count,
+                  COUNT(*) FILTER (WHERE s.accepted_without_edit = true) AS accepted_without_edit_count,
+                  COUNT(*) FILTER (WHERE COALESCE(fe.edit_count, 0) > 0) AS edited_session_count,
+                  AVG(COALESCE(fe.edit_count, 0)::numeric) FILTER (WHERE e.feedback_session_id IS NOT NULL) AS avg_edit_count
+             FROM worker.document_reuse_events e
+             LEFT JOIN worker.ai_feedback_sessions s ON s.id = e.feedback_session_id
+             LEFT JOIN (
+               SELECT feedback_session_id,
+                      COUNT(*) FILTER (
+                        WHERE event_type IN ('field_edited', 'field_added', 'field_removed')
+                      )::int AS edit_count
+               FROM worker.ai_feedback_events
+               GROUP BY feedback_session_id
+             ) fe ON fe.feedback_session_id = e.feedback_session_id
+            WHERE e.company_id = $1
+            GROUP BY e.document_id
          ) rs ON rs.document_id = d.id
        WHERE ${where.replace(/company_id/g, 'd.company_id')} ORDER BY d.created_at DESC`,
       params);
     const documents = rows.map((row) => ({
       ...row,
       quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
+      efficiency_summary: buildDocumentEfficiencySummary({
+        ...row,
+        quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
+      }),
       download_url: `/api/documents/${row.id}/download`,
     }));
     const filtered = qualityStatus === 'all'
@@ -2299,6 +2380,9 @@ app.get('/api/documents/:id', requireAuth, companyFilter, async (req, res) => {
         extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
         extraction_metadata: row.extraction_metadata || {},
         quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
+        efficiency_summary: buildDocumentEfficiencySummary({
+          extraction_metadata: row.extraction_metadata || {},
+        }),
         download_url: `/api/documents/${row.id}/download`,
       },
     });
@@ -2398,6 +2482,9 @@ app.get('/api/documents/:id/extraction', requireAuth, companyFilter, async (req,
         extracted_text_preview: buildExtractionPreview(row.extracted_text || ''),
         extraction_metadata: row.extraction_metadata || {},
         quality_summary: buildDocumentQualitySummary(row.extraction_metadata || {}),
+        efficiency_summary: buildDocumentEfficiencySummary({
+          extraction_metadata: row.extraction_metadata || {},
+        }),
         extracted_at: row.extracted_at,
       },
     });

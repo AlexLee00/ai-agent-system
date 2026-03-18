@@ -47,6 +47,21 @@ function QualityBadge({ summary }) {
   );
 }
 
+function EfficiencyBadge({ summary }) {
+  const status = String(summary?.status || 'watch');
+  const label = summary?.label || '효율 보통';
+  const map = {
+    strong: 'border-sky-200 bg-sky-50 text-sky-700',
+    watch: 'border-slate-200 bg-slate-100 text-slate-700',
+    improve: 'border-rose-200 bg-rose-50 text-rose-700',
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${map[status] || map.watch}`}>
+      {label} {summary?.score != null ? `${summary.score}점` : ''}
+    </span>
+  );
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState([]);
   const [qualityFilter, setQualityFilter] = useState('all');
@@ -128,6 +143,7 @@ export default function DocumentsPage() {
             >
               <option value="recent">최신순</option>
               <option value="quality">품질 검토 우선</option>
+              <option value="efficiency">효율 높은 순</option>
               <option value="conversion">전환율 높은 순</option>
               <option value="reuse">재사용 많은 순</option>
               <option value="linked">연결 많은 순</option>
@@ -162,6 +178,7 @@ export default function DocumentsPage() {
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <QualityBadge summary={document.quality_summary} />
+                      <EfficiencyBadge summary={document.efficiency_summary} />
                       {document.quality_summary?.reasons?.[0] ? (
                         <p className="text-xs text-slate-500">{document.quality_summary.reasons[0]}</p>
                       ) : null}

@@ -34,6 +34,21 @@ function QualityBadge({ summary }) {
   );
 }
 
+function EfficiencyBadge({ summary }) {
+  const status = String(summary?.status || 'watch');
+  const label = summary?.label || '효율 보통';
+  const map = {
+    strong: 'border-sky-200 bg-sky-50 text-sky-700',
+    watch: 'border-slate-200 bg-slate-100 text-slate-700',
+    improve: 'border-rose-200 bg-rose-50 text-rose-700',
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${map[status] || map.watch}`}>
+      {label} {summary?.score != null ? `${summary.score}점` : ''}
+    </span>
+  );
+}
+
 function getLinkedEntityInfo(event) {
   const type = String(event?.linked_entity_type || '');
   const entityId = event?.linked_entity_id;
@@ -99,6 +114,7 @@ export default function DocumentDetailPage() {
 
   const metadata = extraction?.extraction_metadata || documentInfo?.extraction_metadata || {};
   const qualitySummary = extraction?.quality_summary || documentInfo?.quality_summary || null;
+  const efficiencySummary = documentInfo?.efficiency_summary || extraction?.efficiency_summary || null;
   const reusePackage = useMemo(() => {
     if (!documentInfo && !extraction) return null;
     return buildDocumentReusePackage({
@@ -267,6 +283,15 @@ export default function DocumentDetailPage() {
               <MetadataCard label="무수정 확정률" value={`${reuseSummary.acceptedWithoutEditRate}%`} caption="accepted_without_edit / reviewed" />
               <MetadataCard label="수정 발생 세션" value={reuseSummary.editedSessions} caption="edit_count > 0" />
               <MetadataCard label="평균 수정 필드 수" value={reuseSummary.avgEditCount} caption="reviewed 세션 평균" />
+              <MetadataCard label="종합 효율 점수" value={efficiencySummary?.score != null ? `${efficiencySummary.score}점` : '-'} caption="품질 · 전환율 · 무수정 확정률 기반" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <EfficiencyBadge summary={efficiencySummary} />
+              {efficiencySummary?.reasons?.map((reason) => (
+                <span key={reason} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                  {reason}
+                </span>
+              ))}
             </div>
           </div>
 

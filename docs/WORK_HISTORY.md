@@ -29,6 +29,28 @@
 - `node --check 'bots/worker/web/app/documents/[id]/page.js'`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — 워커 문서 종합 효율 점수 추가
+
+핵심 구현:
+- `buildDocumentEfficiencySummary()` 추가
+- 문서 품질 상태, 전환율, 무수정 확정률, 평균 수정 필드 수, 재사용 표본 수를 묶어 `효율 점수` 계산
+- `/documents` 목록에 `효율 높은 순` 정렬과 효율 배지 추가
+- `/documents/[id]` 상세에 종합 효율 점수와 근거 배지 추가
+
+세션 맥락:
+- 워커 문서 흐름은 품질/재사용/수정량 지표까지는 이미 올라와 있었지만, 운영자가 “좋은 문서 자산”을 한 번에 판별하긴 어려웠다.
+- 이번 단계에서 흩어진 지표를 하나의 운영 점수로 묶어 우선순위가 더 선명하게 보이도록 정리했다.
+
+의사결정 이유:
+- 새 평가 테이블 없이 기존 `documents`, `document_reuse_events`, `ai_feedback_sessions/events`, `extraction_metadata`를 재사용하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 이 점수는 추후 SaaS 문서 자산 등급, 템플릿 우선순위, OCR 정책 개선 대상 선정으로 자연스럽게 확장 가능하다.
+
+검증:
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/documents/page.js`
+- `node --check 'bots/worker/web/app/documents/[id]/page.js'`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 스카 shadow 판단 레이어 명시화
 
 핵심 구현:

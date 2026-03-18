@@ -32,6 +32,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 문서 목록/상세에서 OCR 품질, 추출 실패, 짧은 텍스트 기반 품질 신호 표시
   - 문서 목록에서 품질 상태와 전환율 기준 정렬/필터 지원
   - 문서 상세에서 무수정 확정률과 평균 수정 필드 수 기반 재사용 효율 표시
+  - 문서 품질/전환율/무수정 확정률/수정량을 묶은 종합 효율 점수와 `효율 높은 순` 정렬 추가
 - 투자 runtime_config 제안 리포트 추가
   - 최근 14일 신호/실행/실패 코드 기준 `current -> suggested` 제안 출력
   - `adjust / hold / confidence / reason` 형식으로 운영 검토용 후보 제공
