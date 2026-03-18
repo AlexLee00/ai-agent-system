@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ## 12주차 (2026-03-16 ~ 2026-03-18) — 운영 변수 외부화 + 분석 자동화 정리
 
 ### 신규 기능 (feat)
+- 제이에 `/llm-selectors` 운영 조회 명령 추가
+  - 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 텔레그램/자연어 질의로 바로 조회 가능
 - 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장

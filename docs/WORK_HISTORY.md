@@ -24,6 +24,26 @@
 - `node --check scripts/llm-selector-report.js`
 - `node scripts/llm-selector-report.js`
 
+### 12주차 후속 (2026-03-18) — 제이 `/llm-selectors` 운영 조회 명령 추가
+
+핵심 구현:
+- 오케스트레이터에 `/llm-selectors` 슬래시 명령 추가
+- 자연어 패턴 `LLM 체인 보여줘`, `현재 모델 폴백 체인 보여줘` 등을 `llm_selector_report` 인텐트로 연결
+- 제이가 `scripts/llm-selector-report.js`를 직접 호출해 전 팀 selector / fallback / 최근 speed-test 스냅샷을 텔레그램에서 바로 보여주도록 정리
+
+세션 맥락:
+- 공용 selector 중앙화와 speed-test 스냅샷 결합은 끝났지만, 운영자가 이를 즉시 확인하는 명령 경로가 아직 없었다.
+- 이번 단계에서 새 UI를 만들지 않고, 기존 제이 명령 체계 위에 얇게 붙여 운영 통제 가치를 바로 사용할 수 있게 했다.
+
+의사결정 이유:
+- 내부 MVP 기준으로는 새 화면보다 텔레그램/제이 명령이 더 빠르고 안전한 운영 진입점이다.
+- 이 구조는 추후 운영 UI 조회나 SaaS 관리자 화면으로 확장하더라도 동일한 스크립트 출력을 재사용할 수 있다.
+
+검증:
+- `node --check bots/orchestrator/lib/intent-parser.js`
+- `node --check bots/orchestrator/src/router.js`
+- `/llm-selectors`, `LLM 체인 보여줘` 인텐트 매핑 확인
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:
