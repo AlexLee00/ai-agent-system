@@ -6,6 +6,7 @@ const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
 const { selectLLMChain } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -296,6 +297,7 @@ function parseRuleIntent(text, session) {
 }
 
 async function parseLlmIntent(text) {
+  const selectorOverrides = getWorkerLLMSelectorOverrides();
   const baseSystemPrompt = [
     '당신은 워커팀 자연어 업무 분류기다.',
     '반드시 JSON만 반환한다.',
@@ -311,7 +313,9 @@ async function parseLlmIntent(text) {
     const dynamicExamples = await loadDynamicExamples();
     const systemPrompt = injectDynamicExamples(baseSystemPrompt, dynamicExamples);
     const result = await callWithFallback({
-      chain: selectLLMChain('worker.chat.task_intake'),
+      chain: selectLLMChain('worker.chat.task_intake', {
+        policyOverride: selectorOverrides['worker.chat.task_intake'],
+      }),
       systemPrompt,
       userPrompt,
       logMeta: { team: 'worker', bot: 'worker-chat', requestType: 'task_intake' },

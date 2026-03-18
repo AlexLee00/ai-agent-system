@@ -17,6 +17,7 @@ const {
   getWorkerMonitoringPreference,
   isProviderConfigured,
 } = require('./llm-api-monitoring');
+const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
 
 async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
   const result = await callWithFallback({
@@ -32,11 +33,13 @@ async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, lo
   const preferredApi = await getWorkerMonitoringPreference().catch(() => 'groq');
   const configuredProviders = ['groq', 'anthropic', 'gemini', 'openai']
     .filter((provider) => isProviderConfigured(provider));
+  const selectorOverrides = getWorkerLLMSelectorOverrides();
   const chain = selectLLMChain('worker.ai.fallback', {
     groqModel,
     preferredApi,
     configuredProviders,
     maxTokens,
+    policyOverride: selectorOverrides['worker.ai.fallback'],
   });
 
   const result = await callWithFallback({

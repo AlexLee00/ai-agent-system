@@ -2280,6 +2280,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 투자 `runtime_config.llmPolicies.investmentAgentPolicy`를 추가해 agent별 route와 주요 모델 상수를 selector override로 관리 가능하게 정리
 - 공용 selector는 기본 체인을 보유하고, 팀 runtime_config는 override만 담당하는 구조로 역할 경계를 분명히 함
 
+### 공용 LLM 모델 셀렉터 3차 통합
+- 워커 `runtime_config.llmSelectorOverrides`를 추가해 `worker.ai.fallback`, `worker.chat.task_intake`를 운영 설정 기반으로 제어 가능하게 정리
+- 워커 모니터링 DB의 `preferredApi`는 provider 선택만 담당하고, 각 provider의 실제 모델명은 selector override가 결정하는 구조로 경계 정리
+- 공용 selector를 중심으로 `기본 체인 + runtime_config override + 운영 선호값(DB)`가 계층적으로 결합되도록 구조를 맞춤
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거
