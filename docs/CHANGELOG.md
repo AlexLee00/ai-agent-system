@@ -410,6 +410,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 # 2026-03-18
 
 - 투자
+  - 루나 주식 공격적 매매를 `runtime_config` 기반 전략 프로필(`stockStrategyMode`, `stockStrategyProfiles`)로 실제 연결
+  - 네메시스가 `stockRejectConfidence`, `stockAutoApproveDomestic`, `stockAutoApproveOverseas`를 하드 규칙으로 사용하도록 보강
+  - 소규모 국내/해외장 BUY 자동 승인과 저확신 주식 조기 차단이 실제 코드 경로에 반영
+- 개발계획
+  - `PLATFORM_IMPLEMENTATION_TRACKER`에서 이미 운영 중인 워커 로컬/외부 IP 접속 항목을 PENDING 최우선 목록에서 제거
+- 투자
   - 실제 운영 `config.yaml`에 `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44` 반영
   - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`를 `applied` 상태로 올리고 검증 단계까지 연결
 - 세션 운영

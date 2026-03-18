@@ -12,6 +12,7 @@
 - `hanul` KIS 실행
 - 시장별 일일/주간 리뷰
 - `runtime_config` 기반 공격성/보수성 조정
+  - 주식은 `luna.stockStrategyMode` / `luna.stockStrategyProfiles` 기준으로 별도 전략 프로필 운영
 
 ## 핵심 진입점
 
@@ -55,6 +56,11 @@
   - `kis.paper_trading`: 주식 `brokerAccountMode`
   - `binance_testnet`: 레거시 실험 플래그 (현재 운영 분류에는 미사용)
 - 현재 저장 구조는 `paper` 레거시 필드를 일부 유지하지만, 운영 해석과 리포트는 `executionMode / brokerAccountMode` 기준을 우선한다.
+- 주식 공격적 매매 기준:
+  - `luna.stockStrategyMode.live|paper`
+  - `luna.stockStrategyProfiles.aggressive|balanced`
+  - 루나는 이 프로필을 기준으로 주식 `minConfidence`, `debateThresholds`, `fastPath` 기준을 선택한다.
+  - 네메시스는 `nemesis.thresholds.stockRejectConfidence`, `stockAutoApproveDomestic`, `stockAutoApproveOverseas`를 실제 하드 규칙으로 사용한다.
 
 실패 원인 저장 기준:
 - `signals.block_reason`

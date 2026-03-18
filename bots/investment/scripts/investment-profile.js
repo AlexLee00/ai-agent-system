@@ -11,6 +11,7 @@ import { createRequire } from 'module';
 
 import { getMarketExecutionModeInfo } from '../shared/secrets.js';
 import { getMinConfidence } from '../team/luna.js';
+import { getLunaStockStrategyProfile } from '../shared/runtime-config.js';
 
 const require   = createRequire(import.meta.url);
 const jsYaml    = require('js-yaml');
@@ -22,12 +23,6 @@ const EXCHANGE_MAP = {
   domestic: 'kis',
   overseas: 'kis_overseas',
   crypto:   'binance',
-};
-
-const RISK_LABEL = {
-  domestic: 'aggressive',
-  overseas: 'moderate',
-  crypto:   'moderate',
 };
 
 // nemesis.js RULES
@@ -46,6 +41,7 @@ export async function getInvestmentProfile(market) {
 
   const exchange  = EXCHANGE_MAP[market] || 'binance';
   const isCrypto  = market === 'crypto';
+  const stockProfile = getLunaStockStrategyProfile();
   const rules     = isCrypto ? RULES_CRYPTO : RULES_STOCK;
   const capMgmt   = cfg.capital_management || {};
   const dualModel = process.env.LUNA_DUAL_MODEL !== 'false';
@@ -57,7 +53,7 @@ export async function getInvestmentProfile(market) {
     mode:             `${modeInfo.executionMode.toUpperCase()} / ${modeInfo.brokerAccountMode.toUpperCase()}`,
     executionMode:    modeInfo.executionMode,
     brokerAccountMode: modeInfo.brokerAccountMode,
-    riskLevel:        RISK_LABEL[market] || 'moderate',
+    riskLevel:        isCrypto ? 'moderate' : (stockProfile.label || 'aggressive'),
     maxPositions:     rules.MAX_OPEN_POSITIONS,
     riskPerTrade:     (capMgmt.risk_per_trade || 0.02) * 100,   // % 표시
     minConfidence:    getMinConfidence(exchange),

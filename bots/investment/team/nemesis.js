@@ -18,6 +18,9 @@ import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
 import { getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
 const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
+const STOCK_REJECT_CONFIDENCE = NEMESIS_RUNTIME.thresholds?.stockRejectConfidence ?? 0.20;
+const STOCK_AUTO_APPROVE_DOMESTIC = NEMESIS_RUNTIME.thresholds?.stockAutoApproveDomestic ?? 500000;
+const STOCK_AUTO_APPROVE_OVERSEAS = NEMESIS_RUNTIME.thresholds?.stockAutoApproveOverseas ?? 400;
 
 function isDynamicTPSLEnabled() {
   return isDynamicTpSlEnabled();
@@ -55,12 +58,12 @@ const NEMESIS_SYSTEM_STOCK = `
 
 REJECT 조건 (명백한 위험만):
 1. 리스크 점수 9 이상 (극도의 위험만)
-2. 확신도(confidence) 0.20 미만 (매우 낮은 확신도만)
+2. 확신도(confidence) ${STOCK_REJECT_CONFIDENCE.toFixed(2)} 미만 (매우 낮은 확신도만)
 3. 포지션 한도(6개) 도달 + 신규 BUY 신호
 
 APPROVE 우선 원칙:
-- 국내장 소규모 신호(500000 KRW 이하): 별도 검토 없이 자동 APPROVE
-- 해외장 소규모 신호(400 USD 이하): 별도 검토 없이 자동 APPROVE
+- 국내장 소규모 신호(${STOCK_AUTO_APPROVE_DOMESTIC} KRW 이하): 별도 검토 없이 자동 APPROVE
+- 해외장 소규모 신호(${STOCK_AUTO_APPROVE_OVERSEAS} USD 이하): 별도 검토 없이 자동 APPROVE
 - 리스크 점수 9 미만: 기본 APPROVE
 - 분할 진입 권장: 큰 금액은 절반으로 나눠 ADJUST
 
@@ -562,6 +565,7 @@ export async function evaluateSignal(signal, opts = {}) {
   const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
   const rules      = getRules(signal.exchange);
   const persist    = opts.persist !== false;
+  const isStockExchange = signal.exchange === 'kis' || signal.exchange === 'kis_overseas';
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
@@ -582,6 +586,14 @@ export async function evaluateSignal(signal, opts = {}) {
     }
   }
 
+  if (action === ACTIONS.BUY && isStockExchange && (signal.confidence ?? 0) < STOCK_REJECT_CONFIDENCE) {
+    const reason = `주식 공격적 모드 최소 확신도 미달 (${(signal.confidence ?? 0).toFixed(2)} < ${STOCK_REJECT_CONFIDENCE.toFixed(2)})`;
+    if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+    if (persist) await notifyRiskRejection({ symbol, action, reason });
+    if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
+    return { approved: false, reason };
+  }
+
   const todayPnl = await db.getTodayPnl();
   const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
   if (lossPct >= rules.MAX_DAILY_LOSS_PCT) {
@@ -600,6 +612,30 @@ export async function evaluateSignal(signal, opts = {}) {
       if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
       if (persist) await notifyRiskRejection({ symbol, action, reason });
       return { approved: false, reason };
+    }
+  }
+
+  if (action === ACTIONS.BUY && isStockExchange) {
+    const autoApproveLimit = signal.exchange === 'kis'
+      ? STOCK_AUTO_APPROVE_DOMESTIC
+      : STOCK_AUTO_APPROVE_OVERSEAS;
+    if (amountUsdt <= autoApproveLimit) {
+      if (persist) {
+        if (signal.id) {
+          await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
+          await db.updateSignalAmount(signal.id, amountUsdt);
+        }
+        await db.insertRiskLog({
+          traceId,
+          symbol,
+          exchange: signal.exchange,
+          decision: 'APPROVE',
+          riskScore: 1,
+          reason: `주식 공격적 모드 소규모 자동 승인 (${amountUsdt} <= ${autoApproveLimit})`,
+        }).catch(() => {});
+      }
+      console.log(`  ✅ [네메시스] ${symbol} ${action} ${amountUsdt} 자동 승인 (공격적 주식 모드)`);
+      return { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true };
     }
   }
 

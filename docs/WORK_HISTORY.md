@@ -2258,6 +2258,12 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 세션 종료 문서(SESSION_HANDOFF / RESEARCH_JOURNAL / TEST_RESULTS / CHANGELOG) 갱신
 - 덱스터 체크섬 베이스라인 갱신 완료 (`bots/claude/.checksums.json`, 65개 파일)
 
+### 전략 백로그 재정렬 + 루나 공격적 매매 실구현
+- `PLATFORM_IMPLEMENTATION_TRACKER`에서 이미 완료된 `워커웹 로컬/외부 IP 접속`을 PENDING 최우선 과제에서 제거
+- 루나 주식 전략을 단순 문구가 아니라 `runtime_config` 기반 `stockStrategyMode / stockStrategyProfiles`로 승격
+- 네메시스가 `stockRejectConfidence`, `stockAutoApproveDomestic`, `stockAutoApproveOverseas`를 실제 하드 규칙으로 사용하도록 연결
+- 소규모 주식 BUY는 공격적 모드에서 자동 승인되고, 매우 낮은 확신도는 조기 REJECT되도록 불변식 회복
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거
