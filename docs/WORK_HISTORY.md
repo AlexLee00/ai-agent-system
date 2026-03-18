@@ -141,6 +141,28 @@
 - `node --check bots/orchestrator/lib/jay-model-policy.js`
 - `node --check bots/orchestrator/lib/intent-parser.js`
 
+### 12주차 후속 (2026-03-18) — 제이 gateway primary 정합성 점검 레이어 추가
+
+핵심 구현:
+- `openclaw.json` 실제 gateway primary를 읽는 [openclaw-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/openclaw-config.js) 추가
+- `runtime_config.jayModels.gatewayPrimary`와 `~/.openclaw/openclaw.json`의 실제 primary를 비교하는 [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js) 추가
+- `/jay-models` 응답에 `runtime_config 기준 / openclaw.json 실제값 / 정합성`을 함께 표시하도록 보강
+- 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화할 수 있는 운영 준비 경로 추가
+
+세션 맥락:
+- 제이 모델 정책은 이미 코드와 runtime_config에서 분리돼 있었지만, 외부 OpenClaw 설정의 실제값까지 한 번에 읽는 운영 도구는 없었다.
+- 이번 단계에서 “무엇을 기준값으로 보고, 실제값은 무엇이며, 둘이 맞는가”를 먼저 확인하는 절차를 고정했다.
+
+의사결정 이유:
+- 외부 OpenClaw 설정을 바로 바꾸기보다 정합성 점검 레이어를 먼저 두는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 이 방식은 추후 SaaS에서 앱 정책과 플랫폼 기본 정책을 분리 관리할 때도 그대로 확장 가능하다.
+
+검증:
+- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
+- `node --check bots/orchestrator/src/router.js`
+- `node bots/orchestrator/scripts/check-jay-gateway-primary.js --json`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:

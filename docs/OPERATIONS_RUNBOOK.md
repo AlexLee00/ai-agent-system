@@ -158,6 +158,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - OpenClaw gateway 기본 모델: [openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
   - 제이 앱 레벨 모델 정책: [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - 운영 오버라이드 값: [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`
+  - 정합성 점검 스크립트: [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
 
 ### Claude / Dexter
 
