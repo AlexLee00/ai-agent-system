@@ -194,6 +194,7 @@
 - 전환 단계를 `hold / compare / switch` 3단계로 고정해, 운영자가 언제 유지하고 언제 비교하며 언제 실제 전환할지 같은 판단 틀로 읽게 정리
 - `log-jay-gateway-experiment.js`를 추가해 gateway 로그, 제이 usage, health-report, primary 정합성을 한 번에 스냅샷으로 남길 수 있게 정리
 - 실험 로그는 기본적으로 `~/.openclaw/workspace/jay-gateway-experiments.jsonl`에 append되어, 이후 전환 전후 비교 근거로 재사용 가능
+- `jay-gateway-experiment-review.js`를 추가해 누적 스냅샷을 `hold / compare / sync_first` 권장 판단으로 읽을 수 있게 정리
 
 세션 맥락:
 - 이전 단계까지는 “현재 기준값과 실제값이 맞는지”를 확인하는 레이어를 만들었다.

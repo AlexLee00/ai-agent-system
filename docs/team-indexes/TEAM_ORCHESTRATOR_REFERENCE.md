@@ -42,6 +42,9 @@
   - [log-jay-gateway-experiment.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js)
   - 의미: gateway 로그, 제이 usage, health-report, primary 정합성을 한 번에 스냅샷으로 저장
   - 기본 저장 위치: `~/.openclaw/workspace/jay-gateway-experiments.jsonl`
+- gateway 실험 리뷰
+  - [jay-gateway-experiment-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js)
+  - 의미: 누적 스냅샷을 읽어 `hold / compare / sync_first` 권장 판단으로 요약
 
 ## 핵심 진입점
 
@@ -62,6 +65,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-re
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js --hours=24 --json
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
 # /jay-models
