@@ -11,12 +11,15 @@ const { collectJayUsage } = require('../../../scripts/reviews/lib/jay-usage');
 
 const DEFAULT_HOURS = 24;
 const ACTIVE_WINDOW_HOURS = 3;
+const REPO_ROOT = path.join(__dirname, '..', '..', '..');
+const DEFAULT_WORKSPACE_OUTPUT = path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl');
+const FALLBACK_OUTPUT = path.join(REPO_ROOT, 'tmp', 'jay-gateway-experiments.jsonl');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const hoursArg = argv.find((arg) => arg.startsWith('--hours='));
   const outputArg = argv.find((arg) => arg.startsWith('--output='));
   const hours = Math.max(1, Number(hoursArg?.split('=')[1] || DEFAULT_HOURS));
-  const outputPath = outputArg?.split('=').slice(1).join('=') || path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl');
+  const outputPath = outputArg?.split('=').slice(1).join('=') || DEFAULT_WORKSPACE_OUTPUT;
   return {
     hours,
     outputPath,
@@ -104,8 +107,8 @@ function topJayUsageModels(jayUsage, limit = 5) {
 
 function safeExecJson(scriptPath, args = []) {
   try {
-    const raw = execFileSync('node', [scriptPath, ...args], {
-      cwd: path.join(__dirname, '..', '..', '..'),
+    const raw = execFileSync(process.execPath, [scriptPath, ...args], {
+      cwd: REPO_ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -199,6 +202,31 @@ function persistSnapshot(snapshot, outputPath) {
   fs.appendFileSync(outputPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
 }
 
+function persistSnapshotWithFallback(snapshot, preferredOutputPath) {
+  const attempts = [preferredOutputPath, FALLBACK_OUTPUT].filter((value, index, array) => value && array.indexOf(value) === index);
+  let lastError = null;
+
+  for (const outputPath of attempts) {
+    try {
+      persistSnapshot(snapshot, outputPath);
+      return {
+        ok: true,
+        outputPath,
+        fallbackUsed: outputPath !== preferredOutputPath,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  return {
+    ok: false,
+    outputPath: preferredOutputPath,
+    fallbackUsed: false,
+    error: lastError,
+  };
+}
+
 function printHuman(snapshot, outputPath, willWrite) {
   const lines = [];
   lines.push('🤖 제이 gateway 전환 실험 로그');
@@ -236,17 +264,29 @@ function printHuman(snapshot, outputPath, willWrite) {
 function main() {
   const { hours, json, write, outputPath } = parseArgs();
   const snapshot = buildSnapshot(hours);
+  let finalOutputPath = outputPath;
+  let fallbackUsed = false;
 
   if (write) {
-    persistSnapshot(snapshot, outputPath);
+    const persisted = persistSnapshotWithFallback(snapshot, outputPath);
+    if (!persisted.ok) {
+      throw persisted.error;
+    }
+    finalOutputPath = persisted.outputPath;
+    fallbackUsed = Boolean(persisted.fallbackUsed);
   }
 
   if (json) {
-    process.stdout.write(`${JSON.stringify({ outputPath, snapshot }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({
+      outputPath: finalOutputPath,
+      requestedOutputPath: outputPath,
+      fallbackUsed,
+      snapshot,
+    }, null, 2)}\n`);
     return;
   }
 
-  process.stdout.write(`${printHuman(snapshot, outputPath, write)}\n`);
+  process.stdout.write(`${printHuman(snapshot, finalOutputPath, write)}\n`);
 }
 
 if (require.main === module) {
@@ -263,4 +303,5 @@ module.exports = {
   summarizeGatewayLogs,
   parseArgs,
   persistSnapshot,
+  persistSnapshotWithFallback,
 };

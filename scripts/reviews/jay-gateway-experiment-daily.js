@@ -6,7 +6,7 @@ const path = require('path');
 
 const {
   buildSnapshot,
-  persistSnapshot,
+  persistSnapshotWithFallback,
 } = require('../../bots/orchestrator/scripts/log-jay-gateway-experiment.js');
 const {
   safeReadSnapshots,
@@ -33,21 +33,30 @@ function buildRun({ hours, reviewDays, outputPath }) {
   let snapshot = null;
   let snapshotError = null;
   let persisted = false;
+  let finalOutputPath = outputPath;
+  let fallbackUsed = false;
 
   try {
     snapshot = buildSnapshot(hours);
-    persistSnapshot(snapshot, outputPath);
-    persisted = true;
+    const persistResult = persistSnapshotWithFallback(snapshot, outputPath);
+    persisted = Boolean(persistResult.ok);
+    if (!persistResult.ok) {
+      throw persistResult.error;
+    }
+    finalOutputPath = persistResult.outputPath;
+    fallbackUsed = Boolean(persistResult.fallbackUsed);
   } catch (error) {
     snapshotError = error?.stack || error?.message || String(error);
   }
 
-  const review = buildReview(safeReadSnapshots(outputPath), reviewDays, outputPath);
+  const review = buildReview(safeReadSnapshots(finalOutputPath), reviewDays, finalOutputPath);
   return {
-    outputPath,
+    outputPath: finalOutputPath,
+    requestedOutputPath: outputPath,
     snapshot,
     snapshotError,
     persisted,
+    fallbackUsed,
     review,
   };
 }

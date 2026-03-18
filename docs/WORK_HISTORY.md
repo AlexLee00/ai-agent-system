@@ -78,9 +78,15 @@
 
 핵심 구현:
 - `jay-gateway-experiment-daily.js`가 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기반 review를 계속 출력하고, `snapshotError / persisted` 상태를 명시하도록 보강
+- `log-jay-gateway-experiment.js`와 `jay-gateway-experiment-daily.js`가 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장을 사용하도록 보강
 - `daily-ops-report.js`가 `process.execPath` 기준으로 health script를 실행하고, `health_report_failed_launchctl / health_report_failed_probe_unavailable` source와 `healthError`를 함께 노출하도록 정리
+- `daily-ops-report.js`가 `현재 활성 이슈 / 누적 반복 이슈 / 입력 실패`를 분리해 시스템 문제와 입력 실패를 구분해서 읽도록 재구성
 - `ska-sales-forecast-daily-review.js`에 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 즉시 조치 항목으로 제공
+- `ska-sales-forecast-weekly-review.js`에 `requestedDays / effectiveDays`와 `actionItems`를 추가해 일일/주간 운영 판단 포맷을 통일
 - `trading-journal.js`에 `no-trade high-cost` 경고를 추가해 거래가 없는데 LLM 분석비용만 큰 날을 운영자가 바로 식별 가능하게 함
+- `weekly-trade-review.js`가 종료 거래가 없어도 미결 포지션 / 주간 usage / 다음 조치를 포함한 운영 요약을 남기도록 보강
+- `trading-journal.js`, `weekly-trade-review.js`의 `date_kst` 비교를 `::date` 기준으로 수정해 usage가 0으로 잘못 내려가던 불변식을 회복
+- `jay-llm-daily-review.js`는 DB 접근 실패 시 `dbStatsStatus=partial`, `dbSourceErrors`, `session_usage_fallback` 기준 모델별 사용량을 함께 보여주도록 보강
 
 세션 맥락:
 - 오늘 점검한 자동화 리포트는 숫자 자체보다 “왜 hold인지”, “무엇을 바로 조치할지”가 약했다.
@@ -92,11 +98,21 @@
 
 검증:
 - `node --check scripts/reviews/jay-gateway-experiment-daily.js`
+- `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js`
 - `node --check scripts/reviews/daily-ops-report.js`
 - `node --check bots/investment/scripts/trading-journal.js`
+- `node --check bots/investment/scripts/weekly-trade-review.js`
+- `node --check scripts/reviews/jay-llm-daily-review.js`
+- `node --check scripts/reviews/ska-sales-forecast-weekly-review.js`
 - `node --check scripts/reviews/ska-sales-forecast-daily-review.js`
 - `node scripts/reviews/jay-gateway-experiment-daily.js --json`
+- `node -e "const {buildRun}=require('./scripts/reviews/jay-gateway-experiment-daily.js'); ..."`
 - `node scripts/reviews/daily-ops-report.js --json`
+- `node scripts/reviews/daily-ops-report.js`
+- `node scripts/reviews/jay-llm-daily-review.js --json`
+- `node scripts/reviews/jay-llm-daily-review.js`
+- `node bots/investment/scripts/weekly-trade-review.js --dry-run`
+- `node scripts/reviews/ska-sales-forecast-weekly-review.js --days=7 --json`
 - `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json`
 
 ### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합

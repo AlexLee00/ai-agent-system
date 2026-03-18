@@ -232,7 +232,7 @@ async function fetchTokenUsage(fromDate, toDate) {
         SUM(cost_usd)   AS total_cost,
         COUNT(*)        AS call_count
       FROM token_usage
-      WHERE team = 'investment' AND date_kst BETWEEN $1 AND $2
+      WHERE team = 'investment' AND date_kst::date BETWEEN $1::date AND $2::date
       GROUP BY bot_name, model, provider, is_free, task_type
       ORDER BY total_tokens DESC
     `, [fromDate, toDate]);

@@ -8,8 +8,9 @@ const FORECAST_CONFIG = getSkaForecastConfig();
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
-  const days = Math.max(WEEKLY_REVIEW_CONFIG.minDays, Number(daysArg?.split('=')[1] || WEEKLY_REVIEW_CONFIG.defaultDays));
-  return { days, json: argv.includes('--json') };
+  const requestedDays = Number(daysArg?.split('=')[1] || WEEKLY_REVIEW_CONFIG.defaultDays);
+  const effectiveDays = Math.max(WEEKLY_REVIEW_CONFIG.minDays, requestedDays);
+  return { requestedDays, effectiveDays, json: argv.includes('--json') };
 }
 
 function fmt(n) {
@@ -294,10 +295,35 @@ function buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowCompariso
   return lines.slice(0, 4);
 }
 
+function buildActionItems(weekly, weekdayBias, upcomingRisk, shadowComparison, shadowDecision) {
+  const items = [];
+  const recent = weekly[weekly.length - 1];
+
+  if (recent && Math.abs(recent.bias) >= WEEKLY_REVIEW_CONFIG.avgBiasWarn) {
+    items.push(`bias_tuning: 최근 주간 편향이 ${biasLabel(recent.bias)} 수준이라 주간 가산/감산 로직을 점검합니다.`);
+  }
+
+  if (weekdayBias[0] && weekdayBias[0].avgMape >= WEEKLY_REVIEW_CONFIG.weekdayMapeWarn) {
+    items.push(`weekday_tuning: ${weekdayBias[0].weekday}요일 편향이 커서 요일별 보정 계수를 우선 조정합니다.`);
+  }
+
+  if (upcomingRisk[0] && upcomingRisk[0].confidence < WEEKLY_REVIEW_CONFIG.confidenceWarn) {
+    items.push(`manual_review: ${upcomingRisk[0].date} 예측 확신도가 ${(upcomingRisk[0].confidence * 100).toFixed(0)}%라 수동 검토 우선순위를 올립니다.`);
+  }
+
+  items.push(`shadow_readiness: ${shadowDecision.recommendation}`);
+
+  if (shadowComparison.availableDays >= 5 && shadowComparison.avgMapeGap != null && Math.abs(shadowComparison.avgMapeGap) >= Number(FORECAST_CONFIG.shadowPromotionMapeGap || 0)) {
+    items.push(`shadow_compare: shadow ${shadowComparison.shadowModelName}의 주간 성능 차이가 ${Math.abs(shadowComparison.avgMapeGap)}%p라 다음 운영 사이클 비교 실험을 검토합니다.`);
+  }
+
+  return items.slice(0, 4);
+}
+
 async function main() {
-  const { days, json } = parseArgs();
+  const { requestedDays, effectiveDays, json } = parseArgs();
   const [rows, upcomingRows] = await Promise.all([
-    loadRows(days),
+    loadRows(effectiveDays),
     loadUpcomingForecasts(WEEKLY_REVIEW_CONFIG.upcomingDays),
   ]);
 
@@ -307,15 +333,19 @@ async function main() {
   const shadowDecision = buildShadowDecision(shadowComparison);
   const upcomingRisk = buildUpcomingRisk(upcomingRows);
   const recommendations = buildRecommendations(weekly, weekdayBias, upcomingRisk, shadowComparison, shadowDecision);
+  const actionItems = buildActionItems(weekly, weekdayBias, upcomingRisk, shadowComparison, shadowDecision);
 
   const report = {
-    periodDays: days,
+    requestedDays,
+    effectiveDays,
+    periodDays: effectiveDays,
     weekly,
     weekdayBias,
     shadowComparison,
     shadowDecision,
     upcomingRisk,
     recommendations,
+    actionItems,
   };
 
   if (json) {
@@ -324,7 +354,10 @@ async function main() {
   }
 
   const lines = [];
-  lines.push(`📈 스카 매출 예측 주간 리뷰 (${days}일)`);
+  lines.push(`📈 스카 매출 예측 주간 리뷰 (${effectiveDays}일)`);
+  if (requestedDays !== effectiveDays) {
+    lines.push(`- 요청 기간 ${requestedDays}일 → 최소 운영 기준 ${effectiveDays}일로 확장`);
+  }
 
   if (weekly.length) {
     lines.push('');
@@ -369,6 +402,12 @@ async function main() {
   lines.push('');
   lines.push('추천:');
   for (const item of recommendations) lines.push(item);
+
+  if (actionItems.length) {
+    lines.push('');
+    lines.push('즉시 조치:');
+    for (const item of actionItems) lines.push(`- ${item}`);
+  }
 
   process.stdout.write(`${lines.join('\n')}\n`);
 }
