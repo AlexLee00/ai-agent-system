@@ -20,6 +20,7 @@ const ALERT_LEVEL_ICONS = {
 const MOBILE_DETAIL_LIMIT = 4;
 const MOBILE_SECTION_LINE_LIMIT = 3;
 const MOBILE_LINE_MAX = 88;
+const MOBILE_DIVIDER = '───────────────';
 
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
@@ -100,7 +101,7 @@ function summarizePayloadWarnings(entries = []) {
 function compactLine(line, maxLength = MOBILE_LINE_MAX) {
   const text = String(line || '')
     .replace(/\s+/g, ' ')
-    .replace(/[━═─-]{8,}/g, '────────')
+    .replace(/[━═─-]{8,}/g, MOBILE_DIVIDER)
     .trim();
   if (!text) return '';
   if (text.length <= maxLength) return text;
