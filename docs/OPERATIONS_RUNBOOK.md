@@ -160,6 +160,10 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - 운영 오버라이드 값: [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`
   - 정합성 점검 스크립트: [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
   - 변경 원칙: 정합성이 맞고 헬스가 안정이면 즉시 변경보다 유지가 우선, 전환은 비교 근거 확보 후 진행
+  - 전환 단계:
+    - `hold`: 정합성 일치 + 오케스트레이터 health-report 안정
+    - `compare`: rate limit 재발 / fallback 진입률 증가 / 응답속도 불만 발생
+    - `switch`: 비교 로그에서 대체 후보 우위 확인 후 `runtime_config` 변경 → `--apply` 동기화 → 헬스 재관찰
 
 ### Claude / Dexter
 
