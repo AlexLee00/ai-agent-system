@@ -2557,6 +2557,7 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 
 ### 자동화 리포트 해석력 보강
 - `jay-llm-daily-review.js`에 `dbSourceStatus`를 추가해 `EPERM` 기반 실패를 `sandbox_restricted`로 분류하고, 현재 실행 컨텍스트 제한 가능성을 리포트에서 직접 읽을 수 있게 정리
+- `jay-llm-daily-review.js`가 `tmp/jay-llm-daily-review-db-snapshot.json`에 최근 DB 집계를 저장하고, 이후 DB 접근이 막혀도 snapshot fallback으로 리뷰를 유지하도록 보강
 - `packages/core/lib/health-runner.js`를 보강해 team health script가 빈 `예외:` 대신 `[EPERM] at ...` 같은 실제 실패 힌트를 stderr에 남기도록 정리
 - `ska-sales-forecast-daily-review.js`에 `requestedDays / effectiveDays`를 추가해 주간 리뷰와 같은 기간 해석 규칙을 적용
 - `daily-ops-report.js`에 `localFallback` 메타를 추가해 investment / reservation 팀이 `health_report_failed_local_fallback + local fallback 활동 신호 1건`으로 읽히도록 정리
