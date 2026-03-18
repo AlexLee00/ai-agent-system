@@ -8,36 +8,172 @@ const DOMESTIC_MAX_KRW = 5_000_000;
 const OVERSEAS_MIN_USD = 10;
 const OVERSEAS_MAX_USD = 1_000;
 
-function inferBlockReason(row) {
+function inferBlockInfo(row) {
   const exchange = row.exchange || 'unknown';
   const action = String(row.action || '').toUpperCase();
   const amount = Number(row.amount_usdt || 0);
+  const existingReason = String(row.block_reason || '').trim();
+  const baseMeta = {
+    inferred: true,
+    source: 'backfill-signal-block-reasons',
+    exchange,
+    symbol: row.symbol || null,
+    action,
+    amount_usdt: Number.isFinite(amount) ? amount : null,
+    original_status: row.status || null,
+    created_at: row.created_at || null,
+  };
+
+  if (existingReason.startsWith('최소 주문금액 미달')) {
+    return {
+      reason: existingReason,
+      code: 'min_order_notional',
+      meta: {
+        ...baseMeta,
+        market: exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto',
+      },
+    };
+  }
+
+  if (existingReason.startsWith('최대 주문금액 초과')) {
+    return {
+      reason: existingReason,
+      code: 'max_order_notional',
+      meta: {
+        ...baseMeta,
+        market: exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto',
+      },
+    };
+  }
+
+  if (existingReason === 'legacy_order_rejected_without_reason') {
+    return {
+      reason: existingReason,
+      code: 'legacy_order_rejected',
+      meta: {
+        ...baseMeta,
+        market: 'overseas',
+        note: '구형 해외장 실패 이력으로 상세 원인 복원 불가',
+      },
+    };
+  }
+
+  if (existingReason === 'legacy_executor_failed_without_reason') {
+    return {
+      reason: existingReason,
+      code: 'legacy_executor_failed',
+      meta: {
+        ...baseMeta,
+        market: exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : exchange === 'binance' ? 'crypto' : 'unknown',
+        note: '구형 실행 실패 이력으로 상세 원인 복원 불가',
+      },
+    };
+  }
+
+  if (existingReason === 'cleanup:nemesis_error_pending_stale') {
+    return {
+      reason: existingReason,
+      code: 'nemesis_error',
+      meta: {
+        ...baseMeta,
+        stage: 'cleanup',
+        note: '정리 단계에서 stale pending 신호를 제거한 이력',
+      },
+    };
+  }
 
   if (exchange === 'kis') {
     if (action === 'BUY' && amount > 0 && amount < DOMESTIC_MIN_KRW) {
-      return `최소 주문금액 미달 (${amount.toLocaleString()}원)`;
+      return {
+        reason: `최소 주문금액 미달 (${amount.toLocaleString()}원)`,
+        code: 'min_order_notional',
+        meta: {
+          ...baseMeta,
+          market: 'domestic',
+          minimum_required: DOMESTIC_MIN_KRW,
+          currency: 'KRW',
+        },
+      };
     }
     if (action === 'BUY' && amount > DOMESTIC_MAX_KRW) {
-      return `최대 주문금액 초과 (${amount.toLocaleString()}원)`;
+      return {
+        reason: `최대 주문금액 초과 (${amount.toLocaleString()}원)`,
+        code: 'max_order_notional',
+        meta: {
+          ...baseMeta,
+          market: 'domestic',
+          maximum_allowed: DOMESTIC_MAX_KRW,
+          currency: 'KRW',
+        },
+      };
     }
-    return 'legacy_executor_failed_without_reason';
+    return {
+      reason: 'legacy_executor_failed_without_reason',
+      code: 'legacy_executor_failed',
+      meta: {
+        ...baseMeta,
+        market: 'domestic',
+        note: '구형 국내장 실패 이력으로 상세 원인 복원 불가',
+      },
+    };
   }
 
   if (exchange === 'kis_overseas') {
     if (action === 'BUY' && amount > 0 && amount < OVERSEAS_MIN_USD) {
-      return `최소 주문금액 미달 ($${amount})`;
+      return {
+        reason: `최소 주문금액 미달 ($${amount})`,
+        code: 'min_order_notional',
+        meta: {
+          ...baseMeta,
+          market: 'overseas',
+          minimum_required: OVERSEAS_MIN_USD,
+          currency: 'USD',
+        },
+      };
     }
     if (action === 'BUY' && amount > OVERSEAS_MAX_USD) {
-      return `최대 주문금액 초과 ($${amount})`;
+      return {
+        reason: `최대 주문금액 초과 ($${amount})`,
+        code: 'max_order_notional',
+        meta: {
+          ...baseMeta,
+          market: 'overseas',
+          maximum_allowed: OVERSEAS_MAX_USD,
+          currency: 'USD',
+        },
+      };
     }
-    return 'legacy_order_rejected_without_reason';
+    return {
+      reason: 'legacy_order_rejected_without_reason',
+      code: 'legacy_order_rejected',
+      meta: {
+        ...baseMeta,
+        market: 'overseas',
+        note: '구형 해외장 실패 이력으로 상세 원인 복원 불가',
+      },
+    };
   }
 
   if (exchange === 'binance') {
-    return 'legacy_executor_failed_without_reason';
+    return {
+      reason: 'legacy_executor_failed_without_reason',
+      code: 'legacy_executor_failed',
+      meta: {
+        ...baseMeta,
+        market: 'crypto',
+        note: '구형 암호화폐 실패 이력으로 상세 원인 복원 불가',
+      },
+    };
   }
 
-  return 'legacy_missing_block_reason';
+  return {
+    reason: 'legacy_missing_block_reason',
+    code: 'legacy_missing_block_reason',
+    meta: {
+      ...baseMeta,
+      note: '거래소 정보가 불충분해 상세 원인 복원 불가',
+    },
+  };
 }
 
 export async function backfillSignalBlockReasons({ dryRun = false, days = 30 } = {}) {
@@ -45,11 +181,15 @@ export async function backfillSignalBlockReasons({ dryRun = false, days = 30 } =
   const safeDays = Number.isFinite(Number(days)) ? Math.max(1, Math.floor(Number(days))) : 30;
 
   const rows = await db.query(`
-    SELECT id, symbol, exchange, action, amount_usdt, status, block_reason, created_at
+    SELECT id, symbol, exchange, action, amount_usdt, status, block_reason, block_code, block_meta, created_at
     FROM investment.signals
     WHERE created_at > now() - interval '${safeDays} days'
       AND status IN ('failed', 'rejected', 'expired')
-      AND (block_reason IS NULL OR block_reason = '')
+      AND (
+        block_reason IS NULL OR block_reason = ''
+        OR block_code IS NULL OR block_code = ''
+        OR block_meta IS NULL
+      )
     ORDER BY created_at DESC
   `);
 
@@ -57,17 +197,16 @@ export async function backfillSignalBlockReasons({ dryRun = false, days = 30 } =
     id: row.id,
     exchange: row.exchange,
     symbol: row.symbol,
-    inferredReason: inferBlockReason(row),
+    ...inferBlockInfo(row),
   }));
 
   if (!dryRun) {
     for (const item of updates) {
-      await db.run(
-        `UPDATE investment.signals
-         SET block_reason = $1
-         WHERE id = $2`,
-        [item.inferredReason, item.id],
-      );
+      await db.updateSignalBlock(item.id, {
+        reason: item.reason,
+        code: item.code,
+        meta: item.meta,
+      });
     }
   }
 
