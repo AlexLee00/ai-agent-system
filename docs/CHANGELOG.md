@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
   - `worker.system_preferences` 테이블로 선택값 저장
   - 최근 24시간 호출 통계와 기본 API 변경 이력까지 확인 가능
+  - provider별/경로별 성공률과 평균 응답시간까지 확인 가능
 - 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
   - investment / reservation / ska / worker / orchestrator / claude / blog
 - 팀별 운영 설정 조회 스크립트 추가

@@ -172,7 +172,9 @@ function summarizeUsageRows(rows = []) {
     totalCalls: 0,
     successCalls: 0,
     failedCalls: 0,
+    successRatePct: 0,
     totalCostUsd: 0,
+    avgLatencyMs: null,
     latestCallAt: null,
     byProvider: [],
     byRoute: [],
@@ -180,17 +182,25 @@ function summarizeUsageRows(rows = []) {
 
   const providerMap = new Map();
   const routeMap = new Map();
+  let latencyCount = 0;
+  let latencyTotalMs = 0;
 
   for (const row of rows) {
     const provider = providerFromModel(String(row.model || ''));
     const route = row.request_type === 'revenue_forecast' ? '/api/ai/revenue-forecast' : '/api/ai/ask';
     const success = Number(row.success) === 1;
     const cost = Number(row.cost_usd || 0);
+    const latencyMs = Number(row.latency_ms);
+    const hasLatency = Number.isFinite(latencyMs) && latencyMs >= 0;
 
     summary.totalCalls += 1;
     if (success) summary.successCalls += 1;
     else summary.failedCalls += 1;
     summary.totalCostUsd += cost;
+    if (hasLatency) {
+      latencyCount += 1;
+      latencyTotalMs += latencyMs;
+    }
     if (!summary.latestCallAt || new Date(row.created_at) > new Date(summary.latestCallAt)) {
       summary.latestCallAt = row.created_at;
     }
@@ -204,6 +214,8 @@ function summarizeUsageRows(rows = []) {
         failedCalls: 0,
         totalCostUsd: 0,
         latestModel: null,
+        latencyCount: 0,
+        latencyTotalMs: 0,
       });
     }
     const providerItem = providerMap.get(provider);
@@ -212,6 +224,10 @@ function summarizeUsageRows(rows = []) {
     else providerItem.failedCalls += 1;
     providerItem.totalCostUsd += cost;
     providerItem.latestModel = row.model || providerItem.latestModel;
+    if (hasLatency) {
+      providerItem.latencyCount += 1;
+      providerItem.latencyTotalMs += latencyMs;
+    }
 
     if (!routeMap.has(route)) {
       routeMap.set(route, {
@@ -220,28 +236,49 @@ function summarizeUsageRows(rows = []) {
         successCalls: 0,
         failedCalls: 0,
         latestCallAt: null,
+        latencyCount: 0,
+        latencyTotalMs: 0,
       });
     }
     const routeItem = routeMap.get(route);
     routeItem.calls += 1;
     if (success) routeItem.successCalls += 1;
     else routeItem.failedCalls += 1;
+    if (hasLatency) {
+      routeItem.latencyCount += 1;
+      routeItem.latencyTotalMs += latencyMs;
+    }
     if (!routeItem.latestCallAt || new Date(row.created_at) > new Date(routeItem.latestCallAt)) {
       routeItem.latestCallAt = row.created_at;
     }
   }
 
+  summary.successRatePct = summary.totalCalls
+    ? Number(((summary.successCalls / summary.totalCalls) * 100).toFixed(1))
+    : 0;
   summary.totalCostUsd = Number(summary.totalCostUsd.toFixed(4));
+  summary.avgLatencyMs = latencyCount ? Math.round(latencyTotalMs / latencyCount) : null;
   summary.byProvider = Array.from(providerMap.values())
-    .map((item) => ({ ...item, totalCostUsd: Number(item.totalCostUsd.toFixed(4)) }))
+    .map((item) => ({
+      ...item,
+      totalCostUsd: Number(item.totalCostUsd.toFixed(4)),
+      successRatePct: item.calls ? Number(((item.successCalls / item.calls) * 100).toFixed(1)) : 0,
+      avgLatencyMs: item.latencyCount ? Math.round(item.latencyTotalMs / item.latencyCount) : null,
+    }))
     .sort((a, b) => b.calls - a.calls);
-  summary.byRoute = Array.from(routeMap.values()).sort((a, b) => b.calls - a.calls);
+  summary.byRoute = Array.from(routeMap.values())
+    .map((item) => ({
+      ...item,
+      successRatePct: item.calls ? Number(((item.successCalls / item.calls) * 100).toFixed(1)) : 0,
+      avgLatencyMs: item.latencyCount ? Math.round(item.latencyTotalMs / item.latencyCount) : null,
+    }))
+    .sort((a, b) => b.calls - a.calls);
   return summary;
 }
 
 async function getWorkerMonitoringUsageSummary() {
   const rows = await pgPool.query('reservation', `
-    SELECT model, request_type, success, cost_usd, created_at
+    SELECT model, request_type, success, cost_usd, latency_ms, created_at
     FROM llm_usage_log
     WHERE team = 'worker'
       AND bot = 'ai-client'

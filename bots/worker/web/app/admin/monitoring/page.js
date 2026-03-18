@@ -47,7 +47,9 @@ export default function WorkerMonitoringPage() {
     totalCalls: 0,
     successCalls: 0,
     failedCalls: 0,
+    successRatePct: 0,
     totalCostUsd: 0,
+    avgLatencyMs: null,
     latestCallAt: null,
     byProvider: [],
     byRoute: [],
@@ -201,6 +203,19 @@ export default function WorkerMonitoringPage() {
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">성공률</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">{Number(usageSummary.successRatePct || 0).toFixed(1)}%</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium text-slate-500">평균 응답시간</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">
+                  {usageSummary.avgLatencyMs !== null ? `${usageSummary.avgLatencyMs}ms` : '기록 없음'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-medium text-slate-500">추정 비용</p>
                 <p className="mt-2 text-lg font-semibold text-slate-900">${Number(usageSummary.totalCostUsd || 0).toFixed(4)}</p>
               </div>
@@ -231,6 +246,9 @@ export default function WorkerMonitoringPage() {
                         <p className="mt-2 text-xs text-slate-500">
                           성공 {item.successCalls} / 실패 {item.failedCalls} · 비용 ${Number(item.totalCostUsd || 0).toFixed(4)}
                         </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          성공률 {Number(item.successRatePct || 0).toFixed(1)}% · 평균 응답시간 {item.avgLatencyMs !== null ? `${item.avgLatencyMs}ms` : '기록 없음'}
+                        </p>
                       </div>
                     ))
                   ) : (
@@ -253,6 +271,8 @@ export default function WorkerMonitoringPage() {
                         </div>
                         <p className="mt-2 text-xs text-slate-500">
                           성공 {item.successCalls} / 실패 {item.failedCalls}
+                          {` · 성공률 ${Number(item.successRatePct || 0).toFixed(1)}%`}
+                          {` · 평균 응답시간 ${item.avgLatencyMs !== null ? `${item.avgLatencyMs}ms` : '기록 없음'}`}
                           {item.latestCallAt ? ` · 마지막 ${new Date(item.latestCallAt).toLocaleString('ko-KR')}` : ''}
                         </p>
                       </div>

@@ -29,6 +29,28 @@
 - `node bots/worker/migrations/018-monitoring-history.js`
 - `node bots/worker/scripts/health-report.js --json`
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 품질 지표 추가
+
+핵심 구현:
+- `/admin/monitoring`의 최근 24시간 통계에 `성공률`과 `평균 응답시간` 추가
+- API별 사용량 카드에 provider별 `성공률 / 평균 응답시간` 추가
+- 경로별 사용량 카드에 route별 `성공률 / 평균 응답시간` 추가
+- 기존 `reservation.llm_usage_log`의 `success`, `latency_ms`를 재사용해 새 저장소 없이 품질 지표를 계산
+
+세션 맥락:
+- 워커 모니터링은 이미 “무슨 API를 쓸지”와 “누가 바꿨는지”를 볼 수 있게 됐다.
+- 이번 단계에서는 운영자가 설정 변경의 실제 품질까지 같은 화면에서 판단할 수 있도록, 호출량 중심 화면을 품질 지표 중심까지 확장했다.
+
+의사결정 이유:
+- 내부 MVP 단계에서는 새 이벤트 저장 구조를 늘리기보다 기존 `llm_usage_log`를 재사용하는 것이 가장 빠르고 안전하다.
+- 단순 호출 수보다 `성공률`과 `응답시간`이 있어야 provider 전환 판단이 가능하고, 이는 추후 SaaS 운영 대시보드에서도 바로 재사용 가능한 축이다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 투자 실패 이력 구조화 백필
 
 핵심 구현:
