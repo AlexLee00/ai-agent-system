@@ -15,6 +15,47 @@ const rag    = require('../../../packages/core/lib/rag-safe');
 const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
 const GDRIVE_DIR    = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost';
 
+function normalizeTitleKey(value) {
+  return String(value || '')
+    .replace(/\[[^\]]+\]/g, ' ')
+    .replace(/[^가-힣a-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+async function loadPublishedLinkMap() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT title, naver_url
+      FROM blog.posts
+      WHERE status = 'published'
+        AND naver_url IS NOT NULL
+        AND naver_url <> ''
+      ORDER BY created_at DESC
+      LIMIT 500
+    `);
+    const map = new Map();
+    for (const row of rows) {
+      const key = normalizeTitleKey(row.title);
+      if (!key || map.has(key)) continue;
+      map.set(key, row.naver_url);
+    }
+    return map;
+  } catch (e) {
+    console.warn('[퍼블] 내부 링크 맵 조회 실패:', e.message);
+    return new Map();
+  }
+}
+
+function replaceInternalLinkPlaceholders(content, titleUrlMap) {
+  return String(content || '').replace(/→\s*\[([^\]]+)\]\s*←\s*여기에 링크 삽입/g, (_, title) => {
+    const url = titleUrlMap.get(normalizeTitleKey(title));
+    if (!url) return `→ ${title}`;
+    return `→ [${title}](${url})`;
+  });
+}
+
 // ─── 텍스트 → HTML 변환 ──────────────────────────────────────────────
 
 function _contentToHtml(content, title, images = null) {
@@ -72,7 +113,8 @@ function _contentToHtml(content, title, images = null) {
     let l = line
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // 굵게
-      .replace(/`([^`]+)`/g, '<code>$1</code>');          // 인라인 코드
+      .replace(/`([^`]+)`/g, '<code>$1</code>')           // 인라인 코드
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
     // 제목과 동일한 첫 줄 중복 스킵
     const cleanTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
@@ -182,8 +224,11 @@ async function publishToFile(postData) {
     }
   }
 
+  const titleUrlMap = await loadPublishedLinkMap();
+  const linkedContent = replaceInternalLinkPlaceholders(content, titleUrlMap);
+
   // HTML 변환 (이미지 포함)
-  const htmlContent = _contentToHtml(content, title, images);
+  const htmlContent = _contentToHtml(linkedContent, title, images);
 
   fs.writeFileSync(filepath, htmlContent, 'utf8');
 
@@ -210,7 +255,7 @@ async function publishToFile(postData) {
       postType,
       lectureNumber || null,
       charCount,
-      content,
+      linkedContent,
       hashtags || [],
       {
         schedule_id: scheduleId || null,
@@ -243,7 +288,7 @@ async function publishToFile(postData) {
     console.warn('[퍼블] RAG 저장 실패:', e.message);
   }
 
-  return { filepath, postId, filename };
+  return { filepath, postId, filename, content: linkedContent };
 }
 
 /**
@@ -262,4 +307,10 @@ async function markPublished(postId, naverUrl) {
   }
 }
 
-module.exports = { publishToFile, markPublished, OUTPUT_DIR };
+module.exports = {
+  publishToFile,
+  markPublished,
+  OUTPUT_DIR,
+  normalizeTitleKey,
+  replaceInternalLinkPlaceholders,
+};

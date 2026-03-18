@@ -442,6 +442,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `scripts/speed-test.js`가 최신 스냅샷 외에 `llm-speed-test-history.jsonl` 히스토리를 누적하도록 보강
   - `scripts/reviews/llm-selector-speed-review.js`를 추가해 최근 N일 speed-test 히스토리 기반 selector 추천 근거를 리뷰 가능하게 정리
   - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 speed-test 실행과 review를 일일 러너로 묶어 자동화 진입점을 정리
+  - 블로그 `publ.js`가 내부 링킹 플레이스홀더를 실제 `published + naver_url` 과거 포스트 링크로 치환하고 Markdown 링크를 HTML anchor로 변환하도록 보강
 - 클로드/아처
   - 아처 LLM 폴백 순서를 `anthropic/claude-sonnet-4-6 -> openai/gpt-4o-mini -> groq/llama-4-scout-17b-16e-instruct`로 재정렬
   - `bots/claude/lib/archer/config.js`에 `LLM_CHAIN`을 추가해 아처 전용 모델 우선순위를 설정 레이어로 승격

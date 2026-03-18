@@ -2492,6 +2492,7 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `scripts/speed-test.js`가 최신 스냅샷과 별도로 `llm-speed-test-history.jsonl` 히스토리를 누적하도록 보강
 - `scripts/reviews/llm-selector-speed-review.js`를 추가해 최근 speed-test 히스토리의 top model, current/recommended, recommendation을 요약할 수 있게 정리
 - `scripts/reviews/llm-selector-speed-daily.js`를 추가해 speed-test 실행과 speed review를 일일 러너로 묶을 수 있게 정리
+- 블로그 `publ.js`에 내부 링킹 Phase 2 후처리를 추가해 발행 시점에 과거 `published + naver_url` 포스트를 조회하고 제목 플레이스홀더를 실제 링크로 치환할 수 있게 정리
 
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
