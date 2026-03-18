@@ -169,6 +169,31 @@ async function fetchSignalFunnel(fromDate, toDate) {
   return { signalRows, blockRows, blockCodeRows, analysisRows };
 }
 
+async function fetchDecisionPipelineStats(fromDate, toDate) {
+  try {
+    return await db.query(`
+      SELECT
+        market,
+        COALESCE(SUM(COALESCE((meta->>'decided_symbols')::int, 0)), 0) AS decided_symbols,
+        COALESCE(SUM(COALESCE((meta->>'executed_symbols')::int, 0)), 0) AS executed_symbols,
+        COALESCE(SUM(COALESCE((meta->>'buy_decisions')::int, 0)), 0) AS buy_decisions,
+        COALESCE(SUM(COALESCE((meta->>'sell_decisions')::int, 0)), 0) AS sell_decisions,
+        COALESCE(SUM(COALESCE((meta->>'hold_decisions')::int, 0)), 0) AS hold_decisions,
+        COALESCE(SUM(COALESCE((meta->>'weak_signal_skipped')::int, 0)), 0) AS weak_signal_skipped,
+        COALESCE(SUM(COALESCE((meta->>'risk_rejected')::int, 0)), 0) AS risk_rejected,
+        COALESCE(SUM(COALESCE((meta->>'saved_execution_work')::int, 0)), 0) AS saved_execution_work
+      FROM pipeline_runs
+      WHERE pipeline = 'luna_pipeline'
+        AND CAST(to_timestamp(started_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+            BETWEEN '${fromDate}' AND '${toDate}'
+      GROUP BY market
+      ORDER BY market
+    `);
+  } catch {
+    return [];
+  }
+}
+
 // ─── 심볼별 P&L 계산 (FIFO) ─────────────────────────────────────────
 
 function calcPnl(trades) {
@@ -536,6 +561,42 @@ function formatSignalFunnel({ signalRows, blockRows, blockCodeRows, analysisRows
   return lines.join('\n').trimEnd();
 }
 
+function formatDecisionPipeline(rows) {
+  if (!rows.length) return '  기록 없음';
+
+  const lines = [];
+  const buckets = ['crypto', 'domestic', 'overseas'];
+
+  for (const market of buckets) {
+    const marketRows = rows.filter(row => getMarketBucket(row.market) === market);
+    lines.push(`  ■ ${getMarketLabel(market)}`);
+
+    if (!marketRows.length) {
+      lines.push('    기록 없음');
+      lines.push('');
+      continue;
+    }
+
+    const totals = marketRows.reduce((acc, row) => {
+      acc.decided += Number(row.decided_symbols || 0);
+      acc.executed += Number(row.executed_symbols || 0);
+      acc.buy += Number(row.buy_decisions || 0);
+      acc.sell += Number(row.sell_decisions || 0);
+      acc.hold += Number(row.hold_decisions || 0);
+      acc.weak += Number(row.weak_signal_skipped || 0);
+      acc.risk += Number(row.risk_rejected || 0);
+      acc.saved += Number(row.saved_execution_work || 0);
+      return acc;
+    }, { decided: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0 });
+
+    lines.push(`    decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold}`);
+    lines.push(`    executed ${totals.executed}건 | weakSignalSkipped ${totals.weak}건 | riskRejected ${totals.risk}건 | savedNodes ${totals.saved}`);
+    lines.push('');
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────────
 
 async function main() {
@@ -558,6 +619,7 @@ async function main() {
   const pnlMap    = calcPnl(trades);
   const tokenRows = await fetchTokenUsage(from, to);
   const funnel    = await fetchSignalFunnel(from, to);
+  const decisionPipeline = await fetchDecisionPipelineStats(from, to);
 
   // ─── 출력 조립 ───
   const lines = [
@@ -575,6 +637,9 @@ async function main() {
     ``,
     `━━ 신호 퍼널 / 판단 품질 ━━`,
     formatSignalFunnel(funnel),
+    ``,
+    `━━ decision 퍼널 병목 ━━`,
+    formatDecisionPipeline(decisionPipeline),
     ``,
     `━━ LLM 토큰 사용 ━━`,
     formatTokenUsage(tokenRows),

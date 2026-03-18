@@ -33,11 +33,19 @@
 - 투자
   - `executionMode=live/paper`, `brokerAccountMode=real/mock` 기준이 코드/리포트/문서에 반영됐다.
   - 실패 원인 저장은 `block_reason + block_code + block_meta` 구조로 확장됐다.
+  - `pipeline_runs.meta`는 이제 `decision / BUY / SELL / HOLD / executed / weak / risk / savedExecutionWork`를 함께 저장해 루나 decision 퍼널을 시장별로 직접 읽을 수 있다.
+  - `trading-journal.js`, `weekly-trade-review.js`는 시장별 `decision 퍼널 병목`을 노출해, 거래 부재 원인을 weak/risk가 아닌 `portfolio decision` 쪽에서 좁혀 볼 수 있게 됐다.
   - `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어가 추가돼 `PEPEUSDT Invalid time value` 로그 노이즈가 줄었다.
   - `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44`가 실제 운영 `config.yaml`에 반영됐다.
   - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`는 `applied` 상태이며, 현재 판단은 `observe`다.
   - `trading-journal.js`는 거래 없음 대비 분석비용이 큰 날 `no-trade high-cost` 경고를 출력하도록 보강됐다.
   - `weekly-trade-review.js`는 종료 거래가 없어도 미결 포지션, 주간 LLM 사용량, 다음 조치를 포함한 운영 요약을 남기며, `date_kst::date` 비교로 주간 usage가 0으로 떨어지던 버그를 수정했다.
+  - 바이낸스 목표를 `수익 가능 종목 다변화 + 활발한 거래 파이프라인`으로 재정의하고, `config.yaml`과 `luna.js`에서 crypto 후보 폭과 decision 보수성을 완화했다.
+  - `screening.crypto.max_dynamic=12`, `min_volume_usdt=750000`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`가 적용됐다.
+  - 바이낸스는 최종 signal gating에서 `timeMode.minSignalScore`보다 runtime crypto 기준이 더 낮을 경우 runtime 기준을 우선 사용하도록 정리됐다.
+  - 루나 시스템 재점검 Phase용 문서와 Codex 실행 프롬프트가 추가됐다.
+    - `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md`
+    - `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md`
 - 제이 / 오케스트레이터
   - OpenClaw gateway 기본 모델과 제이 앱 레벨 커스텀 모델 정책을 분리해서 읽도록 정리됐다.
   - `jay-model-policy.js`가 추가되어 `intent parse`와 `chat fallback` 모델 체인을 한 곳에서 관리한다.
@@ -81,8 +89,8 @@
 ## 3. 다음 작업 목표
 
 1. 투자 실험 3~7일 관찰
-   - 적용값: `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44`
-   - 확인 항목: `binance BUY / executed / failed`, `nemesis_error`, `legacy_executor_failed`, health warnCount
+   - 적용값: `screening.crypto.max_dynamic=12`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`
+   - 확인 항목: `binance BUY / SELL / HOLD`, `executed`, `weakSignalSkipped`, `riskRejected`, `nemesis_error`, `legacy_executor_failed`
 2. 스카 shadow 비교 actual 누적 관찰
    - 현재 `availableDays = 0`
    - 일일 최소 3일 / 주간 최소 5일 누적이 필요
@@ -106,6 +114,9 @@
 7. 제이 DB 접근 컨텍스트 복구
    - `jay-llm-daily-review.js`는 현재 `dbStatsStatus=partial` 상태
    - `reservation.llm_usage_log`, `claude.command_history` 접근이 자동화 컨텍스트에서 `EPERM`으로 막히고 있어 PostgreSQL 접근 권한 또는 실행 컨텍스트를 복구해야 함
+8. 루나 시스템 재점검 Phase 착수 여부 판단
+   - 현재는 퍼널 계측과 crypto 보수성 완화까지 반영된 상태
+   - 다음은 `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준으로 부분 보완안 vs 재설계안 비교에 들어갈 수 있음
 
 ---
 
@@ -121,6 +132,8 @@
 - `jay-llm-daily-review.js`는 이제 snapshot fallback으로 운영 리포트 연속성은 확보했지만, live DB query 자체의 `EPERM` 원인은 아직 별도 운영 컨텍스트 복구가 필요하다
 - `daily-ops-report.js`는 이제 `sourceMode`를 함께 출력해 `orchestrator / worker / claude / blog`는 `unavailable`, `investment / reservation`은 `local_fallback`, global error review는 `auxiliary_review`로 읽을 수 있다
 - 투자 주간 리뷰 usage는 복구됐지만, 주간/일간 usage 집계 로직을 공용 함수로 통합하면 중복 유지보수를 더 줄일 수 있다
+- 루나 퍼널의 `BUY / SELL / HOLD` 분포는 저장 필드를 추가했지만, 과거 `pipeline_runs.meta`에는 값이 없어 초기 관측 구간에서는 `0`으로 보일 수 있다
+- 따라서 다음 해석은 새 파이프라인 런 누적 후 진행해야 한다
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다

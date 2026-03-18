@@ -228,6 +228,7 @@ async function logPipelineMetrics(label, metrics = {}) {
     metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
     metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
     metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
+    metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
     metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
     metrics.savedExecutionWork != null ? `savedNodes=${metrics.savedExecutionWork}` : null,
   ].filter(Boolean);

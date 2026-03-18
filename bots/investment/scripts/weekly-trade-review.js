@@ -122,6 +122,31 @@ async function fetchOpenPositions() {
   }
 }
 
+async function fetchDecisionPipelineStats(days) {
+  try {
+    return await db.query(`
+      SELECT
+        market,
+        COALESCE(SUM(COALESCE((meta->>'decided_symbols')::int, 0)), 0) AS decided_symbols,
+        COALESCE(SUM(COALESCE((meta->>'executed_symbols')::int, 0)), 0) AS executed_symbols,
+        COALESCE(SUM(COALESCE((meta->>'buy_decisions')::int, 0)), 0) AS buy_decisions,
+        COALESCE(SUM(COALESCE((meta->>'sell_decisions')::int, 0)), 0) AS sell_decisions,
+        COALESCE(SUM(COALESCE((meta->>'hold_decisions')::int, 0)), 0) AS hold_decisions,
+        COALESCE(SUM(COALESCE((meta->>'weak_signal_skipped')::int, 0)), 0) AS weak_signal_skipped,
+        COALESCE(SUM(COALESCE((meta->>'risk_rejected')::int, 0)), 0) AS risk_rejected,
+        COALESCE(SUM(COALESCE((meta->>'saved_execution_work')::int, 0)), 0) AS saved_execution_work
+      FROM pipeline_runs
+      WHERE pipeline = 'luna_pipeline'
+        AND CAST(to_timestamp(started_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+            >= CURRENT_DATE - ($1::int - 1)
+      GROUP BY market
+      ORDER BY market
+    `, [days]);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchTokenUsage(days) {
   try {
     const [tokenUsageRows, llmLogRows] = await Promise.all([
@@ -191,6 +216,37 @@ function buildNoTradeSummary(days, positions, tokenUsage) {
     '다음 조치:',
     ...actionLines,
   ].join('\n');
+}
+
+function buildDecisionPipelineSection(rows) {
+  if (!rows.length) return '';
+
+  const marketBuckets = ['crypto', 'domestic', 'overseas'];
+  const lines = ['의사결정 퍼널 병목:'];
+
+  for (const bucket of marketBuckets) {
+    const marketRows = rows.filter(row => getMarketBucket(row.market) === bucket);
+    if (!marketRows.length) {
+      lines.push(`- ${getMarketLabel(bucket)}: 기록 없음`);
+      continue;
+    }
+
+    const totals = marketRows.reduce((acc, row) => {
+      acc.decided += Number(row.decided_symbols || 0);
+      acc.executed += Number(row.executed_symbols || 0);
+      acc.buy += Number(row.buy_decisions || 0);
+      acc.sell += Number(row.sell_decisions || 0);
+      acc.hold += Number(row.hold_decisions || 0);
+      acc.weak += Number(row.weak_signal_skipped || 0);
+      acc.risk += Number(row.risk_rejected || 0);
+      acc.saved += Number(row.saved_execution_work || 0);
+      return acc;
+    }, { decided: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0 });
+
+    lines.push(`- ${getMarketLabel(bucket)}: decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold} | executed ${totals.executed}건 | weak ${totals.weak}건 | risk ${totals.risk}건 | saved ${totals.saved}`);
+  }
+
+  return lines.join('\n');
 }
 
 function buildNoTradeTelegramMessage(days, positions, tokenUsage) {
@@ -526,11 +582,13 @@ async function main() {
   console.log(`  📊 종료 거래 ${trades.length}건 조회`);
 
   if (trades.length === 0) {
-    const [positions, tokenUsage] = await Promise.all([
+    const [positions, tokenUsage, decisionPipeline] = await Promise.all([
       fetchOpenPositions(),
       fetchTokenUsage(DAYS),
+      fetchDecisionPipelineStats(DAYS),
     ]);
-    const noTradeSummary = buildNoTradeSummary(DAYS, positions, tokenUsage);
+    const pipelineSection = buildDecisionPipelineSection(decisionPipeline);
+    const noTradeSummary = [buildNoTradeSummary(DAYS, positions, tokenUsage), pipelineSection].filter(Boolean).join('\n\n');
     console.log('\n' + noTradeSummary);
 
     if (!DRY_RUN) {
@@ -550,12 +608,17 @@ async function main() {
     process.exit(0);
   }
 
+  const [decisionPipeline] = await Promise.all([
+    fetchDecisionPipelineStats(DAYS),
+  ]);
   const rrSection = buildRRSection(trades);
   if (rrSection.text) console.log('\n' + rrSection.text);
   const reviewSection = buildReviewSection(reviewRows);
   if (reviewSection) console.log('\n' + reviewSection);
-
-  const summary = buildTradeSummary(trades, signalStats, rrSection) + (reviewSection ? `\n\n${reviewSection}` : '');
+  const pipelineSection = buildDecisionPipelineSection(decisionPipeline);
+  const summary = buildTradeSummary(trades, signalStats, rrSection)
+    + (pipelineSection ? `\n\n${pipelineSection}` : '')
+    + (reviewSection ? `\n\n${reviewSection}` : '');
   console.log('\n' + summary);
 
   console.log('\n  🤖 LLM 자기반성 분석 중...');
