@@ -17,6 +17,10 @@ const ALERT_LEVEL_ICONS = {
   4: '🚨',
 };
 
+const MOBILE_DETAIL_LIMIT = 4;
+const MOBILE_SECTION_LINE_LIMIT = 3;
+const MOBILE_LINE_MAX = 88;
+
 const DELIVERY_STATE = new Map();
 const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
@@ -91,6 +95,35 @@ function summarizePayloadWarnings(entries = []) {
     topProducers,
     latest: entries.length > 0 ? entries[entries.length - 1] : null,
   };
+}
+
+function compactLine(line, maxLength = MOBILE_LINE_MAX) {
+  const text = String(line || '')
+    .replace(/\s+/g, ' ')
+    .replace(/[━═─-]{8,}/g, '────────')
+    .trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function compactSectionTitle(title) {
+  return compactLine(String(title || '').replace(/[━═─]/g, ' ').replace(/\s+/g, ' ').trim(), 40);
+}
+
+function compactNoticeTitle(title) {
+  return compactLine(String(title || '').replace(/^[^\w가-힣]+\s*/, '').trim(), 48);
+}
+
+function compactLines(lines = [], limit = MOBILE_DETAIL_LIMIT) {
+  const normalized = lines
+    .map((line) => compactLine(line))
+    .filter(Boolean);
+  if (normalized.length <= limit) return normalized;
+  return [
+    ...normalized.slice(0, limit),
+    `… 외 ${normalized.length - limit}줄`,
+  ];
 }
 
 function validatePayloadSchema(payload = null) {
@@ -663,27 +696,19 @@ function renderNoticeEvent(event) {
   const normalized = buildNoticeEvent(event);
   const levelLabel = ALERT_LEVEL_LABELS[normalized.alert_level] || '알림';
   const levelIcon = ALERT_LEVEL_ICONS[normalized.alert_level] || 'ℹ️';
-  const lines = [
-    `${levelIcon} ${levelLabel}`,
-  ];
+  const title = compactNoticeTitle(normalized.title);
+  const summary = compactLine(normalized.summary);
+  const lines = [`${levelIcon} ${levelLabel}${title ? ` · ${title}` : ''}`];
 
-  if (normalized.title) {
-    lines.push('');
-    lines.push(normalized.title);
-  }
-  if (normalized.summary) {
-    lines.push('');
-    lines.push(`요약: ${normalized.summary}`);
-  }
-  for (const detail of normalized.details) {
+  if (summary && summary !== title) lines.push(`요약: ${summary}`);
+  for (const detail of compactLines(normalized.details, MOBILE_DETAIL_LIMIT)) {
     lines.push(detail);
   }
   if (normalized.action) {
-    lines.push(`${normalized.actionLabel}: ${normalized.action}`);
+    lines.push(`${normalized.actionLabel}: ${compactLine(normalized.action)}`);
   }
   if (normalized.footer) {
-    lines.push('');
-    lines.push(normalized.footer);
+    lines.push(compactLine(normalized.footer));
   }
   return lines.join('\n').trim();
 }
@@ -723,21 +748,17 @@ function renderReportEvent(event) {
   if (!event) return '';
   const normalized = buildReportEvent(event);
   const lines = [];
-  if (normalized.title) lines.push(normalized.title);
-  if (normalized.summary) {
-    if (lines.length > 0) lines.push('');
-    lines.push(normalized.summary);
-  }
+  if (normalized.title) lines.push(compactLine(normalized.title, 52));
+  if (normalized.summary) lines.push(compactLine(normalized.summary));
   for (const section of normalized.sections) {
-    if (lines.length > 0) lines.push('');
-    if (section.title) lines.push(section.title);
-    for (const line of section.lines) {
-      lines.push(`  ${line}`);
+    const title = compactSectionTitle(section.title);
+    if (title) lines.push(title);
+    for (const line of compactLines(section.lines, MOBILE_SECTION_LINE_LIMIT)) {
+      lines.push(`• ${line}`);
     }
   }
   if (normalized.footer) {
-    if (lines.length > 0) lines.push('');
-    lines.push(normalized.footer);
+    lines.push(compactLine(normalized.footer));
   }
   return lines.join('\n').trim();
 }
@@ -774,13 +795,16 @@ function getEventDetailLines(event) {
   if (Array.isArray(payload?.details)) {
     payloadDetails.push(...payload.details.map((line) => String(line || '').trim()).filter(Boolean));
   }
+  if (payloadDetails.length > 0) {
+    return compactLines(payloadDetails, MOBILE_DETAIL_LIMIT);
+  }
   const messageLines = String(event?.message || '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
   const headline = getEventHeadline(event);
   const filteredMessageLines = messageLines.filter((line, index) => !(index === 0 && line === headline));
-  return [...payloadDetails, ...filteredMessageLines];
+  return compactLines(filteredMessageLines, MOBILE_DETAIL_LIMIT);
 }
 
 function getEventAction(event) {

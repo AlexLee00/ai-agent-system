@@ -2249,6 +2249,12 @@ deps.js cd→cwd 수정(launchd PATH 오류) | git 상태 패턴 저장 제외(f
 ### 헬스체크 회복 로직 + 제이 할루시네이션 방지
 health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 수정 | TOOLS.md bot_commands 명령 테이블 + 할루시네이션 방지 경고
 
+### 알림 메시지 모바일 최적화
+- reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
+- payload.details 우선 사용으로 긴 원문 중복 노출 제거
+- telegram-sender에서 긴 구분선/연속 공백 정규화
+- 루나 실시간 알림과 주간 리뷰 메시지의 구분선/근거 길이 축약
+
 ### 스카팀 취소 루틴 버그 수정
 page.click(body)→Escape 키 수정(상세보기 블러 문제) | toCancelKey bookingId 기반 개선(슬롯 재예약 키 충돌 방지)
 

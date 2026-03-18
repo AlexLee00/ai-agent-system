@@ -630,6 +630,14 @@
 - AI feedback layer를 worker/blog/claude 흐름에 실제 연결
 - worker AI 정책 테이블/설정 UI 추가
 
+### 2026-03-18
+
+- 텔레그램 알림 모바일 최적화
+- reporting-hub notice/report 렌더러를 헤더·디테일 축약형으로 정리
+- payload.details가 있는 알림은 원문 전체 본문 대신 요약 detail 우선 사용
+- telegram-sender에서 긴 구분선/과도한 공백을 발송 직전 정규화
+- 루나 실시간 알림과 주간 리뷰 메시지의 긴 구분선/장문 근거를 축약
+
 ### 2026-03-14
 
 - shared intent engine 확장
