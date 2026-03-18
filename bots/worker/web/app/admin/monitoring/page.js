@@ -57,6 +57,7 @@ export default function WorkerMonitoringPage() {
     byRoute: [],
   };
   const changeHistory = payload?.change_history || [];
+  const changeImpact = payload?.change_impact || [];
 
   async function handleSaveProvider() {
     setSaving(true);
@@ -381,6 +382,73 @@ export default function WorkerMonitoringPage() {
                 </div>
               ) : (
                 <div className="px-4 py-5 text-sm text-slate-500">아직 기본 API 변경 이력이 없습니다.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="card space-y-4">
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-sky-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">최근 변경 전후 품질 비교</p>
+                <p className="text-xs text-slate-500">최근 변경 기준 전후 {changeImpact[0]?.window_hours || 12}시간의 성공률과 평균 응답시간을 비교합니다.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {changeImpact.length ? (
+                changeImpact.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {item.previous_api_label} → {item.next_api_label}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          변경 시각 {new Date(item.changed_at).toLocaleString('ko-KR')}
+                        </p>
+                        {item.change_note ? (
+                          <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs leading-5 text-slate-600">
+                            사유: {item.change_note}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${item.enough_data ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {item.enough_data ? '비교 가능' : '데이터 부족'}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-white px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">변경 전</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{item.before.totalCalls}회 · 성공률 {Number(item.before.successRatePct || 0).toFixed(1)}%</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          평균 응답시간 {item.before.avgLatencyMs !== null ? `${item.before.avgLatencyMs}ms` : '기록 없음'}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">변경 후</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{item.after.totalCalls}회 · 성공률 {Number(item.after.successRatePct || 0).toFixed(1)}%</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          평균 응답시간 {item.after.avgLatencyMs !== null ? `${item.after.avgLatencyMs}ms` : '기록 없음'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                      <span className="rounded-full bg-white px-3 py-1">
+                        성공률 변화 {item.success_rate_delta_pct > 0 ? '+' : ''}{Number(item.success_rate_delta_pct || 0).toFixed(1)}%p
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1">
+                        응답시간 변화 {item.avg_latency_delta_ms === null ? '기록 없음' : `${item.avg_latency_delta_ms > 0 ? '+' : ''}${item.avg_latency_delta_ms}ms`}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                  아직 전후 비교를 계산할 만큼 최근 변경 이력이 없습니다.
+                </div>
               )}
             </div>
           </div>

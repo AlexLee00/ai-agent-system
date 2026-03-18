@@ -12,6 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 최근 24시간 호출 통계와 기본 API 변경 이력까지 확인 가능
   - provider별/경로별 성공률과 평균 응답시간까지 확인 가능
   - provider 변경 사유(note)까지 이력에 함께 저장 가능
+  - 최근 변경 전후 12시간 기준 성공률/응답시간 비교 가능
 - 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
   - investment / reservation / ska / worker / orchestrator / claude / blog
 - 팀별 운영 설정 조회 스크립트 추가

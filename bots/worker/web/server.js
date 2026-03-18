@@ -40,6 +40,7 @@ const {
   API_CATALOG,
   buildProviderOptions,
   getWorkerMonitoringChangeHistory,
+  getWorkerMonitoringChangeImpact,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
   getWorkerMonitoringUsageSummary,
@@ -370,18 +371,22 @@ async function buildWorkerMonitoringPayload(user) {
   const selectedApi = await getWorkerMonitoringPreference();
   const company = user?.company_id ? await getCompanyAiPolicy(user.company_id) : null;
   const aiPolicy = resolveAiPolicy({ user, company });
-  const [changeHistory, usageSummary] = await Promise.all([
+  const emptyUsageSummary = {
+    periodHours: 24,
+    totalCalls: 0,
+    successCalls: 0,
+    failedCalls: 0,
+    successRatePct: 0,
+    totalCostUsd: 0,
+    avgLatencyMs: null,
+    latestCallAt: null,
+    byProvider: [],
+    byRoute: [],
+  };
+  const [changeHistory, usageSummary, changeImpact] = await Promise.all([
     getWorkerMonitoringChangeHistory(8),
-    getWorkerMonitoringUsageSummary().catch(() => ({
-      periodHours: 24,
-      totalCalls: 0,
-      successCalls: 0,
-      failedCalls: 0,
-      totalCostUsd: 0,
-      latestCallAt: null,
-      byProvider: [],
-      byRoute: [],
-    })),
+    getWorkerMonitoringUsageSummary().catch(() => emptyUsageSummary),
+    getWorkerMonitoringChangeImpact(3, 12).catch(() => []),
   ]);
 
   return {
@@ -405,6 +410,21 @@ async function buildWorkerMonitoringPayload(user) {
         changed_by_role: item.changed_by_role,
       };
     }),
+    change_impact: changeImpact.map((item) => ({
+      id: item.id,
+      previous_api: item.previousApi || null,
+      next_api: item.nextApi || null,
+      previous_api_label: API_CATALOG[item.previousApi]?.label || item.previousApi || '초기값',
+      next_api_label: API_CATALOG[item.nextApi]?.label || item.nextApi || '-',
+      change_note: item.changeNote || '',
+      changed_at: item.changedAt,
+      window_hours: item.windowHours,
+      enough_data: item.enoughData,
+      success_rate_delta_pct: item.successRateDeltaPct,
+      avg_latency_delta_ms: item.avgLatencyDeltaMs,
+      before: item.before,
+      after: item.after,
+    })),
     usage_summary: usageSummary,
   };
 }
