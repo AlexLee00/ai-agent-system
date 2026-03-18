@@ -74,6 +74,31 @@
 - `launchctl kickstart -k gui/$(id -u)/ai.investment.prescreen-domestic`
 - `launchctl kickstart -k gui/$(id -u)/ai.investment.prescreen-overseas`
 
+### 12주차 후속 (2026-03-19) — 자동화 리포트 판단력 강화
+
+핵심 구현:
+- `jay-gateway-experiment-daily.js`가 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기반 review를 계속 출력하고, `snapshotError / persisted` 상태를 명시하도록 보강
+- `daily-ops-report.js`가 `process.execPath` 기준으로 health script를 실행하고, `health_report_failed_launchctl / health_report_failed_probe_unavailable` source와 `healthError`를 함께 노출하도록 정리
+- `ska-sales-forecast-daily-review.js`에 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 즉시 조치 항목으로 제공
+- `trading-journal.js`에 `no-trade high-cost` 경고를 추가해 거래가 없는데 LLM 분석비용만 큰 날을 운영자가 바로 식별 가능하게 함
+
+세션 맥락:
+- 오늘 점검한 자동화 리포트는 숫자 자체보다 “왜 hold인지”, “무엇을 바로 조치할지”가 약했다.
+- 특히 제이 Gateway 자동화는 스냅샷 저장 실패 시 리포트 가치가 크게 떨어졌고, 일일 운영 분석은 health 입력 실패가 `hold` 뒤에 묻혀 있었다.
+
+의사결정 이유:
+- 내부 MVP 단계에서는 자동화를 늘리기보다, 기존 자동화가 실패해도 의미 있는 판단을 남기도록 만드는 편이 운영 안정성에 더 중요하다.
+- 스카와 투자 리포트는 상세 수치보다 실행 가능한 액션 문구를 먼저 주는 편이 실무 운영 속도와 SaaS 확장성 모두에 유리하다.
+
+검증:
+- `node --check scripts/reviews/jay-gateway-experiment-daily.js`
+- `node --check scripts/reviews/daily-ops-report.js`
+- `node --check bots/investment/scripts/trading-journal.js`
+- `node --check scripts/reviews/ska-sales-forecast-daily-review.js`
+- `node scripts/reviews/jay-gateway-experiment-daily.js --json`
+- `node scripts/reviews/daily-ops-report.js --json`
+- `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json`
+
 ### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합
 
 핵심 구현:

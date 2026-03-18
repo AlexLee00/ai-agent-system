@@ -6,6 +6,18 @@
 
 ## 2026-03-18
 
+### 자동화 리포트 개선
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check scripts/reviews/jay-gateway-experiment-daily.js` | ✅ |
+| `node --check scripts/reviews/daily-ops-report.js` | ✅ |
+| `node --check bots/investment/scripts/trading-journal.js` | ✅ |
+| `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ |
+| `node scripts/reviews/jay-gateway-experiment-daily.js --json` | ✅ `snapshotError / persisted / review` 동시 출력 확인 |
+| `node scripts/reviews/daily-ops-report.js --json` | ✅ 팀별 `healthError` 노출 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` | ✅ `actionItems` 출력 확인 |
+
 ### 모바일 알림 UX 정리
 
 | 테스트 | 결과 |

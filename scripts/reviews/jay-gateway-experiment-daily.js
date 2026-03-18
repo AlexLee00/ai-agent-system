@@ -30,12 +30,24 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function buildRun({ hours, reviewDays, outputPath }) {
-  const snapshot = buildSnapshot(hours);
-  persistSnapshot(snapshot, outputPath);
+  let snapshot = null;
+  let snapshotError = null;
+  let persisted = false;
+
+  try {
+    snapshot = buildSnapshot(hours);
+    persistSnapshot(snapshot, outputPath);
+    persisted = true;
+  } catch (error) {
+    snapshotError = error?.stack || error?.message || String(error);
+  }
+
   const review = buildReview(safeReadSnapshots(outputPath), reviewDays, outputPath);
   return {
     outputPath,
     snapshot,
+    snapshotError,
+    persisted,
     review,
   };
 }
@@ -45,10 +57,16 @@ function printHuman(run) {
   lines.push('🤖 제이 gateway 일일 실험 실행');
   lines.push('');
   lines.push(`저장 파일: ${run.outputPath}`);
-  lines.push(`기록 시각: ${run.snapshot.capturedAt}`);
-  lines.push(`현재 단계: ${run.snapshot.experimentStage}`);
-  lines.push(`정합성: ${run.snapshot.primaryCheck.aligned ? '일치' : '불일치'}`);
-  lines.push(`최근 ${run.snapshot.observedHours}시간 rate limit: ${run.snapshot.gatewayMetrics.rateLimitCount}건 (활성 ${run.snapshot.gatewayMetrics.activeRateLimitCount}건)`);
+  if (run.snapshot) {
+    lines.push(`기록 시각: ${run.snapshot.capturedAt}`);
+    lines.push(`현재 단계: ${run.snapshot.experimentStage}`);
+    lines.push(`정합성: ${run.snapshot.primaryCheck.aligned ? '일치' : '불일치'}`);
+    lines.push(`최근 ${run.snapshot.observedHours}시간 rate limit: ${run.snapshot.gatewayMetrics.rateLimitCount}건 (활성 ${run.snapshot.gatewayMetrics.activeRateLimitCount}건)`);
+  } else {
+    lines.push('기록 시각: 이번 실행에서 새 스냅샷 저장 실패');
+    lines.push(`실패 사유: ${run.snapshotError || '원인 확인 필요'}`);
+  }
+  lines.push(`스냅샷 저장: ${run.persisted ? '성공' : '실패'}`);
   lines.push('');
   lines.push(printReviewHuman(run.review));
   return lines.join('\n');

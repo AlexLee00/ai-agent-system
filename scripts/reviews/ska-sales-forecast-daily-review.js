@@ -247,6 +247,27 @@ function buildRecommendations(summary, latest, shadowComparison, shadowDecision)
   return lines.slice(0, 4);
 }
 
+function buildActionItems(summary, latest, shadowComparison, shadowDecision) {
+  const items = [];
+
+  if (summary.avgBias <= -DAILY_REVIEW_CONFIG.avgBiasWarn) {
+    items.push('bias_tuning: 과소예측 성향이 커서 예약 선행지표 또는 상향 보정 계수를 점검합니다.');
+  } else if (summary.avgBias >= DAILY_REVIEW_CONFIG.avgBiasWarn) {
+    items.push('bias_tuning: 과대예측 성향이 커서 피크일 가산치 또는 상한 보정 계수를 점검합니다.');
+  }
+
+  if (summary.hitRate20 < DAILY_REVIEW_CONFIG.hitRate20Warn) {
+    items.push('weekday_tuning: 20% 이내 적중률이 낮아 요일별 계수와 환경 변수 가중치를 재검토합니다.');
+  }
+
+  if (latest && latest.confidence != null && Number(latest.confidence) < DAILY_REVIEW_CONFIG.confidenceWarn) {
+    items.push('manual_review: 최신 확신도가 낮아 수동 확인 우선순위를 올립니다.');
+  }
+
+  items.push(`shadow_readiness: ${shadowDecision.recommendation}`);
+  return items.slice(0, 4);
+}
+
 async function main() {
   const { days, json } = parseArgs();
   const [accuracyRows, upcomingRows] = await Promise.all([
@@ -281,6 +302,7 @@ async function main() {
     summary,
     shadowComparison,
     shadowDecision,
+    actionItems: buildActionItems(summary, upcomingRows[0] || latestActual, shadowComparison, shadowDecision),
     upcomingForecasts: upcomingRows.map(row => ({
       date: toDateString(row.date),
       predictedRevenue: Number(row.predicted_revenue || 0),
@@ -345,6 +367,12 @@ async function main() {
   lines.push('');
   lines.push('추천:');
   for (const item of report.recommendations) lines.push(item);
+
+  if (report.actionItems.length) {
+    lines.push('');
+    lines.push('즉시 조치:');
+    for (const item of report.actionItems) lines.push(`- ${item}`);
+  }
 
   process.stdout.write(`${lines.join('\n')}\n`);
 }

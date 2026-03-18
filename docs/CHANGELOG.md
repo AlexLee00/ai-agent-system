@@ -85,6 +85,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 투자 장전 스크리닝 / 장 마감 매매일지 본문을 모바일형으로 압축
   - 심볼 목록은 최대 개수까지만 보여주고 `외 N개`로 축약
   - 투자 성향 / 매매 내역 / 보유 포지션 / 신호 요약 줄 수를 줄여 한 화면 가독성을 높였다
+- 자동화 리포트 출력을 운영 액션 중심으로 보강
+  - `jay-gateway-experiment-daily.js`는 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기준 리뷰를 계속 출력하도록 강인성을 높였다
+  - `daily-ops-report.js`는 `health_report_failed_probe_unavailable`와 실제 `healthError`를 함께 노출해 입력 실패 원인을 더 명확히 구분한다
+  - `ska-sales-forecast-daily-review.js`는 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 바로 읽을 수 있게 정리했다
+  - `trading-journal.js`는 거래 없음 대비 분석 비용이 큰 경우 `no-trade high-cost` 경고를 추가하도록 보강했다
 - `speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `llm-selector-report.js`가 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 함께 출력하도록 확장
 - 투자팀 운영 모드 용어 정리
@@ -142,6 +147,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 동일 메시지 안에서 `안내`와 `bot 알림`이 반복되던 구조를 headline 우선 포맷으로 정리
 - 장전/장마감 투자 알림 과도한 본문 길이 보정
   - 긴 심볼 나열, 상세 투자 성향, 매매/포지션 장문 나열을 요약형으로 축소
+- 제이 Gateway 자동화 일일 러너 강인성 보강
+  - `~/.openclaw/workspace` 쓰기 실패가 나더라도 기존 스냅샷 리뷰는 계속 생성되도록 불변식을 회복했다
+- 일일 운영 분석 입력 실패 해석 보강
+  - 단순 `hold`만 남기지 않고 어떤 팀 health-report 입력이 실패했는지 `healthError`로 함께 표시한다
 
 ### 문서 (docs)
 - 개발계획에 `OpenClaw`를 `LLM API 현황` 조회 전용 그룹으로 추가하는 후속 작업을 내일 진행할 항목으로 기록
