@@ -48,6 +48,7 @@ const sender = require('../packages/core/lib/telegram-sender');
 const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.json');
 const AUTH_PROFILES_FILE     = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
 const SPEED_TEST_KEYS_FILE   = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
+const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-latest.json');
 const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/investment/secrets.json');
 const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
@@ -457,6 +458,34 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   return sender.send('claude-lead', text);
 }
 
+function writeLatestSnapshot(results, { applied, recommended, current } = {}) {
+  try {
+    fs.mkdirSync(path.dirname(SPEED_TEST_LATEST_FILE), { recursive: true });
+    const payload = {
+      capturedAt: new Date().toISOString(),
+      prompt: TEST_PROMPT,
+      runs: runsArg,
+      current: current || null,
+      recommended: recommended || null,
+      applied: applied || null,
+      results: results.map((r, index) => ({
+        rank: index + 1,
+        modelId: r.modelId,
+        provider: r.provider,
+        label: r.label,
+        ttft: r.ttft,
+        total: r.total,
+        ok: r.ok === true,
+        error: r.error || null,
+      })),
+    };
+    fs.writeFileSync(SPEED_TEST_LATEST_FILE, JSON.stringify(payload, null, 2) + '\n');
+    log(dim(`\n  📝 최신 속도 스냅샷 저장: ${SPEED_TEST_LATEST_FILE}`));
+  } catch (e) {
+    log(dim(`\n  ⚠️ 속도 스냅샷 저장 실패: ${e.message}`));
+  }
+}
+
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────
 function applyFastest(results) {
   const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
@@ -609,6 +638,11 @@ async function main() {
     });
     log(green(' ✅'));
   }
+  writeLatestSnapshot(results, {
+    applied: appliedModel,
+    recommended: fastest?.modelId,
+    current,
+  });
   log('');
 }
 

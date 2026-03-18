@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const {
@@ -30,15 +31,44 @@ async function getInvestmentPolicyOverrideSafe() {
   }
 }
 
-function formatChainEntry(entry, index) {
-  return `${index === 0 ? 'primary' : `fallback${index}`}: ${entry.provider} / ${entry.model}${entry.maxTokens ? ` | maxTokens=${entry.maxTokens}` : ''}${entry.temperature != null ? ` | temperature=${entry.temperature}` : ''}`;
+const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
+
+function loadLatestSpeedSnapshot() {
+  try {
+    if (!fs.existsSync(SPEED_TEST_LATEST_FILE)) return null;
+    return JSON.parse(fs.readFileSync(SPEED_TEST_LATEST_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
-function formatSelectorBlock(title, description) {
+function buildSpeedLookup(snapshot) {
+  const lookup = new Map();
+  for (const item of snapshot?.results || []) {
+    if (item?.modelId) lookup.set(item.modelId, item);
+    const short = String(item?.modelId || '').split('/').pop();
+    if (short) lookup.set(short, item);
+  }
+  return lookup;
+}
+
+function attachSpeed(entry, speedLookup) {
+  const speed = speedLookup?.get(entry.model) || null;
+  return speed ? { ...entry, speed } : entry;
+}
+
+function formatChainEntry(entry, index) {
+  const speed = entry.speed
+    ? ` | speed=${entry.speed.ok ? `${entry.speed.ttft ?? '-'}ms/${entry.speed.total ?? '-'}ms` : `fail(${entry.speed.error || 'error'})`}`
+    : '';
+  return `${index === 0 ? 'primary' : `fallback${index}`}: ${entry.provider} / ${entry.model}${entry.maxTokens ? ` | maxTokens=${entry.maxTokens}` : ''}${entry.temperature != null ? ` | temperature=${entry.temperature}` : ''}${speed}`;
+}
+
+function formatSelectorBlock(title, description, speedLookup) {
   if (description.kind === 'chain') {
     return [
       `## ${title}`,
-      ...description.chain.map((entry, index) => formatChainEntry(entry, index)),
+      ...description.chain.map((entry, index) => formatChainEntry(attachSpeed(entry, speedLookup), index)),
       '',
     ].join('\n');
   }
@@ -47,9 +77,9 @@ function formatSelectorBlock(title, description) {
     const policy = description.policy || {};
     const lines = [`## ${title}`];
     if (policy.route) lines.push(`route: ${policy.route}`);
-    if (policy.primary) lines.push(formatChainEntry(policy.primary, 0));
+    if (policy.primary) lines.push(formatChainEntry(attachSpeed(policy.primary, speedLookup), 0));
     if (Array.isArray(policy.fallbacks)) {
-      lines.push(...policy.fallbacks.map((entry, index) => formatChainEntry(entry, index + 1)));
+      lines.push(...policy.fallbacks.map((entry, index) => formatChainEntry(attachSpeed(entry, speedLookup), index + 1)));
     }
     if (!policy.primary && !Array.isArray(policy.fallbacks)) {
       lines.push(JSON.stringify(policy, null, 2));
@@ -68,66 +98,72 @@ async function buildReport() {
   const claudeOverrides = claudeConfig.RUNTIME?.llmSelectorOverrides || {};
   const workerPreferredApi = await getWorkerPreferredApiSafe();
   const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
+  const speedSnapshot = loadLatestSpeedSnapshot();
+  const speedLookup = buildSpeedLookup(speedSnapshot);
 
   const blocks = [
     '# LLM Selector Report',
     '',
+    speedSnapshot
+      ? `최근 speed-test: ${speedSnapshot.capturedAt} | current=${speedSnapshot.current || '-'} | recommended=${speedSnapshot.recommended || '-'}`
+      : '최근 speed-test: 없음',
+    '',
     formatSelectorBlock('Jay Intent', describeLLMSelector('orchestrator.jay.intent', {
       policyOverride: jayOverrides['orchestrator.jay.intent'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Jay Chat Fallback', describeLLMSelector('orchestrator.jay.chat_fallback', {
       policyOverride: jayOverrides['orchestrator.jay.chat_fallback'],
-    })),
+    }), speedLookup),
     formatSelectorBlock(`Worker AI Fallback (preferredApi=${workerPreferredApi})`, describeLLMSelector('worker.ai.fallback', {
       preferredApi: workerPreferredApi,
       configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
       policyOverride: workerOverrides['worker.ai.fallback'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Worker Chat Task Intake', describeLLMSelector('worker.chat.task_intake', {
       policyOverride: workerOverrides['worker.chat.task_intake'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Claude Archer', describeLLMSelector('claude.archer.tech_analysis', {
       policyOverride: claudeOverrides['claude.archer.tech_analysis'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Claude Lead', describeLLMSelector('claude.lead.system_issue_triage', {
       policyOverride: claudeOverrides['claude.lead.system_issue_triage'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Dexter Analyst (warn/error)', describeLLMSelector('claude.dexter.ai_analyst', {
       level: 2,
       policyOverride: claudeOverrides['claude.dexter.ai_analyst']
         ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
         : null,
-    })),
+    }), speedLookup),
     formatSelectorBlock('Dexter Analyst (critical)', describeLLMSelector('claude.dexter.ai_analyst', {
       level: 4,
       policyOverride: claudeOverrides['claude.dexter.ai_analyst']
         ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
         : null,
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog POS Writer', describeLLMSelector('blog.pos.writer', {
       policyOverride: blogOverrides['blog.pos.writer'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog GEMS Writer', describeLLMSelector('blog.gems.writer', {
       policyOverride: blogOverrides['blog.gems.writer'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog Social Summarize', describeLLMSelector('blog.social.summarize', {
       policyOverride: blogOverrides['blog.social.summarize'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog Social Caption', describeLLMSelector('blog.social.caption', {
       policyOverride: blogOverrides['blog.social.caption'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog STAR Summarize', describeLLMSelector('blog.star.summarize', {
       policyOverride: blogOverrides['blog.star.summarize'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog STAR Caption', describeLLMSelector('blog.star.caption', {
       policyOverride: blogOverrides['blog.star.caption'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog Curriculum Recommend', describeLLMSelector('blog.curriculum.recommend', {
       policyOverride: blogOverrides['blog.curriculum.recommend'],
-    })),
+    }), speedLookup),
     formatSelectorBlock('Blog Curriculum Generate', describeLLMSelector('blog.curriculum.generate', {
       policyOverride: blogOverrides['blog.curriculum.generate'],
-    })),
+    }), speedLookup),
   ];
 
   const investmentAgents = ['luna', 'nemesis', 'oracle', 'hermes', 'sophia', 'zeus', 'athena', 'argos'];
@@ -135,7 +171,7 @@ async function buildReport() {
     formatSelectorBlock(`Investment ${agentName}`, describeLLMSelector('investment.agent_policy', {
       agentName,
       policyOverride: investmentPolicyOverride,
-    })));
+    }), speedLookup));
 
   return [...blocks, ...investmentBlocks].join('\n');
 }
@@ -150,7 +186,9 @@ async function main() {
 
   const workerPreferredApi = await getWorkerPreferredApiSafe();
   const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
+  const speedSnapshot = loadLatestSpeedSnapshot();
   const payload = {
+    speedTest: speedSnapshot,
     jay: {
       intent: describeLLMSelector('orchestrator.jay.intent', {
         policyOverride: orchestratorRuntime.getLLMSelectorOverrides()['orchestrator.jay.intent'],
