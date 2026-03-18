@@ -5,6 +5,8 @@
 포함된 스크립트:
 - `jay-llm-usage-report.js`
 - `jay-llm-daily-review.js`
+- `jay-gateway-experiment-daily.js`
+- `jay-gateway-experiment-review.js`
 - `llm-model-daily-review.js`
 - `error-log-daily-review.js`
 - `ska-sales-forecast-daily-review.js`

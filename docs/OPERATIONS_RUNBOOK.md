@@ -161,6 +161,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - 정합성 점검 스크립트: [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
   - 실험 로그 스냅샷: [log-jay-gateway-experiment.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js)
   - 실험 리뷰: [jay-gateway-experiment-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js)
+  - 자동화 진입점: [jay-gateway-experiment-daily.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js)
   - 변경 원칙: 정합성이 맞고 헬스가 안정이면 즉시 변경보다 유지가 우선, 전환은 비교 근거 확보 후 진행
   - 전환 단계:
     - `hold`: 정합성 일치 + 오케스트레이터 health-report 안정
@@ -168,10 +169,9 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
     - `switch`: 비교 로그에서 대체 후보 우위 확인 후 `runtime_config` 변경 → `--apply` 동기화 → 헬스 재관찰
   - 권장 운영 순서:
     1. `check-jay-gateway-primary.js --json`
-    2. `log-jay-gateway-experiment.js --hours=24 --write`
-    3. `jay-gateway-experiment-review.js --days=7`
-    4. `jay-llm-daily-review.js --days=1`과 함께 비교
-    5. 그 뒤에만 실제 primary 변경 검토
+    2. `jay-gateway-experiment-daily.js --hours=24 --days=7`
+    3. 필요하면 `jay-llm-daily-review.js --days=1`과 함께 비교
+    4. 그 뒤에만 실제 primary 변경 검토
 
 ### Claude / Dexter
 

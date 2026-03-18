@@ -45,6 +45,9 @@
 - gateway 실험 리뷰
   - [jay-gateway-experiment-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js)
   - 의미: 누적 스냅샷을 읽어 `hold / compare / sync_first` 권장 판단으로 요약
+- gateway 일일 실행 스크립트
+  - [jay-gateway-experiment-daily.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js)
+  - 의미: 스냅샷 기록과 리뷰 생성을 한 번에 수행하는 자동화 진입점
 
 ## 핵심 진입점
 
@@ -65,6 +68,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-re
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js --hours=24 --json
+node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js --hours=24 --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js --days=7 --json
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-llm-daily-review.js --days=1
 # 제이 명령으로 조회:
