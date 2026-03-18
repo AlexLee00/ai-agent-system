@@ -33,6 +33,47 @@
 - `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
 - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
 
+### 12주차 후속 (2026-03-18) — 텔레그램 모바일 알림 UX 정리
+
+핵심 구현:
+- 공용 텔레그램 발송 직전 긴 구분선을 모두 `───────────────` 15자로 정규화
+- `reporting-hub`의 모바일 축약 경로도 같은 15자 구분선을 사용하도록 맞춤
+- 루나 direct report 상수도 같은 구분선 규칙으로 통일
+- 제이 메인봇 queued notice 포맷에서 `headline`을 제목 우선값으로 사용하도록 바꿔 `ℹ️ 안내 / ℹ️ luna 알림 / 요약:` 중복을 축소
+- 장전 스크리닝 완료 메시지는 심볼 최대 6개만 노출하고 초과분을 `외 N개`로 축약
+- 장 마감 매매일지는 투자 성향/매매 내역/보유 포지션/신호 요약을 최대 개수 기준으로 축약
+
+세션 맥락:
+- 모바일 수신 화면에서 긴 구분선이 2줄로 꺾이고, 루나 큐 알림은 `안내`와 `bot 알림`이 동시에 보여 가독성이 떨어졌다.
+- 장전/장마감 알림은 심볼과 상세 상태가 길게 이어져 핵심만 빠르게 보기 어려웠다.
+
+의사결정 이유:
+- 각 producer를 전면 수정하기보다 공용 `telegram-sender`와 `reporting-hub`에서 출력 규칙을 통일하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- 투자 알림은 상세판보다 모바일 요약판이 우선이므로, 핵심 정보만 남기고 `외 N개 / 외 N건`으로 축약하는 편이 실전 운영에 맞다.
+
+실발송 검증:
+- 개인 Telegram 채팅 직접 전송 `ok=true`
+- 그룹 채팅 직접 전송 `ok=true`
+- 루나 포럼 토픽 15 직접 전송 `ok=true`
+- 실제 수신 화면에서 15자 구분선 1줄 유지와 테스트 메시지 헤더 중복 해소를 확인
+
+검증:
+- `node --check packages/core/lib/telegram-sender.js`
+- `node --check packages/core/lib/reporting-hub.js`
+- `node --check bots/investment/shared/report.js`
+- `node --check bots/orchestrator/lib/batch-formatter.js`
+- `node --check bots/investment/scripts/market-alert.js`
+- `node --check bots/investment/scripts/pre-market-screen.js`
+- `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.commander`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.market-alert-domestic-open`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.market-alert-domestic-close`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.market-alert-overseas-open`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.market-alert-overseas-close`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.market-alert-crypto-daily`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.prescreen-domestic`
+- `launchctl kickstart -k gui/$(id -u)/ai.investment.prescreen-overseas`
+
 ### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합
 
 핵심 구현:

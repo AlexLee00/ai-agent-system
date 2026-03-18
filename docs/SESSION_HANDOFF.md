@@ -10,6 +10,9 @@
   - 공용 `reporting-hub` notice/report 렌더러가 모바일 친화형으로 축약됐다.
   - 텔레그램 발송 직전에 긴 구분선과 과도한 공백을 정규화하도록 `telegram-sender`가 보강됐다.
   - 루나 실시간 알림/주간 리뷰 메시지도 긴 구분선과 장문 근거를 줄여 모바일 가독성을 높였다.
+  - 긴 구분선은 모두 `───────────────` 15자 규칙으로 통일됐다.
+  - queued notice 알림은 `headline` 우선 제목 구조로 바뀌어 `ℹ️ 안내 / ℹ️ luna 알림 / 요약:` 중복이 줄었다.
+  - 장전 스크리닝과 장 마감 매매일지는 심볼/포지션/매매 내역이 `외 N개 / 외 N건` 형태로 축약돼 한 화면 가독성이 높아졌다.
 - 워커
   - 문서 업로드/파싱/OCR/문서 상세/재사용 이력/생성 결과 연결까지 한 사이클이 닫혔다.
   - `/documents`, `/documents/[id]`에서 문서 재사용 성과를 확인할 수 있다.
@@ -93,6 +96,7 @@
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
+- 텔레그램 알림 포맷은 구분선/헤더/본문 압축까지 반영됐지만, 잔여 producer 미세 조정은 실제 운영 알림이 더 쌓인 뒤 확인하는 편이 안전하다
 
 자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
 
@@ -107,6 +111,7 @@
 - 투자 설정 변경은 자동 적용보다 `suggestion -> review -> apply -> validate -> observe` 불변식을 유지한다.
 - 운영 리포트는 `근거 약한 추론`보다 `보수적 hold`가 우선이다.
 - 제이의 모델 체계는 하나가 아니라 `OpenClaw 기본 모델 / intent parse 모델 / chat fallback 체인`으로 분리해 읽어야 한다.
+- 알림 UX는 개별 producer 전면 수정보다 공용 sender / renderer 정규화를 우선한다.
 - 문서 체계는 `정책 / 인덱스 / 구조 / 현재 상태 / 팀 참조 / 로그 / 브이로그 / handoff`로 역할을 분리한다.
 - 다만 같은 성격의 기록은 새 파일을 만들지 않고 기존 문서에 흡수한다.
 

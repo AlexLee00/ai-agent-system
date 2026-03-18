@@ -71,11 +71,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `review-runtime-config-suggestion.js`로 저장된 제안의 `pending / hold / approved / rejected / applied` 상태 갱신 가능
   - `apply-runtime-config-suggestion.js`로 승인된 제안을 `config.yaml`에 반영하고 `applied_at`까지 자동 기록 가능
   - `validate-runtime-config-apply.js`로 적용 직후 suggestion 상태, health, 최근 실행 흐름을 함께 검증 가능
+- 알림 UX 실발송 검증 경로 정리
+  - 개인 채팅 / 그룹 채팅 / 루나 토픽 15 직접 전송이 모두 `ok=true`로 확인됐다
+  - 실제 수신 화면 기준으로 모바일 구분선/헤더 포맷을 검증할 수 있는 상태로 정리됐다
 
 ### 변경 사항 (changed)
 - 워커 웹 사이드바를 `관리자` / `마스터` 그룹으로 재정리하고, 시스템 전체 모니터링성 메뉴를 마스터 그룹으로 이동
 - 워커 `LLM API 현황`의 전역 selector payload 생성을 외부 report 스크립트 호출 대신 서버 내부 직접 조합 방식으로 안정화
 - `LLM API 현황` 화면에서 중복되던 워커 특화 카드와 중복 설명 문구를 정리하고, 전체 에이전트 리스트 중심 구조로 재배치
+- 공용 텔레그램 알림 포맷을 모바일 기준으로 재정리
+  - 긴 구분선은 모두 `───────────────` 15자 규칙으로 정규화
+  - queued notice 알림은 `headline` 우선 제목 구조로 바뀌어 `ℹ️ 안내 / ℹ️ luna 알림 / 요약:` 중복이 줄었다
+- 투자 장전 스크리닝 / 장 마감 매매일지 본문을 모바일형으로 압축
+  - 심볼 목록은 최대 개수까지만 보여주고 `외 N개`로 축약
+  - 투자 성향 / 매매 내역 / 보유 포지션 / 신호 요약 줄 수를 줄여 한 화면 가독성을 높였다
 - `speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `llm-selector-report.js`가 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 함께 출력하도록 확장
 - 투자팀 운영 모드 용어 정리
@@ -127,6 +136,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `forecast_results` 누락을 필수 오류에서 분리
 - 덱스터 AI 진단 문구를 낮은 심각도 이슈에 과장되지 않도록 보수화
 - 일일 운영 분석 리포트가 `fallback_probe_unavailable`을 장애처럼 다루지 않도록 보정
+- 모바일 텔레그램 알림 줄바꿈 이슈 보정
+  - 긴 `━/═/─/-` 구분선이 2줄로 꺾이던 문제를 공용 sender 직전 정규화로 회복
+- 메인봇 큐 notice 알림 헤더 중복 보정
+  - 동일 메시지 안에서 `안내`와 `bot 알림`이 반복되던 구조를 headline 우선 포맷으로 정리
+- 장전/장마감 투자 알림 과도한 본문 길이 보정
+  - 긴 심볼 나열, 상세 투자 성향, 매매/포지션 장문 나열을 요약형으로 축소
 
 ### 문서 (docs)
 - 개발계획에 `OpenClaw`를 `LLM API 현황` 조회 전용 그룹으로 추가하는 후속 작업을 내일 진행할 항목으로 기록
