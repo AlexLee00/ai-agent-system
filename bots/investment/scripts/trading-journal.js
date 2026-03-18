@@ -439,6 +439,20 @@ function formatTokenUsage(usageRows) {
   return lines.join('\n');
 }
 
+function buildCostEfficiencyNote(trades, usageRows) {
+  const totalCost = usageRows.reduce((sum, row) => sum + toNumber(row.total_cost), 0);
+  if (trades.length === 0 && totalCost >= 1) {
+    return `  ⚠️ 거래 없음 대비 분석 비용이 $${totalCost.toFixed(4)} 발생했습니다. no-trade high-cost 경로를 점검하세요.`;
+  }
+  if (trades.length > 0 && totalCost >= 1) {
+    const costPerTrade = totalCost / trades.length;
+    if (costPerTrade >= 0.25) {
+      return `  ⚠️ 거래 1건당 분석 비용이 $${costPerTrade.toFixed(4)}로 높습니다. 실행 효율을 함께 점검하세요.`;
+    }
+  }
+  return '';
+}
+
 function formatSignalFunnel({ signalRows, blockRows, blockCodeRows, analysisRows }) {
   if (!signalRows.length && !blockRows.length && !blockCodeRows.length && !analysisRows.length) return '  기록 없음';
 
@@ -567,15 +581,17 @@ async function main() {
   ];
 
   const report = lines.join('\n');
+  const costEfficiencyNote = buildCostEfficiencyNote(trades, tokenRows);
+  const finalReport = costEfficiencyNote ? `${report}\n\n${costEfficiencyNote}` : report;
 
-  console.log(report);
+  console.log(finalReport);
 
   if (sendTg) {
     // 텔레그램 4096자 제한 — 필요 시 분할
     const chunks = [];
     const MAX    = 3800;
-    for (let i = 0; i < report.length; i += MAX) {
-      chunks.push(report.slice(i, i + MAX));
+    for (let i = 0; i < finalReport.length; i += MAX) {
+      chunks.push(finalReport.slice(i, i + MAX));
     }
     for (const chunk of chunks) {
       await publishToMainBot({
