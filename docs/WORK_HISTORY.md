@@ -135,6 +135,33 @@
 - `node --check bots/worker/web/app/admin/monitoring/page.js`
 - `cd bots/worker/web && npm run build`
 
+### 12주차 후속 (2026-03-18) — selector advisor를 override 후보 추천으로 연결
+
+핵심 구현:
+- `scripts/llm-selector-override-suggestions.js` 추가
+- `llm-selector-report --json`의 `advice`를 읽어 `compare / switch_candidate` 대상만 추려 override 후보로 변환
+- 각 추천에 대해
+  - selector key
+  - current primary
+  - candidate
+  - config 파일
+  - runtime_config 경로
+  - suggested chain
+  를 함께 출력
+
+세션 맥락:
+- selector advisor는 이미 계산되고 UI에도 노출되지만, 운영자가 실제 override를 어디에 반영해야 하는지는 직접 추론해야 했다.
+- 이번 단계에서 자동 반영 없이도 “어느 config의 어느 path를 검토해야 하는가”를 바로 보여주는 추천 레이어를 추가했다.
+
+의사결정 이유:
+- 자산/운영과 연결된 모델 정책은 자동 변경보다 승인형 추천이 안전하다.
+- 이 구조는 추후 `runtime_config` 승인 플로우, 변경 이력, SaaS tenant별 정책 추천으로 그대로 확장할 수 있다.
+
+검증:
+- `node --check scripts/llm-selector-override-suggestions.js`
+- `node scripts/llm-selector-override-suggestions.js`
+- `node scripts/llm-selector-override-suggestions.js --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:
