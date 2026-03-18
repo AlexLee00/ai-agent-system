@@ -98,6 +98,28 @@
 - `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --json`
 - `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --write`
 
+### 12주차 후속 (2026-03-18) — 투자 runtime_config 제안 검토 상태 저장
+
+핵심 구현:
+- `review-runtime-config-suggestion.js` 추가
+- 저장된 제안 로그를 `pending / hold / approved / rejected / applied` 상태로 갱신 가능하게 정리
+- `runtime_config_suggestion_log`에 `reviewed_at`, `applied_at` 추적 컬럼 추가
+- 최근 제안 목록 조회와 단건 상태 변경을 같은 스크립트로 처리
+
+세션 맥락:
+- 제안 이력 저장까진 닫혔지만, 실제 운영에서는 어떤 제안을 승인했는지, 보류했는지, 적용했는지를 남길 경로가 추가로 필요했다.
+- 이번 단계에서 자산 연결 설정의 감사 흐름을 위해 최소한의 검토 이력 레이어를 붙였다.
+
+의사결정 이유:
+- 별도 승인 서비스나 UI를 먼저 만들기보다, 기존 로그 테이블과 CLI 검토 스크립트를 재사용하는 것이 내부 MVP와 운영 안정성에 더 적합하다.
+- `reviewed_at`, `applied_at`만 추가해도 추후 자동화, 세션 리뷰, SaaS 관리자 감사 추적까지 충분히 확장 가능하다.
+
+검증:
+- `node --check bots/investment/shared/db.js`
+- `node --check bots/investment/scripts/review-runtime-config-suggestion.js`
+- `node bots/investment/scripts/review-runtime-config-suggestion.js --list --json`
+- `node bots/investment/scripts/review-runtime-config-suggestion.js --id=<suggestion_log_id> --status=hold --note='운영 검토 유지' --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
