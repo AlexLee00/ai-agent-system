@@ -49,6 +49,7 @@ const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.j
 const AUTH_PROFILES_FILE     = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
 const SPEED_TEST_KEYS_FILE   = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
 const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-latest.json');
+const SPEED_TEST_HISTORY_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-history.jsonl');
 const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/investment/secrets.json');
 const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
@@ -459,30 +460,37 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
 }
 
 function writeLatestSnapshot(results, { applied, recommended, current } = {}) {
+  const payload = {
+    capturedAt: new Date().toISOString(),
+    prompt: TEST_PROMPT,
+    runs: runsArg,
+    current: current || null,
+    recommended: recommended || null,
+    applied: applied || null,
+    results: results.map((r, index) => ({
+      rank: index + 1,
+      modelId: r.modelId,
+      provider: r.provider,
+      label: r.label,
+      ttft: r.ttft,
+      total: r.total,
+      ok: r.ok === true,
+      error: r.error || null,
+    })),
+  };
   try {
     fs.mkdirSync(path.dirname(SPEED_TEST_LATEST_FILE), { recursive: true });
-    const payload = {
-      capturedAt: new Date().toISOString(),
-      prompt: TEST_PROMPT,
-      runs: runsArg,
-      current: current || null,
-      recommended: recommended || null,
-      applied: applied || null,
-      results: results.map((r, index) => ({
-        rank: index + 1,
-        modelId: r.modelId,
-        provider: r.provider,
-        label: r.label,
-        ttft: r.ttft,
-        total: r.total,
-        ok: r.ok === true,
-        error: r.error || null,
-      })),
-    };
     fs.writeFileSync(SPEED_TEST_LATEST_FILE, JSON.stringify(payload, null, 2) + '\n');
     log(dim(`\n  📝 최신 속도 스냅샷 저장: ${SPEED_TEST_LATEST_FILE}`));
   } catch (e) {
     log(dim(`\n  ⚠️ 속도 스냅샷 저장 실패: ${e.message}`));
+  }
+  try {
+    fs.mkdirSync(path.dirname(SPEED_TEST_HISTORY_FILE), { recursive: true });
+    fs.appendFileSync(SPEED_TEST_HISTORY_FILE, JSON.stringify(payload) + '\n');
+    log(dim(`  🗂️ 속도 히스토리 누적: ${SPEED_TEST_HISTORY_FILE}`));
+  } catch (e) {
+    log(dim(`  ⚠️ 속도 히스토리 저장 실패: ${e.message}`));
   }
 }
 
