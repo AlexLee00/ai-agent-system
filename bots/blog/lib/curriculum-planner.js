@@ -15,6 +15,7 @@
 const https                  = require('https');
 const pgPool                 = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback }   = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain }     = require('../../../packages/core/lib/llm-model-selector');
 const tg                     = require('../../../packages/core/lib/telegram-sender');
 const { runIfOps }           = require('../../../packages/core/lib/mode-guard');
 const {
@@ -201,10 +202,7 @@ ${trendSummary}
 
   try {
     const result = await callWithFallback({
-      chain: [
-        { provider: 'openai', model: 'gpt-4o',            maxTokens: 2000, temperature: 0.7 },
-        { provider: 'groq',   model: 'qwen/qwen3-32b',    maxTokens: 2000, temperature: 0.7 },
-      ],
+      chain: selectLLMChain('blog.curriculum.recommend'),
       systemPrompt: PLANNER_SYSTEM,
       userPrompt,
       logMeta: { team: 'blog', bot: 'blog-richer', requestType: 'curriculum_planning' },
@@ -344,9 +342,7 @@ async function generateCurriculum(topic, lectureCount = 100) {
   let parsed;
   try {
     const result = await callWithFallback({
-      chain: [
-        { provider: 'openai', model: 'gpt-4o', maxTokens: 8000, temperature: 0.5 },
-      ],
+      chain: selectLLMChain('blog.curriculum.generate'),
       systemPrompt: CURRICULUM_SYSTEM,
       userPrompt,
       logMeta: { team: 'blog', bot: 'blog-richer', requestType: 'curriculum_generate' },

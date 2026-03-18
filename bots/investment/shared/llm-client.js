@@ -89,21 +89,21 @@ try {
 
 export const PAPER_MODE = getTradingMode() === 'paper';
 
+const {
+  selectLLMPolicy,
+} = require('../../../packages/core/lib/llm-model-selector.js');
+
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
-export const GROQ_SCOUT_MODEL  = 'meta-llama/llama-4-scout-17b-16e-instruct';
-export const GPT_OSS_20B_MODEL = 'openai/gpt-oss-20b';  // OpenAI 오픈소스, Groq 경유
-export const OPENAI_PERF_MODEL = _cfg.openai?.model || 'gpt-4o';
-export const HAIKU_MODEL       = 'claude-haiku-4-5-20251001';
-
-// 루나 전용 — OpenAI gpt-4o 직행 (최고 품질 판단)
-const LUNA_AGENTS  = new Set(['luna']);
-
-// Groq 경쟁 에이전트 — gpt-oss-20b vs llama-4-scout 멀티 모델
-const GROQ_AGENTS  = new Set(['nemesis', 'oracle']);
-
-// Mini 우선 에이전트 — gpt-4o-mini 메인 + llama-4-scout 폴백 (비용 절감)
-const MINI_FIRST_AGENTS = new Set(['hermes', 'sophia', 'zeus', 'athena']);
+const DEFAULT_INVESTMENT_POLICY = selectLLMPolicy('investment.agent_policy', {
+  agentName: 'luna',
+  openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
+});
+export const GROQ_SCOUT_MODEL  = DEFAULT_INVESTMENT_POLICY.groqScoutModel;
+export const GPT_OSS_20B_MODEL = DEFAULT_INVESTMENT_POLICY.groqCompetitionModels[0];
+export const OPENAI_PERF_MODEL = DEFAULT_INVESTMENT_POLICY.openaiPerfModel;
+export const HAIKU_MODEL       = DEFAULT_INVESTMENT_POLICY.anthropicModel;
+export const OPENAI_MINI_MODEL = DEFAULT_INVESTMENT_POLICY.openaiMiniModel;
 
 // 멀티 모델 경쟁 활성 여부 (GROQ_AGENTS에만 적용, 기본: true)
 const DUAL_MODEL = process.env.LUNA_DUAL_MODEL !== 'false';
@@ -206,21 +206,21 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     const r = _billingGuard.getBlockReason();
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
-  // 루나 전용 → OpenAI gpt-4o 직행
-  if (LUNA_AGENTS.has(agentName)) {
+  const agentPolicy = selectLLMPolicy('investment.agent_policy', {
+    agentName,
+    openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
+  });
+  if (agentPolicy.route === 'openai_perf') {
     return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
   }
-  // Groq 경쟁 에이전트 (nemesis/oracle) → 멀티 모델 경쟁 (활성) 또는 Groq Scout (비활성)
-  if (GROQ_AGENTS.has(agentName)) {
+  if (agentPolicy.route === 'dual_groq') {
     return DUAL_MODEL
       ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens, options)
       : callGroq(agentName, systemPrompt, userPrompt, maxTokens);
   }
-  // Mini 우선 에이전트 (hermes/sophia/zeus/athena) → gpt-4o-mini 메인 + scout 폴백
-  if (MINI_FIRST_AGENTS.has(agentName)) {
+  if (agentPolicy.route === 'openai_mini') {
     return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens);
   }
-  // 속도 우선 에이전트 (argos 등) → Groq Scout
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
 }
 
@@ -384,7 +384,7 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
 // ─── OpenAI 호출 ─────────────────────────────────────────────────────
 
 async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
-  const MINI_MODEL = 'gpt-4o-mini';
+  const MINI_MODEL = OPENAI_MINI_MODEL;
   const t0 = Date.now();
   const doCall = async () => {
     const openai = getOpenAI();

@@ -9,23 +9,16 @@
  */
 
 const { callWithFallback } = require('./llm-fallback');
+const { selectLLMChain } = require('./llm-model-selector');
 
 function _buildChain(model, maxTokens) {
   if (Array.isArray(model)) return model;
 
   if (model === 'gpt4o') {
-    return [
-      { provider: 'openai', model: 'gpt-4o', maxTokens, temperature: 0.75 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.75 },
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: 0.75 },
-    ];
+    return selectLLMChain('core.chunked.gpt4o', { maxTokens });
   }
 
-  return [
-    { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: 0.75 },
-    { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.75 },
-    { provider: 'openai', model: 'gpt-4o', maxTokens, temperature: 0.75 },
-  ];
+  return selectLLMChain('core.chunked.default', { maxTokens });
 }
 
 /**

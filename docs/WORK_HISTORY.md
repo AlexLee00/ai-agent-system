@@ -2269,6 +2269,12 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `lib/archer/config.js`의 `LLM_CHAIN`으로 외부화해 이후 우선순위 변경을 설정 레이어에서 처리 가능하게 정리
 - 문서상 “아처는 Claude Sonnet 급 분석 품질 우선”이라는 기존 가이드와 실제 코드 경로를 다시 일치시킴
 
+### 공용 LLM 모델 셀렉터 1차 통합
+- `packages/core/lib/llm-model-selector.js` 추가
+- 제이, 아처, 클로드 리드, 워커 AI, 블로그 writer/social/curriculum, 공용 chunked-llm, 투자 agent 라우팅의 모델/폴백 기준을 selector key로 통합
+- 팀별 고유 정책은 유지하되, 체인 상수와 기본 모델 우선순위는 공용 selector에서 조회하도록 정리
+- 이후 운영상 모델 변경 시 개별 파일 하드코딩보다 selector 레이어 우선 수정이 가능해짐
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

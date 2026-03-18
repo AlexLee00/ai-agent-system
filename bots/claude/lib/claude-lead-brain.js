@@ -20,16 +20,13 @@
 
 const pgPool    = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const stateBus  = require('../../reservation/lib/state-bus');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → llama-4-scout (무료)
-const LLM_CHAIN = [
-  { provider: 'openai', model: 'gpt-4o',                                   maxTokens: 300, temperature: 0.1 },
-  { provider: 'openai', model: 'gpt-4o-mini',                              maxTokens: 300, temperature: 0.1 },
-  { provider: 'groq',   model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
-];
+const LLM_CHAIN = selectLLMChain('claude.lead.system_issue_triage');
 const MODEL   = LLM_CHAIN[0].model;  // 로그 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
