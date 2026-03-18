@@ -151,6 +151,8 @@ export async function initSchema() {
       suggestions       JSONB NOT NULL,
       review_status     TEXT DEFAULT 'pending',
       review_note       TEXT,
+      reviewed_at       TIMESTAMP,
+      applied_at        TIMESTAMP,
       captured_at       TIMESTAMP DEFAULT now()
     )
   `);
@@ -158,6 +160,12 @@ export async function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_runtime_config_suggestion_log_captured_at
     ON runtime_config_suggestion_log(captured_at DESC)
   `);
+  for (const [col, type] of [
+    ['reviewed_at', 'TIMESTAMP'],
+    ['applied_at', 'TIMESTAMP'],
+  ]) {
+    try { await run(`ALTER TABLE runtime_config_suggestion_log ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
+  }
 
   // signals 컬럼 추가 (없으면 추가)
   for (const [col, type] of [
@@ -601,11 +609,42 @@ export async function insertRuntimeConfigSuggestionLog({
 
 export async function getRecentRuntimeConfigSuggestionLogs(limit = 10) {
   return query(
-    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, captured_at
+    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, reviewed_at, applied_at, captured_at
      FROM runtime_config_suggestion_log
      ORDER BY captured_at DESC
      LIMIT $1`,
     [limit],
+  );
+}
+
+export async function getRuntimeConfigSuggestionLogById(id) {
+  return get(
+    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, reviewed_at, applied_at, captured_at
+     FROM runtime_config_suggestion_log
+     WHERE id = $1`,
+    [id],
+  );
+}
+
+export async function updateRuntimeConfigSuggestionLogReview(id, {
+  reviewStatus,
+  reviewNote = null,
+} = {}) {
+  if (!id || !reviewStatus) return null;
+
+  const normalizedStatus = String(reviewStatus).trim().toLowerCase();
+  const nowClause = `now()`;
+  const appliedClause = normalizedStatus === 'applied' ? nowClause : 'NULL';
+
+  return get(
+    `UPDATE runtime_config_suggestion_log
+     SET review_status = $1,
+         review_note = $2,
+         reviewed_at = ${nowClause},
+         applied_at = ${appliedClause}
+     WHERE id = $3
+     RETURNING id, review_status, review_note, reviewed_at, applied_at, captured_at`,
+    [normalizedStatus, reviewNote, id],
   );
 }
 
@@ -626,5 +665,6 @@ export default {
   insertRiskLog,
   insertAssetSnapshot, getLatestEquity, getEquityHistory,
   insertRuntimeConfigSuggestionLog, getRecentRuntimeConfigSuggestionLogs,
+  getRuntimeConfigSuggestionLogById, updateRuntimeConfigSuggestionLogReview,
   close,
 };

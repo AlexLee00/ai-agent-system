@@ -29,6 +29,7 @@
 - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
 - [bots/investment/scripts/backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
 - [bots/investment/scripts/runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)
+- [bots/investment/scripts/review-runtime-config-suggestion.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runtime-config-suggestion.js)
 
 ## 운영 설정
 
@@ -64,6 +65,7 @@
 - `runtime_config_suggestion_log`
   - 최근 설정 제안 스냅샷 저장
   - `market_summary`, `suggestions`, `actionable_count`, `review_status`, `review_note` 보존
+  - `reviewed_at`, `applied_at`으로 검토/반영 시점 추적
 - 대표 코드
   - `risk_rejected`
   - `safety_gate_blocked`
@@ -89,6 +91,8 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trad
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js --days=30
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js --days=14
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js --days=14 --write
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runtime-config-suggestion.js --list
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/review-runtime-config-suggestion.js --id=<suggestion_log_id> --status=approved --note='다음 주 재검토'
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 
