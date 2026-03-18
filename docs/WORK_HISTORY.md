@@ -35,6 +35,7 @@
 - `backfill-signal-block-reasons.js`가 빈 `block_reason`뿐 아니라 `block_code`, `block_meta`가 비어 있는 `legacy_*` 실패 이력까지 구조화 대상으로 확장
 - 과거 국내/해외/암호화폐 실패 14건에 `block_code`, `block_meta` 실제 반영
 - 자동매매 일지에서 실패 사유 옆에 `[min_order_notional]`, `[legacy_order_rejected]` 같은 구조화 코드가 함께 보이도록 확장
+- 자동매매 일지에 시장별 `실패 코드 요약` 섹션 추가
 
 세션 맥락:
 - 신규 실패는 이미 구조화 저장이 되지만, 과거 데이터는 `legacy_*` 문자열만 남아 있어 운영 튜닝 근거로 쓰기 어려웠다.

@@ -51,6 +51,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 투자 실패 원인 저장 구조 확장
   - `block_reason` + `block_code` + `block_meta`
   - `backfill-signal-block-reasons.js`로 과거 `legacy_*` 실패 이력까지 구조화 백필
+  - 자동매매 일지에 시장별 `실패 코드 요약` 추가
 - 주간 자동매매 리뷰 입력 강인성 보강
   - 보조 입력 실패 시 전체 리포트 중단 대신 가능한 범위에서 계속 진행
 - 덱스터 shadow mismatch 완화
