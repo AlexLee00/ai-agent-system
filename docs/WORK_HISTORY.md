@@ -195,6 +195,7 @@
 - `log-jay-gateway-experiment.js`를 추가해 gateway 로그, 제이 usage, health-report, primary 정합성을 한 번에 스냅샷으로 남길 수 있게 정리
 - 실험 로그는 기본적으로 `~/.openclaw/workspace/jay-gateway-experiments.jsonl`에 append되어, 이후 전환 전후 비교 근거로 재사용 가능
 - `jay-gateway-experiment-review.js`를 추가해 누적 스냅샷을 `hold / compare / sync_first` 권장 판단으로 읽을 수 있게 정리
+- `jay-gateway-experiment-daily.js`를 추가해 기록과 리뷰를 한 번에 실행하는 일일 운영 진입점을 고정
 
 세션 맥락:
 - 이전 단계까지는 “현재 기준값과 실제값이 맞는지”를 확인하는 레이어를 만들었다.
