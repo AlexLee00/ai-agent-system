@@ -162,6 +162,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - 실험 로그 스냅샷: [log-jay-gateway-experiment.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/log-jay-gateway-experiment.js)
   - 실험 리뷰: [jay-gateway-experiment-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-review.js)
   - 자동화 진입점: [jay-gateway-experiment-daily.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js)
+  - 전환 전후 비교: [jay-gateway-change-compare.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-change-compare.js)
   - 변경 원칙: 정합성이 맞고 헬스가 안정이면 즉시 변경보다 유지가 우선, 전환은 비교 근거 확보 후 진행
   - 전환 단계:
     - `hold`: 정합성 일치 + 오케스트레이터 health-report 안정
@@ -172,6 +173,10 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
     2. `jay-gateway-experiment-daily.js --hours=24 --days=7`
     3. 필요하면 `jay-llm-daily-review.js --days=1`과 함께 비교
     4. 그 뒤에만 실제 primary 변경 검토
+  - 실제 전환이 있었다면:
+    1. 전환 시각 기록
+    2. `jay-gateway-change-compare.js --pivot=<전환시각> --before-hours=24 --after-hours=24`
+    3. `improved / neutral / regressed` 판정 후 유지 여부 결정
 
 ### Claude / Dexter
 

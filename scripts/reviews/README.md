@@ -7,6 +7,7 @@
 - `jay-llm-daily-review.js`
 - `jay-gateway-experiment-daily.js`
 - `jay-gateway-experiment-review.js`
+- `jay-gateway-change-compare.js`
 - `llm-model-daily-review.js`
 - `error-log-daily-review.js`
 - `ska-sales-forecast-daily-review.js`
