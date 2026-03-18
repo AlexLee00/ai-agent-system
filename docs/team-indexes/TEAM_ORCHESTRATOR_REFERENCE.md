@@ -33,6 +33,10 @@
   - 의미: `runtime_config.jayModels.gatewayPrimary`와 `~/.openclaw/openclaw.json`의 실제 primary 일치 여부를 확인
   - 후보 프로필: Gemini 유지 / Groq GPT-OSS / Anthropic Haiku
   - 현재 권장: 정합성이 맞고 헬스가 안정이면 Gemini Flash 유지, 변경은 비교 근거가 쌓인 뒤 검토
+  - 전환 기준:
+    - `hold`: 정합성 일치 + health-report `hold` 구간이면 유지
+    - `compare`: rate limit 재발, fallback 의존 증가, 체감 응답속도 불만 누적 시 후보 비교
+    - `switch`: 비교 로그에서 더 낮은 rate limit, 더 나은 응답시간, 더 안정적 성공률이 확인되면 전환
   - 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화 가능
 
 ## 핵심 진입점

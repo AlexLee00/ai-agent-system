@@ -45,6 +45,23 @@ function buildPayload() {
         action: 'sync_first',
         reason: '현재 기준값과 실제 OpenClaw primary가 다릅니다. 모델 변경 실험 전에 먼저 정합성을 맞춰야 합니다.',
       };
+  const experimentCriteria = [
+    {
+      stage: 'hold',
+      when: 'runtime_config와 openclaw.json이 일치하고, 오케스트레이터 health-report가 hold 구간일 때',
+      focus: '현재 primary 유지, 제이 일일 LLM 리뷰와 gateway rate limit 재발 여부 관찰',
+    },
+    {
+      stage: 'compare',
+      when: 'gateway rate limit이 반복되거나, fallback 의존이 늘거나, 체감 응답속도 불만이 누적될 때',
+      focus: 'Gemini 유지안과 Groq/Anthropic 후보를 비교한다. 핵심 지표는 응답시간, rate limit 빈도, fallback 진입률, 운영비용이다.',
+    },
+    {
+      stage: 'switch',
+      when: '비교 로그에서 대체 후보가 더 낮은 rate limit, 더 나은 응답시간 또는 더 안정적인 성공률을 보이고, 정합성 점검이 완료됐을 때',
+      focus: 'runtime_config 변경 → openclaw.json 동기화(--apply) → 헬스/리뷰 재관찰 순서로 전환한다.',
+    },
+  ];
   return {
     runtimePrimary,
     openclawConfigReadable: gatewayState.ok,
@@ -55,6 +72,7 @@ function buildPayload() {
     aligned,
     recommendation,
     candidateProfiles,
+    experimentCriteria,
     error: gatewayState.error || null,
   };
 }
@@ -83,6 +101,13 @@ function printHuman(payload) {
     lines.push(`  configured: ${profile.configured ? 'yes' : 'no'}`);
     lines.push(`  pros: ${profile.pros.join(' / ')}`);
     lines.push(`  cons: ${profile.cons.join(' / ')}`);
+  }
+  lines.push('');
+  lines.push('전환 실험 기준:');
+  for (const criterion of payload.experimentCriteria) {
+    lines.push(`- ${criterion.stage}`);
+    lines.push(`  when: ${criterion.when}`);
+    lines.push(`  focus: ${criterion.focus}`);
   }
   if (!payload.aligned) {
     lines.push('');
