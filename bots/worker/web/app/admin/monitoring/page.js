@@ -12,6 +12,13 @@ const llmModeLabels = {
   full: 'FULL',
 };
 
+const adviceTone = {
+  hold: 'bg-emerald-100 text-emerald-700',
+  compare: 'bg-amber-100 text-amber-700',
+  switch_candidate: 'bg-rose-100 text-rose-700',
+  observe: 'bg-slate-200 text-slate-700',
+};
+
 export default function WorkerMonitoringPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -370,6 +377,21 @@ export default function WorkerMonitoringPage() {
                       <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">{selector.key}</span>
                     </div>
                     <p className="mt-2 text-xs text-slate-500">{selector.description}</p>
+                    {selector.advice ? (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${adviceTone[selector.advice.decision] || adviceTone.observe}`}>
+                            {selector.advice.decision}
+                          </span>
+                          {selector.advice.candidate ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">
+                              candidate {selector.advice.candidate}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-2 text-xs text-slate-600">{selector.advice.reason}</p>
+                      </div>
+                    ) : null}
                     <div className="mt-3 space-y-2">
                       {(selector.chain || []).map((entry) => (
                         <div key={`${selector.key}-${entry.role}`} className="rounded-xl bg-slate-50 px-3 py-2">
@@ -539,6 +561,21 @@ export default function WorkerMonitoringPage() {
                           </div>
                         </div>
                         <div className="mt-2 space-y-1">
+                          {entry.advice ? (
+                            <div className="mb-2 rounded-lg bg-white px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${adviceTone[entry.advice.decision] || adviceTone.observe}`}>
+                                  {entry.advice.decision}
+                                </span>
+                                {entry.advice.candidate ? (
+                                  <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] text-slate-600">
+                                    candidate {entry.advice.candidate}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-[11px] text-slate-600">{entry.advice.reason}</p>
+                            </div>
+                          ) : null}
                           {(entry.chain || []).map((chainEntry) => (
                             <p key={`${entry.key}-${chainEntry.role}`} className="break-all text-[11px] text-slate-600">
                               <span className="font-semibold uppercase tracking-wide text-slate-500">{chainEntry.role}</span>
