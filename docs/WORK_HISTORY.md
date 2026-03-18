@@ -2285,6 +2285,11 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - 워커 모니터링 DB의 `preferredApi`는 provider 선택만 담당하고, 각 provider의 실제 모델명은 selector override가 결정하는 구조로 경계 정리
 - 공용 selector를 중심으로 `기본 체인 + runtime_config override + 운영 선호값(DB)`가 계층적으로 결합되도록 구조를 맞춤
 
+### 공용 LLM 모델 셀렉터 4차 통합
+- 블로그 `runtime_config.llmSelectorOverrides`를 추가해 `blog.pos.writer`, `blog.gems.writer`, `blog.social.*`, `blog.star.*`, `blog.curriculum.*` 경로를 운영 설정으로 제어 가능하게 정리
+- 블로그 생성 계열은 writer/social/curriculum/stage별로 selector key를 유지하고, 실제 모델 체인은 config override로만 바꾸는 구조로 경계 정리
+- 이후 블로그 발행 실험이나 품질 튜닝 시 개별 파일 하드코딩 수정 없이 `config.json` 우선 조정이 가능해짐
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

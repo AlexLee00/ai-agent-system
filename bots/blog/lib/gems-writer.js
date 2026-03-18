@@ -15,12 +15,14 @@ const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
+const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
-const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer');
+const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer', {
+  policyOverride: getBlogLLMSelectorOverrides()['blog.gems.writer'],
+});
 
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
 

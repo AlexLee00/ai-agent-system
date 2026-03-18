@@ -1,6 +1,7 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 /**
  * bots/blog/lib/social.js — 소셜(SOCIAL) 봇
@@ -48,6 +49,7 @@ const SUMMARIZE_SYSTEM = `
  * @returns {Array<{section, summary, charCount}>}
  */
 async function summarizeForInsta(content, count = 3) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   const userPrompt = `
 다음 블로그 포스팅에서 가장 핵심적인 섹션 ${count}개를 선정하고,
 각 섹션을 15~20자 이내 인스타 카드용 한줄 요약으로 변환하세요.
@@ -57,7 +59,9 @@ ${content.slice(0, 6000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: selectLLMChain('blog.social.summarize'),
+    chain: selectLLMChain('blog.social.summarize', {
+      policyOverride: selectorOverrides['blog.social.summarize'],
+    }),
     systemPrompt: SUMMARIZE_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_summarize' },
@@ -106,6 +110,7 @@ const REQUIRED_HASHTAGS = ['#개발자일상', '#IT블로그', '#승호아빠', 
  * @returns {{ caption, hashtags, cta, fullText }}
  */
 async function generateInstaCaption(content, title, category) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
 
@@ -117,7 +122,9 @@ ${content.slice(0, 3000)}
 `.trim();
 
   const result = await callWithFallback({
-    chain: selectLLMChain('blog.social.caption'),
+    chain: selectLLMChain('blog.social.caption', {
+      policyOverride: selectorOverrides['blog.social.caption'],
+    }),
     systemPrompt: CAPTION_SYSTEM,
     userPrompt,
     logMeta: { team: 'blog', bot: 'social', requestType: 'insta_caption' },
