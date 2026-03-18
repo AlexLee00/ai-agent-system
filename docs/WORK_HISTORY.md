@@ -162,6 +162,34 @@
 - `node scripts/llm-selector-override-suggestions.js`
 - `node scripts/llm-selector-override-suggestions.js --json`
 
+### 12주차 후속 (2026-03-18) — override 추천을 제이 명령과 워커 화면에 노출
+
+핵심 구현:
+- 제이 `/llm-selectors` 응답에 `llm-selector-override-suggestions.js` 결과를 함께 붙여 출력
+- 워커 `/admin/monitoring`의 전 팀 selector 개요에 `override 추천 후보` 카드 추가
+- 추천 후보별로
+  - decision
+  - current primary
+  - candidate
+  - config 파일
+  - runtime_config path
+  - reason
+  을 운영자가 바로 읽을 수 있게 정리
+
+세션 맥락:
+- override 추천 스크립트는 이미 있었지만, 운영자가 별도 스크립트를 직접 실행해야만 볼 수 있었다.
+- 이번 단계에서 제이 명령과 워커 운영 화면이 추천까지 함께 보여주는 실전 운영 진입점이 되었다.
+
+의사결정 이유:
+- 내부 MVP 기준으로는 별도 새 화면보다 기존 운영 경로에 추천을 얹는 것이 더 빠르고 안정적이다.
+- 이 구조는 추후 승인/보류 이력, override 적용 워크플로, SaaS 관리자 정책 검토 UI로 그대로 확장하기 좋다.
+
+검증:
+- `node --check bots/orchestrator/src/router.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 워커 문서 재사용 품질 신호 추가
 
 핵심 구현:

@@ -609,6 +609,11 @@ async function getGlobalSelectorSummary() {
   const script = path.join(root, 'scripts', 'llm-selector-report.js');
   const payload = await runNodeScriptJson(script, ['--json'], 60_000);
   if (!payload) return null;
+  const overrideSuggestionPayload = await runNodeScriptJson(
+    path.join(root, 'scripts', 'llm-selector-override-suggestions.js'),
+    ['--json'],
+    60_000,
+  ).catch(() => null);
 
   return {
     speed_test: payload.speedTest
@@ -618,6 +623,12 @@ async function getGlobalSelectorSummary() {
           recommended: payload.speedTest.recommended || null,
         }
       : null,
+    override_suggestions: {
+      count: Number(overrideSuggestionPayload?.count || 0),
+      suggestions: Array.isArray(overrideSuggestionPayload?.suggestions)
+        ? overrideSuggestionPayload.suggestions.slice(0, 6)
+        : [],
+    },
     groups: [
       buildSelectorGroup('Jay', [
         { key: 'orchestrator.jay.intent', label: 'Intent', description: payload.jay?.intent, advice: payload.advice?.jay?.intent || null },
