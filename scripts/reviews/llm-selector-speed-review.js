@@ -78,9 +78,10 @@ function buildModelStats(entries) {
     });
 }
 
-function buildReview(entries, days) {
+function buildReview(entries, days, inputPath = HISTORY_FILE) {
+  const rows = Array.isArray(entries) ? entries : readHistory(inputPath);
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
-  const filtered = entries.filter((entry) => {
+  const filtered = rows.filter((entry) => {
     const captured = new Date(entry.capturedAt || 0).getTime();
     return Number.isFinite(captured) && captured >= cutoff;
   });
@@ -90,7 +91,7 @@ function buildReview(entries, days) {
 
   return {
     days,
-    historyFile: HISTORY_FILE,
+    historyFile: inputPath,
     snapshotCount: filtered.length,
     latestCapturedAt: latest?.capturedAt || null,
     currentPrimary: latest?.current || null,
@@ -128,7 +129,7 @@ function printReview(review) {
 function main() {
   const { days, input, json } = parseArgs();
   const entries = readHistory(input);
-  const review = buildReview(entries, days);
+  const review = buildReview(entries, days, input);
   if (json) {
     process.stdout.write(`${JSON.stringify(review, null, 2)}\n`);
     return;
@@ -136,4 +137,13 @@ function main() {
   printReview(review);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  parseArgs,
+  readHistory,
+  buildReview,
+  printReview,
+};
