@@ -27,18 +27,18 @@ const ALERT_LABELS = { 1: '안내', 2: '경고', 3: '높음', 4: '긴급 장애'
  * @param {object} item mainbot_queue 행
  */
 function formatSingle(item) {
-  const icon   = ALERT_ICONS[item.alert_level] || '⚪';
-  const label  = ALERT_LABELS[item.alert_level] || '?';
   const headline = getEventHeadline(item);
   const action = getEventAction(item) || '상세 내용 확인';
   const linkLines = getEventLinkLines(item);
+  const title = headline || `${item.from_bot} 알림`;
+  const summary = headline ? '' : (item.event_type || '');
   return renderNoticeEvent(buildNoticeEvent({
     from_bot: item.from_bot,
     team: item.team,
     event_type: item.event_type,
     alert_level: item.alert_level,
-    title: `${icon} ${item.from_bot} 알림`,
-    summary: headline ? `${label} · ${headline}` : `${label} · ${item.event_type}`,
+    title,
+    summary,
     details: [...getEventDetailLines(item), ...linkLines],
     action,
     footer: '추가 점검: /ops-health',
