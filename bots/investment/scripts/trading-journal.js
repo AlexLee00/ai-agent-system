@@ -131,14 +131,15 @@ async function fetchSignalFunnel(fromDate, toDate) {
     db.query(`
       SELECT
         exchange,
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
         COALESCE(NULLIF(block_reason, ''), 'none') AS reason,
         COUNT(*) AS cnt
       FROM signals
       WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
         AND status IN ('failed', 'rejected', 'expired')
-      GROUP BY exchange, 2
+      GROUP BY exchange, 2, 3
       ORDER BY exchange, cnt DESC
-      LIMIT 8
+      LIMIT 12
     `).catch(() => []),
     db.query(`
       SELECT
@@ -488,7 +489,10 @@ function formatSignalFunnel({ signalRows, blockRows, analysisRows }) {
     if (marketBlockRows.length > 0) {
       lines.push('    주요 차단/실패 사유');
       for (const row of marketBlockRows) {
-        lines.push(`      ${row.reason}: ${Number(row.cnt || 0)}건`);
+        const code = row.block_code && row.block_code !== 'legacy_unclassified'
+          ? ` [${row.block_code}]`
+          : '';
+        lines.push(`      ${row.reason}${code}: ${Number(row.cnt || 0)}건`);
       }
     }
 

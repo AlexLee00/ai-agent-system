@@ -29,6 +29,27 @@
 - `node bots/worker/migrations/018-monitoring-history.js`
 - `node bots/worker/scripts/health-report.js --json`
 
+### 12주차 후속 (2026-03-18) — 투자 실패 이력 구조화 백필
+
+핵심 구현:
+- `backfill-signal-block-reasons.js`가 빈 `block_reason`뿐 아니라 `block_code`, `block_meta`가 비어 있는 `legacy_*` 실패 이력까지 구조화 대상으로 확장
+- 과거 국내/해외/암호화폐 실패 14건에 `block_code`, `block_meta` 실제 반영
+- 자동매매 일지에서 실패 사유 옆에 `[min_order_notional]`, `[legacy_order_rejected]` 같은 구조화 코드가 함께 보이도록 확장
+
+세션 맥락:
+- 신규 실패는 이미 구조화 저장이 되지만, 과거 데이터는 `legacy_*` 문자열만 남아 있어 운영 튜닝 근거로 쓰기 어려웠다.
+- 이번 단계에서 과거 이력까지 최소한 코드형 분류와 실행 맥락을 채워, 일지와 후속 자동화가 같은 기준으로 읽을 수 있게 만들었다.
+
+의사결정 이유:
+- 새로운 분석 레이어를 만들기보다 기존 `signals` 테이블의 `block_code`, `block_meta`를 백필하는 것이 내부 MVP와 데이터 일관성에 더 유리하다.
+- 상세 원인 복원이 불가능한 건 `legacy_*` 코드로 남기되, 적어도 시장/심볼/행동/금액 맥락은 구조화해 두는 것이 추후 SaaS 리포트에도 도움이 된다.
+
+검증:
+- `node --check bots/investment/scripts/backfill-signal-block-reasons.js`
+- `node --check bots/investment/scripts/trading-journal.js`
+- `node bots/investment/scripts/backfill-signal-block-reasons.js --days=30`
+- `node bots/investment/scripts/trading-journal.js --days=7`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:

@@ -48,6 +48,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### 버그 수정 (fix)
 - 투자 실패 원인 저장 구조 확장
   - `block_reason` + `block_code` + `block_meta`
+  - `backfill-signal-block-reasons.js`로 과거 `legacy_*` 실패 이력까지 구조화 백필
 - 주간 자동매매 리뷰 입력 강인성 보강
   - 보조 입력 실패 시 전체 리포트 중단 대신 가능한 범위에서 계속 진행
 - 덱스터 shadow mismatch 완화
@@ -65,6 +66,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### 문서 (docs)
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
 - 워커 모니터링 운영 지표와 `018-monitoring-history` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
+- 투자팀 참조 문서에 `legacy_order_rejected`, `legacy_executor_failed` 코드와 백필 스크립트 경로 반영
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신

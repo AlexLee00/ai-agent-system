@@ -27,6 +27,7 @@
 - [bots/investment/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
 - [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
 - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
+- [bots/investment/scripts/backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
 
 ## 운영 설정
 
@@ -71,6 +72,8 @@
   - `position_mode_conflict`
   - `paper_fallback`
   - `broker_execution_error`
+  - `legacy_order_rejected`
+  - `legacy_executor_failed`
 
 ## 자주 쓰는 명령어
 
@@ -78,6 +81,7 @@
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js --days=1
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js --dry-run
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js --days=30
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 
