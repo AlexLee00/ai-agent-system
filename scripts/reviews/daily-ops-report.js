@@ -252,6 +252,18 @@ function buildLocalFallbackMeta(mergedHealth, hasFallbackSignal) {
   };
 }
 
+function classifySourceMode(source, data = {}) {
+  const normalized = String(source || '').toLowerCase();
+  if (normalized === 'health-report') return 'live';
+  if (normalized === 'fallback_probe') return 'endpoint_fallback';
+  if (normalized === 'health_report_failed_local_fallback') return 'local_fallback';
+  if (normalized === 'error-review') return 'auxiliary_review';
+  if (normalized === 'auxiliary_review_failed') return 'auxiliary_review_failed';
+  if (normalized.includes('probe_unavailable')) return 'unavailable';
+  if (data?.localFallback?.enabled) return 'local_fallback';
+  return 'unknown';
+}
+
 async function buildFallbackTeamResult(team, healthError = null, launchctlRows = {}) {
   const launchdHealth = buildLaunchdTeamHealth(team, launchctlRows);
   const fileHealth = buildFileActivityTeamHealth(team);
@@ -356,9 +368,11 @@ async function buildFallbackTeamResult(team, healthError = null, launchctlRows =
 function toSummaryLine(team, data) {
   const decision = data?.decision || {};
   const service = data?.serviceHealth || {};
+  const source = data?.source || 'health-report';
   return {
     team,
-    source: data?.source || 'health-report',
+    source,
+    sourceMode: classifySourceMode(source, data),
     level: decision.level || 'unknown',
     recommended: Boolean(decision.recommended),
     okCount: Number(service.okCount || 0),
@@ -377,6 +391,7 @@ function buildRecommendations(teamSummaries, auxiliary) {
   const dbSandboxWithFallbackTeams = dbSandboxTeams.filter((item) => item.localFallback?.enabled);
   const dbSandboxWithoutFallbackTeams = dbSandboxTeams.filter((item) => !item.localFallback?.enabled);
   const noProbeTeams = teamSummaries.filter((item) => item.failureCode === 'no_probe_configured');
+  const unavailableTeams = teamSummaries.filter((item) => item.sourceMode === 'unavailable');
 
   if (dbSandboxWithFallbackTeams.length) {
     lines.push(`- ${dbSandboxWithFallbackTeams.map((item) => item.team).join(', ')} 팀은 health-report DB 제한이 있지만 local fallback 활동 신호는 살아 있습니다. 운영 런타임 DB 제한 해소 전까지는 fallback 신호를 보조 기준으로 보세요.`);
@@ -388,6 +403,10 @@ function buildRecommendations(teamSummaries, auxiliary) {
 
   if (noProbeTeams.length) {
     lines.push(`- ${noProbeTeams.map((item) => item.team).join(', ')} 팀은 fallback probe가 없어 관측 공백이 큽니다. launchd 외 대체 신호를 설계하는 편이 좋습니다.`);
+  }
+
+  if (unavailableTeams.length && !dbSandboxWithoutFallbackTeams.length) {
+    lines.push(`- ${unavailableTeams.map((item) => item.team).join(', ')} 팀은 현재 관측 source가 unavailable 상태라, endpoint 또는 local fallback 신호를 더 보강하는 편이 좋습니다.`);
   }
 
   for (const team of warnedTeams) {
@@ -423,6 +442,7 @@ function buildActiveIssues(teamSummaries, auxiliary) {
         team: item.team,
         level: item.level,
         source: item.source,
+        sourceMode: item.sourceMode || 'unknown',
         summary: item.reasons[0] || '원인 확인 필요',
       });
     }
@@ -436,6 +456,7 @@ function buildActiveIssues(teamSummaries, auxiliary) {
       team: 'global',
       level: 'medium',
       source: 'error-review',
+      sourceMode: classifySourceMode('error-review'),
       summary: `반복 오류 상위: ${repeated.label} / ${repeated.categoryLabel} ${Number(repeated.count || 0).toLocaleString()}회`,
     });
   }
@@ -468,6 +489,7 @@ function buildInputFailures(teamSummaries, auxiliary) {
       kind: 'team_health',
       target: item.team,
       source: item.source,
+      sourceMode: item.sourceMode || 'unknown',
       code: item.failureCode || classifyHealthError(item.healthError || item.source, item.source),
       error: item.healthError || item.reasons[0] || '입력 실패',
       fallbackStatus: item.localFallback?.enabled ? item.localFallback.summary : null,
@@ -497,6 +519,7 @@ function buildTextReport(report) {
   } else {
     for (const item of report.activeIssues) {
       lines.push(`- ${item.team}: level=${item.level}, source=${item.source}`);
+      lines.push(`  sourceMode: ${item.sourceMode || 'unknown'}`);
       lines.push(`  사유: ${item.summary}`);
     }
   }
@@ -519,7 +542,7 @@ function buildTextReport(report) {
     lines.push('- 없음');
   } else {
     for (const item of report.inputFailures) {
-      lines.push(`- ${item.target}: source=${item.source}, code=${item.code || 'unknown_error'}`);
+      lines.push(`- ${item.target}: source=${item.source}, sourceMode=${item.sourceMode || 'unknown'}, code=${item.code || 'unknown_error'}`);
       lines.push(`  오류: ${item.error}`);
       if (item.fallbackStatus) lines.push(`  보조 신호: ${item.fallbackStatus}`);
     }

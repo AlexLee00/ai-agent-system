@@ -689,6 +689,7 @@
   - `ska-sales-forecast-daily-review.js`도 `requestedDays / effectiveDays`를 함께 출력하도록 맞춰 일일/주간 포맷을 통일
   - `daily-ops-report.js`가 `localFallback` 메타를 추가해 investment / reservation의 활동 신호를 별도 축으로 읽을 수 있게 정리
   - `daily-ops-report.js` 추천 문구가 `db_sandbox_restricted`와 `local fallback` 상태를 분리해 운영 액션으로 직접 연결되도록 정리
+  - `daily-ops-report.js`가 `sourceMode`를 추가해 팀 health source를 `unavailable / local_fallback / auxiliary_review` 기준으로 표준화하고, 실제 장애와 관측 경로 차이를 같은 리포트 안에서 분리해 읽을 수 있게 정리
 
 ### 2026-03-14
 

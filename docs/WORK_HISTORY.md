@@ -2623,6 +2623,12 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - telegram-sender에서 긴 구분선/연속 공백 정규화
 - 루나 실시간 알림과 주간 리뷰 메시지의 구분선/근거 길이 축약
 
+### 자동화 리포트 health source 표준화
+- `daily-ops-report.js`에 `sourceMode`를 추가해 팀 health source를 `unavailable / local_fallback / auxiliary_review` 기준으로 표준화
+- `investment / reservation`은 `db_sandbox_restricted`이지만 `local fallback 활동 신호`가 살아 있는 팀으로 분리해 읽을 수 있게 정리
+- `orchestrator / worker / claude / blog`는 현재 `sourceMode=unavailable`로 표시돼, 실제 health 관측 공백이 더 큰 축이라는 점을 운영 리포트에서 바로 읽을 수 있게 정리
+- global `error-review`는 `sourceMode=auxiliary_review`로 표시해 보조 운영 신호와 팀 health source를 같은 축으로 혼동하지 않게 정리
+
 ### 스카팀 취소 루틴 버그 수정
 page.click(body)→Escape 키 수정(상세보기 블러 문제) | toCancelKey bookingId 기반 개선(슬롯 재예약 키 충돌 방지)
 
