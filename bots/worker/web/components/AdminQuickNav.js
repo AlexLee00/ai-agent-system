@@ -11,6 +11,7 @@ const DEFAULT_ITEMS = [
   { href: '/admin/intents', label: '인텐트 학습' },
   { href: '/admin/companies', label: '업체 관리' },
   { href: '/admin/users', label: '사용자 관리' },
+  { href: '/admin/monitoring', label: '워커 모니터링' },
 ];
 
 export default function AdminQuickNav({ items = DEFAULT_ITEMS, title = '운영 바로가기' }) {

@@ -6,6 +6,27 @@
 
 ## 2026-03-18
 
+### 워커 모니터링 + LLM API 선택
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/lib/llm-api-monitoring.js` | ✅ |
+| `node --check bots/worker/lib/ai-client.js` | ✅ |
+| `node --check bots/worker/web/server.js` | ✅ |
+| `node --check bots/worker/scripts/setup-worker.js` | ✅ |
+| `cd bots/worker/web && npm run build` | ✅ |
+| `node bots/worker/migrations/017-system-preferences.js` | ✅ |
+| `node bots/worker/scripts/health-report.js --json` | ✅ |
+| `curl -s http://127.0.0.1:4001/admin/monitoring` | ✅ |
+
+### 투자 실행 모드 / 실패 원인 구조화 / 덱스터 경고 보정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/investment/scripts/trading-journal.js --days=7` | ✅ |
+| `node bots/investment/scripts/weekly-trade-review.js --dry-run` (실제 PostgreSQL 환경) | ✅ |
+| `node bots/claude/scripts/health-report.js --json` | ✅ |
+
 ### 스카 shadow 비교 모델 + 운영 리뷰 입력 구조
 
 | 테스트 | 결과 |

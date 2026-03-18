@@ -4,6 +4,37 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 + 투자 실행 모드 정합성 + 덱스터 경고 정리
+
+핵심 구현:
+- 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
+- `/admin/monitoring` 페이지에서 현재 워커 LLM API 적용 내용과 기본 provider 선택 드롭다운 추가
+- `worker.system_preferences` 테이블 신설로 워커 웹 기본 LLM API 선택값 저장
+- 워커 관리자 분석 경로(`/api/ai/ask`, `/api/ai/revenue-forecast`)가 선택한 provider를 우선 사용하도록 반영
+- 투자팀 `executionMode` / `brokerAccountMode` 기준을 코드와 문서에 정리
+- 투자 실패 원인 저장을 `block_reason + block_code + block_meta` 구조로 확장
+- `weekly-trade-review.js`를 보조 입력 실패에 더 강인하게 보정
+- 덱스터 `shadow mismatch`를 저위험 코드 무결성 이슈에서 `soft match`로 재해석해 과장 경고 정리
+
+세션 맥락:
+- 워커는 문서 재사용 추적 이후, 운영자가 실제 LLM 공급자 경로를 제어할 수 있는 관리 레이어까지 올라왔다.
+- 투자팀은 자산과 직접 연결되는 실행 모드 의미를 다시 고정하면서 운영 리포트 해석 기준을 정리했다.
+- 덱스터는 false positive를 줄여 실제 운영 경고만 남기도록 보정했다.
+
+의사결정 이유:
+- 워커 LLM 모니터링은 기존 `llm_mode` 정책을 깨지 않고, 관리자 분석 경로의 기본 provider만 별도 축으로 제어하는 것이 안전하다.
+- 투자팀은 `paper/live`만으로는 자산/계좌 의미가 섞여서, `executionMode`와 `brokerAccountMode`를 분리하는 쪽이 운영과 SaaS 확장 모두에 유리하다.
+- 덱스터는 `monitor`와 `ignore` 차이를 모두 오류로 올리면 운영 피로도가 커지므로, 저위험 dev-state는 완화해서 보는 것이 맞다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/lib/ai-client.js`
+- `node --check bots/worker/web/server.js`
+- `cd bots/worker/web && npm run build`
+- `node bots/worker/scripts/health-report.js --json`
+- `node bots/investment/scripts/trading-journal.js --days=7`
+- `node bots/claude/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-18) — 스카 shadow 비교 + 워커 문서 재사용 추적
 
 핵심 구현:

@@ -9,6 +9,10 @@
 
 const path = require('path');
 const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
+const {
+  getWorkerMonitoringPreference,
+  isProviderConfigured,
+} = require('./llm-api-monitoring');
 
 function buildSingleChain(model, maxTokens) {
   if (model.startsWith('groq/')) {
@@ -37,16 +41,47 @@ async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
 }
 
 async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, logMeta = {}) {
+  const preferredApi = await getWorkerMonitoringPreference().catch(() => 'groq');
+  const primaryChain = [];
+
+  if (preferredApi === 'anthropic' && isProviderConfigured('anthropic')) {
+    primaryChain.push({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 });
+  } else if (preferredApi === 'openai' && isProviderConfigured('openai')) {
+    primaryChain.push({ provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 });
+  } else if (preferredApi === 'gemini' && isProviderConfigured('gemini')) {
+    primaryChain.push({ provider: 'gemini', model: 'gemini-2.5-flash', maxTokens, temperature: 0.1 });
+  } else if (isProviderConfigured('groq')) {
+    primaryChain.push({ provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 });
+  }
+
+  const fallbackChain = [
+    { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 },
+    { provider: 'gemini', model: 'gemini-2.5-flash', maxTokens, temperature: 0.1 },
+    { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 },
+  ].filter((entry, index, array) => {
+    const configured = isProviderConfigured(entry.provider);
+    if (!configured) return false;
+    return array.findIndex((candidate) => candidate.provider === entry.provider) === index;
+  });
+
+  const chain = [...primaryChain];
+  for (const entry of fallbackChain) {
+    if (!chain.some((candidate) => candidate.provider === entry.provider)) {
+      chain.push(entry);
+    }
+  }
+
   const result = await callWithFallback({
-    chain: [
+    chain: chain.length ? chain : [
       { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 },
     ],
     systemPrompt: system,
     userPrompt: user,
-    logMeta: { team: 'worker', bot: 'ai-client', requestType: 'ai_question', ...logMeta },
+    logMeta: { team: 'worker', bot: 'ai-client', requestType: 'ai_question', preferredApi, ...logMeta },
   });
-  return { text: result.text, model: `${result.provider}/${result.model}` };
+  return { text: result.text, model: `${result.provider}/${result.model}`, preferredApi };
 }
 
 module.exports = { callLLM, callLLMWithFallback };

@@ -1,71 +1,45 @@
 # PATCH_REQUEST.md
-> 아처 자동 생성 — 2026-03-16 (2026-03-16 00:00:23 KST)
+> 아처 자동 생성 — 2026-03-18 (2026-03-18 00:00:17 KST)
 > ⚠️ Claude Code 세션 시작 시 자동 처리 대상
 
 ## 주간 요약
-이번 주는 @anthropic-ai/sdk와 관련된 패치가 없으며, better-sqlite3의 업데이트가 필요합니다. 보안 취약점은 모두 moderate 등급으로, 업데이트가 권장됩니다. OpenAI의 새로운 AI 설계 원칙과 기술들이 우리 시스템에 적용 가능성이 높습니다.
+이번 주에는 @anthropic-ai/sdk와 ccxt 패키지의 업데이트가 필요합니다. OpenAI의 새로운 GPT-5.4 모델이 발표되어 성능 향상이 기대됩니다. 또한, 로컬 AI와 제로데이 사기 탐지에 대한 새로운 기술이 주목받고 있습니다.
 
 ## 패키지 업데이트 요청
 
 | 우선순위 | 패키지 | 현재 | 최신 | Breaking | 이유 |
 |---------|--------|------|------|----------|------|
-| low | `@anthropic-ai/sdk` | 0.78.0 | 0.78.0 | NO | 현재 버전과 최신 버전이 동일하여 업그레이드 필요 없음. |
-| medium | `better-sqlite3` | 12.6.2 | 12.8.0 | NO | 버그 수정 및 성능 개선이 포함된 최신 버전으로 업그레이드 필요. |
+| medium | `@anthropic-ai/sdk` | 0.78.0 | 0.79.0 | NO | 최신 기능 및 버그 수정을 포함하고 있습니다. |
+| low | `ccxt` | 4.5.43 | 4.5.44 | NO | 마이너 업데이트로 안정성 향상이 기대됩니다. |
 
 ### 실행 명령
 ```bash
-없음
-npm update better-sqlite3
+npm update @anthropic-ai/sdk
+npm update ccxt
 ```
-
-## 보안 취약점 조치 요청
-
-### ⚡ [moderate] `@puppeteer/browsers`
-- **내용**: 취약점이 존재하여 보안 위험이 증가함.
-- **조치**: 업데이트 필요
-
-### ⚡ [moderate] `extract-zip`
-- **내용**: 취약점이 존재하여 보안 위험이 증가함.
-- **조치**: 업데이트 필요
-
-### ⚡ [moderate] `puppeteer`
-- **내용**: 취약점이 존재하여 보안 위험이 증가함.
-- **조치**: 업데이트 필요
-
-### ⚡ [moderate] `puppeteer-core`
-- **내용**: 취약점이 존재하여 보안 위험이 증가함.
-- **조치**: 업데이트 필요
-
-### ⚡ [moderate] `yauzl`
-- **내용**: yauzl contains an off-by-one error.
-- **조치**: 업데이트 필요
 
 ## LLM API 변경사항
 
-### [OpenAI] Designing AI agents to resist prompt injection
-- **영향**: 우리 시스템의 보안성을 높이기 위한 새로운 설계 원칙이 필요할 수 있음.
-- **대응**: 권장 대응: 설계 원칙 검토 및 적용
-
-### [OpenAI] Rakuten fixes issues twice as fast with Codex
-- **영향**: Codex의 활용을 통해 문제 해결 속도를 높일 수 있는 기회.
-- **대응**: 권장 대응: Codex 통합 검토
+### [OpenAI] Introducing GPT-5.4 mini and nano
+- **영향**: 새로운 모델이 기존 시스템에 통합될 경우 성능 향상이 예상됩니다.
+- **대응**: 모델 통합 계획 수립
 
 ## AI 기술 트렌드
 
-### AI-driven flash flood forecasting
-- **출처**: Google Research 블로그
-- **요약**: AI를 활용한 플래시 홍수 예측 기술이 도시 보호에 기여할 수 있음.
-- **적용 가능성**: 우리 시스템에 적용 가능성 있음.
-
-### Generalizable Agentic Retrieval Pipeline
+### Nemotron 3 Nano 4B: A Compact Hybrid Model for Efficient Local AI
 - **출처**: HuggingFace 블로그
-- **요약**: NVIDIA NeMo Retriever의 새로운 검색 파이프라인이 다양한 상황에서 활용 가능.
-- **적용 가능성**: 우리 시스템에 적용 가능성 있음.
+- **요약**: 효율적인 로컬 AI를 위한 소형 하이브리드 모델에 대한 논의입니다.
+- **적용 가능성**: 우리 시스템에 적용 가능성이 높습니다.
+
+### A Dual-Path Generative Framework for Zero-Day Fraud Detection in Banking Systems
+- **출처**: arXiv CS.AI
+- **요약**: 은행 시스템에서 제로데이 사기 탐지를 위한 이중 경로 생성 프레임워크를 제안합니다.
+- **적용 가능성**: 금융 서비스에 적용 가능성이 있습니다.
 
 ## 주간 웹 하이라이트
 
-- **[OpenAI 뉴스]** [Rakuten fixes issues twice as fast with Codex](https://openai.com/news/rakuten-fixes-issues-twice-as-fast-with-codex) — Codex의 효과적인 활용 사례로 주목할 필요가 있음.
-- **[Google Research 블로그]** [Protecting cities with AI-driven flash flood forecasting](https://research.google.com/pubs/archive/2023/flash-flood-forecasting.html) — AI를 활용한 재난 예측 기술의 발전을 보여줌.
+- **[OpenAI 뉴스]** [Introducing GPT-5.4 mini and nano](https://openai.com/news/gpt-5-4-mini-nano) — 새로운 모델 발표로 AI 기술의 발전을 보여줍니다.
+- **[MIT Technology Review AI]** [The Pentagon is planning for AI companies to train on classified data](https://www.technologyreview.com/2026/03/17/ai-pentagon-training) — AI와 군사 데이터의 결합에 대한 중요한 논의입니다.
 
 ---
 

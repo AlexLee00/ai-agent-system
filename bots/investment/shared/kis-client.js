@@ -227,6 +227,10 @@ async function getOverseasPrice(symbol) {
   throw new Error(`${symbol} 해외 현재가 조회 실패 — NAS/NYS/AMX 전체 응답 없음`);
 }
 
+export async function getOverseasQuote(symbol) {
+  return getOverseasPrice(symbol);
+}
+
 // ─── 계좌번호 파싱 ──────────────────────────────────────────────────
 
 /** KIS 계좌번호 → { cano(앞8자리), prodCd(뒤2자리) } */

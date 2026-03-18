@@ -29,6 +29,8 @@
 | KI-011 | 스카 shadow 비교 | `forecast_results`에 shadow 저장은 시작됐지만 actual 누적이 부족해 `shadowComparison.availableDays = 0` | 2026-03-18 | 며칠간 관찰 후 `primary vs shadow` 비교 시작 |
 | KI-012 | 일일 운영 분석 자동화 | 일부 자동화 런타임에서 `health-report.js` 직접 실행 실패로 `fallback_probe_unavailable`이 발생 | 2026-03-18 | `daily-ops-report.js`로 보수 처리 중, 입력 안정화 추가 필요 |
 | KI-013 | 워커 문서 재사용 품질 | 문서 재사용 이력과 결과 연결은 완료됐지만 수정량/품질 점수는 아직 없음 | 2026-03-18 | 재사용 후 수정량/확정률 분석 단계 예정 |
+| KI-014 | 워커 모니터링 | LLM API 선택값은 저장되지만 변경 이력/호출 통계는 아직 없음 | 2026-03-18 | 운영 이력과 호출량 집계 후속 필요 |
+| KI-015 | 투자 legacy 실패 이력 | 과거 `legacy_*` 실패는 일부만 구조화되어 `block_code`, `block_meta` 백필이 완전하지 않음 | 2026-03-18 | backfill 구조화 후속 필요 |
 
 ---
 

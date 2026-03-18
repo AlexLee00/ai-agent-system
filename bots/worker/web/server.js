@@ -36,6 +36,14 @@ const { recalcProgress } = require('../src/ryan');
 const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
 const { getMenuPolicyForRole } = require('../lib/menu-policy');
 const {
+  ALLOWED_APIS,
+  API_CATALOG,
+  buildProviderOptions,
+  getWorkerMonitoringPreference,
+  getWorkerLlmApplicationSummary,
+  setWorkerMonitoringPreference,
+} = require('../lib/llm-api-monitoring');
+const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
 } = require('../lib/attendance-ai');
@@ -354,6 +362,20 @@ function getEndOfMonthStr(yearMonth) {
   first.setUTCMonth(first.getUTCMonth() + 1);
   first.setUTCDate(0);
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(first.getUTCDate()).padStart(2, '0')}`;
+}
+
+async function buildWorkerMonitoringPayload(user) {
+  const selectedApi = await getWorkerMonitoringPreference();
+  const company = user?.company_id ? await getCompanyAiPolicy(user.company_id) : null;
+  const aiPolicy = resolveAiPolicy({ user, company });
+
+  return {
+    selected_api: selectedApi,
+    selected_api_label: API_CATALOG[selectedApi]?.label || selectedApi,
+    options: buildProviderOptions(),
+    ai_policy: aiPolicy,
+    application_summary: getWorkerLlmApplicationSummary(selectedApi),
+  };
 }
 
 function pagination(req) {
@@ -753,6 +775,49 @@ app.put('/api/settings/ai-policy',
   }
 );
 
+app.get('/api/admin/monitoring/llm-api', requireAuth, requireRole('admin', 'master'), async (req, res) => {
+  try {
+    const user = await pgPool.get(SCHEMA, `
+      SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+             ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+      FROM worker.users
+      WHERE id = $1 AND deleted_at IS NULL
+    `, [req.user.id]);
+    if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+    res.json(await buildWorkerMonitoringPayload(user));
+  } catch (error) {
+    res.status(500).json({ error: '워커 모니터링 정보를 불러오지 못했습니다.', code: 'WORKER_MONITORING_LOAD_FAILED', detail: error.message });
+  }
+});
+
+app.put('/api/admin/monitoring/llm-api',
+  requireAuth,
+  requireRole('admin', 'master'),
+  body('provider').isIn(ALLOWED_APIS),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const user = await pgPool.get(SCHEMA, `
+        SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+               ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+        FROM worker.users
+        WHERE id = $1 AND deleted_at IS NULL
+      `, [req.user.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+      await setWorkerMonitoringPreference(req.body.provider, user.id);
+      res.json({
+        success: true,
+        message: `${API_CATALOG[req.body.provider]?.label || req.body.provider} API를 워커 웹 기본 분석 경로로 저장했습니다.`,
+        ...(await buildWorkerMonitoringPayload(user)),
+      });
+    } catch (error) {
+      res.status(500).json({ error: '워커 모니터링 설정을 저장하지 못했습니다.', code: 'WORKER_MONITORING_SAVE_FAILED', detail: error.message });
+    }
+  }
+);
+
 // ── 업체 API (master 전용) ────────────────────────────────────────────
 
 app.get('/api/companies', requireAuth, requireRole('master'), async (req, res) => {
@@ -824,7 +889,7 @@ app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('D
 
 const MENU_KEYS = [
   'dashboard','attendance','sales','projects','schedules',
-  'journals','employees','payroll','settings','ai','approvals',
+  'journals','employees','payroll','settings','ai','approvals','monitoring',
 ];
 const ALL_MENUS = [
   { key: 'dashboard',  label: '대시보드',  alwaysOn: true },
@@ -838,6 +903,7 @@ const ALL_MENUS = [
   { key: 'settings',   label: '설정',     alwaysOn: true },
   { key: 'ai',         label: 'AI 분석' },
   { key: 'approvals',  label: '승인 관리' },
+  { key: 'monitoring', label: '워커 모니터링' },
 ];
 
 // GET /api/companies/:id/menus — 업체 메뉴 설정 조회

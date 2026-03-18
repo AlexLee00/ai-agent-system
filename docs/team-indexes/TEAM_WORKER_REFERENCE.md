@@ -11,6 +11,7 @@
 - `PromptAdvisor` 기반 자연어 입력
 - 메뉴 권한/AI 정책/승인 흐름
 - 문서 업로드 파싱과 OCR 테스트
+- 워커 모니터링과 기본 LLM API 선택
 
 ## 핵심 진입점
 
@@ -22,6 +23,7 @@
   - [bots/worker/web/app/attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)
   - [bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js)
   - [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js)
+  - [bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js)
 
 ## 공용 정책/구조
 
@@ -30,6 +32,7 @@
 - [bots/worker/web/lib/menu-access.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/menu-access.js)
 - [bots/worker/web/components/PromptAdvisor.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/PromptAdvisor.js)
 - [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js)
+- [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
 
 ## 운영 스크립트
 
@@ -42,12 +45,14 @@
 - [bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json)
 - [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
 - [bots/worker/web/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/runtime-config.js)
+- [bots/worker/migrations/017-system-preferences.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.sql)
 
 ## 자주 쓰는 명령어
 
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js --json
 node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js
+node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js
 cd /Users/alexlee/projects/ai-agent-system/bots/worker/web && npm run build
 ```
 

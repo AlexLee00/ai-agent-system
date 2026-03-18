@@ -23,6 +23,7 @@ const migrations = [
   '../migrations/014-document-extraction.js',
   '../migrations/015-document-reuse-events.js',
   '../migrations/016-document-reuse-linking.js',
+  '../migrations/017-system-preferences.js',
 ];
 
 async function main() {

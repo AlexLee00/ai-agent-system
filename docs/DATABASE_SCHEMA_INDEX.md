@@ -139,10 +139,26 @@
 - `intent_*`
 - `ai_feedback_*`
 
+대표 owner code:
+- [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)
+- [bots/orchestrator/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js)
+- [bots/claude/src/claude-commander.js](/Users/alexlee/projects/ai-agent-system/bots/claude/src/claude-commander.js)
+- [bots/claude/lib/claude-lead-brain.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/claude-lead-brain.js)
+
 소스 오브 트루스:
 - [bots/orchestrator/migrations/002_mainbot.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/migrations/002_mainbot.js)
 - [bots/orchestrator/migrations/003_bot_commands.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/migrations/003_bot_commands.js)
 - [packages/core/lib/shadow-mode.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/shadow-mode.js)
+
+운영적으로 자주 보는 테이블:
+- `claude.bot_commands`
+  - 제이/클로드 명령 enqueue, 실행 상태, 결과 추적
+- `claude.mainbot_queue`
+  - 팀장봇 큐 적재 상태와 지연 확인
+- `claude.token_usage`
+  - LLM 사용량 집계
+- `claude.shadow_log`
+  - shadow mode 비교 로그
 
 ### Reservation / Ska Commander
 
@@ -158,9 +174,25 @@
 - `daily_summary`
 - `llm_usage_log`
 
+대표 owner code:
+- [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
+- [bots/reservation/auto/monitors/naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)
+- [bots/reservation/auto/monitors/pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
+- [bots/reservation/manual/admin/pickko-verify.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-verify.js)
+
 소스 오브 트루스:
 - [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
 - [bots/reservation/migrations/](/Users/alexlee/projects/ai-agent-system/bots/reservation/migrations)
+
+운영적으로 자주 보는 테이블:
+- `reservation.reservations`
+  - 예약 상태, pickko/naver 동기화 상태, retry/verify 맥락
+- `reservation.alerts`
+  - andy/jimmy 경고, resolve 여부
+- `reservation.tool_calls`
+  - 툴 호출 로그
+- SQLite `cancelled_keys`
+  - 중복 취소/오발동 점검용 상태 데이터
 
 ### Ska Forecast
 
@@ -172,10 +204,26 @@
 - `training_feature_daily`
 - 예측/실적/환경 feature 계열 테이블
 
+대표 owner code:
+- [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py)
+- [bots/ska/lib/feature_store.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/feature_store.py)
+- [bots/ska/src/rebecca.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/rebecca.py)
+- [bots/ska/src/etl.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/etl.py)
+
 소스 오브 트루스:
 - [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py)
 - [bots/ska/scripts/build-ska-model-dataset.js](/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/build-ska-model-dataset.js)
 - [bots/ska/scripts/export-ska-training-csv.js](/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/export-ska-training-csv.js)
+
+운영적으로 자주 보는 테이블:
+- `ska.forecast_results`
+  - 예측값, actual, bias, model diagnostics, shadow 비교값
+- `ska.training_feature_daily`
+  - 예측 학습/비교용 일 단위 feature 집합
+- `revenue_daily`
+  - DuckDB 실적 집계 원본
+- `environment_factors`, `exam_events`
+  - 보정용 환경 입력
 
 ### Investment
 
@@ -186,10 +234,26 @@
 주요 테이블/개념:
 - 신호/리뷰/포지션/리스크/스냅샷 계열
 
+대표 owner code:
+- [bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js)
+- [bots/investment/team/luna.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/luna.js)
+- [bots/investment/team/nemesis.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/nemesis.js)
+- [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
+
 소스 오브 트루스:
 - [bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js)
 - [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
 - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
+
+운영적으로 자주 보는 테이블:
+- `investment.signals`
+  - 시장별 최종 판단과 analyst output
+- `investment.positions`
+  - 현재 보유 포지션
+- `investment.trades`
+  - 실제 체결 결과
+- `investment.trade_journal`
+  - 일일/주간 분석 리포트 기반 테이블
 
 ### Worker
 
@@ -202,9 +266,30 @@
 - `document_reuse_events`
 - worker 업무/승인 관련 테이블
 
+대표 owner code:
+- [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
+- [bots/worker/src/worker-lead.js](/Users/alexlee/projects/ai-agent-system/bots/worker/src/worker-lead.js)
+- [bots/worker/lib/approval.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/approval.js)
+- [bots/worker/lib/ai-feedback-service.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-feedback-service.js)
+- [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
+
 소스 오브 트루스:
 - [bots/worker/migrations/](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations)
 - [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
+
+운영적으로 자주 보는 테이블:
+- `worker.documents`
+  - 업로드 문서, 요약, 추출 텍스트
+- `worker.document_reuse_events`
+  - 문서 재사용 이력, 연결 결과
+- `worker.system_preferences`
+  - 워커 모니터링 기본 설정, 기본 LLM API 선택값
+- `worker.approval_requests`
+  - 승인 대기 흐름
+- `worker.schedules`, `worker.work_journals`, `worker.sales`, `worker.projects`
+  - AI가 생성/수정하는 실제 업무 객체
+- `worker.audit_log`
+  - 권한/운영 행위 추적
 
 ### Blog
 
@@ -215,9 +300,43 @@
 - `pipeline_store`
 - blog 피드백/리서치/발행 관련 테이블
 
+대표 owner code:
+- [bots/blog/lib/maestro.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/maestro.js)
+- [bots/blog/lib/gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)
+- [bots/blog/lib/pos-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/pos-writer.js)
+- [bots/blog/api/node-server.js](/Users/alexlee/projects/ai-agent-system/bots/blog/api/node-server.js)
+
 소스 오브 트루스:
 - [packages/core/lib/blog-rag-store.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/blog-rag-store.js)
 - [bots/blog/migrations/](/Users/alexlee/projects/ai-agent-system/bots/blog/migrations)
+
+운영적으로 자주 보는 테이블:
+- `blog.posts`
+  - 발행 글 본문/메타데이터
+- `blog.execution_history`
+  - maestro 실행 이력
+- `blog.research_cache`
+  - 리서치 캐시
+- `blog.curriculum_series`, `blog.curriculum`
+  - 교육 시리즈/강의 커리큘럼
+- `blog.publish_schedule`
+  - 발행 스케줄
+
+---
+
+## 5.1 공통 테이블 빠른 찾기
+
+| 목적 | 대표 테이블 | 우선 보는 코드 |
+|---|---|---|
+| 명령 큐/오케스트레이션 | `claude.bot_commands`, `claude.mainbot_queue` | [bots/orchestrator/src/router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js) |
+| 예약 상태/경고 | `reservation.reservations`, `reservation.alerts` | [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js) |
+| 예측/실적 비교 | `ska.forecast_results`, `ska.training_feature_daily` | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py) |
+| 거래 판단/성과 | `investment.signals`, `investment.trades`, `investment.trade_journal` | [bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js) |
+| 워커 업무 객체 | `worker.documents`, `worker.schedules`, `worker.projects`, `worker.sales` | [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js) |
+| 워커 운영 설정 | `worker.system_preferences` | [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js) |
+| AI 피드백 | `*.ai_feedback_sessions`, `*.ai_feedback_events` | [packages/core/lib/ai-feedback-store.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/ai-feedback-store.js) |
+| LLM 사용량 | `*.llm_usage_log`, `claude.token_usage` | [packages/core/lib/llm-logger.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/llm-logger.js) |
+| RAG 저장소 | `rag_*` 계열 | [packages/core/lib/rag.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/rag.js) |
 
 ---
 
@@ -236,6 +355,6 @@
 
 ## 7. 다음 보강 후보
 
-- team별 실제 테이블 목록을 더 촘촘히 보강
+- 팀별 핵심 테이블에 주요 컬럼/PK/FK를 부록으로 추가
 - DuckDB 핵심 테이블/컬럼 목적을 부록으로 분리
-- write path / read path owner code를 더 표준화
+- migration 파일과 runtime owner code를 더 표준화

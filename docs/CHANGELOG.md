@@ -6,6 +6,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ## 12주차 (2026-03-16 ~ 2026-03-18) — 운영 변수 외부화 + 분석 자동화 정리
 
 ### 신규 기능 (feat)
+- 워커 웹 관리자 메뉴에 `워커 모니터링` 추가
+  - `/admin/monitoring`에서 현재 적용 LLM API 경로와 기본 provider 선택 가능
+  - `worker.system_preferences` 테이블로 선택값 저장
 - 팀별 `runtime_config` / `config.json` / `config.yaml` 외부화 체계 추가
   - investment / reservation / ska / worker / orchestrator / claude / blog
 - 팀별 운영 설정 조회 스크립트 추가
@@ -24,6 +27,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 업무 생성 결과 연결 및 문서별 재사용 성과 집계
 
 ### 변경 사항 (changed)
+- 투자팀 운영 모드 용어 정리
+  - `executionMode = live/paper`
+  - `brokerAccountMode = real/mock`
+  - 암호화폐는 `brokerAccountMode=real`만 사용하도록 기준 고정
 - 루나팀 실행 모드 / `[PAPER]` 태그 / 브로커 표현을 공용 헬퍼 기준으로 통합
   - 암호화폐와 국내외장은 분리 유지하되 한 곳에서 관리
 - 국내/해외장 로그 문구를 실제 KIS 모의투자 상태 기준으로 정리
@@ -38,6 +45,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `RESEARCH_JOURNAL.md`
 
 ### 버그 수정 (fix)
+- 투자 실패 원인 저장 구조 확장
+  - `block_reason` + `block_code` + `block_meta`
+- 주간 자동매매 리뷰 입력 강인성 보강
+  - 보조 입력 실패 시 전체 리포트 중단 대신 가능한 범위에서 계속 진행
+- 덱스터 shadow mismatch 완화
+  - 저위험 코드 무결성 이슈(`git 상태`, `git 변경사항`, `체크섬`)의 `monitor ↔ ignore`는 `soft match`로 재해석
 - KIS 국내/해외장 주문 금액 단위 보정
   - 국내는 `KRW`, 해외는 `USD` 기준으로 clamp
 - 국내/해외 모의투자 경로에서 장외 시간/최소 주문 수량 검증 흐름 점검
@@ -49,6 +62,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 일일 운영 분석 리포트가 `fallback_probe_unavailable`을 장애처럼 다루지 않도록 보정
 
 ### 문서 (docs)
+- 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
 - 팀 운영 변수 관리 체계 문서화
 - 운영 중 조정 가능한 값과 추가 개발 후보 정리
 - 세션 인덱스/팀 참조 문서/구현 추적 문서 이름 정리 및 참조 링크 갱신
