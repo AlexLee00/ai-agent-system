@@ -409,6 +409,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
 # 2026-03-18
 
+- 투자
+  - 실제 운영 `config.yaml`에 `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44` 반영
+  - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`를 `applied` 상태로 올리고 검증 단계까지 연결
+- 세션 운영
+  - 세션 종료 문서를 `모바일 알림 최적화 + 투자 실험 observe 단계` 기준으로 갱신
+- 클로드
+  - `node bots/claude/src/dexter.js --update-checksums`로 체크섬 베이스라인 갱신 (`65개 파일`)
 - reporting-hub notice/report 메시지를 모바일 친화형으로 축약
 - payload.details가 있는 알림은 긴 원문 본문 대신 요약 detail 우선 사용
 - telegram-sender에서 긴 구분선과 연속 공백을 발송 직전 정리

@@ -2249,6 +2249,15 @@ deps.js cd→cwd 수정(launchd PATH 오류) | git 상태 패턴 저장 제외(f
 ### 헬스체크 회복 로직 + 제이 할루시네이션 방지
 health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 수정 | TOOLS.md bot_commands 명령 테이블 + 할루시네이션 방지 경고
 
+### 세션 마감 정리 + 모바일 알림 최적화
+- 공용 `reporting-hub` notice/report 렌더러를 모바일 친화형으로 축약하고 `payload.details` 우선 렌더링으로 긴 본문 중복을 줄임
+- `telegram-sender`에서 긴 구분선과 연속 공백을 발송 직전 정규화하도록 보강
+- 루나 실시간 알림/주간 리뷰 메시지의 구분선과 장문 근거를 축약
+- 투자 실험값 `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44` 실제 운영 `config.yaml` 반영
+- suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19` 상태를 `applied`로 올리고 검증 리포트 기준 `observe` 판단 확인
+- 세션 종료 문서(SESSION_HANDOFF / RESEARCH_JOURNAL / TEST_RESULTS / CHANGELOG) 갱신
+- 덱스터 체크섬 베이스라인 갱신 완료 (`bots/claude/.checksums.json`, 65개 파일)
+
 ### 알림 메시지 모바일 최적화
 - reporting-hub notice/report 렌더러를 모바일 친화형으로 축약
 - payload.details 우선 사용으로 긴 원문 중복 노출 제거

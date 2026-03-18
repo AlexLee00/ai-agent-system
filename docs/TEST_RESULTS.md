@@ -214,3 +214,34 @@
 |------|------|
 | openclaw.js IPv6 `[::1]` 파싱 수정 | ✅ 실행 시 status: ok |
 | dexter-quickcheck.js 수동 실행 | ✅ 이상 없음 |
+
+---
+
+## 2026-03-18
+
+### 모바일 알림 최적화
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/reporting-hub.js` | ✅ |
+| `node --check packages/core/lib/telegram-sender.js` | ✅ |
+| `node --check bots/orchestrator/lib/batch-formatter.js` | ✅ |
+| `node --check bots/investment/shared/report.js` | ✅ |
+| `node --check bots/investment/team/reporter.js` | ✅ |
+| `node --check bots/investment/scripts/weekly-trade-review.js` | ✅ |
+| `renderNoticeEvent/buildReportEvent` 모바일 샘플 출력 확인 | ✅ 헤더/구분선/디테일 축약 확인 |
+
+### 투자 설정 실험 적용/검증
+
+| 테스트 | 결과 |
+|--------|------|
+| `apply-runtime-config-suggestion.js --id=498d9f9c-4725-460a-a5ea-129e82f3be19 --write` | ✅ 실제 운영 `config.yaml` 반영 |
+| `validate-runtime-config-apply.js --id=498d9f9c-4725-460a-a5ea-129e82f3be19 --days=7 --json` | ✅ `review_status=applied`, 판단 `observe` |
+| `launchctl list | egrep 'ai\\.investment\\.commander'` | ✅ commander 재기동 확인 |
+
+### 세션 종료 정합성
+
+| 테스트 | 결과 |
+|--------|------|
+| 세션 문서 업데이트 (`SESSION_HANDOFF`, `WORK_HISTORY`, `RESEARCH_JOURNAL`, `CHANGELOG`) | ✅ |
+| `node bots/claude/src/dexter.js --update-checksums` | ✅ 65개 파일 갱신 |
