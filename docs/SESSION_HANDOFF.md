@@ -119,12 +119,14 @@
 - `jay-llm-daily-review.js`는 더 이상 완전 degraded가 아니라 `partial`로 동작하지만, DB source(`llmUsage`, `parseHistory`)는 아직 `EPERM`으로 실패한다
 - `daily-ops-report.js`는 investment / reservation에 대해 `local fallback 활동 신호`를 보이지만, 여전히 원본 `health-report`의 DB 접근 제한은 별도 복구가 필요하다
 - `jay-llm-daily-review.js`는 이제 snapshot fallback으로 운영 리포트 연속성은 확보했지만, live DB query 자체의 `EPERM` 원인은 아직 별도 운영 컨텍스트 복구가 필요하다
+- `daily-ops-report.js`는 이제 `sourceMode`를 함께 출력해 `orchestrator / worker / claude / blog`는 `unavailable`, `investment / reservation`은 `local_fallback`, global error review는 `auxiliary_review`로 읽을 수 있다
 - 투자 주간 리뷰 usage는 복구됐지만, 주간/일간 usage 집계 로직을 공용 함수로 통합하면 중복 유지보수를 더 줄일 수 있다
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 - 텔레그램 알림 포맷은 구분선/헤더/본문 압축까지 반영됐지만, 잔여 producer 미세 조정은 실제 운영 알림이 더 쌓인 뒤 확인하는 편이 안전하다
+- 제이 일일 리뷰는 실제 운영 컨텍스트에서는 `dbSource=db`, 샌드박스 안에서는 `dbSource=snapshot_fallback`으로 동작해 live + fallback 이중화는 확보된 상태다
 
 자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
 

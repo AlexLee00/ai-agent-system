@@ -482,6 +482,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `ska-sales-forecast-daily-review.js`가 `requestedDays / effectiveDays`를 함께 출력해 일일/주간 리포트 해석 규칙을 통일
   - `daily-ops-report.js`가 `inputFailures.code`를 세분화하고 `investment / reservation`에는 `local fallback 활동 신호`를 함께 표시해 health-report 실패와 팀 활동 신호를 분리해서 읽을 수 있게 정리
   - `daily-ops-report.js` 추천 문구가 `db_sandbox_restricted`와 `local fallback` 상태를 구분해 운영 액션으로 직접 이어지도록 보강
+  - `daily-ops-report.js`가 `sourceMode`를 추가해 전 팀 health source를 `unavailable / local_fallback / auxiliary_review` 같은 관측 모드로 표준화해 읽을 수 있게 정리
 
 - 공통 LLM
   - `packages/core/lib/llm-model-selector.js` 추가
