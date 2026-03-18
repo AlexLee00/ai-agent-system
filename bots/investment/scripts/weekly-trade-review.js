@@ -16,14 +16,10 @@
  * launchd: 매주 일요일 18:00 KST 실행 (ai.investment.weekly-review)
  */
 
-import { createRequire } from 'module';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import * as db from '../shared/db.js';
 import { validateTradeReview } from './validate-trade-review.js';
-
-const require = createRequire(import.meta.url);
-const pgPool  = require('../../../packages/core/lib/pg-pool');
 
 function getMarketBucket(exchange) {
   if (exchange === 'kis') return 'domestic';
@@ -50,26 +46,24 @@ const DRY_RUN = args.includes('--dry-run');
  * @returns {Promise<Array>}
  */
 async function fetchRecentTrades(days) {
-  const since = Date.now() - days * 86_400_000;
-  const rows = await pgPool.query('investment', `
+  return db.query(`
     SELECT
       symbol, exchange, direction, is_paper,
       entry_time, entry_price, entry_size, entry_value,
       exit_time, exit_price, exit_value, exit_reason,
       pnl_amount, pnl_percent, pnl_net, fee_total,
       hold_duration, status
-    FROM investment.trade_journal
-    WHERE exit_time >= $1
+    FROM trade_journal
+    WHERE CAST(to_timestamp(exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+          >= CURRENT_DATE - ($1::int - 1)
       AND status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
     ORDER BY exit_time DESC
     LIMIT 200
-  `, [since]);
-  return rows;
+  `, [days]);
 }
 
 async function fetchRecentTradeReviews(days) {
-  const since = Date.now() - days * 86_400_000;
-  return pgPool.query('investment', `
+  return db.query(`
     SELECT
       j.trade_id,
       j.exchange,
@@ -85,11 +79,12 @@ async function fetchRecentTradeReviews(days) {
       r.hermes_accurate
     FROM trade_journal j
     LEFT JOIN trade_review r ON r.trade_id = j.trade_id
-    WHERE j.exit_time >= $1
+    WHERE CAST(to_timestamp(j.exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+          >= CURRENT_DATE - ($1::int - 1)
       AND j.status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
     ORDER BY j.exit_time DESC
     LIMIT 200
-  `, [since]);
+  `, [days]);
 }
 
 /**
@@ -97,12 +92,13 @@ async function fetchRecentTradeReviews(days) {
  */
 async function fetchSignalStats(days) {
   try {
-    const since = Date.now() - days * 86_400_000;
-    const rows  = await db.query(
-      `SELECT exchange, action, COUNT(*) AS cnt FROM investment.signals
-       WHERE created_at >= ? GROUP BY exchange, action`,
-      [since]
-    );
+    const rows  = await db.query(`
+      SELECT exchange, action, COUNT(*) AS cnt
+      FROM signals
+      WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE)
+            >= CURRENT_DATE - ($1::int - 1)
+      GROUP BY exchange, action
+    `, [days]);
     return rows;
   } catch {
     return [];
@@ -471,5 +467,13 @@ async function main() {
 
 main().catch(e => {
   console.error('❌ [주간 리뷰] 오류:', e?.message || String(e));
+  if (e?.errors?.length) {
+    for (const inner of e.errors) {
+      console.error('  ↳ inner:', inner?.message || String(inner));
+    }
+  }
+  if (e?.stack) {
+    console.error(e.stack);
+  }
   process.exit(1);
 });
