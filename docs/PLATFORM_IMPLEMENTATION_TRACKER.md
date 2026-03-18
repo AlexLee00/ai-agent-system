@@ -651,6 +651,7 @@
 - `scripts/review-llm-selector-override-suggestion.js`를 추가해 저장된 selector override 추천을 `pending / hold / approved / rejected / applied` 상태로 검토할 수 있게 정리
 - `scripts/speed-test.js`가 최신 스냅샷 외에 `llm-speed-test-history.jsonl` 히스토리도 누적하도록 보강
 - `scripts/reviews/llm-selector-speed-review.js`를 추가해 최근 N일 speed-test 누적 결과를 바탕으로 selector 추천 근거를 리뷰할 수 있게 정리
+- `scripts/reviews/llm-selector-speed-daily.js`를 추가해 `speed-test 실행 + speed review`를 일일 러너로 한 번에 묶을 수 있게 정리
 
 ### 2026-03-14
 

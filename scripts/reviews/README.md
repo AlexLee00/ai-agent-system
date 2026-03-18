@@ -9,6 +9,8 @@
 - `jay-gateway-experiment-review.js`
 - `jay-gateway-change-compare.js`
 - `llm-model-daily-review.js`
+- `llm-selector-speed-review.js`
+- `llm-selector-speed-daily.js`
 - `error-log-daily-review.js`
 - `ska-sales-forecast-daily-review.js`
 - `ska-sales-forecast-weekly-review.js`
