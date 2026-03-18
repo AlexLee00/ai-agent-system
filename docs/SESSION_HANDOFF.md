@@ -17,9 +17,14 @@
 - 운영 분석
   - `daily-ops-report.js`가 도입됐다.
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.
+  - `error-log-daily-review.js`는 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리해, 이미 종료된 반복 오류를 현재 장애처럼 과장하지 않도록 보정됐다.
 - 투자
   - `executionMode=live/paper`, `brokerAccountMode=real/mock` 기준이 코드/리포트/문서에 반영됐다.
   - 실패 원인 저장은 `block_reason + block_code + block_meta` 구조로 확장됐다.
+  - `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어가 추가돼 `PEPEUSDT Invalid time value` 로그 노이즈가 줄었다.
+- 제이 / 오케스트레이터
+  - OpenClaw gateway 기본 모델과 제이 앱 레벨 커스텀 모델 정책을 분리해서 읽도록 정리됐다.
+  - `jay-model-policy.js`가 추가되어 `intent parse`와 `chat fallback` 모델 체인을 한 곳에서 관리한다.
 - 클로드/덱스터
   - 저위험 코드 무결성 이슈는 `soft match`로 재해석되어 shadow mismatch 과장 경고가 정리됐다.
 - 문서 체계
@@ -60,6 +65,8 @@
    - 저품질 OCR 문서의 전환율
 3. 일일 운영 분석 리포트의 health 입력 안정화
    - 자동화 런타임에서 팀별 `health-report.js` 직접 수집 성공률 개선
+4. 제이 모델 정책 정리 후속
+   - OpenClaw 기본 primary와 제이 앱 커스텀 모델 체계를 문서와 운영 설정에서 더 명확히 연결
 
 ---
 
@@ -70,6 +77,7 @@
 - 워커 문서 재사용은 추적선은 완성됐지만, “좋은 문서인지”를 평가하는 품질 지표는 아직 없음
 - 워커 모니터링의 LLM API 선택 변경 이력은 아직 저장하지 않는다
 - 투자 과거 `legacy_*` 실패 이력은 일부만 구조화되어 있어 백필 확장이 남아 있다
+- OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 
 자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
 
@@ -82,6 +90,7 @@
 - 워커 LLM API 모니터링은 기존 `llm_mode` 정책을 깨지 않고, 관리자 분석 경로의 기본 provider만 별도 축으로 제어한다.
 - 투자팀의 자산/계좌 해석은 `executionMode`와 `brokerAccountMode`를 분리해 읽는다.
 - 운영 리포트는 `근거 약한 추론`보다 `보수적 hold`가 우선이다.
+- 제이의 모델 체계는 하나가 아니라 `OpenClaw 기본 모델 / intent parse 모델 / chat fallback 체인`으로 분리해 읽어야 한다.
 - 문서 체계는 `정책 / 인덱스 / 구조 / 현재 상태 / 팀 참조 / 로그 / 브이로그 / handoff`로 역할을 분리한다.
 - 다만 같은 성격의 기록은 새 파일을 만들지 않고 기존 문서에 흡수한다.
 
@@ -106,6 +115,7 @@
   - [scripts/reviews/README.md](/Users/alexlee/projects/ai-agent-system/scripts/reviews/README.md)
 - 운영 설정
   - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)
+  - [TEAM_ORCHESTRATOR_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_ORCHESTRATOR_REFERENCE.md)
 
 ### 핵심 코드 진입점
 
@@ -126,3 +136,7 @@
   - [/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
 - 운영 분석
   - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js)
+  - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/error-log-daily-review.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/error-log-daily-review.js)
+- 제이 모델 정책
+  - [/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
+  - [/Users/alexlee/.openclaw/openclaw.json](/Users/alexlee/.openclaw/openclaw.json)

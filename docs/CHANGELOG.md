@@ -372,3 +372,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ### Changed
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
+# 2026-03-18
+
+- 오케스트레이터
+  - `jay-model-policy.js` 신규
+  - 제이 모델 체계를 `OpenClaw gateway 기본 모델`과 `제이 앱 레벨 커스텀 모델 정책`으로 분리
+  - `intent-parser.js`, `router.js`가 제이 모델 정책 파일을 공통 참조하도록 정리
+- 운영 리뷰
+  - `error-log-daily-review.js`에 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리
+  - 종료된 `OpenClaw gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
+- 투자
+  - `onchain-data.js`에서 비정상 `nextFundingTime` 방어 추가
+  - `PEPEUSDT Invalid time value` 로그 노이즈 완화

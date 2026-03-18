@@ -4,6 +4,33 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
+
+핵심 구현:
+- `bots/orchestrator/lib/jay-model-policy.js` 신규 추가
+- 제이 모델 체계를 `OpenClaw gateway 기본 primary`와 `제이 앱 커스텀 정책`으로 분리
+- `intent-parser.js`의 `gpt-5-mini -> gemini-2.5-flash` 명령 해석 정책을 집약 파일로 이동
+- `router.js`의 자유대화 fallback 체인을 집약 파일로 이동
+- `error-log-daily-review.js`에 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리
+- 종료된 `OpenClaw gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
+- `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어 추가
+
+세션 맥락:
+- 제이는 실제로 하나의 모델을 쓰는 구조가 아니라, OpenClaw 기본 모델과 제이 앱 레벨 모델 정책이 섞여 있었다.
+- 운영자 입장에서 “왜 Gemini인데 GPT도 쓰는가”를 이해하기 어렵던 상태를 먼저 문서와 코드 레이어로 정리했다.
+- 동시에 개인 텔레그램 알림에서 종료된 장애가 계속 현재 문제처럼 올라오던 구조를 완화했다.
+
+의사결정 이유:
+- 전면 재설계보다 `플랫폼 기본`과 `앱 커스텀`의 경계를 먼저 드러내는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 오류 리뷰는 하루 누적과 현재 활성 상태를 분리해야 실제 장애 대응 우선순위를 올바르게 잡을 수 있다.
+
+검증:
+- `node --check bots/orchestrator/lib/jay-model-policy.js`
+- `node --check bots/orchestrator/lib/intent-parser.js`
+- `node --check bots/orchestrator/src/router.js`
+- `node --check scripts/reviews/error-log-daily-review.js`
+- `node scripts/reviews/error-log-daily-review.js --days=1 --json`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 + 투자 실행 모드 정합성 + 덱스터 경고 정리
 
 핵심 구현:
