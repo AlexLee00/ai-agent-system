@@ -14,8 +14,8 @@ const {
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
-const DIVIDER = '────────';
-const SMALL_DIVIDER = '──────';
+const DIVIDER = '───────────────';
+const SMALL_DIVIDER = '───────────────';
 
 function compactReasoning(reasoning, maxLength = 90) {
   const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
