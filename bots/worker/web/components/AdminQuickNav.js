@@ -11,7 +11,7 @@ const DEFAULT_ITEMS = [
   { href: '/admin/intents', label: '인텐트 학습' },
   { href: '/admin/companies', label: '업체 관리' },
   { href: '/admin/users', label: '사용자 관리' },
-  { href: '/admin/monitoring', label: '워커 모니터링' },
+  { href: '/admin/monitoring', label: 'LLM API 현황' },
   { href: '/admin/monitoring/blog-links', label: '블로그 URL 입력' },
 ];
 

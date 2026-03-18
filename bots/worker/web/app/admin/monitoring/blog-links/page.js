@@ -22,7 +22,11 @@ export default function BlogPublishedUrlPage() {
     try {
       const data = await api.get('/admin/monitoring/blog-published-urls');
       setPayload(data);
-      setSelectedPostId((current) => current || String(data.rows?.find((row) => row.needs_url)?.id || ''));
+      setSelectedPostId((current) => {
+        const pending = (data.rows || []).filter((row) => row.needs_url);
+        if (pending.some((row) => String(row.id) === String(current))) return current;
+        return String(pending[0]?.id || '');
+      });
     } catch (err) {
       setError(err.message || '블로그 발행 URL 목록을 불러오지 못했습니다.');
     } finally {
@@ -35,10 +39,18 @@ export default function BlogPublishedUrlPage() {
   }, []);
 
   const rows = payload?.rows || [];
-  const summary = payload?.summary || { total: 0, missingUrl: 0, published: 0 };
+  const summary = payload?.summary || { total: 0, missingUrl: 0, scheduled: 0, published: 0 };
+  const pendingRows = useMemo(
+    () => rows.filter((row) => row.needs_url),
+    [rows],
+  );
+  const scheduledRows = useMemo(
+    () => rows.filter((row) => row.scheduled),
+    [rows],
+  );
   const selectedPost = useMemo(
-    () => rows.find((row) => String(row.id) === String(selectedPostId)) || null,
-    [rows, selectedPostId],
+    () => pendingRows.find((row) => String(row.id) === String(selectedPostId)) || null,
+    [pendingRows, selectedPostId],
   );
 
   async function handleSubmit(event) {
@@ -54,7 +66,7 @@ export default function BlogPublishedUrlPage() {
       setPayload({ rows: data.rows || [], summary: data.summary || summary });
       setNotice(data.message || '블로그 발행 URL을 저장했습니다.');
       setUrl('');
-      setSelectedPostId(String(data.rows?.find((row) => row.needs_url)?.id || selectedPostId));
+      setSelectedPostId(String((data.rows || []).find((row) => row.needs_url)?.id || ''));
     } catch (err) {
       setError(err.message || '블로그 발행 URL을 저장하지 못했습니다.');
     } finally {
@@ -73,7 +85,8 @@ export default function BlogPublishedUrlPage() {
         description="수동 발행한 네이버 블로그 URL을 운영 화면에서 바로 기록합니다. 기록된 URL은 내부 링킹과 발행 상태 판단의 기준이 됩니다."
         stats={[
           { label: '최근 글', value: summary.total || 0, caption: '최근 20건 기준' },
-          { label: 'URL 미입력', value: summary.missingUrl || 0, caption: '내부 링킹 미연결 후보' },
+          { label: '입력 필요', value: summary.missingUrl || 0, caption: '발행 후 URL 후처리 대상' },
+          { label: '발행예정', value: summary.scheduled || 0, caption: 'ready + URL 미입력' },
           { label: '발행 완료', value: summary.published || 0, caption: 'naver_url 기록 포함' },
         ]}
       />
@@ -86,7 +99,7 @@ export default function BlogPublishedUrlPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">발행 URL 기록</p>
-              <p className="mt-1 text-sm text-slate-500">대상 글을 고르고 실제 네이버 블로그 URL을 붙여넣으면 canonical URL로 정규화해 저장합니다.</p>
+              <p className="mt-1 text-sm text-slate-500">이미 발행된 글 중 URL이 비어 있는 경우만 입력 대상으로 보입니다. `ready` 상태 글은 발행예정 섹션에서 따로 확인합니다.</p>
             </div>
             <button type="button" className="btn-secondary text-sm" onClick={load} disabled={loading}>
               <RefreshCcw className="mr-2 h-4 w-4" />
@@ -103,12 +116,15 @@ export default function BlogPublishedUrlPage() {
               disabled={loading || saving}
             >
               <option value="">글을 선택하세요</option>
-              {rows.map((row) => (
+              {pendingRows.map((row) => (
                 <option key={row.id} value={row.id}>
                   #{row.id} · {row.title}
                 </option>
               ))}
             </select>
+            {!pendingRows.length && (
+              <p className="mt-2 text-xs text-slate-500">현재 실제 URL 입력이 필요한 발행 완료 글이 없습니다.</p>
+            )}
             {selectedPost && (
               <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
                 <p>현재 상태: <span className="font-semibold text-slate-900">{selectedPost.status}</span></p>
@@ -139,7 +155,7 @@ export default function BlogPublishedUrlPage() {
               {saving ? '저장 중...' : '발행 URL 저장'}
             </button>
             <Link href="/admin/monitoring" className="text-sm font-medium text-slate-600 hover:text-slate-900">
-              워커 모니터링으로 돌아가기
+              LLM API 현황으로 돌아가기
             </Link>
           </div>
         </form>
@@ -149,12 +165,15 @@ export default function BlogPublishedUrlPage() {
             <Link2 className="h-5 w-5 text-indigo-600" />
             <div>
               <p className="text-sm font-semibold text-slate-900">최근 블로그 글</p>
-              <p className="text-xs text-slate-500">URL이 없는 글을 먼저 채우면 내부 링킹과 발행 상태 추적이 정확해집니다.</p>
+              <p className="text-xs text-slate-500">실제 URL 후처리 대상과 내일 발행 예정 글을 분리해서 보여줍니다.</p>
             </div>
           </div>
 
-          <div className="space-y-3">
-            {rows.map((row) => (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">URL 입력 필요</p>
+              <div className="mt-3 space-y-3">
+            {pendingRows.map((row) => (
               <div key={row.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -189,11 +208,38 @@ export default function BlogPublishedUrlPage() {
                 </div>
               </div>
             ))}
-            {!rows.length && !loading && (
+              {!pendingRows.length && !loading && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                최근 블로그 글이 없습니다.
+                현재 실제 URL 입력이 필요한 발행 완료 글이 없습니다.
               </div>
             )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">발행예정</p>
+              <div className="mt-3 space-y-3">
+                {scheduledRows.map((row) => (
+                  <div key={row.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">#{row.id} {row.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">상태: {row.status} · 생성: {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                        발행예정
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">당일 예약 등록 후 다음날 오전 7시에 실제 발행되는 글입니다. 실제 발행 후 URL 입력 대상으로 이동합니다.</p>
+                  </div>
+                ))}
+                {!scheduledRows.length && !loading && (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                    현재 발행예정인 최근 글이 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

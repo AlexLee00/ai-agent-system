@@ -20,10 +20,12 @@
   - 무수정 확정률
   - 평균 수정 필드 수
   - 재사용 표본 수
-- 워커 모니터링과 기본 LLM API 선택
-- 최근 24시간 LLM 호출 통계와 기본 API 변경 이력 확인
-- provider별/경로별 성공률과 평균 응답시간 확인
-- provider 변경 사유(note)와 최근 설정 판단 맥락 확인
+- `LLM API 현황`에서 ai-agent-system 전체 에이전트의 primary / fallback / 미적용 상태 확인
+- `LLM API 현황`에서 selector별 `primary / fallback` 역할 선택 후 `provider -> model` 2단계 변경
+- `LLM API 현황`에서 speed-test 실행, 대상 목록, 최신 측정 결과, 최근 7일 review 확인
+- `블로그 URL 입력`에서 실제 네이버 블로그 URL canonical 기록
+- 최근 24시간 Worker LLM 호출 통계와 활성 컨트롤 변경 이력 확인
+- Worker provider별/경로별 성공률과 평균 응답시간 확인
 - 최근 변경 전후 12시간 기준 성공률/응답시간 비교 확인
 
 ## 핵심 진입점
@@ -37,6 +39,7 @@
   - [bots/worker/web/app/approvals/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/approvals/page.js)
   - [bots/worker/web/app/admin/ocr-test/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/ocr-test/page.js)
   - [bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js)
+  - [bots/worker/web/app/admin/monitoring/blog-links/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/blog-links/page.js)
 
 ## 공용 정책/구조
 

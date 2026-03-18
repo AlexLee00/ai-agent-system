@@ -18,7 +18,8 @@ const kst = require('../../../packages/core/lib/kst');
 const path        = require('path');
 const http        = require('http');
 const { randomUUID } = require('crypto');
-const { spawn }   = require('child_process');
+const { spawn, spawnSync }   = require('child_process');
+const { pathToFileURL } = require('url');
 const express     = require('express');
 const helmet      = require('helmet');
 const cors        = require('cors');
@@ -48,7 +49,13 @@ const {
   setWorkerMonitoringPreference,
 } = require('../lib/llm-api-monitoring');
 const { parseNaverBlogUrl } = require(path.join(__dirname, '../../../packages/core/lib/naver-blog-url'));
+const { describeLLMSelector } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
+const { buildSpeedLookup, buildSelectorAdvice } = require(path.join(__dirname, '../../../packages/core/lib/llm-selector-advisor'));
 const { markPublished } = require(path.join(__dirname, '../../blog/lib/publ'));
+const orchestratorRuntime = require(path.join(__dirname, '../../../bots/orchestrator/lib/runtime-config'));
+const workerRuntime = require('../lib/runtime-config');
+const blogRuntime = require(path.join(__dirname, '../../../bots/blog/lib/runtime-config'));
+const claudeConfig = require(path.join(__dirname, '../../../bots/claude/lib/config'));
 const {
   buildAttendanceProposal,
   normalizeAttendanceProposal,
@@ -192,6 +199,309 @@ const app = express();
 const wsClients = new Set();
 let chatWss = null;
 let taskEventClient = null;
+const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
+const OPENCLAW_CONFIG_FILE = path.join(process.env.HOME || '', '.openclaw/openclaw.json');
+const ROOT_DIR = path.join(__dirname, '..', '..', '..', '..');
+const SPEED_TEST_REVIEW_SCRIPT = path.join(ROOT_DIR, 'scripts', 'reviews', 'llm-selector-speed-review.js');
+const SPEED_TEST_DAILY_SCRIPT = path.join(ROOT_DIR, 'scripts', 'reviews', 'llm-selector-speed-daily.js');
+const PROVIDER_MODEL_OPTIONS = {
+  openai: [
+    { model: 'gpt-5-mini', label: 'gpt-5-mini' },
+    { model: 'gpt-4o', label: 'gpt-4o' },
+    { model: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+  ],
+  anthropic: [
+    { model: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
+    { model: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5-20251001' },
+  ],
+  gemini: [
+    { model: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+    { model: 'google-gemini-cli/gemini-2.5-flash', label: 'google-gemini-cli/gemini-2.5-flash' },
+  ],
+  groq: [
+    { model: 'groq/llama-4-scout-17b-16e-instruct', label: 'groq/llama-4-scout-17b-16e-instruct' },
+    { model: 'llama-4-scout-17b-16e-instruct', label: 'llama-4-scout-17b-16e-instruct' },
+    { model: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'meta-llama/llama-4-scout-17b-16e-instruct' },
+    { model: 'openai/gpt-oss-20b', label: 'openai/gpt-oss-20b' },
+    { model: 'qwen/qwen3-32b', label: 'qwen/qwen3-32b' },
+  ],
+};
+const SELECTOR_EDIT_CONFIG = {
+  'orchestrator.jay.intent': {
+    type: 'intent_pair',
+    config: 'bots/orchestrator/config.json',
+    path: 'runtime_config.llmSelectorOverrides.orchestrator.jay.intent',
+  },
+  'orchestrator.jay.chat_fallback': {
+    type: 'chain',
+    config: 'bots/orchestrator/config.json',
+    path: 'runtime_config.llmSelectorOverrides.orchestrator.jay.chat_fallback.chain',
+  },
+  'worker.ai.fallback': {
+    type: 'providerModels',
+    config: 'bots/worker/config.json',
+    path: 'runtime_config.llmSelectorOverrides.worker.ai.fallback.providerModels',
+  },
+  'worker.chat.task_intake': {
+    type: 'chain',
+    config: 'bots/worker/config.json',
+    path: 'runtime_config.llmSelectorOverrides.worker.chat.task_intake.chain',
+  },
+  'claude.archer.tech_analysis': {
+    type: 'chain',
+    config: 'bots/claude/config.json',
+    path: 'runtime_config.llmSelectorOverrides.claude.archer.tech_analysis.chain',
+  },
+  'claude.lead.system_issue_triage': {
+    type: 'chain',
+    config: 'bots/claude/config.json',
+    path: 'runtime_config.llmSelectorOverrides.claude.lead.system_issue_triage.chain',
+  },
+  'claude.dexter.ai_analyst.warn': {
+    type: 'singleModel',
+    config: 'bots/claude/config.json',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.lowModel',
+  },
+  'claude.dexter.ai_analyst.critical': {
+    type: 'singleModel',
+    config: 'bots/claude/config.json',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.highModel',
+  },
+  'blog.pos.writer': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.pos.writer.chain',
+  },
+  'blog.gems.writer': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.gems.writer.chain',
+  },
+  'blog.social.summarize': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.social.summarize.chain',
+  },
+  'blog.social.caption': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.social.caption.chain',
+  },
+  'blog.star.summarize': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.star.summarize.chain',
+  },
+  'blog.star.caption': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.star.caption.chain',
+  },
+  'blog.curriculum.recommend': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.curriculum.recommend.chain',
+  },
+  'blog.curriculum.generate': {
+    type: 'chain',
+    config: 'bots/blog/config.json',
+    path: 'runtime_config.llmSelectorOverrides.blog.curriculum.generate.chain',
+  },
+};
+
+async function runNodeScriptJson(script, args = [], timeoutMs = 60_000) {
+  const root = path.join(__dirname, '..', '..', '..', '..');
+  try {
+    const result = spawnSync(process.execPath, [script, ...args], {
+      cwd: root,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024 * 4,
+    });
+    if (result.error || result.status !== 0) return null;
+    return JSON.parse(result.stdout || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function loadLatestSpeedSnapshot() {
+  try {
+    if (!fs.existsSync(SPEED_TEST_LATEST_FILE)) return null;
+    return JSON.parse(fs.readFileSync(SPEED_TEST_LATEST_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function loadSpeedTestTargets() {
+  try {
+    if (!fs.existsSync(OPENCLAW_CONFIG_FILE)) return [];
+    const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_FILE, 'utf8'));
+    const models = config?.agents?.defaults?.models || {};
+    return Object.keys(models)
+      .map((modelId) => {
+        const [provider, ...rest] = String(modelId || '').split('/');
+        if (!provider || !rest.length) return null;
+        return {
+          modelId,
+          provider,
+          label: rest.join('/'),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const providerDiff = a.provider.localeCompare(b.provider);
+        if (providerDiff !== 0) return providerDiff;
+        return a.label.localeCompare(b.label);
+      });
+  } catch {
+    return [];
+  }
+}
+
+async function buildSpeedTestConsolePayload() {
+  const latest = loadLatestSpeedSnapshot();
+  const review = await runNodeScriptJson(SPEED_TEST_REVIEW_SCRIPT, ['--days=7', '--json'], 60_000).catch(() => null);
+  const targets = loadSpeedTestTargets();
+  const results = Array.isArray(latest?.results)
+    ? latest.results.map((item) => ({
+        rank: Number(item.rank || 0),
+        provider: item.provider || 'unknown',
+        modelId: item.modelId || '-',
+        label: item.label || item.modelId || '-',
+        ttft: item.ttft ?? null,
+        total: item.total ?? null,
+        ok: item.ok === true,
+        error: item.error || null,
+      }))
+    : [];
+
+  return {
+    targets,
+    latest: latest
+      ? {
+          capturedAt: latest.capturedAt || null,
+          current: latest.current || null,
+          recommended: latest.recommended || null,
+          applied: latest.applied || null,
+          runs: Number(latest.runs || 0),
+          prompt: latest.prompt || null,
+        }
+      : null,
+    review: review
+      ? {
+          days: Number(review.days || 7),
+          snapshotCount: Number(review.snapshotCount || 0),
+          latestCapturedAt: review.latestCapturedAt || null,
+          currentPrimary: review.currentPrimary || null,
+          latestRecommended: review.latestRecommended || null,
+          recommendation: review.recommendation || 'observe',
+          topModels: Array.isArray(review.topModels) ? review.topModels.slice(0, 5) : [],
+        }
+      : null,
+    results,
+    summary: {
+      targetCount: targets.length,
+      resultCount: results.length,
+      successCount: results.filter((item) => item.ok).length,
+      failedCount: results.filter((item) => !item.ok).length,
+    },
+  };
+}
+
+async function getInvestmentPolicyOverrideSafe() {
+  try {
+    const moduleUrl = pathToFileURL(path.join(__dirname, '../../investment/shared/runtime-config.js')).href;
+    const mod = await import(moduleUrl);
+    return mod.getInvestmentLLMPolicyConfig().investmentAgentPolicy || null;
+  } catch {
+    return null;
+  }
+}
+
+function getByPath(target, pathString) {
+  return String(pathString || '').split('.').filter(Boolean).reduce((cursor, key) => (cursor == null ? undefined : cursor[key]), target);
+}
+
+function setByPath(target, pathString, value) {
+  const parts = String(pathString || '').split('.').filter(Boolean);
+  let cursor = target;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const key = parts[index];
+    if (!cursor[key] || typeof cursor[key] !== 'object' || Array.isArray(cursor[key])) {
+      cursor[key] = {};
+    }
+    cursor = cursor[key];
+  }
+  cursor[parts[parts.length - 1]] = value;
+}
+
+function dedupeChain(chain = []) {
+  const seen = new Set();
+  return chain.filter((entry) => {
+    const key = `${entry?.provider || ''}:${entry?.model || ''}`;
+    if (!entry?.provider || !entry?.model || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildPrimaryChainEntry(provider, model, currentChain = []) {
+  const exact = currentChain.find((entry) => entry?.provider === provider && entry?.model === model);
+  if (exact) return { ...exact };
+  const sameProvider = currentChain.find((entry) => entry?.provider === provider);
+  return {
+    provider,
+    model,
+    ...(sameProvider?.maxTokens ? { maxTokens: sameProvider.maxTokens } : {}),
+    ...(sameProvider?.temperature != null ? { temperature: sameProvider.temperature } : {}),
+  };
+}
+
+function buildReorderedChain(currentChain = [], provider, model) {
+  const primary = buildPrimaryChainEntry(provider, model, currentChain);
+  const rest = currentChain.filter((entry) => !(entry?.provider === provider && entry?.model === model));
+  return dedupeChain([primary, ...rest]);
+}
+
+function resolveConfigAbsolutePath(relativePath) {
+  return path.join(ROOT_DIR, relativePath);
+}
+
+function buildSelectorEditorCatalog(globalSelectorSummary) {
+  const catalog = {};
+  for (const group of globalSelectorSummary?.groups || []) {
+    for (const entry of group.entries || []) {
+      const mapping = SELECTOR_EDIT_CONFIG[entry.key] || null;
+      const primary = (entry.chain || []).find((item) => item.role === 'primary') || null;
+      catalog[entry.key] = {
+        team: group.title,
+        key: entry.key,
+        label: entry.label,
+        editable: Boolean(mapping),
+        editType: mapping?.type || null,
+        configPath: mapping?.config || null,
+        runtimePath: mapping?.path || null,
+        currentProvider: primary?.provider || null,
+        currentModel: primary?.model || null,
+        roleOptions: (entry.chain || []).map((item) => ({
+          role: item.role,
+          label: item.role === 'primary' ? 'Primary' : item.role.toUpperCase(),
+          provider: item.provider || null,
+          model: item.model || null,
+        })),
+        providerOptions: Object.keys(PROVIDER_MODEL_OPTIONS).map((provider) => ({
+          key: provider,
+          label: API_CATALOG[provider]?.label || provider,
+        })),
+        modelOptionsByProvider: PROVIDER_MODEL_OPTIONS,
+      };
+    }
+  }
+  return catalog;
+}
 
 async function extractUploadedDocument({ absolutePath, filename, mimeType }) {
   try {
@@ -523,6 +833,13 @@ async function buildWorkerMonitoringPayload(user) {
     getWorkerMonitoringChangeImpact(3, 12).catch(() => []),
   ]);
   const globalSelectorSummary = await getGlobalSelectorSummary().catch(() => null);
+  const speedTestConsole = await buildSpeedTestConsolePayload().catch(() => ({
+    targets: [],
+    latest: null,
+    review: null,
+    results: [],
+    summary: { targetCount: 0, resultCount: 0, successCount: 0, failedCount: 0 },
+  }));
 
   return {
     selected_api: selectedApi,
@@ -532,6 +849,8 @@ async function buildWorkerMonitoringPayload(user) {
     application_summary: getWorkerLlmApplicationSummary(selectedApi),
     selector_summary: getWorkerSelectorSummary(selectedApi),
     global_selector_summary: globalSelectorSummary,
+    selector_editors: buildSelectorEditorCatalog(globalSelectorSummary),
+    speed_test_console: speedTestConsole,
     change_history: changeHistory.map((item) => {
       const previousApi = String(item.previous_value?.selected_api || '').trim().toLowerCase();
       const nextApi = String(item.next_value?.selected_api || '').trim().toLowerCase();
@@ -570,6 +889,7 @@ async function buildBlogPublishedUrlPayload(limit = 20) {
   const rows = await pgPool.query('blog', `
     SELECT id, title, status, naver_url, created_at
     FROM blog.posts
+    WHERE id NOT IN (34, 36, 38)
     ORDER BY created_at DESC
     LIMIT $1
   `, [limit]);
@@ -581,11 +901,13 @@ async function buildBlogPublishedUrlPayload(limit = 20) {
       status: row.status,
       naver_url: row.naver_url,
       created_at: row.created_at,
-      needs_url: !row.naver_url,
+      needs_url: row.status === 'published' && !row.naver_url,
+      scheduled: row.status === 'ready' && !row.naver_url,
     })),
     summary: {
       total: rows.length,
-      missingUrl: rows.filter((row) => !row.naver_url).length,
+      missingUrl: rows.filter((row) => row.status === 'published' && !row.naver_url).length,
+      scheduled: rows.filter((row) => row.status === 'ready' && !row.naver_url).length,
       published: rows.filter((row) => row.status === 'published').length,
     },
   };
@@ -631,13 +953,234 @@ function buildSelectorGroup(title, entries) {
   };
 }
 
+async function describeRuntimeSelectorByKey(key) {
+  const jayOverrides = orchestratorRuntime.getLLMSelectorOverrides();
+  const workerOverrides = workerRuntime.getWorkerLLMSelectorOverrides();
+  const blogOverrides = blogRuntime.getBlogLLMSelectorOverrides();
+  const claudeOverrides = claudeConfig.RUNTIME?.llmSelectorOverrides || {};
+  const workerPreferredApi = await getWorkerMonitoringPreference().catch(() => 'groq');
+  const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
+
+  switch (key) {
+    case 'orchestrator.jay.intent':
+      return describeLLMSelector(key, { policyOverride: jayOverrides[key] });
+    case 'orchestrator.jay.chat_fallback':
+      return describeLLMSelector(key, { policyOverride: jayOverrides[key] });
+    case 'worker.ai.fallback':
+      return describeLLMSelector(key, {
+        preferredApi: workerPreferredApi,
+        configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
+        policyOverride: workerOverrides[key],
+      });
+    case 'worker.chat.task_intake':
+      return describeLLMSelector(key, { policyOverride: workerOverrides[key] });
+    case 'claude.archer.tech_analysis':
+    case 'claude.lead.system_issue_triage':
+      return describeLLMSelector(key, { policyOverride: claudeOverrides[key] });
+    case 'claude.dexter.ai_analyst.warn':
+      return describeLLMSelector('claude.dexter.ai_analyst', {
+        level: 2,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
+          ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
+          : null,
+      });
+    case 'claude.dexter.ai_analyst.critical':
+      return describeLLMSelector('claude.dexter.ai_analyst', {
+        level: 4,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
+          ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
+          : null,
+      });
+    case 'blog.pos.writer':
+    case 'blog.gems.writer':
+    case 'blog.social.summarize':
+    case 'blog.social.caption':
+    case 'blog.star.summarize':
+    case 'blog.star.caption':
+    case 'blog.curriculum.recommend':
+    case 'blog.curriculum.generate':
+      return describeLLMSelector(key, { policyOverride: blogOverrides[key] });
+    default:
+      if (key.startsWith('investment.')) {
+        const agentName = key.split('.')[1];
+        return describeLLMSelector('investment.agent_policy', {
+          agentName,
+          policyOverride: investmentPolicyOverride,
+        });
+      }
+      throw new Error(`지원하지 않는 selector key: ${key}`);
+  }
+}
+
+function buildUpdatedSelectorValue(key, editType, provider, model, description, role = 'primary') {
+  const currentChain = Array.isArray(description?.chain) ? description.chain : [];
+  const normalizedRole = String(role || 'primary').trim().toLowerCase();
+  const targetIndex = normalizedRole === 'primary'
+    ? 0
+    : Math.max(1, Number.parseInt(normalizedRole.replace('fallback', ''), 10) || 1);
+
+  if (editType === 'providerModels') {
+    const reordered = buildReorderedChain(currentChain, provider, model);
+    const nextChain = reordered.map((entry, index) => (
+      index === targetIndex
+        ? buildPrimaryChainEntry(provider, model, currentChain)
+        : entry
+    ));
+    const providerModels = dedupeChain(nextChain).reduce((acc, entry) => {
+      if (entry?.provider && entry?.model) acc[entry.provider] = entry.model;
+      return acc;
+    }, {});
+    return providerModels;
+  }
+
+  if (editType === 'singleModel') {
+    return model;
+  }
+
+  if (editType === 'intent_pair') {
+    const nextChain = currentChain.length
+      ? currentChain.map((entry, index) => (
+          index === targetIndex ? buildPrimaryChainEntry(provider, model, currentChain) : entry
+        ))
+      : [{ provider, model }];
+    const reordered = dedupeChain(nextChain);
+    return {
+      primary: reordered[0]
+        ? { provider: reordered[0].provider, model: reordered[0].model }
+        : null,
+      fallback: reordered[1]
+        ? { provider: reordered[1].provider, model: reordered[1].model }
+        : null,
+    };
+  }
+
+  if (!currentChain.length) {
+    return [{ provider, model }];
+  }
+  const nextChain = currentChain.map((entry, index) => (
+    index === targetIndex ? buildPrimaryChainEntry(provider, model, currentChain) : entry
+  ));
+  return dedupeChain(nextChain);
+}
+
 async function getGlobalSelectorSummary() {
-  const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'scripts', 'llm-selector-report.js');
-  const payload = await runNodeScriptJson(script, ['--json'], 60_000);
-  if (!payload) return null;
+  const jayOverrides = orchestratorRuntime.getLLMSelectorOverrides();
+  const workerOverrides = workerRuntime.getWorkerLLMSelectorOverrides();
+  const blogOverrides = blogRuntime.getBlogLLMSelectorOverrides();
+  const claudeOverrides = claudeConfig.RUNTIME?.llmSelectorOverrides || {};
+  const workerPreferredApi = await getWorkerMonitoringPreference().catch(() => 'groq');
+  const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
+  const speedSnapshot = loadLatestSpeedSnapshot();
+  const speedLookup = buildSpeedLookup(speedSnapshot);
+  const payload = {
+    speedTest: speedSnapshot,
+    jay: {
+      intent: describeLLMSelector('orchestrator.jay.intent', {
+        policyOverride: jayOverrides['orchestrator.jay.intent'],
+      }),
+      chatFallback: describeLLMSelector('orchestrator.jay.chat_fallback', {
+        policyOverride: jayOverrides['orchestrator.jay.chat_fallback'],
+      }),
+    },
+    worker: {
+      preferredApi: workerPreferredApi,
+      aiFallback: describeLLMSelector('worker.ai.fallback', {
+        preferredApi: workerPreferredApi,
+        configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
+        policyOverride: workerOverrides['worker.ai.fallback'],
+      }),
+      taskIntake: describeLLMSelector('worker.chat.task_intake', {
+        policyOverride: workerOverrides['worker.chat.task_intake'],
+      }),
+    },
+    claude: {
+      archer: describeLLMSelector('claude.archer.tech_analysis', {
+        policyOverride: claudeOverrides['claude.archer.tech_analysis'],
+      }),
+      lead: describeLLMSelector('claude.lead.system_issue_triage', {
+        policyOverride: claudeOverrides['claude.lead.system_issue_triage'],
+      }),
+      dexterWarn: describeLLMSelector('claude.dexter.ai_analyst', {
+        level: 2,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
+          ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
+          : null,
+      }),
+      dexterCritical: describeLLMSelector('claude.dexter.ai_analyst', {
+        level: 4,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
+          ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
+          : null,
+      }),
+    },
+    blog: {
+      pos: describeLLMSelector('blog.pos.writer', {
+        policyOverride: blogOverrides['blog.pos.writer'],
+      }),
+      gems: describeLLMSelector('blog.gems.writer', {
+        policyOverride: blogOverrides['blog.gems.writer'],
+      }),
+      socialSummarize: describeLLMSelector('blog.social.summarize', {
+        policyOverride: blogOverrides['blog.social.summarize'],
+      }),
+      socialCaption: describeLLMSelector('blog.social.caption', {
+        policyOverride: blogOverrides['blog.social.caption'],
+      }),
+      starSummarize: describeLLMSelector('blog.star.summarize', {
+        policyOverride: blogOverrides['blog.star.summarize'],
+      }),
+      starCaption: describeLLMSelector('blog.star.caption', {
+        policyOverride: blogOverrides['blog.star.caption'],
+      }),
+      curriculumRecommend: describeLLMSelector('blog.curriculum.recommend', {
+        policyOverride: blogOverrides['blog.curriculum.recommend'],
+      }),
+      curriculumGenerate: describeLLMSelector('blog.curriculum.generate', {
+        policyOverride: blogOverrides['blog.curriculum.generate'],
+      }),
+    },
+    investment: Object.fromEntries(
+      ['luna', 'nemesis', 'oracle', 'hermes', 'sophia', 'zeus', 'athena', 'argos']
+        .map((agent) => [agent, describeLLMSelector('investment.agent_policy', {
+          agentName: agent,
+          policyOverride: investmentPolicyOverride,
+        })])
+    ),
+  };
+  payload.advice = {
+    jay: {
+      intent: buildSelectorAdvice(payload.jay.intent, speedLookup),
+      chatFallback: buildSelectorAdvice(payload.jay.chatFallback, speedLookup),
+    },
+    worker: {
+      aiFallback: buildSelectorAdvice(payload.worker.aiFallback, speedLookup),
+      taskIntake: buildSelectorAdvice(payload.worker.taskIntake, speedLookup),
+    },
+    claude: {
+      archer: buildSelectorAdvice(payload.claude.archer, speedLookup),
+      lead: buildSelectorAdvice(payload.claude.lead, speedLookup),
+      dexterWarn: buildSelectorAdvice(payload.claude.dexterWarn, speedLookup),
+      dexterCritical: buildSelectorAdvice(payload.claude.dexterCritical, speedLookup),
+    },
+    blog: {
+      pos: buildSelectorAdvice(payload.blog.pos, speedLookup),
+      gems: buildSelectorAdvice(payload.blog.gems, speedLookup),
+      socialSummarize: buildSelectorAdvice(payload.blog.socialSummarize, speedLookup),
+      socialCaption: buildSelectorAdvice(payload.blog.socialCaption, speedLookup),
+      starSummarize: buildSelectorAdvice(payload.blog.starSummarize, speedLookup),
+      starCaption: buildSelectorAdvice(payload.blog.starCaption, speedLookup),
+      curriculumRecommend: buildSelectorAdvice(payload.blog.curriculumRecommend, speedLookup),
+      curriculumGenerate: buildSelectorAdvice(payload.blog.curriculumGenerate, speedLookup),
+    },
+    investment: Object.fromEntries(
+      Object.entries(payload.investment || {}).map(([agent, description]) => [
+        agent,
+        buildSelectorAdvice(description, speedLookup),
+      ]),
+    ),
+  };
   const overrideSuggestionPayload = await runNodeScriptJson(
-    path.join(root, 'scripts', 'llm-selector-override-suggestions.js'),
+    path.join(__dirname, '..', '..', '..', '..', 'scripts', 'llm-selector-override-suggestions.js'),
     ['--json'],
     60_000,
   ).catch(() => null);
@@ -1124,6 +1667,115 @@ app.put('/api/admin/monitoring/llm-api',
       });
     } catch (error) {
       res.status(500).json({ error: '워커 모니터링 설정을 저장하지 못했습니다.', code: 'WORKER_MONITORING_SAVE_FAILED', detail: error.message });
+    }
+  }
+);
+
+app.put('/api/admin/monitoring/llm-api/selector',
+  requireAuth,
+  requireRole('admin', 'master'),
+  body('key').isString().trim().notEmpty(),
+  body('role').optional({ values: 'falsy' }).isString().trim().notEmpty(),
+  body('provider').isString().trim().notEmpty(),
+  body('model').isString().trim().notEmpty(),
+  body('note').optional({ values: 'falsy' }).trim().isLength({ max: 300 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const user = await pgPool.get(SCHEMA, `
+        SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+               ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+        FROM worker.users
+        WHERE id = $1 AND deleted_at IS NULL
+      `, [req.user.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+      const key = String(req.body.key || '').trim();
+      const role = String(req.body.role || 'primary').trim().toLowerCase();
+      const provider = String(req.body.provider || '').trim();
+      const model = String(req.body.model || '').trim();
+      const note = String(req.body.note || '').trim();
+      const editMeta = SELECTOR_EDIT_CONFIG[key] || null;
+      if (!editMeta) {
+        return res.status(400).json({ error: '현재 화면에서 직접 변경할 수 없는 selector입니다.', code: 'SELECTOR_NOT_EDITABLE' });
+      }
+      if (!PROVIDER_MODEL_OPTIONS[provider]) {
+        return res.status(400).json({ error: '지원하지 않는 provider입니다.', code: 'INVALID_PROVIDER' });
+      }
+      if (!PROVIDER_MODEL_OPTIONS[provider].some((item) => item.model === model)) {
+        return res.status(400).json({ error: '지원하지 않는 model입니다.', code: 'INVALID_MODEL' });
+      }
+
+      const description = await describeRuntimeSelectorByKey(key);
+      const availableRoles = Array.isArray(description?.chain)
+        ? description.chain.map((entry, index) => (index === 0 ? 'primary' : `fallback${index}`))
+        : ['primary'];
+      if (!availableRoles.includes(role)) {
+        return res.status(400).json({ error: '지원하지 않는 role입니다.', code: 'INVALID_SELECTOR_ROLE' });
+      }
+      const nextValue = buildUpdatedSelectorValue(key, editMeta.type, provider, model, description, role);
+      const configPath = resolveConfigAbsolutePath(editMeta.config);
+      const rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      setByPath(rawConfig, editMeta.path, nextValue);
+      fs.writeFileSync(configPath, JSON.stringify(rawConfig, null, 2) + '\n', 'utf8');
+
+      if (key === 'worker.ai.fallback') {
+        await setWorkerMonitoringPreference(provider, user.id, note || `selector_edit:${key}:${provider}/${model}`);
+      }
+
+      res.json({
+        success: true,
+        message: `${key} ${role}를 ${provider} / ${model} 로 저장했습니다.`,
+        ...(await buildWorkerMonitoringPayload(user)),
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'selector 설정을 저장하지 못했습니다.', code: 'SELECTOR_SAVE_FAILED', detail: error.message });
+    }
+  }
+);
+
+app.post('/api/admin/monitoring/llm-api/speed-test',
+  requireAuth,
+  requireRole('admin', 'master'),
+  async (req, res) => {
+    try {
+      const user = await pgPool.get(SCHEMA, `
+        SELECT id, company_id, username, role, name, email, telegram_id, channel, must_change_pw, last_login_at, created_at,
+               ai_ui_mode_override, ai_llm_mode_override, ai_confirmation_mode_override
+        FROM worker.users
+        WHERE id = $1 AND deleted_at IS NULL
+      `, [req.user.id]);
+      if (!user) return res.status(404).json({ error: '사용자를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+
+      const run = await runNodeScriptJson(SPEED_TEST_DAILY_SCRIPT, ['--days=7', '--json'], 180_000);
+      if (!run) {
+        return res.status(500).json({
+          error: '속도 테스트 실행 결과를 읽지 못했습니다.',
+          code: 'SPEED_TEST_RUN_FAILED',
+        });
+      }
+
+      const speedTestOk = run?.speedTest?.ok !== false;
+      res.json({
+        success: speedTestOk,
+        message: speedTestOk
+          ? '속도 테스트를 실행하고 최신 측정 결과를 반영했습니다.'
+          : '속도 테스트를 실행했지만 일부 대상 측정이 실패했습니다.',
+        speed_test_run: {
+          executed_at: run.executedAt || null,
+          ok: run?.speedTest?.ok !== false,
+          skipped: Boolean(run?.speedTest?.skipped),
+          status: Number(run?.speedTest?.status || 0),
+          stderr: String(run?.speedTest?.stderr || '').trim(),
+        },
+        ...(await buildWorkerMonitoringPayload(user)),
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: '속도 테스트를 실행하지 못했습니다.',
+        code: 'SPEED_TEST_RUN_FAILED',
+        detail: error.message,
+      });
     }
   }
 );
