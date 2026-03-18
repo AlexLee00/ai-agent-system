@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
+import { isPaperMode } from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -11,6 +12,36 @@ const DEFAULT_RUNTIME_CONFIG = {
     minConfidence: {
       live: { binance: 0.50, kis: 0.30, kis_overseas: 0.30 },
       paper: { binance: 0.45, kis: 0.22, kis_overseas: 0.22 },
+    },
+    stockStrategyMode: {
+      live: 'aggressive',
+      paper: 'aggressive',
+    },
+    stockStrategyProfiles: {
+      balanced: {
+        label: 'balanced',
+        promptTag: '균형 모드',
+        minConfidence: { live: 0.30, paper: 0.22 },
+        debateThresholds: {
+          live: { minAverageConfidence: 0.62, minAbsScore: 0.40 },
+          paper: { minAverageConfidence: 0.48, minAbsScore: 0.22 },
+        },
+        fastPathMinConfidence: 0.22,
+        portfolioMaxPositionPct: 0.25,
+        portfolioDailyLossPct: 0.08,
+      },
+      aggressive: {
+        label: 'aggressive',
+        promptTag: '공격적 모드',
+        minConfidence: { live: 0.28, paper: 0.20 },
+        debateThresholds: {
+          live: { minAverageConfidence: 0.58, minAbsScore: 0.34 },
+          paper: { minAverageConfidence: 0.44, minAbsScore: 0.18 },
+        },
+        fastPathMinConfidence: 0.20,
+        portfolioMaxPositionPct: 0.30,
+        portfolioDailyLossPct: 0.10,
+      },
     },
     analystWeights: {
       default: { taMtf: 0.30, onchain: 0.25, sentiment: 0.20, news: 0.15 },
@@ -133,6 +164,25 @@ export function isDynamicTpSlEnabled() {
 
 export function getLunaRuntimeConfig() {
   return loadRuntimeConfig().luna;
+}
+
+export function getLunaStockStrategyProfile() {
+  const luna = getLunaRuntimeConfig();
+  const mode = luna.stockStrategyMode || {};
+  const profiles = luna.stockStrategyProfiles || {};
+  const selectedKey = (mode[isPaperMode() ? 'paper' : 'live'] || 'aggressive');
+  return profiles[selectedKey] || profiles.aggressive || profiles.balanced || {
+    label: 'aggressive',
+    promptTag: '공격적 모드',
+    minConfidence: { live: 0.30, paper: 0.22 },
+    debateThresholds: {
+      live: { minAverageConfidence: 0.62, minAbsScore: 0.40 },
+      paper: { minAverageConfidence: 0.48, minAbsScore: 0.22 },
+    },
+    fastPathMinConfidence: 0.22,
+    portfolioMaxPositionPct: 0.30,
+    portfolioDailyLossPct: 0.10,
+  };
 }
 
 export function getNemesisRuntimeConfig() {
