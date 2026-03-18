@@ -75,6 +75,28 @@
 - `cd bots/worker/web && npm run build`
 - `node bots/worker/migrations/019-monitoring-change-notes.js`
 
+### 12주차 후속 (2026-03-18) — 워커 모니터링 전후 품질 비교 추가
+
+핵심 구현:
+- 최근 기본 API 변경 3건에 대해 전후 12시간 품질 비교 카드 추가
+- 변경 전/후 각각 호출 수, 성공률, 평균 응답시간을 같은 화면에서 비교 가능하게 정리
+- 성공률 변화(%p)와 응답시간 변화(ms)를 delta로 계산
+- 별도 저장소 없이 기존 변경 이력과 `reservation.llm_usage_log`를 조합해 계산
+
+세션 맥락:
+- 워커 모니터링은 이제 현재값, 변경 사유, 호출 품질을 모두 볼 수 있게 됐다.
+- 이번 단계에서는 “바꾼 뒤 실제로 나아졌는가”를 바로 판단할 수 있도록, 최근 변경의 전후 효과를 같은 관리자 화면에 붙였다.
+
+의사결정 이유:
+- 내부 MVP 단계에서는 추세 분석 전용 테이블을 새로 두기보다, 기존 이벤트와 호출 로그를 조합하는 것이 가장 빠르고 안전하다.
+- 전후 비교는 provider 전환 실험의 근거가 되며, 추후 SaaS 운영 대시보드에서도 그대로 재사용 가능한 판단 축이다.
+
+검증:
+- `node --check bots/worker/lib/llm-api-monitoring.js`
+- `node --check bots/worker/web/server.js`
+- `node --check bots/worker/web/app/admin/monitoring/page.js`
+- `cd bots/worker/web && npm run build`
+
 ### 12주차 후속 (2026-03-18) — 투자 실패 이력 구조화 백필
 
 핵심 구현:

@@ -166,6 +166,34 @@ async function getWorkerMonitoringChangeHistory(limit = 10) {
   `, [PREFERENCE_KEY, limit]);
 }
 
+function toIsoString(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function buildChangeImpactSummary({ event, beforeRows, afterRows, windowHours = 12 }) {
+  const before = summarizeUsageRows(beforeRows);
+  const after = summarizeUsageRows(afterRows);
+  const successRateDeltaPct = Number((after.successRatePct - before.successRatePct).toFixed(1));
+  const avgLatencyDeltaMs = before.avgLatencyMs !== null && after.avgLatencyMs !== null
+    ? after.avgLatencyMs - before.avgLatencyMs
+    : null;
+
+  return {
+    id: event.id,
+    changedAt: event.changed_at,
+    windowHours,
+    previousApi: normalizeApi(event.previous_value?.selected_api),
+    nextApi: normalizeApi(event.next_value?.selected_api),
+    changeNote: event.change_note || '',
+    before,
+    after,
+    successRateDeltaPct,
+    avgLatencyDeltaMs,
+    enoughData: before.totalCalls >= 3 && after.totalCalls >= 3,
+  };
+}
+
 function providerFromModel(model = '') {
   if (model.startsWith('claude-')) return 'anthropic';
   if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
@@ -298,6 +326,44 @@ async function getWorkerMonitoringUsageSummary() {
   return summarizeUsageRows(rows);
 }
 
+async function getWorkerMonitoringChangeImpact(limit = 3, windowHours = 12) {
+  await ensureSystemPreferencesTable();
+  const events = await getWorkerMonitoringChangeHistory(limit);
+  if (!events.length) return [];
+
+  const oldestEvent = events[events.length - 1];
+  const oldestIso = toIsoString(new Date(new Date(oldestEvent.changed_at).getTime() - (windowHours * 60 * 60 * 1000)));
+  const newestIso = toIsoString(new Date(new Date(events[0].changed_at).getTime() + (windowHours * 60 * 60 * 1000)));
+  if (!oldestIso || !newestIso) return [];
+
+  const rows = await pgPool.query('reservation', `
+    SELECT model, request_type, success, cost_usd, latency_ms, created_at
+    FROM llm_usage_log
+    WHERE team = 'worker'
+      AND bot = 'ai-client'
+      AND request_type IN ('ai_question', 'revenue_forecast')
+      AND created_at::timestamptz >= $1::timestamptz
+      AND created_at::timestamptz < $2::timestamptz
+    ORDER BY created_at DESC
+    LIMIT 2000
+  `, [oldestIso, newestIso]);
+
+  return events.map((event) => {
+    const changedAt = new Date(event.changed_at);
+    const beforeStart = new Date(changedAt.getTime() - (windowHours * 60 * 60 * 1000));
+    const afterEnd = new Date(changedAt.getTime() + (windowHours * 60 * 60 * 1000));
+    const beforeRows = rows.filter((row) => {
+      const createdAt = new Date(row.created_at);
+      return createdAt >= beforeStart && createdAt < changedAt;
+    });
+    const afterRows = rows.filter((row) => {
+      const createdAt = new Date(row.created_at);
+      return createdAt >= changedAt && createdAt < afterEnd;
+    });
+    return buildChangeImpactSummary({ event, beforeRows, afterRows, windowHours });
+  });
+}
+
 function getWorkerLlmApplicationSummary(selectedApi) {
   const selected = normalizeApi(selectedApi);
   const selectedInfo = API_CATALOG[selected];
@@ -340,6 +406,7 @@ module.exports = {
   buildProviderOptions,
   ensureSystemPreferencesTable,
   getWorkerMonitoringChangeHistory,
+  getWorkerMonitoringChangeImpact,
   getWorkerMonitoringPreference,
   getWorkerLlmApplicationSummary,
   getWorkerMonitoringUsageSummary,
