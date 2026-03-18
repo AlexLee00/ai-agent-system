@@ -37,6 +37,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `adjust / hold / confidence / reason` 형식으로 운영 검토용 후보 제공
   - `--write` 옵션으로 제안 스냅샷을 `investment.runtime_config_suggestion_log`에 저장 가능
   - `review-runtime-config-suggestion.js`로 저장된 제안의 `pending / hold / approved / rejected / applied` 상태 갱신 가능
+  - `apply-runtime-config-suggestion.js`로 승인된 제안을 `config.yaml`에 반영하고 `applied_at`까지 자동 기록 가능
 
 ### 변경 사항 (changed)
 - 투자팀 운영 모드 용어 정리
