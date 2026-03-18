@@ -185,6 +185,27 @@
 - `node --check bots/orchestrator/src/router.js`
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js`
 
+### 12주차 후속 (2026-03-18) — 제이 gateway primary 전환 실험 기준표 정리
+
+핵심 구현:
+- `check-jay-gateway-primary.js`에 전환 후보별 장단점과 현재 권장 판단을 구조화해 출력
+- 현재 기준에서 `hold`가 왜 맞는지 스크립트와 문서 모두에서 같은 언어로 설명하도록 정리
+- 전환 후보를 `Gemini Flash 유지 / Groq GPT-OSS 전환 / Anthropic Haiku 전환` 3개로 고정
+
+세션 맥락:
+- 이전 단계까지는 “현재 기준값과 실제값이 맞는지”를 확인하는 레이어를 만들었다.
+- 이번 단계에서는 “그렇다면 지금 바꾸는 게 맞는가”에 답하기 위한 운영 판단 기준표를 붙였다.
+
+의사결정 이유:
+- 내부 MVP 단계에서는 무작정 전환보다 유지 판단의 근거를 먼저 명확히 해야 한다.
+- 비교 기준이 있어야 이후 SaaS 확장 시에도 workspace별 모델 정책 전환을 일관되게 판단할 수 있다.
+
+검증:
+- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
+- `node --check bots/orchestrator/src/router.js`
+- `node bots/orchestrator/scripts/check-jay-gateway-primary.js`
+
 ### 12주차 후속 (2026-03-18) — 제이 모델 정책 분리 + 오류 리뷰 최근성 보정
 
 핵심 구현:
