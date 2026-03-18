@@ -69,6 +69,30 @@ const WORKSPACE    = path.join(process.env.HOME || '/tmp', '.openclaw', 'workspa
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 const TG_MAX       = 4096 - 20;  // Telegram 최대 길이 여유 확보
 
+function _normalizeForMobile(message) {
+  const raw = String(message || '');
+  const lines = raw
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .map((line) => {
+      const trimmed = line.trim();
+      if (/^[━═─-]{8,}$/.test(trimmed)) return '────────';
+      return line;
+    });
+
+  const compact = [];
+  let previousBlank = false;
+  for (const line of lines) {
+    const blank = line.trim() === '';
+    if (blank && previousBlank) continue;
+    compact.push(line);
+    previousBlank = blank;
+  }
+
+  return compact.join('\n').trim();
+}
+
 function _savePending(team, message) {
   try {
     if (!fs.existsSync(WORKSPACE)) return;
@@ -197,20 +221,21 @@ async function _flushBatch(topic) {
  */
 async function send(team, message) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
+  const normalized = _normalizeForMobile(message);
 
-  if (_isFilenameLeak(message)) {
-    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${message.slice(0, 60)}`);
+  if (_isFilenameLeak(normalized)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
     return false;
   }
 
   const threadId = _getThreadId(team);
 
   // 긴급 메시지: 배치 우회, 즉시 발송
-  if (_isUrgent(message)) {
-    const text = message.slice(0, TG_MAX);
+  if (_isUrgent(normalized)) {
+    const text = normalized.slice(0, TG_MAX);
     if (await _doSend(text, threadId)) return true;
     console.warn(`⚠️ [telegram-sender] 긴급 메시지 발송 최종 실패 — 대기큐 저장 (team=${team})`);
-    _savePending(team, message);
+    _savePending(team, normalized);
     return false;
   }
 
@@ -221,7 +246,7 @@ async function send(team, message) {
     _batchBuffer.set(team, buf);
   }
 
-  buf.lines.push(message.slice(0, TG_MAX));
+  buf.lines.push(normalized.slice(0, TG_MAX));
 
   // 타이머 리셋 (2초 배치 윈도우)
   if (buf.timer) clearTimeout(buf.timer);
@@ -232,31 +257,33 @@ async function send(team, message) {
 
 async function sendWithOptions(team, message, options = {}) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
+  const normalized = _normalizeForMobile(message);
 
-  if (_isFilenameLeak(message)) {
-    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${message.slice(0, 60)}`);
+  if (_isFilenameLeak(normalized)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
     return false;
   }
 
   const threadId = _getThreadId(team);
-  const text = message.slice(0, TG_MAX);
+  const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId, options);
   if (ok) return true;
   console.warn(`⚠️ [telegram-sender] 옵션 메시지 발송 최종 실패 — 대기큐 저장 (team=${team})`);
-  _savePending(team, message);
+  _savePending(team, normalized);
   return false;
 }
 
 async function sendDirect(chatId, message, options = {}) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   if (!chatId) return false;
+  const normalized = _normalizeForMobile(message);
 
-  if (_isFilenameLeak(message)) {
-    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (chat=${chatId}): ${message.slice(0, 60)}`);
+  if (_isFilenameLeak(normalized)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (chat=${chatId}): ${normalized.slice(0, 60)}`);
     return false;
   }
 
-  const text = String(message || '').slice(0, TG_MAX);
+  const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, options.threadId || null, {
     ...options,
     chatId,

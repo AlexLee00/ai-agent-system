@@ -14,6 +14,16 @@ const {
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
+const DIVIDER = '────────';
+const SMALL_DIVIDER = '──────';
+
+function compactReasoning(reasoning, maxLength = 90) {
+  const text = String(reasoning || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 function publishLunaMessage({
   message,
   eventType = 'report',
@@ -65,7 +75,7 @@ export function notifySignal({ symbol, action, amountUsdt, confidence, reasoning
     `${tag}${emoji} ${action} 신호 — ${symbol}`,
     `금액: $${amountUsdt?.toFixed(2) || 'N/A'}`,
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
-    reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
+    reasoning ? `근거: ${compactReasoning(reasoning)}` : '',
   ].filter(Boolean).join('\n');
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
@@ -84,14 +94,14 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, tpP
   ];
   if (tpPrice && slPrice && price) {
     const isDynamic = tpslSource && tpslSource !== 'fixed' && tpslSource !== 'fixed_fallback';
-    const dynTag    = isDynamic ? '[동적 TP/SL]' : '[고정 TP/SL]';
+    const dynTag    = isDynamic ? '[동적]' : '[고정]';
     const tpPct     = ((tpPrice / price - 1) * 100).toFixed(1);
     const slPct     = ((slPrice / price - 1) * 100).toFixed(1);
     lines.push(`${dynTag} TP: $${tpPrice?.toLocaleString()} (+${tpPct}%) | SL: $${slPrice?.toLocaleString()} (${slPct}%)`);
   }
   if (memo) lines.push(`📝 ${memo}`);
   if (capitalInfo) {
-    lines.push('───────────────');
+    lines.push(DIVIDER);
     if (capitalInfo.balance    != null) lines.push(`💰 가용 잔고: $${parseFloat(capitalInfo.balance).toFixed(2)}`);
     if (capitalInfo.openPositions != null) lines.push(`📊 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions}`);
     if (capitalInfo.dailyPnL   != null) lines.push(`🛡️ 일간 PnL: ${capitalInfo.dailyPnL >= 0 ? '+' : ''}${capitalInfo.dailyPnL.toFixed(2)} USDT`);
@@ -106,7 +116,7 @@ export function notifyKisSignal({ symbol, action, amountKrw, confidence, reasoni
     `${tag}${emoji} [국내주식] ${action} 신호 — ${symbol}`,
     `금액: ${amountKrw?.toLocaleString()}원`,
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
-    reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
+    reasoning ? `근거: ${compactReasoning(reasoning)}` : '',
   ].filter(Boolean).join('\n');
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
@@ -118,7 +128,7 @@ export function notifyKisOverseasSignal({ symbol, action, amountUsdt, confidence
     `${tag}${emoji} [미국주식] ${action} 신호 — ${symbol}`,
     `금액: $${amountUsdt?.toFixed(2) || 'N/A'}`,
     `확신도: ${((confidence || 0) * 100).toFixed(0)}%`,
-    reasoning ? `근거: ${reasoning.slice(0, 150)}` : '',
+    reasoning ? `근거: ${compactReasoning(reasoning)}` : '',
   ].filter(Boolean).join('\n');
   return publishLunaMessage({ message: msg, eventType: 'signal', alertLevel: 1 });
 }
@@ -129,27 +139,23 @@ export function notifyRiskRejection({ symbol, action, reason }) {
 }
 
 export function notifyTradeSkip({ symbol, action, reason, balance, openPositions, maxPositions, confidence }) {
-  const SEP = '═'.repeat(19);
-  const sep = '─'.repeat(19);
   const lines = [
     `⚠️ ${symbol} ${action} 스킵`,
-    SEP,
-    `사유: ${reason}`,
+    DIVIDER,
+    `사유: ${compactReasoning(reason, 80)}`,
   ];
   if (confidence != null) lines.push(`시그널 신뢰도: ${((confidence || 0) * 100).toFixed(0)}%`);
   if (balance !== undefined) lines.push(`💰 가용 잔고: $${parseFloat(balance).toFixed(2)}`);
   if (openPositions !== undefined) lines.push(`📋 동시 포지션: ${openPositions}/${maxPositions}`);
-  lines.push(SEP);
+  lines.push(SMALL_DIVIDER);
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 2 });
 }
 
 export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
-  const SEP = '═'.repeat(19);
-  const sep = '─'.repeat(19);
   const lines = [
     '🚨 서킷 브레이커 발동!',
-    sep,
-    `사유: ${reason}`,
+    SMALL_DIVIDER,
+    `사유: ${compactReasoning(reason, 80)}`,
   ];
   if (type === 'daily_loss' && dailyPnL !== undefined) {
     const pct = dailyPnL.toFixed(2);
@@ -159,9 +165,9 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
     lines.push(`주간 PnL: ${weeklyPnL.toFixed(2)} USDT`);
   }
   lines.push('매매 자동 중지');
-  lines.push(sep);
+  lines.push(SMALL_DIVIDER);
   lines.push('재개: /resume_trading (마스터만)');
-  lines.push(SEP);
+  lines.push(DIVIDER);
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 4 });
 }
 
@@ -184,8 +190,6 @@ export function notifyJournalEntry({
   signalToExecMs,
   capitalInfo,  // { balance, openPositions, maxPositions, dailyPnL, totalCapital }
 }) {
-  const SEP      = '═'.repeat(19);
-  const sep      = '─'.repeat(19);
   const tag      = formatExecutionTag(isPaper);
   const dir      = direction === 'long' ? 'LONG' : 'SHORT';
   const currency = market === 'domestic' ? '₩' : '$';
@@ -195,7 +199,7 @@ export function notifyJournalEntry({
 
   const lines = [
     `${tag}🔔 ${symbol} ${dir} 실행`,
-    SEP,
+    SMALL_DIVIDER,
     `📍 진입: ${fmtPrice(entryPrice)}`,
   ];
 
@@ -215,7 +219,7 @@ export function notifyJournalEntry({
   if (tpSlSet !== undefined) lines.push(`🔒 TP/SL 설정: ${tpSlSet ? '✅ 완료' : '⚠️ 미설정'}`);
 
   if (capitalInfo || confidence != null) {
-    lines.push(SEP);
+    lines.push(SMALL_DIVIDER);
     if (capitalInfo?.balance    != null) lines.push(`💰 가용 잔고: ${fmtPrice(capitalInfo.balance)}`);
     if (capitalInfo?.openPositions != null) lines.push(`📋 동시 포지션: ${capitalInfo.openPositions}/${capitalInfo.maxPositions ?? '-'}`);
     if (capitalInfo?.dailyPnL   != null) {
@@ -224,9 +228,9 @@ export function notifyJournalEntry({
     }
     if (confidence != null) lines.push(`🔋 시그널 신뢰도: ${(confidence * 100).toFixed(0)}%`);
   }
-  lines.push(SEP);
+  lines.push(SMALL_DIVIDER);
 
-  if (reasoning)     lines.push(`근거: ${String(reasoning).slice(0, 100)}`);
+  if (reasoning)     lines.push(`근거: ${compactReasoning(reasoning)}`);
   if (signalToExecMs) lines.push(`실행 속도: ${(signalToExecMs / 1000).toFixed(1)}초`);
 
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'trade', alertLevel: 1 });
@@ -240,7 +244,7 @@ export function notifyJournalEntry({
 export function notifyDailyJournal(date, records = []) {
   const lines = [
     `📊 루나팀 일간 매매일지 (${date})`,
-    '═'.repeat(31),
+    DIVIDER,
     '',
   ];
 
@@ -293,8 +297,6 @@ export function notifySettlement({
   market = 'crypto', pnlPercent = null, maxFavorable = null, maxAdverse = null,
   signalAccuracy = null, executionSpeed = null,
 }) {
-  const SEP     = '═'.repeat(19);
-  const sep     = '─'.repeat(19);
   const tag     = formatExecutionTag(paper);
   const dir     = side === 'buy' ? 'LONG' : 'SHORT';
   const pnlSign = (pnl || 0) >= 0 ? '+' : '';
@@ -304,7 +306,7 @@ export function notifySettlement({
 
   const lines = [
     `${tag}💰 ${symbol} ${dir} 체결`,
-    sep,
+    SMALL_DIVIDER,
     `진입: ${currency}${Number(entryPrice).toLocaleString()}`,
     `청산: ${currency}${Number(exitPrice).toLocaleString()}${pricePct}`,
     `수익: ${pnlSign}${currency}${Math.abs(pnl || 0).toFixed(2)}`,
@@ -319,7 +321,7 @@ export function notifySettlement({
   if (signalAccuracy || executionSpeed) {
     lines.push(`리뷰: ${signalAccuracy || '-'} / 실행속도 ${executionSpeed || '-'}`);
   }
-  lines.push(SEP);
+  lines.push(SMALL_DIVIDER);
   if (weeklyPnl != null) {
     const wSign = weeklyPnl >= 0 ? '+' : '';
     lines.push(`누적 PnL: ${wSign}${currency}${Math.abs(weeklyPnl).toFixed(2)} (이번 주)`);
@@ -327,7 +329,7 @@ export function notifySettlement({
   if (winRate != null && totalTrades != null) {
     lines.push(`승률: ${((winRate) * 100).toFixed(0)}% (${wins}/${totalTrades})`);
   }
-  lines.push(SEP);
+  lines.push(DIVIDER);
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 
@@ -335,8 +337,6 @@ export function notifySettlement({
  * 자본 현황 알림 (/capital_status 명령 응답)
  */
 export function notifyCapitalStatus({ totalCapital, balance, positionValue, reserve, openPositions, maxPositions, dailyTrades, maxDailyTrades, dailyPnl, circuitOn }) {
-  const SEP    = '═'.repeat(19);
-  const sep    = '─'.repeat(19);
   const total  = totalCapital || 0;
   const balPct = total > 0 ? (balance / total * 100).toFixed(0) : 0;
   const posPct = total > 0 ? ((positionValue || 0) / total * 100).toFixed(0) : 0;
@@ -345,17 +345,17 @@ export function notifyCapitalStatus({ totalCapital, balance, positionValue, rese
 
   const lines = [
     '💰 자본 현황',
-    SEP,
+    DIVIDER,
     `총 자본:   ${total.toFixed(2)} USDT`,
     `가용 잔고: ${(balance || 0).toFixed(2)} USDT (${balPct}%)`,
     `포지션 중: ${(positionValue || 0).toFixed(2)} USDT (${posPct}%)`,
     `예비금:    ${(reserve || 0).toFixed(2)} USDT (${resPct}%)`,
-    sep,
+    SMALL_DIVIDER,
     `📋 포지션: ${openPositions ?? '-'}/${maxPositions ?? '-'}`,
     `📊 일간 매매: ${dailyTrades ?? '-'}/${maxDailyTrades ?? '-'}`,
     `📈 일간 PnL: ${pnlSign}${(dailyPnl || 0).toFixed(2)} USDT`,
     `🛡️ 서킷 브레이커: ${circuitOn ? 'ON 🔴' : 'OFF ✅'}`,
-    SEP,
+    DIVIDER,
   ];
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
@@ -364,13 +364,12 @@ export function notifyCapitalStatus({ totalCapital, balance, positionValue, rese
  * 주간 자기반성 리포트 — 루나팀 주간 리뷰
  */
 export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losses, totalPnl, avgRR, llmCost, lossAnalysis }) {
-  const SEP     = '═'.repeat(19);
   const winRate = trades > 0 ? Math.round(wins / trades * 100) : 0;
   const pnlSign = (totalPnl || 0) >= 0 ? '+' : '';
 
   const lines = [
     '📋 루나팀 주간 자기반성 리포트',
-    SEP,
+    DIVIDER,
     `📅 ${weekStart} ~ ${weekEnd}`,
     '',
     '■ 성과 요약',
@@ -389,7 +388,7 @@ export function notifyWeeklyReflection({ weekStart, weekEnd, trades, wins, losse
     if (lossAnalysis.suggest) lines.push(`  💡 제안: ${lossAnalysis.suggest}`);
     if (lossAnalysis.caution) lines.push(`  ⚠️ 주의: ${lossAnalysis.caution}`);
   }
-  lines.push(SEP);
+  lines.push(DIVIDER);
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'report', alertLevel: 1 });
 }
 

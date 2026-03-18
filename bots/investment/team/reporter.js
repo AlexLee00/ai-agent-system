@@ -432,30 +432,30 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       title: '📊 루나팀 투자 리포트',
       summary: `기준: ${kstStr()} | 최근 ${days}일`,
       sections: [
-        buildSection('━━━ 운영 모드 ━━━', [
+        buildSection('운영 모드', [
           `${cryptoMode.executionMode.toUpperCase()} / ${cryptoMode.brokerAccountMode.toUpperCase()} — 암호화폐`,
           `${domesticMode.executionMode.toUpperCase()} / ${domesticMode.brokerAccountMode.toUpperCase()} — 국내주식`,
           `${overseasMode.executionMode.toUpperCase()} / ${overseasMode.brokerAccountMode.toUpperCase()} — 미국주식`,
         ]),
-        buildSection('━━━ 실행 모드 분리 ━━━', tradeBreakdown.length === 0
+        buildSection('실행 모드', tradeBreakdown.length === 0
           ? ['거래 없음']
           : tradeBreakdown.map((row) => {
               const modeLabel = row.mode === 'live' ? 'LIVE' : 'PAPER';
               return `${modeLabel} [${row.exchange} / ${row.brokerAccountMode}]: ${row.count}건 | 총 거래금액 $${row.gross.toFixed(2)}`;
             })),
-        buildSection('━━━ 자산/비용 요약 ━━━', [
+        buildSection('자산/비용', [
           `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
           `총 자산(추정): $${equity.toFixed(2)}`,
           `오늘 LLM 비용: $${cost.usage.toFixed(4)} / $${cost.dailyBudget.toFixed(2)}`,
           `이번달 LLM 비용: $${cost.monthUsage.toFixed(4)} / $${cost.monthlyBudget.toFixed(2)}`,
         ]),
-        buildSection(`━━━ 신호 통계 (최근 ${days}일) ━━━`, [
+        buildSection(`신호 통계 (${days}일)`, [
           `총 신호: ${sigTotal}개`,
           `실행(모의): ${sigExec}개 | 승인대기: ${sigApproved}개 | 잔고부족실패: ${sigFailed}개`,
           ...(sigTotal > 0 ? [`실행률: ${((sigExec / sigTotal) * 100).toFixed(1)}%`] : []),
         ]),
       ],
-      footer: '상세 원문은 콘솔 출력 리포트를 참고하세요.',
+      footer: '상세: 콘솔 리포트 참고',
     }));
     await publishEventPipeline({
       event: {

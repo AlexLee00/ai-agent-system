@@ -41,7 +41,7 @@ function formatSingle(item) {
     summary: headline ? `${label} · ${headline}` : `${label} · ${item.event_type}`,
     details: [...getEventDetailLines(item), ...linkLines],
     action,
-    footer: '필요 시 /ops-health 또는 팀별 헬스 명령으로 추가 점검',
+    footer: '추가 점검: /ops-health',
   }));
 }
 

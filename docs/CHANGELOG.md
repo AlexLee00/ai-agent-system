@@ -409,6 +409,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
 # 2026-03-18
 
+- reporting-hub notice/report 메시지를 모바일 친화형으로 축약
+- payload.details가 있는 알림은 긴 원문 본문 대신 요약 detail 우선 사용
+- telegram-sender에서 긴 구분선과 연속 공백을 발송 직전 정리
+- 루나 실시간 알림/주간 리뷰 메시지의 구분선과 장문 근거를 단축
 - 오케스트레이터
   - `jay-model-policy.js` 신규
   - 제이 모델 체계를 `OpenClaw gateway 기본 모델`과 `제이 앱 레벨 커스텀 모델 정책`으로 분리

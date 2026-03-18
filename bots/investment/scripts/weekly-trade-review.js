@@ -335,8 +335,7 @@ function buildTelegramMessage(trades, review, rrSection = null) {
   const wr   = trades.length ? ((wins / trades.length) * 100).toFixed(1) : '0.0';
 
   const lines = [
-    `${gradeEmoji} 루나팀 주간 리뷰 (최근 ${DAYS}일)`,
-    ``,
+    `${gradeEmoji} 루나 주간 리뷰 (${DAYS}일)`,
     `📊 실적: ${trades.length}건 | 승률 ${wr}% | 손익 $${pnl.toFixed(2)}`,
   ];
 
@@ -344,22 +343,18 @@ function buildTelegramMessage(trades, review, rrSection = null) {
     const rrEmoji = rrSection.currentRR >= 2 ? '✅' : rrSection.currentRR >= 1 ? '🟡' : '🔴';
     lines.push(`${rrEmoji} R/R: ${rrSection.currentRR} (기준 2:1)`);
   }
-  lines.push('');
 
   if (review.highlights?.length) {
     lines.push(`✨ 잘한 점`);
-    review.highlights.forEach(h => lines.push(`  • ${h}`));
-    lines.push('');
+    review.highlights.slice(0, 2).forEach(h => lines.push(`• ${h}`));
   }
   if (review.issues?.length) {
     lines.push(`🔍 문제점`);
-    review.issues.forEach(i => lines.push(`  • ${i}`));
-    lines.push('');
+    review.issues.slice(0, 2).forEach(i => lines.push(`• ${i}`));
   }
   if (review.improvements?.length) {
     lines.push(`💡 개선 방안`);
-    review.improvements.forEach(i => lines.push(`  • ${i}`));
-    lines.push('');
+    review.improvements.slice(0, 2).forEach(i => lines.push(`• ${i}`));
   }
   if (review.next_week_strategy) {
     lines.push(`📅 다음 주 전략: ${review.next_week_strategy}`);
