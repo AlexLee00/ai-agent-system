@@ -113,9 +113,20 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 
 ---
 
-## 5. 대표 포트 / 엔드포인트
+## 5. 대표 launchd / 로그 / 엔드포인트
 
 ### Worker
+
+- 대표 launchd
+  - `ai.worker.web`
+  - `ai.worker.nextjs`
+  - `ai.worker.lead`
+  - `ai.worker.task-runner`
+- 대표 로그
+  - `~/.openclaw/workspace/logs/worker-web.log`
+  - `~/.openclaw/workspace/logs/worker-web-error.log`
+  - `~/.openclaw/workspace/logs/worker-nextjs.log`
+  - `~/.openclaw/workspace/logs/worker-lead.log`
 
 - API health
   - `http://127.0.0.1:4000/api/health`
@@ -123,12 +134,77 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - `http://127.0.0.1:4001`
 - OCR 테스트
   - `http://127.0.0.1:4001/admin/ocr-test`
+- 워커 모니터링
+  - `http://127.0.0.1:4001/admin/monitoring`
+- 운영 설정 마이그레이션
+  - `node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js`
 
-### Orchestrator / N8N
+### Orchestrator / OpenClaw / N8N
+
+- 대표 launchd
+  - `ai.orchestrator.mainbot`
+  - `ai.openclaw.gateway`
+  - `ai.orchestrator.health-check`
+- 대표 로그
+  - `~/.openclaw/workspace/logs/openclaw-gateway.log`
+  - `~/.openclaw/workspace/logs/openclaw-gateway-error.log`
+  - `~/.openclaw/workspace/logs/mainbot.log`
+  - `~/.openclaw/workspace/logs/mainbot-error.log`
 
 - critical path와 webhook은 config 기준으로 점검
   - [bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)
   - [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js)
+
+### Claude / Dexter
+
+- 대표 launchd
+  - `ai.claude.dexter`
+  - `ai.claude.dexter.daily`
+  - `ai.claude.dexter.quick`
+- 대표 로그
+  - `bots/claude/dexter.log`
+  - `bots/claude/dexter.err.log`
+  - `bots/claude/dexter-quick.log`
+
+### Reservation / Ska
+
+- 대표 launchd
+  - `ai.ska.naver-monitor`
+  - `ai.ska.kiosk-monitor`
+  - `ai.ska.pickko-verify`
+  - `ai.ska.rebecca`
+  - `ai.ska.eve`
+- 대표 로그
+  - `~/.openclaw/workspace/logs/naver-monitor.log`
+  - `~/.openclaw/workspace/logs/naver-monitor-error.log`
+  - `~/.openclaw/workspace/logs/kiosk-monitor.log`
+  - `~/.openclaw/workspace/logs/kiosk-monitor-error.log`
+
+### Investment
+
+- 대표 launchd
+  - `ai.investment.commander`
+  - `ai.investment.crypto`
+  - `ai.investment.domestic`
+  - `ai.investment.overseas`
+  - `ai.investment.argos`
+- 대표 로그
+  - `~/.openclaw/workspace/logs/luna-commander.log`
+  - `~/.openclaw/workspace/logs/luna-commander-error.log`
+  - `/tmp/investment-domestic.log`
+  - `/tmp/investment-domestic.err.log`
+
+### Blog
+
+- 대표 launchd
+  - `ai.blog.node-server`
+  - `ai.blog.daily`
+  - `ai.blog.health-check`
+- 대표 로그
+  - `bots/blog/blog-node-server.log`
+  - `bots/blog/blog-node-server.err.log`
+  - `bots/blog/blog-daily.log`
+  - `bots/blog/blog-daily.err.log`
 
 ---
 
@@ -151,9 +227,16 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 - Reservation/Ska monitor
   - `bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh`
 - Worker web
-  - worker launchd/공식 재기동 절차 사용
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
 - Claude/Dexter
   - quickcheck/dexter 결과를 본 뒤 필요한 경우만 재시작
+  - `launchctl kickstart -k gui/$(id -u)/ai.claude.dexter`
+- Orchestrator/OpenClaw
+  - `launchctl kickstart -k gui/$(id -u)/ai.orchestrator.mainbot`
+  - `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`
+- Blog node server
+  - `launchctl kickstart -k gui/$(id -u)/ai.blog.node-server`
 
 주의:
 - 증상 확인 없이 습관적으로 재시작하지 않는다.
@@ -170,6 +253,18 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 3. 최근 로그 확인
 4. 공식 재시작
 5. 여전히 실패하면 config/network 문제로 분기
+
+권장 순서 예:
+- worker 화면 불가
+  - `node bots/worker/scripts/health-report.js --json`
+  - `curl -s http://127.0.0.1:4000/api/health`
+  - `curl -s -I http://127.0.0.1:4001`
+  - `curl -s http://127.0.0.1:4001/admin/monitoring`
+  - `tail -n 100 ~/.openclaw/workspace/logs/worker-web-error.log`
+- blog API 불가
+  - `node bots/blog/scripts/health-report.js --json`
+  - `curl -s http://127.0.0.1:3100/health`
+  - `tail -n 100 bots/blog/blog-node-server.err.log`
 
 ### 자동화 결과 이상
 
@@ -192,6 +287,24 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 3. DB 상태와 실제 Pickko/Naver 상태 비교
 4. 필요 시 manual verify 후 alert resolve
 
+대표 점검:
+- `node bots/reservation/scripts/health-report.js --json`
+- `node bots/reservation/manual/admin/pickko-verify.js`
+- `bash bots/reservation/scripts/reload-monitor.sh`
+
+---
+
+## 7.1 장애 체크리스트 요약
+
+| 증상 | 먼저 볼 것 | 다음 조치 |
+|---|---|---|
+| 워커 웹 접속 불가 | `worker health-report`, `4000/4001 curl`, `/admin/monitoring`, `worker-web-error.log` | `ai.worker.web`, `ai.worker.nextjs` kickstart |
+| 제이/오케스트레이터 응답 이상 | `orchestrator health-report`, gateway log, critical path check | `ai.orchestrator.mainbot`, `ai.openclaw.gateway` kickstart |
+| 예약 경고 반복 | `reservation health-report`, `pickko-verify`, alerts state | monitor reload, alert resolve, DB 상태 동기화 |
+| 스카 예측 리포트 이상 | daily/weekly review, `ska.forecast_results` 최근값 | config 보정, shadow 비교 확인 |
+| 루나 거래 0건 지속 | investment health, trading journal, paper/live mode | runtime_config/threshold 점검 |
+| 덱스터 과장 경고 | claude health, dexter quickcheck, recent logs | false positive 규칙/리포트 입력 점검 |
+
 ---
 
 ## 8. 같이 보는 문서
@@ -209,6 +322,6 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 
 ## 9. 다음 보강 후보
 
-- 팀별 launchd 서비스명과 재기동 절차를 부록으로 표준화
-- 주요 로그 파일 경로를 별도 부록으로 정리
-- 장애 유형별 decision tree를 간단한 표로 추가
+- launchd 서비스명과 로그 경로를 실제 운영 환경 기준으로 더 촘촘히 표준화
+- 장애 유형별 decision tree를 간단한 표 또는 mermaid로 추가
+- 야간 대응용 최소 체크셋을 별도 부록으로 분리

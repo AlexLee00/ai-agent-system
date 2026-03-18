@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, CheckSquare, Settings,
   Building2, UserCog, FolderKanban, Calendar, Bot, BrainCircuit,
+  Activity,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -34,6 +35,7 @@ export default function Sidebar() {
   const showIntents = user?.role === 'master' && canAccessMenu(user, 'intents');
   const showCompanies = user?.role === 'master' && canAccessMenu(user, 'companies');
   const showUsers = user?.role === 'master' && canAccessMenu(user, 'users');
+  const showMonitoring = showAdminGroup && canAccessMenu(user, 'monitoring');
 
   return (
     <div className="flex flex-col h-full">
@@ -78,6 +80,7 @@ export default function Sidebar() {
               ...(showOcrTest ? [{ href: '/admin/ocr-test', icon: BrainCircuit, label: 'OCR 테스트' }] : []),
               ...(showCompanies ? [{ href: '/admin/companies', icon: Building2, label: '업체 관리' }] : []),
               ...(showUsers ? [{ href: '/admin/users', icon: UserCog, label: '사용자 관리' }] : []),
+              ...(showMonitoring ? [{ href: '/admin/monitoring', icon: Activity, label: '워커 모니터링' }] : []),
             ].map(item => {
               const active = pathname.startsWith(item.href);
               const Icon   = item.icon;

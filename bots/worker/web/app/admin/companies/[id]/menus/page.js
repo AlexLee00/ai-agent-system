@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, LayoutDashboard, Users, Clock, DollarSign, FolderKanban, Calendar, BookOpen, CheckSquare, Settings, Bot, Save } from 'lucide-react';
+import { ArrowLeft, LayoutDashboard, Users, Clock, DollarSign, FolderKanban, Calendar, BookOpen, CheckSquare, Settings, Bot, Save, Activity } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
@@ -18,6 +18,7 @@ const ICON_MAP = {
   approvals:  CheckSquare,
   settings:   Settings,
   ai:         Bot,
+  monitoring: Activity,
 };
 
 function normalizeEnabledMenus(enabledMenus, allMenus) {

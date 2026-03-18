@@ -167,8 +167,8 @@ const LUNA_SYSTEM_STOCK = `당신은 루나(Luna), 루나팀의 수석 오케스
 중요:
 - exchange='kis'면 amount_usdt는 KRW 주문금액으로 해석한다
 - exchange='kis_overseas'면 amount_usdt는 USD 주문금액으로 해석한다
-- 국내주식(kis) amount_usdt 범위: 100000~1000000
-- 해외주식(kis_overseas) amount_usdt 범위: 50~1000`.trim();
+- 국내주식(kis) amount_usdt 범위: 200000~1200000
+- 해외주식(kis_overseas) amount_usdt 범위: 300~1200`.trim();
 
 function getLunaSystem(exchange) {
   if (exchange === 'kis' || exchange === 'kis_overseas') return LUNA_SYSTEM_STOCK;
@@ -186,8 +186,8 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const exampleAmount = isStock ? (stockSpec?.buyDefault ?? 500) : 100;
   const amountRule    = isStock
     ? exchange === 'kis'
-      ? 'amount_usdt는 KRW 주문금액이며 100000~1000000 범위'
-      : 'amount_usdt는 USD 주문금액이며 50~1000 범위'
+      ? 'amount_usdt는 KRW 주문금액이며 200000~1200000 범위'
+      : 'amount_usdt는 USD 주문금액이며 300~1200 범위'
     : 'amount_usdt는 USDT 주문금액';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ' (주식 — 공격적 모드)' : ''}
 

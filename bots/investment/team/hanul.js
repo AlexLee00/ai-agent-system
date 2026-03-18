@@ -17,7 +17,7 @@
  * bots/invest/src/kis-executor.js 패턴 재사용
  *
  * 실행: node team/hanul.js [--symbol=005930] [--action=BUY] [--amount=500000]
- *       node team/hanul.js [--symbol=AAPL] [--action=BUY] [--amount=100]
+ *       node team/hanul.js [--symbol=AAPL] [--action=BUY] [--amount=400]
  */
 
 import { fileURLToPath } from 'url';
@@ -43,13 +43,13 @@ export function isKisOverseasSymbol(symbol) {
 // ─── KIS 리스크 규칙 ─────────────────────────────────────────────────
 
 const KIS_RULES = {
-  MIN_ORDER_KRW:   10_000,
-  MAX_ORDER_KRW: 5_000_000,
+  MIN_ORDER_KRW:   200_000,
+  MAX_ORDER_KRW: 1_200_000,
 };
 
 const KIS_OVERSEAS_RULES = {
-  MIN_ORDER_USD:    10,
-  MAX_ORDER_USD: 1_000,
+  MIN_ORDER_USD:   300,
+  MAX_ORDER_USD: 1_200,
 };
 
 function getInvestmentPoolStats() {
@@ -187,6 +187,21 @@ async function checkKisOverseasRisk(signal) {
       return { approved: false, reason: `최소 주문금액 미달 ($${amountUsd})` };
     if (amountUsd > KIS_OVERSEAS_RULES.MAX_ORDER_USD)
       return { approved: false, reason: `최대 주문금액 초과 ($${amountUsd})` };
+    try {
+      const kis = await getKis();
+      if (typeof kis.getOverseasQuote === 'function') {
+        const quote = await kis.getOverseasQuote(symbol);
+        const currentPrice = Number(quote?.price || 0);
+        if (currentPrice > 0 && amountUsd < currentPrice) {
+          return {
+            approved: false,
+            reason: `1주 가격 미달 ($${amountUsd} < $${currentPrice.toFixed(2)})`,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn(`  ⚠️ [한울] 해외 현재가 사전검증 실패 (${symbol}): ${e.message}`);
+    }
   }
   if (action === ACTIONS.SELL) {
     const pos = await db.getPosition(symbol);
@@ -583,7 +598,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         id:          `CLI-HAN-${Date.now()}`,
         symbol:      sym,
         action:      actionArg.toUpperCase(),
-        amount_usdt: parseFloat(amountArg || (isOverseas ? '100' : '500000')),
+        amount_usdt: parseFloat(amountArg || (isOverseas ? '400' : '500000')),
         confidence:  0.7,
         reasoning:   'CLI 수동 실행',
         exchange:    isOverseas ? 'kis_overseas' : 'kis',

@@ -1,18 +1,18 @@
 {
-  "lastRun": "2026-03-16",
+  "lastRun": "2026-03-18",
   "versions": {
-    "@anthropic-ai/sdk": "0.78.0",
+    "@anthropic-ai/sdk": "0.79.0",
     "@modelcontextprotocol/sdk": "1.27.1",
     "groq-sdk": "1.1.1",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.8.0",
-    "ccxt": "4.5.43",
+    "ccxt": "4.5.44",
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주는 @anthropic-ai/sdk와 관련된 패치가 없으며, better-sqlite3의 업데이트가 필요합니다. 보안 취약점은 모두 moderate 등급으로, 업데이트가 권장됩니다. OpenAI의 새로운 AI 설계 원칙과 기술들이 우리 시스템에 적용 가능성이 높습니다.",
+    "summary": "이번 주에는 @anthropic-ai/sdk와 ccxt 패키지의 업데이트가 필요합니다. OpenAI의 새로운 GPT-5.4 모델이 발표되어 성능 향상이 기대됩니다. 또한, 로컬 AI와 제로데이 사기 탐지에 대한 새로운 기술이 주목받고 있습니다.",
     "patchCount": 2,
-    "securityCount": 5,
-    "llmApiCount": 2
+    "securityCount": 0,
+    "llmApiCount": 1
   }
 }

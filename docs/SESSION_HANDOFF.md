@@ -9,6 +9,7 @@
 - 워커
   - 문서 업로드/파싱/OCR/문서 상세/재사용 이력/생성 결과 연결까지 한 사이클이 닫혔다.
   - `/documents`, `/documents/[id]`에서 문서 재사용 성과를 확인할 수 있다.
+  - `/admin/monitoring`에서 현재 워커 웹의 LLM API 적용 내용과 기본 provider 선택값을 확인/변경할 수 있다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -16,6 +17,11 @@
 - 운영 분석
   - `daily-ops-report.js`가 도입됐다.
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.
+- 투자
+  - `executionMode=live/paper`, `brokerAccountMode=real/mock` 기준이 코드/리포트/문서에 반영됐다.
+  - 실패 원인 저장은 `block_reason + block_code + block_meta` 구조로 확장됐다.
+- 클로드/덱스터
+  - 저위험 코드 무결성 이슈는 `soft match`로 재해석되어 shadow mismatch 과장 경고가 정리됐다.
 - 문서 체계
   - 구현 추적 문서는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)로 이름이 바뀌었다.
   - 세션 지속성용 문서 체계는 기존 문서 중심으로 정리됐다.
@@ -62,6 +68,8 @@
 - 스카 shadow 비교는 저장은 정상이나 아직 actual 누적이 부족해서 비교 일수는 `0`
 - 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
 - 워커 문서 재사용은 추적선은 완성됐지만, “좋은 문서인지”를 평가하는 품질 지표는 아직 없음
+- 워커 모니터링의 LLM API 선택 변경 이력은 아직 저장하지 않는다
+- 투자 과거 `legacy_*` 실패 이력은 일부만 구조화되어 있어 백필 확장이 남아 있다
 
 자세한 상태는 [KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)를 함께 보세요.
 
@@ -71,6 +79,8 @@
 
 - 스카 새 모델은 `교체`가 아니라 `shadow 비교`로만 시작한다.
 - 워커 문서 흐름은 새 레이어를 만들기보다 기존 confirm/result 흐름을 확장한다.
+- 워커 LLM API 모니터링은 기존 `llm_mode` 정책을 깨지 않고, 관리자 분석 경로의 기본 provider만 별도 축으로 제어한다.
+- 투자팀의 자산/계좌 해석은 `executionMode`와 `brokerAccountMode`를 분리해 읽는다.
 - 운영 리포트는 `근거 약한 추론`보다 `보수적 hold`가 우선이다.
 - 문서 체계는 `정책 / 인덱스 / 구조 / 현재 상태 / 팀 참조 / 로그 / 브이로그 / handoff`로 역할을 분리한다.
 - 다만 같은 성격의 기록은 새 파일을 만들지 않고 기존 문서에 흡수한다.
@@ -107,5 +117,12 @@
   - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
   - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/page.js)
   - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/documents/[id]/page.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
+- 투자 실행/리포트
+  - [/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
+  - [/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
 - 운영 분석
   - [/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js](/Users/alexlee/projects/ai-agent-system/scripts/reviews/daily-ops-report.js)

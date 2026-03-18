@@ -10,6 +10,7 @@
 - 워커
   - 자연어 중심 업무 UX와 확인창 흐름을 더 자연스럽게 연결
   - 문서 파싱 결과의 실제 업무 화면 재사용 범위를 더 넓히기
+  - 워커 모니터링의 LLM API 선택 변경 이력과 호출 통계까지 연결
 - 투자
   - 암호화폐/국내/해외장 체결 증가 여부를 실제 리뷰 데이터로 튜닝
   - `runtime_config` 변경 제안 자동화까지 닫기
@@ -159,10 +160,14 @@
   - [bots/worker/lib/ai-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-policy.js)
   - [bots/worker/lib/menu-policy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/menu-policy.js)
   - [bots/worker/web/lib/menu-access.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/menu-access.js)
+  - [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
 - 문서 파싱/OCR
   - [bots/worker/web/lib/document-attachment.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/document-attachment.js)
   - [packages/core/lib/document-parser.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/document-parser.js)
   - [packages/core/lib/document-parsing/registry.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/document-parsing/registry.js)
+- 운영 모니터링
+  - [bots/worker/web/app/admin/monitoring/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/monitoring/page.js)
+  - [bots/worker/migrations/017-system-preferences.sql](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.sql)
 - 운영 설정
   - [bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json)
   - [bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
