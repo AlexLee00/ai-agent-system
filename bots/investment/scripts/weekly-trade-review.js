@@ -381,16 +381,52 @@ async function main() {
   console.log(`\n📋 [주간 리뷰] 최근 ${DAYS}일 매매 분석 시작...`);
 
   await db.initSchema();
-  const validation = await validateTradeReview({ days: DAYS, fix: true });
-  if (validation.findings > 0) {
-    console.log(`  🩺 trade_review 정합성 보정: ${validation.findings}건 점검, ${validation.fixed}건 처리`);
+  let validation = { findings: 0, fixed: 0 };
+  try {
+    validation = await validateTradeReview({ days: DAYS, fix: true });
+    if (validation.findings > 0) {
+      console.log(`  🩺 trade_review 정합성 보정: ${validation.findings}건 점검, ${validation.fixed}건 처리`);
+    }
+  } catch (e) {
+    console.warn(`  ⚠️ trade_review 정합성 점검 실패 (계속 진행): ${e?.message || String(e)}`);
   }
 
-  const [trades, signalStats, reviewRows] = await Promise.all([
+  const fetchResults = await Promise.allSettled([
     fetchRecentTrades(DAYS),
     fetchSignalStats(DAYS),
     fetchRecentTradeReviews(DAYS),
   ]);
+
+  const [tradesResult, signalStatsResult, reviewRowsResult] = fetchResults;
+
+  if (tradesResult.status !== 'fulfilled') {
+    const err = tradesResult.reason;
+    if (err?.errors?.length) {
+      const messages = err.errors.map(inner => inner?.message || String(inner)).join(' | ');
+      throw new Error(`종료 거래 조회 실패: ${messages}`);
+    }
+    throw new Error(`종료 거래 조회 실패: ${err?.message || String(err)}`);
+  }
+
+  const trades = tradesResult.value;
+  const signalStats = signalStatsResult.status === 'fulfilled'
+    ? signalStatsResult.value
+    : [];
+  const reviewRows = reviewRowsResult.status === 'fulfilled'
+    ? reviewRowsResult.value
+    : [];
+
+  if (signalStatsResult.status !== 'fulfilled') {
+    const err = signalStatsResult.reason;
+    console.warn(`  ⚠️ 신호 통계 조회 실패 (빈값 대체): ${err?.message || String(err)}`);
+  }
+  if (reviewRowsResult.status !== 'fulfilled') {
+    const err = reviewRowsResult.reason;
+    const extra = err?.errors?.length
+      ? ` | ${err.errors.map(inner => inner?.message || String(inner)).join(' | ')}`
+      : '';
+    console.warn(`  ⚠️ trade_review 조회 실패 (빈값 대체): ${err?.message || String(err)}${extra}`);
+  }
 
   console.log(`  📊 종료 거래 ${trades.length}건 조회`);
 
