@@ -123,6 +123,27 @@ const DEFAULT_RUNTIME_CONFIG = {
       emergencyTrigger: false,
     },
   },
+  llmPolicies: {
+    investmentAgentPolicy: {
+      openaiPerfModel: 'gpt-4o',
+      openaiMiniModel: 'gpt-4o-mini',
+      groqScoutModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      groqCompetitionModels: [
+        'openai/gpt-oss-20b',
+        'meta-llama/llama-4-scout-17b-16e-instruct',
+      ],
+      anthropicModel: 'claude-haiku-4-5-20251001',
+      agentRoutes: {
+        luna: 'openai_perf',
+        nemesis: 'dual_groq',
+        oracle: 'dual_groq',
+        hermes: 'openai_mini',
+        sophia: 'openai_mini',
+        zeus: 'openai_mini',
+        athena: 'openai_mini',
+      },
+    },
+  },
 };
 
 let cachedConfig = null;
@@ -191,4 +212,8 @@ export function getNemesisRuntimeConfig() {
 
 export function getTimeModeRuntimeConfig() {
   return loadRuntimeConfig().timeMode;
+}
+
+export function getInvestmentLLMPolicyConfig() {
+  return loadRuntimeConfig().llmPolicies || {};
 }

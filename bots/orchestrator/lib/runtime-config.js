@@ -21,6 +21,18 @@ const DEFAULT_RUNTIME_CONFIG = {
       { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
     ],
   },
+  llmSelectorOverrides: {
+    'orchestrator.jay.intent': {
+      primary: { provider: 'openai', model: 'gpt-5-mini' },
+      fallback: { provider: 'gemini', model: 'gemini-2.5-flash' },
+    },
+    'orchestrator.jay.chat_fallback': {
+      chain: [
+        { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+      ],
+    },
+  },
 };
 
 let cachedConfig = null;
@@ -60,8 +72,13 @@ function getJayModelConfig() {
   return loadOrchestratorRuntimeConfig().jayModels;
 }
 
+function getLLMSelectorOverrides() {
+  return loadOrchestratorRuntimeConfig().llmSelectorOverrides || {};
+}
+
 module.exports = {
   loadOrchestratorRuntimeConfig,
   getOrchestratorHealthConfig,
   getJayModelConfig,
+  getLLMSelectorOverrides,
 };

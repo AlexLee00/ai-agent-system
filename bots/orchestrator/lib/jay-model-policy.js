@@ -1,6 +1,6 @@
 'use strict';
 
-const { getJayModelConfig } = require('./runtime-config');
+const { getJayModelConfig, getLLMSelectorOverrides } = require('./runtime-config');
 const { selectLLMPolicy, selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 /**
@@ -19,16 +19,21 @@ function getGatewayPrimaryModel() {
 
 function buildIntentParsePolicy() {
   const config = getJayModelConfig();
+  const selectorOverrides = getLLMSelectorOverrides();
+  const legacyOverride = {
+    primary: { provider: 'openai', model: config.intentPrimary || 'gpt-5-mini' },
+    fallback: { provider: 'gemini', model: config.intentFallback || 'gemini-2.5-flash' },
+  };
   return selectLLMPolicy('orchestrator.jay.intent', {
-    intentPrimary: config.intentPrimary,
-    intentFallback: config.intentFallback,
+    policyOverride: selectorOverrides['orchestrator.jay.intent'] || legacyOverride,
   });
 }
 
 function buildJayChatFallbackChain() {
   const config = getJayModelConfig();
+  const selectorOverrides = getLLMSelectorOverrides();
   return selectLLMChain('orchestrator.jay.chat_fallback', {
-    chatFallbackChain: config.chatFallbackChain,
+    policyOverride: selectorOverrides['orchestrator.jay.chat_fallback'] || { chain: config.chatFallbackChain },
   });
 }
 
