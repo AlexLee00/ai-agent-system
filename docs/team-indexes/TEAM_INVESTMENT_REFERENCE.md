@@ -28,6 +28,7 @@
 - [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js)
 - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js)
 - [bots/investment/scripts/backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
+- [bots/investment/scripts/runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)
 
 ## 운영 설정
 
@@ -83,6 +84,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-repo
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js --days=1
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js --dry-run
 node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js --days=30
+node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js --days=14
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 

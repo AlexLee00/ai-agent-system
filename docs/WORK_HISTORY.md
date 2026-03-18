@@ -54,6 +54,27 @@
 - `node scripts/reviews/ska-sales-forecast-daily-review.js --days=14 --json`
 - `node scripts/reviews/ska-sales-forecast-weekly-review.js --days=42 --json`
 
+### 12주차 후속 (2026-03-18) — 투자 runtime_config 제안 리포트 추가
+
+핵심 구현:
+- `bots/investment/scripts/runtime-config-suggestions.js` 추가
+- 최근 14일 신호/실행/실패 코드/분석가 HOLD 편향을 읽어 `current -> suggested` 형식의 설정 후보 출력
+- `adjust / hold / confidence / reason`를 함께 출력해 자동 변경이 아닌 운영 검토용 제안 리포트로 정리
+- `package.json`에 `runtime-suggest` 실행 진입점 추가
+
+세션 맥락:
+- 투자팀은 `runtime_config` 외부화와 시장별 리뷰는 이미 올라와 있었지만, 실제 운영 데이터에서 “어떤 키를 왜 바꿔야 하는지”를 한 번에 보여주는 레이어가 없었다.
+- 이번 단계에서 암호화폐/국내장/해외장의 최근 실행률과 실패 코드를 바로 설정 제안으로 연결했다.
+
+의사결정 이유:
+- 설정을 자동 변경하기보다 `current -> suggested` 리포트만 먼저 만드는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 이 구조는 추후 일일/주간 자동화, 마스터 승인 후 반영, SaaS tenant별 튜닝 제안으로 확장하기 쉽다.
+
+검증:
+- `node --check bots/investment/scripts/runtime-config-suggestions.js`
+- `node bots/investment/scripts/runtime-config-suggestions.js --days=14 --json`
+- `node bots/investment/scripts/runtime-config-suggestions.js --days=14`
+
 ### 12주차 후속 (2026-03-18) — 워커 모니터링 운영 지표 고도화
 
 핵심 구현:
