@@ -28,6 +28,12 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
 
   const totalPages = pageSize ? Math.ceil(data.length / pageSize) : 1;
   const paged = pageSize ? data.slice((page - 1) * pageSize, page * pageSize) : data;
+  const visiblePageCount = 5;
+  const paginationStart = Math.max(1, Math.min(page - Math.floor(visiblePageCount / 2), totalPages - visiblePageCount + 1));
+  const pageNumbers = Array.from(
+    { length: Math.min(visiblePageCount, totalPages) },
+    (_, i) => paginationStart + i,
+  );
 
   return (
     <>
@@ -109,18 +115,14 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
               disabled={page === 1}
               className="w-8 h-8 rounded flex items-center justify-center text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30"
             >‹</button>
-            {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-              const start = Math.max(1, Math.min(page - 1, totalPages - 2));
-              const p = start + i;
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded flex items-center justify-center text-sm font-medium
-                    ${p === page ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-                >{p}</button>
-              );
-            })}
+            {pageNumbers.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className={`w-8 h-8 rounded flex items-center justify-center text-sm font-medium
+                  ${p === page ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+              >{p}</button>
+            ))}
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={page === totalPages}

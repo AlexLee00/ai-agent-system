@@ -5,7 +5,6 @@ import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
-import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import Card from '@/components/Card';
@@ -49,24 +48,6 @@ export default function SalesPage() {
   const fileRef = useRef(null);
   const promptRef = useRef(null);
   useAutoResizeTextarea(promptRef, prompt);
-  const totalSales = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const quickFlows = [
-    {
-      title: '오늘 매출 누락 점검',
-      body: '당일 누락된 매출이나 비정상 흐름을 바로 확인합니다.',
-      onPromptFill: () => refillPrompt('오늘 누락된 매출이나 비정상 매출 흐름이 있는지 알려줘'),
-      onSecondary: () => setTab('list'),
-      secondaryLabel: '목록 보기',
-    },
-    {
-      title: '주간 매출 비교',
-      body: '주간 흐름을 비교하고 바로 차트 탭에서 이어봅니다.',
-      onPromptFill: () => refillPrompt('이번 주와 지난주 매출 흐름을 비교해줘'),
-      onSecondary: () => setTab('chart'),
-      secondaryLabel: '차트 보기',
-    },
-  ];
-
   const refillPrompt = (text) => {
     setPrompt(text);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -75,7 +56,7 @@ export default function SalesPage() {
   const load = () => {
     setLoading(true);
     Promise.all([
-      api.get('/sales?limit=200&from=2000-01-01').catch(() => ({ sales: [] })),
+      api.get('/sales?limit=1000&from=2000-01-01').catch(() => ({ sales: [] })),
       api.get('/sales/summary').catch(() => null),
     ]).then(([list, sum]) => {
       setSales(list.sales || []);
@@ -248,13 +229,10 @@ export default function SalesPage() {
         description="매출 등록, 주간 흐름, 카테고리별 내역을 한 화면에서 관리합니다."
         stats={[
           { label: '매출 건수', value: sales.length || 0, caption: '조회 기준' },
-          { label: '누적 금액', value: `₩${totalSales.toLocaleString()}`, caption: '현재 목록 합계' },
+          { label: '누적 금액', value: `₩${Number(summary?.lifetime?.total ?? 0).toLocaleString()}`, caption: '전체 누적 기준' },
           { label: '오늘 매출', value: `₩${Number(summary?.today?.total ?? 0).toLocaleString()}`, caption: 'summary 기준' },
         ]}
       />
-
-      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
-
       <div>
         <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
         <PromptAdvisor
@@ -331,7 +309,7 @@ export default function SalesPage() {
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Card title="오늘 매출" value={`₩${(summary?.today?.total ?? 0).toLocaleString()}`} icon="📅" color="blue" />
           <Card title="주간 매출" value={`₩${chartData.reduce((s, r) => s + r.total, 0).toLocaleString()}`} icon="📊" color="green" />
-          <Card title="월간 매출" value={`₩${(summary?.monthly?.reduce?.((s, r) => s + Number(r.total), 0) ?? 0).toLocaleString()}`} icon="📈" color="yellow" />
+          <Card title="월간 매출" value={`₩${Number(summary?.currentMonth?.total ?? 0).toLocaleString()}`} icon="📈" color="yellow" />
         </div>
 
         <div className="mt-5 border-t border-slate-200 pt-5">

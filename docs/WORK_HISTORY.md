@@ -2967,3 +2967,11 @@ blo.js(팀장) + richer.js(IT뉴스/HN/날씨) + pos-writer.js(강의8000자+) +
 
 ### 블로그팀 팀 제이 핵심 기술 통합 + 구글드라이브 저장 (2026-03-09)
 RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | quality-checker AI탐지리스크(0~100) | GEO/AEO + ai-agent-system 컨텍스트 시스템프롬프트 통합 | RAG 실전에피소드+내부링킹 자동화 | 리라이팅가이드 텔레그램 포함 | publ.js 구글드라이브 자동저장(/010_BlogPost) | 글자수 기준 실측조정(강의7000/일반3500) | 전파이프라인 통과(강의8018자, 일반3990자) | rag_blog 컬렉션 pgvector 추가 | 커밋: a12364e, e361917, dae45f6
+
+### 워커 매출 / 스카 매출 일치화 + 리스트 페이지네이션 보강
+- `reservation.daily_summary`를 `test-company`의 매출 원천으로 사용하는 `bots/worker/lib/ska-sales-sync.js` 신규
+- `worker.sales`에 스카 일반석/스터디룸 투영 구조를 자동 동기화하고 중복 스카 매출 행은 soft-delete 정리
+- 스카 누락 구간을 재파싱해 `2026-03-16`, `2026-03-17`, `2026-03-18` 원천 데이터를 복구
+- 워커 매출관리의 `누적 금액`/`월간 매출` 집계 의미를 각각 전체 누적 / 이번 달 기준으로 바로잡음
+- 매출 목록 조회 상한을 늘려 `2026-01-13` 이전 데이터가 UI에서 잘리지 않도록 보강
+- 공용 `DataTable` 페이지네이션 숫자를 최대 5개씩 노출하도록 정리
