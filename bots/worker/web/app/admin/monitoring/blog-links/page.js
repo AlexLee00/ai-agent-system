@@ -85,8 +85,8 @@ export default function BlogPublishedUrlPage() {
         description="수동 발행한 네이버 블로그 URL을 운영 화면에서 바로 기록합니다. 기록된 URL은 내부 링킹과 발행 상태 판단의 기준이 됩니다."
         stats={[
           { label: '최근 글', value: summary.total || 0, caption: '최근 20건 기준' },
-          { label: '입력 필요', value: summary.missingUrl || 0, caption: '발행 후 URL 후처리 대상' },
-          { label: '발행예정', value: summary.scheduled || 0, caption: 'ready + URL 미입력' },
+          { label: '입력 필요', value: summary.missingUrl || 0, caption: 'published 또는 발행일이 지난 ready 글' },
+          { label: '발행예정', value: summary.scheduled || 0, caption: '미래 publish_date + ready + URL 미입력' },
           { label: '발행 완료', value: summary.published || 0, caption: 'naver_url 기록 포함' },
         ]}
       />
@@ -100,6 +100,7 @@ export default function BlogPublishedUrlPage() {
             <div>
               <p className="text-sm font-semibold text-slate-900">발행 URL 기록</p>
               <p className="mt-1 text-sm text-slate-500">이미 발행된 글 중 URL이 비어 있는 경우만 입력 대상으로 보입니다. `ready` 상태 글은 발행예정 섹션에서 따로 확인합니다.</p>
+              <p className="mt-1 text-xs text-slate-400">발행일이 오늘 이하인 `ready` 글은 실제 발행 확인이 필요한 대상으로 자동 승격됩니다.</p>
             </div>
             <button type="button" className="btn-secondary text-sm" onClick={load} disabled={loading}>
               <RefreshCcw className="mr-2 h-4 w-4" />
@@ -127,7 +128,8 @@ export default function BlogPublishedUrlPage() {
             )}
             {selectedPost && (
               <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                <p>현재 상태: <span className="font-semibold text-slate-900">{selectedPost.status}</span></p>
+                <p>현재 상태: <span className="font-semibold text-slate-900">{selectedPost.status}</span>{selectedPost.publish_due ? ' · 발행 확인 필요' : ''}</p>
+                <p className="mt-1">발행일: <span className="font-semibold text-slate-900">{selectedPost.publish_date || '-'}</span></p>
                 <p className="mt-1 break-all">현재 URL: {selectedPost.naver_url || '미입력'}</p>
               </div>
             )}
@@ -173,41 +175,41 @@ export default function BlogPublishedUrlPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">URL 입력 필요</p>
               <div className="mt-3 space-y-3">
-            {pendingRows.map((row) => (
-              <div key={row.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900">#{row.id} {row.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">상태: {row.status} · 생성: {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'}</p>
+                {pendingRows.map((row) => (
+                  <div key={row.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">#{row.id} {row.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">상태: {row.status}{row.publish_due ? ' · 발행 확인 필요' : ''} · 발행일: {row.publish_date || '-'} · 생성: {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${row.naver_url ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {row.naver_url ? 'URL 있음' : row.publish_due ? '발행 확인 필요' : 'URL 필요'}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-xs text-slate-500">{row.naver_url || '아직 저장된 네이버 URL이 없습니다.'}</p>
+                      {row.naver_url ? (
+                        <a
+                          href={row.naver_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-900"
+                        >
+                          열기
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-slate-700 hover:text-slate-900"
+                          onClick={() => setSelectedPostId(String(row.id))}
+                        >
+                          이 글 선택
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${row.naver_url ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {row.naver_url ? 'URL 있음' : 'URL 필요'}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="min-w-0 truncate text-xs text-slate-500">{row.naver_url || '아직 저장된 네이버 URL이 없습니다.'}</p>
-                  {row.naver_url ? (
-                    <a
-                      href={row.naver_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-slate-700 hover:text-slate-900"
-                    >
-                      열기
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-slate-700 hover:text-slate-900"
-                      onClick={() => setSelectedPostId(String(row.id))}
-                    >
-                      이 글 선택
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+                ))}
               {!pendingRows.length && !loading && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                 현재 실제 URL 입력이 필요한 발행 완료 글이 없습니다.
@@ -224,7 +226,7 @@ export default function BlogPublishedUrlPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-900">#{row.id} {row.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">상태: {row.status} · 생성: {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'}</p>
+                        <p className="mt-1 text-xs text-slate-500">상태: {row.status} · 발행일: {row.publish_date || '-'} · 생성: {row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'}</p>
                       </div>
                       <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
                         발행예정

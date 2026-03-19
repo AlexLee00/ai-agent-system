@@ -3,6 +3,15 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-19) — 워커 블로그 URL 입력의 발행일 경계 복구
+
+### 변경 사항 (changed)
+- `worker` 웹의 블로그 URL 입력 대상 분류를 `status` 단일 기준에서 `status + publish_date(KST)` 기준으로 보강
+  - 기존: `published + URL 없음`만 `입력 필요`
+  - 변경: `published + URL 없음` 또는 `ready + publish_date <= 오늘(KST) + URL 없음`을 `입력 필요`로 승격
+- `발행예정`은 이제 `미래 publish_date + ready + URL 미입력`만 남도록 정리
+- 블로그 URL 입력 화면에 `발행일`, `발행 확인 필요` 상태를 함께 표시해 운영자가 오늘 발행 대상과 미래 예약 글을 즉시 구분할 수 있게 보강
+
 ## 12주차 (2026-03-19) — 투자 validation 성과 반영 + worker/blog 복구
 
 ### 신규 기능 (feat)
