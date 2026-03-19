@@ -5,11 +5,12 @@ import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
-import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
+import PromptAdvisor from '@/components/PromptAdvisor';
+import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
+import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 const TYPE_CONFIG = {
   meeting:  { label: '미팅',     color: 'bg-blue-100 text-blue-700',   dot: 'bg-blue-500' },
@@ -72,38 +73,40 @@ function CalendarView({ year, month, schedules }) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   return (
-    <div className="card">
-      <div className="grid grid-cols-7 mb-2">
-        {WEEKDAYS.map((d, i) => (
-          <div key={i} className={`text-xs text-center font-medium py-1 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>{d}</div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-px bg-gray-100">
-        {cells.map((d, i) => {
-          if (!d) return <div key={`e-${i}`} className="bg-white min-h-[72px]" />;
-          const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-          const dayEvts = byDate[dateStr] || [];
-          const isToday = dateStr === todayStr;
-          const dow = (firstDay + d - 1) % 7;
-          return (
-            <div key={dateStr} className="bg-white min-h-[72px] p-1">
-              <div className={`text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full ${
-                isToday ? 'bg-indigo-600 text-white' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
-              }`}>{d}</div>
-              <div className="space-y-0.5">
-                {dayEvts.slice(0, 3).map(s => {
-                  const cfg = TYPE_CONFIG[s.type] || {};
-                  return (
-                    <div key={s.id} className={`text-xs px-1 py-0.5 rounded truncate ${cfg.color || 'bg-gray-100 text-gray-600'}`}>
-                      {fmtTime(s.start_time)} {s.title}
-                    </div>
-                  );
-                })}
-                {dayEvts.length > 3 && <div className="text-xs text-gray-400 px-1">+{dayEvts.length - 3}건</div>}
+    <div className="overflow-x-auto">
+      <div className="min-w-[700px]">
+        <div className="mb-2 grid grid-cols-7">
+          {WEEKDAYS.map((d, i) => (
+            <div key={i} className={`py-1 text-center text-xs font-medium ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-2">
+          {cells.map((d, i) => {
+            if (!d) return <div key={`e-${i}`} className="min-h-[88px] rounded-2xl border border-dashed border-slate-200 bg-slate-50/60" />;
+            const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dayEvts = byDate[dateStr] || [];
+            const isToday = dateStr === todayStr;
+            const dow = (firstDay + d - 1) % 7;
+            return (
+              <div key={dateStr} className="min-h-[88px] rounded-2xl border border-slate-200 bg-white p-2">
+                <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                  isToday ? 'bg-indigo-600 text-white' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'
+                }`}>{d}</div>
+                <div className="space-y-1">
+                  {dayEvts.slice(0, 3).map(s => {
+                    const cfg = TYPE_CONFIG[s.type] || {};
+                    return (
+                      <div key={s.id} className={`truncate rounded px-1 py-0.5 text-xs ${cfg.color || 'bg-gray-100 text-gray-600'}`}>
+                        {fmtTime(s.start_time)} {s.title}
+                      </div>
+                    );
+                  })}
+                  {dayEvts.length > 3 && <div className="px-1 text-xs text-gray-400">+{dayEvts.length - 3}건</div>}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -120,93 +123,28 @@ function ListView({ schedules, onDelete, canDelete }) {
   );
 
   return (
-    <div className="card space-y-2">
+    <div className="space-y-2">
       {schedules.map(s => {
         const cfg = TYPE_CONFIG[s.type] || {};
         return (
-          <div key={s.id} className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:border-indigo-200 transition-colors group">
+          <div key={s.id} className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition-colors hover:border-indigo-200">
             <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${cfg.dot || 'bg-gray-400'}`} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-xs px-1.5 py-0.5 rounded ${cfg.color || 'bg-gray-100'}`}>{cfg.label || s.type}</span>
-                <p className="text-sm font-medium text-gray-900">{s.title}</p>
+                <p className="text-sm font-medium text-slate-900">{s.title}</p>
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">{fmtDatetime(s.start_time)}{s.location ? ` · ${s.location}` : ''}</p>
+              <p className="mt-1 text-xs text-slate-500">{fmtDatetime(s.start_time)}{s.location ? ` · ${s.location}` : ''}</p>
             </div>
             {canDelete && (
               <button
-                className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                className="shrink-0 text-xs text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
                 onClick={() => onDelete(s.id)}
               >✕</button>
             )}
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ── 일정 추가 모달 ────────────────────────────────────────────────
-
-function AddModal({ onClose, onAdded }) {
-  const [form, setForm] = useState({
-    title: '',
-    type: 'task',
-    start_time: new Date().toISOString().slice(0, 16),
-    location: '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) return;
-    setSaving(true);
-    try {
-      await api.post('/schedules', {
-        ...form,
-        start_time: new Date(form.start_time).toISOString(),
-      });
-      onAdded();
-      onClose();
-    } catch (e) { alert(e.message); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-gray-900 mb-4">📅 일정 추가</h3>
-        <form onSubmit={submit} className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">유형</label>
-            <select className="input-base w-full" value={form.type} onChange={e => set('type', e.target.value)}>
-              {Object.entries(TYPE_CONFIG).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">제목</label>
-            <input className="input-base w-full" value={form.title} onChange={e => set('title', e.target.value)} placeholder="일정 제목" autoFocus />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">시작 일시</label>
-            <input type="datetime-local" className="input-base w-full" value={form.start_time} onChange={e => set('start_time', e.target.value)} />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">장소 (선택)</label>
-            <input className="input-base w-full" value={form.location} onChange={e => set('location', e.target.value)} placeholder="장소" />
-          </div>
-          <div className="flex gap-2 pt-2">
-            <button type="button" className="btn-secondary flex-1" onClick={onClose}>취소</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving || !form.title.trim()}>
-              {saving ? '저장 중...' : '저장'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
@@ -221,7 +159,6 @@ export default function SchedulesPage() {
   const [view,  setView]  = useState('calendar'); // 'calendar' | 'list'
   const [schedules, setSchedules] = useState([]);
   const [loading,   setLoading]   = useState(true);
-  const [showAdd,   setShowAdd]   = useState(false);
   const [prompt, setPrompt] = useState('');
   const [proposal, setProposal] = useState(null);
   const [originalProposal, setOriginalProposal] = useState(null);
@@ -232,11 +169,9 @@ export default function SchedulesPage() {
   const [attachedFileName, setAttachedFileName] = useState('');
   const [reusedDocument, setReusedDocument] = useState(null);
 
-  const refillPrompt = (text) => {
-    setPrompt(text);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
   const fileRef = useRef(null);
+  const promptRef = useRef(null);
+  useAutoResizeTextarea(promptRef, prompt);
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
 
@@ -368,202 +303,68 @@ export default function SchedulesPage() {
   const reminderCount = schedules.filter(item => item.type === 'reminder').length;
   const canCreateSchedules = canPerformMenuOperation(user, 'schedules', 'create');
   const canDeleteSchedules = canPerformMenuOperation(user, 'schedules', 'delete');
-  const quickFlows = [
-    {
-      title: '오늘 일정 요약',
-      body: '오늘 등록된 일정과 빠진 미팅 항목을 다시 점검합니다.',
-      onPromptFill: () => refillPrompt('오늘 일정과 빠진 미팅 항목을 요약해줘'),
-      onSecondary: () => setView('list'),
-      secondaryLabel: '리스트 보기',
-    },
-    {
-      title: '월간 일정 검토',
-      body: '이번 달 일정 밀도와 리마인더 누락 가능성을 확인합니다.',
-      onPromptFill: () => refillPrompt(`${yearMonth} 일정 밀도와 리마인더 누락 가능성을 알려줘`),
-      onSecondary: () => setView('calendar'),
-      secondaryLabel: '캘린더 보기',
-    },
-  ];
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
       {user?.role !== 'member' && <AdminQuickNav />}
 
       <AdminPageHero
         title="일정 관리"
         description="캘린더와 리스트를 오가며 일정, 미팅, 리마인더를 관리합니다."
         stats={[
-          { label: '이달 일정', value: schedules.length || 0, caption: yearMonth },
-          { label: '미팅', value: meetingCount || 0, caption: 'type=meeting' },
-          { label: '리마인더', value: reminderCount || 0, caption: 'type=reminder' },
+          {
+            label: '이달 일정',
+            value: `${schedules.length || 0}건`,
+            caption: `${yearMonth} 기준`,
+            body: '현재 월에 등록된 전체 일정 수입니다.',
+          },
+          {
+            label: '미팅',
+            value: `${meetingCount || 0}건`,
+            caption: 'type=meeting',
+            body: '협업 및 고객 미팅 일정만 따로 집계합니다.',
+          },
+          {
+            label: '리마인더',
+            value: `${reminderCount || 0}건`,
+            caption: 'type=reminder',
+            body: '후속 확인용 리마인더 일정을 집계합니다.',
+          },
         ]}
       />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-600">일정 운영 작업</p>
-        <button className="btn-primary text-sm" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>
-          + 일정 추가
-        </button>
-      </div>
+      <PromptAdvisor
+        title="프롬프트 어드바이저"
+        description="일정 등록, 미팅 추가, 리마인더 요청을 자연어로 정리하고 바로 일정 제안 검토로 이어집니다."
+        badge={`Noah 일정 ${user?.role === 'master' ? '오케스트레이터' : user?.role === 'admin' ? '운영 에이전트' : '에이전트'}`}
+        suggestions={[
+          '오늘 오후 3시 팀 회의 잡아줘',
+          '내일 오전 10시 업체 미팅 잡아줘',
+          '모레 오후 1시 리마인더 추가해줘',
+        ]}
+        helperText="일정 등록, 미팅 추가, 리마인더 등록처럼 일정 관리 요청을 빠르게 확인 결과로 넘길 때 적합합니다."
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        promptRef={promptRef}
+        placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
+        onFileClick={() => fileRef.current?.click()}
+        uploading={uploading}
+        attachedFileName={attachedFileName}
+        onReset={() => {
+          setPrompt('');
+          setError('');
+          setNotice('');
+          setAttachedFileName('');
+          setReusedDocument(null);
+          if (fileRef.current) fileRef.current.value = '';
+        }}
+        onSubmit={handlePromptSubmit}
+        submitDisabled={!canCreateSchedules || proposalLoading || !prompt.trim()}
+        error={error}
+        notice={notice}
+      />
 
-      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
-
-      <div className="card space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-500">일정 자연어 입력</p>
-            <p className="text-sm text-slate-600 mt-1">
-              예: `내일 오전 10시 업체 미팅 잡아줘`, `오늘 오후 3시 리마인더 추가해줘`
-            </p>
-          </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            확인 결과 창 기반 피드백 수집
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {['오늘 오후 3시 팀 회의 잡아줘', '내일 오전 10시 업체 미팅 잡아줘', '모레 오후 1시 리마인더 추가해줘'].map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setPrompt(item)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <textarea
-            className="input-base min-h-[92px]"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
-          />
-          {reusedDocument ? (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              <p className="font-semibold">문서 재사용 초안이 적용됨</p>
-              <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 일정 초안이 채워졌습니다.</p>
-              {reusedDocument.documentId ? (
-                <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
-                  문서 상세 보기
-                </a>
-              ) : null}
-            </div>
-          ) : null}
-          {attachedFileName && (
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-                첨부됨: {attachedFileName}
-              </span>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-3">
-            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handlePromptSubmit}
-              disabled={!canCreateSchedules || proposalLoading || !prompt.trim()}
-            >
-              {proposalLoading ? '제안 생성 중...' : '일정 제안 만들기'}
-            </button>
-            <button className="btn-secondary" type="button" onClick={() => fileRef.current?.click()} disabled={uploading}>
-              {uploading ? '업로드 중...' : '파일 첨부'}
-            </button>
-            <button className="btn-secondary" type="button" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>
-              직접 입력 모달 열기
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
-        {notice && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {notice}
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">📅 일정 관리</h1>
-        <button className="btn-primary text-sm" onClick={() => setShowAdd(true)} disabled={!canCreateSchedules}>+ 일정 추가</button>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">월간 일정 요약</p>
-          <div className="grid gap-3 sm:grid-cols-3 mt-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">전체 일정</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{schedules.length}건</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">예정 일정</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{upcomingCount}건</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">미팅</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{meetingCount}건</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">현재 보기</p>
-          <div className="flex items-center gap-3 mt-4">
-            <button className="btn-secondary px-2 py-1 text-sm" onClick={prevMonth}>‹</button>
-            <span className="font-semibold text-slate-800 min-w-[92px] text-center">{year}년 {month + 1}월</span>
-            <button className="btn-secondary px-2 py-1 text-sm" onClick={nextMonth}>›</button>
-            <div className="ml-auto flex gap-1 bg-slate-100 p-1 rounded-2xl">
-              {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
-                <button
-                  key={v.k}
-                  className={`px-3 py-1.5 text-xs rounded-2xl font-medium transition-colors ${
-                    view === v.k ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                  onClick={() => setView(v.k)}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 월 내비 + 뷰 전환 */}
-      <div className="hidden">
-        <button className="btn-secondary px-2 py-1 text-sm" onClick={prevMonth}>‹</button>
-        <span className="font-semibold text-gray-800 min-w-[80px] text-center">{year}년 {month + 1}월</span>
-        <button className="btn-secondary px-2 py-1 text-sm" onClick={nextMonth}>›</button>
-        <div className="ml-auto flex gap-1 bg-gray-100 p-1 rounded-lg">
-          {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
-            <button
-              key={v.k}
-              className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
-                view === v.k ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
-              }`}
-              onClick={() => setView(v.k)}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-16 text-gray-400">로딩 중...</div>
-      ) : view === 'calendar' ? (
-        <CalendarView year={year} month={month} schedules={schedules} />
-      ) : (
-        <ListView schedules={sorted} onDelete={deleteSchedule} canDelete={canDeleteSchedules} />
-      )}
+      <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
 
       {(proposal || notice) && (
         <PendingReviewSection
@@ -571,7 +372,7 @@ export default function SchedulesPage() {
           description="일정 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다."
         >
           {proposal && (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
+            <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-sky-700">일정 제안</p>
@@ -626,6 +427,18 @@ export default function SchedulesPage() {
                 </label>
               </div>
 
+              <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 h-full">
+                  <p><span className="font-semibold text-slate-900">제안 일정</span> {proposal.title || '-'}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">예정 시각</span> {fmtDatetime(proposal.start_time)}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">장소</span> {proposal.location || '-'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700 h-full">
+                  <p><span className="font-semibold text-slate-900">처리 방식</span> 수정 후 확정하면 즉시 일정에 반영됩니다.</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">설명</span> {proposal.description || '추가 설명 없음'}</p>
+                </div>
+              </div>
+
               {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
                 <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
                   <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
@@ -639,13 +452,6 @@ export default function SchedulesPage() {
                           </span>
                         </div>
                         <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                        <button
-                          type="button"
-                          className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
-                          onClick={() => refillPrompt(`이 사례를 참고해서 일정 등록 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
-                        >
-                          이 사례로 다시 작성
-                        </button>
                       </div>
                     ))}
                   </div>
@@ -653,18 +459,11 @@ export default function SchedulesPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
-                <ProposalFlowActions
-                  onPromptFill={() => refillPrompt(`일정 등록 제안을 다시 정리해줘\n제목: ${proposal.title || ''}\n시작: ${proposal.start_time || ''}\n장소: ${proposal.location || ''}`.trim())}
-                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>
                 <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
                   제안 반려
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => { setProposal(null); setOriginalProposal(null); setError(''); }} disabled={proposalLoading}>
-                  닫기
                 </button>
               </div>
             </div>
@@ -672,7 +471,70 @@ export default function SchedulesPage() {
         </PendingReviewSection>
       )}
 
-      {showAdd && canCreateSchedules && <AddModal onClose={() => setShowAdd(false)} onAdded={load} />}
+      {reusedDocument ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+          <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 일정 초안이 채워졌습니다.</p>
+          {reusedDocument.documentId ? (
+            <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+              문서 상세 보기
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="card">
+        <OperationsSectionHeader
+          className="border-b border-slate-200 pb-4"
+          right={(
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={prevMonth}
+                aria-label="이전 달"
+              >
+                ‹
+              </button>
+              <span className="min-w-[92px] text-center font-semibold text-slate-800">{year}년 {month + 1}월</span>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={nextMonth}
+                aria-label="다음 달"
+              >
+                ›
+              </button>
+            </div>
+          )}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
+            <button
+              type="button"
+              key={v.k}
+              onClick={() => setView(v.k)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                view === v.k
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5 sm:mt-4">
+          {loading ? (
+            <div className="py-16 text-center text-gray-400">로딩 중...</div>
+          ) : view === 'calendar' ? (
+            <CalendarView year={year} month={month} schedules={schedules} />
+          ) : (
+            <ListView schedules={sorted} onDelete={deleteSchedule} canDelete={canDeleteSchedules} />
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

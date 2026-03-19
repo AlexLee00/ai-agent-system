@@ -11,6 +11,8 @@ import { canPerformMenuOperation } from '@/lib/menu-access';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import PromptAdvisor from '@/components/PromptAdvisor';
+import OperationsSectionHeader from '@/components/OperationsSectionHeader';
+import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -95,14 +97,7 @@ export default function AttendancePage() {
   const [approvalProcessing, setApprovalProcessing] = useState('');
   const promptRef = useRef(null);
 
-  useEffect(() => {
-    const node = promptRef.current;
-    if (!node) return;
-    const baseHeight = 24;
-    node.style.height = `${baseHeight}px`;
-    const nextHeight = node.scrollHeight <= 28 ? baseHeight : node.scrollHeight;
-    node.style.height = `${nextHeight}px`;
-  }, [prompt]);
+  useAutoResizeTextarea(promptRef, prompt);
 
   const refillPrompt = (text) => {
     setPrompt(text);
@@ -844,7 +839,15 @@ export default function AttendancePage() {
       {pendingReviewSection}
 
       <div className="card">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <OperationsSectionHeader
+          className="border-b border-slate-200 pb-4"
+          right={(
+            <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:w-auto sm:justify-end">
+              {activeSummary}
+            </div>
+          )}
+        />
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
             <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
               <span className="w-14 shrink-0 text-xs font-semibold text-slate-500">시작날짜</span>
@@ -869,9 +872,6 @@ export default function AttendancePage() {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </label>
-          </div>
-          <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:w-auto sm:justify-end">
-            {activeSummary}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">

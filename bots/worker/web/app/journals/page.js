@@ -6,13 +6,14 @@ import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
-import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
+import PromptAdvisor from '@/components/PromptAdvisor';
+import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
+import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 const CATEGORIES = [
   { value: 'general', label: '일반' },
@@ -55,18 +56,19 @@ export default function JournalsPage() {
   const [attachedFileName, setAttachedFileName] = useState('');
   const [reusedDocument, setReusedDocument] = useState(null);
   const fileRef = useRef(null);
+  const promptRef = useRef(null);
 
-  const refillPrompt = (text) => {
-    setPrompt(text);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  useAutoResizeTextarea(promptRef, prompt);
 
-  const load = (kw) => {
+  const load = (overrides = {}) => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (filterDate) params.set('date', filterDate);
-    if (filterCat)  params.set('category', filterCat);
-    if (kw ?? search) params.set('keyword', kw ?? search);
+    const date = overrides.date ?? filterDate;
+    const category = overrides.category ?? filterCat;
+    const keyword = overrides.keyword ?? search;
+    if (date) params.set('date', date);
+    if (category) params.set('category', category);
+    if (keyword) params.set('keyword', keyword);
     api.get(`/journals?${params}`)
       .then(d => setJournals(d.journals || []))
       .finally(() => setLoading(false));
@@ -213,176 +215,262 @@ export default function JournalsPage() {
   const emptyNode = (
     <div className="text-center py-12">
       <p className="text-4xl mb-3">📝</p>
-      <p className="text-gray-500 mb-4">오늘의 업무를 기록해보세요</p>
-      <button onClick={openNew} className="btn-primary text-sm">
-        + 업무일지 작성하기
-      </button>
+      <p className="text-gray-500 mb-4">
+        {canCreateJournals ? '오늘의 업무를 기록해보세요' : '현재 조회 조건에 맞는 업무일지가 없습니다.'}
+      </p>
+      {canCreateJournals ? (
+        <button onClick={openNew} className="btn-primary text-sm">
+          + 업무일지 작성하기
+        </button>
+      ) : null}
     </div>
   );
 
   const canCreateJournals = canPerformMenuOperation(user, 'journals', 'create');
   const canUpdateJournals = canPerformMenuOperation(user, 'journals', 'update');
   const canDeleteJournals = canPerformMenuOperation(user, 'journals', 'delete');
-  const quickFlows = [
-    {
-      title: '오늘 업무일지 점검',
-      body: '오늘 작성된 업무일지와 누락된 기록을 다시 점검합니다.',
-      onPromptFill: () => refillPrompt('오늘 작성된 업무일지와 누락된 기록을 요약해줘'),
-      onSecondary: () => setFilterDate(todayDate),
-      secondaryLabel: '오늘 필터 적용',
-    },
-    {
-      title: '미팅/보고 정리',
-      body: '미팅, 보고 카테고리 위주로 중요한 기록을 다시 모읍니다.',
-      onPromptFill: () => refillPrompt('최근 미팅과 보고 업무일지를 중심으로 정리해줘'),
-      onSecondary: () => setFilterCat('meeting'),
-      secondaryLabel: '미팅 필터 적용',
-    },
-  ];
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
       {user?.role !== 'member' && <AdminQuickNav />}
 
       <AdminPageHero
         title="업무 관리"
         description="업무일지 초안, 카테고리 필터, 검색과 상세 열람을 한 화면에서 운영합니다."
         stats={[
-          { label: '전체 기록', value: journals.length || 0, caption: '현재 조회 기준' },
-          { label: '오늘 기록', value: todayCount || 0, caption: todayDate },
-          { label: '분류 수', value: categorySummary.length || 0, caption: '표시된 카테고리' },
+          {
+            label: '전체 기록',
+            value: `${journals.length || 0}건`,
+            caption: '현재 조회 기준',
+            body: '현재 필터 기준으로 확인되는 업무일지 수입니다.',
+          },
+          {
+            label: '오늘 기록',
+            value: `${todayCount || 0}건`,
+            caption: todayDate,
+            body: '오늘 날짜로 등록된 업무일지 건수입니다.',
+          },
+          {
+            label: '분류 수',
+            value: `${categorySummary.length || 0}개`,
+            caption: '표시된 카테고리',
+            body: '현재 조회 결과에서 나타나는 업무 분류 수입니다.',
+          },
         ]}
       />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-600">업무일지 운영 작업</p>
-        <button className="btn-primary text-sm" onClick={openNew} disabled={!canCreateJournals}>+ 등록</button>
-      </div>
+      <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
 
-      {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
+      <PromptAdvisor
+        title="프롬프트 어드바이저"
+        description="업무일지 초안 생성, 미팅/보고 정리, 오늘 기록 요약 요청을 자연어로 정리하고 바로 확인 결과로 이어집니다."
+        badge={`Noah 업무 ${user?.role === 'master' ? '오케스트레이터' : user?.role === 'admin' ? '운영 에이전트' : '에이전트'}`}
+        suggestions={[
+          '오늘 작성한 업무일지를 정리해줘',
+          '최근 미팅 업무일지를 중심으로 정리해줘',
+          '보고 카테고리 업무일지만 요약해줘',
+          '오늘 오전 김대리 업체 미팅 후 후속 견적 요청 사항을 정리해줘',
+        ]}
+        helperText="업무일지 초안 생성, 미팅/보고 정리, 오늘 기록 요약처럼 업무관리 요청을 빠르게 확인 결과로 넘길 때 적합합니다."
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        promptRef={promptRef}
+        placeholder="업무일지 초안이나 업무 요약 요청을 자연어로 입력하세요."
+        onFileClick={() => fileRef.current?.click()}
+        uploading={uploading}
+        attachedFileName={attachedFileName}
+        onReset={() => {
+          setPrompt('');
+          setError('');
+          setNotice('');
+          setAttachedFileName('');
+          setReusedDocument(null);
+          if (fileRef.current) fileRef.current.value = '';
+        }}
+        onSubmit={createProposal}
+        submitDisabled={!canCreateJournals || proposalLoading || !prompt.trim()}
+        error={error}
+        notice={notice}
+      />
 
-      <div className="card space-y-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">자연어로 업무일지 초안 만들기</p>
-          <p className="text-sm text-slate-500 mt-1">입력한 내용을 먼저 확인한 뒤 등록합니다. 수정 내용은 피드백 데이터로 쌓입니다.</p>
+      {reusedDocument ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+          <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 업무일지 초안이 채워졌습니다.</p>
+          {reusedDocument.documentId ? (
+            <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+              문서 상세 보기
+            </a>
+          ) : null}
         </div>
-        <div className="flex flex-col gap-3 lg:flex-row">
-          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-          <textarea
-            className="input-base min-h-[104px] flex-1"
-            placeholder="예: 오늘 오전 김대리 업체 미팅 후 후속 견적 요청 사항을 정리해줘"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-          {attachedFileName && (
-            <div className="lg:hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 w-fit">
-              첨부됨: {attachedFileName}
+      ) : null}
+
+      {(proposal || notice) && (
+        <PendingReviewSection
+          title="확인 및 승인 대기 리스트"
+          description="프롬프트 입력은 위에서 한 번만 하고, 실제 확정 또는 반려는 아래 처리 리스트에서 진행합니다."
+          hasPending={Boolean(proposal)}
+          badgeLabel={proposal ? '1건 대기 중' : '처리 완료'}
+        >
+          {proposal && (
+            <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-sky-700">업무일지 확인 항목</p>
+                  <h3 className="text-lg font-semibold text-slate-900 mt-1">{proposal.summary || '업무일지 제안'}</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    AI가 자연어 입력을 업무일지 초안으로 정리했습니다. 내용을 검토한 뒤 그대로 확정하거나 반려하세요.
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-2 text-right">
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 border border-slate-200">
+                    {proposal.confidence === 'high' ? '해석 신뢰도 높음' : '해석 신뢰도 보통'}
+                  </span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold border ${proposalChanged(originalProposal, proposal)
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    {proposalChanged(originalProposal, proposal) ? '수정 있음' : '수정 없음'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+                  <p><span className="font-semibold text-slate-900">예정 날짜</span> {proposal.date || today()}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">카테고리</span> {catLabel(proposal.category || 'general')}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+                  <p><span className="font-semibold text-slate-900">처리 방식</span> {proposal.confidence === 'high' ? '높은 확신 초안' : '검토 필요 초안'}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">설명</span> 초안을 검토한 뒤 확정하거나 반려합니다.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">날짜</span>
+                  <input type="date" className="input-base" value={proposal.date || ''} onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value }))} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-slate-500">카테고리</span>
+                  <select className="input-base" value={proposal.category || 'general'} onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value }))}>
+                    {CATEGORIES.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-slate-500">내용</span>
+                <textarea className="input-base min-h-[144px]" value={proposal.content || ''} onChange={(e) => setProposal((prev) => ({ ...prev, content: e.target.value }))} />
+              </label>
+
+              {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+                  <p className="text-sm font-semibold text-violet-900">유사 확정 사례</p>
+                  <p className="text-xs text-violet-700 mt-1">
+                    수정 없이 확정된 과거 사례를 참고해 현재 초안을 빠르게 판단할 수 있습니다.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {proposal.similar_cases.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-violet-100 bg-white/90 px-3 py-3 text-sm text-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-slate-900">{item.summary || `${item.flow_code}/${item.action_code}`}</p>
+                          <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                            유사도 {Math.round((item.similarity || 0) * 100)}%
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
+                  제안 반려
+                </button>
+                <button type="button" className="btn-primary flex-1" disabled={proposalActionLoading || !String(proposal.content || '').trim()} onClick={confirmProposal}>
+                  {proposalActionLoading ? '처리 중...' : '이대로 확정'}
+                </button>
+              </div>
             </div>
           )}
-          <button
-            type="button"
-            className="btn-primary lg:w-40"
-            disabled={!canCreateJournals || proposalLoading || !prompt.trim()}
-            onClick={createProposal}
-          >
-            {proposalLoading ? '초안 생성 중...' : '초안 만들기'}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary lg:w-32"
-            disabled={!canCreateJournals || uploading}
-            onClick={() => fileRef.current?.click()}
-          >
-            {uploading ? '업로드 중...' : '파일 첨부'}
-          </button>
-        </div>
-        {reusedDocument ? (
-          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-            <p className="font-semibold">문서 재사용 초안이 적용됨</p>
-            <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 업무일지 초안이 채워졌습니다.</p>
-            {reusedDocument.documentId ? (
-              <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
-                문서 상세 보기
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-        {attachedFileName && (
-          <div className="hidden lg:flex">
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-              첨부됨: {attachedFileName}
-            </span>
-          </div>
-        )}
-        {notice && <p className="text-sm text-emerald-600">{notice}</p>}
-        {error && <p className="text-sm text-red-500">{error}</p>}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">오늘의 업무 흐름</p>
-          <div className="grid gap-3 sm:grid-cols-3 mt-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">전체 기록</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{journals.length}</p>
+          {!proposal && notice ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+              <p className="font-semibold">처리 완료</p>
+              <p className="mt-1 text-emerald-800">{notice}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">오늘 작성</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">{todayCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-xs text-slate-500">현재 필터</p>
-              <p className="text-sm font-semibold text-slate-900 mt-2">
-                {[filterDate && '날짜', filterCat && catLabel(filterCat), search && '검색어'].filter(Boolean).join(' · ') || '전체'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">카테고리 분포</p>
-          <div className="space-y-2 mt-4">
-            {categorySummary.length === 0 ? (
-              <p className="text-sm text-slate-400">아직 집계할 업무 분류가 없습니다.</p>
-            ) : categorySummary.map((item) => (
-              <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                <span className="text-sm font-medium text-slate-700">{item.label}</span>
-                <span className="text-sm font-semibold text-slate-900">{item.count}건</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+          ) : null}
+        </PendingReviewSection>
+      )}
 
       {/* 필터 */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <input
-          type="date"
-          className="input-base w-auto"
-          value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
+      <div className="card">
+        <OperationsSectionHeader
+          eyebrow="업무일지 필터"
+          title="조회 조건과 검색"
+          description="날짜, 카테고리, 검색어를 조합해 필요한 업무일지만 빠르게 좁힐 수 있습니다."
+          className="border-b border-slate-200 pb-4"
+          right={(
+            <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:w-auto sm:justify-end">
+              <div><span className="text-slate-500">현재 필터</span> <strong>{[filterDate && '날짜', filterCat && catLabel(filterCat), search && '검색어'].filter(Boolean).join(' · ') || '전체'}</strong></div>
+              <div><span className="text-slate-500">오늘 기록</span> <strong>{todayCount}건</strong></div>
+            </div>
+          )}
         />
-        <select className="input-base w-auto" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-          <option value="">전체 카테고리</option>
-          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <form onSubmit={e => { e.preventDefault(); load(); }} className="flex gap-2">
-          <input
-            className="input-base"
-            placeholder="내용 검색"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button type="submit" className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-            <Search className="w-4 h-4" />
-          </button>
-        </form>
-        {(filterDate || filterCat || search) && (
-          <button
-            className="text-xs text-gray-400 hover:text-gray-600"
-            onClick={() => { setFilterDate(''); setFilterCat(''); setSearch(''); load(''); }}
-          >초기화</button>
-        )}
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+            <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
+              <span className="w-16 shrink-0 text-xs font-semibold text-slate-500">날짜</span>
+              <input
+                type="date"
+                className="input-base w-[calc(100%-4.75rem)] sm:min-w-[150px] sm:w-auto"
+                value={filterDate}
+                onChange={e => setFilterDate(e.target.value)}
+              />
+            </label>
+            <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
+              <span className="w-16 shrink-0 text-xs font-semibold text-slate-500">카테고리</span>
+              <select className="input-base w-[calc(100%-4.75rem)] sm:min-w-[150px] sm:w-auto" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+                <option value="">전체 카테고리</option>
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <form onSubmit={e => { e.preventDefault(); load(); }} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              className="input-base flex-1"
+              placeholder="내용 검색"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <button type="submit" className="inline-flex h-10 w-full shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white transition hover:bg-slate-800 sm:w-10 sm:rounded-full">
+              <Search className="w-4 h-4" />
+            </button>
+          </form>
+          <div className="flex gap-2">
+            {canCreateJournals ? (
+              <button className="btn-primary" onClick={openNew} disabled={!canCreateJournals}>+ 등록</button>
+            ) : null}
+            {(filterDate || filterCat || search) && (
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setFilterDate('');
+                  setFilterCat('');
+                  setSearch('');
+                  load({ date: '', category: '', keyword: '' });
+                }}
+              >
+                초기화
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="card">
@@ -394,7 +482,7 @@ export default function JournalsPage() {
               data={journals}
               emptyNode={emptyNode}
               actions={row => (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => { setViewItem(row); setViewModal(true); }}>보기</button>
                   {canUpdateJournals && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
                   {canDeleteJournals && <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
@@ -403,82 +491,6 @@ export default function JournalsPage() {
             />
         }
       </div>
-
-      {(proposal || notice) && (
-        <PendingReviewSection
-          hasPending={Boolean(proposal)}
-          description="업무일지 초안을 아래 리스트에서 검토하고 확정하거나 반려합니다."
-        >
-          {proposal && (
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/30 px-4 py-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">업무일지 제안</p>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {proposal.summary || '업무일지 제안'} · {proposal.confidence === 'high' ? '높은 확신' : '검토 필요'}
-                  </p>
-                </div>
-                {proposalChanged(originalProposal, proposal) && (
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">수정됨</span>
-                )}
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">날짜</label>
-                  <input type="date" className="input-base" value={proposal.date || ''} onChange={(e) => setProposal((prev) => ({ ...prev, date: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
-                  <select className="input-base" value={proposal.category || 'general'} onChange={(e) => setProposal((prev) => ({ ...prev, category: e.target.value }))}>
-                    {CATEGORIES.map((item) => (
-                      <option key={item.value} value={item.value}>{item.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">내용</label>
-                <textarea className="input-base min-h-[144px]" value={proposal.content || ''} onChange={(e) => setProposal((prev) => ({ ...prev, content: e.target.value }))} />
-              </div>
-              {Array.isArray(proposal.similar_cases) && proposal.similar_cases.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm font-semibold text-slate-800">유사 확정 사례</p>
-                  <div className="mt-3 space-y-3">
-                    {proposal.similar_cases.map((item) => (
-                      <div key={item.id} className="rounded-xl bg-white px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-slate-900">{item.summary || `${item.flow_code}/${item.action_code}`}</p>
-                          <span className="text-xs text-slate-400">{Math.round((item.similarity || 0) * 100)}%</span>
-                        </div>
-                        <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                        <button
-                          type="button"
-                          className="mt-3 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
-                          onClick={() => refillPrompt(`이 사례를 참고해서 업무일지 초안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
-                        >
-                          이 사례로 다시 작성
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-wrap gap-3">
-                <ProposalFlowActions
-                  onPromptFill={() => refillPrompt(`업무일지 초안을 다시 정리해줘\n날짜: ${proposal.date || ''}\n카테고리: ${proposal.category || ''}\n내용: ${proposal.content || ''}`.trim())}
-                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                />
-                <button type="button" className="btn-secondary flex-1" disabled={proposalActionLoading} onClick={rejectProposal}>
-                  반려
-                </button>
-                <button type="button" className="btn-primary flex-1" disabled={proposalActionLoading || !String(proposal.content || '').trim()} onClick={confirmProposal}>
-                  {proposalActionLoading ? '처리 중...' : '확정'}
-                </button>
-              </div>
-            </div>
-          )}
-        </PendingReviewSection>
-      )}
 
       {/* 보기 모달 */}
       <Modal open={viewModal} onClose={() => setViewModal(false)} title="업무일지 상세">

@@ -7,9 +7,12 @@ import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import { useAuth } from '@/lib/auth-context';
 import PromptAdvisor from '@/components/PromptAdvisor';
+import OperationsSectionHeader from '@/components/OperationsSectionHeader';
+import OperationsSplitLayout from '@/components/OperationsSplitLayout';
 import { parseClaudeOutput } from '../ai/canvas';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
+import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -55,14 +58,7 @@ export default function DashboardPage() {
     setPrompt((prev) => (prev === merged ? prev : merged));
   }, []);
 
-  useEffect(() => {
-    const node = promptRef.current;
-    if (!node) return;
-    const baseHeight = 24;
-    node.style.height = `${baseHeight}px`;
-    const nextHeight = node.scrollHeight <= 28 ? baseHeight : node.scrollHeight;
-    node.style.height = `${nextHeight}px`;
-  }, [prompt]);
+  useAutoResizeTextarea(promptRef, prompt);
 
   if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
 
@@ -485,17 +481,14 @@ export default function DashboardPage() {
         </>
       )}
 
-      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+      <OperationsSplitLayout
+        left={(
         <div className="card">
-          <div className="flex flex-col gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-500">운영 캔버스</p>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">지금 바로 확인할 항목</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400 break-keep">
-                우선순위가 높은 항목부터 위쪽에 정렬됩니다.
-              </p>
-            </div>
-          </div>
+          <OperationsSectionHeader
+            eyebrow="운영 캔버스"
+            title="지금 바로 확인할 항목"
+            description="우선순위가 높은 항목부터 위쪽에 정렬됩니다."
+          />
           <div className="mt-4 grid gap-3">
             {priorityItems.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
@@ -521,18 +514,15 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
-
+        )}
+        right={(
         <div className="card">
-          <div className="flex flex-col gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-500">최근 업무 큐</p>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">최신 처리 흐름</h2>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400 break-keep">
-                처리 유형별 배지와 최신 시각을 기준으로 흐름을 빠르게 읽을 수 있습니다.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 max-h-[44rem] space-y-3 overflow-y-auto pr-1">
+          <OperationsSectionHeader
+            eyebrow="최근 업무 큐"
+            title="최신 처리 흐름"
+            description="처리 유형별 배지와 최신 시각을 기준으로 흐름을 빠르게 읽을 수 있습니다."
+          />
+          <div className="mt-4 space-y-3 lg:max-h-[44rem] lg:overflow-y-auto lg:pr-1">
             {activities.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-6 text-sm text-slate-500">
                 최근 활동이 없습니다.
@@ -570,7 +560,8 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
-      </section>
+        )}
+      />
     </div>
   );
 }
