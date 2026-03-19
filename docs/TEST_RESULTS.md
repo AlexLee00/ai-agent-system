@@ -405,3 +405,20 @@
 | `node --check bots/investment/markets/crypto.js` | ✅ `trade_mode`별 상태 파일 분리 로직 문법 확인 |
 | `plutil -lint bots/investment/launchd/ai.investment.domestic.validation.plist` | ✅ OK |
 | `plutil -lint bots/investment/launchd/ai.investment.overseas.validation.plist` | ✅ OK |
+
+### 워커 매출 / 스카 동기화 및 페이지네이션 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/lib/ska-sales-sync.js` | ✅ 통과 |
+| `node --check bots/worker/web/server.js` | ✅ 통과 |
+| `node --check bots/worker/web/app/sales/page.js` | ✅ 통과 |
+| `node --check bots/worker/web/components/DataTable.js` | ✅ 통과 |
+| `node -e "syncSkaSalesToWorker('test-company')"` 1차 실행 | ✅ 누락분 `inserted: 124` backfill 확인 |
+| `node --input-type=module -e "... worker.sales / reservation.daily_summary 총액 대조 ..."` | ✅ `28,847,500원`, 최신일 `2026-03-19` 일치 확인 |
+| `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ `2026-03-16~2026-03-18` 원천 데이터 복구 확인, 종료 시 CSV export `rows is not iterable` 잔여 오류 확인 |
+| `node --input-type=module -e "... 2026-03-16~2026-03-19 daily_summary 확인 ..."` | ✅ `pickko_total/general_revenue` 기준 저장 확인 |
+| `node --input-type=module -e "... 2026-01-01~2026-01-12 worker.sales 확인 ..."` | ✅ `test-company`의 1월 초 데이터가 이미 존재함을 확인 |
+| `npm --prefix bots/worker/web run build` | ✅ 통과 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ 실행 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 실행 |

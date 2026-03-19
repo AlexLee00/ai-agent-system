@@ -33,6 +33,7 @@ const { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswo
 const { requireAuth, requireRole, companyFilter, auditLog, assertCompanyAccess } = require('../lib/company-guard');
 const { accessLogger, errorLogger, logAuth } = require('../lib/logger');
 const { getSecret } = require('../lib/secrets');
+const { syncSkaSalesToWorker } = require('../lib/ska-sales-sync');
 const { recalcProgress } = require('../src/ryan');
 const { resolveAiPolicy, validateLlmModeForUser } = require('../lib/ai-policy');
 const { getMenuPolicyForRole } = require('../lib/menu-policy');
@@ -2905,6 +2906,7 @@ app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
   const from = req.query.from || new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0,10);
   const to   = req.query.to   || kst.today();
   try {
+    await syncSkaSalesToWorker(req.companyId);
     const rows = await pgPool.query(SCHEMA,
       `SELECT id, TO_CHAR(date,'YYYY-MM-DD') AS date, amount, category, description, registered_by, created_at
        FROM worker.sales
@@ -2917,10 +2919,23 @@ app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
 
 app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
   try {
-    const [daily, weekly, monthly, daily30] = await Promise.all([
+    await syncSkaSalesToWorker(req.companyId);
+    const [daily, lifetime, currentMonth, weekly, monthly, daily30] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
          FROM worker.sales WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+         FROM worker.sales WHERE company_id=$1 AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+         FROM worker.sales
+         WHERE company_id=$1
+           AND date >= DATE_TRUNC('month', CURRENT_DATE)::date
+           AND date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')::date
+           AND deleted_at IS NULL`,
         [req.companyId]),
       pgPool.query(SCHEMA,
         `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date, SUM(amount) AS total, COUNT(*) AS cnt
@@ -2939,7 +2954,9 @@ app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
         [req.companyId]),
     ]);
     res.json({
-      today:   { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
+      today: { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
+      lifetime: { total: Number(lifetime?.total ?? 0), count: Number(lifetime?.cnt ?? 0) },
+      currentMonth: { total: Number(currentMonth?.total ?? 0), count: Number(currentMonth?.cnt ?? 0) },
       weekly,
       monthly,
       daily30,
@@ -3847,6 +3864,7 @@ app.delete('/api/journals/:id', requireAuth, companyFilter, async (req, res) => 
 
 app.get('/api/dashboard/summary', requireAuth, companyFilter, async (req, res) => {
   try {
+    await syncSkaSalesToWorker(req.companyId);
     const [salesRow, attendRow, docsRow, approvalsRow, projectsRow, schedulesRow] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total FROM worker.sales
@@ -5062,6 +5080,7 @@ app.post('/api/ai/revenue-forecast',
   requireAuth, requireRole('admin', 'master'), companyFilter,
   async (req, res) => {
     try {
+      await syncSkaSalesToWorker(req.companyId);
       const rows = await pgPool.query(SCHEMA,
         `SELECT date::text, SUM(amount) AS daily_total, COUNT(*) AS tx_count
          FROM worker.sales
