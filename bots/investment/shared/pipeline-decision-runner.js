@@ -7,11 +7,21 @@ import { getDebateLimit, getMinConfidence, getPortfolioDecision, inspectPortfoli
 import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
 import { loadAnalysesForSession } from '../nodes/helpers.js';
+import { getInvestmentTradeMode } from './secrets.js';
 
 function getDecisionNode(id) {
   const node = getInvestmentNode(id);
   if (!node) throw new Error(`노드 없음: ${id}`);
   return node;
+}
+
+function isActuallyExecuted(resultItem) {
+  const execution = resultItem?.execution;
+  if (!execution || execution.skipped) return false;
+  if (execution.trade) return true;
+  if (execution.signalStatus === 'executed') return true;
+  if (execution.execution?.success && !execution.execution?.absorbed) return true;
+  return false;
 }
 
 function buildAnalystSignals(analyses) {
@@ -33,6 +43,7 @@ export async function runDecisionExecutionPipeline({
   params = null,
 } = {}) {
   const startedAt = Date.now();
+  const investmentTradeMode = getInvestmentTradeMode();
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
   const l10Node = getDecisionNode('L10');
   const l11Node = getDecisionNode('L11');
@@ -51,6 +62,7 @@ export async function runDecisionExecutionPipeline({
   let debateCount = 0;
   const debateLimit = getDebateLimit(exchange);
   let riskRejected = 0;
+  const riskRejectReasons = {};
   let weakSignalSkipped = 0;
   let invalidSignalSkipped = 0;
   let portfolioDecision = null;
@@ -69,10 +81,12 @@ export async function runDecisionExecutionPipeline({
     durationMs: Date.now() - startedAt,
     inputSymbols: symbols.length,
     decidedSymbols: symbolDecisions.length,
+    approvedSignals: extra.approvedSignals ?? 0,
     executedSymbols: extra.executedSymbols ?? 0,
     debateCount,
     debateLimit,
     riskRejected,
+    riskRejectReasons: { ...riskRejectReasons },
     weakSignalSkipped,
     invalidSignalSkipped,
     savedExecutionWork: riskRejected * 5,
@@ -85,6 +99,13 @@ export async function runDecisionExecutionPipeline({
     }),
     ...extra,
   });
+
+  function getTopRiskRejectReason() {
+    const entries = Object.entries(riskRejectReasons);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  }
 
   for (const symbol of symbols) {
     try {
@@ -153,10 +174,13 @@ export async function runDecisionExecutionPipeline({
         debate_count: metrics.debateCount,
         debate_limit: metrics.debateLimit,
         risk_rejected: metrics.riskRejected,
+        risk_reject_reason_top: null,
+        risk_reject_reasons: {},
         weak_signal_skipped: metrics.weakSignalSkipped,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
+        investment_trade_mode: investmentTradeMode,
       },
     });
     return {
@@ -191,10 +215,13 @@ export async function runDecisionExecutionPipeline({
         debate_count: metrics.debateCount,
         debate_limit: metrics.debateLimit,
         risk_rejected: metrics.riskRejected,
+        risk_reject_reason_top: null,
+        risk_reject_reasons: {},
         weak_signal_skipped: metrics.weakSignalSkipped,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
+        investment_trade_mode: investmentTradeMode,
       },
     });
     return {
@@ -268,6 +295,8 @@ export async function runDecisionExecutionPipeline({
 
     if (!riskResult?.approved) {
       riskRejected++;
+      const riskReason = String(riskResult?.reason || 'risk_rejected');
+      riskRejectReasons[riskReason] = (riskRejectReasons[riskReason] || 0) + 1;
       results.push({
         symbol: dec.symbol,
         action: dec.action,
@@ -276,7 +305,7 @@ export async function runDecisionExecutionPipeline({
         adjustedAmount: null,
         signalId: null,
         skipped: true,
-        skipReason: riskResult?.reason || 'risk_rejected',
+        skipReason: riskReason,
         risk: riskResult,
       });
       continue;
@@ -335,7 +364,8 @@ export async function runDecisionExecutionPipeline({
 
   const completedMetrics = buildMetrics({
     bridgeStatus: 'completed',
-    executedSymbols: results.filter(item => !item.skipped).length,
+    approvedSignals: results.filter(item => !item.skipped).length,
+    executedSymbols: results.filter(isActuallyExecuted).length,
   });
   await finishPipelineRun(sessionId, {
     status: 'completed',
@@ -346,16 +376,20 @@ export async function runDecisionExecutionPipeline({
       buy_decisions: actionCounts.buy,
       sell_decisions: actionCounts.sell,
       hold_decisions: actionCounts.hold,
-      executed_symbols: results.filter(item => !item.skipped).length,
+      approved_signals: completedMetrics.approvedSignals,
+      executed_symbols: completedMetrics.executedSymbols,
       portfolio_view: portfolioDecision.portfolio_view,
       risk_level: portfolioDecision.risk_level,
       debate_count: completedMetrics.debateCount,
       debate_limit: completedMetrics.debateLimit,
       risk_rejected: completedMetrics.riskRejected,
+      risk_reject_reason_top: getTopRiskRejectReason(),
+      risk_reject_reasons: completedMetrics.riskRejectReasons,
       weak_signal_skipped: completedMetrics.weakSignalSkipped,
       invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
+      investment_trade_mode: investmentTradeMode,
     },
   });
 

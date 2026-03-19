@@ -201,8 +201,9 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
  */
 async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} }) {
   // ★ 긴급 차단 체크
-  if (billingGuard.isBlocked()) {
-    const r = billingGuard.getBlockReason();
+  const guardScope = logMeta.team || 'global';
+  if (billingGuard.isBlocked(guardScope)) {
+    const r = billingGuard.getBlockReason(guardScope);
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
   if (!chain || chain.length === 0) throw new Error('폴백 체인이 비어 있음');

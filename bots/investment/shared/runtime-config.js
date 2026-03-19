@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
-import { isPaperMode } from './secrets.js';
+import { getInvestmentTradeMode, isPaperMode } from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -167,7 +167,23 @@ function loadRuntimeConfig() {
   if (cachedConfig) return cachedConfig;
   try {
     const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
-    cachedConfig = deepMerge(DEFAULT_RUNTIME_CONFIG, raw.runtime_config || {});
+    const legacyCapitalRuntime = raw.capital_management && (
+      raw.capital_management.dynamicTpSlEnabled !== undefined ||
+      raw.capital_management.luna ||
+      raw.capital_management.nemesis ||
+      raw.capital_management.timeMode ||
+      raw.capital_management.llmPolicies
+    )
+      ? {
+          dynamicTpSlEnabled: raw.capital_management.dynamicTpSlEnabled,
+          luna: raw.capital_management.luna,
+          nemesis: raw.capital_management.nemesis,
+          timeMode: raw.capital_management.timeMode,
+          llmPolicies: raw.capital_management.llmPolicies,
+        }
+      : {};
+    const runtimeOverride = raw.runtime_config || raw.capital_management?.runtime_config || legacyCapitalRuntime || {};
+    cachedConfig = deepMerge(DEFAULT_RUNTIME_CONFIG, runtimeOverride);
     return cachedConfig;
   } catch {
     cachedConfig = { ...DEFAULT_RUNTIME_CONFIG };
@@ -192,7 +208,7 @@ export function getLunaStockStrategyProfile() {
   const mode = luna.stockStrategyMode || {};
   const profiles = luna.stockStrategyProfiles || {};
   const selectedKey = (mode[isPaperMode() ? 'paper' : 'live'] || 'aggressive');
-  return profiles[selectedKey] || profiles.aggressive || profiles.balanced || {
+  const selectedProfile = profiles[selectedKey] || profiles.aggressive || profiles.balanced || {
     label: 'aggressive',
     promptTag: '공격적 모드',
     minConfidence: { live: 0.30, paper: 0.22 },
@@ -204,6 +220,9 @@ export function getLunaStockStrategyProfile() {
     portfolioMaxPositionPct: 0.30,
     portfolioDailyLossPct: 0.10,
   };
+  const tradeMode = getInvestmentTradeMode();
+  const tradeModeOverride = selectedProfile.tradeModes?.[tradeMode] || {};
+  return deepMerge(selectedProfile, tradeModeOverride);
 }
 
 export function getNemesisRuntimeConfig() {

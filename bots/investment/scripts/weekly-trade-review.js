@@ -52,7 +52,7 @@ const DRY_RUN = args.includes('--dry-run');
 async function fetchRecentTrades(days) {
   return db.query(`
     SELECT
-      symbol, exchange, direction, is_paper,
+      symbol, exchange, direction, is_paper, COALESCE(trade_mode, 'normal') AS trade_mode,
       entry_time, entry_price, entry_size, entry_value,
       exit_time, exit_price, exit_value, exit_reason,
       pnl_amount, pnl_percent, pnl_net, fee_total,
@@ -72,6 +72,7 @@ async function fetchRecentTradeReviews(days) {
       j.trade_id,
       j.exchange,
       j.is_paper,
+      COALESCE(j.trade_mode, 'normal') AS trade_mode,
       j.pnl_percent,
       r.max_favorable,
       r.max_adverse,
@@ -127,14 +128,7 @@ async function fetchDecisionPipelineStats(days) {
     return await db.query(`
       SELECT
         market,
-        COALESCE(SUM(COALESCE((meta->>'decided_symbols')::int, 0)), 0) AS decided_symbols,
-        COALESCE(SUM(COALESCE((meta->>'executed_symbols')::int, 0)), 0) AS executed_symbols,
-        COALESCE(SUM(COALESCE((meta->>'buy_decisions')::int, 0)), 0) AS buy_decisions,
-        COALESCE(SUM(COALESCE((meta->>'sell_decisions')::int, 0)), 0) AS sell_decisions,
-        COALESCE(SUM(COALESCE((meta->>'hold_decisions')::int, 0)), 0) AS hold_decisions,
-        COALESCE(SUM(COALESCE((meta->>'weak_signal_skipped')::int, 0)), 0) AS weak_signal_skipped,
-        COALESCE(SUM(COALESCE((meta->>'risk_rejected')::int, 0)), 0) AS risk_rejected,
-        COALESCE(SUM(COALESCE((meta->>'saved_execution_work')::int, 0)), 0) AS saved_execution_work
+        COALESCE(JSONB_AGG(meta) FILTER (WHERE meta IS NOT NULL), '[]'::jsonb) AS meta_rows
       FROM pipeline_runs
       WHERE pipeline = 'luna_pipeline'
         AND CAST(to_timestamp(started_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
@@ -232,20 +226,141 @@ function buildDecisionPipelineSection(rows) {
     }
 
     const totals = marketRows.reduce((acc, row) => {
-      acc.decided += Number(row.decided_symbols || 0);
-      acc.executed += Number(row.executed_symbols || 0);
-      acc.buy += Number(row.buy_decisions || 0);
-      acc.sell += Number(row.sell_decisions || 0);
-      acc.hold += Number(row.hold_decisions || 0);
-      acc.weak += Number(row.weak_signal_skipped || 0);
-      acc.risk += Number(row.risk_rejected || 0);
-      acc.saved += Number(row.saved_execution_work || 0);
+      for (const meta of (row.meta_rows || [])) {
+        acc.decided += Number(meta?.decided_symbols || 0);
+        acc.approved += Number(meta?.approved_signals || 0);
+        acc.executed += Number(meta?.executed_symbols || 0);
+        acc.buy += Number(meta?.buy_decisions || 0);
+        acc.sell += Number(meta?.sell_decisions || 0);
+        acc.hold += Number(meta?.hold_decisions || 0);
+        acc.weak += Number(meta?.weak_signal_skipped || 0);
+        acc.risk += Number(meta?.risk_rejected || 0);
+        acc.saved += Number(meta?.saved_execution_work || 0);
+        const modeKey = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+        acc.modeCounts[modeKey] = (acc.modeCounts[modeKey] || 0) + 1;
+        const topReason = meta?.risk_reject_reason_top;
+        if (topReason) acc.riskReasons[topReason] = (acc.riskReasons[topReason] || 0) + Number(meta?.risk_rejected || 1);
+      }
       return acc;
-    }, { decided: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0 });
+    }, { decided: 0, approved: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0, riskReasons: {}, modeCounts: {} });
 
-    lines.push(`- ${getMarketLabel(bucket)}: decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold} | executed ${totals.executed}건 | weak ${totals.weak}건 | risk ${totals.risk}건 | saved ${totals.saved}`);
+    const topRiskReason = Object.entries(totals.riskReasons).sort((a, b) => b[1] - a[1])[0];
+    const modeSummary = Object.entries(totals.modeCounts).map(([mode, count]) => `${mode} ${count}`).join(' / ');
+    lines.push(`- ${getMarketLabel(bucket)}: decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold} | approved ${totals.approved}건 | executed ${totals.executed}건 | weak ${totals.weak}건 | risk ${totals.risk}건 | saved ${totals.saved}${modeSummary ? ` | mode ${modeSummary}` : ''}${topRiskReason ? ` | riskTop ${topRiskReason[0]}` : ''}`);
   }
 
+  return lines.join('\n');
+}
+
+function buildIntegratedFeedbackSection(rows, trades) {
+  const marketBuckets = ['crypto', 'domestic', 'overseas'];
+  const modes = ['NORMAL', 'VALIDATION'];
+  const tradeSummary = new Map();
+
+  for (const trade of trades) {
+    const key = `${getMarketBucket(trade.exchange)}|${String(trade.trade_mode || 'normal').toUpperCase()}`;
+    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+    bucket.total += 1;
+    if (trade.is_paper) bucket.paper += 1;
+    else bucket.live += 1;
+    tradeSummary.set(key, bucket);
+  }
+
+  const pipelineSummary = new Map();
+  for (const row of rows) {
+    const market = getMarketBucket(row.market);
+    for (const meta of (row.meta_rows || [])) {
+      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      const key = `${market}|${mode}`;
+      const bucket = pipelineSummary.get(key) || {
+        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0,
+      };
+      bucket.decision += Number(meta?.decided_symbols || 0);
+      bucket.buy += Number(meta?.buy_decisions || 0);
+      bucket.sell += Number(meta?.sell_decisions || 0);
+      bucket.hold += Number(meta?.hold_decisions || 0);
+      bucket.approved += Number(meta?.approved_signals || 0);
+      bucket.executed += Number(meta?.executed_symbols || 0);
+      bucket.weak += Number(meta?.weak_signal_skipped || 0);
+      bucket.risk += Number(meta?.risk_rejected || 0);
+      pipelineSummary.set(key, bucket);
+    }
+  }
+
+  const lines = ['시장 × 운영모드 통합 피드백:'];
+  for (const bucket of marketBuckets) {
+    lines.push(`- ${getMarketLabel(bucket)}`);
+    for (const mode of modes) {
+      const key = `${bucket}|${mode}`;
+      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      const trade = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+      const hasActivity = pipeline.decision || pipeline.approved || pipeline.executed || trade.total;
+      if (!hasActivity) {
+        lines.push(`  ${mode}: 기록 없음`);
+        continue;
+      }
+      lines.push(`  ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildValidationPromotionSection(rows, trades) {
+  const marketBuckets = ['crypto', 'domestic', 'overseas'];
+  const tradeSummary = new Map();
+  for (const trade of trades) {
+    const key = `${getMarketBucket(trade.exchange)}|${String(trade.trade_mode || 'normal').toUpperCase()}`;
+    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+    bucket.total += 1;
+    if (trade.is_paper) bucket.paper += 1;
+    else bucket.live += 1;
+    tradeSummary.set(key, bucket);
+  }
+
+  const pipelineSummary = new Map();
+  for (const row of rows) {
+    const market = getMarketBucket(row.market);
+    for (const meta of (row.meta_rows || [])) {
+      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      if (mode !== 'VALIDATION') continue;
+      const bucket = pipelineSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      bucket.decision += Number(meta?.decided_symbols || 0);
+      bucket.buy += Number(meta?.buy_decisions || 0);
+      bucket.hold += Number(meta?.hold_decisions || 0);
+      bucket.approved += Number(meta?.approved_signals || 0);
+      bucket.executed += Number(meta?.executed_symbols || 0);
+      bucket.weak += Number(meta?.weak_signal_skipped || 0);
+      bucket.risk += Number(meta?.risk_rejected || 0);
+      pipelineSummary.set(market, bucket);
+    }
+  }
+
+  const lines = ['validation 승격 후보:'];
+  for (const bucket of marketBuckets) {
+    const summary = pipelineSummary.get(bucket);
+    const trade = tradeSummary.get(`${bucket}|VALIDATION`) || { total: 0, live: 0, paper: 0 };
+    if (!summary && trade.total === 0) {
+      lines.push(`- ${getMarketLabel(bucket)}: validation 기록 없음`);
+      continue;
+    }
+    if ((summary?.executed || 0) > 0 || trade.total > 0) {
+      lines.push(`- ${getMarketLabel(bucket)}: 승격 후보 — executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+      continue;
+    }
+    if ((summary?.approved || 0) > 0) {
+      lines.push(`- ${getMarketLabel(bucket)}: 조건부 승격 검토 — approved ${summary.approved}건, executed 0건`);
+      continue;
+    }
+    if ((summary?.buy || 0) > 0 && (summary?.risk || 0) > 0) {
+      lines.push(`- ${getMarketLabel(bucket)}: 보류 — BUY ${summary.buy}건은 생기지만 riskRejected ${summary.risk}건`);
+      continue;
+    }
+    if ((summary?.decision || 0) > 0 && (summary?.hold || 0) >= (summary?.decision || 0)) {
+      lines.push(`- ${getMarketLabel(bucket)}: 보류 — validation decision ${summary.decision}건이 대부분 HOLD`);
+      continue;
+    }
+    lines.push(`- ${getMarketLabel(bucket)}: 관찰 필요 — decision ${summary?.decision || 0} / approved ${summary?.approved || 0} / executed ${summary?.executed || 0}`);
+  }
   return lines.join('\n');
 }
 
@@ -272,6 +387,11 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
 
   const live   = trades.filter(t => !t.is_paper);
   const paper  = trades.filter(t => t.is_paper);
+  const modeCounts = trades.reduce((acc, trade) => {
+    const key = String(trade.trade_mode || 'normal').toUpperCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
   const wins     = trades.filter(t => (t.pnl_net ?? 0) > 0).length;
   const losses   = trades.filter(t => (t.pnl_net ?? 0) <= 0).length;
   const winRate  = trades.length > 0 ? ((wins / trades.length) * 100).toFixed(1) : '0.0';
@@ -298,6 +418,7 @@ function buildTradeSummary(trades, signalStats, rrSection = null) {
   const lines = [
     `=== 최근 ${DAYS}일 매매 요약 ===`,
     `총 거래: ${trades.length}건 (LIVE ${live.length}건 / PAPER ${paper.length}건)`,
+    `운영모드: ${Object.entries(modeCounts).map(([mode, count]) => `${mode} ${count}건`).join(' / ')}`,
     `승률: ${winRate}% (${wins}승 ${losses}패)`,
     `총 손익(net): $${totalPnl.toFixed(2)}`,
     `평균 보유시간: ${avgHoldH}시간`,
@@ -370,8 +491,15 @@ function buildReviewSection(reviewRows) {
       return vals.length ? vals.filter(Boolean).length / vals.length : null;
     }).filter(v => v != null);
     const analystAvg = analystAcc.length ? analystAcc.reduce((sum, value) => sum + value, 0) / analystAcc.length : null;
+    const modeCounts = group.rows.reduce((acc, row) => {
+      const key = String(row.trade_mode || 'normal').toUpperCase();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const modeSummary = Object.entries(modeCounts).map(([mode, count]) => `${mode} ${count}건`).join(' / ');
 
     lines.push(`${group.label}: ${group.rows.length}건`);
+    if (modeSummary) lines.push(`  운영모드: ${modeSummary}`);
     if (pnl != null) lines.push(`  평균 실현수익률: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%`);
     if (mf != null || ma != null) lines.push(`  평균 MFE/MAE: ${mf != null ? `+${mf.toFixed(2)}%` : '-'} / ${ma != null ? `${ma.toFixed(2)}%` : '-'}`);
     lines.push(`  신호 적중: ${signalGood}/${group.rows.length} | 실행 fast: ${fastExec}/${group.rows.length}`);
@@ -588,7 +716,9 @@ async function main() {
       fetchDecisionPipelineStats(DAYS),
     ]);
     const pipelineSection = buildDecisionPipelineSection(decisionPipeline);
-    const noTradeSummary = [buildNoTradeSummary(DAYS, positions, tokenUsage), pipelineSection].filter(Boolean).join('\n\n');
+    const integratedSection = buildIntegratedFeedbackSection(decisionPipeline, trades);
+    const promotionSection = buildValidationPromotionSection(decisionPipeline, trades);
+    const noTradeSummary = [buildNoTradeSummary(DAYS, positions, tokenUsage), pipelineSection, integratedSection, promotionSection].filter(Boolean).join('\n\n');
     console.log('\n' + noTradeSummary);
 
     if (!DRY_RUN) {
@@ -616,8 +746,12 @@ async function main() {
   const reviewSection = buildReviewSection(reviewRows);
   if (reviewSection) console.log('\n' + reviewSection);
   const pipelineSection = buildDecisionPipelineSection(decisionPipeline);
+  const integratedSection = buildIntegratedFeedbackSection(decisionPipeline, trades);
+  const promotionSection = buildValidationPromotionSection(decisionPipeline, trades);
   const summary = buildTradeSummary(trades, signalStats, rrSection)
     + (pipelineSection ? `\n\n${pipelineSection}` : '')
+    + (integratedSection ? `\n\n${integratedSection}` : '')
+    + (promotionSection ? `\n\n${promotionSection}` : '')
     + (reviewSection ? `\n\n${reviewSection}` : '');
   console.log('\n' + summary);
 

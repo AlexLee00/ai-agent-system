@@ -10,6 +10,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
+import { getInvestmentTradeMode } from './secrets.js';
 
 const SCHEMA = 'investment';
 let _schemaInitPromise = null;
@@ -174,6 +175,7 @@ export async function initSchema() {
     ['block_code',      'TEXT'],
     ['block_meta',      'JSONB'],
     ['analyst_signals', 'TEXT'],  // 분석 봇 4인 신호 패턴 (예: "A:B|O:B|H:N|S:B")
+    ['trade_mode',      `TEXT DEFAULT 'normal'`],
   ]) {
     try { await run(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -183,6 +185,7 @@ export async function initSchema() {
     ['tp_price', 'DOUBLE PRECISION'], ['sl_price', 'DOUBLE PRECISION'],
     ['tp_order_id', 'TEXT'], ['sl_order_id', 'TEXT'],
     ['tp_sl_set', 'BOOLEAN DEFAULT false'],
+    ['trade_mode', `TEXT DEFAULT 'normal'`],
   ]) {
     try { await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -298,12 +301,13 @@ export async function getRecentAnalysis(symbol, minutesBack = 30, exchange = nul
 
 // ─── signals ────────────────────────────────────────────────────────
 
-export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null }) {
+export async function insertSignal({ symbol, action, amountUsdt, confidence, reasoning, exchange = 'binance', analystSignals = null, tradeMode = null }) {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
-    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
+    `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
      RETURNING id`,
-    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null],
+    [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null, effectiveTradeMode],
   );
   return rows[0]?.id;
 }
@@ -369,12 +373,13 @@ export async function getApprovedSignals(exchange) {
 
 // ─── trades ─────────────────────────────────────────────────────────
 
-export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false }) {
+export async function insertTrade({ signalId, symbol, side, amount, price, totalUsdt, paper, exchange = 'binance', tpPrice = null, slPrice = null, tpOrderId = null, slOrderId = null, tpSlSet = false, tradeMode = null }) {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   await run(
-    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO trades (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, trade_mode)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [signalId ?? null, symbol, side, amount, price, totalUsdt ?? null, paper !== false, exchange,
-     tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false],
+     tpPrice, slPrice, tpOrderId, slOrderId, tpSlSet ?? false, effectiveTradeMode],
   );
 }
 
@@ -450,10 +455,12 @@ export async function deletePosition(symbol) {
 export async function getTodayPnl() {
   const rows = await query(`
     SELECT
-      SUM(CASE WHEN side='sell' THEN total_usdt ELSE -total_usdt END) AS pnl,
+      COALESCE(SUM(pnl_net), 0) AS pnl,
       COUNT(*) AS trade_count
-    FROM trades
-    WHERE executed_at::date = current_date
+    FROM trade_journal
+    WHERE status = 'closed'
+      AND exit_time IS NOT NULL
+      AND to_timestamp(exit_time / 1000.0)::date = current_date
   `);
   return rows[0] || { pnl: 0, trade_count: 0 };
 }

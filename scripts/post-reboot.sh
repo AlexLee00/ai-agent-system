@@ -101,6 +101,7 @@ check_svc() {
 check_periodic() {
   local svc="$1"
   local label="$2"
+  local optional="${3:-0}"
   local info runs exit_raw exit_code
   info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
   runs=$(echo "$info" | awk '/	runs =/ {print $3}')
@@ -113,9 +114,14 @@ check_periodic() {
   fi
 
   if [ -z "$runs" ]; then
-    log "   ⚠️  ${label} (서비스 미등록)"
-    append_report "⚠️ ${label} 미등록"
-    ((WARN++)) || true
+    if [ "$optional" = "1" ]; then
+      log "   ℹ️  ${label} (선택적 서비스 미등록)"
+      append_report "ℹ️ ${label} 미등록(선택)"
+    else
+      log "   ⚠️  ${label} (서비스 미등록)"
+      append_report "⚠️ ${label} 미등록"
+      ((WARN++)) || true
+    fi
   elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
     log "   ✅ ${label} (${runs}회 실행, exit=0)"
     append_report "✅ ${label}"
@@ -149,8 +155,11 @@ check_svc      "ai.worker.task-runner"  "워커 task-runner"
 log "💹 투자팀"
 check_svc      "ai.investment.commander"             "루나 커맨더"
 check_periodic "ai.investment.crypto"                "루나 크립토 사이클"
+check_periodic "ai.investment.crypto.validation"     "루나 크립토 검증거래" "1"
 check_periodic "ai.investment.domestic"              "루나 국내주식 사이클"
+check_periodic "ai.investment.domestic.validation"   "루나 국내주식 검증거래" "1"
 check_periodic "ai.investment.overseas"              "루나 해외주식 사이클"
+check_periodic "ai.investment.overseas.validation"   "루나 해외주식 검증거래" "1"
 check_periodic "ai.investment.argos"                 "아르고스"
 check_periodic "ai.investment.reporter"              "투자 리포터"
 check_periodic "ai.investment.market-alert-domestic-open"   "국내장 오픈 알림"

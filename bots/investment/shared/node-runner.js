@@ -137,6 +137,7 @@ export async function runNode(node, ctx = {}) {
         result_summary: summarizeResult(result),
         rag_artifact_stored: artifact.stored,
         artifact_mode: storeArtifact ? 'rag' : 'db_only',
+        inline_payload: storeArtifact && !artifact.stored ? result : undefined,
       },
     });
 
@@ -194,6 +195,7 @@ export async function recordNodeResult(node, ctx = {}, result, status = 'complet
       result_summary: summarizeResult(result),
       rag_artifact_stored: artifact.stored,
       artifact_mode: storeArtifact ? 'rag' : 'db_only',
+      inline_payload: storeArtifact && !artifact.stored ? result : undefined,
     },
   });
 

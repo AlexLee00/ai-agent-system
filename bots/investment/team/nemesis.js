@@ -9,6 +9,7 @@
 
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
+import { getInvestmentTradeMode } from '../shared/secrets.js';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -18,9 +19,37 @@ import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
 import { getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
 const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
-const STOCK_REJECT_CONFIDENCE = NEMESIS_RUNTIME.thresholds?.stockRejectConfidence ?? 0.20;
-const STOCK_AUTO_APPROVE_DOMESTIC = NEMESIS_RUNTIME.thresholds?.stockAutoApproveDomestic ?? 500000;
-const STOCK_AUTO_APPROVE_OVERSEAS = NEMESIS_RUNTIME.thresholds?.stockAutoApproveOverseas ?? 400;
+function getCryptoRiskThresholds() {
+  const base = {
+    cryptoRejectConfidence: NEMESIS_RUNTIME.thresholds?.cryptoRejectConfidence ?? 0.42,
+    cryptoStarterApproveConfidence: NEMESIS_RUNTIME.thresholds?.cryptoStarterApproveConfidence ?? 0.44,
+    cryptoStarterApproveMaxRisk: NEMESIS_RUNTIME.thresholds?.cryptoStarterApproveMaxRisk ?? 6,
+    cryptoStarterScale: NEMESIS_RUNTIME.thresholds?.cryptoStarterScale ?? 0.60,
+  };
+  const tradeMode = getInvestmentTradeMode();
+  const modeOverride = NEMESIS_RUNTIME.thresholds?.byTradeMode?.[tradeMode] || {};
+  return {
+    ...base,
+    ...modeOverride,
+  };
+}
+
+function getStockRiskThresholds() {
+  const base = {
+    stockRejectConfidence: NEMESIS_RUNTIME.thresholds?.stockRejectConfidence ?? 0.20,
+    stockAutoApproveDomestic: NEMESIS_RUNTIME.thresholds?.stockAutoApproveDomestic ?? 500000,
+    stockAutoApproveOverseas: NEMESIS_RUNTIME.thresholds?.stockAutoApproveOverseas ?? 400,
+    stockStarterApproveConfidence: NEMESIS_RUNTIME.thresholds?.stockStarterApproveConfidence ?? 0.24,
+    stockStarterApproveDomestic: NEMESIS_RUNTIME.thresholds?.stockStarterApproveDomestic ?? 350000,
+    stockStarterApproveOverseas: NEMESIS_RUNTIME.thresholds?.stockStarterApproveOverseas ?? 280,
+  };
+  const tradeMode = getInvestmentTradeMode();
+  const modeOverride = NEMESIS_RUNTIME.thresholds?.byTradeMode?.[tradeMode] || {};
+  return {
+    ...base,
+    ...modeOverride,
+  };
+}
 
 function isDynamicTPSLEnabled() {
   return isDynamicTpSlEnabled();
@@ -28,29 +57,9 @@ function isDynamicTPSLEnabled() {
 
 // ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
 
-const NEMESIS_SYSTEM_CRYPTO = `
-당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다.
-
-핵심 가치: 손실 통제는 유지하되, 과도한 보수성으로 기회를 놓치지 않는다.
-의심스러우면 ADJUST. REJECT는 명백한 위험에만 사용한다.
-
-REJECT 조건 (하나라도 해당하면 즉시 REJECT):
-1. 리스크 점수 7 이상
-2. 수익/손실 비율 2:1 미만
-3. 확신도(confidence) 0.50 미만
-4. KST 01:00~07:00 심야 시간 + 포지션 크기 > 5%
-5. 포지션 한도(6개) 도달 + 신규 BUY 신호
-
-ADJUST 조건:
-- 포지션 크기가 6% 초과 → 6%로 축소
-- 심야 시간 → 포지션 크기 50% 강제 축소
-- 동일 방향 상관 포지션 2개 이상 → 신규 크기 50% 축소
-
-응답 형식 (JSON만, 다른 텍스트 없이):
-{"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
-`.trim();
-
-const NEMESIS_SYSTEM_STOCK = `
+function getNemesisStockSystem() {
+  const stockThresholds = getStockRiskThresholds();
+  return `
 당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다. (국내/해외 주식 — 공격적 모드)
 
 핵심 가치: 기본적으로 APPROVE. 명백한 위험만 차단한다.
@@ -58,12 +67,12 @@ const NEMESIS_SYSTEM_STOCK = `
 
 REJECT 조건 (명백한 위험만):
 1. 리스크 점수 9 이상 (극도의 위험만)
-2. 확신도(confidence) ${STOCK_REJECT_CONFIDENCE.toFixed(2)} 미만 (매우 낮은 확신도만)
+2. 확신도(confidence) ${stockThresholds.stockRejectConfidence.toFixed(2)} 미만 (매우 낮은 확신도만)
 3. 포지션 한도(6개) 도달 + 신규 BUY 신호
 
 APPROVE 우선 원칙:
-- 국내장 소규모 신호(${STOCK_AUTO_APPROVE_DOMESTIC} KRW 이하): 별도 검토 없이 자동 APPROVE
-- 해외장 소규모 신호(${STOCK_AUTO_APPROVE_OVERSEAS} USD 이하): 별도 검토 없이 자동 APPROVE
+- 국내장 소규모 신호(${stockThresholds.stockAutoApproveDomestic} KRW 이하): 별도 검토 없이 자동 APPROVE
+- 해외장 소규모 신호(${stockThresholds.stockAutoApproveOverseas} USD 이하): 별도 검토 없이 자동 APPROVE
 - 리스크 점수 9 미만: 기본 APPROVE
 - 분할 진입 권장: 큰 금액은 절반으로 나눠 ADJUST
 
@@ -74,10 +83,43 @@ ADJUST 조건:
 응답 형식 (JSON만, 다른 텍스트 없이):
 {"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
 `.trim();
+}
 
 function getNemesisSystem(exchange) {
-  if (exchange === 'kis' || exchange === 'kis_overseas') return NEMESIS_SYSTEM_STOCK;
-  return NEMESIS_SYSTEM_CRYPTO;
+  const cryptoThresholds = getCryptoRiskThresholds();
+  const cryptoSystem = `
+당신은 네메시스(Nemesis), 루나팀의 리스크 매니저다.
+
+핵심 가치: 손실 통제는 유지하되, 과도한 보수성으로 기회를 놓치지 않는다.
+의심스러우면 ADJUST. REJECT는 명백한 위험에만 사용한다.
+
+REJECT 조건 (하나라도 해당하면 즉시 REJECT):
+1. 리스크 점수 7 이상
+2. 수익/손실 비율 2:1 미만
+3. 확신도(confidence) ${cryptoThresholds.cryptoRejectConfidence.toFixed(2)} 미만
+4. KST 01:00~07:00 심야 시간 + 포지션 크기 > 5%
+5. 포지션 한도(6개) 도달 + 신규 BUY 신호
+
+ADJUST 조건:
+- 포지션 크기가 6% 초과 → 6%로 축소
+- 심야 시간 → 포지션 크기 50% 강제 축소
+- 동일 방향 상관 포지션 2개 이상 → 신규 크기 50% 축소
+- 확신도 ${cryptoThresholds.cryptoStarterApproveConfidence.toFixed(2)}~0.48 구간은 전면 REJECT보다 소액 starter position을 우선 검토
+
+응답 형식 (JSON만, 다른 텍스트 없이):
+{"decision":"APPROVE|ADJUST|REJECT","reasoning":"근거 (한국어, 2줄 이내)","adjusted_amount":숫자,"risk_score":0~10}
+`.trim();
+  if (exchange === 'kis' || exchange === 'kis_overseas') return getNemesisStockSystem();
+  return cryptoSystem;
+}
+
+function isConfidenceDrivenRejection(reason = '') {
+  return /확신도|신뢰도/.test(reason || '');
+}
+
+function buildCryptoStarterAmount(amountUsdt, rules, thresholds = getCryptoRiskThresholds()) {
+  const starter = Math.floor(amountUsdt * (thresholds.cryptoStarterScale ?? 0.60));
+  return Math.max(rules.MIN_ORDER_USDT, starter);
 }
 
 // ─── 하드 규칙 (마켓별 분기) ─────────────────────────────────────────
@@ -566,14 +608,22 @@ export async function evaluateSignal(signal, opts = {}) {
   const rules      = getRules(signal.exchange);
   const persist    = opts.persist !== false;
   const isStockExchange = signal.exchange === 'kis' || signal.exchange === 'kis_overseas';
+  const isCryptoExchange = signal.exchange === 'binance';
+  const stockThresholds = getStockRiskThresholds();
 
   // ── v1 하드 규칙 ──
   if (action === ACTIONS.BUY) {
     if (amountUsdt < rules.MIN_ORDER_USDT) {
-      const reason = `최소 주문 미달 ($${amountUsdt} < $${rules.MIN_ORDER_USDT})`;
-      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      if (persist) await notifyRiskRejection({ symbol, action, reason });
-      return { approved: false, reason };
+      if (isCryptoExchange && totalUsdt >= rules.MIN_ORDER_USDT) {
+        const prev = amountUsdt;
+        amountUsdt = rules.MIN_ORDER_USDT;
+        console.log(`  📐 [네메시스] 최소 주문 보정: $${prev} → $${amountUsdt} (crypto min-order floor)`);
+      } else {
+        const reason = `최소 주문 미달 ($${amountUsdt} < $${rules.MIN_ORDER_USDT})`;
+        if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
+        if (persist) await notifyRiskRejection({ symbol, action, reason });
+        return { approved: false, reason };
+      }
     }
     if (amountUsdt > rules.MAX_ORDER_USDT) {
       amountUsdt = rules.MAX_ORDER_USDT;
@@ -586,8 +636,8 @@ export async function evaluateSignal(signal, opts = {}) {
     }
   }
 
-  if (action === ACTIONS.BUY && isStockExchange && (signal.confidence ?? 0) < STOCK_REJECT_CONFIDENCE) {
-    const reason = `주식 공격적 모드 최소 확신도 미달 (${(signal.confidence ?? 0).toFixed(2)} < ${STOCK_REJECT_CONFIDENCE.toFixed(2)})`;
+  if (action === ACTIONS.BUY && isStockExchange && (signal.confidence ?? 0) < stockThresholds.stockRejectConfidence) {
+    const reason = `주식 공격적 모드 최소 확신도 미달 (${(signal.confidence ?? 0).toFixed(2)} < ${stockThresholds.stockRejectConfidence.toFixed(2)})`;
     if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
     if (persist) await notifyRiskRejection({ symbol, action, reason });
     if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
@@ -617,8 +667,8 @@ export async function evaluateSignal(signal, opts = {}) {
 
   if (action === ACTIONS.BUY && isStockExchange) {
     const autoApproveLimit = signal.exchange === 'kis'
-      ? STOCK_AUTO_APPROVE_DOMESTIC
-      : STOCK_AUTO_APPROVE_OVERSEAS;
+      ? stockThresholds.stockAutoApproveDomestic
+      : stockThresholds.stockAutoApproveOverseas;
     if (amountUsdt <= autoApproveLimit) {
       if (persist) {
         if (signal.id) {
@@ -637,11 +687,33 @@ export async function evaluateSignal(signal, opts = {}) {
       console.log(`  ✅ [네메시스] ${symbol} ${action} ${amountUsdt} 자동 승인 (공격적 주식 모드)`);
       return { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true };
     }
+    const starterApproveLimit = signal.exchange === 'kis'
+      ? stockThresholds.stockStarterApproveDomestic
+      : stockThresholds.stockStarterApproveOverseas;
+    if ((signal.confidence ?? 0) >= stockThresholds.stockStarterApproveConfidence && amountUsdt <= starterApproveLimit) {
+      if (persist) {
+        if (signal.id) {
+          await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
+          await db.updateSignalAmount(signal.id, amountUsdt);
+        }
+        await db.insertRiskLog({
+          traceId,
+          symbol,
+          exchange: signal.exchange,
+          decision: 'APPROVE',
+          riskScore: 2,
+          reason: `주식 validation starter 승인 (${amountUsdt} <= ${starterApproveLimit}, confidence ${(signal.confidence ?? 0).toFixed(2)})`,
+        }).catch(() => {});
+      }
+      console.log(`  ✅ [네메시스] ${symbol} ${action} ${amountUsdt} starter 승인 (validation 주식 모드)`);
+      return { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true, starterApproved: true };
+    }
   }
 
   // ── v2: 조정 계수 ──
   let dynamicTPSL; // function scope — BUY 블록 내에서 할당, tpslResult에서 참조
   if (action === ACTIONS.BUY) {
+    const cryptoThresholds = getCryptoRiskThresholds();
     const [volFactor, corrFactor] = await Promise.all([
       calcVolatilityFactor(symbol, opts.atrRatio),
       calcCorrelationFactor(symbol, signal.exchange),
@@ -657,6 +729,20 @@ export async function evaluateSignal(signal, opts = {}) {
 
     const llm = await evaluateWithLLM({ signal, adjustedAmount: amountUsdt, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange: signal.exchange });
     console.log(`  🤖 [네메시스 LLM] ${llm.decision}: ${llm.reasoning}`);
+
+    if (
+      llm.decision === 'REJECT' &&
+      isCryptoExchange &&
+      (signal.confidence ?? 0) >= cryptoThresholds.cryptoStarterApproveConfidence &&
+      (llm.risk_score ?? 0) <= cryptoThresholds.cryptoStarterApproveMaxRisk &&
+      isConfidenceDrivenRejection(llm.reasoning)
+    ) {
+      const starterAmount = buildCryptoStarterAmount(amountUsdt, rules, cryptoThresholds);
+      console.log(`  🔓 [네메시스] crypto starter 승인: ${symbol} $${amountUsdt} → $${starterAmount} (confidence ${(signal.confidence ?? 0).toFixed(2)})`);
+      amountUsdt = starterAmount;
+      llm.decision = 'ADJUST';
+      llm.reasoning = `crypto starter 승인 — 확신도 ${(signal.confidence ?? 0).toFixed(2)} 구간은 소액 분산진입 우선`;
+    }
 
     if (llm.decision === 'REJECT') {
       if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);

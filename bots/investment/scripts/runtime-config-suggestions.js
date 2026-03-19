@@ -74,6 +74,35 @@ async function loadAnalysisRows(fromDate, toDate) {
   `);
 }
 
+async function loadPipelineRows(fromDate, toDate) {
+  return db.query(`
+    SELECT
+      market,
+      COALESCE(JSONB_AGG(meta) FILTER (WHERE meta IS NOT NULL), '[]'::jsonb) AS meta_rows
+    FROM pipeline_runs
+    WHERE pipeline = 'luna_pipeline'
+      AND CAST(to_timestamp(started_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
+          BETWEEN '${fromDate}' AND '${toDate}'
+    GROUP BY market
+    ORDER BY market
+  `);
+}
+
+async function loadTradeModeTradeRows(fromDate, toDate) {
+  return db.query(`
+    SELECT
+      exchange,
+      COALESCE(trade_mode, 'normal') AS trade_mode,
+      COUNT(*) AS total,
+      SUM(CASE WHEN paper THEN 1 ELSE 0 END) AS paper_trades,
+      SUM(CASE WHEN paper THEN 0 ELSE 1 END) AS live_trades
+    FROM trades
+    WHERE CAST(executed_at AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+    GROUP BY exchange, 2
+    ORDER BY exchange, 2
+  `);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -110,11 +139,54 @@ function summarizeExchange(signalRows, blockRows, analysisRows, exchange) {
   };
 }
 
-function buildSuggestions(config, summaries) {
+function getMarketBucket(exchange) {
+  if (exchange === 'kis') return 'domestic';
+  if (exchange === 'kis_overseas') return 'overseas';
+  return 'crypto';
+}
+
+function summarizeValidationSignals(pipelineRows, tradeRows, market) {
+  const row = pipelineRows.find(item => item.market === market);
+  const summary = { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+  for (const meta of (row?.meta_rows || [])) {
+    const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+    if (mode !== 'VALIDATION') continue;
+    summary.decision += Number(meta?.decided_symbols || 0);
+    summary.buy += Number(meta?.buy_decisions || 0);
+    summary.hold += Number(meta?.hold_decisions || 0);
+    summary.approved += Number(meta?.approved_signals || 0);
+    summary.executed += Number(meta?.executed_symbols || 0);
+    summary.weak += Number(meta?.weak_signal_skipped || 0);
+    summary.risk += Number(meta?.risk_rejected || 0);
+  }
+
+  const trade = tradeRows.find(item =>
+    getMarketBucket(item.exchange) === market &&
+    String(item.trade_mode || 'normal').toUpperCase() === 'VALIDATION'
+  );
+
+  const tradeTotal = Number(trade?.total || 0);
+  const liveTrades = Number(trade?.live_trades || 0);
+  const paperTrades = Number(trade?.paper_trades || 0);
+  const effectiveExecuted = Math.max(summary.executed, tradeTotal);
+
+  return {
+    ...summary,
+    approved: Math.max(summary.approved, effectiveExecuted),
+    executed: effectiveExecuted,
+    tradeTotal,
+    liveTrades,
+    paperTrades,
+  };
+}
+
+function buildSuggestions(config, summaries, validationSummaries) {
   const suggestions = [];
   const crypto = summaries.binance;
   const domestic = summaries.kis;
   const overseas = summaries.kis_overseas;
+  const domesticValidation = validationSummaries.domestic;
+  const overseasValidation = validationSummaries.overseas;
 
   if (crypto.totalBuy >= 3 && crypto.executed === 0 && crypto.failed >= 3) {
     suggestions.push({
@@ -196,13 +268,47 @@ function buildSuggestions(config, summaries) {
     });
   }
 
+  if (domesticValidation.liveTrades > 0 || domesticValidation.executed > 0) {
+    suggestions.push({
+      key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic',
+      current: config.nemesis.thresholds.stockStarterApproveDomestic,
+      suggested: Math.max(
+        config.nemesis.thresholds.stockStarterApproveDomestic,
+        config.nemesis.thresholds.byTradeMode?.validation?.stockStarterApproveDomestic || config.nemesis.thresholds.stockStarterApproveDomestic,
+      ),
+      action: 'promote_candidate',
+      confidence: 'medium',
+      reason: `국내장 validation에서 executed ${domesticValidation.executed}건 / LIVE ${domesticValidation.liveTrades}건이 확인돼 starter 승인 한도 일부를 normal 후보로 승격 검토할 가치가 있습니다.`,
+    });
+    suggestions.push({
+      key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live',
+      current: config.luna.stockStrategyProfiles.aggressive.minConfidence?.live,
+      suggested: config.luna.stockStrategyProfiles.aggressive.tradeModes?.validation?.minConfidence?.live ?? config.luna.stockStrategyProfiles.aggressive.minConfidence?.live,
+      action: 'promote_candidate',
+      confidence: 'low',
+      reason: '국내장 validation에서 실제 LIVE 체결이 발생해 공격적 검증 모드의 live minConfidence 일부 승격을 비교할 수 있습니다.',
+    });
+  }
+
+  if (overseasValidation.decision > 0 && overseasValidation.hold >= overseasValidation.decision) {
+    suggestions.push({
+      key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live',
+      current: config.luna.stockStrategyProfiles.aggressive.minConfidence?.live,
+      suggested: config.luna.stockStrategyProfiles.aggressive.tradeModes?.validation?.minConfidence?.live ?? config.luna.stockStrategyProfiles.aggressive.minConfidence?.live,
+      action: 'observe',
+      confidence: 'low',
+      reason: `해외장 validation은 decision ${overseasValidation.decision}건이 대부분 HOLD라 추가 장중 표본 확인 후 승격 여부를 판단하는 것이 안전합니다.`,
+    });
+  }
+
   return suggestions;
 }
 
-function buildReport(days, summaries, suggestions) {
+function buildReport(days, summaries, validationSummaries, suggestions) {
   return {
     periodDays: days,
     marketSummary: summaries,
+    validationSummary: validationSummaries,
     suggestions,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
   };
@@ -218,6 +324,11 @@ function printHuman(report) {
     if (summary.topBlocks[0]) {
       lines.push(`  주요 실패 코드: ${summary.topBlocks[0].code} (${summary.topBlocks[0].count}건)`);
     }
+  }
+  lines.push('');
+  lines.push('validation 요약:');
+  for (const [market, summary] of Object.entries(report.validationSummary || {})) {
+    lines.push(`- ${market}: decision ${summary.decision} / BUY ${summary.buy} / approved ${summary.approved} / executed ${summary.executed} / trades ${summary.tradeTotal} (LIVE ${summary.liveTrades} / PAPER ${summary.paperTrades})`);
   }
   lines.push('');
   lines.push('설정 제안:');
@@ -241,14 +352,23 @@ async function main() {
     loadBlockCodeRows(fromDate, toDate),
     loadAnalysisRows(fromDate, toDate),
   ]);
+  const [pipelineRows, tradeModeTradeRows] = await Promise.all([
+    loadPipelineRows(fromDate, toDate),
+    loadTradeModeTradeRows(fromDate, toDate),
+  ]);
   const config = getInvestmentRuntimeConfig();
   const summaries = {
     binance: summarizeExchange(signalRows, blockRows, analysisRows, 'binance'),
     kis: summarizeExchange(signalRows, blockRows, analysisRows, 'kis'),
     kis_overseas: summarizeExchange(signalRows, blockRows, analysisRows, 'kis_overseas'),
   };
-  const suggestions = buildSuggestions(config, summaries);
-  const report = buildReport(days, summaries, suggestions);
+  const validationSummaries = {
+    crypto: summarizeValidationSignals(pipelineRows, tradeModeTradeRows, 'crypto'),
+    domestic: summarizeValidationSignals(pipelineRows, tradeModeTradeRows, 'domestic'),
+    overseas: summarizeValidationSignals(pipelineRows, tradeModeTradeRows, 'overseas'),
+  };
+  const suggestions = buildSuggestions(config, summaries, validationSummaries);
+  const report = buildReport(days, summaries, validationSummaries, suggestions);
 
   let saved = null;
   if (write) {

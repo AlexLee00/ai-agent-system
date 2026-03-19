@@ -4,11 +4,12 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.investment.crypto</string>
-  <!-- Phase 3-A: 암호화폐 5분 사이클 (OPS_MODE — 2026-03-03 전환) -->
-  <!-- 현재 normal 거래 레일의 호환 라벨로 유지 -->
-  <!-- 설치: cp launchd/ai.investment.crypto.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.crypto.plist -->
+  <string>ai.investment.crypto.validation</string>
+  <!-- Phase 3-B: 암호화폐 검증거래 레일 (validation mode) -->
+  <!-- normal 레일과 다른 guard scope / 로그 경로를 사용 -->
+  <!-- 설치: cp launchd/ai.investment.crypto.validation.plist ~/Library/LaunchAgents/ -->
+  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.crypto.validation.plist -->
+  <!-- 주의: validation 전용 sizing/risk 정책을 붙이기 전에는 운영 판단 하에만 활성화 -->
   <key>ProgramArguments</key>
   <array>
     <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
@@ -16,13 +17,13 @@
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-  <!-- 5분 주기 (암호화폐 실시간 사이클) -->
+  <!-- 15분 주기 (validation canary) -->
   <key>StartInterval</key>
-  <integer>300</integer>
+  <integer>900</integer>
   <key>StandardOutPath</key>
-  <string>/tmp/investment-crypto.log</string>
+  <string>/tmp/investment-crypto-validation.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/investment-crypto.err.log</string>
+  <string>/tmp/investment-crypto-validation.err.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
@@ -34,9 +35,8 @@
     <key>PAPER_MODE</key>
     <string>false</string>
     <key>INVESTMENT_TRADE_MODE</key>
-    <string>normal</string>
+    <string>validation</string>
   </dict>
-  <!-- 부팅 시 자동 실행 -->
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

@@ -25,7 +25,7 @@ import { search as searchRag, store as storeRag } from '../shared/rag-client.js'
 import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared/signal.js';
 import { notifySignal, notifyError } from '../shared/report.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
-import { isPaperMode } from '../shared/secrets.js';
+import { isPaperMode, isValidationTradeMode } from '../shared/secrets.js';
 import { getAvailableBalance, getAvailableUSDT } from '../shared/capital-manager.js';
 import { getDomesticBalance } from '../shared/kis-client.js';
 import { getLunaRuntimeConfig, getLunaStockStrategyProfile } from '../shared/runtime-config.js';
@@ -148,11 +148,12 @@ const LUNA_SYSTEM_CRYPTO = `당신은 루나(Luna), 루나팀의 수석 오케�
 
 핵심 원칙:
 - 기본은 진입 검토 — HOLD는 명확한 충돌 신호나 기대값 부족이 분명할 때만
-- 장기(4h)와 단기(1h) 방향이 일치할 때만 BUY/SELL
-- 2라운드 토론 후에도 우세 신호가 매우 약하면 HOLD
-- confidence 0.42 미만이면 HOLD 우선, 0.42~0.55 구간은 소액 분할 진입을 우선 검토
+- 장기(4h)와 단기(1h)가 같은 방향이거나, 단기 추세(15m/1h)가 강하고 4h가 중립이면 진입 검토
+- 2라운드 토론 후에도 우세 신호가 매우 약할 때만 HOLD
+- confidence 0.38 미만이면 HOLD 우선, 0.38~0.52 구간은 소액 분할 진입을 우선 검토
 - 동일 방향의 유망 심볼이 여러 개면 1개만 고집하지 말고 분산 진입 기회를 검토
 - 단기 급등 추격보다 재진입 가능한 추세 지속 종목을 선호
+- 2개 이상 분석가가 같은 방향이고 명확한 반대 근거가 약하면 HOLD 대신 소규모 진입을 우선 검토
 
 응답 형식 (JSON만, 다른 텍스트 없이):
 {"action":"HOLD","amount_usdt":100,"confidence":0.6,"reasoning":"근거 60자 이내"}
@@ -201,7 +202,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
     : 'amount_usdt는 USDT 주문금액';
   const diversificationRule = isStock
     ? ''
-    : '\n- 암호화폐는 동일 시간대에 기대값이 있는 심볼을 1개만 고집하지 말고 분산 진입 후보를 유지\n- HOLD 남발 금지: 명확한 반대 근거가 없으면 BUY/SELL/HOLD 중 기대값이 가장 높은 쪽을 선택';
+    : '\n- 암호화폐는 동일 시간대에 기대값이 있는 심볼을 1개만 고집하지 말고 2~4개 분산 진입 후보를 유지\n- HOLD 남발 금지: 명확한 반대 근거가 없으면 BUY/SELL/HOLD 중 기대값이 가장 높은 쪽을 선택\n- 2개 이상 후보의 기대값이 비슷하면 하나만 선택하지 말고 소규모 분산 진입 결정을 우선\n- BUY/SELL 후보가 있는데 전부 HOLD로 돌리지 말고, 가장 우세한 방향의 심볼부터 우선 배치';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ` (주식 — ${LUNA_STOCK_PROFILE.promptTag})` : ''}
 
 분석 대상 심볼: ${symbols.join(', ')}
@@ -263,6 +264,87 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
     fusedScore  < -0.2                        ? 'SHORT' : 'HOLD';
 
   return { fusedScore, averageConfidence, hasConflict, recommendation };
+}
+
+function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
+  const candidates = symbolDecisions
+    .filter(dec => dec.action !== ACTIONS.HOLD && (dec.confidence || 0) >= 0.38)
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+
+  if (candidates.length === 0) return null;
+
+  const slotsAvailable = Math.max(1, Math.min(3, MAX_POS_COUNT - (portfolio?.positionCount || 0)));
+  const portfolioCap = Math.max(80, Math.floor((portfolio?.totalAsset || 0) * 0.12));
+  const budgetCap = Math.max(80, Math.floor(((portfolio?.usdtFree || 0) / Math.max(1, slotsAvailable)) * 0.8));
+  const baseAmount = Math.max(80, Math.min(180, Math.min(portfolioCap, budgetCap)));
+  const decisions = candidates.slice(0, slotsAvailable).map((dec, idx) => ({
+    symbol: dec.symbol,
+    action: dec.action,
+    amount_usdt: Math.max(80, Math.min(220, baseAmount + (idx === 0 ? 20 : 0))),
+    confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
+    reasoning: `crypto fallback 분산진입 | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
+  }));
+
+  return {
+    decisions,
+    portfolio_view: 'LLM 포트폴리오 판단 공백 보정 — crypto 분산진입 fallback',
+    risk_level: 'MEDIUM',
+    source: 'crypto_portfolio_fallback',
+  };
+}
+
+function buildStockValidationPortfolioFallback(symbolDecisions, exchange, reason = 'llm_emergency_stop') {
+  if (!isValidationTradeMode()) return null;
+  const candidates = symbolDecisions
+    .filter(dec => dec.action !== ACTIONS.HOLD && (dec.confidence || 0) >= 0.18)
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  if (candidates.length === 0) return null;
+  const spec = getStockOrderSpec(exchange);
+  const starterAmount = normalizeDecisionAmount(exchange, ACTIONS.BUY, spec?.min ?? spec?.buyDefault);
+  return {
+    decisions: candidates.slice(0, 2).map((dec) => ({
+      symbol: dec.symbol,
+      action: dec.action,
+      amount_usdt: starterAmount,
+      confidence: Math.max(0.22, Math.min(0.55, dec.confidence || 0.22)),
+      reasoning: `주식 validation 긴급 차단 starter fallback | ${dec.reasoning || '우세 신호 유지'}`.slice(0, 120),
+    })),
+    portfolio_view: `LLM 긴급 차단 fallback — 주식 validation starter 유지 (${reason})`,
+    risk_level: 'MEDIUM',
+    source: 'stock_validation_emergency_fallback',
+    block_reason: reason,
+  };
+}
+
+function buildEmergencyPortfolioFallback(symbolDecisions, portfolio, exchange, reason = 'llm_emergency_stop') {
+  if (exchange === 'binance') {
+    const cryptoFallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
+    if (cryptoFallback) {
+      return {
+        ...cryptoFallback,
+        portfolio_view: `LLM 긴급 차단 fallback — crypto 분산진입 유지 (${reason})`,
+        source: 'llm_emergency_stop_crypto_fallback',
+        block_reason: reason,
+      };
+    }
+  }
+  if ((exchange === 'kis' || exchange === 'kis_overseas') && isValidationTradeMode()) {
+    const stockFallback = buildStockValidationPortfolioFallback(symbolDecisions, exchange, reason);
+    if (stockFallback) return stockFallback;
+  }
+
+  return {
+    decisions: symbolDecisions.map((dec) => ({
+      ...dec,
+      action: ACTIONS.HOLD,
+      amount_usdt: 0,
+      reasoning: `LLM 긴급 차단 보수 fallback | ${dec.reasoning || '신규 진입 보류'}`.slice(0, 120),
+    })),
+    portfolio_view: `LLM 긴급 차단 fallback — 신규 포지션 보류 (${reason})`,
+    risk_level: 'HIGH',
+    source: 'llm_emergency_stop_hold_fallback',
+    block_reason: reason,
+  };
 }
 
 function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}, fallbackWeights = ANALYST_WEIGHTS) {
@@ -333,6 +415,55 @@ export function buildAnalysisSummary(analyses) {
   }).join('\n');
 }
 
+function buildVoteFallbackDecision(analyses, exchange = 'binance', reason = '분석가 투표 기반 fallback') {
+  const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
+  const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
+  const vote    = votes.reduce((a, b) => a + b, 0);
+  const isStock = exchange === 'kis' || exchange === 'kis_overseas';
+  const stockBuyThreshold = isValidationTradeMode() ? 0.18 : 0.3;
+  const action  = isStock
+    ? (vote >= 0 && avgConf >= stockBuyThreshold ? ACTIONS.BUY : vote < -1 ? ACTIONS.SELL : ACTIONS.HOLD)
+    : (vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD);
+  const fallbackAmt = isStock
+    ? normalizeDecisionAmount(exchange, action, getStockOrderSpec(exchange)?.buyDefault)
+    : 100;
+  return { action, amount_usdt: fallbackAmt, confidence: avgConf, reasoning: reason };
+}
+
+function buildEmergencySymbolFallbackDecision(analyses, exchange, fused) {
+  if (exchange === 'binance' && !fused.hasConflict) {
+    if (fused.recommendation === 'LONG' && fused.averageConfidence >= 0.24 && fused.fusedScore >= 0.12) {
+      return {
+        action: ACTIONS.BUY,
+        amount_usdt: 80,
+        confidence: Math.max(0.40, Math.min(0.62, fused.averageConfidence)),
+        reasoning: '분석가 합의 기반 긴급 차단 starter BUY',
+      };
+    }
+    if (fused.recommendation === 'SHORT' && fused.averageConfidence >= 0.24 && Math.abs(fused.fusedScore) >= 0.12) {
+      return {
+        action: ACTIONS.SELL,
+        amount_usdt: 80,
+        confidence: Math.max(0.38, Math.min(0.58, fused.averageConfidence)),
+        reasoning: '분석가 합의 기반 긴급 차단 starter SELL',
+      };
+    }
+  }
+  if ((exchange === 'kis' || exchange === 'kis_overseas') && isValidationTradeMode() && !fused.hasConflict) {
+    const spec = getStockOrderSpec(exchange);
+    const starterAmount = normalizeDecisionAmount(exchange, ACTIONS.BUY, spec?.min ?? spec?.buyDefault);
+    if (fused.recommendation === 'LONG' && fused.averageConfidence >= 0.16 && fused.fusedScore >= 0.06) {
+      return {
+        action: ACTIONS.BUY,
+        amount_usdt: starterAmount,
+        confidence: Math.max(0.22, Math.min(0.52, fused.averageConfidence)),
+        reasoning: '주식 validation 긴급 차단 starter BUY',
+      };
+    }
+  }
+  return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (긴급 차단 fallback)');
+}
+
 // ─── 개별 심볼 LLM 판단 ────────────────────────────────────────────
 
 export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null, analystWeights = ANALYST_WEIGHTS) {
@@ -383,7 +514,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   } catch { /* 시장 레짐 실패 시 무시 */ }
 
   const weakSignalGate = exchange === 'binance'
-    ? { minAverageConfidence: 0.26, minAbsScore: 0.04 }
+    ? { minAverageConfidence: 0.22, minAbsScore: 0.03 }
     : { minAverageConfidence: 0.32, minAbsScore: 0.08 };
 
   if (!fused.hasConflict && fused.averageConfidence < weakSignalGate.minAverageConfidence && Math.abs(fused.fusedScore) < weakSignalGate.minAbsScore) {
@@ -410,34 +541,36 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
   const userMsg = `심볼: ${symbol} (${label})\n\n분석 결과:\n${summary}${fusedSection}${reviewSection}${debateSection}${strategySection}${ragContext}${regimeSection}\n\n최종 매매 신호:`;
 
   // Shadow Mode 래핑 (mode: 'shadow' 고정 — TEAM_MODE.luna='off' 무시)
-  const shadowResult = await shadow.evaluate({
-    team:      'luna',
-    context:   'symbol_decision',
-    input:     userMsg,
-    ruleEngine: async () => {
-      const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300 });
-      const parsed = parseJSON(raw);
-      if (!parsed?.action) {
-        const votes   = analyses.filter(a => a.signal !== 'HOLD').map(a => a.signal === 'BUY' ? 1 : -1);
-        const avgConf = analyses.reduce((s, a) => s + (a.confidence || 0), 0) / (analyses.length || 1);
-        const vote    = votes.reduce((a, b) => a + b, 0);
-        const isStock = exchange === 'kis' || exchange === 'kis_overseas';
-        const action  = isStock
-          ? (vote >= 0 && avgConf >= 0.3 ? ACTIONS.BUY : vote < -1 ? ACTIONS.SELL : ACTIONS.HOLD)
-          : (vote > 0 ? ACTIONS.BUY : vote < 0 ? ACTIONS.SELL : ACTIONS.HOLD);
-        const fallbackAmt = isStock
-          ? normalizeDecisionAmount(exchange, action, getStockOrderSpec(exchange)?.buyDefault)
-          : 100;
-        return { action, amount_usdt: fallbackAmt, confidence: avgConf, reasoning: '분석가 투표 기반 (LLM fallback)' };
-      }
-      if (exchange === 'kis' || exchange === 'kis_overseas') {
-        parsed.amount_usdt = normalizeDecisionAmount(exchange, parsed.action, parsed.amount_usdt);
-      }
-      return parsed;
-    },
-    llmPrompt: getLunaSystem(exchange),
-    mode:      'shadow',
-  });
+  let shadowResult;
+  try {
+    shadowResult = await shadow.evaluate({
+      team:      'luna',
+      context:   'symbol_decision',
+      input:     userMsg,
+      ruleEngine: async () => {
+        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300 });
+        const parsed = parseJSON(raw);
+        if (!parsed?.action) {
+          return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (LLM fallback)');
+        }
+        if (exchange === 'kis' || exchange === 'kis_overseas') {
+          parsed.amount_usdt = normalizeDecisionAmount(exchange, parsed.action, parsed.amount_usdt);
+        }
+        return parsed;
+      },
+      llmPrompt: getLunaSystem(exchange),
+      mode:      'shadow',
+    });
+  } catch (err) {
+    if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
+      console.warn(`[luna] symbol decision LLM 긴급 차단 fallback 적용 (${symbol}/${exchange}): ${err.message}`);
+      shadowResult = {
+        action: buildEmergencySymbolFallbackDecision(analyses, exchange, fused),
+      };
+    } else {
+      throw err;
+    }
+  }
   const adjusted = { ...shadowResult.action };
   const baseConfidence = Math.max(0, Math.min(1, adjusted.confidence ?? fused.averageConfidence ?? 0.5));
   adjusted.confidence = Math.max(0, Math.min(1, baseConfidence + reviewHint.delta));
@@ -477,9 +610,24 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     `최종 포트폴리오 투자 결정:`,
   ].join('\n');
 
-  const raw    = await callLLM('luna', buildPortfolioPrompt(symbols, exchange), userMsg, 768);
+  let raw;
+  try {
+    raw = await callLLM('luna', buildPortfolioPrompt(symbols, exchange), userMsg, 768);
+  } catch (err) {
+    if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
+      console.warn(`[luna] portfolio decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
+      return buildEmergencyPortfolioFallback(symbolDecisions, portfolio, exchange, err.message);
+    }
+    throw err;
+  }
   const parsed = parseJSON(raw);
-  if (!parsed) return { decisions: symbolDecisions.map(s => ({ ...s })), portfolio_view: 'LLM 판단 실패', risk_level: 'MEDIUM' };
+  if (!parsed) {
+    if (exchange === 'binance') {
+      const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
+      if (fallback) return fallback;
+    }
+    return { decisions: symbolDecisions.map(s => ({ ...s })), portfolio_view: 'LLM 판단 실패', risk_level: 'MEDIUM' };
+  }
 
   // 허용 심볼 외 결정 필터링 (LLM 환각 방지)
   if (parsed.decisions) {
@@ -491,6 +639,11 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
         amount_usdt: normalizeDecisionAmount(exchange, d.action, d.amount_usdt),
       }));
     }
+  }
+  const hasExecutableDecision = (parsed.decisions || []).some(d => d.action && d.action !== ACTIONS.HOLD);
+  if (!hasExecutableDecision && exchange === 'binance') {
+    const fallback = buildCryptoPortfolioFallback(symbolDecisions, portfolio);
+    if (fallback) return fallback;
   }
   return parsed;
 }

@@ -76,7 +76,7 @@ const MARKET_PARAMS = {
   binance: {
     rsiOversold:    30, rsiOverbought:    70,
     stochOversold:  20, stochOverbought:  80,
-    signalThreshold: 1.5,
+    signalThreshold: 1.15,
   },
   kis_overseas: {
     rsiOversold:    35, rsiOverbought:    65,
@@ -427,12 +427,20 @@ export async function analyzeCryptoMTF(symbol) {
   if (totalWeight === 0) return null;
 
   const normalizedScore = weightedScore / totalWeight;
+  const trendAlignedLong = ['15m', '1h', '4h'].filter(tf => tfResults[tf]?.signal === ACTIONS.BUY).length;
+  const trendAlignedShort = ['15m', '1h', '4h'].filter(tf => tfResults[tf]?.signal === ACTIONS.SELL).length;
+  const trendBiasBoost = trendAlignedLong >= 2
+    ? 0.28
+    : trendAlignedShort >= 2
+      ? -0.28
+      : 0;
+  const adjustedScore = normalizedScore + trendBiasBoost;
   const confidence      = Math.min(Math.abs(normalizedScore) / 5.0, 1);
   const threshold       = MARKET_PARAMS.binance.signalThreshold;
 
   let signal;
-  if (normalizedScore >= threshold)       signal = ACTIONS.BUY;
-  else if (normalizedScore <= -threshold) signal = ACTIONS.SELL;
+  if (adjustedScore >= threshold)       signal = ACTIONS.BUY;
+  else if (adjustedScore <= -threshold) signal = ACTIONS.SELL;
   else                                     signal = ACTIONS.HOLD;
 
   const tfSummary = CRYPTO_TIMEFRAMES
@@ -441,7 +449,7 @@ export async function analyzeCryptoMTF(symbol) {
       `[${label} ${((weights[tf] || 0) * 100).toFixed(0)}%] ${tfResults[tf].signal} (${(tfResults[tf].confidence * 100).toFixed(0)}%)`
     ).join(' | ');
 
-  const reasoning = `MTF: ${tfSummary} → 가중점수 ${normalizedScore.toFixed(2)}`;
+  const reasoning = `MTF: ${tfSummary} → 가중점수 ${normalizedScore.toFixed(2)}${trendBiasBoost !== 0 ? ` | 추세보정 ${trendBiasBoost > 0 ? '+' : ''}${trendBiasBoost.toFixed(2)}` : ''}`;
   const atrLabel  = atrRatio == null ? 'N/A' : atrRatio > 0.03 ? '고변동' : atrRatio < 0.01 ? '저변동' : '중간';
   console.log(`  → [아리아 MTF] ${signal} (${(confidence * 100).toFixed(0)}%) | ATR ${(atrRatio != null ? (atrRatio * 100).toFixed(2) : '?')}% (${atrLabel}) | ${reasoning}`);
 
@@ -455,6 +463,7 @@ export async function analyzeCryptoMTF(symbol) {
       exchange:  'binance',
       metadata:  {
         weightedScore: normalizedScore,
+        adjustedScore,
         atrRatio,                // 네메시스 동적 TP/SL용
         weights,                 // 적용된 동적 가중치
         tfResults: Object.fromEntries(

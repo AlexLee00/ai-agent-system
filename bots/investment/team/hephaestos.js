@@ -18,7 +18,7 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
-import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, config as cmConfig } from '../shared/capital-manager.js';
+import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig } from '../shared/capital-manager.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -89,6 +89,91 @@ async function marketSell(symbol, amount, paperMode) {
   return await ex.createOrder(symbol, 'market', 'sell', amount);
 }
 
+function extractOrderId(orderLike) {
+  if (!orderLike) return null;
+  return orderLike.id?.toString?.()
+    ?? orderLike.orderId?.toString?.()
+    ?? orderLike.clientOrderId?.toString?.()
+    ?? null;
+}
+
+function extractOcoOrderIds(ocoResponse) {
+  const reports = ocoResponse?.orderReports || ocoResponse?.info?.orderReports || [];
+  const tpOrderId = reports?.[0]?.orderId?.toString?.() ?? ocoResponse?.orders?.[0]?.orderId?.toString?.() ?? null;
+  const slOrderId = reports?.[1]?.orderId?.toString?.() ?? ocoResponse?.orders?.[1]?.orderId?.toString?.() ?? null;
+  return { tpOrderId, slOrderId };
+}
+
+async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
+  const ex = getExchange();
+  const marketId = symbol.replace('/', '');
+  const quantity = ex.amountToPrecision(symbol, amount);
+  const tp = ex.priceToPrecision(symbol, tpPrice);
+  const sl = ex.priceToPrecision(symbol, slPrice);
+  const slLimit = ex.priceToPrecision(symbol, slPrice * 0.999);
+  const errors = [];
+
+  if (typeof ex.privatePostOrderOco === 'function') {
+    try {
+      const response = await ex.privatePostOrderOco({
+        symbol: marketId,
+        side: 'SELL',
+        quantity,
+        price: tp,
+        stopPrice: sl,
+        stopLimitPrice: slLimit,
+        stopLimitTimeInForce: 'GTC',
+      });
+      return { ok: true, mode: 'oco', ...extractOcoOrderIds(response) };
+    } catch (error) {
+      errors.push(`privatePostOrderOco:${error.message}`);
+    }
+  }
+
+  if (typeof ex.privatePostOrderListOco === 'function') {
+    try {
+      const response = await ex.privatePostOrderListOco({
+        symbol: marketId,
+        side: 'SELL',
+        quantity,
+        aboveType: 'LIMIT_MAKER',
+        abovePrice: tp,
+        belowType: 'STOP_LOSS_LIMIT',
+        belowStopPrice: sl,
+        belowPrice: slLimit,
+        belowTimeInForce: 'GTC',
+      });
+      return { ok: true, mode: 'oco_list', ...extractOcoOrderIds(response) };
+    } catch (error) {
+      errors.push(`privatePostOrderListOco:${error.message}`);
+    }
+  }
+
+  try {
+    const stopOrder = await ex.createOrder(symbol, 'stop_loss_limit', 'sell', quantity, slLimit, {
+      stopPrice: sl,
+      timeInForce: 'GTC',
+    });
+    return {
+      ok: false,
+      mode: 'stop_loss_only',
+      tpOrderId: null,
+      slOrderId: extractOrderId(stopOrder),
+      error: errors.join(' | ') || null,
+    };
+  } catch (error) {
+    errors.push(`stop_loss_only:${error.message}`);
+  }
+
+  return {
+    ok: false,
+    mode: 'failed',
+    tpOrderId: null,
+    slOrderId: null,
+    error: errors.join(' | '),
+  };
+}
+
 function isCapitalShortageReason(reason = '') {
   return reason.includes('잔고 부족') || reason.includes('현금 보유 부족');
 }
@@ -146,13 +231,14 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
 }
 
 async function maybePromotePaperPositions() {
+  const capitalPolicy = getCapitalConfig('binance');
   const paperPositions = await db.getPaperPositions('binance').catch(() => []);
   if (paperPositions.length === 0) return [];
 
   const promoted = [];
   for (const paperPos of paperPositions) {
     const desiredUsdt = (paperPos.amount || 0) * (paperPos.avg_price || 0);
-    if (desiredUsdt < (cmConfig.min_order_usdt || 11)) continue;
+    if (desiredUsdt < (capitalPolicy.min_order_usdt || 11)) continue;
 
     const freeUsdt = await getAvailableUSDT().catch(() => 0);
     if (freeUsdt < desiredUsdt) break;
@@ -234,13 +320,14 @@ async function maybePromotePaperPositions() {
 }
 
 export async function inspectPromotionCandidates() {
+  const capitalPolicy = getCapitalConfig('binance');
   const freeUsdt = await getAvailableUSDT().catch(() => 0);
   const paperPositions = await db.getPaperPositions('binance').catch(() => []);
   const results = [];
 
   for (const paperPos of paperPositions) {
     const desiredUsdt = (paperPos.amount || 0) * (paperPos.avg_price || 0);
-    const minOrder = cmConfig.min_order_usdt || 11;
+    const minOrder = capitalPolicy.min_order_usdt || 11;
     const tooSmall = desiredUsdt < minOrder;
     const enoughUsdt = freeUsdt >= desiredUsdt;
     let check = { allowed: false, reason: tooSmall ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT` : 'USDT 부족' };
@@ -268,10 +355,11 @@ export async function inspectPromotionCandidates() {
 }
 
 export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
+  const capitalPolicy = getCapitalConfig('binance');
   const currentPrice = await fetchTicker(symbol).catch(() => 0);
   const slPrice = 0;
   const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');
-  const sizing = await calculatePositionSize(symbol, currentPrice, slPrice);
+  const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
   const paperFallback = !isPaperMode() && !check.circuit && !check.allowed && isCapitalShortageReason(check.reason || '');
 
   return {
@@ -283,6 +371,12 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
     paperFallback,
     finalMode: check.allowed ? 'live' : paperFallback ? 'paper' : 'blocked',
     suggestedLiveAmountUsdt: sizing.skip ? 0 : sizing.size,
+    capitalPolicy: {
+      reserveRatio: capitalPolicy.reserve_ratio,
+      minOrderUsdt: capitalPolicy.min_order_usdt,
+      maxPositionPct: capitalPolicy.max_position_pct,
+      maxConcurrentPositions: capitalPolicy.max_concurrent_positions,
+    },
     sizing,
   };
 }
@@ -295,6 +389,7 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
  * @returns {object|null} 성공 시 결과 객체, BTC 페어 없거나 미추적 BTC 없으면 null
  */
 async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
+  const capitalPolicy = getCapitalConfig('binance');
   if (base === 'BTC') return null;  // BTC 자체는 흡수 블록에서 처리
 
   // 미추적 BTC 확인
@@ -309,7 +404,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   // 미추적 BTC USD 환산 → 최소금액 체크
   const btcPrice     = await fetchTicker('BTC/USDT').catch(() => 0);
   const untrackedUsd = untrackedBtc * btcPrice;
-  if (untrackedUsd < (cmConfig.min_order_usdt || 11)) return null;
+  if (untrackedUsd < (capitalPolicy.min_order_usdt || 11)) return null;
 
   // BTC 직접 페어 존재 여부 확인
   const btcPair = `${base}/BTC`;
@@ -349,14 +444,15 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   let tpSlSet   = false;
   if (!paperMode && usdPrice > 0) {
     try {
-      const slLimit = parseFloat((slPrice * 0.999).toFixed(2));
-      await ex.createOrder(symbol, 'oco_sell', 'sell', filledCoin, tpPrice, {
-        stopPrice:            slPrice,
-        stopLimitPrice:       slLimit,
-        stopLimitTimeInForce: 'GTC',
-      });
-      tpSlSet = true;
-      console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
+      const protection = await placeBinanceProtectiveExit(symbol, filledCoin, tpPrice, slPrice);
+      tpSlSet = protection.ok;
+      if (protection.ok) {
+        console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
+      } else if (protection.mode === 'stop_loss_only') {
+        console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
+      } else {
+        throw new Error(protection.error || 'protective_exit_failed');
+      }
     } catch (e) {
       console.warn(`  ⚠️ TP/SL 설정 실패: ${e.message}`);
       await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, e);
@@ -393,6 +489,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
  * @param {boolean} paperMode
  */
 async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
+  const capitalPolicy = getCapitalConfig('binance');
   const ex        = getExchange();
   const walletBal = await ex.fetchBalance();
   let totalUsd    = 0;
@@ -412,7 +509,7 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
     const curPrice    = await fetchTicker(sym).catch(() => 0);
     const untrackedUsd = untracked * curPrice;
 
-    if (untrackedUsd < (cmConfig.min_order_usdt || 11)) {
+    if (untrackedUsd < (capitalPolicy.min_order_usdt || 11)) {
       console.log(`  ℹ️ 미추적 ${coin} ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) — 최소금액 미만, 스킵`);
       continue;
     }
@@ -442,9 +539,11 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
  * @param {object} signal  { id, symbol, action, amountUsdt, confidence, reasoning }
  */
 export async function executeSignal(signal) {
+  const capitalPolicy = getCapitalConfig('binance');
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
+  const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
     code = 'broker_execution_error',
@@ -498,28 +597,28 @@ export async function executeSignal(signal) {
         return { success: false, reason: circuit.reason };
       }
       const openPositionsSafe = await getOpenPositions('binance').catch(() => []);
-      if (openPositionsSafe.length >= cmConfig.max_concurrent_positions) {
-        const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${cmConfig.max_concurrent_positions}`;
+      if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
+        const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
           code: 'capital_guard_rejected',
           meta: {
             openPositions: openPositionsSafe.length,
-            maxPositions: cmConfig.max_concurrent_positions,
+            maxPositions: capitalPolicy.max_concurrent_positions,
           },
         });
-        notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: cmConfig.max_concurrent_positions }).catch(() => {});
+        notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
         return { success: false, reason };
       }
       const dailyTradesSafe = await getDailyTradeCount().catch(() => 0);
-      if (dailyTradesSafe >= cmConfig.max_daily_trades) {
-        const reason = `일간 매매 한도: ${dailyTradesSafe}/${cmConfig.max_daily_trades}`;
+      if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
+        const reason = `일간 매매 한도: ${dailyTradesSafe}/${capitalPolicy.max_daily_trades}`;
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
           code: 'capital_guard_rejected',
           meta: {
             dailyTrades: dailyTradesSafe,
-            maxDailyTrades: cmConfig.max_daily_trades,
+            maxDailyTrades: capitalPolicy.max_daily_trades,
           },
         });
         notifyTradeSkip({ symbol, action, reason }).catch(() => {});
@@ -530,7 +629,6 @@ export async function executeSignal(signal) {
       // 지갑에 있지만 DB 포지션에 없는 코인 → 기존 BTC를 포지션으로 등록 + TP/SL 설정
       // 이미 보유한 코인을 그대로 매매에 사용 (불필요한 매도·재매수 없음)
       try {
-        const base       = symbol.split('/')[0];
         const walletBal  = await getExchange().fetchBalance();
         const walletFree = walletBal.free?.[base] || 0;
         const trackedPos = await db.getLivePosition(symbol);
@@ -541,7 +639,7 @@ export async function executeSignal(signal) {
           const curPrice     = await fetchTicker(symbol).catch(() => 0);
           const untrackedUsd = untracked * curPrice;
 
-          if (untrackedUsd >= (cmConfig.min_order_usdt || 11)) {
+          if (untrackedUsd >= (capitalPolicy.min_order_usdt || 11)) {
             console.log(`  ✅ [헤파이스토스] 미추적 ${base} 흡수: ${untracked.toFixed(6)} (≈$${untrackedUsd.toFixed(2)}) → 포지션 등록 + TP/SL 설정`);
 
             // DB 포지션 등록 (현재가 기준 평균가)
@@ -557,15 +655,15 @@ export async function executeSignal(signal) {
             let tpSlSet   = false;
             if (!effectivePaperMode && curPrice > 0) {
               try {
-                const ex      = getExchange();
-                const slLimit = parseFloat((slPrice * 0.999).toFixed(2));
-                await ex.createOrder(symbol, 'oco_sell', 'sell', untracked, tpPrice, {
-                  stopPrice:            slPrice,
-                  stopLimitPrice:       slLimit,
-                  stopLimitTimeInForce: 'GTC',
-                });
-                tpSlSet = true;
-                console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
+                const protection = await placeBinanceProtectiveExit(symbol, untracked, tpPrice, slPrice);
+                tpSlSet = protection.ok;
+                if (protection.ok) {
+                  console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
+                } else if (protection.mode === 'stop_loss_only') {
+                  console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
+                } else {
+                  throw new Error(protection.error || 'protective_exit_failed');
+                }
               } catch (tpslErr) {
                 console.warn(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
               }
@@ -642,7 +740,7 @@ export async function executeSignal(signal) {
             notifyCircuitBreaker({ reason: check.reason, type: check.circuitType }).catch(() => {});
           } else {
             const openPos = await getOpenPositions('binance').catch(() => []);
-            notifyTradeSkip({ symbol, action, reason: check.reason, openPositions: openPos.length, maxPositions: cmConfig.max_concurrent_positions }).catch(() => {});
+            notifyTradeSkip({ symbol, action, reason: check.reason, openPositions: openPos.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
           }
           return { success: false, reason: check.reason };
         }
@@ -651,7 +749,7 @@ export async function executeSignal(signal) {
       // ── 동적 포지션 사이징 ──────────────────────────────────────────
       const slPrice = signal.slPrice || 0;
       const currentPrice = await fetchTicker(symbol).catch(() => 0);
-      const sizing  = await calculatePositionSize(symbol, currentPrice, slPrice);
+      const sizing  = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
       if (sizing.skip && !effectivePaperMode) {
         console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
         await persistFailure(sizing.reason, {
@@ -725,18 +823,17 @@ export async function executeSignal(signal) {
         // OCO 주문은 실투자 모드에서만 거래소에 실제 전송
         if (!effectivePaperMode) {
           try {
-            const ex      = getExchange();
-            const slLimit = parseFloat((trade.slPrice * 0.999).toFixed(2));
-            const ocoOrder = await ex.createOrder(symbol, 'oco_sell', 'sell', order.filled, trade.tpPrice, {
-              stopPrice:            trade.slPrice,
-              stopLimitPrice:       slLimit,
-              stopLimitTimeInForce: 'GTC',
-            });
-            // Binance OCO 응답: orderReports[0]=LIMIT_MAKER(TP), [1]=STOP_LOSS_LIMIT(SL)
-            trade.tpOrderId = ocoOrder?.info?.orderReports?.[0]?.orderId?.toString() ?? null;
-            trade.slOrderId = ocoOrder?.info?.orderReports?.[1]?.orderId?.toString() ?? null;
-            trade.tpSlSet   = true;
-            console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
+            const protection = await placeBinanceProtectiveExit(symbol, order.filled, trade.tpPrice, trade.slPrice);
+            trade.tpOrderId = protection.tpOrderId;
+            trade.slOrderId = protection.slOrderId;
+            trade.tpSlSet = protection.ok;
+            if (protection.ok) {
+              console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
+            } else if (protection.mode === 'stop_loss_only') {
+              console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${trade.slPrice}`);
+            } else {
+              throw new Error(protection.error || 'protective_exit_failed');
+            }
           } catch (tpslErr) {
             console.error(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
             trade.tpSlSet = false;
@@ -799,7 +896,7 @@ export async function executeSignal(signal) {
       capitalInfo: {
         balance:       curBalance,
         openPositions: curPositions.length,
-        maxPositions:  cmConfig.max_concurrent_positions,
+        maxPositions:  capitalPolicy.max_concurrent_positions,
         dailyPnL:      curDailyPnl,
       },
     });
