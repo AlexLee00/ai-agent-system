@@ -896,7 +896,15 @@ async function buildBlogPublishedUrlPayload(limit = 20) {
   `, [limit]);
 
   const normalizedRows = rows.map((row) => {
-    const publishDate = row.publish_date ? String(row.publish_date).slice(0, 10) : null;
+    let publishDate = null;
+    if (row.publish_date instanceof Date) {
+      publishDate = row.publish_date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+    } else if (row.publish_date) {
+      const parsed = new Date(row.publish_date);
+      publishDate = Number.isNaN(parsed.getTime())
+        ? String(row.publish_date).slice(0, 10)
+        : parsed.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+    }
     const isReadyWithoutUrl = row.status === 'ready' && !row.naver_url;
     const publishDue = Boolean(isReadyWithoutUrl && publishDate && publishDate <= todayKst);
     const needsUrl = Boolean((row.status === 'published' && !row.naver_url) || publishDue);
