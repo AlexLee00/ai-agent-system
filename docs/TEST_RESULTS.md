@@ -6,6 +6,26 @@
 
 ## 2026-03-19
 
+### 워커 재무 탭 확장 + 업체 비활성화 운영 완결
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/worker/migrations/020-expenses.js` | ✅ `worker.expenses` 테이블 추가 완료 |
+| `node bots/worker/migrations/021-company-deactivation-meta.js` | ✅ `deactivated_reason`, `deactivated_by` 컬럼 실제 반영 확인 |
+| `node bots/worker/scripts/import-expenses-from-excel.js "...2025년 스터디카페_고정지출관리_월별.xlsx" "...2026년 스터디카페_고정지출관리_월별.xlsx"` | ✅ 2025 파일 `126건 적재 / 2건 skip`, 2026 파일 `63건 적재 / 0건 skip`, 총 매입 `189건 / 47,427,532원` 확인 |
+| `node --input-type=module ... worker.companies count` | ✅ 활성 업체 `4건`, 비활성 `0건`, 전체 `4건` 확인 |
+| `node --input-type=module ... worker.companies active rows` | ✅ `sssssss`, `test-company`, `test_company`, `master` 활성 업체 조회 확인 |
+| `node --check bots/worker/lib/expenses-ai.js` | ✅ |
+| `node --check bots/worker/lib/expenses-import.js` | ✅ |
+| `node --check bots/worker/scripts/import-expenses-from-excel.js` | ✅ |
+| `node --check bots/worker/web/app/sales/page.js` | ✅ |
+| `node --check bots/worker/web/app/admin/companies/page.js` | ✅ |
+| `node --check bots/worker/web/server.js` | ✅ |
+| `npm --prefix bots/worker/web run build` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ |
+| `node bots/worker/scripts/health-report.js --json` | ✅ `web`, `nextjs`, `lead`, `task-runner`, API, websocket 정상 확인 |
+
 ### 워커 web 운영 화면 공용화 + 업무/일정/근태/매출 정리
 
 | 테스트 | 결과 |

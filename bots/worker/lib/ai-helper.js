@@ -20,6 +20,7 @@ function buildSQLPrompt(question, companyId) {
 - worker.employees (id, company_id, name, position, department, phone, email, hire_date, status, base_salary)
 - worker.attendance (id, company_id, employee_id, date, check_in, check_out, status)
 - worker.sales (id, company_id, date, amount, category, description, registered_by)
+- worker.expenses (id, company_id, date, category, item_name, amount, quantity, unit_price, note, expense_type, source_type)
 - worker.payroll (id, company_id, employee_id, year_month, base_salary, overtime_pay, incentive, deduction, net_salary, performance, status)
 - worker.projects (id, company_id, name, description, status, start_date, end_date, progress, owner_id)
 - worker.milestones (id, project_id, company_id, title, due_date, status, completed_at)
@@ -73,7 +74,7 @@ function isSafeQuestion(question) {
 // ── 허용 테이블 화이트리스트 ──────────────────────────────────────────
 
 const ALLOWED_TABLES = [
-  'worker.employees', 'worker.attendance', 'worker.revenue', 'worker.sales',
+  'worker.employees', 'worker.attendance', 'worker.revenue', 'worker.sales', 'worker.expenses',
   'worker.payroll', 'worker.projects', 'worker.project_members',
   'worker.milestones', 'worker.schedules', 'worker.documents',
   'worker.work_journals', 'worker.companies', 'worker.users',
