@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml from 'js-yaml';
 import ccxt from 'ccxt';
+import { getInvestmentTradeMode } from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -36,6 +37,7 @@ function loadCapitalConfig() {
       max_weekly_loss_pct:        cm.max_weekly_loss_pct        ?? 0.20,
       cooldown_after_loss_streak: cm.cooldown_after_loss_streak ?? 3,
       cooldown_minutes:           cm.cooldown_minutes           ?? 60,
+      by_exchange:                cm.by_exchange                ?? {},
     };
   } catch {
     return {
@@ -43,11 +45,25 @@ function loadCapitalConfig() {
       max_position_pct: 0.10,   min_order_usdt: 11,           max_concurrent_positions: 3,
       max_daily_trades: 10,     max_daily_loss_pct: 0.10,     max_weekly_loss_pct: 0.20,
       cooldown_after_loss_streak: 3, cooldown_minutes: 60,
+      by_exchange: {},
     };
   }
 }
 
 export const config = loadCapitalConfig();
+
+export function getCapitalConfig(exchange = null) {
+  if (!exchange) return config;
+  const override = config.by_exchange?.[exchange] || {};
+  const tradeMode = getInvestmentTradeMode();
+  const modeOverride = tradeMode ? (override.trade_modes?.[tradeMode] || {}) : {};
+  return {
+    ...config,
+    ...override,
+    ...modeOverride,
+    by_exchange: config.by_exchange || {},
+  };
+}
 
 // ─── 바이낸스 클라이언트 (lazy) ─────────────────────────────────────
 
@@ -281,17 +297,18 @@ export async function checkCircuitBreaker() {
  */
 export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
+  const policy = getCapitalConfig(exchange);
 
   // 1. 가용 잔고 (BUY만)
   if (isBuy) {
     const balance = await getAvailableBalance();
-    if (balance < config.min_order_usdt) {
-      return { allowed: false, reason: `잔고 부족: ${balance.toFixed(2)} USDT < 최소 ${config.min_order_usdt} USDT` };
+    if (balance < policy.min_order_usdt) {
+      return { allowed: false, reason: `잔고 부족: ${balance.toFixed(2)} USDT < 최소 ${policy.min_order_usdt} USDT` };
     }
 
     // 2. 현금 보유 비율
     const totalCapital    = await getTotalCapital();
-    const reserveRequired = totalCapital * config.reserve_ratio;
+    const reserveRequired = totalCapital * policy.reserve_ratio;
     if (balance - estimatedAmount < reserveRequired) {
       return {
         allowed: false,
@@ -301,8 +318,8 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
 
     // 3. 동시 포지션 제한
     const openPositions = await getOpenPositions(exchange);
-    if (openPositions.length >= config.max_concurrent_positions) {
-      return { allowed: false, reason: `최대 포지션 도달: ${openPositions.length}/${config.max_concurrent_positions}` };
+    if (openPositions.length >= policy.max_concurrent_positions) {
+      return { allowed: false, reason: `최대 포지션 도달: ${openPositions.length}/${policy.max_concurrent_positions}` };
     }
   }
 
@@ -315,8 +332,8 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   // 5. 일간 매매 횟수 (BUY만)
   if (isBuy) {
     const dailyTrades = await getDailyTradeCount();
-    if (dailyTrades >= config.max_daily_trades) {
-      return { allowed: false, reason: `일간 매매 한도: ${dailyTrades}/${config.max_daily_trades}` };
+    if (dailyTrades >= policy.max_daily_trades) {
+      return { allowed: false, reason: `일간 매매 한도: ${dailyTrades}/${policy.max_daily_trades}` };
     }
     return { allowed: true, dailyTrades };
   }
@@ -333,14 +350,15 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
  * @param {number} stopLossPrice  — 0이면 고정 3% 폴백
  * @returns {{ size, sizeInCoin, riskAmount, riskPercent, capitalPct, skip, reason? }}
  */
-export async function calculatePositionSize(symbol, entryPrice, stopLossPrice) {
+export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, exchange = null) {
+  const policy = getCapitalConfig(exchange);
   const balance      = await getAvailableBalance();
   const totalCapital = await getTotalCapital();
 
   if (totalCapital <= 0) return { size: 0, skip: true, reason: '총 자본 없음' };
 
   // 리스크 기반 사이징
-  const accountRisk = totalCapital * config.risk_per_trade;
+  const accountRisk = totalCapital * policy.risk_per_trade;
   const tradeRisk   = (entryPrice > 0 && stopLossPrice > 0)
     ? Math.abs(entryPrice - stopLossPrice) / entryPrice
     : 0.03;  // SL 없으면 기본 3% 리스크
@@ -348,17 +366,17 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice) {
   let size = accountRisk / tradeRisk;
 
   // 단일 포지션 최대 비율 제한
-  size = Math.min(size, totalCapital * config.max_position_pct);
+  size = Math.min(size, totalCapital * policy.max_position_pct);
 
   // 현금 보유 비율 고려한 가용 한도
-  const usable = balance - (totalCapital * config.reserve_ratio);
+  const usable = balance - (totalCapital * policy.reserve_ratio);
   size = Math.min(size, Math.max(0, usable));
 
-  if (size < config.min_order_usdt) {
+  if (size < policy.min_order_usdt) {
     return {
       size:   0,
       skip:   true,
-      reason: `포지션 크기 ${size.toFixed(2)} USDT < 최소 ${config.min_order_usdt} USDT`,
+      reason: `포지션 크기 ${size.toFixed(2)} USDT < 최소 ${policy.min_order_usdt} USDT`,
     };
   }
 
@@ -366,7 +384,7 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice) {
     size,
     sizeInCoin:  entryPrice > 0 ? size / entryPrice : 0,
     riskAmount:  accountRisk,
-    riskPercent: config.risk_per_trade * 100,
+    riskPercent: policy.risk_per_trade * 100,
     capitalPct:  (size / totalCapital * 100).toFixed(1),
     skip:        false,
   };

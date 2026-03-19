@@ -24,6 +24,12 @@ function normalizeMode(value) {
   return null;
 }
 
+function normalizeInvestmentTradeMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'normal' || normalized === 'validation') return normalized;
+  return null;
+}
+
 export function loadSecrets() {
   if (_secrets) return _secrets;
 
@@ -72,6 +78,7 @@ export function loadSecrets() {
       trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),
       binance_mode: normalizeMode(c.binance_mode) || 'inherit',
       kis_mode: normalizeMode(c.kis_mode) || 'inherit',
+      investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
       paper_mode: c.paper_mode !== false,
     };
     return _secrets;
@@ -87,6 +94,7 @@ export function loadSecrets() {
       trading_mode: 'paper',
       binance_mode: 'inherit',
       kis_mode: 'inherit',
+      investment_trade_mode: 'normal',
       paper_mode: true,
       binance_symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
     };
@@ -119,6 +127,22 @@ export function formatExecutionTag(paper) {
 
 export function getExecutionMode() {
   return isPaperMode() ? 'paper' : 'live';
+}
+
+export function getInvestmentTradeMode() {
+  const envMode = normalizeInvestmentTradeMode(process.env.INVESTMENT_TRADE_MODE);
+  if (envMode) return envMode;
+  const s = loadSecrets();
+  return normalizeInvestmentTradeMode(s.investment_trade_mode) || 'normal';
+}
+
+export function isValidationTradeMode() {
+  return getInvestmentTradeMode() === 'validation';
+}
+
+export function getInvestmentGuardScope() {
+  const mode = getInvestmentTradeMode();
+  return `investment.${mode}`;
 }
 
 export function isTestnet() {
@@ -414,15 +438,20 @@ export function getMarketExecutionModeInfo(marketType = 'crypto', marketLabel = 
   const broker = isStockMarket ? 'KIS' : 'BINANCE';
   const executionMode = getExecutionMode();
   const brokerAccountMode = getBrokerAccountMode(isStockMarket ? 'stocks' : 'crypto');
+  const investmentTradeMode = getInvestmentTradeMode();
   const paper = executionMode === 'paper';
+  const operationTag = investmentTradeMode === 'validation' ? '[VALIDATION]' : '[NORMAL]';
   return {
     marketType: isStockMarket ? 'stocks' : 'crypto',
     broker,
     executionMode,
     brokerAccountMode,
+    investmentTradeMode,
+    investmentGuardScope: getInvestmentGuardScope(),
     paper,
     tag: paper ? '[PAPER]' : '[LIVE]',
-    logLine: `${describeModePair({ executionMode, brokerAccountMode, marketLabel })} | broker=${broker}`,
+    operationTag,
+    logLine: `${describeModePair({ executionMode, brokerAccountMode, marketLabel })} | broker=${broker} | investmentMode=${investmentTradeMode.toUpperCase()} ${operationTag}`,
   };
 }
 

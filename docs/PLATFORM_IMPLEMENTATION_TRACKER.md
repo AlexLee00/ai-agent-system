@@ -18,8 +18,9 @@
 - 투자
   - 루나 공격적 매매 전략을 별도 실험축으로 구현
   - Argos Yahoo API 대안과 장전 스크리닝 launchd 등록
-  - 현재 적용된 바이낸스 crypto 보수성 완화(`max_dynamic=12`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`)는 3~7일 observe 후 추가 판단
-  - `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준 부분 보완안 vs 재설계안 비교 착수
+  - 현재 적용된 바이낸스/국내장 validation 성과를 normal 정책에 어디까지 승격할지 3~7일 observe 후 추가 판단
+  - 해외장 validation 표본 확보 및 장중 운영 컨텍스트 검증
+  - `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준 부분 보완안 vs 재설계안 비교 지속
 - 스카
   - RAG 연동을 전략문서 기준 미완료 항목으로 다시 올림
   - shadow 모델 비교 데이터 누적 후 `ensemble experiment` 승격 여부 판단
@@ -152,6 +153,31 @@
   - `pipeline_runs.meta`에 `decision / BUY / SELL / HOLD / executed / weak / risk / savedExecutionWork`를 저장하고, 일지/주간 리뷰에서 시장별 병목을 직접 조회할 수 있게 확장했다
 - 루나 재점검 Phase 문서화
   - `docs/LUNA_RESET_AUDIT_PLAN_2026-03-19.md`, `docs/LUNA_RESET_AUDIT_CODEX_PROMPT_2026-03-19.md`를 추가해 진단 범위/불변식/산출물/실행 프롬프트를 분리 정리했다
+- 투자 운영모드 분리의 운영 레이어 준비
+  - 기존 `ai.investment.crypto`를 `normal` 거래 레일로 유지하고 `INVESTMENT_TRADE_MODE=normal`을 명시했다.
+  - 신규 `ai.investment.crypto.validation` launchd를 추가해 `validation` 검증거래 레일을 별도 로그/별도 guard scope 기반으로 정의했다.
+  - 재부팅 전/후 절차도 validation 레일을 인지하도록 확장해, 이후 점진적으로 launchd 분리를 활성화할 수 있게 정리했다.
+- 투자 validation 레일 공용화
+  - `ai.investment.domestic.validation`, `ai.investment.overseas.validation` launchd를 추가해 국내장/해외장도 `normal / validation` 운영모드 구조를 공유하도록 확장했다.
+  - 재부팅 전/후 절차와 덱스터 launchd 체크도 domestic/overseas validation 레일을 선택적 서비스로 인지한다.
+  - 이제 세 시장에서 나온 `trade_mode` 기반 시그널/거래/퍼널 데이터를 통합 피드백 루프로 묶을 수 있는 운영 기반이 생겼다.
+- 투자 validation 성과 반영
+  - 암호화폐 validation은 `PAPER 2건`이 확인돼 `승격 후보`로 전환됐다.
+  - 국내장 validation은 `LIVE 1건`과 `approved 3 / executed 1`이 확인돼 `승격 후보`로 전환됐다.
+  - `runtime-config-suggestions.js`는 validation `approved / executed / LIVE / PAPER`를 실제 `trades` 기준으로 보정하고, `normal 승격 후보`를 직접 출력하도록 보강됐다.
+- 국내장 normal 2차 승격
+  - `runtime_config.nemesis.thresholds.stockStarterApproveDomestic`가 `450000`까지 상향됐다.
+- 투자 긴급 차단 경계 복구
+  - 레거시 `.llm-emergency-stop`의 `investment` scope는 이제 `investment.normal`만 막고 `investment.validation`은 막지 않는다.
+- 상시 서비스 복구
+  - `ai.blog.node-server`, `ai.worker.lead`, `ai.worker.task-runner`가 launchd 재등록으로 복구됐고 team health-report 기준 정상 상태다.
+- 투자 validation 정책 분리 1차
+  - 바이낸스는 `INVESTMENT_TRADE_MODE=validation`일 때 더 작은 reserve / risk_per_trade / position cap / daily trade cap을 사용하도록 `capital-manager`가 mode override를 지원한다.
+  - `nemesis`도 validation 모드에서 crypto starter 승인 임계값과 starter size를 별도로 읽도록 바꿔, normal과 validation이 실제로 다른 행동을 하도록 만들었다.
+- 투자 운영모드 데이터 영속화
+  - `signals / trades / trade_journal / pipeline_runs.meta`에 `trade_mode` 또는 `investment_trade_mode`를 저장하도록 확장했다.
+  - `trading-journal`, `weekly-trade-review`는 이제 `NORMAL / VALIDATION`을 거래·리뷰·퍼널 요약에서 함께 표시한다.
+  - validation 레일 실험 결과를 normal KPI와 섞지 않고 해석할 수 있는 관측 기반을 확보했다.
 - 재부팅 절차도 운영 이벤트 기준으로 보강됐다.
   - `pre-reboot.sh`는 기본 실행 시 준비/대기만 수행하고, `--drain-now`에서만 ai-agent-system 서비스 정지 신호를 보낸다.
   - 재부팅 전에는 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER` 최신성 점검이 필수 게이트다.

@@ -1,6 +1,6 @@
 # 운영 런북
 
-> 마지막 업데이트: 2026-03-18
+> 마지막 업데이트: 2026-03-19
 > 목적: 장애 대응, health 확인, 재시작, 운영 점검을 같은 순서로 수행하기 위한 실무 런북이다.
 
 ---
@@ -211,13 +211,73 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 
 - 대표 launchd
   - `ai.investment.commander`
-  - `ai.investment.crypto`
+  - `ai.investment.crypto` (`normal` 거래 레일)
+  - `ai.investment.crypto.validation` (`validation` 검증거래 레일, 선택적)
   - `ai.investment.domestic`
+  - `ai.investment.domestic.validation` (`validation` 검증거래 레일, 선택적)
   - `ai.investment.overseas`
+  - `ai.investment.overseas.validation` (`validation` 검증거래 레일, 선택적)
   - `ai.investment.argos`
 - 대표 로그
   - `~/.openclaw/workspace/logs/luna-commander.log`
   - `~/.openclaw/workspace/logs/luna-commander-error.log`
+  - `/tmp/investment-crypto.log`
+  - `/tmp/investment-crypto.err.log`
+  - `/tmp/investment-crypto-validation.log`
+  - `/tmp/investment-crypto-validation.err.log`
+
+### Investment validation 레일 활성화 / 비활성화
+
+- validation 레일은 기본 상시 서비스가 아니라 `선택적 canary`로 취급한다.
+- 현재 범위:
+  - `ai.investment.crypto.validation`
+  - `ai.investment.domestic.validation`
+  - `ai.investment.overseas.validation`
+- 활성화 전 확인:
+  - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+  - [bots/investment/scripts/trading-journal.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js) `--days=1`
+  - [bots/investment/scripts/weekly-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trade-review.js) `--dry-run`
+- 암호화폐 validation 활성화 명령:
+
+```bash
+launchctl bootstrap gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.crypto.validation.plist
+launchctl kickstart -k gui/$(id -u)/ai.investment.crypto.validation
+launchctl list | egrep 'ai\.investment\.(crypto|crypto\.validation)'
+```
+
+- 국내장 validation 활성화 명령:
+
+```bash
+launchctl bootstrap gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.domestic.validation.plist
+launchctl kickstart -k gui/$(id -u)/ai.investment.domestic.validation
+launchctl list | egrep 'ai\.investment\.(domestic|domestic\.validation)'
+```
+
+- 해외장 validation 활성화 명령:
+
+```bash
+launchctl bootstrap gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.overseas.validation.plist
+launchctl kickstart -k gui/$(id -u)/ai.investment.overseas.validation
+launchctl list | egrep 'ai\.investment\.(overseas|overseas\.validation)'
+```
+
+- 비활성화 명령 예시:
+
+```bash
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.crypto.validation.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.domestic.validation.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.overseas.validation.plist
+```
+
+- 활성화 후 점검:
+  - `/tmp/investment-crypto-validation.log`
+  - `/tmp/investment-crypto-validation.err.log`
+  - `/tmp/investment-domestic-validation.log`
+  - `/tmp/investment-domestic-validation.err.log`
+  - `/tmp/investment-overseas-validation.log`
+  - `/tmp/investment-overseas-validation.err.log`
+  - `node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/trading-journal.js --days=1`
+  - 리포트에서 `[NORMAL]`, `[VALIDATION]`, `[LIVE]`, `[PAPER]` 태그 및 `mode NORMAL / VALIDATION` 집계 확인
   - `/tmp/investment-domestic.log`
   - `/tmp/investment-domestic.err.log`
 

@@ -19,6 +19,7 @@
   - `/admin/monitoring`은 `LLM API 현황`으로 재정리돼, ai-agent-system 전체 에이전트의 primary / fallback / 미적용 상태와 speed-test 결과를 한 화면에서 본다.
   - 같은 화면에서 Jay / Worker / Claude / Blog selector는 `primary / fallback` 역할 선택 후 `provider -> model` 2단계로 변경할 수 있다.
   - `/admin/monitoring/blog-links`가 추가돼 실제 네이버 블로그 URL 기록과 발행 후처리를 마스터 화면에서 처리할 수 있다.
+  - `ai.worker.lead`, `ai.worker.task-runner`는 이번 세션에서 launchd 재등록으로 복구됐고, health-report 기준 정상이다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -68,6 +69,19 @@
   - `scripts/pre-reboot.sh`는 기본 실행 시 준비/대기만 수행하고, `--drain-now`에서만 ai-agent-system 서비스 정지 신호를 보낸다.
   - 재부팅 전에는 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS / PLATFORM_IMPLEMENTATION_TRACKER` 최신성 점검이 필수 게이트다.
   - `scripts/post-reboot.sh`는 현재 전사 운영 구조 기준으로 worker / investment / blog / claude / orchestrator / ska / n8n 복구 상태를 넓게 확인한다.
+  - 투자팀은 `ai.investment.crypto`를 `normal` 거래 레일로 유지하고, `ai.investment.crypto.validation`을 선택적 validation 레일로 분리할 준비가 됐다.
+  - validation 레일은 이제 `crypto / domestic / overseas`까지 launchd 분리 가능한 구조로 확장됐고, `crypto`는 더 작은 reserve / position cap / daily trade cap, 더 완화된 starter 승인 기준까지 분리되었다.
+  - `signals / trades / trade_journal / pipeline_runs.meta`에는 `trade_mode(normal/validation)`가 저장되며, 일지/주간 리뷰도 `NORMAL / VALIDATION` 집계를 분리해서 보여준다.
+  - `trading-journal.js`는 `initJournalSchema()`를 명시적으로 호출해 기존 DB에서도 `trade_journal.trade_mode` 마이그레이션을 선행하도록 복구됐다.
+  - `crypto.js`는 `trade_mode`별 상태 파일을 분리해, validation canary가 normal 레일의 쿨다운/긴급트리거 상태를 공유하지 않도록 정리됐다.
+  - 레거시 `.llm-emergency-stop`의 `investment` scope는 이제 `investment.normal`만 막고 `investment.validation`은 막지 않는다.
+  - 암호화폐 validation은 일간 기준 `BUY 2 / approved 2 / executed 2 / PAPER 2건`이 확인돼 `승격 후보`로 읽힌다.
+  - 국내장 validation은 일간 기준 `BUY 3 / approved 3 / executed 1 / LIVE 1건`이 확인돼 `승격 후보`로 읽힌다.
+  - 국내장 validation 강제 세션에서는 `214390 BUY 500000 자동 승인`, `최종 결과: 1개 신호 승인`까지 확인됐다.
+  - `runtime-config-suggestions.js`는 validation 성과를 actual `trades` 기준으로 보정해 `normal 승격 후보`를 직접 제안한다.
+  - 국내장 normal 정책은 validation 성과를 반영해 `stockStarterApproveDomestic=450000`까지 제한 승격됐다.
+- 블로그
+  - `ai.blog.node-server`는 이번 세션에서 launchd 재등록으로 복구됐고, `node-server API`까지 health-report 기준 정상이다.
   - 재부팅 후에는 `/tmp/post-reboot-followup.txt`를 확인하고, 상태 변화가 있으면 문서와 세션 인수인계를 다시 갱신해야 한다.
   - 최근 dry-run 기준 현재 로컬 launchd 상태는 `OK 5 / WARN 16 / FAIL 12`로 보고되어, 실제 재부팅 후에는 팀별 `health-report --json` 2차 확인이 필수다.
 
@@ -94,9 +108,13 @@
 
 ## 3. 다음 작업 목표
 
-1. 투자 실험 3~7일 관찰
-   - 적용값: `screening.crypto.max_dynamic=12`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`
-   - 확인 항목: `binance BUY / SELL / HOLD`, `executed`, `weakSignalSkipped`, `riskRejected`, `nemesis_error`, `legacy_executor_failed`
+1. 투자 normal / validation 분리 관찰
+   - 적용값: `screening.crypto.max_dynamic=12`, `minConfidence.live.binance=0.44`, `debateThresholds.crypto=0.56/0.18`, `fastPath minCryptoConfidence=0.40`, `stockStarterApproveDomestic=450000`
+   - 현재 성과:
+     - crypto validation `PAPER 2건`
+     - domestic validation `LIVE 1건`
+   - 확인 항목: `crypto/domestic/overseas BUY / SELL / HOLD`, `approved`, `executed`, `LIVE/PAPER`, `NORMAL/VALIDATION`, `weakSignalSkipped`, `riskRejected`, `nemesis_error`, `legacy_executor_failed`
+   - 운영 체크리스트: [INVESTMENT_VALIDATION_OBSERVATION_CHECKLIST_2026-03-19.md](/Users/alexlee/projects/ai-agent-system/docs/INVESTMENT_VALIDATION_OBSERVATION_CHECKLIST_2026-03-19.md)
 2. 스카 shadow 비교 actual 누적 관찰
    - 현재 `availableDays = 0`
    - 일일 최소 3일 / 주간 최소 5일 누적이 필요
@@ -120,9 +138,9 @@
 7. 제이 DB 접근 컨텍스트 복구
    - `jay-llm-daily-review.js`는 현재 `dbStatsStatus=partial` 상태
    - `reservation.llm_usage_log`, `claude.command_history` 접근이 자동화 컨텍스트에서 `EPERM`으로 막히고 있어 PostgreSQL 접근 권한 또는 실행 컨텍스트를 복구해야 함
-8. 루나 시스템 재점검 Phase 착수 여부 판단
-   - 현재는 퍼널 계측과 crypto 보수성 완화까지 반영된 상태
-   - 다음은 `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준으로 부분 보완안 vs 재설계안 비교에 들어갈 수 있음
+8. 루나 시스템 재점검 Phase 후속 관찰
+   - 현재는 퍼널 계측, crypto 보수성 완화, `normal/validation`, `trade_mode` 영속화까지 반영된 상태
+   - 다음은 `LUNA_RESET_AUDIT_PLAN_2026-03-19.md` 기준으로 validation 결과를 normal 정책에 승격할지, 부분 보완을 유지할지, 재설계로 전환할지 판단
 9. 재부팅 후 운영 검증
    - `bash /Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh --dry-run`
    - `/tmp/post-reboot.log`
@@ -142,6 +160,8 @@
 - `daily-ops-report.js`는 investment / reservation에 대해 `local fallback 활동 신호`를 보이지만, 여전히 원본 `health-report`의 DB 접근 제한은 별도 복구가 필요하다
 - `jay-llm-daily-review.js`는 이제 snapshot fallback으로 운영 리포트 연속성은 확보했지만, live DB query 자체의 `EPERM` 원인은 아직 별도 운영 컨텍스트 복구가 필요하다
 - `daily-ops-report.js`는 이제 `sourceMode`를 함께 출력해 `orchestrator / worker / claude / blog`는 `unavailable`, `investment / reservation`은 `local_fallback`, global error review는 `auxiliary_review`로 읽을 수 있다
+- `worker`와 `blog`의 상시 서비스 공백은 이번 세션에서 복구됐다.
+- 해외장 validation은 아직 장중 + 실제 운영 컨텍스트 표본이 부족하다.
 - 투자 주간 리뷰 usage는 복구됐지만, 주간/일간 usage 집계 로직을 공용 함수로 통합하면 중복 유지보수를 더 줄일 수 있다
 - 루나 퍼널의 `BUY / SELL / HOLD` 분포는 저장 필드를 추가했지만, 과거 `pipeline_runs.meta`에는 값이 없어 초기 관측 구간에서는 `0`으로 보일 수 있다
 - 따라서 다음 해석은 새 파이프라인 런 누적 후 진행해야 한다

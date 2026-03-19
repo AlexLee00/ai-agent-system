@@ -6,6 +6,29 @@
 
 ## 2026-03-19
 
+### 투자 validation 성과 반영 + 국내장 normal 2차 승격
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/billing-guard.js` | ✅ |
+| `node --input-type=module -e "import { isBlocked } from './packages/core/lib/billing-guard.js'; ..."` | ✅ 레거시 `investment` stop 파일 기준 `investment.normal=true`, `investment.validation=false` 확인 |
+| `INVESTMENT_TRADE_MODE=validation node bots/investment/markets/domestic.js --force` | ✅ `214390 BUY 500000 자동 승인`, `최종 결과: 1개 신호 승인` 확인 |
+| `node bots/investment/scripts/trading-journal.js --days=1` | ✅ `crypto VALIDATION: PAPER 2건`, `domestic VALIDATION: LIVE 1건`, `validation 승격 후보` 출력 확인 |
+| `node bots/investment/scripts/weekly-trade-review.js --dry-run` | ✅ 세 시장 `NORMAL / VALIDATION` 통합 피드백 및 validation 후보 출력 확인 |
+| `node --check bots/investment/scripts/runtime-config-suggestions.js` | ✅ |
+| `node bots/investment/scripts/runtime-config-suggestions.js --days=7` | ✅ domestic validation `approved 1 / executed 1 / LIVE 1` 반영 및 `normal 승격 후보` 출력 확인 |
+| `node --input-type=module -e "import { getInvestmentRuntimeConfig } from './bots/investment/shared/runtime-config.js'; ..."` | ✅ `stockStarterApproveDomestic=450000`, `stockStarterApproveOverseas=300` 확인 |
+
+### blog / worker 상시 서비스 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/blog/api/node-server.js` | ✅ |
+| `node --check bots/worker/src/worker-lead.js` | ✅ |
+| `node --check bots/worker/src/task-runner.js` | ✅ |
+| `node bots/blog/scripts/health-report.js --json` | ✅ `node-server`, `node-server API` 정상 확인 |
+| `node bots/worker/scripts/health-report.js --json` | ✅ `lead`, `task-runner` 정상 확인 |
+
 ### 재부팅 절차 개편
 
 | 테스트 | 결과 |
@@ -336,3 +359,21 @@
 | `node scripts/reviews/daily-ops-report.js` | ✅ `보조 신호: local fallback 활동 신호 1건` 텍스트 출력 확인 |
 | `node scripts/reviews/daily-ops-report.js --json` 재실행 | ✅ `sourceMode=unavailable(local teams) / local_fallback(investment,reservation) / auxiliary_review(global)` 확인 |
 | `node scripts/reviews/daily-ops-report.js` 재실행 | ✅ active issue / input failure에 `sourceMode` 텍스트 출력 확인 |
+| `plutil -lint bots/investment/launchd/ai.investment.crypto.plist` | ✅ OK |
+| `plutil -lint bots/investment/launchd/ai.investment.crypto.validation.plist` | ✅ OK |
+| `bash -n scripts/pre-reboot.sh` | ✅ 통과 |
+| `bash -n scripts/post-reboot.sh` | ✅ 통과 |
+| `node --check bots/investment/shared/capital-manager.js` | ✅ 통과 |
+| `node --check bots/investment/team/nemesis.js` | ✅ 통과 |
+| `node --input-type=module -e "import { getCapitalConfig } from './bots/investment/shared/capital-manager.js'; ..."` | ✅ normal 바이낸스 정책 `reserve_ratio=0.02`, `max_position_pct=0.18`, `max_concurrent_positions=6`, `max_daily_trades=16` 확인 |
+| `INVESTMENT_TRADE_MODE=validation node --input-type=module -e "import { getCapitalConfig } from './bots/investment/shared/capital-manager.js'; ..."` | ✅ validation 바이낸스 정책 `reserve_ratio=0.01`, `risk_per_trade=0.01`, `max_position_pct=0.08`, `max_concurrent_positions=3`, `max_daily_trades=8` 확인 |
+| `node --check bots/investment/shared/db.js` | ✅ 통과 |
+| `node --check bots/investment/shared/trade-journal-db.js` | ✅ 통과 |
+| `node --check bots/investment/shared/pipeline-decision-runner.js` | ✅ 통과 |
+| `node --check bots/investment/scripts/trading-journal.js` | ✅ 통과 |
+| `node --check bots/investment/scripts/weekly-trade-review.js` | ✅ 통과 |
+| `node bots/investment/scripts/trading-journal.js --days=1` | ✅ `trade_journal.trade_mode` 마이그레이션 선행 후 `[LIVE][NORMAL]`, `[PAPER][NORMAL]` 태그와 `mode NORMAL` 퍼널 출력 확인 |
+| `node bots/investment/scripts/weekly-trade-review.js --dry-run` | ✅ 주간 퍼널에 `mode NORMAL ...` 운영모드 집계 출력 확인 |
+| `node --check bots/investment/markets/crypto.js` | ✅ `trade_mode`별 상태 파일 분리 로직 문법 확인 |
+| `plutil -lint bots/investment/launchd/ai.investment.domestic.validation.plist` | ✅ OK |
+| `plutil -lint bots/investment/launchd/ai.investment.overseas.validation.plist` | ✅ OK |

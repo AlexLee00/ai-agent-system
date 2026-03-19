@@ -17,6 +17,7 @@
 
 import * as db from '../shared/db.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
+import { initJournalSchema } from '../shared/trade-journal-db.js';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
@@ -36,6 +37,10 @@ function getMarketBucket(exchange) {
 
 function getMarketLabel(bucket) {
   return bucket === 'domestic' ? '국내장' : bucket === 'overseas' ? '해외장' : '암호화폐';
+}
+
+function getTradeModeLabel(mode) {
+  return String(mode || 'normal').toUpperCase();
 }
 
 // ─── 날짜 유틸 ──────────────────────────────────────────────────────
@@ -66,6 +71,7 @@ async function fetchTrades(fromDate, toDate) {
       t.price,
       t.total_usdt,
       t.paper,
+      COALESCE(t.trade_mode, s.trade_mode, 'normal') AS trade_mode,
       t.exchange,
       t.executed_at,
       s.confidence,
@@ -95,6 +101,7 @@ async function fetchClosedTradeReviews(fromDate, toDate) {
       j.symbol,
       j.exchange,
       j.is_paper,
+      COALESCE(j.trade_mode, 'normal') AS trade_mode,
       j.pnl_net,
       j.pnl_percent,
       r.max_favorable,
@@ -174,14 +181,7 @@ async function fetchDecisionPipelineStats(fromDate, toDate) {
     return await db.query(`
       SELECT
         market,
-        COALESCE(SUM(COALESCE((meta->>'decided_symbols')::int, 0)), 0) AS decided_symbols,
-        COALESCE(SUM(COALESCE((meta->>'executed_symbols')::int, 0)), 0) AS executed_symbols,
-        COALESCE(SUM(COALESCE((meta->>'buy_decisions')::int, 0)), 0) AS buy_decisions,
-        COALESCE(SUM(COALESCE((meta->>'sell_decisions')::int, 0)), 0) AS sell_decisions,
-        COALESCE(SUM(COALESCE((meta->>'hold_decisions')::int, 0)), 0) AS hold_decisions,
-        COALESCE(SUM(COALESCE((meta->>'weak_signal_skipped')::int, 0)), 0) AS weak_signal_skipped,
-        COALESCE(SUM(COALESCE((meta->>'risk_rejected')::int, 0)), 0) AS risk_rejected,
-        COALESCE(SUM(COALESCE((meta->>'saved_execution_work')::int, 0)), 0) AS saved_execution_work
+        COALESCE(JSONB_AGG(meta) FILTER (WHERE meta IS NOT NULL), '[]'::jsonb) AS meta_rows
       FROM pipeline_runs
       WHERE pipeline = 'luna_pipeline'
         AND CAST(to_timestamp(started_at / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
@@ -346,6 +346,7 @@ function formatTrades(trades, pnlMap) {
     }
     const side   = (t.side === 'buy' || t.side === 'BUY') ? '🟢 매수' : '🔴 매도';
     const paper  = t.paper ? '[PAPER]' : '[LIVE]';
+    const tradeMode = `[${getTradeModeLabel(t.trade_mode)}]`;
     const confValue = toNumber(t.confidence, null);
     const conf   = confValue != null ? ` 신뢰도 ${(confValue * 100).toFixed(0)}%` : '';
     const sym    = t.symbol.padEnd(10);
@@ -358,7 +359,7 @@ function formatTrades(trades, pnlMap) {
     const total  = isKis
       ? `₩${Math.round(totalValue).toLocaleString()}`
       : `$${totalValue.toLocaleString('en-US', { maximumFractionDigits: 4 })}`;
-    lines.push(`  ${side} ${sym} ${amt} @ ${price} = ${total} ${paper}${conf}`);
+    lines.push(`  ${side} ${sym} ${amt} @ ${price} = ${total} ${paper}${tradeMode}${conf}`);
   }
   return lines.join('\n');
 }
@@ -440,6 +441,13 @@ function formatTradeReviewStats(reviewRows) {
     if (mf != null || ma != null) lines.push(`    평균 MFE/MAE: ${mf != null ? `+${mf.toFixed(2)}%` : '-'} / ${ma != null ? `${ma.toFixed(2)}%` : '-'}`);
     lines.push(`    신호 적중: ${goodSignals}/${group.rows.length} | 실행 fast: ${speedFast}/${group.rows.length}`);
     if (analystAvg != null) lines.push(`    분석팀 평균 정확도: ${(analystAvg * 100).toFixed(0)}%`);
+    const modeCounts = group.rows.reduce((acc, row) => {
+      const key = getTradeModeLabel(row.trade_mode);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const modeSummary = Object.entries(modeCounts).map(([mode, count]) => `${mode} ${count}건`).join(' / ');
+    if (modeSummary) lines.push(`    운영모드: ${modeSummary}`);
   }
   return lines.join('\n');
 }
@@ -578,29 +586,154 @@ function formatDecisionPipeline(rows) {
     }
 
     const totals = marketRows.reduce((acc, row) => {
-      acc.decided += Number(row.decided_symbols || 0);
-      acc.executed += Number(row.executed_symbols || 0);
-      acc.buy += Number(row.buy_decisions || 0);
-      acc.sell += Number(row.sell_decisions || 0);
-      acc.hold += Number(row.hold_decisions || 0);
-      acc.weak += Number(row.weak_signal_skipped || 0);
-      acc.risk += Number(row.risk_rejected || 0);
-      acc.saved += Number(row.saved_execution_work || 0);
+      for (const meta of (row.meta_rows || [])) {
+        acc.decided += Number(meta?.decided_symbols || 0);
+        acc.approved += Number(meta?.approved_signals || 0);
+        acc.executed += Number(meta?.executed_symbols || 0);
+        acc.buy += Number(meta?.buy_decisions || 0);
+        acc.sell += Number(meta?.sell_decisions || 0);
+        acc.hold += Number(meta?.hold_decisions || 0);
+        acc.weak += Number(meta?.weak_signal_skipped || 0);
+        acc.risk += Number(meta?.risk_rejected || 0);
+        acc.saved += Number(meta?.saved_execution_work || 0);
+        const modeKey = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+        acc.modeCounts[modeKey] = (acc.modeCounts[modeKey] || 0) + 1;
+        const topReason = meta?.risk_reject_reason_top;
+        if (topReason) acc.riskReasons[topReason] = (acc.riskReasons[topReason] || 0) + Number(meta?.risk_rejected || 1);
+      }
       return acc;
-    }, { decided: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0 });
+    }, { decided: 0, approved: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0, riskReasons: {}, modeCounts: {} });
 
     lines.push(`    decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold}`);
-    lines.push(`    executed ${totals.executed}건 | weakSignalSkipped ${totals.weak}건 | riskRejected ${totals.risk}건 | savedNodes ${totals.saved}`);
+    const modeSummary = Object.entries(totals.modeCounts).map(([mode, count]) => `${mode} ${count}`).join(' / ');
+    lines.push(`    approved ${totals.approved}건 | executed ${totals.executed}건 | weakSignalSkipped ${totals.weak}건 | riskRejected ${totals.risk}건 | savedNodes ${totals.saved}${modeSummary ? ` | mode ${modeSummary}` : ''}`);
+    const topRiskReason = Object.entries(totals.riskReasons).sort((a, b) => b[1] - a[1])[0];
+    if (topRiskReason) lines.push(`    risk top reason: ${topRiskReason[0]} (${topRiskReason[1]}건)`);
     lines.push('');
   }
 
   return lines.join('\n').trimEnd();
 }
 
+function formatIntegratedFeedbackMatrix(rows, trades) {
+  const markets = ['crypto', 'domestic', 'overseas'];
+  const modes = ['NORMAL', 'VALIDATION'];
+  const tradeSummary = new Map();
+
+  for (const trade of trades) {
+    const key = `${getMarketBucket(trade.exchange)}|${getTradeModeLabel(trade.trade_mode)}`;
+    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+    bucket.total += 1;
+    if (trade.paper) bucket.paper += 1;
+    else bucket.live += 1;
+    tradeSummary.set(key, bucket);
+  }
+
+  const pipelineSummary = new Map();
+  for (const row of rows) {
+    const market = getMarketBucket(row.market);
+    for (const meta of (row.meta_rows || [])) {
+      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      const key = `${market}|${mode}`;
+      const bucket = pipelineSummary.get(key) || {
+        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0,
+      };
+      bucket.decision += Number(meta?.decided_symbols || 0);
+      bucket.buy += Number(meta?.buy_decisions || 0);
+      bucket.sell += Number(meta?.sell_decisions || 0);
+      bucket.hold += Number(meta?.hold_decisions || 0);
+      bucket.approved += Number(meta?.approved_signals || 0);
+      bucket.executed += Number(meta?.executed_symbols || 0);
+      bucket.weak += Number(meta?.weak_signal_skipped || 0);
+      bucket.risk += Number(meta?.risk_rejected || 0);
+      pipelineSummary.set(key, bucket);
+    }
+  }
+
+  const lines = [];
+  for (const market of markets) {
+    lines.push(`  ■ ${getMarketLabel(market)}`);
+    for (const mode of modes) {
+      const key = `${market}|${mode}`;
+      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      const trade = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+      const hasActivity = pipeline.decision || pipeline.approved || pipeline.executed || trade.total;
+      if (!hasActivity) {
+        lines.push(`    ${mode}: 기록 없음`);
+        continue;
+      }
+      lines.push(`    ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
+function formatValidationPromotionCandidates(rows, trades) {
+  const markets = ['crypto', 'domestic', 'overseas'];
+  const tradeSummary = new Map();
+  for (const trade of trades) {
+    const key = `${getMarketBucket(trade.exchange)}|${getTradeModeLabel(trade.trade_mode)}`;
+    const bucket = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
+    bucket.total += 1;
+    if (trade.paper) bucket.paper += 1;
+    else bucket.live += 1;
+    tradeSummary.set(key, bucket);
+  }
+
+  const validationSummary = new Map();
+  for (const row of rows) {
+    const market = getMarketBucket(row.market);
+    for (const meta of (row.meta_rows || [])) {
+      const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
+      if (mode !== 'VALIDATION') continue;
+      const bucket = validationSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      bucket.decision += Number(meta?.decided_symbols || 0);
+      bucket.buy += Number(meta?.buy_decisions || 0);
+      bucket.hold += Number(meta?.hold_decisions || 0);
+      bucket.approved += Number(meta?.approved_signals || 0);
+      bucket.executed += Number(meta?.executed_symbols || 0);
+      bucket.weak += Number(meta?.weak_signal_skipped || 0);
+      bucket.risk += Number(meta?.risk_rejected || 0);
+      validationSummary.set(market, bucket);
+    }
+  }
+
+  const lines = [];
+  for (const market of markets) {
+    const summary = validationSummary.get(market);
+    const trade = tradeSummary.get(`${market}|VALIDATION`) || { total: 0, live: 0, paper: 0 };
+    if (!summary && trade.total === 0) {
+      lines.push(`  - ${getMarketLabel(market)}: validation 기록 없음`);
+      continue;
+    }
+    if ((summary?.executed || 0) > 0 || trade.total > 0) {
+      lines.push(`  - ${getMarketLabel(market)}: 승격 후보 — validation에서 executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+      continue;
+    }
+    if ((summary?.approved || 0) > 0) {
+      lines.push(`  - ${getMarketLabel(market)}: 조건부 승격 검토 — approved ${summary.approved}건, executed 0건`);
+      continue;
+    }
+    if ((summary?.buy || 0) > 0 && (summary?.risk || 0) > 0) {
+      lines.push(`  - ${getMarketLabel(market)}: 보류 — BUY ${summary.buy}건은 생기지만 riskRejected ${summary.risk}건`);
+      continue;
+    }
+    if ((summary?.decision || 0) > 0 && (summary?.hold || 0) >= (summary?.decision || 0)) {
+      lines.push(`  - ${getMarketLabel(market)}: 보류 — validation decision ${summary.decision}건이 대부분 HOLD`);
+      continue;
+    }
+    lines.push(`  - ${getMarketLabel(market)}: 관찰 필요 — validation decision ${summary?.decision || 0} / approved ${summary?.approved || 0} / executed ${summary?.executed || 0}`);
+  }
+  return lines.join('\n');
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────────
 
 async function main() {
   await db.initSchema();
+  await initJournalSchema();
 
   const args    = process.argv.slice(2);
   const sendTg  = args.includes('--telegram');
@@ -640,6 +773,12 @@ async function main() {
     ``,
     `━━ decision 퍼널 병목 ━━`,
     formatDecisionPipeline(decisionPipeline),
+    ``,
+    `━━ 시장 × 운영모드 통합 피드백 ━━`,
+    formatIntegratedFeedbackMatrix(decisionPipeline, trades),
+    ``,
+    `━━ validation 승격 후보 ━━`,
+    formatValidationPromotionCandidates(decisionPipeline, trades),
     ``,
     `━━ LLM 토큰 사용 ━━`,
     formatTokenUsage(tokenRows),

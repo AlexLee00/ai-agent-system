@@ -1,6 +1,6 @@
 # 팀별 기능 목록 — ai-agent-system
 
-> 마지막 업데이트: 2026-03-03
+> 마지막 업데이트: 2026-03-19
 
 ---
 
@@ -169,13 +169,28 @@ bash scripts/reload-monitor.sh
 | `shared/signal.js` | 신호 데이터 구조 & 검증 |
 | `shared/report.js` | 텔레그램 알림 |
 
-### launchd 서비스 (3개)
+### launchd 서비스 (6개)
 
 | 서비스명 | 주기 | 역할 |
 |---------|------|------|
-| `ai.investment.crypto` | 5분 (내부 30분 throttle) | 암호화폐 사이클 — executionMode=live / brokerAccountMode=real |
-| `ai.investment.domestic` | 5분 (내부 30분 throttle) | 국내주식 사이클 |
-| `ai.investment.overseas` | 5분 (내부 30분 throttle) | 미국주식 사이클 |
+| `ai.investment.crypto` | 5분 (내부 30분 throttle) | 암호화폐 정상거래 레일 — `INVESTMENT_TRADE_MODE=normal`, executionMode=live / brokerAccountMode=real |
+| `ai.investment.crypto.validation` | 15분 (validation canary) | 암호화폐 검증거래 레일 — `INVESTMENT_TRADE_MODE=validation`, 별도 guard scope / 별도 로그 / 더 작은 reserve·position cap·starter size |
+| `ai.investment.domestic` | 30분 (장중) | 국내주식 정상거래 레일 — KIS 모의/실계좌 정책에 따라 실행 |
+| `ai.investment.domestic.validation` | 30분 (장중) | 국내주식 검증거래 레일 — `INVESTMENT_TRADE_MODE=validation`, 모의투자 기준 canary 관찰 |
+| `ai.investment.overseas` | 30분 (장중) | 미국주식 정상거래 레일 — KIS 모의/실계좌 정책에 따라 실행 |
+| `ai.investment.overseas.validation` | 30분 (장중) | 미국주식 검증거래 레일 — `INVESTMENT_TRADE_MODE=validation`, 모의투자 기준 canary 관찰 |
+
+### 최근 validation 관찰 요약 (2026-03-19)
+
+- 암호화폐 validation
+  - `decision 48 | BUY 2 | approved 2 | executed 2 | trades 2 (LIVE 0 / PAPER 2)`
+  - 현재 해석: `승격 후보`
+- 국내주식 validation
+  - `decision 46 | BUY 3 | approved 3 | executed 1 | trades 1 (LIVE 1 / PAPER 0)`
+  - 현재 해석: `승격 후보`
+- 미국주식 validation
+  - 공용 레일은 준비 완료
+  - 장중 + 실제 운영 컨텍스트 표본 추가 관찰 필요
 
 ---
 

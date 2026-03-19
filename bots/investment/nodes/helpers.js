@@ -17,9 +17,15 @@ const _sessionCollectCache = new Map();
 export async function loadNodePayloads(sessionId, nodeIds, symbol) {
   const results = [];
   for (const nodeId of nodeIds) {
-    const hits = await fetchNodeArtifacts(sessionId, nodeId, { symbol, limit: 1 }).catch(() => []);
-    if (hits[0]?.payload) {
-      results.push({ nodeId, payload: hits[0].payload, ref: hits[0].ref, metadata: hits[0].metadata });
+    const fromArtifact = await fetchNodeArtifacts(sessionId, nodeId, { symbol, limit: 1 }).catch(() => []);
+    if (fromArtifact[0]?.payload) {
+      results.push({ nodeId, payload: fromArtifact[0].payload, ref: fromArtifact[0].ref, metadata: fromArtifact[0].metadata });
+      continue;
+    }
+
+    const fallback = await loadLatestNodePayloadFromRuns(sessionId, nodeId, symbol);
+    if (fallback?.payload) {
+      results.push({ nodeId, payload: fallback.payload, ref: fallback.ref, metadata: fallback.metadata });
     }
   }
   return results;
@@ -27,7 +33,8 @@ export async function loadNodePayloads(sessionId, nodeIds, symbol) {
 
 export async function loadLatestNodePayload(sessionId, nodeId, symbol) {
   const hits = await fetchNodeArtifacts(sessionId, nodeId, { symbol, limit: 1 }).catch(() => []);
-  return hits[0] || null;
+  if (hits[0]?.payload) return hits[0];
+  return loadLatestNodePayloadFromRuns(sessionId, nodeId, symbol);
 }
 
 export async function loadAnalysesForSession(sessionId, symbol, market) {
@@ -137,4 +144,22 @@ async function getCachedPipelineRun(sessionId) {
   const row = await getPipelineRun(sessionId).catch(() => null);
   _pipelineRunCache.set(sessionId, row);
   return row;
+}
+
+async function loadLatestNodePayloadFromRuns(sessionId, nodeId, symbol) {
+  if (!symbol) return null;
+  const rows = await getNodeRunsForSymbol(sessionId, symbol, [nodeId]);
+  const latest = [...rows]
+    .filter(row => row.node_id === nodeId)
+    .sort((a, b) => Number(b.started_at || 0) - Number(a.started_at || 0))[0];
+  const payload = latest?.metadata?.inline_payload ?? null;
+  if (!payload) return null;
+  return {
+    ref: latest.output_ref || null,
+    payload,
+    metadata: {
+      ...(latest.metadata || {}),
+      source: 'pipeline_node_runs_inline',
+    },
+  };
 }

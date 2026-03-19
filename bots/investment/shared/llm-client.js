@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml         from 'js-yaml';
 import { tracker }  from './cost-tracker.js';
-import { getTradingMode } from './secrets.js';
+import { getTradingMode, getInvestmentGuardScope } from './secrets.js';
 import { getInvestmentLLMPolicyConfig } from './runtime-config.js';
 
 // CJS 토큰 트래커 (orchestrator 공용)
@@ -207,8 +207,9 @@ export function parseJSON(text) {
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
   // ★ 긴급 차단 체크
-  if (_billingGuard?.isBlocked()) {
-    const r = _billingGuard.getBlockReason();
+  const guardScope = getInvestmentGuardScope();
+  if (_billingGuard?.isBlocked(guardScope)) {
+    const r = _billingGuard.getBlockReason(guardScope);
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
   const agentPolicy = selectLLMPolicy('investment.agent_policy', {

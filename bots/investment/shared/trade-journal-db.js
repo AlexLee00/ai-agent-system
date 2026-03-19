@@ -11,6 +11,7 @@
 
 import { get, query, run } from './db.js';
 import { computeTradeExcursions } from './trade-review-metrics.js';
+import { getInvestmentTradeMode } from './secrets.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -42,6 +43,7 @@ export async function initJournalSchema() {
       exchange          VARCHAR NOT NULL,
       symbol            VARCHAR NOT NULL,
       is_paper          BOOLEAN NOT NULL DEFAULT true,
+      trade_mode        VARCHAR NOT NULL DEFAULT 'normal',
 
       entry_time        BIGINT NOT NULL,
       entry_price       DOUBLE PRECISION NOT NULL,
@@ -76,6 +78,7 @@ export async function initJournalSchema() {
       created_at        BIGINT NOT NULL
     )
   `);
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS trade_mode VARCHAR NOT NULL DEFAULT 'normal'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_market ON trade_journal(market, created_at)`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_status ON trade_journal(status, created_at)`); } catch { /* 이미 있으면 무시 */ }
 
@@ -225,15 +228,15 @@ export async function insertJournalEntry(entry) {
   try {
     await run(
       `INSERT INTO trade_journal (
-        trade_id, signal_id, market, exchange, symbol, is_paper,
+        trade_id, signal_id, market, exchange, symbol, is_paper, trade_mode,
         entry_time, entry_price, entry_size, entry_value, direction,
         signal_time, decision_time, execution_time, signal_to_exec_ms,
         tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
-        entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true,
+        entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
         entry.entry_time ?? now, entry.entry_price, entry.entry_size, entry.entry_value,
         entry.direction ?? 'long',
         entry.signal_time ?? null, entry.decision_time ?? null,

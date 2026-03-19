@@ -122,8 +122,11 @@ function checkLaunchd(items) {
     { id: 'ai.ska.pickko-daily-audit',  label: '스카팀 일간감사 (launchd)', optional: true },
     // 루나팀 Phase 3
     { id: 'ai.investment.crypto',       label: '루나팀 크립토 사이클 (launchd)' },
+    { id: 'ai.investment.crypto.validation', label: '루나팀 크립토 검증거래 (launchd)', optional: true },
     { id: 'ai.investment.domestic',     label: '루나팀 국내주식 사이클 (launchd)' },
+    { id: 'ai.investment.domestic.validation', label: '루나팀 국내주식 검증거래 (launchd)', optional: true },
     { id: 'ai.investment.overseas',     label: '루나팀 미국주식 사이클 (launchd)' },
+    { id: 'ai.investment.overseas.validation', label: '루나팀 미국주식 검증거래 (launchd)', optional: true },
     { id: 'ai.investment.commander',    label: '루나팀 커맨더 (launchd)' },
     { id: 'ai.investment.argos',        label: '루나팀 아르고스 모니터 (launchd)', optional: true },
     { id: 'ai.investment.reporter',     label: '루나팀 리포터 (launchd)', optional: true },

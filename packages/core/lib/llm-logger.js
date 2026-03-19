@@ -162,9 +162,20 @@ async function logLLMCall({
 
 // 배치성 팀 — 하루 1회 실행이라 10분 급등이 정상. 스파이크 감지 제외
 const BATCH_TEAMS = new Set(['blog']);
+const INVESTMENT_TEAMS = new Set(['luna', 'nemesis', 'oracle', 'argos', 'hermes', 'sophia', 'athena', 'zeus', 'investment']);
+
+function resolveTeamEmergencyScope(team) {
+  const normalized = String(team || '').trim().toLowerCase();
+  if (INVESTMENT_TEAMS.has(normalized)) {
+    const mode = String(process.env.INVESTMENT_TRADE_MODE || 'normal').trim().toLowerCase();
+    return `investment.${mode === 'validation' ? 'validation' : 'normal'}`;
+  }
+  return normalized || 'global';
+}
 
 async function _checkEmergencyLimits(cost, team) {
-  if (billingGuard.isBlocked()) return;
+  const scopedGuard = resolveTeamEmergencyScope(team);
+  if (billingGuard.isBlocked(scopedGuard) || billingGuard.isBlocked('global')) return;
 
   try {
     // 단건 한도
@@ -205,7 +216,7 @@ async function _checkEmergencyLimits(cost, team) {
       const recent = parseFloat(r10?.t || 0);
       const prev   = parseFloat(p10?.t || 0);
       if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
-        _triggerEmergency(`[${team}] 10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent);
+        _triggerEmergency(`[${team}] 10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent, scopedGuard);
       }
     }
   } catch (e) {
@@ -213,8 +224,8 @@ async function _checkEmergencyLimits(cost, team) {
   }
 }
 
-function _triggerEmergency(reason, cost) {
-  billingGuard.activate(reason, cost, 'llm-logger');
+function _triggerEmergency(reason, cost, scope = 'global') {
+  billingGuard.activate(reason, cost, 'llm-logger', scope);
 
   // 텔레그램 CRITICAL 알림 (실패해도 차단 유지)
   try {
@@ -233,7 +244,7 @@ function _triggerEmergency(reason, cost) {
           `시각: ${kst.datetimeStr()} KST`,
           '',
           '⚠️ 모든 LLM 호출 즉시 중단됨',
-          '해제: `rm .llm-emergency-stop` (마스터만)',
+          `해제: \`rm ${scope === 'global' ? '.llm-emergency-stop' : `.llm-emergency-stop.${billingGuard.normalizeScope(scope)}`}\` (마스터만)`,
         ].join('\n'),
       }).catch(() => {});
     }

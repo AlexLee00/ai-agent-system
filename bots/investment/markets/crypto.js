@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getSymbols, getMarketExecutionModeInfo } from '../shared/secrets.js';
+import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
@@ -33,18 +33,25 @@ import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.j
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
-const STATE_FILE    = join(homedir(), '.openclaw', 'investment-state.json');
 const EMERGENCY_CHG = 0.03;  // BTC ±3% 긴급 트리거
 
+function getStateFile() {
+  const tradeMode = getInvestmentTradeMode();
+  const suffix = tradeMode === 'validation' ? '-validation' : '';
+  return join(homedir(), '.openclaw', `investment-state${suffix}.json`);
+}
+
 function loadState() {
-  try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')); }
+  const stateFile = getStateFile();
+  try { return JSON.parse(readFileSync(stateFile, 'utf8')); }
   catch { return { lastCycleAt: 0, lastBtcPrice: 0 }; }
 }
 
 function saveState(state) {
+  const stateFile = getStateFile();
   try {
     mkdirSync(join(homedir(), '.openclaw'), { recursive: true });
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    writeFileSync(stateFile, JSON.stringify(state, null, 2));
   } catch (e) {
     console.warn(`  ⚠️ 상태 저장 실패: ${e.message}`);
   }

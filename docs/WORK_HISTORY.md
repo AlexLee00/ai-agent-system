@@ -4,6 +4,177 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-19) — 투자 validation 성과 확인 + 국내장 normal 2차 승격
+
+핵심 구현:
+- `billing-guard.js`에서 레거시 `investment` stop 파일이 `investment.normal`만 차단하고 `investment.validation`까지 전염되지 않도록 수정
+- 국내장 validation 강제 세션이 `LLM 긴급 차단 fallback`이 아닌 정상 분석/판단 경로로 진입하도록 복구
+  - `214390 BUY 500000 자동 승인`
+  - `최종 결과: 1개 신호 승인`
+- `runtime-config-suggestions.js`가 validation 실제 체결 데이터를 우선 반영하도록 보강
+  - `executed = max(meta.executed, tradeTotal)`
+  - `approved = max(meta.approved, executed)`
+- 국내장 validation 성과를 근거로 normal 정책을 제한 승격
+  - `stockStarterApproveDomestic: 400000 -> 450000`
+
+세션 맥락:
+- 사용자는 국내장/국외장도 거래 시간이 짧으므로 validation을 넓게 적용하고, 거래가 먼저 발생해야 후속 판단이 가능하다고 명시했다.
+- 그에 따라 세 시장 validation을 공용 구조로 확장했고, 이번 라운드에서는 국내장 validation이 실제 승인/체결 성과를 낸 것을 normal 정책에 반영하는 단계까지 진행됐다.
+
+의사결정 이유:
+- validation은 이제 단순 canary가 아니라 실제 정책 승격 후보를 만드는 레일로 기능한다.
+- 국내장 validation에서 실제 `LIVE 1건`이 확인된 만큼, 전면 완화보다 `starter approve` 한도만 소폭 올리는 제한 승격이 내부 MVP와 운영 안정성에 가장 적합했다.
+
+검증:
+- `INVESTMENT_TRADE_MODE=validation node bots/investment/markets/domestic.js --force`
+- `node bots/investment/scripts/trading-journal.js --days=1`
+- `node bots/investment/scripts/weekly-trade-review.js --dry-run`
+- `node bots/investment/scripts/runtime-config-suggestions.js --days=7`
+
+### 12주차 후속 (2026-03-19) — blog / worker 상시 서비스 복구
+
+핵심 구현:
+- launchd에서 빠져 있던 상시 서비스 3개를 재등록/재기동
+  - `ai.blog.node-server`
+  - `ai.worker.lead`
+  - `ai.worker.task-runner`
+- 팀 health-report 기준 모두 정상 상태 회복
+  - blog: `node-server`, `node-server API`
+  - worker: `lead`, `task-runner`
+
+세션 맥락:
+- 전사 오류 로그 점검 결과 실제 운영 공백은 투자보다 `blog node-server`, `worker lead/task-runner` 미로드가 더 직접적이었다.
+- 셋 다 optional 서비스가 아니라 문서/health 기준상 상시 서비스였고, 코드 자체보다 launchd 미로드가 핵심 원인으로 확인됐다.
+
+의사결정 이유:
+- 내부 MVP 운영에서는 신규 기능보다 상시 서비스 복구가 우선이다.
+- `launchctl list`의 종료 코드보다 `launchctl print + health-report`를 최종 기준으로 삼는 편이 운영 판단 정확도가 높다.
+
+검증:
+- `node --check bots/blog/api/node-server.js`
+- `node --check bots/worker/src/worker-lead.js`
+- `node --check bots/worker/src/task-runner.js`
+- `node bots/blog/scripts/health-report.js --json`
+- `node bots/worker/scripts/health-report.js --json`
+
+### 12주차 후속 (2026-03-19) — 루나 normal / validation 거래 레일 분리 준비
+
+핵심 구현:
+- 기존 `ai.investment.crypto` launchd에 `INVESTMENT_TRADE_MODE=normal`을 명시해 정상거래 레일 역할을 고정
+- 신규 `bots/investment/launchd/ai.investment.crypto.validation.plist` 추가
+  - `INVESTMENT_TRADE_MODE=validation`
+  - 별도 로그 `/tmp/investment-crypto-validation.log`, `/tmp/investment-crypto-validation.err.log`
+  - 15분 주기 validation canary 레일로 정의
+- `scripts/pre-reboot.sh`, `scripts/post-reboot.sh`가 validation 레일까지 인지하도록 보강
+  - pre-reboot는 validation 서비스 정지 신호를 함께 처리
+  - post-reboot는 validation 서비스를 선택적 서비스로 점검
+- 운영 문서에 investment `normal / validation` 레일 개념을 반영
+  - `OPERATIONS_RUNBOOK.md`
+  - `team-features.md`
+  - `SESSION_HANDOFF.md`
+
+세션 맥락:
+- 투자팀은 이미 코드 레이어에서 `investment.normal` / `investment.validation` guard scope와 `INVESTMENT_TRADE_MODE`를 지원하게 됐다.
+- 다음 자연스러운 단계는 기존 launchd 구조를 깨지 않으면서 운영 레이어에서 분리하는 것이었다.
+
+의사결정 이유:
+- 기존 `ai.investment.crypto` 라벨은 덱스터/헬스/문서/운영 습관과 넓게 연결돼 있어, 전면 교체보다 호환 유지가 안정적이다.
+- 따라서 `ai.investment.crypto`를 normal 레일로 유지하고 validation 레일만 별도 추가하는 방식이 내부 MVP 운영 안정성과 향후 SaaS용 mode/profile 확장성 사이 균형이 가장 좋다.
+
+검증:
+- `bash -n scripts/pre-reboot.sh`
+- `bash -n scripts/post-reboot.sh`
+- `plutil -lint bots/investment/launchd/ai.investment.crypto.plist`
+- `plutil -lint bots/investment/launchd/ai.investment.crypto.validation.plist`
+
+### 12주차 후속 (2026-03-19) — validation 전용 자금정책 / starter 승인 분리
+
+핵심 구현:
+- `capital-management.by_exchange.binance.trade_modes.validation` 추가
+  - `reserve_ratio: 0.01`
+  - `risk_per_trade: 0.01`
+  - `max_position_pct: 0.08`
+  - `max_concurrent_positions: 3`
+  - `max_daily_trades: 8`
+- `capital-manager.js`가 바이낸스에서 `INVESTMENT_TRADE_MODE`를 읽어 mode별 override를 자동 합성하도록 보강
+- `nemesis.js`가 mode별 crypto risk threshold를 동적으로 읽도록 변경
+  - validation 모드에서는 rejection 기준을 조금 완화
+  - starter 승인 confidence/risk 범위를 넓히고 starter size를 더 작게 유지
+
+세션 맥락:
+- launchd 레일 분리만으로는 validation이 normal과 같은 행동을 해 운영 의미가 약했다.
+- 그래서 validation은 “더 작은 금액으로 더 넓게 검증”한다는 운영 의도를 실제 자금정책과 리스크 승인에 반영할 필요가 있었다.
+
+의사결정 이유:
+- 내부 MVP 기준으로는 validation이 normal보다 더 공격적이기보다, 더 작은 손실 반경에서 더 많은 가설을 검증하는 쪽이 안정적이다.
+- 향후 SaaS에서도 canary/validation 계층은 normal과 다른 risk profile을 쓰는 구조가 자연스럽다.
+
+검증:
+- `node --check bots/investment/shared/capital-manager.js`
+- `node --check bots/investment/team/nemesis.js`
+- `node --input-type=module -e "import { getCapitalConfig } from './bots/investment/shared/capital-manager.js'; console.log(JSON.stringify({ normal: getCapitalConfig('binance') }, null, 2));"`
+- `INVESTMENT_TRADE_MODE=validation node --input-type=module -e "import { getCapitalConfig } from './bots/investment/shared/capital-manager.js'; console.log(JSON.stringify({ validation: getCapitalConfig('binance') }, null, 2));"`
+
+### 12주차 후속 (2026-03-19) — 투자 `trade_mode` 영속화 + 일지/주간 리뷰 분리
+
+핵심 구현:
+- `signals`, `trades`, `trade_journal`에 `trade_mode` 컬럼을 저장하도록 확장
+  - 기본값은 현재 실행 중인 `INVESTMENT_TRADE_MODE`
+  - `normal` / `validation`이 DB 레코드 단위로 구분됨
+- `pipeline_runs.meta`에 `investment_trade_mode`를 저장해 퍼널 메트릭도 운영모드별로 집계 가능하게 보강
+- `trading-journal.js`
+  - 거래 라인에 `[NORMAL]`, `[VALIDATION]` 태그 추가
+  - 거래 리뷰 / decision 퍼널에 운영모드 요약 추가
+- `weekly-trade-review.js`
+  - 거래 요약 / 리뷰 섹션 / decision 퍼널에 운영모드 분리 집계 추가
+- `trading-journal.js`는 실행 시작 시 `initJournalSchema()`를 명시적으로 호출하도록 보강
+  - 기존 DB에서 `trade_journal.trade_mode` 컬럼이 아직 없을 때 일지가 `column j.trade_mode does not exist`로 실패하던 경로를 복구
+- `crypto.js`는 `investment-state.json`을 `trade_mode`별 파일로 분리
+  - `normal`과 `validation`이 같은 마지막 실행 시각/긴급트리거 상태를 공유하지 않도록 정리
+  - validation canary가 normal 레일 쿨다운 때문에 스킵되는 운영 왜곡을 줄임
+
+세션 맥락:
+- launchd와 risk/capital 정책까지 분리된 뒤에도, 운영 데이터가 `normal`과 `validation`을 섞어 집계하면 검증레일의 의미가 약해진다.
+- 따라서 이번 단계는 “운영모드 분리”를 코드 설정이 아니라 데이터 불변식으로 내리는 작업이었다.
+
+의사결정 이유:
+- 내부 MVP 기준으로도 validation은 canary 성격이므로 normal KPI와 섞이면 운영 판단이 왜곡된다.
+- 향후 SaaS에서도 workspace / strategy profile / release rail을 분리 관측하려면 레코드 레벨 `trade_mode`는 필수 확장 포인트다.
+
+검증:
+- `node --check bots/investment/shared/db.js`
+- `node --check bots/investment/shared/trade-journal-db.js`
+- `node --check bots/investment/shared/pipeline-decision-runner.js`
+- `node --check bots/investment/scripts/trading-journal.js`
+- `node --check bots/investment/scripts/weekly-trade-review.js`
+- `node bots/investment/scripts/trading-journal.js --days=1`
+- `node bots/investment/scripts/weekly-trade-review.js --dry-run`
+- `node --check bots/investment/markets/crypto.js`
+
+### 12주차 후속 (2026-03-19) — 국내장/해외장 validation 레일 공용화
+
+핵심 구현:
+- `ai.investment.domestic.validation`, `ai.investment.overseas.validation` launchd 추가
+  - `INVESTMENT_TRADE_MODE=validation`
+  - 시장별 별도 validation 로그 경로 사용
+- `scripts/pre-reboot.sh`, `scripts/post-reboot.sh`, `bots/claude/lib/checks/bots.js`가 세 시장 validation 레일을 선택적 서비스로 인지하도록 확장
+- 운영 문서에 세 시장 공통 validation 활성화/비활성화 절차를 반영
+
+세션 맥락:
+- 국내장과 해외장은 장 시간이 제한적이지만 현재 모의투자 계좌 기준으로 검증 부담이 낮다.
+- 따라서 crypto만이 아니라 세 시장 전체에서 validation 레일을 공용화하고, 세 시장의 시그널을 통합 피드백에 반영하는 방향이 더 맞는 전략으로 판단됐다.
+
+의사결정 이유:
+- 내부 MVP 관점에서는 세 시장 validation을 공용 구조로 먼저 깔아 두는 편이 빠르다.
+- 이후 SaaS 확장 시에도 시장별 `normal / validation / canary` 레일을 공통 데이터 구조(`trade_mode`) 위에서 해석하는 쪽이 확장성이 좋다.
+
+검증:
+- `plutil -lint bots/investment/launchd/ai.investment.domestic.validation.plist`
+- `plutil -lint bots/investment/launchd/ai.investment.overseas.validation.plist`
+- `bash -n scripts/pre-reboot.sh`
+- `bash -n scripts/post-reboot.sh`
+- `node --check bots/claude/lib/checks/bots.js`
+
 ### 12주차 후속 (2026-03-19) — 재부팅 절차를 문서/세션 게이트로 재정리
 
 핵심 구현:

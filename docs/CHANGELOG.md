@@ -3,6 +3,89 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-19) — 투자 validation 성과 반영 + worker/blog 복구
+
+### 신규 기능 (feat)
+- 투자 validation 성과를 일간/주간/설정 제안 리포트에 연결
+  - `trading-journal.js`, `weekly-trade-review.js`가 `crypto / domestic / overseas × NORMAL / VALIDATION` 통합 피드백과 `validation 승격 후보`를 함께 출력하도록 확장
+  - `runtime-config-suggestions.js`가 validation `approved / executed / LIVE / PAPER`를 실제 `trades` 기준으로 보정해 `normal 승격 후보`를 직접 제안하도록 보강
+- 국내장 validation 성과를 normal 정책에 제한 승격
+  - `runtime_config.nemesis.thresholds.stockStarterApproveDomestic: 400000 -> 450000`
+
+### 변경 사항 (changed)
+- 투자팀 레거시 `billing-guard` 해석을 조정
+  - 기존 `.llm-emergency-stop`의 `investment` scope는 이제 `investment.normal`만 차단
+  - `investment.validation`은 같은 파일에 전염되지 않도록 `packages/core/lib/billing-guard.js`를 보강
+- 국내장 validation은 `LLM 긴급 차단 fallback` 대신 정상 분석/판단 경로로 복구
+  - 강제 세션에서 `214390 BUY 500000 자동 승인`, `최종 결과: 1개 신호 승인` 확인
+- 암호화폐 validation도 `PAPER 2건`이 실제 일간 리포트에 반영돼 `승격 후보`로 전환
+- `blog node-server`, `worker lead`, `worker task-runner`를 launchd 재등록으로 복구
+  - 팀 health-report 기준 모두 `정상` 상태 회복
+
+## 12주차 (2026-03-19) — 루나 normal / validation 거래 레일 분리 준비
+
+### 신규 기능 (feat)
+- 투자팀 운영모드 분리를 launchd 레벨까지 연결할 준비를 완료
+  - 기존 `ai.investment.crypto`는 `INVESTMENT_TRADE_MODE=normal`을 명시한 정상거래 레일로 유지
+  - 신규 `bots/investment/launchd/ai.investment.crypto.validation.plist`를 추가해 `INVESTMENT_TRADE_MODE=validation` 기반 검증거래 레일을 별도 정의
+  - validation 레일은 별도 로그(`/tmp/investment-crypto-validation*.log`)와 별도 guard scope를 사용하도록 정리
+
+### 변경 사항 (changed)
+- 재부팅 전/후 운영 절차를 새 투자 모드 분리를 인지하도록 보강
+  - `pre-reboot.sh`가 `ai.investment.crypto.validation` 정지 신호도 함께 처리
+  - `post-reboot.sh`가 `ai.investment.crypto.validation`을 선택적 서비스로 점검
+- 운영 문서에 투자팀 `normal / validation` 레일 개념과 로그 경로를 반영
+  - `OPERATIONS_RUNBOOK.md`
+  - `team-features.md`
+  - `SESSION_HANDOFF.md`
+
+## 12주차 (2026-03-19) — validation 전용 자금정책 / starter 승인 분리
+
+### 변경 사항 (changed)
+- 투자 validation 모드가 normal과 다른 자금정책을 읽도록 확장
+  - `capital_management.by_exchange.binance.trade_modes.validation`
+  - `reserve_ratio: 0.01`
+  - `risk_per_trade: 0.01`
+  - `max_position_pct: 0.08`
+  - `max_concurrent_positions: 3`
+  - `max_daily_trades: 8`
+- `capital-manager.js`가 `INVESTMENT_TRADE_MODE`를 읽어 바이낸스 전용 mode override를 자동 합성하도록 보강
+- `nemesis.js`가 `runtime_config.nemesis.thresholds.byTradeMode.validation`을 읽어 validation 모드에서 starter 승인 기준을 별도로 적용
+  - `cryptoRejectConfidence: 0.39`
+  - `cryptoStarterApproveConfidence: 0.40`
+  - `cryptoStarterApproveMaxRisk: 7`
+  - `cryptoStarterScale: 0.45`
+- validation은 normal보다 더 작은 사이징 / 더 작은 포지션 수 / 더 완화된 starter 승인으로 검증거래를 수행할 수 있는 기반을 확보
+
+## 12주차 (2026-03-19) — 투자 `trade_mode` 영속화 + 일지/주간 리뷰 분리
+
+### 신규 기능 (feat)
+- 투자 실행 이력에 `trade_mode(normal/validation)`를 영속 저장하도록 확장
+  - `signals.trade_mode`
+  - `trades.trade_mode`
+  - `trade_journal.trade_mode`
+  - `pipeline_runs.meta.investment_trade_mode`
+
+### 변경 사항 (changed)
+- `db.js`, `trade-journal-db.js`가 `INVESTMENT_TRADE_MODE`를 기본값으로 읽어 signal / trade / trade_journal 레코드에 저장
+- `pipeline-decision-runner.js`가 모든 종료 경로 메타에 `investment_trade_mode`를 함께 남기도록 보강
+- `trading-journal.js`, `weekly-trade-review.js`가 거래/리뷰/퍼널 요약에서 `NORMAL / VALIDATION` 운영모드를 함께 보여주도록 확장
+- 이제 validation 거래가 normal 거래와 같은 KPI로 섞이지 않고, 일간/주간 운영 리뷰에서 분리 관측 가능한 기반을 확보
+- `trading-journal.js`는 실행 시작 시 `initJournalSchema()`를 명시적으로 호출하도록 보강해, 기존 DB에서 `trade_journal.trade_mode` 미마이그레이션으로 일지가 실패하던 경로를 복구
+- `crypto.js`는 `investment-state.json`을 `trade_mode`별로 분리해, validation canary가 normal 레일의 쿨다운/긴급트리거 상태와 섞이지 않도록 정리
+
+## 12주차 (2026-03-19) — 국내장/해외장 validation 레일 공용화
+
+### 신규 기능 (feat)
+- 국내장 / 해외장도 `normal / validation` 운영모드 구조를 공유할 수 있도록 launchd validation 레일을 추가
+  - `bots/investment/launchd/ai.investment.domestic.validation.plist`
+  - `bots/investment/launchd/ai.investment.overseas.validation.plist`
+
+### 변경 사항 (changed)
+- `pre-reboot.sh`, `post-reboot.sh`, `bots.js`가 domestic/overseas validation 레일을 선택적 서비스로 인지하도록 확장
+- `OPERATIONS_RUNBOOK.md`, `SESSION_HANDOFF.md`, `team-features.md`에 세 시장(`crypto / domestic / overseas`) 공통 validation 운영 구조와 활성화 절차를 반영
+- 세 시장에서 생성되는 `trade_mode` 기반 시그널/거래/퍼널 데이터를 통합 피드백 루프로 묶을 수 있는 운영 기반을 확보
+
 ## 12주차 (2026-03-19) — 재부팅 절차를 문서/핸드오프 게이트로 고도화
 
 ### 변경 사항 (changed)
