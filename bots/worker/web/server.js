@@ -84,6 +84,14 @@ const {
   normalizeSalesProposal,
 } = require('../lib/sales-ai');
 const {
+  buildExpenseProposal,
+  normalizeExpenseProposal,
+} = require('../lib/expenses-ai');
+const {
+  buildExpenseImportNotice,
+  parseExpenseRowsFromXlsxExtraction,
+} = require('../lib/expenses-import');
+const {
   buildProjectProposal,
   normalizeProjectProposal,
 } = require('../lib/project-ai');
@@ -1284,9 +1292,10 @@ async function getGlobalSelectorSummary() {
   };
 }
 
-function pagination(req) {
+function pagination(req, options = {}) {
+  const maxLimit = Math.max(1, parseInt(options.maxLimit || '100', 10));
   const page  = Math.max(1, parseInt(req.query.page  || '1',  10));
-  const limit = Math.min(100, parseInt(req.query.limit || '20', 10));
+  const limit = Math.min(maxLimit, parseInt(req.query.limit || '20', 10));
   const sort  = /^\w+$/.test(req.query.sort || 'created_at') ? (req.query.sort || 'created_at') : 'created_at';
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
   return { page, limit, offset: (page - 1) * limit, sort, order };
@@ -1906,16 +1915,28 @@ app.post('/api/admin/monitoring/blog-published-urls',
 app.get('/api/companies', requireAuth, requireRole('master'), async (req, res) => {
   const { limit, offset, sort, order } = pagination(req);
   const search = req.query.q ? `%${req.query.q}%` : null;
+  const status = String(req.query.status || 'active').toLowerCase();
   try {
-    const params = search ? [search, limit, offset] : [limit, offset];
-    const where  = search ? `WHERE deleted_at IS NULL AND (c.name ILIKE $1 OR c.owner ILIKE $1)` : `WHERE deleted_at IS NULL`;
-    const pLimit = search ? '$2' : '$1';
-    const pOff   = search ? '$3' : '$2';
+    const clauses = [];
+    const params = [];
+    if (status === 'active') clauses.push('c.deleted_at IS NULL');
+    else if (status === 'inactive') clauses.push('c.deleted_at IS NOT NULL');
+    if (search) {
+      params.push(search);
+      clauses.push(`(c.name ILIKE $${params.length} OR c.owner ILIKE $${params.length})`);
+    }
+    params.push(limit, offset);
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const pLimit = `$${params.length - 1}`;
+    const pOff = `$${params.length}`;
     const rows = await pgPool.query(SCHEMA,
       `SELECT c.*,
+        du.name AS deactivated_by_name,
         (SELECT COUNT(*) FROM worker.users    u WHERE u.company_id=c.id AND u.deleted_at IS NULL) AS user_count,
         (SELECT COUNT(*) FROM worker.employees e WHERE e.company_id=c.id AND e.deleted_at IS NULL) AS employee_count
-       FROM worker.companies c ${where}
+       FROM worker.companies c
+       LEFT JOIN worker.users du ON du.id = c.deactivated_by
+       ${where}
        ORDER BY c.${sort} ${order} LIMIT ${pLimit} OFFSET ${pOff}`,
       params);
     res.json({ companies: rows });
@@ -1962,10 +1983,67 @@ app.put('/api/companies/:id',
 
 app.delete('/api/companies/:id', requireAuth, requireRole('master'), auditLog('DELETE', 'companies'), async (req, res) => {
   try {
+    const reason = String(req.query.reason || '').trim() || null;
     await pgPool.run(SCHEMA,
-      `UPDATE worker.companies SET deleted_at=NOW(), updated_at=NOW() WHERE id=$1`, [req.params.id]);
+      `UPDATE worker.companies
+       SET deleted_at=NOW(),
+           updated_at=NOW(),
+           deactivated_reason=$2,
+           deactivated_by=$3
+       WHERE id=$1`,
+      [req.params.id, reason, req.user.id]);
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/companies/:id/restore', requireAuth, requireRole('master'), auditLog('RESTORE', 'companies'), async (req, res) => {
+  try {
+    const company = await pgPool.get(SCHEMA,
+      `UPDATE worker.companies
+       SET deleted_at=NULL,
+           updated_at=NOW(),
+           deactivated_reason=NULL,
+           deactivated_by=NULL
+       WHERE id=$1
+       RETURNING *`,
+      [req.params.id]);
+    if (!company) return res.status(404).json({ error: '업체를 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    res.json({ ok: true, company });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/companies/activity', requireAuth, requireRole('master'), async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit || 8), 1), 30);
+  try {
+    const rows = await pgPool.query(SCHEMA, `
+      SELECT
+        a.id,
+        a.action,
+        a.created_at,
+        COALESCE(u.name, u.username, '알 수 없음') AS actor_name,
+        COALESCE(
+          a.detail->'body'->>'id',
+          a.detail->'params'->>'id'
+        ) AS company_id,
+        c.name AS company_name,
+        c.deactivated_reason,
+        c.deleted_at
+      FROM worker.audit_log a
+      LEFT JOIN worker.users u ON u.id = a.user_id
+      LEFT JOIN worker.companies c
+        ON c.id = COALESCE(
+          a.detail->'body'->>'id',
+          a.detail->'params'->>'id'
+        )
+      WHERE a.target = 'companies'
+        AND a.action IN ('CREATE', 'UPDATE', 'DELETE', 'RESTORE', 'UPDATE_MENUS')
+      ORDER BY a.created_at DESC
+      LIMIT $1
+    `, [limit]);
+    res.json({ activities: rows });
+  } catch {
+    res.status(500).json({ error: '업체 변경 이력을 불러오지 못했습니다.', code: 'SERVER_ERROR' });
+  }
 });
 
 // ── 업체 메뉴 설정 API (master 전용) ─────────────────────────────────
@@ -2902,7 +2980,7 @@ app.post('/api/leave/proposals/:id/reject', requireAuth, async (req, res) => {
 // ── 매출 API (올리버) ──────────────────────────────────────────────────
 
 app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
-  const { limit, offset } = pagination(req);
+  const { limit, offset } = pagination(req, { maxLimit: 1000 });
   const from = req.query.from || new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0,10);
   const to   = req.query.to   || kst.today();
   try {
@@ -2920,7 +2998,7 @@ app.get('/api/sales', requireAuth, companyFilter, async (req, res) => {
 app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
   try {
     await syncSkaSalesToWorker(req.companyId);
-    const [daily, lifetime, currentMonth, weekly, monthly, daily30] = await Promise.all([
+    const [daily, lifetime, currentYear, currentMonth, weekly, monthly, daily30] = await Promise.all([
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
          FROM worker.sales WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`,
@@ -2928,6 +3006,14 @@ app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
          FROM worker.sales WHERE company_id=$1 AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+         FROM worker.sales
+         WHERE company_id=$1
+           AND date >= DATE_TRUNC('year', CURRENT_DATE)::date
+           AND date < (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year')::date
+           AND deleted_at IS NULL`,
         [req.companyId]),
       pgPool.get(SCHEMA,
         `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
@@ -2956,6 +3042,7 @@ app.get('/api/sales/summary', requireAuth, companyFilter, async (req, res) => {
     res.json({
       today: { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
       lifetime: { total: Number(lifetime?.total ?? 0), count: Number(lifetime?.cnt ?? 0) },
+      currentYear: { total: Number(currentYear?.total ?? 0), count: Number(currentYear?.cnt ?? 0) },
       currentMonth: { total: Number(currentMonth?.total ?? 0), count: Number(currentMonth?.cnt ?? 0) },
       weekly,
       monthly,
@@ -3120,6 +3207,454 @@ app.delete('/api/sales/:id', requireAuth, companyFilter, auditLog('DELETE', 'sal
     res.json({ ok: true });
   } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
 });
+
+// ── 매입 API (sales 확장 1차) ────────────────────────────────────────
+
+app.get('/api/expenses', requireAuth, companyFilter, async (req, res) => {
+  const { limit, offset } = pagination(req, { maxLimit: 1000 });
+  const from = req.query.from || new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0,10);
+  const to   = req.query.to   || kst.today();
+  const category = String(req.query.category || '').trim();
+  try {
+    const params = [req.companyId, from, to];
+    let where = `company_id=$1 AND date BETWEEN $2 AND $3 AND deleted_at IS NULL`;
+    if (category) {
+      params.push(category);
+      where += ` AND category=$${params.length}`;
+    }
+    params.push(limit, offset);
+    const rows = await pgPool.query(SCHEMA,
+      `SELECT id,
+              TO_CHAR(date,'YYYY-MM-DD') AS date,
+              category,
+              item_name,
+              amount,
+              quantity,
+              unit_price,
+              note,
+              expense_type,
+              source_type,
+              source_file_id,
+              source_row_key,
+              registered_by,
+              created_at
+         FROM worker.expenses
+        WHERE ${where}
+        ORDER BY date DESC, created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params);
+    res.json({ expenses: rows });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.get('/api/expenses/summary', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const [daily, lifetime, currentYear, currentMonth, weekly, monthly, daily30, byCategory] = await Promise.all([
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND date=CURRENT_DATE AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1
+            AND date >= DATE_TRUNC('year', CURRENT_DATE)::date
+            AND date < (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year')::date
+            AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.get(SCHEMA,
+        `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1
+            AND date >= DATE_TRUNC('month', CURRENT_DATE)::date
+            AND date < (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month')::date
+            AND deleted_at IS NULL`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date, SUM(amount) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND date>=CURRENT_DATE-6 AND deleted_at IS NULL
+          GROUP BY date ORDER BY date`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM') AS month, SUM(amount) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND date>=CURRENT_DATE-364 AND deleted_at IS NULL
+          GROUP BY 1 ORDER BY 1`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date, SUM(amount) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND date>=CURRENT_DATE-29 AND deleted_at IS NULL
+          GROUP BY date ORDER BY date`,
+        [req.companyId]),
+      pgPool.query(SCHEMA,
+        `SELECT COALESCE(category,'기타') AS category, SUM(amount) AS total, COUNT(*) AS cnt
+           FROM worker.expenses
+          WHERE company_id=$1 AND deleted_at IS NULL
+          GROUP BY 1
+          ORDER BY total DESC, category ASC`,
+        [req.companyId]),
+    ]);
+    res.json({
+      today: { total: Number(daily?.total ?? 0), count: Number(daily?.cnt ?? 0) },
+      lifetime: { total: Number(lifetime?.total ?? 0), count: Number(lifetime?.cnt ?? 0) },
+      currentYear: { total: Number(currentYear?.total ?? 0), count: Number(currentYear?.cnt ?? 0) },
+      currentMonth: { total: Number(currentMonth?.total ?? 0), count: Number(currentMonth?.cnt ?? 0) },
+      weekly,
+      monthly,
+      daily30,
+      byCategory,
+    });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/expenses',
+  requireAuth, companyFilter, auditLog('CREATE', 'expenses'),
+  body('amount').isInt({ min: 1 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    const {
+      amount,
+      category,
+      item_name,
+      note,
+      date,
+      quantity,
+      unit_price,
+      expense_type,
+      source_type,
+      source_file_id,
+      source_row_key,
+    } = req.body;
+    const expenseDate = date || kst.today();
+    const safeExpenseType = ['fixed', 'variable'].includes(String(expense_type || '')) ? String(expense_type) : 'variable';
+    const safeSourceType = String(source_type || 'manual').trim() || 'manual';
+    const parsedQuantity = quantity === '' || quantity == null ? null : Number(quantity);
+    const parsedUnitPrice = unit_price === '' || unit_price == null ? null : Number(unit_price);
+    try {
+      const expense = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.expenses (
+           company_id,date,category,item_name,amount,quantity,unit_price,note,expense_type,
+           source_type,source_file_id,source_row_key,registered_by
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         RETURNING id, date, category, item_name, amount, quantity, unit_price, expense_type`,
+        [
+          req.user.company_id,
+          expenseDate,
+          category || '기타',
+          item_name || null,
+          amount,
+          Number.isFinite(parsedQuantity) ? parsedQuantity : null,
+          Number.isFinite(parsedUnitPrice) ? parsedUnitPrice : null,
+          note || null,
+          safeExpenseType,
+          safeSourceType,
+          source_file_id || null,
+          source_row_key || null,
+          req.user.id,
+        ]);
+      res.status(201).json({ expense });
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: '이미 반영된 매입 행입니다.', code: 'DUPLICATE_EXPENSE_ROW' });
+      res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' });
+    }
+  }
+);
+
+app.put('/api/expenses/:id',
+  requireAuth, companyFilter, auditLog('UPDATE', 'expenses'),
+  body('amount').optional().isInt({ min: 1 }),
+  async (req, res) => {
+    if (!validate(req, res)) return;
+    try {
+      const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.expenses WHERE id=$1 AND deleted_at IS NULL`, [req.params.id]);
+      if (!target) return res.status(404).json({ error: '매입 항목을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+      if (!await assertCompanyAccess(req, res, target.company_id)) return;
+      const {
+        amount,
+        category,
+        item_name,
+        note,
+        date,
+        quantity,
+        unit_price,
+        expense_type,
+      } = req.body;
+      const parsedQuantity = quantity === '' || quantity == null ? null : Number(quantity);
+      const parsedUnitPrice = unit_price === '' || unit_price == null ? null : Number(unit_price);
+      const normalizedExpenseType = expense_type == null
+        ? null
+        : (['fixed', 'variable'].includes(String(expense_type)) ? String(expense_type) : 'variable');
+      const expense = await pgPool.get(SCHEMA,
+        `UPDATE worker.expenses
+            SET amount=COALESCE($1,amount),
+                category=COALESCE($2,category),
+                item_name=COALESCE($3,item_name),
+                note=COALESCE($4,note),
+                date=COALESCE($5,date),
+                quantity=COALESCE($6,quantity),
+                unit_price=COALESCE($7,unit_price),
+                expense_type=COALESCE($8,expense_type),
+                updated_at=NOW()
+          WHERE id=$9
+        RETURNING id, date, category, item_name, amount, quantity, unit_price, expense_type`,
+        [
+          amount || null,
+          category || null,
+          item_name || null,
+          note || null,
+          date || null,
+          Number.isFinite(parsedQuantity) ? parsedQuantity : null,
+          Number.isFinite(parsedUnitPrice) ? parsedUnitPrice : null,
+          normalizedExpenseType,
+          req.params.id,
+        ]);
+      res.json({ expense });
+    } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+  }
+);
+
+app.delete('/api/expenses/:id', requireAuth, companyFilter, auditLog('DELETE', 'expenses'), async (req, res) => {
+  try {
+    const target = await pgPool.get(SCHEMA, `SELECT company_id FROM worker.expenses WHERE id=$1`, [req.params.id]);
+    if (target && !await assertCompanyAccess(req, res, target.company_id)) return;
+    await pgPool.run(SCHEMA, `UPDATE worker.expenses SET deleted_at=NOW(), updated_at=NOW() WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
+});
+
+app.post('/api/expenses/proposals', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const prompt = String(req.body.prompt || '').trim();
+    const proposal = buildExpenseProposal({ prompt });
+    const sourceRefId = `expense-proposal:${randomUUID()}`;
+    const session = await createWorkerProposalFeedbackSession({
+      companyId: req.user.company_id,
+      userId: req.user.id,
+      sourceType: 'expense_prompt',
+      sourceRefType: 'expense_proposal',
+      sourceRefId,
+      flowCode: 'expense_create',
+      actionCode: 'create_expense',
+      proposalId: sourceRefId,
+      aiInputText: prompt || proposal.summary,
+      aiInputPayload: {
+        prompt,
+        amount: proposal.amount,
+        category: proposal.category,
+        date: proposal.date,
+      },
+      aiOutputType: 'expense_record',
+      originalSnapshot: proposal,
+      eventMeta: proposal.parser_meta,
+    });
+    const similarCases = await searchFeedbackCases(rag, {
+      schema: SCHEMA,
+      flowCode: 'expense_create',
+      actionCode: 'create_expense',
+      query: `${prompt || proposal.summary} ${proposal.category} ${proposal.amount}`.trim(),
+      acceptedWithoutEditOnly: true,
+      sourceBot: 'worker-feedback',
+    });
+    res.json({
+      ok: true,
+      session_id: session.id,
+      proposal: {
+        ...proposal,
+        feedback_session_id: session.id,
+        similar_cases: similarCases,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || '매입 제안을 생성하지 못했습니다.', code: 'EXPENSE_PROPOSAL_FAILED' });
+  }
+});
+
+app.post('/api/expenses/proposals/:id/confirm', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '매입 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    const proposal = normalizeExpenseProposal(req.body.proposal || session.original_snapshot_json || {});
+    const reuseEventId = Number(req.body?.reuse_event_id || 0) || null;
+    await replaceWorkerFeedbackEdits({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'expense_confirm' },
+    });
+    const expense = await pgPool.get(SCHEMA,
+      `INSERT INTO worker.expenses (
+         company_id,date,category,item_name,amount,note,expense_type,source_type,registered_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING id,date,category,item_name,amount,note,expense_type`,
+      [
+        req.user.company_id,
+        proposal.date,
+        proposal.category || '기타',
+        proposal.item_name || null,
+        proposal.amount,
+        proposal.note || null,
+        proposal.expense_type || 'variable',
+        'ai_proposal',
+        req.user.id,
+      ]);
+    await linkDocumentReuseEvent({
+      reuseEventId,
+      feedbackSessionId: session.id,
+      entityType: 'expense',
+      entityId: expense.id,
+      companyId: req.companyId,
+    });
+    await markWorkerFeedbackConfirmed({
+      sessionId: session.id,
+      submittedSnapshot: proposal,
+      eventMeta: { source: 'expense_confirm', expense_id: expense.id },
+    });
+    const committedSnapshot = {
+      ...proposal,
+      expense_id: expense.id,
+      status: 'committed',
+    };
+    await markWorkerFeedbackCommitted({
+      sessionId: session.id,
+      submittedSnapshot: committedSnapshot,
+      eventMeta: { source: 'expense_confirm', expense_id: expense.id },
+    });
+    res.json({ ok: true, expense, proposal: committedSnapshot });
+  } catch (error) {
+    res.status(500).json({ error: error.message || '매입 확정 처리 중 오류가 발생했습니다.', code: 'EXPENSE_CONFIRM_FAILED' });
+  }
+});
+
+app.post('/api/expenses/proposals/:id/reject', requireAuth, companyFilter, async (req, res) => {
+  try {
+    const session = await getWorkerFeedbackSessionById(Number(req.params.id));
+    if (!session || String(session.user_id) !== String(req.user.id)) {
+      return res.status(404).json({ error: '매입 제안을 찾을 수 없습니다.', code: 'NOT_FOUND' });
+    }
+    await markWorkerFeedbackRejected({
+      sessionId: session.id,
+      submittedSnapshot: session.original_snapshot_json || {},
+      eventMeta: { source: 'expense_reject' },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: '매입 제안을 반려하지 못했습니다.', code: 'SERVER_ERROR' });
+  }
+});
+
+app.post('/api/expenses/import/excel',
+  requireAuth, companyFilter, upload.single('file'), auditLog('IMPORT', 'expenses'),
+  async (req, res) => {
+    const rawName = req.file?.originalname || req.body?.filename;
+    const filename = normalizeUploadedFilename(rawName);
+    if (!filename?.trim()) return res.status(400).json({ error: '파일이 없습니다.', code: 'NO_FILE' });
+    const filePath = req.file ? `/uploads/${req.file.filename}` : null;
+    if (!filePath) return res.status(400).json({ error: '업로드 파일이 필요합니다.', code: 'NO_FILE' });
+
+    try {
+      const absolutePath = path.join(UPLOAD_DIR, path.basename(req.file.filename));
+      const extraction = await extractUploadedDocument({
+        absolutePath,
+        filename,
+        mimeType: req.file?.mimetype || '',
+      });
+      const expenseRows = parseExpenseRowsFromXlsxExtraction(extraction.text || '');
+      if (!expenseRows.length) {
+        return res.status(400).json({ error: '매입내역 시트에서 반영할 행을 찾지 못했습니다.', code: 'NO_EXPENSE_ROWS' });
+      }
+
+      const deterministicSummary = buildDeterministicSummary(extraction);
+      const doc = await pgPool.get(SCHEMA,
+        `INSERT INTO worker.documents (company_id,category,filename,file_path,uploaded_by,ai_summary,extracted_text,extraction_metadata,extracted_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id,category,filename,ai_summary,created_at`,
+        [
+          req.user.company_id,
+          '매입관리',
+          filename,
+          filePath,
+          req.user.id,
+          deterministicSummary || null,
+          extraction.text || null,
+          JSON.stringify(extraction.metadata || {}),
+          extraction.text ? new Date() : null,
+        ]);
+
+      const existingRows = await pgPool.query(SCHEMA,
+        `SELECT TO_CHAR(date,'YYYY-MM-DD') AS date,
+                COALESCE(category,'') AS category,
+                COALESCE(item_name,'') AS item_name,
+                amount,
+                COALESCE(note,'') AS note
+           FROM worker.expenses
+          WHERE company_id=$1
+            AND source_type='excel_import'
+            AND deleted_at IS NULL`,
+        [req.companyId]);
+      const signatureSet = new Set(
+        existingRows.map((row) => [row.date, row.category, row.item_name, String(row.amount), row.note].join('|'))
+      );
+
+      let importedCount = 0;
+      let skippedCount = 0;
+      for (const row of expenseRows) {
+        const signature = [row.date, row.category || '', row.item_name || '', String(row.amount), row.note || ''].join('|');
+        if (signatureSet.has(signature)) {
+          skippedCount += 1;
+          continue;
+        }
+        await pgPool.run(SCHEMA,
+          `INSERT INTO worker.expenses (
+             company_id,date,category,item_name,amount,quantity,unit_price,note,expense_type,
+             source_type,source_file_id,source_row_key,registered_by
+           )
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            req.companyId,
+            row.date,
+            row.category || '기타',
+            row.item_name || null,
+            row.amount,
+            row.quantity,
+            row.unit_price,
+            row.note || null,
+            row.expense_type || 'variable',
+            'excel_import',
+            doc.id,
+            row.source_row_key,
+            req.user.id,
+          ]);
+        signatureSet.add(signature);
+        importedCount += 1;
+      }
+
+      res.status(201).json({
+        ok: true,
+        importedCount,
+        skippedCount,
+        notice: buildExpenseImportNotice({ filename, importedCount, skippedCount }),
+        document: {
+          ...doc,
+          extraction_metadata: extraction.metadata,
+          extracted_text_preview: buildExtractionPreview(extraction.text),
+        },
+      });
+    } catch (error) {
+      console.error('[worker/expenses/import] 실패:', error?.stack || error?.message || error);
+      res.status(500).json({ error: '매입 엑셀 import 중 오류가 발생했습니다.', code: 'EXPENSE_IMPORT_FAILED' });
+    }
+  }
+);
 
 // ── 문서 API (에밀리) ──────────────────────────────────────────────────
 

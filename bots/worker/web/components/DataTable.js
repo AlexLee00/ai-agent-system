@@ -102,7 +102,7 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
       {pageSize && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 pt-4">
           <p className="text-sm text-gray-500 text-center sm:text-left">
-            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, data.length)} / 총 {data.length}건
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, data.length)} / 총 {data.length}건 · {page} / {totalPages}페이지
           </p>
           <div className="flex items-center justify-center gap-1">
             <button

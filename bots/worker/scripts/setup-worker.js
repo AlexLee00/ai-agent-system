@@ -26,6 +26,8 @@ const migrations = [
   '../migrations/017-system-preferences.js',
   '../migrations/018-monitoring-history.js',
   '../migrations/019-monitoring-change-notes.js',
+  '../migrations/020-expenses.js',
+  '../migrations/021-company-deactivation-meta.js',
 ];
 
 async function main() {

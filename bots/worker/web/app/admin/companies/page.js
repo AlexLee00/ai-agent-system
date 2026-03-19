@@ -12,15 +12,20 @@ import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 
 const EMPTY_FORM = { id: '', name: '', owner: '', phone: '', biz_number: '', memo: '' };
+const EMPTY_DEACTIVATION_FORM = { companyId: '', companyName: '', reason: '' };
 
 export default function AdminCompaniesPage() {
   const { user } = useAuth();
   const router   = useRouter();
   const [companies, setCompanies] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [modal,     setModal]     = useState(false);
+  const [deactivationModal, setDeactivationModal] = useState(false);
   const [form,      setForm]      = useState(EMPTY_FORM);
+  const [deactivationForm, setDeactivationForm] = useState(EMPTY_DEACTIVATION_FORM);
   const [editId,    setEditId]    = useState(null);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
@@ -33,7 +38,7 @@ export default function AdminCompaniesPage() {
     },
     {
       title: '운영 이슈 업체 찾기',
-      body: '미등록, 미연동, 비활성 업체 흐름을 빠르게 점검합니다.',
+      body: '미등록, 미연동, 비활성화된 업체 흐름을 빠르게 점검합니다.',
       promptHref: '/dashboard?prompt=' + encodeURIComponent('운영 점검이 필요한 업체를 요약해줘'),
       route: '/admin/companies',
     },
@@ -43,15 +48,21 @@ export default function AdminCompaniesPage() {
     if (user && user.role !== 'master') router.push('/dashboard');
   }, [user, router]);
 
-  const load = (q = search) => {
+  const load = (q = search, status = statusFilter) => {
     setLoading(true);
-    const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+    const query = new URLSearchParams();
+    if (q) query.set('q', q);
+    if (status && status !== 'active') query.set('status', status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
     api.get(`/companies${qs}`)
       .then(d => setCompanies(d.companies || []))
       .finally(() => setLoading(false));
+    api.get('/companies/activity?limit=8')
+      .then((d) => setActivities(d.activities || []))
+      .catch(() => setActivities([]));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(search, statusFilter); }, [statusFilter]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -61,6 +72,15 @@ export default function AdminCompaniesPage() {
   const openEdit = (c) => {
     setForm({ id: c.id, name: c.name, owner: c.owner || '', phone: c.phone || '', biz_number: c.biz_number || '', memo: c.memo || '' });
     setEditId(c.id); setError(''); setModal(true);
+  };
+  const openDeactivate = (c) => {
+    setDeactivationForm({
+      companyId: c.id,
+      companyName: c.name,
+      reason: c.deactivated_reason || '',
+    });
+    setError('');
+    setDeactivationModal(true);
   };
 
   const handleSave = async (e) => {
@@ -86,9 +106,20 @@ export default function AdminCompaniesPage() {
     finally { setSaving(false); }
   };
 
-  const handleDelete = async (row) => {
-    if (!confirm(`"${row.name}" 업체를 비활성화하시겠습니까?\n(실제 삭제가 아닌 숨김 처리입니다)`)) return;
-    await api.delete(`/companies/${row.id}`).catch(e => alert(e.message));
+  const handleDelete = async (e) => {
+    e.preventDefault();
+    if (!deactivationForm.companyId) return;
+    if (!confirm(`"${deactivationForm.companyName}" 업체를 비활성화하시겠습니까?\n(실제 삭제가 아닌 비활성화 처리입니다)`)) return;
+    const qs = deactivationForm.reason.trim() ? `?reason=${encodeURIComponent(deactivationForm.reason.trim())}` : '';
+    await api.delete(`/companies/${deactivationForm.companyId}${qs}`).catch(err => alert(err.message));
+    setDeactivationModal(false);
+    setDeactivationForm(EMPTY_DEACTIVATION_FORM);
+    load();
+  };
+
+  const handleRestore = async (row) => {
+    if (!confirm(`"${row.name}" 업체를 다시 활성화하시겠습니까?`)) return;
+    await api.post(`/companies/${row.id}/restore`).catch(e => alert(e.message));
     load();
   };
 
@@ -99,6 +130,15 @@ export default function AdminCompaniesPage() {
     { key: 'phone',          label: '연락처',  render: v => v || '-' },
     { key: 'user_count',     label: '사용자',  render: v => `${Number(v)}명` },
     { key: 'employee_count', label: '직원',    render: v => `${Number(v)}명` },
+    {
+      key: 'deleted_at',
+      label: '상태',
+      render: (v) => v
+        ? <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">비활성</span>
+        : <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">활성</span>,
+    },
+    { key: 'deactivated_reason', label: '비활성화 사유', render: (v) => v || '-' },
+    { key: 'deactivated_by_name', label: '비활성화한 사용자', render: (v) => v || '-' },
     { key: 'created_at',     label: '등록일',  render: v => v?.slice(0, 10) || '-' },
   ];
 
@@ -121,7 +161,7 @@ export default function AdminCompaniesPage() {
         tone="indigo"
         description="업체 등록, 메뉴 노출 정책, 운영 이슈 업체 점검을 한 화면에서 관리합니다."
         stats={[
-          { label: '등록 업체', value: companies.length || 0, caption: '현재 조회 기준' },
+          { label: statusFilter === 'active' ? '등록 업체' : '조회 업체', value: companies.length || 0, caption: statusFilter === 'active' ? '활성 업체 기준' : statusFilter === 'inactive' ? '비활성 업체 기준' : '활성 + 비활성 기준' },
           { label: '검색어', value: search ? '적용' : '전체', caption: search || '필터 없음' },
         ]}
       />
@@ -135,7 +175,7 @@ export default function AdminCompaniesPage() {
       </div>
 
       {/* 검색 */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           className="input-base flex-1 max-w-xs"
           placeholder="업체명 또는 대표자 검색"
@@ -143,8 +183,17 @@ export default function AdminCompaniesPage() {
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && load()}
         />
+        <select
+          className="input-base w-[150px]"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="active">활성 업체</option>
+          <option value="inactive">비활성 업체</option>
+          <option value="all">전체 업체</option>
+        </select>
         <button className="btn-secondary text-sm" onClick={() => load()}>검색</button>
-        {search && <button className="btn-secondary text-sm" onClick={() => { setSearch(''); load(''); }}>초기화</button>}
+        {search && <button className="btn-secondary text-sm" onClick={() => { setSearch(''); load('', statusFilter); }}>초기화</button>}
       </div>
 
       <AdminQuickFlowGrid
@@ -172,11 +221,57 @@ export default function AdminCompaniesPage() {
                   메뉴 설정
                 </Link>
                 <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>
-                <button className="btn-danger   text-xs px-3 py-1.5" onClick={() => handleDelete(row)}>삭제</button>
+                {row.deleted_at ? (
+                  <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => handleRestore(row)}>복구</button>
+                ) : (
+                  <button className="btn-danger text-xs px-3 py-1.5" onClick={() => openDeactivate(row)}>비활성화</button>
+                )}
               </div>
             )}
           />
         )}
+      </div>
+
+      <div className="card">
+        <div className="border-b border-slate-200 pb-4">
+          <p className="text-sm font-semibold text-slate-900">최근 업체 상태 변경 이력</p>
+          <p className="mt-1 text-sm text-slate-500">업체 등록, 수정, 비활성화, 복구 같은 상태 변경을 최근 순으로 보여줍니다.</p>
+        </div>
+        <div className="mt-4 space-y-3">
+          {activities.length ? activities.map((item) => {
+            const actionLabel = item.action === 'CREATE'
+              ? '등록'
+              : item.action === 'UPDATE'
+                ? '수정'
+                : item.action === 'DELETE'
+                  ? '비활성화'
+                  : item.action === 'RESTORE'
+                    ? '복구'
+                    : item.action === 'UPDATE_MENUS'
+                      ? '메뉴 변경'
+                      : item.action;
+            return (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">{actionLabel}</span>
+                    <span className="text-sm font-medium text-slate-900">{item.company_name || item.company_id || '업체'}</span>
+                  </div>
+                  <span className="text-xs text-slate-400">{item.created_at?.slice(0, 16)?.replace('T', ' ') || '-'}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                  <span>처리자: {item.actor_name || '-'}</span>
+                  <span>업체 ID: {item.company_id || '-'}</span>
+                  {item.action === 'DELETE' && item.deactivated_reason ? <span>사유: {item.deactivated_reason}</span> : null}
+                </div>
+              </div>
+            );
+          }) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              최근 업체 상태 변경 이력이 없습니다.
+            </div>
+          )}
+        </div>
       </div>
 
       <Modal open={modal} onClose={() => setModal(false)} title={editId ? '업체 수정' : '업체 등록'}>
@@ -228,6 +323,29 @@ export default function AdminCompaniesPage() {
             <button type="submit"  className="btn-primary flex-1"  disabled={saving}>
               {saving ? '저장 중...' : '저장'}
             </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={deactivationModal} onClose={() => setDeactivationModal(false)} title="업체 비활성화">
+        <form onSubmit={handleDelete} className="space-y-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-semibold">{deactivationForm.companyName || '업체'}</p>
+            <p className="mt-1 text-amber-800">비활성화하면 기본 목록에서 숨겨지고, 하위 데이터는 유지됩니다.</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">비활성화 사유</label>
+            <textarea
+              className="input-base w-full resize-none"
+              rows={3}
+              value={deactivationForm.reason}
+              onChange={(e) => setDeactivationForm((prev) => ({ ...prev, reason: e.target.value }))}
+              placeholder="운영 종료, 테스트 종료, 통합 이전 등 비활성화 사유를 입력하세요."
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" className="btn-secondary flex-1" onClick={() => setDeactivationModal(false)}>취소</button>
+            <button type="submit" className="btn-danger flex-1">비활성화</button>
           </div>
         </form>
       </Modal>

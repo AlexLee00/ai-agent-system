@@ -3,6 +3,28 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
+
+### 신규 기능 (feat)
+- 워커 `매출 관리`를 `매출 | 매입 | 손익` 탭 구조로 확장
+  - `worker.expenses` 원장과 `expenses` CRUD / summary / proposal / excel import API를 추가
+  - `매입` 탭에서 수동 등록, 제안형 입력, `매입내역` 엑셀 import를 지원
+  - `손익` 탭에서 월별 매출/매입/손익 비교와 읽기 전용 브리핑을 제공
+- `test-company` 매출을 스카 `reservation.daily_summary`와 자동 동기화하는 projection 레이어를 추가
+  - `pickko_total`, `pickko_study_room`, `general_revenue` 기준으로 일반석/스터디룸 매출을 워커 `worker.sales`에 미러링
+- 업체 관리에 soft delete 운영 완결 기능 추가
+  - `활성 / 비활성 / 전체` 상태 필터
+  - 업체 복구 API / UI
+  - 비활성화 사유 / 처리자 기록
+  - 최근 업체 상태 변경 이력 카드
+
+### 변경 사항 (changed)
+- 매출관리 `누적 매출`, `누적 매입`은 이제 lifetime이 아니라 **당해연도(1월 1일 ~ 12월 31일)** 기준으로 계산
+- 매입 탭 요약 카드를 `오늘 매입 / 주간 매입 / 월간 매입`으로 정렬
+- 손익 탭은 입력형 `PromptAdvisor` 대신 읽기 전용 `손익 브리핑` 패널을 사용하고, 중복되던 `오늘 매출 / 오늘 매입 / 월간 매출 / 이번 달 손익` 카드 줄을 제거
+- 공용 `DataTable` 페이지네이션은 한 번에 5개 숫자 버튼을 보여주도록 보강
+- `021-company-deactivation-meta.js`를 단독 실행 가능한 마이그레이션 스크립트로 수정해 운영 DB에도 실제 컬럼이 반영되도록 정리
+
 ## 12주차 (2026-03-19) — 워커 블로그 URL 입력의 발행일 경계 복구
 
 ### 변경 사항 (changed)

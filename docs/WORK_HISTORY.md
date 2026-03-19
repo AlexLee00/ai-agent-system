@@ -4,6 +4,52 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
+
+핵심 구현:
+- `bots/worker/migrations/020-expenses.sql`, `020-expenses.js`
+  - `worker.expenses` 원장 테이블 추가
+- `bots/worker/lib/expenses-ai.js`, `expenses-import.js`
+  - 매입 제안 파서와 `매입내역` 시트 import 로직 추가
+- `bots/worker/scripts/import-expenses-from-excel.js`
+  - 2025/2026 스터디카페 고정지출 엑셀을 `worker.expenses`로 적재하는 재실행 스크립트 추가
+- `bots/worker/web/server.js`
+  - `expenses` CRUD / summary / proposal / confirm / reject / import API 추가
+  - `sales/summary`, `expenses/summary`에 `currentYear` 집계 추가
+  - `companies` soft delete 운영용 `status` 필터, `restore`, `activity` API 추가
+- `bots/worker/web/app/sales/page.js`
+  - `매출 | 매입 | 손익` 탭 구조 도입
+  - 손익 탭은 읽기 전용 `손익 브리핑` + 손익 구조 / 월별 비교 중심으로 정리
+- `bots/worker/web/app/admin/companies/page.js`
+  - `비활성화` 모달
+  - 상태 필터
+  - 복구 버튼
+  - 비활성화 사유 / 처리자 컬럼
+  - 최근 업체 상태 변경 이력 카드 추가
+- `bots/worker/lib/ska-sales-sync.js`
+  - 스카 `daily_summary`와 `test-company` 워커 매출 미러 정합성 유지
+
+세션 맥락:
+- 사용자는 매출관리 안에서 매입과 손익까지 같이 보고 싶다고 요청했고, 별도 페이지가 아니라 기존 매출관리의 확장 구조를 원했다.
+- 또한 업체 삭제의 실제 의미가 완전 삭제가 아니라 비활성화라는 점을 운영 화면에서도 정확히 보이게 해달라고 요청했다.
+
+의사결정 이유:
+- 내부 MVP 기준으로는 새로운 재무 페이지를 만드는 것보다, 기존 `sales/page.js`를 `매출 | 매입 | 손익` 탭으로 확장하는 것이 가장 빠르고 안정적이다.
+- 매입 원장은 엑셀 `매입내역` 시트를 source of truth로 두는 것이 월별 집계표보다 추후 검증/로그/중복 방지 구조에 유리하다.
+- 업체는 하위 데이터 루트 엔티티이므로 soft delete가 맞고, 비활성화/복구/사유/처리자/이력까지 갖춰야 운영 정책이 닫힌다.
+
+검증:
+- `node bots/worker/migrations/020-expenses.js`
+- `node bots/worker/migrations/021-company-deactivation-meta.js`
+- `node bots/worker/scripts/import-expenses-from-excel.js "...2025년 스터디카페_고정지출관리_월별.xlsx" "...2026년 스터디카페_고정지출관리_월별.xlsx"`
+- `node --check bots/worker/web/app/sales/page.js`
+- `node --check bots/worker/web/app/admin/companies/page.js`
+- `node --check bots/worker/web/server.js`
+- `npm --prefix bots/worker/web run build`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- `node bots/worker/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-19) — 워커 web 운영 화면 공용화 + 업무/일정/근태/매출 정리
 
 핵심 구현:
