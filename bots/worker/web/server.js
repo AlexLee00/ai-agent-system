@@ -788,6 +788,37 @@ app.get('/', (req, res) => {
   res.redirect(`${uiBase}/dashboard`);
 });
 
+const UI_ROUTE_PREFIXES = [
+  '/dashboard',
+  '/attendance',
+  '/schedules',
+  '/journals',
+  '/sales',
+  '/projects',
+  '/employees',
+  '/payroll',
+  '/settings',
+  '/ai',
+  '/approvals',
+  '/login',
+  '/change-password',
+  '/documents',
+  '/chat',
+  '/admin',
+];
+
+app.get('*', (req, res, next) => {
+  if (req.path === '/' || req.path.startsWith('/api/') || req.path.startsWith('/ws/')) {
+    return next();
+  }
+  if (!UI_ROUTE_PREFIXES.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
+    return next();
+  }
+
+  const uiBase = process.env.WORKER_WEB_URL || `${req.protocol}://${req.hostname}:4001`;
+  return res.redirect(`${uiBase}${req.originalUrl}`);
+});
+
 // ── 유틸 ─────────────────────────────────────────────────────────────
 function validate(req, res) {
   const errors = validationResult(req);
