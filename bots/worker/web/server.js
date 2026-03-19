@@ -886,29 +886,42 @@ async function buildWorkerMonitoringPayload(user) {
 }
 
 async function buildBlogPublishedUrlPayload(limit = 20) {
+  const todayKst = kst.today();
   const rows = await pgPool.query('blog', `
-    SELECT id, title, status, naver_url, created_at
+    SELECT id, title, status, naver_url, publish_date, created_at
     FROM blog.posts
     WHERE id NOT IN (34, 36, 38)
     ORDER BY created_at DESC
     LIMIT $1
   `, [limit]);
 
-  return {
-    rows: rows.map((row) => ({
+  const normalizedRows = rows.map((row) => {
+    const publishDate = row.publish_date ? String(row.publish_date).slice(0, 10) : null;
+    const isReadyWithoutUrl = row.status === 'ready' && !row.naver_url;
+    const publishDue = Boolean(isReadyWithoutUrl && publishDate && publishDate <= todayKst);
+    const needsUrl = Boolean((row.status === 'published' && !row.naver_url) || publishDue);
+    const scheduled = Boolean(isReadyWithoutUrl && !publishDue);
+
+    return {
       id: row.id,
       title: row.title,
       status: row.status,
       naver_url: row.naver_url,
+      publish_date: publishDate,
       created_at: row.created_at,
-      needs_url: row.status === 'published' && !row.naver_url,
-      scheduled: row.status === 'ready' && !row.naver_url,
-    })),
+      needs_url: needsUrl,
+      scheduled,
+      publish_due: publishDue,
+    };
+  });
+
+  return {
+    rows: normalizedRows,
     summary: {
-      total: rows.length,
-      missingUrl: rows.filter((row) => row.status === 'published' && !row.naver_url).length,
-      scheduled: rows.filter((row) => row.status === 'ready' && !row.naver_url).length,
-      published: rows.filter((row) => row.status === 'published').length,
+      total: normalizedRows.length,
+      missingUrl: normalizedRows.filter((row) => row.needs_url).length,
+      scheduled: normalizedRows.filter((row) => row.scheduled).length,
+      published: normalizedRows.filter((row) => row.status === 'published').length,
     },
   };
 }

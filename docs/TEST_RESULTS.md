@@ -6,6 +6,16 @@
 
 ## 2026-03-19
 
+### 워커 블로그 URL 입력의 발행일 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/server.js` | ✅ |
+| `npm --prefix bots/worker/web run build` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ |
+| `node bots/worker/scripts/health-report.js --json` | ✅ `web`, `nextjs`, `lead`, `task-runner` 정상 확인 |
+
 ### 투자 validation 성과 반영 + 국내장 normal 2차 승격
 
 | 테스트 | 결과 |

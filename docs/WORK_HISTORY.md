@@ -4,6 +4,31 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-19) — 워커 블로그 URL 입력의 발행일 경계 복구
+
+핵심 구현:
+- `bots/worker/web/server.js`
+  - `buildBlogPublishedUrlPayload()`가 `publish_date`를 함께 조회
+  - `ready + publish_date <= 오늘(KST) + URL 미입력` 글을 `needs_url`로 승격
+  - `publish_due` 상태를 추가해 오늘 발행 확인 대상과 미래 예약 글을 구분
+- `bots/worker/web/app/admin/monitoring/blog-links/page.js`
+  - 카드/요약 문구를 새 기준에 맞게 수정
+  - `발행일`, `발행 확인 필요` 상태를 함께 노출
+
+세션 맥락:
+- 운영 화면에서 “어제 등록되어 오늘 오전 발행 예정인 글”이 여전히 `발행예정`에 남아 있어, 실제 발행 확인과 URL 후처리 타이밍이 한 박자 늦어지는 문제가 있었다.
+
+의사결정 이유:
+- 블로그 URL 입력은 단순 상태 표시가 아니라 내부 링크와 발행 후처리 기준점이므로, `status`만이 아니라 실제 `publish_date`를 함께 해석해야 운영 정확도가 높다.
+- 내부 MVP 기준으로는 새 상태 테이블을 만드는 대신 기존 `blog.posts.publish_date`를 재활용하는 것이 가장 빠르고 안전하다.
+
+검증:
+- `node --check bots/worker/web/server.js`
+- `npm --prefix bots/worker/web run build`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- `node bots/worker/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-19) — 투자 validation 성과 확인 + 국내장 normal 2차 승격
 
 핵심 구현:
