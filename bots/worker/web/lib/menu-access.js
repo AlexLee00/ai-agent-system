@@ -4,6 +4,7 @@ export function resolveMenuKey(key = '') {
   const path = String(key || '').replace(/^\//, '');
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0) return '';
+  if (segments[0] === 'work-journals') return 'journals';
   if (segments[0] !== 'admin') return segments[0];
 
   if (segments[1] === 'intents') return 'intents';

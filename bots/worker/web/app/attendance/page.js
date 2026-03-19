@@ -393,7 +393,7 @@ export default function AttendancePage() {
   const pendingReviewSection = (proposal || leaveProposal) ? (
     <PendingReviewSection
       title="확인 및 승인 대기 리스트"
-      description="프롬프트 입력은 위에서 한 번만 하고, 실제 확정/신청/반려는 아래 처리 리스트에서 진행합니다."
+      description="문서 파싱과 자연어 입력 결과를 확인한 뒤 아래 리스트에서 확정, 신청 또는 반려를 진행합니다."
       hasPending={Boolean(proposal || leaveProposal)}
       badgeLabel={proposal && leaveProposal ? '2건 대기 중' : '1건 대기 중'}
     >
@@ -662,25 +662,24 @@ export default function AttendancePage() {
     ...(canManageAttendance ? [{ key: 'leave-approvals', label: `휴가 승인(${pendingLeaveCount}명)` }] : []),
   ];
 
-  const activeSummary = activeTab === 'leave'
-    ? (
-      <>
-        <div><span className="text-slate-500">승인 대기</span> <strong>{pendingLeaveCount}건</strong></div>
-        <div><span className="text-slate-500">전체</span> <strong>{leaveRecords.length}건</strong></div>
-      </>
-    ) : activeTab === 'leave-approvals'
-      ? (
-        <>
-          <div><span className="text-slate-500">승인 대기</span> <strong>{leaveApprovals.length}건</strong></div>
-          <div><span className="text-slate-500">회사 전체</span> <strong>{leaveApprovals.length}건</strong></div>
-        </>
-      )
-      : (
-        <>
-          <div><span className="text-slate-500">총 출근</span> <strong>{checkedIn}명</strong></div>
-          <div><span className="text-slate-500">전체</span> <strong>{records.length}명</strong></div>
-        </>
-      );
+  const tabControls = (
+    <div className="flex w-full flex-wrap items-center justify-end gap-2 text-sm sm:w-auto sm:flex-nowrap sm:shrink-0">
+      {tabItems.map((tab) => (
+        <button
+          type="button"
+          key={tab.key}
+          onClick={() => setActiveTab(tab.key)}
+          className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+            activeTab === tab.key
+              ? 'bg-slate-900 text-white'
+              : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
 
   let activeTable = (
     <DataTable
@@ -839,16 +838,8 @@ export default function AttendancePage() {
       {pendingReviewSection}
 
       <div className="card">
-        <OperationsSectionHeader
-          className="border-b border-slate-200 pb-4"
-          right={(
-            <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:w-auto sm:justify-end">
-              {activeSummary}
-            </div>
-          )}
-        />
-        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:flex-nowrap sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-nowrap sm:items-end sm:gap-4">
             <label className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
               <span className="w-14 shrink-0 text-xs font-semibold text-slate-500">시작날짜</span>
               <input
@@ -873,22 +864,7 @@ export default function AttendancePage() {
               />
             </label>
           </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {tabItems.map((tab) => (
-            <button
-              type="button"
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                activeTab === tab.key
-                  ? 'bg-slate-900 text-white'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {tabControls}
         </div>
         <div className="mt-5 sm:mt-4">
         {loading

@@ -62,7 +62,7 @@ function getLinkedEntityInfo(event) {
   if (type === 'journals') {
     return {
       label: `업무일지 #${entityId}`,
-      href: `/journals/${entityId}`,
+      href: `/work-journals/${entityId}`,
     };
   }
   if (type === 'sales') {
@@ -358,7 +358,7 @@ export default function DocumentDetailPage() {
               <button type="button" className="btn-secondary text-sm" onClick={() => handoffTo('schedules', '/schedules')}>
                 일정으로 보내기
               </button>
-              <button type="button" className="btn-secondary text-sm" onClick={() => handoffTo('journals', '/journals')}>
+              <button type="button" className="btn-secondary text-sm" onClick={() => handoffTo('journals', '/work-journals')}>
                 업무로 보내기
               </button>
               <button type="button" className="btn-secondary text-sm" onClick={() => handoffTo('sales', '/sales')}>

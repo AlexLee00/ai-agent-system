@@ -4,6 +4,65 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-19) — 워커 web 운영 화면 공용화 + 업무/일정/근태/매출 정리
+
+핵심 구현:
+- `bots/worker/web/components/PromptAdvisor.js`
+  - 드래그 앤 드롭 파일 첨부 지원
+  - 드롭 중 중앙 사각형 `+` 오버레이 추가
+  - 안내 문구 제거로 입력 밀도 정리
+- `bots/worker/web/lib/document-attachment.js`
+  - 첨부 문서 문맥을 제출 시점에만 합성하는 `mergePromptWithDocumentContext()` 추가
+  - 업로드 notice를 `프롬프트에 첨부`가 아니라 `제출 시 결과에 반영` 의미로 수정
+- `bots/worker/web/app/dashboard/page.js`
+  - 첨부 문맥 분리
+  - 첨부파일만 있어도 제출 가능하도록 보강
+- `bots/worker/web/app/work-journals/page.js`
+  - `/work-journals`를 정식 업무관리 경로로 사용
+  - 첨부 문맥 분리
+  - `일일업무` 카테고리 통합
+  - 필터 + 리스트 카드 통합
+  - 검색창을 돋보기 토글 방식으로 전환
+  - `+ 수동 등록` 버튼을 필터 줄 우측 정렬로 배치
+- `bots/worker/web/app/schedules/page.js`
+  - 월 이동 줄 좌측 정렬
+  - `캘린더 | 목록` 줄 우측에 `+ 수동 등록`
+  - 첨부 문맥 분리
+  - proposal이 없을 때 빈 승인 박스가 뜨지 않도록 정리
+  - 완료 notice 전용 카드 보강
+- `bots/worker/web/app/attendance/page.js`
+  - 상단 탭/날짜 필터를 한 줄 도구바로 재정렬
+  - 데스크톱에서 `시작날짜 / 종료날짜`가 2줄로 꺾이지 않도록 `nowrap` 기준 보강
+- `bots/worker/web/app/sales/page.js`
+  - 구형 자연어 입력 카드 제거
+  - `PromptAdvisor` 전환
+  - 첨부 문맥 분리 / 첨부-only 제출 허용
+  - `매출 운영 요약` + `목록/차트/+ 매출 등록` 통합 카드 구성
+- `bots/worker/web/components/DataTable.js`
+  - PC 테이블 셀 수직 정렬을 `align-middle`로 통일
+
+세션 맥락:
+- 대시보드, 근태관리, 일정관리, 업무관리 1차 정리 후 남아 있던 공용 UX 불일치와 매출관리 구형 입력 패턴을 정리했다.
+- 특히 첨부 문서 파싱 결과가 프롬프트 본문에 직접 섞이던 구조를 모든 핵심 운영 페이지에서 분리해, 사용자 입력과 시스템 보조 문맥의 경계를 회복했다.
+
+의사결정 이유:
+- 내부 MVP 단계에서도 운영 화면은 실제 사용자가 빠르게 읽고 입력할 수 있어야 하므로, 입력형/검토형/조회형 역할을 명확히 나누는 것이 중요하다.
+- 첨부 문맥을 프롬프트 본문에서 분리하면 로그/피드백 구조가 더 명확해지고, 이후 멀티워크스페이스 SaaS에서 사용자 입력/시스템 보조 문맥/첨부 이력을 각각 추적하기 쉬워진다.
+- 업무/일정/근태/매출 화면이 같은 공용 패턴을 쓰면 추후 운영 콘솔 확장과 반응형 보정도 훨씬 안정적으로 진행할 수 있다.
+
+검증:
+- `node --check bots/worker/web/components/PromptAdvisor.js`
+- `node --check bots/worker/web/components/DataTable.js`
+- `node --check bots/worker/web/app/dashboard/page.js`
+- `node --check bots/worker/web/app/work-journals/page.js`
+- `node --check bots/worker/web/app/schedules/page.js`
+- `node --check bots/worker/web/app/attendance/page.js`
+- `node --check bots/worker/web/app/sales/page.js`
+- `npm --prefix bots/worker/web run build`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- `node bots/worker/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-19) — 워커 블로그 URL 입력의 발행일 경계 복구
 
 핵심 구현:

@@ -48,12 +48,12 @@ export default function DataTable({ columns, data, actions, emptyText = '데이�
             {paged.map((row, i) => (
               <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
                 {columns.map(col => (
-                  <td key={col.key} className="py-3 px-4 align-top text-gray-700 break-keep">
+                  <td key={col.key} className="py-3 px-4 align-middle text-gray-700 break-keep">
                     {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '-')}
                   </td>
                 ))}
                 {actions && (
-                  <td className="py-3 px-4">
+                  <td className="py-3 px-4 align-middle">
                     <div className="flex flex-wrap items-center gap-2">
                       {actions(row)}
                     </div>

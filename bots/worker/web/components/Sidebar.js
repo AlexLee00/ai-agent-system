@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
   { href: '/attendance', icon: Clock,           label: '근태 관리' },
   { href: '/schedules',  icon: Calendar,        label: '일정 관리' },
-  { href: '/journals',   icon: BookOpen,        label: '업무 관리' },
+  { href: '/work-journals', icon: BookOpen,     label: '업무 관리' },
   { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
   { href: '/projects',   icon: FolderKanban,    label: '프로젝트 관리' },
   { href: '/settings',   icon: Settings,        label: '설정' },

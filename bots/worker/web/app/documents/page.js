@@ -100,7 +100,7 @@ export default function DocumentsPage() {
           description="회의 자료나 일정 관련 파일을 첨부해 바로 일정 등록 흐름으로 연결합니다."
         />
         <ShortcutCard
-          href="/journals"
+          href="/work-journals"
           icon={BookOpen}
           title="업무 관리"
           description="보고, 회의록, 작업 메모 파일을 첨부해 업무 기록과 초안 흐름으로 연결합니다."

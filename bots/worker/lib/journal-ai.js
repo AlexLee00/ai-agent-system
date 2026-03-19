@@ -4,9 +4,9 @@ const path = require('path');
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
 
 const CATEGORY_MAP = {
-  general: '일반',
+  general: '일일업무',
   meeting: '미팅',
-  task: '업무',
+  task: '일일업무',
   report: '보고',
   other: '기타',
 };
@@ -38,7 +38,7 @@ function inferCategory(prompt = '') {
   const text = String(prompt || '');
   if (/(회의|미팅|콜|업체 미팅)/.test(text)) return 'meeting';
   if (/(보고|리포트|보고서|결과 공유)/.test(text)) return 'report';
-  if (/(업무|작업|처리|요청|진행|완료)/.test(text)) return 'task';
+  if (/(업무|작업|처리|요청|진행|완료)/.test(text)) return 'general';
   if (/(기타|메모|비고)/.test(text)) return 'other';
   return 'general';
 }
@@ -62,8 +62,10 @@ function buildSummary(proposal = {}) {
 }
 
 function normalizeJournalProposal(proposal = {}) {
-  const category = ['general', 'meeting', 'task', 'report', 'other'].includes(proposal.category)
-    ? proposal.category
+  const rawCategory = String(proposal.category || '').trim();
+  const normalizedCategory = rawCategory === 'task' ? 'general' : rawCategory;
+  const category = ['general', 'meeting', 'report', 'other'].includes(normalizedCategory)
+    ? normalizedCategory
     : 'general';
   const date = String(proposal.date || kst.today()).slice(0, 10);
   const content = String(proposal.content || '').trim();

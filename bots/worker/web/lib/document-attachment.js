@@ -71,10 +71,18 @@ export function buildDocumentUploadNotice(document = {}, fallbackName = '') {
   const conservative = Boolean(document.extraction_metadata?.imageConservativeHandling);
   if (length > 0) {
     return conservative
-      ? `"${filename}" 문서를 파싱해 프롬프트에 첨부했습니다. 이미지 OCR 품질을 고려해 보수적으로 처리합니다.`
-      : `"${filename}" 문서를 파싱해 프롬프트에 첨부했습니다.`;
+      ? `"${filename}" 문서를 파싱했습니다. 제출 시 결과에 반영하며, 이미지 OCR 품질을 고려해 보수적으로 처리합니다.`
+      : `"${filename}" 문서를 파싱했습니다. 제출 시 결과에 반영합니다.`;
   }
-  return `"${filename}" 파일을 프롬프트에 첨부했습니다.`;
+  return `"${filename}" 파일을 첨부했습니다. 제출 시 결과에 반영합니다.`;
+}
+
+export function mergePromptWithDocumentContext(prompt = '', appendix = '') {
+  const basePrompt = String(prompt || '').trim();
+  const documentAppendix = String(appendix || '').trim();
+  if (!documentAppendix) return basePrompt;
+  if (!basePrompt) return documentAppendix;
+  return `${basePrompt}\n\n${documentAppendix}`.trim();
 }
 
 export function buildDocumentReusePackage(document = {}, fallbackName = '') {

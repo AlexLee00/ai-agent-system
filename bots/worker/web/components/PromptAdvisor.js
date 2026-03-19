@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowUp, Paperclip } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUp, Paperclip, Plus } from 'lucide-react';
 import { DynamicCanvas } from '@/app/ai/canvas';
 
 function renderInline(text) {
@@ -148,6 +149,7 @@ export default function PromptAdvisor({
   promptRef,
   placeholder = '메시지 입력',
   onFileClick,
+  onFileDrop,
   uploading = false,
   attachedFileName = '',
   onReset,
@@ -160,6 +162,28 @@ export default function PromptAdvisor({
   result = null,
   onResultAction,
 }) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (event) => {
+    if (!showFileButton || !onFileDrop) return;
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event) => {
+    if (!showFileButton || !onFileDrop) return;
+    event.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (event) => {
+    if (!showFileButton || !onFileDrop) return;
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file) onFileDrop(file);
+  };
+
   return (
     <div className="card">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -192,7 +216,25 @@ export default function PromptAdvisor({
       {helperText && <p className="mt-4 text-xs leading-relaxed text-slate-400 break-keep">{helperText}</p>}
 
       <div className="mt-4 flex flex-col gap-3">
-        <div className="rounded-[24px] border border-slate-200 bg-white px-3 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.35)] sm:rounded-[28px] sm:px-4 sm:py-4">
+        <div
+          className={`relative rounded-[24px] border bg-white px-3 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.35)] transition sm:rounded-[28px] sm:px-4 sm:py-4 ${
+            isDragOver
+              ? 'border-sky-300 bg-sky-50/50 ring-2 ring-sky-100'
+              : 'border-slate-200'
+          }`}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isDragOver && showFileButton && onFileDrop ? (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[24px] sm:rounded-[28px]">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-sky-300 bg-white/95 text-sky-600 shadow-[0_16px_32px_-20px_rgba(2,132,199,0.55)] backdrop-blur-sm">
+                <Plus className="h-6 w-6" />
+              </div>
+            </div>
+          ) : null}
+
           {attachedFileName && (
             <div className="mb-3 flex flex-wrap gap-2">
               <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">

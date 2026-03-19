@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { href: '/dashboard',  icon: LayoutDashboard, label: '대시보드' },
   { href: '/attendance', icon: Clock,           label: '근태' },
   { href: '/schedules',  icon: Calendar,        label: '일정' },
-  { href: '/journals',   icon: BookOpen,        label: '업무' },
+  { href: '/work-journals', icon: BookOpen,     label: '업무' },
   { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 
