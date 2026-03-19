@@ -10,7 +10,7 @@ import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import OperationsSplitLayout from '@/components/OperationsSplitLayout';
 import { parseClaudeOutput } from '../ai/canvas';
-import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [prompt,       setPrompt]       = useState('');
   const [advisorResult, setAdvisorResult] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [attachedDocumentContext, setAttachedDocumentContext] = useState('');
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -80,7 +81,7 @@ export default function DashboardPage() {
       ? { title: '매출 입력 확인', detail: '오늘 매출이 아직 등록되지 않았습니다.', href: '/sales', tone: 'emerald', prompt: '오늘 매출 상태 알려줘', bot: 'oliver', severity: 'medium', badge: '등록 필요' }
       : null,
     (alerts?.pending_docs_count ?? 0) > 0
-      ? { title: '문서 적체 확인', detail: `AI 요약이 없는 문서 ${alerts.pending_docs_count}건이 남아 있습니다.`, href: '/journals', tone: 'blue', prompt: '문서 적체와 업무 상태 점검해줘', bot: 'worker', severity: 'medium', badge: '우선 정리' }
+      ? { title: '문서 적체 확인', detail: `AI 요약이 없는 문서 ${alerts.pending_docs_count}건이 남아 있습니다.`, href: '/work-journals', tone: 'blue', prompt: '문서 적체와 업무 상태 점검해줘', bot: 'worker', severity: 'medium', badge: '우선 정리' }
       : null,
     (alerts?.due_projects_count ?? 0) > 0
       ? { title: '프로젝트 마감 확인', detail: `${alerts.due_projects_count}건의 프로젝트가 7일 내 마감 예정입니다.`, href: '/projects', tone: 'amber', prompt: '마감 임박 프로젝트 점검해줘', bot: 'ryan', severity: 'medium', badge: '일정 주의' }
@@ -181,7 +182,7 @@ export default function DashboardPage() {
       caption: 'AI 요약이 아직 없는 문서 기준',
       body: '업무 관리에서 먼저 정리할 항목입니다.',
       actionLabel: '업무 열기',
-      actionHref: '/journals',
+      actionHref: '/work-journals',
     },
     {
       label: '오늘 매출',
@@ -352,7 +353,7 @@ export default function DashboardPage() {
         '- 업무일지와 문서 흐름을 같이 보면 누락된 처리도 찾기 쉽습니다.',
       ].join('\n');
       result.actionLabel = '업무 열기';
-      result.actionHref = '/journals';
+      result.actionHref = '/work-journals';
       result.uiComponent = parseClaudeOutput(result.markdown);
       return result;
     }
@@ -372,13 +373,16 @@ export default function DashboardPage() {
 
   function handleDashboardPromptSubmit() {
     const nextPrompt = prompt.trim();
-    if (!nextPrompt) return;
+    if (!(nextPrompt || attachedDocumentContext.trim())) return;
     setError('');
-    setAdvisorResult(buildDashboardAdvisorResult(nextPrompt));
+    setAdvisorResult(buildDashboardAdvisorResult(mergePromptWithDocumentContext(nextPrompt, attachedDocumentContext)));
+    setPrompt('');
+    setAttachedFileName('');
+    setAttachedDocumentContext('');
   }
 
-  async function handleUpload(event) {
-    const file = event.target.files?.[0];
+  async function handleUpload(input) {
+    const file = input instanceof File ? input : input?.target?.files?.[0];
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
@@ -397,7 +401,7 @@ export default function DashboardPage() {
       const filename = data.document?.filename || file.name;
       const appendix = buildDocumentPromptAppendix(data.document, file.name);
       setAttachedFileName(filename);
-      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}${appendix}`.trim());
+      setAttachedDocumentContext(appendix);
       setAdvisorResult(null);
       setNotice(buildDocumentUploadNotice(data.document, file.name));
     } catch (err) {
@@ -450,17 +454,19 @@ export default function DashboardPage() {
               promptRef={promptRef}
               placeholder="메시지 입력"
               onFileClick={() => fileRef.current?.click()}
+              onFileDrop={handleUpload}
               uploading={uploading}
               attachedFileName={attachedFileName}
               onReset={() => {
                 setPrompt('');
                 setAdvisorResult(null);
                 setAttachedFileName('');
+                setAttachedDocumentContext('');
                 setNotice('');
                 setError('');
               }}
               onSubmit={handleDashboardPromptSubmit}
-              submitDisabled={!prompt.trim()}
+              submitDisabled={!(prompt.trim() || attachedDocumentContext.trim())}
               error={error}
               notice={notice}
               result={advisorResult}

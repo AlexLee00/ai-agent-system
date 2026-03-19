@@ -793,6 +793,7 @@ const UI_ROUTE_PREFIXES = [
   '/attendance',
   '/schedules',
   '/journals',
+  '/work-journals',
   '/sales',
   '/projects',
   '/employees',
@@ -3583,7 +3584,15 @@ app.get('/api/journals', requireAuth, companyFilter, async (req, res) => {
   let where = 'j.company_id=$1 AND j.deleted_at IS NULL';
   if (date)        { params.push(date);           where += ` AND j.date=$${params.length}`; }
   if (employee_id) { params.push(employee_id);    where += ` AND j.employee_id=$${params.length}`; }
-  if (category)    { params.push(category);       where += ` AND j.category=$${params.length}`; }
+  if (category) {
+    if (category === 'general' || category === 'daily_work') {
+      params.push(['general', 'task']);
+      where += ` AND j.category = ANY($${params.length})`;
+    } else {
+      params.push(category);
+      where += ` AND j.category=$${params.length}`;
+    }
+  }
   if (keyword)     { params.push(`%${keyword}%`); where += ` AND j.content ILIKE $${params.length}`; }
   params.push(limit, offset);
   try {
@@ -3756,10 +3765,11 @@ app.post('/api/journals/proposals/:id/reject', requireAuth, companyFilter, async
 app.post('/api/journals',
   requireAuth, companyFilter, auditLog('CREATE', 'work_journals'),
   body('content').trim().notEmpty(),
-  body('category').optional().isIn(['general','meeting','task','report','other']),
+  body('category').optional().isIn(['general','daily_work','meeting','report','other']),
   async (req, res) => {
     if (!validate(req, res)) return;
     const { content, category, date } = req.body;
+    const normalizedCategory = category === 'daily_work' || category === 'task' ? 'general' : category;
     try {
       // 사용자와 연결된 직원 조회
       let emp = await pgPool.get(SCHEMA,
@@ -3772,10 +3782,10 @@ app.post('/api/journals',
       const row = await pgPool.get(SCHEMA,
         `INSERT INTO worker.work_journals (company_id, employee_id, date, content, category)
          VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [req.companyId, empId, date || new Date().toISOString().slice(0,10), content, category || 'general']);
+        [req.companyId, empId, date || new Date().toISOString().slice(0,10), content, normalizedCategory || 'general']);
       // RAG 자동 저장 (실패해도 본 기능 영향 없음)
       rag.store('rag_work_docs', `[업무일지] ${content.slice(0, 500)}`,
-        { company_id: req.companyId, journal_id: row.id, category: category || 'general' }, 'emily'
+        { company_id: req.companyId, journal_id: row.id, category: normalizedCategory || 'general' }, 'emily'
       ).catch(() => {});
       res.status(201).json({ journal: row });
     } catch { res.status(500).json({ error: '서버 오류가 발생했습니다.', code: 'SERVER_ERROR' }); }
@@ -3798,11 +3808,12 @@ app.put('/api/journals/:id',
         return res.status(403).json({ error: '본인 작성만 수정할 수 있습니다.', code: 'FORBIDDEN' });
       }
       const { content, category } = req.body;
+      const normalizedCategory = category === 'daily_work' || category === 'task' ? 'general' : category;
       const row = await pgPool.get(SCHEMA,
         `UPDATE worker.work_journals
          SET content=COALESCE($1,content), category=COALESCE($2,category), updated_at=NOW()
          WHERE id=$3 RETURNING *`,
-        [content || null, category || null, req.params.id]);
+        [content || null, normalizedCategory || null, req.params.id]);
       await pgPool.run(SCHEMA,
         `INSERT INTO worker.audit_log (company_id,user_id,action,target_type,target_id)
          VALUES ($1,$2,'update','work_journal',$3)`,

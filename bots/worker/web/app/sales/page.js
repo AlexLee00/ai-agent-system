@@ -11,9 +11,11 @@ import Modal from '@/components/Modal';
 import Card from '@/components/Card';
 import { SalesBarChart } from '@/components/Chart';
 import PendingReviewSection from '@/components/PendingReviewSection';
-import ProposalFlowActions from '@/components/ProposalFlowActions';
-import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import PromptAdvisor from '@/components/PromptAdvisor';
+import OperationsSectionHeader from '@/components/OperationsSectionHeader';
+import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
+import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 const WEEKDAY = ['일','월','화','수','목','금','토'];
 const EMPTY_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0,10) };
@@ -42,8 +44,11 @@ export default function SalesPage() {
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [attachedDocumentContext, setAttachedDocumentContext] = useState('');
   const [reusedDocument, setReusedDocument] = useState(null);
   const fileRef = useRef(null);
+  const promptRef = useRef(null);
+  useAutoResizeTextarea(promptRef, prompt);
   const totalSales = sales.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const quickFlows = [
     {
@@ -127,15 +132,19 @@ export default function SalesPage() {
   };
 
   const createProposal = async () => {
-    if (!prompt.trim()) return;
+    if (!(prompt.trim() || attachedDocumentContext.trim())) return;
     setProposalLoading(true);
     setError('');
     setNotice('');
     try {
-      const data = await api.post('/sales/proposals', { prompt });
+      const data = await api.post('/sales/proposals', {
+        prompt: mergePromptWithDocumentContext(prompt, attachedDocumentContext),
+      });
       setProposal(data.proposal || null);
       setOriginalProposal(data.proposal || null);
       setPrompt('');
+      setAttachedFileName('');
+      setAttachedDocumentContext('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -180,8 +189,8 @@ export default function SalesPage() {
     }
   };
 
-  const handleUpload = async (event) => {
-    const file = event.target.files?.[0];
+  const handleUpload = async (input) => {
+    const file = input instanceof File ? input : input?.target?.files?.[0];
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
@@ -199,7 +208,7 @@ export default function SalesPage() {
       const filename = data.document?.filename || file.name;
       const appendix = buildDocumentPromptAppendix(data.document, file.name);
       setAttachedFileName(filename);
-      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}${appendix}`.trim());
+      setAttachedDocumentContext(appendix);
       setNotice(buildDocumentUploadNotice(data.document, file.name));
     } catch (err) {
       setError(err.message);
@@ -244,145 +253,123 @@ export default function SalesPage() {
         ]}
       />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-600">매출 운영 작업</p>
-        <button className="btn-primary text-sm" onClick={openModal} disabled={!canCreateSales}>
-          + 매출 등록
-        </button>
-      </div>
-
       {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
-      <div className="card space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-500">매출 자연어 등록</p>
-            <p className="text-sm text-slate-600 mt-1">
-              예: `오늘 상품판매 5만원 매출 등록해줘`, `어제 서비스 매출 12만원 기록해줘`
-            </p>
+      <div>
+        <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+        <PromptAdvisor
+          title="프롬프트 어드바이저"
+          description="매출 등록, 누락 점검, 주간 흐름 비교 요청을 자연어로 정리하고 바로 제안 검토로 이어집니다."
+          badge={`Noah 매출 ${user?.role === 'master' ? '오케스트레이터' : user?.role === 'admin' ? '운영 에이전트' : '에이전트'}`}
+          suggestions={[
+            '오늘 상품판매 5만원 매출 등록해줘',
+            '어제 서비스 매출 12만원 기록해줘',
+            '3월 14일 광고 매출 8만원 추가해줘',
+          ]}
+          helperText="매출 등록, 매출 누락 점검, 주간 매출 비교처럼 매출 운영 요청을 빠르게 확인 결과로 넘길 때 적합합니다."
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          promptRef={promptRef}
+          placeholder="매출 등록 요청이나 흐름 점검 요청을 자연어로 입력하세요."
+          onFileClick={() => fileRef.current?.click()}
+          onFileDrop={handleUpload}
+          uploading={uploading}
+          attachedFileName={attachedFileName}
+          onReset={() => {
+            setPrompt('');
+            setError('');
+            setNotice('');
+            setAttachedFileName('');
+            setAttachedDocumentContext('');
+            setReusedDocument(null);
+            if (fileRef.current) fileRef.current.value = '';
+          }}
+          onSubmit={createProposal}
+          submitDisabled={!canCreateSales || proposalLoading || !(prompt.trim() || attachedDocumentContext.trim())}
+          error={error}
+          notice={notice}
+        />
+        {reusedDocument ? (
+          <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <p className="font-semibold">문서 재사용 초안이 적용됨</p>
+            <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 매출 등록 초안이 채워졌습니다.</p>
+            {reusedDocument.documentId ? (
+              <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
+                문서 상세 보기
+              </a>
+            ) : null}
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            확인 결과 창 기반 피드백 수집
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {['오늘 상품판매 5만원 매출 등록해줘', '어제 서비스 매출 12만원 기록해줘', '3월 14일 광고 매출 8만원 추가해줘'].map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setPrompt(item)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-          <textarea
-            className="input-base min-h-[92px]"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="매출 등록 요청을 자연어로 입력하세요."
-          />
-          {reusedDocument ? (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              <p className="font-semibold">문서 재사용 초안이 적용됨</p>
-              <p className="mt-1 text-sky-800">{reusedDocument.filename || '이전 문서'} 기반으로 매출 등록 초안이 채워졌습니다.</p>
-              {reusedDocument.documentId ? (
-                <a href={`/documents/${reusedDocument.documentId}`} className="mt-2 inline-flex text-xs font-medium text-sky-700 hover:text-sky-900">
-                  문서 상세 보기
-                </a>
-              ) : null}
-            </div>
-          ) : null}
-          {attachedFileName && (
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-                첨부됨: {attachedFileName}
-              </span>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary" onClick={createProposal} disabled={!canCreateSales || proposalLoading || !prompt.trim()}>
-              {proposalLoading ? '제안 생성 중...' : '매출 제안 만들기'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!canCreateSales || uploading}>
-              {uploading ? '업로드 중...' : '파일 첨부'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={openModal} disabled={!canCreateSales}>
-              직접 입력 모달 열기
-            </button>
-          </div>
-        </div>
-
-        {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
-        {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
+        ) : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">매출 운영 요약</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
-            <Card title="오늘 매출" value={`₩${(summary?.today?.total ?? 0).toLocaleString()}`} icon="📅" color="blue" />
-            <Card title="주간 매출" value={`₩${chartData.reduce((s,r)=>s+r.total,0).toLocaleString()}`} icon="📊" color="green" />
-            <Card title="월간 매출" value={`₩${(summary?.monthly?.reduce?.((s,r)=>s+Number(r.total),0)??0).toLocaleString()}`} icon="📈" color="yellow" />
-          </div>
-        </div>
-
-        <div className="card">
-          <p className="text-sm font-medium text-slate-500">보기 전환</p>
-          <div className="flex gap-2 mt-4">
-            <button className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab==='list'?'bg-slate-900 text-white':'bg-slate-100 text-slate-600'}`} onClick={()=>setTab('list')}>목록</button>
-            <button className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab==='chart'?'bg-slate-900 text-white':'bg-slate-100 text-slate-600'}`} onClick={()=>setTab('chart')}>차트</button>
-          </div>
-          <p className="text-sm text-slate-500 mt-4">
-            등록과 분석을 같은 화면에서 빠르게 전환할 수 있습니다.
-          </p>
-        </div>
-      </div>
-
-      {tab === 'list' ? (
-        <div className="card">
-          {loading
-            ? <p className="text-center py-10 text-gray-400">로딩 중...</p>
-            : <DataTable
-                columns={columns}
-                data={sales}
-                pageSize={10}
-                emptyNode={emptyNode}
-                actions={row => (
-                  <>
-                    {canUpdateSales && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
-                    {canDeleteSales && <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
-                  </>
-                )}
-              />
-          }
-        </div>
-      ) : (
-        <div className="card">
-          <h2 className="font-semibold text-gray-800 mb-4">주간 매출 추이</h2>
-          {chartData.length > 0 ? (
-            <SalesBarChart data={chartData} />
-          ) : (
-            <div className="text-center py-10">
-              <p className="text-4xl mb-3">📊</p>
-              <p className="text-gray-500 text-sm mb-4">매출 데이터가 없습니다</p>
-              <button onClick={openModal} className="btn-primary text-sm" disabled={!canCreateSales}>
-                + 매출 등록하기
+      <div className="card">
+        <OperationsSectionHeader
+          className="border-b border-slate-200 pb-4"
+          title="매출 운영 요약"
+          description="매출 흐름을 요약 카드로 먼저 보고, 같은 카드 안에서 목록과 차트를 전환해 이어서 확인합니다."
+          right={(
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab === 'list' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                onClick={() => setTab('list')}
+              >
+                목록
+              </button>
+              <button
+                className={`px-4 py-2 rounded-2xl text-sm font-medium ${tab === 'chart' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+                onClick={() => setTab('chart')}
+              >
+                차트
+              </button>
+              <button className="btn-secondary text-sm" onClick={openModal} disabled={!canCreateSales}>
+                + 매출 등록
               </button>
             </div>
           )}
-        </div>
-      )}
+        />
 
-      {(proposal || notice) && (
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Card title="오늘 매출" value={`₩${(summary?.today?.total ?? 0).toLocaleString()}`} icon="📅" color="blue" />
+          <Card title="주간 매출" value={`₩${chartData.reduce((s, r) => s + r.total, 0).toLocaleString()}`} icon="📊" color="green" />
+          <Card title="월간 매출" value={`₩${(summary?.monthly?.reduce?.((s, r) => s + Number(r.total), 0) ?? 0).toLocaleString()}`} icon="📈" color="yellow" />
+        </div>
+
+        <div className="mt-5 border-t border-slate-200 pt-5">
+          {tab === 'list' ? (
+            loading
+              ? <p className="py-10 text-center text-gray-400">로딩 중...</p>
+              : <DataTable
+                  columns={columns}
+                  data={sales}
+                  pageSize={10}
+                  emptyNode={emptyNode}
+                  actions={row => (
+                    <>
+                      {canUpdateSales && <button className="btn-secondary text-xs px-3 py-1.5" onClick={() => openEdit(row)}>수정</button>}
+                      {canDeleteSales && <button className="btn-danger text-xs px-3 py-1.5" onClick={() => handleDelete(row.id)}>삭제</button>}
+                    </>
+                  )}
+                />
+          ) : (
+            chartData.length > 0 ? (
+              <SalesBarChart data={chartData} />
+            ) : (
+              <div className="py-10 text-center">
+                <p className="mb-3 text-4xl">📊</p>
+                <p className="mb-4 text-sm text-gray-500">매출 데이터가 없습니다</p>
+                <button onClick={openModal} className="btn-primary text-sm" disabled={!canCreateSales}>
+                  + 매출 등록하기
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
+      {proposal && (
         <PendingReviewSection
-          hasPending={Boolean(proposal)}
-          description="매출 등록 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다."
+          hasPending
+          description="문서 파싱과 자연어 입력 결과를 확인한 뒤 아래 리스트에서 매출로 확정하거나 반려합니다."
         >
           {proposal && (
             <div className="rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-4 space-y-4">
@@ -431,13 +418,6 @@ export default function SalesPage() {
                           </span>
                         </div>
                         <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{item.preview}</p>
-                        <button
-                          type="button"
-                          className="mt-3 rounded-full border border-violet-200 bg-violet-100 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-200"
-                          onClick={() => refillPrompt(`이 사례를 참고해서 매출 등록 제안을 다시 정리해줘\n${item.preview || item.summary || ''}`.trim())}
-                        >
-                          이 사례로 다시 작성
-                        </button>
                       </div>
                     ))}
                   </div>
@@ -445,18 +425,11 @@ export default function SalesPage() {
               )}
 
               <div className="flex flex-wrap gap-3">
-                <ProposalFlowActions
-                  onPromptFill={() => refillPrompt(`매출 등록 제안을 다시 정리해줘\n금액: ${proposal.amount || ''}\n카테고리: ${proposal.category || ''}\n날짜: ${proposal.date || ''}`.trim())}
-                  onSecondary={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                />
                 <button type="button" className="btn-primary" onClick={handleConfirmProposal} disabled={proposalLoading}>
                   {proposalLoading ? '확정 중...' : '이대로 확정'}
                 </button>
                 <button type="button" className="btn-secondary" onClick={handleRejectProposal} disabled={proposalLoading}>
                   제안 반려
-                </button>
-                <button type="button" className="btn-secondary" onClick={() => { setProposal(null); setOriginalProposal(null); setError(''); }} disabled={proposalLoading}>
-                  닫기
                 </button>
               </div>
             </div>

@@ -6,6 +6,23 @@
 
 ## 2026-03-19
 
+### 워커 web 운영 화면 공용화 + 업무/일정/근태/매출 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/components/PromptAdvisor.js` | ✅ |
+| `node --check bots/worker/web/components/DataTable.js` | ✅ |
+| `node --check bots/worker/web/lib/document-attachment.js` | ✅ |
+| `node --check bots/worker/web/app/dashboard/page.js` | ✅ |
+| `node --check bots/worker/web/app/work-journals/page.js` | ✅ |
+| `node --check bots/worker/web/app/schedules/page.js` | ✅ |
+| `node --check bots/worker/web/app/attendance/page.js` | ✅ |
+| `node --check bots/worker/web/app/sales/page.js` | ✅ |
+| `npm --prefix bots/worker/web run build` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ |
+| `node bots/worker/scripts/health-report.js --json` | ✅ 프로세스(`web`, `nextjs`, `lead`, `task-runner`) 정상 확인. 재시작 직후 endpoint 경고는 warm-up 상태로 관측됨 |
+
 ### 워커 블로그 URL 입력의 발행일 경계 복구
 
 | 테스트 | 결과 |

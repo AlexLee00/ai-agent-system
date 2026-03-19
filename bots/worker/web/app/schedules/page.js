@@ -5,10 +5,11 @@ import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
+import Modal from '@/components/Modal';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
-import { buildDocumentPromptAppendix, buildDocumentUploadNotice } from '@/lib/document-attachment';
+import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
@@ -20,6 +21,13 @@ const TYPE_CONFIG = {
 };
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const EMPTY_SCHEDULE_FORM = {
+  title: '',
+  type: 'task',
+  start_time: '',
+  location: '',
+  description: '',
+};
 
 function fmtTime(ts) {
   if (!ts) return '';
@@ -29,6 +37,13 @@ function fmtTime(ts) {
 function fmtDatetime(ts) {
   if (!ts) return '-';
   return new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function toLocalDateKey(ts) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function toDateTimeLocal(ts) {
@@ -61,7 +76,7 @@ function CalendarView({ year, month, schedules }) {
     const m = {};
     for (const s of schedules) {
       if (!s.start_time) continue;
-      const d = s.start_time.slice(0, 10);
+      const d = toLocalDateKey(s.start_time);
       if (!m[d]) m[d] = [];
       m[d].push(s);
     }
@@ -138,7 +153,7 @@ function ListView({ schedules, onDelete, canDelete }) {
             </div>
             {canDelete && (
               <button
-                className="shrink-0 text-xs text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
+                className="shrink-0 text-xs text-slate-400 opacity-100 transition-colors hover:text-red-500 md:opacity-0 md:group-hover:opacity-100"
                 onClick={() => onDelete(s.id)}
               >✕</button>
             )}
@@ -165,8 +180,12 @@ export default function SchedulesPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState(EMPTY_SCHEDULE_FORM);
+  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [attachedFileName, setAttachedFileName] = useState('');
+  const [attachedDocumentContext, setAttachedDocumentContext] = useState('');
   const [reusedDocument, setReusedDocument] = useState(null);
 
   const fileRef = useRef(null);
@@ -201,15 +220,35 @@ export default function SchedulesPage() {
     else setMonth(m => m + 1);
   };
 
+  const openNew = () => {
+    const nextHour = new Date();
+    nextHour.setMinutes(0, 0, 0);
+    nextHour.setHours(nextHour.getHours() + 1);
+    setForm({
+      ...EMPTY_SCHEDULE_FORM,
+      start_time: toDateTimeLocal(nextHour.toISOString()),
+    });
+    setError('');
+    setModal(true);
+  };
+
   const createProposal = async (payload) => {
     setProposalLoading(true);
     setError('');
     setNotice('');
     try {
-      const data = await api.post('/schedules/proposals', payload);
+      const nextPayload = {
+        ...payload,
+        prompt: mergePromptWithDocumentContext(payload.prompt || '', attachedDocumentContext),
+      };
+      const data = await api.post('/schedules/proposals', nextPayload);
       setProposal(data.proposal || null);
       setOriginalProposal(data.proposal || null);
-      if (payload.prompt) setPrompt('');
+      if (payload.prompt) {
+        setPrompt('');
+        setAttachedFileName('');
+        setAttachedDocumentContext('');
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -218,7 +257,7 @@ export default function SchedulesPage() {
   };
 
   const handlePromptSubmit = async () => {
-    if (!prompt.trim()) return;
+    if (!(prompt.trim() || attachedDocumentContext.trim())) return;
     await createProposal({ prompt });
   };
 
@@ -259,8 +298,8 @@ export default function SchedulesPage() {
     }
   };
 
-  const handleUpload = async (event) => {
-    const file = event.target.files?.[0];
+  const handleUpload = async (input) => {
+    const file = input instanceof File ? input : input?.target?.files?.[0];
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
@@ -278,7 +317,7 @@ export default function SchedulesPage() {
       const filename = data.document?.filename || file.name;
       const appendix = buildDocumentPromptAppendix(data.document, file.name);
       setAttachedFileName(filename);
-      setPrompt((prev) => `${prev ? `${prev}\n\n` : ''}${appendix}`.trim());
+      setAttachedDocumentContext(appendix);
       setNotice(buildDocumentUploadNotice(data.document, file.name));
     } catch (e) {
       setError(e.message);
@@ -296,9 +335,32 @@ export default function SchedulesPage() {
     } catch (e) { alert(e.message); }
   };
 
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) { setError('제목을 입력해주세요.'); return; }
+    if (!form.start_time) { setError('시작 일시를 입력해주세요.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await api.post('/schedules', {
+        title: form.title.trim(),
+        type: form.type,
+        start_time: fromDateTimeLocal(form.start_time),
+        location: form.location.trim() || null,
+        description: form.description.trim() || null,
+      });
+      setModal(false);
+      setNotice('일정을 등록했습니다.');
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // 리스트뷰용 정렬
   const sorted = [...schedules].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-  const upcomingCount = sorted.filter(item => new Date(item.start_time) >= new Date()).length;
   const meetingCount = schedules.filter(item => item.type === 'meeting').length;
   const reminderCount = schedules.filter(item => item.type === 'reminder').length;
   const canCreateSchedules = canPerformMenuOperation(user, 'schedules', 'create');
@@ -348,6 +410,7 @@ export default function SchedulesPage() {
         promptRef={promptRef}
         placeholder="일정이나 미팅 요청을 자연어로 입력하세요."
         onFileClick={() => fileRef.current?.click()}
+        onFileDrop={handleUpload}
         uploading={uploading}
         attachedFileName={attachedFileName}
         onReset={() => {
@@ -355,21 +418,22 @@ export default function SchedulesPage() {
           setError('');
           setNotice('');
           setAttachedFileName('');
+          setAttachedDocumentContext('');
           setReusedDocument(null);
           if (fileRef.current) fileRef.current.value = '';
         }}
         onSubmit={handlePromptSubmit}
-        submitDisabled={!canCreateSchedules || proposalLoading || !prompt.trim()}
+        submitDisabled={!canCreateSchedules || proposalLoading || !(prompt.trim() || attachedDocumentContext.trim())}
         error={error}
         notice={notice}
       />
 
       <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
 
-      {(proposal || notice) && (
+      {proposal && (
         <PendingReviewSection
-          hasPending={Boolean(proposal)}
-          description="일정 제안을 아래 리스트에서 검토하고 확정하거나 반려합니다."
+          hasPending
+          description="문서 파싱과 자연어 입력 결과를 확인한 뒤 아래 리스트에서 일정으로 확정하거나 반려합니다."
         >
           {proposal && (
             <div className="rounded-3xl border border-sky-200 bg-sky-50/40 px-5 py-5 space-y-4">
@@ -468,6 +532,12 @@ export default function SchedulesPage() {
               </div>
             </div>
           )}
+          {!proposal && notice ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+              <p className="font-semibold">처리 완료</p>
+              <p className="mt-1 text-emerald-800">{notice}</p>
+            </div>
+          ) : null}
         </PendingReviewSection>
       )}
 
@@ -484,45 +554,47 @@ export default function SchedulesPage() {
       ) : null}
 
       <div className="card">
-        <OperationsSectionHeader
-          className="border-b border-slate-200 pb-4"
-          right={(
-            <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={prevMonth}
+            aria-label="이전 달"
+          >
+            ‹
+          </button>
+          <span className="min-w-[92px] text-left font-semibold text-slate-800">{year}년 {month + 1}월</span>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={nextMonth}
+            aria-label="다음 달"
+          >
+            ›
+          </button>
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                onClick={prevMonth}
-                aria-label="이전 달"
+                key={v.k}
+                onClick={() => setView(v.k)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                  view === v.k
+                    ? 'bg-slate-900 text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
               >
-                ‹
+                {v.label}
               </button>
-              <span className="min-w-[92px] text-center font-semibold text-slate-800">{year}년 {month + 1}월</span>
-              <button
-                type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                onClick={nextMonth}
-                aria-label="다음 달"
-              >
-                ›
-              </button>
-            </div>
-          )}
-        />
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[{ k: 'calendar', label: '캘린더' }, { k: 'list', label: '목록' }].map(v => (
-            <button
-              type="button"
-              key={v.k}
-              onClick={() => setView(v.k)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                view === v.k
-                  ? 'bg-slate-900 text-white'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {v.label}
+            ))}
+          </div>
+          {canCreateSchedules ? (
+            <button type="button" className="btn-secondary shrink-0" onClick={openNew}>
+              + 수동 등록
             </button>
-          ))}
+          ) : null}
         </div>
         <div className="mt-5 sm:mt-4">
           {loading ? (
@@ -534,6 +606,70 @@ export default function SchedulesPage() {
           )}
         </div>
       </div>
+
+      <Modal open={modal} onClose={() => setModal(false)} title="일정 수동 등록">
+        <form onSubmit={handleSave} className="space-y-4">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-700">제목 *</span>
+            <input
+              className="input-base"
+              value={form.title}
+              onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="일정 제목"
+            />
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">유형</span>
+              <select
+                className="input-base"
+                value={form.type}
+                onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}
+              >
+                {Object.entries(TYPE_CONFIG).map(([key, value]) => (
+                  <option key={key} value={key}>{value.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">시작 일시 *</span>
+              <input
+                type="datetime-local"
+                className="input-base"
+                value={form.start_time}
+                onChange={(e) => setForm((prev) => ({ ...prev, start_time: e.target.value }))}
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-700">장소</span>
+            <input
+              className="input-base"
+              value={form.location}
+              onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
+              placeholder="장소"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-700">설명</span>
+            <textarea
+              className="input-base min-h-[120px] resize-y"
+              value={form.description}
+              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="필요하면 일정 설명을 남길 수 있습니다."
+            />
+          </label>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex gap-3 pt-2">
+            <button type="button" className="btn-secondary flex-1" onClick={() => setModal(false)}>
+              취소
+            </button>
+            <button type="submit" className="btn-primary flex-1" disabled={saving}>
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
     </div>
   );
