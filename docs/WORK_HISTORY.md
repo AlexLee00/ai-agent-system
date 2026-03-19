@@ -11,6 +11,8 @@
   - `buildBlogPublishedUrlPayload()`가 `publish_date`를 함께 조회
   - `ready + publish_date <= 오늘(KST) + URL 미입력` 글을 `needs_url`로 승격
   - `publish_due` 상태를 추가해 오늘 발행 확인 대상과 미래 예약 글을 구분
+  - PostgreSQL `Date` 객체를 `String(date)`로 비교하면서 `Thu Mar 19` 형태가 되어 분류가 깨지던 버그를 수정
+  - 이제 KST 기준 `YYYY-MM-DD` 문자열로 정규화해 비교
 - `bots/worker/web/app/admin/monitoring/blog-links/page.js`
   - 카드/요약 문구를 새 기준에 맞게 수정
   - `발행일`, `발행 확인 필요` 상태를 함께 노출

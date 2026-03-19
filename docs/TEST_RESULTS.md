@@ -11,6 +11,7 @@
 | 테스트 | 결과 |
 |--------|------|
 | `node --check bots/worker/web/server.js` | ✅ |
+| `node --input-type=module ... blog.posts 54/55 정규화 재현` | ✅ `54`, `55`가 `publishDate=2026-03-19`, `needsUrl=true`, `publishDue=true`로 계산됨 확인 |
 | `npm --prefix bots/worker/web run build` | ✅ |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ |
