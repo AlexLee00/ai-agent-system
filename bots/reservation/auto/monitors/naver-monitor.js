@@ -21,6 +21,7 @@ const { recordHeartbeat, markStopped } = require('../../lib/status');
 const { registerShutdownHandlers, isShuttingDown } = require('../../lib/health');
 const {
   isSeenId, markSeen, addReservation, updateReservation, getReservation, findReservationByBooking,
+  findReservationByCompositeKey, findReservationBySlot,
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
@@ -1087,21 +1088,28 @@ async function monitorBookings() {
               // date가 row에 없으면(드물게) 서울 기준 오늘로 채움
               .map(b => ({ ...b, date: b.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) }))
               .filter(b => b.phone && b.date && b.start && b.end && b.room)
-              .map(b => ({ ...b, _key: toKey(b) }));
-            const _seenFlags = await Promise.all(_baseItems.map(b => isSeenId(b._key)));
-            const _existingRows = await Promise.all(_baseItems.map(b => getReservation(b._key)));
+              .map(b => ({
+                ...b,
+                _key: toKey(b),
+                _slotKey: buildReservationCompositeKey(b.phoneRaw || b.phone, b.date, b.start, b.end, b.room),
+              }));
+            const _existingRows = await Promise.all(_baseItems.map(async (b) => {
+              return await getReservation(b._key)
+                || await findReservationByCompositeKey(b._slotKey)
+                || await findReservationBySlot(b.phone, b.date, b.start, b.room);
+            }));
             const _entries = _baseItems.map((booking, i) => ({
               booking,
-              seen: _seenFlags[i],
+              seen: !!_existingRows[i] && (_existingRows[i].markedSeen || _existingRows[i].seenOnly),
               existing: _existingRows[i],
             }));
             const _unseenEntries = _entries.filter(entry => !entry.seen);
             const _newCandidates = _unseenEntries
               .filter(entry => !entry.existing)
-              .map(entry => entry.booking);
+              .map(entry => ({ ...entry.booking, _trackingId: entry.booking._key }));
             const candidates = _unseenEntries
               .filter((entry) => !entry.existing || entry.existing.status === 'pending' || entry.existing.status === 'failed')
-              .map(entry => entry.booking);
+              .map(entry => ({ ...entry.booking, _trackingId: entry.existing?.id || entry.booking._key }));
 
             if (candidates.length === 0) {
               log('ℹ️ 실행 후보 없음(이미 처리했거나 파싱 실패)');
@@ -1120,7 +1128,7 @@ async function monitorBookings() {
               
               // 🆕 신규 예약 감지 알람
               for (const booking of _newCandidates) {
-                const bookingId = booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start);
+                const bookingId = booking._trackingId || booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start);
                 const state = await updateBookingState(bookingId, booking, 'pending');
 
                 const vipBadge = formatVipBadge(booking.phone);
@@ -1180,10 +1188,10 @@ async function monitorBookings() {
 
                 // DEV: 성공(code=0)일 때만 마킹 (실패면 재시도 가능)
                 for (const b of onlyMine) {
-                  const bookingId = b._key || buildReservationId(b.phoneRaw, b.date, b.start);
+                  const bookingId = b._trackingId || b._key || buildReservationId(b.phoneRaw, b.date, b.start);
                   const code = await runPickko(b, bookingId, page);
                   if (code === 0) {
-                    await markSeen(b._key);
+                    await markSeen(bookingId);
                   } else {
                     log(`⚠️ DEV 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
                   }
@@ -1229,7 +1237,10 @@ async function monitorBookings() {
                 }
 
                 // ops에서는 재처리 방지를 위해 마킹
-                for (const b of observeFiltered) await markSeen(b._key);
+                for (const b of observeFiltered) {
+                  const bookingId = b._trackingId || b._key || buildReservationId(b.phoneRaw, b.date, b.start);
+                  await markSeen(bookingId);
+                }
 
                 await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
@@ -1237,13 +1248,13 @@ async function monitorBookings() {
               }
               // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0) 또는 재시도 한도 초과(code=99) 시 seen 마킹
               for (const b of observeFiltered) {
-                const bookingId = b._key || buildReservationId(b.phoneRaw, b.date, b.start);
+                const bookingId = b._trackingId || b._key || buildReservationId(b.phoneRaw, b.date, b.start);
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
-                  await markSeen(b._key);
+                  await markSeen(bookingId);
                 } else if (code === 99) {
                   // 최대 재시도 초과 → 재감지 차단 (수동 처리 필요 알람은 runPickko 내부에서 발송)
-                  await markSeen(b._key);
+                  await markSeen(bookingId);
                   log(`⛔ 최대 재시도 초과 → seen 마킹 완료 (재감지 차단)`);
                 } else {
                   log(`⚠️ OPS 픽코 실패(code=${code}) → seen 마킹 안 함(재시도 가능)`);
@@ -1774,7 +1785,7 @@ async function updateBookingState(bookingId, booking, state = 'pending') {
     if (!existing) {
       // 🆕 신규 예약
       await addReservation(bookingId, {
-        compositeKey: `${booking.phoneRaw}-${booking.date}-${booking.start}`,
+        compositeKey: buildReservationCompositeKey(booking.phoneRaw, booking.date, booking.start, booking.end, booking.room),
         name:         booking.raw?.name || null,
         phone:        booking.phone,
         phoneRaw:     booking.phoneRaw,
