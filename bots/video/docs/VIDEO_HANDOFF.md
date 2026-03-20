@@ -183,6 +183,7 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `video_edits` INSERT/단계별 status UPDATE/trace_id 기록/텔레그램 알림 연결 완료
     - 실자산 `--source=1 --skip-render` 검증에서 전처리 → STT → 자막교정 → 영상분석 → EDL 생성까지 완료 확인
     - preview 렌더도 실제로 진행되지만, 현재 transition 수가 많은 실자산에서는 wall-clock이 길어 추가 최적화가 필요
+    - single-flight lock 추가로 동시 실행은 즉시 차단되며, SIGINT/SIGTERM 시 lock 정리까지 보강 완료
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB

@@ -328,6 +328,7 @@
   - smoke final 결과 `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart` 확인
   - `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` 실검증에서 전처리 → STT → 자막교정 → 영상분석 → EDL 생성까지 완료 확인
   - scene 중복 감지를 줄이기 위해 EDL builder에 인접 transition merge 보정을 추가
+  - `run-pipeline`는 이제 single-flight lock으로 동시 실행을 즉시 차단하고, stale lock / SIGINT / SIGTERM 정리까지 수행
   - 실자산 preview 렌더도 진행되지만 wall-clock이 길어 과제 7은 preview 최적화와 최종 end-to-end 검증이 다음 경계
   - 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay / burn-in은 자동 생략 fallback으로 동작
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
