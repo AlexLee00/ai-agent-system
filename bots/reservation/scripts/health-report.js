@@ -26,6 +26,7 @@ const {
   buildFileActivityHealth,
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const CONTINUOUS = ['ai.ska.naver-monitor', 'ai.ska.commander'];
 const CORE_SERVICES = [
@@ -47,6 +48,23 @@ const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+
+function sumRoomAmounts(roomAmountsJson) {
+  if (!roomAmountsJson) return 0;
+
+  let parsed = roomAmountsJson;
+  if (typeof roomAmountsJson === 'string') {
+    try {
+      parsed = JSON.parse(roomAmountsJson);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') return 0;
+
+  return Object.values(parsed).reduce((sum, value) => sum + Number(value || 0), 0);
+}
 
 function buildMonitorHealth() {
   return buildFileActivityHealth({
@@ -74,7 +92,62 @@ async function buildN8nCommandHealth() {
   });
 }
 
-function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth) {
+async function buildDailySummaryIntegrityHealth() {
+  try {
+    const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const rows = await pgPool.query('reservation', `
+      SELECT date::text, total_amount, room_amounts_json, pickko_total, pickko_study_room, general_revenue
+      FROM daily_summary
+      ORDER BY date DESC
+      LIMIT 400
+    `);
+
+    const issues = [];
+    for (const row of rows) {
+      const date = String(row.date || '').slice(0, 10);
+      const totalAmount = Number(row.total_amount || 0);
+      const roomTotal = sumRoomAmounts(row.room_amounts_json);
+      const pickkoTotal = Number(row.pickko_total || 0);
+      const pickkoStudyRoom = Number(row.pickko_study_room || 0);
+      const generalRevenue = Number(row.general_revenue || 0);
+
+      if (date < todayKst && roomTotal > 0 && pickkoStudyRoom <= 0) {
+        issues.push(`${date}: room_amounts_json ${roomTotal}원인데 pickko_study_room=0`);
+        continue;
+      }
+
+      const expectedPickkoTotal = generalRevenue + pickkoStudyRoom;
+      if (pickkoStudyRoom > 0 && expectedPickkoTotal !== pickkoTotal) {
+        issues.push(`${date}: pickko_total ${pickkoTotal}원 != 일반 ${generalRevenue}원 + 스터디룸 ${pickkoStudyRoom}원`);
+      }
+    }
+
+    if (issues.length > 0) {
+      return {
+        ok: [],
+        warn: [
+          `  daily_summary 무결성: 경고 ${issues.length}건`,
+          ...issues.slice(0, 5).map((line) => `    - ${line}`),
+        ],
+        issueCount: issues.length,
+      };
+    }
+
+    return {
+      ok: ['  daily_summary 무결성: 스터디룸/일반/합계 구조 정상'],
+      warn: [],
+      issueCount: 0,
+    };
+  } catch (error) {
+    return {
+      ok: [],
+      warn: [`  daily_summary 무결성: 확인 실패 (${error.message})`],
+      issueCount: 1,
+    };
+  }
+}
+
+function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -97,6 +170,11 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth) {
         level: 'medium',
         reason: `n8n은 살아 있지만 ska command webhook이 미등록 상태입니다 (${n8nCommandHealth.webhookReason}).`,
       },
+      {
+        active: dailySummaryIntegrityHealth.warn.length > 0,
+        level: 'medium',
+        reason: `daily_summary 무결성 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 스카 매출 원천을 점검해야 합니다.`,
+      },
     ],
     okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
   });
@@ -111,6 +189,7 @@ function formatText(report) {
       buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
+      buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 2, warnLimit: 6 }),
       {
         title: null,
         lines: buildHealthDecisionSection({
@@ -144,7 +223,8 @@ async function buildReport() {
   });
   const monitorHealth = buildMonitorHealth();
   const n8nCommandHealth = await buildN8nCommandHealth();
-  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth);
+  const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
+  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth);
 
   const report = {
     coreServiceHealth: {
@@ -177,6 +257,13 @@ async function buildReport() {
       webhookStatus: n8nCommandHealth.webhookStatus,
       webhookUrl: n8nCommandHealth.webhookUrl,
       resolvedWebhookUrl: n8nCommandHealth.resolvedWebhookUrl,
+    },
+    dailySummaryIntegrityHealth: {
+      okCount: dailySummaryIntegrityHealth.ok.length,
+      warnCount: dailySummaryIntegrityHealth.warn.length,
+      ok: dailySummaryIntegrityHealth.ok,
+      warn: dailySummaryIntegrityHealth.warn,
+      issueCount: dailySummaryIntegrityHealth.issueCount,
     },
     decision,
   };

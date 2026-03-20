@@ -3028,3 +3028,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/reservation/lib/db.js`의 `upsertDailySummary()`를 `COALESCE(EXCLUDED, daily_summary)` 기반으로 바꿔, 자정 외 보고가 `pickko_*` 값을 0으로 덮지 않도록 수정
 - `bots/reservation/auto/scheduled/pickko-daily-summary.js`에서 자정이 아닐 때 `pickkoTotal/pickkoStudyRoom/generalRevenue`를 `null`로 넘겨 기존 수집값을 유지하도록 정리
 - 원천 `daily_summary` 37건을 `room_amounts_json` 합계 기준으로 복구한 뒤 `test-company` 워커 매출 미러도 재동기화해 mismatch 0건을 확인
+- `bots/reservation/scripts/health-report.js`에 `daily_summary 무결성` 체크를 추가해 당일 미마감 데이터를 제외한 스터디룸/일반/합계 구조 이상을 health에서 바로 경고하도록 정리
