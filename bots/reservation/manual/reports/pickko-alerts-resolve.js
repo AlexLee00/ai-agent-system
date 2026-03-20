@@ -12,44 +12,45 @@
  */
 
 const { parseArgs } = require('../../lib/args');
-const { getDb }     = require('../../lib/db');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 
 const ARGS  = parseArgs(process.argv);
 const phone = ARGS['phone'] || null;
 const date  = ARGS['date']  || null;
 const start = ARGS['start'] || null;
 
-const db = getDb();
-
 let result;
 
-if (phone && date && start) {
-  // 특정 예약 알림만 해결
-  result = db.prepare(`
-    UPDATE alerts
-    SET resolved = 1, resolved_at = datetime('now')
-    WHERE resolved = 0 AND type = 'error'
-      AND phone = ? AND date = ? AND start_time = ?
-  `).run(phone, date, start);
-} else {
-  // 전체 미해결 오류 알림 해결
-  result = db.prepare(`
-    UPDATE alerts
-    SET resolved = 1, resolved_at = datetime('now')
-    WHERE resolved = 0 AND type = 'error'
-  `).run();
-}
+(async () => {
+  if (phone && date && start) {
+    result = await pgPool.run('reservation', `
+      UPDATE alerts
+      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE resolved = 0 AND type = 'error'
+        AND phone = $1 AND date = $2 AND start_time = $3
+    `, [phone, date, start]);
+  } else {
+    result = await pgPool.run('reservation', `
+      UPDATE alerts
+      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE resolved = 0 AND type = 'error'
+    `, []);
+  }
 
-const n = result.changes;
+  const n = Number(result?.rowCount || 0);
 
-if (n === 0) {
-  console.log(JSON.stringify({
-    success: true, resolved: 0,
-    message: '미해결 오류 알림 없음 (이미 모두 해결됨)',
-  }));
-} else {
-  console.log(JSON.stringify({
-    success: true, resolved: n,
-    message: `✅ 미해결 오류 알림 ${n}건 해결 처리 완료`,
-  }));
-}
+  if (n === 0) {
+    console.log(JSON.stringify({
+      success: true, resolved: 0,
+      message: '미해결 오류 알림 없음 (이미 모두 해결됨)',
+    }));
+  } else {
+    console.log(JSON.stringify({
+      success: true, resolved: n,
+      message: `✅ 미해결 오류 알림 ${n}건 해결 처리 완료`,
+    }));
+  }
+})().catch((error) => {
+  console.error(error?.stack || error?.message || String(error));
+  process.exit(1);
+});

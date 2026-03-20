@@ -529,3 +529,19 @@
 | `npm --prefix bots/worker/web run build` | ✅ 통과 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ 실행 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 실행 |
+
+### 스카 수동 처리 완료 루프 / 재시작 경고 정정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/manual/reports/pickko-alerts-resolve.js` | ✅ 통과 |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 통과 |
+| `node --check bots/reservation/lib/db.js` | ✅ 통과 |
+| `node --check bots/orchestrator/src/router.js` | ✅ 통과 |
+| `node bots/reservation/manual/reports/pickko-alerts-resolve.js --phone=010-4697-3620 --date=2026-03-20 --start=16:00` | ✅ 기존 미해결 오류 알림 `8건` 해결 처리 완료 확인 |
+| `node --input-type=module -e "... reservation.alerts by phone/date/start ..."` | ✅ 동일 예약 과거 오류 알림이 모두 `resolved=1`, `resolved_at` 채워짐 확인 |
+| `node --input-type=module -e "... reservation.reservations by phone/date/start ..."` | ✅ 대상 예약 `status=completed`, `pickko_status=time_elapsed`, `marked_seen=1` 확인 |
+| `node --input-type=module -e "... unresolved error alerts ..."` | ✅ 현재 PostgreSQL 기준 unresolved error alerts `0건` 확인 |
+| `bash bots/reservation/scripts/reload-monitor.sh` | ✅ 스카 모니터 재시작 완료 (`PID: 6546`) |
+| `node bots/orchestrator/scripts/health-report.js --json` | ✅ orchestrator / gateway / critical webhook 정상 |
+| `launchctl kickstart -k gui/$(id -u)/ai.orchestrator` | ✅ 제이 완료 문구 처리 로직 라이브 반영 |

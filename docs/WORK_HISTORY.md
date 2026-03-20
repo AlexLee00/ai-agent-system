@@ -3206,3 +3206,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/markets/crypto.js`, `domestic.js`, `overseas.js` 메트릭 로그에 `coreFailed`, `enrichFailed`를 함께 남겨 `/ops-health`나 텔레그램 경고 해석이 과장되지 않도록 정리
 - `bots/investment/shared/kis-client.js`에서 국내 현재가 API가 전부 0 스냅샷을 돌려주는 경우를 `거래불가/종목코드 확인 필요` 의미로 다시 분류
 - `bots/investment/team/hanul.js`에서 국내 BUY도 해외와 같은 방식으로 현재가 사전검증을 수행해 `0원 응답 종목`은 주문 단계 전에 리스크 거부하도록 변경
+
+### 스카 수동 처리 완료 루프 복구 + 재시작 미해결 요약 정정
+- `bots/reservation/manual/reports/pickko-alerts-resolve.js`가 더 이상 깨진 `getDb()`를 참조하지 않고 PostgreSQL `reservation.alerts`에서 unresolved error alerts를 직접 resolve 하도록 복구
+- `bots/orchestrator/src/router.js`가 `처리완료`, `해결했어`, `직접 처리했어`, `마스터가 수동으로 처리함` 등 실제 운영 피드백 문구를 받아 즉시 alert resolve 스크립트를 실행하도록 연결
+- `bots/reservation/auto/monitors/naver-monitor.js`의 취소 경로에서 이미 종결된 예약(`completed/cancelled/time_elapsed/marked_seen`)은 재시도 없이 건너뛰고 동일 예약의 과거 오류 알림도 함께 해결 처리하도록 보강
+- 스카 재시작 시작 보고는 unresolved alert를 그대로 읽지 않고, 각 alert에 대응하는 예약을 다시 조회해 이미 종결된 예약의 과거 실패 알림은 자동 resolve 후 actionable alert만 `미해결 오류 n건` 요약에 남기도록 수정

@@ -1885,6 +1885,35 @@ function getSkaStatus() {
   } catch { return '📊 스카팀 상태 조회 실패'; }
 }
 
+function isPickkoAlertResolveCommand(text = '') {
+  const normalized = String(text || '').replace(/\s+/g, '').toLowerCase();
+  if (!normalized) return false;
+  return [
+    '처리완료',
+    '처리했어',
+    '처리됨',
+    '해결했어',
+    '해결됐어',
+    '해결완료',
+    '수동처리함',
+    '수동으로처리했어',
+    '직접처리했어',
+    '마스터가수동으로처리함',
+    '마스터가직접처리함',
+    '마스터수동처리완료',
+  ].some((pattern) => normalized.includes(pattern));
+}
+
+async function runPickkoAlertsResolveDirect() {
+  const root = path.join(__dirname, '..', '..', '..');
+  const script = path.join(root, 'bots', 'reservation', 'manual', 'reports', 'pickko-alerts-resolve.js');
+  const result = await runNodeScriptJson(script, [], 60_000);
+  if (!result) {
+    return '⚠️ 미해결 오류 알림 해결 처리 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  return result.message || '✅ 미해결 오류 알림 해결 처리 완료';
+}
+
 /**
  * 인텐트 → 응답 텍스트 처리
  * @param {object} parsed   { intent, args, source }
@@ -2734,6 +2763,12 @@ async function route(msg, sendReply) {
 
   const start = Date.now();
   try {
+    if (isPickkoAlertResolveCommand(msg.text || '')) {
+      const response = await runPickkoAlertsResolveDirect();
+      await sendReply(response);
+      return;
+    }
+
     const preparedText = buildReservationIntentText(msg.chat?.id, msg.text);
     const parsed   = await parseIntent(preparedText);
     if (parsed?.intent === 'ska_action' && parsed?.args?.command === 'register_reservation') {

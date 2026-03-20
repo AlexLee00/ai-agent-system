@@ -20,7 +20,7 @@ const { printModeBanner, getModeSuffix } = require('../../lib/mode');
 const { recordHeartbeat, markStopped } = require('../../lib/status');
 const { registerShutdownHandlers, isShuttingDown } = require('../../lib/health');
 const {
-  isSeenId, markSeen, addReservation, updateReservation, getReservation,
+  isSeenId, markSeen, addReservation, updateReservation, getReservation, findReservationByBooking,
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
@@ -553,15 +553,39 @@ async function resolveAlertsByBooking(phone, date, start) {
 async function reportUnresolvedAlerts() {
   try {
     const unresolved = await getUnresolvedAlerts();
+    const actionable = [];
 
-    if (unresolved.length === 0) {
+    for (const alert of unresolved) {
+      if (!alert.phone || !alert.date || !alert.start_time) {
+        actionable.push(alert);
+        continue;
+      }
+
+      const reservation = await findReservationByBooking(alert.phone, alert.date, alert.start_time).catch(() => null);
+      const isTerminalReservation = reservation && (
+        reservation.status === 'completed' ||
+        reservation.status === 'cancelled' ||
+        reservation.markedSeen ||
+        reservation.seenOnly ||
+        ['manual', 'manual_retry', 'verified', 'time_elapsed', 'cancelled'].includes(reservation.pickkoStatus)
+      );
+
+      if (isTerminalReservation) {
+        await resolveAlertsByBooking(alert.phone, alert.date, alert.start_time);
+        continue;
+      }
+
+      actionable.push(alert);
+    }
+
+    if (actionable.length === 0) {
       log('✅ [미해결 알림] 없음');
       return;
     }
 
-    log(`⚠️ [미해결 알림] ${unresolved.length}건 감지`);
-    let summary = `⚠️ 스카 재시작 — 미해결 오류 ${unresolved.length}건\n\n`;
-    for (const a of unresolved) {
+    log(`⚠️ [미해결 알림] ${actionable.length}건 감지`);
+    let summary = `⚠️ 스카 재시작 — 미해결 오류 ${actionable.length}건\n\n`;
+    for (const a of actionable) {
       const ageMins = Math.floor((Date.now() - new Date(a.timestamp).getTime()) / 60000);
       const ageText = ageMins >= 60 ? `${Math.floor(ageMins / 60)}시간 전` : `${ageMins}분 전`;
       summary += `• [${ageText}] ${a.title}\n`;
@@ -572,7 +596,7 @@ async function reportUnresolvedAlerts() {
     }
     summary += '\n처리 완료 시 자동으로 해결됨 처리됩니다.';
     publishToMainBot({ from_bot: 'andy', event_type: 'report', alert_level: 2, message: summary });
-    log(`📱 미해결 알림 ${unresolved.length}건 제이 큐 발송 완료`);
+    log(`📱 미해결 알림 ${actionable.length}건 제이 큐 발송 완료`);
   } catch (err) {
     log(`⚠️ 미해결 알림 보고 실패: ${err.message}`);
   }
@@ -2010,6 +2034,21 @@ function runPickkoCancel(booking, cancelKey = null) {
       return;
     }
 
+    if (booking.bookingId) {
+      const currentEntry = await getReservation(String(booking.bookingId)).catch(() => null);
+      if (currentEntry && (
+        currentEntry.status === 'completed' ||
+        currentEntry.status === 'cancelled' ||
+        ['manual', 'manual_retry', 'verified', 'time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus)
+      )) {
+        log(`✅ [취소 건너뜀] 이미 종결 처리됨: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} → ${currentEntry.pickkoStatus || currentEntry.status}`);
+        await markSeen(String(booking.bookingId)).catch(() => {});
+        await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
+        resolve(0);
+        return;
+      }
+    }
+
     const args = [
       path.join(__dirname, '../../manual/reservation/pickko-cancel.js'),
       `--phone=${phoneRawForKey}`,
@@ -2026,7 +2065,9 @@ function runPickkoCancel(booking, cancelKey = null) {
       await addCancelledKey(doneKey).catch(() => {});
       if (booking.bookingId) {
         await updateBookingState(String(booking.bookingId), booking, 'cancelled').catch(() => {});
+        await markSeen(String(booking.bookingId)).catch(() => {});
       }
+      await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
       dailyStats.cancelled++;
       sendAlert({
         type: 'cancelled',

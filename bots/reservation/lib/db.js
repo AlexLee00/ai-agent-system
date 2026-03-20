@@ -144,6 +144,15 @@ async function getReservation(id) {
   return row ? _decryptRow(row) : null;
 }
 
+async function findReservationByBooking(phone, date, start) {
+  const row = await pgPool.get(
+    SCHEMA,
+    'SELECT * FROM reservations WHERE phone = $1 AND date = $2 AND start_time = $3 ORDER BY updated_at DESC NULLS LAST LIMIT 1',
+    [phone, date, start],
+  );
+  return row ? _decryptRow(row) : null;
+}
+
 /**
  * pending/processing/failed 상태 예약 목록 반환
  */
@@ -644,6 +653,7 @@ module.exports = {
   addReservation,
   updateReservation,
   getReservation,
+  findReservationByBooking,
   getPendingReservations,
   getUnverifiedCompletedReservations,
   getAllNaverKeys,
