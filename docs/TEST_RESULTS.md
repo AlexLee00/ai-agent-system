@@ -28,6 +28,17 @@
 | `node --input-type=module -e "import { getBlockReason } from './packages/core/lib/billing-guard.js'; ..."` | ✅ `crypto`, `domestic`, `overseas` 모두 active guard 없음 확인 |
 | `node --input-type=module -e "import fs from 'fs'; import billingGuard from './packages/core/lib/billing-guard.js'; ..."` | ✅ 오래된 `.llm-emergency-stop`가 자동 만료/삭제됨 확인 |
 
+### /ops-health 루나 guard 범위·만료 시각 표시
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/billing-guard.js` | ✅ |
+| `node --check bots/orchestrator/lib/night-handler.js` | ✅ |
+| `node --check bots/investment/scripts/health-report.js` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.orchestrator` | ✅ |
+| `node bots/orchestrator/scripts/health-report.js --json` | ✅ `ai.orchestrator`, `gateway`, `ai.n8n.server` 정상 및 orchestrator health 정상 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `guardHealth.okCount=1`, `투자 LLM guard 없음` 정상 출력 확인 |
+
 ### 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
 
 | 테스트 | 결과 |

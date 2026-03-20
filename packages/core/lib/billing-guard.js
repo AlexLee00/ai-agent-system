@@ -169,11 +169,33 @@ function deactivate(scope = 'global') {
   return false;
 }
 
+function listActiveGuards(scopePrefix = '') {
+  const dir = path.dirname(STOP_FILE);
+  const base = path.basename(STOP_FILE);
+  const normalizedPrefix = scopePrefix ? normalizeScope(scopePrefix) : '';
+  const entries = fs.readdirSync(dir).filter((name) => name === base || name.startsWith(`${base}.`));
+  const rows = [];
+
+  for (const entry of entries) {
+    const scope = entry === base ? 'global' : entry.slice(`${base}.`.length);
+    const data = readStopData(scope);
+    if (!data) continue;
+    const actualScope = normalizeScope(data.scope || scope);
+    if (normalizedPrefix && actualScope !== normalizedPrefix && !actualScope.startsWith(`${normalizedPrefix}.`)) {
+      continue;
+    }
+    rows.push(data);
+  }
+
+  return rows.sort((a, b) => String(a.scope || '').localeCompare(String(b.scope || ''), 'ko'));
+}
+
 module.exports = {
   isBlocked,
   getBlockReason,
   activate,
   deactivate,
+  listActiveGuards,
   normalizeScope,
   scopeMatches,
   getStopFile,

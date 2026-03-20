@@ -100,6 +100,40 @@
 - `node bots/investment/scripts/health-report.js --json`
 - `node --input-type=module -e "import { getBlockReason } from './packages/core/lib/billing-guard.js'; ..."`
 
+### 12주차 후속 (2026-03-20) — /ops-health 루나 guard 범위·만료 시각 표시
+
+핵심 구현:
+- `packages/core/lib/billing-guard.js`
+  - active stop 파일을 scope prefix 기준으로 조회하는 `listActiveGuards()` helper 추가
+  - 오케스트레이터 `/ops-health`와 루나 health-report가 같은 guard source를 읽도록 정리
+- `bots/orchestrator/lib/night-handler.js`
+  - `getLunaRiskSnapshot()`에 투자 `LLM guard` 활성 상태를 포함
+  - active guard가 있으면
+    - `암호화폐/국내주식/해외주식` 범위
+    - 자동 해제 시각
+    - 차단 사유
+    를 리스크 라인에 함께 표시
+- `bots/investment/scripts/health-report.js`
+  - `guardHealth` 섹션 추가
+  - `투자 LLM guard 없음` 또는 `시장별 차단 / 자동 해제 시각`을 직접 표시
+  - 운영 판단에도 `투자 LLM guard n건 활성`을 medium 경고로 반영
+
+세션 맥락:
+- 사용자는 `/ops-health`에서 guard가 왜 걸렸는지, 범위가 어디까지인지, 언제 풀리는지를 한눈에 보고 싶어 했다.
+- 코덱은 기존 broad stop/TTL 작업을 마친 뒤, 현재 상태와 다음 단계의 경계를 분리해서 “표시 레이어만 추가”하는 보수적 확장으로 붙였다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 guard dashboard 신설이 아니라, 기존 `/ops-health`와 `루나 운영 헬스`가 같은 guard state를 읽어 운영 가시성을 높이는 것이다.
+- 공용 `billing-guard`를 source of truth로 두면 이후 멀티워크스페이스 SaaS에서도 guard 상태를 같은 방식으로 재사용할 수 있다.
+
+검증:
+- `node --check packages/core/lib/billing-guard.js`
+- `node --check bots/orchestrator/lib/night-handler.js`
+- `node --check bots/investment/scripts/health-report.js`
+- `node bots/investment/scripts/health-report.js --json`
+- `node bots/orchestrator/scripts/health-report.js --json`
+- `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
+
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 핵심 구현:
