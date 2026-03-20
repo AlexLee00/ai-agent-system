@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-20
-> 상태: Phase 1 Week 1 구현 시작 전
+> 상태: 문서 정리 완료 / Phase 1 Week 1 스캐폴딩 시작 전
 
 ---
 
@@ -13,6 +13,9 @@
 
 ┌───────────────────────────────┬────────────────────────────────────────┐
 │ 문서                           │ 용도                                    │
+├───────────────────────────────┼────────────────────────────────────────┤
+│ CLAUDE.md                     │ 구현 규칙 + YouTube 렌더링 확정값       │
+│                               │ Claude Code 시작 전 우선 참조 문서      │
 ├───────────────────────────────┼────────────────────────────────────────┤
 │ VIDEO_HANDOFF.md              │ 이 파일 (인수인계 허브)                 │
 │                               │ 안정화 후 → docs/VIDEO_HANDOFF.md      │
@@ -28,6 +31,9 @@
 │ video-team-tasks.md           │ 소과제 13개 분류 + Claude Code 프롬프트 │
 │                               │ Week 1 (7과제) + Week 2 (6과제)        │
 │                               │ + Week 3 최종 테스트 + 문서 이동        │
+├───────────────────────────────┼────────────────────────────────────────┤
+│ SESSION_HANDOFF_VIDEO.md      │ 세션 로그 / LMS 구조 학습 메모          │
+│                               │ 현재 상태와 다음 작업 경계 기록         │
 └───────────────────────────────┴────────────────────────────────────────┘
 ```
 
@@ -73,6 +79,12 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
 ## 현재 상태
 
 ```
+현재 로컬 상태:
+  - 핵심 문서 4개 + SESSION_HANDOFF_VIDEO.md + CLAUDE.md 배치 완료
+  - scripts/ 폴더는 다른 bots와 동일한 공통 구조용 예약 상태
+  - samples/ 폴더에 raw/narration/edited 테스트 fixture 존재
+  - samples/ANALYSIS.md 에 ffprobe/YouTube 권장 분석 결과 정리 완료
+
 Week 1: 핵심 파이프라인
   ☐ 과제 1: 프로젝트 스캐폴딩 + DB
   ☐ 과제 2: FFmpeg 전처리
@@ -99,10 +111,12 @@ Week 3: 최종 테스트 + 문서 체계 통합
 ## Claude Code 첫 세션 시작 순서
 
 ```
-1. bots/video/docs/VIDEO_HANDOFF.md 읽기 (전체 맥락 파악)
-2. bots/video/docs/video-team-design.md 읽기 (모듈 매핑 + 기능목록)
-3. bots/video/docs/video-team-tasks.md에서 과제 1 프롬프트 실행
-4. 과제 1 완료 → 단위 테스트 → 과제 2 순서대로 진행
+1. bots/video/docs/CLAUDE.md 읽기 (구현 규칙 + 렌더링 확정값)
+2. bots/video/docs/VIDEO_HANDOFF.md 읽기 (전체 맥락 파악)
+3. bots/video/docs/video-team-design.md 읽기 (모듈 매핑 + 기능목록)
+4. bots/video/samples/ANALYSIS.md 읽기 (샘플 입출력 특성 확인)
+5. bots/video/docs/video-team-tasks.md에서 과제 1 프롬프트 실행
+6. 과제 1 완료 → 단위 테스트 → 과제 2 순서대로 진행
 ```
 
 ## 더백클래스 LMS 연동 (Phase 2+)
