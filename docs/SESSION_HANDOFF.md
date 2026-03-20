@@ -24,6 +24,14 @@
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
   - 일일/주간 예측 리뷰와 자동화는 shadow 비교를 읽도록 확장됐다.
+  - `naver-monitor` 취소 감지 루프에서 `pendingCancelMap` shape 충돌로 `bookingId` 예외가 반복되던 버그를 수정했다.
+  - `today cancelledCount`가 증가했는데 실제 신규 취소 처리 0건이면 `cancel counter drift` 경고를 즉시 alert로 올리도록 보강했다.
+  - `reservation health-report`는 이제 `cancelCounterDriftHealth`와 샘플 메시지를 함께 보여준다.
+  - 2026-03-21 실운영 복구:
+    - 박수민 `2026-03-21 01:00~03:30 A1`
+    - 김경혜 `2026-03-27 17:30~18:30 A1`
+    두 누락 취소를 `pickko-cancel-cmd.js`로 수동 복구했고, reservation DB 상태도 `cancelled / cancelled`로 정합성 복구했다.
+  - 수동 취소 후에는 실제 픽코/네이버 취소만 끝내지 말고 `reservations.status`, `pickko_status`, `marked_seen`, `cancelled_keys`, `doneKey`, alert resolve까지 같이 맞춰야 한다.
 - 운영 분석
   - `daily-ops-report.js`가 도입됐다.
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.

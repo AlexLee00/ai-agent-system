@@ -77,6 +77,66 @@ bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-mon
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
 ```
 
+취소 누락 복구 표준 절차:
+
+1. health / drift 확인
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+```
+
+- `cancelCounterDriftHealth`
+- `naver-monitor 로그`
+- `ai.ska.naver-monitor`
+를 먼저 확인한다.
+
+2. 예약/취소 이력 대조
+
+- `reservation.reservations`
+- `reservation.cancelled_keys`
+- `reservation.alerts`
+에서 전화번호 + 날짜 + 시작시간 기준으로 조회한다.
+- 취소가 실제로 누락됐다면 보통 아래 패턴으로 보인다.
+  - reservation row는 `completed / verified`
+  - `cancelled_keys` 없음
+  - 관련 `alerts` 없음
+
+3. 수동 취소 실행
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js \
+  --phone=01000000000 \
+  --date=YYYY-MM-DD \
+  --start=HH:MM \
+  --end=HH:MM \
+  --room=A1|A2|B \
+  --name=고객명
+```
+
+- 슬롯 시간은 네이버/DB 기준 실제 저장값으로 맞춘다.
+- 메모와 10분 차이가 있어도 DB/픽코가 보는 실제 슬롯 기준을 우선한다.
+
+4. 내부 상태 정합성 복구
+
+- 수동 취소 래퍼는 실제 픽코/네이버 취소는 처리하지만, reservation DB 상태는 자동으로 `cancelled`로 바꾸지 않을 수 있다.
+- 아래 항목을 함께 맞춰야 한다.
+  - `reservations.status = cancelled`
+  - `reservations.pickko_status = cancelled`
+  - `marked_seen = 1`
+  - `cancelled_keys`에 `cancelid|...`, `cancel_done|...` 반영
+  - 관련 `alerts` resolve
+
+5. 최종 검증
+
+- 두 축을 모두 확인한다.
+  - 실제 운영 화면: 픽코 취소 / 네이버 예약가능 복구
+  - 내부 상태: DB `cancelled`, `cancelled_keys` 반영, health drift 경고 해소
+
+주의:
+
+- 동일 슬롯 duplicate row가 있으면 한 건만 취소하지 말고 같은 슬롯의 관련 row를 함께 점검한다.
+- 취소 누락 복구 후에는 다음 사이클에서 `cancelCounterDriftHealth`와 `/tmp/naver-ops-mode.log`를 한 번 더 확인한다.
+
 참조:
 - [TEAM_SKA_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_SKA_REFERENCE.md)
 
