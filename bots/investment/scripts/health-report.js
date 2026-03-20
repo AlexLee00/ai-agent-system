@@ -163,6 +163,20 @@ function formatLaneLabel(exchange, tradeMode) {
   return `${String(exchange || 'unknown').toUpperCase()} / ${String(tradeMode || 'normal')}`;
 }
 
+function collectConfiguredLanes(policy) {
+  const lanes = [];
+  for (const [exchange, exchangeConfig] of Object.entries(policy.byExchange || {})) {
+    lanes.push({ exchange, tradeMode: 'normal' });
+    const tradeModes = exchangeConfig?.trade_modes || {};
+    const tradeModeNames = Object.keys(tradeModes);
+    for (const tradeMode of tradeModeNames) {
+      if (tradeMode === 'normal') continue;
+      lanes.push({ exchange, tradeMode });
+    }
+  }
+  return lanes;
+}
+
 function classifyGuardReason(row = {}) {
   const code = String(row.block_code || '').trim() || 'legacy_unclassified';
   const reason = String(row.block_reason || '').toLowerCase();
@@ -347,13 +361,23 @@ async function loadTradeLaneHealth() {
     `,
   ).catch(() => []);
 
-  const lanes = rows.map((row) => {
-    const count = Number(row.cnt || 0);
-    const limit = resolveLaneTradeLimit(policy, row.exchange, row.trade_mode);
+  const configured = collectConfiguredLanes(policy);
+  const rowMap = new Map(
+    rows.map((row) => [`${row.exchange}::${row.trade_mode}`, Number(row.cnt || 0)]),
+  );
+  const laneKeys = new Set([
+    ...configured.map((lane) => `${lane.exchange}::${lane.tradeMode}`),
+    ...rows.map((row) => `${row.exchange}::${row.trade_mode}`),
+  ]);
+
+  const lanes = [...laneKeys].sort((a, b) => a.localeCompare(b, 'ko')).map((key) => {
+    const [exchange, tradeMode] = key.split('::');
+    const count = Number(rowMap.get(key) || 0);
+    const limit = resolveLaneTradeLimit(policy, exchange, tradeMode);
     const ratio = limit > 0 ? count / limit : 0;
     return {
-      exchange: row.exchange,
-      tradeMode: row.trade_mode,
+      exchange,
+      tradeMode,
       count,
       limit,
       ratio,
