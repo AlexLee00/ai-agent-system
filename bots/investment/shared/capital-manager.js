@@ -65,6 +65,15 @@ export function getCapitalConfig(exchange = null) {
   };
 }
 
+export function formatDailyTradeLimitReason(dailyTrades, maxDailyTrades) {
+  const current = Number(dailyTrades || 0);
+  const limit = Number(maxDailyTrades || 0);
+  if (current > limit) {
+    return `일간 매매 한도 초과: 현재 ${current}건 / 한도 ${limit}건`;
+  }
+  return `일간 매매 한도 도달: 현재 ${current}건 / 한도 ${limit}건`;
+}
+
 // ─── 바이낸스 클라이언트 (lazy) ─────────────────────────────────────
 
 let _ex = null;
@@ -333,7 +342,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   if (isBuy) {
     const dailyTrades = await getDailyTradeCount();
     if (dailyTrades >= policy.max_daily_trades) {
-      return { allowed: false, reason: `일간 매매 한도: ${dailyTrades}/${policy.max_daily_trades}` };
+      return { allowed: false, reason: formatDailyTradeLimitReason(dailyTrades, policy.max_daily_trades) };
     }
     return { allowed: true, dailyTrades };
   }
