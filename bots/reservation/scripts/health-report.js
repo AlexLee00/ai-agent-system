@@ -48,6 +48,7 @@ const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
 const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
+const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
 
 function sumRoomAmounts(roomAmountsJson) {
   if (!roomAmountsJson) return 0;
@@ -147,7 +148,57 @@ async function buildDailySummaryIntegrityHealth() {
   }
 }
 
-function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth) {
+async function buildCancelCounterDriftHealth() {
+  try {
+    const rows = await pgPool.query('reservation', `
+      SELECT timestamp, resolved, title, message, date, start_time
+      FROM alerts
+      WHERE title = $1
+        AND timestamp >= to_char(now() - interval '24 hours', 'YYYY-MM-DD HH24:MI:SS')
+      ORDER BY timestamp DESC
+      LIMIT 20
+    `, [CANCEL_COUNTER_DRIFT_TITLE]);
+
+    const unresolved = rows.filter((row) => Number(row.resolved || 0) === 0);
+    const latest = rows[0] || null;
+
+    if (rows.length === 0) {
+      return {
+        ok: ['  취소 카운터 드리프트: 최근 24시간 경고 없음'],
+        warn: [],
+        totalCount: 0,
+        unresolvedCount: 0,
+        latestTimestamp: null,
+      };
+    }
+
+    const warn = [
+      `  취소 카운터 드리프트: 최근 24시간 ${rows.length}건`,
+      `  미해결: ${unresolved.length}건`,
+    ];
+    if (latest?.timestamp) {
+      warn.push(`  최신 감지: ${latest.timestamp}`);
+    }
+
+    return {
+      ok: [],
+      warn,
+      totalCount: rows.length,
+      unresolvedCount: unresolved.length,
+      latestTimestamp: latest?.timestamp || null,
+    };
+  } catch (error) {
+    return {
+      ok: [],
+      warn: [`  취소 카운터 드리프트: 확인 실패 (${error.message})`],
+      totalCount: 0,
+      unresolvedCount: 0,
+      latestTimestamp: null,
+    };
+  }
+}
+
+function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -175,6 +226,13 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
         level: 'medium',
         reason: `daily_summary 무결성 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 스카 매출 원천을 점검해야 합니다.`,
       },
+      {
+        active: cancelCounterDriftHealth.warn.length > 0,
+        level: cancelCounterDriftHealth.unresolvedCount > 0 ? 'high' : 'medium',
+        reason: cancelCounterDriftHealth.unresolvedCount > 0
+          ? `취소 카운터 드리프트 미해결 경고 ${cancelCounterDriftHealth.unresolvedCount}건이 있어 취소 누락을 점검해야 합니다.`
+          : `최근 24시간 취소 카운터 드리프트 경고 ${cancelCounterDriftHealth.totalCount}건이 있어 로그/취소 탭 추적이 필요합니다.`,
+      },
     ],
     okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
   });
@@ -189,6 +247,7 @@ function formatText(report) {
       buildHealthCountSection('■ 스케줄 작업 상태', report.scheduledServiceHealth),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
+      buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
       buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 2, warnLimit: 6 }),
       {
         title: null,
@@ -223,8 +282,9 @@ async function buildReport() {
   });
   const monitorHealth = buildMonitorHealth();
   const n8nCommandHealth = await buildN8nCommandHealth();
+  const cancelCounterDriftHealth = await buildCancelCounterDriftHealth();
   const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
-  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth);
+  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth);
 
   const report = {
     coreServiceHealth: {
@@ -257,6 +317,15 @@ async function buildReport() {
       webhookStatus: n8nCommandHealth.webhookStatus,
       webhookUrl: n8nCommandHealth.webhookUrl,
       resolvedWebhookUrl: n8nCommandHealth.resolvedWebhookUrl,
+    },
+    cancelCounterDriftHealth: {
+      okCount: cancelCounterDriftHealth.ok.length,
+      warnCount: cancelCounterDriftHealth.warn.length,
+      ok: cancelCounterDriftHealth.ok,
+      warn: cancelCounterDriftHealth.warn,
+      totalCount: cancelCounterDriftHealth.totalCount,
+      unresolvedCount: cancelCounterDriftHealth.unresolvedCount,
+      latestTimestamp: cancelCounterDriftHealth.latestTimestamp,
     },
     dailySummaryIntegrityHealth: {
       okCount: dailySummaryIntegrityHealth.ok.length,
