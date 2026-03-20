@@ -438,11 +438,23 @@ export async function getSignalById(id) {
   return get(`SELECT * FROM signals WHERE id = $1`, [id]);
 }
 
-export async function getPendingSignals(exchange) {
+export async function getPendingSignals(exchange, tradeMode = null) {
+  const conditions = [`status = 'pending'`];
+  const params = [];
+
   if (exchange) {
-    return query(`SELECT * FROM signals WHERE status = 'pending' AND exchange = $1 ORDER BY created_at ASC`, [exchange]);
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
   }
-  return query(`SELECT * FROM signals WHERE status = 'pending' ORDER BY created_at ASC`);
+  if (tradeMode) {
+    params.push(tradeMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+  }
+
+  return query(
+    `SELECT * FROM signals WHERE ${conditions.join(' AND ')} ORDER BY created_at ASC`,
+    params,
+  );
 }
 
 export async function getApprovedSignals(exchange, tradeMode = null) {

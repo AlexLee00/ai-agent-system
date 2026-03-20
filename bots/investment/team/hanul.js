@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
+import { getInvestmentTradeMode } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
@@ -163,6 +164,7 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
 
 async function checkKisRisk(signal) {
   const { action, amount_usdt: amountKrw, symbol } = signal;
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   if (!isKisSymbol(symbol)) return { approved: false, reason: `KIS 국내 심볼 아님: ${symbol}` };
   if (action === ACTIONS.HOLD)  return { approved: true };
   if (action === ACTIONS.BUY) {
@@ -192,7 +194,8 @@ async function checkKisRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getPosition(symbol);
+    const pos = await db.getLivePosition(symbol, 'kis')
+      || await db.getPaperPosition(symbol, 'kis', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 포지션 없음` };
   }
   return { approved: true };
@@ -200,6 +203,7 @@ async function checkKisRisk(signal) {
 
 async function checkKisOverseasRisk(signal) {
   const { action, amount_usdt: amountUsd, symbol } = signal;
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   if (!isKisOverseasSymbol(symbol)) return { approved: false, reason: `KIS 해외 심볼 아님: ${symbol}` };
   if (action === ACTIONS.HOLD)   return { approved: true };
   if (action === ACTIONS.BUY) {
@@ -224,7 +228,8 @@ async function checkKisOverseasRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getPosition(symbol);
+    const pos = await db.getLivePosition(symbol, 'kis_overseas')
+      || await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 해외 포지션 없음` };
   }
   return { approved: true };
@@ -265,6 +270,7 @@ export async function executeSignal(signal) {
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
@@ -292,6 +298,46 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
+      const livePosition = await db.getLivePosition(symbol, 'kis');
+      const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
+
+      if (paperMode && livePosition) {
+        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
+        return { success: false, reason };
+      }
+      if (paperMode && paperPosition) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
+        return { success: false, reason };
+      }
+      if (!paperMode && livePosition) {
+        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
+        return { success: false, reason };
+      }
+
       // paperMode=true → dryRun(API 호출 없음) / false → brokerAccountMode(mock/real)에 따라 실제 주문 API 호출
       const order = await kis.marketBuy(symbol, amountKrw, paperMode);
       trade = {
@@ -301,15 +347,18 @@ export async function executeSignal(signal) {
         totalUsdt: order.totalKrw,
         paper:     paperMode,
         exchange:  'kis',
+        tradeMode: signalTradeMode,
       };
 
-      const existing    = await db.getPosition(symbol);
-      const newQty      = (existing?.amount || 0) + (order.qty || 0);
-      const newAvgPrice = existing && existing.amount > 0
-        ? ((existing.amount * existing.avg_price) + amountKrw) / newQty
-        : order.price || 0;
-
-      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis' });
+      await db.upsertPosition({
+        symbol,
+        amount: order.qty || 0,
+        avgPrice: order.price || 0,
+        unrealizedPnl: 0,
+        exchange: 'kis',
+        paper: paperMode,
+        tradeMode: signalTradeMode,
+      });
 
       try {
         const execTime = Date.now();
@@ -344,7 +393,10 @@ export async function executeSignal(signal) {
       }
 
     } else if (action === ACTIONS.SELL) {
-      const position = await db.getPosition(symbol);
+      const livePosition = await db.getLivePosition(symbol, 'kis');
+      const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
+      const position = livePosition || paperPosition;
+      const sellPaperMode = !livePosition && !!paperPosition;
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
@@ -364,12 +416,17 @@ export async function executeSignal(signal) {
         amount:    order.qty,
         price:     order.price,
         totalUsdt: order.totalKrw,
-        paper:     paperMode,
+        paper:     sellPaperMode,
         exchange:  'kis',
+        tradeMode: sellPaperMode ? signalTradeMode : null,
       };
 
-      await db.deletePosition(symbol);
-      await closeOpenJournalForSymbol(symbol, 'domestic', paperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
+      await db.deletePosition(symbol, {
+        exchange: 'kis',
+        paper: sellPaperMode,
+        tradeMode: sellPaperMode ? signalTradeMode : null,
+      });
+      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -409,6 +466,7 @@ export async function executeOverseasSignal(signal) {
   const paperMode = isPaperMode();
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
@@ -436,6 +494,46 @@ export async function executeOverseasSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
+      const livePosition = await db.getLivePosition(symbol, 'kis_overseas');
+      const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
+
+      if (paperMode && livePosition) {
+        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
+        return { success: false, reason };
+      }
+      if (paperMode && paperPosition) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
+        return { success: false, reason };
+      }
+      if (!paperMode && livePosition) {
+        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
+        return { success: false, reason };
+      }
+
       const order = await kis.marketBuyOverseas(symbol, amountUsd, paperMode);
       trade = {
         signalId, symbol, side: 'buy',
@@ -444,15 +542,18 @@ export async function executeOverseasSignal(signal) {
         totalUsdt: order.totalUsd,
         paper:     paperMode,
         exchange:  'kis_overseas',
+        tradeMode: signalTradeMode,
       };
 
-      const existing    = await db.getPosition(symbol);
-      const newQty      = (existing?.amount || 0) + (order.qty || 0);
-      const newAvgPrice = existing && existing.amount > 0
-        ? ((existing.amount * existing.avg_price) + amountUsd) / newQty
-        : order.price || 0;
-
-      await db.upsertPosition({ symbol, amount: newQty, avgPrice: newAvgPrice, unrealizedPnl: 0, exchange: 'kis_overseas' });
+      await db.upsertPosition({
+        symbol,
+        amount: order.qty || 0,
+        avgPrice: order.price || 0,
+        unrealizedPnl: 0,
+        exchange: 'kis_overseas',
+        paper: paperMode,
+        tradeMode: signalTradeMode,
+      });
 
       try {
         const execTime = Date.now();
@@ -487,7 +588,10 @@ export async function executeOverseasSignal(signal) {
       }
 
     } else if (action === ACTIONS.SELL) {
-      const position = await db.getPosition(symbol);
+      const livePosition = await db.getLivePosition(symbol, 'kis_overseas');
+      const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
+      const position = livePosition || paperPosition;
+      const sellPaperMode = !livePosition && !!paperPosition;
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 해외 포지션 없음 — SELL 스킵`);
@@ -507,12 +611,17 @@ export async function executeOverseasSignal(signal) {
         amount:    order.qty,
         price:     order.price,
         totalUsdt: order.totalUsd,
-        paper:     paperMode,
+        paper:     sellPaperMode,
         exchange:  'kis_overseas',
+        tradeMode: sellPaperMode ? signalTradeMode : null,
       };
 
-      await db.deletePosition(symbol);
-      await closeOpenJournalForSymbol(symbol, 'overseas', paperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
+      await db.deletePosition(symbol, {
+        exchange: 'kis_overseas',
+        paper: sellPaperMode,
+        tradeMode: sellPaperMode ? signalTradeMode : null,
+      });
+      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -547,11 +656,12 @@ export async function executeOverseasSignal(signal) {
  */
 export async function processAllPendingKisSignals() {
   const startedAt = Date.now();
+  const tradeMode = getInvestmentTradeMode();
   console.log(`[한울] KIS 국내 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const signals = await db.getPendingSignals('kis');
-  logHanulPhase('KIS 국내 pending 조회 완료', startedAt, { signal_count: signals.length });
-  if (signals.length === 0) { console.log('[한울] 대기 KIS 국내 신호 없음'); return []; }
-  console.log(`[한울] ${signals.length}개 KIS 국내 신호 처리 시작`);
+  const signals = await db.getPendingSignals('kis', tradeMode);
+  logHanulPhase('KIS 국내 pending 조회 완료', startedAt, { signal_count: signals.length, trade_mode: tradeMode });
+  if (signals.length === 0) { console.log(`[한울] 대기 KIS 국내 신호 없음 (trade_mode=${tradeMode})`); return []; }
+  console.log(`[한울] ${signals.length}개 KIS 국내 신호 처리 시작 (trade_mode=${tradeMode})`);
   const results = [];
   for (const signal of signals) {
     const signalStartedAt = Date.now();
@@ -574,11 +684,12 @@ export async function processAllPendingKisSignals() {
  */
 export async function processAllPendingKisOverseasSignals() {
   const startedAt = Date.now();
+  const tradeMode = getInvestmentTradeMode();
   console.log(`[한울] KIS 해외 pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const signals = await db.getPendingSignals('kis_overseas');
-  logHanulPhase('KIS 해외 pending 조회 완료', startedAt, { signal_count: signals.length });
-  if (signals.length === 0) { console.log('[한울] 대기 KIS 해외 신호 없음'); return []; }
-  console.log(`[한울] ${signals.length}개 KIS 해외 신호 처리 시작`);
+  const signals = await db.getPendingSignals('kis_overseas', tradeMode);
+  logHanulPhase('KIS 해외 pending 조회 완료', startedAt, { signal_count: signals.length, trade_mode: tradeMode });
+  if (signals.length === 0) { console.log(`[한울] 대기 KIS 해외 신호 없음 (trade_mode=${tradeMode})`); return []; }
+  console.log(`[한울] ${signals.length}개 KIS 해외 신호 처리 시작 (trade_mode=${tradeMode})`);
   const results = [];
   for (const signal of signals) {
     const signalStartedAt = Date.now();
