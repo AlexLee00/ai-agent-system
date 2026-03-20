@@ -11,6 +11,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
 import { getInvestmentTradeMode } from './secrets.js';
+import { getSignalDedupeWindowMinutes } from './runtime-config.js';
 
 const SCHEMA = 'investment';
 let _schemaInitPromise = null;
@@ -350,15 +351,18 @@ export async function insertSignalIfFresh({
   exchange = 'binance',
   analystSignals = null,
   tradeMode = null,
-  dedupeWindowMinutes = 180,
+  dedupeWindowMinutes = null,
 } = {}) {
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const effectiveWindow = Number.isFinite(Number(dedupeWindowMinutes)) && Number(dedupeWindowMinutes) > 0
+    ? Math.round(Number(dedupeWindowMinutes))
+    : getSignalDedupeWindowMinutes();
   const duplicate = await getRecentSignalDuplicate({
     symbol,
     action,
     exchange,
     tradeMode: effectiveTradeMode,
-    minutesBack: dedupeWindowMinutes,
+    minutesBack: effectiveWindow,
   });
 
   if (duplicate) {
@@ -366,7 +370,7 @@ export async function insertSignalIfFresh({
       id: duplicate.id,
       duplicate: true,
       existingSignal: duplicate,
-      dedupeWindowMinutes,
+      dedupeWindowMinutes: effectiveWindow,
     };
   }
 
@@ -385,7 +389,7 @@ export async function insertSignalIfFresh({
     id,
     duplicate: false,
     existingSignal: null,
-    dedupeWindowMinutes,
+    dedupeWindowMinutes: effectiveWindow,
   };
 }
 
