@@ -28,6 +28,7 @@
   - `today cancelledCount`가 증가했는데 실제 신규 취소 처리 0건이면 `cancel counter drift` 경고를 즉시 alert로 올리도록 보강했다.
   - `reservation health-report`는 이제 `cancelCounterDriftHealth`와 샘플 메시지를 함께 보여준다.
   - `duplicate slot audit`가 reservation health-report에 추가돼, 같은 슬롯 duplicate를 `risky(활성 중복)`와 `historical(과거 취소/재예약 이력)`로 분리해서 보여준다.
+  - `bots/reservation/scripts/audit-duplicate-slots.js --json`가 추가돼 duplicate group의 실제 row id / status / 권장 조치를 health summary보다 자세히 볼 수 있다.
   - 2026-03-21 실운영 복구:
     - 박수민 `2026-03-21 01:00~03:30 A1`
     - 김경혜 `2026-03-27 17:30~18:30 A1`

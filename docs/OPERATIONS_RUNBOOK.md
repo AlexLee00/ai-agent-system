@@ -143,6 +143,7 @@ duplicate slot cleanup policy:
 
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/audit-duplicate-slots.js --json
 ```
 
 - `duplicateSlotHealth.riskyCount > 0`
@@ -180,6 +181,14 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-rep
 - 따라서 현재 기본 원칙은:
   - `risky`만 즉시 대응
   - `historical`은 audit 대상으로 유지
+
+운영 팁:
+
+- `health-report`는 요약/count를 본다.
+- `audit-duplicate-slots.js`는 실제 row id, status, 권장 조치를 본다.
+- 현재 기준 historical sample은 아래 두 패턴이 정상 후보다.
+  - `completed + cancelled`
+  - `cancelled + cancelled`
 
 5. 후속 개선 후보
 
