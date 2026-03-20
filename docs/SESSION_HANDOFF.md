@@ -27,11 +27,13 @@
   - `naver-monitor` 취소 감지 루프에서 `pendingCancelMap` shape 충돌로 `bookingId` 예외가 반복되던 버그를 수정했다.
   - `today cancelledCount`가 증가했는데 실제 신규 취소 처리 0건이면 `cancel counter drift` 경고를 즉시 alert로 올리도록 보강했다.
   - `reservation health-report`는 이제 `cancelCounterDriftHealth`와 샘플 메시지를 함께 보여준다.
+  - `duplicate slot audit`가 reservation health-report에 추가돼, 같은 슬롯 duplicate를 `risky(활성 중복)`와 `historical(과거 취소/재예약 이력)`로 분리해서 보여준다.
   - 2026-03-21 실운영 복구:
     - 박수민 `2026-03-21 01:00~03:30 A1`
     - 김경혜 `2026-03-27 17:30~18:30 A1`
     두 누락 취소를 `pickko-cancel-cmd.js`로 수동 복구했고, reservation DB 상태도 `cancelled / cancelled`로 정합성 복구했다.
   - 수동 취소 후에는 실제 픽코/네이버 취소만 끝내지 말고 `reservations.status`, `pickko_status`, `marked_seen`, `cancelled_keys`, `doneKey`, alert resolve까지 같이 맞춰야 한다.
+  - duplicate slot 전수 점검 결과 현재 `risky duplicate = 0`, `historical duplicate = 3`이며, 현재 3건은 `completed + cancelled` 또는 `cancelled + cancelled`로 확인돼 즉시 cleanup 대상은 아니다.
 - 운영 분석
   - `daily-ops-report.js`가 도입됐다.
   - health 입력 실패 시 과장된 장애 진단을 줄이도록 보정됐다.

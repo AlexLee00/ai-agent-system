@@ -137,6 +137,56 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation
 - 동일 슬롯 duplicate row가 있으면 한 건만 취소하지 말고 같은 슬롯의 관련 row를 함께 점검한다.
 - 취소 누락 복구 후에는 다음 사이클에서 `cancelCounterDriftHealth`와 `/tmp/naver-ops-mode.log`를 한 번 더 확인한다.
 
+duplicate slot cleanup policy:
+
+1. 먼저 health 기준으로 분류
+
+```bash
+node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js --json
+```
+
+- `duplicateSlotHealth.riskyCount > 0`
+  - 같은 슬롯에 `non-cancelled` row가 2개 이상인 상태
+  - 운영 정합성 위험이 있으므로 즉시 점검 대상이다.
+- `duplicateSlotHealth.historicalCount > 0`
+  - 보통 `completed + cancelled` 또는 `cancelled + cancelled`
+  - 과거 취소/재예약 또는 수동 복구 잔여 이력일 가능성이 높다.
+
+2. risky duplicate 처리 기준
+
+- 같은 `phone + date + start_time + room` 슬롯을 직접 조회한다.
+- 아래 패턴이면 즉시 정리 후보다.
+  - `completed + completed`
+  - `pending/processing + completed`
+  - `non-cancelled` row가 2건 이상
+- 이 경우:
+  - 실제 운영 화면(네이버/픽코) 기준 최종 상태를 먼저 확정
+  - 살아 있어야 하는 canonical row 1건만 남기고 나머지는 `cancelled` 또는 `seen_only` 등 내부 정책에 맞게 정리 검토
+  - 단, 즉시 삭제보다는 상태 정합성 복구가 우선이다.
+
+3. historical duplicate 처리 기준
+
+- `completed + cancelled`
+  - 과거 취소 후 재예약 이력으로 간주 가능
+  - 즉시 정리하지 않아도 된다.
+- `cancelled + cancelled`
+  - 수동 취소 복구나 bookingId 변경 과정의 잔여 이력일 수 있다.
+  - 운영 리스크는 낮지만, 장기적으로는 cleanup 후보로 기록한다.
+
+4. 지금 당장 정리하지 않는 이유
+
+- 예약 운영에서는 원본 이력 보존 가치가 있다.
+- duplicate가 모두 위험한 것은 아니다.
+- 따라서 현재 기본 원칙은:
+  - `risky`만 즉시 대응
+  - `historical`은 audit 대상으로 유지
+
+5. 후속 개선 후보
+
+- `historical duplicate` 전용 audit 스크립트
+- `cancelled + cancelled` pair 압축 정책
+- duplicate row를 별도 history 테이블로 이동하는 구조
+
 참조:
 - [TEAM_SKA_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_SKA_REFERENCE.md)
 
