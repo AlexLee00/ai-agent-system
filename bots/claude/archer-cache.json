@@ -1,7 +1,7 @@
 {
-  "lastRun": "2026-03-18",
+  "lastRun": "2026-03-20",
   "versions": {
-    "@anthropic-ai/sdk": "0.79.0",
+    "@anthropic-ai/sdk": "0.80.0",
     "@modelcontextprotocol/sdk": "1.27.1",
     "groq-sdk": "1.1.1",
     "duckdb": "1.4.4",
@@ -10,9 +10,9 @@
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 @anthropic-ai/sdk와 ccxt 패키지의 업데이트가 필요합니다. OpenAI의 새로운 GPT-5.4 모델이 발표되어 성능 향상이 기대됩니다. 또한, 로컬 AI와 제로데이 사기 탐지에 대한 새로운 기술이 주목받고 있습니다.",
-    "patchCount": 2,
+    "summary": "이번 주에는 @anthropic-ai/sdk의 패치가 필요합니다. LLM 관련 논문에서 잠재적 사실 메모리와 자기 반영 프로그램 검색의 중요성이 강조되었습니다. OpenAI의 Astral 인수는 향후 AI 기술에 큰 영향을 미칠 것으로 예상됩니다.",
+    "patchCount": 1,
     "securityCount": 0,
-    "llmApiCount": 1
+    "llmApiCount": 0
   }
 }
