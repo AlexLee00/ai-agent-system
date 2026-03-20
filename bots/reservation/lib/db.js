@@ -153,6 +153,33 @@ async function findReservationByBooking(phone, date, start) {
   return row ? _decryptRow(row) : null;
 }
 
+async function findReservationByCompositeKey(compositeKey) {
+  const row = await pgPool.get(
+    SCHEMA,
+    'SELECT * FROM reservations WHERE composite_key = $1 ORDER BY updated_at DESC NULLS LAST LIMIT 1',
+    [compositeKey],
+  );
+  return row ? _decryptRow(row) : null;
+}
+
+async function findReservationBySlot(phone, date, start, room = null) {
+  const row = await pgPool.get(
+    SCHEMA,
+    `
+      SELECT *
+      FROM reservations
+      WHERE phone = $1
+        AND date = $2
+        AND start_time = $3
+        AND ($4::text IS NULL OR room = $4)
+      ORDER BY updated_at DESC NULLS LAST
+      LIMIT 1
+    `,
+    [phone, date, start, room || null],
+  );
+  return row ? _decryptRow(row) : null;
+}
+
 /**
  * pending/processing/failed 상태 예약 목록 반환
  */
@@ -654,6 +681,8 @@ module.exports = {
   updateReservation,
   getReservation,
   findReservationByBooking,
+  findReservationByCompositeKey,
+  findReservationBySlot,
   getPendingReservations,
   getUnverifiedCompletedReservations,
   getAllNaverKeys,
