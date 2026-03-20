@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "timestamp": "2026-03-20T23:33:26.956Z",
+  "critic_score": 80,
+  "subtitle": {
+    "path": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/subtitle_corrected.srt",
+    "changes_count": 0,
+    "changes": []
+  },
+  "edl": {
+    "path": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/edit_decision_list.json",
+    "changes_count": 0,
+    "changes": []
+  },
+  "audio": null,
+  "total_changes": 0,
+  "cost_usd": 0
+}

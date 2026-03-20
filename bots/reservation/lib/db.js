@@ -572,6 +572,104 @@ async function getDailySummariesInRange(startDate, endDate) {
   }));
 }
 
+// ─── pickko_order_raw ──────────────────────────────────────────────
+
+async function upsertPickkoOrderRaw(row) {
+  await pgPool.run(SCHEMA, `
+    INSERT INTO pickko_order_raw (
+      entry_key, source_date, source_axis, order_kind, transaction_no, detail_href,
+      description, raw_amount, payment_at, pay_type, pay_device, memo,
+      ticket_type, product_hours, product_days, member_hint, validity_start, validity_end,
+      room_label, room_type, use_date, use_start_time, use_end_time, member_name,
+      policy_amount, amount_match, amount_delta, created_at, updated_at
+    )
+    VALUES (
+      $1,$2,$3,$4,$5,$6,
+      $7,$8,$9,$10,$11,$12,
+      $13,$14,$15,$16,$17,$18,
+      $19,$20,$21,$22,$23,$24,
+      $25,$26,$27,now(),now()
+    )
+    ON CONFLICT(entry_key) DO UPDATE SET
+      source_date      = EXCLUDED.source_date,
+      source_axis      = EXCLUDED.source_axis,
+      order_kind       = EXCLUDED.order_kind,
+      transaction_no   = EXCLUDED.transaction_no,
+      detail_href      = EXCLUDED.detail_href,
+      description      = EXCLUDED.description,
+      raw_amount       = EXCLUDED.raw_amount,
+      payment_at       = COALESCE(EXCLUDED.payment_at, pickko_order_raw.payment_at),
+      pay_type         = COALESCE(EXCLUDED.pay_type, pickko_order_raw.pay_type),
+      pay_device       = COALESCE(EXCLUDED.pay_device, pickko_order_raw.pay_device),
+      memo             = COALESCE(EXCLUDED.memo, pickko_order_raw.memo),
+      ticket_type      = COALESCE(EXCLUDED.ticket_type, pickko_order_raw.ticket_type),
+      product_hours    = COALESCE(EXCLUDED.product_hours, pickko_order_raw.product_hours),
+      product_days     = COALESCE(EXCLUDED.product_days, pickko_order_raw.product_days),
+      member_hint      = COALESCE(EXCLUDED.member_hint, pickko_order_raw.member_hint),
+      validity_start   = COALESCE(EXCLUDED.validity_start, pickko_order_raw.validity_start),
+      validity_end     = COALESCE(EXCLUDED.validity_end, pickko_order_raw.validity_end),
+      room_label       = COALESCE(EXCLUDED.room_label, pickko_order_raw.room_label),
+      room_type        = COALESCE(EXCLUDED.room_type, pickko_order_raw.room_type),
+      use_date         = COALESCE(EXCLUDED.use_date, pickko_order_raw.use_date),
+      use_start_time   = COALESCE(EXCLUDED.use_start_time, pickko_order_raw.use_start_time),
+      use_end_time     = COALESCE(EXCLUDED.use_end_time, pickko_order_raw.use_end_time),
+      member_name      = COALESCE(EXCLUDED.member_name, pickko_order_raw.member_name),
+      policy_amount    = COALESCE(EXCLUDED.policy_amount, pickko_order_raw.policy_amount),
+      amount_match     = COALESCE(EXCLUDED.amount_match, pickko_order_raw.amount_match),
+      amount_delta     = COALESCE(EXCLUDED.amount_delta, pickko_order_raw.amount_delta),
+      updated_at       = now()
+  `, [
+    row.entryKey,
+    row.sourceDate,
+    row.sourceAxis,
+    row.orderKind,
+    row.transactionNo ?? null,
+    row.detailHref ?? null,
+    row.description || '',
+    Number(row.rawAmount || 0),
+    row.paymentAt || null,
+    row.payType || null,
+    row.payDevice || null,
+    row.memo || null,
+    row.ticketType || null,
+    row.productHours ?? null,
+    row.productDays ?? null,
+    row.memberHint || null,
+    row.validityStart || null,
+    row.validityEnd || null,
+    row.roomLabel || null,
+    row.roomType || null,
+    row.useDate || null,
+    row.useStartTime || null,
+    row.useEndTime || null,
+    row.memberName || null,
+    row.policyAmount ?? null,
+    row.amountMatch ?? null,
+    row.amountDelta ?? null,
+  ]);
+}
+
+async function upsertPickkoOrderRawBatch(rows) {
+  for (const row of rows || []) {
+    await upsertPickkoOrderRaw(row);
+  }
+}
+
+async function getPickkoOrderRawByDate(sourceDate, sourceAxis = null) {
+  const rows = sourceAxis
+    ? await pgPool.query(
+      SCHEMA,
+      `SELECT * FROM pickko_order_raw WHERE source_date = $1 AND source_axis = $2 ORDER BY order_kind, transaction_no NULLS LAST, entry_key`,
+      [sourceDate, sourceAxis],
+    )
+    : await pgPool.query(
+      SCHEMA,
+      `SELECT * FROM pickko_order_raw WHERE source_date = $1 ORDER BY source_axis, order_kind, transaction_no NULLS LAST, entry_key`,
+      [sourceDate],
+    );
+  return rows;
+}
+
 // ─── room_revenue ───────────────────────────────────────────────────
 
 async function getRoomRevenueSummary() {
@@ -712,6 +810,10 @@ module.exports = {
   getUnconfirmedSummaryBefore,
   getLatestUnconfirmedSummary,
   confirmDailySummary,
+  // pickko_order_raw
+  upsertPickkoOrderRaw,
+  upsertPickkoOrderRawBatch,
+  getPickkoOrderRawByDate,
   // room_revenue
   getRoomRevenueSummary,
   // stats

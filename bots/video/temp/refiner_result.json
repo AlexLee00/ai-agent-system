@@ -1,0 +1,91 @@
+{
+  "version": 3,
+  "timestamp": "2026-03-20T23:15:28.580Z",
+  "critic_score": 78,
+  "subtitle": {
+    "path": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/subtitle_corrected_v3.srt",
+    "changes_count": 12,
+    "changes": [
+      {
+        "entry": 1,
+        "type": "subtitle_terminology",
+        "before": "지난 시간 우리는 동적 데이터, 다이나믹 데이터 개념으로 영화 순위 페이지를 만들었죠?",
+        "after": "지난 시간 우리는 동적 데이터, 동적 데이터 개념으로 영화 순위 페이지를 만들었죠?"
+      },
+      {
+        "entry": 5,
+        "type": "subtitle_terminology",
+        "before": "그렇다면 Navigate to Action으로 상세 페이지로 전환되도록 해야 할 것이고",
+        "after": "그렇다면 Navigate To 액션으로 상세 페이지로 전환되도록 해야 할 것이고"
+      },
+      {
+        "entry": 12,
+        "type": "subtitle_terminology",
+        "before": "페이지가 전환될 때 파라미터로 관련 데이터를 패스, 즉 전달시킬 수 있습니다",
+        "after": "페이지가 전환될 때 파라미터로 관련 데이터를 전달, 즉 전달시킬 수 있습니다"
+      },
+      {
+        "entry": 17,
+        "type": "subtitle_terminology",
+        "before": "먼저 데이터셋에 영화에 대한 추가 정보 필드를 추가해 보겠습니다",
+        "after": "먼저 데이터 타입에 영화에 대한 추가 정보 필드를 추가해 보겠습니다"
+      },
+      {
+        "entry": 27,
+        "type": "subtitle_terminology",
+        "before": "액션에서 내비게이트 투 액션에서 디테일 페이지로 지정해 줍니다",
+        "after": "액션에서 내비게이트 액션에서 디테일 페이지로 지정해 줍니다"
+      },
+      {
+        "entry": 31,
+        "type": "subtitle_typo",
+        "before": "디파인 버튼을 선택하면 전원될 페이지로 이동해서",
+        "after": "디파인 버튼을 선택하면 전달될 페이지로 이동해서"
+      },
+      {
+        "entry": 35,
+        "type": "subtitle_terminology",
+        "before": "타입은 커스텀 타입인 데이터 셋이잖아요",
+        "after": "타입은 커스텀 데이터 타입이잖아요"
+      },
+      {
+        "entry": 38,
+        "type": "subtitle_terminology",
+        "before": "디파인이 아닌 패스라는 버튼이 생기죠",
+        "after": "디파인이 아닌 패스 파라미터(Pass Parameter) 버튼이 생기죠"
+      },
+      {
+        "entry": 45,
+        "type": "subtitle_typo",
+        "before": "이미지, 랭킹, 타이틀, 소개 데이터를 출기록할 수 있도록",
+        "after": "이미지, 랭킹, 타이틀, 소개 데이터를 출력할 수 있도록"
+      },
+      {
+        "entry": 48,
+        "type": "subtitle_terminology",
+        "before": "아이템 스페이스를 줘서 위젯 간 간격을 띄우고",
+        "after": "아이템 스페이싱을 줘서 위젯 간 간격을 띄우고"
+      },
+      {
+        "entry": 56,
+        "type": "subtitle_terminology",
+        "before": "패스 변수 연동은 파라미터에서 필드를 꺼내 연결하면 됩니다",
+        "after": "경로 변수 연동은 파라미터에서 필드를 꺼내 연결하면 됩니다"
+      },
+      {
+        "entry": 57,
+        "type": "subtitle_terminology",
+        "before": "텍스트들도 각 필드에 맞게 바인딩 해줍니다",
+        "after": "텍스트들도 각 필드에 맞게 바인딩해 줍니다"
+      }
+    ]
+  },
+  "edl": {
+    "path": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/edit_decision_list.json",
+    "changes_count": 0,
+    "changes": []
+  },
+  "audio": null,
+  "total_changes": 12,
+  "cost_usd": 0
+}

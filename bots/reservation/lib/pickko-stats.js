@@ -27,6 +27,135 @@ function normalizeStudyRoomLabel(description) {
   return `스터디룸${alpha}${digits}`;
 }
 
+function normalizeTicketType(hours, description, amount) {
+  const text = String(description || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (text.includes('기간권')) {
+    if (Number(amount || 0) === 80000) return '기간권-14일';
+    if (Number(amount || 0) === 150000) return '기간권-28일';
+    const dayMatch = text.match(/(\d+)\s*일/);
+    return dayMatch ? `기간권-${dayMatch[1]}일` : '기간권';
+  }
+
+  const hour = Number(hours || 0);
+  if ([1, 2, 3, 4, 6, 8, 14].includes(hour)) return `일회권-${hour}시간`;
+  if ([30, 50].includes(hour)) return `시간권-${hour}시간`;
+  return hour > 0 ? `기타-${hour}시간` : '미분류';
+}
+
+function parseGeneralTicketDescription(description, amount = 0) {
+  const text = String(description || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) {
+    return {
+      rawDescription: '',
+      productHours: null,
+      productDays: null,
+      ticketType: '미분류',
+      memberHint: null,
+      startDate: null,
+      endDate: null,
+      isPeriodPass: false,
+    };
+  }
+
+  const baseMatch = text.match(/(\d+)(시간|일)\((\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})\)\s*([^()]+?)\s*\(([^)]+)\)/);
+  if (baseMatch) {
+    const value = Number(baseMatch[1]);
+    const unit = baseMatch[2];
+    return {
+      rawDescription: text,
+      productHours: unit === '시간' ? value : null,
+      productDays: unit === '일' ? value : null,
+      ticketType: unit === '시간'
+        ? normalizeTicketType(value, text, amount)
+        : normalizeTicketType(null, `기간권 ${value}일`, amount),
+      memberHint: baseMatch[6],
+      startDate: baseMatch[3],
+      endDate: baseMatch[4],
+      isPeriodPass: unit === '일' || text.includes('기간권'),
+    };
+  }
+
+  const periodMatch = text.match(/기간권\s*\(([^)]+)\)/);
+  if (periodMatch) {
+    return {
+      rawDescription: text,
+      productHours: null,
+      productDays: Number((text.match(/(\d+)\s*일/) || [])[1] || 0) || null,
+      ticketType: normalizeTicketType(null, text, amount),
+      memberHint: periodMatch[1],
+      startDate: null,
+      endDate: null,
+      isPeriodPass: true,
+    };
+  }
+
+  return {
+    rawDescription: text,
+    productHours: null,
+    productDays: null,
+    ticketType: normalizeTicketType(null, text, amount),
+    memberHint: (text.match(/\(([^)]+)\)\s*$/) || [])[1] || null,
+    startDate: null,
+    endDate: null,
+    isPeriodPass: text.includes('기간권'),
+  };
+}
+
+function parseStudyRoomDescription(description, defaultYear = null) {
+  const text = String(description || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) {
+    return {
+      rawDescription: '',
+      roomLabel: null,
+      roomType: null,
+      useDate: null,
+      startTime: null,
+      endTime: null,
+      memberName: null,
+    };
+  }
+
+  const roomLabel = normalizeStudyRoomLabel(text);
+  const roomTypeMatch = roomLabel ? roomLabel.match(/^스터디룸([A-Z])/i) : null;
+  const roomType = roomTypeMatch ? String(roomTypeMatch[1] || '').toUpperCase() : null;
+  const timeMatch = text.match(/(\d{2})월\s+(\d{2})일\s+(\d{2})시\s+(\d{2})분\s+~\s+(\d{2})시\s+(\d{2})분\s+\(([^)]+)\)/);
+
+  if (!timeMatch) {
+    return {
+      rawDescription: text,
+      roomLabel,
+      roomType,
+      useDate: null,
+      startTime: null,
+      endTime: null,
+      memberName: (text.match(/\(([^)]+)\)\s*$/) || [])[1] || null,
+    };
+  }
+
+  const year = defaultYear || new Date().getFullYear();
+  return {
+    rawDescription: text,
+    roomLabel,
+    roomType,
+    useDate: `${year}-${timeMatch[1]}-${timeMatch[2]}`,
+    startTime: `${timeMatch[3]}:${timeMatch[4]}`,
+    endTime: `${timeMatch[5]}:${timeMatch[6]}`,
+    memberName: timeMatch[7],
+  };
+}
+
 // ─── 월별 매출 조회 ────────────────────────────────────────────────
 
 /**
@@ -106,7 +235,9 @@ async function fetchDailyDetail(page, date) {
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
 
-  const transactions = await page.evaluate(() => {
+  const targetYear = Number(String(date || '').slice(0, 4)) || new Date().getFullYear();
+
+  const transactions = await page.evaluate((defaultYear) => {
     const normalizeStudyRoomLabel = (description) => {
       const text = String(description || '')
         .replace(/\u00A0/g, ' ')
@@ -123,6 +254,134 @@ async function fetchDailyDetail(page, date) {
       return `스터디룸${alpha}${digits}`;
     };
 
+    const normalizeTicketType = (hours, description, amount) => {
+      const text = String(description || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (text.includes('기간권')) {
+        if (Number(amount || 0) === 80000) return '기간권-14일';
+        if (Number(amount || 0) === 150000) return '기간권-28일';
+        const dayMatch = text.match(/(\d+)\s*일/);
+        return dayMatch ? `기간권-${dayMatch[1]}일` : '기간권';
+      }
+
+      const hour = Number(hours || 0);
+      if ([1, 2, 3, 4, 6, 8, 14].includes(hour)) return `일회권-${hour}시간`;
+      if ([30, 50].includes(hour)) return `시간권-${hour}시간`;
+      return hour > 0 ? `기타-${hour}시간` : '미분류';
+    };
+
+    const parseGeneralTicketDescription = (description, amount = 0) => {
+      const text = String(description || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!text) {
+        return {
+          rawDescription: '',
+          productHours: null,
+          productDays: null,
+          ticketType: '미분류',
+          memberHint: null,
+          startDate: null,
+          endDate: null,
+          isPeriodPass: false,
+        };
+      }
+
+      const baseMatch = text.match(/(\d+)(시간|일)\((\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})\)\s*([^()]+?)\s*\(([^)]+)\)/);
+      if (baseMatch) {
+        const value = Number(baseMatch[1]);
+        const unit = baseMatch[2];
+        return {
+          rawDescription: text,
+          productHours: unit === '시간' ? value : null,
+          productDays: unit === '일' ? value : null,
+          ticketType: unit === '시간'
+            ? normalizeTicketType(value, text, amount)
+            : normalizeTicketType(null, `기간권 ${value}일`, amount),
+          memberHint: baseMatch[6],
+          startDate: baseMatch[3],
+          endDate: baseMatch[4],
+          isPeriodPass: unit === '일' || text.includes('기간권'),
+        };
+      }
+
+      const periodMatch = text.match(/기간권\s*\(([^)]+)\)/);
+      if (periodMatch) {
+        return {
+          rawDescription: text,
+          productHours: null,
+          productDays: Number((text.match(/(\d+)\s*일/) || [])[1] || 0) || null,
+          ticketType: normalizeTicketType(null, text, amount),
+          memberHint: periodMatch[1],
+          startDate: null,
+          endDate: null,
+          isPeriodPass: true,
+        };
+      }
+
+      return {
+        rawDescription: text,
+        productHours: null,
+        productDays: null,
+        ticketType: normalizeTicketType(null, text, amount),
+        memberHint: (text.match(/\(([^)]+)\)\s*$/) || [])[1] || null,
+        startDate: null,
+        endDate: null,
+        isPeriodPass: text.includes('기간권'),
+      };
+    };
+
+    const parseStudyRoomDescription = (description, defaultYear) => {
+      const text = String(description || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!text) {
+        return {
+          rawDescription: '',
+          roomLabel: null,
+          roomType: null,
+          useDate: null,
+          startTime: null,
+          endTime: null,
+          memberName: null,
+        };
+      }
+
+      const roomLabel = normalizeStudyRoomLabel(text);
+      const roomTypeMatch = roomLabel ? roomLabel.match(/^스터디룸([A-Z])/i) : null;
+      const roomType = roomTypeMatch ? String(roomTypeMatch[1] || '').toUpperCase() : null;
+      const timeMatch = text.match(/(\d{2})월\s+(\d{2})일\s+(\d{2})시\s+(\d{2})분\s+~\s+(\d{2})시\s+(\d{2})분\s+\(([^)]+)\)/);
+
+      if (!timeMatch) {
+        return {
+          rawDescription: text,
+          roomLabel,
+          roomType,
+          useDate: null,
+          startTime: null,
+          endTime: null,
+          memberName: (text.match(/\(([^)]+)\)\s*$/) || [])[1] || null,
+        };
+      }
+
+      return {
+        rawDescription: text,
+        roomLabel,
+        roomType,
+        useDate: `${defaultYear}-${timeMatch[1]}-${timeMatch[2]}`,
+        startTime: `${timeMatch[3]}:${timeMatch[4]}`,
+        endTime: `${timeMatch[5]}:${timeMatch[6]}`,
+        memberName: timeMatch[7],
+      };
+    };
+
     return Array.from(document.querySelectorAll('table tbody tr')).map(tr => {
       const tds = Array.from(tr.querySelectorAll('td'));
       const getText = (i) => (tds[i] ? tds[i].textContent.trim() : '');
@@ -137,10 +396,12 @@ async function fetchDailyDetail(page, date) {
 
       // 스터디룸 판별
       const studyRoom = normalizeStudyRoomLabel(description);
+      const generalTicket = studyRoom ? null : parseGeneralTicketDescription(description, netRevenue);
+      const roomDetail = studyRoom ? parseStudyRoomDescription(description, defaultYear) : null;
 
-      return { no: Number(no), description, netRevenue, studyRoom };
+      return { no: Number(no), description, netRevenue, studyRoom, generalTicket, roomDetail };
     }).filter(Boolean);
-  });
+  }, targetYear);
 
   // 룸별·일반 합산
   const studyRoomRevenue = {};
@@ -159,4 +420,12 @@ async function fetchDailyDetail(page, date) {
   return { transactions, studyRoomRevenue, generalRevenue, totalRevenue };
 }
 
-module.exports = { fetchMonthlyRevenue, fetchDailyRevenue, fetchDailyDetail };
+module.exports = {
+  fetchMonthlyRevenue,
+  fetchDailyRevenue,
+  fetchDailyDetail,
+  normalizeStudyRoomLabel,
+  parseGeneralTicketDescription,
+  parseStudyRoomDescription,
+  normalizeTicketType,
+};

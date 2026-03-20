@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "timestamp": "2026-03-20T23:33:26.951Z",
+  "source_video": "synced.mp4",
+  "source_subtitle": "subtitle_corrected.srt",
+  "score": 80,
+  "pass": false,
+  "target_score": 85,
+  "issues": [
+    {
+      "type": "scene_change",
+      "at": 18.666667,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1293.016667,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1294.166667,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1317.133333,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1352.233333,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1372.116667,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1396.483333,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1435.483333,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1459.433333,
+      "score": 0.3,
+      "action": "add_transition"
+    },
+    {
+      "type": "scene_change",
+      "at": 1461.183333,
+      "score": 0.3,
+      "action": "add_transition"
+    }
+  ],
+  "scores": {
+    "subtitle_accuracy": 50,
+    "audio_quality": 100,
+    "video_structure": 100,
+    "overall": 80
+  },
+  "analysis_summary": {
+    "subtitle_entries": 67,
+    "subtitle_issues_count": 0,
+    "audio_lufs": -14.96,
+    "audio_peak": -3.54,
+    "silences_count": 0,
+    "freezes_count": 0,
+    "scenes_count": 57,
+    "duration_seconds": 4416.8
+  },
+  "llm_cost_usd": 0
+}
