@@ -34,6 +34,7 @@ const { buildReservationId, buildReservationCompositeKey } = require('../../lib/
 const { saveJson } = require('../../lib/files');
 const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
+const { getNaverLaunchOptions, isHeadedMode } = require('../../lib/browser');
 const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
 const kst = require('../../../../packages/core/lib/kst');
 
@@ -323,9 +324,9 @@ async function naverLogin(page) {
     const hasLoginForm = await page.$('input#id, input[name="id"], input#pw, input[name="pw"]');
     if (hasLoginForm) {
       // 2단계 보안이 켜져 있으면 headless에서 막힐 수 있음 → 창을 띄우고 사장님이 1회 수동 로그인
-      const isHeadless = process.env.NAVER_HEADLESS !== '0';
+      const isHeadless = !isHeadedMode('naver');
       if (isHeadless) {
-        log('⚠️ 로그인 폼 감지: 현재 headless 모드입니다. 2단계 보안이 있으면 실패할 수 있어요. NAVER_HEADLESS=0으로 재실행 권장');
+        log('⚠️ 로그인 폼 감지: 현재 headless 모드입니다. 2단계 보안이 있으면 실패할 수 있어요. PLAYWRIGHT_HEADLESS=false 또는 NAVER_HEADLESS=0으로 재실행 권장');
       }
 
       log('로그인 필요 - 아이디/비밀번호 입력 시도');
@@ -755,30 +756,17 @@ async function monitorBookings() {
 
     // Puppeteer 실행
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
-    browser = await puppeteer.launch({
-      headless: false, // 🖥️ 항상 브라우저 화면 표시
-      defaultViewport: null, // 창 크기 = 뷰포트 (짤림 방지)
-      protocolTimeout: 30000, // CDP 개별 호출 타임아웃 (기본 180초→30초, Runtime.callFunctionOn 타임아웃 단축)
+    browser = await puppeteer.launch(getNaverLaunchOptions({
+      protocolTimeout: 30000,
       // OPS: naver-profile  |  DEV: naver-profile-dev (세션 파일 분리 → 동시 실행 가능)
       userDataDir: path.join(WORKSPACE, `naver-profile${getModeSuffix()}`),
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--window-position=0,25',  // 📍 주 모니터 고정 (메뉴바 25px 아래)
-        '--window-size=2294,1380', // 📺 맥북 해상도 기준 (2294x1432 - 메뉴바/독 여유)
-        // ✅ 백그라운드/탭 회수(페이지 확보)로 인한 frame detach 완화
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TabDiscarding,Translate,BackForwardCache'
-      ]
-    });
+    }));
 
     // CDP 엔드포인트 저장: kiosk-monitor가 새 탭으로 연결하기 위해 사용
     try { fs.writeFileSync(NAVER_WS_FILE, browser.wsEndpoint(), 'utf8'); } catch (e) {}
     log('📡 CDP 엔드포인트 저장됨 (kiosk-monitor 연결용)');
 
-    const isHeadless = process.env.NAVER_HEADLESS !== '0';
+    const isHeadless = !isHeadedMode('naver');
 
     // ✅ 탭 분리(Headful일 때만): 사장님 탭을 건드리지 않기 위함
     let pageMain = null;
@@ -1672,13 +1660,13 @@ async function monitorBookings() {
     log(`❌ 치명적 오류: ${err.message}`);
     await updateAgentState('andy', 'error', null, err.message);
   } finally {
-    const isHeadless = process.env.NAVER_HEADLESS !== '0';
+    const isHeadless = !isHeadedMode('naver');
     if (browser) {
       if (isHeadless) {
         await browser.close();
         log('🔌 브라우저 종료');
       } else {
-        log('🟢 NAVER_HEADLESS=0 상태: 브라우저를 닫지 않고 유지합니다(수동 확인/2단계 대비).');
+        log('🟢 headed 디버그 상태: 브라우저를 닫지 않고 유지합니다(수동 확인/2단계 대비).');
       }
     }
 

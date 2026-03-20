@@ -1,10 +1,14 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
 async function getHTML() {
   const browser = await puppeteer.launch({
-    headless: false,
-    args: ['--start-maximized', '--kiosk']
+    ...getNaverLaunchOptions(),
+    args: [
+      ...getNaverLaunchOptions().args,
+      ...(isHeadedMode('naver') ? ['--start-maximized', '--kiosk'] : [])
+    ]
   });
   
   const page = await browser.newPage();
@@ -64,7 +68,8 @@ async function getHTML() {
     fs.writeFileSync('./naver-login-page.html', html);
     console.log('\n✅ HTML이 naver-login-page.html에 저장됨');
     
-    console.log('\n브라우저는 열려있습니다. 확인 후 Ctrl+C를 누르세요.');
+    console.log(`\n현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);
+    console.log('브라우저를 직접 보려면 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
     
     // 무한 대기
     await new Promise(() => {});

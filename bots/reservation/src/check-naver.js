@@ -1,7 +1,8 @@
 const puppeteer = require('puppeteer');
+const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
 async function checkNaver() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch(getNaverLaunchOptions());
   const page = await browser.newPage();
   
   try {
@@ -35,7 +36,8 @@ async function checkNaver() {
     
     console.log(JSON.stringify(inputs.slice(0, 10), null, 2));
     
-    console.log('\n검사 완료. 브라우저는 열려있습니다. (Ctrl+C로 종료)');
+    console.log(`\n검사 완료. 현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);
+    console.log('필요 시 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
     
   } catch (e) {
     console.error('오류:', e.message);

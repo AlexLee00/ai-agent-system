@@ -4,6 +4,34 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 스카 Playwright/Puppeteer headless 기본화 + headed 디버그 토글
+
+핵심 구현:
+- `bots/reservation/lib/browser.js`
+  - `PLAYWRIGHT_HEADLESS`를 기본 토글로 읽는 공용 headless helper 추가
+  - 기존 `NAVER_HEADLESS`, `PICKKO_HEADLESS`는 하위 호환으로 유지
+  - `.playwright-headed` 플래그 파일이 있으면 headed 모드로 전환되도록 지원
+  - `pickko`, `naver` 공통 launch 옵션에서 `headless: 'new'`, `--disable-gpu`, `--disable-dev-shm-usage`를 기본화
+- `packages/playwright-utils/src/browser.js`
+  - reservation 공용 브라우저 정책과 동일한 headless/ headed 토글 규칙 반영
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 네이버 모니터를 항상 headful로 띄우던 구조를 환경변수/플래그 기반 headless 기본값으로 전환
+  - 기존 persistent `userDataDir`는 유지해 로그인 세션이 계속 재사용되도록 보강
+  - 로그인 폼 감지/종료 로그도 `PLAYWRIGHT_HEADLESS=false` 기준 안내로 수정
+- `bots/reservation/src/check-naver.js`, `init-naver-booking-session.js`, `inspect-naver.js`, `analyze-booking-page.js`, `get-naver-html.js`
+  - 진단/수동 세션 스크립트도 같은 headless 토글 규칙을 공유하도록 정리
+- `bots/reservation/auto/monitors/start-ops.sh`, `bots/reservation/launchd/ai.ska.naver-monitor.plist`
+  - 운영 기본값을 `PLAYWRIGHT_HEADLESS=true`로 명시
+
+세션 맥락:
+- 사용자는 네이버/픽코 브라우저가 작업 중 맥북 포커스를 가져가는 문제를 줄이기 위해, 스카 브라우저 자동화를 기본 headless로 돌리고 디버깅 때만 화면을 보이게 하는 전환을 요청했다.
+- 현재 스카 브라우저 계층은 이름상 Playwright/공용 브라우저 유틸이지만 실제 런타임은 Puppeteer 중심이라, 운영 핵심인 `naver-monitor`와 `lib/browser.js`를 기준으로 정책을 공통화하는 것이 맞았다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 운영 기본값을 headless로 바꿔 맥북 포커스 침해를 없애는 것이다.
+- 다만 네이버 로그인 세션은 이미 `userDataDir` 기반으로 유지되고 있으므로, 무리하게 전면 재구성하지 않고 기존 persistent profile을 그대로 재사용하는 편이 안정적이다.
+- `PLAYWRIGHT_HEADLESS=false`와 `.playwright-headed`를 모두 지원하면 운영은 headless, 개발/디버깅은 headed로 쉽게 전환할 수 있다.
+
 ### 12주차 후속 (2026-03-20) — 비디오팀 과제 1 스캐폴딩 + DB 원장 초기화
 
 핵심 구현:

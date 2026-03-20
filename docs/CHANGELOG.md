@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — 스카 브라우저 자동화 headless 기본화
+
+### 변경 사항 (changed)
+- `bots/reservation/lib/browser.js`
+  - `PLAYWRIGHT_HEADLESS` 기본 토글, `NAVER_HEADLESS` / `PICKKO_HEADLESS` 하위 호환, `.playwright-headed` 파일 기반 headed 디버그 전환 지원 추가
+  - `pickko`, `naver` 공용 launch 옵션에 `headless: 'new'`, `--disable-gpu`, `--disable-dev-shm-usage`를 반영
+- `packages/playwright-utils/src/browser.js`
+  - reservation 브라우저 정책과 동일한 headless/ headed 토글 규칙으로 정리
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 네이버 모니터 기본 실행을 headless로 전환하고, 기존 persistent profile 세션은 유지
+  - 로그인/종료 안내 문구를 `PLAYWRIGHT_HEADLESS=false` 기준으로 갱신
+- `bots/reservation/src/check-naver.js`, `init-naver-booking-session.js`, `inspect-naver.js`, `analyze-booking-page.js`, `get-naver-html.js`
+  - 진단 스크립트도 공통 headless 토글을 사용하도록 정리
+- `bots/reservation/auto/monitors/start-ops.sh`, `bots/reservation/launchd/ai.ska.naver-monitor.plist`
+  - 운영 기본값으로 `PLAYWRIGHT_HEADLESS=true`를 명시
+
 ## 12주차 후속 (2026-03-20) — 비디오팀 과제 1 스캐폴딩 생성
 
 ### 신규 기능 (feat)

@@ -34,6 +34,8 @@
         <string>/Users/alexlee</string>
         <key>PATH</key>
         <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>PLAYWRIGHT_HEADLESS</key>
+        <string>true</string>
         <key>PICKKO_HEADLESS</key>
         <string>1</string>
         <key>PICKKO_ENABLE</key>
