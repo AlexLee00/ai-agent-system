@@ -116,8 +116,9 @@ function runStartupPickkoVerification() {
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
 
-// 취소감지1 더블체크 맵: 미래 예약 사라짐 1차 감지 → 1사이클 후 재확인 후 취소 실행
-// { cancelKey → { booking, detectedAt } }
+// 취소 대기 맵:
+// - 취소감지1: { source: 'confirmed_drop', booking, detectedAt }
+// - 취소감지4: { source: 'future_stale', booking, stale, firstDetectedAt, count }
 const pendingCancelMap = new Map();
 
 // Heartbeat: 마지막 전송 시각 (1시간 주기)
@@ -1375,9 +1376,8 @@ async function monitorBookings() {
                 const toKey2 = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
                 const currentKeysSet = new Set(currentConfirmedList.map(b => toKey2(b)));
                 for (const [pKey, entry] of pendingCancelMap.entries()) {
-                  // 취소감지4는 { stale, firstDetectedAt, count } 구조를 사용하므로
-                  // 감지1 cleanup에서는 booking 기반 엔트리만 만진다.
-                  if (!entry?.booking) continue;
+                  // 감지1 cleanup은 자기 source만 처리한다.
+                  if (entry?.source !== 'confirmed_drop' || !entry?.booking) continue;
                   const reappeared = currentKeysSet.has(toKey2(entry.booking));
                   const expired    = Date.now() - entry.detectedAt > 30 * 60 * 1000; // 30분 만료
                   if (reappeared) {
@@ -1417,7 +1417,11 @@ async function monitorBookings() {
                         } else {
                           // 1번째 감지 → pending 등록 (다음 사이클에 재확인)
                           log(`⏳ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 사라짐 감지 → 1사이클 후 재확인 (더블체크 대기)`);
-                          pendingCancelMap.set(cancelKey, { booking: dropped, detectedAt: Date.now() });
+                          pendingCancelMap.set(cancelKey, {
+                            source: 'confirmed_drop',
+                            booking: dropped,
+                            detectedAt: Date.now(),
+                          });
                         }
                       } else {
                         // 오늘/과거 날짜 → 이용완료 추정 (정상 종료)
@@ -1545,7 +1549,13 @@ async function monitorBookings() {
                       if (elapsed > STALE_EXPIRE_MS) {
                         // pending 만료 → 카운트 초기화 후 재등록
                         log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — pending 만료(${Math.floor(elapsed/60000)}분) → 재등록`);
-                        pendingCancelMap.set(cancelKey, { stale, firstDetectedAt: Date.now(), count: 1 });
+                        pendingCancelMap.set(cancelKey, {
+                          source: 'future_stale',
+                          booking,
+                          stale,
+                          firstDetectedAt: Date.now(),
+                          count: 1,
+                        });
                         await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
                       } else {
                         const newCount = (pending.count || 1) + 1;
@@ -1557,7 +1567,7 @@ async function monitorBookings() {
                           await runPickkoCancel(booking, cancelKey);
                         } else {
                           // 누적 대기
-                          pendingCancelMap.set(cancelKey, { ...pending, count: newCount });
+                          pendingCancelMap.set(cancelKey, { ...pending, source: 'future_stale', booking, count: newCount });
                           log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 stale (${Math.floor(elapsed/60000)}분 경과) → 취소 대기 (${STALE_CONFIRM_COUNT}회/${Math.floor(STALE_MIN_ELAPSED_MS/60000)}분 필요)`);
                           await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
                         }
@@ -1565,7 +1575,13 @@ async function monitorBookings() {
                     } else {
                       // 1회 감지 → pending 등록
                       log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 1회 stale 감지 → 대기 (${STALE_CONFIRM_COUNT}회 연속 필요)`);
-                      pendingCancelMap.set(cancelKey, { stale, firstDetectedAt: Date.now(), count: 1 });
+                      pendingCancelMap.set(cancelKey, {
+                        source: 'future_stale',
+                        booking,
+                        stale,
+                        firstDetectedAt: Date.now(),
+                        count: 1,
+                      });
                       await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
                     }
                   }
