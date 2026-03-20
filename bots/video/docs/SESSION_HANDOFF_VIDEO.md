@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (2차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 문서 정리 완료 + Phase 1 Week 1 스캐폴딩 대기
+> 상태: 과제 1 스캐폴딩 완료 + FFmpeg 전처리(과제 2) 대기
 
 ---
 
@@ -103,8 +103,9 @@
   - raw/narration/edited 샘플의 ffprobe 분석 결과
   - config와 출력 스펙 확정의 근거 문서
 
-### 3. Claude Code 과제 1 실행
-- video-team-tasks.md 과제 1 프롬프트 → 스캐폴딩
+### 3. Claude Code / 코덱 다음 작업
+- 과제 1 스캐폴딩 완료 상태 확인
+- 다음은 `video-team-tasks.md` 과제 2 프롬프트 → FFmpeg 전처리 구현
 - 과제별 단위 테스트 통과 후 순차 진행
 - 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
 - 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
@@ -121,8 +122,10 @@
 
 ```
 ai-agent-system/bots/video/
-├─ config/                          ← 빈 폴더
-├─ context/                         ← 빈 폴더
+├─ config/
+│   └─ video-config.yaml            ✅ 생성 완료
+├─ context/
+│   └─ IDENTITY.md                  ✅ 생성 완료
 ├─ docs/
 │   ├─ SESSION_HANDOFF_VIDEO.md     ✅ 이 파일
 │   ├─ VIDEO_HANDOFF.md             ✅ 인수인계 허브
@@ -131,10 +134,14 @@ ai-agent-system/bots/video/
 │   ├─ video-team-design.md         ✅ 설계 문서
 │   └─ video-team-tasks.md          ✅ 소과제 문서
 ├─ lib/                             ← 빈 폴더
-├─ migrations/                      ← 빈 폴더
+├─ migrations/
+│   └─ 001-video-schema.sql         ✅ 생성 완료
 ├─ scripts/                         ← 비디오팀 공통 관례용 예약 폴더 (현재 비어 있음)
 ├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
-└─ src/                             ← 빈 폴더
+├─ temp/                            ✅ 생성 완료
+├─ exports/                         ✅ 생성 완료
+└─ src/
+   └─ index.js                      ✅ 생성 완료
 ```
 
 ## 크롬 탭 상태
@@ -166,10 +173,14 @@ tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨
 3. 과제 프롬프트는 하드코딩보다 config/video-config.yaml 참조를 우선
 4. samples/ANALYSIS.md는 초기값과 최종값을 분리해 해석
 
-아직 구현되지 않은 것:
+구현 완료:
 - bots/video/context/IDENTITY.md
 - bots/video/config/video-config.yaml
 - bots/video/migrations/001-video-schema.sql
 - bots/video/src/index.js
+- public.video_edits 테이블 생성/조회 검증
+
+아직 구현되지 않은 것:
 - bots/video/lib/* 실제 구현 파일
+- 과제 2 이후 FFmpeg/Whisper/CapCut/렌더 파이프라인
 ```

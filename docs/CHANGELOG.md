@@ -3,6 +3,24 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — 비디오팀 과제 1 스캐폴딩 생성
+
+### 신규 기능 (feat)
+- `bots/video/config/video-config.yaml`
+  - YouTube 공식 권장 렌더링 값(24M, H.264 High, 48kHz stereo 384kbps, `+faststart`, `bt709`)을 포함한 비디오팀 설정 파일 추가
+- `bots/video/migrations/001-video-schema.sql`
+  - `video_edits` 원장 테이블과 상태/생성일 인덱스를 생성하는 초기 DB 스키마 추가
+- `bots/video/context/IDENTITY.md`
+  - 비디오팀 역할, 소속, 핵심 도구, 렌더링 규칙을 담은 정체성 파일 추가
+- `bots/video/src/index.js`
+  - config 로드와 `pg-pool` DB 연결을 확인하는 비디오팀 엔트리 추가
+- `bots/video/temp/`, `bots/video/exports/`
+  - 비디오 처리 임시 산출물과 최종 렌더 출력을 위한 디렉토리 추가
+
+### 변경 사항 (changed)
+- `.gitignore`
+  - 비디오팀 대용량 미디어 파일(`*.mp4`, `*.m4a`, `*.mp3`, `*.wav`, `*.srt`, `dfd_*/`) 무시 규칙 추가
+
 ## 12주차 후속 (2026-03-20) — 아처 비용 표 source 보정 + 날짜 포맷 정상화
 
 ### 변경 사항 (changed)
