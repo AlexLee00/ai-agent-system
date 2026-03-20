@@ -29,6 +29,7 @@ const {
   buildServiceRows,
 } = require('../../../packages/core/lib/health-provider');
 const billingGuard = require('../../../packages/core/lib/billing-guard');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -127,7 +128,34 @@ async function loadTradeReviewHealth() {
   };
 }
 
-function buildDecision(serviceRows, tradeReview, guardHealth) {
+async function loadSignalBlockHealth() {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE created_at::date = CURRENT_DATE
+        AND status IN ('failed', 'blocked', 'rejected')
+      GROUP BY 1
+      ORDER BY cnt DESC, block_code ASC
+      LIMIT 5
+    `,
+  ).catch(() => []);
+
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  return {
+    total,
+    top: rows.map((row) => ({
+      code: row.block_code,
+      count: Number(row.cnt || 0),
+    })),
+  };
+}
+
+function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth) {
+  const topBlock = signalBlockHealth.top[0] || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -145,6 +173,11 @@ function buildDecision(serviceRows, tradeReview, guardHealth) {
         level: 'medium',
         reason: `투자 LLM guard ${guardHealth.warnCount}건이 활성 상태입니다.`,
       },
+      {
+        active: signalBlockHealth.total >= 5,
+        level: topBlock?.code === 'same_day_reentry_blocked' ? 'medium' : 'low',
+        reason: `오늘 차단/거부 신호 ${signalBlockHealth.total}건 — 최다 사유 ${topBlock?.code || 'n/a'} ${topBlock?.count || 0}건`,
+      },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
   });
@@ -161,6 +194,15 @@ function formatText(report) {
       ],
     },
     buildHealthCountSection('■ 투자 LLM guard', report.guardHealth, { okLimit: 1 }),
+    {
+      title: '■ 신호 차단 코드(오늘)',
+      lines: report.signalBlockHealth.total > 0
+        ? [
+            `  총 ${report.signalBlockHealth.total}건`,
+            ...report.signalBlockHealth.top.map((row) => `  ${row.code}: ${row.count}건`),
+          ]
+        : ['  오늘 차단/거부 신호 없음'],
+    },
     {
       title: null,
       lines: buildHealthDecisionSection({
@@ -193,7 +235,8 @@ async function buildReport() {
   });
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth();
-  const decision = buildDecision(serviceRows, tradeReview, guardHealth);
+  const signalBlockHealth = await loadSignalBlockHealth();
+  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth);
 
   const report = {
     serviceHealth: {
@@ -204,6 +247,7 @@ async function buildReport() {
     },
     tradeReview,
     guardHealth,
+    signalBlockHealth,
     decision,
   };
   return report;
