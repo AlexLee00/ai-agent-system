@@ -15,7 +15,7 @@ import ccxt from 'ccxt';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
-import { loadSecrets, isPaperMode } from '../shared/secrets.js';
+import { loadSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason } from '../shared/capital-manager.js';
@@ -543,6 +543,7 @@ export async function executeSignal(signal) {
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
@@ -610,7 +611,7 @@ export async function executeSignal(signal) {
         notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
         return { success: false, reason };
       }
-      const dailyTradesSafe = await getDailyTradeCount().catch(() => 0);
+      const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode }).catch(() => 0);
       if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
         const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
         console.log(`  ⛔ [자본관리] ${reason}`);
@@ -711,7 +712,7 @@ export async function executeSignal(signal) {
       }
 
       // ── 자본 관리 게이트 ────────────────────────────────────────────
-      const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');
+      const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance', signalTradeMode);
       if (!check.allowed) {
         if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
           effectivePaperMode = true;
@@ -781,6 +782,7 @@ export async function executeSignal(signal) {
         totalUsdt: actualAmount,
         paper:     effectivePaperMode,
         exchange:  'binance',
+        tradeMode: signalTradeMode,
       };
 
       const existing    = await db.getPosition(symbol);
@@ -872,6 +874,7 @@ export async function executeSignal(signal) {
         totalUsdt: order.totalUsdt,
         paper:     sellPaperMode,
         exchange:  'binance',
+        tradeMode: signalTradeMode,
       };
 
       await db.deletePosition(symbol);
@@ -971,13 +974,14 @@ export async function executeSignal(signal) {
  * 대기 중인 바이낸스 신호 전체 처리
  */
 export async function processAllPendingSignals() {
-  const signals = await db.getApprovedSignals('binance');
+  const tradeMode = getInvestmentTradeMode();
+  const signals = await db.getApprovedSignals('binance', tradeMode);
   if (signals.length === 0) {
-    console.log('[헤파이스토스] 대기 신호 없음');
+    console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
     return [];
   }
 
-  console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작`);
+  console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작 (trade_mode=${tradeMode})`);
   const results = [];
   for (const signal of signals) {
     const r = await executeSignal(signal);
