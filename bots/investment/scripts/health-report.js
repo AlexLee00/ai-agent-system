@@ -9,9 +9,11 @@
  *   node bots/investment/scripts/health-report.js [--json]
  */
 
+import { readFileSync } from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
+import yaml from 'js-yaml';
 
 const require = createRequire(import.meta.url);
 const {
@@ -94,6 +96,49 @@ function formatGuardReason(reason = '') {
     .trim();
 }
 
+function loadCapitalPolicySnapshot() {
+  try {
+    const raw = yaml.load(readFileSync(path.resolve(__dirname, '..', 'config.yaml'), 'utf8'));
+    const capital = raw?.capital_management || {};
+    return {
+      defaultLimit: Number(capital.max_daily_trades || 0),
+      byExchange: capital.by_exchange || {},
+    };
+  } catch {
+    return {
+      defaultLimit: 0,
+      byExchange: {},
+    };
+  }
+}
+
+function resolveLaneTradeLimit(policy, exchange, tradeMode) {
+  const exchangeConfig = policy.byExchange?.[exchange] || {};
+  const tradeModeConfig = exchangeConfig.trade_modes?.[tradeMode] || {};
+  return Number(
+    tradeModeConfig.max_daily_trades
+    ?? exchangeConfig.max_daily_trades
+    ?? policy.defaultLimit
+    ?? 0,
+  );
+}
+
+function formatLaneLabel(exchange, tradeMode) {
+  return `${String(exchange || 'unknown').toUpperCase()} / ${String(tradeMode || 'normal')}`;
+}
+
+function classifyGuardReason(row = {}) {
+  const code = String(row.block_code || '').trim() || 'legacy_unclassified';
+  const reason = String(row.block_reason || '').toLowerCase();
+  if (code !== 'capital_guard_rejected') return code;
+  if (reason.includes('일간 매매 한도')) return 'daily_trade_limit';
+  if (reason.includes('최대 동시 포지션')) return 'max_concurrent_positions';
+  if (reason.includes('reserve') || reason.includes('보유 부족') || reason.includes('현금 보유')) return 'cash_reserve';
+  if (reason.includes('최소 주문')) return 'min_order_size';
+  if (reason.includes('cooldown')) return 'loss_cooldown';
+  return 'capital_guard_other';
+}
+
 function buildGuardHealth() {
   const rows = billingGuard.listActiveGuards('investment.normal');
   if (rows.length === 0) {
@@ -134,28 +179,100 @@ async function loadSignalBlockHealth() {
     `
       SELECT
         COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COALESCE(block_reason, '') AS block_reason,
         COUNT(*)::int AS cnt
       FROM investment.signals
       WHERE created_at::date = CURRENT_DATE
         AND status IN ('failed', 'blocked', 'rejected')
-      GROUP BY 1
+      GROUP BY 1, 2
       ORDER BY cnt DESC, block_code ASC
-      LIMIT 5
     `,
   ).catch(() => []);
 
-  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const grouped = new Map();
+  for (const row of rows) {
+    const code = String(row.block_code || 'legacy_unclassified');
+    grouped.set(code, (grouped.get(code) || 0) + Number(row.cnt || 0));
+  }
+  const top = [...grouped.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code, 'ko'))
+    .slice(0, 5);
+
+  const reasonGroups = new Map();
+  for (const row of rows) {
+    const group = classifyGuardReason(row);
+    reasonGroups.set(group, (reasonGroups.get(group) || 0) + Number(row.cnt || 0));
+  }
+  const topReasonGroups = [...reasonGroups.entries()]
+    .map(([group, count]) => ({ group, count }))
+    .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko'))
+    .slice(0, 5);
+
+  const total = [...grouped.values()].reduce((sum, count) => sum + Number(count || 0), 0);
   return {
     total,
-    top: rows.map((row) => ({
-      code: row.block_code,
-      count: Number(row.cnt || 0),
-    })),
+    top,
+    topReasonGroups,
   };
 }
 
-function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth) {
+async function loadTradeLaneHealth() {
+  const policy = loadCapitalPolicySnapshot();
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        exchange,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        COUNT(*)::int AS cnt
+      FROM investment.trades
+      WHERE executed_at::date = CURRENT_DATE
+      GROUP BY 1, 2
+      ORDER BY exchange ASC, trade_mode ASC
+    `,
+  ).catch(() => []);
+
+  const lanes = rows.map((row) => {
+    const count = Number(row.cnt || 0);
+    const limit = resolveLaneTradeLimit(policy, row.exchange, row.trade_mode);
+    const ratio = limit > 0 ? count / limit : 0;
+    return {
+      exchange: row.exchange,
+      tradeMode: row.trade_mode,
+      count,
+      limit,
+      ratio,
+      nearLimit: limit > 0 && ratio >= 0.8,
+      atLimit: limit > 0 && count >= limit,
+    };
+  });
+
+  const warn = lanes
+    .filter((lane) => lane.nearLimit)
+    .map((lane) => {
+      const status = lane.atLimit ? '한도 도달' : '한도 근접';
+      return `  ${formatLaneLabel(lane.exchange, lane.tradeMode)} ${lane.count}/${lane.limit} (${status})`;
+    });
+
+  const ok = lanes
+    .filter((lane) => !lane.nearLimit)
+    .map((lane) => `  ${formatLaneLabel(lane.exchange, lane.tradeMode)} ${lane.count}/${lane.limit}`);
+
+  return {
+    okCount: ok.length,
+    warnCount: warn.length,
+    ok,
+    warn,
+    lanes,
+  };
+}
+
+function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, tradeLaneHealth) {
   const topBlock = signalBlockHealth.top[0] || null;
+  const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
+  const saturatedLane = tradeLaneHealth.lanes.find((lane) => lane.atLimit);
+  const nearLimitLane = tradeLaneHealth.lanes.find((lane) => lane.nearLimit);
   return buildHealthDecision({
     warnings: [
       {
@@ -175,8 +292,15 @@ function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth)
       },
       {
         active: signalBlockHealth.total >= 5,
-        level: topBlock?.code === 'same_day_reentry_blocked' ? 'medium' : 'low',
-        reason: `오늘 차단/거부 신호 ${signalBlockHealth.total}건 — 최다 사유 ${topBlock?.code || 'n/a'} ${topBlock?.count || 0}건`,
+        level: topReasonGroup?.group === 'daily_trade_limit' ? 'medium' : 'low',
+        reason: `오늘 차단/거부 신호 ${signalBlockHealth.total}건 — 최다 코드 ${topBlock?.code || 'n/a'} ${topBlock?.count || 0}건 / 최다 세부 그룹 ${topReasonGroup?.group || 'n/a'} ${topReasonGroup?.count || 0}건`,
+      },
+      {
+        active: Boolean(saturatedLane || nearLimitLane),
+        level: saturatedLane ? 'medium' : 'low',
+        reason: saturatedLane
+          ? `거래 한도 도달 rail ${formatLaneLabel(saturatedLane.exchange, saturatedLane.tradeMode)} ${saturatedLane.count}/${saturatedLane.limit}`
+          : `거래 한도 근접 rail ${formatLaneLabel(nearLimitLane?.exchange, nearLimitLane?.tradeMode)} ${nearLimitLane?.count}/${nearLimitLane?.limit}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -203,6 +327,13 @@ function formatText(report) {
           ]
         : ['  오늘 차단/거부 신호 없음'],
     },
+    {
+      title: '■ 자본/가드 차단 세부(오늘)',
+      lines: report.signalBlockHealth.topReasonGroups?.length > 0
+        ? report.signalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`)
+        : ['  세부 차단 그룹 없음'],
+    },
+    buildHealthCountSection('■ rail별 거래 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
       title: null,
       lines: buildHealthDecisionSection({
@@ -236,7 +367,8 @@ async function buildReport() {
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth();
   const signalBlockHealth = await loadSignalBlockHealth();
-  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth);
+  const tradeLaneHealth = await loadTradeLaneHealth();
+  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, tradeLaneHealth);
 
   const report = {
     serviceHealth: {
@@ -248,6 +380,7 @@ async function buildReport() {
     tradeReview,
     guardHealth,
     signalBlockHealth,
+    tradeLaneHealth,
     decision,
   };
   return report;
