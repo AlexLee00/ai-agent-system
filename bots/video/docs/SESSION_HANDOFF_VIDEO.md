@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~11 중 Refiner까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 확장 단계
+> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 1차 검증 완료
 
 ---
 
@@ -127,16 +127,34 @@ Step 3 — 과제 6~13 재정의:
   - 코드 점검 후 `runRefiner()` 단계별 fallback 추가
     - 자막/EDL/오디오 중 하나가 실패해도 전체 Refiner는 중단되지 않음
 
+### 9. 과제 12: Evaluator Agent + quality loop ✅
+- `bots/video/lib/evaluator-agent.js`
+  - `runEvaluator`, `evaluate`, `compareReports`, `makeRecommendation`, `saveEvaluation` 구현
+  - Evaluator 자체적으로 별도 LLM을 호출하지 않고, Refiner 수정본을 기준으로 Critic을 재호출해 점수를 재평가
+  - 필요 시 수정된 EDL과 오디오 경로를 반영해 남은 이슈와 오디오 점수를 보정
+- `bots/video/lib/quality-loop.js`
+  - `runQualityLoop`, `findBestVersion`, `saveLoopResult` 구현
+  - `critic -> refiner -> evaluator` 반복과 최고 점수 버전 선택, `PASS / RETRY / ACCEPT_BEST` 종료 판정 추가
+  - 각 반복의 산출물을 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`처럼 temp 원장에 저장
+- `bots/video/scripts/test-quality-loop.js`
+  - 실제 quality loop 실행, `onProgress` 이벤트 출력, `loop_result.json` 저장 검증
+- 실제 테스트 결과:
+  - `iteration0 score=80`
+  - `iteration1 score=80`
+  - `recommendation=ACCEPT_BEST`
+  - `final_score=80`, `pass=false`
+  - 현재 샘플에서는 Refiner가 추가 변경을 만들지 못해 최고 버전이 원본 subtitle/EDL로 유지됨
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 운영 안정화 + 과제 12 착수
+### 즉시: 과제 7 운영 안정화 + 과제 13 착수
 - worker-web 세션 루프는 연결 완료
 - 남은 건 실자산 preview wall-clock 최적화와 final render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
-- 과제 12 Evaluator는 Critic/Refiner 결과를 받아 85점 기준 루프 제어와 재편집 여부를 결정하면 된다
+- 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
 
 ### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 
@@ -189,11 +207,11 @@ Week 1: 핵심 파이프라인
   ☐ 과제 7: 엔드투엔드 파이프라인 통합 (runner 구현 완료, preview 최적화 남음)
 
 Week 2: 워커웹 + n8n + 품질 루프
-  ☐ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
+  ✅ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
   ☐ 과제 9: n8n 연동
-  ☐ 과제 10: Critic (자막+오디오+★영상 구조)
-  ☐ 과제 11: Refiner (SRT+★EDL 생성/수정)
-  ☐ 과제 12: Evaluator + 품질 루프
+  ✅ 과제 10: Critic (자막+오디오+★영상 구조)
+  ✅ 과제 11: Refiner (SRT+★EDL 생성/수정)
+  ✅ 과제 12: Evaluator + 품질 루프
   ☐ 과제 13: 5세트 검증
 
 Week 3: 최종 테스트 + 문서 체계 통합

@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~10 중 Critic까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 품질 루프 확장 단계
+> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 품질 루프 1차 검증 완료
 
 ---
 
@@ -206,6 +206,14 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - 실제 테스트 결과 `subtitle changes=12`, `edl changes=0`, `audio 변경 없음`
     - 코드 점검 후 단계별 partial failure fallback 보강 완료
     - `temp/subtitle_corrected_v2.srt`, `temp/refiner_result.json` 생성 완료
+  - 과제 12 Evaluator + quality loop 구현 완료
+    - `lib/evaluator-agent.js`
+    - `lib/quality-loop.js`
+    - `scripts/test-quality-loop.js`
+    - Evaluator는 Refiner 수정본을 기준으로 Critic을 재호출해 점수와 남은 이슈를 재평가
+    - quality-loop는 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`, `loop_result.json`을 temp 원장으로 남김
+    - 실제 테스트 결과 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`
+    - 현재 샘플에서는 Refiner 추가 변경이 없어 최고 버전은 원본 `subtitle_corrected.srt + edit_decision_list.json` 유지
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -221,7 +229,7 @@ Week 2: 워커웹 + n8n + 품질 루프
   ☐ 과제 9: n8n 연동
   ✅ 과제 10: Critic
   ✅ 과제 11: Refiner
-  ☐ 과제 12: Evaluator
+  ✅ 과제 12: Evaluator + quality loop
   ☐ 과제 13: 4세트 검증
 
 Week 3: 최종 테스트 + 문서 체계 통합
