@@ -33,6 +33,24 @@
 - [bots/ska/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/runtime-config.js)
 - [bots/ska/src/runtime_config.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/runtime_config.py)
 
+## 브라우저 운영 모드
+
+- 기본 운영값:
+  - `PLAYWRIGHT_HEADLESS=true` 또는 미설정
+  - 스카 모니터는 headless 백그라운드 실행
+- 디버깅/수동 로그인:
+  - `PLAYWRIGHT_HEADLESS=false`
+  - 또는 [bots/reservation/.playwright-headed](/Users/alexlee/projects/ai-agent-system/bots/reservation/.playwright-headed) 플래그 파일 생성
+- 하위 호환:
+  - `NAVER_HEADLESS`, `PICKKO_HEADLESS`는 legacy 토글로 유지
+  - 새 기준은 `PLAYWRIGHT_HEADLESS`
+- 세션 만료 복구 순서:
+  1. `touch bots/reservation/.playwright-headed`
+  2. `bash bots/reservation/scripts/reload-monitor.sh`
+  3. 브라우저에서 수동 로그인
+  4. `rm bots/reservation/.playwright-headed`
+  5. `bash bots/reservation/scripts/reload-monitor.sh`
+
 ## 자주 쓰는 명령어
 
 ```bash
@@ -40,6 +58,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-rep
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-daily-review.js --days=7
 node /Users/alexlee/projects/ai-agent-system/scripts/reviews/ska-sales-forecast-weekly-review.js --days=28
 bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh
+PLAYWRIGHT_HEADLESS=false node /Users/alexlee/projects/ai-agent-system/bots/reservation/src/check-naver.js
 ```
 
 ## 관련 문서

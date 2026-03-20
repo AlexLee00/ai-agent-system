@@ -3361,3 +3361,8 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/orchestrator/src/router.js`가 `처리완료`, `해결했어`, `직접 처리했어`, `마스터가 수동으로 처리함` 등 실제 운영 피드백 문구를 받아 즉시 alert resolve 스크립트를 실행하도록 연결
 - `bots/reservation/auto/monitors/naver-monitor.js`의 취소 경로에서 이미 종결된 예약(`completed/cancelled/time_elapsed/marked_seen`)은 재시도 없이 건너뛰고 동일 예약의 과거 오류 알림도 함께 해결 처리하도록 보강
 - 스카 재시작 시작 보고는 unresolved alert를 그대로 읽지 않고, 각 alert에 대응하는 예약을 다시 조회해 이미 종결된 예약의 과거 실패 알림은 자동 resolve 후 actionable alert만 `미해결 오류 n건` 요약에 남기도록 수정
+
+### 스카 Playwright headless 운영 정책 문서 정합화
+- `docs/team-indexes/TEAM_SKA_REFERENCE.md`에 스카 브라우저 운영 모드를 추가해 `PLAYWRIGHT_HEADLESS` 기본값, `.playwright-headed` headed 복구 플로우, legacy `NAVER_HEADLESS/PICKKO_HEADLESS` 호환 범위를 한 곳에서 확인할 수 있게 정리
+- `docs/coding-guide.md`의 Playwright/DEV-OPS 예시를 최신 토글 정책으로 갱신해 `PICKKO_HEADLESS=1` 단독 설명 대신 `PLAYWRIGHT_HEADLESS=true|false`와 파일 플래그 운영 방식을 기준으로 맞춤
+- `docs/SYSTEM_DESIGN.md`의 스카 파싱 도구 설명을 `PICKKO_HEADLESS=1` 고정 표현에서 `PLAYWRIGHT_HEADLESS`/`.playwright-headed` 기반 토글 구조로 수정해 코드와 참조 문서의 의미를 일치화

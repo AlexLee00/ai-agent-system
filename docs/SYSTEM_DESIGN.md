@@ -162,7 +162,7 @@ skastatus # → launchctl list | grep ai.ska
 | Fallback | `gemini-2.0-flash` |
 | 채널 | 텔레그램 (@SCAFE8282_BOT) |
 | 상태 | **OPS 모드 실운영 중** (launchd KeepAlive) |
-| 파싱 도구 | Playwright (헤드리스, PICKKO_HEADLESS=1) |
+| 파싱 도구 | Playwright (기본 headless, `PLAYWRIGHT_HEADLESS` / `.playwright-headed` 토글) |
 | 대상 플랫폼 | 네이버 스마트플레이스 → 픽코 키오스크 |
 
 **시스템 흐름**
