@@ -215,7 +215,7 @@ export async function getWeeklyPnL() {
   }
 }
 
-export async function getDailyTradeCount({ exchange = null, tradeMode = null, paper = null } = {}) {
+export async function getDailyTradeCount({ exchange = null, tradeMode = null, paper = null, side = null } = {}) {
   try {
     const conditions = [`executed_at::date = CURRENT_DATE`];
     const params = [];
@@ -231,6 +231,10 @@ export async function getDailyTradeCount({ exchange = null, tradeMode = null, pa
     if (paper !== null) {
       params.push(paper === true);
       conditions.push(`paper = $${params.length}`);
+    }
+    if (side) {
+      params.push(String(side).toLowerCase());
+      conditions.push(`LOWER(COALESCE(side, '')) = $${params.length}`);
     }
 
     const rows = await pgPool.query(
@@ -361,7 +365,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
 
   // 5. 일간 매매 횟수 (BUY만)
   if (isBuy) {
-    const dailyTrades = await getDailyTradeCount({ exchange, tradeMode: effectiveTradeMode });
+    const dailyTrades = await getDailyTradeCount({ exchange, tradeMode: effectiveTradeMode, side: 'buy' });
     if (dailyTrades >= policy.max_daily_trades) {
       return { allowed: false, reason: formatDailyTradeLimitReason(dailyTrades, policy.max_daily_trades) };
     }

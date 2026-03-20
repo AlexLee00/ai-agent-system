@@ -620,7 +620,7 @@ export async function executeSignal(signal) {
         notifyTradeSkip({ symbol, action, reason, openPositions: openPositionsSafe.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
         return { success: false, reason };
       }
-      const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode }).catch(() => 0);
+      const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0);
       if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
         const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
         console.log(`  ⛔ [자본관리] ${reason}`);
