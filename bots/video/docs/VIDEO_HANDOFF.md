@@ -196,8 +196,9 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
   - 과제 10 Critic Agent 구현 완료
     - `lib/critic-agent.js`
     - `scripts/test-critic-agent.js`
-    - 실제 테스트 결과 `score=74`, `pass=false`
-    - 자막 이슈 `22건`, 오디오는 `LUFS=-14.96 / Peak=-3.54`, 영상 구조 이슈 `10건`
+    - 코드 점검 후 실제 테스트 결과 `score=78`, `pass=false`
+    - 자막 이슈 `18건`, 오디오는 `LUFS=-14.96 / Peak=-3.54`, 영상 구조 이슈 `10건`
+    - config provider 준수, JSON 파싱 실패 강등, 인접 scene 병합 보강 완료
     - `temp/critic_report.json` 생성 완료
 
 Week 1: 핵심 파이프라인

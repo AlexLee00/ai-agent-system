@@ -49,9 +49,8 @@
 │ capcut-draft-builder.js  │ CapCutAPI 선택적 보조 프리뷰 (완료) │ P0 (W1) ✅│
 │ video-analyzer.js        │ FFmpeg 영상 분석 (무음/정지/씬전환) │ P0 (W1)  │
 │ edl-builder.js           │ EDL JSON 생성/수정 + FFmpeg 실행    │ P0 (W1)  │
-│ ffmpeg-renderer.js       │ 파싱된 편집정보 → 1440p/60fps 렌더링│ P0 (W1)  │
 │ quality-loop.js          │ Critic-Refiner-Evaluator 순환 검증  │ P1 (W2)  │
-│ critic-agent.js          │ RED: 드래프트 분석 → 문제점 리포트   │ P1 (W2)  │
+│ critic-agent.js          │ RED: 자막+오디오+영상 구조 분석     │ P1 (W2)  │
 │ refiner-agent.js         │ BLUE: SRT 수정 + EDL 생성/수정      │ P1 (W2)  │
 │ evaluator-agent.js       │ 품질 점수 판정 (85/100 기준)        │ P1 (W2)  │
 └──────────────────────────┴────────────────────────────────────┴──────────┘
@@ -79,7 +78,6 @@ ai-agent-system/
 │   │   ├─ capcut-draft-builder.js     — CapCutAPI 선택적 보조 (완료, --with-capcut)
 │   │   ├─ video-analyzer.js           — FFmpeg 영상 분석 (무음/정지/씬전환)
 │   │   ├─ edl-builder.js              — EDL JSON 생성/수정 + FFmpeg 렌더링
-│   │   ├─ ffmpeg-renderer.js          — 편집정보 → 1440p/60fps MP4
 │   │   ├─ quality-loop.js             — Critic-Refiner-Evaluator 루프
 │   │   ├─ critic-agent.js             — RED Team 분석
 │   │   ├─ refiner-agent.js            — BLUE Team 수정
@@ -181,7 +179,7 @@ FFmpeg 최종 렌더링 명령어      │ bots/video/lib/edl-builder.js    │ 
 ```
 기능                          │ 파일 위치                      │ 의존 모듈
 ─────────────────────────────│────────────────────────────────│──────────────
-Critic: 자막 싱크 분석         │ bots/video/lib/critic-agent.js │ llm-router.js
+Critic: 자막/용어/길이 분석     │ bots/video/lib/critic-agent.js │ Gemini/OpenAI
 Critic: 오디오 밸런스 검증     │ bots/video/lib/critic-agent.js │ child_process (ffmpeg)
 Critic: 영상 구조 분석         │ bots/video/lib/critic-agent.js │ video-analyzer.js (무음/정지/씬전환)
 Refiner: SRT 수정              │ bots/video/lib/refiner-agent.js │ subtitle-corrector.js

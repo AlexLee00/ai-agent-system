@@ -98,13 +98,16 @@ Step 3 — 과제 6~13 재정의:
   - 영상 구조는 `analysis.json`을 재사용해 무음/정지/씬전환/비효율 비율 분석
 - `bots/video/scripts/test-critic-agent.js`
   - 실제 테스트 결과:
-    - `score=74`, `pass=false`
-    - `subtitle issues=22`
+    - `score=78`, `pass=false`
+    - `subtitle issues=18`
     - `audio LUFS=-14.96`, `Peak=-3.54`
     - `scene issues=10`
     - `temp/critic_report.json` 생성
 - 운영 보강:
   - LLM 호출 timeout 추가
+  - config provider 준수
+  - 자막 JSON 파싱 실패 강등
+  - 인접 scene 병합
   - 부분 실패 시 해당 분석만 `score=50`, issues 빈 배열로 degrade
 
 ---

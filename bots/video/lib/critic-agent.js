@@ -270,9 +270,15 @@ async function analyzeSubtitles(subtitlePath, config) {
   const entries = parseSrt(fs.readFileSync(subtitlePath, 'utf8'));
   const chunks = chunkArray(entries, SUBTITLE_CHUNK_SIZE);
   const issues = [];
+  let hasParseFailure = false;
   let llmCostUsd = 0;
-  let llmProvider = config?.quality_loop?.critic?.provider || 'gemini';
+  let llmProvider = String(config?.quality_loop?.critic?.provider || 'gemini').toLowerCase();
   let llmModel = config?.quality_loop?.critic?.model || 'gemini-2.5-flash';
+
+  const primaryProvider = llmProvider === 'google' ? 'gemini' : llmProvider;
+  const primaryModel = llmModel;
+  const fallbackProvider = primaryProvider === 'openai' ? null : 'openai';
+  const fallbackModel = OPENAI_FALLBACK_MODEL;
 
   for (const chunk of chunks) {
     const chunkText = chunk
@@ -290,23 +296,31 @@ async function analyzeSubtitles(subtitlePath, config) {
 
     let response;
     try {
-      response = await callGemini(prompt, llmModel);
+      if (primaryProvider === 'openai') {
+        response = await callOpenAI(prompt, primaryModel);
+      } else {
+        response = await callGemini(prompt, primaryModel);
+      }
     } catch (geminiError) {
-      await logToolCall('llm_gemini', 'critic_subtitle_review', {
+      await logToolCall(primaryProvider === 'openai' ? 'llm_openai' : 'llm_gemini', 'critic_subtitle_review', {
         bot: BOT_NAME,
         success: false,
         duration_ms: 0,
         error: toErrorMessage(geminiError),
-        metadata: { model: llmModel },
+        metadata: { model: primaryModel },
       });
-      response = await callOpenAI(prompt, OPENAI_FALLBACK_MODEL);
-      llmProvider = response.provider;
-      llmModel = response.model;
+      if (!fallbackProvider) {
+        throw geminiError;
+      }
+      response = await callOpenAI(prompt, fallbackModel);
     }
 
     llmCostUsd += Number(response.costUsd || 0);
+    llmProvider = response.provider;
+    llmModel = response.model;
     const parsed = extractJsonArray(response.text);
     if (!parsed) {
+      hasParseFailure = true;
       await logToolCall('critic_agent', 'subtitle_json_parse', {
         bot: BOT_NAME,
         success: false,
@@ -320,7 +334,8 @@ async function analyzeSubtitles(subtitlePath, config) {
     issues.push(...mapSubtitleIssues(parsed));
   }
 
-  const score = Math.max(0, 100 - (issues.length * 3));
+  const baseScore = Math.max(0, 100 - (issues.length * 3));
+  const score = hasParseFailure ? Math.min(baseScore, 50) : baseScore;
   await logToolCall('critic_agent', 'analyze_subtitles', {
     bot: BOT_NAME,
     success: true,
@@ -333,6 +348,7 @@ async function analyzeSubtitles(subtitlePath, config) {
       llmProvider,
       llmModel,
       llmCostUsd: Number(llmCostUsd.toFixed(6)),
+      hasParseFailure,
     },
   });
 
@@ -355,6 +371,30 @@ function extractLoudnormJson(stderr) {
   } catch (_error) {
     return null;
   }
+}
+
+function mergeNearbyScenes(scenes, windowSeconds = 1.0) {
+  const sorted = [...(Array.isArray(scenes) ? scenes : [])]
+    .map((scene) => ({
+      at: Number(scene.at),
+      score: Number(scene.score || 0),
+    }))
+    .filter((scene) => Number.isFinite(scene.at))
+    .sort((a, b) => a.at - b.at);
+
+  const merged = [];
+  for (const scene of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && Math.abs(scene.at - previous.at) <= windowSeconds) {
+      if (scene.score >= previous.score) {
+        previous.at = scene.at;
+        previous.score = scene.score;
+      }
+      continue;
+    }
+    merged.push({ ...scene });
+  }
+  return merged;
 }
 
 async function analyzeAudio(videoPath, _config) {
@@ -427,7 +467,7 @@ function analyzeVideoStructure(analysisData, _config) {
   const duration = Number.parseFloat(analysis.duration || 0);
   const silences = Array.isArray(analysis.silences) ? analysis.silences : [];
   const freezes = Array.isArray(analysis.freezes) ? analysis.freezes : [];
-  const scenes = Array.isArray(analysis.scenes) ? analysis.scenes : [];
+  const scenes = mergeNearbyScenes(Array.isArray(analysis.scenes) ? analysis.scenes : []);
   const issues = [];
 
   for (const silence of silences) {
@@ -485,7 +525,7 @@ function analyzeVideoStructure(analysisData, _config) {
 
   const score = Math.max(
     0,
-    Math.round(100 - (silences.length * 5) - (freezes.length * 5) - ((inefficiencyRatio * 100) * 0.5))
+    Math.round(100 - (silences.length * 5) - (freezes.length * 5) - (inefficiencyRatio * 0.5))
   );
 
   logToolCall('critic_agent', 'analyze_video_structure', {
