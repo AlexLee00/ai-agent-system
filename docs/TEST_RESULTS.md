@@ -50,6 +50,13 @@
 | `node --check bots/investment/team/hephaestos.js` | ✅ |
 | `node --input-type=module -e "import { formatDailyTradeLimitReason } from './bots/investment/shared/capital-manager.js'; ..."` | ✅ `초과: 현재 10건 / 한도 8건`, `도달: 현재 8건 / 한도 8건` 출력 확인 |
 
+### 루나 알림 카드 구분선 10칸 축소
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/report.js` | ✅ |
+| `node --input-type=module -e "import { readFileSync } from 'fs'; ..."` | ✅ `DIVIDER='──────────'`, 길이 `10` 확인 |
+
 ### 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
 
 | 테스트 | 결과 |

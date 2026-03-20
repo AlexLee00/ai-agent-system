@@ -162,6 +162,18 @@
 - `node --check bots/investment/team/hephaestos.js`
 - `node --input-type=module -e "import { formatDailyTradeLimitReason } from './bots/investment/shared/capital-manager.js'; ..."`
 
+### 12주차 후속 (2026-03-20) — 루나 알림 카드 구분선 10칸 축소
+
+핵심 구현:
+- `bots/investment/shared/report.js`
+  - 루나 공용 카드 템플릿의 `DIVIDER`, `SMALL_DIVIDER`를 `15칸`에서 `10칸`으로 축소
+
+의사결정 이유:
+- 모바일 텔레그램 카드에서 긴 구분선은 제목/사유 줄바꿈을 더 쉽게 유발하므로, 장식 요소 폭을 줄여 카드 폭 체감을 완화하는 편이 운영 UX에 유리하다.
+
+검증:
+- `node --check bots/investment/shared/report.js`
+
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 핵심 구현:
