@@ -104,9 +104,9 @@ async function buildDailySummaryIntegrityHealth() {
     `);
 
     const issues = [];
+    const policyDivergences = [];
     for (const row of rows) {
       const date = String(row.date || '').slice(0, 10);
-      const totalAmount = Number(row.total_amount || 0);
       const roomTotal = sumRoomAmounts(row.room_amounts_json);
       const pickkoTotal = Number(row.pickko_total || 0);
       const pickkoStudyRoom = Number(row.pickko_study_room || 0);
@@ -117,33 +117,51 @@ async function buildDailySummaryIntegrityHealth() {
         continue;
       }
 
+      if (roomTotal !== pickkoStudyRoom) {
+        issues.push(`${date}: room_amounts_json ${roomTotal}원 != pickko_study_room ${pickkoStudyRoom}원`);
+        continue;
+      }
+
       const expectedPickkoTotal = generalRevenue + pickkoStudyRoom;
-      if (pickkoStudyRoom > 0 && expectedPickkoTotal !== pickkoTotal) {
-        issues.push(`${date}: pickko_total ${pickkoTotal}원 != 일반 ${generalRevenue}원 + 스터디룸 ${pickkoStudyRoom}원`);
+      if (pickkoTotal > 0 && expectedPickkoTotal !== pickkoTotal) {
+        policyDivergences.push(`${date}: 픽코합계 ${pickkoTotal}원 vs 운영산출 ${expectedPickkoTotal}원`);
       }
     }
 
     if (issues.length > 0) {
       return {
-        ok: [],
+        ok: policyDivergences.length > 0
+          ? [`  참고: 픽코합계와 운영산출 차이 ${policyDivergences.length}건 (새 스터디룸 산출식 기준)`]
+          : [],
         warn: [
           `  daily_summary 무결성: 경고 ${issues.length}건`,
           ...issues.slice(0, 5).map((line) => `    - ${line}`),
         ],
         issueCount: issues.length,
+        policyDivergenceCount: policyDivergences.length,
+        policyDivergenceSamples: policyDivergences.slice(0, 5),
       };
     }
 
+    const ok = ['  daily_summary 무결성: 스터디룸 산출식과 저장값이 일치'];
+    if (policyDivergences.length > 0) {
+      ok.push(`  참고: 픽코합계와 운영산출 차이 ${policyDivergences.length}건 (정책 기준 정상 가능)`);
+    }
+
     return {
-      ok: ['  daily_summary 무결성: 스터디룸/일반/합계 구조 정상'],
+      ok,
       warn: [],
       issueCount: 0,
+      policyDivergenceCount: policyDivergences.length,
+      policyDivergenceSamples: policyDivergences.slice(0, 5),
     };
   } catch (error) {
     return {
       ok: [],
       warn: [`  daily_summary 무결성: 확인 실패 (${error.message})`],
       issueCount: 1,
+      policyDivergenceCount: 0,
+      policyDivergenceSamples: [],
     };
   }
 }
@@ -302,7 +320,7 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
       {
         active: dailySummaryIntegrityHealth.warn.length > 0,
         level: 'medium',
-        reason: `daily_summary 무결성 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 스카 매출 원천을 점검해야 합니다.`,
+        reason: `daily_summary 저장값 경고 ${dailySummaryIntegrityHealth.warn.length}건이 있어 스카 매출 저장 구조를 점검해야 합니다.`,
       },
       {
         active: cancelCounterDriftHealth.warn.length > 0,
@@ -338,7 +356,10 @@ function formatText(report) {
       buildHealthSampleSection('■ duplicate slot 샘플', {
         ok: report.duplicateSlotHealth.samples || [],
       }, 3),
-      buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 2, warnLimit: 6 }),
+      buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 3, warnLimit: 6 }),
+      buildHealthSampleSection('■ 픽코합계 vs 운영산출 차이 샘플', {
+        ok: report.dailySummaryIntegrityHealth.policyDivergenceSamples || [],
+      }, 5),
       {
         title: null,
         lines: buildHealthDecisionSection({
@@ -434,6 +455,8 @@ async function buildReport() {
       ok: dailySummaryIntegrityHealth.ok,
       warn: dailySummaryIntegrityHealth.warn,
       issueCount: dailySummaryIntegrityHealth.issueCount,
+      policyDivergenceCount: dailySummaryIntegrityHealth.policyDivergenceCount || 0,
+      policyDivergenceSamples: dailySummaryIntegrityHealth.policyDivergenceSamples || [],
     },
     decision,
   };

@@ -137,6 +137,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `llm-logger`가 생성한 오래된 investment guard는 읽기 시점에 자동 만료/삭제
 - 레거시 broad stop 상태를 자동 정리해 현재는 `crypto`, `domestic`, `overseas` 모두 active guard 없이 정상 상태로 복구
 
+## 12주차 후속 (2026-03-21) — 스카 스터디룸 매출 산출식 전환 + 과거 데이터 재검증
+
+### 변경 사항 (changed)
+- 스카 스터디룸 매출 원천을 `픽코 예약목록 이용금액` 기준에서 `예약 시간 기반 산출식` 기준으로 전환
+  - 배경: 네이버 예약을 픽코에 등록할 때 스터디룸 금액을 `0원`으로 수정하고 있어 `이용금액` 필드를 신뢰할 수 없음
+  - 적용 정책:
+    - `A1/A2`: `30분당 3,500원`, 단 `00:00~09:00`은 `30분당 2,500원`
+    - `B`: `30분당 6,000원`, 단 `00:00~09:00`은 `30분당 4,000원`
+- `bots/reservation/lib/study-room-pricing.js`를 추가해 스터디룸 이름 정규화, 시간대별 요금 계산, 룸별 합산을 공용 helper로 분리
+- `pickko-daily-summary`와 `pickko-revenue-backfill`이 모두 새 공용 산출식을 사용하도록 정리
+- `2026-02`와 `2026-03` Pickko backfill을 다시 실행해 과거 `daily_summary`를 정책 기준으로 재계산
+  - 대표 복구:
+    - `2026-03-18`: 스터디룸 7건 → `87,500원`
+    - `2026-03-10`: timeout으로 빠졌던 A1 4건 → `40,000원`
+    - `2026-02-27`: stale `pickko_study_room=7,000` → `122,000원`
+- worker `test-company` 미러도 재동기화해 과거 전체 범위에서 `reservation.daily_summary`와 `worker.sales` 차이를 `0건`으로 정리
+- 스카 `health-report`의 `daily_summary 무결성` 규칙을 새 정책 기준으로 재정의
+  - 이제 실제 오류는 `room_amounts_json`과 `pickko_study_room` 저장값 불일치만 경고
+  - `pickko_total != 일반석 + 스터디룸`은 정책상 정상 가능하므로 정보성 차이로만 노출
+
 ## 12주차 후속 (2026-03-20) — /ops-health 루나 guard 가시성 보강
 
 ### 변경 사항 (changed)

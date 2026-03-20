@@ -345,3 +345,28 @@
   - Claude는 video 폴더 문서를 읽고 구조를 해석하는 역할이며, 실제 코드 업데이트는 코덱 또는 Claude Code가 수행
   - 비디오팀 개발도 각 과제 종료 시 문서 업데이트 + 커밋/푸시까지 함께 마감
 ```
+
+## 2026-03-21 — 스카 매출 정책 전환 / 과거 데이터 재검증
+
+- 스카 스터디룸 매출 기준을 `픽코 amount`에서 `예약 시간 기반 산출식`으로 전환
+  - 이유: 네이버 예약은 픽코 등록 시 금액을 `0원`으로 수정하고 있어 예약목록 `이용금액`을 신뢰할 수 없음
+  - 정책:
+    - `A1/A2`: `30분당 3,500원`, `00:00~09:00`은 `30분당 2,500원`
+    - `B`: `30분당 6,000원`, `00:00~09:00`은 `30분당 4,000원`
+- 코드 반영:
+  - `bots/reservation/lib/study-room-pricing.js` 신규
+  - `bots/reservation/auto/scheduled/pickko-daily-summary.js`
+  - `bots/reservation/scripts/pickko-revenue-backfill.js`
+  - `bots/reservation/scripts/health-report.js`
+- 운영 조치:
+  - `2026-03` 전체 backfill 재실행
+  - `2026-03-10` timeout 잔여값 직접 재검증/복구
+  - `2026-02` 전체 backfill 재실행으로 `2026-02-27` stale row 복구
+  - `syncSkaSalesToWorker('test-company')` 재실행
+- 최종 검증:
+  - 과거 전체 source(`reservation.daily_summary`) vs worker mirror(`worker.sales`, `test-company`) diff `0건`
+  - `node bots/reservation/scripts/health-report.js --json` 기준 `dailySummaryIntegrityHealth.issueCount = 0`
+  - 남는 `policyDivergenceCount = 14`는 `pickko_total`과 운영 산출식 차이이며 정책상 정상 가능
+- 주의:
+  - 이제 `pickko_total == general_revenue + pickko_study_room`은 무결성 불변식이 아님
+  - 실제 저장 오류는 `room_amounts_json`과 `pickko_study_room` 불일치만 보면 됨
