@@ -161,11 +161,20 @@ async function buildCancelCounterDriftHealth() {
 
     const unresolved = rows.filter((row) => Number(row.resolved || 0) === 0);
     const latest = rows[0] || null;
+    const samples = rows.slice(0, 3).map((row) => {
+      const timestamp = row.timestamp || '시각 미상';
+      const message = String(row.message || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      return `  ${timestamp} — ${message || '상세 메시지 없음'}`;
+    });
 
     if (rows.length === 0) {
       return {
         ok: ['  취소 카운터 드리프트: 최근 24시간 경고 없음'],
         warn: [],
+        samples: [],
         totalCount: 0,
         unresolvedCount: 0,
         latestTimestamp: null,
@@ -183,6 +192,7 @@ async function buildCancelCounterDriftHealth() {
     return {
       ok: [],
       warn,
+      samples,
       totalCount: rows.length,
       unresolvedCount: unresolved.length,
       latestTimestamp: latest?.timestamp || null,
@@ -191,6 +201,7 @@ async function buildCancelCounterDriftHealth() {
     return {
       ok: [],
       warn: [`  취소 카운터 드리프트: 확인 실패 (${error.message})`],
+      samples: [],
       totalCount: 0,
       unresolvedCount: 0,
       latestTimestamp: null,
@@ -248,6 +259,9 @@ function formatText(report) {
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
       buildHealthCountSection('■ n8n 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
+      buildHealthSampleSection('■ 취소 카운터 드리프트 샘플', {
+        ok: report.cancelCounterDriftHealth.samples || [],
+      }, 3),
       buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 2, warnLimit: 6 }),
       {
         title: null,
@@ -323,6 +337,7 @@ async function buildReport() {
       warnCount: cancelCounterDriftHealth.warn.length,
       ok: cancelCounterDriftHealth.ok,
       warn: cancelCounterDriftHealth.warn,
+      samples: cancelCounterDriftHealth.samples || [],
       totalCount: cancelCounterDriftHealth.totalCount,
       unresolvedCount: cancelCounterDriftHealth.unresolvedCount,
       latestTimestamp: cancelCounterDriftHealth.latestTimestamp,
