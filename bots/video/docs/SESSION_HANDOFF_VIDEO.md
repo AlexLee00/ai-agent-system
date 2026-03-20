@@ -68,6 +68,16 @@
 - 5~9편: Firebase (Setup, Auth, Password Reset, SHA-1)
 - 일부 "회원 전용" 표시 → LMS 유료 콘텐츠
 
+### 4. 문서 기준값/프롬프트 정합화
+- `bots/video/docs/CLAUDE.md`
+  - YouTube 권장 렌더링 확정값(24M / 48kHz / 384kbps / faststart) 반영
+- `bots/video/docs/video-team-design.md`
+  - `config 구조` 섹션을 YouTube 공식 권장 기반 값으로 갱신
+- `bots/video/docs/video-team-tasks.md`
+  - FFmpeg/렌더링 과제 프롬프트의 하드코딩을 줄이고 config/CLAUDE.md 참조 구조로 정리
+- `bots/video/samples/ANALYSIS.md`
+  - 초기 분석값(섹션 6~7)과 최종 확정값(섹션 8)을 구분하도록 정리
+
 ---
 
 ## 다음 세션에서 해야 할 것
@@ -96,6 +106,14 @@
 ### 3. Claude Code 과제 1 실행
 - video-team-tasks.md 과제 1 프롬프트 → 스캐폴딩
 - 과제별 단위 테스트 통과 후 순차 진행
+- 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
+- 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
+- 세션 마감 직전에는 `VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md` 반영 여부를 다시 확인한다.
+
+### 4. 역할 경계 유지
+- Claude는 bots/video 폴더 문서를 읽고 프롬프트/설계 방향을 정리하는 역할
+- 실제 코드 업데이트는 코덱(Codex) 또는 Claude Code가 수행
+- 구현 세션에서는 파일 수정 후 반드시 문서에 현재 상태를 반영
 
 ---
 
@@ -137,4 +155,21 @@ tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨
 6. 단계적 구현 + 단위 테스트 필수
 7. 더백클래스 LMS 연동은 Phase 2+
 8. RED/BLUE Team = Critic-Refiner-Evaluator 3에이전트
+```
+
+## 현재까지 정리된 구현 기준
+
+```
+문서 기준으로 현재 확정된 것:
+1. 렌더링 목표: 2560x1440 / 60fps / H.264 High Profile / 24M / +faststart / bt709
+2. 오디오 목표: AAC / 48kHz / stereo / 384kbps / -14 LUFS / -1 dBTP
+3. 과제 프롬프트는 하드코딩보다 config/video-config.yaml 참조를 우선
+4. samples/ANALYSIS.md는 초기값과 최종값을 분리해 해석
+
+아직 구현되지 않은 것:
+- bots/video/context/IDENTITY.md
+- bots/video/config/video-config.yaml
+- bots/video/migrations/001-video-schema.sql
+- bots/video/src/index.js
+- bots/video/lib/* 실제 구현 파일
 ```

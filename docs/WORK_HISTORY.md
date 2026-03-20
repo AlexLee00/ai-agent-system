@@ -4,6 +4,27 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 비디오팀 handoff 정합화 + 코덱 세션 시작/마감 규칙 반영
+
+핵심 구현:
+- `docs/SESSION_HANDOFF.md`
+  - 비디오팀 세션 컨텍스트를 현재 상태 기준으로 갱신
+  - `CLAUDE.md`, `samples/ANALYSIS.md` 링크를 추가하고 `scripts` 폴더 상태를 예약 폴더 기준으로 수정
+  - 전사 handoff의 `반드시 먼저 읽기` 순서에 `SESSION_HANDOFF.md` 자체를 다시 포함
+  - 코덱이 세션 시작 시 문서 묶음을 먼저 읽고, 세션 마감 직전 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS` 갱신 여부를 확인하도록 규칙 명시
+- `docs/SESSION_CONTEXT_INDEX.md`
+  - 코덱 세션은 시작과 종료 모두 handoff 규칙을 따르도록 문구 추가
+  - 종료 시 문서 갱신 체크리스트를 유지 규칙에 반영
+
+세션 맥락:
+- 비디오팀 문서 묶음은 최근 정리됐지만, 전사 `SESSION_HANDOFF.md`의 비디오팀 섹션은 아직 `scripts 제거` 같은 예전 상태를 가리키고 있었다.
+- 동시에 코덱이 세션 시작과 마감에 인수인계 문서를 반드시 읽도록 운영 규칙을 문서로 고정할 필요가 있었다.
+
+의사결정 이유:
+- 내부 MVP와 이후 SaaS 확장을 모두 고려하면, 새로운 팀 폴더를 추가할 때 전사 handoff와 팀 handoff가 같은 상태를 가리켜야 다음 세션 복원 비용이 줄어든다.
+- 코덱 세션의 시작/마감 규칙은 자동 실행보다 먼저 문서 규칙으로 고정해야 운영 누락을 줄일 수 있다.
+- 다만 Codex 앱 레벨에서 실제 자동 강제를 걸려면 리포지토리 루트 `AGENTS.md` 같은 물리적 지시 파일이 추가로 필요하다.
+
 ### 12주차 후속 (2026-03-20) — 어제자 리포트 후속: KIS 과속 완화 + 아처 비용 표 왜곡 수정
 
 핵심 구현:

@@ -81,6 +81,10 @@
 4. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
    - 현재 알려진 문제
 
+추가 규칙:
+- 코덱은 세션 시작 시 위 순서를 먼저 읽고 작업을 시작한다.
+- 코덱은 세션 종료 직전 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)를 다시 확인하고, 실제 변경이 있으면 관련 문서를 갱신한 뒤 마감한다.
+
 ### 2.2 문서 체계와 역할
 
 - 정책 / 세션 규칙
@@ -423,6 +427,8 @@
   2. [docs/SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
   3. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
   4. [docs/PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+- 코덱 세션은 시작과 종료 모두 이 규칙을 따른다.
+- 종료 시에는 최소 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS` 갱신 필요 여부를 확인한다.
 - 새 기능을 구현했을 때 아래 중 하나에 해당하면 이 문서도 같이 갱신한다.
   - 여러 팀이 공통으로 알아야 하는 규칙
   - 세션이 바뀌어도 다시 찾아야 하는 진입점

@@ -266,11 +266,18 @@ ffmpeg:
   audio_lufs: -14
   audio_tp: -1
   audio_lra: 11
+  audio_bitrate: 384k
+  audio_sample_rate: 48000
+  audio_channels: 2
   render_width: 2560
   render_height: 1440
   render_fps: 60
-  render_bitrate: 3000k
+  render_bitrate: 24M
   render_preset: medium
+  render_profile: high
+  render_pixel_format: yuv420p
+  render_movflags: +faststart
+  render_color_space: bt709
 
 # Whisper
 whisper:
