@@ -74,6 +74,21 @@
 
 의사결정 이유:
 - 지금 당장 필요한 구조는 비디오팀 문서 기준점을 실제 코드/설정/DB 원장으로 연결하는 것이다.
+
+### 12주차 후속 (2026-03-20) — 비디오팀 과제 2 FFmpeg 전처리
+
+- `bots/video/lib/ffmpeg-preprocess.js`
+  - `removeAudio`, `normalizeAudio`, `syncVideoAudio`, `preprocess` 4단계 전처리 모듈 구현
+  - FFmpeg/ffprobe 호출을 `execFile` 기반으로 감싸고, 실패 시 `tool-logger`에 로깅하도록 정리
+- `bots/video/scripts/test-preprocess.js`
+  - `samples/raw/원본_파라미터.mp4` + `samples/narration/원본_나레이션_파라미터.m4a` 기준 실제 테스트 스크립트 추가
+  - removeAudio / normalizeAudio / syncVideoAudio / preprocess 통합 / LUFS 측정까지 한 번에 검증
+- 샘플 검증 결과
+  - `video_noaudio.mp4` 생성 및 video-only stream 확인
+  - 나레이션이 `48000Hz stereo AAC`로 리샘플링됨을 ffprobe로 검증
+  - `synced.mp4`가 `1920x1080 60fps + 48kHz stereo`로 합성됨을 확인
+  - LUFS `-14.9`로 목표 `-14 ± 2` 범위 통과
+- macOS 샘플 한글 파일명(NFC/NFD) 차이로 `preprocess()` 매칭이 실패하던 경계를 보수적으로 복구해, 실제 fixture 경로를 안정적으로 찾도록 정리
 - YAML config와 SQL migration을 먼저 고정해야 이후 FFmpeg/Whisper/CapCut 파이프라인이 deterministic하게 이어진다.
 - `psql` 의존성이 없는 환경에서도 `pg-pool`로 같은 DB를 검증할 수 있게 해 두는 편이 운영 안정성에 유리하다.
 

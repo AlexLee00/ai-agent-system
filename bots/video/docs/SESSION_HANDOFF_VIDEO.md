@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (2차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1 스캐폴딩 완료 + FFmpeg 전처리(과제 2) 대기
+> 상태: 과제 2 FFmpeg 전처리 완료 + Whisper STT(과제 3) 대기
 
 ---
 
@@ -104,8 +104,8 @@
   - config와 출력 스펙 확정의 근거 문서
 
 ### 3. Claude Code / 코덱 다음 작업
-- 과제 1 스캐폴딩 완료 상태 확인
-- 다음은 `video-team-tasks.md` 과제 2 프롬프트 → FFmpeg 전처리 구현
+- 과제 2 FFmpeg 전처리 완료 상태 확인
+- 다음은 `video-team-tasks.md` 과제 3 프롬프트 → Whisper STT 구현
 - 과제별 단위 테스트 통과 후 순차 진행
 - 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
 - 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
@@ -133,10 +133,12 @@ ai-agent-system/bots/video/
 │   ├─ video-automation-tech-plan.md✅ 기술 구현 방안
 │   ├─ video-team-design.md         ✅ 설계 문서
 │   └─ video-team-tasks.md          ✅ 소과제 문서
-├─ lib/                             ← 빈 폴더
+├─ lib/
+│   └─ ffmpeg-preprocess.js         ✅ 과제 2 구현 완료
 ├─ migrations/
 │   └─ 001-video-schema.sql         ✅ 생성 완료
-├─ scripts/                         ← 비디오팀 공통 관례용 예약 폴더 (현재 비어 있음)
+├─ scripts/
+│   └─ test-preprocess.js           ✅ 과제 2 테스트 스크립트
 ├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
 ├─ temp/                            ✅ 생성 완료
 ├─ exports/                         ✅ 생성 완료
@@ -179,8 +181,13 @@ tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨
 - bots/video/migrations/001-video-schema.sql
 - bots/video/src/index.js
 - public.video_edits 테이블 생성/조회 검증
+- bots/video/lib/ffmpeg-preprocess.js
+- bots/video/scripts/test-preprocess.js
+- 샘플 1세트 전처리 검증
+  - removeAudio / normalizeAudio / syncVideoAudio / preprocess 통합 통과
+  - 오디오 48kHz stereo AAC 확인
+  - LUFS -14.9 확인
 
 아직 구현되지 않은 것:
-- bots/video/lib/* 실제 구현 파일
-- 과제 2 이후 FFmpeg/Whisper/CapCut/렌더 파이프라인
+- Whisper STT / 자막 교정 / CapCut / 렌더 파이프라인
 ```
