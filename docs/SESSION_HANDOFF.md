@@ -276,7 +276,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 5 CapCut 드래프트 완료, CapCut Desktop 목록 표시 확인, 과제 6 착수 가능
+상태: 과제 1~5 완료, 아키텍처 변경 (CapCut→EDL JSON), 과제 6 재정의 후 착수
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -316,14 +316,17 @@
   - `node bots/video/scripts/test-capcut-draft.js` 통과
   - repo 내부 `dfd_cat_*` draft 생성 + CapCut Desktop 프로젝트 폴더 복사 확인
   - CapCut Desktop 프로젝트 목록에 새 draft 카드 표시 확인
+  - 단, CapCut Desktop 내부 타임라인/미디어/자막은 비어 있어 CapCut draft parser 전략은 폐기
+  - 메인 파이프라인은 CapCut 의존 대신 EDL JSON + FFmpeg로 재정의 중
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code/Codex 과제 6 범위의 draft 파서 + FFmpeg 렌더링 구현
-     - draft_info.json 파싱
-     - FFmpeg 1440p/60fps 렌더링
+  1. Claude Code/Codex 과제 6 범위의 영상 분석 + EDL 생성 + FFmpeg 렌더링 구현
+     - FFmpeg 기반 무음/정지/씬전환 분석
+     - edit_decision_list.json 생성
+     - 720p 프리뷰 및 1440p 최종 렌더링
   2. 과제 7 엔드투엔드 통합 파이프라인 구성
   3. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
 

@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (3차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~5 완료, CapCut Desktop 연동 확인 완료, 과제 6부터 이어서 진행
+> 상태: 과제 1~5 완료, 아키텍처 변경 (CapCut→EDL JSON), 과제 6 재정의 후 진행
 
 ---
 
@@ -82,7 +82,7 @@
 - `save_draft` 후 repo 내부 `dfd_cat_*`를 `config.paths.capcut_drafts`로 복사하는 흐름 검증 완료
 - CapCut Desktop 프로젝트 목록에 새 draft 카드 실제 표시 확인
 
-### 과제 6~7: draft 파서 + FFmpeg 렌더링 + 엔드투엔드 통합
+### 과제 6~7: 영상 분석 + EDL 생성 + FFmpeg 렌더링 + 엔드투엔드 통합
 ### 과제 8~13: 워커웹 + n8n + 품질 루프 (Week 2)
 ### Week 3: 최종 통합 테스트 + 품질 테스트
 
@@ -134,7 +134,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 4: LLM 자막 교정
   ✅ CapCut readiness 체크
   ✅ 과제 5: CapCut 드래프트
-  ☐ 과제 6: draft 파서 + FFmpeg 렌더링
+  ☐ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
   ☐ 과제 7: 엔드투엔드 통합
 
 Week 2: 워커웹 + n8n + 품질 루프
@@ -149,6 +149,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 [확정] YouTube 렌더링: 24Mbps, H.264 High, 48kHz/384kbps, movflags +faststart, BT.709
 [확정] 1440p 업로드 = VP9 코덱 트리거 (1080p 원본 → 2560x1440 업스케일)
 [확정] CapCut 무료 + FFmpeg 렌더링 (Pro 불필요)
+[확정] CapCut 7.2.0 draft 파싱 전략 폐기, EDL JSON을 편집 원장으로 사용
 [확정] 저비용 LLM 전략: 자막 gpt-4o-mini, 품질루프 전부 무료 (월 ~$1.12)
 [확정] Gemini 2.0 → 2.5-flash 변경 (2.0 퇴역 예정)
 [확정] quality_loop: critic=gemini-2.5-flash, refiner=groq/gpt-oss-20b, evaluator=groq/scout

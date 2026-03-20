@@ -46,12 +46,13 @@
 │ ffmpeg-preprocess.js     │ 오디오 정규화 + 추출 + 포맷 변환    │ P0 (W1)  │
 │ whisper-client.js        │ Whisper API 호출 → SRT 생성         │ P0 (W1)  │
 │ subtitle-corrector.js    │ LLM 셀렉터 → 한글 자막 교정         │ P0 (W1)  │
-│ capcut-draft-builder.js  │ CapCutAPI MCP 연동 → 드래프트 생성  │ P0 (W1)  │
-│ draft-parser.js          │ draft_info.json 파싱 → 편집정보 추출│ P0 (W1)  │
+│ capcut-draft-builder.js  │ CapCutAPI 선택적 보조 프리뷰 (완료) │ P0 (W1) ✅│
+│ video-analyzer.js        │ FFmpeg 영상 분석 (무음/정지/씬전환) │ P0 (W1)  │
+│ edl-builder.js           │ EDL JSON 생성/수정 + FFmpeg 실행    │ P0 (W1)  │
 │ ffmpeg-renderer.js       │ 파싱된 편집정보 → 1440p/60fps 렌더링│ P0 (W1)  │
 │ quality-loop.js          │ Critic-Refiner-Evaluator 순환 검증  │ P1 (W2)  │
 │ critic-agent.js          │ RED: 드래프트 분석 → 문제점 리포트   │ P1 (W2)  │
-│ refiner-agent.js         │ BLUE: CapCutAPI로 드래프트 패치     │ P1 (W2)  │
+│ refiner-agent.js         │ BLUE: SRT 수정 + EDL 생성/수정      │ P1 (W2)  │
 │ evaluator-agent.js       │ 품질 점수 판정 (85/100 기준)        │ P1 (W2)  │
 └──────────────────────────┴────────────────────────────────────┴──────────┘
 ```
@@ -75,8 +76,9 @@ ai-agent-system/
 │   │   ├─ ffmpeg-preprocess.js        — 오디오 정규화 + 추출
 │   │   ├─ whisper-client.js           — Whisper API STT
 │   │   ├─ subtitle-corrector.js       — LLM 자막 교정
-│   │   ├─ capcut-draft-builder.js     — CapCutAPI MCP 드래프트 생성
-│   │   ├─ draft-parser.js             — draft_info.json → 편집정보
+│   │   ├─ capcut-draft-builder.js     — CapCutAPI 선택적 보조 (완료, --with-capcut)
+│   │   ├─ video-analyzer.js           — FFmpeg 영상 분석 (무음/정지/씬전환)
+│   │   ├─ edl-builder.js              — EDL JSON 생성/수정 + FFmpeg 렌더링
 │   │   ├─ ffmpeg-renderer.js          — 편집정보 → 1440p/60fps MP4
 │   │   ├─ quality-loop.js             — Critic-Refiner-Evaluator 루프
 │   │   ├─ critic-agent.js             — RED Team 분석
@@ -144,28 +146,34 @@ LLM 자막 교정                  │ bots/video/lib/subtitle-corrector.js│ l
 SRT 파일 읽기/쓰기            │ bots/video/lib/subtitle-corrector.js│ fs
 ```
 
-### 3-2. CapCut 편집 계층
+### 3-2. EDL JSON 편집 계층 (CapCut 대체)
+
+```
+★ CapCut 7.2.0 draft 암호화 + CapCutAPI 저장 실패로 파이프라인 변경
+기존: CapCut 드래프트 → draft_info.json 파싱 → FFmpeg 렌더링
+현재: 영상 분석 → EDL JSON 생성 → FFmpeg 렌더링
+
+기능                          │ 파일 위치                      │ 의존 모듈
+─────────────────────────────│────────────────────────────────│──────────────
+FFmpeg 영상 분석              │ bots/video/lib/video-analyzer.js  │ ffmpeg silencedetect, freezedetect, scene
+분석 결과 → analysis.json     │ bots/video/lib/video-analyzer.js  │ JSON
+Critic 리포트 → critic_report │ bots/video/lib/critic-agent.js    │ LLM + analysis.json
+Refiner → EDL JSON 생성       │ bots/video/lib/edl-builder.js     │ critic_report + LLM
+EDL → FFmpeg 프리뷰 렌더링    │ bots/video/lib/edl-builder.js     │ ffmpeg (720p)
+EDL → FFmpeg 최종 렌더링      │ bots/video/lib/edl-builder.js     │ ffmpeg (1440p/24Mbps)
+영상제작팀 피드백 → EDL 수정   │ 워커 웹 + edl-builder.js         │ JSON patch
+CapCutAPI 보조 프리뷰 (선택)  │ bots/video/lib/capcut-draft-builder.js │ http (--with-capcut)
+```
+
+### 3-3. FFmpeg 영상 분석 + 렌더링
 
 ```
 기능                          │ 파일 위치                      │ 의존 모듈
 ─────────────────────────────│────────────────────────────────│──────────────
-CapCutAPI MCP 서버 연결        │ bots/video/lib/capcut-draft-builder.js │ http (localhost:9001)
-create_draft                  │ bots/video/lib/capcut-draft-builder.js │ CapCutAPI
-add_video/audio/subtitle      │ bots/video/lib/capcut-draft-builder.js │ CapCutAPI
-save_draft → dfd_ 폴더        │ bots/video/lib/capcut-draft-builder.js │ CapCutAPI, fs
-dfd_ → CapCut 드래프트 복사   │ bots/video/lib/capcut-draft-builder.js │ fs (cp)
-```
-
-### 3-3. FFmpeg 최종 렌더링 (CapCut Export 우회)
-
-```
-기능                          │ 파일 위치                      │ 의존 모듈
-─────────────────────────────│────────────────────────────────│──────────────
-draft_info.json 파싱           │ bots/video/lib/draft-parser.js │ fs, JSON
-클립 순서/in-out 포인트 추출   │ bots/video/lib/draft-parser.js │ -
-FFmpeg 명령어 생성             │ bots/video/lib/ffmpeg-renderer.js │ draft-parser.js
-자막 번인 (ASS 스타일)         │ bots/video/lib/ffmpeg-renderer.js │ child_process (ffmpeg)
-1440p/60fps 렌더링            │ bots/video/lib/ffmpeg-renderer.js │ child_process (ffmpeg)
+영상 분석 (무음/정지/씬전환)   │ bots/video/lib/video-analyzer.js │ ffmpeg filters
+EDL JSON 해석                  │ bots/video/lib/edl-builder.js    │ JSON
+FFmpeg 프리뷰 명령어 생성      │ bots/video/lib/edl-builder.js    │ 720p, 빠른 인코딩
+FFmpeg 최종 렌더링 명령어      │ bots/video/lib/edl-builder.js    │ 1440p/24Mbps/High Profile
 ```
 
 ### 3-4. 품질 검증 루프 (Phase 2)
@@ -175,8 +183,9 @@ FFmpeg 명령어 생성             │ bots/video/lib/ffmpeg-renderer.js │ dr
 ─────────────────────────────│────────────────────────────────│──────────────
 Critic: 자막 싱크 분석         │ bots/video/lib/critic-agent.js │ llm-router.js
 Critic: 오디오 밸런스 검증     │ bots/video/lib/critic-agent.js │ child_process (ffmpeg)
+Critic: 영상 구조 분석         │ bots/video/lib/critic-agent.js │ video-analyzer.js (무음/정지/씬전환)
 Refiner: SRT 수정              │ bots/video/lib/refiner-agent.js │ subtitle-corrector.js
-Refiner: CapCutAPI 패치        │ bots/video/lib/refiner-agent.js │ capcut-draft-builder.js
+Refiner: SRT수정 + EDL생성     │ bots/video/lib/refiner-agent.js │ edl-builder.js, subtitle-corrector.js
 Evaluator: 가중 평균 판정     │ bots/video/lib/evaluator-agent.js │ -
 품질 루프 오케스트레이션       │ bots/video/lib/quality-loop.js │ critic/refiner/evaluator
 ```
@@ -553,23 +562,13 @@ RAG 활용:
             CapCut Desktop을 열면 드래프트 3개가 보입니다."
 
 ════════════════════════════════════════════════════════════
- Step 6: CapCut 편집 상태 확인 안내
+ Step 6: 프리뷰 확인 (720p + 자막 + EDL 편집 적용)
 ════════════════════════════════════════════════════════════
 
-  시스템: "CapCut Desktop에서 다음 드래프트를 확인해주세요:
-          📂 [DB생성_20260320] — 세트 1
-          📂 [동적데이터_20260320] — 세트 2
-          📂 [서버인증_20260320] — 세트 3
-
-          확인할 사항:
-            ✓ 자막이 올바르게 표시되는지
-            ✓ 오디오-영상 싱크가 맞는지
-            ✓ 전환 효과가 적절한지
-
-          CapCut에서 수정이 필요하면 직접 수정하셔도 됩니다.
-          수정 내용은 최종본에 자동 반영됩니다.
-
-          확인 완료 후 아래 [컨펌] 버튼을 눌러주세요."
+  시스템: "편집 프리뷰가 준비되었습니다. 아래에서 확인해주세요.
+          AI가 자동으로 무음 구간 삭제, 씬 전환 효과, 자막을 적용했습니다.
+          수정이 필요하면 타임코드와 함께 의견을 입력해주세요.
+          예: '02:30 여기 잘라줘', '05:00에 페이드 추가'"
 
 ════════════════════════════════════════════════════════════
  Step 7: 웹에서 컨펌 입력
