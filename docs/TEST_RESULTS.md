@@ -118,6 +118,20 @@
 | `node --check bots/investment/markets/crypto.js` | ✅ |
 | `node --check bots/investment/markets/domestic.js` | ✅ |
 | `node --check bots/investment/markets/overseas.js` | ✅ |
+
+## 2026-03-21
+
+### 워커 웹 영상 편집 API + 프론트엔드
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/routes/video-api.js` | ✅ |
+| `node --check bots/video/scripts/render-from-edl.js` | ✅ |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ `--session-id`, `--pair-index` 확장 후 문법 확인 |
+| `node --check bots/worker/web/server.js` | ✅ `/api/video` 라우터 연결 후 문법 확인 |
+| `npm --prefix bots/worker/web run build` | ✅ `/video`, `/video/history` 포함 Next.js production build 통과 |
+| `node -e "... 002-video-sessions.sql ..."` | ✅ `video_sessions`, `video_upload_files`, `video_edits` 확장 컬럼 마이그레이션 적용 |
+| `node -e "... information_schema.columns ..."` | ✅ `video_sessions`, `video_upload_files`, `video_edits(session_id/pair_index/confirm_status/reject_reason)` 생성 확인 |
 | `node --check bots/investment/team/athena.js` | ✅ |
 | `node --check bots/investment/team/oracle.js` | ✅ |
 | `node --check bots/investment/team/hermes.js` | ✅ |

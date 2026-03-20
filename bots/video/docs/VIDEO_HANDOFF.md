@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~6 핵심 모듈 구현 완료 / 과제 7 run-pipeline 1차 통합 완료 / 장시간 preview 렌더 최적화 대기
+> 상태: 과제 1~7 핵심 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 장시간 preview 렌더 최적화 대기
 
 ---
 
@@ -181,9 +181,18 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `src/index.js`는 `loadConfig()` export로 리팩터링
     - `--source=N`, `--source-video`, `--source-audio`, `--skip-render`, `--with-capcut` 지원
     - `video_edits` INSERT/단계별 status UPDATE/trace_id 기록/텔레그램 알림 연결 완료
+    - worker-web 연동용 `--session-id`, `--pair-index` 지원 추가
     - 실자산 `--source=1 --skip-render` 검증에서 전처리 → STT → 자막교정 → 영상분석 → EDL 생성까지 완료 확인
     - preview 렌더도 실제로 진행되지만, 현재 transition 수가 많은 실자산에서는 wall-clock이 길어 추가 최적화가 필요
     - single-flight lock 추가로 동시 실행은 즉시 차단되며, SIGINT/SIGTERM 시 lock 정리까지 보강 완료
+  - worker-web 영상 편집 연결 완료
+    - `migrations/002-video-sessions.sql`
+    - `routes/video-api.js`
+    - `app/video/page.js`
+    - `app/video/history/page.js`
+    - session/file/edit 원장은 `video_sessions -> video_upload_files -> video_edits` 구조로 연결
+    - confirm 후 final render는 `scripts/render-from-edl.js`가 백그라운드에서 수행
+    - preview/subtitle/download는 JWT 헤더 제약 때문에 `fetch + Authorization + blob URL` 방식 사용
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -195,7 +204,7 @@ Week 1: 핵심 파이프라인
   ☐ 과제 7: 엔드투엔드 통합 (run-pipeline 1차 구현 완료, preview wall-clock 최적화 대기)
 
 Week 2: 워커웹 + n8n + 품질 루프
-  ☐ 과제 8: 워커 웹 대화형 영상 편집 페이지
+  ✅ 과제 8: 워커 웹 대화형 영상 편집 페이지 (API + UI 1차 연결)
   ☐ 과제 9: n8n 연동
   ☐ 과제 10~12: 품질 루프 (Critic/Refiner/Evaluator)
   ☐ 과제 13: 4세트 검증

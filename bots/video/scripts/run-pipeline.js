@@ -45,6 +45,8 @@ function parseArgs(argv) {
     source: null,
     sourceVideo: null,
     sourceAudio: null,
+    sessionId: null,
+    pairIndex: null,
     skipRender: false,
     withCapcut: false,
   };
@@ -68,6 +70,14 @@ function parseArgs(argv) {
     }
     if (arg.startsWith('--source-audio=')) {
       parsed.sourceAudio = arg.slice('--source-audio='.length);
+      continue;
+    }
+    if (arg.startsWith('--session-id=')) {
+      parsed.sessionId = Number.parseInt(arg.slice('--session-id='.length), 10) || null;
+      continue;
+    }
+    if (arg.startsWith('--pair-index=')) {
+      parsed.pairIndex = Number.parseInt(arg.slice('--pair-index='.length), 10) || null;
       continue;
     }
   }
@@ -261,6 +271,8 @@ async function insertVideoEdit(payload) {
   const rows = await pgPool.query(
     'public',
     `INSERT INTO video_edits (
+      session_id,
+      pair_index,
       source_dir,
       title,
       raw_video_path,
@@ -268,9 +280,11 @@ async function insertVideoEdit(payload) {
       raw_duration_ms,
       status,
       trace_id
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id`,
     [
+      payload.session_id,
+      payload.pair_index,
       payload.source_dir,
       payload.title,
       payload.raw_video_path,
@@ -352,6 +366,8 @@ async function main() {
 
     const rawDurationMs = await probeDurationMs(source.rawVideoPath);
     const recordId = await insertVideoEdit({
+      session_id: args.sessionId,
+      pair_index: args.pairIndex,
       source_dir: source.sourceDir,
       title,
       raw_video_path: source.rawVideoPath,
