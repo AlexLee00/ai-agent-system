@@ -265,7 +265,7 @@ capcut_api:
 ffmpeg:
   audio_lufs: -14
   audio_tp: -1
-  audio_lra: 11
+  audio_lra: 20
   audio_bitrate: 384k
   audio_sample_rate: 48000
   audio_channels: 2
