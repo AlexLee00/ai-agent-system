@@ -9,6 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RUNTIME_CONFIG = {
   dynamicTpSlEnabled: true,
   luna: {
+    signalDedupeWindowMinutes: 180,
     minConfidence: {
       live: { binance: 0.50, kis: 0.30, kis_overseas: 0.30 },
       paper: { binance: 0.45, kis: 0.22, kis_overseas: 0.22 },
@@ -201,6 +202,12 @@ export function isDynamicTpSlEnabled() {
 
 export function getLunaRuntimeConfig() {
   return loadRuntimeConfig().luna;
+}
+
+export function getSignalDedupeWindowMinutes() {
+  const raw = Number(getLunaRuntimeConfig()?.signalDedupeWindowMinutes);
+  if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
+  return 180;
 }
 
 export function getLunaStockStrategyProfile() {
