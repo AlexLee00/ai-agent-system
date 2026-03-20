@@ -215,12 +215,32 @@ export async function getWeeklyPnL() {
   }
 }
 
-export async function getDailyTradeCount() {
+export async function getDailyTradeCount({ exchange = null, tradeMode = null, paper = null } = {}) {
   try {
-    const rows = await pgPool.query(SCHEMA, `
+    const conditions = [`executed_at::date = CURRENT_DATE`];
+    const params = [];
+
+    if (exchange) {
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
+    }
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+    if (paper !== null) {
+      params.push(paper === true);
+      conditions.push(`paper = $${params.length}`);
+    }
+
+    const rows = await pgPool.query(
+      SCHEMA,
+      `
       SELECT COUNT(*) AS cnt FROM trades
-      WHERE executed_at::date = CURRENT_DATE
-    `, []);
+      WHERE ${conditions.join(' AND ')}
+    `,
+      params,
+    );
     return parseInt(rows[0]?.cnt || 0, 10);
   } catch (e) {
     console.warn('[capital] 일간 거래 횟수 조회 실패:', e.message);
@@ -304,9 +324,10 @@ export async function checkCircuitBreaker() {
  * @param {string|null} exchange   — 포지션 제한을 적용할 거래소 (예: 'binance')
  * @returns {{ allowed: boolean, reason?: string, balance?: number, dailyTrades?: number }}
  */
-export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null) {
+export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null, tradeMode = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
   const policy = getCapitalConfig(exchange);
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
 
   // 1. 가용 잔고 (BUY만)
   if (isBuy) {
@@ -340,7 +361,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
 
   // 5. 일간 매매 횟수 (BUY만)
   if (isBuy) {
-    const dailyTrades = await getDailyTradeCount();
+    const dailyTrades = await getDailyTradeCount({ exchange, tradeMode: effectiveTradeMode });
     if (dailyTrades >= policy.max_daily_trades) {
       return { allowed: false, reason: formatDailyTradeLimitReason(dailyTrades, policy.max_daily_trades) };
     }
