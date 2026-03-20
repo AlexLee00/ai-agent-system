@@ -113,7 +113,16 @@ function compactSectionTitle(title) {
 }
 
 function compactNoticeTitle(title) {
-  return compactLine(String(title || '').replace(/^[^\w가-힣]+\s*/, '').trim(), 48);
+  const normalized = String(title || '')
+    .replace(/^[^\w가-힣]+\s*/, '')
+    .replace(/^루나 메트릭 경고\s*[—-]\s*/u, '루나 경고 · ')
+    .replace(/^오늘 예약 현황\s*[—-]\s*/u, '오늘 예약 · ')
+    .replace(/^오늘 예약 현황\s*/u, '오늘 예약 ')
+    .replace(/국내주식 수집/gu, '국내 수집')
+    .replace(/해외주식 수집/gu, '해외 수집')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return compactLine(normalized, 40);
 }
 
 function compactLines(lines = [], limit = MOBILE_DETAIL_LIMIT) {

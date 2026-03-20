@@ -3,6 +3,21 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
+
+### 변경 사항 (changed)
+- 모바일 텔레그램 카드에서 제목이 2줄로 쉽게 꺾이던 운영 알림을 short-title 중심으로 정리
+  - `루나 메트릭 경고`는 `루나 경고`로 축약
+  - `국내주식 수집`, `해외주식 수집`은 각각 `국내 수집`, `해외 수집`으로 축약
+  - `오늘 예약 현황 — ...` 계열 제목은 `오늘 예약 · ...` 또는 `오늘 예약 (...)` 형태로 짧게 보이도록 정리
+- 루나 collect 경고는 raw key 나열 대신 사람이 바로 해석할 수 있는 경고 문장으로 보강
+  - `collect_blocked_by_llm_guard`, `enrichment_collect_failure_rate_high`를 `LLM guard 발동`, `보조 분석 수집 차단` 의미로 풀어서 전달
+  - 핵심 수집(`coreFailed=0`)과 보조 enrichment 실패를 구분해 과장된 장애 해석을 줄임
+- 스카 n8n 매출 알림 제목을 모바일 기준으로 축약
+  - `스카팀 일간 매출 요약 (n8n)` → `스카 매출 요약`
+  - `스카팀 주간 매출 트렌드 (n8n)` → `스카 주간 매출`
+- `reload-monitor.sh`를 강제 `bootout/bootstrap` 기반에서 안전한 `ensure_launchd_service + kickstart -k` 구조로 바꿔 `Bootstrap failed: 5` 재기동 오류를 줄임
+
 ## 12주차 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 ### 신규 기능 (feat)

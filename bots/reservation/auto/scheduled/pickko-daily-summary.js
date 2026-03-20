@@ -134,7 +134,7 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
   const dateHeader = formatDateHeader(today);
 
   if (entries.length === 0) {
-    const base = `📋 오늘 예약 현황 — ${dateHeader}\n\n예약 없음`;
+    const base = `📋 오늘 예약 · ${dateHeader}\n\n예약 없음`;
     if (isNoon) {
       const generalRevenue = pickkoStats ? pickkoStats.generalRevenue : 0;
       const baseMsg = base + `\n\n💰 총 매출: ${formatAmount(generalRevenue)}\n\n❓ 오늘 매출을 확정하시겠습니까?`;
@@ -175,7 +175,7 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
 
   const SEP = '━━━━━━━━━━━━━━━';
 
-  let msg = `📋 오늘 예약 현황 — ${dateHeader}\n\n`;
+  let msg = `📋 오늘 예약 · ${dateHeader}\n\n`;
   msg += `총 ${sorted.length}건 | ${formatAmount(totalAmount)}\n`;
   msg += `${SEP}\n`;
 

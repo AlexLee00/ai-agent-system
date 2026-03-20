@@ -146,9 +146,68 @@ export function summarizeNodeStatuses(summaries = []) {
   return [...counts.entries()].map(([key, count]) => `${key}=${count}`).join(' | ');
 }
 
+export function summarizeCollectWarnings(warnings = [], metrics = {}) {
+  if (!Array.isArray(warnings) || warnings.length === 0) return [];
+
+  const lines = [];
+  const coreFailed = Number(metrics.failedCoreTasks || 0);
+  const enrichFailed = Number(metrics.failedEnrichmentTasks || 0);
+  const llmGuardFailed = Number(metrics.llmGuardFailedTasks || 0);
+
+  if (warnings.includes('collect_blocked_by_llm_guard')) {
+    if (coreFailed === 0 && enrichFailed > 0) {
+      lines.push(`LLM guard 발동으로 보조 분석 수집 ${enrichFailed}건이 차단됐습니다. 핵심 수집은 정상입니다.`);
+    } else {
+      lines.push(`LLM guard 발동으로 수집 노드 ${llmGuardFailed || (coreFailed + enrichFailed)}건이 차단됐습니다.`);
+    }
+  }
+
+  if (warnings.includes('enrichment_collect_failure_rate_high')) {
+    lines.push(`뉴스·감성·온체인 등 보조 분석 실패율이 높습니다 (실패 ${enrichFailed}건).`);
+  }
+
+  if (warnings.includes('core_collect_failure_rate_high')) {
+    lines.push(`핵심 수집 실패율이 높습니다 (실패 ${coreFailed}건). 즉시 원천 API 점검이 필요합니다.`);
+  }
+
+  if (warnings.includes('collect_overload_detected')) {
+    lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}).`);
+  }
+
+  if (warnings.includes('concurrency_guard_active')) {
+    lines.push(`동시성 guard가 활성화된 상태입니다 (limit=${metrics.concurrencyLimit || 0}).`);
+  }
+
+  if (warnings.includes('collect_failure_rate_high') && lines.length === 0) {
+    lines.push(`수집 실패율이 높습니다 (failed=${metrics.failedTasks || 0}/${metrics.totalTasks || 0}).`);
+  }
+
+  return lines;
+}
+
+export function buildCollectAlertMessage(label, warnings = [], metrics = {}) {
+  const detailLines = summarizeCollectWarnings(warnings, metrics);
+  const compactLabel = String(label || '')
+    .replace(/국내주식 수집/gu, '국내 수집')
+    .replace(/해외주식 수집/gu, '해외 수집')
+    .replace(/암호화폐 수집/gu, '암호화폐 수집')
+    .trim();
+  if (detailLines.length === 0) {
+    return `📈 루나 경고 — ${compactLabel}\n${warnings.join(', ')}`;
+  }
+  return [
+    `📈 루나 경고 — ${compactLabel}`,
+    ...detailLines.map((line) => `- ${line}`),
+    '조치: 상세 내용 확인',
+    '추가 점검: /ops-health',
+  ].join('\n');
+}
+
 export default {
   runMarketCollectPipeline,
   summarizeNodeStatuses,
+  summarizeCollectWarnings,
+  buildCollectAlertMessage,
 };
 
 async function runWithConcurrencyLimit(tasks, limit) {

@@ -1567,7 +1567,7 @@ async function monitorBookings() {
             const upMin = Math.floor((Date.now() - startTime) / 60000);
             const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
             const todayStats = await getTodayStats(todayStr);
-            const hMsg = `✅ 스카 정상 운영 중\n\n확인 #${checkCount} | 업타임 ${upMin}분\n\n📋 오늘 예약 현황 (${todayStr})\n네이버: ${currentConfirmedList.length}건 확정 | ${cancelledCount}건 취소\n키오스크: ${todayStats.kioskTotal}건\n합계: ${todayStats.total}건\n\n다음 heartbeat: 1시간 후`;
+            const hMsg = `✅ 스카 정상 운영 중\n\n확인 #${checkCount} | 업타임 ${upMin}분\n\n📋 오늘 예약 (${todayStr})\n네이버: ${currentConfirmedList.length}건 확정 | ${cancelledCount}건 취소\n키오스크: ${todayStats.kioskTotal}건\n합계: ${todayStats.total}건\n\n다음 heartbeat: 1시간 후`;
             publishToMainBot({ from_bot: 'andy', event_type: 'heartbeat', alert_level: 1, message: hMsg });
             log(`💓 Heartbeat 전송 (확인 #${checkCount}, 업타임 ${upMin}분)`);
             lastHeartbeatTime = Date.now();

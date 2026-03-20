@@ -26,7 +26,7 @@ import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
-import { runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
+import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.js';
@@ -260,7 +260,7 @@ async function logPipelineMetrics(label, metrics = {}) {
         from_bot: 'argos',
         event_type: 'alert',
         alert_level: 2,
-        message: `📈 루나 메트릭 경고 — ${label}\n${escalated.join(', ')}`,
+        message: buildCollectAlertMessage(label, escalated, metrics),
         payload: metrics,
       });
     }
