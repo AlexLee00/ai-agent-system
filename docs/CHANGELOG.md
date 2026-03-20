@@ -794,3 +794,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `crypto/domestic/overseas` 메트릭 로그에 `coreFailed`, `enrichFailed`를 함께 출력하고 새 경고 키도 escalated alert 대상으로 연결
   - `shared/kis-client.js`의 국내 현재가 0원 응답을 `거래불가/종목코드 확인 필요` 성격으로 더 명확히 분류
   - `team/hanul.js`에서 국내 KIS BUY도 사전 현재가 검증을 수행해 `0원 응답 종목`은 주문 단계 전에 리스크 거부하도록 보강
+- 스카 예약 운영
+  - `pickko-alerts-resolve.js`를 PostgreSQL 기반으로 복구해 수동 처리 완료 시 실제 unresolved error alerts를 해결 처리하도록 정리
+  - `orchestrator/router.js`에서 `처리완료`, `해결했어`, `직접 처리했어`, `마스터가 수동으로 처리함` 계열 문구를 즉시 alert resolve 명령으로 연결
+  - `naver-monitor.js`의 취소 재시도 전에 예약 종결 상태를 다시 조회해 `completed/cancelled/time_elapsed/marked_seen` 예약은 재알림 없이 건너뛰고 기존 오류 알림도 자동 resolve 하도록 보강
+  - 스카 재시작 시 `미해결 오류 n건` 시작 보고는 현재 actionable alert만 남기고, 이미 종결된 예약의 과거 실패 알림은 요약 전에 자동 정리하도록 수정
