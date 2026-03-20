@@ -46,6 +46,7 @@
   - investment health-report는 이제 다음을 함께 보여준다.
     - 오늘 `signal block_code / 세부 reason group`
     - 최근 60분 `signal block pressure`
+    - 최근 60분 `daily_trade_limit rail pressure`
     - rail별 신규 진입(BUY) 한도 사용량
   - scheduled market worker(`crypto/domestic/overseas`)는 코드 파일 시각이 stderr보다 최신이면 과거 `last exit 1`을 stale failure로 간주해 health false warning을 줄이도록 보정됐다.
   - `daily_trade_limit`는 이제 SELL이 아니라 BUY 신규 진입만 집계한다.
@@ -53,6 +54,7 @@
     - 로컬 운영 `bots/investment/config.yaml`에서 `binance validation max_daily_trades`를 `8 -> 10`으로 상향했다.
     - 이 파일은 `.gitignore` 대상이라 저장소에는 남지 않으며, 운영 메모/핸드오프로만 추적한다.
     - health-report 기준 현재 `BINANCE / validation 3/10`, 최근 60분 차단/거부 `2건`, 세부 그룹은 모두 `daily_trade_limit`이다.
+    - 다음 세션부터는 `■ 최근 60분 rail 압력` 섹션으로 실제 압력이 `BINANCE / validation`에 몰리는지 바로 확인할 수 있다.
   - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`는 `applied` 상태이며, 현재 판단은 `observe`다.
   - `trading-journal.js`는 거래 없음 대비 분석비용이 큰 날 `no-trade high-cost` 경고를 출력하도록 보강됐다.
   - `weekly-trade-review.js`는 종료 거래가 없어도 미결 포지션, 주간 LLM 사용량, 다음 조치를 포함한 운영 요약을 남기며, `date_kst::date` 비교로 주간 usage가 0으로 떨어지던 버그를 수정했다.

@@ -296,6 +296,40 @@ async function loadRecentSignalBlockHealth(windowMinutes = 60) {
   };
 }
 
+async function loadRecentLaneBlockPressure(windowMinutes = 60) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(exchange, 'unknown') AS exchange,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE created_at > now() - INTERVAL '1 minute' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+        AND COALESCE(block_reason, '') ILIKE '%일간 매매 한도%'
+      GROUP BY 1, 2
+      ORDER BY cnt DESC, exchange ASC, trade_mode ASC
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  const lanes = rows.map((row) => ({
+    exchange: row.exchange,
+    tradeMode: row.trade_mode,
+    count: Number(row.cnt || 0),
+    label: formatLaneLabel(row.exchange, row.trade_mode),
+  }));
+
+  return {
+    windowMinutes,
+    total: lanes.reduce((sum, lane) => sum + Number(lane.count || 0), 0),
+    lanes,
+    topLane: lanes[0] || null,
+  };
+}
+
 async function loadTradeLaneHealth() {
   const policy = loadCapitalPolicySnapshot();
   const rows = await pgPool.query(
@@ -348,12 +382,21 @@ async function loadTradeLaneHealth() {
   };
 }
 
-function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, recentSignalBlockHealth, tradeLaneHealth) {
+function buildDecision(
+  serviceRows,
+  tradeReview,
+  guardHealth,
+  signalBlockHealth,
+  recentSignalBlockHealth,
+  recentLaneBlockPressure,
+  tradeLaneHealth,
+) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
   const recentTopReasonGroup = recentSignalBlockHealth.topReasonGroups?.[0] || null;
   const saturatedLane = tradeLaneHealth.lanes.find((lane) => lane.atLimit);
   const nearLimitLane = tradeLaneHealth.lanes.find((lane) => lane.nearLimit);
+  const pressureLane = recentLaneBlockPressure.topLane || null;
   return buildHealthDecision({
     warnings: [
       {
@@ -380,6 +423,11 @@ function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth,
         active: recentSignalBlockHealth.total >= 1,
         level: recentTopReasonGroup?.group === 'daily_trade_limit' ? 'medium' : 'low',
         reason: `최근 ${recentSignalBlockHealth.windowMinutes}분 차단/거부 ${recentSignalBlockHealth.total}건 — 최다 세부 그룹 ${recentTopReasonGroup?.group || 'n/a'} ${recentTopReasonGroup?.count || 0}건`,
+      },
+      {
+        active: recentLaneBlockPressure.total >= 1,
+        level: pressureLane?.count >= 3 ? 'medium' : 'low',
+        reason: `최근 ${recentLaneBlockPressure.windowMinutes}분 일간 한도 압력 ${recentLaneBlockPressure.total}건 — 최다 rail ${pressureLane?.label || 'n/a'} ${pressureLane?.count || 0}건`,
       },
       {
         active: Boolean(saturatedLane || nearLimitLane),
@@ -428,6 +476,12 @@ function formatText(report) {
           ]
         : ['  최근 차단/거부 신호 없음'],
     },
+    {
+      title: `■ 최근 ${report.recentLaneBlockPressure.windowMinutes}분 rail 압력`,
+      lines: report.recentLaneBlockPressure.total > 0
+        ? report.recentLaneBlockPressure.lanes.map((lane) => `  ${lane.label}: ${lane.count}건`)
+        : ['  최근 일간 한도 rail 압력 없음'],
+    },
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
       title: null,
@@ -469,8 +523,17 @@ async function buildReport() {
   const guardHealth = buildGuardHealth();
   const signalBlockHealth = await loadSignalBlockHealth();
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
+  const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
   const tradeLaneHealth = await loadTradeLaneHealth();
-  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, recentSignalBlockHealth, tradeLaneHealth);
+  const decision = buildDecision(
+    serviceRows,
+    tradeReview,
+    guardHealth,
+    signalBlockHealth,
+    recentSignalBlockHealth,
+    recentLaneBlockPressure,
+    tradeLaneHealth,
+  );
 
   const report = {
     serviceHealth: {
@@ -483,6 +546,7 @@ async function buildReport() {
     guardHealth,
     signalBlockHealth,
     recentSignalBlockHealth,
+    recentLaneBlockPressure,
     tradeLaneHealth,
     decision,
   };
