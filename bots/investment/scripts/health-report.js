@@ -28,6 +28,8 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
 } = require('../../../packages/core/lib/health-provider');
+const billingGuard = require('../../../packages/core/lib/billing-guard');
+const kst = require('../../../packages/core/lib/kst');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +56,38 @@ const ALL_SERVICES = [
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 
+function formatGuardScope(scope = '') {
+  const normalized = String(scope || '').trim().toLowerCase();
+  if (normalized === 'investment.normal.crypto') return '암호화폐';
+  if (normalized === 'investment.normal.domestic') return '국내주식';
+  if (normalized === 'investment.normal.overseas') return '해외주식';
+  if (normalized.startsWith('investment.normal.crypto.')) return `암호화폐/${normalized.split('.').pop()}`;
+  if (normalized.startsWith('investment.normal.domestic.')) return `국내주식/${normalized.split('.').pop()}`;
+  if (normalized.startsWith('investment.normal.overseas.')) return `해외주식/${normalized.split('.').pop()}`;
+  return normalized || 'unknown';
+}
+
+function buildGuardHealth() {
+  const rows = billingGuard.listActiveGuards('investment.normal');
+  if (rows.length === 0) {
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: ['  투자 LLM guard 없음'],
+      warn: [],
+    };
+  }
+  return {
+    okCount: 0,
+    warnCount: rows.length,
+    ok: [],
+    warn: rows.map((row) => {
+      const expires = row.expires_at ? kst.toKST(row.expires_at) : '수동 해제';
+      return `  ${formatGuardScope(row.scope)} 차단 / 자동 해제 ${expires}`;
+    }),
+  };
+}
+
 async function loadTradeReviewHealth() {
   const modulePath = path.resolve(__dirname, './validate-trade-review.js');
   const mod = await import(pathToFileURL(modulePath).href);
@@ -64,7 +98,7 @@ async function loadTradeReviewHealth() {
   };
 }
 
-function buildDecision(serviceRows, tradeReview) {
+function buildDecision(serviceRows, tradeReview, guardHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -76,6 +110,11 @@ function buildDecision(serviceRows, tradeReview) {
         active: tradeReview.findings > 0,
         level: 'medium',
         reason: `trade_review 정합성 이슈 ${tradeReview.findings}건이 남아 있습니다.`,
+      },
+      {
+        active: guardHealth.warnCount > 0,
+        level: 'medium',
+        reason: `투자 LLM guard ${guardHealth.warnCount}건이 활성 상태입니다.`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -92,6 +131,7 @@ function formatText(report) {
         `  점검 필요 ${report.tradeReview.findings}건`,
       ],
     },
+    buildHealthCountSection('■ 투자 LLM guard', report.guardHealth, { okLimit: 1 }),
     {
       title: null,
       lines: buildHealthDecisionSection({
@@ -123,7 +163,8 @@ async function buildReport() {
     shortLabel: (label) => hsm.shortLabel(label),
   });
   const tradeReview = await loadTradeReviewHealth();
-  const decision = buildDecision(serviceRows, tradeReview);
+  const guardHealth = buildGuardHealth();
+  const decision = buildDecision(serviceRows, tradeReview, guardHealth);
 
   const report = {
     serviceHealth: {
@@ -133,6 +174,7 @@ async function buildReport() {
       warn: serviceRows.warn,
     },
     tradeReview,
+    guardHealth,
     decision,
   };
   return report;

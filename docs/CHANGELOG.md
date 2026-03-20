@@ -36,6 +36,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `llm-logger`가 생성한 오래된 investment guard는 읽기 시점에 자동 만료/삭제
 - 레거시 broad stop 상태를 자동 정리해 현재는 `crypto`, `domestic`, `overseas` 모두 active guard 없이 정상 상태로 복구
 
+## 12주차 후속 (2026-03-20) — /ops-health 루나 guard 가시성 보강
+
+### 변경 사항 (changed)
+- `/ops-health`와 `루나 운영 헬스`가 투자 `LLM guard` 활성 상태를 직접 표시하도록 보강
+  - active guard가 있으면 `암호화폐/국내주식/해외주식` 범위와 자동 해제 시각을 함께 노출
+  - `LLM guard n건 활성`을 루나 리스크 사유에 포함해 핵심 서비스 장애와 보조 분석 차단 상태를 운영자가 구분할 수 있도록 정리
+- 공용 `billing-guard`에 active guard 목록 조회 helper를 추가해 오케스트레이터 `/ops-health`와 루나 health-report가 같은 source of truth를 공유
+
 ## 12주차 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 ### 신규 기능 (feat)

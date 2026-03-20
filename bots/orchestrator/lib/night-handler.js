@@ -9,6 +9,7 @@ const {
   getRecentPayloadWarnings,
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
+const billingGuard = require('../../../packages/core/lib/billing-guard');
 
 /**
  * lib/night-handler.js — 야간 자율 운영 관리
@@ -24,6 +25,22 @@ const {
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'claude';
+
+function formatGuardScope(scope = '') {
+  const normalized = String(scope || '').trim().toLowerCase();
+  if (normalized === 'investment.normal.crypto') return '암호화폐';
+  if (normalized === 'investment.normal.domestic') return '국내주식';
+  if (normalized === 'investment.normal.overseas') return '해외주식';
+  if (normalized.startsWith('investment.normal.crypto.')) return `암호화폐/${normalized.split('.').pop()}`;
+  if (normalized.startsWith('investment.normal.domestic.')) return `국내주식/${normalized.split('.').pop()}`;
+  if (normalized.startsWith('investment.normal.overseas.')) return `해외주식/${normalized.split('.').pop()}`;
+  return normalized || 'unknown';
+}
+
+function formatGuardExpiry(expiresAt) {
+  if (!expiresAt) return '수동 해제';
+  return kst.toKST(expiresAt);
+}
 
 // KST 시간 (0~23)
 function getKSTHour() {
@@ -338,6 +355,21 @@ function getLunaRiskSnapshot() {
     } else if (budgetPct >= 0.8) {
       pushUniqueLine(lines, `  • 일일 LLM 비용 사용률 ${(budgetPct * 100).toFixed(1)}%`);
       reasons.push(`일일 비용 ${(budgetPct * 100).toFixed(1)}%`);
+    }
+  }
+
+  const activeGuards = billingGuard.listActiveGuards('investment.normal');
+  if (activeGuards.length > 0) {
+    pushUniqueLine(lines, `  • 투자 LLM guard ${activeGuards.length}건 활성`);
+    reasons.push(`LLM guard ${activeGuards.length}건 활성`);
+    for (const guard of activeGuards.slice(0, 3)) {
+      pushUniqueLine(
+        lines,
+        `  • ${formatGuardScope(guard.scope)} 차단 — 자동 해제 ${formatGuardExpiry(guard.expires_at)}`
+      );
+      if (guard.reason) {
+        pushUniqueLine(lines, `    사유: ${guard.reason}`);
+      }
     }
   }
 
