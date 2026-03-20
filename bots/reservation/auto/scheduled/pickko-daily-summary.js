@@ -338,9 +338,9 @@ async function main() {
       totalAmount,
       roomAmounts,
       entriesCount:    entries.length,
-      pickkoTotal:     pickkoStats ? pickkoStats.totalRevenue : 0,
-      pickkoStudyRoom: pickkoStudyRoomTotal,
-      generalRevenue:  pickkoStats ? pickkoStats.generalRevenue : 0,
+      pickkoTotal:     pickkoStats ? pickkoStats.totalRevenue : null,
+      pickkoStudyRoom: pickkoStats ? pickkoStudyRoomTotal : null,
+      generalRevenue:  pickkoStats ? pickkoStats.generalRevenue : null,
     });
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);
 

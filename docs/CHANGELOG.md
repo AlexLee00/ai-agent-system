@@ -742,6 +742,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `/api/sales`, `/api/sales/summary`, `/api/dashboard/summary`, `/api/ai/revenue-forecast` 조회 전에 스카 매출 동기화를 선행하도록 보강
   - 스카 `pickko_total`을 우선 총액 원천으로 사용하고 `general_revenue`는 `일반석`, 나머지는 `스터디룸`으로 투영하도록 정리
   - `test-company` 누락 구간(특히 2026-03-16~2026-03-18)을 backfill 후 워커 매출과 스카 원천 총액을 다시 일치화
+  - `pickko_study_room`이 0이더라도 `room_amounts_json`에 스터디룸 합계가 남아 있는 날짜 37건을 원천(`daily_summary`)과 워커 미러에서 함께 복구
+  - 자정이 아닌 보고가 `pickko_total/pickko_study_room/general_revenue`를 0으로 다시 덮어쓰지 않도록 `upsertDailySummary()`를 `COALESCE` 기반 보존형으로 보강
   - `sales/page.js`의 `누적 금액`을 전체 누적(`summary.lifetime`) 기준으로, `월간 매출`을 이번 달(`summary.currentMonth`) 기준으로 수정
   - 매출 목록 조회 상한을 `limit=200 -> 1000`으로 늘려 2026-01-13 이전 과거 데이터가 화면에서 잘리지 않도록 정리
   - 공용 `DataTable` 페이지네이션 숫자 버튼을 최대 5개 window(`1 2 3 4 5`)로 확장

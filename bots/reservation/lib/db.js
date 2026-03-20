@@ -412,18 +412,18 @@ async function upsertDailySummary(date, data) {
       total_amount       = EXCLUDED.total_amount,
       room_amounts_json  = EXCLUDED.room_amounts_json,
       entries_count      = EXCLUDED.entries_count,
-      pickko_total       = EXCLUDED.pickko_total,
-      pickko_study_room  = EXCLUDED.pickko_study_room,
-      general_revenue    = EXCLUDED.general_revenue,
+      pickko_total       = COALESCE(EXCLUDED.pickko_total, daily_summary.pickko_total),
+      pickko_study_room  = COALESCE(EXCLUDED.pickko_study_room, daily_summary.pickko_study_room),
+      general_revenue    = COALESCE(EXCLUDED.general_revenue, daily_summary.general_revenue),
       last_reported_at   = EXCLUDED.last_reported_at
   `, [
     date,
     data.totalAmount    || 0,
     roomJson,
     data.entriesCount   || 0,
-    data.pickkoTotal    || 0,
-    data.pickkoStudyRoom|| 0,
-    data.generalRevenue || 0,
+    data.pickkoTotal ?? null,
+    data.pickkoStudyRoom ?? null,
+    data.generalRevenue ?? null,
     nowISO,
   ]);
   } catch (e) {

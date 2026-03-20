@@ -3021,3 +3021,10 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 워커 매출관리의 `누적 금액`/`월간 매출` 집계 의미를 각각 전체 누적 / 이번 달 기준으로 바로잡음
 - 매출 목록 조회 상한을 늘려 `2026-01-13` 이전 데이터가 UI에서 잘리지 않도록 보강
 - 공용 `DataTable` 페이지네이션 숫자를 최대 5개씩 노출하도록 정리
+
+### 스카 스터디룸 매출 원천 보정 + 0 덮어쓰기 방지
+- `reservation.daily_summary`에서 `pickko_study_room=0`인데 `room_amounts_json`에는 스터디룸 금액이 있는 날짜 37건을 확인
+- `bots/worker/lib/ska-sales-sync.js`가 `pickko_study_room -> room_amounts_json -> (pickko_total-general_revenue)` 우선순위로 스터디룸 매출을 계산하도록 보강
+- `bots/reservation/lib/db.js`의 `upsertDailySummary()`를 `COALESCE(EXCLUDED, daily_summary)` 기반으로 바꿔, 자정 외 보고가 `pickko_*` 값을 0으로 덮지 않도록 수정
+- `bots/reservation/auto/scheduled/pickko-daily-summary.js`에서 자정이 아닐 때 `pickkoTotal/pickkoStudyRoom/generalRevenue`를 `null`로 넘겨 기존 수집값을 유지하도록 정리
+- 원천 `daily_summary` 37건을 `room_amounts_json` 합계 기준으로 복구한 뒤 `test-company` 워커 매출 미러도 재동기화해 mismatch 0건을 확인
