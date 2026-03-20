@@ -1375,6 +1375,9 @@ async function monitorBookings() {
                 const toKey2 = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
                 const currentKeysSet = new Set(currentConfirmedList.map(b => toKey2(b)));
                 for (const [pKey, entry] of pendingCancelMap.entries()) {
+                  // 취소감지4는 { stale, firstDetectedAt, count } 구조를 사용하므로
+                  // 감지1 cleanup에서는 booking 기반 엔트리만 만진다.
+                  if (!entry?.booking) continue;
                   const reappeared = currentKeysSet.has(toKey2(entry.booking));
                   const expired    = Date.now() - entry.detectedAt > 30 * 60 * 1000; // 30분 만료
                   if (reappeared) {
