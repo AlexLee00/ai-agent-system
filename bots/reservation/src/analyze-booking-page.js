@@ -1,13 +1,15 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
 async function analyze() {
   const browser = await puppeteer.launch({
-    headless: false,
-    userDataDir: './naver-profile',  // 기존 로그인 세션 사용
+    ...getNaverLaunchOptions({
+      userDataDir: './naver-profile',
+    }),
     args: [
-      '--start-maximized',   // 최대화
-      '--kiosk'              // 전체 화면 모드
+      ...getNaverLaunchOptions({ userDataDir: './naver-profile' }).args,
+      ...(isHeadedMode('naver') ? ['--start-maximized', '--kiosk'] : [])
     ]
   });
   
@@ -49,8 +51,8 @@ async function analyze() {
     console.log(analysis.all_text);
     
     console.log('\n\n✅ HTML이 booking-list-page.html에 저장됨');
-    console.log('\n브라우저는 전체 화면 모드로 띄워졌습니다!');
-    console.log('예약 목록을 조사한 후 Terminal에서 Ctrl+C를 누르세요.');
+    console.log(`\n현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);
+    console.log('브라우저를 직접 보며 조사하려면 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
     
     // 무한 대기 (사용자가 Ctrl+C를 누를 때까지)
     await new Promise(() => {});

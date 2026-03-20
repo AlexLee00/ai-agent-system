@@ -1,10 +1,11 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 
 async function inspect() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch(getNaverLaunchOptions());
   const page = await browser.newPage();
   
   try {
@@ -57,8 +58,8 @@ async function inspect() {
     fs.writeFileSync(path.join(WORKSPACE, 'naver-home.html'), html);
     console.log('\n✅ HTML이 naver-home.html에 저장됨');
     
-    console.log('\n브라우저는 열려있습니다. 예약 리스트를 클릭하거나 조사해보세요.');
-    console.log('조사 완료 후 터미널에서 Ctrl+C를 누르세요.');
+    console.log(`\n현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);
+    console.log('브라우저를 보며 조사하려면 PLAYWRIGHT_HEADLESS=false 로 재실행하세요.');
     
   } catch (e) {
     console.error('오류:', e.message);

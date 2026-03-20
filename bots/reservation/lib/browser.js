@@ -1,17 +1,67 @@
+const fs = require('fs');
+const path = require('path');
 const puppeteer = require('puppeteer');
 const { getReservationBrowserConfig } = require('./runtime-config');
 
+const HEADED_FLAG = path.join(__dirname, '..', '.playwright-headed');
+
+function readLegacyHeadlessEnv(scope) {
+  if (scope === 'naver') return process.env.NAVER_HEADLESS;
+  if (scope === 'pickko') return process.env.PICKKO_HEADLESS;
+  return undefined;
+}
+
+function isHeadedMode(scope = 'general') {
+  if (process.env.PLAYWRIGHT_HEADLESS === 'false') return true;
+  if (process.env.PLAYWRIGHT_HEADLESS === 'true') return false;
+
+  const legacy = readLegacyHeadlessEnv(scope);
+  if (legacy === '0' || legacy === 'false') return true;
+  if (legacy === '1' || legacy === 'true') return false;
+
+  return fs.existsSync(HEADED_FLAG);
+}
+
+function getHeadlessMode(scope = 'general') {
+  return isHeadedMode(scope) ? false : 'new';
+}
+
+function getCommonBrowserArgs(scope = 'general') {
+  const headed = isHeadedMode(scope);
+  return [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-gpu',
+    '--disable-dev-shm-usage',
+    ...(headed ? ['--window-position=0,25', '--window-size=2294,1380'] : [])
+  ];
+}
+
 function getPickkoLaunchOptions() {
   const runtime = getReservationBrowserConfig();
-  const headless = process.env.PICKKO_HEADLESS === '1';
+  const headed = isHeadedMode('pickko');
+  const headless = getHeadlessMode('pickko');
   return {
     headless,
-    defaultViewport: headless ? { width: 1920, height: 1080 } : null,
+    defaultViewport: headed ? null : { width: 1920, height: 1080 },
     protocolTimeout: parseInt(process.env.PICKKO_PROTOCOL_TIMEOUT_MS || String(runtime.pickkoProtocolTimeoutMs), 10),
+    args: getCommonBrowserArgs('pickko')
+  };
+}
+
+function getNaverLaunchOptions({ userDataDir, protocolTimeout = 30000 } = {}) {
+  const headed = isHeadedMode('naver');
+  return {
+    headless: getHeadlessMode('naver'),
+    defaultViewport: headed ? null : { width: 1920, height: 1080 },
+    protocolTimeout,
+    ...(userDataDir ? { userDataDir } : {}),
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      ...(headless ? [] : ['--window-position=0,25', '--window-size=2294,1380'])
+      ...getCommonBrowserArgs('naver'),
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=TabDiscarding,Translate,BackForwardCache'
     ]
   };
 }
@@ -68,4 +118,12 @@ async function navigateWithTimeout(page, url, timeout = 30000) {
   }
 }
 
-module.exports = { getPickkoLaunchOptions, setupDialogHandler, launchBrowserWithRetry, navigateWithTimeout };
+module.exports = {
+  getPickkoLaunchOptions,
+  getNaverLaunchOptions,
+  getHeadlessMode,
+  isHeadedMode,
+  setupDialogHandler,
+  launchBrowserWithRetry,
+  navigateWithTimeout,
+};

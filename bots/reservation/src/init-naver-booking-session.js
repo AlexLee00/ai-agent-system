@@ -17,6 +17,7 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
 const readline = require('readline');
+const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 // naver-monitor.js와 동일한 naver-profile 사용 (CDP 새 탭 연결 시 같은 세션 공유)
@@ -35,17 +36,13 @@ function waitForEnter(msg) {
   console.log(`   Profile: ${NAVER_PROFILE}`);
   console.log(`   URL: ${BOOKING_URL}\n`);
 
-  const browser = await puppeteer.launch({
-    headless: false,
-    defaultViewport: null,
+  if (!isHeadedMode('naver')) {
+    console.log('ℹ️ 기본값은 headless입니다. 수동 로그인 초기화는 PLAYWRIGHT_HEADLESS=false 또는 NAVER_HEADLESS=0으로 실행하는 것을 권장합니다.\n');
+  }
+
+  const browser = await puppeteer.launch(getNaverLaunchOptions({
     userDataDir: NAVER_PROFILE,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--window-position=0,25',
-      '--window-size=2294,1380'
-    ]
-  });
+  }));
 
   const page = await browser.newPage();
   await page.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });

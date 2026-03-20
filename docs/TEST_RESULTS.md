@@ -6,6 +6,24 @@
 
 ## 2026-03-20
 
+### 스카 Playwright/Puppeteer headless 기본화
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/lib/browser.js` | ✅ |
+| `node --check packages/playwright-utils/src/browser.js` | ✅ |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ |
+| `node --check bots/reservation/src/check-naver.js` | ✅ |
+| `node --check bots/reservation/src/init-naver-booking-session.js` | ✅ |
+| `node --check bots/reservation/src/inspect-naver.js` | ✅ |
+| `node --check bots/reservation/src/analyze-booking-page.js` | ✅ |
+| `node --check bots/reservation/src/get-naver-html.js` | ✅ |
+| `bash -n bots/reservation/auto/monitors/start-ops.sh` | ✅ |
+| `node -e "const b=require('./bots/reservation/lib/browser'); ..."` | ✅ 기본값 `headless='new'` 확인 |
+| `PLAYWRIGHT_HEADLESS=false node -e "const b=require('./bots/reservation/lib/browser'); ..."` | ✅ headed 디버그 모드 전환 확인 |
+| `bash bots/reservation/scripts/reload-monitor.sh` | ✅ `ai.ska.naver-monitor` 재시작, PID `45377` 확인 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `naver-monitor`, `kiosk-monitor`, `health-check`, `daily_summary 무결성` 모두 정상 확인 |
+
 ### 비디오팀 과제 1 — 프로젝트 스캐폴딩 + DB 스키마 + config
 
 | 테스트 | 결과 |

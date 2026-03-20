@@ -118,6 +118,22 @@ _현재 미해결 이슈 없음_
 - 관련 파일: `bots/reservation/lib/browser.js`, `bots/reservation/src/start-ops.sh`, `ai.ska.naver-monitor.plist`
 <!-- session-close:2026-02-27:완전-백그라운드-모드-전환-launchd-pickko-:end -->
 
+<!-- session-close:2026-03-20:playwright-headless-기본화 -->
+#### 2026-03-20 ♻️ 스카 브라우저 자동화 headless 기본화 + headed 디버그 토글
+- `lib/browser.js` 공용 headless helper 추가
+  - `PLAYWRIGHT_HEADLESS` 기본 토글
+  - `NAVER_HEADLESS`, `PICKKO_HEADLESS` 하위 호환 유지
+  - `.playwright-headed` 파일 기반 headed 전환 지원
+- `naver-monitor.js`
+  - 기본 실행을 `headless: 'new'`로 전환
+  - 기존 `userDataDir` 기반 네이버 세션 유지
+  - 로그인 폼 감지/종료 안내를 `PLAYWRIGHT_HEADLESS=false` 기준으로 갱신
+- 진단 스크립트(`check-naver`, `inspect-naver`, `get-naver-html`, `analyze-booking-page`, `init-naver-booking-session`)도 동일 토글 구조로 정리
+- 운영 루프/launchd
+  - `start-ops.sh`, `ai.ska.naver-monitor.plist`에 `PLAYWRIGHT_HEADLESS=true` 기본값 반영
+- 관련 파일: `lib/browser.js`, `auto/monitors/naver-monitor.js`, `src/check-naver.js`, `src/init-naver-booking-session.js`, `src/inspect-naver.js`, `src/analyze-booking-page.js`, `src/get-naver-html.js`, `auto/monitors/start-ops.sh`, `launchd/ai.ska.naver-monitor.plist`, `packages/playwright-utils/src/browser.js`
+<!-- session-close:2026-03-20:playwright-headless-기본화:end -->
+
 <!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계 -->
 #### 2026-02-27 ✨ 시스템 설계 v2.0 + iPad 원격 접속 + 투자봇 설계
 - SYSTEM_DESIGN.md v2.0 전면 개정 (봇별 LLM 확정·투자팀 3봇·메모리 할당)
