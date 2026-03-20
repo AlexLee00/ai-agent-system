@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~7 핵심 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 장시간 preview 렌더 최적화 대기
+> 상태: 과제 1~10 중 Critic까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 품질 루프 확장 단계
 
 ---
 
@@ -193,6 +193,12 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - session/file/edit 원장은 `video_sessions -> video_upload_files -> video_edits` 구조로 연결
     - confirm 후 final render는 `scripts/render-from-edl.js`가 백그라운드에서 수행
     - preview/subtitle/download는 JWT 헤더 제약 때문에 `fetch + Authorization + blob URL` 방식 사용
+  - 과제 10 Critic Agent 구현 완료
+    - `lib/critic-agent.js`
+    - `scripts/test-critic-agent.js`
+    - 실제 테스트 결과 `score=74`, `pass=false`
+    - 자막 이슈 `22건`, 오디오는 `LUFS=-14.96 / Peak=-3.54`, 영상 구조 이슈 `10건`
+    - `temp/critic_report.json` 생성 완료
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB

@@ -4,6 +4,25 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent 구현
+
+핵심 구현:
+- `bots/video/lib/critic-agent.js`
+  - RED Team Critic Agent 추가
+  - 자막(SRT 청크 LLM 분석), 오디오(FFmpeg loudnorm), 영상 구조(analysis.json 기반) 3축을 병렬 평가
+  - `critic_report.json` 구조 생성, 가중 평균 점수 산출, `target_score` 기준 pass/fail 판정 구현
+- `bots/video/scripts/test-critic-agent.js`
+  - `synced.mp4`, `subtitle_corrected.srt`, `analysis.json` 기준 실제 Critic 테스트 스크립트 추가
+  - 점수/이슈/오디오 LUFS·Peak/영상 구조 요약 출력 및 `temp/critic_report.json` 저장
+
+세션 맥락:
+- 과제 10은 EDL 기반 품질 루프의 첫 RED Team 레이어로, Refiner가 수정할 근거가 되는 정형 리포트를 만들어야 했다.
+- 기존 subtitle-corrector의 Gemini/OpenAI 호출 패턴을 최대한 재사용하되, Critic은 “교정”이 아니라 “문제 진단”에 집중하도록 분리했다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 자막/오디오/영상 구조를 각각 deterministic + LLM 보조 방식으로 평가하고, 이를 하나의 `critic_report.json`으로 묶는 것이다.
+- 또한 LLM 호출은 무료 Gemini 우선, OpenAI fallback으로 두되 timeout을 넣어 운영 중 무한 대기하지 않도록 했다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

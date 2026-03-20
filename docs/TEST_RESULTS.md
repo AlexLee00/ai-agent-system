@@ -121,6 +121,15 @@
 
 ## 2026-03-21
 
+### 비디오팀 과제 10 — Critic Agent
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/critic-agent.js` | ✅ |
+| `node --check bots/video/scripts/test-critic-agent.js` | ✅ |
+| `node - <<'EOF' ... parseSrt / analyzeVideoStructure / calculateOverallScore ... EOF` | ✅ `67 entries`, `videoScore=100`, `sceneIssues=10` 확인 |
+| `node bots/video/scripts/test-critic-agent.js` | ✅ 실제 Critic 실행, `score=74`, `pass=false`, `subtitle issues=22`, `audio LUFS=-14.96`, `scene issues=10`, `temp/critic_report.json` 생성 |
+
 ### 워커 웹 영상 편집 API + 프론트엔드
 
 | 테스트 | 결과 |

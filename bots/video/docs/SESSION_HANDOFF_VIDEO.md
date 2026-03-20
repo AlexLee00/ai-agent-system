@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~7 핵심 구현 완료 + worker-web 영상 편집 API/UI 연결 완료 + 운영 안정화 단계
+> 상태: 과제 1~10 중 Critic까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 확장 단계
 
 ---
 
@@ -90,15 +90,33 @@ Step 3 — 과제 6~13 재정의:
   - worker-web 인증은 localStorage JWT 헤더 기반이라 `<video>`와 `<track>`에 직접 Authorization을 실을 수 없음
   - 그래서 preview/subtitle/download는 `fetch + Authorization + blob URL`로 우회 구현
 
+### 7. 과제 10: Critic Agent (RED Team) ✅
+- `bots/video/lib/critic-agent.js`
+  - `runCritic`, `analyzeSubtitles`, `analyzeAudio`, `analyzeVideoStructure`, `calculateOverallScore`, `parseSrt`, `saveCriticReport` 구현
+  - 자막은 Gemini `gemini-2.5-flash` 우선, OpenAI `gpt-4o-mini` fallback
+  - 오디오는 FFmpeg `loudnorm=print_format=json`으로 LUFS / True Peak 측정
+  - 영상 구조는 `analysis.json`을 재사용해 무음/정지/씬전환/비효율 비율 분석
+- `bots/video/scripts/test-critic-agent.js`
+  - 실제 테스트 결과:
+    - `score=74`, `pass=false`
+    - `subtitle issues=22`
+    - `audio LUFS=-14.96`, `Peak=-3.54`
+    - `scene issues=10`
+    - `temp/critic_report.json` 생성
+- 운영 보강:
+  - LLM 호출 timeout 추가
+  - 부분 실패 시 해당 분석만 `score=50`, issues 빈 배열로 degrade
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 운영 안정화
+### 즉시: 과제 7 운영 안정화 + 과제 11 착수
 - worker-web 세션 루프는 연결 완료
 - 남은 건 실자산 preview wall-clock 최적화와 final render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
+- 과제 11 Refiner는 Critic 리포트(`critic_report.json`)를 받아 SRT 수정 + EDL 생성/수정으로 이어가면 된다
 
 ### 이후: 과제 7 → 8 → 9 → 10~12 → 13 순차 진행
 

@@ -24,6 +24,10 @@
   - `/api/video` 라우터는 `video_sessions -> video_upload_files -> video_edits` 원장 구조를 사용하며, 현재는 `projects` 권한 정책에 임시 매핑돼 있다.
   - protected preview/subtitle/download는 JWT 헤더를 직접 실을 수 없는 HTML media 태그 제약 때문에 `fetch + Authorization + blob URL` 방식으로 프론트에서 처리한다.
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
+- 비디오
+  - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.
+  - 현재 샘플 기준 실제 Critic 결과는 `score=74`, `pass=false`, `subtitle issues=22`, `audio LUFS=-14.96`, `scene issues=10`으로 확인됐다.
+  - Gemini 기반 자막 분석은 무료라 `llm_cost_usd=0`이었고, timeout 보강으로 네트워크 지연 시 무한 대기하지 않도록 했다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -163,6 +167,9 @@
   - 워커 문서 효율 일일/주간
   - 투자 설정 제안 일일/주간
 6. 자동화 리포트 운영 데이터 관찰
+7. 비디오 품질 루프 확장
+  - 과제 10 Critic은 구현 완료
+  - 다음은 과제 11 Refiner(SRT 수정 + EDL 생성/수정) 연결
   - 제이 Gateway `persisted` 상태
   - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴
