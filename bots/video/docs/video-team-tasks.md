@@ -335,24 +335,22 @@ config에서 capcut_api.host, paths.capcut_drafts 읽기
 
 ---
 
-### 과제 6: draft_info.json 파서 + FFmpeg 렌더링
+### 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
 
 ```
-목표: CapCut 드래프트 JSON 파싱 → FFmpeg 1440p/60fps 렌더링
+목표: FFmpeg 영상 분석 + EDL JSON 생성 → 프리뷰(720p) + 최종 렌더링(1440p/60fps)
 의존: 과제 5 (드래프트 생성 완료)
-산출: draft-parser.js + ffmpeg-renderer.js
+산출: video-analyzer.js + edl-builder.js
 
 작업 위치:
-  생성: bots/video/lib/draft-parser.js
-  생성: bots/video/lib/ffmpeg-renderer.js
-
-참고 프로젝트:
-  npm capcut-export (github.com/emosheeep/capcut-export)
-  → draft_info.json 파싱 로직 참조
+  생성: bots/video/lib/video-analyzer.js
+  생성: bots/video/lib/edl-builder.js
 
 단위 테스트:
-  ☐ draft_info.json에서 비디오/오디오/자막 트랙 정보 추출됨
-  ☐ FFmpeg 명령어가 올바르게 생성됨
+  ☐ video-analyzer가 무음/정지/씬전환 후보를 JSON으로 생성
+  ☐ EDL JSON이 생성됨
+  ☐ 프리뷰(720p) 명령어가 올바르게 생성됨
+  ☐ 최종 렌더링 명령어가 올바르게 생성됨
   ☐ exports/편집_1.mp4 = 2560×1440, H.264 High Profile, 60fps, ~24Mbps
   ☐ ffprobe로 movflags faststart 확인
   ☐ 오디오: AAC 48kHz stereo 384kbps
@@ -361,47 +359,46 @@ config에서 capcut_api.host, paths.capcut_drafts 읽기
 
 **Claude Code 프롬프트:**
 ```
-bots/video/lib/draft-parser.js + ffmpeg-renderer.js를 구현해줘.
+bots/video/lib/video-analyzer.js + edl-builder.js를 구현해줘.
 
-[draft-parser.js]
-CapCut 드래프트의 draft_info.json을 파싱해서 편집 정보를 추출.
-
-macOS 경로: /Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft/
-
-참고: npm capcut-export (github.com/emosheeep/capcut-export) 소스의
-handleDraftInfo() 함수를 참조. draft_info.json 구조:
-- tracks 배열 안에 video/audio/text 트랙이 있음
-- 각 트랙에 segments 배열 (start, duration, source_path 등)
+[video-analyzer.js]
+FFmpeg 기반으로 영상 구조를 분석해서 편집 후보를 추출.
 
 기능:
-1. parseDraft(draftPath) → { videos: [], audios: [], subtitles: [] }
-   각 항목: { sourcePath, startTime, duration, inPoint, outPoint }
+1. analyzeVideo(videoPath, config) → { silences: [], freezes: [], scenes: [] }
+   - ffmpeg silencedetect
+   - ffmpeg freezedetect
+   - ffmpeg scene 감지
+   - 결과를 analysis.json으로 저장 가능하도록 구조화
 
-2. findLatestDraft(capCutDir) → 가장 최근 수정된 dfd_ 폴더 반환
-
-[ffmpeg-renderer.js]
-파싱된 편집 정보로 FFmpeg 1440p/60fps 렌더링.
+[edl-builder.js]
+영상 분석 + critic 리포트를 바탕으로 EDL JSON 생성/수정 + FFmpeg 렌더링.
 
 기능:
-1. buildFFmpegCommand(editInfo, srtPath, outputPath) → FFmpeg 명령어 문자열
-   - 비디오: concat demuxer 또는 -filter_complex로 클립 연결
-   - 오디오: 나레이션 합성
-   - 자막: subtitles 필터로 번인
-   - 해상도: scale=2560:1440:flags=lanczos
-   - 인코딩: config에서 render 설정 읽기 (CLAUDE.md 절대 규칙 참조)
+1. buildInitialEDL(sourcePath, subtitlePath, analysis, options) → edit_decision_list.json
+   - 컷, 속도, 전환, 텍스트 오버레이를 JSON으로 표현
+   - EDL 구조는 CLAUDE.md의 'EDL JSON' 섹션 참조
 
-2. render(editInfo, srtPath, outputPath) → FFmpeg 실행 + 결과 반환
+2. buildPreviewCommand(edl, outputPath, config) → FFmpeg 명령어 문자열
+   - 720p 빠른 프리뷰
+   - 자막 번인
+   - EDL의 cut / transition / speed / text_overlay 반영
+
+3. buildFinalRenderCommand(edl, outputPath, config) → FFmpeg 명령어 문자열
+   - 2560x1440, 60fps, H.264 High Profile, 24Mbps
+   - AAC 48kHz stereo 384kbps
+
+4. renderPreview(edl, outputPath, config) → FFmpeg 실행
+5. renderFinal(edl, outputPath, config) → FFmpeg 실행
    - child_process.execFile 사용
    - 진행률 파싱 (FFmpeg stderr에서 time= 추출)
    - 완료 시 tool-logger.js로 렌더링 시간 기록
 
-FFmpeg 렌더링 명령어 구성 시 반드시 bots/video/docs/CLAUDE.md의
-'★ YouTube 공식 권장 기반 확정값' 섹션을 참조하여 config 값을 사용할 것.
-하드코딩 금지 — config/video-config.yaml에서 읽기.
-
-config에서 render_width, render_height, render_fps, render_bitrate 읽기
-
-참조: video-automation-tech-plan.md 섹션 4-5
+구현 규칙:
+- CapCut draft_info.json 의존 금지
+- config/video-config.yaml 기준값 사용
+- EDL JSON을 진실 원장으로 사용
+- 프리뷰는 720p, 최종본은 1440p/24Mbps
 ```
 
 ---
@@ -422,7 +419,7 @@ config에서 render_width, render_height, render_fps, render_bitrate 읽기
 
 단위 테스트:
   ☐ node scripts/run-pipeline.js --source=1 실행
-  ☐ sources/1/ → 전처리 → STT → 교정 → 드래프트 → 파싱 → 렌더링 완료
+  ☐ sources/1/ → 전처리 → STT → 교정 → 분석 → EDL → 프리뷰 → 렌더링 완료
   ☐ video_edits 테이블에 이력 기록됨
   ☐ 텔레그램에 알림 수신됨
   ☐ exports/편집_DB생성.mp4 파일 존재
@@ -442,11 +439,11 @@ Usage: node scripts/run-pipeline.js --source=1 [--skip-render]
 3. 전처리 (ffmpeg-preprocess.js preprocess)
 4. STT (whisper-client.js generateSubtitle)
 5. 자막 교정 (subtitle-corrector.js correctFile)
-6. CapCut 드래프트 생성 (capcut-draft-builder.js buildDraft)
-7. 텔레그램 알림: "드래프트 완료, CapCut에서 프리뷰 확인 후 OK 회신"
+6. FFmpeg 영상 분석 (video-analyzer.js analyzeVideo)
+7. EDL 생성 + 프리뷰 렌더링 (edl-builder.js)
 8. 마스터 OK 대기 (--skip-render 옵션 시 여기서 종료)
-9. draft_info.json 파싱 (draft-parser.js)
-10. FFmpeg 렌더링 (ffmpeg-renderer.js render)
+9. 필요 시 선택적 CapCut 프리뷰 생성 (--with-capcut 옵션일 때만)
+10. FFmpeg 최종 렌더링 (edl-builder.js renderFinal)
 11. video_edits 테이블에 이력 저장 (pg-pool.js)
 12. 텔레그램 알림: "렌더링 완료 → 유튜브 업로드 준비됨"
 

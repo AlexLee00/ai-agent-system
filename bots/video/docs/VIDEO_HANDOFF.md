@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 5 CapCut 드래프트 완료 / CapCut Desktop 목록 표시 확인 / 과제 6(draft 파서 + FFmpeg 렌더링) 착수 가능
+> 상태: 과제 1~5 완료 / 아키텍처 변경 (CapCut→EDL JSON) / 과제 6 재정의 후 착수
 
 ---
 
@@ -40,12 +40,26 @@
 ## 핵심 아키텍처 요약
 
 ```
-워커 웹 = 대화형 영상 편집 UI (절차 안내 + 편집 의도 수집 + 다운로드)
-CapCut (무료) = 편집 UI + 프리뷰 (Export 안 함, 편집 상태 유지)
-FFmpeg = 최종 렌더링 (1440p/60fps, CapCut 제한 완전 우회)
-CapCutAPI = 오픈소스 MCP, 드래프트 자동 생성
-OpenClaw = 오케스트레이터 (전체 파이프라인 관리)
-비용: 월 $0.86 (Whisper + LLM + 품질 루프), 나머지 전부 $0
+워커 웹 = 대화형 영상 편집 UI (프리뷰 + 프레임 단위 편집 의견 + 다운로드)
+FFmpeg = 영상 분석 + 프리뷰 렌더링 + 최종 렌더링
+EDL JSON = 편집 결정 목록 (컷/전환/효과/속도/오버레이)
+RED Team (Critic) = 자막 + 오디오 + ★영상 구조 분석 → 편집 권고
+BLUE Team (Refiner) = 자막 수정 + 오디오 조정 + ★EDL 생성/수정
+CapCutAPI = 선택적 보조 프리뷰 (--with-capcut 플래그, 기본 비활성)
+비용: 월 $1.12 (Whisper + LLM, 나머지 전부 $0)
+
+파이프라인 흐름:
+
+원본 + 나레이션 업로드
+FFmpeg 전처리 (오디오 정규화 + 합성)
+Whisper STT → SRT 생성
+LLM 자막 교정
+FFmpeg 영상 분석 (무음/정지/씬전환 감지)
+RED/BLUE 품질 루프 (자막+오디오+영상 편집)
+프리뷰 생성 (720p + EDL 적용)
+영상제작팀 프리뷰 검토 (프레임 단위 피드백 가능)
+피드백 → Refiner 재실행 (필요시)
+OK → FFmpeg 최종 렌더링 (1440p/24Mbps)
 
 UX 흐름 (9단계):
   1. 웹에서 영상+음성 다중 업로드 (순서대로)
@@ -53,7 +67,7 @@ UX 흐름 (9단계):
   3. 파일 수집 확인 (매칭 표시)
   4. AI 편집 진행 (RAG 예상시간 + 실시간 진행률)
   5. 1차 완료 (품질 점수)
-  6. CapCut 편집 상태 확인 안내
+  6. 프리뷰 확인 (720p + 자막 + EDL 편집 적용)
   7. 웹에서 컨펌/재편집 입력
   8. FFmpeg 최종 렌더링
   9. 완료본 웹에서 다운로드
@@ -147,6 +161,8 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `add_subtitle`는 CapCutAPI upstream `font_type` 버그를 피하기 위해 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height` 명시 전달로 보강
     - repo 내부 `dfd_cat_*` 생성 후 `config.paths.capcut_drafts`로 복사되는 흐름까지 실검증 완료
     - CapCut Desktop 프로젝트 목록에 draft 카드 실제 표시 확인
+    - 단, CapCut 7.2.0 draft_info.json 암호화 + CapCutAPI 저장 실패로 메인 파이프라인 의존은 폐기
+    - 과제 6부터는 EDL JSON + FFmpeg 중심으로 재정의
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -154,7 +170,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 3: Whisper STT
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCut 드래프트
-  ☐ 과제 6: draft 파서 + FFmpeg 렌더링
+  ☐ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링 (재정의)
   ☐ 과제 7: 엔드투엔드 통합
 
 Week 2: 워커웹 + n8n + 품질 루프
@@ -178,8 +194,9 @@ Week 3: 최종 테스트 + 문서 체계 통합
 2. bots/video/docs/VIDEO_HANDOFF.md 읽기 (전체 맥락 파악)
 3. bots/video/docs/video-team-design.md 읽기 (모듈 매핑 + 기능목록)
 4. bots/video/samples/ANALYSIS.md 읽기 (샘플 입출력 특성 확인)
+5.5. EDL JSON 스펙은 CLAUDE.md 'EDL JSON' 섹션 참조
 5. bots/video/docs/video-team-tasks.md에서 현재 과제 프롬프트 실행
-6. 과제 6은 CapCut 드래프트를 실제 입력으로 읽는 parser + FFmpeg 렌더링 구현부터 진행
+6. 과제 6은 FFmpeg 영상 분석 + EDL JSON 생성 + 프리뷰/최종 렌더링 구현부터 진행
 7. 세션 마감 직전 VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md 반영 여부를 다시 확인
 ```
 
