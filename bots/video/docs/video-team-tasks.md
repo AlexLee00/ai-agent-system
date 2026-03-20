@@ -578,17 +578,53 @@ UI 구성요소:
 ### 과제 10: Critic Agent (RED Team)
 
 ```
-목표: 드래프트 분석 → 문제점 리포트 JSON 생성
-의존: 과제 5 (드래프트 존재)
+목표: 자막 + 오디오 + ★영상 구조를 분석 → critic_report.json 생성
+의존: 과제 6 (video-analyzer + edl-builder)
 산출: critic-agent.js
 
 작업 위치: bots/video/lib/critic-agent.js
-기존 모듈: llm-router.js
-참조: video-automation-tech-plan.md 섹션 6-3
+기존 모듈: llm-router.js, video-analyzer.js
+참조: CLAUDE.md (EDL JSON 섹션), video-team-design.md 섹션 3-4
+
+분석 대상 3가지:
+① 자막 분석 (LLM)
+- IT 전문용어 정확도 (FlutterFlow, Firebase 등)
+- 맞춤법/문법 오류
+- 자막 1줄 최대 길이 초과 여부
+② 오디오 분석 (FFmpeg)
+- LUFS 범위 (-14 ± 2)
+- True Peak (-1.0 dBTP 이하)
+③ ★영상 구조 분석 (video-analyzer.js)
+- 무음 구간 (silencedetect → 삭제 권고)
+- 정지 화면 (freezedetect → 삭제 권고)
+- 씬 전환점 (scene detection → 전환 효과 권고)
+- 원본 대비 유효 구간 비율
+
+출력: critic_report.json
+{
+  "score": 78,
+  "pass": false,
+  "issues": [
+    { "type": "silent_gap", "from": 225.0, "to": 250.0, "action": "cut" },
+    { "type": "freeze_frame", "from": 440.0, "to": 455.0, "action": "cut" },
+    { "type": "scene_change", "at": 510.0, "action": "add_transition" },
+    { "type": "subtitle_sync", "entry": 23, "offset_ms": 450, "action": "adjust" },
+    { "type": "subtitle_typo", "entry": 41, "current": "플러터 플로", "fix": "FlutterFlow" },
+    { "type": "audio_lufs", "measured": -17.2, "target": -14.0, "action": "renormalize" }
+  ],
+  "scores": {
+    "subtitle_accuracy": 85,
+    "audio_quality": 70,
+    "video_structure": 75,
+    "overall": 78
+  }
+}
 
 단위 테스트:
-  ☐ 정상 드래프트 → 리포트 JSON 생성 (issues 배열 + scores 객체)
-  ☐ 자막 싱크 오류 감지 (±200ms 초과 시)
+  ☐ synced.mp4 + subtitle_corrected.srt → critic_report.json 생성
+  ☐ 무음 구간 감지 (silencedetect 결과 포함)
+  ☐ 정지 화면 감지 (freezedetect 결과 포함)
+  ☐ 자막 싱크 오류 감지 (±300ms 초과 시)
   ☐ 오디오 LUFS 범위 이탈 감지
   ☐ overall_score 85 미만 시 pass=false
 ```
@@ -596,25 +632,44 @@ UI 구성요소:
 ### 과제 11: Refiner Agent (BLUE Team)
 
 ```
-목표: Critic 리포트 기반 드래프트 자동 수정
+목표: Critic 리포트 기반으로 SRT 수정 + EDL JSON 생성/수정
 의존: 과제 10
 산출: refiner-agent.js
 
 작업 위치: bots/video/lib/refiner-agent.js
-기존 모듈: subtitle-corrector.js, capcut-draft-builder.js
-참조: video-automation-tech-plan.md 섹션 6-4
+기존 모듈: subtitle-corrector.js, edl-builder.js, ffmpeg-preprocess.js
+참조: CLAUDE.md (EDL JSON 섹션)
+
+수정 대상 3가지:
+① SRT 자막 수정
+- Critic이 지적한 타이밍 오류 → SRT 타임스탬프 조정
+- Critic이 지적한 오탈자 → LLM 재교정
+→ subtitle_v{N}.srt 생성
+② ★EDL JSON 생성/수정
+- Critic이 "cut" 권고한 구간 → EDL에 cut 추가
+- Critic이 "add_transition" 권고한 지점 → EDL에 transition 추가
+- 속도 조절, 텍스트 오버레이 등
+→ edit_decision_list_v{N}.json 생성
+③ 오디오 재조정 (필요시)
+- LUFS 범위 이탈 시 ffmpeg-preprocess.js로 재정규화
+→ narr_norm_v{N}.m4a 생성
+
+반환: { subtitlePath, edlPath, audioPath, version, changes }
 
 단위 테스트:
-  ☐ 자막 타이밍 오류 리포트 → SRT 수정 + 드래프트 업데이트
-  ☐ 오디오 밸런스 리포트 → 재정규화 + 드래프트 업데이트
-  ☐ 수정 후 드래프트 버전 V2 생성 확인
+  ☐ critic_report의 silent_gap → EDL에 cut 추가됨
+  ☐ critic_report의 scene_change → EDL에 transition 추가됨
+  ☐ critic_report의 subtitle_typo → SRT 텍스트 수정됨
+  ☐ critic_report의 subtitle_sync → SRT 타임스탬프 조정됨
+  ☐ critic_report의 audio_lufs → 오디오 재정규화됨
+  ☐ 수정 후 버전 V2 파일 생성 확인
 ```
 
 ### 과제 12: Evaluator Agent + 품질 루프
 
 ```
 목표: 품질 점수 판정 + 루프 오케스트레이션
-의존: 과제 10, 11
+의존: 과제 10 (critic_report.json), 과제 11 (EDL + SRT 수정본)
 산출: evaluator-agent.js, quality-loop.js
 
 작업 위치: bots/video/lib/evaluator-agent.js, quality-loop.js
@@ -625,6 +680,8 @@ UI 구성요소:
   ☐ 85점 미만 → FAIL → Critic 재실행 확인
   ☐ 3회 반복 후 미달 → 최고 점수 버전으로 전달 + 알림
   ☐ 루프별 LLM 비용 누적 계산 정확성
+  ☐ Refiner 수정 후 EDL 기반 프리뷰 재생성 확인
+  ☐ 영상제작팀 피드백 → Refiner 재실행 → EDL 업데이트 확인
 ```
 
 ### 과제 13: 나머지 4세트 검증
