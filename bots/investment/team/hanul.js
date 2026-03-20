@@ -23,8 +23,8 @@
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
-import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
-import { getInvestmentTradeMode, isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
+import { loadSecrets, isPaperMode, isKisPaper, getInvestmentTradeMode } from '../shared/secrets.js';
+import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
