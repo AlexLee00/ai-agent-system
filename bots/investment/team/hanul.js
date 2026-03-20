@@ -87,6 +87,7 @@ function inferHanulBlockCode(reason = '', market = 'domestic') {
 
 async function markSignalFailedDetailed(signalId, {
   reason = null,
+  code = null,
   market = 'domestic',
   symbol = null,
   action = null,
@@ -97,7 +98,7 @@ async function markSignalFailedDetailed(signalId, {
   await db.updateSignalBlock(signalId, {
     status: SIGNAL_STATUS.FAILED,
     reason: normalizedReason,
-    code: inferHanulBlockCode(normalizedReason || '', market),
+    code: code || inferHanulBlockCode(normalizedReason || '', market),
     meta: {
       market,
       symbol,
@@ -309,6 +310,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_mode_conflict',
           market: 'domestic',
           symbol,
           action,
@@ -321,6 +323,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_reentry_blocked',
           market: 'domestic',
           symbol,
           action,
@@ -333,6 +336,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_reentry_blocked',
           market: 'domestic',
           symbol,
           action,
@@ -345,6 +349,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'same_day_reentry_blocked',
           market: 'domestic',
           symbol,
           action,
@@ -520,6 +525,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_mode_conflict',
           market: 'overseas',
           symbol,
           action,
@@ -532,6 +538,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_reentry_blocked',
           market: 'overseas',
           symbol,
           action,
@@ -544,6 +551,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'position_reentry_blocked',
           market: 'overseas',
           symbol,
           action,
@@ -556,6 +564,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
+          code: 'same_day_reentry_blocked',
           market: 'overseas',
           symbol,
           action,
