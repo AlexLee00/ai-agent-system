@@ -3,6 +3,17 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — KIS 공용 throttling + 아처 비용 리포트 정합성 복구
+
+### 변경 사항 (changed)
+- `bots/investment/shared/kis-client.js`
+  - KIS 공용 요청 레이어에 `paper/live` 별도 직렬화 queue, 최소 호출 간격, rate-limit 재시도를 추가
+  - `초당 거래건수를 초과하였습니다.` 응답이 나올 때 주문/현재가/잔고 조회가 즉시 실패하지 않고 backoff 후 재시도하도록 보강
+- `bots/claude/lib/archer/analyzer.js`
+  - `billing_snapshots.cost_usd`를 일별 비용처럼 해석하던 오류를 수정
+  - 최근 7일 비용 표는 누적 snapshot의 day-over-day delta로 계산
+  - 월간 누적/소진율은 provider별 최신 snapshot만 합산하도록 보정
+
 ## 12주차 후속 (2026-03-20) — 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
 
 ### 변경 사항 (changed)

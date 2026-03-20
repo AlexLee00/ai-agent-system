@@ -38,6 +38,37 @@ const TR_ID = {
   OVERSEAS_BALANCE_LIVE:   'TTTS3012R',
 };
 
+const KIS_MIN_INTERVAL_MS = 380;
+const KIS_RATE_LIMIT_RETRY_MS = 1100;
+const KIS_RATE_LIMIT_MAX_RETRIES = 2;
+
+const _requestState = {
+  paper: { nextAt: 0, tail: Promise.resolve() },
+  live: { nextAt: 0, tail: Promise.resolve() },
+};
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function scheduleKisSlot(paper) {
+  const key = paper ? 'paper' : 'live';
+  const state = _requestState[key];
+  const run = async () => {
+    const waitMs = Math.max(0, state.nextAt - Date.now());
+    if (waitMs > 0) await sleep(waitMs);
+    state.nextAt = Date.now() + KIS_MIN_INTERVAL_MS;
+  };
+  const scheduled = state.tail.then(run, run);
+  state.tail = scheduled.catch(() => {});
+  return scheduled;
+}
+
+function isKisRateLimitMessage(message = '') {
+  const text = String(message || '');
+  return text.includes('초당 거래건수를 초과') || text.toLowerCase().includes('rate limit');
+}
+
 // ─── 토큰 관리 ─────────────────────────────────────────────────────
 
 /** 메모리 캐시: { paper: { token, expires } } */
@@ -106,7 +137,7 @@ async function getToken(paper) {
 
 // ─── 공통 API 요청 ──────────────────────────────────────────────────
 
-async function kisRequest(method, endpoint, { trId, params, body, paper } = {}) {
+async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, attempt = 0) {
   const s     = loadSecrets();
   const key   = paper ? s.kis_paper_app_key    : s.kis_app_key;
   const sec   = paper ? s.kis_paper_app_secret : s.kis_app_secret;
@@ -116,36 +147,48 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}) 
   let url = base + endpoint;
   if (params) url += '?' + new URLSearchParams(params).toString();
 
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      Authorization:   `Bearer ${token}`,
-      appkey:          key,
-      appsecret:       sec,
-      tr_id:           trId,
-      custtype:        'P',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  await scheduleKisSlot(paper);
 
-  const raw = await res.text();
-  if (!raw || !raw.trim()) {
-    throw new Error(`KIS 빈 응답 (${res.status})`);
-  }
-
-  let data;
   try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error(`KIS JSON 파싱 실패 (${res.status})`);
-  }
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Authorization:   `Bearer ${token}`,
+        appkey:          key,
+        appsecret:       sec,
+        tr_id:           trId,
+        custtype:        'P',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
-  if (data.rt_cd !== '0') {
-    throw new Error(`KIS API 오류 [${data.msg_cd}]: ${data.msg1 || JSON.stringify(data)}`);
-  }
+    const raw = await res.text();
+    if (!raw || !raw.trim()) {
+      throw new Error(`KIS 빈 응답 (${res.status})`);
+    }
 
-  return data;
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error(`KIS JSON 파싱 실패 (${res.status})`);
+    }
+
+    if (data.rt_cd !== '0') {
+      throw new Error(`KIS API 오류 [${data.msg_cd}]: ${data.msg1 || JSON.stringify(data)}`);
+    }
+
+    return data;
+  } catch (error) {
+    if (attempt < KIS_RATE_LIMIT_MAX_RETRIES && isKisRateLimitMessage(error?.message)) {
+      const retryIn = KIS_RATE_LIMIT_RETRY_MS * (attempt + 1);
+      console.warn(`  ⚠️ [KIS] rate limit 감지 — ${retryIn}ms 후 재시도 (${attempt + 1}/${KIS_RATE_LIMIT_MAX_RETRIES})`);
+      await sleep(retryIn);
+      return kisRequest(method, endpoint, { trId, params, body, paper }, attempt + 1);
+    }
+    throw error;
+  }
 }
 
 // ─── 현재가 조회 ────────────────────────────────────────────────────
