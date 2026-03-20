@@ -102,6 +102,23 @@
   - `temp/subtitle_raw.srt` 생성
   - 비용 `$0.026119`
   - `llm_usage_log`에 `team=video`, `request_type=audio_transcription` 기록 확인
+
+### 12주차 후속 (2026-03-20) — 비디오팀 과제 4 LLM 자막 교정
+
+- `bots/video/lib/subtitle-corrector.js`
+  - `gpt-4o-mini` 1순위, `gemini-2.5-flash` 폴백 체인으로 SRT 교정 모듈 구현
+  - 50 entries 단위 청크 처리, 타임스탬프/번호 원본 보존, 구조 불일치 시 원본 유지로 보수적 복구
+  - 실패 시 `telegram-sender`로 알림하고 파일 단위로 원본 SRT를 복사하는 fallback 추가
+- `bots/video/scripts/test-subtitle-corrector.js`
+  - `temp/subtitle_raw.srt` 기준 실제 LLM 호출, 타임스탬프 보존, diff, 비용 출력 테스트 추가
+- 샘플 검증 결과
+  - entries `67` 유지
+  - 타임스탬프 `67/67` 보존
+  - `temp/subtitle_corrected.srt` 생성
+  - `llm_usage_log`에 `subtitle_correction` 비용 로그 확인
+- 비디오 설정 정합화
+  - `subtitle_correction.fallback_model`을 `gemini-2.5-flash`로 갱신
+  - `quality_loop`를 `critic/refiner/evaluator` 역할별 모델 구조로 확장
 - YAML config와 SQL migration을 먼저 고정해야 이후 FFmpeg/Whisper/CapCut 파이프라인이 deterministic하게 이어진다.
 - `psql` 의존성이 없는 환경에서도 `pg-pool`로 같은 DB를 검증할 수 있게 해 두는 편이 운영 안정성에 유리하다.
 

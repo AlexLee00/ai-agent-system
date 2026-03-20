@@ -67,6 +67,16 @@
 | `test -f bots/video/temp/subtitle_raw.srt` | ✅ 생성 확인 |
 | `node --input-type=module -e "... llm_usage_log WHERE team='video' ..."` | ✅ `model=whisper-1`, `request_type=audio_transcription`, `cost_usd=0.026119` 확인 |
 
+### 비디오팀 과제 4 — LLM 자막 교정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/subtitle-corrector.js` | ✅ 통과 |
+| `node --check bots/video/scripts/test-subtitle-corrector.js` | ✅ 통과 |
+| `node bots/video/scripts/test-subtitle-corrector.js` | ✅ 실제 LLM 호출 기준 `67 entries 유지`, `67/67 타임스탬프 보존`, `subtitle_corrected.srt`, 비용 `$0.002` 확인 |
+| `test -f bots/video/temp/subtitle_corrected.srt` | ✅ 생성 확인 |
+| `node --input-type=module -e "... llm_usage_log WHERE team='video' ..."` | ✅ `model=gpt-4o-mini`, `request_type=subtitle_correction`, 성공 로그 확인 |
+
 ### 아처 자동화 리포트 재검증 + 비용 표 source 보정
 
 | 테스트 | 결과 |

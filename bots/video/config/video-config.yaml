@@ -46,7 +46,7 @@ subtitle_correction:
   llm_provider: openai
   llm_model: gpt-4o-mini
   fallback_provider: google
-  fallback_model: gemini-2.0-flash
+  fallback_model: gemini-2.5-flash
   max_retries: 2
   temperature: 0.1
 
@@ -55,7 +55,15 @@ quality_loop:
   enabled: false
   target_score: 85
   max_iterations: 3
-  llm_model: gpt-4o-mini
+  critic:
+    provider: gemini
+    model: gemini-2.5-flash
+  refiner:
+    provider: groq
+    model: groq/gpt-oss-20b
+  evaluator:
+    provider: groq
+    model: groq/llama-4-scout-17b-16e-instruct
 
 # 텔레그램
 telegram:
