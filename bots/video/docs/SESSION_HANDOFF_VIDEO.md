@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (2차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 기획 완료 + LMS 구조 학습 진행 중
+> 상태: 문서 정리 완료 + Phase 1 Week 1 스캐폴딩 대기
 
 ---
 
@@ -79,15 +79,21 @@
 - 영상 호스팅 방식 확인 (직접 업로드 vs 유튜브 임베드 vs Firebase Storage)
 - 이 정보를 video-team-design.md 섹션 8에 반영
 
-### 2. MD 파일 3개 배치 (제이가 다운로드 후)
-- claude.ai에서 다운로드:
-  video-automation-tech-plan.md (950줄)
-  video-team-design.md (719줄)
-  video-team-tasks.md (726줄)
-- 터미널 실행: bash bots/video/scripts/setup-video-docs.sh
-- 또는 수동으로 bots/video/docs/ 에 복사
+### 2. 문서 반영 상태 확인
+- `bots/video/docs/`에 핵심 문서 4개가 이미 배치됨
+  - VIDEO_HANDOFF.md
+  - video-automation-tech-plan.md
+  - video-team-design.md
+  - video-team-tasks.md
+- `bots/video/docs/CLAUDE.md`
+  - Claude Code용 구현 규칙 문서
+  - YouTube 렌더링 확정값, 문서 참조 순서, 절대 규칙 포함
+- `SESSION_HANDOFF_VIDEO.md`는 세션 로그 성격의 보조 문서
+- `bots/video/samples/ANALYSIS.md`
+  - raw/narration/edited 샘플의 ffprobe 분석 결과
+  - config와 출력 스펙 확정의 근거 문서
 
-### 3. Claude Code 과제 1 실행 (MD 배치 후)
+### 3. Claude Code 과제 1 실행
 - video-team-tasks.md 과제 1 프롬프트 → 스캐폴딩
 - 과제별 단위 테스트 통과 후 순차 진행
 
@@ -101,12 +107,15 @@ ai-agent-system/bots/video/
 ├─ context/                         ← 빈 폴더
 ├─ docs/
 │   ├─ SESSION_HANDOFF_VIDEO.md     ✅ 이 파일
-│   └─ VIDEO_HANDOFF.md             ✅ 인수인계 허브
-│   (나머지 3개 MD: 제이 다운로드 후 배치 필요)
+│   ├─ VIDEO_HANDOFF.md             ✅ 인수인계 허브
+│   ├─ CLAUDE.md                    ✅ 구현 규칙 + 렌더링 확정값
+│   ├─ video-automation-tech-plan.md✅ 기술 구현 방안
+│   ├─ video-team-design.md         ✅ 설계 문서
+│   └─ video-team-tasks.md          ✅ 소과제 문서
 ├─ lib/                             ← 빈 폴더
 ├─ migrations/                      ← 빈 폴더
-├─ scripts/
-│   └─ setup-video-docs.sh          ✅ MD 배치 스크립트
+├─ scripts/                         ← 비디오팀 공통 관례용 예약 폴더 (현재 비어 있음)
+├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
 └─ src/                             ← 빈 폴더
 ```
 

@@ -67,7 +67,8 @@ ai-agent-system/
 │   │   ├─ VIDEO_HANDOFF.md            — 인수인계 허브
 │   │   ├─ video-automation-tech-plan.md — 기술 구현 방안
 │   │   ├─ video-team-design.md        — 설계 + 모듈 매핑
-│   │   └─ video-team-tasks.md         — 소과제 + 프롬프트
+│   │   ├─ video-team-tasks.md         — 소과제 + 프롬프트
+│   │   └─ CLAUDE.md                   — 구현 규칙 + YouTube 렌더링 확정값
 │   ├─ context/
 │   │   └─ IDENTITY.md                 — 비디오팀 정체성
 │   ├─ lib/
@@ -88,8 +89,14 @@ ai-agent-system/
 │   ├─ scripts/
 │   │   ├─ run-pipeline.js             — 수동 파이프라인 실행
 │   │   └─ test-capcut-api.js          — CapCutAPI 연결 테스트
+│   │      ★ 현재는 다른 bots와 동일한 공통 구조를 맞추기 위한 예약 폴더
 │   └─ src/
 │       └─ index.js                    — 메인 엔트리
+│   └─ samples/
+│       ├─ raw/                        — 원본 샘플 영상
+│       ├─ narration/                  — 샘플 나레이션
+│       ├─ edited/                     — 기존 편집본 참고
+│       └─ ANALYSIS.md                 — ffprobe/YouTube 분석 결과
 │
 ├─ packages/core/lib/                  (기존 — 수정 없이 재사용)
 │   ├─ pg-pool.js
@@ -112,6 +119,12 @@ flutterflow_video/
   안정화 후: docs/ 체계로 이동
     bots/video/docs/*.md  →  docs/video/*.md
     VIDEO_HANDOFF.md      →  docs/VIDEO_HANDOFF.md (루트 승격)
+
+★ 현재 경계:
+  - `bots/video/docs/CLAUDE.md`는 구현 규칙과 렌더링 확정값을 담는 운영 문서
+  - Claude Code는 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서로 읽는 것을 기본으로 한다
+  - `bots/video/samples/`는 로컬 fixture/학습 데이터
+  - 실제 운영 원본/임시/결과 저장소는 `flutterflow_video/`를 기준으로 유지
 ```
 
 ---
