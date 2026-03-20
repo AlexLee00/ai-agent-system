@@ -17,6 +17,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### 변경 사항 (changed)
 - `bots/video/lib/critic-agent.js`
   - LLM 호출 timeout을 추가해 네트워크 지연 시 Critic이 무한 대기하지 않도록 보강
+  - config의 `quality_loop.critic.provider`를 실제 primary provider로 사용하도록 정리
+  - 자막 JSON 파싱 실패 시 점수가 과대평가되지 않도록 `score <= 50` 경계 추가
+  - 인접한 `scene_change` 후보를 병합해 중복 transition 권고를 줄이도록 보강
 
 ## 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 세션 원장 + 대화형 UI
 

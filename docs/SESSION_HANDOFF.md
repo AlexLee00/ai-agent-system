@@ -26,7 +26,8 @@
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
 - 비디오
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.
-  - 현재 샘플 기준 실제 Critic 결과는 `score=74`, `pass=false`, `subtitle issues=22`, `audio LUFS=-14.96`, `scene issues=10`으로 확인됐다.
+  - 코드 점검 후 자막 JSON 파싱 실패 강등, config provider 준수, 인접 scene 병합을 보강했다.
+  - 현재 샘플 기준 실제 Critic 결과는 `score=78`, `pass=false`, `subtitle issues=18`, `audio LUFS=-14.96`, `scene issues=10`으로 확인됐다.
   - Gemini 기반 자막 분석은 무료라 `llm_cost_usd=0`이었고, timeout 보강으로 네트워크 지연 시 무한 대기하지 않도록 했다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.

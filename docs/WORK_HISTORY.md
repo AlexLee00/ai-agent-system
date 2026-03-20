@@ -23,6 +23,12 @@
 - 지금 당장 필요한 구조는 자막/오디오/영상 구조를 각각 deterministic + LLM 보조 방식으로 평가하고, 이를 하나의 `critic_report.json`으로 묶는 것이다.
 - 또한 LLM 호출은 무료 Gemini 우선, OpenAI fallback으로 두되 timeout을 넣어 운영 중 무한 대기하지 않도록 했다.
 
+후속 안정화:
+- 코드 점검 후 `critic-agent.js`에 자막 JSON 파싱 실패 시 점수를 `50` 이하로 강등하는 경계를 추가했다.
+- Critic의 primary provider 설정을 실제 config(`quality_loop.critic.provider`)를 따르도록 보강했다.
+- 인접한 씬 전환점을 병합해 Refiner가 중복 transition 후보를 과하게 받지 않도록 정리했다.
+- 재검증 결과 실제 Critic 출력은 `score=78`, `pass=false`, `subtitle issues=18`, `audio LUFS=-14.96`, `scene issues=10`으로 안정화됐다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:
