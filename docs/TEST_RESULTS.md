@@ -448,6 +448,13 @@
 | `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js` | ✅ 통과 |
 | `node --check bots/reservation/scripts/health-report.js` | ✅ 통과 |
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `dailySummaryIntegrityHealth.issueCount=0`, `daily_summary 무결성: 스터디룸/일반/합계 구조 정상` 확인 |
+| `node --check bots/investment/shared/pipeline-market-runner.js` | ✅ 통과 |
+| `node --check bots/investment/markets/crypto.js` | ✅ 통과 |
+| `node --check bots/investment/markets/domestic.js` | ✅ 통과 |
+| `node --check bots/investment/markets/overseas.js` | ✅ 통과 |
+| `node --check bots/investment/shared/kis-client.js` | ✅ 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ 현재 `warnCount=0`, 루나 health 자체는 정상이나 최근 collect 경고는 enrichment/LLM 차단 계열 로그로 분리 확인 |
 | `npm --prefix bots/worker/web run build` | ✅ 통과 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ 실행 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 실행 |

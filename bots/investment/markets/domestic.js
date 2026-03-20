@@ -205,6 +205,8 @@ async function logPipelineMetrics(label, metrics = {}) {
     metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
     metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
     metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
+    metrics.failedCoreTasks != null ? `coreFailed=${metrics.failedCoreTasks}` : null,
+    metrics.failedEnrichmentTasks != null ? `enrichFailed=${metrics.failedEnrichmentTasks}` : null,
     metrics.debateCount != null ? `debate=${metrics.debateCount}/${metrics.debateLimit}` : null,
     metrics.weakSignalSkipped != null ? `weakSkipped=${metrics.weakSignalSkipped}` : null,
     metrics.riskRejected != null ? `riskRejected=${metrics.riskRejected}` : null,
@@ -214,7 +216,15 @@ async function logPipelineMetrics(label, metrics = {}) {
   if (metrics.warnings?.length) {
     console.warn(`  ⚠️ [경고] ${label} | ${metrics.warnings.join(', ')}`);
     const escalated = metrics.warnings.filter(w =>
-      ['collect_overload_detected', 'collect_failure_rate_high', 'debate_capacity_hot', 'weak_signal_pressure'].includes(w),
+      [
+        'collect_overload_detected',
+        'collect_failure_rate_high',
+        'core_collect_failure_rate_high',
+        'enrichment_collect_failure_rate_high',
+        'collect_blocked_by_llm_guard',
+        'debate_capacity_hot',
+        'weak_signal_pressure',
+      ].includes(w),
     );
     if (escalated.length) {
       await publishToMainBot({

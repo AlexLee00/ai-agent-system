@@ -748,3 +748,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `sales/page.js`의 `누적 금액`을 전체 누적(`summary.lifetime`) 기준으로, `월간 매출`을 이번 달(`summary.currentMonth`) 기준으로 수정
   - 매출 목록 조회 상한을 `limit=200 -> 1000`으로 늘려 2026-01-13 이전 과거 데이터가 화면에서 잘리지 않도록 정리
   - 공용 `DataTable` 페이지네이션 숫자 버튼을 최대 5개 window(`1 2 3 4 5`)로 확장
+- 투자 / 한울 / 루나 경고 해석
+  - `pipeline-market-runner.js`에서 collect 실패율 경고를 `core_collect_failure_rate_high`, `enrichment_collect_failure_rate_high`, `collect_blocked_by_llm_guard`로 세분화해 핵심 수집 실패와 LLM 의존 보조 수집 실패를 구분하도록 정리
+  - `crypto/domestic/overseas` 메트릭 로그에 `coreFailed`, `enrichFailed`를 함께 출력하고 새 경고 키도 escalated alert 대상으로 연결
+  - `shared/kis-client.js`의 국내 현재가 0원 응답을 `거래불가/종목코드 확인 필요` 성격으로 더 명확히 분류
+  - `team/hanul.js`에서 국내 KIS BUY도 사전 현재가 검증을 수행해 `0원 응답 종목`은 주문 단계 전에 리스크 거부하도록 보강

@@ -3029,3 +3029,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/reservation/auto/scheduled/pickko-daily-summary.js`에서 자정이 아닐 때 `pickkoTotal/pickkoStudyRoom/generalRevenue`를 `null`로 넘겨 기존 수집값을 유지하도록 정리
 - 원천 `daily_summary` 37건을 `room_amounts_json` 합계 기준으로 복구한 뒤 `test-company` 워커 매출 미러도 재동기화해 mismatch 0건을 확인
 - `bots/reservation/scripts/health-report.js`에 `daily_summary 무결성` 체크를 추가해 당일 미마감 데이터를 제외한 스터디룸/일반/합계 구조 이상을 health에서 바로 경고하도록 정리
+
+### 루나 collect 경고 의미 분리 + 한울 국내 0원 응답 사전 차단
+- `bots/investment/shared/pipeline-market-runner.js`에서 collect 실패를 핵심 수집(`core`)과 보조 enrichment(`L03/L04/L05`)로 분리하고, `LLM 긴급 차단` 기인 실패도 별도 경고(`collect_blocked_by_llm_guard`)로 표기하도록 보강
+- `bots/investment/markets/crypto.js`, `domestic.js`, `overseas.js` 메트릭 로그에 `coreFailed`, `enrichFailed`를 함께 남겨 `/ops-health`나 텔레그램 경고 해석이 과장되지 않도록 정리
+- `bots/investment/shared/kis-client.js`에서 국내 현재가 API가 전부 0 스냅샷을 돌려주는 경우를 `거래불가/종목코드 확인 필요` 의미로 다시 분류
+- `bots/investment/team/hanul.js`에서 국내 BUY도 해외와 같은 방식으로 현재가 사전검증을 수행해 `0원 응답 종목`은 주문 단계 전에 리스크 거부하도록 변경

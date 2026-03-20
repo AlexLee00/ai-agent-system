@@ -170,6 +170,26 @@ async function checkKisRisk(signal) {
       return { approved: false, reason: `최소 주문금액 미달 (${amountKrw?.toLocaleString()}원)` };
     if (amountKrw > KIS_RULES.MAX_ORDER_KRW)
       return { approved: false, reason: `최대 주문금액 초과 (${amountKrw?.toLocaleString()}원)` };
+    try {
+      const kis = await getKis();
+      if (typeof kis.getDomesticPrice === 'function') {
+        const currentPrice = Number(await kis.getDomesticPrice(symbol, isKisPaper()));
+        if (!(currentPrice > 0)) {
+          return { approved: false, reason: `${symbol} 국내 현재가 0원 응답 — 거래불가 종목으로 판단` };
+        }
+        if (amountKrw < currentPrice) {
+          return {
+            approved: false,
+            reason: `1주 가격 미달 (${amountKrw?.toLocaleString()}원 < ${currentPrice.toLocaleString()}원)`,
+          };
+        }
+      }
+    } catch (e) {
+      return {
+        approved: false,
+        reason: `${symbol} 국내 현재가 사전검증 실패 — ${e.message}`,
+      };
+    }
   }
   if (action === ACTIONS.SELL) {
     const pos = await db.getPosition(symbol);

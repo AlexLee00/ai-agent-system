@@ -151,14 +151,37 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}) 
 // ─── 현재가 조회 ────────────────────────────────────────────────────
 
 /** 국내주식 현재가 (원) */
-async function getDomesticPrice(symbol, paper) {
+export async function getDomesticPrice(symbol, paper) {
   const data  = await kisRequest('GET', '/uapi/domestic-stock/v1/quotations/inquire-price', {
     trId:   TR_ID.DOMESTIC_PRICE,
     params: { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: symbol },
     paper,
   });
-  const price = parseInt(data.output?.stck_prpr || '0', 10);
-  if (!price) throw new Error(`${symbol} 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
+  const output = data.output || {};
+  const price = parseInt(output.stck_prpr || '0', 10);
+  if (!price) {
+    const marketName = output.rprs_mrkt_kor_name || '시장정보없음';
+    const statusCode = output.iscd_stat_cls_code || 'unknown';
+    const tempStop = output.temp_stop_yn === 'Y' ? '매매정지' : '정지표시없음';
+    const volume = parseInt(output.acml_vol || '0', 10);
+    const hasZeroSnapshot = [
+      output.stck_prpr,
+      output.stck_oprc,
+      output.stck_hgpr,
+      output.stck_lwpr,
+      output.acml_vol,
+    ].every((value) => String(value || '0') === '0');
+
+    const reason = hasZeroSnapshot
+      ? 'KIS가 현재 거래 가능한 종목으로 가격을 반환하지 않았습니다. 종목코드 오류, 비상장/거래정지, 권리락/특수종목 코드 가능성을 확인하세요.'
+      : 'KIS 현재가 응답이 비정상입니다.';
+
+    throw new Error(
+      `${symbol} 현재가 0원 응답 — ${reason} `
+      + `(시장=${marketName}, 상태=${statusCode}, ${tempStop}, 거래량=${volume}) `
+      + `(응답: ${JSON.stringify(output)})`,
+    );
+  }
   return price;
 }
 
