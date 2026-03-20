@@ -27,6 +27,29 @@ const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http:/
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
 const MAX_WARNING_LOG_BYTES = 512 * 1024;
 
+function normalizeMessageText(message = '') {
+  const lines = String(message || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .map((line) => {
+      const trimmed = line.trim();
+      if (/^[━═─-]{8,}$/.test(trimmed)) return MOBILE_DIVIDER;
+      return line;
+    });
+
+  const compact = [];
+  let previousBlank = false;
+  for (const line of lines) {
+    const blank = line.trim() === '';
+    if (blank && previousBlank) continue;
+    compact.push(line);
+    previousBlank = blank;
+  }
+
+  return compact.join('\n').trim();
+}
+
 function appendPayloadWarning(entry) {
   try {
     if (fs.existsSync(PAYLOAD_WARNING_LOG)) {
@@ -320,7 +343,7 @@ function normalizeEvent({
     team: String(team || 'general'),
     event_type: String(event_type || 'report'),
     alert_level: Number.isFinite(Number(alert_level)) ? Number(alert_level) : 2,
-    message: String(message || '').trim(),
+    message: normalizeMessageText(message),
     payload: validated.payload,
   };
   recordPayloadWarnings(normalized, validated.warnings);
