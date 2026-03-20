@@ -3436,3 +3436,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/video/src/index.js`는 `loadConfig()` export 구조로 리팩터링해 pipeline runner가 config 로드를 재사용하도록 정리
 - 실자산 `--source=1 --skip-render` 검증에서 전처리 → Whisper → 자막교정 → 영상분석 → EDL 생성까지 성공했고 session temp 산출물도 생성 확인
 - 실자산 preview 렌더는 실제로 전진하지만 wall-clock이 길어, EDL scene transition merge 보정을 추가하고 과제 7 잔여 범위를 `preview 최적화 + end-to-end 마감`으로 정리
+- 추가로 single-flight lock, stale lock 자동 정리, SIGINT/SIGTERM 시 lock 해제를 넣어 동시 실행/중단 시 프로세스 생명주기 불변식을 보강

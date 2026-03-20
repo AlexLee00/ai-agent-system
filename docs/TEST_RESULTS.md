@@ -705,3 +705,5 @@
 | `node -e "... pgPool.query('public', 'SELECT 1') ..."` | ✅ 로컬 DB 연결 확인 |
 | `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` | ⚠️ 실자산 기준 전처리 / STT / 자막교정 / 영상분석 / EDL 생성까지 통과, preview 렌더는 실제로 진행되지만 wall-clock이 길어 최종 종료까지는 추가 최적화 필요 |
 | `analysis.json`, `edit_decision_list.json`, session temp 산출물 확인 | ✅ 실검증 session dir에 생성 확인 |
+| 동시 2회 `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` 실행 | ✅ 두 번째 실행이 `다른 video pipeline 실행이 이미 진행 중입니다`로 즉시 차단됨 확인 |
+| lock 파일 `/Users/alexlee/projects/ai-agent-system/bots/video/temp/.run-pipeline.lock.json` | ✅ 검증 후 자동 해제 확인 |

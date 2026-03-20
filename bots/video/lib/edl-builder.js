@@ -509,7 +509,7 @@ function createFilterScriptFile(contents, suffix) {
 
 function buildPreviewCommand(edl, outputPath, config) {
   ensureFfmpegConfig(config);
-  const { filter } = buildFFmpegFilter(edl);
+  const { filter, duration } = buildFFmpegFilter(edl);
   const previewFilter = `${filter};\n[vout]scale=1280:720:flags=lanczos[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(previewFilter, 'preview');
 
@@ -530,12 +530,13 @@ function buildPreviewCommand(edl, outputPath, config) {
     outputPath,
   ];
   args.filterScriptPath = filterScriptPath;
+  args.renderDurationSeconds = duration;
   return args;
 }
 
 function buildFinalRenderCommand(edl, outputPath, config) {
   ensureFfmpegConfig(config);
-  const { filter } = buildFFmpegFilter(edl);
+  const { filter, duration } = buildFFmpegFilter(edl);
   const ff = config.ffmpeg;
   const finalFilter = `${filter};\n[vout]scale=${ff.render_width}:${ff.render_height}:flags=lanczos[vscaled];\n[vscaled]fps=${ff.render_fps}[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(finalFilter, 'final');
@@ -565,6 +566,7 @@ function buildFinalRenderCommand(edl, outputPath, config) {
     outputPath,
   ];
   args.filterScriptPath = filterScriptPath;
+  args.renderDurationSeconds = duration;
   return args;
 }
 
@@ -578,30 +580,77 @@ function parseProgressTime(stderrChunk) {
   return (hours * 3600) + (minutes * 60) + seconds;
 }
 
-async function executeRender(commandArgs, action, metadata = {}) {
+async function executeRender(commandArgs, action, metadata = {}, options = {}) {
   const startedAt = Date.now();
   const [bin, ...args] = commandArgs;
   const filterScriptPath = commandArgs.filterScriptPath;
+  const renderDurationSeconds = commandArgs.renderDurationSeconds || null;
+  const timeoutMs = options.timeoutMs || 0;
+  const stallTimeoutMs = options.stallTimeoutMs || 0;
 
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
+    let settled = false;
+    let timeoutId = null;
+    let stallIntervalId = null;
+    let killTimerId = null;
+    let lastProgressSeconds = null;
+    let lastProgressAdvanceAt = Date.now();
+    let sawProgress = false;
+
+    function cleanup() {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (stallIntervalId) clearInterval(stallIntervalId);
+      if (killTimerId) clearTimeout(killTimerId);
+      if (filterScriptPath && fs.existsSync(filterScriptPath)) {
+        fs.unlinkSync(filterScriptPath);
+      }
+    }
+
+    function terminateRender(reason) {
+      if (settled) return;
+      stderr += `\n[video] ${reason}\n`;
+      proc.kill('SIGTERM');
+      killTimerId = setTimeout(() => {
+        if (!settled) proc.kill('SIGKILL');
+      }, 5000);
+    }
+
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        terminateRender(`FFmpeg ${action} 전체 제한 시간(${timeoutMs}ms) 초과`);
+      }, timeoutMs);
+    }
+
+    if (stallTimeoutMs > 0) {
+      stallIntervalId = setInterval(() => {
+        if (!sawProgress || settled) return;
+        if ((Date.now() - lastProgressAdvanceAt) > stallTimeoutMs) {
+          terminateRender(`FFmpeg ${action} 진행 정체(${stallTimeoutMs}ms, last=${lastProgressSeconds ?? 'n/a'}s)`);
+        }
+      }, 5000);
+    }
 
     proc.stderr.on('data', chunk => {
       const text = chunk.toString();
       stderr += text;
       const seconds = parseProgressTime(text);
       if (seconds !== null) {
+        sawProgress = true;
+        if (lastProgressSeconds === null || seconds > lastProgressSeconds) {
+          lastProgressAdvanceAt = Date.now();
+          lastProgressSeconds = seconds;
+        }
         process.stdout.write(`[${action}] progress: ${seconds.toFixed(1)}s\r`);
       }
     });
 
     proc.on('error', async err => {
-      if (filterScriptPath && fs.existsSync(filterScriptPath)) {
-        fs.unlinkSync(filterScriptPath);
-      }
+      settled = true;
+      cleanup();
       await logToolCall(bin, action, {
         bot: BOT_NAME,
         success: false,
@@ -613,16 +662,19 @@ async function executeRender(commandArgs, action, metadata = {}) {
     });
 
     proc.on('close', async code => {
-      if (filterScriptPath && fs.existsSync(filterScriptPath)) {
-        fs.unlinkSync(filterScriptPath);
-      }
+      settled = true;
+      cleanup();
       const duration_ms = Date.now() - startedAt;
       if (code === 0) {
         await logToolCall(bin, action, {
           bot: BOT_NAME,
           success: true,
           duration_ms,
-          metadata,
+          metadata: {
+            ...metadata,
+            renderDurationSeconds,
+            lastProgressSeconds,
+          },
         });
         process.stdout.write('\n');
         resolve({ success: true, duration_ms, stderr });
@@ -654,6 +706,9 @@ async function renderPreview(edl, outputPath, config) {
   const result = await executeRender(args, 'render_preview', {
     source: edl.source,
     outputPath,
+  }, {
+    timeoutMs: 15 * 60 * 1000,
+    stallTimeoutMs: 45 * 1000,
   });
   return {
     success: result.success,
@@ -667,6 +722,9 @@ async function renderFinal(edl, outputPath, config) {
   const result = await executeRender(args, 'render_final', {
     source: edl.source,
     outputPath,
+  }, {
+    timeoutMs: 90 * 60 * 1000,
+    stallTimeoutMs: 2 * 60 * 1000,
   });
   const stats = fs.statSync(outputPath);
   const probe = await getMediaInfo(outputPath);

@@ -72,6 +72,7 @@ Step 3 — 과제 6~13 재정의:
   - `analysis.json`, `edit_decision_list.json`, session temp 산출물 생성 확인
   - scene 중복 감지를 줄이기 위해 EDL builder에 인접 transition merge 보정 추가
   - preview 렌더는 실제로 진행되지만, 현재 실자산에서는 wall-clock이 길어 추가 최적화가 필요
+  - single-flight lock 추가로 동시 실행은 즉시 거절되며, 검증 후 lock 해제와 child process 정리까지 확인
 
 ---
 
@@ -158,6 +159,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 [확정] Phase 2 연구: CapCutAPI 저장 실패 원인, Remotion SaaS 전환
 [확정] 과제 6 smoke 검증: 120초 샘플에서 preview/final 렌더 성공
 [확정] 과제 7 1차 통합: `run-pipeline.js`가 source 선택부터 DB status/trace/preview까지 연결
+[확정] 과제 7 운영 안전장치: single-flight lock + stale lock 정리 + SIGINT/SIGTERM 시 lock 해제
 [주의] 실자산 preview 렌더는 EDL transition 수에 따라 wall-clock이 길 수 있어 추가 최적화가 필요
 [주의] 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay/burn-in은 capability fallback으로 자동 생략됨
 ```

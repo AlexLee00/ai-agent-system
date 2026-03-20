@@ -938,3 +938,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/video/scripts/run-pipeline.js`를 추가해 source 선택, `video_edits` 상태 기록, 전처리 → STT → 자막교정 → 분석 → EDL → preview/final 흐름을 한 CLI로 연결
   - `bots/video/src/index.js`는 `loadConfig()`를 export 하도록 리팩터링되어 pipeline runner가 config 로드를 재사용
   - 실자산 `--source=1 --skip-render` 검증에서 preview 이전 단계가 모두 통과했고, 실자산 preview wall-clock 병목을 줄이기 위해 EDL builder에 인접 scene transition merge 보정을 추가
+  - `run-pipeline`에 single-flight lock, stale lock 정리, SIGINT/SIGTERM lock 해제를 추가해 중복 실행과 비정상 종료 시 프로세스 잔여 위험을 낮춤

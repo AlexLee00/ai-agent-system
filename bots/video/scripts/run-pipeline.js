@@ -38,6 +38,7 @@ const RAW_DIR = path.join(SAMPLES_DIR, 'raw');
 const NARRATION_DIR = path.join(SAMPLES_DIR, 'narration');
 const TEMP_ROOT = path.join(PROJECT_ROOT, 'temp');
 const EXPORTS_DIR = path.join(PROJECT_ROOT, 'exports');
+const PIPELINE_LOCK_PATH = path.join(TEMP_ROOT, '.run-pipeline.lock.json');
 
 function parseArgs(argv) {
   const parsed = {
@@ -100,6 +101,55 @@ function printDone(totalMs, outputPath) {
   console.log(`[video] 파이프라인 완료! 총 ${totalMs}ms`);
   console.log(`[video] 출력: ${outputPath}`);
   console.log('[video] ══════════════════════════════════');
+}
+
+function readLockFile(lockPath = PIPELINE_LOCK_PATH) {
+  if (!fs.existsSync(lockPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function acquirePipelineLock(lockPayload, lockPath = PIPELINE_LOCK_PATH) {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  try {
+    const fd = fs.openSync(lockPath, 'wx');
+    fs.writeFileSync(fd, JSON.stringify(lockPayload, null, 2), 'utf8');
+    fs.closeSync(fd);
+    return lockPath;
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const existing = readLockFile(lockPath);
+    if (existing && !isProcessAlive(Number(existing.pid))) {
+      fs.unlinkSync(lockPath);
+      return acquirePipelineLock(lockPayload, lockPath);
+    }
+    const detail = existing
+      ? `pid=${existing.pid}, trace_id=${existing.trace_id}, title=${existing.title}, started_at=${existing.started_at}`
+      : '기존 lock 상세를 읽을 수 없음';
+    throw new Error(`다른 video pipeline 실행이 이미 진행 중입니다. (${detail})`);
+  }
+}
+
+function releasePipelineLock(lockPath = PIPELINE_LOCK_PATH, traceId = null) {
+  if (!fs.existsSync(lockPath)) return;
+  const current = readLockFile(lockPath);
+  if (traceId && current && current.trace_id && current.trace_id !== traceId) {
+    return;
+  }
+  fs.unlinkSync(lockPath);
 }
 
 function collectSamplePairs() {
@@ -271,9 +321,34 @@ async function main() {
     const titleForMessage = source.title;
     const sessionDir = path.join(TEMP_ROOT, `run-${traceId.slice(0, 8)}`);
     const outputName = `편집_${title}.mp4`;
+    let currentStep = 'initializing';
+    let lockAcquired = false;
 
     fs.mkdirSync(sessionDir, { recursive: true });
     fs.mkdirSync(EXPORTS_DIR, { recursive: true });
+    acquirePipelineLock({
+      pid: process.pid,
+      trace_id: traceId,
+      title,
+      started_at: new Date().toISOString(),
+      source_video_path: source.rawVideoPath,
+      source_audio_path: source.rawAudioPath,
+    });
+    lockAcquired = true;
+    const releaseCurrentLock = () => {
+      if (lockAcquired) {
+        releasePipelineLock(PIPELINE_LOCK_PATH, traceId);
+        lockAcquired = false;
+      }
+    };
+    process.once('SIGINT', () => {
+      releaseCurrentLock();
+      process.exit(130);
+    });
+    process.once('SIGTERM', () => {
+      releaseCurrentLock();
+      process.exit(143);
+    });
 
     const rawDurationMs = await probeDurationMs(source.rawVideoPath);
     const recordId = await insertVideoEdit({
@@ -301,6 +376,7 @@ async function main() {
     printBanner(titleForMessage);
 
     try {
+      currentStep = 'preprocess';
       console.log('[video] [1/7] 전처리 중...');
       const preprocessStartedAt = Date.now();
       const videoNoAudioPath = path.join(sessionDir, 'video_noaudio.mp4');
@@ -318,6 +394,7 @@ async function main() {
         status: 'preprocessing_done',
       });
 
+      currentStep = 'stt';
       console.log('[video] [2/7] STT 중...');
       const sttStartedAt = Date.now();
       rawSrtPath = path.join(sessionDir, 'subtitle_raw.srt');
@@ -332,6 +409,7 @@ async function main() {
         status: 'stt_done',
       });
 
+      currentStep = 'correction';
       console.log('[video] [3/7] 자막 교정 중...');
       const correctionStartedAt = Date.now();
       const correctionResult = await correctFile(rawSrtPath, correctedSrtPath, config);
@@ -346,17 +424,20 @@ async function main() {
         status: 'correction_done',
       });
 
+      currentStep = 'analysis';
       console.log('[video] [4/7] 영상 분석 중...');
       const analysis = await analyzeVideo(syncedPath, config);
       saveAnalysis(analysis, analysisPath);
       console.log(`[video] [4/7] 영상 분석 완료 (${summarizeAnalysis(analysis)})`);
 
+      currentStep = 'edl';
       console.log('[video] [5/7] EDL 생성 중...');
       const edl = buildInitialEDL(syncedPath, correctedSrtPath, analysis, { title });
       saveEDL(edl, edlPath);
       const edlSummary = summarizeEdl(edl);
       console.log(`[video] [5/7] EDL 생성 완료 (edits ${edlSummary.count}건)`, edlSummary.counts);
 
+      currentStep = 'preview';
       console.log('[video] [6/7] 프리뷰 렌더링 중...');
       const previewResult = await renderPreview(edl, previewPath, config);
       const previewStats = fs.statSync(previewPath);
@@ -382,6 +463,7 @@ async function main() {
       }
 
       if (args.withCapcut) {
+        currentStep = 'capcut';
         console.log('[video] [옵션] CapCut 드래프트 생성 중...');
         const draftStartedAt = Date.now();
         const draftResult = await buildDraft(config, syncedPath, normalizedAudioPath, correctedSrtPath, title);
@@ -394,6 +476,7 @@ async function main() {
         });
       }
 
+      currentStep = 'render_final';
       console.log('[video] [7/7] 최종 렌더링 중...');
       const renderStartedAt = Date.now();
       const renderResult = await renderFinal(edl, exportPath, config);
@@ -438,12 +521,15 @@ async function main() {
         metadata: {
           title,
           traceId,
+          currentStep,
           sourceVideoPath: source.rawVideoPath,
           sourceAudioPath: source.rawAudioPath,
         },
       });
       console.error(`[video] 파이프라인 실패: ${message}`);
       process.exitCode = 1;
+    } finally {
+      releaseCurrentLock();
     }
   });
 }
