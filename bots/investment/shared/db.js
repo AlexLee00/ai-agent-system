@@ -499,6 +499,30 @@ export async function getLatestTradeBySignalId(signalId) {
   return get(`SELECT * FROM trades WHERE signal_id = $1 ORDER BY executed_at DESC LIMIT 1`, [signalId]);
 }
 
+export async function getSameDayTrade({
+  symbol,
+  side,
+  exchange = null,
+  tradeMode = null,
+} = {}) {
+  const conditions = [`symbol = $1`, `side = $2`, `executed_at::date = CURRENT_DATE`];
+  const params = [symbol, side];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (tradeMode) {
+    params.push(tradeMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+  }
+
+  return get(
+    `SELECT * FROM trades WHERE ${conditions.join(' AND ')} ORDER BY executed_at DESC LIMIT 1`,
+    params,
+  );
+}
+
 // ─── positions ──────────────────────────────────────────────────────
 
 export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false, tradeMode = null }) {
@@ -829,7 +853,7 @@ export default {
   query, run, get, initSchema,
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
-  insertTrade, getTradeHistory, getLatestTradeBySignalId,
+  insertTrade, getTradeHistory, getLatestTradeBySignalId, getSameDayTrade,
   upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
   getTodayPnl,
   insertScreeningHistory,
