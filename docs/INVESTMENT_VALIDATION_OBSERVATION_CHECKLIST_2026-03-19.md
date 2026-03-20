@@ -8,6 +8,10 @@
 ## 1. 결론
 
 - validation 레일은 이제 실제로 launchd, `trade_mode`, 퍼널 메트릭, 일지/주간 리뷰까지 연결된 상태다.
+- 2026-03-20 기준 운영 보정:
+  - `binance validation max_daily_trades`는 로컬 운영값으로 `8 -> 10` 상향됐다.
+  - `signals` recent dedupe, same-lane reentry block, same-day reentry block이 함께 반영돼 단순 과매매 노이즈는 줄어든 상태다.
+  - 따라서 남은 `daily_trade_limit` 경고는 입력 노이즈보다 실제 validation lane 압력으로 읽는 편이 더 정확하다.
 - 다음 단계는 추가 구현보다 **3~5 사이클 관찰**이다.
 - 관찰의 목적은 아래 세 가지다.
   1. validation이 실제로 `BUY / approved / executed`를 만드는가
@@ -77,6 +81,8 @@
 - validation이 `BUY 0`만 반복하지 않는가
 - validation 비용 증가 대비 승인/실행이 전혀 없는 상태가 지속되는가
 - validation이 normal보다 더 작은 손실 반경에서 더 많은 후보를 검증하는가
+- health-report의 `■ 최근 60분 차단 세부`에서 validation `daily_trade_limit`가 계속 누적되는가
+- health-report의 `■ rail별 신규 진입 한도(오늘)`에서 `BINANCE / validation x/10` 비율이 반복적으로 높은가
 
 ---
 
@@ -177,6 +183,8 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/weekly-trad
 
 - validation이 `BUY는 생기지만 approved/executed`가 약하면
 - `nemesis` 또는 `hephaestos`의 validation 전용 정책만 추가 보정
+- validation이 실제로 `approved/executed`는 나오지만 최근 60분 `daily_trade_limit`가 반복되면
+- 현재 `10`을 1~2일 더 관찰한 뒤 `12`까지 추가 상향할지 판단
 
 ### 중단/재설계
 
