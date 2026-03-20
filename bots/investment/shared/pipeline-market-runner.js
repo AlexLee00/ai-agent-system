@@ -13,6 +13,8 @@ const COLLECT_CONCURRENCY_LIMIT = {
   kis_overseas: 4,
 };
 
+const ENRICHMENT_NODE_IDS = new Set(['L03', 'L04', 'L05']);
+
 const COLLECT_WARNING_THRESHOLDS = {
   overloadTasks: 60,
   guardedTasks: 45,
@@ -88,6 +90,18 @@ export async function runMarketCollectPipeline({
 
   const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
   const failedTasks = summaries.filter(item => item.status === 'failed').length;
+  const failedSummaries = summaries.filter(item => item.status === 'failed');
+  const failedCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+  const failedEnrichmentTasks = failedSummaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+  const totalEnrichmentTasks = summaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+  const totalCoreTasks = Math.max(totalTasks - totalEnrichmentTasks, 0);
+  const llmGuardFailedTasks = failedSummaries.filter(item =>
+    String(item.error || '').includes('LLM 긴급 차단 중')
+  ).length;
+  const failedNodeCounts = failedSummaries.reduce((acc, item) => {
+    acc[item.nodeId] = (acc[item.nodeId] || 0) + 1;
+    return acc;
+  }, {});
   const metrics = {
     durationMs: Date.now() - startedAt,
     symbolCount: symbols.length,
@@ -95,6 +109,14 @@ export async function runMarketCollectPipeline({
     totalTasks,
     failedTasks,
     failureRate: totalTasks > 0 ? failedTasks / totalTasks : 0,
+    totalCoreTasks,
+    failedCoreTasks,
+    coreFailureRate: totalCoreTasks > 0 ? failedCoreTasks / totalCoreTasks : 0,
+    totalEnrichmentTasks,
+    failedEnrichmentTasks,
+    enrichmentFailureRate: totalEnrichmentTasks > 0 ? failedEnrichmentTasks / totalEnrichmentTasks : 0,
+    llmGuardFailedTasks,
+    failedNodeCounts,
     concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
     ragArtifactsSkipped: tasks.length,
     overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
@@ -104,6 +126,11 @@ export async function runMarketCollectPipeline({
       failedTasks,
       totalTasks,
       limit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+      totalCoreTasks,
+      failedCoreTasks,
+      totalEnrichmentTasks,
+      failedEnrichmentTasks,
+      llmGuardFailedTasks,
     }),
   };
 
@@ -140,11 +167,36 @@ async function runWithConcurrencyLimit(tasks, limit) {
   return results;
 }
 
-function buildCollectWarnings({ tasks, symbols, failedTasks, totalTasks, limit }) {
+function buildCollectWarnings({
+  tasks,
+  symbols,
+  failedTasks,
+  totalTasks,
+  limit,
+  totalCoreTasks,
+  failedCoreTasks,
+  totalEnrichmentTasks,
+  failedEnrichmentTasks,
+  llmGuardFailedTasks,
+}) {
   const warnings = [];
   if (symbols.length >= COLLECT_WARNING_THRESHOLDS.wideUniverseSymbols) warnings.push('wide_universe');
   if (tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks) warnings.push('collect_overload_detected');
   if (limit <= 4 && tasks.length >= COLLECT_WARNING_THRESHOLDS.guardedTasks) warnings.push('concurrency_guard_active');
-  if (failedTasks > 0 && totalTasks > 0 && failedTasks / totalTasks >= 0.2) warnings.push('collect_failure_rate_high');
+  if (llmGuardFailedTasks > 0) warnings.push('collect_blocked_by_llm_guard');
+  if (failedCoreTasks > 0 && totalCoreTasks > 0 && failedCoreTasks / totalCoreTasks >= 0.2) {
+    warnings.push('core_collect_failure_rate_high');
+  }
+  if (failedEnrichmentTasks > 0 && totalEnrichmentTasks > 0 && failedEnrichmentTasks / totalEnrichmentTasks >= 0.2) {
+    warnings.push('enrichment_collect_failure_rate_high');
+  }
+  if (
+    warnings.length === 0
+    && failedTasks > 0
+    && totalTasks > 0
+    && failedTasks / totalTasks >= 0.2
+  ) {
+    warnings.push('collect_failure_rate_high');
+  }
   return warnings;
 }
