@@ -29,6 +29,28 @@
 - 인접한 씬 전환점을 병합해 Refiner가 중복 transition 후보를 과하게 받지 않도록 정리했다.
 - 재검증 결과 실제 Critic 출력은 `score=78`, `pass=false`, `subtitle issues=18`, `audio LUFS=-14.96`, `scene issues=10`으로 안정화됐다.
 
+### 12주차 후속 (2026-03-21) — 비디오팀 과제 11 Refiner Agent 구현
+
+핵심 구현:
+- `bots/video/lib/refiner-agent.js`
+  - `runRefiner`, `refineSubtitles`, `refineEDL`, `refineAudio`, `saveRefinerResult` 구현
+  - Critic 리포트를 읽어 자막/SRT, EDL, 오디오를 순차적으로 보정하는 BLUE Team 레이어 추가
+  - 자막 수정은 우선 deterministic 치환/타임스탬프 이동/줄 분할을 수행하고, 필요한 경우만 Groq→Gemini LLM 폴백을 사용
+  - EDL 수정은 `applyPatch()` 기반으로 cut/transition 추가 또는 transition 제거를 적용
+  - 오디오 이슈가 있을 때만 `normalizeAudio()`를 재사용하도록 분기
+- `bots/video/scripts/test-refiner-agent.js`
+  - 실제 `critic_report.json`, `subtitle_corrected.srt`, `edit_decision_list.json`, `synced.mp4` 기준 Refiner 통합 테스트 추가
+  - `refiner_result.json` 저장, 수정된 SRT 재파싱, 수정된 EDL 재로드 검증
+
+세션 맥락:
+- 과제 11은 Critic이 찾은 문제를 실제 산출물 수정으로 연결하는 첫 BLUE Team 레이어다.
+- 현재 샘플 `critic_report.json`은 자막 용어 수정과 `scene_change` 권고 위주라, MVP 기준으로는 네트워크 의존을 최소화하고 결정적 수정 경로를 우선 구현하는 편이 맞았다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 `critic_report.json -> subtitle_v2.srt / edit_decision_list_v2.json / narr_norm_v2.m4a(선택)` 흐름을 확정하는 것이다.
+- 원본 파일을 직접 덮어쓰지 않고 `_v{N}` 버전을 생성하면, 이후 워커 웹 피드백/재편집 이력까지 자연스럽게 확장할 수 있다.
+- 실제 샘플에서는 자막 12건이 수정됐고, 오디오 이슈가 없어 오디오 재정규화는 건너뛰었다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

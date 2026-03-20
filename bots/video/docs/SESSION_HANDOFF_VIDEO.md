@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~10 중 Critic까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 확장 단계
+> 상태: 과제 1~11 중 Refiner까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 확장 단계
 
 ---
 
@@ -110,18 +110,33 @@ Step 3 — 과제 6~13 재정의:
   - 인접 scene 병합
   - 부분 실패 시 해당 분석만 `score=50`, issues 빈 배열로 degrade
 
+### 8. 과제 11: Refiner Agent (BLUE Team) ✅
+- `bots/video/lib/refiner-agent.js`
+  - `runRefiner`, `refineSubtitles`, `refineEDL`, `refineAudio`, `saveRefinerResult` 구현
+  - Critic 리포트를 읽어 자막/SRT, EDL, 오디오를 순차 보정하는 BLUE Team 레이어 추가
+  - 자막은 deterministic 치환/타임스탬프 이동/줄 분할을 우선 적용하고, 필요한 경우만 Groq→Gemini LLM 폴백
+  - EDL은 `applyPatch()`를 이용해 cut/transition 추가 또는 transition 제거를 처리
+- `bots/video/scripts/test-refiner-agent.js`
+  - 실제 테스트 결과:
+    - `subtitle changes=12`
+    - `edl changes=0`
+    - `audio=null`
+    - `cost_usd=0`
+    - `temp/subtitle_corrected_v2.srt`, `temp/refiner_result.json` 생성
+  - 수정된 SRT 재파싱(`67 entries`)과 수정된 EDL 재로드 확인
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 운영 안정화 + 과제 11 착수
+### 즉시: 과제 7 운영 안정화 + 과제 12 착수
 - worker-web 세션 루프는 연결 완료
 - 남은 건 실자산 preview wall-clock 최적화와 final render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
-- 과제 11 Refiner는 Critic 리포트(`critic_report.json`)를 받아 SRT 수정 + EDL 생성/수정으로 이어가면 된다
+- 과제 12 Evaluator는 Critic/Refiner 결과를 받아 85점 기준 루프 제어와 재편집 여부를 결정하면 된다
 
-### 이후: 과제 7 → 8 → 9 → 10~12 → 13 순차 진행
+### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 
 ---
 

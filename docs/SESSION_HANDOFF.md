@@ -29,6 +29,8 @@
   - 코드 점검 후 자막 JSON 파싱 실패 강등, config provider 준수, 인접 scene 병합을 보강했다.
   - 현재 샘플 기준 실제 Critic 결과는 `score=78`, `pass=false`, `subtitle issues=18`, `audio LUFS=-14.96`, `scene issues=10`으로 확인됐다.
   - Gemini 기반 자막 분석은 무료라 `llm_cost_usd=0`이었고, timeout 보강으로 네트워크 지연 시 무한 대기하지 않도록 했다.
+  - `bots/video/lib/refiner-agent.js`와 `bots/video/scripts/test-refiner-agent.js`가 추가돼 BLUE Team Refiner가 `critic_report.json`을 받아 `subtitle_corrected_v2.srt`와 버전형 결과물을 생성할 수 있다.
+  - 현재 샘플 기준 실제 Refiner 결과는 `subtitle changes=12`, `edl changes=0`, `audio 변경 없음`, `cost_usd=0`이다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
