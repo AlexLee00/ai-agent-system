@@ -6,10 +6,15 @@ const yaml = require('js-yaml');
 
 const configPath = path.join(__dirname, '..', 'config', 'video-config.yaml');
 
-let config;
-try {
+let config = null;
+
+function loadConfig() {
   const configText = fs.readFileSync(configPath, 'utf8');
-  config = yaml.load(configText);
+  return yaml.load(configText);
+}
+
+try {
+  config = loadConfig();
   console.log('[video] config 로드 성공');
 } catch (err) {
   console.error('[video] config 로드 실패:', err.message);
@@ -46,4 +51,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { config, testDB, main };
+module.exports = { config, loadConfig, testDB, main };

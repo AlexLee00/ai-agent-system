@@ -52,6 +52,39 @@ function safeParseFloat(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function mergeNearbyScenes(scenes, windowSeconds = 1.0) {
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    return [];
+  }
+
+  const sorted = [...scenes]
+    .map(scene => ({
+      at: safeParseFloat(scene.at),
+      score: safeParseFloat(scene.score, 0),
+    }))
+    .filter(scene => Number.isFinite(scene.at) && scene.at >= 0)
+    .sort((a, b) => a.at - b.at);
+
+  if (!sorted.length) {
+    return [];
+  }
+
+  const merged = [sorted[0]];
+  for (const current of sorted.slice(1)) {
+    const last = merged[merged.length - 1];
+    if ((current.at - last.at) <= windowSeconds) {
+      if (current.score > last.score) {
+        last.at = current.at;
+        last.score = current.score;
+      }
+      continue;
+    }
+    merged.push(current);
+  }
+
+  return merged;
+}
+
 function ensureFfmpegConfig(config) {
   if (!config || !config.ffmpeg) {
     throw new Error('config.ffmpeg 설정이 필요합니다.');
@@ -127,6 +160,10 @@ async function getMediaInfo(filePath) {
 
 function buildInitialEDL(sourcePath, subtitlePath, analysis = {}, options = {}) {
   const edits = [];
+  const mergedScenes = mergeNearbyScenes(
+    analysis.scenes || [],
+    safeParseFloat(options.sceneMergeWindowSeconds, 1.0)
+  );
 
   for (const silence of analysis.silences || []) {
     edits.push({
@@ -146,7 +183,7 @@ function buildInitialEDL(sourcePath, subtitlePath, analysis = {}, options = {}) 
     });
   }
 
-  for (const scene of analysis.scenes || []) {
+  for (const scene of mergedScenes) {
     edits.push({
       type: 'transition',
       at: scene.at,
