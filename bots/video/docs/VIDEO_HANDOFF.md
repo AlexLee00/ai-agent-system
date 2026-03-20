@@ -204,6 +204,7 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `lib/refiner-agent.js`
     - `scripts/test-refiner-agent.js`
     - 실제 테스트 결과 `subtitle changes=12`, `edl changes=0`, `audio 변경 없음`
+    - 코드 점검 후 단계별 partial failure fallback 보강 완료
     - `temp/subtitle_corrected_v2.srt`, `temp/refiner_result.json` 생성 완료
 
 Week 1: 핵심 파이프라인

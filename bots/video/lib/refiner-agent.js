@@ -663,9 +663,52 @@ async function runRefiner(criticReportOrPath, subtitlePath, edlPath, config, opt
   const startedAt = Date.now();
   const criticReport = loadJsonMaybe(criticReportOrPath);
 
-  const subtitleResult = await refineSubtitles(criticReport, subtitlePath, config);
-  const edlResult = await refineEDL(criticReport, edlPath, config);
-  const audioResult = await refineAudio(criticReport, options.videoPath || options.syncedVideoPath, config);
+  let subtitleResult = {
+    outputPath: path.resolve(subtitlePath),
+    changes: [],
+    cost_usd: 0,
+  };
+  let edlResult = {
+    outputPath: path.resolve(edlPath),
+    changes: [],
+  };
+  let audioResult = null;
+
+  try {
+    subtitleResult = await refineSubtitles(criticReport, subtitlePath, config);
+  } catch (error) {
+    await logToolCall('refiner_agent', 'run_refiner_subtitle_stage', {
+      bot: BOT_NAME,
+      success: false,
+      duration_ms: 0,
+      error: toErrorMessage(error),
+      metadata: { subtitlePath },
+    });
+  }
+
+  try {
+    edlResult = await refineEDL(criticReport, edlPath, config);
+  } catch (error) {
+    await logToolCall('refiner_agent', 'run_refiner_edl_stage', {
+      bot: BOT_NAME,
+      success: false,
+      duration_ms: 0,
+      error: toErrorMessage(error),
+      metadata: { edlPath },
+    });
+  }
+
+  try {
+    audioResult = await refineAudio(criticReport, options.videoPath || options.syncedVideoPath, config);
+  } catch (error) {
+    await logToolCall('refiner_agent', 'run_refiner_audio_stage', {
+      bot: BOT_NAME,
+      success: false,
+      duration_ms: 0,
+      error: toErrorMessage(error),
+      metadata: { videoPath: options.videoPath || options.syncedVideoPath || null },
+    });
+  }
 
   const versions = [
     subtitleResult.outputPath,
