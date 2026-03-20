@@ -702,6 +702,50 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ 미추적 잔고 흡수 실패 (일반 매수 계속): ${e.message}`);
       }
 
+      const livePosition = await db.getLivePosition(symbol, 'binance');
+      const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+      if (effectivePaperMode && livePosition) {
+        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
+        console.log(`  ⛔ [자본관리] ${reason}`);
+        await persistFailure(reason, {
+          code: 'position_mode_conflict',
+          meta: {
+            existingPaper: livePosition.paper,
+            requestedPaper: effectivePaperMode,
+          },
+        });
+        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+        return { success: false, reason };
+      }
+      if (effectivePaperMode && paperPosition) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
+        console.log(`  ⛔ [자본관리] ${reason}`);
+        await persistFailure(reason, {
+          code: 'position_reentry_blocked',
+          meta: {
+            existingPaper: paperPosition.paper,
+            requestedPaper: effectivePaperMode,
+            tradeMode: signalTradeMode,
+          },
+        });
+        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+        return { success: false, reason };
+      }
+      if (!effectivePaperMode && livePosition) {
+        const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+        console.log(`  ⛔ [자본관리] ${reason}`);
+        await persistFailure(reason, {
+          code: 'position_reentry_blocked',
+          meta: {
+            existingPaper: livePosition.paper,
+            requestedPaper: effectivePaperMode,
+            tradeMode: signalTradeMode,
+          },
+        });
+        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+        return { success: false, reason };
+      }
+
       // ── 미추적 BTC로 직접 매수 (BTC 페어 우선) ─────────────────────
       // 1순위: ETH/BTC 같은 직접 페어 → BTC→USDT 변환 없이 1회 수수료로 매수
       // 2순위: BTC 페어 없으면 BTC→USDT 전환 후 매수 (USDT 폴백)
@@ -755,6 +799,24 @@ export async function executeSignal(signal) {
         }
       }
 
+      if (effectivePaperMode) {
+        const paperPositionAfterFallback = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+        if (paperPositionAfterFallback) {
+          const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
+          console.log(`  ⛔ [자본관리] ${reason}`);
+          await persistFailure(reason, {
+            code: 'position_reentry_blocked',
+            meta: {
+              existingPaper: paperPositionAfterFallback.paper,
+              requestedPaper: effectivePaperMode,
+              tradeMode: signalTradeMode,
+            },
+          });
+          notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+          return { success: false, reason };
+        }
+      }
+
       // ── 동적 포지션 사이징 ──────────────────────────────────────────
       const slPrice = signal.slPrice || 0;
       const currentPrice = await fetchTicker(symbol).catch(() => 0);
@@ -793,27 +855,8 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       };
 
-      const livePosition = await db.getLivePosition(symbol, 'binance');
-      if (effectivePaperMode && livePosition) {
-        const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
-        console.log(`  ⛔ [자본관리] ${reason}`);
-        await persistFailure(reason, {
-          code: 'position_mode_conflict',
-          meta: {
-            existingPaper: livePosition.paper,
-            requestedPaper: effectivePaperMode,
-          },
-        });
-        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
-        return { success: false, reason };
-      }
-      const existing = effectivePaperMode
-        ? await db.getPaperPosition(symbol, 'binance', signalTradeMode)
-        : livePosition;
-      const newAmount   = (existing?.amount || 0) + (order.filled || 0);
-      const newAvgPrice = existing && existing.amount > 0
-        ? ((existing.amount * existing.avg_price) + actualAmount) / newAmount
-        : order.price || 0;
+      const newAmount = order.filled || 0;
+      const newAvgPrice = order.price || 0;
 
       await db.upsertPosition({
         symbol,
