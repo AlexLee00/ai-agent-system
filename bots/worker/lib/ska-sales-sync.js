@@ -16,6 +16,23 @@ function buildSkaSalesDescription(kind, date) {
     : `스카 스터디룸 매출 (${date})`;
 }
 
+function sumRoomAmounts(roomAmountsJson) {
+  if (!roomAmountsJson) return 0;
+
+  let parsed = roomAmountsJson;
+  if (typeof roomAmountsJson === 'string') {
+    try {
+      parsed = JSON.parse(roomAmountsJson);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') return 0;
+
+  return Object.values(parsed).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
 function buildExpectedSalesRows(rows) {
   const expected = [];
 
@@ -25,9 +42,15 @@ function buildExpectedSalesRows(rows) {
 
     const totalAmount = Number(row.total_amount || 0);
     const pickkoTotal = Number(row.pickko_total || 0);
+    const pickkoStudyRoom = Number(row.pickko_study_room || 0);
     const generalRevenue = Number(row.general_revenue || 0);
     const grossTotal = pickkoTotal > 0 ? pickkoTotal : totalAmount;
-    const studyRoomRevenue = Math.max(grossTotal - generalRevenue, 0);
+    const roomAmountTotal = sumRoomAmounts(row.room_amounts_json);
+    const studyRoomRevenue = pickkoStudyRoom > 0
+      ? pickkoStudyRoom
+      : roomAmountTotal > 0
+        ? roomAmountTotal
+      : Math.max(grossTotal - generalRevenue, 0);
 
     if (generalRevenue > 0) {
       expected.push({
@@ -57,7 +80,7 @@ async function syncSkaSalesToWorker(companyId) {
   }
 
   const dailyRows = await pgPool.query(RESERVATION_SCHEMA, `
-    SELECT date::text, total_amount, pickko_total, general_revenue
+    SELECT date::text, total_amount, room_amounts_json, pickko_total, pickko_study_room, general_revenue
     FROM daily_summary
     ORDER BY date
   `);

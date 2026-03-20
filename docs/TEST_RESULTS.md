@@ -439,6 +439,13 @@
 | `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ `2026-03-16~2026-03-18` 원천 데이터 복구 확인, 종료 시 CSV export `rows is not iterable` 잔여 오류 확인 |
 | `node --input-type=module -e "... 2026-03-16~2026-03-19 daily_summary 확인 ..."` | ✅ `pickko_total/general_revenue` 기준 저장 확인 |
 | `node --input-type=module -e "... 2026-01-01~2026-01-12 worker.sales 확인 ..."` | ✅ `test-company`의 1월 초 데이터가 이미 존재함을 확인 |
+| `node -e "... daily_summary vs worker.sales mismatch check ..."` | ✅ `2026-03-19` 1건 mismatch 확인 후 `mismatchCount: 0`으로 재검증 완료 |
+| `node -e "... room_amounts_json 있는데 pickko_study_room=0 인 날짜 탐지 ..."` | ✅ 이상치 37건 확인 |
+| `node -e "... daily_summary pickko_study_room / pickko_total 원천 보정 ..."` | ✅ 원천 37건 복구 완료 |
+| `node -e "syncSkaSalesToWorker('test-company')"` 2차 실행 | ✅ room JSON 기반 스터디룸 매출 `inserted: 37`, 최종 `expectedRows: 274` 확인 |
+| `node -e "... room_amounts_json 기준 suspicious 재검사 ..."` | ✅ `suspiciousCount: 0` |
+| `node --check bots/reservation/lib/db.js` | ✅ 통과 |
+| `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js` | ✅ 통과 |
 | `npm --prefix bots/worker/web run build` | ✅ 통과 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ 실행 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 실행 |
