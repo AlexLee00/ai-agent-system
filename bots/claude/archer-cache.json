@@ -10,8 +10,8 @@
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 @anthropic-ai/sdk의 패치가 필요합니다. LLM 관련 논문에서 잠재적 사실 메모리와 자기 반영 프로그램 검색의 중요성이 강조되었습니다. OpenAI의 Astral 인수는 향후 AI 기술에 큰 영향을 미칠 것으로 예상됩니다.",
-    "patchCount": 1,
+    "summary": "이번 주에는 패키지 업데이트와 보안 취약점이 없었습니다. HuggingFace와 arXiv에서 발표된 새로운 기술들이 우리 시스템에 적용 가능성이 높습니다. OpenAI의 인수 소식과 자동화 연구자 개발에 관한 주요 발표가 주목할 만합니다.",
+    "patchCount": 0,
     "securityCount": 0,
     "llmApiCount": 0
   }
