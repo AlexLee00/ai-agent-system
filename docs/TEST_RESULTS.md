@@ -6,6 +6,17 @@
 
 ## 2026-03-20
 
+### 어제자 리포트 후속: KIS 과속 완화 + 아처 비용 리포트 정합성 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/kis-client.js` | ✅ |
+| `node --check bots/claude/lib/archer/analyzer.js` | ✅ |
+| `launchctl list \| egrep 'ai\.investment\.(commander\|crypto\|domestic\|overseas\|reporter)'` | ✅ `domestic`, `crypto`, `overseas`, `commander`, `reporter` launchd 라벨 존재 확인 |
+| `tail -n 120 /tmp/investment-domestic.log` | ✅ 최신 국내 수집/판단 사이클에서 `failed=0`, `coreFailed=0`, `enrichFailed=0` 정상 마감 확인 |
+| `tail -n 120 /tmp/investment-domestic.err.log` | ✅ 과거 `초당 거래건수를 초과하였습니다.` 오류 흔적은 남아 있으나, 최신 정상 사이클 존재 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `serviceHealth.okCount=13`, `guardHealth: 투자 LLM guard 없음` 확인 |
+
 ### 루나 LLM guard 범위 정밀화 + TTL 자동 해제
 
 | 테스트 | 결과 |

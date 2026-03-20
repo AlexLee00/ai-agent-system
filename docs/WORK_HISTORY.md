@@ -4,6 +4,33 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 어제자 리포트 후속: KIS 과속 완화 + 아처 비용 표 왜곡 수정
+
+핵심 구현:
+- `bots/investment/shared/kis-client.js`
+  - KIS 공용 요청 함수 `kisRequest()`에 최소 호출 간격(`380ms`)과 `paper/live` 별도 직렬화 queue를 추가
+  - `초당 거래건수를 초과하였습니다.` 또는 `rate limit` 응답은 최대 2회 backoff 재시도하도록 정리
+- `bots/claude/lib/archer/analyzer.js`
+  - `billing_snapshots`가 월 누적 snapshot임을 반영해 최근 7일 표를 day-over-day delta로 계산하도록 수정
+  - 월간 누적/소진율은 `SUM(cost_usd)`가 아니라 provider별 최신 snapshot을 합산하도록 보정
+
+세션 맥락:
+- 어제자 아처 리포트와 투자 로그를 확인한 결과, 국내주식 쪽에서는 `KIS API 오류 [undefined]: 초당 거래건수를 초과하였습니다.`가 실제로 반복되고 있었다.
+- 동시에 아처 주간 리포트의 LLM 비용 트렌드는 최근 7일이 모두 동일한 비용처럼 보였는데, 이는 live 비용 패턴이라기보다 누적 snapshot 해석 오류로 판단됐다.
+
+의사결정 이유:
+- KIS 과속은 한울 한 곳만 늦추는 임시 대응보다 공용 요청 레이어에서 전체 국내 호출을 보호하는 편이 더 안정적이다.
+- 비용 리포트는 운영 판단의 근거이므로, 저장 구조(`billing_snapshots = 월 누적`)와 표시 구조(일별 비용 표)가 정확히 일치해야 한다.
+- 루나 guard는 현재 health 기준으로 active guard가 없으므로, 오늘 우선 수정은 현재 장애성이 있는 KIS와 비용 정합성에 집중하는 것이 맞았다.
+
+검증:
+- `node --check bots/investment/shared/kis-client.js`
+- `node --check bots/claude/lib/archer/analyzer.js`
+- `launchctl list | egrep 'ai\.investment\.(commander|crypto|domestic|overseas|reporter)'`
+- `tail -n 120 /tmp/investment-domestic.err.log`
+- `tail -n 120 /tmp/investment-domestic.log`
+- `node bots/investment/scripts/health-report.js --json`
+
 ### 12주차 후속 (2026-03-20) — 모바일 알림 제목 축약 + 스카 모니터 리로드 안정화
 
 핵심 구현:

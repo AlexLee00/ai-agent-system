@@ -194,19 +194,20 @@ async function buildBillingTrendSection() {
   const lines  = [];
 
   try {
-    // 최근 7일 일별 비용
+    // billing_snapshots.cost_usd 는 "일별 비용"이 아니라 "해당 시점의 월 누적 비용"이다.
+    // 따라서 최근 7일 표는 day-over-day delta 로 계산해야 실제 일별 비용이 된다.
     const rows = await pgPool.query('claude', `
       SELECT date::text, provider, cost_usd
       FROM billing_snapshots
-      WHERE date >= CURRENT_DATE - 6
-      ORDER BY date DESC, provider
+      WHERE date >= CURRENT_DATE - 7
+      ORDER BY date ASC, provider
     `);
 
     if (!rows || rows.length === 0) {
       return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (billing_snapshots 비어있음)\n';
     }
 
-    // 날짜별 맵
+    // 날짜별 누적 비용 맵
     const byDate = {};
     for (const r of rows) {
       const d = String(r.date).slice(0, 10);
@@ -214,25 +215,42 @@ async function buildBillingTrendSection() {
       byDate[d][r.provider] = parseFloat(r.cost_usd || 0);
     }
 
+    const cumulativeDates = Object.keys(byDate).sort();
+    const dailyByDate = {};
+    for (let i = 0; i < cumulativeDates.length; i += 1) {
+      const d = cumulativeDates[i];
+      const prev = i > 0 ? byDate[cumulativeDates[i - 1]] : null;
+      const current = byDate[d] || {};
+      const antCum = Number(current.anthropic || 0);
+      const oaiCum = Number(current.openai || 0);
+      const antPrev = Number(prev?.anthropic || 0);
+      const oaiPrev = Number(prev?.openai || 0);
+      dailyByDate[d] = {
+        anthropic: Math.max(0, antCum - antPrev),
+        openai: Math.max(0, oaiCum - oaiPrev),
+      };
+    }
+
     lines.push('## 💰 LLM 비용 트렌드');
     lines.push('');
     lines.push('| 날짜 | Anthropic | OpenAI | 일합계 |');
     lines.push('|------|-----------|--------|--------|');
 
-    const dates = Object.keys(byDate).sort().reverse();
-    for (const d of dates) {
-      const ant = byDate[d].anthropic || 0;
-      const oai = byDate[d].openai    || 0;
+    const recentDates = Object.keys(dailyByDate).sort().slice(-7).reverse();
+    for (const d of recentDates) {
+      const ant = dailyByDate[d].anthropic || 0;
+      const oai = dailyByDate[d].openai    || 0;
       lines.push(`| ${d} | $${ant.toFixed(3)} | $${oai.toFixed(3)} | $${(ant + oai).toFixed(3)} |`);
     }
     lines.push('');
 
     // 월간 소진율 + 예상 월말
+    // 누적 snapshot 구조이므로 provider별 "최신" 값만 합산해야 한다.
     const monthRows = await pgPool.query('claude', `
-      SELECT provider, SUM(cost_usd) AS total
+      SELECT DISTINCT ON (provider) provider, cost_usd AS total
       FROM billing_snapshots
       WHERE date >= date_trunc('month', CURRENT_DATE)::date
-      GROUP BY provider
+      ORDER BY provider, date DESC
     `);
 
     let grandTotal = 0;
