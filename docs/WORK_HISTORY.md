@@ -81,6 +81,10 @@
 - 실제 테스트 결과 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`가 나왔다.
 - 이번 샘플에서는 Refiner가 추가 변경을 만들지 못했기 때문에 최고 버전은 원본 `subtitle_corrected.srt + edit_decision_list.json`으로 유지됐다.
 
+후속 안정화:
+- 코드 점검 후 `evaluator-agent.js`가 `analysis_path`가 없는 standalone `refiner_result.json`도 처리할 수 있도록 보강했다.
+- 이제 Evaluator는 subtitle/EDL/audio/synced video와 같은 temp 디렉토리의 `analysis.json`을 자동 추론해 재평가를 계속할 수 있다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

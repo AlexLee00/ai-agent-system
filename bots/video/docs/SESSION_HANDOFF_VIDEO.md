@@ -132,6 +132,7 @@ Step 3 — 과제 6~13 재정의:
   - `runEvaluator`, `evaluate`, `compareReports`, `makeRecommendation`, `saveEvaluation` 구현
   - Evaluator 자체적으로 별도 LLM을 호출하지 않고, Refiner 수정본을 기준으로 Critic을 재호출해 점수를 재평가
   - 필요 시 수정된 EDL과 오디오 경로를 반영해 남은 이슈와 오디오 점수를 보정
+  - 코드 점검 후 standalone `refiner_result.json`에서도 sibling `analysis.json`을 자동 추론해 재평가할 수 있도록 입력 경계 보강
 - `bots/video/lib/quality-loop.js`
   - `runQualityLoop`, `findBestVersion`, `saveLoopResult` 구현
   - `critic -> refiner -> evaluator` 반복과 최고 점수 버전 선택, `PASS / RETRY / ACCEPT_BEST` 종료 판정 추가

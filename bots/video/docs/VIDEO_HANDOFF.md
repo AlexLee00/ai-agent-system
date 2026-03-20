@@ -211,6 +211,7 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `lib/quality-loop.js`
     - `scripts/test-quality-loop.js`
     - Evaluator는 Refiner 수정본을 기준으로 Critic을 재호출해 점수와 남은 이슈를 재평가
+    - 코드 점검 후 standalone `refiner_result.json`에서도 sibling `analysis.json`을 자동 추론하도록 보강
     - quality-loop는 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`, `loop_result.json`을 temp 원장으로 남김
     - 실제 테스트 결과 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`
     - 현재 샘플에서는 Refiner 추가 변경이 없어 최고 버전은 원본 `subtitle_corrected.srt + edit_decision_list.json` 유지

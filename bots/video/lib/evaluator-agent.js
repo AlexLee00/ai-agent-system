@@ -29,11 +29,29 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function resolveAnalysisInput(refinerResult) {
+function resolveAnalysisInput(refinerResult, syncedVideoPath = null) {
   if (refinerResult?.analysis) return refinerResult.analysis;
   if (refinerResult?.analysis_data) return refinerResult.analysis_data;
   if (refinerResult?.analysis_path) return refinerResult.analysis_path;
   if (refinerResult?._analysisOrPath) return refinerResult._analysisOrPath;
+
+  const candidates = [
+    refinerResult?.subtitle?.path,
+    refinerResult?.subtitlePath,
+    refinerResult?.edl?.path,
+    refinerResult?.edlPath,
+    refinerResult?.audio?.path,
+    refinerResult?.audioPath,
+    syncedVideoPath,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const guessedPath = path.join(path.dirname(path.resolve(candidate)), 'analysis.json');
+    if (fs.existsSync(guessedPath)) {
+      return guessedPath;
+    }
+  }
+
   throw new Error('Evaluator에 analysis 정보가 없습니다.');
 }
 
@@ -209,7 +227,7 @@ async function runEvaluator(refinerResultOrPath, syncedVideoPath, config) {
   const subtitlePath = getResolvedSubtitlePath(refinerResult);
   const edlPath = getResolvedEtlPath(refinerResult);
   const audioPath = getResolvedAudioPath(refinerResult);
-  const analysisOrPath = resolveAnalysisInput(refinerResult);
+  const analysisOrPath = resolveAnalysisInput(refinerResult, syncedVideoPath);
   const previousReport = refinerResult.previous_report || refinerResult.previousReport || {
     score: safeNumber(refinerResult.critic_score, 0),
     issues: [],
