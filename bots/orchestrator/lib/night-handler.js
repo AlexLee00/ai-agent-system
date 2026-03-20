@@ -54,6 +54,16 @@ function formatGuardExpiry(expiresAt) {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
+function formatGuardReason(reason = '') {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  return text
+    .replace(/^\[(.*?)\]\s*/i, '$1 ')
+    .replace(/10분 급등\s*/g, '급등 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // KST 시간 (0~23)
 function getKSTHour() {
   return new Date(Date.now() + 9 * 3600 * 1000).getUTCHours();
@@ -377,10 +387,10 @@ function getLunaRiskSnapshot() {
     for (const guard of activeGuards.slice(0, 3)) {
       pushUniqueLine(
         lines,
-        `  • ${formatGuardScope(guard.scope)} 차단 — 자동 해제 ${formatGuardExpiry(guard.expires_at)}`
+        `  • ${formatGuardScope(guard.scope)} 차단 / 해제 ${formatGuardExpiry(guard.expires_at)}`
       );
       if (guard.reason) {
-        pushUniqueLine(lines, `    사유: ${guard.reason}`);
+        pushUniqueLine(lines, `    사유: ${formatGuardReason(guard.reason)}`);
       }
     }
   }

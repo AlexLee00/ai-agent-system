@@ -83,6 +83,16 @@ function formatGuardExpiry(expiresAt) {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
+function formatGuardReason(reason = '') {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  return text
+    .replace(/^\[(.*?)\]\s*/i, '$1 ')
+    .replace(/10분 급등\s*/g, '급등 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildGuardHealth() {
   const rows = billingGuard.listActiveGuards('investment.normal');
   if (rows.length === 0) {
@@ -97,9 +107,12 @@ function buildGuardHealth() {
     okCount: 0,
     warnCount: rows.length,
     ok: [],
-    warn: rows.map((row) => {
+    warn: rows.flatMap((row) => {
       const expires = formatGuardExpiry(row.expires_at);
-      return `  ${formatGuardScope(row.scope)} 차단 / 자동 해제 ${expires}`;
+      const lines = [`  ${formatGuardScope(row.scope)} 차단 / 해제 ${expires}`];
+      const reason = formatGuardReason(row.reason);
+      if (reason) lines.push(`    사유: ${reason}`);
+      return lines;
     }),
   };
 }
