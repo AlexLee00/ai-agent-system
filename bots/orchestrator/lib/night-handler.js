@@ -39,7 +39,19 @@ function formatGuardScope(scope = '') {
 
 function formatGuardExpiry(expiresAt) {
   if (!expiresAt) return '수동 해제';
-  return kst.toKST(expiresAt);
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return '수동 해제';
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
 
 // KST 시간 (0~23)
@@ -377,6 +389,7 @@ function getLunaRiskSnapshot() {
     hasWarn: lines.length > 0,
     lines,
     reasons,
+    guardCount: activeGuards.length,
   };
 }
 

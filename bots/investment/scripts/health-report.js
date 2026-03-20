@@ -29,7 +29,6 @@ const {
   buildServiceRows,
 } = require('../../../packages/core/lib/health-provider');
 const billingGuard = require('../../../packages/core/lib/billing-guard');
-const kst = require('../../../packages/core/lib/kst');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +66,23 @@ function formatGuardScope(scope = '') {
   return normalized || 'unknown';
 }
 
+function formatGuardExpiry(expiresAt) {
+  if (!expiresAt) return '수동 해제';
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return '수동 해제';
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+}
+
 function buildGuardHealth() {
   const rows = billingGuard.listActiveGuards('investment.normal');
   if (rows.length === 0) {
@@ -82,7 +98,7 @@ function buildGuardHealth() {
     warnCount: rows.length,
     ok: [],
     warn: rows.map((row) => {
-      const expires = row.expires_at ? kst.toKST(row.expires_at) : '수동 해제';
+      const expires = formatGuardExpiry(row.expires_at);
       return `  ${formatGuardScope(row.scope)} 차단 / 자동 해제 ${expires}`;
     }),
   };

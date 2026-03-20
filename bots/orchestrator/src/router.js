@@ -1208,7 +1208,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     {
       title: '루나',
       summary: luna
-        ? `서비스 경고 ${luna.serviceHealth.warnCount}건${lunaRisk.hasWarn ? ` / 리스크 ${lunaRisk.reasons.length}건` : ''}`
+        ? `서비스 경고 ${luna.serviceHealth.warnCount}건${lunaRisk.hasWarn ? ` / 리스크 ${lunaRisk.reasons.length}건` : ''}${lunaRisk.guardCount > 0 ? ` / guard ${lunaRisk.guardCount}건` : ''}`
         : '조회 실패',
       detail: luna
         ? [

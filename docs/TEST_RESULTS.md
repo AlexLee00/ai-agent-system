@@ -38,6 +38,7 @@
 | `launchctl kickstart -k gui/$(id -u)/ai.orchestrator` | ✅ |
 | `node bots/orchestrator/scripts/health-report.js --json` | ✅ `ai.orchestrator`, `gateway`, `ai.n8n.server` 정상 및 orchestrator health 정상 확인 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `guardHealth.okCount=1`, `투자 LLM guard 없음` 정상 출력 확인 |
+| `node --check bots/orchestrator/src/router.js` | ✅ |
 
 ### 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
 
