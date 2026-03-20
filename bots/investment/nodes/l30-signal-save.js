@@ -28,7 +28,7 @@ async function run({ sessionId, market, symbol }) {
     ? (risk.adjustedAmount ?? decision.amount_usdt)
     : (decision.amount_usdt ?? 0);
 
-  const signalId = await db.insertSignal({
+  const signalInsert = await db.insertSignalIfFresh({
     symbol,
     action: decision.action,
     amountUsdt,
@@ -37,6 +37,20 @@ async function run({ sessionId, market, symbol }) {
     exchange: market,
     analystSignals,
   });
+  const signalId = signalInsert.id;
+
+  if (signalInsert.duplicate) {
+    return {
+      symbol,
+      market,
+      signalId,
+      status: signalInsert.existingSignal?.status || 'duplicate',
+      skipped: true,
+      reason: `최근 ${signalInsert.dedupeWindowMinutes}분 내 중복 신호`,
+      duplicateOf: signalInsert.existingSignal?.id || signalId,
+      analystSignals,
+    };
+  }
 
   let status = SIGNAL_STATUS.PENDING;
   if (risk) {
