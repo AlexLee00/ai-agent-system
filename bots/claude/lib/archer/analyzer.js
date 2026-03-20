@@ -12,6 +12,14 @@
 const config = require('./config');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 
+function normalizeDateLabel(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const asDate = new Date(value);
+  return Number.isNaN(asDate.getTime()) ? String(value).slice(0, 10) : asDate.toISOString().slice(0, 10);
+}
+
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `당신은 AI 개발팀의 수석 기술 인텔리전스 봇 "아처"입니다.
@@ -194,41 +202,35 @@ async function buildBillingTrendSection() {
   const lines  = [];
 
   try {
-    // billing_snapshots.cost_usd 는 "일별 비용"이 아니라 "해당 시점의 월 누적 비용"이다.
-    // 따라서 최근 7일 표는 day-over-day delta 로 계산해야 실제 일별 비용이 된다.
-    const rows = await pgPool.query('claude', `
-      SELECT date::text, provider, cost_usd
-      FROM billing_snapshots
-      WHERE date >= CURRENT_DATE - 7
-      ORDER BY date ASC, provider
+    // 최근 7일 표는 실제 사용 로그(llm_usage_log)의 일별 합계를 사용한다.
+    // billing_snapshots 는 외부 billing API의 "월 누적 snapshot"이므로
+    // 최근 일별 비용 표 source 로 쓰면 변화가 없을 때 전부 0으로 보일 수 있다.
+    const dailyRows = await pgPool.query('reservation', `
+      SELECT created_at::date AS day,
+             CASE
+               WHEN model ILIKE 'claude%' OR model ILIKE '%claude%' THEN 'anthropic'
+               WHEN model ILIKE 'gpt-%'   OR model ILIKE 'openai/%'  THEN 'openai'
+               WHEN model ILIKE 'gemini%' OR model ILIKE '%gemini%'  THEN 'google'
+               WHEN model ILIKE '%groq%'  OR model ILIKE '%llama%'   THEN 'groq'
+               ELSE 'other'
+             END AS provider,
+             SUM(cost_usd)::float AS total_cost
+      FROM llm_usage_log
+      WHERE created_at::date >= CURRENT_DATE - 7
+      GROUP BY day, provider
+      ORDER BY day ASC, provider
     `);
 
-    if (!rows || rows.length === 0) {
-      return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (billing_snapshots 비어있음)\n';
+    if (!dailyRows || dailyRows.length === 0) {
+      return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (llm_usage_log 비어있음)\n';
     }
 
-    // 날짜별 누적 비용 맵
+    // 날짜별 실제 일간 비용 맵
     const byDate = {};
-    for (const r of rows) {
-      const d = String(r.date).slice(0, 10);
+    for (const r of dailyRows) {
+      const d = normalizeDateLabel(r.day);
       if (!byDate[d]) byDate[d] = {};
-      byDate[d][r.provider] = parseFloat(r.cost_usd || 0);
-    }
-
-    const cumulativeDates = Object.keys(byDate).sort();
-    const dailyByDate = {};
-    for (let i = 0; i < cumulativeDates.length; i += 1) {
-      const d = cumulativeDates[i];
-      const prev = i > 0 ? byDate[cumulativeDates[i - 1]] : null;
-      const current = byDate[d] || {};
-      const antCum = Number(current.anthropic || 0);
-      const oaiCum = Number(current.openai || 0);
-      const antPrev = Number(prev?.anthropic || 0);
-      const oaiPrev = Number(prev?.openai || 0);
-      dailyByDate[d] = {
-        anthropic: Math.max(0, antCum - antPrev),
-        openai: Math.max(0, oaiCum - oaiPrev),
-      };
+      byDate[d][r.provider] = parseFloat(r.total_cost || 0);
     }
 
     lines.push('## 💰 LLM 비용 트렌드');
@@ -236,10 +238,10 @@ async function buildBillingTrendSection() {
     lines.push('| 날짜 | Anthropic | OpenAI | 일합계 |');
     lines.push('|------|-----------|--------|--------|');
 
-    const recentDates = Object.keys(dailyByDate).sort().slice(-7).reverse();
+    const recentDates = Object.keys(byDate).sort().slice(-7).reverse();
     for (const d of recentDates) {
-      const ant = dailyByDate[d].anthropic || 0;
-      const oai = dailyByDate[d].openai    || 0;
+      const ant = byDate[d].anthropic || 0;
+      const oai = byDate[d].openai    || 0;
       lines.push(`| ${d} | $${ant.toFixed(3)} | $${oai.toFixed(3)} | $${(ant + oai).toFixed(3)} |`);
     }
     lines.push('');

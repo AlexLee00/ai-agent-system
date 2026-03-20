@@ -4,6 +4,25 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 아처 자동화 리포트 재검증 + 비용 표 source 보정
+
+핵심 구현:
+- `bots/claude/lib/archer/analyzer.js`
+  - 최근 7일 비용 표 source를 `claude.billing_snapshots`에서 `reservation.llm_usage_log` 일별 합계로 교체
+  - 월 누적 비용과 소진율은 기존처럼 `billing_snapshots` provider별 최신값을 유지
+  - 날짜 라벨을 `YYYY-MM-DD` 형식으로 정규화
+- `bots/claude/reports/archer-2026-03-20.md`
+  - 수정된 로직 기준으로 리포트를 재생성
+
+세션 맥락:
+- 아처 최신 리포트를 다시 생성해 보니 월 누적 비용은 정상화됐지만, 최근 7일 비용 표가 모두 `0.000`으로 보여 추가 점검이 필요했다.
+- `billing_snapshots`를 직접 확인한 결과, 이 테이블은 외부 billing API의 월 누적 snapshot을 일별로 저장하고 있었고 최근 10일 값이 provider별로 동일했다.
+- 반면 `reservation.llm_usage_log`의 실제 일별 사용량은 날짜별로 변동이 있어, 최근 7일 비용 표는 usage log를 source로 쓰는 것이 더 정확하다고 판단했다.
+
+의사결정 이유:
+- 월 누적 비용/소진율은 외부 billing API snapshot이 정합성이 높지만, 운영자가 보는 일별 트렌드 표는 실사용 로그 기반이 더 해석 가능성이 높다.
+- 즉 비용 리포트는 `월 누적 = billing snapshot`, `일별 추세 = usage log`로 source를 분리하는 것이 맞다.
+
 ### 12주차 후속 (2026-03-20) — 비디오팀 handoff 정합화 + 코덱 세션 시작/마감 규칙 반영
 
 핵심 구현:
