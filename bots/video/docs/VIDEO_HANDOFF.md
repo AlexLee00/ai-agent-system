@@ -200,6 +200,11 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - 자막 이슈 `18건`, 오디오는 `LUFS=-14.96 / Peak=-3.54`, 영상 구조 이슈 `10건`
     - config provider 준수, JSON 파싱 실패 강등, 인접 scene 병합 보강 완료
     - `temp/critic_report.json` 생성 완료
+  - 과제 11 Refiner Agent 구현 완료
+    - `lib/refiner-agent.js`
+    - `scripts/test-refiner-agent.js`
+    - 실제 테스트 결과 `subtitle changes=12`, `edl changes=0`, `audio 변경 없음`
+    - `temp/subtitle_corrected_v2.srt`, `temp/refiner_result.json` 생성 완료
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -213,7 +218,9 @@ Week 1: 핵심 파이프라인
 Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 8: 워커 웹 대화형 영상 편집 페이지 (API + UI 1차 연결)
   ☐ 과제 9: n8n 연동
-  ☐ 과제 10~12: 품질 루프 (Critic/Refiner/Evaluator)
+  ✅ 과제 10: Critic
+  ✅ 과제 11: Refiner
+  ☐ 과제 12: Evaluator
   ☐ 과제 13: 4세트 검증
 
 Week 3: 최종 테스트 + 문서 체계 통합

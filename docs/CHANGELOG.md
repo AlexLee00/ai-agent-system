@@ -3,6 +3,17 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 비디오팀 과제 11 Refiner Agent
+
+### 신규 기능 (feat)
+- `bots/video/lib/refiner-agent.js`
+  - Critic 리포트 기반으로 자막(SRT), EDL, 오디오를 순차 보정하는 BLUE Team 레이어 추가
+  - deterministic 치환/타임스탬프 보정/줄 분할을 우선 사용하고, 필요한 경우에만 Groq→Gemini LLM 폴백으로 자막을 재교정
+  - `applyPatch()` 기반 EDL 수정과 `normalizeAudio()` 재사용을 통한 오디오 재정규화 경로 추가
+- `bots/video/scripts/test-refiner-agent.js`
+  - 실제 `critic_report.json` 기준 통합 테스트 추가
+  - `subtitle_corrected_v2.srt`, `refiner_result.json` 생성과 SRT/EDL 재검증 포함
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)

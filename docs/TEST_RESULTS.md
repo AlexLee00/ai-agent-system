@@ -121,6 +121,16 @@
 
 ## 2026-03-21
 
+### 비디오팀 과제 11 — Refiner Agent
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/refiner-agent.js` | ✅ |
+| `node --check bots/video/scripts/test-refiner-agent.js` | ✅ |
+| `node bots/video/scripts/test-refiner-agent.js` | ✅ `critic_report.json` 기준 실제 Refiner 실행, `subtitle changes=12`, `edl changes=0`, `audio=null`, `subtitle_corrected_v2.srt`, `refiner_result.json` 생성 |
+| `node -e "... parseSrt(load subtitle_corrected_v2.srt) ..."` | ✅ 수정된 SRT `67 entries` 재파싱 확인 |
+| `node -e "... loadEDL(edit_decision_list.json) ..."` | ✅ 수정 후 EDL 로드 확인 |
+
 ### 비디오팀 과제 10 — Critic Agent
 
 | 테스트 | 결과 |
