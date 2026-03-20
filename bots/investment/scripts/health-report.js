@@ -264,6 +264,7 @@ async function loadTradeLaneHealth() {
         COUNT(*)::int AS cnt
       FROM investment.trades
       WHERE executed_at::date = CURRENT_DATE
+        AND LOWER(COALESCE(side, '')) = 'buy'
       GROUP BY 1, 2
       ORDER BY exchange ASC, trade_mode ASC
     `,
@@ -369,7 +370,7 @@ function formatText(report) {
         ? report.signalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`)
         : ['  세부 차단 그룹 없음'],
     },
-    buildHealthCountSection('■ rail별 거래 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
+    buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
       title: null,
       lines: buildHealthDecisionSection({
