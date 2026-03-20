@@ -3,6 +3,16 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — 스카 세션 만료 알림 문구 고도화
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 네이버 세션 만료/자동 재로그인 실패 알림에 즉시 조치 절차를 포함
+  - `.playwright-headed` 플래그 생성/삭제, `reload-monitor.sh` 재시작, 수동 로그인 순서를 본문에 직접 표시
+  - 네이버 profile 경로와 플래그 파일 경로를 함께 노출해 운영자가 바로 확인할 수 있도록 보강
+- `bots/reservation/context/HANDOFF.md`
+  - `.playwright-headed` 기반 headed 디버그 운영 가이드와 환경변수 기반 1회 디버깅 예시를 추가
+
 ## 12주차 후속 (2026-03-20) — 스카 브라우저 자동화 headless 기본화
 
 ### 변경 사항 (changed)

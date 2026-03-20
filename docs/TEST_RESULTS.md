@@ -6,6 +6,13 @@
 
 ## 2026-03-20
 
+### 스카 세션 만료 알림 문구 개선 + headed 운영 가이드 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ |
+| `rg -n "playwright-headed|reload-monitor|네이버 로그인 세션 만료" bots/reservation/auto/monitors/naver-monitor.js bots/reservation/context/HANDOFF.md` | ✅ 알림 문구와 운영 가이드 반영 확인 |
+
 ### 스카 Playwright/Puppeteer headless 기본화
 
 | 테스트 | 결과 |
