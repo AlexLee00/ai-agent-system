@@ -11,6 +11,8 @@
 import * as db from './db.js';
 import { publishToMainBot } from './mainbot-client.js';
 
+const DIVIDER = '──────────';
+
 /**
  * 주간 멀티 모델 경쟁 분석 리포트 생성 + 텔레그램 발송
  * @param {number} days — 분석 기간 (기본 7일)
@@ -73,7 +75,7 @@ export async function buildDualModelReport(days = 7) {
   // ── 리포트 텍스트 생성 ────────────────────────────────────────────
   const lines = [
     `🏆 [루나팀] 멀티 모델 경쟁 주간 리포트 (최근 ${days}일)`,
-    `━━━━━━━━━━━━━━━━━━━━━`,
+    DIVIDER,
     '',
     `📊 전체 승률 (${total}회 대결):`,
   ];
@@ -140,7 +142,7 @@ export async function buildDualModelReport(days = 7) {
 
   // 권장
   lines.push('');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━');
+  lines.push(DIVIDER);
   const ossWins   = parseInt((overallRows || []).find(r => r.winner === 'gpt-oss-20b')?.wins   || 0);
   const scoutWins = parseInt((overallRows || []).find(r => r.winner === 'llama-4-scout')?.wins || 0);
 

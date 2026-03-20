@@ -37,6 +37,8 @@ const MARKET_LABEL = {
   crypto:   '🪙 암호화폐',
 };
 
+const DIVIDER = '──────────';
+
 const EXCHANGE_MAP = {
   domestic: 'kis',
   overseas: 'kis_overseas',
@@ -208,11 +210,11 @@ async function sendCloseReport(market, label) {
     `날짜: ${today}`,
     `시각: ${kst.toKST(new Date())}`,
     '',
-    `━━━━━━━━━━━━━━━━━━━━━`,
+    DIVIDER,
     `[투자 성향]`,
     `  ${profile.mode} · ${profile.riskLevel} · MIN_CONF ${profile.minConfidence}`,
     `  손절 ${profile.stopLossPct}% · 최대 $${profile.maxOrderUsdt} · 듀얼 ${profile.dualModel ? 'ON' : 'OFF'}`,
-    `━━━━━━━━━━━━━━━━━━━━━`,
+    DIVIDER,
   ];
 
   // 매매 내역
@@ -237,7 +239,7 @@ async function sendCloseReport(market, label) {
   for (const line of summarizePositions(positions)) lines.push(`  ${line}`);
 
   lines.push('');
-  lines.push(`━━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(DIVIDER);
   lines.push(`${label} 장 마감. 수고하셨습니다! 🙏`);
 
   await publishToMainBot({
