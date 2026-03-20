@@ -142,7 +142,12 @@ export function isValidationTradeMode() {
 
 export function getInvestmentGuardScope() {
   const mode = getInvestmentTradeMode();
-  return `investment.${mode}`;
+  const rail = `investment.${mode}`;
+  const market = String(process.env.INVESTMENT_MARKET || '').trim().toLowerCase();
+  if (['crypto', 'domestic', 'overseas'].includes(market)) {
+    return `${rail}.${market}`;
+  }
+  return rail;
 }
 
 export function isTestnet() {

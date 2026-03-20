@@ -198,8 +198,6 @@ export function buildCollectAlertMessage(label, warnings = [], metrics = {}) {
   return [
     `📈 루나 경고 — ${compactLabel}`,
     ...detailLines.map((line) => `- ${line}`),
-    '조치: 상세 내용 확인',
-    '추가 점검: /ops-health',
   ].join('\n');
 }
 

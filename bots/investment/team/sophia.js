@@ -429,7 +429,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   const postList     = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg      = `심볼: ${symbol} (${label})\n커뮤니티 게시물 (${posts.length}건):\n${postList}`;
-  const responseText = await callLLM('sophia', systemPrompt, userMsg, 300);
+  const responseText = await callLLM('sophia', systemPrompt, userMsg, 300, { symbol });
   const parsed       = parseJSON(responseText);
 
   let signal, confidence, reasoning, sentiment = '중립';

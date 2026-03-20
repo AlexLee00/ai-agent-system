@@ -548,7 +548,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       context:   'symbol_decision',
       input:     userMsg,
       ruleEngine: async () => {
-        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300 });
+        const raw    = await cachedCallLLM('luna', getLunaSystem(exchange), userMsg, 256, { cacheTTL: 300, symbol });
         const parsed = parseJSON(raw);
         if (!parsed?.action) {
           return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (LLM fallback)');

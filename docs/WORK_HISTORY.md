@@ -49,6 +49,57 @@
 - `node bots/orchestrator/n8n/setup-ska-workflows.js`
 - `bash bots/reservation/scripts/reload-monitor.sh`
 
+### 12주차 후속 (2026-03-20) — 루나 LLM guard 범위 정밀화 + TTL 자동 해제
+
+핵심 구현:
+- `bots/investment/shared/pipeline-market-runner.js`
+  - collect 경고 본문 helper에서 footer를 제거해 `조치: 상세 내용 확인`, `추가 점검: /ops-health`가 카드에 중복 출력되지 않도록 정리
+- `packages/core/lib/billing-guard.js`
+  - `investment.normal.crypto`, `investment.normal.domestic`, `investment.normal.overseas` 같은 투자 market/symbol scope를 정확히 해석하도록 보강
+  - 투자 guard 자동 만료(TTL) 추가
+    - market-level: 30분
+    - symbol-level: 15분
+  - 만료된 investment guard는 읽기 시점에 자동 삭제
+- `packages/core/lib/llm-logger.js`
+  - `llm_usage_log`에 `market`, `symbol`, `guard_scope` 컬럼 추가
+  - 투자 심볼 호출은 팀 전체가 아니라 심볼 기준 10분 급등으로 우선 감지
+  - `llm-logger`가 생성한 investment guard는 scope에 따라 자동 만료 시각을 함께 기록
+- `bots/investment/shared/llm-client.js`
+  - `callLLM()`가 `market`, `symbol`, `guardScope`를 계산해 로깅과 guard 체크에 함께 넘기도록 보강
+- `bots/investment/shared/secrets.js`
+  - `INVESTMENT_MARKET` 환경변수를 읽어 market-level guard scope를 안정적으로 계산
+- `bots/investment/markets/crypto.js`, `domestic.js`, `overseas.js`
+  - 각 수집 프로세스가 `INVESTMENT_MARKET=crypto|domestic|overseas`를 명시하도록 정리
+- `bots/investment/team/athena.js`, `oracle.js`, `hermes.js`, `sophia.js`, `nemesis.js`, `luna.js`
+  - per-symbol LLM 호출에 심볼 문맥을 넘겨 symbol-aware guard와 실제로 연결
+
+세션 맥락:
+- 사용자는 `collect_blocked_by_llm_guard`, `enrichment_collect_failure_rate_high` 경고가 핵심 수집 장애처럼 보이는지, 차단이 너무 엄격한지, 비용 이슈인지 분석을 요청했다.
+- 코덱이 로그를 확인한 결과, 핵심 수집은 정상(`coreFailed=0`)이고 `L03/L04/L05` enrichment만 LLM guard로 막히는 구조였으며, 기존 broad guard가 국내/해외까지 번지는 문제가 있었다.
+
+의사결정 이유:
+- 내부 MVP에서는 guard 자체를 없애는 것보다, **범위를 global -> market -> symbol로 좁혀 false-positive 운영 피로를 줄이는 것**이 더 안전하다.
+- 비용 초과 guard가 아니라 리스크 guard이므로 완전 해제보다 자동 만료(TTL)와 scope 정밀화가 우선이다.
+- `llm_usage_log`에 market/symbol/guard_scope를 남겨야 향후 `/ops-health`, audit, SaaS형 guard policy로 확장하기 쉽다.
+
+검증:
+- `node --check bots/investment/shared/pipeline-market-runner.js`
+- `node --check packages/core/lib/billing-guard.js`
+- `node --check packages/core/lib/llm-logger.js`
+- `node --check bots/investment/shared/llm-client.js`
+- `node --check bots/investment/shared/secrets.js`
+- `node --check bots/investment/markets/crypto.js`
+- `node --check bots/investment/markets/domestic.js`
+- `node --check bots/investment/markets/overseas.js`
+- `node --check bots/investment/team/athena.js`
+- `node --check bots/investment/team/oracle.js`
+- `node --check bots/investment/team/hermes.js`
+- `node --check bots/investment/team/sophia.js`
+- `node --check bots/investment/team/nemesis.js`
+- `node --check bots/investment/team/luna.js`
+- `node bots/investment/scripts/health-report.js --json`
+- `node --input-type=module -e "import { getBlockReason } from './packages/core/lib/billing-guard.js'; ..."`
+
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 핵심 구현:

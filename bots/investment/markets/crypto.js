@@ -31,6 +31,8 @@ import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.js';
 
+process.env.INVESTMENT_MARKET = 'crypto';
+
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
 const EMERGENCY_CHG = 0.03;  // BTC ±3% 긴급 트리거

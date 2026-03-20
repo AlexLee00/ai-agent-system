@@ -123,7 +123,7 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
   ].filter(Boolean).join('\n');
 
   let signal, confidence, reasoning;
-  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 200);
+  const responseText = await callLLM('oracle', SYSTEM_PROMPT, userMsg, 200, { symbol });
   const parsed       = parseJSON(responseText);
 
   if (parsed?.action) {

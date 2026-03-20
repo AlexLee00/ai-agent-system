@@ -386,7 +386,7 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
 
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg      = `심볼: ${symbol} (${label})\n최신 뉴스 ${relevant.length}건:\n${headlines}`;
-  const responseText = await callLLM('hermes', systemPrompt, userMsg, 300);
+  const responseText = await callLLM('hermes', systemPrompt, userMsg, 300, { symbol });
   const parsed       = parseJSON(responseText);
 
   let signal, confidence, reasoning, sentiment = '중립';

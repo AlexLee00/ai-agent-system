@@ -207,7 +207,7 @@ export function parseJSON(text) {
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
   // ★ 긴급 차단 체크
-  const guardScope = getInvestmentGuardScope();
+  const guardScope = resolveInvestmentLLMGuardScope(options);
   if (_billingGuard?.isBlocked(guardScope)) {
     const r = _billingGuard.getBlockReason(guardScope);
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
@@ -218,17 +218,41 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     policyOverride: INVESTMENT_AGENT_POLICY_OVERRIDE,
   });
   if (agentPolicy.route === 'openai_perf') {
-    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens);
+    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
   }
   if (agentPolicy.route === 'dual_groq') {
     return DUAL_MODEL
-      ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens, options)
-      : callGroq(agentName, systemPrompt, userPrompt, maxTokens);
+      ? callDualModel(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope })
+      : callGroq(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
   }
   if (agentPolicy.route === 'openai_mini') {
-    return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens);
+    return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
   }
-  return callGroq(agentName, systemPrompt, userPrompt, maxTokens);
+  return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
+}
+
+function normalizeScopeToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function resolveInvestmentLLMGuardScope(options = {}) {
+  const baseScope = getInvestmentGuardScope();
+  const explicit = normalizeScopeToken(options.guardScopeSuffix || options.scopeSuffix || '');
+  if (explicit) return `${baseScope}.${explicit}`;
+
+  const symbolToken = normalizeScopeToken(options.symbol || '');
+  if (symbolToken) return `${baseScope}.${symbolToken}`;
+
+  return baseScope;
+}
+
+function getCurrentInvestmentMarket() {
+  const market = String(process.env.INVESTMENT_MARKET || '').trim().toLowerCase();
+  return ['crypto', 'domestic', 'overseas'].includes(market) ? market : null;
 }
 
 // ─── 재시도 헬퍼 (500/502/503 Exponential Backoff) ──────────────────
@@ -375,7 +399,11 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
   } else {
     // 둘 다 실패 → OpenAI 폴백
     console.warn(`  ⚠️ [${agentName}] 무료 모델 전체 실패 → OpenAI gpt-4o 폴백`);
-    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+    return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, {
+      skipFallback: true,
+      symbol: options.symbol || null,
+      guardScope: options.guardScope || null,
+    });
   }
 
   const dur = Date.now() - t0;
@@ -383,6 +411,7 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
   _trackTokens?.({ bot: agentName, team: 'investment', model, provider: 'groq',
     taskType: 'trade_signal_dual', tokensIn: winnerData.inputTokens, tokensOut: winnerData.outputTokens, durationMs: dur });
   _logLLMCall?.({ team: 'luna', bot: agentName, model, requestType: 'trade_signal_dual',
+    market: getCurrentInvestmentMarket(), symbol: options.symbol || null, guardScope: options.guardScope || null,
     inputTokens: winnerData.inputTokens, outputTokens: winnerData.outputTokens, latencyMs: dur });
 
   return chosen;
@@ -390,7 +419,7 @@ async function callDualModel(agentName, systemPrompt, userPrompt, maxTokens = 51
 
 // ─── OpenAI 호출 ─────────────────────────────────────────────────────
 
-async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
+async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false, symbol = null, guardScope = null } = {}) {
   const MINI_MODEL = OPENAI_MINI_MODEL;
   const t0 = Date.now();
   const doCall = async () => {
@@ -416,6 +445,7 @@ async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { 
     });
     _logLLMCall?.({
       team: 'luna', bot: agentName, model: MINI_MODEL,
+      market: getCurrentInvestmentMarket(), symbol, guardScope,
       requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
     });
     return res.choices[0]?.message?.content || '';
@@ -424,16 +454,16 @@ async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { 
     // 1차 폴백: Groq Scout
     console.warn(`  ⚠️ [${agentName}] gpt-4o-mini 실패 (${err.message?.slice(0,60)}) → Groq Scout 폴백`);
     try {
-      return await callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+      return await callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
     } catch (groqErr) {
       // 2차 폴백: gpt-4o (최종 안전망)
       console.warn(`  ⚠️ [${agentName}] Groq Scout도 실패 (${groqErr.message?.slice(0,60)}) → gpt-4o 최종 폴백`);
-      return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+      return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
     }
   }
 }
 
-async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
+async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false, symbol = null, guardScope = null } = {}) {
   const t0 = Date.now();
   const doCall = async () => {
     const openai = getOpenAI();
@@ -458,6 +488,7 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skip
     });
     _logLLMCall?.({
       team: 'luna', bot: agentName, model: OPENAI_PERF_MODEL,
+      market: getCurrentInvestmentMarket(), symbol, guardScope,
       requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
     });
     return res.choices[0]?.message?.content || '';
@@ -465,11 +496,11 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skip
     if (skipFallback) throw err;
     // OpenAI 실패 시 Groq로 폴백
     console.warn(`  ⚠️ [${agentName}] OpenAI 실패 (${err.message?.slice(0,60)}) → Groq 폴백`);
-    return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+    return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
   }
 }
 
-async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false } = {}) {
+async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false, symbol = null, guardScope = null } = {}) {
   let lastErr;
   const maxAttempts = Math.max(_groqClients?.length || _groqAccounts.length || 0, 1);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -494,6 +525,7 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFa
       });
       _logLLMCall?.({
         team: 'luna', bot: agentName, model: GROQ_SCOUT_MODEL,
+        market: getCurrentInvestmentMarket(), symbol, guardScope,
         requestType: 'trade_signal', inputTokens: inTok, outputTokens: outTok, latencyMs: dur,
       });
       return res.choices[0]?.message?.content || '';
@@ -507,7 +539,7 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFa
   // Groq 전체 실패 → gpt-4o-mini 폴백 (비용 절감)
   const reason = lastErr?.status === 429 ? '전체 키 rate limit' : (lastErr?.message?.slice(0, 60) ?? '알 수 없는 오류');
   console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → gpt-4o-mini 폴백`);
-  return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true });
+  return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
 }
 
 // ─── 시맨틱 캐싱 (SHA256 해시, PostgreSQL reservation.llm_cache) ──────
@@ -551,12 +583,12 @@ export async function cachedCallLLM(agentName, systemPrompt, userPrompt, maxToke
   const ttl = Math.max(60, Math.min(86400, Math.floor(opts.cacheTTL ?? 300)));  // 1분~24시간
 
   if (opts.skipCache || !_pgPool) {
-    return callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+    return callLLM(agentName, systemPrompt, userPrompt, maxTokens, opts);
   }
 
   await ensureLLMCache();
   if (!_cacheReady) {
-    return callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+    return callLLM(agentName, systemPrompt, userPrompt, maxTokens, opts);
   }
 
   const key = createHash('sha256')
@@ -576,7 +608,7 @@ export async function cachedCallLLM(agentName, systemPrompt, userPrompt, maxToke
   } catch { /* 조회 실패 → API 직접 호출 */ }
 
   // 캐시 미스 → API 호출
-  const result = await callLLM(agentName, systemPrompt, userPrompt, maxTokens);
+  const result = await callLLM(agentName, systemPrompt, userPrompt, maxTokens, opts);
 
   // 캐시 저장 (실패해도 결과는 반환)
   try {

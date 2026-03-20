@@ -14,6 +14,8 @@ const fs   = require('fs');
 const path = require('path');
 
 const STOP_FILE = path.join(__dirname, '../../../.llm-emergency-stop');
+const DEFAULT_MARKET_GUARD_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_SYMBOL_GUARD_TTL_MS = 15 * 60 * 1000;
 
 const SCOPE_ALIASES = {
   global: 'global',
@@ -45,6 +47,7 @@ function scopeMatches(targetScope = 'global', actualScope = 'global') {
   const actual = normalizeScope(actualScope);
   if (actual === 'global') return target === 'global';
   if (actual === target) return true;
+  if (target.startsWith(`${actual}.`)) return true;
   // 레거시 investment stop 파일은 validation까지 같이 막지 않고
   // normal 레일만 막는 보수적 하위 호환으로 해석한다.
   if (actual === 'investment' && target === 'investment.normal') return true;
@@ -67,16 +70,42 @@ function inferScope(data = {}, fallbackScope = 'global') {
   return normalizeScope(fallbackScope);
 }
 
+function getDefaultAutoTtlMs(scope = 'global') {
+  const normalized = normalizeScope(scope);
+  const parts = normalized.split('.');
+  if (parts[0] !== 'investment') return 0;
+  if (parts.length >= 4) return DEFAULT_SYMBOL_GUARD_TTL_MS;
+  if (parts.length >= 3) return DEFAULT_MARKET_GUARD_TTL_MS;
+  return 0;
+}
+
+function resolveExpiresAt(data = {}, scope = 'global') {
+  if (data.expires_at) return data.expires_at;
+  if (String(data.activated_by || '') !== 'llm-logger') return null;
+  const activatedAt = Date.parse(data.activated_at || '');
+  if (!Number.isFinite(activatedAt)) return null;
+  const ttlMs = getDefaultAutoTtlMs(inferScope(data, scope));
+  if (!ttlMs) return null;
+  return new Date(activatedAt + ttlMs).toISOString();
+}
+
 function readStopData(scope = 'global') {
   const file = getStopFile(scope);
   if (!fs.existsSync(file)) return null;
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return {
+    const resolved = {
       ...parsed,
       scope: inferScope(parsed, scope),
+      expires_at: resolveExpiresAt(parsed, scope),
       stop_file: file,
     };
+    const expiresAtMs = Date.parse(resolved.expires_at || '');
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
+      try { fs.unlinkSync(file); } catch {}
+      return null;
+    }
+    return resolved;
   } catch {
     return {
       reason: '알 수 없음',
@@ -109,9 +138,10 @@ function getBlockReason(scope = 'global') {
 }
 
 /** 긴급 차단 활성화 */
-function activate(reason, costUsd, activatedBy = 'billing-guard', scope = 'global') {
+function activate(reason, costUsd, activatedBy = 'billing-guard', scope = 'global', options = {}) {
   const normalized = normalizeScope(scope);
   const stopFile = getStopFile(normalized);
+  const ttlMs = Number.isFinite(Number(options.ttlMs)) ? Number(options.ttlMs) : 0;
   const data = {
     activated_at:  new Date().toISOString(),
     reason,
@@ -120,6 +150,9 @@ function activate(reason, costUsd, activatedBy = 'billing-guard', scope = 'globa
     scope:         normalized,
     release:       `마스터만 해제 가능: rm ${path.basename(stopFile)}`,
   };
+  if (ttlMs > 0) {
+    data.expires_at = new Date(Date.now() + ttlMs).toISOString();
+  }
   fs.writeFileSync(stopFile, JSON.stringify(data, null, 2));
   console.error(`🚨 [billing-guard] LLM 긴급 차단(${normalized}): ${reason}`);
   return data;
@@ -144,5 +177,6 @@ module.exports = {
   normalizeScope,
   scopeMatches,
   getStopFile,
+  getDefaultAutoTtlMs,
   STOP_FILE,
 };
