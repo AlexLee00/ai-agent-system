@@ -124,6 +124,8 @@ Step 3 — 과제 6~13 재정의:
     - `cost_usd=0`
     - `temp/subtitle_corrected_v2.srt`, `temp/refiner_result.json` 생성
   - 수정된 SRT 재파싱(`67 entries`)과 수정된 EDL 재로드 확인
+  - 코드 점검 후 `runRefiner()` 단계별 fallback 추가
+    - 자막/EDL/오디오 중 하나가 실패해도 전체 Refiner는 중단되지 않음
 
 ---
 

@@ -14,6 +14,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 실제 `critic_report.json` 기준 통합 테스트 추가
   - `subtitle_corrected_v2.srt`, `refiner_result.json` 생성과 SRT/EDL 재검증 포함
 
+### 변경 사항 (changed)
+- `bots/video/lib/refiner-agent.js`
+  - `runRefiner()`에 단계별 fallback을 추가해 자막/EDL/오디오 중 한 단계 실패가 전체 Refiner 실패로 번지지 않도록 보강
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)
