@@ -209,7 +209,74 @@ async function buildCancelCounterDriftHealth() {
   }
 }
 
-function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth) {
+async function buildDuplicateSlotHealth() {
+  try {
+    const rows = await pgPool.query('reservation', `
+      SELECT
+        phone,
+        date,
+        start_time,
+        room,
+        COUNT(*) AS row_count,
+        COUNT(*) FILTER (WHERE COALESCE(status, '') <> 'cancelled') AS non_cancelled_count,
+        ARRAY_AGG(id ORDER BY updated_at DESC NULLS LAST) AS ids,
+        ARRAY_AGG(COALESCE(status, '') ORDER BY updated_at DESC NULLS LAST) AS statuses
+      FROM reservations
+      WHERE seen_only = 0
+        AND phone IS NOT NULL
+        AND date IS NOT NULL
+        AND start_time IS NOT NULL
+        AND room IS NOT NULL
+      GROUP BY phone, date, start_time, room
+      HAVING COUNT(*) > 1
+      ORDER BY date DESC, start_time DESC
+      LIMIT 50
+    `);
+
+    const risky = rows.filter((row) => Number(row.non_cancelled_count || 0) > 1);
+    const historical = rows.filter((row) => Number(row.non_cancelled_count || 0) <= 1);
+
+    if (risky.length === 0) {
+      const ok = ['  duplicate slot audit: 위험 group 없음'];
+      if (historical.length > 0) {
+        ok.push(`  참고: 과거 재예약/취소 이력으로 보이는 historical duplicate ${historical.length}건`);
+      }
+      return {
+        ok,
+        warn: [],
+        riskyCount: 0,
+        historicalCount: historical.length,
+        samples: [],
+      };
+    }
+
+    const samples = risky.slice(0, 3).map((row) => {
+      const statuses = Array.isArray(row.statuses) ? row.statuses.join(', ') : String(row.statuses || '');
+      return `  ${row.date} ${row.start_time} ${row.room} ${row.phone} — rows=${row.row_count}, active=${row.non_cancelled_count}, statuses=[${statuses}]`;
+    });
+
+    return {
+      ok: [],
+      warn: [
+        `  duplicate slot audit: 위험 group ${risky.length}건`,
+        `  historical duplicate: ${historical.length}건`,
+      ],
+      riskyCount: risky.length,
+      historicalCount: historical.length,
+      samples,
+    };
+  } catch (error) {
+    return {
+      ok: [],
+      warn: [`  duplicate slot audit: 확인 실패 (${error.message})`],
+      riskyCount: 0,
+      historicalCount: 0,
+      samples: [],
+    };
+  }
+}
+
+function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -244,6 +311,11 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
           ? `취소 카운터 드리프트 미해결 경고 ${cancelCounterDriftHealth.unresolvedCount}건이 있어 취소 누락을 점검해야 합니다.`
           : `최근 24시간 취소 카운터 드리프트 경고 ${cancelCounterDriftHealth.totalCount}건이 있어 로그/취소 탭 추적이 필요합니다.`,
       },
+      {
+        active: duplicateSlotHealth.riskyCount > 0,
+        level: 'medium',
+        reason: `같은 슬롯의 non-cancelled duplicate group ${duplicateSlotHealth.riskyCount}건이 있어 중복 예약 상태를 점검해야 합니다.`,
+      },
     ],
     okReason: '스카 서비스와 naver-monitor 로그 활동성이 현재는 안정 구간입니다.',
   });
@@ -261,6 +333,10 @@ function formatText(report) {
       buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
       buildHealthSampleSection('■ 취소 카운터 드리프트 샘플', {
         ok: report.cancelCounterDriftHealth.samples || [],
+      }, 3),
+      buildHealthCountSection('■ duplicate slot audit', report.duplicateSlotHealth, { okLimit: 2, warnLimit: 4 }),
+      buildHealthSampleSection('■ duplicate slot 샘플', {
+        ok: report.duplicateSlotHealth.samples || [],
       }, 3),
       buildHealthCountSection('■ daily_summary 무결성', report.dailySummaryIntegrityHealth, { okLimit: 2, warnLimit: 6 }),
       {
@@ -297,8 +373,9 @@ async function buildReport() {
   const monitorHealth = buildMonitorHealth();
   const n8nCommandHealth = await buildN8nCommandHealth();
   const cancelCounterDriftHealth = await buildCancelCounterDriftHealth();
+  const duplicateSlotHealth = await buildDuplicateSlotHealth();
   const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
-  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth);
+  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth);
 
   const report = {
     coreServiceHealth: {
@@ -341,6 +418,15 @@ async function buildReport() {
       totalCount: cancelCounterDriftHealth.totalCount,
       unresolvedCount: cancelCounterDriftHealth.unresolvedCount,
       latestTimestamp: cancelCounterDriftHealth.latestTimestamp,
+    },
+    duplicateSlotHealth: {
+      okCount: duplicateSlotHealth.ok.length,
+      warnCount: duplicateSlotHealth.warn.length,
+      ok: duplicateSlotHealth.ok,
+      warn: duplicateSlotHealth.warn,
+      samples: duplicateSlotHealth.samples || [],
+      riskyCount: duplicateSlotHealth.riskyCount,
+      historicalCount: duplicateSlotHealth.historicalCount,
     },
     dailySummaryIntegrityHealth: {
       okCount: dailySummaryIntegrityHealth.ok.length,
