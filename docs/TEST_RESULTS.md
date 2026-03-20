@@ -446,6 +446,8 @@
 | `node -e "... room_amounts_json 기준 suspicious 재검사 ..."` | ✅ `suspiciousCount: 0` |
 | `node --check bots/reservation/lib/db.js` | ✅ 통과 |
 | `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js` | ✅ 통과 |
+| `node --check bots/reservation/scripts/health-report.js` | ✅ 통과 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `dailySummaryIntegrityHealth.issueCount=0`, `daily_summary 무결성: 스터디룸/일반/합계 구조 정상` 확인 |
 | `npm --prefix bots/worker/web run build` | ✅ 통과 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ 실행 |
 | `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 실행 |
