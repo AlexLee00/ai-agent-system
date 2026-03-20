@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~6 핵심 모듈 구현 완료 / EDL JSON + FFmpeg 전환 반영 / 장시간 전체 분석 검증 대기
+> 상태: 과제 1~6 핵심 모듈 구현 완료 / 과제 7 run-pipeline 1차 통합 완료 / 장시간 preview 렌더 최적화 대기
 
 ---
 
@@ -176,6 +176,13 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `drawtext`, `subtitles` 필터 미지원
     - 현재 코드는 해당 필터가 없으면 overlay / burn-in을 자동 생략하는 fallback 포함
     - 따라서 이 머신에서 자막 번인 최종 검증은 추가 FFmpeg 빌드 또는 다른 실행 환경이 필요
+  - 과제 7 1차 통합 runner 구현 완료
+    - `scripts/run-pipeline.js`
+    - `src/index.js`는 `loadConfig()` export로 리팩터링
+    - `--source=N`, `--source-video`, `--source-audio`, `--skip-render`, `--with-capcut` 지원
+    - `video_edits` INSERT/단계별 status UPDATE/trace_id 기록/텔레그램 알림 연결 완료
+    - 실자산 `--source=1 --skip-render` 검증에서 전처리 → STT → 자막교정 → 영상분석 → EDL 생성까지 완료 확인
+    - preview 렌더도 실제로 진행되지만, 현재 transition 수가 많은 실자산에서는 wall-clock이 길어 추가 최적화가 필요
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -184,7 +191,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCut 드래프트
   ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링 (핵심 모듈 구현)
-  ☐ 과제 7: 엔드투엔드 통합
+  ☐ 과제 7: 엔드투엔드 통합 (run-pipeline 1차 구현 완료, preview wall-clock 최적화 대기)
 
 Week 2: 워커웹 + n8n + 품질 루프
   ☐ 과제 8: 워커 웹 대화형 영상 편집 페이지

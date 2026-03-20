@@ -3430,3 +3430,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/video/scripts/test-video-analyzer.js`, `bots/video/scripts/test-edl-builder.js`를 추가해 실제 temp 자산 기준 분석/EDL/렌더 테스트 진입점을 마련
 - 120초 smoke clip 기준으로 `analyzeVideo()`, EDL 생성, 720p preview 렌더, 1440p final 렌더 검증을 완료했고 최종 결과가 `2560x1440 / 60fps / H.264 High / 48kHz stereo / faststart`임을 확인
 - 현재 로컬 FFmpeg에 `drawtext`, `subtitles` 필터가 없음을 확인해 overlay / burn-in은 capability fallback으로 자동 생략되도록 보강
+
+### 비디오팀 과제 7 — run-pipeline 1차 통합
+- `bots/video/scripts/run-pipeline.js`를 추가해 source 선택, `video_edits` INSERT, 단계별 status UPDATE, trace/텔레그램 연결, preview/final render orchestration을 한 CLI로 묶음
+- `bots/video/src/index.js`는 `loadConfig()` export 구조로 리팩터링해 pipeline runner가 config 로드를 재사용하도록 정리
+- 실자산 `--source=1 --skip-render` 검증에서 전처리 → Whisper → 자막교정 → 영상분석 → EDL 생성까지 성공했고 session temp 산출물도 생성 확인
+- 실자산 preview 렌더는 실제로 전진하지만 wall-clock이 길어, EDL scene transition merge 보정을 추가하고 과제 7 잔여 범위를 `preview 최적화 + end-to-end 마감`으로 정리

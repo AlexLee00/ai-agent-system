@@ -516,6 +516,7 @@ function buildPreviewCommand(edl, outputPath, config) {
   const args = [
     'ffmpeg',
     '-y',
+    '-nostdin',
     '-i', edl.source,
     '-filter_complex_script', filterScriptPath,
     '-map', '[vfinal]',
@@ -542,6 +543,7 @@ function buildFinalRenderCommand(edl, outputPath, config) {
   const args = [
     'ffmpeg',
     '-y',
+    '-nostdin',
     '-i', edl.source,
     '-filter_complex_script', filterScriptPath,
     '-map', '[vfinal]',
@@ -583,7 +585,7 @@ async function executeRender(commandArgs, action, metadata = {}) {
 
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
 
