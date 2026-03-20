@@ -253,6 +253,49 @@ async function loadSignalBlockHealth() {
   };
 }
 
+async function loadRecentSignalBlockHealth(windowMinutes = 60) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COALESCE(block_reason, '') AS block_reason,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE created_at > now() - INTERVAL '1 minute' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+      GROUP BY 1, 2
+      ORDER BY cnt DESC, block_code ASC
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  const grouped = new Map();
+  for (const row of rows) {
+    const code = String(row.block_code || 'legacy_unclassified');
+    grouped.set(code, (grouped.get(code) || 0) + Number(row.cnt || 0));
+  }
+
+  const reasonGroups = new Map();
+  for (const row of rows) {
+    const group = classifyGuardReason(row);
+    reasonGroups.set(group, (reasonGroups.get(group) || 0) + Number(row.cnt || 0));
+  }
+
+  return {
+    windowMinutes,
+    total: [...grouped.values()].reduce((sum, count) => sum + Number(count || 0), 0),
+    top: [...grouped.entries()]
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code, 'ko'))
+      .slice(0, 5),
+    topReasonGroups: [...reasonGroups.entries()]
+      .map(([group, count]) => ({ group, count }))
+      .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko'))
+      .slice(0, 5),
+  };
+}
+
 async function loadTradeLaneHealth() {
   const policy = loadCapitalPolicySnapshot();
   const rows = await pgPool.query(
@@ -305,9 +348,10 @@ async function loadTradeLaneHealth() {
   };
 }
 
-function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, tradeLaneHealth) {
+function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, recentSignalBlockHealth, tradeLaneHealth) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
+  const recentTopReasonGroup = recentSignalBlockHealth.topReasonGroups?.[0] || null;
   const saturatedLane = tradeLaneHealth.lanes.find((lane) => lane.atLimit);
   const nearLimitLane = tradeLaneHealth.lanes.find((lane) => lane.nearLimit);
   return buildHealthDecision({
@@ -331,6 +375,11 @@ function buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth,
         active: signalBlockHealth.total >= 5,
         level: topReasonGroup?.group === 'daily_trade_limit' ? 'medium' : 'low',
         reason: `오늘 차단/거부 신호 ${signalBlockHealth.total}건 — 최다 코드 ${topBlock?.code || 'n/a'} ${topBlock?.count || 0}건 / 최다 세부 그룹 ${topReasonGroup?.group || 'n/a'} ${topReasonGroup?.count || 0}건`,
+      },
+      {
+        active: recentSignalBlockHealth.total >= 1,
+        level: recentTopReasonGroup?.group === 'daily_trade_limit' ? 'medium' : 'low',
+        reason: `최근 ${recentSignalBlockHealth.windowMinutes}분 차단/거부 ${recentSignalBlockHealth.total}건 — 최다 세부 그룹 ${recentTopReasonGroup?.group || 'n/a'} ${recentTopReasonGroup?.count || 0}건`,
       },
       {
         active: Boolean(saturatedLane || nearLimitLane),
@@ -369,6 +418,15 @@ function formatText(report) {
       lines: report.signalBlockHealth.topReasonGroups?.length > 0
         ? report.signalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`)
         : ['  세부 차단 그룹 없음'],
+    },
+    {
+      title: `■ 최근 ${report.recentSignalBlockHealth.windowMinutes}분 차단 세부`,
+      lines: report.recentSignalBlockHealth.total > 0
+        ? [
+            `  총 ${report.recentSignalBlockHealth.total}건`,
+            ...report.recentSignalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`),
+          ]
+        : ['  최근 차단/거부 신호 없음'],
     },
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
@@ -410,8 +468,9 @@ async function buildReport() {
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth();
   const signalBlockHealth = await loadSignalBlockHealth();
+  const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const tradeLaneHealth = await loadTradeLaneHealth();
-  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, tradeLaneHealth);
+  const decision = buildDecision(serviceRows, tradeReview, guardHealth, signalBlockHealth, recentSignalBlockHealth, tradeLaneHealth);
 
   const report = {
     serviceHealth: {
@@ -423,6 +482,7 @@ async function buildReport() {
     tradeReview,
     guardHealth,
     signalBlockHealth,
+    recentSignalBlockHealth,
     tradeLaneHealth,
     decision,
   };
