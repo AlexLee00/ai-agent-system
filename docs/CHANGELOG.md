@@ -3,6 +3,35 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 세션 원장 + 대화형 UI
+
+### 신규 기능 (feat)
+- `bots/video/migrations/002-video-sessions.sql`
+  - `video_sessions`, `video_upload_files` 테이블 추가
+  - `video_edits`에 `session_id`, `pair_index`, `confirm_status`, `reject_reason` 컬럼 확장
+- `bots/worker/web/routes/video-api.js`
+  - `/api/video/sessions`, `/api/video/edits` 계열 API 추가
+  - 업로드, 정렬, 노트 저장, 시작, 상태 조회, preview/subtitle/download, ZIP 다운로드 지원
+- `bots/video/scripts/render-from-edl.js`
+  - confirm 이후 EDL 기준 final render 전용 백그라운드 스크립트 추가
+- `bots/worker/web/app/video/page.js`
+  - 대화형 영상 편집 메인 UI 추가
+  - 업로드, 상태 추적, preview 확인, confirm/reject, 다운로드 흐름 구현
+- `bots/worker/web/app/video/history/page.js`
+  - 과거 편집 세션 이력 화면 추가
+
+### 변경 사항 (changed)
+- `bots/video/scripts/run-pipeline.js`
+  - `--session-id`, `--pair-index` 지원 추가
+  - worker 세션과 `video_edits` 원장을 직접 연결
+- `bots/worker/web/server.js`
+  - `/api/video` 라우터 연결
+  - UI prefix에 `/video` 추가
+- `bots/worker/web/components/Sidebar.js`, `bots/worker/web/components/BottomNav.js`
+  - `영상 편집` 메뉴 추가
+- `bots/worker/web/lib/menu-access.js`
+  - `video` 메뉴를 현재 `projects` 정책에 매핑하는 MVP 권한 해석 추가
+
 ## 12주차 후속 (2026-03-20) — 스카 세션 만료 알림 문구 고도화
 
 ### 변경 사항 (changed)

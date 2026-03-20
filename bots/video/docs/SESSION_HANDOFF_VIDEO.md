@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~6 핵심 모듈 구현 완료 + 과제 7 run-pipeline 1차 통합 완료 + preview 최적화 후 이어서
+> 상태: 과제 1~7 핵심 구현 완료 + worker-web 영상 편집 API/UI 연결 완료 + 운영 안정화 단계
 
 ---
 
@@ -74,14 +74,31 @@ Step 3 — 과제 6~13 재정의:
   - preview 렌더는 실제로 진행되지만, 현재 실자산에서는 wall-clock이 길어 추가 최적화가 필요
   - single-flight lock 추가로 동시 실행은 즉시 거절되며, 검증 후 lock 해제와 child process 정리까지 확인
 
+### 6. 워커 웹 영상 편집 API + 프론트엔드 ✅
+- `bots/video/migrations/002-video-sessions.sql`
+  - `video_sessions`, `video_upload_files` 추가
+  - `video_edits.session_id`, `pair_index`, `confirm_status`, `reject_reason` 확장
+- `bots/worker/web/routes/video-api.js`
+  - 세션 생성/업로드/정렬/노트/시작/상태/confirm/reject/preview/subtitle/download/ZIP API 구현
+- `bots/video/scripts/run-pipeline.js`
+  - `--session-id`, `--pair-index` 지원으로 worker 세션과 `video_edits` 원장을 연결
+- `bots/video/scripts/render-from-edl.js`
+  - preview 확인 후 confirm 단계에서 final render만 별도로 수행하는 스크립트 추가
+- `bots/worker/web/app/video/page.js`, `app/video/history/page.js`
+  - 대화형 편집 UI와 과거 세션 이력 화면 추가
+- 중요한 운영 경계:
+  - worker-web 인증은 localStorage JWT 헤더 기반이라 `<video>`와 `<track>`에 직접 Authorization을 실을 수 없음
+  - 그래서 preview/subtitle/download는 `fetch + Authorization + blob URL`로 우회 구현
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 마감
-- 전처리 → Whisper → 자막교정 → 영상분석 → EDL → preview/final 연결 runner는 구현됨
-- 남은 건 실자산 preview wall-clock 최적화와 최종 render 운영 시간 측정
+### 즉시: 과제 7 운영 안정화
+- worker-web 세션 루프는 연결 완료
+- 남은 건 실자산 preview wall-clock 최적화와 final render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
+- 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
 
 ### 이후: 과제 7 → 8 → 9 → 10~12 → 13 순차 진행
 

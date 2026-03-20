@@ -4,6 +4,39 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
+
+핵심 구현:
+- `bots/video/migrations/002-video-sessions.sql`
+  - `video_sessions`, `video_upload_files` 테이블 추가
+  - `video_edits.session_id`, `pair_index`, `confirm_status`, `reject_reason` 확장
+- `bots/worker/web/routes/video-api.js`
+  - `/api/video/*` 라우터 분리
+  - 세션 생성/조회, 다중 파일 업로드, 순서 변경, 편집 노트 저장, 세션 시작, 상태 조회, preview/subtitle/download, ZIP 다운로드 구현
+  - `company_id` 기준 세션/편집 접근을 강제하고, mutating API는 `auditLog`를 붙였다
+- `bots/video/scripts/run-pipeline.js`
+  - `--session-id`, `--pair-index` 지원을 추가해 worker 세션과 `video_edits` 원장을 직접 연결
+- `bots/video/scripts/render-from-edl.js`
+  - preview 후 confirm 단계에서 EDL 기준 final render만 별도로 수행하는 백그라운드 렌더 스크립트 추가
+  - all-confirm 이후 세션 상태를 `rendering -> done`으로 닫는 구조 보강
+- `bots/worker/web/app/video/page.js`, `bots/worker/web/app/video/history/page.js`
+  - 워커 웹에 대화형 영상 편집 UI와 과거 편집 이력 화면 추가
+  - JWT 헤더가 필요한 protected preview/subtitle/download는 `fetch + Authorization + blob URL` 패턴으로 구현해 `<video>`/다운로드 인증 경계를 복구
+- `bots/worker/web/components/Sidebar.js`, `BottomNav.js`, `bots/worker/web/lib/menu-access.js`
+  - `영상 편집` 메뉴 추가
+  - 현재 MVP에서는 `video` 메뉴를 `projects` 권한 정책에 매핑해 기존 권한 체계를 최대한 재사용
+- `bots/worker/web/server.js`
+  - `/api/video` 라우터 연결
+  - UI 리다이렉트 prefix에 `/video` 추가
+
+세션 맥락:
+- 비디오팀은 이미 `EDL JSON + FFmpeg` 구조로 메인 아키텍처가 전환된 상태였고, 다음 자연스러운 단계는 이를 워커 웹 UX와 운영 세션 원장으로 연결하는 것이었다.
+- 단순 업로드 폼이 아니라, 내부 MVP 기준으로 세션/파일/세트 상태 추적, preview 확인, confirm/reject, final render, 다운로드까지 이어지는 운영 사이클을 한 번에 닫는 것이 목표였다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 `video_sessions -> video_upload_files -> video_edits` 3계층 원장을 만들고, 워커 웹에서 세션 단위로 실제 편집 상태를 조회/컨펌할 수 있게 하는 것이다.
+- 또한 JWT를 localStorage에 두는 현재 worker-web 구조에서는 미디어 태그가 Authorization 헤더를 못 보내므로, preview/subtitle/download를 blob URL로 우회하는 방식이 운영적으로 가장 안전했다.
+
 ### 12주차 후속 (2026-03-20) — 스카 세션 만료 알림 문구 개선 + headed 운영 가이드 보강
 
 핵심 구현:

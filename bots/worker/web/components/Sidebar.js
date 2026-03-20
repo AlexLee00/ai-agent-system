@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Clock, DollarSign,
   BookOpen, CheckSquare, Settings,
   Building2, UserCog, FolderKanban, Calendar, Bot, BrainCircuit,
-  Activity,
+  Activity, Video,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/work-journals', icon: BookOpen,     label: '업무 관리' },
   { href: '/sales',      icon: DollarSign,      label: '매출 관리' },
   { href: '/projects',   icon: FolderKanban,    label: '프로젝트 관리' },
+  { href: '/video',      icon: Video,           label: '영상 편집' },
   { href: '/settings',   icon: Settings,        label: '설정' },
 ];
 

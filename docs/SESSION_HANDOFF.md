@@ -20,6 +20,10 @@
   - 같은 화면에서 Jay / Worker / Claude / Blog selector는 `primary / fallback` 역할 선택 후 `provider -> model` 2단계로 변경할 수 있다.
   - `/admin/monitoring/blog-links`가 추가돼 실제 네이버 블로그 URL 기록과 발행 후처리를 마스터 화면에서 처리할 수 있다.
   - `ai.worker.lead`, `ai.worker.task-runner`는 이번 세션에서 launchd 재등록으로 복구됐고, health-report 기준 정상이다.
+  - `/video`, `/video/history`가 추가돼 영상 편집 세션 생성, 업로드, 프리뷰 확인, confirm/reject, 다운로드까지 worker-web에서 처리할 수 있다.
+  - `/api/video` 라우터는 `video_sessions -> video_upload_files -> video_edits` 원장 구조를 사용하며, 현재는 `projects` 권한 정책에 임시 매핑돼 있다.
+  - protected preview/subtitle/download는 JWT 헤더를 직접 실을 수 없는 HTML media 태그 제약 때문에 `fetch + Authorization + blob URL` 방식으로 프론트에서 처리한다.
+  - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -126,6 +130,7 @@
 
 - `문서 파싱 → 문서 재사용 → 실제 업무 생성 결과 추적 → 품질/효율 분석 → 개선 후보 리뷰` 단계까지 확장
 - `LLM API 현황`과 `블로그 URL 입력`이 마스터 운영 콘솔에 올라왔고, 다음은 `OpenClaw` 조회 전용 그룹을 추가해 전사 LLM 현황 범위를 넓히는 단계
+- 영상 편집은 이제 worker-web 세션/프리뷰 UI까지 연결됐고, 다음은 실제 운영 기준 `preview_ready -> confirming -> rendering -> done` 루프를 더 안정화하는 단계
 
 ### 스카 관점
 
