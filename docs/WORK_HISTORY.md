@@ -173,6 +173,7 @@
 
 검증:
 - `node --check bots/investment/shared/report.js`
+- `node --input-type=module -e "import { readFileSync } from 'fs'; ..."` 로 divider 길이 `10` 확인
 
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
