@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~6 핵심 모듈 구현 완료 + EDL JSON 아키텍처 반영 + 과제 7부터 이어서
+> 상태: 과제 1~6 핵심 모듈 구현 완료 + 과제 7 run-pipeline 1차 통합 완료 + preview 최적화 후 이어서
 
 ---
 
@@ -53,13 +53,33 @@ Step 3 — 과제 6~13 재정의:
   ✅ 과제 11: Refiner → SRT 수정 + ★EDL JSON 생성/수정
   ✅ 과제 12: Evaluator → EDL 기반 프리뷰 재생성 + 영상제작팀 피드백 루프
 
+### 5. 과제 7: run-pipeline 1차 통합 ✅
+- `bots/video/scripts/run-pipeline.js` 추가
+- `bots/video/src/index.js`를 `loadConfig()` export 구조로 리팩터링
+- 통합 흐름:
+  - source 선택
+  - `video_edits` INSERT
+  - 전처리
+  - Whisper STT
+  - 자막 교정
+  - 영상 분석
+  - EDL 생성
+  - preview 렌더
+  - 선택적 CapCut
+  - final render
+- `--source=1 --skip-render` 실검증 결과
+  - 전처리 / STT / 자막 교정 / 영상 분석 / EDL 생성 성공
+  - `analysis.json`, `edit_decision_list.json`, session temp 산출물 생성 확인
+  - scene 중복 감지를 줄이기 위해 EDL builder에 인접 transition merge 보정 추가
+  - preview 렌더는 실제로 진행되지만, 현재 실자산에서는 wall-clock이 길어 추가 최적화가 필요
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 엔드투엔드 통합
-- 전처리 → Whisper → 자막교정 → 영상분석 → EDL → preview/final 연결
-- 장시간 전체 자산(`synced.mp4`, 73분) 기준 analysis / render 운영 시간 측정
+### 즉시: 과제 7 마감
+- 전처리 → Whisper → 자막교정 → 영상분석 → EDL → preview/final 연결 runner는 구현됨
+- 남은 건 실자산 preview wall-clock 최적화와 최종 render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 
 ### 이후: 과제 7 → 8 → 9 → 10~12 → 13 순차 진행
@@ -94,6 +114,7 @@ ai-agent-system/bots/video/
 │   └─ test-capcut-draft.js        ✅
 │   ├─ test-video-analyzer.js      ✅
 │   └─ test-edl-builder.js         ✅
+│   └─ run-pipeline.js             ✅ 과제 7 1차 통합
 ├─ src/index.js                    ✅
 ├─ samples/ (5세트 + ANALYSIS.md)  ✅
 └─ temp/ (synced.mp4, SRT 등)      ✅
@@ -109,7 +130,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCutAPI 드래프트 (선택적 보조)
   ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
-  ☐ 과제 7: 엔드투엔드 파이프라인 통합
+  ☐ 과제 7: 엔드투엔드 파이프라인 통합 (runner 구현 완료, preview 최적화 남음)
 
 Week 2: 워커웹 + n8n + 품질 루프
   ☐ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
@@ -136,5 +157,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 [확정] Gemini 2.5-flash (2.0 퇴역)
 [확정] Phase 2 연구: CapCutAPI 저장 실패 원인, Remotion SaaS 전환
 [확정] 과제 6 smoke 검증: 120초 샘플에서 preview/final 렌더 성공
+[확정] 과제 7 1차 통합: `run-pipeline.js`가 source 선택부터 DB status/trace/preview까지 연결
+[주의] 실자산 preview 렌더는 EDL transition 수에 따라 wall-clock이 길 수 있어 추가 최적화가 필요
 [주의] 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay/burn-in은 capability fallback으로 자동 생략됨
 ```

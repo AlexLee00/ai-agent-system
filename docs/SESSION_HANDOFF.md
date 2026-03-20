@@ -279,7 +279,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 1~6 핵심 모듈 구현 완료, EDL JSON + FFmpeg 전환 반영, 과제 7 통합 대기
+상태: 과제 1~6 핵심 모듈 구현 완료, 과제 7 run-pipeline 1차 통합 완료, preview 최적화 대기
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -300,6 +300,7 @@
   - lib/capcut-draft-builder.js, scripts/test-capcut-draft.js 생성 완료
   - lib/video-analyzer.js, scripts/test-video-analyzer.js 생성 완료
   - lib/edl-builder.js, scripts/test-edl-builder.js 생성 완료
+  - scripts/run-pipeline.js 추가, src/index.js는 loadConfig export 구조로 리팩터링 완료
   - temp/, exports/ 디렉토리 생성 완료
   - public.video_edits 테이블 생성 및 조회 검증 완료
   - 샘플 1세트 기준 FFmpeg 전처리 테스트(removeAudio / normalizeAudio / syncVideoAudio / preprocess) 통과
@@ -325,15 +326,18 @@
   - 메인 파이프라인은 CapCut 의존 대신 EDL JSON + FFmpeg로 재정의 중
   - 120초 smoke clip 기준 `analyzeVideo()`, EDL 생성, 720p preview, 1440p final render 검증 완료
   - smoke final 결과 `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart` 확인
+  - `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` 실검증에서 전처리 → STT → 자막교정 → 영상분석 → EDL 생성까지 완료 확인
+  - scene 중복 감지를 줄이기 위해 EDL builder에 인접 transition merge 보정을 추가
+  - 실자산 preview 렌더도 진행되지만 wall-clock이 길어 과제 7은 preview 최적화와 최종 end-to-end 검증이 다음 경계
   - 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay / burn-in은 자동 생략 fallback으로 동작
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. 과제 7 엔드투엔드 통합 파이프라인 구성
-     - 전처리 → STT → 교정 → 분석 → EDL → preview/final 연결
-     - 장시간 전체 자산 기준 render/analysis 운영 시간 측정
+  1. 과제 7 엔드투엔드 통합 마감
+     - 전처리 → STT → 교정 → 분석 → EDL → preview/final runner는 구현됨
+     - 남은 것은 실자산 preview wall-clock 최적화와 장시간 전체 자산 기준 render/analysis 운영 시간 측정
   2. 자막 번인용 FFmpeg capability 확보 또는 대체 실행 환경 정리
   3. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
 

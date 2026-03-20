@@ -694,3 +694,14 @@
 | smoke clip `renderPreview()` | ✅ `1280x720`, `60fps`, `AAC 128k`, `faststart` 확인 |
 | smoke clip `renderFinal()` | ✅ `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart` 확인 |
 | `ffmpeg -hide_banner -filters | rg "drawtext|subtitles"` | ✅ 현재 로컬 FFmpeg에서 두 필터 미지원 확인, overlay / burn-in fallback 동작 확인 |
+
+### 비디오팀 과제 7 — run-pipeline 1차 통합
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/src/index.js` | ✅ `loadConfig()` export 리팩터링 문법 통과 |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ 문법 통과 |
+| `node -e "... parseArgs/resolveSources ..."` | ✅ `--source=1`이 `원본_파라미터.mp4` + `원본_나레이션_파라미터.m4a`로 매핑됨 확인 |
+| `node -e "... pgPool.query('public', 'SELECT 1') ..."` | ✅ 로컬 DB 연결 확인 |
+| `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` | ⚠️ 실자산 기준 전처리 / STT / 자막교정 / 영상분석 / EDL 생성까지 통과, preview 렌더는 실제로 진행되지만 wall-clock이 길어 최종 종료까지는 추가 최적화 필요 |
+| `analysis.json`, `edit_decision_list.json`, session temp 산출물 확인 | ✅ 실검증 session dir에 생성 확인 |
