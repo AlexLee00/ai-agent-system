@@ -268,7 +268,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 4 LLM 자막 교정 완료, CapCut 드래프트(과제 5) 착수 가능
+상태: 과제 5 CapCut 드래프트 완료, CapCut Desktop 목록 표시 확인, 과제 6 착수 가능
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -286,6 +286,7 @@
   - lib/ffmpeg-preprocess.js, scripts/test-preprocess.js 생성 완료
   - lib/whisper-client.js, scripts/test-whisper.js 생성 완료
   - lib/subtitle-corrector.js, scripts/test-subtitle-corrector.js 생성 완료
+  - lib/capcut-draft-builder.js, scripts/test-capcut-draft.js 생성 완료
   - temp/, exports/ 디렉토리 생성 완료
   - public.video_edits 테이블 생성 및 조회 검증 완료
   - 샘플 1세트 기준 FFmpeg 전처리 테스트(removeAudio / normalizeAudio / syncVideoAudio / preprocess) 통과
@@ -301,16 +302,22 @@
   - `llm_usage_log`에 `gpt-4o-mini`, `subtitle_correction`, 비용 로그 확인
   - subtitle_correction fallback 모델을 `gemini-2.5-flash`로 갱신
   - `quality_loop`를 `critic/refiner/evaluator` 역할별 모델 구조로 확장
+  - CapCut 드래프트 빌더 구현 완료
+  - `healthCheck / createDraft / addVideo / addAudio / addSubtitle / saveDraft / findDraftFolder / copyToCapCut / buildDraft` 통합 구현 확인
+  - CapCutAPI upstream `add_subtitle`의 `font_type` 오류를 피하기 위해 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height` 전달 보강
+  - `node bots/video/scripts/test-capcut-draft.js` 통과
+  - repo 내부 `dfd_cat_*` draft 생성 + CapCut Desktop 프로젝트 폴더 복사 확인
+  - CapCut Desktop 프로젝트 목록에 새 draft 카드 표시 확인
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code/Codex 과제 5 범위의 CapCut 드래프트 모듈 구현
-     - lib/capcut-draft-builder.js
-     - CapCutAPI health check / draft create / copy-to-CapCut 경로 검증
-  2. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
-  3. 더백클래스 LMS 구조 학습은 Phase 2 이후 확장 과제로 분리
+  1. Claude Code/Codex 과제 6 범위의 draft 파서 + FFmpeg 렌더링 구현
+     - draft_info.json 파싱
+     - FFmpeg 1440p/60fps 렌더링
+  2. 과제 7 엔드투엔드 통합 파이프라인 구성
+  3. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
 
 설계상 핵심 판단:
   - 지금 당장 필요한 구조는 Case 1 (원본 영상 편집 자동화)만 구현

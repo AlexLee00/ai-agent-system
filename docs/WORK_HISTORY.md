@@ -3417,3 +3417,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 체크 항목은 `CapCut.app` 실행 여부, `CapCutAPI` 9001 응답, `create_draft / save_draft`, 실제 draft 저장 위치를 포함
 - 검증 결과 현재 `save_draft`는 CapCut Desktop 프로젝트 경로가 아니라 `/Users/alexlee/projects/CapCutAPI/dfd_cat_*` 아래에 draft를 생성한다
 - 따라서 과제 5는 `save_draft` 후 repo 내부 draft를 `config.paths.capcut_drafts`로 복사하는 `copyToCapCut()` 단계를 전제로 구현해야 한다
+
+### 비디오팀 과제 5 — CapCutAPI 드래프트 생성
+- `bots/video/lib/capcut-draft-builder.js`를 추가해 `healthCheck`, `createDraft`, `addVideo`, `addAudio`, `addSubtitle`, `saveDraft`, `findDraftFolder`, `copyToCapCut`, `buildDraft` 흐름을 구현
+- `bots/video/scripts/test-capcut-draft.js`로 `temp/synced.mp4`, `narr_norm.m4a`, `subtitle_corrected.srt`를 실제 입력으로 사용하는 통합 테스트를 추가
+- CapCutAPI upstream `add_subtitle`가 `font` 미지정 시 `font_type` 오류로 깨지는 문제를 확인했고, video builder에서 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height`를 명시 전달해 우회
+- 실제 검증에서 repo 내부 `dfd_cat_*` 생성, CapCut Desktop 프로젝트 디렉토리 복사, 프로젝트 목록 카드 표시까지 확인
