@@ -121,6 +121,15 @@
 
 ## 2026-03-21
 
+### 비디오팀 과제 12 — Evaluator + quality loop
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/evaluator-agent.js` | ✅ |
+| `node --check bots/video/lib/quality-loop.js` | ✅ |
+| `node --check bots/video/scripts/test-quality-loop.js` | ✅ |
+| `node bots/video/scripts/test-quality-loop.js` | ✅ 실제 quality loop 실행, `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `loop_result.json` 생성 |
+
 ### 비디오팀 과제 11 — Refiner Agent
 
 | 테스트 | 결과 |

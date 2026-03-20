@@ -18,6 +18,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/video/lib/refiner-agent.js`
   - `runRefiner()`에 단계별 fallback을 추가해 자막/EDL/오디오 중 한 단계 실패가 전체 Refiner 실패로 번지지 않도록 보강
 
+## 12주차 후속 (2026-03-21) — 비디오팀 과제 12 Evaluator + quality loop
+
+### 신규 기능 (feat)
+- `bots/video/lib/evaluator-agent.js`
+  - Refiner 수정본을 기준으로 Critic을 재호출해 점수, 개선폭, 남은 이슈를 재평가하는 Evaluator 레이어 추가
+  - `compareReports()`와 `makeRecommendation()`으로 `PASS / RETRY / ACCEPT_BEST` 판정을 구조화
+- `bots/video/lib/quality-loop.js`
+  - `critic -> refiner -> evaluator` 반복과 최고 점수 버전 선택을 담당하는 품질 루프 오케스트레이터 추가
+  - 각 반복 산출물을 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`, `loop_result.json`으로 temp 원장에 저장
+- `bots/video/scripts/test-quality-loop.js`
+  - 실제 quality loop 실행과 진행 이벤트 출력, 최종 결과 저장을 검증하는 테스트 스크립트 추가
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)

@@ -55,6 +55,32 @@
 - 코드 점검 후 `runRefiner()`가 자막/EDL/오디오 단계 중 하나가 실패해도 전체 Refiner가 중단되지 않도록 단계별 fallback을 추가했다.
 - 이제 개별 단계 실패는 원본 경로 유지 + 빈 변경 집합으로 degrade 되며, 실패 사실은 `tool-logger`에 남긴다.
 
+### 12주차 후속 (2026-03-21) — 비디오팀 과제 12 Evaluator + quality loop 구현
+
+핵심 구현:
+- `bots/video/lib/evaluator-agent.js`
+  - Refiner 수정본을 기준으로 Critic을 재호출해 점수, 남은 이슈, 개선폭을 재평가하는 Evaluator 레이어 추가
+  - `compareReports()`와 `makeRecommendation()`으로 `PASS / RETRY / ACCEPT_BEST` 판정 근거를 구조화
+- `bots/video/lib/quality-loop.js`
+  - `critic -> refiner -> evaluator` 반복을 오케스트레이션하는 품질 루프 추가
+  - 각 반복의 산출물을 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`, `loop_result.json`으로 temp에 저장
+  - 최고 점수 버전 선택과 onProgress 콜백 이벤트 지원
+- `bots/video/scripts/test-quality-loop.js`
+  - 실제 quality loop 실행 테스트 추가
+  - 진행 이벤트 출력, `loop_result.json` 저장, 최고 버전 경로 검증 포함
+
+세션 맥락:
+- 과제 10, 11이 각각 진단과 수정 레이어를 닫았기 때문에, 이번 과제의 의미는 품질 루프를 실제로 “반복 가능한 운영 구조”로 묶는 것이었다.
+- Evaluator가 독립 LLM을 새로 쓰기보다 Critic을 재호출하도록 한 것은 채점 기준을 통일하고, 비용과 운영 복잡도를 낮추기 위한 선택이다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 수정 후 품질이 실제로 나아졌는지 같은 기준으로 다시 보고, 목표 점수 미달 시 재시도 또는 최고 버전 채택을 결정하는 것이다.
+- 또한 반복 산출물을 temp 원장으로 남겨야 이후 worker-web 피드백, 세트별 비교, SaaS 운영 로그까지 자연스럽게 확장된다.
+
+실측 결과:
+- 실제 테스트 결과 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`가 나왔다.
+- 이번 샘플에서는 Refiner가 추가 변경을 만들지 못했기 때문에 최고 버전은 원본 `subtitle_corrected.srt + edit_decision_list.json`으로 유지됐다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

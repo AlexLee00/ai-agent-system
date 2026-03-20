@@ -32,6 +32,10 @@
   - `bots/video/lib/refiner-agent.js`와 `bots/video/scripts/test-refiner-agent.js`가 추가돼 BLUE Team Refiner가 `critic_report.json`을 받아 `subtitle_corrected_v2.srt`와 버전형 결과물을 생성할 수 있다.
   - 현재 샘플 기준 실제 Refiner 결과는 `subtitle changes=12`, `edl changes=0`, `audio 변경 없음`, `cost_usd=0`이다.
   - 코드 점검 후 Refiner도 단계별 partial failure fallback이 들어가, 자막/EDL/오디오 중 하나가 실패해도 전체 BLUE Team 실행이 중단되지 않는다.
+  - `bots/video/lib/evaluator-agent.js`, `bots/video/lib/quality-loop.js`, `bots/video/scripts/test-quality-loop.js`가 추가돼 Evaluator와 품질 루프 오케스트레이션이 구현됐다.
+  - Evaluator는 Refiner 수정본을 기준으로 Critic을 재호출해 점수를 재평가하고, quality-loop는 `PASS / RETRY / ACCEPT_BEST` 종료 판정과 최고 점수 버전 선택을 담당한다.
+  - 현재 샘플 기준 실제 quality-loop 결과는 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`다.
+  - 이번 샘플에서는 Refiner가 추가 변경을 만들지 못해 최고 버전이 원본 subtitle/EDL로 유지됐고, 다음 자연스러운 단계는 과제 13 다세트 검증과 preview wall-clock 최적화다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -172,8 +176,8 @@
   - 투자 설정 제안 일일/주간
 6. 자동화 리포트 운영 데이터 관찰
 7. 비디오 품질 루프 확장
-  - 과제 10 Critic은 구현 완료
-  - 다음은 과제 11 Refiner(SRT 수정 + EDL 생성/수정) 연결
+  - 과제 10 Critic, 과제 11 Refiner, 과제 12 Evaluator/quality-loop는 구현 완료
+  - 다음은 과제 13 다세트 검증과 실자산 preview/final render wall-clock 최적화
   - 제이 Gateway `persisted` 상태
   - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴
