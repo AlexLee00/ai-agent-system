@@ -48,6 +48,7 @@
     - 최근 60분 `signal block pressure`
     - 최근 60분 `daily_trade_limit rail pressure`
     - rail별 신규 진입(BUY) 한도 사용량
+    - 당일 체결이 없어도 configured rail별 `0/limit` 상태를 계속 보여준다.
   - scheduled market worker(`crypto/domestic/overseas`)는 코드 파일 시각이 stderr보다 최신이면 과거 `last exit 1`을 stale failure로 간주해 health false warning을 줄이도록 보정됐다.
   - `daily_trade_limit`는 이제 SELL이 아니라 BUY 신규 진입만 집계한다.
   - 2026-03-20 운영 조정:
