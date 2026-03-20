@@ -1,90 +1,68 @@
 # 비디오팀 세션 인수인계
 
-> 세션 날짜: 2026-03-20 (3차 세션)
+> 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~5 완료, 아키텍처 변경 (CapCut→EDL JSON), 과제 6 재정의 후 진행
+> 상태: 과제 1~6 핵심 모듈 구현 완료 + EDL JSON 아키텍처 반영 + 과제 7부터 이어서
 
 ---
 
 ## 이번 세션에서 완료한 것
 
-### 1. 영상 샘플 폴더 생성 + 5세트 데이터 배치
-- samples/raw/ (원본 5세트), narration/ (나레이션 5세트), edited/ (편집본 5+18개)
-- .gitignore + README.md 생성
+### 1. 과제 5: CapCutAPI 드래프트 생성 ✅
+- CapCutAPI 설치 (/Users/alexlee/projects/CapCutAPI)
+- Flask 서버 localhost:9001 정상 동작
+- lib/capcut-draft-builder.js (12개 함수)
+- 테스트 전체 통과 (healthCheck → buildDraft 통합)
+- CapCut Desktop 프로젝트 목록에 드래프트 카드 표시 확인
 
-### 2. ffprobe 전체 분석 + YouTube 공식 권장 사양 리서치
-- 5세트 ffprobe 분석 (해상도, fps, 비트레이트, 오디오)
-- 5세트 LUFS 분석 (평균 -14.33, True Peak 클리핑 발견)
-- YouTube 공식 권장 사양 확인 → 기존 3Mbps가 권장 24Mbps의 12%
-- VP9 코덱 트리거 전략 확인 (1440p 업로드 → VP9 강제)
-- samples/ANALYSIS.md 작성 (190줄, 초기분석 + YouTube 최종 확정값)
+### 2. CapCut 문제 발견 + 아키텍처 변경 결정
+발견된 문제:
+- CapCutAPI가 생성한 draft_info.json: tracks=0, materials 전부 비어있음
+- CapCut 7.2.0 수동 편집 드래프트: draft_info.json 암호화 (JSON 파싱 불가)
+- 즉 "CapCut 편집 → draft 파싱 → FFmpeg 렌더링" 전략 폐기
 
-### 3. CLAUDE.md 생성 + 전체 문서 일관성 통일
-- bots/video/docs/CLAUDE.md 생성 (96줄, 규칙 + YouTube 확정값)
-- video-team-design.md config 업데이트 (24M, 48kHz, 384k, High Profile)
-- video-team-tasks.md 하드코딩 제거 (3000k → config 참조)
-- ANALYSIS.md 섹션 6-7 "초기 분석" 명시
-- audio_lra 11→20 수정, gemini-2.0→2.5 수정
+결정:
+- EDL JSON (편집 결정 목록) 기반 아키텍처로 전환
+- CapCutAPI는 선택적 보조 프리뷰로 유지 (--with-capcut)
+- RED/BLUE 팀이 영상 편집(컷/효과/전환)까지 관여
+- 프리뷰는 FFmpeg 720p 또는 워커 웹 HTML5 Video+VTT
 
-### 4. LLM 모델 비교 분석 + 저비용 전략 확정
-- 팀 제이 사용 가능 모델 10개 벤치마크 + 비용 종합 비교표 작성
-- 저비용 프로토타입 전략 확정:
-  자막교정: gpt-4o-mini ($0.15/$0.60) + fallback gemini-2.5-flash (무료)
-  Critic: gemini-2.5-flash (무료)
-  Refiner: groq/gpt-oss-20b (무료)
-  Evaluator: groq/llama-4-scout (무료)
-  월 20영상 예상: ~$1.12
-- quality_loop config 블록 확장 (critic/refiner/evaluator 개별 모델)
+### 3. CapCut 대안 조사
+- 8개 도구 비교: FFmpeg, Editly, Remotion, MoviePy, Shotstack 등
+- MVP: FFmpeg + EDL JSON (즉시 적용)
+- SaaS 확장: Remotion (Phase 2)
+- llm-video-editor 패턴 참고 (LLM → EDL JSON → FFmpeg)
 
-### 5. 과제 1~5 구현 완료 (Claude Code/Codex 실행)
+### 4. 문서 업데이트 (Step 1~3 완료)
 
+Step 1 — 문서 업데이트:
+  ✅ CLAUDE.md: EDL JSON 섹션 추가, 절대 규칙 11~13 추가, CapCutAPI→선택적 보조
+  ✅ VIDEO_HANDOFF.md: 아키텍처 요약 교체, UX Step 6 변경, 상태 라인 갱신
+  ✅ video-team-design.md: 모듈 테이블(video-analyzer, edl-builder), 섹션 3-2/3-3/3-4 교체
+  ✅ video-team-tasks.md: 과제 6 재정의, 과제 10~12 재정의
 
-#### 과제 1: 프로젝트 스캐폴딩 + DB ✅
-- config/video-config.yaml (YouTube 확정값 반영)
-- migrations/001-video-schema.sql (video_edits 테이블)
-- context/IDENTITY.md, src/index.js
-- .gitignore (mp4/m4a/dfd_), temp/, exports/
-- `node src/index.js` → config 로드 성공 + DB 연결 성공 + 렌더링 설정 24M 2560x1440
+Step 2 — 과제 1~5 수정사항 점검:
+  ✅ 과제 2~4: CapCut 참조 없음 — 수정 불필요
+  ✅ 과제 5: 코드 유지 (선택적 보조), 다른 모듈에서 직접 의존 없음
+  ✅ config: capcut_api 섹션 유지 (선택적)
 
-#### 과제 2: FFmpeg 전처리 ✅
-- lib/ffmpeg-preprocess.js (removeAudio, normalizeAudio, syncVideoAudio, preprocess)
-- 44100Hz mono → 48000Hz stereo 리샘플링 포함
-- 테스트: removeAudio 229ms, normalizeAudio 19.6s, syncVideoAudio 6.4s, preprocess 50.6s
-- LUFS: -14.9 (목표 -14 ± 2 범위 내)
-
-#### 과제 3: Whisper STT ✅
-- lib/whisper-client.js (transcribe, toSRT, generateSubtitle)
-- 테스트: 17.2s, 67 segments, temp/subtitle_raw.srt 6.9KB
-- SRT 한국어 정상: "지난 시간 우리는 동적 데이터..."
-- 비용: $0.026
-
-#### 과제 4: LLM 자막 교정 ✅
-- lib/subtitle-corrector.js (correctSubtitle, correctFile + 청크분할 + 폴백)
-- 테스트: 55.9s, 67/67 타임스탬프 보존, 비용 $0.002
-- 폴백 체인: gpt-4o-mini → gemini-2.5-flash → 원본 SRT 유지
-
-### 6. CapCut readiness 확인 ✅
-- `/Users/alexlee/projects/CapCutAPI` 설치 + venv + requirements 설치 완료
-- `capcut_server.py` 서버 9001 포트 실행 확인
-- `CapCut.app` 실행 상태에서 `create_draft / save_draft` 성공 응답 확인
-- 실제 draft 저장 위치는 `/Users/alexlee/projects/CapCutAPI/dfd_cat_*`
-- 과제 5에서는 `save_draft` 후 repo 내부 draft를 `config.paths.capcut_drafts`로 복사해야 함
+Step 3 — 과제 6~13 재정의:
+  ✅ 과제 6: "영상 분석 + EDL 생성 + FFmpeg 렌더링" (video-analyzer + edl-builder)
+  ✅ 과제 7: EDL 기반 파이프라인 통합 (--with-capcut 선택적)
+  ✅ 과제 10: Critic → 자막+오디오+★영상 구조 분석 → critic_report.json
+  ✅ 과제 11: Refiner → SRT 수정 + ★EDL JSON 생성/수정
+  ✅ 과제 12: Evaluator → EDL 기반 프리뷰 재생성 + 영상제작팀 피드백 루프
 
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 과제 5: CapCutAPI 드래프트 생성 ✅
-- `lib/capcut-draft-builder.js`
-- `scripts/test-capcut-draft.js`
-- `healthCheck, createDraft, addVideo, addAudio, addSubtitle, saveDraft, findDraftFolder, copyToCapCut, buildDraft` 구현 완료
-- `temp/synced.mp4 + narr_norm.m4a + subtitle_corrected.srt` 기준 통합 테스트 통과
-- `save_draft` 후 repo 내부 `dfd_cat_*`를 `config.paths.capcut_drafts`로 복사하는 흐름 검증 완료
-- CapCut Desktop 프로젝트 목록에 새 draft 카드 실제 표시 확인
+### 즉시: 과제 7 엔드투엔드 통합
+- 전처리 → Whisper → 자막교정 → 영상분석 → EDL → preview/final 연결
+- 장시간 전체 자산(`synced.mp4`, 73분) 기준 analysis / render 운영 시간 측정
+- FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 
-### 과제 6~7: 영상 분석 + EDL 생성 + FFmpeg 렌더링 + 엔드투엔드 통합
-### 과제 8~13: 워커웹 + n8n + 품질 루프 (Week 2)
-### Week 3: 최종 통합 테스트 + 품질 테스트
+### 이후: 과제 7 → 8 → 9 → 10~12 → 13 순차 진행
 
 ---
 
@@ -92,36 +70,33 @@
 
 ```
 ai-agent-system/bots/video/
-├─ config/video-config.yaml        ✅ YouTube 확정값 (24M, 48kHz, 384k, faststart)
-├─ context/IDENTITY.md             ✅ 비디오팀 정체성
+├─ config/video-config.yaml        ✅ YouTube 확정값 + capcut_api(선택적)
+├─ context/IDENTITY.md             ✅
 ├─ docs/
-│   ├─ CLAUDE.md                   ✅ 규칙 + 확정값 (96줄)
+│   ├─ CLAUDE.md                   ✅ EDL JSON 섹션 + 절대 규칙 13개
 │   ├─ SESSION_HANDOFF_VIDEO.md    ✅ 이 파일
-│   ├─ VIDEO_HANDOFF.md            ✅ 인수인계 허브
-│   ├─ video-automation-tech-plan.md ✅ 기술 기획서 (950줄)
-│   ├─ video-team-design.md        ✅ 설계 문서 (739줄, config 업데이트 완료)
-│   └─ video-team-tasks.md         ✅ 소과제 13개 + 프롬프트 (749줄)
-├─ exports/.gitkeep                ✅
+│   ├─ VIDEO_HANDOFF.md            ✅ EDL 아키텍처 반영
+│   ├─ video-automation-tech-plan.md ✅ (원본 유지)
+│   ├─ video-team-design.md        ✅ video-analyzer + edl-builder 반영
+│   └─ video-team-tasks.md         ✅ 과제 6, 10~12 재정의 완료
 ├─ lib/
 │   ├─ ffmpeg-preprocess.js        ✅ 과제 2
 │   ├─ whisper-client.js           ✅ 과제 3
 │   ├─ subtitle-corrector.js       ✅ 과제 4
-│   └─ capcut-draft-builder.js     ✅ 과제 5
-├─ migrations/001-video-schema.sql ✅ video_edits 테이블
-├─ samples/
-│   ├─ ANALYSIS.md                 ✅ ffprobe + YouTube 분석 (190줄)
-│   ├─ raw/ (5세트), narration/ (5세트), edited/ (5+18개)
+│   └─ capcut-draft-builder.js     ✅ 과제 5 (선택적 보조)
+│   ├─ video-analyzer.js           ✅ 과제 6
+│   └─ edl-builder.js              ✅ 과제 6
+├─ migrations/001-video-schema.sql ✅
 ├─ scripts/
-│   ├─ test-preprocess.js          ✅ 과제 2 테스트
-│   ├─ test-whisper.js             ✅ 과제 3 테스트
-│   ├─ test-subtitle-corrector.js  ✅ 과제 4 테스트
-│   ├─ check-capcut-readiness.js   ✅ 과제 5 전 readiness 체크
-│   └─ test-capcut-draft.js        ✅ 과제 5 테스트
-├─ src/index.js                    ✅ config + DB 연결
-└─ temp/
-    ├─ narr_norm.m4a               ✅ 정규화된 나레이션
-    ├─ subtitle_raw.srt            ✅ Whisper 출력 (67 entries)
-    └─ subtitle_corrected.srt      ✅ LLM 교정본
+│   ├─ test-preprocess.js          ✅
+│   ├─ test-whisper.js             ✅
+│   ├─ test-subtitle-corrector.js  ✅
+│   └─ test-capcut-draft.js        ✅
+│   ├─ test-video-analyzer.js      ✅
+│   └─ test-edl-builder.js         ✅
+├─ src/index.js                    ✅
+├─ samples/ (5세트 + ANALYSIS.md)  ✅
+└─ temp/ (synced.mp4, SRT 등)      ✅
 ```
 
 ## 진행 현황
@@ -132,13 +107,17 @@ Week 1: 핵심 파이프라인
   ✅ 과제 2: FFmpeg 전처리
   ✅ 과제 3: Whisper STT
   ✅ 과제 4: LLM 자막 교정
-  ✅ CapCut readiness 체크
-  ✅ 과제 5: CapCut 드래프트
-  ☐ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
-  ☐ 과제 7: 엔드투엔드 통합
+  ✅ 과제 5: CapCutAPI 드래프트 (선택적 보조)
+  ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
+  ☐ 과제 7: 엔드투엔드 파이프라인 통합
 
 Week 2: 워커웹 + n8n + 품질 루프
-  ☐ 과제 8~13
+  ☐ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
+  ☐ 과제 9: n8n 연동
+  ☐ 과제 10: Critic (자막+오디오+★영상 구조)
+  ☐ 과제 11: Refiner (SRT+★EDL 생성/수정)
+  ☐ 과제 12: Evaluator + 품질 루프
+  ☐ 과제 13: 5세트 검증
 
 Week 3: 최종 테스트 + 문서 체계 통합
 ```
@@ -147,28 +126,15 @@ Week 3: 최종 테스트 + 문서 체계 통합
 
 ```
 [확정] YouTube 렌더링: 24Mbps, H.264 High, 48kHz/384kbps, movflags +faststart, BT.709
-[확정] 1440p 업로드 = VP9 코덱 트리거 (1080p 원본 → 2560x1440 업스케일)
-[확정] CapCut 무료 + FFmpeg 렌더링 (Pro 불필요)
-[확정] CapCut 7.2.0 draft 파싱 전략 폐기, EDL JSON을 편집 원장으로 사용
-[확정] 저비용 LLM 전략: 자막 gpt-4o-mini, 품질루프 전부 무료 (월 ~$1.12)
-[확정] Gemini 2.0 → 2.5-flash 변경 (2.0 퇴역 예정)
-[확정] quality_loop: critic=gemini-2.5-flash, refiner=groq/gpt-oss-20b, evaluator=groq/scout
-[확정] 대화형 UX 9단계 (워커웹)
-[확정] 더백클래스 LMS 연동은 Phase 2+
-```
-
-## 크롬 탭 상태
-
-```
-tabId 284978451: "Flutterflow 중급 - YouTube" (플레이리스트)
-tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨)
-```
-
-## LMS 학습 메모 (Phase 2 준비)
-
-```
-더백클래스 관리자 패널 접속 완료 (the100class.flutterflow.app/adminLectures)
-좌측 메뉴: 회원/약관/강의/FAQ/멤버십/기타
-카테고리 3개: 인스타1st SNS 앱(36), 컴팩트기초 서버(9), 컴팩트기초 로컬(10) = 총 56강의
-아직 확인 안 한 것: 개별 강의 수정 폼, 신규 업로드 폼, 영상 호스팅 방식
+[확정] 1440p 업로드 = VP9 코덱 트리거
+[확정] EDL JSON 기반 아키텍처 (CapCut draft_info.json 의존 폐기)
+[확정] RED/BLUE 팀이 자막+오디오+★영상 편집 모두 관여
+[확정] 프리뷰: FFmpeg 720p + 워커 웹 HTML5 Video+VTT
+[확정] 영상제작팀 프레임 단위 편집 의견 → EDL JSON 수정 → 프리뷰 재생성
+[확정] CapCutAPI는 선택적 보조 (--with-capcut, 기본 비활성)
+[확정] 저비용 LLM: 자막 gpt-4o-mini, 품질루프 전부 무료 (월 ~$1.12)
+[확정] Gemini 2.5-flash (2.0 퇴역)
+[확정] Phase 2 연구: CapCutAPI 저장 실패 원인, Remotion SaaS 전환
+[확정] 과제 6 smoke 검증: 120초 샘플에서 preview/final 렌더 성공
+[주의] 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay/burn-in은 capability fallback으로 자동 생략됨
 ```

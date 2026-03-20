@@ -3423,3 +3423,10 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/video/scripts/test-capcut-draft.js`로 `temp/synced.mp4`, `narr_norm.m4a`, `subtitle_corrected.srt`를 실제 입력으로 사용하는 통합 테스트를 추가
 - CapCutAPI upstream `add_subtitle`가 `font` 미지정 시 `font_type` 오류로 깨지는 문제를 확인했고, video builder에서 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height`를 명시 전달해 우회
 - 실제 검증에서 repo 내부 `dfd_cat_*` 생성, CapCut Desktop 프로젝트 디렉토리 복사, 프로젝트 목록 카드 표시까지 확인
+
+### 비디오팀 과제 6 — 영상 분석 + EDL + FFmpeg 렌더링
+- `bots/video/lib/video-analyzer.js`를 추가해 `ffprobe`, `silencedetect`, `freezedetect`, `scene` 기반 분석 구조를 구현하고 JSON 저장 함수까지 정리
+- `bots/video/lib/edl-builder.js`를 추가해 초기 EDL 생성, patch 적용, filter_complex_script 생성, preview/final render, SRT→VTT 변환을 한 레이어로 묶음
+- `bots/video/scripts/test-video-analyzer.js`, `bots/video/scripts/test-edl-builder.js`를 추가해 실제 temp 자산 기준 분석/EDL/렌더 테스트 진입점을 마련
+- 120초 smoke clip 기준으로 `analyzeVideo()`, EDL 생성, 720p preview 렌더, 1440p final 렌더 검증을 완료했고 최종 결과가 `2560x1440 / 60fps / H.264 High / 48kHz stereo / faststart`임을 확인
+- 현재 로컬 FFmpeg에 `drawtext`, `subtitles` 필터가 없음을 확인해 overlay / burn-in은 capability fallback으로 자동 생략되도록 보강
