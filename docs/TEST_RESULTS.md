@@ -6,6 +6,16 @@
 
 ## 2026-03-20
 
+### 아처 자동화 리포트 재검증 + 비용 표 source 보정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/claude/lib/archer/analyzer.js` | ✅ |
+| `node bots/claude/src/archer.js` | ✅ 실네트워크 수집/분석 후 `archer-2026-03-20.md` 재생성 |
+| `node --input-type=module -e "... from claude.billing_snapshots ..."` | ✅ 최근 10일 snapshot이 provider별 동일 누적값으로 저장됨 확인 (`anthropic=16.417`, `openai=3.564`) |
+| `node --input-type=module -e "... from reservation.llm_usage_log ..."` | ✅ 실제 일별 사용량은 날짜별로 변동함 확인 |
+| `sed -n '52,68p' bots/claude/reports/archer-2026-03-20.md` | ✅ 최근 7일 비용 표가 `YYYY-MM-DD` 형식과 usage 기반 일별 값으로 출력됨 확인 |
+
 ### 어제자 리포트 후속: KIS 과속 완화 + 아처 비용 리포트 정합성 복구
 
 | 테스트 | 결과 |

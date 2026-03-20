@@ -3,6 +3,16 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-20) — 아처 비용 표 source 보정 + 날짜 포맷 정상화
+
+### 변경 사항 (changed)
+- `bots/claude/lib/archer/analyzer.js`
+  - 최근 7일 `LLM 비용 트렌드` 표를 `billing_snapshots` day-over-day delta 대신 `reservation.llm_usage_log`의 실제 일별 합계로 계산하도록 변경
+  - 월 누적 비용과 소진율은 계속 `billing_snapshots` provider별 최신값을 사용하도록 유지
+  - 비용 표 날짜 라벨을 `YYYY-MM-DD` 형식으로 정규화
+- `bots/claude/reports/archer-2026-03-20.md`
+  - 수정된 집계 로직 기준으로 자동화 리포트를 재생성
+
 ## 12주차 후속 (2026-03-20) — KIS 공용 throttling + 아처 비용 리포트 정합성 복구
 
 ### 변경 사항 (changed)
