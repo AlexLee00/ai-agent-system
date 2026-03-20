@@ -236,3 +236,39 @@
 - 제이 모델 정책
   - [/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - [/Users/alexlee/.openclaw/openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
+
+
+---
+
+## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
+
+```
+상태: 기획/설계 문서 정리 완료, 구현 스캐폴딩 시작 전
+상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
+
+현재 확보된 문서:
+  - bots/video/docs/VIDEO_HANDOFF.md
+  - bots/video/docs/video-automation-tech-plan.md
+  - bots/video/docs/video-team-design.md
+  - bots/video/docs/video-team-tasks.md
+
+현재 폴더 상태:
+  - bots/video/는 설계/인수인계 문서 중심의 신규 팀 폴더
+  - scripts/ 폴더는 제거됨 (문서 이동/배치 스크립트는 유지하지 않음)
+  - 구현 코드 뼈대(context/config/migrations/src)는 아직 비어 있거나 최소 상태
+
+다음 작업:
+  1. Claude Code 과제 1 범위의 최소 스캐폴딩 생성
+     - context/IDENTITY.md
+     - config/video-config.yaml
+     - migrations/001-video-schema.sql
+     - src/index.js
+  2. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
+  3. 더백클래스 LMS 구조 학습은 Phase 2 이후 확장 과제로 분리
+
+설계상 핵심 판단:
+  - 지금 당장 필요한 구조는 Case 1 (원본 영상 편집 자동화)만 구현
+  - Case 2 (완전 자동 생성), LMS 발행 자동화, 품질 루프 고도화는 후속 Phase
+  - 원본/임시/결과 파일 저장소는 외부 작업 디렉토리(flutterflow_video)를 사용하고,
+    리포지토리 내부 bots/video/는 오케스트레이션/설정/문서/메타데이터 레이어로 유지
+```

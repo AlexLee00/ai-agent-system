@@ -464,6 +464,14 @@
 
 ### 자동화 리포트 해석력 보강
 
+### 비디오팀 신규 문서 과제 정리
+
+| 테스트 | 결과 |
+|--------|------|
+| `find /Users/alexlee/projects/ai-agent-system/bots/video/docs -maxdepth 1 -type f | sort` | ✅ `SESSION_HANDOFF_VIDEO.md`, `VIDEO_HANDOFF.md`, `video-automation-tech-plan.md`, `video-team-design.md`, `video-team-tasks.md` 존재 확인 |
+| `find /Users/alexlee/projects/ai-agent-system/bots/video -maxdepth 2 -type d | sort` | ✅ `bots/video/scripts` 제거 후 `config/context/docs/lib/migrations/src`만 남은 폴더 구조 확인 |
+| `rg -n "비디오팀 세션 컨텍스트|과제 1" /Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md` | ✅ handoff 문서의 비디오팀 섹션이 `문서 정리 완료 / 구현 스캐폴딩 시작 전` 상태와 과제 1 다음 단계로 갱신됨 |
+
 | 테스트 | 결과 |
 |--------|------|
 | `node --check scripts/reviews/jay-llm-daily-review.js` | ✅ |
