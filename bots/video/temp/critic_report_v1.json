@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "timestamp": "2026-03-20T23:35:05.706Z",
+  "source_video": "synced.mp4",
+  "source_subtitle": "subtitle_corrected.srt",
+  "score": 80,
+  "pass": false,
+  "target_score": 85,
+  "issues": [],
+  "scores": {
+    "subtitle_accuracy": 50,
+    "audio_quality": 100,
+    "video_structure": 100,
+    "overall": 80
+  },
+  "analysis_summary": {
+    "subtitle_entries": 67,
+    "subtitle_issues_count": 0,
+    "audio_lufs": -14.96,
+    "audio_peak": -3.54,
+    "silences_count": 0,
+    "freezes_count": 0,
+    "scenes_count": 57,
+    "duration_seconds": 4416.8
+  },
+  "llm_cost_usd": 0
+}

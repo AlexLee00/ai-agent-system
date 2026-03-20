@@ -45,6 +45,7 @@ const CSV_PATH  = path.join(WORKSPACE, 'revenue-history.csv');
 // ─── CLI 인자 파싱 ─────────────────────────────────────────────
 const argv    = process.argv.slice(2);
 const DRY_RUN = argv.includes('--dry-run');
+const FRESH_SESSION_PER_DAY = argv.includes('--fresh-session-per-day');
 
 function getArg(name) {
   const a = argv.find(s => s.startsWith(`--${name}=`));
@@ -88,6 +89,54 @@ async function buildRoomAmountsFallback(page, date) {
 
 // ─── 금액 포맷 ─────────────────────────────────────────────────
 function fmt(n) { return Number(n || 0).toLocaleString('ko-KR') + '원'; }
+
+async function fetchDetailWithFallback(page, date, netRevenue, maxAttempts = 3) {
+  let lastDetail = null;
+  let lastFallback = { roomAmounts: {}, studyRoomTotal: 0, entryCount: 0 };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const detail = await fetchDailyDetail(page, date);
+    const fallback = await buildRoomAmountsFallback(page, date);
+    lastDetail = detail;
+    lastFallback = fallback;
+
+    const hasDetailRevenue = Number(detail.totalRevenue || 0) > 0;
+    const hasDetailRows = Array.isArray(detail.transactions) && detail.transactions.length > 0;
+    const hasFallbackRows = Number(fallback.entryCount || 0) > 0;
+
+    if (hasDetailRevenue || hasDetailRows || hasFallbackRows) {
+      return { detail, fallback, attempt, suspiciousZero: false };
+    }
+
+    if (Number(netRevenue || 0) <= 0) {
+      return { detail, fallback, attempt, suspiciousZero: false };
+    }
+
+    if (attempt < maxAttempts) {
+      log(`    ↳ ${date} 상세/예약목록이 비어 재시도 (${attempt}/${maxAttempts})`);
+      await delay(1500 * attempt);
+    }
+  }
+
+  return {
+    detail: lastDetail,
+    fallback: lastFallback,
+    attempt: maxAttempts,
+    suspiciousZero: Number(netRevenue || 0) > 0,
+  };
+}
+
+async function withFreshPickkoPage(browser, fn) {
+  const page = await browser.newPage();
+  page.setDefaultTimeout(30000);
+  setupDialogHandler(page, log);
+  try {
+    await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
+    return await fn(page);
+  } finally {
+    try { await page.close(); } catch (_) {}
+  }
+}
 
 // ─── 날짜 → 요일 ───────────────────────────────────────────────
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
@@ -190,8 +239,13 @@ async function main() {
         // 매출 있는 날짜 → 일별 상세 파싱
         try {
           await delay(800); // 서버 부하 방지
-          const detail         = await fetchDailyDetail(page, date);
-          const fallback = await buildRoomAmountsFallback(page, date);
+          const fetchRunner = FRESH_SESSION_PER_DAY
+            ? () => withFreshPickkoPage(browser, (freshPage) => fetchDetailWithFallback(freshPage, date, netRevenue))
+            : () => fetchDetailWithFallback(page, date, netRevenue);
+          const { detail, fallback, suspiciousZero } = await fetchRunner();
+          if (suspiciousZero) {
+            throw new Error(`월별 netRevenue=${netRevenue}원인데 일별 상세/예약목록이 모두 비어 있음`);
+          }
           const studyRoomTotal = fallback.studyRoomTotal;
           const roomAmounts = fallback.roomAmounts;
           const fallbackUsed = studyRoomTotal > 0;
