@@ -861,7 +861,13 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       continue;
     }
 
-    const signalId = await db.insertSignal(signalData);
+    const signalInsert = await db.insertSignalIfFresh(signalData);
+    const signalId = signalInsert.id;
+    if (signalInsert.duplicate) {
+      console.log(`  ⏭️ [루나] 최근 중복 신호 스킵: ${dec.symbol} ${dec.action} (${signalInsert.dedupeWindowMinutes}분 내 기존 signal=${signalId})`);
+      continue;
+    }
+
     console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action})`);
     await notifySignal({ ...signalData, paper: paperMode });
 

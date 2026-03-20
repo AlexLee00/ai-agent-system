@@ -91,12 +91,14 @@ export async function initSchema() {
 
   await run(`
     CREATE TABLE IF NOT EXISTS positions (
-      symbol         TEXT PRIMARY KEY,
+      symbol         TEXT NOT NULL,
       amount         DOUBLE PRECISION DEFAULT 0,
       avg_price      DOUBLE PRECISION DEFAULT 0,
       unrealized_pnl DOUBLE PRECISION DEFAULT 0,
       paper          BOOLEAN DEFAULT false,
       exchange       TEXT DEFAULT 'binance',
+      trade_mode     TEXT DEFAULT 'normal',
+      UNIQUE(symbol, exchange, paper, trade_mode),
       updated_at     TIMESTAMP DEFAULT now()
     )
   `);
@@ -191,6 +193,10 @@ export async function initSchema() {
   }
 
   try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS paper BOOLEAN DEFAULT false`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE positions ADD COLUMN IF NOT EXISTS trade_mode TEXT DEFAULT 'normal'`); } catch { /* 무시 */ }
+  try { await run(`UPDATE positions SET trade_mode = 'normal' WHERE trade_mode IS NULL`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_pkey`); } catch { /* 무시 */ }
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_scope_unique ON positions(symbol, exchange, paper, trade_mode)`); } catch { /* 무시 */ }
 
   // ── screening_history (아르고스 동적 종목 스크리닝 이력) ──
   await run(`
@@ -250,6 +256,7 @@ export async function initSchema() {
       [3, 'trades_tp_sl_columns'],
       [4, 'screening_history_dual_model_results'],
       [5, 'runtime_config_suggestion_log'],
+      [6, 'positions_trade_mode_scope'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -310,6 +317,76 @@ export async function insertSignal({ symbol, action, amountUsdt, confidence, rea
     [symbol, action, amountUsdt ?? null, confidence ?? null, reasoning ?? null, exchange, analystSignals ?? null, effectiveTradeMode],
   );
   return rows[0]?.id;
+}
+
+export async function getRecentSignalDuplicate({
+  symbol,
+  action,
+  exchange = 'binance',
+  tradeMode = null,
+  minutesBack = 180,
+} = {}) {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  return get(
+    `SELECT *
+       FROM signals
+      WHERE symbol = $1
+        AND action = $2
+        AND exchange = $3
+        AND COALESCE(trade_mode, 'normal') = $4
+        AND created_at > now() - INTERVAL '1 minute' * $5
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [symbol, action, exchange, effectiveTradeMode, minutesBack],
+  );
+}
+
+export async function insertSignalIfFresh({
+  symbol,
+  action,
+  amountUsdt,
+  confidence,
+  reasoning,
+  exchange = 'binance',
+  analystSignals = null,
+  tradeMode = null,
+  dedupeWindowMinutes = 180,
+} = {}) {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const duplicate = await getRecentSignalDuplicate({
+    symbol,
+    action,
+    exchange,
+    tradeMode: effectiveTradeMode,
+    minutesBack: dedupeWindowMinutes,
+  });
+
+  if (duplicate) {
+    return {
+      id: duplicate.id,
+      duplicate: true,
+      existingSignal: duplicate,
+      dedupeWindowMinutes,
+    };
+  }
+
+  const id = await insertSignal({
+    symbol,
+    action,
+    amountUsdt,
+    confidence,
+    reasoning,
+    exchange,
+    analystSignals,
+    tradeMode: effectiveTradeMode,
+  });
+
+  return {
+    id,
+    duplicate: false,
+    existingSignal: null,
+    dedupeWindowMinutes,
+  };
 }
 
 export async function updateSignalStatus(id, status) {
@@ -408,34 +485,70 @@ export async function getLatestTradeBySignalId(signalId) {
 
 // ─── positions ──────────────────────────────────────────────────────
 
-export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false }) {
+export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false, tradeMode = null }) {
+  const effectiveTradeMode = paper === true
+    ? (tradeMode || getInvestmentTradeMode())
+    : 'normal';
   await run(
-    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, exchange, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (symbol) DO UPDATE SET
+    `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, exchange, trade_mode, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (symbol, exchange, paper, trade_mode) DO UPDATE SET
        amount         = EXCLUDED.amount,
        avg_price      = EXCLUDED.avg_price,
        unrealized_pnl = EXCLUDED.unrealized_pnl,
        paper          = EXCLUDED.paper,
        exchange       = EXCLUDED.exchange,
+       trade_mode     = EXCLUDED.trade_mode,
        updated_at     = EXCLUDED.updated_at`,
-    [symbol, amount, avgPrice, unrealizedPnl ?? 0, paper === true, exchange],
+    [symbol, amount, avgPrice, unrealizedPnl ?? 0, paper === true, exchange, effectiveTradeMode],
   );
 }
 
-export async function getPosition(symbol) {
-  return get(`SELECT * FROM positions WHERE symbol = $1`, [symbol]);
+export async function getPosition(symbol, { exchange = null, paper = null, tradeMode = null } = {}) {
+  const conditions = [`symbol = $1`];
+  const params = [symbol];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (paper !== null) {
+    params.push(paper === true);
+    conditions.push(`paper = $${params.length}`);
+    if (paper === true) {
+      params.push(tradeMode || getInvestmentTradeMode());
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+  }
+
+  const orderBy = paper === null
+    ? `ORDER BY paper ASC, updated_at DESC`
+    : `ORDER BY updated_at DESC`;
+
+  return get(`SELECT * FROM positions WHERE ${conditions.join(' AND ')} ${orderBy} LIMIT 1`, params);
 }
 
-export async function getLivePosition(symbol) {
-  return get(`SELECT * FROM positions WHERE symbol = $1 AND paper = false`, [symbol]);
+export async function getLivePosition(symbol, exchange = null) {
+  return getPosition(symbol, { exchange, paper: false });
 }
 
-export async function getPaperPosition(symbol) {
-  return get(`SELECT * FROM positions WHERE symbol = $1 AND paper = true`, [symbol]);
+export async function getPaperPosition(symbol, exchange = null, tradeMode = null) {
+  return getPosition(symbol, { exchange, paper: true, tradeMode });
 }
 
-export async function getAllPositions(exchange = null, paper = null) {
+export async function getAllPositions(exchange = null, paper = null, tradeMode = null) {
+  if (exchange && paper === true && tradeMode) {
+    return query(
+      `SELECT * FROM positions WHERE amount > 0 AND exchange = $1 AND paper = true AND COALESCE(trade_mode, 'normal') = $2 ORDER BY symbol`,
+      [exchange, tradeMode],
+    );
+  }
+  if (paper === true && tradeMode) {
+    return query(
+      `SELECT * FROM positions WHERE amount > 0 AND paper = true AND COALESCE(trade_mode, 'normal') = $1 ORDER BY symbol`,
+      [tradeMode],
+    );
+  }
   if (exchange && paper !== null) {
     return query(
       `SELECT * FROM positions WHERE amount > 0 AND exchange = $1 AND paper = $2 ORDER BY symbol`,
@@ -451,15 +564,40 @@ export async function getAllPositions(exchange = null, paper = null) {
   return query(`SELECT * FROM positions WHERE amount > 0 ORDER BY symbol`);
 }
 
-export async function getPaperPositions(exchange = null) {
+export async function getPaperPositions(exchange = null, tradeMode = null) {
+  if (exchange && tradeMode) {
+    return query(
+      `SELECT * FROM positions WHERE amount > 0 AND paper = true AND exchange = $1 AND COALESCE(trade_mode, 'normal') = $2 ORDER BY updated_at ASC`,
+      [exchange, tradeMode],
+    );
+  }
   if (exchange) {
     return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true AND exchange = $1 ORDER BY updated_at ASC`, [exchange]);
+  }
+  if (tradeMode) {
+    return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true AND COALESCE(trade_mode, 'normal') = $1 ORDER BY updated_at ASC`, [tradeMode]);
   }
   return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true ORDER BY updated_at ASC`);
 }
 
-export async function deletePosition(symbol) {
-  await run(`DELETE FROM positions WHERE symbol = $1`, [symbol]);
+export async function deletePosition(symbol, { exchange = null, paper = null, tradeMode = null } = {}) {
+  const conditions = [`symbol = $1`];
+  const params = [symbol];
+
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (paper !== null) {
+    params.push(paper === true);
+    conditions.push(`paper = $${params.length}`);
+    if (paper === true) {
+      params.push(tradeMode || getInvestmentTradeMode());
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+  }
+
+  await run(`DELETE FROM positions WHERE ${conditions.join(' AND ')}`, params);
 }
 
 // ─── 집계 ───────────────────────────────────────────────────────────

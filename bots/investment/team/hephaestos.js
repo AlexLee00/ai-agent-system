@@ -232,7 +232,7 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
 
 async function maybePromotePaperPositions() {
   const capitalPolicy = getCapitalConfig('binance');
-  const paperPositions = await db.getPaperPositions('binance').catch(() => []);
+  const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
   if (paperPositions.length === 0) return [];
 
   const promoted = [];
@@ -243,7 +243,7 @@ async function maybePromotePaperPositions() {
     const freeUsdt = await getAvailableUSDT().catch(() => 0);
     if (freeUsdt < desiredUsdt) break;
 
-    const check = await preTradeCheck(paperPos.symbol, 'BUY', desiredUsdt, 'binance');
+    const check = await preTradeCheck(paperPos.symbol, 'BUY', desiredUsdt, 'binance', 'normal');
     if (!check.allowed) {
       if (isCapitalShortageReason(check.reason || '')) break;
       continue;
@@ -322,7 +322,7 @@ async function maybePromotePaperPositions() {
 export async function inspectPromotionCandidates() {
   const capitalPolicy = getCapitalConfig('binance');
   const freeUsdt = await getAvailableUSDT().catch(() => 0);
-  const paperPositions = await db.getPaperPositions('binance').catch(() => []);
+  const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
   const results = [];
 
   for (const paperPos of paperPositions) {
@@ -333,7 +333,7 @@ export async function inspectPromotionCandidates() {
     let check = { allowed: false, reason: tooSmall ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT` : 'USDT 부족' };
 
     if (!tooSmall && enoughUsdt) {
-      check = await preTradeCheck(paperPos.symbol, 'BUY', desiredUsdt, 'binance');
+      check = await preTradeCheck(paperPos.symbol, 'BUY', desiredUsdt, 'binance', 'normal');
     }
 
     results.push({
@@ -436,7 +436,15 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   const usdEquiv    = filledCoin * usdPrice;
 
   // DB 포지션 등록 (USDT 환산 기준)
-  await db.upsertPosition({ symbol, amount: filledCoin, avgPrice: usdPrice, unrealizedPnl: 0, paper: paperMode });
+  await db.upsertPosition({
+    symbol,
+    amount: filledCoin,
+    avgPrice: usdPrice,
+    unrealizedPnl: 0,
+    paper: paperMode,
+    exchange: 'binance',
+    tradeMode: signal?.trade_mode || getInvestmentTradeMode(),
+  });
 
   // TP/SL OCO — /USDT 페어 기준 설정 (일관성 유지)
   const tpPrice = parseFloat((usdPrice * 1.06).toFixed(2));
@@ -575,7 +583,7 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      if (!globalPaperMode) {
+      if (!globalPaperMode && signalTradeMode === 'normal') {
         const promoted = await maybePromotePaperPositions().catch(err => {
           console.warn(`  ⚠️ PAPER 포지션 승격 체크 실패: ${err.message}`);
           return [];
@@ -785,26 +793,37 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       };
 
-      const existing    = await db.getPosition(symbol);
-      if (effectivePaperMode && existing && existing.paper === false) {
+      const livePosition = await db.getLivePosition(symbol, 'binance');
+      if (effectivePaperMode && livePosition) {
         const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
           code: 'position_mode_conflict',
           meta: {
-            existingPaper: existing.paper,
+            existingPaper: livePosition.paper,
             requestedPaper: effectivePaperMode,
           },
         });
         notifyTradeSkip({ symbol, action, reason }).catch(() => {});
         return { success: false, reason };
       }
+      const existing = effectivePaperMode
+        ? await db.getPaperPosition(symbol, 'binance', signalTradeMode)
+        : livePosition;
       const newAmount   = (existing?.amount || 0) + (order.filled || 0);
       const newAvgPrice = existing && existing.amount > 0
         ? ((existing.amount * existing.avg_price) + actualAmount) / newAmount
         : order.price || 0;
 
-      await db.upsertPosition({ symbol, amount: newAmount, avgPrice: newAvgPrice, unrealizedPnl: 0, paper: effectivePaperMode });
+      await db.upsertPosition({
+        symbol,
+        amount: newAmount,
+        avgPrice: newAvgPrice,
+        unrealizedPnl: 0,
+        paper: effectivePaperMode,
+        exchange: 'binance',
+        tradeMode: signalTradeMode,
+      });
 
       // ── TP/SL 가격 결정 (동적/고정, PAPER_MODE 포함) ────────────────
       // 우선순위: 1) 네메시스 동적 TP/SL (signal.tpPrice/slPrice, applied=true)
@@ -846,9 +865,11 @@ export async function executeSignal(signal) {
 
     } else if (action === ACTIONS.SELL) {
       // DB 포지션 우선, 없으면 실제 바이낸스 잔고 조회 (외부 매수 코인도 매도 가능)
-      const position = await db.getPosition(symbol);
+      const livePosition = await db.getLivePosition(symbol, 'binance');
+      const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+      const position = livePosition || paperPosition;
       let amount = position?.amount;
-      const sellPaperMode = globalPaperMode || Boolean(position?.paper);
+      const sellPaperMode = !livePosition && Boolean(paperPosition);
       if (!amount || amount <= 0) {
         const base = symbol.split('/')[0];
         const bal  = await getExchange().fetchBalance();
@@ -877,7 +898,11 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
       };
 
-      await db.deletePosition(symbol);
+      await db.deletePosition(symbol, {
+        exchange: 'binance',
+        paper: sellPaperMode,
+        tradeMode: sellPaperMode ? signalTradeMode : null,
+      });
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
