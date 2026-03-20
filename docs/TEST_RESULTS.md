@@ -30,6 +30,14 @@
 | `PLAYWRIGHT_HEADLESS=false node -e "const b=require('./bots/reservation/lib/browser'); ..."` | ✅ headed 디버그 모드 전환 확인 |
 | `bash bots/reservation/scripts/reload-monitor.sh` | ✅ `ai.ska.naver-monitor` 재시작, PID `45377` 확인 |
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `naver-monitor`, `kiosk-monitor`, `health-check`, `daily_summary 무결성` 모두 정상 확인 |
+| `node --check bots/reservation/lib/study-room-pricing.js` | ✅ 스터디룸 시간 기반 산출 helper 문법 확인 |
+| `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js` | ✅ 새 스터디룸 산출식 반영 후 문법 확인 |
+| `node --check bots/reservation/scripts/pickko-revenue-backfill.js` | ✅ backfill 스크립트 문법 확인 (`exportCsv` await 포함) |
+| `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ 3월 전체 재집계, `2026-03-18` 스터디룸 7건 → `87,500원`, `2026-03-10` timeout 잔여 복구 기준 확보 |
+| `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-02 --to=2026-02` | ✅ 2월 전체 재집계, `2026-02-27` stale `pickko_study_room=7,000` → `122,000원` 복구 |
+| `node --input-type=module -e \"... syncSkaSalesToWorker('test-company') ...\"` | ✅ worker `test-company` 미러 재동기화 (`expectedRows: 288`) |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ 새 정책 기준 `dailySummaryIntegrityHealth.issueCount=0`, `policyDivergenceCount=14` 확인 |
+| `node --input-type=module -e \"... reservation.daily_summary vs worker.sales(test-company) 전체 diff ...\"` | ✅ 과거 전체 범위 diff `0건` 확인 |
 
 ### 비디오팀 과제 1 — 프로젝트 스캐폴딩 + DB 스키마 + config
 

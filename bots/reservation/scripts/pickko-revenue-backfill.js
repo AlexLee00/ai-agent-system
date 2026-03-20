@@ -30,9 +30,10 @@ const path      = require('path');
 const { delay, log } = require('../lib/utils');
 const { loadSecrets } = require('../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
-const { loginToPickko } = require('../lib/pickko');
+const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { upsertDailySummary, getDailySummariesInRange } = require('../lib/db');
 const { fetchMonthlyRevenue, fetchDailyDetail } = require('../lib/pickko-stats');
+const { buildRoomAmountsFromEntries } = require('../lib/study-room-pricing');
 
 const SECRETS   = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -72,14 +73,17 @@ function monthsInRange(from, to) {
 
 // ─── roomAmounts 키 정규화 ─────────────────────────────────────
 // '스터디룸A1' → 'A1'
-function normalizeRoomAmounts(studyRoomRevenue) {
-  const out = {};
-  for (const [k, v] of Object.entries(studyRoomRevenue)) {
-    const match = k.match(/스터디룸([A-Z]\d*)/);
-    const key = match ? match[1] : k;
-    out[key] = (out[key] || 0) + v;
-  }
-  return out;
+async function buildRoomAmountsFallback(page, date) {
+  const { entries, fetchOk } = await fetchPickkoEntries(page, date, {
+    statusKeyword: '결제완료',
+    endDate: date,
+    sortBy: 'sd_start',
+  });
+  if (!fetchOk || !entries.length) return { roomAmounts: {}, studyRoomTotal: 0, entryCount: 0 };
+
+  const roomAmounts = buildRoomAmountsFromEntries(entries);
+  const studyRoomTotal = Object.values(roomAmounts).reduce((sum, value) => sum + Number(value || 0), 0);
+  return { roomAmounts, studyRoomTotal, entryCount: entries.length };
 }
 
 // ─── 금액 포맷 ─────────────────────────────────────────────────
@@ -96,10 +100,10 @@ function getIsWeekend(dateStr) {
 }
 
 // ─── CSV 생성 ──────────────────────────────────────────────────
-function exportCsv(from, to) {
+async function exportCsv(from, to) {
   const fromDate = from + '-01';
   const toDate   = to   + '-31'; // 말일은 대략
-  const rows = getDailySummariesInRange(fromDate, toDate);
+  const rows = await getDailySummariesInRange(fromDate, toDate);
 
   const header = 'date,day_of_week,is_weekend,study_cafe,room_a1,room_a2,room_b,study_room_total,total';
   const lines  = [header];
@@ -187,8 +191,10 @@ async function main() {
         try {
           await delay(800); // 서버 부하 방지
           const detail         = await fetchDailyDetail(page, date);
-          const studyRoomTotal = Object.values(detail.studyRoomRevenue).reduce((s, v) => s + v, 0);
-          const roomAmounts    = normalizeRoomAmounts(detail.studyRoomRevenue);
+          const fallback = await buildRoomAmountsFallback(page, date);
+          const studyRoomTotal = fallback.studyRoomTotal;
+          const roomAmounts = fallback.roomAmounts;
+          const fallbackUsed = studyRoomTotal > 0;
 
           const roomBreakdown = ['A1', 'A2', 'B']
             .filter(r => roomAmounts[r])
@@ -196,10 +202,10 @@ async function main() {
             .join(' / ') || '-';
 
           log(`  ${date} (${dow}): ` +
-              `스터디카페 ${fmt(detail.generalRevenue)}  ` +
+              `스터디카페 ${fmt(Math.max(detail.totalRevenue - studyRoomTotal, 0))}  ` +
               `스터디룸 [${roomBreakdown}]  ` +
               `합계 ${fmt(detail.totalRevenue)}  ` +
-              `(${detail.transactions.length}건)`);
+              `(${detail.transactions.length}건${fallbackUsed ? ', fallback' : ''})`);
 
           if (!DRY_RUN) {
             upsertDailySummary(date, {
@@ -208,7 +214,7 @@ async function main() {
               entriesCount:    detail.transactions.length,
               pickkoTotal:     detail.totalRevenue,
               pickkoStudyRoom: studyRoomTotal,
-              generalRevenue:  detail.generalRevenue,
+              generalRevenue:  Math.max(detail.totalRevenue - studyRoomTotal, 0),
             });
           }
           totalSaved++;
@@ -231,7 +237,7 @@ async function main() {
   log(`✅ 완료  매출 저장: ${totalSaved}건  0원: ${totalZero}건  오류: ${totalErrors}건`);
 
   if (!DRY_RUN) {
-    exportCsv(FROM_MONTH, TO_MONTH);
+    await exportCsv(FROM_MONTH, TO_MONTH);
   } else {
     log('⚠️  DRY-RUN — DB에 저장되지 않았습니다. --dry-run 제거 후 재실행하세요.');
   }

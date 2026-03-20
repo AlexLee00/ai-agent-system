@@ -11,6 +11,22 @@
 
 const { delay } = require('./utils');
 
+function normalizeStudyRoomLabel(description) {
+  const text = String(description || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) return null;
+
+  const roomMatch = text.match(/스터디룸\s*[\(\[]?\s*([A-Z])\s*-?\s*(\d*)\s*[\)\]]?/i);
+  if (!roomMatch) return null;
+
+  const alpha = String(roomMatch[1] || '').toUpperCase();
+  const digits = String(roomMatch[2] || '');
+  return `스터디룸${alpha}${digits}`;
+}
+
 // ─── 월별 매출 조회 ────────────────────────────────────────────────
 
 /**
@@ -91,6 +107,22 @@ async function fetchDailyDetail(page, date) {
   await delay(1500);
 
   const transactions = await page.evaluate(() => {
+    const normalizeStudyRoomLabel = (description) => {
+      const text = String(description || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!text) return null;
+
+      const roomMatch = text.match(/스터디룸\s*[\(\[]?\s*([A-Z])\s*-?\s*(\d*)\s*[\)\]]?/i);
+      if (!roomMatch) return null;
+
+      const alpha = String(roomMatch[1] || '').toUpperCase();
+      const digits = String(roomMatch[2] || '');
+      return `스터디룸${alpha}${digits}`;
+    };
+
     return Array.from(document.querySelectorAll('table tbody tr')).map(tr => {
       const tds = Array.from(tr.querySelectorAll('td'));
       const getText = (i) => (tds[i] ? tds[i].textContent.trim() : '');
@@ -104,8 +136,7 @@ async function fetchDailyDetail(page, date) {
       if (!no || !/^\d+$/.test(no)) return null;
 
       // 스터디룸 판별
-      const roomMatch = description.match(/스터디룸([A-Z]\d*)/);
-      const studyRoom = roomMatch ? `스터디룸${roomMatch[1]}` : null;
+      const studyRoom = normalizeStudyRoomLabel(description);
 
       return { no: Number(no), description, netRevenue, studyRoom };
     }).filter(Boolean);

@@ -28,6 +28,11 @@ const {
 } = require('../../lib/db');
 const { fetchDailyDetail } = require('../../lib/pickko-stats');
 const { maskName } = require('../../lib/formatting');
+const {
+  timeToMinutes,
+  calcStudyRoomAmount,
+  buildRoomAmountsFromEntries,
+} = require('../../lib/study-room-pricing');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -66,29 +71,13 @@ function formatAmount(amount) {
   return Number(amount).toLocaleString('ko-KR') + '원';
 }
 
-// 시간 → 분 (정렬용)
-function timeToMinutes(t) {
-  if (!t) return 0;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
 /**
  * 예약 금액 계산 (룸 타입 × 이용 시간)
- * A1, A2: 3,500원 / 30분
- * B:      6,000원 / 30분
+ * A1, A2: 3,500원 / 30분 (00:00~09:00 = 2,500원)
+ * B:      6,000원 / 30분 (00:00~09:00 = 4,000원)
  */
 function calcAmount(entry) {
-  const room = entry.room || '';
-  const isRoomB = /스터디룸\s*B/i.test(room) || /룸\s*B$/i.test(room);
-  const ratePerSlot = isRoomB ? 6000 : 3500;
-
-  const startMin = timeToMinutes(entry.start);
-  const endMin   = timeToMinutes(entry.end);
-  const durationMin = endMin - startMin;
-  if (durationMin <= 0) return 0;
-
-  return Math.ceil(durationMin / 30) * ratePerSlot;
+  return calcStudyRoomAmount(entry);
 }
 
 /**
@@ -153,13 +142,11 @@ function buildMessage(today, entries, naverKeys, kioskMap, isNoon, pickkoStats =
   const classified = sorted.map(e => ({ ...e, cls: classifyEntry(e, naverKeys, kioskMap) }));
 
   // 총 금액 & 룸별 금액
-  const roomAmounts = {};
+  const roomAmounts = buildRoomAmountsFromEntries(classified);
   let totalAmount = 0;
   for (const e of classified) {
     const amt = calcAmount(e);
     totalAmount += amt;
-    const r = e.room || '?';
-    roomAmounts[r] = (roomAmounts[r] || 0) + amt;
   }
 
   // 룸별 건수
@@ -331,16 +318,23 @@ async function main() {
     }
 
     // daily_summary DB 저장 (매 보고마다 최신 데이터로 갱신)
-    const pickkoStudyRoomTotal = pickkoStats
+    const entryStudyRoomTotal = Object.values(roomAmounts || {}).reduce((s, v) => s + Number(v || 0), 0);
+    const statsStudyRoomTotal = pickkoStats
       ? Object.values(pickkoStats.studyRoomRevenue).reduce((s, v) => s + v, 0)
       : 0;
+    const pickkoStudyRoomTotal = pickkoStats
+      ? (statsStudyRoomTotal > 0 ? statsStudyRoomTotal : entryStudyRoomTotal)
+      : 0;
+    const resolvedGeneralRevenue = pickkoStats
+      ? Math.max(Number(pickkoStats.totalRevenue || 0) - pickkoStudyRoomTotal, 0)
+      : null;
     upsertDailySummary(reportDate, {
       totalAmount,
       roomAmounts,
       entriesCount:    entries.length,
       pickkoTotal:     pickkoStats ? pickkoStats.totalRevenue : null,
       pickkoStudyRoom: pickkoStats ? pickkoStudyRoomTotal : null,
-      generalRevenue:  pickkoStats ? pickkoStats.generalRevenue : null,
+      generalRevenue:  resolvedGeneralRevenue,
     });
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);
 
