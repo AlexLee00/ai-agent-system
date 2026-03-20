@@ -577,7 +577,9 @@ child.on('close', (code) => {
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
 
 const browser = await puppeteer.launch(getPickkoLaunchOptions());
-// PICKKO_HEADLESS=1 환경변수로 headless 모드 제어
+// 기본값: PLAYWRIGHT_HEADLESS=true (headless 운영)
+// 디버깅: PLAYWRIGHT_HEADLESS=false 또는 .playwright-headed 플래그 파일
+// legacy 호환: PICKKO_HEADLESS, NAVER_HEADLESS
 ```
 
 ### page.click() vs page.evaluate() 선택 기준
@@ -846,8 +848,11 @@ openclaw models set google-gemini-cli/gemini-2.5-flash
 node src/naver-monitor.js
 
 # OPS (운영, 픽코 실행 허용) — start-ops.sh가 자동 설정
-MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=${OBSERVE_ONLY:-0} PICKKO_CANCEL_ENABLE=1 PICKKO_HEADLESS=1 \
+MODE=ops PLAYWRIGHT_HEADLESS=true PICKKO_ENABLE=1 OBSERVE_ONLY=${OBSERVE_ONLY:-0} PICKKO_CANCEL_ENABLE=1 \
   node src/naver-monitor.js
+
+# 디버깅/수동 로그인
+PLAYWRIGHT_HEADLESS=false node src/naver-monitor.js
 ```
 
 | 환경변수 | 기본 | 설명 |
@@ -856,12 +861,15 @@ MODE=ops PICKKO_ENABLE=1 OBSERVE_ONLY=${OBSERVE_ONLY:-0} PICKKO_CANCEL_ENABLE=1 
 | `PICKKO_ENABLE` | `0` | `1`이어야 픽코 활성화 |
 | `OBSERVE_ONLY` | `0` | `1`이면 화이트리스트 번호만 실행 (관찰 모드) |
 | `PICKKO_CANCEL_ENABLE` | `0` | `1`이어야 자동 취소 |
-| `PICKKO_HEADLESS` | `0` | `1`이면 완전 headless |
+| `PLAYWRIGHT_HEADLESS` | `true` | 미설정 포함 기본 headless, `false`면 headed |
+| `PICKKO_HEADLESS` | `legacy` | 구버전 호환용, 새 기준은 `PLAYWRIGHT_HEADLESS` |
+| `NAVER_HEADLESS` | `legacy` | 구버전 호환용, 새 기준은 `PLAYWRIGHT_HEADLESS` |
 
 > **OBSERVE_ONLY 설정 방법**: `start-ops.sh`는 `${OBSERVE_ONLY:-0}` 패턴 사용.
 > plist `EnvironmentVariables`에 `OBSERVE_ONLY=1` 추가 → 화이트리스트 모드 활성화.
 > plist에서 제거하면 기본값 `0` (전체 OPS) 복원.
 > **하드코딩(`OBSERVE_ONLY=0`) 절대 금지** — plist 설정이 무시되어 오취소 유발.
+> **브라우저 headed 전환**: `touch bots/reservation/.playwright-headed` → `bash bots/reservation/scripts/reload-monitor.sh` → 수동 로그인 후 `rm bots/reservation/.playwright-headed` → 재시작.
 
 **DEV 화이트리스트**: 이재룡 010-3500-0586 / 김정민 010-5435-0586
 

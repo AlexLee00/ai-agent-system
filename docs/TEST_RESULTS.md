@@ -614,3 +614,10 @@
 | `bash bots/reservation/scripts/reload-monitor.sh` | ✅ 스카 모니터 재시작 완료 (`PID: 6546`) |
 | `node bots/orchestrator/scripts/health-report.js --json` | ✅ orchestrator / gateway / critical webhook 정상 |
 | `launchctl kickstart -k gui/$(id -u)/ai.orchestrator` | ✅ 제이 완료 문구 처리 로직 라이브 반영 |
+
+### 스카 headless 운영 문서 정합화
+
+| 테스트 | 결과 |
+|--------|------|
+| `rg -n "PLAYWRIGHT_HEADLESS|playwright-headed|PICKKO_HEADLESS|NAVER_HEADLESS" docs/team-indexes/TEAM_SKA_REFERENCE.md docs/coding-guide.md docs/SYSTEM_DESIGN.md` | ✅ 스카 참조/가이드/설계 문서가 최신 headless 토글 정책을 공통 참조하도록 반영 확인 |
+| `rg -n "PICKKO_HEADLESS=1" docs/team-indexes/TEAM_SKA_REFERENCE.md docs/coding-guide.md docs/SYSTEM_DESIGN.md` | ✅ `SYSTEM_DESIGN.md`의 고정 표현 제거, `coding-guide.md`는 legacy 호환 설명만 유지됨을 확인 |
