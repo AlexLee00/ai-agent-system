@@ -18,7 +18,7 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode } from '../shared/secrets.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
-import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig } from '../shared/capital-manager.js';
+import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason } from '../shared/capital-manager.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -612,7 +612,7 @@ export async function executeSignal(signal) {
       }
       const dailyTradesSafe = await getDailyTradeCount().catch(() => 0);
       if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
-        const reason = `일간 매매 한도: ${dailyTradesSafe}/${capitalPolicy.max_daily_trades}`;
+        const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
           code: 'capital_guard_rejected',

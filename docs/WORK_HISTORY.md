@@ -141,6 +141,27 @@
   - `expires_at` 표기를 `YYYY-MM-DD HH:MM` KST 형식으로 축약해 모바일/운영 화면에서 더 짧게 읽히도록 정리
   - guard 본문은 `범위/해제 시각`을 먼저 두고, 원인은 `사유:` 한 줄 보조 정보로 압축
 
+### 12주차 후속 (2026-03-20) — 일간 매매 한도 차단 문구 명확화
+
+핵심 구현:
+- `bots/investment/shared/capital-manager.js`
+  - 공용 helper `formatDailyTradeLimitReason()` 추가
+  - `일간 매매 한도: 10/8` 형태의 모호한 표현을
+    - `일간 매매 한도 초과: 현재 10건 / 한도 8건`
+    - `일간 매매 한도 도달: 현재 8건 / 한도 8건`
+    형태로 명확하게 정리
+- `bots/investment/team/hephaestos.js`
+  - 실제 실행 단계의 skip/failure 사유도 같은 공용 helper를 사용하도록 통일
+
+의사결정 이유:
+- 운영 알림은 차단 여부뿐 아니라 현재치와 한도를 즉시 읽을 수 있어야 한다.
+- 동일 사유를 사전 자본관리와 실행 단계에서 각자 문자열로 만들면 표현이 다시 어긋날 수 있으므로 공용 helper로 묶는 편이 안전하다.
+
+검증:
+- `node --check bots/investment/shared/capital-manager.js`
+- `node --check bots/investment/team/hephaestos.js`
+- `node --input-type=module -e "import { formatDailyTradeLimitReason } from './bots/investment/shared/capital-manager.js'; ..."`
+
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 핵심 구현:
