@@ -36,6 +36,9 @@ async function _ensureTable() {
       team          TEXT NOT NULL,
       bot           TEXT NOT NULL,
       model         TEXT NOT NULL,
+      market        TEXT,
+      symbol        TEXT,
+      guard_scope   TEXT,
       request_type  TEXT,
       input_tokens  INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -48,10 +51,22 @@ async function _ensureTable() {
     )
   `);
   await pgPool.run('reservation', `
+    ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS market TEXT
+  `);
+  await pgPool.run('reservation', `
+    ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS symbol TEXT
+  `);
+  await pgPool.run('reservation', `
+    ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS guard_scope TEXT
+  `);
+  await pgPool.run('reservation', `
     CREATE INDEX IF NOT EXISTS idx_llm_log_team ON llm_usage_log(team, created_at)
   `);
   await pgPool.run('reservation', `
     CREATE INDEX IF NOT EXISTS idx_llm_log_bot ON llm_usage_log(team, bot, created_at)
+  `);
+  await pgPool.run('reservation', `
+    CREATE INDEX IF NOT EXISTS idx_llm_log_market_symbol ON llm_usage_log(team, market, symbol, created_at)
   `);
   _initialized = true;
 }
@@ -122,6 +137,9 @@ function _calcCost(model, inputTokens, outputTokens) {
  */
 async function logLLMCall({
   team, bot, model,
+  market       = null,
+  symbol       = null,
+  guardScope   = null,
   requestType  = 'unknown',
   inputTokens  = 0,
   outputTokens = 0,
@@ -135,15 +153,16 @@ async function logLLMCall({
     await _ensureTable();
     const cost = costUsd !== undefined ? costUsd : _calcCost(model, inputTokens, outputTokens);
     const now  = _kstNow();
+    const effectiveGuardScope = guardScope || resolveTeamEmergencyScope(team, { market, symbol });
 
     await pgPool.run('reservation', `
       INSERT INTO llm_usage_log
-        (timestamp, team, bot, model, request_type,
+        (timestamp, team, bot, model, market, symbol, guard_scope, request_type,
          input_tokens, output_tokens, cost_usd,
          cache_hit, latency_ms, success, error_msg, created_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
     `, [
-      now, team, bot, model, requestType,
+      now, team, bot, model, market, symbol, effectiveGuardScope, requestType,
       inputTokens, outputTokens, cost,
       cacheHit ? 1 : 0, latencyMs,
       success ? 1 : 0, errorMsg, now,
@@ -151,7 +170,7 @@ async function logLLMCall({
 
     // ★ 실시간 긴급 한도 체크 (성공 호출 + 비용 있을 때만, 비동기)
     if (success && cost > 0) {
-      _checkEmergencyLimits(cost, team).catch(() => {});
+      _checkEmergencyLimits(cost, team, { market, symbol, guardScope: effectiveGuardScope }).catch(() => {});
     }
   } catch (e) {
     console.warn(`[llm-logger] 기록 실패 (${bot}): ${e.message}`);
@@ -164,17 +183,32 @@ async function logLLMCall({
 const BATCH_TEAMS = new Set(['blog']);
 const INVESTMENT_TEAMS = new Set(['luna', 'nemesis', 'oracle', 'argos', 'hermes', 'sophia', 'athena', 'zeus', 'investment']);
 
-function resolveTeamEmergencyScope(team) {
+function normalizeScopeToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function resolveTeamEmergencyScope(team, meta = {}) {
   const normalized = String(team || '').trim().toLowerCase();
   if (INVESTMENT_TEAMS.has(normalized)) {
     const mode = String(process.env.INVESTMENT_TRADE_MODE || 'normal').trim().toLowerCase();
-    return `investment.${mode === 'validation' ? 'validation' : 'normal'}`;
+    const rail = `investment.${mode === 'validation' ? 'validation' : 'normal'}`;
+    const market = String(meta.market || process.env.INVESTMENT_MARKET || '').trim().toLowerCase();
+    if (['crypto', 'domestic', 'overseas'].includes(market)) {
+      const symbolToken = normalizeScopeToken(meta.symbol || '');
+      if (symbolToken) return `${rail}.${market}.${symbolToken}`;
+      return `${rail}.${market}`;
+    }
+    return rail;
   }
   return normalized || 'global';
 }
 
-async function _checkEmergencyLimits(cost, team) {
-  const scopedGuard = resolveTeamEmergencyScope(team);
+async function _checkEmergencyLimits(cost, team, meta = {}) {
+  const scopedGuard = resolveTeamEmergencyScope(team, meta);
   if (billingGuard.isBlocked(scopedGuard) || billingGuard.isBlocked('global')) return;
 
   try {
@@ -203,20 +237,47 @@ async function _checkEmergencyLimits(cost, team) {
 
     // 10분 급등 — 팀별 독립 감지 (배치 팀 제외)
     if (!BATCH_TEAMS.has(team)) {
-      const r10 = await pgPool.get('reservation',
-        `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
-         WHERE team = $1 AND created_at::timestamptz > NOW() - INTERVAL '10 minutes'`,
-        [team]
-      );
-      const p10 = await pgPool.get('reservation',
-        `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
-         WHERE team = $1 AND created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`,
-        [team]
-      );
-      const recent = parseFloat(r10?.t || 0);
-      const prev   = parseFloat(p10?.t || 0);
-      if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
-        _triggerEmergency(`[${team}] 10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent, scopedGuard);
+      const hasScopedSymbol = Boolean(meta.symbol && meta.market);
+      if (!hasScopedSymbol) {
+        const r10 = await pgPool.get('reservation',
+          `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+           WHERE team = $1 AND created_at::timestamptz > NOW() - INTERVAL '10 minutes'`,
+          [team]
+        );
+        const p10 = await pgPool.get('reservation',
+          `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+           WHERE team = $1 AND created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`,
+          [team]
+        );
+        const recent = parseFloat(r10?.t || 0);
+        const prev   = parseFloat(p10?.t || 0);
+        if (prev > 0.01 && recent / prev >= EMERGENCY_LIMITS.spikeRatio) {
+          _triggerEmergency(`[${team}] 10분 급등 ${(recent / prev).toFixed(1)}배 ($${recent.toFixed(4)})`, recent, scopedGuard);
+        }
+      }
+
+      if (hasScopedSymbol) {
+        const sr10 = await pgPool.get('reservation',
+          `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+           WHERE team = $1 AND market = $2 AND symbol = $3
+             AND created_at::timestamptz > NOW() - INTERVAL '10 minutes'`,
+          [team, meta.market, meta.symbol]
+        );
+        const sp10 = await pgPool.get('reservation',
+          `SELECT COALESCE(SUM(cost_usd),0)::float AS t FROM llm_usage_log
+           WHERE team = $1 AND market = $2 AND symbol = $3
+             AND created_at::timestamptz BETWEEN NOW() - INTERVAL '20 minutes' AND NOW() - INTERVAL '10 minutes'`,
+          [team, meta.market, meta.symbol]
+        );
+        const recentSymbol = parseFloat(sr10?.t || 0);
+        const prevSymbol = parseFloat(sp10?.t || 0);
+        if (prevSymbol > 0.01 && recentSymbol / prevSymbol >= EMERGENCY_LIMITS.spikeRatio) {
+          _triggerEmergency(
+            `[${team}:${meta.market}:${meta.symbol}] 10분 급등 ${(recentSymbol / prevSymbol).toFixed(1)}배 ($${recentSymbol.toFixed(4)})`,
+            recentSymbol,
+            scopedGuard,
+          );
+        }
       }
     }
   } catch (e) {
@@ -224,8 +285,13 @@ async function _checkEmergencyLimits(cost, team) {
   }
 }
 
-function _triggerEmergency(reason, cost, scope = 'global') {
-  billingGuard.activate(reason, cost, 'llm-logger', scope);
+function resolveEmergencyTtlMs(scope = 'global') {
+  return billingGuard.getDefaultAutoTtlMs?.(scope) || 0;
+}
+
+function _triggerEmergency(reason, cost, scope = 'global', options = {}) {
+  const ttlMs = Number.isFinite(Number(options.ttlMs)) ? Number(options.ttlMs) : resolveEmergencyTtlMs(scope);
+  const stopData = billingGuard.activate(reason, cost, 'llm-logger', scope, { ttlMs });
 
   // 텔레그램 CRITICAL 알림 (실패해도 차단 유지)
   try {
@@ -242,10 +308,11 @@ function _triggerEmergency(reason, cost, scope = 'global') {
           `사유: ${reason}`,
           `비용: $${cost.toFixed(4)}`,
           `시각: ${kst.datetimeStr()} KST`,
+          ttlMs > 0 && stopData?.expires_at ? `자동 해제: ${String(stopData.expires_at).replace('T', ' ').replace('Z', ' UTC')}` : null,
           '',
           '⚠️ 모든 LLM 호출 즉시 중단됨',
           `해제: \`rm ${scope === 'global' ? '.llm-emergency-stop' : `.llm-emergency-stop.${billingGuard.normalizeScope(scope)}`}\` (마스터만)`,
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
       }).catch(() => {});
     }
   } catch { /* 알림 실패해도 차단 유지 */ }

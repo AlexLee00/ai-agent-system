@@ -18,6 +18,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `스카팀 주간 매출 트렌드 (n8n)` → `스카 주간 매출`
 - `reload-monitor.sh`를 강제 `bootout/bootstrap` 기반에서 안전한 `ensure_launchd_service + kickstart -k` 구조로 바꿔 `Bootstrap failed: 5` 재기동 오류를 줄임
 
+## 12주차 후속 (2026-03-20) — 루나 LLM guard 범위 정밀화 + 자동 만료 복구
+
+### 변경 사항 (changed)
+- 루나 collect 경고 본문에서 `조치: 상세 내용 확인`, `추가 점검: /ops-health` footer를 중복 생성하던 구조를 제거해 모바일 카드 중복 문구를 정리
+- 투자 `LLM guard` scope를 전역 `investment.normal`에서 시장 단위로 정밀화
+  - `investment.normal.crypto`
+  - `investment.normal.domestic`
+  - `investment.normal.overseas`
+  - 암호화폐 급등 guard가 국내/해외 enrichment까지 같이 막지 않도록 보정
+- 투자팀 per-symbol LLM 호출이 `market`, `symbol`, `guard_scope` 문맥을 함께 전달하도록 보강
+  - `athena`, `oracle`, `hermes`, `sophia`, `nemesis`, `luna`의 심볼 분석 호출을 symbol-aware guard에 연결
+- `llm_usage_log`에 `market`, `symbol`, `guard_scope` 메타를 저장하도록 확장하고, 심볼 호출은 팀 전체가 아니라 심볼 기준 10분 급등으로 우선 판단하도록 정리
+- `billing-guard`에 투자 guard 자동 만료(TTL) 로직을 추가
+  - market-level guard: 30분
+  - symbol-level guard: 15분
+  - `llm-logger`가 생성한 오래된 investment guard는 읽기 시점에 자동 만료/삭제
+- 레거시 broad stop 상태를 자동 정리해 현재는 `crypto`, `domestic`, `overseas` 모두 active guard 없이 정상 상태로 복구
+
 ## 12주차 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 ### 신규 기능 (feat)

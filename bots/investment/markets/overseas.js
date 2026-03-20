@@ -30,6 +30,8 @@ import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.js';
 
+process.env.INVESTMENT_MARKET = 'overseas';
+
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
 const STATE_FILE     = join(homedir(), '.openclaw', 'investment-overseas-state.json');

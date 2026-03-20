@@ -290,7 +290,7 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callLLM('nemesis', getNemesisSystem(exchange), userMsg, 256);
+  const raw    = await callLLM('nemesis', getNemesisSystem(exchange), userMsg, 256, { symbol: signal.symbol });
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };
