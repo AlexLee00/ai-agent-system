@@ -248,7 +248,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 기획/설계 문서 정리 완료, 구현 스캐폴딩 시작 전
+상태: 과제 1 스캐폴딩 완료, FFmpeg 전처리(과제 2) 착수 가능
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -260,19 +260,19 @@
   - bots/video/samples/ANALYSIS.md
 
 현재 폴더 상태:
-  - bots/video/는 설계/인수인계 문서 중심의 신규 팀 폴더
+  - bots/video/는 문서 + 과제 1 스캐폴딩(config/context/migrations/src)까지 반영된 신규 팀 폴더
   - scripts/ 폴더는 다른 bots와 같은 공통 구조용 예약 폴더로 유지
-  - 구현 코드 뼈대(context/config/migrations/src/lib)는 아직 비어 있거나 최소 상태
+  - config/video-config.yaml, context/IDENTITY.md, migrations/001-video-schema.sql, src/index.js 생성 완료
+  - temp/, exports/ 디렉토리 생성 완료
+  - public.video_edits 테이블 생성 및 조회 검증 완료
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code 과제 1 범위의 최소 스캐폴딩 생성
-     - context/IDENTITY.md
-     - config/video-config.yaml
-     - migrations/001-video-schema.sql
-     - src/index.js
+  1. Claude Code/Codex 과제 2 범위의 FFmpeg 전처리 모듈 구현
+     - lib/ffmpeg-preprocess.js
+     - scripts/test-preprocess.js
   2. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
   3. 더백클래스 LMS 구조 학습은 Phase 2 이후 확장 과제로 분리
 

@@ -1,0 +1,62 @@
+# 비디오팀 설정 파일
+# YouTube 공식 권장 + ffprobe 실측 기반 확정 (2026-03-20)
+# 참조: bots/video/docs/CLAUDE.md
+
+# 경로
+paths:
+  sources: /Users/alexlee/projects/ai-agent-system/bots/video/samples
+  temp: /Users/alexlee/projects/ai-agent-system/bots/video/temp
+  exports: /Users/alexlee/projects/ai-agent-system/bots/video/exports
+  capcut_drafts: /Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft
+
+# CapCutAPI
+capcut_api:
+  host: http://localhost:9001
+  mcp_cwd: /Users/alexlee/projects/CapCutAPI
+
+# FFmpeg 렌더링 (YouTube 공식 권장)
+ffmpeg:
+  # 오디오 정규화
+  audio_lufs: -14
+  audio_tp: -1
+  audio_lra: 20
+  audio_bitrate: 384k
+  audio_sample_rate: 48000
+  audio_channels: 2
+  # 비디오 렌더링
+  render_width: 2560
+  render_height: 1440
+  render_fps: 60
+  render_bitrate: 24M
+  render_preset: medium
+  render_profile: high
+  render_pixel_format: yuv420p
+  render_movflags: +faststart
+  render_color_space: bt709
+
+# Whisper STT
+whisper:
+  provider: openai
+  model: whisper-1
+  language: ko
+  response_format: verbose_json
+
+# 자막 교정 LLM
+subtitle_correction:
+  llm_provider: openai
+  llm_model: gpt-4o-mini
+  fallback_provider: google
+  fallback_model: gemini-2.0-flash
+  max_retries: 2
+  temperature: 0.1
+
+# 품질 검증 루프
+quality_loop:
+  enabled: false
+  target_score: 85
+  max_iterations: 3
+  llm_model: gpt-4o-mini
+
+# 텔레그램
+telegram:
+  topic_id: null

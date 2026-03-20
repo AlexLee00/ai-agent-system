@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-20
-> 상태: 문서 정리 완료 / Phase 1 Week 1 스캐폴딩 시작 전
+> 상태: 과제 1 스캐폴딩 완료 / 과제 2(FFmpeg 전처리) 착수 가능
 
 ---
 
@@ -101,9 +101,16 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
   - video-team-design.md config 섹션은 YouTube 권장 렌더링 값(24M / 48kHz / 384k / faststart 등)으로 갱신 완료
   - video-team-tasks.md 과제 프롬프트는 하드코딩 값을 줄이고 config/CLAUDE.md 참조 기준으로 정리 완료
   - ANALYSIS.md 는 초기 분석값(섹션 6~7)과 최종 확정값(섹션 8)을 구분하도록 정리 완료
+  - 과제 1 스캐폴딩 완료
+    - config/video-config.yaml
+    - migrations/001-video-schema.sql
+    - context/IDENTITY.md
+    - src/index.js
+    - temp/, exports/ 디렉토리
+  - `public.video_edits` 테이블 생성 및 `index.js` DB 연결 검증 완료
 
 Week 1: 핵심 파이프라인
-  ☐ 과제 1: 프로젝트 스캐폴딩 + DB
+  ✅ 과제 1: 프로젝트 스캐폴딩 + DB
   ☐ 과제 2: FFmpeg 전처리
   ☐ 과제 3: Whisper STT
   ☐ 과제 4: LLM 자막 교정

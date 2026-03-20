@@ -59,3 +59,11 @@ bots/blog/output/
 
 # 덱스터 운영 이력 파일
 bots/claude/dexter-fixes.json
+
+# 비디오팀 — 대용량 미디어 파일
+*.mp4
+*.m4a
+*.mp3
+*.wav
+*.srt
+dfd_*/

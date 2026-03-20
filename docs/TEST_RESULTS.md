@@ -6,6 +6,21 @@
 
 ## 2026-03-20
 
+### 비디오팀 과제 1 — 프로젝트 스캐폴딩 + DB 스키마 + config
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/src/index.js` | ✅ |
+| `tail -n 3 bots/video/docs/CLAUDE.md` | ✅ 마지막 줄이 `24Mbps로 업로드하면 유튜브 재인코딩 후에도 디테일이 최대한 보존됨.` 으로 종료됨 확인 |
+| `grep -n "\*.mp4\|\*.m4a\|\*.mp3\|\*.wav\|\*.srt\|dfd_\*/" .gitignore` | ✅ 비디오팀 미디어 ignore 규칙 반영 확인 |
+| `mkdir -p bots/video/temp bots/video/exports` | ✅ 디렉토리 생성 완료 |
+| `node --input-type=module -e "... pgPool.run('public', sql) ..."` | ✅ `bots/video/migrations/001-video-schema.sql`을 `jay` DB에 직접 적용 (`migration_ok`) |
+| `node bots/video/src/index.js` | ✅ `config 로드 성공`, `DB 연결 성공` 출력 확인 |
+| `node --input-type=module -e "... SELECT * FROM video_edits LIMIT 1 ..."` | ✅ `public.video_edits` 조회 성공, 빈 결과(`rowCount: 0`) 확인 |
+| `rg -n "render_bitrate: 24M" bots/video/config/video-config.yaml` | ✅ |
+| `test -f bots/video/context/IDENTITY.md` | ✅ |
+| `ls -ld bots/video/config bots/video/context bots/video/migrations bots/video/src bots/video/temp bots/video/exports` | ✅ 필요한 디렉토리/파일 존재 확인 |
+
 ### 아처 자동화 리포트 재검증 + 비용 표 source 보정
 
 | 테스트 | 결과 |

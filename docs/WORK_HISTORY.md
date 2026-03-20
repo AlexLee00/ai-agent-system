@@ -4,6 +4,32 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 비디오팀 과제 1 스캐폴딩 + DB 원장 초기화
+
+핵심 구현:
+- `bots/video/config/video-config.yaml`
+  - YouTube 공식 권장 기반 렌더링 값(1440p/60fps, 24M, High Profile, 48kHz, 384kbps, faststart)을 실제 설정 파일로 생성
+- `bots/video/migrations/001-video-schema.sql`
+  - `video_edits` 원장 테이블과 상태/생성일 인덱스를 추가하는 초기 마이그레이션 작성
+- `bots/video/context/IDENTITY.md`
+  - 비디오팀 정체성, 핵심 도구, 렌더링 규칙을 문서화
+- `bots/video/src/index.js`
+  - YAML config 로드 + `pg-pool` 기반 `public` DB 연결 테스트 엔트리 추가
+- `.gitignore`
+  - 비디오팀 대용량 미디어 산출물(`*.mp4`, `*.m4a`, `*.mp3`, `*.wav`, `*.srt`, `dfd_*/`) 무시 규칙 추가
+- `bots/video/temp`, `bots/video/exports`
+  - 처리 중간 산출물과 렌더 출력 디렉토리 생성
+
+세션 맥락:
+- 비디오팀 문서 정리는 이미 끝난 상태였고, 실제 구현 시작점으로 과제 1 스캐폴딩을 닫는 것이 다음 자연스러운 단계였다.
+- 사용자가 명시한 YAML/config, SQL schema, IDENTITY, 엔트리 파일 기준을 그대로 반영하되, 실제 `pg-pool` 인터페이스에 맞는 최소 런타임 구조로 연결했다.
+- `psql` 바이너리는 현재 머신 PATH에 없어 CLI 마이그레이션은 직접 실행되지 않았지만, 동일한 `jay` DB에 공용 `pg-pool`로 SQL 파일을 적용해 스키마 생성과 조회를 검증했다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 비디오팀 문서 기준점을 실제 코드/설정/DB 원장으로 연결하는 것이다.
+- YAML config와 SQL migration을 먼저 고정해야 이후 FFmpeg/Whisper/CapCut 파이프라인이 deterministic하게 이어진다.
+- `psql` 의존성이 없는 환경에서도 `pg-pool`로 같은 DB를 검증할 수 있게 해 두는 편이 운영 안정성에 유리하다.
+
 ### 12주차 후속 (2026-03-20) — 아처 자동화 리포트 재검증 + 비용 표 source 보정
 
 핵심 구현:
