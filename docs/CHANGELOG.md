@@ -3,6 +3,21 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
+
+### 신규 기능 (feat)
+- `bots/video/lib/critic-agent.js`
+  - `runCritic`, `analyzeSubtitles`, `analyzeAudio`, `analyzeVideoStructure`, `calculateOverallScore`, `parseSrt`, `saveCriticReport` 구현
+  - Gemini `gemini-2.5-flash` 기반 자막 품질 분석과 OpenAI `gpt-4o-mini` fallback 추가
+  - FFmpeg loudnorm 기반 LUFS / True Peak 측정 및 issue 생성 추가
+  - `analysis.json` 기반 무음/정지/씬전환 구조 분석과 `critic_report.json` 생성 추가
+- `bots/video/scripts/test-critic-agent.js`
+  - 실제 Critic 실행, 점수/이슈 출력, `temp/critic_report.json` 저장 테스트 추가
+
+### 변경 사항 (changed)
+- `bots/video/lib/critic-agent.js`
+  - LLM 호출 timeout을 추가해 네트워크 지연 시 Critic이 무한 대기하지 않도록 보강
+
 ## 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 세션 원장 + 대화형 UI
 
 ### 신규 기능 (feat)
