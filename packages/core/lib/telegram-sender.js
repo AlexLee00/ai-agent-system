@@ -68,7 +68,7 @@ function _getThreadId(team) {
 const WORKSPACE    = path.join(process.env.HOME || '/tmp', '.openclaw', 'workspace');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 const TG_MAX       = 4096 - 20;  // Telegram 최대 길이 여유 확보
-const MOBILE_DIVIDER = '───────────────';
+const MOBILE_DIVIDER = '──────────';
 
 function _normalizeForMobile(message) {
   const raw = String(message || '');
