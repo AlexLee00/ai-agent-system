@@ -1,0 +1,469 @@
+{
+  "version": 1,
+  "source": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/synced.mp4",
+  "subtitle": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/subtitle_corrected.srt",
+  "duration": 4416.8,
+  "edits": [
+    {
+      "type": "text_overlay",
+      "at": 0,
+      "duration": 3,
+      "text": "FlutterFlow DB 생성"
+    },
+    {
+      "type": "transition",
+      "at": 18.666667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1293,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1293.016667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1294.166667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1317.133333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1352.233333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1372.116667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1396.483333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1435.483333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1459.433333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1461.183333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1586.783333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1593.016667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1593.066667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1636.933333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1639.133333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1881.716667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1886.233333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1889.966667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1892.433333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1896.516667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1947.716667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1949.116667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2017.85,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2021.833333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2023.966667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2032.05,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2033.233333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2033.566667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2036.666667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2038.866667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2046.25,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2058.7,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2067.566667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2221.016667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2413.8,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2413.883333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2415.216667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2419.9,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2424.083333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2425.783333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2428.916667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2431.616667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2436.933333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2584.95,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2585.083333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2690.366667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2692.4,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2696.1,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2696.2,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2786.183333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2796.466667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3218.766667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3219.8,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3224.216667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3914.666667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3916.283333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3916.3,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3919.283333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3919.4,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 4052.9,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 4100.683333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 4161.05,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 4248.25,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 4277.7,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    }
+  ]
+}

@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "source": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/run-22540988/synced.mp4",
+  "subtitle": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/run-22540988/subtitle_corrected.srt",
+  "duration": 1410.45,
+  "edits": [
+    {
+      "type": "text_overlay",
+      "at": 0,
+      "duration": 3,
+      "text": "파라미터"
+    },
+    {
+      "type": "transition",
+      "at": 1.2,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 2.45,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 3.466667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 21,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 62.283333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 72.1,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 122.983333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 263.533333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 321.65,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 323.716667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 329.533333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 357.5,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 384.6,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 410.7,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 507.55,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 513.783333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 550.316667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 578.45,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 668.666667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 676.916667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 719.066667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 734.266667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 784.033333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 792.7,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 850.5,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 924.483333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 950.066667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 997.716667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1031.4,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1091.433333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1131.15,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1178.033333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1182.516667,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1185.3,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1233.983333,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    },
+    {
+      "type": "transition",
+      "at": 1349.45,
+      "effect": "fade",
+      "duration": 0.5,
+      "score": 0.3
+    }
+  ]
+}
