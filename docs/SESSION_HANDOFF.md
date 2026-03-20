@@ -248,7 +248,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 2 FFmpeg 전처리 완료, Whisper STT(과제 3) 착수 가능
+상태: 과제 3 Whisper STT 완료, LLM 자막 교정(과제 4) 착수 가능
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -264,19 +264,24 @@
   - scripts/ 폴더는 다른 bots와 같은 공통 구조용 예약 폴더로 유지
   - config/video-config.yaml, context/IDENTITY.md, migrations/001-video-schema.sql, src/index.js 생성 완료
   - lib/ffmpeg-preprocess.js, scripts/test-preprocess.js 생성 완료
+  - lib/whisper-client.js, scripts/test-whisper.js 생성 완료
   - temp/, exports/ 디렉토리 생성 완료
   - public.video_edits 테이블 생성 및 조회 검증 완료
   - 샘플 1세트 기준 FFmpeg 전처리 테스트(removeAudio / normalizeAudio / syncVideoAudio / preprocess) 통과
   - 나레이션 44100Hz mono → 48000Hz stereo AAC 리샘플링 확인
   - LUFS `-14.9` 확인 (목표 -14 ± 2)
+  - Whisper STT 샘플 테스트 통과
+  - `temp/subtitle_raw.srt` 생성 확인
+  - `67 segments` 반환 확인
+  - `llm_usage_log`에 `whisper-1`, `$0.026119`, `audio_transcription` 기록 확인
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code/Codex 과제 3 범위의 Whisper STT 모듈 구현
-     - lib/whisper-client.js
-     - verbose_json → SRT 생성 경로 검증
+  1. Claude Code/Codex 과제 4 범위의 LLM 자막 교정 모듈 구현
+     - lib/subtitle-corrector.js
+     - SRT 타임스탬프 불변 유지 검증
   2. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
   3. 더백클래스 LMS 구조 학습은 Phase 2 이후 확장 과제로 분리
 

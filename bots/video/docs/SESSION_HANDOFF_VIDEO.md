@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (2차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 2 FFmpeg 전처리 완료 + Whisper STT(과제 3) 대기
+> 상태: 과제 3 Whisper STT 완료 + LLM 자막 교정(과제 4) 대기
 
 ---
 
@@ -104,8 +104,8 @@
   - config와 출력 스펙 확정의 근거 문서
 
 ### 3. Claude Code / 코덱 다음 작업
-- 과제 2 FFmpeg 전처리 완료 상태 확인
-- 다음은 `video-team-tasks.md` 과제 3 프롬프트 → Whisper STT 구현
+- 과제 3 Whisper STT 완료 상태 확인
+- 다음은 `video-team-tasks.md` 과제 4 프롬프트 → LLM 자막 교정 구현
 - 과제별 단위 테스트 통과 후 순차 진행
 - 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
 - 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
@@ -135,10 +135,12 @@ ai-agent-system/bots/video/
 │   └─ video-team-tasks.md          ✅ 소과제 문서
 ├─ lib/
 │   └─ ffmpeg-preprocess.js         ✅ 과제 2 구현 완료
+│   └─ whisper-client.js            ✅ 과제 3 구현 완료
 ├─ migrations/
 │   └─ 001-video-schema.sql         ✅ 생성 완료
 ├─ scripts/
 │   └─ test-preprocess.js           ✅ 과제 2 테스트 스크립트
+│   └─ test-whisper.js              ✅ 과제 3 테스트 스크립트
 ├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
 ├─ temp/                            ✅ 생성 완료
 ├─ exports/                         ✅ 생성 완료
@@ -187,7 +189,14 @@ tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨
   - removeAudio / normalizeAudio / syncVideoAudio / preprocess 통합 통과
   - 오디오 48kHz stereo AAC 확인
   - LUFS -14.9 확인
+- bots/video/lib/whisper-client.js
+- bots/video/scripts/test-whisper.js
+- 샘플 Whisper 검증
+  - OpenAI Whisper 실제 호출 성공
+  - 67 segments 반환
+  - subtitle_raw.srt 생성
+  - llm_usage_log 비용 `$0.026119` 기록 확인
 
 아직 구현되지 않은 것:
-- Whisper STT / 자막 교정 / CapCut / 렌더 파이프라인
+- 자막 교정 / CapCut / 렌더 파이프라인
 ```

@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-20
-> 상태: 과제 2 FFmpeg 전처리 완료 / 과제 3(Whisper STT) 착수 가능
+> 상태: 과제 3 Whisper STT 완료 / 과제 4(LLM 자막 교정) 착수 가능
 
 ---
 
@@ -115,11 +115,19 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - removeAudio / normalizeAudio / syncVideoAudio / preprocess 통합 통과
     - 오디오 48kHz stereo AAC 리샘플링 확인
     - LUFS `-14.9` 확인 (목표 -14 ± 2)
+  - 과제 3 Whisper STT 완료
+    - `lib/whisper-client.js`
+    - `scripts/test-whisper.js`
+  - 샘플 `원본_나레이션_파라미터.m4a` 기준 실제 OpenAI Whisper 호출 검증 완료
+    - `67 segments`
+    - `temp/subtitle_raw.srt` 생성
+    - 비용 `$0.026119`
+    - `llm_usage_log` 기록 확인
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
   ✅ 과제 2: FFmpeg 전처리
-  ☐ 과제 3: Whisper STT
+  ✅ 과제 3: Whisper STT
   ☐ 과제 4: LLM 자막 교정
   ☐ 과제 5: CapCut 드래프트
   ☐ 과제 6: draft 파서 + FFmpeg 렌더링
@@ -147,7 +155,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 3. bots/video/docs/video-team-design.md 읽기 (모듈 매핑 + 기능목록)
 4. bots/video/samples/ANALYSIS.md 읽기 (샘플 입출력 특성 확인)
 5. bots/video/docs/video-team-tasks.md에서 현재 과제 프롬프트 실행
-6. 과제 2 완료 → 단위 테스트 → 문서 업데이트 → 커밋/푸시 → 과제 3 순서대로 진행
+6. 과제 3 완료 → 단위 테스트 → 문서 업데이트 → 커밋/푸시 → 과제 4 순서대로 진행
 7. 세션 마감 직전 VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md 반영 여부를 다시 확인
 ```
 

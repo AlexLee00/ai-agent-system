@@ -89,6 +89,19 @@
   - `synced.mp4`가 `1920x1080 60fps + 48kHz stereo`로 합성됨을 확인
   - LUFS `-14.9`로 목표 `-14 ± 2` 범위 통과
 - macOS 샘플 한글 파일명(NFC/NFD) 차이로 `preprocess()` 매칭이 실패하던 경계를 보수적으로 복구해, 실제 fixture 경로를 안정적으로 찾도록 정리
+
+### 12주차 후속 (2026-03-20) — 비디오팀 과제 3 Whisper STT
+
+- `bots/video/lib/whisper-client.js`
+  - OpenAI Whisper API `verbose_json` 호출, 25MB 파일 크기 제한 검사, 429/5xx 재시도, 5분 타임아웃, SRT 생성 래퍼까지 구현
+  - `getOpenAIKey()`로 키를 읽고, 성공 시 `llm_usage_log`에 `whisper-1` 비용을 남기도록 정리
+- `bots/video/scripts/test-whisper.js`
+  - 가장 짧은 샘플 `원본_나레이션_파라미터.m4a`를 사용해 실제 Whisper 호출, segment 검증, SRT 저장, 비용 출력까지 한 번에 확인하는 테스트 추가
+- 샘플 검증 결과
+  - `67 segments` 반환
+  - `temp/subtitle_raw.srt` 생성
+  - 비용 `$0.026119`
+  - `llm_usage_log`에 `team=video`, `request_type=audio_transcription` 기록 확인
 - YAML config와 SQL migration을 먼저 고정해야 이후 FFmpeg/Whisper/CapCut 파이프라인이 deterministic하게 이어진다.
 - `psql` 의존성이 없는 환경에서도 `pg-pool`로 같은 DB를 검증할 수 있게 해 두는 편이 운영 안정성에 유리하다.
 

@@ -58,6 +58,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - ffprobe로 audio/video stream 사양을 검증하고 loudnorm 측정으로 LUFS 범위를 확인
 - macOS 한글 파일명 정규화(NFC/NFD) 차이로 `preprocess()` 매칭이 실패하지 않도록 샘플 파일 탐색 로직을 보강
 
+## 12주차 후속 (2026-03-20) — 비디오팀 과제 3 Whisper STT
+
+- `bots/video/lib/whisper-client.js`
+  - OpenAI Whisper API `verbose_json` 호출, 25MB 제한 검사, 429/5xx 재시도, 5분 타임아웃 처리 추가
+  - `toSRT()`로 seconds → `HH:MM:SS,mmm` 변환과 SRT 문자열 생성 구현
+  - `generateSubtitle()`에서 `subtitle_raw.srt` 저장과 `llm_usage_log` 비용 기록까지 통합
+- `bots/video/scripts/test-whisper.js`
+  - `원본_나레이션_파라미터.m4a` 기준 실제 Whisper 호출 검증 추가
+  - `67 segments`, `subtitle_raw.srt`, 비용 `$0.026119` 확인
+
 ## 12주차 후속 (2026-03-20) — 아처 비용 표 source 보정 + 날짜 포맷 정상화
 
 ### 변경 사항 (changed)

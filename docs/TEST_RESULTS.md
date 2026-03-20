@@ -57,6 +57,16 @@
 | `test -f bots/video/temp/synced.mp4` | ✅ 생성 확인 |
 | `ffprobe 기반 stream 검증` | ✅ `1920x1080 60fps` video + `48000Hz stereo AAC` audio 확인 |
 
+### 비디오팀 과제 3 — Whisper STT
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/whisper-client.js` | ✅ 통과 |
+| `node --check bots/video/scripts/test-whisper.js` | ✅ 통과 |
+| `node bots/video/scripts/test-whisper.js` | ✅ 실제 OpenAI Whisper 호출, `67 segments`, `subtitle_raw.srt`, 비용 `$0.026119` 전체 통과 |
+| `test -f bots/video/temp/subtitle_raw.srt` | ✅ 생성 확인 |
+| `node --input-type=module -e "... llm_usage_log WHERE team='video' ..."` | ✅ `model=whisper-1`, `request_type=audio_transcription`, `cost_usd=0.026119` 확인 |
+
 ### 아처 자동화 리포트 재검증 + 비용 표 source 보정
 
 | 테스트 | 결과 |
