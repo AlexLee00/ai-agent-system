@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (3차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~4 완료, CapCut readiness 확인 완료, 과제 5부터 이어서 진행
+> 상태: 과제 1~5 완료, CapCut Desktop 연동 확인 완료, 과제 6부터 이어서 진행
 
 ---
 
@@ -36,7 +36,7 @@
   월 20영상 예상: ~$1.12
 - quality_loop config 블록 확장 (critic/refiner/evaluator 개별 모델)
 
-### 5. 과제 1~4 구현 완료 (Claude Code/Codex 실행)
+### 5. 과제 1~5 구현 완료 (Claude Code/Codex 실행)
 
 
 #### 과제 1: 프로젝트 스캐폴딩 + DB ✅
@@ -74,10 +74,13 @@
 
 ## 다음 세션에서 해야 할 것
 
-### 과제 5: CapCutAPI 드래프트 생성
-- lib/capcut-draft-builder.js
-- CapCut readiness는 이미 검증됨
-- healthCheck, createDraft, addVideo, addAudio, addSubtitle, saveDraft, copyToCapCut
+### 과제 5: CapCutAPI 드래프트 생성 ✅
+- `lib/capcut-draft-builder.js`
+- `scripts/test-capcut-draft.js`
+- `healthCheck, createDraft, addVideo, addAudio, addSubtitle, saveDraft, findDraftFolder, copyToCapCut, buildDraft` 구현 완료
+- `temp/synced.mp4 + narr_norm.m4a + subtitle_corrected.srt` 기준 통합 테스트 통과
+- `save_draft` 후 repo 내부 `dfd_cat_*`를 `config.paths.capcut_drafts`로 복사하는 흐름 검증 완료
+- CapCut Desktop 프로젝트 목록에 새 draft 카드 실제 표시 확인
 
 ### 과제 6~7: draft 파서 + FFmpeg 렌더링 + 엔드투엔드 통합
 ### 과제 8~13: 워커웹 + n8n + 품질 루프 (Week 2)
@@ -102,7 +105,8 @@ ai-agent-system/bots/video/
 ├─ lib/
 │   ├─ ffmpeg-preprocess.js        ✅ 과제 2
 │   ├─ whisper-client.js           ✅ 과제 3
-│   └─ subtitle-corrector.js       ✅ 과제 4
+│   ├─ subtitle-corrector.js       ✅ 과제 4
+│   └─ capcut-draft-builder.js     ✅ 과제 5
 ├─ migrations/001-video-schema.sql ✅ video_edits 테이블
 ├─ samples/
 │   ├─ ANALYSIS.md                 ✅ ffprobe + YouTube 분석 (190줄)
@@ -111,7 +115,8 @@ ai-agent-system/bots/video/
 │   ├─ test-preprocess.js          ✅ 과제 2 테스트
 │   ├─ test-whisper.js             ✅ 과제 3 테스트
 │   ├─ test-subtitle-corrector.js  ✅ 과제 4 테스트
-│   └─ check-capcut-readiness.js   ✅ 과제 5 전 readiness 체크
+│   ├─ check-capcut-readiness.js   ✅ 과제 5 전 readiness 체크
+│   └─ test-capcut-draft.js        ✅ 과제 5 테스트
 ├─ src/index.js                    ✅ config + DB 연결
 └─ temp/
     ├─ narr_norm.m4a               ✅ 정규화된 나레이션
@@ -128,7 +133,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 3: Whisper STT
   ✅ 과제 4: LLM 자막 교정
   ✅ CapCut readiness 체크
-  ☐ 과제 5: CapCut 드래프트        ← 다음
+  ✅ 과제 5: CapCut 드래프트
   ☐ 과제 6: draft 파서 + FFmpeg 렌더링
   ☐ 과제 7: 엔드투엔드 통합
 

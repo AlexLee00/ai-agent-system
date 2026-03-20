@@ -908,3 +908,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
   - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영
+  - `bots/video/lib/capcut-draft-builder.js`, `bots/video/scripts/test-capcut-draft.js`를 추가해 CapCutAPI HTTP API 기반 draft 생성과 `copyToCapCut()` Desktop 연동 흐름을 구현
+  - `add_subtitle`는 CapCutAPI upstream `font_type` 오류를 피하기 위해 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height`를 명시 전달하도록 보강
+  - 실제 통합 테스트에서 repo 내부 `dfd_cat_*` draft 생성, CapCut Desktop 프로젝트 디렉토리 복사, Desktop 프로젝트 목록 표시를 모두 확인

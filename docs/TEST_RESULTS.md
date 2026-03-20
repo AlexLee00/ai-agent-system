@@ -660,3 +660,14 @@
 | `node bots/video/scripts/check-capcut-readiness.js` | ✅ `CapCut.app` 실행, `CapCutAPI` 응답, `create_draft / save_draft` 성공 확인 |
 | `find /Users/alexlee/projects/CapCutAPI -maxdepth 2 -type d -name 'dfd_cat_*'` | ✅ repo 내부 `dfd_cat_*` draft 폴더 생성 확인 |
 | `find "/Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft" -maxdepth 2 -name 'dfd_*'` | ✅ Desktop 프로젝트 경로에는 새 draft 미생성 확인 |
+
+### 비디오팀 과제 5 — CapCutAPI 드래프트 생성
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/capcut-draft-builder.js` | ✅ 문법 통과 |
+| `node --check bots/video/scripts/test-capcut-draft.js` | ✅ 문법 통과 |
+| `node bots/video/scripts/test-capcut-draft.js` | ✅ `healthCheck / createDraft / addVideo / addAudio / addSubtitle / saveDraft / findDraftFolder / copyToCapCut / buildDraft` 전체 통과 |
+| `find /Users/alexlee/projects/CapCutAPI -maxdepth 2 -type d -name 'dfd_cat_1774019905_8be75a35'` | ✅ repo 내부 draft 생성 확인 |
+| `find "/Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft" -maxdepth 2 -name 'dfd_cat_1774019905_8be75a35'` | ✅ CapCut Desktop 프로젝트 디렉토리 복사 확인 |
+| CapCut Desktop 프로젝트 목록 확인 | ✅ 새 draft 카드 표시 확인 |
