@@ -905,3 +905,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `naver-monitor.js`의 취소 재시도 전에 예약 종결 상태를 다시 조회해 `completed/cancelled/time_elapsed/marked_seen` 예약은 재알림 없이 건너뛰고 기존 오류 알림도 자동 resolve 하도록 보강
   - 스카 재시작 시 `미해결 오류 n건` 시작 보고는 현재 actionable alert만 남기고, 이미 종결된 예약의 과거 실패 알림은 요약 전에 자동 정리하도록 수정
   - `TEAM_SKA_REFERENCE.md`, `coding-guide.md`, `SYSTEM_DESIGN.md`를 최신 Playwright 정책에 맞춰 `PLAYWRIGHT_HEADLESS` 기본 headless 운영, `.playwright-headed` headed 복구, legacy `PICKKO_HEADLESS/NAVER_HEADLESS` 호환 구조 기준으로 정합화
+- 비디오
+  - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
+  - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영
