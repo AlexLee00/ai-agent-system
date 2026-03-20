@@ -247,7 +247,7 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
         parameters: {
           chatId: CHAT_ID,
           text: `={{
-'📊 <b>스카팀 일간 매출 요약</b> (n8n)\\n' +
+'📊 <b>스카 매출 요약</b>\\n' +
 '═══════════════════\\n' +
 '오늘: ' + Number($json.todayTotal).toLocaleString('ko-KR') + '원 (' + $json.cnt + '건)\\n' +
 '  픽코: ' + Number($json.pickko).toLocaleString('ko-KR') + '원' +
@@ -273,7 +273,7 @@ return [{ json: { todayTotal, yesterTotal, lwTotal, cnt, pickko, general, studyR
         parameters: {
           chatId: CHAT_ID,
           text: `={{
-'📊 <b>스카팀 일간 매출 요약</b> (n8n)\\n' +
+'📊 <b>스카 매출 요약</b>\\n' +
 '═══════════════════\\n' +
 '오늘: ' + Number($json.todayTotal).toLocaleString('ko-KR') + '원 (' + $json.cnt + '건)\\n' +
 '  픽코: ' + Number($json.pickko).toLocaleString('ko-KR') + '원' +
@@ -477,7 +477,7 @@ const dowLines = trend.dowSummary.map(d =>
 ).join('\\n');
 
 const report =
-  '📊 <b>스카팀 주간 매출 트렌드</b> (n8n)\\n' +
+  '📊 <b>스카 주간 매출</b>\\n' +
   '═══════════════════\\n\\n' +
   '■ 주별 추이 (4주)\n' + weekLines + '\\n\\n' +
   '■ 요일별 평균\\n' + dowLines + '\\n' +

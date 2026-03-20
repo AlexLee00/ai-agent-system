@@ -4,6 +4,51 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 모바일 알림 제목 축약 + 스카 모니터 리로드 안정화
+
+핵심 구현:
+- `packages/core/lib/reporting-hub.js`
+  - 공용 `compactNoticeTitle()`에 모바일 short-title 축약 규칙 추가
+  - `루나 메트릭 경고`, `오늘 예약 현황`, `국내주식 수집`, `해외주식 수집` 계열 제목을 짧게 정리
+- `bots/investment/shared/pipeline-market-runner.js`
+  - `summarizeCollectWarnings()`, `buildCollectAlertMessage()` 추가
+  - 루나 collect 경고를 raw key 나열 대신 `LLM guard 발동`, `보조 분석 수집 차단`, `핵심 수집 정상` 의미로 풀어 쓰도록 보강
+- `bots/investment/markets/crypto.js`, `domestic.js`, `overseas.js`
+  - 새 경고 본문 생성 helper를 사용하도록 정리
+- `bots/orchestrator/n8n/setup-ska-workflows.js`
+  - `스카팀 일간 매출 요약 (n8n)` → `스카 매출 요약`
+  - `스카팀 주간 매출 트렌드 (n8n)` → `스카 주간 매출`
+  - 워크플로우 재설치 및 활성화
+- `bots/reservation/auto/scheduled/pickko-daily-summary.js`
+  - `오늘 예약 현황 — ...` → `오늘 예약 · ...`
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - heartbeat 제목을 `오늘 예약 (...)` 형태로 축약
+- `bots/reservation/scripts/reload-monitor.sh`
+  - 무조건 `bootout/bootstrap`을 반복하지 않고, launchd 등록 상태를 확인한 뒤 필요할 때만 `bootstrap`
+  - 재시작은 `kickstart -k` 중심으로 단순화
+
+세션 맥락:
+- 사용자는 모바일 텔레그램 카드에서 제목이 2줄로 꺾여 운영 가독성이 떨어진다고 지적했고, 스카 모니터 재기동도 `Bootstrap failed: 5`로 불안정하다고 보고했다.
+- 특히 `/ops-health` 경고와 스카 매출/예약 알림은 첫 줄만 보고도 의미를 파악할 수 있어야 한다는 운영 요구가 강했다.
+
+의사결정 이유:
+- 내부 MVP 운영에서는 알림의 정보량보다 **모바일 첫 줄 스캔 속도**가 더 중요하므로, 같은 의미를 유지하면서 short-title로 축약하는 편이 맞다.
+- 루나 collect 경고는 핵심 수집 장애와 보조 enrichment 실패를 구분해서 보여야 운영자가 과잉 대응하지 않는다.
+- 스카 모니터는 이미 launchd에 등록된 서비스를 매번 강제 재등록할 필요가 없으므로, `ensure_launchd_service + kickstart -k`가 더 안전하다.
+
+검증:
+- `node --check packages/core/lib/reporting-hub.js`
+- `node --check bots/investment/shared/pipeline-market-runner.js`
+- `node --check bots/investment/markets/crypto.js`
+- `node --check bots/investment/markets/domestic.js`
+- `node --check bots/investment/markets/overseas.js`
+- `node --check bots/orchestrator/n8n/setup-ska-workflows.js`
+- `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js`
+- `node --check bots/reservation/auto/monitors/naver-monitor.js`
+- `bash -n bots/reservation/scripts/reload-monitor.sh`
+- `node bots/orchestrator/n8n/setup-ska-workflows.js`
+- `bash bots/reservation/scripts/reload-monitor.sh`
+
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
 핵심 구현:

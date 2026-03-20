@@ -9,23 +9,31 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MONITOR="$SCRIPT_DIR/../auto/monitors/naver-monitor.js"
 SERVICE="gui/$(id -u)/ai.ska.naver-monitor"
 
+ensure_launchd_service() {
+  if launchctl print "$SERVICE" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ ! -f "$PLIST" ]; then
+    echo "❌ plist 없음: $PLIST"
+    return 1
+  fi
+
+  echo "📦 launchd 등록..."
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+}
+
 # 1. 문법 체크
 echo "🔍 문법 체크..."
 node --check "$MONITOR" || { echo "❌ 문법 오류 — 재시작 중단"; exit 1; }
 
-# 2. 정지
-echo "⏹ 모니터 정지..."
-launchctl bootout "$SERVICE" 2>/dev/null || true
-pkill -f "naver-monitor" 2>/dev/null || true
-sleep 2
-
-# 3. 재시작
+# 2. launchd 보장 + 재시작
 echo "🚀 재시작..."
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+ensure_launchd_service
 launchctl kickstart -k "$SERVICE"
 sleep 3
 
-# 4. 확인
+# 3. 확인
 PRINT_OUT=$(launchctl print "$SERVICE" 2>/dev/null || true)
 PID=$(printf '%s\n' "$PRINT_OUT" | awk -F'= ' '/^[[:space:]]*pid = / {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')
 STATE=$(printf '%s\n' "$PRINT_OUT" | awk -F'= ' '/^[[:space:]]*state = / {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}')

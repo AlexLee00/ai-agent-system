@@ -4,7 +4,27 @@
 
 ---
 
-## 2026-03-19
+## 2026-03-20
+
+### 모바일 알림 short-title 정리 + 스카 모니터 리로드 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/reporting-hub.js` | ✅ |
+| `node --check bots/investment/shared/pipeline-market-runner.js` | ✅ |
+| `node --check bots/investment/markets/crypto.js` | ✅ |
+| `node --check bots/investment/markets/domestic.js` | ✅ |
+| `node --check bots/investment/markets/overseas.js` | ✅ |
+| `node --check bots/orchestrator/n8n/setup-ska-workflows.js` | ✅ |
+| `node --check bots/reservation/auto/scheduled/pickko-daily-summary.js` | ✅ |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ |
+| `bash -n bots/reservation/scripts/reload-monitor.sh` | ✅ |
+| `node bots/orchestrator/n8n/setup-ska-workflows.js` | ✅ `SKA-WF-01 일간 매출 요약`, `SKA-WF-03 주간 매출 트렌드` 재생성/활성화 확인 |
+| `launchctl kickstart -k gui/$(id -u)/ai.investment.crypto` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.investment.domestic` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.investment.overseas` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.investment.commander` | ✅ |
+| `bash bots/reservation/scripts/reload-monitor.sh` | ✅ `ai.ska.naver-monitor` 재기동, PID `88807` 확인 |
 
 ### 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
