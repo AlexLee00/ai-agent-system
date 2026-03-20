@@ -720,6 +720,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나팀 Phase 3-A 크립토 LIVE 전환 (PAPER_MODE=false)
 # 2026-03-18
 
+- 비디오팀 신규 과제용 `bots/video/docs/` 문서 묶음을 정리하고 `video-team-tasks.md`를 추가해 인수인계/설계/소과제 문서 참조를 연결
+- `video-automation-tech-plan.md`의 프로젝트 경로를 현재 저장소 기준으로 수정하고, `docs/SESSION_HANDOFF.md`의 비디오팀 섹션을 `문서 정리 완료 / 구현 스캐폴딩 시작 전` 상태로 갱신
+- `bots/video/scripts/`는 문서 배치용 보조 폴더였고 실제 구현 스크립트가 아니므로 제거해 신규 비디오팀 폴더의 경계를 단순화
+
 - 자동화 리포트
   - `jay-llm-daily-review.js`가 `dbSourceStatus`를 추가해 `sandbox_restricted / permission_denied / db_unreachable` 등 source별 실패 상태를 구분해 노출하도록 보강
   - `jay-llm-daily-review.js`가 `tmp/jay-llm-daily-review-db-snapshot.json` fallback 저장을 지원해, live DB query가 막혀도 최근 DB 집계를 snapshot 기준으로 계속 읽을 수 있게 정리

@@ -1,0 +1,13 @@
+# 영상/음성 파일은 git 제외
+*.mp4
+*.m4a
+*.mp3
+*.wav
+*.avi
+*.mov
+*.mkv
+*.srt
+
+# 임시 파일
+*.tmp
+*.part

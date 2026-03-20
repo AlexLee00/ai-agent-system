@@ -3139,6 +3139,15 @@ health-check.js 회복 감지·알림·state 저장 | backup-db.js async 누락 
 - `investment / reservation`은 `db_sandbox_restricted`이지만 `local fallback 활동 신호`가 살아 있는 팀으로 분리해 읽을 수 있게 정리
 - `orchestrator / worker / claude / blog`는 현재 `sourceMode=unavailable`로 표시돼, 실제 health 관측 공백이 더 큰 축이라는 점을 운영 리포트에서 바로 읽을 수 있게 정리
 
+## 2026-03-20
+
+### 비디오팀 신규 과제 문서 정리
+- `bots/video/docs/`에 비디오팀 인수인계/설계 문서 묶음을 정리해 신규 구축 과제의 기준 문서를 리포지토리 안으로 고정했다.
+- 누락돼 있던 `video-team-tasks.md`를 추가해 `VIDEO_HANDOFF.md`, `video-automation-tech-plan.md`, `video-team-design.md`와 참조 관계가 끊기지 않도록 보완했다.
+- `video-automation-tech-plan.md`의 프로젝트 경로를 현재 저장소 기준(`ai-agent-system/bots/video/`)으로 정리해 외부 경로와 리포지토리 경계를 명확히 했다.
+- `docs/SESSION_HANDOFF.md`의 비디오팀 섹션을 갱신해, 현재 상태를 `문서 정리 완료 / 구현 스캐폴딩 시작 전`으로 맞추고 다음 자연스러운 단계가 과제 1 최소 스캐폴딩이라는 점을 명시했다.
+- `bots/video/scripts/`는 문서 배치용 보조 폴더였고 실제 운영/구현 스크립트가 아니므로 제거해 신규 폴더의 역할 경계를 단순화했다.
+
 ## 2026-03-19
 
 ### 루나 퍼널 계측 강화 + 바이낸스 전환 보수성 완화
