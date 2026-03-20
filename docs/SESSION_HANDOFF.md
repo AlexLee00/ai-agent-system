@@ -38,6 +38,21 @@
   - `trading-journal.js`, `weekly-trade-review.js`는 시장별 `decision 퍼널 병목`을 노출해, 거래 부재 원인을 weak/risk가 아닌 `portfolio decision` 쪽에서 좁혀 볼 수 있게 됐다.
   - `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어가 추가돼 `PEPEUSDT Invalid time value` 로그 노이즈가 줄었다.
   - `runtime_config.luna.fastPathThresholds.minCryptoConfidence = 0.44`가 실제 운영 `config.yaml`에 반영됐다.
+  - 루나 rail guard 보강이 연속 반영됐다.
+    - `daily trade limit`는 이제 `exchange + trade_mode` 기준으로 분리 집계된다.
+    - `signals` 저장 단계에는 `same symbol + same action + same exchange + same trade_mode` 기준 recent dedupe가 붙었다.
+    - `paper positions`는 `symbol + exchange + paper + trade_mode` scope로 분리돼 normal/validation 실험이 섞이지 않는다.
+    - `same-lane open position reentry`와 `same-day same-lane reentry` 차단이 `hephaestos / hanul`에 공통 반영됐다.
+  - investment health-report는 이제 다음을 함께 보여준다.
+    - 오늘 `signal block_code / 세부 reason group`
+    - 최근 60분 `signal block pressure`
+    - rail별 신규 진입(BUY) 한도 사용량
+  - scheduled market worker(`crypto/domestic/overseas`)는 코드 파일 시각이 stderr보다 최신이면 과거 `last exit 1`을 stale failure로 간주해 health false warning을 줄이도록 보정됐다.
+  - `daily_trade_limit`는 이제 SELL이 아니라 BUY 신규 진입만 집계한다.
+  - 2026-03-20 운영 조정:
+    - 로컬 운영 `bots/investment/config.yaml`에서 `binance validation max_daily_trades`를 `8 -> 10`으로 상향했다.
+    - 이 파일은 `.gitignore` 대상이라 저장소에는 남지 않으며, 운영 메모/핸드오프로만 추적한다.
+    - health-report 기준 현재 `BINANCE / validation 3/10`, 최근 60분 차단/거부 `2건`, 세부 그룹은 모두 `daily_trade_limit`이다.
   - suggestion log `498d9f9c-4725-460a-a5ea-129e82f3be19`는 `applied` 상태이며, 현재 판단은 `observe`다.
   - `trading-journal.js`는 거래 없음 대비 분석비용이 큰 날 `no-trade high-cost` 경고를 출력하도록 보강됐다.
   - `weekly-trade-review.js`는 종료 거래가 없어도 미결 포지션, 주간 LLM 사용량, 다음 조치를 포함한 운영 요약을 남기며, `date_kst::date` 비교로 주간 usage가 0으로 떨어지던 버그를 수정했다.
@@ -168,6 +183,8 @@
 - 워커 문서 재사용은 품질/효율 지표와 개선 후보 리뷰까지 붙었지만, 현재 `company_id=1` 기준 실제 문서 표본은 아직 없음
 - 워커 `LLM API 현황`은 전사 콘솔로 정리됐지만, 아직 `OpenClaw`는 포함되지 않았고 내일 조회 전용 그룹으로 추가할 예정
 - 투자 실험은 실제 적용까지 들어갔지만, 아직 표본이 부족해 `observe` 상태다
+- `binance validation max_daily_trades`는 로컬 운영값으로 `10`이 적용돼 있지만 tracked config가 아니므로, 재배포/환경 복구 시 누락될 수 있다
+- 따라서 다음 투자 세션 시작 시 `health-report --json`에서 `BINANCE / validation 3/10`처럼 limit가 실제 반영됐는지 먼저 확인하는 것이 안전하다
 - OpenClaw gateway 기본 primary는 아직 `google-gemini-cli/gemini-2.5-flash`이고, 제이 명령 해석은 `gpt-5-mini`라 운영자 입장에서 모델 체계 혼선이 남아 있다
 - 텔레그램 알림 포맷은 구분선/헤더/본문 압축까지 반영됐지만, 잔여 producer 미세 조정은 실제 운영 알림이 더 쌓인 뒤 확인하는 편이 안전하다
 - 제이 일일 리뷰는 실제 운영 컨텍스트에서는 `dbSource=db`, 샌드박스 안에서는 `dbSource=snapshot_fallback`으로 동작해 live + fallback 이중화는 확보된 상태다
