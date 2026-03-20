@@ -74,6 +74,20 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
 2. 단위 테스트 필수: 각 과제 완료 시 단위 테스트 통과 후 다음 진행
 3. 최종 테스트: Week 3에 통합 테스트(4 시나리오) + 품질 테스트 수행
 4. 커밋 규칙: 과제 1개 완료 = 1 커밋 (테스트 포함)
+5. 모든 개발 종료 시 문서 업데이트 + 커밋 + push까지 완료
+```
+
+## 에이전트 역할 경계
+
+```
+- Claude (대화형 기획/전략 문맥):
+  - bots/video 폴더의 문서를 읽고 구조를 해석하는 역할
+  - 구현 프롬프트 작성, 설계 검토, 작업 순서 정리에 집중
+  - 코드 직접 수정 주체로 가정하지 않음
+
+- 코덱(Codex) 또는 Claude Code:
+  - 실제 파일 생성/수정, 테스트, 문서 업데이트, 커밋/푸시 수행
+  - 구현이 끝난 뒤 반드시 문서 반영과 git 마감까지 함께 처리
 ```
 
 ## 현재 상태
@@ -84,6 +98,9 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
   - scripts/ 폴더는 다른 bots와 동일한 공통 구조용 예약 상태
   - samples/ 폴더에 raw/narration/edited 테스트 fixture 존재
   - samples/ANALYSIS.md 에 ffprobe/YouTube 권장 분석 결과 정리 완료
+  - video-team-design.md config 섹션은 YouTube 권장 렌더링 값(24M / 48kHz / 384k / faststart 등)으로 갱신 완료
+  - video-team-tasks.md 과제 프롬프트는 하드코딩 값을 줄이고 config/CLAUDE.md 참조 기준으로 정리 완료
+  - ANALYSIS.md 는 초기 분석값(섹션 6~7)과 최종 확정값(섹션 8)을 구분하도록 정리 완료
 
 Week 1: 핵심 파이프라인
   ☐ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -108,7 +125,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
   ☐ ★ VIDEO_HANDOFF.md → docs/ 루트 승격
 ```
 
-## Claude Code 첫 세션 시작 순서
+## 구현 세션 시작 순서 (코덱 / Claude Code 공통)
 
 ```
 1. bots/video/docs/CLAUDE.md 읽기 (구현 규칙 + 렌더링 확정값)
@@ -116,7 +133,8 @@ Week 3: 최종 테스트 + 문서 체계 통합
 3. bots/video/docs/video-team-design.md 읽기 (모듈 매핑 + 기능목록)
 4. bots/video/samples/ANALYSIS.md 읽기 (샘플 입출력 특성 확인)
 5. bots/video/docs/video-team-tasks.md에서 과제 1 프롬프트 실행
-6. 과제 1 완료 → 단위 테스트 → 과제 2 순서대로 진행
+6. 과제 1 완료 → 단위 테스트 → 문서 업데이트 → 커밋/푸시 → 과제 2 순서대로 진행
+7. 세션 마감 직전 VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md 반영 여부를 다시 확인
 ```
 
 ## 더백클래스 LMS 연동 (Phase 2+)

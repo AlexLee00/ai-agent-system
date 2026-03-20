@@ -198,9 +198,14 @@
 
 1. [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
 2. [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
-3. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
-4. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
-5. [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+3. [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+4. [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
+5. [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md)
+6. [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)
+
+코덱 세션 규칙:
+- 코덱은 새 세션 시작 시 위 문서 묶음을 먼저 읽고 작업을 시작한다.
+- 코덱은 세션 마감 직전 이 문서를 다시 확인하고, 실제 변경 사항이 있으면 `SESSION_HANDOFF / WORK_HISTORY / CHANGELOG / TEST_RESULTS`를 함께 갱신한다.
 
 ### 이어서 볼 문서
 
@@ -247,15 +252,20 @@
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
+  - bots/video/docs/CLAUDE.md
   - bots/video/docs/VIDEO_HANDOFF.md
   - bots/video/docs/video-automation-tech-plan.md
   - bots/video/docs/video-team-design.md
   - bots/video/docs/video-team-tasks.md
+  - bots/video/samples/ANALYSIS.md
 
 현재 폴더 상태:
   - bots/video/는 설계/인수인계 문서 중심의 신규 팀 폴더
-  - scripts/ 폴더는 제거됨 (문서 이동/배치 스크립트는 유지하지 않음)
-  - 구현 코드 뼈대(context/config/migrations/src)는 아직 비어 있거나 최소 상태
+  - scripts/ 폴더는 다른 bots와 같은 공통 구조용 예약 폴더로 유지
+  - 구현 코드 뼈대(context/config/migrations/src/lib)는 아직 비어 있거나 최소 상태
+  - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
+  - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
+  - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
   1. Claude Code 과제 1 범위의 최소 스캐폴딩 생성
@@ -271,4 +281,6 @@
   - Case 2 (완전 자동 생성), LMS 발행 자동화, 품질 루프 고도화는 후속 Phase
   - 원본/임시/결과 파일 저장소는 외부 작업 디렉토리(flutterflow_video)를 사용하고,
     리포지토리 내부 bots/video/는 오케스트레이션/설정/문서/메타데이터 레이어로 유지
+  - Claude는 video 폴더 문서를 읽고 구조를 해석하는 역할이며, 실제 코드 업데이트는 코덱 또는 Claude Code가 수행
+  - 비디오팀 개발도 각 과제 종료 시 문서 업데이트 + 커밋/푸시까지 함께 마감
 ```

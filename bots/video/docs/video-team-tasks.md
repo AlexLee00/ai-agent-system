@@ -29,6 +29,18 @@ Phase 1 — Week 3: 최종 통합 테스트 + 품질 테스트
 2. 단위 테스트 필수: 각 과제 완료 시 반드시 단위 테스트 통과 후 다음 진행.
 3. 최종 테스트: 프로토타입 전체 완성 후 통합 테스트 + 품질 테스트 수행.
 4. 커밋 규칙: 과제 1개 완료 = 1 커밋 (테스트 포함)
+5. 모든 개발 종료 시 관련 문서 업데이트 후 커밋/푸시까지 마감한다.
+```
+
+## ★ 역할 경계
+
+```
+- Claude:
+  bots/video 폴더의 문서를 읽고 구조를 해석하며, 프롬프트/설계 방향을 정리한다.
+  코드 직접 수정 주체로 가정하지 않는다.
+
+- 코덱(Codex) / Claude Code:
+  실제 파일 생성/수정, 테스트, 문서 업데이트, 커밋/푸시를 수행한다.
 ```
 
 ---
@@ -136,10 +148,12 @@ bots/video/lib/ffmpeg-preprocess.js를 구현해줘.
 1. removeAudio(inputPath) — 원본 mp4에서 오디오 트랙 제거
    → ffmpeg -i input.mp4 -an -c:v copy output.mp4
 
-2. normalizeAudio(inputPath, lufs=-14) — m4a 오디오 LUFS 정규화
-   → ffmpeg -i input.m4a -af loudnorm=I=-14:TP=-1:LRA=11 output.m4a
+2. normalizeAudio(inputPath, config) — m4a 오디오 LUFS 정규화
+   → config에서 audio_normalize.target_lufs, true_peak, lra 읽기
+   → ffmpeg -i input.m4a -af loudnorm=I=${config.audio_normalize.target_lufs}:TP=${config.audio_normalize.true_peak}:LRA=${config.audio_normalize.lra} output.m4a
 
 3. syncVideoAudio(videoPath, audioPath, outputPath) — 영상+오디오 합성
+   → ffmpeg -i audio.m4a -ar 48000 -ac 2 resampled.m4a  (44.1kHz mono → 48kHz stereo)
    → ffmpeg -i video.mp4 -i audio.m4a -c:v copy -c:a aac output.mp4
 
 4. preprocess(sourceDir, tempDir) — 위 3단계를 순차 실행
@@ -339,7 +353,9 @@ config에서 capcut_api.host, paths.capcut_drafts 읽기
 단위 테스트:
   ☐ draft_info.json에서 비디오/오디오/자막 트랙 정보 추출됨
   ☐ FFmpeg 명령어가 올바르게 생성됨
-  ☐ exports/편집_1.mp4 = 2560×1440, H.264, 60fps
+  ☐ exports/편집_1.mp4 = 2560×1440, H.264 High Profile, 60fps, ~24Mbps
+  ☐ ffprobe로 movflags faststart 확인
+  ☐ 오디오: AAC 48kHz stereo 384kbps
   ☐ 자막이 영상에 번인됨
 ```
 
@@ -372,12 +388,16 @@ handleDraftInfo() 함수를 참조. draft_info.json 구조:
    - 오디오: 나레이션 합성
    - 자막: subtitles 필터로 번인
    - 해상도: scale=2560:1440:flags=lanczos
-   - 인코딩: -c:v libx264 -b:v 3000k -r 60
+   - 인코딩: config에서 render 설정 읽기 (CLAUDE.md 절대 규칙 참조)
 
 2. render(editInfo, srtPath, outputPath) → FFmpeg 실행 + 결과 반환
    - child_process.execFile 사용
    - 진행률 파싱 (FFmpeg stderr에서 time= 추출)
    - 완료 시 tool-logger.js로 렌더링 시간 기록
+
+FFmpeg 렌더링 명령어 구성 시 반드시 bots/video/docs/CLAUDE.md의
+'★ YouTube 공식 권장 기반 확정값' 섹션을 참조하여 config 값을 사용할 것.
+하드코딩 금지 — config/video-config.yaml에서 읽기.
 
 config에서 render_width, render_height, render_fps, render_bitrate 읽기
 
@@ -666,7 +686,7 @@ UI 구성요소:
   ☐ IT 전문용어: FlutterFlow, Firebase 등 정확 표기
   ☐ 오디오 레벨: -14 LUFS ± 1 범위
   ☐ 영상 품질: 2560×1440, 60fps, H.264
-  ☐ 파일 크기: 원본 대비 적절한 비트레이트 (3000kbps 근처)
+  ☐ 파일 크기: YouTube 권장 비트레이트 (24Mbps 근처)
 
 비교 테스트:
   ☐ 자동 편집본 vs 기존 수동 편집본 비교 (5세트)
