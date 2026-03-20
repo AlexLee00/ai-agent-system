@@ -652,3 +652,11 @@
 |--------|------|
 | `rg -n "PLAYWRIGHT_HEADLESS|playwright-headed|PICKKO_HEADLESS|NAVER_HEADLESS" docs/team-indexes/TEAM_SKA_REFERENCE.md docs/coding-guide.md docs/SYSTEM_DESIGN.md` | ✅ 스카 참조/가이드/설계 문서가 최신 headless 토글 정책을 공통 참조하도록 반영 확인 |
 | `rg -n "PICKKO_HEADLESS=1" docs/team-indexes/TEAM_SKA_REFERENCE.md docs/coding-guide.md docs/SYSTEM_DESIGN.md` | ✅ `SYSTEM_DESIGN.md`의 고정 표현 제거, `coding-guide.md`는 legacy 호환 설명만 유지됨을 확인 |
+
+### 비디오팀 CapCut readiness 체크
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/video/scripts/check-capcut-readiness.js` | ✅ `CapCut.app` 실행, `CapCutAPI` 응답, `create_draft / save_draft` 성공 확인 |
+| `find /Users/alexlee/projects/CapCutAPI -maxdepth 2 -type d -name 'dfd_cat_*'` | ✅ repo 내부 `dfd_cat_*` draft 폴더 생성 확인 |
+| `find "/Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft" -maxdepth 2 -name 'dfd_*'` | ✅ Desktop 프로젝트 경로에는 새 draft 미생성 확인 |

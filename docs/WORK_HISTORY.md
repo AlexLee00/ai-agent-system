@@ -3411,3 +3411,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `docs/team-indexes/TEAM_SKA_REFERENCE.md`에 스카 브라우저 운영 모드를 추가해 `PLAYWRIGHT_HEADLESS` 기본값, `.playwright-headed` headed 복구 플로우, legacy `NAVER_HEADLESS/PICKKO_HEADLESS` 호환 범위를 한 곳에서 확인할 수 있게 정리
 - `docs/coding-guide.md`의 Playwright/DEV-OPS 예시를 최신 토글 정책으로 갱신해 `PICKKO_HEADLESS=1` 단독 설명 대신 `PLAYWRIGHT_HEADLESS=true|false`와 파일 플래그 운영 방식을 기준으로 맞춤
 - `docs/SYSTEM_DESIGN.md`의 스카 파싱 도구 설명을 `PICKKO_HEADLESS=1` 고정 표현에서 `PLAYWRIGHT_HEADLESS`/`.playwright-headed` 기반 토글 구조로 수정해 코드와 참조 문서의 의미를 일치화
+
+### 비디오팀 CapCut readiness 체크
+- `bots/video/scripts/check-capcut-readiness.js`를 추가해 CapCutAPI 과제 5 전 준비 상태를 재현 가능하게 확인할 수 있도록 정리
+- 체크 항목은 `CapCut.app` 실행 여부, `CapCutAPI` 9001 응답, `create_draft / save_draft`, 실제 draft 저장 위치를 포함
+- 검증 결과 현재 `save_draft`는 CapCut Desktop 프로젝트 경로가 아니라 `/Users/alexlee/projects/CapCutAPI/dfd_cat_*` 아래에 draft를 생성한다
+- 따라서 과제 5는 `save_draft` 후 repo 내부 draft를 `config.paths.capcut_drafts`로 복사하는 `copyToCapCut()` 단계를 전제로 구현해야 한다

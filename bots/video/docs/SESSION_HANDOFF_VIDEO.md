@@ -1,120 +1,87 @@
 # 비디오팀 세션 인수인계
 
-> 세션 날짜: 2026-03-20 (2차 세션)
+> 세션 날짜: 2026-03-20 (3차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 4 LLM 자막 교정 완료 + CapCut 드래프트(과제 5) 대기
+> 상태: 과제 1~4 완료, CapCut readiness 확인 완료, 과제 5부터 이어서 진행
 
 ---
 
 ## 이번 세션에서 완료한 것
 
-### 1. 더백클래스 LMS 관리자 패널 접속 성공
-- URL: the100class.flutterflow.app/adminLectures
-- 제이가 직접 로그인 완료 (비밀번호 관리자 팝업 이슈 해결)
-- 강의 관리 페이지 구조 확인 완료
+### 1. 영상 샘플 폴더 생성 + 5세트 데이터 배치
+- samples/raw/ (원본 5세트), narration/ (나레이션 5세트), edited/ (편집본 5+18개)
+- .gitignore + README.md 생성
 
-### 2. LMS 강의 구조 파악 (스크린샷 3장 분석)
+### 2. ffprobe 전체 분석 + YouTube 공식 권장 사양 리서치
+- 5세트 ffprobe 분석 (해상도, fps, 비트레이트, 오디오)
+- 5세트 LUFS 분석 (평균 -14.33, True Peak 클리핑 발견)
+- YouTube 공식 권장 사양 확인 → 기존 3Mbps가 권장 24Mbps의 12%
+- VP9 코덱 트리거 전략 확인 (1440p 업로드 → VP9 강제)
+- samples/ANALYSIS.md 작성 (190줄, 초기분석 + YouTube 최종 확정값)
 
-```
-좌측 메뉴:
-  회원 관리 / 약관 관리 / 강의 관리 / FAQ 관리 / 멤버십 관리 / 기타
+### 3. CLAUDE.md 생성 + 전체 문서 일관성 통일
+- bots/video/docs/CLAUDE.md 생성 (96줄, 규칙 + YouTube 확정값)
+- video-team-design.md config 업데이트 (24M, 48kHz, 384k, High Profile)
+- video-team-tasks.md 하드코딩 제거 (3000k → config 참조)
+- ANALYSIS.md 섹션 6-7 "초기 분석" 명시
+- audio_lra 11→20 수정, gemini-2.0→2.5 수정
 
-강의 테이블 컬럼:
-  순번 | 생성일시 | 수정일시 | 카테고리 | 제목 | 부제 | 영상 | 시청수 | 수강수 | 공개 | 관리 | 신규
+### 4. LLM 모델 비교 분석 + 저비용 전략 확정
+- 팀 제이 사용 가능 모델 10개 벤치마크 + 비용 종합 비교표 작성
+- 저비용 프로토타입 전략 확정:
+  자막교정: gpt-4o-mini ($0.15/$0.60) + fallback gemini-2.5-flash (무료)
+  Critic: gemini-2.5-flash (무료)
+  Refiner: groq/gpt-oss-20b (무료)
+  Evaluator: groq/llama-4-scout (무료)
+  월 20영상 예상: ~$1.12
+- quality_loop config 블록 확장 (critic/refiner/evaluator 개별 모델)
 
-카테고리 3개 확인:
-  ① 인스타1st SNS 앱 (순번 1~36) — 인스타그램 클론 앱 개발
-     1. 36. 프로필 편집: 액션 설계
-     2. 35. 프로필 편집 페이지
-     ...
-     30. 7. 이용약관: 관리자 기능
-     ...
-     36. 1. 커스텀 NavBar (인스타그램 스타일)
-     37. 0. 프로젝트 셋업 (FlutterFlow 프로젝트)
+### 5. 과제 1~4 구현 완료 (Claude Code/Codex 실행)
 
-  ② 컴팩트기초(서버) (순번 38~46)
-     38. 부록. 데스크탑 앱 (실제 핸드폰 또는)
-     39. 부록. 데스크탑 앱 (실제 핸드폰 또는)
-     40. 7. 데이터베이스 4대 규칙
-     41. 6. 데이터베이스 4대 규칙
-     42. 5. 데이터베이스 4대 규칙
-     43. 4. 데이터베이스 4대 규칙
-     44. 3. DB구조 (SQL vs NoSQL)
-     45. 2. 인증 Authentication 회원가입
-     46. 1. 프로젝트 셋업 (FlutterFlow 프로)
 
-  ③ 컴팩트기초(로컬) (순번 47~56)
-     47. 10. 로컬 미니 앱 [컴팩트 기초(로)]
-     48. 9. 데이터 전달 Parameter
-     49. 8. 동적데이터
-     50. 7. 로컬변수 Component
-     51. 6. 로컬변수 Page
-     52. 5. 로컬변수 App
-     53. 4. Actions
-     54. 3. 화면 UI 개념잡기
-     55. 2. FlutterFlow 둘러보기
-     56. 1. 오리엔테이션
+#### 과제 1: 프로젝트 스캐폴딩 + DB ✅
+- config/video-config.yaml (YouTube 확정값 반영)
+- migrations/001-video-schema.sql (video_edits 테이블)
+- context/IDENTITY.md, src/index.js
+- .gitignore (mp4/m4a/dfd_), temp/, exports/
+- `node src/index.js` → config 로드 성공 + DB 연결 성공 + 렌더링 설정 24M 2560x1440
 
-총 56개 강의 (역순 정렬 — 최신이 위)
-공개 상태: 공개(초록) / 비공개(회색) 혼재
-관리 버튼: 수정(파랑) + 삭제(빨강) 각 강의별
-우상단: "신규 강의 업로드" 버튼 (초록)
-```
+#### 과제 2: FFmpeg 전처리 ✅
+- lib/ffmpeg-preprocess.js (removeAudio, normalizeAudio, syncVideoAudio, preprocess)
+- 44100Hz mono → 48000Hz stereo 리샘플링 포함
+- 테스트: removeAudio 229ms, normalizeAudio 19.6s, syncVideoAudio 6.4s, preprocess 50.6s
+- LUFS: -14.9 (목표 -14 ± 2 범위 내)
 
-### 3. 유튜브 플레이리스트 확인
-- 채널: AI·노코드 THE100
-- 플레이리스트: "Flutterflow 중급" — 105개 동영상, 조회수 60,331회
-- 1~4편: Action-Navigation
-- 5~9편: Firebase (Setup, Auth, Password Reset, SHA-1)
-- 일부 "회원 전용" 표시 → LMS 유료 콘텐츠
+#### 과제 3: Whisper STT ✅
+- lib/whisper-client.js (transcribe, toSRT, generateSubtitle)
+- 테스트: 17.2s, 67 segments, temp/subtitle_raw.srt 6.9KB
+- SRT 한국어 정상: "지난 시간 우리는 동적 데이터..."
+- 비용: $0.026
 
-### 4. 문서 기준값/프롬프트 정합화
-- `bots/video/docs/CLAUDE.md`
-  - YouTube 권장 렌더링 확정값(24M / 48kHz / 384kbps / faststart) 반영
-- `bots/video/docs/video-team-design.md`
-  - `config 구조` 섹션을 YouTube 공식 권장 기반 값으로 갱신
-- `bots/video/docs/video-team-tasks.md`
-  - FFmpeg/렌더링 과제 프롬프트의 하드코딩을 줄이고 config/CLAUDE.md 참조 구조로 정리
-- `bots/video/samples/ANALYSIS.md`
-  - 초기 분석값(섹션 6~7)과 최종 확정값(섹션 8)을 구분하도록 정리
+#### 과제 4: LLM 자막 교정 ✅
+- lib/subtitle-corrector.js (correctSubtitle, correctFile + 청크분할 + 폴백)
+- 테스트: 55.9s, 67/67 타임스탬프 보존, 비용 $0.002
+- 폴백 체인: gpt-4o-mini → gemini-2.5-flash → 원본 SRT 유지
+
+### 6. CapCut readiness 확인 ✅
+- `/Users/alexlee/projects/CapCutAPI` 설치 + venv + requirements 설치 완료
+- `capcut_server.py` 서버 9001 포트 실행 확인
+- `CapCut.app` 실행 상태에서 `create_draft / save_draft` 성공 응답 확인
+- 실제 draft 저장 위치는 `/Users/alexlee/projects/CapCutAPI/dfd_cat_*`
+- 과제 5에서는 `save_draft` 후 repo 내부 draft를 `config.paths.capcut_drafts`로 복사해야 함
 
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 1. LMS 영상 상세 구조 학습 (우선)
-- 개별 강의 클릭 → 영상 URL, 메타데이터 필드 확인
-- "수정" 버튼 클릭 → 편집 폼 구조 파악 (어떤 필드가 있는지)
-- "신규 강의 업로드" 버튼 → 업로드 폼 구조 파악
-- 영상 호스팅 방식 확인 (직접 업로드 vs 유튜브 임베드 vs Firebase Storage)
-- 이 정보를 video-team-design.md 섹션 8에 반영
+### 과제 5: CapCutAPI 드래프트 생성
+- lib/capcut-draft-builder.js
+- CapCut readiness는 이미 검증됨
+- healthCheck, createDraft, addVideo, addAudio, addSubtitle, saveDraft, copyToCapCut
 
-### 2. 문서 반영 상태 확인
-- `bots/video/docs/`에 핵심 문서 4개가 이미 배치됨
-  - VIDEO_HANDOFF.md
-  - video-automation-tech-plan.md
-  - video-team-design.md
-  - video-team-tasks.md
-- `bots/video/docs/CLAUDE.md`
-  - Claude Code용 구현 규칙 문서
-  - YouTube 렌더링 확정값, 문서 참조 순서, 절대 규칙 포함
-- `SESSION_HANDOFF_VIDEO.md`는 세션 로그 성격의 보조 문서
-- `bots/video/samples/ANALYSIS.md`
-  - raw/narration/edited 샘플의 ffprobe 분석 결과
-  - config와 출력 스펙 확정의 근거 문서
-
-### 3. Claude Code / 코덱 다음 작업
-- 과제 4 LLM 자막 교정 완료 상태 확인
-- 다음은 `video-team-tasks.md` 과제 5 프롬프트 → CapCut 드래프트 구현
-- 과제별 단위 테스트 통과 후 순차 진행
-- 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
-- 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
-- 세션 마감 직전에는 `VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md` 반영 여부를 다시 확인한다.
-
-### 4. 역할 경계 유지
-- Claude는 bots/video 폴더 문서를 읽고 프롬프트/설계 방향을 정리하는 역할
-- 실제 코드 업데이트는 코덱(Codex) 또는 Claude Code가 수행
-- 구현 세션에서는 파일 수정 후 반드시 문서에 현재 상태를 반영
+### 과제 6~7: draft 파서 + FFmpeg 렌더링 + 엔드투엔드 통합
+### 과제 8~13: 워커웹 + n8n + 품질 루프 (Week 2)
+### Week 3: 최종 통합 테스트 + 품질 테스트
 
 ---
 
@@ -122,92 +89,80 @@
 
 ```
 ai-agent-system/bots/video/
-├─ config/
-│   └─ video-config.yaml            ✅ 생성 완료
-├─ context/
-│   └─ IDENTITY.md                  ✅ 생성 완료
+├─ config/video-config.yaml        ✅ YouTube 확정값 (24M, 48kHz, 384k, faststart)
+├─ context/IDENTITY.md             ✅ 비디오팀 정체성
 ├─ docs/
-│   ├─ SESSION_HANDOFF_VIDEO.md     ✅ 이 파일
-│   ├─ VIDEO_HANDOFF.md             ✅ 인수인계 허브
-│   ├─ CLAUDE.md                    ✅ 구현 규칙 + 렌더링 확정값
-│   ├─ video-automation-tech-plan.md✅ 기술 구현 방안
-│   ├─ video-team-design.md         ✅ 설계 문서
-│   └─ video-team-tasks.md          ✅ 소과제 문서
+│   ├─ CLAUDE.md                   ✅ 규칙 + 확정값 (96줄)
+│   ├─ SESSION_HANDOFF_VIDEO.md    ✅ 이 파일
+│   ├─ VIDEO_HANDOFF.md            ✅ 인수인계 허브
+│   ├─ video-automation-tech-plan.md ✅ 기술 기획서 (950줄)
+│   ├─ video-team-design.md        ✅ 설계 문서 (739줄, config 업데이트 완료)
+│   └─ video-team-tasks.md         ✅ 소과제 13개 + 프롬프트 (749줄)
+├─ exports/.gitkeep                ✅
 ├─ lib/
-│   └─ ffmpeg-preprocess.js         ✅ 과제 2 구현 완료
-│   └─ whisper-client.js            ✅ 과제 3 구현 완료
-│   └─ subtitle-corrector.js        ✅ 과제 4 구현 완료
-├─ migrations/
-│   └─ 001-video-schema.sql         ✅ 생성 완료
+│   ├─ ffmpeg-preprocess.js        ✅ 과제 2
+│   ├─ whisper-client.js           ✅ 과제 3
+│   └─ subtitle-corrector.js       ✅ 과제 4
+├─ migrations/001-video-schema.sql ✅ video_edits 테이블
+├─ samples/
+│   ├─ ANALYSIS.md                 ✅ ffprobe + YouTube 분석 (190줄)
+│   ├─ raw/ (5세트), narration/ (5세트), edited/ (5+18개)
 ├─ scripts/
-│   └─ test-preprocess.js           ✅ 과제 2 테스트 스크립트
-│   └─ test-whisper.js              ✅ 과제 3 테스트 스크립트
-│   └─ test-subtitle-corrector.js   ✅ 과제 4 테스트 스크립트
-├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
-├─ temp/                            ✅ 생성 완료
-├─ exports/                         ✅ 생성 완료
-└─ src/
-   └─ index.js                      ✅ 생성 완료
+│   ├─ test-preprocess.js          ✅ 과제 2 테스트
+│   ├─ test-whisper.js             ✅ 과제 3 테스트
+│   ├─ test-subtitle-corrector.js  ✅ 과제 4 테스트
+│   └─ check-capcut-readiness.js   ✅ 과제 5 전 readiness 체크
+├─ src/index.js                    ✅ config + DB 연결
+└─ temp/
+    ├─ narr_norm.m4a               ✅ 정규화된 나레이션
+    ├─ subtitle_raw.srt            ✅ Whisper 출력 (67 entries)
+    └─ subtitle_corrected.srt      ✅ LLM 교정본
+```
+
+## 진행 현황
+
+```
+Week 1: 핵심 파이프라인
+  ✅ 과제 1: 프로젝트 스캐폴딩 + DB
+  ✅ 과제 2: FFmpeg 전처리
+  ✅ 과제 3: Whisper STT
+  ✅ 과제 4: LLM 자막 교정
+  ✅ CapCut readiness 체크
+  ☐ 과제 5: CapCut 드래프트        ← 다음
+  ☐ 과제 6: draft 파서 + FFmpeg 렌더링
+  ☐ 과제 7: 엔드투엔드 통합
+
+Week 2: 워커웹 + n8n + 품질 루프
+  ☐ 과제 8~13
+
+Week 3: 최종 테스트 + 문서 체계 통합
+```
+
+## 핵심 결정사항
+
+```
+[확정] YouTube 렌더링: 24Mbps, H.264 High, 48kHz/384kbps, movflags +faststart, BT.709
+[확정] 1440p 업로드 = VP9 코덱 트리거 (1080p 원본 → 2560x1440 업스케일)
+[확정] CapCut 무료 + FFmpeg 렌더링 (Pro 불필요)
+[확정] 저비용 LLM 전략: 자막 gpt-4o-mini, 품질루프 전부 무료 (월 ~$1.12)
+[확정] Gemini 2.0 → 2.5-flash 변경 (2.0 퇴역 예정)
+[확정] quality_loop: critic=gemini-2.5-flash, refiner=groq/gpt-oss-20b, evaluator=groq/scout
+[확정] 대화형 UX 9단계 (워커웹)
+[확정] 더백클래스 LMS 연동은 Phase 2+
 ```
 
 ## 크롬 탭 상태
 
 ```
-tabId 284978451: "Flutterflow 중급 - YouTube"
+tabId 284978451: "Flutterflow 중급 - YouTube" (플레이리스트)
 tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨)
 ```
 
-## 핵심 결정사항 (변경 없음)
+## LMS 학습 메모 (Phase 2 준비)
 
 ```
-1. CapCut 무료 + FFmpeg 렌더링 (Pro 불필요)
-2. ai-agent-system/bots/video/ 에 통합
-3. 개발 중 문서: bots/video/docs/ → 안정화 후 docs/video/
-4. 대화형 UX 9단계 (클로드 프롬프트 형태)
-5. 다중 파일 업로드 + 영상-음성 자동 매칭
-6. 단계적 구현 + 단위 테스트 필수
-7. 더백클래스 LMS 연동은 Phase 2+
-8. RED/BLUE Team = Critic-Refiner-Evaluator 3에이전트
-```
-
-## 현재까지 정리된 구현 기준
-
-```
-문서 기준으로 현재 확정된 것:
-1. 렌더링 목표: 2560x1440 / 60fps / H.264 High Profile / 24M / +faststart / bt709
-2. 오디오 목표: AAC / 48kHz / stereo / 384kbps / -14 LUFS / -1 dBTP
-3. 과제 프롬프트는 하드코딩보다 config/video-config.yaml 참조를 우선
-4. samples/ANALYSIS.md는 초기값과 최종값을 분리해 해석
-
-구현 완료:
-- bots/video/context/IDENTITY.md
-- bots/video/config/video-config.yaml
-- bots/video/migrations/001-video-schema.sql
-- bots/video/src/index.js
-- public.video_edits 테이블 생성/조회 검증
-- bots/video/lib/ffmpeg-preprocess.js
-- bots/video/scripts/test-preprocess.js
-- 샘플 1세트 전처리 검증
-  - removeAudio / normalizeAudio / syncVideoAudio / preprocess 통합 통과
-  - 오디오 48kHz stereo AAC 확인
-  - LUFS -14.9 확인
-- bots/video/lib/whisper-client.js
-- bots/video/scripts/test-whisper.js
-- 샘플 Whisper 검증
-  - OpenAI Whisper 실제 호출 성공
-  - 67 segments 반환
-  - subtitle_raw.srt 생성
-  - llm_usage_log 비용 `$0.026119` 기록 확인
-- bots/video/lib/subtitle-corrector.js
-- bots/video/scripts/test-subtitle-corrector.js
-- 샘플 자막 교정 검증
-  - SRT entries 67개 유지
-  - 타임스탬프 67/67 보존
-  - subtitle_corrected.srt 생성
-  - `subtitle_correction` 비용 로그 확인
-- subtitle_correction fallback 모델 `gemini-2.5-flash`로 갱신
-- quality_loop config를 critic/refiner/evaluator 역할별 모델 구조로 확장
-
-아직 구현되지 않은 것:
-- CapCut / 렌더 파이프라인
+더백클래스 관리자 패널 접속 완료 (the100class.flutterflow.app/adminLectures)
+좌측 메뉴: 회원/약관/강의/FAQ/멤버십/기타
+카테고리 3개: 인스타1st SNS 앱(36), 컴팩트기초 서버(9), 컴팩트기초 로컬(10) = 총 56강의
+아직 확인 안 한 것: 개별 강의 수정 폼, 신규 업로드 폼, 영상 호스팅 방식
 ```
