@@ -129,6 +129,7 @@
 | `node --check bots/video/lib/quality-loop.js` | ✅ |
 | `node --check bots/video/scripts/test-quality-loop.js` | ✅ |
 | `node bots/video/scripts/test-quality-loop.js` | ✅ 실제 quality loop 실행, `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `loop_result.json` 생성 |
+| `node --input-type=module -e "... runEvaluator('./bots/video/temp/refiner_result.json', './bots/video/temp/synced.mp4', config) ..."` | ✅ standalone `refiner_result.json` 기준 `analysis.json` 자동 추론, `score=71`, `recommendation=ACCEPT_BEST` 확인 |
 
 ### 비디오팀 과제 11 — Refiner Agent
 

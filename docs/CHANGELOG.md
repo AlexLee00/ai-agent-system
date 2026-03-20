@@ -30,6 +30,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/video/scripts/test-quality-loop.js`
   - 실제 quality loop 실행과 진행 이벤트 출력, 최종 결과 저장을 검증하는 테스트 스크립트 추가
 
+### 변경 사항 (changed)
+- `bots/video/lib/evaluator-agent.js`
+  - standalone `refiner_result.json` 입력에서도 같은 temp 디렉토리의 `analysis.json`을 자동 추론해 재평가를 계속할 수 있도록 입력 경계를 보강
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)
