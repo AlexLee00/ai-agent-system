@@ -132,6 +132,20 @@ _현재 미해결 이슈 없음_
 - 운영 루프/launchd
   - `start-ops.sh`, `ai.ska.naver-monitor.plist`에 `PLAYWRIGHT_HEADLESS=true` 기본값 반영
 - 관련 파일: `lib/browser.js`, `auto/monitors/naver-monitor.js`, `src/check-naver.js`, `src/init-naver-booking-session.js`, `src/inspect-naver.js`, `src/analyze-booking-page.js`, `src/get-naver-html.js`, `auto/monitors/start-ops.sh`, `launchd/ai.ska.naver-monitor.plist`, `packages/playwright-utils/src/browser.js`
+
+운영 가이드:
+- 기본 운영은 headless
+  - 별도 설정이 없으면 `PLAYWRIGHT_HEADLESS=true`로 해석
+- 브라우저를 직접 보며 점검해야 할 때
+  1. `touch bots/reservation/.playwright-headed`
+  2. `bash bots/reservation/scripts/reload-monitor.sh`
+  3. 네이버/픽코 확인 또는 수동 로그인
+  4. 점검 종료 후 `rm bots/reservation/.playwright-headed`
+  5. 다시 `bash bots/reservation/scripts/reload-monitor.sh`
+- 빠른 1회 디버깅은 환경변수도 가능
+  - `PLAYWRIGHT_HEADLESS=false node bots/reservation/src/init-naver-booking-session.js`
+  - `PLAYWRIGHT_HEADLESS=false node bots/reservation/src/check-naver.js`
+- 세션 만료 알림이 오면 위 headed 전환 절차를 우선 사용한다.
 <!-- session-close:2026-03-20:playwright-headless-기본화:end -->
 
 <!-- session-close:2026-02-27:시스템-설계-v20-ipad-원격-접속-투자봇-설계 -->

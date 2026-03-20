@@ -4,6 +4,25 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-20) — 스카 세션 만료 알림 문구 개선 + headed 운영 가이드 보강
+
+핵심 구현:
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 네이버 세션 만료/자동 재로그인 실패 알림을 운영자 조치형 메시지로 확장
+  - `touch bots/reservation/.playwright-headed -> reload-monitor -> 수동 로그인 -> rm .playwright-headed` 순서를 본문에 직접 포함
+  - 현재 사용 중인 네이버 프로필 경로와 `.playwright-headed` 플래그 경로를 함께 표시
+- `bots/reservation/context/HANDOFF.md`
+  - `.playwright-headed` 기반 headed 디버그 운영 가이드를 step-by-step으로 추가
+  - 환경변수 1회 디버깅 예시와 세션 만료 시 기본 조치 순서를 문서화
+
+세션 맥락:
+- headless 전환 자체는 이미 정상 동작이 확인됐지만, 실제 운영에서는 “세션 만료 알림을 봤을 때 무엇을 해야 하는지”가 바로 보이는 문구가 더 중요했다.
+- 또한 `.playwright-headed` 플래그는 구현됐지만 운영 문서에 짧은 절차로 남아 있지 않아, 다음 세션이나 운영자 입장에서 기억 의존도가 있었다.
+
+의사결정 이유:
+- 지금 당장 필요한 구조는 장애 원인 설명보다 **즉시 실행 가능한 조치 절차**를 알림과 handoff에 같이 넣는 것이다.
+- headed 전환 절차를 알림과 문서 모두에 같은 순서로 남기면, 세션 만료가 와도 운영 대응 속도와 정확성이 올라간다.
+
 ### 12주차 후속 (2026-03-20) — 스카 Playwright/Puppeteer headless 기본화 + headed 디버그 토글
 
 핵심 구현:

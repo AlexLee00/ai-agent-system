@@ -43,6 +43,7 @@ const SECRETS = loadSecrets();
 const NAVER_ID = SECRETS.naver_id;
 const NAVER_PW = SECRETS.naver_pw;
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
+const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
 
 // ─── 자동 버그리포트 ────────────────────────────────────────────────────
 // 오늘 이미 등록된 동일 제목의 버그는 재등록 안 함 (하루 1회 dedup)
@@ -819,7 +820,21 @@ async function monitorBookings() {
             log('✅ 세션 자동 복구 완료');
           } else {
             log('❌ 세션 자동 복구 실패');
-            publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 3, message: '⚠️ 네이버 세션 만료, 자동 재로그인 실패\n수동 확인이 필요합니다.' });
+            publishToMainBot({
+              from_bot: 'andy',
+              event_type: 'alert',
+              alert_level: 3,
+              message:
+                '🚨 네이버 로그인 세션 만료 또는 자동 재로그인 실패\n' +
+                '현재 스카 모니터는 headless 운영 중입니다.\n\n' +
+                '조치:\n' +
+                '1. headed 모드 전환: touch bots/reservation/.playwright-headed\n' +
+                '2. 모니터 재시작: bash bots/reservation/scripts/reload-monitor.sh\n' +
+                '3. 네이버 수동 로그인 완료 후 상태 확인\n' +
+                '4. 운영 복귀: rm bots/reservation/.playwright-headed 후 재시작\n\n' +
+                `프로필: ${path.join(WORKSPACE, `naver-profile${getModeSuffix()}`)}\n` +
+                `플래그 파일: ${HEADED_FLAG_PATH}`
+            });
           }
         }
 
