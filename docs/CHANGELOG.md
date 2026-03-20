@@ -68,6 +68,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `원본_나레이션_파라미터.m4a` 기준 실제 Whisper 호출 검증 추가
   - `67 segments`, `subtitle_raw.srt`, 비용 `$0.026119` 확인
 
+## 12주차 후속 (2026-03-20) — 비디오팀 과제 4 LLM 자막 교정
+
+- `bots/video/lib/subtitle-corrector.js`
+  - `gpt-4o-mini` + `gemini-2.5-flash` 폴백 기반 자막 교정 모듈 추가
+  - 50-entry 청크 처리와 타임스탬프/번호 보존 검증, 구조 불일치 시 원문 유지 fallback 추가
+  - 실패 시 텔레그램 알림 후 원본 SRT 복사로 파이프라인 중단을 방지
+- `bots/video/scripts/test-subtitle-corrector.js`
+  - `subtitle_raw.srt` 기준 실제 교정 테스트 추가
+  - entries `67` 유지, 타임스탬프 `67/67` 보존, 비용 `$0.002` 수준 확인
+- `bots/video/config/video-config.yaml`
+  - `subtitle_correction.fallback_model`을 `gemini-2.5-flash`로 갱신
+  - `quality_loop`를 `critic/refiner/evaluator` 역할별 모델 구조로 확장
+- `bots/video/docs/video-team-design.md`
+  - `subtitle_correction.fallback_model`을 `gemini-2.5-flash`로 갱신
+
 ## 12주차 후속 (2026-03-20) — 아처 비용 표 source 보정 + 날짜 포맷 정상화
 
 ### 변경 사항 (changed)

@@ -248,7 +248,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 3 Whisper STT 완료, LLM 자막 교정(과제 4) 착수 가능
+상태: 과제 4 LLM 자막 교정 완료, CapCut 드래프트(과제 5) 착수 가능
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -265,6 +265,7 @@
   - config/video-config.yaml, context/IDENTITY.md, migrations/001-video-schema.sql, src/index.js 생성 완료
   - lib/ffmpeg-preprocess.js, scripts/test-preprocess.js 생성 완료
   - lib/whisper-client.js, scripts/test-whisper.js 생성 완료
+  - lib/subtitle-corrector.js, scripts/test-subtitle-corrector.js 생성 완료
   - temp/, exports/ 디렉토리 생성 완료
   - public.video_edits 테이블 생성 및 조회 검증 완료
   - 샘플 1세트 기준 FFmpeg 전처리 테스트(removeAudio / normalizeAudio / syncVideoAudio / preprocess) 통과
@@ -274,14 +275,20 @@
   - `temp/subtitle_raw.srt` 생성 확인
   - `67 segments` 반환 확인
   - `llm_usage_log`에 `whisper-1`, `$0.026119`, `audio_transcription` 기록 확인
+  - 자막 교정 샘플 테스트 통과
+  - `temp/subtitle_corrected.srt` 생성 확인
+  - entries `67` 유지, 타임스탬프 `67/67` 보존 확인
+  - `llm_usage_log`에 `gpt-4o-mini`, `subtitle_correction`, 비용 로그 확인
+  - subtitle_correction fallback 모델을 `gemini-2.5-flash`로 갱신
+  - `quality_loop`를 `critic/refiner/evaluator` 역할별 모델 구조로 확장
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code/Codex 과제 4 범위의 LLM 자막 교정 모듈 구현
-     - lib/subtitle-corrector.js
-     - SRT 타임스탬프 불변 유지 검증
+  1. Claude Code/Codex 과제 5 범위의 CapCut 드래프트 모듈 구현
+     - lib/capcut-draft-builder.js
+     - CapCutAPI health check / draft create / copy-to-CapCut 경로 검증
   2. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
   3. 더백클래스 LMS 구조 학습은 Phase 2 이후 확장 과제로 분리
 

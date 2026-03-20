@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-20 (2차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 3 Whisper STT 완료 + LLM 자막 교정(과제 4) 대기
+> 상태: 과제 4 LLM 자막 교정 완료 + CapCut 드래프트(과제 5) 대기
 
 ---
 
@@ -104,8 +104,8 @@
   - config와 출력 스펙 확정의 근거 문서
 
 ### 3. Claude Code / 코덱 다음 작업
-- 과제 3 Whisper STT 완료 상태 확인
-- 다음은 `video-team-tasks.md` 과제 4 프롬프트 → LLM 자막 교정 구현
+- 과제 4 LLM 자막 교정 완료 상태 확인
+- 다음은 `video-team-tasks.md` 과제 5 프롬프트 → CapCut 드래프트 구현
 - 과제별 단위 테스트 통과 후 순차 진행
 - 각 과제 종료 시 문서 업데이트 + 커밋 + push까지 수행
 - 코덱 또는 Claude Code 모두 시작 전에 `CLAUDE.md → VIDEO_HANDOFF.md → video-team-design.md → samples/ANALYSIS.md → video-team-tasks.md` 순서를 먼저 읽는다.
@@ -136,11 +136,13 @@ ai-agent-system/bots/video/
 ├─ lib/
 │   └─ ffmpeg-preprocess.js         ✅ 과제 2 구현 완료
 │   └─ whisper-client.js            ✅ 과제 3 구현 완료
+│   └─ subtitle-corrector.js        ✅ 과제 4 구현 완료
 ├─ migrations/
 │   └─ 001-video-schema.sql         ✅ 생성 완료
 ├─ scripts/
 │   └─ test-preprocess.js           ✅ 과제 2 테스트 스크립트
 │   └─ test-whisper.js              ✅ 과제 3 테스트 스크립트
+│   └─ test-subtitle-corrector.js   ✅ 과제 4 테스트 스크립트
 ├─ samples/                         ← 로컬 fixture 데이터 (raw/narration/edited + ANALYSIS.md)
 ├─ temp/                            ✅ 생성 완료
 ├─ exports/                         ✅ 생성 완료
@@ -196,7 +198,16 @@ tabId 284978582: "AI&NoCode 프리미엄 강의" (adminLectures — 로그인됨
   - 67 segments 반환
   - subtitle_raw.srt 생성
   - llm_usage_log 비용 `$0.026119` 기록 확인
+- bots/video/lib/subtitle-corrector.js
+- bots/video/scripts/test-subtitle-corrector.js
+- 샘플 자막 교정 검증
+  - SRT entries 67개 유지
+  - 타임스탬프 67/67 보존
+  - subtitle_corrected.srt 생성
+  - `subtitle_correction` 비용 로그 확인
+- subtitle_correction fallback 모델 `gemini-2.5-flash`로 갱신
+- quality_loop config를 critic/refiner/evaluator 역할별 모델 구조로 확장
 
 아직 구현되지 않은 것:
-- 자막 교정 / CapCut / 렌더 파이프라인
+- CapCut / 렌더 파이프라인
 ```

@@ -291,7 +291,7 @@ subtitle_correction:
   llm_provider: openai
   llm_model: gpt-4o-mini
   fallback_provider: google
-  fallback_model: gemini-2.0-flash
+  fallback_model: gemini-2.5-flash
   max_retries: 2
   temperature: 0.1
 
