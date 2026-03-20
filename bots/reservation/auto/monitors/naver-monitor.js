@@ -115,6 +115,7 @@ function runStartupPickkoVerification() {
 
 // 이전 사이클 확정 리스트 (취소 감지용)
 let previousConfirmedList = [];
+let previousCancelledCount = null;
 
 // 취소 대기 맵:
 // - 취소감지1: { source: 'confirmed_drop', booking, detectedAt }
@@ -868,6 +869,7 @@ async function monitorBookings() {
         let cancelledHref = null; // 홈에서 추출한 취소 탭 href (스코프 공유)
         let cancelledCount = 0;   // 오늘 취소 카운터 (스코프 공유)
         let confirmedCount = 0;   // 오늘 확정 카운터 (취소 감지 1 스코프 공유)
+        let cycleNewCancelDetections = 0;
 
         // ✅ 매 사이클 오늘 확정 리스트 파싱 (카운터 비교 없이 항상 실행)
         {
@@ -1301,6 +1303,7 @@ async function monitorBookings() {
                 for (const c of cancelCandidates) {
                   const cancelKey = toCancelKey(c);
                   await addCancelledKey(cancelKey);
+                  cycleNewCancelDetections++;
                   await runPickkoCancel(c, cancelKey);
                 }
               } else {
@@ -1339,6 +1342,7 @@ async function monitorBookings() {
                 for (const c of newCancels) {
                   const key = toCancelKey(c);
                   await addCancelledKey(key);
+                  cycleNewCancelDetections++;
                   await runPickkoCancel(c, key);
                 }
               } else {
@@ -1388,6 +1392,7 @@ async function monitorBookings() {
                     pendingCancelMap.delete(pKey);
                     if (!await isCancelledKey(pKey)) {
                       await addCancelledKey(pKey);
+                      cycleNewCancelDetections++;
                       await runPickkoCancel(entry.booking, pKey);
                     }
                   }
@@ -1403,6 +1408,7 @@ async function monitorBookings() {
                     if (cancelledKeySet.has(cancelKey)) {
                       // 취소 탭에서 확인됨 → 즉시 처리 (신뢰도 높음, 더블체크 불필요)
                       await addCancelledKey(cancelKey);
+                      cycleNewCancelDetections++;
                       await runPickkoCancel(dropped, cancelKey);
                     } else {
                       // 취소 탭에 없음 → 날짜로 판단
@@ -1413,6 +1419,7 @@ async function monitorBookings() {
                           log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 2회 연속 미감지 → 취소 확정`);
                           pendingCancelMap.delete(cancelKey);
                           await addCancelledKey(cancelKey);
+                          cycleNewCancelDetections++;
                           await runPickkoCancel(dropped, cancelKey);
                         } else {
                           // 1번째 감지 → pending 등록 (다음 사이클에 재확인)
@@ -1445,6 +1452,23 @@ async function monitorBookings() {
 
         // ✅ previousConfirmedList 업데이트
         previousConfirmedList = currentConfirmedList;
+        if (
+          previousCancelledCount !== null &&
+          cancelledCount > previousCancelledCount &&
+          cycleNewCancelDetections === 0
+        ) {
+          const delta = cancelledCount - previousCancelledCount;
+          log(`🚨 취소 카운터 증가 이상 감지: 오늘 취소 ${previousCancelledCount}→${cancelledCount} (+${delta}), 이번 사이클 신규 취소 처리 0건`);
+          await sendAlert({
+            type: 'error',
+            title: '🚨 네이버 취소 카운터 증가 이상',
+            date: todaySeoul,
+            status: `오늘 취소 ${previousCancelledCount}→${cancelledCount}`,
+            reason: `카운터는 ${delta}건 증가했지만 이번 사이클 신규 취소 처리 0건`,
+            action: '취소 탭 / cancelled_keys / naver-monitor 로그를 즉시 확인하세요.',
+          });
+        }
+        previousCancelledCount = cancelledCount;
 
         // ✅ 취소 감지 4: 미래 예약 스냅샷 비교 (3사이클 = ~15분마다, 내일~+60일)
         // 목적: Detection 1은 현재 세션에서 감지된 예약만 비교 → 이전 세션에 등록된 미래 예약 취소 누락
@@ -1564,6 +1588,7 @@ async function monitorBookings() {
                           log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed/60000)}분 경과 → 취소 확정`);
                           pendingCancelMap.delete(cancelKey);
                           await addCancelledKey(cancelKey);
+                          cycleNewCancelDetections++;
                           await runPickkoCancel(booking, cancelKey);
                         } else {
                           // 누적 대기
