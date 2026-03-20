@@ -9,7 +9,7 @@
  *   node bots/investment/scripts/health-report.js [--json]
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -57,6 +57,20 @@ const ALL_SERVICES = [
 ];
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
+const SCHEDULED_SERVICE_DEPLOYMENTS = {
+  'ai.investment.crypto': {
+    scriptPath: path.resolve(__dirname, '..', 'markets', 'crypto.js'),
+    errorLogPath: '/tmp/investment-crypto.err.log',
+  },
+  'ai.investment.domestic': {
+    scriptPath: path.resolve(__dirname, '..', 'markets', 'domestic.js'),
+    errorLogPath: '/tmp/investment-domestic.err.log',
+  },
+  'ai.investment.overseas': {
+    scriptPath: path.resolve(__dirname, '..', 'markets', 'overseas.js'),
+    errorLogPath: '/tmp/investment-overseas.err.log',
+  },
+};
 
 function formatGuardScope(scope = '') {
   const normalized = String(scope || '').trim().toLowerCase();
@@ -94,6 +108,28 @@ function formatGuardReason(reason = '') {
     .replace(/10분 급등\s*/g, '급등 ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildScheduledDeploymentState() {
+  const state = {};
+  for (const [label, deployment] of Object.entries(SCHEDULED_SERVICE_DEPLOYMENTS)) {
+    try {
+      const scriptMtimeMs = statSync(deployment.scriptPath).mtimeMs;
+      const logMtimeMs = statSync(deployment.errorLogPath).mtimeMs;
+      state[label] = {
+        staleFailure: scriptMtimeMs > logMtimeMs,
+        scriptMtimeMs,
+        logMtimeMs,
+      };
+    } catch {
+      state[label] = {
+        staleFailure: false,
+        scriptMtimeMs: null,
+        logMtimeMs: null,
+      };
+    }
+  }
+  return state;
 }
 
 function loadCapitalPolicySnapshot() {
@@ -358,11 +394,17 @@ function formatText(report) {
 
 async function buildReport() {
   const status = getLaunchctlStatus();
+  const scheduledDeploymentState = buildScheduledDeploymentState();
   const serviceRows = buildServiceRows(status, {
     labels: ALL_SERVICES,
     continuous: CONTINUOUS,
     normalExitCodes: NORMAL_EXIT_CODES,
     shortLabel: (label) => hsm.shortLabel(label),
+    isExpectedExit: (label, exitCode, svc) => {
+      if (svc?.running) return false;
+      if (NORMAL_EXIT_CODES.has(exitCode)) return true;
+      return scheduledDeploymentState[label]?.staleFailure === true;
+    },
   });
   const tradeReview = await loadTradeReviewHealth();
   const guardHealth = buildGuardHealth();
