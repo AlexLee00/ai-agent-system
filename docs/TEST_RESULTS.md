@@ -46,6 +46,17 @@
 | `test -f bots/video/context/IDENTITY.md` | ✅ |
 | `ls -ld bots/video/config bots/video/context bots/video/migrations bots/video/src bots/video/temp bots/video/exports` | ✅ 필요한 디렉토리/파일 존재 확인 |
 
+### 비디오팀 과제 2 — FFmpeg 전처리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/ffmpeg-preprocess.js` | ✅ 통과 |
+| `node --check bots/video/scripts/test-preprocess.js` | ✅ 통과 |
+| `ffmpeg -version \| head -n 1 && ffprobe -version \| head -n 1` | ✅ FFmpeg/ffprobe 8.1 사용 가능 확인 |
+| `node bots/video/scripts/test-preprocess.js` | ✅ `removeAudio`, `normalizeAudio`, `syncVideoAudio`, `preprocess 통합`, `LUFS 측정 -14.9` 전체 통과 |
+| `test -f bots/video/temp/synced.mp4` | ✅ 생성 확인 |
+| `ffprobe 기반 stream 검증` | ✅ `1920x1080 60fps` video + `48000Hz stereo AAC` audio 확인 |
+
 ### 아처 자동화 리포트 재검증 + 비용 표 source 보정
 
 | 테스트 | 결과 |

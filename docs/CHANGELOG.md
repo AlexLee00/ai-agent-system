@@ -47,6 +47,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `.gitignore`
   - 비디오팀 대용량 미디어 파일(`*.mp4`, `*.m4a`, `*.mp3`, `*.wav`, `*.srt`, `dfd_*/`) 무시 규칙 추가
 
+## 12주차 후속 (2026-03-20) — 비디오팀 과제 2 FFmpeg 전처리
+
+- `bots/video/lib/ffmpeg-preprocess.js`
+  - `removeAudio`, `normalizeAudio`, `syncVideoAudio`, `preprocess` 함수 추가
+  - 나레이션 정규화 시 config 기반 `-14 LUFS / -1 TP / LRA 20 / 48kHz / stereo / AAC 384k` 적용
+  - 영상 스트림은 `-c:v copy`로 재인코딩 없이 유지
+- `bots/video/scripts/test-preprocess.js`
+  - 샘플 `원본_파라미터` 세트를 사용하는 과제 2 통합 테스트 추가
+  - ffprobe로 audio/video stream 사양을 검증하고 loudnorm 측정으로 LUFS 범위를 확인
+- macOS 한글 파일명 정규화(NFC/NFD) 차이로 `preprocess()` 매칭이 실패하지 않도록 샘플 파일 탐색 로직을 보강
+
 ## 12주차 후속 (2026-03-20) — 아처 비용 표 source 보정 + 날짜 포맷 정상화
 
 ### 변경 사항 (changed)
