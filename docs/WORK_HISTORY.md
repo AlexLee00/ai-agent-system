@@ -139,6 +139,7 @@
   - 통합 운영 헬스 요약에서 루나 행에 `guard n건`을 함께 보여주도록 정리
 - `bots/orchestrator/lib/night-handler.js`, `bots/investment/scripts/health-report.js`
   - `expires_at` 표기를 `YYYY-MM-DD HH:MM` KST 형식으로 축약해 모바일/운영 화면에서 더 짧게 읽히도록 정리
+  - guard 본문은 `범위/해제 시각`을 먼저 두고, 원인은 `사유:` 한 줄 보조 정보로 압축
 
 ### 12주차 후속 (2026-03-19) — 워커 재무 탭 확장 + 업체 비활성화 운영 완결
 
