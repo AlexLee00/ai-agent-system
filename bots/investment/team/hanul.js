@@ -24,7 +24,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode, isKisPaper } from '../shared/secrets.js';
-import { getInvestmentTradeMode } from '../shared/runtime-config.js';
+import { getInvestmentTradeMode, isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
@@ -300,6 +300,9 @@ export async function executeSignal(signal) {
     if (action === ACTIONS.BUY) {
       const livePosition = await db.getLivePosition(symbol, 'kis');
       const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
+      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
+        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis', tradeMode: signalTradeMode })
+        : null;
 
       if (paperMode && livePosition) {
         const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
@@ -327,6 +330,18 @@ export async function executeSignal(signal) {
       }
       if (!paperMode && livePosition) {
         const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
+        return { success: false, reason };
+      }
+      if (!livePosition && !paperPosition && sameDayBuyTrade) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
@@ -496,6 +511,9 @@ export async function executeOverseasSignal(signal) {
     if (action === ACTIONS.BUY) {
       const livePosition = await db.getLivePosition(symbol, 'kis_overseas');
       const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
+      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
+        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis_overseas', tradeMode: signalTradeMode })
+        : null;
 
       if (paperMode && livePosition) {
         const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
@@ -523,6 +541,18 @@ export async function executeOverseasSignal(signal) {
       }
       if (!paperMode && livePosition) {
         const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
+        return { success: false, reason };
+      }
+      if (!livePosition && !paperPosition && sameDayBuyTrade) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,

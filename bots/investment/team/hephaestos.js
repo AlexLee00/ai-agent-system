@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
 import { loadSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.js';
+import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.js';
 import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason } from '../shared/capital-manager.js';
@@ -704,6 +705,9 @@ export async function executeSignal(signal) {
 
       const livePosition = await db.getLivePosition(symbol, 'binance');
       const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
+      const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
+        ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
+        : null;
       if (effectivePaperMode && livePosition) {
         const reason = '실포지션 보유 중에는 PAPER 추가매수로 혼합 포지션을 만들 수 없음';
         console.log(`  ⛔ [자본관리] ${reason}`);
@@ -740,6 +744,20 @@ export async function executeSignal(signal) {
             existingPaper: livePosition.paper,
             requestedPaper: effectivePaperMode,
             tradeMode: signalTradeMode,
+          },
+        });
+        notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+        return { success: false, reason };
+      }
+      if (!livePosition && !paperPosition && sameDayBuyTrade) {
+        const reason = `동일 ${signalTradeMode.toUpperCase()} 심볼 당일 재진입 차단`;
+        console.log(`  ⛔ [자본관리] ${reason}`);
+        await persistFailure(reason, {
+          code: 'same_day_reentry_blocked',
+          meta: {
+            tradeMode: signalTradeMode,
+            sameDayTradeId: sameDayBuyTrade.id,
+            sameDayTradePaper: sameDayBuyTrade.paper === true,
           },
         });
         notifyTradeSkip({ symbol, action, reason }).catch(() => {});
