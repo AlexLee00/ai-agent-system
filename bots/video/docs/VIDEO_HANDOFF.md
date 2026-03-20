@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~5 완료 / 아키텍처 변경 (CapCut→EDL JSON) / 과제 6 재정의 후 착수
+> 상태: 과제 1~6 핵심 모듈 구현 완료 / EDL JSON + FFmpeg 전환 반영 / 장시간 전체 분석 검증 대기
 
 ---
 
@@ -163,6 +163,19 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - CapCut Desktop 프로젝트 목록에 draft 카드 실제 표시 확인
     - 단, CapCut 7.2.0 draft_info.json 암호화 + CapCutAPI 저장 실패로 메인 파이프라인 의존은 폐기
     - 과제 6부터는 EDL JSON + FFmpeg 중심으로 재정의
+  - 과제 6 핵심 모듈 구현 완료
+    - `lib/video-analyzer.js`
+    - `lib/edl-builder.js`
+    - `scripts/test-video-analyzer.js`
+    - `scripts/test-edl-builder.js`
+  - smoke clip 기준 실검증 완료
+    - 120초 샘플에서 `analyzeVideo()`가 메타데이터 + scene 후보 반환
+    - EDL 생성 / VTT 변환 / 720p preview 렌더 / 1440p final 렌더 검증
+    - 최종 smoke 렌더 결과: `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart`
+  - 로컬 FFmpeg 빌드 capability 확인
+    - `drawtext`, `subtitles` 필터 미지원
+    - 현재 코드는 해당 필터가 없으면 overlay / burn-in을 자동 생략하는 fallback 포함
+    - 따라서 이 머신에서 자막 번인 최종 검증은 추가 FFmpeg 빌드 또는 다른 실행 환경이 필요
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -170,7 +183,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 3: Whisper STT
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCut 드래프트
-  ☐ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링 (재정의)
+  ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링 (핵심 모듈 구현)
   ☐ 과제 7: 엔드투엔드 통합
 
 Week 2: 워커웹 + n8n + 품질 루프
@@ -196,7 +209,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 4. bots/video/samples/ANALYSIS.md 읽기 (샘플 입출력 특성 확인)
 5.5. EDL JSON 스펙은 CLAUDE.md 'EDL JSON' 섹션 참조
 5. bots/video/docs/video-team-tasks.md에서 현재 과제 프롬프트 실행
-6. 과제 6은 FFmpeg 영상 분석 + EDL JSON 생성 + 프리뷰/최종 렌더링 구현부터 진행
+6. 과제 7은 전처리 → STT → 교정 → 분석 → EDL → preview/final 렌더 통합부터 진행
 7. 세션 마감 직전 VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md 반영 여부를 다시 확인
 ```
 

@@ -671,3 +671,18 @@
 | `find /Users/alexlee/projects/CapCutAPI -maxdepth 2 -type d -name 'dfd_cat_1774019905_8be75a35'` | ✅ repo 내부 draft 생성 확인 |
 | `find "/Users/alexlee/Movies/CapCut/User Data/Projects/com.lveditor.draft" -maxdepth 2 -name 'dfd_cat_1774019905_8be75a35'` | ✅ CapCut Desktop 프로젝트 디렉토리 복사 확인 |
 | CapCut Desktop 프로젝트 목록 확인 | ✅ 새 draft 카드 표시 확인 |
+
+### 비디오팀 과제 6 — 영상 분석 + EDL + FFmpeg 렌더링
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/video-analyzer.js` | ✅ 문법 통과 |
+| `node --check bots/video/lib/edl-builder.js` | ✅ 문법 통과 |
+| `node --check bots/video/scripts/test-video-analyzer.js` | ✅ 문법 통과 |
+| `node --check bots/video/scripts/test-edl-builder.js` | ✅ 문법 통과 |
+| `node -e "getMediaInfo('./bots/video/temp/synced.mp4')"` | ✅ `1920x1080`, `60fps`, `h264`, `48000Hz stereo`, `duration=4416.8` 확인 |
+| `analyzer-smoke.mp4` 120초 샘플 생성 후 `analyzeVideo()` 실행 | ✅ `duration=120.033333`, `scenes=1`, 메타데이터 구조 확인 |
+| smoke clip EDL 생성 + `buildPreviewCommand()` + `convertSrtToVtt()` | ✅ EDL 저장, preview 명령 생성, VTT 변환 확인 |
+| smoke clip `renderPreview()` | ✅ `1280x720`, `60fps`, `AAC 128k`, `faststart` 확인 |
+| smoke clip `renderFinal()` | ✅ `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart` 확인 |
+| `ffmpeg -hide_banner -filters | rg "drawtext|subtitles"` | ✅ 현재 로컬 FFmpeg에서 두 필터 미지원 확인, overlay / burn-in fallback 동작 확인 |

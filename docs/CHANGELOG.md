@@ -911,3 +911,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/video/lib/capcut-draft-builder.js`, `bots/video/scripts/test-capcut-draft.js`를 추가해 CapCutAPI HTTP API 기반 draft 생성과 `copyToCapCut()` Desktop 연동 흐름을 구현
   - `add_subtitle`는 CapCutAPI upstream `font_type` 오류를 피하기 위해 기본 `font='文轩体'`, `vertical=false`, `alpha=1.0`, `width/height`를 명시 전달하도록 보강
   - 실제 통합 테스트에서 repo 내부 `dfd_cat_*` draft 생성, CapCut Desktop 프로젝트 디렉토리 복사, Desktop 프로젝트 목록 표시를 모두 확인
+  - `bots/video/lib/video-analyzer.js`, `bots/video/lib/edl-builder.js`를 추가해 EDL JSON 기반 영상 분석/프리뷰/최종 렌더 경로를 구현
+  - `bots/video/scripts/test-video-analyzer.js`, `bots/video/scripts/test-edl-builder.js`를 추가해 분석/EDL/렌더 테스트 진입점을 마련
+  - 120초 smoke clip 기준 preview/final 렌더 검증에서 `2560x1440 / 60fps / H.264 High / 48kHz stereo / faststart`를 확인
+  - 현재 로컬 FFmpeg에 `drawtext`, `subtitles` 필터가 없어 overlay / burn-in은 capability fallback으로 자동 생략되도록 보강

@@ -279,7 +279,7 @@
 ## ★ 비디오팀 세션 컨텍스트 (2026-03-20 추가)
 
 ```
-상태: 과제 1~5 완료, 아키텍처 변경 (CapCut→EDL JSON), 과제 6 재정의 후 착수
+상태: 과제 1~6 핵심 모듈 구현 완료, EDL JSON + FFmpeg 전환 반영, 과제 7 통합 대기
 상세 인수인계: bots/video/docs/SESSION_HANDOFF_VIDEO.md
 
 현재 확보된 문서:
@@ -298,6 +298,8 @@
   - lib/whisper-client.js, scripts/test-whisper.js 생성 완료
   - lib/subtitle-corrector.js, scripts/test-subtitle-corrector.js 생성 완료
   - lib/capcut-draft-builder.js, scripts/test-capcut-draft.js 생성 완료
+  - lib/video-analyzer.js, scripts/test-video-analyzer.js 생성 완료
+  - lib/edl-builder.js, scripts/test-edl-builder.js 생성 완료
   - temp/, exports/ 디렉토리 생성 완료
   - public.video_edits 테이블 생성 및 조회 검증 완료
   - 샘플 1세트 기준 FFmpeg 전처리 테스트(removeAudio / normalizeAudio / syncVideoAudio / preprocess) 통과
@@ -321,16 +323,18 @@
   - CapCut Desktop 프로젝트 목록에 새 draft 카드 표시 확인
   - 단, CapCut Desktop 내부 타임라인/미디어/자막은 비어 있어 CapCut draft parser 전략은 폐기
   - 메인 파이프라인은 CapCut 의존 대신 EDL JSON + FFmpeg로 재정의 중
+  - 120초 smoke clip 기준 `analyzeVideo()`, EDL 생성, 720p preview, 1440p final render 검증 완료
+  - smoke final 결과 `2560x1440`, `60fps`, `H.264 High`, `48kHz stereo`, `faststart` 확인
+  - 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay / burn-in은 자동 생략 fallback으로 동작
   - YouTube 렌더링 확정값(24M / 48kHz / 384kbps / faststart)은 video 문서 세트에 반영 완료
   - task 프롬프트는 하드코딩보다 config 참조 우선으로 정리 완료
   - ANALYSIS.md는 초기 분석값과 최종 확정값을 구분하도록 정리 완료
 
 다음 작업:
-  1. Claude Code/Codex 과제 6 범위의 영상 분석 + EDL 생성 + FFmpeg 렌더링 구현
-     - FFmpeg 기반 무음/정지/씬전환 분석
-     - edit_decision_list.json 생성
-     - 720p 프리뷰 및 1440p 최종 렌더링
-  2. 과제 7 엔드투엔드 통합 파이프라인 구성
+  1. 과제 7 엔드투엔드 통합 파이프라인 구성
+     - 전처리 → STT → 교정 → 분석 → EDL → preview/final 연결
+     - 장시간 전체 자산 기준 render/analysis 운영 시간 측정
+  2. 자막 번인용 FFmpeg capability 확보 또는 대체 실행 환경 정리
   3. 워커 웹 대화형 영상 편집 UX를 기존 worker 패턴 재사용 기준으로 구체화
 
 설계상 핵심 판단:
