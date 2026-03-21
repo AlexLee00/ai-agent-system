@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료
+> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료 / 5세트 preview 검증 완료
 
 ---
 
@@ -255,7 +255,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCut 드래프트
   ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링 (핵심 모듈 구현)
-  ☐ 과제 7: 엔드투엔드 통합 (run-pipeline 1차 구현 완료, preview wall-clock 최적화 대기)
+  ✅ 과제 7: 엔드투엔드 통합 1차 (5세트 `--skip-render` preview 검증 완료)
 
 Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 8: 워커 웹 대화형 영상 편집 페이지 (API + UI 1차 연결)
@@ -264,11 +264,11 @@ Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 11: Refiner
   ✅ 과제 12: Evaluator + quality loop
   ✅ RAG 피드백 루프
-  ☐ 과제 13: 4세트 검증
+  ✅ 과제 13: 5세트 preview 검증 (`--skip-render`)
 
 Week 3: 최종 테스트 + 문서 체계 통합
   ☐ 통합 테스트 (4개 시나리오)
-  ☐ 품질 테스트 (5세트 비교)
+  ✅ 품질 테스트 1차 (5세트 preview 비교 + 세트 1 quality loop)
   ☐ 미달 항목 수정
   ☐ ★ 문서 이동: bots/video/docs/ → docs/video/
   ☐ ★ VIDEO_HANDOFF.md → docs/ 루트 승격
@@ -285,6 +285,28 @@ Week 3: 최종 테스트 + 문서 체계 통합
 5. bots/video/docs/video-team-tasks.md에서 현재 과제 프롬프트 실행
 6. 과제 7은 전처리 → STT → 교정 → 분석 → EDL → preview/final 렌더 통합부터 진행
 7. 세션 마감 직전 VIDEO_HANDOFF.md / SESSION_HANDOFF_VIDEO.md / 전사 SESSION_HANDOFF.md 반영 여부를 다시 확인
+```
+
+## 최신 검증 메모
+
+```
+- 2026-03-21 5세트 전체 `run-pipeline.js --skip-render` 재검증 완료
+- 최초 실패 원인:
+  - preview watchdog 자체가 아니라 `ffmpeg-preprocess.syncVideoAudio()`가 나레이션 길이에 맞춰 영상을 자르지 않아
+    `synced.mp4`의 video/audio duration이 크게 어긋난 것이 핵심
+- 복구 불변식:
+  - `syncVideoAudio()`가 audio duration 기준 `-t` + `-shortest`를 적용
+  - 이후 5세트 모두 `preview_ready` 복구
+  - `subtitle.vtt`도 preview 이전 생성으로 안정화
+- 최신 성공 trace:
+  - 파라미터: `05b1bc91-7251-401f-a6db-2cd53604404c`
+  - 컴포넌트스테이트: `5e18ef34-7841-4faa-9981-7023eef51d36`
+  - 동적데이터: `68c204d7-a99a-404d-bc23-8ed411e114b3`
+  - 서버인증: `3017b788-e0b9-4e09-9235-dfce5127804b`
+  - DB생성: `a4acc396-b9bf-4a43-ae30-b8ddb296d566`
+- 종합 리포트:
+  - `bots/video/temp/validation_report.json`
+  - `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`
 ```
 
 ## 더백클래스 LMS 연동 (Phase 2+)

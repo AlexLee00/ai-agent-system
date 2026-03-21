@@ -47,6 +47,10 @@
   - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, launchd env 없이도 setup/check 스크립트와 내부 dispatch probe가 정상 동작하는 것까지 확인됐다.
   - 이번 라운드에서 `packages/core/lib/rag.js`에 `rag_video` 컬렉션이 추가됐고, `bots/video/lib/video-rag.js`가 편집 결과/피드백 저장, 유사 패턴 검색, Critic/EDL 보강, 예상 시간 추정을 담당하게 됐다.
   - `run-pipeline.js`, `critic-agent.js`, `edl-builder.js`, `bots/worker/web/routes/video-api.js`가 RAG와 연결돼 비디오 품질 루프가 이제 과거 편집 패턴을 학습할 수 있는 구조로 확장됐다.
+  - 5세트 전체 `run-pipeline.js --skip-render` 재검증 결과 현재는 파라미터/컴포넌트스테이트/동적데이터/서버인증/DB생성 모두 `preview_ready`까지 복구됐다.
+  - 초기 5세트 실패의 실제 원인은 preview watchdog 자체가 아니라 `ffmpeg-preprocess.syncVideoAudio()`가 나레이션 길이에 맞춰 영상을 자르지 않아 `synced.mp4`의 video/audio duration이 크게 어긋난 것이었다.
+  - `syncVideoAudio()`에 audio duration 기준 `-t` + `-shortest`를 적용한 뒤 5세트가 모두 정상 통과했고, `subtitle.vtt`는 preview 전에 생성되도록 이동해 artifact 정합성도 회복됐다.
+  - 최신 종합 리포트는 `bots/video/temp/validation_report.json`에 저장돼 있으며 요약값은 `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`이다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
@@ -187,8 +191,8 @@
   - 투자 설정 제안 일일/주간
 6. 자동화 리포트 운영 데이터 관찰
 7. 비디오 품질 루프 확장
-  - 과제 10 Critic, 과제 11 Refiner, 과제 12 Evaluator/quality-loop는 구현 완료
-  - 다음은 과제 13 다세트 검증과 실자산 preview/final render wall-clock 최적화
+  - 과제 10 Critic, 과제 11 Refiner, 과제 12 Evaluator/quality-loop, 과제 13 5세트 preview 검증까지 완료
+  - 다음은 preview wall-clock을 원장에 따로 저장하는 구조 보강과 final render 다세트 실검증
   - 제이 Gateway `persisted` 상태
   - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴

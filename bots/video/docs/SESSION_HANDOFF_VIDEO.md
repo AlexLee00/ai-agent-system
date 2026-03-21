@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 live 검증 완료
+> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 live 검증 완료 + 5세트 preview 검증 완료
 
 ---
 
@@ -201,16 +201,39 @@ Step 3 — 과제 6~13 재정의:
   - `estimateWithRAG.estimated_ms: 180000`
   - `enhanceCriticWithRAG.rag_insights`, `enhanceEDLWithRAG.rag_source` 생성 확인
 
+### 12. 과제 13: 5세트 전체 파이프라인 검증 (`--skip-render`) ✅
+- `bots/video/scripts/run-pipeline.js`를 5세트 샘플에 대해 순차 재실행
+  - 파라미터
+  - 컴포넌트스테이트
+  - 동적데이터
+  - 서버인증
+  - DB생성
+- 최초 5세트 실패에서 확인한 핵심 원인:
+  - preview watchdog 자체가 아니라 `ffmpeg-preprocess.syncVideoAudio()`가 나레이션 길이에 맞춰 영상을 자르지 않아
+    `synced.mp4`의 video/audio duration이 크게 어긋났던 것
+- 복구:
+  - `syncVideoAudio()`에 audio duration 기준 `-t` + `-shortest` 적용
+  - `subtitle.vtt` 생성 시점을 preview 렌더 전에 이동
+  - `renderPreview` watchdog을 예상 duration 기준으로 동적 계산
+- 최신 재검증 결과:
+  - 5세트 모두 `preview_ready`
+  - `subtitle.vtt` 5세트 모두 생성
+  - `validation_report.json` 기준 `successful=5`, `failed=0`, `avg_total_ms=440378`
+  - `rag_video` 적재 건수 `7`, `estimateWithRAG.sample_count=5`, `confidence=high`
+- 세트 1 quality loop 재실행 결과:
+  - 최신 성공 run 기준 `final_score=80`, `pass=false`, `recommendation=ACCEPT_BEST`
+  - RAG 네트워크 우회 모드가 들어가면 quality loop 점수 개선이 제한될 수 있음
+
 ---
 
 ## 다음 세션에서 해야 할 것
 
-### 즉시: 과제 7 운영 안정화 + 과제 13 착수
+### 즉시: preview 원장 고도화 + final render 다세트 검증
 - worker-web 세션 루프는 연결 완료
-- 남은 건 실자산 preview wall-clock 최적화와 final render 운영 시간 측정
+- 남은 건 `preview_ms`를 DB 원장에 별도 기록하는 구조와 final render 운영 시간 측정
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
-- 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
+- 과제 13의 preview 검증은 완료됐고, 다음은 4~5세트 기준 final render와 quality loop 수렴 패턴까지 함께 검증하면 된다
 - n8n 쪽은 live webhook 등록, 내부 dispatch route 검증, worker secret 영속화까지 완료됐고, 다음은 과제 13 다세트 검증으로 넘어가면 된다
 - RAG는 이제 편집 결과/피드백을 축적하기 시작했으므로, 다음 검증에서는 세트 수를 늘려 실제 추천 품질과 추정 정확도가 올라가는지 함께 봐야 한다
 
@@ -262,7 +285,7 @@ Week 1: 핵심 파이프라인
   ✅ 과제 4: LLM 자막 교정
   ✅ 과제 5: CapCutAPI 드래프트 (선택적 보조)
   ✅ 과제 6: 영상 분석 + EDL 생성 + FFmpeg 렌더링
-  ☐ 과제 7: 엔드투엔드 파이프라인 통합 (runner 구현 완료, preview 최적화 남음)
+  ✅ 과제 7: 엔드투엔드 파이프라인 통합 1차 (5세트 preview 검증 완료)
 
 Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
@@ -270,7 +293,7 @@ Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 10: Critic (자막+오디오+★영상 구조)
   ✅ 과제 11: Refiner (SRT+★EDL 생성/수정)
   ✅ 과제 12: Evaluator + 품질 루프
-  ☐ 과제 13: 5세트 검증
+  ✅ 과제 13: 5세트 preview 검증 (`--skip-render`)
 
 Week 3: 최종 테스트 + 문서 체계 통합
 ```
@@ -291,6 +314,7 @@ Week 3: 최종 테스트 + 문서 체계 통합
 [확정] 과제 6 smoke 검증: 120초 샘플에서 preview/final 렌더 성공
 [확정] 과제 7 1차 통합: `run-pipeline.js`가 source 선택부터 DB status/trace/preview까지 연결
 [확정] 과제 7 운영 안전장치: single-flight lock + stale lock 정리 + SIGINT/SIGTERM 시 lock 해제
-[주의] 실자산 preview 렌더는 EDL transition 수에 따라 wall-clock이 길 수 있어 추가 최적화가 필요
+[확정] 실자산 preview 실패의 핵심 원인은 watchdog이 아니라 `synced.mp4` video/audio duration 불일치였고, preprocessing 수정 후 5세트 모두 `preview_ready` 복구
+[주의] `preview_ms`는 아직 DB 원장에 별도 저장되지 않아 validation_report에서는 null로 유지됨
 [주의] 현재 로컬 FFmpeg는 `drawtext`, `subtitles` 필터가 없어 overlay/burn-in은 capability fallback으로 자동 생략됨
 ```

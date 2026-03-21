@@ -589,6 +589,37 @@ function parseProgressTime(stderrChunk) {
   return (hours * 3600) + (minutes * 60) + seconds;
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function computePreviewWatchdogOptions(commandArgs) {
+  const renderDurationSeconds = safeParseFloat(commandArgs.renderDurationSeconds, 0);
+  if (!renderDurationSeconds) {
+    return {
+      timeoutMs: 15 * 60 * 1000,
+      stallTimeoutMs: 3 * 60 * 1000,
+    };
+  }
+
+  const estimatedRuntimeMs = renderDurationSeconds * 600;
+  const timeoutMs = clamp(
+    Math.round(estimatedRuntimeMs),
+    15 * 60 * 1000,
+    60 * 60 * 1000
+  );
+  const stallTimeoutMs = clamp(
+    Math.round(renderDurationSeconds * 100),
+    3 * 60 * 1000,
+    10 * 60 * 1000
+  );
+
+  return {
+    timeoutMs,
+    stallTimeoutMs,
+  };
+}
+
 async function executeRender(commandArgs, action, metadata = {}, options = {}) {
   const startedAt = Date.now();
   const [bin, ...args] = commandArgs;
@@ -712,13 +743,12 @@ function hasFastStart(filePath) {
 
 async function renderPreview(edl, outputPath, config) {
   const args = buildPreviewCommand(edl, outputPath, config);
+  const watchdogOptions = computePreviewWatchdogOptions(args);
   const result = await executeRender(args, 'render_preview', {
     source: edl.source,
     outputPath,
-  }, {
-    timeoutMs: 15 * 60 * 1000,
-    stallTimeoutMs: 45 * 1000,
-  });
+    watchdogOptions,
+  }, watchdogOptions);
   return {
     success: result.success,
     duration_ms: result.duration_ms,

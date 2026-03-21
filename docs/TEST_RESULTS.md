@@ -121,6 +121,21 @@
 
 ## 2026-03-21
 
+### 비디오팀 과제 13 — 5세트 전체 파이프라인 검증 (`--skip-render`)
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/video/scripts/run-pipeline.js --source-video="bots/video/samples/raw/원본_파라미터.mp4" --source-audio="bots/video/samples/narration/원본_나레이션_파라미터.m4a" --skip-render` | ✅ `preview_ready`, trace `05b1bc91-7251-401f-a6db-2cd53604404c`, `total_ms=214732` |
+| `node bots/video/scripts/run-pipeline.js --source-video="bots/video/samples/raw/원본_컴포넌트스테이트.mp4" --source-audio="bots/video/samples/narration/원본_나레이션_컴포넌트스테이트.m4a" --skip-render` | ✅ `preview_ready`, trace `5e18ef34-7841-4faa-9981-7023eef51d36`, `total_ms=522694` |
+| `node bots/video/scripts/run-pipeline.js --source-video="bots/video/samples/raw/원본_동적데이터.mp4" --source-audio="bots/video/samples/narration/원본_나레이션_동적데이터.m4a" --skip-render` | ✅ `preview_ready`, trace `68c204d7-a99a-404d-bc23-8ed411e114b3`, `total_ms=417838` |
+| `node bots/video/scripts/run-pipeline.js --source-video="bots/video/samples/raw/원본_서버인증.mp4" --source-audio="bots/video/samples/narration/원본_나레이션_서버인증.m4a" --skip-render` | ✅ `preview_ready`, trace `3017b788-e0b9-4e09-9235-dfce5127804b`, `total_ms=712327` |
+| `node bots/video/scripts/run-pipeline.js --source-video="bots/video/samples/raw/원본_DB생성.mp4" --source-audio="bots/video/samples/narration/원본_나레이션_DB생성.m4a" --skip-render` | ✅ `preview_ready`, trace `a4acc396-b9bf-4a43-ae30-b8ddb296d566`, `total_ms=334298` |
+| `ffprobe bots/video/temp/run-05b1bc91/synced.mp4 / preview.mp4` | ✅ 세트 1 `261.2s`, `1920x1080 -> 1280x720` 및 video/audio duration 정합성 확인 |
+| `node - <<'NODE' ... runQualityLoop(...) ... NODE` (세트 1 최신 run 기준) | ✅ `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false` |
+| `node - <<'NODE' ... estimateWithRAG(5, 481.9, 224.3) ... NODE` | ✅ `estimated_ms=373360`, `confidence=high`, `sample_count=5` |
+| `SELECT COUNT(*) FROM reservation.rag_video` | ✅ `7건` 확인 |
+| `bots/video/temp/validation_report.json` 재생성 | ✅ `successful=5`, `failed=0`, `avg_total_ms=440378`, `total_cost_usd=0.2756` |
+
 ### 비디오팀 과제 12 — Evaluator + quality loop
 
 | 테스트 | 결과 |
