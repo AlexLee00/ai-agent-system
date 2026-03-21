@@ -3,6 +3,54 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback readiness + concurrency 안정화
+
+### 변경 사항 (changed)
+- `bots/orchestrator/lib/openclaw-config.js`
+  - provider `configured`와 `authReady`를 분리하도록 readiness 계산 추가
+  - `fallbackReadiness`, `readyFallbacks`, `unreadyFallbacks` 노출
+  - `updateOpenClawGatewayFallbacks()`, `updateOpenClawGatewayConcurrency()` 추가
+- `bots/orchestrator/scripts/check-jay-gateway-primary.js`
+  - candidate별 `authReady`, ready/unready fallback 개수, 즉시 사용 가능 fallback 출력 추가
+- `bots/orchestrator/scripts/prepare-jay-gateway-switch.js`
+  - 전환 후보는 `configured=true`뿐 아니라 `authReady=true`여야 통과하도록 보강
+- `bots/orchestrator/scripts/log-jay-gateway-experiment.js`
+  - `providerAuthMissingCount`, `nonAuthFailoverErrorCount`, `embeddedRateLimitRuns`, `retryBurstCount`, `maxAttemptsPerRun` 추가
+- `scripts/reviews/jay-gateway-experiment-review.js`
+  - rate limit과 auth missing, retry burst를 분리 해석하도록 리뷰 보강
+
+### 신규 기능 (feat)
+- `bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js`
+  - ready fallback만 유지하는 권장 체인을 계산하고 `--apply`로 라이브 설정에 반영하는 CLI 추가
+- `bots/orchestrator/scripts/tune-jay-gateway-concurrency.js`
+  - `maxConcurrent`, `subagents.maxConcurrent`를 보수적으로 조정하는 CLI 추가
+
+### 운영 반영 (ops)
+- `~/.openclaw/openclaw.json`
+  - fallback chain `11 -> 4` 축소
+  - 현재 fallback:
+    - `openai/gpt-4o-mini`
+    - `openai/gpt-4o`
+    - `openai/o4-mini`
+    - `openai/o3-mini`
+  - concurrency:
+    - `maxConcurrent=1`
+    - `subagents.maxConcurrent=2`
+
+### 검증
+- `node --check bots/orchestrator/lib/openclaw-config.js` | ✅
+- `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅
+- `node --check bots/orchestrator/scripts/prepare-jay-gateway-switch.js` | ✅
+- `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅
+- `node --check scripts/reviews/jay-gateway-experiment-review.js` | ✅
+- `node --check bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js` | ✅
+- `node --check bots/orchestrator/scripts/tune-jay-gateway-concurrency.js` | ✅
+- `node bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅ `ready fallback=4`, `unready fallback=0` 확인
+- `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` | ✅ 라이브 fallback chain 정리
+- `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency 조정
+- `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동
+- `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 24시간 창에서 `retry burst runs=13`, `max attempts per run=4` 기준 남은 병목 확인
+
 ## 12주차 후속 (2026-03-21) — 스카 수동등록 후속 차단 원장화
 
 ### 변경 사항 (changed)

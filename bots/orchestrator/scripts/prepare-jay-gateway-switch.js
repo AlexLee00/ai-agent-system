@@ -20,7 +20,7 @@ function buildPlan(candidateKey) {
     throw new Error(`unknown candidate: ${candidateKey}`);
   }
 
-  const recommended = payload.aligned && candidate.configured;
+  const recommended = payload.aligned && candidate.configured && candidate.authReady;
   const currentPrimary = payload.runtimePrimary;
   const preflightChecks = [
     {
@@ -39,7 +39,7 @@ function buildPlan(candidateKey) {
       step: '후보 provider 사용 가능 여부',
       command: 'node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json',
       required: true,
-      passCondition: `${candidate.model} 후보의 configured 값이 true여야 한다.`,
+      passCondition: `${candidate.model} 후보의 configured=true 그리고 authReady=true 이어야 한다.`,
     },
   ];
 
@@ -79,6 +79,7 @@ function buildPlan(candidateKey) {
       label: candidate.label,
       model: candidate.model,
       configured: candidate.configured,
+      authReady: candidate.authReady,
       pros: candidate.pros,
       cons: candidate.cons,
     },
@@ -86,7 +87,11 @@ function buildPlan(candidateKey) {
       action: recommended ? 'prepare_compare' : 'blocked',
       reason: recommended
         ? `${candidate.label} 후보는 현재 설정에서 사용 가능하며, 비교 실험 준비가 가능합니다.`
-        : `${candidate.label} 후보는 현재 설정 또는 정합성 조건이 맞지 않아 바로 준비할 수 없습니다.`,
+        : `${candidate.label} 후보는 현재 설정, auth readiness, 또는 정합성 조건이 맞지 않아 바로 준비할 수 없습니다.`,
+    },
+    fallbackReadiness: {
+      readyFallbacks: payload.readyFallbacks,
+      unreadyFallbacks: payload.unreadyFallbacks,
     },
     preflightChecks,
     executionSteps,
@@ -101,6 +106,10 @@ function printHuman(plan) {
   lines.push(`현재 primary: ${plan.currentPrimary}`);
   lines.push(`후보: ${plan.candidate.label} (${plan.candidate.model})`);
   lines.push(`configured: ${plan.candidate.configured ? 'yes' : 'no'}`);
+  lines.push(`authReady: ${plan.candidate.authReady ? 'yes' : 'no'}`);
+  if (plan.fallbackReadiness.unreadyFallbacks.length) {
+    lines.push(`unready fallback: ${plan.fallbackReadiness.unreadyFallbacks.join(', ')}`);
+  }
   lines.push('');
   lines.push(`권장 판단: ${plan.recommendation.action}`);
   lines.push(`- ${plan.recommendation.reason}`);

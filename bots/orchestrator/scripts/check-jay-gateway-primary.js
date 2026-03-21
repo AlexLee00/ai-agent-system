@@ -17,6 +17,7 @@ function buildPayload() {
       pros: ['무료 OAuth 기반', '현재 운영 primary와 동일', '현재 정합성 점검 결과와 잘 맞음'],
       cons: ['rate limit burst 이력 존재', '제이 intent 모델과 공급자 축이 다름'],
       configured: gatewayState.availableProviders.includes('google-gemini-cli'),
+      authReady: gatewayState.readyProviders.includes('google-gemini-cli'),
     },
     {
       key: 'groq_speed',
@@ -25,6 +26,7 @@ function buildPayload() {
       pros: ['자유대화 fallback 체인과 축이 맞음', '응답속도 개선 가능성'],
       cons: ['gateway 전역 primary 변경 영향 범위 큼', '명령형 GPT 분리 구조와는 별도 검증 필요'],
       configured: gatewayState.availableProviders.includes('groq'),
+      authReady: gatewayState.readyProviders.includes('groq'),
     },
     {
       key: 'anthropic_safe',
@@ -33,6 +35,7 @@ function buildPayload() {
       pros: ['짧은 운영 질의에 안정적', '비상용 품질 안전판 역할 가능'],
       cons: ['유료 호출', '현재 primary/fallback 체계와 비용 구조가 달라짐'],
       configured: gatewayState.availableProviders.includes('anthropic'),
+      authReady: gatewayState.readyProviders.includes('anthropic'),
     },
   ];
   const aligned = gatewayState.ok ? gatewayState.primary === runtimePrimary : false;
@@ -68,7 +71,13 @@ function buildPayload() {
     openclawPath: gatewayState.filePath,
     openclawPrimary: gatewayState.primary,
     openclawFallbackCount: gatewayState.fallbacks.length,
+    readyFallbackCount: gatewayState.readyFallbacks.length,
+    unreadyFallbackCount: gatewayState.unreadyFallbacks.length,
+    readyFallbacks: gatewayState.readyFallbacks,
+    unreadyFallbacks: gatewayState.unreadyFallbacks,
     availableProviders: gatewayState.availableProviders,
+    readyProviders: gatewayState.readyProviders,
+    authPath: gatewayState.authPath,
     aligned,
     recommendation,
     candidateProfiles,
@@ -84,12 +93,22 @@ function printHuman(payload) {
     `runtime_config 기준: ${payload.runtimePrimary || '-'}`,
     `openclaw.json 기준: ${payload.openclawPrimary || '확인 불가'}`,
     `fallback 개수: ${payload.openclawFallbackCount}`,
+    `ready fallback 개수: ${payload.readyFallbackCount}`,
+    `unready fallback 개수: ${payload.unreadyFallbackCount}`,
     `정합성: ${payload.aligned ? '일치' : '불일치'}`,
     `사용 가능 provider: ${payload.availableProviders.length ? payload.availableProviders.join(', ') : '확인 불가'}`,
+    `실사용 준비 provider: ${payload.readyProviders.length ? payload.readyProviders.join(', ') : '없음'}`,
     `설정 파일: ${payload.openclawPath}`,
+    `agent auth 파일: ${payload.authPath}`,
   ];
   if (payload.error) {
     lines.push(`오류: ${payload.error}`);
+  }
+  if (payload.unreadyFallbacks.length) {
+    lines.push(`미준비 fallback: ${payload.unreadyFallbacks.join(', ')}`);
+  }
+  if (payload.readyFallbacks.length) {
+    lines.push(`즉시 사용 가능 fallback: ${payload.readyFallbacks.join(', ')}`);
   }
   lines.push('');
   lines.push(`권장 판단: ${payload.recommendation.action}`);
@@ -99,6 +118,7 @@ function printHuman(payload) {
   for (const profile of payload.candidateProfiles) {
     lines.push(`- ${profile.label} (${profile.model})`);
     lines.push(`  configured: ${profile.configured ? 'yes' : 'no'}`);
+    lines.push(`  authReady: ${profile.authReady ? 'yes' : 'no'}`);
     lines.push(`  pros: ${profile.pros.join(' / ')}`);
     lines.push(`  cons: ${profile.cons.join(' / ')}`);
   }

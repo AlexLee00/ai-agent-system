@@ -4,6 +4,50 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback hygiene + concurrency 보수화
+
+핵심 구현:
+- `bots/orchestrator/lib/openclaw-config.js`
+  - provider `configured`와 실제 `authReady`를 분리하도록 readiness 계산 추가
+  - `fallbackReadiness`, `readyFallbacks`, `unreadyFallbacks` 노출
+  - `updateOpenClawGatewayFallbacks()`, `updateOpenClawGatewayConcurrency()` 추가
+- `bots/orchestrator/scripts/check-jay-gateway-primary.js`
+  - 후보 점검 결과에 `authReady`, ready/unready fallback 개수, 즉시 사용 가능 fallback 목록 포함
+- `bots/orchestrator/scripts/prepare-jay-gateway-switch.js`
+  - gateway 전환 후보는 `configured=true`뿐 아니라 `authReady=true`도 충족해야 통과하도록 보강
+- `bots/orchestrator/scripts/log-jay-gateway-experiment.js`
+  - `providerAuthMissingCount`, `nonAuthFailoverErrorCount`, `embeddedRateLimitRuns`, `retryBurstCount`, `maxAttemptsPerRun` 지표 추가
+- `scripts/reviews/jay-gateway-experiment-review.js`
+  - rate limit과 auth missing, retry burst를 분리 해석하도록 보강
+- `bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js`
+  - ready fallback만 남기는 권장 체인 계산/적용 CLI 추가
+- `bots/orchestrator/scripts/tune-jay-gateway-concurrency.js`
+  - `maxConcurrent`, `subagents.maxConcurrent`를 보수적으로 조정하는 CLI 추가
+
+세션 맥락:
+- 5개 자동화 리포트를 종합한 결과, 가장 직접적인 운영 병목은 `OpenClaw gateway / LLM rate limit`이었다.
+- 초기 로그를 보면 `Gemini rate limit` 뒤에 `groq`, `cerebras` auth missing이 대량으로 이어져 실제 병목과 noisy failover가 섞여 있었다.
+- 또한 동일 `runId`가 `2~4회` 반복 기록돼, 현재 남은 핵심은 fallback 부족보다 `retry burst`라는 점이 확인됐다.
+
+실측 결과:
+- `node bots/orchestrator/scripts/check-jay-gateway-primary.js` ✅
+  - 기존 fallback `11개`, ready fallback `4개`, unready fallback `7개` 확인
+- `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` ✅
+  - 라이브 `openclaw.json` fallback을 ready provider만 남도록 정리
+- `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` ✅
+  - 라이브 concurrency를 `1/2`로 보수화
+- `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` ✅
+  - gateway 재기동
+- 후속 `check-jay-gateway-primary.js` ✅
+  - `fallback 개수=4`, `ready fallback 개수=4`, `unready fallback 개수=0`
+- `node scripts/reviews/jay-gateway-experiment-daily.js` ✅
+  - 최신 24시간 창에는 아직 과거 로그가 남아 있으나 `retry burst runs=13`, `max attempts per run=4`로 남은 병목이 좁혀짐
+
+의미:
+- 지금 당장 필요한 구조인 “준비되지 않은 fallback 제거 + 보수적 동시성”은 회복됐다.
+- 이후 SaaS 확장을 고려하면 provider는 많을수록 좋은 것이 아니라, `registered`와 `ready`를 분리해 실제 복구 가능 후보만 운영 체인에 두는 구조가 맞다.
+- 다음 자연스러운 단계는 post-prune/post-tune 관찰 창에서 `provider auth missing`, `retry burst`, `active rate limit`이 실제로 감소하는지 확인하는 것이다.
+
 ### 12주차 후속 (2026-03-21) — 스카 수동등록 후속 차단 silent failure 원장화
 
 핵심 구현:
