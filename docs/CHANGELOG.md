@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 비디오팀 Phase 1 마감 문서 정리 + worker-web `/video` 반영
+
+### 변경 사항 (changed)
+- `bots/video/docs/CLAUDE.md`
+  - 절대 규칙에 RAG 피드백 루프 원칙 14~16 추가
+  - `RAG 피드백 루프 — 학습하는 편집 시스템` 섹션 추가
+- `bots/video/docs/SESSION_HANDOFF_VIDEO.md`
+  - Phase 1 완료 기준 인수인계 문서로 전면 교체
+- `bots/video/docs/VIDEO_HANDOFF.md`
+  - 상태 라인을 `Phase 1 전체 완료` 기준으로 갱신
+- `docs/SESSION_HANDOFF.md`
+  - 비디오팀 Phase 1 완료와 worker-web `/video` 반영 상태를 전사 handoff에 반영
+
+### 검증
+- `cd bots/worker/web && npx next build` | ✅ `/video`, `/video/history` route 생성 확인
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 런타임 재기동
+- `curl -I http://127.0.0.1:4001/video` | ✅ `200 OK`
+- `curl -I http://127.0.0.1:4001/video/history` | ✅ `200 OK`
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 5세트 preview 검증 복구
 
 ### 변경 사항 (changed)

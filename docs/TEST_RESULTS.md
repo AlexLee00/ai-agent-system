@@ -121,6 +121,16 @@
 
 ## 2026-03-21
 
+### 비디오팀 Phase 1 마감 — worker-web `/video` 빌드 반영
+
+| 테스트 | 결과 |
+|--------|------|
+| `cd bots/worker/web && npx next build` | ✅ `/video`, `/video/history` 포함 production build 통과 |
+| `launchctl list \| egrep 'ai\.worker\.(web\|nextjs)'` | ✅ 재기동 전 `ai.worker.nextjs`가 예전 빌드를 물고 있던 상태 확인 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 런타임 재기동 |
+| `curl -I http://127.0.0.1:4001/video` | ✅ `200 OK` |
+| `curl -I http://127.0.0.1:4001/video/history` | ✅ `200 OK` |
+
 ### 비디오팀 과제 13 — 5세트 전체 파이프라인 검증 (`--skip-render`)
 
 | 테스트 | 결과 |

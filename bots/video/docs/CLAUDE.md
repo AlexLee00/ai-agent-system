@@ -69,6 +69,9 @@ audio_normalize:
 11. 영상 편집 결정은 EDL JSON으로 표현 (CapCut draft_info.json 의존 금지)
 12. RED/BLUE 품질 루프는 자막+오디오+영상 편집 모두 관여
 13. 프리뷰는 FFmpeg 720p 프리뷰 또는 워커 웹 HTML5 Video+VTT
+14. RAG 피드백 루프: 편집 완료 시 결과를 반드시 RAG에 축적 (video-rag.js `storeEditResult`)
+15. Critic/EDL은 RAG 인사이트를 참조 후 분석/생성 (`enhanceCriticWithRAG`, `enhanceEDLWithRAG`)
+16. RAG 실패 시 파이프라인 중단 금지 — graceful degradation (`rag-safe.js` 패턴)
 
 ## 문서 참조 순서
 
@@ -119,3 +122,26 @@ EDL 생성 주체:
 - Refiner(BLUE): 권고 반영 → edit_decision_list.json 생성/수정
 - 영상제작팀: 워커 웹에서 프레임 단위 편집 의견 → EDL 수정
 - FFmpeg: EDL JSON 해석 → 프리뷰(720p) 또는 최종 렌더링(1440p/24Mbps)
+
+## RAG 피드백 루프 — 학습하는 편집 시스템
+
+비디오팀은 편집 결과를 RAG(pgvector)에 축적하고, 다음 편집 시 참조하여 점점 정교해지는 자기학습형 파이프라인.
+
+컬렉션: `rag_video` (`reservation` 스키마)
+
+저장 시점:
+- 파이프라인 완료 시 (`preview_ready` / `completed`) → `storeEditResult()`
+- 마스터 `confirm` / `reject` 시 → `storeEditFeedback()`
+
+참조 시점:
+- Critic 분석 시 → `enhanceCriticWithRAG()` (과거 반복 이슈 주의)
+- EDL 생성 시 → `enhanceEDLWithRAG()` (과거 성공 패턴 반영)
+- 예상 시간 추정 시 → `estimateWithRAG()` (벡터 유사도 기반)
+
+핵심 모듈: `bots/video/lib/video-rag.js`
+- `storeEditResult`, `storeEditFeedback`
+- `searchSimilarEdits`, `searchEditPatterns`
+- `enhanceCriticWithRAG`, `enhanceEDLWithRAG`
+- `estimateWithRAG`
+
+RAG 실패 시: `rag-safe.js` 서킷 브레이커 → 2시간 우회 → 파이프라인 정상 진행
