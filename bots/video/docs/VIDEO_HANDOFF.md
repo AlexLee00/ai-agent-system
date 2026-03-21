@@ -222,6 +222,7 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `worker/web/routes/video-api.js`의 `start/confirm` 경로를 `runWithN8nFallback()` 기반으로 전환
     - n8n 장애 시 기존 `fork()` direct fallback 유지
     - `packages/core/lib/n8n-runner.js`에 커스텀 헤더 전달 지원 추가 (`X-Video-Token`)
+    - `setup-video-workflow.js`는 이제 registry DB 조회가 막혀도 기본 webhook 경로로 degrade 하며, setup 성공 자체를 불필요하게 실패시키지 않음
     - 현재 로컬 진단 결과는 `n8nHealthy=false`, `webhookReason=unreachable`라 fallback 경로가 실제로 필요한 상태
 
 Week 1: 핵심 파이프라인

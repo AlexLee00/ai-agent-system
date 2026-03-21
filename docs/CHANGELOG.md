@@ -52,6 +52,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - webhook 호출에 커스텀 헤더(`X-Video-Token`) 전달 지원 추가
 - `bots/video/config/video-config.yaml`
   - 비디오팀 `n8n` 설정 섹션 추가
+- `bots/video/n8n/setup-video-workflow.js`
+  - registry DB 조회 실패 시에도 setup 성공 후 기본 webhook 경로를 출력하도록 보강
 
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 

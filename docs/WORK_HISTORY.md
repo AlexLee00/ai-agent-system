@@ -111,6 +111,10 @@
 - `check-n8n-video-path.js` 기준 현재 로컬 컨텍스트에서는 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError`가 확인됐다.
 - 즉 이번 구현은 단순 옵션 추가가 아니라, 실제 장애 상황에서 direct fallback이 필요한 운영 안전장치를 코드로 고정한 작업이다.
 
+후속 안정화:
+- `setup-video-workflow.js`가 registry DB 조회 실패 때문에 setup 전체를 실패로 끝내지 않도록 보강했다.
+- 이제 workflow 생성/활성화가 성공하면, live path를 못 읽더라도 기본 webhook 경로를 출력하며 종료한다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:
