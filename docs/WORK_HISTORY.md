@@ -3894,3 +3894,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 추가: `google-gemini-cli/gemini-2.5-flash-lite`
   - 교체: `groq/moonshotai/kimi-k2-instruct-0905`
   - 제거: `cerebras/gpt-oss-120b` (현재 계정/런타임 404)
+- 후속으로 `llm-selector-speed-review.js`에 `primaryHealth`, `latestPrimaryResult`를 추가해 속도 추천(`compare`)과 현재 primary 실패(`rate_limited`)를 분리해서 읽을 수 있게 정리

@@ -492,3 +492,4 @@
   - 최신 recommended: `groq/openai/gpt-oss-20b`
   - Gemini primary `gemini-2.5-flash`는 현재 속도 최적화 이슈가 아니라 `429 capacity exhausted` 상태
   - 따라서 immediate switch가 아니라 `compare` 유지가 맞고, primary health와 selector recommendation을 분리해서 읽어야 한다
+- `scripts/reviews/llm-selector-speed-review.js`는 이제 `primaryHealth`, `latestPrimaryResult`를 함께 보여준다. 즉 현재는 `recommended=compare`이면서 동시에 `current primary=rate_limited`라는 운영 상태를 한 리포트에서 분리해 읽을 수 있다.

@@ -96,6 +96,17 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
       errorClass: result.errorClass || null,
       error: result.error || null,
     }));
+  const latestPrimaryResult = (latest?.results || [])
+    .find((result) => result?.modelId === (latest?.current || null)) || null;
+  const primaryHealth = !latest?.current
+    ? 'unknown'
+    : latestPrimaryResult?.ok === true
+      ? 'healthy'
+      : latestPrimaryResult?.errorClass === 'rate_limited'
+        ? 'rate_limited'
+        : latestPrimaryResult
+          ? 'degraded'
+          : 'unavailable';
 
   return {
     days,
@@ -104,6 +115,15 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
     latestCapturedAt: latest?.capturedAt || null,
     currentPrimary: latest?.current || null,
     latestRecommended: latest?.recommended || null,
+    latestPrimaryResult: latestPrimaryResult ? {
+      modelId: latestPrimaryResult.modelId,
+      ok: latestPrimaryResult.ok === true,
+      ttft: latestPrimaryResult.ttft ?? null,
+      total: latestPrimaryResult.total ?? null,
+      errorClass: latestPrimaryResult.errorClass || null,
+      error: latestPrimaryResult.error || null,
+    } : null,
+    primaryHealth,
     latestFailures,
     topModels: top,
     recommendation: latest?.recommended && latest?.current && latest.recommended !== latest.current
@@ -125,6 +145,7 @@ function printReview(review) {
     `- 스냅샷: ${review.snapshotCount}건`,
     `- latest: ${review.latestCapturedAt || '-'}`,
     `- current: ${review.currentPrimary || '-'}`,
+    `- primary health: ${review.primaryHealth}`,
     `- latest recommended: ${review.latestRecommended || '-'}`,
     `- recommendation: ${review.recommendation}`,
     ...(review.latestFailures?.length ? [`- latest failures: ${review.latestFailures.length}건`] : []),
@@ -139,6 +160,11 @@ function printReview(review) {
     for (const item of review.latestFailures.slice(0, 5)) {
       lines.push(`- ${item.modelId} | ${item.errorClass || 'request_failed'} | ${(item.error || '-').slice(0, 120)}`);
     }
+  }
+  if (review.latestPrimaryResult && review.latestPrimaryResult.ok !== true) {
+    lines.push('');
+    lines.push('현재 primary 상태');
+    lines.push(`- ${review.latestPrimaryResult.modelId} | ${review.latestPrimaryResult.errorClass || 'request_failed'} | ${(review.latestPrimaryResult.error || '-').slice(0, 120)}`);
   }
   process.stdout.write(`${lines.join('\n')}\n`);
 }
