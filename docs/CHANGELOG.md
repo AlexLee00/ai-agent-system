@@ -3,6 +3,17 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 성공한 네이버 예약 차단 완료, 대리등록 차단 완료, 취소 후 네이버 예약가능 복구 완료를 `event_type=report`, `alert_level=1`로 하향 조정
+  - 성공 이벤트 전용 `publishKioskSuccessReport()` helper 추가
+
+### 효과
+- 성공 이벤트가 더 이상 `⚠️ 경고 · ...`, `⚠️ jimmy 집약 알림`으로 묶이지 않음
+- 실패/불확실 경로의 alert severity는 그대로 유지
+
 ## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
 
 ### 신규 모듈

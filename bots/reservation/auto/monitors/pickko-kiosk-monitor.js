@@ -78,6 +78,15 @@ function publishRetryableBlockAlert(entry, reason, options = {}) {
   });
 }
 
+function publishKioskSuccessReport(message) {
+  publishToMainBot({
+    from_bot: 'jimmy',
+    event_type: 'report',
+    alert_level: 1,
+    message,
+  });
+}
+
 async function journalBlockAttempt(entry, result, reason, options = {}) {
   await recordKioskBlockAttempt(entry.phoneRaw, entry.date, entry.start, {
     name: entry.name,
@@ -2139,9 +2148,9 @@ async function main() {
 
         // ── Phase 4: 텔레그램 알림 ──
         if (blocked) {
-          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
-            `🚫 네이버 예약 차단 완료\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)`
-          });
+          publishKioskSuccessReport(
+            `✅ 네이버 예약 차단 완료\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)`
+          );
         } else {
           await journalBlockAttempt(e, 'retryable_failure', 'verify_failed', {
             naverBlocked: false,
@@ -2337,7 +2346,7 @@ async function blockSlotOnly(entry) {
 
       if (blocked) {
         log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸` });
+        publishKioskSuccessReport(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`);
       } else if (blockResult?.applied) {
         log(`⚠️ 네이버 차단 검증 불확실 — 화면 확인 권장`);
         await journalBlockAttempt(entry, 'uncertain', blockResult?.reason || 'applied_but_unverified', {
@@ -2639,7 +2648,7 @@ async function unblockSlotOnly(entry) {
 
       if (unblocked) {
         log(`✅ 네이버 해제 완료: ${name} ${date} ${start}~${end} ${room}`);
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸` });
+        publishKioskSuccessReport(`✅ [취소] 네이버 예약가능 복구 완료\n${name} ${date} ${start}~${end} ${room}룸`);
       } else {
         log(`⚠️ 네이버 해제 실패 — 수동 확인 필요`);
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });

@@ -38,6 +38,7 @@
   - Phase 2 전환: `syncVideoAudio()` 폐기 → AI 싱크 매칭 파이프라인으로 전환 (2026-03-21)
   - 신규 모듈: `scene-indexer.js`, `narration-analyzer.js`, `sync-matcher.js`, `intro-outro-handler.js`
   - 워커 웹 UX는 `업로드 → 인트로 → 아웃트로 → 의도 → 시작`의 5단계로 확장됐고, file_type도 `video/audio/intro/outro/logo`를 지원한다.
+  - 비디오팀 Phase 2는 `6732396 feat(video): add ai sync matching pipeline`까지 `main` 반영이 끝나 있어, 다음 세션에서는 scene-index 정밀 검증이나 preview 품질 보강부터 바로 이어서 진행하면 된다.
   - 비디오팀 Phase 1은 과제 1~13 + RAG 피드백 루프 기준으로 마감됐다.
   - `bots/worker/web`의 Next.js는 이번 세션에서 재빌드 후 launchd `ai.worker.nextjs`를 재기동했고, `/video`, `/video/history`는 현재 `200 OK`로 실제 반영 상태다.
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.
@@ -69,6 +70,7 @@
   - `syncVideoAudio()`에 audio duration 기준 `-t` + `-shortest`를 적용한 뒤 5세트가 모두 정상 통과했고, `subtitle.vtt`는 preview 전에 생성되도록 이동해 artifact 정합성도 회복됐다.
   - 최신 종합 리포트는 `bots/video/temp/validation_report.json`에 저장돼 있으며 요약값은 `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`이다.
 - 스카
+  - `pickko-kiosk-monitor.js`는 이제 성공한 네이버 차단/해제 완료를 `event_type=report`, `alert_level=1`로 발송한다. 이전처럼 성공 메시지가 `⚠️ jimmy 집약 알림`으로 묶이지 않도록 경계를 복구했다.
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
   - 일일/주간 예측 리뷰와 자동화는 shadow 비교를 읽도록 확장됐다.
