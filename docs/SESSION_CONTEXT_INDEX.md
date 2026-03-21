@@ -21,6 +21,7 @@
 - “장애가 났을 때 어떤 순서로 점검하지?”는 [OPERATIONS_RUNBOOK.md](/Users/alexlee/projects/ai-agent-system/docs/OPERATIONS_RUNBOOK.md)를 먼저 본다.
 - “지금 무엇이 구현됐지?”는 [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)를 먼저 본다.
 - “방금 전 세션이 뭘 했지?”는 [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md), [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [CHANGELOG.md](/Users/alexlee/projects/ai-agent-system/docs/CHANGELOG.md)를 본다.
+- “지금 진짜 무엇이 위험하지?”는 [ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)를 먼저 본다.
 - “오늘 세션의 실제 작업 맥락과 연구 기록”은 [WORK_HISTORY.md](/Users/alexlee/projects/ai-agent-system/docs/WORK_HISTORY.md), [RESEARCH_JOURNAL.md](/Users/alexlee/projects/ai-agent-system/docs/RESEARCH_JOURNAL.md)를 본다.
 - “헬스/장애”는 각 팀 문서의 `자주 쓰는 명령어`와 `운영 스크립트`에서 시작한다.
 
@@ -78,7 +79,9 @@
 3. [docs/SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
    - 직전 세션 맥락
    - 지금 바로 이어야 할 작업
-4. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
+4. [docs/ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)
+   - 현재 active risk / watch / recently resolved 요약
+5. [docs/KNOWN_ISSUES.md](/Users/alexlee/projects/ai-agent-system/docs/KNOWN_ISSUES.md)
    - 현재 알려진 문제
 
 추가 규칙:
@@ -93,6 +96,7 @@
   - [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)
 - 현재 상태 / 다음 작업
   - [SESSION_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_HANDOFF.md)
+  - [ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)
   - [PLATFORM_IMPLEMENTATION_TRACKER.md](/Users/alexlee/projects/ai-agent-system/docs/PLATFORM_IMPLEMENTATION_TRACKER.md)
 - 구조 / 기준 설계
   - [README.md](/Users/alexlee/projects/ai-agent-system/README.md)

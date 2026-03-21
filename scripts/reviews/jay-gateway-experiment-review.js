@@ -56,10 +56,19 @@ function buildReview(rows, days, inputPath) {
   }, {});
 
   const rateLimitCounts = filtered.map((row) => Number(row.gatewayMetrics?.rateLimitCount || 0));
+  const uniqueRateLimitCounts = filtered.map((row) => Number(row.gatewayMetrics?.uniqueRateLimitIncidentCount || 0));
   const activeRateLimitCounts = filtered.map((row) => Number(row.gatewayMetrics?.activeRateLimitCount || 0));
+  const activeUniqueRateLimitCounts = filtered.map((row) => Number(row.gatewayMetrics?.activeUniqueRateLimitIncidentCount || 0));
   const failoverCounts = filtered.map((row) => Number(row.gatewayMetrics?.failoverErrorCount || 0));
+  const nonAuthFailoverCounts = filtered.map((row) => Number(row.gatewayMetrics?.nonAuthFailoverErrorCount || 0));
+  const providerAuthMissingCounts = filtered.map((row) => Number(row.gatewayMetrics?.providerAuthMissingCount || 0));
+  const embeddedUniqueRunCounts = filtered.map((row) => Number(row.gatewayMetrics?.embeddedRateLimitRuns?.uniqueRunCount || 0));
+  const embeddedRetryBurstCounts = filtered.map((row) => Number(row.gatewayMetrics?.embeddedRateLimitRuns?.retryBurstCount || 0));
+  const embeddedMaxAttempts = filtered.map((row) => Number(row.gatewayMetrics?.embeddedRateLimitRuns?.maxAttemptsPerRun || 0));
   const healthLevels = filtered.map((row) => row.orchestratorHealth?.decision?.level).filter(Boolean);
   const activeSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.activeRateLimitCount || 0) > 0).length;
+  const authIssueSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.providerAuthMissingCount || 0) > 0).length;
+  const retryBurstSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.embeddedRateLimitRuns?.retryBurstCount || 0) > 0).length;
 
   let recommendation = 'hold';
   let reason = '최근 스냅샷 기준 정합성과 활성 오류가 안정 구간입니다.';
@@ -69,6 +78,12 @@ function buildReview(rows, days, inputPath) {
   } else if (activeSnapshots > 0 || stageCounts.compare > 0) {
     recommendation = 'compare';
     reason = '최근 스냅샷에서 활성 rate limit 또는 compare 단계가 관찰되어 후보 비교가 필요합니다.';
+  }
+  if (authIssueSnapshots > 0) {
+    reason += ' 다만 일부 failover는 provider auth missing이 섞여 있어 모델 성능 문제와 분리해서 해석해야 합니다.';
+  }
+  if (retryBurstSnapshots > 0) {
+    reason += ' 동일 runId 재시도 burst가 보여 backoff/동시성 조정도 같이 봐야 합니다.';
   }
 
   return {
@@ -83,17 +98,34 @@ function buildReview(rows, days, inputPath) {
           openclawPrimary: latest.primaryCheck?.openclawPrimary || null,
           aligned: latest.primaryCheck?.aligned ?? null,
           rateLimitCount: Number(latest.gatewayMetrics?.rateLimitCount || 0),
+          uniqueRateLimitIncidentCount: Number(latest.gatewayMetrics?.uniqueRateLimitIncidentCount || 0),
           activeRateLimitCount: Number(latest.gatewayMetrics?.activeRateLimitCount || 0),
+          activeUniqueRateLimitIncidentCount: Number(latest.gatewayMetrics?.activeUniqueRateLimitIncidentCount || 0),
           lastRateLimitAt: latest.gatewayMetrics?.lastRateLimitAt || null,
+          failoverErrorCount: Number(latest.gatewayMetrics?.failoverErrorCount || 0),
+          nonAuthFailoverErrorCount: Number(latest.gatewayMetrics?.nonAuthFailoverErrorCount || 0),
+          providerAuthMissingCount: Number(latest.gatewayMetrics?.providerAuthMissingCount || 0),
+          embeddedUniqueRunCount: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.uniqueRunCount || 0),
+          embeddedRetryBurstCount: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.retryBurstCount || 0),
+          embeddedMaxAttemptsPerRun: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.maxAttemptsPerRun || 0),
           orchestratorHealthLevel: latest.orchestratorHealth?.decision?.level || null,
         }
       : null,
     stageCounts,
     summary: {
       avgRateLimitCount: average(rateLimitCounts),
+      avgUniqueRateLimitIncidentCount: average(uniqueRateLimitCounts),
       avgActiveRateLimitCount: average(activeRateLimitCounts),
+      avgActiveUniqueRateLimitIncidentCount: average(activeUniqueRateLimitCounts),
       avgFailoverErrorCount: average(failoverCounts),
+      avgNonAuthFailoverErrorCount: average(nonAuthFailoverCounts),
+      avgProviderAuthMissingCount: average(providerAuthMissingCounts),
+      avgEmbeddedUniqueRunCount: average(embeddedUniqueRunCounts),
+      avgEmbeddedRetryBurstCount: average(embeddedRetryBurstCounts),
+      avgEmbeddedMaxAttemptsPerRun: average(embeddedMaxAttempts),
       activeSnapshotCount: activeSnapshots,
+      authIssueSnapshotCount: authIssueSnapshots,
+      retryBurstSnapshotCount: retryBurstSnapshots,
       latestHealthLevel: healthLevels[healthLevels.length - 1] || null,
     },
     recommendation: {
@@ -121,6 +153,11 @@ function printHuman(review) {
     lines.push(`- primary: ${review.latestSnapshot.runtimePrimary} / ${review.latestSnapshot.openclawPrimary}`);
     lines.push(`- 정합성: ${review.latestSnapshot.aligned ? '일치' : '불일치'}`);
     lines.push(`- rate limit: ${review.latestSnapshot.rateLimitCount}건 (활성 ${review.latestSnapshot.activeRateLimitCount}건)`);
+    lines.push(`- unique incidents: ${review.latestSnapshot.uniqueRateLimitIncidentCount}건 (활성 ${review.latestSnapshot.activeUniqueRateLimitIncidentCount}건)`);
+    lines.push(`- failover error: ${review.latestSnapshot.failoverErrorCount}건 (auth missing 제외 ${review.latestSnapshot.nonAuthFailoverErrorCount}건)`);
+    lines.push(`- provider auth missing: ${review.latestSnapshot.providerAuthMissingCount}건`);
+    lines.push(`- embedded unique runs: ${review.latestSnapshot.embeddedUniqueRunCount}건`);
+    lines.push(`- retry burst runs: ${review.latestSnapshot.embeddedRetryBurstCount}건 (최대 ${review.latestSnapshot.embeddedMaxAttemptsPerRun}회)`);
     lines.push(`- 마지막 rate limit: ${review.latestSnapshot.lastRateLimitAt || '없음'}`);
     lines.push(`- health: ${review.latestSnapshot.orchestratorHealthLevel || '확인 불가'}`);
     lines.push('');
@@ -129,9 +166,18 @@ function printHuman(review) {
   lines.push('요약:');
   lines.push(`- 단계 분포: ${Object.entries(review.stageCounts).map(([key, value]) => `${key} ${value}`).join(', ') || '없음'}`);
   lines.push(`- 평균 rate limit: ${review.summary.avgRateLimitCount ?? 0}건`);
+  lines.push(`- 평균 unique incidents: ${review.summary.avgUniqueRateLimitIncidentCount ?? 0}건`);
   lines.push(`- 평균 활성 rate limit: ${review.summary.avgActiveRateLimitCount ?? 0}건`);
+  lines.push(`- 평균 활성 unique incidents: ${review.summary.avgActiveUniqueRateLimitIncidentCount ?? 0}건`);
   lines.push(`- 평균 failover error: ${review.summary.avgFailoverErrorCount ?? 0}건`);
+  lines.push(`- 평균 non-auth failover: ${review.summary.avgNonAuthFailoverErrorCount ?? 0}건`);
+  lines.push(`- 평균 provider auth missing: ${review.summary.avgProviderAuthMissingCount ?? 0}건`);
+  lines.push(`- 평균 embedded unique runs: ${review.summary.avgEmbeddedUniqueRunCount ?? 0}건`);
+  lines.push(`- 평균 retry burst runs: ${review.summary.avgEmbeddedRetryBurstCount ?? 0}건`);
+  lines.push(`- 평균 max attempts/run: ${review.summary.avgEmbeddedMaxAttemptsPerRun ?? 0}회`);
   lines.push(`- 활성 스냅샷 수: ${review.summary.activeSnapshotCount}`);
+  lines.push(`- auth issue 스냅샷 수: ${review.summary.authIssueSnapshotCount}`);
+  lines.push(`- retry burst 스냅샷 수: ${review.summary.retryBurstSnapshotCount}`);
 
   return lines.join('\n');
 }

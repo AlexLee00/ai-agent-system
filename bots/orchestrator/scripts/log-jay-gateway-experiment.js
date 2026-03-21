@@ -65,6 +65,42 @@ function countMatches(lines, pattern) {
   return lines.reduce((sum, line) => sum + (pattern.test(line) ? 1 : 0), 0);
 }
 
+function countUniqueIncidents(lines, pattern) {
+  const seen = new Set();
+  for (const line of lines) {
+    if (!pattern.test(line)) continue;
+    const ts = parseLogTimestamp(line);
+    const normalized = line
+      .replace(/lane=[^ ]+/g, 'lane=*')
+      .replace(/durationMs=\d+/g, 'durationMs=*')
+      .trim();
+    const key = `${Number.isFinite(ts) ? ts : 'na'}|${normalized}`;
+    seen.add(key);
+  }
+  return seen.size;
+}
+
+function summarizeEmbeddedRateLimitRuns(lines) {
+  const counts = {};
+  for (const line of lines) {
+    if (!/API rate limit reached/i.test(line)) continue;
+    const match = line.match(/runId=([A-Za-z0-9._:-]+)/);
+    if (!match) continue;
+    const runId = match[1];
+    counts[runId] = (counts[runId] || 0) + 1;
+  }
+  const entries = Object.entries(counts).map(([runId, count]) => ({ runId, count }));
+  return {
+    uniqueRunCount: entries.length,
+    retryBurstCount: entries.filter((item) => item.count > 1).length,
+    maxAttemptsPerRun: entries.reduce((max, item) => Math.max(max, item.count), 0),
+    topBurstRuns: entries
+      .filter((item) => item.count > 1)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5),
+  };
+}
+
 function summarizeGatewayLogs(hours) {
   const gatewayErrPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.err.log');
   const gatewayLogPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.log');
@@ -74,8 +110,23 @@ function summarizeGatewayLogs(hours) {
 
   const rateLimitPattern = /API rate limit reached/i;
   const failoverPattern = /FailoverError/i;
+  const providerAuthMissingPattern = /No API key found for provider/i;
   const staleSocketPattern = /health-monitor: restarting \(reason: stale-socket\)/i;
   const schemaSnapshotPattern = /google tool schema snapshot/i;
+
+  const rateLimitCount = countMatches(errLines, rateLimitPattern);
+  const activeRateLimitCount = countMatches(activeLines, rateLimitPattern);
+  const providerAuthMissingCount = countMatches(errLines, providerAuthMissingPattern);
+  const uniqueRateLimitIncidentCount = countUniqueIncidents(errLines, rateLimitPattern);
+  const activeUniqueRateLimitIncidentCount = countUniqueIncidents(activeLines, rateLimitPattern);
+  const failoverErrorCount = countMatches(errLines, failoverPattern);
+  const nonAuthFailoverErrorCount = errLines.reduce((sum, line) => {
+    if (!failoverPattern.test(line)) return sum;
+    if (providerAuthMissingPattern.test(line)) return sum;
+    return sum + 1;
+  }, 0);
+  const embeddedRateLimitRuns = summarizeEmbeddedRateLimitRuns(errLines);
+  const activeEmbeddedRateLimitRuns = summarizeEmbeddedRateLimitRuns(activeLines);
 
   return {
     observedHours: hours,
@@ -83,11 +134,17 @@ function summarizeGatewayLogs(hours) {
       errorLog: gatewayErrPath,
       outputLog: gatewayLogPath,
     },
-    rateLimitCount: countMatches(errLines, rateLimitPattern),
-    failoverErrorCount: countMatches(errLines, failoverPattern),
+    rateLimitCount,
+    uniqueRateLimitIncidentCount,
+    failoverErrorCount,
+    nonAuthFailoverErrorCount,
+    providerAuthMissingCount,
+    embeddedRateLimitRuns,
+    activeEmbeddedRateLimitRuns,
     staleSocketRestartCount: countMatches(outLines, staleSocketPattern),
     schemaSnapshotCount: countMatches(outLines, schemaSnapshotPattern),
-    activeRateLimitCount: countMatches(activeLines, rateLimitPattern),
+    activeRateLimitCount,
+    activeUniqueRateLimitIncidentCount,
     lastRateLimitAt: getLastTimestamp(errLines, rateLimitPattern),
     lastStaleSocketRestartAt: getLastTimestamp(outLines, staleSocketPattern),
   };
@@ -239,7 +296,10 @@ function printHuman(snapshot, outputPath, willWrite) {
   lines.push('');
   lines.push('gateway 지표:');
   lines.push(`- rate limit: ${snapshot.gatewayMetrics.rateLimitCount}건 (최근 ${ACTIVE_WINDOW_HOURS}시간 활성 ${snapshot.gatewayMetrics.activeRateLimitCount}건)`);
-  lines.push(`- failover error: ${snapshot.gatewayMetrics.failoverErrorCount}건`);
+  lines.push(`- unique rate limit incidents: ${snapshot.gatewayMetrics.uniqueRateLimitIncidentCount}건 (최근 ${ACTIVE_WINDOW_HOURS}시간 활성 ${snapshot.gatewayMetrics.activeUniqueRateLimitIncidentCount}건)`);
+  lines.push(`- failover error: ${snapshot.gatewayMetrics.failoverErrorCount}건 (auth missing 제외 ${snapshot.gatewayMetrics.nonAuthFailoverErrorCount}건)`);
+  lines.push(`- provider auth missing: ${snapshot.gatewayMetrics.providerAuthMissingCount}건`);
+  lines.push(`- embedded unique runs: ${snapshot.gatewayMetrics.embeddedRateLimitRuns.uniqueRunCount}건 (재시도 burst ${snapshot.gatewayMetrics.embeddedRateLimitRuns.retryBurstCount}건, 최대 ${snapshot.gatewayMetrics.embeddedRateLimitRuns.maxAttemptsPerRun}회)`);
   lines.push(`- stale socket restart: ${snapshot.gatewayMetrics.staleSocketRestartCount}건`);
   lines.push(`- 마지막 rate limit: ${snapshot.gatewayMetrics.lastRateLimitAt || '없음'}`);
   lines.push('');

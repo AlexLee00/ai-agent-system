@@ -2,6 +2,26 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-22
+
+### 제이/OpenClaw gateway fallback readiness + concurrency 안정화
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/orchestrator/lib/openclaw-config.js` | ✅ |
+| `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅ |
+| `node --check bots/orchestrator/scripts/prepare-jay-gateway-switch.js` | ✅ |
+| `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ |
+| `node --check scripts/reviews/jay-gateway-experiment-review.js` | ✅ |
+| `node --check bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js` | ✅ |
+| `node --check bots/orchestrator/scripts/tune-jay-gateway-concurrency.js` | ✅ |
+| `node bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅ `ready fallback=4`, `unready fallback=0`, `Groq authReady=no` 확인 |
+| `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js` | ✅ 현재 fallback `11`, ready fallback `4`, 권장 체인 계산 확인 |
+| `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` | ✅ 라이브 fallback chain `11 -> 4` 적용 |
+| `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency `1/2` 적용 |
+| `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동 |
+| `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 창에서 `rate limit=76`, `active=33`, `retry burst runs=13`, `max attempts per run=4` 확인 |
+
 ## 2026-03-21
 
 ### 스카 수동등록 후속 차단 원장화 + 취소 스킵 버그 복구

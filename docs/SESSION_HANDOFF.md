@@ -1,6 +1,7 @@
 # 세션 핸드오프
 
 > 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 읽고 이 문서를 보세요.
+> 현재 active risk / watch / recently resolved만 빠르게 보려면 [ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)를 함께 확인하세요.
 
 ---
 
@@ -161,6 +162,7 @@
 ### 플랫폼 관점
 
 - `운영 데이터 신뢰성 강화 + 모바일 알림 최적화 + 관찰 단계 전환` 단계
+- 이번 세션에서는 `제이/OpenClaw gateway fallback hygiene + concurrency 보수화`가 핵심 운영 안정화 축이었다.
 
 ### 워커 관점
 
@@ -201,12 +203,17 @@
 4. `LLM API 현황`에 OpenClaw 조회 전용 그룹 추가
    - 현재 전사 현황은 Jay / Worker / Claude / Blog / Investment까지만 포함
    - 내일은 `OpenClaw`를 조회 전용 그룹으로 붙여 전사 LLM 현황 범위를 확장
-5. 남은 자동화 확정
+5. 제이/OpenClaw gateway post-prune 관찰
+   - 라이브 `openclaw.json`은 fallback `11 -> 4`로 정리됐고, 현재 fallback은 `openai/gpt-4o-mini`, `openai/gpt-4o`, `openai/o4-mini`, `openai/o3-mini`만 남아 있다.
+   - concurrency는 `maxConcurrent=1`, `subagents.maxConcurrent=2`로 보수화됐다.
+   - 최신 실험 스냅샷에서 남은 진짜 병목은 `Gemini rate limit` 이후 동일 run 재시도 burst이며, `embedded unique runs=14`, `retry burst runs=13`, `max attempts per run=4`로 관찰됐다.
+   - 다음은 post-prune/post-tune 24시간 창에서 `provider auth missing`, `retry burst`, `active rate limit`이 실제로 감소하는지 확인하는 단계다.
+6. 남은 자동화 확정
   - 스카 shadow 일일/주간
   - 워커 문서 효율 일일/주간
   - 투자 설정 제안 일일/주간
-6. 자동화 리포트 운영 데이터 관찰
-7. 비디오 품질 루프 확장
+7. 자동화 리포트 운영 데이터 관찰
+8. 비디오 품질 루프 확장
   - 과제 10 Critic, 과제 11 Refiner, 과제 12 Evaluator/quality-loop, 과제 13 5세트 preview 검증까지 완료
   - 다음은 preview wall-clock을 원장에 따로 저장하는 구조 보강, 세션 1 프리뷰 재검증, transition 렌더 재설계, final render 다세트 실검증
   - 제이 Gateway `persisted` 상태
@@ -215,7 +222,7 @@
   - investment / reservation `local fallback 활동 신호`가 실제 운영 상태를 안정적으로 대변하는지
   - 투자 `no-trade high-cost` 경고 발생 여부
   - 스카 `actionItems`가 실제 튜닝 판단에 충분한지 확인
-7. 제이 DB 접근 컨텍스트 복구
+9. 제이 DB 접근 컨텍스트 복구
    - `jay-llm-daily-review.js`는 현재 `dbStatsStatus=partial` 상태
    - `reservation.llm_usage_log`, `claude.command_history` 접근이 자동화 컨텍스트에서 `EPERM`으로 막히고 있어 PostgreSQL 접근 권한 또는 실행 컨텍스트를 복구해야 함
 8. 루나 시스템 재점검 Phase 후속 관찰
