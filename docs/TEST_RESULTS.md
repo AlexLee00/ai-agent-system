@@ -921,3 +921,10 @@
 |--------|------|
 | `node --check bots/investment/scripts/crypto-live-gate-review.js` | ✅ 문법 통과 |
 | `node bots/investment/scripts/crypto-live-gate-review.js` | ✅ 최근 3일 기준 `decision 2236 / BUY 344 / approved 247 / executed 48 / PAPER 48 / LIVE 0 / weak 99 / 종료 리뷰 0` 확인, LIVE 게이트 `blocked` 출력 |
+
+### 루나 운영 헬스 — 암호화폐 LIVE 게이트 통합
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/scripts/health-report.js` | ✅ `cryptoLiveGateHealth` 통합 후 문법 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `cryptoLiveGateHealth.warnCount=1`, `liveGate.decision=blocked`, 운영 판단에 `암호화폐 LIVE 게이트 blocked` 포함 확인 |

@@ -245,6 +245,7 @@
   - weakSignalSkipped `99`
   - 종료 거래 리뷰 `0건`
 - 즉 신호/체결 활력은 충분하지만, **청산 품질과 LIVE 체결 데이터가 없어 게이트는 여전히 `blocked`**다
+- 이 기준은 이제 [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)에도 직접 포함되므로, 투자 헬스만 봐도 암호화폐 LIVE 전환 상태를 함께 읽을 수 있다
 
 ### 5.2 최소 승격 조건
 
