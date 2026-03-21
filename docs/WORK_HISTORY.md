@@ -4,6 +4,35 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-21) — 비디오팀 Phase 1 마감 문서 정리 + worker-web `/video` 런타임 반영
+
+핵심 구현:
+- `bots/video/docs/CLAUDE.md`
+  - 절대 규칙에 RAG 피드백 루프 원칙 14~16 추가
+  - `RAG 피드백 루프 — 학습하는 편집 시스템` 섹션 추가
+- `bots/video/docs/SESSION_HANDOFF_VIDEO.md`
+  - Phase 1 완료 기준 인수인계 문서로 전면 갱신
+- `bots/worker/web`
+  - `npx next build` 재실행
+  - launchd `ai.worker.nextjs` 재기동
+  - `/video`, `/video/history`가 실제 4001 런타임에서 `200 OK`로 노출되는 것 확인
+
+세션 맥락:
+- 비디오팀은 구현 자체보다 “문서 기준점”이 더 중요해지는 마감 단계에 들어왔다.
+- 특히 RAG가 이미 코드에는 붙어 있었는데 `CLAUDE.md`에는 전혀 반영되지 않아, 다음 세션 구현자가 source of truth를 잘못 읽을 수 있는 상태였다.
+- 또 worker-web 쪽은 코드와 빌드는 준비됐지만, 런타임이 예전 Next.js 빌드를 서빙하고 있어 `/video`가 404로 보이는 상태였다.
+
+실측 결과:
+- `npx next build` 결과에 `/video`, `/video/history`가 모두 route 목록에 포함됨 확인
+- 재빌드 직후 기존 4001 런타임은 여전히 `404 Not Found`
+- launchd `ai.worker.nextjs` 재기동 후:
+  - `curl -I http://127.0.0.1:4001/video` → `200 OK`
+  - `curl -I http://127.0.0.1:4001/video/history` → `200 OK`
+
+의미:
+- 지금 당장 필요한 구조인 “비디오팀 Phase 1 완료 상태를 문서와 런타임이 동시에 반영하는 것”이 닫혔다.
+- 이후 세션은 구현 재설명보다 `final render`, `preview_ms`, `quality-loop 수렴률`, `RAG 샘플 확대` 같은 운영 고도화로 바로 넘어갈 수 있다.
+
 ### 12주차 후속 (2026-03-21) — 비디오팀 5세트 전체 파이프라인 재검증 + preview 복구
 
 핵심 구현:

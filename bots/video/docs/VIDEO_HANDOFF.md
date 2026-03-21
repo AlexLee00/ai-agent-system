@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료 / 5세트 preview 검증 완료
+> 상태: ★ Phase 1 전체 완료 (과제 1~13 + RAG 피드백 루프) / worker-web `/video`, `/video/history` 빌드·런타임 반영 완료 / 비디오팀 n8n 연동 live 검증 완료
 
 ---
 
