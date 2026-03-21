@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 1차 구현 완료
+> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 live 검증 완료
 
 ---
 
@@ -149,25 +149,34 @@ Step 3 — 과제 6~13 재정의:
 ### 10. 과제 9: 비디오팀 n8n 연동 ✅
 - `bots/video/n8n/video-pipeline-workflow.json`
   - `Video Pipeline` 워크플로우 템플릿 추가
-  - `Webhook -> 요청 파싱 -> 토큰 확인 -> (run-pipeline | render-from-edl) -> Respond` 순차 체인
-  - `Execute Command`는 background shell로 실행돼 webhook 응답을 빠르게 반환
+  - 현재 n8n 런타임에서 `ExecuteCommand` activation이 실패해, `Webhook -> 요청 파싱 -> 토큰 확인 -> health probe -> HTTP Request -> Respond` 구조로 호환 전환
+  - n8n은 트리거 역할만 맡고, 실제 프로세스 실행은 worker 내부 dispatch API가 기존 detached `fork()` 경로를 재사용
 - `bots/video/n8n/setup-video-workflow.js`
   - 공용 `n8n-setup-client` 기반 안전 재생성/활성화 스크립트 추가
   - `VIDEO_N8N_TOKEN` placeholder hydration 후 webhook URL 출력
-- `bots/video/scripts/check-n8n-video-path.js`
-  - registry resolved URL + default URL + healthz + webhook registration 진단 스크립트 추가
-  - DB 접근이 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
 - `bots/video/n8n/setup-video-workflow.js`
   - registry DB 조회가 실패해도 setup 완료 후 기본 webhook 경로를 출력하도록 보강
   - 즉 workflow 생성/활성화는 성공했는데 URL 출력 단계 때문에 전체 setup이 실패로 끝나는 경계를 제거
+- `bots/video/scripts/check-n8n-video-path.js`
+  - registry resolved URL + default URL + healthz + webhook registration 진단 스크립트 추가
+  - DB 접근이 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
+- `bots/worker/web/routes/video-internal-api.js`
+  - `/api/video/internal/run-pipeline`
+  - `/api/video/internal/render-from-edl`
+  - `X-Video-Token`으로 보호되는 내부 dispatch API 추가
 - `bots/worker/web/routes/video-api.js`
   - `POST /sessions/:id/start`, `POST /edits/:id/confirm`이 `runWithN8nFallback()`를 사용하도록 전환
   - n8n health/webhook 실패 시 기존 detached `fork()` direct fallback 유지
 - `packages/core/lib/n8n-runner.js`
   - 커스텀 헤더 전달 지원 추가 (`X-Video-Token`)
 - 현재 진단 결과:
-  - `check-n8n-video-path.js` 기준 `n8nHealthy=false`, `webhookReason=unreachable`
-  - 따라서 direct fallback 유지가 실제 운영 안전장치 역할을 한다
+  - sandbox 내부 Node `fetch`로는 `healthz`가 막히지만, sandbox 밖 live 검증에서는 정상 동작
+  - 임시 `VIDEO_N8N_TOKEN` + worker 재기동 후 `check-n8n-video-path.js` 기준:
+    - `n8nHealthy=true`
+    - `webhookRegistered=true`
+    - `webhookStatus=200`
+    - `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`
+  - 남은 운영 TODO는 `VIDEO_N8N_TOKEN`을 launchd/운영 secret로 영속화하는 것
 
 ---
 
@@ -179,7 +188,7 @@ Step 3 — 과제 6~13 재정의:
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
 - 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
-- n8n 쪽은 워크플로우 import 및 `VIDEO_N8N_TOKEN` 배포 후 live webhook 등록 상태를 재확인해야 한다
+- n8n 쪽은 live webhook 등록과 내부 dispatch route 검증까지 완료됐고, 다음은 `VIDEO_N8N_TOKEN`을 launchd/운영 secret로 영속화하는 작업이 남아 있다
 
 ### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 

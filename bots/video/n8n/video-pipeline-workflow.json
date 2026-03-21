@@ -20,7 +20,7 @@
       "typeVersion": 2,
       "position": [460, 300],
       "parameters": {
-        "jsCode": "const payload = $input.item.json.body || $input.item.json;\nconst headers = $input.item.json.headers || payload.headers || {};\nconst providedToken = headers['x-video-token'] || headers['X-Video-Token'] || '';\nconst expectedToken = '__VIDEO_N8N_TOKEN__';\n\nreturn [{\n  json: {\n    sessionId: payload.sessionId ? Number(payload.sessionId) : null,\n    pairIndex: payload.pairIndex ? Number(payload.pairIndex) : null,\n    editId: payload.editId ? Number(payload.editId) : null,\n    sourceVideoPath: payload.sourceVideoPath || '',\n    sourceAudioPath: payload.sourceAudioPath || '',\n    title: payload.title || '',\n    editNotes: payload.editNotes || '',\n    skipRender: Boolean(payload.skipRender),\n    tokenValid: Boolean(expectedToken) && providedToken === expectedToken\n  }\n}];"
+        "jsCode": "const payload = $input.item.json.body || $input.item.json;\nconst headers = $input.item.json.headers || payload.headers || {};\nconst providedToken = headers['x-video-token'] || headers['X-Video-Token'] || '';\nconst expectedToken = '__VIDEO_N8N_TOKEN__';\nconst probeHeader = headers['x-health-probe'] || headers['X-Health-Probe'] || '';\n\nreturn [{\n  json: {\n    sessionId: payload.sessionId ? Number(payload.sessionId) : null,\n    pairIndex: payload.pairIndex ? Number(payload.pairIndex) : null,\n    editId: payload.editId ? Number(payload.editId) : null,\n    sourceVideoPath: payload.sourceVideoPath || '',\n    sourceAudioPath: payload.sourceAudioPath || '',\n    title: payload.title || '',\n    editNotes: payload.editNotes || '',\n    skipRender: Boolean(payload.skipRender),\n    healthProbe: Boolean(payload._healthProbe) || probeHeader === '1',\n    tokenValid: Boolean(expectedToken) && providedToken === expectedToken\n  }\n}];"
       }
     },
     {
@@ -55,11 +55,39 @@
       }
     },
     {
+      "id": "video-health-probe-if",
+      "name": "헬스 프로브?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 80],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.healthProbe}}",
+              "operation": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "video-respond-probe",
+      "name": "프로브 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1160, 20],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, status: 'probe_ok' } }}"
+      }
+    },
+    {
       "id": "video-skip-if",
       "name": "프리뷰만?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [920, 220],
+      "position": [1160, 220],
       "parameters": {
         "conditions": {
           "boolean": [
@@ -74,21 +102,49 @@
     {
       "id": "video-run-pipeline",
       "name": "run-pipeline",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [1160, 140],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 140],
       "parameters": {
-        "command": "=sh -lc 'cd /Users/alexlee/projects/ai-agent-system && nohup node /Users/alexlee/projects/ai-agent-system/bots/video/scripts/run-pipeline.js --source-video=\"{{$json.sourceVideoPath}}\" --source-audio=\"{{$json.sourceAudioPath}}\" --session-id={{$json.sessionId}} --pair-index={{$json.pairIndex}} --skip-render >/tmp/video-pipeline-{{$json.sessionId}}-{{$json.pairIndex}}.log 2>&1 &'"
+        "method": "POST",
+        "url": "__VIDEO_INTERNAL_API_BASE_URL__/api/video/internal/run-pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Video-Token",
+              "value": "__VIDEO_N8N_TOKEN__"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
       }
     },
     {
       "id": "video-render-edl",
       "name": "render-from-edl",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [1160, 300],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 300],
       "parameters": {
-        "command": "=sh -lc 'cd /Users/alexlee/projects/ai-agent-system && nohup node /Users/alexlee/projects/ai-agent-system/bots/video/scripts/render-from-edl.js --edit-id={{$json.editId}} >/tmp/video-render-{{$json.editId}}.log 2>&1 &'"
+        "method": "POST",
+        "url": "__VIDEO_INTERNAL_API_BASE_URL__/api/video/internal/render-from-edl",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Video-Token",
+              "value": "__VIDEO_N8N_TOKEN__"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}",
+        "options": {}
       }
     },
     {
@@ -96,7 +152,7 @@
       "name": "프리뷰 응답",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1400, 140],
+      "position": [1640, 140],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { ok: true, sessionId: $json.sessionId, pairIndex: $json.pairIndex, status: 'preview_started' } }}"
@@ -107,7 +163,7 @@
       "name": "렌더 응답",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1400, 300],
+      "position": [1640, 300],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { ok: true, sessionId: $json.sessionId, editId: $json.editId, status: 'render_started' } }}"
@@ -141,7 +197,7 @@
       "main": [
         [
           {
-            "node": "프리뷰만?",
+            "node": "헬스 프로브?",
             "type": "main",
             "index": 0
           }
@@ -149,6 +205,24 @@
         [
           {
             "node": "인증 실패 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "헬스 프로브?": {
+      "main": [
+        [
+          {
+            "node": "프로브 응답",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "프리뷰만?",
             "type": "main",
             "index": 0
           }

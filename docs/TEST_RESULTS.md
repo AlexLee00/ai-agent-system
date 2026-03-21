@@ -137,10 +137,14 @@
 |--------|------|
 | `node --check packages/core/lib/n8n-runner.js` | ✅ |
 | `node --check bots/video/n8n/setup-video-workflow.js` | ✅ |
+| `node --check bots/worker/web/routes/video-internal-api.js` | ✅ |
+| `node --check bots/worker/web/server.js` | ✅ |
 | `node --check bots/video/scripts/check-n8n-video-path.js` | ✅ |
 | `node --check bots/worker/web/routes/video-api.js` | ✅ |
 | `node -e "JSON.parse(fs.readFileSync('bots/video/n8n/video-pipeline-workflow.json','utf8'))"` | ✅ workflow JSON 파싱 확인 |
-| `node bots/video/scripts/check-n8n-video-path.js` | ✅ 현재 컨텍스트 기준 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError` 확인 — direct fallback 필요성 검증 |
+| `VIDEO_N8N_TOKEN=video-local-test-20260321 WORKER_API_INTERNAL_URL=http://127.0.0.1:4000 N8N_BASE_URL=http://127.0.0.1:5678 node bots/video/n8n/setup-video-workflow.js` | ✅ 기존 inactive workflow 정리 후 새 workflow 생성/활성화, live webhook path 출력 확인 |
+| `curl -i -s -X POST http://127.0.0.1:4000/api/video/internal/run-pipeline -H 'Content-Type: application/json' -H 'X-Video-Token: video-local-test-20260321' -d '{"_healthProbe":true}'` | ✅ 내부 dispatch API `200 {"ok":true,"status":"probe_ok"}` 확인 |
+| `VIDEO_N8N_TOKEN=video-local-test-20260321 node bots/video/scripts/check-n8n-video-path.js` | ✅ `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, live resolved webhook 확인 |
 | `node --check bots/video/n8n/setup-video-workflow.js` (보강 후) | ✅ `N8N_BASE_URL` 파싱 + registry 실패 degrade 문법 확인 |
 
 ### 비디오팀 과제 11 — Refiner Agent

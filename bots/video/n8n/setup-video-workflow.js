@@ -11,6 +11,7 @@ const EMAIL = process.env.N8N_EMAIL || '***REMOVED***';
 const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
 const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const VIDEO_TOKEN = process.env.VIDEO_N8N_TOKEN || '';
+const INTERNAL_API_BASE_URL = process.env.WORKER_API_INTERNAL_URL || 'http://127.0.0.1:4000';
 const parsedBaseUrl = new URL(N8N_BASE_URL);
 
 const client = createN8nSetupClient({
@@ -30,6 +31,19 @@ function hydrateWorkflow(workflow) {
   for (const node of cloned.nodes || []) {
     if (node.type === 'n8n-nodes-base.code' && typeof node.parameters?.jsCode === 'string') {
       node.parameters.jsCode = node.parameters.jsCode.replace(/__VIDEO_N8N_TOKEN__/g, VIDEO_TOKEN);
+    }
+    if (typeof node.parameters?.url === 'string') {
+      node.parameters.url = node.parameters.url
+        .replace(/__VIDEO_INTERNAL_API_BASE_URL__/g, INTERNAL_API_BASE_URL)
+        .replace(/__VIDEO_N8N_TOKEN__/g, VIDEO_TOKEN);
+    }
+    const headers = node.parameters?.headerParameters?.parameters;
+    if (Array.isArray(headers)) {
+      for (const header of headers) {
+        if (header.value === '__VIDEO_N8N_TOKEN__') {
+          header.value = VIDEO_TOKEN;
+        }
+      }
     }
   }
   return cloned;

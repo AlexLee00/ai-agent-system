@@ -48,12 +48,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### 변경 사항 (changed)
 - `bots/worker/web/routes/video-api.js`
   - `/sessions/:id/start`, `/edits/:id/confirm`이 `runWithN8nFallback()`로 n8n webhook을 우선 호출하고, 실패 시 기존 detached fork로 direct fallback 하도록 전환
+- `bots/video/n8n/video-pipeline-workflow.json`
+  - `ExecuteCommand` 대신 `HTTP Request -> /api/video/internal/*` 구조로 호환 전환
 - `packages/core/lib/n8n-runner.js`
   - webhook 호출에 커스텀 헤더(`X-Video-Token`) 전달 지원 추가
 - `bots/video/config/video-config.yaml`
   - 비디오팀 `n8n` 설정 섹션 추가
 - `bots/video/n8n/setup-video-workflow.js`
   - registry DB 조회 실패 시에도 setup 성공 후 기본 webhook 경로를 출력하도록 보강
+- `bots/worker/web/server.js`
+  - `/api/video/internal` 비공개 dispatch 라우트 마운트 추가
+- `bots/worker/web/routes/video-internal-api.js`
+  - `run-pipeline`, `render-from-edl`용 내부 토큰 보호 dispatch API 추가
 
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
