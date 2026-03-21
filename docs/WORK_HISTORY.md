@@ -260,6 +260,42 @@
   - `estimateWithRAG.estimated_ms: 180000`
   - `enhanceCriticWithRAG`, `enhanceEDLWithRAG` 결과 생성 확인
 
+### 12주차 후속 (2026-03-21) — worker-web `/video` 운영 경계 복구
+
+핵심 구현:
+- `bots/worker/web/app/video/page.js`
+  - `idle` 단계에서도 업로드 영역이 즉시 보이도록 수정
+  - 파일 업로드 시 세션이 없으면 자동 생성 후 업로드하는 흐름 추가
+  - 현재 세션 ID를 URL `?session=`과 `localStorage`에 동기화해 새로고침 후 복원 가능하도록 보강
+  - 한글 파일명이 기존 DB에 깨져 있더라도 화면에서 최대한 복원해 보여주는 `repairFilename()` 추가
+- `bots/worker/web/app/_shell.js`
+  - hydration 전 완전 빈 화면 대신 로딩 셸을 보여주도록 수정
+- `bots/worker/web/routes/video-api.js`
+  - 업로드 파일명의 UTF-8 복원 경계 추가
+  - `POST /sessions/:id/start`에서 n8n 응답 뒤 실제 `video_edits` 생성까지 확인하고, 미생성 시 direct fallback으로 `run-pipeline.js`를 다시 실행하도록 보강
+- `bots/video/lib/edl-builder.js`
+  - 프리뷰 검은 화면 원인이던 연속 `fade in/out` transition 렌더를 임시 비활성화
+  - transition edit는 EDL source of truth에 유지하고, 렌더 단계에서만 잠시 무시하도록 변경
+
+의미:
+- 이번 복구는 단순 UI 수정이 아니라 worker-web 영상 편집의 입력 경계와 세션 복원 불변식을 회복한 작업이었다.
+- 특히 `processing` 세션만 남고 `video_edits`가 생성되지 않던 경계를 막아, n8n 성공 응답과 실제 파이프라인 실행 사이의 틈을 줄였다.
+- 또한 검은 프리뷰의 원인이 원본 영상이 아니라 transition 필터 체인이라는 점을 분리해, 다음 세션에서 올바른 segment 기반 transition 렌더로 교체할 수 있는 기준점을 만들었다.
+
+검증:
+- `node --check bots/worker/web/app/_shell.js`
+- `node --check bots/worker/web/app/video/page.js`
+- `node --check bots/worker/web/routes/video-api.js`
+- `node --check bots/video/lib/edl-builder.js`
+- `cd bots/worker/web && npx next build`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- session 1 direct recovery
+  - `video_sessions.id=1`
+  - `video_edits.id=16`
+  - `trace_id=f84aa3f6-329e-43af-8eac-ae6f8eeaf474`
+  - `status=correction_done`까지 확인
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

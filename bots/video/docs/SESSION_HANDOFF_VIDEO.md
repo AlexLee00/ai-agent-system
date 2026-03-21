@@ -49,6 +49,17 @@
 - `http://127.0.0.1:4001/video/history` → `200 OK`
 - `video_sessions.company_id`를 worker 회사 ID 체계와 맞춰 `TEXT`로 보정 완료
 - 업로드 UI는 드래그앤드롭 + 아이콘 클릭 + 버튼 클릭 3가지 입력 경로를 모두 지원하도록 보강 완료
+- 한글 파일 업로드 시 `original_name`이 깨지던 문제를 UTF-8 복원 경계로 보정 완료
+- `/video`는 현재 세션 ID를 URL `?session=` + `localStorage`에 동기화해 새로고침 후에도 진행 세션 복원이 가능하도록 보강 완료
+- `POST /sessions/:id/start`는 n8n 응답만 신뢰하지 않고 실제 `video_edits(session_id, pair_index)` 생성까지 확인하며, 미생성 시 direct fallback으로 재실행하도록 보강 완료
+
+### 이번 세션 운영 복구 메모
+- 실제 테스트 세션은 `video_sessions.id=1`
+- 새로고침과 첨부파일 수정이 겹치며 세션 컨텍스트가 끊겼고, 한동안 `video_edits`가 생성되지 않아 worker-web 화면에는 `자동 편집 진행중`만 남는 상태가 발생했다
+- 세션 1은 direct recovery로 `video_edits.id=16`, trace `f84aa3f6-329e-43af-8eac-ae6f8eeaf474`를 다시 생성해 파이프라인을 복구했다
+- 세션 1 프리뷰 검은 화면 원인은 `edl-builder.js`의 연속 `fade in/out` transition 렌더 로직이었다
+- 임시 조치로 렌더 단계에서는 `transition` edit를 적용하지 않고 EDL 원장에만 유지하도록 바꿨다
+- 다음 세션 시작점은 세션 1 `preview.mp4` 재검증과 올바른 segment 기반 transition 렌더(`xfade` 계열) 설계다
 
 ---
 
@@ -99,12 +110,14 @@ bots/worker/web/app/video/history/page.js (이력)
 - worker-web `/video`, `/video/history` 빌드와 런타임 반영 완료
 - n8n live webhook + direct fallback + worker secret 영속화 완료
 - Critic / Refiner / Evaluator / quality-loop / RAG feedback loop 구현 완료
+- worker-web `/video` 세션 복원, 업로드 파일명 복구, n8n start 검증 fallback까지 운영 경계 보강 완료
 
 ### 남은 핵심 과제
 - `preview_ms`를 `video_edits` 원장에 별도 저장
 - 5세트 기준 final render 다세트 실검증
 - 품질 루프 수렴률 개선
 - RAG 샘플 수를 늘려 추천 품질과 예상 시간 정확도 향상
+- transition 렌더를 다시 도입하되 검은 화면이 생기지 않도록 segment 기반 설계로 교체
 
 ---
 
@@ -114,6 +127,8 @@ bots/worker/web/app/video/history/page.js (이력)
 - `preview_ms` 원장 고도화
 - final render 다세트 검증
 - worker-web 세트별 상태/예상시간 표시 세분화
+- 세션 1 (`id=1`, edit `id=16`, trace `f84aa3f6-329e-43af-8eac-ae6f8eeaf474`) 프리뷰 재렌더 결과 시각 검증
+- `transition` 렌더 임시 비활성화 상태를 `xfade` 또는 구간 분할 기반 구현으로 대체
 
 ### 이후
 - 품질 루프 수렴률 개선

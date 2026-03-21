@@ -463,20 +463,9 @@ function buildFFmpegFilter(edl) {
   let currentVideoLabel = 'vcat';
 
   if (transitionEdits.length) {
-    transitionEdits.forEach((edit, index) => {
-      const duration = Math.max(0.1, safeParseFloat(edit.duration, 0.5));
-      const center = safeParseFloat(edit.at, 0);
-      const outStart = Math.max(0, center - (duration / 2));
-      const midLabel = `vfade_mid_${index}`;
-      const outLabel = `vfade_${index}`;
-      filterParts.push(
-        `[${currentVideoLabel}]fade=t=out:st=${outStart.toFixed(3)}:d=${(duration / 2).toFixed(3)}[${midLabel}]`
-      );
-      filterParts.push(
-        `[${midLabel}]fade=t=in:st=${center.toFixed(3)}:d=${(duration / 2).toFixed(3)}[${outLabel}]`
-      );
-      currentVideoLabel = outLabel;
-    });
+    // 현재 transition은 단일 연속 스트림 위에 fade in/out를 누적 적용하면
+    // 후속 fade-in이 앞 구간 전체를 검게 만드는 문제가 있어 렌더 단계에서는 비활성화한다.
+    // transition edit 자체는 EDL 원장에 유지하고, 향후 구간 분할 기반 xfade로 교체한다.
   }
 
   if (overlayEdits.length && supportsFilter('drawtext')) {

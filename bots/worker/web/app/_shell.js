@@ -43,7 +43,15 @@ export default function AppShell({ children }) {
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
 
   if (!mounted) {
-    return <div className="min-h-screen bg-gray-50" />;
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-medium text-slate-600 shadow-sm">
+            워커 화면을 준비하고 있습니다...
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {

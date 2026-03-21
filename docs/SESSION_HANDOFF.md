@@ -23,6 +23,9 @@
   - `/video`, `/video/history`가 추가돼 영상 편집 세션 생성, 업로드, 프리뷰 확인, confirm/reject, 다운로드까지 worker-web에서 처리할 수 있다.
   - worker 비디오 업로드는 이번 세션에서 `video_sessions.company_id`를 `TEXT`로 보정해 `test-company` 같은 문자열 회사 ID에서도 세션 생성이 가능하도록 복구됐다.
   - `/video` 업로드 영역은 드래그앤드롭 + 아이콘 클릭 + 파일 선택 버튼 3가지 입력 경로를 모두 지원하도록 개선됐다.
+  - 업로드 한글 파일명은 서버에서 UTF-8 복원 경계로 보정돼 `original_name`이 깨진 상태로 저장되지 않도록 복구됐다.
+  - `/video`는 현재 세션 ID를 URL `?session=`과 `localStorage`에 동기화해 새로고침 후에도 진행 세션을 다시 붙잡을 수 있게 됐다.
+  - `POST /api/video/sessions/:id/start`는 n8n 응답만 믿지 않고 실제 `video_edits(session_id, pair_index)` 생성까지 확인하며, 생성이 안 되면 direct fallback으로 다시 실행하도록 보강됐다.
   - `/api/video` 라우터는 `video_sessions -> video_upload_files -> video_edits` 원장 구조를 사용하며, 현재는 `projects` 권한 정책에 임시 매핑돼 있다.
   - protected preview/subtitle/download는 JWT 헤더를 직접 실을 수 없는 HTML media 태그 제약 때문에 `fetch + Authorization + blob URL` 방식으로 프론트에서 처리한다.
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
@@ -52,6 +55,8 @@
   - 이번 라운드에서 `packages/core/lib/rag.js`에 `rag_video` 컬렉션이 추가됐고, `bots/video/lib/video-rag.js`가 편집 결과/피드백 저장, 유사 패턴 검색, Critic/EDL 보강, 예상 시간 추정을 담당하게 됐다.
   - `run-pipeline.js`, `critic-agent.js`, `edl-builder.js`, `bots/worker/web/routes/video-api.js`가 RAG와 연결돼 비디오 품질 루프가 이제 과거 편집 패턴을 학습할 수 있는 구조로 확장됐다.
   - 5세트 전체 `run-pipeline.js --skip-render` 재검증 결과 현재는 파라미터/컴포넌트스테이트/동적데이터/서버인증/DB생성 모두 `preview_ready`까지 복구됐다.
+  - 이번 worker 실사용 테스트에서는 `video_sessions.id=1`이 새로고침 후 세션 컨텍스트를 잃어 `processing`으로만 남는 문제가 있었고, 세션 복원 로직과 start 검증 fallback을 추가한 뒤 `video_edits.id=16`으로 직접 복구했다.
+  - 세션 1의 프리뷰 검은 화면은 `edl-builder.js`에서 연속 `fade in/out` transition을 같은 스트림에 체인 적용한 것이 원인이었고, 현재는 transition을 EDL 원장에만 남기고 렌더 단계에서는 임시 비활성화한 상태다.
   - 초기 5세트 실패의 실제 원인은 preview watchdog 자체가 아니라 `ffmpeg-preprocess.syncVideoAudio()`가 나레이션 길이에 맞춰 영상을 자르지 않아 `synced.mp4`의 video/audio duration이 크게 어긋난 것이었다.
   - `syncVideoAudio()`에 audio duration 기준 `-t` + `-shortest`를 적용한 뒤 5세트가 모두 정상 통과했고, `subtitle.vtt`는 preview 전에 생성되도록 이동해 artifact 정합성도 회복됐다.
   - 최신 종합 리포트는 `bots/video/temp/validation_report.json`에 저장돼 있으며 요약값은 `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`이다.
@@ -196,7 +201,7 @@
 6. 자동화 리포트 운영 데이터 관찰
 7. 비디오 품질 루프 확장
   - 과제 10 Critic, 과제 11 Refiner, 과제 12 Evaluator/quality-loop, 과제 13 5세트 preview 검증까지 완료
-  - 다음은 preview wall-clock을 원장에 따로 저장하는 구조 보강과 final render 다세트 실검증
+  - 다음은 preview wall-clock을 원장에 따로 저장하는 구조 보강, 세션 1 프리뷰 재검증, transition 렌더 재설계, final render 다세트 실검증
   - 제이 Gateway `persisted` 상태
   - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴
