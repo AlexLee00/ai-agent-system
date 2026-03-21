@@ -19,7 +19,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
-const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
+const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, getOpenManualBlockFollowups, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
@@ -105,6 +105,12 @@ function roundUpToHalfHour(timeStr) {
   const newM = m < 30 ? 30 : 0;
   const newH = m >= 30 ? h + 1 : h;
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+}
+
+function toClockMinutes(timeStr) {
+  const [h, m] = String(timeStr || '').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
 }
 
 function to24Hour(timeText) {
@@ -256,6 +262,15 @@ async function blockNaverSlot(page, entry) {
     await capture('date-selected');
 
     // Step 4: 해당 룸의 예약가능 버튼 클릭
+    const endRounded = roundUpToHalfHour(end);
+    if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
+    const alreadyBlocked = await verifyBlockInGrid(page, room, start, endRounded);
+    if (alreadyBlocked) {
+      log('  ℹ️ 요청 구간이 이미 예약불가 상태입니다. 추가 차단 없이 성공 처리합니다.');
+      await capture('already-blocked');
+      return { ok: true, applied: false, reason: 'already_blocked' };
+    }
+
     let selectedStart = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       selectedStart = await clickRoomAvailableSlot(page, room, start);
@@ -283,8 +298,21 @@ async function blockNaverSlot(page, entry) {
 
     // Step 5~9: 팝업에서 시간/상태 설정 + 설정변경
     // 네이버 드롭다운은 30분 단위 — 종료시간 올림 (19:50 → 20:00)
-    const endRounded = roundUpToHalfHour(end);
-    if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
+    const selectedStartMin = toClockMinutes(selectedStart);
+    const requestedStartMin = toClockMinutes(start);
+    const roundedEndMin = toClockMinutes(endRounded);
+    if (
+      selectedStartMin == null ||
+      requestedStartMin == null ||
+      roundedEndMin == null ||
+      Math.abs(selectedStartMin - requestedStartMin) > 90 ||
+      selectedStartMin >= roundedEndMin
+    ) {
+      log(`⚠️ 슬롯 안전장치 발동: 요청=${start} 선택=${selectedStart} 종료=${endRounded}`);
+      await capture('slot-guard-blocked');
+      return { ok: false, applied: false, reason: 'slot_guard_blocked' };
+    }
+
     let done = false;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       done = await fillUnavailablePopup(page, date, selectedStart, endRounded);
@@ -748,20 +776,76 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
   log(`  시간 표시: "${timeDisplay}"`);
 
   // 모든 로직을 단일 evaluate에서 수행 (scroll → getBoundingClientRect 일관성 유지)
-  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin) => {
-    // 1. Calendar__time 스팬에서 대상 시간 요소 찾기
-    //    오후 7:00: ampm스팬("오후") + time스팬("7:00") 구조
-    let targetTimeEl = null;
+  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin, startTimeArg) => {
+    const isRenderable = (el) => {
+      if (!el || !el.getBoundingClientRect) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const isInViewport = (rect) => rect.bottom >= 0 && rect.top <= window.innerHeight;
+    const to24HourLocal = (timeText) => {
+      const text = String(timeText || '').trim().replace(/\s+/g, ' ');
+      const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      const [, meridiem, hourStr, minStr] = m;
+      let hour = Number(hourStr);
+      const minute = Number(minStr);
+      if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+      if (meridiem === '자정') hour = 0;
+      else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
+      else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
 
-    // a) Calendar__time 클래스 스팬에서 hourMin("7:00") 찾고, 부모에 ampm("오후") 포함 확인
-    const timeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
-    for (const span of timeSpans) {
-      if ((span.textContent || '').trim() !== hourMin) continue;
-      // 부모 또는 형제에 ampm 텍스트가 있는지 확인
-      const parentText = (span.parentElement?.textContent || '').trim();
+    const visibleAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
+      if (el.children.length > 0) return false;
+      if (!isRenderable(el)) return false;
+      const rect = el.getBoundingClientRect();
+      if (!isInViewport(rect)) return false;
+      if (rect.left > 320) return false; // 좌측 시간축/행 라벨 영역
+      const txt = (el.textContent || '').trim();
+      return /^\d{1,2}:\d{2}$/.test(txt);
+    }).map((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        el,
+        raw: (el.textContent || '').trim(),
+        y: rect.top + rect.height / 2,
+        left: rect.left,
+      };
+    }).sort((a, b) => a.y - b.y);
+
+    // 1. 먼저 현재 화면의 왼쪽 시간축에서 실제로 보이는 타임 라벨을 우선 찾는다.
+    //    네이버 캘린더는 오프스크린 복제 노드가 섞여 있어, 보이는 시간축을 먼저 기준으로 잡아야 Y축이 안정적이다.
+    let targetTimeEl = null;
+    const visibleLeafTimeEls = visibleAxisMarkers
+      .filter((marker) => marker.raw === hourMin)
+      .map((marker) => marker.el);
+
+    for (const el of visibleLeafTimeEls) {
+      const parentText = (el.parentElement?.textContent || '').trim();
       if (parentText.includes(ampm)) {
-        targetTimeEl = span;
+        targetTimeEl = el;
         break;
+      }
+    }
+    if (!targetTimeEl && visibleLeafTimeEls.length > 0) {
+      targetTimeEl = visibleLeafTimeEls[0];
+    }
+
+    // 2. Calendar__time 스팬에서 대상 시간 요소 찾기
+    //    오후 7:00: ampm스팬("오후") + time스팬("7:00") 구조
+    const allTimeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
+    const timeSpans = allTimeSpans.filter((span) => isRenderable(span));
+    if (!targetTimeEl) {
+      for (const span of timeSpans) {
+        if ((span.textContent || '').trim() !== hourMin) continue;
+        // 부모 또는 형제에 ampm 텍스트가 있는지 확인
+        const parentText = (span.parentElement?.textContent || '').trim();
+        if (parentText.includes(ampm)) {
+          targetTimeEl = span;
+          break;
+        }
       }
     }
     // b) ampm 무시하고 hourMin 만으로 재시도
@@ -777,6 +861,7 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     if (!targetTimeEl) {
       for (const el of document.querySelectorAll('*')) {
         if (el.children.length > 0) continue;
+        if (!isRenderable(el)) continue;
         if ((el.textContent || '').trim() === hourMin) {
           targetTimeEl = el;
           break;
@@ -785,7 +870,7 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     }
 
     if (!targetTimeEl) {
-      return { found: false, reason: `time element "${hourMin}" not found`, timeSpansCount: timeSpans.length };
+      return { found: false, reason: `time element "${hourMin}" not found`, timeSpansCount: allTimeSpans.length };
     }
 
     // 2. 스크롤 후 Y 좌표 측정 (동일 evaluate 내에서 일관성 보장)
@@ -820,17 +905,26 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     // 4. calendar-btn 버튼 수집 (scrollIntoView 이후 화면에 나타난 것만)
     const calBtns = Array.from(document.querySelectorAll(
       '.calendar-btn, [class*="calendar-btn"], [class*="week-cell"] button, [class*="WeekCell"] button'
-    )).filter(b => b.offsetParent !== null);
+    )).filter((b) => {
+      if (b.offsetParent === null) return false;
+      const rect = b.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && isInViewport(rect);
+    });
 
     if (calBtns.length === 0) {
       return { found: false, reason: 'no calendar-btn visible after scroll', targetY: Math.round(targetY), roomXRange };
     }
 
-    const timeMarkers = timeSpans.map(span => {
-      const r = span.getBoundingClientRect();
-      const raw = (span.parentElement?.textContent || span.textContent || '').replace(/\s+/g, ' ').trim();
-      return { y: r.top + r.height / 2, raw };
-    });
+    const timeMarkers = [
+      ...visibleAxisMarkers.map((marker) => ({ y: marker.y, raw: marker.raw })),
+      ...timeSpans
+        .filter((span) => isInViewport(span.getBoundingClientRect()))
+        .map((span) => {
+          const r = span.getBoundingClientRect();
+          const raw = (span.parentElement?.textContent || span.textContent || '').replace(/\s+/g, ' ').trim();
+          return { y: r.top + r.height / 2, raw };
+        }),
+    ];
 
     const btnInfos = calBtns.map(b => {
       const r = b.getBoundingClientRect();
@@ -845,44 +939,70 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
         cls: b.className || '',
         text: (b.textContent || '').trim(),
         slotTime: nearestTime ? nearestTime.raw : null,
+        slotTime24: nearestTime ? to24HourLocal(nearestTime.raw) : null,
       };
     });
 
-    // 5. 시간 Y 기준 필터 (±25px, 없으면 ±60px)
-    let candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 25);
-    if (candidates.length === 0) candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60);
-    if (candidates.length === 0) candidates = btnInfos; // Y 필터 포기
-
-    // 6. 룸 X 범위 필터
+    // 5. 룸 X 범위 필터
+    let candidates = btnInfos;
     if (roomXRange) {
       const inRoom = candidates.filter(b => b.cx >= roomXRange.left - 15 && b.cx <= roomXRange.right + 15);
       if (inRoom.length > 0) candidates = inRoom;
     }
 
-    // 7. soldout 제외, avail/remaining 우선 (아무 슬롯이나 클릭해서 팝업 열기)
-    const notSoldout = candidates.filter(b => !b.cls.includes('soldout') && !b.cls.includes('disabled'));
-    const finalCandidates = notSoldout.length > 0 ? notSoldout : candidates;
+    // 6. block 경로에서는 예약가능(avail/remaining) 슬롯만 대상으로 본다.
+    const availableCandidates = candidates.filter((b) => {
+      const cls = String(b.cls || '');
+      const text = String(b.text || '');
+      const isSoldout = cls.includes('soldout') || cls.includes('disabled');
+      const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
+      const isAvailable = cls.includes('avail') || cls.includes('btn-info') || text.includes('예약가능');
+      return !isSoldout && !isBlocked && isAvailable;
+    });
+    const sameRowCandidates = availableCandidates.filter((b) => b.slotTime24 === startTimeArg);
+    let finalCandidates = sameRowCandidates;
+    if (finalCandidates.length === 0) {
+      finalCandidates = availableCandidates.filter((b) => Math.abs(b.cy - targetY) <= 70);
+    }
+    if (finalCandidates.length === 0) {
+      finalCandidates = availableCandidates;
+    }
 
     if (finalCandidates.length === 0) {
       return {
-        found: false, reason: 'no suitable button',
-        btnsTotal: btnInfos.length, targetY: Math.round(targetY), roomXRange
+        found: false, reason: 'no available button for target slot',
+        btnsTotal: btnInfos.length,
+        targetY: Math.round(targetY),
+        roomXRange,
+        roomCandidates: candidates.map((b) => ({
+          cy: Math.round(b.cy),
+          text: b.text,
+          cls: String(b.cls || '').slice(0, 80),
+          slotTime: b.slotTime || null,
+          slotTime24: b.slotTime24 || null,
+        })).slice(0, 12),
       };
     }
 
-    // 8. 목표 시각 이후 슬롯을 우선 시도한다.
-    // 이미 지난 슬롯은 클릭이 되지 않거나 패널이 열리지 않을 수 있어,
-    // 같은 룸의 다음 가능한 슬롯으로 자연스럽게 진행한다.
+    // 7. 같은 행(exact row) 후보를 최우선으로 두고, 같은 행이 없으면 가장 가까운 행으로 후순위 정렬한다.
     const normalizedTarget = `${ampm}${hourMin}`;
     const orderedCandidates = finalCandidates
       .map(c => ({
         ...c,
         exact: String(c.slotTime || '').replace(/\s+/g, '') === normalizedTarget ? 0 : 1,
+        timeDelta: (() => {
+          const slot = to24HourLocal(c.slotTime);
+          if (!slot) return Number.MAX_SAFE_INTEGER;
+          const [slotH, slotM] = slot.split(':').map(Number);
+          const [targetH, targetM] = String(startTimeArg || '00:00').split(':').map(Number);
+          return Math.abs((slotH * 60 + slotM) - (targetH * 60 + targetM));
+        })(),
         forward: c.cy >= targetY ? 0 : 1,
         diff: Math.abs(c.cy - targetY),
       }))
       .sort((a, b) => {
         if (a.exact !== b.exact) return a.exact - b.exact;
+        if (a.timeDelta !== b.timeDelta) return a.timeDelta - b.timeDelta;
         if (a.forward !== b.forward) return a.forward - b.forward;
         if (a.diff !== b.diff) return a.diff - b.diff;
         return a.cy - b.cy;
@@ -908,7 +1028,7 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
         slotTime: c.slotTime || null,
       })),
     };
-  }, roomType, timeDisplay, ampm, hourMin);
+  }, roomType, timeDisplay, ampm, hourMin, startTime);
 
   log(`  예약가능 버튼: ${JSON.stringify(result)}`);
   if (!result.found || !result.clicked) return false;
@@ -1551,9 +1671,56 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       };
     }
 
+    function addThirtyMinutes(time24) {
+      const [hh, mm] = String(time24 || '').split(':').map(Number);
+      if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+      const total = hh * 60 + mm + 30;
+      return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    }
+
+    function isRenderable(el) {
+      if (!el || !el.getBoundingClientRect) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }
+
+    function isInViewport(rect) {
+      return rect.bottom >= 0 && rect.top <= window.innerHeight;
+    }
+
     function findTargetY(time24) {
       const token = toDisplayToken(time24);
       if (!token) return null;
+      const visibleAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
+        if (el.children.length > 0) return false;
+        if (!isRenderable(el)) return false;
+        const rect = el.getBoundingClientRect();
+        if (!isInViewport(rect)) return false;
+        if (rect.left > 320) return false;
+        const txt = (el.textContent || '').trim();
+        return /^\d{1,2}:\d{2}$/.test(txt);
+      });
+      for (const el of visibleAxisMarkers) {
+        if ((el.textContent || '').trim() !== token.hourMin) continue;
+        const rect = el.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      }
+
+      const allAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
+        if (el.children.length > 0) return false;
+        if (!isRenderable(el)) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.left > 320) return false;
+        const txt = (el.textContent || '').trim();
+        return /^\d{1,2}:\d{2}$/.test(txt);
+      });
+      for (const el of allAxisMarkers) {
+        if ((el.textContent || '').trim() !== token.hourMin) continue;
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        const rect = el.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      }
+
       let targetTimeEl = null;
       for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
         if ((el.textContent || '').trim() === token.hourMin) {
@@ -1617,11 +1784,6 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       }
     }
 
-    // 3. calendar-btn 상태 파싱 (class/title/text 기준)
-    const calBtns = Array.from(document.querySelectorAll(
-      '.calendar-btn, [class*="calendar-btn"]'
-    )).filter(b => b.offsetParent !== null);
-
     const matchedSlots = [];
     const missingSlots = [];
     for (const slot of requestedSlots) {
@@ -1630,6 +1792,15 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
         missingSlots.push({ slot, reason: 'time_not_found' });
         continue;
       }
+
+      const calBtns = Array.from(document.querySelectorAll(
+        '.calendar-btn, [class*="calendar-btn"]'
+      )).filter((b) => {
+        if (b.offsetParent === null) return false;
+        const rect = b.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && isInViewport(rect);
+      });
+
       let foundSuspended = null;
       for (const btn of calBtns) {
         const slotState = parseSlotState(btn);
@@ -1661,11 +1832,39 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       else missingSlots.push({ slot, reason: 'suspended_not_found' });
     }
 
+    const reconciledMissingSlots = [];
+    for (const missing of missingSlots) {
+      const missingIndex = requestedSlots.indexOf(missing.slot);
+      const prevSlot = requestedSlots[missingIndex - 1];
+      const prevMatched = matchedSlots.find((slot) => slot.slot === prevSlot);
+      const isTrailingContinuation =
+        missingIndex === requestedSlots.length - 1 &&
+        prevMatched &&
+        addThirtyMinutes(prevMatched.slot) === missing.slot &&
+        missing.reason === 'suspended_not_found';
+
+      if (isTrailingContinuation) {
+        matchedSlots.push({
+          slot: missing.slot,
+          key: `${prevMatched.key}:continued`,
+          cls: prevMatched.cls,
+          title: prevMatched.title,
+          x: prevMatched.x,
+          y: prevMatched.y + prevMatched.h,
+          h: prevMatched.h,
+          txt: prevMatched.txt,
+          inferred: true,
+        });
+        continue;
+      }
+      reconciledMissingSlots.push(missing);
+    }
+
     return {
-      verified: missingSlots.length === 0,
+      verified: reconciledMissingSlots.length === 0,
       requestedSlots,
       matchedSlots,
-      missingSlots,
+      missingSlots: reconciledMissingSlots,
       roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
     };
   }, roomType, requestedSlots);
@@ -1742,8 +1941,23 @@ async function main() {
       return !isExpired;
     });
 
-    // 차단 처리 대상 = 신규 + 재시도
-    const toBlockEntries = [...newEntries, ...retryEntries];
+    // ── Phase 2A-2: manual 등록 후속 미완료 재시도 ──
+    const manualFollowupEntriesRaw = await getOpenManualBlockFollowups(today);
+    const manualFollowupEntries = manualFollowupEntriesRaw.filter((e) => {
+      const [_rEndH, _rEndM] = (e.end || '23:59').split(':').map(Number);
+      const isExpired = e.date < _nowDateForRetry || (e.date === _nowDateForRetry && _nowMinForRetry >= _rEndH * 60 + _rEndM);
+      return !isExpired;
+    });
+
+    // 차단 처리 대상 = 신규 + 재시도 + manual follow-up 미완료
+    const toBlockEntries = [];
+    const seenBlockKeys = new Set();
+    for (const entry of [...newEntries, ...retryEntries, ...manualFollowupEntries]) {
+      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.room || ''}`;
+      if (seenBlockKeys.has(key)) continue;
+      seenBlockKeys.add(key);
+      toBlockEntries.push(entry);
+    }
 
     // ── Phase 2B: 취소 감지 (픽코 환불 목록 직접 조회) ──
     // JSON 파일 비교 대신 픽코를 직접 조회 → 무결성 보장
@@ -1762,7 +1976,7 @@ async function main() {
       return true;
     });
 
-    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
+    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 / 🧾 manual 후속 재시도: ${manualFollowupEntries.length}건 (전체 ${kioskEntries.length}건)`);
     log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
 
     if (toBlockEntries.length === 0 && cancelledEntries.length === 0) {

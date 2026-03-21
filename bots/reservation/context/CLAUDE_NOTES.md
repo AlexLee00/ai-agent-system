@@ -483,10 +483,12 @@ node /Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation
   --start=15:00 --end=17:00 --room=A1 [--name=홍길동]
 ```
 
-- stdout JSON `{ success, message [, naverUnblockFailed] }`
-- `success: true` → "✅ 예약 취소 완료: ..." 텔레그램 전송
-- `success: true` + `naverUnblockFailed: true` → 픽코 취소 성공, 네이버 해제 실패 → "취소 완료, 네이버 수동 확인 필요" 전송
-- `success: false` → 실패 사유 보고, 픽코 수동 취소 요청
+- stdout JSON `{ success, message [, naverUnblockFailed, partialSuccess, pickkoCancelled] }`
+- `success: true` → 픽코 취소 + 네이버 해제까지 완료된 완전 성공
+- `success: false` + `partialSuccess: true` + `pickkoCancelled: true` + `naverUnblockFailed: true`
+  → 픽코 취소는 성공, 네이버 해제는 실패
+  → 상위 응답 레이어는 "픽코 취소 완료, 네이버 수동 확인 필요"로 안내
+- `success: false` → 픽코 취소 자체 실패, 수동 취소 요청
 
 ### 취소 예시
 

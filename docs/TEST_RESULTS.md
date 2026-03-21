@@ -860,3 +860,16 @@
 | `analysis.json`, `edit_decision_list.json`, session temp 산출물 확인 | ✅ 실검증 session dir에 생성 확인 |
 | 동시 2회 `node bots/video/scripts/run-pipeline.js --source=1 --skip-render` 실행 | ✅ 두 번째 실행이 `다른 video pipeline 실행이 이미 진행 중입니다`로 즉시 차단됨 확인 |
 | lock 파일 `/Users/alexlee/projects/ai-agent-system/bots/video/temp/.run-pipeline.lock.json` | ✅ 검증 후 자동 해제 확인 |
+
+### 스카 수동등록 후속 차단 / 취소 완결성 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 자동 취소 후 `--unblock-slot` 후속 실행 경로 문법 통과 |
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ manual follow-up 재시도 / slot verify 보강 문법 통과 |
+| `node --check bots/reservation/lib/db.js` | ✅ `getOpenManualBlockFollowups()` 추가 후 문법 통과 |
+| `node --check bots/reservation/manual/reservation/pickko-cancel-cmd.js` | ✅ 부분 성공 응답 분리 후 문법 통과 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `naver-monitor`, `kiosk-monitor`, `ska command webhook` 정상 확인 |
+| 포그라운드 `pickko-kiosk-monitor.js --block-slot` 재현 | ✅ 이재룡 `2026-11-28 11:00~12:30 B`가 `already_blocked`로 수렴, 잘못된 슬롯 저장 위험은 slot guard로 차단 |
+| `manual-block-followup-report.js --from=2026-03-21` + `manual-block-followup-resolve.js --all-open` | ✅ 운영자가 네이버에서 직접 처리한 8건을 `manually_confirmed / operator_confirmed_naver_blocked`로 원장 반영, `openCount=0` 확인 |
+| `/tmp/naver-ops-mode.log` 취소 추적 | ⚠️ `취소감지4` 미래 예약 스캔 범위가 `2026-03-23~2026-05-21`로 보이며, `2026-11-28` 테스트 예약은 자동 취소 감지 범위 밖이라 end-to-end 자동 취소는 별도 재검증 필요 |

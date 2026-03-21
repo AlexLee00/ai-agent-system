@@ -430,3 +430,15 @@
 - 주의:
   - 이제 `pickko_total == general_revenue + pickko_study_room`은 무결성 불변식이 아님
   - 실제 저장 오류는 `room_amounts_json`과 `pickko_study_room` 불일치만 보면 됨
+
+## 2026-03-22 — 스카 수동등록 후속 차단 / 취소 완결성 보강
+
+- 수동등록 후 네이버 예약불가 후속 차단의 silent failure를 더 이상 방치하지 않도록 `kiosk_blocks` 원장에 `last_block_attempt_at`, `last_block_result`, `last_block_reason`, `block_retry_count`를 남기는 구조를 붙였고, `manual-block-followup-report.js`, `manual-block-followup-resolve.js`로 운영 점검/수동 확인 반영 루프를 만들었다.
+- 최근 미래 `manual/manual_retry` 예약 중 네이버 차단 미완료 후보 8건을 실제 네이버 예약관리에서 확인 후 처리했고, `manual-block-followup-resolve.js`로 `manually_confirmed / operator_confirmed_naver_blocked` 상태를 원장에 반영해 `openCount=0` 기준점을 확보했다.
+- `pickko-kiosk-monitor.js`는 이제 `manual follow-up open` 건도 정기 재시도 레일에 포함하며, B룸 오전 슬롯의 잘못된 시간대/잘못된 셀을 건드리는 문제를 줄이기 위해 visible time axis 기준 Y축 보정, available-only 필터, slot guard, trailing half-hour verify 보강을 적용했다.
+- 이재룡 `010-3500-0586 / 2026-11-28 11:00~12:30 B` 테스트 예약은 block 경로 기준 `already_blocked`로 수렴했고, `manual-block-followup` 원장 기준 `naver_blocked=1`, `last_block_result=blocked`, `last_block_reason=already_blocked` 상태로 정리됐다.
+- `naver-monitor.js`의 자동 취소 경로는 이제 픽코 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 후속 실행하도록 보강됐다. 즉 자동 취소도 `취소 감지 -> 픽코 취소 -> 네이버 예약가능 복구`의 완결 경로를 갖는다.
+- 추가로 `pickko-cancel-cmd.js`는 `픽코 취소 성공 + 네이버 해제 실패`를 더 이상 `success: true`로 포장하지 않고 `success: false`, `partialSuccess: true`, `pickkoCancelled: true`, `naverUnblockFailed: true`로 반환하도록 바꿔 상위 응답 레이어가 완전 성공으로 오해하기 어렵게 만들었다.
+- 현재 남은 핵심은 두 가지다.
+  1. 상위 텔레그램 응답 레이어가 `partialSuccess / naverUnblockFailed`를 그대로 반영해 “픽코 취소 완료, 네이버 수동 확인 필요” 문구로 분기하는지 실전 확인
+  2. `naver-monitor`의 미래 취소 스캔 범위가 현재 11월 테스트 예약을 직접 커버하지 못하므로, 자동 취소 테스트는 더 가까운 날짜 예약 또는 scan window 확장 기준으로 다시 검증 필요

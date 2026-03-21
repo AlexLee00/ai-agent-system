@@ -116,11 +116,15 @@ runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
     process.exit(0);
   } else {
     // 픽코 취소는 성공했지만 네이버 해제 실패
+    // 상위 응답 레이어가 success만 보고 완전 성공으로 안내하지 않도록
+    // partial failure를 명시적으로 실패로 돌려준다.
     process.stdout.write(JSON.stringify({
-      success: true,
+      success: false,
+      partialSuccess: true,
+      pickkoCancelled: true,
       naverUnblockFailed: true,
       message: `예약 취소 완료 (픽코), 네이버 해제 실패 — 수동 확인 필요: ${baseInfo}`
     }) + '\n');
-    process.exit(0); // 픽코 취소가 핵심 — 네이버는 경고만
+    process.exit(2);
   }
 });

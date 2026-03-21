@@ -2118,6 +2118,33 @@ function runPickkoCancel(booking, cancelKey = null) {
 
     log(`🗑️ 픽코 취소 실행: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
 
+    const runNaverUnblockFollowup = async () => {
+      const kioskScript = path.join(__dirname, 'pickko-kiosk-monitor.js');
+      const unblockArgs = [
+        kioskScript,
+        '--unblock-slot',
+        `--phone=${phoneRawForKey}`,
+        `--date=${booking.date}`,
+        `--start=${booking.start}`,
+        `--end=${booking.end}`,
+        `--room=${booking.room}`,
+        `--name=${(booking.raw?.name || '고객').slice(0, 20)}`,
+      ];
+
+      log(`🔓 네이버 해제 후속 실행: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
+
+      return new Promise((resolveUnblock) => {
+        const child = spawn('node', unblockArgs, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+        child.stdout.on('data', (d) => process.stdout.write(d.toString()));
+        child.stderr.on('data', (d) => process.stderr.write(d.toString()));
+        child.on('close', (code) => resolveUnblock(code === 0));
+        child.on('error', (error) => {
+          log(`⚠️ 네이버 해제 후속 실행 실패: ${error.message}`);
+          resolveUnblock(false);
+        });
+      });
+    };
+
     const onCancelSuccess = async (isRetry) => {
       await addCancelledKey(doneKey).catch(() => {});
       if (booking.bookingId) {
@@ -2136,6 +2163,19 @@ function runPickkoCancel(booking, cancelKey = null) {
         action: isRetry ? '재시도 후 정상 취소 처리됨' : '정상 취소 처리됨',
       });
       ragSaveReservation(booking, isRetry ? '취소완료(재시도)' : '취소완료');
+
+      const unblocked = await runNaverUnblockFollowup();
+      if (!unblocked) {
+        publishToMainBot({
+          from_bot: 'andy',
+          event_type: 'alert',
+          alert_level: 3,
+          message:
+            `⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n` +
+            `${booking.raw?.name || '고객'} ${booking.date} ${booking.start}~${booking.end} ${booking.room}룸\n` +
+            `사유: 픽코 취소는 성공했지만 unblock-slot 후속 처리 실패`,
+        });
+      }
     };
 
     const onCancelFail = (code, firstCode) => {
