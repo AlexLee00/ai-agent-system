@@ -231,7 +231,7 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
       - `n8nHealthy=true`
       - `webhookRegistered=true`
       - `webhookStatus=200`
-    - 이제 launchd env가 없어도 `bots/worker/secrets.json`의 `video_n8n_token`으로 토큰을 영속화할 수 있음
+    - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, env 없이도 `setup-video-workflow.js` / `check-n8n-video-path.js`가 정상 동작하는 것까지 확인
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB

@@ -178,7 +178,7 @@ Step 3 — 과제 6~13 재정의:
     - `webhookRegistered=true`
     - `webhookStatus=200`
     - `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`
-  - launchd env가 없어도 `bots/worker/secrets.json`의 `video_n8n_token`으로 영속화 가능하도록 코드 경계 정리 완료
+  - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, env 없이도 `setup-video-workflow.js` / `check-n8n-video-path.js`가 정상 동작하는 것까지 확인
 
 ---
 
@@ -190,7 +190,7 @@ Step 3 — 과제 6~13 재정의:
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
 - 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
-- n8n 쪽은 live webhook 등록과 내부 dispatch route 검증까지 완료됐고, 다음은 `VIDEO_N8N_TOKEN`을 launchd/운영 secret로 영속화하는 작업이 남아 있다
+- n8n 쪽은 live webhook 등록, 내부 dispatch route 검증, worker secret 영속화까지 완료됐고, 다음은 과제 13 다세트 검증으로 넘어가면 된다
 
 ### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 

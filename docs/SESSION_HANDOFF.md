@@ -44,7 +44,7 @@
   - `bots/video/lib/video-n8n-config.js`가 추가돼 `VIDEO_N8N_TOKEN`을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 통합됐다.
   - `bots/video/n8n/setup-video-workflow.js`는 registry DB 조회 실패 시 기본 webhook 경로로 degrade 하도록 보강돼, setup 성공 후 URL 출력 단계에서 불필요하게 실패하지 않는다.
   - sandbox 밖 live 검증 기준 현재 상태는 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`이다.
-  - launchd env가 없어도 worker secrets fallback으로 토큰을 영속화할 수 있고, 다음 운영 작업은 실제 `bots/worker/secrets.json`에 `video_n8n_token`을 배치하는 것이다.
+  - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, launchd env 없이도 setup/check 스크립트와 내부 dispatch probe가 정상 동작하는 것까지 확인됐다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.

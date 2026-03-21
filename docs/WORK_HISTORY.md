@@ -117,7 +117,7 @@
 - 이후 실제 n8n activation 실패 원인을 추적한 결과, 현재 로컬 n8n 런타임은 `n8n-nodes-base.executeCommand`를 활성화하지 못했다.
 - 그래서 workflow를 `HTTP Request -> /api/video/internal/run-pipeline|render-from-edl` 구조로 호환 전환하고, worker에 `video-internal-api.js`를 추가해 기존 detached `fork()` 실행 경로를 내부 API로 재사용하도록 바꿨다.
 - 임시 `VIDEO_N8N_TOKEN`과 worker 재기동 후 live 검증 결과 `resolvedWebhookUrl`이 실제 path로 해석되고 `webhookRegistered=true`, `webhookStatus=200`까지 확인됐다.
-- 마지막으로 `video-n8n-config.js`를 추가해 토큰을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 정리했다.
+- 마지막으로 `video-n8n-config.js`를 추가해 토큰을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 정리했고, 실제 운영 secret 파일 반영 후 env 없이도 setup/check가 성공하는 것까지 확인했다.
 
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
