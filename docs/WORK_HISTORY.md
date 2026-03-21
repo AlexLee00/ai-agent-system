@@ -3863,3 +3863,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `naver-monitor.js`의 `runPickkoCancel()`은 자동 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 이어지는 후속 경로를 갖도록 보강되어, 자동 취소도 `픽코 취소 -> 네이버 예약가능 복구` 완결 경로를 따르게 됨
 - `pickko-cancel-cmd.js`는 픽코 취소 성공 후 네이버 해제가 실패한 경우 더 이상 `success: true`를 반환하지 않고 `success: false`, `partialSuccess: true`, `pickkoCancelled: true`, `naverUnblockFailed: true`를 반환하도록 변경해 상위 응답 레이어가 부분 실패를 완전 성공처럼 포장하는 위험을 줄임
 - `bots/reservation/context/CLAUDE_NOTES.md`도 취소 명령 stdout JSON 계약을 현재 코드와 맞게 업데이트
+
+### 루나 암호화폐 weak signal 계측 보강
+- `bots/investment/shared/pipeline-decision-runner.js`에 `weak_signal_reason_top`, `weak_signal_reasons`를 추가해 `weakSignalSkipped`를 단순 카운트가 아니라 `confidence_near_threshold / confidence_mid_gap / confidence_far_below_threshold` 기준으로 누적 저장하도록 보강
+- `bots/investment/scripts/trading-journal.js`, `bots/investment/scripts/weekly-trade-review.js`는 decision 퍼널 / 운영모드 피드백 / validation 승격 후보 섹션에서 `weakTop`을 함께 노출하도록 정리
+- `bots/investment/scripts/runtime-config-suggestions.js`도 validation 요약에 `weakTop`을 포함하도록 연결해 threshold 튜닝이 “임계값 근처 신호 부족”인지 “실제로 약한 신호 과다”인지 구분할 수 있는 기반을 마련
+- 현재 과거 `pipeline_runs.meta`에는 새 필드가 없으므로, 의미 있는 `weakTop`은 다음 암호화폐 파이프라인 실행부터 누적된다

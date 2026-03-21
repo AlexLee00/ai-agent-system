@@ -449,3 +449,11 @@
 - 현재 남은 핵심은 두 가지다.
   1. 상위 텔레그램 응답 레이어가 `partialSuccess / naverUnblockFailed`를 그대로 반영해 “픽코 취소 완료, 네이버 수동 확인 필요” 문구로 분기하는지 실전 확인
   2. `naver-monitor`의 미래 취소 스캔 범위가 현재 11월 테스트 예약을 직접 커버하지 못하므로, 자동 취소 테스트는 더 가까운 날짜 예약 또는 scan window 확장 기준으로 다시 검증 필요
+
+## 2026-03-22 — 루나 암호화폐 weak signal 계측 1차 보강
+
+- `bots/investment/shared/pipeline-decision-runner.js`가 이제 `weakSignalSkipped`를 단순 카운트로만 남기지 않고 `weak_signal_reason_top`, `weak_signal_reasons`를 함께 저장한다.
+- 현재 분류 기준은 `confidence_near_threshold`, `confidence_mid_gap`, `confidence_far_below_threshold` 3단이다. 목적은 threshold를 미세조정해야 하는 상황과 실제 신호 품질이 낮은 상황을 분리하는 것이다.
+- `bots/investment/scripts/trading-journal.js`, `bots/investment/scripts/weekly-trade-review.js`, `bots/investment/scripts/runtime-config-suggestions.js`는 새 메타를 읽어 `weakTop`을 함께 표시하도록 연결했다.
+- 현재 일지/주간리뷰에서 `weakTop`이 바로 안 보일 수 있는 것은 정상이다. 과거 `pipeline_runs.meta`에는 새 필드가 없고, 다음 암호화폐 파이프라인 실행부터 누적된다.
+- LIVE 전환 판단은 여전히 보류다. 이번 계측은 튜닝 근거를 더 정교하게 만드는 단계이며, `PAPER -> LIVE` 승격 게이트는 [CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md)를 기준으로 유지한다.

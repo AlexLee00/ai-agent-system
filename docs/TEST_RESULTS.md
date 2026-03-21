@@ -895,3 +895,15 @@
 | 포그라운드 `pickko-kiosk-monitor.js --block-slot` 재현 | ✅ 이재룡 `2026-11-28 11:00~12:30 B`가 `already_blocked`로 수렴, 잘못된 슬롯 저장 위험은 slot guard로 차단 |
 | `manual-block-followup-report.js --from=2026-03-21` + `manual-block-followup-resolve.js --all-open` | ✅ 운영자가 네이버에서 직접 처리한 8건을 `manually_confirmed / operator_confirmed_naver_blocked`로 원장 반영, `openCount=0` 확인 |
 | `/tmp/naver-ops-mode.log` 취소 추적 | ⚠️ `취소감지4` 미래 예약 스캔 범위가 `2026-03-23~2026-05-21`로 보이며, `2026-11-28` 테스트 예약은 자동 취소 감지 범위 밖이라 end-to-end 자동 취소는 별도 재검증 필요 |
+
+### 루나 암호화폐 weak signal 계측 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/pipeline-decision-runner.js` | ✅ `weak_signal_reason_top`, `weak_signal_reasons` 계측 추가 후 문법 통과 |
+| `node --check bots/investment/scripts/trading-journal.js` | ✅ `weakTop` 출력 보강 후 문법 통과 |
+| `node --check bots/investment/scripts/runtime-config-suggestions.js` | ✅ validation `weakTop` 요약 연결 후 문법 통과 |
+| `node --check bots/investment/scripts/weekly-trade-review.js` | ✅ 주간 리뷰 `weakTop` 출력 보강 후 문법 통과 |
+| `node bots/investment/scripts/trading-journal.js` | ✅ 일지 정상 출력, 기존 과거 meta에는 새 필드가 없어 `weakTop`이 아직 비어도 오류 없이 동작함 확인 |
+| `node bots/investment/scripts/runtime-config-suggestions.js` | ✅ runtime_config 제안 정상 출력, 새 `weakTop` 필드가 없어도 validation 요약이 안전하게 유지됨 확인 |
+| `node bots/investment/scripts/weekly-trade-review.js` | ✅ 주간 리뷰 정상 출력, 기존 집계 데이터와 호환됨 확인 |
