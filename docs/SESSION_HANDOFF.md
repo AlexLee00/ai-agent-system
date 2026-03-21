@@ -470,3 +470,10 @@
 - 초기 구현에서 `pipeline_runs.market='crypto'`로 좁게 잡아 decision이 0으로 보이던 문제를 바로 수정했고, 현재는 `binance` market을 포함해 기존 원장 구조와 맞춘다.
 - 실제 최근 3일 검증 결과는 `decision 2236 / BUY 344 / approved 247 / executed 48 / 체결 48건(PAPER 48, LIVE 0) / weak 99 / 종료 리뷰 0`이었다.
 - 이 기준으로 현재 LIVE 게이트는 여전히 `blocked`다. 이유는 **신호와 PAPER 체결은 충분하지만, LIVE 체결과 종료 리뷰가 아직 없기 때문**이다.
+
+## 2026-03-22 — 루나 운영 헬스에 암호화폐 LIVE 게이트 반영
+
+- `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 출력한다.
+- 실제 `health-report --json` 기준 현재 값은 `warnCount=1`, `liveGate.decision=blocked`, `사유=PAPER 체결 또는 청산 검증이 아직 부족함`이다.
+- 따라서 `/ops-health`나 투자 헬스 리포트만 봐도 “서비스는 정상인데, 암호화폐 LIVE 전환은 아직 막혀 있다”는 상태를 한 번에 읽을 수 있다.
+- 참고로 오늘 `signalBlockHealth`에 보이는 `position_reentry_blocked`는 과거 데이터 잔상이며, 새 `paper/live` 차단 코드 분리는 이후 신규 신호부터 누적된다.

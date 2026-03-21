@@ -13,6 +13,7 @@
  */
 
 import * as db from '../shared/db.js';
+import { pathToFileURL } from 'url';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -244,8 +245,7 @@ function printHuman(review) {
   return lines.join('\n');
 }
 
-async function main() {
-  const { days, json } = parseArgs();
+export async function loadCryptoLiveGateReview(days = 3) {
   await db.initSchema();
 
   const [pipelineRows, tradeRows, blockRows, closedReviewRows] = await Promise.all([
@@ -263,6 +263,13 @@ async function main() {
     closedReviews: Number(closedReviewRows?.[0]?.cnt || 0),
   });
 
+  return review;
+}
+
+async function main() {
+  const { days, json } = parseArgs();
+  const review = await loadCryptoLiveGateReview(days);
+
   if (json) {
     process.stdout.write(`${JSON.stringify(review, null, 2)}\n`);
     return;
@@ -271,7 +278,9 @@ async function main() {
   process.stdout.write(`${printHuman(review)}\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`❌ ${error?.stack || error?.message || String(error)}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    process.stderr.write(`❌ ${error?.stack || error?.message || String(error)}\n`);
+    process.exit(1);
+  });
+}

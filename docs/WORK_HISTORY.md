@@ -3879,3 +3879,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/scripts/crypto-live-gate-review.js`를 추가해 최근 N일 기준 암호화폐 `decision / BUY / approved / executed / PAPER-LIVE 체결 / weakSignalSkipped / 재진입 차단 / 종료 리뷰 수`를 한 번에 읽고 LIVE 게이트(`blocked/candidate`)를 자동 판정하도록 정리
 - 초기 구현에서 `pipeline_runs.market='crypto'`로 좁게 잡아 decision 0으로 보이던 경계를 즉시 보정했고, 현재는 `binance` market까지 포함해 최근 3일 암호화폐 퍼널을 정상 집계한다
 - 실제 최근 3일 출력 기준 `decision 2236 / BUY 344 / approved 247 / executed 48 / 체결 48(PAPER 48, LIVE 0) / 종료 리뷰 0`으로 확인되어, LIVE 게이트는 여전히 `blocked`로 유지된다
+
+### 루나 운영 헬스에 암호화폐 LIVE 게이트 통합
+- `bots/investment/scripts/crypto-live-gate-review.js`가 `loadCryptoLiveGateReview()` export를 제공하도록 열어, 단독 CLI이면서도 다른 리포트에서 재사용 가능한 구조로 정리
+- `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다
+- 실제 `node bots/investment/scripts/health-report.js --json` 기준 `cryptoLiveGateHealth.warnCount=1`, `decision.level=medium`, `reason='PAPER 체결 또는 청산 검증이 아직 부족함'` 확인
+- 현재 `signalBlockHealth`에는 과거 데이터 영향으로 `position_reentry_blocked` 단일 코드가 남아 있지만, 새 `paper_position_reentry_blocked / live_position_reentry_blocked` 분리는 이후 신규 신호부터 누적된다

@@ -406,6 +406,39 @@ async function loadTradeLaneHealth() {
   };
 }
 
+async function loadCryptoLiveGateHealth() {
+  try {
+    const modulePath = path.resolve(__dirname, './crypto-live-gate-review.js');
+    const mod = await import(pathToFileURL(modulePath).href);
+    const review = await mod.loadCryptoLiveGateReview(3);
+    const decision = String(review?.liveGate?.decision || 'unknown');
+    const lines = [
+      `  게이트: ${decision}`,
+      `  사유: ${String(review?.liveGate?.reason || 'n/a')}`,
+      `  체결: ${Number(review?.metrics?.trades?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.paper || 0)})`,
+      `  퍼널: decision ${Number(review?.metrics?.pipeline?.decision || 0)} / BUY ${Number(review?.metrics?.pipeline?.buy || 0)} / approved ${Number(review?.metrics?.pipeline?.approved || 0)} / executed ${Number(review?.metrics?.pipeline?.executed || 0)}`,
+      `  weak: ${Number(review?.metrics?.pipeline?.weak || 0)}${review?.metrics?.pipeline?.weakTop ? ` (top ${review.metrics.pipeline.weakTop})` : ''}`,
+      `  reentry: PAPER ${Number(review?.metrics?.blocks?.paperReentry || 0)} / LIVE ${Number(review?.metrics?.blocks?.liveReentry || 0)} / same-day ${Number(review?.metrics?.blocks?.sameDayReentry || 0)}`,
+      `  종료 리뷰: ${Number(review?.metrics?.closedReviews || 0)}건`,
+    ];
+    return {
+      okCount: decision === 'candidate' ? 1 : 0,
+      warnCount: decision === 'blocked' ? 1 : 0,
+      ok: decision === 'candidate' ? lines : [],
+      warn: decision === 'blocked' ? lines : [],
+      review,
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  LIVE 게이트 리뷰 로드 실패: ${error?.message || String(error)}`],
+      review: null,
+    };
+  }
+}
+
 function buildDecision(
   serviceRows,
   tradeReview,
@@ -414,6 +447,7 @@ function buildDecision(
   recentSignalBlockHealth,
   recentLaneBlockPressure,
   tradeLaneHealth,
+  cryptoLiveGateHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -459,6 +493,11 @@ function buildDecision(
         reason: saturatedLane
           ? `거래 한도 도달 rail ${formatLaneLabel(saturatedLane.exchange, saturatedLane.tradeMode)} ${saturatedLane.count}/${saturatedLane.limit}`
           : `거래 한도 근접 rail ${formatLaneLabel(nearLimitLane?.exchange, nearLimitLane?.tradeMode)} ${nearLimitLane?.count}/${nearLimitLane?.limit}`,
+      },
+      {
+        active: cryptoLiveGateHealth.warnCount > 0,
+        level: 'medium',
+        reason: `암호화폐 LIVE 게이트 ${cryptoLiveGateHealth.review?.liveGate?.decision || 'blocked'} — ${cryptoLiveGateHealth.review?.liveGate?.reason || 'PAPER/LIVE 전환 데이터 부족'}`,
       },
     ],
     okReason: '핵심 서비스와 trade_review 정합성이 현재는 안정 구간입니다.',
@@ -506,6 +545,7 @@ function formatText(report) {
         ? report.recentLaneBlockPressure.lanes.map((lane) => `  ${lane.label}: ${lane.count}건`)
         : ['  최근 일간 한도 rail 압력 없음'],
     },
+    buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
       title: null,
@@ -549,6 +589,7 @@ async function buildReport() {
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
   const tradeLaneHealth = await loadTradeLaneHealth();
+  const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const decision = buildDecision(
     serviceRows,
     tradeReview,
@@ -557,6 +598,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     tradeLaneHealth,
+    cryptoLiveGateHealth,
   );
 
   const report = {
@@ -572,6 +614,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     tradeLaneHealth,
+    cryptoLiveGateHealth,
     decision,
   };
   return report;
