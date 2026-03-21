@@ -939,4 +939,5 @@
 | `node scripts/speed-test.js` (실측) | ✅ `gemini-2.5-pro` 정상 측정 복구, `gemini-2.5-flash-lite` 신규 성공, 최신 실패는 `google-gemini-cli/gemini-2.5-flash | rate_limited` 1건만 남음 |
 | `node scripts/reviews/llm-selector-speed-review.js` | ✅ 최신 recommended `groq/openai/gpt-oss-20b`, 최신 실패 `gemini-2.5-flash | rate_limited` 1건으로 정리됨 확인 |
 | `node scripts/reviews/llm-selector-speed-daily.js --skip-test --json` | ✅ `primaryHealth=rate_limited`, `latestPrimaryResult.errorClass=rate_limited` 노출 확인 |
+| `node scripts/reviews/llm-selector-speed-review.js` (후속) | ✅ `primaryFallbackCandidate=google-gemini-cli/gemini-2.5-flash-lite` 노출 확인 |
 | `~/.openclaw/openclaw.json` 모델 레지스트리 갱신 | ✅ `gemini-2.5-flash-lite` 추가, `groq/moonshotai/kimi-k2-instruct-0905` 교체, `cerebras/gpt-oss-120b` 제거 완료 |
