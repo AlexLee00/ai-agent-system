@@ -27,6 +27,7 @@
   - fallback chain을 ready provider만 남도록 `11 -> 4`로 정리
   - `maxConcurrent=1`, `subagents.maxConcurrent=2`로 보수화
   - `ai.openclaw.gateway` 재기동 완료
+  - gateway 실험 리포트에 `마지막 gateway 재기동 이후` 창을 추가해 과거 24시간 노이즈와 현재 상태를 분리
 - 의미:
   - 미준비 fallback이 복구 경로를 오염시키던 문제는 해소
   - 남은 진짜 병목은 `Gemini rate limit` 이후 동일 run 재시도 burst
@@ -131,15 +132,17 @@
 
 ### 제이 gateway post-prune 관찰
 
-- 상태: **새 관찰 창 대기**
+- 상태: **1차 관찰 성공**
 - 기준점:
   - fallback `11 -> 4`
   - `ready fallback=4`, `unready fallback=0`
   - concurrency `2/4 -> 1/2`
+- 최신 관찰:
+  - `log-jay-gateway-experiment.js` 기준 `마지막 gateway 재기동 이후: rate limit 0건 / auth missing 0건 / retry burst 0건`
 - 다음 관찰:
-  - `provider auth missing` 24시간 창 감소 여부
-  - `retry burst runs`와 `maxAttemptsPerRun` 감소 여부
-  - 여전히 높으면 upstream rate-limit 또는 backoff 설계 재검토
+  - 새 트래픽이 더 쌓였을 때도 post-restart 창이 낮게 유지되는지 확인
+  - rolling 24시간 창이 자연히 내려오는지 확인
+  - 다시 높아지면 upstream rate-limit 또는 backoff 설계 재검토
 
 ### 비디오 quality score
 

@@ -21,6 +21,8 @@
 | `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency `1/2` 적용 |
 | `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동 |
 | `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 창에서 `rate limit=76`, `active=33`, `retry burst runs=13`, `max attempts per run=4` 확인 |
+| `node bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ `마지막 gateway 재기동 이후: rate limit 0 / auth missing 0 / retry burst 0` 확인 |
+| `node scripts/reviews/jay-gateway-experiment-review.js` | ✅ `post-restart rate limit/auth missing/retry burst` 출력 확인 |
 
 ## 2026-03-21
 

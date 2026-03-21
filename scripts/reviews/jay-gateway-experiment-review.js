@@ -69,6 +69,13 @@ function buildReview(rows, days, inputPath) {
   const activeSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.activeRateLimitCount || 0) > 0).length;
   const authIssueSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.providerAuthMissingCount || 0) > 0).length;
   const retryBurstSnapshots = filtered.filter((row) => Number(row.gatewayMetrics?.embeddedRateLimitRuns?.retryBurstCount || 0) > 0).length;
+  const postRestartRateLimitCounts = filtered
+    .map((row) => Number(row.gatewayMetrics?.postRestart?.rateLimitCount || 0));
+  const postRestartAuthMissingCounts = filtered
+    .map((row) => Number(row.gatewayMetrics?.postRestart?.providerAuthMissingCount || 0));
+  const postRestartRetryBurstCounts = filtered
+    .map((row) => Number(row.gatewayMetrics?.postRestart?.embeddedRateLimitRuns?.retryBurstCount || 0));
+  const postRestartSnapshots = filtered.filter((row) => row.gatewayMetrics?.postRestart).length;
 
   let recommendation = 'hold';
   let reason = '최근 스냅샷 기준 정합성과 활성 오류가 안정 구간입니다.';
@@ -84,6 +91,12 @@ function buildReview(rows, days, inputPath) {
   }
   if (retryBurstSnapshots > 0) {
     reason += ' 동일 runId 재시도 burst가 보여 backoff/동시성 조정도 같이 봐야 합니다.';
+  }
+  if (postRestartSnapshots > 0) {
+    const latestPostRestartRate = Number(latest.gatewayMetrics?.postRestart?.rateLimitCount || 0);
+    const latestPostRestartAuthMissing = Number(latest.gatewayMetrics?.postRestart?.providerAuthMissingCount || 0);
+    const latestPostRestartBurst = Number(latest.gatewayMetrics?.postRestart?.embeddedRateLimitRuns?.retryBurstCount || 0);
+    reason += ` 마지막 gateway 재기동 이후 창에서는 rate limit ${latestPostRestartRate}건, auth missing ${latestPostRestartAuthMissing}건, retry burst ${latestPostRestartBurst}건으로 분리 관찰됩니다.`;
   }
 
   return {
@@ -108,6 +121,10 @@ function buildReview(rows, days, inputPath) {
           embeddedUniqueRunCount: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.uniqueRunCount || 0),
           embeddedRetryBurstCount: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.retryBurstCount || 0),
           embeddedMaxAttemptsPerRun: Number(latest.gatewayMetrics?.embeddedRateLimitRuns?.maxAttemptsPerRun || 0),
+          postRestartRateLimitCount: Number(latest.gatewayMetrics?.postRestart?.rateLimitCount || 0),
+          postRestartProviderAuthMissingCount: Number(latest.gatewayMetrics?.postRestart?.providerAuthMissingCount || 0),
+          postRestartRetryBurstCount: Number(latest.gatewayMetrics?.postRestart?.embeddedRateLimitRuns?.retryBurstCount || 0),
+          postRestartMaxAttemptsPerRun: Number(latest.gatewayMetrics?.postRestart?.embeddedRateLimitRuns?.maxAttemptsPerRun || 0),
           orchestratorHealthLevel: latest.orchestratorHealth?.decision?.level || null,
         }
       : null,
@@ -123,9 +140,13 @@ function buildReview(rows, days, inputPath) {
       avgEmbeddedUniqueRunCount: average(embeddedUniqueRunCounts),
       avgEmbeddedRetryBurstCount: average(embeddedRetryBurstCounts),
       avgEmbeddedMaxAttemptsPerRun: average(embeddedMaxAttempts),
+      avgPostRestartRateLimitCount: average(postRestartRateLimitCounts),
+      avgPostRestartProviderAuthMissingCount: average(postRestartAuthMissingCounts),
+      avgPostRestartRetryBurstCount: average(postRestartRetryBurstCounts),
       activeSnapshotCount: activeSnapshots,
       authIssueSnapshotCount: authIssueSnapshots,
       retryBurstSnapshotCount: retryBurstSnapshots,
+      postRestartSnapshotCount: postRestartSnapshots,
       latestHealthLevel: healthLevels[healthLevels.length - 1] || null,
     },
     recommendation: {
@@ -158,6 +179,9 @@ function printHuman(review) {
     lines.push(`- provider auth missing: ${review.latestSnapshot.providerAuthMissingCount}건`);
     lines.push(`- embedded unique runs: ${review.latestSnapshot.embeddedUniqueRunCount}건`);
     lines.push(`- retry burst runs: ${review.latestSnapshot.embeddedRetryBurstCount}건 (최대 ${review.latestSnapshot.embeddedMaxAttemptsPerRun}회)`);
+    lines.push(`- post-restart rate limit: ${review.latestSnapshot.postRestartRateLimitCount}건`);
+    lines.push(`- post-restart auth missing: ${review.latestSnapshot.postRestartProviderAuthMissingCount}건`);
+    lines.push(`- post-restart retry burst: ${review.latestSnapshot.postRestartRetryBurstCount}건 (최대 ${review.latestSnapshot.postRestartMaxAttemptsPerRun}회)`);
     lines.push(`- 마지막 rate limit: ${review.latestSnapshot.lastRateLimitAt || '없음'}`);
     lines.push(`- health: ${review.latestSnapshot.orchestratorHealthLevel || '확인 불가'}`);
     lines.push('');
@@ -175,9 +199,13 @@ function printHuman(review) {
   lines.push(`- 평균 embedded unique runs: ${review.summary.avgEmbeddedUniqueRunCount ?? 0}건`);
   lines.push(`- 평균 retry burst runs: ${review.summary.avgEmbeddedRetryBurstCount ?? 0}건`);
   lines.push(`- 평균 max attempts/run: ${review.summary.avgEmbeddedMaxAttemptsPerRun ?? 0}회`);
+  lines.push(`- 평균 post-restart rate limit: ${review.summary.avgPostRestartRateLimitCount ?? 0}건`);
+  lines.push(`- 평균 post-restart auth missing: ${review.summary.avgPostRestartProviderAuthMissingCount ?? 0}건`);
+  lines.push(`- 평균 post-restart retry burst: ${review.summary.avgPostRestartRetryBurstCount ?? 0}건`);
   lines.push(`- 활성 스냅샷 수: ${review.summary.activeSnapshotCount}`);
   lines.push(`- auth issue 스냅샷 수: ${review.summary.authIssueSnapshotCount}`);
   lines.push(`- retry burst 스냅샷 수: ${review.summary.retryBurstSnapshotCount}`);
+  lines.push(`- post-restart 스냅샷 수: ${review.summary.postRestartSnapshotCount}`);
 
   return lines.join('\n');
 }

@@ -37,6 +37,13 @@ function safeReadLines(filePath) {
   }
 }
 
+function findLastLineIndex(lines, pattern) {
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (pattern.test(lines[i])) return i;
+  }
+  return -1;
+}
+
 function parseLogTimestamp(line) {
   const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/);
   if (!match) return null;
@@ -101,13 +108,7 @@ function summarizeEmbeddedRateLimitRuns(lines) {
   };
 }
 
-function summarizeGatewayLogs(hours) {
-  const gatewayErrPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.err.log');
-  const gatewayLogPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.log');
-  const errLines = filterRecentLines(safeReadLines(gatewayErrPath), hours);
-  const outLines = filterRecentLines(safeReadLines(gatewayLogPath), hours);
-  const activeLines = filterRecentLines(errLines, ACTIVE_WINDOW_HOURS);
-
+function summarizeGatewayWindow({ errLines, outLines, activeLines, observedHours, windowLabel }) {
   const rateLimitPattern = /API rate limit reached/i;
   const failoverPattern = /FailoverError/i;
   const providerAuthMissingPattern = /No API key found for provider/i;
@@ -129,11 +130,9 @@ function summarizeGatewayLogs(hours) {
   const activeEmbeddedRateLimitRuns = summarizeEmbeddedRateLimitRuns(activeLines);
 
   return {
-    observedHours: hours,
-    paths: {
-      errorLog: gatewayErrPath,
-      outputLog: gatewayLogPath,
-    },
+    windowLabel,
+    observedHours,
+    lineCount: errLines.length,
     rateLimitCount,
     uniqueRateLimitIncidentCount,
     failoverErrorCount,
@@ -147,6 +146,46 @@ function summarizeGatewayLogs(hours) {
     activeUniqueRateLimitIncidentCount,
     lastRateLimitAt: getLastTimestamp(errLines, rateLimitPattern),
     lastStaleSocketRestartAt: getLastTimestamp(outLines, staleSocketPattern),
+  };
+}
+
+function summarizeGatewayLogs(hours) {
+  const gatewayErrPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.err.log');
+  const gatewayLogPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.log');
+  const errAllLines = safeReadLines(gatewayErrPath);
+  const outAllLines = safeReadLines(gatewayLogPath);
+  const errLines = filterRecentLines(errAllLines, hours);
+  const outLines = filterRecentLines(outAllLines, hours);
+  const activeLines = filterRecentLines(errLines, ACTIVE_WINDOW_HOURS);
+  const restartMarkerPattern = /^\[start-gateway\]/;
+  const lastRestartErrIndex = findLastLineIndex(errAllLines, restartMarkerPattern);
+  const lastRestartOutIndex = findLastLineIndex(outAllLines, restartMarkerPattern);
+  const postRestartErrLines = lastRestartErrIndex >= 0 ? errAllLines.slice(lastRestartErrIndex + 1) : [];
+  const postRestartOutLines = lastRestartOutIndex >= 0 ? outAllLines.slice(lastRestartOutIndex + 1) : [];
+  const postRestartActiveLines = filterRecentLines(postRestartErrLines, ACTIVE_WINDOW_HOURS);
+
+  return {
+    observedHours: hours,
+    paths: {
+      errorLog: gatewayErrPath,
+      outputLog: gatewayLogPath,
+    },
+    ...summarizeGatewayWindow({
+      errLines,
+      outLines,
+      activeLines,
+      observedHours: hours,
+      windowLabel: 'rolling',
+    }),
+    postRestart: lastRestartErrIndex >= 0 || lastRestartOutIndex >= 0
+      ? summarizeGatewayWindow({
+          errLines: postRestartErrLines,
+          outLines: postRestartOutLines,
+          activeLines: postRestartActiveLines,
+          observedHours: hours,
+          windowLabel: 'post_restart',
+        })
+      : null,
   };
 }
 
@@ -302,6 +341,10 @@ function printHuman(snapshot, outputPath, willWrite) {
   lines.push(`- embedded unique runs: ${snapshot.gatewayMetrics.embeddedRateLimitRuns.uniqueRunCount}건 (재시도 burst ${snapshot.gatewayMetrics.embeddedRateLimitRuns.retryBurstCount}건, 최대 ${snapshot.gatewayMetrics.embeddedRateLimitRuns.maxAttemptsPerRun}회)`);
   lines.push(`- stale socket restart: ${snapshot.gatewayMetrics.staleSocketRestartCount}건`);
   lines.push(`- 마지막 rate limit: ${snapshot.gatewayMetrics.lastRateLimitAt || '없음'}`);
+  if (snapshot.gatewayMetrics.postRestart) {
+    lines.push('- 마지막 gateway 재기동 이후:');
+    lines.push(`  rate limit ${snapshot.gatewayMetrics.postRestart.rateLimitCount}건 / auth missing ${snapshot.gatewayMetrics.postRestart.providerAuthMissingCount}건 / retry burst ${snapshot.gatewayMetrics.postRestart.embeddedRateLimitRuns.retryBurstCount}건 / 최대 ${snapshot.gatewayMetrics.postRestart.embeddedRateLimitRuns.maxAttemptsPerRun}회`);
+  }
   lines.push('');
   lines.push('제이 usage:');
   lines.push(`- 총 호출: ${snapshot.jayUsage.totalCalls}회`);
