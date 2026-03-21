@@ -119,6 +119,49 @@
 - 임시 `VIDEO_N8N_TOKEN`과 worker 재기동 후 live 검증 결과 `resolvedWebhookUrl`이 실제 path로 해석되고 `webhookRegistered=true`, `webhookStatus=200`까지 확인됐다.
 - 마지막으로 `video-n8n-config.js`를 추가해 토큰을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 정리했고, 실제 운영 secret 파일 반영 후 env 없이도 setup/check가 성공하는 것까지 확인했다.
 
+### 12주차 후속 (2026-03-21) — 비디오팀 RAG 피드백 루프 구현
+
+핵심 구현:
+- `packages/core/lib/rag.js`
+  - `rag_video` 컬렉션 추가
+- `bots/video/lib/video-rag.js`
+  - 편집 결과 저장 `storeEditResult()`
+  - 승인/반려 피드백 저장 `storeEditFeedback()`
+  - 유사 편집 검색 `searchSimilarEdits()`
+  - 분석 기반 패턴 추천 `searchEditPatterns()`
+  - Critic 보강 `enhanceCriticWithRAG()`
+  - EDL 보강 `enhanceEDLWithRAG()`
+  - 예상 시간 추정 `estimateWithRAG()`
+- `bots/video/scripts/run-pipeline.js`
+  - `preview_ready` / `completed` 시점에 편집 결과를 RAG에 축적하도록 연결
+- `bots/video/lib/critic-agent.js`
+  - 점수 산출 후 RAG 인사이트(`rag_insights`) 병합
+- `bots/video/lib/edl-builder.js`
+  - 초기 EDL 생성 후 과거 고득점 패턴을 반영하도록 비동기 보강
+- `bots/worker/web/routes/video-api.js`
+  - `confirm/reject` 피드백을 RAG에 저장
+  - `/estimate`는 RAG 기반 벡터 추정을 우선 사용하고, 실패 시 기존 SQL AVG 방식으로 fallback
+
+의미:
+- 지금까지 비디오팀의 품질 루프는 Critic/Refiner/Evaluator까지 닫혀 있었지만, 이번 단계에서 과거 편집 결과와 사용자 피드백이 벡터 원장으로 축적되기 시작했다.
+- 즉 비디오팀은 이제 단순 자동 편집 파이프라인이 아니라, 운영 데이터가 쌓일수록 다음 편집의 Critic/EDL/예상 시간 추정이 점점 좋아지는 구조로 확장됐다.
+
+검증:
+- `node --check packages/core/lib/rag.js`
+- `node --check bots/video/lib/video-rag.js`
+- `node --check bots/video/lib/critic-agent.js`
+- `node --check bots/video/lib/edl-builder.js`
+- `node --check bots/video/scripts/run-pipeline.js`
+- `node --check bots/worker/web/routes/video-api.js`
+- `node --check bots/video/scripts/test-video-rag.js`
+- `node bots/video/scripts/test-video-rag.js`
+  - `rag.initSchema` 성공
+  - `storeEditResult: { ragId: '1', stored: true }`
+  - `storeEditFeedback: { ragId: '2', stored: true }`
+  - `searchSimilarEdits: 2건`
+  - `estimateWithRAG.estimated_ms: 180000`
+  - `enhanceCriticWithRAG`, `enhanceEDLWithRAG` 결과 생성 확인
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

@@ -10,6 +10,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { enhanceEDLWithRAG } = require('./video-rag');
 
 const BOT_NAME = 'video';
 const FILTER_SUPPORT_CACHE = new Map();
@@ -158,7 +159,7 @@ async function getMediaInfo(filePath) {
   };
 }
 
-function buildInitialEDL(sourcePath, subtitlePath, analysis = {}, options = {}) {
+async function buildInitialEDL(sourcePath, subtitlePath, analysis = {}, options = {}) {
   const edits = [];
   const mergedScenes = mergeNearbyScenes(
     analysis.scenes || [],
@@ -208,13 +209,21 @@ function buildInitialEDL(sourcePath, subtitlePath, analysis = {}, options = {}) 
     return aTime - bTime;
   });
 
-  return {
+  let edl = {
     version: 1,
     source: sourcePath,
     subtitle: subtitlePath,
     duration: safeParseFloat(analysis.duration, 0),
     edits,
   };
+
+  try {
+    edl = await enhanceEDLWithRAG(edl, analysis, options.config || null);
+  } catch (_error) {
+    // RAG 실패 시 원본 EDL 유지
+  }
+
+  return edl;
 }
 
 function saveEDL(edl, outputPath) {

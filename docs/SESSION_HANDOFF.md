@@ -45,6 +45,8 @@
   - `bots/video/n8n/setup-video-workflow.js`는 registry DB 조회 실패 시 기본 webhook 경로로 degrade 하도록 보강돼, setup 성공 후 URL 출력 단계에서 불필요하게 실패하지 않는다.
   - sandbox 밖 live 검증 기준 현재 상태는 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`이다.
   - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, launchd env 없이도 setup/check 스크립트와 내부 dispatch probe가 정상 동작하는 것까지 확인됐다.
+  - 이번 라운드에서 `packages/core/lib/rag.js`에 `rag_video` 컬렉션이 추가됐고, `bots/video/lib/video-rag.js`가 편집 결과/피드백 저장, 유사 패턴 검색, Critic/EDL 보강, 예상 시간 추정을 담당하게 됐다.
+  - `run-pipeline.js`, `critic-agent.js`, `edl-builder.js`, `bots/worker/web/routes/video-api.js`가 RAG와 연결돼 비디오 품질 루프가 이제 과거 편집 패턴을 학습할 수 있는 구조로 확장됐다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.

@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료
+> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료
 
 ---
 
@@ -232,6 +232,21 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
       - `webhookRegistered=true`
       - `webhookStatus=200`
     - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, env 없이도 `setup-video-workflow.js` / `check-n8n-video-path.js`가 정상 동작하는 것까지 확인
+  - RAG 피드백 루프 구현 완료
+    - `packages/core/lib/rag.js`에 `rag_video` 컬렉션 추가
+    - `lib/video-rag.js`
+      - 편집 결과 `storeEditResult()`
+      - 사용자 승인/반려 `storeEditFeedback()`
+      - 유사 편집 검색 `searchSimilarEdits()`
+      - 분석 기반 패턴 추천 `searchEditPatterns()`
+      - Critic 보강 `enhanceCriticWithRAG()`
+      - EDL 보강 `enhanceEDLWithRAG()`
+      - 시간 추정 `estimateWithRAG()`
+    - `run-pipeline.js`는 preview_ready / completed 시 편집 결과를 RAG에 저장
+    - `critic-agent.js`는 점수 산출 후 RAG 인사이트를 병합
+    - `edl-builder.js`는 초기 EDL 생성 후 과거 성공 패턴을 반영
+    - `worker/web/routes/video-api.js`는 confirm/reject 피드백 저장과 `/estimate`의 RAG 우선 추정을 지원
+    - `scripts/test-video-rag.js` 기준 `rag_video` 초기화, 저장/검색/보강/추정 경로 통과 확인
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -248,6 +263,7 @@ Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 10: Critic
   ✅ 과제 11: Refiner
   ✅ 과제 12: Evaluator + quality loop
+  ✅ RAG 피드백 루프
   ☐ 과제 13: 4세트 검증
 
 Week 3: 최종 테스트 + 문서 체계 통합

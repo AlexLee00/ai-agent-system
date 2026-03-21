@@ -14,6 +14,7 @@ const { auditLog } = require('../../lib/company-guard');
 const { probeDurationMs } = require('../../../video/lib/ffmpeg-preprocess');
 const { resolveVideoN8nToken: resolveSharedVideoN8nToken } = require('../../../video/lib/video-n8n-config');
 const { loadConfig } = require('../../../video/src/index');
+const { storeEditFeedback, estimateWithRAG } = require('../../../video/lib/video-rag');
 
 const router = express.Router();
 
@@ -638,6 +639,13 @@ router.get('/estimate', async (req, res) => {
   try {
     const durationMin = Number.parseFloat(req.query.total_duration_min || '0');
     const sizeMb = Number.parseFloat(req.query.total_size_mb || '0');
+    const videoCount = Number.parseInt(req.query.video_count || '0', 10) || 0;
+
+    const ragEstimate = await estimateWithRAG(videoCount, sizeMb, durationMin);
+    if (Number(ragEstimate.estimated_ms || 0) > 0) {
+      return res.json(ragEstimate);
+    }
+
     const minDurationMs = Math.max(0, durationMin * 60 * 1000 * 0.8);
     const maxDurationMs = durationMin > 0 ? durationMin * 60 * 1000 * 1.2 : Number.MAX_SAFE_INTEGER;
     const minSizeMb = Math.max(0, sizeMb * 0.7);
@@ -658,10 +666,12 @@ router.get('/estimate', async (req, res) => {
     const estimatedMs = Number(rows[0]?.estimated_ms || 0);
     const confidence = sampleCount >= 5 ? 'high' : sampleCount >= 2 ? 'medium' : 'low';
 
-    res.json({
+    return res.json({
       estimated_ms: estimatedMs,
       confidence,
       sample_count: sampleCount,
+      estimated_cost_usd: 0,
+      samples: [],
     });
   } catch (error) {
     res.status(500).json({ error: toErrorMessage(error) });
@@ -683,6 +693,7 @@ router.post('/edits/:id/confirm', auditLog('CONFIRM', 'video_edits'), async (req
         WHERE id = $1`,
       [editId]
     );
+    storeEditFeedback(editId, { confirmed: true, text: '' }, VIDEO_CONFIG).catch(() => {});
 
     const edits = await listEdits(edit.session_id);
     const allConfirmed = edits.length && edits.every((row) => (
@@ -743,6 +754,11 @@ router.post('/edits/:id/reject', auditLog('REJECT', 'video_edits'), async (req, 
         WHERE id = $1`,
       [editId, reason]
     );
+    storeEditFeedback(editId, {
+      confirmed: false,
+      rejectReason: reason,
+      text: reason,
+    }, VIDEO_CONFIG).catch(() => {});
     await updateSession(edit.session_id, {
       status: 'confirming',
       error_message: `재편집 요청: ${reason}`,

@@ -11,6 +11,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getOpenAIKey, getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { enhanceCriticWithRAG } = require('./video-rag');
 
 const execFileAsync = promisify(execFile);
 
@@ -597,7 +598,7 @@ async function runCritic(syncedVideoPath, subtitlePath, analysisOrPath, config) 
 
   const overall = calculateOverallScore(subtitleResult.score, audioResult.score, videoResult.score);
   const targetScore = Number(config?.quality_loop?.target_score || 85);
-  const report = {
+  let report = {
     version: 1,
     timestamp: new Date().toISOString(),
     source_video: path.basename(syncedVideoPath),
@@ -628,6 +629,12 @@ async function runCritic(syncedVideoPath, subtitlePath, analysisOrPath, config) 
     },
     llm_cost_usd: Number((subtitleResult.llmCostUsd || 0).toFixed(6)),
   };
+
+  try {
+    report = await enhanceCriticWithRAG(report, config);
+  } catch (_error) {
+    // RAG 실패 시 원본 critic report 유지
+  }
 
   await logToolCall('critic_agent', 'run_critic', {
     bot: BOT_NAME,
