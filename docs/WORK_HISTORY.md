@@ -3885,3 +3885,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다
 - 실제 `node bots/investment/scripts/health-report.js --json` 기준 `cryptoLiveGateHealth.warnCount=1`, `decision.level=medium`, `reason='PAPER 체결 또는 청산 검증이 아직 부족함'` 확인
 - 현재 `signalBlockHealth`에는 과거 데이터 영향으로 `position_reentry_blocked` 단일 코드가 남아 있지만, 새 `paper_position_reentry_blocked / live_position_reentry_blocked` 분리는 이후 신규 신호부터 누적된다
+
+### LLM speed test 실패 원인 분류 / 모델 레지스트리 정리
+- `scripts/speed-test.js`가 이제 전 모델 실패와 snapshot 저장 실패를 실제 non-zero exit로 올리도록 보강되어, selector speed 자동화가 false success를 기록하지 않게 정리
+- Gemini 요청은 모델별 thinking budget을 분기해 `gemini-2.5-pro`는 `thinkingBudget=-1`, `gemini-2.5-flash/flash-lite`는 `thinkingBudget=0`을 사용하도록 수정
+- `scripts/reviews/llm-selector-speed-review.js`는 최신 실패 모델과 `errorClass`를 직접 보여주도록 보강
+- `~/.openclaw/openclaw.json` 모델 레지스트리를 최신 운영 기준으로 갱신
+  - 추가: `google-gemini-cli/gemini-2.5-flash-lite`
+  - 교체: `groq/moonshotai/kimi-k2-instruct-0905`
+  - 제거: `cerebras/gpt-oss-120b` (현재 계정/런타임 404)

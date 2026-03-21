@@ -477,3 +477,18 @@
 - 실제 `health-report --json` 기준 현재 값은 `warnCount=1`, `liveGate.decision=blocked`, `사유=PAPER 체결 또는 청산 검증이 아직 부족함`이다.
 - 따라서 `/ops-health`나 투자 헬스 리포트만 봐도 “서비스는 정상인데, 암호화폐 LIVE 전환은 아직 막혀 있다”는 상태를 한 번에 읽을 수 있다.
 - 참고로 오늘 `signalBlockHealth`에 보이는 `position_reentry_blocked`는 과거 데이터 잔상이며, 새 `paper/live` 차단 코드 분리는 이후 신규 신호부터 누적된다.
+
+## 2026-03-22 — LLM speed test 실패 원인 분류 / 지원 모델 레지스트리 정리
+
+- `scripts/speed-test.js`는 이제 모든 모델 측정 실패를 더 이상 정상 종료로 숨기지 않는다. 전 모델 실패는 `exit 2`, snapshot/history 저장 실패는 `exit 3`으로 종료해 selector automation이 false success를 기록하지 않도록 보강했다.
+- 최신 snapshot에는 각 실패 모델의 `errorClass`를 함께 저장한다. 현재 분류는 `rate_limited`, `network_unavailable`, `gemini_thinking_budget_unsupported`, `unsupported_or_no_access`, `auth_or_access_failed`, `request_failed` 등을 포함한다.
+- Gemini 경로는 `thinkingBudget=0` 고정으로 깨지던 문제를 수정했다. `gemini-2.5-pro`는 `thinkingBudget=-1`, `gemini-2.5-flash / flash-lite`는 `thinkingBudget=0`으로 보내도록 분기해 `gemini-2.5-pro` 속도 측정이 다시 정상화됐다.
+- `scripts/reviews/llm-selector-speed-review.js`는 최신 실패 모델과 `errorClass`를 함께 보여주도록 보강됐다. 현재 최신 기준 실패는 `google-gemini-cli/gemini-2.5-flash | rate_limited` 1건만 남아 있다.
+- 운영 모델 레지스트리 `~/.openclaw/openclaw.json`도 정리했다.
+  - 추가: `google-gemini-cli/gemini-2.5-flash-lite`
+  - 교체: `groq/moonshotai/kimi-k2-instruct` → `groq/moonshotai/kimi-k2-instruct-0905`
+  - 제거: `cerebras/gpt-oss-120b` (실측 `HTTP 404: Model ... does not exist or you do not have access`)
+- 현재 속도 해석은 다음과 같다.
+  - 최신 recommended: `groq/openai/gpt-oss-20b`
+  - Gemini primary `gemini-2.5-flash`는 현재 속도 최적화 이슈가 아니라 `429 capacity exhausted` 상태
+  - 따라서 immediate switch가 아니라 `compare` 유지가 맞고, primary health와 selector recommendation을 분리해서 읽어야 한다

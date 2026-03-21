@@ -10,12 +10,11 @@
  *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
  *       llama-3.1-8b-instant / llama-3.3-70b-versatile
  *       meta-llama/llama-4-scout-17b-16e-instruct (750 T/s)
- *       moonshotai/kimi-k2-instruct (1T MoE, 256K ctx)
+ *       moonshotai/kimi-k2-instruct-0905 (1T MoE, 256K ctx)
  *       qwen/qwen3-32b
  *       openai/gpt-oss-20b (OpenAI 오픈소스, Groq 경유)
  *   - Cerebras(영구 무료 티어)      → CEREBRAS_API_KEY
- *       llama3.1-8b / llama-3.3-70b
- *       llama-4-scout-17b-16e-instruct (~2600 T/s, 세계 최고속)
+ *       llama3.1-8b / gpt-oss-120b
  *   - SambaNova($5 크레딧 무료)     → SAMBANOVA_API_KEY
  *       Meta-Llama-3.3-70B-Instruct / DeepSeek-V3-0324
  *   - OpenRouter(무료 :free 모델)   → OPENROUTER_API_KEY
@@ -101,6 +100,36 @@ const PROVIDER_ICONS = {
   'deepinfra':         '🏗️',
 };
 
+const SUPPORTED_MODEL_ALIASES = {
+  'groq/moonshotai/kimi-k2-instruct': 'groq/moonshotai/kimi-k2-instruct-0905',
+};
+
+const SPEED_TEST_MODEL_CATALOG = {
+  'google-gemini-cli': new Set([
+    'google-gemini-cli/gemini-2.5-flash-lite',
+    'google-gemini-cli/gemini-2.5-flash',
+    'google-gemini-cli/gemini-2.5-pro',
+  ]),
+  'openai': new Set([
+    'openai/gpt-4o-mini',
+    'openai/gpt-4o',
+    'openai/o4-mini',
+    'openai/o3-mini',
+  ]),
+  'groq': new Set([
+    'groq/llama-3.1-8b-instant',
+    'groq/llama-3.3-70b-versatile',
+    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+    'groq/moonshotai/kimi-k2-instruct-0905',
+    'groq/qwen/qwen3-32b',
+    'groq/openai/gpt-oss-20b',
+  ]),
+  'cerebras': new Set([
+    'cerebras/llama3.1-8b',
+    'cerebras/gpt-oss-120b',
+  ]),
+};
+
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
 const args              = process.argv.slice(2);
 const runsArg           = parseInt(args.find(a => a.startsWith('--runs='))?.split('=')[1] ?? '2');
@@ -130,7 +159,7 @@ function loadModels() {
   const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
   const allModels = cfg?.agents?.defaults?.models ?? {};
 
-  const supported = Object.keys(allModels).filter(id =>
+  const supported = Object.keys(allModels).map((id) => SUPPORTED_MODEL_ALIASES[id] || id).filter(id =>
     id.startsWith('google-gemini-cli/') ||
     id.startsWith('ollama/')            ||
     id.startsWith('openai/')            ||
@@ -143,13 +172,56 @@ function loadModels() {
     id.startsWith('together/')          ||
     id.startsWith('fireworks/')         ||
     id.startsWith('deepinfra/')
-  );
+  ).filter((id, index, arr) => arr.indexOf(id) === index)
+   .filter((id) => {
+     const provider = id.split('/')[0];
+     const catalog = SPEED_TEST_MODEL_CATALOG[provider];
+     return !catalog || catalog.has(id);
+   });
 
   if (modelArg) {
     const filter = modelArg.split(',');
     return supported.filter(id => filter.some(f => id.includes(f)));
   }
   return supported;
+}
+
+function classifySpeedTestError(provider, modelId, errorMessage = '') {
+  const message = String(errorMessage || '');
+  const lower = message.toLowerCase();
+
+  if (lower.includes('enotfound') || lower.includes('eai_again')) {
+    return 'network_unavailable';
+  }
+  if (lower.includes('eperm: operation not permitted')) {
+    return 'snapshot_write_failed';
+  }
+  if (lower.includes('http 429') || lower.includes('rate limit') || lower.includes('exhausted your capacity')) {
+    return 'rate_limited';
+  }
+  if (provider === 'google-gemini-cli' && lower.includes('does not support setting thinking_budget to 0')) {
+    return 'gemini_thinking_budget_unsupported';
+  }
+  if (lower.includes('does not exist or you do not have access to it')) {
+    return 'unsupported_or_no_access';
+  }
+  if (lower.includes('unsupported model') || lower.includes('model not found')) {
+    return 'unsupported_model';
+  }
+  if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('forbidden')) {
+    return 'auth_or_access_failed';
+  }
+  return 'request_failed';
+}
+
+function buildGeminiThinkingConfig(model) {
+  if (model === 'gemini-2.5-pro') {
+    return { thinkingBudget: -1 };
+  }
+  if (model === 'gemini-2.5-flash' || model === 'gemini-2.5-flash-lite') {
+    return { thinkingBudget: 0 };
+  }
+  return undefined;
 }
 
 // ─── API 키 로드 ───────────────────────────────────────────────────────────
@@ -287,12 +359,16 @@ async function testGemini(modelId, accessToken) {
 
   // 올바른 URL: v1internal:streamGenerateContent?alt=sse (SSE 스트리밍)
   const url  = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_VERSION}:streamGenerateContent?alt=sse`;
+  const thinkingConfig = buildGeminiThinkingConfig(model);
   const body = {
     model:   model,   // "gemini-2.5-flash" (models/ 접두사 없음)
     project: projectId,
     request: {
       contents: [{ role: 'user', parts: [{ text: TEST_PROMPT }] }],
-      generationConfig: { maxOutputTokens: 200, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig: {
+        maxOutputTokens: 200,
+        ...(thinkingConfig ? { thinkingConfig } : {}),
+      },
     },
   };
 
@@ -422,14 +498,29 @@ async function benchmarkModel(modelId, ctx) {
       process.stdout.write(dim('.'));
     } catch (e) {
       process.stdout.write(red('✗'));
-      results.push({ ttft: null, total: null, ok: false, error: e.message });
+      results.push({
+        ttft: null,
+        total: null,
+        ok: false,
+        error: e.message,
+        errorClass: classifySpeedTestError(provider, modelId, e.message),
+      });
     }
   }
   process.stdout.write('\n');
 
   const valid = results.filter(r => r.ttft !== null && r.ok);
   if (valid.length === 0) {
-    return { modelId, label, provider, ttft: null, total: null, ok: false, error: results[0]?.error };
+    return {
+      modelId,
+      label,
+      provider,
+      ttft: null,
+      total: null,
+      ok: false,
+      error: results[0]?.error,
+      errorClass: results[0]?.errorClass || classifySpeedTestError(provider, modelId, results[0]?.error),
+    };
   }
 
   const avgTTFT  = Math.round(valid.reduce((s, r) => s + r.ttft,  0) / valid.length);
@@ -476,22 +567,34 @@ function writeLatestSnapshot(results, { applied, recommended, current } = {}) {
       total: r.total,
       ok: r.ok === true,
       error: r.error || null,
+      errorClass: r.errorClass || null,
     })),
+  };
+  const status = {
+    latestSaved: false,
+    historySaved: false,
+    latestError: null,
+    historyError: null,
   };
   try {
     fs.mkdirSync(path.dirname(SPEED_TEST_LATEST_FILE), { recursive: true });
     fs.writeFileSync(SPEED_TEST_LATEST_FILE, JSON.stringify(payload, null, 2) + '\n');
+    status.latestSaved = true;
     log(dim(`\n  📝 최신 속도 스냅샷 저장: ${SPEED_TEST_LATEST_FILE}`));
   } catch (e) {
+    status.latestError = e.message;
     log(dim(`\n  ⚠️ 속도 스냅샷 저장 실패: ${e.message}`));
   }
   try {
     fs.mkdirSync(path.dirname(SPEED_TEST_HISTORY_FILE), { recursive: true });
     fs.appendFileSync(SPEED_TEST_HISTORY_FILE, JSON.stringify(payload) + '\n');
+    status.historySaved = true;
     log(dim(`  🗂️ 속도 히스토리 누적: ${SPEED_TEST_HISTORY_FILE}`));
   } catch (e) {
+    status.historyError = e.message;
     log(dim(`  ⚠️ 속도 히스토리 저장 실패: ${e.message}`));
   }
+  return status;
 }
 
 // ─── openclaw.json 업데이트 ────────────────────────────────────────────────
@@ -646,12 +749,46 @@ async function main() {
     });
     log(green(' ✅'));
   }
-  writeLatestSnapshot(results, {
+  const snapshotStatus = writeLatestSnapshot(results, {
     applied: appliedModel,
     recommended: fastest?.modelId,
     current,
   });
   log('');
+
+  const successfulRuns = results.filter((r) => r.ok).length;
+  const attemptedRuns = results.length;
+  const storageOk = snapshotStatus.latestSaved && snapshotStatus.historySaved;
+
+  if (attemptedRuns === 0) {
+    log(red('❌ 속도 테스트 실패: 실행 가능한 모델이 없어 측정 결과가 없습니다.'));
+    return 2;
+  }
+
+  if (successfulRuns === 0) {
+    const sampleErrors = results
+      .filter((r) => !r.ok && r.error)
+      .slice(0, 3)
+      .map((r) => `${r.modelId}: ${r.error}`)
+      .join(' | ');
+    log(red(`❌ 속도 테스트 실패: 모든 모델 측정이 실패했습니다.${sampleErrors ? ` ${sampleErrors}` : ''}`));
+    return 2;
+  }
+
+  if (!storageOk) {
+    const storageErrors = [snapshotStatus.latestError, snapshotStatus.historyError].filter(Boolean).join(' | ');
+    log(red(`❌ 속도 테스트 실패: 측정 결과 저장에 실패했습니다.${storageErrors ? ` ${storageErrors}` : ''}`));
+    return 3;
+  }
+
+  return 0;
 }
 
-main().catch(e => { log(red(`\n❌ 오류: ${e.message}`)); process.exit(1); });
+main()
+  .then((code) => {
+    if (Number.isInteger(code) && code !== 0) process.exit(code);
+  })
+  .catch((e) => {
+    log(red(`\n❌ 오류: ${e.message}`));
+    process.exit(1);
+  });
