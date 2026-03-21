@@ -85,6 +85,32 @@
 - 코드 점검 후 `evaluator-agent.js`가 `analysis_path`가 없는 standalone `refiner_result.json`도 처리할 수 있도록 보강했다.
 - 이제 Evaluator는 subtitle/EDL/audio/synced video와 같은 temp 디렉토리의 `analysis.json`을 자동 추론해 재평가를 계속할 수 있다.
 
+### 12주차 후속 (2026-03-21) — 비디오팀 과제 9 n8n 연동 + direct fallback 유지
+
+핵심 구현:
+- `bots/video/n8n/video-pipeline-workflow.json`
+  - `Video Pipeline` n8n 워크플로우 템플릿 추가
+  - `Webhook -> 요청 파싱 -> 토큰 확인 -> (run-pipeline | render-from-edl) -> Respond` 순차 체인으로 구성
+- `bots/video/n8n/setup-video-workflow.js`
+  - 공용 `n8n-setup-client`를 사용해 워크플로우를 안전하게 재생성/활성화하는 setup 스크립트 추가
+  - `VIDEO_N8N_TOKEN`을 workflow 템플릿에 hydration 후 live webhook URL을 출력
+- `bots/video/scripts/check-n8n-video-path.js`
+  - registry resolved URL, default URL, healthz, webhook 등록 상태를 함께 보는 진단 스크립트 추가
+  - DB 기반 registry 조회가 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
+- `bots/worker/web/routes/video-api.js`
+  - 세션 시작과 confirm 후 렌더 트리거를 `runWithN8nFallback()` 기반으로 전환
+  - n8n이 죽었을 때는 기존 detached `fork()` direct 실행 경로를 그대로 유지
+- `packages/core/lib/n8n-runner.js`
+  - `X-Video-Token` 같은 커스텀 헤더를 webhook 호출에 실을 수 있도록 확장
+
+세션 맥락:
+- 워커 웹 영상 편집 UX는 이미 세션/preview/final render까지 닫혀 있었고, 이번 단계의 의미는 이를 n8n 오케스트레이션 경로와 연결하되 기존 direct 실행 안정성을 잃지 않는 것이었다.
+- 팀 제이 원칙상 n8n은 트리거/오케스트레이션 역할만 맡고, 실제 DB update와 파이프라인 상태 관리는 `run-pipeline.js`, `render-from-edl.js`가 직접 수행하도록 유지했다.
+
+실측 결과:
+- `check-n8n-video-path.js` 기준 현재 로컬 컨텍스트에서는 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError`가 확인됐다.
+- 즉 이번 구현은 단순 옵션 추가가 아니라, 실제 장애 상황에서 direct fallback이 필요한 운영 안전장치를 코드로 고정한 작업이다.
+
 ### 12주차 후속 (2026-03-21) — 워커 웹 영상 편집 API + 대화형 프론트엔드 연결
 
 핵심 구현:

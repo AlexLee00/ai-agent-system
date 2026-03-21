@@ -37,6 +37,9 @@
   - 현재 샘플 기준 실제 quality-loop 결과는 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`다.
   - 코드 점검 후 Evaluator는 `analysis_path`가 없는 standalone `refiner_result.json`도 sibling `analysis.json` 자동 추론으로 재평가할 수 있게 보강됐다.
   - 이번 샘플에서는 Refiner가 추가 변경을 만들지 못해 최고 버전이 원본 subtitle/EDL로 유지됐고, 다음 자연스러운 단계는 과제 13 다세트 검증과 preview wall-clock 최적화다.
+  - 비디오팀 n8n 연동도 1차 구현돼 `POST /api/video/sessions/:id/start`와 `POST /api/video/edits/:id/confirm`이 `runWithN8nFallback()`를 통해 `Video Pipeline` webhook을 우선 호출하고, n8n 장애 시 기존 detached fork로 direct fallback 한다.
+  - `packages/core/lib/n8n-runner.js`는 커스텀 헤더 전달을 지원하도록 확장됐고, 비디오 webhook은 `X-Video-Token`을 사용한다.
+  - `bots/video/scripts/check-n8n-video-path.js` 기준 현재 로컬 컨텍스트에서는 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError`가 확인돼 direct fallback 유지가 실제 운영 안전장치다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.

@@ -1,0 +1,205 @@
+{
+  "name": "Video Pipeline",
+  "nodes": [
+    {
+      "id": "video-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "video-pipeline",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "video-parse",
+      "name": "요청 파싱",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const payload = $input.item.json.body || $input.item.json;\nconst headers = $input.item.json.headers || payload.headers || {};\nconst providedToken = headers['x-video-token'] || headers['X-Video-Token'] || '';\nconst expectedToken = '__VIDEO_N8N_TOKEN__';\n\nreturn [{\n  json: {\n    sessionId: payload.sessionId ? Number(payload.sessionId) : null,\n    pairIndex: payload.pairIndex ? Number(payload.pairIndex) : null,\n    editId: payload.editId ? Number(payload.editId) : null,\n    sourceVideoPath: payload.sourceVideoPath || '',\n    sourceAudioPath: payload.sourceAudioPath || '',\n    title: payload.title || '',\n    editNotes: payload.editNotes || '',\n    skipRender: Boolean(payload.skipRender),\n    tokenValid: Boolean(expectedToken) && providedToken === expectedToken\n  }\n}];"
+      }
+    },
+    {
+      "id": "video-auth-if",
+      "name": "토큰 유효?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.tokenValid}}",
+              "operation": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "video-respond-unauthorized",
+      "name": "인증 실패 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [920, 480],
+      "parameters": {
+        "respondWith": "json",
+        "options": {
+          "responseCode": 403
+        },
+        "responseBody": "={{ { ok: false, error: 'invalid_video_token' } }}"
+      }
+    },
+    {
+      "id": "video-skip-if",
+      "name": "프리뷰만?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 220],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.skipRender}}",
+              "operation": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "video-run-pipeline",
+      "name": "run-pipeline",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1160, 140],
+      "parameters": {
+        "command": "=sh -lc 'cd /Users/alexlee/projects/ai-agent-system && nohup node /Users/alexlee/projects/ai-agent-system/bots/video/scripts/run-pipeline.js --source-video=\"{{$json.sourceVideoPath}}\" --source-audio=\"{{$json.sourceAudioPath}}\" --session-id={{$json.sessionId}} --pair-index={{$json.pairIndex}} --skip-render >/tmp/video-pipeline-{{$json.sessionId}}-{{$json.pairIndex}}.log 2>&1 &'"
+      }
+    },
+    {
+      "id": "video-render-edl",
+      "name": "render-from-edl",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1160, 300],
+      "parameters": {
+        "command": "=sh -lc 'cd /Users/alexlee/projects/ai-agent-system && nohup node /Users/alexlee/projects/ai-agent-system/bots/video/scripts/render-from-edl.js --edit-id={{$json.editId}} >/tmp/video-render-{{$json.editId}}.log 2>&1 &'"
+      }
+    },
+    {
+      "id": "video-respond-preview",
+      "name": "프리뷰 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1400, 140],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, sessionId: $json.sessionId, pairIndex: $json.pairIndex, status: 'preview_started' } }}"
+      }
+    },
+    {
+      "id": "video-respond-render",
+      "name": "렌더 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1400, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, sessionId: $json.sessionId, editId: $json.editId, status: 'render_started' } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "요청 파싱",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "요청 파싱": {
+      "main": [
+        [
+          {
+            "node": "토큰 유효?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "토큰 유효?": {
+      "main": [
+        [
+          {
+            "node": "프리뷰만?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "인증 실패 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "프리뷰만?": {
+      "main": [
+        [
+          {
+            "node": "run-pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "render-from-edl",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run-pipeline": {
+      "main": [
+        [
+          {
+            "node": "프리뷰 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "render-from-edl": {
+      "main": [
+        [
+          {
+            "node": "렌더 응답",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "video-pipeline-draft"
+}

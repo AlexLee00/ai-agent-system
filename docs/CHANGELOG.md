@@ -34,6 +34,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/video/lib/evaluator-agent.js`
   - standalone `refiner_result.json` 입력에서도 같은 temp 디렉토리의 `analysis.json`을 자동 추론해 재평가를 계속할 수 있도록 입력 경계를 보강
 
+## 12주차 후속 (2026-03-21) — 비디오팀 과제 9 n8n 연동
+
+### 신규 기능 (feat)
+- `bots/video/n8n/video-pipeline-workflow.json`
+  - `Video Pipeline` 워크플로우 템플릿 추가
+  - video start/confirm webhook을 받아 background `run-pipeline.js` 또는 `render-from-edl.js`를 실행하는 순차 체인 구성
+- `bots/video/n8n/setup-video-workflow.js`
+  - 공용 `n8n-setup-client` 기반 워크플로우 재생성/활성화 스크립트 추가
+- `bots/video/scripts/check-n8n-video-path.js`
+  - resolved webhook URL, healthz, webhook 등록 상태를 점검하는 진단 스크립트 추가
+
+### 변경 사항 (changed)
+- `bots/worker/web/routes/video-api.js`
+  - `/sessions/:id/start`, `/edits/:id/confirm`이 `runWithN8nFallback()`로 n8n webhook을 우선 호출하고, 실패 시 기존 detached fork로 direct fallback 하도록 전환
+- `packages/core/lib/n8n-runner.js`
+  - webhook 호출에 커스텀 헤더(`X-Video-Token`) 전달 지원 추가
+- `bots/video/config/video-config.yaml`
+  - 비디오팀 `n8n` 설정 섹션 추가
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)

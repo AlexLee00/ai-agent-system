@@ -55,14 +55,17 @@ async function triggerWebhookCandidates({
   candidates,
   body,
   timeoutMs = DEFAULT_WEBHOOK_TIMEOUT_MS,
-  headers = { 'Content-Type': 'application/json' },
+  headers = {},
 }) {
   const failures = [];
   for (const url of [...new Set((candidates || []).filter(Boolean))]) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -101,6 +104,7 @@ async function runWithN8nFallback({
   healthUrl,
   body,
   directRunner,
+  headers = {},
   webhookTimeoutMs = DEFAULT_WEBHOOK_TIMEOUT_MS,
   healthTimeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
   backoffMs = DEFAULT_BACKOFF_MS,
@@ -123,6 +127,7 @@ async function runWithN8nFallback({
     candidates: webhookCandidates,
     body,
     timeoutMs: webhookTimeoutMs,
+    headers,
   });
 
   if (triggered.ok) {
