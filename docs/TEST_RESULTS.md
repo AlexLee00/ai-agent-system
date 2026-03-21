@@ -4,6 +4,12 @@
 
 ## 2026-03-22
 
+### Jimmy 성공 알림 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ |
+
 ### 비디오팀 Phase 2 — AI 싱크 매칭 파이프라인
 
 | 테스트 | 결과 |
