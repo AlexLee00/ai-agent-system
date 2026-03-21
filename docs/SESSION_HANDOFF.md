@@ -463,3 +463,10 @@
 - `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리했다.
 - 목적은 같은 “추가매수 차단”이라도 검증용 PAPER 포지션 과밀인지, 실제 LIVE 포지션 보유인지 운영 리포트와 자동화 리뷰에서 분리해서 읽게 만드는 것이다.
 - 이번 단계는 정책 완화가 아니라 계측/원장 정밀화 단계다. 실제 scale-in 허용이나 cooldown 완화는 새 block code 분포가 1~2일 누적된 뒤 판단한다.
+
+## 2026-03-22 — 루나 암호화폐 LIVE 게이트 리뷰 자동화
+
+- `bots/investment/scripts/crypto-live-gate-review.js`를 추가해 최근 N일 암호화폐 `decision / BUY / approved / executed / PAPER-LIVE 체결 / weakSignalSkipped / reentry block / 종료 리뷰 수`를 한 번에 읽고 LIVE 게이트를 자동 판정하도록 정리했다.
+- 초기 구현에서 `pipeline_runs.market='crypto'`로 좁게 잡아 decision이 0으로 보이던 문제를 바로 수정했고, 현재는 `binance` market을 포함해 기존 원장 구조와 맞춘다.
+- 실제 최근 3일 검증 결과는 `decision 2236 / BUY 344 / approved 247 / executed 48 / 체결 48건(PAPER 48, LIVE 0) / weak 99 / 종료 리뷰 0`이었다.
+- 이 기준으로 현재 LIVE 게이트는 여전히 `blocked`다. 이유는 **신호와 PAPER 체결은 충분하지만, LIVE 체결과 종료 리뷰가 아직 없기 때문**이다.

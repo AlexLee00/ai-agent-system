@@ -3874,3 +3874,8 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리
 - 목적은 추가진입 차단을 한 묶음으로 보지 않고, 검증용 PAPER 포지션 과밀과 실제 LIVE 포지션 보유 상태를 운영 리포트에서 구분하기 위함
 - 현재는 차단 정책 자체를 완화하지 않았고, 먼저 원장/리포트 의미를 정교하게 만드는 1차 계측 단계로 정리
+
+### 루나 암호화폐 LIVE 게이트 리뷰 스크립트 추가
+- `bots/investment/scripts/crypto-live-gate-review.js`를 추가해 최근 N일 기준 암호화폐 `decision / BUY / approved / executed / PAPER-LIVE 체결 / weakSignalSkipped / 재진입 차단 / 종료 리뷰 수`를 한 번에 읽고 LIVE 게이트(`blocked/candidate`)를 자동 판정하도록 정리
+- 초기 구현에서 `pipeline_runs.market='crypto'`로 좁게 잡아 decision 0으로 보이던 경계를 즉시 보정했고, 현재는 `binance` market까지 포함해 최근 3일 암호화폐 퍼널을 정상 집계한다
+- 실제 최근 3일 출력 기준 `decision 2236 / BUY 344 / approved 247 / executed 48 / 체결 48(PAPER 48, LIVE 0) / 종료 리뷰 0`으로 확인되어, LIVE 게이트는 여전히 `blocked`로 유지된다
