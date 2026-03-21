@@ -274,6 +274,10 @@ async function getKioskBlock(phoneRaw, date, start) {
     firstSeenAt:      row.first_seen_at,
     blockedAt:        row.blocked_at,
     naverUnblockedAt: row.naver_unblocked_at,
+    lastBlockAttemptAt: row.last_block_attempt_at,
+    lastBlockResult:  row.last_block_result,
+    lastBlockReason:  row.last_block_reason,
+    blockRetryCount:  Number(row.block_retry_count || 0),
     start:            row.start_time,
     end:              row.end_time,
   };
@@ -284,8 +288,9 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
   await pgPool.run(SCHEMA, `
     INSERT INTO kiosk_blocks
       (id, phone_raw_enc, name_enc, date, start_time, end_time, room,
-       amount, naver_blocked, first_seen_at, blocked_at, naver_unblocked_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       amount, naver_blocked, first_seen_at, blocked_at, naver_unblocked_at,
+       last_block_attempt_at, last_block_result, last_block_reason, block_retry_count)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
     ON CONFLICT(id) DO UPDATE SET
       name_enc           = EXCLUDED.name_enc,
       end_time           = EXCLUDED.end_time,
@@ -294,7 +299,11 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
       naver_blocked      = EXCLUDED.naver_blocked,
       first_seen_at      = COALESCE(kiosk_blocks.first_seen_at, EXCLUDED.first_seen_at),
       blocked_at         = EXCLUDED.blocked_at,
-      naver_unblocked_at = EXCLUDED.naver_unblocked_at
+      naver_unblocked_at = EXCLUDED.naver_unblocked_at,
+      last_block_attempt_at = COALESCE(EXCLUDED.last_block_attempt_at, kiosk_blocks.last_block_attempt_at),
+      last_block_result  = COALESCE(EXCLUDED.last_block_result, kiosk_blocks.last_block_result),
+      last_block_reason  = COALESCE(EXCLUDED.last_block_reason, kiosk_blocks.last_block_reason),
+      block_retry_count  = COALESCE(EXCLUDED.block_retry_count, kiosk_blocks.block_retry_count, 0)
   `, [
     id,
     encrypt(phoneRaw),
@@ -308,7 +317,35 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
     data.firstSeenAt     || null,
     data.blockedAt       || null,
     data.naverUnblockedAt|| null,
+    data.lastBlockAttemptAt || null,
+    data.lastBlockResult || null,
+    data.lastBlockReason || null,
+    Number(data.blockRetryCount || 0),
   ]);
+}
+
+async function recordKioskBlockAttempt(phoneRaw, date, start, data = {}) {
+  const existing = await getKioskBlock(phoneRaw, date, start);
+  const nextRetryCount = Number(existing?.blockRetryCount || 0) + (data.incrementRetry ? 1 : 0);
+
+  await upsertKioskBlock(phoneRaw, date, start, {
+    ...(existing || {}),
+    ...data,
+    date: data.date || existing?.date || date,
+    start: data.start || existing?.start || start,
+    end: data.end !== undefined ? data.end : (existing?.end || null),
+    room: data.room !== undefined ? data.room : (existing?.room || null),
+    amount: data.amount !== undefined ? data.amount : (existing?.amount || 0),
+    name: data.name !== undefined ? data.name : (existing?.name || null),
+    naverBlocked: typeof data.naverBlocked === 'boolean' ? data.naverBlocked : Boolean(existing?.naverBlocked),
+    firstSeenAt: existing?.firstSeenAt || data.firstSeenAt || null,
+    blockedAt: data.blockedAt !== undefined ? data.blockedAt : (existing?.blockedAt || null),
+    naverUnblockedAt: data.naverUnblockedAt !== undefined ? data.naverUnblockedAt : (existing?.naverUnblockedAt || null),
+    lastBlockAttemptAt: data.lastBlockAttemptAt || new Date().toISOString(),
+    lastBlockResult: data.lastBlockResult || null,
+    lastBlockReason: data.lastBlockReason || null,
+    blockRetryCount: nextRetryCount,
+  });
 }
 
 async function getBlockedKioskBlocks() {
@@ -321,6 +358,10 @@ async function getBlockedKioskBlocks() {
     naverBlocked: row.naver_blocked === 1,
     firstSeenAt:  row.first_seen_at,
     blockedAt:    row.blocked_at,
+    lastBlockAttemptAt: row.last_block_attempt_at,
+    lastBlockResult: row.last_block_result,
+    lastBlockReason: row.last_block_reason,
+    blockRetryCount: Number(row.block_retry_count || 0),
     start:        row.start_time,
     end:          row.end_time,
   }));
@@ -337,6 +378,10 @@ async function getKioskBlocksForDate(date) {
     naverBlocked: row.naver_blocked === 1,
     firstSeenAt:  row.first_seen_at,
     blockedAt:    row.blocked_at,
+    lastBlockAttemptAt: row.last_block_attempt_at,
+    lastBlockResult: row.last_block_result,
+    lastBlockReason: row.last_block_reason,
+    blockRetryCount: Number(row.block_retry_count || 0),
     start:        row.start_time,
     end:          row.end_time,
   }));
@@ -832,6 +877,7 @@ module.exports = {
   // kiosk_blocks
   getKioskBlock,
   upsertKioskBlock,
+  recordKioskBlockAttempt,
   getBlockedKioskBlocks,
   getKioskBlocksForDate,
   pruneOldKioskBlocks,

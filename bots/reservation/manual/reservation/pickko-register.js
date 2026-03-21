@@ -23,7 +23,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { transformAndNormalizeData } = require('../../lib/validation');
-const { addReservation, updateReservation, getReservation, markSeen, upsertKioskBlock } = require('../../lib/db');
+const { addReservation, updateReservation, getReservation, markSeen, upsertKioskBlock, recordKioskBlockAttempt } = require('../../lib/db');
 const { buildReservationId } = require('../../lib/reservation-key');
 const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
@@ -134,6 +134,10 @@ child.on('close', async (code) => {
         name: customerName, date: normalized.date, start: normalized.start,
         end: normalized.end, room: normalized.room, amount: 0,
         naverBlocked: false, firstSeenAt: kst.datetimeStr(), blockedAt: null,
+        lastBlockAttemptAt: kst.datetimeStr(),
+        lastBlockResult: 'queued',
+        lastBlockReason: 'manual_register_spawned',
+        blockRetryCount: 0,
       }).catch(e => process.stderr.write(`[pickko-register] kiosk_blocks 선등록 실패: ${e.message}\n`));
 
       // 2. spawn으로 즉시 차단 시도 (빠른 경로, fire-and-forget)
@@ -153,6 +157,21 @@ child.on('close', async (code) => {
         stdio: ['ignore', process.stderr, process.stderr],
         detached: true,
       });
+      blockChild.on('error', (error) => {
+        recordKioskBlockAttempt(normalized.phone, normalized.date, normalized.start, {
+          name: customerName,
+          date: normalized.date,
+          start: normalized.start,
+          end: normalized.end,
+          room: normalized.room,
+          amount: 0,
+          naverBlocked: false,
+          lastBlockAttemptAt: kst.datetimeStr(),
+          lastBlockResult: 'spawn_failed',
+          lastBlockReason: error.message,
+          incrementRetry: true,
+        }).catch((dbError) => process.stderr.write(`[pickko-register] kiosk_blocks spawn 실패 기록 실패: ${dbError.message}\n`));
+      });
       blockChild.unref();
     }
 
@@ -160,7 +179,7 @@ child.on('close', async (code) => {
       ? `시간 경과로 픽코 등록 생략: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — 픽코에서 직접 확인 필요`
       : SKIP_NAVER_BLOCK
         ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
-        : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 중`;
+        : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`;
     process.stdout.write(JSON.stringify({ success: true, message }) + '\n');
     process.exit(0);
   } else {

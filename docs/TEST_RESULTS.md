@@ -2,6 +2,25 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-21
+
+### 스카 수동등록 후속 차단 원장화 + 취소 스킵 버그 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/lib/db.js` | ✅ |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ |
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ |
+| `node --check bots/reservation/manual/reservation/pickko-register.js` | ✅ |
+| `node --check bots/reservation/migrations/006_kiosk_block_attempts.js` | ✅ |
+| `node bots/reservation/scripts/check-n8n-command-path.js` | ✅ 이제 실제 nested error(`EPERM ... 5432`) 출력 확인 |
+| `node bots/reservation/scripts/migrate.js --status` | ✅ `v006 kiosk_block_attempts` 미적용 상태 확인 |
+| `node bots/reservation/scripts/migrate.js` | ✅ `v006 kiosk_block_attempts` 적용 완료, 스키마 `v6` 확인 |
+| `launchctl kickstart -k gui/$(id -u)/ai.ska.naver-monitor` | ✅ |
+| `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `naver-monitor`, `kiosk-monitor`, `ska command webhook` 정상 유지 확인 |
+| `민경수 2026-03-27 12:00~14:00 A1 원장 조회` | ✅ `manual 등록 완료 + naver_blocked=false` 확인, false alert가 아니라 실제 후속 차단 누락으로 분류 |
+
 ---
 
 ## 2026-03-20

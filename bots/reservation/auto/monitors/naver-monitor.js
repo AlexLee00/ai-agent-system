@@ -2095,9 +2095,8 @@ function runPickkoCancel(booking, cancelKey = null) {
     if (booking.bookingId) {
       const currentEntry = await getReservation(String(booking.bookingId)).catch(() => null);
       if (currentEntry && (
-        currentEntry.status === 'completed' ||
         currentEntry.status === 'cancelled' ||
-        ['manual', 'manual_retry', 'verified', 'time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus)
+        ['time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus)
       )) {
         log(`✅ [취소 건너뜀] 이미 종결 처리됨: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} → ${currentEntry.pickkoStatus || currentEntry.status}`);
         await markSeen(String(booking.bookingId)).catch(() => {});

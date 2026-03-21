@@ -19,7 +19,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
-const { getKioskBlock, upsertKioskBlock, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
+const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
@@ -50,6 +50,50 @@ function nowKST() {
 function fmtPhone(raw) {
   if ((raw || '').length === 11) return `${raw.slice(0, 3)}-${raw.slice(3, 7)}-${raw.slice(7)}`;
   return raw || '';
+}
+
+function publishRetryableBlockAlert(entry, reason, options = {}) {
+  const {
+    prefix = '⚠️',
+    title = '네이버 차단 지연',
+    roomSuffix = '룸',
+    alertLevel = 2,
+    sourceLabel = '키오스크 예약',
+    actionLine = '자동 재시도 예정 — kiosk-monitor 후속 사이클을 확인하고, 계속 실패하면 수동 처리'
+  } = options;
+
+  const name = entry?.name || '(이름없음)';
+  const phone = entry?.phoneRaw ? ` ${fmtPhone(entry.phoneRaw)}` : '';
+  const date = entry?.date || '';
+  const start = entry?.start || '';
+  const end = entry?.end || '';
+  const room = entry?.room || '';
+
+  publishToMainBot({
+    from_bot: 'jimmy',
+    event_type: 'alert',
+    alert_level: alertLevel,
+    message:
+      `${prefix} ${title}\n${name}${phone}\n${date} ${start}~${end} ${room}${roomSuffix}\n사유: ${reason}\n조치: ${actionLine} (${sourceLabel})`,
+  });
+}
+
+async function journalBlockAttempt(entry, result, reason, options = {}) {
+  await recordKioskBlockAttempt(entry.phoneRaw, entry.date, entry.start, {
+    name: entry.name,
+    date: entry.date,
+    start: entry.start,
+    end: entry.end,
+    room: entry.room,
+    amount: entry.amount || 0,
+    naverBlocked: options.naverBlocked,
+    blockedAt: options.blockedAt,
+    naverUnblockedAt: options.naverUnblockedAt,
+    lastBlockAttemptAt: options.at || nowKST(),
+    lastBlockResult: result,
+    lastBlockReason: reason,
+    incrementRetry: options.incrementRetry === true,
+  });
 }
 
 // 네이버 드롭다운은 30분 단위 — 종료시간을 30분 단위로 올림
@@ -1736,9 +1780,21 @@ async function main() {
     if (!wsEndpoint) {
       log('⚠️ naver-monitor 브라우저 미실행 (WS 파일 없음). 수동 처리 필요.');
       for (const e of toBlockEntries) {
-        await upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-          `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: naver-monitor 미실행`
+        await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+          ...e,
+          naverBlocked: false,
+          firstSeenAt: nowKST(),
+          lastBlockAttemptAt: nowKST(),
+          lastBlockResult: 'deferred',
+          lastBlockReason: 'naver_monitor_unavailable',
+        });
+        await journalBlockAttempt(e, 'deferred', 'naver_monitor_unavailable', {
+          naverBlocked: false,
+          incrementRetry: true,
+        });
+        publishRetryableBlockAlert(e, 'naver-monitor 미실행', {
+          title: '네이버 차단 지연',
+          sourceLabel: '키오스크 예약',
         });
       }
       for (const e of cancelledEntries) {
@@ -1775,9 +1831,21 @@ async function main() {
       if (!loggedIn) {
         log('❌ 네이버 booking 로그인 실패');
         for (const e of toBlockEntries) {
-          await upsertKioskBlock(e.phoneRaw, e.date, e.start, { ...e, naverBlocked: false, firstSeenAt: nowKST() });
-          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-            `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)\n사유: 네이버 로그인 실패`
+          await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
+            ...e,
+            naverBlocked: false,
+            firstSeenAt: nowKST(),
+            lastBlockAttemptAt: nowKST(),
+            lastBlockResult: 'deferred',
+            lastBlockReason: 'naver_login_failed',
+          });
+          await journalBlockAttempt(e, 'deferred', 'naver_login_failed', {
+            naverBlocked: false,
+            incrementRetry: true,
+          });
+          publishRetryableBlockAlert(e, '네이버 로그인 실패', {
+            title: '네이버 차단 지연',
+            sourceLabel: '키오스크 예약',
           });
         }
         for (const e of cancelledEntries) {
@@ -1807,6 +1875,9 @@ async function main() {
             name: e.name, date: e.date, start: e.start, end: e.end,
             room: e.room, amount: e.amount,
             naverBlocked: false, firstSeenAt: _now, blockedAt: null,
+            lastBlockAttemptAt: _now,
+            lastBlockResult: 'skipped',
+            lastBlockReason: 'time_elapsed',
           });
           publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
             `⏰ 시간 경과 — 네이버 차단 생략\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}\n예약 종료 시각이 지나 네이버 차단 불필요 (픽코에서 직접 확인)`
@@ -1847,6 +1918,9 @@ async function main() {
           naverBlocked: blocked,
           firstSeenAt:  now,
           blockedAt:    blocked ? now : null,
+          lastBlockAttemptAt: now,
+          lastBlockResult: blocked ? 'blocked' : 'retryable_failure',
+          lastBlockReason: blocked ? 'verified' : 'verify_failed',
         });
 
         // ── Phase 4: 텔레그램 알림 ──
@@ -1855,8 +1929,13 @@ async function main() {
             `🚫 네이버 예약 차단 완료\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)`
           });
         } else {
-          publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
-            `⚠️ 네이버 차단 실패 — 수동 처리 필요\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''}`
+          await journalBlockAttempt(e, 'retryable_failure', 'verify_failed', {
+            naverBlocked: false,
+            incrementRetry: true,
+          });
+          publishRetryableBlockAlert(e, '차단 검증 실패', {
+            title: '네이버 차단 미확인',
+            sourceLabel: '키오스크 예약',
           });
         }
       }
@@ -1942,7 +2021,16 @@ async function blockSlotOnly(entry) {
   try { wsEndpoint = fs.readFileSync(NAVER_WS_FILE, 'utf8').trim(); } catch (e) {}
   if (!wsEndpoint) {
     log('⚠️ naver-monitor 미실행 (WS 파일 없음) — 수동 차단 필요');
-    publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: naver-monitor 미실행` });
+    await journalBlockAttempt(entry, 'deferred', 'naver_monitor_unavailable', {
+      naverBlocked: false,
+      incrementRetry: true,
+    });
+    publishRetryableBlockAlert(entry, 'naver-monitor 미실행', {
+      prefix: '🟠',
+      title: '[대리등록] 네이버 예약불가 처리 지연',
+      roomSuffix: '룸',
+      sourceLabel: '대리등록',
+    });
     process.exit(1);
   }
 
@@ -1964,7 +2052,16 @@ async function blockSlotOnly(entry) {
     const loggedIn = await naverBookingLogin(naverPg);
     if (!loggedIn) {
       log('❌ 네이버 booking 로그인 실패');
-      publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 차단 실패 — 수동 처리 필요\n${name} ${date} ${start}~${end} ${room}\n사유: 네이버 로그인 실패` });
+      await journalBlockAttempt(entry, 'deferred', 'naver_login_failed', {
+        naverBlocked: false,
+        incrementRetry: true,
+      });
+      publishRetryableBlockAlert(entry, '네이버 로그인 실패', {
+        prefix: '🟠',
+        title: '[대리등록] 네이버 예약불가 처리 지연',
+        roomSuffix: '룸',
+        sourceLabel: '대리등록',
+      });
       // exitCode = 1 (기본값), finally로 탭 닫기 후 종료
     } else {
       // blockNaverSlot 실행 (Frame detach 시 1회 재시도)
@@ -1995,11 +2092,33 @@ async function blockSlotOnly(entry) {
         naverBlocked: blocked,
         firstSeenAt:  nowKST(),
         blockedAt:    blocked ? nowKST() : null,
+        lastBlockAttemptAt: nowKST(),
+        lastBlockResult: blocked ? 'blocked' : 'attempted',
+        lastBlockReason: blockResult?.reason || 'block_attempt_finished',
       });
 
       if (!blocked) {
         blocked = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-recheck' });
         log(`  🔁 대리등록 후 독립 재검증: ${blocked ? '✅ 차단 확인' : '❌ 차단 미확인'}`);
+        if (blocked) {
+          const existing = await getKioskBlock(phoneRaw, date, start);
+          await upsertKioskBlock(phoneRaw, date, start, {
+            ...(existing || {}),
+            name,
+            date,
+            start,
+            end,
+            room,
+            amount: 0,
+            naverBlocked: true,
+            firstSeenAt: existing?.firstSeenAt || nowKST(),
+            blockedAt: existing?.blockedAt || nowKST(),
+            lastBlockAttemptAt: nowKST(),
+            lastBlockResult: 'blocked',
+            lastBlockReason: 'fresh_page_verified',
+            blockRetryCount: existing?.blockRetryCount || 0,
+          });
+        }
       }
 
       if (blocked) {
@@ -2007,11 +2126,23 @@ async function blockSlotOnly(entry) {
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸` });
       } else if (blockResult?.applied) {
         log(`⚠️ 네이버 차단 검증 불확실 — 화면 확인 권장`);
+        await journalBlockAttempt(entry, 'uncertain', blockResult?.reason || 'applied_but_unverified', {
+          naverBlocked: false,
+        });
         publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message: `⚠️ [대리등록] 네이버 차단 검증 불확실 — 화면 확인 권장\n${name} ${date} ${start}~${end} ${room}룸` });
         blocked = true;
       } else {
-        log(`⚠️ 네이버 차단 실패 — 수동 확인 필요`);
-        publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message: `⚠️ [대리등록] 네이버 예약불가 처리 실패 — 수동 확인 필요\n${name} ${date} ${start}~${end} ${room}룸` });
+        log(`⚠️ 네이버 차단 미확인 — 자동 재시도 예정`);
+        await journalBlockAttempt(entry, 'retryable_failure', blockResult?.reason || 'verify_failed', {
+          naverBlocked: false,
+          incrementRetry: true,
+        });
+        publishRetryableBlockAlert(entry, '차단 검증 실패', {
+          prefix: '🟠',
+          title: '[대리등록] 네이버 예약불가 처리 지연',
+          roomSuffix: '룸',
+          sourceLabel: '대리등록',
+        });
       }
       exitCode = blocked ? 0 : 1;
     }

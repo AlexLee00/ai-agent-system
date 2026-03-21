@@ -42,6 +42,10 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`[ska n8n command path] ${error.message}`);
+  const nestedErrors = Array.isArray(error?.errors)
+    ? error.errors.map((item) => item?.message).filter(Boolean).join(' | ')
+    : '';
+  const detail = error?.message || nestedErrors || error?.stack || String(error);
+  console.error(`[ska n8n command path] ${detail}`);
   process.exit(1);
 });
