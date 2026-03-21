@@ -41,9 +41,10 @@
   - 현재 n8n 런타임은 `ExecuteCommand` activation을 거부해, workflow는 `HTTP Request -> /api/video/internal/*` 구조로 호환 전환됐다.
   - `bots/worker/web/routes/video-internal-api.js`가 추가돼 n8n이 `X-Video-Token`으로 보호된 내부 dispatch API를 호출하고, 실제 프로세스 실행은 기존 `fork()` 경로를 재사용한다.
   - `packages/core/lib/n8n-runner.js`는 커스텀 헤더 전달을 지원하도록 확장됐고, 비디오 webhook은 `X-Video-Token`을 사용한다.
+  - `bots/video/lib/video-n8n-config.js`가 추가돼 `VIDEO_N8N_TOKEN`을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 통합됐다.
   - `bots/video/n8n/setup-video-workflow.js`는 registry DB 조회 실패 시 기본 webhook 경로로 degrade 하도록 보강돼, setup 성공 후 URL 출력 단계에서 불필요하게 실패하지 않는다.
   - sandbox 밖 live 검증 기준 현재 상태는 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`이다.
-  - 남은 운영 TODO는 `VIDEO_N8N_TOKEN`을 worker launchd/운영 secret로 영속화하는 것이다.
+  - launchd env가 없어도 worker secrets fallback으로 토큰을 영속화할 수 있고, 다음 운영 작업은 실제 `bots/worker/secrets.json`에 `video_n8n_token`을 배치하는 것이다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.

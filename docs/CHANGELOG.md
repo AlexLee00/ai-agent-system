@@ -52,6 +52,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `ExecuteCommand` 대신 `HTTP Request -> /api/video/internal/*` 구조로 호환 전환
 - `packages/core/lib/n8n-runner.js`
   - webhook 호출에 커스텀 헤더(`X-Video-Token`) 전달 지원 추가
+- `bots/video/lib/video-n8n-config.js`
+  - `VIDEO_N8N_TOKEN`을 env 또는 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽는 공용 helper 추가
 - `bots/video/config/video-config.yaml`
   - 비디오팀 `n8n` 설정 섹션 추가
 - `bots/video/n8n/setup-video-workflow.js`
