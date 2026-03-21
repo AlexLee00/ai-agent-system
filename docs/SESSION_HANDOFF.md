@@ -224,6 +224,18 @@
   - 다음은 preview wall-clock을 원장에 따로 저장하는 구조 보강, 세션 1 프리뷰 재검증, transition 렌더 재설계, final render 다세트 실검증
   - 제이 Gateway `persisted` 상태
   - 제이 일일 리뷰 `dbSource=db / snapshot_fallback` 전환 패턴
+
+---
+
+## 4. 세션 마감 메모
+
+- 이번 세션의 문서/코드 커밋은 `8c73f64 feat(reports): enrich daily ops interpretation`까지 `main` 반영 완료다.
+- `bots/claude/.checksums.json`은 이번 턴에서 다시 갱신됐지만, 아래 unrelated 로컬 변경을 함께 반영한 상태라 별도 커밋하지 않았다.
+  - `bots/orchestrator/lib/night-handler.js`
+  - `bots/reservation/context/HANDOFF.md`
+  - `bots/reservation/lib/study-room-pricing.js`
+  - `bots/reservation/scripts/collect-pickko-order-raw.js`
+- 다음 체크섬 마감은 위 변경들의 소유 세션이 정리된 뒤, 실제 커밋 대상 파일 집합 기준으로 `node bots/claude/src/dexter.js --update-checksums`를 다시 실행하는 것이 기준이다.
   - 일일 운영 분석의 `activeIssues / historicalIssues / inputFailures` 축적 패턴
   - investment / reservation `local fallback 활동 신호`가 실제 운영 상태를 안정적으로 대변하는지
   - 투자 `no-trade high-cost` 경고 발생 여부

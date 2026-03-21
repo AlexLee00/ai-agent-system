@@ -31,6 +31,10 @@
 - 지금 당장 필요한 구조인 “runtime restriction / historical noise / current policy signal” 분리가 전사 ops report에 반영됐다.
 - 이후 SaaS 확장을 고려하면, 팀별 health뿐 아니라 policy signal과 current window를 함께 읽는 상위 리포트 구조가 필요하므로 이번 보강이 기준선 역할을 한다.
 
+마감 메모:
+- `bots/claude/.checksums.json`은 세션 말미에 재갱신했지만, unrelated 로컬 변경(`night-handler.js`, reservation 일부 파일)도 함께 반영돼 체크섬 커밋은 의도적으로 보류했다.
+- 문서/리포트 기준점은 `8c73f64 feat(reports): enrich daily ops interpretation`까지 원격 반영 완료이며, 체크섬은 관련 작업 정리 후 재갱신이 필요하다.
+
 ### 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback hygiene + concurrency 보수화
 
 핵심 구현:
