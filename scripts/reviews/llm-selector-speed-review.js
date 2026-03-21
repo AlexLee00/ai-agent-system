@@ -107,6 +107,66 @@ function inferPrimaryFallbackCandidate(latest, modelStats, latestPrimaryResult) 
   return sameFamilyFlashLite || providerCandidates[0] || null;
 }
 
+function buildRecentPrimaryHealthHistory(filtered, currentPrimary, latestCapturedAt) {
+  if (!currentPrimary) return [];
+  return filtered
+    .slice(-5)
+    .map((snapshot) => {
+      const result = (snapshot.results || []).find((item) => item?.modelId === currentPrimary) || null;
+      const health = result?.ok === true
+        ? 'healthy'
+        : result?.errorClass === 'rate_limited'
+          ? 'rate_limited'
+          : result
+            ? 'degraded'
+            : 'unavailable';
+      return {
+        capturedAt: snapshot.capturedAt || null,
+        isLatest: snapshot.capturedAt === latestCapturedAt,
+        health,
+        errorClass: result?.errorClass || null,
+      };
+    });
+}
+
+function inferPrimaryFallbackPolicy(primaryHealthHistory, primaryFallbackCandidate) {
+  if (!primaryFallbackCandidate || primaryHealthHistory.length === 0) {
+    return {
+      decision: 'hold',
+      reason: 'fallback_candidate_absent',
+      consecutivePrimaryIssues: 0,
+    };
+  }
+
+  let consecutivePrimaryIssues = 0;
+  for (let i = primaryHealthHistory.length - 1; i >= 0; i -= 1) {
+    if (primaryHealthHistory[i].health === 'healthy') break;
+    consecutivePrimaryIssues += 1;
+  }
+
+  if (consecutivePrimaryIssues >= 2 && primaryHealthHistory[primaryHealthHistory.length - 1]?.health === 'rate_limited') {
+    return {
+      decision: 'temporary_fallback_candidate',
+      reason: 'primary_rate_limited_consecutive',
+      consecutivePrimaryIssues,
+    };
+  }
+
+  if (consecutivePrimaryIssues >= 1) {
+    return {
+      decision: 'observe',
+      reason: 'primary_issue_recent',
+      consecutivePrimaryIssues,
+    };
+  }
+
+  return {
+    decision: 'hold',
+    reason: 'primary_healthy',
+    consecutivePrimaryIssues,
+  };
+}
+
 function buildReview(entries, days, inputPath = HISTORY_FILE) {
   const rows = Array.isArray(entries) ? entries : readHistory(inputPath);
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
@@ -137,6 +197,8 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
           ? 'degraded'
           : 'unavailable';
   const primaryFallbackCandidate = inferPrimaryFallbackCandidate(latest, modelStats, latestPrimaryResult);
+  const recentPrimaryHealthHistory = buildRecentPrimaryHealthHistory(filtered, latest?.current || null, latest?.capturedAt || null);
+  const primaryFallbackPolicy = inferPrimaryFallbackPolicy(recentPrimaryHealthHistory, primaryFallbackCandidate);
 
   return {
     days,
@@ -155,6 +217,8 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
     } : null,
     primaryHealth,
     primaryFallbackCandidate,
+    recentPrimaryHealthHistory,
+    primaryFallbackPolicy,
     latestFailures,
     topModels: top,
     recommendation: latest?.recommended && latest?.current && latest.recommended !== latest.current
@@ -178,6 +242,7 @@ function printReview(review) {
     `- current: ${review.currentPrimary || '-'}`,
     `- primary health: ${review.primaryHealth}`,
     ...(review.primaryFallbackCandidate ? [`- primary fallback candidate: ${review.primaryFallbackCandidate.modelId}`] : []),
+    ...(review.primaryFallbackPolicy ? [`- primary fallback policy: ${review.primaryFallbackPolicy.decision}`] : []),
     `- latest recommended: ${review.latestRecommended || '-'}`,
     `- recommendation: ${review.recommendation}`,
     ...(review.latestFailures?.length ? [`- latest failures: ${review.latestFailures.length}건`] : []),
@@ -199,6 +264,9 @@ function printReview(review) {
     lines.push(`- ${review.latestPrimaryResult.modelId} | ${review.latestPrimaryResult.errorClass || 'request_failed'} | ${(review.latestPrimaryResult.error || '-').slice(0, 120)}`);
     if (review.primaryFallbackCandidate) {
       lines.push(`- safe fallback: ${review.primaryFallbackCandidate.modelId} | ttft ${review.primaryFallbackCandidate.ttft ?? '-'}ms | total ${review.primaryFallbackCandidate.total ?? '-'}ms`);
+    }
+    if (review.primaryFallbackPolicy) {
+      lines.push(`- policy: ${review.primaryFallbackPolicy.decision} | reason ${review.primaryFallbackPolicy.reason} | consecutive issues ${review.primaryFallbackPolicy.consecutivePrimaryIssues}`);
     }
   }
   process.stdout.write(`${lines.join('\n')}\n`);

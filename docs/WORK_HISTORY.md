@@ -3896,3 +3896,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 제거: `cerebras/gpt-oss-120b` (현재 계정/런타임 404)
 - 후속으로 `llm-selector-speed-review.js`에 `primaryHealth`, `latestPrimaryResult`를 추가해 속도 추천(`compare`)과 현재 primary 실패(`rate_limited`)를 분리해서 읽을 수 있게 정리
 - 같은 맥락으로 `primaryFallbackCandidate`도 추가해 현재 primary가 unhealthy일 때 같은 provider 안에서 쓸 수 있는 안전 후보를 리포트가 직접 제시하도록 보강
+- 최근 snapshot history를 함께 읽어 `primaryFallbackPolicy`를 계산하도록 확장했다. 현재 `gemini-2.5-flash`는 연속 rate-limit 기준으로 `temporary_fallback_candidate`까지는 승격되지만, 여전히 운영자 확인 없는 자동 전환은 하지 않는 구조다.
