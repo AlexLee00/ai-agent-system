@@ -131,6 +131,17 @@
 | `curl -I http://127.0.0.1:4001/video` | ✅ `200 OK` |
 | `curl -I http://127.0.0.1:4001/video/history` | ✅ `200 OK` |
 
+### worker-web 비디오 업로드 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/routes/video-api.js` | ✅ |
+| `node --check bots/worker/web/app/video/page.js` | ✅ |
+| `cd bots/worker/web && npx next build` | ✅ 업로드 UI 보강 후 build 통과 |
+| `node --input-type=module -e \"... ALTER TABLE public.video_sessions ALTER COLUMN company_id TYPE TEXT ...\"` | ✅ `video_sessions.company_id`가 실제 `text`로 보정됨 확인 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ worker API 재기동 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 재기동 |
+
 ### 비디오팀 과제 13 — 5세트 전체 파이프라인 검증 (`--skip-render`)
 
 | 테스트 | 결과 |
