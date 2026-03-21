@@ -40,6 +40,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `launchctl kickstart -k gui/$(id -u)/ai.ska.naver-monitor` | ✅
 - `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅
 - `node bots/reservation/scripts/health-report.js --json` | ✅ core/scheduled/n8n 건강도 정상 확인
+- 최근 manual 등록 미래 예약 8건 운영 점검 | ✅ 네이버 예약관리에서 직접 확인 후 처리 완료
 
 ## 12주차 후속 (2026-03-21) — worker-web `/video` 세션 복원 + 프리뷰 렌더 경계 복구
 

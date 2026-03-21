@@ -20,6 +20,7 @@
 | `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ |
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `naver-monitor`, `kiosk-monitor`, `ska command webhook` 정상 유지 확인 |
 | `민경수 2026-03-27 12:00~14:00 A1 원장 조회` | ✅ `manual 등록 완료 + naver_blocked=false` 확인, false alert가 아니라 실제 후속 차단 누락으로 분류 |
+| `최근 manual 등록 미래 예약 8건 운영 점검` | ✅ 네이버 예약관리에서 직접 확인 후 모두 처리 완료 |
 
 ---
 
