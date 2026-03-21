@@ -495,3 +495,4 @@
 - `scripts/reviews/llm-selector-speed-review.js`는 이제 `primaryHealth`, `latestPrimaryResult`를 함께 보여준다. 즉 현재는 `recommended=compare`이면서 동시에 `current primary=rate_limited`라는 운영 상태를 한 리포트에서 분리해 읽을 수 있다.
 - 추가로 현재 primary가 unhealthy일 때 같은 provider 안에서 즉시 쓸 수 있는 `primaryFallbackCandidate`도 함께 보여준다. 최신 기준 Gemini 레일의 안전 후보는 `google-gemini-cli/gemini-2.5-flash-lite`다.
 - 후속으로 최근 snapshot 이력을 읽어 `primaryFallbackPolicy`도 계산한다. 현재 기준 `gemini-2.5-flash`는 최근 2회 이상 연속 `rate_limited`로 관측되어 `temporary_fallback_candidate` 상태다. 다만 이는 운영 신호이며 자동 전환을 뜻하지는 않는다.
+- 임시 전환 기준은 [GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md)에 따로 정리했다. 현재 자연스러운 다음 단계는 quota reset 이후 `gemini-2.5-flash` 재측정이며, 동일 상태가 이어질 때만 `flash-lite` 임시 primary를 검토한다.
