@@ -263,6 +263,37 @@ function FileUploader({ files, onSelectFiles, onMove, onRemove, disabled }) {
   );
 }
 
+function AssetUploadCard({ title, description, accept, file, onSelect, disabled }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{title}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+          {file ? (
+            <p className="mt-2 text-xs font-medium text-indigo-700">{repairFilename(file.original_name || file.name)}</p>
+          ) : null}
+        </div>
+        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 ${disabled ? 'opacity-50' : 'hover:border-indigo-300 hover:text-indigo-700'}`}>
+          <Upload className="h-4 w-4" />
+          업로드
+          <input
+            type="file"
+            hidden
+            accept={accept}
+            disabled={disabled}
+            onChange={(event) => {
+              const selected = event.target.files?.[0];
+              if (selected) onSelect(selected);
+              event.target.value = '';
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function ProgressTracker({ session, edits }) {
   const stages = ['processing', 'preprocessing_done', 'stt_done', 'correction_done', 'preview_ready', 'completed'];
 
@@ -432,9 +463,19 @@ export default function VideoPage() {
   const [files, setFiles] = useState([]);
   const [edits, setEdits] = useState([]);
   const [notes, setNotes] = useState('');
+  const [introConfig, setIntroConfig] = useState({ mode: 'none', prompt: '', durationSec: 3, title: '' });
+  const [outroConfig, setOutroConfig] = useState({ mode: 'none', prompt: '', durationSec: 5, title: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const messageBottomRef = useRef(null);
+
+  const sourceFiles = useMemo(
+    () => files.filter((file) => ['video', 'audio'].includes(String(file.file_type || ''))),
+    [files]
+  );
+  const introFile = useMemo(() => files.find((file) => file.file_type === 'intro') || null, [files]);
+  const outroFile = useMemo(() => files.find((file) => file.file_type === 'outro') || null, [files]);
+  const logoFile = useMemo(() => files.find((file) => file.file_type === 'logo') || null, [files]);
 
   useEffect(() => {
     addMessage(setMessages, {
@@ -466,6 +507,19 @@ export default function VideoPage() {
         setSession(nextSession);
         setFiles(nextFiles);
         setEdits(nextEdits);
+        setNotes(nextSession.edit_notes || '');
+        setIntroConfig({
+          mode: nextSession.intro_mode || 'none',
+          prompt: nextSession.intro_prompt || '',
+          durationSec: nextSession.intro_duration_sec || 3,
+          title: nextSession.title || '',
+        });
+        setOutroConfig({
+          mode: nextSession.outro_mode || 'none',
+          prompt: nextSession.outro_prompt || '',
+          durationSec: nextSession.outro_duration_sec || 5,
+          title: nextSession.title || '',
+        });
         writeActiveSessionId(nextSession.id);
 
         if (nextSession.status === 'done') setPhase(PHASES.done);
@@ -601,6 +655,8 @@ export default function VideoPage() {
       const detail = await api.get(`/video/sessions/${activeSession.id}`);
       setSession(detail.session);
       setFiles(detail.files || []);
+      setIntroConfig((prev) => ({ ...prev, title: detail.session?.title || prev.title || '새 영상 편집' }));
+      setOutroConfig((prev) => ({ ...prev, title: detail.session?.title || prev.title || '새 영상 편집' }));
       setPhase(PHASES.uploaded);
       addMessage(setMessages, {
         type: 'user',
@@ -610,6 +666,41 @@ export default function VideoPage() {
         type: 'system',
         content: '편집에 참고할 사항이 있으면 알려주세요. 준비되면 편집을 시작합니다.',
       });
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const uploadAssetFile = async (file, fileType) => {
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    try {
+      let activeSession = session;
+      if (!activeSession?.id) {
+        activeSession = await api.post('/video/sessions', { title: '새 영상 편집' });
+        setSession(activeSession);
+        writeActiveSessionId(activeSession.id);
+      }
+
+      const formData = new FormData();
+      formData.append('file_type', fileType);
+      formData.append('files', file);
+      const token = getToken();
+      const response = await fetch(`/api/video/sessions/${activeSession.id}/upload`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || '부가 파일 업로드에 실패했습니다.');
+      }
+      const detail = await api.get(`/video/sessions/${activeSession.id}`);
+      setSession(detail.session);
+      setFiles(detail.files || []);
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
@@ -652,9 +743,11 @@ export default function VideoPage() {
     setLoading(true);
     setError('');
     try {
-      if (notes.trim()) {
-        await api.put(`/video/sessions/${session.id}/notes`, { edit_notes: notes.trim() });
-      }
+      await api.put(`/video/sessions/${session.id}/notes`, { edit_notes: notes.trim() || null });
+      await api.put(`/video/sessions/${session.id}/intro-outro`, {
+        intro: introConfig,
+        outro: outroConfig,
+      });
       await api.post(`/video/sessions/${session.id}/start`, {});
       setPhase(PHASES.processing);
       addMessage(setMessages, {
@@ -788,32 +881,166 @@ export default function VideoPage() {
               </div>
             ) : null}
 
-            <FileUploader
-              files={files}
-              onSelectFiles={uploadFiles}
-              onMove={reorderFiles}
-              onRemove={removeFile}
-              disabled={loading}
-            />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">Step 1. 파일 업로드</p>
+              <p className="mt-1 text-xs text-slate-500">원본 영상 파일과 나레이션 오디오를 업로드해주세요.</p>
+              <div className="mt-4">
+                <FileUploader
+                  files={sourceFiles}
+                  onSelectFiles={uploadFiles}
+                  onMove={reorderFiles}
+                  onRemove={removeFile}
+                  disabled={loading}
+                />
+              </div>
+            </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <label className="text-sm font-semibold text-slate-900">편집 의도</label>
+              <p className="text-sm font-semibold text-slate-900">Step 2. 인트로 설정</p>
+              <p className="mt-1 text-xs text-slate-500">파일 업로드, 프롬프트 설명, 인트로 없음 중 하나를 선택합니다.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {['file', 'prompt', 'none'].map((mode) => (
+                  <button
+                    key={`intro-${mode}`}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setIntroConfig((prev) => ({ ...prev, mode }))}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${introConfig.mode === mode ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    {mode === 'file' ? '파일 업로드' : mode === 'prompt' ? '프롬프트로 설명' : '인트로 없음'}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="space-y-4">
+                  {introConfig.mode === 'file' ? (
+                    <AssetUploadCard
+                      title="인트로 영상"
+                      description="mp4 파일을 업로드하면 본편 스펙에 맞게 정규화합니다."
+                      accept=".mp4"
+                      file={introFile}
+                      disabled={loading}
+                      onSelect={(file) => uploadAssetFile(file, 'intro')}
+                    />
+                  ) : null}
+                  {introConfig.mode === 'prompt' ? (
+                    <>
+                      <textarea
+                        value={introConfig.prompt}
+                        onChange={(event) => setIntroConfig((prev) => ({ ...prev, prompt: event.target.value }))}
+                        placeholder="채널 로고 3초 + 강의 제목 페이드인"
+                        className="min-h-[96px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                      />
+                      <input
+                        value={introConfig.title}
+                        onChange={(event) => setIntroConfig((prev) => ({ ...prev, title: event.target.value }))}
+                        placeholder="강의 제목"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+                      <label className="block text-xs font-medium text-slate-600">길이: {introConfig.durationSec}초</label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={introConfig.durationSec}
+                        onChange={(event) => setIntroConfig((prev) => ({ ...prev, durationSec: Number(event.target.value) }))}
+                        className="w-full"
+                      />
+                      <AssetUploadCard
+                        title="로고 이미지"
+                        description="선택 사항입니다."
+                        accept=".png,.jpg,.jpeg,.webp"
+                        file={logoFile}
+                        disabled={loading}
+                        onSelect={(file) => uploadAssetFile(file, 'logo')}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">Step 3. 아웃트로 설정</p>
+              <p className="mt-1 text-xs text-slate-500">파일 업로드, 프롬프트 설명, 아웃트로 없음 중 하나를 선택합니다.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {['file', 'prompt', 'none'].map((mode) => (
+                  <button
+                    key={`outro-${mode}`}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setOutroConfig((prev) => ({ ...prev, mode }))}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${outroConfig.mode === mode ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                  >
+                    {mode === 'file' ? '파일 업로드' : mode === 'prompt' ? '프롬프트로 설명' : '아웃트로 없음'}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="space-y-4">
+                  {outroConfig.mode === 'file' ? (
+                    <AssetUploadCard
+                      title="아웃트로 영상"
+                      description="mp4 파일을 업로드하면 본편 뒤에 자동으로 합성합니다."
+                      accept=".mp4"
+                      file={outroFile}
+                      disabled={loading}
+                      onSelect={(file) => uploadAssetFile(file, 'outro')}
+                    />
+                  ) : null}
+                  {outroConfig.mode === 'prompt' ? (
+                    <>
+                      <textarea
+                        value={outroConfig.prompt}
+                        onChange={(event) => setOutroConfig((prev) => ({ ...prev, prompt: event.target.value }))}
+                        placeholder="구독 + 좋아요 CTA 5초"
+                        className="min-h-[96px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                      />
+                      <input
+                        value={outroConfig.title}
+                        onChange={(event) => setOutroConfig((prev) => ({ ...prev, title: event.target.value }))}
+                        placeholder="아웃트로 제목"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      />
+                      <label className="block text-xs font-medium text-slate-600">길이: {outroConfig.durationSec}초</label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={outroConfig.durationSec}
+                        onChange={(event) => setOutroConfig((prev) => ({ ...prev, durationSec: Number(event.target.value) }))}
+                        className="w-full"
+                      />
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="text-sm font-semibold text-slate-900">Step 4. 편집 의도</label>
               <textarea
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="예: 무음 구간은 과감하게 잘라주고, 핵심 개념은 텍스트 오버레이를 넣어주세요."
+                placeholder="예: 자막 크게, 배속 1.2배, 중요한 장면 강조"
                 className="mt-3 min-h-[100px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">Step 5. 설정 요약 + 편집 시작</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <p>원본: {sourceFiles.length}개 업로드</p>
+                <p>인트로: {introConfig.mode === 'file' ? `파일 — ${repairFilename(introFile?.original_name || '') || '미업로드'}` : introConfig.mode === 'prompt' ? `프롬프트 — ${introConfig.prompt || '(설명 없음)'} (${introConfig.durationSec}초)` : '없음'}</p>
+                <p>아웃트로: {outroConfig.mode === 'file' ? `파일 — ${repairFilename(outroFile?.original_name || '') || '미업로드'}` : outroConfig.mode === 'prompt' ? `프롬프트 — ${outroConfig.prompt || '(설명 없음)'} (${outroConfig.durationSec}초)` : '없음'}</p>
+                <p>편집 의도: {notes.trim() || '없음'}</p>
+              </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button onClick={startProcessing} disabled={loading || files.length < 2 || !session?.id} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                <button onClick={startProcessing} disabled={loading || sourceFiles.length < 2 || !session?.id} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
                   편집 시작
                 </button>
-                <p className="text-xs text-slate-500">
-                  {phase === PHASES.idle
-                    ? '영상과 음성 파일을 드래그앤드롭하거나 클릭해 첨부하세요. 파일 업로드 시 세션이 자동 생성됩니다.'
-                    : '영상과 음성 파일을 각각 업로드한 뒤 순서를 맞춰주세요.'}
-                </p>
+                <p className="text-xs text-slate-500">원본 전체를 OCR 장면 인덱싱한 뒤 나레이션과 AI 싱크 매칭합니다.</p>
               </div>
             </div>
           </div>

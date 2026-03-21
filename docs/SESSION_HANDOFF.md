@@ -35,6 +35,9 @@
   - protected preview/subtitle/download는 JWT 헤더를 직접 실을 수 없는 HTML media 태그 제약 때문에 `fetch + Authorization + blob URL` 방식으로 프론트에서 처리한다.
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
 - 비디오
+  - Phase 2 전환: `syncVideoAudio()` 폐기 → AI 싱크 매칭 파이프라인으로 전환 (2026-03-21)
+  - 신규 모듈: `scene-indexer.js`, `narration-analyzer.js`, `sync-matcher.js`, `intro-outro-handler.js`
+  - 워커 웹 UX는 `업로드 → 인트로 → 아웃트로 → 의도 → 시작`의 5단계로 확장됐고, file_type도 `video/audio/intro/outro/logo`를 지원한다.
   - 비디오팀 Phase 1은 과제 1~13 + RAG 피드백 루프 기준으로 마감됐다.
   - `bots/worker/web`의 Next.js는 이번 세션에서 재빌드 후 launchd `ai.worker.nextjs`를 재기동했고, `/video`, `/video/history`는 현재 `200 OK`로 실제 반영 상태다.
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.

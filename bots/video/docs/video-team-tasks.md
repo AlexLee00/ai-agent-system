@@ -22,6 +22,75 @@ Phase 1 — Week 3: 최종 통합 테스트 + 품질 테스트
 기존 모듈 15개 재사용, 신규 모듈 10개
 ```
 
+## Phase 2 — AI 싱크 매칭 파이프라인
+
+### 과제 A: 원본 영상 장면 인덱싱 (scene-indexer.js)
+```
+목표: 원본 영상 전체를 OCR로 분석하여 장면 인덱스 생성
+의존: tesseract.js, sharp, video-analyzer.js
+산출: scene-indexer.js, scene_index.json
+
+기능:
+  ☐ 프레임 캡처 (10초 간격, FFmpeg)
+  ☐ 중복 제거 (perceptual hash)
+  ☐ OCR (tesseract.js, eng)
+  ☐ LLM 장면 분류 (gpt-4o-mini, 배치)
+  ☐ 장면 인덱스 JSON 생성
+```
+
+### 과제 B: 나레이션 구간 분석 (narration-analyzer.js)
+```
+목표: 나레이션을 구간별로 분석하여 필요 화면 키워드 추출
+의존: whisper-client.js, subtitle-corrector.js
+산출: narration-analyzer.js, narration_segments.json
+
+기능:
+  ☐ Whisper STT (기존 모듈 재사용)
+  ☐ LLM 구간 분석 (의미 단위 분할 + 키워드)
+  ☐ 자막 교정 (선택적)
+```
+
+### 과제 C: AI 싱크 매칭 (sync-matcher.js)
+```
+목표: 나레이션 구간↔원본 장면 자동 매칭 + EDL 생성
+의존: 과제 A, B
+산출: sync-matcher.js, sync_map.json
+
+기능:
+  ☐ 키워드 매칭 (1순위)
+  ☐ 임베딩 유사도 매칭 (2순위 fallback)
+  ☐ 시간순서 보정
+  ☐ 미매칭 구간 처리 (hold)
+  ☐ sync_map → EDL 변환
+```
+
+### 과제 D: 인트로/아웃트로 하이브리드 (intro-outro-handler.js)
+```
+목표: 인트로/아웃트로를 파일 업로드 또는 프롬프트 설명으로 처리
+의존: FFmpeg, LLM
+산출: intro-outro-handler.js, 004 마이그레이션
+
+기능:
+  ☐ Mode A: 파일 제공 → 해상도/fps 맞춤 + concat
+  ☐ Mode B: 프롬프트 → LLM FFmpeg 명령 생성 → 타이틀 카드
+  ☐ 기본 템플릿 fallback
+  ☐ DB 마이그레이션 (intro/outro 컬럼)
+  ☐ 워커 웹 5단계 질문 흐름
+```
+
+### 과제 E: 파이프라인 통합 + 5세트 검증
+```
+목표: run-pipeline.js 재구성 + 파라미터 세트 E2E 검증
+의존: 과제 A~D
+산출: run-pipeline.js 수정, test-full-sync-pipeline.js
+
+검증:
+  ☐ 자동 매칭 성공률 ≥ 70%
+  ☐ 편집_파라미터.mp4(실제 편집본)과 비교
+  ☐ 인트로/아웃트로 정상 합성
+  ☐ 세트당 비용 ≤ $0.05
+```
+
 ## ★ 개발 원칙
 
 ```

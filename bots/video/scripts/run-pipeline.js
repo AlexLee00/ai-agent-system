@@ -10,26 +10,23 @@ const { startTrace, withTrace } = require('../../../packages/core/lib/trace');
 
 const { loadConfig } = require('../src/index');
 const {
-  removeAudio,
   normalizeAudio,
-  syncVideoAudio,
   probeDurationMs,
 } = require('../lib/ffmpeg-preprocess');
 const { generateSubtitle } = require('../lib/whisper-client');
 const { correctFile } = require('../lib/subtitle-corrector');
 const { buildDraft } = require('../lib/capcut-draft-builder');
 const {
-  analyzeVideo,
-  saveAnalysis,
-} = require('../lib/video-analyzer');
-const {
-  buildInitialEDL,
   saveEDL,
   renderPreview,
   renderFinal,
   convertSrtToVtt,
 } = require('../lib/edl-builder');
 const { storeEditResult } = require('../lib/video-rag');
+const { indexVideo } = require('../lib/scene-indexer');
+const { parseSrt, analyzeSegments } = require('../lib/narration-analyzer');
+const { buildSyncMap, syncMapToEDL } = require('../lib/sync-matcher');
+const { processIntroOutro } = require('../lib/intro-outro-handler');
 
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
@@ -48,8 +45,20 @@ function parseArgs(argv) {
     sourceAudio: null,
     sessionId: null,
     pairIndex: null,
+    title: null,
+    editNotes: null,
     skipRender: false,
     withCapcut: false,
+    introMode: 'none',
+    introFile: null,
+    introPrompt: null,
+    introDuration: null,
+    introLogo: null,
+    outroMode: 'none',
+    outroFile: null,
+    outroPrompt: null,
+    outroDuration: null,
+    outroLogo: null,
   };
 
   for (const arg of argv) {
@@ -81,9 +90,115 @@ function parseArgs(argv) {
       parsed.pairIndex = Number.parseInt(arg.slice('--pair-index='.length), 10) || null;
       continue;
     }
+    if (arg.startsWith('--title=')) {
+      parsed.title = arg.slice('--title='.length);
+      continue;
+    }
+    if (arg.startsWith('--edit-notes=')) {
+      parsed.editNotes = arg.slice('--edit-notes='.length);
+      continue;
+    }
+    if (arg.startsWith('--intro-mode=')) {
+      parsed.introMode = arg.slice('--intro-mode='.length) || 'none';
+      continue;
+    }
+    if (arg.startsWith('--intro-file=')) {
+      parsed.introFile = arg.slice('--intro-file='.length) || null;
+      continue;
+    }
+    if (arg.startsWith('--intro-prompt=')) {
+      parsed.introPrompt = arg.slice('--intro-prompt='.length) || null;
+      continue;
+    }
+    if (arg.startsWith('--intro-duration=')) {
+      parsed.introDuration = Number.parseFloat(arg.slice('--intro-duration='.length)) || null;
+      continue;
+    }
+    if (arg.startsWith('--intro-logo=')) {
+      parsed.introLogo = arg.slice('--intro-logo='.length) || null;
+      continue;
+    }
+    if (arg.startsWith('--outro-mode=')) {
+      parsed.outroMode = arg.slice('--outro-mode='.length) || 'none';
+      continue;
+    }
+    if (arg.startsWith('--outro-file=')) {
+      parsed.outroFile = arg.slice('--outro-file='.length) || null;
+      continue;
+    }
+    if (arg.startsWith('--outro-prompt=')) {
+      parsed.outroPrompt = arg.slice('--outro-prompt='.length) || null;
+      continue;
+    }
+    if (arg.startsWith('--outro-duration=')) {
+      parsed.outroDuration = Number.parseFloat(arg.slice('--outro-duration='.length)) || null;
+      continue;
+    }
+    if (arg.startsWith('--outro-logo=')) {
+      parsed.outroLogo = arg.slice('--outro-logo='.length) || null;
+      continue;
+    }
   }
 
   return parsed;
+}
+
+function shiftSrtTimecode(timecode, offsetSec) {
+  const match = String(timecode || '').match(/^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/);
+  if (!match) return timecode;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  const ss = Number(match[3]);
+  const ms = Number(match[4]);
+  const totalMs = Math.max(0, (((hh * 60) + mm) * 60 + ss) * 1000 + ms + Math.round(offsetSec * 1000));
+  const nextH = String(Math.floor(totalMs / 3600000)).padStart(2, '0');
+  const nextM = String(Math.floor((totalMs % 3600000) / 60000)).padStart(2, '0');
+  const nextS = String(Math.floor((totalMs % 60000) / 1000)).padStart(2, '0');
+  const nextMs = String(totalMs % 1000).padStart(3, '0');
+  return `${nextH}:${nextM}:${nextS},${nextMs}`;
+}
+
+function shiftSrtFile(inputPath, outputPath, offsetSec) {
+  if (!offsetSec) {
+    fs.copyFileSync(inputPath, outputPath);
+    return outputPath;
+  }
+  const text = fs.readFileSync(inputPath, 'utf8');
+  const shifted = text.replace(
+    /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/g,
+    (_match, start, end) => `${shiftSrtTimecode(start, offsetSec)} --> ${shiftSrtTimecode(end, offsetSec)}`
+  );
+  fs.writeFileSync(outputPath, shifted, 'utf8');
+  return outputPath;
+}
+
+function summarizeSyncMap(syncMap) {
+  return `keyword ${syncMap.matched_keyword}, embedding ${syncMap.matched_embedding}, hold ${syncMap.matched_hold}, unmatched ${syncMap.unmatched}`;
+}
+
+function buildIntroOutroOptions(args, config, sessionDir, title) {
+  return {
+    intro: {
+      mode: args.introMode || 'none',
+      filePath: args.introFile ? path.resolve(args.introFile) : null,
+      prompt: args.introPrompt || null,
+      logoPath: args.introLogo ? path.resolve(args.introLogo) : null,
+      durationSec: args.introDuration || config?.intro_outro?.default_intro_duration_sec || 3,
+      title,
+    },
+    outro: {
+      mode: args.outroMode || 'none',
+      filePath: args.outroFile ? path.resolve(args.outroFile) : null,
+      prompt: args.outroPrompt || null,
+      logoPath: args.outroLogo ? path.resolve(args.outroLogo) : null,
+      durationSec: args.outroDuration || config?.intro_outro?.default_outro_duration_sec || 5,
+      title,
+    },
+    targetWidth: Number(config?.ffmpeg?.render_width || 2560),
+    targetHeight: Number(config?.ffmpeg?.render_height || 1440),
+    targetFps: Number(config?.ffmpeg?.render_fps || 60),
+    tempDir: sessionDir,
+  };
 }
 
 function toErrorMessage(error) {
@@ -298,11 +413,16 @@ async function insertVideoEdit(payload) {
   return rows[0]?.id;
 }
 
-function summarizeAnalysis(analysis) {
-  return `무음 ${analysis.silences.length}건, 정지 ${analysis.freezes.length}건, 씬전환 ${analysis.scenes.length}건`;
-}
-
 function summarizeEdl(edl) {
+  const clips = Array.isArray(edl.clips) ? edl.clips : [];
+  if (clips.length) {
+    const counts = clips.reduce((acc, clip) => {
+      acc[clip.clip_type] = (acc[clip.clip_type] || 0) + 1;
+      return acc;
+    }, {});
+    return { count: clips.length, counts };
+  }
+
   const counts = (edl.edits || []).reduce((acc, edit) => {
     acc[edit.type] = (acc[edit.type] || 0) + 1;
     return acc;
@@ -342,8 +462,9 @@ async function main() {
     const startedAt = Date.now();
     const traceId = traceContext.trace_id;
     const source = resolveSources(args);
-    const title = sanitizeTitle(source.title);
-    const titleForMessage = source.title;
+    const titleSource = sanitizeTitle(args.title || source.title);
+    const title = titleSource;
+    const titleForMessage = args.title || source.title;
     const sessionDir = path.join(TEMP_ROOT, `run-${traceId.slice(0, 8)}`);
     const outputName = `편집_${title}.mp4`;
     let currentStep = 'initializing';
@@ -388,35 +509,35 @@ async function main() {
       trace_id: traceId,
     });
 
-    const analysisPath = path.join(sessionDir, 'analysis.json');
+    const sceneIndexPath = path.join(sessionDir, 'scene_index.json');
+    const narrationSegmentsPath = path.join(sessionDir, 'narration_segments.json');
+    const syncMapPath = path.join(sessionDir, 'sync_map.json');
     const correctedSrtPath = path.join(sessionDir, 'subtitle_corrected.srt');
+    const shiftedSrtPath = path.join(sessionDir, 'subtitle_timeline.srt');
     const edlPath = path.join(sessionDir, 'edit_decision_list.json');
     const previewPath = path.join(sessionDir, 'preview.mp4');
     const vttPath = path.join(sessionDir, 'subtitle.vtt');
     const exportPath = path.join(EXPORTS_DIR, outputName);
 
-    let syncedPath = null;
     let normalizedAudioPath = null;
     let rawSrtPath = null;
     let draftPath = null;
-    let analysis = null;
+    let sceneIndex = null;
+    let narrationAnalysis = null;
+    let syncMap = null;
+    let introOutro = { introClip: null, outroClip: null };
     let edl = null;
 
     printBanner(titleForMessage);
 
     try {
       currentStep = 'preprocess';
-      console.log('[video] [1/7] 전처리 중...');
+      console.log('[video] [1/10] 나레이션 정규화 중...');
       const preprocessStartedAt = Date.now();
-      const videoNoAudioPath = path.join(sessionDir, 'video_noaudio.mp4');
       normalizedAudioPath = path.join(sessionDir, 'narr_norm.m4a');
-      syncedPath = path.join(sessionDir, 'synced.mp4');
-
-      await removeAudio(source.rawVideoPath, videoNoAudioPath);
       await normalizeAudio(source.rawAudioPath, normalizedAudioPath, config);
-      const syncResult = await syncVideoAudio(videoNoAudioPath, normalizedAudioPath, syncedPath);
       const preprocessMs = Date.now() - preprocessStartedAt;
-      console.log(`[video] [1/7] 전처리 완료 (${preprocessMs}ms)`);
+      console.log(`[video] [1/10] 나레이션 정규화 완료 (${preprocessMs}ms)`);
 
       await updateVideoEdit(recordId, {
         preprocess_ms: preprocessMs,
@@ -424,12 +545,12 @@ async function main() {
       });
 
       currentStep = 'stt';
-      console.log('[video] [2/7] STT 중...');
+      console.log('[video] [2/10] 나레이션 STT 중...');
       const sttStartedAt = Date.now();
       rawSrtPath = path.join(sessionDir, 'subtitle_raw.srt');
       const subtitleResult = await generateSubtitle(normalizedAudioPath, rawSrtPath, config);
       const sttMs = Date.now() - sttStartedAt;
-      console.log(`[video] [2/7] STT 완료 (${sttMs}ms)`);
+      console.log(`[video] [2/10] 나레이션 STT 완료 (${sttMs}ms)`);
 
       await updateVideoEdit(recordId, {
         srt_raw_path: subtitleResult.srtPath,
@@ -439,12 +560,12 @@ async function main() {
       });
 
       currentStep = 'correction';
-      console.log('[video] [3/7] 자막 교정 중...');
+      console.log('[video] [3/10] 자막 교정 중...');
       const correctionStartedAt = Date.now();
       const correctionResult = await correctFile(rawSrtPath, correctedSrtPath, config);
       const correctionMs = Date.now() - correctionStartedAt;
       const correctionCost = correctionResult.stats?.cost || 0;
-      console.log(`[video] [3/7] 자막 교정 완료 (${correctionMs}ms)`);
+      console.log(`[video] [3/10] 자막 교정 완료 (${correctionMs}ms)`);
 
       await updateVideoEdit(recordId, {
         srt_corrected_path: correctionResult.outputPath,
@@ -453,26 +574,67 @@ async function main() {
         status: 'correction_done',
       });
 
-      currentStep = 'analysis';
-      console.log('[video] [4/7] 영상 분석 중...');
-      analysis = await analyzeVideo(syncedPath, config);
-      saveAnalysis(analysis, analysisPath);
-      console.log(`[video] [4/7] 영상 분석 완료 (${summarizeAnalysis(analysis)})`);
+      currentStep = 'scene_index';
+      console.log('[video] [4/10] 원본 장면 인덱싱 중...');
+      sceneIndex = await indexVideo(source.rawVideoPath, config, { tempDir: sessionDir });
+      fs.copyFileSync(sceneIndex.output_path, sceneIndexPath);
+      console.log(`[video] [4/10] 원본 장면 인덱싱 완료 (unique ${sceneIndex.unique_frames})`);
+
+      currentStep = 'narration_analysis';
+      console.log('[video] [5/10] 나레이션 구간 분석 중...');
+      const correctedSrtText = fs.readFileSync(correctedSrtPath, 'utf8');
+      const narrationEntries = parseSrt(correctedSrtText);
+      const narrationSegments = await analyzeSegments(narrationEntries, config);
+      narrationAnalysis = {
+        source_audio: path.basename(normalizedAudioPath),
+        source_audio_path: normalizedAudioPath,
+        duration_s: Number((await probeDurationMs(normalizedAudioPath) / 1000).toFixed(3)),
+        total_entries: narrationEntries.length,
+        total_segments: narrationSegments.length,
+        segments: narrationSegments,
+        srt_path: rawSrtPath,
+        corrected_srt_path: correctedSrtPath,
+      };
+      fs.writeFileSync(narrationSegmentsPath, JSON.stringify(narrationAnalysis, null, 2), 'utf8');
+      console.log(`[video] [5/10] 나레이션 구간 분석 완료 (segments ${narrationAnalysis.total_segments})`);
+
+      currentStep = 'sync_match';
+      console.log('[video] [6/10] AI 싱크 매칭 중...');
+      syncMap = await buildSyncMap(sceneIndex, narrationAnalysis, config, { tempDir: sessionDir });
+      fs.copyFileSync(syncMap.output_path, syncMapPath);
+      console.log(`[video] [6/10] AI 싱크 매칭 완료 (${summarizeSyncMap(syncMap)})`);
+
+      currentStep = 'intro_outro';
+      console.log('[video] [7/10] 인트로/아웃트로 처리 중...');
+      introOutro = await processIntroOutro(
+        config,
+        buildIntroOutroOptions(args, config, sessionDir, titleForMessage)
+      );
+      shiftSrtFile(correctedSrtPath, shiftedSrtPath, Number(introOutro?.introClip?.durationSec || 0));
+      convertSrtToVtt(shiftedSrtPath, vttPath);
+      console.log('[video] [7/10] 인트로/아웃트로 처리 완료');
 
       currentStep = 'edl';
-      console.log('[video] [5/7] EDL 생성 중...');
-      edl = await buildInitialEDL(syncedPath, correctedSrtPath, analysis, { title, config });
+      console.log('[video] [8/10] EDL 생성 중...');
+      edl = syncMapToEDL(
+        syncMap,
+        source.rawVideoPath,
+        normalizedAudioPath,
+        introOutro?.introClip,
+        introOutro?.outroClip
+      );
+      edl.title = titleForMessage;
+      edl.subtitle = shiftedSrtPath;
       saveEDL(edl, edlPath);
       const edlSummary = summarizeEdl(edl);
-      console.log(`[video] [5/7] EDL 생성 완료 (edits ${edlSummary.count}건)`, edlSummary.counts);
+      console.log(`[video] [8/10] EDL 생성 완료 (clips ${edlSummary.count}건)`, edlSummary.counts);
 
       currentStep = 'preview';
-      console.log('[video] [6/7] 프리뷰 렌더링 중...');
-      convertSrtToVtt(correctedSrtPath, vttPath);
+      console.log('[video] [9/10] 프리뷰 렌더링 중...');
       const previewResult = await renderPreview(edl, previewPath, config);
       const previewStats = fs.statSync(previewPath);
       console.log(
-        `[video] [6/7] 프리뷰 완료 (${previewResult.duration_ms}ms, ${(previewStats.size / 1024 / 1024).toFixed(2)}MB)`
+        `[video] [9/10] 프리뷰 완료 (${previewResult.duration_ms}ms, ${(previewStats.size / 1024 / 1024).toFixed(2)}MB)`
       );
       console.log(`[video] 프리뷰: ${previewPath}`);
 
@@ -489,28 +651,30 @@ async function main() {
         });
         try {
           const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;
-          const cutCount = (edl?.edits || []).filter((item) => item.type === 'cut').length;
+          const cutCount = Array.isArray(edl?.clips) ? edl.clips.length : (edl?.edits || []).filter((item) => item.type === 'cut').length;
           await storeEditResult({
             editId: recordId,
             sessionId: args.sessionId,
             pairIndex: args.pairIndex,
             title,
-            duration: analysis?.duration || 0,
-            subtitleCount: countSubtitleEntries(correctedSrtPath),
+            duration: edl?.duration || narrationAnalysis?.duration_s || 0,
+            subtitleCount: countSubtitleEntries(shiftedSrtPath),
             qualityScore: 0,
             qualityPass: false,
             cutCount,
             transitionCount,
-            silenceCount: analysis?.silences?.length || 0,
-            freezeCount: analysis?.freezes?.length || 0,
+            silenceCount: 0,
+            freezeCount: 0,
             subtitleIssuesCount: 0,
             audioIssuesCount: 0,
-            edlEditTypes: (edl?.edits || []).map((item) => item.type),
+            edlEditTypes: Array.isArray(edl?.clips)
+              ? edl.clips.map((item) => item.clip_type)
+              : (edl?.edits || []).map((item) => item.type),
             totalMs,
             totalCostUsd: 0,
-            videoWidth: analysis?.metadata?.width || 0,
-            videoHeight: analysis?.metadata?.height || 0,
-            videoFps: analysis?.metadata?.fps || 0,
+            videoWidth: config?.ffmpeg?.render_width || 0,
+            videoHeight: config?.ffmpeg?.render_height || 0,
+            videoFps: config?.ffmpeg?.render_fps || 0,
           }, config);
         } catch (error) {
           console.warn('[video] RAG 저장 실패 (무시):', toErrorMessage(error));
@@ -523,7 +687,7 @@ async function main() {
         currentStep = 'capcut';
         console.log('[video] [옵션] CapCut 드래프트 생성 중...');
         const draftStartedAt = Date.now();
-        const draftResult = await buildDraft(config, syncedPath, normalizedAudioPath, correctedSrtPath, title);
+        const draftResult = await buildDraft(config, source.rawVideoPath, normalizedAudioPath, shiftedSrtPath, title);
         draftPath = draftResult.capCutPath || draftResult.draftPath;
         const draftMs = Date.now() - draftStartedAt;
         console.log(`[video] [옵션] CapCut 드래프트 완료 (${draftMs}ms)`);
@@ -534,7 +698,7 @@ async function main() {
       }
 
       currentStep = 'render_final';
-      console.log('[video] [7/7] 최종 렌더링 중...');
+      console.log('[video] [10/10] 최종 렌더링 중...');
       const renderStartedAt = Date.now();
       const renderResult = await renderFinal(edl, exportPath, config);
       const renderMs = Date.now() - renderStartedAt;
@@ -561,28 +725,30 @@ async function main() {
 
       try {
         const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;
-        const cutCount = (edl?.edits || []).filter((item) => item.type === 'cut').length;
+        const cutCount = Array.isArray(edl?.clips) ? edl.clips.length : (edl?.edits || []).filter((item) => item.type === 'cut').length;
         await storeEditResult({
           editId: recordId,
           sessionId: args.sessionId,
           pairIndex: args.pairIndex,
           title,
-          duration: analysis?.duration || 0,
-          subtitleCount: countSubtitleEntries(correctedSrtPath),
+          duration: edl?.duration || narrationAnalysis?.duration_s || 0,
+          subtitleCount: countSubtitleEntries(shiftedSrtPath),
           qualityScore: 0,
           qualityPass: false,
           cutCount,
           transitionCount,
-          silenceCount: analysis?.silences?.length || 0,
-          freezeCount: analysis?.freezes?.length || 0,
+          silenceCount: 0,
+          freezeCount: 0,
           subtitleIssuesCount: 0,
           audioIssuesCount: 0,
-          edlEditTypes: (edl?.edits || []).map((item) => item.type),
+          edlEditTypes: Array.isArray(edl?.clips)
+            ? edl.clips.map((item) => item.clip_type)
+            : (edl?.edits || []).map((item) => item.type),
           totalMs,
           totalCostUsd: 0,
-          videoWidth: analysis?.metadata?.width || 0,
-          videoHeight: analysis?.metadata?.height || 0,
-          videoFps: analysis?.metadata?.fps || 0,
+          videoWidth: config?.ffmpeg?.render_width || 0,
+          videoHeight: config?.ffmpeg?.render_height || 0,
+          videoFps: config?.ffmpeg?.render_fps || 0,
         }, config);
       } catch (error) {
         console.warn('[video] RAG 저장 실패 (무시):', toErrorMessage(error));
