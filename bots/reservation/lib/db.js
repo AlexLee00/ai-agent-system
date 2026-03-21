@@ -387,6 +387,62 @@ async function getKioskBlocksForDate(date) {
   }));
 }
 
+async function getOpenManualBlockFollowups(fromDate) {
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT
+      r.id,
+      r.name_enc,
+      r.phone,
+      r.phone_raw_enc,
+      r.date,
+      r.start_time,
+      r.end_time,
+      r.room,
+      kb.id AS kiosk_block_id,
+      kb.naver_blocked,
+      kb.naver_unblocked_at,
+      kb.last_block_attempt_at,
+      kb.last_block_result,
+      kb.last_block_reason,
+      kb.block_retry_count,
+      kb.first_seen_at
+    FROM reservations r
+    LEFT JOIN kiosk_blocks kb
+      ON kb.date = r.date
+     AND kb.start_time = r.start_time
+     AND (kb.room IS NULL OR r.room IS NULL OR kb.room = r.room)
+     AND kb.phone_raw_enc = r.phone_raw_enc
+    WHERE r.pickko_status IN ('manual', 'manual_retry')
+      AND r.status = 'completed'
+      AND r.date >= $1
+      AND (
+        kb.id IS NULL
+        OR (kb.naver_blocked <> 1 AND kb.naver_unblocked_at IS NULL)
+      )
+    ORDER BY r.date ASC, r.start_time ASC
+  `, [fromDate]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: _safeDec(row.name_enc),
+    phone: row.phone,
+    phoneRaw: _safeDec(row.phone_raw_enc),
+    date: row.date,
+    start: row.start_time,
+    end: row.end_time,
+    room: row.room,
+    amount: 0,
+    kioskBlockId: row.kiosk_block_id,
+    naverBlocked: row.naver_blocked === 1,
+    naverUnblockedAt: row.naver_unblocked_at,
+    lastBlockAttemptAt: row.last_block_attempt_at,
+    lastBlockResult: row.last_block_result,
+    lastBlockReason: row.last_block_reason,
+    blockRetryCount: Number(row.block_retry_count || 0),
+    firstSeenAt: row.first_seen_at,
+  })).filter((row) => row.phoneRaw);
+}
+
 async function pruneOldKioskBlocks(beforeDate) {
   const result = await pgPool.run(SCHEMA,
     'DELETE FROM kiosk_blocks WHERE date < $1', [beforeDate]);
@@ -880,6 +936,7 @@ module.exports = {
   recordKioskBlockAttempt,
   getBlockedKioskBlocks,
   getKioskBlocksForDate,
+  getOpenManualBlockFollowups,
   pruneOldKioskBlocks,
   // alerts
   addAlert,

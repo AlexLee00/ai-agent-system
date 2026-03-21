@@ -3806,3 +3806,11 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 실자산 `--source=1 --skip-render` 검증에서 전처리 → Whisper → 자막교정 → 영상분석 → EDL 생성까지 성공했고 session temp 산출물도 생성 확인
 - 실자산 preview 렌더는 실제로 전진하지만 wall-clock이 길어, EDL scene transition merge 보정을 추가하고 과제 7 잔여 범위를 `preview 최적화 + end-to-end 마감`으로 정리
 - 추가로 single-flight lock, stale lock 자동 정리, SIGINT/SIGTERM 시 lock 해제를 넣어 동시 실행/중단 시 프로세스 생명주기 불변식을 보강
+
+### 스카 수동등록 후속 차단 / 취소 완결성 보강
+- `bots/reservation/lib/db.js`에 `getOpenManualBlockFollowups()`를 추가하고, `pickko-kiosk-monitor.js`가 이제 신규/재시도 대상 외에도 `manual follow-up open` 건을 정기 재시도 레일에 포함하도록 보강
+- `pickko-kiosk-monitor.js`의 B룸 오전 슬롯 탐색을 visible time axis 기준으로 다시 보정하고, `avail` 전용 필터, slot guard, trailing half-hour verify 추론을 추가해 잘못된 시간대/잘못된 셀 차단 저장 위험을 크게 낮춤
+- 이재룡 `010-3500-0586 / 2026-11-28 11:00~12:30 B` 테스트 예약은 포그라운드/백그라운드 추적 끝에 `already_blocked`로 수렴했고, 이후 원장 기준 `naver_blocked=1`, `last_block_result=blocked`, `last_block_reason=already_blocked` 상태를 확인
+- `naver-monitor.js`의 `runPickkoCancel()`은 자동 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 이어지는 후속 경로를 갖도록 보강되어, 자동 취소도 `픽코 취소 -> 네이버 예약가능 복구` 완결 경로를 따르게 됨
+- `pickko-cancel-cmd.js`는 픽코 취소 성공 후 네이버 해제가 실패한 경우 더 이상 `success: true`를 반환하지 않고 `success: false`, `partialSuccess: true`, `pickkoCancelled: true`, `naverUnblockFailed: true`를 반환하도록 변경해 상위 응답 레이어가 부분 실패를 완전 성공처럼 포장하는 위험을 줄임
+- `bots/reservation/context/CLAUDE_NOTES.md`도 취소 명령 stdout JSON 계약을 현재 코드와 맞게 업데이트

@@ -1184,6 +1184,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `naver-monitor.js`의 취소 재시도 전에 예약 종결 상태를 다시 조회해 `completed/cancelled/time_elapsed/marked_seen` 예약은 재알림 없이 건너뛰고 기존 오류 알림도 자동 resolve 하도록 보강
   - 스카 재시작 시 `미해결 오류 n건` 시작 보고는 현재 actionable alert만 남기고, 이미 종결된 예약의 과거 실패 알림은 요약 전에 자동 정리하도록 수정
   - `TEAM_SKA_REFERENCE.md`, `coding-guide.md`, `SYSTEM_DESIGN.md`를 최신 Playwright 정책에 맞춰 `PLAYWRIGHT_HEADLESS` 기본 headless 운영, `.playwright-headed` headed 복구, legacy `PICKKO_HEADLESS/NAVER_HEADLESS` 호환 구조 기준으로 정합화
+  - `db.js`에 `getOpenManualBlockFollowups()`를 추가하고 `pickko-kiosk-monitor.js`가 `manual follow-up open` 미래 예약도 정기 차단 재시도 레일에 포함하도록 보강
+  - `pickko-kiosk-monitor.js`의 B룸 오전 슬롯 block/verify 로직을 visible time axis 기준으로 보정하고 `avail` 전용 필터, slot guard, trailing half-hour verify 추론을 추가해 잘못된 슬롯 저장 위험을 낮춤
+  - 이재룡 `010-3500-0586 / 2026-11-28 11:00~12:30 B` 테스트 예약은 최종적으로 `already_blocked` 상태로 수렴했고, manual follow-up 원장 기준 `naver_blocked=1`, `last_block_result=blocked`, `last_block_reason=already_blocked` 상태를 확인
+  - `naver-monitor.js`의 자동 취소 경로는 이제 픽코 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 이어져 자동 취소도 `취소 -> 픽코 취소 -> 네이버 예약가능 복구` 완결 경로를 갖게 됨
+  - `pickko-cancel-cmd.js`는 픽코 취소 성공/네이버 해제 실패를 더 이상 `success: true`로 포장하지 않고 `partialSuccess / pickkoCancelled / naverUnblockFailed`를 포함한 실패 응답으로 반환하도록 보강
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
   - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영
