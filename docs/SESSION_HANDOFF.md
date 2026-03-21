@@ -7,6 +7,10 @@
 
 ## 1. 현재 시스템 상태 요약
 
+- 공통 운영 리포트
+  - `daily-ops-report.js`는 이제 `runtimeRestrictions` 섹션으로 `db_sandbox_restricted` 팀을 별도 분리해, 런타임 제약과 실제 장애를 같은 축으로 읽지 않도록 보강됐다.
+  - 같은 리포트는 selector 보조 입력을 읽어 현재 primary(`google-gemini-cli/gemini-2.5-flash`)가 `rate_limited`이고 `gemini-2.5-flash-lite`가 `temporary_fallback_candidate`임을 active issue로 직접 노출한다.
+  - gateway 쪽은 24시간 누적 경고를 그대로 유지하되, `post-restart` 창이 깨끗한 경우 recommendation에서 과거 잔상과 현재 상태를 분리해 해석하도록 안내한다.
 - 공통 알림 / 리포팅
   - 공용 `reporting-hub` notice/report 렌더러가 모바일 친화형으로 축약됐다.
   - 텔레그램 발송 직전에 긴 구분선과 과도한 공백을 정규화하도록 `telegram-sender`가 보강됐다.
@@ -163,6 +167,7 @@
 
 - `운영 데이터 신뢰성 강화 + 모바일 알림 최적화 + 관찰 단계 전환` 단계
 - 이번 세션에서는 `제이/OpenClaw gateway fallback hygiene + concurrency 보수화`가 핵심 운영 안정화 축이었다.
+- 전사 `daily ops report`는 이번 세션에서 `runtime restriction / historical gateway noise / selector primary policy signal`을 분리해서 읽는 구조로 보강됐다.
 
 ### 워커 관점
 
@@ -208,6 +213,7 @@
    - concurrency는 `maxConcurrent=1`, `subagents.maxConcurrent=2`로 보수화됐다.
    - 최신 실험 스냅샷에서 남은 진짜 병목은 `Gemini rate limit` 이후 동일 run 재시도 burst이며, `embedded unique runs=14`, `retry burst runs=13`, `max attempts per run=4`로 관찰됐다.
    - 다음은 post-prune/post-tune 24시간 창에서 `provider auth missing`, `retry burst`, `active rate limit`이 실제로 감소하는지 확인하는 단계다.
+   - 전사 `daily-ops-report.js`도 이제 selector primary 건강도(`rate_limited`)와 same-provider fallback 후보(`gemini-2.5-flash-lite`)를 함께 노출하므로, gateway와 selector 운영 판단을 같은 리포트에서 읽을 수 있다.
 6. 남은 자동화 확정
   - 스카 shadow 일일/주간
   - 워커 문서 효율 일일/주간

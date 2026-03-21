@@ -3,6 +3,20 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 일일 운영 분석 리포트 해석 품질 보강
+
+### 변경 사항 (changed)
+- `scripts/reviews/daily-ops-report.js`
+  - 보조 입력으로 `jay-gateway-experiment-review.js --json`, `llm-selector-speed-daily.js --skip-test --json`를 함께 읽도록 확장
+  - `runtimeRestrictions` top-level 섹션 추가
+  - `activeIssues`에 unhealthy selector primary 상태를 직접 반영
+  - gateway `post-restart` 창이 깨끗한 경우 이를 recommendation에 분리 표기
+  - `buildTextReport()`에 `런타임 제한` 섹션 추가
+
+### 검증
+- `node --check scripts/reviews/daily-ops-report.js` | ✅
+- `node scripts/reviews/daily-ops-report.js --json` | ✅ `runtimeRestrictions`, selector primary issue, post-restart gateway guidance 반영 확인
+
 ## 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback readiness + concurrency 안정화
 
 ### 변경 사항 (changed)

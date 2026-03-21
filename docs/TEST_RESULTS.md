@@ -4,6 +4,13 @@
 
 ## 2026-03-22
 
+### 일일 운영 분석 리포트 해석 품질 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check scripts/reviews/daily-ops-report.js` | ✅ |
+| `node scripts/reviews/daily-ops-report.js --json` | ✅ `runtimeRestrictions` 섹션, selector primary issue, gateway post-restart guidance 반영 확인 |
+
 ### 제이/OpenClaw gateway fallback readiness + concurrency 안정화
 
 | 테스트 | 결과 |
