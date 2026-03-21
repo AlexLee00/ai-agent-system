@@ -600,15 +600,21 @@ function formatDecisionPipeline(rows) {
         acc.modeCounts[modeKey] = (acc.modeCounts[modeKey] || 0) + 1;
         const topReason = meta?.risk_reject_reason_top;
         if (topReason) acc.riskReasons[topReason] = (acc.riskReasons[topReason] || 0) + Number(meta?.risk_rejected || 1);
+        const weakReasons = meta?.weak_signal_reasons || {};
+        for (const [reason, count] of Object.entries(weakReasons)) {
+          acc.weakReasons[reason] = (acc.weakReasons[reason] || 0) + Number(count || 0);
+        }
       }
       return acc;
-    }, { decided: 0, approved: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0, riskReasons: {}, modeCounts: {} });
+    }, { decided: 0, approved: 0, executed: 0, buy: 0, sell: 0, hold: 0, weak: 0, risk: 0, saved: 0, riskReasons: {}, weakReasons: {}, modeCounts: {} });
 
     lines.push(`    decision ${totals.decided}건 | BUY ${totals.buy} | SELL ${totals.sell} | HOLD ${totals.hold}`);
     const modeSummary = Object.entries(totals.modeCounts).map(([mode, count]) => `${mode} ${count}`).join(' / ');
     lines.push(`    approved ${totals.approved}건 | executed ${totals.executed}건 | weakSignalSkipped ${totals.weak}건 | riskRejected ${totals.risk}건 | savedNodes ${totals.saved}${modeSummary ? ` | mode ${modeSummary}` : ''}`);
     const topRiskReason = Object.entries(totals.riskReasons).sort((a, b) => b[1] - a[1])[0];
+    const topWeakReason = Object.entries(totals.weakReasons).sort((a, b) => b[1] - a[1])[0];
     if (topRiskReason) lines.push(`    risk top reason: ${topRiskReason[0]} (${topRiskReason[1]}건)`);
+    if (topWeakReason) lines.push(`    weak top reason: ${topWeakReason[0]} (${topWeakReason[1]}건)`);
     lines.push('');
   }
 
@@ -636,7 +642,7 @@ function formatIntegratedFeedbackMatrix(rows, trades) {
       const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
       const key = `${market}|${mode}`;
       const bucket = pipelineSummary.get(key) || {
-        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0,
+        decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {},
       };
       bucket.decision += Number(meta?.decided_symbols || 0);
       bucket.buy += Number(meta?.buy_decisions || 0);
@@ -646,6 +652,10 @@ function formatIntegratedFeedbackMatrix(rows, trades) {
       bucket.executed += Number(meta?.executed_symbols || 0);
       bucket.weak += Number(meta?.weak_signal_skipped || 0);
       bucket.risk += Number(meta?.risk_rejected || 0);
+      const weakReasons = meta?.weak_signal_reasons || {};
+      for (const [reason, count] of Object.entries(weakReasons)) {
+        bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
+      }
       pipelineSummary.set(key, bucket);
     }
   }
@@ -655,14 +665,15 @@ function formatIntegratedFeedbackMatrix(rows, trades) {
     lines.push(`  ■ ${getMarketLabel(market)}`);
     for (const mode of modes) {
       const key = `${market}|${mode}`;
-      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      const pipeline = pipelineSummary.get(key) || { decision: 0, buy: 0, sell: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
       const trade = tradeSummary.get(key) || { total: 0, live: 0, paper: 0 };
       const hasActivity = pipeline.decision || pipeline.approved || pipeline.executed || trade.total;
       if (!hasActivity) {
         lines.push(`    ${mode}: 기록 없음`);
         continue;
       }
-      lines.push(`    ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+      const topWeakReason = Object.entries(pipeline.weakReasons).sort((a, b) => b[1] - a[1])[0];
+      lines.push(`    ${mode}: decision ${pipeline.decision} | BUY ${pipeline.buy} | SELL ${pipeline.sell} | HOLD ${pipeline.hold} | approved ${pipeline.approved} | executed ${pipeline.executed} | weak ${pipeline.weak} | risk ${pipeline.risk} | trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}`);
     }
     lines.push('');
   }
@@ -688,7 +699,7 @@ function formatValidationPromotionCandidates(rows, trades) {
     for (const meta of (row.meta_rows || [])) {
       const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
       if (mode !== 'VALIDATION') continue;
-      const bucket = validationSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+      const bucket = validationSummary.get(market) || { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
       bucket.decision += Number(meta?.decided_symbols || 0);
       bucket.buy += Number(meta?.buy_decisions || 0);
       bucket.hold += Number(meta?.hold_decisions || 0);
@@ -696,6 +707,10 @@ function formatValidationPromotionCandidates(rows, trades) {
       bucket.executed += Number(meta?.executed_symbols || 0);
       bucket.weak += Number(meta?.weak_signal_skipped || 0);
       bucket.risk += Number(meta?.risk_rejected || 0);
+      const weakReasons = meta?.weak_signal_reasons || {};
+      for (const [reason, count] of Object.entries(weakReasons)) {
+        bucket.weakReasons[reason] = (bucket.weakReasons[reason] || 0) + Number(count || 0);
+      }
       validationSummary.set(market, bucket);
     }
   }
@@ -704,16 +719,17 @@ function formatValidationPromotionCandidates(rows, trades) {
   for (const market of markets) {
     const summary = validationSummary.get(market);
     const trade = tradeSummary.get(`${market}|VALIDATION`) || { total: 0, live: 0, paper: 0 };
+    const topWeakReason = Object.entries(summary?.weakReasons || {}).sort((a, b) => b[1] - a[1])[0];
     if (!summary && trade.total === 0) {
       lines.push(`  - ${getMarketLabel(market)}: validation 기록 없음`);
       continue;
     }
     if ((summary?.executed || 0) > 0 || trade.total > 0) {
-      lines.push(`  - ${getMarketLabel(market)}: 승격 후보 — validation에서 executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})`);
+      lines.push(`  - ${getMarketLabel(market)}: 승격 후보 — validation에서 executed ${summary?.executed || 0}, trades ${trade.total} (LIVE ${trade.live} / PAPER ${trade.paper})${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}`);
       continue;
     }
     if ((summary?.approved || 0) > 0) {
-      lines.push(`  - ${getMarketLabel(market)}: 조건부 승격 검토 — approved ${summary.approved}건, executed 0건`);
+      lines.push(`  - ${getMarketLabel(market)}: 조건부 승격 검토 — approved ${summary.approved}건, executed 0건${topWeakReason ? ` | weakTop ${topWeakReason[0]}` : ''}`);
       continue;
     }
     if ((summary?.buy || 0) > 0 && (summary?.risk || 0) > 0) {

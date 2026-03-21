@@ -147,7 +147,7 @@ function getMarketBucket(exchange) {
 
 function summarizeValidationSignals(pipelineRows, tradeRows, market) {
   const row = pipelineRows.find(item => item.market === market);
-  const summary = { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0 };
+  const summary = { decision: 0, buy: 0, hold: 0, approved: 0, executed: 0, weak: 0, risk: 0, weakReasons: {} };
   for (const meta of (row?.meta_rows || [])) {
     const mode = String(meta?.investment_trade_mode || 'normal').toUpperCase();
     if (mode !== 'VALIDATION') continue;
@@ -158,6 +158,10 @@ function summarizeValidationSignals(pipelineRows, tradeRows, market) {
     summary.executed += Number(meta?.executed_symbols || 0);
     summary.weak += Number(meta?.weak_signal_skipped || 0);
     summary.risk += Number(meta?.risk_rejected || 0);
+    const weakReasons = meta?.weak_signal_reasons || {};
+    for (const [reason, count] of Object.entries(weakReasons)) {
+      summary.weakReasons[reason] = (summary.weakReasons[reason] || 0) + Number(count || 0);
+    }
   }
 
   const trade = tradeRows.find(item =>
@@ -177,6 +181,7 @@ function summarizeValidationSignals(pipelineRows, tradeRows, market) {
     tradeTotal,
     liveTrades,
     paperTrades,
+    weakTopReason: Object.entries(summary.weakReasons).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
   };
 }
 
@@ -328,7 +333,7 @@ function printHuman(report) {
   lines.push('');
   lines.push('validation 요약:');
   for (const [market, summary] of Object.entries(report.validationSummary || {})) {
-    lines.push(`- ${market}: decision ${summary.decision} / BUY ${summary.buy} / approved ${summary.approved} / executed ${summary.executed} / trades ${summary.tradeTotal} (LIVE ${summary.liveTrades} / PAPER ${summary.paperTrades})`);
+    lines.push(`- ${market}: decision ${summary.decision} / BUY ${summary.buy} / approved ${summary.approved} / executed ${summary.executed} / trades ${summary.tradeTotal} (LIVE ${summary.liveTrades} / PAPER ${summary.paperTrades})${summary.weakTopReason ? ` / weakTop ${summary.weakTopReason}` : ''}`);
   }
   lines.push('');
   lines.push('설정 제안:');

@@ -34,6 +34,13 @@ function buildAnalystSignals(analyses) {
   ].join('|');
 }
 
+function classifyWeakSignalReason(confidence, minConfidence) {
+  const gap = Number(minConfidence || 0) - Number(confidence || 0);
+  if (gap <= 0.03) return 'confidence_near_threshold';
+  if (gap <= 0.08) return 'confidence_mid_gap';
+  return 'confidence_far_below_threshold';
+}
+
 export async function runDecisionExecutionPipeline({
   sessionId,
   symbols,
@@ -64,6 +71,7 @@ export async function runDecisionExecutionPipeline({
   let riskRejected = 0;
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;
+  const weakSignalReasons = {};
   let invalidSignalSkipped = 0;
   let portfolioDecision = null;
 
@@ -88,6 +96,7 @@ export async function runDecisionExecutionPipeline({
     riskRejected,
     riskRejectReasons: { ...riskRejectReasons },
     weakSignalSkipped,
+    weakSignalReasons: { ...weakSignalReasons },
     invalidSignalSkipped,
     savedExecutionWork: riskRejected * 5,
     warnings: buildDecisionWarnings({
@@ -102,6 +111,13 @@ export async function runDecisionExecutionPipeline({
 
   function getTopRiskRejectReason() {
     const entries = Object.entries(riskRejectReasons);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  }
+
+  function getTopWeakSignalReason() {
+    const entries = Object.entries(weakSignalReasons);
     if (entries.length === 0) return null;
     entries.sort((a, b) => b[1] - a[1]);
     return entries[0][0];
@@ -177,6 +193,8 @@ export async function runDecisionExecutionPipeline({
         risk_reject_reason_top: null,
         risk_reject_reasons: {},
         weak_signal_skipped: metrics.weakSignalSkipped,
+        weak_signal_reason_top: null,
+        weak_signal_reasons: {},
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
@@ -218,6 +236,8 @@ export async function runDecisionExecutionPipeline({
         risk_reject_reason_top: null,
         risk_reject_reasons: {},
         weak_signal_skipped: metrics.weakSignalSkipped,
+        weak_signal_reason_top: null,
+        weak_signal_reasons: {},
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
@@ -241,6 +261,8 @@ export async function runDecisionExecutionPipeline({
       : (params?.minSignalScore ?? runtimeMinConf);
     if ((dec.confidence || 0) < minConf) {
       weakSignalSkipped++;
+      const weakReason = classifyWeakSignalReason(dec.confidence, minConf);
+      weakSignalReasons[weakReason] = (weakSignalReasons[weakReason] || 0) + 1;
       continue;
     }
 
@@ -386,6 +408,8 @@ export async function runDecisionExecutionPipeline({
       risk_reject_reason_top: getTopRiskRejectReason(),
       risk_reject_reasons: completedMetrics.riskRejectReasons,
       weak_signal_skipped: completedMetrics.weakSignalSkipped,
+      weak_signal_reason_top: getTopWeakSignalReason(),
+      weak_signal_reasons: completedMetrics.weakSignalReasons,
       invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,

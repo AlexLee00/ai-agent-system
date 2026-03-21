@@ -1240,6 +1240,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 이재룡 `010-3500-0586 / 2026-11-28 11:00~12:30 B` 테스트 예약은 최종적으로 `already_blocked` 상태로 수렴했고, manual follow-up 원장 기준 `naver_blocked=1`, `last_block_result=blocked`, `last_block_reason=already_blocked` 상태를 확인
   - `naver-monitor.js`의 자동 취소 경로는 이제 픽코 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 이어져 자동 취소도 `취소 -> 픽코 취소 -> 네이버 예약가능 복구` 완결 경로를 갖게 됨
   - `pickko-cancel-cmd.js`는 픽코 취소 성공/네이버 해제 실패를 더 이상 `success: true`로 포장하지 않고 `partialSuccess / pickkoCancelled / naverUnblockFailed`를 포함한 실패 응답으로 반환하도록 보강
+- 투자
+  - `pipeline-decision-runner.js`가 이제 `weakSignalSkipped`를 `confidence_near_threshold`, `confidence_mid_gap`, `confidence_far_below_threshold`로 분해해 `pipeline_runs.meta`에 `weak_signal_reason_top`, `weak_signal_reasons`를 저장
+  - `trading-journal.js`, `weekly-trade-review.js`, `runtime-config-suggestions.js`는 새 weak reason 메타를 읽어 `weakTop`을 출력하도록 연결
+  - 이를 통해 암호화폐 튜닝에서 “threshold를 소폭 낮출지”와 “실제로 신호 품질을 먼저 올려야 할지”를 더 분리해서 판단할 수 있게 정리
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
   - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영
