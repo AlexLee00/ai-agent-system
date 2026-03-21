@@ -44,11 +44,28 @@ const AUDIO_MIMES = new Set([
   'audio/wave',
 ]);
 
+function normalizeOriginalFilename(name) {
+  const raw = String(name || '');
+  if (!raw) return raw;
+  if (/[가-힣]/.test(raw)) return raw;
+
+  try {
+    const decoded = Buffer.from(raw, 'latin1').toString('utf8');
+    if (/[가-힣]/.test(decoded)) {
+      return decoded;
+    }
+  } catch {
+    // 무시
+  }
+
+  return raw;
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, WORKER_UPLOAD_DIR),
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || '').toLowerCase();
+      const ext = path.extname(normalizeOriginalFilename(file.originalname) || '').toLowerCase();
       cb(null, `${randomUUID()}${ext}`);
     },
   }),
@@ -57,12 +74,13 @@ const upload = multer({
     files: 20,
   },
   fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase();
+    const originalName = normalizeOriginalFilename(file.originalname);
+    const ext = path.extname(originalName || '').toLowerCase();
     const mime = String(file.mimetype || '').toLowerCase();
     const validExt = ALLOWED_EXTENSIONS.has(ext);
     const validMime = VIDEO_MIMES.has(mime) || AUDIO_MIMES.has(mime);
     if (!validExt || !validMime) {
-      cb(new Error(`허용되지 않은 파일 형식입니다: ${file.originalname}`));
+      cb(new Error(`허용되지 않은 파일 형식입니다: ${originalName}`));
       return;
     }
     cb(null, true);
@@ -173,7 +191,7 @@ function runRenderDirect(editId) {
 }
 
 function detectFileType(file) {
-  const ext = path.extname(file.originalname || '').toLowerCase();
+  const ext = path.extname(normalizeOriginalFilename(file.originalname) || '').toLowerCase();
   if (ext === '.mp4') return 'video';
   return 'audio';
 }
@@ -229,6 +247,35 @@ async function listEdits(sessionId) {
       ORDER BY pair_index ASC NULLS LAST, id ASC`,
     [sessionId]
   );
+}
+
+async function findEditBySessionPair(sessionId, pairIndex) {
+  const rows = await pgPool.query(
+    'public',
+    `SELECT *
+       FROM video_edits
+      WHERE session_id = $1
+        AND pair_index = $2
+      ORDER BY id DESC
+      LIMIT 1`,
+    [sessionId, pairIndex]
+  );
+  return rows[0] || null;
+}
+
+async function waitForEditCreation(sessionId, pairIndex, options = {}) {
+  const attempts = Number(options.attempts || 5);
+  const delayMs = Number(options.delayMs || 1000);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const edit = await findEditBySessionPair(sessionId, pairIndex);
+    if (edit) return edit;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return null;
 }
 
 async function updateSession(sessionId, fields) {
@@ -422,13 +469,14 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
     const inserted = [];
 
     for (const file of uploadedFiles) {
-      const ext = path.extname(file.originalname || '').toLowerCase();
+      const originalName = normalizeOriginalFilename(file.originalname);
+      const ext = path.extname(originalName || '').toLowerCase();
       const mime = String(file.mimetype || '').toLowerCase();
       const fileType = detectFileType(file);
       const validMime = fileType === 'video' ? VIDEO_MIMES.has(mime) : AUDIO_MIMES.has(mime);
       if (!ALLOWED_EXTENSIONS.has(ext) || !validMime) {
         fs.unlinkSync(file.path);
-        return sendBadRequest(res, `허용되지 않은 파일입니다: ${file.originalname}`);
+        return sendBadRequest(res, `허용되지 않은 파일입니다: ${originalName}`);
       }
 
       const storedPath = buildStoredPath(file);
@@ -455,7 +503,7 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
         [
           sessionId,
           fileType,
-          file.originalname,
+          originalName,
           path.basename(storedPath),
           storedPath,
           Number((file.size / 1024 / 1024).toFixed(2)),
@@ -597,7 +645,7 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
         [pair.pairIndex, pair.video.id, pair.audio.id]
       );
 
-      const dispatch = await runWithN8nFallback({
+      let dispatch = await runWithN8nFallback({
         circuitName: `video:pipeline:${sessionId}:${pair.pairIndex}`,
         webhookCandidates: n8n.candidates,
         healthUrl: n8n.healthUrl,
@@ -619,11 +667,26 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
         }),
         logger: console,
       });
+
+      let createdEdit = await waitForEditCreation(sessionId, pair.pairIndex);
+      if (!createdEdit) {
+        console.warn(`[video] 세션 ${sessionId} / pair ${pair.pairIndex}: n8n dispatch 후 video_edits 생성이 확인되지 않아 direct fallback 재시도`);
+        dispatch = runPipelineDirect({
+          sessionId,
+          pairIndex: pair.pairIndex,
+          videoPath: pair.video.stored_path,
+          audioPath: pair.audio.stored_path,
+        });
+        createdEdit = await waitForEditCreation(sessionId, pair.pairIndex, { attempts: 8, delayMs: 1000 });
+      }
+
       dispatches.push({
         pairIndex: pair.pairIndex,
         source: dispatch?.source || 'unknown',
         webhookUrl: dispatch?.webhookUrl || null,
         pid: dispatch?.pid || null,
+        editId: createdEdit?.id || null,
+        verified: Boolean(createdEdit),
       });
     }
 

@@ -3,6 +3,33 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — worker-web `/video` 세션 복원 + 프리뷰 렌더 경계 복구
+
+### 변경 사항 (changed)
+- `bots/worker/web/app/video/page.js`
+  - `idle` 단계에서도 업로드 영역이 바로 보이도록 조정
+  - 파일 업로드 시 세션이 없으면 자동 생성 후 업로드하는 흐름 추가
+  - 현재 세션 ID를 URL `?session=`과 `localStorage`에 동기화해 새로고침 후에도 진행 세션 복원이 가능하도록 보강
+  - 기존 깨진 한글 파일명을 화면에서 복원해 보이도록 `repairFilename()` 추가
+- `bots/worker/web/app/_shell.js`
+  - hydration 전 완전 빈 화면 대신 로딩 셸 표시
+- `bots/worker/web/routes/video-api.js`
+  - 업로드 파일명의 UTF-8 복원 경계 추가
+  - `POST /sessions/:id/start`에서 n8n 응답 후 실제 `video_edits` 생성까지 확인하고, 미생성 시 direct fallback으로 재실행하도록 보강
+- `bots/video/lib/edl-builder.js`
+  - 프리뷰를 검게 만들던 연속 `fade in/out` transition 렌더를 임시 비활성화
+  - transition edit는 EDL 원장에 남기고 렌더 단계에서만 무시하도록 조정
+
+### 검증
+- `node --check bots/worker/web/app/_shell.js` | ✅
+- `node --check bots/worker/web/app/video/page.js` | ✅
+- `node --check bots/worker/web/routes/video-api.js` | ✅
+- `node --check bots/video/lib/edl-builder.js` | ✅
+- `cd bots/worker/web && npx next build` | ✅
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅
+- `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅
+- session 1 direct recovery | ✅ `video_edits.id=16`, `trace=f84aa3f6-329e-43af-8eac-ae6f8eeaf474`, `status=correction_done` 확인
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 Phase 1 마감 문서 정리 + worker-web `/video` 반영
 
 ### 변경 사항 (changed)

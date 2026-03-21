@@ -121,6 +121,23 @@
 
 ## 2026-03-21
 
+### worker-web `/video` 세션 복원 + 프리뷰 렌더 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/app/_shell.js` | ✅ hydration 전 빈 화면 대신 로딩 셸 렌더 문법 확인 |
+| `node --check bots/worker/web/app/video/page.js` | ✅ idle 업로드 노출, 세션 URL/localStorage 복원 로직 문법 확인 |
+| `node --check bots/worker/web/routes/video-api.js` | ✅ 파일명 UTF-8 복원, start fallback, edit 생성 검증 문법 확인 |
+| `node --check bots/video/lib/edl-builder.js` | ✅ transition 렌더 임시 비활성화 문법 확인 |
+| `cd bots/worker/web && npx next build` | ✅ `/video`, `/video/history` 포함 build 재통과 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ worker API 재기동 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 재기동 |
+| `SELECT id, status FROM public.video_sessions WHERE id = 1` | ✅ `id=1`, `status=processing` 세션 존재 확인 |
+| `SELECT id, status, trace_id FROM public.video_edits WHERE session_id = 1` | ✅ 초기 `0건` 확인 후 direct recovery 뒤 `id=16`, `status=correction_done`, `trace=f84aa3f6-329e-43af-8eac-ae6f8eeaf474` 확인 |
+| `ffprobe bots/video/temp/run-f84aa3f6/synced.mp4` | ✅ 원본 합성본은 정상 비디오 스트림 확인 |
+| `ffprobe bots/video/temp/run-f84aa3f6/preview.mp4` | ✅ 프리뷰 파일 자체는 생성되지만 bitrate가 비정상적으로 낮아 검은 화면 의심 |
+| `preview/synced 첫 프레임 추출 비교` | ✅ `synced.mp4`는 정상 화면, `preview.mp4`는 완전 검정으로 transition 필터 체인 원인 분리 확인 |
+
 ### 비디오팀 Phase 1 마감 — worker-web `/video` 빌드 반영
 
 | 테스트 | 결과 |

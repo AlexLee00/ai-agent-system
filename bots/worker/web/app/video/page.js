@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowDown, ArrowUp, CheckCircle2, Clock3, Download, Film, Loader2, MessageSquareText,
   PlayCircle, RefreshCcw, Sparkles, Upload, Video,
@@ -22,6 +22,8 @@ const PHASES = {
   done: 'done',
   failed: 'failed',
 };
+
+const ACTIVE_VIDEO_SESSION_KEY = 'worker_video_active_session_id';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -46,6 +48,42 @@ function formatTimestamp(seconds) {
   const mm = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
   const ss = String(safe % 60).padStart(2, '0');
   return `${hh}:${mm}:${ss}`;
+}
+
+function repairFilename(name) {
+  const raw = String(name || '');
+  if (!raw || /[가-힣]/.test(raw)) return raw;
+
+  try {
+    const decoded = decodeURIComponent(escape(raw));
+    if (/[가-힣]/.test(decoded)) return decoded;
+  } catch {
+    // 무시
+  }
+
+  return raw;
+}
+
+function readActiveSessionId() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return String(window.localStorage.getItem(ACTIVE_VIDEO_SESSION_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function writeActiveSessionId(sessionId) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!sessionId) {
+      window.localStorage.removeItem(ACTIVE_VIDEO_SESSION_KEY);
+      return;
+    }
+    window.localStorage.setItem(ACTIVE_VIDEO_SESSION_KEY, String(sessionId));
+  } catch {
+    // 무시
+  }
 }
 
 function addMessage(setMessages, payload) {
@@ -200,7 +238,7 @@ function FileUploader({ files, onSelectFiles, onMove, onRemove, disabled }) {
         {files.map((file, index) => (
           <div key={file.localId || file.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-900">{file.original_name || file.name}</p>
+              <p className="truncate text-sm font-medium text-slate-900">{repairFilename(file.original_name || file.name)}</p>
               <p className="mt-1 text-xs text-slate-500">
                 {(file.file_type || (String(file.name || '').endsWith('.mp4') ? 'video' : 'audio'))}
                 {' · '}
@@ -386,6 +424,7 @@ function PreviewCard({ edit, onConfirm, onReject, busy }) {
 }
 
 export default function VideoPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [phase, setPhase] = useState(PHASES.idle);
   const [messages, setMessages] = useState([]);
@@ -405,6 +444,16 @@ export default function VideoPage() {
   }, []);
 
   useEffect(() => {
+    const sessionId = String(searchParams.get('session') || '').trim();
+    if (sessionId) return;
+
+    const savedSessionId = readActiveSessionId();
+    if (!savedSessionId) return;
+
+    router.replace(`/video?session=${savedSessionId}`);
+  }, [router, searchParams]);
+
+  useEffect(() => {
     const sessionId = searchParams.get('session');
     if (!sessionId) return;
     let alive = true;
@@ -417,6 +466,7 @@ export default function VideoPage() {
         setSession(nextSession);
         setFiles(nextFiles);
         setEdits(nextEdits);
+        writeActiveSessionId(nextSession.id);
 
         if (nextSession.status === 'done') setPhase(PHASES.done);
         else if (nextSession.status === 'rendering') setPhase(PHASES.rendering);
@@ -432,12 +482,24 @@ export default function VideoPage() {
       })
       .catch((loadError) => {
         if (!alive) return;
+        writeActiveSessionId('');
         setError(loadError.message);
       });
     return () => {
       alive = false;
     };
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!session?.id) return;
+
+    writeActiveSessionId(session.id);
+    const currentSessionId = String(searchParams.get('session') || '').trim();
+    const nextSessionId = String(session.id);
+    if (currentSessionId !== nextSessionId) {
+      router.replace(`/video?session=${nextSessionId}`);
+    }
+  }, [router, searchParams, session?.id]);
 
   useEffect(() => {
     messageBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -453,6 +515,7 @@ export default function VideoPage() {
         const data = await api.get(`/video/sessions/${session.id}/status`);
         setSession(data.session);
         setEdits(data.edits || []);
+        writeActiveSessionId(data.session?.id);
 
         if (data.session.status === 'preview_ready') {
           setPhase(PHASES.preview_ready);
@@ -493,6 +556,7 @@ export default function VideoPage() {
     try {
       const created = await api.post('/video/sessions', { title: '새 영상 편집' });
       setSession(created);
+      writeActiveSessionId(created.id);
       setPhase(PHASES.uploading);
       addMessage(setMessages, {
         type: 'system',
@@ -506,14 +570,26 @@ export default function VideoPage() {
   };
 
   const uploadFiles = async (selectedFiles) => {
-    if (!session?.id || !selectedFiles?.length) return;
+    if (!selectedFiles?.length) return;
     setLoading(true);
     setError('');
     try {
+      let activeSession = session;
+      if (!activeSession?.id) {
+        activeSession = await api.post('/video/sessions', { title: '새 영상 편집' });
+        setSession(activeSession);
+        writeActiveSessionId(activeSession.id);
+        setPhase(PHASES.uploading);
+        addMessage(setMessages, {
+          type: 'system',
+          content: '파일 업로드를 위해 새 편집 세션을 자동으로 만들었습니다.',
+        });
+      }
+
       const formData = new FormData();
       selectedFiles.forEach((file) => formData.append('files', file));
       const token = getToken();
-      const response = await fetch(`/api/video/sessions/${session.id}/upload`, {
+      const response = await fetch(`/api/video/sessions/${activeSession.id}/upload`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -522,7 +598,7 @@ export default function VideoPage() {
       if (!response.ok) {
         throw new Error(data.error || '파일 업로드에 실패했습니다.');
       }
-      const detail = await api.get(`/video/sessions/${session.id}`);
+      const detail = await api.get(`/video/sessions/${activeSession.id}`);
       setSession(detail.session);
       setFiles(detail.files || []);
       setPhase(PHASES.uploaded);
@@ -697,21 +773,21 @@ export default function VideoPage() {
       </div>
 
       <div className="border-t border-slate-200 bg-white p-4 sm:p-5">
-        {phase === PHASES.idle && (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">영상 편집을 시작할 준비가 되었습니다.</p>
-              <p className="mt-1 text-sm text-slate-500">새 세션을 만들고 파일 업로드부터 진행합니다.</p>
-            </div>
-            <button onClick={startSession} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-              새 편집 시작
-            </button>
-          </div>
-        )}
-
-        {[PHASES.uploading, PHASES.uploaded].includes(phase) && session && (
+        {[PHASES.idle, PHASES.uploading, PHASES.uploaded].includes(phase) && (
           <div className="space-y-4">
+            {phase === PHASES.idle ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">영상 편집을 시작할 준비가 되었습니다.</p>
+                  <p className="mt-1 text-sm text-slate-500">파일을 바로 첨부하면 세션을 자동으로 만들고 업로드를 시작합니다.</p>
+                </div>
+                <button onClick={startSession} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
+                  새 편집 시작
+                </button>
+              </div>
+            ) : null}
+
             <FileUploader
               files={files}
               onSelectFiles={uploadFiles}
@@ -719,6 +795,7 @@ export default function VideoPage() {
               onRemove={removeFile}
               disabled={loading}
             />
+
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <label className="text-sm font-semibold text-slate-900">편집 의도</label>
               <textarea
@@ -728,11 +805,15 @@ export default function VideoPage() {
                 className="mt-3 min-h-[100px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               />
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button onClick={startProcessing} disabled={loading || files.length < 2} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                <button onClick={startProcessing} disabled={loading || files.length < 2 || !session?.id} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
                   편집 시작
                 </button>
-                <p className="text-xs text-slate-500">영상과 음성 파일을 각각 업로드한 뒤 순서를 맞춰주세요.</p>
+                <p className="text-xs text-slate-500">
+                  {phase === PHASES.idle
+                    ? '영상과 음성 파일을 드래그앤드롭하거나 클릭해 첨부하세요. 파일 업로드 시 세션이 자동 생성됩니다.'
+                    : '영상과 음성 파일을 각각 업로드한 뒤 순서를 맞춰주세요.'}
+                </p>
               </div>
             </div>
           </div>
