@@ -176,7 +176,8 @@
 - 수동등록 후 네이버 예약불가 후속 차단은 이번 세션에서 silent failure를 원장에 남기도록 보강됐다.
 - `kiosk_blocks`에는 이제 `last_block_attempt_at`, `last_block_result`, `last_block_reason`, `block_retry_count`가 저장돼 실제 실패 / 지연 후 재시도 / 성공을 구분할 수 있다.
 - `naver-monitor.js`는 더 이상 `manual`, `manual_retry`, `verified`, `completed` 예약을 자동 취소 대상에서 잘못 스킵하지 않는다.
-- 민경수 `2026-03-27 A1` 연속 4건은 이번 원장 조회에서 `manual 등록 완료 + naver_blocked=false`로 확인돼, false alert가 아니라 실제 후속 차단 누락 사례로 분류됐다.
+- 민경수 `2026-03-27 A1` 연속 4건과 인접 manual 등록 건들은 이번 원장 조회에서 `manual 등록 완료 + naver_blocked=false`로 확인돼, false alert가 아니라 실제 후속 차단 누락 사례로 분류됐다.
+- 이후 운영자가 네이버 예약관리에서 해당 미래 슬롯들을 직접 확인했고, 이번 수동 점검 대상 8건은 모두 처리 완료됐다.
 - 새 원장 필드는 이번 패치 이후 발생하는 후속 차단 시도부터 채워지며, 과거 누락 건은 별도 운영 점검/백필이 필요하다.
 
 ---
@@ -231,7 +232,8 @@
 
 - 스카 shadow 비교는 저장은 정상이나 아직 actual 누적이 부족해서 비교 일수는 `0`
 - 스카 수동등록 후속 차단 경로는 이제 결과 원장화를 시작했지만, 과거 manual 등록 건은 새 필드가 비어 있어 historical 분석에는 바로 쓰기 어렵다.
-- 최근 manual 등록건 중 `reservations.pickko_status='manual'`인데 `kiosk_blocks.naver_blocked=false`인 사례를 일괄 재분류하고 수동 차단 여부를 운영 확인해야 한다.
+- 최근 manual 등록건 중 `reservations.pickko_status='manual'`인데 `kiosk_blocks.naver_blocked=false`인 사례는 이번 1차 리스트를 운영자가 직접 처리 완료했다.
+- 다음 단계는 새 원장 필드(`last_block_*`, `block_retry_count`)가 이후 발생하는 건에서 실제로 채워지고, 후속 사이클에서 `naver_blocked=true`로 수렴하는지 확인하는 것이다.
 - 스카 일일/주간 리뷰는 이제 `shadowDecision`으로 현재 단계(`collecting / observe / promotion_candidate / primary_hold`)를 명시
 - 자동화 런타임에서 일부 `health-report.js`가 직접 실패하는 경향이 있어 `fallback_probe_unavailable`이 남을 수 있음
 - 제이 Gateway 자동화는 review 강인성은 올라갔지만, `~/.openclaw/workspace` 쓰기 권한 문제로 `persisted=false`가 남을 수 있어 운영 환경에서 재확인 필요
