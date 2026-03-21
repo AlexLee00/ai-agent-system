@@ -42,9 +42,14 @@
   - `fallback 개수=4`, `ready fallback 개수=4`, `unready fallback 개수=0`
 - `node scripts/reviews/jay-gateway-experiment-daily.js` ✅
   - 최신 24시간 창에는 아직 과거 로그가 남아 있으나 `retry burst runs=13`, `max attempts per run=4`로 남은 병목이 좁혀짐
+- `node bots/orchestrator/scripts/log-jay-gateway-experiment.js` ✅
+  - `마지막 gateway 재기동 이후: rate limit 0건 / auth missing 0건 / retry burst 0건` 확인
+- `node scripts/reviews/jay-gateway-experiment-review.js` ✅
+  - 최신 스냅샷에 `post-restart rate limit/auth missing/retry burst` 요약 반영 확인
 
 의미:
 - 지금 당장 필요한 구조인 “준비되지 않은 fallback 제거 + 보수적 동시성”은 회복됐다.
+- 추가로 “과거 24시간 노이즈”와 “마지막 재기동 이후 현재 상태”를 분리해 관찰할 수 있게 됐다.
 - 이후 SaaS 확장을 고려하면 provider는 많을수록 좋은 것이 아니라, `registered`와 `ready`를 분리해 실제 복구 가능 후보만 운영 체인에 두는 구조가 맞다.
 - 다음 자연스러운 단계는 post-prune/post-tune 관찰 창에서 `provider auth missing`, `retry burst`, `active rate limit`이 실제로 감소하는지 확인하는 것이다.
 

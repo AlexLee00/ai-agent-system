@@ -18,6 +18,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `providerAuthMissingCount`, `nonAuthFailoverErrorCount`, `embeddedRateLimitRuns`, `retryBurstCount`, `maxAttemptsPerRun` 추가
 - `scripts/reviews/jay-gateway-experiment-review.js`
   - rate limit과 auth missing, retry burst를 분리 해석하도록 리뷰 보강
+  - `마지막 gateway 재기동 이후` 창의 rate limit / auth missing / retry burst를 별도 요약하도록 보강
 
 ### 신규 기능 (feat)
 - `bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js`
@@ -50,6 +51,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency 조정
 - `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동
 - `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 24시간 창에서 `retry burst runs=13`, `max attempts per run=4` 기준 남은 병목 확인
+- `node bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ `마지막 gateway 재기동 이후: rate limit 0 / auth missing 0 / retry burst 0` 확인
+- `node scripts/reviews/jay-gateway-experiment-review.js` | ✅ `post-restart rate limit/auth missing/retry burst` 출력 확인
 
 ## 12주차 후속 (2026-03-21) — 스카 수동등록 후속 차단 원장화
 
