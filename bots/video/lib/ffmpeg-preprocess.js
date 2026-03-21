@@ -185,12 +185,16 @@ async function normalizeAudio(inputPath, outputPath, config) {
 
 async function syncVideoAudio(videoPath, audioPath, outputPath) {
   const startedAt = Date.now();
+  const audioDurationMs = await probeDurationMs(audioPath);
+  const audioDurationSeconds = (audioDurationMs / 1000).toFixed(3);
   await runCommand(
     'ffmpeg',
     [
       '-y',
       '-i', videoPath,
       '-i', audioPath,
+      '-t', String(audioDurationSeconds),
+      '-shortest',
       '-c:v', 'copy',
       '-c:a', 'aac',
       '-map', '0:v:0',
@@ -198,7 +202,13 @@ async function syncVideoAudio(videoPath, audioPath, outputPath) {
       outputPath,
     ],
     'sync_video_audio',
-    { videoPath, audioPath, outputPath }
+    {
+      videoPath,
+      audioPath,
+      outputPath,
+      audioDurationMs,
+      audioDurationSeconds,
+    }
   );
 
   const duration_ms = await probeDurationMs(outputPath);

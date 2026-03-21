@@ -4,6 +4,47 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-21) — 비디오팀 5세트 전체 파이프라인 재검증 + preview 복구
+
+핵심 구현:
+- `bots/video/lib/ffmpeg-preprocess.js`
+  - `syncVideoAudio()`가 나레이션 duration을 먼저 probe해서 `-t <audioDuration>` + `-shortest`를 적용하도록 수정
+  - 이 수정으로 `synced.mp4`의 video/audio duration mismatch를 해소
+- `bots/video/scripts/run-pipeline.js`
+  - `subtitle.vtt` 생성 시점을 preview 렌더 이전으로 이동
+  - preview 성공 여부와 VTT 생성 실패를 분리
+- `bots/video/lib/edl-builder.js`
+  - preview watchdog을 예상 duration 기반으로 동적 계산하도록 보강
+
+세션 맥락:
+- 최초 5세트 검증에서는 모든 세트가 preview 단계에서 `SIGTERM`으로 종료됐고, 겉으로는 watchdog 문제처럼 보였다.
+- 하지만 실제 원인은 preprocessing에서 긴 원본 영상에 짧은 나레이션만 mux되면서 `synced.mp4`의 video/audio duration이 크게 어긋난 것이었다.
+- 즉 이번 작업은 “preview가 느리다”는 현상 뒤에서, 실제로는 `syncVideoAudio()`가 회복해야 할 입력 경계를 다시 맞추는 작업이었다.
+
+실측 결과:
+- 수정 전 실패 trace
+  - 파라미터 `3afc9a1d...`
+  - 컴포넌트스테이트 `38a3b936...`
+  - 동적데이터 `1c61b2c0...`
+  - 서버인증 `0a9268dc...`
+  - DB생성 `579bb009...`
+- 수정 후 성공 trace
+  - 파라미터 `05b1bc91...`
+  - 컴포넌트스테이트 `5e18ef34...`
+  - 동적데이터 `68c204d7...`
+  - 서버인증 `3017b788...`
+  - DB생성 `a4acc396...`
+- 최신 `validation_report.json` 기준
+  - `successful=5`, `failed=0`
+  - `avg_total_ms=440378`
+  - `total_cost_usd=0.2756`
+  - `rag_records_stored=7`
+  - `estimateWithRAG.sample_count=5`, `confidence=high`
+
+의미:
+- 지금 당장 필요한 구조인 `run-pipeline.js --skip-render` 기반 preview 원장은 5세트 기준으로 다시 닫혔다.
+- 이후 worker-web confirm/reject, final render, RAG 학습도 모두 이 preview 성공 불변식을 전제로 확장할 수 있게 됐다.
+
 ### 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent 구현
 
 핵심 구현:

@@ -3,6 +3,23 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 비디오팀 5세트 preview 검증 복구
+
+### 변경 사항 (changed)
+- `bots/video/lib/ffmpeg-preprocess.js`
+  - `syncVideoAudio()`가 오디오 duration 기준 `-t`와 `-shortest`를 사용하도록 수정
+  - 긴 원본 영상 + 짧은 나레이션 조합에서 `synced.mp4` video/audio duration mismatch가 생기지 않도록 보강
+- `bots/video/scripts/run-pipeline.js`
+  - `subtitle.vtt` 생성 시점을 preview 렌더 이전으로 이동
+- `bots/video/lib/edl-builder.js`
+  - preview watchdog을 예상 duration 기반으로 동적 계산하도록 보강
+
+### 검증
+- 5세트 전체 `run-pipeline.js --skip-render` 재실행
+  - 파라미터, 컴포넌트스테이트, 동적데이터, 서버인증, DB생성 모두 `preview_ready`
+- `bots/video/temp/validation_report.json`
+  - `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 11 Refiner Agent
 
 ### 신규 기능 (feat)

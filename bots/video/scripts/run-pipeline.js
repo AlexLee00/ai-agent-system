@@ -468,9 +468,9 @@ async function main() {
 
       currentStep = 'preview';
       console.log('[video] [6/7] 프리뷰 렌더링 중...');
+      convertSrtToVtt(correctedSrtPath, vttPath);
       const previewResult = await renderPreview(edl, previewPath, config);
       const previewStats = fs.statSync(previewPath);
-      convertSrtToVtt(correctedSrtPath, vttPath);
       console.log(
         `[video] [6/7] 프리뷰 완료 (${previewResult.duration_ms}ms, ${(previewStats.size / 1024 / 1024).toFixed(2)}MB)`
       );
