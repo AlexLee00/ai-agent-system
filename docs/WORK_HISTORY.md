@@ -33,6 +33,34 @@
 - 지금 당장 필요한 구조인 “비디오팀 Phase 1 완료 상태를 문서와 런타임이 동시에 반영하는 것”이 닫혔다.
 - 이후 세션은 구현 재설명보다 `final render`, `preview_ms`, `quality-loop 수렴률`, `RAG 샘플 확대` 같은 운영 고도화로 바로 넘어갈 수 있다.
 
+### 12주차 후속 (2026-03-21) — worker-web 비디오 업로드 경계 복구
+
+핵심 구현:
+- `bots/worker/web/routes/video-api.js`
+  - `video_sessions.company_id`를 worker 회사 ID 체계(`test-company`)와 맞춰 문자열로 정규화
+  - 기존 DB가 `INTEGER`로 생성돼 있더라도 런타임에서 자동으로 `TEXT`로 보정하도록 schema guard 추가
+- `bots/video/migrations/002-video-sessions.sql`
+  - `video_sessions.company_id`를 `TEXT`로 수정
+- `bots/video/migrations/003-video-sessions-company-text.sql`
+  - 기존 DB를 `TEXT`로 바꾸는 보정 마이그레이션 추가
+- `bots/worker/web/app/video/page.js`
+  - 업로드 영역에 drag active 상태, 전체 영역 클릭, 아이콘 클릭, 파일 선택 버튼을 모두 지원하도록 개선
+
+세션 맥락:
+- `/video` 화면 자체는 떠 있었지만, `새 편집 시작`에서 `invalid input syntax for type integer: "test-company"`가 나면서 세션 생성이 먼저 실패했다.
+- 즉 사용자는 “업로드가 안 된다”고 느끼지만, 실제로는 upload 단계로 들어가기 전에 `company_id` 스키마 불일치가 먼저 깨지고 있었다.
+
+실측 결과:
+- `video_sessions.company_id` DB 컬럼을 실제로 `TEXT`로 보정 완료
+- `node --check bots/worker/web/routes/video-api.js` ✅
+- `node --check bots/worker/web/app/video/page.js` ✅
+- `cd bots/worker/web && npx next build` ✅
+- worker launchd 재기동 완료
+
+의미:
+- 지금 당장 필요한 구조인 “세션 생성 → 파일 첨부 → 업로드” 경계가 다시 닫혔다.
+- 이후에는 실제 로그인 상태에서 업로드/세션 생성 E2E만 확인하면 된다.
+
 ### 12주차 후속 (2026-03-21) — 비디오팀 5세트 전체 파이프라인 재검증 + preview 복구
 
 핵심 구현:

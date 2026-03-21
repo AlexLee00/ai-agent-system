@@ -107,24 +107,79 @@ function ChatBubble({ msg }) {
 
 function FileUploader({ files, onSelectFiles, onMove, onRemove, disabled }) {
   const inputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleSelect = (nextFiles) => {
+    if (disabled) return;
+    const picked = Array.from(nextFiles || []);
+    if (!picked.length) return;
+    onSelectFiles(picked);
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="space-y-4">
       <div
-        className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center"
-        onDragOver={(event) => event.preventDefault()}
+        role="button"
+        tabIndex={0}
+        className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 bg-slate-50'} ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/60'}`}
+        onClick={() => {
+          if (disabled) return;
+          inputRef.current?.click();
+        }}
+        onKeyDown={(event) => {
+          if (disabled) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (!disabled) setIsDragging(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!disabled) setIsDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          setIsDragging(false);
+        }}
         onDrop={(event) => {
           event.preventDefault();
+          setIsDragging(false);
           if (disabled) return;
-          onSelectFiles(Array.from(event.dataTransfer.files || []));
+          handleSelect(event.dataTransfer.files);
         }}
       >
-        <Upload className="mx-auto h-8 w-8 text-slate-400" />
+        <div className="mx-auto flex max-w-md flex-col items-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (disabled) return;
+              inputRef.current?.click();
+            }}
+            disabled={disabled}
+            className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-indigo-600 disabled:opacity-50"
+            aria-label="파일 선택"
+          >
+            <Upload className="h-6 w-6" />
+          </button>
+        </div>
         <p className="mt-3 text-sm font-medium text-slate-700">영상(.mp4)과 음성(.m4a/.mp3/.wav)을 업로드하세요</p>
-        <p className="mt-1 text-xs text-slate-500">드래그앤드롭 또는 파일 선택</p>
+        <p className="mt-1 text-xs text-slate-500">아이콘 클릭 또는 이 영역에 드래그앤드롭</p>
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (disabled) return;
+            inputRef.current?.click();
+          }}
           disabled={disabled}
           className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
@@ -136,7 +191,8 @@ function FileUploader({ files, onSelectFiles, onMove, onRemove, disabled }) {
           type="file"
           multiple
           hidden
-          onChange={(event) => onSelectFiles(Array.from(event.target.files || []))}
+          accept=".mp4,.m4a,.mp3,.wav"
+          onChange={(event) => handleSelect(event.target.files)}
         />
       </div>
 

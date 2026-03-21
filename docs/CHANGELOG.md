@@ -22,6 +22,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `curl -I http://127.0.0.1:4001/video` | ✅ `200 OK`
 - `curl -I http://127.0.0.1:4001/video/history` | ✅ `200 OK`
 
+## 12주차 후속 (2026-03-21) — worker-web 비디오 업로드 경계 복구
+
+### 변경 사항 (changed)
+- `bots/worker/web/routes/video-api.js`
+  - `company_id`를 문자열로 정규화하고, `video_sessions.company_id`가 예전 `INTEGER` 스키마여도 자동으로 `TEXT`로 보정하는 guard 추가
+- `bots/worker/web/app/video/page.js`
+  - 업로드 영역에 drag active 시각화, 전체 영역 클릭 업로드, 아이콘 클릭 업로드, `accept` 확장자 제한 추가
+- `bots/video/migrations/002-video-sessions.sql`
+  - `video_sessions.company_id`를 `TEXT`로 수정
+- `bots/video/migrations/003-video-sessions-company-text.sql`
+  - 기존 DB용 `company_id TEXT` 보정 마이그레이션 추가
+
+### 검증
+- `node --check bots/worker/web/routes/video-api.js` | ✅
+- `node --check bots/worker/web/app/video/page.js` | ✅
+- `cd bots/worker/web && npx next build` | ✅
+- `node --input-type=module ... ALTER TABLE ... video_sessions.company_id TYPE TEXT ...` | ✅ DB 컬럼 `text` 확인
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 5세트 preview 검증 복구
 
 ### 변경 사항 (changed)

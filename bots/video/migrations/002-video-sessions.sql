@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS video_sessions (
   id                SERIAL PRIMARY KEY,
-  company_id        INTEGER NOT NULL,
+  company_id        TEXT NOT NULL,
   uploaded_by       INTEGER NOT NULL,
   title             TEXT,
   edit_notes        TEXT,

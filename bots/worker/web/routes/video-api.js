@@ -69,6 +69,8 @@ const upload = multer({
   },
 });
 
+let ensureVideoSessionsSchemaPromise = null;
+
 function toErrorMessage(error) {
   return error?.message || error?.stderr || error?.stdout || String(error || '알 수 없는 오류');
 }
@@ -77,6 +79,37 @@ function normalizeTitle(title) {
   return String(title || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeCompanyId(companyId) {
+  return String(companyId || '').trim();
+}
+
+async function ensureVideoSessionsSchema() {
+  if (ensureVideoSessionsSchemaPromise) return ensureVideoSessionsSchemaPromise;
+  ensureVideoSessionsSchemaPromise = (async () => {
+    const rows = await pgPool.query(
+      'public',
+      `SELECT data_type
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'video_sessions'
+          AND column_name = 'company_id'`
+    );
+    const dataType = String(rows[0]?.data_type || '').toLowerCase();
+    if (dataType && dataType !== 'text') {
+      await pgPool.run(
+        'public',
+        `ALTER TABLE public.video_sessions
+            ALTER COLUMN company_id TYPE TEXT
+            USING company_id::TEXT`
+      );
+    }
+  })().catch((error) => {
+    ensureVideoSessionsSchemaPromise = null;
+    throw error;
+  });
+  return ensureVideoSessionsSchemaPromise;
 }
 
 function resolveVideoN8nToken() {
@@ -150,18 +183,20 @@ function buildStoredPath(file) {
 }
 
 async function getSessionForCompany(sessionId, companyId) {
+  await ensureVideoSessionsSchema();
   const rows = await pgPool.query(
     'public',
     `SELECT *
        FROM video_sessions
       WHERE id = $1
         AND company_id = $2`,
-    [sessionId, companyId]
+    [sessionId, normalizeCompanyId(companyId)]
   );
   return rows[0] || null;
 }
 
 async function getEditForCompany(editId, companyId) {
+  await ensureVideoSessionsSchema();
   const rows = await pgPool.query(
     'public',
     `SELECT ve.*, vs.company_id, vs.title AS session_title
@@ -169,7 +204,7 @@ async function getEditForCompany(editId, companyId) {
        JOIN video_sessions vs ON vs.id = ve.session_id
       WHERE ve.id = $1
         AND vs.company_id = $2`,
-    [editId, companyId]
+    [editId, normalizeCompanyId(companyId)]
   );
   return rows[0] || null;
 }
@@ -318,13 +353,18 @@ function streamWithRange(req, res, filePath, contentType) {
 
 router.post('/sessions', auditLog('CREATE', 'video_sessions'), async (req, res) => {
   try {
+    await ensureVideoSessionsSchema();
     const title = normalizeTitle(req.body?.title);
+    const companyId = normalizeCompanyId(req.user?.company_id);
+    if (!companyId) {
+      return sendBadRequest(res, '회사 정보가 없어 편집 세션을 만들 수 없습니다.');
+    }
     const rows = await pgPool.query(
       'public',
       `INSERT INTO video_sessions (company_id, uploaded_by, title, status)
        VALUES ($1, $2, $3, 'idle')
        RETURNING id, title, status, created_at`,
-      [req.user.company_id, req.user.id, title || null]
+      [companyId, req.user.id, title || null]
     );
     res.status(201).json(rows[0]);
   } catch (error) {
@@ -334,6 +374,7 @@ router.post('/sessions', auditLog('CREATE', 'video_sessions'), async (req, res) 
 
 router.get('/sessions', async (req, res) => {
   try {
+    await ensureVideoSessionsSchema();
     const rows = await pgPool.query(
       'public',
       `SELECT vs.*,
@@ -345,7 +386,7 @@ router.get('/sessions', async (req, res) => {
         WHERE vs.company_id = $1
         GROUP BY vs.id
         ORDER BY vs.created_at DESC`,
-      [req.user.company_id]
+      [normalizeCompanyId(req.user?.company_id)]
     );
     res.json({ sessions: rows });
   } catch (error) {

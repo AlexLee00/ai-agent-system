@@ -21,6 +21,8 @@
   - `/admin/monitoring/blog-links`가 추가돼 실제 네이버 블로그 URL 기록과 발행 후처리를 마스터 화면에서 처리할 수 있다.
   - `ai.worker.lead`, `ai.worker.task-runner`는 이번 세션에서 launchd 재등록으로 복구됐고, health-report 기준 정상이다.
   - `/video`, `/video/history`가 추가돼 영상 편집 세션 생성, 업로드, 프리뷰 확인, confirm/reject, 다운로드까지 worker-web에서 처리할 수 있다.
+  - worker 비디오 업로드는 이번 세션에서 `video_sessions.company_id`를 `TEXT`로 보정해 `test-company` 같은 문자열 회사 ID에서도 세션 생성이 가능하도록 복구됐다.
+  - `/video` 업로드 영역은 드래그앤드롭 + 아이콘 클릭 + 파일 선택 버튼 3가지 입력 경로를 모두 지원하도록 개선됐다.
   - `/api/video` 라우터는 `video_sessions -> video_upload_files -> video_edits` 원장 구조를 사용하며, 현재는 `projects` 권한 정책에 임시 매핑돼 있다.
   - protected preview/subtitle/download는 JWT 헤더를 직접 실을 수 없는 HTML media 태그 제약 때문에 `fetch + Authorization + blob URL` 방식으로 프론트에서 처리한다.
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.

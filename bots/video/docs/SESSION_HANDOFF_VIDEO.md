@@ -47,6 +47,8 @@
 - `ai.worker.nextjs` launchd 재기동 완료
 - `http://127.0.0.1:4001/video` → `200 OK`
 - `http://127.0.0.1:4001/video/history` → `200 OK`
+- `video_sessions.company_id`를 worker 회사 ID 체계와 맞춰 `TEXT`로 보정 완료
+- 업로드 UI는 드래그앤드롭 + 아이콘 클릭 + 버튼 클릭 3가지 입력 경로를 모두 지원하도록 보강 완료
 
 ---
 
