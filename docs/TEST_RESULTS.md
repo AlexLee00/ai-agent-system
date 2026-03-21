@@ -147,6 +147,8 @@
 | `curl -i -s -X POST http://127.0.0.1:4000/api/video/internal/run-pipeline -H 'Content-Type: application/json' -H 'X-Video-Token: video-local-test-20260321' -d '{"_healthProbe":true}'` | ✅ 내부 dispatch API `200 {"ok":true,"status":"probe_ok"}` 확인 |
 | `VIDEO_N8N_TOKEN=video-local-test-20260321 node bots/video/scripts/check-n8n-video-path.js` | ✅ `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, live resolved webhook 확인 |
 | `node --check bots/video/n8n/setup-video-workflow.js` (보강 후) | ✅ `N8N_BASE_URL` 파싱 + registry 실패 degrade 문법 확인 |
+| `node bots/video/n8n/setup-video-workflow.js` | ✅ `bots/worker/secrets.json`의 `video_n8n_token` fallback만으로 workflow 재생성/활성화 성공 |
+| `node bots/video/scripts/check-n8n-video-path.js` | ✅ env 없이도 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200` 확인 |
 
 ### 비디오팀 과제 11 — Refiner Agent
 
