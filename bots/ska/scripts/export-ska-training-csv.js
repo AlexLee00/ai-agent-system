@@ -20,6 +20,16 @@ function csvCell(value) {
   return text;
 }
 
+function formatDateValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return value;
+}
+
 async function main() {
   const days = Number.parseInt(getArg('days') || '100', 10);
   const outputPath = getArg('output') || path.join(os.homedir(), 'Downloads', 'ska-training-last-100-days.csv');
@@ -53,6 +63,25 @@ async function main() {
       rds.pickko_study_room,
       rds.general_revenue AS reservation_general_revenue,
       rds.entries_count,
+      tf.general_payment_count,
+      tf.general_payment_revenue_raw,
+      tf.general_payment_morning_count,
+      tf.general_payment_afternoon_count,
+      tf.general_payment_evening_count,
+      tf.general_ticket_single_count,
+      tf.general_ticket_hourpack_count,
+      tf.general_ticket_period_count,
+      tf.study_room_payment_count,
+      tf.study_room_payment_revenue_raw,
+      tf.study_room_payment_a1_count,
+      tf.study_room_payment_a2_count,
+      tf.study_room_payment_b_count,
+      tf.study_room_use_count,
+      tf.study_room_use_policy_revenue,
+      tf.study_room_use_booked_hours,
+      tf.study_room_use_a1_hours,
+      tf.study_room_use_a2_hours,
+      tf.study_room_use_b_hours,
       rd.actual_revenue,
       rd.occupancy_rate,
       rd.total_reservations,
@@ -90,6 +119,8 @@ async function main() {
       ON rd.date = ds.date
     LEFT JOIN reservation.daily_summary rds
       ON rds.date::date = ds.date
+    LEFT JOIN training_feature_daily tf
+      ON tf.date = ds.date
     ORDER BY ds.date DESC
   `, [days]);
 
@@ -100,6 +131,25 @@ async function main() {
     'pickko_study_room',
     'reservation_general_revenue',
     'entries_count',
+    'general_payment_count',
+    'general_payment_revenue_raw',
+    'general_payment_morning_count',
+    'general_payment_afternoon_count',
+    'general_payment_evening_count',
+    'general_ticket_single_count',
+    'general_ticket_hourpack_count',
+    'general_ticket_period_count',
+    'study_room_payment_count',
+    'study_room_payment_revenue_raw',
+    'study_room_payment_a1_count',
+    'study_room_payment_a2_count',
+    'study_room_payment_b_count',
+    'study_room_use_count',
+    'study_room_use_policy_revenue',
+    'study_room_use_booked_hours',
+    'study_room_use_a1_hours',
+    'study_room_use_a2_hours',
+    'study_room_use_b_hours',
     'actual_revenue',
     'occupancy_rate',
     'total_reservations',
@@ -132,12 +182,31 @@ async function main() {
   const lines = [header.join(',')];
   for (const row of rows) {
     lines.push([
-      row.date,
+      formatDateValue(row.date),
       row.total_amount,
       row.pickko_total,
       row.pickko_study_room,
       row.reservation_general_revenue,
       row.entries_count,
+      row.general_payment_count,
+      row.general_payment_revenue_raw,
+      row.general_payment_morning_count,
+      row.general_payment_afternoon_count,
+      row.general_payment_evening_count,
+      row.general_ticket_single_count,
+      row.general_ticket_hourpack_count,
+      row.general_ticket_period_count,
+      row.study_room_payment_count,
+      row.study_room_payment_revenue_raw,
+      row.study_room_payment_a1_count,
+      row.study_room_payment_a2_count,
+      row.study_room_payment_b_count,
+      row.study_room_use_count,
+      row.study_room_use_policy_revenue,
+      row.study_room_use_booked_hours,
+      row.study_room_use_a1_hours,
+      row.study_room_use_a2_hours,
+      row.study_room_use_b_hours,
       row.actual_revenue,
       row.occupancy_rate,
       row.total_reservations,

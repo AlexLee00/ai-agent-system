@@ -10,6 +10,7 @@
  */
 
 const { delay } = require('./utils');
+const { normalizeStudyRoomKey } = require('./study-room-pricing');
 
 function normalizeStudyRoomLabel(description) {
   const text = String(description || '')
@@ -128,8 +129,7 @@ function parseStudyRoomDescription(description, defaultYear = null) {
   }
 
   const roomLabel = normalizeStudyRoomLabel(text);
-  const roomTypeMatch = roomLabel ? roomLabel.match(/^스터디룸([A-Z])/i) : null;
-  const roomType = roomTypeMatch ? String(roomTypeMatch[1] || '').toUpperCase() : null;
+  const roomType = normalizeStudyRoomKey(roomLabel || text);
   const timeMatch = text.match(/(\d{2})월\s+(\d{2})일\s+(\d{2})시\s+(\d{2})분\s+~\s+(\d{2})시\s+(\d{2})분\s+\(([^)]+)\)/);
 
   if (!timeMatch) {
@@ -355,8 +355,17 @@ async function fetchDailyDetail(page, date) {
       }
 
       const roomLabel = normalizeStudyRoomLabel(text);
-      const roomTypeMatch = roomLabel ? roomLabel.match(/^스터디룸([A-Z])/i) : null;
-      const roomType = roomTypeMatch ? String(roomTypeMatch[1] || '').toUpperCase() : null;
+      const roomType = (() => {
+        const normalized = String(roomLabel || text || '')
+          .replace(/\u00A0/g, ' ')
+          .replace(/\s+/g, '')
+          .toUpperCase();
+        if (!normalized) return null;
+        if (normalized.includes('A1')) return 'A1';
+        if (normalized.includes('A2')) return 'A2';
+        if (normalized === 'B' || normalized.includes('룸B') || normalized.includes('스터디룸B') || /^B\d*$/.test(normalized)) return 'B';
+        return null;
+      })();
       const timeMatch = text.match(/(\d{2})월\s+(\d{2})일\s+(\d{2})시\s+(\d{2})분\s+~\s+(\d{2})시\s+(\d{2})분\s+\(([^)]+)\)/);
 
       if (!timeMatch) {

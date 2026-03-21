@@ -1,0 +1,74 @@
+{
+  "storedEdit": {
+    "ragId": "1",
+    "stored": true
+  },
+  "storedFeedback": {
+    "ragId": "2",
+    "stored": true
+  },
+  "similarCount": 2,
+  "patterns": {
+    "count": 1,
+    "suggestions": {
+      "recommended_cuts": [
+        {
+          "rag_id": "1",
+          "title": "FlutterFlow DB 생성",
+          "cut_count": 0,
+          "cut_density": 0,
+          "quality_score": 78,
+          "similarity": 0.5971439612904352
+        }
+      ],
+      "recommended_transitions": [
+        {
+          "rag_id": "1",
+          "title": "FlutterFlow DB 생성",
+          "transition_count": 65,
+          "transition_density": 0.88,
+          "quality_score": 78,
+          "similarity": 0.5971439612904352
+        }
+      ],
+      "avg_quality_score": 78,
+      "avg_processing_time_ms": 180000,
+      "sample_count": 1
+    }
+  },
+  "estimate": {
+    "estimated_ms": 180000,
+    "estimated_cost_usd": 0.001,
+    "confidence": "low",
+    "sample_count": 1,
+    "samples": [
+      {
+        "title": "FlutterFlow DB 생성",
+        "duration_s": 4416.8,
+        "total_ms": 180000,
+        "similarity": 0.435
+      }
+    ]
+  },
+  "criticInsights": {
+    "similar_edits_found": 1,
+    "recurring_issues": [
+      "subtitle_terminology",
+      "scene_change",
+      "subtitle_typo"
+    ],
+    "recommended_actions": [
+      "과거 유사 영상의 고득점 편집 패턴을 참고해 컷/전환 밀도를 보수적으로 조정하는 것이 좋습니다."
+    ],
+    "historical_avg_score": 78
+  },
+  "edlRagSource": {
+    "based_on": [
+      "1"
+    ],
+    "confidence": 0.5,
+    "avg_processing_time_ms": 180000,
+    "sample_count": 1,
+    "duration_minutes": 73.61
+  }
+}

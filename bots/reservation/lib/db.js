@@ -601,7 +601,11 @@ async function upsertPickkoOrderRaw(row) {
       payment_at       = COALESCE(EXCLUDED.payment_at, pickko_order_raw.payment_at),
       pay_type         = COALESCE(EXCLUDED.pay_type, pickko_order_raw.pay_type),
       pay_device       = COALESCE(EXCLUDED.pay_device, pickko_order_raw.pay_device),
-      memo             = COALESCE(EXCLUDED.memo, pickko_order_raw.memo),
+      memo             = CASE
+                           WHEN EXCLUDED.memo IS NOT NULL THEN EXCLUDED.memo
+                           WHEN pickko_order_raw.memo IN ('주문상태', '주문일시', '결제타입', '결제기기') THEN NULL
+                           ELSE pickko_order_raw.memo
+                         END,
       ticket_type      = COALESCE(EXCLUDED.ticket_type, pickko_order_raw.ticket_type),
       product_hours    = COALESCE(EXCLUDED.product_hours, pickko_order_raw.product_hours),
       product_days     = COALESCE(EXCLUDED.product_days, pickko_order_raw.product_days),
@@ -655,6 +659,40 @@ async function upsertPickkoOrderRawBatch(rows) {
   }
 }
 
+function _formatDateParts(value, withTime = false) {
+  if (!value) return null;
+  if (!(value instanceof Date)) return value;
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    ...(withTime ? {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    } : {}),
+  }).formatToParts(value);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  const date = `${get('year')}-${get('month')}-${get('day')}`;
+  if (!withTime) return date;
+  return `${date} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function _normalizePickkoOrderRawRow(row) {
+  return {
+    ...row,
+    source_date: _formatDateParts(row.source_date, false),
+    payment_at: _formatDateParts(row.payment_at, true),
+    validity_start: _formatDateParts(row.validity_start, false),
+    validity_end: _formatDateParts(row.validity_end, false),
+    use_date: _formatDateParts(row.use_date, false),
+    created_at: _formatDateParts(row.created_at, true),
+    updated_at: _formatDateParts(row.updated_at, true),
+  };
+}
+
 async function getPickkoOrderRawByDate(sourceDate, sourceAxis = null) {
   const rows = sourceAxis
     ? await pgPool.query(
@@ -667,7 +705,7 @@ async function getPickkoOrderRawByDate(sourceDate, sourceAxis = null) {
       `SELECT * FROM pickko_order_raw WHERE source_date = $1 ORDER BY source_axis, order_kind, transaction_no NULLS LAST, entry_key`,
       [sourceDate],
     );
-  return rows;
+  return rows.map(_normalizePickkoOrderRawRow);
 }
 
 // ─── room_revenue ───────────────────────────────────────────────────
