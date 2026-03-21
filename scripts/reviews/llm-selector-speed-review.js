@@ -78,6 +78,35 @@ function buildModelStats(entries) {
     });
 }
 
+function inferPrimaryFallbackCandidate(latest, modelStats, latestPrimaryResult) {
+  const currentPrimary = latest?.current || null;
+  if (!currentPrimary || !latestPrimaryResult || latestPrimaryResult.ok === true) return null;
+
+  const [provider] = currentPrimary.split('/');
+  const latestResults = latest?.results || [];
+  const providerCandidates = latestResults
+    .filter((result) => result?.provider === provider && result?.ok === true)
+    .map((result) => {
+      const stat = modelStats.find((item) => item.modelId === result.modelId) || null;
+      return {
+        modelId: result.modelId,
+        provider,
+        ttft: result.ttft ?? stat?.avgTtft ?? null,
+        total: result.total ?? stat?.avgTotal ?? null,
+        successRatePct: stat?.successRatePct ?? 100,
+      };
+    })
+    .sort((a, b) => {
+      if (a.ttft == null && b.ttft == null) return 0;
+      if (a.ttft == null) return 1;
+      if (b.ttft == null) return -1;
+      return a.ttft - b.ttft;
+    });
+
+  const sameFamilyFlashLite = providerCandidates.find((item) => item.modelId.includes('flash-lite'));
+  return sameFamilyFlashLite || providerCandidates[0] || null;
+}
+
 function buildReview(entries, days, inputPath = HISTORY_FILE) {
   const rows = Array.isArray(entries) ? entries : readHistory(inputPath);
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
@@ -107,6 +136,7 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
         : latestPrimaryResult
           ? 'degraded'
           : 'unavailable';
+  const primaryFallbackCandidate = inferPrimaryFallbackCandidate(latest, modelStats, latestPrimaryResult);
 
   return {
     days,
@@ -124,6 +154,7 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
       error: latestPrimaryResult.error || null,
     } : null,
     primaryHealth,
+    primaryFallbackCandidate,
     latestFailures,
     topModels: top,
     recommendation: latest?.recommended && latest?.current && latest.recommended !== latest.current
@@ -146,6 +177,7 @@ function printReview(review) {
     `- latest: ${review.latestCapturedAt || '-'}`,
     `- current: ${review.currentPrimary || '-'}`,
     `- primary health: ${review.primaryHealth}`,
+    ...(review.primaryFallbackCandidate ? [`- primary fallback candidate: ${review.primaryFallbackCandidate.modelId}`] : []),
     `- latest recommended: ${review.latestRecommended || '-'}`,
     `- recommendation: ${review.recommendation}`,
     ...(review.latestFailures?.length ? [`- latest failures: ${review.latestFailures.length}건`] : []),
@@ -165,6 +197,9 @@ function printReview(review) {
     lines.push('');
     lines.push('현재 primary 상태');
     lines.push(`- ${review.latestPrimaryResult.modelId} | ${review.latestPrimaryResult.errorClass || 'request_failed'} | ${(review.latestPrimaryResult.error || '-').slice(0, 120)}`);
+    if (review.primaryFallbackCandidate) {
+      lines.push(`- safe fallback: ${review.primaryFallbackCandidate.modelId} | ttft ${review.primaryFallbackCandidate.ttft ?? '-'}ms | total ${review.primaryFallbackCandidate.total ?? '-'}ms`);
+    }
   }
   process.stdout.write(`${lines.join('\n')}\n`);
 }

@@ -1252,6 +1252,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - Gemini speed test 요청은 모델별 thinking budget을 분기해 `gemini-2.5-pro`의 `thinking_budget=0` 오류를 해소
   - 최신 snapshot에 실패 모델 `errorClass`를 함께 저장하고, `llm-selector-speed-review.js`가 최신 실패 모델/분류를 직접 출력하도록 보강
   - `llm-selector-speed-review.js`가 `primaryHealth`, `latestPrimaryResult`를 함께 출력해 `추천 모델`과 `현재 primary 위험`을 한 리포트에서 분리해서 읽을 수 있게 정리
+  - `llm-selector-speed-review.js`가 `primaryFallbackCandidate`도 함께 출력해 현재 primary가 unhealthy일 때 같은 provider 안의 안전한 대체 후보(`gemini-2.5-flash-lite`)를 바로 제시하도록 보강
   - 운영 모델 레지스트리 `~/.openclaw/openclaw.json`에 `gemini-2.5-flash-lite`, `groq/moonshotai/kimi-k2-instruct-0905`를 반영하고 `cerebras/gpt-oss-120b`는 현재 404 기준으로 제거
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
