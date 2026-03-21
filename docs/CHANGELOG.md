@@ -20,6 +20,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `kiosk_blocks` 새 필드 읽기/쓰기 지원
 - `bots/reservation/scripts/check-n8n-command-path.js`
   - nested error 상세 출력 지원
+- `bots/reservation/manual/reports/manual-block-followup-checklist-2026-03-21.md`
+  - 운영자가 실제 확인/처리한 8건 상태를 기록하도록 갱신
+
+### 신규 기능 (feat)
+- `bots/reservation/manual/reports/manual-block-followup-report.js`
+  - manual 등록 미래 예약의 네이버 차단 상태를 `전체 / 미완료` 기준으로 조회하는 CLI 추가
+- `bots/reservation/manual/reports/manual-block-followup-resolve.js`
+  - 운영자가 수동으로 처리 완료한 future 예약을 `kiosk_blocks`에 `manually_confirmed`로 반영하는 CLI 추가
 
 ### 신규 기능 (feat)
 - `bots/reservation/migrations/006_kiosk_block_attempts.js`
@@ -41,6 +49,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅
 - `node bots/reservation/scripts/health-report.js --json` | ✅ core/scheduled/n8n 건강도 정상 확인
 - 최근 manual 등록 미래 예약 8건 운영 점검 | ✅ 네이버 예약관리에서 직접 확인 후 처리 완료
+- `node bots/reservation/manual/reports/manual-block-followup-resolve.js --from=2026-03-21 --all-open` | ✅ 8건 원장 반영 완료
+- `node bots/reservation/manual/reports/manual-block-followup-report.js --from=2026-03-21` | ✅ `전체 11건 / 미완료 0건` 확인
 
 ## 12주차 후속 (2026-03-21) — worker-web `/video` 세션 복원 + 프리뷰 렌더 경계 복구
 

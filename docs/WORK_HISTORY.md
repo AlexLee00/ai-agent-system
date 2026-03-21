@@ -29,6 +29,8 @@
 - 코드 점검 결과, 취소는 실제 스킵 버그가 있었고, 수동등록 후속 차단은 실패/지연/복구를 구분할 원장과 알람 상태가 부족했다.
 - 특히 민경수 `2026-03-27 12:00~14:00 A1` 포함 연속 4건은 `manual 등록 완료 + naver_blocked=false`로 확인돼 false alert가 아니라 실제 후속 차단 누락으로 분류됐다.
 - 이후 최근 manual 등록 미래 예약 8건을 운영자가 네이버 예약관리에서 직접 확인했고, 모두 처리 완료했다.
+- 추가로 `bots/reservation/manual/reports/manual-block-followup-report.js`, `manual-block-followup-resolve.js`를 붙여 미완료 manual 예약을 CLI로 조회하고, 운영자가 수동 확인한 건을 `kiosk_blocks` 원장에 `manually_confirmed`로 반영할 수 있게 했다.
+- 실제 반영 후 `manual-block-followup-report.js --from=2026-03-21` 결과는 `전체 11건 / 미완료 0건`으로 수렴했다.
 
 실측 결과:
 - `node --check bots/reservation/lib/db.js` ✅
