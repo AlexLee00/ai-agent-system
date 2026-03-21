@@ -914,3 +914,10 @@
 |--------|------|
 | `node --check bots/investment/team/hephaestos.js` | ✅ `paper_position_reentry_blocked`, `live_position_reentry_blocked` 분리 후 문법 통과 |
 | `node --check bots/investment/team/hanul.js` | ✅ 국내/해외장 추가진입 차단 코드 세분화 후 문법 통과 |
+
+### 루나 암호화폐 LIVE 게이트 리뷰
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/scripts/crypto-live-gate-review.js` | ✅ 문법 통과 |
+| `node bots/investment/scripts/crypto-live-gate-review.js` | ✅ 최근 3일 기준 `decision 2236 / BUY 344 / approved 247 / executed 48 / PAPER 48 / LIVE 0 / weak 99 / 종료 리뷰 0` 확인, LIVE 게이트 `blocked` 출력 |

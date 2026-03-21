@@ -1245,6 +1245,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `trading-journal.js`, `weekly-trade-review.js`, `runtime-config-suggestions.js`는 새 weak reason 메타를 읽어 `weakTop`을 출력하도록 연결
   - 이를 통해 암호화폐 튜닝에서 “threshold를 소폭 낮출지”와 “실제로 신호 품질을 먼저 올려야 할지”를 더 분리해서 판단할 수 있게 정리
   - `hephaestos.js`, `hanul.js`의 추가진입 차단 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리해 PAPER 검증 병목과 LIVE 실포지션 병목을 구분 가능하게 정리
+  - `crypto-live-gate-review.js`를 추가해 최근 암호화폐 퍼널/체결/차단/종료리뷰를 기준으로 LIVE 전환 게이트를 자동 판정하도록 정리하고, `pipeline_runs.market`이 `binance`로 저장되는 기존 구조까지 반영해 집계 정확도를 맞춤
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
   - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영

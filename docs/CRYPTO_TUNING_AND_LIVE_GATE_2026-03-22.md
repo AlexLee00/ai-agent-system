@@ -235,6 +235,17 @@
 3. `position_reentry_blocked`와 `weakSignalSkipped` 구조를 아직 손보지 않음
 4. 실현 손익 기반 검증이 부족함
 
+1차 자동 리뷰 기준:
+- [crypto-live-gate-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/crypto-live-gate-review.js) 최근 3일 출력 기준
+  - decision `2236`
+  - BUY `344`
+  - approved `247`
+  - executed `48`
+  - 체결 `48건`, 전부 `PAPER`
+  - weakSignalSkipped `99`
+  - 종료 거래 리뷰 `0건`
+- 즉 신호/체결 활력은 충분하지만, **청산 품질과 LIVE 체결 데이터가 없어 게이트는 여전히 `blocked`**다
+
 ### 5.2 최소 승격 조건
 
 아래를 만족해야 `NORMAL` 제한형 LIVE 전환 검토 가능:
