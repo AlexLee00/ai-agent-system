@@ -50,6 +50,8 @@ const FALLBACK_FILE_ACTIVITY = {
 const AUXILIARY_COMMANDS = [
   { key: 'errorReview', script: path.join(ROOT, 'scripts/reviews/error-log-daily-review.js'), args: ['--days=1', '--json'] },
   { key: 'jayUsage', script: path.join(ROOT, 'scripts/reviews/jay-llm-usage-report.js'), args: ['--days=1', '--json'] },
+  { key: 'gatewayExperiment', script: path.join(ROOT, 'scripts/reviews/jay-gateway-experiment-review.js'), args: ['--json'] },
+  { key: 'selectorSpeed', script: path.join(ROOT, 'scripts/reviews/llm-selector-speed-daily.js'), args: ['--skip-test', '--json'] },
 ];
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -426,6 +428,25 @@ function buildRecommendations(teamSummaries, auxiliary) {
     }
   }
 
+  if (auxiliary.gatewayExperiment?.ok) {
+    const gatewayAction = auxiliary.gatewayExperiment.data?.recommendation?.action;
+    const latest = auxiliary.gatewayExperiment.data?.latestSnapshot || null;
+    if (latest && Number(latest.postRestartRateLimitCount || 0) === 0 && Number(latest.postRestartRetryBurstCount || 0) === 0) {
+      lines.push('- gateway는 24시간 누적 경고가 남아 있어도 post-restart 창은 깨끗합니다. 과거 잔상과 현재 상태를 분리해서 해석하세요.');
+    } else if (gatewayAction && gatewayAction !== 'hold') {
+      lines.push(`- gateway 실험 리뷰 기준 현재 판단은 \`${gatewayAction}\`입니다. fallback/readiness보다 active rate limit과 retry burst를 우선 보세요.`);
+    }
+  }
+
+  if (auxiliary.selectorSpeed?.ok) {
+    const review = auxiliary.selectorSpeed.data?.review || {};
+    if (review.primaryHealth && review.primaryHealth !== 'healthy') {
+      const fallback = review.primaryFallbackCandidate?.modelId || '후보 없음';
+      const policy = review.primaryFallbackPolicy?.decision || 'observe';
+      lines.push(`- selector 기준 current primary는 \`${review.primaryHealth}\` 상태입니다. same-provider fallback 후보 \`${fallback}\`, 정책 신호 \`${policy}\`를 함께 보세요.`);
+    }
+  }
+
   if (!lines.length) {
     lines.push('- 오늘 기준으로는 치명적 운영 이상보다 세부 품질 경고 위주입니다. 설정값 변경보다 경고 원인 정리가 우선입니다.');
   }
@@ -459,6 +480,33 @@ function buildActiveIssues(teamSummaries, auxiliary) {
       sourceMode: classifySourceMode('error-review'),
       summary: `반복 오류 상위: ${repeated.label} / ${repeated.categoryLabel} ${Number(repeated.count || 0).toLocaleString()}회`,
     });
+  }
+
+  if (auxiliary.gatewayExperiment?.ok) {
+    const latest = auxiliary.gatewayExperiment.data?.latestSnapshot || null;
+    const action = auxiliary.gatewayExperiment.data?.recommendation?.action || 'hold';
+    if (latest && (Number(latest.postRestartRateLimitCount || 0) > 0 || Number(latest.postRestartRetryBurstCount || 0) > 0)) {
+      items.push({
+        team: 'orchestrator',
+        level: 'medium',
+        source: 'gateway-experiment',
+        sourceMode: 'auxiliary_review',
+        summary: `post-restart gateway 경고: rate limit ${latest.postRestartRateLimitCount}건, retry burst ${latest.postRestartRetryBurstCount}건, action=${action}`,
+      });
+    }
+  }
+
+  if (auxiliary.selectorSpeed?.ok) {
+    const review = auxiliary.selectorSpeed.data?.review || {};
+    if (review.primaryHealth && review.primaryHealth !== 'healthy') {
+      items.push({
+        team: 'orchestrator',
+        level: 'medium',
+        source: 'selector-speed',
+        sourceMode: 'auxiliary_review',
+        summary: `selector primary ${review.currentPrimary || '-'} 상태=${review.primaryHealth}, fallback=${review.primaryFallbackCandidate?.modelId || '-'}, policy=${review.primaryFallbackPolicy?.decision || 'observe'}`,
+      });
+    }
   }
 
   return items;
@@ -508,6 +556,18 @@ function buildInputFailures(teamSummaries, auxiliary) {
   return [...teamFailures, ...auxiliaryFailures];
 }
 
+function buildRuntimeRestrictions(teamSummaries) {
+  return teamSummaries
+    .filter((item) => item.failureCode === 'db_sandbox_restricted')
+    .map((item) => ({
+      team: item.team,
+      source: item.source,
+      sourceMode: item.sourceMode || 'unknown',
+      fallbackStatus: item.localFallback?.enabled ? item.localFallback.summary : null,
+      healthError: item.healthError || item.reasons[0] || 'runtime restriction',
+    }));
+}
+
 function buildTextReport(report) {
   const lines = [];
   lines.push('📙 일일 운영 분석');
@@ -533,6 +593,18 @@ function buildTextReport(report) {
     for (const item of report.historicalIssues) {
       lines.push(`- ${item.label} / ${item.category}: ${item.count}회`);
       if (item.sample) lines.push(`  예시: ${item.sample}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('런타임 제한:');
+  if (!report.runtimeRestrictions.length) {
+    lines.push('- 없음');
+  } else {
+    for (const item of report.runtimeRestrictions) {
+      lines.push(`- ${item.team}: source=${item.source}, sourceMode=${item.sourceMode}`);
+      lines.push(`  사유: ${item.healthError}`);
+      if (item.fallbackStatus) lines.push(`  보조 신호: ${item.fallbackStatus}`);
     }
   }
 
@@ -577,6 +649,7 @@ async function main() {
   const activeIssues = buildActiveIssues(teamSummaries, auxiliary);
   const historicalIssues = buildHistoricalIssues(auxiliary);
   const inputFailures = buildInputFailures(teamSummaries, auxiliary);
+  const runtimeRestrictions = buildRuntimeRestrictions(teamSummaries);
   const report = {
     generatedAt: new Date().toISOString(),
     sourcePriority: ['health-report', 'fallback_probe', 'auxiliary_review'],
@@ -585,6 +658,7 @@ async function main() {
     teamSummaries,
     activeIssues,
     historicalIssues,
+    runtimeRestrictions,
     inputFailures,
     recommendations: buildRecommendations(teamSummaries, auxiliary),
   };

@@ -4,6 +4,33 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-22) — 일일 운영 분석 리포트 해석 품질 보강
+
+핵심 구현:
+- `scripts/reviews/daily-ops-report.js`
+  - 보조 입력으로 `jay-gateway-experiment-review.js --json`, `llm-selector-speed-daily.js --skip-test --json`를 함께 읽도록 확장
+  - `runtimeRestrictions` 섹션을 추가해 `db_sandbox_restricted` 팀들을 상단에서 별도 분리
+  - `activeIssues`에 selector primary 건강도 이슈를 직접 반영
+  - gateway는 24시간 누적 경고와 별도로 `post-restart` 창이 깨끗한 경우 이를 recommendation에 명시하도록 보강
+  - investment / reservation의 local fallback 활동 신호는 “완전 미확인”과 구분해서 해석하도록 유지
+
+세션 맥락:
+- 기존 전사 daily ops report는 실제 장애와 런타임 제약, 과거 24시간 잔상이 한 화면에서 섞여 보여 운영 우선순위가 흐려졌다.
+- 특히 코덱이 이미 gateway 쪽에서 `post-restart` 관찰과 selector `primaryHealth / primaryFallbackPolicy`를 만들었지만, daily ops report는 이를 아직 재사용하지 못했다.
+- 이번 보강의 목적은 “시스템이 죽었는가”보다 “지금 진짜 위험이 무엇인가”를 더 빨리 읽게 만드는 것이었다.
+
+실측 결과:
+- `node --check scripts/reviews/daily-ops-report.js` ✅
+- `node scripts/reviews/daily-ops-report.js --json` ✅
+  - `runtimeRestrictions` 섹션 생성 확인
+  - `activeIssues`에 `selector primary google-gemini-cli/gemini-2.5-flash 상태=rate_limited ...` 항목 추가 확인
+  - gateway는 `errorReview` historical issue는 유지하되, `post-restart` 창이 깨끗한 경우 recommendation에 분리 안내되는 것 확인
+  - `investment`, `reservation`은 `local_fallback=active` 신호 유지 확인
+
+의미:
+- 지금 당장 필요한 구조인 “runtime restriction / historical noise / current policy signal” 분리가 전사 ops report에 반영됐다.
+- 이후 SaaS 확장을 고려하면, 팀별 health뿐 아니라 policy signal과 current window를 함께 읽는 상위 리포트 구조가 필요하므로 이번 보강이 기준선 역할을 한다.
+
 ### 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback hygiene + concurrency 보수화
 
 핵심 구현:
