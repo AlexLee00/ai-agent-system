@@ -88,6 +88,14 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
   const latest = filtered[filtered.length - 1] || null;
   const modelStats = buildModelStats(filtered);
   const top = modelStats.slice(0, 5);
+  const latestFailures = (latest?.results || [])
+    .filter((result) => result?.ok === false)
+    .map((result) => ({
+      modelId: result.modelId,
+      provider: result.provider || 'unknown',
+      errorClass: result.errorClass || null,
+      error: result.error || null,
+    }));
 
   return {
     days,
@@ -96,6 +104,7 @@ function buildReview(entries, days, inputPath = HISTORY_FILE) {
     latestCapturedAt: latest?.capturedAt || null,
     currentPrimary: latest?.current || null,
     latestRecommended: latest?.recommended || null,
+    latestFailures,
     topModels: top,
     recommendation: latest?.recommended && latest?.current && latest.recommended !== latest.current
       ? 'compare'
@@ -118,11 +127,19 @@ function printReview(review) {
     `- current: ${review.currentPrimary || '-'}`,
     `- latest recommended: ${review.latestRecommended || '-'}`,
     `- recommendation: ${review.recommendation}`,
+    ...(review.latestFailures?.length ? [`- latest failures: ${review.latestFailures.length}건`] : []),
     '',
     '상위 속도 모델',
     ...review.topModels.map((item, index) =>
       `${index + 1}. ${item.modelId} | avg ttft ${item.avgTtft ?? '-'}ms | avg total ${item.avgTotal ?? '-'}ms | success ${item.successRatePct}%`),
   ];
+  if (review.latestFailures?.length) {
+    lines.push('');
+    lines.push('최신 실패 모델');
+    for (const item of review.latestFailures.slice(0, 5)) {
+      lines.push(`- ${item.modelId} | ${item.errorClass || 'request_failed'} | ${(item.error || '-').slice(0, 120)}`);
+    }
+  }
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 

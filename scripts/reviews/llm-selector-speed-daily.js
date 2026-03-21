@@ -24,11 +24,19 @@ function runSpeedTest() {
     encoding: 'utf8',
   });
 
+  const stdout = result.stdout || '';
+  const stderr = result.stderr || '';
+  const failureDetail = stderr.trim()
+    || stdout.split('\n').map((line) => line.trim()).filter(Boolean).reverse()
+      .find((line) => line.includes('❌') || line.includes('실패'))
+    || '';
+
   return {
     status: result.status,
     ok: result.status === 0,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
+    stdout,
+    stderr,
+    failureDetail,
   };
 }
 
@@ -39,6 +47,7 @@ function buildRun({ days, skipTest }) {
     status: 0,
     stdout: '',
     stderr: '',
+    failureDetail: '',
   } : runSpeedTest();
 
   const review = buildReview(undefined, days);
@@ -73,6 +82,9 @@ function printHuman(run) {
   if (!run.speedTest.ok && run.speedTest.stderr) {
     lines.push('');
     lines.push(`speed-test error: ${run.speedTest.stderr.trim()}`);
+  } else if (!run.speedTest.ok && run.speedTest.failureDetail) {
+    lines.push('');
+    lines.push(`speed-test error: ${run.speedTest.failureDetail}`);
   }
   return lines.join('\n');
 }
