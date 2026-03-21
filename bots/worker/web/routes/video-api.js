@@ -31,7 +31,7 @@ const VIDEO_CONFIG = loadConfig();
 fs.mkdirSync(WORKER_UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(ZIP_TEMP_DIR, { recursive: true });
 
-const ALLOWED_EXTENSIONS = new Set(['.mp4', '.m4a', '.mp3', '.wav']);
+const ALLOWED_EXTENSIONS = new Set(['.mp4', '.m4a', '.mp3', '.wav', '.png', '.jpg', '.jpeg', '.webp']);
 const VIDEO_MIMES = new Set(['video/mp4']);
 const AUDIO_MIMES = new Set([
   'audio/mp4',
@@ -42,6 +42,12 @@ const AUDIO_MIMES = new Set([
   'audio/x-wav',
   'audio/vnd.wave',
   'audio/wave',
+]);
+const IMAGE_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
 ]);
 
 function normalizeOriginalFilename(name) {
@@ -73,12 +79,12 @@ const upload = multer({
     fileSize: 500 * 1024 * 1024,
     files: 20,
   },
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (req, file, cb) => {
     const originalName = normalizeOriginalFilename(file.originalname);
     const ext = path.extname(originalName || '').toLowerCase();
     const mime = String(file.mimetype || '').toLowerCase();
     const validExt = ALLOWED_EXTENSIONS.has(ext);
-    const validMime = VIDEO_MIMES.has(mime) || AUDIO_MIMES.has(mime);
+    const validMime = VIDEO_MIMES.has(mime) || AUDIO_MIMES.has(mime) || IMAGE_MIMES.has(mime);
     if (!validExt || !validMime) {
       cb(new Error(`허용되지 않은 파일 형식입니다: ${originalName}`));
       return;
@@ -164,12 +170,13 @@ async function buildVideoWebhookCandidates() {
   };
 }
 
-function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath }) {
+function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath, extraArgs = [] }) {
   const child = fork(VIDEO_RUN_PIPELINE, [
     `--source-video=${videoPath}`,
     `--source-audio=${audioPath}`,
     `--session-id=${sessionId}`,
     `--pair-index=${pairIndex}`,
+    ...extraArgs,
     '--skip-render',
   ], {
     cwd: PROJECT_ROOT,
@@ -191,6 +198,10 @@ function runRenderDirect(editId) {
 }
 
 function detectFileType(file) {
+  const requestedType = String(file?.requested_file_type || '').trim().toLowerCase();
+  if (['video', 'audio', 'intro', 'outro', 'logo'].includes(requestedType)) {
+    return requestedType;
+  }
   const ext = path.extname(normalizeOriginalFilename(file.originalname) || '').toLowerCase();
   if (ext === '.mp4') return 'video';
   return 'audio';
@@ -301,6 +312,7 @@ function pairFiles(files) {
   });
   const byOrder = new Map();
   for (const file of sorted) {
+    if (!['video', 'audio'].includes(String(file.file_type || ''))) continue;
     const key = Number(file.sort_order || 0);
     if (!byOrder.has(key)) byOrder.set(key, []);
     byOrder.get(key).push(file);
@@ -464,6 +476,8 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
       return sendBadRequest(res, '업로드할 파일이 없습니다.');
     }
 
+    const requestedFileType = String(req.body?.file_type || '').trim().toLowerCase();
+
     const existingFiles = await listFiles(sessionId);
     let sortOrder = existingFiles.length + 1;
     const inserted = [];
@@ -472,8 +486,13 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
       const originalName = normalizeOriginalFilename(file.originalname);
       const ext = path.extname(originalName || '').toLowerCase();
       const mime = String(file.mimetype || '').toLowerCase();
+      file.requested_file_type = requestedFileType;
       const fileType = detectFileType(file);
-      const validMime = fileType === 'video' ? VIDEO_MIMES.has(mime) : AUDIO_MIMES.has(mime);
+      const validMime = fileType === 'logo'
+        ? IMAGE_MIMES.has(mime)
+        : (fileType === 'video' || fileType === 'intro' || fileType === 'outro')
+          ? VIDEO_MIMES.has(mime)
+          : AUDIO_MIMES.has(mime);
       if (!ALLOWED_EXTENSIONS.has(ext) || !validMime) {
         fs.unlinkSync(file.path);
         return sendBadRequest(res, `허용되지 않은 파일입니다: ${originalName}`);
@@ -482,7 +501,9 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
       const storedPath = buildStoredPath(file);
       let durationMs = null;
       try {
-        durationMs = await probeDurationMs(storedPath);
+        if (fileType !== 'logo') {
+          durationMs = await probeDurationMs(storedPath);
+        }
       } catch (_error) {
         durationMs = null;
       }
@@ -536,6 +557,28 @@ router.post('/sessions/:id/upload', auditLog('UPLOAD', 'video_upload_files'), up
         }
       }
     }
+    res.status(500).json({ error: toErrorMessage(error) });
+  }
+});
+
+router.put('/sessions/:id/intro-outro', auditLog('UPDATE', 'video_sessions'), async (req, res) => {
+  try {
+    const sessionId = Number.parseInt(req.params.id, 10);
+    const session = await getSessionForCompany(sessionId, req.user.company_id);
+    if (!session) return sendNotFound(res, '세션을 찾을 수 없습니다.');
+
+    const intro = req.body?.intro || {};
+    const outro = req.body?.outro || {};
+    await updateSession(sessionId, {
+      intro_mode: String(intro.mode || 'none'),
+      intro_prompt: String(intro.prompt || '').trim() || null,
+      intro_duration_sec: Number.parseInt(intro.durationSec, 10) || Number(VIDEO_CONFIG?.intro_outro?.default_intro_duration_sec || 3),
+      outro_mode: String(outro.mode || 'none'),
+      outro_prompt: String(outro.prompt || '').trim() || null,
+      outro_duration_sec: Number.parseInt(outro.durationSec, 10) || Number(VIDEO_CONFIG?.intro_outro?.default_outro_duration_sec || 5),
+    });
+    res.json({ success: true });
+  } catch (error) {
     res.status(500).json({ error: toErrorMessage(error) });
   }
 });
@@ -626,6 +669,10 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
       return sendBadRequest(res, '편집할 영상-음성 세트를 만들 수 없습니다.');
     }
 
+    const introFile = files.find((file) => file.file_type === 'intro');
+    const outroFile = files.find((file) => file.file_type === 'outro');
+    const logoFile = files.find((file) => file.file_type === 'logo');
+
     await updateSession(sessionId, {
       status: 'processing',
       error_message: null,
@@ -658,12 +705,36 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
           title: session.title || `세트_${pair.pairIndex}`,
           editNotes: session.edit_notes || '',
           skipRender: true,
+          introMode: session.intro_mode || 'none',
+          introFilePath: introFile?.stored_path || '',
+          introPrompt: session.intro_prompt || '',
+          introDurationSec: Number(session.intro_duration_sec || VIDEO_CONFIG?.intro_outro?.default_intro_duration_sec || 3),
+          introLogoPath: logoFile?.stored_path || '',
+          outroMode: session.outro_mode || 'none',
+          outroFilePath: outroFile?.stored_path || '',
+          outroPrompt: session.outro_prompt || '',
+          outroDurationSec: Number(session.outro_duration_sec || VIDEO_CONFIG?.intro_outro?.default_outro_duration_sec || 5),
+          outroLogoPath: logoFile?.stored_path || '',
         },
         directRunner: () => runPipelineDirect({
           sessionId,
           pairIndex: pair.pairIndex,
           videoPath: pair.video.stored_path,
           audioPath: pair.audio.stored_path,
+          extraArgs: [
+            `--title=${session.title || `세트_${pair.pairIndex}`}`,
+            `--edit-notes=${session.edit_notes || ''}`,
+            `--intro-mode=${session.intro_mode || 'none'}`,
+            `--intro-duration=${Number(session.intro_duration_sec || VIDEO_CONFIG?.intro_outro?.default_intro_duration_sec || 3)}`,
+            `--outro-mode=${session.outro_mode || 'none'}`,
+            `--outro-duration=${Number(session.outro_duration_sec || VIDEO_CONFIG?.intro_outro?.default_outro_duration_sec || 5)}`,
+            ...(introFile?.stored_path ? [`--intro-file=${introFile.stored_path}`] : []),
+            ...(session.intro_prompt ? [`--intro-prompt=${session.intro_prompt}`] : []),
+            ...(logoFile?.stored_path ? [`--intro-logo=${logoFile.stored_path}`] : []),
+            ...(outroFile?.stored_path ? [`--outro-file=${outroFile.stored_path}`] : []),
+            ...(session.outro_prompt ? [`--outro-prompt=${session.outro_prompt}`] : []),
+            ...(logoFile?.stored_path ? [`--outro-logo=${logoFile.stored_path}`] : []),
+          ],
         }),
         logger: console,
       });

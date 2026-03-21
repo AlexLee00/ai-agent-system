@@ -34,12 +34,13 @@ function ensureAuthorized(req, res) {
   return true;
 }
 
-function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath }) {
+function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath, extraArgs = [] }) {
   const child = fork(VIDEO_RUN_PIPELINE, [
     `--source-video=${videoPath}`,
     `--source-audio=${audioPath}`,
     `--session-id=${sessionId}`,
     `--pair-index=${pairIndex}`,
+    ...extraArgs,
     '--skip-render',
   ], {
     cwd: PROJECT_ROOT,
@@ -84,6 +85,20 @@ router.post('/run-pipeline', (req, res) => {
     pairIndex,
     videoPath: sourceVideoPath,
     audioPath: sourceAudioPath,
+    extraArgs: [
+      ...(req.body?.title ? [`--title=${String(req.body.title)}`] : []),
+      ...(req.body?.editNotes ? [`--edit-notes=${String(req.body.editNotes)}`] : []),
+      `--intro-mode=${String(req.body?.introMode || 'none')}`,
+      ...(req.body?.introFilePath ? [`--intro-file=${String(req.body.introFilePath)}`] : []),
+      ...(req.body?.introPrompt ? [`--intro-prompt=${String(req.body.introPrompt)}`] : []),
+      ...(req.body?.introDurationSec ? [`--intro-duration=${Number(req.body.introDurationSec)}`] : []),
+      ...(req.body?.introLogoPath ? [`--intro-logo=${String(req.body.introLogoPath)}`] : []),
+      `--outro-mode=${String(req.body?.outroMode || 'none')}`,
+      ...(req.body?.outroFilePath ? [`--outro-file=${String(req.body.outroFilePath)}`] : []),
+      ...(req.body?.outroPrompt ? [`--outro-prompt=${String(req.body.outroPrompt)}`] : []),
+      ...(req.body?.outroDurationSec ? [`--outro-duration=${Number(req.body.outroDurationSec)}`] : []),
+      ...(req.body?.outroLogoPath ? [`--outro-logo=${String(req.body.outroLogoPath)}`] : []),
+    ],
   });
 
   res.json({

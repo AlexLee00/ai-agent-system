@@ -58,6 +58,47 @@ subtitle_correction:
   max_retries: 2
   temperature: 0.1
 
+# 장면 인덱싱 (AI 싱크 매칭 파이프라인)
+scene_indexer:
+  interval_sec: 10
+  max_frames: 500
+  dedup_threshold: 5
+  dedup_method: phash
+  ocr_lang: eng
+  ocr_workers: 2
+  llm_batch_size: 8
+  llm_model: gpt-4o-mini
+  llm_timeout_ms: 15000
+
+# 나레이션 분석
+narration_analyzer:
+  segment_min_sec: 10
+  segment_max_sec: 60
+  correct_subtitle: true
+  llm_model: gpt-4o-mini
+  llm_timeout_ms: 15000
+
+# AI 싱크 매칭
+sync_matcher:
+  keyword_min_overlap: 2
+  embedding_threshold: 0.5
+  time_reorder_penalty: 0.3
+  max_speed_factor: 2.0
+  min_speed_factor: 0.5
+  unmatched_strategy: hold
+
+# 인트로/아웃트로
+intro_outro:
+  default_intro_duration_sec: 3
+  default_outro_duration_sec: 5
+  default_bg_color: black
+  default_text_color: white
+  default_font_size: 72
+  fade_duration_sec: 0.5
+  llm_model: gpt-4o-mini
+  llm_timeout_ms: 15000
+  fallback_enabled: true
+
 # 품질 검증 루프
 quality_loop:
   enabled: false

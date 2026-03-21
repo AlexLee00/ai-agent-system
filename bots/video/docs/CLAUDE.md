@@ -1,13 +1,17 @@
 # 비디오팀 CLAUDE.md — Claude Code 프로젝트 규칙
 
 > 이 파일은 Claude Code가 비디오팀 과제 실행 시 반드시 먼저 읽는 파일입니다.
-> 최종 업데이트: 2026-03-20
+> 최종 업데이트: 2026-03-21 (Phase 2 AI 싱크 매칭 전환)
 
 ## 프로젝트 개요
 
 FlutterFlow 유튜브 채널(AI·노코드 THE100) 영상 편집 자동화.
-원본 영상 + 나레이션 → 자동 편집 → 1440p/60fps 최종본 렌더링.
+원본 영상(무음 FlutterFlow 화면녹화) + 나레이션 → AI 싱크 매칭 → 1440p/60fps 최종본 렌더링.
 더백클래스 LMS (the100class.flutterflow.app) 강의 영상이 대상.
+
+★ Phase 2 핵심: 원본 영상 전체를 OCR로 장면 인덱싱 후,
+나레이션 구간별로 적합한 장면을 AI가 자동 매칭하는 구조.
+Phase 1의 syncVideoAudio(원본 앞부분만 자름)는 폐기됨.
 
 ## 기술 스택
 
@@ -72,6 +76,10 @@ audio_normalize:
 14. RAG 피드백 루프: 편집 완료 시 결과를 반드시 RAG에 축적 (video-rag.js `storeEditResult`)
 15. Critic/EDL은 RAG 인사이트를 참조 후 분석/생성 (`enhanceCriticWithRAG`, `enhanceEDLWithRAG`)
 16. RAG 실패 시 파이프라인 중단 금지 — graceful degradation (`rag-safe.js` 패턴)
+17. 원본 영상은 전체를 OCR 장면 인덱싱 — syncVideoAudio()로 앞부분만 자르지 않음
+18. 나레이션↔장면 매칭은 키워드 매칭 우선, 임베딩 유사도 fallback
+19. 인트로/아웃트로는 파일 업로드 또는 프롬프트 설명 중 택1 (하이브리드)
+20. OCR은 tesseract.js 사용 (FlutterFlow UI가 영어 텍스트 위주라 eng 모델로 충분)
 
 ## 문서 참조 순서
 
@@ -122,6 +130,53 @@ EDL 생성 주체:
 - Refiner(BLUE): 권고 반영 → edit_decision_list.json 생성/수정
 - 영상제작팀: 워커 웹에서 프레임 단위 편집 의견 → EDL 수정
 - FFmpeg: EDL JSON 해석 → 프리뷰(720p) 또는 최종 렌더링(1440p/24Mbps)
+
+## AI 싱크 매칭 파이프라인 — Phase 2 핵심
+
+원본 영상(23~74분, 무음 FlutterFlow 화면 녹화)과 나레이션(4~14분)을
+자동으로 매칭하는 파이프라인.
+
+입력 특성:
+- 원본 영상: 완전 무음(-91dB), 1920x1080, 마우스/클릭 포함 화면 녹화
+- 나레이션: 한국어, 4~14분
+- 원본 대비 나레이션 비율: 10~30% (원본의 대부분은 사용 안 됨)
+- 최종본은 나레이션 길이 + 인트로/아웃트로 (7~34분)
+
+파이프라인 흐름:
+1. normalizeAudio (나레이션 정규화)
+2. STT + 자막 교정 (기존 Whisper + gpt-4o-mini)
+3. indexVideo — 원본 프레임 캡처 → OCR → LLM 장면 분류 (scene-indexer.js)
+4. analyzeNarration — 나레이션 구간별 의도/키워드 추출 (narration-analyzer.js)
+5. buildSyncMap — 키워드 매칭 → 임베딩 fallback → 시간순서 보정 (sync-matcher.js)
+6. processIntroOutro — 파일 또는 프롬프트 기반 인트로/아웃트로 (intro-outro-handler.js)
+7. syncMapToEDL → 렌더링 (edl-builder.js 확장)
+8. 품질 루프 + RAG (기존)
+
+핵심 모듈:
+- `bots/video/lib/scene-indexer.js` — OCR 장면 인덱싱
+- `bots/video/lib/narration-analyzer.js` — 나레이션 구간 분석
+- `bots/video/lib/sync-matcher.js` — AI 싱크 매칭 엔진
+- `bots/video/lib/intro-outro-handler.js` — 인트로/아웃트로 하이브리드
+
+## 인트로/아웃트로 하이브리드
+
+인트로/아웃트로는 2가지 모드 중 택1:
+
+Mode A (file): 사용자가 인트로.mp4/아웃트로.mp4 직접 업로드
+→ 해상도/fps 본편 맞춤 후 EDL 앞/뒤에 concat
+
+Mode B (prompt): "채널 로고 3초 + 강의 제목 페이드인" 텍스트 설명
+→ LLM이 FFmpeg drawtext 명령 생성 → 타이틀 카드 자동 생성
+→ LLM 실패 시 기본 템플릿 fallback (검정 배경 + 흰색 텍스트)
+
+Mode `none`: 인트로/아웃트로 없음 (기본값)
+
+워커 웹 UI 흐름 (5단계):
+1. 파일 업로드 (원본 + 나레이션)
+2. 인트로 선택 (파일/프롬프트/없음)
+3. 아웃트로 선택 (파일/프롬프트/없음)
+4. 편집 의도 입력
+5. 편집 시작
 
 ## RAG 피드백 루프 — 학습하는 편집 시스템
 

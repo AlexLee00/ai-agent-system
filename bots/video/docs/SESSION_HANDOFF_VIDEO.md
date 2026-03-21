@@ -3,8 +3,21 @@
 > 세션 날짜: 2026-03-21
 > 담당: 메티 (claude.ai Opus) + Codex
 > 상태: ★ Phase 1 전체 완료 — 과제 1~13 + RAG 피드백 루프
+> Phase 2 전환: 2026-03-21
+> syncVideoAudio() 폐기 → AI 싱크 매칭 파이프라인으로 전환
+> 과제 A(scene-indexer) + B(narration-analyzer) + C(sync-matcher) + D(intro-outro) 구현 중
 
 ---
+
+## Phase 2 현재 상태
+
+- `scene-indexer.js`, `narration-analyzer.js`, `sync-matcher.js`, `intro-outro-handler.js`가 추가됐다.
+- `run-pipeline.js`는 이제 `scene-indexer -> narration-analyzer -> sync-matcher -> intro/outro -> syncMapToEDL` 흐름을 사용한다.
+- worker-web `/video`는 5단계 흐름(업로드 → 인트로 → 아웃트로 → 의도 → 시작)으로 확장됐다.
+- `video_sessions`에는 `intro_mode`, `intro_prompt`, `intro_duration_sec`, `outro_mode`, `outro_prompt`, `outro_duration_sec` 컬럼이 추가됐다.
+- 현재 런타임 검증 경계:
+  - OCR은 `tesseract.js` 기본 경로에 더해 로컬 `tesseract` CLI fallback을 테스트 레일에 붙였다.
+  - STT/LLM은 샌드박스 네트워크 제약 시 오프라인 fixture fallback으로 테스트를 이어간다.
 
 ## Phase 1 완료 요약
 

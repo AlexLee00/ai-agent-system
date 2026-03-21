@@ -385,7 +385,122 @@ function escapeDrawtextText(text) {
     .replace(/,/g, '\\,');
 }
 
+function resolveEdlInputs(edl) {
+  const inputs = Array.isArray(edl.inputs) && edl.inputs.length
+    ? edl.inputs
+    : [{ id: 'main', type: 'video', path: edl.source }];
+  return inputs
+    .filter((input) => input?.path)
+    .map((input, index) => ({
+      ...input,
+      ffmpegIndex: index,
+      path: path.resolve(input.path),
+    }));
+}
+
+function buildInputArgs(edl) {
+  const inputs = resolveEdlInputs(edl);
+  const args = [];
+  for (const input of inputs) {
+    args.push('-i', input.path);
+  }
+  return { args, inputs };
+}
+
+function buildFFmpegFilterV2(edl) {
+  const ffInputs = resolveEdlInputs(edl);
+  const inputById = new Map(ffInputs.map((input) => [input.id, input]));
+  const narrationInput = inputById.get('narration');
+  const clips = Array.isArray(edl.clips) ? edl.clips : [];
+  const filterParts = [];
+  const videoLabels = [];
+  const audioLabels = [];
+  let timelineCursor = 0;
+  const audioSampleRate = 48000;
+  const audioChannels = 'stereo';
+
+  clips.forEach((clip, index) => {
+    const sourceInput = inputById.get(clip.source_id);
+    if (!sourceInput) return;
+
+    const sourceStart = safeParseFloat(clip.source_start, 0);
+    const sourceEnd = safeParseFloat(clip.source_end, sourceStart);
+    const clipDuration = Math.max(0, safeParseFloat(clip.timeline_end, 0) - safeParseFloat(clip.timeline_start, 0));
+    if (clipDuration <= 0 || sourceEnd <= sourceStart) return;
+
+    const speed = Math.max(0.01, safeParseFloat(clip.speed, 1));
+    const videoLabel = `vclip_${index}`;
+    const audioLabel = `aclip_${index}`;
+    const videoChain = [
+      `[${sourceInput.ffmpegIndex}:v]trim=start=${sourceStart.toFixed(3)}:end=${sourceEnd.toFixed(3)}`,
+      'setpts=PTS-STARTPTS',
+    ];
+    if (speed !== 1) {
+      videoChain.push(`setpts=(PTS-STARTPTS)/${speed}`);
+    }
+    filterParts.push(`${videoChain.join(',')}[${videoLabel}]`);
+    videoLabels.push(`[${videoLabel}]`);
+
+    const audioStart = safeParseFloat(
+      clip.audio_start,
+      safeParseFloat(clip.narration_start, 0)
+    );
+    const audioEnd = safeParseFloat(
+      clip.audio_end,
+      safeParseFloat(clip.narration_end, audioStart + clipDuration)
+    );
+    if (clip.clip_type === 'main' && narrationInput) {
+      const audioChain = [
+        `[${narrationInput.ffmpegIndex}:a]atrim=start=${audioStart.toFixed(3)}:end=${audioEnd.toFixed(3)}`,
+        'asetpts=PTS-STARTPTS',
+      ];
+      if (speed !== 1) {
+        audioChain.push(atempoChain(speed));
+      }
+      filterParts.push(`${audioChain.join(',')}[${audioLabel}]`);
+    } else {
+      filterParts.push(
+        `anullsrc=r=${audioSampleRate}:cl=${audioChannels},atrim=duration=${clipDuration.toFixed(3)},asetpts=PTS-STARTPTS[${audioLabel}]`
+      );
+    }
+    audioLabels.push(`[${audioLabel}]`);
+    timelineCursor = Math.max(timelineCursor, safeParseFloat(clip.timeline_end, 0));
+  });
+
+  if (!videoLabels.length) {
+    throw new Error('EDL v2에 렌더링할 clip이 없습니다.');
+  }
+
+  if (videoLabels.length === 1) {
+    filterParts.push(`${videoLabels[0]}null[vcat]`);
+    filterParts.push(`${audioLabels[0]}anull[acat]`);
+  } else {
+    filterParts.push(`${videoLabels.join('')}concat=n=${videoLabels.length}:v=1:a=0[vcat]`);
+    filterParts.push(`${audioLabels.join('')}concat=n=${audioLabels.length}:v=0:a=1[acat]`);
+  }
+
+  let currentVideoLabel = 'vcat';
+  if (edl.subtitle && supportsFilter('subtitles')) {
+    const subtitleLabel = 'vsub';
+    filterParts.push(
+      `[${currentVideoLabel}]subtitles=filename='${escapeSubtitlesPath(edl.subtitle)}'[${subtitleLabel}]`
+    );
+    currentVideoLabel = subtitleLabel;
+  }
+
+  filterParts.push(`[${currentVideoLabel}]null[vout]`);
+  filterParts.push('[acat]anull[aout]');
+
+  return {
+    filter: filterParts.join(';\n'),
+    duration: timelineCursor || safeParseFloat(edl.duration, 0),
+  };
+}
+
 function buildFFmpegFilter(edl) {
+  if (Number(edl?.version) >= 2 && Array.isArray(edl?.clips)) {
+    return buildFFmpegFilterV2(edl);
+  }
   const sourcePath = edl.source;
   const subtitlePath = edl.subtitle;
   if (!sourcePath) {
@@ -510,12 +625,13 @@ function buildPreviewCommand(edl, outputPath, config) {
   const { filter, duration } = buildFFmpegFilter(edl);
   const previewFilter = `${filter};\n[vout]scale=1280:720:flags=lanczos[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(previewFilter, 'preview');
+  const { args: inputArgs } = buildInputArgs(edl);
 
   const args = [
     'ffmpeg',
     '-y',
     '-nostdin',
-    '-i', edl.source,
+    ...inputArgs,
     '-filter_complex_script', filterScriptPath,
     '-map', '[vfinal]',
     '-map', '[afinal]',
@@ -538,12 +654,13 @@ function buildFinalRenderCommand(edl, outputPath, config) {
   const ff = config.ffmpeg;
   const finalFilter = `${filter};\n[vout]scale=${ff.render_width}:${ff.render_height}:flags=lanczos[vscaled];\n[vscaled]fps=${ff.render_fps}[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(finalFilter, 'final');
+  const { args: inputArgs } = buildInputArgs(edl);
 
   const args = [
     'ffmpeg',
     '-y',
     '-nostdin',
-    '-i', edl.source,
+    ...inputArgs,
     '-filter_complex_script', filterScriptPath,
     '-map', '[vfinal]',
     '-map', '[afinal]',

@@ -3,6 +3,40 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
+
+### 신규 모듈
+- `bots/video/lib/scene-indexer.js`
+  - OCR 기반 원본 영상 장면 인덱싱
+- `bots/video/lib/narration-analyzer.js`
+  - 나레이션 구간별 의도/키워드 분석
+- `bots/video/lib/sync-matcher.js`
+  - 키워드+임베딩 기반 AI 싱크 매칭
+- `bots/video/lib/intro-outro-handler.js`
+  - 인트로/아웃트로 하이브리드 (파일/프롬프트)
+- `bots/video/migrations/004-intro-outro.sql`
+  - 인트로/아웃트로 DB 컬럼 추가
+
+### 변경
+- `bots/video/scripts/run-pipeline.js`
+  - `syncVideoAudio()` 기본 경로를 제거하고 `scene-indexer -> narration-analyzer -> sync-matcher -> intro-outro -> syncMapToEDL` 흐름으로 교체
+- `bots/video/lib/edl-builder.js`
+  - 다중 입력과 clip 기반 `version: 2` EDL 렌더링 지원
+- `bots/video/config/video-config.yaml`
+  - `scene_indexer`, `narration_analyzer`, `sync_matcher`, `intro_outro` 섹션 추가
+- `bots/worker/web/routes/video-api.js`
+  - 인트로/아웃트로 API 및 `file_type` 확장
+- `bots/worker/web/routes/video-internal-api.js`
+  - 내부 `run-pipeline` 호출에 intro/outro 인자 전달
+- `bots/worker/web/app/video/page.js`
+  - 5단계 질문 흐름과 인트로/아웃트로 입력 UI 추가
+- `bots/video/n8n/video-pipeline-workflow.json`
+  - intro/outro 관련 webhook payload 전달 확장
+
+### 폐기
+- `ffmpeg-preprocess.js`의 `syncVideoAudio()`는 더 이상 `run-pipeline`의 메인 경로에서 호출하지 않음
+  - 함수 자체는 유지되며 Phase 1 호환/보조 용도로만 남김
+
 ## 12주차 후속 (2026-03-22) — 일일 운영 분석 리포트 해석 품질 보강
 
 ### 변경 사항 (changed)
