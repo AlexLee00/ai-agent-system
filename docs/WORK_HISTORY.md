@@ -3869,3 +3869,8 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/scripts/trading-journal.js`, `bots/investment/scripts/weekly-trade-review.js`는 decision 퍼널 / 운영모드 피드백 / validation 승격 후보 섹션에서 `weakTop`을 함께 노출하도록 정리
 - `bots/investment/scripts/runtime-config-suggestions.js`도 validation 요약에 `weakTop`을 포함하도록 연결해 threshold 튜닝이 “임계값 근처 신호 부족”인지 “실제로 약한 신호 과다”인지 구분할 수 있는 기반을 마련
 - 현재 과거 `pipeline_runs.meta`에는 새 필드가 없으므로, 의미 있는 `weakTop`은 다음 암호화폐 파이프라인 실행부터 누적된다
+
+### 루나 암호화폐 재진입 차단 코드 세분화
+- `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리
+- 목적은 추가진입 차단을 한 묶음으로 보지 않고, 검증용 PAPER 포지션 과밀과 실제 LIVE 포지션 보유 상태를 운영 리포트에서 구분하기 위함
+- 현재는 차단 정책 자체를 완화하지 않았고, 먼저 원장/리포트 의미를 정교하게 만드는 1차 계측 단계로 정리

@@ -193,6 +193,15 @@
    - 일정 시간 경과 후 재진입 허용
    - validation에서는 reentry 기준을 normal보다 조금 더 완화
 
+1차 반영 완료:
+- execution bot block code를 아래처럼 분리
+  - `paper_position_reentry_blocked`
+  - `live_position_reentry_blocked`
+- 목적은 threshold 조정보다 먼저, 실제 병목이
+  - PAPER 검증 포지션 과밀인지
+  - LIVE 실포지션 보유 상태인지
+를 운영 리포트에서 분리해 읽게 만드는 것이다
+
 나중에 확장할 구조:
 - scale-in 전용 정책
 - position age / unrealized / exposure 기반 재진입 허용

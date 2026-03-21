@@ -323,7 +323,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
-          code: 'position_reentry_blocked',
+          code: 'paper_position_reentry_blocked',
           market: 'domestic',
           symbol,
           action,
@@ -336,7 +336,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
-          code: 'position_reentry_blocked',
+          code: 'live_position_reentry_blocked',
           market: 'domestic',
           symbol,
           action,
@@ -538,7 +538,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
-          code: 'position_reentry_blocked',
+          code: 'paper_position_reentry_blocked',
           market: 'overseas',
           symbol,
           action,
@@ -551,7 +551,7 @@ export async function executeOverseasSignal(signal) {
         console.warn(`  ⚠️ ${reason}`);
         await markSignalFailedDetailed(signalId, {
           reason,
-          code: 'position_reentry_blocked',
+          code: 'live_position_reentry_blocked',
           market: 'overseas',
           symbol,
           action,
