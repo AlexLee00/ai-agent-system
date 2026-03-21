@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 품질 루프 1차 검증 완료
+> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 1차 구현 완료
 
 ---
 
@@ -215,6 +215,14 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - quality-loop는 `critic_report_v0.json`, `refiner_result_v1.json`, `evaluation_v1.json`, `loop_result.json`을 temp 원장으로 남김
     - 실제 테스트 결과 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`
     - 현재 샘플에서는 Refiner 추가 변경이 없어 최고 버전은 원본 `subtitle_corrected.srt + edit_decision_list.json` 유지
+  - n8n 연동 1차 구현 완료
+    - `n8n/video-pipeline-workflow.json`
+    - `n8n/setup-video-workflow.js`
+    - `scripts/check-n8n-video-path.js`
+    - `worker/web/routes/video-api.js`의 `start/confirm` 경로를 `runWithN8nFallback()` 기반으로 전환
+    - n8n 장애 시 기존 `fork()` direct fallback 유지
+    - `packages/core/lib/n8n-runner.js`에 커스텀 헤더 전달 지원 추가 (`X-Video-Token`)
+    - 현재 로컬 진단 결과는 `n8nHealthy=false`, `webhookReason=unreachable`라 fallback 경로가 실제로 필요한 상태
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB
@@ -227,7 +235,7 @@ Week 1: 핵심 파이프라인
 
 Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 8: 워커 웹 대화형 영상 편집 페이지 (API + UI 1차 연결)
-  ☐ 과제 9: n8n 연동
+  ✅ 과제 9: n8n 연동 (fallback 포함)
   ✅ 과제 10: Critic
   ✅ 과제 11: Refiner
   ✅ 과제 12: Evaluator + quality loop

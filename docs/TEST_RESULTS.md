@@ -131,6 +131,17 @@
 | `node bots/video/scripts/test-quality-loop.js` | ✅ 실제 quality loop 실행, `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `loop_result.json` 생성 |
 | `node --input-type=module -e "... runEvaluator('./bots/video/temp/refiner_result.json', './bots/video/temp/synced.mp4', config) ..."` | ✅ standalone `refiner_result.json` 기준 `analysis.json` 자동 추론, `score=71`, `recommendation=ACCEPT_BEST` 확인 |
 
+### 비디오팀 과제 9 — n8n 연동
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/n8n-runner.js` | ✅ |
+| `node --check bots/video/n8n/setup-video-workflow.js` | ✅ |
+| `node --check bots/video/scripts/check-n8n-video-path.js` | ✅ |
+| `node --check bots/worker/web/routes/video-api.js` | ✅ |
+| `node -e "JSON.parse(fs.readFileSync('bots/video/n8n/video-pipeline-workflow.json','utf8'))"` | ✅ workflow JSON 파싱 확인 |
+| `node bots/video/scripts/check-n8n-video-path.js` | ✅ 현재 컨텍스트 기준 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError` 확인 — direct fallback 필요성 검증 |
+
 ### 비디오팀 과제 11 — Refiner Agent
 
 | 테스트 | 결과 |

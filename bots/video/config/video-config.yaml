@@ -14,6 +14,14 @@ capcut_api:
   host: http://localhost:9001
   mcp_cwd: /Users/alexlee/projects/CapCutAPI
 
+# n8n 연동
+n8n:
+  health_url: http://127.0.0.1:5678/healthz
+  base_url: http://127.0.0.1:5678
+  webhook_path: video-pipeline
+  workflow_name: Video Pipeline
+  token: ${VIDEO_N8N_TOKEN}
+
 # FFmpeg 렌더링 (YouTube 공식 권장)
 ffmpeg:
   # 오디오 정규화

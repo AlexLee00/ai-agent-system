@@ -1,0 +1,60 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
+const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+
+const WORKFLOW_PATH = path.join(__dirname, 'video-pipeline-workflow.json');
+const EMAIL = process.env.N8N_EMAIL || '***REMOVED***';
+const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
+const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
+const VIDEO_TOKEN = process.env.VIDEO_N8N_TOKEN || '';
+
+const client = createN8nSetupClient({
+  host: '127.0.0.1',
+  port: 5678,
+  email: EMAIL,
+  password: PASSWORD,
+  logger: console,
+});
+
+function hydrateWorkflow(workflow) {
+  if (!VIDEO_TOKEN) {
+    throw new Error('VIDEO_N8N_TOKEN 환경변수가 필요합니다.');
+  }
+
+  const cloned = JSON.parse(JSON.stringify(workflow));
+  for (const node of cloned.nodes || []) {
+    if (node.type === 'n8n-nodes-base.code' && typeof node.parameters?.jsCode === 'string') {
+      node.parameters.jsCode = node.parameters.jsCode.replace(/__VIDEO_N8N_TOKEN__/g, VIDEO_TOKEN);
+    }
+  }
+  return cloned;
+}
+
+async function main() {
+  console.log('\n🎬 비디오팀 n8n 워크플로우 설정 시작\n');
+  await client.login();
+
+  const workflow = JSON.parse(fs.readFileSync(WORKFLOW_PATH, 'utf8'));
+  const hydrated = hydrateWorkflow(workflow);
+  const created = await client.createOrReplaceWorkflow(hydrated);
+
+  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
+    workflowName: workflow.name,
+    method: 'POST',
+    pathSuffix: 'video-pipeline',
+    baseUrl: N8N_BASE_URL,
+  });
+
+  console.log(`  ✅ 워크플로우 확인: "${workflow.name}" (id: ${created?.id || 'unknown'})`);
+  console.log(`  🔗 webhook: ${resolvedWebhookUrl || `${N8N_BASE_URL}/webhook/video-pipeline`}`);
+  console.log('\n✅ 비디오팀 n8n 워크플로우 설정 완료\n');
+}
+
+main().catch((error) => {
+  console.error('\n❌ 비디오팀 n8n 설정 실패:', error.message);
+  process.exit(1);
+});

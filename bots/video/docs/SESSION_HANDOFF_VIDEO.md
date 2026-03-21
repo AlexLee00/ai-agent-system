@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + 품질 루프 1차 검증 완료
+> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 1차 구현 완료
 
 ---
 
@@ -146,6 +146,26 @@ Step 3 — 과제 6~13 재정의:
   - `final_score=80`, `pass=false`
   - 현재 샘플에서는 Refiner가 추가 변경을 만들지 못해 최고 버전이 원본 subtitle/EDL로 유지됨
 
+### 10. 과제 9: 비디오팀 n8n 연동 ✅
+- `bots/video/n8n/video-pipeline-workflow.json`
+  - `Video Pipeline` 워크플로우 템플릿 추가
+  - `Webhook -> 요청 파싱 -> 토큰 확인 -> (run-pipeline | render-from-edl) -> Respond` 순차 체인
+  - `Execute Command`는 background shell로 실행돼 webhook 응답을 빠르게 반환
+- `bots/video/n8n/setup-video-workflow.js`
+  - 공용 `n8n-setup-client` 기반 안전 재생성/활성화 스크립트 추가
+  - `VIDEO_N8N_TOKEN` placeholder hydration 후 webhook URL 출력
+- `bots/video/scripts/check-n8n-video-path.js`
+  - registry resolved URL + default URL + healthz + webhook registration 진단 스크립트 추가
+  - DB 접근이 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
+- `bots/worker/web/routes/video-api.js`
+  - `POST /sessions/:id/start`, `POST /edits/:id/confirm`이 `runWithN8nFallback()`를 사용하도록 전환
+  - n8n health/webhook 실패 시 기존 detached `fork()` direct fallback 유지
+- `packages/core/lib/n8n-runner.js`
+  - 커스텀 헤더 전달 지원 추가 (`X-Video-Token`)
+- 현재 진단 결과:
+  - `check-n8n-video-path.js` 기준 `n8nHealthy=false`, `webhookReason=unreachable`
+  - 따라서 direct fallback 유지가 실제 운영 안전장치 역할을 한다
+
 ---
 
 ## 다음 세션에서 해야 할 것
@@ -156,6 +176,7 @@ Step 3 — 과제 6~13 재정의:
 - FFmpeg `drawtext` / `subtitles` capability 부족 환경에서의 자막 번인 전략 확정
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
 - 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
+- n8n 쪽은 워크플로우 import 및 `VIDEO_N8N_TOKEN` 배포 후 live webhook 등록 상태를 재확인해야 한다
 
 ### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 
@@ -209,7 +230,7 @@ Week 1: 핵심 파이프라인
 
 Week 2: 워커웹 + n8n + 품질 루프
   ✅ 과제 8: 워커 웹 프리뷰 (프레임 단위 편집 의견)
-  ☐ 과제 9: n8n 연동
+  ✅ 과제 9: n8n 연동
   ✅ 과제 10: Critic (자막+오디오+★영상 구조)
   ✅ 과제 11: Refiner (SRT+★EDL 생성/수정)
   ✅ 과제 12: Evaluator + 품질 루프

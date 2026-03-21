@@ -8,8 +8,11 @@ const multer = require('multer');
 const { fork, spawn } = require('child_process');
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { runWithN8nFallback } = require('../../../../packages/core/lib/n8n-runner');
+const { buildWebhookCandidates } = require('../../../../packages/core/lib/n8n-webhook-registry');
 const { auditLog } = require('../../lib/company-guard');
 const { probeDurationMs } = require('../../../video/lib/ffmpeg-preprocess');
+const { loadConfig } = require('../../../video/src/index');
 
 const router = express.Router();
 
@@ -21,6 +24,7 @@ const VIDEO_RUN_PIPELINE = path.join(PROJECT_ROOT, 'bots/video/scripts/run-pipel
 const VIDEO_RENDER_FROM_EDL = path.join(PROJECT_ROOT, 'bots/video/scripts/render-from-edl.js');
 const WORKER_UPLOAD_DIR = path.join(__dirname, '../uploads/video');
 const ZIP_TEMP_DIR = path.join(PROJECT_ROOT, 'tmp/video-downloads');
+const VIDEO_CONFIG = loadConfig();
 
 fs.mkdirSync(WORKER_UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(ZIP_TEMP_DIR, { recursive: true });
@@ -71,6 +75,70 @@ function normalizeTitle(title) {
   return String(title || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function resolveVideoN8nToken() {
+  const raw = String(VIDEO_CONFIG?.n8n?.token || '').trim();
+  if (!raw || raw === '${VIDEO_N8N_TOKEN}') {
+    return process.env.VIDEO_N8N_TOKEN || '';
+  }
+  return raw;
+}
+
+function getVideoN8nSettings() {
+  const baseUrl = String(VIDEO_CONFIG?.n8n?.base_url || process.env.N8N_BASE_URL || 'http://127.0.0.1:5678').replace(/\/+$/, '');
+  const webhookPath = String(VIDEO_CONFIG?.n8n?.webhook_path || 'video-pipeline').replace(/^\/+/, '');
+  const workflowName = VIDEO_CONFIG?.n8n?.workflow_name || 'Video Pipeline';
+  const healthUrl = VIDEO_CONFIG?.n8n?.health_url || `${baseUrl}/healthz`;
+  const token = resolveVideoN8nToken();
+  return {
+    baseUrl,
+    webhookPath,
+    workflowName,
+    healthUrl,
+    token,
+  };
+}
+
+async function buildVideoWebhookCandidates() {
+  const settings = getVideoN8nSettings();
+  const defaults = [`${settings.baseUrl}/webhook/${settings.webhookPath}`];
+  const candidates = await buildWebhookCandidates({
+    workflowName: settings.workflowName,
+    method: 'POST',
+    pathSuffix: settings.webhookPath,
+    defaults,
+  });
+  return {
+    ...settings,
+    candidates,
+  };
+}
+
+function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath }) {
+  const child = fork(VIDEO_RUN_PIPELINE, [
+    `--source-video=${videoPath}`,
+    `--source-audio=${audioPath}`,
+    `--session-id=${sessionId}`,
+    `--pair-index=${pairIndex}`,
+    '--skip-render',
+  ], {
+    cwd: PROJECT_ROOT,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return { ok: true, source: 'direct', pid: child.pid };
+}
+
+function runRenderDirect(editId) {
+  const child = fork(VIDEO_RENDER_FROM_EDL, [`--edit-id=${editId}`], {
+    cwd: PROJECT_ROOT,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return { ok: true, source: 'direct', pid: child.pid };
 }
 
 function detectFileType(file) {
@@ -477,6 +545,10 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
       file_count: files.length,
     });
 
+    const n8n = await buildVideoWebhookCandidates();
+    const n8nHeaders = n8n.token ? { 'X-Video-Token': n8n.token } : {};
+    const dispatches = [];
+
     for (const pair of pairs) {
       await pgPool.run(
         'public',
@@ -486,24 +558,41 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
         [pair.pairIndex, pair.video.id, pair.audio.id]
       );
 
-      const child = fork(VIDEO_RUN_PIPELINE, [
-        `--source-video=${pair.video.stored_path}`,
-        `--source-audio=${pair.audio.stored_path}`,
-        `--session-id=${sessionId}`,
-        `--pair-index=${pair.pairIndex}`,
-        '--skip-render',
-      ], {
-        cwd: PROJECT_ROOT,
-        detached: true,
-        stdio: 'ignore',
+      const dispatch = await runWithN8nFallback({
+        circuitName: `video:pipeline:${sessionId}:${pair.pairIndex}`,
+        webhookCandidates: n8n.candidates,
+        healthUrl: n8n.healthUrl,
+        headers: n8nHeaders,
+        body: {
+          sessionId,
+          pairIndex: pair.pairIndex,
+          sourceVideoPath: pair.video.stored_path,
+          sourceAudioPath: pair.audio.stored_path,
+          title: session.title || `세트_${pair.pairIndex}`,
+          editNotes: session.edit_notes || '',
+          skipRender: true,
+        },
+        directRunner: () => runPipelineDirect({
+          sessionId,
+          pairIndex: pair.pairIndex,
+          videoPath: pair.video.stored_path,
+          audioPath: pair.audio.stored_path,
+        }),
+        logger: console,
       });
-      child.unref();
+      dispatches.push({
+        pairIndex: pair.pairIndex,
+        source: dispatch?.source || 'unknown',
+        webhookUrl: dispatch?.webhookUrl || null,
+        pid: dispatch?.pid || null,
+      });
     }
 
     res.json({
       success: true,
       status: 'processing',
       pair_count: pairs.length,
+      dispatches,
     });
   } catch (error) {
     await updateSession(Number.parseInt(req.params.id, 10), {
@@ -604,15 +693,32 @@ router.post('/edits/:id/confirm', auditLog('CONFIRM', 'video_edits'), async (req
     ));
     if (allConfirmed) {
       await updateSession(edit.session_id, { status: 'rendering' });
+      const n8n = await buildVideoWebhookCandidates();
+      const n8nHeaders = n8n.token ? { 'X-Video-Token': n8n.token } : {};
+      const dispatches = [];
       for (const targetEdit of edits.map((row) => row.id === editId ? { ...row, confirm_status: 'confirmed' } : row)) {
         if (targetEdit.status === 'completed') continue;
-        const child = fork(VIDEO_RENDER_FROM_EDL, [`--edit-id=${targetEdit.id}`], {
-          cwd: PROJECT_ROOT,
-          detached: true,
-          stdio: 'ignore',
+        const dispatch = await runWithN8nFallback({
+          circuitName: `video:render:${targetEdit.id}`,
+          webhookCandidates: n8n.candidates,
+          healthUrl: n8n.healthUrl,
+          headers: n8nHeaders,
+          body: {
+            sessionId: edit.session_id,
+            editId: targetEdit.id,
+            skipRender: false,
+          },
+          directRunner: () => runRenderDirect(targetEdit.id),
+          logger: console,
         });
-        child.unref();
+        dispatches.push({
+          editId: targetEdit.id,
+          source: dispatch?.source || 'unknown',
+          webhookUrl: dispatch?.webhookUrl || null,
+          pid: dispatch?.pid || null,
+        });
       }
+      return res.json({ success: true, status: 'rendering', dispatches });
     } else {
       await updateSession(edit.session_id, { status: 'confirming' });
     }
