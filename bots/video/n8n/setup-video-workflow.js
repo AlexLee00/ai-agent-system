@@ -5,12 +5,13 @@ const path = require('path');
 
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-webhook-registry');
+const { resolveVideoN8nToken } = require('../lib/video-n8n-config');
 
 const WORKFLOW_PATH = path.join(__dirname, 'video-pipeline-workflow.json');
 const EMAIL = process.env.N8N_EMAIL || '***REMOVED***';
 const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
 const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
-const VIDEO_TOKEN = process.env.VIDEO_N8N_TOKEN || '';
+const VIDEO_TOKEN = resolveVideoN8nToken();
 const INTERNAL_API_BASE_URL = process.env.WORKER_API_INTERNAL_URL || 'http://127.0.0.1:4000';
 const parsedBaseUrl = new URL(N8N_BASE_URL);
 

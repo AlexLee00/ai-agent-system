@@ -12,6 +12,7 @@ const { runWithN8nFallback } = require('../../../../packages/core/lib/n8n-runner
 const { buildWebhookCandidates } = require('../../../../packages/core/lib/n8n-webhook-registry');
 const { auditLog } = require('../../lib/company-guard');
 const { probeDurationMs } = require('../../../video/lib/ffmpeg-preprocess');
+const { resolveVideoN8nToken: resolveSharedVideoN8nToken } = require('../../../video/lib/video-n8n-config');
 const { loadConfig } = require('../../../video/src/index');
 
 const router = express.Router();
@@ -78,11 +79,7 @@ function normalizeTitle(title) {
 }
 
 function resolveVideoN8nToken() {
-  const raw = String(VIDEO_CONFIG?.n8n?.token || '').trim();
-  if (!raw || raw === '${VIDEO_N8N_TOKEN}') {
-    return process.env.VIDEO_N8N_TOKEN || '';
-  }
-  return raw;
+  return resolveSharedVideoN8nToken(VIDEO_CONFIG);
 }
 
 function getVideoN8nSettings() {

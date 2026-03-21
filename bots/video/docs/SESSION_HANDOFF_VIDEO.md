@@ -157,6 +157,8 @@ Step 3 — 과제 6~13 재정의:
 - `bots/video/n8n/setup-video-workflow.js`
   - registry DB 조회가 실패해도 setup 완료 후 기본 webhook 경로를 출력하도록 보강
   - 즉 workflow 생성/활성화는 성공했는데 URL 출력 단계 때문에 전체 setup이 실패로 끝나는 경계를 제거
+- `bots/video/lib/video-n8n-config.js`
+  - `VIDEO_N8N_TOKEN`을 env 우선, 없으면 `bots/worker/secrets.json`의 `video_n8n_token` fallback으로 읽도록 통합
 - `bots/video/scripts/check-n8n-video-path.js`
   - registry resolved URL + default URL + healthz + webhook registration 진단 스크립트 추가
   - DB 접근이 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
@@ -176,7 +178,7 @@ Step 3 — 과제 6~13 재정의:
     - `webhookRegistered=true`
     - `webhookStatus=200`
     - `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`
-  - 남은 운영 TODO는 `VIDEO_N8N_TOKEN`을 launchd/운영 secret로 영속화하는 것
+  - launchd env가 없어도 `bots/worker/secrets.json`의 `video_n8n_token`으로 영속화 가능하도록 코드 경계 정리 완료
 
 ---
 

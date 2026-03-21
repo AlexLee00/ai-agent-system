@@ -139,6 +139,7 @@
 | `node --check bots/video/n8n/setup-video-workflow.js` | ✅ |
 | `node --check bots/worker/web/routes/video-internal-api.js` | ✅ |
 | `node --check bots/worker/web/server.js` | ✅ |
+| `node --check bots/video/lib/video-n8n-config.js` | ✅ |
 | `node --check bots/video/scripts/check-n8n-video-path.js` | ✅ |
 | `node --check bots/worker/web/routes/video-api.js` | ✅ |
 | `node -e "JSON.parse(fs.readFileSync('bots/video/n8n/video-pipeline-workflow.json','utf8'))"` | ✅ workflow JSON 파싱 확인 |

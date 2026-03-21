@@ -5,6 +5,7 @@ const { fork } = require('child_process');
 const path = require('path');
 
 const { loadConfig } = require('../../../video/src/index');
+const { resolveVideoN8nToken: resolveSharedVideoN8nToken } = require('../../../video/lib/video-n8n-config');
 
 const router = express.Router();
 
@@ -14,11 +15,7 @@ const VIDEO_RENDER_FROM_EDL = path.join(PROJECT_ROOT, 'bots/video/scripts/render
 const VIDEO_CONFIG = loadConfig();
 
 function resolveVideoToken() {
-  const raw = String(VIDEO_CONFIG?.n8n?.token || '').trim();
-  if (!raw || raw === '${VIDEO_N8N_TOKEN}') {
-    return process.env.VIDEO_N8N_TOKEN || '';
-  }
-  return raw;
+  return resolveSharedVideoN8nToken(VIDEO_CONFIG);
 }
 
 function ensureAuthorized(req, res) {
