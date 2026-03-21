@@ -68,6 +68,7 @@ const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag
 const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser'));
 const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 const videoApi = require('./routes/video-api');
+const videoInternalApi = require('./routes/video-internal-api');
 const {
   buildScheduleProposal,
   normalizeScheduleProposal,
@@ -774,6 +775,7 @@ const limiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.', code: 'RATE_LIMIT' }),
 });
 app.use('/api/', limiter);
+app.use('/api/video/internal', express.json({ limit: '5mb' }), videoInternalApi);
 app.use('/api/video', requireAuth, videoApi);
 
 // ── 접근 로그 (OWASP) — 모든 라우트 앞에 배치 ─────────────────────

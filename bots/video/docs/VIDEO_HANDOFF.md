@@ -1,7 +1,7 @@
 # 비디오팀 인수인계 허브
 
 > 최종 업데이트: 2026-03-21
-> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 1차 구현 완료
+> 상태: 과제 1~12 중 Evaluator까지 완료 / worker-web 영상 편집 API·프론트 연결 완료 / 비디오팀 n8n 연동 live 검증 완료
 
 ---
 
@@ -222,8 +222,15 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - `worker/web/routes/video-api.js`의 `start/confirm` 경로를 `runWithN8nFallback()` 기반으로 전환
     - n8n 장애 시 기존 `fork()` direct fallback 유지
     - `packages/core/lib/n8n-runner.js`에 커스텀 헤더 전달 지원 추가 (`X-Video-Token`)
-    - `setup-video-workflow.js`는 이제 registry DB 조회가 막혀도 기본 webhook 경로로 degrade 하며, setup 성공 자체를 불필요하게 실패시키지 않음
-    - 현재 로컬 진단 결과는 `n8nHealthy=false`, `webhookReason=unreachable`라 fallback 경로가 실제로 필요한 상태
+    - 현재 n8n 런타임은 `ExecuteCommand` 활성화를 거부해, workflow를 `HTTP Request -> /api/video/internal/*` 구조로 호환 전환
+    - `worker/web/routes/video-internal-api.js` 추가로 n8n이 기존 detached `fork()` 경로를 내부 API로 재사용
+    - `setup-video-workflow.js`는 registry DB 조회가 막혀도 기본 webhook 경로로 degrade 하며, setup 성공 자체를 불필요하게 실패시키지 않음
+    - 임시 `VIDEO_N8N_TOKEN` + worker 재기동 기준 live 검증 결과:
+      - `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`
+      - `n8nHealthy=true`
+      - `webhookRegistered=true`
+      - `webhookStatus=200`
+    - 남은 운영 TODO는 `VIDEO_N8N_TOKEN`을 launchd/운영 secret로 영속화하는 것
 
 Week 1: 핵심 파이프라인
   ✅ 과제 1: 프로젝트 스캐폴딩 + DB

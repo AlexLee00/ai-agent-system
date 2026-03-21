@@ -37,10 +37,13 @@
   - 현재 샘플 기준 실제 quality-loop 결과는 `iteration0 score=80`, `iteration1 score=80`, `recommendation=ACCEPT_BEST`, `final_score=80`, `pass=false`다.
   - 코드 점검 후 Evaluator는 `analysis_path`가 없는 standalone `refiner_result.json`도 sibling `analysis.json` 자동 추론으로 재평가할 수 있게 보강됐다.
   - 이번 샘플에서는 Refiner가 추가 변경을 만들지 못해 최고 버전이 원본 subtitle/EDL로 유지됐고, 다음 자연스러운 단계는 과제 13 다세트 검증과 preview wall-clock 최적화다.
-  - 비디오팀 n8n 연동도 1차 구현돼 `POST /api/video/sessions/:id/start`와 `POST /api/video/edits/:id/confirm`이 `runWithN8nFallback()`를 통해 `Video Pipeline` webhook을 우선 호출하고, n8n 장애 시 기존 detached fork로 direct fallback 한다.
+  - 비디오팀 n8n 연동은 현재 live 검증까지 완료돼 `POST /api/video/sessions/:id/start`와 `POST /api/video/edits/:id/confirm`이 `runWithN8nFallback()`를 통해 `Video Pipeline` webhook을 우선 호출하고, n8n 장애 시 기존 detached fork로 direct fallback 한다.
+  - 현재 n8n 런타임은 `ExecuteCommand` activation을 거부해, workflow는 `HTTP Request -> /api/video/internal/*` 구조로 호환 전환됐다.
+  - `bots/worker/web/routes/video-internal-api.js`가 추가돼 n8n이 `X-Video-Token`으로 보호된 내부 dispatch API를 호출하고, 실제 프로세스 실행은 기존 `fork()` 경로를 재사용한다.
   - `packages/core/lib/n8n-runner.js`는 커스텀 헤더 전달을 지원하도록 확장됐고, 비디오 webhook은 `X-Video-Token`을 사용한다.
-  - `bots/video/scripts/check-n8n-video-path.js` 기준 현재 로컬 컨텍스트에서는 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError`가 확인돼 direct fallback 유지가 실제 운영 안전장치다.
-  - `bots/video/n8n/setup-video-workflow.js`도 registry DB 조회 실패 시 기본 webhook 경로로 degrade 하도록 보강돼, setup 성공 후 URL 출력 단계에서 불필요하게 실패하지 않는다.
+  - `bots/video/n8n/setup-video-workflow.js`는 registry DB 조회 실패 시 기본 webhook 경로로 degrade 하도록 보강돼, setup 성공 후 URL 출력 단계에서 불필요하게 실패하지 않는다.
+  - sandbox 밖 live 검증 기준 현재 상태는 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200`, `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`이다.
+  - 남은 운영 TODO는 `VIDEO_N8N_TOKEN`을 worker launchd/운영 secret로 영속화하는 것이다.
 - 스카
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
