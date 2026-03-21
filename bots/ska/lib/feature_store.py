@@ -28,6 +28,25 @@ TRAINING_FEATURE_TABLE_SQL = """
         reservation_morning_count    INTEGER,
         reservation_afternoon_count  INTEGER,
         reservation_evening_count    INTEGER,
+        general_payment_count        INTEGER,
+        general_payment_revenue_raw  INTEGER,
+        general_payment_morning_count INTEGER,
+        general_payment_afternoon_count INTEGER,
+        general_payment_evening_count INTEGER,
+        general_ticket_single_count  INTEGER,
+        general_ticket_hourpack_count INTEGER,
+        general_ticket_period_count  INTEGER,
+        study_room_payment_count     INTEGER,
+        study_room_payment_revenue_raw INTEGER,
+        study_room_payment_a1_count  INTEGER,
+        study_room_payment_a2_count  INTEGER,
+        study_room_payment_b_count   INTEGER,
+        study_room_use_count         INTEGER,
+        study_room_use_policy_revenue INTEGER,
+        study_room_use_booked_hours  DOUBLE PRECISION,
+        study_room_use_a1_hours      DOUBLE PRECISION,
+        study_room_use_a2_hours      DOUBLE PRECISION,
+        study_room_use_b_hours       DOUBLE PRECISION,
         cancellation_count           INTEGER,
         studyroom_revenue            INTEGER,
         ska_general_revenue          INTEGER,
@@ -90,6 +109,25 @@ def ensure_training_feature_table(con):
         ("reservation_morning_count", "INTEGER"),
         ("reservation_afternoon_count", "INTEGER"),
         ("reservation_evening_count", "INTEGER"),
+        ("general_payment_count", "INTEGER"),
+        ("general_payment_revenue_raw", "INTEGER"),
+        ("general_payment_morning_count", "INTEGER"),
+        ("general_payment_afternoon_count", "INTEGER"),
+        ("general_payment_evening_count", "INTEGER"),
+        ("general_ticket_single_count", "INTEGER"),
+        ("general_ticket_hourpack_count", "INTEGER"),
+        ("general_ticket_period_count", "INTEGER"),
+        ("study_room_payment_count", "INTEGER"),
+        ("study_room_payment_revenue_raw", "INTEGER"),
+        ("study_room_payment_a1_count", "INTEGER"),
+        ("study_room_payment_a2_count", "INTEGER"),
+        ("study_room_payment_b_count", "INTEGER"),
+        ("study_room_use_count", "INTEGER"),
+        ("study_room_use_policy_revenue", "INTEGER"),
+        ("study_room_use_booked_hours", "DOUBLE PRECISION"),
+        ("study_room_use_a1_hours", "DOUBLE PRECISION"),
+        ("study_room_use_a2_hours", "DOUBLE PRECISION"),
+        ("study_room_use_b_hours", "DOUBLE PRECISION"),
         ("lag_reservation_count_1d", "INTEGER"),
         ("lag_reservation_count_3d", "INTEGER"),
         ("lag_reservation_hours_1d", "DOUBLE PRECISION"),
@@ -185,6 +223,91 @@ def sync_training_feature_store(con, days=365):
             ) q
             GROUP BY date
         ),
+        pickko_general_payment_agg AS (
+            SELECT
+                source_date AS date,
+                COUNT(*) AS general_payment_count,
+                COALESCE(SUM(raw_amount), 0) AS general_payment_revenue_raw,
+                COUNT(*) FILTER (
+                    WHERE payment_at IS NOT NULL
+                      AND (payment_at AT TIME ZONE 'Asia/Seoul')::time < TIME '13:00'
+                ) AS general_payment_morning_count,
+                COUNT(*) FILTER (
+                    WHERE payment_at IS NOT NULL
+                      AND (payment_at AT TIME ZONE 'Asia/Seoul')::time >= TIME '13:00'
+                      AND (payment_at AT TIME ZONE 'Asia/Seoul')::time < TIME '18:00'
+                ) AS general_payment_afternoon_count,
+                COUNT(*) FILTER (
+                    WHERE payment_at IS NOT NULL
+                      AND (payment_at AT TIME ZONE 'Asia/Seoul')::time >= TIME '18:00'
+                ) AS general_payment_evening_count,
+                COUNT(*) FILTER (WHERE ticket_type LIKE '일회권-%%') AS general_ticket_single_count,
+                COUNT(*) FILTER (WHERE ticket_type LIKE '시간권-%%') AS general_ticket_hourpack_count,
+                COUNT(*) FILTER (WHERE ticket_type LIKE '기간권-%%') AS general_ticket_period_count
+            FROM reservation.pickko_order_raw por
+            WHERE por.source_date >= current_date - (%s::int - 1)
+              AND por.source_axis = 'payment_day'
+              AND por.order_kind = 'general'
+            GROUP BY por.source_date
+        ),
+        pickko_room_payment_agg AS (
+            SELECT
+                source_date AS date,
+                COUNT(*) AS study_room_payment_count,
+                COALESCE(SUM(raw_amount), 0) AS study_room_payment_revenue_raw,
+                COUNT(*) FILTER (WHERE room_type = 'A1') AS study_room_payment_a1_count,
+                COUNT(*) FILTER (WHERE room_type = 'A2') AS study_room_payment_a2_count,
+                COUNT(*) FILTER (WHERE room_type = 'B') AS study_room_payment_b_count
+            FROM reservation.pickko_order_raw por
+            WHERE por.source_date >= current_date - (%s::int - 1)
+              AND por.source_axis = 'payment_day'
+              AND por.order_kind = 'study_room'
+            GROUP BY por.source_date
+        ),
+        pickko_room_use_agg AS (
+            SELECT
+                source_date AS date,
+                COUNT(*) AS study_room_use_count,
+                COALESCE(SUM(policy_amount), 0) AS study_room_use_policy_revenue,
+                COALESCE(SUM(
+                    GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM ((NULLIF(use_end_time, '')::time) - (NULLIF(use_start_time, '')::time))) / 3600.0
+                    )
+                ), 0.0) AS study_room_use_booked_hours,
+                COALESCE(SUM(
+                    CASE
+                        WHEN room_type = 'A1' THEN GREATEST(
+                            0,
+                            EXTRACT(EPOCH FROM ((NULLIF(use_end_time, '')::time) - (NULLIF(use_start_time, '')::time))) / 3600.0
+                        )
+                        ELSE 0
+                    END
+                ), 0.0) AS study_room_use_a1_hours,
+                COALESCE(SUM(
+                    CASE
+                        WHEN room_type = 'A2' THEN GREATEST(
+                            0,
+                            EXTRACT(EPOCH FROM ((NULLIF(use_end_time, '')::time) - (NULLIF(use_start_time, '')::time))) / 3600.0
+                        )
+                        ELSE 0
+                    END
+                ), 0.0) AS study_room_use_a2_hours,
+                COALESCE(SUM(
+                    CASE
+                        WHEN room_type = 'B' THEN GREATEST(
+                            0,
+                            EXTRACT(EPOCH FROM ((NULLIF(use_end_time, '')::time) - (NULLIF(use_start_time, '')::time))) / 3600.0
+                        )
+                        ELSE 0
+                    END
+                ), 0.0) AS study_room_use_b_hours
+            FROM reservation.pickko_order_raw por
+            WHERE por.source_date >= current_date - (%s::int - 1)
+              AND por.source_axis = 'use_day'
+              AND por.order_kind = 'study_room'
+            GROUP BY por.source_date
+        ),
         merged AS (
             SELECT
                 ds.date,
@@ -210,6 +333,25 @@ def sync_training_feature_store(con, days=365):
                 ra.reservation_morning_count,
                 ra.reservation_afternoon_count,
                 ra.reservation_evening_count,
+                COALESCE(pgpa.general_payment_count, 0) AS general_payment_count,
+                COALESCE(pgpa.general_payment_revenue_raw, 0) AS general_payment_revenue_raw,
+                COALESCE(pgpa.general_payment_morning_count, 0) AS general_payment_morning_count,
+                COALESCE(pgpa.general_payment_afternoon_count, 0) AS general_payment_afternoon_count,
+                COALESCE(pgpa.general_payment_evening_count, 0) AS general_payment_evening_count,
+                COALESCE(pgpa.general_ticket_single_count, 0) AS general_ticket_single_count,
+                COALESCE(pgpa.general_ticket_hourpack_count, 0) AS general_ticket_hourpack_count,
+                COALESCE(pgpa.general_ticket_period_count, 0) AS general_ticket_period_count,
+                COALESCE(prpa.study_room_payment_count, 0) AS study_room_payment_count,
+                COALESCE(prpa.study_room_payment_revenue_raw, 0) AS study_room_payment_revenue_raw,
+                COALESCE(prpa.study_room_payment_a1_count, 0) AS study_room_payment_a1_count,
+                COALESCE(prpa.study_room_payment_a2_count, 0) AS study_room_payment_a2_count,
+                COALESCE(prpa.study_room_payment_b_count, 0) AS study_room_payment_b_count,
+                COALESCE(prua.study_room_use_count, 0) AS study_room_use_count,
+                COALESCE(prua.study_room_use_policy_revenue, 0) AS study_room_use_policy_revenue,
+                COALESCE(prua.study_room_use_booked_hours, 0.0) AS study_room_use_booked_hours,
+                COALESCE(prua.study_room_use_a1_hours, 0.0) AS study_room_use_a1_hours,
+                COALESCE(prua.study_room_use_a2_hours, 0.0) AS study_room_use_a2_hours,
+                COALESCE(prua.study_room_use_b_hours, 0.0) AS study_room_use_b_hours,
                 rd.cancellation_count,
                 rd.studyroom_revenue,
                 rd.general_revenue AS ska_general_revenue,
@@ -307,6 +449,12 @@ def sync_training_feature_store(con, days=365):
               ON ra.date = ds.date
             LEFT JOIN reservation_overlap ro
               ON ro.date = ds.date
+            LEFT JOIN pickko_general_payment_agg pgpa
+              ON pgpa.date = ds.date
+            LEFT JOIN pickko_room_payment_agg prpa
+              ON prpa.date = ds.date
+            LEFT JOIN pickko_room_use_agg prua
+              ON prua.date = ds.date
         )
         INSERT INTO ska.training_feature_daily (
             date, target_revenue, total_amount, pickko_total, pickko_study_room,
@@ -315,7 +463,13 @@ def sync_training_feature_store(con, days=365):
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
             reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
             reservation_b_count, reservation_morning_count, reservation_afternoon_count,
-            reservation_evening_count, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
+            reservation_evening_count, general_payment_count, general_payment_revenue_raw,
+            general_payment_morning_count, general_payment_afternoon_count, general_payment_evening_count,
+            general_ticket_single_count, general_ticket_hourpack_count, general_ticket_period_count,
+            study_room_payment_count, study_room_payment_revenue_raw, study_room_payment_a1_count,
+            study_room_payment_a2_count, study_room_payment_b_count, study_room_use_count,
+            study_room_use_policy_revenue, study_room_use_booked_hours, study_room_use_a1_hours,
+            study_room_use_a2_hours, study_room_use_b_hours, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
             predicted_prophet, predicted_sarima, predicted_quick, yhat_lower, yhat_upper,
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
@@ -332,7 +486,13 @@ def sync_training_feature_store(con, days=365):
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
             reservation_avg_duration_hours, reservation_a1_count, reservation_a2_count,
             reservation_b_count, reservation_morning_count, reservation_afternoon_count,
-            reservation_evening_count, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
+            reservation_evening_count, general_payment_count, general_payment_revenue_raw,
+            general_payment_morning_count, general_payment_afternoon_count, general_payment_evening_count,
+            general_ticket_single_count, general_ticket_hourpack_count, general_ticket_period_count,
+            study_room_payment_count, study_room_payment_revenue_raw, study_room_payment_a1_count,
+            study_room_payment_a2_count, study_room_payment_b_count, study_room_use_count,
+            study_room_use_policy_revenue, study_room_use_booked_hours, study_room_use_a1_hours,
+            study_room_use_a2_hours, study_room_use_b_hours, cancellation_count, studyroom_revenue, ska_general_revenue, predicted_revenue,
             predicted_prophet, predicted_sarima, predicted_quick, yhat_lower, yhat_upper,
             forecast_reservation_count, model_version, mape, holiday_flag, holiday_name,
             rain_prob, temperature, exam_score, exam_types, vacation_flag, festival_flag,
@@ -362,6 +522,25 @@ def sync_training_feature_store(con, days=365):
             reservation_morning_count = EXCLUDED.reservation_morning_count,
             reservation_afternoon_count = EXCLUDED.reservation_afternoon_count,
             reservation_evening_count = EXCLUDED.reservation_evening_count,
+            general_payment_count = EXCLUDED.general_payment_count,
+            general_payment_revenue_raw = EXCLUDED.general_payment_revenue_raw,
+            general_payment_morning_count = EXCLUDED.general_payment_morning_count,
+            general_payment_afternoon_count = EXCLUDED.general_payment_afternoon_count,
+            general_payment_evening_count = EXCLUDED.general_payment_evening_count,
+            general_ticket_single_count = EXCLUDED.general_ticket_single_count,
+            general_ticket_hourpack_count = EXCLUDED.general_ticket_hourpack_count,
+            general_ticket_period_count = EXCLUDED.general_ticket_period_count,
+            study_room_payment_count = EXCLUDED.study_room_payment_count,
+            study_room_payment_revenue_raw = EXCLUDED.study_room_payment_revenue_raw,
+            study_room_payment_a1_count = EXCLUDED.study_room_payment_a1_count,
+            study_room_payment_a2_count = EXCLUDED.study_room_payment_a2_count,
+            study_room_payment_b_count = EXCLUDED.study_room_payment_b_count,
+            study_room_use_count = EXCLUDED.study_room_use_count,
+            study_room_use_policy_revenue = EXCLUDED.study_room_use_policy_revenue,
+            study_room_use_booked_hours = EXCLUDED.study_room_use_booked_hours,
+            study_room_use_a1_hours = EXCLUDED.study_room_use_a1_hours,
+            study_room_use_a2_hours = EXCLUDED.study_room_use_a2_hours,
+            study_room_use_b_hours = EXCLUDED.study_room_use_b_hours,
             cancellation_count = EXCLUDED.cancellation_count,
             studyroom_revenue = EXCLUDED.studyroom_revenue,
             ska_general_revenue = EXCLUDED.ska_general_revenue,
@@ -405,7 +584,7 @@ def sync_training_feature_store(con, days=365):
             forecast_abs_error = EXCLUDED.forecast_abs_error,
             forecast_created_at = EXCLUDED.forecast_created_at,
             source_updated_at = NOW()
-    """, (days, days, days, days, days))
+    """, (days, days, days, days, days, days, days, days))
     rowcount = cur.rowcount
     con.commit()
     cur.close()

@@ -9,8 +9,9 @@
  *
  * 기본 저장 규칙:
  *   - 일반석: payment_day 기준 direct 거래행 저장
- *   - 스터디룸: use_day 기준 예약행 저장 (policy_amount 포함)
- *   - 스터디룸 raw/payment 정보는 같은 날 daily detail 행과 매칭되면 보강
+ *   - 스터디룸(payment): payment_day 기준 direct 거래행 저장
+ *   - 스터디룸(use): use_day 기준 예약행 저장 (policy_amount 포함)
+ *   - 스터디룸 use/payment 두 축을 같이 저장해 결제 패턴과 이용 패턴을 분리 분석
  *
  * 사용 예:
  *   PICKKO_HEADLESS=1 node bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20
@@ -36,14 +37,8 @@ function getArg(name) {
   return match ? match.split('=').slice(1).join('=') : null;
 }
 
-const targetDate = getArg('date');
 const asJson = argv.includes('--json');
 const noStore = argv.includes('--no-store');
-
-if (!targetDate) {
-  console.error('❌ --date=YYYY-MM-DD 가 필요합니다.');
-  process.exit(1);
-}
 
 function buildEntryKey(parts) {
   return parts.map((part) => String(part || '')).join('|');
@@ -55,36 +50,74 @@ function matchRoomPolicyToDirect(policyRow, roomTransactions) {
     tx.roomDetail.useDate === policyRow.useDate &&
     tx.roomDetail.startTime === policyRow.useStartTime &&
     tx.roomDetail.endTime === policyRow.useEndTime &&
-    tx.roomDetail.roomType === policyRow.roomType &&
+    normalizeStudyRoomKey(tx.roomDetail.roomType || tx.roomDetail.roomLabel || tx.studyRoom) === policyRow.roomType &&
     tx.roomDetail.memberName === policyRow.memberName
   ) || null;
+}
+
+function calcPolicyAmountFromRoomDetail(roomDetail) {
+  if (!roomDetail?.roomType || !roomDetail?.startTime || !roomDetail?.endTime) return 0;
+  return calcStudyRoomAmount({
+    room: roomDetail.roomType,
+    start: roomDetail.startTime,
+    end: roomDetail.endTime,
+  });
 }
 
 async function scrapeOrderDetail(page, href) {
   const url = href.startsWith('http') ? href : `https://pickkoadmin.com${href}`;
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-  await delay(1000);
+  try {
+    await page.waitForFunction(() => {
+      const text = document.body?.innerText || '';
+      return text.includes('주문일시') || text.includes('주문 상세 정보') || text.includes('결제 항목');
+    }, { timeout: 5000 });
+  } catch (_) {
+    // 일부 상세 페이지는 렌더링이 늦거나 라벨 구성이 달라 추가 대기만 하고 진행
+  }
+  await delay(1200);
   return await page.evaluate(() => {
     const text = document.body.innerText.replace(/\s+/g, ' ').trim();
-    const extractTimestamp = (label) => {
+    const labels = ['결제타입', '결제기기', '카드결제금액', '주문메모', '주문상태', '주문일시', '작업로그', '추가 정보'];
+    const extractSection = (label) => {
       const idx = text.indexOf(label);
       if (idx < 0) return null;
       const rest = text.slice(idx + label.length).trim();
-      const match = rest.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
-      return match ? match[0] : null;
+      let cut = rest.length;
+      for (const nextLabel of labels) {
+        if (nextLabel === label) continue;
+        const nextIdx = rest.indexOf(nextLabel);
+        if (nextIdx >= 0 && nextIdx < cut) cut = nextIdx;
+      }
+      const value = rest.slice(0, cut).trim();
+      return value || null;
+    };
+    const extractTimestamp = (label) => {
+      const section = extractSection(label);
+      const directMatch = String(section || '').match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+      if (directMatch) return directMatch[0];
+      const fallback = text.match(new RegExp(`${label}\\s*(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})`));
+      return fallback ? fallback[1] : null;
     };
     const extractWord = (label) => {
-      const idx = text.indexOf(label);
-      if (idx < 0) return null;
-      const rest = text.slice(idx + label.length).trim();
-      return rest.split(' ')[0] || null;
+      const section = extractSection(label);
+      if (!section) return null;
+      const value = section.split(' ')[0]?.trim();
+      if (!value || labels.includes(value)) return null;
+      return value;
     };
+    const extractMemo = () => {
+      const section = extractSection('주문메모');
+      if (!section || labels.includes(section)) return null;
+      return section;
+    };
+    const firstTimestamp = text.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/)?.[0] || null;
     return {
-      orderAt: extractTimestamp('주문일시'),
+      orderAt: extractTimestamp('주문일시') || firstTimestamp,
       payType: extractWord('결제타입'),
       payDevice: extractWord('결제기기'),
       status: extractWord('주문상태'),
-      memo: extractWord('주문메모'),
+      memo: extractMemo(),
       url: location.href,
     };
   });
@@ -129,6 +162,7 @@ async function collectRows(date) {
     setupDialogHandler(detailPage, console.log);
 
     const generalRows = [];
+    const paymentRoomRows = [];
     const roomTransactions = [];
 
     for (const tx of detail.transactions || []) {
@@ -136,13 +170,37 @@ async function collectRows(date) {
       const extra = hrefRow?.href ? await scrapeOrderDetail(detailPage, hrefRow.href) : {};
 
       if (tx.studyRoom) {
-        roomTransactions.push({
+        const roomTx = {
           ...tx,
           detailHref: hrefRow?.href || null,
           orderAt: extra.orderAt || null,
           payType: extra.payType || null,
           payDevice: extra.payDevice || null,
           memo: extra.memo || null,
+        };
+        roomTransactions.push(roomTx);
+        paymentRoomRows.push({
+          entryKey: buildEntryKey(['payment_day', 'study_room', date, tx.no]),
+          sourceDate: date,
+          sourceAxis: 'payment_day',
+          orderKind: 'study_room',
+          transactionNo: tx.no,
+          detailHref: hrefRow?.href || null,
+          description: tx.description,
+          rawAmount: tx.netRevenue,
+          paymentAt: extra.orderAt || null,
+          payType: extra.payType || null,
+          payDevice: extra.payDevice || null,
+          memo: extra.memo || null,
+          roomLabel: roomTx.roomDetail?.roomLabel || roomTx.studyRoom || null,
+          roomType: normalizeStudyRoomKey(roomTx.roomDetail?.roomType || roomTx.roomDetail?.roomLabel || roomTx.studyRoom),
+          useDate: roomTx.roomDetail?.useDate || null,
+          useStartTime: roomTx.roomDetail?.startTime || null,
+          useEndTime: roomTx.roomDetail?.endTime || null,
+          memberName: roomTx.roomDetail?.memberName || null,
+          policyAmount: calcPolicyAmountFromRoomDetail(roomTx.roomDetail),
+          amountMatch: roomTx.roomDetail ? (Number(tx.netRevenue || 0) === calcPolicyAmountFromRoomDetail(roomTx.roomDetail) ? 1 : 0) : null,
+          amountDelta: roomTx.roomDetail ? Number(tx.netRevenue || 0) - calcPolicyAmountFromRoomDetail(roomTx.roomDetail) : null,
         });
       } else {
         generalRows.push({
@@ -216,16 +274,23 @@ async function collectRows(date) {
         directGeneralRevenue: detail.generalRevenue,
         directStudyRoomRevenue: Object.values(detail.studyRoomRevenue || {}).reduce((sum, value) => sum + Number(value || 0), 0),
         generalCount: generalRows.length,
+        paymentRoomCount: paymentRoomRows.length,
         roomCount: policyRows.length,
       },
-      rows: [...generalRows, ...policyRows],
+      rows: [...generalRows, ...paymentRoomRows, ...policyRows],
     };
   } finally {
     try { await browser.close(); } catch (_) {}
   }
 }
 
-(async () => {
+async function main() {
+  const targetDate = getArg('date');
+  if (!targetDate) {
+    console.error('❌ --date=YYYY-MM-DD 가 필요합니다.');
+    process.exit(1);
+  }
+
   const result = await collectRows(targetDate);
 
   if (!noStore) {
@@ -246,9 +311,20 @@ async function collectRows(date) {
 
   console.log(`📦 Pickko raw order 수집 완료 (${targetDate})`);
   console.log(`  일반석: ${result.summary.generalCount}건`);
-  console.log(`  스터디룸: ${result.summary.roomCount}건`);
+  console.log(`  스터디룸(payment): ${result.summary.paymentRoomCount}건`);
+  console.log(`  스터디룸(use): ${result.summary.roomCount}건`);
   console.log(`  저장: ${noStore ? '건너뜀' : `${storedRows.length}건 조회 확인`}`);
-})().catch((error) => {
-  console.error(`❌ 수집 실패: ${error.message}`);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`❌ 수집 실패: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  collectRows,
+  matchRoomPolicyToDirect,
+  calcPolicyAmountFromRoomDetail,
+};

@@ -49,7 +49,11 @@ function stddev(values) {
 }
 
 function formatDate(date) {
-  return date.toISOString().slice(0, 10);
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function writeCsv(outputPath, rows, header) {
@@ -90,6 +94,25 @@ async function loadRows(days) {
       rds.pickko_study_room,
       rds.general_revenue AS reservation_general_revenue,
       rds.entries_count,
+      tf.general_payment_count,
+      tf.general_payment_revenue_raw,
+      tf.general_payment_morning_count,
+      tf.general_payment_afternoon_count,
+      tf.general_payment_evening_count,
+      tf.general_ticket_single_count,
+      tf.general_ticket_hourpack_count,
+      tf.general_ticket_period_count,
+      tf.study_room_payment_count,
+      tf.study_room_payment_revenue_raw,
+      tf.study_room_payment_a1_count,
+      tf.study_room_payment_a2_count,
+      tf.study_room_payment_b_count,
+      tf.study_room_use_count,
+      tf.study_room_use_policy_revenue,
+      tf.study_room_use_booked_hours,
+      tf.study_room_use_a1_hours,
+      tf.study_room_use_a2_hours,
+      tf.study_room_use_b_hours,
       rd.actual_revenue,
       rd.occupancy_rate,
       rd.total_reservations,
@@ -125,6 +148,8 @@ async function loadRows(days) {
       ON rd.date = ds.date
     LEFT JOIN reservation.daily_summary rds
       ON rds.date::date = ds.date
+    LEFT JOIN training_feature_daily tf
+      ON tf.date = ds.date
     ORDER BY ds.date ASC
   `, [days]);
 }
@@ -136,9 +161,9 @@ function buildModelRows(rows) {
     const row = rows[i];
     const date = new Date(row.date);
     const isoDate = formatDate(date);
-    const weekday = ((date.getUTCDay() + 6) % 7) + 1; // Mon=1..Sun=7
-    const month = date.getUTCMonth() + 1;
-    const day = date.getUTCDate();
+    const weekday = ((date.getDay() + 6) % 7) + 1; // Mon=1..Sun=7
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
     const isWeekend = weekday >= 6 ? 1 : 0;
 
     const priorRows = built;
@@ -163,6 +188,25 @@ function buildModelRows(rows) {
       pickko_study_room: row.pickko_study_room == null ? '' : toInt(row.pickko_study_room),
       reservation_general_revenue: row.reservation_general_revenue == null ? '' : toInt(row.reservation_general_revenue),
       entries_count: row.entries_count == null ? '' : toInt(row.entries_count),
+      general_payment_count: row.general_payment_count == null ? '' : toInt(row.general_payment_count),
+      general_payment_revenue_raw: row.general_payment_revenue_raw == null ? '' : toInt(row.general_payment_revenue_raw),
+      general_payment_morning_count: row.general_payment_morning_count == null ? '' : toInt(row.general_payment_morning_count),
+      general_payment_afternoon_count: row.general_payment_afternoon_count == null ? '' : toInt(row.general_payment_afternoon_count),
+      general_payment_evening_count: row.general_payment_evening_count == null ? '' : toInt(row.general_payment_evening_count),
+      general_ticket_single_count: row.general_ticket_single_count == null ? '' : toInt(row.general_ticket_single_count),
+      general_ticket_hourpack_count: row.general_ticket_hourpack_count == null ? '' : toInt(row.general_ticket_hourpack_count),
+      general_ticket_period_count: row.general_ticket_period_count == null ? '' : toInt(row.general_ticket_period_count),
+      study_room_payment_count: row.study_room_payment_count == null ? '' : toInt(row.study_room_payment_count),
+      study_room_payment_revenue_raw: row.study_room_payment_revenue_raw == null ? '' : toInt(row.study_room_payment_revenue_raw),
+      study_room_payment_a1_count: row.study_room_payment_a1_count == null ? '' : toInt(row.study_room_payment_a1_count),
+      study_room_payment_a2_count: row.study_room_payment_a2_count == null ? '' : toInt(row.study_room_payment_a2_count),
+      study_room_payment_b_count: row.study_room_payment_b_count == null ? '' : toInt(row.study_room_payment_b_count),
+      study_room_use_count: row.study_room_use_count == null ? '' : toInt(row.study_room_use_count),
+      study_room_use_policy_revenue: row.study_room_use_policy_revenue == null ? '' : toInt(row.study_room_use_policy_revenue),
+      study_room_use_booked_hours: row.study_room_use_booked_hours == null ? '' : Number(toNum(row.study_room_use_booked_hours).toFixed(2)),
+      study_room_use_a1_hours: row.study_room_use_a1_hours == null ? '' : Number(toNum(row.study_room_use_a1_hours).toFixed(2)),
+      study_room_use_a2_hours: row.study_room_use_a2_hours == null ? '' : Number(toNum(row.study_room_use_a2_hours).toFixed(2)),
+      study_room_use_b_hours: row.study_room_use_b_hours == null ? '' : Number(toNum(row.study_room_use_b_hours).toFixed(2)),
       occupancy_rate: row.occupancy_rate == null ? '' : Number(toNum(row.occupancy_rate).toFixed(4)),
       total_reservations: row.total_reservations == null ? '' : toInt(row.total_reservations),
       cancellation_count: row.cancellation_count == null ? '' : toInt(row.cancellation_count),
