@@ -3897,3 +3897,7 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 후속으로 `llm-selector-speed-review.js`에 `primaryHealth`, `latestPrimaryResult`를 추가해 속도 추천(`compare`)과 현재 primary 실패(`rate_limited`)를 분리해서 읽을 수 있게 정리
 - 같은 맥락으로 `primaryFallbackCandidate`도 추가해 현재 primary가 unhealthy일 때 같은 provider 안에서 쓸 수 있는 안전 후보를 리포트가 직접 제시하도록 보강
 - 최근 snapshot history를 함께 읽어 `primaryFallbackPolicy`를 계산하도록 확장했다. 현재 `gemini-2.5-flash`는 연속 rate-limit 기준으로 `temporary_fallback_candidate`까지는 승격되지만, 여전히 운영자 확인 없는 자동 전환은 하지 않는 구조다.
+
+### Gemini Flash 임시 fallback 운영 기준 문서화
+- `docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md`를 추가해 `gemini-2.5-flash`가 `rate_limited/degraded`일 때 `gemini-2.5-flash-lite`를 임시 primary 후보로 검토하는 조건, 금지 조건, 롤백 조건, 관찰 절차를 정리
+- 현재 정책은 자동 전환이 아니라 운영 승인형 임시 fallback이며, 최근 selector review의 `primaryFallbackPolicy=temporary_fallback_candidate`를 해석하는 기준 문서 역할을 한다

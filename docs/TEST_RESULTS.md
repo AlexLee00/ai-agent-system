@@ -942,3 +942,4 @@
 | `node scripts/reviews/llm-selector-speed-review.js` (후속) | ✅ `primaryFallbackCandidate=google-gemini-cli/gemini-2.5-flash-lite` 노출 확인 |
 | `node scripts/reviews/llm-selector-speed-daily.js --skip-test --json` (후속) | ✅ `primaryFallbackPolicy.decision=temporary_fallback_candidate`, `consecutivePrimaryIssues=3` 확인 |
 | `~/.openclaw/openclaw.json` 모델 레지스트리 갱신 | ✅ `gemini-2.5-flash-lite` 추가, `groq/moonshotai/kimi-k2-instruct-0905` 교체, `cerebras/gpt-oss-120b` 제거 완료 |
+| `docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md` 작성 | ✅ `flash -> flash-lite` 임시 전환 조건 / 금지 조건 / 롤백 조건 / 관찰 절차 문서화 완료 |

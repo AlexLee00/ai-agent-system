@@ -1254,6 +1254,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `llm-selector-speed-review.js`가 `primaryHealth`, `latestPrimaryResult`를 함께 출력해 `추천 모델`과 `현재 primary 위험`을 한 리포트에서 분리해서 읽을 수 있게 정리
   - `llm-selector-speed-review.js`가 `primaryFallbackCandidate`도 함께 출력해 현재 primary가 unhealthy일 때 같은 provider 안의 안전한 대체 후보(`gemini-2.5-flash-lite`)를 바로 제시하도록 보강
   - `llm-selector-speed-review.js`가 최근 snapshot history를 읽어 `primaryFallbackPolicy`를 계산하고, 연속 rate-limit 시 `temporary_fallback_candidate` 신호를 출력하도록 확장
+  - `GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md`를 추가해 `gemini-2.5-flash -> gemini-2.5-flash-lite` 임시 전환 조건, 금지 조건, 롤백 조건을 운영 문서로 고정
   - 운영 모델 레지스트리 `~/.openclaw/openclaw.json`에 `gemini-2.5-flash-lite`, `groq/moonshotai/kimi-k2-instruct-0905`를 반영하고 `cerebras/gpt-oss-120b`는 현재 404 기준으로 제거
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
