@@ -4,6 +4,47 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+### 12주차 후속 (2026-03-21) — 스카 수동등록 후속 차단 silent failure 원장화
+
+핵심 구현:
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - `runPickkoCancel()`의 스킵 조건을 보정해 `manual`, `manual_retry`, `verified`, `completed` 예약도 네이버 취소 인식 후 자동 취소 대상으로 처리되도록 수정
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 재시도 가능한 차단 지연을 `실패`가 아니라 `지연 / 자동 재시도 예정`으로 분리
+  - `journalBlockAttempt()`를 추가해 네이버 차단 시도 결과를 원장에 남기도록 보강
+  - `block-slot` 독립 재검증 성공 시 `kiosk_blocks.naver_blocked=true`로 다시 뒤집히도록 복구
+- `bots/reservation/manual/reservation/pickko-register.js`
+  - 수동등록 성공 시 `kiosk_blocks`에 `queued/manual_register_spawned` 상태를 먼저 기록
+  - detached `block-slot` spawn 실패도 원장에 기록하도록 보강
+- `bots/reservation/lib/db.js`
+  - `recordKioskBlockAttempt()` 추가
+  - `kiosk_blocks`의 `last_block_attempt_at`, `last_block_result`, `last_block_reason`, `block_retry_count` 읽기/쓰기 지원
+- `bots/reservation/migrations/006_kiosk_block_attempts.js`
+  - 후속 차단 원장 컬럼 추가
+- `bots/reservation/scripts/check-n8n-command-path.js`
+  - 빈 오류 메시지 대신 실제 nested error를 출력하도록 보강
+
+세션 맥락:
+- 사용자 신고 기준 “네이버 취소 고객을 인식하지 못함”과 “수동등록 후 네이버 예약 차단 실패”가 동시에 제기됐다.
+- 코드 점검 결과, 취소는 실제 스킵 버그가 있었고, 수동등록 후속 차단은 실패/지연/복구를 구분할 원장과 알람 상태가 부족했다.
+- 특히 민경수 `2026-03-27 12:00~14:00 A1` 포함 연속 4건은 `manual 등록 완료 + naver_blocked=false`로 확인돼 false alert가 아니라 실제 후속 차단 누락으로 분류됐다.
+
+실측 결과:
+- `node --check bots/reservation/lib/db.js` ✅
+- `node --check bots/reservation/auto/monitors/naver-monitor.js` ✅
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` ✅
+- `node --check bots/reservation/manual/reservation/pickko-register.js` ✅
+- `node --check bots/reservation/migrations/006_kiosk_block_attempts.js` ✅
+- `node bots/reservation/scripts/migrate.js --status` ✅ `v006` 미적용 확인
+- `node bots/reservation/scripts/migrate.js` ✅ `v006 kiosk_block_attempts` 적용 완료
+- `launchctl kickstart -k gui/$(id -u)/ai.ska.naver-monitor` ✅
+- `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` ✅
+- `node bots/reservation/scripts/health-report.js --json` ✅ 스카 core/scheduled/n8n 건강도 정상 유지 확인
+
+의미:
+- 지금 당장 필요한 구조인 “진짜 실패 / 지연 후 재시도 / 성공”의 분리 원장이 생겼다.
+- 이후 SaaS 확장을 고려하면, 수동등록 후속 자동화는 단순 성공/실패 메시지보다 상태 원장과 재시도 이력이 핵심이므로 이번 보강의 ROI가 높다.
+
 ### 12주차 후속 (2026-03-21) — 비디오팀 Phase 1 마감 문서 정리 + worker-web `/video` 런타임 반영
 
 핵심 구현:

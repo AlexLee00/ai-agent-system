@@ -3,6 +3,44 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-21) — 스카 수동등록 후속 차단 원장화
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - `manual`, `manual_retry`, `verified`, `completed` 예약을 잘못 종결 상태로 보던 취소 스킵 조건 제거
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 재시도 가능한 네이버 차단 실패 알람을 `지연 / 자동 재시도 예정`으로 재분류
+  - `journalBlockAttempt()`를 추가해 차단 시도 결과/사유/재시도 횟수를 `kiosk_blocks`에 기록
+  - `block-slot` 독립 재검증 성공 시 DB 상태도 `naver_blocked=true`로 동기화
+- `bots/reservation/manual/reservation/pickko-register.js`
+  - 수동등록 직후 `queued/manual_register_spawned` 상태를 `kiosk_blocks`에 기록
+  - detached spawn 실패도 원장에 남기도록 보강
+- `bots/reservation/lib/db.js`
+  - `recordKioskBlockAttempt()` 추가
+  - `kiosk_blocks` 새 필드 읽기/쓰기 지원
+- `bots/reservation/scripts/check-n8n-command-path.js`
+  - nested error 상세 출력 지원
+
+### 신규 기능 (feat)
+- `bots/reservation/migrations/006_kiosk_block_attempts.js`
+  - `kiosk_blocks.last_block_attempt_at`
+  - `kiosk_blocks.last_block_result`
+  - `kiosk_blocks.last_block_reason`
+  - `kiosk_blocks.block_retry_count`
+  컬럼 추가
+
+### 검증
+- `node --check bots/reservation/lib/db.js` | ✅
+- `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+- `node --check bots/reservation/manual/reservation/pickko-register.js` | ✅
+- `node --check bots/reservation/migrations/006_kiosk_block_attempts.js` | ✅
+- `node bots/reservation/scripts/migrate.js --status` | ✅ `v006` 미적용 확인
+- `node bots/reservation/scripts/migrate.js` | ✅ `v006 kiosk_block_attempts` 적용 완료
+- `launchctl kickstart -k gui/$(id -u)/ai.ska.naver-monitor` | ✅
+- `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅
+- `node bots/reservation/scripts/health-report.js --json` | ✅ core/scheduled/n8n 건강도 정상 확인
+
 ## 12주차 후속 (2026-03-21) — worker-web `/video` 세션 복원 + 프리뷰 렌더 경계 복구
 
 ### 변경 사항 (changed)
