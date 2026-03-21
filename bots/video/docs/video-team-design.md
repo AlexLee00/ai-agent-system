@@ -29,8 +29,8 @@
 │ kst.js                  │ KST 시간 유틸리티                   │ 없음           │
 │ trace.js                │ 파이프라인 trace_id 추적             │ 없음           │
 │ tool-logger.js          │ FFmpeg/Whisper/CapCutAPI 호출 로깅  │ 없음           │
-│ rag.js                  │ 편집 패턴 벡터 검색 (Phase 2)       │ 없음           │
-│ rag-safe.js             │ RAG 안전 래퍼                       │ 없음           │
+│ rag.js                  │ 편집 패턴/피드백 벡터 저장·검색     │ 없음           │
+│ rag-safe.js             │ RAG 안전 래퍼 + 서킷 브레이커       │ 없음           │
 │ shadow-mode.js          │ 품질 검증 루프 참고 패턴             │ 패턴 참고만    │
 └─────────────────────────┴────────────────────────────────────┴───────────────┘
 
@@ -49,6 +49,7 @@
 │ capcut-draft-builder.js  │ CapCutAPI 선택적 보조 프리뷰 (완료) │ P0 (W1) ✅│
 │ video-analyzer.js        │ FFmpeg 영상 분석 (무음/정지/씬전환) │ P0 (W1)  │
 │ edl-builder.js           │ EDL JSON 생성/수정 + FFmpeg 실행    │ P0 (W1)  │
+│ video-rag.js            │ 편집 결과/피드백 RAG 축적 + 추천    │ P1 (W2)  │
 │ quality-loop.js          │ Critic-Refiner-Evaluator 순환 검증  │ P1 (W2)  │
 │ critic-agent.js          │ RED: 자막+오디오+영상 구조 분석     │ P1 (W2)  │
 │ refiner-agent.js         │ BLUE: SRT 수정 + EDL 생성/수정      │ P1 (W2)  │
@@ -78,6 +79,7 @@ ai-agent-system/
 │   │   ├─ capcut-draft-builder.js     — CapCutAPI 선택적 보조 (완료, --with-capcut)
 │   │   ├─ video-analyzer.js           — FFmpeg 영상 분석 (무음/정지/씬전환)
 │   │   ├─ edl-builder.js              — EDL JSON 생성/수정 + FFmpeg 렌더링
+│   │   ├─ video-rag.js                — 편집 결과/피드백 RAG 축적 + 패턴 추천
 │   │   ├─ quality-loop.js             — Critic-Refiner-Evaluator 루프
 │   │   ├─ critic-agent.js             — RED Team 분석
 │   │   ├─ refiner-agent.js            — BLUE Team 수정

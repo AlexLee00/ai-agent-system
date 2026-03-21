@@ -150,6 +150,19 @@
 | `node bots/video/n8n/setup-video-workflow.js` | ✅ `bots/worker/secrets.json`의 `video_n8n_token` fallback만으로 workflow 재생성/활성화 성공 |
 | `node bots/video/scripts/check-n8n-video-path.js` | ✅ env 없이도 `n8nHealthy=true`, `webhookRegistered=true`, `webhookStatus=200` 확인 |
 
+### 비디오팀 RAG 피드백 루프
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check packages/core/lib/rag.js` | ✅ |
+| `node --check bots/video/lib/video-rag.js` | ✅ |
+| `node --check bots/video/lib/critic-agent.js` | ✅ |
+| `node --check bots/video/lib/edl-builder.js` | ✅ |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ |
+| `node --check bots/worker/web/routes/video-api.js` | ✅ |
+| `node --check bots/video/scripts/test-video-rag.js` | ✅ |
+| `node bots/video/scripts/test-video-rag.js` | ✅ `rag_video` 초기화, `storeEditResult`, `storeEditFeedback`, `searchSimilarEdits`, `searchEditPatterns`, `estimateWithRAG`, `enhanceCriticWithRAG`, `enhanceEDLWithRAG` 확인 |
+
 ### 비디오팀 과제 11 — Refiner Agent
 
 | 테스트 | 결과 |

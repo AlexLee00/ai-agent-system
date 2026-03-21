@@ -684,6 +684,30 @@ UI 구성요소:
   ☐ 영상제작팀 피드백 → Refiner 재실행 → EDL 업데이트 확인
 ```
 
+### 과제 12-A: RAG 피드백 루프
+
+```
+목표: 편집 완료 결과와 사용자 피드백을 RAG에 축적해 다음 Critic/Refiner/EDL 생성에 반영
+산출: video-rag.js
+
+작업 위치: bots/video/lib/video-rag.js
+기존 모듈: packages/core/lib/rag.js, rag-safe.js
+
+핵심 기능:
+- 편집 결과 storeEditResult()
+- 사용자 확인/반려 storeEditFeedback()
+- 유사 편집 패턴 searchSimilarEdits() / searchEditPatterns()
+- Critic RAG 보강 enhanceCriticWithRAG()
+- EDL RAG 보강 enhanceEDLWithRAG()
+- 예상 시간 RAG 추정 estimateWithRAG()
+
+연동 지점:
+- run-pipeline.js 완료 시 RAG 저장
+- critic-agent.js 점수 산출 후 RAG 인사이트 병합
+- edl-builder.js 초기 EDL 생성 후 RAG 패턴 보강
+- worker video-api.js confirm/reject / estimate 엔드포인트 연동
+```
+
 ### 과제 13: 나머지 4세트 검증
 
 ```

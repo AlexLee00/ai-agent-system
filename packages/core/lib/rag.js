@@ -79,6 +79,7 @@ const VALID_COLLECTIONS = [
   'rag_schedule',      // 일정/메모 (미래 확장)
   'rag_work_docs',     // 업무문서 (미래 확장)
   'rag_blog',          // 블로그팀 — 과거 포스팅 / 인기 패턴 / 실전 사례
+  'rag_video',         // 비디오팀 — 편집 이력, 피드백, EDL 패턴
 ];
 
 function _validateCollection(name) {
@@ -125,7 +126,7 @@ async function initSchema() {
     `, []);
   }
 
-  console.log('[RAG] 스키마 초기화 완료 (rag_operations, rag_trades, rag_tech)');
+  console.log('[RAG] 스키마 초기화 완료 (rag_operations, rag_trades, rag_tech, rag_video)');
 }
 
 // ── 임베딩 생성 ──────────────────────────────────────────────────────

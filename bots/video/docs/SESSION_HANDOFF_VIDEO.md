@@ -2,7 +2,7 @@
 
 > 세션 날짜: 2026-03-21 (4차 세션)
 > 담당: 메티 (claude.ai Opus)
-> 상태: 과제 1~12 중 Evaluator까지 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 live 검증 완료
+> 상태: 과제 1~12 + RAG 피드백 루프 구현 완료 + worker-web 영상 편집 API/UI 연결 완료 + n8n 연동 live 검증 완료
 
 ---
 
@@ -180,6 +180,27 @@ Step 3 — 과제 6~13 재정의:
     - `resolvedWebhookUrl=http://127.0.0.1:5678/webhook/eJrK6wh4S8qAkuw9/webhook/video-pipeline`
   - 이후 실제 운영 `bots/worker/secrets.json`에 `video_n8n_token`을 반영했고, env 없이도 `setup-video-workflow.js` / `check-n8n-video-path.js`가 정상 동작하는 것까지 확인
 
+### 11. RAG 피드백 루프 구현 ✅
+- `packages/core/lib/rag.js`
+  - `rag_video` 컬렉션 추가
+- `bots/video/lib/video-rag.js`
+  - 편집 결과/피드백 저장, 유사 편집 검색, 패턴 검색, Critic/EDL 보강, 시간 추정 구현
+- `bots/video/scripts/test-video-rag.js`
+  - `rag_video` 초기화
+  - `storeEditResult()`, `storeEditFeedback()`, `searchSimilarEdits()`, `searchEditPatterns()`
+  - `estimateWithRAG()`, `enhanceCriticWithRAG()`, `enhanceEDLWithRAG()` 검증
+- 기존 연동
+  - `run-pipeline.js`: preview_ready/completed 시 편집 결과 저장
+  - `critic-agent.js`: 점수 산출 후 RAG 인사이트 병합
+  - `edl-builder.js`: 초기 EDL 생성 후 과거 성공 패턴 반영
+  - `worker/web/routes/video-api.js`: confirm/reject 피드백 저장 + `/estimate` RAG 우선 추정
+- 실측 결과
+  - `storeEditResult: { ragId: '1', stored: true }`
+  - `storeEditFeedback: { ragId: '2', stored: true }`
+  - `searchSimilarEdits: 2건`
+  - `estimateWithRAG.estimated_ms: 180000`
+  - `enhanceCriticWithRAG.rag_insights`, `enhanceEDLWithRAG.rag_source` 생성 확인
+
 ---
 
 ## 다음 세션에서 해야 할 것
@@ -191,6 +212,7 @@ Step 3 — 과제 6~13 재정의:
 - 필요 시 worker-web에서 세트별 현재 단계/예상시간 표현을 더 세분화
 - 과제 13은 4~5세트 기준으로 quality loop와 preview/final render를 묶어 실제 운영 시간을 검증하면 된다
 - n8n 쪽은 live webhook 등록, 내부 dispatch route 검증, worker secret 영속화까지 완료됐고, 다음은 과제 13 다세트 검증으로 넘어가면 된다
+- RAG는 이제 편집 결과/피드백을 축적하기 시작했으므로, 다음 검증에서는 세트 수를 늘려 실제 추천 품질과 추정 정확도가 올라가는지 함께 봐야 한다
 
 ### 이후: 과제 7 → 8 → 9 → 12 → 13 순차 진행
 

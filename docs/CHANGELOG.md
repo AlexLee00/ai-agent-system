@@ -65,6 +65,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/worker/web/routes/video-internal-api.js`
   - `run-pipeline`, `render-from-edl`용 내부 토큰 보호 dispatch API 추가
 
+## 12주차 후속 (2026-03-21) — 비디오팀 RAG 피드백 루프
+
+### 신규 기능 (feat)
+- `packages/core/lib/rag.js`
+  - `rag_video` 컬렉션 추가
+- `bots/video/lib/video-rag.js`
+  - 편집 결과/피드백 저장, 유사 편집 검색, 분석 기반 패턴 추천, Critic/EDL 보강, 예상 시간 추정 구현
+- `bots/video/scripts/test-video-rag.js`
+  - `rag_video` 초기화, 저장/검색/보강/추정 통합 테스트 추가
+
+### 변경 사항 (changed)
+- `bots/video/scripts/run-pipeline.js`
+  - `preview_ready` / `completed` 시 편집 결과를 RAG에 저장하도록 연동
+- `bots/video/lib/critic-agent.js`
+  - 점수 산출 후 `rag_insights`를 병합하도록 보강
+- `bots/video/lib/edl-builder.js`
+  - 초기 EDL 생성 시 RAG 패턴을 반영하도록 비동기화
+- `bots/worker/web/routes/video-api.js`
+  - `confirm/reject` 피드백을 RAG에 저장하고 `/estimate`는 RAG 기반 추정을 우선 사용하도록 전환
+
 ## 12주차 후속 (2026-03-21) — 비디오팀 과제 10 Critic Agent
 
 ### 신규 기능 (feat)

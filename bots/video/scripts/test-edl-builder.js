@@ -67,8 +67,9 @@ async function main() {
   fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 
   const analysis = JSON.parse(fs.readFileSync(ANALYSIS_PATH, 'utf8'));
-  const edl = buildInitialEDL(VIDEO_PATH, SRT_PATH, analysis, {
+  const edl = await buildInitialEDL(VIDEO_PATH, SRT_PATH, analysis, {
     title: 'FlutterFlow DB 생성',
+    config,
   });
   saveEDL(edl, EDL_PATH);
 

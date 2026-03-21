@@ -29,6 +29,7 @@ const {
   renderFinal,
   convertSrtToVtt,
 } = require('../lib/edl-builder');
+const { storeEditResult } = require('../lib/video-rag');
 
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
@@ -312,6 +313,16 @@ function summarizeEdl(edl) {
   };
 }
 
+function countSubtitleEntries(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return 0;
+  return String(fs.readFileSync(filePath, 'utf8') || '')
+    .trim()
+    .split(/\n\s*\n/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .length;
+}
+
 async function notifyFailure(step, title, error) {
   const message = [
     '[비디오] 실패',
@@ -388,6 +399,8 @@ async function main() {
     let normalizedAudioPath = null;
     let rawSrtPath = null;
     let draftPath = null;
+    let analysis = null;
+    let edl = null;
 
     printBanner(titleForMessage);
 
@@ -442,13 +455,13 @@ async function main() {
 
       currentStep = 'analysis';
       console.log('[video] [4/7] 영상 분석 중...');
-      const analysis = await analyzeVideo(syncedPath, config);
+      analysis = await analyzeVideo(syncedPath, config);
       saveAnalysis(analysis, analysisPath);
       console.log(`[video] [4/7] 영상 분석 완료 (${summarizeAnalysis(analysis)})`);
 
       currentStep = 'edl';
       console.log('[video] [5/7] EDL 생성 중...');
-      const edl = buildInitialEDL(syncedPath, correctedSrtPath, analysis, { title });
+      edl = await buildInitialEDL(syncedPath, correctedSrtPath, analysis, { title, config });
       saveEDL(edl, edlPath);
       const edlSummary = summarizeEdl(edl);
       console.log(`[video] [5/7] EDL 생성 완료 (edits ${edlSummary.count}건)`, edlSummary.counts);
@@ -474,6 +487,34 @@ async function main() {
           total_ms: totalMs,
           status: 'preview_ready',
         });
+        try {
+          const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;
+          const cutCount = (edl?.edits || []).filter((item) => item.type === 'cut').length;
+          await storeEditResult({
+            editId: recordId,
+            sessionId: args.sessionId,
+            pairIndex: args.pairIndex,
+            title,
+            duration: analysis?.duration || 0,
+            subtitleCount: countSubtitleEntries(correctedSrtPath),
+            qualityScore: 0,
+            qualityPass: false,
+            cutCount,
+            transitionCount,
+            silenceCount: analysis?.silences?.length || 0,
+            freezeCount: analysis?.freezes?.length || 0,
+            subtitleIssuesCount: 0,
+            audioIssuesCount: 0,
+            edlEditTypes: (edl?.edits || []).map((item) => item.type),
+            totalMs,
+            totalCostUsd: 0,
+            videoWidth: analysis?.metadata?.width || 0,
+            videoHeight: analysis?.metadata?.height || 0,
+            videoFps: analysis?.metadata?.fps || 0,
+          }, config);
+        } catch (error) {
+          console.warn('[video] RAG 저장 실패 (무시):', toErrorMessage(error));
+        }
         printDone(totalMs, previewPath);
         return;
       }
@@ -517,6 +558,35 @@ async function main() {
         `파일: ${renderResult.outputPath}`,
         `총 시간: ${totalMs}ms`,
       ].join('\n'));
+
+      try {
+        const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;
+        const cutCount = (edl?.edits || []).filter((item) => item.type === 'cut').length;
+        await storeEditResult({
+          editId: recordId,
+          sessionId: args.sessionId,
+          pairIndex: args.pairIndex,
+          title,
+          duration: analysis?.duration || 0,
+          subtitleCount: countSubtitleEntries(correctedSrtPath),
+          qualityScore: 0,
+          qualityPass: false,
+          cutCount,
+          transitionCount,
+          silenceCount: analysis?.silences?.length || 0,
+          freezeCount: analysis?.freezes?.length || 0,
+          subtitleIssuesCount: 0,
+          audioIssuesCount: 0,
+          edlEditTypes: (edl?.edits || []).map((item) => item.type),
+          totalMs,
+          totalCostUsd: 0,
+          videoWidth: analysis?.metadata?.width || 0,
+          videoHeight: analysis?.metadata?.height || 0,
+          videoFps: analysis?.metadata?.fps || 0,
+        }, config);
+      } catch (error) {
+        console.warn('[video] RAG 저장 실패 (무시):', toErrorMessage(error));
+      }
 
       printDone(totalMs, renderResult.outputPath);
     } catch (error) {
