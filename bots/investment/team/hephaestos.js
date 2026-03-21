@@ -725,7 +725,7 @@ export async function executeSignal(signal) {
         const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
-          code: 'position_reentry_blocked',
+          code: 'paper_position_reentry_blocked',
           meta: {
             existingPaper: paperPosition.paper,
             requestedPaper: effectivePaperMode,
@@ -739,7 +739,7 @@ export async function executeSignal(signal) {
         const reason = '동일 LIVE 포지션 보유 중 — 추가매수 차단';
         console.log(`  ⛔ [자본관리] ${reason}`);
         await persistFailure(reason, {
-          code: 'position_reentry_blocked',
+          code: 'live_position_reentry_blocked',
           meta: {
             existingPaper: livePosition.paper,
             requestedPaper: effectivePaperMode,
@@ -823,7 +823,7 @@ export async function executeSignal(signal) {
           const reason = `동일 ${signalTradeMode.toUpperCase()} PAPER 포지션 보유 중 — 추가매수 차단`;
           console.log(`  ⛔ [자본관리] ${reason}`);
           await persistFailure(reason, {
-            code: 'position_reentry_blocked',
+            code: 'paper_position_reentry_blocked',
             meta: {
               existingPaper: paperPositionAfterFallback.paper,
               requestedPaper: effectivePaperMode,

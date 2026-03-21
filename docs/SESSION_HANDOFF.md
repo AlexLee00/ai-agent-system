@@ -457,3 +457,9 @@
 - `bots/investment/scripts/trading-journal.js`, `bots/investment/scripts/weekly-trade-review.js`, `bots/investment/scripts/runtime-config-suggestions.js`는 새 메타를 읽어 `weakTop`을 함께 표시하도록 연결했다.
 - 현재 일지/주간리뷰에서 `weakTop`이 바로 안 보일 수 있는 것은 정상이다. 과거 `pipeline_runs.meta`에는 새 필드가 없고, 다음 암호화폐 파이프라인 실행부터 누적된다.
 - LIVE 전환 판단은 여전히 보류다. 이번 계측은 튜닝 근거를 더 정교하게 만드는 단계이며, `PAPER -> LIVE` 승격 게이트는 [CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md)를 기준으로 유지한다.
+
+## 2026-03-22 — 루나 암호화폐 재진입 차단 코드 세분화
+
+- `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리했다.
+- 목적은 같은 “추가매수 차단”이라도 검증용 PAPER 포지션 과밀인지, 실제 LIVE 포지션 보유인지 운영 리포트와 자동화 리뷰에서 분리해서 읽게 만드는 것이다.
+- 이번 단계는 정책 완화가 아니라 계측/원장 정밀화 단계다. 실제 scale-in 허용이나 cooldown 완화는 새 block code 분포가 1~2일 누적된 뒤 판단한다.

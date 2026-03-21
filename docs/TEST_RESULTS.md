@@ -907,3 +907,10 @@
 | `node bots/investment/scripts/trading-journal.js` | ✅ 일지 정상 출력, 기존 과거 meta에는 새 필드가 없어 `weakTop`이 아직 비어도 오류 없이 동작함 확인 |
 | `node bots/investment/scripts/runtime-config-suggestions.js` | ✅ runtime_config 제안 정상 출력, 새 `weakTop` 필드가 없어도 validation 요약이 안전하게 유지됨 확인 |
 | `node bots/investment/scripts/weekly-trade-review.js` | ✅ 주간 리뷰 정상 출력, 기존 집계 데이터와 호환됨 확인 |
+
+### 루나 암호화폐 재진입 차단 코드 세분화
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/team/hephaestos.js` | ✅ `paper_position_reentry_blocked`, `live_position_reentry_blocked` 분리 후 문법 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ 국내/해외장 추가진입 차단 코드 세분화 후 문법 통과 |
