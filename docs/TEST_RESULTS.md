@@ -141,6 +141,7 @@
 | `node --check bots/worker/web/routes/video-api.js` | ✅ |
 | `node -e "JSON.parse(fs.readFileSync('bots/video/n8n/video-pipeline-workflow.json','utf8'))"` | ✅ workflow JSON 파싱 확인 |
 | `node bots/video/scripts/check-n8n-video-path.js` | ✅ 현재 컨텍스트 기준 `n8nHealthy=false`, `webhookReason=unreachable`, `registryResolveError=AggregateError` 확인 — direct fallback 필요성 검증 |
+| `node --check bots/video/n8n/setup-video-workflow.js` (보강 후) | ✅ `N8N_BASE_URL` 파싱 + registry 실패 degrade 문법 확인 |
 
 ### 비디오팀 과제 11 — Refiner Agent
 

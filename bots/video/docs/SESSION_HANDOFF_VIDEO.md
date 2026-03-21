@@ -157,6 +157,9 @@ Step 3 — 과제 6~13 재정의:
 - `bots/video/scripts/check-n8n-video-path.js`
   - registry resolved URL + default URL + healthz + webhook registration 진단 스크립트 추가
   - DB 접근이 막힌 컨텍스트에서도 default webhook 경로로 degrade 하도록 보강
+- `bots/video/n8n/setup-video-workflow.js`
+  - registry DB 조회가 실패해도 setup 완료 후 기본 webhook 경로를 출력하도록 보강
+  - 즉 workflow 생성/활성화는 성공했는데 URL 출력 단계 때문에 전체 setup이 실패로 끝나는 경계를 제거
 - `bots/worker/web/routes/video-api.js`
   - `POST /sessions/:id/start`, `POST /edits/:id/confirm`이 `runWithN8nFallback()`를 사용하도록 전환
   - n8n health/webhook 실패 시 기존 detached `fork()` direct fallback 유지

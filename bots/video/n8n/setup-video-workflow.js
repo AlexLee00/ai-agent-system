@@ -11,10 +11,11 @@ const EMAIL = process.env.N8N_EMAIL || '***REMOVED***';
 const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
 const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const VIDEO_TOKEN = process.env.VIDEO_N8N_TOKEN || '';
+const parsedBaseUrl = new URL(N8N_BASE_URL);
 
 const client = createN8nSetupClient({
-  host: '127.0.0.1',
-  port: 5678,
+  host: parsedBaseUrl.hostname || '127.0.0.1',
+  port: Number(parsedBaseUrl.port || 5678),
   email: EMAIL,
   password: PASSWORD,
   logger: console,
@@ -42,15 +43,25 @@ async function main() {
   const hydrated = hydrateWorkflow(workflow);
   const created = await client.createOrReplaceWorkflow(hydrated);
 
-  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
-    workflowName: workflow.name,
-    method: 'POST',
-    pathSuffix: 'video-pipeline',
-    baseUrl: N8N_BASE_URL,
-  });
+  let resolvedWebhookUrl = null;
+  let resolveError = null;
+  try {
+    resolvedWebhookUrl = await resolveProductionWebhookUrl({
+      workflowName: workflow.name,
+      method: 'POST',
+      pathSuffix: 'video-pipeline',
+      baseUrl: N8N_BASE_URL,
+    });
+  } catch (error) {
+    resolveError = error?.message || String(error);
+  }
+  const defaultWebhookUrl = `${String(N8N_BASE_URL).replace(/\/+$/, '')}/webhook/video-pipeline`;
 
   console.log(`  ✅ 워크플로우 확인: "${workflow.name}" (id: ${created?.id || 'unknown'})`);
-  console.log(`  🔗 webhook: ${resolvedWebhookUrl || `${N8N_BASE_URL}/webhook/video-pipeline`}`);
+  if (resolveError) {
+    console.log(`  ⚠️ webhook registry 조회 실패 — 기본 경로 사용 (${resolveError})`);
+  }
+  console.log(`  🔗 webhook: ${resolvedWebhookUrl || defaultWebhookUrl}`);
   console.log('\n✅ 비디오팀 n8n 워크플로우 설정 완료\n');
 }
 
