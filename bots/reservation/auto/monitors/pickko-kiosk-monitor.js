@@ -2110,9 +2110,12 @@ async function main() {
 
         // Frame detach 시 새 탭으로 1회 재시도
         let blocked = false;
+        let blockReason = 'verify_failed';
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            blocked = await blockNaverSlot(naverPg, e);
+            const blockResult = await blockNaverSlot(naverPg, e);
+            blocked = Boolean(blockResult?.ok);
+            blockReason = blockResult?.reason || (blocked ? 'verified' : 'verify_failed');
             break;
           } catch (err) {
             if (err.message.includes('detached Frame') && attempt === 1) {
@@ -2120,11 +2123,12 @@ async function main() {
               try { await naverPg.close(); } catch {}
               naverPg = await createNaverPage();
               const reLoggedIn = await naverBookingLogin(naverPg);
-              if (!reLoggedIn) { blocked = false; break; }
+              if (!reLoggedIn) { blocked = false; blockReason = 'naver_relogin_failed'; break; }
             } else {
               log(`❌ blockNaverSlot 오류: ${err.message}`);
               const ssPath = `/tmp/naver-block-${e.date}-fatal.png`;
               await naverPg.screenshot({ path: ssPath }).catch(() => null);
+              blockReason = 'exception';
               break;
             }
           }
@@ -2143,7 +2147,7 @@ async function main() {
           blockedAt:    blocked ? now : null,
           lastBlockAttemptAt: now,
           lastBlockResult: blocked ? 'blocked' : 'retryable_failure',
-          lastBlockReason: blocked ? 'verified' : 'verify_failed',
+          lastBlockReason: blockReason,
         });
 
         // ── Phase 4: 텔레그램 알림 ──
@@ -2152,11 +2156,11 @@ async function main() {
             `✅ 네이버 예약 차단 완료\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 예약)`
           );
         } else {
-          await journalBlockAttempt(e, 'retryable_failure', 'verify_failed', {
+          await journalBlockAttempt(e, 'retryable_failure', blockReason, {
             naverBlocked: false,
             incrementRetry: true,
           });
-          publishRetryableBlockAlert(e, '차단 검증 실패', {
+          publishRetryableBlockAlert(e, `차단 실패(${blockReason})`, {
             title: '네이버 차단 미확인',
             sourceLabel: '키오스크 예약',
           });
