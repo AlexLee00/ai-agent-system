@@ -247,6 +247,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 실제 DB 트랜잭션에서 두 개의 재예약 row를 삽입/조회 후 rollback하는 비파괴 회귀 테스트 스크립트 추가
 - `docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md`
   - 취소 후 같은 시작시각 재예약 회귀 테스트 절차서 추가
+- `docs/SKA_NAVER_CANCEL_FLOW_RUNBOOK_2026-03-22.md`
+  - 네이버 자동 모니터링 예약취소 절차 runbook 추가
 
 ### 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
 

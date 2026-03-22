@@ -28,6 +28,7 @@
 - 확인 결과 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, 이전 legacy 키 충돌 문제를 피할 수 있다.
 - 후속 운영 검증용 [SKA_REBOOK_REGRESSION_TEST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md) 절차서를 추가했다.
 - `bots/reservation/scripts/test-kiosk-block-key-v2.js`를 추가해 실제 `reservation.kiosk_blocks` 트랜잭션 안에서 두 row를 넣고 rollback하는 비파괴 검증까지 붙였다. 실측 결과 `rowCount=2`, `v2Keys.distinct=true`로 재예약 충돌이 분리 저장됨을 확인했다.
+- 네이버 자동 모니터링 취소 경로를 운영 절차 문서 [SKA_NAVER_CANCEL_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_NAVER_CANCEL_FLOW_RUNBOOK_2026-03-22.md)로 고정했다. 감지 2 / 2E / 1 / 4와 `runPickkoCancel()` 분기를 한 문서에서 읽을 수 있다.
 
 ## 2026-03-22: 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 
