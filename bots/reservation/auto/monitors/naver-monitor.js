@@ -1319,7 +1319,12 @@ async function monitorBookings() {
                 log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
                 for (const c of cancelCandidates) {
                   const cancelKey = toCancelKey(c);
+                  const tracked = await shouldProcessCancelledBooking(c);
                   await addCancelledKey(cancelKey);
+                  if (!tracked) {
+                    log(`ℹ️ [취소탭] 미추적 과거 취소건 스킵: ${maskPhone(c.phone || c.phoneRaw)} ${c.date} ${c.start}~${c.end} ${c.room || ''} (DB 추적 없음)`);
+                    continue;
+                  }
                   cycleNewCancelDetections++;
                   await runPickkoCancel(c, cancelKey);
                 }
@@ -1354,7 +1359,12 @@ async function monitorBookings() {
                 log(`🗑️ [취소감지2E] 신규 취소 ${newCancels.length}건 처리`);
                 for (const c of newCancels) {
                   const key = toCancelKey(c);
+                  const tracked = await shouldProcessCancelledBooking(c);
                   await addCancelledKey(key);
+                  if (!tracked) {
+                    log(`ℹ️ [취소감지2E] 미추적 과거 취소건 스킵: ${maskPhone(c.phone || c.phoneRaw)} ${c.date} ${c.start}~${c.end} ${c.room || ''} (DB 추적 없음)`);
+                    continue;
+                  }
                   cycleNewCancelDetections++;
                   await runPickkoCancel(c, key);
                 }
@@ -2187,6 +2197,35 @@ function runPickkoCancel(booking, cancelKey = null) {
       }, 60000);
     });
   });
+}
+
+async function findTrackedReservationForCancelCandidate(booking) {
+  const phoneRaw = (booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+  const compositeKey = buildReservationCompositeKey(
+    phoneRaw,
+    booking.date,
+    booking.start,
+    booking.end,
+    booking.room,
+  );
+
+  if (booking.bookingId) {
+    const byId = await getReservation(String(booking.bookingId)).catch(() => null);
+    if (byId) return byId;
+  }
+
+  const byComposite = await findReservationByCompositeKey(compositeKey).catch(() => null);
+  if (byComposite) return byComposite;
+
+  const bySlot = await findReservationBySlot(phoneRaw, booking.date, booking.start, booking.room).catch(() => null);
+  if (bySlot) return bySlot;
+
+  return null;
+}
+
+async function shouldProcessCancelledBooking(booking) {
+  const tracked = await findTrackedReservationForCancelCandidate(booking);
+  return Boolean(tracked);
 }
 
 function runPickko(booking, bookingId = null, naveraPage = null) {
