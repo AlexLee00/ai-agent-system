@@ -1,6 +1,6 @@
 # 데이터베이스 스키마 인덱스
 
-> 마지막 업데이트: 2026-03-18
+> 마지막 업데이트: 2026-03-23
 > 목적: ai-agent-system의 DB 종류, 스키마, 주요 테이블, 소스 오브 트루스 코드를 빠르게 찾기 위한 인덱스다.
 
 ---
@@ -163,16 +163,17 @@
 ### Reservation / Ska Commander
 
 주요 저장소:
-- SQLite `state.db`
-- PostgreSQL `reservation` 스키마 일부 공용화
+- PostgreSQL `reservation` 스키마
+- SQLite `state.db`는 보조 상태/로컬 캐시 성격으로만 유지
 
 주요 테이블:
-- `reservations`
-- `cancelled_keys`
-- `kiosk_blocks`
-- `alerts`
-- `daily_summary`
-- `llm_usage_log`
+- `reservation.reservations`
+- `reservation.cancelled_keys`
+- `reservation.kiosk_blocks`
+- `reservation.alerts`
+- `reservation.daily_summary`
+- `reservation.pickko_order_raw`
+- `reservation.llm_usage_log`
 
 대표 owner code:
 - [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
@@ -189,6 +190,13 @@
   - 예약 상태, pickko/naver 동기화 상태, retry/verify 맥락
 - `reservation.alerts`
   - andy/jimmy 경고, resolve 여부
+- `reservation.daily_summary`
+  - `general_revenue = payment_day|general`
+  - `pickko_study_room = use_day|study_room`
+  - `pickko_total`은 2026-03-23 기준 제거됨
+- `reservation.pickko_order_raw`
+  - `payment_day|general`와 `use_day|study_room`만 유지
+  - `payment_day|study_room`, `amount_delta`는 제거됨
 - `reservation.tool_calls`
   - 툴 호출 로그
 - SQLite `cancelled_keys`
