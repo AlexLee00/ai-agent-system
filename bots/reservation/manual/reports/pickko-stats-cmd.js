@@ -16,7 +16,11 @@
  *   { success: true,  message: "포맷된 결과" }
  *   { success: false, message: "오류 내용" }
  *
- * 데이터 소스: state.db daily_summary / room_revenue (00:00/09:00 갱신)
+ * 데이터 소스: PostgreSQL reservation.daily_summary / room_revenue
+ * 해석 기준:
+ *   - general_revenue     = payment_day|general
+ *   - total_amount        = use_day|study_room 합계
+ *   - 합계 표시는 general_revenue + total_amount
  */
 
 const { getDailySummary, getDailySummariesInRange, getRoomRevenueSummary } = require('../../lib/db');

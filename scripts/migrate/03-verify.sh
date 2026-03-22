@@ -154,19 +154,85 @@ fi
 # ── DB 데이터 확인 ─────────────────────────────────────────
 section "DB 데이터 무결성"
 
-# state.db 테이블 확인
-TABLES=$(sqlite3 "$HOME/.openclaw/workspace/state.db" ".tables" 2>/dev/null || true)
-if echo "$TABLES" | grep -q "reservations"; then
-  ROW_COUNT=$(sqlite3 "$HOME/.openclaw/workspace/state.db" "SELECT COUNT(*) FROM reservations" 2>/dev/null || echo 0)
-  pass "reservations 테이블: ${ROW_COUNT}행"
+PG_VERIFY_OUT=$(node - "$ROOT" <<'NODE'
+const path = require('path');
+const ROOT = process.argv[2];
+const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
+
+(async () => {
+  try {
+    const [
+      reservations,
+      dailySummary,
+      legacyStudyRoom,
+      pickkoTotalColumn,
+      amountDeltaColumn,
+    ] = await Promise.all([
+      pgPool.get('reservation', 'SELECT COUNT(*)::int AS cnt FROM reservations'),
+      pgPool.get('reservation', 'SELECT COUNT(*)::int AS cnt FROM daily_summary'),
+      pgPool.get('reservation', `
+        SELECT COUNT(*)::int AS cnt
+        FROM pickko_order_raw
+        WHERE source_axis = 'payment_day'
+          AND order_kind = 'study_room'
+      `),
+      pgPool.get('reservation', `
+        SELECT COUNT(*)::int AS cnt
+        FROM information_schema.columns
+        WHERE table_schema = 'reservation'
+          AND table_name = 'daily_summary'
+          AND column_name = 'pickko_total'
+      `),
+      pgPool.get('reservation', `
+        SELECT COUNT(*)::int AS cnt
+        FROM information_schema.columns
+        WHERE table_schema = 'reservation'
+          AND table_name = 'pickko_order_raw'
+          AND column_name = 'amount_delta'
+      `),
+    ]);
+
+    process.stdout.write([
+      `RESERVATIONS=${Number(reservations?.cnt || 0)}`,
+      `DAILY_SUMMARY=${Number(dailySummary?.cnt || 0)}`,
+      `LEGACY_PAYMENT_STUDY_ROOM=${Number(legacyStudyRoom?.cnt || 0)}`,
+      `PICKKO_TOTAL_COLUMN=${Number(pickkoTotalColumn?.cnt || 0)}`,
+      `AMOUNT_DELTA_COLUMN=${Number(amountDeltaColumn?.cnt || 0)}`,
+    ].join('\n'));
+  } catch (error) {
+    console.error(error.message || String(error));
+    process.exitCode = 1;
+  } finally {
+    await pgPool.closeAll().catch(() => {});
+  }
+})();
+NODE
+)
+
+if [[ $? -ne 0 ]]; then
+  fail "PostgreSQL 검증 실패: $PG_VERIFY_OUT"
 else
-  fail "reservations 테이블 없음"
-fi
-if echo "$TABLES" | grep -q "daily_summary"; then
-  ROW_COUNT=$(sqlite3 "$HOME/.openclaw/workspace/state.db" "SELECT COUNT(*) FROM daily_summary" 2>/dev/null || echo 0)
-  pass "daily_summary 테이블: ${ROW_COUNT}행"
-else
-  warn "daily_summary 테이블 없음"
+  eval "$PG_VERIFY_OUT"
+  pass "reservation.reservations: ${RESERVATIONS}행"
+  pass "reservation.daily_summary: ${DAILY_SUMMARY}행"
+
+  if [[ "${LEGACY_PAYMENT_STUDY_ROOM}" == "0" ]]; then
+    pass "pickko_order_raw legacy payment_day|study_room row 없음"
+  else
+    fail "pickko_order_raw legacy payment_day|study_room row ${LEGACY_PAYMENT_STUDY_ROOM}건 남아 있음"
+  fi
+
+  if [[ "${PICKKO_TOTAL_COLUMN}" == "0" ]]; then
+    pass "daily_summary.pickko_total 컬럼 제거됨"
+  else
+    fail "daily_summary.pickko_total 컬럼이 아직 남아 있음"
+  fi
+
+  if [[ "${AMOUNT_DELTA_COLUMN}" == "0" ]]; then
+    pass "pickko_order_raw.amount_delta 컬럼 제거됨"
+  else
+    fail "pickko_order_raw.amount_delta 컬럼이 아직 남아 있음"
+  fi
 fi
 
 # DuckDB 확인

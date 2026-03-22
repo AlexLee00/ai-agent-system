@@ -57,18 +57,21 @@
 
 ### P2. 스카 daily_summary 무결성
 
-- 상태: **다른 채팅에서 수정 진행 중**
+- 상태: **정리 완료, 새 축 기준 반영 후 관찰 단계**
 - 근거:
-  - `node bots/reservation/scripts/health-report.js --json`
-  - 경고: `2026-03-21: room_amounts_json 156000원 != pickko_study_room 10500원`
+  - `payment_day|study_room` row 제거
+  - `pickko_order_raw.amount_delta` 제거
+  - `daily_summary.pickko_total` 제거
+  - 저장 기준을 `general_revenue=payment_day|general`, `pickko_study_room=use_day|study_room`로 고정
+  - `2025-10 ~ 2026-03` backfill 및 `worker.sales(test-company)` 재동기화 완료
 - 의미:
-  - 매출 원장 신뢰성 이슈
-  - worker 매출 미러 / 향후 SaaS 정산 구조에 직접 영향
+  - 스카 매출 원장은 `결제축 일반매출`과 `예약축 스터디룸 매출`의 이중축 구조로 정리됐다
+  - 이후 검증은 `매출현황`과 `예약/이용 검색`을 서로 다른 기준 화면으로 사용해야 한다
 - 지금 당장 필요한 구조:
-  - 현재 채팅에서는 중복 수정하지 않고 진행 상황만 관찰
+  - health / KPI / forecast가 이 축 분리를 그대로 따르는지 관찰
 - 나중에 확장할 구조:
-  - `integrity report`를 health와 분리
-  - `daily_summary` 저장 시 derived/stored delta 자동 기록
+  - payment/use 분리 read model
+  - 검증 리포트에 화면 기준(`매출현황`/`예약·이용`)을 명시
 
 ### P2. 오케스트레이터 reporting payload 경고
 
