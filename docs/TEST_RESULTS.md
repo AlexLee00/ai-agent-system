@@ -60,6 +60,14 @@
 | `node -e "... buildOfflineNarrationFixture(db sample) ..."` | ✅ `segments=6`, DB 특화 topic/keywords 확인 |
 | `node -e "... buildSyncMap(server scene_index + auth fixture) ..."` | ✅ `서버인증` sync-level `keyword=7`, `hold=0`, `unmatched=0` 확인 |
 | `node -e "... buildSyncMap(db scene_index + db fixture) ..."` | ✅ `DB생성` sync-level `keyword=4`, `hold=2`, `unmatched=0` 확인 |
+| `node --check bots/video/lib/edl-builder.js` | ✅ pacing policy 오디오 패딩(`apad`) 문법 확인 |
+| `node --check bots/video/lib/sync-matcher.js` | ✅ pacing policy EDL 길이 보정 문법 확인 |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ `syncMapToEDL(..., config)` 호출 경계 확인 |
+| `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅ validation 레일 pacing 호출 경계 확인 |
+| `node --check bots/video/scripts/test-sync-matcher.js` | ✅ 더미 검증 레일 pacing 호출 경계 확인 |
+| `node bots/video/scripts/test-sync-matcher.js` | ✅ `matched_keyword=2`, `overall_confidence=0.8334`, `edl_clip_count=2` 유지 |
+| `node -e \"... syncMapToEDL(server auth sync_map) ...\"` | ✅ `서버인증` EDL `duration=1008.129`, `pacing_extra_total=162.129` |
+| `node -e \"... syncMapToEDL(db sync_map) ...\"` | ✅ `DB생성` EDL `duration=629.8`, `pacing_extra_total=125.8` |
 | `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
 | `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |

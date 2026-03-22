@@ -73,7 +73,14 @@ async function runPipelineValidation(rawArgs) {
     targetFps: Number(config.ffmpeg.render_fps || 60),
     tempDir,
   });
-  const edl = syncMapToEDL(syncMap, path.resolve(args.sourceVideo), normalizedAudioPath, introOutro.introClip, introOutro.outroClip);
+  const edl = syncMapToEDL(
+    syncMap,
+    path.resolve(args.sourceVideo),
+    normalizedAudioPath,
+    introOutro.introClip,
+    introOutro.outroClip,
+    config
+  );
   const edlPath = path.join(tempDir, 'edit_decision_list.json');
   saveEDL(edl, edlPath);
 

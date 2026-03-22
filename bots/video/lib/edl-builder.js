@@ -483,6 +483,7 @@ function buildFFmpegFilterV2(edl, config = {}) {
         'asetpts=PTS-STARTPTS',
         ...normalizeAudioForConcat(audioSampleRate, audioChannels),
       ];
+      audioChain.push(`apad=pad_dur=${clipDuration.toFixed(3)}`);
       audioChain.push(`atrim=duration=${clipDuration.toFixed(3)}`);
       audioChain.push('asetpts=PTS-STARTPTS');
       filterParts.push(`${audioChain.join(',')}[${audioLabel}]`);

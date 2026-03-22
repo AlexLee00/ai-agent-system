@@ -20,6 +20,13 @@ function ensureSyncMatcherConfig(config = {}) {
     unmatched_strategy: String(config?.sync_matcher?.unmatched_strategy || 'hold'),
     short_source_window_sec: Number(config?.sync_matcher?.short_source_window_sec || 30),
     repeated_window_penalty: Number(config?.sync_matcher?.repeated_window_penalty || 0.2),
+    pacing_multiplier: Number(config?.sync_matcher?.pacing_multiplier || 1.15),
+    pacing_max_extra_sec: Number(config?.sync_matcher?.pacing_max_extra_sec || 20),
+    hold_pacing_extra_sec: Number(config?.sync_matcher?.hold_pacing_extra_sec || 12),
+    low_confidence_pacing_extra_sec: Number(config?.sync_matcher?.low_confidence_pacing_extra_sec || 6),
+    speed_floor_threshold: Number(config?.sync_matcher?.speed_floor_threshold || 0.55),
+    speed_floor_pacing_extra_sec: Number(config?.sync_matcher?.speed_floor_pacing_extra_sec || 10),
+    pacing_total_max_extra_sec: Number(config?.sync_matcher?.pacing_total_max_extra_sec || 24),
   };
 }
 
@@ -245,6 +252,32 @@ function calculateSpeedFactor(segment, scene, config = {}) {
   return Number(Math.min(resolved.max_speed_factor, Math.max(resolved.min_speed_factor, factor)).toFixed(4));
 }
 
+function calculateTimelineDuration(match, config = {}) {
+  const resolved = ensureSyncMatcherConfig(config);
+  const narrationStart = safeParseFloat(match.narration_start_s, match.narration?.start_s || 0);
+  const narrationEnd = safeParseFloat(match.narration_end_s, match.narration?.end_s || narrationStart);
+  const narrationDuration = Math.max(0, narrationEnd - narrationStart);
+  if (narrationDuration <= 0) return 0;
+
+  let extra = Math.min(
+    resolved.pacing_max_extra_sec,
+    narrationDuration * Math.max(0, resolved.pacing_multiplier - 1)
+  );
+
+  if (match.match_type === 'hold') {
+    extra += resolved.hold_pacing_extra_sec;
+  }
+  if (String(match.confidence || '').toLowerCase() === 'low') {
+    extra += resolved.low_confidence_pacing_extra_sec;
+  }
+  if (Number(match.speed_factor || 1) <= resolved.speed_floor_threshold) {
+    extra += resolved.speed_floor_pacing_extra_sec;
+  }
+
+  extra = Math.min(resolved.pacing_total_max_extra_sec, Math.max(0, extra));
+  return Number((narrationDuration + extra).toFixed(3));
+}
+
 async function buildSyncMap(sceneIndex, narrationAnalysis, config = {}, options = {}) {
   const scenes = Array.isArray(sceneIndex?.scenes) ? sceneIndex.scenes : [];
   const segments = Array.isArray(narrationAnalysis?.segments) ? narrationAnalysis.segments : [];
@@ -357,7 +390,7 @@ function buildClip(sourceId, clipType, sourceStart, sourceEnd, timelineStart, ti
   };
 }
 
-function syncMapToEDL(syncMap, sourceVideoPath, narrationAudioPath, introClip = null, outroClip = null) {
+function syncMapToEDL(syncMap, sourceVideoPath, narrationAudioPath, introClip = null, outroClip = null, config = {}) {
   const inputs = [
     { id: 'main', type: 'video', path: path.resolve(sourceVideoPath) },
     { id: 'narration', type: 'audio', path: path.resolve(narrationAudioPath) },
@@ -375,7 +408,8 @@ function syncMapToEDL(syncMap, sourceVideoPath, narrationAudioPath, introClip = 
     const source = match.source;
     const narrationStart = safeParseFloat(match.narration_start_s, match.narration?.start_s || 0);
     const narrationEnd = safeParseFloat(match.narration_end_s, match.narration?.end_s || narrationStart);
-    const duration = narrationEnd - narrationStart;
+    const narrationDuration = narrationEnd - narrationStart;
+    const duration = calculateTimelineDuration(match, config);
     if (!source || duration <= 0) continue;
     clips.push(buildClip(
       'main',
@@ -389,8 +423,11 @@ function syncMapToEDL(syncMap, sourceVideoPath, narrationAudioPath, introClip = 
         segment_id: match.segment_id,
         narration_start: narrationStart,
         narration_end: narrationEnd,
+        narration_duration: Number(narrationDuration.toFixed(3)),
+        timeline_duration: duration,
         match_type: match.match_type,
         match_score: match.match_score,
+        pacing_extra_sec: Number(Math.max(0, duration - Math.max(0, narrationDuration)).toFixed(3)),
       }
     ));
     timelineCursor += duration;

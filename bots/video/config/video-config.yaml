@@ -92,6 +92,13 @@ sync_matcher:
   unmatched_strategy: hold
   short_source_window_sec: 30
   repeated_window_penalty: 0.2
+  pacing_multiplier: 1.15
+  pacing_max_extra_sec: 20
+  hold_pacing_extra_sec: 12
+  low_confidence_pacing_extra_sec: 6
+  speed_floor_threshold: 0.55
+  speed_floor_pacing_extra_sec: 10
+  pacing_total_max_extra_sec: 24
 
 # 인트로/아웃트로
 intro_outro:

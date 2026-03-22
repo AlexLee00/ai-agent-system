@@ -51,6 +51,14 @@
   - `서버인증`: `segments=7`, `keyword=7`, `hold=0`, `unmatched=0`
   - `DB생성`: `segments=6`, `keyword=4`, `hold=2`, `unmatched=0`
 - 해석상 `서버인증`은 generic fallback 병목이 크게 줄었고, `DB생성`은 아직 hold가 남아 다음 final 재렌더에서 추가 확인이 필요하다.
+- duration/structure 튜닝 2차로 pacing policy를 EDL 레이어에 추가했다.
+  - `syncMapToEDL()`는 `hold / low confidence / speed floor` 구간에 추가 체류 시간을 반영한다.
+  - `edl-builder.js`는 main clip 오디오에 `apad`를 추가해 timeline이 narration보다 길어질 때 무음 패딩으로 final render를 유지한다.
+  - 설정값은 `video-config.yaml`의 `pacing_multiplier`, `pacing_max_extra_sec`, `hold_pacing_extra_sec`, `low_confidence_pacing_extra_sec`, `speed_floor_threshold`, `speed_floor_pacing_extra_sec`, `pacing_total_max_extra_sec`로 분리했다.
+- EDL 수준 재검증:
+  - `서버인증`: `edl.duration=1008.129`, `pacing_extra_total=162.129`
+  - `DB생성`: `edl.duration=629.8`, `pacing_extra_total=125.8`
+- 해석상 다음 병목은 더 이상 키워드 매칭 자체보다 `timeline length / tutorial pacing`이며, 다음 단계는 `서버인증`, `DB생성` final 재렌더로 실제 점수 개선폭을 다시 재는 것이다.
 - 현재 1순위 보강 포인트는 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure를 사람 편집본 기준으로 더 맞추는 것과 transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
