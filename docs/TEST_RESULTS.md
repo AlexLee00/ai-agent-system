@@ -1036,3 +1036,14 @@
 | `node scripts/reviews/llm-selector-speed-daily.js --skip-test --json` (후속) | ✅ `primaryFallbackPolicy.decision=temporary_fallback_candidate`, `consecutivePrimaryIssues=3` 확인 |
 | `~/.openclaw/openclaw.json` 모델 레지스트리 갱신 | ✅ `gemini-2.5-flash-lite` 추가, `groq/moonshotai/kimi-k2-instruct-0905` 교체, `cerebras/gpt-oss-120b` 제거 완료 |
 | `docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md` 작성 | ✅ `flash -> flash-lite` 임시 전환 조건 / 금지 조건 / 롤백 조건 / 관찰 절차 문서화 완료 |
+## 2026-03-22 — 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 네이버 신규 예약 write-path 가드 제거 + 자동 취소 `unblock-slot` 후속 제거 문법 통과 |
+| `node --check bots/reservation/manual/reservation/pickko-cancel-cmd.js` | ✅ 수동 취소 command 단순화 문법 통과 |
+| `node --check bots/reservation/lib/manual-cancellation.js` | ✅ 취소 contract 정리 문법 통과 |
+| `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"` | ✅ `ai.ska.kiosk-monitor` launchd 등록 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `kiosk-monitor` 수동 기동 성공 |
+| `launchctl print gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `pid=49161`, `state=xpcproxy` 확인 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `kiosk-monitor: 정상 (PID 49161)` |

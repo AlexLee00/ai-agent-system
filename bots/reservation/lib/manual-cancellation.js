@@ -107,12 +107,9 @@ function runManualReservationCancellation(args = {}) {
 
   return {
     ok: Boolean(payload.success),
-    code: payload.partialSuccess ? 'PARTIAL_SUCCESS' : (payload.success ? null : 'CANCEL_FAILED'),
+    code: payload.success ? null : 'CANCEL_FAILED',
     message: payload.message,
     error: payload.success ? null : payload.message,
-    partialSuccess: Boolean(payload.partialSuccess),
-    pickkoCancelled: Boolean(payload.pickkoCancelled),
-    naverUnblockFailed: Boolean(payload.naverUnblockFailed),
     reservation,
     exitCode: result.status,
     stdout,

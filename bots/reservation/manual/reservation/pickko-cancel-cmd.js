@@ -17,7 +17,6 @@
  *
  * 흐름:
  *   1. pickko-cancel.js  — 픽코 어드민에서 예약 취소 처리
- *   2. pickko-kiosk-monitor.js --unblock-slot — 네이버 예약불가 → 예약가능 복구
  *
  * 로그: 각 child 출력이 stderr로 전달됨
  */
@@ -89,42 +88,12 @@ runScript(cancelScript, cancelArgs, 'pickko-cancel').then(async (cancelOk) => {
     process.exit(1);
   }
 
-  process.stderr.write(`[pickko-cancel-cmd] 픽코 취소 완료 → 네이버 해제 시작\n`);
-
-  // ── Step 2: 네이버 예약불가 → 예약가능 해제 ──
-  const kioskScript = path.join(__dirname, '../../auto/monitors/pickko-kiosk-monitor.js');
-  const unblockArgs = [
-    '--unblock-slot',
-    `--phone=${phoneRaw}`,
-    `--date=${ARGS.date}`,
-    `--start=${ARGS.start}`,
-    `--end=${ARGS.end}`,
-    `--room=${room}`,
-    ...(ARGS.name ? [`--name=${ARGS.name}`] : [])
-  ];
-
-  const unblockOk = await runScript(kioskScript, unblockArgs, 'unblock-slot');
-
   const nameStr = ARGS.name ? ` (${ARGS.name})` : '';
   const baseInfo = `${phoneRaw} ${ARGS.date} ${ARGS.start}~${ARGS.end} ${room}룸${nameStr}`;
 
-  if (unblockOk) {
-    process.stdout.write(JSON.stringify({
-      success: true,
-      message: `예약 취소 완료: ${baseInfo}`
-    }) + '\n');
-    process.exit(0);
-  } else {
-    // 픽코 취소는 성공했지만 네이버 해제 실패
-    // 상위 응답 레이어가 success만 보고 완전 성공으로 안내하지 않도록
-    // partial failure를 명시적으로 실패로 돌려준다.
-    process.stdout.write(JSON.stringify({
-      success: false,
-      partialSuccess: true,
-      pickkoCancelled: true,
-      naverUnblockFailed: true,
-      message: `예약 취소 완료 (픽코), 네이버 해제 실패 — 수동 확인 필요: ${baseInfo}`
-    }) + '\n');
-    process.exit(2);
-  }
+  process.stdout.write(JSON.stringify({
+    success: true,
+    message: `예약 취소 완료: ${baseInfo}`
+  }) + '\n');
+  process.exit(0);
 });

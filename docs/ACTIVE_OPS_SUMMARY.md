@@ -38,24 +38,22 @@
   - provider `registered / ready / cooldown / disabled` 공통 계약
   - gateway KPI에 `rate limit / retry burst / lane duplication` 분리 기록
 
-### P1. 스카 취소 상위 응답 레이어
+### P1. 스카 자동 write-path 정렬
 
-- 상태: **구현 경계 복구 완료, 실전 관찰 단계**
+- 상태: **운영 로직 기준 정렬 완료, 관찰 단계**
 - 근거:
-  - [pickko-cancel-cmd.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js)는
-    `partialSuccess`, `pickkoCancelled`, `naverUnblockFailed`를 분리 반환
-  - 이번 세션에서 스카 command contract에 `cancel_reservation`을 추가해
-    [ska-command-handlers.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.js),
-    [dashboard-server.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/dashboard-server.js),
-    [router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)까지 같은 result shape가 흐르도록 연결 완료
+  - [naver-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.js)에서 네이버 신규 예약 후 픽코 등록을 막던 `OBSERVE_ONLY`, `PICKKO_ENABLE`, `SAFE_DEV_FALLBACK` 가드를 제거
+  - 네이버 취소 감지 후 `pickko-kiosk-monitor.js --unblock-slot` 후속 호출 제거
+  - [pickko-cancel-cmd.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js)도 동일하게 `픽코 취소만 수행`하도록 단순화
+  - `launchctl bootstrap/kickstart`로 `ai.ska.kiosk-monitor` 재가동 완료
 - 의미:
-  - 문서에는 있었지만 실제 contract에 빠져 있던 취소 write-path가 정식 command로 승격됨
-  - 이제 부분 실패를 완전 성공처럼 포장할 구조적 위험이 크게 줄어듦
+  - 사용자 정의 운영 로직과 실제 자동화 흐름이 다시 일치한다
+  - 현재 기준 자동 경로는 `네이버 예약 -> 픽코 등록`, `네이버 취소 -> 픽코 취소`, `픽코 예약 -> 네이버 차단`, `픽코 취소 -> 네이버 해제`의 4경로로 읽으면 된다
 - 지금 당장 필요한 구조:
-  - 실전 취소 1건에서 `partialSuccess`가 실제 텔레그램 문구 `픽코 취소 완료, 네이버 수동 확인 필요`로 분기하는지 관찰
+  - 신규 예약 1건 / 취소 1건에서 위 4경로가 실제로 기대대로 흐르는지 관찰
 - 나중에 확장할 구조:
-  - 취소 응답 표준 계약 문서화
-  - `pickko cancel / naver unblock` 단계별 사용자 문구 분리
+  - `observe / limited_auto / full_auto` 같은 운영 모드 표준화
+  - 자동 write-path 단계별 결과 원장 분리
 
 ### P2. 스카 daily_summary 무결성
 
@@ -122,16 +120,15 @@
 
 ### 스카 자동 취소 E2E
 
-- 상태: **부분 보강 완료, 실전 검증 필요**
+- 상태: **자동 취소 write-path 단순화 완료, 실전 검증 필요**
 - 기준점:
-  - `naver-monitor.js`는 자동 취소 성공 후 `--unblock-slot`까지 후속 실행하도록 수정됨
+  - `naver-monitor.js`와 `pickko-cancel-cmd.js`는 이제 `픽코 취소`까지만 수행하고, 네이버 슬롯 복구는 추가 후속으로 건드리지 않음
 - 제약:
   - 미래 취소 감지 스캔 범위와 테스트 예약 날짜가 어긋나면 자동 E2E 검증이 어렵다
 - 다음 관찰:
   - 60일 이내 테스트 예약으로
     - 취소 감지
-  - pickko cancel
-  - naver unblock
+    - pickko cancel
   전체 확인
 
 ### 제이 gateway post-prune 관찰
@@ -165,8 +162,8 @@
 - 스카 manual 등록 후속 차단 silent failure 원장화 완료
 - 민경수 포함 manual 미래 예약 8건 수동 처리 후 `manually_confirmed` 반영 완료
 - 스카 취소 경로:
-  - 자동 취소 후 `--unblock-slot` 후속 실행 연결 완료
-  - 수동 취소 partial success 계약 분리 완료
+  - 자동/수동 취소 모두 `픽코 취소`만 수행하도록 정렬 완료
+  - 네이버 슬롯은 네이버 취소 시 자동 복구된다는 운영 전제를 기준으로 추가 `unblock-slot` 후속 제거
 - 제이/OpenClaw gateway:
   - 미준비 Groq/Cerebras fallback 제거 완료
   - concurrency `maxConcurrent=1`, `subagents.maxConcurrent=2` 보수화 완료

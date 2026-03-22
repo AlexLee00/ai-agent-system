@@ -227,6 +227,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 5세트 전체에서 현재 자동 편집 품질의 공통 병목이 `sync`보다 `duration/structure`와 `preview 해상도 차이`라는 점이 드러났다.
 - 세트별 우선순위를 정해 final render 검증과 구조 튜닝으로 바로 연결할 수 있게 됐다.
 
+## 2026-03-22
+
+### 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
+
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 네이버 신규 예약 후 픽코 등록을 막던 `OBSERVE_ONLY`, `PICKKO_ENABLE`, `SAFE_DEV_FALLBACK` 가드 제거
+  - 자동 취소 후 `pickko-kiosk-monitor.js --unblock-slot` 후속 제거
+- `bots/reservation/manual/reservation/pickko-cancel-cmd.js`
+  - 수동 취소 command를 `픽코 취소만 수행`하는 계약으로 단순화
+- `bots/reservation/lib/manual-cancellation.js`
+  - `cancel_reservation` result shape에서 `partialSuccess / naverUnblockFailed` 제거
+- `bots/reservation/context/N8N_COMMAND_CONTRACT.md`
+  - 취소 command 응답 예시와 원칙을 최신 운영 로직 기준으로 갱신
+- 운영 상태:
+  - `launchctl bootstrap/kickstart`로 `ai.ska.kiosk-monitor` 재가동
+  - `node bots/reservation/scripts/health-report.js --json` 기준 `kiosk-monitor 정상`
+
 ## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
 
 ### 신규 모듈
