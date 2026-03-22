@@ -27,6 +27,16 @@
 | `node - <<'EOF' ... syncSkaSalesToWorker('test-company') ... EOF` | ✅ worker `test-company` 미러 재동기화 `updated=12`, `expectedRows=299` |
 | `node --input-type=module - <<'EOF' ... SELECT date, pickko_study_room, general_revenue FROM reservation.daily_summary ... EOF` | ✅ 대표 값 재확인: `2026-03-01 113000/113800`, `2026-03-12 135000/265000`, `2026-03-17 74500/290000`, `2026-03-21 156000/132000`, `2026-03-22 136000/173800` |
 
+### 스카 downstream 합산 표기 정렬
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/lib/ska-read-service.js` | ✅ `combined_revenue`, `study_cafe_revenue`, `study_room_revenue` 응답 필드 추가 후 문법 통과 |
+| `node --check bots/reservation/scripts/dashboard-server.js` | ✅ 대시보드 summary query가 `combined_revenue`를 함께 노출하도록 변경 후 문법 통과 |
+| `node --check scripts/collect-kpi.js` | ✅ 스카 KPI 합산값 의미 주석 추가 후 문법 통과 |
+| `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ 일일 리뷰 출력이 `내부 합산매출` 표기 기준으로 정렬된 후 문법 통과 |
+| `dashboard.html` diff 검토 | ✅ 요약 카드가 `내부 합산매출 + 스터디카페/스터디룸 분리` 구조로 변경됨을 확인 |
+
 ## 2026-03-22
 
 ### 스카 픽코 모니터링 unblock 경계 복구

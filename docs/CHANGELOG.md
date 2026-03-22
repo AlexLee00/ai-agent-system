@@ -27,8 +27,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `2026-03-17` `pickko_study_room: 74500` 유지
   - `2026-03-01` `pickko_study_room: 113000`으로 재산출
  - 검증 기준 문구도 명확히 함
-  - 스터디카페 매출은 `payment_day|general`을 픽코 `매출현황` 기준으로 검증
+ - 스터디카페 매출은 `payment_day|general`을 픽코 `매출현황` 기준으로 검증
   - 스터디룸 매출은 `use_day|study_room`을 픽코 `예약/이용 검색` 기준으로 검증
+
+## 12주차 후속 (2026-03-23) — 스카 downstream 합산 표기 정렬
+
+- `ska-read-service`, `dashboard-server`, `dashboard.html`에서 합산값을 `combined_revenue` / `내부 합산매출`로 함께 노출
+- 대시보드 요약 카드에 `스터디카페 / 스터디룸` 분리 표시 추가
+- `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에 합산값 의미 주석/표기 반영
 
 ## 12주차 후속 (2026-03-22) — 스카 매출 source 영향 경로 정렬 + 예측엔진 입력 복구
 
