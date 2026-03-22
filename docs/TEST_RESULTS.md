@@ -4,6 +4,12 @@
 
 ## 2026-03-22
 
+### 스카 픽코 자동 예약 감지 runbook
+
+| 테스트 | 결과 |
+|--------|------|
+| 문서 반영 | ✅ `SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md` 추가, 최신 `pickko-kiosk-monitor.js` 경계(`newEntries/retryEntries`, `manual follow-up` 분리) 반영 |
+
 ### 스카 픽코 자동 취소 감지 이중 조회
 
 | 테스트 | 결과 |

@@ -17,6 +17,7 @@
   - `manual` 픽코 작업이 진행 중이면 `kiosk-monitor`는 이제 `isPickkoLocked()`로 선확인 후 즉시 스킵한다. 수동 락 TTL도 20분으로 늘려, 운영자가 수동 등록/수정 중일 때 자동 모니터가 중간에 끼어들지 않도록 `수동 우선` 불변식을 코드로 고정했다.
   - 픽코 자동 취소 감지는 이제 `상태=환불`과 `상태=취소`를 각각 따로 조회한 뒤 합산/중복제거한다. 픽코 화면 상태 필터는 중복 선택이 되지 않으므로, 취소 입력은 반드시 이중 조회 구조여야 한다.
   - 픽코 자동 취소 절차는 [SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md)에 고정했다.
+  - 픽코 자동 예약 감지 절차는 [SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md)에 고정했다. 현재 자동 범위는 `결제완료 예약 -> 신규/미차단 재시도 -> 네이버 차단`이며, `manual follow-up`은 포함하지 않는다.
   - 운영 의미: 자동 write-path 범위를 줄여 false block과 중복 후속 시도를 낮추고, 사람이 개입한 예약은 운영 확인을 거친 뒤 별도 원장으로 닫는 구조로 정리됐다.
 
 - 공통 운영 리포트
