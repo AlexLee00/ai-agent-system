@@ -10,6 +10,11 @@
 - PoC 성공: pytesseract OCR로 FlutterFlow UI 영어 키워드를 추출하고, 편집본↔원본 역추적을 5/5 세트에서 확인했다.
 - 신규 파이프라인: 장면 인덱싱(OCR) → 나레이션 분석(STT+LLM) → AI 매칭 → 인트로/아웃트로 → EDL 기반 렌더링.
 - 인트로/아웃트로는 파일 업로드 또는 프롬프트 설명을 모두 지원하는 하이브리드 구조로 전환했다.
+- 2026-03-22 Phase 2 검증 기준선:
+  - `scene-indexer`: `duration_s=1410.45`, `total_frames_captured=141`, `unique_frames=42`, `scene_count=42`
+  - `narration-analyzer`: 샌드박스 네트워크 제약 시 `offline fixture fallback`, `total_segments=3`
+  - `full-sync-pipeline`: `keyword=2`, `unmatched=1`, `sync_confidence=0.3445`
+- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 오프라인 `narration-analyzer` fallback의 세그먼트 granularity와 첫 구간 unmatched 처리 정책이다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 
