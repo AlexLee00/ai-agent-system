@@ -103,6 +103,20 @@
     - 서버인증 `72.96`
     - DB생성 `75.12`
   - 해석: final 기준에서도 공통 병목은 장면 유사도보다 사람 편집본 대비 `길이/구조`다. 해상도 문제는 거의 해소됐고, 다음 1순위는 duration/structure 튜닝이다.
+  - duration/structure 진단 레일 추가:
+    - `analyze-final-structure-gap.js`를 추가해 `final.mp4 + edit_decision_list.json + reference`만으로 길이/구조 병목을 재현 가능하게 분석할 수 있게 함
+    - `서버인증` 진단:
+      - `duration_ratio=0.4126`
+      - `speed_floor_ratio=0.8`
+      - `hold_clip_count=1`
+      - `main:900-910s` 10초 window가 `4회`, 총 `676.8s` 재사용
+      - 해석: 짧은 anchor 장면 반복 + hold 의존이 커서 사람 편집본 대비 구조 압축이 가장 큼
+    - `DB생성` 진단:
+      - `duration_ratio=0.3803`
+      - `speed_floor_ratio=0.8`
+      - `hold_clip_count=0`
+      - `main:1370-1400s` 30초 window가 `2회`, 총 `201.6s` 재사용
+      - 해석: hold는 없지만 짧은 source window 재사용과 speed floor 의존이 커서 길이/구조 차이가 큼
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
@@ -110,6 +124,11 @@
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
 - `preview_ms` 원장화, preview A/V 정합성 복구, 파라미터 세트 final render 단일 검증까지 완료됐다.
 - 다음 Phase 2 보강 1순위는 final 5세트 baseline을 기준으로 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure 차이를 줄이고, 그다음 transition 재도입 설계를 진행하는 것이다.
+- 현재 구조상 바로 손볼 1순위는 `sync-matcher` 자체 재설계보다,
+  - 긴 오디오에 대한 fallback narration 세그먼트 추가 세분화
+  - `speed=0.5` floor 과다 의존 완화
+  - 짧은 source window 반복 사용 제한
+  순서다.
 
 ## Phase 1 완료 요약
 
