@@ -32,7 +32,9 @@
 - 파라미터 세트 final render는 `2560x1440 / 60fps / 264초`, `AAC 48kHz stereo / 264초`, `faststart=true`, `file_size=46,555,622`, `duration_ms=249452`로 검증됐다.
 - final reference quality는 `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`로 확인됐다.
 - 해석상 preview 기준선의 핵심 약점이던 해상도 차이는 final에서 거의 해소됐고, 남은 1순위 병목은 사람 편집본 대비 `길이/구조`다.
-- 현재 1순위 보강 포인트는 final render 5세트 batch baseline, duration/structure를 사람 편집본 기준으로 더 맞추는 것, transition 재도입 설계다.
+- `test-final-reference-quality-batch.js`를 추가해 temp 산출물 없이 샘플 5세트를 직접 순회하는 final batch 검증 레일을 만들었다.
+- 파라미터 1세트 sanity check는 `averageOverall=81.62`, `averageFinalRenderMs=210767`로 통과했다.
+- 현재 1순위 보강 포인트는 이 batch 레일로 final render 5세트 baseline을 완성하고, duration/structure를 사람 편집본 기준으로 더 맞추는 것, transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 
