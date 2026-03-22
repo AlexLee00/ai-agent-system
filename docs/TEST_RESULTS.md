@@ -68,6 +68,12 @@
 | `node bots/video/scripts/test-sync-matcher.js` | ✅ `matched_keyword=2`, `overall_confidence=0.8334`, `edl_clip_count=2` 유지 |
 | `node -e \"... syncMapToEDL(server auth sync_map) ...\"` | ✅ `서버인증` EDL `duration=1008.129`, `pacing_extra_total=162.129` |
 | `node -e \"... syncMapToEDL(db sync_map) ...\"` | ✅ `DB생성` EDL `duration=629.8`, `pacing_extra_total=125.8` |
+| `node bots/video/scripts/test-full-sync-pipeline.js --source-video=...원본_서버인증.mp4 --source-audio=...원본_나레이션_서버인증.m4a --edited=...편집_서버인증.mp4 --render-final` | ✅ `duration_ms=675045`, `scene_count=13`, `segment_count=7`, `keyword=7`, `hold=0` |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../video-sync-pipeline-6qDyBJ/final.mp4 --sample=서버인증 --json` | ✅ `overall=75.61`, `duration=49.13`, `visual_similarity=75.30`, `duration_ratio=0.4913` |
+| `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-6qDyBJ/final.mp4 --edl=.../video-sync-pipeline-6qDyBJ/edit_decision_list.json --sample=서버인증 --json` | ✅ `hold=0`, `speed_floor_ratio=0.7143`, `900~910s`/`1620~1660s` 반복 window 2개 확인 |
+| `node bots/video/scripts/test-full-sync-pipeline.js --source-video=...원본_DB생성.mp4 --source-audio=...원본_나레이션_DB생성.m4a --edited=...편집_DB생성.mp4 --render-final` | ✅ `duration_ms=345379`, `scene_count=116`, `segment_count=6`, `keyword=4`, `hold=2` |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../video-sync-pipeline-mjrDSu/final.mp4 --sample=db생성 --json` | ✅ `overall=78.77`, `duration=47.47`, `visual_similarity=85.75`, `duration_ratio=0.4747` |
+| `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-mjrDSu/final.mp4 --edl=.../video-sync-pipeline-mjrDSu/edit_decision_list.json --sample=db생성 --json` | ✅ `hold=2`, `speed_floor_ratio=0.5`, `650~690s`/`860~910s` 반복 window 2개 확인 |
 | `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
 | `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |
