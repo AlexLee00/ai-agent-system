@@ -15,7 +15,8 @@
   - `narration-analyzer`: 샌드박스 네트워크 제약 시 `offline fixture fallback`, `total_segments=5`
   - `full-sync-pipeline`: `keyword=5`, `unmatched=0`, `sync_confidence=0.6`
 - 오프라인 fallback 세그먼트 granularity를 공용 fixture 5세그먼트 구조로 보강했고, 첫 구간 unmatched를 제거했다.
-- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 `preview_ms` 원장화와 preview/final render 품질 검증이다.
+- `video_edits.preview_ms` 컬럼을 위한 `005-preview-ms.sql`과 `run-pipeline.js` preview wall-clock 저장 경로를 추가했고, 로컬 DB에도 실제 컬럼 반영을 확인했다.
+- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 preview/final render 품질 검증이다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 
