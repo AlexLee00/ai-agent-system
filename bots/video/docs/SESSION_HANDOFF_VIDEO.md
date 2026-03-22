@@ -39,12 +39,15 @@
   - `keyword=5`, `embedding=0`, `hold=0`, `unmatched=0`
   - `sync_confidence=0.6`
   - `intro_prompt.mp4` 생성 확인
+- `video_edits.preview_ms`
+  - `005-preview-ms.sql` 추가
+  - `run-pipeline.js`가 preview 렌더 직후 wall-clock을 원장에 저장하도록 보강
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
 - 현재 가장 큰 병목은 `scene-indexer`가 아니라 샌드박스 제약 시 narration 분석이 live STT가 아니라 fallback으로 내려간다는 점이다.
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
-- 다음 Phase 2 보강 1순위는 `preview_ms` 원장화와 실제 preview/final render 품질 검증으로 옮겨간다.
+- `preview_ms` 원장화까지 완료됐고, 다음 Phase 2 보강 1순위는 실제 preview/final render 품질 검증이다.
 
 ## Phase 1 완료 요약
 
@@ -164,12 +167,10 @@ bots/worker/web/app/video/history/page.js (이력)
 ## 다음 세션에서 해야 할 것
 
 ### 즉시
-- `preview_ms` 원장 고도화
 - final render 다세트 검증
 - worker-web 세트별 상태/예상시간 표시 세분화
 - 세션 1 (`id=1`, edit `id=16`, trace `f84aa3f6-329e-43af-8eac-ae6f8eeaf474`) 프리뷰 재렌더 결과 시각 검증
 - `transition` 렌더 임시 비활성화 상태를 `xfade` 또는 구간 분할 기반 구현으로 대체
-- `preview_ms` 원장 저장
 - `sync_map` 기준선으로 실제 preview/final render 품질 검증
 
 ### 이후

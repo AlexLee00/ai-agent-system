@@ -639,6 +639,7 @@ async function main() {
       console.log(`[video] 프리뷰: ${previewPath}`);
 
       await updateVideoEdit(recordId, {
+        preview_ms: previewResult.duration_ms,
         status: 'preview_ready',
       });
 

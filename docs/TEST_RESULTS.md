@@ -29,6 +29,8 @@
 | `node bots/video/scripts/test-narration-analyzer.js --source-audio=...` | ✅ 샌드박스 네트워크 제약 시 오프라인 fixture fallback으로 `duration_s=261`, `total_segments=5` 확인 |
 | `node bots/video/scripts/test-scene-indexer.js --source-video=...` | ✅ `duration_s=1410.45`, `total_frames_captured=141`, `unique_frames=42`, `scene_count=42` 확인 |
 | `node bots/video/scripts/test-full-sync-pipeline.js --source-video=... --source-audio=... --edited=...` | ✅ `scene_count=42`, `segment_count=5`, `keyword=5`, `unmatched=0`, `sync_confidence=0.6`, `intro_prompt.mp4` 생성 확인 |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
+| `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |
 
 ### 일일 운영 분석 리포트 해석 품질 보강
