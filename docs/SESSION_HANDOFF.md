@@ -72,6 +72,7 @@
 - 스카
   - `pickko-kiosk-monitor.js`는 이제 성공한 네이버 차단/해제 완료를 `event_type=report`, `alert_level=1`로 발송한다. 이전처럼 성공 메시지가 `⚠️ jimmy 집약 알림`으로 묶이지 않도록 경계를 복구했다.
   - 최근 운영에서는 픽코/네이버 관리자 화면을 사람이 직접 쓰는 동안 자동화가 같은 세션을 건드리며 `detached Frame`, `Session closed`, `ECONNREFUSED`가 발생한 정황이 확인됐다. 운영 규칙은 [SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md)를 따른다.
+  - 현재는 `naver-monitor`만 안정화해 유지하고 `kiosk-monitor`는 의도적으로 미로드 상태다. 재개 전 확인과 재투입 순서는 [SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md)를 기준으로 본다.
   - 기존 예측 엔진은 유지되고 있다.
   - `knn-shadow-v1` shadow 비교 모델이 `forecast_results.predictions`에 저장되기 시작했다.
   - 일일/주간 예측 리뷰와 자동화는 shadow 비교를 읽도록 확장됐다.

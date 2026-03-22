@@ -53,11 +53,13 @@ function getNaverLaunchOptions({ userDataDir, protocolTimeout = 30000 } = {}) {
   const headed = isHeadedMode('naver');
   return {
     headless: getHeadlessMode('naver'),
+    pipe: false,
     defaultViewport: headed ? null : { width: 1920, height: 1080 },
     protocolTimeout,
     ...(userDataDir ? { userDataDir } : {}),
     args: [
       ...getCommonBrowserArgs('naver'),
+      '--remote-debugging-port=0',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',

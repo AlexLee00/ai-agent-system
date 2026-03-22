@@ -85,6 +85,54 @@ const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'op
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
 
+function deriveDevtoolsHttpUrl(wsEndpoint) {
+  if (!wsEndpoint || typeof wsEndpoint !== 'string') return null;
+  const match = wsEndpoint.match(/^ws:\/\/([^/]+)\/devtools\/browser\//);
+  if (!match) return null;
+  return `http://${match[1]}/json/version`;
+}
+
+async function waitForDevtoolsEndpoint(wsEndpoint, timeoutMs = 10000) {
+  const httpUrl = deriveDevtoolsHttpUrl(wsEndpoint);
+  if (!httpUrl) return false;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const res = await fetch(httpUrl, { method: 'GET' });
+      if (res.ok) return true;
+    } catch (_) {
+      // DevTools 포트가 아직 열리기 전이면 잠시 대기 후 재시도
+    }
+    await delay(250);
+  }
+  return false;
+}
+
+function readWsEndpointFromActivePort(userDataDir) {
+  try {
+    const activePortPath = path.join(userDataDir, 'DevToolsActivePort');
+    const raw = fs.readFileSync(activePortPath, 'utf8').trim();
+    const [port, browserPath] = raw.split(/\r?\n/);
+    if (!port || !browserPath) return null;
+    return `ws://127.0.0.1:${port}${browserPath}`;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function waitForWsEndpointFromActivePort(userDataDir, timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const wsEndpoint = readWsEndpointFromActivePort(userDataDir);
+    if (wsEndpoint) {
+      const ready = await waitForDevtoolsEndpoint(wsEndpoint, 1000);
+      if (ready) return wsEndpoint;
+    }
+    await delay(250);
+  }
+  return null;
+}
+
 function runStartupPickkoVerification() {
   if (!NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReport) return;
 
@@ -760,14 +808,23 @@ async function monitorBookings() {
 
     // Puppeteer 실행
     // ✅ 네이버 2단계 보안(추가인증) 때문에 최초 1회는 headless=false + userDataDir로 세션 저장 권장
+    const naverUserDataDir = path.join(WORKSPACE, `naver-profile${getModeSuffix()}`);
+    try { fs.unlinkSync(path.join(naverUserDataDir, 'DevToolsActivePort')); } catch (_) {}
     browser = await puppeteer.launch(getNaverLaunchOptions({
       protocolTimeout: 30000,
       // OPS: naver-profile  |  DEV: naver-profile-dev (세션 파일 분리 → 동시 실행 가능)
-      userDataDir: path.join(WORKSPACE, `naver-profile${getModeSuffix()}`),
+      userDataDir: naverUserDataDir,
     }));
 
     // CDP 엔드포인트 저장: kiosk-monitor가 새 탭으로 연결하기 위해 사용
-    try { fs.writeFileSync(NAVER_WS_FILE, browser.wsEndpoint(), 'utf8'); } catch (e) {}
+    const wsEndpoint =
+      (await waitForWsEndpointFromActivePort(naverUserDataDir, 10000)) ||
+      browser.wsEndpoint();
+    const devtoolsReady = await waitForDevtoolsEndpoint(wsEndpoint, 3000);
+    if (!devtoolsReady) {
+      throw new Error(`DevTools endpoint unavailable: ${wsEndpoint}`);
+    }
+    try { fs.writeFileSync(NAVER_WS_FILE, wsEndpoint, 'utf8'); } catch (e) {}
     log('📡 CDP 엔드포인트 저장됨 (kiosk-monitor 연결용)');
 
     const isHeadless = !isHeadedMode('naver');

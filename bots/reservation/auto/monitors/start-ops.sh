@@ -173,12 +173,18 @@ cleanup_old() {
 # ================================================================
 log "🚀 ━━━ OPS 모드 자동 재시작 루프 시작 ━━━━━━━━━━━━━━━━━━━━"
 
-# 픽코 키오스크 모니터 킥스타트 (launchd 30분 주기 + 즉시 1회)
-if ensure_launchd_service "ai.ska.kiosk-monitor" "$KIOSK_PLIST" && \
-  launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor 2>/dev/null; then
-  log "  🔄 픽코 키오스크 모니터 킥스타트"
+# 픽코 키오스크 모니터는 launchd 스케줄에 맡긴다.
+# naver-monitor 재기동 직후 강제 kickstart를 하면 CDP/WS 준비 전 연결 경쟁이 발생해
+# false warning 또는 connect ECONNREFUSED가 연쇄적으로 생길 수 있다.
+if [ "${SKA_KIOSK_KICKSTART_ON_BOOT:-0}" = "1" ]; then
+  if ensure_launchd_service "ai.ska.kiosk-monitor" "$KIOSK_PLIST" && \
+    launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor 2>/dev/null; then
+    log "  🔄 픽코 키오스크 모니터 킥스타트"
+  else
+    log "  ⚠️  픽코 키오스크 모니터 킥스타트 실패"
+  fi
 else
-  log "  ⚠️  픽코 키오스크 모니터 킥스타트 실패"
+  log "  ℹ️  픽코 키오스크 모니터 즉시 kickstart 비활성화 (launchd 주기 사용)"
 fi
 
 while true; do
