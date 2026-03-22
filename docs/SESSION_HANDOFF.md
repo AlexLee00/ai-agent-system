@@ -124,7 +124,7 @@
   - 같은 날짜 저녁 `kiosk-monitor` 반복 성공 알림의 직접 원인은 `blockNaverSlot()` 반환 객체 `{ ok, reason }`를 상위 루프가 truthy 객체 자체로 성공 판정하던 버그였다. 현재는 `blockResult?.ok`만 성공으로 해석하도록 hotfix가 반영됐고, `kiosk-monitor`는 다시 꺼둔 상태다.
   - 운영자 실사 결과 manual follow-up 12건 중 정상 차단은 6건, 원장 오류는 6건으로 정리됐다. 취소/예약없음 3건은 `operator_invalidated`로 정정했고, 시간 불일치 3건(`2026-04-01~03 A1 08:00~10:50`)은 기존 row를 invalidated 처리한 뒤 실제 차단 슬롯 `09:00~11:20` row를 새로 기록했다.
   - `manual-block-followup-report.js`는 이제 exact `getKioskBlock(phone,date,start)` lookup과 `operator_confirmed_actual_slot` corrected row를 함께 보여준다. 현재 출력 기준선은 `count=12`, `openCount=6`, `correctedCount=3`이다.
-  - 구조 리스크: `kiosk_blocks` 식별키는 아직 `phone|date|start` 기반이라 같은 사람/같은 날짜/같은 시작시각 재예약(`09:00~13:00` 취소 후 `09:00~11:00` 재예약)에서 충돌 가능성이 남아 있다. 다음 개선은 `end`와 `room`까지 포함하는 키 재설계다.
+  - 구조 리스크 후속 조치: `kiosk_blocks` 식별키는 `phone|date|start|end|room` 기반 v2로 승격했고, 마이그레이션 `v007 kiosk_block_key_v2`를 적용했다. 이제 같은 사람/같은 날짜/같은 시작시각 재예약(`09:00~13:00` 취소 후 `09:00~11:00` 재예약)은 키 수준에서 분리된다. 다만 일부 조회/리포트는 여전히 `date/start` 관성에 의존할 수 있어 다음 단계는 재예약 충돌 회귀 테스트와 남은 join 정리다.
   - 최근 운영에서는 픽코/네이버 관리자 화면을 사람이 직접 쓰는 동안 자동화가 같은 세션을 건드리며 `detached Frame`, `Session closed`, `ECONNREFUSED`가 발생한 정황이 확인됐다. 운영 규칙은 [SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md)를 따른다.
   - 현재는 `naver-monitor`만 안정화해 유지하고 `kiosk-monitor`는 의도적으로 미로드 상태다. 재개 전 확인과 재투입 순서는 [SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md)를 기준으로 본다.
   - 기존 예측 엔진은 유지되고 있다.
@@ -623,6 +623,12 @@
   - `openCount=6`
   - `correctedCount=3`
 - 남은 구조 리스크:
-  - `kiosk_blocks` 식별키가 아직 `phone|date|start`
-  - 같은 사람/같은 날짜/같은 시작시각 재예약 시 `end/room` 변화가 충돌할 수 있음
-  - 다음 단계는 `phone|date|start|end|room` 수준으로 키를 재설계하는 것이다.
+  - 다음 단계는 `v2 키` 기준 회귀 테스트와 남은 query/join이 `end/room`까지 일관되게 반영되는지 점검하는 것이다.
+
+## 2026-03-22 — 스카 kiosk_blocks 키 v2 재설계 / 재예약 충돌 완화
+
+- `kiosk_blocks` 식별키를 `phone|date|start`에서 `phone|date|start|end|room` 기반 v2로 승격했다.
+- `bots/reservation/lib/crypto.js`는 `hashKioskKeyLegacy()`와 v2 `hashKioskKey()`를 함께 지원하고, `db.js`는 조회 시 v2 우선 + legacy fallback으로 읽는다.
+- `bots/reservation/migrations/007_kiosk_block_key_v2.js`를 추가해 기존 `kiosk_blocks` row를 v2 id로 재키잉했다. 현재 스키마는 `v7`이다.
+- `pickko-kiosk-monitor.js`, `manual-block-followup-report.js`, `getOpenManualBlockFollowups()`는 `end/room`까지 반영해 같은 사람/같은 날짜/같은 시작시각 재예약에서도 다른 row로 다루도록 보강했다.
+- 검증상 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, legacy 단일 키와 달리 충돌하지 않는다.

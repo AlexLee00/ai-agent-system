@@ -17,7 +17,15 @@
 - `2026-04-01~03 A1 / 01037410771`는 실제 차단된 `09:00~11:20` 슬롯 row를 `operator_confirmed_actual_slot`로 새로 기록했다.
 - `manual-block-followup-report.js`는 exact `getKioskBlock(phone,date,start)` lookup과 `correctedRows` 출력(`correctedCount`)을 지원하도록 보강했다.
 - 현재 기준선은 `count=12`, `openCount=6`, `correctedCount=3`이다.
-- 구조 리스크도 확인했다: `kiosk_blocks` 키가 아직 `phone|date|start`라 같은 사람/같은 날짜/같은 시작시각 재예약에서는 `end/room`이 달라도 충돌할 수 있다.
+
+## 2026-03-22: 스카 kiosk_blocks 키 v2 재설계 / 재예약 충돌 완화
+
+- `kiosk_blocks` 식별키를 `phone|date|start|end|room` 기반 v2로 승격했다.
+- `crypto.js`에 `hashKioskKeyLegacy()`를 분리하고, `hashKioskKey()`는 v2 키를 생성하도록 바꿨다.
+- `db.js`는 조회 시 v2 우선 + legacy fallback을 사용하고, upsert 시 기존 legacy row를 v2 id로 승격하도록 보강했다.
+- `007_kiosk_block_key_v2.js` 마이그레이션을 추가/적용해 기존 `kiosk_blocks` row를 재키잉했고, 스키마 버전이 `v7`로 올라갔다.
+- `pickko-kiosk-monitor.js`, `manual-block-followup-report.js`, `getOpenManualBlockFollowups()`도 `end/room`까지 반영해 같은 시작시각 재예약 충돌을 줄였다.
+- 확인 결과 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, 이전 legacy 키 충돌 문제를 피할 수 있다.
 
 ## 2026-03-22: 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 
