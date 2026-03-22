@@ -10,6 +10,7 @@ const { analyzeNarration, buildOfflineNarrationFixture } = require('../lib/narra
 const { buildSyncMap, syncMapToEDL } = require('../lib/sync-matcher');
 const { processIntroOutro } = require('../lib/intro-outro-handler');
 const { renderPreview, saveEDL } = require('../lib/edl-builder');
+const { normalizeAudio } = require('../lib/ffmpeg-preprocess');
 
 function parseArgs(argv) {
   const parsed = {
@@ -37,14 +38,16 @@ async function main() {
 
   const config = loadConfig();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-sync-pipeline-'));
+  const normalizedAudioPath = path.join(tempDir, 'narration_norm.m4a');
+  await normalizeAudio(path.resolve(args.sourceAudio), normalizedAudioPath, config);
   const sceneIndex = await indexVideo(path.resolve(args.sourceVideo), config, { tempDir, ocrEngine: 'cli' });
   let narration;
   try {
-    narration = await analyzeNarration(path.resolve(args.sourceAudio), config, { tempDir, correct: true });
+    narration = await analyzeNarration(normalizedAudioPath, config, { tempDir, correct: true });
   } catch (error) {
     if (!args.allowOfflineFixture) throw error;
     console.warn('[video] test-full-sync-pipeline 오프라인 narration fixture fallback:', error.message);
-    narration = await buildOfflineNarrationFixture(path.resolve(args.sourceAudio));
+    narration = await buildOfflineNarrationFixture(normalizedAudioPath);
   }
   const syncMap = await buildSyncMap(sceneIndex, narration, config, { tempDir });
   const introOutro = await processIntroOutro(config, {
@@ -60,7 +63,7 @@ async function main() {
     targetFps: Number(config.ffmpeg.render_fps || 60),
     tempDir,
   });
-  const edl = syncMapToEDL(syncMap, path.resolve(args.sourceVideo), path.resolve(args.sourceAudio), introOutro.introClip, introOutro.outroClip);
+  const edl = syncMapToEDL(syncMap, path.resolve(args.sourceVideo), normalizedAudioPath, introOutro.introClip, introOutro.outroClip);
   const edlPath = path.join(tempDir, 'edit_decision_list.json');
   saveEDL(edl, edlPath);
 

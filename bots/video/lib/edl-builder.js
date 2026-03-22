@@ -368,6 +368,23 @@ function atempoChain(factor) {
   return filters.join(',');
 }
 
+function normalizeAudioForConcat(sampleRate = 48000, channelLayout = 'stereo') {
+  return [
+    `aresample=${sampleRate}`,
+    `aformat=sample_fmts=fltp:channel_layouts=${channelLayout}`,
+  ];
+}
+
+function normalizeVideoForConcat(width, height, fps) {
+  return [
+    `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos`,
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
+    'setsar=1',
+    'format=yuv420p',
+    `fps=${fps}`,
+  ];
+}
+
 function escapeSubtitlesPath(filePath) {
   return String(filePath)
     .replace(/\\/g, '\\\\')
@@ -407,7 +424,7 @@ function buildInputArgs(edl) {
   return { args, inputs };
 }
 
-function buildFFmpegFilterV2(edl) {
+function buildFFmpegFilterV2(edl, config = {}) {
   const ffInputs = resolveEdlInputs(edl);
   const inputById = new Map(ffInputs.map((input) => [input.id, input]));
   const narrationInput = inputById.get('narration');
@@ -418,6 +435,9 @@ function buildFFmpegFilterV2(edl) {
   let timelineCursor = 0;
   const audioSampleRate = 48000;
   const audioChannels = 'stereo';
+  const targetWidth = Number(config?.ffmpeg?.render_width || 2560);
+  const targetHeight = Number(config?.ffmpeg?.render_height || 1440);
+  const targetFps = Number(config?.ffmpeg?.render_fps || 60);
 
   clips.forEach((clip, index) => {
     const sourceInput = inputById.get(clip.source_id);
@@ -429,6 +449,7 @@ function buildFFmpegFilterV2(edl) {
     if (clipDuration <= 0 || sourceEnd <= sourceStart) return;
 
     const speed = Math.max(0.01, safeParseFloat(clip.speed, 1));
+    const sourceDuration = Math.max(0, sourceEnd - sourceStart);
     const videoLabel = `vclip_${index}`;
     const audioLabel = `aclip_${index}`;
     const videoChain = [
@@ -438,6 +459,13 @@ function buildFFmpegFilterV2(edl) {
     if (speed !== 1) {
       videoChain.push(`setpts=(PTS-STARTPTS)/${speed}`);
     }
+    videoChain.push(...normalizeVideoForConcat(targetWidth, targetHeight, targetFps));
+    const renderedVideoDuration = sourceDuration / speed;
+    if (renderedVideoDuration < clipDuration) {
+      videoChain.push(`tpad=stop_mode=clone:stop_duration=${(clipDuration - renderedVideoDuration).toFixed(3)}`);
+    }
+    videoChain.push(`trim=duration=${clipDuration.toFixed(3)}`);
+    videoChain.push('setpts=PTS-STARTPTS');
     filterParts.push(`${videoChain.join(',')}[${videoLabel}]`);
     videoLabels.push(`[${videoLabel}]`);
 
@@ -453,10 +481,10 @@ function buildFFmpegFilterV2(edl) {
       const audioChain = [
         `[${narrationInput.ffmpegIndex}:a]atrim=start=${audioStart.toFixed(3)}:end=${audioEnd.toFixed(3)}`,
         'asetpts=PTS-STARTPTS',
+        ...normalizeAudioForConcat(audioSampleRate, audioChannels),
       ];
-      if (speed !== 1) {
-        audioChain.push(atempoChain(speed));
-      }
+      audioChain.push(`atrim=duration=${clipDuration.toFixed(3)}`);
+      audioChain.push('asetpts=PTS-STARTPTS');
       filterParts.push(`${audioChain.join(',')}[${audioLabel}]`);
     } else {
       filterParts.push(
@@ -497,9 +525,9 @@ function buildFFmpegFilterV2(edl) {
   };
 }
 
-function buildFFmpegFilter(edl) {
+function buildFFmpegFilter(edl, config = {}) {
   if (Number(edl?.version) >= 2 && Array.isArray(edl?.clips)) {
-    return buildFFmpegFilterV2(edl);
+    return buildFFmpegFilterV2(edl, config);
   }
   const sourcePath = edl.source;
   const subtitlePath = edl.subtitle;
@@ -551,6 +579,7 @@ function buildFFmpegFilter(edl) {
       const audioChain = [
         `[0:a]atrim=start=${segment.from.toFixed(3)}:end=${segment.to.toFixed(3)}`,
         'asetpts=PTS-STARTPTS',
+        ...normalizeAudioForConcat(),
       ];
       if (factor !== 1) {
         audioChain.push(atempoChain(factor));
@@ -622,7 +651,7 @@ function createFilterScriptFile(contents, suffix) {
 
 function buildPreviewCommand(edl, outputPath, config) {
   ensureFfmpegConfig(config);
-  const { filter, duration } = buildFFmpegFilter(edl);
+  const { filter, duration } = buildFFmpegFilter(edl, config);
   const previewFilter = `${filter};\n[vout]scale=1280:720:flags=lanczos[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(previewFilter, 'preview');
   const { args: inputArgs } = buildInputArgs(edl);
@@ -650,7 +679,7 @@ function buildPreviewCommand(edl, outputPath, config) {
 
 function buildFinalRenderCommand(edl, outputPath, config) {
   ensureFfmpegConfig(config);
-  const { filter, duration } = buildFFmpegFilter(edl);
+  const { filter, duration } = buildFFmpegFilter(edl, config);
   const ff = config.ffmpeg;
   const finalFilter = `${filter};\n[vout]scale=${ff.render_width}:${ff.render_height}:flags=lanczos[vscaled];\n[vscaled]fps=${ff.render_fps}[vfinal];\n[aout]anull[afinal]`;
   const filterScriptPath = createFilterScriptFile(finalFilter, 'final');

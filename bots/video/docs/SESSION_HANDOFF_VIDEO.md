@@ -42,12 +42,17 @@
 - `video_edits.preview_ms`
   - `005-preview-ms.sql` 추가
   - `run-pipeline.js`가 preview 렌더 직후 wall-clock을 원장에 저장하도록 보강
+- preview/final render 경계 보강
+  - `test-full-sync-pipeline.js --render-preview`가 raw narration 직결 대신 runtime과 동일하게 `normalizeAudio()`를 선행하도록 수정
+  - `edl-builder.js`는 V2 clip concat 전에 모든 비디오를 공통 캔버스로 정규화하고, narration 오디오는 clip speed와 독립적으로 timeline 길이에 맞춰 유지하도록 보강
+  - speed floor(`min_speed_factor=0.5`) 때문에 영상 길이가 narration보다 짧아질 때는 `tpad=stop_mode=clone`으로 마지막 프레임을 hold해 timeline 길이를 맞추도록 수정
+  - 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264s`, audio `48000Hz stereo / 264s`로 A/V 길이 정합성 회복 확인
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
 - 현재 가장 큰 병목은 `scene-indexer`가 아니라 샌드박스 제약 시 narration 분석이 live STT가 아니라 fallback으로 내려간다는 점이다.
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
-- `preview_ms` 원장화까지 완료됐고, 다음 Phase 2 보강 1순위는 실제 preview/final render 품질 검증이다.
+- `preview_ms` 원장화와 preview A/V 정합성 복구까지 완료됐고, 다음 Phase 2 보강 1순위는 final render 다세트 검증과 transition 재도입 설계다.
 
 ## Phase 1 완료 요약
 
@@ -156,7 +161,6 @@ bots/worker/web/app/video/history/page.js (이력)
 - worker-web `/video` 세션 복원, 업로드 파일명 복구, n8n start 검증 fallback까지 운영 경계 보강 완료
 
 ### 남은 핵심 과제
-- `preview_ms`를 `video_edits` 원장에 별도 저장
 - 5세트 기준 final render 다세트 실검증
 - 품질 루프 수렴률 개선
 - RAG 샘플 수를 늘려 추천 품질과 예상 시간 정확도 향상
