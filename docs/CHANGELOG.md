@@ -3,6 +3,14 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 매출 DB 적재 마무리 / daily_summary 정합성 복구
+
+- `bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`를 다시 실행해 3월 전체 `daily_summary`를 재집계
+- stale 상태였던 `2026-03-21`, `2026-03-22` row를 현재 스터디룸 산출식 기준으로 복구
+- `bots/worker/lib/ska-sales-sync.js`로 `test-company` `worker.sales` 미러를 다시 동기화
+- `health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0` 회복
+- 결과적으로 현재 남은 스카 health 주요 경고는 매출 적재가 아니라 `naver-monitor 미로드/무활동`으로 다시 좁혀짐
+
 ## 12주차 후속 (2026-03-22) — 스카 픽코 모니터링 unblock 경계 복구
 
 ### 변경 사항 (changed)
