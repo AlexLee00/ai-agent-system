@@ -36,6 +36,9 @@
 | `node --check scripts/collect-kpi.js` | ✅ 스카 KPI 합산값 의미 주석 추가 후 문법 통과 |
 | `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ 일일 리뷰 출력이 `내부 합산매출` 표기 기준으로 정렬된 후 문법 통과 |
 | `dashboard.html` diff 검토 | ✅ 요약 카드가 `내부 합산매출 + 스터디카페/스터디룸 분리` 구조로 변경됨을 확인 |
+| `node --check scripts/reviews/ska-sales-forecast-weekly-review.js` | ✅ 주간 리뷰가 `실매출` 대신 `내부 합산매출` 기준 문구로 정렬된 후 문법 통과 |
+| `node --check bots/reservation/scripts/export-ska-sales-csv.js` | ✅ CSV export에 `study_cafe_revenue / study_room_revenue / combined_revenue` 컬럼 추가 후 문법 통과 |
+| `node --check bots/reservation/scripts/health-report.js` | ✅ 무결성 문구가 `스터디룸 축` 기준임을 명시하도록 변경 후 문법 통과 |
 
 ## 2026-03-22
 

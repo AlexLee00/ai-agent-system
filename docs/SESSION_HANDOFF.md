@@ -32,6 +32,7 @@
   - `bots/ska/src/etl.py`도 새 기준으로 정렬했다. `studyroom_revenue=pickko_study_room`, `general_revenue=general_revenue`, `actual_revenue=studyroom_revenue+general_revenue`를 기준으로 `ska.revenue_daily`를 다시 적재하며, `room_amounts_json`과 `total_amount`는 fallback 경계로만 사용한다.
   - `scripts/reviews/ska-sales-forecast-daily-review.js`는 `daily_summary` 보조 표시값을 `total_revenue / studyRoomRevenue / generalRevenue` 기준으로 다시 노출한다. `forecast_date::text`를 사용하도록 바꿔 review 날짜가 하루 밀려 보이던 경계도 함께 복구했다. 주간 리뷰도 같은 날짜 캐스팅 경계를 맞췄다.
   - `collect-kpi.js`와 `etl.py`에도 같은 의미 주석을 추가했다. 합산 로직은 유지하되, KPI/예측 actual이 `결제축 일반매출 + 예약축 스터디룸매출`의 내부 운영 총합이라는 점을 코드에 명시했다.
+  - `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어로 맞췄다. 주간 리뷰는 `실매출` 대신 `내부 합산매출`을 쓰고, CSV는 `study_cafe_revenue / study_room_revenue / combined_revenue` 컬럼으로 내보내며, health는 `daily_summary 무결성(스터디룸 축)`으로 표기한다.
   - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 재실행해 `revenue_daily`와 `training_feature_daily`까지 새 기준으로 동기화했다. 현재 최근 5일 미리보기 기준 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000`, `2026-03-20 actual_revenue=379800`으로 반영됐다.
   - 현재 ETL 기준 actual은 `general_revenue + pickko_study_room` 합산값이며, `2026-03-22`는 `173800 + 136000 = 309800`, `2026-03-21`은 `132000 + 156000 = 288000`으로 읽는다.
   - 예측엔진 후속 정리 기준은 [SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md)에 문서화했다.

@@ -355,6 +355,7 @@ async function main() {
 
   const lines = [];
   lines.push(`📈 스카 매출 예측 주간 리뷰 (${effectiveDays}일)`);
+  lines.push(`- 기준: actual_revenue는 결제축 일반매출 + 예약축 스터디룸매출의 내부 합산매출`);
   if (requestedDays !== effectiveDays) {
     lines.push(`- 요청 기간 ${requestedDays}일 → 최소 운영 기준 ${effectiveDays}일로 확장`);
   }
@@ -363,7 +364,7 @@ async function main() {
     lines.push('');
     lines.push('주간 추세:');
     for (const row of weekly.slice(-6)) {
-      lines.push(`- ${row.week}: 실매출 ${fmt(row.actualRevenue)}원 / 예측 ${fmt(row.predictedRevenue)}원 / 평균 MAPE ${row.avgMape == null ? 'N/A' : `${row.avgMape}%`} / 20% 적중률 ${row.hitRate20}%`);
+      lines.push(`- ${row.week}: 내부 합산매출 ${fmt(row.actualRevenue)}원 / 예측 ${fmt(row.predictedRevenue)}원 / 평균 MAPE ${row.avgMape == null ? 'N/A' : `${row.avgMape}%`} / 20% 적중률 ${row.hitRate20}%`);
     }
   }
 

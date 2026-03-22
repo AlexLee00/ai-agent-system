@@ -123,7 +123,7 @@ async function buildDailySummaryIntegrityHealth() {
       return {
         ok: [],
         warn: [
-          `  daily_summary 무결성: 경고 ${issues.length}건`,
+          `  daily_summary 무결성(스터디룸 축): 경고 ${issues.length}건`,
           ...issues.slice(0, 5).map((line) => `    - ${line}`),
         ],
         issueCount: issues.length,
@@ -131,14 +131,14 @@ async function buildDailySummaryIntegrityHealth() {
     }
 
     return {
-      ok: ['  daily_summary 무결성: 스터디룸 산출식과 저장값이 일치'],
+      ok: ['  daily_summary 무결성(스터디룸 축): 스터디룸 산출식과 저장값이 일치'],
       warn: [],
       issueCount: 0,
     };
   } catch (error) {
     return {
       ok: [],
-      warn: [`  daily_summary 무결성: 확인 실패 (${error.message})`],
+      warn: [`  daily_summary 무결성(스터디룸 축): 확인 실패 (${error.message})`],
       issueCount: 1,
       policyDivergenceCount: 0,
       policyDivergenceSamples: [],

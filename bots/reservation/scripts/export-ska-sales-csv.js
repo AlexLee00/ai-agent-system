@@ -30,6 +30,7 @@ async function main() {
       total_amount,
       pickko_study_room,
       general_revenue,
+      COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0) AS combined_revenue,
       entries_count
     FROM daily_summary
     WHERE date::date >= CURRENT_DATE - ($1::int - 1)
@@ -38,9 +39,10 @@ async function main() {
 
   const header = [
     'date',
-    'total_amount',
-    'pickko_study_room',
-    'general_revenue',
+    'study_room_total_amount',
+    'study_room_revenue',
+    'study_cafe_revenue',
+    'combined_revenue',
     'entries_count',
   ];
 
@@ -51,6 +53,7 @@ async function main() {
       row.total_amount ?? 0,
       row.pickko_study_room ?? 0,
       row.general_revenue ?? 0,
+      row.combined_revenue ?? 0,
       row.entries_count ?? 0,
     ].map(csvCell).join(','));
   }
