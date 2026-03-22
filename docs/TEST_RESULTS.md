@@ -4,6 +4,12 @@
 
 ## 2026-03-22
 
+### 스카 kiosk-monitor 자동 차단 경계 조정
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ `toBlockEntries` dedupe key에 `end` 포함, `manualFollowupEntries` 제거 후 문법 통과 |
+
 ### 스카 취소 command contract 복구
 
 | 테스트 | 결과 |

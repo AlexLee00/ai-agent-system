@@ -10,6 +10,13 @@
 - 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
 - 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
 
+## 2026-03-22: 스카 kiosk-monitor 자동 차단 경계 축소
+
+- `pickko-kiosk-monitor.js`의 `toBlockEntries` dedupe key를 `phone|date|start|end|room`으로 올려 같은 사이클에서 종료시각이 다른 재예약을 합쳐버리지 않도록 수정했다.
+- `manualFollowupEntries`를 `kiosk-monitor` 자동 차단 루프에서 제거했다.
+- 이제 자동 차단 레일은 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 다루고, 사람이 개입한 `manual/manual_retry` 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 운영 레일에서만 처리한다.
+- 해석: 자동화는 deterministic 범위만 좁게 담당하고, 운영자 개입 이후 후속은 수동 truth source 기준으로 닫는 구조로 경계를 명확히 했다.
+
 ## 2026-03-22: 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
 
 - `kiosk-monitor` 반복 성공 알림 hotfix 이후 manual follow-up 12건을 운영자 실사 기준으로 재정렬했다.

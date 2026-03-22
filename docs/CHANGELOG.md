@@ -3,6 +3,21 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 kiosk-monitor 자동 차단 경계 조정
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - `toBlockEntries` dedupe key를 `phone|date|start|end|room`으로 확장해 같은 사람/같은 날짜/같은 시작시각 재예약이 같은 사이클에서 합쳐지지 않도록 보강
+  - `manualFollowupEntries`를 자동 차단 루프에서 제거하고, 자동 경로를 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당하도록 축소
+  - 로그도 `manual 후속 재시도` 카운트 없이 현재 자동 처리 범위만 보여주도록 정리
+
+### 효과
+- 자동 차단 레일과 수동 후속 레일의 경계가 명확해졌다.
+- 사람이 개입한 예약은 `manual-block-followup` 운영 루프로만 닫히므로, 중복 차단 시도와 운영 오해를 줄일 수 있다.
+
+### 검증
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+
 ## 12주차 후속 (2026-03-22) — 스카 취소 command contract 복구
 
 ### 추가 사항 (added)
