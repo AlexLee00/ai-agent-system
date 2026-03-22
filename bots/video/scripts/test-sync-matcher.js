@@ -82,7 +82,7 @@ async function main() {
     : buildDummyNarration();
 
   const syncMap = await buildSyncMap(sceneIndex, narration, config, { tempDir: process.cwd() });
-  const edl = syncMapToEDL(syncMap, '/tmp/source.mp4', '/tmp/narration.m4a');
+  const edl = syncMapToEDL(syncMap, '/tmp/source.mp4', '/tmp/narration.m4a', null, null, config);
   console.log(JSON.stringify({
     total_segments: syncMap.total_segments,
     matched_keyword: syncMap.matched_keyword,

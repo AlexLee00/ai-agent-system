@@ -140,6 +140,24 @@
     - `서버인증`: `segments=7`, `keyword=7`, `hold=0`, `unmatched=0`
     - `DB생성`: `segments=6`, `keyword=4`, `hold=2`, `unmatched=0`
   - 해석: `서버인증`은 기존 generic fallback에서 `keyword 4 / hold 3`이던 구조가 `keyword 7 / hold 0`으로 회복됐다. `DB생성`은 아직 hold가 남지만, 다음 final 재렌더 대상으로는 충분히 개선 여지가 생겼다.
+- duration/structure 튜닝 2차 적용:
+  - `sync-matcher.js`
+    - `syncMapToEDL()`에 pacing policy를 추가해 timeline을 나레이션 길이에만 고정하지 않고 `hold / low confidence / speed floor` 구간에 추가 체류 시간을 부여하도록 보강
+    - main clip metadata에 `narration_duration`, `timeline_duration`, `pacing_extra_sec`를 기록
+  - `edl-builder.js`
+    - main clip 오디오에 `apad`를 추가해 timeline이 narration보다 길어져도 무음 패딩으로 final render를 유지하도록 보강
+  - `video-config.yaml`
+    - `pacing_multiplier=1.15`
+    - `pacing_max_extra_sec=20`
+    - `hold_pacing_extra_sec=12`
+    - `low_confidence_pacing_extra_sec=6`
+    - `speed_floor_threshold=0.55`
+    - `speed_floor_pacing_extra_sec=10`
+    - `pacing_total_max_extra_sec=24`
+  - EDL 수준 재검증:
+    - `서버인증`: `edl.duration=1008.129`, `pacing_extra_total=162.129`
+    - `DB생성`: `edl.duration=629.8`, `pacing_extra_total=125.8`
+  - 해석: 이번 단계에서 병목을 더 명확히 줄인 것은 `키워드`가 아니라 `timeline length`다. 다음 자연스러운 단계는 `서버인증`, `DB생성` final 재렌더로 pacing policy가 실제 점수 개선으로 이어지는지 재측정하는 것이다.
 
 ## Phase 1 완료 요약
 

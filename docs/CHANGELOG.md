@@ -3,6 +3,37 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 비디오팀 pacing policy 추가
+
+### 변경 사항 (changed)
+- `bots/video/lib/sync-matcher.js`
+  - `syncMapToEDL()`에 pacing policy를 추가해 timeline을 나레이션 길이에만 고정하지 않고 `hold / low confidence / speed floor` 구간에 추가 체류 시간을 부여
+  - main clip metadata에 `narration_duration`, `timeline_duration`, `pacing_extra_sec` 기록
+- `bots/video/lib/edl-builder.js`
+  - main clip 오디오에 `apad`를 추가해 timeline 확장 시 무음 패딩으로 final render 유지
+- `bots/video/scripts/run-pipeline.js`
+  - config를 `syncMapToEDL()`까지 전달해 pacing policy가 실제 파이프라인에 반영되도록 수정
+- `bots/video/scripts/test-full-sync-pipeline.js`
+  - validation 레일도 같은 pacing policy를 타도록 `syncMapToEDL(..., config)`로 정렬
+- `bots/video/scripts/test-sync-matcher.js`
+  - 더미 검증도 최신 pacing config를 반영하도록 호출부 정리
+- `bots/video/config/video-config.yaml`
+  - `pacing_multiplier`, `pacing_max_extra_sec`, `hold_pacing_extra_sec`, `low_confidence_pacing_extra_sec`, `speed_floor_threshold`, `speed_floor_pacing_extra_sec`, `pacing_total_max_extra_sec` 추가
+
+### 검증
+- `node --check bots/video/lib/sync-matcher.js` | ✅
+- `node --check bots/video/lib/edl-builder.js` | ✅
+- `node --check bots/video/scripts/run-pipeline.js` | ✅
+- `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅
+- `node --check bots/video/scripts/test-sync-matcher.js` | ✅
+- `node bots/video/scripts/test-sync-matcher.js` | ✅ `matched_keyword=2`, `overall_confidence=0.8334`
+- `node -e \"... syncMapToEDL(server auth sync_map) ...\"` | ✅ `edl.duration=1008.129`, `pacing_extra_total=162.129`
+- `node -e \"... syncMapToEDL(db sync_map) ...\"` | ✅ `edl.duration=629.8`, `pacing_extra_total=125.8`
+
+### 효과
+- 남아 있던 핵심 병목이 `키워드`보다 `timeline length / tutorial pacing`임을 실제 EDL 숫자로 고정했다.
+- 기존 deterministic 구조를 유지한 채, final 재렌더 전에 길이 확장 정책을 config-driven으로 실험할 수 있게 됐다.
+
 ## 12주차 후속 (2026-03-22) — 비디오팀 final 5세트 baseline 완료 + watchdog 완화
 
 ### 변경 사항 (added)

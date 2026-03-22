@@ -72,7 +72,12 @@
   - sync-level 재검증:
     - `서버인증`: `segments=7`, `keyword=7`, `hold=0`, `unmatched=0`
     - `DB생성`: `segments=6`, `keyword=4`, `hold=2`, `unmatched=0`
-  - 아직 final 재렌더 baseline은 다시 돌리지 않았고, 이번 단계는 `sync 경계 개선 확인 -> final 재측정 대기` 상태다.
+  - duration/structure 튜닝 2차로 pacing policy를 추가했다.
+    - `syncMapToEDL()`는 이제 `hold / low confidence / speed floor` 구간에 추가 체류 시간을 반영한다.
+    - `edl-builder.js`는 main clip 오디오에 `apad`를 추가해 timeline 확장 시 무음 패딩으로 final render를 유지한다.
+    - `서버인증` EDL 재계산: `duration=1008.129`, `pacing_extra_total=162.129`
+    - `DB생성` EDL 재계산: `duration=629.8`, `pacing_extra_total=125.8`
+  - 해석: 이제 남은 핵심은 키워드보다 `timeline length / tutorial pacing`이며, 다음 1순위는 `서버인증`, `DB생성` final 재렌더로 실제 점수 개선폭을 재측정하는 것이다.
 - 스카
   - `pickko-alerts-query.js`를 최신 `pgPool` 기반 reservation DB에 맞게 복구했다. 기존 SQLite `getDb()` 경로는 더 이상 유효하지 않았다.
   - 복구 후 실제 DB 조회 기준 `--type=error --unresolved`는 `0건`, `--phone=01089430972 --hours=48`도 `0건`으로 확인됐다.

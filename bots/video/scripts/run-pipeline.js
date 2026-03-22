@@ -621,7 +621,8 @@ async function main() {
         source.rawVideoPath,
         normalizedAudioPath,
         introOutro?.introClip,
-        introOutro?.outroClip
+        introOutro?.outroClip,
+        config
       );
       edl.title = titleForMessage;
       edl.subtitle = shiftedSrtPath;
