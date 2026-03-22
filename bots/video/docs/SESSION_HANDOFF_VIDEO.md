@@ -88,14 +88,14 @@
     - `--title=파라미터 --json` 성공
     - `averageOverall=81.62`
     - `averageFinalRenderMs=210767`
-  - 해석: batch 검증 레일 자체는 정상이며, 다음 단계는 동일 스크립트로 5세트 전체 final baseline을 생성하는 것이다.
+  - 해석: batch 검증 레일 자체는 정상이며, 현재는 `파라미터` 1세트만 sanity check를 통과했다. 5세트 전체 final baseline은 아직 실행 전이다.
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
 - 현재 가장 큰 병목은 `scene-indexer`가 아니라 샌드박스 제약 시 narration 분석이 live STT가 아니라 fallback으로 내려간다는 점이다.
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
 - `preview_ms` 원장화, preview A/V 정합성 복구, 파라미터 세트 final render 단일 검증까지 완료됐다.
-- 다음 Phase 2 보강 1순위는 `test-final-reference-quality-batch.js`로 final render 5세트 baseline을 완주하고, duration/structure 튜닝, 그다음 transition 재도입 설계를 진행하는 것이다.
+- 다음 Phase 2 보강 1순위는 `test-final-reference-quality-batch.js`로 아직 실행하지 않은 final render 5세트 baseline을 완주하고, duration/structure 튜닝, 그다음 transition 재도입 설계를 진행하는 것이다.
 
 ## Phase 1 완료 요약
 
