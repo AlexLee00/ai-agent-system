@@ -57,7 +57,7 @@ async function runPipelineValidation(rawArgs) {
   } catch (error) {
     if (!args.allowOfflineFixture) throw error;
     console.warn('[video] test-full-sync-pipeline 오프라인 narration fixture fallback:', error.message);
-    narration = await buildOfflineNarrationFixture(normalizedAudioPath);
+    narration = await buildOfflineNarrationFixture(normalizedAudioPath, config, { sampleLabel: args.sourceAudio });
   }
   const syncMap = await buildSyncMap(sceneIndex, narration, config, { tempDir });
   const introOutro = await processIntroOutro(config, {

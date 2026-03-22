@@ -27,6 +27,10 @@ function ensureNarrationConfig(config = {}) {
     ),
     llm_model: String(config?.narration_analyzer?.llm_model || 'gpt-4o-mini'),
     llm_timeout_ms: Number(config?.narration_analyzer?.llm_timeout_ms || 15000),
+    offline_segment_count_short: Number(config?.narration_analyzer?.offline_segment_count_short || 4),
+    offline_segment_count_medium: Number(config?.narration_analyzer?.offline_segment_count_medium || 5),
+    offline_segment_count_long: Number(config?.narration_analyzer?.offline_segment_count_long || 6),
+    offline_segment_count_xlong: Number(config?.narration_analyzer?.offline_segment_count_xlong || 7),
   };
 }
 
@@ -149,13 +153,20 @@ function mechanicalSegments(entries, config) {
   return segments;
 }
 
-async function buildOfflineNarrationFixture(audioPath) {
+async function buildOfflineNarrationFixture(audioPath, config = {}, options = {}) {
   const durationMs = await probeDurationMs(audioPath);
   const durationSec = Math.max(30, Math.round(durationMs / 1000));
-  const segmentCount = durationSec >= 240 ? 5 : (durationSec >= 150 ? 4 : 3);
+  const resolved = ensureNarrationConfig(config);
+  const segmentCount = durationSec >= 720
+    ? resolved.offline_segment_count_xlong
+    : durationSec >= 480
+      ? resolved.offline_segment_count_long
+      : durationSec >= 240
+        ? resolved.offline_segment_count_medium
+        : resolved.offline_segment_count_short;
   const step = durationSec / segmentCount;
 
-  const templates = [
+  const genericTemplates = [
     {
       text: 'FlutterFlow 에디터와 페이지 구조를 소개하고 파라미터 개념을 설명',
       topic: '에디터 구조와 파라미터 개념 소개',
@@ -197,6 +208,133 @@ async function buildOfflineNarrationFixture(audioPath) {
       action_verbs: ['확인', '정리'],
     },
   ];
+
+  const authTemplates = [
+    {
+      text: 'FlutterFlow 프로젝트 구조와 로그인 흐름을 소개하고 인증 준비 상태를 점검',
+      topic: '로그인 흐름과 인증 준비 소개',
+      required_screen: '앱 시작 화면 또는 로그인 플로우 개요 화면',
+      keywords_en: ['EmailAuthApp', 'LoginPage', 'Page', 'Parameters', 'FlutterFlow'],
+      keywords_ko: ['로그인', '인증', '플로우'],
+      action_verbs: ['소개', '점검'],
+    },
+    {
+      text: 'Firebase Authentication 또는 Supabase 설정 화면에서 인증 공급자를 활성화한다',
+      topic: '인증 공급자 설정',
+      required_screen: 'Authentication Settings 또는 Provider 설정 화면',
+      keywords_en: ['FlutterFire', 'AuthenticatedUser', 'Settings', 'EmailAuthApp', 'Page'],
+      keywords_ko: ['인증', '공급자', '설정'],
+      action_verbs: ['활성화', '설정'],
+    },
+    {
+      text: '이메일 로그인 폼과 입력 필드를 연결하고 validation 동작을 확인한다',
+      topic: '로그인 폼과 validation 연결',
+      required_screen: 'Login Form 또는 TextField 설정 화면',
+      keywords_en: ['LoginPage', 'TextField', 'Button', 'Condition', 'Variable'],
+      keywords_ko: ['이메일', '비밀번호', '폼'],
+      action_verbs: ['연결', '확인'],
+    },
+    {
+      text: '로그인 버튼 액션에 sign in 동작을 연결하고 성공 후 이동 페이지를 설정한다',
+      topic: '로그인 액션 연결',
+      required_screen: 'Action Flow Editor 또는 Sign In action 화면',
+      keywords_en: ['Set', 'Variable', 'Action', 'LoginPage', 'Conditions'],
+      keywords_ko: ['로그인', '액션', '이동'],
+      action_verbs: ['연결', '이동'],
+    },
+    {
+      text: '세션 유지와 로그인 성공 후 분기 처리를 확인하고 오류 메시지를 점검한다',
+      topic: '세션 유지와 오류 처리',
+      required_screen: 'Conditional Action 또는 App State 화면',
+      keywords_en: ['AuthenticatedUser', 'Conditional', 'verifyEmail', 'Widget', 'State'],
+      keywords_ko: ['세션', '오류', '상태'],
+      action_verbs: ['유지', '점검'],
+    },
+    {
+      text: '최종적으로 로그인 테스트를 실행하고 인증 흐름 전체를 검증한다',
+      topic: '인증 테스트와 검증',
+      required_screen: 'Preview 또는 Test Mode 화면',
+      keywords_en: ['verifyEmail', 'ForgotPassword', 'LoginPage', 'FlutterFire', 'Test'],
+      keywords_ko: ['테스트', '검증'],
+      action_verbs: ['실행', '검증'],
+    },
+    {
+      text: '마지막으로 로그아웃과 재로그인 시나리오까지 확인하며 운영 흐름을 정리한다',
+      topic: '로그아웃과 재로그인 정리',
+      required_screen: 'Profile 또는 Logout action 화면',
+      keywords_en: ['SettingPage', 'SignupPage', 'ForgotPassword', 'LoginPage', 'Page'],
+      keywords_ko: ['로그아웃', '재로그인'],
+      action_verbs: ['확인', '정리'],
+    },
+  ];
+
+  const dbTemplates = [
+    {
+      text: '프로젝트와 데이터 구조를 소개하고 데이터베이스 생성 목표를 설명한다',
+      topic: '데이터베이스 생성 개요',
+      required_screen: '프로젝트 개요 또는 Database 탭 화면',
+      keywords_en: ['Database', 'Project', 'Schema', 'Collection', 'Table'],
+      keywords_ko: ['데이터베이스', '스키마'],
+      action_verbs: ['소개', '설명'],
+    },
+    {
+      text: '새 컬렉션 또는 테이블을 생성하고 기본 필드를 추가한다',
+      topic: '테이블과 필드 생성',
+      required_screen: 'Create Table 또는 Add Field 화면',
+      keywords_en: ['Create', 'Table', 'Collection', 'Field', 'Column'],
+      keywords_ko: ['테이블', '필드'],
+      action_verbs: ['생성', '추가'],
+    },
+    {
+      text: '문자열과 숫자 타입을 설정하고 기본값과 제약 조건을 확인한다',
+      topic: '필드 타입과 제약 조건 설정',
+      required_screen: 'Field Settings 또는 Schema Editor 화면',
+      keywords_en: ['Type', 'Text', 'Number', 'Default', 'Constraint'],
+      keywords_ko: ['타입', '기본값', '제약'],
+      action_verbs: ['설정', '확인'],
+    },
+    {
+      text: '레코드 조회용 쿼리와 리스트 바인딩을 연결해 실제 데이터를 표시한다',
+      topic: '쿼리와 리스트 바인딩',
+      required_screen: 'Query Collection 또는 Backend Query 화면',
+      keywords_en: ['Query', 'List', 'Collection', 'Record', 'Backend'],
+      keywords_ko: ['쿼리', '리스트', '레코드'],
+      action_verbs: ['연결', '표시'],
+    },
+    {
+      text: '생성 액션과 업데이트 액션을 추가하고 입력 폼과 데이터 저장 흐름을 연결한다',
+      topic: '생성 업데이트 액션 연결',
+      required_screen: 'Create Record 또는 Update Record action 화면',
+      keywords_en: ['Create', 'Update', 'Record', 'Action', 'Form'],
+      keywords_ko: ['생성', '업데이트', '저장'],
+      action_verbs: ['추가', '저장'],
+    },
+    {
+      text: '필터와 정렬을 적용해 데이터 표시 순서를 정리하고 상세 페이지를 연결한다',
+      topic: '필터 정렬과 상세 페이지 연결',
+      required_screen: 'Filter Settings 또는 Sort Query 화면',
+      keywords_en: ['Filter', 'Sort', 'Detail', 'Page', 'Query'],
+      keywords_ko: ['필터', '정렬', '상세'],
+      action_verbs: ['적용', '연결'],
+    },
+    {
+      text: '최종적으로 테스트 데이터를 넣고 CRUD 흐름 전체를 검증한다',
+      topic: 'CRUD 테스트와 검증',
+      required_screen: 'Preview 또는 Data Viewer 화면',
+      keywords_en: ['Test', 'Preview', 'Create', 'Delete', 'Record'],
+      keywords_ko: ['테스트', '검증', '데이터'],
+      action_verbs: ['입력', '검증'],
+    },
+  ];
+
+  const sampleLabel = String(options.sampleLabel || audioPath || '').normalize('NFC');
+  const baseName = path.basename(sampleLabel);
+  let templates = genericTemplates;
+  if (/서버인증/.test(baseName)) {
+    templates = authTemplates;
+  } else if (/DB|db생성|DB생성/.test(baseName)) {
+    templates = dbTemplates;
+  }
 
   const segments = [];
   for (let index = 0; index < segmentCount; index += 1) {
