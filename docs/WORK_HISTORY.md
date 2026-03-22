@@ -10,6 +10,19 @@
 - 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
 - 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
 
+## 2026-03-22: 스카 네이버 슬롯 UI 안정화 1차 / block-unblock 실측 성공
+
+- `pickko-kiosk-monitor.js`에 네이버 schedule API trace 계측을 추가했다. `NAVER_TRACE_SCHEDULE_API=1`에서 `/tmp/naver-schedule-trace.log`로 request/response JSONL을 남긴다.
+- headed `naver-monitor` 수동 세션에서 `2026-04-20 11:00~12:30 A1`를 기준으로 block/unblock 실측 테스트를 진행했다.
+- 초기 병목은 API 부재가 아니라 네이버 일간 캘린더의 가상 스크롤/transform 구조 때문에 목표 시간 row를 정확히 못 잡는 것이었다.
+- `clickRoomAvailableSlot()`, `clickRoomSuspendedSlot()`를 `row-index + room column` 기반으로 재작성했고, `Calendar__row-wrap` 스크롤을 직접 제어해 목표 time row를 화면 중앙으로 끌어오는 방식으로 보강했다.
+- `verifyBlockInGrid()`도 같은 row-index 전제를 쓰도록 정리했다. 런타임 누락 helper(`isVisible`)와 잔존 debug 참조를 제거해 false negative/런타임 오류를 복구했다.
+- 실측 결과:
+  - block: 정확한 `오전 11:00 A1` 슬롯 클릭, 설정 패널 열림, `PATCH /schedules`, 응답 `200 OK`, 검증 성공
+  - unblock: 정확한 `예약불가` 슬롯 클릭, `예약가능` 적용, `PATCH /schedules`, 응답 `200 OK`, 검증 성공
+- 해석: 사용자가 기억한 API 역추적 기반 흐름은 여전히 살아 있으며, 기존 실패는 API 이전의 UI 선택/검증 레이어 불안정성이 원인이었다.
+- 운영 판단: `kiosk-monitor`는 아직 꺼둔 채 유지하고, 이번 기준선은 controlled restart 전 마지막 안정화 기준으로 사용한다.
+
 ## 2026-03-22: 스카 kiosk-monitor 자동 차단 경계 축소
 
 - `pickko-kiosk-monitor.js`의 `toBlockEntries` dedupe key를 `phone|date|start|end|room`으로 올려 같은 사이클에서 종료시각이 다른 재예약을 합쳐버리지 않도록 수정했다.

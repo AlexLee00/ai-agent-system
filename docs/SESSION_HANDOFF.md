@@ -12,6 +12,12 @@
 ## 1. 현재 시스템 상태 요약
 
 - 스카
+  - 네이버 슬롯 처리 안정화 1차를 진행했다. `pickko-kiosk-monitor.js`는 이제 네이버 일간 캘린더의 가상 스크롤/transform 구조를 전제로 `row-index + room column` 방식으로 슬롯을 찾는다. 잘못된 시간축 fallback으로 저녁 슬롯을 누르던 경계를 제거했고, `Calendar__row-wrap` 스크롤을 직접 제어해 목표 시간 row를 화면으로 끌어온 뒤 처리한다.
+  - `clickRoomAvailableSlot()`, `clickRoomSuspendedSlot()`, `verifyBlockInGrid()`는 같은 캘린더 parser 전제를 쓰도록 맞췄다. 그 결과 `2026-04-20 11:00~12:30 A1` 기준으로 `block/unblock` 모두 정확한 슬롯 선택과 최종 검증까지 실측 확인됐다.
+  - 네이버 내부 schedule API trace 계측을 추가했다. `NAVER_TRACE_SCHEDULE_API=1` 환경에서 `/tmp/naver-schedule-trace.log`에 `api-partner.booking.naver.com/.../schedules` request/response JSONL이 남는다.
+  - 실측 기준 `block`과 `unblock` 모두 같은 endpoint로 `PATCH /schedules`가 발생했고 응답 `200 OK`를 확인했다. 즉 API 경로는 사라진 것이 아니라, 이전에는 UI 슬롯 선택/검증이 그 직전 단계에서 막히고 있었던 것으로 정리됐다.
+  - `block` 경로는 이미 `예약불가` 상태인 슬롯이면 추가 조작 없이 idempotent 성공 처리하고, `unblock` 경로는 `예약불가` 슬롯이 사라졌음을 최종 성공 조건으로 읽는다. 현재 테스트 기준으로 실행 레이어(UI) / 내부 API / 검증 레이어가 모두 닫혔다.
+  - 현재 `kiosk-monitor`는 여전히 의도적으로 꺼둔 상태다. 이번 phase는 headed `naver-monitor` 수동 세션에서 브라우저를 보면서 디버깅한 controlled test이며, 상시 재가동은 아직 하지 않았다.
   - `pickko-kiosk-monitor.js`의 `toBlockEntries` dedupe key는 이제 `phone|date|start|end|room`을 사용한다. 같은 사람/같은 날짜/같은 시작시각이라도 종료시각이 다른 재예약을 같은 사이클에서 합쳐버리지 않도록 보강했다.
   - `manual/manual_retry` 후속 차단은 `kiosk-monitor` 자동 차단 루프에서 분리했다. 자동 모니터링은 이제 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당하고, 수동 예약 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 레일에서 관리한다.
   - `manual` 픽코 작업이 진행 중이면 `kiosk-monitor`는 이제 `isPickkoLocked()`로 선확인 후 즉시 스킵한다. 수동 락 TTL도 20분으로 늘려, 운영자가 수동 등록/수정 중일 때 자동 모니터가 중간에 끼어들지 않도록 `수동 우선` 불변식을 코드로 고정했다.
