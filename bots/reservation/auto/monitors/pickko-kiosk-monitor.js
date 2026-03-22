@@ -616,7 +616,7 @@ async function unblockNaverSlot(page, entry) {
       await page.screenshot({ path: ssPath }).catch(() => null);
       log(`📸 최종 확인 스크린샷: ${ssPath}`);
     }
-    return true;
+    return verified;
 
   } catch (err) {
     log(`❌ 네이버 차단 해제 중 오류: ${err.message}`);
@@ -1539,8 +1539,14 @@ async function fillAvailablePopup(page, date, start, end) {
   log(`  설정변경 클릭: ${JSON.stringify(saved)}`);
   if (!saved.clicked) return false;
 
+  const panelClosed = await waitForSettingsPanelClosed(page, 8000);
+  if (!panelClosed) {
+    log('  ⚠️ 설정 패널이 닫히지 않음 — 예약가능 반영 실패 가능성');
+    return false;
+  }
+
   await delay(2500);
-  log('  ✅ 설정변경 완료 (예약가능)');
+  log('  ✅ 설정변경 완료 (예약가능, 패널 닫힘 확인)');
   return true;
 }
 
@@ -2371,9 +2377,9 @@ async function main() {
             await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST()
             });
-            publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 2, message:
+            publishKioskSuccessReport(
               `✅ 네이버 예약불가 해제\n${e.name || '(이름없음)'} ${fmtPhone(e.phoneRaw)}\n${e.date} ${e.start}~${e.end} ${e.room || ''} (키오스크 취소)`
-            });
+            );
           } else {
             // 실패 시 naverBlocked: true 유지 → 다음 주기에 재시도
             publishToMainBot({ from_bot: 'jimmy', event_type: 'alert', alert_level: 3, message:
@@ -2819,7 +2825,7 @@ async function unblockSlotOnly(entry) {
       const existing = await getKioskBlock(phoneRaw, date, start, end, room);
       await upsertKioskBlock(phoneRaw, date, start, {
         ...(existing || {}), name, date, start, end, room,
-        naverBlocked: false,
+        naverBlocked: unblocked ? false : Boolean(existing?.naverBlocked),
         naverUnblockedAt: unblocked ? nowKST() : (existing?.naverUnblockedAt || null),
       });
 

@@ -10,6 +10,15 @@
 - 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
 - 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
 
+## 2026-03-22: 스카 픽코 모니터링 심층 코드점검 / unblock 경계 복구
+
+- `pickko-kiosk-monitor.js`를 심층 점검하면서 unblock 경계의 운영 위험 3개를 추가로 수정했다.
+- `unblockNaverSlot()`는 기존에 최종 검증이 실패해도 `true`를 반환하던 버그가 있었고, 이 때문에 해제 불확실 건도 상위 레이어에서 성공처럼 처리될 수 있었다. 현재는 `return verified`로 복구했다.
+- `fillAvailablePopup()`는 `설정변경` 클릭 후 패널 닫힘을 확인하지 않고 바로 성공 처리하던 상태였고, 이를 `waitForSettingsPanelClosed()`로 block 경로와 동일하게 맞췄다.
+- `--unblock-slot` 단독 모드는 실패 시에도 `naverBlocked=false`를 써서 DB 원장을 오염시키고 있었고, 현재는 성공 시에만 false로 내리고 실패 시에는 기존 차단 상태를 유지한다.
+- 해제 성공 알림도 다시 `publishKioskSuccessReport()` 경로로 정렬해 성공은 `report`, 실패만 `alert`로 읽도록 복구했다.
+- 같은 슬롯(`2026-04-20 11:00~12:30 A1`)으로 block/unblock를 다시 재실행해 `PATCH /schedules 200 OK`, 패널 닫힘 확인, 최종 검증 성공을 재확인했다.
+
 ## 2026-03-22: 스카 네이버 슬롯 UI 안정화 1차 / block-unblock 실측 성공
 
 - `pickko-kiosk-monitor.js`에 네이버 schedule API trace 계측을 추가했다. `NAVER_TRACE_SCHEDULE_API=1`에서 `/tmp/naver-schedule-trace.log`로 request/response JSONL을 남긴다.
