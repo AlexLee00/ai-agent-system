@@ -18,6 +18,7 @@
 - `pickko-accurate.js`의 `manual` 락 TTL을 20분으로 늘렸고, `pickko-kiosk-monitor.js`는 사이클 시작 시 `isPickkoLocked()`를 확인해 `manual` 락이 보이면 즉시 스킵하도록 보강했다.
 - 픽코 자동 취소 감지는 `상태=환불`만 보지 않고 `상태=환불`, `상태=취소`를 각각 조회해 합산/중복제거하도록 보강했다.
 - 픽코 자동 취소 절차를 [SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md) 문서로 고정했다.
+- 픽코 자동 예약 감지 절차도 [SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md)로 고정했다. 자동 범위는 `신규 + 미차단 재시도`만 포함하고 `manual follow-up`은 수동 운영 레일로 분리된 상태를 문서에 반영했다.
 - 해석: 자동화는 deterministic 범위만 좁게 담당하고, 운영자 개입 이후 후속은 수동 truth source 기준으로 닫는 구조로 경계를 명확히 했다.
 
 ## 2026-03-22: 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강

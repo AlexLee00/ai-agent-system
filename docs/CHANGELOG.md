@@ -3,6 +3,21 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 픽코 자동 예약 감지 runbook 추가
+
+### 추가 사항 (added)
+- `docs/SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md`
+  - 픽코 자동 모니터링 예약 감지 절차를 운영/개발 공통 runbook으로 추가
+  - `결제완료` 예약 조회, `newEntries / retryEntries` 분기, `phone|date|start|end|room` dedupe, 네이버 세션 분기, 차단 성공/실패 분기 문서화
+
+### 효과
+- 픽코 자동 모니터링의 예약 경계와 취소 경계가 모두 문서화됐다.
+- `manual follow-up`이 자동 경로에 포함되지 않는 현재 운영 원칙을 source of truth로 고정했다.
+
+### 검증
+- 문서 작업이므로 별도 실행 검증 없음
+- 참조 구현은 `bots/reservation/auto/monitors/pickko-kiosk-monitor.js` 최신 기준선 사용
+
 ## 12주차 후속 (2026-03-22) — 스카 픽코 자동 취소 감지 이중 조회 + runbook 추가
 
 ### 추가 사항 (added)
