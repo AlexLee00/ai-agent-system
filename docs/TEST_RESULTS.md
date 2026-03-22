@@ -4,6 +4,18 @@
 
 ## 2026-03-22
 
+### 스카 취소 command contract 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/lib/manual-cancellation.js` | ✅ |
+| `node --check bots/reservation/lib/ska-command-handlers.js` | ✅ |
+| `node --check bots/reservation/scripts/dashboard-server.js` | ✅ |
+| `node --check bots/orchestrator/lib/intent-parser.js` | ✅ |
+| `node --check bots/orchestrator/src/router.js` | ✅ |
+| `node - <<'NODE' ... parseCancellationCommand({ raw_text: '강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540' }) ... NODE` | ✅ `phone/date/start/end/room/name` 정상 추출 |
+| `node - <<'NODE' ... parseIntent('강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540') ... NODE` | ✅ `ska_action`, `command=cancel_reservation` 파싱 확인 |
+
 ### Jimmy 성공 알림 경계 복구
 
 | 테스트 | 결과 |

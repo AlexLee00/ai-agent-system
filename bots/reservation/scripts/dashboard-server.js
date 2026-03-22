@@ -19,6 +19,7 @@ const rag = require('../../../packages/core/lib/rag-safe');
 const { createSkaReadService } = require('../lib/ska-read-service');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
 const { runManualReservationRegistration } = require('../lib/manual-reservation');
+const { runManualReservationCancellation } = require('../lib/manual-cancellation');
 
 const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
@@ -120,6 +121,8 @@ async function runWebhookCommand(payload = {}) {
       return { ok: true, message: 'RAG 저장 완료' };
     case 'register_reservation':
       return runManualReservationRegistration(args);
+    case 'cancel_reservation':
+      return runManualReservationCancellation(args);
     default:
       return { ok: false, error: `지원하지 않는 명령: ${command}` };
   }

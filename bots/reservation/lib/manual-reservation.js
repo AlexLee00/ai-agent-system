@@ -407,6 +407,10 @@ function runManualReservationRegistration(args = {}) {
 }
 
 module.exports = {
+  parseDateFromText,
+  parseTimeRangeFromText,
+  parseRoomFromText,
+  parseNameFromText,
   isRetryRegistrationRequest,
   parseReservationCommand,
   parseReservationRequest,

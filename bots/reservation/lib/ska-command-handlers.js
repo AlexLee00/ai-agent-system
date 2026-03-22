@@ -7,6 +7,7 @@ const { storeReservationResolution } = require('../../../packages/core/lib/reser
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { createSkaReadService } = require('./ska-read-service');
 const { runManualReservationRegistration } = require('./manual-reservation');
+const { runManualReservationCancellation } = require('./manual-cancellation');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
@@ -100,6 +101,12 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     return runManualReservationRegistration(args);
   }
 
+  async function handleCancelReservation(args = {}) {
+    // Cancellation is also a write path that must surface partial-success
+    // details from Pickko cancel / Naver unblock directly.
+    return runManualReservationCancellation(args);
+  }
+
   function handleRestartAndy() {
     try {
       ensureLaunchdLoaded('ai.ska.naver-monitor', `${process.env.HOME}/Library/LaunchAgents/ai.ska.naver-monitor.plist`);
@@ -134,6 +141,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     restart_jimmy: handleRestartJimmy,
     store_resolution: handleStoreResolution,
     register_reservation: handleRegisterReservation,
+    cancel_reservation: handleCancelReservation,
   };
 }
 

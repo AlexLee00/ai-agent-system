@@ -1752,6 +1752,18 @@ function formatSkaResult(command, rawResult) {
         return `⚠️ 픽코 관리자 로그인 상태를 먼저 확인해야 합니다.\n상세: ${r.error}`;
       }
       return `⚠️ 스카 오류: ${r.error || '예약 등록 실패'}`;
+    case 'cancel_reservation':
+      if (r.ok) return `✅ ${r.message || '예약 취소 완료'}`;
+      if (r.partialSuccess || r.code === 'PARTIAL_SUCCESS') {
+        return `⚠️ ${r.message || '픽코 취소는 완료됐지만 네이버 해제는 수동 확인이 필요합니다.'}`;
+      }
+      if (r.code === 'MISSING_FIELDS' || /필요한 정보가 부족/.test(r.error || '')) {
+        return `⚠️ ${r.error || '예약 취소에 필요한 정보가 부족합니다.'}`;
+      }
+      if (/로그인/.test(r.error || '')) {
+        return `⚠️ 픽코 관리자 로그인 상태를 먼저 확인해야 합니다.\n상세: ${r.error}`;
+      }
+      return `⚠️ 스카 오류: ${r.error || '예약 취소 실패'}`;
     case 'restart_andy':
     case 'restart_jimmy':
       return `✅ ${r.message}`;
@@ -2067,7 +2079,7 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
       const cmdId = await insertBotCommand('ska', command, args);
       const raw   = await waitForCommandResult(cmdId, 45000);
       const formatted = formatSkaResult(command, raw);
-      if (command === 'register_reservation' && /^✅/.test(formatted)) {
+      if ((command === 'register_reservation' || command === 'cancel_reservation') && /^✅/.test(formatted)) {
         clearReservationDraft(msg.chat?.id);
       }
       return formatted;
@@ -2771,9 +2783,14 @@ async function route(msg, sendReply) {
 
     const preparedText = buildReservationIntentText(msg.chat?.id, msg.text);
     const parsed   = await parseIntent(preparedText);
-    if (parsed?.intent === 'ska_action' && parsed?.args?.command === 'register_reservation') {
+    if (parsed?.intent === 'ska_action' && (
+      parsed?.args?.command === 'register_reservation' ||
+      parsed?.args?.command === 'cancel_reservation'
+    )) {
       parsed.args.raw_text = preparedText;
-      parsed.args.manual_retry = isRetryRegistrationRequest({ raw_text: preparedText });
+      if (parsed.args.command === 'register_reservation') {
+        parsed.args.manual_retry = isRetryRegistrationRequest({ raw_text: preparedText });
+      }
     }
     const response = await handleIntent(parsed, msg, sendReply);
 

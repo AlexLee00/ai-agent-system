@@ -4,6 +4,22 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-22: 세션 마감 준비 — 체크섬 재갱신
+
+- `node bots/claude/src/dexter.js --update-checksums`로 `bots/claude/.checksums.json`을 다시 갱신했다.
+- 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
+- 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
+
+## 2026-03-22: 스카 취소 command contract 복구
+
+- 문서에는 오래전부터 `pickko-cancel-cmd.js` 기반 자연어 취소 흐름이 있었지만, 실제 스카 command contract에는 `cancel_reservation`이 빠져 있었다.
+- 이번 세션에서 `bots/reservation/lib/manual-cancellation.js`를 추가해 취소 자연어를 파싱하고 `pickko-cancel-cmd.js` stdout JSON을 상위 result shape로 정규화했다.
+- `ska-command-handlers.js`, `dashboard-server.js`, `bots/orchestrator/lib/intent-parser.js`, `bots/orchestrator/src/router.js`를 연결해 스카 취소도 등록과 같은 수준의 정식 write-path command로 승격했다.
+- `partialSuccess / pickkoCancelled / naverUnblockFailed`가 이제 상위 응답 포맷터까지 전달되며, 부분 실패는 `⚠️` 경고 문구로 분기된다.
+- 최소 검증 기준:
+  - 취소 자연어 `"강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540"`가 `cancel_reservation`으로 파싱됨
+  - 같은 문장에서 취소 parser가 `phone/date/start/end/room/name`을 정상 추출함
+
 ## 2026-03-21: 비디오팀 Phase 2 — AI 싱크 매칭 파이프라인
 
 - 근본 문제 발견: `syncVideoAudio()`가 원본 앞부분만 잘라 나레이션과 싱크가 맞지 않았고, 실제 편집 과정의 핵심 병목인 장면 선택을 자동화하지 못했다.

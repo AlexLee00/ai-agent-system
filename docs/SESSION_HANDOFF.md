@@ -3,6 +3,10 @@
 > 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 읽고 이 문서를 보세요.
 > 현재 active risk / watch / recently resolved만 빠르게 보려면 [ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)를 함께 확인하세요.
 
+> 세션 마감 준비 메모 (2026-03-22)
+> `bots/claude/.checksums.json`은 이번 세션 말미에 다시 갱신됐다.
+> 다만 현재 워킹트리에는 비디오 외 `orchestrator / reservation / ska`의 미커밋 변경이 함께 남아 있으므로, 체크섬은 “현재 dirty workspace 기준 최신 상태”로 해석해야 한다.
+
 ---
 
 ## 1. 현재 시스템 상태 요약
@@ -517,8 +521,11 @@
 - 이재룡 `010-3500-0586 / 2026-11-28 11:00~12:30 B` 테스트 예약은 block 경로 기준 `already_blocked`로 수렴했고, `manual-block-followup` 원장 기준 `naver_blocked=1`, `last_block_result=blocked`, `last_block_reason=already_blocked` 상태로 정리됐다.
 - `naver-monitor.js`의 자동 취소 경로는 이제 픽코 취소 성공 후 `pickko-kiosk-monitor.js --unblock-slot`까지 후속 실행하도록 보강됐다. 즉 자동 취소도 `취소 감지 -> 픽코 취소 -> 네이버 예약가능 복구`의 완결 경로를 갖는다.
 - 추가로 `pickko-cancel-cmd.js`는 `픽코 취소 성공 + 네이버 해제 실패`를 더 이상 `success: true`로 포장하지 않고 `success: false`, `partialSuccess: true`, `pickkoCancelled: true`, `naverUnblockFailed: true`로 반환하도록 바꿔 상위 응답 레이어가 완전 성공으로 오해하기 어렵게 만들었다.
+- 이번 세션에서는 문서에만 있던 취소 write-path를 실제 command contract에 복구했다.
+  - `cancel_reservation`이 `ska-command-handlers.js`, `dashboard-server.js`, `orchestrator/router.js`, `intent-parser.js`, `COMMANDER_IDENTITY.md`, `N8N_COMMAND_CONTRACT.md`까지 연결돼, 이제 스카 취소도 등록과 같은 수준의 정식 command로 처리된다.
+  - `partialSuccess / pickkoCancelled / naverUnblockFailed` 필드가 상위 응답 포맷터까지 전달되며, 부분 실패는 `⚠️` 경고 문구로 분기된다.
 - 현재 남은 핵심은 두 가지다.
-  1. 상위 텔레그램 응답 레이어가 `partialSuccess / naverUnblockFailed`를 그대로 반영해 “픽코 취소 완료, 네이버 수동 확인 필요” 문구로 분기하는지 실전 확인
+  1. 상위 텔레그램 응답 레이어가 `partialSuccess / naverUnblockFailed`를 실제 취소 1건에서 예상 문구로 분기하는지 실전 확인
   2. `naver-monitor`의 미래 취소 스캔 범위가 현재 11월 테스트 예약을 직접 커버하지 못하므로, 자동 취소 테스트는 더 가까운 날짜 예약 또는 scan window 확장 기준으로 다시 검증 필요
 
 ## 2026-03-22 — 루나 암호화폐 weak signal 계측 1차 보강

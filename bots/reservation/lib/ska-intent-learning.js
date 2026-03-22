@@ -191,6 +191,7 @@ function createSkaIntentLearning({
 사용 가능한 인텐트 목록:
 - status              : 전체 시스템 현황 조회
 - ska_query  command=query_reservations : 오늘 예약 현황·목록
+- ska_action command=cancel_reservation : 예약 취소 (픽코 취소 + 네이버 해제)
 - ska_query  command=query_today_stats  : 오늘 매출·입장 통계
 - ska_query  command=query_alerts       : 미해결 알람 목록
 - ska_action command=restart_andy       : 앤디(네이버 모니터) 재시작
