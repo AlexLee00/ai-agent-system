@@ -16,6 +16,33 @@
 - `node bots/reservation/scripts/health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0`으로 회복됐다.
 - 해석: 이번 작업은 새 매출 정책 구현이 아니라, 이미 닫힌 `daily_summary -> worker.sales` 구조에서 남아 있던 stale source row를 복구해 운영 정합성을 다시 맞춘 단계다.
 
+## 2026-03-23: 스카 스터디룸 계산식 문서 기준 재정렬 / 3월 재집계 재실행
+
+- `daily_summary`에서 `pickko_total`을 제거하는 cleanup을 마무리했다.
+  - `009_daily_summary_remove_pickko_total.js` 마이그레이션 추가/적용
+  - write/read path(`db.js`, `pickko-daily-summary.js`, `pickko-revenue-backfill.js`, `ska-read-service.js`, `dashboard-server.js`, `health-report.js`, `ska-sales-sync.js`)와 ETL/feature/model export(`feature_store.py`, `etl.py`, `export-ska-training-csv.js`, `build-ska-model-dataset.js`)까지 새 스키마로 정렬
+- `node bots/reservation/scripts/migrate.js --status` 기준 스키마 버전 `v9`, 전체 9개 마이그레이션 적용 완료를 확인했다.
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 재실행해 예측 ETL을 새 스키마로 다시 적재했다.
+  - 결과: `174건 upsert`, `training_feature_daily 365행 동기화`
+  - 최근 5일 기준 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000`
+- 문서에 남아 있던 스터디룸 계산식을 다시 source of truth로 확정했다.
+  - `A1/A2`: `30분당 3,500원`, 단 `00:00~09:00`은 `30분당 2,500원`
+  - `B`: `30분당 6,000원`, 단 `00:00~09:00`은 `30분당 4,000원`
+- `bots/reservation/lib/study-room-pricing.js`는 이제 위 규칙을 그대로 반영한다. 픽코 시간이 왜곡되는 경계를 고려해 요금은 `30분 슬롯 시작 시각` 기준으로 합산한다.
+- 수정된 계산식으로 `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`를 다시 실행했다.
+- 이후 `syncSkaSalesToWorker('test-company')`를 다시 실행해 worker 미러도 재정렬했다.
+  - 결과: `updated=12`, `expectedRows=299`
+- 대표 결과:
+  - `2026-03-01`: `pickko_study_room=113000`, `general_revenue=113800`
+  - `2026-03-12`: `pickko_study_room=135000`, `general_revenue=265000`
+  - `2026-03-17`: `pickko_study_room=74500`, `general_revenue=290000`
+  - `2026-03-21`: `pickko_study_room=156000`, `general_revenue=132000`
+  - `2026-03-22`: `pickko_study_room=136000`, `general_revenue=173800`
+- 검증 기준도 분리 고정했다.
+  - 스터디카페 매출: `payment_day|general` ↔ 픽코 `매출현황`
+  - 스터디룸 매출: `use_day|study_room` ↔ 픽코 `예약/이용 검색`
+- `2026-03-17` 스터디룸 `74,500원`은 예약기준 화면의 5건과 일치함을 재확인했다.
+
 ## 2026-03-22: 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 기준 복구
 
 - `daily_summary.total_amount`를 총매출처럼 읽던 경로를 다시 점검했다.

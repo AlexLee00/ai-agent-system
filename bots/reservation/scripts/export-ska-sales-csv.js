@@ -28,7 +28,6 @@ async function main() {
     SELECT
       date,
       total_amount,
-      pickko_total,
       pickko_study_room,
       general_revenue,
       entries_count
@@ -40,7 +39,6 @@ async function main() {
   const header = [
     'date',
     'total_amount',
-    'pickko_total',
     'pickko_study_room',
     'general_revenue',
     'entries_count',
@@ -51,7 +49,6 @@ async function main() {
     lines.push([
       row.date,
       row.total_amount ?? 0,
-      row.pickko_total ?? 0,
       row.pickko_study_room ?? 0,
       row.general_revenue ?? 0,
       row.entries_count ?? 0,

@@ -3,6 +3,33 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-23) — 스카 daily_summary `pickko_total` 제거
+
+- `bots/reservation/migrations/009_daily_summary_remove_pickko_total.js` 추가
+  - `daily_summary`에서 `pickko_total` 컬럼 제거
+- `db.js`, `pickko-daily-summary.js`, `pickko-revenue-backfill.js`에서 더 이상 `pickko_total`을 저장하지 않도록 정리
+- `ska-read-service.js`, `dashboard-server.js`, `health-report.js`, `export-ska-sales-csv.js`, `ska-sales-sync.js`에서 `pickko_total` 의존 제거
+- `feature_store.py`, `etl.py`, `export-ska-training-csv.js`, `build-ska-model-dataset.js`도 새 스키마 기준으로 정렬
+- `migrate.js --status` 기준 스키마 버전 `v9` 확인
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365` 재실행으로 예측 ETL/feature store를 새 스키마로 다시 동기화
+
+## 12주차 후속 (2026-03-23) — 스카 스터디룸 계산식 문서 기준 재정렬
+
+- `bots/reservation/lib/study-room-pricing.js`의 `A1/A2` 새벽 요금을 문서 기준으로 수정
+  - 이전: `A1/A2` 항상 `30분당 3,500원`
+  - 현재: `A1/A2` `00:00~09:00`은 `30분당 2,500원`, 그 외 `3,500원`
+- `B`는 기존대로 `00:00~09:00` `4,000원`, 그 외 `6,000원` 유지
+- 스터디룸 산출은 계속 `30분 슬롯 시작 시각` 기준 합산을 사용
+- 수정 후 `pickko-revenue-backfill --from=2026-03 --to=2026-03`를 다시 실행해 3월 전체 `daily_summary`를 재집계
+- `syncSkaSalesToWorker('test-company')`를 다시 실행해 worker 미러를 새 기준으로 동기화 (`updated=12`)
+- 대표 결과:
+  - `2026-03-12` `pickko_study_room: 137000 -> 135000`
+  - `2026-03-17` `pickko_study_room: 74500` 유지
+  - `2026-03-01` `pickko_study_room: 113000`으로 재산출
+ - 검증 기준 문구도 명확히 함
+  - 스터디카페 매출은 `payment_day|general`을 픽코 `매출현황` 기준으로 검증
+  - 스터디룸 매출은 `use_day|study_room`을 픽코 `예약/이용 검색` 기준으로 검증
+
 ## 12주차 후속 (2026-03-22) — 스카 매출 source 영향 경로 정렬 + 예측엔진 입력 복구
 
 - `ska-read-service`, `dashboard-server`, dashboard HTML, `collect-kpi`가 총매출을 `general_revenue + pickko_study_room` 기준으로 읽도록 정리

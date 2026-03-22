@@ -589,14 +589,13 @@ async function upsertDailySummary(date, data) {
   await pgPool.run(SCHEMA, `
     INSERT INTO daily_summary
       (date, total_amount, room_amounts_json, entries_count,
-       pickko_total, pickko_study_room, general_revenue,
+       pickko_study_room, general_revenue,
        reported_at, last_reported_at, confirmed, confirmed_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,0,NULL)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$7,0,NULL)
     ON CONFLICT(date) DO UPDATE SET
       total_amount       = EXCLUDED.total_amount,
       room_amounts_json  = EXCLUDED.room_amounts_json,
       entries_count      = EXCLUDED.entries_count,
-      pickko_total       = COALESCE(EXCLUDED.pickko_total, daily_summary.pickko_total),
       pickko_study_room  = COALESCE(EXCLUDED.pickko_study_room, daily_summary.pickko_study_room),
       general_revenue    = COALESCE(EXCLUDED.general_revenue, daily_summary.general_revenue),
       last_reported_at   = EXCLUDED.last_reported_at
@@ -605,7 +604,6 @@ async function upsertDailySummary(date, data) {
     data.totalAmount    || 0,
     roomJson,
     data.entriesCount   || 0,
-    data.pickkoTotal ?? null,
     data.pickkoStudyRoom ?? null,
     data.generalRevenue ?? null,
     nowISO,
@@ -623,7 +621,6 @@ async function getDailySummary(date) {
     return {
       ...row,
       roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
-      pickkoTotal:     row.pickko_total     || 0,
       pickkoStudyRoom: row.pickko_study_room|| 0,
       generalRevenue:  row.general_revenue  || 0,
       confirmed:       row.confirmed === 1,
@@ -642,7 +639,6 @@ async function getUnconfirmedSummaryBefore(cutoffDate) {
   return {
     ...row,
     roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
-    pickkoTotal:     row.pickko_total     || 0,
     pickkoStudyRoom: row.pickko_study_room|| 0,
     generalRevenue:  row.general_revenue  || 0,
     confirmed:       false,
@@ -656,7 +652,6 @@ async function getLatestUnconfirmedSummary() {
   return {
     ...row,
     roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
-    pickkoTotal:     row.pickko_total     || 0,
     pickkoStudyRoom: row.pickko_study_room|| 0,
     generalRevenue:  row.general_revenue  || 0,
     confirmed:       false,
@@ -713,7 +708,6 @@ async function getDailySummariesInRange(startDate, endDate) {
   return rows.map(row => ({
     ...row,
     roomAmounts:     JSON.parse(row.room_amounts_json || '{}'),
-    pickkoTotal:     row.pickko_total     || 0,
     pickkoStudyRoom: row.pickko_study_room|| 0,
     generalRevenue:  row.general_revenue  || 0,
     confirmed:       row.confirmed === 1,
@@ -729,14 +723,14 @@ async function upsertPickkoOrderRaw(row) {
       description, raw_amount, payment_at, pay_type, pay_device, memo,
       ticket_type, product_hours, product_days, member_hint, validity_start, validity_end,
       room_label, room_type, use_date, use_start_time, use_end_time, member_name,
-      policy_amount, amount_match, amount_delta, created_at, updated_at
+      policy_amount, amount_match, created_at, updated_at
     )
     VALUES (
       $1,$2,$3,$4,$5,$6,
       $7,$8,$9,$10,$11,$12,
       $13,$14,$15,$16,$17,$18,
       $19,$20,$21,$22,$23,$24,
-      $25,$26,$27,now(),now()
+      $25,$26,now(),now()
     )
     ON CONFLICT(entry_key) DO UPDATE SET
       source_date      = EXCLUDED.source_date,
@@ -768,7 +762,6 @@ async function upsertPickkoOrderRaw(row) {
       member_name      = COALESCE(EXCLUDED.member_name, pickko_order_raw.member_name),
       policy_amount    = COALESCE(EXCLUDED.policy_amount, pickko_order_raw.policy_amount),
       amount_match     = COALESCE(EXCLUDED.amount_match, pickko_order_raw.amount_match),
-      amount_delta     = COALESCE(EXCLUDED.amount_delta, pickko_order_raw.amount_delta),
       updated_at       = now()
   `, [
     row.entryKey,
@@ -797,7 +790,6 @@ async function upsertPickkoOrderRaw(row) {
     row.memberName || null,
     row.policyAmount ?? null,
     row.amountMatch ?? null,
-    row.amountDelta ?? null,
   ]);
 }
 

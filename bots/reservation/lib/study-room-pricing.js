@@ -23,7 +23,7 @@ function getSlotRate(roomKey, minuteOfDay) {
   const isRoomB = roomKey === 'B';
   const isEarlyMorning = minuteOfDay >= 0 && minuteOfDay < 9 * 60;
   if (isRoomB) return isEarlyMorning ? 4000 : 6000;
-  return 3500;
+  return isEarlyMorning ? 2500 : 3500;
 }
 
 function calcStudyRoomAmount(entry) {
@@ -45,13 +45,25 @@ function calcStudyRoomAmount(entry) {
   return total;
 }
 
+function resolveStudyRoomAmount(entry) {
+  const directAmount = Number(
+    entry?.rawAmount ??
+    entry?.raw_amount ??
+    entry?.amount ??
+    entry?.netRevenue ??
+    0,
+  );
+  if (directAmount > 0) return directAmount;
+  return calcStudyRoomAmount(entry);
+}
+
 function buildRoomAmountsFromEntries(entries = []) {
   const roomAmounts = {};
 
   for (const entry of entries) {
     const roomKey = normalizeStudyRoomKey(entry?.room);
     if (!roomKey) continue;
-    const amount = calcStudyRoomAmount(entry);
+    const amount = resolveStudyRoomAmount(entry);
     roomAmounts[roomKey] = (roomAmounts[roomKey] || 0) + amount;
   }
 
@@ -62,5 +74,6 @@ module.exports = {
   normalizeStudyRoomKey,
   timeToMinutes,
   calcStudyRoomAmount,
+  resolveStudyRoomAmount,
   buildRoomAmountsFromEntries,
 };

@@ -41,16 +41,14 @@ function buildExpectedSalesRows(rows) {
     if (!date) continue;
 
     const totalAmount = Number(row.total_amount || 0);
-    const pickkoTotal = Number(row.pickko_total || 0);
     const pickkoStudyRoom = Number(row.pickko_study_room || 0);
     const generalRevenue = Number(row.general_revenue || 0);
-    const grossTotal = pickkoTotal > 0 ? pickkoTotal : totalAmount;
     const roomAmountTotal = sumRoomAmounts(row.room_amounts_json);
     const studyRoomRevenue = pickkoStudyRoom > 0
       ? pickkoStudyRoom
       : roomAmountTotal > 0
         ? roomAmountTotal
-      : Math.max(grossTotal - generalRevenue, 0);
+      : totalAmount;
 
     if (generalRevenue > 0) {
       expected.push({
@@ -80,7 +78,7 @@ async function syncSkaSalesToWorker(companyId) {
   }
 
   const dailyRows = await pgPool.query(RESERVATION_SCHEMA, `
-    SELECT date::text, total_amount, room_amounts_json, pickko_total, pickko_study_room, general_revenue
+    SELECT date::text, total_amount, room_amounts_json, pickko_study_room, general_revenue
     FROM daily_summary
     ORDER BY date
   `);

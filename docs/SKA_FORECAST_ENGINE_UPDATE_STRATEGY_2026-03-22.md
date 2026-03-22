@@ -14,7 +14,6 @@
 - `reservation.daily_summary`
   - `pickko_study_room`
   - `general_revenue`
-  - `pickko_total`
   - `room_amounts_json`
   를 함께 읽어야 한다.
 - `bots/ska/src/etl.py`는 이제

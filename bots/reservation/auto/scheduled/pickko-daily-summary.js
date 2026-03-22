@@ -30,7 +30,7 @@ const { fetchDailyDetail } = require('../../lib/pickko-stats');
 const { maskName } = require('../../lib/formatting');
 const {
   timeToMinutes,
-  calcStudyRoomAmount,
+  resolveStudyRoomAmount,
   buildRoomAmountsFromEntries,
 } = require('../../lib/study-room-pricing');
 
@@ -77,7 +77,7 @@ function formatAmount(amount) {
  * B:      6,000원 / 30분 (00:00~09:00 = 4,000원)
  */
 function calcAmount(entry) {
-  return calcStudyRoomAmount(entry);
+  return resolveStudyRoomAmount(entry);
 }
 
 /**
@@ -325,14 +325,15 @@ async function main() {
     const pickkoStudyRoomTotal = pickkoStats
       ? (statsStudyRoomTotal > 0 ? statsStudyRoomTotal : entryStudyRoomTotal)
       : 0;
+    // 일반이용 매출은 픽코 일별 상세의 direct generalRevenue를 그대로 사용한다.
+    // 스터디룸 배분(use-day)과 잔차식(total-studyroom)을 섞으면 축이 달라져 왜곡된다.
     const resolvedGeneralRevenue = pickkoStats
-      ? Math.max(Number(pickkoStats.totalRevenue || 0) - pickkoStudyRoomTotal, 0)
+      ? Number(pickkoStats.generalRevenue || 0)
       : null;
     upsertDailySummary(reportDate, {
       totalAmount,
       roomAmounts,
       entriesCount:    entries.length,
-      pickkoTotal:     pickkoStats ? pickkoStats.totalRevenue : null,
       pickkoStudyRoom: pickkoStats ? pickkoStudyRoomTotal : null,
       generalRevenue:  resolvedGeneralRevenue,
     });

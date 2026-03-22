@@ -175,7 +175,7 @@ def run_etl(days_back=90):
 
         # daily_summary 로드 (dict-style row access)
         summary_rows = _dict_qry(res_con, """
-            SELECT date, total_amount, pickko_total, pickko_study_room, general_revenue, room_amounts_json
+            SELECT date, total_amount, pickko_study_room, general_revenue, room_amounts_json
             FROM daily_summary
             WHERE date >= %s AND date <= %s
             ORDER BY date

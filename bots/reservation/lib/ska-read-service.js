@@ -34,7 +34,6 @@ function createSkaReadService({ pgPool, rag = null }) {
           entries_count,
           COALESCE(pickko_study_room, 0) AS pickko_study_room,
           COALESCE(general_revenue, 0) AS general_revenue,
-          COALESCE(pickko_total, 0) AS pickko_total,
           COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0) AS total_revenue
         FROM daily_summary
         WHERE date = $1
@@ -51,7 +50,6 @@ function createSkaReadService({ pgPool, rag = null }) {
         total_revenue: Number(summary.total_revenue || 0),
         pickko_study_room: Number(summary.pickko_study_room || 0),
         general_revenue: Number(summary.general_revenue || 0),
-        pickko_total: Number(summary.pickko_total || 0),
         entries_count: summary.entries_count,
       };
     } catch (e) {

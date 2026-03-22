@@ -127,7 +127,7 @@ async function main() {
 
   // ════════════════════════════════════════════════════════════════════════
   // SKA-WF-01: 일간 매출 요약 + AI 분석 (매일 22:00)
-  // 테이블: reservation.daily_summary (date TEXT, total_amount, pickko_total, general_revenue, entries_count)
+  // 테이블: reservation.daily_summary (date TEXT, total_amount, pickko_study_room, general_revenue, entries_count)
   // ════════════════════════════════════════════════════════════════════════
   await createWorkflow({
     name: 'SKA-WF-01 일간 매출 요약',
@@ -157,7 +157,6 @@ async function main() {
           query: `SELECT
   COALESCE(total_amount, 0)      AS total,
   COALESCE(entries_count, 0)     AS cnt,
-  COALESCE(pickko_total, 0)      AS pickko,
   COALESCE(general_revenue, 0)   AS general,
   COALESCE(pickko_study_room, 0) AS study_room
 FROM reservation.daily_summary

@@ -9,9 +9,8 @@
  *
  * 기본 저장 규칙:
  *   - 일반석: payment_day 기준 direct 거래행 저장
- *   - 스터디룸(payment): payment_day 기준 direct 거래행 저장
  *   - 스터디룸(use): use_day 기준 예약행 저장 (policy_amount 포함)
- *   - 스터디룸 use/payment 두 축을 같이 저장해 결제 패턴과 이용 패턴을 분리 분석
+ *   - 스터디룸은 use_day 기준 예약행만 저장
  *
  * 사용 예:
  *   PICKKO_HEADLESS=1 node bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20
@@ -162,7 +161,6 @@ async function collectRows(date) {
     setupDialogHandler(detailPage, console.log);
 
     const generalRows = [];
-    const paymentRoomRows = [];
     const roomTransactions = [];
 
     for (const tx of detail.transactions || []) {
@@ -179,29 +177,6 @@ async function collectRows(date) {
           memo: extra.memo || null,
         };
         roomTransactions.push(roomTx);
-        paymentRoomRows.push({
-          entryKey: buildEntryKey(['payment_day', 'study_room', date, tx.no]),
-          sourceDate: date,
-          sourceAxis: 'payment_day',
-          orderKind: 'study_room',
-          transactionNo: tx.no,
-          detailHref: hrefRow?.href || null,
-          description: tx.description,
-          rawAmount: tx.netRevenue,
-          paymentAt: extra.orderAt || null,
-          payType: extra.payType || null,
-          payDevice: extra.payDevice || null,
-          memo: extra.memo || null,
-          roomLabel: roomTx.roomDetail?.roomLabel || roomTx.studyRoom || null,
-          roomType: normalizeStudyRoomKey(roomTx.roomDetail?.roomType || roomTx.roomDetail?.roomLabel || roomTx.studyRoom),
-          useDate: roomTx.roomDetail?.useDate || null,
-          useStartTime: roomTx.roomDetail?.startTime || null,
-          useEndTime: roomTx.roomDetail?.endTime || null,
-          memberName: roomTx.roomDetail?.memberName || null,
-          policyAmount: calcPolicyAmountFromRoomDetail(roomTx.roomDetail),
-          amountMatch: roomTx.roomDetail ? (Number(tx.netRevenue || 0) === calcPolicyAmountFromRoomDetail(roomTx.roomDetail) ? 1 : 0) : null,
-          amountDelta: roomTx.roomDetail ? Number(tx.netRevenue || 0) - calcPolicyAmountFromRoomDetail(roomTx.roomDetail) : null,
-        });
       } else {
         generalRows.push({
           entryKey: buildEntryKey(['payment_day', 'general', date, tx.no]),
@@ -263,7 +238,6 @@ async function collectRows(date) {
         memberName: entry.name,
         policyAmount,
         amountMatch: rawAmount === policyAmount ? 1 : 0,
-        amountDelta: rawAmount - policyAmount,
       };
     });
 
@@ -272,14 +246,13 @@ async function collectRows(date) {
     return {
       date,
       summary: {
-        pickkoTotal: detail.totalRevenue,
+        detailTotalRevenue: detail.totalRevenue,
         directGeneralRevenue: detail.generalRevenue,
-        directStudyRoomRevenue: Object.values(detail.studyRoomRevenue || {}).reduce((sum, value) => sum + Number(value || 0), 0),
         generalCount: generalRows.length,
-        paymentRoomCount: paymentRoomRows.length,
+        paymentRoomCount: 0,
         roomCount: policyRows.length,
       },
-      rows: [...generalRows, ...paymentRoomRows, ...policyRows],
+      rows: [...generalRows, ...policyRows],
     };
   } finally {
     try { await browser.close(); } catch (_) {}
@@ -313,7 +286,6 @@ async function main() {
 
   console.log(`📦 Pickko raw order 수집 완료 (${targetDate})`);
   console.log(`  일반석: ${result.summary.generalCount}건`);
-  console.log(`  스터디룸(payment): ${result.summary.paymentRoomCount}건`);
   console.log(`  스터디룸(use): ${result.summary.roomCount}건`);
   console.log(`  저장: ${noStore ? '건너뜀' : `${storedRows.length}건 조회 확인`}`);
 }
