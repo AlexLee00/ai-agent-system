@@ -35,6 +35,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `ska-read-service`, `dashboard-server`, `dashboard.html`에서 합산값을 `combined_revenue` / `내부 합산매출`로 함께 노출
 - 대시보드 요약 카드에 `스터디카페 / 스터디룸` 분리 표시 추가
 - `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에 합산값 의미 주석/표기 반영
+- `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬
 
 ## 12주차 후속 (2026-03-22) — 스카 매출 source 영향 경로 정렬 + 예측엔진 입력 복구
 

@@ -49,6 +49,7 @@
 - 대시보드 요약 카드에는 내부 합산매출과 함께 `스터디카페 / 스터디룸` 금액을 분리 표시하도록 바꿨다.
 - `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에도 같은 의미 주석/표기를 맞췄다.
 - 해석: 합산 로직 자체는 유지하지만, payment 축 일반매출과 use 축 스터디룸매출을 운영자에게 숨기지 않고 드러내는 방향으로 표시층을 정리한 단계다.
+- 후속으로 `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬했다.
 
 ## 2026-03-22: 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 기준 복구
 
