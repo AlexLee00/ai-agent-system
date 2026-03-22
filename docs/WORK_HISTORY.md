@@ -16,7 +16,13 @@
   - `full-sync-pipeline`: `keyword=5`, `unmatched=0`, `sync_confidence=0.6`
 - 오프라인 fallback 세그먼트 granularity를 공용 fixture 5세그먼트 구조로 보강했고, 첫 구간 unmatched를 제거했다.
 - `video_edits.preview_ms` 컬럼을 위한 `005-preview-ms.sql`과 `run-pipeline.js` preview wall-clock 저장 경로를 추가했고, 로컬 DB에도 실제 컬럼 반영을 확인했다.
-- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 preview/final render 품질 검증이다.
+- preview/final render 검증 1차에서 실제 병목이 `scene-indexer`가 아니라 render layer 경계라는 점을 확인했다.
+- `edl-builder.js` V2 경계 보강:
+  - concat 전 비디오 clip을 공통 해상도/픽셀 포맷/SAR/FPS로 정규화
+  - narration 오디오는 clip speed와 독립적으로 timeline 길이를 유지
+  - speed floor 때문에 영상 길이가 narration보다 짧아지면 마지막 프레임 hold(`tpad=stop_mode=clone`)로 보정
+- 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264초`, audio `48kHz stereo / 264초`, 파일 크기 `6.96MB`, preview wall-clock `103527ms`로 A/V 정합성이 복구됐다.
+- 현재 1순위 보강 포인트는 final render 다세트 검증과 transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 

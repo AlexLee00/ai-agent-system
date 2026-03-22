@@ -14,6 +14,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 성공 이벤트가 더 이상 `⚠️ 경고 · ...`, `⚠️ jimmy 집약 알림`으로 묶이지 않음
 - 실패/불확실 경로의 alert severity는 그대로 유지
 
+## 12주차 후속 (2026-03-22) — 비디오팀 preview render A/V 정합성 복구
+
+### 변경 사항 (changed)
+- `bots/video/lib/edl-builder.js`
+  - V2 sync clip concat 전에 모든 비디오를 공통 캔버스 기준으로 정규화하도록 보강
+  - narration 오디오는 clip speed와 독립적으로 timeline 길이에 맞춰 유지하도록 보강
+  - speed floor(`min_speed_factor=0.5`) 때문에 영상 길이가 narration보다 짧아질 때 마지막 프레임 hold(`tpad=stop_mode=clone`)로 길이를 맞추도록 보강
+- `bots/video/scripts/test-full-sync-pipeline.js`
+  - 테스트도 runtime과 동일하게 `normalizeAudio()`를 먼저 거치도록 수정
+
+### 검증
+- `node --check bots/video/lib/edl-builder.js` | ✅
+- `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅
+- `node bots/video/scripts/test-full-sync-pipeline.js --source-video=... --source-audio=... --edited=... --render-preview` | ✅ preview render 완료
+- `ffprobe .../preview.mp4` | ⚠️ 초기 검증에서 `video=103s`, `audio=524.863s` 불일치 확인
+- `node - <<'NODE' ... renderPreview(loadEDL(...), 'preview-fixed.mp4') ... NODE` | ✅ 수정 후 `preview-fixed.mp4` 렌더 성공
+- `ffprobe .../preview-fixed.mp4` | ✅ `1280x720`, `60fps`, `video=264.000s`, `audio=264.000s`, `48000Hz stereo`
+
+### 효과
+- preview가 단순 생성 성공을 넘어서 timeline 기준 A/V 정합성을 회복했다.
+- Phase 2 다음 단계는 sync 기준선 자체보다 final render 다세트 검증과 transition 재도입 설계로 이동할 수 있다.
+
 ## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
 
 ### 신규 모듈

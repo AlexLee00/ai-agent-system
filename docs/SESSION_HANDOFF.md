@@ -40,6 +40,10 @@
   - 워커 웹 UX는 `업로드 → 인트로 → 아웃트로 → 의도 → 시작`의 5단계로 확장됐고, file_type도 `video/audio/intro/outro/logo`를 지원한다.
   - 비디오팀 Phase 2는 `6732396 feat(video): add ai sync matching pipeline`까지 `main` 반영이 끝나 있어, 다음 세션에서는 scene-index 정밀 검증이나 preview 품질 보강부터 바로 이어서 진행하면 된다.
   - 2026-03-22 검증 기준선은 `scene_count=42`, `segment_count=5`, `sync_confidence=0.6`, `keyword=5`, `unmatched=0`까지 올라왔다. 오프라인 `narration-analyzer` fallback 세그먼트 granularity 보강이 효과를 냈고, 이제 `video_edits.preview_ms` 원장화까지 반영됐다. 다음 1순위는 preview/final render 품질 검증이다.
+  - preview/final render 검증 1차에서 `test-full-sync-pipeline --render-preview`의 실제 병목이 `intro 2560x1440`와 `main 1920x1080` concat 해상도 불일치, 그리고 V2 sync clip에서 narration 오디오를 speed에 맞춰 잘못 늘리던 경계라는 점을 확인했다.
+  - `edl-builder.js`는 이제 V2 concat 전에 모든 clip 비디오를 공통 캔버스로 정규화하고, narration 오디오는 clip speed와 무관하게 timeline 길이에 맞춰 유지한다. speed floor 때문에 영상 길이가 narration보다 짧아질 때는 마지막 프레임 hold(`tpad=stop_mode=clone`)로 길이를 맞춘다.
+  - 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264s`, `AAC 48kHz stereo / 264s`, 파일 크기 `6.96MB`, preview wall-clock `103527ms`로 A/V 길이 정합성이 복구됐다.
+  - 다음 1순위는 final render 다세트 검증과 transition 재도입 설계다.
   - 비디오팀 Phase 1은 과제 1~13 + RAG 피드백 루프 기준으로 마감됐다.
   - `bots/worker/web`의 Next.js는 이번 세션에서 재빌드 후 launchd `ai.worker.nextjs`를 재기동했고, `/video`, `/video/history`는 현재 `200 OK`로 실제 반영 상태다.
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.
