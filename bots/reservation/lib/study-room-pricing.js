@@ -23,7 +23,7 @@ function getSlotRate(roomKey, minuteOfDay) {
   const isRoomB = roomKey === 'B';
   const isEarlyMorning = minuteOfDay >= 0 && minuteOfDay < 9 * 60;
   if (isRoomB) return isEarlyMorning ? 4000 : 6000;
-  return isEarlyMorning ? 2500 : 3500;
+  return 3500;
 }
 
 function calcStudyRoomAmount(entry) {
@@ -31,12 +31,16 @@ function calcStudyRoomAmount(entry) {
   if (!roomKey) return 0;
 
   const startMin = timeToMinutes(entry?.start);
-  const endMin = timeToMinutes(entry?.end);
-  if (endMin <= startMin) return 0;
+  const rawEndMin = timeToMinutes(entry?.end);
+  if (startMin === rawEndMin) return 0;
+
+  const crossesMidnight = rawEndMin <= startMin;
+  const endMin = crossesMidnight ? rawEndMin + 24 * 60 : rawEndMin;
+  const overnightRate = crossesMidnight ? getSlotRate(roomKey, startMin) : null;
 
   let total = 0;
   for (let cursor = startMin; cursor < endMin; cursor += 30) {
-    total += getSlotRate(roomKey, cursor);
+    total += overnightRate ?? getSlotRate(roomKey, cursor % (24 * 60));
   }
   return total;
 }

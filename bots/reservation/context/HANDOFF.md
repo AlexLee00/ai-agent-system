@@ -1166,7 +1166,13 @@ if (saved.naverUnblockedAt) return false; // 이미 해제 완료
 - 스카 자연어 취소 명령용 래퍼 (stdout JSON)
 - 내부적으로 `pickko-cancel.js` 스폰 (child logs → stderr, 부모 stdout = JSON 전용)
 - CLI: `--phone, --date, --start, --end, --room, [--name]`
-- stdout JSON `{ success, message }`
+- stdout JSON `{ success, message [, partialSuccess, pickkoCancelled, naverUnblockFailed] }`
+- `success: true`
+  - 픽코 취소 + 네이버 해제까지 완료된 완전 성공
+- `success: false` + `partialSuccess: true` + `pickkoCancelled: true` + `naverUnblockFailed: true`
+  - 픽코 취소는 성공했지만 네이버 해제는 실패
+  - 상위 응답 레이어는 "픽코 취소 완료, 네이버 수동 확인 필요"로 안내해야 함
+- 2026-03-22 기준: 이 저장소 안에서는 부분 성공 계약을 분리했으며, 텔레그램 최종 문구가 여전히 완전 성공처럼 보이면 제이 상위 응답 레이어 해석을 점검해야 함
 
 ### CLAUDE_NOTES.md 업데이트
 
