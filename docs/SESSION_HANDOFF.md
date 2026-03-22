@@ -12,6 +12,10 @@
 ## 1. 현재 시스템 상태 요약
 
 - 스카
+  - 스카 매출 DB 적재 마무리 작업을 진행했다. `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 재집계했고, stale 상태였던 `2026-03-21`, `2026-03-22` source row를 현재 정책 기준으로 복구했다.
+  - 복구 후 `2026-03-21`은 `pickko_study_room=156000`, `general_revenue=0`, `total_amount=156000`, `2026-03-22`는 `pickko_study_room=136000`, `general_revenue=37800`, `pickko_total=173800` 상태로 정리됐다.
+  - `bots/worker/lib/ska-sales-sync.js`의 `syncSkaSalesToWorker('test-company')`를 재실행해 `worker.sales` 미러도 source에 다시 맞췄다. 현재 `2026-03-21`은 `스터디룸 156000`, `2026-03-22`는 `스터디룸 136000 + 일반석 37800`으로 반영됐다.
+  - `node bots/reservation/scripts/health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0`으로 복구됐다. 현재 스카 health의 주요 경고는 매출 적재가 아니라 `naver-monitor 미로드 / 로그 무활동`으로 다시 좁혀졌다.
   - 픽코 모니터링 심층 코드점검에서 해제(unblock) 경계 버그 3개를 추가로 수정했다. `unblockNaverSlot()`는 이제 최종 검증이 실패하면 `false`를 반환하고, `fillAvailablePopup()`는 `설정변경` 이후 패널이 실제로 닫혔는지 확인한 뒤에만 성공 처리한다.
   - `--unblock-slot` 단독 모드는 실패 시 더 이상 `naverBlocked=false`를 써서 DB 원장을 오염시키지 않는다. 성공 시에만 `false`로 내리고, 실패 시에는 기존 차단 상태를 유지한다.
   - 취소 후 네이버 해제 성공 알림은 다시 `report` 레벨로 정렬했다. 즉 성공은 `publishKioskSuccessReport()`, 실패만 `alert`로 읽는 기존 운영 계약을 복구했다.

@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-22: 스카 매출 DB 적재 마무리 / source-mirror 정합성 복구
+
+- `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 다시 재집계했다.
+- stale 상태였던 `2026-03-21`, `2026-03-22` row를 현재 정책 기준으로 복구했다.
+  - `2026-03-21`: `pickko_study_room=156000`, `general_revenue=0`, `total_amount=156000`
+  - `2026-03-22`: `pickko_study_room=136000`, `general_revenue=37800`, `pickko_total=173800`
+- `bots/worker/lib/ska-sales-sync.js`의 `syncSkaSalesToWorker('test-company')`를 재실행해 `worker.sales` 미러를 다시 맞췄다.
+  - `2026-03-21`: `스터디룸 156000`
+  - `2026-03-22`: `스터디룸 136000`, `일반석 37800`
+- `node bots/reservation/scripts/health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0`으로 회복됐다.
+- 해석: 이번 작업은 새 매출 정책 구현이 아니라, 이미 닫힌 `daily_summary -> worker.sales` 구조에서 남아 있던 stale source row를 복구해 운영 정합성을 다시 맞춘 단계다.
+
 ## 2026-03-22: 세션 마감 준비 — 체크섬 재갱신
 
 - `node bots/claude/src/dexter.js --update-checksums`로 `bots/claude/.checksums.json`을 다시 갱신했다.

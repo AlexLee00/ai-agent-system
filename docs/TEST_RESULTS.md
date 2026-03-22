@@ -65,6 +65,16 @@
 | `node - <<'NODE' ... parseCancellationCommand({ raw_text: '강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540' }) ... NODE` | ✅ `phone/date/start/end/room/name` 정상 추출 |
 | `node - <<'NODE' ... parseIntent('강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540') ... NODE` | ✅ `ska_action`, `command=cancel_reservation` 파싱 확인 |
 
+### 2026-03-22 — 스카 매출 DB 적재 마무리 / source-mirror 정합성 복구
+
+| 명령 | 결과 |
+| --- | --- |
+| `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ 3월 전체 재집계 완료, `2026-03-21`, `2026-03-22` stale `daily_summary` 복구 |
+| `node --input-type=module - <<'EOF' ... syncSkaSalesToWorker('test-company') ... EOF` | ✅ `inserted=1`, `updated=27`, `deleted=2`, `expectedRows=290`으로 worker 미러 재동기화 완료 |
+| `node --input-type=module - <<'EOF' ... SELECT ... FROM reservation.daily_summary WHERE date IN ('2026-03-21','2026-03-22') ... EOF` | ✅ `2026-03-21 pickko_study_room=156000`, `2026-03-22 pickko_study_room=136000 / general_revenue=37800 / pickko_total=173800` 확인 |
+| `node --input-type=module - <<'EOF' ... SELECT ... FROM worker.sales WHERE company_id='test-company' AND date IN ('2026-03-21','2026-03-22') ... EOF` | ✅ `2026-03-21 스터디룸 156000`, `2026-03-22 스터디룸 136000 + 일반석 37800` 확인 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `dailySummaryIntegrityHealth.issueCount=0`, `daily_summary 무결성` 경고 해소 확인 |
+
 ### Jimmy 성공 알림 경계 복구
 
 | 테스트 | 결과 |
