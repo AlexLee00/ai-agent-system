@@ -11,6 +11,11 @@
 
 ## 1. 현재 시스템 상태 요약
 
+- 스카
+  - `pickko-kiosk-monitor.js`의 `toBlockEntries` dedupe key는 이제 `phone|date|start|end|room`을 사용한다. 같은 사람/같은 날짜/같은 시작시각이라도 종료시각이 다른 재예약을 같은 사이클에서 합쳐버리지 않도록 보강했다.
+  - `manual/manual_retry` 후속 차단은 `kiosk-monitor` 자동 차단 루프에서 분리했다. 자동 모니터링은 이제 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당하고, 수동 예약 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 레일에서 관리한다.
+  - 운영 의미: 자동 write-path 범위를 줄여 false block과 중복 후속 시도를 낮추고, 사람이 개입한 예약은 운영 확인을 거친 뒤 별도 원장으로 닫는 구조로 정리됐다.
+
 - 공통 운영 리포트
   - `daily-ops-report.js`는 이제 `runtimeRestrictions` 섹션으로 `db_sandbox_restricted` 팀을 별도 분리해, 런타임 제약과 실제 장애를 같은 축으로 읽지 않도록 보강됐다.
   - 같은 리포트는 selector 보조 입력을 읽어 현재 primary(`google-gemini-cli/gemini-2.5-flash`)가 `rate_limited`이고 `gemini-2.5-flash-lite`가 `temporary_fallback_candidate`임을 active issue로 직접 노출한다.

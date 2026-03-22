@@ -19,7 +19,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
-const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, getOpenManualBlockFollowups, pruneOldKioskBlocks } = require('../../lib/db');
+const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
@@ -1950,19 +1950,12 @@ async function main() {
       return !isExpired;
     });
 
-    // ── Phase 2A-2: manual 등록 후속 미완료 재시도 ──
-    const manualFollowupEntriesRaw = await getOpenManualBlockFollowups(today);
-    const manualFollowupEntries = manualFollowupEntriesRaw.filter((e) => {
-      const [_rEndH, _rEndM] = (e.end || '23:59').split(':').map(Number);
-      const isExpired = e.date < _nowDateForRetry || (e.date === _nowDateForRetry && _nowMinForRetry >= _rEndH * 60 + _rEndM);
-      return !isExpired;
-    });
-
-    // 차단 처리 대상 = 신규 + 재시도 + manual follow-up 미완료
+    // 차단 처리 대상 = 신규 + 미차단 재시도
+    // manual/manual_retry 후속 차단은 manual-block-followup 레일에서 별도 관리한다.
     const toBlockEntries = [];
     const seenBlockKeys = new Set();
-    for (const entry of [...newEntries, ...retryEntries, ...manualFollowupEntries]) {
-      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.room || ''}`;
+    for (const entry of [...newEntries, ...retryEntries]) {
+      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
       if (seenBlockKeys.has(key)) continue;
       seenBlockKeys.add(key);
       toBlockEntries.push(entry);
@@ -1985,7 +1978,7 @@ async function main() {
       return true;
     });
 
-    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 / 🧾 manual 후속 재시도: ${manualFollowupEntries.length}건 (전체 ${kioskEntries.length}건)`);
+    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
     log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
 
     if (toBlockEntries.length === 0 && cancelledEntries.length === 0) {
