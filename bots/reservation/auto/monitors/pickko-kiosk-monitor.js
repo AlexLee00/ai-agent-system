@@ -1971,25 +1971,36 @@ async function main() {
       toBlockEntries.push(entry);
     }
 
-    // ── Phase 2B: 취소 감지 (픽코 환불 목록 직접 조회) ──
-    // JSON 파일 비교 대신 픽코를 직접 조회 → 무결성 보장
-    log('\n[Phase 2B] 픽코 환불 예약 직접 조회');
+    // ── Phase 2B: 취소 감지 (픽코 상태별 직접 조회) ──
+    // 상태 필터는 중복 선택이 되지 않으므로 `취소`, `환불`을 각각 조회한 뒤 합친다.
+    log('\n[Phase 2B] 픽코 취소/환불 예약 직접 조회');
     log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=환불`);
     const { entries: refundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
+    log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=취소`);
+    const { entries: cancelledStatusEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '취소', minAmount: 1 });
+    const rawCancelledEntries = [...refundedEntries, ...cancelledStatusEntries];
+    const dedupedCancelledEntries = [];
+    const seenCancelledKeys = new Set();
+    for (const entry of rawCancelledEntries) {
+      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
+      if (seenCancelledKeys.has(key)) continue;
+      seenCancelledKeys.add(key);
+      dedupedCancelledEntries.push(entry);
+    }
 
     // naverBlocked=true로 실제 차단한 항목만 해제 시도
     // (DB에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
-    const _refundedWithKey = refundedEntries.map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }));
-    const _refundedSaved = await Promise.all(_refundedWithKey.map(e => getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room)));
-    const cancelledEntries = _refundedWithKey.filter((e, i) => {
-      const saved = _refundedSaved[i];
+    const _cancelledWithKey = dedupedCancelledEntries.map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}|${e.end || ''}|${e.room || ''}` }));
+    const _cancelledSaved = await Promise.all(_cancelledWithKey.map(e => getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room)));
+    const cancelledEntries = _cancelledWithKey.filter((e, i) => {
+      const saved = _cancelledSaved[i];
       if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
       if (saved.naverUnblockedAt) return false; // 이미 해제 완료
       return true;
     });
 
     log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
-    log(`🗑 환불된 키오스크 예약: ${refundedEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
+    log(`🗑 픽코 취소 감지: 환불 ${refundedEntries.length}건 / 취소 ${cancelledStatusEntries.length}건 / 합산 ${dedupedCancelledEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
 
     if (toBlockEntries.length === 0 && cancelledEntries.length === 0) {
       log('✅ 신규 예약 없음, 재시도 없음, 취소 없음. 종료');
