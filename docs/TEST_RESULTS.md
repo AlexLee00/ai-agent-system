@@ -4,6 +4,15 @@
 
 ## 2026-03-22
 
+### 스카 네이버 슬롯 UI 안정화 1차
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ row-index 기반 slot selection / verify 보강 후 문법 통과 |
+| `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --block-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ 정확한 `오전 11:00 A1` 슬롯 선택, 내부 `PATCH /schedules` 실측, 최종 검증 성공 |
+| `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --unblock-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ 정확한 `예약불가` 슬롯 선택, `예약가능` 전환, 내부 `PATCH /schedules` `200 OK`, 최종 해제 검증 성공 |
+| `/tmp/naver-schedule-trace.log` 확인 | ✅ `PATCH https://api-partner.booking.naver.com/v3.1/businesses/596871/biz-items/4132466/schedules` request/response trace 확보 |
+
 ### 스카 operation_queue 설계 문서
 
 | 테스트 | 결과 |

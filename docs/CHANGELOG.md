@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 네이버 슬롯 UI 안정화 1차
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 네이버 일간 캘린더 슬롯 선택을 가상 스크롤/transform 구조에 맞춘 `row-index + room column` 방식으로 보강
+  - `Calendar__row-wrap` 스크롤을 직접 제어해 목표 시간 row를 화면에 끌어온 뒤 처리하도록 수정
+  - `clickRoomAvailableSlot()`, `clickRoomSuspendedSlot()`, `verifyBlockInGrid()`가 같은 캘린더 parser 전제를 사용하도록 정리
+  - `NAVER_TRACE_SCHEDULE_API=1` 환경에서 `/tmp/naver-schedule-trace.log`에 네이버 `/schedules` request/response trace를 남기도록 계측 추가
+
+### 효과
+- 잘못된 시간대 fallback 클릭을 제거하고, 실제 목표 슬롯 기준으로 block/unblock UI 조작이 가능해졌다.
+- 사용자가 기억한 네이버 내부 `PATCH /schedules` API 경로가 여전히 살아 있음을 실측으로 재확인했다.
+- block/unblock 모두에서 UI 실행 경로, 내부 API 호출, 최종 검증 레이어가 같은 기준으로 정렬됐다.
+
+### 검증
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+- `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --block-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ row-index 기반 block 경로 및 최종 검증 성공
+- `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --unblock-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ row-index 기반 unblock 경로, `PATCH /schedules` `200 OK`, 최종 해제 검증 성공
+
 ## 12주차 후속 (2026-03-22) — 스카 operation_queue 설계 문서 추가
 
 ### 추가 사항 (added)

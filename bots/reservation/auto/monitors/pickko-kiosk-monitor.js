@@ -35,6 +35,7 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 const KIOSK_MONITOR_RUNTIME = getReservationKioskMonitorConfig();
+const NAVER_SCHEDULE_TRACE_LOG = '/tmp/naver-schedule-trace.log';
 
 // ─── 유틸 ───────────────────────────────────────────────
 
@@ -44,6 +45,57 @@ function getTodayKST() {
 
 function nowKST() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T') + '+09:00';
+}
+
+function appendScheduleTrace(kind, payload) {
+  const line = JSON.stringify({
+    ts: nowKST(),
+    kind,
+    ...payload,
+  });
+  fs.appendFileSync(NAVER_SCHEDULE_TRACE_LOG, `${line}\n`);
+}
+
+function attachNaverScheduleTrace(page, label = 'naver-page') {
+  if (!process.env.NAVER_TRACE_SCHEDULE_API || page.__naverScheduleTraceAttached) return;
+  page.__naverScheduleTraceAttached = true;
+
+  page.on('request', (req) => {
+    const url = req.url();
+    if (!url.includes('api-partner.booking.naver.com')) return;
+    if (!url.includes('/schedules')) return;
+
+    appendScheduleTrace('request', {
+      label,
+      method: req.method(),
+      url,
+      headers: req.headers(),
+      postData: req.postData() || null,
+    });
+    log(`🛰️ [trace:${label}] ${req.method()} ${url}`);
+  });
+
+  page.on('response', async (res) => {
+    const url = res.url();
+    if (!url.includes('api-partner.booking.naver.com')) return;
+    if (!url.includes('/schedules')) return;
+
+    let body = null;
+    try {
+      body = await res.text();
+    } catch (err) {
+      body = `[body_read_failed] ${err.message}`;
+    }
+
+    appendScheduleTrace('response', {
+      label,
+      url,
+      status: res.status(),
+      headers: res.headers(),
+      body,
+    });
+    log(`🛰️ [trace:${label}] response ${res.status()} ${url}`);
+  });
 }
 
 
@@ -821,16 +873,16 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
   const timeDisplay = `${ampm} ${hourMin}`;                           // "오후 7:00"
   log(`  시간 표시: "${timeDisplay}"`);
 
-  // 모든 로직을 단일 evaluate에서 수행 (scroll → getBoundingClientRect 일관성 유지)
-  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin, startTimeArg) => {
-    const isRenderable = (el) => {
+  // 캘린더 DOM 구조(row-index 기반)로 룸/시간을 직접 매칭한다.
+  const result = await page.evaluate(async (roomType, timeDisplay, ampm, hourMin, startTimeArg) => {
+    const isVisible = (el) => {
       if (!el || !el.getBoundingClientRect) return false;
       const rect = el.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
+      return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
     };
-    const isInViewport = (rect) => rect.bottom >= 0 && rect.top <= window.innerHeight;
-    const to24HourLocal = (timeText) => {
-      const text = String(timeText || '').trim().replace(/\s+/g, ' ');
+    const normalize = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+    const to24Hour = (label) => {
+      const text = normalize(label);
       const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
       if (!m) return null;
       const [, meridiem, hourStr, minStr] = m;
@@ -842,258 +894,201 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
       else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
       return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     };
+    const roomPattern = new RegExp(`^${roomType}(?:룸|\\b)`, 'i');
+    const targetLabel = normalize(`${ampm} ${hourMin}`);
 
-    const visibleAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
-      if (el.children.length > 0) return false;
-      if (!isRenderable(el)) return false;
-      const rect = el.getBoundingClientRect();
-      if (!isInViewport(rect)) return false;
-      if (rect.left > 320) return false; // 좌측 시간축/행 라벨 영역
-      const txt = (el.textContent || '').trim();
-      return /^\d{1,2}:\d{2}$/.test(txt);
-    }).map((el) => {
-      const rect = el.getBoundingClientRect();
+    const headerCells = Array.from(document.querySelectorAll('[class*="Calendar__inner-header"] [class*="Calendar__week-row"] [class*="Calendar__week-cell"]'));
+    const roomHeaders = headerCells
+      .map((cell, idx) => ({ idx, text: normalize(cell.textContent) }))
+      .filter((row) => row.text.length > 0);
+    const roomIndex = roomHeaders.findIndex((row) => roomPattern.test(row.text) || row.text === roomType);
+    if (roomIndex < 0) {
+      return { found: false, reason: 'room_header_not_found', roomHeaders: roomHeaders.map((row) => row.text) };
+    }
+
+    const scrollCalendarToTarget = (targetEl) => {
+      if (!targetEl) return null;
+      const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
+      const innerWrap = document.querySelector('[class*="Calendar__inner-wrap"]');
+      const scrollContainer = rowWrap || innerWrap || targetEl.parentElement;
+      if (!scrollContainer) return null;
+
+      const timelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
+      const targetIndex = timelineEls.indexOf(targetEl);
+      const rowHeight = (() => {
+        for (let i = 1; i < timelineEls.length; i += 1) {
+          const prevRect = timelineEls[i - 1].getBoundingClientRect();
+          const currRect = timelineEls[i].getBoundingClientRect();
+          const delta = Math.abs(currRect.top - prevRect.top);
+          if (delta > 8) return delta;
+        }
+        return 96;
+      })();
+
+      const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
+      const targetOffsetTop = targetEl.offsetTop || targetIndex * rowHeight;
+      const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
+      scrollContainer.scrollTop = nextScrollTop;
+      if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
+      if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
+
       return {
-        el,
-        raw: (el.textContent || '').trim(),
-        y: rect.top + rect.height / 2,
-        left: rect.left,
+        targetIndex,
+        rowHeight: Math.round(rowHeight),
+        scrollTop: Math.round(nextScrollTop),
+        viewportHeight: Math.round(viewportHeight),
+        scrollContainerClass: String(scrollContainer.className || '').slice(0, 120),
       };
-    }).sort((a, b) => a.y - b.y);
+    };
 
-    // 1. 먼저 현재 화면의 왼쪽 시간축에서 실제로 보이는 타임 라벨을 우선 찾는다.
-    //    네이버 캘린더는 오프스크린 복제 노드가 섞여 있어, 보이는 시간축을 먼저 기준으로 잡아야 Y축이 안정적이다.
-    let targetTimeEl = null;
-    const visibleLeafTimeEls = visibleAxisMarkers
-      .filter((marker) => marker.raw === hourMin)
-      .map((marker) => marker.el);
-
-    for (const el of visibleLeafTimeEls) {
-      const parentText = (el.parentElement?.textContent || '').trim();
-      if (parentText.includes(ampm)) {
-        targetTimeEl = el;
-        break;
-      }
-    }
-    if (!targetTimeEl && visibleLeafTimeEls.length > 0) {
-      targetTimeEl = visibleLeafTimeEls[0];
-    }
-
-    // 2. Calendar__time 스팬에서 대상 시간 요소 찾기
-    //    오후 7:00: ampm스팬("오후") + time스팬("7:00") 구조
-    const allTimeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
-    const timeSpans = allTimeSpans.filter((span) => isRenderable(span));
-    if (!targetTimeEl) {
-      for (const span of timeSpans) {
-        if ((span.textContent || '').trim() !== hourMin) continue;
-        // 부모 또는 형제에 ampm 텍스트가 있는지 확인
-        const parentText = (span.parentElement?.textContent || '').trim();
-        if (parentText.includes(ampm)) {
-          targetTimeEl = span;
-          break;
-        }
-      }
-    }
-    // b) ampm 무시하고 hourMin 만으로 재시도
-    if (!targetTimeEl) {
-      for (const span of timeSpans) {
-        if ((span.textContent || '').trim() === hourMin) {
-          targetTimeEl = span;
-          break;
-        }
-      }
-    }
-    // c) 최후 폴백: 모든 leaf 요소에서 hourMin 검색
-    if (!targetTimeEl) {
-      for (const el of document.querySelectorAll('*')) {
-        if (el.children.length > 0) continue;
-        if (!isRenderable(el)) continue;
-        if ((el.textContent || '').trim() === hourMin) {
-          targetTimeEl = el;
-          break;
-        }
-      }
-    }
-
-    if (!targetTimeEl) {
-      return { found: false, reason: `time element "${hourMin}" not found`, timeSpansCount: allTimeSpans.length };
-    }
-
-    // 2. 스크롤 후 Y 좌표 측정 (동일 evaluate 내에서 일관성 보장)
-    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
-    const timeRect = targetTimeEl.getBoundingClientRect();
-    const targetY = timeRect.top + timeRect.height / 2;
-
-    // 3. 룸 컬럼 헤더 X 범위 구하기
-    //    헤더는 페이지 상단 고정 영역 (viewport Y < 500)
-    //    대상: roomType("A1") 포함 텍스트를 가진 가시 요소
-    let roomXRange = null;
-    const allVisible = Array.from(document.querySelectorAll('*')).filter(el => {
-      if (!el.offsetParent) return false;
-      if (el.children.length > 0) return false; // leaf only (text content)
-      const rect = el.getBoundingClientRect();
-      return rect.top >= 0 && rect.top < 450 && rect.width > 20; // 상단 헤더 영역
+    const allTimelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
+    const targetTimelineEl = allTimelineEls.find((row) => {
+      const ampmText = normalize(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent);
+      const timeText = normalize(row.querySelector('[class*="Calendar__time__"]')?.textContent);
+      return normalize(`${ampmText} ${timeText}`) === targetLabel;
     });
-    for (const el of allVisible) {
-      const text = (el.textContent || '').trim();
-      // "A1룸" 또는 "A1" 포함, "A1" 로만 검색 시 A2룸 등 오매칭 방지
-      // roomType이 "A1"이면 "A1룸" 또는 "A1 " 패턴 사용
-      const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
-      if (pattern.test(text) || text === roomType) {
-        const rect = el.getBoundingClientRect();
-        // 가장 왼쪽에 있는 첫 번째 match 선택 (기본룸 우선)
-        if (!roomXRange || rect.left < roomXRange.left) {
-          roomXRange = { left: rect.left, right: rect.right, cx: rect.left + rect.width / 2 };
-        }
-      }
+    const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
+    if (scrollDebug) {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     }
 
-    // 4. calendar-btn 버튼 수집 (scrollIntoView 이후 화면에 나타난 것만)
-    const calBtns = Array.from(document.querySelectorAll(
-      '.calendar-btn, [class*="calendar-btn"], [class*="week-cell"] button, [class*="WeekCell"] button'
-    )).filter((b) => {
-      if (b.offsetParent === null) return false;
-      const rect = b.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && isInViewport(rect);
-    });
+    const timelineRows = allTimelineEls
+      .filter((row) => isVisible(row))
+      .map((row) => {
+        const ampmText = normalize(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent);
+        const timeText = normalize(row.querySelector('[class*="Calendar__time__"]')?.textContent);
+        const label = normalize(`${ampmText} ${timeText}`);
+        const rect = row.getBoundingClientRect();
+        return {
+          label,
+          slot24: to24Hour(label),
+          y: rect.top + rect.height / 2,
+        };
+      });
 
-    if (calBtns.length === 0) {
-      return { found: false, reason: 'no calendar-btn visible after scroll', targetY: Math.round(targetY), roomXRange };
+    if (timelineRows.length === 0) {
+      return { found: false, reason: 'no_visible_timeline_rows' };
     }
 
-    const timeMarkers = [
-      ...visibleAxisMarkers.map((marker) => ({ y: marker.y, raw: marker.raw })),
-      ...timeSpans
-        .filter((span) => isInViewport(span.getBoundingClientRect()))
-        .map((span) => {
-          const r = span.getBoundingClientRect();
-          const raw = (span.parentElement?.textContent || span.textContent || '').replace(/\s+/g, ' ').trim();
-          return { y: r.top + r.height / 2, raw };
-        }),
-    ];
+    const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
+      .map((dailyRow) => {
+        const rowRect = dailyRow.getBoundingClientRect();
+        if (rowRect.height <= 0 || rowRect.bottom < 0 || rowRect.top > window.innerHeight) return null;
+        const roomCells = Array.from(dailyRow.children).filter((cell) => {
+          const rect = cell.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        if (roomCells.length === 0) return null;
+        return {
+          y: rowRect.top + rowRect.height / 2,
+          roomCells,
+        };
+      })
+      .filter(Boolean);
 
-    const btnInfos = calBtns.map(b => {
-      const r = b.getBoundingClientRect();
-      const cy = r.top + r.height / 2;
-      const nearestTime = timeMarkers
-        .slice()
-        .sort((a, b) => Math.abs(a.y - cy) - Math.abs(b.y - cy))[0];
+    if (gridRows.length === 0) {
+      return { found: false, reason: 'no_visible_grid_rows' };
+    }
+
+    const rows = timelineRows
+      .map((timeline, idx) => ({ idx, timeline, grid: gridRows[idx] || null }))
+      .filter((row) => row.grid && row.timeline.slot24);
+
+    const targetRows = rows.filter((row) => row.timeline.slot24 === startTimeArg);
+    if (targetRows.length === 0) {
       return {
-        el: b,
-        cx: r.left + r.width / 2,
-        cy,
-        cls: b.className || '',
-        text: (b.textContent || '').trim(),
-        slotTime: nearestTime ? nearestTime.raw : null,
-        slotTime24: nearestTime ? to24HourLocal(nearestTime.raw) : null,
+        found: false,
+        reason: 'target_row_not_found',
+        target: startTimeArg,
+        targetLabel,
+        scrollDebug,
+        visibleRows: rows.slice(0, 16).map((row) => ({
+          idx: row.idx,
+          label: row.timeline.label,
+          slot24: row.timeline.slot24,
+        })),
       };
-    });
-
-    // 5. 룸 X 범위 필터
-    let candidates = btnInfos;
-    if (roomXRange) {
-      const inRoom = candidates.filter(b => b.cx >= roomXRange.left - 15 && b.cx <= roomXRange.right + 15);
-      if (inRoom.length > 0) candidates = inRoom;
     }
 
-    // 6. block 경로에서는 예약가능(avail/remaining) 슬롯만 대상으로 본다.
-    const availableCandidates = candidates.filter((b) => {
-      const cls = String(b.cls || '');
-      const text = String(b.text || '');
+    const fallbackCandidates = [];
+    for (const row of targetRows) {
+      const targetCell = row.grid.roomCells[roomIndex];
+      if (!targetCell) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'room_cell_missing',
+        });
+        continue;
+      }
+
+      const button = targetCell.querySelector('button.calendar-btn, button[class*="calendar-btn"]');
+      if (!button) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'button_missing',
+        });
+        continue;
+      }
+
+      const cls = String(button.className || '');
+      const text = normalize(button.textContent);
       const isSoldout = cls.includes('soldout') || cls.includes('disabled');
       const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
       const isAvailable = cls.includes('avail') || cls.includes('btn-info') || text.includes('예약가능');
-      return !isSoldout && !isBlocked && isAvailable;
-    });
-    const sameRowCandidates = availableCandidates.filter((b) => b.slotTime24 === startTimeArg);
-    let finalCandidates = sameRowCandidates;
-    if (finalCandidates.length === 0) {
-      finalCandidates = availableCandidates.filter((b) => Math.abs(b.cy - targetY) <= 70);
-    }
-    if (finalCandidates.length === 0) {
-      finalCandidates = availableCandidates;
-    }
 
-    if (finalCandidates.length === 0) {
+      if (isSoldout || isBlocked || !isAvailable) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'button_not_available',
+          btnClass: cls.slice(0, 80),
+          btnText: text,
+        });
+        continue;
+      }
+
+      button.scrollIntoView({ block: 'center', inline: 'center' });
+      button.click();
+      const rect = button.getBoundingClientRect();
       return {
-        found: false, reason: 'no available button for target slot',
-        btnsTotal: btnInfos.length,
-        targetY: Math.round(targetY),
-        roomXRange,
-        roomCandidates: candidates.map((b) => ({
-          cy: Math.round(b.cy),
-          text: b.text,
-          cls: String(b.cls || '').slice(0, 80),
-          slotTime: b.slotTime || null,
-          slotTime24: b.slotTime24 || null,
-        })).slice(0, 12),
+        found: true,
+        clicked: true,
+        btnText: text,
+        btnClass: cls.slice(0, 80),
+        pos: { cx: Math.round(rect.left + rect.width / 2), cy: Math.round(rect.top + rect.height / 2) },
+        targetLabel: row.timeline.label,
+        targetSlot24: row.timeline.slot24,
+        scrollDebug,
+        fallbackCandidates,
       };
     }
 
-    // 7. 같은 행(exact row) 후보를 최우선으로 두고, 같은 행이 없으면 가장 가까운 행으로 후순위 정렬한다.
-    const normalizedTarget = `${ampm}${hourMin}`;
-    const orderedCandidates = finalCandidates
-      .map(c => ({
-        ...c,
-        exact: String(c.slotTime || '').replace(/\s+/g, '') === normalizedTarget ? 0 : 1,
-        timeDelta: (() => {
-          const slot = to24HourLocal(c.slotTime);
-          if (!slot) return Number.MAX_SAFE_INTEGER;
-          const [slotH, slotM] = slot.split(':').map(Number);
-          const [targetH, targetM] = String(startTimeArg || '00:00').split(':').map(Number);
-          return Math.abs((slotH * 60 + slotM) - (targetH * 60 + targetM));
-        })(),
-        forward: c.cy >= targetY ? 0 : 1,
-        diff: Math.abs(c.cy - targetY),
-      }))
-      .sort((a, b) => {
-        if (a.exact !== b.exact) return a.exact - b.exact;
-        if (a.timeDelta !== b.timeDelta) return a.timeDelta - b.timeDelta;
-        if (a.forward !== b.forward) return a.forward - b.forward;
-        if (a.diff !== b.diff) return a.diff - b.diff;
-        return a.cy - b.cy;
-      })
-      .slice(0, 5);
-
     return {
-      found: true, clicked: orderedCandidates.length > 0,
-      btnText: orderedCandidates[0]?.text || '',
-      btnClass: (orderedCandidates[0]?.cls || '').slice(0, 80),
-      pos: orderedCandidates[0]
-        ? { cx: Math.round(orderedCandidates[0].cx), cy: Math.round(orderedCandidates[0].cy) }
-        : null,
-      targetY: Math.round(targetY),
-      roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
-      btnsNearTime: btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60).length,
-      fallbackCandidates: orderedCandidates.map(c => ({
-        cx: Math.round(c.cx),
-        cy: Math.round(c.cy),
-        text: c.text,
-        cls: (c.cls || '').slice(0, 80),
-        forward: c.forward === 0,
-        slotTime: c.slotTime || null,
-      })),
+      found: false,
+      reason: 'no_available_button_near_target_slot',
+      target: startTimeArg,
+      targetLabel: timeDisplay,
+      scrollDebug,
+      fallbackCandidates,
     };
   }, roomType, timeDisplay, ampm, hourMin, startTime);
 
   log(`  예약가능 버튼: ${JSON.stringify(result)}`);
   if (!result.found || !result.clicked) return false;
 
-  const fallbacks = Array.isArray(result.fallbackCandidates) ? result.fallbackCandidates : [];
-  for (let i = 0; i < fallbacks.length; i++) {
-    const c = fallbacks[i];
-    if (c.cx <= 0 || c.cy <= 0) continue;
-    log(`  ↻ 슬롯 선택 시도 #${i + 1}: (${c.cx}, ${c.cy}) ${c.text}${c.forward ? ' [다음 슬롯 우선]' : ' [이전 슬롯]'}`);
-    await page.mouse.click(c.cx, c.cy);
-    await delay(1200);
-    if (await isSettingsPanelVisible(page)) {
-      const effectiveStart = to24Hour(c.slotTime) || startTime;
-      log(`  ✅ 설정 패널 열림 확인 (시도 #${i + 1})${c.slotTime ? ` → 시작시간 ${effectiveStart}` : ''}`);
-      return effectiveStart;
-    }
+  await delay(1200);
+  if (await isSettingsPanelVisible(page)) {
+    const effectiveStart = result.targetSlot24 || startTime;
+    log(`  ✅ 설정 패널 열림 확인${result.targetLabel ? ` → 시작시간 ${effectiveStart} (${result.targetLabel})` : ''}`);
+    return effectiveStart;
   }
 
-  log('  ❌ 후보 슬롯들을 순차 시도했지만 설정 패널이 열리지 않음');
+  log('  ❌ 버튼 클릭 후에도 설정 패널이 열리지 않음');
   return null;
 }
 
@@ -1110,92 +1105,198 @@ async function clickRoomSuspendedSlot(page, roomRaw, startTime) {
   const timeDisplay = `${ampm} ${hourMin}`;
   log(`  시간 표시: "${timeDisplay}"`);
 
-  const result = await page.evaluate((roomType, timeDisplay, ampm, hourMin) => {
-    // 1. 시간 Y 좌표 찾기 (clickRoomAvailableSlot과 동일)
-    let targetTimeEl = null;
-    const timeSpans = Array.from(document.querySelectorAll('[class*="Calendar__time"]'));
-    for (const span of timeSpans) {
-      if ((span.textContent || '').trim() !== hourMin) continue;
-      const parentText = (span.parentElement?.textContent || '').trim();
-      if (parentText.includes(ampm)) { targetTimeEl = span; break; }
-    }
-    if (!targetTimeEl) {
-      for (const span of timeSpans) {
-        if ((span.textContent || '').trim() === hourMin) { targetTimeEl = span; break; }
-      }
-    }
-    if (!targetTimeEl) {
-      for (const el of document.querySelectorAll('*')) {
-        if (el.children.length > 0) continue;
-        if ((el.textContent || '').trim() === hourMin) { targetTimeEl = el; break; }
-      }
-    }
-    if (!targetTimeEl) return { found: false, reason: `time "${hourMin}" not found` };
-
-    targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
-    const timeRect = targetTimeEl.getBoundingClientRect();
-    const targetY = timeRect.top + timeRect.height / 2;
-
-    // 2. 룸 컬럼 X 범위
-    let roomXRange = null;
-    const allVisible = Array.from(document.querySelectorAll('*')).filter(el => {
-      if (!el.offsetParent) return false;
-      if (el.children.length > 0) return false;
+  const result = await page.evaluate(async (roomType, timeDisplay, ampm, hourMin, startTimeArg) => {
+    const isVisible = (el) => {
+      if (!el || !el.getBoundingClientRect) return false;
       const rect = el.getBoundingClientRect();
-      return rect.top >= 0 && rect.top < 450 && rect.width > 20;
+      return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
+    };
+    const normalize = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+    const to24Hour = (label) => {
+      const text = normalize(label);
+      const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      const [, meridiem, hourStr, minStr] = m;
+      let hour = Number(hourStr);
+      const minute = Number(minStr);
+      if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+      if (meridiem === '자정') hour = 0;
+      else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
+      else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
+    const roomPattern = new RegExp(`^${roomType}(?:룸|\\b)`, 'i');
+    const targetLabel = normalize(`${ampm} ${hourMin}`);
+
+    const headerCells = Array.from(document.querySelectorAll('[class*="Calendar__inner-header"] [class*="Calendar__week-row"] [class*="Calendar__week-cell"]'));
+    const roomHeaders = headerCells
+      .map((cell, idx) => ({ idx, text: normalize(cell.textContent) }))
+      .filter((row) => row.text.length > 0);
+    const roomIndex = roomHeaders.findIndex((row) => roomPattern.test(row.text) || row.text === roomType);
+    if (roomIndex < 0) {
+      return { found: false, reason: 'room_header_not_found', roomHeaders: roomHeaders.map((row) => row.text) };
+    }
+
+    const scrollCalendarToTarget = (targetEl) => {
+      if (!targetEl) return null;
+      const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
+      const innerWrap = document.querySelector('[class*="Calendar__inner-wrap"]');
+      const scrollContainer = rowWrap || innerWrap || targetEl.parentElement;
+      if (!scrollContainer) return null;
+
+      const timelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
+      const targetIndex = timelineEls.indexOf(targetEl);
+      const rowHeight = (() => {
+        for (let i = 1; i < timelineEls.length; i += 1) {
+          const prevRect = timelineEls[i - 1].getBoundingClientRect();
+          const currRect = timelineEls[i].getBoundingClientRect();
+          const delta = Math.abs(currRect.top - prevRect.top);
+          if (delta > 8) return delta;
+        }
+        return 96;
+      })();
+
+      const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
+      const targetOffsetTop = targetEl.offsetTop || targetIndex * rowHeight;
+      const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
+      scrollContainer.scrollTop = nextScrollTop;
+      if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
+      if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
+
+      return {
+        targetIndex,
+        rowHeight: Math.round(rowHeight),
+        scrollTop: Math.round(nextScrollTop),
+        viewportHeight: Math.round(viewportHeight),
+        scrollContainerClass: String(scrollContainer.className || '').slice(0, 120),
+      };
+    };
+
+    const allTimelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
+    const targetTimelineEl = allTimelineEls.find((row) => {
+      const ampmText = normalize(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent);
+      const timeText = normalize(row.querySelector('[class*="Calendar__time__"]')?.textContent);
+      return normalize(`${ampmText} ${timeText}`) === targetLabel;
     });
-    for (const el of allVisible) {
-      const text = (el.textContent || '').trim();
-      const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
-      if (pattern.test(text) || text === roomType) {
-        const rect = el.getBoundingClientRect();
-        if (!roomXRange || rect.left < roomXRange.left)
-          roomXRange = { left: rect.left, right: rect.right, cx: rect.left + rect.width / 2 };
+    const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
+    if (scrollDebug) {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    const timelineRows = allTimelineEls
+      .filter((row) => isVisible(row))
+      .map((row) => {
+        const ampmText = normalize(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent);
+        const timeText = normalize(row.querySelector('[class*="Calendar__time__"]')?.textContent);
+        const label = normalize(`${ampmText} ${timeText}`);
+        const rect = row.getBoundingClientRect();
+        return {
+          label,
+          slot24: to24Hour(label),
+          y: rect.top + rect.height / 2,
+        };
+      });
+
+    const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
+      .map((dailyRow) => {
+        const rowRect = dailyRow.getBoundingClientRect();
+        if (rowRect.height <= 0 || rowRect.bottom < 0 || rowRect.top > window.innerHeight) return null;
+        const roomCells = Array.from(dailyRow.children).filter((cell) => {
+          const rect = cell.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        if (roomCells.length === 0) return null;
+        return {
+          y: rowRect.top + rowRect.height / 2,
+          roomCells,
+        };
+      })
+      .filter(Boolean);
+
+    const rows = timelineRows
+      .map((timeline, idx) => ({ idx, timeline, grid: gridRows[idx] || null }))
+      .filter((row) => row.grid && row.timeline.slot24);
+
+    const targetRows = rows.filter((row) => row.timeline.slot24 === startTimeArg);
+    if (targetRows.length === 0) {
+      return {
+        found: false,
+        reason: 'target_row_not_found',
+        target: startTimeArg,
+        targetLabel,
+        scrollDebug,
+        visibleRows: rows.slice(0, 16).map((row) => ({
+          idx: row.idx,
+          label: row.timeline.label,
+          slot24: row.timeline.slot24,
+        })),
+      };
+    }
+
+    const fallbackCandidates = [];
+    for (const row of targetRows) {
+      const targetCell = row.grid.roomCells[roomIndex];
+      if (!targetCell) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'room_cell_missing',
+        });
+        continue;
       }
+
+      const button = targetCell.querySelector('button.calendar-btn, button[class*="calendar-btn"]');
+      if (!button) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'button_missing',
+        });
+        continue;
+      }
+
+      const cls = String(button.className || '');
+      const text = normalize(button.textContent);
+      const isSuspended = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
+      if (!isSuspended) {
+        fallbackCandidates.push({
+          idx: row.idx,
+          slot24: row.timeline.slot24,
+          label: row.timeline.label,
+          reason: 'button_not_suspended',
+          btnClass: cls.slice(0, 80),
+          btnText: text,
+        });
+        continue;
+      }
+
+      button.scrollIntoView({ block: 'center', inline: 'center' });
+      button.click();
+      const rect = button.getBoundingClientRect();
+      return {
+        found: true,
+        clicked: true,
+        btnText: text,
+        btnClass: cls.slice(0, 80),
+        pos: { cx: Math.round(rect.left + rect.width / 2), cy: Math.round(rect.top + rect.height / 2) },
+        targetLabel: row.timeline.label,
+        targetSlot24: row.timeline.slot24,
+        scrollDebug,
+        fallbackCandidates,
+      };
     }
-
-    // 3. calendar-btn 수집
-    const calBtns = Array.from(document.querySelectorAll(
-      '.calendar-btn, [class*="calendar-btn"], [class*="week-cell"] button, [class*="WeekCell"] button'
-    )).filter(b => b.offsetParent !== null);
-    if (calBtns.length === 0) return { found: false, reason: 'no calendar-btn visible', targetY: Math.round(targetY) };
-
-    const btnInfos = calBtns.map(b => {
-      const r = b.getBoundingClientRect();
-      return { el: b, cx: r.left + r.width / 2, cy: r.top + r.height / 2, cls: b.className || '', text: (b.textContent || '').trim() };
-    });
-
-    // 4. Y 범위 필터
-    let candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 25);
-    if (candidates.length === 0) candidates = btnInfos.filter(b => Math.abs(b.cy - targetY) <= 60);
-    if (candidates.length === 0) candidates = btnInfos;
-
-    // 5. X 범위 필터
-    if (roomXRange) {
-      const inRoom = candidates.filter(b => b.cx >= roomXRange.left - 15 && b.cx <= roomXRange.right + 15);
-      if (inRoom.length > 0) candidates = inRoom;
-    }
-
-    // 6. suspended(예약불가) 슬롯 우선 ← clickRoomAvailableSlot과의 핵심 차이
-    const suspendedCandidates = candidates.filter(b => b.cls.includes('suspended') || b.cls.includes('btn-danger'));
-    const finalCandidates = suspendedCandidates.length > 0 ? suspendedCandidates : candidates;
-
-    if (finalCandidates.length === 0) {
-      return { found: false, reason: 'no suitable button', btnsTotal: btnInfos.length, targetY: Math.round(targetY), roomXRange };
-    }
-
-    const best = finalCandidates.sort((a, b) => Math.abs(a.cy - targetY) - Math.abs(b.cy - targetY))[0];
-    best.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    best.el.click();
 
     return {
-      found: true, clicked: true,
-      btnText: best.text, btnClass: best.cls.slice(0, 80),
-      pos: { cx: Math.round(best.cx), cy: Math.round(best.cy) },
-      targetY: Math.round(targetY),
-      isSuspended: suspendedCandidates.length > 0
+      found: false,
+      reason: 'no_suspended_button_near_target_slot',
+      target: startTimeArg,
+      targetLabel: timeDisplay,
+      scrollDebug,
+      fallbackCandidates,
     };
-  }, roomType, timeDisplay, ampm, hourMin);
+  }, roomType, timeDisplay, ampm, hourMin, startTime);
 
   log(`  suspended 버튼: ${JSON.stringify(result)}`);
   if (!result.found || !result.clicked) return false;
@@ -1705,23 +1806,18 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
     return false;
   }
 
-  const result = await page.evaluate((roomType, requestedSlots) => {
-    function toDisplayToken(time24) {
-      const [hh, mm] = String(time24 || '').split(':').map(Number);
-      if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
-      const isAM = hh < 12;
-      const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
-      return {
-        ampm: isAM ? '오전' : '오후',
-        hourMin: `${dispH}:${String(mm).padStart(2, '0')}`,
-      };
-    }
-
+  const result = await page.evaluate(async (roomType, requestedSlots) => {
     function addThirtyMinutes(time24) {
       const [hh, mm] = String(time24 || '').split(':').map(Number);
       if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
       const total = hh * 60 + mm + 30;
       return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    }
+
+    function isVisible(el) {
+      if (!el || !el.getBoundingClientRect) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.bottom >= 0 && rect.top <= window.innerHeight;
     }
 
     function isRenderable(el) {
@@ -1732,57 +1828,6 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
 
     function isInViewport(rect) {
       return rect.bottom >= 0 && rect.top <= window.innerHeight;
-    }
-
-    function findTargetY(time24) {
-      const token = toDisplayToken(time24);
-      if (!token) return null;
-      const visibleAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
-        if (el.children.length > 0) return false;
-        if (!isRenderable(el)) return false;
-        const rect = el.getBoundingClientRect();
-        if (!isInViewport(rect)) return false;
-        if (rect.left > 320) return false;
-        const txt = (el.textContent || '').trim();
-        return /^\d{1,2}:\d{2}$/.test(txt);
-      });
-      for (const el of visibleAxisMarkers) {
-        if ((el.textContent || '').trim() !== token.hourMin) continue;
-        const rect = el.getBoundingClientRect();
-        return rect.top + rect.height / 2;
-      }
-
-      const allAxisMarkers = Array.from(document.querySelectorAll('*')).filter((el) => {
-        if (el.children.length > 0) return false;
-        if (!isRenderable(el)) return false;
-        const rect = el.getBoundingClientRect();
-        if (rect.left > 320) return false;
-        const txt = (el.textContent || '').trim();
-        return /^\d{1,2}:\d{2}$/.test(txt);
-      });
-      for (const el of allAxisMarkers) {
-        if ((el.textContent || '').trim() !== token.hourMin) continue;
-        el.scrollIntoView({ block: 'center', inline: 'nearest' });
-        const rect = el.getBoundingClientRect();
-        return rect.top + rect.height / 2;
-      }
-
-      let targetTimeEl = null;
-      for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
-        if ((el.textContent || '').trim() === token.hourMin) {
-          const parentText = (el.parentElement?.textContent || '').trim();
-          if (parentText.includes(token.ampm)) { targetTimeEl = el; break; }
-        }
-      }
-      if (!targetTimeEl) {
-        for (const el of document.querySelectorAll('[class*="Calendar__time"]')) {
-          if ((el.textContent || '').trim() === token.hourMin) { targetTimeEl = el; break; }
-        }
-      }
-      if (!targetTimeEl) return null;
-      targetTimeEl.scrollIntoView({ block: 'center', inline: 'nearest' });
-      const rect = targetTimeEl.getBoundingClientRect();
-      return rect.top + rect.height / 2;
     }
 
     function parseSlotState(btn) {
@@ -1814,68 +1859,132 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       };
     }
 
-    // 2. 룸 컬럼 X 범위 (헤더 영역 Y < 450)
-    let roomXRange = null;
-    const pattern = new RegExp(`${roomType}(?:룸|\\s|$)`, 'i');
-    for (const el of Array.from(document.querySelectorAll('*')).filter(e => {
-      if (!e.offsetParent || e.children.length > 0) return false;
-      const r = e.getBoundingClientRect();
-      return r.top >= 0 && r.top < 450 && r.width > 20;
-    })) {
-      const txt = (el.textContent || '').trim();
-      if (pattern.test(txt) || txt === roomType) {
-        const r = el.getBoundingClientRect();
-        if (!roomXRange || r.left < roomXRange.left)
-          roomXRange = { left: r.left, right: r.right };
+    function toDisplayLabel(time24) {
+      const [hh, mm] = String(time24 || '').split(':').map(Number);
+      if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+      const isAM = hh < 12;
+      const dispH = hh > 12 ? hh - 12 : (hh === 0 ? 12 : hh);
+      return `${isAM ? '오전' : '오후'} ${dispH}:${String(mm).padStart(2, '0')}`;
+    }
+
+    function to24Hour(label) {
+      const text = String(label || '').replace(/\s+/g, ' ').trim();
+      const m = text.match(/(오전|오후|자정)\s*(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      const [, meridiem, hourStr, minStr] = m;
+      let hour = Number(hourStr);
+      const minute = Number(minStr);
+      if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+      if (meridiem === '자정') hour = 0;
+      else if (meridiem === '오전') hour = hour === 12 ? 0 : hour;
+      else if (meridiem === '오후') hour = hour === 12 ? 12 : hour + 12;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+
+    const roomPattern = new RegExp(`^${roomType}(?:룸|\\b)`, 'i');
+    const headerCells = Array.from(document.querySelectorAll('[class*="Calendar__inner-header"] [class*="Calendar__week-row"] [class*="Calendar__week-cell"]'));
+    const roomHeaders = headerCells
+      .map((cell, idx) => ({ idx, text: String(cell.textContent || '').replace(/\s+/g, ' ').trim() }))
+      .filter((row) => row.text.length > 0);
+    const roomIndex = roomHeaders.findIndex((row) => roomPattern.test(row.text) || row.text === roomType);
+    if (roomIndex < 0) {
+      return { verified: false, requestedSlots, matchedSlots: [], missingSlots: requestedSlots.map((slot) => ({ slot, reason: 'room_header_not_found' })) };
+    }
+
+    const firstTargetLabel = toDisplayLabel(requestedSlots[0]);
+    const allTimelineEls = Array.from(document.querySelectorAll('[class*="Calendar__time-col-wrap"] [class*="Calendar__week-timeline"]'));
+    const targetTimelineEl = allTimelineEls.find((row) => {
+      const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
+      const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
+      return `${ampmText} ${timeText}`.replace(/\s+/g, ' ').trim() === firstTargetLabel;
+    });
+    if (targetTimelineEl) {
+      const rowWrap = document.querySelector('[class*="Calendar__row-wrap"]');
+      const innerWrap = document.querySelector('[class*="Calendar__inner-wrap"]');
+      const scrollContainer = rowWrap || innerWrap || targetTimelineEl.parentElement;
+      if (scrollContainer) {
+        const targetIndex = allTimelineEls.indexOf(targetTimelineEl);
+        const rowHeight = (() => {
+          for (let i = 1; i < allTimelineEls.length; i += 1) {
+            const prevRect = allTimelineEls[i - 1].getBoundingClientRect();
+            const currRect = allTimelineEls[i].getBoundingClientRect();
+            const delta = Math.abs(currRect.top - prevRect.top);
+            if (delta > 8) return delta;
+          }
+          return 96;
+        })();
+        const viewportHeight = scrollContainer.clientHeight || window.innerHeight || 0;
+        const targetOffsetTop = targetTimelineEl.offsetTop || targetIndex * rowHeight;
+        const nextScrollTop = Math.max(0, targetOffsetTop - Math.max(0, viewportHeight / 2 - rowHeight));
+        scrollContainer.scrollTop = nextScrollTop;
+        if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
+        if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
       }
     }
+
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const timelineRows = allTimelineEls
+      .filter((row) => isVisible(row))
+      .map((row) => {
+        const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
+        const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
+        const label = `${ampmText} ${timeText}`.replace(/\s+/g, ' ').trim();
+        return { label, slot24: to24Hour(label) };
+      });
+
+    const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
+      .map((dailyRow) => {
+        const rect = dailyRow.getBoundingClientRect();
+        if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) return null;
+        const roomCells = Array.from(dailyRow.children).filter((cell) => {
+          const cellRect = cell.getBoundingClientRect();
+          return cellRect.width > 0 && cellRect.height > 0;
+        });
+        if (roomCells.length === 0) return null;
+        return { roomCells };
+      })
+      .filter(Boolean);
 
     const matchedSlots = [];
     const missingSlots = [];
     for (const slot of requestedSlots) {
-      const targetY = findTargetY(slot);
-      if (targetY === null) {
-        missingSlots.push({ slot, reason: 'time_not_found' });
+      const rowIndex = timelineRows.findIndex((row) => row.slot24 === slot);
+      if (rowIndex < 0) {
+        missingSlots.push({ slot, reason: 'timeline_row_not_found' });
         continue;
       }
-
-      const calBtns = Array.from(document.querySelectorAll(
-        '.calendar-btn, [class*="calendar-btn"]'
-      )).filter((b) => {
-        if (b.offsetParent === null) return false;
-        const rect = b.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && isInViewport(rect);
-      });
-
-      let foundSuspended = null;
-      for (const btn of calBtns) {
-        const slotState = parseSlotState(btn);
-        if (slotState.state !== 'blocked') continue;
-        const r = btn.getBoundingClientRect();
-        if (Math.abs((r.top + r.height / 2) - targetY) > 40) continue;
-        if (roomXRange) {
-          const cx = r.left + r.width / 2;
-          if (cx < roomXRange.left - 20 || cx > roomXRange.right + 20) continue;
-        }
-        const buttonKey = `${Math.round(r.left)}:${Math.round(r.top)}:${Math.round(r.width)}:${Math.round(r.height)}`;
-        const cy = r.top + r.height / 2;
-        const halfHeight = r.height / 2;
-        const coversTargetSlot = Math.abs(cy - targetY) <= Math.max(40, halfHeight + 8);
-        if (!coversTargetSlot) continue;
-        foundSuspended = {
-          slot,
-          key: buttonKey,
-          cls: slotState.cls.slice(0, 80),
-          title: slotState.title,
-          x: Math.round(r.left),
-          y: Math.round(r.top),
-          h: Math.round(r.height),
-          txt: slotState.txt,
-        };
-        break;
+      const gridRow = gridRows[rowIndex];
+      if (!gridRow) {
+        missingSlots.push({ slot, reason: 'grid_row_not_found' });
+        continue;
       }
-      if (foundSuspended) matchedSlots.push(foundSuspended);
-      else missingSlots.push({ slot, reason: 'suspended_not_found' });
+      const targetCell = gridRow.roomCells[roomIndex];
+      if (!targetCell) {
+        missingSlots.push({ slot, reason: 'room_cell_not_found' });
+        continue;
+      }
+      const btn = targetCell.querySelector('button.calendar-btn, button[class*="calendar-btn"]');
+      if (!btn) {
+        missingSlots.push({ slot, reason: 'button_not_found' });
+        continue;
+      }
+      const slotState = parseSlotState(btn);
+      if (slotState.state !== 'blocked') {
+        missingSlots.push({ slot, reason: 'suspended_not_found' });
+        continue;
+      }
+      const r = btn.getBoundingClientRect();
+      matchedSlots.push({
+        slot,
+        key: `${Math.round(r.left)}:${Math.round(r.top)}:${Math.round(r.width)}:${Math.round(r.height)}`,
+        cls: slotState.cls.slice(0, 80),
+        title: slotState.title,
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        h: Math.round(r.height),
+        txt: slotState.txt,
+      });
     }
 
     const reconciledMissingSlots = [];
@@ -1911,7 +2020,6 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
       requestedSlots,
       matchedSlots,
       missingSlots: reconciledMissingSlots,
-      roomXRange: roomXRange ? { l: Math.round(roomXRange.left), r: Math.round(roomXRange.right) } : null,
     };
   }, roomType, requestedSlots);
 
@@ -2095,6 +2203,7 @@ async function main() {
         const pg = await naverBrowser.newPage();
         pg.setDefaultTimeout(30000);
         await pg.setViewport({ width: 1920, height: 1080 });
+        attachNaverScheduleTrace(pg, 'main-loop');
         return pg;
       };
 
@@ -2333,6 +2442,7 @@ async function blockSlotOnly(entry) {
       const pg = await naverBrowser.newPage();
       pg.setDefaultTimeout(30000);
       await pg.setViewport({ width: 1920, height: 1080 });
+      attachNaverScheduleTrace(pg, 'block-slot');
       return pg;
     };
     naverPg = await createPage();
@@ -2496,6 +2606,7 @@ async function auditToday(dateOverride = null) {
       const pg = await naverBrowser.newPage();
       pg.setDefaultTimeout(30000);
       await pg.setViewport({ width: 1920, height: 1080 });
+      attachNaverScheduleTrace(pg, 'verify-slot');
       return pg;
     };
     naverPg = await createPage();
@@ -2674,6 +2785,7 @@ async function unblockSlotOnly(entry) {
       const pg = await naverBrowser.newPage();
       pg.setDefaultTimeout(30000);
       await pg.setViewport({ width: 1920, height: 1080 });
+      attachNaverScheduleTrace(pg, 'unblock-slot');
       return pg;
     };
     naverPg = await createPage();
