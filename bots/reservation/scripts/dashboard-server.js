@@ -43,7 +43,13 @@ async function getTodayData() {
     `, [today]),
 
     pgPool.get('reservation', `
-      SELECT total_amount, entries_count
+      SELECT
+        total_amount,
+        entries_count,
+        COALESCE(pickko_study_room, 0) AS pickko_study_room,
+        COALESCE(general_revenue, 0) AS general_revenue,
+        COALESCE(pickko_total, 0) AS pickko_total,
+        COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0) AS total_revenue
       FROM daily_summary
       WHERE date = $1
     `, [today]),
@@ -67,7 +73,14 @@ async function getTodayData() {
   return {
     date:             today,
     reservations,
-    summary:          summary || { total_amount: 0, entries_count: 0 },
+    summary:          summary || {
+      total_amount: 0,
+      total_revenue: 0,
+      pickko_study_room: 0,
+      general_revenue: 0,
+      pickko_total: 0,
+      entries_count: 0,
+    },
     alerts,
     room_summary:     roomMap,
     total_reserved:   reservations.length,

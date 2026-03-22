@@ -48,7 +48,7 @@ async function loadRows(days) {
       ORDER BY fr.forecast_date, fr.created_at DESC, fr.id DESC
     )
     SELECT
-      latest.forecast_date AS date,
+      latest.forecast_date::text AS date,
       rd.actual_revenue,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
       (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue,
@@ -84,7 +84,7 @@ async function loadUpcomingForecasts() {
       ORDER BY fr.forecast_date, fr.created_at DESC, fr.id DESC
     )
     SELECT
-      latest.forecast_date AS date,
+      latest.forecast_date::text AS date,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence

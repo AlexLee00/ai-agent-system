@@ -16,6 +16,15 @@
 - `node bots/reservation/scripts/health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0`으로 회복됐다.
 - 해석: 이번 작업은 새 매출 정책 구현이 아니라, 이미 닫힌 `daily_summary -> worker.sales` 구조에서 남아 있던 stale source row를 복구해 운영 정합성을 다시 맞춘 단계다.
 
+## 2026-03-22: 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 기준 복구
+
+- `daily_summary.total_amount`를 총매출처럼 읽던 경로를 다시 점검했다.
+- `bots/reservation/lib/ska-read-service.js`, `bots/reservation/scripts/dashboard-server.js`, `bots/reservation/scripts/dashboard.html`, `scripts/collect-kpi.js`는 이제 `general_revenue + pickko_study_room`을 총매출 기준으로 사용한다.
+- `bots/ska/src/etl.py`는 `actual_revenue = pickko_study_room + general_revenue` 기준으로 `ska.revenue_daily`를 다시 적재하도록 수정했다. `room_amounts_json`과 `total_amount`는 fallback 경계로만 남겼다.
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=120`를 재실행해 `revenue_daily`와 `training_feature_daily`를 새 기준으로 다시 동기화했다.
+- `scripts/reviews/ska-sales-forecast-daily-review.js`는 `total_revenue / studyRoomRevenue / generalRevenue`를 보조 표시값으로 노출하도록 바뀌었고, `forecast_date::text`를 사용해 날짜가 하루 밀려 보이던 review 경계도 복구했다. 주간 리뷰도 같은 날짜 캐스팅 기준으로 맞췄다.
+- 예측엔진 후속 정리 기준과 단계별 전략은 [SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md)에 문서화했다.
+
 ## 2026-03-22: 세션 마감 준비 — 체크섬 재갱신
 
 - `node bots/claude/src/dexter.js --update-checksums`로 `bots/claude/.checksums.json`을 다시 갱신했다.

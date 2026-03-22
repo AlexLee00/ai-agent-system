@@ -65,6 +65,22 @@
 | `node - <<'NODE' ... parseCancellationCommand({ raw_text: '강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540' }) ... NODE` | ✅ `phone/date/start/end/room/name` 정상 추출 |
 | `node - <<'NODE' ... parseIntent('강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540') ... NODE` | ✅ `ska_action`, `command=cancel_reservation` 파싱 확인 |
 
+### 2026-03-22 — 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 복구
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/reservation/lib/ska-read-service.js` | ✅ `total_revenue` 노출 추가 후 문법 통과 |
+| `node --check bots/reservation/scripts/dashboard-server.js` | ✅ dashboard summary에 `total_revenue` 추가 후 문법 통과 |
+| `node --check scripts/collect-kpi.js` | ✅ KPI 집계가 `general_revenue + pickko_study_room` 기준으로 바뀐 후 문법 통과 |
+| `python3 -m py_compile bots/ska/src/etl.py` | ✅ ETL 문법 통과 |
+| `node --check scripts/reviews/ska-sales-forecast-daily-review.js` | ✅ 보조 표시값/날짜 캐스팅 수정 후 문법 통과 |
+| `node --check scripts/reviews/ska-sales-forecast-weekly-review.js` | ✅ 날짜 캐스팅 수정 후 문법 통과 |
+| `node --input-type=module - <<'EOF' ... createSkaReadService().queryTodayStats({ date: '2026-03-22' }) ... EOF` | ✅ `total_revenue=173800`, `pickko_study_room=136000`, `general_revenue=37800` 확인 |
+| `node --input-type=module - <<'EOF' ... SUM(general_revenue + pickko_study_room) ... EOF` | ✅ `2026-03-22` KPI 총매출 기준 `173800원`, `entries_count=25` 확인 |
+| `bots/ska/venv/bin/python bots/ska/src/etl.py --days=120` | ✅ `revenue_daily 121건 upsert`, `training_feature_daily 365행 대상 동기화`, 최근 5일 actual 재적재 완료 |
+| `node --input-type=module - <<'EOF' ... SELECT ... FROM ska.revenue_daily WHERE date IN ('2026-03-21','2026-03-22') ... EOF` | ✅ `2026-03-21 actual_revenue=156000`, `2026-03-22 actual_revenue=173800` 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` | ✅ 최신 actual이 `2026-03-22`, `actualRevenue=173800`, `totalRevenue=173800`으로 정렬된 것 확인 |
+
 ### 2026-03-22 — 스카 매출 DB 적재 마무리 / source-mirror 정합성 복구
 
 | 명령 | 결과 |

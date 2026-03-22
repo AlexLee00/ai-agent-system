@@ -12,6 +12,13 @@
 ## 1. 현재 시스템 상태 요약
 
 - 스카
+  - 스카 매출 source of truth 변경 영향 범위를 다시 점검했고, `daily_summary.total_amount`를 총매출처럼 읽던 경로들을 현재 정책 기준으로 정렬했다.
+  - `bots/reservation/lib/ska-read-service.js`, `bots/reservation/scripts/dashboard-server.js`, `bots/reservation/scripts/dashboard.html`, `scripts/collect-kpi.js`는 이제 총매출을 `general_revenue + pickko_study_room` 기준으로 읽는다. 기존 `total_amount`는 호환용으로 유지하되, 조회 응답에는 `total_revenue`를 함께 노출한다.
+  - `bots/ska/src/etl.py`도 새 기준으로 정렬했다. `studyroom_revenue=pickko_study_room`, `general_revenue=general_revenue`, `actual_revenue=studyroom_revenue+general_revenue`를 기준으로 `ska.revenue_daily`를 다시 적재하며, `room_amounts_json`과 `total_amount`는 fallback 경계로만 사용한다.
+  - `scripts/reviews/ska-sales-forecast-daily-review.js`는 `daily_summary` 보조 표시값을 `total_revenue / studyRoomRevenue / generalRevenue` 기준으로 다시 노출한다. `forecast_date::text`를 사용하도록 바꿔 review 날짜가 하루 밀려 보이던 경계도 함께 복구했다. 주간 리뷰도 같은 날짜 캐스팅 경계를 맞췄다.
+  - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=120`를 실제로 재실행해 `revenue_daily`와 `training_feature_daily`까지 새 기준으로 동기화했다. 현재 최근 5일 미리보기 기준 `2026-03-22 actual_revenue=173800`, `2026-03-21 actual_revenue=156000`으로 반영됐다.
+  - 이후 `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` 재검증 기준 최신 actual은 `2026-03-22`, `actualRevenue=173800`, `totalRevenue=173800`, `studyRoomRevenue=136000`, `generalRevenue=37800`으로 정렬됐다.
+  - 예측엔진 후속 정리 기준은 [SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md)에 문서화했다.
   - 스카 매출 DB 적재 마무리 작업을 진행했다. `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 재집계했고, stale 상태였던 `2026-03-21`, `2026-03-22` source row를 현재 정책 기준으로 복구했다.
   - 복구 후 `2026-03-21`은 `pickko_study_room=156000`, `general_revenue=0`, `total_amount=156000`, `2026-03-22`는 `pickko_study_room=136000`, `general_revenue=37800`, `pickko_total=173800` 상태로 정리됐다.
   - `bots/worker/lib/ska-sales-sync.js`의 `syncSkaSalesToWorker('test-company')`를 재실행해 `worker.sales` 미러도 source에 다시 맞췄다. 현재 `2026-03-21`은 `스터디룸 156000`, `2026-03-22`는 `스터디룸 136000 + 일반석 37800`으로 반영됐다.

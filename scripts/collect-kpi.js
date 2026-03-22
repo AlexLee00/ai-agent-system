@@ -20,7 +20,9 @@ const SCHEMA = 'reservation';
 async function collectSkaKPI(date) {
   const [rev, err, sync] = await Promise.all([
     pgPool.get(SCHEMA,
-      `SELECT COALESCE(SUM(total_amount),0)::bigint AS total, COALESCE(SUM(entries_count),0)::int AS cnt
+      `SELECT
+         COALESCE(SUM(COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0)),0)::bigint AS total,
+         COALESCE(SUM(entries_count),0)::int AS cnt
        FROM reservation.daily_summary WHERE date = $1`, [date]),
     pgPool.get(SCHEMA,
       `SELECT COUNT(*)::int AS cnt FROM reservation.agent_events

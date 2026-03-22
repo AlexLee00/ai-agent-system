@@ -81,7 +81,7 @@ function render(data) {
   const summaryCard = `
     <div class="card">
       <div class="card-title">📊 오늘 현황 · ${data.date}</div>
-      <div class="stat-big">${formatAmount(data.summary?.total_amount)}</div>
+      <div class="stat-big">${formatAmount(data.summary?.total_revenue ?? data.summary?.total_amount)}</div>
       <div class="stat-sub">입장 ${data.summary?.entries_count || 0}건</div>
       <div style="margin-top:14px; font-size:0.85rem; color:#aaa;">
         <span class="status-dot ${dotClass}"></span>
