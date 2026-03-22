@@ -755,6 +755,33 @@ function computePreviewWatchdogOptions(commandArgs) {
   };
 }
 
+function computeFinalWatchdogOptions(commandArgs) {
+  const renderDurationSeconds = safeParseFloat(commandArgs.renderDurationSeconds, 0);
+  if (!renderDurationSeconds) {
+    return {
+      timeoutMs: 90 * 60 * 1000,
+      stallTimeoutMs: 5 * 60 * 1000,
+    };
+  }
+
+  const estimatedRuntimeMs = renderDurationSeconds * 1200;
+  const timeoutMs = clamp(
+    Math.round(estimatedRuntimeMs),
+    45 * 60 * 1000,
+    4 * 60 * 60 * 1000
+  );
+  const stallTimeoutMs = clamp(
+    Math.round(renderDurationSeconds * 500),
+    5 * 60 * 1000,
+    15 * 60 * 1000
+  );
+
+  return {
+    timeoutMs,
+    stallTimeoutMs,
+  };
+}
+
 async function executeRender(commandArgs, action, metadata = {}, options = {}) {
   const startedAt = Date.now();
   const [bin, ...args] = commandArgs;
@@ -893,13 +920,12 @@ async function renderPreview(edl, outputPath, config) {
 
 async function renderFinal(edl, outputPath, config) {
   const args = buildFinalRenderCommand(edl, outputPath, config);
+  const watchdogOptions = computeFinalWatchdogOptions(args);
   const result = await executeRender(args, 'render_final', {
     source: edl.source,
     outputPath,
-  }, {
-    timeoutMs: 90 * 60 * 1000,
-    stallTimeoutMs: 2 * 60 * 1000,
-  });
+    watchdogOptions,
+  }, watchdogOptions);
   const stats = fs.statSync(outputPath);
   const probe = await getMediaInfo(outputPath);
 

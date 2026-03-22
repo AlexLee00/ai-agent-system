@@ -46,6 +46,13 @@
 | `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=파라미터 --json` | ✅ final baseline `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82` 확인 |
 | `node --check bots/video/scripts/test-final-reference-quality-batch.js` | ✅ |
 | `node bots/video/scripts/test-final-reference-quality-batch.js --title=파라미터 --json` | ✅ batch 레일 1세트 sanity check, `averageOverall=81.62`, `averageFinalRenderMs=210767` 확인 |
+| `node --check bots/video/lib/edl-builder.js` | ✅ final render watchdog 가변화 문법 확인 |
+| `node bots/video/scripts/test-final-reference-quality-batch.js --title=서버인증 --json` | ✅ false stall 복구 후 `overall=72.96`, `duration=41.26`, `visual_similarity=74.49`, `duration_ms=754867` 확인 |
+| `node bots/video/scripts/test-final-reference-quality-batch.js --json` | ✅ final 5세트 baseline 완료, `averageOverall=79.00`, `averageDuration=54.67`, `averageResolution=99.58`, `averageVisualSimilarity=80.41` 확인 |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=컴포넌트스테이트 --json` | ✅ `overall=80.16`, `duration=59.95`, `visual_similarity=79.33` |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=동적데이터 --json` | ✅ `overall=85.12`, `duration=69.85`, `visual_similarity=85.02` |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=서버인증 --json` | ✅ `overall=72.96`, `duration=41.26`, `visual_similarity=74.49` |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=db생성 --json` | ✅ `overall=75.12`, `duration=38.03`, `visual_similarity=83.41` |
 | `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
 | `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |

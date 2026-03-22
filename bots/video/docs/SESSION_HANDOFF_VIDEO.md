@@ -88,14 +88,28 @@
     - `--title=파라미터 --json` 성공
     - `averageOverall=81.62`
     - `averageFinalRenderMs=210767`
-  - 해석: batch 검증 레일 자체는 정상이며, 현재는 `파라미터` 1세트만 sanity check를 통과했다. 5세트 전체 final baseline은 아직 실행 전이다.
+  - final render watchdog 보강:
+    - `edl-builder.js`에 `computeFinalWatchdogOptions()`를 추가해 긴 세트가 고정 2분 stall timeout으로 잘리지 않도록 보강
+    - `서버인증` 세트는 기존 `last=2.01s` false stall을 넘겨 `duration_ms=754867`로 final render 완료 확인
+  - 5세트 final baseline 완료:
+    - `averageOverall=79.00`
+    - `averageDuration=54.67`
+    - `averageResolution=99.58`
+    - `averageVisualSimilarity=80.41`
+  - 세트별 overall:
+    - 파라미터 `81.62`
+    - 컴포넌트스테이트 `80.16`
+    - 동적데이터 `85.12`
+    - 서버인증 `72.96`
+    - DB생성 `75.12`
+  - 해석: final 기준에서도 공통 병목은 장면 유사도보다 사람 편집본 대비 `길이/구조`다. 해상도 문제는 거의 해소됐고, 다음 1순위는 duration/structure 튜닝이다.
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
 - 현재 가장 큰 병목은 `scene-indexer`가 아니라 샌드박스 제약 시 narration 분석이 live STT가 아니라 fallback으로 내려간다는 점이다.
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
 - `preview_ms` 원장화, preview A/V 정합성 복구, 파라미터 세트 final render 단일 검증까지 완료됐다.
-- 다음 Phase 2 보강 1순위는 `test-final-reference-quality-batch.js`로 아직 실행하지 않은 final render 5세트 baseline을 완주하고, duration/structure 튜닝, 그다음 transition 재도입 설계를 진행하는 것이다.
+- 다음 Phase 2 보강 1순위는 final 5세트 baseline을 기준으로 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure 차이를 줄이고, 그다음 transition 재도입 설계를 진행하는 것이다.
 
 ## Phase 1 완료 요약
 
@@ -204,7 +218,7 @@ bots/worker/web/app/video/history/page.js (이력)
 - worker-web `/video` 세션 복원, 업로드 파일명 복구, n8n start 검증 fallback까지 운영 경계 보강 완료
 
 ### 남은 핵심 과제
-- 5세트 기준 final render 다세트 실검증
+- 5세트 final baseline 기준 duration/structure 튜닝
 - 품질 루프 수렴률 개선
 - RAG 샘플 수를 늘려 추천 품질과 예상 시간 정확도 향상
 - transition 렌더를 다시 도입하되 검은 화면이 생기지 않도록 segment 기반 설계로 교체
@@ -214,7 +228,7 @@ bots/worker/web/app/video/history/page.js (이력)
 ## 다음 세션에서 해야 할 것
 
 ### 즉시
-- final render 다세트 검증
+- 낮은 점수 세트(`서버인증`, `DB생성`) duration/structure 튜닝
 - worker-web 세트별 상태/예상시간 표시 세분화
 - 세션 1 (`id=1`, edit `id=16`, trace `f84aa3f6-329e-43af-8eac-ae6f8eeaf474`) 프리뷰 재렌더 결과 시각 검증
 - `transition` 렌더 임시 비활성화 상태를 `xfade` 또는 구간 분할 기반 구현으로 대체
