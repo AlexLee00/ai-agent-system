@@ -3,6 +3,38 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 취소 command contract 복구
+
+### 추가 사항 (added)
+- `bots/reservation/lib/manual-cancellation.js`
+  - 자연어 취소 요청에서 `phone/date/start/end/room/name`을 파싱하고
+  - `pickko-cancel-cmd.js` stdout JSON을 스카 상위 result shape로 정규화하는 모듈 추가
+
+### 변경 사항 (changed)
+- `bots/reservation/lib/ska-command-handlers.js`
+  - `cancel_reservation` write-path command 추가
+- `bots/reservation/scripts/dashboard-server.js`
+  - webhook bridge가 `cancel_reservation`을 직접 처리하도록 확장
+- `bots/reservation/lib/ska-intent-learning.js`
+  - Claude unknown-intent prompt에 `cancel_reservation` command 추가
+- `bots/reservation/context/COMMANDER_IDENTITY.md`
+  - 스카 커맨더 지원 명령에 `cancel_reservation` 반영
+- `bots/reservation/context/N8N_COMMAND_CONTRACT.md`
+  - 취소 command의 request/response/partial success 계약 문서화
+- `bots/orchestrator/lib/intent-parser.js`
+  - `"예약 취소해줘"`류 문장을 `ska_action -> cancel_reservation`으로 파싱하도록 추가
+- `bots/orchestrator/src/router.js`
+  - `cancel_reservation` 결과를 `✅ / ⚠️` 사용자 문구로 포맷하고 `partialSuccess`를 완전 성공으로 오해하지 않도록 분기
+
+### 검증
+- `node --check bots/reservation/lib/manual-cancellation.js` | ✅
+- `node --check bots/reservation/lib/ska-command-handlers.js` | ✅
+- `node --check bots/reservation/scripts/dashboard-server.js` | ✅
+- `node --check bots/orchestrator/lib/intent-parser.js` | ✅
+- `node --check bots/orchestrator/src/router.js` | ✅
+- `node - <<'NODE' ... parseCancellationCommand(...) ... NODE` | ✅ `강보영 / 2026-04-05 / 09:00~11:00 / A1 / 01023174540` 정상 파싱
+- `node - <<'NODE' ... parseIntent('강보영 4월 5일 오전 9시~11시 A1 예약 취소해줘 010-2317-4540') ... NODE` | ✅ `ska_action -> cancel_reservation`
+
 ## 12주차 후속 (2026-03-22) — 비디오팀 pacing policy 추가
 
 ### 변경 사항 (changed)

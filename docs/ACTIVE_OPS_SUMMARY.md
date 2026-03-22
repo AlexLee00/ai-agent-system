@@ -40,15 +40,19 @@
 
 ### P1. 스카 취소 상위 응답 레이어
 
-- 상태: **부분 해소, 상위 레이어 확인 필요**
+- 상태: **구현 경계 복구 완료, 실전 관찰 단계**
 - 근거:
   - [pickko-cancel-cmd.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reservation/pickko-cancel-cmd.js)는
-    `partialSuccess`, `pickkoCancelled`, `naverUnblockFailed`를 분리하도록 수정 완료
-  - 사용자가 본 텔레그램 응답은 여전히 `예약이 성공적으로 취소되었습니다`
+    `partialSuccess`, `pickkoCancelled`, `naverUnblockFailed`를 분리 반환
+  - 이번 세션에서 스카 command contract에 `cancel_reservation`을 추가해
+    [ska-command-handlers.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.js),
+    [dashboard-server.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/dashboard-server.js),
+    [router.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/router.js)까지 같은 result shape가 흐르도록 연결 완료
 - 의미:
-  - 부분 실패를 완전 성공처럼 오해할 수 있음
+  - 문서에는 있었지만 실제 contract에 빠져 있던 취소 write-path가 정식 command로 승격됨
+  - 이제 부분 실패를 완전 성공처럼 포장할 구조적 위험이 크게 줄어듦
 - 지금 당장 필요한 구조:
-  - 제이 상위 응답 레이어가 `partialSuccess`를 실제 문구에 반영하는지 실전 확인
+  - 실전 취소 1건에서 `partialSuccess`가 실제 텔레그램 문구 `픽코 취소 완료, 네이버 수동 확인 필요`로 분기하는지 관찰
 - 나중에 확장할 구조:
   - 취소 응답 표준 계약 문서화
   - `pickko cancel / naver unblock` 단계별 사용자 문구 분리
@@ -175,7 +179,7 @@
 ## 5. 다음 자연스러운 작업 순서
 
 1. 제이 gateway post-prune 관찰 창에서 `retry burst` 감소 여부 확인
-2. 스카 취소 상위 응답 레이어 실전 확인
+2. 스카 취소 상위 응답 레이어 실전 관찰
 3. 스카 `daily_summary` 별도 채팅 진행 상황 확인
 4. 비디오 preview/quality 원장화
 

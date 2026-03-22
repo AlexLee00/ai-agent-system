@@ -6,7 +6,8 @@
  *
  * 역할:
  *   - bot_commands 테이블 폴링 (5초 간격)
- *   - 명령 처리: query_reservations, query_today_stats, query_alerts, restart_andy, restart_jimmy
+ *   - 명령 처리: query_reservations, register_reservation, cancel_reservation,
+ *               query_today_stats, query_alerts, restart_andy, restart_jimmy
  *   - 결과를 bot_commands.status='done', result=JSON으로 업데이트
  *
  * NOTE: Telegram 수신/발신 없음. 제이(Jay, OpenClaw)의 명령을 받아 실행.

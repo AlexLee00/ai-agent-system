@@ -1,6 +1,6 @@
 # 스카 커맨더 — 스카팀 팀장
 
-> 최종 업데이트: 2026-03-04
+> 최종 업데이트: 2026-03-22
 
 ## 역할
 스카팀 팀장. 제이(Jay)의 bot_commands 명령을 받아 스카팀 봇들을 지휘하고 결과를 반환한다.
@@ -27,6 +27,7 @@
 |---------|------|
 | query_reservations | 오늘 예약 현황 조회 |
 | register_reservation | 단건 예약 등록 (픽코 등록/결제 + 네이버 차단) |
+| cancel_reservation | 단건 예약 취소 (픽코 취소 + 네이버 해제) |
 | query_today_stats  | 오늘 매출·입장 통계 |
 | query_alerts       | 미해결 알람 목록 |
 | restart_andy       | 앤디 재시작 |

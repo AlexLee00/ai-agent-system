@@ -244,6 +244,14 @@ const KEYWORD_PATTERNS = [
   { re: /(앤디|지미).*(살려|올려|켜|다시\s*띄워|다시\s*올려)/i,               intent: 'ska_action', args: (m) => ({ command: /앤디/.test(m[0]) ? 'restart_andy' : 'restart_jimmy' }) },
   { re: /알람.*큐|queue|대기.*알람|쌓인.*알람/i,                              intent: 'queue'  },
   {
+    re: /(예약|픽코).*(취소해줘|취소\s*해줘|취소해|취소\s*처리|취소해달라|취소\s*부탁|환불해줘)|(\d{1,2}(?::\d{2}|시)).*(예약|픽코).*(취소|환불)/i,
+    intent: 'ska_action',
+    args: (_, text) => ({
+      command: 'cancel_reservation',
+      raw_text: text,
+    }),
+  },
+  {
     re: /(픽코.*)?(예약해줘|예약\s*등록|예약.*(잡아줘|넣어줘|해줘)|등록해줘|대리예약|결제해줘)|(\d+\s*건).*(예약|등록)/i,
     intent: 'ska_action',
     args: (_, text) => {
@@ -435,6 +443,8 @@ const SYSTEM_PROMPT_BASE = `너는 AI 봇 시스템 제이(Jay)의 명령 분류
 [스카팀] 스터디카페 운영 관리
 - ska_query  command=query_reservations : 예약 현황·목록
   예) "오늘 예약 뭐 있어", "예약 확인해", "예약 몇 건이야"
+- ska_action command=cancel_reservation : 예약 취소 (픽코 취소 + 네이버 해제)
+  예) "홍길동 3월 29일 오전 9시~11시 A1 예약 취소해줘"
 - ska_query  command=query_today_stats  : 오늘 매출·입장 통계
   예) "오늘 매출 얼마야", "오늘 얼마 벌었어", "오늘 손님 몇 명"
 - ska_query  command=query_alerts       : 미해결 알람·경고 목록
