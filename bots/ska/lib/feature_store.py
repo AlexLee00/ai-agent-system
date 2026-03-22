@@ -4,6 +4,8 @@ ska feature store helpers
 운영 테이블(revenue_daily, environment_factors, forecast_results, reservation.daily_summary)을
 학습용 feature store(ska.training_feature_daily)로 동기화한다.
 """
+from datetime import date as date_type
+
 import psycopg2
 
 TRAINING_FEATURE_TABLE_SQL = """
@@ -141,13 +143,19 @@ def ensure_training_feature_table(con):
     cur.close()
 
 
-def sync_training_feature_store(con, days=365):
+def sync_training_feature_store(con, days=365, end_date=None):
+    anchor_date = end_date or date_type.today()
     cur = con.cursor()
     cur.execute("""
-        WITH date_span AS (
+        WITH params AS (
+            SELECT
+                %s::date AS anchor_date,
+                %s::int AS days_window
+        ),
+        date_span AS (
             SELECT generate_series(
-                current_date - (%s::int - 1),
-                current_date,
+                (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1),
+                (SELECT anchor_date FROM params),
                 INTERVAL '1 day'
             )::date AS date
         ),
@@ -163,7 +171,7 @@ def sync_training_feature_store(con, days=365):
                     ORDER BY fr.created_at DESC, fr.id DESC
                 ) AS rn
             FROM ska.forecast_results fr
-            WHERE fr.forecast_date >= current_date - (%s::int - 1)
+            WHERE fr.forecast_date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
         ),
         reservation_agg AS (
             SELECT
@@ -189,20 +197,20 @@ def sync_training_feature_store(con, days=365):
                 COUNT(*) FILTER (WHERE NULLIF(r.start_time, '')::time >= TIME '13:00' AND NULLIF(r.start_time, '')::time < TIME '18:00') AS reservation_afternoon_count,
                 COUNT(*) FILTER (WHERE NULLIF(r.start_time, '')::time >= TIME '18:00') AS reservation_evening_count
             FROM reservation.reservations r
-            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+            WHERE NULLIF(r.date, '')::date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND r.status IN ('confirmed', 'pending', 'completed')
             GROUP BY NULLIF(r.date, '')::date
         ),
         reservation_overlap_events AS (
             SELECT NULLIF(r.date, '')::date AS date, NULLIF(r.start_time, '')::time AS event_time, 1 AS delta
             FROM reservation.reservations r
-            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+            WHERE NULLIF(r.date, '')::date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND NULLIF(r.start_time, '') IS NOT NULL
               AND r.status IN ('confirmed', 'pending', 'completed')
             UNION ALL
             SELECT NULLIF(r.date, '')::date AS date, NULLIF(r.end_time, '')::time AS event_time, -1 AS delta
             FROM reservation.reservations r
-            WHERE NULLIF(r.date, '')::date >= current_date - (%s::int - 1)
+            WHERE NULLIF(r.date, '')::date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND NULLIF(r.end_time, '') IS NOT NULL
               AND r.status IN ('confirmed', 'pending', 'completed')
         ),
@@ -245,7 +253,7 @@ def sync_training_feature_store(con, days=365):
                 COUNT(*) FILTER (WHERE ticket_type LIKE '시간권-%%') AS general_ticket_hourpack_count,
                 COUNT(*) FILTER (WHERE ticket_type LIKE '기간권-%%') AS general_ticket_period_count
             FROM reservation.pickko_order_raw por
-            WHERE por.source_date >= current_date - (%s::int - 1)
+            WHERE por.source_date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND por.source_axis = 'payment_day'
               AND por.order_kind = 'general'
             GROUP BY por.source_date
@@ -259,7 +267,7 @@ def sync_training_feature_store(con, days=365):
                 COUNT(*) FILTER (WHERE room_type = 'A2') AS study_room_payment_a2_count,
                 COUNT(*) FILTER (WHERE room_type = 'B') AS study_room_payment_b_count
             FROM reservation.pickko_order_raw por
-            WHERE por.source_date >= current_date - (%s::int - 1)
+            WHERE por.source_date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND por.source_axis = 'payment_day'
               AND por.order_kind = 'study_room'
             GROUP BY por.source_date
@@ -303,7 +311,7 @@ def sync_training_feature_store(con, days=365):
                     END
                 ), 0.0) AS study_room_use_b_hours
             FROM reservation.pickko_order_raw por
-            WHERE por.source_date >= current_date - (%s::int - 1)
+            WHERE por.source_date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
               AND por.source_axis = 'use_day'
               AND por.order_kind = 'study_room'
             GROUP BY por.source_date
@@ -320,7 +328,7 @@ def sync_training_feature_store(con, days=365):
                 rd.occupancy_rate,
                 rd.total_reservations,
                 CASE
-                    WHEN ds.date < current_date THEN rd.total_reservations
+                    WHEN ds.date < (SELECT anchor_date FROM params) THEN rd.total_reservations
                     ELSE COALESCE(ra.reservation_count, rd.total_reservations)
                 END AS reservation_count,
                 ra.reservation_booked_hours,
@@ -380,14 +388,14 @@ def sync_training_feature_store(con, days=365):
                 (EXTRACT(ISODOW FROM ds.date)::int >= 6) AS is_weekend,
                 LAG(
                     CASE
-                        WHEN ds.date < current_date THEN rd.total_reservations
+                        WHEN ds.date < (SELECT anchor_date FROM params) THEN rd.total_reservations
                         ELSE COALESCE(ra.reservation_count, rd.total_reservations)
                     END,
                     1
                 ) OVER (ORDER BY ds.date) AS lag_reservation_count_1d,
                 LAG(
                     CASE
-                        WHEN ds.date < current_date THEN rd.total_reservations
+                        WHEN ds.date < (SELECT anchor_date FROM params) THEN rd.total_reservations
                         ELSE COALESCE(ra.reservation_count, rd.total_reservations)
                     END,
                     3
@@ -584,7 +592,7 @@ def sync_training_feature_store(con, days=365):
             forecast_abs_error = EXCLUDED.forecast_abs_error,
             forecast_created_at = EXCLUDED.forecast_created_at,
             source_updated_at = NOW()
-    """, (days, days, days, days, days, days, days, days))
+    """, (anchor_date, days))
     rowcount = cur.rowcount
     con.commit()
     cur.close()

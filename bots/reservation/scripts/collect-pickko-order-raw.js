@@ -226,7 +226,9 @@ async function collectRows(date) {
       }
     }
 
-    const policyRows = entries.map((entry) => {
+    const scopedEntries = entries.filter((entry) => (entry.date || date) === date);
+
+    const policyRows = scopedEntries.map((entry) => {
       const roomType = normalizeStudyRoomKey(entry.room);
       const useDate = entry.date || date;
       const useStartTime = entry.start || null;

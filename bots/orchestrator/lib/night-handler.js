@@ -315,7 +315,7 @@ async function buildSkaForecastAlertSnippet() {
     title: '📉 스카 예측 경고',
     lines,
     detailHint: '/ska-forecast | /ska-review',
-    payload: { kind: 'ska_forecast', tuning, summary },
+    payload: { kind: 'ska_forecast', tuning, forecast_summary: summary },
   }));
 }
 
@@ -443,7 +443,7 @@ async function buildReportingHealthAlertSnippet() {
       `최근 경고: ${summary.latest?.team || 'general'}/${summary.latest?.from_bot || 'unknown'} - ${latestWarning}`,
     ],
     detailHint: '/reporting-health | /orchestrator-health',
-    payload: { kind: 'reporting_health', summary },
+    payload: { kind: 'reporting_health', warning_summary: summary },
   }));
 }
 
