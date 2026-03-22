@@ -47,8 +47,20 @@
   - 5세트 batch baseline은 `averageOverall=68.88`, `averageDuration=54.30`, `averageResolution=25.11`, `averageVisualSimilarity=83.76`로 나왔다. 세트별 overall은 파라미터 `72.77`, 동적데이터 `73.15`, 컴포넌트스테이트 `69.88`, DB생성 `64.77`, 서버인증 `63.85`다.
   - 단일 세트 final render 검증도 성공했다. 파라미터 세트 `final.mp4`는 `2560x1440 / 60fps / 264s`, `AAC 48kHz stereo / 264s`, `faststart=true`, `file_size=46,555,622`, `duration_ms=249452`로 확인됐다.
   - final reference quality는 `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`다. preview 대비 해상도 점수는 회복됐고, 현재 남은 핵심 차이는 사람 편집본 대비 `길이/구조`다.
-  - `test-final-reference-quality-batch.js`가 추가돼 temp 산출물 없이도 샘플 5세트를 직접 순회하는 final batch 검증 레일이 생겼다. 현재 `--title=파라미터` 1세트 sanity check는 성공했고 `averageOverall=81.62`, `averageFinalRenderMs=210767`로 확인됐다. 5세트 전체 final baseline은 아직 실행 전이다.
-  - 다음 1순위는 이 batch 레일로 아직 실행하지 않은 final render 5세트 baseline을 만들고, duration/structure 기준을 사람 편집본 쪽으로 더 맞추는 것이다.
+  - `test-final-reference-quality-batch.js`가 추가돼 temp 산출물 없이도 샘플 5세트를 직접 순회하는 final batch 검증 레일이 생겼고, 이번 세션에서 5세트 전체 final baseline까지 완료했다.
+  - `edl-builder.js`에는 `computeFinalWatchdogOptions()`가 추가돼 긴 세트가 고정 2분 stall timeout으로 잘리는 false failure를 줄였다. `서버인증` 세트는 이 보강 후 단일/배치 둘 다 final render를 끝까지 통과했다.
+  - final 5세트 baseline:
+    - `averageOverall=79.00`
+    - `averageDuration=54.67`
+    - `averageResolution=99.58`
+    - `averageVisualSimilarity=80.41`
+  - 세트별 overall:
+    - 파라미터 `81.62`
+    - 컴포넌트스테이트 `80.16`
+    - 동적데이터 `85.12`
+    - 서버인증 `72.96`
+    - DB생성 `75.12`
+  - 현재 남은 핵심 차이는 해상도보다 사람 편집본 대비 `길이/구조`이며, 다음 1순위는 낮은 점수 세트의 duration/structure 튜닝이다.
 - 스카
   - `pickko-alerts-query.js`를 최신 `pgPool` 기반 reservation DB에 맞게 복구했다. 기존 SQLite `getDb()` 경로는 더 이상 유효하지 않았다.
   - 복구 후 실제 DB 조회 기준 `--type=error --unresolved`는 `0건`, `--phone=01089430972 --hours=48`도 `0건`으로 확인됐다.

@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 비디오팀 final 5세트 baseline 완료 + watchdog 완화
+
+### 변경 사항 (changed)
+- `bots/video/lib/edl-builder.js`
+  - `computeFinalWatchdogOptions()`를 추가해 긴 final render가 고정 2분 stall timeout으로 false failure 되지 않도록 가변 watchdog으로 전환
+
+### 검증
+- `node --check bots/video/lib/edl-builder.js` | ✅
+- `node bots/video/scripts/test-final-reference-quality-batch.js --title=서버인증 --json` | ✅ false stall 복구 후 `overall=72.96`, `duration=41.26`, `visual_similarity=74.49`
+- `node bots/video/scripts/test-final-reference-quality-batch.js --json` | ✅ final 5세트 baseline 완료
+  - `averageOverall=79.00`
+  - `averageDuration=54.67`
+  - `averageResolution=99.58`
+  - `averageVisualSimilarity=80.41`
+
+### 효과
+- 긴 세트(`서버인증`)가 false stall 없이 끝까지 렌더되며 final 5세트 batch를 완주할 수 있게 됐다.
+- final 기준으로 남은 핵심 차이가 해상도보다는 사람 편집본 대비 `길이/구조`라는 점이 더 선명해졌다.
+
 ## 12주차 후속 (2026-03-22) — 비디오팀 final render batch 검증 레일 추가
 
 ### 변경 사항 (added)
