@@ -4043,3 +4043,9 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 ### Gemini Flash 임시 fallback 운영 기준 문서화
 - `docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md`를 추가해 `gemini-2.5-flash`가 `rate_limited/degraded`일 때 `gemini-2.5-flash-lite`를 임시 primary 후보로 검토하는 조건, 금지 조건, 롤백 조건, 관찰 절차를 정리
 - 현재 정책은 자동 전환이 아니라 운영 승인형 임시 fallback이며, 최근 selector review의 `primaryFallbackPolicy=temporary_fallback_candidate`를 해석하는 기준 문서 역할을 한다
+
+### 스카 픽코 등록 실패 단계 분해 계측
+- `bots/reservation/manual/reservation/pickko-accurate.js`에 단계 코드 기반 실패 마커를 추가해 child 프로세스가 실패 시 `PICKKO_FAILURE_STAGE=...` 로그를 남기도록 보강
+- 현재 표준화된 축은 `LOCK_CONFLICT`, `MEMBER_SELECT_FAILED`, `DATE_SELECT_FAILED`, `TIME_SLOT_SELECT_FAILED`, `SAVE_*`, `PAYMENT_*` 등이며, 운영자가 즉시 “어느 단계에서 반복 실패하는지”를 읽을 수 있게 정리
+- `bots/reservation/auto/monitors/naver-monitor.js`는 위 마커를 파싱해 `errorReason`과 텔레그램 수동 처리 알림에 `[STAGE_CODE]`, `🧩 실패 단계`를 붙이도록 연결
+- 간단한 smoke 검증으로 `MODE=ops node bots/reservation/manual/reservation/pickko-accurate.js --phone=abc --date=bad ...` 실행 시 `INPUT_NORMALIZE_FAILED` 마커가 실제 출력되는 것까지 확인

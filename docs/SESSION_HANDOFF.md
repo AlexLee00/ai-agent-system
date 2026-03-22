@@ -599,3 +599,11 @@
 - 추가로 현재 primary가 unhealthy일 때 같은 provider 안에서 즉시 쓸 수 있는 `primaryFallbackCandidate`도 함께 보여준다. 최신 기준 Gemini 레일의 안전 후보는 `google-gemini-cli/gemini-2.5-flash-lite`다.
 - 후속으로 최근 snapshot 이력을 읽어 `primaryFallbackPolicy`도 계산한다. 현재 기준 `gemini-2.5-flash`는 최근 2회 이상 연속 `rate_limited`로 관측되어 `temporary_fallback_candidate` 상태다. 다만 이는 운영 신호이며 자동 전환을 뜻하지는 않는다.
 - 임시 전환 기준은 [GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md)에 따로 정리했다. 현재 자연스러운 다음 단계는 quota reset 이후 `gemini-2.5-flash` 재측정이며, 동일 상태가 이어질 때만 `flash-lite` 임시 primary를 검토한다.
+
+## 2026-03-22 — 스카 픽코 등록 실패 단계 분해 계측
+
+- `pickko-accurate.js`는 이제 실패 시 단순 에러 문자열만 남기지 않고 `PICKKO_FAILURE_STAGE=...` 마커를 함께 출력한다.
+- 현재 표준화한 실패 단계는 `INPUT_NORMALIZE_FAILED`, `LOCK_CONFLICT`, `MEMBER_SELECT_FAILED`, `MEMBER_REGISTER_OR_SEARCH_FAILED`, `DATE_SELECT_FAILED`, `ROOM_MAPPING_FAILED`, `TIME_SLOT_SELECT_FAILED`, `SAVE_*`, `PAYMENT_*`, `TIME_ELAPSED`, `ALREADY_REGISTERED` 등이다.
+- `naver-monitor.js`의 `runPickko()`는 child stdout/stderr에서 위 마커를 파싱해 `errorReason` 앞에 `[STAGE_CODE]`를 붙여 저장하고, 수동 처리 알림에도 `🧩 실패 단계:`를 함께 노출한다.
+- 의미: 이제 “재시도는 계속 했는데 왜 한 번도 성공 못 했는가”를 감으로 보지 않고, `member/date/slot/lock/payment` 경계별로 바로 읽을 수 있다.
+- 이번 단계는 DB 스키마 변경 없이 `errorReason`/알림 계약만 강화한 1차 계측이다. 다음 자연스러운 단계는 실패 단계 분포를 1~2일 관찰한 뒤 `slot 선택` 또는 `lock 충돌`에 맞는 재시도 정책을 분리하는 것이다.

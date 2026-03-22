@@ -21,6 +21,21 @@ const { maskPhone, maskName } = require('../../lib/formatting');
 const { acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 
+function buildStageError(code, message) {
+  const error = new Error(message);
+  error.stageCode = code;
+  return error;
+}
+
+function logStageFailure(code, message, extra = {}) {
+  const payload = {
+    code,
+    message,
+    ...extra,
+  };
+  log(`PICKKO_FAILURE_STAGE=${code} ${JSON.stringify(payload)}`);
+}
+
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
 
@@ -51,7 +66,8 @@ const rawInput = {
 
 const normalized = transformAndNormalizeData(rawInput);
 if (!normalized) {
-  throw new Error(`입력 데이터 변환 실패: ${JSON.stringify(rawInput)}`);
+  logStageFailure('INPUT_NORMALIZE_FAILED', '입력 데이터 변환 실패', { rawInput });
+  throw buildStageError('INPUT_NORMALIZE_FAILED', `입력 데이터 변환 실패: ${JSON.stringify(rawInput)}`);
 }
 
 const PHONE_NOHYPHEN = normalized.phone;
@@ -282,6 +298,11 @@ async function registerNewMember(page, phoneNoHyphen, customerName, reservationD
 async function main() {
   let browser;
   let lockAcquired = false;
+  let currentStage = 'INIT';
+  const setStage = (stage) => {
+    currentStage = stage;
+    log(`📍 단계 진입: ${stage}`);
+  };
   // try/catch 양쪽에서 접근 가능하도록 바깥에 선언
   const releaseLock = async () => {
     if (lockAcquired) {
@@ -294,8 +315,10 @@ async function main() {
     log(`🚀 픽코 예약 등록 시작`);
 
     // 픽코 단독접근 락 획득 (최대 5분)
+    setStage('LOCK_ACQUIRE');
     lockAcquired = await acquirePickkoLock('manual');
     if (!lockAcquired) {
+      logStageFailure('LOCK_CONFLICT', '픽코 락 획득 실패', { mode: MODE });
       log('⚠️ 픽코 락 획득 실패 — 자동 에이전트가 픽코 사용 중. 잠시 후 재시도하세요.');
       process.exit(1);
     }
@@ -313,6 +336,7 @@ async function main() {
     setupDialogHandler(page, log);
     
     // ======================== 1단계: 로그인 ========================
+    setStage('LOGIN');
     log('\n[1단계] 로그인');
     await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
     log('✅ 로그인 완료');
@@ -325,11 +349,13 @@ async function main() {
     log(`✅ 시간 변환 완료: ${START_TIME} ~ ${END_TIME}${timeRangeCheck.isCrossMidnight ? ' (자정 넘어감)' : ''}`);
     
     // ======================== 2단계: 페이지 이동 ========================
+    setStage('OPEN_STUDY_WRITE');
     log('\n[2단계] 예약 등록 페이지');
     await page.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
     await delay(3000);
     
     // ======================== 3단계: 회원 검색 ========================
+    setStage('MEMBER_SEARCH');
     log('\n[3단계] 회원 검색');
     await page.evaluate((phone) => {
       const inputs = document.querySelectorAll('input[type="text"]');
@@ -353,6 +379,7 @@ async function main() {
     await delay(3000);
     
     // ======================== 4단계: 회원 선택 ✅ (검증 추가됨) ========================
+    setStage('MEMBER_SELECT');
     log('\n[4단계] 회원 선택');
     
     // 🔧 회원정보 검증 함수
@@ -372,7 +399,7 @@ async function main() {
           phone: PHONE_NOHYPHEN, 
           retries: retryCount 
         });
-        throw new Error(errorMsg);
+        throw buildStageError('MEMBER_SELECT_FAILED', errorMsg);
       }
       
       // 회원 선택 버튼 클릭 (page.click → evaluate: Runtime.callFunctionOn 타임아웃 방지)
@@ -391,7 +418,7 @@ async function main() {
         // 등록 후 재시도에서도 회원이 없으면 → 등록은 됐지만 검색 안 됨
         const failMsg = `❌ 신규 등록 후에도 회원 검색 안됨 (${PHONE_NOHYPHEN}) → 픽코 수동 확인 필요`;
         log(failMsg);
-        throw new Error(failMsg);
+        throw buildStageError('MEMBER_REGISTER_OR_SEARCH_FAILED', failMsg);
       }
 
       if (!hasMember && retryCount === 0) {
@@ -514,6 +541,7 @@ async function main() {
     }
     
     // ======================== 5단계: 날짜 확인 ✅ (검증 추가됨) ========================
+    setStage('DATE_SELECT');
     log('\n[5단계] 날짜 확인');
     
     // 날짜 포맷 정규화 함수
@@ -537,7 +565,7 @@ async function main() {
           targetDate: DATE,
           retries: retryCount
         });
-        throw new Error(errorMsg);
+        throw buildStageError('DATE_SELECT_FAILED', errorMsg);
       }
       
       // 1) 예약일자 읽기
@@ -734,6 +762,7 @@ async function main() {
     }
 
     // ======================== 6단계: 룸 & 시간 선택 ========================
+    setStage('ROOM_AND_SLOT_SELECT');
     log('\n[6단계] 룸 & 시간 선택');
     
     // ─────────────────────────────────────────────────────────────
@@ -753,7 +782,7 @@ async function main() {
     await delay(1500);
     
     const stNo = ROOM_ID[ROOM];
-    if (!stNo) throw new Error(`ROOM_ID 매핑 없음: ROOM=${ROOM}`);
+    if (!stNo) throw buildStageError('ROOM_MAPPING_FAILED', `ROOM_ID 매핑 없음: ROOM=${ROOM}`);
 
     // ─────────────────────────────────────────────────────────────
     // [6-2] 스케줄 갱신 대기
@@ -993,11 +1022,11 @@ async function main() {
         // 추후 텔레그램 알람 연동
         // await sendAlert(errorAlert);
         
-        throw new Error(`[OPS-CRITICAL] 시간 선택 실패 - 예약 불가능한 시간대`);
+        throw buildStageError('TIME_SLOT_SELECT_FAILED', `[OPS-CRITICAL] 시간 선택 실패 - 예약 불가능한 시간대`);
       } else {
         // 🟡 DEV 모드: 로그만 출력 후 중단
         log(`⚠️ [DEV] 시간 선택 실패: 모든 슬롯이 예약됨`);
-        throw new Error(`[DEV] 시간 선택 실패`);
+        throw buildStageError('TIME_SLOT_SELECT_FAILED', `[DEV] 시간 선택 실패`);
       }
     }
 
@@ -1039,6 +1068,7 @@ async function main() {
 
     await delay(1500);
     // ======================== 7단계: 저장 ========================
+    setStage('SAVE_PRECHECK');
     log('\n[7단계] 저장');
 
     const sanity = await page.evaluate(() => {
@@ -1121,13 +1151,13 @@ async function main() {
 
     // 안전장치: badTime 또는 badAmount가 true면 즉시 중단
     if (sanity.badTime) {
-      throw new Error(
+      throw buildStageError('SAVE_TIME_VALIDATION_FAILED',
         `저장 중단: 시간 비정상 (start=${sanity.startDate} ${sanity.startTime}, end=${sanity.endDate || sanity.startDate} ${sanity.endTime}, durationMin=${sanity.durationMin})`
       );
     }
 
     if (sanity.badAmount) {
-      throw new Error(
+      throw buildStageError('SAVE_AMOUNT_VALIDATION_FAILED',
         `저장 중단: 금액 비정상 (가격=${sanity.priceText}, 파싱결과=${sanity.priceNum})`
       );
     }
@@ -1247,7 +1277,7 @@ async function main() {
     // 🔴 추출 실패 시 즉시 중단
     if (finalVerification.errors.length > 0) {
       log(`❌ 검증 실패: ${finalVerification.errors.join(', ')}`);
-      throw new Error(`[7-5검증] 예약 정보 추출 실패: ${finalVerification.errors.join(', ')}`);
+      throw buildStageError('SAVE_FINAL_VERIFICATION_FAILED', `[7-5검증] 예약 정보 추출 실패: ${finalVerification.errors.join(', ')}`);
     }
     
     // 🟡 데이터 비교 검증
@@ -1279,7 +1309,7 @@ async function main() {
     
     if (comparisonErrors.length > 0) {
       log(`❌ 데이터 불일치: ${comparisonErrors.join(', ')}`);
-      throw new Error(`[7-6검증] 파싱 데이터 불일치: ${comparisonErrors.join(', ')}`);
+      throw buildStageError('SAVE_COMPARISON_FAILED', `[7-6검증] 파싱 데이터 불일치: ${comparisonErrors.join(', ')}`);
     }
     
     log(`✅ [7-6] 모든 데이터 일치 확인됨! 결제 진행 가능`);
@@ -1288,6 +1318,7 @@ async function main() {
     log(`   날짜: ✅`);
 
     // ======================== 8단계: 결제(확정) ========================
+    setStage('PAYMENT');
     log('\n[8단계] 결제(확정) 처리');
 
     const payBtnClicked = await page.evaluate(() => {
@@ -1442,7 +1473,7 @@ async function main() {
     log(`🧾 결제 모달 입력 결과: ${JSON.stringify(payModalResult)}`);
 
     if (!SKIP_PRICE_ZERO && norm(payModalResult.totalText) !== '0') {
-      throw new Error(`결제 중단: 총 결제금액이 0이 아님 (od_total_price3=${payModalResult.totalText})`);
+      throw buildStageError('PAYMENT_TOTAL_VALIDATION_FAILED', `결제 중단: 총 결제금액이 0이 아님 (od_total_price3=${payModalResult.totalText})`);
     }
 
     await delay(300);
@@ -1545,6 +1576,7 @@ async function main() {
     log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
     
     // ======================== 9단계: 완료 확인 ========================
+    setStage('FINAL_CONFIRM');
     log('\n[9단계] 픽코 예약등록 + 결제 완료 확인');
     
     const finalStatus = await page.evaluate(() => {
@@ -1607,6 +1639,7 @@ async function main() {
   } catch (err) {
     // ⏰ 시간 경과로 등록 불가 (exit 2) — 완료로 간주, retry 없음
     if (err.code === 'TIME_ELAPSED') {
+      logStageFailure('TIME_ELAPSED', err.message, { currentStage });
       log(`⏰ [시간 경과] 픽코 등록 생략: ${err.message}`);
       try { await browser.close(); } catch(e) {}
       await releaseLock();
@@ -1615,6 +1648,7 @@ async function main() {
 
     // ⚠️ 슬롯에 동일 고객이 이미 등록됨 → 결제대기 여부 확인 후 결제 완료 처리
     if (err.code === 'ALREADY_REGISTERED') {
+      logStageFailure('ALREADY_REGISTERED', err.message, { currentStage });
       log(`⚠️ [이미 등록됨] 결제대기 여부 확인 → pickko-pay-pending.js 실행: ${err.message}`);
       try { await browser.close(); } catch(e) {}
       await releaseLock();
@@ -1639,6 +1673,7 @@ async function main() {
       process.exit(0);
     }
 
+    logStageFailure(err.stageCode || currentStage || 'UNKNOWN_STAGE', err.message, { currentStage });
     log(`❌ 에러 발생: ${err.message}`);
 
     // 🔐 **OPS 모드 오류 처리**

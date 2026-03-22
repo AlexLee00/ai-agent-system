@@ -2275,6 +2275,8 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 
     child.on('close', async (code) => {
       log(`🤖 픽코 실행 종료 (exit code: ${code})`);
+      const stageMatch = outputBuf.match(/PICKKO_FAILURE_STAGE=([A-Z0-9_]+)/);
+      const failureStage = stageMatch ? stageMatch[1] : null;
 
       // ⏰ 시간 경과로 등록 생략 (completed + memo)
       if (code === 2) {
@@ -2330,9 +2332,12 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
         const errMatch = outputBuf.match(/❌\s*(?:에러|오류)\s*발생[:\s]+(.+)/m)
           || outputBuf.match(/OPS-CRITICAL[:\s]+(.+)/m)
           || outputBuf.match(/Error[:\s]+(.+)/m);
-        const errorMsg = errMatch
+        const rawErrorMsg = errMatch
           ? errMatch[1].trim().substring(0, 200)
           : `exit code ${code}`;
+        const errorMsg = failureStage
+          ? `[${failureStage}] ${rawErrorMsg}`
+          : rawErrorMsg;
 
         if (bookingId) {
           await updateBookingState(bookingId, booking, 'failed');
@@ -2364,6 +2369,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
             `📅 날짜: ${booking.date}\n` +
             `⏰ 시간: ${booking.start}~${booking.end} (${booking.room}룸)\n` +
             `🔄 시도 횟수: ${retryCount}회\n` +
+            (failureStage ? `🧩 실패 단계: ${failureStage}\n` : '') +
             `❌ 원인: ${errorMsg}\n\n` +
             `픽코에서 직접 등록해 주세요!\n처리 후 '완료' 라고 답장해 주세요.`
           });

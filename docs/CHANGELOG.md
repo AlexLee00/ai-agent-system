@@ -1560,3 +1560,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/video/src/index.js`는 `loadConfig()`를 export 하도록 리팩터링되어 pipeline runner가 config 로드를 재사용
   - 실자산 `--source=1 --skip-render` 검증에서 preview 이전 단계가 모두 통과했고, 실자산 preview wall-clock 병목을 줄이기 위해 EDL builder에 인접 scene transition merge 보정을 추가
   - `run-pipeline`에 single-flight lock, stale lock 정리, SIGINT/SIGTERM lock 해제를 추가해 중복 실행과 비정상 종료 시 프로세스 잔여 위험을 낮춤
+- 스카
+  - `pickko-accurate.js`가 픽코 등록 실패 시 `PICKKO_FAILURE_STAGE=...` 마커를 함께 출력하도록 보강되어 `lock/member/date/slot/save/payment` 경계를 로그에서 바로 읽을 수 있게 됨
+  - `naver-monitor.js`의 `runPickko()`가 위 실패 단계 마커를 파싱해 `errorReason`과 수동 처리 알림에 `[STAGE_CODE]`, `🧩 실패 단계`를 포함하도록 정리
+  - 이를 통해 “재시도는 했지만 계속 실패”를 한 덩어리 `failed`가 아니라 원인 단계별로 읽는 1차 계측 레일을 확보
