@@ -27,6 +27,8 @@
 | `node bots/video/scripts/test-sync-matcher.js` | ✅ `matched_keyword=2`, `overall_confidence=0.8334`, `edl_clip_count=2` 확인 |
 | `node bots/video/scripts/test-intro-outro.js` | ✅ 로컬 ffmpeg `drawtext` 미지원 환경에서도 fallback title card 생성 확인 |
 | `node bots/video/scripts/test-narration-analyzer.js --source-audio=...` | ✅ 샌드박스 네트워크 제약 시 오프라인 fixture fallback으로 `duration_s=261`, `total_segments=3` 확인 |
+| `node bots/video/scripts/test-scene-indexer.js --source-video=...` | ✅ `duration_s=1410.45`, `total_frames_captured=141`, `unique_frames=42`, `scene_count=42` 확인 |
+| `node bots/video/scripts/test-full-sync-pipeline.js --source-video=... --source-audio=... --edited=...` | ✅ `scene_count=42`, `segment_count=3`, `keyword=2`, `unmatched=1`, `sync_confidence=0.3445`, `intro_prompt.mp4` 생성 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |
 
 ### 일일 운영 분석 리포트 해석 품질 보강

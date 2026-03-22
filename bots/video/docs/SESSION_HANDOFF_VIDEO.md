@@ -19,6 +19,32 @@
   - OCR은 `tesseract.js` 기본 경로에 더해 로컬 `tesseract` CLI fallback을 테스트 레일에 붙였다.
   - STT/LLM은 샌드박스 네트워크 제약 시 오프라인 fixture fallback으로 테스트를 이어간다.
 
+### 2026-03-22 검증 메모
+
+- `test-scene-indexer.js --source-video=원본_파라미터.mp4`
+  - `duration_s=1410.45`
+  - `total_frames_captured=141`
+  - `unique_frames=42`
+  - `scene_count=42`
+- `test-narration-analyzer.js --source-audio=원본_나레이션_파라미터.m4a`
+  - 샌드박스 네트워크 제약으로 `offline fixture fallback`
+  - `total_entries=3`, `total_segments=3`
+- `test-sync-matcher.js`
+  - 더미 기준 `matched_keyword=2/2`
+  - `overall_confidence=0.8334`
+- `test-full-sync-pipeline.js`
+  - `scene_count=42`
+  - `segment_count=3`
+  - `keyword=2`, `embedding=0`, `hold=0`, `unmatched=1`
+  - `sync_confidence=0.3445`
+  - `intro_prompt.mp4` 생성 확인
+
+해석:
+- 원본 장면 인덱싱 품질 자체는 usable 수준이다.
+- 현재 가장 큰 병목은 `scene-indexer`가 아니라 `offline fixture narration`의 세그먼트가 너무 거칠다는 점이다.
+- 첫 세그먼트(0~87초)가 바로 `unmatched`로 떨어져 전체 `sync_confidence`를 크게 깎고 있다.
+- 다음 Phase 2 보강 1순위는 `narration-analyzer fallback` 세분화 또는 `sync-matcher unmatched -> hold` 정책 보강이다.
+
 ## Phase 1 완료 요약
 
 ### 구현된 과제 (13 + RAG)
@@ -142,6 +168,8 @@ bots/worker/web/app/video/history/page.js (이력)
 - worker-web 세트별 상태/예상시간 표시 세분화
 - 세션 1 (`id=1`, edit `id=16`, trace `f84aa3f6-329e-43af-8eac-ae6f8eeaf474`) 프리뷰 재렌더 결과 시각 검증
 - `transition` 렌더 임시 비활성화 상태를 `xfade` 또는 구간 분할 기반 구현으로 대체
+- `narration-analyzer` 오프라인 fallback 세그먼트 granularity 보강
+- `sync-matcher`에서 첫 구간 unmatched 시 `hold` 또는 인트로 뒤 대표 화면 유지 정책 재검토
 
 ### 이후
 - 품질 루프 수렴률 개선
