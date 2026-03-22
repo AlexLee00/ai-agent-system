@@ -9,6 +9,9 @@
 | 테스트 | 결과 |
 |--------|------|
 | `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ |
+| `node --check bots/reservation/manual/reports/pickko-alerts-query.js` | ✅ |
+| `node bots/reservation/manual/reports/pickko-alerts-query.js --type=error --unresolved` | ✅ 실제 DB 기준 `count=0` |
+| `node bots/reservation/manual/reports/pickko-alerts-query.js --phone=01089430972 --hours=48` | ✅ 실제 DB 기준 `count=0` |
 
 ### 비디오팀 Phase 2 — AI 싱크 매칭 파이프라인
 

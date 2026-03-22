@@ -14,24 +14,48 @@
  */
 
 const { parseArgs } = require('../../lib/args');
-const { getDb } = require('../../lib/db');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 
 const ARGS   = parseArgs(process.argv);
 const hours  = parseInt(ARGS['hours'] || '24', 10);
 const typeF  = ARGS['type']       || null;   // 'error' | 'new' | 'completed' | null
 const unresO = ARGS['unresolved'] === true;  // --unresolved 플래그
+const phoneF = ARGS['phone']      || null;
+const dateF  = ARGS['date']       || null;
+const startF = ARGS['start']      || null;
 
-const db = getDb();
+async function queryAlerts() {
+  const clauses = [`timestamp::timestamptz > NOW() - ($1::int * INTERVAL '1 hour')`];
+  const params = [hours];
 
-// ── 쿼리 ──
-let sql = `SELECT id, timestamp, type, title, message, resolved, resolved_at, phone, date, start_time
-           FROM alerts
-           WHERE timestamp > datetime('now', '-${hours} hours')`;
-if (typeF) sql += ` AND type = '${typeF.replace(/'/g, "''")}'`;
-if (unresO) sql += ` AND resolved = 0`;
-sql += ` ORDER BY timestamp DESC LIMIT 30`;
+  if (typeF) {
+    params.push(typeF);
+    clauses.push(`type = $${params.length}`);
+  }
+  if (unresO) {
+    clauses.push('resolved = 0');
+  }
+  if (phoneF) {
+    params.push(phoneF);
+    clauses.push(`phone = $${params.length}`);
+  }
+  if (dateF) {
+    params.push(dateF);
+    clauses.push(`date = $${params.length}`);
+  }
+  if (startF) {
+    params.push(startF);
+    clauses.push(`start_time = $${params.length}`);
+  }
 
-const rows = db.prepare(sql).all();
+  return pgPool.query('reservation', `
+    SELECT id, timestamp, type, title, message, resolved, resolved_at, phone, date, start_time
+      FROM alerts
+     WHERE ${clauses.join(' AND ')}
+     ORDER BY timestamp DESC
+     LIMIT 30
+  `, params);
+}
 
 // ── 포맷 ──
 function fmt(r) {
@@ -47,24 +71,36 @@ function fmt(r) {
   return `${icon} [${ts}]${res} ${r.title}${who}${when}`;
 }
 
-if (rows.length === 0) {
-  const scope = typeF ? `${typeF} 타입` : '전체';
-  const filter = unresO ? ' (미해결만)' : '';
-  console.log(JSON.stringify({
-    success: true, count: 0,
-    message: `최근 ${hours}시간 ${scope} 알림${filter} 없음`,
-  }));
-  process.exit(0);
-}
+(async () => {
+  const rows = await queryAlerts();
 
-const lines  = rows.map(fmt);
-const errCnt = rows.filter(r => r.type === 'error').length;
-const unresCnt = rows.filter(r => !r.resolved).length;
+  if (rows.length === 0) {
+    const scope = typeF ? `${typeF} 타입` : '전체';
+    const filters = [];
+    if (unresO) filters.push('미해결만');
+    if (phoneF) filters.push(`phone=${phoneF}`);
+    if (dateF) filters.push(`date=${dateF}`);
+    if (startF) filters.push(`start=${startF}`);
+    const filterText = filters.length ? ` (${filters.join(', ')})` : '';
+    console.log(JSON.stringify({
+      success: true,
+      count: 0,
+      message: `최근 ${hours}시간 ${scope} 알림${filterText} 없음`,
+    }));
+    return;
+  }
 
-let header = `📋 최근 ${hours}시간 알림 (${rows.length}건)`;
-if (errCnt > 0) header += ` — 실패 ${errCnt}건`;
-if (unresCnt > 0) header += `, 미해결 ${unresCnt}건`;
+  const lines  = rows.map(fmt);
+  const errCnt = rows.filter((row) => row.type === 'error').length;
+  const unresCnt = rows.filter((row) => !Number(row.resolved)).length;
 
-const message = [header, '', ...lines].join('\n');
+  let header = `📋 최근 ${hours}시간 알림 (${rows.length}건)`;
+  if (errCnt > 0) header += ` — 실패 ${errCnt}건`;
+  if (unresCnt > 0) header += `, 미해결 ${unresCnt}건`;
 
-console.log(JSON.stringify({ success: true, count: rows.length, message }));
+  const message = [header, '', ...lines].join('\n');
+  console.log(JSON.stringify({ success: true, count: rows.length, message }));
+})().catch((error) => {
+  console.error(error?.stack || error?.message || String(error));
+  process.exit(1);
+});
