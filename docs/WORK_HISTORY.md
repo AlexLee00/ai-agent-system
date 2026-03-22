@@ -22,6 +22,7 @@
 - `bots/reservation/manual/reservation/pickko-cancel-cmd.js`도 같은 기준으로 정리해, 수동 취소 command는 `pickko-cancel.js` 성공 후 즉시 성공을 반환하도록 바꿨다.
 - `bots/reservation/lib/manual-cancellation.js`, `bots/reservation/context/N8N_COMMAND_CONTRACT.md`는 새 취소 contract에 맞춰 정리했다.
 - `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ska.kiosk-monitor.plist`와 `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor`로 `kiosk-monitor`를 다시 올렸고, `health-report --json` 기준 `kiosk-monitor: 정상 (PID 49161)`을 확인했다.
+- 후속 코드 점검에서 네이버 취소 감지 1/2/2E/4 경로에 `OBSERVE_ONLY` 필터가 남아 있음을 발견했고, 이를 제거해 신규 예약뿐 아니라 취소 경로도 같은 운영 기준으로 정렬했다.
 
 ## 2026-03-22: 스카 취소 command contract 복구
 

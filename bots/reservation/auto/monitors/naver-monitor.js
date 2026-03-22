@@ -1217,10 +1217,9 @@ async function monitorBookings() {
 
               // ✅ 모드에 따른 기본 동작
               // dev: 픽코 실행 기본 OFF
-              // ops: PICKKO_ENABLE=1일 때만 실행
               // ✅ 실행 조건
               // - DEV: DEV_PICKKO_TEST=1 이고, DEV_TEST_PHONE(기본 01035000586)만 픽코 실행 허용
-              // - OPS: PICKKO_ENABLE=1 일 때만 픽코 실행
+              // - OPS: 신규 네이버 예약은 전건 픽코 실행
               if (MODE === 'dev') {
                 if (!allowDevPickko) {
                   log(`🧷 MODE=dev, DEV_PICKKO_TEST!=1 → 픽코 실행은 건너뜁니다(파싱만 확인).`);
@@ -1310,13 +1309,9 @@ async function monitorBookings() {
             log(`🗑️ 오늘 취소 탭: ${cancelledList.length}건`);
 
             if (cancelledList.length > 0) {
-              const _c2ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
-              const _c2ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
               const _cancelledFlags = await Promise.all(cancelledList.map(c => isCancelledKey(toCancelKey(c))));
               const cancelCandidates = cancelledList.filter((c, i) => {
                 if (_cancelledFlags[i]) return false;
-                // OBSERVE_ONLY 모드: 화이트리스트 번호만 취소 처리
-                if (_c2ObserveOnly && !_c2ObservePhones.includes(String(c.phoneRaw || c.phone.replace(/\D/g, '')))) return false;
                 return true;
               });
 
@@ -1345,9 +1340,6 @@ async function monitorBookings() {
         //        → "오늘취소" 버튼 비활성화 + 일간 + 취소 필터 → 미래 날짜 예약 취소 포함 감지
         if (checkCount % 3 === 2 && process.env.PICKKO_CANCEL_ENABLE === '1' && cancelledHref) {
           try {
-            const _c2eObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
-            const _c2eObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
-
             log(`🔍 [취소감지2E] 확장 취소 스캔 시작 — 사이클 #${checkCount}`);
             const expandedList = await scrapeExpandedCancelled(page, cancelledHref);
             log(`🔍 [취소감지2E] ${expandedList.length}건 확인`);
@@ -1356,7 +1348,6 @@ async function monitorBookings() {
               const _expandedFlags = await Promise.all(expandedList.map(c => isCancelledKey(toCancelKey(c))));
               const newCancels = expandedList.filter((c, i) => {
                 if (_expandedFlags[i]) return false;
-                if (_c2eObserveOnly && !_c2eObservePhones.includes(String(c.phoneRaw || c.phone?.replace(/\D/g, '') || ''))) return false;
                 return true;
               });
               if (newCancels.length > 0) {
@@ -1388,12 +1379,8 @@ async function monitorBookings() {
             try {
               const toKey = (b) => b.bookingId || `${b.date || todaySeoul}|${b.start}|${b.end}|${b.room}|${b.phone}`;
               const currentKeys = new Set(currentConfirmedList.map(b => toKey(b)));
-              // OBSERVE_ONLY 모드: 화이트리스트 번호만 취소 처리
-              const _d1ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
-              const _d1ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
               const droppedFromConfirmed = previousConfirmedList.filter(b => {
                 if (currentKeys.has(toKey(b))) return false;
-                if (_d1ObserveOnly && !_d1ObservePhones.includes(String(b.phoneRaw || b.phone.replace(/\D/g, '')))) return false;
                 return true;
               });
 
@@ -1550,17 +1537,9 @@ async function monitorBookings() {
             // ⚠️ hitScanLimit이면 스캔 범위 밖의 예약이 있을 수 있음 → stale 처리 스킵
             if (futureList.length > 0 && !hitScanLimit) {
               const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
-              // ✅ OBSERVE_ONLY 필터 (취소감지1/2/2E와 동일 기준)
-              const _d4ObservePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586').split(',').map(s => s.replace(/\D/g, '')).filter(Boolean);
-              const _d4ObserveOnly = (process.env.OBSERVE_ONLY || '1') === '1';
               if (staleItems.length > 0) {
                 log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 더블체크 진행`);
                 for (const stale of staleItems) {
-                  // ✅ OBSERVE_ONLY: 화이트리스트 번호만 취소 처리
-                  if (_d4ObserveOnly && !_d4ObservePhones.includes(String(stale.phone_raw || ''))) {
-                    log(`ℹ️ [취소감지4] ${maskPhone(stale.phone_raw)} — OBSERVE_ONLY 필터 (화이트리스트 외) → 스킵`);
-                    continue;
-                  }
                   // ✅ booking_key가 숫자 ID이면 cancelid| 키 사용 (슬롯 재예약 충돌 방지)
                   const cancelKey = /^\d+$/.test(String(stale.booking_key))
                     ? `cancelid|${stale.booking_key}`
