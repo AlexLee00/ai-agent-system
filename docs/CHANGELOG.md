@@ -3,6 +3,26 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 픽코 자동 취소 감지 이중 조회 + runbook 추가
+
+### 추가 사항 (added)
+- `docs/SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md`
+  - 픽코 자동 모니터링 예약취소 절차를 운영/개발 공통 runbook으로 추가
+  - `상태=환불`, `상태=취소` 별도 조회, 합산/중복제거, 실제 해제 대상 판정, 네이버 세션 분기, 해제 성공/실패 분기 문서화
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 픽코 취소 감지를 `상태=환불` 단일 조회에서 `상태=환불 + 상태=취소` 이중 조회로 확장
+  - 두 결과를 `phone|date|start|end|room` 기준으로 합산/중복제거 후 `cancelledEntries`를 계산
+  - 운영 로그도 `환불 / 취소 / 합산 / 처리 필요`를 각각 보이도록 정리
+
+### 효과
+- 픽코 관리자 상태 필터가 단일 선택이라는 실제 운영 제약을 코드에 반영했다.
+- `취소` 상태 예약이 자동 해제 대상에서 누락되는 위험을 줄였다.
+
+### 검증
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+
 ## 12주차 후속 (2026-03-22) — 스카 kiosk-monitor 자동 차단 경계 조정
 
 ### 변경 사항 (changed)

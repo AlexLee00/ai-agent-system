@@ -4,6 +4,12 @@
 
 ## 2026-03-22
 
+### 스카 픽코 자동 취소 감지 이중 조회
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ `상태=환불 + 상태=취소` 이중 조회, 합산/중복제거 후 문법 통과 |
+
 ### 스카 kiosk-monitor 자동 차단 경계 조정
 
 | 테스트 | 결과 |
