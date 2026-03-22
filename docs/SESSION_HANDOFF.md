@@ -184,6 +184,10 @@
   - `reservation health-report`는 이제 `cancelCounterDriftHealth`와 샘플 메시지를 함께 보여준다.
   - `duplicate slot audit`가 reservation health-report에 추가돼, 같은 슬롯 duplicate를 `risky(활성 중복)`와 `historical(과거 취소/재예약 이력)`로 분리해서 보여준다.
   - `bots/reservation/scripts/audit-duplicate-slots.js --json`가 추가돼 duplicate group의 실제 row id / status / 권장 조치를 health summary보다 자세히 볼 수 있다.
+  - `naver-monitor`와 `kiosk-monitor`는 다시 launchd 백그라운드 운영 모드로 복귀했다. `health-report --json` 기준 현재 `commander / naver-monitor / kiosk-monitor / health-check` 모두 정상이며, `naver-monitor 로그: 최근 0분 이내 활동`까지 확인된다.
+  - `naver-monitor` 취소 감지 2/2E에는 새로운 가드가 추가됐다. 이제 취소 탭에서 읽은 항목이라도 DB에 이미 추적 중인 예약(`bookingId / compositeKey / phone+date+start+room`)일 때만 자동 픽코 취소 대상으로 넘긴다.
+  - 이 변경은 조민정 케이스처럼 `같은 고객 / 같은 날짜 / 같은 룸`에서 과거 취소건과 현재 재예약건이 함께 존재할 때, 모니터가 “오늘 처음 본 historical cancel”을 바로 자동 취소로 오인하던 경계를 복구한 것이다.
+  - 대표 사례: `2026-04-04 A1`에서 과거 취소건 `16:30~18:30`과 현재 확정건 `15:30~18:30`이 함께 보이는 상황에서, 기존 로직은 취소 탭의 `16:30` 건을 즉시 픽코 취소 대상으로 넘겨 `[4단계] 취소 대상 예약 미발견`을 냈다. 현재는 DB 추적이 없는 과거 취소건이면 `미추적 과거 취소건 스킵` 로그를 남기고 자동 취소를 건너뛴다.
   - 2026-03-21 실운영 복구:
     - 박수민 `2026-03-21 01:00~03:30 A1`
     - 김경혜 `2026-03-27 17:30~18:30 A1`

@@ -4,6 +4,17 @@
 
 ## 2026-03-23
 
+### 스카 취소 감지 재예약 교차 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 취소 감지 2/2E에 tracked reservation 가드 추가 후 문법 통과 |
+| `bash bots/reservation/scripts/reload-monitor.sh` | ✅ `naver-monitor` 재기동 완료, 새 PID `70952`로 launchd 운영 반영 |
+| `launchctl list | grep 'ai.ska.naver-monitor'` | ✅ `ai.ska.naver-monitor` launchd 등록/실행 확인 |
+| `launchctl print gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `ai.ska.kiosk-monitor` launchd running, PID 확인 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `commander / naver-monitor / kiosk-monitor / health-check` 모두 정상, `warnCount=0` 확인 |
+| `/tmp/naver-ops-mode.log` 조민정 케이스 로그 대조 | ✅ 현재 확정 예약 `2026-04-04 15:30~18:30 A1`와 과거 취소건 `16:30~18:30`이 교차되며, 기존 실패 원인이 취소 탭 historical cancel 오인임을 확인 |
+
 ### 스카 daily_summary `pickko_total` 제거 / ETL 재동기화
 
 | 테스트 | 결과 |

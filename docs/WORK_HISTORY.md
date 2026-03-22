@@ -51,6 +51,15 @@
 - 해석: 합산 로직 자체는 유지하지만, payment 축 일반매출과 use 축 스터디룸매출을 운영자에게 숨기지 않고 드러내는 방향으로 표시층을 정리한 단계다.
 - 후속으로 `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬했다.
 
+## 2026-03-23: 스카 취소 감지 재예약 교차 경계 복구
+
+- `naver-monitor`와 `kiosk-monitor`를 모두 launchd 백그라운드 운영 모드로 다시 복귀시켰다.
+- 운영 중 조민정 케이스에서 `4/4 16:30~18:30` 과거 취소건과 `4/4 15:30~18:30` 현재 확정건이 함께 존재하는 재예약 시나리오를 확인했다.
+- 기존 `naver-monitor` 취소 감지 2/2E는 취소 탭에서 읽은 항목을 DB 추적 여부와 무관하게 바로 픽코 자동 취소로 넘길 수 있었고, 이 때문에 historical cancel이 현재 확정 예약과 섞여 `취소 대상 예약 미발견` 실패를 만들었다.
+- `bots/reservation/auto/monitors/naver-monitor.js`에 `findTrackedReservationForCancelCandidate()` / `shouldProcessCancelledBooking()` 가드를 추가해, 취소 탭 항목이 `bookingId / compositeKey / phone+date+start+room` 기준으로 DB에 이미 추적된 예약일 때만 자동 취소를 수행하도록 바꿨다.
+- 이제 DB에 없는 과거 취소건은 `미추적 과거 취소건 스킵` 로그만 남기고 자동 픽코 취소를 시도하지 않는다.
+- `node --check bots/reservation/auto/monitors/naver-monitor.js` 통과 후 `bash bots/reservation/scripts/reload-monitor.sh`로 운영 프로세스까지 재기동했고, `health-report --json` 기준 `naver-monitor / kiosk-monitor` 모두 정상으로 복귀했다.
+
 ## 2026-03-22: 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 기준 복구
 
 - `daily_summary.total_amount`를 총매출처럼 읽던 경로를 다시 점검했다.

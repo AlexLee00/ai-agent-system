@@ -37,6 +37,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에 합산값 의미 주석/표기 반영
 - `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬
 
+## 12주차 후속 (2026-03-23) — 스카 재예약 교차 취소 오탐 방지
+
+- `bots/reservation/auto/monitors/naver-monitor.js`
+  - 취소 감지 2/2E에서 취소 탭 항목을 바로 픽코 자동 취소 대상으로 넘기지 않고, DB에 이미 추적 중인 예약인지 먼저 확인하도록 변경
+  - 새 가드 함수 `findTrackedReservationForCancelCandidate()` / `shouldProcessCancelledBooking()` 추가
+  - `bookingId`, `compositeKey`, `phone+date+start+room` 기준으로 tracked reservation을 찾지 못하면 `미추적 과거 취소건 스킵` 로그만 남기고 자동 취소를 건너뜀
+- 효과
+  - 같은 고객/같은 날짜/같은 룸에서 과거 취소건과 현재 재예약건이 함께 보이는 경우, historical cancel을 현재 확정 예약 취소로 오인하던 경계를 제거
+  - 조민정 `2026-04-04 A1` 케이스처럼 `16:30` 취소 이력과 `15:30` 재예약이 섞여도 자동 픽코 취소가 잘못 발동하지 않도록 보강
+- 운영
+  - `bash bots/reservation/scripts/reload-monitor.sh`로 `naver-monitor`를 재기동했고, `health-report --json` 기준 `naver-monitor / kiosk-monitor` 모두 정상 상태 확인
+
 ## 12주차 후속 (2026-03-22) — 스카 매출 source 영향 경로 정렬 + 예측엔진 입력 복구
 
 - `ska-read-service`, `dashboard-server`, dashboard HTML, `collect-kpi`가 총매출을 `general_revenue + pickko_study_room` 기준으로 읽도록 정리
