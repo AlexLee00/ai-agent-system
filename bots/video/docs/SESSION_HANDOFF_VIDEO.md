@@ -47,6 +47,14 @@
   - `edl-builder.js`는 V2 clip concat 전에 모든 비디오를 공통 캔버스로 정규화하고, narration 오디오는 clip speed와 독립적으로 timeline 길이에 맞춰 유지하도록 보강
   - speed floor(`min_speed_factor=0.5`) 때문에 영상 길이가 narration보다 짧아질 때는 `tpad=stop_mode=clone`으로 마지막 프레임을 hold해 timeline 길이를 맞추도록 수정
   - 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264s`, audio `48000Hz stereo / 264s`로 A/V 길이 정합성 회복 확인
+- reference quality baseline 추가
+  - `reference-quality.js`, `test-reference-quality.js`를 추가해 자동 결과와 실제 편집본(`edited/`)을 구조/시각 유사도 기준으로 비교할 수 있게 함
+  - 현재 파라미터 세트 baseline:
+    - `overall=70.43`
+    - `duration=64.26`
+    - `resolution=25.18`
+    - `visual_similarity=79.61`
+  - 해석: 현재 약점은 sync 자체보다 편집본 대비 `길이 축소`와 `preview 해상도 차이`이며, 장면 유사도는 baseline usable 수준
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.

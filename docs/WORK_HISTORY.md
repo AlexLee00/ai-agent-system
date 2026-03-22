@@ -22,7 +22,10 @@
   - narration 오디오는 clip speed와 독립적으로 timeline 길이를 유지
   - speed floor 때문에 영상 길이가 narration보다 짧아지면 마지막 프레임 hold(`tpad=stop_mode=clone`)로 보정
 - 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264초`, audio `48kHz stereo / 264초`, 파일 크기 `6.96MB`, preview wall-clock `103527ms`로 A/V 정합성이 복구됐다.
-- 현재 1순위 보강 포인트는 final render 다세트 검증과 transition 재도입 설계다.
+- `reference-quality.js` / `test-reference-quality.js`를 추가해 자동 결과와 `samples/edited` 실제 편집본을 구조/시각 유사도 기준으로 비교할 수 있게 했다.
+- 현재 파라미터 baseline은 `overall=70.43`, `duration=64.26`, `resolution=25.18`, `visual_similarity=79.61`로 확인됐다.
+- 해석상 현재 약점은 sync 자체보다 편집본 대비 `길이 축소`와 `preview 해상도 차이`이며, 장면 유사도는 usable 수준이다.
+- 현재 1순위 보강 포인트는 final render 다세트 검증, reference evaluator 5세트 확장, transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 

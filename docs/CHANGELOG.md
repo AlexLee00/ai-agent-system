@@ -36,6 +36,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - preview가 단순 생성 성공을 넘어서 timeline 기준 A/V 정합성을 회복했다.
 - Phase 2 다음 단계는 sync 기준선 자체보다 final render 다세트 검증과 transition 재도입 설계로 이동할 수 있다.
 
+## 12주차 후속 (2026-03-22) — 비디오팀 reference quality evaluator 추가
+
+### 변경 사항 (added)
+- `bots/video/lib/reference-quality.js`
+  - `ffprobe` 기반 메타데이터 비교
+  - 샘플 프레임 RGB 비교 기반 시각 유사도 계산
+  - duration / resolution / fps / audio spec / visual similarity 종합 점수 산출
+- `bots/video/scripts/test-reference-quality.js`
+  - 자동 결과물과 `samples/edited` 실제 편집본을 비교하는 CLI 추가
+  - `--generated`, `--reference`, `--sample`, `--json` 지원
+
+### 검증
+- `node --check bots/video/lib/reference-quality.js` | ✅
+- `node --check bots/video/scripts/test-reference-quality.js` | ✅
+- `node bots/video/scripts/test-reference-quality.js --generated=.../preview-fixed.mp4 --sample=파라미터 --json` | ✅ `overall=70.43`, `duration=64.26`, `resolution=25.18`, `visual_similarity=79.61`
+
+### 효과
+- RED/BLUE 내부 품질 점수와 별도로, 실제 사람 편집본 기준 reference 품질 평가 축이 생겼다.
+- 현재 baseline 기준 자동 결과의 약점이 `sync` 자체보다 `길이 축소`와 `preview 해상도 차이`라는 점을 수치로 읽을 수 있게 됐다.
+
 ## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
 
 ### 신규 모듈
