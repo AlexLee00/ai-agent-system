@@ -14,3 +14,4 @@ runtime_config:
     verifyBeforeUnresolvedReportTimeoutMs: 240000
   kioskMonitor:
     errorTrackerThreshold: 3
+    customerOperationCooldownMs: 30000

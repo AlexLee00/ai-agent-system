@@ -4,6 +4,13 @@
 
 ## 2026-03-22
 
+### 스카 고객 단위 연속 작업 cooldown
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ `phone|date` 기준 고객 cooldown 및 순차 처리 보강 후 문법 통과 |
+| `node --check bots/reservation/lib/runtime-config.js` | ✅ `customerOperationCooldownMs` 추가 후 문법 통과 |
+
 ### 스카 픽코 자동 예약 감지 runbook
 
 | 테스트 | 결과 |

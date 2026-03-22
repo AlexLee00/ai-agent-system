@@ -20,6 +20,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
   kioskMonitor: {
     errorTrackerThreshold: 3,
+    customerOperationCooldownMs: 30000,
   },
 };
 

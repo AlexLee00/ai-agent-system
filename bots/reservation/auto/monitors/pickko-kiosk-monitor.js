@@ -136,6 +136,43 @@ function to24Hour(timeText) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+function getCustomerOperationGroupKey(entry) {
+  return `${entry?.phoneRaw || ''}|${entry?.date || ''}`;
+}
+
+function compareEntrySequence(a, b) {
+  const aGroup = getCustomerOperationGroupKey(a);
+  const bGroup = getCustomerOperationGroupKey(b);
+  if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
+  const aStart = String(a?.start || '');
+  const bStart = String(b?.start || '');
+  if (aStart !== bStart) return aStart.localeCompare(bStart);
+  const aEnd = String(a?.end || '');
+  const bEnd = String(b?.end || '');
+  if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
+  return String(a?.room || '').localeCompare(String(b?.room || ''));
+}
+
+async function waitForCustomerCooldown(entry, tracker, operationLabel) {
+  const cooldownMs = Number(KIOSK_MONITOR_RUNTIME.customerOperationCooldownMs || 0);
+  if (!cooldownMs || cooldownMs <= 0) return;
+  const groupKey = getCustomerOperationGroupKey(entry);
+  if (!groupKey || groupKey === '|') return;
+  const lastAt = tracker.get(groupKey);
+  if (!lastAt) return;
+  const elapsedMs = Date.now() - lastAt;
+  const waitMs = cooldownMs - elapsedMs;
+  if (waitMs <= 0) return;
+  log(`⏳ 동일 고객 연속 ${operationLabel} cooldown 대기: ${Math.ceil(waitMs / 1000)}초 (${groupKey})`);
+  await delay(waitMs);
+}
+
+function markCustomerCooldown(entry, tracker) {
+  const groupKey = getCustomerOperationGroupKey(entry);
+  if (!groupKey || groupKey === '|') return;
+  tracker.set(groupKey, Date.now());
+}
+
 
 
 // ─── Phase 3: 네이버 booking calendar 로그인 ──────────
@@ -1970,6 +2007,7 @@ async function main() {
       seenBlockKeys.add(key);
       toBlockEntries.push(entry);
     }
+    toBlockEntries.sort(compareEntrySequence);
 
     // ── Phase 2B: 취소 감지 (픽코 상태별 직접 조회) ──
     // 상태 필터는 중복 선택이 되지 않으므로 `취소`, `환불`을 각각 조회한 뒤 합친다.
@@ -1998,6 +2036,7 @@ async function main() {
       if (saved.naverUnblockedAt) return false; // 이미 해제 완료
       return true;
     });
+    cancelledEntries.sort(compareEntrySequence);
 
     log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
     log(`🗑 픽코 취소 감지: 환불 ${refundedEntries.length}건 / 취소 ${cancelledStatusEntries.length}건 / 합산 ${dedupedCancelledEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
@@ -2093,6 +2132,8 @@ async function main() {
         return;
       }
 
+      const customerOperationTracker = new Map();
+
       // 각 신규·재시도 예약 처리
       for (const e of toBlockEntries) {
         const key = `${e.phoneRaw}|${e.date}|${e.start}`;
@@ -2122,6 +2163,8 @@ async function main() {
           continue;
         }
 
+        await waitForCustomerCooldown(e, customerOperationTracker, '예약 차단');
+
         // Frame detach 시 새 탭으로 1회 재시도
         let blocked = false;
         let blockReason = 'verify_failed';
@@ -2147,6 +2190,7 @@ async function main() {
             }
           }
         }
+        markCustomerCooldown(e, customerOperationTracker);
 
         const now = nowKST();
         await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
@@ -2188,6 +2232,8 @@ async function main() {
           const { key } = e;
           log(`\n처리 중 (취소): ${key}`);
 
+          await waitForCustomerCooldown(e, customerOperationTracker, '예약 해제');
+
           let unblocked = false;
           for (let attempt = 1; attempt <= 2; attempt++) {
             try {
@@ -2208,6 +2254,7 @@ async function main() {
               }
             }
           }
+          markCustomerCooldown(e, customerOperationTracker);
 
           if (unblocked) {
             // naverBlocked: false + naverUnblockedAt 기록 (기존 DB 데이터 보존)

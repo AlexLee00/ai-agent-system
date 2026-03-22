@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 고객 단위 연속 작업 cooldown 추가
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 같은 고객(`phone|date`)의 예약 차단/해제 작업을 정렬 후 순차 처리하도록 보강
+  - `waitForCustomerCooldown()` / `markCustomerCooldown()`를 추가해 같은 고객/같은 날짜의 직전 작업 후 일정 시간 대기한 뒤 다음 작업을 수행
+- `bots/reservation/lib/runtime-config.js`
+  - `kioskMonitor.customerOperationCooldownMs` 기본값 `30000` 추가
+- `bots/reservation/config.yaml`
+  - `runtime_config.kioskMonitor.customerOperationCooldownMs: 30000` 반영
+
+### 효과
+- 한 고객이 연속으로 여러 슬롯을 예약/취소할 때 이전 작업의 UI/원장 반영 시간이 부족해 실패하던 경계를 1차로 완화했다.
+- 새 큐 테이블 없이 기존 자동 모니터 안에서 고객 단위 직렬화를 먼저 확보했다.
+
+### 검증
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+- `node --check bots/reservation/lib/runtime-config.js` | ✅
+
 ## 12주차 후속 (2026-03-22) — 스카 픽코 자동 예약 감지 runbook 추가
 
 ### 추가 사항 (added)
