@@ -632,4 +632,5 @@
 - `bots/reservation/migrations/007_kiosk_block_key_v2.js`를 추가해 기존 `kiosk_blocks` row를 v2 id로 재키잉했다. 현재 스키마는 `v7`이다.
 - `pickko-kiosk-monitor.js`, `manual-block-followup-report.js`, `getOpenManualBlockFollowups()`는 `end/room`까지 반영해 같은 사람/같은 날짜/같은 시작시각 재예약에서도 다른 row로 다루도록 보강했다.
 - 검증상 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, legacy 단일 키와 달리 충돌하지 않는다.
+- 추가로 `test-kiosk-block-key-v2.js`를 통해 실제 `reservation.kiosk_blocks` 트랜잭션 안에서 `09:00~13:00`와 `09:00~11:00` 두 row를 삽입/조회 후 rollback하는 비파괴 검증을 수행했고, `rowCount=2`, `v2Keys.distinct=true`를 확인했다.
 - 후속 운영 검증 절차는 [SKA_REBOOK_REGRESSION_TEST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md)를 기준으로 본다.
