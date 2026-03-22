@@ -61,6 +61,10 @@
     - 서버인증 `72.96`
     - DB생성 `75.12`
   - 현재 남은 핵심 차이는 해상도보다 사람 편집본 대비 `길이/구조`이며, 다음 1순위는 낮은 점수 세트의 duration/structure 튜닝이다.
+  - `analyze-final-structure-gap.js`를 추가해 `final.mp4 + edit_decision_list.json + reference` 기준으로 구조 병목을 재현 가능하게 분석할 수 있게 했다.
+    - `서버인증`: `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `10초 window(900~910s)` 4회 재사용
+    - `DB생성`: `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `30초 window(1370~1400s)` 2회 재사용
+  - 해석: 다음 1순위는 transition 재도입보다 먼저 `fallback narration 세분화`, `speed floor 의존 완화`, `짧은 source window 반복 제한`이다.
 - 스카
   - `pickko-alerts-query.js`를 최신 `pgPool` 기반 reservation DB에 맞게 복구했다. 기존 SQLite `getDb()` 경로는 더 이상 유효하지 않았다.
   - 복구 후 실제 DB 조회 기준 `--type=error --unresolved`는 `0건`, `--phone=01089430972 --hours=48`도 `0건`으로 확인됐다.

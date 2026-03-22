@@ -5,22 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 12주차 후속 (2026-03-22) — 비디오팀 final 5세트 baseline 완료 + watchdog 완화
 
+### 변경 사항 (added)
+- `bots/video/scripts/analyze-final-structure-gap.js`
+  - `final.mp4 + edit_decision_list.json + reference` 기준으로 low-score 세트의 구조 병목을 분석하는 진단 스크립트 추가
+
 ### 변경 사항 (changed)
 - `bots/video/lib/edl-builder.js`
   - `computeFinalWatchdogOptions()`를 추가해 긴 final render가 고정 2분 stall timeout으로 false failure 되지 않도록 가변 watchdog으로 전환
 
 ### 검증
 - `node --check bots/video/lib/edl-builder.js` | ✅
+- `node --check bots/video/scripts/analyze-final-structure-gap.js` | ✅
 - `node bots/video/scripts/test-final-reference-quality-batch.js --title=서버인증 --json` | ✅ false stall 복구 후 `overall=72.96`, `duration=41.26`, `visual_similarity=74.49`
 - `node bots/video/scripts/test-final-reference-quality-batch.js --json` | ✅ final 5세트 baseline 완료
   - `averageOverall=79.00`
   - `averageDuration=54.67`
   - `averageResolution=99.58`
   - `averageVisualSimilarity=80.41`
+- `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-S73v5p/final.mp4 --edl=.../video-sync-pipeline-S73v5p/edit_decision_list.json --sample=서버인증 --json` | ✅ `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `main:900~910s` 4회 재사용 확인
+- `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-037yYC/final.mp4 --edl=.../video-sync-pipeline-037yYC/edit_decision_list.json --sample=db생성 --json` | ✅ `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `main:1370~1400s` 2회 재사용 확인
 
 ### 효과
 - 긴 세트(`서버인증`)가 false stall 없이 끝까지 렌더되며 final 5세트 batch를 완주할 수 있게 됐다.
 - final 기준으로 남은 핵심 차이가 해상도보다는 사람 편집본 대비 `길이/구조`라는 점이 더 선명해졌다.
+- 이제 낮은 점수 세트의 병목을 “짧은 source window 반복 / speed floor 의존 / hold 사용” 수준으로 재현 가능하게 분석할 수 있다.
 
 ## 12주차 후속 (2026-03-22) — 비디오팀 final render batch 검증 레일 추가
 

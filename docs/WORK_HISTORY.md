@@ -39,6 +39,10 @@
 - final render 5세트 baseline을 완성했다.
   - 평균: `overall=79.00`, `duration=54.67`, `resolution=99.58`, `visual_similarity=80.41`
   - 세트별 overall: 파라미터 `81.62`, 컴포넌트스테이트 `80.16`, 동적데이터 `85.12`, 서버인증 `72.96`, DB생성 `75.12`
+- `analyze-final-structure-gap.js`를 추가해 low-score 세트의 EDL 구조 병목을 재현 가능하게 분석할 수 있게 했다.
+  - `서버인증`: `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `main:900~910s` 10초 window 4회 재사용
+  - `DB생성`: `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `main:1370~1400s` 30초 window 2회 재사용
+- 해석상 현재 가장 큰 차이는 해상도나 장면 유사도보다, 짧은 source window 반복과 `speed=0.5` floor 의존으로 인한 사람 편집본 대비 `길이/구조 압축`이다.
 - 현재 1순위 보강 포인트는 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure를 사람 편집본 기준으로 더 맞추는 것과 transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구

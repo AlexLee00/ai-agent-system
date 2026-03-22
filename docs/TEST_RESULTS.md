@@ -53,6 +53,9 @@
 | `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=동적데이터 --json` | ✅ `overall=85.12`, `duration=69.85`, `visual_similarity=85.02` |
 | `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=서버인증 --json` | ✅ `overall=72.96`, `duration=41.26`, `visual_similarity=74.49` |
 | `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=db생성 --json` | ✅ `overall=75.12`, `duration=38.03`, `visual_similarity=83.41` |
+| `node --check bots/video/scripts/analyze-final-structure-gap.js` | ✅ |
+| `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-S73v5p/final.mp4 --edl=.../video-sync-pipeline-S73v5p/edit_decision_list.json --sample=서버인증 --json` | ✅ `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `main:900~910s` 4회 재사용 확인 |
+| `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-037yYC/final.mp4 --edl=.../video-sync-pipeline-037yYC/edit_decision_list.json --sample=db생성 --json` | ✅ `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `main:1370~1400s` 2회 재사용 확인 |
 | `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
 | `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |
