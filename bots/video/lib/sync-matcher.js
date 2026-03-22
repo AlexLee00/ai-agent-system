@@ -143,7 +143,7 @@ function applyTimeOrdering(matches, config = {}) {
   });
 }
 
-function handleUnmatched(segments, matches, config = {}) {
+function handleUnmatched(segments, matches, scenes = [], config = {}) {
   const resolved = ensureSyncMatcherConfig(config);
   const bySegment = new Map(matches.filter(Boolean).map((match) => [match.segment_id, match]));
   const filled = [];
@@ -168,6 +168,26 @@ function handleUnmatched(segments, matches, config = {}) {
         hold_from_segment_id: previous.segment_id,
       });
       continue;
+    }
+
+    if (resolved.unmatched_strategy === 'hold') {
+      const nextMatched = segments
+        .slice(segments.findIndex((item) => item.segment_id === segment.segment_id) + 1)
+        .map((item) => bySegment.get(item.segment_id))
+        .find(Boolean);
+      const anchorSource = nextMatched?.source || scenes[0] || null;
+      if (anchorSource) {
+        filled.push({
+          segment_id: segment.segment_id,
+          source: anchorSource,
+          match_type: 'hold',
+          match_score: Number(Math.max(0.15, Number(nextMatched?.match_score || 0.25) * 0.6).toFixed(4)),
+          overlap_keywords: [],
+          confidence: 'low',
+          hold_from_segment_id: nextMatched?.segment_id || null,
+        });
+        continue;
+      }
     }
 
     filled.push({
@@ -227,6 +247,7 @@ async function buildSyncMap(sceneIndex, narrationAnalysis, config = {}, options 
   const filled = handleUnmatched(
     segments,
     segments.map((segment) => orderedById.get(segment.segment_id)).filter(Boolean),
+    scenes,
     config
   );
 

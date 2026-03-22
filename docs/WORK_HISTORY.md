@@ -12,9 +12,10 @@
 - 인트로/아웃트로는 파일 업로드 또는 프롬프트 설명을 모두 지원하는 하이브리드 구조로 전환했다.
 - 2026-03-22 Phase 2 검증 기준선:
   - `scene-indexer`: `duration_s=1410.45`, `total_frames_captured=141`, `unique_frames=42`, `scene_count=42`
-  - `narration-analyzer`: 샌드박스 네트워크 제약 시 `offline fixture fallback`, `total_segments=3`
-  - `full-sync-pipeline`: `keyword=2`, `unmatched=1`, `sync_confidence=0.3445`
-- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 오프라인 `narration-analyzer` fallback의 세그먼트 granularity와 첫 구간 unmatched 처리 정책이다.
+  - `narration-analyzer`: 샌드박스 네트워크 제약 시 `offline fixture fallback`, `total_segments=5`
+  - `full-sync-pipeline`: `keyword=5`, `unmatched=0`, `sync_confidence=0.6`
+- 오프라인 fallback 세그먼트 granularity를 공용 fixture 5세그먼트 구조로 보강했고, 첫 구간 unmatched를 제거했다.
+- 현재 1순위 보강 포인트는 OCR 장면 인덱싱 자체보다 `preview_ms` 원장화와 preview/final render 품질 검증이다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 
