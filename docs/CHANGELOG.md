@@ -3,6 +3,15 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 매출 source 영향 경로 정렬 + 예측엔진 입력 복구
+
+- `ska-read-service`, `dashboard-server`, dashboard HTML, `collect-kpi`가 총매출을 `general_revenue + pickko_study_room` 기준으로 읽도록 정리
+- `bots/ska/src/etl.py`가 `actual_revenue = pickko_study_room + general_revenue` 기준으로 `revenue_daily`를 적재하도록 수정
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=120`를 재실행해 `revenue_daily`와 `training_feature_daily`를 새 기준으로 재동기화
+- `ska-sales-forecast-daily-review.js`가 `total_revenue / studyRoomRevenue / generalRevenue`를 보조 표시값으로 노출하도록 정리
+- 일일/주간 리뷰는 `forecast_date::text` 기준으로 바꿔 날짜가 하루 밀려 보이던 경계를 복구
+- 후속 예측엔진 단계별 정리 문서 `docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md` 추가
+
 ## 12주차 후속 (2026-03-22) — 스카 매출 DB 적재 마무리 / daily_summary 정합성 복구
 
 - `bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`를 다시 실행해 3월 전체 `daily_summary`를 재집계

@@ -48,10 +48,13 @@ async function loadAccuracyRows(days) {
       ORDER BY fr.forecast_date, fr.created_at DESC, fr.id DESC
     )
     SELECT
-      latest.forecast_date AS date,
+      latest.forecast_date::text AS date,
       rd.actual_revenue,
       rds.total_amount,
       rds.entries_count,
+      COALESCE(rds.general_revenue, 0) AS general_revenue,
+      COALESCE(rds.pickko_study_room, 0) AS pickko_study_room,
+      COALESCE(rds.general_revenue, 0) + COALESCE(rds.pickko_study_room, 0) AS total_revenue,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
       (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue,
       COALESCE((latest.predictions->>'shadow_confidence')::float, 0.0) AS shadow_confidence,
@@ -88,7 +91,7 @@ async function loadUpcomingForecasts(days = 3) {
       ORDER BY fr.forecast_date, fr.created_at DESC, fr.id DESC
     )
     SELECT
-      latest.forecast_date AS date,
+      latest.forecast_date::text AS date,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence,
@@ -296,6 +299,9 @@ async function main() {
       actualReservations: Number(latestActual.actual_reservations || 0),
       predictedReservations: Number(latestActual.predicted_reservations || 0),
       totalAmount: Number(latestActual.total_amount || 0),
+      totalRevenue: Number(latestActual.total_revenue || 0),
+      studyRoomRevenue: Number(latestActual.pickko_study_room || 0),
+      generalRevenue: Number(latestActual.general_revenue || 0),
       entriesCount: Number(latestActual.entries_count || 0),
       mape: latestActual.mape == null ? null : Number(Number(latestActual.mape).toFixed(2)),
       bias: Number(latestActual.error || 0),
@@ -335,7 +341,8 @@ async function main() {
     lines.push(`- 오차: ${biasLabel(report.latestActual.bias)}`);
     lines.push(`- 적중률(MAPE): ${report.latestActual.mape == null ? 'N/A' : `${report.latestActual.mape}%`}`);
     lines.push(`- 실예약/예측예약: ${fmt(report.latestActual.actualReservations)}건 / ${fmt(report.latestActual.predictedReservations)}건`);
-    lines.push(`- total_amount / entries_count: ${fmt(report.latestActual.totalAmount)}원 / ${fmt(report.latestActual.entriesCount)}건`);
+    lines.push(`- total_revenue / entries_count: ${fmt(report.latestActual.totalRevenue)}원 / ${fmt(report.latestActual.entriesCount)}건`);
+    lines.push(`- 매출 구성: 스터디룸 ${fmt(report.latestActual.studyRoomRevenue)}원 / 일반이용 ${fmt(report.latestActual.generalRevenue)}원`);
   }
 
   lines.push('');

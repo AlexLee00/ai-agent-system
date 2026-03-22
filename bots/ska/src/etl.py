@@ -15,6 +15,7 @@ launchd: 매일 00:30 (ai.ska.etl)
 """
 import sys
 import os
+import json
 import psycopg2
 from psycopg2.extras import DictCursor
 from datetime import datetime, timedelta, date as date_type
@@ -57,6 +58,18 @@ def _dict_qry(con, sql, params=()):
     rows = cur.fetchall()
     cur.close()
     return rows
+
+def _sum_room_amounts(room_amounts):
+    if not room_amounts:
+        return 0
+    if isinstance(room_amounts, str):
+        try:
+            room_amounts = json.loads(room_amounts)
+        except Exception:
+            return 0
+    if isinstance(room_amounts, dict):
+        return sum(int(v or 0) for v in room_amounts.values())
+    return 0
 
 def _run(con, sql, params=()):
     """INSERT/UPDATE/DELETE + commit"""
@@ -162,7 +175,7 @@ def run_etl(days_back=90):
 
         # daily_summary 로드 (dict-style row access)
         summary_rows = _dict_qry(res_con, """
-            SELECT date, total_amount, pickko_total, pickko_study_room, general_revenue
+            SELECT date, total_amount, pickko_total, pickko_study_room, general_revenue, room_amounts_json
             FROM daily_summary
             WHERE date >= %s AND date <= %s
             ORDER BY date
@@ -174,9 +187,13 @@ def run_etl(days_back=90):
         for row in summary_rows:
             d = str(row['date'])  # 'YYYY-MM-DD'
 
-            actual_revenue    = row['total_amount'] or 0
-            studyroom_revenue = actual_revenue - (row['general_revenue'] or 0)
-            general_revenue   = row['general_revenue'] or 0
+            general_revenue = int(row['general_revenue'] or 0)
+            studyroom_revenue = int(row['pickko_study_room'] or 0)
+            if studyroom_revenue <= 0:
+                studyroom_revenue = _sum_room_amounts(row.get('room_amounts_json'))
+            if studyroom_revenue <= 0 and general_revenue <= 0:
+                studyroom_revenue = int(row['total_amount'] or 0)
+            actual_revenue = studyroom_revenue + general_revenue
 
             # 해당 날짜 완료 예약 (status='completed')
             res_rows = _dict_qry(res_con, """
