@@ -243,6 +243,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 추가로 `blockNaverSlot()` 반환 객체를 다시 boolean으로 해석하지 않던 잔여 경로 1건 수정
 - `bots/reservation/migrations/007_kiosk_block_key_v2.js`
   - 기존 `kiosk_blocks` row를 v2 id로 재키잉하는 마이그레이션 추가
+- `bots/reservation/scripts/test-kiosk-block-key-v2.js`
+  - 실제 DB 트랜잭션에서 두 개의 재예약 row를 삽입/조회 후 rollback하는 비파괴 회귀 테스트 스크립트 추가
 - `docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md`
   - 취소 후 같은 시작시각 재예약 회귀 테스트 절차서 추가
 

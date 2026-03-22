@@ -1081,3 +1081,5 @@
 | `node bots/reservation/scripts/migrate.js` | ✅ `v007 kiosk_block_key_v2` 적용 완료, 스키마 `v7` 확인 |
 | `node bots/reservation/manual/reports/manual-block-followup-report.js` | ✅ 마이그레이션 후에도 `count=12`, `openCount=6`, `correctedCount=3` 유지 확인 |
 | `node --input-type=module -e \"... hashKioskKey('...09:00','13:00','A1') vs hashKioskKey('...09:00','11:00','A1') ...\"` | ✅ v2 해시 서로 다름, legacy `phone|date|start` 단일 키 충돌 해소 확인 |
+| `node --check bots/reservation/scripts/test-kiosk-block-key-v2.js` | ✅ |
+| `node bots/reservation/scripts/test-kiosk-block-key-v2.js` | ✅ 실제 DB 트랜잭션 + rollback 기준 `rowCount=2`, `v2Keys.distinct=true` 확인 |
