@@ -55,6 +55,18 @@
     - `resolution=25.18`
     - `visual_similarity=79.61`
   - 해석: 현재 약점은 sync 자체보다 편집본 대비 `길이 축소`와 `preview 해상도 차이`이며, 장면 유사도는 baseline usable 수준
+  - 5세트 batch baseline:
+    - `averageOverall=68.88`
+    - `averageDuration=54.30`
+    - `averageResolution=25.11`
+    - `averageVisualSimilarity=83.76`
+  - 세트별 overall:
+    - 파라미터 `72.77`
+    - 동적데이터 `73.15`
+    - 컴포넌트스테이트 `69.88`
+    - DB생성 `64.77`
+    - 서버인증 `63.85`
+  - 해석: 현재 Phase 2 preview는 장면 유사도는 전반적으로 높지만(`80~86`), 사람 편집본 대비 길이가 크게 짧아 duration score가 전체를 깎는다. 가장 큰 병목은 `sync 정확도`보다 `편집 길이 설계`와 `preview/final 출력 정책 차이`다.
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
