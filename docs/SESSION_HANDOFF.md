@@ -12,6 +12,10 @@
 ## 1. 현재 시스템 상태 요약
 
 - 스카
+  - 픽코 모니터링 심층 코드점검에서 해제(unblock) 경계 버그 3개를 추가로 수정했다. `unblockNaverSlot()`는 이제 최종 검증이 실패하면 `false`를 반환하고, `fillAvailablePopup()`는 `설정변경` 이후 패널이 실제로 닫혔는지 확인한 뒤에만 성공 처리한다.
+  - `--unblock-slot` 단독 모드는 실패 시 더 이상 `naverBlocked=false`를 써서 DB 원장을 오염시키지 않는다. 성공 시에만 `false`로 내리고, 실패 시에는 기존 차단 상태를 유지한다.
+  - 취소 후 네이버 해제 성공 알림은 다시 `report` 레벨로 정렬했다. 즉 성공은 `publishKioskSuccessReport()`, 실패만 `alert`로 읽는 기존 운영 계약을 복구했다.
+  - 같은 슬롯(`2026-04-20 11:00~12:30 A1`) 기준으로 block/unblock를 다시 재실행한 결과, `PATCH /schedules` `200 OK`, 패널 닫힘 확인, 최종 검증 성공까지 모두 재확인됐다.
   - 네이버 슬롯 처리 안정화 1차를 진행했다. `pickko-kiosk-monitor.js`는 이제 네이버 일간 캘린더의 가상 스크롤/transform 구조를 전제로 `row-index + room column` 방식으로 슬롯을 찾는다. 잘못된 시간축 fallback으로 저녁 슬롯을 누르던 경계를 제거했고, `Calendar__row-wrap` 스크롤을 직접 제어해 목표 시간 row를 화면으로 끌어온 뒤 처리한다.
   - `clickRoomAvailableSlot()`, `clickRoomSuspendedSlot()`, `verifyBlockInGrid()`는 같은 캘린더 parser 전제를 쓰도록 맞췄다. 그 결과 `2026-04-20 11:00~12:30 A1` 기준으로 `block/unblock` 모두 정확한 슬롯 선택과 최종 검증까지 실측 확인됐다.
   - 네이버 내부 schedule API trace 계측을 추가했다. `NAVER_TRACE_SCHEDULE_API=1` 환경에서 `/tmp/naver-schedule-trace.log`에 `api-partner.booking.naver.com/.../schedules` request/response JSONL이 남는다.

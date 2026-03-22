@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 픽코 모니터링 unblock 경계 복구
+
+### 변경 사항 (changed)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - `unblockNaverSlot()`가 최종 검증 실패 시에도 `true`를 반환하던 경계를 `return verified`로 수정
+  - `fillAvailablePopup()`에 `waitForSettingsPanelClosed()`를 추가해 `설정변경` 후 패널이 실제로 닫혔는지 확인하도록 보강
+  - `--unblock-slot` 단독 모드가 실패 시에도 `naverBlocked=false`를 쓰던 버그를 수정해 성공 시에만 DB 상태를 낮추도록 정리
+  - 취소 후 네이버 해제 성공 알림을 `publishKioskSuccessReport()`로 되돌려 success/report, failure/alert 계약을 회복
+
+### 효과
+- 해제 검증 실패를 성공처럼 포장하는 false success 경계를 제거했다.
+- 단독 해제 모드 실패 시 `kiosk_blocks` 원장이 오염되는 문제를 막아 운영 데이터 신뢰도를 높였다.
+- block/unblock 경로의 성공 판정 규칙이 다시 대칭적으로 정렬됐다.
+
+### 검증
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+- `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --block-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ `PATCH /schedules` `200 OK`, 최종 검증 성공 재확인
+- `env NAVER_TRACE_SCHEDULE_API=1 node bots/reservation/auto/monitors/pickko-kiosk-monitor.js --unblock-slot --date=2026-04-20 --start=11:00 --end=12:30 --room=A1 --phone=01000000000 --name=테스트` | ✅ 패널 닫힘 확인, `PATCH /schedules` `200 OK`, 최종 해제 검증 성공 재확인
+
 ## 12주차 후속 (2026-03-22) — 스카 네이버 슬롯 UI 안정화 1차
 
 ### 변경 사항 (changed)
