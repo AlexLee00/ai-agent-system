@@ -611,6 +611,7 @@
 - `naver-monitor.js`의 `runPickko()`는 child stdout/stderr에서 위 마커를 파싱해 `errorReason` 앞에 `[STAGE_CODE]`를 붙여 저장하고, 수동 처리 알림에도 `🧩 실패 단계:`를 함께 노출한다.
 - 의미: 이제 “재시도는 계속 했는데 왜 한 번도 성공 못 했는가”를 감으로 보지 않고, `member/date/slot/lock/payment` 경계별로 바로 읽을 수 있다.
 - 이번 단계는 DB 스키마 변경 없이 `errorReason`/알림 계약만 강화한 1차 계측이다. 다음 자연스러운 단계는 실패 단계 분포를 1~2일 관찰한 뒤 `slot 선택` 또는 `lock 충돌`에 맞는 재시도 정책을 분리하는 것이다.
+- 네이버 취소 자동화의 실제 분기 절차는 [SKA_NAVER_CANCEL_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_NAVER_CANCEL_FLOW_RUNBOOK_2026-03-22.md)에 별도 고정했다. 다음 세션에서 취소 live 점검 시 이 문서를 source of truth로 사용한다.
 
 ## 2026-03-22 — 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
 
