@@ -8,9 +8,8 @@
  * 기존 레코드는 ON CONFLICT UPDATE (confirmed 상태 유지).
  *
  * 저장 구조:
- *   스터디카페 (일반이용)  → general_revenue
- *   스터디룸 (A1/A2/B)   → pickko_study_room + room_amounts_json
- *   합계                  → pickko_total
+ *   스터디카페 (일반이용)  → detail.generalRevenue (payment-day direct)
+ *   스터디룸 (A1/A2/B)   → pickko_study_room + room_amounts_json (use-day allocation)
  *
  * 완료 후 예측용 CSV 자동 생성:
  *   ~/.openclaw/workspace/revenue-history.csv
@@ -228,7 +227,7 @@ async function main() {
           if (!DRY_RUN) {
             upsertDailySummary(date, {
               totalAmount: 0, roomAmounts: {}, entriesCount: 0,
-              pickkoTotal: 0, pickkoStudyRoom: 0, generalRevenue: 0,
+              pickkoStudyRoom: 0, generalRevenue: 0,
             });
           }
           log(`  ${date} (${dow}): 0원`);
@@ -256,7 +255,7 @@ async function main() {
             .join(' / ') || '-';
 
           log(`  ${date} (${dow}): ` +
-              `스터디카페 ${fmt(Math.max(detail.totalRevenue - studyRoomTotal, 0))}  ` +
+              `스터디카페 ${fmt(detail.generalRevenue)}  ` +
               `스터디룸 [${roomBreakdown}]  ` +
               `합계 ${fmt(detail.totalRevenue)}  ` +
               `(${detail.transactions.length}건${fallbackUsed ? ', fallback' : ''})`);
@@ -266,9 +265,8 @@ async function main() {
               totalAmount:     studyRoomTotal,
               roomAmounts,
               entriesCount:    detail.transactions.length,
-              pickkoTotal:     detail.totalRevenue,
               pickkoStudyRoom: studyRoomTotal,
-              generalRevenue:  Math.max(detail.totalRevenue - studyRoomTotal, 0),
+              generalRevenue:  detail.generalRevenue,
             });
           }
           totalSaved++;

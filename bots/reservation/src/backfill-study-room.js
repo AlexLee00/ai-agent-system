@@ -29,9 +29,9 @@ function normalizeRoom(raw) {
 async function main() {
   const db = getDb();
 
-  // 채울 날짜 목록 (total_amount=0 이고 픽코 총매출 있는 날)
+  // 채울 날짜 목록 (total_amount=0 이고 일반매출 또는 엔트리가 남아 있는 날)
   const dates = db.prepare(
-    'SELECT date FROM daily_summary WHERE total_amount = 0 AND pickko_total > 0 ORDER BY date DESC'
+    'SELECT date FROM daily_summary WHERE total_amount = 0 AND (general_revenue > 0 OR entries_count > 0) ORDER BY date DESC'
   ).all().map(r => r.date);
 
   log(`\n📋 채울 날짜: ${dates.length}개`);

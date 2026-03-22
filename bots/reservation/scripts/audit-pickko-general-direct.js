@@ -55,7 +55,6 @@ async function loadCandidateRows({ fromDate, toDate, exactDate, limit }) {
     return pgPool.query('reservation', `
       SELECT
         date::text AS date,
-        pickko_total,
         pickko_study_room,
         general_revenue,
         room_amounts_json
@@ -67,14 +66,12 @@ async function loadCandidateRows({ fromDate, toDate, exactDate, limit }) {
   return pgPool.query('reservation', `
     SELECT
       date::text AS date,
-      pickko_total,
       pickko_study_room,
       general_revenue,
       room_amounts_json
     FROM daily_summary
     WHERE date BETWEEN $1 AND $2
-      AND COALESCE(pickko_total, 0) > 0
-    ORDER BY ABS(COALESCE(pickko_total,0) - (COALESCE(general_revenue,0) + COALESCE(pickko_study_room,0))) DESC, date
+    ORDER BY date
     LIMIT $3
   `, [fromDate, toDate, limit]);
 }
@@ -114,11 +111,11 @@ async function main() {
       const storedRoomTotal = Number(row.pickko_study_room || 0);
       const storedGeneral = Number(row.general_revenue || 0);
       const directGeneral = Number(detail.generalRevenue || 0);
-      const pickkoTotal = Number(row.pickko_total || 0);
+      const detailTotalRevenue = Number(detail.totalRevenue || 0);
 
       results.push({
         date: row.date,
-        pickkoTotal,
+        detailTotalRevenue,
         stored: {
           generalRevenue: storedGeneral,
           studyRoomRevenue: storedRoomTotal,
@@ -160,8 +157,8 @@ async function main() {
         deltas: {
           generalRevenue: directGeneral - storedGeneral,
           studyRoomRevenue: directRoomTotal - storedRoomTotal,
-          totalGapAgainstStored: pickkoTotal - (storedGeneral + storedRoomTotal),
-          totalGapAgainstDirect: pickkoTotal - (directGeneral + directRoomTotal),
+          totalGapAgainstStored: detailTotalRevenue - (storedGeneral + storedRoomTotal),
+          totalGapAgainstDirect: detailTotalRevenue - (directGeneral + directRoomTotal),
         },
       });
     }
@@ -191,7 +188,7 @@ async function main() {
   for (const row of results) {
     lines.push('');
     lines.push(`■ ${row.date}`);
-    lines.push(`  Pickko total: ${won(row.pickkoTotal)}`);
+    lines.push(`  detail total: ${won(row.detailTotalRevenue)}`);
     lines.push(`  stored general: ${won(row.stored.generalRevenue)} | direct general: ${won(row.direct.generalRevenue)} | Δ ${won(row.deltas.generalRevenue)}`);
     lines.push(`  stored room: ${won(row.stored.studyRoomRevenue)} | direct room: ${won(row.direct.studyRoomRevenue)} | Δ ${won(row.deltas.studyRoomRevenue)}`);
     lines.push(`  txCount: ${row.direct.transactionCount}`);

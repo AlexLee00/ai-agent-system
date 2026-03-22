@@ -2,6 +2,31 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-23
+
+### 스카 daily_summary `pickko_total` 제거 / ETL 재동기화
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/reservation/scripts/migrate.js --status` | ✅ 스키마 버전 `v9`, `v008 pickko_order_raw_cleanup`, `v009 daily_summary_remove_pickko_total` 포함 총 9개 적용 확인 |
+| `node --check bots/reservation/lib/db.js` | ✅ `daily_summary` write/read path에서 `pickko_total` 제거 후 문법 통과 |
+| `node --check bots/reservation/scripts/pickko-revenue-backfill.js` | ✅ `pickko_total` 저장 제거 후 문법 통과 |
+| `node --check bots/reservation/scripts/health-report.js` | ✅ `pickko_total` 없는 `daily_summary` 기준 무결성 검사 문법 통과 |
+| `node --check bots/worker/lib/ska-sales-sync.js` | ✅ worker 미러가 `pickko_total` 없이도 동작하도록 정리 후 문법 통과 |
+| `python3 -m py_compile bots/ska/src/etl.py bots/ska/lib/feature_store.py` | ✅ 예측 ETL/feature store 스키마 정렬 후 문법 통과 |
+| `node - <<'EOF' ... syncSkaSalesToWorker('test-company') ... EOF` | ✅ worker `test-company` 재동기화 결과 `updated=0`, `expectedRows=299` 확인 |
+| `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365` | ✅ `174건 upsert`, `training_feature_daily 365행 동기화`, 최근값 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000` 확인 |
+
+### 스카 스터디룸 계산식 문서 기준 재정렬
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/lib/study-room-pricing.js` | ✅ `A1/A2 00:00~09:00 = 2,500원` 반영 후 문법 통과 |
+| `node - <<'EOF' ... calcStudyRoomAmount(...) ... EOF` | ✅ `A1 08:00~09:00 = 5,000`, `A1 09:00~11:20 = 17,500`, `B 10:30~13:20 = 36,000`, `A1 17:30~18:20 = 7,000` 확인 |
+| `env PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ 3월 전체 재집계 완료, 오류 `0건`, CSV `/Users/alexlee/.openclaw/workspace/revenue-history.csv` 31행 갱신 |
+| `node - <<'EOF' ... syncSkaSalesToWorker('test-company') ... EOF` | ✅ worker `test-company` 미러 재동기화 `updated=12`, `expectedRows=299` |
+| `node --input-type=module - <<'EOF' ... SELECT date, pickko_study_room, general_revenue FROM reservation.daily_summary ... EOF` | ✅ 대표 값 재확인: `2026-03-01 113000/113800`, `2026-03-12 135000/265000`, `2026-03-17 74500/290000`, `2026-03-21 156000/132000`, `2026-03-22 136000/173800` |
+
 ## 2026-03-22
 
 ### 스카 픽코 모니터링 unblock 경계 복구

@@ -69,12 +69,11 @@ function summarizeRows(rows) {
     if (row.source_axis === 'payment_day' && row.order_kind === 'general') {
       acc.generalCount += 1;
       acc.generalRevenueRaw += Number(row.raw_amount || 0);
-    } else if (row.source_axis === 'payment_day' && row.order_kind === 'study_room') {
-      acc.paymentRoomCount += 1;
-      acc.paymentRoomRevenueRaw += Number(row.raw_amount || 0);
     } else if (row.source_axis === 'use_day' && row.order_kind === 'study_room') {
       acc.useRoomCount += 1;
-      acc.useRoomPolicyRevenue += Number(row.policy_amount || 0);
+      acc.useRoomPolicyRevenue += Number(row.raw_amount || 0) > 0
+        ? Number(row.raw_amount || 0)
+        : Number(row.policy_amount || 0);
     }
     return acc;
   }, {
@@ -94,12 +93,14 @@ function verifyDate(result, storedRows) {
     totalCount: result.rows.length,
     generalCount: result.summary.generalCount,
     generalRevenueRaw: Number(result.summary.directGeneralRevenue || 0),
-    paymentRoomCount: result.summary.paymentRoomCount,
-    paymentRoomRevenueRaw: Number(result.summary.directStudyRoomRevenue || 0),
+    paymentRoomCount: 0,
+    paymentRoomRevenueRaw: 0,
     useRoomCount: result.summary.roomCount,
     useRoomPolicyRevenue: result.rows
       .filter((row) => row.sourceAxis === 'use_day' && row.orderKind === 'study_room')
-      .reduce((sum, row) => sum + Number(row.policyAmount || 0), 0),
+      .reduce((sum, row) => sum + (Number(row.rawAmount || 0) > 0
+        ? Number(row.rawAmount || 0)
+        : Number(row.policyAmount || 0)), 0),
   };
   return {
     ok:

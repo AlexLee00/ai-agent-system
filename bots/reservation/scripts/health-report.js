@@ -97,20 +97,17 @@ async function buildDailySummaryIntegrityHealth() {
   try {
     const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const rows = await pgPool.query('reservation', `
-      SELECT date::text, total_amount, room_amounts_json, pickko_total, pickko_study_room, general_revenue
+      SELECT date::text, total_amount, room_amounts_json, pickko_study_room, general_revenue
       FROM daily_summary
       ORDER BY date DESC
       LIMIT 400
     `);
 
     const issues = [];
-    const policyDivergences = [];
     for (const row of rows) {
       const date = String(row.date || '').slice(0, 10);
       const roomTotal = sumRoomAmounts(row.room_amounts_json);
-      const pickkoTotal = Number(row.pickko_total || 0);
       const pickkoStudyRoom = Number(row.pickko_study_room || 0);
-      const generalRevenue = Number(row.general_revenue || 0);
 
       if (date < todayKst && roomTotal > 0 && pickkoStudyRoom <= 0) {
         issues.push(`${date}: room_amounts_json ${roomTotal}원인데 pickko_study_room=0`);
@@ -119,41 +116,24 @@ async function buildDailySummaryIntegrityHealth() {
 
       if (roomTotal !== pickkoStudyRoom) {
         issues.push(`${date}: room_amounts_json ${roomTotal}원 != pickko_study_room ${pickkoStudyRoom}원`);
-        continue;
-      }
-
-      const expectedPickkoTotal = generalRevenue + pickkoStudyRoom;
-      if (pickkoTotal > 0 && expectedPickkoTotal !== pickkoTotal) {
-        policyDivergences.push(`${date}: 픽코합계 ${pickkoTotal}원 vs 운영산출 ${expectedPickkoTotal}원`);
       }
     }
 
     if (issues.length > 0) {
       return {
-        ok: policyDivergences.length > 0
-          ? [`  참고: 픽코합계와 운영산출 차이 ${policyDivergences.length}건 (새 스터디룸 산출식 기준)`]
-          : [],
+        ok: [],
         warn: [
           `  daily_summary 무결성: 경고 ${issues.length}건`,
           ...issues.slice(0, 5).map((line) => `    - ${line}`),
         ],
         issueCount: issues.length,
-        policyDivergenceCount: policyDivergences.length,
-        policyDivergenceSamples: policyDivergences.slice(0, 5),
       };
     }
 
-    const ok = ['  daily_summary 무결성: 스터디룸 산출식과 저장값이 일치'];
-    if (policyDivergences.length > 0) {
-      ok.push(`  참고: 픽코합계와 운영산출 차이 ${policyDivergences.length}건 (정책 기준 정상 가능)`);
-    }
-
     return {
-      ok,
+      ok: ['  daily_summary 무결성: 스터디룸 산출식과 저장값이 일치'],
       warn: [],
       issueCount: 0,
-      policyDivergenceCount: policyDivergences.length,
-      policyDivergenceSamples: policyDivergences.slice(0, 5),
     };
   } catch (error) {
     return {

@@ -90,7 +90,6 @@ async function loadRows(days) {
     SELECT
       ds.date,
       rds.total_amount,
-      rds.pickko_total,
       rds.pickko_study_room,
       rds.general_revenue AS reservation_general_revenue,
       rds.entries_count,
@@ -184,7 +183,6 @@ function buildModelRows(rows) {
       date: isoDate,
       target_revenue: actualRevenue,
       total_amount: row.total_amount == null ? '' : toInt(row.total_amount),
-      pickko_total: row.pickko_total == null ? '' : toInt(row.pickko_total),
       pickko_study_room: row.pickko_study_room == null ? '' : toInt(row.pickko_study_room),
       reservation_general_revenue: row.reservation_general_revenue == null ? '' : toInt(row.reservation_general_revenue),
       entries_count: row.entries_count == null ? '' : toInt(row.entries_count),

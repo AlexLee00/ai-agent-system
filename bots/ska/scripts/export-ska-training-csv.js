@@ -59,7 +59,6 @@ async function main() {
     SELECT
       ds.date,
       rds.total_amount,
-      rds.pickko_total,
       rds.pickko_study_room,
       rds.general_revenue AS reservation_general_revenue,
       rds.entries_count,
@@ -127,7 +126,6 @@ async function main() {
   const header = [
     'date',
     'total_amount',
-    'pickko_total',
     'pickko_study_room',
     'reservation_general_revenue',
     'entries_count',
@@ -184,7 +182,6 @@ async function main() {
     lines.push([
       formatDateValue(row.date),
       row.total_amount,
-      row.pickko_total,
       row.pickko_study_room,
       row.reservation_general_revenue,
       row.entries_count,

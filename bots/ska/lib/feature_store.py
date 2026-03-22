@@ -13,7 +13,6 @@ TRAINING_FEATURE_TABLE_SQL = """
         date                         DATE PRIMARY KEY,
         target_revenue               INTEGER,
         total_amount                 INTEGER,
-        pickko_total                 INTEGER,
         pickko_study_room            INTEGER,
         reservation_general_revenue  INTEGER,
         entries_count                INTEGER,
@@ -139,6 +138,7 @@ def ensure_training_feature_table(con):
         cur.execute(
             f"ALTER TABLE ska.training_feature_daily ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
         )
+    cur.execute("ALTER TABLE ska.training_feature_daily DROP COLUMN IF EXISTS pickko_total")
     con.commit()
     cur.close()
 
@@ -276,7 +276,12 @@ def sync_training_feature_store(con, days=365, end_date=None):
             SELECT
                 source_date AS date,
                 COUNT(*) AS study_room_use_count,
-                COALESCE(SUM(policy_amount), 0) AS study_room_use_policy_revenue,
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(raw_amount, 0) > 0 THEN raw_amount
+                        ELSE COALESCE(policy_amount, 0)
+                    END
+                ), 0) AS study_room_use_policy_revenue,
                 COALESCE(SUM(
                     GREATEST(
                         0,
@@ -321,7 +326,6 @@ def sync_training_feature_store(con, days=365, end_date=None):
                 ds.date,
                 rd.actual_revenue AS target_revenue,
                 rds.total_amount,
-                rds.pickko_total,
                 rds.pickko_study_room,
                 rds.general_revenue AS reservation_general_revenue,
                 rds.entries_count,
@@ -465,7 +469,7 @@ def sync_training_feature_store(con, days=365, end_date=None):
               ON prua.date = ds.date
         )
         INSERT INTO ska.training_feature_daily (
-            date, target_revenue, total_amount, pickko_total, pickko_study_room,
+            date, target_revenue, total_amount, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
             reservation_count,
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
@@ -488,7 +492,7 @@ def sync_training_feature_store(con, days=365, end_date=None):
             forecast_error, forecast_abs_error, forecast_created_at, source_updated_at
         )
         SELECT
-            date, target_revenue, total_amount, pickko_total, pickko_study_room,
+            date, target_revenue, total_amount, pickko_study_room,
             reservation_general_revenue, entries_count, occupancy_rate, total_reservations,
             reservation_count,
             reservation_booked_hours, reservation_unique_rooms, reservation_peak_overlap,
@@ -513,7 +517,6 @@ def sync_training_feature_store(con, days=365, end_date=None):
         ON CONFLICT (date) DO UPDATE SET
             target_revenue = EXCLUDED.target_revenue,
             total_amount = EXCLUDED.total_amount,
-            pickko_total = EXCLUDED.pickko_total,
             pickko_study_room = EXCLUDED.pickko_study_room,
             reservation_general_revenue = EXCLUDED.reservation_general_revenue,
             entries_count = EXCLUDED.entries_count,

@@ -12,15 +12,29 @@
 ## 1. 현재 시스템 상태 요약
 
 - 스카
+  - `daily_summary`에서 `pickko_total` 컬럼을 제거했다. `v009 daily_summary_remove_pickko_total`까지 적용 완료됐고, 현재 저장 기준은 `general_revenue=payment_day|general`, `pickko_study_room=use_day|study_room`이다.
+  - 관련 write/read 경로(`db.js`, `pickko-daily-summary.js`, `pickko-revenue-backfill.js`, `ska-sales-sync.js`, `ska-read-service.js`, `dashboard-server.js`, `health-report.js`, `feature_store.py`, `etl.py`, CSV/model export`)는 모두 `pickko_total` 의존을 제거했다.
+  - `node bots/reservation/scripts/migrate.js --status` 기준 현재 스키마 버전은 `v9`이며, `v008 pickko_order_raw_cleanup`, `v009 daily_summary_remove_pickko_total`까지 모두 적용됐다.
+  - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 재실행해 예측 ETL도 새 스키마로 다시 동기화했다. 현재 최근 5일 preview 기준 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000`, `2026-03-20 actual_revenue=379800`으로 반영된다.
+  - `study-room-pricing.js`를 문서 기준으로 다시 맞췄다. 현재 스터디룸 계산식은 `A1/A2: 30분당 3,500원, 00:00~09:00은 2,500원`, `B: 30분당 6,000원, 00:00~09:00은 4,000원`이며, 픽코 시간 왜곡을 고려해 `30분 슬롯 시작 시각` 기준으로 합산한다.
+  - `use_day|study_room`는 여전히 `raw_amount > 0`이면 raw 금액을 우선 사용하고, 없을 때만 위 슬롯 계산식을 사용한다. `payment_day|study_room` row와 `amount_delta` 컬럼은 제거된 상태를 유지한다.
+  - 수정된 계산식으로 `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`를 다시 실행했고, 이후 `syncSkaSalesToWorker('test-company')`를 재실행했다. worker sync 결과는 `updated=12`, `expectedRows=299`였다.
+  - 대표 검증값은 다음과 같다.
+    - `2026-03-01`: `pickko_study_room=113000`, `general_revenue=113800`
+    - `2026-03-12`: `pickko_study_room=135000`, `general_revenue=265000`
+    - `2026-03-17`: `pickko_study_room=74500`, `general_revenue=290000`
+    - `2026-03-21`: `pickko_study_room=156000`, `general_revenue=132000`
+    - `2026-03-22`: `pickko_study_room=136000`, `general_revenue=173800`
+  - 운영 검증 기준도 다시 고정했다. 스터디카페 매출은 `payment_day|general`을 픽코 `매출현황` 기준으로 보고, 스터디룸 매출은 `use_day|study_room`을 픽코 `예약/이용 검색` 기준으로 본다. `2026-03-17`의 `pickko_study_room=74,500원`은 예약기준 화면의 5건과 일치한다.
   - 스카 매출 source of truth 변경 영향 범위를 다시 점검했고, `daily_summary.total_amount`를 총매출처럼 읽던 경로들을 현재 정책 기준으로 정렬했다.
   - `bots/reservation/lib/ska-read-service.js`, `bots/reservation/scripts/dashboard-server.js`, `bots/reservation/scripts/dashboard.html`, `scripts/collect-kpi.js`는 이제 총매출을 `general_revenue + pickko_study_room` 기준으로 읽는다. 기존 `total_amount`는 호환용으로 유지하되, 조회 응답에는 `total_revenue`를 함께 노출한다.
   - `bots/ska/src/etl.py`도 새 기준으로 정렬했다. `studyroom_revenue=pickko_study_room`, `general_revenue=general_revenue`, `actual_revenue=studyroom_revenue+general_revenue`를 기준으로 `ska.revenue_daily`를 다시 적재하며, `room_amounts_json`과 `total_amount`는 fallback 경계로만 사용한다.
   - `scripts/reviews/ska-sales-forecast-daily-review.js`는 `daily_summary` 보조 표시값을 `total_revenue / studyRoomRevenue / generalRevenue` 기준으로 다시 노출한다. `forecast_date::text`를 사용하도록 바꿔 review 날짜가 하루 밀려 보이던 경계도 함께 복구했다. 주간 리뷰도 같은 날짜 캐스팅 경계를 맞췄다.
-  - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=120`를 실제로 재실행해 `revenue_daily`와 `training_feature_daily`까지 새 기준으로 동기화했다. 현재 최근 5일 미리보기 기준 `2026-03-22 actual_revenue=173800`, `2026-03-21 actual_revenue=156000`으로 반영됐다.
-  - 이후 `node scripts/reviews/ska-sales-forecast-daily-review.js --days=5 --json` 재검증 기준 최신 actual은 `2026-03-22`, `actualRevenue=173800`, `totalRevenue=173800`, `studyRoomRevenue=136000`, `generalRevenue=37800`으로 정렬됐다.
+  - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 재실행해 `revenue_daily`와 `training_feature_daily`까지 새 기준으로 동기화했다. 현재 최근 5일 미리보기 기준 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000`, `2026-03-20 actual_revenue=379800`으로 반영됐다.
+  - 현재 ETL 기준 actual은 `general_revenue + pickko_study_room` 합산값이며, `2026-03-22`는 `173800 + 136000 = 309800`, `2026-03-21`은 `132000 + 156000 = 288000`으로 읽는다.
   - 예측엔진 후속 정리 기준은 [SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md)에 문서화했다.
   - 스카 매출 DB 적재 마무리 작업을 진행했다. `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 재집계했고, stale 상태였던 `2026-03-21`, `2026-03-22` source row를 현재 정책 기준으로 복구했다.
-  - 복구 후 `2026-03-21`은 `pickko_study_room=156000`, `general_revenue=0`, `total_amount=156000`, `2026-03-22`는 `pickko_study_room=136000`, `general_revenue=37800`, `pickko_total=173800` 상태로 정리됐다.
+  - 복구 후 현재 대표 row는 `2026-03-21 = pickko_study_room 156000 / general_revenue 132000 / total_amount 156000`, `2026-03-22 = pickko_study_room 136000 / general_revenue 173800 / total_amount 136000`으로 읽는다.
   - `bots/worker/lib/ska-sales-sync.js`의 `syncSkaSalesToWorker('test-company')`를 재실행해 `worker.sales` 미러도 source에 다시 맞췄다. 현재 `2026-03-21`은 `스터디룸 156000`, `2026-03-22`는 `스터디룸 136000 + 일반석 37800`으로 반영됐다.
   - `node bots/reservation/scripts/health-report.js --json` 재검증 기준 `dailySummaryIntegrityHealth.issueCount=0`으로 복구됐다. 현재 스카 health의 주요 경고는 매출 적재가 아니라 `naver-monitor 미로드 / 로그 무활동`으로 다시 좁혀졌다.
   - 픽코 모니터링 심층 코드점검에서 해제(unblock) 경계 버그 3개를 추가로 수정했다. `unblockNaverSlot()`는 이제 최종 검증이 실패하면 `false`를 반환하고, `fillAvailablePopup()`는 `설정변경` 이후 패널이 실제로 닫혔는지 확인한 뒤에만 성공 처리한다.
