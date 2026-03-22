@@ -43,10 +43,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
   - 성공한 네이버 예약 차단 완료, 대리등록 차단 완료, 취소 후 네이버 예약가능 복구 완료를 `event_type=report`, `alert_level=1`로 하향 조정
   - 성공 이벤트 전용 `publishKioskSuccessReport()` helper 추가
+- `bots/reservation/manual/reports/pickko-alerts-query.js`
+  - 예전 SQLite `getDb()` 의존 제거
+  - 최신 `pgPool` 기반 reservation DB 조회로 복구
+  - `alerts.timestamp` text 컬럼 비교를 `timestamptz` 캐스팅으로 보정
 
 ### 효과
 - 성공 이벤트가 더 이상 `⚠️ 경고 · ...`, `⚠️ jimmy 집약 알림`으로 묶이지 않음
 - 실패/불확실 경로의 alert severity는 그대로 유지
+- 현재 미해결 오류 알림을 DB 기준으로 바로 조회할 수 있게 됐고, `01089430972` 관련 실패 알림이 과거 잔상인지 즉시 확인 가능해졌다
 
 ## 12주차 후속 (2026-03-22) — 비디오팀 preview render A/V 정합성 복구
 

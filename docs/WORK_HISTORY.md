@@ -42,14 +42,19 @@
 - `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
   - 네이버 차단 완료, 대리등록 차단 완료, 취소 후 네이버 해제 완료를 더 이상 `event_type=alert`, `alert_level=2`로 보내지 않도록 수정
   - 성공 이벤트 전용 `publishKioskSuccessReport()`를 추가해 `event_type=report`, `alert_level=1`로 통일
+- `bots/reservation/manual/reports/pickko-alerts-query.js`
+  - 예전 SQLite `getDb()` 의존을 제거하고 최신 `pgPool` 기반 reservation DB 조회로 복구
+  - `timestamp` text 컬럼 비교를 `timestamptz` 캐스팅으로 보정
 
 세션 맥락:
 - 운영 텔레그램에서 실제 성공 이벤트가 `⚠️ 경고 · 네이버 예약 차단 완료`, `⚠️ jimmy 집약 알림`으로 묶여 false warning처럼 보였다.
 - 원인은 Jimmy가 성공 완료도 경고 등급으로 발송하던 경계 버그였고, 실패/불확실 경로와 성공 경로를 분리하는 것이 핵심이었다.
+- 추가로 알림 조회 CLI가 깨져 있어 현재 미해결 건을 빠르게 확인하기 어려웠고, 이를 최신 DB 레이어 기준으로 복구했다.
 
 의미:
 - 지금 당장 필요한 구조인 “성공은 report, 실패/불확실만 alert” 불변식을 회복했다.
 - 이후 SaaS로 확장할 때도 성공/경고/실패 이벤트의 severity contract를 같은 방식으로 유지할 수 있는 기준점이 된다.
+- 실제 DB 조회 결과 `--type=error --unresolved`는 `0건`, `01089430972` 최근 48시간 알림도 `0건`으로 확인돼, 해당 실패 알림은 현재 미해결 장애가 아니라 과거 잔상임을 재확인했다.
 
 ### 12주차 후속 (2026-03-22) — 일일 운영 분석 리포트 해석 품질 보강
 
