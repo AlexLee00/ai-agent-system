@@ -56,6 +56,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - RED/BLUE 내부 품질 점수와 별도로, 실제 사람 편집본 기준 reference 품질 평가 축이 생겼다.
 - 현재 baseline 기준 자동 결과의 약점이 `sync` 자체보다 `길이 축소`와 `preview 해상도 차이`라는 점을 수치로 읽을 수 있게 됐다.
 
+## 12주차 후속 (2026-03-22) — 비디오팀 reference quality batch baseline 추가
+
+### 변경 사항 (added)
+- `bots/video/scripts/test-reference-quality-batch.js`
+  - `temp/validation_report.json`의 5세트 preview 산출물을 실제 `samples/edited` 편집본과 일괄 비교하는 batch evaluator 추가
+
+### 검증
+- `node --check bots/video/scripts/test-reference-quality-batch.js` | ✅
+- `node bots/video/scripts/test-reference-quality-batch.js --json` | ✅
+  - `averageOverall=68.88`
+  - `averageDuration=54.30`
+  - `averageResolution=25.11`
+  - `averageVisualSimilarity=83.76`
+
+### 효과
+- 5세트 전체에서 현재 자동 편집 품질의 공통 병목이 `sync`보다 `duration/structure`와 `preview 해상도 차이`라는 점이 드러났다.
+- 세트별 우선순위를 정해 final render 검증과 구조 튜닝으로 바로 연결할 수 있게 됐다.
+
 ## [Phase 2] 비디오팀 AI 싱크 매칭 파이프라인 (2026-03-21)
 
 ### 신규 모듈
