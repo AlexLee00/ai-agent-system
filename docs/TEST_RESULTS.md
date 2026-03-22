@@ -38,6 +38,9 @@
 | `node bots/video/scripts/test-reference-quality.js --generated=.../preview-fixed.mp4 --sample=파라미터 --json` | ✅ `overall=70.43`, `duration=64.26`, `resolution=25.18`, `visual_similarity=79.61` baseline 확인 |
 | `node --check bots/video/scripts/test-reference-quality-batch.js` | ✅ |
 | `node bots/video/scripts/test-reference-quality-batch.js --json` | ✅ 5세트 batch baseline `averageOverall=68.88`, `averageDuration=54.30`, `averageResolution=25.11`, `averageVisualSimilarity=83.76` 확인 |
+| `node bots/video/scripts/test-full-sync-pipeline.js --source-video=... --source-audio=... --edited=... --render-final` | ✅ `final.mp4` 생성, `2560x1440`, `60fps`, `264s`, `AAC 48kHz stereo`, `file_size=46,555,622`, `duration_ms=249452` 확인 |
+| `ffprobe .../final.mp4` | ✅ `video=264.000s`, `audio=264.000s`, `2560x1440`, `60fps`, `faststart` 메타데이터 확인 |
+| `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=파라미터 --json` | ✅ final baseline `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82` 확인 |
 | `node --check bots/video/scripts/run-pipeline.js` | ✅ `preview_ms` 저장 경로 문법 확인 |
 | `node --input-type=module -e \"... preview_ms migration ...\"` | ✅ `video_edits.preview_ms` 컬럼 실제 반영 확인 |
 | `node -e \"... ALTER TABLE video_sessions ADD COLUMN ...\"` | ✅ `video_sessions` intro/outro 컬럼 6종 실제 반영 확인 |

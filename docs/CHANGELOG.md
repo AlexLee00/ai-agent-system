@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 비디오팀 final render 단일 세트 기준선 추가
+
+### 변경 사항 (changed)
+- `bots/video/scripts/test-full-sync-pipeline.js`
+  - `--render-final` 옵션을 추가해 Phase 2 파이프라인을 preview뿐 아니라 final render까지 한 번에 검증할 수 있도록 확장
+
+### 검증
+- `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅
+- `node bots/video/scripts/test-full-sync-pipeline.js --source-video=... --source-audio=... --edited=... --render-final` | ✅ `final.mp4` 생성, `2560x1440`, `60fps`, `264s`, `AAC 48kHz stereo`, `file_size=46,555,622`, `duration_ms=249452`
+- `ffprobe .../final.mp4` | ✅ `video=264.000s`, `audio=264.000s`, `2560x1440`, `60fps`
+- `node bots/video/scripts/test-reference-quality.js --generated=.../final.mp4 --sample=파라미터 --json` | ✅ `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`
+
+### 효과
+- Phase 2가 preview 정합성 복구를 넘어서 final render 단일 세트 기준선까지 확보됐다.
+- 현재 자동 편집의 남은 핵심 차이가 `sync`나 출력 해상도보다는 사람 편집본 대비 `길이/구조`라는 점이 더 선명해졌다.
+
 ## 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 
 ### 변경 사항 (changed)

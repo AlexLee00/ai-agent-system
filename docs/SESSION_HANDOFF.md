@@ -45,8 +45,9 @@
   - 재검증 결과 `preview-fixed.mp4`는 `1280x720 / 60fps / 264s`, `AAC 48kHz stereo / 264s`, 파일 크기 `6.96MB`, preview wall-clock `103527ms`로 A/V 길이 정합성이 복구됐다.
   - `reference-quality.js`, `test-reference-quality.js`가 추가돼 자동 결과와 `samples/edited` 실제 편집본을 구조/시각 유사도 기준으로 비교할 수 있다. 현재 파라미터 baseline은 `overall=70.43`, `duration=64.26`, `resolution=25.18`, `visual_similarity=79.61`이다.
   - 5세트 batch baseline은 `averageOverall=68.88`, `averageDuration=54.30`, `averageResolution=25.11`, `averageVisualSimilarity=83.76`로 나왔다. 세트별 overall은 파라미터 `72.77`, 동적데이터 `73.15`, 컴포넌트스테이트 `69.88`, DB생성 `64.77`, 서버인증 `63.85`다.
-  - 해석상 현재 약점은 sync 자체보다 편집본 대비 `길이 축소`와 `preview 해상도 차이`이며, 장면 유사도는 usable 수준이다.
-  - 다음 1순위는 final render 다세트 검증과 duration/structure 기준을 사람 편집본 쪽으로 더 맞추는 것이다.
+  - 단일 세트 final render 검증도 성공했다. 파라미터 세트 `final.mp4`는 `2560x1440 / 60fps / 264s`, `AAC 48kHz stereo / 264s`, `faststart=true`, `file_size=46,555,622`, `duration_ms=249452`로 확인됐다.
+  - final reference quality는 `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`다. preview 대비 해상도 점수는 회복됐고, 현재 남은 핵심 차이는 사람 편집본 대비 `길이/구조`다.
+  - 다음 1순위는 final render 5세트 검증과 duration/structure 기준을 사람 편집본 쪽으로 더 맞추는 것이다.
   - 비디오팀 Phase 1은 과제 1~13 + RAG 피드백 루프 기준으로 마감됐다.
   - `bots/worker/web`의 Next.js는 이번 세션에서 재빌드 후 launchd `ai.worker.nextjs`를 재기동했고, `/video`, `/video/history`는 현재 `200 OK`로 실제 반영 상태다.
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.

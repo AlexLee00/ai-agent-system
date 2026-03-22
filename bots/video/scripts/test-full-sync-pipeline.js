@@ -9,7 +9,7 @@ const { indexVideo } = require('../lib/scene-indexer');
 const { analyzeNarration, buildOfflineNarrationFixture } = require('../lib/narration-analyzer');
 const { buildSyncMap, syncMapToEDL } = require('../lib/sync-matcher');
 const { processIntroOutro } = require('../lib/intro-outro-handler');
-const { renderPreview, saveEDL } = require('../lib/edl-builder');
+const { renderPreview, renderFinal, saveEDL } = require('../lib/edl-builder');
 const { normalizeAudio } = require('../lib/ffmpeg-preprocess');
 
 function parseArgs(argv) {
@@ -18,6 +18,7 @@ function parseArgs(argv) {
     sourceAudio: null,
     edited: null,
     renderPreview: false,
+    renderFinal: false,
     allowOfflineFixture: true,
   };
   for (const arg of argv) {
@@ -25,6 +26,7 @@ function parseArgs(argv) {
     if (arg.startsWith('--source-audio=')) parsed.sourceAudio = arg.slice('--source-audio='.length);
     if (arg.startsWith('--edited=')) parsed.edited = arg.slice('--edited='.length);
     if (arg === '--render-preview') parsed.renderPreview = true;
+    if (arg === '--render-final') parsed.renderFinal = true;
     if (arg === '--no-offline-fixture') parsed.allowOfflineFixture = false;
   }
   return parsed;
@@ -73,6 +75,13 @@ async function main() {
     await renderPreview(edl, previewPath, config);
   }
 
+  let finalPath = null;
+  let finalRender = null;
+  if (args.renderFinal) {
+    finalPath = path.join(tempDir, 'final.mp4');
+    finalRender = await renderFinal(edl, finalPath, config);
+  }
+
   const editedExists = args.edited ? fs.existsSync(path.resolve(args.edited)) : false;
   console.log(JSON.stringify({
     scene_count: sceneIndex.scenes?.length || 0,
@@ -89,6 +98,12 @@ async function main() {
     offline_narration_fixture: Boolean(narration.offline_fixture),
     edl_path: edlPath,
     preview_path: previewPath,
+    final_path: finalPath,
+    final_render: finalRender ? {
+      duration_ms: finalRender.duration_ms,
+      file_size: finalRender.fileSize,
+      validation: finalRender.validation,
+    } : null,
     reference_edited_exists: editedExists,
   }, null, 2));
 }
