@@ -74,6 +74,22 @@ function extractEnglishKeywords(text) {
   return [...new Set(tokens)].slice(0, 10);
 }
 
+function buildSegment(segmentId, startSec, endSec, text, topic, requiredScreen, keywordsEn = [], keywordsKo = [], actionVerbs = []) {
+  return {
+    segment_id: segmentId,
+    start_s: Number(startSec.toFixed(3)),
+    end_s: Number(endSec.toFixed(3)),
+    entries: [segmentId],
+    text,
+    topic,
+    required_screen: requiredScreen,
+    keywords_en: keywordsEn,
+    keywords_ko: keywordsKo,
+    action_verbs: actionVerbs,
+    llm_analyzed: false,
+  };
+}
+
 function mechanicalSegments(entries, config) {
   const segments = [];
   let current = [];
@@ -131,6 +147,88 @@ function mechanicalSegments(entries, config) {
   }
 
   return segments;
+}
+
+async function buildOfflineNarrationFixture(audioPath) {
+  const durationMs = await probeDurationMs(audioPath);
+  const durationSec = Math.max(30, Math.round(durationMs / 1000));
+  const segmentCount = durationSec >= 240 ? 5 : (durationSec >= 150 ? 4 : 3);
+  const step = durationSec / segmentCount;
+
+  const templates = [
+    {
+      text: 'FlutterFlow 에디터와 페이지 구조를 소개하고 파라미터 개념을 설명',
+      topic: '에디터 구조와 파라미터 개념 소개',
+      required_screen: '에디터 전체 뷰 또는 Widget Tree 화면',
+      keywords_en: ['FlutterFlow', 'Page', 'Parameters', 'Widget', 'Tree'],
+      keywords_ko: ['파라미터', '위젯', '트리'],
+      action_verbs: ['소개', '설명'],
+    },
+    {
+      text: '페이지 파라미터를 생성하고 Route Settings와 Page Parameters를 확인',
+      topic: '페이지 파라미터 생성',
+      required_screen: 'Page Parameters 또는 Route Settings 화면',
+      keywords_en: ['Page', 'Parameters', 'Route', 'Settings', 'Parameter'],
+      keywords_ko: ['페이지', '파라미터', '설정'],
+      action_verbs: ['생성', '확인'],
+    },
+    {
+      text: '액션 플로우에서 값을 연결하고 Set from Variable을 설정',
+      topic: '액션 플로우와 값 연결',
+      required_screen: 'Action Flow Editor 또는 Set from Variable 화면',
+      keywords_en: ['Action', 'Flow', 'Set', 'Variable', 'Value'],
+      keywords_ko: ['액션', '값', '변수'],
+      action_verbs: ['설정', '연결'],
+    },
+    {
+      text: '페이지 이동과 Navigate action을 설정하며 전달 값을 점검',
+      topic: '페이지 이동과 전달 값 설정',
+      required_screen: 'Navigate action 또는 대상 페이지 선택 화면',
+      keywords_en: ['Navigate', 'Page', 'Action', 'DetailPage', 'Value'],
+      keywords_ko: ['이동', '페이지', '전달'],
+      action_verbs: ['이동', '전달'],
+    },
+    {
+      text: '마지막으로 테스트와 검증 흐름을 확인하고 전체 동작을 정리',
+      topic: '테스트와 동작 정리',
+      required_screen: '미리보기 또는 최종 확인 화면',
+      keywords_en: ['Test', 'Preview', 'Run', 'Action', 'Page'],
+      keywords_ko: ['테스트', '검증'],
+      action_verbs: ['확인', '정리'],
+    },
+  ];
+
+  const segments = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    const template = templates[Math.min(index, templates.length - 1)];
+    const startSec = index * step;
+    const endSec = index === segmentCount - 1 ? durationSec : (index + 1) * step;
+    if (endSec <= startSec) continue;
+    segments.push(buildSegment(
+      index + 1,
+      startSec,
+      endSec,
+      template.text,
+      template.topic,
+      template.required_screen,
+      template.keywords_en,
+      template.keywords_ko,
+      template.action_verbs
+    ));
+  }
+
+  return {
+    source_audio: path.basename(audioPath),
+    source_audio_path: path.resolve(audioPath),
+    duration_s: durationSec,
+    total_entries: segments.length,
+    total_segments: segments.length,
+    segments,
+    srt_path: null,
+    corrected_srt_path: null,
+    output_path: null,
+    offline_fixture: true,
+  };
 }
 
 async function transcribeNarration(audioPath, config, options = {}) {
@@ -271,4 +369,5 @@ module.exports = {
   parseSrt,
   analyzeSegments,
   analyzeNarration,
+  buildOfflineNarrationFixture,
 };
