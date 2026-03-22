@@ -29,10 +29,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `node bots/video/scripts/test-sync-matcher.js` | ✅ `matched_keyword=2`, `overall_confidence=0.8334`
 - `node -e \"... syncMapToEDL(server auth sync_map) ...\"` | ✅ `edl.duration=1008.129`, `pacing_extra_total=162.129`
 - `node -e \"... syncMapToEDL(db sync_map) ...\"` | ✅ `edl.duration=629.8`, `pacing_extra_total=125.8`
+- `node bots/video/scripts/test-full-sync-pipeline.js --source-video=...원본_서버인증.mp4 --source-audio=...원본_나레이션_서버인증.m4a --edited=...편집_서버인증.mp4 --render-final` | ✅ `duration_ms=675045`, `2560x1440`, `60fps`
+- `node bots/video/scripts/test-reference-quality.js --generated=.../video-sync-pipeline-6qDyBJ/final.mp4 --sample=서버인증 --json` | ✅ `overall=75.61`, `duration=49.13`, `visual_similarity=75.30`, `duration_ratio=0.4913`
+- `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-6qDyBJ/final.mp4 --edl=.../video-sync-pipeline-6qDyBJ/edit_decision_list.json --sample=서버인증 --json` | ✅ `hold=0`, `speed_floor_ratio=0.7143`, 반복 window 2개 확인
+- `node bots/video/scripts/test-full-sync-pipeline.js --source-video=...원본_DB생성.mp4 --source-audio=...원본_나레이션_DB생성.m4a --edited=...편집_DB생성.mp4 --render-final` | ✅ `duration_ms=345379`, `2560x1440`, `60fps`
+- `node bots/video/scripts/test-reference-quality.js --generated=.../video-sync-pipeline-mjrDSu/final.mp4 --sample=db생성 --json` | ✅ `overall=78.77`, `duration=47.47`, `visual_similarity=85.75`, `duration_ratio=0.4747`
+- `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-mjrDSu/final.mp4 --edl=.../video-sync-pipeline-mjrDSu/edit_decision_list.json --sample=db생성 --json` | ✅ `hold=2`, `speed_floor_ratio=0.5`, 반복 window 2개 확인
 
 ### 효과
 - 남아 있던 핵심 병목이 `키워드`보다 `timeline length / tutorial pacing`임을 실제 EDL 숫자로 고정했다.
 - 기존 deterministic 구조를 유지한 채, final 재렌더 전에 길이 확장 정책을 config-driven으로 실험할 수 있게 됐다.
+- pacing policy는 `서버인증`, `DB생성` 두 저점 세트 모두에서 실제 점수 개선으로 이어졌다.
+- 다음 1순위 병목은 `hold 완화`와 `반복 source window` 감소다.
 
 ## 12주차 후속 (2026-03-22) — 비디오팀 final 5세트 baseline 완료 + watchdog 완화
 

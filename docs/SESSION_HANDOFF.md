@@ -77,7 +77,10 @@
     - `edl-builder.js`는 main clip 오디오에 `apad`를 추가해 timeline 확장 시 무음 패딩으로 final render를 유지한다.
     - `서버인증` EDL 재계산: `duration=1008.129`, `pacing_extra_total=162.129`
     - `DB생성` EDL 재계산: `duration=629.8`, `pacing_extra_total=125.8`
-  - 해석: 이제 남은 핵심은 키워드보다 `timeline length / tutorial pacing`이며, 다음 1순위는 `서버인증`, `DB생성` final 재렌더로 실제 점수 개선폭을 재측정하는 것이다.
+  - final 재렌더 재측정:
+    - `서버인증`: `overall=75.61`, `duration=49.13`, `visual_similarity=75.30`, `duration_ratio=0.4913`
+    - `DB생성`: `overall=78.77`, `duration=47.47`, `visual_similarity=85.75`, `duration_ratio=0.4747`
+  - 해석: pacing policy는 두 저점 세트 모두에서 실제 점수 개선으로 이어졌다. 다음 1순위는 `hold 완화`와 `반복 source window` 감소다.
 - 스카
   - `pickko-alerts-query.js`를 최신 `pgPool` 기반 reservation DB에 맞게 복구했다. 기존 SQLite `getDb()` 경로는 더 이상 유효하지 않았다.
   - 복구 후 실제 DB 조회 기준 `--type=error --unresolved`는 `0건`, `--phone=01089430972 --hours=48`도 `0건`으로 확인됐다.

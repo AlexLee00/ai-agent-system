@@ -58,7 +58,11 @@
 - EDL 수준 재검증:
   - `서버인증`: `edl.duration=1008.129`, `pacing_extra_total=162.129`
   - `DB생성`: `edl.duration=629.8`, `pacing_extra_total=125.8`
-- 해석상 다음 병목은 더 이상 키워드 매칭 자체보다 `timeline length / tutorial pacing`이며, 다음 단계는 `서버인증`, `DB생성` final 재렌더로 실제 점수 개선폭을 다시 재는 것이다.
+- final 재렌더 재측정 결과:
+  - `서버인증`: `overall=75.61`, `duration=49.13`, `visual_similarity=75.30`, `duration_ratio=0.4913`
+  - `DB생성`: `overall=78.77`, `duration=47.47`, `visual_similarity=85.75`, `duration_ratio=0.4747`
+- 해석상 다음 병목은 더 이상 키워드 매칭 자체보다 `timeline length / tutorial pacing`이며, 이번 pacing policy는 두 저점 세트 모두에서 실제 점수 개선으로 이어졌다.
+- 다음 1순위는 `hold 완화`와 `반복 source window` 감소다.
 - 현재 1순위 보강 포인트는 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure를 사람 편집본 기준으로 더 맞추는 것과 transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구

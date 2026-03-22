@@ -157,7 +157,18 @@
   - EDL 수준 재검증:
     - `서버인증`: `edl.duration=1008.129`, `pacing_extra_total=162.129`
     - `DB생성`: `edl.duration=629.8`, `pacing_extra_total=125.8`
-  - 해석: 이번 단계에서 병목을 더 명확히 줄인 것은 `키워드`가 아니라 `timeline length`다. 다음 자연스러운 단계는 `서버인증`, `DB생성` final 재렌더로 pacing policy가 실제 점수 개선으로 이어지는지 재측정하는 것이다.
+  - final 재렌더 재측정:
+    - `서버인증`
+      - `overall=75.61` (이전 `72.42`)
+      - `duration=49.13` (이전 `41.26`)
+      - `visual_similarity=75.30` (이전 `72.95`)
+      - `duration_ratio=0.4913`
+    - `DB생성`
+      - `overall=78.77` (이전 `76.34`)
+      - `duration=47.47` (이전 `38.03`)
+      - `visual_similarity=85.75` (이전 `85.75` 근처 유지)
+      - `duration_ratio=0.4747`
+  - 해석: 이번 단계에서 병목을 더 명확히 줄인 것은 `키워드`가 아니라 `timeline length`다. pacing policy는 두 저점 세트 모두에서 실제 점수 개선으로 이어졌고, 다음 1순위는 `hold 완화`와 `반복 source window` 감소다.
 
 ## Phase 1 완료 요약
 
