@@ -28,7 +28,11 @@
 - `test-reference-quality-batch.js`를 추가해 validation_report의 5세트 preview 산출물을 실제 편집본과 일괄 비교할 수 있게 했다.
 - 5세트 batch baseline은 `averageOverall=68.88`, `averageDuration=54.30`, `averageResolution=25.11`, `averageVisualSimilarity=83.76`로 확인됐다.
 - 세트별 overall은 파라미터 `72.77`, 동적데이터 `73.15`, 컴포넌트스테이트 `69.88`, DB생성 `64.77`, 서버인증 `63.85`다.
-- 현재 1순위 보강 포인트는 final render 다세트 검증, duration/structure를 사람 편집본 기준으로 더 맞추는 것, transition 재도입 설계다.
+- `test-full-sync-pipeline.js --render-final` 옵션을 추가해 Phase 2 단일 세트 final render까지 같은 검증 레일에서 확인할 수 있게 했다.
+- 파라미터 세트 final render는 `2560x1440 / 60fps / 264초`, `AAC 48kHz stereo / 264초`, `faststart=true`, `file_size=46,555,622`, `duration_ms=249452`로 검증됐다.
+- final reference quality는 `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`로 확인됐다.
+- 해석상 preview 기준선의 핵심 약점이던 해상도 차이는 final에서 거의 해소됐고, 남은 1순위 병목은 사람 편집본 대비 `길이/구조`다.
+- 현재 1순위 보강 포인트는 final render 5세트 batch baseline, duration/structure를 사람 편집본 기준으로 더 맞추는 것, transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
 

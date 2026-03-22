@@ -5,7 +5,7 @@
 > 상태: ★ Phase 1 전체 완료 — 과제 1~13 + RAG 피드백 루프
 > Phase 2 전환: 2026-03-21
 > syncVideoAudio() 폐기 → AI 싱크 매칭 파이프라인으로 전환
-> 과제 A(scene-indexer) + B(narration-analyzer) + C(sync-matcher) + D(intro-outro) 구현 중
+> 과제 A~D 구현 완료, 과제 E(파이프라인 통합 + 품질 검증) 진행 중
 
 ---
 
@@ -67,12 +67,27 @@
     - DB생성 `64.77`
     - 서버인증 `63.85`
   - 해석: 현재 Phase 2 preview는 장면 유사도는 전반적으로 높지만(`80~86`), 사람 편집본 대비 길이가 크게 짧아 duration score가 전체를 깎는다. 가장 큰 병목은 `sync 정확도`보다 `편집 길이 설계`와 `preview/final 출력 정책 차이`다.
+- final render 단일 세트 기준선 추가
+  - `test-full-sync-pipeline.js --render-final`이 파라미터 세트에서 성공
+  - `final.mp4` 검증 결과:
+    - `2560x1440 / 60fps / 264s`
+    - `AAC 48kHz stereo / 264s`
+    - `faststart=true`
+    - `file_size=46,555,622`
+    - `duration_ms=249452`
+  - final reference quality:
+    - `overall=81.62`
+    - `duration=64.26`
+    - `resolution=99.30`
+    - `visual_similarity=79.82`
+  - 해석: final render로 올라오면서 preview 병목이던 해상도 점수는 거의 해소됐고, 남은 핵심 차이는 사람 편집본 대비 `길이/구조`다.
 
 해석:
 - 원본 장면 인덱싱 품질 자체는 usable 수준이다.
 - 현재 가장 큰 병목은 `scene-indexer`가 아니라 샌드박스 제약 시 narration 분석이 live STT가 아니라 fallback으로 내려간다는 점이다.
 - fallback 세그먼트 granularity 보강 후 첫 구간 `unmatched`는 해소됐다.
-- `preview_ms` 원장화와 preview A/V 정합성 복구까지 완료됐고, 다음 Phase 2 보강 1순위는 final render 다세트 검증과 transition 재도입 설계다.
+- `preview_ms` 원장화, preview A/V 정합성 복구, 파라미터 세트 final render 단일 검증까지 완료됐다.
+- 다음 Phase 2 보강 1순위는 final render 5세트 batch baseline과 duration/structure 튜닝, 그다음 transition 재도입 설계다.
 
 ## Phase 1 완료 요약
 
