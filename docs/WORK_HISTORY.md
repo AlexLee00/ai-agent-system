@@ -10,6 +10,15 @@
 - 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
 - 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
 
+## 2026-03-22: 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
+
+- `kiosk-monitor` 반복 성공 알림 hotfix 이후 manual follow-up 12건을 운영자 실사 기준으로 재정렬했다.
+- 취소/예약없음/테스트 취소 3건과 시간 불일치 3건의 기존 `kiosk_blocks` row를 `operator_invalidated`로 정정했다.
+- `2026-04-01~03 A1 / 01037410771`는 실제 차단된 `09:00~11:20` 슬롯 row를 `operator_confirmed_actual_slot`로 새로 기록했다.
+- `manual-block-followup-report.js`는 exact `getKioskBlock(phone,date,start)` lookup과 `correctedRows` 출력(`correctedCount`)을 지원하도록 보강했다.
+- 현재 기준선은 `count=12`, `openCount=6`, `correctedCount=3`이다.
+- 구조 리스크도 확인했다: `kiosk_blocks` 키가 아직 `phone|date|start`라 같은 사람/같은 날짜/같은 시작시각 재예약에서는 `end/room`이 달라도 충돌할 수 있다.
+
 ## 2026-03-22: 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 
 - 사용자 운영 로직 기준으로 스카 자동 4경로를 다시 정렬했다.

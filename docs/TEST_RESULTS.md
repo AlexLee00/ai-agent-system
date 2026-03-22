@@ -1057,3 +1057,13 @@
 | `node --check bots/reservation/manual/reservation/pickko-accurate.js` | ✅ 단계 코드 마커 추가 후 문법 통과 |
 | `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ `runPickko()` 실패 단계 파싱 추가 후 문법 통과 |
 | `MODE=ops node bots/reservation/manual/reservation/pickko-accurate.js --phone=abc --date=bad --start=19:00 --end=20:00 --room=A1` | ✅ `PICKKO_FAILURE_STAGE=INPUT_NORMALIZE_FAILED` 마커 실제 출력 확인 |
+
+### 2026-03-22 — 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/reservation/manual/reports/manual-block-followup-report.js` | ✅ corrected slot 출력 보강 후 문법 통과 |
+| `node bots/reservation/manual/reports/manual-block-followup-report.js` | ✅ `count=12`, `openCount=6`, `correctedCount=3` 출력 확인 |
+| `node --input-type=module -e \"... getKioskBlock('01035000586','2026-03-28','13:00') ...\"` | ✅ `naverBlocked=false`, `operator_invalidated`, `operator_reconciled_not_reserved` 확인 |
+| `node --input-type=module -e \"... getKioskBlock('01037410771','2026-04-01','08:00') ...\"` | ✅ 기존 잘못된 row가 `operator_reconciled_time_mismatch`로 invalidated 처리된 것 확인 |
+| `node --input-type=module -e \"... getKioskBlock('01037410771','2026-04-01','09:00') ...\"` | ✅ corrected actual slot row가 `09:00~11:20`, `operator_confirmed_actual_slot`로 저장된 것 확인 |
