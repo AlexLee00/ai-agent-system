@@ -18,6 +18,8 @@ function ensureSyncMatcherConfig(config = {}) {
     max_speed_factor: Number(config?.sync_matcher?.max_speed_factor || 2),
     min_speed_factor: Number(config?.sync_matcher?.min_speed_factor || 0.5),
     unmatched_strategy: String(config?.sync_matcher?.unmatched_strategy || 'hold'),
+    short_source_window_sec: Number(config?.sync_matcher?.short_source_window_sec || 30),
+    repeated_window_penalty: Number(config?.sync_matcher?.repeated_window_penalty || 0.2),
   };
 }
 
@@ -41,6 +43,11 @@ function sceneDuration(scene) {
 }
 
 function matchByKeywords(segment, scenes, config = {}) {
+  const candidates = listKeywordMatches(segment, scenes, config);
+  return candidates[0] || null;
+}
+
+function listKeywordMatches(segment, scenes, config = {}) {
   const resolved = ensureSyncMatcherConfig(config);
   const candidates = [];
   for (const scene of scenes) {
@@ -59,7 +66,35 @@ function matchByKeywords(segment, scenes, config = {}) {
   }
 
   candidates.sort((a, b) => b.match_score - a.match_score || a.source.timestamp_s - b.source.timestamp_s);
-  return candidates[0] || null;
+  return candidates;
+}
+
+function sceneKey(scene) {
+  if (!scene) return 'none';
+  return `${scene.frame_id || 'na'}:${safeParseFloat(scene.timestamp_s, 0)}:${safeParseFloat(scene.timestamp_end_s, 0)}`;
+}
+
+function penalizeRepeatedWindow(match, usageByScene, config = {}) {
+  const resolved = ensureSyncMatcherConfig(config);
+  if (!match?.source) return match;
+  const sourceStart = safeParseFloat(match.source.timestamp_s, 0);
+  const sourceEnd = safeParseFloat(match.source.timestamp_end_s, 0);
+  const sourceDuration = Math.max(0, sourceEnd - sourceStart);
+  if (sourceDuration > resolved.short_source_window_sec) return match;
+
+  const key = sceneKey(match.source);
+  const usage = Number(usageByScene.get(key) || 0);
+  if (usage <= 0) return match;
+
+  const penalty = resolved.repeated_window_penalty * usage;
+  const nextScore = Number(Math.max(0, match.match_score - penalty).toFixed(4));
+  return {
+    ...match,
+    match_score: nextScore,
+    repeated_window_penalized: true,
+    repeated_window_usage: usage,
+    confidence: nextScore >= 0.7 ? 'high' : (nextScore >= 0.5 ? 'medium' : 'low'),
+  };
 }
 
 async function matchByEmbedding(segment, scenes, config = {}, cache = new Map()) {
@@ -214,6 +249,7 @@ async function buildSyncMap(sceneIndex, narrationAnalysis, config = {}, options 
   const scenes = Array.isArray(sceneIndex?.scenes) ? sceneIndex.scenes : [];
   const segments = Array.isArray(narrationAnalysis?.segments) ? narrationAnalysis.segments : [];
   const embeddingCache = new Map();
+  const usageByScene = new Map();
 
   let matchedKeyword = 0;
   let matchedEmbedding = 0;
@@ -222,10 +258,14 @@ async function buildSyncMap(sceneIndex, narrationAnalysis, config = {}, options 
 
   const initialMatches = [];
   for (const segment of segments) {
-    let match = matchByKeywords(segment, scenes, config);
+    const keywordCandidates = listKeywordMatches(segment, scenes, config)
+      .map((candidate) => penalizeRepeatedWindow(candidate, usageByScene, config))
+      .sort((a, b) => b.match_score - a.match_score || a.source.timestamp_s - b.source.timestamp_s);
+    let match = keywordCandidates[0] || null;
     if (match) {
       matchedKeyword += 1;
       initialMatches.push(match);
+      usageByScene.set(sceneKey(match.source), Number(usageByScene.get(sceneKey(match.source)) || 0) + 1);
       continue;
     }
     try {
@@ -236,6 +276,7 @@ async function buildSyncMap(sceneIndex, narrationAnalysis, config = {}, options 
     if (match) {
       matchedEmbedding += 1;
       initialMatches.push(match);
+      usageByScene.set(sceneKey(match.source), Number(usageByScene.get(sceneKey(match.source)) || 0) + 1);
     }
   }
 
@@ -375,6 +416,7 @@ function syncMapToEDL(syncMap, sourceVideoPath, narrationAudioPath, introClip = 
 
 module.exports = {
   matchByKeywords,
+  listKeywordMatches,
   matchByEmbedding,
   applyTimeOrdering,
   handleUnmatched,

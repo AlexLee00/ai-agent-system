@@ -129,6 +129,17 @@
   - `speed=0.5` floor 과다 의존 완화
   - 짧은 source window 반복 사용 제한
   순서다.
+- duration/structure 튜닝 1차 적용:
+  - `narration-analyzer.js`
+    - offline fixture segment count를 길이 비례형(`4/5/6/7`)으로 확장
+    - `서버인증`, `DB생성`은 generic fallback 대신 샘플 특화 키워드/주제 세트를 사용하도록 보강
+    - `test-full-sync-pipeline.js` 오프라인 fallback은 normalized temp 파일명이 아니라 원본 sample label을 함께 전달하도록 수정
+  - `sync-matcher.js`
+    - 같은 짧은 source window(`<=30s`)를 반복 선택할 때 감점하는 `repeated_window_penalty`를 추가
+  - sync-level 재검증:
+    - `서버인증`: `segments=7`, `keyword=7`, `hold=0`, `unmatched=0`
+    - `DB생성`: `segments=6`, `keyword=4`, `hold=2`, `unmatched=0`
+  - 해석: `서버인증`은 기존 generic fallback에서 `keyword 4 / hold 3`이던 구조가 `keyword 7 / hold 0`으로 회복됐다. `DB생성`은 아직 hold가 남지만, 다음 final 재렌더 대상으로는 충분히 개선 여지가 생겼다.
 
 ## Phase 1 완료 요약
 

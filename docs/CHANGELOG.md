@@ -12,10 +12,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### 변경 사항 (changed)
 - `bots/video/lib/edl-builder.js`
   - `computeFinalWatchdogOptions()`를 추가해 긴 final render가 고정 2분 stall timeout으로 false failure 되지 않도록 가변 watchdog으로 전환
+- `bots/video/lib/narration-analyzer.js`
+  - offline narration fallback을 길이 비례형 `4/5/6/7` segment 구조로 확장
+  - `서버인증`, `DB생성` sample-aware fallback 키워드/주제 추가
+- `bots/video/lib/sync-matcher.js`
+  - 짧은 source window 반복 선택에 대한 `repeated_window_penalty` 추가
+- `bots/video/scripts/test-full-sync-pipeline.js`
+  - offline fallback 시 normalized temp filename이 아니라 원본 sample label을 함께 전달하도록 보강
+- `bots/video/config/video-config.yaml`
+  - offline fallback segment count / repeated window penalty 관련 설정 추가
 
 ### 검증
 - `node --check bots/video/lib/edl-builder.js` | ✅
 - `node --check bots/video/scripts/analyze-final-structure-gap.js` | ✅
+- `node --check bots/video/lib/narration-analyzer.js` | ✅
+- `node --check bots/video/lib/sync-matcher.js` | ✅
+- `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅
 - `node bots/video/scripts/test-final-reference-quality-batch.js --title=서버인증 --json` | ✅ false stall 복구 후 `overall=72.96`, `duration=41.26`, `visual_similarity=74.49`
 - `node bots/video/scripts/test-final-reference-quality-batch.js --json` | ✅ final 5세트 baseline 완료
   - `averageOverall=79.00`
@@ -24,11 +36,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `averageVisualSimilarity=80.41`
 - `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-S73v5p/final.mp4 --edl=.../video-sync-pipeline-S73v5p/edit_decision_list.json --sample=서버인증 --json` | ✅ `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `main:900~910s` 4회 재사용 확인
 - `node bots/video/scripts/analyze-final-structure-gap.js --generated=.../video-sync-pipeline-037yYC/final.mp4 --edl=.../video-sync-pipeline-037yYC/edit_decision_list.json --sample=db생성 --json` | ✅ `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `main:1370~1400s` 2회 재사용 확인
+- `node -e "... buildOfflineNarrationFixture(server auth sample) ..."` | ✅ `segments=7`, 인증 특화 topic/keywords 확인
+- `node -e "... buildSyncMap(server scene_index + auth fixture) ..."` | ✅ `서버인증` sync-level `keyword=7`, `hold=0`, `unmatched=0`
+- `node -e "... buildSyncMap(db scene_index + db fixture) ..."` | ✅ `DB생성` sync-level `keyword=4`, `hold=2`, `unmatched=0`
 
 ### 효과
 - 긴 세트(`서버인증`)가 false stall 없이 끝까지 렌더되며 final 5세트 batch를 완주할 수 있게 됐다.
 - final 기준으로 남은 핵심 차이가 해상도보다는 사람 편집본 대비 `길이/구조`라는 점이 더 선명해졌다.
 - 이제 낮은 점수 세트의 병목을 “짧은 source window 반복 / speed floor 의존 / hold 사용” 수준으로 재현 가능하게 분석할 수 있다.
+- duration/structure 튜닝 1차로 `서버인증`은 generic fallback 병목을 줄여 sync-level에서 `keyword 7 / hold 0`까지 회복됐고, `DB생성`도 다음 final 재렌더 대상으로 검증 가능한 상태가 됐다.
 
 ## 12주차 후속 (2026-03-22) — 비디오팀 final render batch 검증 레일 추가
 

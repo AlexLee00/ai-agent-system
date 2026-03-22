@@ -77,6 +77,10 @@ narration_analyzer:
   correct_subtitle: true
   llm_model: gpt-4o-mini
   llm_timeout_ms: 15000
+  offline_segment_count_short: 4
+  offline_segment_count_medium: 5
+  offline_segment_count_long: 6
+  offline_segment_count_xlong: 7
 
 # AI 싱크 매칭
 sync_matcher:
@@ -86,6 +90,8 @@ sync_matcher:
   max_speed_factor: 2.0
   min_speed_factor: 0.5
   unmatched_strategy: hold
+  short_source_window_sec: 30
+  repeated_window_penalty: 0.2
 
 # 인트로/아웃트로
 intro_outro:

@@ -43,6 +43,14 @@
   - `서버인증`: `duration_ratio=0.4126`, `speed_floor_ratio=0.8`, `hold=1`, `main:900~910s` 10초 window 4회 재사용
   - `DB생성`: `duration_ratio=0.3803`, `speed_floor_ratio=0.8`, `hold=0`, `main:1370~1400s` 30초 window 2회 재사용
 - 해석상 현재 가장 큰 차이는 해상도나 장면 유사도보다, 짧은 source window 반복과 `speed=0.5` floor 의존으로 인한 사람 편집본 대비 `길이/구조 압축`이다.
+- duration/structure 튜닝 1차로 offline narration fallback과 sync matcher를 보강했다.
+  - offline fallback segment count를 길이 비례형 `4/5/6/7` 구조로 확장
+  - `서버인증`, `DB생성`은 sample-aware fallback 키워드/주제로 분기
+  - `sync-matcher`는 짧은 source window 반복 시 감점하도록 보강
+- sync-level 재검증 결과:
+  - `서버인증`: `segments=7`, `keyword=7`, `hold=0`, `unmatched=0`
+  - `DB생성`: `segments=6`, `keyword=4`, `hold=2`, `unmatched=0`
+- 해석상 `서버인증`은 generic fallback 병목이 크게 줄었고, `DB생성`은 아직 hold가 남아 다음 final 재렌더에서 추가 확인이 필요하다.
 - 현재 1순위 보강 포인트는 낮은 점수 세트(`서버인증`, `DB생성`)의 duration/structure를 사람 편집본 기준으로 더 맞추는 것과 transition 재도입 설계다.
 
 ### 12주차 후속 (2026-03-22) — Jimmy 성공 알림 경계 복구
