@@ -43,6 +43,13 @@
   - 스터디룸 매출: `use_day|study_room` ↔ 픽코 `예약/이용 검색`
 - `2026-03-17` 스터디룸 `74,500원`은 예약기준 화면의 5건과 일치함을 재확인했다.
 
+## 2026-03-23: 스카 downstream 합산 표기 정렬
+
+- `ska-read-service`, `dashboard-server`, `dashboard.html`에서 `general_revenue + pickko_study_room` 합산값을 `combined_revenue` / `내부 합산매출`로 함께 노출하도록 정리했다.
+- 대시보드 요약 카드에는 내부 합산매출과 함께 `스터디카페 / 스터디룸` 금액을 분리 표시하도록 바꿨다.
+- `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에도 같은 의미 주석/표기를 맞췄다.
+- 해석: 합산 로직 자체는 유지하지만, payment 축 일반매출과 use 축 스터디룸매출을 운영자에게 숨기지 않고 드러내는 방향으로 표시층을 정리한 단계다.
+
 ## 2026-03-22: 스카 매출 source 영향 경로 정렬 / 예측엔진 입력 기준 복구
 
 - `daily_summary.total_amount`를 총매출처럼 읽던 경로를 다시 점검했다.

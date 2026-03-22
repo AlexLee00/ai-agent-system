@@ -28,8 +28,10 @@
   - 운영 검증 기준도 다시 고정했다. 스터디카페 매출은 `payment_day|general`을 픽코 `매출현황` 기준으로 보고, 스터디룸 매출은 `use_day|study_room`을 픽코 `예약/이용 검색` 기준으로 본다. `2026-03-17`의 `pickko_study_room=74,500원`은 예약기준 화면의 5건과 일치한다.
   - 스카 매출 source of truth 변경 영향 범위를 다시 점검했고, `daily_summary.total_amount`를 총매출처럼 읽던 경로들을 현재 정책 기준으로 정렬했다.
   - `bots/reservation/lib/ska-read-service.js`, `bots/reservation/scripts/dashboard-server.js`, `bots/reservation/scripts/dashboard.html`, `scripts/collect-kpi.js`는 이제 총매출을 `general_revenue + pickko_study_room` 기준으로 읽는다. 기존 `total_amount`는 호환용으로 유지하되, 조회 응답에는 `total_revenue`를 함께 노출한다.
+  - 위 합산값은 현재 `combined_revenue` / `내부 합산매출`로도 함께 노출한다. 의미는 `payment_day|general + use_day|study_room`의 내부 운영 총합이며, 운영자 화면에서 스터디카페/스터디룸 축과 분리해 표시한다.
   - `bots/ska/src/etl.py`도 새 기준으로 정렬했다. `studyroom_revenue=pickko_study_room`, `general_revenue=general_revenue`, `actual_revenue=studyroom_revenue+general_revenue`를 기준으로 `ska.revenue_daily`를 다시 적재하며, `room_amounts_json`과 `total_amount`는 fallback 경계로만 사용한다.
   - `scripts/reviews/ska-sales-forecast-daily-review.js`는 `daily_summary` 보조 표시값을 `total_revenue / studyRoomRevenue / generalRevenue` 기준으로 다시 노출한다. `forecast_date::text`를 사용하도록 바꿔 review 날짜가 하루 밀려 보이던 경계도 함께 복구했다. 주간 리뷰도 같은 날짜 캐스팅 경계를 맞췄다.
+  - `collect-kpi.js`와 `etl.py`에도 같은 의미 주석을 추가했다. 합산 로직은 유지하되, KPI/예측 actual이 `결제축 일반매출 + 예약축 스터디룸매출`의 내부 운영 총합이라는 점을 코드에 명시했다.
   - `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 재실행해 `revenue_daily`와 `training_feature_daily`까지 새 기준으로 동기화했다. 현재 최근 5일 미리보기 기준 `2026-03-22 actual_revenue=309800`, `2026-03-21 actual_revenue=288000`, `2026-03-20 actual_revenue=379800`으로 반영됐다.
   - 현재 ETL 기준 actual은 `general_revenue + pickko_study_room` 합산값이며, `2026-03-22`는 `173800 + 136000 = 309800`, `2026-03-21`은 `132000 + 156000 = 288000`으로 읽는다.
   - 예측엔진 후속 정리 기준은 [SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md)에 문서화했다.

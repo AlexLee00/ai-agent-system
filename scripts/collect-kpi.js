@@ -21,6 +21,10 @@ async function collectSkaKPI(date) {
   const [rev, err, sync] = await Promise.all([
     pgPool.get(SCHEMA,
       `SELECT
+         /* 스카 KPI의 daily_revenue는 내부 운영 총합이다.
+            - general_revenue     = payment_day|general
+            - pickko_study_room   = use_day|study_room
+            두 축을 운영 총매출 관점에서 합산해 본다. */
          COALESCE(SUM(COALESCE(general_revenue, 0) + COALESCE(pickko_study_room, 0)),0)::bigint AS total,
          COALESCE(SUM(entries_count),0)::int AS cnt
        FROM reservation.daily_summary WHERE date = $1`, [date]),

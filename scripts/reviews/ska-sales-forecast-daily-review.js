@@ -54,7 +54,7 @@ async function loadAccuracyRows(days) {
       rds.entries_count,
       COALESCE(rds.general_revenue, 0) AS general_revenue,
       COALESCE(rds.pickko_study_room, 0) AS pickko_study_room,
-      COALESCE(rds.general_revenue, 0) + COALESCE(rds.pickko_study_room, 0) AS total_revenue,
+      COALESCE(rds.general_revenue, 0) + COALESCE(rds.pickko_study_room, 0) AS combined_revenue,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
       (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue,
       COALESCE((latest.predictions->>'shadow_confidence')::float, 0.0) AS shadow_confidence,
@@ -299,7 +299,8 @@ async function main() {
       actualReservations: Number(latestActual.actual_reservations || 0),
       predictedReservations: Number(latestActual.predicted_reservations || 0),
       totalAmount: Number(latestActual.total_amount || 0),
-      totalRevenue: Number(latestActual.total_revenue || 0),
+      combinedRevenue: Number(latestActual.combined_revenue || 0),
+      totalRevenue: Number(latestActual.combined_revenue || 0),
       studyRoomRevenue: Number(latestActual.pickko_study_room || 0),
       generalRevenue: Number(latestActual.general_revenue || 0),
       entriesCount: Number(latestActual.entries_count || 0),
@@ -341,7 +342,7 @@ async function main() {
     lines.push(`- 오차: ${biasLabel(report.latestActual.bias)}`);
     lines.push(`- 적중률(MAPE): ${report.latestActual.mape == null ? 'N/A' : `${report.latestActual.mape}%`}`);
     lines.push(`- 실예약/예측예약: ${fmt(report.latestActual.actualReservations)}건 / ${fmt(report.latestActual.predictedReservations)}건`);
-    lines.push(`- total_revenue / entries_count: ${fmt(report.latestActual.totalRevenue)}원 / ${fmt(report.latestActual.entriesCount)}건`);
+    lines.push(`- 내부 합산매출 / entries_count: ${fmt(report.latestActual.combinedRevenue)}원 / ${fmt(report.latestActual.entriesCount)}건`);
     lines.push(`- 매출 구성: 스터디룸 ${fmt(report.latestActual.studyRoomRevenue)}원 / 일반이용 ${fmt(report.latestActual.generalRevenue)}원`);
   }
 

@@ -193,6 +193,9 @@ def run_etl(days_back=90):
                 studyroom_revenue = _sum_room_amounts(row.get('room_amounts_json'))
             if studyroom_revenue <= 0 and general_revenue <= 0:
                 studyroom_revenue = int(row['total_amount'] or 0)
+            # actual_revenue는 스카 내부 운영 총합이다.
+            # general_revenue   = payment_day|general
+            # studyroom_revenue = use_day|study_room
             actual_revenue = studyroom_revenue + general_revenue
 
             # 해당 날짜 완료 예약 (status='completed')
