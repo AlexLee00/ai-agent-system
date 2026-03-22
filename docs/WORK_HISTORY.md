@@ -26,6 +26,7 @@
 - `007_kiosk_block_key_v2.js` 마이그레이션을 추가/적용해 기존 `kiosk_blocks` row를 재키잉했고, 스키마 버전이 `v7`로 올라갔다.
 - `pickko-kiosk-monitor.js`, `manual-block-followup-report.js`, `getOpenManualBlockFollowups()`도 `end/room`까지 반영해 같은 시작시각 재예약 충돌을 줄였다.
 - 확인 결과 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, 이전 legacy 키 충돌 문제를 피할 수 있다.
+- 후속 운영 검증용 [SKA_REBOOK_REGRESSION_TEST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md) 절차서를 추가했다.
 
 ## 2026-03-22: 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 
