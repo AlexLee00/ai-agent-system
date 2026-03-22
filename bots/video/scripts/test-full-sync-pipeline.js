@@ -32,8 +32,16 @@ function parseArgs(argv) {
   return parsed;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+async function runPipelineValidation(rawArgs) {
+  const args = {
+    sourceVideo: rawArgs?.sourceVideo || null,
+    sourceAudio: rawArgs?.sourceAudio || null,
+    edited: rawArgs?.edited || null,
+    renderPreview: Boolean(rawArgs?.renderPreview),
+    renderFinal: Boolean(rawArgs?.renderFinal),
+    allowOfflineFixture: rawArgs?.allowOfflineFixture !== false,
+  };
+
   if (!args.sourceVideo || !args.sourceAudio) {
     throw new Error('--source-video와 --source-audio는 필수입니다.');
   }
@@ -70,9 +78,10 @@ async function main() {
   saveEDL(edl, edlPath);
 
   let previewPath = null;
+  let previewRender = null;
   if (args.renderPreview) {
     previewPath = path.join(tempDir, 'preview.mp4');
-    await renderPreview(edl, previewPath, config);
+    previewRender = await renderPreview(edl, previewPath, config);
   }
 
   let finalPath = null;
@@ -83,7 +92,8 @@ async function main() {
   }
 
   const editedExists = args.edited ? fs.existsSync(path.resolve(args.edited)) : false;
-  console.log(JSON.stringify({
+  return {
+    temp_dir: tempDir,
     scene_count: sceneIndex.scenes?.length || 0,
     segment_count: narration.total_segments || 0,
     sync_confidence: syncMap.overall_confidence,
@@ -98,6 +108,11 @@ async function main() {
     offline_narration_fixture: Boolean(narration.offline_fixture),
     edl_path: edlPath,
     preview_path: previewPath,
+    preview_render: previewRender ? {
+      duration_ms: previewRender.duration_ms,
+      file_size: previewRender.fileSize,
+      validation: previewRender.validation,
+    } : null,
     final_path: finalPath,
     final_render: finalRender ? {
       duration_ms: finalRender.duration_ms,
@@ -105,7 +120,13 @@ async function main() {
       validation: finalRender.validation,
     } : null,
     reference_edited_exists: editedExists,
-  }, null, 2));
+  };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const result = await runPipelineValidation(args);
+  console.log(JSON.stringify(result, null, 2));
 }
 
 if (require.main === module) {
@@ -114,3 +135,9 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
+module.exports = {
+  parseArgs,
+  runPipelineValidation,
+  main,
+};

@@ -47,7 +47,8 @@
   - 5세트 batch baseline은 `averageOverall=68.88`, `averageDuration=54.30`, `averageResolution=25.11`, `averageVisualSimilarity=83.76`로 나왔다. 세트별 overall은 파라미터 `72.77`, 동적데이터 `73.15`, 컴포넌트스테이트 `69.88`, DB생성 `64.77`, 서버인증 `63.85`다.
   - 단일 세트 final render 검증도 성공했다. 파라미터 세트 `final.mp4`는 `2560x1440 / 60fps / 264s`, `AAC 48kHz stereo / 264s`, `faststart=true`, `file_size=46,555,622`, `duration_ms=249452`로 확인됐다.
   - final reference quality는 `overall=81.62`, `duration=64.26`, `resolution=99.30`, `visual_similarity=79.82`다. preview 대비 해상도 점수는 회복됐고, 현재 남은 핵심 차이는 사람 편집본 대비 `길이/구조`다.
-  - 다음 1순위는 final render 5세트 검증과 duration/structure 기준을 사람 편집본 쪽으로 더 맞추는 것이다.
+  - `test-final-reference-quality-batch.js`가 추가돼 temp 산출물 없이도 샘플 5세트를 직접 순회하는 final batch 검증 레일이 생겼다. 현재 `--title=파라미터` 1세트 sanity check는 성공했고 `averageOverall=81.62`, `averageFinalRenderMs=210767`로 확인됐다.
+  - 다음 1순위는 이 batch 레일로 final render 5세트 baseline을 만들고, duration/structure 기준을 사람 편집본 쪽으로 더 맞추는 것이다.
   - 비디오팀 Phase 1은 과제 1~13 + RAG 피드백 루프 기준으로 마감됐다.
   - `bots/worker/web`의 Next.js는 이번 세션에서 재빌드 후 launchd `ai.worker.nextjs`를 재기동했고, `/video`, `/video/history`는 현재 `200 OK`로 실제 반영 상태다.
   - `bots/video/lib/critic-agent.js`와 `bots/video/scripts/test-critic-agent.js`가 추가돼 RED Team Critic이 자막/오디오/영상 구조를 하나의 `critic_report.json`으로 평가할 수 있다.

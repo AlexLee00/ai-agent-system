@@ -3,6 +3,24 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 비디오팀 final render batch 검증 레일 추가
+
+### 변경 사항 (added)
+- `bots/video/scripts/test-final-reference-quality-batch.js`
+  - temp `validation_report.json` 없이도 샘플 5세트를 직접 순회하며 `final render -> reference 비교`를 수행하는 batch evaluator 추가
+- `bots/video/scripts/test-full-sync-pipeline.js`
+  - CLI 외부에서도 재사용할 수 있도록 `runPipelineValidation()` export 추가
+  - `preview_render` / `final_render` 결과를 함수 반환값으로 재사용 가능하게 정리
+
+### 검증
+- `node --check bots/video/scripts/test-full-sync-pipeline.js` | ✅
+- `node --check bots/video/scripts/test-final-reference-quality-batch.js` | ✅
+- `node bots/video/scripts/test-final-reference-quality-batch.js --title=파라미터 --json` | ✅ `averageOverall=81.62`, `averageFinalRenderMs=210767`
+
+### 효과
+- final render 5세트 batch baseline을 temp 파일 유무와 무관하게 같은 스크립트로 재현할 수 있게 됐다.
+- 다음 단계에서 5세트 전체 final baseline을 같은 레일로 밀 수 있는 기반이 생겼다.
+
 ## 12주차 후속 (2026-03-22) — 비디오팀 final render 단일 세트 기준선 추가
 
 ### 변경 사항 (changed)
