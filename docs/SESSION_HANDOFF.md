@@ -121,6 +121,10 @@
   - 최신 종합 리포트는 `bots/video/temp/validation_report.json`에 저장돼 있으며 요약값은 `successful=5`, `failed=0`, `avg_total_ms=440378`, `rag_records_stored=7`이다.
 - 스카
   - `pickko-kiosk-monitor.js`는 이제 성공한 네이버 차단/해제 완료를 `event_type=report`, `alert_level=1`로 발송한다. 이전처럼 성공 메시지가 `⚠️ jimmy 집약 알림`으로 묶이지 않도록 경계를 복구했다.
+  - 같은 날짜 저녁 `kiosk-monitor` 반복 성공 알림의 직접 원인은 `blockNaverSlot()` 반환 객체 `{ ok, reason }`를 상위 루프가 truthy 객체 자체로 성공 판정하던 버그였다. 현재는 `blockResult?.ok`만 성공으로 해석하도록 hotfix가 반영됐고, `kiosk-monitor`는 다시 꺼둔 상태다.
+  - 운영자 실사 결과 manual follow-up 12건 중 정상 차단은 6건, 원장 오류는 6건으로 정리됐다. 취소/예약없음 3건은 `operator_invalidated`로 정정했고, 시간 불일치 3건(`2026-04-01~03 A1 08:00~10:50`)은 기존 row를 invalidated 처리한 뒤 실제 차단 슬롯 `09:00~11:20` row를 새로 기록했다.
+  - `manual-block-followup-report.js`는 이제 exact `getKioskBlock(phone,date,start)` lookup과 `operator_confirmed_actual_slot` corrected row를 함께 보여준다. 현재 출력 기준선은 `count=12`, `openCount=6`, `correctedCount=3`이다.
+  - 구조 리스크: `kiosk_blocks` 식별키는 아직 `phone|date|start` 기반이라 같은 사람/같은 날짜/같은 시작시각 재예약(`09:00~13:00` 취소 후 `09:00~11:00` 재예약)에서 충돌 가능성이 남아 있다. 다음 개선은 `end`와 `room`까지 포함하는 키 재설계다.
   - 최근 운영에서는 픽코/네이버 관리자 화면을 사람이 직접 쓰는 동안 자동화가 같은 세션을 건드리며 `detached Frame`, `Session closed`, `ECONNREFUSED`가 발생한 정황이 확인됐다. 운영 규칙은 [SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_MANUAL_ADMIN_CONCURRENCY_RULE_2026-03-22.md)를 따른다.
   - 현재는 `naver-monitor`만 안정화해 유지하고 `kiosk-monitor`는 의도적으로 미로드 상태다. 재개 전 확인과 재투입 순서는 [SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_KIOSK_MONITOR_REENABLE_CHECKLIST_2026-03-22.md)를 기준으로 본다.
   - 기존 예측 엔진은 유지되고 있다.
@@ -607,3 +611,18 @@
 - `naver-monitor.js`의 `runPickko()`는 child stdout/stderr에서 위 마커를 파싱해 `errorReason` 앞에 `[STAGE_CODE]`를 붙여 저장하고, 수동 처리 알림에도 `🧩 실패 단계:`를 함께 노출한다.
 - 의미: 이제 “재시도는 계속 했는데 왜 한 번도 성공 못 했는가”를 감으로 보지 않고, `member/date/slot/lock/payment` 경계별로 바로 읽을 수 있다.
 - 이번 단계는 DB 스키마 변경 없이 `errorReason`/알림 계약만 강화한 1차 계측이다. 다음 자연스러운 단계는 실패 단계 분포를 1~2일 관찰한 뒤 `slot 선택` 또는 `lock 충돌`에 맞는 재시도 정책을 분리하는 것이다.
+
+## 2026-03-22 — 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
+
+- `kiosk-monitor` 반복 성공 알림 hotfix 후 운영자 실사 결과를 기준으로 `kiosk_blocks` 12건을 재검증했다.
+- 취소/예약없음/테스트 취소 3건과 시간 불일치 3건의 기존 row는 `operator_invalidated`로 정정했다.
+- `2026-04-01~03 A1 / 01037410771`는 실제 차단된 `09:00~11:20` 슬롯 row를 `operator_confirmed_actual_slot`로 새로 기록했다.
+- `manual-block-followup-report.js`는 단순 `reservations LEFT JOIN kiosk_blocks` 대신 exact `getKioskBlock(phone,date,start)` lookup을 사용하고, corrected slot row를 `correctedRows`로 함께 출력한다.
+- 현재 기준선:
+  - `count=12`
+  - `openCount=6`
+  - `correctedCount=3`
+- 남은 구조 리스크:
+  - `kiosk_blocks` 식별키가 아직 `phone|date|start`
+  - 같은 사람/같은 날짜/같은 시작시각 재예약 시 `end/room` 변화가 충돌할 수 있음
+  - 다음 단계는 `phone|date|start|end|room` 수준으로 키를 재설계하는 것이다.

@@ -229,6 +229,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-03-22
 
+### 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
+
+- `bots/reservation/manual/reports/manual-block-followup-report.js`
+  - exact `getKioskBlock(phone,date,start)` lookup을 사용하도록 변경
+  - `operator_confirmed_actual_slot` corrected row를 별도 `correctedRows` / `correctedCount`로 출력하도록 확장
+- 운영 원칙
+  - 취소/예약없음/시간 불일치 row는 `operator_invalidated`로 정정
+  - 실제 차단된 corrected slot은 별도 row로 기록
+
 ### 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 
 - `bots/reservation/auto/monitors/naver-monitor.js`
