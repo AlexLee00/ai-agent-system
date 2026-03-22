@@ -16,6 +16,7 @@
 - `manualFollowupEntries`를 `kiosk-monitor` 자동 차단 루프에서 제거했다.
 - 이제 자동 차단 레일은 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 다루고, 사람이 개입한 `manual/manual_retry` 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 운영 레일에서만 처리한다.
 - `pickko-accurate.js`의 `manual` 락 TTL을 20분으로 늘렸고, `pickko-kiosk-monitor.js`는 사이클 시작 시 `isPickkoLocked()`를 확인해 `manual` 락이 보이면 즉시 스킵하도록 보강했다.
+- `pickko-kiosk-monitor.js`에 고객 단위 cooldown을 추가했다. 현재 기준 key는 `phone|date`, 기본 대기값은 `customerOperationCooldownMs=30000`이며 같은 고객/같은 날짜의 예약 차단/해제는 정렬 후 순차 처리된다.
 - 픽코 자동 취소 감지는 `상태=환불`만 보지 않고 `상태=환불`, `상태=취소`를 각각 조회해 합산/중복제거하도록 보강했다.
 - 픽코 자동 취소 절차를 [SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_CANCEL_FLOW_RUNBOOK_2026-03-22.md) 문서로 고정했다.
 - 픽코 자동 예약 감지 절차도 [SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_PICKKO_RESERVATION_FLOW_RUNBOOK_2026-03-22.md)로 고정했다. 자동 범위는 `신규 + 미차단 재시도`만 포함하고 `manual follow-up`은 수동 운영 레일로 분리된 상태를 문서에 반영했다.
