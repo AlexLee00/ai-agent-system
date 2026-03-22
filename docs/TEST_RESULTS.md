@@ -1049,3 +1049,11 @@
 | `launchctl print gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `pid=49161`, `state=xpcproxy` 확인 |
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `kiosk-monitor: 정상 (PID 49161)` |
 | `tail -n 120 /tmp/pickko-kiosk-monitor.log` | ✅ 실제 `pickko-kiosk-monitor.js`가 기동되어 신규/재시도/취소 목록 조회와 네이버 차단 시도까지 수행함 확인 |
+
+### 2026-03-22 — 스카 픽코 등록 실패 단계 분해 계측
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/reservation/manual/reservation/pickko-accurate.js` | ✅ 단계 코드 마커 추가 후 문법 통과 |
+| `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ `runPickko()` 실패 단계 파싱 추가 후 문법 통과 |
+| `MODE=ops node bots/reservation/manual/reservation/pickko-accurate.js --phone=abc --date=bad --start=19:00 --end=20:00 --room=A1` | ✅ `PICKKO_FAILURE_STAGE=INPUT_NORMALIZE_FAILED` 마커 실제 출력 확인 |
