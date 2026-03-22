@@ -1930,7 +1930,7 @@ async function main() {
     }
 
     // ── Phase 2: 신규 예약 감지 ──
-    const _kioskFlags = await Promise.all(kioskEntries.map(e => getKioskBlock(e.phoneRaw, e.date, e.start)));
+    const _kioskFlags = await Promise.all(kioskEntries.map(e => getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room)));
     const newEntries = kioskEntries.filter((_, i) => !_kioskFlags[i]);
 
     // ── Phase 2A: 미차단 재시도 대상 ──
@@ -1977,7 +1977,7 @@ async function main() {
     // naverBlocked=true로 실제 차단한 항목만 해제 시도
     // (DB에 없거나 naverBlocked !== true → 차단한 적 없음 → 해제 불필요)
     const _refundedWithKey = refundedEntries.map(e => ({ ...e, key: `${e.phoneRaw}|${e.date}|${e.start}` }));
-    const _refundedSaved = await Promise.all(_refundedWithKey.map(e => getKioskBlock(e.phoneRaw, e.date, e.start)));
+    const _refundedSaved = await Promise.all(_refundedWithKey.map(e => getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room)));
     const cancelledEntries = _refundedWithKey.filter((e, i) => {
       const saved = _refundedSaved[i];
       if (!saved || !saved.naverBlocked) return false; // 차단 이력 없음
@@ -2197,7 +2197,7 @@ async function main() {
 
           if (unblocked) {
             // naverBlocked: false + naverUnblockedAt 기록 (기존 DB 데이터 보존)
-            const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
+            const existing = await getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room);
             await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e, naverBlocked: false, naverUnblockedAt: nowKST()
             });
@@ -2328,7 +2328,7 @@ async function blockSlotOnly(entry) {
         blocked = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-recheck' });
         log(`  🔁 대리등록 후 독립 재검증: ${blocked ? '✅ 차단 확인' : '❌ 차단 미확인'}`);
         if (blocked) {
-          const existing = await getKioskBlock(phoneRaw, date, start);
+          const existing = await getKioskBlock(phoneRaw, date, start, end, room);
           await upsertKioskBlock(phoneRaw, date, start, {
             ...(existing || {}),
             name,
@@ -2462,7 +2462,7 @@ async function auditToday(dateOverride = null) {
           log(`  ✅ 차단확인: ${e.room} ${e.start}~${e.end} (${maskName(e.name)})`);
           okList.push(e);
           // DB 동기화: 확인됐으면 naverBlocked=true 보장
-          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
+          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room);
           if (!existing || !existing.naverBlocked) {
             await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
               ...(existing || {}), ...e,
@@ -2476,7 +2476,7 @@ async function auditToday(dateOverride = null) {
           let success = false;
           for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-              success = await blockNaverSlot(naverPg, e);
+              success = Boolean((await blockNaverSlot(naverPg, e))?.ok);
               break;
             } catch (err) {
               if (err.message.includes('detached Frame') && attempt === 1) {
@@ -2491,7 +2491,7 @@ async function auditToday(dateOverride = null) {
               }
             }
           }
-          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start);
+          const existing = await getKioskBlock(e.phoneRaw, e.date, e.start, e.end, e.room);
           await upsertKioskBlock(e.phoneRaw, e.date, e.start, {
             ...(existing || {}), ...e,
             naverBlocked: success,
@@ -2537,7 +2537,7 @@ async function auditToday(dateOverride = null) {
         }
       }
       if (unblocked) {
-        const existing = await getKioskBlock(b.phoneRaw, b.date, b.start);
+        const existing = await getKioskBlock(b.phoneRaw, b.date, b.start, b.end, b.room);
         await upsertKioskBlock(b.phoneRaw, b.date, b.start, {
           ...(existing || {}), ...b,
           naverBlocked: false,
@@ -2643,7 +2643,7 @@ async function unblockSlotOnly(entry) {
       }
 
       // DB 업데이트
-      const existing = await getKioskBlock(phoneRaw, date, start);
+      const existing = await getKioskBlock(phoneRaw, date, start, end, room);
       await upsertKioskBlock(phoneRaw, date, start, {
         ...(existing || {}), name, date, start, end, room,
         naverBlocked: false,

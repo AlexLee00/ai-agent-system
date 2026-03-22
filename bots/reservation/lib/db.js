@@ -11,7 +11,7 @@
  *              kiosk_blocks.name_enc, phone_raw_enc
  */
 
-const { encrypt, decrypt, hashKioskKey } = require('./crypto');
+const { encrypt, decrypt, hashKioskKey, hashKioskKeyLegacy } = require('./crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'reservation';
@@ -262,9 +262,7 @@ async function pruneOldCancelledKeys(cutoffDate) {
 
 // ─── kiosk_blocks ──────────────────────────────────────────────────
 
-async function getKioskBlock(phoneRaw, date, start) {
-  const id = hashKioskKey(phoneRaw, date, start);
-  const row = await pgPool.get(SCHEMA, 'SELECT * FROM kiosk_blocks WHERE id = $1', [id]);
+function _mapKioskBlockRow(row) {
   if (!row) return null;
   return {
     ...row,
@@ -283,8 +281,52 @@ async function getKioskBlock(phoneRaw, date, start) {
   };
 }
 
+function _buildKioskLookupIds(phoneRaw, date, start, end, room) {
+  const ids = [];
+  if (end || room) ids.push(hashKioskKey(phoneRaw, date, start, end, room));
+  ids.push(hashKioskKeyLegacy(phoneRaw, date, start));
+  return [...new Set(ids)];
+}
+
+async function _findKioskBlockRow(phoneRaw, date, start, end = null, room = null) {
+  for (const id of _buildKioskLookupIds(phoneRaw, date, start, end, room)) {
+    const row = await pgPool.get(SCHEMA, 'SELECT * FROM kiosk_blocks WHERE id = $1', [id]);
+    if (row) return row;
+  }
+
+  const rows = await pgPool.query(SCHEMA,
+    'SELECT * FROM kiosk_blocks WHERE date = $1 AND start_time = $2',
+    [date, start]
+  );
+  const filtered = rows.filter((row) => {
+    const samePhone = decrypt(row.phone_raw_enc) === phoneRaw;
+    if (!samePhone) return false;
+    if (end && row.end_time !== end) return false;
+    if (room && row.room !== room) return false;
+    return true;
+  });
+  if (filtered.length === 0) return null;
+  filtered.sort((a, b) => {
+    const aTs = new Date(a.blocked_at || a.last_block_attempt_at || a.first_seen_at || 0).getTime();
+    const bTs = new Date(b.blocked_at || b.last_block_attempt_at || b.first_seen_at || 0).getTime();
+    return bTs - aTs;
+  });
+  return filtered[0];
+}
+
+async function getKioskBlock(phoneRaw, date, start, end = null, room = null) {
+  const row = await _findKioskBlockRow(phoneRaw, date, start, end, room);
+  return _mapKioskBlockRow(row);
+}
+
 async function upsertKioskBlock(phoneRaw, date, start, data) {
-  const id = hashKioskKey(phoneRaw, date, start);
+  const effectiveDate = data.date || date;
+  const effectiveStart = data.start || start;
+  const effectiveEnd = data.end || null;
+  const effectiveRoom = data.room || null;
+  const existingRow = await _findKioskBlockRow(phoneRaw, effectiveDate, effectiveStart, effectiveEnd, effectiveRoom);
+  const legacyId = existingRow?.id || null;
+  const id = hashKioskKey(phoneRaw, effectiveDate, effectiveStart, effectiveEnd, effectiveRoom);
   await pgPool.run(SCHEMA, `
     INSERT INTO kiosk_blocks
       (id, phone_raw_enc, name_enc, date, start_time, end_time, room,
@@ -308,10 +350,10 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
     id,
     encrypt(phoneRaw),
     encrypt(data.name || null),
-    data.date    || date,
-    data.start   || start,
-    data.end     || null,
-    data.room    || null,
+      effectiveDate,
+      effectiveStart,
+      effectiveEnd,
+      effectiveRoom,
     data.amount  || 0,
     data.naverBlocked    ? 1 : 0,
     data.firstSeenAt     || null,
@@ -319,13 +361,17 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
     data.naverUnblockedAt|| null,
     data.lastBlockAttemptAt || null,
     data.lastBlockResult || null,
-    data.lastBlockReason || null,
-    Number(data.blockRetryCount || 0),
+      data.lastBlockReason || null,
+      Number(data.blockRetryCount || 0),
   ]);
+
+  if (legacyId && legacyId !== id) {
+    await pgPool.run(SCHEMA, 'DELETE FROM kiosk_blocks WHERE id = $1', [legacyId]);
+  }
 }
 
 async function recordKioskBlockAttempt(phoneRaw, date, start, data = {}) {
-  const existing = await getKioskBlock(phoneRaw, date, start);
+  const existing = await getKioskBlock(phoneRaw, data.date || date, data.start || start, data.end || null, data.room || null);
   const nextRetryCount = Number(existing?.blockRetryCount || 0) + (data.incrementRetry ? 1 : 0);
 
   await upsertKioskBlock(phoneRaw, date, start, {
@@ -410,6 +456,7 @@ async function getOpenManualBlockFollowups(fromDate) {
     LEFT JOIN kiosk_blocks kb
       ON kb.date = r.date
      AND kb.start_time = r.start_time
+     AND (kb.end_time IS NULL OR r.end_time IS NULL OR kb.end_time = r.end_time)
      AND (kb.room IS NULL OR r.room IS NULL OR kb.room = r.room)
      AND kb.phone_raw_enc = r.phone_raw_enc
     WHERE r.pickko_status IN ('manual', 'manual_retry')

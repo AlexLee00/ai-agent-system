@@ -70,7 +70,7 @@ async function main() {
 
   const rows = await Promise.all(reservationRows.map(async (row) => {
     const phoneRaw = normalizePhone(row.phone);
-    const kiosk = phoneRaw ? await getKioskBlock(phoneRaw, row.date, row.start_time) : null;
+    const kiosk = phoneRaw ? await getKioskBlock(phoneRaw, row.date, row.start_time, row.end_time, row.room) : null;
     return {
       ...row,
       kiosk_block_id: kiosk?.id || null,

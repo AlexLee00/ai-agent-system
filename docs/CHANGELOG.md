@@ -229,6 +229,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-03-22
 
+### 스카 kiosk_blocks 키 v2 재설계 / 재예약 충돌 완화
+
+- `bots/reservation/lib/crypto.js`
+  - `hashKioskKeyLegacy()` 추가
+  - `hashKioskKey()`를 `phone|date|start|end|room` 기반 v2 해시로 변경
+- `bots/reservation/lib/db.js`
+  - `getKioskBlock()` v2 우선 + legacy fallback 지원
+  - `upsertKioskBlock()`이 legacy row를 v2 id로 승격하도록 보강
+  - `getOpenManualBlockFollowups()` 조인에 `end_time` 조건 추가
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 주요 조회 경로가 `end/room`까지 전달하도록 보강
+  - 추가로 `blockNaverSlot()` 반환 객체를 다시 boolean으로 해석하지 않던 잔여 경로 1건 수정
+- `bots/reservation/migrations/007_kiosk_block_key_v2.js`
+  - 기존 `kiosk_blocks` row를 v2 id로 재키잉하는 마이그레이션 추가
+
 ### 스카 manual block follow-up 원장 정정 / corrected slot 리포트 보강
 
 - `bots/reservation/manual/reports/manual-block-followup-report.js`

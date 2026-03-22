@@ -63,17 +63,41 @@ function decrypt(b64) {
   }
 }
 
+function _normalizeKioskKeyPart(value) {
+  return String(value || '').trim();
+}
+
 /**
- * hashKioskKey(phoneRaw, date, start) → SHA256 hex
- * kiosk_blocks 테이블의 PRIMARY KEY용 불가역 해시
+ * legacy 키: phone|date|start
  */
-function hashKioskKey(phoneRaw, date, start) {
+function hashKioskKeyLegacy(phoneRaw, date, start) {
   const secrets = loadSecrets();
   const pepper = secrets.db_key_pepper || '';
   return crypto
     .createHash('sha256')
-    .update(`${phoneRaw}|${date}|${start}${pepper}`)
+    .update(`${_normalizeKioskKeyPart(phoneRaw)}|${_normalizeKioskKeyPart(date)}|${_normalizeKioskKeyPart(start)}${pepper}`)
     .digest('hex');
 }
 
-module.exports = { encrypt, decrypt, hashKioskKey };
+/**
+ * v2 키: phone|date|start|end|room
+ * 재예약/부분 시간 변경 충돌을 줄이기 위한 kiosk_blocks PRIMARY KEY용 불가역 해시
+ */
+function hashKioskKey(phoneRaw, date, start, end, room) {
+  const secrets = loadSecrets();
+  const pepper = secrets.db_key_pepper || '';
+  return crypto
+    .createHash('sha256')
+    .update(
+      [
+        _normalizeKioskKeyPart(phoneRaw),
+        _normalizeKioskKeyPart(date),
+        _normalizeKioskKeyPart(start),
+        _normalizeKioskKeyPart(end),
+        _normalizeKioskKeyPart(room),
+      ].join('|') + pepper
+    )
+    .digest('hex');
+}
+
+module.exports = { encrypt, decrypt, hashKioskKey, hashKioskKeyLegacy };

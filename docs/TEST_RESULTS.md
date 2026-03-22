@@ -1067,3 +1067,17 @@
 | `node --input-type=module -e \"... getKioskBlock('01035000586','2026-03-28','13:00') ...\"` | ✅ `naverBlocked=false`, `operator_invalidated`, `operator_reconciled_not_reserved` 확인 |
 | `node --input-type=module -e \"... getKioskBlock('01037410771','2026-04-01','08:00') ...\"` | ✅ 기존 잘못된 row가 `operator_reconciled_time_mismatch`로 invalidated 처리된 것 확인 |
 | `node --input-type=module -e \"... getKioskBlock('01037410771','2026-04-01','09:00') ...\"` | ✅ corrected actual slot row가 `09:00~11:20`, `operator_confirmed_actual_slot`로 저장된 것 확인 |
+
+### 2026-03-22 — 스카 kiosk_blocks 키 v2 재설계 / 재예약 충돌 완화
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/reservation/lib/crypto.js` | ✅ |
+| `node --check bots/reservation/lib/db.js` | ✅ |
+| `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ |
+| `node --check bots/reservation/manual/reports/manual-block-followup-report.js` | ✅ |
+| `node --check bots/reservation/migrations/007_kiosk_block_key_v2.js` | ✅ |
+| `node bots/reservation/scripts/migrate.js --status` | ✅ `v007 kiosk_block_key_v2` 미적용 상태 확인 |
+| `node bots/reservation/scripts/migrate.js` | ✅ `v007 kiosk_block_key_v2` 적용 완료, 스키마 `v7` 확인 |
+| `node bots/reservation/manual/reports/manual-block-followup-report.js` | ✅ 마이그레이션 후에도 `count=12`, `openCount=6`, `correctedCount=3` 유지 확인 |
+| `node --input-type=module -e \"... hashKioskKey('...09:00','13:00','A1') vs hashKioskKey('...09:00','11:00','A1') ...\"` | ✅ v2 해시 서로 다름, legacy `phone|date|start` 단일 키 충돌 해소 확인 |
