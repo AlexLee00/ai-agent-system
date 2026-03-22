@@ -10,13 +10,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `toBlockEntries` dedupe key를 `phone|date|start|end|room`으로 확장해 같은 사람/같은 날짜/같은 시작시각 재예약이 같은 사이클에서 합쳐지지 않도록 보강
   - `manualFollowupEntries`를 자동 차단 루프에서 제거하고, 자동 경로를 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당하도록 축소
   - 로그도 `manual 후속 재시도` 카운트 없이 현재 자동 처리 범위만 보여주도록 정리
+- `bots/reservation/manual/reservation/pickko-accurate.js`
+  - `manual` 픽코 락 TTL을 20분으로 늘려 수동 작업 중 자동 모니터가 중간에 진입하지 않도록 보강
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - 사이클 시작 시 `isPickkoLocked()`로 기존 락 소유자를 먼저 확인하고, `manual` 락이 잡혀 있으면 `manual_priority_lock` 상태로 즉시 스킵하도록 보강
 
 ### 효과
 - 자동 차단 레일과 수동 후속 레일의 경계가 명확해졌다.
 - 사람이 개입한 예약은 `manual-block-followup` 운영 루프로만 닫히므로, 중복 차단 시도와 운영 오해를 줄일 수 있다.
+- 수동 작업 중에는 자동이 멈추는 `수동 우선` 운영 원칙이 코드로 명시됐다.
 
 ### 검증
 - `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅
+- `node --check bots/reservation/manual/reservation/pickko-accurate.js` | ✅
 
 ## 12주차 후속 (2026-03-22) — 스카 취소 command contract 복구
 

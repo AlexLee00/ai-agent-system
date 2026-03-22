@@ -14,6 +14,7 @@
 - 스카
   - `pickko-kiosk-monitor.js`의 `toBlockEntries` dedupe key는 이제 `phone|date|start|end|room`을 사용한다. 같은 사람/같은 날짜/같은 시작시각이라도 종료시각이 다른 재예약을 같은 사이클에서 합쳐버리지 않도록 보강했다.
   - `manual/manual_retry` 후속 차단은 `kiosk-monitor` 자동 차단 루프에서 분리했다. 자동 모니터링은 이제 `픽코 직접 감지 신규 예약 + 미차단 재시도`만 담당하고, 수동 예약 후속은 `manual-block-followup-report.js` / `manual-block-followup-resolve.js` 수동 레일에서 관리한다.
+  - `manual` 픽코 작업이 진행 중이면 `kiosk-monitor`는 이제 `isPickkoLocked()`로 선확인 후 즉시 스킵한다. 수동 락 TTL도 20분으로 늘려, 운영자가 수동 등록/수정 중일 때 자동 모니터가 중간에 끼어들지 않도록 `수동 우선` 불변식을 코드로 고정했다.
   - 운영 의미: 자동 write-path 범위를 줄여 false block과 중복 후속 시도를 낮추고, 사람이 개입한 예약은 운영 확인을 거친 뒤 별도 원장으로 닫는 구조로 정리됐다.
 
 - 공통 운영 리포트

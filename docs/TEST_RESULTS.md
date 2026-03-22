@@ -9,6 +9,7 @@
 | 테스트 | 결과 |
 |--------|------|
 | `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` | ✅ `toBlockEntries` dedupe key에 `end` 포함, `manualFollowupEntries` 제거 후 문법 통과 |
+| `node --check bots/reservation/manual/reservation/pickko-accurate.js` | ✅ `manual` 락 TTL 20분 보강 후 문법 통과 |
 
 ### 스카 취소 command contract 복구
 
