@@ -1041,9 +1041,11 @@
 | 명령 | 결과 |
 | --- | --- |
 | `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 네이버 신규 예약 write-path 가드 제거 + 자동 취소 `unblock-slot` 후속 제거 문법 통과 |
+| `node - <<'NODE' ... OBSERVE_ONLY/PICKKO_ENABLE/SAFE_DEV_FALLBACK grep ... NODE` | ✅ `naver-monitor.js` OPS 자동 경로에서 3가지 가드와 취소 `OBSERVE_ONLY` 필터 잔존 없음 확인 |
 | `node --check bots/reservation/manual/reservation/pickko-cancel-cmd.js` | ✅ 수동 취소 command 단순화 문법 통과 |
 | `node --check bots/reservation/lib/manual-cancellation.js` | ✅ 취소 contract 정리 문법 통과 |
 | `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"` | ✅ `ai.ska.kiosk-monitor` launchd 등록 성공 |
 | `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `kiosk-monitor` 수동 기동 성공 |
 | `launchctl print gui/$(id -u)/ai.ska.kiosk-monitor` | ✅ `pid=49161`, `state=xpcproxy` 확인 |
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `kiosk-monitor: 정상 (PID 49161)` |
+| `tail -n 120 /tmp/pickko-kiosk-monitor.log` | ✅ 실제 `pickko-kiosk-monitor.js`가 기동되어 신규/재시도/취소 목록 조회와 네이버 차단 시도까지 수행함 확인 |

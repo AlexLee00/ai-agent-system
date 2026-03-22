@@ -234,6 +234,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/reservation/auto/monitors/naver-monitor.js`
   - 네이버 신규 예약 후 픽코 등록을 막던 `OBSERVE_ONLY`, `PICKKO_ENABLE`, `SAFE_DEV_FALLBACK` 가드 제거
   - 자동 취소 후 `pickko-kiosk-monitor.js --unblock-slot` 후속 제거
+  - 후속 코드 점검에서 취소 감지 1/2/2E/4 경로에 남아 있던 `OBSERVE_ONLY` 필터도 제거
 - `bots/reservation/manual/reservation/pickko-cancel-cmd.js`
   - 수동 취소 command를 `픽코 취소만 수행`하는 계약으로 단순화
 - `bots/reservation/lib/manual-cancellation.js`
