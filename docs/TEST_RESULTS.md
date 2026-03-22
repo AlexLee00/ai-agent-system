@@ -4,6 +4,12 @@
 
 ## 2026-03-22
 
+### 스카 operation_queue 설계 문서
+
+| 테스트 | 결과 |
+|--------|------|
+| 문서 반영 | ✅ `SKA_OPERATION_QUEUE_DESIGN_2026-03-22.md` 추가, 현재 in-memory 직렬화와 차후 queue 확장 구조를 분리 문서화 |
+
 ### 스카 고객 단위 연속 작업 cooldown
 
 | 테스트 | 결과 |

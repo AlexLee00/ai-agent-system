@@ -3,6 +3,20 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-22) — 스카 operation_queue 설계 문서 추가
+
+### 추가 사항 (added)
+- `docs/SKA_OPERATION_QUEUE_DESIGN_2026-03-22.md`
+  - 스카 `operation_queue` 차후 도입을 위한 설계 초안 추가
+  - 현재 in-memory 직렬화와의 관계, 미도입 이유, 테이블 스키마 초안, `operation_type`, `operation_group_key`, producer/consumer 구조, 상태 전이, audit trail 방향 정리
+
+### 효과
+- 지금은 왜 queue를 넣지 않았는지와 나중에 어떻게 승격할지를 분리해서 설명할 수 있게 됐다.
+- 내부 MVP의 현재 구조와 향후 SaaS 확장 구조를 한 문서에서 연결할 수 있게 됐다.
+
+### 검증
+- 문서 작업이므로 별도 실행 검증 없음
+
 ## 12주차 후속 (2026-03-22) — 스카 고객 단위 연속 작업 cooldown 추가
 
 ### 변경 사항 (changed)
