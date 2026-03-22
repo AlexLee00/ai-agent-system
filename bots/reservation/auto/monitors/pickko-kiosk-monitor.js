@@ -21,7 +21,7 @@ const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
-const { updateAgentState, acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
+const { updateAgentState, acquirePickkoLock, releasePickkoLock, isPickkoLocked } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
 
 const SECRETS = loadSecrets();
@@ -1901,6 +1901,16 @@ async function main() {
   let browser;
   let lockAcquired = false;
   try {
+    const existingLock = await isPickkoLocked();
+    if (existingLock.locked && existingLock.by === 'manual') {
+      const expiresAt = existingLock.expiresAt instanceof Date
+        ? existingLock.expiresAt.toISOString()
+        : existingLock.expiresAt || null;
+      log(`⏸️ manual 픽코 작업이 진행 중이므로 kiosk-monitor 이번 사이클 스킵 (expiresAt=${expiresAt || 'unknown'})`);
+      await updateAgentState('jimmy', 'idle', 'manual_priority_lock');
+      return;
+    }
+
     // 픽코 단독접근 락 획득 (최대 5분)
     lockAcquired = await acquirePickkoLock('jimmy');
     if (!lockAcquired) {
