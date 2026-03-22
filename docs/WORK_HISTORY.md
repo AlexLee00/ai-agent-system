@@ -10,6 +10,19 @@
 - 이번 갱신은 현재 워킹트리 전체 기준이며, 비디오 외에도 `orchestrator / reservation / ska`의 미커밋 변경이 함께 존재하는 dirty workspace 상태를 반영한다.
 - 따라서 다음 세션에서는 체크섬을 “최신 상태 확인용 기준”으로 쓰되, 커밋/푸시 여부는 파일 집합별로 다시 판단해야 한다.
 
+## 2026-03-22: 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
+
+- 사용자 운영 로직 기준으로 스카 자동 4경로를 다시 정렬했다.
+  - 네이버 예약 감지 -> 픽코 등록
+  - 네이버 취소 감지 -> 픽코 취소
+  - 픽코 예약 감지 -> 네이버 예약불가
+  - 픽코 취소 감지 -> 네이버 예약가능
+- `bots/reservation/auto/monitors/naver-monitor.js`에서 네이버 신규 예약 후 픽코 등록을 막던 `OBSERVE_ONLY`, `PICKKO_ENABLE`, `SAFE_DEV_FALLBACK` 가드를 제거했다.
+- 같은 파일의 자동 취소 경로에서는 `pickko-kiosk-monitor.js --unblock-slot` 후속 호출을 제거했다. 네이버 취소 시 슬롯은 이미 예약가능 상태로 복구된다는 운영 전제를 기준으로 취소 후속을 `픽코 취소`까지만 단순화했다.
+- `bots/reservation/manual/reservation/pickko-cancel-cmd.js`도 같은 기준으로 정리해, 수동 취소 command는 `pickko-cancel.js` 성공 후 즉시 성공을 반환하도록 바꿨다.
+- `bots/reservation/lib/manual-cancellation.js`, `bots/reservation/context/N8N_COMMAND_CONTRACT.md`는 새 취소 contract에 맞춰 정리했다.
+- `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.ska.kiosk-monitor.plist`와 `launchctl kickstart -k gui/$(id -u)/ai.ska.kiosk-monitor`로 `kiosk-monitor`를 다시 올렸고, `health-report --json` 기준 `kiosk-monitor: 정상 (PID 49161)`을 확인했다.
+
 ## 2026-03-22: 스카 취소 command contract 복구
 
 - 문서에는 오래전부터 `pickko-cancel-cmd.js` 기반 자연어 취소 흐름이 있었지만, 실제 스카 command contract에는 `cancel_reservation`이 빠져 있었다.

@@ -44,12 +44,8 @@
 
 ```json
 {
-  "ok": false,
-  "code": "PARTIAL_SUCCESS",
-  "message": "예약 취소 완료 (픽코), 네이버 해제 실패 — 수동 확인 필요: 01012345678 2026-03-29 09:00~11:00 A1룸 (홍길동)",
-  "partialSuccess": true,
-  "pickkoCancelled": true,
-  "naverUnblockFailed": true,
+  "ok": true,
+  "message": "예약 취소 완료: 01012345678 2026-03-29 09:00~11:00 A1룸 (홍길동)",
   "source": "ska-webhook"
 }
 ```
@@ -57,12 +53,10 @@
 원칙:
 
 - `ok: true`
-  - 픽코 취소 + 네이버 해제까지 완료
-- `ok: false` + `code: PARTIAL_SUCCESS`
-  - 픽코 취소는 성공, 네이버 해제는 실패
-  - 상위 응답 레이어는 완전 성공으로 포장하지 않고 수동 확인 필요 문구로 분기
+  - 픽코 취소 완료
+  - 네이버 슬롯은 네이버 취소 시 자동으로 예약가능 상태로 복구된다고 가정하므로 추가 `unblock-slot` 후속은 수행하지 않음
 - `ok: false` + `code: MISSING_FIELDS|CANCEL_FAILED`
-  - 취소 정보 부족 또는 픽코 취소 자체 실패
+  - 취소 정보 부족 또는 픽코 취소 실패
 
 ### `query_reservations`
 

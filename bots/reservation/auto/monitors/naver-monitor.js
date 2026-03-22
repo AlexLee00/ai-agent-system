@@ -79,8 +79,6 @@ const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 // ✅ 홈(검은 예약현황 박스)로 바로 가는 URL
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = (process.env.MODE || 'dev').toLowerCase();
-// ⚠️ 변경/신규 프로세스 감지 시 자동으로 DEV 정책을 적용(픽코 실행 차단)
-const SAFE_DEV_FALLBACK = (process.env.SAFE_DEV_FALLBACK || '1') === '1';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10); // ops=5분, dev=2분 기본
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();
@@ -1259,52 +1257,8 @@ async function monitorBookings() {
                 continue;
               }
 
-              // OPS
-              // SAFE_DEV_FALLBACK=1이면, 파싱/시간 파트가 불완전하거나 리스크 이벤트 시 DEV 정책(픽코 차단)
-              const riskItems = candidates.filter(b => !b.start || !b.end || !b.date);
-              const risk = riskItems.length > 0;
-
-              // 관찰 OPS: OBSERVE_PHONE(기본 사장님 번호)만 실행
-              // 관찰 OPS: 테스트 번호 allowlist만 실행 (콤마로 여러 개 가능)
-              // 예: OBSERVE_PHONES=01035000586,01054350586
-              const observePhones = (process.env.OBSERVE_PHONES || process.env.OBSERVE_PHONE || '01035000586,01054350586')
-                .split(',')
-                .map(s => s.replace(/\D/g, ''))
-                .filter(Boolean);
-              const observeOnly = (process.env.OBSERVE_ONLY || '1') === '1';
-              // 🔍 OPS 관찰: phoneRaw로 비교 (observePhones는 이미 숫자만)
-              const observeFiltered = observeOnly ? candidates.filter(b => observePhones.includes(String(b.phoneRaw))) : candidates;
-
-              if (observeOnly && observeFiltered.length === 0) {
-                log(`👀 관찰 OPS: 대상 번호(${observePhones.join(',')}) 후보 없음 → 픽코 실행 안 함`);
-                // 관찰 OPS에서는 다른 예약은 마킹하지 않음(운영 전환 시 처리 가능하게)
-                await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
-                continue;
-              }
-
-              if ((SAFE_DEV_FALLBACK && risk) || process.env.PICKKO_ENABLE !== '1') {
-                log(`🧷 MODE=ops, SAFE_DEV_FALLBACK=${SAFE_DEV_FALLBACK}, risk=${risk}, PICKKO_ENABLE=${process.env.PICKKO_ENABLE || ''} → 픽코 실행은 건너뜁니다(DEV 정책/파싱만 확인).`);
-
-                if (SAFE_DEV_FALLBACK && risk) {
-                  log('❓ [CONFIRM] 파싱이 불완전한 예약이 있어 OPS 실행을 보류합니다.');
-                  for (const b of riskItems.slice(0, 3)) {
-                    log(`   - bookingId=${b.bookingId} phone=${maskPhone(b.phone)} date=${b.date} start=${b.start} end=${b.end} room=${b.room} timeText=${b.raw?.timeText || ''}`);
-                  }
-                }
-
-                // ops에서는 재처리 방지를 위해 마킹
-                for (const b of observeFiltered) {
-                  const bookingId = b._trackingId || b._key || buildReservationId(b.phoneRaw, b.date, b.start);
-                  await markSeen(bookingId);
-                }
-
-                await page.goto(NAVER_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForNetworkIdle({ idleTime: 800, timeout: 30000 }).catch(() => null);
-                continue;
-              }
-              // OPS: 관찰 allowlist 필터를 적용하고, 성공(code=0) 또는 재시도 한도 초과(code=99) 시 seen 마킹
-              for (const b of observeFiltered) {
+              // OPS: 신규 네이버 예약은 가드 없이 전건 픽코 등록 시도
+              for (const b of candidates) {
                 const bookingId = b._trackingId || b._key || buildReservationId(b.phoneRaw, b.date, b.start);
                 const code = await runPickko(b, bookingId, page);
                 if (code === 0) {
@@ -2175,33 +2129,6 @@ function runPickkoCancel(booking, cancelKey = null) {
 
     log(`🗑️ 픽코 취소 실행: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
 
-    const runNaverUnblockFollowup = async () => {
-      const kioskScript = path.join(__dirname, 'pickko-kiosk-monitor.js');
-      const unblockArgs = [
-        kioskScript,
-        '--unblock-slot',
-        `--phone=${phoneRawForKey}`,
-        `--date=${booking.date}`,
-        `--start=${booking.start}`,
-        `--end=${booking.end}`,
-        `--room=${booking.room}`,
-        `--name=${(booking.raw?.name || '고객').slice(0, 20)}`,
-      ];
-
-      log(`🔓 네이버 해제 후속 실행: ${maskPhone(booking.phone)} / ${booking.date} ${booking.start}~${booking.end} / ${booking.room}`);
-
-      return new Promise((resolveUnblock) => {
-        const child = spawn('node', unblockArgs, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
-        child.stdout.on('data', (d) => process.stdout.write(d.toString()));
-        child.stderr.on('data', (d) => process.stderr.write(d.toString()));
-        child.on('close', (code) => resolveUnblock(code === 0));
-        child.on('error', (error) => {
-          log(`⚠️ 네이버 해제 후속 실행 실패: ${error.message}`);
-          resolveUnblock(false);
-        });
-      });
-    };
-
     const onCancelSuccess = async (isRetry) => {
       await addCancelledKey(doneKey).catch(() => {});
       if (booking.bookingId) {
@@ -2220,19 +2147,6 @@ function runPickkoCancel(booking, cancelKey = null) {
         action: isRetry ? '재시도 후 정상 취소 처리됨' : '정상 취소 처리됨',
       });
       ragSaveReservation(booking, isRetry ? '취소완료(재시도)' : '취소완료');
-
-      const unblocked = await runNaverUnblockFollowup();
-      if (!unblocked) {
-        publishToMainBot({
-          from_bot: 'andy',
-          event_type: 'alert',
-          alert_level: 3,
-          message:
-            `⚠️ [취소] 네이버 예약가능 복구 실패 — 수동 확인 필요\n` +
-            `${booking.raw?.name || '고객'} ${booking.date} ${booking.start}~${booking.end} ${booking.room}룸\n` +
-            `사유: 픽코 취소는 성공했지만 unblock-slot 후속 처리 실패`,
-        });
-      }
     };
 
     const onCancelFail = (code, firstCode) => {
