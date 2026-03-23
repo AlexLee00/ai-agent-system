@@ -60,6 +60,14 @@
 | `node bots/investment/scripts/health-report.js --json` | ✅ `stalePositionHealth.warnCount=7`, `decision.reasons`에 장기 미결 LIVE 포지션 경고 포함 확인 |
 | `node bots/investment/scripts/health-report.js` | ✅ 텍스트 리포트에 `■ 장기 미결 LIVE 포지션` 섹션과 stale 샘플 7건이 직접 출력됨을 확인 |
 
+### 루나 force-exit 후보 리포트 추가
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/scripts/force-exit-candidate-report.js` | ✅ force-exit 후보 리포트 문법 통과 |
+| `node bots/investment/scripts/force-exit-candidate-report.js --json` | ✅ 운영 DB 기준 총 후보 `7건`, strong 후보 `5건`, 시장별 요약(`해외장 4 / 국내장 2 / 암호화폐 1`) 확인 |
+| `node bots/investment/scripts/force-exit-candidate-report.js` | ✅ 텍스트 리포트에 후보 상세(`ORCL`, `NVTS`, `HIMS`, `NBIS`, `ROBO/USDT`, `006340`, `375500`)와 priority 출력 확인 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

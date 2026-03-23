@@ -128,6 +128,37 @@
   - shadow `knn-shadow-v1`은 `availableDays=3`, `avgMapeGap=-7.32`로 우위지만 아직 canary guard 전
 - 해석: underprediction은 아직 남아 있지만, 이제 보정 강도는 코드 수정 없이 runtime-config에서 조절 가능해졌고, shadow 앙상블 편입 검토가 현실적인 다음 단계가 됐다.
 
+## 2026-03-23: 루나 force-exit 후보 리포트 추가
+
+- `bots/investment/scripts/force-exit-candidate-report.js`를 추가했다.
+- 역할:
+  - 장기 미결 LIVE 포지션을 시장별 threshold 기준으로 `force_exit_candidate` / `strong_force_exit_candidate`로 분류
+  - 자동 cleanup runner가 아직 없어도 운영자가 같은 기준으로 정리 우선순위를 볼 수 있게 함
+- 기준:
+  - `binance 48h`
+  - `kis 48h`
+  - `kis_overseas 72h`
+- 출력:
+  - `--json`
+  - human-readable text
+  - `priorityScore` 정렬
+- 운영 DB 기준 결과:
+  - 총 후보 `7건`
+  - strong 후보 `5건`
+  - 시장별 요약:
+    - 해외장 `4건 / 2383.88`
+    - 국내장 `2건 / 3140700`
+    - 암호화폐 `1건 / 191.90`
+  - 우선순위 상위:
+    - `ORCL`
+    - `NVTS`
+    - `HIMS`
+    - `NBIS`
+    - `ROBO/USDT`
+- 해석:
+  - 이번 단계는 force-exit 자동화가 아니라, 최소 정책 문서를 실제 운영 보고 레일로 연결한 작업이다.
+  - sandbox에서는 `db.initSchema()`가 `EPERM`으로 막힐 수 있어 read-only 보고 경계에서 이를 허용하도록 보강했다.
+
 ## 2026-03-23: 루나 암호화폐 TP/SL 실패 추적 계측 1차
 
 - `bots/investment/shared/trade-journal-db.js`
