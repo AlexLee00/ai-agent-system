@@ -3,6 +3,23 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Phase 3 과제 F `step-proposal-engine`
+
+- `bots/video/lib/step-proposal-engine.js` 추가
+  - `sync_map.matches -> steps[]` 변환
+  - confidence 정규화, `auto_confirm` 판정
+  - RED 평가 / BLUE 대안 첨부 인터페이스
+  - `applyUserAction`, `stepsToSyncMap`, `saveSteps`, `loadSteps` 추가
+- `bots/video/config/video-config.yaml`
+  - `step_proposal` 섹션 추가
+    - `auto_confirm_threshold`
+    - `red_required_below`
+    - `blue_required_below_red`
+    - `red_model`
+    - `blue_max_alternatives`
+- 의미:
+  - Phase 2 `sync_map`를 Phase 3 대화형 편집의 개별 스텝 원장으로 변환하는 첫 백엔드 엔진 추가
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `bots/worker/web/app/video/editor/page.js`

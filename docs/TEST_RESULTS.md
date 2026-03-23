@@ -4,6 +4,15 @@
 
 ## 2026-03-23
 
+### 비디오팀 Phase 3 과제 F `step-proposal-engine`
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/step-proposal-engine.js` | ✅ 문법 통과 |
+| `find bots/video/temp -maxdepth 2 -name 'sync_map.json'` | ✅ 현재 temp에 실산출 `sync_map.json` 없음 확인 |
+| `node - <<'NODE' ... generateSteps(dummySyncMap, ..., { introClip, outroClip }) ... NODE` | ✅ 총 `4`스텝, `autoConfirm=3`, `manual=1`, intro/sync_match/outro 구조 확인 |
+| `node - <<'NODE' ... stepsToSyncMap(generateSteps(syncMap)) ... NODE` | ✅ 원본 `matches=2`, 역변환 `matches=2`, count 일치 확인 |
+
 ### 비디오팀 Twick CSS scoped 로딩 전환
 
 | 테스트 | 결과 |
