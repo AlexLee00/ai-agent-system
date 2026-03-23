@@ -1311,3 +1311,7 @@
 | `node --check bots/investment/team/hanul.js` | ✅ executor preflight 추가 후 문법 통과 |
 | `env PAPER_MODE=false node bots/investment/team/hanul.js --symbol=375500 --action=SELL --amount=444500` | ✅ 국내장 executor가 브로커 호출 전 `장외 시간`을 사전 차단함 |
 | `env PAPER_MODE=false node bots/investment/team/hanul.js --symbol=ORCL --action=SELL --amount=983.4` | ✅ 해외장 executor가 브로커 호출 전 `미국 장외 시간`을 사전 차단함 |
+| `node --check bots/reservation/lib/ska-command-handlers.js` | ✅ `store_resolution` alert resolve 보강 후 문법 통과 |
+| `node --check bots/reservation/scripts/dashboard-server.js` | ✅ webhook `store_resolution` alert resolve 보강 후 문법 통과 |
+| `node --input-type=module -e \"... handlers.store_resolution({ phone:'010-4572-0846', date:'2026-04-04', start:'16:30' }) ...\"` | ✅ `RAG 저장 완료 / 미해결 오류 알림 없음` 또는 해소 건수 포함 응답 확인 |
+| `node bots/reservation/manual/reports/pickko-alerts-query.js --unresolved --phone=010-4572-0846 --date=2026-04-04 --start=16:30` | ✅ unresolved 0건 확인 |

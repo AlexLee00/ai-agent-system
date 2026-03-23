@@ -810,6 +810,13 @@
 - `bots/investment/scripts/health-report.js`에도 `kisCapabilityHealth` 섹션을 추가해 국내/해외 KIS 계좌 모드와 현재 SELL 가능 범위를 운영 헬스에서 바로 읽게 했다.
 - 현재 자연스러운 다음 단계는 force-exit 확대가 아니라 `KIS capability`를 전제로 stale 포지션 정리 우선순위를 다시 읽는 것이다. 국내장은 장중에만 검증 가능하고, 해외장은 여전히 preview 중심으로 본다.
 
+## 2026-03-23 — 스카 `처리완료` 알림 해결 경계 복구
+
+- 실제 운영에서 사장님이 `처리완료`를 보냈는데도 `reservation.alerts`의 error row가 `resolved=0`으로 남아, 이후 `naver-monitor` 재시작 요약에 같은 건이 다시 포함되는 문제가 확인됐다.
+- 원인: `pickko-alerts-resolve.js` 직접 실행 경로는 정상인데, `store_resolution` 경로([ska-command-handlers.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.js), [dashboard-server.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/dashboard-server.js))는 RAG 저장만 하고 실제 `alerts` 해소는 하지 않았다.
+- 현재는 `store_resolution`도 `phone/date/start`가 있으면 해당 error alert만, 없으면 전체 미해결 error alert를 `resolved=1`로 마킹한 뒤 RAG를 저장한다.
+- 따라서 앞으로는 direct resolve 경로를 놓쳐도 `store_resolution`만 타면 동일한 알림이 재시작 요약에 재등장하지 않아야 한다.
+
 ## 2026-03-23 — 한울 executor 장중/market capability 사전 차단
 
 - `bots/investment/team/hanul.js`에도 KIS 실행 사전 차단을 추가했다. 이제 runner preview가 아니라 executor 본체도 국내/해외 장중 여부를 먼저 확인한 뒤 주문 API를 치기 전 실패를 반환한다.

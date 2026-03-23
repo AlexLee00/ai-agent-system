@@ -4333,6 +4333,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 국내장은 장외 시간에 `국내주식 장외 시간 ... — 장중에만 주문 실행 가능`, 해외장은 미국 장외 시간에 `해외주식 미국 장외 시간 ... — 장중에만 주문 실행 가능`으로 즉시 실패를 반환한다
 - 해외장은 장중 기준 `mock SELL 제한` 정책을 후속으로 더 얹을 수 있는 구조로 정리해, 시장 시간과 계좌 capability를 executor 레벨에서 분리하기 쉬워졌다
 
+### 스카 `처리완료` 알림 해결 경계 복구
+- 실제 운영에서 `처리완료` 응답은 갔지만 `reservation.alerts.resolved`가 바뀌지 않아, 같은 pickko 취소 실패 알림이 재시작 요약에 반복 포함되는 문제를 확인
+- 조사 결과 `pickko-alerts-resolve.js` 직접 실행은 정상 동작했지만, `store_resolution` 경로는 RAG 저장만 하고 실제 alert 해소는 하지 않았다
+- `bots/reservation/lib/ska-command-handlers.js`, `bots/reservation/scripts/dashboard-server.js`의 `store_resolution`에 실제 error alert resolve 쿼리를 추가해, `phone/date/start`가 있으면 해당 row만, 없으면 전체 미해결 error alert를 해결 처리한 뒤 RAG를 저장하도록 보강
+- 검증상 `handlers.store_resolution({ phone:'010-4572-0846', date:'2026-04-04', start:'16:30' })`는 이제 `resolved: 0` 또는 실제 해소 건수를 함께 반환하고, unresolved query 결과도 즉시 줄어든다
+
 ### 루나 운영 헬스에 암호화폐 LIVE 게이트 통합
 - `bots/investment/scripts/crypto-live-gate-review.js`가 `loadCryptoLiveGateReview()` export를 제공하도록 열어, 단독 CLI이면서도 다른 리포트에서 재사용 가능한 구조로 정리
 - `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다

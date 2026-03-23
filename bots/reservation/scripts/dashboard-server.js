@@ -116,6 +116,27 @@ function isWebhookAuthorized(req) {
 async function runWebhookCommand(payload = {}) {
   const command = String(payload.command || '');
   const args = payload.args || {};
+  async function resolveErrorAlerts() {
+    const phone = args.phone || null;
+    const date = args.date || null;
+    const start = args.start || args.start_time || null;
+    if (phone && date && start) {
+      const result = await pgPool.run('reservation', `
+        UPDATE alerts
+        SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+        WHERE resolved = 0 AND type = 'error'
+          AND phone = $1 AND date = $2 AND start_time = $3
+      `, [phone, date, start]);
+      return Number(result?.rowCount || 0);
+    }
+
+    const result = await pgPool.run('reservation', `
+      UPDATE alerts
+      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE resolved = 0 AND type = 'error'
+    `, []);
+    return Number(result?.rowCount || 0);
+  }
   switch (command) {
     case 'query_reservations':
       return readService.queryReservations(args);
@@ -124,13 +145,22 @@ async function runWebhookCommand(payload = {}) {
     case 'query_alerts':
       return readService.queryAlerts(args);
     case 'store_resolution':
-      await storeReservationResolution(rag, {
-        issueType: args.issueType || '알람',
-        detail: args.detail || '',
-        resolution: args.resolution || '처리 완료',
-        sourceBot: 'ska-webhook',
-      });
-      return { ok: true, message: 'RAG 저장 완료' };
+      {
+        const resolved = await resolveErrorAlerts();
+        await storeReservationResolution(rag, {
+          issueType: args.issueType || '알람',
+          detail: args.detail || '',
+          resolution: args.resolution || '처리 완료',
+          sourceBot: 'ska-webhook',
+        });
+        return {
+          ok: true,
+          resolved,
+          message: resolved > 0
+            ? `RAG 저장 완료 / 미해결 오류 알림 ${resolved}건 해결 처리`
+            : 'RAG 저장 완료 / 미해결 오류 알림 없음',
+        };
+      }
     case 'register_reservation':
       return runManualReservationRegistration(args);
     case 'cancel_reservation':

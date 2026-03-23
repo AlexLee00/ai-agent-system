@@ -1881,6 +1881,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 스카 예약 운영
   - `pickko-alerts-resolve.js`를 PostgreSQL 기반으로 복구해 수동 처리 완료 시 실제 unresolved error alerts를 해결 처리하도록 정리
   - `orchestrator/router.js`에서 `처리완료`, `해결했어`, `직접 처리했어`, `마스터가 수동으로 처리함` 계열 문구를 즉시 alert resolve 명령으로 연결
+  - `ska-command-handlers.js`, `dashboard-server.js`의 `store_resolution`도 이제 RAG 저장만 하지 않고 실제 `reservation.alerts` error row를 함께 resolve 하도록 보강해, direct resolve 경로를 놓쳐도 동일 알림이 재시작 요약에 재등장하지 않게 정리
   - `naver-monitor.js`의 취소 재시도 전에 예약 종결 상태를 다시 조회해 `completed/cancelled/time_elapsed/marked_seen` 예약은 재알림 없이 건너뛰고 기존 오류 알림도 자동 resolve 하도록 보강
   - 스카 재시작 시 `미해결 오류 n건` 시작 보고는 현재 actionable alert만 남기고, 이미 종결된 예약의 과거 실패 알림은 요약 전에 자동 정리하도록 수정
   - `TEAM_SKA_REFERENCE.md`, `coding-guide.md`, `SYSTEM_DESIGN.md`를 최신 Playwright 정책에 맞춰 `PLAYWRIGHT_HEADLESS` 기본 headless 운영, `.playwright-headed` headed 복구, legacy `PICKKO_HEADLESS/NAVER_HEADLESS` 호환 구조 기준으로 정합화

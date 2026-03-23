@@ -80,16 +80,45 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     return runCommandWithN8n('query_alerts', args, () => readService.queryAlerts(args));
   }
 
+  async function resolveErrorAlerts(args = {}) {
+    const phone = args.phone || null;
+    const date = args.date || null;
+    const start = args.start || args.start_time || null;
+    if (phone && date && start) {
+      const result = await pgPool.run('reservation', `
+        UPDATE alerts
+        SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+        WHERE resolved = 0 AND type = 'error'
+          AND phone = $1 AND date = $2 AND start_time = $3
+      `, [phone, date, start]);
+      return Number(result?.rowCount || 0);
+    }
+
+    const result = await pgPool.run('reservation', `
+      UPDATE alerts
+      SET resolved = 1, resolved_at = to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+      WHERE resolved = 0 AND type = 'error'
+    `, []);
+    return Number(result?.rowCount || 0);
+  }
+
   async function handleStoreResolution(args = {}) {
     const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
     try {
+      const resolved = await resolveErrorAlerts(args);
       await storeReservationResolution(rag, {
         issueType,
         detail,
         resolution,
         sourceBot: 'ska-commander',
       });
-      return { ok: true, message: 'RAG 저장 완료' };
+      return {
+        ok: true,
+        resolved,
+        message: resolved > 0
+          ? `RAG 저장 완료 / 미해결 오류 알림 ${resolved}건 해결 처리`
+          : 'RAG 저장 완료 / 미해결 오류 알림 없음',
+      };
     } catch (e) {
       return { ok: false, error: e.message };
     }
