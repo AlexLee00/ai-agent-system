@@ -912,3 +912,19 @@
 - 의미:
   - 지금 당장 필요한 구조는 `이어쓰기 append` 경계 복구다.
   - 나중에는 `gems` 일반 포스팅을 chunked generation 기본 경로로 승격하는 것도 검토할 수 있다.
+
+## 2026-03-23 — 세션 마감 / 다음 전환 축
+
+- 이번 라운드에서 운영 follow-up은 아래까지 정리됐다.
+  - Gateway: `heartbeat 60m` 완화 반영과 cadence 개선 확인, 다음 자동화 리포트 관찰 대기
+  - 스카: `처리완료 -> reservation.alerts resolve` 경계 복구 완료, 다음 실제 실패 케이스 운영 테스트 대기
+  - 투자팀: stale LIVE / KIS capability / force-exit preflight 정리 완료, 다음 국내장 장중 검증 대기
+  - 블로: 젬스 일반 포스팅 이어쓰기 중복 섹션 방지 경계 복구 완료, 다음 일반 포스팅 1건 관찰 대기
+- 즉 현재 전사 운영은 “추가 수정”보다 “실제 운영 이벤트 기반 검증” 단계로 전환된 상태다.
+- 다음 구현 축은 비디오팀으로 넘긴다.
+  - 시작 전 source of truth:
+    - [bots/video/docs/CLAUDE.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/CLAUDE.md)
+    - [bots/video/docs/VIDEO_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/VIDEO_HANDOFF.md)
+    - [bots/video/docs/video-team-design.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-design.md)
+    - [bots/video/samples/ANALYSIS.md](/Users/alexlee/projects/ai-agent-system/bots/video/samples/ANALYSIS.md)
+    - [bots/video/docs/video-team-tasks.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-tasks.md)
