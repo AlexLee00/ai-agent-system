@@ -71,6 +71,21 @@
   - 추가 LIVE probe도 기존 open position을 줄이기 전까지는 불가
   - 다음 우선순위는 `포지션 6/6` 경계와 오래된 open 포지션 정리 정책 점검
 
+## 2026-03-23 — 루나 PAPER→LIVE 승격 슬롯 잠식 경계 복구
+
+- `ETH/USDT` 소액 LIVE probe를 다시 태우는 과정에서, 이번엔 자본관리 경계는 통과했지만 BUY 직전 `maybePromotePaperPositions()`가 PAPER normal 포지션 5건(`KAT/USDT`, `OPN/USDT`, `SAHARA/USDT`, `TAO/USDT`, `KITE/USDT`)을 한꺼번에 LIVE로 승격시켰다.
+- 그 결과 probe 자체는 보호 주문 단계까지 가지 못하고 `최대 포지션 도달: 6/6`에서 중단됐다.
+  - 현재 Binance LIVE normal open 포지션은 `ROBO/USDT` + 위 승격 5건으로 정확히 6개다.
+- [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)는 이제 승격 시 `reserveSlots`를 받는다.
+  - BUY 직전 호출은 `maybePromotePaperPositions({ reserveSlots: 1 })`
+  - 즉 현재 처리 중인 BUY가 사용할 슬롯 1개는 반드시 남기고, 그 범위 안에서만 PAPER→LIVE 승격을 허용한다.
+- 의미:
+  - 기존에는 “신규 LIVE 진입을 위해 실행한 BUY”가 오히려 사전 승격 로직 때문에 자기 슬롯을 잃는 구조였다.
+  - 이번 수정으로 `promotion`은 더 이상 현재 BUY를 굶기지 못한다.
+- 운영 판단:
+  - 구조 버그는 복구됐지만, 이미 열린 6개 LIVE 포지션은 그대로이므로 추가 probe는 아직 불가
+  - 다음 단계는 오래된 LIVE open 포지션 정리 기준/force-exit 정책 점검
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카

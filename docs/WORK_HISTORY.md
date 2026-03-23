@@ -92,6 +92,16 @@
   - `preTradeCheck('ETH/USDT', 'BUY', 15, 'binance', 'normal') => allowed=true`
 - 같은 `ETH/USDT` 소액 LIVE probe는 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않았고, 대신 다음 경계인 `최대 포지션 도달: 6/6`에서 중단됐다.
 - 해석: 이번 단계는 TP/SL 성공률 개선이 아니라, 먼저 Binance 자본관리 레일이 KIS 포지션과 섞이지 않도록 불변식을 복구한 작업이다.
+
+## 2026-03-23: 루나 PAPER→LIVE 승격 슬롯 잠식 경계 복구
+
+- `ETH/USDT` 소액 LIVE probe를 재시도하는 과정에서, BUY 직전 `maybePromotePaperPositions()`가 PAPER normal 포지션 5건(`KAT/USDT`, `OPN/USDT`, `SAHARA/USDT`, `TAO/USDT`, `KITE/USDT`)을 LIVE로 먼저 승격시키는 것을 확인했다.
+- 그 결과 probe는 보호 주문 단계까지 가지 못하고 `최대 포지션 도달: 6/6`에서 막혔다.
+- `bots/investment/team/hephaestos.js`
+  - `maybePromotePaperPositions({ reserveSlots })` 형태로 변경
+  - BUY 직전에는 `reserveSlots: 1`을 넘겨, 현재 처리 중인 신규 BUY가 사용할 LIVE 슬롯 1개를 항상 남기도록 보수화
+  - 승격 루프 내부에서도 현재 LIVE open 수를 다시 읽어 한도를 넘지 않게 중단
+- 해석: 이번 단계는 TP/SL 자체보다 `promotion`이 신규 BUY를 잠식하던 운영 경계를 복구한 작업이다. 다만 이미 열린 6개 LIVE 포지션은 그대로라 추가 probe는 포지션 정리 전까지 불가하다.
 - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 재확인 기준:
   - `avgMape=33.44`
   - `avgBias=-75,194`

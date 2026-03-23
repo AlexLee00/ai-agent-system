@@ -88,6 +88,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 바이낸스 BUY 검토 시 국내장/해외장 포지션을 USDT reserve 계산에 섞어 읽던 경계를 제거
   - `ETH/USDT` 소액 LIVE probe가 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않고, 다음 경계인 `최대 포지션 도달: 6/6`에서 멈춤을 확인
 
+## 12주차 후속 (2026-03-23) — 루나 PAPER→LIVE 승격 슬롯 잠식 방지
+
+- `bots/investment/team/hephaestos.js`
+  - `maybePromotePaperPositions()`에 `reserveSlots` 인자 추가
+  - BUY 직전 호출을 `maybePromotePaperPositions({ reserveSlots: 1 })`로 변경
+  - 승격 루프가 현재 LIVE open 수를 다시 읽어 `max_concurrent_positions - reserveSlots`를 넘지 않도록 보수화
+- 효과:
+  - PAPER→LIVE 자동 승격이 현재 처리 중인 신규 BUY의 슬롯을 잠식해 `최대 포지션 도달`을 유발하던 경계를 복구
+  - 다만 이미 열린 6개 LIVE 포지션은 그대로이므로 추가 probe는 포지션 정리 전까지 계속 보류
+
 ## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
 
 - `bots/investment/team/hephaestos.js`
