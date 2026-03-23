@@ -44,6 +44,14 @@
 | `node --input-type=module ... getAvailableBalance('binance'), getTotalCapital('binance'), preTradeCheck('ETH/USDT', 'BUY', 15, 'binance', 'normal') ...` | ✅ `binanceBalance=521.56`, `binanceTotalCapital=713.46`, `buyCheck.allowed=true` 확인 |
 | `env PAPER_MODE=false INVESTMENT_TRADE_MODE=normal node bots/investment/team/hephaestos.js --action=BUY --symbol=ETH/USDT --amount=15` | ✅ 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않고, 이번엔 `최대 포지션 도달: 6/6` 경계에서 중단됨 |
 
+### 루나 PAPER→LIVE 승격 슬롯 잠식 방지
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/team/hephaestos.js` | ✅ `reserveSlots` 기반 승격 제한 추가 후 문법 통과 |
+| `node --input-type=module ... SELECT ... FROM investment.positions WHERE exchange='binance' AND paper=false AND trade_mode='normal' ...` | ✅ 현재 LIVE normal open 6건(`ROBO/USDT` + `KAT/USDT`, `OPN/USDT`, `SAHARA/USDT`, `TAO/USDT`, `KITE/USDT`) 확인 |
+| `env PAPER_MODE=false INVESTMENT_TRADE_MODE=normal node bots/investment/team/hephaestos.js --action=BUY --symbol=ETH/USDT --amount=15` | ✅ BUY 직전 PAPER→LIVE 승격이 5건 발생해 슬롯이 잠식됐음을 확인했고, 이후 코드에서 `reserveSlots: 1`로 현재 BUY용 슬롯 1개를 남기도록 보수화 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

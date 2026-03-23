@@ -294,13 +294,19 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
   }).catch(() => {});
 }
 
-async function maybePromotePaperPositions() {
+async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
   const capitalPolicy = getCapitalConfig('binance');
   const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
   if (paperPositions.length === 0) return [];
 
+  let liveOpenPositions = await getOpenPositions('binance').catch(() => []);
+  const maxPromotableOpenPositions = Math.max(0, capitalPolicy.max_concurrent_positions - Math.max(0, reserveSlots));
+  if (liveOpenPositions.length >= maxPromotableOpenPositions) return [];
+
   const promoted = [];
   for (const paperPos of paperPositions) {
+    if (liveOpenPositions.length >= maxPromotableOpenPositions) break;
+
     const desiredUsdt = (paperPos.amount || 0) * (paperPos.avg_price || 0);
     if (desiredUsdt < (capitalPolicy.min_order_usdt || 11)) continue;
 
@@ -378,6 +384,7 @@ async function maybePromotePaperPositions() {
     }).catch(() => {});
 
     promoted.push({ symbol: paperPos.symbol, totalUsdt: desiredUsdt, amount: trade.amount });
+    liveOpenPositions = await getOpenPositions('binance').catch(() => liveOpenPositions);
   }
 
   return promoted;
@@ -650,7 +657,7 @@ export async function executeSignal(signal) {
 
     if (action === ACTIONS.BUY) {
       if (!globalPaperMode && signalTradeMode === 'normal') {
-        const promoted = await maybePromotePaperPositions().catch(err => {
+        const promoted = await maybePromotePaperPositions({ reserveSlots: 1 }).catch(err => {
           console.warn(`  ⚠️ PAPER 포지션 승격 체크 실패: ${err.message}`);
           return [];
         });
