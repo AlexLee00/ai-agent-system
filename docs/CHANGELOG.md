@@ -125,6 +125,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 상위 후보 `ORCL`, `NVTS`, `HIMS`, `NBIS`, `ROBO/USDT`
   - force-exit 최소 정책이 실제 후보 리포트로 연결됨
 
+## 12주차 후속 (2026-03-23) — 루나 force-exit 승인형 runner 추가
+
+- `bots/investment/scripts/force-exit-runner.js`
+  - 기본 preview-only
+  - `--execute --confirm=force-exit`에서만 실제 SELL 실행
+  - 후보는 `force-exit-candidate-report`를 재사용하고, 실행은 기존 executor를 그대로 사용
+- `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`
+  - `exit_reason_override` 지원 추가
+  - 승인형 force-exit 실행 시 journal close reason을 명시적으로 남길 수 있도록 보강
+- `bots/investment/scripts/force-exit-candidate-report.js`
+  - direct CLI 실행일 때만 `main()`이 동작하도록 변경해 import side effect 제거
+- 효과:
+  - 자동 cleanup runner 전 단계로, 승인형 stale position 정리 레일이 기존 아키텍처 위에 안전하게 연결됨
+
 ## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
 
 - `bots/investment/team/hephaestos.js`

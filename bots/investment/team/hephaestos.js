@@ -625,6 +625,7 @@ export async function executeSignal(signal) {
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  const exitReasonOverride = signal.exit_reason_override || null;
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
@@ -1106,7 +1107,7 @@ export async function executeSignal(signal) {
           trade.paper,
           trade.price,
           trade.totalUsdt,
-          'signal_reverse',
+          exitReasonOverride || 'signal_reverse',
         );
       }
     } catch (journalErr) {

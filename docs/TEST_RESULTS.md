@@ -68,6 +68,16 @@
 | `node bots/investment/scripts/force-exit-candidate-report.js --json` | ✅ 운영 DB 기준 총 후보 `7건`, strong 후보 `5건`, 시장별 요약(`해외장 4 / 국내장 2 / 암호화폐 1`) 확인 |
 | `node bots/investment/scripts/force-exit-candidate-report.js` | ✅ 텍스트 리포트에 후보 상세(`ORCL`, `NVTS`, `HIMS`, `NBIS`, `ROBO/USDT`, `006340`, `375500`)와 priority 출력 확인 |
 
+### 루나 force-exit 승인형 runner 추가
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/scripts/force-exit-runner.js` | ✅ 승인형 runner 문법 통과 |
+| `node --check bots/investment/team/hephaestos.js` | ✅ `exit_reason_override` 추가 후 문법 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ `exit_reason_override` 추가 후 문법 통과 |
+| `node bots/investment/scripts/force-exit-runner.js --json` | ✅ preview-only 모드에서 후보 7건과 실행 예시 명령이 출력됨을 확인 |
+| `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas` | ✅ 특정 후보 preview가 `ORCL / strong_force_exit_candidate / 278.2h` 기준으로 정상 출력되고, 실제 실행 명령 안내가 함께 노출됨을 확인 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

@@ -272,6 +272,7 @@ export async function executeSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  const exitReasonOverride = signal.exit_reason_override || null;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
@@ -446,7 +447,7 @@ export async function executeSignal(signal) {
         paper: sellPaperMode,
         tradeMode: sellPaperMode ? signalTradeMode : null,
       });
-      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -487,6 +488,7 @@ export async function executeOverseasSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  const exitReasonOverride = signal.exit_reason_override || null;
 
   const tag = paperMode ? '[PAPER]' : kisPaper ? '[LIVE/MOCK]' : '[LIVE/REAL]';
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
@@ -660,7 +662,7 @@ export async function executeOverseasSignal(signal) {
         paper: sellPaperMode,
         tradeMode: sellPaperMode ? signalTradeMode : null,
       });
-      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, 'sell').catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell').catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
