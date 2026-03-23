@@ -11,6 +11,14 @@
 - `bots/video/config/video-config.yaml`에 `step_proposal` 섹션을 추가해 자동 승인/RED/BLUE 기준을 config에서 읽도록 맞췄다.
 - 해석: 이번 단계는 Twick UI 구현이 아니라, Phase 2 자동 편집 결과를 “스텝별 제안 → 사용자 판단 → EDL 재조립” 흐름으로 바꾸는 백엔드 원장 레이어를 연 것이다.
 
+## 2026-03-23: 비디오팀 Phase 3 과제 G `video-feedback-service`
+
+- `bots/video/lib/video-feedback-service.js`를 추가해 워커 피드백 패턴을 비디오팀 스텝 단위로 복제했다.
+- `schema='video'`, `sourceRefType='edit_step'`, `sourceBot='video-feedback'` 기준으로 세션 생성, 수정 이벤트 diff, 상태 전이, RAG 게시까지 연결했다.
+- `packages/core/lib/pg-pool.js`는 `video` 스키마를 직접 알지 못하므로, 비디오 서비스 내부에 `public` 풀 기반 로컬 어댑터를 두고 SQL은 `video.*`를 명시적으로 호출하도록 맞췄다.
+- `bots/video/migrations/006-feedback-sessions.sql`로 `video.ai_feedback_sessions`, `video.ai_feedback_events`, `video.video_edit_steps` 명시적 DDL도 추가했다.
+- 해석: 이번 단계는 Twick UI가 수집한 사용자 판단을 “편집 스텝별 피드백 원장 + RAG 학습 데이터”로 바꾸는 Phase 3 백엔드 저장 레이어를 연 것이다.
+
 ## 2026-03-23: 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`가 `@twick/video-editor/dist/video-editor.css`를 전역 import하던 구조를 제거했다.

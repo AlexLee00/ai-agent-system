@@ -27,6 +27,27 @@
   - temp에 실산출 `sync_map.json`은 없어서 더미 `sync_map` 기준 `generateSteps`/`stepsToSyncMap` 검증 수행
   - intro/outro 포함 `4`스텝 생성, 역변환 시 `matches` 수 일치 확인
 
+## 2026-03-23 — 비디오팀 Phase 3 과제 G `video-feedback-service`
+
+- [video-feedback-service.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/video-feedback-service.js)를 추가했다.
+  - `ensureVideoFeedbackTables()`
+  - `createVideoStepFeedbackSession()`
+  - `getVideoFeedbackSessionForStep()/ById()`
+  - `record/replaceVideoFeedbackEdits()`
+  - `markVideoFeedbackConfirmed/Rejected/Submitted/Committed()`
+- [006-feedback-sessions.sql](/Users/alexlee/projects/ai-agent-system/bots/video/migrations/006-feedback-sessions.sql)을 추가했다.
+  - `video.ai_feedback_sessions`
+  - `video.ai_feedback_events`
+  - `video.video_edit_steps`
+- 의미:
+  - Phase 3의 `steps[]` 사용자 판단을 워커 피드백과 같은 구조로 저장하되, 비디오 도메인에 맞는 `video` 스키마와 `edit_step` 소스 기준으로 분리했다.
+  - `packages/core`를 수정하지 않는 제약 때문에, 서비스 내부에서 `public` 풀 기반 어댑터를 사용하고 SQL은 `video.*` 테이블을 명시적으로 가리키도록 경계를 맞췄다.
+  - 이후 `video-step-api`는 이 서비스를 통해 `accepted_without_edit`, 수정 필드 diff, RAG 학습 데이터를 바로 누적할 수 있다.
+- 검증:
+  - `node --check bots/video/lib/video-feedback-service.js` 성공
+  - 로컬 PostgreSQL 실검증 기준 `ensureVideoFeedbackTables()` + `createVideoStepFeedbackSession()` + `markVideoFeedbackConfirmed()` 성공
+  - 결과: `feedback_status=confirmed`, `accepted_without_edit=true`
+
 ## 2026-03-23 — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`의 `@twick/video-editor/dist/video-editor.css` 전역 import를 제거했다.
