@@ -40,6 +40,35 @@
   - provider `registered / ready / cooldown / disabled` 공통 계약
   - gateway KPI에 `rate limit / retry burst / lane duplication` 분리 기록
 
+### P1. 투자팀 장기 미결 LIVE 포지션 정리 기준
+
+- 상태: **health 경고 반영 완료, force-exit 최소 정책 설계 단계**
+- 근거:
+  - `bots/investment/scripts/health-report.js`
+  - 현재 `stalePositionHealth.warnCount = 7`
+  - stale 샘플:
+    - `ORCL 278.0h`
+    - `HIMS/NBIS/NVTS 256.0h`
+    - `ROBO/USDT 101.3h`
+    - `375500 75.5h`
+    - `006340 72.5h`
+- 이번 세션 조치:
+  - 투자 health에 `■ 장기 미결 LIVE 포지션` 섹션 추가
+  - 운영 판단에도 `장기 미결 LIVE 포지션 7건 — force-exit/정리 기준 점검 필요`를 직접 반영
+  - 최소 정책 초안 문서화:
+    - [INVESTMENT_FORCE_EXIT_MIN_POLICY_2026-03-23.md](/Users/alexlee/projects/ai-agent-system/docs/INVESTMENT_FORCE_EXIT_MIN_POLICY_2026-03-23.md)
+- 의미:
+  - 현재 투자팀의 핵심 리스크는 진입 부족이 아니라 종료/정리 부재다
+  - LIVE 확대보다 장기 미결 정리 정책이 먼저다
+- 지금 당장 필요한 구조:
+  - `binance 48h`, `kis 48h`, `kis_overseas 72h` threshold 유지
+  - market별 force-exit candidate report 추가
+  - `hanul.js`, `hephaestos.js`에 최소 강제 정리 경로를 붙일지 다음 phase에서 결정
+- 나중에 확장할 구조:
+  - force-exit policy engine
+  - stale threshold runtime-config화
+  - 멀티브로커/멀티테넌트 정책 분기
+
 ### P1. 스카 자동 write-path 정렬
 
 - 상태: **운영 로직 기준 정렬 완료, 관찰 단계**

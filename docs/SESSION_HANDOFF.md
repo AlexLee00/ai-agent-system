@@ -105,6 +105,9 @@
 - 의미:
   - force-exit 정책이 아직 없는 상태에서도, 적어도 운영 health가 “지금 무엇을 정리해야 하는지”를 먼저 드러내도록 보강한 단계
   - 다음 phase는 이 경고를 기준으로 시장별 정리 우선순위를 정하고, 실제 force-exit/cleanup 정책을 설계하는 흐름이 자연스럽다
+- 정책 초안은 [INVESTMENT_FORCE_EXIT_MIN_POLICY_2026-03-23.md](/Users/alexlee/projects/ai-agent-system/docs/INVESTMENT_FORCE_EXIT_MIN_POLICY_2026-03-23.md)에 정리했다.
+  - `binance=48h`, `kis=48h`, `kis_overseas=72h`를 최소 stale threshold로 보고
+  - 현재 후보는 `ROBO/USDT`, `375500`, `006340`, `ORCL`, `HIMS`, `NBIS`, `NVTS` 7건이다.
 
 ## 1. 현재 시스템 상태 요약
 
