@@ -75,6 +75,35 @@
   - payment/use 분리 read model
   - 검증 리포트에 화면 기준(`매출현황`/`예약·이용`)을 명시
 
+### P2. 스카 forecast shadow canary 관찰
+
+- 상태: **guarded canary 경로 추가 완료, actual 누적 관찰 단계**
+- 근거:
+  - `forecast.py`는 이제 shadow 성능이 더 좋아도 바로 primary를 교체하지 않고 낮은 비중 canary로만 섞음
+  - 현재 guard:
+    - `shadowBlendMinCompareDays = 5`
+    - `shadowBlendRequiredMapeGap = 5.0`
+    - `shadowBlendMinConfidence = 0.35`
+    - `shadowBlendWeight = 0.25`
+  - 최신 review 기준:
+    - `availableDays = 3`
+    - `avgMapeGap = -7.32`
+    - `shadow_blend_reason = shadow_compare_days_insufficient`
+- 의미:
+  - shadow가 현재 더 좋아 보이지만, 비교일이 아직 부족해서 운영 예측은 여전히 primary-only다
+  - daily/weekly review도 이제 같은 canary guard 기준으로 `collecting`을 출력한다
+- 지금 당장 필요한 구조:
+  - 다음 actual 반영 때
+    - `availableDays`
+    - `avgMapeGap`
+    - `shadowBlendApplied`
+    - `shadowBlendReason`
+    - `avgBias`, `avgMape`
+    변화를 같이 확인
+- 나중에 확장할 구조:
+  - primary / shadow / canary 3축 성능 대시보드
+  - workspace별 shadow 정책 분기
+
 ### P2. 오케스트레이터 reporting payload 경고
 
 - 상태: **원인 수정 완료, 로그 잔상 관찰 중**
@@ -151,6 +180,19 @@
   - rolling 24시간 창과 `activeRateLimitCount`가 함께 내려오는지 확인
   - `google tool schema snapshot`가 실제 `60분 cadence`로 바뀌었는지 확인
   - 다시 높아지면 upstream rate-limit 또는 internal retry/backoff 설계 재검토
+
+### 스카 forecast shadow canary
+
+- 상태: **collecting**
+- 기준점:
+  - `shadowCompareDays = 3`
+  - `requiredDays = 5`
+  - `avgMapeGap = -7.32`
+  - `shadowBlendApplied = false`
+- 다음 관찰:
+  - `availableDays >= 5` 도달 여부
+  - 도달 후 `shadowBlendApplied=true`로 실제 canary가 켜지는지
+  - canary 발동 후 `avgBias`, `avgMape` 개선되는지
 
 ### 비디오 quality score
 
