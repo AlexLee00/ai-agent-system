@@ -2,10 +2,17 @@
 
 > 세션 날짜: 2026-03-21
 > 담당: 메티 (claude.ai Opus) + Codex
+> 팀 구조 결정 (2026-03-22): Phase 2 완료 후 bots/video → packages/video 승격,
+> bots/blog → packages/blog 승격, bots/worker를 통합 웹 포털로 전환
 > 상태: ★ Phase 1 전체 완료 — 과제 1~13 + RAG 피드백 루프
 > Phase 2 전환: 2026-03-21
 > syncVideoAudio() 폐기 → AI 싱크 매칭 파이프라인으로 전환
-> 과제 A~D 구현 완료, 과제 E(파이프라인 통합 + 품질 검증) 진행 중
+> 과제 A~E 완료, Phase 2 마감 검증/문서 보완 완료
+> Phase 3 설계 완료 (2026-03-22):
+> - Twick React SDK 기반 CapCut급 타임라인 UI
+> - AI 스텝바이스텝 편집 + RED/BLUE 매 스텝 품질 검증
+> - 워커 피드백 시스템(ai-feedback-core/store/rag 893줄) 재사용
+> - KPI: accepted_without_edit 비율
 
 ---
 
@@ -103,6 +110,11 @@
     - 서버인증 `72.96`
     - DB생성 `75.12`
   - 해석: final 기준에서도 공통 병목은 장면 유사도보다 사람 편집본 대비 `길이/구조`다. 해상도 문제는 거의 해소됐고, 다음 1순위는 duration/structure 튜닝이다.
+  - 2026-03-23 final batch rerun:
+    - `test-final-reference-quality-batch.js --json`은 이제 `bots/video/temp/final_batch_report.json`에 결과를 저장한다.
+    - plain command 기본 timeout은 `300000ms`로 조정했고, 느린 세트는 skip하도록 했다.
+    - 현재 이 머신 실측에서는 5세트 모두 `skipped_timeout`으로 종료됐다.
+    - 해석: Phase 2 final batch는 레일 자체는 닫혔지만, 현 로컬 런타임에서는 full final render 5세트 일괄 검증을 소화하지 못한다. 다음 단계는 더 긴 배치 전용 런타임을 쓰거나, final 기준 fixture/light render 전략을 따로 두는 것이다.
   - duration/structure 진단 레일 추가:
     - `analyze-final-structure-gap.js`를 추가해 `final.mp4 + edit_decision_list.json + reference`만으로 길이/구조 병목을 재현 가능하게 분석할 수 있게 함
     - `서버인증` 진단:

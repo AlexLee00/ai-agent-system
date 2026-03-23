@@ -91,6 +91,64 @@ Phase 1 — Week 3: 최종 통합 테스트 + 품질 테스트
   ☐ 세트당 비용 ≤ $0.05
 ```
 
+## Phase 3 — AI 대화형 편집기
+
+### 과제 F: step-proposal-engine.js
+```
+목표: sync_map → 편집 스텝 분리, confidence 계산, RED/BLUE 연결
+의존: Phase 2 sync_map
+산출: step-proposal-engine.js
+예상 줄 수: ~300
+```
+
+### 과제 G: video-feedback-service.js
+```
+목표: ai-feedback-store 패턴 재사용, schema='video' 피드백 세션 관리
+의존: ai-feedback-store
+산출: video-feedback-service.js
+예상 줄 수: ~200
+```
+
+### 과제 H: Twick 통합 + 타임라인 UI
+```
+목표: Twick React SDK 기반 타임라인 UI 통합
+의존: @twick/video-editor
+산출: app/video/editor/page.js
+예상 줄 수: ~800
+```
+
+### 과제 I: AI 채팅 패널 + 스텝 API
+```
+목표: 스텝 제안/컨펌/수정/건너뛰기 API + AI 채팅 패널 연결
+의존: WebSocket
+산출: routes/video-step-api.js, StepPanel.jsx
+예상 줄 수: ~500
+```
+
+### 과제 J: RED/BLUE 스텝별 연결
+```
+목표: critic/refiner를 각 스텝에 연결해 RED/BLUE 검증 루프 구성
+의존: critic-agent.js, refiner-agent.js
+산출: step-proposal-engine.js 확장
+예상 줄 수: ~200
+```
+
+### 과제 K: EDL 조립 + 렌더링 연결
+```
+목표: confirmedSteps → EDL 조립 → 프리뷰/최종 렌더링 연결
+의존: edl-builder.js
+산출: TimelineEditor.jsx, EDL 연결 로직
+예상 줄 수: ~200
+```
+
+### 과제 L: 5세트 검증 + 자동화율 측정
+```
+목표: Phase 3 검증 + accepted_without_edit 비율 측정
+의존: 과제 F~K
+산출: 검증 리포트
+예상 줄 수: ~300
+```
+
 ## ★ 개발 원칙
 
 ```

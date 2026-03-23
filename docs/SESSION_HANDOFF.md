@@ -260,6 +260,8 @@
   - confirm 이후 final render는 `bots/video/scripts/render-from-edl.js`가 백그라운드에서 수행한다.
 - 비디오
   - Phase 2 전환: `syncVideoAudio()` 폐기 → AI 싱크 매칭 파이프라인으로 전환 (2026-03-21)
+  - 팀 구조 결정 (2026-03-22): Phase 2 완료 후 bots/video → packages/video 승격,
+    bots/blog → packages/blog 승격, bots/worker를 통합 웹 포털로 전환.
   - 신규 모듈: `scene-indexer.js`, `narration-analyzer.js`, `sync-matcher.js`, `intro-outro-handler.js`
   - 워커 웹 UX는 `업로드 → 인트로 → 아웃트로 → 의도 → 시작`의 5단계로 확장됐고, file_type도 `video/audio/intro/outro/logo`를 지원한다.
   - 비디오팀 Phase 2는 `6732396 feat(video): add ai sync matching pipeline`까지 `main` 반영이 끝나 있어, 다음 세션에서는 scene-index 정밀 검증이나 preview 품질 보강부터 바로 이어서 진행하면 된다.
@@ -278,6 +280,7 @@
     - `averageDuration=54.67`
     - `averageResolution=99.58`
     - `averageVisualSimilarity=80.41`
+  - 2026-03-23 rerun 기준 `test-final-reference-quality-batch.js --json`은 `bots/video/temp/final_batch_report.json` 저장과 `per-set timeout skip`을 지원하도록 보강했다. 현재 로컬 머신에서는 `timeoutMs=300000` 기준 5세트 모두 `skipped_timeout`으로 종료돼, final batch는 전용 런타임 또는 더 긴 timeout/경량화 전략이 필요하다.
   - 세트별 overall:
     - 파라미터 `81.62`
     - 컴포넌트스테이트 `80.16`

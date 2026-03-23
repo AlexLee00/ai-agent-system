@@ -80,6 +80,8 @@ audio_normalize:
 18. 나레이션↔장면 매칭은 키워드 매칭 우선, 임베딩 유사도 fallback
 19. 인트로/아웃트로는 파일 업로드 또는 프롬프트 설명 중 택1 (하이브리드)
 20. OCR은 tesseract.js 사용 (FlutterFlow UI가 영어 텍스트 위주라 eng 모델로 충분)
+21. 비디오 도메인 로직은 bots/video/lib/ 안에만 작성 (워커에 직접 넣지 말 것 — 추후 packages/video 승격 대비)
+22. Phase 3 대화형 편집: 매 스텝마다 RED/BLUE 검증 + 사용자 피드백 → RAG 축적
 
 ## 문서 참조 순서
 
@@ -114,7 +116,7 @@ EDL JSON 구조:
 ```json
 {
   "version": 1,
-  "source": "synced.mp4",
+  "source": "원본_파라미터.mp4",
   "subtitle": "subtitle_corrected.srt",
   "edits": [
     { "type": "cut", "from": 225.0, "to": 250.0, "reason": "무음 구간" },
@@ -157,6 +159,18 @@ EDL 생성 주체:
 - `bots/video/lib/narration-analyzer.js` — 나레이션 구간 분석
 - `bots/video/lib/sync-matcher.js` — AI 싱크 매칭 엔진
 - `bots/video/lib/intro-outro-handler.js` — 인트로/아웃트로 하이브리드
+- `bots/video/lib/reference-quality.js` — 실제 편집본과 자동 품질 비교
+
+## Phase 3: AI 대화형 편집 + 자기학습
+
+Phase 2의 일괄 처리 결과를 스텝별로 분해해, 매 스텝마다
+RED팀(Critic) 평가 + BLUE팀(Refiner) 대안 + 사용자 판단을 거치는 구조.
+
+UI: Twick React SDK 기반 타임라인 + AI 채팅 패널
+피드백: packages/core/lib/ai-feedback-core + store + rag 재사용 (schema='video')
+KPI: accepted_without_edit 비율 (목표: 30번째 영상에서 95%)
+
+상세: bots/video/docs/video-phase3-design.md 참조
 
 ## 인트로/아웃트로 하이브리드
 
@@ -177,6 +191,19 @@ Mode `none`: 인트로/아웃트로 없음 (기본값)
 3. 아웃트로 선택 (파일/프롬프트/없음)
 4. 편집 의도 입력
 5. 편집 시작
+
+## 팀 구조 로드맵 (2026-03-22 확정)
+
+현재: bots/video/ (비디오팀 별도) → Phase 2 완료 후 packages/video/로 승격 예정.
+워커팀은 통합 웹 포털로, 영상 편집 UI + 블로그 관리 UI + 기존 SaaS를 제공.
+비디오 도메인 로직(FFmpeg/OCR/EDL/매칭)은 반드시 bots/video/lib/ 안에 작성.
+워커에는 API 라우트(video-api.js)와 UI(page.js)만 배치 — 처리 로직을 넣지 말 것.
+
+목표 구조:
+  packages/core/   — 공용 인프라 (기존 44 모듈)
+  packages/video/  — 영상 처리 엔진 (bots/video에서 승격)
+  packages/blog/   — 텍스트 처리 엔진 (bots/blog에서 승격)
+  bots/worker/     — 통합 웹 포털 (UI 채널)
 
 ## RAG 피드백 루프 — 학습하는 편집 시스템
 

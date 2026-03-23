@@ -4,6 +4,12 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-22: 팀 구조 결정 + Phase 2 문서 보완 + Phase 3 설계
+
+- 팀 구조 확정: packages/video + packages/blog + bots/worker 통합 포털
+- Phase 3 결정: Twick React SDK 기반 CapCut급 AI 대화형 편집기
+- 5세트 final batch 검증 실행
+
 ## 2026-03-22: 스카 매출 DB 적재 마무리 / source-mirror 정합성 복구
 
 - `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 다시 재집계했다.
