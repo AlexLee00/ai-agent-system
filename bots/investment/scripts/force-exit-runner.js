@@ -18,6 +18,12 @@ import * as db from '../shared/db.js';
 import { loadCandidates, getMarketLabel } from './force-exit-candidate-report.js';
 import { executeSignal as executeCryptoSignal } from '../team/hephaestos.js';
 import { executeSignal as executeDomesticSignal, executeOverseasSignal } from '../team/hanul.js';
+import {
+  getKisExecutionModeInfo,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+  isKisPaper,
+} from '../shared/secrets.js';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -59,6 +65,62 @@ function formatPreview(candidate) {
     `- 우선순위: ${candidate.priorityScore}`,
     `- trade_mode: ${candidate.tradeMode || 'normal'}`,
   ].join('\n');
+}
+
+async function getExecutionPreflight(candidate) {
+  if (!candidate) return { ok: false, level: 'blocked', lines: ['- force-exit 후보가 없습니다.'] };
+
+  if (candidate.exchange === 'binance') {
+    return {
+      ok: true,
+      level: 'ready',
+      lines: ['- 암호화폐 레일은 별도 브로커 세션 제약 없이 현재 runner 실행 가능'],
+    };
+  }
+
+  const modeInfo = getKisExecutionModeInfo(candidate.exchange === 'kis' ? '국내주식' : '해외주식');
+  const isMock = modeInfo.brokerAccountMode === 'mock' || isKisPaper();
+  const marketStatus = candidate.exchange === 'kis'
+    ? await getKisMarketStatus()
+    : getKisOverseasMarketStatus();
+
+  const lines = [
+    `- accountMode: ${modeInfo.brokerAccountMode}`,
+    `- executionMode: ${modeInfo.executionMode}`,
+    `- marketStatus: ${marketStatus.reason}`,
+  ];
+
+  if (candidate.exchange === 'kis_overseas' && isMock) {
+    lines.push('- 현재 관측 기준 해외장 mock 계좌 SELL은 미지원 또는 제한 상태로 해석합니다.');
+    return {
+      ok: false,
+      level: 'blocked',
+      lines: marketStatus.isOpen
+        ? lines
+        : [...lines, '- 현재 장외/휴장 상태라 force-exit SELL 실행을 보류해야 합니다.'],
+    };
+  }
+
+  if (candidate.exchange === 'kis' && isMock) {
+    lines.push('- 국내장 mock 계좌는 장중 SELL 검증용으로는 사용 가능하되, 장종료 이후에는 바로 실패합니다.');
+  }
+
+  if (!marketStatus.isOpen) {
+    return {
+      ok: false,
+      level: 'blocked',
+      lines: [
+        ...lines,
+        '- 현재 장외/휴장 상태라 force-exit SELL 실행을 보류해야 합니다.',
+      ],
+    };
+  }
+
+  return {
+    ok: true,
+    level: candidate.exchange === 'kis' && isMock ? 'guarded' : 'ready',
+    lines,
+  };
 }
 
 async function createForceExitSignal(candidate, reason) {
@@ -128,9 +190,11 @@ async function main() {
   }
 
   if (!options.execute) {
+    const preflight = await getExecutionPreflight(candidate);
     const payload = {
       mode: 'preview',
       candidate,
+      preflight,
       executeCommand: `env PAPER_MODE=false node bots/investment/scripts/force-exit-runner.js --symbol=${candidate.symbol} --exchange=${candidate.exchange} --execute --confirm=force-exit`,
     };
     if (options.json) {
@@ -138,6 +202,9 @@ async function main() {
       return;
     }
     console.log(formatPreview(candidate));
+    console.log('');
+    console.log('- 실행 가능성 점검:');
+    for (const line of preflight.lines) console.log(`  ${line}`);
     console.log('');
     console.log(`- 실행 명령: ${payload.executeCommand}`);
     return;
@@ -147,10 +214,16 @@ async function main() {
     throw new Error('실행하려면 --confirm=force-exit 가 필요합니다.');
   }
 
+  const preflight = await getExecutionPreflight(candidate);
+  if (!preflight.ok) {
+    throw new Error(`force-exit preflight blocked: ${preflight.lines.join(' | ')}`);
+  }
+
   const result = await executeCandidate(candidate, options.reason);
   const payload = {
     mode: 'execute',
     candidate,
+    preflight,
     result,
   };
 

@@ -14,6 +14,11 @@ import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
+import {
+  getKisExecutionModeInfo,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+} from '../shared/secrets.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -492,6 +497,46 @@ async function loadCryptoLiveGateHealth() {
   }
 }
 
+async function loadKisCapabilityHealth() {
+  const domesticMode = getKisExecutionModeInfo('국내주식');
+  const overseasMode = getKisExecutionModeInfo('해외주식');
+  const domesticStatus = await getKisMarketStatus();
+  const overseasStatus = getKisOverseasMarketStatus();
+
+  const domesticCapability = domesticMode.brokerAccountMode === 'mock'
+    ? (domesticStatus.isOpen ? 'mock SELL 검증 가능' : 'mock SELL 장중에만 가능')
+    : 'real SELL 가능';
+  const overseasCapability = overseasMode.brokerAccountMode === 'mock'
+    ? '현재 관측 기준 mock SELL 미지원 또는 제한'
+    : 'real SELL 가능';
+
+  return {
+    domestic: {
+      accountMode: domesticMode.brokerAccountMode,
+      executionMode: domesticMode.executionMode,
+      marketStatus: domesticStatus,
+      capability: domesticCapability,
+    },
+    overseas: {
+      accountMode: overseasMode.brokerAccountMode,
+      executionMode: overseasMode.executionMode,
+      marketStatus: overseasStatus,
+      capability: overseasCapability,
+    },
+    okCount: overseasMode.brokerAccountMode === 'mock' ? 1 : 2,
+    warnCount: overseasMode.brokerAccountMode === 'mock' ? 1 : 0,
+    ok: [
+      `  국내주식 ${domesticMode.executionMode}/${domesticMode.brokerAccountMode} — ${domesticStatus.reason} / ${domesticCapability}`,
+      ...(overseasMode.brokerAccountMode === 'mock'
+        ? []
+        : [`  해외주식 ${overseasMode.executionMode}/${overseasMode.brokerAccountMode} — ${overseasStatus.reason} / ${overseasCapability}`]),
+    ],
+    warn: overseasMode.brokerAccountMode === 'mock'
+      ? [`  해외주식 ${overseasMode.executionMode}/${overseasMode.brokerAccountMode} — ${overseasStatus.reason} / ${overseasCapability}`]
+      : [],
+  };
+}
+
 function buildDecision(
   serviceRows,
   tradeReview,
@@ -606,6 +651,7 @@ function formatText(report) {
     },
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
+    buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
       title: null,
@@ -651,6 +697,7 @@ async function buildReport() {
   const tradeLaneHealth = await loadTradeLaneHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
+  const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
     serviceRows,
     tradeReview,
@@ -678,6 +725,7 @@ async function buildReport() {
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
+    kisCapabilityHealth,
     decision,
   };
   return report;
