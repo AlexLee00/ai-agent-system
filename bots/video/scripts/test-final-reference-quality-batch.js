@@ -1,13 +1,18 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 
 const { compareVideos } = require('../lib/reference-quality');
-const { runPipelineValidation } = require('./test-full-sync-pipeline');
 const { SAMPLE_MAP } = require('./test-reference-quality');
 
+const execFileAsync = promisify(execFile);
 const ROOT = path.join(__dirname, '..');
 const SAMPLES_DIR = path.join(ROOT, 'samples');
+const DEFAULT_REPORT_PATH = path.join(ROOT, 'temp', 'final_batch_report.json');
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 const SAMPLE_SETS = [
   {
@@ -47,12 +52,16 @@ function parseArgs(argv) {
     json: false,
     limit: null,
     title: null,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    output: DEFAULT_REPORT_PATH,
   };
 
   for (const arg of argv) {
     if (arg === '--json') parsed.json = true;
     if (arg.startsWith('--limit=')) parsed.limit = Number.parseInt(arg.slice('--limit='.length), 10) || null;
     if (arg.startsWith('--title=')) parsed.title = arg.slice('--title='.length);
+    if (arg.startsWith('--timeout-ms=')) parsed.timeoutMs = Number.parseInt(arg.slice('--timeout-ms='.length), 10) || DEFAULT_TIMEOUT_MS;
+    if (arg.startsWith('--output=')) parsed.output = arg.slice('--output='.length) || DEFAULT_REPORT_PATH;
   }
 
   return parsed;
@@ -74,6 +83,110 @@ function selectSets(args) {
   return sets;
 }
 
+async function runPipelineValidationViaScript(set, timeoutMs) {
+  const startedAt = Date.now();
+  const scriptPath = path.join(__dirname, 'test-full-sync-pipeline.js');
+  const args = [
+    scriptPath,
+    `--source-video=${set.sourceVideo}`,
+    `--source-audio=${set.sourceAudio}`,
+    `--edited=${set.reference}`,
+    '--render-final',
+  ];
+
+  try {
+    const { stdout, stderr } = await execFileAsync('node', args, {
+      cwd: ROOT,
+      timeout: timeoutMs,
+      maxBuffer: 20 * 1024 * 1024,
+      killSignal: 'SIGKILL',
+    });
+    const pipeline = JSON.parse(stdout);
+    return {
+      status: 'ok',
+      elapsedMs: Date.now() - startedAt,
+      pipeline,
+      warnings: stderr
+        ? stderr.split('\n').map((line) => line.trim()).filter(Boolean)
+        : [],
+    };
+  } catch (error) {
+    const elapsedMs = Date.now() - startedAt;
+    if (error.killed || error.signal === 'SIGKILL' || error.code === 'ETIMEDOUT') {
+      return {
+        status: 'timeout',
+        elapsedMs,
+        pipeline: null,
+        error: `timeout after ${timeoutMs}ms`,
+      };
+    }
+
+    const stderr = error.stderr
+      ? String(error.stderr).split('\n').map((line) => line.trim()).filter(Boolean)
+      : [];
+    return {
+      status: 'error',
+      elapsedMs,
+      pipeline: null,
+      error: error.message,
+      stderr,
+    };
+  }
+}
+
+function buildSetResult(set, runResult, comparison) {
+  if (runResult.status !== 'ok') {
+    return {
+      title: set.title,
+      sourceVideo: set.sourceVideo,
+      sourceAudio: set.sourceAudio,
+      reference: set.reference,
+      status: runResult.status === 'timeout' ? 'skipped_timeout' : 'failed',
+      overall: null,
+      duration_ratio: null,
+      visual_similarity: null,
+      match_type_distribution: null,
+      processing_time_ms: runResult.elapsedMs,
+      error: runResult.error || null,
+      warnings: runResult.stderr || runResult.warnings || [],
+    };
+  }
+
+  const pipeline = runResult.pipeline;
+  const durationRatio = comparison.reference.durationSec
+    ? Number((comparison.generated.durationSec / comparison.reference.durationSec).toFixed(4))
+    : null;
+  return {
+    title: set.title,
+    sourceVideo: set.sourceVideo,
+    sourceAudio: set.sourceAudio,
+    reference: set.reference,
+    status: 'ok',
+    overall: comparison.scores.overall,
+    duration_ratio: durationRatio,
+    visual_similarity: comparison.scores.visual_similarity,
+    match_type_distribution: {
+      keyword: pipeline.match_breakdown?.keyword || 0,
+      embedding: pipeline.match_breakdown?.embedding || 0,
+      hold: pipeline.match_breakdown?.hold || 0,
+      unmatched: pipeline.match_breakdown?.unmatched || 0,
+    },
+    processing_time_ms: runResult.elapsedMs,
+    final_render_ms: pipeline.final_render?.duration_ms || null,
+    error: null,
+    warnings: runResult.warnings || [],
+    pipeline,
+    scores: comparison.scores,
+    deltas: {
+      ...comparison.deltas,
+      duration_ratio: durationRatio,
+    },
+    generated: comparison.generated,
+    referenceMeta: comparison.reference,
+    visualSamples: comparison.visualSamples,
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const sets = selectSets(args);
@@ -83,39 +196,67 @@ async function main() {
 
   const results = [];
   for (const set of sets) {
-    const pipeline = await runPipelineValidation({
-      sourceVideo: set.sourceVideo,
-      sourceAudio: set.sourceAudio,
-      edited: set.reference,
-      renderFinal: true,
-      allowOfflineFixture: true,
-    });
+    const runResult = await runPipelineValidationViaScript(set, args.timeoutMs);
+    if (runResult.status !== 'ok') {
+      results.push(buildSetResult(set, runResult, null));
+      continue;
+    }
 
-    const comparison = await compareVideos(pipeline.final_path, set.reference);
-    results.push({
-      title: set.title,
-      sourceVideo: set.sourceVideo,
-      sourceAudio: set.sourceAudio,
-      reference: set.reference,
-      pipeline,
-      scores: comparison.scores,
-      deltas: comparison.deltas,
-      generated: comparison.generated,
-      referenceMeta: comparison.reference,
-      visualSamples: comparison.visualSamples,
-    });
+    try {
+      const comparison = await compareVideos(runResult.pipeline.final_path, set.reference);
+      results.push(buildSetResult(set, runResult, comparison));
+    } catch (error) {
+      results.push({
+        title: set.title,
+        sourceVideo: set.sourceVideo,
+        sourceAudio: set.sourceAudio,
+        reference: set.reference,
+        status: 'failed',
+        overall: null,
+        duration_ratio: null,
+        visual_similarity: null,
+        match_type_distribution: {
+          keyword: runResult.pipeline.match_breakdown?.keyword || 0,
+          embedding: runResult.pipeline.match_breakdown?.embedding || 0,
+          hold: runResult.pipeline.match_breakdown?.hold || 0,
+          unmatched: runResult.pipeline.match_breakdown?.unmatched || 0,
+        },
+        processing_time_ms: runResult.elapsedMs,
+        error: `reference compare failed: ${error.message}`,
+        warnings: runResult.warnings || [],
+        pipeline: runResult.pipeline,
+      });
+    }
   }
+
+  const completed = results.filter((item) => item.status === 'ok');
+  const skipped = results.filter((item) => item.status === 'skipped_timeout').length;
+  const failed = results.filter((item) => item.status === 'failed').length;
 
   const summary = {
     totalSets: results.length,
-    averageOverall: average(results, (item) => item.scores.overall),
-    averageDuration: average(results, (item) => item.scores.duration),
-    averageResolution: average(results, (item) => item.scores.resolution),
-    averageVisualSimilarity: average(results, (item) => item.scores.visual_similarity),
-    averageFinalRenderMs: average(results, (item) => item.pipeline.final_render?.duration_ms || 0),
+    completedSets: completed.length,
+    skippedSets: skipped,
+    failedSets: failed,
+    timeoutMs: args.timeoutMs,
+    averageOverall: average(completed, (item) => item.overall),
+    averageDuration: average(completed, (item) => item.scores.duration),
+    averageResolution: average(completed, (item) => item.scores.resolution),
+    averageVisualSimilarity: average(completed, (item) => item.visual_similarity),
+    averageDurationRatio: average(completed, (item) => item.duration_ratio),
+    averageFinalRenderMs: average(completed, (item) => item.final_render_ms || 0),
+    averageProcessingMs: average(completed, (item) => item.processing_time_ms || 0),
   };
 
-  const payload = { summary, results };
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    reportPath: path.resolve(args.output),
+    summary,
+    results,
+  };
+
+  fs.mkdirSync(path.dirname(args.output), { recursive: true });
+  fs.writeFileSync(args.output, `${JSON.stringify(payload, null, 2)}\n`);
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -123,10 +264,15 @@ async function main() {
   }
 
   console.log(`[final-reference-batch] compared=${summary.totalSets}`);
-  console.log(`[final-reference-batch] avg overall=${summary.averageOverall} duration=${summary.averageDuration} resolution=${summary.averageResolution} visual=${summary.averageVisualSimilarity} render_ms=${summary.averageFinalRenderMs}`);
+  console.log(`[final-reference-batch] avg overall=${summary.averageOverall} duration=${summary.averageDuration} resolution=${summary.averageResolution} visual=${summary.averageVisualSimilarity} duration_ratio=${summary.averageDurationRatio} render_ms=${summary.averageFinalRenderMs}`);
   for (const item of results) {
-    console.log(`[final-reference-batch] ${item.title}: overall=${item.scores.overall} duration=${item.scores.duration} resolution=${item.scores.resolution} visual=${item.scores.visual_similarity} render_ms=${item.pipeline.final_render?.duration_ms || 0}`);
+    if (item.status !== 'ok') {
+      console.log(`[final-reference-batch] ${item.title}: status=${item.status} error=${item.error}`);
+      continue;
+    }
+    console.log(`[final-reference-batch] ${item.title}: overall=${item.scores.overall} duration=${item.scores.duration} resolution=${item.scores.resolution} visual=${item.scores.visual_similarity} duration_ratio=${item.duration_ratio} render_ms=${item.final_render_ms || 0}`);
   }
+  console.log(`[final-reference-batch] report=${path.resolve(args.output)}`);
 }
 
 if (require.main === module) {

@@ -1,0 +1,90 @@
+{
+  "generatedAt": "2026-03-23T08:14:33.230Z",
+  "reportPath": "/Users/alexlee/projects/ai-agent-system/bots/video/temp/final_batch_report.json",
+  "summary": {
+    "totalSets": 5,
+    "completedSets": 0,
+    "skippedSets": 5,
+    "failedSets": 0,
+    "timeoutMs": 300000,
+    "averageOverall": 0,
+    "averageDuration": 0,
+    "averageResolution": 0,
+    "averageVisualSimilarity": 0,
+    "averageDurationRatio": 0,
+    "averageFinalRenderMs": 0,
+    "averageProcessingMs": 0
+  },
+  "results": [
+    {
+      "title": "파라미터",
+      "sourceVideo": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/raw/원본_파라미터.mp4",
+      "sourceAudio": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/narration/원본_나레이션_파라미터.m4a",
+      "reference": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/edited/편집_파라미터.mp4",
+      "status": "skipped_timeout",
+      "overall": null,
+      "duration_ratio": null,
+      "visual_similarity": null,
+      "match_type_distribution": null,
+      "processing_time_ms": 300012,
+      "error": "timeout after 300000ms",
+      "warnings": []
+    },
+    {
+      "title": "컴포넌트스테이트",
+      "sourceVideo": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/raw/원본_컴포넌트스테이트.mp4",
+      "sourceAudio": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/narration/원본_나레이션_컴포넌트스테이트.m4a",
+      "reference": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/edited/편집_컴포넌트스테이트.mp4",
+      "status": "skipped_timeout",
+      "overall": null,
+      "duration_ratio": null,
+      "visual_similarity": null,
+      "match_type_distribution": null,
+      "processing_time_ms": 300048,
+      "error": "timeout after 300000ms",
+      "warnings": []
+    },
+    {
+      "title": "동적데이터",
+      "sourceVideo": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/raw/원본_동적데이터.mp4",
+      "sourceAudio": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/narration/원본_나레이션_동적데이터.m4a",
+      "reference": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/edited/편집_동적데이터.mp4",
+      "status": "skipped_timeout",
+      "overall": null,
+      "duration_ratio": null,
+      "visual_similarity": null,
+      "match_type_distribution": null,
+      "processing_time_ms": 300022,
+      "error": "timeout after 300000ms",
+      "warnings": []
+    },
+    {
+      "title": "서버인증",
+      "sourceVideo": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/raw/원본_서버인증.mp4",
+      "sourceAudio": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/narration/원본_나레이션_서버인증.m4a",
+      "reference": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/edited/편집_서버인증.mp4",
+      "status": "skipped_timeout",
+      "overall": null,
+      "duration_ratio": null,
+      "visual_similarity": null,
+      "match_type_distribution": null,
+      "processing_time_ms": 300016,
+      "error": "timeout after 300000ms",
+      "warnings": []
+    },
+    {
+      "title": "DB생성",
+      "sourceVideo": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/raw/원본_DB생성.mp4",
+      "sourceAudio": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/narration/원본_나레이션_DB생성.m4a",
+      "reference": "/Users/alexlee/projects/ai-agent-system/bots/video/samples/edited/편집_DB생성.mp4",
+      "status": "skipped_timeout",
+      "overall": null,
+      "duration_ratio": null,
+      "visual_similarity": null,
+      "match_type_distribution": null,
+      "processing_time_ms": 300007,
+      "error": "timeout after 300000ms",
+      "warnings": []
+    }
+  ]
+}

@@ -4,6 +4,14 @@
 
 ## 2026-03-23
 
+### 비디오팀 Phase 2 final batch rerun
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/scripts/test-final-reference-quality-batch.js` | ✅ per-set timeout/skip, report 저장 경계 추가 후 문법 통과 |
+| `node /Users/alexlee/projects/ai-agent-system/bots/video/scripts/test-final-reference-quality-batch.js --json --timeout-ms=300000` | ✅ `bots/video/temp/final_batch_report.json` 생성, 5세트 모두 `skipped_timeout`, 각 세트 `processing_time_ms ≈ 300000` 기록 |
+| `node --input-type=module -e "...read bots/video/temp/final_batch_report.json..."` | ✅ summary `totalSets=5`, `completedSets=0`, `skippedSets=5`, `failedSets=0`, `timeoutMs=300000` 확인 |
+
 ### 스카 예측엔진 feature cleanup 1차
 
 | 테스트 | 결과 |

@@ -3,6 +3,12 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## [2026-03-22] 팀 구조 결정 + Phase 2 문서 보완
+
+- 확정: Phase 2 완료 후 bots/video → packages/video, bots/blog → packages/blog 승격
+- bots/worker는 통합 웹 포털 (영상 편집 UI + 블로그 관리 UI + 기존 SaaS)
+- CLAUDE.md 절대규칙 21번, 팀 구조 로드맵, EDL 예시 수정, reference-quality 등재
+
 ## 12주차 후속 (2026-03-23) — 스카 daily_summary `pickko_total` 제거
 
 - `bots/reservation/migrations/009_daily_summary_remove_pickko_total.js` 추가
