@@ -46,6 +46,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 자동 승인/수동 검토 분류가 문자열 점수 입력에서도 안정적으로 유지
   - 사용자가 `confirm`만 해도 proposal/final 단계에서 원본 confidence 의미가 손실되지 않음
 
+## 12주차 후속 (2026-03-23) — 비디오팀 feedback session missing guard 복구
+
+- `bots/video/lib/video-feedback-service.js`
+  - `markVideoFeedbackStatus()` 시작 시 대상 feedback session 존재 여부를 먼저 확인
+  - 세션이 없으면 FK 오류 대신 `feedback_session_id=... 를 찾을 수 없습니다.` 도메인 오류 반환
+- 의미:
+  - 잘못된 `sessionId` 입력이 API 레이어에서 DB 내부 오류(`23503`)로 번지지 않도록 입력 경계 복구
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `bots/worker/web/app/video/editor/page.js`

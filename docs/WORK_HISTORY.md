@@ -25,6 +25,12 @@
 - `buildSyncProposal()`는 이제 비숫자 점수를 `0`으로 잃지 않고, 정규화된 `match_score`와 원본 `match_score_raw`를 함께 남긴다.
 - 해석: 이번 수정은 새 기능 추가가 아니라, Phase 3 스텝 분류의 입력 경계와 proposal/final 원장 불변식을 복구한 버그픽스다.
 
+## 2026-03-23: 비디오팀 feedback session missing guard 복구
+
+- `video-feedback-service.js`에서 상태 전이 전에 feedback session 존재 여부를 먼저 확인하도록 보강했다.
+- 이제 잘못된 `sessionId`로 `markVideoFeedback*()`를 호출하면 PostgreSQL FK 오류가 아니라 명시적 도메인 오류를 반환한다.
+- 해석: 이번 수정은 새 기능이 아니라, Phase 3 피드백 상태 전이의 입력 경계와 API 안정성을 복구한 버그픽스다.
+
 ## 2026-03-23: 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`가 `@twick/video-editor/dist/video-editor.css`를 전역 import하던 구조를 제거했다.

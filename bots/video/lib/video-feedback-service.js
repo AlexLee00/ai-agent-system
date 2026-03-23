@@ -170,6 +170,14 @@ async function markVideoFeedbackStatus({
   eventType,
   eventMeta = {},
 }) {
+  const session = await getFeedbackSessionById(videoFeedbackPool, {
+    schema: SCHEMA,
+    id: sessionId,
+  });
+  if (!session) {
+    throw new Error(`feedback_session_id=${sessionId} 를 찾을 수 없습니다.`);
+  }
+
   const events = await listFeedbackEvents(videoFeedbackPool, {
     schema: SCHEMA,
     feedbackSessionId: sessionId,

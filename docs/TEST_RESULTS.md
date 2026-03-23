@@ -22,6 +22,8 @@
 | `node --check bots/video/lib/video-feedback-service.js` | ✅ 문법 통과 |
 | `node - <<'NODE' ... ensureVideoFeedbackTables/createVideoStepFeedbackSession/markVideoFeedbackConfirmed ... NODE` | ✅ 로컬 PostgreSQL 실검증 기준 `sessionId=1`, `feedbackStatus=confirmed`, `acceptedWithoutEdit=true` 확인 |
 | `node --check bots/video/lib/step-proposal-engine.js` | ✅ Task F와 조합되는 기본 엔진 문법 유지 |
+| `node - <<'NODE' ... markVideoFeedbackConfirmed({ sessionId: 999999999 }) ... NODE` | ✅ 더 이상 FK 오류가 아니라 도메인 오류 `feedback_session_id=999999999 를 찾을 수 없습니다.` 반환 |
+| `node - <<'NODE' ... createVideoStepFeedbackSession() + markVideoFeedbackConfirmed() ... NODE` | ✅ guard 추가 후에도 정상 세션 `sessionId=2`, `feedbackStatus=confirmed`, `acceptedWithoutEdit=true` 유지 |
 
 ### 비디오팀 Twick CSS scoped 로딩 전환
 
