@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Twick React SDK 통합 1차
+
+- `bots/worker/web/app/video/editor/page.js`
+  - `/video/editor` 테스트 페이지 추가
+  - Twick CSS를 페이지 상단 글로벌 import로 이동
+  - 좌측 AI 편집 어시스턴트 스켈레톤 패널 추가
+- `bots/worker/web/components/TwickEditorWrapper.js`
+  - 런타임 CSS `require()` 제거
+  - Twick 패키지 로드/에러 경계만 유지
+- `bots/worker/web/next.config.js`
+  - `transpilePackages`에 `@twick/video-editor`, `@twick/timeline`, `@twick/canvas`, `@twick/live-player` 추가
+- `bots/worker/web/package.json`, `bots/worker/web/package-lock.json`
+  - `tailwindcss` 재설치로 PostCSS 빌드 경계 복구
+- 검증:
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `http://127.0.0.1:4001/`, `/video`, `/video/editor` 모두 `200`
+  - 현재 worker-web live 포트는 `4001`, `localhost:3000`은 worker Next.js 라우트가 아님을 확인
+
 ## [2026-03-22] 팀 구조 결정 + Phase 2 문서 보완
 
 - 확정: Phase 2 완료 후 bots/video → packages/video, bots/blog → packages/blog 승격
