@@ -65,7 +65,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 검증
   - `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json`
   - `2026-03-24` 예측 `238,053원`, `calibration_adjustment=34,912` 반영 확인
-  - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 기준 shadow `knn-shadow-v1`가 `promotion_candidate` 상태로 진입
+  - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 기준 shadow `knn-shadow-v1`가 `availableDays=3`, `avgMapeGap=-7.32`로 우위지만, canary guard 전에는 자동 편입되지 않음을 확인
+
+## 12주차 후속 (2026-03-23) — 스카 shadow canary 편입 경로 추가
+
+- `bots/ska/src/forecast.py`
+  - shadow 비교 성능을 읽는 `_load_shadow_compare_signal()` 추가
+  - 예측 결과에 `shadow_blend_applied`, `shadow_blend_weight`, `shadow_blend_reason`, `shadow_compare_days`, `shadow_compare_mape_gap`를 저장
+  - shadow blend는 아래 guard를 모두 만족할 때만 적용
+    - `shadowBlendEnabled = true`
+    - `shadowCompareDays >= 5`
+    - `shadow avgMapeGap <= -5.0`
+    - `shadow confidence >= 0.35`
+- `bots/ska/config.json`, `bots/ska/src/runtime_config.py`, `bots/ska/lib/runtime-config.js`
+  - shadow canary 설정 추가
+  - 기본값: `shadowBlendWeight=0.25`, `shadowBlendMinCompareDays=5`, `shadowBlendRequiredMapeGap=5.0`, `shadowBlendMinConfidence=0.35`
+- `scripts/reviews/ska-sales-forecast-daily-review.js`, `scripts/reviews/ska-sales-forecast-weekly-review.js`
+  - review 출력이 `shadow canary 적용/미적용`, `compare days`, `mape gap`를 그대로 보여주도록 보강
+  - 승격 판단도 `shadowBlendMinCompareDays`, `shadowBlendRequiredMapeGap`와 같은 guard를 사용하도록 정렬
+- 현재 운영 상태
+  - `2026-03-24` 예측에서 shadow `yhat=283075`, primary `yhat=238598`
+  - `shadow avgMapeGap=-7.32`, `availableDays=3`
+  - 하지만 canary는 `shadow_compare_days_insufficient`로 아직 미적용
 
 ## 12주차 후속 (2026-03-23) — 스카 재예약 교차 취소 오탐 방지
 

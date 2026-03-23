@@ -86,6 +86,11 @@ async function loadUpcomingForecasts() {
     SELECT
       latest.forecast_date::text AS date,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
+      COALESCE((latest.predictions->>'shadow_blend_applied')::boolean, false) AS shadow_blend_applied,
+      COALESCE((latest.predictions->>'shadow_blend_weight')::float, 0.0) AS shadow_blend_weight,
+      latest.predictions->>'shadow_blend_reason' AS shadow_blend_reason,
+      COALESCE((latest.predictions->>'shadow_compare_days')::int, 0) AS shadow_compare_days,
+      COALESCE((latest.predictions->>'shadow_compare_mape_gap')::float, 0.0) AS shadow_compare_mape_gap,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence
     FROM latest
@@ -194,8 +199,8 @@ function buildShadowComparison(rows) {
 }
 
 function buildShadowDecision(shadowComparison) {
-  const requiredDays = 5;
-  const gapThreshold = Number(FORECAST_CONFIG.shadowPromotionMapeGap || 0);
+  const requiredDays = Number(FORECAST_CONFIG.shadowBlendMinCompareDays || 5);
+  const gapThreshold = Number(FORECAST_CONFIG.shadowBlendRequiredMapeGap || FORECAST_CONFIG.shadowPromotionMapeGap || 0);
 
   if (shadowComparison.availableDays < requiredDays) {
     return {
@@ -203,7 +208,7 @@ function buildShadowDecision(shadowComparison) {
       label: '데이터 수집 단계',
       requiredDays,
       gapThreshold,
-      recommendation: '주간 비교 데이터 누적 유지',
+      recommendation: 'shadow canary 비교 데이터 누적 유지',
       reason: `shadow actual 비교일이 ${shadowComparison.availableDays}일이라 최소 ${requiredDays}일 누적이 더 필요합니다.`,
     };
   }
@@ -211,10 +216,10 @@ function buildShadowDecision(shadowComparison) {
   if (shadowComparison.avgMapeGap <= -gapThreshold) {
     return {
       stage: 'promotion_candidate',
-      label: '앙상블 실험 후보',
+      label: 'shadow canary 편입 후보',
       requiredDays,
       gapThreshold,
-      recommendation: '다음 주 앙상블 편입 실험 검토',
+      recommendation: '다음 주 shadow canary 적용 검토',
       reason: `shadow 평균 MAPE가 기존 대비 ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되었습니다.`,
     };
   }
@@ -396,7 +401,12 @@ async function main() {
     lines.push('');
     lines.push('다음 주 위험일:');
     for (const row of upcomingRisk) {
-      lines.push(`- ${row.date}: ${fmt(row.predictedRevenue)}원 / ${fmt(row.predictedReservations)}건 / 확신도 ${(row.confidence * 100).toFixed(0)}%`);
+      const blendLabel = row.shadow_blend_applied
+        ? ` / shadow canary ${Math.round(Number(row.shadow_blend_weight || 0) * 100)}%`
+        : row.shadow_blend_reason
+          ? ` / shadow ${row.shadow_blend_reason}`
+          : '';
+      lines.push(`- ${row.date}: ${fmt(row.predictedRevenue)}원 / ${fmt(row.predictedReservations)}건 / 확신도 ${(row.confidence * 100).toFixed(0)}%${blendLabel}`);
     }
   }
 

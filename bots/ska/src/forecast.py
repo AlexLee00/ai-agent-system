@@ -901,6 +901,7 @@ def ensure_forecast_results_table(con):
 def save_forecast_result(con, forecast_date, result, mape=None, forecast_mode='daily'):
     """예측 결과를 ska.forecast_results에 저장 → n8n/레베카에서 조회 가능"""
     shadow_model = result.get('shadow_model') or {}
+    shadow_blend = result.get('shadow_blend') or {}
     predictions = {
         'yhat':         result['yhat'],
         'yhat_prophet': result.get('yhat_prophet', result['yhat']),
@@ -934,6 +935,11 @@ def save_forecast_result(con, forecast_date, result, mape=None, forecast_mode='d
         'shadow_models': {
             shadow_model.get('model_name'): shadow_model,
         } if shadow_model.get('model_name') else {},
+        'shadow_blend_applied': bool(shadow_blend.get('applied')),
+        'shadow_blend_weight': shadow_blend.get('weight'),
+        'shadow_blend_reason': shadow_blend.get('reason'),
+        'shadow_compare_days': shadow_blend.get('available_days'),
+        'shadow_compare_mape_gap': shadow_blend.get('avg_mape_gap'),
     }
     params = _load_model_params()
     params['forecast_mode'] = forecast_mode
@@ -992,6 +998,109 @@ def get_recent_mape(con, days=7):
         return None
 
 
+def _load_shadow_compare_signal(con, days=None):
+    compare_days = int(days or FORECAST_RUNTIME.get('perModelAccuracyDays', 30) or 30)
+    try:
+        row = _one(con, """
+            WITH latest AS (
+                SELECT DISTINCT ON (fr.forecast_date)
+                    fr.forecast_date,
+                    fr.predictions
+                FROM ska.forecast_results fr
+                WHERE fr.forecast_date >= current_date - %s
+                ORDER BY fr.forecast_date, fr.created_at DESC, fr.id DESC
+            ),
+            scored AS (
+                SELECT
+                    rd.actual_revenue,
+                    (latest.predictions->>'yhat')::int AS primary_predicted_revenue,
+                    (latest.predictions->>'shadow_yhat')::int AS shadow_predicted_revenue
+                FROM latest
+                JOIN ska.revenue_daily rd
+                  ON rd.date = latest.forecast_date
+                WHERE rd.actual_revenue > 0
+                  AND (latest.predictions->>'yhat') IS NOT NULL
+                  AND (latest.predictions->>'shadow_yhat') IS NOT NULL
+            )
+            SELECT
+                COUNT(*) AS available_days,
+                AVG(ABS((primary_predicted_revenue::float - actual_revenue) / NULLIF(actual_revenue, 0)) * 100) AS primary_avg_mape,
+                AVG(ABS((shadow_predicted_revenue::float - actual_revenue) / NULLIF(actual_revenue, 0)) * 100) AS shadow_avg_mape
+            FROM scored
+        """, (compare_days,))
+        available_days = int(row[0] or 0) if row else 0
+        primary_avg_mape = float(row[1]) if row and row[1] is not None else None
+        shadow_avg_mape = float(row[2]) if row and row[2] is not None else None
+        avg_mape_gap = None
+        if primary_avg_mape is not None and shadow_avg_mape is not None:
+            avg_mape_gap = round(shadow_avg_mape - primary_avg_mape, 2)
+        return {
+            'available_days': available_days,
+            'primary_avg_mape': round(primary_avg_mape, 2) if primary_avg_mape is not None else None,
+            'shadow_avg_mape': round(shadow_avg_mape, 2) if shadow_avg_mape is not None else None,
+            'avg_mape_gap': avg_mape_gap,
+        }
+    except Exception:
+        return {
+            'available_days': 0,
+            'primary_avg_mape': None,
+            'shadow_avg_mape': None,
+            'avg_mape_gap': None,
+        }
+
+
+def _apply_shadow_blend(result, shadow_compare_signal):
+    shadow_model = result.get('shadow_model') or {}
+    blend_meta = {
+        'applied': False,
+        'weight': 0.0,
+        'reason': 'shadow_blend_disabled',
+        'available_days': shadow_compare_signal.get('available_days', 0),
+        'avg_mape_gap': shadow_compare_signal.get('avg_mape_gap'),
+    }
+    result['shadow_blend'] = blend_meta
+
+    if not FORECAST_RUNTIME.get('shadowBlendEnabled', False):
+        return result
+    if not shadow_model or shadow_model.get('yhat') is None:
+        blend_meta['reason'] = 'shadow_missing'
+        return result
+
+    min_compare_days = int(FORECAST_RUNTIME.get('shadowBlendMinCompareDays', 5) or 5)
+    required_gap = float(FORECAST_RUNTIME.get('shadowBlendRequiredMapeGap', 5.0) or 5.0)
+    min_confidence = float(FORECAST_RUNTIME.get('shadowBlendMinConfidence', 0.35) or 0.35)
+    blend_weight = float(FORECAST_RUNTIME.get('shadowBlendWeight', 0.25) or 0.25)
+
+    if int(shadow_compare_signal.get('available_days') or 0) < min_compare_days:
+        blend_meta['reason'] = 'shadow_compare_days_insufficient'
+        return result
+    avg_mape_gap = shadow_compare_signal.get('avg_mape_gap')
+    if avg_mape_gap is None or avg_mape_gap > -required_gap:
+        blend_meta['reason'] = 'shadow_gap_insufficient'
+        return result
+    shadow_confidence = float(shadow_model.get('confidence') or 0.0)
+    if shadow_confidence < min_confidence:
+        blend_meta['reason'] = 'shadow_confidence_low'
+        return result
+
+    primary_yhat = int(result.get('yhat') or 0)
+    shadow_yhat = int(shadow_model.get('yhat') or 0)
+    blended_yhat = round(primary_yhat * (1 - blend_weight) + shadow_yhat * blend_weight)
+    result['yhat'] = max(0, blended_yhat)
+
+    if result.get('yhat_lower') is not None:
+        result['yhat_lower'] = max(0, min(int(result['yhat_lower']), result['yhat']))
+    if result.get('yhat_upper') is not None:
+        result['yhat_upper'] = max(int(result['yhat_upper']), result['yhat'])
+
+    blend_meta.update({
+        'applied': True,
+        'weight': blend_weight,
+        'reason': 'shadow_blend_applied',
+    })
+    return result
+
+
 # ─── 예측 실행 ────────────────────────────────────────────────────────────────
 
 def run_forecast(con, base_date, periods):
@@ -1000,6 +1109,7 @@ def run_forecast(con, base_date, periods):
     """
     weekday_avg = load_weekday_avg(con)
     calibration = _load_recent_calibration_stats(con)
+    shadow_compare_signal = _load_shadow_compare_signal(con)
     hist_df = load_history(con)
 
     if len(hist_df) < MIN_TRAIN_DAYS:
@@ -1038,6 +1148,7 @@ def run_forecast(con, base_date, periods):
             })
             results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
             results[-1]['shadow_model'] = _run_shadow_knn_prediction(con, target_d, results[-1])
+            results[-1] = _apply_shadow_blend(results[-1], shadow_compare_signal)
         return results
 
     print(f'[FORECAST] 학습 데이터: {len(hist_df)}일 ({hist_df["ds"].min().date()}~{hist_df["ds"].max().date()})')
@@ -1165,6 +1276,7 @@ def run_forecast(con, base_date, periods):
 
         results[-1] = _apply_result_calibration(results[-1], calibration, target_d)
         results[-1]['shadow_model'] = _run_shadow_knn_prediction(con, target_d, results[-1])
+        results[-1] = _apply_shadow_blend(results[-1], shadow_compare_signal)
 
     print(f'[FORECAST] 앙상블 예측 완료: {len(results)}일')
     return results
