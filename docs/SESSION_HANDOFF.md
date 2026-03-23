@@ -51,6 +51,26 @@
   - 이 단계는 성공률 개선 실험이 아니라 `공식 우선 + 실패 원인 추적 강화` 단계
   - crypto LIVE 확대 금지는 그대로 유지
 
+## 2026-03-23 — 루나 Binance 자본 스코프 경계 복구
+
+- crypto TP/SL 실표본 확보를 위해 `ETH/USDT` 소액 LIVE probe를 다시 태우는 과정에서, 보호 주문 이전에 `capital-manager` 경계 버그가 먼저 드러났다.
+  - 기존 `preTradeCheck()`는 바이낸스 BUY를 검토하면서도 `getTotalCapital()`에 국내장/해외장 포지션까지 함께 합산했다.
+  - 그 결과 Binance reserve 계산이 KIS 포지션을 USDT 자본처럼 읽어 `예비금 111298.75 USDT` 같은 비정상 요구치가 생기고, 실주문이 `실잔고 부족 → PAPER 폴백`으로 잘못 내려가고 있었다.
+- [capital-manager.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/capital-manager.js)는 이제 거래소 스코프를 분리한다.
+  - `getAvailableBalance(exchange)`는 바이낸스가 아닌 경우 `0`으로 반환
+  - `getTotalCapital(exchange)`는 해당 거래소 `open positions`만 평가금액에 포함
+  - `preTradeCheck()` / `calculatePositionSize()`도 모두 `exchange` 인자를 넘겨 같은 스코프를 사용
+- 재검증 결과:
+  - `getAvailableBalance('binance') = 521.56`
+  - `getTotalCapital('binance') = 713.46`
+  - `preTradeCheck('ETH/USDT', 'BUY', 15, 'binance', 'normal') => allowed=true`
+- 같은 `ETH/USDT` probe를 다시 실행했을 때는 더 이상 PAPER 폴백이 아니라 LIVE 레일로 들어갔고, 이번엔 다음 경계인 `최대 포지션 도달: 6/6`에서 중단됐다.
+  - 의미: TP/SL 보호 주문 경계를 보기 전, 먼저 자본관리 입력 경계가 복구됐음을 확인했다.
+- 현재 운영 판단:
+  - crypto LIVE 확대 금지 유지
+  - 추가 LIVE probe도 기존 open position을 줄이기 전까지는 불가
+  - 다음 우선순위는 `포지션 6/6` 경계와 오래된 open 포지션 정리 정책 점검
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카

@@ -137,7 +137,8 @@ export async function getAvailableUSDT() {
  * 가용 자본 = USDT 잔고 + 미추적 BTC USD 환산
  * - BTC를 USDT와 동등하게 취급 → preTradeCheck / sizeCalculation 기준
  */
-export async function getAvailableBalance() {
+export async function getAvailableBalance(exchange = null) {
+  if (exchange && exchange !== 'binance') return 0;
   try {
     const [usdt, btcUsd] = await Promise.all([
       getAvailableUSDT(),
@@ -153,10 +154,10 @@ export async function getAvailableBalance() {
 /**
  * 총 자본 = USDT 잔고 + 미추적 BTC + 포지션 평가금액 (avg_price 기준)
  */
-export async function getTotalCapital() {
+export async function getTotalCapital(exchange = null) {
   try {
-    const balance   = await getAvailableBalance();  // USDT + 미추적 BTC
-    const positions = await getOpenPositions();
+    const balance   = await getAvailableBalance(exchange);  // USDT + 미추적 BTC
+    const positions = await getOpenPositions(exchange);
     const posValue  = positions.reduce((s, p) => s + (p.amount || 0) * (p.avg_price || 0), 0);
     return balance + posValue;
   } catch (e) {
@@ -335,13 +336,13 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
 
   // 1. 가용 잔고 (BUY만)
   if (isBuy) {
-    const balance = await getAvailableBalance();
+    const balance = await getAvailableBalance(exchange);
     if (balance < policy.min_order_usdt) {
       return { allowed: false, reason: `잔고 부족: ${balance.toFixed(2)} USDT < 최소 ${policy.min_order_usdt} USDT` };
     }
 
     // 2. 현금 보유 비율
-    const totalCapital    = await getTotalCapital();
+    const totalCapital    = await getTotalCapital(exchange);
     const reserveRequired = totalCapital * policy.reserve_ratio;
     if (balance - estimatedAmount < reserveRequired) {
       return {
@@ -386,8 +387,8 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
  */
 export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, exchange = null) {
   const policy = getCapitalConfig(exchange);
-  const balance      = await getAvailableBalance();
-  const totalCapital = await getTotalCapital();
+  const balance      = await getAvailableBalance(exchange);
+  const totalCapital = await getTotalCapital(exchange);
 
   if (totalCapital <= 0) return { size: 0, skip: true, reason: '총 자본 없음' };
 

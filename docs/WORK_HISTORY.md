@@ -78,6 +78,20 @@
   - `bookedHoursTrendAdjustmentWeight: 0.16 -> 0.22`
 - 해석상 이번 변경은 모델 구조 교체가 아니라, 새 매출 DB 의미에서 예약/이용 선행신호가 실제 매출 변화에 더 크게 반응하도록 보정 강도를 외부화한 단계다.
 - `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` 재실행 기준 `2026-03-24` 예측은 `238,053원`으로 저장됐고, calibration note는 `weekday_bias:+34,912`, `samples:11`로 기록됐다.
+
+## 2026-03-23: 루나 Binance 자본 스코프 경계 복구
+
+- crypto TP/SL probe를 다시 실행하는 과정에서, 기존 `capital-manager`가 바이낸스 reserve 계산에 국내장/해외장 포지션까지 합산하는 입력 경계 버그를 확인했다.
+- `bots/investment/shared/capital-manager.js`
+  - `getAvailableBalance(exchange)`는 바이낸스 이외 거래소에서 `0`을 반환하도록 변경
+  - `getTotalCapital(exchange)`는 해당 거래소 포지션만 평가금액에 포함하도록 변경
+  - `preTradeCheck()`와 `calculatePositionSize()`도 모두 거래소 스코프 기반으로 자본을 계산하도록 정렬
+- 재검증 기준:
+  - `getAvailableBalance('binance') = 521.56`
+  - `getTotalCapital('binance') = 713.46`
+  - `preTradeCheck('ETH/USDT', 'BUY', 15, 'binance', 'normal') => allowed=true`
+- 같은 `ETH/USDT` 소액 LIVE probe는 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않았고, 대신 다음 경계인 `최대 포지션 도달: 6/6`에서 중단됐다.
+- 해석: 이번 단계는 TP/SL 성공률 개선이 아니라, 먼저 Binance 자본관리 레일이 KIS 포지션과 섞이지 않도록 불변식을 복구한 작업이다.
 - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 재확인 기준:
   - `avgMape=33.44`
   - `avgBias=-75,194`

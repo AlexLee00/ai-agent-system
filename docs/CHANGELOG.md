@@ -78,6 +78,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 기존에는 `tp_sl_set=false`만 보여 “왜 실패했는지”를 알기 어려웠고,
   - 이제는 `oco`, `oco_list`, `stop_loss_only`, `failed`와 실제 에러 문자열 기준으로 후속 분석 가능
 
+## 12주차 후속 (2026-03-23) — 루나 Binance 자본 스코프 경계 복구
+
+- `bots/investment/shared/capital-manager.js`
+  - `getAvailableBalance(exchange)`가 바이낸스 외 거래소에서는 `0`을 반환하도록 변경
+  - `getTotalCapital(exchange)`가 해당 거래소 포지션만 평가금액에 포함하도록 변경
+  - `preTradeCheck()`와 `calculatePositionSize()`도 거래소 스코프를 명시적으로 전달하도록 정렬
+- 효과:
+  - 바이낸스 BUY 검토 시 국내장/해외장 포지션을 USDT reserve 계산에 섞어 읽던 경계를 제거
+  - `ETH/USDT` 소액 LIVE probe가 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않고, 다음 경계인 `최대 포지션 도달: 6/6`에서 멈춤을 확인
+
 ## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
 
 - `bots/investment/team/hephaestos.js`
