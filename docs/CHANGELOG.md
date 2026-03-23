@@ -1927,6 +1927,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `pickko-accurate.js`가 픽코 등록 실패 시 `PICKKO_FAILURE_STAGE=...` 마커를 함께 출력하도록 보강되어 `lock/member/date/slot/save/payment` 경계를 로그에서 바로 읽을 수 있게 됨
   - `naver-monitor.js`의 `runPickko()`가 위 실패 단계 마커를 파싱해 `errorReason`과 수동 처리 알림에 `[STAGE_CODE]`, `🧩 실패 단계`를 포함하도록 정리
   - 이를 통해 “재시도는 했지만 계속 실패”를 한 덩어리 `failed`가 아니라 원인 단계별로 읽는 1차 계측 레일을 확보
+ - 블로그
+  - `gems-writer.js`의 일반 포스팅 이어쓰기 경계에 섹션 마커 기반 중복 정리 레이어를 추가
+  - `general_post_continue`가 완성본을 다시 시작하더라도 기존 `# 제목` 감지에만 의존하지 않고, `AI 스니펫 요약`, `승호아빠 인사말`, `본론 섹션 1/2/3`, `함께 읽으면 좋은 글` 등 주요 섹션 마커를 기준으로 중복 append를 차단
+  - 이미 작성된 섹션부터 재시작하면 아직 안 나온 섹션부터 잘라 이어붙이고, 전부 이미 작성된 섹션이면 continuation 전체를 버리도록 보강
 - `scripts/reviews/jay-llm-daily-review.js`
   - `freshness.level / freshness.trust / freshness.summary` 메타를 추가해 live DB와 snapshot fallback 해석 경계를 강화
   - stale snapshot fallback일 때 텍스트 출력에 `운영 신뢰도`와 `참고용 해석` 경고를 함께 노출

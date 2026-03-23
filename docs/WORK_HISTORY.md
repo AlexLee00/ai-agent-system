@@ -4339,6 +4339,14 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/reservation/lib/ska-command-handlers.js`, `bots/reservation/scripts/dashboard-server.js`의 `store_resolution`에 실제 error alert resolve 쿼리를 추가해, `phone/date/start`가 있으면 해당 row만, 없으면 전체 미해결 error alert를 해결 처리한 뒤 RAG를 저장하도록 보강
 - 검증상 `handlers.store_resolution({ phone:'010-4572-0846', date:'2026-04-04', start:'16:30' })`는 이제 `resolved: 0` 또는 실제 해소 건수를 함께 반환하고, unresolved query 결과도 즉시 줄어든다
 
+### 블로 젬스 일반 포스팅 이어쓰기 중복 섹션 방지
+- 블로그 출력 샘플을 점검한 결과, 일부 일반 포스팅은 동일 글 내부에 `AI 스니펫 요약`, `본론 섹션 1/2/3`, `함께 읽으면 좋은 글`이 2회씩 반복돼 있었다
+- 원인은 `bots/blog/lib/gems-writer.js`의 `general_post_continue` 이어쓰기 응답이 완성본을 다시 시작해도, 기존 감지가 `# 제목` 재시작만 막고 본문형 재시작은 놓치던 점이었다
+- `gems-writer.js`에 일반 포스팅 섹션 마커 기반 continuation 정리 레이어를 추가해:
+  - 이미 작성된 섹션부터 다시 시작하면 아직 안 나온 섹션부터만 잘라 이어붙이고
+  - 전부 이미 나온 섹션이면 continuation 전체를 버리도록 보강했다
+- 의미상 이번 수정은 저장 중복 픽스가 아니라 `이어쓰기 append` 경계 복구다
+
 ### 루나 운영 헬스에 암호화폐 LIVE 게이트 통합
 - `bots/investment/scripts/crypto-live-gate-review.js`가 `loadCryptoLiveGateReview()` export를 제공하도록 열어, 단독 CLI이면서도 다른 리포트에서 재사용 가능한 구조로 정리
 - `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다
