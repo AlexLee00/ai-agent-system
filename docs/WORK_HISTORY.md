@@ -4328,6 +4328,11 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `bots/investment/scripts/health-report.js`에도 `kisCapabilityHealth`를 추가해 국내/해외 KIS 계좌 capability를 운영 헬스 JSON과 텍스트에서 함께 노출
 - 이를 통해 force-exit runner 실패를 단순 broker reject로 보지 않고, `시장 시간 / mock capability / 현재 운영 readiness` 경계로 분리해 해석할 수 있게 정리
 
+### 한울 executor 장중/market capability 사전 차단
+- `bots/investment/team/hanul.js`에 `getKisExecutionPreflight()`를 추가해 국내/해외 KIS 실행봇이 주문 API를 호출하기 전 `market closed` 여부를 먼저 차단하도록 보강
+- 국내장은 장외 시간에 `국내주식 장외 시간 ... — 장중에만 주문 실행 가능`, 해외장은 미국 장외 시간에 `해외주식 미국 장외 시간 ... — 장중에만 주문 실행 가능`으로 즉시 실패를 반환한다
+- 해외장은 장중 기준 `mock SELL 제한` 정책을 후속으로 더 얹을 수 있는 구조로 정리해, 시장 시간과 계좌 capability를 executor 레벨에서 분리하기 쉬워졌다
+
 ### 루나 운영 헬스에 암호화폐 LIVE 게이트 통합
 - `bots/investment/scripts/crypto-live-gate-review.js`가 `loadCryptoLiveGateReview()` export를 제공하도록 열어, 단독 CLI이면서도 다른 리포트에서 재사용 가능한 구조로 정리
 - `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다

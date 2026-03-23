@@ -1308,3 +1308,6 @@
 | `node bots/investment/scripts/force-exit-runner.js --symbol=375500 --exchange=kis` | ✅ 국내장 preview에 `LIVE/MOCK`, `장외 시간`, `mock 장중 SELL 가능` 경고가 함께 출력됨 |
 | `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas` | ✅ 해외장 preview에 `LIVE/MOCK`, `mock SELL 제한`, `미국 장외 시간` 경고가 함께 출력됨 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `kisCapabilityHealth.domestic/overseas`와 capability 요약이 JSON에 반영됨 |
+| `node --check bots/investment/team/hanul.js` | ✅ executor preflight 추가 후 문법 통과 |
+| `env PAPER_MODE=false node bots/investment/team/hanul.js --symbol=375500 --action=SELL --amount=444500` | ✅ 국내장 executor가 브로커 호출 전 `장외 시간`을 사전 차단함 |
+| `env PAPER_MODE=false node bots/investment/team/hanul.js --symbol=ORCL --action=SELL --amount=983.4` | ✅ 해외장 executor가 브로커 호출 전 `미국 장외 시간`을 사전 차단함 |
