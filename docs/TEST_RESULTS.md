@@ -29,6 +29,13 @@
 | `node --check bots/investment/shared/trade-journal-db.js` | ✅ `trade_journal.tp_sl_mode / tp_sl_error` 추가 후 문법 통과 |
 | `rg -n "tp_sl_mode|tp_sl_error|buildProtectionSnapshot" bots/investment/team/hephaestos.js bots/investment/shared/trade-journal-db.js` | ✅ 보호 주문 결과 계측 지점과 journal 컬럼 연결 확인 |
 
+### 루나 crypto TP/SL capability-first 정책 반영
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/team/hephaestos.js` | ✅ capability-first 분기(`safeFeatureValue`, `getProtectiveExitCapabilities`) 추가 후 문법 통과 |
+| `rg -n "getProtectiveExitCapabilities|safeFeatureValue|ccxt_stop_loss_only|exchange_stop_loss_only|isStopLossOnlyMode" bots/investment/team/hephaestos.js` | ✅ raw OCO → CCXT stopLossPrice → exchange stop-loss fallback 우선순위와 새 모드 분기 확인 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

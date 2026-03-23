@@ -78,6 +78,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 기존에는 `tp_sl_set=false`만 보여 “왜 실패했는지”를 알기 어려웠고,
   - 이제는 `oco`, `oco_list`, `stop_loss_only`, `failed`와 실제 에러 문자열 기준으로 후속 분석 가능
 
+## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
+
+- `bots/investment/team/hephaestos.js`
+  - `safeFeatureValue()`, `getProtectiveExitCapabilities()` 추가
+  - 보호 주문 우선순위를 `raw OCO -> raw orderListOco -> ccxt stopLossPrice -> exchange stop_loss_limit`으로 정리
+  - `ccxt_stop_loss_only`, `exchange_stop_loss_only` 모드를 journal 추적 축으로 포함
+
 ## 12주차 후속 (2026-03-23) — 스카 shadow canary 편입 경로 추가
 
 - `bots/ska/src/forecast.py`

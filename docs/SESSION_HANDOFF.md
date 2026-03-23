@@ -35,6 +35,22 @@
   2. `stop_loss_only`가 반복되면 브로커 호환/주문 파라미터 경계 점검
   3. domestic/overseas는 `force-exit` 최소 정책 별도 설계
 
+## 2026-03-23 — 루나 crypto TP/SL capability-first 정책 반영
+
+- [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)는 이제 보호 주문에서 `capability-first` 분기를 사용한다.
+  - `safeFeatureValue()` / `getProtectiveExitCapabilities()`로 CCXT capability를 먼저 읽는다.
+  - 우선순위는 다음과 같다.
+    1. raw Binance OCO
+    2. raw Binance `orderListOco`
+    3. CCXT `stopLossPrice` 기반 `ccxt_stop_loss_only`
+    4. exchange-specific `stop_loss_limit` 기반 `exchange_stop_loss_only`
+- 의미:
+  - 기존 raw OCO fallback을 버리지 않고,
+  - 공식 CCXT capability가 보이는 경우에는 표준 stop-loss 경로까지 탐색하도록 정리한 것이다.
+- 현재 운영 판단은 동일하다.
+  - 이 단계는 성공률 개선 실험이 아니라 `공식 우선 + 실패 원인 추적 강화` 단계
+  - crypto LIVE 확대 금지는 그대로 유지
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카

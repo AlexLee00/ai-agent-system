@@ -1,5 +1,5 @@
 {
-  "lastRun": "2026-03-20",
+  "lastRun": "2026-03-23",
   "versions": {
     "@anthropic-ai/sdk": "0.80.0",
     "@modelcontextprotocol/sdk": "1.27.1",
@@ -10,9 +10,9 @@
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 패키지 업데이트와 보안 취약점이 없었습니다. HuggingFace와 arXiv에서 발표된 새로운 기술들이 우리 시스템에 적용 가능성이 높습니다. OpenAI의 인수 소식과 자동화 연구자 개발에 관한 주요 발표가 주목할 만합니다.",
+    "summary": "이번 주에는 OpenAI의 새로운 모델 출시와 도메인 특화 임베딩 모델 구축 방법에 대한 논의가 주목받고 있습니다. 보안 취약점은 발견되지 않았으며, 패키지 업데이트는 필요하지 않습니다. OpenAI의 인수 소식과 자동화 연구자 개발은 향후 기술 발전에 큰 영향을 미칠 것으로 예상됩니다.",
     "patchCount": 0,
     "securityCount": 0,
-    "llmApiCount": 0
+    "llmApiCount": 1
   }
 }
