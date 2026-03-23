@@ -3,6 +3,25 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-24) — 비디오팀 Phase 3 5세트 batch 검증
+
+- `bots/video/scripts/test-phase3-batch.js` 추가
+  - 5세트 샘플에 대해 `scene index -> narration analysis -> sync_map -> step generation -> RED/BLUE -> auto confirm -> EDL -> preview -> reference compare`를 순차 실행
+  - 세트별 timeout `300000ms`, 실패/timeout이어도 다음 세트 계속 진행
+  - 결과를 `bots/video/temp/phase3_batch_report.json`에 저장
+- 실측 결과:
+  - `totalSets=5`
+  - `successfulSets=2`
+  - `skippedSets=3`
+  - `averageAutoConfirmRate=55.0%`
+  - `averageOverall=75.07`
+  - `averageVisualSimilarity=78.97`
+  - `totalRedEvaluations=4`
+  - `totalBlueSuggestions=0`
+- 해석:
+  - 초기 자동화율 KPI는 usable 수준으로 시작했지만, 현재 로컬 런타임에서는 5세트 전량 완주보다 `3세트 timeout skip`이 먼저 병목으로 드러난다.
+  - 품질은 기준선 `75`를 넘겼지만, Phase 2 baseline(`79.00 / 80.41`) 대비 overall/visual은 아직 소폭 낮다.
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Phase 3 과제 F `step-proposal-engine`
 
 - `bots/video/lib/step-proposal-engine.js` 추가

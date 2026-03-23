@@ -68,6 +68,7 @@ const rag         = require(path.join(__dirname, '../../../packages/core/lib/rag
 const { extractDocument } = require(path.join(__dirname, '../../../packages/core/lib/document-parser'));
 const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/core/lib/feedback-rag'));
 const videoApi = require('./routes/video-api');
+const videoStepApi = require('./routes/video-step-api');
 const videoInternalApi = require('./routes/video-internal-api');
 const {
   buildScheduleProposal,
@@ -776,6 +777,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 app.use('/api/video/internal', express.json({ limit: '5mb' }), videoInternalApi);
+app.use('/api/video/steps', requireAuth, videoStepApi);
 app.use('/api/video', requireAuth, videoApi);
 
 // ── 접근 로그 (OWASP) — 모든 라우트 앞에 배치 ─────────────────────
