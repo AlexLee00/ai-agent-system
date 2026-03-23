@@ -36,6 +36,14 @@
 | `node --check bots/investment/team/hephaestos.js` | ✅ capability-first 분기(`safeFeatureValue`, `getProtectiveExitCapabilities`) 추가 후 문법 통과 |
 | `rg -n "getProtectiveExitCapabilities|safeFeatureValue|ccxt_stop_loss_only|exchange_stop_loss_only|isStopLossOnlyMode" bots/investment/team/hephaestos.js` | ✅ raw OCO → CCXT stopLossPrice → exchange stop-loss fallback 우선순위와 새 모드 분기 확인 |
 
+### 루나 Binance 자본 스코프 경계 복구
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/shared/capital-manager.js` | ✅ 거래소 스코프 분리 후 문법 통과 |
+| `node --input-type=module ... getAvailableBalance('binance'), getTotalCapital('binance'), preTradeCheck('ETH/USDT', 'BUY', 15, 'binance', 'normal') ...` | ✅ `binanceBalance=521.56`, `binanceTotalCapital=713.46`, `buyCheck.allowed=true` 확인 |
+| `env PAPER_MODE=false INVESTMENT_TRADE_MODE=normal node bots/investment/team/hephaestos.js --action=BUY --symbol=ETH/USDT --amount=15` | ✅ 더 이상 `실잔고 부족 → PAPER 폴백`으로 내려가지 않고, 이번엔 `최대 포지션 도달: 6/6` 경계에서 중단됨 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |
