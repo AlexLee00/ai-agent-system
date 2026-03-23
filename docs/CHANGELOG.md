@@ -3,6 +3,17 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS 경계 복구 1차
+
+- `bots/worker/web/app/globals.css`
+  - 전역 media reset에서 `video`, `canvas`를 제외하고 `img, svg`만 유지하도록 조정
+- 의미:
+  - worker 공용 전역 CSS가 Twick preview/timeline 캔버스 크기 계산에 간섭할 수 있는 경계를 줄임
+  - 편집기 도메인(`video/canvas`)은 컴포넌트/Twick 내부 스타일이 우선하도록 정리
+- 검증:
+  - `npx next build` 성공
+  - `http://127.0.0.1:4001/`, `/video`, `/video/editor` 모두 `200`
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick React SDK 통합 1차
 
 - `bots/worker/web/app/video/editor/page.js`

@@ -24,7 +24,7 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
   }
-  img, svg, video, canvas {
+  img, svg {
     max-width: 100%;
     height: auto;
   }

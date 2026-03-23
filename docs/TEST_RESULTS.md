@@ -4,6 +4,17 @@
 
 ## 2026-03-23
 
+### 비디오팀 Twick CSS 경계 복구 1차
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/worker/web/app/video/editor/page.js` | ✅ `/video/editor` 테스트 페이지 문법 유지 |
+| `node --check bots/worker/web/components/TwickEditorWrapper.js` | ✅ Twick 래퍼 문법 유지 |
+| `npx next build` (`bots/worker/web`) | ✅ `globals.css` 전역 media reset 축소 후에도 빌드 성공 |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video/editor` | ✅ `200` |
+
 ### 비디오팀 Twick React SDK 통합 1차
 
 | 테스트 | 결과 |

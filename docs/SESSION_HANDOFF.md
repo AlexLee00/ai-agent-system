@@ -9,6 +9,21 @@
 
 ---
 
+## 2026-03-23 — 비디오팀 Twick CSS 경계 복구 1차
+
+- [bots/worker/web/app/globals.css](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/globals.css)의 전역 media reset에서 `video`, `canvas`를 제외했다.
+  - 이전: `img, svg, video, canvas { max-width: 100%; height: auto; }`
+  - 현재: `img, svg { max-width: 100%; height: auto; }`
+- 의미:
+  - worker 공용 전역 CSS가 Twick preview/timeline 캔버스 크기 계산에 간섭할 수 있는 경계를 줄인 단계
+  - 비디오 도메인 렌더는 Twick 내부 스타일과 컴포넌트 레이아웃이 우선하도록 정리
+- 검증:
+  - `npx next build` 성공
+  - `http://127.0.0.1:4001/`, `/video`, `/video/editor` 모두 `200`
+- 남은 리스크:
+  - Twick CSS 자체가 `.flex`, `.text-sm`, `.w-full` 같은 범용 클래스를 정의하므로 `/video/editor` 라우트에서 미세한 shell 스타일 충돌 가능성은 남아 있음
+  - 다음 단계로는 브라우저에서 `/video/editor`를 열어 Header/Sidebar/Twick 타임라인이 함께 정상인지 시각 확인하는 것이 자연스럽다
+
 ## 2026-03-23 — 루나 암호화폐 TP/SL 실패 추적 계측 1차
 
 - 투자 운영 점검 결과, 현재 LIVE 확대 병목은 `entry`보다 `exit / protection` 경계다.
