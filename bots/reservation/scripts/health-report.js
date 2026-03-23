@@ -109,7 +109,14 @@ async function buildDailySummaryIntegrityHealth() {
       const roomTotal = sumRoomAmounts(row.room_amounts_json);
       const pickkoStudyRoom = Number(row.pickko_study_room || 0);
 
-      if (date < todayKst && roomTotal > 0 && pickkoStudyRoom <= 0) {
+      // 당일 row는 09:00 예약현황 보고가 먼저 저장될 수 있어
+      // room_amounts_json만 채워지고 스터디룸 매출 축은 아직 비어 있을 수 있다.
+      // 무결성 경고는 마감 완료된 과거 일자만 대상으로 본다.
+      if (date >= todayKst) {
+        continue;
+      }
+
+      if (roomTotal > 0 && pickkoStudyRoom <= 0) {
         issues.push(`${date}: room_amounts_json ${roomTotal}원인데 pickko_study_room=0`);
         continue;
       }

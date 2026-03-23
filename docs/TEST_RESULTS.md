@@ -31,6 +31,15 @@
 | `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review가 `shadowCompareDays=3`, `shadowBlendReason=shadow_compare_days_insufficient`를 출력하고, 승격 판단도 canary guard 기준으로 정렬됨을 확인 |
 | `node scripts/reviews/ska-sales-forecast-weekly-review.js --json` | ✅ weekly review가 `requiredDays=5`, `shadow canary 비교 데이터 누적 유지`, `availableDays=3`를 일관되게 출력함을 확인 |
 
+### 스카 daily_summary 당일 false warning 경계 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/reservation/scripts/health-report.js` | ✅ 당일 row 예외 처리 추가 후 문법 통과 |
+| `node --input-type=module -e \"... select ... from reservation.daily_summary where date='2026-03-23'\"` | ✅ `total_amount=76500`, `room_amounts_json={A1:31500,A2:21000,B:24000}`, `pickko_study_room=0`, `general_revenue=0` 확인 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `dailySummaryIntegrityHealth.issueCount=0`, `decision.level=hold`, `recommended=false`로 회복 |
+| `node scripts/reviews/daily-ops-report.js --json` | ✅ reservation 팀은 다시 `local fallback 활동 신호` 기준 hold로 읽히고, 스카 `daily_summary` 경고가 active issue에서 빠짐 |
+
 ### 스카 취소 감지 재예약 교차 경계 복구
 
 | 테스트 | 결과 |
