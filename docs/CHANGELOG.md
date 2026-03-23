@@ -37,6 +37,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `collect-kpi.js`, `bots/ska/src/etl.py`, `ska-sales-forecast-daily-review.js`에 합산값 의미 주석/표기 반영
 - `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬
 
+## 12주차 후속 (2026-03-23) — 스카 예측엔진 feature cleanup 1차
+
+- `bots/ska/lib/feature_store.py`
+  - 이미 제거된 `payment_day|study_room` 축을 더 이상 training feature source로 읽지 않도록 정리
+  - 기존 `study_room_payment_*` 컬럼은 학습 스키마 호환용으로만 유지하고 실제 동기화 값은 `0`으로 고정
+  - `total_amount`는 `legacy compatibility / fallback trace` 필드라는 의미를 코드에 명시
+- `docs/SKA_FORECAST_ENGINE_UPDATE_STRATEGY_2026-03-22.md`
+  - target은 유지하고 stale feature cleanup을 우선한다는 전략을 문서에 반영
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`
+  - `revenue_daily`/`training_feature_daily`를 다시 동기화
+  - 샘플 검증 기준 `study_room_payment_*`는 모두 `0`, `study_room_use_*`만 실제 use 축 값을 유지함을 확인
+
 ## 12주차 후속 (2026-03-23) — 스카 재예약 교차 취소 오탐 방지
 
 - `bots/reservation/auto/monitors/naver-monitor.js`
