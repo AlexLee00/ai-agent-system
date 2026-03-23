@@ -63,6 +63,28 @@
 - 샘플 검증(`2026-03-17 ~ 2026-03-23`) 기준 `study_room_payment_count`, `study_room_payment_revenue_raw`, `study_room_payment_a1/a2/b_count`는 모두 `0`으로 들어가고, `study_room_use_count / study_room_use_policy_revenue`만 실제 use 축 값을 유지함을 확인했다.
 - 해석: 이번 단계는 예측 target을 바꾸는 작업이 아니라, 삭제된 매출 축이 feature store에 잔존해 historical/current 데이터 의미가 섞이던 경계를 정리한 것이다.
 
+## 2026-03-23: 스카 예측엔진 bias 보정 2차
+
+- `bots/ska/src/forecast.py`의 보정 강도를 runtime-config 기반으로 승격했다.
+- `bots/ska/src/runtime_config.py`, `bots/ska/lib/runtime-config.js`, `bots/ska/config.json`에 아래 조정값을 추가/반영했다.
+  - `reservationAdjustmentWeight: 0.42 -> 0.55`
+  - `calibrationMaxRatio: 0.12 -> 0.22`
+  - `bookedHoursAdjustmentWeight: 0.30 -> 0.40`
+  - `roomSpreadAdjustmentWeight: 0.20 -> 0.24`
+  - `peakOverlapAdjustmentWeight: 0.18 -> 0.22`
+  - `afternoonPatternAdjustmentWeight: 0.10 -> 0.12`
+  - `eveningPatternAdjustmentWeight: 0.14 -> 0.18`
+  - `reservationTrendAdjustmentWeight: 0.18 -> 0.24`
+  - `bookedHoursTrendAdjustmentWeight: 0.16 -> 0.22`
+- 해석상 이번 변경은 모델 구조 교체가 아니라, 새 매출 DB 의미에서 예약/이용 선행신호가 실제 매출 변화에 더 크게 반응하도록 보정 강도를 외부화한 단계다.
+- `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` 재실행 기준 `2026-03-24` 예측은 `238,053원`으로 저장됐고, calibration note는 `weekday_bias:+34,912`, `samples:11`로 기록됐다.
+- `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 재확인 기준:
+  - `avgMape=33.44`
+  - `avgBias=-75,194`
+  - `hitRate20=41.7%`
+  - shadow `knn-shadow-v1`은 `availableDays=3`, `avgMapeGap=-7.32`, `promotion_candidate`
+- 해석: underprediction은 아직 남아 있지만, 이제 보정 강도는 코드 수정 없이 runtime-config에서 조절 가능해졌고, shadow 앙상블 편입 검토가 현실적인 다음 단계가 됐다.
+
 ## 2026-03-23: 스카 취소 감지 재예약 교차 경계 복구
 
 - `naver-monitor`와 `kiosk-monitor`를 모두 launchd 백그라운드 운영 모드로 다시 복귀시켰다.

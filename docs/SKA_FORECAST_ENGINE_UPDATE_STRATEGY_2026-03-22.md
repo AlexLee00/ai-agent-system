@@ -74,6 +74,7 @@
 - 지금 당장 필요한 구조
   - 기존 모델을 즉시 폐기하지 않음
   - ETL/feature store 갱신 후 최근 구간 예측/리뷰를 다시 돌려 drift 여부를 관찰
+  - bias tuning은 우선 `runtime_config` 기반 조정으로 수행하고, 모델 구조 변경은 후순위로 둔다.
 - 나중에 확장할 구조
   - source version별 forecast accuracy 비교
   - 멀티워크스페이스 확장 시 workspace별 revenue policy 분기
