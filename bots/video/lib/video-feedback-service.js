@@ -28,6 +28,10 @@ const SCHEMA = 'video';
 const SOURCE_REF_TYPE = 'edit_step';
 const SOURCE_BOT = 'video-feedback';
 const FLOW_CODE = 'video_edit';
+const VIDEO_FEEDBACK_STATUSES = {
+  ...FEEDBACK_STATUSES,
+  ARCHIVED: 'archived',
+};
 
 function createVideoSchemaAdapter() {
   return {
@@ -116,6 +120,65 @@ async function getVideoFeedbackSessionById(sessionId) {
     schema: SCHEMA,
     id: sessionId,
   });
+}
+
+async function refreshVideoStepFeedbackSession({
+  sessionId,
+  originalSnapshot,
+  aiOutputType = 'step_proposal',
+  actionCode,
+}) {
+  const session = await getFeedbackSessionById(videoFeedbackPool, {
+    schema: SCHEMA,
+    id: sessionId,
+  });
+  if (!session) {
+    throw new Error(`feedback_session_id=${sessionId} 를 찾을 수 없습니다.`);
+  }
+
+  await updateFeedbackSession(videoFeedbackPool, {
+    schema: SCHEMA,
+    sessionId,
+    patch: {
+      feedbackStatus: VIDEO_FEEDBACK_STATUSES.ARCHIVED,
+    },
+  });
+
+  const nextSession = await createFeedbackSession(videoFeedbackPool, {
+    schema: SCHEMA,
+    session: {
+      companyId: session.company_id || null,
+      userId: session.user_id || null,
+      sourceType: session.source_type,
+      sourceRefType: session.source_ref_type,
+      sourceRefId: session.source_ref_id,
+      flowCode: session.flow_code,
+      actionCode: actionCode || session.action_code,
+      proposalId: session.proposal_id || null,
+      aiInputText: session.ai_input_text || null,
+      aiInputPayload: session.ai_input_payload || {},
+      aiOutputType: aiOutputType || session.ai_output_type,
+      originalSnapshot,
+      feedbackStatus: FEEDBACK_STATUSES.PENDING,
+      acceptedWithoutEdit: false,
+      submittedSnapshot: null,
+    },
+  });
+
+  await addFeedbackEvent(videoFeedbackPool, {
+    schema: SCHEMA,
+    event: {
+      feedbackSessionId: nextSession.id,
+      eventType: FEEDBACK_EVENT_TYPES.PROPOSAL_GENERATED,
+      afterValue: originalSnapshot,
+      eventMeta: {
+        regenerated_from: sessionId,
+        previous_status: session.feedback_status,
+      },
+    },
+  });
+
+  return nextSession;
 }
 
 async function recordVideoFeedbackEdits({
@@ -263,6 +326,7 @@ module.exports = {
   createVideoStepFeedbackSession,
   getVideoFeedbackSessionForStep,
   getVideoFeedbackSessionById,
+  refreshVideoStepFeedbackSession,
   recordVideoFeedbackEdits,
   replaceVideoFeedbackEdits,
   markVideoFeedbackConfirmed,

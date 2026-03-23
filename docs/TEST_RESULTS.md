@@ -2,6 +2,16 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-24
+
+### 비디오팀 Phase 3 5세트 batch 검증
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/scripts/test-phase3-batch.js` | ✅ Phase 3 batch 스크립트 문법 통과 |
+| `node bots/video/scripts/test-phase3-batch.js --title=파라미터 --json` | ✅ 단일 세트 sanity check 기준 `autoConfirmRate=60.0%`, `overall=76.88`, `visual_similarity=80.90` 확인 |
+| `node bots/video/scripts/test-phase3-batch.js --json` | ✅ `bots/video/temp/phase3_batch_report.json` 생성, `successfulSets=2`, `skippedSets=3`, `averageAutoConfirmRate=55.0%`, `averageOverall=75.07`, `averageVisualSimilarity=78.97` 확인 |
+
 ## 2026-03-23
 
 ### 비디오팀 Phase 3 과제 F `step-proposal-engine`

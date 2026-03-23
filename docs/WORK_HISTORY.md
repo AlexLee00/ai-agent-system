@@ -4,6 +4,19 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-24: 비디오팀 Phase 3 5세트 batch 검증
+
+- `bots/video/scripts/test-phase3-batch.js`를 추가해 Phase 3 전체 파이프라인을 5세트 샘플 기준으로 자동 검증할 수 있게 했다.
+- 실행 흐름은 `scene-indexer -> narration-analyzer -> buildSyncMap -> generateSteps -> attachRedEvaluation -> attachBlueAlternative -> auto confirm -> stepsToSyncMap -> syncMapToEDL -> renderPreview -> compareVideos` 순서다.
+- 실측 결과:
+  - `successfulSets=2/5`
+  - `skippedSets=3/5` (`300000ms` timeout)
+  - `averageAutoConfirmRate=55.0%`
+  - `averageOverall=75.07`
+  - `averageVisualSimilarity=78.97`
+  - `RED=4`, `BLUE=0`
+- 해석: 이번 단계는 Phase 3 UI 기능 추가가 아니라, accepted_without_edit와 품질 비교를 함께 측정하는 운영 검증 레일을 닫은 작업이다. 현재 병목은 편집 품질 자체보다 장시간 세트에서의 timeout이다.
+
 ## 2026-03-23: 비디오팀 Phase 3 과제 F `step-proposal-engine`
 
 - `bots/video/lib/step-proposal-engine.js`를 추가해 `sync_map.matches`를 개별 편집 스텝으로 변환하는 Phase 3 엔진을 붙였다.
