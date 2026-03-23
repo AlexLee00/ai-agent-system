@@ -4,6 +4,12 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-23: 비디오팀 Twick CSS 경계 복구 1차
+
+- `bots/worker/web/app/globals.css`의 전역 media reset에서 `video, canvas`를 제거하고 `img, svg`만 유지하도록 축소했다.
+- 해석: 이번 수정은 새 기능 추가가 아니라, worker 공용 스타일이 Twick preview/timeline 캔버스에 간섭할 수 있는 입력 경계를 복구한 단계다.
+- `npx next build`와 live route 검증 기준 `http://127.0.0.1:4001/`, `/video`, `/video/editor`가 모두 `200`으로 유지됨을 확인했다.
+
 ## 2026-03-23: 비디오팀 Twick React SDK 통합 1차 / worker-web 빌드 경계 복구
 
 - `bots/worker/web/app/video/editor/page.js`와 `components/TwickEditorWrapper.js`를 연결해 Twick 테스트 페이지를 worker-web에 붙였다.
