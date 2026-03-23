@@ -51,6 +51,18 @@
 - 해석: 합산 로직 자체는 유지하지만, payment 축 일반매출과 use 축 스터디룸매출을 운영자에게 숨기지 않고 드러내는 방향으로 표시층을 정리한 단계다.
 - 후속으로 `ska-sales-forecast-weekly-review.js`, `export-ska-sales-csv.js`, `health-report.js`도 같은 용어 체계로 정렬했다.
 
+## 2026-03-23: 스카 예측엔진 feature cleanup 1차
+
+- `bots/ska/lib/feature_store.py`에서 예측 feature source를 다시 점검했다.
+- 이미 운영 DB에서 제거된 `payment_day|study_room` 축을 더 이상 training feature source로 읽지 않도록 정리했다.
+  - 기존 `study_room_payment_*` 컬럼은 스키마 호환용으로만 유지
+  - 실제 동기화 시 값은 항상 `0`으로 고정
+- `total_amount`는 예측 target source가 아니라 `legacy compatibility / fallback trace` 필드로만 취급하도록 코드/전략 문서에 의미를 명시했다.
+- `bots/ska/venv/bin/python bots/ska/src/etl.py --days=365`를 다시 실행해 `revenue_daily`와 `training_feature_daily`를 재동기화했다.
+  - 결과: `174건 upsert`, `training_feature_daily 365행 대상 동기화`
+- 샘플 검증(`2026-03-17 ~ 2026-03-23`) 기준 `study_room_payment_count`, `study_room_payment_revenue_raw`, `study_room_payment_a1/a2/b_count`는 모두 `0`으로 들어가고, `study_room_use_count / study_room_use_policy_revenue`만 실제 use 축 값을 유지함을 확인했다.
+- 해석: 이번 단계는 예측 target을 바꾸는 작업이 아니라, 삭제된 매출 축이 feature store에 잔존해 historical/current 데이터 의미가 섞이던 경계를 정리한 것이다.
+
 ## 2026-03-23: 스카 취소 감지 재예약 교차 경계 복구
 
 - `naver-monitor`와 `kiosk-monitor`를 모두 launchd 백그라운드 운영 모드로 다시 복귀시켰다.

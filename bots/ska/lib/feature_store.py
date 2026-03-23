@@ -258,20 +258,6 @@ def sync_training_feature_store(con, days=365, end_date=None):
               AND por.order_kind = 'general'
             GROUP BY por.source_date
         ),
-        pickko_room_payment_agg AS (
-            SELECT
-                source_date AS date,
-                COUNT(*) AS study_room_payment_count,
-                COALESCE(SUM(raw_amount), 0) AS study_room_payment_revenue_raw,
-                COUNT(*) FILTER (WHERE room_type = 'A1') AS study_room_payment_a1_count,
-                COUNT(*) FILTER (WHERE room_type = 'A2') AS study_room_payment_a2_count,
-                COUNT(*) FILTER (WHERE room_type = 'B') AS study_room_payment_b_count
-            FROM reservation.pickko_order_raw por
-            WHERE por.source_date >= (SELECT anchor_date FROM params) - ((SELECT days_window FROM params) - 1)
-              AND por.source_axis = 'payment_day'
-              AND por.order_kind = 'study_room'
-            GROUP BY por.source_date
-        ),
         pickko_room_use_agg AS (
             SELECT
                 source_date AS date,
@@ -325,6 +311,10 @@ def sync_training_feature_store(con, days=365, end_date=None):
             SELECT
                 ds.date,
                 rd.actual_revenue AS target_revenue,
+                -- total_amount는 legacy compatibility / fallback trace 용도다.
+                -- 현재 스카 예측 target의 source of truth는 actual_revenue,
+                -- reservation_general_revenue(payment_day|general),
+                -- pickko_study_room(use_day|study_room) 조합이다.
                 rds.total_amount,
                 rds.pickko_study_room,
                 rds.general_revenue AS reservation_general_revenue,
@@ -353,11 +343,13 @@ def sync_training_feature_store(con, days=365, end_date=None):
                 COALESCE(pgpa.general_ticket_single_count, 0) AS general_ticket_single_count,
                 COALESCE(pgpa.general_ticket_hourpack_count, 0) AS general_ticket_hourpack_count,
                 COALESCE(pgpa.general_ticket_period_count, 0) AS general_ticket_period_count,
-                COALESCE(prpa.study_room_payment_count, 0) AS study_room_payment_count,
-                COALESCE(prpa.study_room_payment_revenue_raw, 0) AS study_room_payment_revenue_raw,
-                COALESCE(prpa.study_room_payment_a1_count, 0) AS study_room_payment_a1_count,
-                COALESCE(prpa.study_room_payment_a2_count, 0) AS study_room_payment_a2_count,
-                COALESCE(prpa.study_room_payment_b_count, 0) AS study_room_payment_b_count,
+                -- payment_day|study_room 축은 운영 DB에서 제거되었다.
+                -- 학습 스키마 호환을 위해 컬럼은 유지하되 항상 0으로 고정한다.
+                0 AS study_room_payment_count,
+                0 AS study_room_payment_revenue_raw,
+                0 AS study_room_payment_a1_count,
+                0 AS study_room_payment_a2_count,
+                0 AS study_room_payment_b_count,
                 COALESCE(prua.study_room_use_count, 0) AS study_room_use_count,
                 COALESCE(prua.study_room_use_policy_revenue, 0) AS study_room_use_policy_revenue,
                 COALESCE(prua.study_room_use_booked_hours, 0.0) AS study_room_use_booked_hours,
@@ -463,8 +455,6 @@ def sync_training_feature_store(con, days=365, end_date=None):
               ON ro.date = ds.date
             LEFT JOIN pickko_general_payment_agg pgpa
               ON pgpa.date = ds.date
-            LEFT JOIN pickko_room_payment_agg prpa
-              ON prpa.date = ds.date
             LEFT JOIN pickko_room_use_agg prua
               ON prua.date = ds.date
         )
