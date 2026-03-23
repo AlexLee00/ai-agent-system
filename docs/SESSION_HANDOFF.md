@@ -9,6 +9,24 @@
 
 ---
 
+## 2026-03-23 — 비디오팀 Phase 3 과제 F `step-proposal-engine`
+
+- [step-proposal-engine.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/step-proposal-engine.js)를 추가했다.
+  - `generateSteps(syncMap, config, options)`
+  - `attachRedEvaluation(steps, config)`
+  - `attachBlueAlternative(steps, sceneIndex, config)`
+  - `applyUserAction(steps, stepIndex, action, modification)`
+  - `stepsToSyncMap(steps)`
+  - `saveSteps/loadSteps`
+- [video-config.yaml](/Users/alexlee/projects/ai-agent-system/bots/video/config/video-config.yaml)에 `step_proposal` 섹션을 추가했다.
+- 의미:
+  - Phase 2의 `sync_map`를 Phase 3의 편집 스텝 원장으로 바꾸는 핵심 백엔드 레이어가 열렸다.
+  - 이후 Twick UI와 `video-step-api`는 이 `steps[]`를 기준으로 사용자 판단/피드백을 붙이면 된다.
+- 검증:
+  - `node --check bots/video/lib/step-proposal-engine.js` 성공
+  - temp에 실산출 `sync_map.json`은 없어서 더미 `sync_map` 기준 `generateSteps`/`stepsToSyncMap` 검증 수행
+  - intro/outro 포함 `4`스텝 생성, 역변환 시 `matches` 수 일치 확인
+
 ## 2026-03-23 — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`의 `@twick/video-editor/dist/video-editor.css` 전역 import를 제거했다.

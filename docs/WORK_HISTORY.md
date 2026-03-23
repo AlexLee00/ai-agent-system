@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-23: 비디오팀 Phase 3 과제 F `step-proposal-engine`
+
+- `bots/video/lib/step-proposal-engine.js`를 추가해 `sync_map.matches`를 개별 편집 스텝으로 변환하는 Phase 3 엔진을 붙였다.
+- confidence 정규화, `auto_confirm` 분기, RED 평가/BLUE 대안 확장 지점, 사용자 액션 적용, `stepsToSyncMap` 역변환까지 한 파일에 정리했다.
+- `bots/video/config/video-config.yaml`에 `step_proposal` 섹션을 추가해 자동 승인/RED/BLUE 기준을 config에서 읽도록 맞췄다.
+- 해석: 이번 단계는 Twick UI 구현이 아니라, Phase 2 자동 편집 결과를 “스텝별 제안 → 사용자 판단 → EDL 재조립” 흐름으로 바꾸는 백엔드 원장 레이어를 연 것이다.
+
 ## 2026-03-23: 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`가 `@twick/video-editor/dist/video-editor.css`를 전역 import하던 구조를 제거했다.
