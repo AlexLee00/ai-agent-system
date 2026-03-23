@@ -34,6 +34,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - Phase 3에서 스텝별 사용자 판단/수정 이력을 `accepted_without_edit`까지 포함해 누적하는 피드백 원장 레이어 추가
   - `packages/core`를 수정하지 않고도 `video.*` 스키마를 쓰도록 로컬 어댑터 경계 복구
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Phase 3 과제 F confidence 문자열 경계 복구
+
+- `bots/video/lib/step-proposal-engine.js`
+  - `normalizeConfidence()`가 문자열 `match_score` (`high` / `medium` / `low`)를 올바르게 0~1 confidence로 해석하도록 수정
+  - `buildSyncProposal()`가 비숫자 `match_score`를 `0`으로 덮어쓰지 않고
+    - `match_score`에는 정규화된 수치값
+    - `match_score_raw`에는 원본 문자열값
+    을 함께 보존하도록 보강
+- 의미:
+  - 자동 승인/수동 검토 분류가 문자열 점수 입력에서도 안정적으로 유지
+  - 사용자가 `confirm`만 해도 proposal/final 단계에서 원본 confidence 의미가 손실되지 않음
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `bots/worker/web/app/video/editor/page.js`

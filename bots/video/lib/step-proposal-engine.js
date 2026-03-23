@@ -32,15 +32,18 @@ function resolveStepConfig(config) {
 }
 
 function normalizeConfidence(match = {}) {
+  const labelMap = { high: 0.85, medium: 0.6, low: 0.3 };
   if (typeof match.match_score === 'number') {
     return clamp01(match.match_score, 0.5);
   }
-
-  const map = { high: 0.85, medium: 0.6, low: 0.3 };
-  if (typeof match.confidence === 'string' && map[match.confidence]) {
-    return map[match.confidence];
+  if (typeof match.match_score === 'string' && labelMap[match.match_score]) {
+    return labelMap[match.match_score];
   }
-  return map[match.match_type === 'hold' ? 'low' : 'medium'] || 0.5;
+
+  if (typeof match.confidence === 'string' && labelMap[match.confidence]) {
+    return labelMap[match.confidence];
+  }
+  return labelMap[match.match_type === 'hold' ? 'low' : 'medium'] || 0.5;
 }
 
 function inferProviderFromModel(model) {
@@ -97,12 +100,17 @@ function buildReason(match = {}) {
 }
 
 function buildSyncProposal(match = {}) {
+  const normalizedConfidence = normalizeConfidence(match);
+  const rawMatchScore = match.match_score;
   return {
     segment_id: match.segment_id,
     narration: match.narration || null,
     source: match.source || null,
     match_type: match.match_type || 'sync_match',
-    match_score: Number(match.match_score || 0),
+    match_score: typeof rawMatchScore === 'number'
+      ? clamp01(rawMatchScore, normalizedConfidence)
+      : normalizedConfidence,
+    match_score_raw: rawMatchScore ?? null,
     overlap_keywords: ensureArray(match.overlap_keywords),
     speed_factor: Number(match.speed_factor || 1),
     hold_from_segment_id: match.hold_from_segment_id || null,
