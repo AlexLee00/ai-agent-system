@@ -242,6 +242,16 @@
   - `log-jay-gateway-experiment.js`와 `jay-gateway-experiment-daily.js`는 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장으로 계속 기록을 남긴다.
   - `jay-llm-daily-review.js`는 DB 접근 실패 시에도 `session_usage_fallback` 기준 모델별 사용량을 유지하고, `dbStatsStatus=partial`, `dbSourceErrors`, `dbSourceStatus`를 함께 노출해 현재 실행 컨텍스트 제한과 실제 DB 장애를 더 명확히 구분한다.
   - `jay-llm-daily-review.js`는 DB 읽기가 가능한 실행 컨텍스트에서는 `tmp/jay-llm-daily-review-db-snapshot.json`에 최근 DB 집계를 저장하고, 이후 DB 접근이 막혀도 snapshot fallback으로 리뷰를 계속 유지하도록 보강됐다.
+  - 2026-03-23 운영 조정으로 `~/.openclaw/openclaw.json`의 `agents.defaults.heartbeat.every`를 `30m -> 60m`으로 완화했고, `ai.openclaw.gateway`를 launchd 운영모드에서 재기동했다. 현재 live health는 `hold / recommended=false`, `gateway PID=34576`으로 정상이다.
+  - 이번 조정의 목적은 모델 교체가 아니라 `30분 cadence heartbeat -> embedded run -> 동일 runId 4회 retry burst` 패턴 완화다. 현재 `maxConcurrent=1`, `subagents.maxConcurrent=2`, ready fallback만 남아 있어 1차 병목은 concurrency나 fallback보다 heartbeat pacing으로 본다.
+  - 다음 자동화 리포트 체크리스트:
+    - `jay-gateway-experiment-review.js`: `activeRateLimitCount`, `embeddedRetryBurstCount`, `postRestartRateLimitCount`, `postRestartRetryBurstCount` 감소 여부 확인
+    - `daily-ops-report.js`: gateway 권고가 여전히 `compare`인지, live 장애가 아니라 historical pressure인지 확인
+    - `gateway.log` / `gateway.err.log`: `google tool schema snapshot` cadence가 실제 `60분`으로 늘었는지, 같은 `runId` 4회 재시도 묶음이 줄었는지 확인
+  - 다음 판정 기준:
+    - `hold 유지`: live 정상, `activeRateLimitCount=0`, retry burst 감소
+    - `compare 유지`: live 정상이나 누적 pressure 지속
+    - `2차 조정`: active rate limit 재발 또는 burst 유지 시 내부 retry spacing/count 추가 점검
 - 스카
   - `ska-sales-forecast-daily-review.js`는 `requestedDays / effectiveDays`와 `actionItems`를 제공해 일일/주간 리포트 해석 규칙을 맞췄다.
   - `ska-sales-forecast-weekly-review.js`도 `requestedDays / effectiveDays`와 `actionItems`를 제공해 일일/주간 리포트 해석 규칙을 맞췄다.
