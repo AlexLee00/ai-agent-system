@@ -1898,6 +1898,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `health-report.js`가 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 직접 노출하고, 운영 판단에 LIVE 게이트 blocked 사유를 포함하도록 보강
   - `force-exit-runner.js`가 KIS force-exit preview/execute 전에 `accountMode / executionMode / marketStatus / capability`를 계산하는 capability preflight를 추가해 국내장 mock 장중 전용, 해외장 mock SELL 제한 상태를 명시적으로 출력하도록 보강
   - `health-report.js`에 `kisCapabilityHealth` 섹션을 추가해 KIS 국내/해외 계좌 모드와 현재 SELL 가능 범위를 운영 헬스에서 직접 읽게 정리
+  - `hanul.js`가 이제 국내/해외 KIS 주문을 브로커에 보내기 전에 장중 여부를 먼저 검사해, 장외 시간에는 broker reject 대신 executor 레벨에서 즉시 차단하도록 보강
 - LLM selector / speed test
   - `speed-test.js`가 모든 모델 실패와 snapshot 저장 실패를 실제 non-zero exit로 처리하도록 보강해 selector speed 자동화의 false success를 제거
   - Gemini speed test 요청은 모델별 thinking budget을 분기해 `gemini-2.5-pro`의 `thinking_budget=0` 오류를 해소

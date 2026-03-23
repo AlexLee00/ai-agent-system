@@ -810,6 +810,13 @@
 - `bots/investment/scripts/health-report.js`에도 `kisCapabilityHealth` 섹션을 추가해 국내/해외 KIS 계좌 모드와 현재 SELL 가능 범위를 운영 헬스에서 바로 읽게 했다.
 - 현재 자연스러운 다음 단계는 force-exit 확대가 아니라 `KIS capability`를 전제로 stale 포지션 정리 우선순위를 다시 읽는 것이다. 국내장은 장중에만 검증 가능하고, 해외장은 여전히 preview 중심으로 본다.
 
+## 2026-03-23 — 한울 executor 장중/market capability 사전 차단
+
+- `bots/investment/team/hanul.js`에도 KIS 실행 사전 차단을 추가했다. 이제 runner preview가 아니라 executor 본체도 국내/해외 장중 여부를 먼저 확인한 뒤 주문 API를 치기 전 실패를 반환한다.
+- 국내장 `SELL/BUY`는 `getKisMarketStatus()` 기준으로 장외 시간에 즉시 `국내주식 장외 시간 ... — 장중에만 주문 실행 가능`으로 차단된다.
+- 해외장은 `getKisOverseasMarketStatus()` 기준 장외 시간 차단을 먼저 적용하고, 이후 장중에는 mock SELL 제한 정책을 추가로 적용할 수 있는 구조로 정리했다.
+- 목적은 broker reject를 사후 해석하는 것이 아니라, 장시간/시장 readiness 불변식을 실행 레일 안에서 먼저 보장하는 것이다.
+
 ## 2026-03-22 — 루나 암호화폐 재진입 차단 코드 세분화
 
 - `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리했다.

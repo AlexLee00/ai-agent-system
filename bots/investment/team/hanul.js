@@ -23,7 +23,13 @@
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 import * as journalDb from '../shared/trade-journal-db.js';
-import { loadSecrets, isPaperMode, isKisPaper, getInvestmentTradeMode } from '../shared/secrets.js';
+import {
+  isPaperMode,
+  isKisPaper,
+  getInvestmentTradeMode,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+} from '../shared/secrets.js';
 import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
@@ -107,6 +113,37 @@ async function markSignalFailedDetailed(signalId, {
       error: error ? String(error).slice(0, 240) : null,
     },
   }).catch(() => {});
+}
+
+async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.HOLD }) {
+  if (market === 'domestic') {
+    const status = await getKisMarketStatus();
+    if (!status.isOpen) {
+      return {
+        ok: false,
+        reason: `국내주식 ${status.reason} — 장중에만 주문 실행 가능`,
+        code: 'market_closed',
+      };
+    }
+    return { ok: true };
+  }
+
+  const status = getKisOverseasMarketStatus();
+  if (!status.isOpen) {
+    return {
+      ok: false,
+      reason: `해외주식 ${status.reason} — 장중에만 주문 실행 가능`,
+      code: 'market_closed',
+    };
+  }
+  if (isKisPaper() && action === ACTIONS.SELL) {
+    return {
+      ok: false,
+      reason: '해외주식 mock 계좌 SELL은 현재 운영 기준에서 미지원 또는 제한 상태',
+      code: 'mock_operation_unsupported',
+    };
+  }
+  return { ok: true };
 }
 
 async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason) {
@@ -278,6 +315,20 @@ export async function executeSignal(signal) {
   console.log(`\n⚡ [한울] ${symbol} ${action} ${amountKrw?.toLocaleString()}원 ${tag}`);
 
   try {
+    const preflight = await getKisExecutionPreflight({ market: 'domestic', action });
+    if (!preflight.ok) {
+      console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
+      await markSignalFailedDetailed(signalId, {
+        reason: preflight.reason,
+        code: preflight.code,
+        market: 'domestic',
+        symbol,
+        action,
+        amount: amountKrw,
+      });
+      return { success: false, reason: preflight.reason };
+    }
+
     const risk = await checkKisRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
@@ -494,6 +545,20 @@ export async function executeOverseasSignal(signal) {
   console.log(`\n⚡ [한울] 해외 ${symbol} ${action} $${amountUsd} ${tag}`);
 
   try {
+    const preflight = await getKisExecutionPreflight({ market: 'overseas', action });
+    if (!preflight.ok) {
+      console.log(`  ⛔ 실행 사전 차단: ${preflight.reason}`);
+      await markSignalFailedDetailed(signalId, {
+        reason: preflight.reason,
+        code: preflight.code,
+        market: 'overseas',
+        symbol,
+        action,
+        amount: amountUsd,
+      });
+      return { success: false, reason: preflight.reason };
+    }
+
     const risk = await checkKisOverseasRisk(signal);
     if (!risk.approved) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
