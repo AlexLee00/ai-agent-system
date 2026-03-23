@@ -18,7 +18,7 @@
 
 ### P1. 제이/OpenClaw gateway rate limit + retry burst
 
-- 상태: **1차 안정화 완료, 관찰 필요**
+- 상태: **1차 안정화 완료, heartbeat 완화 후 관찰 필요**
 - 근거:
   - `scripts/reviews/jay-gateway-experiment-daily.js`
   - 최신 스냅샷 기준 `rate limit=76`, `active rate limit=33`
@@ -27,12 +27,14 @@
   - fallback chain을 ready provider만 남도록 `11 -> 4`로 정리
   - `maxConcurrent=1`, `subagents.maxConcurrent=2`로 보수화
   - `ai.openclaw.gateway` 재기동 완료
+  - `~/.openclaw/openclaw.json`의 `agents.defaults.heartbeat.every`를 `30m -> 60m`으로 완화
   - gateway 실험 리포트에 `마지막 gateway 재기동 이후` 창을 추가해 과거 24시간 노이즈와 현재 상태를 분리
 - 의미:
   - 미준비 fallback이 복구 경로를 오염시키던 문제는 해소
-  - 남은 진짜 병목은 `Gemini rate limit` 이후 동일 run 재시도 burst
+  - 남은 진짜 병목은 `Gemini rate limit` 이후 동일 run 재시도 burst와 `30분 cadence heartbeat -> embedded run` 결합 여부
 - 지금 당장 필요한 구조:
-  - post-prune / post-tune 창에서 `provider auth missing`, `retry burst` 감소 여부 관찰
+  - 다음 자동화 리포트에서 `activeRateLimitCount`, `embeddedRetryBurstCount`, `postRestartRateLimitCount`, `postRestartRetryBurstCount` 감소 여부 확인
+  - `gateway.log`에서 `google tool schema snapshot` cadence가 실제 `60분`으로 늘었는지 확인
   - `main` / `session:*` lane 동시 버스트를 분리 해석
 - 나중에 확장할 구조:
   - provider `registered / ready / cooldown / disabled` 공통 계약
@@ -134,19 +136,21 @@
     - pickko cancel
   전체 확인
 
-### 제이 gateway post-prune 관찰
+### 제이 gateway post-prune / post-heartbeat 관찰
 
-- 상태: **1차 관찰 성공**
+- 상태: **1차 관찰 성공, 2차 관찰 대기**
 - 기준점:
   - fallback `11 -> 4`
   - `ready fallback=4`, `unready fallback=0`
   - concurrency `2/4 -> 1/2`
+  - heartbeat `30m -> 60m`
 - 최신 관찰:
   - `log-jay-gateway-experiment.js` 기준 `마지막 gateway 재기동 이후: rate limit 0건 / auth missing 0건 / retry burst 0건`
 - 다음 관찰:
   - 새 트래픽이 더 쌓였을 때도 post-restart 창이 낮게 유지되는지 확인
-  - rolling 24시간 창이 자연히 내려오는지 확인
-  - 다시 높아지면 upstream rate-limit 또는 backoff 설계 재검토
+  - rolling 24시간 창과 `activeRateLimitCount`가 함께 내려오는지 확인
+  - `google tool schema snapshot`가 실제 `60분 cadence`로 바뀌었는지 확인
+  - 다시 높아지면 upstream rate-limit 또는 internal retry/backoff 설계 재검토
 
 ### 비디오 quality score
 
@@ -178,7 +182,7 @@
 
 ## 5. 다음 자연스러운 작업 순서
 
-1. 제이 gateway post-prune 관찰 창에서 `retry burst` 감소 여부 확인
+1. 제이 gateway post-prune / post-heartbeat 관찰 창에서 `retry burst`, `active rate limit`, `60분 cadence` 감소 여부 확인
 2. 스카 취소 상위 응답 레이어 실전 관찰
 3. 스카 `daily_summary` 별도 채팅 진행 상황 확인
 4. 비디오 preview/quality 원장화
