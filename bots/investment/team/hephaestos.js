@@ -105,6 +105,33 @@ function extractOcoOrderIds(ocoResponse) {
   return { tpOrderId, slOrderId };
 }
 
+function safeFeatureValue(ex, symbol, method, feature) {
+  try {
+    if (typeof ex.featureValue === 'function') {
+      return ex.featureValue(symbol, method, feature);
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function getProtectiveExitCapabilities(ex, symbol) {
+  const stopLossPrice = safeFeatureValue(ex, symbol, 'createOrder', 'stopLossPrice');
+  const stopLoss = safeFeatureValue(ex, symbol, 'createOrder', 'stopLoss');
+  const takeProfitPrice = safeFeatureValue(ex, symbol, 'createOrder', 'takeProfitPrice');
+  const takeProfit = safeFeatureValue(ex, symbol, 'createOrder', 'takeProfit');
+
+  return {
+    rawOco: typeof ex.privatePostOrderOco === 'function',
+    rawOrderListOco: typeof ex.privatePostOrderListOco === 'function',
+    ccxtStopLossPrice: Boolean(stopLossPrice),
+    ccxtStopLossObject: Boolean(stopLoss),
+    ccxtTakeProfitPrice: Boolean(takeProfitPrice),
+    ccxtTakeProfitObject: Boolean(takeProfit),
+  };
+}
+
 async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
   const ex = getExchange();
   const marketId = symbol.replace('/', '');
@@ -113,8 +140,9 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
   const sl = ex.priceToPrecision(symbol, slPrice);
   const slLimit = ex.priceToPrecision(symbol, slPrice * 0.999);
   const errors = [];
+  const capabilities = getProtectiveExitCapabilities(ex, symbol);
 
-  if (typeof ex.privatePostOrderOco === 'function') {
+  if (capabilities.rawOco) {
     try {
       const response = await ex.privatePostOrderOco({
         symbol: marketId,
@@ -131,7 +159,7 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
     }
   }
 
-  if (typeof ex.privatePostOrderListOco === 'function') {
+  if (capabilities.rawOrderListOco) {
     try {
       const response = await ex.privatePostOrderListOco({
         symbol: marketId,
@@ -150,6 +178,24 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
     }
   }
 
+  if (capabilities.ccxtStopLossPrice) {
+    try {
+      const stopOrder = await ex.createOrder(symbol, 'limit', 'sell', quantity, slLimit, {
+        stopLossPrice: sl,
+        timeInForce: 'GTC',
+      });
+      return {
+        ok: false,
+        mode: 'ccxt_stop_loss_only',
+        tpOrderId: null,
+        slOrderId: extractOrderId(stopOrder),
+        error: errors.join(' | ') || null,
+      };
+    } catch (error) {
+      errors.push(`ccxtStopLossPrice:${error.message}`);
+    }
+  }
+
   try {
     const stopOrder = await ex.createOrder(symbol, 'stop_loss_limit', 'sell', quantity, slLimit, {
       stopPrice: sl,
@@ -157,7 +203,7 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
     });
     return {
       ok: false,
-      mode: 'stop_loss_only',
+      mode: 'exchange_stop_loss_only',
       tpOrderId: null,
       slOrderId: extractOrderId(stopOrder),
       error: errors.join(' | ') || null,
@@ -171,7 +217,7 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
     mode: 'failed',
     tpOrderId: null,
     slOrderId: null,
-    error: errors.join(' | '),
+    error: `${errors.join(' | ')} | capabilities:${JSON.stringify(capabilities)}`,
   };
 }
 
@@ -188,6 +234,12 @@ function buildProtectionSnapshot(protection = null, fallbackError = null) {
     tpSlMode: protection?.mode ?? null,
     tpSlError: errorText ? String(errorText).slice(0, 240) : null,
   };
+}
+
+function isStopLossOnlyMode(mode = null) {
+  return mode === 'stop_loss_only'
+    || mode === 'ccxt_stop_loss_only'
+    || mode === 'exchange_stop_loss_only';
 }
 
 async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason) {
@@ -468,7 +520,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
       protectionSnapshot = buildProtectionSnapshot(protection);
       if (protection.ok) {
         console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
-      } else if (protection.mode === 'stop_loss_only') {
+      } else if (isStopLossOnlyMode(protection.mode)) {
         console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
       } else {
         throw new Error(protection.error || 'protective_exit_failed');
@@ -682,7 +734,7 @@ export async function executeSignal(signal) {
                 protectionSnapshot = buildProtectionSnapshot(protection);
                 if (protection.ok) {
                   console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
-                } else if (protection.mode === 'stop_loss_only') {
+                } else if (isStopLossOnlyMode(protection.mode)) {
                   console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
                 } else {
                   throw new Error(protection.error || 'protective_exit_failed');
@@ -924,7 +976,7 @@ export async function executeSignal(signal) {
             Object.assign(trade, buildProtectionSnapshot(protection));
             if (protection.ok) {
               console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
-            } else if (protection.mode === 'stop_loss_only') {
+            } else if (isStopLossOnlyMode(protection.mode)) {
               console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${trade.slPrice}`);
             } else {
               throw new Error(protection.error || 'protective_exit_failed');

@@ -100,6 +100,16 @@
   - `node --check bots/investment/team/hephaestos.js`
   - `node --check bots/investment/shared/trade-journal-db.js`
 
+### 2026-03-23: 루나 crypto TP/SL capability-first 정책 반영
+
+- `bots/investment/team/hephaestos.js`
+  - `safeFeatureValue()`, `getProtectiveExitCapabilities()` 추가
+  - 보호 주문 우선순위를 `raw OCO -> raw orderListOco -> ccxt stopLossPrice -> exchange stop_loss_limit`으로 정리
+  - `ccxt_stop_loss_only`, `exchange_stop_loss_only` 모드를 새로 기록하고 기존 `SL-only` 허용 분기도 이 두 모드를 함께 수용하도록 보강
+- 의미:
+  - 브로커/ccxt capability를 무시한 exchange-specific fallback만 쓰던 상태에서
+  - 공식 capability를 먼저 읽는 정책으로 이동한 2차 정렬 단계
+
 ## 2026-03-23: 스카 shadow canary 편입 경로 추가
 
 - `bots/ska/src/forecast.py`에 shadow canary blend 경로를 추가했다.
