@@ -112,6 +112,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - force-exit 정책이 아직 없는 상태에서도 오래된 LIVE 포지션이 운영 경고로 직접 드러남
   - 현재 기준 `ORCL`, `HIMS`, `NBIS`, `NVTS`, `ROBO/USDT`, `375500`, `006340`이 stale 경고로 잡힘
 
+## 12주차 후속 (2026-03-23) — 루나 force-exit 후보 리포트 추가
+
+- `bots/investment/scripts/force-exit-candidate-report.js`
+  - 장기 미결 LIVE 포지션을 `force_exit_candidate` / `strong_force_exit_candidate`로 분류하는 read-only 리포트 추가
+  - `binance 48h`, `kis 48h`, `kis_overseas 72h` threshold 적용
+  - `priorityScore` 기준 정렬, `--json`과 텍스트 출력 모두 지원
+- 구현 보강:
+  - sandbox에서 `db.initSchema()`가 `EPERM`으로 막혀도 read-only 보고 스크립트는 계속 동작할 수 있도록 경계 보완
+- 운영 DB 기준 효과:
+  - 총 후보 `7건`, strong 후보 `5건`
+  - 상위 후보 `ORCL`, `NVTS`, `HIMS`, `NBIS`, `ROBO/USDT`
+  - force-exit 최소 정책이 실제 후보 리포트로 연결됨
+
 ## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
 
 - `bots/investment/team/hephaestos.js`

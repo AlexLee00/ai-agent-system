@@ -109,6 +109,37 @@
   - `binance=48h`, `kis=48h`, `kis_overseas=72h`를 최소 stale threshold로 보고
   - 현재 후보는 `ROBO/USDT`, `375500`, `006340`, `ORCL`, `HIMS`, `NBIS`, `NVTS` 7건이다.
 
+## 2026-03-23 — 루나 force-exit 후보 리포트 추가
+
+- 장기 미결 LIVE 포지션을 실제 정리 우선순위로 읽기 위한 read-only 레일을 추가했다.
+  - [force-exit-candidate-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-candidate-report.js)
+  - 목적:
+    - 시장별 stale threshold를 기준으로 `force_exit_candidate` / `strong_force_exit_candidate`를 정리
+    - 아직 자동 cleanup runner가 없어도 운영자가 같은 기준으로 수동 정리 우선순위를 잡을 수 있게 함
+- 현재 기준:
+  - `binance=48h`, `kis=48h`, `kis_overseas=72h`
+  - `priorityScore`로 후보를 정렬
+  - `--json`과 human-readable 출력 둘 다 지원
+- 운영 DB 기준 검증 결과:
+  - 총 후보 `7건`
+  - strong 후보 `5건`
+  - 시장별:
+    - 해외장 `4건 / 2383.88`
+    - 국내장 `2건 / 3140700`
+    - 암호화폐 `1건 / 191.90`
+  - 우선순위 상위:
+    - `ORCL`
+    - `NVTS`
+    - `HIMS`
+    - `NBIS`
+    - `ROBO/USDT`
+- 구현 포인트:
+  - sandbox에서는 `db.initSchema()`가 `EPERM`으로 막힐 수 있어 read-only 보고 경계에서 이를 허용
+  - 운영 DB 권한에서는 정상 실행되며 실제 후보를 출력함을 확인
+- 의미:
+  - force-exit 정책 문서가 추상 기준에 머물지 않고, 실제 정리 대상/우선순위를 운영 레일에서 바로 볼 수 있게 됐다
+  - 다음 phase는 이 리포트를 기준으로 시장별 수동 정리 또는 승인형 cleanup runner를 붙이는 흐름이 자연스럽다
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카
