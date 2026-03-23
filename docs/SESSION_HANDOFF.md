@@ -86,6 +86,26 @@
   - 구조 버그는 복구됐지만, 이미 열린 6개 LIVE 포지션은 그대로이므로 추가 probe는 아직 불가
   - 다음 단계는 오래된 LIVE open 포지션 정리 기준/force-exit 정책 점검
 
+## 2026-03-23 — 루나 장기 미결 LIVE 포지션 health 경고 추가
+
+- 투자팀 운영 점검 결과, 현재 병목은 단순 `TP/SL 미확인`보다 장기 미결 LIVE 포지션 누적이었다.
+  - Binance LIVE normal: `ROBO/USDT 101.3h`
+  - 국내장 LIVE normal: `375500 75.5h`, `006340 72.5h`
+  - 해외장 LIVE normal: `ORCL 278.0h`, `HIMS/NBIS/NVTS 256.0h`
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)에 `stalePositionHealth`를 추가했다.
+  - `paper=false`인 LIVE 포지션만 대상으로 집계
+  - 기본 threshold:
+    - `binance`: 48h
+    - `kis`: 48h
+    - `kis_overseas`: 72h
+  - threshold를 넘는 포지션은 `장기 미결 LIVE 포지션` 섹션과 운영 판단 이유에 직접 노출
+- 현재 리포트 기준:
+  - `stalePositionHealth.warnCount = 7`
+  - 운영 판단에 `장기 미결 LIVE 포지션 7건 — force-exit/정리 기준 점검 필요`가 추가됨
+- 의미:
+  - force-exit 정책이 아직 없는 상태에서도, 적어도 운영 health가 “지금 무엇을 정리해야 하는지”를 먼저 드러내도록 보강한 단계
+  - 다음 phase는 이 경고를 기준으로 시장별 정리 우선순위를 정하고, 실제 force-exit/cleanup 정책을 설계하는 흐름이 자연스럽다
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카

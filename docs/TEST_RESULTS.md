@@ -52,6 +52,14 @@
 | `node --input-type=module ... SELECT ... FROM investment.positions WHERE exchange='binance' AND paper=false AND trade_mode='normal' ...` | ✅ 현재 LIVE normal open 6건(`ROBO/USDT` + `KAT/USDT`, `OPN/USDT`, `SAHARA/USDT`, `TAO/USDT`, `KITE/USDT`) 확인 |
 | `env PAPER_MODE=false INVESTMENT_TRADE_MODE=normal node bots/investment/team/hephaestos.js --action=BUY --symbol=ETH/USDT --amount=15` | ✅ BUY 직전 PAPER→LIVE 승격이 5건 발생해 슬롯이 잠식됐음을 확인했고, 이후 코드에서 `reserveSlots: 1`로 현재 BUY용 슬롯 1개를 남기도록 보수화 |
 
+### 루나 장기 미결 LIVE 포지션 health 경고 추가
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/scripts/health-report.js` | ✅ `stalePositionHealth` 추가 후 문법 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `stalePositionHealth.warnCount=7`, `decision.reasons`에 장기 미결 LIVE 포지션 경고 포함 확인 |
+| `node bots/investment/scripts/health-report.js` | ✅ 텍스트 리포트에 `■ 장기 미결 LIVE 포지션` 섹션과 stale 샘플 7건이 직접 출력됨을 확인 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

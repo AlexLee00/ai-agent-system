@@ -98,6 +98,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - PAPER→LIVE 자동 승격이 현재 처리 중인 신규 BUY의 슬롯을 잠식해 `최대 포지션 도달`을 유발하던 경계를 복구
   - 다만 이미 열린 6개 LIVE 포지션은 그대로이므로 추가 probe는 포지션 정리 전까지 계속 보류
 
+## 12주차 후속 (2026-03-23) — 루나 장기 미결 LIVE 포지션 health 경고 추가
+
+- `bots/investment/scripts/health-report.js`
+  - `loadStalePositionHealth()` 추가
+  - `paper=false`인 LIVE 포지션만 대상으로 장기 미결 여부 집계
+  - threshold:
+    - `binance 48h`
+    - `kis 48h`
+    - `kis_overseas 72h`
+  - 결과를 `장기 미결 LIVE 포지션` 섹션과 운영 판단 이유에 함께 반영
+- 효과:
+  - force-exit 정책이 아직 없는 상태에서도 오래된 LIVE 포지션이 운영 경고로 직접 드러남
+  - 현재 기준 `ORCL`, `HIMS`, `NBIS`, `NVTS`, `ROBO/USDT`, `375500`, `006340`이 stale 경고로 잡힘
+
 ## 12주차 후속 (2026-03-23) — 루나 crypto TP/SL capability-first 정책 반영
 
 - `bots/investment/team/hephaestos.js`
