@@ -1243,3 +1243,6 @@
 | `node --input-type=module -e \"... hashKioskKey('...09:00','13:00','A1') vs hashKioskKey('...09:00','11:00','A1') ...\"` | ✅ v2 해시 서로 다름, legacy `phone|date|start` 단일 키 충돌 해소 확인 |
 | `node --check bots/reservation/scripts/test-kiosk-block-key-v2.js` | ✅ |
 | `node bots/reservation/scripts/test-kiosk-block-key-v2.js` | ✅ 실제 DB 트랜잭션 + rollback 기준 `rowCount=2`, `v2Keys.distinct=true` 확인 |
+| `node --check scripts/reviews/jay-llm-daily-review.js` | ✅ |
+| `node scripts/reviews/jay-llm-daily-review.js --json` | ✅ `freshness.level`, `freshness.trust`, `freshness.summary` 노출 확인 |
+| `node scripts/reviews/jay-llm-daily-review.js` | ✅ `운영 신뢰도` 라인과 stale snapshot 참고용 경고 출력 확인 |

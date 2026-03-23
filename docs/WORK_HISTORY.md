@@ -4227,3 +4227,6 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 현재 표준화된 축은 `LOCK_CONFLICT`, `MEMBER_SELECT_FAILED`, `DATE_SELECT_FAILED`, `TIME_SLOT_SELECT_FAILED`, `SAVE_*`, `PAYMENT_*` 등이며, 운영자가 즉시 “어느 단계에서 반복 실패하는지”를 읽을 수 있게 정리
 - `bots/reservation/auto/monitors/naver-monitor.js`는 위 마커를 파싱해 `errorReason`과 텔레그램 수동 처리 알림에 `[STAGE_CODE]`, `🧩 실패 단계`를 붙이도록 연결
 - 간단한 smoke 검증으로 `MODE=ops node bots/reservation/manual/reservation/pickko-accurate.js --phone=abc --date=bad ...` 실행 시 `INPUT_NORMALIZE_FAILED` 마커가 실제 출력되는 것까지 확인
+- `scripts/reviews/jay-llm-daily-review.js`
+  - `freshness.level / trust / summary` 메타를 추가해 `live / partial_live / snapshot_fallback / snapshot_stale / degraded`를 직접 읽을 수 있게 정리
+  - 텍스트 출력에 `운영 신뢰도` 라인을 추가하고, stale snapshot일 때는 `live 운영 판단보다 참고용` 경고를 함께 출력하도록 보강

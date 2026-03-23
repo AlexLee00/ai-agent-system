@@ -72,6 +72,46 @@ function buildDbSnapshotAgeHours(capturedAt) {
   return Number(((Date.now() - ts) / (1000 * 60 * 60)).toFixed(1));
 }
 
+function buildFreshnessMeta({ dbStatsStatus, dbSource, dbSnapshotFallback, dbSnapshotMeta, dbStatsError }) {
+  if (dbStatsError || dbSource === 'degraded') {
+    return {
+      level: 'degraded',
+      trust: 'low',
+      summary: 'DB 기반 집계를 읽지 못해 degraded 상태입니다.',
+      stale: true,
+    };
+  }
+
+  if (dbSnapshotFallback) {
+    const ageHours = Number(dbSnapshotMeta?.ageHours);
+    const isStale = Boolean(dbSnapshotMeta?.stale) || (Number.isFinite(ageHours) && ageHours >= 6);
+    return {
+      level: isStale ? 'snapshot_stale' : 'snapshot_fallback',
+      trust: isStale ? 'low' : 'medium',
+      summary: isStale
+        ? `stale snapshot fallback (${dbSnapshotMeta?.capturedAt || 'capturedAt unknown'})`
+        : `snapshot fallback (${dbSnapshotMeta?.capturedAt || 'capturedAt unknown'})`,
+      stale: isStale,
+    };
+  }
+
+  if (dbStatsStatus === 'partial') {
+    return {
+      level: 'partial_live',
+      trust: 'medium',
+      summary: '일부 DB source가 실패한 partial live 상태입니다.',
+      stale: false,
+    };
+  }
+
+  return {
+    level: 'live',
+    trust: 'high',
+    summary: 'live DB 기반 집계입니다.',
+    stale: false,
+  };
+}
+
 async function getJayDbStats(days) {
   const fromDate = kstDateDaysAgo(days);
   const [usageResult, historyResult] = await Promise.allSettled([
@@ -312,6 +352,13 @@ async function main() {
       snapshotFallback: Boolean(dbStatsResult.snapshotFallback),
     }),
   };
+  report.freshness = buildFreshnessMeta({
+    dbStatsStatus: report.dbStatsStatus,
+    dbSource: report.dbSource,
+    dbSnapshotFallback: report.dbSnapshotFallback,
+    dbSnapshotMeta: report.dbSnapshotMeta,
+    dbStatsError: report.dbStatsError,
+  });
 
   if (json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -325,6 +372,7 @@ async function main() {
   lines.push(`총 토큰: ${fmt(jayUsage.total.totalTokens)}`);
   lines.push(`입력/출력: ${fmt(jayUsage.total.input)} / ${fmt(jayUsage.total.output)}`);
   lines.push(`캐시 읽기/쓰기: ${fmt(jayUsage.total.cacheRead)} / ${fmt(jayUsage.total.cacheWrite)}`);
+  lines.push(`운영 신뢰도: ${report.freshness.trust} (${report.freshness.summary})`);
 
   if (report.dbStatsError) {
     lines.push('');
@@ -337,6 +385,7 @@ async function main() {
     if (report.dbSnapshotMeta?.capturedAt) lines.push(`- snapshot capturedAt: ${report.dbSnapshotMeta.capturedAt}`);
     if (report.dbSnapshotMeta?.ageHours != null) lines.push(`- snapshot age: ${report.dbSnapshotMeta.ageHours}h`);
     if (report.dbSnapshotMeta?.stale) lines.push('- snapshot 기간이 현재 요청 일수와 달라 해석 시 주의가 필요합니다.');
+    if (report.freshness.stale) lines.push('- 현재 결과는 stale snapshot 기반이므로 live 운영 판단보다 참고용으로 해석해야 합니다.');
   } else if (report.dbStatsStatus === 'partial') {
     lines.push('');
     lines.push('DB 집계 상태: partial');
