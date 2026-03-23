@@ -79,6 +79,21 @@
   - source version별 forecast accuracy 비교
   - 멀티워크스페이스 확장 시 workspace별 revenue policy 분기
 
+### Phase E. shadow canary 편입
+
+- 지금 당장 필요한 구조
+  - shadow 모델이 더 좋아도 바로 primary를 대체하지 않는다.
+  - `forecast.py`에서 아래 guard를 만족할 때만 낮은 비중으로 blend한다.
+    - `shadowBlendEnabled = true`
+    - `shadowCompareDays >= shadowBlendMinCompareDays`
+    - `shadow avgMapeGap <= -shadowBlendRequiredMapeGap`
+    - `shadow confidence >= shadowBlendMinConfidence`
+  - daily/weekly review의 승격 판단도 같은 guard 값을 사용해 운영 해석과 실제 적용 경계를 일치시킨다.
+- 나중에 확장할 구조
+  - shadow blend를 workspace별로 다르게 켜는 정책
+  - primary/shadow/ensemble 3축 성능 이력 비교
+  - 자동 승격 전 human approval step 추가
+
 ## 4. 리스크
 
 - `total_amount` 의미가 historical row마다 다를 수 있어 혼합 구간 해석이 필요하다.

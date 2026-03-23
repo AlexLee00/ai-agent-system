@@ -93,6 +93,11 @@ async function loadUpcomingForecasts(days = 3) {
     SELECT
       latest.forecast_date::text AS date,
       (latest.predictions->>'yhat')::int AS predicted_revenue,
+      COALESCE((latest.predictions->>'shadow_blend_applied')::boolean, false) AS shadow_blend_applied,
+      COALESCE((latest.predictions->>'shadow_blend_weight')::float, 0.0) AS shadow_blend_weight,
+      latest.predictions->>'shadow_blend_reason' AS shadow_blend_reason,
+      COALESCE((latest.predictions->>'shadow_compare_days')::int, 0) AS shadow_compare_days,
+      COALESCE((latest.predictions->>'shadow_compare_mape_gap')::float, 0.0) AS shadow_compare_mape_gap,
       COALESCE((latest.predictions->>'reservation_count')::int, 0) AS predicted_reservations,
       COALESCE((latest.predictions->>'confidence')::float, 0.0) AS confidence,
       latest.model_version,
@@ -159,8 +164,8 @@ function buildShadowComparison(rows) {
 }
 
 function buildShadowDecision(shadowComparison) {
-  const requiredDays = 3;
-  const gapThreshold = Number(FORECAST_CONFIG.shadowPromotionMapeGap || 0);
+  const requiredDays = Number(FORECAST_CONFIG.shadowBlendMinCompareDays || 5);
+  const gapThreshold = Number(FORECAST_CONFIG.shadowBlendRequiredMapeGap || FORECAST_CONFIG.shadowPromotionMapeGap || 0);
 
   if (shadowComparison.availableDays < requiredDays) {
     return {
@@ -168,7 +173,7 @@ function buildShadowDecision(shadowComparison) {
       label: '데이터 수집 단계',
       requiredDays,
       gapThreshold,
-      recommendation: 'actual 누적 후 비교 유지',
+      recommendation: 'shadow canary 비교 데이터 누적 유지',
       reason: `shadow actual 비교일이 ${shadowComparison.availableDays}일이라 최소 ${requiredDays}일 누적이 더 필요합니다.`,
     };
   }
@@ -176,10 +181,10 @@ function buildShadowDecision(shadowComparison) {
   if (shadowComparison.avgMapeGap <= -gapThreshold) {
     return {
       stage: 'promotion_candidate',
-      label: '앙상블 편입 후보',
+      label: 'shadow canary 편입 후보',
       requiredDays,
       gapThreshold,
-      recommendation: '다음 운영 사이클에서 앙상블 실험 검토',
+      recommendation: '다음 운영 사이클에서 shadow canary 적용 검토',
       reason: `shadow 평균 MAPE가 기존 대비 ${Math.abs(shadowComparison.avgMapeGap)}%p 개선되었습니다.`,
     };
   }
@@ -296,6 +301,11 @@ async function main() {
       shadowPredictedRevenue: latestActual.shadow_predicted_revenue == null ? null : Number(latestActual.shadow_predicted_revenue),
       shadowConfidence: Number(latestActual.shadow_confidence || 0),
       shadowModelName: latestActual.shadow_model_name || '',
+      shadowBlendApplied: Boolean(latestActual.shadow_blend_applied || false),
+      shadowBlendWeight: Number(latestActual.shadow_blend_weight || 0),
+      shadowBlendReason: latestActual.shadow_blend_reason || '',
+      shadowCompareDays: Number(latestActual.shadow_compare_days || 0),
+      shadowCompareMapeGap: Number(latestActual.shadow_compare_mape_gap || 0),
       actualReservations: Number(latestActual.actual_reservations || 0),
       predictedReservations: Number(latestActual.predicted_reservations || 0),
       totalAmount: Number(latestActual.total_amount || 0),
@@ -316,6 +326,11 @@ async function main() {
     upcomingForecasts: upcomingRows.map(row => ({
       date: toDateString(row.date),
       predictedRevenue: Number(row.predicted_revenue || 0),
+      shadowBlendApplied: Boolean(row.shadow_blend_applied || false),
+      shadowBlendWeight: Number(row.shadow_blend_weight || 0),
+      shadowBlendReason: row.shadow_blend_reason || '',
+      shadowCompareDays: Number(row.shadow_compare_days || 0),
+      shadowCompareMapeGap: Number(row.shadow_compare_mape_gap || 0),
       predictedReservations: Number(row.predicted_reservations || 0),
       confidence: Number(row.confidence || 0),
       modelVersion: row.model_version || '',
@@ -344,6 +359,11 @@ async function main() {
     lines.push(`- 실예약/예측예약: ${fmt(report.latestActual.actualReservations)}건 / ${fmt(report.latestActual.predictedReservations)}건`);
     lines.push(`- 내부 합산매출 / entries_count: ${fmt(report.latestActual.combinedRevenue)}원 / ${fmt(report.latestActual.entriesCount)}건`);
     lines.push(`- 매출 구성: 스터디룸 ${fmt(report.latestActual.studyRoomRevenue)}원 / 일반이용 ${fmt(report.latestActual.generalRevenue)}원`);
+    if (report.latestActual.shadowBlendApplied) {
+      lines.push(`- shadow canary: 적용됨 (${Math.round(report.latestActual.shadowBlendWeight * 100)}%, gap ${report.latestActual.shadowCompareMapeGap}%p, ${report.latestActual.shadowCompareDays}일)`);
+    } else if (report.latestActual.shadowBlendReason) {
+      lines.push(`- shadow canary: 미적용 (${report.latestActual.shadowBlendReason}, ${report.latestActual.shadowCompareDays}일)`);
+    }
   }
 
   lines.push('');
@@ -374,7 +394,12 @@ async function main() {
     lines.push('');
     lines.push('다가오는 예측:');
     for (const row of report.upcomingForecasts) {
-      lines.push(`- ${row.date}: ${fmt(row.predictedRevenue)}원 / ${fmt(row.predictedReservations)}건 / 확신도 ${(row.confidence * 100).toFixed(0)}%`);
+      const blendLabel = row.shadowBlendApplied
+        ? ` / shadow canary ${Math.round(row.shadowBlendWeight * 100)}%`
+        : row.shadowBlendReason
+          ? ` / shadow ${row.shadowBlendReason}`
+          : '';
+      lines.push(`- ${row.date}: ${fmt(row.predictedRevenue)}원 / ${fmt(row.predictedReservations)}건 / 확신도 ${(row.confidence * 100).toFixed(0)}%${blendLabel}`);
     }
   }
 

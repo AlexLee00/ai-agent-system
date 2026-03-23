@@ -19,7 +19,17 @@
 | `python3 -m py_compile bots/ska/src/forecast.py bots/ska/src/runtime_config.py` | ✅ calibration/runtime-config 외부화 후 문법 통과 |
 | `node --check bots/ska/lib/runtime-config.js` | ✅ JS runtime-config 동기화 후 문법 통과 |
 | `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` | ✅ `2026-03-24 predictedRevenue=238053`, `calibration_adjustment=34912`, `calibration_notes=weekday_bias:+34,912,samples:11` 저장 확인 |
-| `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review 재실행 기준 `avgMape=33.44`, `avgBias=-75194`, `hitRate20=41.7%`, shadow `promotion_candidate` 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review 재실행 기준 `avgMape=33.44`, `avgBias=-75194`, `hitRate20=41.7%`, shadow 우위(`avgMapeGap=-7.32`) 확인 |
+
+### 스카 shadow canary 편입 경로 추가
+
+| 테스트 | 결과 |
+|--------|------|
+| `python3 -m py_compile bots/ska/src/forecast.py bots/ska/src/runtime_config.py` | ✅ shadow compare/blend guard 추가 후 Python 문법 통과 |
+| `node --check bots/ska/lib/runtime-config.js` | ✅ shadow canary runtime-config 기본값 동기화 후 문법 통과 |
+| `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` | ✅ `2026-03-24 predictedRevenue=238598`, `shadow_model.yhat=283075`, `shadow_blend.applied=false`, `reason=shadow_compare_days_insufficient`, `available_days=3`, `avg_mape_gap=-7.32` 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review가 `shadowCompareDays=3`, `shadowBlendReason=shadow_compare_days_insufficient`를 출력하고, 승격 판단도 canary guard 기준으로 정렬됨을 확인 |
+| `node scripts/reviews/ska-sales-forecast-weekly-review.js --json` | ✅ weekly review가 `requiredDays=5`, `shadow canary 비교 데이터 누적 유지`, `availableDays=3`를 일관되게 출력함을 확인 |
 
 ### 스카 취소 감지 재예약 교차 경계 복구
 

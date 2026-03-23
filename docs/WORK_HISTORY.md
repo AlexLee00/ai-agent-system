@@ -82,8 +82,24 @@
   - `avgMape=33.44`
   - `avgBias=-75,194`
   - `hitRate20=41.7%`
-  - shadow `knn-shadow-v1`은 `availableDays=3`, `avgMapeGap=-7.32`, `promotion_candidate`
+  - shadow `knn-shadow-v1`은 `availableDays=3`, `avgMapeGap=-7.32`로 우위지만 아직 canary guard 전
 - 해석: underprediction은 아직 남아 있지만, 이제 보정 강도는 코드 수정 없이 runtime-config에서 조절 가능해졌고, shadow 앙상블 편입 검토가 현실적인 다음 단계가 됐다.
+
+## 2026-03-23: 스카 shadow canary 편입 경로 추가
+
+- `bots/ska/src/forecast.py`에 shadow canary blend 경로를 추가했다.
+- 현재는 shadow가 더 좋아도 바로 주력값으로 바꾸지 않고, 아래 조건을 동시에 만족할 때만 낮은 비중으로 섞는다.
+  - `shadowBlendEnabled = true`
+  - `shadowCompareDays >= 5`
+  - `shadow avgMapeGap <= -5.0`
+  - `shadow confidence >= 0.35`
+- 기본 가중치는 `shadowBlendWeight = 0.25`로 두었다. 즉 발동해도 바로 교체가 아니라 `primary 75% + shadow 25%` canary다.
+- `forecast_results.predictions`에는 이제 `shadow_blend_applied`, `shadow_blend_weight`, `shadow_blend_reason`, `shadow_compare_days`, `shadow_compare_mape_gap` 메타가 함께 저장된다.
+- 실측 기준:
+  - `daily review`: `requiredDays=5`, `requiredGap=5.0` 기준으로 아직 `collecting`
+  - `weekly review`: 비교일수 `3일`이라 아직 `collecting`
+  - `2026-03-24` upcoming 예측의 `shadow_blend_reason = shadow_compare_days_insufficient`
+- 해석: 이번 단계는 shadow를 실제 운영 레일에 억지로 투입한 것이 아니라, daily/weekly review와 실제 canary guard를 같은 기준으로 맞춘 뒤 충분한 actual 누적 후 자동으로 낮은 비중 canary가 발동하도록 안전한 승격 경계를 만든 것이다.
 
 ## 2026-03-23: 스카 취소 감지 재예약 교차 경계 복구
 
