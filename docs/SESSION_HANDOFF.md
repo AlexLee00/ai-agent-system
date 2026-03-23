@@ -213,6 +213,7 @@
   - `daily-ops-report.js`는 이제 `health_report_failed_launchctl / health_report_failed_probe_unavailable`와 `healthError`를 함께 보여줘 입력 실패 원인을 더 명확히 읽을 수 있다.
   - `daily-ops-report.js`는 이제 `현재 활성 이슈 / 누적 반복 이슈 / 입력 실패`를 분리해, 시스템 문제와 자동화 입력 실패를 한 화면에서 구분해 읽을 수 있다.
   - `daily-ops-report.js`는 입력 실패를 `db_sandbox_restricted` 같은 코드형 상태로 구분하고, investment / reservation 팀은 `local fallback 활동 신호`를 함께 표시해 “DB 제한은 있지만 팀 활동은 있음”을 읽을 수 있게 됐다.
+  - `jay-llm-daily-review.js`는 이제 `freshness.level / freshness.trust / freshness.summary`를 함께 노출한다. `snapshot_fallback`일 때는 단순 partial 대신 `운영 신뢰도: medium/low`, `stale snapshot fallback`를 직접 보여줘 live DB 리뷰와 fallback 리뷰를 더 명확히 구분한다.
 - 투자
   - `executionMode=live/paper`, `brokerAccountMode=real/mock` 기준이 코드/리포트/문서에 반영됐다.
   - 실패 원인 저장은 `block_reason + block_code + block_meta` 구조로 확장됐다.
