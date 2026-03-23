@@ -406,6 +406,59 @@ async function loadTradeLaneHealth() {
   };
 }
 
+function getStalePositionThresholdHours(exchange) {
+  if (exchange === 'kis_overseas') return 72;
+  if (exchange === 'kis') return 48;
+  if (exchange === 'binance') return 48;
+  return 48;
+}
+
+async function loadStalePositionHealth() {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        exchange,
+        symbol,
+        paper,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        amount,
+        avg_price,
+        updated_at,
+        ROUND((amount * avg_price)::numeric, 2) AS position_value,
+        ROUND(EXTRACT(EPOCH FROM (NOW() - updated_at))/3600::numeric, 1) AS age_hours
+      FROM investment.positions
+      WHERE amount > 0
+        AND paper = false
+      ORDER BY updated_at ASC
+    `,
+  ).catch(() => []);
+
+  const staleRows = rows.filter((row) => {
+    const ageHours = Number(row.age_hours || 0);
+    const thresholdHours = getStalePositionThresholdHours(row.exchange);
+    return ageHours >= thresholdHours;
+  });
+
+  const warn = staleRows.slice(0, 8).map((row) => {
+    const thresholdHours = getStalePositionThresholdHours(row.exchange);
+    const value = Number(row.position_value || 0).toFixed(2);
+    return `  ${formatLaneLabel(row.exchange, row.trade_mode)} ${row.symbol} ${Number(row.age_hours || 0).toFixed(1)}h / value ${value} (threshold ${thresholdHours}h)`;
+  });
+
+  const ok = staleRows.length === 0
+    ? ['  장기 미결 LIVE 포지션 없음']
+    : [];
+
+  return {
+    okCount: staleRows.length === 0 ? 1 : 0,
+    warnCount: staleRows.length,
+    ok,
+    warn,
+    staleRows,
+  };
+}
+
 async function loadCryptoLiveGateHealth() {
   try {
     const modulePath = path.resolve(__dirname, './crypto-live-gate-review.js');
@@ -447,6 +500,7 @@ function buildDecision(
   recentSignalBlockHealth,
   recentLaneBlockPressure,
   tradeLaneHealth,
+  stalePositionHealth,
   cryptoLiveGateHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
@@ -493,6 +547,11 @@ function buildDecision(
         reason: saturatedLane
           ? `거래 한도 도달 rail ${formatLaneLabel(saturatedLane.exchange, saturatedLane.tradeMode)} ${saturatedLane.count}/${saturatedLane.limit}`
           : `거래 한도 근접 rail ${formatLaneLabel(nearLimitLane?.exchange, nearLimitLane?.tradeMode)} ${nearLimitLane?.count}/${nearLimitLane?.limit}`,
+      },
+      {
+        active: stalePositionHealth.warnCount > 0,
+        level: 'medium',
+        reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — force-exit/정리 기준 점검 필요`,
       },
       {
         active: cryptoLiveGateHealth.warnCount > 0,
@@ -545,6 +604,7 @@ function formatText(report) {
         ? report.recentLaneBlockPressure.lanes.map((lane) => `  ${lane.label}: ${lane.count}건`)
         : ['  최근 일간 한도 rail 압력 없음'],
     },
+    buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
     {
@@ -589,6 +649,7 @@ async function buildReport() {
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
   const tradeLaneHealth = await loadTradeLaneHealth();
+  const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const decision = buildDecision(
     serviceRows,
@@ -598,6 +659,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     tradeLaneHealth,
+    stalePositionHealth,
     cryptoLiveGateHealth,
   );
 
@@ -614,6 +676,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     tradeLaneHealth,
+    stalePositionHealth,
     cryptoLiveGateHealth,
     decision,
   };

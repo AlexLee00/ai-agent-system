@@ -102,6 +102,25 @@
   - BUY 직전에는 `reserveSlots: 1`을 넘겨, 현재 처리 중인 신규 BUY가 사용할 LIVE 슬롯 1개를 항상 남기도록 보수화
   - 승격 루프 내부에서도 현재 LIVE open 수를 다시 읽어 한도를 넘지 않게 중단
 - 해석: 이번 단계는 TP/SL 자체보다 `promotion`이 신규 BUY를 잠식하던 운영 경계를 복구한 작업이다. 다만 이미 열린 6개 LIVE 포지션은 그대로라 추가 probe는 포지션 정리 전까지 불가하다.
+
+## 2026-03-23: 루나 장기 미결 LIVE 포지션 health 경고 추가
+
+- 투자팀 health를 다시 정리하는 과정에서, 실제 운영 병목이 `TP/SL 실표본 부족`뿐 아니라 `장기 미결 LIVE 포지션 누적`이라는 점을 health 레벨로 끌어올렸다.
+- `bots/investment/scripts/health-report.js`
+  - `loadStalePositionHealth()` 추가
+  - LIVE(`paper=false`) 포지션만 대상으로 장기 미결 여부를 집계
+  - threshold:
+    - `binance 48h`
+    - `kis 48h`
+    - `kis_overseas 72h`
+  - 결과를 `■ 장기 미결 LIVE 포지션` 섹션과 `decision.reasons`에 함께 반영
+- 현재 기준 stale LIVE 포지션 7건이 경고된다.
+  - `ROBO/USDT 101.3h`
+  - `375500 75.5h`
+  - `006340 72.5h`
+  - `ORCL 278.0h`
+  - `HIMS/NBIS/NVTS 256.0h`
+- 해석: force-exit 실행 레일은 아직 없지만, 운영 health가 먼저 장기 미결 리스크를 드러내도록 보강한 단계다.
 - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 재확인 기준:
   - `avgMape=33.44`
   - `avgBias=-75,194`
