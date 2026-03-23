@@ -5,7 +5,16 @@ from copy import deepcopy
 DEFAULT_RUNTIME_CONFIG = {
     "forecast": {
         "conditionAdjustmentWeight": 0.50,
-        "reservationAdjustmentWeight": 0.42,
+        "reservationAdjustmentWeight": 0.55,
+        "calibrationMaxRatio": 0.22,
+        "bookedHoursAdjustmentWeight": 0.40,
+        "roomSpreadAdjustmentWeight": 0.24,
+        "peakOverlapAdjustmentWeight": 0.22,
+        "morningPatternAdjustmentWeight": 0.08,
+        "afternoonPatternAdjustmentWeight": 0.12,
+        "eveningPatternAdjustmentWeight": 0.18,
+        "reservationTrendAdjustmentWeight": 0.24,
+        "bookedHoursTrendAdjustmentWeight": 0.22,
         "shadowModelEnabled": True,
         "shadowModelName": "knn-shadow-v1",
         "shadowNeighborCount": 7,

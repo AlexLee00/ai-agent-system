@@ -49,6 +49,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `revenue_daily`/`training_feature_daily`를 다시 동기화
   - 샘플 검증 기준 `study_room_payment_*`는 모두 `0`, `study_room_use_*`만 실제 use 축 값을 유지함을 확인
 
+## 12주차 후속 (2026-03-23) — 스카 예측엔진 bias 보정 2차
+
+- `bots/ska/src/forecast.py`
+  - calibration 관련 상수를 runtime-config에서 읽도록 변경
+  - `calibrationMaxRatio`, `bookedHoursAdjustmentWeight`, `roomSpreadAdjustmentWeight`, `peakOverlapAdjustmentWeight`, `morning/afternoon/eveningPatternAdjustmentWeight`, `reservationTrendAdjustmentWeight`, `bookedHoursTrendAdjustmentWeight`를 외부화
+- `bots/ska/src/runtime_config.py`, `bots/ska/lib/runtime-config.js`, `bots/ska/config.json`
+  - underprediction 완화를 위해 예약/이용 선행지표 보정값을 완만하게 상향
+  - 핵심 값:
+    - `reservationAdjustmentWeight 0.42 -> 0.55`
+    - `calibrationMaxRatio 0.12 -> 0.22`
+    - `bookedHoursAdjustmentWeight 0.30 -> 0.40`
+    - `reservationTrendAdjustmentWeight 0.18 -> 0.24`
+    - `bookedHoursTrendAdjustmentWeight 0.16 -> 0.22`
+- 검증
+  - `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json`
+  - `2026-03-24` 예측 `238,053원`, `calibration_adjustment=34,912` 반영 확인
+  - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 기준 shadow `knn-shadow-v1`가 `promotion_candidate` 상태로 진입
+
 ## 12주차 후속 (2026-03-23) — 스카 재예약 교차 취소 오탐 방지
 
 - `bots/reservation/auto/monitors/naver-monitor.js`

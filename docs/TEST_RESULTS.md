@@ -12,6 +12,15 @@
 | `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ review 재실행 성공, summary는 여전히 `avgMape=32.31`, `avgBias=-78837`로 품질 보정 필요 구간 유지 |
 | `node --input-type=module ... SELECT ... FROM ska.training_feature_daily ...` | ✅ `2026-03-17 ~ 2026-03-23` 샘플에서 `study_room_payment_*` 계열이 모두 `0`으로 고정되고, `study_room_use_*` 계열만 실제 use 축 값을 유지함을 확인 |
 
+### 스카 예측엔진 bias 보정 2차
+
+| 테스트 | 결과 |
+|--------|------|
+| `python3 -m py_compile bots/ska/src/forecast.py bots/ska/src/runtime_config.py` | ✅ calibration/runtime-config 외부화 후 문법 통과 |
+| `node --check bots/ska/lib/runtime-config.js` | ✅ JS runtime-config 동기화 후 문법 통과 |
+| `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` | ✅ `2026-03-24 predictedRevenue=238053`, `calibration_adjustment=34912`, `calibration_notes=weekday_bias:+34,912,samples:11` 저장 확인 |
+| `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review 재실행 기준 `avgMape=33.44`, `avgBias=-75194`, `hitRate20=41.7%`, shadow `promotion_candidate` 확인 |
+
 ### 스카 취소 감지 재예약 교차 경계 복구
 
 | 테스트 | 결과 |
