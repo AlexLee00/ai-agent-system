@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 let VideoEditorDefault = null;
 let TimelineProviderComp = null;
@@ -37,11 +37,35 @@ const EDITOR_CONFIG = {
   },
 };
 
+function useScopedCSS(href) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || ref.current) return undefined;
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.setAttribute('data-twick-scoped', 'true');
+    document.head.appendChild(link);
+    ref.current = link;
+
+    return () => {
+      if (ref.current) {
+        ref.current.remove();
+        ref.current = null;
+      }
+    };
+  }, [href]);
+}
+
 export default function TwickEditorWrapper() {
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
 
-  const handleReady = useCallback(() => {
+  useScopedCSS('/twick-editor-scoped.css');
+
+  useEffect(() => {
     setReady(true);
   }, []);
 
@@ -79,7 +103,7 @@ export default function TwickEditorWrapper() {
   }
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', minHeight: '500px' }}>
+    <div className="twick-scope" style={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', minHeight: '500px' }}>
       <div style={{
         padding: '0.75rem 1rem',
         borderBottom: '1px solid #e5e7eb',

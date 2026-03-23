@@ -1,6 +1,5 @@
 'use client';
 
-import '@twick/video-editor/dist/video-editor.css';
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 
