@@ -159,6 +159,29 @@
   - 이번 단계는 force-exit 자동화가 아니라, 최소 정책 문서를 실제 운영 보고 레일로 연결한 작업이다.
   - sandbox에서는 `db.initSchema()`가 `EPERM`으로 막힐 수 있어 read-only 보고 경계에서 이를 허용하도록 보강했다.
 
+## 2026-03-23: 루나 force-exit 승인형 runner 추가
+
+- `bots/investment/scripts/force-exit-runner.js`를 추가했다.
+- 역할:
+  - `force-exit-candidate-report` 후보를 기준으로, 승인된 심볼만 기존 SELL executor에 태우는 승인형 실행 레일
+  - 기본값은 preview-only
+  - `--execute --confirm=force-exit`가 있을 때만 실제 SELL 실행
+- 구조:
+  - 후보 조회는 `loadCandidates()` 재사용
+  - `binance`는 `hephaestos.executeSignal()`
+  - `kis`는 `hanul.executeSignal()`
+  - `kis_overseas`는 `hanul.executeOverseasSignal()`
+  - synthetic SELL signal을 만들고 기존 trade/journal/notify 레일에 그대로 연결
+- 구현 보강:
+  - `hephaestos.js`, `hanul.js`는 이제 `exit_reason_override`를 지원해 승인형 force-exit의 종료 사유를 journal에 직접 남길 수 있다.
+  - `force-exit-candidate-report.js`는 direct CLI 실행일 때만 `main()`을 돌도록 바꿔 import side effect를 제거했다.
+- 검증:
+  - `node bots/investment/scripts/force-exit-runner.js --json`
+  - `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas`
+  - preview-only 경계와 실행 명령 안내가 정상 출력됨을 확인
+- 해석:
+  - 이번 단계는 자동 cleanup이 아니라, 수동 승인 기반 정리 레일을 기존 executor 아키텍처 위에 안전하게 얹은 작업이다.
+
 ## 2026-03-23: 루나 암호화폐 TP/SL 실패 추적 계측 1차
 
 - `bots/investment/shared/trade-journal-db.js`

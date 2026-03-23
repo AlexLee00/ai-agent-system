@@ -10,34 +10,34 @@
  *   node bots/investment/scripts/force-exit-candidate-report.js
  *   node bots/investment/scripts/force-exit-candidate-report.js --json
  */
-
+import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
 
-function parseArgs(argv = process.argv.slice(2)) {
+export function parseArgs(argv = process.argv.slice(2)) {
   return {
     json: argv.includes('--json'),
   };
 }
 
-function getMarketLabel(exchange) {
+export function getMarketLabel(exchange) {
   if (exchange === 'kis') return '국내장';
   if (exchange === 'kis_overseas') return '해외장';
   return '암호화폐';
 }
 
-function getThresholdHours(exchange) {
+export function getThresholdHours(exchange) {
   if (exchange === 'kis_overseas') return 72;
   if (exchange === 'kis') return 48;
   return 48;
 }
 
-function getCandidateLevel(exchange, ageHours) {
+export function getCandidateLevel(exchange, ageHours) {
   const threshold = getThresholdHours(exchange);
   if (ageHours >= threshold * 2) return 'strong_force_exit_candidate';
   return 'force_exit_candidate';
 }
 
-function getPriorityScore(row) {
+export function getPriorityScore(row) {
   const ageHours = Number(row.ageHours ?? row.age_hours ?? 0);
   const value = Number(row.positionValue ?? row.position_value ?? 0);
   const threshold = getThresholdHours(row.exchange);
@@ -46,7 +46,7 @@ function getPriorityScore(row) {
   return Number((ageFactor * 100 + valueFactor * 10).toFixed(2));
 }
 
-function buildSummary(rows) {
+export function buildSummary(rows) {
   const perExchange = new Map();
   for (const row of rows) {
     const exchange = row.exchange;
@@ -67,7 +67,7 @@ function buildSummary(rows) {
     .sort((a, b) => b.count - a.count || b.grossValue - a.grossValue);
 }
 
-function formatHuman(report) {
+export function formatHuman(report) {
   const lines = [];
   lines.push('🧹 투자팀 force-exit 후보 리포트');
   lines.push('');
@@ -94,7 +94,7 @@ function formatHuman(report) {
   return lines.join('\n');
 }
 
-async function ensureReadableInvestmentSchema() {
+export async function ensureReadableInvestmentSchema() {
   try {
     await db.initSchema();
   } catch (error) {
@@ -108,7 +108,7 @@ async function ensureReadableInvestmentSchema() {
   }
 }
 
-async function loadCandidates() {
+export async function loadCandidates() {
   await ensureReadableInvestmentSchema();
   const rows = await db.query(`
     SELECT
@@ -173,7 +173,9 @@ async function main() {
   console.log(formatHuman(report));
 }
 
-main().catch((error) => {
-  console.error(`[force-exit-candidate-report] ${error?.stack || error?.message || String(error)}`);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(`[force-exit-candidate-report] ${error?.stack || error?.message || String(error)}`);
+    process.exit(1);
+  });
+}

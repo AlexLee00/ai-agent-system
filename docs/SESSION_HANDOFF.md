@@ -140,6 +140,34 @@
   - force-exit 정책 문서가 추상 기준에 머물지 않고, 실제 정리 대상/우선순위를 운영 레일에서 바로 볼 수 있게 됐다
   - 다음 phase는 이 리포트를 기준으로 시장별 수동 정리 또는 승인형 cleanup runner를 붙이는 흐름이 자연스럽다
 
+## 2026-03-23 — 루나 force-exit 승인형 runner 추가
+
+- force-exit를 곧바로 자동화하지 않고, 기존 SELL executor를 재사용하는 승인형 실행 레일을 추가했다.
+  - [force-exit-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-runner.js)
+  - 기본값은 `preview-only`
+  - 실제 실행은 `--execute --confirm=force-exit`가 있을 때만 동작
+- 구조:
+  - 후보 조회는 [force-exit-candidate-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-candidate-report.js)의 `loadCandidates()`를 재사용
+  - 실행은 기존 executor를 그대로 사용
+    - `binance` → `hephaestos.executeSignal()`
+    - `kis` → `hanul.executeSignal()`
+    - `kis_overseas` → `hanul.executeOverseasSignal()`
+  - runner는 승인형 `SELL` synthetic signal을 만들고, 기존 trade/journal/notify 레일에 태운다
+- 구현 보강:
+  - [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+  - 두 executor 모두 `exit_reason_override`를 받으면 기본 `sell/signal_reverse` 대신 그 값을 journal close reason으로 사용
+  - `force-exit-candidate-report.js`는 이제 CLI direct 실행일 때만 `main()`이 동작해, runner import 시 side effect가 없다
+- 현재 검증:
+  - `ORCL / kis_overseas` preview 출력 정상
+  - 실제 실행 명령 예시:
+    - `env PAPER_MODE=false node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --execute --confirm=force-exit`
+- 의미:
+  - 지금 당장 필요한 구조:
+    - 자동 cleanup 없이도 승인형 정리 레일을 운영에 도입 가능
+  - 나중에 확장할 구조:
+    - approval queue / batch cleanup / 시장별 runtime-config 정책으로 확장 가능
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카
