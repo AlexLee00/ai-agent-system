@@ -85,6 +85,21 @@
   - shadow `knn-shadow-v1`은 `availableDays=3`, `avgMapeGap=-7.32`로 우위지만 아직 canary guard 전
 - 해석: underprediction은 아직 남아 있지만, 이제 보정 강도는 코드 수정 없이 runtime-config에서 조절 가능해졌고, shadow 앙상블 편입 검토가 현실적인 다음 단계가 됐다.
 
+## 2026-03-23: 루나 암호화폐 TP/SL 실패 추적 계측 1차
+
+- `bots/investment/shared/trade-journal-db.js`
+  - `trade_journal`에 `tp_sl_mode`, `tp_sl_error` 컬럼을 추가했다.
+  - 목적은 crypto 보호 주문이 실제로 `oco / oco_list / stop_loss_only / failed` 중 어느 경로로 흘렀는지 일지에 남기기 위함이다.
+- `bots/investment/team/hephaestos.js`
+  - `buildProtectionSnapshot()` 헬퍼를 추가했다.
+  - BTC 직접 매수, 미추적 잔고 흡수, 일반 BUY 세 경로 모두 보호 주문 결과(`ok / tp/sl orderId / mode / error`)를 `trade_journal`에 기록하도록 보강했다.
+- 운영 판단 정리:
+  - 현재 LIVE 확대 병목은 signal 품질보다 `exit / protection` 경계다.
+  - crypto는 코드상 보호 주문 경로가 있어도 실제 DB는 `tp_sl_set=0` 상태이므로, 우선 실패 원인을 계측하는 것이 맞다.
+- 검증:
+  - `node --check bots/investment/team/hephaestos.js`
+  - `node --check bots/investment/shared/trade-journal-db.js`
+
 ## 2026-03-23: 스카 shadow canary 편입 경로 추가
 
 - `bots/ska/src/forecast.py`에 shadow canary blend 경로를 추가했다.
