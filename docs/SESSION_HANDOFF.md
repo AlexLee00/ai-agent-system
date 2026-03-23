@@ -63,6 +63,16 @@
   - `normalizeConfidence({ match_score: 'high' }) === 0.85`
   - `generateSteps() -> stepsToSyncMap()` 왕복 기준 `proposal.match_score=0.85`, `proposal.match_score_raw='high'`, 역변환 `match_score=0.85` 확인
 
+## 2026-03-23 — 비디오팀 feedback session missing guard 복구
+
+- [video-feedback-service.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/video-feedback-service.js)의 `markVideoFeedbackStatus()`에 missing-session guard를 추가했다.
+- 의미:
+  - 존재하지 않는 `feedback_session_id`로 상태 전이를 호출해도 더 이상 PostgreSQL FK 오류가 그대로 노출되지 않는다.
+  - `video-step-api`가 붙었을 때도 잘못된 입력은 도메인 오류로 안정적으로 처리할 수 있다.
+- 검증:
+  - `markVideoFeedbackConfirmed({ sessionId: 999999999 })` → `feedback_session_id=999999999 를 찾을 수 없습니다.`
+  - 정상 세션 생성 후 confirm 흐름은 계속 `feedback_status=confirmed`, `accepted_without_edit=true`
+
 ## 2026-03-23 — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`의 `@twick/video-editor/dist/video-editor.css` 전역 import를 제거했다.
