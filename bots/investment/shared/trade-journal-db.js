@@ -74,11 +74,15 @@ export async function initJournalSchema() {
       tp_order_id       VARCHAR,
       sl_order_id       VARCHAR,
       tp_sl_set         BOOLEAN DEFAULT false,
+      tp_sl_mode        VARCHAR,
+      tp_sl_error       VARCHAR,
 
       created_at        BIGINT NOT NULL
     )
   `);
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS trade_mode VARCHAR NOT NULL DEFAULT 'normal'`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_mode VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS tp_sl_error VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_market ON trade_journal(market, created_at)`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_status ON trade_journal(status, created_at)`); } catch { /* 이미 있으면 무시 */ }
 
@@ -231,9 +235,9 @@ export async function insertJournalEntry(entry) {
         trade_id, signal_id, market, exchange, symbol, is_paper, trade_mode,
         entry_time, entry_price, entry_size, entry_value, direction,
         signal_time, decision_time, execution_time, signal_to_exec_ms,
-        tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set,
+        tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, tp_sl_mode, tp_sl_error,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
@@ -244,6 +248,8 @@ export async function insertJournalEntry(entry) {
         entry.tp_price ?? null, entry.sl_price ?? null,
         entry.tp_order_id ?? null, entry.sl_order_id ?? null,
         entry.tp_sl_set ?? false,
+        entry.tp_sl_mode ?? null,
+        entry.tp_sl_error ?? null,
         'open', now,
       ],
     );

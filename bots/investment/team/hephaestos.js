@@ -179,6 +179,17 @@ function isCapitalShortageReason(reason = '') {
   return reason.includes('잔고 부족') || reason.includes('현금 보유 부족');
 }
 
+function buildProtectionSnapshot(protection = null, fallbackError = null) {
+  const errorText = protection?.error || fallbackError || null;
+  return {
+    tpSlSet: Boolean(protection?.ok),
+    tpOrderId: protection?.tpOrderId ?? null,
+    slOrderId: protection?.slOrderId ?? null,
+    tpSlMode: protection?.mode ?? null,
+    tpSlError: errorText ? String(errorText).slice(0, 240) : null,
+  };
+}
+
 async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
   const entry = openEntries.find(e => e.symbol === symbol && Boolean(e.is_paper) === Boolean(isPaper));
@@ -450,11 +461,11 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   // TP/SL OCO — /USDT 페어 기준 설정 (일관성 유지)
   const tpPrice = parseFloat((usdPrice * 1.06).toFixed(2));
   const slPrice = parseFloat((usdPrice * 0.97).toFixed(2));
-  let tpSlSet   = false;
+  let protectionSnapshot = buildProtectionSnapshot();
   if (!paperMode && usdPrice > 0) {
     try {
       const protection = await placeBinanceProtectiveExit(symbol, filledCoin, tpPrice, slPrice);
-      tpSlSet = protection.ok;
+      protectionSnapshot = buildProtectionSnapshot(protection);
       if (protection.ok) {
         console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
       } else if (protection.mode === 'stop_loss_only') {
@@ -463,6 +474,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
         throw new Error(protection.error || 'protective_exit_failed');
       }
     } catch (e) {
+      protectionSnapshot = buildProtectionSnapshot(null, e.message);
       console.warn(`  ⚠️ TP/SL 설정 실패: ${e.message}`);
       await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, e);
     }
@@ -476,7 +488,8 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
     totalUsdt: usdEquiv,
     paper:     paperMode,
     exchange:  'binance',
-    tpPrice, slPrice, tpSlSet,
+    tpPrice, slPrice,
+    ...protectionSnapshot,
     tpslSource: 'fixed',
   };
   await db.insertTrade(trade);
@@ -662,11 +675,11 @@ export async function executeSignal(signal) {
             // TP/SL OCO 설정 (실투자 모드에서만)
             const tpPrice = parseFloat((curPrice * 1.06).toFixed(2));
             const slPrice = parseFloat((curPrice * 0.97).toFixed(2));
-            let tpSlSet   = false;
+            let protectionSnapshot = buildProtectionSnapshot();
             if (!effectivePaperMode && curPrice > 0) {
               try {
                 const protection = await placeBinanceProtectiveExit(symbol, untracked, tpPrice, slPrice);
-                tpSlSet = protection.ok;
+                protectionSnapshot = buildProtectionSnapshot(protection);
                 if (protection.ok) {
                   console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${tpPrice} SL=${slPrice}`);
                 } else if (protection.mode === 'stop_loss_only') {
@@ -675,6 +688,7 @@ export async function executeSignal(signal) {
                   throw new Error(protection.error || 'protective_exit_failed');
                 }
               } catch (tpslErr) {
+                protectionSnapshot = buildProtectionSnapshot(null, tpslErr.message);
                 console.warn(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
               }
             }
@@ -689,7 +703,8 @@ export async function executeSignal(signal) {
               totalUsdt: untrackedUsd,
               paper:     effectivePaperMode,
               exchange:  'binance',
-              tpPrice, slPrice, tpSlSet,
+              tpPrice, slPrice,
+              ...protectionSnapshot,
               memo:      `미추적 잔고 흡수 — 봇 외부 매수 코인 포지션 등록${tag}`,
             }).catch(() => {});
 
@@ -906,9 +921,7 @@ export async function executeSignal(signal) {
         if (!effectivePaperMode) {
           try {
             const protection = await placeBinanceProtectiveExit(symbol, order.filled, trade.tpPrice, trade.slPrice);
-            trade.tpOrderId = protection.tpOrderId;
-            trade.slOrderId = protection.slOrderId;
-            trade.tpSlSet = protection.ok;
+            Object.assign(trade, buildProtectionSnapshot(protection));
             if (protection.ok) {
               console.log(`  🛡️ TP/SL OCO 설정 완료: TP=${trade.tpPrice} SL=${trade.slPrice}`);
             } else if (protection.mode === 'stop_loss_only') {
@@ -918,7 +931,7 @@ export async function executeSignal(signal) {
             }
           } catch (tpslErr) {
             console.error(`  ⚠️ TP/SL 설정 실패: ${tpslErr.message}`);
-            trade.tpSlSet = false;
+            Object.assign(trade, buildProtectionSnapshot(null, tpslErr.message));
             await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, tpslErr);
           }
         }
@@ -1012,6 +1025,8 @@ export async function executeSignal(signal) {
           tp_order_id:   trade.tpOrderId ?? null,
           sl_order_id:   trade.slOrderId ?? null,
           tp_sl_set:     trade.tpSlSet ?? false,
+          tp_sl_mode:    trade.tpSlMode ?? null,
+          tp_sl_error:   trade.tpSlError ?? null,
         });
         await journalDb.linkRationaleToTrade(tradeId, signalId);
         notifyJournalEntry({

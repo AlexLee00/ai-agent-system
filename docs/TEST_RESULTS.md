@@ -21,6 +21,14 @@
 | `bots/ska/venv/bin/python bots/ska/src/forecast.py --mode=daily --json` | ✅ `2026-03-24 predictedRevenue=238053`, `calibration_adjustment=34912`, `calibration_notes=weekday_bias:+34,912,samples:11` 저장 확인 |
 | `node scripts/reviews/ska-sales-forecast-daily-review.js --json` | ✅ daily review 재실행 기준 `avgMape=33.44`, `avgBias=-75194`, `hitRate20=41.7%`, shadow 우위(`avgMapeGap=-7.32`) 확인 |
 
+### 루나 암호화폐 TP/SL 실패 추적 계측 1차
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/investment/team/hephaestos.js` | ✅ `buildProtectionSnapshot()` 추가 후 문법 통과 |
+| `node --check bots/investment/shared/trade-journal-db.js` | ✅ `trade_journal.tp_sl_mode / tp_sl_error` 추가 후 문법 통과 |
+| `rg -n "tp_sl_mode|tp_sl_error|buildProtectionSnapshot" bots/investment/team/hephaestos.js bots/investment/shared/trade-journal-db.js` | ✅ 보호 주문 결과 계측 지점과 journal 컬럼 연결 확인 |
+
 ### 스카 shadow canary 편입 경로 추가
 
 | 테스트 | 결과 |

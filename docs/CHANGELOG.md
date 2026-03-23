@@ -67,6 +67,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `2026-03-24` 예측 `238,053원`, `calibration_adjustment=34,912` 반영 확인
   - `node scripts/reviews/ska-sales-forecast-daily-review.js --json` 기준 shadow `knn-shadow-v1`가 `availableDays=3`, `avgMapeGap=-7.32`로 우위지만, canary guard 전에는 자동 편입되지 않음을 확인
 
+## 12주차 후속 (2026-03-23) — 루나 암호화폐 TP/SL 실패 추적 계측 1차
+
+- `bots/investment/shared/trade-journal-db.js`
+  - `trade_journal`에 `tp_sl_mode`, `tp_sl_error` 컬럼 추가
+- `bots/investment/team/hephaestos.js`
+  - `buildProtectionSnapshot()` 추가
+  - BTC 직접 매수 / 미추적 잔고 흡수 / 일반 BUY 경로 모두 보호 주문 결과(`ok`, `tp/sl orderId`, `mode`, `error`)를 `trade_journal`에 기록
+- 의미:
+  - 기존에는 `tp_sl_set=false`만 보여 “왜 실패했는지”를 알기 어려웠고,
+  - 이제는 `oco`, `oco_list`, `stop_loss_only`, `failed`와 실제 에러 문자열 기준으로 후속 분석 가능
+
 ## 12주차 후속 (2026-03-23) — 스카 shadow canary 편입 경로 추가
 
 - `bots/ska/src/forecast.py`

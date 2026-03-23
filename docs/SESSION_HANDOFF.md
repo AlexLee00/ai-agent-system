@@ -9,6 +9,32 @@
 
 ---
 
+## 2026-03-23 — 루나 암호화폐 TP/SL 실패 추적 계측 1차
+
+- 투자 운영 점검 결과, 현재 LIVE 확대 병목은 `entry`보다 `exit / protection` 경계다.
+  - 실제 open 포지션은 누적돼 있지만 최근 7일 `closed trade / closed review`는 사실상 0건이었다.
+  - 특히 crypto는 코드상 OCO/SL-only 보호 주문 경로가 존재하지만 실제 DB 기준 `tp_sl_set=0`, `protective_order_count=0` 상태다.
+- 이를 추적하기 위해 `trade_journal`에 crypto TP/SL 결과를 직접 남기는 1차 계측을 추가했다.
+  - [trade-journal-db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/trade-journal-db.js)
+    - `tp_sl_mode`
+    - `tp_sl_error`
+  - [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)
+    - BTC 직접 매수
+    - 미추적 잔고 흡수
+    - 일반 BUY
+    세 경로 모두 `protection.ok / mode / tp/sl orderId / error`를 `trade_journal`에 남기도록 보강
+- 의미:
+  - 이제 “TP/SL이 왜 0%인가”를 감으로 보지 않고
+  - `oco`, `oco_list`, `stop_loss_only`, `failed`와 실제 에러 문자열 기준으로 추적 가능
+- 현재 운영 판단은 유지:
+  - crypto LIVE 확대 금지
+  - domestic LIVE는 현 수준 유지까지만 가능
+  - overseas LIVE 확대 금지
+- 다음 자연스러운 단계:
+  1. 실제 crypto BUY 한두 사이클에서 `trade_journal.tp_sl_mode / tp_sl_error` 누적 확인
+  2. `stop_loss_only`가 반복되면 브로커 호환/주문 파라미터 경계 점검
+  3. domestic/overseas는 `force-exit` 최소 정책 별도 설계
+
 ## 1. 현재 시스템 상태 요약
 
 - 스카
