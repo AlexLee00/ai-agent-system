@@ -800,6 +800,16 @@
 - 현재 일지/주간리뷰에서 `weakTop`이 바로 안 보일 수 있는 것은 정상이다. 과거 `pipeline_runs.meta`에는 새 필드가 없고, 다음 암호화폐 파이프라인 실행부터 누적된다.
 - LIVE 전환 판단은 여전히 보류다. 이번 계측은 튜닝 근거를 더 정교하게 만드는 단계이며, `PAPER -> LIVE` 승격 게이트는 [CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/CRYPTO_TUNING_AND_LIVE_GATE_2026-03-22.md)를 기준으로 유지한다.
 
+## 2026-03-23 — 루나 force-exit KIS capability preflight
+
+- `bots/investment/scripts/force-exit-runner.js`는 이제 승인형 force-exit preview/execute 전에 KIS capability preflight를 함께 계산한다.
+- 현재 기준 preflight 해석은 다음과 같다.
+  - 국내장 `LIVE/MOCK`: 장중 SELL 검증은 가능하지만 장외/장종료 시 즉시 차단
+  - 해외장 `LIVE/MOCK`: 현재 운영 관측 기준 SELL이 미지원 또는 제한 상태로 간주
+- 따라서 stale 후보가 있어도 실행 가능성은 시장/세션/계좌 capability를 먼저 본다. 실제 `375500` preview는 `장외 시간 + 국내장 mock 장중 전용`, `ORCL` preview는 `해외장 mock SELL 제한 + 미국 장외 시간`을 함께 출력한다.
+- `bots/investment/scripts/health-report.js`에도 `kisCapabilityHealth` 섹션을 추가해 국내/해외 KIS 계좌 모드와 현재 SELL 가능 범위를 운영 헬스에서 바로 읽게 했다.
+- 현재 자연스러운 다음 단계는 force-exit 확대가 아니라 `KIS capability`를 전제로 stale 포지션 정리 우선순위를 다시 읽는 것이다. 국내장은 장중에만 검증 가능하고, 해외장은 여전히 preview 중심으로 본다.
+
 ## 2026-03-22 — 루나 암호화폐 재진입 차단 코드 세분화
 
 - `bots/investment/team/hephaestos.js`, `bots/investment/team/hanul.js`에서 기존 `position_reentry_blocked` 단일 코드를 `paper_position_reentry_blocked`, `live_position_reentry_blocked`로 분리했다.

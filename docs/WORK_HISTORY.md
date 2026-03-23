@@ -4322,6 +4322,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 초기 구현에서 `pipeline_runs.market='crypto'`로 좁게 잡아 decision 0으로 보이던 경계를 즉시 보정했고, 현재는 `binance` market까지 포함해 최근 3일 암호화폐 퍼널을 정상 집계한다
 - 실제 최근 3일 출력 기준 `decision 2236 / BUY 344 / approved 247 / executed 48 / 체결 48(PAPER 48, LIVE 0) / 종료 리뷰 0`으로 확인되어, LIVE 게이트는 여전히 `blocked`로 유지된다
 
+### 루나 force-exit KIS capability preflight
+- `bots/investment/scripts/force-exit-runner.js`에 `getExecutionPreflight()`를 추가해 KIS force-exit preview/execute 전에 `accountMode / executionMode / marketStatus / capability`를 함께 계산하도록 보강
+- 국내장 `LIVE/MOCK`는 장중 SELL 검증 가능, 장외 시 차단으로 해석하고, 해외장 `LIVE/MOCK`는 현재 운영 관측 기준 SELL 미지원 또는 제한으로 분류
+- `bots/investment/scripts/health-report.js`에도 `kisCapabilityHealth`를 추가해 국내/해외 KIS 계좌 capability를 운영 헬스 JSON과 텍스트에서 함께 노출
+- 이를 통해 force-exit runner 실패를 단순 broker reject로 보지 않고, `시장 시간 / mock capability / 현재 운영 readiness` 경계로 분리해 해석할 수 있게 정리
+
 ### 루나 운영 헬스에 암호화폐 LIVE 게이트 통합
 - `bots/investment/scripts/crypto-live-gate-review.js`가 `loadCryptoLiveGateReview()` export를 제공하도록 열어, 단독 CLI이면서도 다른 리포트에서 재사용 가능한 구조로 정리
 - `bots/investment/scripts/health-report.js`는 이제 최근 3일 암호화폐 LIVE 게이트를 `cryptoLiveGateHealth` 섹션으로 함께 노출하고, 운영 판단에도 `암호화폐 LIVE 게이트 blocked` 경고를 포함한다

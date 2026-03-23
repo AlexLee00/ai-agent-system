@@ -1303,3 +1303,8 @@
 | `node --check scripts/reviews/jay-llm-daily-review.js` | ✅ |
 | `node scripts/reviews/jay-llm-daily-review.js --json` | ✅ `freshness.level`, `freshness.trust`, `freshness.summary` 노출 확인 |
 | `node scripts/reviews/jay-llm-daily-review.js` | ✅ `운영 신뢰도` 라인과 stale snapshot 참고용 경고 출력 확인 |
+| `node --check bots/investment/scripts/force-exit-runner.js` | ✅ KIS capability preflight 추가 후 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ `kisCapabilityHealth` 섹션 추가 후 문법 통과 |
+| `node bots/investment/scripts/force-exit-runner.js --symbol=375500 --exchange=kis` | ✅ 국내장 preview에 `LIVE/MOCK`, `장외 시간`, `mock 장중 SELL 가능` 경고가 함께 출력됨 |
+| `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas` | ✅ 해외장 preview에 `LIVE/MOCK`, `mock SELL 제한`, `미국 장외 시간` 경고가 함께 출력됨 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `kisCapabilityHealth.domestic/overseas`와 capability 요약이 JSON에 반영됨 |
