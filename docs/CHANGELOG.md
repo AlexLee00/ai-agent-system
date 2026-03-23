@@ -88,6 +88,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `shadow avgMapeGap=-7.32`, `availableDays=3`
   - 하지만 canary는 `shadow_compare_days_insufficient`로 아직 미적용
 
+## 12주차 후속 (2026-03-23) — 스카 daily_summary 당일 false warning 제거
+
+- `bots/reservation/scripts/health-report.js`
+  - `daily_summary 무결성(스터디룸 축)`은 이제 마감 완료된 과거 일자만 검사
+  - 당일 KST row(`date >= todayKst`)는 `09:00` 예약현황 보고가 먼저 저장될 수 있으므로 경고 대상에서 제외
+- 효과
+  - `2026-03-23 room_amounts_json 76500원 != pickko_study_room 0원` false warning 제거
+  - 스카 health가 실제 서비스 상태와 더 일치하도록 복구
+
 ## 12주차 후속 (2026-03-23) — 스카 재예약 교차 취소 오탐 방지
 
 - `bots/reservation/auto/monitors/naver-monitor.js`

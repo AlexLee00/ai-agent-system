@@ -47,6 +47,7 @@
   - 현재 기본 canary 가드는 `shadowBlendEnabled=true`, `shadowBlendWeight=0.25`, `shadowBlendMinConfidence=0.35`, `shadowBlendMinCompareDays=5`, `shadowBlendRequiredMapeGap=5.0`이다.
   - 현재 실측 기준 `2026-03-24` 예측은 shadow가 더 좋지만 `available_days=3`이라 `shadow_compare_days_insufficient`로 아직 blend가 발동하지 않는다. 운영 예측은 아직 primary-only 상태다.
   - daily/weekly review는 이제 `shadow canary` 상태를 함께 보여주며, 두 review 모두 canary guard와 같은 `requiredDays=5`, `requiredGap=5.0` 기준으로 shadow readiness를 읽는다.
+  - `health-report.js`의 `daily_summary 무결성(스터디룸 축)` 경계도 보정했다. 당일 KST row는 09:00 예약현황 보고가 먼저 저장되며 `room_amounts_json`만 채워질 수 있으므로, 무결성 경고는 마감 완료된 과거 일자만 대상으로 보도록 바꿨다. 이로써 `2026-03-23 room_amounts_json 76500원 != pickko_study_room 0원` false warning이 해소됐다.
   - 스카 매출 DB 적재 마무리 작업을 진행했다. `PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03`로 3월 전체 `daily_summary`를 재집계했고, stale 상태였던 `2026-03-21`, `2026-03-22` source row를 현재 정책 기준으로 복구했다.
   - 복구 후 현재 대표 row는 `2026-03-21 = pickko_study_room 156000 / general_revenue 132000 / total_amount 156000`, `2026-03-22 = pickko_study_room 136000 / general_revenue 173800 / total_amount 136000`으로 읽는다.
   - `bots/worker/lib/ska-sales-sync.js`의 `syncSkaSalesToWorker('test-company')`를 재실행해 `worker.sales` 미러도 source에 다시 맞췄다. 현재 `2026-03-21`은 `스터디룸 156000`, `2026-03-22`는 `스터디룸 136000 + 일반석 37800`으로 반영됐다.

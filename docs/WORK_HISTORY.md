@@ -101,6 +101,14 @@
   - `2026-03-24` upcoming 예측의 `shadow_blend_reason = shadow_compare_days_insufficient`
 - 해석: 이번 단계는 shadow를 실제 운영 레일에 억지로 투입한 것이 아니라, daily/weekly review와 실제 canary guard를 같은 기준으로 맞춘 뒤 충분한 actual 누적 후 자동으로 낮은 비중 canary가 발동하도록 안전한 승격 경계를 만든 것이다.
 
+## 2026-03-23: 스카 daily_summary 당일 false warning 경계 복구
+
+- `bots/reservation/scripts/health-report.js`의 `daily_summary 무결성(스터디룸 축)` 판정을 수정했다.
+- 이전에는 당일 KST row도 과거 마감 row와 같은 규칙으로 검사해서, `09:00` 예약현황 보고가 먼저 저장된 날에는 `room_amounts_json`만 채워져 false warning이 발생할 수 있었다.
+- 현재는 `date >= todayKst`인 당일 row를 무결성 경고 대상에서 제외해, 마감 완료된 과거 일자만 `room_amounts_json ↔ pickko_study_room` 일치를 검사한다.
+- 실측 기준 `2026-03-23` row는 `total_amount=76500`, `room_amounts_json={"A1":31500,"A2":21000,"B":24000}`, `pickko_study_room=0`, `general_revenue=0`이었고, 이는 저장 오류가 아니라 당일 미마감 row로 판정됐다.
+- 수정 후 `node bots/reservation/scripts/health-report.js --json` 기준 `dailySummaryIntegrityHealth.issueCount=0`, `decision.level=hold`, `recommended=false`로 회복됐다.
+
 ## 2026-03-23: 스카 취소 감지 재예약 교차 경계 복구
 
 - `naver-monitor`와 `kiosk-monitor`를 모두 launchd 백그라운드 운영 모드로 다시 복귀시켰다.
