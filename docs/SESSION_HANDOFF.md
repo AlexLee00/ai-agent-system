@@ -243,6 +243,9 @@
   - queued notice 알림은 `headline` 우선 제목 구조로 바뀌어 `ℹ️ 안내 / ℹ️ luna 알림 / 요약:` 중복이 줄었다.
   - 장전 스크리닝과 장 마감 매매일지는 심볼/포지션/매매 내역이 `외 N개 / 외 N건` 형태로 축약돼 한 화면 가독성이 높아졌다.
 - 워커
+  - 비디오팀 Phase 3 Twick 통합 1차를 진행했다. `bots/worker/web/app/video/editor/page.js`, `components/TwickEditorWrapper.js`를 추가하고 CSS import를 페이지로 이동, `next.config.js`의 `transpilePackages`로 `@twick/*` 4종을 보강했다.
+  - `npm install tailwindcss`로 PostCSS/Tailwind 누락 경계를 복구했고 `npx next build`는 성공했다.
+  - `ai.worker.nextjs` 재기동 후 실제 live 응답은 `http://127.0.0.1:4001/video/editor = 200`, `/video = 200`, `/ = 200`이다. 현재 worker-web 기준 live 포트는 `4001`이며 `localhost:3000`은 같은 라우트를 제공하지 않는다.
   - 문서 업로드/파싱/OCR/문서 상세/재사용 이력/생성 결과 연결까지 한 사이클이 닫혔다.
   - `/documents`, `/documents/[id]`에서 문서 재사용 성과를 확인할 수 있다.
   - `/admin/monitoring`은 `LLM API 현황`으로 재정리돼, ai-agent-system 전체 에이전트의 primary / fallback / 미적용 상태와 speed-test 결과를 한 화면에서 본다.

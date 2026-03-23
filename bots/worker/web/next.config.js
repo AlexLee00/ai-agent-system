@@ -10,6 +10,7 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ['@twick/video-editor', '@twick/timeline', '@twick/canvas', '@twick/live-player'],
   // API proxy → Express on port 4000
   async rewrites() {
     return [

@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-23: 비디오팀 Twick React SDK 통합 1차 / worker-web 빌드 경계 복구
+
+- `bots/worker/web/app/video/editor/page.js`와 `components/TwickEditorWrapper.js`를 연결해 Twick 테스트 페이지를 worker-web에 붙였다.
+- Twick CSS는 런타임 `require()` 대신 페이지 상단 import로 이동했고, `next.config.js`에는 `@twick/*` 4종 `transpilePackages`를 추가했다.
+- `tailwindcss`가 실제 `node_modules`에서 빠져 있던 상태를 확인했고 `npm install tailwindcss`로 복구했다.
+- `npx next build`가 통과했고, `ai.worker.nextjs` 재기동 후 `http://127.0.0.1:4001/video/editor`, `/video`, `/`가 모두 `200`으로 응답했다.
+- 해석: 이번 작업은 Phase 3 전체 구현이 아니라, Twick 기반 편집기를 실제 worker-web 런타임에 올릴 수 있도록 프런트 빌드/패키지 경계를 복구한 단계다.
+
 ## 2026-03-22: 팀 구조 결정 + Phase 2 문서 보완 + Phase 3 설계
 
 - 팀 구조 확정: packages/video + packages/blog + bots/worker 통합 포털

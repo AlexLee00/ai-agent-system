@@ -4,6 +4,19 @@
 
 ## 2026-03-23
 
+### 비디오팀 Twick React SDK 통합 1차
+
+| 테스트 | 결과 |
+|--------|------|
+| `test -d bots/worker/web/node_modules/tailwindcss && echo INSTALLED || echo MISSING` | ✅ 초기 상태 `MISSING` 확인 |
+| `npm install tailwindcss` (`bots/worker/web`) | ✅ `39 packages` 추가, PostCSS/Tailwind 패키지 복구 완료 |
+| `npx next build` (`bots/worker/web`) | ✅ Twick CSS import 방식 수정 + `transpilePackages` 보강 후 빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 서비스 재기동 성공 |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video/editor` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/video/editor` | ✅ 현재 worker-web live 포트가 아님을 확인 (`404`) |
+
 ### 비디오팀 Phase 2 final batch rerun
 
 | 테스트 | 결과 |
