@@ -3,6 +3,27 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS scoped 로딩 전환
+
+- `bots/worker/web/app/video/editor/page.js`
+  - Twick 전역 CSS import 제거
+- `bots/worker/web/components/TwickEditorWrapper.js`
+  - `/twick-editor-scoped.css`를 mount 시 `<link>`로 로드하고 unmount 시 제거하도록 변경
+  - root wrapper에 `.twick-scope` 부여
+- `bots/worker/web/scripts/scope-twick-css.js`
+  - Twick 충돌 클래스(`.btn-primary`, `.card`, `.flex`, `.gap-*`, `.text-sm` 등)에 `.twick-scope` 접두사를 붙인 scoped CSS 생성 스크립트 추가
+- `bots/worker/web/public/twick-editor-scoped.css`
+  - 빌드 산출용 scoped Twick CSS 추가
+- `bots/worker/web/package.json`
+  - `build`, `dev` 전에 `node scripts/scope-twick-css.js` 실행하도록 변경
+- 의미:
+  - `/video/editor` 방문 후에도 Twick CSS가 worker 포털 전체에 남아 `/dashboard` 스타일을 깨뜨리던 전역 주입 경계를 복구
+- 검증:
+  - `node bots/worker/web/scripts/scope-twick-css.js` 성공
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `http://127.0.0.1:4001/dashboard`, `/video`, `/video/editor` 모두 `200`
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS 경계 복구 1차
 
 - `bots/worker/web/app/globals.css`

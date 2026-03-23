@@ -9,6 +9,23 @@
 
 ---
 
+## 2026-03-23 — 비디오팀 Twick CSS scoped 로딩 전환
+
+- `/video/editor`의 `@twick/video-editor/dist/video-editor.css` 전역 import를 제거했다.
+- [TwickEditorWrapper.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/TwickEditorWrapper.js)는 이제 `/twick-editor-scoped.css`를 mount 시 `<link>`로 로드하고 unmount 시 제거한다.
+- [scope-twick-css.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/scripts/scope-twick-css.js)는 Twick 충돌 클래스(`.btn-primary`, `.card`, `.flex`, `.gap-*`, `.text-sm` 등)에 `.twick-scope` 접두사를 붙여 [twick-editor-scoped.css](/Users/alexlee/projects/ai-agent-system/bots/worker/web/public/twick-editor-scoped.css)를 생성한다.
+- 의미:
+  - `/video/editor` 방문 뒤 `/dashboard`로 돌아가도 Twick CSS가 worker 포털 전체에 남아 스타일을 깨뜨리던 전역 주입 경계를 복구
+  - 비디오 편집기 스타일은 `.twick-scope` 내부와 해당 페이지 생명주기로 축소
+- 검증:
+  - `node bots/worker/web/scripts/scope-twick-css.js` 성공
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `http://127.0.0.1:4001/dashboard`, `/video`, `/video/editor` 모두 `200`
+- 남은 리스크:
+  - CLI만으로는 `/video/editor` 방문 후 다시 `/dashboard`로 이동했을 때의 실제 시각 회귀를 완전 증명하진 못했다
+  - 다음 단계로 브라우저에서 route 이동(`dashboard -> video/editor -> dashboard`) 1회만 직접 확인하면 된다
+
 ## 2026-03-23 — 비디오팀 Twick CSS 경계 복구 1차
 
 - [bots/worker/web/app/globals.css](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/globals.css)의 전역 media reset에서 `video`, `canvas`를 제외했다.

@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-23: 비디오팀 Twick CSS scoped 로딩 전환
+
+- `/video/editor`가 `@twick/video-editor/dist/video-editor.css`를 전역 import하던 구조를 제거했다.
+- 대신 `bots/worker/web/scripts/scope-twick-css.js`로 충돌 클래스(`.btn-primary`, `.card`, `.flex`, `.gap-*`, `.text-sm` 등)에 `.twick-scope` 접두사를 붙인 `public/twick-editor-scoped.css`를 생성하도록 바꿨다.
+- `TwickEditorWrapper.js`는 이 scoped CSS를 mount 시 `<link>`로 로드하고 unmount 시 제거한다.
+- 해석: 이번 수정은 Twick CSS가 worker 포털 전체를 오염시키던 전역 주입 경계를 복구한 단계다. 비디오 편집기는 `/video/editor` 안에서만 스타일을 가지도록 축소됐다.
+- `npx next build`, `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`, `http://127.0.0.1:4001/dashboard`, `/video`, `/video/editor` 기준 검증 통과.
+
 ## 2026-03-23: 비디오팀 Twick CSS 경계 복구 1차
 
 - `bots/worker/web/app/globals.css`의 전역 media reset에서 `video, canvas`를 제거하고 `img, svg`만 유지하도록 축소했다.

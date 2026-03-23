@@ -4,6 +4,20 @@
 
 ## 2026-03-23
 
+### 비디오팀 Twick CSS scoped 로딩 전환
+
+| 테스트 | 결과 |
+|--------|------|
+| `node bots/worker/web/scripts/scope-twick-css.js` | ✅ `public/twick-editor-scoped.css` 생성 (`40.8KB`) |
+| `node --check bots/worker/web/scripts/scope-twick-css.js` | ✅ scoped CSS 생성 스크립트 문법 통과 |
+| `node --check bots/worker/web/app/video/editor/page.js` | ✅ page에서 전역 Twick CSS import 제거 후 문법 통과 |
+| `node --check bots/worker/web/components/TwickEditorWrapper.js` | ✅ 동적 scoped CSS 로더 추가 후 문법 통과 |
+| `npx next build` (`bots/worker/web`) | ✅ scoped CSS 생성 후 빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ Next.js 서비스 재기동 성공 |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/dashboard` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video` | ✅ `200` |
+| `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4001/video/editor` | ✅ `200` |
+
 ### 비디오팀 Twick CSS 경계 복구 1차
 
 | 테스트 | 결과 |
