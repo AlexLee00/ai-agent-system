@@ -76,6 +76,76 @@ function _estimateCost(usage) {
   return ((usage.prompt_tokens || 0) * 2.5 + (usage.completion_tokens || 0) * 10) / 1_000_000;
 }
 
+const GENERAL_SECTION_MARKERS = [
+  'AI 스니펫 요약',
+  '이 글에서 배울 수 있는 것',
+  '승호아빠 인사말',
+  '본론 섹션 1',
+  '본론 섹션 2',
+  '본론 섹션 3',
+  '이번 주 IT 뉴스 분석',
+  '스터디카페 홍보 섹션',
+  '마무리 제언',
+  '함께 읽으면 좋은 글',
+  '해시태그',
+];
+
+function _findMarkerIndex(text, marker) {
+  if (!text) return -1;
+  const candidates = [
+    `[${marker}]`,
+    marker,
+  ];
+  let found = -1;
+  for (const candidate of candidates) {
+    const idx = text.indexOf(candidate);
+    if (idx === -1) continue;
+    if (found === -1 || idx < found) found = idx;
+  }
+  return found;
+}
+
+function _getDetectedMarkers(text) {
+  return GENERAL_SECTION_MARKERS
+    .map(marker => ({ marker, index: _findMarkerIndex(text, marker) }))
+    .filter(item => item.index >= 0)
+    .sort((a, b) => a.index - b.index);
+}
+
+function _sanitizeContinuation(baseContent, continuationText) {
+  const continuation = String(continuationText || '').trim();
+  if (!continuation) {
+    return { mode: 'empty', text: '' };
+  }
+
+  const baseMarkers = new Set(_getDetectedMarkers(baseContent).map(item => item.marker));
+  const continuationMarkers = _getDetectedMarkers(continuation);
+
+  if (!continuationMarkers.length) {
+    return { mode: 'append', text: continuation };
+  }
+
+  const firstMarker = continuationMarkers[0];
+  const firstMissing = continuationMarkers.find(item => !baseMarkers.has(item.marker));
+
+  if (baseMarkers.has(firstMarker.marker)) {
+    if (firstMissing) {
+      return {
+        mode: 'trimmed_to_missing_section',
+        text: continuation.slice(firstMissing.index).trim(),
+        marker: firstMissing.marker,
+      };
+    }
+    return {
+      mode: 'discarded_restart',
+      text: '',
+      marker: firstMarker.marker,
+    };
+  }
+
+  return { mode: 'append', text: continuation };
+}
+
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
 const GEMS_SYSTEM_PROMPT = `
@@ -417,7 +487,15 @@ ${_buildVariationBlock(sectionVariation)}
       if (isRestart) {
         console.warn(`[젬스] ⚠️ 이어쓰기 LLM이 새 글 시작 감지 — 이어붙이기 건너뜀 (${cont.text.length}자)`);
       } else {
-        content = content + '\n' + cont.text;
+        const continuation = _sanitizeContinuation(content, cont.text);
+        if (continuation.mode === 'discarded_restart') {
+          console.warn(`[젬스] ⚠️ 이어쓰기 응답이 완성본 재시작으로 보여 건너뜀 (${continuation.marker})`);
+        } else if (continuation.mode === 'trimmed_to_missing_section') {
+          console.log(`[젬스] 이어쓰기 중복 섹션 정리 후 이어붙임 (${continuation.marker}부터)`);
+          content = content + '\n' + continuation.text;
+        } else if (continuation.text) {
+          content = content + '\n' + continuation.text;
+        }
       }
     } catch (e) {
       console.warn(`[젬스] 이어쓰기 실패 (무시): ${e.message}`);

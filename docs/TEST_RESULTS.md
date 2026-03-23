@@ -1315,3 +1315,5 @@
 | `node --check bots/reservation/scripts/dashboard-server.js` | ✅ webhook `store_resolution` alert resolve 보강 후 문법 통과 |
 | `node --input-type=module -e \"... handlers.store_resolution({ phone:'010-4572-0846', date:'2026-04-04', start:'16:30' }) ...\"` | ✅ `RAG 저장 완료 / 미해결 오류 알림 없음` 또는 해소 건수 포함 응답 확인 |
 | `node bots/reservation/manual/reports/pickko-alerts-query.js --unresolved --phone=010-4572-0846 --date=2026-04-04 --start=16:30` | ✅ unresolved 0건 확인 |
+| `node --check bots/blog/lib/gems-writer.js` | ✅ 젬스 이어쓰기 중복 섹션 정리 로직 추가 후 문법 통과 |
+| `python3 - <<'PY' ... bots/blog/output/*_general_*.html ... 'AI 스니펫 요약'/'본론 섹션'/'함께 읽으면 좋은 글' count 점검 ... PY` | ✅ `2026-03-21_general_도서리뷰 그릿 꾸준함의 힘을 배우다.html`에서 주요 섹션 2회 반복 샘플 재현 확인 |

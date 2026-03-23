@@ -894,3 +894,21 @@
 - 검증상 `09:00~13:00`와 `09:00~11:00`는 v2 해시가 서로 다르며, legacy 단일 키와 달리 충돌하지 않는다.
 - 추가로 `test-kiosk-block-key-v2.js`를 통해 실제 `reservation.kiosk_blocks` 트랜잭션 안에서 `09:00~13:00`와 `09:00~11:00` 두 row를 삽입/조회 후 rollback하는 비파괴 검증을 수행했고, `rowCount=2`, `v2Keys.distinct=true`를 확인했다.
 - 후속 운영 검증 절차는 [SKA_REBOOK_REGRESSION_TEST_2026-03-22.md](/Users/alexlee/projects/ai-agent-system/docs/SKA_REBOOK_REGRESSION_TEST_2026-03-22.md)를 기준으로 본다.
+
+## 2026-03-23 — 블로 젬스 일반 포스팅 이어쓰기 중복 섹션 방지
+
+- 사용자 관찰 기준 “같은 일반 포스팅 내용을 두 번씩 써서 억지로 분량을 늘린다”는 현상을 블로 출력 샘플로 재확인했다.
+- 실제 샘플:
+  - [2026-03-21_general_도서리뷰 그릿 꾸준함의 힘을 배우다.html](/Users/alexlee/projects/ai-agent-system/bots/blog/output/2026-03-21_general_도서리뷰%20그릿%20꾸준함의%20힘을%20배우다.html)
+  - `AI 스니펫 요약`, `본론 섹션 1/2/3`, `함께 읽으면 좋은 글`이 각 2회씩 들어가 있었다.
+- 원인 판단:
+  - 저장 중복이 아니라 [gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)의 `general_post_continue` 응답이 완성본을 다시 시작하는 경우가 있었고,
+  - 기존 로직은 `# 제목` 재시작만 감지해서 본문형 재시작을 놓쳤다.
+- 조치:
+  - 젬스 이어쓰기 전에 일반 포스팅 주요 섹션 마커(`AI 스니펫 요약`, `승호아빠 인사말`, `본론 섹션 1/2/3`, `함께 읽으면 좋은 글` 등)를 기준으로 continuation을 검사한다.
+  - 이미 작성된 섹션부터 다시 시작하면:
+    - 아직 안 나온 섹션이 있으면 그 섹션부터 잘라서 이어붙이고
+    - 모두 이미 나온 섹션이면 continuation 전체를 버린다.
+- 의미:
+  - 지금 당장 필요한 구조는 `이어쓰기 append` 경계 복구다.
+  - 나중에는 `gems` 일반 포스팅을 chunked generation 기본 경로로 승격하는 것도 검토할 수 있다.
