@@ -48,6 +48,21 @@
   - 로컬 PostgreSQL 실검증 기준 `ensureVideoFeedbackTables()` + `createVideoStepFeedbackSession()` + `markVideoFeedbackConfirmed()` 성공
   - 결과: `feedback_status=confirmed`, `accepted_without_edit=true`
 
+## 2026-03-23 — 비디오팀 Phase 3 과제 F confidence 문자열 경계 복구
+
+- [step-proposal-engine.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/step-proposal-engine.js)의 confidence 입력 경계를 보강했다.
+  - `normalizeConfidence()`는 이제 문자열 `match_score` (`high` / `medium` / `low`)를 직접 해석한다.
+  - `buildSyncProposal()`는 비숫자 `match_score`를 `0`으로 덮어쓰지 않고,
+    - `match_score`: 정규화된 수치 confidence
+    - `match_score_raw`: 원본 문자열값
+    을 함께 보존한다.
+- 의미:
+  - 문자열 기반 sync 매칭 점수에서도 `auto_confirm` 분기가 정확하게 유지된다.
+  - 사용자가 `confirm`만 한 경우에도 proposal/final 원장에서 원래 confidence 의미가 사라지지 않는다.
+- 검증:
+  - `normalizeConfidence({ match_score: 'high' }) === 0.85`
+  - `generateSteps() -> stepsToSyncMap()` 왕복 기준 `proposal.match_score=0.85`, `proposal.match_score_raw='high'`, 역변환 `match_score=0.85` 확인
+
 ## 2026-03-23 — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`의 `@twick/video-editor/dist/video-editor.css` 전역 import를 제거했다.

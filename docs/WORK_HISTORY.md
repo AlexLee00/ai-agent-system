@@ -19,6 +19,12 @@
 - `bots/video/migrations/006-feedback-sessions.sql`로 `video.ai_feedback_sessions`, `video.ai_feedback_events`, `video.video_edit_steps` 명시적 DDL도 추가했다.
 - 해석: 이번 단계는 Twick UI가 수집한 사용자 판단을 “편집 스텝별 피드백 원장 + RAG 학습 데이터”로 바꾸는 Phase 3 백엔드 저장 레이어를 연 것이다.
 
+## 2026-03-23: 비디오팀 Phase 3 과제 F confidence 문자열 경계 복구
+
+- `step-proposal-engine.js`에서 문자열 `match_score` (`high` / `medium` / `low`)를 confidence로 올바르게 정규화하도록 수정했다.
+- `buildSyncProposal()`는 이제 비숫자 점수를 `0`으로 잃지 않고, 정규화된 `match_score`와 원본 `match_score_raw`를 함께 남긴다.
+- 해석: 이번 수정은 새 기능 추가가 아니라, Phase 3 스텝 분류의 입력 경계와 proposal/final 원장 불변식을 복구한 버그픽스다.
+
 ## 2026-03-23: 비디오팀 Twick CSS scoped 로딩 전환
 
 - `/video/editor`가 `@twick/video-editor/dist/video-editor.css`를 전역 import하던 구조를 제거했다.

@@ -12,6 +12,8 @@
 | `find bots/video/temp -maxdepth 2 -name 'sync_map.json'` | ✅ 현재 temp에 실산출 `sync_map.json` 없음 확인 |
 | `node - <<'NODE' ... generateSteps(dummySyncMap, ..., { introClip, outroClip }) ... NODE` | ✅ 총 `4`스텝, `autoConfirm=3`, `manual=1`, intro/sync_match/outro 구조 확인 |
 | `node - <<'NODE' ... stepsToSyncMap(generateSteps(syncMap)) ... NODE` | ✅ 원본 `matches=2`, 역변환 `matches=2`, count 일치 확인 |
+| `node - <<'NODE' ... normalizeConfidence({ match_score: 'high' }) ... NODE` | ✅ 문자열 `match_score='high'`가 `0.85`로 정규화됨을 확인 |
+| `node - <<'NODE' ... generateSteps({ match_score: 'high' }) ... stepsToSyncMap(...) ... NODE` | ✅ `proposal.match_score=0.85`, `proposal.match_score_raw='high'`, 역변환 `match_score=0.85`로 원본 confidence 보존 확인 |
 
 ### 비디오팀 Phase 3 과제 G `video-feedback-service`
 
