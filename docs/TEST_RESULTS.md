@@ -13,6 +13,14 @@
 | `node - <<'NODE' ... generateSteps(dummySyncMap, ..., { introClip, outroClip }) ... NODE` | ✅ 총 `4`스텝, `autoConfirm=3`, `manual=1`, intro/sync_match/outro 구조 확인 |
 | `node - <<'NODE' ... stepsToSyncMap(generateSteps(syncMap)) ... NODE` | ✅ 원본 `matches=2`, 역변환 `matches=2`, count 일치 확인 |
 
+### 비디오팀 Phase 3 과제 G `video-feedback-service`
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/video-feedback-service.js` | ✅ 문법 통과 |
+| `node - <<'NODE' ... ensureVideoFeedbackTables/createVideoStepFeedbackSession/markVideoFeedbackConfirmed ... NODE` | ✅ 로컬 PostgreSQL 실검증 기준 `sessionId=1`, `feedbackStatus=confirmed`, `acceptedWithoutEdit=true` 확인 |
+| `node --check bots/video/lib/step-proposal-engine.js` | ✅ Task F와 조합되는 기본 엔진 문법 유지 |
+
 ### 비디오팀 Twick CSS scoped 로딩 전환
 
 | 테스트 | 결과 |

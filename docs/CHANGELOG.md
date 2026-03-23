@@ -20,6 +20,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 의미:
   - Phase 2 `sync_map`를 Phase 3 대화형 편집의 개별 스텝 원장으로 변환하는 첫 백엔드 엔진 추가
 
+## 12주차 후속 (2026-03-23) — 비디오팀 Phase 3 과제 G `video-feedback-service`
+
+- `bots/video/lib/video-feedback-service.js` 추가
+  - `ai-feedback-service` 패턴을 비디오팀용으로 복제
+  - `schema='video'`, `sourceRefType='edit_step'`, `sourceBot='video-feedback'`
+  - `createVideoStepFeedbackSession`, `record/replace edits`, `confirm/reject/submit/commit` 상태 전이 지원
+- `bots/video/migrations/006-feedback-sessions.sql` 추가
+  - `video.ai_feedback_sessions`
+  - `video.ai_feedback_events`
+  - `video.video_edit_steps`
+- 의미:
+  - Phase 3에서 스텝별 사용자 판단/수정 이력을 `accepted_without_edit`까지 포함해 누적하는 피드백 원장 레이어 추가
+  - `packages/core`를 수정하지 않고도 `video.*` 스키마를 쓰도록 로컬 어댑터 경계 복구
+
 ## 12주차 후속 (2026-03-23) — 비디오팀 Twick CSS scoped 로딩 전환
 
 - `bots/worker/web/app/video/editor/page.js`
