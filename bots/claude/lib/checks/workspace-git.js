@@ -17,6 +17,15 @@ const { execSync } = require('child_process');
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..', '..', '..');
 
+const GENERATED_PATH_PATTERNS = [
+  /^bots\/video\/temp\//,
+  /^bots\/worker\/web\/\.next\//,
+  /^bots\/worker\/web\/\.next_bak_/,
+  /^tmp\//,
+  /^sync_map\.json$/,
+  /^=$/,
+];
+
 // 핵심 파일 존재 여부 점검 대상
 const CRITICAL_FILES = [
   'CLAUDE.md',
@@ -40,6 +49,15 @@ function git(cmd, timeoutMs = 8000) {
   }
 }
 
+function parseChangedPath(line) {
+  if (!line || line.length < 4) return '';
+  return line.slice(3).trim().replace(/^"(.*)"$/, '$1');
+}
+
+function isGeneratedPath(filePath) {
+  return GENERATED_PATH_PATTERNS.some((pattern) => pattern.test(filePath));
+}
+
 // ── 메인 run ──────────────────────────────────────────────────────
 
 async function run() {
@@ -58,6 +76,9 @@ async function run() {
     items.push({ label: 'Git 상태', status: 'warn', detail: 'git status 실행 실패' });
   } else {
     const changedLines = statusOut ? statusOut.split('\n').filter(Boolean) : [];
+    const changedPaths = changedLines.map(parseChangedPath).filter(Boolean);
+    const generatedPaths = changedPaths.filter(isGeneratedPath);
+    const meaningfulPaths = changedPaths.filter((filePath) => !isGeneratedPath(filePath));
 
     // 절대규칙 위반 감지: secrets.json이 스테이징됐는지 확인
     const secretsStaged = changedLines.some(l => /secrets\.json/.test(l) && !l.startsWith('??'));
@@ -69,19 +90,27 @@ async function run() {
       });
     }
 
-    if (changedLines.length === 0) {
+    if (generatedPaths.length > 0) {
+      items.push({
+        label: 'Git 생성 산출물',
+        status: 'ok',
+        detail: `${generatedPaths.length}개 파일은 temp/build/backup 산출물로 분리 관찰`,
+      });
+    }
+
+    if (meaningfulPaths.length === 0) {
       items.push({ label: 'Git 변경사항', status: 'ok', detail: '변경 없음 (clean)' });
-    } else if (changedLines.length > 10) {
+    } else if (meaningfulPaths.length > 10) {
       items.push({
         label:  'Git 변경사항',
         status: 'warn',
-        detail: `${changedLines.length}개 파일 uncommitted — 커밋 또는 정리 권장`,
+        detail: `${meaningfulPaths.length}개 파일 uncommitted — 커밋 또는 정리 권장`,
       });
     } else {
       items.push({
         label:  'Git 변경사항',
         status: 'ok',
-        detail: `${changedLines.length}개 파일 미커밋 (${changedLines.length}건)`,
+        detail: `${meaningfulPaths.length}개 파일 미커밋 (${meaningfulPaths.length}건)`,
       });
     }
   }
