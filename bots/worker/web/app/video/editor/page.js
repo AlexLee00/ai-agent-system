@@ -29,10 +29,20 @@ export default function VideoEditorPage() {
   const [phase, setPhase] = useState('idle');
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const autoStartedRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    function syncViewport() {
+      setIsMobileViewport(window.innerWidth < 1024);
+    }
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
   }, []);
 
   useEffect(() => {
@@ -121,6 +131,17 @@ export default function VideoEditorPage() {
 
   if (!mounted) {
     return <div className="p-4 text-sm text-slate-500">편집기를 준비하는 중입니다.</div>;
+  }
+
+  if (isMobileViewport) {
+    return (
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-4">
+        <div className="max-w-md rounded-3xl border border-amber-200 bg-amber-50 px-6 py-8 text-center">
+          <p className="text-sm font-semibold text-amber-700">PC 전용 메뉴입니다.</p>
+          <p className="mt-2 text-sm leading-6 text-amber-800">영상 편집기는 PC에서 이용해주세요.</p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -24,6 +24,20 @@ export default function BottomNav() {
       {visibleItems.map(item => {
         const active = pathname.startsWith(item.href);
         const Icon   = item.icon;
+        if (item.href === '/video') {
+          return (
+            <button
+              key={item.href}
+              type="button"
+              onClick={() => window.alert('PC 전용 메뉴입니다. PC에서 이용해주세요')}
+              className="flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-2 py-2 text-gray-400 transition-colors"
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              <span className="max-w-full truncate text-[11px] font-medium leading-tight">{item.label}</span>
+            </button>
+          );
+        }
+
         return (
           <Link
             key={item.href}
