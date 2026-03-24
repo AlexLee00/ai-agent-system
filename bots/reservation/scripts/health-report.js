@@ -104,15 +104,32 @@ async function buildDailySummaryIntegrityHealth() {
     `);
 
     const issues = [];
+    const policyDivergences = [];
     for (const row of rows) {
       const date = String(row.date || '').slice(0, 10);
+      const totalAmount = Number(row.total_amount || 0);
       const roomTotal = sumRoomAmounts(row.room_amounts_json);
       const pickkoStudyRoom = Number(row.pickko_study_room || 0);
+      const generalRevenue = Number(row.general_revenue || 0);
+      const combinedRevenue = generalRevenue + pickkoStudyRoom;
 
       // 당일 row는 09:00 예약현황 보고가 먼저 저장될 수 있어
       // room_amounts_json만 채워지고 스터디룸 매출 축은 아직 비어 있을 수 있다.
       // 무결성 경고는 마감 완료된 과거 일자만 대상으로 본다.
       if (date >= todayKst) {
+        continue;
+      }
+
+      // 현재 daily_summary는 예약현황 기반 total_amount/room_amounts_json(예약 발생 축)과
+      // 픽코 일별 상세 기반 general_revenue/pickko_study_room(매출 인식 축)을 함께 보관한다.
+      // 두 축이 같이 채워진 날짜는 room_amounts_json != pickko_study_room 이어도
+      // 저장 버그가 아니라 정책 차이일 수 있으므로 경고 대신 관찰 샘플로 분리한다.
+      if (totalAmount > 0 && combinedRevenue > 0 && totalAmount !== combinedRevenue) {
+        if (roomTotal !== pickkoStudyRoom) {
+          policyDivergences.push(
+            `${date}: 예약합계 ${totalAmount}원 vs 픽코직접 ${combinedRevenue}원 (room_amounts_json ${roomTotal}원 / pickko_study_room ${pickkoStudyRoom}원)`,
+          );
+        }
         continue;
       }
 
@@ -128,19 +145,30 @@ async function buildDailySummaryIntegrityHealth() {
 
     if (issues.length > 0) {
       return {
-        ok: [],
+        ok: policyDivergences.length > 0
+          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (예약합계 vs 픽코 직접매출)`]
+          : [],
         warn: [
           `  daily_summary 무결성(스터디룸 축): 경고 ${issues.length}건`,
           ...issues.slice(0, 5).map((line) => `    - ${line}`),
         ],
         issueCount: issues.length,
+        policyDivergenceCount: policyDivergences.length,
+        policyDivergenceSamples: policyDivergences.slice(0, 5).map((line) => `  ${line}`),
       };
     }
 
     return {
-      ok: ['  daily_summary 무결성(스터디룸 축): 스터디룸 산출식과 저장값이 일치'],
+      ok: [
+        '  daily_summary 무결성(스터디룸 축): 스터디룸 산출식과 저장값이 일치',
+        ...(policyDivergences.length > 0
+          ? [`  정책 차이 관찰 ${policyDivergences.length}건 (예약합계 vs 픽코 직접매출)`]
+          : []),
+      ],
       warn: [],
       issueCount: 0,
+      policyDivergenceCount: policyDivergences.length,
+      policyDivergenceSamples: policyDivergences.slice(0, 5).map((line) => `  ${line}`),
     };
   } catch (error) {
     return {
