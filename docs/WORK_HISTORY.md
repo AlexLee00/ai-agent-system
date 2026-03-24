@@ -4,6 +4,25 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-25: 스카 매출 두 축 source of truth 문서화
+
+- `2026-03-23` `daily_summary` row를 Pickko 일별 상세와 다시 대조했다.
+- 확인 결과:
+  - `total_amount=175300`, `room_amounts_json=83500`
+  - `general_revenue=91800`, `pickko_study_room=7000`
+  - `recognized_total_revenue=98800`
+- 이 값은 저장 버그가 아니라, `daily_summary`가
+  - 예약합계 축(`total_amount`, `room_amounts_json`)
+  - 픽코 직접매출 축(`general_revenue`, `pickko_study_room`)
+  을 함께 보관하는 구조임을 다시 확인한 사례다.
+- `bots/reservation/scripts/health-report.js`는 이제 이 차이를 경고가 아니라 `정책 차이 관찰`로 분리한다.
+- `bots/reservation/lib/ska-read-service.js`, `bots/reservation/scripts/dashboard-server.js`, `bots/reservation/scripts/dashboard.html`, `bots/reservation/scripts/export-ska-sales-csv.js`는
+  - `booking_total_amount`
+  - `recognized_total_revenue`
+  를 함께 노출하도록 보강했다.
+- 현재 운영 source of truth는 `recognized_total_revenue = general_revenue + pickko_study_room`다.
+- `total_amount`는 예약합계/호환용/fallback trace 필드로 유지한다.
+
 ## 2026-03-24: worker-web `/video` 실브라우저 검증 + 경계 복구 1차
 
 - `bots/worker/web/components/VideoChatWorkflow.jsx`

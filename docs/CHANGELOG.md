@@ -3,6 +3,22 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-25) — 스카 매출 두 축 source of truth 명시화
+
+- `bots/reservation/scripts/health-report.js`
+  - `daily_summary` 경고에서 예약합계 축과 픽코 직접매출 축의 정책 차이를 분리
+  - `2026-03-23` 같은 케이스는 오류가 아니라 `정책 차이 관찰`로 표기
+- `bots/reservation/lib/ska-read-service.js`
+- `bots/reservation/scripts/dashboard-server.js`
+- `bots/reservation/scripts/dashboard.html`
+- `bots/reservation/scripts/export-ska-sales-csv.js`
+  - `booking_total_amount = total_amount`
+  - `recognized_total_revenue = general_revenue + pickko_study_room`
+  두 축을 함께 노출하도록 정리
+- 운영 기준:
+  - 대시보드/읽기 API/CSV/예측/worker 매출 미러는 `recognized_total_revenue`를 실매출 기준으로 사용
+  - `total_amount`는 예약합계/호환용/fallback trace로 유지
+
 ## 12주차 후속 (2026-03-24) — worker-web `/video` 단계형 채팅 UI 및 파일명 복구
 
 - `bots/worker/web/components/VideoChatWorkflow.jsx`
