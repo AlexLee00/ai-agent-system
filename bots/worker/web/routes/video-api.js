@@ -53,11 +53,11 @@ const IMAGE_MIMES = new Set([
 function normalizeOriginalFilename(name) {
   const raw = String(name || '');
   if (!raw) return raw;
-  if (/[가-힣]/.test(raw)) return raw;
+  if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u1100-\u11ff\u3130-\u318f]/.test(raw)) return raw.normalize('NFC');
 
   try {
-    const decoded = Buffer.from(raw, 'latin1').toString('utf8');
-    if (/[가-힣]/.test(decoded)) {
+    const decoded = Buffer.from(raw, 'latin1').toString('utf8').normalize('NFC');
+    if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u1100-\u11ff\u3130-\u318f]/.test(decoded)) {
       return decoded;
     }
   } catch {

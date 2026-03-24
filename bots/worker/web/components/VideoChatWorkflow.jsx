@@ -12,12 +12,17 @@ const ACTIVE_VIDEO_SESSION_KEY = 'worker_video_active_session_id';
 const WORKFLOW_PHASE_PREFIX = 'worker_video_workflow_phase:';
 const WORKFLOW_STEPS = ['upload', 'intro', 'outro', 'edit_intent', 'summary'];
 
+function hasHangulText(value) {
+  return /[가-힣ㄱ-ㅎㅏ-ㅣ\u1100-\u11ff\u3130-\u318f]/.test(String(value || ''));
+}
+
 function normalizeFileName(name) {
   const raw = String(name || '');
-  if (!raw || /[가-힣]/.test(raw)) return raw;
+  if (!raw || hasHangulText(raw)) return raw.normalize('NFC');
   try {
-    const decoded = decodeURIComponent(escape(raw));
-    return /[가-힣]/.test(decoded) ? decoded : raw;
+    const bytes = Uint8Array.from(Array.from(raw), (char) => char.charCodeAt(0) & 0xff);
+    const decoded = new TextDecoder('utf-8').decode(bytes).normalize('NFC');
+    return hasHangulText(decoded) ? decoded : raw;
   } catch {
     return raw;
   }
@@ -95,13 +100,20 @@ function toDraftFiles(files) {
   }));
 }
 
+function hasAssetSelectionEvidence(session, kind) {
+  if (!session) return false;
+  const mode = String(kind === 'intro' ? (session.intro_mode || '') : (session.outro_mode || '')).trim();
+  const prompt = String(kind === 'intro' ? (session.intro_prompt || '') : (session.outro_prompt || '')).trim();
+  return (mode && mode !== 'none') || Boolean(prompt);
+}
+
 function buildComputedPhase(session, files) {
   if (!session) return 'upload';
   const rawFiles = files.filter((file) => file.file_type === 'video');
   const audioFiles = files.filter((file) => file.file_type === 'audio');
   if (!rawFiles.length || !audioFiles.length) return 'upload';
-  if (!session.intro_mode) return 'intro';
-  if (!session.outro_mode) return 'outro';
+  if (!hasAssetSelectionEvidence(session, 'intro')) return 'intro';
+  if (!hasAssetSelectionEvidence(session, 'outro')) return 'outro';
   if (!session.edit_notes) return 'edit_intent';
   return 'summary';
 }
@@ -187,14 +199,21 @@ export default function VideoChatWorkflow({
     loadSession(null);
   }, [sessionId, resetToken]);
 
-  useEffect(() => {
-    if (session?.id) {
-      writeWorkflowPhase(session.id, chatPhase);
-    }
-  }, [chatPhase, session?.id]);
-
   const rawFiles = useMemo(() => files.filter((file) => file.file_type === 'video'), [files]);
   const audioFiles = useMemo(() => files.filter((file) => file.file_type === 'audio'), [files]);
+
+  function schedulePhaseChange(nextPhase) {
+    window.setTimeout(() => {
+      setChatPhase(nextPhase);
+    }, 0);
+  }
+
+  useEffect(() => {
+    if (!session?.id) return;
+    const hasUploadedPairs = rawFiles.length > 0 && audioFiles.length > 0;
+    if (chatPhase === 'upload' && hasUploadedPairs) return;
+    writeWorkflowPhase(session.id, chatPhase);
+  }, [audioFiles.length, chatPhase, rawFiles.length, session?.id]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -303,8 +322,8 @@ export default function VideoChatWorkflow({
 
   const draftFiles = useMemo(() => (
     toDraftFiles([
-      ...rawFiles.map((file) => ({ name: file.original_name, size: Number(file.file_size_bytes || 0), type: 'video/mp4' })),
-      ...audioFiles.map((file) => ({ name: file.original_name, size: Number(file.file_size_bytes || 0), type: 'audio/mp4' })),
+      ...rawFiles.map((file) => ({ name: normalizeFileName(file.original_name), size: Number(file.file_size_bytes || 0), type: 'video/mp4' })),
+      ...audioFiles.map((file) => ({ name: normalizeFileName(file.original_name), size: Number(file.file_size_bytes || 0), type: 'audio/mp4' })),
     ])
   ), [audioFiles, rawFiles]);
 
@@ -320,52 +339,6 @@ export default function VideoChatWorkflow({
 
   const messages = useMemo(() => {
     const now = new Date().toISOString();
-    const items = [];
-    items.push({
-      id: 'start',
-      role: 'ai',
-      content: session?.id
-        ? '기존 작업을 이어서 불러왔습니다.'
-        : '새 편집을 시작합니다. 먼저 원본 영상과 나레이션 파일을 올려주세요.',
-      timestamp: now,
-    });
-
-    if (rawFiles.length > 0 || audioFiles.length > 0) {
-      items.push({
-        id: 'upload-summary',
-        role: 'system',
-        content: `현재 업로드 상태: 영상 ${rawFiles.length}개, 음성 ${audioFiles.length}개`,
-        timestamp: now,
-      });
-    }
-
-    if (session?.intro_mode) {
-      items.push({
-        id: 'intro-done',
-        role: 'system',
-        content: `인트로 설정을 반영했습니다. (${introLabel})`,
-        timestamp: now,
-      });
-    }
-
-    if (session?.outro_mode) {
-      items.push({
-        id: 'outro-done',
-        role: 'system',
-        content: `인트로 ${introLabel}, 아웃트로 ${outroLabel} 확인했습니다.`,
-        timestamp: now,
-      });
-    }
-
-    if (session?.edit_notes) {
-      items.push({
-        id: 'intent-user',
-        role: 'user',
-        content: session.edit_notes,
-        timestamp: now,
-      });
-    }
-
     const promptMap = {
       upload: canContinueUpload
         ? '파일을 더 추가하시거나 다음 단계로 진행해주세요.'
@@ -376,15 +349,13 @@ export default function VideoChatWorkflow({
       summary: '설정 요약입니다. 확인 후 편집을 시작할 수 있습니다.',
     };
 
-    items.push({
+    return [{
       id: 'active-step',
       role: 'ai',
       content: promptMap[chatPhase] || '다음 단계를 진행해주세요.',
       timestamp: now,
-    });
-
-    return items;
-  }, [audioFiles.length, canContinueUpload, chatPhase, introLabel, outroLabel, rawFiles.length, session?.edit_notes, session?.id, session?.intro_mode, session?.outro_mode]);
+    }];
+  }, [canContinueUpload, chatPhase]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -467,7 +438,7 @@ export default function VideoChatWorkflow({
                   <button
                     type="button"
                     disabled={!canContinueUpload || busy === 'upload'}
-                    onClick={() => setChatPhase('intro')}
+                    onClick={() => schedulePhaseChange('intro')}
                     className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
                   >
                     다음 단계

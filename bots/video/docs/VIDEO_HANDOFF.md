@@ -1,7 +1,8 @@
 # 비디오팀 인수인계 허브
 
-> 최종 업데이트: 2026-03-21
+> 최종 업데이트: 2026-03-24
 > 상태: Phase 3 설계 완료 — AI 대화형 편집기 (Twick + RED/BLUE + 피드백 RAG)
+>       worker-web `/video` 단계형 채팅 워크플로우 경계 보강 + 실브라우저 검증 진행 중
 >       Phase 2 완료 — AI 싱크 매칭 파이프라인 / Phase 1 전체 완료
 
 ---
@@ -196,6 +197,24 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
     - session/file/edit 원장은 `video_sessions -> video_upload_files -> video_edits` 구조로 연결
     - confirm 후 final render는 `scripts/render-from-edl.js`가 백그라운드에서 수행
     - preview/subtitle/download는 JWT 헤더 제약 때문에 `fetch + Authorization + blob URL` 방식 사용
+  - 2026-03-24 worker-web `/video`, `/video/editor` 운영 경계 보강
+    - `components/VideoChatWorkflow.jsx`
+      - 채팅 버블을 히스토리 누적형이 아니라 현재 단계 질문 1개만 보이도록 정렬
+      - `upload -> intro -> outro -> edit_intent -> summary` phase 계산에서 `intro_mode/outro_mode='none'`를 완료 증거로 오해하지 않도록 보수화
+      - 업로드 후 stale `upload` phase가 localStorage에 남지 않도록 guard 추가
+      - 업로드 카드에 표시하는 `original_name`을 UTF-8 복구 + `NFC` 정규화 경계로 통일
+    - `components/ChatCard.jsx`
+      - intro/outro 카드는 기본 선택을 비워두고, 명시 선택 전에는 `설정 반영`을 비활성화
+    - `routes/video-api.js`
+      - 업로드 파일명 저장 시 `latin1 -> utf8 -> NFC` 복구 경계를 추가해 새 세션의 `original_name`이 깨진 상태로 원장에 남지 않도록 보강
+    - `app/layout.js`, `public/worker-favicon.svg`, `public/favicon.ico`
+      - worker 웹 favicon 404를 해소하고 브라우저 아이콘 메타데이터를 명시
+    - 실브라우저 검증 기준 확인된 것
+      - `/video/editor` desktop: 좌측 Twick, 우측 AI 채팅 패널 정상
+      - mobile bottom nav `영상`: `PC 전용 메뉴입니다. PC에서 이용해주세요` alert 정상
+      - `/video`: 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 스크롤 정상
+    - 남은 리스크
+      - 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상은 자동화 검증에서 한 차례 더 재현됐고, 최종 운영 브라우저 기준 재확인이 필요
   - 과제 10 Critic Agent 구현 완료
     - `lib/critic-agent.js`
     - `scripts/test-critic-agent.js`

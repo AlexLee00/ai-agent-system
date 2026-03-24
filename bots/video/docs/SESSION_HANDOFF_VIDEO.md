@@ -20,6 +20,40 @@
 > - RED 평가: 총 4회, BLUE 대안: 총 0회
 > - 5세트 중 2세트 완료, 3세트는 `300000ms` timeout skip
 
+## 2026-03-24 worker-web `/video`, `/video/editor` 실브라우저 점검 + 파일명 복구
+
+- 범위
+  - `/video` 단계형 질문 흐름, 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 스크롤
+  - mobile bottom nav `영상` alert
+  - `/video/editor` 좌측 Twick + 우측 AI 채팅 패널
+  - 콘솔 에러 / 네트워크 실패
+  - 업로드 카드 한글 파일명 깨짐
+- 실제 반영
+  - `bots/worker/web/components/VideoChatWorkflow.jsx`
+    - 채팅 메시지를 과거 히스토리 누적형에서 현재 단계 버블 1개만 보이는 구조로 정리
+    - `intro_mode/outro_mode='none'`를 완료 증거로 간주하지 않도록 phase 계산 보수화
+    - stale `upload` phase localStorage 저장 방지
+    - 업로드 카드 파일명 표시를 UTF-8 복구 + `NFC` 정규화 경계로 통일
+  - `bots/worker/web/components/ChatCard.jsx`
+    - intro/outro 카드 기본 선택 제거
+    - 명시 선택 전 `설정 반영` 비활성화
+  - `bots/worker/web/routes/video-api.js`
+    - 새 업로드 파일명의 `original_name` 저장 시 `latin1 -> utf8 -> NFC` 복구 추가
+  - `bots/worker/web/app/layout.js`
+  - `bots/worker/web/public/worker-favicon.svg`
+  - `bots/worker/web/public/favicon.ico`
+- 검증
+  - `npx next build` 반복 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web` 성공
+  - `/video/editor` desktop에서 Twick/AI 패널 정상, 콘솔/네트워크 오류 없음
+  - mobile bottom nav `영상` 클릭 시 `PC 전용 메뉴입니다. PC에서 이용해주세요` alert 확인
+  - `/video` 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 영역 스크롤 확인
+  - DB 저장값 직접 조회 기준, 깨진 `original_name`은 `latin1 -> utf8` 복구 후 `NFC` 정규화로 정상 파일명(`원본_나레이션_파라미터.m4a` 등)으로 되돌아감을 확인
+- 남은 리스크
+  - 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상은 자동화 검증에서 재현된 이력이 있어, 운영 브라우저 기준 최종 재확인이 남아 있다.
+  - 현재 수정은 “표시 경계 + 저장 경계”를 모두 보강했으므로, 다음 세션은 intro/outro phase 전이 계측에 집중하는 것이 자연스럽다.
+
 ---
 
 ## Phase 2 현재 상태
