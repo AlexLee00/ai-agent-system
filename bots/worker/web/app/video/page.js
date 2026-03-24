@@ -1,11 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { History, Plus } from 'lucide-react';
 
-import { api } from '@/lib/api';
 import VideoChatWorkflow from '@/components/VideoChatWorkflow';
-import VideoHistoryPanel from '@/components/VideoHistoryPanel';
 
 export default function VideoPage() {
   const router = useRouter();
@@ -14,7 +14,6 @@ export default function VideoPage() {
     const raw = String(searchParams?.get('session') || '').trim();
     return raw ? Number(raw) : null;
   }, [searchParams]);
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [workflowResetToken, setWorkflowResetToken] = useState(0);
 
   function handleCreate() {
@@ -22,36 +21,32 @@ export default function VideoPage() {
     setWorkflowResetToken((prev) => prev + 1);
   }
 
-  function handleSelect(session) {
-    if (session?.latest_edit_id && session.latest_edit_mode === 'interactive') {
-      router.push(`/video/editor?editId=${session.latest_edit_id}`);
-      return;
-    }
-    router.replace(`/video?session=${session.id}`);
-  }
-
-  async function handleDelete(session) {
-    if (!session?.latest_edit_id) {
-      throw new Error('삭제할 편집 이력이 없습니다.');
-    }
-    await api.delete(`/video/edits/${session.latest_edit_id}`);
-    setHistoryRefreshKey((prev) => prev + 1);
-    if (Number(selectedSessionId || 0) === Number(session.id || 0)) {
-      router.replace('/video');
-      setWorkflowResetToken((prev) => prev + 1);
-    }
-  }
-
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4 lg:flex-row">
-      <div className="h-[320px] shrink-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm lg:h-full lg:w-80">
-        <VideoHistoryPanel
-          selectedSessionId={selectedSessionId}
-          onSelect={handleSelect}
-          onDelete={handleDelete}
-          onCreate={handleCreate}
-          refreshKey={historyRefreshKey}
-        />
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4">
+      <div className="flex items-center justify-between rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-500">AI Chat Workflow</p>
+          <h1 className="mt-1 text-xl font-semibold text-slate-900">대화형 영상 설정</h1>
+          <p className="mt-1 text-sm text-slate-500">AI와 대화하며 업로드, 인트로/아웃트로, 편집 의도를 설정한 뒤 편집기로 이동합니다.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCreate}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Plus className="h-4 w-4" />
+            새 편집
+          </button>
+          <Link
+            href="/video/history"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 text-slate-700 transition hover:bg-slate-50"
+            aria-label="편집 이력 보기"
+            title="편집 이력"
+          >
+            <History className="h-5 w-5" />
+          </Link>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
@@ -60,10 +55,9 @@ export default function VideoPage() {
           sessionId={selectedSessionId}
           resetToken={workflowResetToken}
           onEditStart={(editId) => {
-            setHistoryRefreshKey((prev) => prev + 1);
             router.push(`/video/editor?editId=${editId}`);
           }}
-          onSessionChange={() => setHistoryRefreshKey((prev) => prev + 1)}
+          onSessionChange={() => {}}
         />
       </div>
     </div>
