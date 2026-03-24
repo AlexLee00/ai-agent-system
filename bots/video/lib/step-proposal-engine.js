@@ -23,7 +23,7 @@ function ensureStepConfig(config) {
     blue_required_below_red: Number(config?.step_proposal?.blue_required_below_red || 50),
     red_model: String(config?.step_proposal?.red_model || 'gpt-4o-mini'),
     blue_max_alternatives: Number(config?.step_proposal?.blue_max_alternatives || 3),
-    step_types: config?.step_proposal?.step_types || ['sync_match', 'cut', 'transition', 'intro', 'outro'],
+    step_types: config?.step_proposal?.step_types || ['sync_match', 'cut', 'transition', 'video_insert', 'audio_sync', 'intro', 'outro'],
   };
 }
 
@@ -99,10 +99,37 @@ function buildReason(match = {}) {
   return '기본 싱크 매칭';
 }
 
+function deriveStepType(match = {}, confidence = null) {
+  const safeConfidence = confidence == null ? normalizeConfidence(match) : Number(confidence || 0);
+  const speedFactor = Number(match.speed_factor || 1);
+  const sceneType = String(match?.source?.scene_type || '');
+  const narration = match?.narration || {};
+  const narrationDuration = Math.max(0, Number(narration.end_s || 0) - Number(narration.start_s || 0));
+
+  if (match.match_type === 'unmatched' || !match.source) {
+    return 'video_insert';
+  }
+  if (match.match_type === 'hold' || safeConfidence < 0.4) {
+    return 'cut';
+  }
+  if (Math.abs(speedFactor - 1) >= 0.2) {
+    return 'audio_sync';
+  }
+  if (sceneType.includes('transition') || sceneType.includes('outro') || sceneType.includes('intro') || narrationDuration <= 4) {
+    return 'transition';
+  }
+  if (!String(match?.source?.description || '').trim()) {
+    return 'video_insert';
+  }
+  return 'sync_match';
+}
+
 function buildSyncProposal(match = {}) {
   const normalizedConfidence = normalizeConfidence(match);
   const rawMatchScore = match.match_score;
+  const stepType = deriveStepType(match, normalizedConfidence);
   return {
+    step_type_hint: stepType,
     segment_id: match.segment_id,
     narration: match.narration || null,
     source: match.source || null,
@@ -147,8 +174,9 @@ function generateSteps(syncMap, config = {}, options = {}) {
 
   for (const match of matches) {
     const confidence = normalizeConfidence(match);
+    const stepType = deriveStepType(match, confidence);
     steps.push({
-      step_type: 'sync_match',
+      step_type: stepType,
       proposal: buildSyncProposal(match),
       confidence,
       auto_confirm: confidence >= stepConfig.auto_confirm_threshold,
@@ -177,7 +205,7 @@ async function attachRedEvaluation(steps, config = {}) {
 
   const nextSteps = [];
   for (const step of ensureArray(steps)) {
-    if (step.step_type !== 'sync_match' || Number(step.confidence || 0) >= stepConfig.red_required_below) {
+    if (['intro', 'outro'].includes(step.step_type) || Number(step.confidence || 0) >= stepConfig.red_required_below) {
       nextSteps.push({ ...step, red: null });
       continue;
     }
@@ -277,7 +305,7 @@ async function attachBlueAlternative(steps, sceneIndex, config = {}) {
 
   for (const step of ensureArray(steps)) {
     const redScore = Number(step?.red?.score ?? 100);
-    if (step.step_type !== 'sync_match' || redScore < 0 || redScore >= stepConfig.blue_required_below_red) {
+    if (['intro', 'outro'].includes(step.step_type) || redScore < 0 || redScore >= stepConfig.blue_required_below_red) {
       nextSteps.push({ ...step, blue: null });
       continue;
     }
@@ -360,7 +388,7 @@ function applyUserAction(steps, stepIndex, action, modification = null) {
 }
 
 function stepsToSyncMap(steps) {
-  const syncSteps = ensureArray(steps).filter((step) => step.step_type === 'sync_match' && step.final);
+  const syncSteps = ensureArray(steps).filter((step) => !['intro', 'outro'].includes(step.step_type) && step.final);
   const matches = syncSteps.map((step) => ({
     segment_id: step.final.segment_id,
     narration: step.final.narration || null,

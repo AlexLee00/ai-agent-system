@@ -168,8 +168,9 @@ function ensureDirectory(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function saveWorkflowState(edit, payload) {
-  const paths = getWorkflowPaths(edit);
+function saveWorkflowState(edit, payload, options = {}) {
+  const version = options.version ?? payload?.version ?? null;
+  const paths = options.paths || getWorkflowPaths(edit, version);
   ensureDirectory(paths.phase3Dir);
   fs.writeFileSync(paths.statePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
@@ -295,7 +296,7 @@ router.post('/generate', async (req, res) => {
       version,
       currentStepIndex: getNextStepIndex(steps),
       generatedAt: new Date().toISOString(),
-    });
+    }, { paths: versionedPaths });
     await pgPool.run('public', `
       UPDATE public.video_edits
       SET edit_mode = 'interactive',
@@ -363,7 +364,7 @@ router.post('/:sessionId/action', async (req, res) => {
       ...state,
       phase: 'steps',
       currentStepIndex: nextStepIndex,
-    });
+    }, { version: state.version });
 
     return res.json({
       step: updatedStep,
@@ -422,7 +423,7 @@ router.post('/:sessionId/finalize', async (req, res) => {
       edlPath: paths.edlPath,
       previewPath: paths.previewPath,
       finalizedAt: new Date().toISOString(),
-    });
+    }, { paths });
 
     return res.json({
       edlPath: paths.edlPath,

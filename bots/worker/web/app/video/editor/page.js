@@ -2,17 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
 import { api } from '@/lib/api';
-import StepPanel from '../../../components/StepPanel';
-import StepProgressBar from '../../../components/StepProgressBar';
+import EditorChatPanel from '@/components/EditorChatPanel';
 
-const TwickEditor = dynamic(() => import('../../../components/TwickEditorWrapper'), {
+const TwickEditor = dynamic(() => import('@/components/TwickEditorWrapper'), {
   ssr: false,
   loading: () => (
-    <div style={{ padding: '2rem', textAlign: 'center', color: '#666' }}>
-      타임라인 에디터 로딩 중...
+    <div className="flex h-full min-h-[720px] items-center justify-center rounded-[28px] border border-slate-200 bg-white text-slate-400">
+      <Loader2 className="h-5 w-5 animate-spin" />
     </div>
   ),
 });
@@ -36,12 +37,8 @@ export default function VideoEditorPage() {
 
   useEffect(() => {
     const initialEditId = String(searchParams?.get('editId') || '').trim();
-    if (initialEditId) {
-      setEditIdInput(initialEditId);
-    }
+    if (initialEditId) setEditIdInput(initialEditId);
   }, [searchParams]);
-
-  const currentStep = useMemo(() => steps[currentStepIndex] || null, [steps, currentStepIndex]);
 
   function getNextStepIndex(nextSteps) {
     const unresolvedIndex = nextSteps.findIndex((step) => !step.user_action);
@@ -120,78 +117,71 @@ export default function VideoEditorPage() {
     }
   }
 
+  const currentStep = useMemo(() => steps[currentStepIndex] || null, [steps, currentStepIndex]);
+
   if (!mounted) {
-    return (
-      <div style={{ padding: '2rem' }}>
-        <h1 style={{ fontSize: '1.25rem', fontWeight: 600 }}>영상 편집기 (Phase 3)</h1>
-        <p style={{ color: '#666', marginTop: '0.5rem' }}>로딩 중...</p>
-      </div>
-    );
+    return <div className="p-4 text-sm text-slate-500">편집기를 준비하는 중입니다.</div>;
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">영상 편집기 (Phase 3 — 대화형 편집)</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              sync_map를 스텝으로 분해하고 RED/BLUE 평가와 사용자 판단을 거쳐 프리뷰를 생성합니다.
-            </p>
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4 xl:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <Link href="/video" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  <ArrowLeft className="h-4 w-4" />
+                  돌아가기
+                </Link>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">phase: {phase}</span>
+              </div>
+              <h1 className="mt-4 text-2xl font-semibold text-slate-900">영상 편집기</h1>
+              <p className="mt-1 text-sm text-slate-500">CapCut형 타임라인과 우측 AI 편집 채팅을 결합한 Phase 3 인터랙티브 편집 화면입니다.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                value={editIdInput}
+                onChange={(event) => setEditIdInput(event.target.value)}
+                placeholder="editId 입력"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => startEditSession(editIdInput)}
+                disabled={loading}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+              >
+                {loading ? '처리 중...' : '편집 세션 시작'}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-              value={editIdInput}
-              onChange={(event) => setEditIdInput(event.target.value)}
-              placeholder="editId 입력"
-              className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none ring-0"
-            />
-            <button
-              type="button"
-              onClick={() => startEditSession(editIdInput)}
-              disabled={loading}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
-            >
-              {loading ? '처리 중...' : '편집 세션 시작'}
-            </button>
-          </div>
+          {editSessionId ? (
+            <div className="mt-3 text-xs text-violet-600">session: {editSessionId}</div>
+          ) : null}
+          {error ? (
+            <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+          ) : null}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-slate-600">phase: {phase}</span>
-          {editSessionId ? <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-violet-700">session: {editSessionId}</span> : null}
-          {error ? <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">{error}</span> : null}
+        <div className="min-h-0 flex-1 p-4">
+          <TwickEditor currentStep={currentStep} previewUrl={previewUrl} />
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="min-h-[720px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <StepPanel
-            steps={steps}
-            currentStepIndex={currentStepIndex}
-            onStepClick={setCurrentStepIndex}
-            onConfirm={(stepIndex) => handleStepAction(stepIndex, 'confirm')}
-            onModify={(stepIndex, modification) => handleStepAction(stepIndex, 'modify', modification)}
-            onSkip={(stepIndex) => handleStepAction(stepIndex, 'skip')}
-            onAdoptBlue={(stepIndex) => handleStepAction(stepIndex, 'adopt_blue')}
-            onFinalize={handleFinalize}
-            loading={loading}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <StepProgressBar
-              steps={steps}
-              currentStepIndex={currentStepIndex}
-              onStepClick={setCurrentStepIndex}
-            />
-          </div>
-
-          <div className="min-h-[720px]">
-            <TwickEditor currentStep={currentStep} previewUrl={previewUrl} />
-          </div>
-        </div>
+      <div className="min-h-[420px] w-full shrink-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm xl:w-96">
+        <EditorChatPanel
+          steps={steps}
+          currentStepIndex={currentStepIndex}
+          onStepClick={setCurrentStepIndex}
+          onConfirm={(stepIndex) => handleStepAction(stepIndex, 'confirm')}
+          onModify={(stepIndex, modification) => handleStepAction(stepIndex, 'modify', modification)}
+          onSkip={(stepIndex) => handleStepAction(stepIndex, 'skip')}
+          onAdoptBlue={(stepIndex) => handleStepAction(stepIndex, 'adopt_blue')}
+          onFinalize={handleFinalize}
+          loading={loading}
+          phase={phase}
+        />
       </div>
     </div>
   );
