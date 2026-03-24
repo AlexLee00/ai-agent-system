@@ -4,6 +4,24 @@
 
 ## 2026-03-24
 
+### worker-web `/video`, `/video/editor` 실브라우저 검증
+
+| 테스트 | 결과 |
+|--------|------|
+| `npx next build` (`bots/worker/web`) | ✅ `/video` phase guard, intro/outro explicit submit guard, favicon metadata 추가 후 반복 빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ build 완료본 기준 재기동 성공 |
+| Puppeteer/Chrome: `/video/editor` desktop | ✅ 좌측 Twick, 우측 AI 편집 채팅 패널, `twickError=false`, 콘솔/네트워크 오류 없음 |
+| Puppeteer/Chrome: mobile `/dashboard` → bottom nav `영상` 클릭 | ✅ alert `PC 전용 메뉴입니다. PC에서 이용해주세요` 확인 |
+| Puppeteer/Chrome: `/video` state restore | ✅ 메뉴 왕복 후 summary/편집의도 유지 확인 |
+| Puppeteer/Chrome: `/video` bubble scroll | ✅ `scrollHeight > clientHeight`, `scrollTop 0 -> 120` 실제 변경 확인 |
+| Puppeteer/Chrome: `/video` upload flow | ⚠️ 업로드 카드 유지와 outro 단계 표시는 확인했지만, intro 단계가 건너뛰어지는 현상이 계속 재현됨 |
+| Puppeteer/Chrome: `/video` after build-before-restart | ⚠️ build 완료 전 재기동 시 chunk 404 재현. build 완료 후 재재기동으로 해소 |
+| Puppeteer/Chrome: `/video` favicon/network | ✅ `public/favicon.ico` 추가 후 favicon 404 해소 |
+| `node` DB 조회: `video_upload_files.original_name` 최신 12건 | ✅ 최신 한글 파일명이 `áá¯...` 패턴으로 저장되는 것을 확인 |
+| `node` filename recovery sample | ✅ `latin1 -> utf8 -> NFC` 복구 시 `원본_나레이션_파라미터.m4a`, `원본_나레이션_컴포넌트스테이트.m4a`로 정상 변환 확인 |
+| `npx next build` (`bots/worker/web`) after filename fix | ✅ 분해형 한글/NFC 정규화 반영 후 재빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` / `ai.worker.web` | ✅ filename fix 반영본 재기동 성공 |
+
 ### 비디오팀 Phase 3 5세트 batch 검증
 
 | 테스트 | 결과 |

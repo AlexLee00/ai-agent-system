@@ -3,6 +3,30 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-24) — worker-web `/video` 단계형 채팅 UI 및 파일명 복구
+
+- `bots/worker/web/components/VideoChatWorkflow.jsx`
+  - 채팅 메시지를 히스토리 누적형에서 현재 단계 질문 1개만 보이는 구조로 정리
+  - `intro_mode/outro_mode='none'`를 단계 완료 증거로 오해하지 않도록 phase 계산 보수화
+  - 업로드 카드 파일명을 UTF-8 복구 + `NFC` 정규화 경계로 통일
+  - 분해형 한글 자모까지 한글로 인식하도록 파일명 감지 범위를 확장
+- `bots/worker/web/components/ChatCard.jsx`
+  - intro/outro 카드 기본 선택 제거
+  - 명시 선택 전 `설정 반영` 비활성화
+- `bots/worker/web/routes/video-api.js`
+  - 업로드 시 `original_name`을 `latin1 -> utf8 -> NFC`로 복구해 새 세션의 파일명 원장을 정규화
+- `bots/worker/web/app/layout.js`
+  - worker favicon 메타데이터 명시
+- `bots/worker/web/public/worker-favicon.svg`
+- `bots/worker/web/public/favicon.ico`
+- 검증:
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web` 성공
+  - 최신 `video_upload_files.original_name` 저장값 직접 조회로 한글 파일명 깨짐 패턴 확인 및 복구 가능성 검증
+- 남은 리스크:
+  - `/video` 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상은 자동화 검증 기준 최종 재확인이 남아 있다.
+
 ## 12주차 후속 (2026-03-24) — 비디오팀 Phase 3 5세트 batch 검증
 
 - `bots/video/scripts/test-phase3-batch.js` 추가

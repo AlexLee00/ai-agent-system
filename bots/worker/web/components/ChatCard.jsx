@@ -127,7 +127,8 @@ function AssetCard({
   disabled = false,
   onSubmit,
 }) {
-  const [mode, setMode] = useState(value?.mode || 'none');
+  const initialMode = value?.mode && value.mode !== 'none' ? value.mode : '';
+  const [mode, setMode] = useState(initialMode);
   const [prompt, setPrompt] = useState(value?.prompt || '');
   const [durationSec, setDurationSec] = useState(value?.durationSec || '');
   const [assetFile, setAssetFile] = useState(null);
@@ -135,6 +136,12 @@ function AssetCard({
     if (!assetFile) return '';
     return `${assetFile.name} · ${formatBytes(assetFile.size)}`;
   }, [assetFile]);
+  const canSubmit = useMemo(() => {
+    if (mode === 'none') return true;
+    if (mode === 'file') return Boolean(assetFile);
+    if (mode === 'prompt') return Boolean(prompt.trim());
+    return false;
+  }, [assetFile, mode, prompt]);
 
   return (
     <div className="space-y-3">
@@ -202,7 +209,7 @@ function AssetCard({
         />
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || !canSubmit}
           onClick={() => onSubmit?.({
             mode,
             prompt: prompt.trim(),

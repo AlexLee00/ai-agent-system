@@ -9,6 +9,52 @@
 
 ---
 
+## 2026-03-24 — worker-web `/video`, `/video/editor` 실브라우저 점검 1차
+
+- 요청 범위:
+  - `/video` 단계형 질문/업로드 카드 유지/메뉴 왕복 상태 유지/버블 스크롤
+  - 모바일 bottom nav `영상` alert
+  - `/video/editor` 좌측 Twick + 우측 AI 채팅 패널
+  - 콘솔 에러와 네트워크 실패
+- 반영:
+  - [VideoChatWorkflow.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/VideoChatWorkflow.jsx)
+    - `intro_mode/outro_mode='none'`를 완료 증거로 보지 않도록 phase 계산 보수화
+    - 업로드 후 stale `upload` phase가 localStorage에 남지 않도록 guard 추가
+    - 업로드 카드 `다음 단계`의 phase 전환을 한 틱 뒤로 늦춤
+  - [ChatCard.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/ChatCard.jsx)
+    - intro/outro 카드 기본 선택을 빈 상태로 바꾸고, 명시 선택 전에는 `설정 반영` 비활성화
+  - [layout.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/layout.js)
+    - worker metadata icon 명시
+  - [worker-favicon.svg](/Users/alexlee/projects/ai-agent-system/bots/worker/web/public/worker-favicon.svg)
+  - [favicon.ico](/Users/alexlee/projects/ai-agent-system/bots/worker/web/public/favicon.ico)
+- 확인된 것:
+  - `/video/editor`는 desktop 기준 Twick/AI 패널 모두 정상, 콘솔/네트워크 오류 없음
+  - 모바일 bottom nav `영상` 클릭 alert 정상
+  - `/video`는 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 스크롤 정상
+  - build 완료 전에 재기동하면 chunk 404가 날 수 있고, build 완료 후 재기동으로 해소됨
+- 아직 남은 리스크:
+  - `/video` 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상이 Puppeteer 기준 계속 재현된다.
+  - 세션 상세 API를 보면 새 세션은 `intro_mode='none'`, `outro_mode='none'`로 저장되므로, 남은 원인은 서버값보다 프런트 단계 전이/submit 경계 쪽일 가능성이 높다.
+  - 다음 세션은 `VideoChatWorkflow`에서 intro card mount 직후 어떤 경로로 `setChatPhase('outro')`가 실행되는지 추가 계측하는 것이 자연스럽다.
+
+## 2026-03-24 — worker-web `/video` 단계형 채팅 경계 복구 2차
+
+- 추가 반영:
+  - [VideoChatWorkflow.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/VideoChatWorkflow.jsx)
+    - 채팅 버블을 과거 로그 누적형에서 현재 단계 질문 1개만 보이는 구조로 정리
+    - 업로드 카드에 표시하는 파일명을 UTF-8 복구 + `NFC` 정규화 경계로 통일
+    - 분해형 한글 자모(`원...`)까지 한글로 인식하도록 정규화 범위를 확장
+  - [video-api.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/routes/video-api.js)
+    - 새 업로드 파일명의 `original_name` 저장 시 `latin1 -> utf8 -> NFC` 복구를 적용
+- 확인:
+  - 최신 `video_upload_files.original_name` 저장값을 직접 조회해 `áá¯...` 패턴으로 깨진 값이 들어가 있음을 확인
+  - 같은 값을 복구 함수에 통과시키면 `원본_나레이션_파라미터.m4a`, `원본_나레이션_컴포넌트스테이트.m4a`로 정상 복원됨을 확인
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`, `ai.worker.web` 재기동 성공
+- 의미:
+  - 기존 세션의 깨진 한글 파일명은 프런트 표시 경계에서 복구
+  - 이후 새 세션은 서버 저장 경계에서 정규화해 downstream 원장 신뢰도를 높임
+
 ## 2026-03-23 — 비디오팀 Phase 3 과제 F `step-proposal-engine`
 
 - [step-proposal-engine.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/step-proposal-engine.js)를 추가했다.

@@ -4,6 +4,46 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-24: worker-web `/video` 실브라우저 검증 + 경계 복구 1차
+
+- `bots/worker/web/components/VideoChatWorkflow.jsx`
+  - `intro_mode/outro_mode='none'`를 완료 증거로 오해하지 않도록 phase 계산을 보수화했다.
+  - 새 세션 업로드 직후 `upload` phase가 localStorage에 stale 저장되지 않도록 guard를 추가했다.
+  - 업로드 카드의 `다음 단계`는 한 틱 뒤에 phase를 바꾸도록 조정했다.
+- `bots/worker/web/components/ChatCard.jsx`
+  - intro/outro 카드의 기본 선택을 빈 상태로 바꾸고, 사용자가 `없음/파일/프롬프트`를 명시적으로 고르기 전에는 `설정 반영`이 비활성화되도록 바꿨다.
+- `bots/worker/web/app/layout.js`
+  - worker 웹 metadata icon을 `worker-favicon.svg`로 명시했다.
+- `bots/worker/web/public/worker-favicon.svg`, `bots/worker/web/public/favicon.ico`
+  - 브라우저 `favicon` 404를 없애기 위한 정적 아이콘 파일을 추가했다.
+- 검증:
+  - `npx next build` 반복 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 반복 성공
+  - 실브라우저(Puppeteer/Chrome) 기준 `/video/editor`는 좌측 Twick, 우측 AI 채팅 패널, 콘솔/네트워크 오류 없음 확인
+  - 모바일 bottom nav의 `영상` 버튼은 `PC 전용 메뉴입니다. PC에서 이용해주세요` alert 확인
+  - `/video`는 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 영역 스크롤은 확인
+- 남은 리스크:
+  - `/video` 업로드 직후 intro를 건너뛰고 outro로 진입하는 현상이 자동화 검증에서 계속 재현됐다.
+  - 즉 phase 계산 경계는 일부 정리됐지만, intro 카드 mount 시점의 상태 전이가 아직 완전히 닫히지 않았다.
+
+## 2026-03-24: worker-web `/video` 파일명 복구 + 단계형 채팅 경계 복구 2차
+
+- `bots/worker/web/components/VideoChatWorkflow.jsx`
+  - 채팅 버블을 현재 단계 1개만 보이도록 정리했다.
+  - 업로드 카드 파일명 표시를 UTF-8 복구 + `NFC` 정규화 경계로 바꿨다.
+  - 분해형 한글 자모까지 한글로 인식하도록 감지 범위를 확장했다.
+- `bots/worker/web/routes/video-api.js`
+  - 새 업로드 파일명의 `original_name` 저장 시 `latin1 -> utf8 -> NFC` 복구를 적용했다.
+- 검증:
+  - 최신 `video_upload_files.original_name` 저장값을 직접 조회해 깨진 패턴(`áá¯...`)을 확인했다.
+  - 동일 문자열에 대해 복구 함수가 `원본_나레이션_파라미터.m4a`, `원본_나레이션_컴포넌트스테이트.m4a`로 정상 변환됨을 확인했다.
+  - `npx next build` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web` 성공
+- 의미:
+  - 기존 원장에 남아 있던 깨진 한글 파일명도 화면에서 복구된다.
+  - 이후 새 업로드는 저장 경계부터 정규화돼 운영 데이터 신뢰도가 높아진다.
+
 ## 2026-03-24: 비디오팀 Phase 3 5세트 batch 검증
 
 - `bots/video/scripts/test-phase3-batch.js`를 추가해 Phase 3 전체 파이프라인을 5세트 샘플 기준으로 자동 검증할 수 있게 했다.
