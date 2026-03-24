@@ -94,6 +94,7 @@ const upload = multer({
 });
 
 let ensureVideoSessionsSchemaPromise = null;
+let ensureVideoEditColumnsPromise = null;
 
 function toErrorMessage(error) {
   return error?.message || error?.stderr || error?.stdout || String(error || '알 수 없는 오류');
@@ -134,6 +135,31 @@ async function ensureVideoSessionsSchema() {
     throw error;
   });
   return ensureVideoSessionsSchemaPromise;
+}
+
+async function ensureVideoEditColumns() {
+  if (ensureVideoEditColumnsPromise) return ensureVideoEditColumnsPromise;
+  ensureVideoEditColumnsPromise = (async () => {
+    await pgPool.run(
+      'public',
+      `ALTER TABLE public.video_edits
+          ADD COLUMN IF NOT EXISTS edit_mode TEXT DEFAULT 'auto'`
+    );
+    await pgPool.run(
+      'public',
+      `ALTER TABLE public.video_edits
+          ADD COLUMN IF NOT EXISTS phase3_version INTEGER DEFAULT NULL`
+    );
+    await pgPool.run(
+      'public',
+      `ALTER TABLE public.video_edits
+          ADD COLUMN IF NOT EXISTS phase3_latest_dir TEXT DEFAULT NULL`
+    );
+  })().catch((error) => {
+    ensureVideoEditColumnsPromise = null;
+    throw error;
+  });
+  return ensureVideoEditColumnsPromise;
 }
 
 function resolveVideoN8nToken() {
@@ -232,6 +258,7 @@ async function getEditForCompany(editId, companyId) {
        FROM video_edits ve
        JOIN video_sessions vs ON vs.id = ve.session_id
       WHERE ve.id = $1
+        AND COALESCE(ve.status, '') <> 'deleted'
         AND vs.company_id = $2`,
     [editId, normalizeCompanyId(companyId)]
   );
@@ -255,6 +282,7 @@ async function listEdits(sessionId) {
     `SELECT *
        FROM video_edits
       WHERE session_id = $1
+        AND COALESCE(status, '') <> 'deleted'
       ORDER BY pair_index ASC NULLS LAST, id ASC`,
     [sessionId]
   );
@@ -434,16 +462,30 @@ router.post('/sessions', auditLog('CREATE', 'video_sessions'), async (req, res) 
 router.get('/sessions', async (req, res) => {
   try {
     await ensureVideoSessionsSchema();
+    await ensureVideoEditColumns();
     const rows = await pgPool.query(
       'public',
       `SELECT vs.*,
-              COALESCE(COUNT(vuf.id), 0) AS uploaded_file_count,
-              COALESCE(COUNT(ve.id), 0) AS edit_count
+              COALESCE((SELECT COUNT(*) FROM video_upload_files vuf WHERE vuf.session_id = vs.id), 0) AS uploaded_file_count,
+              COALESCE((SELECT COUNT(*) FROM video_edits ve WHERE ve.session_id = vs.id AND COALESCE(ve.status, '') <> 'deleted'), 0) AS edit_count,
+              (
+                SELECT ve.id
+                  FROM video_edits ve
+                 WHERE ve.session_id = vs.id
+                   AND COALESCE(ve.status, '') <> 'deleted'
+                 ORDER BY ve.updated_at DESC NULLS LAST, ve.id DESC
+                 LIMIT 1
+              ) AS latest_edit_id,
+              (
+                SELECT COALESCE(ve.edit_mode, 'auto')
+                  FROM video_edits ve
+                 WHERE ve.session_id = vs.id
+                   AND COALESCE(ve.status, '') <> 'deleted'
+                 ORDER BY ve.updated_at DESC NULLS LAST, ve.id DESC
+                 LIMIT 1
+              ) AS latest_edit_mode
          FROM video_sessions vs
-         LEFT JOIN video_upload_files vuf ON vuf.session_id = vs.id
-         LEFT JOIN video_edits ve ON ve.session_id = vs.id
         WHERE vs.company_id = $1
-        GROUP BY vs.id
         ORDER BY vs.created_at DESC`,
       [normalizeCompanyId(req.user?.company_id)]
     );
@@ -944,6 +986,27 @@ router.post('/edits/:id/reject', auditLog('REJECT', 'video_edits'), async (req, 
       phase2: true,
       message: '재편집 트리거는 Phase 2에서 연결됩니다.',
     });
+  } catch (error) {
+    res.status(500).json({ error: toErrorMessage(error) });
+  }
+});
+
+router.delete('/edits/:id', auditLog('DELETE', 'video_edits'), async (req, res) => {
+  try {
+    const editId = Number.parseInt(req.params.id, 10);
+    const edit = await getEditForCompany(editId, req.user.company_id);
+    if (!edit) return sendNotFound(res, '편집 세트를 찾을 수 없습니다.');
+
+    await pgPool.run(
+      'public',
+      `UPDATE video_edits
+          SET status = 'deleted',
+              updated_at = NOW()
+        WHERE id = $1`,
+      [editId]
+    );
+
+    res.json({ success: true, deleted: true, editId });
   } catch (error) {
     res.status(500).json({ error: toErrorMessage(error) });
   }

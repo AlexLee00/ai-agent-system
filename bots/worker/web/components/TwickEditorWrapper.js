@@ -149,30 +149,17 @@ export default function TwickEditorWrapper({
   }
 
   return (
-    <div className="twick-scope" style={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', minHeight: '500px' }}>
-      <div style={{
-        padding: '0.75rem 1rem',
-        borderBottom: '1px solid #e5e7eb',
-        backgroundColor: '#f9fafb',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <span style={{ fontWeight: 500, fontSize: '0.875rem' }}>
+    <div className="twick-scope flex h-full min-h-[760px] flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-slate-950">
+      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/90 px-5 py-4 text-slate-200">
+        <span className="text-sm font-semibold">
           Twick 타임라인 에디터
-          {ready && <span style={{ color: '#16a34a', marginLeft: '0.5rem', fontSize: '0.75rem' }}>● 준비됨</span>}
+          {ready && <span className="ml-2 text-xs text-emerald-400">● 준비됨</span>}
         </span>
-        <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Phase 3 테스트</span>
+        <span className="text-xs text-slate-400">CapCut형 편집 레이아웃</span>
       </div>
 
       {currentStep?.proposal?.narration ? (
-        <div style={{
-          padding: '0.75rem 1rem',
-          borderBottom: '1px solid #e5e7eb',
-          backgroundColor: '#f5f3ff',
-          color: '#5b21b6',
-          fontSize: '0.75rem',
-        }}>
+        <div className="border-b border-violet-800/60 bg-violet-950/70 px-5 py-3 text-xs text-violet-100">
           현재 스텝 구간: {Number(currentStep.proposal.narration.start_s || 0).toFixed(1)}s ~ {Number(currentStep.proposal.narration.end_s || 0).toFixed(1)}s
           {' · '}
           {currentStep.proposal.narration.topic || currentStep.proposal.reason || '현재 스텝'}
@@ -180,27 +167,37 @@ export default function TwickEditorWrapper({
       ) : null}
 
       {previewUrl ? (
-        <div style={{ padding: '1rem', borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff' }}>
+        <div className="border-b border-slate-800 bg-black px-5 py-4">
           <video
             key={previewUrl}
             controls
             src={previewUrl}
-            style={{ width: '100%', maxHeight: '280px', borderRadius: '12px', backgroundColor: '#000' }}
+            className="aspect-video w-full rounded-[20px] border border-slate-800 bg-black object-contain shadow-2xl"
           />
         </div>
       ) : null}
 
-      <ErrorBoundary onError={setError}>
-        <LivePlayerProviderComp>
-          <TimelineProviderComp key={timelineKey} initialData={timelineData}>
-            <VideoEditorDefault
-              leftPanel={null}
-              rightPanel={null}
-              editorConfig={EDITOR_CONFIG}
-            />
-          </TimelineProviderComp>
-        </LivePlayerProviderComp>
-      </ErrorBoundary>
+      <div className="grid grid-cols-3 gap-3 border-b border-slate-800 bg-slate-900 px-5 py-3 text-xs text-slate-300">
+        <div className="rounded-2xl bg-slate-800 px-3 py-2">플레이어: 프리뷰 우선</div>
+        <div className="rounded-2xl bg-slate-800 px-3 py-2">타임라인: 현재 스텝 하이라이트</div>
+        <div className="rounded-2xl bg-slate-800 px-3 py-2">컨트롤: 확대/이동/검수</div>
+      </div>
+
+      <div className="min-h-0 flex-1 bg-slate-950 p-4">
+        <ErrorBoundary onError={setError}>
+          <LivePlayerProviderComp>
+            <TimelineProviderComp key={timelineKey} initialData={timelineData}>
+              <div className="h-full overflow-hidden rounded-[20px] border border-slate-800 bg-slate-900">
+                <VideoEditorDefault
+                  leftPanel={null}
+                  rightPanel={null}
+                  editorConfig={EDITOR_CONFIG}
+                />
+              </div>
+            </TimelineProviderComp>
+          </LivePlayerProviderComp>
+        </ErrorBoundary>
+      </div>
     </div>
   );
 }
