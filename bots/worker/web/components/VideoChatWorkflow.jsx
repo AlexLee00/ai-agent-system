@@ -145,7 +145,7 @@ export default function VideoChatWorkflow({
     }
     if (bootstrapRef.current) return;
     bootstrapRef.current = true;
-    createSession();
+    loadSession(null);
   }, [sessionId, resetToken]);
 
   const rawFiles = useMemo(() => files.filter((file) => file.file_type === 'video'), [files]);
@@ -160,12 +160,16 @@ export default function VideoChatWorkflow({
   }, [session]);
 
   async function handleMainUpload(selectedFiles) {
-    if (!session?.id) return;
     setBusy('upload');
     setError('');
     try {
-      await uploadFiles(session.id, selectedFiles);
-      await loadSession(session.id);
+      let activeSessionId = session?.id || null;
+      if (!activeSessionId) {
+        const created = await api.post('/video/sessions', {});
+        activeSessionId = created.id;
+      }
+      await uploadFiles(activeSessionId, selectedFiles);
+      await loadSession(activeSessionId);
       setChatPhase('intro');
     } catch (uploadError) {
       setError(uploadError.message || '파일 업로드에 실패했습니다.');
