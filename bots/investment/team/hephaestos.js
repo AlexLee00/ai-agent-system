@@ -647,7 +647,17 @@ export async function executeSignal(signal) {
   };
 
   if (!isBinanceSymbol(symbol)) {
-    return { success: false, reason: `바이낸스 심볼이 아님: ${symbol}` };
+    const reason = `바이낸스 심볼이 아님: ${symbol}`;
+    console.log(`  ⛔ [헤파이스토스] ${reason}`);
+    await persistFailure(reason, {
+      code: 'invalid_binance_symbol',
+      meta: {
+        invalidSymbol: symbol,
+        tradeMode: signalTradeMode,
+      },
+    });
+    notifyTradeSkip({ symbol, action, reason }).catch(() => {});
+    return { success: false, reason };
   }
 
   const tag = effectivePaperMode ? '[PAPER]' : '[LIVE]';
