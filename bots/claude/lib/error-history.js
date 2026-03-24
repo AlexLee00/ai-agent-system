@@ -15,7 +15,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const SCHEMA = 'claude';
 
 // 패턴 분석에서 제외할 레이블 (개발 중 자연스러운 상태 — false positive 방지)
-const PATTERN_SKIP_LABELS = ['git 상태'];
+const PATTERN_SKIP_LABELS = ['git 상태', 'Git 변경사항', 'Git 생성 산출물'];
 
 // 저장 제외 체크명 — 이 체크 결과는 메타 데이터이므로 피드백 루프 방지를 위해 DB 저장 안 함
 const SKIP_CHECK_NAMES = ['오류 패턴 분석'];
