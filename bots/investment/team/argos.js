@@ -320,9 +320,17 @@ async function _fetchCoinGeckoTrending() {
     }
 
     const data  = await res.json();
+    const invalid = [];
     const coins = (data?.coins || [])
       .map(c => `${(c.item?.symbol || '').toUpperCase()}/USDT`)
-      .filter(s => s.length > 6);
+      .filter((symbol) => {
+        const isValid = /^[A-Z0-9]+\/USDT$/.test(symbol) && symbol.length > 6;
+        if (!isValid && symbol) invalid.push(symbol);
+        return isValid;
+      });
+    if (invalid.length > 0) {
+      console.warn(`[아르고스] CoinGecko 비정상 심볼 제외: ${invalid.slice(0, 10).join(', ')}`);
+    }
     console.log(`[아르고스] CoinGecko 트렌딩: ${coins.join(', ') || '없음'}`);
     return coins;
   } catch (e) {
