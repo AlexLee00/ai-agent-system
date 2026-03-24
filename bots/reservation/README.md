@@ -102,6 +102,34 @@ reservation/
 
 ---
 
+## 매출 축 기준 (2026-03-25)
+
+`reservation.daily_summary`는 현재 두 가지 서로 다른 축을 함께 보관한다.
+
+- `total_amount`, `room_amounts_json`
+  - 예약합계 축
+  - 예약/이용 검색 기준 운영 합계
+- `general_revenue`, `pickko_study_room`
+  - 픽코 직접매출 축
+  - 현재 운영/예측/worker 미러의 실매출 기준
+- `recognized_total_revenue`
+  - 계산식: `general_revenue + pickko_study_room`
+
+현재 source of truth:
+
+- 운영 매출 조회
+- 스카 읽기 명령
+- 대시보드
+- 예측/리뷰
+- worker 매출 미러
+
+위 경로는 모두 `recognized_total_revenue = general_revenue + pickko_study_room`를 우선 기준으로 본다.
+
+`total_amount`는 지금 당장 필요한 구조에서는 예약합계/호환용/fallback trace 필드로 유지한다.
+나중에 확장할 구조에서는 booking-axis와 recognized-axis를 별도 모델로 분리하는 것이 바람직하다.
+
+---
+
 ## 에이전트 통신 (v3.0 신규)
 
 `lib/state-bus.js` — SQLite 기반 에이전트 간 통신:
