@@ -39,7 +39,9 @@ async function main() {
 
   const header = [
     'date',
+    'booking_total_amount',
     'study_room_total_amount',
+    'recognized_total_revenue',
     'study_room_revenue',
     'study_cafe_revenue',
     'combined_revenue',
@@ -51,6 +53,8 @@ async function main() {
     lines.push([
       row.date,
       row.total_amount ?? 0,
+      row.total_amount ?? 0,
+      row.combined_revenue ?? 0,
       row.pickko_study_room ?? 0,
       row.general_revenue ?? 0,
       row.combined_revenue ?? 0,
