@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Clock3, Download, History, Video } from 'lucide-react';
+import { Clock3, Download, History, Trash2, Video } from 'lucide-react';
 
 import DataTable from '@/components/DataTable';
 import { api } from '@/lib/api';
@@ -59,26 +59,44 @@ export default function VideoHistoryPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [busyEditId, setBusyEditId] = useState(null);
+
+  async function loadSessions() {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.get('/video/sessions');
+      setSessions(data.sessions || []);
+    } catch (fetchError) {
+      setError(fetchError.message || '편집 이력을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let alive = true;
-    api.get('/video/sessions')
-      .then((data) => {
-        if (!alive) return;
-        setSessions(data.sessions || []);
-      })
-      .catch((fetchError) => {
-        if (!alive) return;
-        setError(fetchError.message);
-      })
-      .finally(() => {
-        if (!alive) return;
-        setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
+    loadSessions();
   }, []);
+
+  async function handleDelete(row) {
+    if (!row?.latest_edit_id) {
+      setError('삭제할 최신 편집 이력이 없습니다.');
+      return;
+    }
+    const ok = window.confirm(`"${row.title || `세션 #${row.id}`}"의 최신 편집 이력을 삭제할까요?`);
+    if (!ok) return;
+
+    setBusyEditId(row.latest_edit_id);
+    setError('');
+    try {
+      await api.delete(`/video/edits/${row.latest_edit_id}`);
+      await loadSessions();
+    } catch (deleteError) {
+      setError(deleteError.message || '편집 이력 삭제에 실패했습니다.');
+    } finally {
+      setBusyEditId(null);
+    }
+  }
 
   const columns = [
     { key: 'title', label: '제목', render: (value, row) => value || `세션 #${row.id}` },
@@ -126,6 +144,15 @@ export default function VideoHistoryPage() {
                 <Link href={`/video?session=${row.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700">
                   상세 보기
                 </Link>
+                <button
+                  type="button"
+                  disabled={!row.latest_edit_id || busyEditId === row.latest_edit_id}
+                  onClick={() => handleDelete(row)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-xs font-medium text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  삭제
+                </button>
                 {row.status === 'done' ? (
                   <button
                     type="button"
