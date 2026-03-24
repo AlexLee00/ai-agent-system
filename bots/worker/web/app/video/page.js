@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { History, Plus } from 'lucide-react';
 
@@ -15,6 +15,16 @@ export default function VideoPage() {
     return raw ? Number(raw) : null;
   }, [searchParams]);
   const [workflowResetToken, setWorkflowResetToken] = useState(0);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  useEffect(() => {
+    function syncViewport() {
+      setIsMobileViewport(window.innerWidth < 1024);
+    }
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
 
   function handleCreate() {
     router.replace('/video');
@@ -50,15 +60,24 @@ export default function VideoPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-        <VideoChatWorkflow
-          key={`${selectedSessionId || 'new'}-${workflowResetToken}`}
-          sessionId={selectedSessionId}
-          resetToken={workflowResetToken}
-          onEditStart={(editId) => {
-            router.push(`/video/editor?editId=${editId}`);
-          }}
-          onSessionChange={() => {}}
-        />
+        {isMobileViewport ? (
+          <div className="flex h-full items-center justify-center px-6 py-10 text-center">
+            <div className="max-w-md rounded-3xl border border-amber-200 bg-amber-50 px-6 py-8">
+              <p className="text-sm font-semibold text-amber-700">PC 전용 메뉴입니다.</p>
+              <p className="mt-2 text-sm leading-6 text-amber-800">영상 편집 기능은 PC에서 이용해주세요.</p>
+            </div>
+          </div>
+        ) : (
+          <VideoChatWorkflow
+            key={`${selectedSessionId || 'new'}-${workflowResetToken}`}
+            sessionId={selectedSessionId}
+            resetToken={workflowResetToken}
+            onEditStart={(editId) => {
+              router.push(`/video/editor?editId=${editId}`);
+            }}
+            onSessionChange={() => {}}
+          />
+        )}
       </div>
     </div>
   );
