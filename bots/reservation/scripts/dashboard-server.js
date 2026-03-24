@@ -72,13 +72,27 @@ async function getTodayData() {
   return {
     date:             today,
     reservations,
-    summary:          summary || {
+    summary:          summary ? {
+      ...summary,
+      booking_total_amount: Number(summary.total_amount || 0),
+      recognized_total_revenue: Number(summary.combined_revenue || 0),
+      revenue_axes: {
+        booking_axis: 'total_amount',
+        recognized_axis: 'general_revenue + pickko_study_room',
+      },
+    } : {
       total_amount: 0,
+      booking_total_amount: 0,
       combined_revenue: 0,
+      recognized_total_revenue: 0,
       total_revenue: 0,
       pickko_study_room: 0,
       general_revenue: 0,
       entries_count: 0,
+      revenue_axes: {
+        booking_axis: 'total_amount',
+        recognized_axis: 'general_revenue + pickko_study_room',
+      },
     },
     alerts,
     room_summary:     roomMap,

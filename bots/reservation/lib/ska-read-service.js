@@ -46,6 +46,8 @@ function createSkaReadService({ pgPool, rag = null }) {
       return {
         ok: true,
         date,
+        booking_total_amount: Number(summary.total_amount || 0),
+        recognized_total_revenue: Number(summary.combined_revenue || 0),
         total_amount: summary.total_amount,
         combined_revenue: Number(summary.combined_revenue || 0),
         total_revenue: Number(summary.combined_revenue || 0),
@@ -54,6 +56,10 @@ function createSkaReadService({ pgPool, rag = null }) {
         pickko_study_room: Number(summary.pickko_study_room || 0),
         general_revenue: Number(summary.general_revenue || 0),
         entries_count: summary.entries_count,
+        revenue_axes: {
+          booking_axis: 'total_amount',
+          recognized_axis: 'general_revenue + pickko_study_room',
+        },
       };
     } catch (e) {
       return { ok: false, error: e.message };
