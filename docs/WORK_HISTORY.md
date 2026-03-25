@@ -4425,6 +4425,35 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 실자산 preview 렌더는 실제로 전진하지만 wall-clock이 길어, EDL scene transition merge 보정을 추가하고 과제 7 잔여 범위를 `preview 최적화 + end-to-end 마감`으로 정리
 - 추가로 single-flight lock, stale lock 자동 정리, SIGINT/SIGTERM 시 lock 해제를 넣어 동시 실행/중단 시 프로세스 생명주기 불변식을 보강
 
+### 2026-03-25 — worker-web auth-ready 로딩 경계 복구 / 운영 화면 상태 UI 표준화
+- `/sales`, `/dashboard`에서 “매출 원장은 정상인데 로그인 직후 비어 보이는” 현상을 확인했고, 원인은 인증 준비 전 fetch 실패를 `[]`/`null`로 삼켜 버리던 프런트 경계였다.
+- `bots/worker/web/app/sales/page.js`, `bots/worker/web/app/dashboard/page.js`, `bots/worker/web/app/attendance/page.js`, `bots/worker/web/app/payroll/page.js`, `bots/worker/web/app/admin/users/page.js`를 정리해 `useAuth()` loading 종료 후에만 데이터를 읽고, 실패를 명시적으로 표시하도록 보강했다.
+- `bots/worker/web/lib/use-auth-ready-request.js`를 추가해 auth-ready 이후에만 요청을 실행하는 공통 경계를 만들었다.
+- `bots/worker/web/lib/use-operations-loader.js`를 추가해 운영 화면 공통 `loading / loadError / runLoad` 규약을 표준화했다.
+- `bots/worker/web/components/OperationsLoadState.js`를 추가해 `error / retry / loading / empty / notice` UI를 공통 컴포넌트로 묶었다.
+- 의미상 이번 작업은 단순 화면 픽스가 아니라 “인증 준비 전 실패를 빈 데이터로 오인하지 않는다”는 불변식을 운영 핵심 화면 전반에 복구한 것이다.
+- 관련 커밋:
+  - `e6f2676` `fix(worker): reload sales data after auth is ready`
+  - `5401d97` `fix(worker): guard admin data loads until auth is ready`
+  - `e83751e` `refactor(worker): centralize auth-ready data loading`
+  - `775bd66` `refactor(worker): unify operations loading states`
+  - `512ee86` `refactor(worker): standardize empty and retry states`
+- 검증:
+  - `node --check bots/worker/web/app/sales/page.js`
+  - `node --check bots/worker/web/app/dashboard/page.js`
+  - `node --check bots/worker/web/app/attendance/page.js`
+  - `node --check bots/worker/web/app/payroll/page.js`
+  - `node --check bots/worker/web/app/admin/users/page.js`
+  - `node --check bots/worker/web/lib/use-auth-ready-request.js`
+  - `node --check bots/worker/web/lib/use-operations-loader.js`
+  - `node --check bots/worker/web/components/OperationsLoadState.js`
+  - `npx next build` in `bots/worker/web`
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- 체크섬:
+  - `node bots/claude/src/dexter.js --update-checksums`
+  - `bots/claude/.checksums.json` 재갱신 완료
+  - 현재 dirty workspace에 이미 존재하던 비디오 신규 파일 2건(`cut-proposal-engine.js`, `media-binary-env.js`)도 함께 반영됨
+
 ### 스카 수동등록 후속 차단 / 취소 완결성 보강
 - `bots/reservation/lib/db.js`에 `getOpenManualBlockFollowups()`를 추가하고, `pickko-kiosk-monitor.js`가 이제 신규/재시도 대상 외에도 `manual follow-up open` 건을 정기 재시도 레일에 포함하도록 보강
 - `pickko-kiosk-monitor.js`의 B룸 오전 슬롯 탐색을 visible time axis 기준으로 다시 보정하고, `avail` 전용 필터, slot guard, trailing half-hour verify 추론을 추가해 잘못된 시간대/잘못된 셀 차단 저장 위험을 크게 낮춤

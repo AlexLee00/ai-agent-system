@@ -19,6 +19,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 대시보드/읽기 API/CSV/예측/worker 매출 미러는 `recognized_total_revenue`를 실매출 기준으로 사용
   - `total_amount`는 예약합계/호환용/fallback trace로 유지
 
+## 12주차 후속 (2026-03-25) — worker-web 운영 화면 auth-ready 로딩 / 상태 UI 표준화
+
+- `bots/worker/web/app/sales/page.js`
+- `bots/worker/web/app/dashboard/page.js`
+- `bots/worker/web/app/attendance/page.js`
+- `bots/worker/web/app/payroll/page.js`
+- `bots/worker/web/app/admin/users/page.js`
+  - 인증 준비 전 fetch 실패를 `[]`/`null`로 삼키지 않고, auth-ready 이후에 다시 로드하도록 정리
+  - 실패 시 공통 배너와 재시도 경로를 제공하도록 보강
+- `bots/worker/web/lib/use-auth-ready-request.js`
+  - `useAuth()`와 `worker_token`이 준비된 뒤에만 요청을 실행하는 공통 auth-ready 경계를 추가
+- `bots/worker/web/lib/use-operations-loader.js`
+  - 운영 화면 공통 `loading / loadError / runLoad` 로더 규약을 표준화
+- `bots/worker/web/components/OperationsLoadState.js`
+  - `error / retry / loading / empty / notice` 상태 UI를 공통 컴포넌트로 정리
+- 의미:
+  - 실제 원장은 정상인데 로그인 직후 비어 보이던 운영 화면을 복구
+  - 운영 핵심 화면이 같은 auth/load/error/empty 규약을 공유하게 되어 이후 확장과 유지보수가 쉬워짐
+
 ## 12주차 후속 (2026-03-24) — worker-web `/video` 단계형 채팅 UI 및 파일명 복구
 
 - `bots/worker/web/components/VideoChatWorkflow.jsx`

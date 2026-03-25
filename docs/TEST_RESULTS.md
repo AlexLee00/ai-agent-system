@@ -1352,6 +1352,22 @@
 
 | 명령 | 결과 |
 | --- | --- |
+### 2026-03-25 — worker-web auth-ready 로딩 / 상태 UI 표준화
+
+| 명령 | 결과 |
+| --- | --- |
+| `node --check bots/worker/web/app/sales/page.js` | ✅ 매출 페이지 auth-ready 이후 로드 / 공통 상태 UI 적용 후 문법 통과 |
+| `node --check bots/worker/web/app/dashboard/page.js` | ✅ 대시보드 auth-ready 이후 로드 / 공통 상태 UI 적용 후 문법 통과 |
+| `node --check bots/worker/web/app/attendance/page.js` | ✅ 근태 페이지 auth-ready 이후 로드 / 공통 상태 UI 적용 후 문법 통과 |
+| `node --check bots/worker/web/app/payroll/page.js` | ✅ 급여 페이지 auth-ready 이후 로드 / 공통 상태 UI 적용 후 문법 통과 |
+| `node --check bots/worker/web/app/admin/users/page.js` | ✅ 사용자 관리 auth-ready 이후 로드 / 공통 상태 UI 적용 후 문법 통과 |
+| `node --check bots/worker/web/lib/use-auth-ready-request.js` | ✅ 공통 auth-ready 요청 훅 문법 통과 |
+| `node --check bots/worker/web/lib/use-operations-loader.js` | ✅ 공통 operations loader 훅 문법 통과 |
+| `node --check bots/worker/web/components/OperationsLoadState.js` | ✅ 공통 loading/error/empty/notice 상태 컴포넌트 문법 통과 |
+| `npx next build` | ✅ `bots/worker/web` 최신 worker-web auth-ready / operations state 표준화 빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 최신 worker-web 번들 기준 재기동 성공 |
+| `node bots/claude/src/dexter.js --update-checksums` | ✅ 덱스터 체크섬 베이스라인 재갱신 완료 (`bots/claude/.checksums.json`) |
+
 | `node --check bots/reservation/auto/monitors/naver-monitor.js` | ✅ 네이버 신규 예약 write-path 가드 제거 + 자동 취소 `unblock-slot` 후속 제거 문법 통과 |
 | `node - <<'NODE' ... OBSERVE_ONLY/PICKKO_ENABLE/SAFE_DEV_FALLBACK grep ... NODE` | ✅ `naver-monitor.js` OPS 자동 경로에서 3가지 가드와 취소 `OBSERVE_ONLY` 필터 잔존 없음 확인 |
 | `node --check bots/reservation/manual/reservation/pickko-cancel-cmd.js` | ✅ 수동 취소 command 단순화 문법 통과 |
