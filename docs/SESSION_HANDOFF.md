@@ -1166,3 +1166,16 @@
 - 의미:
   - 지금 당장 필요한 구조는 validation 레인이 normal/live 슬롯을 잠식하지 않게 하는 것이다.
   - 나중에는 validation 전용 daily budget/slot을 헬스 리포트와 runtime config suggestion에서 더 직접적으로 비교하는 구조로 확장할 수 있다.
+## 2026-03-25 23:35 KST — hephaestos BUY 직후 TP/SL 보호주문 수량 정합성 복구
+
+- 실제 운영에서 `RENDER/USDT` BUY 후 TP/SL 보호주문이 `Account has insufficient balance for requested action`으로 실패했다.
+- 원인:
+  - [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)의 `placeBinanceProtectiveExit()`가 BUY 체결 `order.filled`를 그대로 OCO/SL 주문 수량으로 사용하고 있었다.
+  - Binance spot에서는 수수료/lot step/잔고 반영 차이 때문에 `filled`와 실제 `free balance`가 살짝 어긋날 수 있다.
+- 조치:
+  - 보호주문 생성 직전에 base asset `free balance`를 다시 조회
+  - `min(requestedAmount, freeBalance)` 기준으로 수량을 다시 맞춘 뒤 `amountToPrecision()`을 적용
+  - 응답 메타에 `requestedAmount`, `freeBalance`, `effectiveAmount`, `reconciled`를 남겨 운영자가 drift를 바로 읽을 수 있게 했다.
+- 의미:
+  - 지금 당장 필요한 구조는 BUY 직후 보호주문도 SELL reconciliation과 같은 수준의 잔고 정합성을 따르게 하는 것이다.
+  - 나중에는 TP/SL 실패 리포트에 `filled vs free balance` 차이를 health/report 섹션으로 직접 노출할 수 있다.

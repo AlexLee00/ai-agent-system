@@ -30,6 +30,15 @@
 | `node bots/video/scripts/test-phase3-batch.js --title=파라미터 --json` | ✅ 단일 세트 sanity check 기준 `autoConfirmRate=60.0%`, `overall=76.88`, `visual_similarity=80.90` 확인 |
 | `node bots/video/scripts/test-phase3-batch.js --json` | ✅ `bots/video/temp/phase3_batch_report.json` 생성, `successfulSets=2`, `skippedSets=3`, `averageAutoConfirmRate=55.0%`, `averageOverall=75.07`, `averageVisualSimilarity=78.97` 확인 |
 
+## 2026-03-25
+
+### 헤파이스토스 BUY 직후 TP/SL 보호주문 수량 정합성 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/team/hephaestos.js` | ✅ 보호주문 수량 reconciliation 추가 후 문법 통과 |
+| `node bots/investment/manual/balance/binance-balance.js RENDER` | ✅ `RENDER free = 30.38958` 확인, 보호주문 실패가 잔고 0이 아니라 BUY 체결 수량과 실잔고 어긋남 문제였음을 재확인 |
+
 ## 2026-03-23
 
 ### 비디오팀 Phase 3 과제 F `step-proposal-engine`

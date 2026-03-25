@@ -132,15 +132,39 @@ function getProtectiveExitCapabilities(ex, symbol) {
   };
 }
 
+async function fetchFreeAssetBalance(symbol) {
+  const ex = getExchange();
+  const base = String(symbol || '').split('/')[0];
+  const balance = await ex.fetchBalance();
+  return Number(balance.free?.[base] || 0);
+}
+
 async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
   const ex = getExchange();
   const marketId = symbol.replace('/', '');
-  const quantity = ex.amountToPrecision(symbol, amount);
+  const requestedAmount = Number(amount || 0);
+  const freeBalance = await fetchFreeAssetBalance(symbol).catch(() => 0);
+  const effectiveAmount = freeBalance > 0 ? Math.min(requestedAmount, freeBalance) : requestedAmount;
+  const quantity = ex.amountToPrecision(symbol, effectiveAmount);
   const tp = ex.priceToPrecision(symbol, tpPrice);
   const sl = ex.priceToPrecision(symbol, slPrice);
   const slLimit = ex.priceToPrecision(symbol, slPrice * 0.999);
   const errors = [];
   const capabilities = getProtectiveExitCapabilities(ex, symbol);
+  const normalizedAmount = Number(quantity || 0);
+
+  if (normalizedAmount <= 0) {
+    return {
+      ok: false,
+      mode: 'failed',
+      tpOrderId: null,
+      slOrderId: null,
+      requestedAmount,
+      freeBalance,
+      effectiveAmount,
+      error: `protective_exit_zero_quantity | requested=${requestedAmount} | free=${freeBalance}`,
+    };
+  }
 
   if (capabilities.rawOco) {
     try {
@@ -153,7 +177,15 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
         stopLimitPrice: slLimit,
         stopLimitTimeInForce: 'GTC',
       });
-      return { ok: true, mode: 'oco', ...extractOcoOrderIds(response) };
+      return {
+        ok: true,
+        mode: 'oco',
+        requestedAmount,
+        freeBalance,
+        effectiveAmount: normalizedAmount,
+        reconciled: freeBalance > 0 && freeBalance < requestedAmount,
+        ...extractOcoOrderIds(response),
+      };
     } catch (error) {
       errors.push(`privatePostOrderOco:${error.message}`);
     }
@@ -172,7 +204,15 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
         belowPrice: slLimit,
         belowTimeInForce: 'GTC',
       });
-      return { ok: true, mode: 'oco_list', ...extractOcoOrderIds(response) };
+      return {
+        ok: true,
+        mode: 'oco_list',
+        requestedAmount,
+        freeBalance,
+        effectiveAmount: normalizedAmount,
+        reconciled: freeBalance > 0 && freeBalance < requestedAmount,
+        ...extractOcoOrderIds(response),
+      };
     } catch (error) {
       errors.push(`privatePostOrderListOco:${error.message}`);
     }
@@ -189,6 +229,10 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
         mode: 'ccxt_stop_loss_only',
         tpOrderId: null,
         slOrderId: extractOrderId(stopOrder),
+        requestedAmount,
+        freeBalance,
+        effectiveAmount: normalizedAmount,
+        reconciled: freeBalance > 0 && freeBalance < requestedAmount,
         error: errors.join(' | ') || null,
       };
     } catch (error) {
@@ -206,6 +250,10 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
       mode: 'exchange_stop_loss_only',
       tpOrderId: null,
       slOrderId: extractOrderId(stopOrder),
+      requestedAmount,
+      freeBalance,
+      effectiveAmount: normalizedAmount,
+      reconciled: freeBalance > 0 && freeBalance < requestedAmount,
       error: errors.join(' | ') || null,
     };
   } catch (error) {
@@ -217,7 +265,11 @@ async function placeBinanceProtectiveExit(symbol, amount, tpPrice, slPrice) {
     mode: 'failed',
     tpOrderId: null,
     slOrderId: null,
-    error: `${errors.join(' | ')} | capabilities:${JSON.stringify(capabilities)}`,
+    requestedAmount,
+    freeBalance,
+    effectiveAmount: normalizedAmount,
+    reconciled: freeBalance > 0 && freeBalance < requestedAmount,
+    error: `${errors.join(' | ')} | capabilities:${JSON.stringify(capabilities)} | requested=${requestedAmount} | free=${freeBalance} | qty=${quantity}`,
   };
 }
 
