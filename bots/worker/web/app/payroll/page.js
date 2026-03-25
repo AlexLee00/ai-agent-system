@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { getToken, useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
@@ -96,7 +96,7 @@ function DetailModal({ row, onClose }) {
 }
 
 export default function PayrollPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const canManage = canPerformMenuOperation(user, 'payroll', 'create');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const [yearMonth,    setYearMonth]  = useState(thisMonth);
@@ -112,6 +112,7 @@ export default function PayrollPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const quickFlows = [
     {
       title: '이번 달 급여 점검',
@@ -134,20 +135,43 @@ export default function PayrollPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const load = () => {
+  const load = async () => {
+    if (authLoading) return;
+    if (!getToken() || !user) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    Promise.all([
-      api.get(`/payroll?year_month=${yearMonth}`).catch(() => ({ payroll: [] })),
-      api.get(`/payroll/summary?year_month=${yearMonth}`).catch(() => null),
-      api.get('/employees').catch(() => ({ employees: [] })),
-    ]).then(([p, s, e]) => {
-      setRows(p.payroll || []);
-      setSummary(s);
-      setEmpCount((e.employees || []).filter(emp => emp.status === 'active').length);
-    }).finally(() => setLoading(false));
+    setLoadError('');
+
+    const [payrollData, summaryData, employeeData] = await Promise.allSettled([
+      api.get(`/payroll?year_month=${yearMonth}`),
+      api.get(`/payroll/summary?year_month=${yearMonth}`),
+      api.get('/employees'),
+    ]);
+
+    if (payrollData.status === 'fulfilled') setRows(payrollData.value.payroll || []);
+    else setRows([]);
+
+    if (summaryData.status === 'fulfilled') setSummary(summaryData.value);
+    else setSummary(null);
+
+    if (employeeData.status === 'fulfilled') {
+      setEmpCount((employeeData.value.employees || []).filter((emp) => emp.status === 'active').length);
+    } else {
+      setEmpCount(0);
+    }
+
+    const firstFailure = [payrollData, summaryData, employeeData].find((result) => result.status === 'rejected');
+    if (firstFailure) {
+      setLoadError(firstFailure.reason?.message || '급여 데이터를 불러오지 못했습니다.');
+    }
+
+    setLoading(false);
   };
 
-  useEffect(() => { load(); }, [yearMonth]);
+  useEffect(() => { load(); }, [authLoading, user?.id, yearMonth]);
 
   const createProposal = async () => {
     if (!prompt.trim()) return;
@@ -235,6 +259,12 @@ export default function PayrollPage() {
           { label: '활성 직원', value: empCount ?? '-', caption: '계산 대상' },
         ]}
       />
+
+      {loadError ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      ) : null}
 
       {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 

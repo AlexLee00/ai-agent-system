@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { getToken, useAuth } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
@@ -22,7 +22,7 @@ const EMPTY_FORM = {
 };
 
 export default function AdminUsersPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router   = useRouter();
 
   const [users,      setUsers]      = useState([]);
@@ -38,6 +38,7 @@ export default function AdminUsersPage() {
   const [resetPw,    setResetPw]    = useState('');
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const [loadError,  setLoadError]  = useState('');
   const quickFlows = [
     {
       title: '권한 분포 점검',
@@ -58,21 +59,36 @@ export default function AdminUsersPage() {
   }, [user, router]);
 
   const loadAll = (co = filterCo, role = filterRole) => {
+    if (authLoading) return;
+    if (!getToken() || !user) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
+    setLoadError('');
     const qs = new URLSearchParams();
     if (co)   qs.set('company_id', co);
     if (role) qs.set('role', role);
     const q = qs.toString() ? `?${qs}` : '';
-    Promise.all([
-      api.get(`/users${q}`).catch(() => ({ users: [] })),
-      api.get('/companies').catch(() => ({ companies: [] })),
+    Promise.allSettled([
+      api.get(`/users${q}`),
+      api.get('/companies'),
     ]).then(([u, c]) => {
-      setUsers(u.users || []);
-      setCompanies(c.companies || []);
+      if (u.status === 'fulfilled') setUsers(u.value.users || []);
+      else setUsers([]);
+
+      if (c.status === 'fulfilled') setCompanies(c.value.companies || []);
+      else setCompanies([]);
+
+      const firstFailure = [u, c].find((result) => result.status === 'rejected');
+      if (firstFailure) {
+        setLoadError(firstFailure.reason?.message || '사용자 데이터를 불러오지 못했습니다.');
+      }
     }).finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [authLoading, user?.id]);
 
   const companyName = (id) => companies.find(c => c.id === id)?.name || id || '-';
 
@@ -173,6 +189,12 @@ export default function AdminUsersPage() {
           { label: '업체 수', value: companies.length || 0, caption: '등록 업체 기준' },
         ]}
       />
+
+      {loadError ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-slate-600">
