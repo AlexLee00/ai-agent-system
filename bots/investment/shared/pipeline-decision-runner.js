@@ -41,6 +41,24 @@ function classifyWeakSignalReason(confidence, minConfidence) {
   return 'confidence_far_below_threshold';
 }
 
+function isMidGapPromotionCandidate({ exchange, investmentTradeMode, decision, weakReason }) {
+  return exchange === 'binance'
+    && investmentTradeMode === 'validation'
+    && weakReason === 'confidence_mid_gap'
+    && decision?.action === ACTIONS.BUY;
+}
+
+function buildMidGapPromotedAmount(amountUsdt, exchange) {
+  const numeric = Number(amountUsdt || (exchange === 'binance' ? 100 : 500));
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return exchange === 'binance' ? 50 : 500;
+  }
+  if (exchange === 'binance') {
+    return Math.max(50, Math.round(numeric * 0.5));
+  }
+  return numeric;
+}
+
 export async function runDecisionExecutionPipeline({
   sessionId,
   symbols,
@@ -72,6 +90,8 @@ export async function runDecisionExecutionPipeline({
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;
   const weakSignalReasons = {};
+  let midGapPromoted = 0;
+  let midGapRejectedByRisk = 0;
   let invalidSignalSkipped = 0;
   let portfolioDecision = null;
 
@@ -97,6 +117,8 @@ export async function runDecisionExecutionPipeline({
     riskRejectReasons: { ...riskRejectReasons },
     weakSignalSkipped,
     weakSignalReasons: { ...weakSignalReasons },
+    midGapPromoted,
+    midGapRejectedByRisk,
     invalidSignalSkipped,
     savedExecutionWork: riskRejected * 5,
     warnings: buildDecisionWarnings({
@@ -105,6 +127,7 @@ export async function runDecisionExecutionPipeline({
       debateLimit,
       riskRejected,
       weakSignalSkipped,
+      midGapPromoted,
     }),
     ...extra,
   });
@@ -195,6 +218,9 @@ export async function runDecisionExecutionPipeline({
         weak_signal_skipped: metrics.weakSignalSkipped,
         weak_signal_reason_top: null,
         weak_signal_reasons: {},
+        mid_gap_promoted: metrics.midGapPromoted,
+        mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
+        mid_gap_executed: 0,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
@@ -238,6 +264,9 @@ export async function runDecisionExecutionPipeline({
         weak_signal_skipped: metrics.weakSignalSkipped,
         weak_signal_reason_top: null,
         weak_signal_reasons: {},
+        mid_gap_promoted: metrics.midGapPromoted,
+        mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
+        mid_gap_executed: 0,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
@@ -259,21 +288,37 @@ export async function runDecisionExecutionPipeline({
     const minConf = exchange === 'binance'
       ? Math.min(params?.minSignalScore ?? runtimeMinConf, runtimeMinConf)
       : (params?.minSignalScore ?? runtimeMinConf);
+    let midGapPromotedCandidate = false;
     if ((dec.confidence || 0) < minConf) {
-      weakSignalSkipped++;
       const weakReason = classifyWeakSignalReason(dec.confidence, minConf);
-      weakSignalReasons[weakReason] = (weakSignalReasons[weakReason] || 0) + 1;
-      continue;
+      if (isMidGapPromotionCandidate({
+        exchange,
+        investmentTradeMode,
+        decision: dec,
+        weakReason,
+      })) {
+        midGapPromoted++;
+        midGapPromotedCandidate = true;
+      } else {
+        weakSignalSkipped++;
+        weakSignalReasons[weakReason] = (weakSignalReasons[weakReason] || 0) + 1;
+        continue;
+      }
     }
 
     const analyses = symbolAnalysesMap.get(dec.symbol) || [];
     const analystSignals = buildAnalystSignals(analyses);
+    const amountUsdt = midGapPromotedCandidate
+      ? buildMidGapPromotedAmount(dec.amount_usdt, exchange)
+      : (dec.amount_usdt || (exchange === 'binance' ? 100 : 500));
     const signalData = {
       symbol: dec.symbol,
       action: dec.action,
-      amountUsdt: dec.amount_usdt || (exchange === 'binance' ? 100 : 500),
+      amountUsdt,
       confidence: dec.confidence,
-      reasoning: `[루나] ${dec.reasoning}`,
+      reasoning: midGapPromotedCandidate
+        ? `[루나] mid-gap validation 승격 | ${dec.reasoning}`
+        : `[루나] ${dec.reasoning}`,
       exchange,
       analystSignals,
     };
@@ -317,6 +362,7 @@ export async function runDecisionExecutionPipeline({
 
     if (!riskResult?.approved) {
       riskRejected++;
+      if (midGapPromotedCandidate) midGapRejectedByRisk++;
       const riskReason = String(riskResult?.reason || 'risk_rejected');
       riskRejectReasons[riskReason] = (riskRejectReasons[riskReason] || 0) + 1;
       results.push({
@@ -329,6 +375,7 @@ export async function runDecisionExecutionPipeline({
         skipped: true,
         skipReason: riskReason,
         risk: riskResult,
+        midGapPromoted: midGapPromotedCandidate,
       });
       continue;
     }
@@ -381,6 +428,7 @@ export async function runDecisionExecutionPipeline({
       ragStore: ragStore.result,
       execution: execute.result,
       journal: journal.result,
+      midGapPromoted: midGapPromotedCandidate,
     });
   }
 
@@ -388,6 +436,7 @@ export async function runDecisionExecutionPipeline({
     bridgeStatus: 'completed',
     approvedSignals: results.filter(item => !item.skipped).length,
     executedSymbols: results.filter(isActuallyExecuted).length,
+    midGapExecuted: results.filter(item => item.midGapPromoted && isActuallyExecuted(item)).length,
   });
   await finishPipelineRun(sessionId, {
     status: 'completed',
@@ -410,6 +459,9 @@ export async function runDecisionExecutionPipeline({
       weak_signal_skipped: completedMetrics.weakSignalSkipped,
       weak_signal_reason_top: getTopWeakSignalReason(),
       weak_signal_reasons: completedMetrics.weakSignalReasons,
+      mid_gap_promoted: completedMetrics.midGapPromoted,
+      mid_gap_rejected_by_risk: completedMetrics.midGapRejectedByRisk,
+      mid_gap_executed: completedMetrics.midGapExecuted,
       invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
@@ -427,10 +479,11 @@ export default {
   runDecisionExecutionPipeline,
 };
 
-function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped }) {
+function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped, midGapPromoted }) {
   const warnings = [];
   if (symbols.length >= 20 && debateCount >= Math.max(1, debateLimit - 1)) warnings.push('debate_capacity_hot');
   if (riskRejected >= 5) warnings.push('risk_reject_saved_work');
   if (weakSignalSkipped >= 10) warnings.push('weak_signal_pressure');
+  if (midGapPromoted >= 3) warnings.push('mid_gap_validation_promoted');
   return warnings;
 }
