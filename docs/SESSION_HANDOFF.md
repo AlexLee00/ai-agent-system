@@ -9,6 +9,44 @@
 
 ---
 
+## 2026-03-25 — worker-web 운영 화면 auth-ready 경계 / 공통 로더 / 상태 UI 표준화
+
+- 요청 배경:
+  - `/sales`와 `/dashboard`에서 실제 매출 원장은 정상인데도, 로그인 직후 프런트가 인증 준비 전에 fetch를 날리고 실패를 빈 데이터로 삼켜 “매출이 안 보이는” 현상이 있었다.
+  - 같은 유형의 silent fallback이 `/attendance`, `/payroll`, `/admin/users`에도 잠재적으로 남아 있어 운영 핵심 화면 전반의 로딩 경계를 정리할 필요가 있었다.
+- 반영:
+  - [sales/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/sales/page.js)
+  - [dashboard/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/dashboard/page.js)
+  - [attendance/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/attendance/page.js)
+  - [payroll/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/payroll/page.js)
+  - [admin/users/page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/admin/users/page.js)
+  - [use-auth-ready-request.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/use-auth-ready-request.js)
+    - `useAuth()`와 `worker_token`이 모두 준비된 뒤에만 요청을 실행하는 공통 auth-ready 경계를 제공한다.
+  - [use-operations-loader.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/lib/use-operations-loader.js)
+    - 운영 화면 공통 `loading / loadError / runLoad` 규약을 묶었다.
+  - [OperationsLoadState.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/OperationsLoadState.js)
+    - 공통 `error / retry / loading / empty / notice` UI를 표준화했다.
+- 의미:
+  - 인증 준비 전 실패를 실제 0건/빈 목록으로 오인하던 입력 경계를 복구했다.
+  - 운영 핵심 화면이 로그인 직후에도 같은 규약으로 다시 로드되고, 실패 시 조용히 숨지 않고 명시적으로 드러난다.
+  - 이후 다른 운영 화면도 같은 공용 레이어 위에 붙일 수 있는 기준선이 생겼다.
+- 검증:
+  - `node --check bots/worker/web/app/sales/page.js`
+  - `node --check bots/worker/web/app/dashboard/page.js`
+  - `node --check bots/worker/web/app/attendance/page.js`
+  - `node --check bots/worker/web/app/payroll/page.js`
+  - `node --check bots/worker/web/app/admin/users/page.js`
+  - `node --check bots/worker/web/lib/use-auth-ready-request.js`
+  - `node --check bots/worker/web/lib/use-operations-loader.js`
+  - `node --check bots/worker/web/components/OperationsLoadState.js`
+  - `npx next build` in `bots/worker/web`
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+- 현재 상태:
+  - 워커웹 매출은 다시 정상 표시된다.
+  - 이 계열 작업의 최종 커밋은 `e6f2676`, `5401d97`, `e83751e`, `775bd66`, `512ee86`이다.
+  - `node bots/claude/src/dexter.js --update-checksums`로 `bots/claude/.checksums.json`을 다시 갱신했다.
+  - 다만 현재 체크섬은 이번 워커웹 문서 반영 외에도 dirty workspace에 이미 존재하던 비디오 신규 파일 2건(`cut-proposal-engine.js`, `media-binary-env.js`)이 함께 반영된 상태다.
+
 ## 2026-03-24 — worker-web `/video`, `/video/editor` 실브라우저 점검 1차
 
 - 요청 범위:
