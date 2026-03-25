@@ -61,6 +61,7 @@ export function loadSecrets() {
       screening_domestic_core: c.screening?.domestic?.core || [],
       screening_overseas_core: c.screening?.overseas?.core || [],
       screening_crypto_core: c.screening?.crypto?.core || [],
+      screening_crypto_max_dynamic: Number(c.screening?.crypto?.max_dynamic || 0),
       // LLM
       anthropic_api_key:    c.anthropic?.api_key   || '',
       groq_api_key:         c.groq?.accounts?.[0]?.api_key || '',
@@ -187,6 +188,12 @@ export function getSymbols() {
     : s.screening_crypto_core?.length
       ? s.screening_crypto_core
       : ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'];
+}
+
+export function getCryptoScreeningMaxDynamic() {
+  const s = loadSecrets();
+  const value = Number(s.screening_crypto_max_dynamic || 0);
+  return Number.isFinite(value) && value > 0 ? value : 8;
 }
 
 export function getKisSymbols() {

@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode } from '../shared/secrets.js';
+import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
@@ -57,6 +57,15 @@ function saveState(state) {
   } catch (e) {
     console.warn(`  ⚠️ 상태 저장 실패: ${e.message}`);
   }
+}
+
+function capDynamicUniverse(symbols, maxDynamic, source = 'dynamic') {
+  if (!Array.isArray(symbols) || symbols.length === 0) return [];
+  const limit = Number(maxDynamic || 0);
+  if (!Number.isFinite(limit) || limit <= 0 || symbols.length <= limit) return symbols;
+  const capped = symbols.slice(0, limit);
+  console.log(`  ✂️ [유니버스 캡] ${source} ${symbols.length}개 -> ${capped.length}개 (max_dynamic=${limit})`);
+  return capped;
 }
 
 function fetchBtcPrice() {
@@ -278,6 +287,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const noDynamic = args.includes('--no-dynamic');
 
   let symbols;
+  const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
   if (symArg) {
     symbols = symArg.split('=')[1].split(',').map(s => s.trim());
   } else if (noDynamic) {
@@ -295,7 +305,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       screenLabel: '아르고스 스크리닝',
       cacheLabel: 'RAG 폴백',
     });
-    symbols = resolved.symbols;
+    symbols = capDynamicUniverse(resolved.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
     if (resolved.source === 'screening') {
       savePreScreened('crypto', symbols);
       const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
