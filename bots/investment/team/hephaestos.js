@@ -295,11 +295,11 @@ async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, 
 }
 
 async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
-  const capitalPolicy = getCapitalConfig('binance');
+  const capitalPolicy = getCapitalConfig('binance', 'normal');
   const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
   if (paperPositions.length === 0) return [];
 
-  let liveOpenPositions = await getOpenPositions('binance').catch(() => []);
+  let liveOpenPositions = await getOpenPositions('binance', false, 'normal').catch(() => []);
   const maxPromotableOpenPositions = Math.max(0, capitalPolicy.max_concurrent_positions - Math.max(0, reserveSlots));
   if (liveOpenPositions.length >= maxPromotableOpenPositions) return [];
 
@@ -384,14 +384,14 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
     }).catch(() => {});
 
     promoted.push({ symbol: paperPos.symbol, totalUsdt: desiredUsdt, amount: trade.amount });
-    liveOpenPositions = await getOpenPositions('binance').catch(() => liveOpenPositions);
+    liveOpenPositions = await getOpenPositions('binance', false, 'normal').catch(() => liveOpenPositions);
   }
 
   return promoted;
 }
 
 export async function inspectPromotionCandidates() {
-  const capitalPolicy = getCapitalConfig('binance');
+  const capitalPolicy = getCapitalConfig('binance', 'normal');
   const freeUsdt = await getAvailableUSDT().catch(() => 0);
   const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
   const results = [];
@@ -426,7 +426,7 @@ export async function inspectPromotionCandidates() {
 }
 
 export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
-  const capitalPolicy = getCapitalConfig('binance');
+  const capitalPolicy = getCapitalConfig('binance', getInvestmentTradeMode());
   const currentPrice = await fetchTicker(symbol).catch(() => 0);
   const slPrice = 0;
   const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');
@@ -460,7 +460,7 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
  * @returns {object|null} 성공 시 결과 객체, BTC 페어 없거나 미추적 BTC 없으면 null
  */
 async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
-  const capitalPolicy = getCapitalConfig('binance');
+  const capitalPolicy = getCapitalConfig('binance', signal?.trade_mode || getInvestmentTradeMode());
   if (base === 'BTC') return null;  // BTC 자체는 흡수 블록에서 처리
 
   // 미추적 BTC 확인
@@ -620,11 +620,11 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
  * @param {object} signal  { id, symbol, action, amountUsdt, confidence, reasoning }
  */
 export async function executeSignal(signal) {
-  const capitalPolicy = getCapitalConfig('binance');
   const globalPaperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
   const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
   const base = symbol.split('/')[0];
   let effectivePaperMode = globalPaperMode;
@@ -689,7 +689,7 @@ export async function executeSignal(signal) {
         notifyCircuitBreaker({ reason: circuit.reason, type: circuit.type }).catch(() => {});
         return { success: false, reason: circuit.reason };
       }
-      const openPositionsSafe = await getOpenPositions('binance').catch(() => []);
+      const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
       if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
         const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
         console.log(`  ⛔ [자본관리] ${reason}`);
@@ -895,7 +895,7 @@ export async function executeSignal(signal) {
           if (check.circuit) {
             notifyCircuitBreaker({ reason: check.reason, type: check.circuitType }).catch(() => {});
           } else {
-            const openPos = await getOpenPositions('binance').catch(() => []);
+            const openPos = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
             notifyTradeSkip({ symbol, action, reason: check.reason, openPositions: openPos.length, maxPositions: capitalPolicy.max_concurrent_positions }).catch(() => {});
           }
           return { success: false, reason: check.reason };
@@ -1076,7 +1076,7 @@ export async function executeSignal(signal) {
     // 자본 관리 정보 포함 알림
     const [curBalance, curPositions, curDailyPnl] = await Promise.all([
       getAvailableBalance().catch(() => null),
-      getOpenPositions('binance').catch(() => []),
+      getOpenPositions('binance', false, signalTradeMode).catch(() => []),
       getDailyPnL().catch(() => null),
     ]);
     await notifyTrade({

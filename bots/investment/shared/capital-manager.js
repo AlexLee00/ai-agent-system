@@ -52,11 +52,11 @@ function loadCapitalConfig() {
 
 export const config = loadCapitalConfig();
 
-export function getCapitalConfig(exchange = null) {
+export function getCapitalConfig(exchange = null, tradeMode = null) {
   if (!exchange) return config;
   const override = config.by_exchange?.[exchange] || {};
-  const tradeMode = getInvestmentTradeMode();
-  const modeOverride = tradeMode ? (override.trade_modes?.[tradeMode] || {}) : {};
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const modeOverride = effectiveTradeMode ? (override.trade_modes?.[effectiveTradeMode] || {}) : {};
   return {
     ...config,
     ...override,
@@ -168,16 +168,24 @@ export async function getTotalCapital(exchange = null) {
 
 // ─── 포지션 조회 ─────────────────────────────────────────────────────
 
-export async function getOpenPositions(exchange = null, paper = false) {
+export async function getOpenPositions(exchange = null, paper = false, tradeMode = null) {
   try {
+    const conditions = ['amount > 0', `paper = $1`];
+    const params = [paper === true];
+
     if (exchange) {
-      return pgPool.query(
-        SCHEMA,
-        'SELECT * FROM investment.positions WHERE amount > 0 AND exchange = $1 AND paper = $2',
-        [exchange, paper === true],
-      );
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
     }
-    return pgPool.query(SCHEMA, 'SELECT * FROM investment.positions WHERE amount > 0 AND paper = $1', [paper === true]);
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+    return pgPool.query(
+      SCHEMA,
+      `SELECT * FROM investment.positions WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
   } catch (e) {
     console.warn('[capital] 포지션 조회 실패:', e.message);
     return [];
@@ -331,8 +339,8 @@ export async function checkCircuitBreaker() {
  */
 export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exchange = null, tradeMode = null) {
   const isBuy = direction === 'BUY' || direction === 'buy';
-  const policy = getCapitalConfig(exchange);
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const policy = getCapitalConfig(exchange, effectiveTradeMode);
 
   // 1. 가용 잔고 (BUY만)
   if (isBuy) {
@@ -352,7 +360,7 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
     }
 
     // 3. 동시 포지션 제한
-    const openPositions = await getOpenPositions(exchange);
+    const openPositions = await getOpenPositions(exchange, false, effectiveTradeMode);
     if (openPositions.length >= policy.max_concurrent_positions) {
       return { allowed: false, reason: `최대 포지션 도달: ${openPositions.length}/${policy.max_concurrent_positions}` };
     }

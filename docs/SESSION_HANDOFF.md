@@ -1149,3 +1149,20 @@
 - 해석:
   - crypto capital guard의 주 병목은 자본 부족이나 단일 주문 크기보다 validation 레인의 일간 매매 한도 소진이다.
   - 이후 validation 전용 budget 분리 검토가 자연스러운 다음 단계다.
+## 2026-03-25 23:25 KST — investment capital guard trade_mode 슬롯 분리 적용
+
+- [capital-manager.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/capital-manager.js)가 이제 `getCapitalConfig(exchange, tradeMode)`와 `getOpenPositions(exchange, paper, tradeMode)`를 지원한다.
+- 기존에는 `getDailyTradeCount()`만 `trade_mode`별로 분리되고, BUY 전 포지션 슬롯 체크는 `getOpenPositions(exchange)`를 써서 validation과 normal/live가 같은 슬롯을 공유하고 있었다.
+- 이번 수정 후:
+  - `preTradeCheck()`는 `effectiveTradeMode` 기준 정책과 포지션 슬롯을 함께 읽는다.
+  - `binance / validation`은 `max_concurrent_positions=3`, `max_daily_trades=10`
+  - `binance / normal`은 `max_concurrent_positions=6`, `max_daily_trades=16`
+  기준을 각각 적용한다.
+- [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)도 같은 경계를 따라:
+  - BUY 안전 게이트
+  - `capital_guard_rejected` 알림용 open position count
+  - 실행 후 capital info
+  를 `signal.trade_mode` 기준으로 계산하도록 정리했다.
+- 의미:
+  - 지금 당장 필요한 구조는 validation 레인이 normal/live 슬롯을 잠식하지 않게 하는 것이다.
+  - 나중에는 validation 전용 daily budget/slot을 헬스 리포트와 runtime config suggestion에서 더 직접적으로 비교하는 구조로 확장할 수 있다.

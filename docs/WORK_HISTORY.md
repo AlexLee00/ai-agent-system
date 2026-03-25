@@ -4564,3 +4564,20 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 검증:
   - `node --check bots/investment/scripts/health-report.js`
   - `node bots/investment/scripts/health-report.js --json`
+## 2026-03-25 — investment validation / normal capital slot 분리 적용
+
+- [capital-manager.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/capital-manager.js)
+  - `getCapitalConfig(exchange, tradeMode)`로 명시적 `trade_mode` override를 지원
+  - `getOpenPositions(exchange, paper, tradeMode)`가 `COALESCE(trade_mode, 'normal')` 기준 필터를 지원
+  - `preTradeCheck()`가 BUY 전 포지션 슬롯을 `effectiveTradeMode` 기준으로 계산하도록 수정
+- [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js)
+  - BUY 안전 게이트와 skip 알림, 실행 후 capital info가 모두 `signal.trade_mode`별 슬롯 기준을 따르도록 정리
+  - PAPER→LIVE 승격(normal)은 계속 normal 슬롯 기준으로 계산
+- 의미:
+  - 기존에는 validation과 normal/live가 일간 매매 횟수는 분리되어도 포지션 슬롯은 공유하고 있었다.
+  - 이번 수정으로 `validation max_concurrent_positions=3`, `normal max_concurrent_positions=6`이 실제 실행 경로에 반영된다.
+- 검증:
+  - `node --check bots/investment/shared/capital-manager.js`
+  - `node --check bots/investment/team/hephaestos.js`
+  - `node --input-type=module -e "... getCapitalConfig('binance','normal') / getCapitalConfig('binance','validation') ..."`
+  - `node bots/investment/scripts/health-report.js --json`
