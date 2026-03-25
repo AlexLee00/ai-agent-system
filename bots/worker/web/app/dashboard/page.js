@@ -15,12 +15,13 @@ import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
   const [alerts,       setAlerts]       = useState(null);
   const [activities,   setActivities]   = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [prompt,       setPrompt]       = useState('');
   const [advisorResult, setAdvisorResult] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState('');
@@ -36,18 +37,39 @@ export default function DashboardPage() {
   const isMember = user?.role === 'member';
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!getToken() || !user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLoadError('');
+
     const requests = [
-      api.get('/dashboard/summary').catch(() => null),
-      canUsePromptWorkspace ? api.get('/dashboard/alerts').catch(() => null) : Promise.resolve(null),
-      api.get('/activity').catch(() => ({ activities: [] })),
+      api.get('/dashboard/summary'),
+      canUsePromptWorkspace ? api.get('/dashboard/alerts') : Promise.resolve(null),
+      api.get('/activity'),
     ];
 
-    Promise.all(requests).then(([sum, alertData, activityData]) => {
-      if (sum) setSummary(sum);
-      if (alertData) setAlerts(alertData);
-      setActivities(activityData?.activities || []);
-    }).finally(() => setLoading(false));
-  }, [canUsePromptWorkspace]);
+    Promise.allSettled(requests)
+      .then(([sum, alertData, activityData]) => {
+        if (sum.status === 'fulfilled') setSummary(sum.value);
+        else setSummary(null);
+
+        if (alertData.status === 'fulfilled') setAlerts(alertData.value);
+        else setAlerts(null);
+
+        if (activityData.status === 'fulfilled') setActivities(activityData.value?.activities || []);
+        else setActivities([]);
+
+        const firstFailure = [sum, alertData, activityData].find((result) => result.status === 'rejected');
+        if (firstFailure) {
+          setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [authLoading, canUsePromptWorkspace, user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -415,6 +437,12 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       {canUsePromptWorkspace && <AdminQuickNav title="관리 화면 바로가기" />}
+
+      {loadError ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      ) : null}
 
       <AdminPageHero
         title="워커 운영 대시보드"
