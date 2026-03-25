@@ -4533,3 +4533,16 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `scripts/reviews/jay-llm-daily-review.js`
   - `freshness.level / trust / summary` 메타를 추가해 `live / partial_live / snapshot_fallback / snapshot_stale / degraded`를 직접 읽을 수 있게 정리
   - 텍스트 출력에 `운영 신뢰도` 라인을 추가하고, stale snapshot일 때는 `live 운영 판단보다 참고용` 경고를 함께 출력하도록 보강
+## 2026-03-25 — investment crypto mid-gap validation 승격 레일 추가
+
+- [pipeline-decision-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/pipeline-decision-runner.js)
+  - `confidence_mid_gap`를 기존처럼 무조건 weak skip하지 않고, `binance + validation + BUY` 조합에서는 validation 승격 후보로 통과시키도록 수정
+  - 승격 주문금액을 기존의 50%로 축소
+  - 메타/경고 계측 추가:
+    - `mid_gap_promoted`
+    - `mid_gap_rejected_by_risk`
+    - `mid_gap_executed`
+    - `mid_gap_validation_promoted`
+- 검증:
+  - `node --check bots/investment/shared/pipeline-decision-runner.js`
+  - `node bots/investment/scripts/health-report.js --json`

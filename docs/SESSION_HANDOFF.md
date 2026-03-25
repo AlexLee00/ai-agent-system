@@ -1116,3 +1116,19 @@
     - [bots/video/docs/video-team-design.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-design.md)
     - [bots/video/samples/ANALYSIS.md](/Users/alexlee/projects/ai-agent-system/bots/video/samples/ANALYSIS.md)
     - [bots/video/docs/video-team-tasks.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-tasks.md)
+## 2026-03-25 23:15 KST — investment crypto mid-gap validation 승격
+
+- [pipeline-decision-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/pipeline-decision-runner.js)에 `confidence_mid_gap` 전용 경계를 추가했다.
+- 현재 정책:
+  - `exchange=binance`
+  - `investment_trade_mode=validation`
+  - `action=BUY`
+  - `weakReason=confidence_mid_gap`
+  인 경우만 즉시 폐기하지 않고 validation 승격 후보로 통과시킨다.
+- 승격된 mid-gap 신호는 주문금액을 50%로 축소하고, reasoning에 `mid-gap validation 승격` 태그를 남긴다.
+- 파이프라인 메타에 아래 계측을 추가했다.
+  - `mid_gap_promoted`
+  - `mid_gap_rejected_by_risk`
+  - `mid_gap_executed`
+  - warning `mid_gap_validation_promoted`
+- 아직 실제 런타임에서 `mid_gap_promoted > 0`가 찍힌 샘플은 없다. 다음 crypto cycle에서 메타가 실제로 쌓이는지 확인 필요.

@@ -2120,3 +2120,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `scripts/reviews/jay-llm-daily-review.js`
   - `freshness.level / freshness.trust / freshness.summary` 메타를 추가해 live DB와 snapshot fallback 해석 경계를 강화
   - stale snapshot fallback일 때 텍스트 출력에 `운영 신뢰도`와 `참고용 해석` 경고를 함께 노출
+## [2026-03-25] investment crypto mid-gap validation promotion
+
+- `confidence_mid_gap` 약한 신호를 암호화폐 validation BUY 경로에서만 제한적으로 승격
+- 승격 주문금액을 50%로 축소해 risk 폭을 줄임
+- pipeline 메타에 `mid_gap_promoted`, `mid_gap_rejected_by_risk`, `mid_gap_executed` 추가
+- 경고 `mid_gap_validation_promoted` 추가
