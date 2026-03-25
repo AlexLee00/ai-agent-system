@@ -1014,10 +1014,11 @@ export async function executeSignal(signal) {
       const position = livePosition || paperPosition;
       let amount = position?.amount;
       const sellPaperMode = !livePosition && Boolean(paperPosition);
+      const base = symbol.split('/')[0];
+      const bal  = await getExchange().fetchBalance();
+      const freeBalance = Number(bal.free?.[base] || 0);
       if (!amount || amount <= 0) {
-        const base = symbol.split('/')[0];
-        const bal  = await getExchange().fetchBalance();
-        amount = bal.free[base] || 0;
+        amount = freeBalance;
         if (amount <= 0) {
           console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
           await persistFailure('보유량 없음', {
@@ -1027,6 +1028,21 @@ export async function executeSignal(signal) {
           return { success: false, reason: '보유량 없음' };
         }
         console.log(`  ℹ️ DB 포지션 없음 → 바이낸스 실잔고 사용: ${amount} ${base}`);
+      } else if (!sellPaperMode && freeBalance > 0 && freeBalance < amount) {
+        const drift = amount - freeBalance;
+        console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(${freeBalance})가 어긋남 — 실잔고 기준으로 SELL 진행`);
+        amount = freeBalance;
+        await db.updateSignalBlock(signalId, {
+          reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
+          code: 'position_balance_reconciled',
+          meta: {
+            exchange: 'binance',
+            symbol,
+            dbAmount: position?.amount || 0,
+            freeBalance,
+            drift,
+          },
+        }).catch(() => {});
       }
 
       const order = await marketSell(symbol, amount, sellPaperMode);
