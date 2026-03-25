@@ -39,7 +39,7 @@ function normalizeChartData(rows = []) {
 }
 
 export default function SalesPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [financeTab, setFinanceTab] = useState('sales');
   const [salesView, setSalesView] = useState('list');
   const [sales, setSales] = useState([]);
@@ -57,6 +57,7 @@ export default function SalesPage() {
   const [saving, setSaving] = useState(false);
   const [expenseSaving, setExpenseSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [prompt, setPrompt] = useState('');
   const [proposalType, setProposalType] = useState('sales');
   const [proposal, setProposal] = useState(null);
@@ -125,27 +126,60 @@ export default function SalesPage() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const load = () => {
+  const load = async () => {
+    if (authLoading) return;
+    if (!getToken() || !user) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    Promise.all([
-      api.get('/sales?limit=1000&from=2000-01-01').catch(() => ({ sales: [] })),
-      api.get('/sales/summary').catch(() => null),
-      api.get('/expenses?limit=1000&from=2000-01-01').catch(() => ({ expenses: [] })),
-      api.get('/expenses/summary').catch(() => null),
-    ]).then(([salesList, salesSummary, expenseList, expenseSummaryData]) => {
-      setSales(salesList.sales || []);
-      setSummary(salesSummary);
-      setExpenses(expenseList.expenses || []);
-      setExpenseSummary(expenseSummaryData);
-      if (salesSummary) {
-        setChartData(normalizeChartData(salesSummary.weekly || []));
-      } else {
-        setChartData([]);
-      }
-    }).finally(() => setLoading(false));
+    setLoadError('');
+
+    const [salesList, salesSummary, expenseList, expenseSummaryData] = await Promise.allSettled([
+      api.get('/sales?limit=1000&from=2000-01-01'),
+      api.get('/sales/summary'),
+      api.get('/expenses?limit=1000&from=2000-01-01'),
+      api.get('/expenses/summary'),
+    ]);
+
+    if (salesList.status === 'fulfilled') {
+      setSales(salesList.value.sales || []);
+    } else {
+      setSales([]);
+    }
+
+    if (salesSummary.status === 'fulfilled') {
+      setSummary(salesSummary.value);
+      setChartData(normalizeChartData(salesSummary.value?.weekly || []));
+    } else {
+      setSummary(null);
+      setChartData([]);
+    }
+
+    if (expenseList.status === 'fulfilled') {
+      setExpenses(expenseList.value.expenses || []);
+    } else {
+      setExpenses([]);
+    }
+
+    if (expenseSummaryData.status === 'fulfilled') {
+      setExpenseSummary(expenseSummaryData.value);
+    } else {
+      setExpenseSummary(null);
+    }
+
+    const failures = [salesList, salesSummary, expenseList, expenseSummaryData].filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      setLoadError(failures[0].reason?.message || '매출 데이터를 불러오지 못했습니다.');
+    }
+
+    setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [authLoading, user?.id]);
   useEffect(() => {
     const reusedDraft = consumeDocumentReuseDraft('sales');
     if (reusedDraft?.draft) {
@@ -433,6 +467,12 @@ export default function SalesPage() {
           { label: '이번 달 손익', value: `₩${currentMonthProfit.toLocaleString()}`, caption: '매출 - 매입' },
         ]}
       />
+
+      {loadError ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      ) : null}
 
       {financeTab !== 'profit' ? (
         <div>
