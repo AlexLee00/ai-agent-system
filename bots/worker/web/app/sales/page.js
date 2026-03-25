@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { getToken, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
@@ -15,6 +15,7 @@ import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
+import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 const EMPTY_SALE_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0, 10) };
@@ -40,6 +41,7 @@ function normalizeChartData(rows = []) {
 
 export default function SalesPage() {
   const { user, loading: authLoading } = useAuth();
+  const { runWhenReady } = useAuthReadyRequest();
   const [financeTab, setFinanceTab] = useState('sales');
   const [salesView, setSalesView] = useState('list');
   const [sales, setSales] = useState([]);
@@ -127,54 +129,52 @@ export default function SalesPage() {
   };
 
   const load = async () => {
-    if (authLoading) return;
-    if (!getToken() || !user) {
+    return runWhenReady(async () => {
+      setLoading(true);
+      setLoadError('');
+
+      const [salesList, salesSummary, expenseList, expenseSummaryData] = await Promise.allSettled([
+        api.get('/sales?limit=1000&from=2000-01-01'),
+        api.get('/sales/summary'),
+        api.get('/expenses?limit=1000&from=2000-01-01'),
+        api.get('/expenses/summary'),
+      ]);
+
+      if (salesList.status === 'fulfilled') {
+        setSales(salesList.value.sales || []);
+      } else {
+        setSales([]);
+      }
+
+      if (salesSummary.status === 'fulfilled') {
+        setSummary(salesSummary.value);
+        setChartData(normalizeChartData(salesSummary.value?.weekly || []));
+      } else {
+        setSummary(null);
+        setChartData([]);
+      }
+
+      if (expenseList.status === 'fulfilled') {
+        setExpenses(expenseList.value.expenses || []);
+      } else {
+        setExpenses([]);
+      }
+
+      if (expenseSummaryData.status === 'fulfilled') {
+        setExpenseSummary(expenseSummaryData.value);
+      } else {
+        setExpenseSummary(null);
+      }
+
+      const failures = [salesList, salesSummary, expenseList, expenseSummaryData].filter((result) => result.status === 'rejected');
+      if (failures.length > 0) {
+        setLoadError(failures[0].reason?.message || '매출 데이터를 불러오지 못했습니다.');
+      }
+
       setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setLoadError('');
-
-    const [salesList, salesSummary, expenseList, expenseSummaryData] = await Promise.allSettled([
-      api.get('/sales?limit=1000&from=2000-01-01'),
-      api.get('/sales/summary'),
-      api.get('/expenses?limit=1000&from=2000-01-01'),
-      api.get('/expenses/summary'),
-    ]);
-
-    if (salesList.status === 'fulfilled') {
-      setSales(salesList.value.sales || []);
-    } else {
-      setSales([]);
-    }
-
-    if (salesSummary.status === 'fulfilled') {
-      setSummary(salesSummary.value);
-      setChartData(normalizeChartData(salesSummary.value?.weekly || []));
-    } else {
-      setSummary(null);
-      setChartData([]);
-    }
-
-    if (expenseList.status === 'fulfilled') {
-      setExpenses(expenseList.value.expenses || []);
-    } else {
-      setExpenses([]);
-    }
-
-    if (expenseSummaryData.status === 'fulfilled') {
-      setExpenseSummary(expenseSummaryData.value);
-    } else {
-      setExpenseSummary(null);
-    }
-
-    const failures = [salesList, salesSummary, expenseList, expenseSummaryData].filter((result) => result.status === 'rejected');
-    if (failures.length > 0) {
-      setLoadError(failures[0].reason?.message || '매출 데이터를 불러오지 못했습니다.');
-    }
-
-    setLoading(false);
+    }, {
+      onMissingAuth: () => setLoading(false),
+    });
   };
 
   useEffect(() => {
