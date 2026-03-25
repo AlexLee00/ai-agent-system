@@ -1432,3 +1432,7 @@
 | `node bots/investment/scripts/health-report.js --json` | ✅ 투자팀 헬스 리포트 정상, 서비스 warn 0 / crypto gate blocked 유지 |
 | `node --check bots/investment/scripts/health-report.js` | ✅ capital guard 분해 리포트 문법 통과 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `capitalGuardBreakdown` 섹션 노출, `daily trade limit=63`, `validation=59` 확인 |
+| `node --check bots/investment/shared/capital-manager.js` | ✅ `trade_mode`별 capital config / open position slot 분리 적용 후 문법 통과 |
+| `node --check bots/investment/team/hephaestos.js` | ✅ BUY 안전 게이트 / 알림의 `trade_mode`별 슬롯 계산 정합화 후 문법 통과 |
+| `node --input-type=module -e \"... getCapitalConfig('binance','normal') / getCapitalConfig('binance','validation') ...\"` | ✅ `normal=6/16`, `validation=3/10` 정책값 분리 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ 투자팀 헬스 재검증, `BINANCE / normal 0/16`, `BINANCE / validation 0/10` lane 기준 유지 확인 |

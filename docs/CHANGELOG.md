@@ -2131,3 +2131,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - crypto `capital_guard_rejected`를 최근 14일 기준으로 사유 그룹/`trade_mode`별로 분해
 - `최대 포지션 도달` 문구를 `max positions`로 올바르게 분류
 - 자동화 리포트에서 validation 레인의 일간 매매 한도 소진이 주 병목임을 명시
+## [2026-03-25] investment trade-mode capital slots
+
+- `capital-manager.js`가 `trade_mode`별 `getCapitalConfig()` / `getOpenPositions()`를 지원
+- BUY 전 포지션 슬롯 체크가 validation과 normal/live를 분리해서 계산하도록 수정
+- `hephaestos.js` 실행 게이트와 알림도 `signal.trade_mode` 기준 슬롯 수를 사용
+- 결과적으로 `binance validation 3슬롯 / normal 6슬롯` 정책이 실제 실행 경로에 반영
