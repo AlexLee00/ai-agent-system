@@ -27,6 +27,7 @@ export async function runMarketCollectPipeline({
   triggerType = 'cycle',
   triggerRef = null,
   meta = {},
+  universeMeta = {},
 } = {}) {
   const startedAt = Date.now();
   const nodeIds = COLLECT_NODE_SETS[market];
@@ -105,6 +106,9 @@ export async function runMarketCollectPipeline({
   const metrics = {
     durationMs: Date.now() - startedAt,
     symbolCount: symbols.length,
+    screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
+    heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
+    heldAddedCount: Number(universeMeta.heldAddedCount || 0),
     perSymbolNodeCount: perSymbolNodes.length,
     totalTasks,
     failedTasks,
@@ -171,7 +175,13 @@ export function summarizeCollectWarnings(warnings = [], metrics = {}) {
   }
 
   if (warnings.includes('collect_overload_detected')) {
-    lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}).`);
+    const screeningCount = Number(metrics.screeningSymbolCount || 0);
+    const heldCount = Number(metrics.heldAddedCount || metrics.heldSymbolCount || 0);
+    if (screeningCount > 0 || heldCount > 0) {
+      lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}, screening=${screeningCount}, held=${heldCount}).`);
+    } else {
+      lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}).`);
+    }
   }
 
   if (warnings.includes('concurrency_guard_active')) {

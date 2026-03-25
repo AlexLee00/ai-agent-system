@@ -68,6 +68,17 @@ function capDynamicUniverse(symbols, maxDynamic, source = 'dynamic') {
   return capped;
 }
 
+function getHeldMergeStats(baseSymbols = [], heldSymbols = []) {
+  const seen = new Set(baseSymbols);
+  let heldAddedCount = 0;
+  for (const symbol of heldSymbols) {
+    if (seen.has(symbol)) continue;
+    seen.add(symbol);
+    heldAddedCount += 1;
+  }
+  return { heldAddedCount };
+}
+
 function fetchBtcPrice() {
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -188,11 +199,18 @@ export async function runCryptoCycle(symbols) {
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──
     console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
+    const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
+    const { heldAddedCount } = getHeldMergeStats(symbols, heldSymbols);
     const collect = await runMarketCollectPipeline({
       market: 'binance',
       symbols,
       triggerType: 'cycle',
       meta: { market_script: 'crypto' },
+      universeMeta: {
+        screeningSymbolCount: symbols.length - heldAddedCount,
+        heldSymbolCount: heldSymbols.length,
+        heldAddedCount,
+      },
     });
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
@@ -242,6 +260,8 @@ async function logPipelineMetrics(label, metrics = {}) {
   const parts = [
     `duration=${((metrics.durationMs || 0) / 1000).toFixed(1)}s`,
     metrics.symbolCount != null ? `symbols=${metrics.symbolCount}` : null,
+    metrics.screeningSymbolCount != null && metrics.screeningSymbolCount > 0 ? `screening=${metrics.screeningSymbolCount}` : null,
+    metrics.heldAddedCount != null && metrics.heldAddedCount > 0 ? `heldAdded=${metrics.heldAddedCount}` : null,
     metrics.totalTasks != null ? `tasks=${metrics.totalTasks}` : null,
     metrics.concurrencyLimit != null ? `concurrency=${metrics.concurrencyLimit}` : null,
     metrics.failedTasks != null ? `failed=${metrics.failedTasks}` : null,
