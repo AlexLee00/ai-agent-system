@@ -12,6 +12,12 @@
  */
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.js';
+import {
+  getKisExecutionModeInfo,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+  isKisPaper,
+} from '../shared/secrets.js';
 
 export function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -67,12 +73,78 @@ export function buildSummary(rows) {
     .sort((a, b) => b.count - a.count || b.grossValue - a.grossValue);
 }
 
+async function classifyExecutionReadiness(row) {
+  if (row.exchange === 'binance') {
+    return {
+      readiness: 'ready_now',
+      readinessLabel: '지금 실행 가능',
+      readinessReason: '암호화폐 레일은 현재 runner 기준 즉시 실행 가능',
+    };
+  }
+
+  const modeInfo = getKisExecutionModeInfo(row.exchange === 'kis' ? '국내주식' : '해외주식');
+  const isMock = modeInfo.brokerAccountMode === 'mock' || isKisPaper();
+  const marketStatus = row.exchange === 'kis'
+    ? await getKisMarketStatus()
+    : getKisOverseasMarketStatus();
+
+  if (row.exchange === 'kis_overseas' && isMock) {
+    return {
+      readiness: 'blocked_by_capability',
+      readinessLabel: 'capability 제약',
+      readinessReason: marketStatus.isOpen
+        ? '해외장 mock SELL capability 제한'
+        : `해외장 mock SELL capability 제한 + ${marketStatus.reason}`,
+    };
+  }
+
+  if (!marketStatus.isOpen) {
+    return {
+      readiness: 'wait_market_open',
+      readinessLabel: '장중 대기',
+      readinessReason: marketStatus.reason,
+    };
+  }
+
+  if (row.exchange === 'kis' && isMock) {
+    return {
+      readiness: 'guarded_ready',
+      readinessLabel: '제한적 실행 가능',
+      readinessReason: '국내장 mock SELL 검증 가능 (장중 한정)',
+    };
+  }
+
+  return {
+    readiness: 'ready_now',
+    readinessLabel: '지금 실행 가능',
+    readinessReason: marketStatus.reason,
+  };
+}
+
+function buildReadinessSummary(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const key = row.readiness || 'unknown';
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return {
+    readyNow: counts.get('ready_now') || 0,
+    guardedReady: counts.get('guarded_ready') || 0,
+    waitMarketOpen: counts.get('wait_market_open') || 0,
+    blockedByCapability: counts.get('blocked_by_capability') || 0,
+  };
+}
+
 export function formatHuman(report) {
   const lines = [];
   lines.push('🧹 투자팀 force-exit 후보 리포트');
   lines.push('');
   lines.push(`- 총 후보: ${report.totalCandidates}건`);
   lines.push(`- strong 후보: ${report.strongCandidates}건`);
+  lines.push(`- 지금 실행 가능: ${report.readinessSummary.readyNow}건`);
+  lines.push(`- 제한적 실행 가능: ${report.readinessSummary.guardedReady}건`);
+  lines.push(`- 장중 대기: ${report.readinessSummary.waitMarketOpen}건`);
+  lines.push(`- capability 제약: ${report.readinessSummary.blockedByCapability}건`);
   lines.push('');
   lines.push('시장별 요약:');
   if (report.summary.length === 0) {
@@ -88,7 +160,7 @@ export function formatHuman(report) {
     lines.push('- 없음');
   } else {
     for (const row of report.candidates) {
-      lines.push(`- ${getMarketLabel(row.exchange)} ${row.symbol} | ${row.candidateLevel} | ${row.ageHours.toFixed(1)}h | value ${row.positionValue.toFixed(2)} | priority ${row.priorityScore}`);
+      lines.push(`- ${getMarketLabel(row.exchange)} ${row.symbol} | ${row.candidateLevel} | ${row.readinessLabel} | ${row.ageHours.toFixed(1)}h | value ${row.positionValue.toFixed(2)} | priority ${row.priorityScore}`);
     }
   }
   return lines.join('\n');
@@ -127,7 +199,7 @@ export async function loadCandidates() {
     ORDER BY updated_at ASC
   `);
 
-  return rows
+  const candidates = rows
     .map((row) => {
       const ageHours = Number(row.age_hours || 0);
       const thresholdHours = getThresholdHours(row.exchange);
@@ -152,6 +224,11 @@ export async function loadCandidates() {
       priorityScore: getPriorityScore({ ...row, exchange: row.exchange }),
     }))
     .sort((a, b) => b.priorityScore - a.priorityScore || b.ageHours - a.ageHours || b.positionValue - a.positionValue);
+
+  return Promise.all(candidates.map(async (row) => ({
+    ...row,
+    ...(await classifyExecutionReadiness(row)),
+  })));
 }
 
 async function main() {
@@ -161,6 +238,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     totalCandidates: candidates.length,
     strongCandidates: candidates.filter((row) => row.candidateLevel === 'strong_force_exit_candidate').length,
+    readinessSummary: buildReadinessSummary(candidates),
     summary: buildSummary(candidates),
     candidates,
   };
