@@ -1132,3 +1132,20 @@
   - `mid_gap_executed`
   - warning `mid_gap_validation_promoted`
 - 아직 실제 런타임에서 `mid_gap_promoted > 0`가 찍힌 샘플은 없다. 다음 crypto cycle에서 메타가 실제로 쌓이는지 확인 필요.
+## 2026-03-25 23:20 KST — investment health capital guard 분해
+
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)에 crypto `capital_guard_rejected` 분해 섹션을 추가했다.
+- 리포트가 이제 최근 14일 binance capital guard를 아래 축으로 나눠 보여준다.
+  - `daily trade limit`
+  - `max positions`
+  - 기타 guard reason
+  - `trade_mode`별 건수
+- 실제 현재 기준:
+  - total `65건`
+  - `daily trade limit = 63건`
+  - `max positions = 2건`
+  - `validation = 59건`
+  - `normal = 6건`
+- 해석:
+  - crypto capital guard의 주 병목은 자본 부족이나 단일 주문 크기보다 validation 레인의 일간 매매 한도 소진이다.
+  - 이후 validation 전용 budget 분리 검토가 자연스러운 다음 단계다.

@@ -2126,3 +2126,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 승격 주문금액을 50%로 축소해 risk 폭을 줄임
 - pipeline 메타에 `mid_gap_promoted`, `mid_gap_rejected_by_risk`, `mid_gap_executed` 추가
 - 경고 `mid_gap_validation_promoted` 추가
+## [2026-03-25] investment health capital guard breakdown
+
+- crypto `capital_guard_rejected`를 최근 14일 기준으로 사유 그룹/`trade_mode`별로 분해
+- `최대 포지션 도달` 문구를 `max positions`로 올바르게 분류
+- 자동화 리포트에서 validation 레인의 일간 매매 한도 소진이 주 병목임을 명시
