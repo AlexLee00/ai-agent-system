@@ -10,7 +10,7 @@ import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import { useOperationsLoader } from '@/lib/use-operations-loader';
-import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
+import { OperationsEmptyState, OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -161,11 +161,12 @@ export default function AdminUsersPage() {
   ];
 
   const emptyNode = (
-    <div className="text-center py-12">
-      <p className="text-4xl mb-3">👤</p>
-      <p className="text-gray-500 mb-4">조건에 맞는 사용자가 없습니다</p>
-      <button onClick={openNew} className="btn-primary text-sm">+ 사용자 등록하기</button>
-    </div>
+    <OperationsEmptyState
+      icon="👤"
+      title="조건에 맞는 사용자가 없습니다"
+      actionLabel="+ 사용자 등록하기"
+      onAction={openNew}
+    />
   );
 
   if (user?.role !== 'master') return null;

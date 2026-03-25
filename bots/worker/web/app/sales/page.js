@@ -12,7 +12,7 @@ import { SalesBarChart } from '@/components/Chart';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
-import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
+import { OperationsEmptyState, OperationsLoadAlert, OperationsLoadingPlaceholder, OperationsNotice } from '@/components/OperationsLoadState';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
@@ -419,23 +419,21 @@ export default function SalesPage() {
   ];
 
   const salesEmptyNode = (
-    <div className="text-center py-12">
-      <p className="text-4xl mb-3">💰</p>
-      <p className="text-gray-500 mb-4">오늘의 매출을 입력해보세요</p>
-      <button onClick={openModal} className="btn-primary text-sm">
-        + 매출 등록하기
-      </button>
-    </div>
+    <OperationsEmptyState
+      icon="💰"
+      title="오늘의 매출을 입력해보세요"
+      actionLabel="+ 매출 등록하기"
+      onAction={openModal}
+    />
   );
 
   const expenseEmptyNode = (
-    <div className="text-center py-12">
-      <p className="text-4xl mb-3">🧾</p>
-      <p className="text-gray-500 mb-4">매입 원장을 등록해 손익 구조를 연결해보세요</p>
-      <button onClick={openExpenseModal} className="btn-primary text-sm">
-        + 매입 등록하기
-      </button>
-    </div>
+    <OperationsEmptyState
+      icon="🧾"
+      title="매입 원장을 등록해 손익 구조를 연결해보세요"
+      actionLabel="+ 매입 등록하기"
+      onAction={openExpenseModal}
+    />
   );
 
   const activeSummaryTitle = financeTab === 'expenses' ? '매입 운영 요약' : financeTab === 'profit' ? '손익 운영 요약' : '매출 운영 요약';
@@ -461,6 +459,7 @@ export default function SalesPage() {
       />
 
       <OperationsLoadAlert error={loadError} onRetry={load} />
+      <OperationsNotice message={notice} />
 
       {financeTab !== 'profit' ? (
         <div>
@@ -640,13 +639,12 @@ export default function SalesPage() {
               ) : chartData.length > 0 ? (
                 <SalesBarChart data={chartData} />
               ) : (
-                <div className="py-10 text-center">
-                  <p className="mb-3 text-4xl">📊</p>
-                  <p className="mb-4 text-sm text-gray-500">매출 데이터가 없습니다</p>
-                  <button onClick={openModal} className="btn-primary text-sm" disabled={!canCreateSales}>
-                    + 매출 등록하기
-                  </button>
-                </div>
+                <OperationsEmptyState
+                  icon="📊"
+                  title="매출 데이터가 없습니다"
+                  actionLabel="+ 매출 등록하기"
+                  onAction={openModal}
+                />
               )}
             </div>
           </>

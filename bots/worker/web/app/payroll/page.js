@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
@@ -11,7 +10,7 @@ import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { useOperationsLoader } from '@/lib/use-operations-loader';
-import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
+import { OperationsEmptyState, OperationsLoadAlert, OperationsLoadingPlaceholder, OperationsNotice } from '@/components/OperationsLoadState';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -253,6 +252,7 @@ export default function PayrollPage() {
       />
 
       <OperationsLoadAlert error={loadError} onRetry={load} />
+      <OperationsNotice message={notice} />
 
       {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
@@ -315,11 +315,6 @@ export default function PayrollPage() {
               {error}
             </div>
           )}
-          {notice && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {notice}
-            </div>
-          )}
         </div>
       )}
 
@@ -353,17 +348,11 @@ export default function PayrollPage() {
 
       {/* 직원 없음 안내 */}
       {empCount === 0 && !loading && (
-        <div className="card bg-amber-50 border border-amber-200 flex items-start gap-3 p-4">
-          <span className="text-xl">⚠️</span>
-          <div>
-            <p className="font-medium text-amber-800">재직 직원이 없습니다</p>
-            <p className="text-sm text-amber-700 mt-1">
-              급여 계산을 하려면 먼저{' '}
-              <Link href="/employees" className="underline font-medium">직원 관리</Link>에서
-              직원을 등록하고 기본급을 설정해야 합니다.
-            </p>
-          </div>
-        </div>
+        <OperationsEmptyState
+          icon="⚠️"
+          title="재직 직원이 없습니다"
+          description="급여 계산을 하려면 먼저 직원 관리에서 직원을 등록하고 기본급을 설정해야 합니다."
+        />
       )}
 
       {!canManage && (
