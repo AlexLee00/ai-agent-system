@@ -4,6 +4,28 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-25: 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
+
+- `bots/investment/shared/secrets.js`에 `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter를 추가했다.
+- `bots/investment/shared/universe-fallback.js`에 공용 `capDynamicUniverse()`를 추가했다.
+- `bots/investment/markets/domestic.js`, `bots/investment/markets/overseas.js`는 이제
+  - prescreened
+  - screening fallback
+  - cache/history/default
+  경로에서 dynamic symbol을 먼저 `max_dynamic`으로 자른 뒤 held positions를 병합한다.
+- 해석: 국내장 최신 runtime이 `symbols=22`, `tasks=67`로 crypto보다 무거워진 상태였기 때문에, crypto와 같은 `dynamic cap -> held merge` 패턴을 주식 레일에도 맞춘 작업이다.
+- `bots/investment/shared/pipeline-market-runner.js`는 `데이터 부족` 실패를 `dataSparsityFailures`로 별도 계측하고, `core_collect_failure_rate_high` 계산에서는 제외하도록 바꿨다.
+- 대신 `data_sparsity_watch` 경고를 별도 문구로 노출한다.
+- 검증:
+  - `node --check bots/investment/shared/secrets.js`
+  - `node --check bots/investment/shared/universe-fallback.js`
+  - `node --check bots/investment/shared/pipeline-market-runner.js`
+  - `node --check bots/investment/markets/domestic.js`
+  - `node --check bots/investment/markets/overseas.js`
+  - `node --input-type=module ... getDomesticScreeningMaxDynamic/getOverseasScreeningMaxDynamic ...`
+  - `node --input-type=module ... capDynamicUniverse(['A','B','C','D'], 2, 'test') ...`
+  - `node --input-type=module ... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ...`
+
 ## 2026-03-25: 스카 매출 두 축 source of truth 문서화
 
 - `2026-03-23` `daily_summary` row를 Pickko 일별 상세와 다시 대조했다.

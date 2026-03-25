@@ -9,6 +9,44 @@
 
 ---
 
+## 2026-03-25 23:59 KST — 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
+
+- 요청 배경:
+  - `/tmp/investment-domestic.err.log` 기준 `wide_universe`, `collect_overload_detected`, `concurrency_guard_active`, `debate_capacity_hot`가 반복되고 있었다.
+  - 최신 국내장 runtime은 `symbols=22`, `tasks=67`로 암호화폐(`tasks=53`)보다 오히려 더 무거웠다.
+  - 동시에 `데이터 부족 (1캔들)` 같은 신규/희소 심볼 경고가 실제 원천 API 장애처럼 같은 core failure 레일에 섞여 운영 해석을 흐리고 있었다.
+- 반영:
+  - [secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
+    - `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic`를 읽는 getter 추가
+  - [universe-fallback.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/universe-fallback.js)
+    - 공용 `capDynamicUniverse()` 추가
+  - [domestic.js](/Users/alexlee/projects/ai-agent-system/bots/investment/markets/domestic.js)
+    - prescreened/screening/cache/history/default 경로 모두 `max_dynamic` cap 후 held symbols 병합
+  - [overseas.js](/Users/alexlee/projects/ai-agent-system/bots/investment/markets/overseas.js)
+    - 같은 방식으로 `max_dynamic` cap 적용
+  - [pipeline-market-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/pipeline-market-runner.js)
+    - `데이터 부족` 실패를 `data_sparsity_failures`로 별도 집계
+    - `core_collect_failure_rate_high` 판단에서는 data sparsity를 제외
+    - 대신 `data_sparsity_watch` 경고를 별도 요약 문구로 노출
+- 의미:
+  - 실제 장애와 신규/희소 심볼의 이력 부족을 같은 레벨의 “원천 API 오류”로 보지 않도록 경계를 분리했다.
+  - 국내장/해외장도 암호화폐와 같은 `dynamic universe cap -> held merge` 패턴으로 수집 범위를 제어하게 됐다.
+- 검증:
+  - `node --check bots/investment/shared/secrets.js`
+  - `node --check bots/investment/shared/universe-fallback.js`
+  - `node --check bots/investment/shared/pipeline-market-runner.js`
+  - `node --check bots/investment/markets/domestic.js`
+  - `node --check bots/investment/markets/overseas.js`
+  - `node --input-type=module -e "... getDomesticScreeningMaxDynamic/getOverseasScreeningMaxDynamic ..."`
+  - `node --input-type=module -e "... capDynamicUniverse(['A','B','C','D'], 2, 'test') ..."`
+  - `node --input-type=module -e "... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ..."`
+- 남은 TODO:
+  - 다음 실제 국내장/해외장 cycle에서 `symbols`, `tasks`가 cap 적용 후 얼마나 줄었는지 확인
+  - `data_sparsity_watch`가 health/report에도 따로 드러나야 하는지 후속 검토
+  - 필요하면 국내장 `max_dynamic=15`를 더 낮추는 2차 튜닝 검토
+
+---
+
 ## 2026-03-25 — worker-web 운영 화면 auth-ready 경계 / 공통 로더 / 상태 UI 표준화
 
 - 요청 배경:

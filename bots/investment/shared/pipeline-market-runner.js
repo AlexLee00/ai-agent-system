@@ -21,6 +21,11 @@ const COLLECT_WARNING_THRESHOLDS = {
   wideUniverseSymbols: 20,
 };
 
+function isDataSparsityError(message = '') {
+  const text = String(message || '');
+  return text.includes('데이터 부족') || text.toLowerCase().includes('insufficient candle');
+}
+
 export async function runMarketCollectPipeline({
   market,
   symbols,
@@ -92,7 +97,9 @@ export async function runMarketCollectPipeline({
   const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
   const failedTasks = summaries.filter(item => item.status === 'failed').length;
   const failedSummaries = summaries.filter(item => item.status === 'failed');
+  const dataSparsityFailures = failedSummaries.filter(item => isDataSparsityError(item.error)).length;
   const failedCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+  const failedHardCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId) && !isDataSparsityError(item.error)).length;
   const failedEnrichmentTasks = failedSummaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
   const totalEnrichmentTasks = summaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
   const totalCoreTasks = Math.max(totalTasks - totalEnrichmentTasks, 0);
@@ -115,10 +122,13 @@ export async function runMarketCollectPipeline({
     failureRate: totalTasks > 0 ? failedTasks / totalTasks : 0,
     totalCoreTasks,
     failedCoreTasks,
+    failedHardCoreTasks,
     coreFailureRate: totalCoreTasks > 0 ? failedCoreTasks / totalCoreTasks : 0,
+    hardCoreFailureRate: totalCoreTasks > 0 ? failedHardCoreTasks / totalCoreTasks : 0,
     totalEnrichmentTasks,
     failedEnrichmentTasks,
     enrichmentFailureRate: totalEnrichmentTasks > 0 ? failedEnrichmentTasks / totalEnrichmentTasks : 0,
+    dataSparsityFailures,
     llmGuardFailedTasks,
     failedNodeCounts,
     concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
@@ -172,6 +182,10 @@ export function summarizeCollectWarnings(warnings = [], metrics = {}) {
 
   if (warnings.includes('core_collect_failure_rate_high')) {
     lines.push(`핵심 수집 실패율이 높습니다 (실패 ${coreFailed}건). 즉시 원천 API 점검이 필요합니다.`);
+  }
+
+  if (warnings.includes('data_sparsity_watch')) {
+    lines.push(`신규/희소 심볼의 이력 부족으로 수집 스킵이 누적되고 있습니다 (data_sparsity=${metrics.dataSparsityFailures || 0}).`);
   }
 
   if (warnings.includes('collect_overload_detected')) {
@@ -242,8 +256,10 @@ function buildCollectWarnings({
   limit,
   totalCoreTasks,
   failedCoreTasks,
+  failedHardCoreTasks,
   totalEnrichmentTasks,
   failedEnrichmentTasks,
+  dataSparsityFailures,
   llmGuardFailedTasks,
 }) {
   const warnings = [];
@@ -251,12 +267,13 @@ function buildCollectWarnings({
   if (tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks) warnings.push('collect_overload_detected');
   if (limit <= 4 && tasks.length >= COLLECT_WARNING_THRESHOLDS.guardedTasks) warnings.push('concurrency_guard_active');
   if (llmGuardFailedTasks > 0) warnings.push('collect_blocked_by_llm_guard');
-  if (failedCoreTasks > 0 && totalCoreTasks > 0 && failedCoreTasks / totalCoreTasks >= 0.2) {
+  if (failedHardCoreTasks > 0 && totalCoreTasks > 0 && failedHardCoreTasks / totalCoreTasks >= 0.2) {
     warnings.push('core_collect_failure_rate_high');
   }
   if (failedEnrichmentTasks > 0 && totalEnrichmentTasks > 0 && failedEnrichmentTasks / totalEnrichmentTasks >= 0.2) {
     warnings.push('enrichment_collect_failure_rate_high');
   }
+  if (dataSparsityFailures >= 3) warnings.push('data_sparsity_watch');
   if (
     warnings.length === 0
     && failedTasks > 0

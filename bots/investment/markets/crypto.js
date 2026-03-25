@@ -25,7 +25,7 @@ import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryp
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
-import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
+import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
 import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
 
@@ -57,15 +57,6 @@ function saveState(state) {
   } catch (e) {
     console.warn(`  ⚠️ 상태 저장 실패: ${e.message}`);
   }
-}
-
-function capDynamicUniverse(symbols, maxDynamic, source = 'dynamic') {
-  if (!Array.isArray(symbols) || symbols.length === 0) return [];
-  const limit = Number(maxDynamic || 0);
-  if (!Number.isFinite(limit) || limit <= 0 || symbols.length <= limit) return symbols;
-  const capped = symbols.slice(0, limit);
-  console.log(`  ✂️ [유니버스 캡] ${source} ${symbols.length}개 -> ${capped.length}개 (max_dynamic=${limit})`);
-  return capped;
 }
 
 function getHeldMergeStats(baseSymbols = [], heldSymbols = []) {

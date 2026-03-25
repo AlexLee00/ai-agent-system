@@ -39,6 +39,19 @@
 | `node --check bots/investment/team/hephaestos.js` | ✅ 보호주문 수량 reconciliation 추가 후 문법 통과 |
 | `node bots/investment/manual/balance/binance-balance.js RENDER` | ✅ `RENDER free = 30.38958` 확인, 보호주문 실패가 잔고 0이 아니라 BUY 체결 수량과 실잔고 어긋남 문제였음을 재확인 |
 
+### 투자팀 국내/해외 dynamic universe cap + data sparsity 분리
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/secrets.js` | ✅ 국내장/해외장 `max_dynamic` getter 추가 후 문법 통과 |
+| `node --check bots/investment/shared/universe-fallback.js` | ✅ 공용 `capDynamicUniverse()` 추가 후 문법 통과 |
+| `node --check bots/investment/shared/pipeline-market-runner.js` | ✅ `data_sparsity_watch` 계측 추가 후 문법 통과 |
+| `node --check bots/investment/markets/domestic.js` | ✅ 국내장 dynamic cap 적용 후 문법 통과 |
+| `node --check bots/investment/markets/overseas.js` | ✅ 해외장 dynamic cap 적용 후 문법 통과 |
+| `node --input-type=module -e \"... getDomesticScreeningMaxDynamic/getOverseasScreeningMaxDynamic ...\"` | ✅ config 기준 `domestic=15`, `overseas=15` 확인 |
+| `node --input-type=module -e \"... capDynamicUniverse(['A','B','C','D'], 2, 'test') ...\"` | ✅ `4개 -> 2개` cap 로그와 결과 배열 확인 |
+| `node --input-type=module -e \"... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ...\"` | ✅ `신규/희소 심볼의 이력 부족...` 경고 문구 확인 |
+
 ## 2026-03-23
 
 ### 비디오팀 Phase 3 과제 F `step-proposal-engine`

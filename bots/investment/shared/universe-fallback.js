@@ -1,5 +1,14 @@
 import * as db from './db.js';
 
+export function capDynamicUniverse(symbols, maxDynamic, source = 'dynamic') {
+  if (!Array.isArray(symbols) || symbols.length === 0) return [];
+  const limit = Number(maxDynamic || 0);
+  if (!Number.isFinite(limit) || limit <= 0 || symbols.length <= limit) return symbols;
+  const capped = symbols.slice(0, limit);
+  console.log(`  ✂️ [유니버스 캡] ${source} ${symbols.length}개 -> ${capped.length}개 (max_dynamic=${limit})`);
+  return capped;
+}
+
 /**
  * 동적 유니버스 스크리닝 결과를 공통 폴백 체계로 해석
  * 순서:

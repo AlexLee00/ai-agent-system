@@ -21,10 +21,10 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo } from '../shared/secrets.js';
+import { getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo, getOverseasScreeningMaxDynamic } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
-import { resolveSymbolsWithFallback, appendHeldSymbols } from '../shared/universe-fallback.js';
+import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
 import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
 
@@ -255,9 +255,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   } else if (noDynamic) {
     symbols = getKisOverseasSymbols();
   } else {
+    const overseasMaxDynamic = getOverseasScreeningMaxDynamic();
     const preScreened = loadPreScreened('overseas');
     if (preScreened?.symbols?.length > 0) {
-      symbols = preScreened.symbols;
+      symbols = capDynamicUniverse(preScreened.symbols, overseasMaxDynamic, 'overseas-prescreened');
       const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
       console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
     } else {
@@ -272,7 +273,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         screenLabel: '아르고스 해외주식 스크리닝',
         cacheLabel: 'RAG 폴백',
       });
-      symbols = resolved.symbols;
+      symbols = capDynamicUniverse(resolved.symbols, overseasMaxDynamic, `overseas-${resolved.source || 'dynamic'}`);
       if (resolved.source === 'screening') {
         savePreScreened('overseas', symbols);
         const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
