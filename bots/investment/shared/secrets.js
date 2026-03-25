@@ -61,6 +61,8 @@ export function loadSecrets() {
       screening_domestic_core: c.screening?.domestic?.core || [],
       screening_overseas_core: c.screening?.overseas?.core || [],
       screening_crypto_core: c.screening?.crypto?.core || [],
+      screening_domestic_max_dynamic: Number(c.screening?.domestic?.max_dynamic || 0),
+      screening_overseas_max_dynamic: Number(c.screening?.overseas?.max_dynamic || 0),
       screening_crypto_max_dynamic: Number(c.screening?.crypto?.max_dynamic || 0),
       // LLM
       anthropic_api_key:    c.anthropic?.api_key   || '',
@@ -194,6 +196,18 @@ export function getCryptoScreeningMaxDynamic() {
   const s = loadSecrets();
   const value = Number(s.screening_crypto_max_dynamic || 0);
   return Number.isFinite(value) && value > 0 ? value : 8;
+}
+
+export function getDomesticScreeningMaxDynamic() {
+  const s = loadSecrets();
+  const value = Number(s.screening_domestic_max_dynamic || 0);
+  return Number.isFinite(value) && value > 0 ? value : 15;
+}
+
+export function getOverseasScreeningMaxDynamic() {
+  const s = loadSecrets();
+  const value = Number(s.screening_overseas_max_dynamic || 0);
+  return Number.isFinite(value) && value > 0 ? value : 15;
 }
 
 export function getKisSymbols() {

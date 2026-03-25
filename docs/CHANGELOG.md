@@ -29,6 +29,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `RENDER/USDT`처럼 BUY는 체결됐지만 보호주문이 `insufficient balance`로 실패하던 케이스를 막는 복구
   - SELL reconciliation에 이어 BUY 직후 보호주문 생성 경계까지 브로커 원장 기준으로 정합화
 
+## 12주차 후속 (2026-03-25) — 투자팀 국내/해외 dynamic universe cap + data sparsity 분리
+
+- `bots/investment/shared/secrets.js`
+  - `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter 추가
+- `bots/investment/shared/universe-fallback.js`
+  - 공용 `capDynamicUniverse()` 추가
+- `bots/investment/markets/domestic.js`
+- `bots/investment/markets/overseas.js`
+  - dynamic screening/prescreened 결과를 먼저 `max_dynamic`으로 자른 뒤 held positions를 병합하도록 정리
+- `bots/investment/shared/pipeline-market-runner.js`
+  - `데이터 부족` 실패를 `data_sparsity_watch`로 별도 계측
+  - `core_collect_failure_rate_high`는 data sparsity를 제외한 hard core failure 기준으로 계산
+- 의미:
+  - 국내장/해외장 수집 범위를 crypto와 같은 `dynamic cap -> held merge` 패턴으로 맞춤
+  - 신규/희소 심볼의 캔들 부족을 원천 API 장애와 같은 error로 과해석하지 않도록 수집 노이즈를 분리
+
 ## 12주차 후속 (2026-03-25) — worker-web 운영 화면 auth-ready 로딩 / 상태 UI 표준화
 
 - `bots/worker/web/app/sales/page.js`
