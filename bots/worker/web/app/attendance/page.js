@@ -14,6 +14,7 @@ import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
 import { useOperationsLoader } from '@/lib/use-operations-loader';
+import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -817,11 +818,7 @@ export default function AttendancePage() {
         />
       )}
 
-      {loadError ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {loadError}
-        </div>
-      ) : null}
+      <OperationsLoadAlert error={loadError} onRetry={() => load(startDate, endDate)} />
 
       {!isMember && <AdminQuickFlowGrid items={quickFlows} />}
 
@@ -885,7 +882,7 @@ export default function AttendancePage() {
         </div>
         <div className="mt-5 sm:mt-4">
         {loading
-          ? <p className="py-10 text-center text-gray-400">로딩 중...</p>
+          ? <OperationsLoadingPlaceholder />
           : activeTable
         }
         </div>

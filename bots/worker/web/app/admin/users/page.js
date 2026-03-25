@@ -10,6 +10,7 @@ import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
 import { useOperationsLoader } from '@/lib/use-operations-loader';
+import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -183,11 +184,7 @@ export default function AdminUsersPage() {
         ]}
       />
 
-      {loadError ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {loadError}
-        </div>
-      ) : null}
+      <OperationsLoadAlert error={loadError} onRetry={() => loadAll()} />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-slate-600">
@@ -236,7 +233,7 @@ export default function AdminUsersPage() {
 
       <div className="card overflow-x-auto">
         {loading ? (
-          <p className="text-center py-10 text-gray-400">로딩 중...</p>
+          <OperationsLoadingPlaceholder />
         ) : (
           <DataTable
               pageSize={10}
