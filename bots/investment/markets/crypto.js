@@ -185,7 +185,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * 암호화폐 사이클 전체 실행
  * @param {string[]} symbols  ex) ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
  */
-export async function runCryptoCycle(symbols) {
+export async function runCryptoCycle(symbols, universeMeta = {}) {
   const { paper: paperMode, tag } = getMarketExecutionModeInfo('crypto', '암호화폐');
   const startTime = Date.now();
   const params    = getLunaParams();
@@ -199,17 +199,15 @@ export async function runCryptoCycle(symbols) {
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──
     console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
-    const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
-    const { heldAddedCount } = getHeldMergeStats(symbols, heldSymbols);
     const collect = await runMarketCollectPipeline({
       market: 'binance',
       symbols,
       triggerType: 'cycle',
       meta: { market_script: 'crypto' },
       universeMeta: {
-        screeningSymbolCount: symbols.length - heldAddedCount,
-        heldSymbolCount: heldSymbols.length,
-        heldAddedCount,
+        screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
+        heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
+        heldAddedCount: Number(universeMeta.heldAddedCount || 0),
       },
     });
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
@@ -308,10 +306,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
   let symbols;
   const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
+  let universeMeta = {
+    screeningSymbolCount: 0,
+    heldSymbolCount: 0,
+    heldAddedCount: 0,
+  };
   if (symArg) {
     symbols = symArg.split('=')[1].split(',').map(s => s.trim());
+    universeMeta.screeningSymbolCount = symbols.length;
   } else if (noDynamic) {
     symbols = getSymbols();
+    universeMeta.screeningSymbolCount = symbols.length;
   } else {
     const { loadPreScreenedFallback, savePreScreened } = await import('../scripts/pre-market-screen.js');
     const resolved = await resolveSymbolsWithFallback({
@@ -326,6 +331,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       cacheLabel: 'RAG 폴백',
     });
     symbols = capDynamicUniverse(resolved.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
+    universeMeta.screeningSymbolCount = symbols.length;
     if (resolved.source === 'screening') {
       savePreScreened('crypto', symbols);
       const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');
@@ -339,6 +345,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
   }
 
+  const heldSymbols = (await db.getAllPositions('binance', false)).map((row) => row.symbol);
+  universeMeta.heldSymbolCount = heldSymbols.length;
+  universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
   symbols = await appendHeldSymbols(symbols, 'binance');
 
   console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
@@ -368,7 +377,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await db.initSchema();
 
   try {
-    const r = await runCryptoCycle(symbols);
+    const r = await runCryptoCycle(symbols, universeMeta);
     console.log(`\n최종 결과: ${r.length}개 신호 승인`);
     process.exit(0);
   } catch (e) {
