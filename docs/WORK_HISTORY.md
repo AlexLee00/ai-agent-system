@@ -23,6 +23,18 @@
 - 현재 운영 source of truth는 `recognized_total_revenue = general_revenue + pickko_study_room`다.
 - `total_amount`는 예약합계/호환용/fallback trace 필드로 유지한다.
 
+## 2026-03-25: 헤파이스토스 BUY 직후 TP/SL 보호주문 수량 정합성 복구
+
+- `RENDER/USDT` BUY 직후 TP/SL 설정이 `binance Account has insufficient balance for requested action`으로 실패한 운영 오류를 추적했다.
+- 확인 결과 `bots/investment/team/hephaestos.js`의 `placeBinanceProtectiveExit()`가 BUY 체결 직후 `order.filled`를 그대로 보호주문 수량으로 사용하고 있었다.
+- 바이낸스 spot에서는 수수료, precision, 잔고 잠금 때문에 `filled`와 실제 `free balance`가 바로 어긋날 수 있으므로, 이 경계는 SELL reconciliation과 같은 방식으로 복구해야 했다.
+- 수정 후 보호주문 경로는 base asset `free balance`를 다시 조회하고 `min(requestedAmount, freeBalance)` 기준으로 수량을 재정렬한 뒤 `amountToPrecision()`을 거쳐 OCO/SL 주문을 시도한다.
+- 반환 메타에도 `requestedAmount`, `freeBalance`, `effectiveAmount`, `reconciled`를 남겨 이후 실패 원인을 원장 기준으로 다시 읽을 수 있게 했다.
+- 검증:
+  - `node --check bots/investment/team/hephaestos.js`
+  - `node bots/investment/manual/balance/binance-balance.js RENDER`
+- 해석: 이번 수정은 보호주문 실패를 단순 예외 처리로 덮은 것이 아니라, BUY 체결 수량과 브로커 실잔고 사이의 입력 경계를 복구한 버그픽스다.
+
 ## 2026-03-24: worker-web `/video` 실브라우저 검증 + 경계 복구 1차
 
 - `bots/worker/web/components/VideoChatWorkflow.jsx`

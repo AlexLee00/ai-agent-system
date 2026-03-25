@@ -19,6 +19,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 대시보드/읽기 API/CSV/예측/worker 매출 미러는 `recognized_total_revenue`를 실매출 기준으로 사용
   - `total_amount`는 예약합계/호환용/fallback trace로 유지
 
+## 12주차 후속 (2026-03-25) — 헤파이스토스 BUY 직후 TP/SL 보호주문 수량 정합성 복구
+
+- `bots/investment/team/hephaestos.js`
+  - `placeBinanceProtectiveExit()`가 BUY 체결 직후 `order.filled`를 그대로 보호주문 수량으로 쓰던 경계를 수정
+  - 바이낸스 실잔고를 다시 조회해 `min(requestedAmount, freeBalance)` 기준으로 TP/SL/OCO 수량을 정렬한 뒤 주문하도록 변경
+  - 반환 메타에 `requestedAmount`, `freeBalance`, `effectiveAmount`, `reconciled` 추가
+- 의미:
+  - `RENDER/USDT`처럼 BUY는 체결됐지만 보호주문이 `insufficient balance`로 실패하던 케이스를 막는 복구
+  - SELL reconciliation에 이어 BUY 직후 보호주문 생성 경계까지 브로커 원장 기준으로 정합화
+
 ## 12주차 후속 (2026-03-25) — worker-web 운영 화면 auth-ready 로딩 / 상태 UI 표준화
 
 - `bots/worker/web/app/sales/page.js`
