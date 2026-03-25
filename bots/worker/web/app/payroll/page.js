@@ -3,13 +3,14 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import Link from 'next/link';
-import { getToken, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import { canPerformMenuOperation } from '@/lib/menu-access';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
+import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -97,6 +98,7 @@ function DetailModal({ row, onClose }) {
 
 export default function PayrollPage() {
   const { user, loading: authLoading } = useAuth();
+  const { runWhenReady } = useAuthReadyRequest();
   const canManage = canPerformMenuOperation(user, 'payroll', 'create');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const [yearMonth,    setYearMonth]  = useState(thisMonth);
@@ -136,39 +138,37 @@ export default function PayrollPage() {
   };
 
   const load = async () => {
-    if (authLoading) return;
-    if (!getToken() || !user) {
+    return runWhenReady(async () => {
+      setLoading(true);
+      setLoadError('');
+
+      const [payrollData, summaryData, employeeData] = await Promise.allSettled([
+        api.get(`/payroll?year_month=${yearMonth}`),
+        api.get(`/payroll/summary?year_month=${yearMonth}`),
+        api.get('/employees'),
+      ]);
+
+      if (payrollData.status === 'fulfilled') setRows(payrollData.value.payroll || []);
+      else setRows([]);
+
+      if (summaryData.status === 'fulfilled') setSummary(summaryData.value);
+      else setSummary(null);
+
+      if (employeeData.status === 'fulfilled') {
+        setEmpCount((employeeData.value.employees || []).filter((emp) => emp.status === 'active').length);
+      } else {
+        setEmpCount(0);
+      }
+
+      const firstFailure = [payrollData, summaryData, employeeData].find((result) => result.status === 'rejected');
+      if (firstFailure) {
+        setLoadError(firstFailure.reason?.message || '급여 데이터를 불러오지 못했습니다.');
+      }
+
       setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setLoadError('');
-
-    const [payrollData, summaryData, employeeData] = await Promise.allSettled([
-      api.get(`/payroll?year_month=${yearMonth}`),
-      api.get(`/payroll/summary?year_month=${yearMonth}`),
-      api.get('/employees'),
-    ]);
-
-    if (payrollData.status === 'fulfilled') setRows(payrollData.value.payroll || []);
-    else setRows([]);
-
-    if (summaryData.status === 'fulfilled') setSummary(summaryData.value);
-    else setSummary(null);
-
-    if (employeeData.status === 'fulfilled') {
-      setEmpCount((employeeData.value.employees || []).filter((emp) => emp.status === 'active').length);
-    } else {
-      setEmpCount(0);
-    }
-
-    const firstFailure = [payrollData, summaryData, employeeData].find((result) => result.status === 'rejected');
-    if (firstFailure) {
-      setLoadError(firstFailure.reason?.message || '급여 데이터를 불러오지 못했습니다.');
-    }
-
-    setLoading(false);
+    }, {
+      onMissingAuth: () => setLoading(false),
+    });
   };
 
   useEffect(() => { load(); }, [authLoading, user?.id, yearMonth]);

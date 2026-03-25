@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import { getToken, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
@@ -13,6 +13,7 @@ import ProposalFlowActions from '@/components/ProposalFlowActions';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
+import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -74,6 +75,7 @@ function leaveProposalChanged(original, proposal) {
 
 export default function AttendancePage() {
   const { user, loading: authLoading } = useAuth();
+  const { runWhenReady } = useAuthReadyRequest();
   const [records, setRecords]     = useState([]);
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [leaveApprovals, setLeaveApprovals] = useState([]);
@@ -106,42 +108,40 @@ export default function AttendancePage() {
   };
 
   const load = async (nextStartDate = startDate, nextEndDate = endDate) => {
-    if (authLoading) return;
-    if (!getToken() || !user) {
+    return runWhenReady(async () => {
+      setLoading(true);
+      setLoadError('');
+      const params = new URLSearchParams({
+        start_date: nextStartDate,
+        end_date: nextEndDate,
+      });
+
+      const [attendanceData, leaveData, leaveApprovalData] = await Promise.allSettled([
+        api.get(`/attendance?${params.toString()}`),
+        api.get(`/attendance/leave-status?${params.toString()}`),
+        canManageAttendance
+          ? api.get('/attendance/leave-approvals')
+          : Promise.resolve({ leave_approvals: [] }),
+      ]);
+
+      if (attendanceData.status === 'fulfilled') setRecords(attendanceData.value.attendance || []);
+      else setRecords([]);
+
+      if (leaveData.status === 'fulfilled') setLeaveRecords(leaveData.value.leave_requests || []);
+      else setLeaveRecords([]);
+
+      if (leaveApprovalData.status === 'fulfilled') setLeaveApprovals(leaveApprovalData.value.leave_approvals || []);
+      else setLeaveApprovals([]);
+
+      const firstFailure = [attendanceData, leaveData, leaveApprovalData].find((result) => result.status === 'rejected');
+      if (firstFailure) {
+        setLoadError(firstFailure.reason?.message || '근태 데이터를 불러오지 못했습니다.');
+      }
+
       setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setLoadError('');
-    const params = new URLSearchParams({
-      start_date: nextStartDate,
-      end_date: nextEndDate,
+    }, {
+      onMissingAuth: () => setLoading(false),
     });
-
-    const [attendanceData, leaveData, leaveApprovalData] = await Promise.allSettled([
-      api.get(`/attendance?${params.toString()}`),
-      api.get(`/attendance/leave-status?${params.toString()}`),
-      canManageAttendance
-        ? api.get('/attendance/leave-approvals')
-        : Promise.resolve({ leave_approvals: [] }),
-    ]);
-
-    if (attendanceData.status === 'fulfilled') setRecords(attendanceData.value.attendance || []);
-    else setRecords([]);
-
-    if (leaveData.status === 'fulfilled') setLeaveRecords(leaveData.value.leave_requests || []);
-    else setLeaveRecords([]);
-
-    if (leaveApprovalData.status === 'fulfilled') setLeaveApprovals(leaveApprovalData.value.leave_approvals || []);
-    else setLeaveApprovals([]);
-
-    const firstFailure = [attendanceData, leaveData, leaveApprovalData].find((result) => result.status === 'rejected');
-    if (firstFailure) {
-      setLoadError(firstFailure.reason?.message || '근태 데이터를 불러오지 못했습니다.');
-    }
-
-    setLoading(false);
   };
 
   useEffect(() => { load(startDate, endDate); }, [authLoading, user?.id, startDate, endDate]);

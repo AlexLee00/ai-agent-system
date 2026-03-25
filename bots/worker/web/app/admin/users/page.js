@@ -3,12 +3,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserCog } from 'lucide-react';
 import { api } from '@/lib/api';
-import { getToken, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
+import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -23,6 +24,7 @@ const EMPTY_FORM = {
 
 export default function AdminUsersPage() {
   const { user, loading: authLoading } = useAuth();
+  const { runWhenReady } = useAuthReadyRequest();
   const router   = useRouter();
 
   const [users,      setUsers]      = useState([]);
@@ -59,33 +61,31 @@ export default function AdminUsersPage() {
   }, [user, router]);
 
   const loadAll = (co = filterCo, role = filterRole) => {
-    if (authLoading) return;
-    if (!getToken() || !user) {
-      setLoading(false);
-      return;
-    }
+    return runWhenReady(async () => {
+      setLoading(true);
+      setLoadError('');
+      const qs = new URLSearchParams();
+      if (co) qs.set('company_id', co);
+      if (role) qs.set('role', role);
+      const q = qs.toString() ? `?${qs}` : '';
+      Promise.allSettled([
+        api.get(`/users${q}`),
+        api.get('/companies'),
+      ]).then(([u, c]) => {
+        if (u.status === 'fulfilled') setUsers(u.value.users || []);
+        else setUsers([]);
 
-    setLoading(true);
-    setLoadError('');
-    const qs = new URLSearchParams();
-    if (co)   qs.set('company_id', co);
-    if (role) qs.set('role', role);
-    const q = qs.toString() ? `?${qs}` : '';
-    Promise.allSettled([
-      api.get(`/users${q}`),
-      api.get('/companies'),
-    ]).then(([u, c]) => {
-      if (u.status === 'fulfilled') setUsers(u.value.users || []);
-      else setUsers([]);
+        if (c.status === 'fulfilled') setCompanies(c.value.companies || []);
+        else setCompanies([]);
 
-      if (c.status === 'fulfilled') setCompanies(c.value.companies || []);
-      else setCompanies([]);
-
-      const firstFailure = [u, c].find((result) => result.status === 'rejected');
-      if (firstFailure) {
-        setLoadError(firstFailure.reason?.message || '사용자 데이터를 불러오지 못했습니다.');
-      }
-    }).finally(() => setLoading(false));
+        const firstFailure = [u, c].find((result) => result.status === 'rejected');
+        if (firstFailure) {
+          setLoadError(firstFailure.reason?.message || '사용자 데이터를 불러오지 못했습니다.');
+        }
+      }).finally(() => setLoading(false));
+    }, {
+      onMissingAuth: () => setLoading(false),
+    });
   };
 
   useEffect(() => { loadAll(); }, [authLoading, user?.id]);

@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { getToken } from '@/lib/auth-context';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import AdminPageHero from '@/components/AdminPageHero';
 import { useAuth } from '@/lib/auth-context';
@@ -13,9 +12,11 @@ import { parseClaudeOutput } from '../ai/canvas';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
+import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
+  const { runWhenReady } = useAuthReadyRequest();
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
   const [alerts,       setAlerts]       = useState(null);
@@ -37,38 +38,36 @@ export default function DashboardPage() {
   const isMember = user?.role === 'member';
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!getToken() || !user) {
-      setLoading(false);
-      return;
-    }
+    runWhenReady(async () => {
+      setLoading(true);
+      setLoadError('');
 
-    setLoading(true);
-    setLoadError('');
+      const requests = [
+        api.get('/dashboard/summary'),
+        canUsePromptWorkspace ? api.get('/dashboard/alerts') : Promise.resolve(null),
+        api.get('/activity'),
+      ];
 
-    const requests = [
-      api.get('/dashboard/summary'),
-      canUsePromptWorkspace ? api.get('/dashboard/alerts') : Promise.resolve(null),
-      api.get('/activity'),
-    ];
+      Promise.allSettled(requests)
+        .then(([sum, alertData, activityData]) => {
+          if (sum.status === 'fulfilled') setSummary(sum.value);
+          else setSummary(null);
 
-    Promise.allSettled(requests)
-      .then(([sum, alertData, activityData]) => {
-        if (sum.status === 'fulfilled') setSummary(sum.value);
-        else setSummary(null);
+          if (alertData.status === 'fulfilled') setAlerts(alertData.value);
+          else setAlerts(null);
 
-        if (alertData.status === 'fulfilled') setAlerts(alertData.value);
-        else setAlerts(null);
+          if (activityData.status === 'fulfilled') setActivities(activityData.value?.activities || []);
+          else setActivities([]);
 
-        if (activityData.status === 'fulfilled') setActivities(activityData.value?.activities || []);
-        else setActivities([]);
-
-        const firstFailure = [sum, alertData, activityData].find((result) => result.status === 'rejected');
-        if (firstFailure) {
-          setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
-        }
-      })
-      .finally(() => setLoading(false));
+          const firstFailure = [sum, alertData, activityData].find((result) => result.status === 'rejected');
+          if (firstFailure) {
+            setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
+          }
+        })
+        .finally(() => setLoading(false));
+    }, {
+      onMissingAuth: () => setLoading(false),
+    });
   }, [authLoading, canUsePromptWorkspace, user?.id]);
 
   useEffect(() => {
