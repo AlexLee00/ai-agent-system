@@ -12,6 +12,7 @@ import { SalesBarChart } from '@/components/Chart';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
+import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
@@ -459,11 +460,7 @@ export default function SalesPage() {
         ]}
       />
 
-      {loadError ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {loadError}
-        </div>
-      ) : null}
+      <OperationsLoadAlert error={loadError} onRetry={load} />
 
       {financeTab !== 'profit' ? (
         <div>
@@ -625,7 +622,7 @@ export default function SalesPage() {
             <div className="mt-5 border-t border-slate-200 pt-5">
               {salesView === 'list' ? (
                 loading ? (
-                  <p className="py-10 text-center text-gray-400">로딩 중...</p>
+                  <OperationsLoadingPlaceholder />
                 ) : (
                   <DataTable
                     columns={salesColumns}
@@ -663,7 +660,7 @@ export default function SalesPage() {
 
             <div className="mt-5 border-t border-slate-200 pt-5">
               {loading ? (
-                <p className="py-10 text-center text-gray-400">로딩 중...</p>
+                <OperationsLoadingPlaceholder />
               ) : (
                 <DataTable
                   columns={expenseColumns}

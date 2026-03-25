@@ -11,6 +11,7 @@ import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
 import { useOperationsLoader } from '@/lib/use-operations-loader';
+import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -251,11 +252,7 @@ export default function PayrollPage() {
         ]}
       />
 
-      {loadError ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {loadError}
-        </div>
-      ) : null}
+      <OperationsLoadAlert error={loadError} onRetry={load} />
 
       {user?.role !== 'member' && <AdminQuickFlowGrid items={quickFlows} />}
 
@@ -378,7 +375,7 @@ export default function PayrollPage() {
       {/* 테이블 */}
       <div className="card">
         {loading ? (
-          <p className="text-center py-10 text-gray-400">로딩 중...</p>
+          <OperationsLoadingPlaceholder />
         ) : (
           <DataTable
               pageSize={10}

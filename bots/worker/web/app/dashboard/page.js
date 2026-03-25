@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import OperationsSplitLayout from '@/components/OperationsSplitLayout';
+import { OperationsLoadAlert, OperationsLoadingPlaceholder } from '@/components/OperationsLoadState';
 import { parseClaudeOutput } from '../ai/canvas';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
@@ -35,8 +36,8 @@ export default function DashboardPage() {
   const canUsePromptWorkspace = ['admin', 'master'].includes(user?.role);
   const isMember = user?.role === 'member';
 
-  useEffect(() => {
-    runLoad(async () => {
+  const loadDashboard = async () => {
+    return runLoad(async () => {
       const requests = [
         api.get('/dashboard/summary'),
         canUsePromptWorkspace ? api.get('/dashboard/alerts') : Promise.resolve(null),
@@ -59,6 +60,10 @@ export default function DashboardPage() {
         setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
       }
     });
+  };
+
+  useEffect(() => {
+    loadDashboard();
   }, [authLoading, canUsePromptWorkspace, user?.id]);
 
   useEffect(() => {
@@ -73,7 +78,7 @@ export default function DashboardPage() {
 
   useAutoResizeTextarea(promptRef, prompt);
 
-  if (loading) return <div className="text-center py-20 text-gray-400">로딩 중...</div>;
+  if (loading) return <OperationsLoadingPlaceholder className="py-20" />;
 
   const uncheckedPreview = alerts?.unchecked_in_preview || [];
   const upcomingSchedules = alerts?.upcoming_schedules || [];
@@ -428,11 +433,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       {canUsePromptWorkspace && <AdminQuickNav title="관리 화면 바로가기" />}
 
-      {loadError ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {loadError}
-        </div>
-      ) : null}
+      <OperationsLoadAlert error={loadError} onRetry={loadDashboard} />
 
       <AdminPageHero
         title="워커 운영 대시보드"
