@@ -10,7 +10,7 @@ import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import PendingReviewSection from '@/components/PendingReviewSection';
 import ProposalFlowActions from '@/components/ProposalFlowActions';
-import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
+import { useOperationsLoader } from '@/lib/use-operations-loader';
 
 const PERF_COLORS = {
   S: 'bg-purple-100 text-purple-700',
@@ -98,13 +98,11 @@ function DetailModal({ row, onClose }) {
 
 export default function PayrollPage() {
   const { user, loading: authLoading } = useAuth();
-  const { runWhenReady } = useAuthReadyRequest();
   const canManage = canPerformMenuOperation(user, 'payroll', 'create');
   const thisMonth = new Date().toISOString().slice(0, 7);
   const [yearMonth,    setYearMonth]  = useState(thisMonth);
   const [rows,         setRows]       = useState([]);
   const [summary,      setSummary]    = useState(null);
-  const [loading,      setLoading]    = useState(true);
   const [calculating,  setCalc]       = useState(false);
   const [selected,     setSelected]   = useState(null);
   const [empCount,     setEmpCount]   = useState(null); // null=로딩중, 0=직원없음
@@ -114,7 +112,7 @@ export default function PayrollPage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [loadError, setLoadError] = useState('');
+  const { loading, loadError, setLoadError, runLoad } = useOperationsLoader(true);
   const quickFlows = [
     {
       title: '이번 달 급여 점검',
@@ -138,10 +136,7 @@ export default function PayrollPage() {
   };
 
   const load = async () => {
-    return runWhenReady(async () => {
-      setLoading(true);
-      setLoadError('');
-
+    return runLoad(async () => {
       const [payrollData, summaryData, employeeData] = await Promise.allSettled([
         api.get(`/payroll?year_month=${yearMonth}`),
         api.get(`/payroll/summary?year_month=${yearMonth}`),
@@ -164,10 +159,6 @@ export default function PayrollPage() {
       if (firstFailure) {
         setLoadError(firstFailure.reason?.message || '급여 데이터를 불러오지 못했습니다.');
       }
-
-      setLoading(false);
-    }, {
-      onMissingAuth: () => setLoading(false),
     });
   };
 

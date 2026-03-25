@@ -15,7 +15,7 @@ import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
-import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
+import { useOperationsLoader } from '@/lib/use-operations-loader';
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 const EMPTY_SALE_FORM = { amount: '', category: '', description: '', date: new Date().toISOString().slice(0, 10) };
@@ -41,7 +41,6 @@ function normalizeChartData(rows = []) {
 
 export default function SalesPage() {
   const { user, loading: authLoading } = useAuth();
-  const { runWhenReady } = useAuthReadyRequest();
   const [financeTab, setFinanceTab] = useState('sales');
   const [salesView, setSalesView] = useState('list');
   const [sales, setSales] = useState([]);
@@ -49,7 +48,6 @@ export default function SalesPage() {
   const [chartData, setChartData] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [expenseSummary, setExpenseSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [expenseModal, setExpenseModal] = useState(false);
   const [form, setForm] = useState(EMPTY_SALE_FORM);
@@ -59,7 +57,7 @@ export default function SalesPage() {
   const [saving, setSaving] = useState(false);
   const [expenseSaving, setExpenseSaving] = useState(false);
   const [error, setError] = useState('');
-  const [loadError, setLoadError] = useState('');
+  const { loading, loadError, setLoadError, runLoad } = useOperationsLoader(true);
   const [prompt, setPrompt] = useState('');
   const [proposalType, setProposalType] = useState('sales');
   const [proposal, setProposal] = useState(null);
@@ -129,10 +127,7 @@ export default function SalesPage() {
   };
 
   const load = async () => {
-    return runWhenReady(async () => {
-      setLoading(true);
-      setLoadError('');
-
+    return runLoad(async () => {
       const [salesList, salesSummary, expenseList, expenseSummaryData] = await Promise.allSettled([
         api.get('/sales?limit=1000&from=2000-01-01'),
         api.get('/sales/summary'),
@@ -170,10 +165,6 @@ export default function SalesPage() {
       if (failures.length > 0) {
         setLoadError(failures[0].reason?.message || '매출 데이터를 불러오지 못했습니다.');
       }
-
-      setLoading(false);
-    }, {
-      onMissingAuth: () => setLoading(false),
     });
   };
 

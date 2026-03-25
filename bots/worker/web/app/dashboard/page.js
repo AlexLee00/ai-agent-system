@@ -12,17 +12,15 @@ import { parseClaudeOutput } from '../ai/canvas';
 import { buildDocumentPromptAppendix, buildDocumentUploadNotice, mergePromptWithDocumentContext } from '@/lib/document-attachment';
 import { consumeDocumentReuseDraft } from '@/lib/document-reuse-draft';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
-import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
+import { useOperationsLoader } from '@/lib/use-operations-loader';
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { runWhenReady } = useAuthReadyRequest();
   const router = useRouter();
   const [summary,      setSummary]      = useState(null);
   const [alerts,       setAlerts]       = useState(null);
   const [activities,   setActivities]   = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const { loading, loadError, setLoadError, runLoad } = useOperationsLoader(true);
   const [prompt,       setPrompt]       = useState('');
   const [advisorResult, setAdvisorResult] = useState(null);
   const [attachedFileName, setAttachedFileName] = useState('');
@@ -38,35 +36,28 @@ export default function DashboardPage() {
   const isMember = user?.role === 'member';
 
   useEffect(() => {
-    runWhenReady(async () => {
-      setLoading(true);
-      setLoadError('');
-
+    runLoad(async () => {
       const requests = [
         api.get('/dashboard/summary'),
         canUsePromptWorkspace ? api.get('/dashboard/alerts') : Promise.resolve(null),
         api.get('/activity'),
       ];
 
-      Promise.allSettled(requests)
-        .then(([sum, alertData, activityData]) => {
-          if (sum.status === 'fulfilled') setSummary(sum.value);
-          else setSummary(null);
+      const [sum, alertData, activityData] = await Promise.allSettled(requests);
 
-          if (alertData.status === 'fulfilled') setAlerts(alertData.value);
-          else setAlerts(null);
+      if (sum.status === 'fulfilled') setSummary(sum.value);
+      else setSummary(null);
 
-          if (activityData.status === 'fulfilled') setActivities(activityData.value?.activities || []);
-          else setActivities([]);
+      if (alertData.status === 'fulfilled') setAlerts(alertData.value);
+      else setAlerts(null);
 
-          const firstFailure = [sum, alertData, activityData].find((result) => result.status === 'rejected');
-          if (firstFailure) {
-            setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
-          }
-        })
-        .finally(() => setLoading(false));
-    }, {
-      onMissingAuth: () => setLoading(false),
+      if (activityData.status === 'fulfilled') setActivities(activityData.value?.activities || []);
+      else setActivities([]);
+
+      const firstFailure = [sum, alertData, activityData].find((result) => result.status === 'rejected');
+      if (firstFailure) {
+        setLoadError(firstFailure.reason?.message || '대시보드 데이터를 불러오지 못했습니다.');
+      }
     });
   }, [authLoading, canUsePromptWorkspace, user?.id]);
 

@@ -13,7 +13,7 @@ import ProposalFlowActions from '@/components/ProposalFlowActions';
 import PromptAdvisor from '@/components/PromptAdvisor';
 import OperationsSectionHeader from '@/components/OperationsSectionHeader';
 import useAutoResizeTextarea from '@/lib/useAutoResizeTextarea';
-import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
+import { useOperationsLoader } from '@/lib/use-operations-loader';
 
 function fmtTime(ts) {
   if (!ts) return '-';
@@ -75,7 +75,6 @@ function leaveProposalChanged(original, proposal) {
 
 export default function AttendancePage() {
   const { user, loading: authLoading } = useAuth();
-  const { runWhenReady } = useAuthReadyRequest();
   const [records, setRecords]     = useState([]);
   const [leaveRecords, setLeaveRecords] = useState([]);
   const [leaveApprovals, setLeaveApprovals] = useState([]);
@@ -83,7 +82,6 @@ export default function AttendancePage() {
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate]     = useState(today);
   const [activeTab, setActiveTab] = useState('attendance');
-  const [loading, setLoading]     = useState(true);
   const [checking, setChecking]   = useState('');
   const [prompt, setPrompt]       = useState('');
   const [proposal, setProposal]   = useState(null);
@@ -93,7 +91,7 @@ export default function AttendancePage() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [loadError, setLoadError] = useState('');
+  const { loading, loadError, setLoadError, runLoad } = useOperationsLoader(true);
   const [editRow, setEditRow] = useState(null);
   const [editForm, setEditForm] = useState({ check_in: '', check_out: '', status: 'present', note: '' });
   const [editSaving, setEditSaving] = useState(false);
@@ -108,9 +106,7 @@ export default function AttendancePage() {
   };
 
   const load = async (nextStartDate = startDate, nextEndDate = endDate) => {
-    return runWhenReady(async () => {
-      setLoading(true);
-      setLoadError('');
+    return runLoad(async () => {
       const params = new URLSearchParams({
         start_date: nextStartDate,
         end_date: nextEndDate,
@@ -137,10 +133,6 @@ export default function AttendancePage() {
       if (firstFailure) {
         setLoadError(firstFailure.reason?.message || '근태 데이터를 불러오지 못했습니다.');
       }
-
-      setLoading(false);
-    }, {
-      onMissingAuth: () => setLoading(false),
     });
   };
 
