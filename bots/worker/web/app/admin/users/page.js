@@ -9,7 +9,7 @@ import AdminPageHero from '@/components/AdminPageHero';
 import AdminQuickFlowGrid from '@/components/AdminQuickFlowGrid';
 import DataTable from '@/components/DataTable';
 import Modal from '@/components/Modal';
-import { useAuthReadyRequest } from '@/lib/use-auth-ready-request';
+import { useOperationsLoader } from '@/lib/use-operations-loader';
 
 const ROLE_CONFIG = {
   master: { label: '마스터', cls: 'bg-red-100 text-red-700' },
@@ -24,12 +24,10 @@ const EMPTY_FORM = {
 
 export default function AdminUsersPage() {
   const { user, loading: authLoading } = useAuth();
-  const { runWhenReady } = useAuthReadyRequest();
   const router   = useRouter();
 
   const [users,      setUsers]      = useState([]);
   const [companies,  setCompanies]  = useState([]);
-  const [loading,    setLoading]    = useState(true);
   const [filterCo,   setFilterCo]   = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [modal,      setModal]      = useState(false);
@@ -40,7 +38,7 @@ export default function AdminUsersPage() {
   const [resetPw,    setResetPw]    = useState('');
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
-  const [loadError,  setLoadError]  = useState('');
+  const { loading, loadError, setLoadError, runLoad } = useOperationsLoader(true);
   const quickFlows = [
     {
       title: '권한 분포 점검',
@@ -61,30 +59,25 @@ export default function AdminUsersPage() {
   }, [user, router]);
 
   const loadAll = (co = filterCo, role = filterRole) => {
-    return runWhenReady(async () => {
-      setLoading(true);
-      setLoadError('');
+    return runLoad(async () => {
       const qs = new URLSearchParams();
       if (co) qs.set('company_id', co);
       if (role) qs.set('role', role);
       const q = qs.toString() ? `?${qs}` : '';
-      Promise.allSettled([
+      const [u, c] = await Promise.allSettled([
         api.get(`/users${q}`),
         api.get('/companies'),
-      ]).then(([u, c]) => {
-        if (u.status === 'fulfilled') setUsers(u.value.users || []);
-        else setUsers([]);
+      ]);
+      if (u.status === 'fulfilled') setUsers(u.value.users || []);
+      else setUsers([]);
 
-        if (c.status === 'fulfilled') setCompanies(c.value.companies || []);
-        else setCompanies([]);
+      if (c.status === 'fulfilled') setCompanies(c.value.companies || []);
+      else setCompanies([]);
 
-        const firstFailure = [u, c].find((result) => result.status === 'rejected');
-        if (firstFailure) {
-          setLoadError(firstFailure.reason?.message || '사용자 데이터를 불러오지 못했습니다.');
-        }
-      }).finally(() => setLoading(false));
-    }, {
-      onMissingAuth: () => setLoading(false),
+      const firstFailure = [u, c].find((result) => result.status === 'rejected');
+      if (firstFailure) {
+        setLoadError(firstFailure.reason?.message || '사용자 데이터를 불러오지 못했습니다.');
+      }
     });
   };
 
