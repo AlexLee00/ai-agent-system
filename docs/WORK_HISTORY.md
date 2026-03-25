@@ -4546,3 +4546,21 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 검증:
   - `node --check bots/investment/shared/pipeline-decision-runner.js`
   - `node bots/investment/scripts/health-report.js --json`
+## 2026-03-25 — investment health capital guard 분해 리포트 추가
+
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+  - `classifyGuardReason()`가 `최대 포지션 도달` 문구를 `max_concurrent_positions`로 올바르게 분류하도록 보강
+  - `loadCapitalGuardBreakdown()` 추가
+  - 최근 14일 binance `capital_guard_rejected`를
+    - 사유 그룹별
+    - `trade_mode`별
+    로 분해해 JSON/text 리포트에 노출
+- 현재 관찰 결과:
+  - `capital_guard_rejected = 65건`
+  - `daily trade limit = 63건`
+  - `max positions = 2건`
+  - `validation = 59건`
+  - `normal = 6건`
+- 검증:
+  - `node --check bots/investment/scripts/health-report.js`
+  - `node bots/investment/scripts/health-report.js --json`

@@ -1430,3 +1430,5 @@
 | `python3 - <<'PY' ... bots/blog/output/*_general_*.html ... 'AI 스니펫 요약'/'본론 섹션'/'함께 읽으면 좋은 글' count 점검 ... PY` | ✅ `2026-03-21_general_도서리뷰 그릿 꾸준함의 힘을 배우다.html`에서 주요 섹션 2회 반복 샘플 재현 확인 |
 | `node --check bots/investment/shared/pipeline-decision-runner.js` | ✅ mid-gap validation 승격 경계 문법 통과 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ 투자팀 헬스 리포트 정상, 서비스 warn 0 / crypto gate blocked 유지 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ capital guard 분해 리포트 문법 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `capitalGuardBreakdown` 섹션 노출, `daily trade limit=63`, `validation=59` 확인 |

@@ -187,11 +187,30 @@ function classifyGuardReason(row = {}) {
   const reason = String(row.block_reason || '').toLowerCase();
   if (code !== 'capital_guard_rejected') return code;
   if (reason.includes('일간 매매 한도')) return 'daily_trade_limit';
-  if (reason.includes('최대 동시 포지션')) return 'max_concurrent_positions';
+  if (reason.includes('최대 동시 포지션') || reason.includes('최대 포지션 도달')) return 'max_concurrent_positions';
   if (reason.includes('reserve') || reason.includes('보유 부족') || reason.includes('현금 보유')) return 'cash_reserve';
   if (reason.includes('최소 주문')) return 'min_order_size';
   if (reason.includes('cooldown')) return 'loss_cooldown';
   return 'capital_guard_other';
+}
+
+function formatGuardReasonGroup(group) {
+  switch (group) {
+    case 'daily_trade_limit':
+      return 'daily trade limit';
+    case 'max_concurrent_positions':
+      return 'max positions';
+    case 'cash_reserve':
+      return 'cash reserve';
+    case 'min_order_size':
+      return 'min order size';
+    case 'loss_cooldown':
+      return 'loss cooldown';
+    case 'capital_guard_other':
+      return 'capital guard other';
+    default:
+      return group;
+  }
 }
 
 function buildGuardHealth() {
@@ -312,6 +331,46 @@ async function loadRecentSignalBlockHealth(windowMinutes = 60) {
       .map(([group, count]) => ({ group, count }))
       .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko'))
       .slice(0, 5),
+  };
+}
+
+async function loadCapitalGuardBreakdown(periodDays = 14) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COALESCE(block_reason, '') AS block_reason,
+        COALESCE(trade_mode, 'normal') AS trade_mode,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE exchange = 'binance'
+        AND created_at >= NOW() - INTERVAL '1 day' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+      GROUP BY 1, 2, 3
+      ORDER BY cnt DESC, trade_mode ASC, block_reason ASC
+    `,
+    [periodDays],
+  ).catch(() => []);
+
+  const byReasonGroup = new Map();
+  const byTradeMode = new Map();
+  for (const row of rows) {
+    const group = classifyGuardReason(row);
+    byReasonGroup.set(group, (byReasonGroup.get(group) || 0) + Number(row.cnt || 0));
+    byTradeMode.set(row.trade_mode, (byTradeMode.get(row.trade_mode) || 0) + Number(row.cnt || 0));
+  }
+
+  return {
+    periodDays,
+    total: rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0),
+    byReasonGroup: [...byReasonGroup.entries()]
+      .map(([group, count]) => ({ group, count, label: formatGuardReasonGroup(group) }))
+      .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko')),
+    byTradeMode: [...byTradeMode.entries()]
+      .map(([tradeMode, count]) => ({ tradeMode, count }))
+      .sort((a, b) => b.count - a.count || a.tradeMode.localeCompare(b.tradeMode, 'ko')),
   };
 }
 
@@ -547,6 +606,7 @@ function buildDecision(
   tradeLaneHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
+  capitalGuardBreakdown,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -592,6 +652,11 @@ function buildDecision(
         reason: saturatedLane
           ? `거래 한도 도달 rail ${formatLaneLabel(saturatedLane.exchange, saturatedLane.tradeMode)} ${saturatedLane.count}/${saturatedLane.limit}`
           : `거래 한도 근접 rail ${formatLaneLabel(nearLimitLane?.exchange, nearLimitLane?.tradeMode)} ${nearLimitLane?.count}/${nearLimitLane?.limit}`,
+      },
+      {
+        active: capitalGuardBreakdown.total > 0,
+        level: capitalGuardBreakdown.byReasonGroup[0]?.group === 'daily_trade_limit' ? 'medium' : 'low',
+        reason: `최근 ${capitalGuardBreakdown.periodDays}일 crypto capital guard ${capitalGuardBreakdown.total}건 — 최다 ${capitalGuardBreakdown.byReasonGroup[0]?.label || 'n/a'} ${capitalGuardBreakdown.byReasonGroup[0]?.count || 0}건 / mode ${capitalGuardBreakdown.byTradeMode[0]?.tradeMode || 'n/a'} ${capitalGuardBreakdown.byTradeMode[0]?.count || 0}건`,
       },
       {
         active: stalePositionHealth.warnCount > 0,
@@ -642,6 +707,16 @@ function formatText(report) {
             ...report.recentSignalBlockHealth.topReasonGroups.map((row) => `  ${row.group}: ${row.count}건`),
           ]
         : ['  최근 차단/거부 신호 없음'],
+    },
+    {
+      title: `■ crypto capital guard 분해(최근 ${report.capitalGuardBreakdown.periodDays}일)`,
+      lines: report.capitalGuardBreakdown.total > 0
+        ? [
+            `  총 ${report.capitalGuardBreakdown.total}건`,
+            ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
+            ...report.capitalGuardBreakdown.byTradeMode.map((row) => `  mode ${row.tradeMode}: ${row.count}건`),
+          ]
+        : ['  최근 crypto capital guard 차단 없음'],
     },
     {
       title: `■ 최근 ${report.recentLaneBlockPressure.windowMinutes}분 rail 압력`,
@@ -697,6 +772,7 @@ async function buildReport() {
   const tradeLaneHealth = await loadTradeLaneHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
+  const capitalGuardBreakdown = await loadCapitalGuardBreakdown();
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
     serviceRows,
@@ -708,6 +784,7 @@ async function buildReport() {
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
+    capitalGuardBreakdown,
   );
 
   const report = {
@@ -725,6 +802,7 @@ async function buildReport() {
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
+    capitalGuardBreakdown,
     kisCapabilityHealth,
     decision,
   };
