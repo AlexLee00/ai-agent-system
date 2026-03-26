@@ -2367,3 +2367,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - reporting-hub telegram target에 `criticalMode` 추가 (`both` 기본)
   - 투자팀 `notifyError()`는 `criticalTelegramMode: 'team_only'`로 발송
   - 실행 오류는 텔레그램 팀 채널 1회 + 기존 N8N critical 경로 유지
+- `feat(investment): align runtime suggestions with validation soft budget`
+  - `runtime-config-suggestions`에 `validationBudgetSnapshots.cryptoValidation` 추가
+  - text report에 `validation budget 스냅샷(오늘)` 섹션 추가
+  - health와 동일하게 `BUY 3/8 soft cap (hard 10, reserve 2)` 기준선 노출

@@ -1750,3 +1750,24 @@
   - 나중에 확장할 구조:
     - 팀별/이벤트유형별 `CRITICAL` fanout 정책 분리
     - 시스템성 장애만 `emergency+team`, 실행 오류는 `team-only`로 일반화
+
+## 2026-03-26 — runtime-config 제안 리포트에 crypto soft budget 정렬
+
+- 배경
+  - investment health에는 `crypto validation soft budget`이 보이는데, [runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)는 같은 정보를 보여주지 않아 운영 리포트와 설정 제안 리포트가 서로 다른 기준선을 가리켰다.
+
+- 이번 변경
+  - [bots/investment/scripts/runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)
+    - 오늘 `binance + validation + BUY` 수를 별도로 집계
+    - `hardCap`, `reserveSlots`, `softCap`, `count`, `ratio`를 포함한 `validationBudgetSnapshots.cryptoValidation` 추가
+    - text report에 `validation budget 스냅샷(오늘)` 섹션 추가
+
+- 현재 기준
+  - `binance/validation: BUY 3/8 soft cap (hard 10, reserve 2)`
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - health와 runtime-config 제안 리포트가 같은 soft budget truth를 보도록 정렬
+  - 나중에 확장할 구조:
+    - validation/live lane별 예산 snapshot 일반화
+    - 설정 추천에서 soft cap 근접 시 observe/adjust 후보 자동 생성
