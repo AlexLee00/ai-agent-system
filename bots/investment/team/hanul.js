@@ -84,6 +84,7 @@ async function markSignalFailed(signalId, reason) {
 
 function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (!reason) return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
+  if (reason.includes('[90000000]') || reason.includes('모의투자에서는 해당업무가 제공되지 않습니다')) return 'mock_operation_unsupported';
   if (reason.includes('[40070000]') || reason.includes('매매불가 종목')) return 'mock_untradable_symbol';
   if (reason.includes('초당 거래건수를 초과')) return 'broker_rate_limited';
   if (reason.includes('장종료')) return 'market_closed';

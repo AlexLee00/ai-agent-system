@@ -9,6 +9,44 @@
 
 ---
 
+## 2026-03-26 22:56 KST — 해외장 mock SELL capability 실검증 후 차단 정책 복구
+
+- 요청 배경:
+  - 해외장 stale 4건(`ORCL`, `NVTS`, `HIMS`, `NBIS`)은 한때 `guarded_ready`로 분류돼 미국 장중 mock SELL 검증이 가능한 것처럼 보였다.
+  - 실제로 [force-exit-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-runner.js)로 `ORCL` force-exit를 실행해 본 결과, KIS가 `KIS API 오류 [90000000]: 모의투자에서는 해당업무가 제공되지 않습니다.`를 반환했다.
+- 반영:
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+    - `90000000 / 모의투자에서는 해당업무가 제공되지 않습니다`를 `mock_operation_unsupported`로 분류
+  - [force-exit-candidate-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-candidate-report.js)
+    - 해외장 mock SELL 후보를 `guarded_ready`가 아니라 `blocked_by_capability`로 되돌림
+  - [force-exit-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-runner.js)
+    - 해외장 mock SELL preflight를 장중이어도 `blocked`로 처리
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - 해외장 capability 문구를 `mock SELL 미지원 (KIS 90000000)`로 수정
+  - [backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
+    - `kis_overseas` + `90000000`도 `mock_operation_unsupported`로 소급 재분류 가능하도록 확장
+    - 실제로 ORCL 2건, 과거 `375500 장종료` 1건을 재분류
+- 의미:
+  - 해외장 stale 4건은 이제 “장중 대기”가 아니라 **실제 브로커 capability 제약**으로 읽어야 한다.
+  - 현재 source of truth는 미국 장중 여부가 아니라 `KIS 모의투자 해외 SELL 미지원`이다.
+- 검증:
+  - `env PAPER_MODE=false node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --execute --confirm=force-exit`
+    - `KIS API 오류 [90000000]: 모의투자에서는 해당업무가 제공되지 않습니다.`
+  - `node --check bots/investment/team/hanul.js`
+  - `node --check bots/investment/scripts/force-exit-candidate-report.js`
+  - `node --check bots/investment/scripts/force-exit-runner.js`
+  - `node --check bots/investment/scripts/health-report.js`
+  - `node --check bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `node bots/investment/scripts/force-exit-candidate-report.js --json`
+  - `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --json`
+  - `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=7`
+  - `node bots/investment/scripts/health-report.js --json`
+- 남은 TODO:
+  - 해외장 stale 4건은 현재 mock 계좌로는 정리 불가
+  - real 계좌 전환 또는 정책 예외 레일이 없는 한 force-exit 자동화 대상에서 제외하는 방향 검토
+
+---
+
 ## 2026-03-26 22:48 KST — 투자팀 국내장 수집 압력 health 최신 cycle 정렬
 
 - 요청 배경:

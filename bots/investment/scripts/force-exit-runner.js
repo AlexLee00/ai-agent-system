@@ -95,7 +95,18 @@ async function getExecutionPreflight(candidate) {
   }
 
   if (candidate.exchange === 'kis_overseas' && isMock) {
-    lines.push('- 해외장 mock 계좌는 장중에 한해 guarded SELL 검증 레일로 실행합니다.');
+    lines.push('- 해외장 mock 계좌는 현재 SELL 미지원으로 확인되어 force-exit를 차단합니다.');
+  }
+
+  if (candidate.exchange === 'kis_overseas' && isMock) {
+    return {
+      ok: false,
+      level: 'blocked',
+      lines: [
+        ...lines,
+        '- KIS API 90000000 기준 모의투자 해외 SELL은 현재 제공되지 않습니다.',
+      ],
+    };
   }
 
   if (!marketStatus.isOpen) {
@@ -111,7 +122,7 @@ async function getExecutionPreflight(candidate) {
 
   return {
     ok: true,
-    level: ((candidate.exchange === 'kis' || candidate.exchange === 'kis_overseas') && isMock) ? 'guarded' : 'ready',
+    level: (candidate.exchange === 'kis' && isMock) ? 'guarded' : 'ready',
     lines,
   };
 }

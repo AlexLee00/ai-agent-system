@@ -3,6 +3,21 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-26) — 해외장 mock SELL capability 실검증 후 blocked 정책 복구
+
+- `bots/investment/team/hanul.js`
+  - `KIS API 오류 [90000000]: 모의투자에서는 해당업무가 제공되지 않습니다.`를 `mock_operation_unsupported`로 분류
+- `bots/investment/scripts/force-exit-candidate-report.js`
+- `bots/investment/scripts/force-exit-runner.js`
+  - 해외장 mock SELL 후보/preview를 `guarded_ready`가 아니라 `blocked_by_capability`로 되돌림
+- `bots/investment/scripts/health-report.js`
+  - 해외장 capability를 `mock SELL 미지원 (KIS 90000000)`로 표기
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `kis_overseas + 90000000` historical row를 `mock_operation_unsupported`로 소급 재분류 가능하게 확장
+- 의미:
+  - 해외장 stale 4건은 현재 mock 계좌로는 실제 정리 불가
+  - health/report/force-exit 해석을 실검증 결과와 다시 맞춤
+
 ## 12주차 후속 (2026-03-26) — 투자팀 국내장 collect pressure를 최신 cycle 기준으로 정렬
 
 - `bots/investment/scripts/health-report.js`

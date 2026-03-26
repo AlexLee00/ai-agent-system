@@ -49,6 +49,20 @@
   - 이전에는 최신 cycle이 `symbols=11`, `tasks=34`까지 내려왔어도 health가 누적 err tail 때문에 과장돼 보였다.
   - 이제 domestic collect pressure는 “현재 cycle 상태”를 source of truth로 읽는다.
 
+## 2026-03-26: 해외장 mock SELL capability 실검증 후 blocked 정책 복구
+
+- `ORCL` force-exit를 실제 장중에 실행해 `KIS API 오류 [90000000]: 모의투자에서는 해당업무가 제공되지 않습니다.`를 확인했다.
+- `bots/investment/team/hanul.js`
+  - 이 오류를 `mock_operation_unsupported`로 분류하도록 추가했다.
+- `bots/investment/scripts/force-exit-candidate-report.js`
+- `bots/investment/scripts/force-exit-runner.js`
+- `bots/investment/scripts/health-report.js`
+  - 해외장 mock SELL을 다시 `blocked_by_capability` / `미지원` 기준으로 정렬했다.
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `kis_overseas + 90000000` 케이스를 `mock_operation_unsupported`로 재분류 가능하게 확장했다.
+- 해석:
+  - 해외장 stale 4건은 더 이상 “장중이면 guarded 검증 가능”이 아니라, 현재 KIS mock capability 제약으로 막힌 상태다.
+
 ## 2026-03-25: 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
 
 - `bots/investment/shared/secrets.js`에 `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter를 추가했다.

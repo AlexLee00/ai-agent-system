@@ -4,6 +4,21 @@
 
 ## 2026-03-26
 
+### 해외장 mock SELL capability 실검증 후 blocked 정책 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `env PAPER_MODE=false node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --execute --confirm=force-exit` | ✅ 실검증 기준 `KIS API 오류 [90000000]: 모의투자에서는 해당업무가 제공되지 않습니다.` 확인 |
+| `node --check bots/investment/team/hanul.js` | ✅ `mock_operation_unsupported` 분류 추가 후 문법 통과 |
+| `node --check bots/investment/scripts/force-exit-candidate-report.js` | ✅ 해외장 readiness를 `blocked_by_capability`로 되돌린 뒤 문법 통과 |
+| `node --check bots/investment/scripts/force-exit-runner.js` | ✅ 해외장 preflight blocked 복구 후 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ 해외장 capability 문구 수정 후 문법 통과 |
+| `node --check bots/investment/scripts/backfill-signal-block-reasons.js` | ✅ 해외장 `90000000` 재분류 추가 후 문법 통과 |
+| `node bots/investment/scripts/force-exit-candidate-report.js --json` | ✅ `blockedByCapability=4`, 해외장 4건 모두 `mock SELL 미지원 (KIS 90000000)` 확인 |
+| `node bots/investment/scripts/force-exit-runner.js --symbol=ORCL --exchange=kis_overseas --json` | ✅ preview가 `preflight.ok=false`, `level=blocked`로 변경된 것 확인 |
+| `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=7` | ✅ `ORCL` 2건을 `mock_operation_unsupported`, `375500` 1건을 `market_closed`로 재분류 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `recentSignalBlockHealth.top[0].code = mock_operation_unsupported`, 해외장 capability `mock SELL 미지원 (KIS 90000000)` 확인 |
+
 ### 투자팀 국내장 collect pressure 최신 cycle 정렬
 
 | 테스트 | 결과 |

@@ -230,6 +230,17 @@ function inferReclassifiedBlockInfo(row) {
     };
   }
 
+  if (
+    exchange === 'kis_overseas'
+    && (existingReason.includes('[90000000]') || existingReason.includes('모의투자에서는 해당업무가 제공되지 않습니다'))
+  ) {
+    return {
+      reason: existingReason,
+      code: 'mock_operation_unsupported',
+      meta: baseMeta,
+    };
+  }
+
   return null;
 }
 
@@ -284,12 +295,12 @@ export async function reclassifySignalBlockReasons({ dryRun = false, days = 30 }
     FROM investment.signals
     WHERE created_at > now() - interval '${safeDays} days'
       AND status IN ('failed', 'rejected', 'expired')
-      AND exchange = 'kis'
-      AND action = 'BUY'
+      AND exchange IN ('kis', 'kis_overseas')
       AND COALESCE(block_reason, '') <> ''
       AND (
         COALESCE(block_code, '') = ''
         OR COALESCE(block_code, '') = 'domestic_order_rejected'
+        OR COALESCE(block_code, '') = 'overseas_order_rejected'
         OR COALESCE(block_code, '') = 'legacy_executor_failed'
         OR COALESCE(block_code, '') = 'legacy_unclassified'
       )
