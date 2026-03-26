@@ -1267,3 +1267,20 @@
 - 의미:
   - 지금 당장 필요한 구조는 BUY 직후 보호주문도 SELL reconciliation과 같은 수준의 잔고 정합성을 따르게 하는 것이다.
   - 나중에는 TP/SL 실패 리포트에 `filled vs free balance` 차이를 health/report 섹션으로 직접 노출할 수 있다.
+## 2026-03-26 09:31 KST — 해외장 mock SELL capability를 guarded 레일로 완화
+
+- [force-exit-candidate-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-candidate-report.js), [force-exit-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-runner.js), [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js), [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)를 같은 기준으로 정리했다.
+- 기존에는 `kis_overseas + mock + SELL`이면 리포트/preview/executor가 모두 `blocked_by_capability`로 선차단했다.
+- 확인 결과 [kis-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/kis-client.js)에 `OVERSEAS_SELL_PAPER (VTTT1006U)`와 `marketSellOverseas()`가 이미 구현돼 있어, 기술적 미구현보다는 운영 정책 차단에 가까웠다.
+- 이번 수정 후:
+  - 해외장 mock SELL은 장외 시간에는 `wait_market_open`
+  - 미국 장중에는 `guarded_ready`
+  - `hanul` preflight도 시장만 열려 있으면 SELL을 선차단하지 않음
+  - health 문구도 `현재 관측 기준 mock SELL 미지원 또는 제한` 대신 `mock SELL 장중에만 가능`으로 정리
+- 현재 확인 결과:
+  - 국내장 stale 7건은 모두 정리 완료
+  - force-exit 후보는 `kis_overseas` 4건만 남음
+  - 현재는 미국 장외라 `wait_market_open=4`, `blockedByCapability=0`
+- 의미:
+  - 지금 당장 필요한 구조는 해외장을 capability 오류가 아니라 시장 시간 기반 `guarded` 레일로 해석하는 것이다.
+  - 나중에는 미국 장중 실제 `ORCL` 1건으로 mock SELL 검증 후, 해외장 guarded 정책을 고정 capability로 승격할 수 있다.

@@ -4651,3 +4651,23 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `node --check bots/investment/team/hephaestos.js`
   - `node --input-type=module -e "... getCapitalConfig('binance','normal') / getCapitalConfig('binance','validation') ..."`
   - `node bots/investment/scripts/health-report.js --json`
+## 2026-03-26 — investment 해외장 mock SELL guarded 레일 완화
+
+- [force-exit-candidate-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-candidate-report.js)
+  - `kis_overseas + mock`를 더 이상 `blocked_by_capability`로 고정하지 않고, 장중이면 `guarded_ready`, 장외면 `wait_market_open`으로 분류
+- [force-exit-runner.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/force-exit-runner.js)
+  - 해외장 mock SELL preflight를 `blocked` 대신 `guarded`로 해석
+- [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+  - 해외장 mock SELL 선차단(`mock_operation_unsupported`) 제거
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+  - 해외장 capability 문구를 `mock SELL 장중에만 가능`으로 조정
+- 현재 확인:
+  - 국내장 stale 7건 정리 후 force-exit 후보는 해외장 4건만 남음
+  - 장외 시간 기준 `wait_market_open=4`, `blockedByCapability=0`
+- 검증:
+  - `node --check bots/investment/scripts/force-exit-candidate-report.js`
+  - `node --check bots/investment/scripts/force-exit-runner.js`
+  - `node --check bots/investment/team/hanul.js`
+  - `node --check bots/investment/scripts/health-report.js`
+  - `node bots/investment/scripts/force-exit-candidate-report.js --json`
+  - `node bots/investment/scripts/health-report.js --json`

@@ -566,7 +566,7 @@ async function loadKisCapabilityHealth() {
     ? (domesticStatus.isOpen ? 'mock SELL 검증 가능' : 'mock SELL 장중에만 가능')
     : 'real SELL 가능';
   const overseasCapability = overseasMode.brokerAccountMode === 'mock'
-    ? '현재 관측 기준 mock SELL 미지원 또는 제한'
+    ? (overseasStatus.isOpen ? 'mock SELL guarded 검증 가능' : 'mock SELL 장중에만 가능')
     : 'real SELL 가능';
 
   return {
@@ -582,8 +582,8 @@ async function loadKisCapabilityHealth() {
       marketStatus: overseasStatus,
       capability: overseasCapability,
     },
-    okCount: overseasMode.brokerAccountMode === 'mock' ? 1 : 2,
-    warnCount: overseasMode.brokerAccountMode === 'mock' ? 1 : 0,
+    okCount: overseasMode.brokerAccountMode === 'mock' && !overseasStatus.isOpen ? 1 : 2,
+    warnCount: overseasMode.brokerAccountMode === 'mock' && !overseasStatus.isOpen ? 1 : 0,
     ok: [
       `  국내주식 ${domesticMode.executionMode}/${domesticMode.brokerAccountMode} — ${domesticStatus.reason} / ${domesticCapability}`,
       ...(overseasMode.brokerAccountMode === 'mock'

@@ -88,16 +88,6 @@ async function classifyExecutionReadiness(row) {
     ? await getKisMarketStatus()
     : getKisOverseasMarketStatus();
 
-  if (row.exchange === 'kis_overseas' && isMock) {
-    return {
-      readiness: 'blocked_by_capability',
-      readinessLabel: 'capability 제약',
-      readinessReason: marketStatus.isOpen
-        ? '해외장 mock SELL capability 제한'
-        : `해외장 mock SELL capability 제한 + ${marketStatus.reason}`,
-    };
-  }
-
   if (!marketStatus.isOpen) {
     return {
       readiness: 'wait_market_open',
@@ -111,6 +101,14 @@ async function classifyExecutionReadiness(row) {
       readiness: 'guarded_ready',
       readinessLabel: '제한적 실행 가능',
       readinessReason: '국내장 mock SELL 검증 가능 (장중 한정)',
+    };
+  }
+
+  if (row.exchange === 'kis_overseas' && isMock) {
+    return {
+      readiness: 'guarded_ready',
+      readinessLabel: '제한적 실행 가능',
+      readinessReason: '해외장 mock SELL 검증 필요 (장중 한정)',
     };
   }
 

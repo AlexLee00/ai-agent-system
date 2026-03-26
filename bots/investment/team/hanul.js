@@ -136,13 +136,6 @@ async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.
       code: 'market_closed',
     };
   }
-  if (isKisPaper() && action === ACTIONS.SELL) {
-    return {
-      ok: false,
-      reason: '해외주식 mock 계좌 SELL은 현재 운영 기준에서 미지원 또는 제한 상태',
-      code: 'mock_operation_unsupported',
-    };
-  }
   return { ok: true };
 }
 

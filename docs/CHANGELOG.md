@@ -2184,3 +2184,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - BUY 전 포지션 슬롯 체크가 validation과 normal/live를 분리해서 계산하도록 수정
 - `hephaestos.js` 실행 게이트와 알림도 `signal.trade_mode` 기준 슬롯 수를 사용
 - 결과적으로 `binance validation 3슬롯 / normal 6슬롯` 정책이 실제 실행 경로에 반영
+## [2026-03-26] investment overseas mock SELL guarded readiness
+
+- 해외장 `kis_overseas + mock + SELL`을 더 이상 고정 capability 차단으로 보지 않고, 미국 장중에는 `guarded_ready`, 장외에는 `wait_market_open`으로 분류
+- `hanul.js` preflight에서 해외장 mock SELL 선차단 제거
+- `force-exit` 리포트/runner/health capability 문구를 동일 기준으로 정리
+- 현재 force-exit 후보는 해외장 4건만 남고, `blockedByCapability=0`으로 정리됨

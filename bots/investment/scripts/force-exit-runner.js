@@ -90,19 +90,12 @@ async function getExecutionPreflight(candidate) {
     `- marketStatus: ${marketStatus.reason}`,
   ];
 
-  if (candidate.exchange === 'kis_overseas' && isMock) {
-    lines.push('- 현재 관측 기준 해외장 mock 계좌 SELL은 미지원 또는 제한 상태로 해석합니다.');
-    return {
-      ok: false,
-      level: 'blocked',
-      lines: marketStatus.isOpen
-        ? lines
-        : [...lines, '- 현재 장외/휴장 상태라 force-exit SELL 실행을 보류해야 합니다.'],
-    };
-  }
-
   if (candidate.exchange === 'kis' && isMock) {
     lines.push('- 국내장 mock 계좌는 장중 SELL 검증용으로는 사용 가능하되, 장종료 이후에는 바로 실패합니다.');
+  }
+
+  if (candidate.exchange === 'kis_overseas' && isMock) {
+    lines.push('- 해외장 mock 계좌는 장중에 한해 guarded SELL 검증 레일로 실행합니다.');
   }
 
   if (!marketStatus.isOpen) {
@@ -118,7 +111,7 @@ async function getExecutionPreflight(candidate) {
 
   return {
     ok: true,
-    level: candidate.exchange === 'kis' && isMock ? 'guarded' : 'ready',
+    level: ((candidate.exchange === 'kis' || candidate.exchange === 'kis_overseas') && isMock) ? 'guarded' : 'ready',
     lines,
   };
 }

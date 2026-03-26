@@ -1477,3 +1477,9 @@
 | `node --check bots/investment/team/hephaestos.js` | ✅ BUY 안전 게이트 / 알림의 `trade_mode`별 슬롯 계산 정합화 후 문법 통과 |
 | `node --input-type=module -e \"... getCapitalConfig('binance','normal') / getCapitalConfig('binance','validation') ...\"` | ✅ `normal=6/16`, `validation=3/10` 정책값 분리 확인 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ 투자팀 헬스 재검증, `BINANCE / normal 0/16`, `BINANCE / validation 0/10` lane 기준 유지 확인 |
+| `node --check bots/investment/scripts/force-exit-candidate-report.js` | ✅ 해외장 mock SELL readiness를 `guarded/wait_market_open` 기준으로 정리한 뒤 문법 통과 |
+| `node --check bots/investment/scripts/force-exit-runner.js` | ✅ 해외장 mock SELL preflight를 guarded 레일로 완화한 뒤 문법 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ 해외장 mock SELL 선차단 제거 후 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ 해외장 capability 문구를 `mock SELL 장중에만 가능`으로 조정 후 문법 통과 |
+| `node bots/investment/scripts/force-exit-candidate-report.js --json` | ✅ force-exit 후보 `4건`, 전부 `kis_overseas`, `waitMarketOpen=4`, `blockedByCapability=0` 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `kisCapabilityHealth.overseas`가 `mock SELL 장중에만 가능`, stale 포지션이 해외장 4건만 남은 상태 확인 |
