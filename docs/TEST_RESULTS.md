@@ -1486,3 +1486,8 @@
 | `node --check bots/investment/shared/secrets.js` | ✅ 국내장 기본 dynamic cap `15 -> 10` 축소 후 문법 통과 |
 | `node --check bots/investment/team/aria.js` | ✅ `데이터 부족` 로그를 `이력 부족으로 스킵` 톤으로 조정 후 문법 통과 |
 | `node --input-type=module -e \"... getDomesticScreeningMaxDynamic() ...\"` | ✅ 실제 읽히는 국내장 dynamic cap 값 `10` 확인 |
+| `node --check bots/claude/lib/checks/database.js` | ✅ `trade_review` ratio-scale false-positive SQL 보정 후 문법 통과 |
+| `node --check bots/reservation/scripts/health-report.js` | ✅ raw Picco mismatch 집계 추가 후 문법 통과 |
+| `node bots/reservation/scripts/health-report.js --json` | ✅ `cancelCounterDriftHealth`가 `실예약 기준 미반영 취소: 1건`과 `010-3157-4920 / 2026-04-05 / 10:00~12:30 / A2` 샘플을 노출 |
+| `node -e \"... require('./bots/claude/lib/checks/database.js').run() ...\"` | ✅ escalated 실행 기준 `investment trade_review 무결성: 종료 거래 19건 정상`, `investment 미처리 신호 (2h+): ok` 확인 |
+| `node -e \"... clearPatterns('investment trade_review 무결성','DB 무결성') ...\"` | ✅ escalated 실행 기준 stale dexter pattern `1건` 삭제 |

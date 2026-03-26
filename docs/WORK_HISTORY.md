@@ -4687,3 +4687,19 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `node --check bots/investment/shared/secrets.js`
   - `node --check bots/investment/team/aria.js`
   - `node --input-type=module -e "... getDomesticScreeningMaxDynamic() ..."`
+## 2026-03-26 — dexter 오류 보고 경계 복구
+
+- [database.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/checks/database.js)
+  - `investment trade_review 무결성`의 `badScaleCnt` SQL을 `ABS(pnl_percent) < 1` 휴리스틱에서 `pnl_amount / entry_value` 기준 ratio-scale 판정으로 교체
+  - 결과적으로 `0.2747%` 같은 정상 저수익 closed trade가 false-positive로 잡히지 않게 정리
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js)
+  - `buildCancelCounterDriftHealth()`가 기존 `alerts`만 보던 구조에서 `cancelled_keys + future completed reservations` raw mismatch도 함께 집계
+  - 현재 `010-3157-4920 / 2026-04-05 / 10:00~12:30 / A2`가 실제 unresolved cancellation mismatch로 드러남
+- 운영 조치:
+  - `dexter_error_log`의 stale `DB 무결성 / investment trade_review 무결성` pattern 1건 직접 삭제
+- 검증:
+  - `node --check bots/claude/lib/checks/database.js`
+  - `node --check bots/reservation/scripts/health-report.js`
+  - `node bots/reservation/scripts/health-report.js --json`
+  - `node -e \"... require('./bots/claude/lib/checks/database.js').run() ...\"` (escalated)
+  - `node -e \"... clearPatterns('investment trade_review 무결성','DB 무결성') ...\"` (escalated)
