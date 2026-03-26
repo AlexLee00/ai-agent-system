@@ -2210,3 +2210,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/investment/docs/VALIDATION_LANE_POLICY.md` 추가
 - `trade_mode`와 `paper`를 독립 축으로 정의하고, 현재 crypto `validation`이 `PAPER`가 아니라 `LIVE 소액 검증 레일`이라는 운영 현실을 문서화
 - `crypto LIVE gate blocked`를 “LIVE 전면 금지”가 아니라 “validation LIVE 표본은 있으나 normal live 확대는 아직 보류”로 해석하도록 기준선 고정
+## [2026-03-26] investment hanul mock-untradable symbol classification
+
+- `bots/investment/team/hanul.js`
+  - KIS `40070000` / `매매불가 종목` 오류를 `mock_untradable_symbol` block code로 분류하도록 보강
+- 의미:
+  - 국내장 mock 브로커 제약을 generic `domestic_order_rejected`로 뭉개지 않고, `모의투자 주문 불가 종목`으로 정확히 남겨 운영 해석과 후속 screening 정책 연결성을 높임

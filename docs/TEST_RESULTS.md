@@ -1497,3 +1497,4 @@
 | `node bots/investment/scripts/health-report.js --json` | ✅ `cryptoLiveGateHealth.warn`에 `mode 체결: NORMAL ... VALIDATION ...`와 새 gate reason 노출 확인 |
 | `node -e \"... SELECT ... FROM trades ... LIMIT 12\"` | ✅ escalated 조회 기준 최근 binance 체결 12건 전부 `paper=false`, validation 4건도 `is_paper=false` 확인 |
 | `bots/investment/docs/VALIDATION_LANE_POLICY.md` 작성 | ✅ `trade_mode`와 `paper`를 분리한 투자팀 정책 기준선 문서 추가, 현재 crypto `validation LIVE` 해석을 source of truth로 고정 |
+| `node --check bots/investment/team/hanul.js` | ✅ KIS `40070000 / 매매불가 종목`을 `mock_untradable_symbol`로 분류하는 block code 보강 후 문법 통과 |
