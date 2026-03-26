@@ -2216,3 +2216,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - KIS `40070000` / `매매불가 종목` 오류를 `mock_untradable_symbol` block code로 분류하도록 보강
 - 의미:
   - 국내장 mock 브로커 제약을 generic `domestic_order_rejected`로 뭉개지 않고, `모의투자 주문 불가 종목`으로 정확히 남겨 운영 해석과 후속 screening 정책 연결성을 높임
+## [2026-03-26] investment hanul mock-untradable cooldown
+
+- `bots/investment/shared/runtime-config.js`
+  - `luna.mockUntradableSymbolCooldownMinutes=1440` 기본값 추가
+- `bots/investment/shared/db.js`
+  - 최근 특정 `block_code` 이력을 조회하는 `getRecentBlockedSignalByCode()` 추가
+- `bots/investment/team/hanul.js`
+  - 국내장 `LIVE/MOCK` BUY에서 최근 `mock_untradable_symbol` 이력이 있으면 `mock_untradable_symbol_cooldown`으로 사전 차단
+- 의미:
+  - 동일 종목이 같은 KIS mock 제약으로 반복 실패하는 루프를 줄이고, 브로커 제약 확인 후 하루 동안 재시도하지 않도록 운영 안전장치 보강

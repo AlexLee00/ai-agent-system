@@ -30,7 +30,7 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.js';
-import { isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
+import { getMockUntradableSymbolCooldownMinutes, isSameDaySymbolReentryBlockEnabled } from '../shared/runtime-config.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyKisSignal, notifyKisOverseasSignal, notifySettlement } from '../shared/report.js';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
@@ -200,6 +200,25 @@ async function checkKisRisk(signal) {
   if (!isKisSymbol(symbol)) return { approved: false, reason: `KIS 국내 심볼 아님: ${symbol}` };
   if (action === ACTIONS.HOLD)  return { approved: true };
   if (action === ACTIONS.BUY) {
+    if (isKisPaper()) {
+      const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
+      const recentBlocked = await db.getRecentBlockedSignalByCode({
+        symbol,
+        action: ACTIONS.BUY,
+        exchange: 'kis',
+        tradeMode: signalTradeMode,
+        blockCode: 'mock_untradable_symbol',
+        minutesBack: cooldownMinutes,
+      });
+      if (recentBlocked) {
+        const cooldownHours = (cooldownMinutes / 60).toFixed(cooldownMinutes % 60 === 0 ? 0 : 1);
+        return {
+          approved: false,
+          reason: `${symbol} 최근 KIS mock 매매불가 종목으로 확인됨 — ${cooldownHours}시간 쿨다운`,
+          code: 'mock_untradable_symbol_cooldown',
+        };
+      }
+    }
     if (!amountKrw || amountKrw < KIS_RULES.MIN_ORDER_KRW)
       return { approved: false, reason: `최소 주문금액 미달 (${amountKrw?.toLocaleString()}원)` };
     if (amountKrw > KIS_RULES.MAX_ORDER_KRW)
@@ -328,6 +347,7 @@ export async function executeSignal(signal) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
       await markSignalFailedDetailed(signalId, {
         reason: risk.reason,
+        code: risk.code || null,
         market: 'domestic',
         symbol,
         action,
@@ -558,6 +578,7 @@ export async function executeOverseasSignal(signal) {
       console.log(`  ❌ 리스크 거부: ${risk.reason}`);
       await markSignalFailedDetailed(signalId, {
         reason: risk.reason,
+        code: risk.code || null,
         market: 'overseas',
         symbol,
         action,

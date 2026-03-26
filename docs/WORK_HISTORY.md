@@ -4744,3 +4744,16 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 해석:
   - 브로커 제약을 generic `domestic_order_rejected`로 남기지 않고, `mock 불가 종목`이라는 운영 의미를 직접 보이게 만든 작업이다.
   - 이후 동일 block code가 쌓이면 screening/승인 단계에서 쿨다운이나 제외 정책을 붙일 수 있다.
+
+## 2026-03-26: KIS mock `매매불가 종목` BUY 재시도 쿨다운 추가
+
+- `bots/investment/shared/runtime-config.js`
+  - `luna.mockUntradableSymbolCooldownMinutes` 기본값 `1440` 추가
+- `bots/investment/shared/db.js`
+  - 최근 특정 `block_code` 이력을 조회하는 `getRecentBlockedSignalByCode()` 추가
+- `bots/investment/team/hanul.js`
+  - 국내장 BUY가 `LIVE/MOCK` 레일일 때, 최근 `mock_untradable_symbol`이 있으면 사전 리스크 단계에서 거부
+  - 이 거부는 `mock_untradable_symbol_cooldown`으로 기록
+- 해석:
+  - 한 번 브로커 mock 제약이 확인된 종목을 같은 날 반복 주문하지 않도록 하는 최소 안전장치다.
+  - 향후 screening 단계로 확장 가능한 전단 쿨다운 경계가 생겼다.
