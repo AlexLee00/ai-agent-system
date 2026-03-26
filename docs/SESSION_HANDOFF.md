@@ -68,6 +68,33 @@
     - `tradeReview.findings=0`
     - `decision.reasons`에서 `trade_review 정합성 이슈` 제거 확인
 
+## 2026-03-26 09:12 KST — 덱스터 resolved pattern 정리 경계 복구
+
+- 요청 배경:
+  - 덱스터 유지보수 리포트가 여전히
+    - `investment 미처리 신호 (2h+)`
+    - `investment trade_review 무결성`
+  반복 오류를 보여주고 있었지만, 현재 DB/헬스 기준으로는 둘 다 해소된 상태였다.
+- 확인 결과:
+  - `signals WHERE status IN ('pending','approved') AND created_at < now() - interval '2 hours'` 결과 `0건`
+  - `validate-trade-review --days=30` 결과 `findings=0`
+  - 그런데 [database.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/checks/database.js)는 `investment 미처리 신호 (2h+)`가 0건일 때 동일 라벨의 `ok` 항목을 내보내지 않아, [error-history.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/error-history.js)의 `markResolved()`가 stale pattern을 지우지 못하고 있었다.
+- 반영:
+  - [database.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/checks/database.js)
+    - `investment 미처리 신호 (2h+)`가 0건일 때도 `ok` 항목을 추가하도록 수정
+  - 현 시점 stale pattern은 직접 정리:
+    - `clearPatterns('investment 미처리 신호 (2h+)')`
+    - `clearPatterns('investment trade_review 무결성')`
+- 의미:
+  - 덱스터가 이미 해소된 DB 무결성 이슈를 계속 반복 error로 들고 있던 해석 지연 경계를 복구했다.
+  - 다음 덱스터 실행부터는 이 두 항목이 다시 stale pattern으로 남지 않는다.
+- 검증:
+  - `node --check bots/claude/lib/checks/database.js`
+  - `node --input-type=module -e "... clearPatterns('investment 미처리 신호 (2h+)') ... clearPatterns('investment trade_review 무결성') ..."`
+    - `clearedPending=1`, `clearedTradeReview=1`
+  - `node --input-type=module -e "... SELECT ... FROM dexter_error_log WHERE label LIKE ..."`
+    - 결과 `[]`
+
 ---
 
 ## 2026-03-25 — worker-web 운영 화면 auth-ready 경계 / 공통 로더 / 상태 UI 표준화

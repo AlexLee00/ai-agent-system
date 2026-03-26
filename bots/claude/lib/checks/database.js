@@ -133,6 +133,8 @@ async function checkInvestmentPostgres(items) {
 
         if (ss > 0) {
           items.push({ label: 'investment 미처리 신호 (2h+)', status: 'warn', detail: `${ss}건 장기 미실행 (approved/pending)` });
+        } else {
+          items.push({ label: 'investment 미처리 신호 (2h+)', status: 'ok', detail: '장기 미처리 approved/pending 신호 없음' });
         }
       } catch (e) {
         items.push({ label: 'investment 신호 무결성', status: 'warn', detail: `조회 실패: ${e.message.slice(0, 80)}` });

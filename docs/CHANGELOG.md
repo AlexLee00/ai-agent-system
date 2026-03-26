@@ -54,6 +54,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `0.2747%` 같은 정상 저수익 거래를 `trade_review 정합성 이상`으로 오판하던 false warning 제거
   - 루나 헬스 알림의 `trade_review` 섹션이 실제 누락/배율 오류 중심으로 다시 정렬
 
+## 12주차 후속 (2026-03-26) — 덱스터 investment resolved pattern 정리 복구
+
+- `bots/claude/lib/checks/database.js`
+  - `investment 미처리 신호 (2h+)`가 0건일 때도 동일 라벨의 `ok` 항목을 생성하도록 수정
+- 운영 조치:
+  - `dexter_error_log`에서 이미 해소된
+    - `investment 미처리 신호 (2h+)`
+    - `investment trade_review 무결성`
+    패턴을 직접 정리
+- 의미:
+  - 이미 해소된 DB 무결성 이슈가 덱스터 패턴 분석에서 stale error로 반복 노출되던 해석 지연 복구
+
 ## 12주차 후속 (2026-03-25) — worker-web 운영 화면 auth-ready 로딩 / 상태 UI 표준화
 
 - `bots/worker/web/app/sales/page.js`
