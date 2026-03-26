@@ -530,7 +530,12 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
       tfResults[tfCfg.tf] = await analyzeTFStock(symbol, exchange, tfCfg);
       await new Promise(r => setTimeout(r, 300)); // Yahoo Finance 호출 간격
     } catch (e) {
-      console.warn(`  ⚠️ [아리아] ${symbol} ${tfCfg.label} 실패: ${e.message}`);
+      const message = String(e?.message || e || '');
+      if (message.includes('데이터 부족')) {
+        console.log(`  ℹ️ [아리아] ${symbol} ${tfCfg.label} 이력 부족으로 스킵: ${message}`);
+      } else {
+        console.warn(`  ⚠️ [아리아] ${symbol} ${tfCfg.label} 실패: ${message}`);
+      }
     }
   }
 
