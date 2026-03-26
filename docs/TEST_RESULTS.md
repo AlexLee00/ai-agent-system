@@ -1604,3 +1604,13 @@
 - `node bots/investment/scripts/health-report.js --json` ✅
   - 기존 investment health 구조 영향 없음 확인
   - 최근 active block은 여전히 `mock_operation_unsupported = 1`로 유지
+
+## 2026-03-26 — runtime-config 제안 리포트 soft budget 정렬
+
+- `node --check bots/investment/scripts/runtime-config-suggestions.js` ✅
+- `node bots/investment/scripts/runtime-config-suggestions.js --json` ✅
+  - `validationBudgetSnapshots.cryptoValidation.count = 3`
+  - `softCap = 8`
+  - `hardCap = 10`
+- `node bots/investment/scripts/runtime-config-suggestions.js` ✅
+  - `validation budget 스냅샷(오늘)` 섹션 출력 확인
