@@ -181,6 +181,18 @@ function inferReclassifiedBlockInfo(row) {
   const exchange = row.exchange || 'unknown';
   const action = String(row.action || '').toUpperCase();
   const amount = Number(row.amount_usdt || 0);
+  const baseMeta = {
+    reclassified: true,
+    source: 'backfill-signal-block-reasons',
+    exchange,
+    symbol: row.symbol || null,
+    action,
+    amount_usdt: Number.isFinite(amount) ? amount : null,
+    original_status: row.status || null,
+    original_code: row.block_code || null,
+    created_at: row.created_at || null,
+    market: exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : exchange === 'binance' ? 'crypto' : 'unknown',
+  };
 
   if (
     exchange === 'kis'
@@ -190,18 +202,31 @@ function inferReclassifiedBlockInfo(row) {
     return {
       reason: existingReason,
       code: 'mock_untradable_symbol',
-      meta: {
-        reclassified: true,
-        source: 'backfill-signal-block-reasons',
-        exchange,
-        symbol: row.symbol || null,
-        action,
-        amount_usdt: Number.isFinite(amount) ? amount : null,
-        original_status: row.status || null,
-        original_code: row.block_code || null,
-        created_at: row.created_at || null,
-        market: 'domestic',
-      },
+      meta: baseMeta,
+    };
+  }
+
+  if (exchange === 'kis' && existingReason.includes('초당 거래건수를 초과')) {
+    return {
+      reason: existingReason,
+      code: 'broker_rate_limited',
+      meta: baseMeta,
+    };
+  }
+
+  if (exchange === 'kis' && existingReason.includes('장종료')) {
+    return {
+      reason: existingReason,
+      code: 'market_closed',
+      meta: baseMeta,
+    };
+  }
+
+  if (exchange === 'kis' && existingReason.includes('현재가 조회 실패')) {
+    return {
+      reason: existingReason,
+      code: 'quote_lookup_failed',
+      meta: baseMeta,
     };
   }
 

@@ -1525,3 +1525,20 @@
 - 의미:
   - 지금 당장 필요한 구조는 국내장 mock 불가 종목을 execution → approval → screening 소비 → prescreen 저장까지 끌어올려, 자동 후보 재등장을 더 앞단에서 줄이는 것이다.
   - 나중에는 이 신호를 prescreen 품질 점수, watchlist hygiene, broker capability cache로 확장할 수 있다.
+
+## 2026-03-26 22:22 KST — 국내장 `domestic_order_rejected` 세부 분류 복구
+
+- 요청 배경:
+  - 자동화 리포트 분석 결과 국내장 최근 14일 실패 상위가 여전히 `domestic_order_rejected 11건`으로 뭉쳐 있어, 실제 병목이 rate limit인지, 현재가 조회 실패인지, 시장시간 문제인지 바로 읽기 어려웠다.
+- 반영:
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+    - `inferHanulBlockCode()`에 `broker_rate_limited`, `market_closed`, `quote_lookup_failed` 추가
+  - [backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
+    - `--mode=reclassify`가 과거 국내장 `domestic_order_rejected`를 `broker_rate_limited`, `quote_lookup_failed`, `mock_untradable_symbol`로 재분류하도록 확장
+    - 실제 30일 이력 10건 재분류 완료
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `loadDomesticRejectBreakdown()` 추가
+    - 최근 24시간 국내장 주문 실패를 subtype별로 요약
+- 의미:
+  - 지금 당장 필요한 구조는 국내장 주문 실패를 운영 판단 가능한 subtype으로 복구해 screening/approval/execution 품질 문제를 분리해서 보는 것이다.
+  - 나중에는 이 분해를 바탕으로 KIS rate limit 재시도 정책, 현재가 조회 품질 경고, 브로커 capability watchlist를 더 세밀하게 붙일 수 있다.

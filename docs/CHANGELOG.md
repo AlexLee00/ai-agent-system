@@ -2296,3 +2296,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 국내장에만 적용하고 해외장/암호화폐 prescreen 경로는 유지
 - 의미:
   - `mock_untradable_symbol` 제약을 prescreen 저장 단계까지 끌어올려, 다음 자동화 사이클의 후보 재등장을 더 앞단에서 줄임
+## [2026-03-26] investment domestic reject subtype breakdown
+
+- `bots/investment/team/hanul.js`
+  - 국내장 주문 실패를 `broker_rate_limited`, `market_closed`, `quote_lookup_failed`, `mock_untradable_symbol`로 더 세밀하게 분류
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - 과거 `domestic_order_rejected`를 새 subtype으로 재분류하는 `--mode=reclassify` 확장
+- `bots/investment/scripts/health-report.js`
+  - 최근 24시간 국내장 주문 실패 subtype 요약 섹션 추가
+- 의미:
+  - 국내장 자동화 리포트에서 `domestic_order_rejected`를 뭉친 실패가 아니라 운영 가능한 세부 원인으로 읽게 함
