@@ -408,6 +408,45 @@ async function loadRecentLaneBlockPressure(windowMinutes = 60) {
   };
 }
 
+async function loadMockUntradableSymbolHealth(windowMinutes = 1440) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        symbol,
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COUNT(*)::int AS cnt,
+        MAX(created_at) AS last_seen_at
+      FROM investment.signals
+      WHERE exchange = 'kis'
+        AND created_at > now() - INTERVAL '1 minute' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') IN ('mock_untradable_symbol', 'mock_untradable_symbol_cooldown')
+      GROUP BY 1, 2
+      ORDER BY cnt DESC, symbol ASC, block_code ASC
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const warn = rows.slice(0, 8).map((row) => {
+    const label = row.block_code === 'mock_untradable_symbol_cooldown'
+      ? 'mock 재시도 쿨다운'
+      : 'mock 주문 불가';
+    return `  ${row.symbol} ${label} ${Number(row.cnt || 0)}건`;
+  });
+
+  return {
+    windowMinutes,
+    total,
+    okCount: total === 0 ? 1 : 0,
+    warnCount: total > 0 ? rows.length : 0,
+    ok: total === 0 ? ['  최근 KIS mock 주문 불가 종목 없음'] : [],
+    warn,
+    rows,
+  };
+}
+
 async function loadTradeLaneHealth() {
   const policy = loadCapitalPolicySnapshot();
   const rows = await pgPool.query(
@@ -604,6 +643,7 @@ function buildDecision(
   signalBlockHealth,
   recentSignalBlockHealth,
   recentLaneBlockPressure,
+  mockUntradableSymbolHealth,
   tradeLaneHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
@@ -646,6 +686,11 @@ function buildDecision(
         active: recentLaneBlockPressure.total >= 1,
         level: pressureLane?.count >= 3 ? 'medium' : 'low',
         reason: `최근 ${recentLaneBlockPressure.windowMinutes}분 일간 한도 압력 ${recentLaneBlockPressure.total}건 — 최다 rail ${pressureLane?.label || 'n/a'} ${pressureLane?.count || 0}건`,
+      },
+      {
+        active: mockUntradableSymbolHealth.total > 0,
+        level: 'low',
+        reason: `최근 ${mockUntradableSymbolHealth.windowMinutes / 60}시간 KIS mock 주문 불가 종목 ${mockUntradableSymbolHealth.total}건 — screening/approval 쿨다운 관찰 필요`,
       },
       {
         active: Boolean(saturatedLane || nearLimitLane),
@@ -725,6 +770,7 @@ function formatText(report) {
         ? report.recentLaneBlockPressure.lanes.map((lane) => `  ${lane.label}: ${lane.count}건`)
         : ['  최근 일간 한도 rail 압력 없음'],
     },
+    buildHealthCountSection(`■ KIS mock 주문 불가 종목(최근 ${Math.round(report.mockUntradableSymbolHealth.windowMinutes / 60)}시간)`, report.mockUntradableSymbolHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
@@ -770,6 +816,7 @@ async function buildReport() {
   const signalBlockHealth = await loadSignalBlockHealth();
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
+  const mockUntradableSymbolHealth = await loadMockUntradableSymbolHealth();
   const tradeLaneHealth = await loadTradeLaneHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
@@ -782,6 +829,7 @@ async function buildReport() {
     signalBlockHealth,
     recentSignalBlockHealth,
     recentLaneBlockPressure,
+    mockUntradableSymbolHealth,
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
@@ -800,6 +848,7 @@ async function buildReport() {
     signalBlockHealth,
     recentSignalBlockHealth,
     recentLaneBlockPressure,
+    mockUntradableSymbolHealth,
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,

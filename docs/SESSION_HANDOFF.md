@@ -1376,3 +1376,17 @@
 - 의미:
   - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 같은 세션/같은 날 반복 주문하지 않도록 입력 경계를 회복하는 것이다.
   - 나중에는 이 쿨다운 히스토리를 screening 단계까지 올려 종목 제외/우회 레일로 확장할 수 있다.
+
+## 2026-03-26 11:39 KST — 투자팀 health에 `mock_untradable_symbol` 관찰 섹션 추가
+
+- 요청 배경:
+  - `002630 BUY` 실패를 `mock_untradable_symbol` / `mock_untradable_symbol_cooldown`으로 정확히 기록하게 되었지만, health/report에서는 아직 이 유형을 별도 운영 신호로 읽지 못했다.
+- 반영:
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `loadMockUntradableSymbolHealth()` 추가
+    - 최근 24시간(`1440분`) `exchange='kis'` + `block_code IN ('mock_untradable_symbol','mock_untradable_symbol_cooldown')` 집계
+    - text report에 `■ KIS mock 주문 불가 종목` 섹션 추가
+    - 운영 판단에도 low-level 관찰 신호로 연결
+- 의미:
+  - 지금 당장 필요한 구조는 국내장 mock 브로커 제약을 단순 개별 실패가 아니라 screening 품질/approval 품질의 관찰 신호로 읽는 것이다.
+  - 나중에는 이 섹션을 기반으로 mock 불가 종목 watchlist나 screening 제외 정책으로 확장할 수 있다.

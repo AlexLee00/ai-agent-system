@@ -2226,3 +2226,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 국내장 `LIVE/MOCK` BUY에서 최근 `mock_untradable_symbol` 이력이 있으면 `mock_untradable_symbol_cooldown`으로 사전 차단
 - 의미:
   - 동일 종목이 같은 KIS mock 제약으로 반복 실패하는 루프를 줄이고, 브로커 제약 확인 후 하루 동안 재시도하지 않도록 운영 안전장치 보강
+## [2026-03-26] investment health mock-untradable watch
+
+- `bots/investment/scripts/health-report.js`
+  - 최근 24시간 `mock_untradable_symbol` / `mock_untradable_symbol_cooldown`를 집계하는 health 섹션 추가
+  - 운영 판단에 low-level 관찰 신호로 연결
+- 의미:
+  - 국내장 mock 브로커 제약을 개별 실패 로그가 아니라 health/report 차원의 screening 품질 신호로 끌어올림
