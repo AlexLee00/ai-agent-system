@@ -4908,3 +4908,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 실행 노이즈 감소
   - block code 해석성 개선
   - validation 예산 과소비를 approval 단계에서 조기 차단
+- 추가로 investment health에 `crypto validation soft budget(오늘)` 섹션을 붙여 현재 사용량을 `3/8 soft cap (hard 10, reserve 2)` 형태로 사전 관찰 가능하게 정리

@@ -2359,3 +2359,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `runtime-config`에 `validationSoftBudget.binance.reserveDailyBuySlots=2` 기본값 추가
   - `nemesis`가 `binance + validation + BUY`에 대해 일간 validation BUY soft cap(`8/10`)을 approval 단계에서 먼저 적용
   - 새 block code: `validation_daily_budget_soft_cap`
+- `feat(investment): expose crypto validation soft budget in health`
+  - investment health에 `■ crypto validation soft budget(오늘)` 섹션 추가
+  - 현재 validation BUY 사용량과 `hard cap / reserve / soft cap`을 함께 노출
+  - soft cap 근접/도달 시 운영 판단 reason으로 승격 가능
