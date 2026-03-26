@@ -447,6 +447,65 @@ async function loadMockUntradableSymbolHealth(windowMinutes = 1440) {
   };
 }
 
+async function loadDomesticRejectBreakdown(windowMinutes = 1440) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COUNT(*)::int AS cnt
+      FROM investment.signals
+      WHERE exchange = 'kis'
+        AND created_at > now() - INTERVAL '1 minute' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') IN (
+          'domestic_order_rejected',
+          'mock_untradable_symbol',
+          'mock_untradable_symbol_cooldown',
+          'mock_untradable_symbol_recent',
+          'broker_rate_limited',
+          'market_closed',
+          'quote_lookup_failed',
+          'min_order_notional',
+          'max_order_notional'
+        )
+      GROUP BY 1
+      ORDER BY cnt DESC, block_code ASC
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  const labels = {
+    domestic_order_rejected: '기타 domestic_order_rejected',
+    mock_untradable_symbol: 'mock 주문 불가',
+    mock_untradable_symbol_cooldown: 'mock 재시도 쿨다운',
+    mock_untradable_symbol_recent: 'approval 최근 mock 주문 불가',
+    broker_rate_limited: 'KIS rate limit',
+    market_closed: '장종료/시장종료',
+    quote_lookup_failed: '현재가 조회 실패',
+    min_order_notional: '최소 주문금액 미달',
+    max_order_notional: '최대 주문금액 초과',
+  };
+
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const warn = rows.length > 0
+    ? rows.map((row) => `  ${labels[row.block_code] || row.block_code}: ${Number(row.cnt || 0)}건`)
+    : [];
+
+  return {
+    windowMinutes,
+    total,
+    okCount: total === 0 ? 1 : 0,
+    warnCount: rows.length,
+    ok: total === 0 ? ['  최근 국내장 주문 실패 세부 이슈 없음'] : [],
+    warn,
+    rows: rows.map((row) => ({
+      ...row,
+      label: labels[row.block_code] || row.block_code,
+    })),
+  };
+}
+
 async function loadTradeLaneHealth() {
   const policy = loadCapitalPolicySnapshot();
   const rows = await pgPool.query(
@@ -644,6 +703,7 @@ function buildDecision(
   recentSignalBlockHealth,
   recentLaneBlockPressure,
   mockUntradableSymbolHealth,
+  domesticRejectBreakdown,
   tradeLaneHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
@@ -691,6 +751,11 @@ function buildDecision(
         active: mockUntradableSymbolHealth.total > 0,
         level: 'low',
         reason: `최근 ${mockUntradableSymbolHealth.windowMinutes / 60}시간 KIS mock 주문 불가 종목 ${mockUntradableSymbolHealth.total}건 — screening/approval 쿨다운 관찰 필요`,
+      },
+      {
+        active: domesticRejectBreakdown.total > 0,
+        level: domesticRejectBreakdown.rows[0]?.block_code === 'broker_rate_limited' ? 'medium' : 'low',
+        reason: `최근 ${domesticRejectBreakdown.windowMinutes / 60}시간 국내장 주문 실패 ${domesticRejectBreakdown.total}건 — 최다 ${domesticRejectBreakdown.rows[0]?.label || 'n/a'} ${domesticRejectBreakdown.rows[0]?.cnt || 0}건`,
       },
       {
         active: Boolean(saturatedLane || nearLimitLane),
@@ -771,6 +836,7 @@ function formatText(report) {
         : ['  최근 일간 한도 rail 압력 없음'],
     },
     buildHealthCountSection(`■ KIS mock 주문 불가 종목(최근 ${Math.round(report.mockUntradableSymbolHealth.windowMinutes / 60)}시간)`, report.mockUntradableSymbolHealth, { okLimit: 1, warnLimit: 8 }),
+    buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
@@ -817,6 +883,7 @@ async function buildReport() {
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
   const mockUntradableSymbolHealth = await loadMockUntradableSymbolHealth();
+  const domesticRejectBreakdown = await loadDomesticRejectBreakdown();
   const tradeLaneHealth = await loadTradeLaneHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
@@ -830,6 +897,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     mockUntradableSymbolHealth,
+    domesticRejectBreakdown,
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
@@ -849,6 +917,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     mockUntradableSymbolHealth,
+    domesticRejectBreakdown,
     tradeLaneHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,

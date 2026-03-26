@@ -1535,3 +1535,9 @@
 | `node --check bots/investment/team/nemesis.js` | ✅ 국내장 `kis + BUY + mock 계좌`에서 최근 `mock_untradable_symbol` 이력을 `mock_untradable_symbol_recent`으로 승인 거부하도록 보강 후 문법 통과 |
 | `node --check bots/investment/markets/domestic.js` | ✅ 자동 screening/prescreened 경로에서 최근 `mock_untradable_symbol` 후보를 제외하고, `appendHeldSymbols()` 전에 적용해 held 심볼은 유지하도록 보강 후 문법 통과 |
 | `node --check bots/investment/scripts/pre-market-screen.js` | ✅ 국내장 장전 prescreen 저장 전에 최근 `mock_untradable_symbol` 후보를 제외하도록 보강 후 문법 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ 국내장 주문 실패를 `broker_rate_limited`, `market_closed`, `quote_lookup_failed`, `mock_untradable_symbol`로 세분화한 뒤 문법 통과 |
+| `node --check bots/investment/scripts/backfill-signal-block-reasons.js` | ✅ 국내장 `domestic_order_rejected` 재분류 확장 후 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ `domesticRejectBreakdown` 섹션 추가 후 문법 통과 |
+| `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30 --dry-run` | ✅ 과거 국내장 `domestic_order_rejected` 10건이 `broker_rate_limited`/`quote_lookup_failed`/`mock_untradable_symbol`로 재분류 가능한지 확인 |
+| `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30` | ✅ 최근 30일 국내장 실패 이력 10건을 새 subtype으로 실제 재분류 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `domesticRejectBreakdown`가 최근 24시간 국내장 주문 실패를 subtype으로 요약하고, 운영 판단 reason에 반영되는지 확인 |

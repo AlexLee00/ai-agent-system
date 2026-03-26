@@ -4835,3 +4835,15 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 국내장에만 적용하고, 해외장/암호화폐 prescreen은 유지한다.
 - 해석:
   - mock 불가 종목 신호를 screening 소비 단계뿐 아니라 prescreen 저장 단계까지 끌어올려, 다음 자동화 사이클의 후보 재등장을 더 앞단에서 줄이는 작업이다.
+
+## 2026-03-26: 국내장 `domestic_order_rejected` 세부 분류 복구
+
+- `bots/investment/team/hanul.js`
+  - `inferHanulBlockCode()`에 `broker_rate_limited`, `market_closed`, `quote_lookup_failed` 분기를 추가했다.
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `--mode=reclassify`에서 과거 국내장 `domestic_order_rejected`를 재분류할 수 있게 확장했다.
+  - 실제 최근 30일 이력 10건을 `broker_rate_limited`와 `quote_lookup_failed`로 재분류했다.
+- `bots/investment/scripts/health-report.js`
+  - `loadDomesticRejectBreakdown()`를 추가해 최근 24시간 국내장 주문 실패 subtype을 health/report 상단에서 직접 읽게 했다.
+- 해석:
+  - 국내장 자동화에서 가장 뭉친 실패 코드를 운영 가능한 세부 원인으로 복구해, 다음 단계 개선 우선순위를 더 선명하게 만든 작업이다.
