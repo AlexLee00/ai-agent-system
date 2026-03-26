@@ -733,6 +733,39 @@ async function loadCryptoValidationSoftBudgetHealth() {
   };
 }
 
+async function loadCryptoValidationBudgetBlockHealth(windowMinutes = 1440) {
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT
+        symbol,
+        COUNT(*)::int AS cnt,
+        MAX(created_at) AS last_seen_at
+      FROM investment.signals
+      WHERE exchange = 'binance'
+        AND created_at > now() - INTERVAL '1 minute' * $1
+        AND status IN ('failed', 'blocked', 'rejected')
+        AND COALESCE(block_code, '') = 'validation_daily_budget_soft_cap'
+      GROUP BY 1
+      ORDER BY cnt DESC, symbol ASC
+    `,
+    [windowMinutes],
+  ).catch(() => []);
+
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const warn = rows.slice(0, 8).map((row) => `  ${row.symbol} validation soft cap ${Number(row.cnt || 0)}건`);
+
+  return {
+    windowMinutes,
+    total,
+    okCount: total === 0 ? 1 : 0,
+    warnCount: total > 0 ? rows.length : 0,
+    ok: total === 0 ? ['  최근 crypto validation soft cap 차단 없음'] : [],
+    warn,
+    rows,
+  };
+}
+
 function getStalePositionThresholdHours(exchange) {
   if (exchange === 'kis_overseas') return 72;
   if (exchange === 'kis') return 48;
@@ -872,6 +905,7 @@ function buildDecision(
   domesticRejectBreakdown,
   tradeLaneHealth,
   cryptoValidationSoftBudgetHealth,
+  cryptoValidationBudgetBlockHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
   capitalGuardBreakdown,
@@ -940,6 +974,11 @@ function buildDecision(
         active: cryptoValidationSoftBudgetHealth.enabled && (cryptoValidationSoftBudgetHealth.atSoftCap || cryptoValidationSoftBudgetHealth.nearSoftCap),
         level: cryptoValidationSoftBudgetHealth.atSoftCap ? 'medium' : 'low',
         reason: `crypto validation soft budget ${cryptoValidationSoftBudgetHealth.count}/${cryptoValidationSoftBudgetHealth.softCap} (hard ${cryptoValidationSoftBudgetHealth.hardCap}, reserve ${cryptoValidationSoftBudgetHealth.reserveSlots})`,
+      },
+      {
+        active: cryptoValidationBudgetBlockHealth.total > 0,
+        level: 'medium',
+        reason: `최근 ${Math.round(cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간 crypto validation soft cap 차단 ${cryptoValidationBudgetBlockHealth.total}건`,
       },
       {
         active: capitalGuardBreakdown.total > 0,
@@ -1016,6 +1055,7 @@ function formatText(report) {
     buildHealthCountSection(`■ 국내장 수집 압력(최신 cycle / 로그 ${report.domesticCollectPressure.windowLines}줄, tail ${report.domesticCollectPressure.logLines}줄)`, report.domesticCollectPressure, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ crypto validation soft budget(오늘)', report.cryptoValidationSoftBudgetHealth, { okLimit: 1, warnLimit: 1 }),
+    buildHealthCountSection(`■ crypto validation soft cap 차단(최근 ${Math.round(report.cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간)`, report.cryptoValidationBudgetBlockHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
@@ -1066,6 +1106,7 @@ async function buildReport() {
   const domesticRejectBreakdown = await loadDomesticRejectBreakdown();
   const tradeLaneHealth = await loadTradeLaneHealth();
   const cryptoValidationSoftBudgetHealth = await loadCryptoValidationSoftBudgetHealth();
+  const cryptoValidationBudgetBlockHealth = await loadCryptoValidationBudgetBlockHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const capitalGuardBreakdown = await loadCapitalGuardBreakdown();
@@ -1082,6 +1123,7 @@ async function buildReport() {
     domesticRejectBreakdown,
     tradeLaneHealth,
     cryptoValidationSoftBudgetHealth,
+    cryptoValidationBudgetBlockHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
@@ -1104,6 +1146,7 @@ async function buildReport() {
     domesticRejectBreakdown,
     tradeLaneHealth,
     cryptoValidationSoftBudgetHealth,
+    cryptoValidationBudgetBlockHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,

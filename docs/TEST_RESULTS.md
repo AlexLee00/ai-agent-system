@@ -1614,3 +1614,12 @@
   - `hardCap = 10`
 - `node bots/investment/scripts/runtime-config-suggestions.js` ✅
   - `validation budget 스냅샷(오늘)` 섹션 출력 확인
+
+## 2026-03-26 — crypto validation soft cap 차단 집계
+
+- `node --check bots/investment/scripts/health-report.js` ✅
+- `node bots/investment/scripts/health-report.js --json` ✅
+  - `cryptoValidationBudgetBlockHealth.total = 0`
+  - `ok[0] = 최근 crypto validation soft cap 차단 없음`
+- `node bots/investment/scripts/health-report.js` ✅
+  - `■ crypto validation soft cap 차단(최근 24시간)` 섹션 출력 확인
