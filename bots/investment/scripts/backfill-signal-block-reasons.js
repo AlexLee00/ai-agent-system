@@ -176,6 +176,38 @@ function inferBlockInfo(row) {
   };
 }
 
+function inferReclassifiedBlockInfo(row) {
+  const existingReason = String(row.block_reason || '').trim();
+  const exchange = row.exchange || 'unknown';
+  const action = String(row.action || '').toUpperCase();
+  const amount = Number(row.amount_usdt || 0);
+
+  if (
+    exchange === 'kis'
+    && action === 'BUY'
+    && (existingReason.includes('[40070000]') || existingReason.includes('매매불가 종목'))
+  ) {
+    return {
+      reason: existingReason,
+      code: 'mock_untradable_symbol',
+      meta: {
+        reclassified: true,
+        source: 'backfill-signal-block-reasons',
+        exchange,
+        symbol: row.symbol || null,
+        action,
+        amount_usdt: Number.isFinite(amount) ? amount : null,
+        original_status: row.status || null,
+        original_code: row.block_code || null,
+        created_at: row.created_at || null,
+        market: 'domestic',
+      },
+    };
+  }
+
+  return null;
+}
+
 export async function backfillSignalBlockReasons({ dryRun = false, days = 30 } = {}) {
   await db.initSchema();
   const safeDays = Number.isFinite(Number(days)) ? Math.max(1, Math.floor(Number(days))) : 30;
@@ -218,11 +250,62 @@ export async function backfillSignalBlockReasons({ dryRun = false, days = 30 } =
   };
 }
 
+export async function reclassifySignalBlockReasons({ dryRun = false, days = 30 } = {}) {
+  await db.initSchema();
+  const safeDays = Number.isFinite(Number(days)) ? Math.max(1, Math.floor(Number(days))) : 30;
+
+  const rows = await db.query(`
+    SELECT id, symbol, exchange, action, amount_usdt, status, block_reason, block_code, block_meta, created_at
+    FROM investment.signals
+    WHERE created_at > now() - interval '${safeDays} days'
+      AND status IN ('failed', 'rejected', 'expired')
+      AND exchange = 'kis'
+      AND action = 'BUY'
+      AND COALESCE(block_reason, '') <> ''
+      AND (
+        COALESCE(block_code, '') = ''
+        OR COALESCE(block_code, '') = 'domestic_order_rejected'
+        OR COALESCE(block_code, '') = 'legacy_executor_failed'
+        OR COALESCE(block_code, '') = 'legacy_unclassified'
+      )
+    ORDER BY created_at DESC
+  `);
+
+  const updates = rows
+    .map((row) => ({
+      id: row.id,
+      exchange: row.exchange,
+      symbol: row.symbol,
+      ...inferReclassifiedBlockInfo(row),
+    }))
+    .filter((item) => item.code);
+
+  if (!dryRun) {
+    for (const item of updates) {
+      await db.updateSignalBlock(item.id, {
+        reason: item.reason,
+        code: item.code,
+        meta: item.meta,
+      });
+    }
+  }
+
+  return {
+    days: safeDays,
+    dryRun,
+    updated: updates.length,
+    items: updates,
+  };
+}
+
 async function main() {
   const dryRunArg = process.argv.includes('--dry-run');
   const daysArg = process.argv.find(arg => arg.startsWith('--days='));
   const days = daysArg ? parseInt(daysArg.split('=')[1], 10) : 30;
-  const result = await backfillSignalBlockReasons({ dryRun: dryRunArg, days });
+  const mode = process.argv.find(arg => arg.startsWith('--mode='))?.split('=')[1] || 'missing';
+  const result = mode === 'reclassify'
+    ? await reclassifySignalBlockReasons({ dryRun: dryRunArg, days })
+    : await backfillSignalBlockReasons({ dryRun: dryRunArg, days });
   console.log(JSON.stringify(result, null, 2));
 }
 

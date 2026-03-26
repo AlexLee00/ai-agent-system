@@ -1502,3 +1502,7 @@
 | `node --check bots/investment/shared/db.js` | ✅ `getRecentBlockedSignalByCode()` helper 추가 후 문법 통과 |
 | `node --check bots/investment/team/hanul.js` | ✅ 국내장 `LIVE/MOCK` BUY에 `mock_untradable_symbol` 24시간 쿨다운을 추가한 뒤 문법 통과 |
 | `node --check bots/investment/scripts/health-report.js` | ✅ `mock_untradable_symbol` / `mock_untradable_symbol_cooldown` 관찰 섹션 추가 후 문법 통과 |
+| `node --check bots/investment/scripts/backfill-signal-block-reasons.js` | ✅ `--mode=reclassify` 추가 후 문법 통과 |
+| `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30 --dry-run` | ✅ `updated=1`, 대상 `002630`, `domestic_order_rejected -> mock_untradable_symbol` 재분류 예정 확인 |
+| `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30` | ✅ `002630` 실패 1건 실제 재분류 완료 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `mockUntradableSymbolHealth.total=1`, `002630 mock 주문 불가 1건`, 운영 판단에 `최근 24시간 KIS mock 주문 불가 종목 1건` 반영 확인 |
