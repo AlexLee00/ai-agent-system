@@ -183,18 +183,31 @@ async function buildDailySummaryIntegrityHealth() {
 
 async function buildCancelCounterDriftHealth() {
   try {
-    const rows = await pgPool.query('reservation', `
-      SELECT timestamp, resolved, title, message, date, start_time
-      FROM alerts
-      WHERE title = $1
-        AND timestamp >= to_char(now() - interval '24 hours', 'YYYY-MM-DD HH24:MI:SS')
-      ORDER BY timestamp DESC
-      LIMIT 20
-    `, [CANCEL_COUNTER_DRIFT_TITLE]);
+    const [rows, unresolvedRawRows] = await Promise.all([
+      pgPool.query('reservation', `
+        SELECT timestamp, resolved, title, message, date, start_time
+        FROM alerts
+        WHERE title = $1
+          AND timestamp >= to_char(now() - interval '24 hours', 'YYYY-MM-DD HH24:MI:SS')
+        ORDER BY timestamp DESC
+        LIMIT 20
+      `, [CANCEL_COUNTER_DRIFT_TITLE]),
+      pgPool.query('reservation', `
+        SELECT ck.cancelled_at, r.id, r.date, r.start_time, r.end_time, r.room, r.phone
+        FROM cancelled_keys ck
+        JOIN reservations r
+          ON ck.cancel_key = 'cancelid|' || r.id::text
+        WHERE r.status = 'completed'
+          AND r.date > to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')
+          AND ck.cancelled_at::timestamp > NOW() - INTERVAL '7 days'
+        ORDER BY ck.cancelled_at DESC
+        LIMIT 20
+      `),
+    ]);
 
-    const unresolved = rows.filter((row) => Number(row.resolved || 0) === 0);
+    const unresolvedAlerts = rows.filter((row) => Number(row.resolved || 0) === 0);
     const latest = rows[0] || null;
-    const samples = rows.slice(0, 3).map((row) => {
+    const alertSamples = rows.slice(0, 3).map((row) => {
       const timestamp = row.timestamp || '시각 미상';
       const message = String(row.message || '')
         .replace(/\s+/g, ' ')
@@ -202,8 +215,11 @@ async function buildCancelCounterDriftHealth() {
         .slice(0, 120);
       return `  ${timestamp} — ${message || '상세 메시지 없음'}`;
     });
+    const rawSamples = unresolvedRawRows.slice(0, 3).map((row) =>
+      `  ${row.phone} ${row.date} ${row.start_time}~${row.end_time} ${row.room} — 네이버 취소됐으나 Picco 미반영`,
+    );
 
-    if (rows.length === 0) {
+    if (rows.length === 0 && unresolvedRawRows.length === 0) {
       return {
         ok: ['  취소 카운터 드리프트: 최근 24시간 경고 없음'],
         warn: [],
@@ -215,9 +231,12 @@ async function buildCancelCounterDriftHealth() {
     }
 
     const warn = [
-      `  취소 카운터 드리프트: 최근 24시간 ${rows.length}건`,
-      `  미해결: ${unresolved.length}건`,
+      `  취소 카운터 드리프트: 최근 24시간 알림 ${rows.length}건`,
+      `  미해결 알림: ${unresolvedAlerts.length}건`,
     ];
+    if (unresolvedRawRows.length > 0) {
+      warn.push(`  실예약 기준 미반영 취소: ${unresolvedRawRows.length}건`);
+    }
     if (latest?.timestamp) {
       warn.push(`  최신 감지: ${latest.timestamp}`);
     }
@@ -225,9 +244,9 @@ async function buildCancelCounterDriftHealth() {
     return {
       ok: [],
       warn,
-      samples,
+      samples: rawSamples.length > 0 ? rawSamples : alertSamples,
       totalCount: rows.length,
-      unresolvedCount: unresolved.length,
+      unresolvedCount: unresolvedAlerts.length + unresolvedRawRows.length,
       latestTimestamp: latest?.timestamp || null,
     };
   } catch (error) {

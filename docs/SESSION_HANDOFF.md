@@ -1295,3 +1295,17 @@
 - 의미:
   - 지금 당장 필요한 구조는 국내장 수집 폭을 더 줄이고, 희소 데이터 심볼을 원천 장애와 분리해서 읽는 것이다.
   - 나중에는 `data_sparsity_watch`를 health/report 상위 섹션으로 분리해 신규 ETF/ETN/희소 심볼을 별도 품질 큐로 다룰 수 있다.
+## 2026-03-26 10:05 KST — 덱스터 오류 보고 경계 복구 (trade_review false positive 제거 + Picco 실제 미반영 노출)
+
+- 덱스터 오류 보고를 재점검한 결과, `investment trade_review 무결성`과 `Picco 취소 실패`가 같은 방식의 stale 패턴이 아니었다.
+- 실제 확인:
+  - [validate-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-trade-review.js) 기준 종료 거래 `19건`, `findings=0`
+  - [database.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/checks/database.js)는 여전히 `ABS(pnl_percent) < 1` 기반 SQL을 써서 `0.2747%` 같은 정상 소수 수익도 `pnl_percent 스케일 이상`으로 오판하고 있었다.
+  - 반면 reservation DB에는 `010-3157-4920 / 2026-04-05 / 10:00~12:30 / A2` 건이 여전히 `future completed + cancelled_key`로 남아 있어 `Picco 취소 실패`는 실제 unresolved 이슈였다.
+- 조치:
+  - [database.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/checks/database.js)의 `badPercentScale` SQL을 `pnl_amount / entry_value` 기반 ratio-scale 판정으로 교체해 `validate-trade-review.js`와 같은 기준으로 맞췄다.
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-report.js)의 `buildCancelCounterDriftHealth()`가 기존 alert 로그뿐 아니라 `cancelled_keys + future completed reservations` raw mismatch도 함께 보게 보강했다.
+  - stale로 남아 있던 `DB 무결성 / investment trade_review 무결성` 패턴 row는 직접 정리했다.
+- 현재 의미:
+  - 지금 당장 필요한 구조는 덱스터가 false-positive `trade_review` 경고는 제거하되, Picco raw mismatch처럼 실제 unresolved 상태는 health/report에서도 숨기지 않는 것이다.
+  - 나중에는 reservation 쪽도 `alert 기반 감지`와 `raw DB mismatch`를 분리한 2축 health로 정리할 수 있다.

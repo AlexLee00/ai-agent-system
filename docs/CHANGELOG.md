@@ -2195,3 +2195,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 국내장 기본 dynamic universe cap을 `15 -> 10`으로 낮춰 wide universe 압박을 완화
 - `아리아`의 `데이터 부족` 로그를 `이력 부족으로 스킵` 톤으로 조정해 hard error와 품질 경고를 분리
 - 국내장 `wide_universe / collect_overload_detected / debate_capacity_hot` 해석 노이즈를 줄이는 2차 완화 패치
+## [2026-03-26] dexter report alignment for trade_review and Picco drift
+
+- `bots/claude/lib/checks/database.js`의 `investment trade_review 무결성` 판정을 `ABS(pnl_percent) < 1` 휴리스틱에서 실제 ratio-scale 판정으로 수정
+- `bots/reservation/scripts/health-report.js`가 `alerts`뿐 아니라 `cancelled_keys + future completed reservations` raw mismatch도 취소 드리프트로 집계
+- 결과적으로 `trade_review` false-positive는 제거하고, 실제 Picco 미반영 건은 health/report에서 다시 드러나도록 정렬

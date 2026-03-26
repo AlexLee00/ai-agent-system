@@ -162,8 +162,9 @@ async function checkInvestmentPostgres(items) {
             WHERE status = 'closed'
               AND exit_time IS NOT NULL
               AND pnl_percent IS NOT NULL
-              AND ABS(pnl_percent) > 0
-              AND ABS(pnl_percent) < 1
+              AND entry_value > 0
+              AND pnl_amount IS NOT NULL
+              AND ABS(pnl_percent - ROUND((pnl_amount / entry_value)::numeric, 6)) <= 0.0005
           `),
           pgPool.get('investment', `
             SELECT COUNT(*) AS cnt
