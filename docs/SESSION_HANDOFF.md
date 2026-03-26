@@ -45,6 +45,29 @@
   - `data_sparsity_watch`가 health/report에도 따로 드러나야 하는지 후속 검토
   - 필요하면 국내장 `max_dynamic=15`를 더 낮추는 2차 튜닝 검토
 
+## 2026-03-26 09:04 KST — 루나 `trade_review` false warning 복구
+
+- 요청 배경:
+  - 루나 헬스 알림이 `종료 거래 12건 중 1건 점검 필요`를 띄웠고, `trade_review` 정합성 이상으로 분류되고 있었다.
+- 확인 결과:
+  - 대상은 `TRD-20260319-001` (`KAT/USDT`, PAPER)
+  - `pnl_percent_stored=0.2747`, `pnl_percent_expected=0.2747`
+  - 실제 데이터는 정상인데 [validate-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-trade-review.js)의 `0 < pnl_percent < 1` 휴리스틱이 `0.2747%` 같은 정상 저수익 거래를 `pnl_percent_ratio_scale`로 오판하고 있었다.
+- 반영:
+  - [validate-trade-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-trade-review.js)
+    - 단순 절대값 기준 `isSuspiciousPercent()` 제거
+    - 대신 `stored pnl_percent`가 `expected pnl_percent / 100`에 가깝게 저장된 경우만 `ratio_scale`로 분류하도록 `isRatioScaledPercent()`로 교체
+- 의미:
+  - 실제로는 정상인 저수익 거래를 health warning으로 과대 해석하던 false positive를 제거했다.
+  - 이제 `trade_review` 경고는 실제 배율 저장 오류나 리뷰 누락에 더 가깝게 수렴한다.
+- 검증:
+  - `node --check bots/investment/scripts/validate-trade-review.js`
+  - `node bots/investment/scripts/validate-trade-review.js --days=30`
+    - `findings=0`
+  - `node bots/investment/scripts/health-report.js --json`
+    - `tradeReview.findings=0`
+    - `decision.reasons`에서 `trade_review 정합성 이슈` 제거 확인
+
 ---
 
 ## 2026-03-25 — worker-web 운영 화면 auth-ready 경계 / 공통 로더 / 상태 UI 표준화

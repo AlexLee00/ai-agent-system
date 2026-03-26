@@ -52,6 +52,17 @@
 | `node --input-type=module -e \"... capDynamicUniverse(['A','B','C','D'], 2, 'test') ...\"` | ✅ `4개 -> 2개` cap 로그와 결과 배열 확인 |
 | `node --input-type=module -e \"... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ...\"` | ✅ `신규/희소 심볼의 이력 부족...` 경고 문구 확인 |
 
+## 2026-03-26
+
+### 루나 trade_review false warning 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/scripts/validate-trade-review.js` | ✅ ratio-scale 판정 로직 수정 후 문법 통과 |
+| `node bots/investment/scripts/validate-trade-review.js --days=30` | ✅ `closedTrades=12`, `findings=0`, `items=[]` 확인 |
+| `node --input-type=module -e \"... SELECT trade_id, symbol, entry_value, pnl_amount, pnl_percent FROM investment.trade_journal WHERE trade_id='TRD-20260319-001' ...\"` | ✅ `pnl_percent=0.2747`, `pnl_amount=0.0274725...`, `entry_value=10`으로 정상 저수익 퍼센트 저장값 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `tradeReview.findings=0`, health decision에서 `trade_review 정합성 이슈` 사라짐 확인 |
+
 ## 2026-03-23
 
 ### 비디오팀 Phase 3 과제 F `step-proposal-engine`

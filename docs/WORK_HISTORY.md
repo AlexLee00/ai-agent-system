@@ -22,9 +22,25 @@
   - `node --check bots/investment/shared/pipeline-market-runner.js`
   - `node --check bots/investment/markets/domestic.js`
   - `node --check bots/investment/markets/overseas.js`
-  - `node --input-type=module ... getDomesticScreeningMaxDynamic/getOverseasScreeningMaxDynamic ...`
-  - `node --input-type=module ... capDynamicUniverse(['A','B','C','D'], 2, 'test') ...`
-  - `node --input-type=module ... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ...`
+- `node --input-type=module ... getDomesticScreeningMaxDynamic/getOverseasScreeningMaxDynamic ...`
+- `node --input-type=module ... capDynamicUniverse(['A','B','C','D'], 2, 'test') ...`
+- `node --input-type=module ... summarizeCollectWarnings(['data_sparsity_watch'], { dataSparsityFailures: 7 }) ...`
+
+## 2026-03-26: 루나 trade_review false warning 복구
+
+- 루나 헬스 알림 기준 `종료 거래 12건 중 1건 점검 필요`를 다시 확인했다.
+- `node bots/investment/scripts/validate-trade-review.js --days=30` 결과 대상은 `TRD-20260319-001` (`KAT/USDT`, PAPER) 1건이었고, 이슈는 `pnl_percent_ratio_scale`뿐이었다.
+- 실데이터 조회 결과:
+  - `entry_value=10`
+  - `pnl_amount=0.0274725...`
+  - `pnl_percent=0.2747`
+  - 즉 `0.2747%`가 정상 저장된 케이스였다.
+- 기존 `validate-trade-review.js`는 `0 < pnl_percent < 1`이면 무조건 suspicious로 봤기 때문에, 정상 저수익률까지 false warning으로 올리고 있었다.
+- 수정 후에는 `stored pnl_percent`가 `expected pnl_percent / 100`에 가까운 경우만 `ratio_scale`로 판단한다.
+- 검증:
+  - `node --check bots/investment/scripts/validate-trade-review.js`
+  - `node bots/investment/scripts/validate-trade-review.js --days=30` → `findings=0`
+  - `node bots/investment/scripts/health-report.js --json` → `tradeReview.findings=0`
 
 ## 2026-03-25: 스카 매출 두 축 source of truth 문서화
 

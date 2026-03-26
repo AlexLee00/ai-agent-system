@@ -9,10 +9,14 @@ const daysArg = args.find(arg => arg.startsWith('--days='));
 const DAYS = daysArg ? parseInt(daysArg.split('=')[1], 10) : 30;
 const FIX = args.includes('--fix');
 
-function isSuspiciousPercent(value) {
-  if (value == null) return false;
-  const abs = Math.abs(Number(value));
-  return abs > 0 && abs < 1;
+function isRatioScaledPercent(storedPercent, expectedPercent) {
+  if (storedPercent == null || expectedPercent == null) return false;
+  const stored = Number(storedPercent);
+  const expected = Number(expectedPercent);
+  if (!Number.isFinite(stored) || !Number.isFinite(expected)) return false;
+  if (expected === 0) return false;
+  const ratioCandidate = Number((expected / 100).toFixed(6));
+  return Math.abs(stored - ratioCandidate) <= 0.0005;
 }
 
 export async function validateTradeReview({ days = 30, fix = false } = {}) {
@@ -55,7 +59,7 @@ export async function validateTradeReview({ days = 30, fix = false } = {}) {
     if (!row.review_trade_id) {
       issues.push('missing_review');
     }
-    if (isSuspiciousPercent(row.pnl_percent)) {
+    if (isRatioScaledPercent(row.pnl_percent, expectedPnlPercent)) {
       issues.push('pnl_percent_ratio_scale');
     }
     if (row.review_trade_id && row.max_favorable == null) {
