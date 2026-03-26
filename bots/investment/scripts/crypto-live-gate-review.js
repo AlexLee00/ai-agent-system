@@ -146,6 +146,15 @@ function aggregateTrades(tradeRows) {
   return summary;
 }
 
+function getTradeModeCounts(trades, mode) {
+  const bucket = trades.byMode[String(mode || 'normal').toUpperCase()] || { total: 0, live: 0, paper: 0 };
+  return {
+    total: Number(bucket.total || 0),
+    live: Number(bucket.live || 0),
+    paper: Number(bucket.paper || 0),
+  };
+}
+
 function aggregateBlocks(blockRows) {
   const mapped = {};
   for (const row of blockRows) {
@@ -164,9 +173,12 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
   const facts = [];
   const inferred = [];
   const recommendations = [];
+  const validationTrades = getTradeModeCounts(trades, 'validation');
+  const normalTrades = getTradeModeCounts(trades, 'normal');
 
   facts.push(`최근 ${days}일 암호화폐 decision ${pipeline.decision}건, BUY ${pipeline.buy}건, approved ${pipeline.approved}건, executed ${pipeline.executed}건`);
   facts.push(`최근 ${days}일 암호화폐 체결 ${trades.total}건 (LIVE ${trades.live} / PAPER ${trades.paper})`);
+  facts.push(`trade_mode별 체결: NORMAL ${normalTrades.total}건 (LIVE ${normalTrades.live} / PAPER ${normalTrades.paper}), VALIDATION ${validationTrades.total}건 (LIVE ${validationTrades.live} / PAPER ${validationTrades.paper})`);
   facts.push(`weakSignalSkipped ${pipeline.weak}건${pipeline.weakTop ? `, 최다 사유 ${pipeline.weakTop}` : ''}`);
   facts.push(`재진입 차단: PAPER ${blocks.paperReentry}건 / LIVE ${blocks.liveReentry}건 / same-day ${blocks.sameDayReentry}건`);
   facts.push(`최근 ${days}일 종료된 암호화폐 거래 리뷰 ${closedReviews}건`);
@@ -195,8 +207,15 @@ function buildReview({ days, pipeline, trades, blocks, closedReviews }) {
     inferred.push('현재 재진입 차단이 주요 병목으로 두드러지지는 않는다');
   }
 
+  if (validationTrades.live > 0 && validationTrades.paper === 0) {
+    inferred.push('현재 암호화폐 validation은 PAPER 검증이 아니라 LIVE 소액 검증 레일로 운영되고 있다');
+    recommendations.push('LIVE gate 문구와 health 리포트에서 validation LIVE와 PAPER 부족을 분리해 해석해야 한다');
+  } else if (validationTrades.paper > 0) {
+    inferred.push('암호화폐 validation 레일에 PAPER 검증 표본이 일부 존재한다');
+  }
+
   let liveDecision = 'blocked';
-  let liveReason = 'PAPER 체결 또는 청산 검증이 아직 부족함';
+  let liveReason = 'validation LIVE 표본은 있으나 PAPER 검증 표본이 부족하고 near-threshold weak가 아직 높음';
   if (trades.live > 0 && closedReviews >= 3 && blocks.liveReentry === 0 && pipeline.weak <= Math.max(5, pipeline.executed)) {
     liveDecision = 'candidate';
     liveReason = '제한형 LIVE 검토 후보 조건에 일부 접근';

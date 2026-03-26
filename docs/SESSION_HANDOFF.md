@@ -1309,3 +1309,20 @@
 - 현재 의미:
   - 지금 당장 필요한 구조는 덱스터가 false-positive `trade_review` 경고는 제거하되, Picco raw mismatch처럼 실제 unresolved 상태는 health/report에서도 숨기지 않는 것이다.
   - 나중에는 reservation 쪽도 `alert 기반 감지`와 `raw DB mismatch`를 분리한 2축 health로 정리할 수 있다.
+## 2026-03-26 10:58 KST — crypto LIVE gate 리포트 표현을 실제 실행 현실에 맞게 정렬
+
+- 최근 binance 체결 12건을 직접 분해한 결과, `LIVE 12 / PAPER 0`은 집계 오류가 아니라 실제 실행 구조였다.
+- 실제 확인:
+  - 최근 12건 전부 `trades.paper = false`
+  - 그중 `FET/USDT`, `CFG/USDT`, `RENDER/USDT`, `SIGN/USDT`는 `trade_mode=validation`인데도 `is_paper=false`
+  - 즉 현재 암호화폐 validation은 PAPER 검증이 아니라 `LIVE 소액 검증` 레일로 동작 중이다.
+- 문제:
+  - [crypto-live-gate-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/crypto-live-gate-review.js)와 [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)는 여전히 `PAPER 체결 또는 청산 검증이 아직 부족함` 중심 문구를 써서 현재 실행 현실을 과도하게 단순화하고 있었다.
+- 조치:
+  - `crypto-live-gate-review.js`에 `trade_mode별 체결` 사실 라인을 추가
+  - `validation LIVE / PAPER` 분해를 `facts`, `inferred`, `recommendations`에 반영
+  - gate 사유를 `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족하고 near-threshold weak가 아직 높음`으로 구체화
+  - 투자팀 health 리포트도 같은 분해 정보를 직접 노출하도록 맞춤
+- 현재 의미:
+  - 지금 당장 필요한 구조는 gate를 푸는 것이 아니라, `validation LIVE`와 `PAPER 부족`를 분리해 읽는 것이다.
+  - 나중에는 crypto에서 `validation-live`, `paper-validation`, `normal-live`를 명시적으로 분리한 운영 정책 문서가 필요하다.
