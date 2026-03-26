@@ -153,6 +153,16 @@ function loadCapitalPolicySnapshot() {
   }
 }
 
+function readLogTailLines(logPath, maxLines = 200) {
+  try {
+    const raw = readFileSync(logPath, 'utf8');
+    const lines = raw.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+    return lines.slice(-maxLines);
+  } catch {
+    return [];
+  }
+}
+
 function resolveLaneTradeLimit(policy, exchange, tradeMode) {
   const exchangeConfig = policy.byExchange?.[exchange] || {};
   const tradeModeConfig = exchangeConfig.trade_modes?.[tradeMode] || {};
@@ -447,6 +457,64 @@ async function loadMockUntradableSymbolHealth(windowMinutes = 1440) {
   };
 }
 
+async function loadDomesticCollectPressure(logLines = 200) {
+  const logPath = SCHEDULED_SERVICE_DEPLOYMENTS['ai.investment.domestic']?.errorLogPath;
+  const lines = readLogTailLines(logPath, logLines);
+  const counts = {
+    wideUniverse: 0,
+    collectOverload: 0,
+    concurrencyGuard: 0,
+    debateCapacityHot: 0,
+    dataSparsity: 0,
+    externalQuoteFailures: 0,
+  };
+  const sparseSymbols = new Set();
+
+  for (const line of lines) {
+    if (line.includes('[경고] 국내주식 수집 |')) {
+      if (line.includes('wide_universe')) counts.wideUniverse += 1;
+      if (line.includes('collect_overload_detected')) counts.collectOverload += 1;
+      if (line.includes('concurrency_guard_active')) counts.concurrencyGuard += 1;
+    }
+    if (line.includes('[경고] 국내주식 판단 |') && line.includes('debate_capacity_hot')) {
+      counts.debateCapacityHot += 1;
+    }
+    if (line.includes('[아리아]') && line.includes('데이터 부족')) {
+      counts.dataSparsity += 1;
+      const match = line.match(/\[아리아\]\s+([A-Z0-9]+)\s/);
+      if (match?.[1]) sparseSymbols.add(match[1]);
+    }
+    if (line.includes('네이버 시세 API 실패') || line.includes('KIS 빈 응답')) {
+      counts.externalQuoteFailures += 1;
+    }
+  }
+
+  const totalSignals = counts.wideUniverse + counts.collectOverload + counts.concurrencyGuard + counts.debateCapacityHot + counts.dataSparsity + counts.externalQuoteFailures;
+  const warn = [];
+  if (counts.collectOverload > 0 || counts.wideUniverse > 0 || counts.concurrencyGuard > 0) {
+    warn.push(`  수집 압력: overload ${counts.collectOverload} / wide ${counts.wideUniverse} / concurrency ${counts.concurrencyGuard}`);
+  }
+  if (counts.debateCapacityHot > 0) {
+    warn.push(`  판단 압력: debate_capacity_hot ${counts.debateCapacityHot}회`);
+  }
+  if (counts.dataSparsity > 0) {
+    warn.push(`  data_sparsity: ${counts.dataSparsity}건 / 심볼 ${sparseSymbols.size}개`);
+  }
+  if (counts.externalQuoteFailures > 0) {
+    warn.push(`  외부 시세/순위 조회 실패: ${counts.externalQuoteFailures}건`);
+  }
+
+  return {
+    logLines,
+    okCount: warn.length === 0 ? 1 : 0,
+    warnCount: warn.length,
+    ok: warn.length === 0 ? ['  최근 국내장 수집 압력 신호 없음'] : [],
+    warn,
+    counts,
+    sparseSymbols: [...sparseSymbols].slice(0, 20),
+  };
+}
+
 async function loadDomesticRejectBreakdown(windowMinutes = 1440) {
   const rows = await pgPool.query(
     'investment',
@@ -703,6 +771,7 @@ function buildDecision(
   recentSignalBlockHealth,
   recentLaneBlockPressure,
   mockUntradableSymbolHealth,
+  domesticCollectPressure,
   domesticRejectBreakdown,
   tradeLaneHealth,
   stalePositionHealth,
@@ -746,6 +815,11 @@ function buildDecision(
         active: recentLaneBlockPressure.total >= 1,
         level: pressureLane?.count >= 3 ? 'medium' : 'low',
         reason: `최근 ${recentLaneBlockPressure.windowMinutes}분 일간 한도 압력 ${recentLaneBlockPressure.total}건 — 최다 rail ${pressureLane?.label || 'n/a'} ${pressureLane?.count || 0}건`,
+      },
+      {
+        active: domesticCollectPressure.warnCount > 0,
+        level: domesticCollectPressure.counts.collectOverload > 0 || domesticCollectPressure.counts.debateCapacityHot > 0 ? 'medium' : 'low',
+        reason: `국내장 최근 로그 ${domesticCollectPressure.logLines}줄 기준 수집 압력 — overload ${domesticCollectPressure.counts.collectOverload}, wide ${domesticCollectPressure.counts.wideUniverse}, debate ${domesticCollectPressure.counts.debateCapacityHot}, data_sparsity ${domesticCollectPressure.counts.dataSparsity}`,
       },
       {
         active: mockUntradableSymbolHealth.total > 0,
@@ -836,6 +910,7 @@ function formatText(report) {
         : ['  최근 일간 한도 rail 압력 없음'],
     },
     buildHealthCountSection(`■ KIS mock 주문 불가 종목(최근 ${Math.round(report.mockUntradableSymbolHealth.windowMinutes / 60)}시간)`, report.mockUntradableSymbolHealth, { okLimit: 1, warnLimit: 8 }),
+    buildHealthCountSection(`■ 국내장 수집 압력(최근 로그 ${report.domesticCollectPressure.logLines}줄)`, report.domesticCollectPressure, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
@@ -883,6 +958,7 @@ async function buildReport() {
   const recentSignalBlockHealth = await loadRecentSignalBlockHealth();
   const recentLaneBlockPressure = await loadRecentLaneBlockPressure();
   const mockUntradableSymbolHealth = await loadMockUntradableSymbolHealth();
+  const domesticCollectPressure = await loadDomesticCollectPressure();
   const domesticRejectBreakdown = await loadDomesticRejectBreakdown();
   const tradeLaneHealth = await loadTradeLaneHealth();
   const stalePositionHealth = await loadStalePositionHealth();
@@ -897,6 +973,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     mockUntradableSymbolHealth,
+    domesticCollectPressure,
     domesticRejectBreakdown,
     tradeLaneHealth,
     stalePositionHealth,
@@ -917,6 +994,7 @@ async function buildReport() {
     recentSignalBlockHealth,
     recentLaneBlockPressure,
     mockUntradableSymbolHealth,
+    domesticCollectPressure,
     domesticRejectBreakdown,
     tradeLaneHealth,
     stalePositionHealth,

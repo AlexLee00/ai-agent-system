@@ -4857,3 +4857,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - pending signal 간 간격을 `500ms -> 1100ms`로 상향했다.
 - 해석:
   - 국내장 실패 원인 중 큰 비중을 차지하던 `broker_rate_limited`를 줄이기 위해, 주문 레일을 시세 조회보다 더 보수적으로 운영하도록 입력 경계를 조정한 작업이다.
+
+## 2026-03-26: 국내장 수집 압력/희소 데이터 health 노출
+
+- `bots/investment/scripts/health-report.js`
+  - `loadDomesticCollectPressure()`를 추가했다.
+  - 국내장 err 로그 최근 200줄에서 `wide_universe`, `collect_overload_detected`, `concurrency_guard_active`, `debate_capacity_hot`, `data_sparsity`, 외부 시세/순위 조회 실패를 집계한다.
+  - health/report 상단에 `국내장 수집 압력` 섹션과 운영 판단 reason을 추가했다.
+- 해석:
+  - 오늘 국내장 자동화의 active 이슈가 주문 실패보다 collect pressure와 희소 심볼 노이즈에 있다는 점을 health 상단에서 바로 읽게 만든 작업이다.
