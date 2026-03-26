@@ -4,6 +4,14 @@
 
 ## 2026-03-26
 
+### 투자팀 국내장 collect pressure 최신 cycle 정렬
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/scripts/health-report.js` | ✅ 최신 domestic cycle window 집계 로직 추가 후 문법 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `domesticCollectPressure.windowLines=4`, `latestMetrics.symbols=11`, `latestMetrics.tasks=34`, `dataSparsity=2` 확인 |
+| `node bots/investment/scripts/health-report.js` | ✅ text report가 `최신 cycle / 로그 4줄` 기준으로 domestic collect pressure를 출력함 확인 |
+
 ### 투자팀 국내장 dynamic universe 2차 축소
 
 | 테스트 | 결과 |

@@ -9,6 +9,37 @@
 
 ---
 
+## 2026-03-26 22:48 KST — 투자팀 국내장 수집 압력 health 최신 cycle 정렬
+
+- 요청 배경:
+  - `domesticCollectPressure`는 err tail 200줄 누적 집계라 최신 runtime 개선이 바로 반영되지 않았다.
+  - 실제 최신 domestic cycle은 [investment-domestic.log](/tmp/investment-domestic.log) 기준 `symbols=11`, `tasks=34`, `failed=0`까지 내려왔는데도 health는 `overload 17 / wide 17 / debate 17 / data_sparsity 156`처럼 과장되어 보였다.
+- 반영:
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `sliceLatestDomesticPressureWindow()` 추가
+    - `readLastMatchingLine()` / `parseDomesticCollectMetrics()` 추가
+    - `loadDomesticCollectPressure()`가 이제 최신 `debate_capacity_hot` 경계로 잘라낸 **최신 cycle block**과 `/tmp/investment-domestic.log`의 최신 수집 메트릭을 함께 사용
+  - health/report 문구도 `최근 로그 200줄 기준`에서 `최신 cycle 기준`으로 변경
+- 의미:
+  - 투자팀 health가 과거 err 누적치가 아니라 현재 국내장 cycle의 실제 상태를 더 정확하게 읽게 됐다.
+  - 현재 domestic collect pressure 해석 기준은
+    - `symbols=11`
+    - `tasks=34`
+    - `overload=1`
+    - `wide=1`
+    - `debate=1`
+    - `data_sparsity=2`
+    다.
+- 검증:
+  - `node --check bots/investment/scripts/health-report.js`
+  - `node bots/investment/scripts/health-report.js --json`
+  - `node bots/investment/scripts/health-report.js`
+- 남은 TODO:
+  - 다음 domestic cycle에서도 `symbols/tasks`가 `10~11 / 34` 안팎으로 유지되는지 관찰
+  - `overload=1`이 계속 반복되면 `max_dynamic=6` 또는 prescreen source 품질 점검으로 이어가기
+
+---
+
 ## 2026-03-26 22:40 KST — 투자팀 국내장 dynamic universe 2차 축소
 
 - 요청 배경:
