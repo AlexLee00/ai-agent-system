@@ -163,6 +163,46 @@ function readLogTailLines(logPath, maxLines = 200) {
   }
 }
 
+function readLastMatchingLine(logPath, matcher, maxLines = 400) {
+  const lines = readLogTailLines(logPath, maxLines);
+  for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
+    if (matcher(lines[idx])) return lines[idx];
+  }
+  return null;
+}
+
+function sliceLatestDomesticPressureWindow(lines = []) {
+  const isDecisionBoundary = (line) =>
+    line.includes('[경고] 국내주식 판단 |') && line.includes('debate_capacity_hot');
+  const lastDecisionIdx = lines.map((line, idx) => ({ line, idx }))
+    .reverse()
+    .find(({ line }) => isDecisionBoundary(line))?.idx;
+  if (lastDecisionIdx == null) return lines;
+  const prevDecisionIdx = lines
+    .slice(0, lastDecisionIdx)
+    .map((line, idx) => ({ line, idx }))
+    .reverse()
+    .find(({ line }) => isDecisionBoundary(line))?.idx;
+  const start = prevDecisionIdx != null ? prevDecisionIdx + 1 : 0;
+  return lines.slice(start, lastDecisionIdx + 1);
+}
+
+function parseDomesticCollectMetrics(line = '') {
+  if (!line) return null;
+  const extractNumber = (pattern) => {
+    const match = line.match(pattern);
+    return match ? Number(match[1]) : null;
+  };
+  return {
+    symbols: extractNumber(/symbols=(\d+)/),
+    tasks: extractNumber(/tasks=(\d+)/),
+    concurrency: extractNumber(/concurrency=(\d+)/),
+    failed: extractNumber(/failed=(\d+)/),
+    coreFailed: extractNumber(/coreFailed=(\d+)/),
+    enrichFailed: extractNumber(/enrichFailed=(\d+)/),
+  };
+}
+
 function resolveLaneTradeLimit(policy, exchange, tradeMode) {
   const exchangeConfig = policy.byExchange?.[exchange] || {};
   const tradeModeConfig = exchangeConfig.trade_modes?.[tradeMode] || {};
@@ -460,6 +500,13 @@ async function loadMockUntradableSymbolHealth(windowMinutes = 1440) {
 async function loadDomesticCollectPressure(logLines = 200) {
   const logPath = SCHEDULED_SERVICE_DEPLOYMENTS['ai.investment.domestic']?.errorLogPath;
   const lines = readLogTailLines(logPath, logLines);
+  const windowLines = sliceLatestDomesticPressureWindow(lines);
+  const latestMetricLine = readLastMatchingLine(
+    '/tmp/investment-domestic.log',
+    (line) => line.includes('📈 [메트릭] 국내주식 수집 |'),
+    400,
+  );
+  const latestMetrics = parseDomesticCollectMetrics(latestMetricLine);
   const counts = {
     wideUniverse: 0,
     collectOverload: 0,
@@ -470,7 +517,7 @@ async function loadDomesticCollectPressure(logLines = 200) {
   };
   const sparseSymbols = new Set();
 
-  for (const line of lines) {
+  for (const line of windowLines) {
     if (line.includes('[경고] 국내주식 수집 |')) {
       if (line.includes('wide_universe')) counts.wideUniverse += 1;
       if (line.includes('collect_overload_detected')) counts.collectOverload += 1;
@@ -489,8 +536,10 @@ async function loadDomesticCollectPressure(logLines = 200) {
     }
   }
 
-  const totalSignals = counts.wideUniverse + counts.collectOverload + counts.concurrencyGuard + counts.debateCapacityHot + counts.dataSparsity + counts.externalQuoteFailures;
   const warn = [];
+  if (latestMetrics?.symbols != null || latestMetrics?.tasks != null) {
+    warn.push(`  최신 cycle 메트릭: symbols ${latestMetrics.symbols ?? 'n/a'} / tasks ${latestMetrics.tasks ?? 'n/a'} / concurrency ${latestMetrics.concurrency ?? 'n/a'} / failed ${latestMetrics.failed ?? 'n/a'}`);
+  }
   if (counts.collectOverload > 0 || counts.wideUniverse > 0 || counts.concurrencyGuard > 0) {
     warn.push(`  수집 압력: overload ${counts.collectOverload} / wide ${counts.wideUniverse} / concurrency ${counts.concurrencyGuard}`);
   }
@@ -506,12 +555,14 @@ async function loadDomesticCollectPressure(logLines = 200) {
 
   return {
     logLines,
+    windowLines: windowLines.length,
     okCount: warn.length === 0 ? 1 : 0,
     warnCount: warn.length,
     ok: warn.length === 0 ? ['  최근 국내장 수집 압력 신호 없음'] : [],
     warn,
     counts,
     sparseSymbols: [...sparseSymbols].slice(0, 20),
+    latestMetrics,
   };
 }
 
@@ -819,7 +870,7 @@ function buildDecision(
       {
         active: domesticCollectPressure.warnCount > 0,
         level: domesticCollectPressure.counts.collectOverload > 0 || domesticCollectPressure.counts.debateCapacityHot > 0 ? 'medium' : 'low',
-        reason: `국내장 최근 로그 ${domesticCollectPressure.logLines}줄 기준 수집 압력 — overload ${domesticCollectPressure.counts.collectOverload}, wide ${domesticCollectPressure.counts.wideUniverse}, debate ${domesticCollectPressure.counts.debateCapacityHot}, data_sparsity ${domesticCollectPressure.counts.dataSparsity}`,
+        reason: `국내장 최신 cycle(${domesticCollectPressure.windowLines}줄) 기준 수집 압력 — symbols ${domesticCollectPressure.latestMetrics?.symbols ?? 'n/a'}, tasks ${domesticCollectPressure.latestMetrics?.tasks ?? 'n/a'}, overload ${domesticCollectPressure.counts.collectOverload}, wide ${domesticCollectPressure.counts.wideUniverse}, debate ${domesticCollectPressure.counts.debateCapacityHot}, data_sparsity ${domesticCollectPressure.counts.dataSparsity}`,
       },
       {
         active: mockUntradableSymbolHealth.total > 0,
@@ -910,7 +961,7 @@ function formatText(report) {
         : ['  최근 일간 한도 rail 압력 없음'],
     },
     buildHealthCountSection(`■ KIS mock 주문 불가 종목(최근 ${Math.round(report.mockUntradableSymbolHealth.windowMinutes / 60)}시간)`, report.mockUntradableSymbolHealth, { okLimit: 1, warnLimit: 8 }),
-    buildHealthCountSection(`■ 국내장 수집 압력(최근 로그 ${report.domesticCollectPressure.logLines}줄)`, report.domesticCollectPressure, { okLimit: 1, warnLimit: 8 }),
+    buildHealthCountSection(`■ 국내장 수집 압력(최신 cycle / 로그 ${report.domesticCollectPressure.windowLines}줄, tail ${report.domesticCollectPressure.logLines}줄)`, report.domesticCollectPressure, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),

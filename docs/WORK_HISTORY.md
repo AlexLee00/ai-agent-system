@@ -40,6 +40,15 @@
   - health에 국내장 수집 압력을 먼저 노출한 뒤, 실제 병목을 줄이기 위한 2차 입력폭 축소 단계다.
   - 기존 `dynamic cap -> mock 불가 종목 필터 -> held merge` 구조는 유지하고, dynamic 후보 상한만 한 단계 더 내렸다.
 
+## 2026-03-26: 투자팀 국내장 수집 압력 health 최신 cycle 정렬
+
+- `bots/investment/scripts/health-report.js`
+  - `domesticCollectPressure`를 err tail 200줄 누적이 아니라 최신 domestic cycle block 기준으로 집계하도록 변경했다.
+  - `/tmp/investment-domestic.log`의 최신 `📈 [메트릭] 국내주식 수집` 라인을 함께 읽어 `symbols/tasks/concurrency/failed`를 health에 직접 노출한다.
+- 해석:
+  - 이전에는 최신 cycle이 `symbols=11`, `tasks=34`까지 내려왔어도 health가 누적 err tail 때문에 과장돼 보였다.
+  - 이제 domestic collect pressure는 “현재 cycle 상태”를 source of truth로 읽는다.
+
 ## 2026-03-25: 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
 
 - `bots/investment/shared/secrets.js`에 `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter를 추가했다.
