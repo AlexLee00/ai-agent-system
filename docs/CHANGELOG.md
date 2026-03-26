@@ -45,6 +45,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 국내장/해외장 수집 범위를 crypto와 같은 `dynamic cap -> held merge` 패턴으로 맞춤
   - 신규/희소 심볼의 캔들 부족을 원천 API 장애와 같은 error로 과해석하지 않도록 수집 노이즈를 분리
 
+## 12주차 후속 (2026-03-26) — 루나 trade_review ratio-scale false warning 복구
+
+- `bots/investment/scripts/validate-trade-review.js`
+  - `0 < pnl_percent < 1`이면 무조건 suspicious로 보던 휴리스틱 제거
+  - 실제 문제인 `퍼센트값 대신 비율값(예: expected/100)` 저장 케이스만 `pnl_percent_ratio_scale`로 판정하도록 변경
+- 의미:
+  - `0.2747%` 같은 정상 저수익 거래를 `trade_review 정합성 이상`으로 오판하던 false warning 제거
+  - 루나 헬스 알림의 `trade_review` 섹션이 실제 누락/배율 오류 중심으로 다시 정렬
+
 ## 12주차 후속 (2026-03-25) — worker-web 운영 화면 auth-ready 로딩 / 상태 UI 표준화
 
 - `bots/worker/web/app/sales/page.js`
