@@ -2355,3 +2355,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 운영 판단 reason에도 국내장 수집 압력 요약 반영
 - 의미:
   - 국내장 자동화의 핵심 병목을 주문 실패뿐 아니라 `wide_universe`, `collect_overload_detected`, `debate_capacity_hot`, `data_sparsity`까지 포함해 health 상단에서 직접 읽게 함
+- `fix(investment): add crypto validation soft budget guard`
+  - `runtime-config`에 `validationSoftBudget.binance.reserveDailyBuySlots=2` 기본값 추가
+  - `nemesis`가 `binance + validation + BUY`에 대해 일간 validation BUY soft cap(`8/10`)을 approval 단계에서 먼저 적용
+  - 새 block code: `validation_daily_budget_soft_cap`

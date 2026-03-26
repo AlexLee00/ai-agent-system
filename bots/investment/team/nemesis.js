@@ -10,6 +10,7 @@
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
 import { getInvestmentTradeMode, isKisPaper } from '../shared/secrets.js';
+import { getCapitalConfig, getDailyTradeCount } from '../shared/capital-manager.js';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -17,7 +18,12 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
-import { getMockUntradableSymbolCooldownMinutes, getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
+import {
+  getMockUntradableSymbolCooldownMinutes,
+  getNemesisRuntimeConfig,
+  getValidationSoftBudgetConfig,
+  isDynamicTpSlEnabled,
+} from '../shared/runtime-config.js';
 const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
 function getCryptoRiskThresholds() {
   const base = {
@@ -609,6 +615,7 @@ export async function evaluateSignal(signal, opts = {}) {
   const persist    = opts.persist !== false;
   const isStockExchange = signal.exchange === 'kis' || signal.exchange === 'kis_overseas';
   const isCryptoExchange = signal.exchange === 'binance';
+  const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const stockThresholds = getStockRiskThresholds();
 
   // ── v1 하드 규칙 ──
@@ -675,6 +682,45 @@ export async function evaluateSignal(signal, opts = {}) {
       if (persist) await notifyRiskRejection({ symbol, action, reason });
       if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
       return { approved: false, reason };
+    }
+  }
+
+  if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
+    const softBudget = getValidationSoftBudgetConfig('binance');
+    if (softBudget.enabled && softBudget.reserveDailyBuySlots > 0) {
+      const policy = getCapitalConfig('binance', 'validation');
+      const softCap = Math.max(1, policy.max_daily_trades - softBudget.reserveDailyBuySlots);
+      const validationDailyBuys = await getDailyTradeCount({
+        exchange: 'binance',
+        tradeMode: 'validation',
+        side: 'buy',
+      }).catch(() => 0);
+
+      if (validationDailyBuys >= softCap) {
+        const reason =
+          `crypto validation 일간 예산 soft cap 도달: 현재 ${validationDailyBuys}건 / soft cap ${softCap}건` +
+          ` (총 한도 ${policy.max_daily_trades}건, reserve ${softBudget.reserveDailyBuySlots}건)`;
+        if (persist && signal.id) {
+          await db.updateSignalBlock(signal.id, {
+            status: SIGNAL_STATUS.REJECTED,
+            reason,
+            code: 'validation_daily_budget_soft_cap',
+            meta: {
+              exchange: signal.exchange,
+              symbol,
+              action,
+              trade_mode: signalTradeMode,
+              daily_validation_buys: validationDailyBuys,
+              soft_cap: softCap,
+              hard_cap: policy.max_daily_trades,
+              reserve_slots: softBudget.reserveDailyBuySlots,
+            },
+          }).catch(() => {});
+        }
+        if (persist) await notifyRiskRejection({ symbol, action, reason });
+        if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
+        return { approved: false, reason };
+      }
     }
   }
 
