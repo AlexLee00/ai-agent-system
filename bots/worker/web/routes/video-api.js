@@ -4,6 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { EventEmitter } = require('events');
 const multer = require('multer');
 const { fork, spawn } = require('child_process');
 
@@ -12,11 +13,14 @@ const { runWithN8nFallback } = require('../../../../packages/core/lib/n8n-runner
 const { buildWebhookCandidates } = require('../../../../packages/core/lib/n8n-webhook-registry');
 const { auditLog } = require('../../lib/company-guard');
 const { probeDurationMs } = require('../../../video/lib/ffmpeg-preprocess');
+const { buildMediaBinaryEnv } = require('../../../video/lib/media-binary-env');
 const { resolveVideoN8nToken: resolveSharedVideoN8nToken } = require('../../../video/lib/video-n8n-config');
 const { loadConfig } = require('../../../video/src/index');
 const { storeEditFeedback, estimateWithRAG } = require('../../../video/lib/video-rag');
 
 const router = express.Router();
+const videoSessionEvents = new EventEmitter();
+videoSessionEvents.setMaxListeners(0);
 
 const PROJECT_ROOT = path.join(__dirname, '../../../..');
 const VIDEO_PROJECT_ROOT = path.join(PROJECT_ROOT, 'bots/video');
@@ -208,6 +212,7 @@ function runPipelineDirect({ sessionId, pairIndex, videoPath, audioPath, extraAr
     cwd: PROJECT_ROOT,
     detached: true,
     stdio: 'ignore',
+    env: buildMediaBinaryEnv(process.env),
   });
   child.unref();
   return { ok: true, source: 'direct', pid: child.pid };
@@ -218,9 +223,15 @@ function runRenderDirect(editId) {
     cwd: PROJECT_ROOT,
     detached: true,
     stdio: 'ignore',
+    env: buildMediaBinaryEnv(process.env),
   });
   child.unref();
   return { ok: true, source: 'direct', pid: child.pid };
+}
+
+function emitVideoSessionEvent(sessionId, event, payload = {}) {
+  if (!sessionId || !event) return;
+  videoSessionEvents.emit(`session:${sessionId}`, { event, payload });
 }
 
 function detectFileType(file) {
@@ -382,6 +393,21 @@ function derivePreviewPath(edit) {
 function deriveVttPath(edit) {
   if (!edit?.trace_id) return null;
   return path.join(VIDEO_TEMP_ROOT, `run-${String(edit.trace_id).slice(0, 8)}`, 'subtitle.vtt');
+}
+
+function deriveSyncMapPath(edit) {
+  if (!edit?.trace_id) return null;
+  return path.join(VIDEO_TEMP_ROOT, `run-${String(edit.trace_id).slice(0, 8)}`, 'sync_map.json');
+}
+
+function isEditInteractiveReady(edit) {
+  const syncMapPath = deriveSyncMapPath(edit);
+  return Boolean(
+    edit?.id
+      && syncMapPath
+      && fs.existsSync(syncMapPath)
+      && ['preview_ready', 'completed'].includes(String(edit?.status || ''))
+  );
 }
 
 function sendNotFound(res, message = '대상을 찾을 수 없습니다.') {
@@ -711,6 +737,26 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
       return sendBadRequest(res, '편집할 영상-음성 세트를 만들 수 없습니다.');
     }
 
+    const existingEdits = await listEdits(sessionId);
+    const readyExistingEdit = existingEdits.find((edit) => isEditInteractiveReady(edit)) || null;
+    if (existingEdits.length) {
+      return res.json({
+        success: true,
+        status: session.status || 'processing',
+        pair_count: pairs.length,
+        dispatches: existingEdits.map((edit) => ({
+          pairIndex: Number(edit.pair_index || 1),
+          source: 'existing',
+          webhookUrl: null,
+          pid: null,
+          editId: readyExistingEdit?.id === edit.id ? edit.id : null,
+          verified: true,
+          ready: readyExistingEdit?.id === edit.id,
+          status: edit.status || null,
+        })),
+      });
+    }
+
     const introFile = files.find((file) => file.file_type === 'intro');
     const outroFile = files.find((file) => file.file_type === 'outro');
     const logoFile = files.find((file) => file.file_type === 'logo');
@@ -798,9 +844,19 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
         source: dispatch?.source || 'unknown',
         webhookUrl: dispatch?.webhookUrl || null,
         pid: dispatch?.pid || null,
-        editId: createdEdit?.id || null,
+        editId: isEditInteractiveReady(createdEdit) ? createdEdit.id : null,
         verified: Boolean(createdEdit),
+        ready: isEditInteractiveReady(createdEdit),
+        status: createdEdit?.status || null,
       });
+
+      if (isEditInteractiveReady(createdEdit)) {
+        emitVideoSessionEvent(sessionId, 'editor-ready', {
+          sessionId,
+          editId: createdEdit.id,
+          pairIndex: pair.pairIndex,
+        });
+      }
     }
 
     res.json({
@@ -815,6 +871,94 @@ router.post('/sessions/:id/start', auditLog('START', 'video_sessions'), async (r
       error_message: toErrorMessage(error),
     }).catch(() => {});
     res.status(500).json({ error: toErrorMessage(error) });
+  }
+});
+
+router.get('/sessions/:id/events', async (req, res) => {
+  const sessionId = Number.parseInt(req.params.id, 10);
+  try {
+    const session = await getSessionForCompany(sessionId, req.user.company_id);
+    if (!session) return sendNotFound(res, '세션을 찾을 수 없습니다.');
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const sendEvent = (eventName, payload) => {
+      res.write(`event: ${eventName}\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    let emittedEditId = null;
+    let emittedFailureKey = '';
+    const emitEditorReadyIfExists = async () => {
+      const edits = await listEdits(sessionId);
+      const existingEdit = edits.find((edit) => isEditInteractiveReady(edit)) || null;
+      if (existingEdit?.id && existingEdit.id !== emittedEditId) {
+        emittedEditId = existingEdit.id;
+        sendEvent('editor-ready', {
+          sessionId,
+          editId: existingEdit.id,
+        });
+        return true;
+      }
+      const failedEdit = edits.find((edit) => String(edit?.status || '') === 'failed') || null;
+      if (failedEdit?.id) {
+        const failureKey = `${failedEdit.id}:${failedEdit.error_message || ''}`;
+        if (failureKey !== emittedFailureKey) {
+          emittedFailureKey = failureKey;
+          sendEvent('editor-failed', {
+            sessionId,
+            editId: failedEdit.id,
+            error: failedEdit.error_message || '편집 파이프라인이 실패했습니다.',
+          });
+        }
+      }
+      const nextSession = await getSessionForCompany(sessionId, req.user.company_id);
+      if (String(nextSession?.status || '') === 'failed') {
+        const failureKey = `session:${nextSession.id}:${nextSession.error_message || ''}`;
+        if (failureKey !== emittedFailureKey) {
+          emittedFailureKey = failureKey;
+          sendEvent('editor-failed', {
+            sessionId,
+            error: nextSession.error_message || '편집 세션이 실패했습니다.',
+          });
+        }
+      }
+      return false;
+    };
+
+    const hasExistingEdit = await emitEditorReadyIfExists();
+    if (!hasExistingEdit) {
+      sendEvent('connected', { sessionId });
+    }
+
+    const eventName = `session:${sessionId}`;
+    const listener = ({ event, payload }) => {
+      sendEvent(event, payload);
+    };
+    videoSessionEvents.on(eventName, listener);
+
+    const heartbeat = setInterval(() => {
+      res.write(': keep-alive\n\n');
+    }, 15000);
+
+    const pollForEdit = setInterval(() => {
+      emitEditorReadyIfExists().catch(() => {});
+    }, 1000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      clearInterval(pollForEdit);
+      videoSessionEvents.off(eventName, listener);
+    });
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: toErrorMessage(error) });
+      return;
+    }
+    res.end();
   }
 });
 

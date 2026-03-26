@@ -54,6 +54,67 @@
   - 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상은 자동화 검증에서 재현된 이력이 있어, 운영 브라우저 기준 최종 재확인이 남아 있다.
   - 현재 수정은 “표시 경계 + 저장 경계”를 모두 보강했으므로, 다음 세션은 intro/outro phase 전이 계측에 집중하는 것이 자연스럽다.
 
+## 2026-03-26 worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
+
+- 범위
+  - `/video`를 초기 설정/수정 모드가 분리된 단계형 채팅 워크플로우로 정리
+  - `/video/editor`를 `컷 검토 -> 효과 검토 -> 일반 step` 순서의 편집 워크스페이스로 전환
+  - 상단 원본 검수 플레이어 / 하단 timeline-only Twick dock / 우측 AI 패널 역할 분리
+  - shell/auth/searchParams/mounted 게이트 때문에 blank/spinner에 갇히는 경계 복구
+- 실제 반영
+  - `bots/video/lib/cut-proposal-engine.js`
+    - OCR/scene index 기반 컷 후보 생성 엔진 추가
+  - `bots/worker/web/routes/video-step-api.js`
+    - cut/effect review generate/action/confirm 레일 추가
+    - 컷 확정 결과를 downstream `sync_map`과 finalize EDL에 반영
+    - protected 원본 영상 `source-video`, 컷 프레임 `frame-preview` endpoint 추가
+  - `bots/worker/web/components/VideoChatWorkflow.jsx`
+    - 업로드는 `다음 단계`와 `변경사항 업로드` 흐름으로 분리
+    - intro/outro는 설정 후에도 카드 유지
+    - 초기 설정/수정 모드의 메시지/버튼 분기 정리
+  - `bots/worker/web/components/ChatCard.jsx`
+    - intro/outro/edit intent textarea 자동 높이 확장
+    - 기본 선택 상태에서도 `설정 반영`이 동작하도록 초기 설정과 수정 모드 분리
+  - `bots/worker/web/components/TwickEditorWrapper.js`
+    - 상단 커스텀 플레이어 도입
+    - 하단 Twick는 timeline-only dock으로 축소
+    - 플레이어/컨트롤러/하단 타임라인 시간축 동기화 1차
+    - Twick DOM inline width/height 후처리 보정으로 하단 오버플로우 복구
+  - `bots/worker/web/components/EditorChatPanel.jsx`
+    - 컷 단계 입력/설명/액션을 세로형으로 정리
+    - 우측 `컷 구간 직접 조정` 제거, `컷 제안 요약` 카드로 역할 축소
+  - `bots/worker/web/public/twick-editor-scoped.css`
+    - Twick view/timeline/canvas/container 폭·높이 scoped 보강
+  - `bots/worker/web/app/_shell.js`
+    - 비디오 작업화면은 auth loading 중에도 provisional render 허용
+  - `bots/worker/web/app/video/page.js`, `bots/worker/web/app/video/editor/page.js`
+    - `useSearchParams` 제거, editor loading/dynamic import 경계 축소
+  - `bots/video/lib/media-binary-env.js`, `bots/video/scripts/run-pipeline.js`, `bots/video/scripts/render-from-edl.js`, `bots/video/scripts/test-phase3-batch.js`
+    - media binary PATH / render / batch 종료 경계 보강
+- 검증
+  - `node --check bots/video/lib/cut-proposal-engine.js`
+  - `node --check bots/video/lib/media-binary-env.js`
+  - `node --check bots/video/scripts/render-from-edl.js`
+  - `node --check bots/video/scripts/run-pipeline.js`
+  - `node --check bots/video/scripts/test-phase3-batch.js`
+  - `node --check bots/worker/web/app/_shell.js`
+  - `node --check bots/worker/web/app/video/page.js`
+  - `node --check bots/worker/web/app/video/editor/page.js`
+  - `node --check bots/worker/web/components/ChatCard.jsx`
+  - `node --check bots/worker/web/components/EditorChatPanel.jsx`
+  - `node --check bots/worker/web/components/TwickEditorWrapper.js`
+  - `node --check bots/worker/web/components/VideoChatWorkflow.jsx`
+  - `node --check bots/worker/web/routes/video-api.js`
+  - `node --check bots/worker/web/routes/video-step-api.js`
+  - `npx next build` (`bots/worker/web`) 반복 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+  - `/video`, `/video/editor` `200` 확인
+- 남은 리스크
+  - 하단 컷 요소 드래그와 상단 플레이어의 완전 양방향 동기화는 아직 1차 수준
+  - effect review 결과를 preview/finalize에 더 직접 반영해야 함
+  - 컷/효과 단계의 상세 사용자 수정 이력은 DB 원장으로 승격이 남아 있음
+
 ---
 
 ## Phase 2 현재 상태

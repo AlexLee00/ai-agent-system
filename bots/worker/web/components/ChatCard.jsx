@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpFromLine,
   Check,
@@ -10,6 +10,7 @@ import {
   Send,
   Upload,
   Video,
+  X,
 } from 'lucide-react';
 
 function formatBytes(value) {
@@ -19,14 +20,28 @@ function formatBytes(value) {
   return `${mb.toFixed(1)}MB`;
 }
 
-function FileChip({ file }) {
+function FileChip({ file, disabled = false, onRemove }) {
   const icon = String(file?.type || '').startsWith('audio') ? Mic : Video;
   const Icon = icon;
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-      <div className="flex items-center gap-2">
-        <Icon className="h-3.5 w-3.5" />
-        <span className="truncate font-medium text-slate-800">{String(file?.name || '파일')}</span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex items-center gap-2">
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate font-medium text-slate-800">{String(file?.name || '파일')}</span>
+        </div>
+        {onRemove && file?.id ? (
+          <button
+            type="button"
+            onClick={() => onRemove(file)}
+            disabled={disabled}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={`${String(file?.name || '파일')} 삭제`}
+            title="파일 삭제"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
       </div>
       <div className="mt-1">{formatBytes(file?.size)}</div>
     </div>
@@ -37,6 +52,8 @@ function UploadCard({
   files = [],
   disabled = false,
   onSelectFiles,
+  onRemoveFile,
+  removingFileId = null,
 }) {
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -93,7 +110,14 @@ function UploadCard({
       />
       {files.length ? (
         <div className="grid gap-2 md:grid-cols-2">
-          {files.map((file, index) => <FileChip key={`${file.name}-${index}`} file={file} />)}
+          {files.map((file, index) => (
+            <FileChip
+              key={`${file.id || file.name}-${index}`}
+              file={file}
+              disabled={disabled || String(removingFileId || '') === String(file?.id || '')}
+              onRemove={onRemoveFile}
+            />
+          ))}
         </div>
       ) : null}
     </div>
@@ -126,12 +150,15 @@ function AssetCard({
   value,
   disabled = false,
   onSubmit,
+  submitLabel = '설정 반영',
 }) {
-  const initialMode = value?.mode && value.mode !== 'none' ? value.mode : '';
+  const isEditMode = submitLabel === '변경사항 반영';
+  const initialMode = value?.mode || 'none';
   const [mode, setMode] = useState(initialMode);
   const [prompt, setPrompt] = useState(value?.prompt || '');
   const [durationSec, setDurationSec] = useState(value?.durationSec || '');
   const [assetFile, setAssetFile] = useState(null);
+  const promptRef = useRef(null);
   const fileLabel = useMemo(() => {
     if (!assetFile) return '';
     return `${assetFile.name} · ${formatBytes(assetFile.size)}`;
@@ -142,6 +169,30 @@ function AssetCard({
     if (mode === 'prompt') return Boolean(prompt.trim());
     return false;
   }, [assetFile, mode, prompt]);
+  const isDirty = useMemo(() => {
+    const normalizedMode = value?.mode || 'none';
+    const normalizedPrompt = String(value?.prompt || '').trim();
+    const normalizedDuration = String(value?.durationSec || '').trim();
+    return (
+      mode !== normalizedMode
+      || prompt.trim() !== normalizedPrompt
+      || String(durationSec || '').trim() !== normalizedDuration
+      || Boolean(assetFile)
+    );
+  }, [assetFile, durationSec, mode, prompt, value?.durationSec, value?.mode, value?.prompt]);
+
+  useEffect(() => {
+    setMode(value?.mode || 'none');
+    setPrompt(value?.prompt || '');
+    setDurationSec(value?.durationSec || '');
+    setAssetFile(null);
+  }, [value?.durationSec, value?.mode, value?.prompt]);
+
+  useEffect(() => {
+    if (!promptRef.current || mode !== 'prompt') return;
+    promptRef.current.style.height = '0px';
+    promptRef.current.style.height = `${promptRef.current.scrollHeight}px`;
+  }, [mode, prompt]);
 
   return (
     <div className="space-y-3">
@@ -190,26 +241,33 @@ function AssetCard({
 
       {mode === 'prompt' ? (
         <textarea
+          ref={promptRef}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={`${label} 스타일, 브랜드 톤, 텍스트 등을 설명하세요.`}
-          rows={4}
+          rows={1}
           disabled={disabled}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400"
+          className="w-full resize-none overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400"
         />
       ) : null}
 
-      <div className="flex items-center gap-3">
-        <input
-          value={durationSec}
-          onChange={(event) => setDurationSec(event.target.value)}
-          placeholder="길이(초)"
-          disabled={disabled}
-          className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none"
-        />
+      <div className="flex items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{label} 길이</span>
+          <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <input
+              value={durationSec}
+              onChange={(event) => setDurationSec(event.target.value)}
+              placeholder={label === '인트로' ? '기본 3' : '기본 5'}
+              disabled={disabled}
+              className="w-16 bg-transparent text-sm text-slate-800 outline-none"
+            />
+            <span className="text-sm font-medium text-slate-500">초</span>
+          </div>
+        </label>
         <button
           type="button"
-          disabled={disabled || !canSubmit}
+          disabled={disabled || !canSubmit || (isEditMode && !isDirty)}
           onClick={() => onSubmit?.({
             mode,
             prompt: prompt.trim(),
@@ -219,7 +277,7 @@ function AssetCard({
           className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
         >
           <Check className="h-4 w-4" />
-          설정 반영
+          {submitLabel}
         </button>
       </div>
     </div>
@@ -232,16 +290,28 @@ function IntentCard({
   onSubmit,
 }) {
   const [draft, setDraft] = useState(value);
+  const draftRef = useRef(null);
+
+  useEffect(() => {
+    setDraft(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    if (!draftRef.current) return;
+    draftRef.current.style.height = '0px';
+    draftRef.current.style.height = `${draftRef.current.scrollHeight}px`;
+  }, [draft]);
 
   return (
     <div className="space-y-3">
       <textarea
+        ref={draftRef}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        rows={4}
+        rows={1}
         disabled={disabled}
         placeholder="예: 자막을 더 크게, 불필요한 무음 구간은 적극 삭제, 화면 전환은 부드럽게"
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400"
+        className="w-full resize-none overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400"
       />
       <div className="flex justify-end">
         <button
@@ -297,7 +367,15 @@ function SummaryCard({
 export default function ChatCard(props) {
   const type = props.type || 'summary';
   if (type === 'upload') {
-    return <UploadCard files={props.files} disabled={props.disabled} onSelectFiles={props.onSelectFiles} />;
+    return (
+      <UploadCard
+        files={props.files}
+        disabled={props.disabled}
+        onSelectFiles={props.onSelectFiles}
+        onRemoveFile={props.onRemoveFile}
+        removingFileId={props.removingFileId}
+      />
+    );
   }
   if (type === 'intro' || type === 'outro') {
     return (
@@ -306,6 +384,7 @@ export default function ChatCard(props) {
         value={props.value}
         disabled={props.disabled}
         onSubmit={props.onSubmit}
+        submitLabel={props.submitLabel}
       />
     );
   }

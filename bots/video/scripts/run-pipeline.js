@@ -2,6 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { applyMediaBinaryEnv } = require('../lib/media-binary-env');
+
+applyMediaBinaryEnv(process.env);
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const telegramSender = require('../../../packages/core/lib/telegram-sender');

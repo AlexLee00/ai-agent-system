@@ -150,13 +150,20 @@ async function runSingleSet(sample) {
   fs.mkdirSync(workDir, { recursive: true });
 
   const startTime = Date.now();
+  const mark = (label) => {
+    console.error(`[phase3-batch] [${sample.title}] ${label} (${Date.now() - startTime}ms)`);
+  };
+
+  mark('start');
   const normalizedAudioPath = path.join(workDir, 'narration_norm.m4a');
   await normalizeAudio(path.resolve(sample.sourceAudio), normalizedAudioPath, config);
+  mark('normalizeAudio done');
 
   const sceneIndex = await indexVideo(path.resolve(sample.sourceVideo), config, {
     tempDir: workDir,
     ocrEngine: 'cli',
   });
+  mark('indexVideo done');
 
   let narrationAnalysis = null;
   let offlineNarrationFixture = false;
@@ -165,18 +172,22 @@ async function runSingleSet(sample) {
       tempDir: workDir,
       correct: true,
     });
+    mark('analyzeNarration done');
   } catch (error) {
     narrationAnalysis = await buildOfflineNarrationFixture(normalizedAudioPath, config, {
       sampleLabel: sample.sourceAudio,
     });
     offlineNarrationFixture = true;
+    mark('offline narration fixture done');
   }
 
   const syncMap = await buildSyncMap(sceneIndex, narrationAnalysis, config, { tempDir: workDir });
+  mark('buildSyncMap done');
 
   let steps = generateSteps(syncMap, config, {});
   steps = await attachRedEvaluation(steps, config);
   steps = await attachBlueAlternative(steps, sceneIndex, config);
+  mark('generate steps done');
 
   for (const step of steps) {
     if (!step.user_action) {
@@ -196,15 +207,19 @@ async function runSingleSet(sample) {
   );
   const edlPath = path.join(workDir, 'edit_decision_list.phase3.json');
   saveEDL(edl, edlPath);
+  mark('saveEDL done');
 
   const previewPath = path.join(workDir, 'preview.phase3.mp4');
   const previewRender = await renderPreview(edl, previewPath, config);
+  mark('renderPreview done');
 
   let quality = null;
   try {
     quality = await compareVideos(previewPath, path.resolve(sample.reference));
+    mark('compareVideos done');
   } catch (error) {
     quality = { error: error.message };
+    mark(`compareVideos failed: ${error.message}`);
   }
 
   const autoConfirmedCount = steps.filter((step) => step.auto_confirm).length;
@@ -392,7 +407,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[video] test-phase3-batch 실패:', error.message);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('[video] test-phase3-batch 실패:', error.message);
+    process.exit(1);
+  });

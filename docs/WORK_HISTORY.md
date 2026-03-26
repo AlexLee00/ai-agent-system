@@ -4,6 +4,32 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-26: worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
+
+- `bots/video/lib/cut-proposal-engine.js`를 추가해 OCR/scene index 기반 컷 후보 엔진을 붙였다.
+- `bots/worker/web/routes/video-step-api.js`에 cut/effect review 레일을 추가했다.
+  - 컷 확정 결과는 이후 일반 step 생성과 finalize EDL에도 반영되도록 연결했다.
+- `bots/worker/web/components/VideoChatWorkflow.jsx`
+  - `/video`를 초기 설정/수정 모드 분기 구조로 정리했다.
+  - 업로드는 `다음 단계` vs `변경사항 업로드`, intro/outro는 설정 후에도 카드 유지.
+- `bots/worker/web/components/ChatCard.jsx`
+  - intro/outro/edit intent textarea를 자동 높이 확장으로 변경했다.
+- `bots/worker/web/components/TwickEditorWrapper.js`
+  - 상단 원본 검수 플레이어 + 하단 timeline-only Twick dock 구조로 재배치했다.
+  - 커스텀 플레이어를 도입해 네이티브 video controls 간섭을 제거했다.
+  - 컷 후보 선택, 플레이어/컨트롤러/타임라인 시간축 동기화 1차를 붙였다.
+- `bots/worker/web/components/EditorChatPanel.jsx`
+  - 컷 단계 액션 블록을 세로형 흐름으로 정리하고, 우측 `컷 구간 직접 조정`을 제거해 하단 타임라인과 역할을 분리했다.
+- `bots/worker/web/public/twick-editor-scoped.css`
+  - Twick view/timeline/canvas/container 오버플로우와 높이 경계를 scoped CSS로 보강했다.
+- `bots/worker/web/app/video/page.js`, `bots/worker/web/app/video/editor/page.js`, `bots/worker/web/app/_shell.js`
+  - `useSearchParams`/mounted/dynamic import/auth loading 경계를 정리해 `/video/editor` blank/spinner 문제를 줄였다.
+- `bots/video/lib/media-binary-env.js`, `bots/video/scripts/run-pipeline.js`, `bots/video/scripts/render-from-edl.js`, `bots/video/scripts/test-phase3-batch.js`
+  - media binary PATH, render/batch 경계를 보강했다.
+- 해석:
+  - 이번 작업은 단순 UI 수정이 아니라 `/video/editor`를 `컷 검토 -> 효과 검토 -> 일반 step` 순서의 실제 편집 워크스페이스로 전환한 단계다.
+  - 남은 핵심은 상단 플레이어와 하단 타임라인의 양방향 동기화 완성, 컷/효과 결과의 preview/finalize 반영 고도화다.
+
 ## 2026-03-25: 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
 
 - `bots/investment/shared/secrets.js`에 `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter를 추가했다.

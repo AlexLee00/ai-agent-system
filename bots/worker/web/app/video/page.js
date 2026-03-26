@@ -1,29 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { History, Plus } from 'lucide-react';
 
 import VideoChatWorkflow from '@/components/VideoChatWorkflow';
 
 export default function VideoPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const selectedSessionId = useMemo(() => {
-    const raw = String(searchParams?.get('session') || '').trim();
-    return raw ? Number(raw) : null;
-  }, [searchParams]);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [workflowResetToken, setWorkflowResetToken] = useState(0);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     function syncViewport() {
       setIsMobileViewport(window.innerWidth < 1024);
+      const params = new URLSearchParams(window.location.search);
+      const rawSession = String(params.get('session') || '').trim();
+      setSelectedSessionId(rawSession ? Number(rawSession) : null);
     }
     syncViewport();
     window.addEventListener('resize', syncViewport);
-    return () => window.removeEventListener('resize', syncViewport);
+    window.addEventListener('popstate', syncViewport);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('popstate', syncViewport);
+    };
   }, []);
 
   function handleCreate() {
@@ -32,7 +35,7 @@ export default function VideoPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-6 overflow-hidden">
       <div className="flex items-center justify-between rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-500">AI Chat Workflow</p>

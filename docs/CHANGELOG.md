@@ -3,6 +3,39 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-26) — worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
+
+- `bots/video/lib/cut-proposal-engine.js`
+  - OCR/scene index 기반 컷 제안 엔진 추가
+- `bots/worker/web/routes/video-step-api.js`
+  - `cut review`, `effect review` 전용 API 추가
+  - 컷 확정 결과를 downstream `sync_map`과 finalize EDL에 반영
+  - protected 원본 영상 `source-video`, 프레임 썸네일 `frame-preview` 경계 추가
+- `bots/worker/web/components/VideoChatWorkflow.jsx`
+  - `/video`를 초기 설정과 수정 모드로 분기
+  - 원본 업로드는 `다음 단계`와 `변경사항 업로드` 흐름으로 정리
+  - intro/outro 카드 유지, 파일 삭제/재업로드 흐름 보강
+- `bots/worker/web/components/ChatCard.jsx`
+  - intro/outro/edit intent 입력을 자동 높이 확장으로 전환
+  - 초기 설정과 수정 반영의 버튼 활성 규칙 분리
+- `bots/worker/web/components/TwickEditorWrapper.js`
+  - 상단 원본 검수 플레이어와 하단 timeline-only Twick dock 구조로 재배치
+  - 네이티브 video controls 대신 커스텀 컨트롤러 도입
+  - 플레이어/컨트롤러/타임라인 시간축 동기화 1차 적용
+- `bots/worker/web/components/EditorChatPanel.jsx`
+  - 컷 단계 액션 블록 세로 정렬
+  - 우측 세부정보에서 중복 조작 UI 제거
+- `bots/worker/web/public/twick-editor-scoped.css`
+  - Twick 내부 view/timeline/canvas 폭·높이 오버플로우 보강
+- `bots/worker/web/app/_shell.js`
+  - 비디오 작업 화면은 auth loading 중에도 provisional render 허용
+- `bots/worker/web/app/video/page.js`
+- `bots/worker/web/app/video/editor/page.js`
+  - `useSearchParams` 의존 제거, editor mounted/dynamic import 경계 축소
+- 의미:
+  - `/video/editor`가 preview 확인 화면에서 단계형 편집 워크스페이스로 전환됐다.
+  - `/video`와 `/video/editor`의 진입 경계, 플레이어 경계, 단계형 편집 경계가 함께 정리됐다.
+
 ## 12주차 후속 (2026-03-25) — 스카 매출 두 축 source of truth 명시화
 
 - `bots/reservation/scripts/health-report.js`

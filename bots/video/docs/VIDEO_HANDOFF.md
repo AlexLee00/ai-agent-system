@@ -1,8 +1,8 @@
 # 비디오팀 인수인계 허브
 
-> 최종 업데이트: 2026-03-24
-> 상태: Phase 3 설계 완료 — AI 대화형 편집기 (Twick + RED/BLUE + 피드백 RAG)
->       worker-web `/video` 단계형 채팅 워크플로우 경계 보강 + 실브라우저 검증 진행 중
+> 최종 업데이트: 2026-03-26
+> 상태: Phase 3 구현 진행 중 — `/video` 단계형 채팅 워크플로우 + `/video/editor` 단계형 편집 워크스페이스 1차 반영
+>       컷 검토 → 효과 검토 → 일반 step 흐름, 상단 원본 검수 플레이어 + 하단 timeline-only Twick dock 구조 적용
 >       Phase 2 완료 — AI 싱크 매칭 파이프라인 / Phase 1 전체 완료
 
 ---
@@ -69,12 +69,18 @@ RED/BLUE 품질 루프 (자막+오디오+영상 편집)
 피드백 → Refiner 재실행 (필요시)
 OK → FFmpeg 최종 렌더링 (1440p/24Mbps)
 
-UX 흐름 (5단계):
+UX 흐름 (현재 `/video` 진입):
   1. 웹에서 원본+나레이션 업로드
   2. 인트로 선택 (파일/프롬프트/없음)
   3. 아웃트로 선택 (파일/프롬프트/없음)
   4. 편집 의도 입력
-  5. 설정 요약 + 편집 시작 → AI 싱크 매칭 상태 표시 → 프리뷰/컨펌
+  5. 설정 요약 + 편집 시작
+
+`/video/editor` 현재 흐름 (1차):
+  1. 컷 검토 (`cut review`)
+  2. 효과 삽입 검토 (`effect review`)
+  3. 일반 AI step rail
+  4. preview/finalize
 ```
 
 ## 기존 모듈 재사용 (15개, 수정 0줄)
@@ -215,6 +221,39 @@ heartbeat / kst / trace / tool-logger / rag / rag-safe
       - `/video`: 업로드 카드 유지, 메뉴 왕복 상태 유지, 버블 스크롤 정상
     - 남은 리스크
       - 업로드 직후 intro를 건너뛰고 outro 단계로 진입하는 현상은 자동화 검증에서 한 차례 더 재현됐고, 최종 운영 브라우저 기준 재확인이 필요
+  - 2026-03-26 worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
+    - `lib/cut-proposal-engine.js`
+      - OCR/scene index 기반 컷 후보 제안 엔진 추가
+    - `worker/web/routes/video-step-api.js`
+      - cut/effect review generate/action/confirm 레일 추가
+      - 컷 확정 결과를 이후 일반 step 생성 입력 `sync_map`과 finalize EDL에 반영
+      - protected 원본 영상 `source-video`, 컷 프레임 `frame-preview` 경계 추가
+    - `worker/web/components/VideoChatWorkflow.jsx`
+      - 원본 업로드는 `다음 단계`와 `변경사항 업로드` 흐름으로 분리
+      - intro/outro는 설정 후에도 카드 유지
+      - 초기 설정과 수정 모드의 피드백 문구/버튼 분기 정리
+    - `worker/web/components/ChatCard.jsx`
+      - intro/outro/edit intent textarea 자동 높이 확장
+      - 초기 설정과 수정 반영의 활성 규칙 분리
+    - `worker/web/components/TwickEditorWrapper.js`
+      - 상단 원본 검수 플레이어 + 하단 timeline-only Twick dock 구조 적용
+      - 네이티브 video controls 제거 후 커스텀 플레이어 도입
+      - 플레이어/컨트롤러/하단 타임라인 시간축 동기화 1차 적용
+      - Twick DOM inline width/height를 wrapper 후처리로 보정해 하단 오버플로우 경계 복구
+    - `worker/web/components/EditorChatPanel.jsx`
+      - 컷 단계 메모/설명/버튼 영역을 세로형으로 정리
+      - 우측 `컷 구간 직접 조정` 제거, `컷 제안 요약` 카드로 역할 축소
+    - `worker/web/public/twick-editor-scoped.css`
+      - Twick view/timeline/canvas/container scoped 폭·높이 보강
+    - `worker/web/app/_shell.js`
+      - 비디오 작업화면은 auth loading 중에도 provisional render 허용
+    - `worker/web/app/video/page.js`, `worker/web/app/video/editor/page.js`
+      - `useSearchParams` 의존 제거
+      - editor loading gate/dynamic import 경계 축소
+    - 남은 리스크
+      - 하단 컷 요소 직접 드래그와 상단 플레이어의 완전 양방향 동기화는 아직 1차 수준
+      - effect review 결과를 preview/finalize 렌더에 더 직접 반영해야 함
+      - 컷/효과 단계 사용자 수정 이력은 아직 파일/클라이언트 상태 중심이며 DB 원장 승격이 남아 있음
   - 과제 10 Critic Agent 구현 완료
     - `lib/critic-agent.js`
     - `scripts/test-critic-agent.js`

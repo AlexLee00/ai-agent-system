@@ -2,6 +2,32 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-26
+
+### worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/video/lib/cut-proposal-engine.js` | ✅ 컷 제안 엔진 문법 통과 |
+| `node --check bots/video/lib/media-binary-env.js` | ✅ media binary PATH 보강 모듈 문법 통과 |
+| `node --check bots/video/scripts/render-from-edl.js` | ✅ finalize/render 경계 수정 후 문법 통과 |
+| `node --check bots/video/scripts/run-pipeline.js` | ✅ editor-ready / media env 반영 후 문법 통과 |
+| `node --check bots/video/scripts/test-phase3-batch.js` | ✅ batch 종료/단계 로그 보강 후 문법 통과 |
+| `node --check bots/worker/web/app/_shell.js` | ✅ 비디오 작업화면 provisional render 경계 문법 통과 |
+| `node --check bots/worker/web/app/video/page.js` | ✅ `useSearchParams` 제거 후 문법 통과 |
+| `node --check bots/worker/web/app/video/editor/page.js` | ✅ `useSearchParams` 제거 및 editor entry 경계 수정 후 문법 통과 |
+| `node --check bots/worker/web/components/ChatCard.jsx` | ✅ intro/outro/edit intent 입력 확장/버튼 분기 후 문법 통과 |
+| `node --check bots/worker/web/components/EditorChatPanel.jsx` | ✅ 컷 단계 액션 세로 배열/요약 패널 정리 후 문법 통과 |
+| `node --check bots/worker/web/components/TwickEditorWrapper.js` | ✅ 상단 플레이어/하단 타임라인 분리 및 시간축 동기화 1차 후 문법 통과 |
+| `node --check bots/worker/web/components/VideoChatWorkflow.jsx` | ✅ `/video` 초기 설정/수정 모드 분기 정리 후 문법 통과 |
+| `node --check bots/worker/web/routes/video-api.js` | ✅ editor-ready / source-video 관련 경계 보강 후 문법 통과 |
+| `node --check bots/worker/web/routes/video-step-api.js` | ✅ cut/effect review API 및 EDL/sync_map 반영 후 문법 통과 |
+| `npx next build` (`bots/worker/web`) | ✅ `/video`, `/video/editor`, shell/auth/searchParams/editor layout 보강 이후 빌드 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs` | ✅ 편집기 반영본 재기동 성공 |
+| `launchctl kickstart -k gui/$(id -u)/ai.worker.web` | ✅ worker-web 반영본 재기동 성공 |
+| `curl -I http://127.0.0.1:4001/video` | ✅ `200` |
+| `curl -I http://127.0.0.1:4001/video/editor` | ✅ `200` |
+
 ## 2026-03-24
 
 ### worker-web `/video`, `/video/editor` 실브라우저 검증

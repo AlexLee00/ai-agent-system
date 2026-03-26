@@ -537,37 +537,92 @@
   box-shadow: var(--shadow-md);
 }
 .twick-editor-main-container {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 180px;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
   background-color: var(--color-neutral-900);
   gap: 6px;
 }
+
+.timeline-only-host .twick-editor-main-container {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+.timeline-only-host .twick-editor-view-section {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.timeline-only-host .twick-editor-timeline-section {
+  height: 100% !important;
+  max-height: 100% !important;
+  flex: 1 1 auto !important;
+  border-radius: 0 !important;
+}
+
+.timeline-only-host .twick-editor-timeline-controls {
+  padding-inline: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.timeline-only-host .twick-timeline-scroll-container {
+  padding: 10px 12px 12px;
+}
 .twick-editor-view-section {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: row;
-  justify-content: space-between;
+  justify-content: center;
+  align-items: center;
   gap: 6px;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 .twick-editor-timeline-section {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
+  height: 180px;
+  max-height: 180px;
+  flex: 0 0 180px;
+  min-height: 0;
   background-color: #141419;
   border-radius: 0.75rem;
   overflow-x: hidden;
+  overflow-y: hidden;
 }
 .twick-editor-container {
   position: relative;
-  height: 80dvh;
+  width: auto;
+  height: 100%;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  flex: 0 1 auto;
+  margin: 0 auto;
   overflow: hidden;
   border-radius: 10px;
   background-color: #000;
   color: #fff;
+}
+.twick-editor-view-section > .twick-editor-container {
+  aspect-ratio: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
 }
 /* Ensure the live preview player fills the editor container */
 .twick-editor-container twick-player {
@@ -575,16 +630,23 @@
   height: 100%;
   display: block;
 }
+.twick-editor-container > * {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
 .twick-editor-canvas-container {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 .twick-editor-canvas {
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
 }
 .twick-editor-loading-overlay {
   position: absolute;
@@ -651,6 +713,9 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -658,6 +723,7 @@
 .twick-timeline-container {
   display: flex;
   height: 2.75rem;
+  max-width: 100%;
   position: relative;
 }
 
@@ -673,6 +739,7 @@
   min-width: 100%;
   height: 2rem;
   width: 100%;
+  overflow: hidden;
 }
 
 .twick-seek-track-container-no-scrollbar {
@@ -681,6 +748,7 @@
   min-width: 100%;
   height: 2rem;
   width: 100%;
+  overflow: hidden;
   /* Hide scrollbar for all browsers */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
@@ -721,6 +789,7 @@
   top: 0;
   left: 0;
   z-index: 30;
+  width: auto;
   cursor: ew-resize;
 }
 
@@ -730,6 +799,7 @@
   left: 0;
   z-index: 30;
   width: 2px;
+  max-height: 100%;
   background-color: var(--color-purple-400);
   box-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
 }
@@ -879,6 +949,7 @@
   height: 2.5rem;
   margin-top: 2px;
   background-color: #474747;
+  overflow: hidden;
 }
 
 /* Drop preview - ghost placeholder when dragging files over timeline */
@@ -1667,4 +1738,11 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.twick-scope .twick-editor-container,
+.twick-scope .twick-editor-container *,
+.twick-scope .twick-editor-timeline-section,
+.twick-scope .twick-editor-timeline-section * {
+  box-sizing: border-box;
 }
