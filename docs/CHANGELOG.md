@@ -2205,3 +2205,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 최근 crypto 체결이 `LIVE 12 / PAPER 0`이며 validation도 실제로 `LIVE 소액 검증`으로 돌고 있는 현실을 리포트에 반영
 - `crypto-live-gate-review.js`에 `trade_mode별 체결`과 validation LIVE 해석을 추가
 - 투자팀 health 리포트가 `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족`이라는 더 정확한 gate 사유를 노출하도록 정리
+## [2026-03-26] investment validation lane policy documentation
+
+- `bots/investment/docs/VALIDATION_LANE_POLICY.md` 추가
+- `trade_mode`와 `paper`를 독립 축으로 정의하고, 현재 crypto `validation`이 `PAPER`가 아니라 `LIVE 소액 검증 레일`이라는 운영 현실을 문서화
+- `crypto LIVE gate blocked`를 “LIVE 전면 금지”가 아니라 “validation LIVE 표본은 있으나 normal live 확대는 아직 보류”로 해석하도록 기준선 고정

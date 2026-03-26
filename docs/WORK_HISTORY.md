@@ -4722,3 +4722,15 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `node bots/investment/scripts/crypto-live-gate-review.js --json`
   - `node bots/investment/scripts/health-report.js --json`
   - `node -e \"... SELECT ... FROM trades ... LIMIT 12\"` (escalated)
+
+## 2026-03-26: 투자팀 crypto validation / paper / live 정책 기준선 문서화
+
+- `bots/investment/docs/VALIDATION_LANE_POLICY.md`를 추가했다.
+- 핵심 정리:
+  - `trade_mode`와 `paper`는 독립 축이다.
+  - 현재 crypto `validation`은 `paper 검증`이 아니라 `LIVE 소액 검증`으로 운영 중이다.
+  - 최근 12건 binance 체결은 전부 `paper=false`였고, 그중 `validation` 4건(`FET/USDT`, `CFG/USDT`, `RENDER/USDT`, `SIGN/USDT`)도 모두 LIVE였다.
+  - 따라서 `crypto LIVE gate blocked`는 “LIVE가 전혀 금지”가 아니라 “validation LIVE 표본은 있으나 normal live 확대는 아직 보류”로 읽어야 한다.
+- 해석:
+  - health/report 문구와 운영 현실의 의미 경계를 문서 기준선까지 맞춘 작업이다.
+  - 내부 MVP에서는 `validation LIVE`를 guarded lane으로 인정하고, 나중에 필요하면 `PAPER validation` 레일을 복원하거나 workspace별 risk profile로 분리할 수 있다.
