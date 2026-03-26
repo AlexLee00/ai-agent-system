@@ -106,9 +106,9 @@ async function classifyExecutionReadiness(row) {
 
   if (row.exchange === 'kis_overseas' && isMock) {
     return {
-      readiness: 'guarded_ready',
-      readinessLabel: '제한적 실행 가능',
-      readinessReason: '해외장 mock SELL 검증 필요 (장중 한정)',
+      readiness: 'blocked_by_capability',
+      readinessLabel: 'capability 제약',
+      readinessReason: '해외장 mock SELL 미지원 (KIS 90000000)',
     };
   }
 

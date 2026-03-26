@@ -784,7 +784,7 @@ async function loadKisCapabilityHealth() {
     ? (domesticStatus.isOpen ? 'mock SELL 검증 가능' : 'mock SELL 장중에만 가능')
     : 'real SELL 가능';
   const overseasCapability = overseasMode.brokerAccountMode === 'mock'
-    ? (overseasStatus.isOpen ? 'mock SELL guarded 검증 가능' : 'mock SELL 장중에만 가능')
+    ? 'mock SELL 미지원 (KIS 90000000)'
     : 'real SELL 가능';
 
   return {
