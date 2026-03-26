@@ -2200,3 +2200,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `bots/claude/lib/checks/database.js`의 `investment trade_review 무결성` 판정을 `ABS(pnl_percent) < 1` 휴리스틱에서 실제 ratio-scale 판정으로 수정
 - `bots/reservation/scripts/health-report.js`가 `alerts`뿐 아니라 `cancelled_keys + future completed reservations` raw mismatch도 취소 드리프트로 집계
 - 결과적으로 `trade_review` false-positive는 제거하고, 실제 Picco 미반영 건은 health/report에서 다시 드러나도록 정렬
+## [2026-03-26] investment crypto LIVE gate report alignment
+
+- 최근 crypto 체결이 `LIVE 12 / PAPER 0`이며 validation도 실제로 `LIVE 소액 검증`으로 돌고 있는 현실을 리포트에 반영
+- `crypto-live-gate-review.js`에 `trade_mode별 체결`과 validation LIVE 해석을 추가
+- 투자팀 health 리포트가 `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족`이라는 더 정확한 gate 사유를 노출하도록 정리

@@ -4703,3 +4703,22 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `node bots/reservation/scripts/health-report.js --json`
   - `node -e \"... require('./bots/claude/lib/checks/database.js').run() ...\"` (escalated)
   - `node -e \"... clearPatterns('investment trade_review 무결성','DB 무결성') ...\"` (escalated)
+## 2026-03-26 — investment crypto LIVE gate 리포트 정렬
+
+- [crypto-live-gate-review.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/crypto-live-gate-review.js)
+  - 최근 3일 `trade_mode별 체결` 라인 추가
+  - `validation LIVE / PAPER` 분해를 facts/inferred/recommendations에 반영
+  - gate 사유를 `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족하고 near-threshold weak가 아직 높음`으로 구체화
+- [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+  - `cryptoLiveGateHealth`에 `mode 체결: NORMAL ... / VALIDATION ...` 라인 추가
+  - 투자팀 health가 `validation LIVE` 존재를 직접 드러내도록 정렬
+- 직접 확인:
+  - 최근 binance `trades` 12건 전부 `paper=false`
+  - `FET/USDT`, `CFG/USDT`, `RENDER/USDT`, `SIGN/USDT`는 `trade_mode=validation`, `is_paper=false`
+  - 즉 crypto validation은 현재 PAPER가 아니라 LIVE 소액 검증 레일로 운영 중
+- 검증:
+  - `node --check bots/investment/scripts/crypto-live-gate-review.js`
+  - `node --check bots/investment/scripts/health-report.js`
+  - `node bots/investment/scripts/crypto-live-gate-review.js --json`
+  - `node bots/investment/scripts/health-report.js --json`
+  - `node -e \"... SELECT ... FROM trades ... LIMIT 12\"` (escalated)

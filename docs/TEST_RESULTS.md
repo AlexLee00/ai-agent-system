@@ -1491,3 +1491,8 @@
 | `node bots/reservation/scripts/health-report.js --json` | ✅ `cancelCounterDriftHealth`가 `실예약 기준 미반영 취소: 1건`과 `010-3157-4920 / 2026-04-05 / 10:00~12:30 / A2` 샘플을 노출 |
 | `node -e \"... require('./bots/claude/lib/checks/database.js').run() ...\"` | ✅ escalated 실행 기준 `investment trade_review 무결성: 종료 거래 19건 정상`, `investment 미처리 신호 (2h+): ok` 확인 |
 | `node -e \"... clearPatterns('investment trade_review 무결성','DB 무결성') ...\"` | ✅ escalated 실행 기준 stale dexter pattern `1건` 삭제 |
+| `node --check bots/investment/scripts/crypto-live-gate-review.js` | ✅ crypto LIVE gate 문구를 validation LIVE 현실에 맞게 정렬한 뒤 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ 투자팀 health에 `mode 체결` 라인 추가 후 문법 통과 |
+| `node bots/investment/scripts/crypto-live-gate-review.js --json` | ✅ `trade_mode별 체결: NORMAL 8 / VALIDATION 4`, `validation LIVE 표본은 있으나 PAPER 검증 표본이 부족` 문구 반영 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `cryptoLiveGateHealth.warn`에 `mode 체결: NORMAL ... VALIDATION ...`와 새 gate reason 노출 확인 |
+| `node -e \"... SELECT ... FROM trades ... LIMIT 12\"` | ✅ escalated 조회 기준 최근 binance 체결 12건 전부 `paper=false`, validation 4건도 `is_paper=false` 확인 |
