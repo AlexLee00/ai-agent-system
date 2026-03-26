@@ -2242,3 +2242,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `002630` 실패 1건을 실제로 `domestic_order_rejected -> mock_untradable_symbol`로 소급 정리
 - 의미:
   - 과거 실패 원장도 새 block-code 체계에 맞춰 정렬해 health/report 집계 일관성 회복
+## [2026-03-26] investment nemesis mock-untradable approval cooldown
+
+- `bots/investment/team/nemesis.js`
+  - 국내장 `kis + BUY + mock 계좌`에서 최근 `mock_untradable_symbol` 이력이 있으면 `mock_untradable_symbol_recent`으로 승인 거부
+- 의미:
+  - 브로커 mock 제약이 이미 확인된 종목을 approval 단계에서도 미리 걸러, execution 단계의 반복 실패와 운영 노이즈를 감소

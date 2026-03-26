@@ -1412,3 +1412,19 @@
 - 의미:
   - 지금 당장 필요한 구조는 새 실패만 아니라 과거 동일 유형도 같은 기준으로 해석되도록 원장을 정렬하는 것이다.
   - 나중에는 이 재분류 로직을 다른 브로커 capability 제약(`overseas mock 제한`, `broker_execution_error` subtype)까지 확장할 수 있다.
+
+## 2026-03-26 11:52 KST — 네메시스 승인 단계에 `mock_untradable_symbol` 연동
+
+- 요청 배경:
+  - 한울 실행 단계에서만 `mock_untradable_symbol`을 차단하면, 같은 종목이 approval까지는 계속 올라와 운영 노이즈가 남는다.
+  - 국내장 mock 제약은 execution-only signal이지만, 한 번 확인된 종목은 approval 레이어도 참고하는 게 맞다.
+- 반영:
+  - [nemesis.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/nemesis.js)
+    - `kis + BUY + mock 계좌` 조건에서 최근 `mock_untradable_symbol` 이력을 조회
+    - 최근 24시간 내 동일 종목이면 `mock_untradable_symbol_recent`으로 승인 거부
+  - 재사용 레이어:
+    - [db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js)의 `getRecentBlockedSignalByCode()`
+    - [runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/runtime-config.js)의 `mockUntradableSymbolCooldownMinutes`
+- 의미:
+  - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 approval 단계에서도 조용히 다시 걸러 execution 노이즈를 줄이는 것이다.
+  - 나중에는 screening 단계까지 같은 신호를 올려 mock 불가 종목 watchlist로 확장할 수 있다.

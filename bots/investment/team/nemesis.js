@@ -9,7 +9,7 @@
 
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
-import { getInvestmentTradeMode } from '../shared/secrets.js';
+import { getInvestmentTradeMode, isKisPaper } from '../shared/secrets.js';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -17,7 +17,7 @@ import * as journalDb from '../shared/trade-journal-db.js';
 import { callLLM, parseJSON } from '../shared/llm-client.js';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.js';
 import { notifyRiskRejection }    from '../shared/report.js';
-import { getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
+import { getMockUntradableSymbolCooldownMinutes, getNemesisRuntimeConfig, isDynamicTpSlEnabled } from '../shared/runtime-config.js';
 const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
 function getCryptoRiskThresholds() {
   const base = {
@@ -642,6 +642,40 @@ export async function evaluateSignal(signal, opts = {}) {
     if (persist) await notifyRiskRejection({ symbol, action, reason });
     if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
     return { approved: false, reason };
+  }
+
+  if (action === ACTIONS.BUY && signal.exchange === 'kis' && isKisPaper()) {
+    const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
+    const recentMockUntradable = await db.getRecentBlockedSignalByCode({
+      symbol,
+      action: ACTIONS.BUY,
+      exchange: 'kis',
+      tradeMode: signal.trade_mode || getInvestmentTradeMode(),
+      blockCode: 'mock_untradable_symbol',
+      minutesBack: cooldownMinutes,
+    });
+    if (recentMockUntradable) {
+      const cooldownHours = (cooldownMinutes / 60).toFixed(cooldownMinutes % 60 === 0 ? 0 : 1);
+      const reason = `${symbol} 최근 KIS mock 주문 불가 종목으로 확인됨 — ${cooldownHours}시간 승인 쿨다운`;
+      if (persist && signal.id) {
+        await db.updateSignalBlock(signal.id, {
+          status: SIGNAL_STATUS.REJECTED,
+          reason,
+          code: 'mock_untradable_symbol_recent',
+          meta: {
+            exchange: signal.exchange,
+            symbol,
+            action,
+            amount: amountUsdt,
+            cooldown_minutes: cooldownMinutes,
+            source_signal_id: recentMockUntradable.id,
+          },
+        }).catch(() => {});
+      }
+      if (persist) await notifyRiskRejection({ symbol, action, reason });
+      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
+      return { approved: false, reason };
+    }
   }
 
   const todayPnl = await db.getTodayPnl();
