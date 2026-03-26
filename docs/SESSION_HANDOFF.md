@@ -1728,3 +1728,25 @@
   - 나중에 확장할 구조:
     - exchange/trade_mode별 soft budget health 일반화
     - `/ops-health` 상위 집계와 연결
+
+## 2026-03-26 — 투자팀 CRITICAL 텔레그램 중복 완화
+
+- 배경
+  - `한울(KIS해외) - ORCL SELL` 실패가 텔레그램에서 2회 보였는데, health 기준 최근 active row는 `mock_operation_unsupported 1건`이었다.
+  - 원인은 실행 중복이 아니라 CRITICAL 텔레그램 fanout 정책이었다.
+  - 기존 [packages/core/lib/telegram-sender.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/telegram-sender.js)의 `sendCritical()`는 `emergency + team` 이중 발송을 수행한다.
+
+- 이번 변경
+  - [packages/core/lib/reporting-hub.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/reporting-hub.js)
+    - telegram target에 `criticalMode` 추가 (`both` 기본)
+  - [bots/investment/shared/report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/report.js)
+    - 투자팀 `notifyError()`는 `criticalTelegramMode: 'team_only'`로 발송
+    - 따라서 투자 실행 오류는 더 이상 `emergency + luna` 이중 텔레그램 전송을 하지 않음
+    - 단, `alertLevel=4`와 N8N critical webhook 경로는 유지
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 투자 실행 오류 1건이 텔레그램에서 2건처럼 보이는 UX를 제거
+  - 나중에 확장할 구조:
+    - 팀별/이벤트유형별 `CRITICAL` fanout 정책 분리
+    - 시스템성 장애만 `emergency+team`, 실행 오류는 `team-only`로 일반화

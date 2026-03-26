@@ -1596,3 +1596,11 @@
   - `warnCount = 0`
 - `node bots/investment/scripts/health-report.js` ✅
   - `■ crypto validation soft budget(오늘)` 섹션 출력 확인
+
+## 2026-03-26 — 투자팀 CRITICAL 텔레그램 중복 완화
+
+- `node --check packages/core/lib/reporting-hub.js` ✅
+- `node --check bots/investment/shared/report.js` ✅
+- `node bots/investment/scripts/health-report.js --json` ✅
+  - 기존 investment health 구조 영향 없음 확인
+  - 최근 active block은 여전히 `mock_operation_unsupported = 1`로 유지

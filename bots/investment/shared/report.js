@@ -29,6 +29,7 @@ function publishLunaMessage({
   eventType = 'report',
   alertLevel = 1,
   payload = null,
+  criticalTelegramMode = 'both',
 }) {
   const event = {
     from_bot: 'luna',
@@ -56,6 +57,7 @@ function publishLunaMessage({
       includeQueue: false,
       includeTelegram: true,
       includeN8n: true,
+      criticalTelegramMode,
     }),
   }).then((result) => result.ok);
 }
@@ -173,7 +175,12 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
 
 export function notifyError(context, error) {
   const msg = `❌ [오류] ${context}\n${error?.message || error}`;
-  return publishLunaMessage({ message: msg, eventType: 'alert', alertLevel: 4 });
+  return publishLunaMessage({
+    message: msg,
+    eventType: 'alert',
+    alertLevel: 4,
+    criticalTelegramMode: 'team_only',
+  });
 }
 
 // ─── 매매일지 알림 ───────────────────────────────────────────────────

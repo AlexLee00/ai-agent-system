@@ -2363,3 +2363,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - investment health에 `■ crypto validation soft budget(오늘)` 섹션 추가
   - 현재 validation BUY 사용량과 `hard cap / reserve / soft cap`을 함께 노출
   - soft cap 근접/도달 시 운영 판단 reason으로 승격 가능
+- `fix(investment): reduce duplicate critical telegram alerts`
+  - reporting-hub telegram target에 `criticalMode` 추가 (`both` 기본)
+  - 투자팀 `notifyError()`는 `criticalTelegramMode: 'team_only'`로 발송
+  - 실행 오류는 텔레그램 팀 채널 1회 + 기존 N8N critical 경로 유지
