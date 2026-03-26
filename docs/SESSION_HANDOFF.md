@@ -9,6 +9,33 @@
 
 ---
 
+## 2026-03-26 22:40 KST — 투자팀 국내장 dynamic universe 2차 축소
+
+- 요청 배경:
+  - `investment-domestic.err.log` 최근 200줄 기준 `wide_universe`, `collect_overload_detected`, `concurrency_guard_active`, `debate_capacity_hot`가 모두 `17회`로 묶여 있었다.
+  - health 상단에 국내장 수집 압력을 노출한 뒤에도, 현재 active 병목은 “보이는가”보다 “실제 입력 폭이 과한가”에 가까웠다.
+- 반영:
+  - [config.yaml](/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml)
+    - `screening.domestic.max_dynamic: 10 -> 8`
+  - [secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
+    - `getDomesticScreeningMaxDynamic()` fallback 기본값 `10 -> 8`
+- 의미:
+  - 국내장 자동화는 이제 prescreened/screening fallback/cached dynamic 후보를 최대 `8개`까지만 소비한다.
+  - 이번 수정은 전면 재설계가 아니라, 이미 들어가 있는 `dynamic cap -> filterMockUntradable -> held merge` 흐름을 유지한 채 입력 폭만 한 단계 더 낮춘 2차 완화다.
+- 검증:
+  - `node --check bots/investment/shared/secrets.js`
+  - `node --input-type=module -e "import { getDomesticScreeningMaxDynamic } from './bots/investment/shared/secrets.js'; console.log(getDomesticScreeningMaxDynamic());"` → `8`
+  - `node bots/investment/scripts/health-report.js --json`
+- 남은 TODO:
+  - 다음 국내장 cycle에서 `domesticCollectPressure.counts`
+    - `wideUniverse`
+    - `collectOverload`
+    - `debateCapacityHot`
+    가 실제로 줄어드는지 확인
+  - 여전히 높으면 `max_dynamic=6` 또는 prescreen source 품질 점검까지 검토
+
+---
+
 ## 2026-03-26 18:40 KST — worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차 구현
 
 - 요청 배경:

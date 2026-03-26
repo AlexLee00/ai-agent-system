@@ -4,6 +4,14 @@
 
 ## 2026-03-26
 
+### 투자팀 국내장 dynamic universe 2차 축소
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/shared/secrets.js` | ✅ 국내장 dynamic cap fallback `8` 반영 후 문법 통과 |
+| `node --input-type=module -e "import { getDomesticScreeningMaxDynamic } from './bots/investment/shared/secrets.js'; console.log(getDomesticScreeningMaxDynamic());"` | ✅ 현재 기준 `8` 출력 확인 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ health JSON 정상 출력, 기존 `domesticCollectPressure` / `cryptoLiveGateHealth` / `mockUntradableSymbolHealth` 섹션 유지 확인 |
+
 ### worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
 
 | 테스트 | 결과 |

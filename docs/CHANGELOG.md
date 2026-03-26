@@ -3,6 +3,15 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 12주차 후속 (2026-03-26) — 투자팀 국내장 dynamic universe 2차 축소
+
+- `bots/investment/config.yaml`
+  - `screening.domestic.max_dynamic`을 `10 -> 8`로 조정
+- `bots/investment/shared/secrets.js`
+  - `getDomesticScreeningMaxDynamic()` 기본 fallback도 `8`로 조정
+- 의미:
+  - health 상단에 드러난 국내장 collect pressure를 실제로 낮추기 위한 2차 완화
+  - 기존 domestic 동적 후보 파이프라인은 유지하고 입력 폭만 줄여 MVP 안정성을 우선 확보
 ## 12주차 후속 (2026-03-26) — worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
 
 - `bots/video/lib/cut-proposal-engine.js`
