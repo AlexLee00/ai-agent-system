@@ -22,11 +22,13 @@ import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
 import { getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo, getDomesticScreeningMaxDynamic } from '../shared/secrets.js';
+import { getInvestmentTradeMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
 import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
+import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.js';
 
 import { processAllPendingKisSignals } from '../team/hanul.js';
 
@@ -76,6 +78,32 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
   publishToMainBot({ from_bot: 'luna', event_type: 'alert', alert_level: 3, message: msg });
   process.exit(1);
 });
+
+async function filterMockUntradableDomesticCandidates(symbols, tradeMode = getInvestmentTradeMode()) {
+  if (!Array.isArray(symbols) || symbols.length === 0) return [];
+  await db.initSchema();
+  const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
+  const checks = await Promise.all(
+    symbols.map(async (symbol) => ({
+      symbol,
+      blocked: await db.getRecentBlockedSignalByCode({
+        symbol,
+        action: 'BUY',
+        exchange: 'kis',
+        tradeMode,
+        blockCode: 'mock_untradable_symbol',
+        minutesBack: cooldownMinutes,
+      }),
+    })),
+  );
+  const filtered = checks.filter((item) => !item.blocked).map((item) => item.symbol);
+  const skipped = checks.filter((item) => item.blocked).map((item) => item.symbol);
+  if (skipped.length > 0) {
+    const cooldownHours = (cooldownMinutes / 60).toFixed(cooldownMinutes % 60 === 0 ? 0 : 1);
+    console.log(`  🚫 [mock 불가 제외] ${skipped.join(', ')} (${cooldownHours}시간 쿨다운)`);
+  }
+  return filtered;
+}
 
 // ─── 메인 사이클 ────────────────────────────────────────────────────
 
@@ -259,6 +287,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const preScreened = loadPreScreened('domestic');
     if (preScreened?.symbols?.length > 0) {
       symbols = capDynamicUniverse(preScreened.symbols, domesticMaxDynamic, 'domestic-prescreened');
+      symbols = await filterMockUntradableDomesticCandidates(symbols);
       const ageMin = Math.floor((Date.now() - preScreened.savedAt) / 60000);
       console.log(`📋 [장전 스크리닝] 종목 로드 (${ageMin}분 전): ${symbols.join(', ')}`);
     } else {
@@ -274,6 +303,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         cacheLabel: 'RAG 폴백',
       });
       symbols = capDynamicUniverse(resolved.symbols, domesticMaxDynamic, `domestic-${resolved.source || 'dynamic'}`);
+      symbols = await filterMockUntradableDomesticCandidates(symbols);
       if (resolved.source === 'screening') {
         savePreScreened('domestic', symbols);
         const { recordScreeningSuccess } = await import('../scripts/screening-monitor.js');

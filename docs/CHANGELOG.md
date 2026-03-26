@@ -2248,3 +2248,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 국내장 `kis + BUY + mock 계좌`에서 최근 `mock_untradable_symbol` 이력이 있으면 `mock_untradable_symbol_recent`으로 승인 거부
 - 의미:
   - 브로커 mock 제약이 이미 확인된 종목을 approval 단계에서도 미리 걸러, execution 단계의 반복 실패와 운영 노이즈를 감소
+## [2026-03-26] investment domestic screening mock-untradable filter
+
+- `bots/investment/markets/domestic.js`
+  - 최근 `mock_untradable_symbol` 이력이 있는 국내장 BUY 후보를 screening/prescreened 단계에서 제외하는 필터 추가
+  - `appendHeldSymbols()` 전에 적용해 보유 포지션 심볼은 유지
+  - 명시 실행 `--symbols`, `--no-dynamic`은 그대로 존중
+- 의미:
+  - 브로커 mock 제약을 screening 단계까지 끌어올려, 자동 후보 선정에서 같은 종목이 반복 등장하는 노이즈를 완화

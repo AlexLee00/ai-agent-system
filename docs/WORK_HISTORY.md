@@ -4790,3 +4790,13 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `bots/investment/shared/runtime-config.js`의 `mockUntradableSymbolCooldownMinutes`
 - 해석:
   - 실행 단계에서 한 번 확인된 mock 제약을 승인 단계까지 올려, 같은 종목이 approval을 반복 통과하는 운영 노이즈를 줄인 작업이다.
+
+## 2026-03-26: 국내장 screening 후보 `mock_untradable_symbol` 제외
+
+- `bots/investment/markets/domestic.js`
+  - `filterMockUntradableDomesticCandidates()`를 추가했다.
+  - 최근 `mock_untradable_symbol` 이력이 있는 국내장 BUY 후보를 screening 후보군에서 제외한다.
+  - 이 필터는 자동 screening/prescreened 경로에만 적용하고, `--symbols`, `--no-dynamic`은 건드리지 않는다.
+  - `appendHeldSymbols()` 전에 적용해 보유 포지션 심볼은 유지한다.
+- 해석:
+  - execution → approval → screening으로 브로커 mock 제약 신호를 한 단계씩 끌어올려, 국내장 자동화의 반복 실패 가능성을 줄인 작업이다.
