@@ -2375,3 +2375,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - investment health에 `■ crypto validation soft cap 차단(최근 24시간)` 섹션 추가
   - `validation_daily_budget_soft_cap` block code 발생 건수를 별도 집계
   - soft budget 사용량과 실제 차단을 분리 관찰 가능
+- `feat(investment): enrich crypto soft-budget runtime suggestions`
+  - `runtime-config-suggestions`가 오늘 `validation_daily_budget_soft_cap`, `capital_guard_rejected`, normal BUY 수를 함께 읽도록 보강
+  - `validationBudgetSnapshots.cryptoValidation`에 `normalCount`, `softCapBlocks`, `capitalGuardBlocks` 추가
+  - soft cap 차단이 실제 발생했을 때 reserve slot 유지/완화 후보를 자동 제안할 수 있는 기준선 추가

@@ -4912,3 +4912,5 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 투자팀 `notifyError()`의 CRITICAL 텔레그램 fanout을 `team-only`로 낮춰, 실행 오류 1건이 `emergency + luna`로 이중 전송되는 UX를 완화
 - `runtime-config-suggestions`에도 `validation budget 스냅샷(오늘)`을 추가해 `binance/validation BUY 3/8 soft cap (hard 10, reserve 2)`를 health와 동일 기준으로 노출
 - investment health에 `crypto validation soft cap 차단(최근 24시간)` 섹션을 추가해 실제 `validation_daily_budget_soft_cap` 발생 건수를 별도 관찰 가능하게 정리
+- `runtime-config-suggestions`가 이제 오늘 `validation_daily_budget_soft_cap`, `capital_guard_rejected`, normal BUY 수까지 함께 읽어 reserve slot 유지/완화 후보를 제안할 수 있게 정리
+- 현재 스냅샷은 `binance/validation BUY 3/8 soft cap (hard 10, reserve 2, normal 0, soft-cap blocks 0)`로, 아직 실제 soft cap 차단 표본은 없는 상태
