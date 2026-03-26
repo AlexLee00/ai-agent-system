@@ -4734,3 +4734,13 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 해석:
   - health/report 문구와 운영 현실의 의미 경계를 문서 기준선까지 맞춘 작업이다.
   - 내부 MVP에서는 `validation LIVE`를 guarded lane으로 인정하고, 나중에 필요하면 `PAPER validation` 레일을 복원하거나 workspace별 risk profile로 분리할 수 있다.
+
+## 2026-03-26: 한울 KIS mock `매매불가 종목` 오류 분류 정밀화
+
+- `002630 BUY` 실행 중 `KIS API 오류 [40070000]: 모의투자 주문처리가 안되었습니다(매매불가 종목)`가 발생한 로그를 재확인했다.
+- 현재가 조회는 정상(`586원`)이었기 때문에, 이 이슈는 종목코드 오류보다 `KIS mock 주문 가능 범위` 제약으로 보는 것이 맞다.
+- `bots/investment/team/hanul.js`
+  - `inferHanulBlockCode()`가 `40070000` 또는 `매매불가 종목` 문구를 `mock_untradable_symbol`로 분류하도록 수정했다.
+- 해석:
+  - 브로커 제약을 generic `domestic_order_rejected`로 남기지 않고, `mock 불가 종목`이라는 운영 의미를 직접 보이게 만든 작업이다.
+  - 이후 동일 block code가 쌓이면 screening/승인 단계에서 쿨다운이나 제외 정책을 붙일 수 있다.

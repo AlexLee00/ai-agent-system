@@ -1344,3 +1344,18 @@
 - 남은 TODO:
   - 다음 crypto cycle에서 `mid_gap_promoted / executed / rejected_by_risk`가 실제로 쌓이는지 확인
   - `capital_guard` validation 편중과 `reentry` 변화까지 같이 봐서 LIVE gate 완화 여부 재판단
+
+## 2026-03-26 11:22 KST — 한울 KIS mock `매매불가 종목` 오류 분류 정밀화
+
+- 요청 배경:
+  - 루나가 `002630 BUY`를 승인한 뒤 한울 실행 단계에서 `KIS API 오류 [40070000]: 모의투자 주문처리가 안되었습니다(매매불가 종목)`가 발생했다.
+  - 현재가 조회(`586원`)는 정상 통과했기 때문에 사전 TA/quote 검증만으로는 막을 수 없고, 브로커 mock 주문 단계에서만 드러나는 종목 제약으로 판단됐다.
+- 반영:
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+    - `inferHanulBlockCode()`가 `40070000` 또는 `매매불가 종목` 문구를 `mock_untradable_symbol`로 분류하도록 보강
+- 의미:
+  - 지금 당장 필요한 구조는 브로커 제약을 generic `domestic_order_rejected`로 뭉개지 않고, `KIS mock에서 주문 불가한 종목`으로 정확히 남기는 것이다.
+  - 나중에는 이 block code를 기반으로 동일 종목 BUY를 더 긴 쿨다운으로 묶거나, 모의투자 불가 종목 watchlist를 둘 수 있다.
+- 남은 TODO:
+  - `002630` 같은 종목이 반복되는지 `signals.block_code='mock_untradable_symbol'` 기준으로 추적
+  - 필요하면 국내장 screening 단계에서 mock 불가 종목 쿨다운/제외 정책 검토
