@@ -16,9 +16,10 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.js';
-import { getKisSymbols, getKisOverseasSymbols } from '../shared/secrets.js';
+import { getInvestmentTradeMode, getKisSymbols, getKisOverseasSymbols } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.js';
+import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -32,6 +33,31 @@ const PRESCREENED_FILE = {
 
 const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
 const PRESCREENED_RAG_TTL_MS = 24 * 3600 * 1000;  // 24시간 (RAG 폴백)
+
+async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode = getInvestmentTradeMode()) {
+  if (market !== 'domestic' || !Array.isArray(symbols) || symbols.length === 0) return symbols;
+  const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
+  const checks = await Promise.all(
+    symbols.map(async (symbol) => ({
+      symbol,
+      blocked: await db.getRecentBlockedSignalByCode({
+        symbol,
+        action: 'BUY',
+        exchange: 'kis',
+        tradeMode,
+        blockCode: 'mock_untradable_symbol',
+        minutesBack: cooldownMinutes,
+      }),
+    })),
+  );
+  const filtered = checks.filter((item) => !item.blocked).map((item) => item.symbol);
+  const skipped = checks.filter((item) => item.blocked).map((item) => item.symbol);
+  if (skipped.length > 0) {
+    const cooldownHours = (cooldownMinutes / 60).toFixed(cooldownMinutes % 60 === 0 ? 0 : 1);
+    console.log(`  🚫 [prescreen mock 불가 제외] ${skipped.join(', ')} (${cooldownHours}시간 쿨다운)`);
+  }
+  return filtered;
+}
 
 // ─── 공개 유틸 (domestic.js / overseas.js에서 import) ───────────────
 
@@ -147,7 +173,7 @@ async function main() {
     screenLabel: `장전 ${label} 스크리닝`,
     cacheLabel: '캐시 폴백',
   });
-  const symbols = resolved.symbols;
+  const symbols = await filterMockUntradablePrescreenSymbols(market, resolved.symbols);
   const summarizedSymbols = symbols.length <= 6
     ? symbols.join(', ')
     : `${symbols.slice(0, 6).join(', ')} 외 ${symbols.length - 6}개`;

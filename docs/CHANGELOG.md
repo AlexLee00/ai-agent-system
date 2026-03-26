@@ -2289,3 +2289,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 명시 실행 `--symbols`, `--no-dynamic`은 그대로 존중
 - 의미:
   - 브로커 mock 제약을 screening 단계까지 끌어올려, 자동 후보 선정에서 같은 종목이 반복 등장하는 노이즈를 완화
+## [2026-03-26] investment domestic prescreen mock-untradable filter
+
+- `bots/investment/scripts/pre-market-screen.js`
+  - 국내장 장전 prescreen 저장 전에 최근 `mock_untradable_symbol` 이력이 있는 BUY 후보를 제외하는 필터 추가
+  - 국내장에만 적용하고 해외장/암호화폐 prescreen 경로는 유지
+- 의미:
+  - `mock_untradable_symbol` 제약을 prescreen 저장 단계까지 끌어올려, 다음 자동화 사이클의 후보 재등장을 더 앞단에서 줄임

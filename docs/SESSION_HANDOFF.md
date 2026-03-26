@@ -1511,3 +1511,17 @@
 - 의미:
   - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 execution/approval뿐 아니라 screening 후보에서도 줄여 운영 노이즈를 한 번 더 낮추는 것이다.
   - 나중에는 이 기준을 watchlist, screening history quality score, broker capability profile까지 확장할 수 있다.
+
+## 2026-03-26 15:08 KST — 장전 prescreen 저장 단계에서도 `mock_untradable_symbol` 제외
+
+- 요청 배경:
+  - `015260`, `152550`처럼 국내장 mock 불가 종목이 새로 확인되면서, 소비 단계 필터만으로는 장전 prescreen JSON 자체에는 여전히 같은 후보가 남을 수 있었다.
+  - screening 소비 단계뿐 아니라 prescreen 저장 단계에서도 같은 제약을 적용하는 것이 가장 자연스러운 다음 보강이었다.
+- 반영:
+  - [pre-market-screen.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/pre-market-screen.js)
+    - `filterMockUntradablePrescreenSymbols()` 추가
+    - 국내장 장전 prescreen 저장 전에 최근 `mock_untradable_symbol` 이력이 있는 BUY 후보를 제외
+    - 해외장/암호화폐 prescreen은 건드리지 않음
+- 의미:
+  - 지금 당장 필요한 구조는 국내장 mock 불가 종목을 execution → approval → screening 소비 → prescreen 저장까지 끌어올려, 자동 후보 재등장을 더 앞단에서 줄이는 것이다.
+  - 나중에는 이 신호를 prescreen 품질 점수, watchlist hygiene, broker capability cache로 확장할 수 있다.

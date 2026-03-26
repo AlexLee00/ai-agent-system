@@ -4826,3 +4826,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `appendHeldSymbols()` 전에 적용해 보유 포지션 심볼은 유지한다.
 - 해석:
   - execution → approval → screening으로 브로커 mock 제약 신호를 한 단계씩 끌어올려, 국내장 자동화의 반복 실패 가능성을 줄인 작업이다.
+
+## 2026-03-26: 국내장 prescreen 저장 단계 `mock_untradable_symbol` 제외
+
+- `bots/investment/scripts/pre-market-screen.js`
+  - `filterMockUntradablePrescreenSymbols()`를 추가했다.
+  - 국내장 장전 prescreen 결과 저장 전에 최근 `mock_untradable_symbol` 이력이 있는 BUY 후보를 제외한다.
+  - 국내장에만 적용하고, 해외장/암호화폐 prescreen은 유지한다.
+- 해석:
+  - mock 불가 종목 신호를 screening 소비 단계뿐 아니라 prescreen 저장 단계까지 끌어올려, 다음 자동화 사이클의 후보 재등장을 더 앞단에서 줄이는 작업이다.
