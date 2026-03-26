@@ -392,6 +392,7 @@ async function publishToTelegram({
   topicTeam,
   event,
   prefix = '',
+  criticalMode = 'both',
   policy,
 }) {
   const normalized = normalizeEvent(event);
@@ -409,7 +410,9 @@ async function publishToTelegram({
 
   try {
     const ok = normalized.alert_level >= 3
-      ? await sender.sendCritical(topicTeam, finalMessage)
+      ? (criticalMode === 'team_only'
+          ? await sender.send(topicTeam, finalMessage)
+          : await sender.sendCritical(topicTeam, finalMessage))
       : await sender.send(topicTeam, finalMessage);
     return { ok: Boolean(ok), channel: 'telegram', event: normalized };
   } catch (error) {
@@ -596,6 +599,7 @@ async function publishEventPipeline({
           topicTeam: target.topicTeam,
           event: normalized,
           prefix: target.prefix,
+          criticalMode: target.criticalMode,
           policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
@@ -872,6 +876,7 @@ function buildSeverityTargets({
   includeQueue = true,
   includeTelegram = true,
   includeN8n = true,
+  criticalTelegramMode = 'both',
   criticalWebhookUrl = DEFAULT_CRITICAL_WEBHOOK_URL,
 } = {}) {
   const normalized = normalizeEvent(event);
@@ -897,6 +902,7 @@ function buildSeverityTargets({
       sender,
       topicTeam,
       prefix: telegramPrefix,
+      criticalMode: criticalTelegramMode,
     });
   }
 
