@@ -1705,3 +1705,26 @@
   - 다음 crypto cycle에서 `validation_daily_budget_soft_cap`가 실제 block code로 집계되는지
   - `capital_guard_rejected`의 validation 비중이 감소하는지
   - `mid_gap_*`와 soft cap이 같이 작동할 때 LIVE gate 판단이 어떻게 바뀌는지
+
+## 2026-03-26 — crypto validation soft budget health 노출
+
+- 배경
+  - soft budget guard를 추가했지만, 발동 전에는 운영자가 현재 validation BUY 사용량이 soft cap에 얼마나 가까운지 헬스 리포트만으로 읽기 어려웠다.
+
+- 이번 변경
+  - [bots/investment/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `loadCryptoValidationSoftBudgetHealth()` 추가
+    - 오늘 `binance + validation + BUY` 체결 수를 조회해 `hard cap`, `reserve`, `soft cap`과 함께 노출
+    - `■ crypto validation soft budget(오늘)` 섹션 추가
+    - soft cap 근접/도달 시 운영 판단 reason에도 반영되도록 연결
+
+- 현재 기준
+  - `BINANCE / validation BUY 3/8 soft cap (hard 10, reserve 2)`
+  - 아직 근접/도달 상태는 아니므로 warning은 아님
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - soft cap 발동 전에도 validation 예산 사용량을 예방적으로 관찰
+  - 나중에 확장할 구조:
+    - exchange/trade_mode별 soft budget health 일반화
+    - `/ops-health` 상위 집계와 연결

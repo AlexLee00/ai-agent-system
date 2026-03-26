@@ -19,6 +19,7 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.js';
+import { getValidationSoftBudgetConfig } from '../shared/runtime-config.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -687,6 +688,51 @@ async function loadTradeLaneHealth() {
   };
 }
 
+async function loadCryptoValidationSoftBudgetHealth() {
+  const policy = loadCapitalPolicySnapshot();
+  const softBudget = getValidationSoftBudgetConfig('binance');
+  const hardCap = resolveLaneTradeLimit(policy, 'binance', 'validation');
+
+  const rows = await pgPool.query(
+    'investment',
+    `
+      SELECT COUNT(*)::int AS cnt
+      FROM investment.trades
+      WHERE exchange = 'binance'
+        AND COALESCE(trade_mode, 'normal') = 'validation'
+        AND LOWER(COALESCE(side, '')) = 'buy'
+        AND executed_at::date = CURRENT_DATE
+    `,
+  ).catch(() => []);
+
+  const count = Number(rows[0]?.cnt || 0);
+  const reserveSlots = softBudget.reserveDailyBuySlots;
+  const softCap = hardCap > 0 ? Math.max(1, hardCap - reserveSlots) : 0;
+  const ratio = softCap > 0 ? count / softCap : 0;
+  const atSoftCap = softCap > 0 && count >= softCap;
+  const nearSoftCap = softCap > 0 && !atSoftCap && ratio >= 0.8;
+  const line =
+    `  BINANCE / validation BUY ${count}/${softCap || 'n/a'} soft cap` +
+    ` (hard ${hardCap || 'n/a'}, reserve ${reserveSlots})`;
+
+  return {
+    enabled: softBudget.enabled,
+    reserveSlots,
+    hardCap,
+    softCap,
+    count,
+    ratio,
+    atSoftCap,
+    nearSoftCap,
+    okCount: softBudget.enabled && !atSoftCap && !nearSoftCap ? 1 : 0,
+    warnCount: softBudget.enabled && (atSoftCap || nearSoftCap) ? 1 : 0,
+    ok: softBudget.enabled && !atSoftCap && !nearSoftCap ? [line] : [],
+    warn: softBudget.enabled && (atSoftCap || nearSoftCap)
+      ? [line + (atSoftCap ? ' (soft cap 도달)' : ' (soft cap 근접)')]
+      : [],
+  };
+}
+
 function getStalePositionThresholdHours(exchange) {
   if (exchange === 'kis_overseas') return 72;
   if (exchange === 'kis') return 48;
@@ -825,6 +871,7 @@ function buildDecision(
   domesticCollectPressure,
   domesticRejectBreakdown,
   tradeLaneHealth,
+  cryptoValidationSoftBudgetHealth,
   stalePositionHealth,
   cryptoLiveGateHealth,
   capitalGuardBreakdown,
@@ -888,6 +935,11 @@ function buildDecision(
         reason: saturatedLane
           ? `거래 한도 도달 rail ${formatLaneLabel(saturatedLane.exchange, saturatedLane.tradeMode)} ${saturatedLane.count}/${saturatedLane.limit}`
           : `거래 한도 근접 rail ${formatLaneLabel(nearLimitLane?.exchange, nearLimitLane?.tradeMode)} ${nearLimitLane?.count}/${nearLimitLane?.limit}`,
+      },
+      {
+        active: cryptoValidationSoftBudgetHealth.enabled && (cryptoValidationSoftBudgetHealth.atSoftCap || cryptoValidationSoftBudgetHealth.nearSoftCap),
+        level: cryptoValidationSoftBudgetHealth.atSoftCap ? 'medium' : 'low',
+        reason: `crypto validation soft budget ${cryptoValidationSoftBudgetHealth.count}/${cryptoValidationSoftBudgetHealth.softCap} (hard ${cryptoValidationSoftBudgetHealth.hardCap}, reserve ${cryptoValidationSoftBudgetHealth.reserveSlots})`,
       },
       {
         active: capitalGuardBreakdown.total > 0,
@@ -963,6 +1015,7 @@ function formatText(report) {
     buildHealthCountSection(`■ KIS mock 주문 불가 종목(최근 ${Math.round(report.mockUntradableSymbolHealth.windowMinutes / 60)}시간)`, report.mockUntradableSymbolHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection(`■ 국내장 수집 압력(최신 cycle / 로그 ${report.domesticCollectPressure.windowLines}줄, tail ${report.domesticCollectPressure.logLines}줄)`, report.domesticCollectPressure, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
+    buildHealthCountSection('■ crypto validation soft budget(오늘)', report.cryptoValidationSoftBudgetHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
@@ -1012,6 +1065,7 @@ async function buildReport() {
   const domesticCollectPressure = await loadDomesticCollectPressure();
   const domesticRejectBreakdown = await loadDomesticRejectBreakdown();
   const tradeLaneHealth = await loadTradeLaneHealth();
+  const cryptoValidationSoftBudgetHealth = await loadCryptoValidationSoftBudgetHealth();
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const capitalGuardBreakdown = await loadCapitalGuardBreakdown();
@@ -1027,6 +1081,7 @@ async function buildReport() {
     domesticCollectPressure,
     domesticRejectBreakdown,
     tradeLaneHealth,
+    cryptoValidationSoftBudgetHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
@@ -1048,6 +1103,7 @@ async function buildReport() {
     domesticCollectPressure,
     domesticRejectBreakdown,
     tradeLaneHealth,
+    cryptoValidationSoftBudgetHealth,
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,

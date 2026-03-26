@@ -1585,3 +1585,14 @@
 - `node bots/investment/scripts/health-report.js --json` ✅
   - 기존 health 구조 정상 유지 확인
   - 현재 `tradeLaneHealth` 기준 `BINANCE / validation 3/10`
+
+## 2026-03-26 — crypto validation soft budget health
+
+- `node --check bots/investment/scripts/health-report.js` ✅
+- `node bots/investment/scripts/health-report.js --json` ✅
+  - `cryptoValidationSoftBudgetHealth.count = 3`
+  - `hardCap = 10`
+  - `softCap = 8`
+  - `warnCount = 0`
+- `node bots/investment/scripts/health-report.js` ✅
+  - `■ crypto validation soft budget(오늘)` 섹션 출력 확인
