@@ -1507,3 +1507,4 @@
 | `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30` | ✅ `002630` 실패 1건 실제 재분류 완료 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `mockUntradableSymbolHealth.total=1`, `002630 mock 주문 불가 1건`, 운영 판단에 `최근 24시간 KIS mock 주문 불가 종목 1건` 반영 확인 |
 | `node --check bots/investment/team/nemesis.js` | ✅ 국내장 `kis + BUY + mock 계좌`에서 최근 `mock_untradable_symbol` 이력을 `mock_untradable_symbol_recent`으로 승인 거부하도록 보강 후 문법 통과 |
+| `node --check bots/investment/markets/domestic.js` | ✅ 자동 screening/prescreened 경로에서 최근 `mock_untradable_symbol` 후보를 제외하고, `appendHeldSymbols()` 전에 적용해 held 심볼은 유지하도록 보강 후 문법 통과 |

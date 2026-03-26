@@ -1428,3 +1428,19 @@
 - 의미:
   - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 approval 단계에서도 조용히 다시 걸러 execution 노이즈를 줄이는 것이다.
   - 나중에는 screening 단계까지 같은 신호를 올려 mock 불가 종목 watchlist로 확장할 수 있다.
+
+## 2026-03-26 11:59 KST — 국내장 screening 후보에서 `mock_untradable_symbol` 제외
+
+- 요청 배경:
+  - execution과 approval까지 `mock_untradable_symbol`을 반영했지만, 자동 screening 후보 자체는 여전히 같은 종목을 다시 올릴 수 있었다.
+  - held 포지션은 유지하되, 신규 BUY 후보만 미리 덜어내는 것이 가장 자연스러운 다음 단계였다.
+- 반영:
+  - [domestic.js](/Users/alexlee/projects/ai-agent-system/bots/investment/markets/domestic.js)
+    - `filterMockUntradableDomesticCandidates()` 추가
+    - 최근 `mock_untradable_symbol` 이력이 있는 국내장 BUY 후보를 screening 단계에서 제외
+    - 이 필터는 `prescreened` / dynamic screening 경로에만 적용
+    - 명시 실행 `--symbols`, `--no-dynamic`은 존중
+    - `appendHeldSymbols()` 전에 적용해서 보유 포지션 심볼은 계속 유지
+- 의미:
+  - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 execution/approval뿐 아니라 screening 후보에서도 줄여 운영 노이즈를 한 번 더 낮추는 것이다.
+  - 나중에는 이 기준을 watchlist, screening history quality score, broker capability profile까지 확장할 수 있다.
