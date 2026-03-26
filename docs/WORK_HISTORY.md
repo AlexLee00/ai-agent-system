@@ -4899,3 +4899,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - health/report 상단에 `국내장 수집 압력` 섹션과 운영 판단 reason을 추가했다.
 - 해석:
   - 오늘 국내장 자동화의 active 이슈가 주문 실패보다 collect pressure와 희소 심볼 노이즈에 있다는 점을 health 상단에서 바로 읽게 만든 작업이다.
+## 2026-03-26
+
+- crypto validation BUY가 실행 단계 `capital_guard_rejected`로 밀리는 문제를 줄이기 위해 approval 단계 soft budget guard 추가
+- `runtime-config`에 `validationSoftBudget.binance.reserveDailyBuySlots=2` 기본값 추가
+- `nemesis`에서 `binance + validation + BUY`의 일간 BUY 수가 soft cap(`hard 10 - reserve 2 = 8`)에 도달하면 `validation_daily_budget_soft_cap`으로 즉시 거부하도록 보강
+- 목적:
+  - 실행 노이즈 감소
+  - block code 해석성 개선
+  - validation 예산 과소비를 approval 단계에서 조기 차단

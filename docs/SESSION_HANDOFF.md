@@ -1674,3 +1674,34 @@
 - 의미:
   - 지금 당장 필요한 구조는 국내장 자동화의 핵심 병목을 주문 실패가 아니라 collect pressure/data sparsity까지 포함해 상단 리포트에서 직접 읽는 것이다.
   - 나중에는 이 집계를 로그 tail 기반 임시 방식에서 pipeline/session 메트릭 기반 health로 승격할 수 있다.
+## 2026-03-26 — crypto validation soft budget guard
+
+- 배경
+  - 최근 14일 `capital_guard_rejected=65` 중 `validation=59`, `daily trade limit=63`으로 crypto validation 레인의 일간 예산 소진이 핵심 병목으로 확인됐다.
+  - 기존에는 approval을 통과한 validation BUY가 실행 단계 `capital_guard_rejected`에서 뒤늦게 막혀 운영 노이즈가 커졌다.
+
+- 이번 변경
+  - [bots/investment/shared/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/runtime-config.js)
+    - `luna.validationSoftBudget.binance.reserveDailyBuySlots=2` 기본값 추가
+  - [bots/investment/team/nemesis.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/nemesis.js)
+    - `binance + validation + BUY` 경로에서 일간 validation BUY 수를 먼저 조회
+    - `max_daily_trades(10)` 중 마지막 `2` 슬롯은 남기고, soft cap(`8`) 도달 시 approval 단계에서 `validation_daily_budget_soft_cap`으로 거부
+    - block meta에 `daily_validation_buys`, `soft_cap`, `hard_cap`, `reserve_slots` 기록
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - execution 단계 `capital_guard_rejected`를 approval 단계의 더 명확한 subtype으로 앞당겨 운영 해석성과 노이즈를 개선
+  - 나중에 확장할 구조:
+    - exchange/trade_mode별 soft budget 정책 외부화
+    - validation/live/paper budget을 분리한 lane-level capital policy
+
+- 검증
+  - `node --check bots/investment/shared/runtime-config.js`
+  - `node --check bots/investment/team/nemesis.js`
+  - `node --input-type=module -e "import { getValidationSoftBudgetConfig } from './bots/investment/shared/runtime-config.js'; console.log(JSON.stringify(getValidationSoftBudgetConfig('binance')));"`
+  - `node bots/investment/scripts/health-report.js --json`
+
+- 현재 후속 확인 포인트
+  - 다음 crypto cycle에서 `validation_daily_budget_soft_cap`가 실제 block code로 집계되는지
+  - `capital_guard_rejected`의 validation 비중이 감소하는지
+  - `mid_gap_*`와 soft cap이 같이 작동할 때 LIVE gate 판단이 어떻게 바뀌는지

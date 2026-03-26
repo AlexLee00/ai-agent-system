@@ -11,6 +11,12 @@ const DEFAULT_RUNTIME_CONFIG = {
   luna: {
     signalDedupeWindowMinutes: 180,
     mockUntradableSymbolCooldownMinutes: 1440,
+    validationSoftBudget: {
+      binance: {
+        enabled: true,
+        reserveDailyBuySlots: 2,
+      },
+    },
     sameDaySymbolReentryBlockEnabled: true,
     minConfidence: {
       live: { binance: 0.50, kis: 0.30, kis_overseas: 0.30 },
@@ -216,6 +222,19 @@ export function getMockUntradableSymbolCooldownMinutes() {
   const raw = Number(getLunaRuntimeConfig()?.mockUntradableSymbolCooldownMinutes);
   if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
   return 1440;
+}
+
+export function getValidationSoftBudgetConfig(exchange = 'binance') {
+  const luna = getLunaRuntimeConfig();
+  const override = luna?.validationSoftBudget?.[exchange] || {};
+  const enabled = override.enabled !== false;
+  const reserveDailyBuySlots = Number(override.reserveDailyBuySlots ?? 2);
+  return {
+    enabled,
+    reserveDailyBuySlots: Number.isFinite(reserveDailyBuySlots) && reserveDailyBuySlots > 0
+      ? Math.round(reserveDailyBuySlots)
+      : 0,
+  };
 }
 
 export function isSameDaySymbolReentryBlockEnabled() {
