@@ -42,6 +42,26 @@
   - `node bots/investment/scripts/validate-trade-review.js --days=30` → `findings=0`
   - `node bots/investment/scripts/health-report.js --json` → `tradeReview.findings=0`
 
+## 2026-03-26: 덱스터 resolved pattern 정리 경계 복구
+
+- 덱스터 유지보수 리포트에 여전히
+  - `investment 미처리 신호 (2h+)`
+  - `investment trade_review 무결성`
+  반복 패턴이 남아 있는 것을 확인했다.
+- 현재 실상 확인:
+  - `signals`의 `approved/pending 2h+` = `0건`
+  - `validate-trade-review --days=30` = `findings=0`
+- 원인:
+  - `bots/claude/lib/checks/database.js`가 `investment 미처리 신호 (2h+)` 0건일 때 동일 라벨의 `ok` 항목을 내보내지 않아 `markResolved()`가 stale pattern을 지우지 못했다.
+- 수정:
+  - `investment 미처리 신호 (2h+)`가 0건이면 `ok` 항목을 추가하도록 보강
+  - 기존 stale pattern은 `clearPatterns()`로 직접 정리
+- 검증:
+  - `node --check bots/claude/lib/checks/database.js`
+  - `clearPatterns('investment 미처리 신호 (2h+)')`
+  - `clearPatterns('investment trade_review 무결성')`
+  - `dexter_error_log` 재조회 결과 대상 패턴 `[]`
+
 ## 2026-03-25: 스카 매출 두 축 source of truth 문서화
 
 - `2026-03-23` `daily_summary` row를 Pickko 일별 상세와 다시 대조했다.

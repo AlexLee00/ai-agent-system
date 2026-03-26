@@ -63,6 +63,14 @@
 | `node --input-type=module -e \"... SELECT trade_id, symbol, entry_value, pnl_amount, pnl_percent FROM investment.trade_journal WHERE trade_id='TRD-20260319-001' ...\"` | ✅ `pnl_percent=0.2747`, `pnl_amount=0.0274725...`, `entry_value=10`으로 정상 저수익 퍼센트 저장값 확인 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `tradeReview.findings=0`, health decision에서 `trade_review 정합성 이슈` 사라짐 확인 |
 
+### 덱스터 investment resolved pattern 정리 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/claude/lib/checks/database.js` | ✅ `investment 미처리 신호 (2h+)` 0건일 때 `ok` 항목 추가 후 문법 통과 |
+| `node --input-type=module -e \"... clearPatterns('investment 미처리 신호 (2h+)'); clearPatterns('investment trade_review 무결성') ...\"` | ✅ stale pattern 직접 정리 결과 `clearedPending=1`, `clearedTradeReview=1` |
+| `node --input-type=module -e \"... SELECT check_name,label FROM dexter_error_log WHERE label LIKE ...\"` | ✅ 대상 stale pattern 조회 결과 `[]` |
+
 ## 2026-03-23
 
 ### 비디오팀 Phase 3 과제 F `step-proposal-engine`
