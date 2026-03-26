@@ -1558,3 +1558,23 @@
 - 의미:
   - 지금 당장 필요한 구조는 KIS mock 레일에서 주문 요청을 시세 조회보다 더 보수적으로 pacing해 `broker_rate_limited`를 줄이는 것이다.
   - 나중에는 거래소/시장별로 lane별 pacing을 runtime-config로 외부화할 수 있다.
+
+## 2026-03-26 22:30 KST — 투자팀 health에 국내장 수집 압력/희소 데이터 노출
+
+- 요청 배경:
+  - 오늘 오류 로그를 다시 확인한 결과 국내장은 주문 실패보다 `wide_universe`, `collect_overload_detected`, `debate_capacity_hot`, 대량 `데이터 부족`이 더 큰 active 병목으로 보였다.
+  - 기존 health는 `mock 주문 불가`와 주문 실패는 보여주지만, collect pressure와 data sparsity는 상단 판단에서 바로 읽히지 않았다.
+- 반영:
+  - [health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `/tmp/investment-domestic.err.log` 최근 200줄을 직접 집계하는 `loadDomesticCollectPressure()` 추가
+    - `overload`, `wide`, `concurrency`, `debate_capacity_hot`, `data_sparsity`, `외부 시세/순위 조회 실패`를 요약
+    - text/JSON report와 운영 판단 reason에 `국내장 수집 압력` 섹션 추가
+- 현재 관측값:
+  - overload `17`
+  - wide `17`
+  - debate `17`
+  - data_sparsity `156`
+  - 외부 시세/순위 조회 실패 `6`
+- 의미:
+  - 지금 당장 필요한 구조는 국내장 자동화의 핵심 병목을 주문 실패가 아니라 collect pressure/data sparsity까지 포함해 상단 리포트에서 직접 읽는 것이다.
+  - 나중에는 이 집계를 로그 tail 기반 임시 방식에서 pipeline/session 메트릭 기반 health로 승격할 수 있다.

@@ -2314,3 +2314,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - pending signal 간 간격 상향
 - 의미:
   - 국내장 `broker_rate_limited`를 줄이기 위해 시세 조회보다 주문 요청을 더 보수적으로 spacing
+## [2026-03-26] investment domestic collect pressure health
+
+- `bots/investment/scripts/health-report.js`
+  - 국내장 err 로그 최근 200줄에서 collect pressure와 data sparsity를 집계하는 `domesticCollectPressure` 섹션 추가
+  - 운영 판단 reason에도 국내장 수집 압력 요약 반영
+- 의미:
+  - 국내장 자동화의 핵심 병목을 주문 실패뿐 아니라 `wide_universe`, `collect_overload_detected`, `debate_capacity_hot`, `data_sparsity`까지 포함해 health 상단에서 직접 읽게 함

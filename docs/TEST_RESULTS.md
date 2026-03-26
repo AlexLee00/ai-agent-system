@@ -1543,3 +1543,5 @@
 | `node bots/investment/scripts/health-report.js --json` | ✅ `domesticRejectBreakdown`가 최근 24시간 국내장 주문 실패를 subtype으로 요약하고, 운영 판단 reason에 반영되는지 확인 |
 | `node --check bots/investment/shared/kis-client.js` | ✅ KIS 요청 lane을 `quote` / `order`로 분리하고 주문 간격을 보수적으로 상향한 뒤 문법 통과 |
 | `node --check bots/investment/team/hanul.js` | ✅ KIS pending signal 간 간격을 `1100ms`로 상향한 뒤 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ 국내장 err 로그 최근 200줄을 집계하는 `domesticCollectPressure` 섹션 추가 후 문법 통과 |
+| `node bots/investment/scripts/health-report.js --json` | ✅ `domesticCollectPressure`가 `overload 17 / wide 17 / debate 17 / data_sparsity 156 / 외부 시세 실패 6`를 노출하고 운영 판단 reason에 반영되는지 확인 |
