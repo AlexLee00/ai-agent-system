@@ -1326,3 +1326,21 @@
 - 현재 의미:
   - 지금 당장 필요한 구조는 gate를 푸는 것이 아니라, `validation LIVE`와 `PAPER 부족`를 분리해 읽는 것이다.
   - 나중에는 crypto에서 `validation-live`, `paper-validation`, `normal-live`를 명시적으로 분리한 운영 정책 문서가 필요하다.
+
+## 2026-03-26 11:08 KST — 투자팀 crypto validation / paper / live 정책 기준선 문서화
+
+- 요청 배경:
+  - 최근 crypto LIVE gate 리포트가 `LIVE 12 / PAPER 0`, `VALIDATION 4건도 LIVE`를 보여주고 있었고, 기존 "`validation = paper 검증`" 해석과 실제 운영 레일이 어긋나 있었다.
+  - health/report 문구는 이미 정렬됐지만, 다음 세션이 정책 의미를 오해하지 않도록 source of truth 문서가 필요했다.
+- 반영:
+  - [VALIDATION_LANE_POLICY.md](/Users/alexlee/projects/ai-agent-system/bots/investment/docs/VALIDATION_LANE_POLICY.md) 추가
+    - `trade_mode`와 `paper`를 독립 축으로 정의
+    - crypto의 현재 `validation`은 `PAPER`가 아니라 `LIVE 소액 검증 레일`임을 명시
+    - `crypto LIVE gate blocked`의 정확한 의미를 "`LIVE 금지`"가 아니라 "`normal live 확대 보류`"로 정리
+    - 이후 확인해야 할 `mid_gap_*`, `capital_guard`, `reentry` 관찰 지표 정리
+- 의미:
+  - 현재 운영 현실과 health/report 문구, 문서 기준선을 하나로 맞췄다.
+  - 내부 MVP에서는 `validation LIVE`를 guarded lane으로 인정하되, 추후 SaaS 확장 시 `PAPER validation` 복원 또는 workspace별 risk profile 분리를 선택할 수 있는 기준점이 생겼다.
+- 남은 TODO:
+  - 다음 crypto cycle에서 `mid_gap_promoted / executed / rejected_by_risk`가 실제로 쌓이는지 확인
+  - `capital_guard` validation 편중과 `reentry` 변화까지 같이 봐서 LIVE gate 완화 여부 재판단
