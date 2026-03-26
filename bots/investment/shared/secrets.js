@@ -201,7 +201,7 @@ export function getCryptoScreeningMaxDynamic() {
 export function getDomesticScreeningMaxDynamic() {
   const s = loadSecrets();
   const value = Number(s.screening_domestic_max_dynamic || 0);
-  return Number.isFinite(value) && value > 0 ? value : 15;
+  return Number.isFinite(value) && value > 0 ? value : 10;
 }
 
 export function getOverseasScreeningMaxDynamic() {

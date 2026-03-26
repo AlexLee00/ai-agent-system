@@ -1483,3 +1483,6 @@
 | `node --check bots/investment/scripts/health-report.js` | ✅ 해외장 capability 문구를 `mock SELL 장중에만 가능`으로 조정 후 문법 통과 |
 | `node bots/investment/scripts/force-exit-candidate-report.js --json` | ✅ force-exit 후보 `4건`, 전부 `kis_overseas`, `waitMarketOpen=4`, `blockedByCapability=0` 확인 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `kisCapabilityHealth.overseas`가 `mock SELL 장중에만 가능`, stale 포지션이 해외장 4건만 남은 상태 확인 |
+| `node --check bots/investment/shared/secrets.js` | ✅ 국내장 기본 dynamic cap `15 -> 10` 축소 후 문법 통과 |
+| `node --check bots/investment/team/aria.js` | ✅ `데이터 부족` 로그를 `이력 부족으로 스킵` 톤으로 조정 후 문법 통과 |
+| `node --input-type=module -e \"... getDomesticScreeningMaxDynamic() ...\"` | ✅ 실제 읽히는 국내장 dynamic cap 값 `10` 확인 |

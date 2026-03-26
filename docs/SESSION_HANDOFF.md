@@ -1284,3 +1284,14 @@
 - 의미:
   - 지금 당장 필요한 구조는 해외장을 capability 오류가 아니라 시장 시간 기반 `guarded` 레일로 해석하는 것이다.
   - 나중에는 미국 장중 실제 `ORCL` 1건으로 mock SELL 검증 후, 해외장 guarded 정책을 고정 capability로 승격할 수 있다.
+## 2026-03-26 09:40 KST — 국내장 로그 병목 완화 2차 (dynamic cap + data sparsity 톤다운)
+
+- 최신 오류 로그 기준 국내장은 `wide_universe`, `collect_overload_detected`, `concurrency_guard_active`, `debate_capacity_hot`가 계속 묶여 나타났다.
+- 동시에 [aria.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/aria.js)의 `데이터 부족 (1캔들)`이 실제 장애와 같은 톤으로 반복돼 운영 해석을 더럽히고 있었다.
+- 조치:
+  - [secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)에서 국내장 기본 dynamic cap을 `15 -> 10`으로 축소
+  - 실제 운영 설정 [config.yaml](/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml)은 이미 `domestic.max_dynamic=10` 기준으로 읽히는 것을 재확인
+  - [aria.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/aria.js)에서 `데이터 부족`은 `⚠️ 실패` 대신 `ℹ️ 이력 부족으로 스킵`으로 로그 톤 다운
+- 의미:
+  - 지금 당장 필요한 구조는 국내장 수집 폭을 더 줄이고, 희소 데이터 심볼을 원천 장애와 분리해서 읽는 것이다.
+  - 나중에는 `data_sparsity_watch`를 health/report 상위 섹션으로 분리해 신규 ETF/ETN/희소 심볼을 별도 품질 큐로 다룰 수 있다.

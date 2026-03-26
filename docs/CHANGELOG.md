@@ -2190,3 +2190,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `hanul.js` preflight에서 해외장 mock SELL 선차단 제거
 - `force-exit` 리포트/runner/health capability 문구를 동일 기준으로 정리
 - 현재 force-exit 후보는 해외장 4건만 남고, `blockedByCapability=0`으로 정리됨
+## [2026-03-26] investment domestic log pressure reduction
+
+- 국내장 기본 dynamic universe cap을 `15 -> 10`으로 낮춰 wide universe 압박을 완화
+- `아리아`의 `데이터 부족` 로그를 `이력 부족으로 스킵` 톤으로 조정해 hard error와 품질 경고를 분리
+- 국내장 `wide_universe / collect_overload_detected / debate_capacity_hot` 해석 노이즈를 줄이는 2차 완화 패치

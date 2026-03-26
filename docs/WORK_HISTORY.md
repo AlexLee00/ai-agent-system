@@ -4671,3 +4671,19 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `node --check bots/investment/scripts/health-report.js`
   - `node bots/investment/scripts/force-exit-candidate-report.js --json`
   - `node bots/investment/scripts/health-report.js --json`
+## 2026-03-26 — investment 국내장 로그 병목 완화 2차
+
+- [secrets.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/secrets.js)
+  - 국내장 기본 `getDomesticScreeningMaxDynamic()` fallback을 `15 -> 10`으로 축소
+- [aria.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/aria.js)
+  - `데이터 부족`은 `⚠️ 실패` 대신 `ℹ️ 이력 부족으로 스킵`으로 출력해 품질 경고와 원천 장애를 분리
+- 실제 확인:
+  - `node --input-type=module -e "... getDomesticScreeningMaxDynamic() ..."` 결과 `10`
+  - 운영 설정 [config.yaml](/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml)도 `screening.domestic.max_dynamic=10`
+- 의미:
+  - 국내장 `wide_universe / collect_overload_detected / debate_capacity_hot`를 줄이는 2차 완화 패치
+  - `데이터 부족` 로그를 hard error처럼 읽지 않게 해 운영 해석 신뢰도 개선
+- 검증:
+  - `node --check bots/investment/shared/secrets.js`
+  - `node --check bots/investment/team/aria.js`
+  - `node --input-type=module -e "... getDomesticScreeningMaxDynamic() ..."`
