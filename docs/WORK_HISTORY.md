@@ -4780,3 +4780,13 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 경고 문구 `002630 mock 주문 불가 1건`이 직접 보이게 됨
 - 해석:
   - 새 실패 기준선뿐 아니라 과거 원장까지 같은 의미로 정렬해, health/report의 해석 일관성을 높인 작업이다.
+
+## 2026-03-26: 네메시스 승인 단계 `mock_untradable_symbol` 연동
+
+- `bots/investment/team/nemesis.js`
+  - `kis + BUY + mock 계좌` 조건에서 최근 `mock_untradable_symbol` 이력을 확인하고, 있으면 `mock_untradable_symbol_recent`으로 승인 거부하도록 보강했다.
+- 재사용:
+  - `bots/investment/shared/db.js`의 `getRecentBlockedSignalByCode()`
+  - `bots/investment/shared/runtime-config.js`의 `mockUntradableSymbolCooldownMinutes`
+- 해석:
+  - 실행 단계에서 한 번 확인된 mock 제약을 승인 단계까지 올려, 같은 종목이 approval을 반복 통과하는 운영 노이즈를 줄인 작업이다.
