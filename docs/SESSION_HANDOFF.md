@@ -1791,3 +1791,26 @@
     - soft budget 사용량과 실제 soft cap 차단 건수를 분리 관찰
   - 나중에 확장할 구조:
     - `capital_guard_rejected`와 `validation_daily_budget_soft_cap`를 함께 추적하는 lane-level budget 분석
+
+## 2026-03-26 — runtime-config 제안 리포트에 soft cap 조정 힌트 보강
+
+- 배경
+  - [runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)가 soft budget 스냅샷은 보여주지만, 실제 `validation_daily_budget_soft_cap` 차단이 발생했을 때 reserve slot을 유지/완화 중 어느 쪽을 볼지 제안하지 못했다.
+
+- 이번 변경
+  - [bots/investment/scripts/runtime-config-suggestions.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-config-suggestions.js)
+    - 오늘 `signals` 기준 `validation_daily_budget_soft_cap`, `capital_guard_rejected` 차단 건수를 함께 집계
+    - `validationBudgetSnapshots.cryptoValidation`에 `normalCount`, `softCapBlocks`, `capitalGuardBlocks`를 추가
+    - reserve slot 제안 로직 보강
+      - `softCapBlocks > 0`이고 `normal BUY = 0`, `capital_guard = 0`이면 reserve 완화 후보 제안
+      - 그렇지 않으면 reserve 유지 관찰 제안
+    - text report 스냅샷에도 `normal`, `soft-cap blocks`를 함께 표기
+
+- 현재 기준
+  - `binance/validation: BUY 3/8 soft cap (hard 10, reserve 2, normal 0, soft-cap blocks 0)`
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - soft cap이 실제로 걸렸을 때 reserve slot 조정 방향을 운영 리포트에서 바로 읽게 하는 것
+  - 나중에 확장할 구조:
+    - soft cap 차단 누적치와 normal lane 점유율을 함께 본 자동 reserve slot 튜닝

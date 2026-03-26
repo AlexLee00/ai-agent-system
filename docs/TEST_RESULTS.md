@@ -4,6 +4,14 @@
 
 ## 2026-03-26
 
+### crypto soft budget runtime suggestion 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/scripts/runtime-config-suggestions.js` | ✅ today soft-cap block snapshot / reserve slot suggestion 로직 추가 후 문법 통과 |
+| `node bots/investment/scripts/runtime-config-suggestions.js --json` | ✅ `validationBudgetSnapshots.cryptoValidation`에 `normalCount`, `softCapBlocks`, `capitalGuardBlocks`가 포함되고 현재 `3/8`, `normal 0`, `soft-cap blocks 0` 확인 |
+| `node bots/investment/scripts/runtime-config-suggestions.js` | ✅ text report에 `normal`, `soft-cap blocks`가 함께 출력되는 것 확인 |
+
 ### 해외장 mock SELL capability 실검증 후 blocked 정책 복구
 
 | 테스트 | 결과 |

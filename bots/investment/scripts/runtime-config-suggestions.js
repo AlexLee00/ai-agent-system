@@ -120,6 +120,21 @@ async function loadTodayTradeModeTradeRows() {
   `);
 }
 
+async function loadTodaySignalBlockRows() {
+  return db.query(`
+    SELECT
+      exchange,
+      COALESCE(trade_mode, 'normal') AS trade_mode,
+      COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+      COUNT(*) AS total
+    FROM signals
+    WHERE CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) = CURRENT_DATE
+      AND status IN ('failed', 'rejected', 'expired')
+    GROUP BY exchange, 2, 3
+    ORDER BY exchange, 2, 3
+  `);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -202,7 +217,7 @@ function summarizeValidationSignals(pipelineRows, tradeRows, market) {
   };
 }
 
-function buildValidationBudgetSnapshot(exchange, tradeMode, todayTradeRows) {
+function buildValidationBudgetSnapshot(exchange, tradeMode, todayTradeRows, todayBlockRows = []) {
   const softBudget = getValidationSoftBudgetConfig(exchange);
   const hardCap = getCapitalConfig(exchange, tradeMode)?.max_daily_trades || 0;
   const reserveSlots = Number(softBudget.reserveDailyBuySlots || 0);
@@ -211,6 +226,20 @@ function buildValidationBudgetSnapshot(exchange, tradeMode, todayTradeRows) {
     item.exchange === exchange &&
     String(item.trade_mode || 'normal').toLowerCase() === String(tradeMode || 'normal').toLowerCase()
   );
+  const normalTrade = todayTradeRows.find((item) =>
+    item.exchange === exchange &&
+    String(item.trade_mode || 'normal').toLowerCase() === 'normal'
+  );
+  const softCapBlock = todayBlockRows.find((item) =>
+    item.exchange === exchange &&
+    String(item.trade_mode || 'normal').toLowerCase() === String(tradeMode || 'normal').toLowerCase() &&
+    item.block_code === 'validation_daily_budget_soft_cap'
+  );
+  const capitalGuardBlock = todayBlockRows.find((item) =>
+    item.exchange === exchange &&
+    String(item.trade_mode || 'normal').toLowerCase() === String(tradeMode || 'normal').toLowerCase() &&
+    item.block_code === 'capital_guard_rejected'
+  );
   const count = Number(trade?.total || 0);
   const ratio = softCap > 0 ? round(count / softCap, 3) : 0;
   return {
@@ -218,10 +247,13 @@ function buildValidationBudgetSnapshot(exchange, tradeMode, todayTradeRows) {
     tradeMode,
     enabled: Boolean(softBudget.enabled),
     count,
+    normalCount: Number(normalTrade?.total || 0),
     hardCap,
     reserveSlots,
     softCap,
     ratio,
+    softCapBlocks: Number(softCapBlock?.total || 0),
+    capitalGuardBlocks: Number(capitalGuardBlock?.total || 0),
     atSoftCap: softCap > 0 && count >= softCap,
     nearSoftCap: softCap > 0 && count < softCap && ratio >= 0.8,
   };
@@ -360,6 +392,24 @@ function buildSuggestions(config, summaries, validationSummaries, validationBudg
     });
   }
 
+  if (cryptoValidationBudget?.enabled && cryptoValidationBudget.softCapBlocks > 0) {
+    const relaxedReserve = Math.max(1, cryptoValidationBudget.reserveSlots - 1);
+    const canRelaxReserve =
+      cryptoValidationBudget.normalCount === 0 &&
+      cryptoValidationBudget.capitalGuardBlocks === 0 &&
+      cryptoValidationBudget.reserveSlots > 1;
+    suggestions.push({
+      key: 'runtime_config.luna.validationSoftBudget.binance.reserveDailyBuySlots',
+      current: cryptoValidationBudget.reserveSlots,
+      suggested: canRelaxReserve ? relaxedReserve : cryptoValidationBudget.reserveSlots,
+      action: canRelaxReserve ? 'promote_candidate' : 'observe',
+      confidence: 'medium',
+      reason: canRelaxReserve
+        ? `오늘 crypto validation soft cap 차단이 ${cryptoValidationBudget.softCapBlocks}건 발생했고 normal BUY는 0건이라 reserve ${cryptoValidationBudget.reserveSlots} 슬롯이 과보수적일 가능성이 있습니다. reserve를 ${relaxedReserve}로 낮추는 비교 실험 후보입니다.`
+        : `오늘 crypto validation soft cap 차단이 ${cryptoValidationBudget.softCapBlocks}건 발생했습니다. 다만 normal BUY ${cryptoValidationBudget.normalCount}건 또는 validation capital_guard ${cryptoValidationBudget.capitalGuardBlocks}건이 함께 있어 reserve ${cryptoValidationBudget.reserveSlots} 슬롯은 우선 유지 관찰이 안전합니다.`,
+    });
+  }
+
   return suggestions;
 }
 
@@ -394,7 +444,7 @@ function printHuman(report) {
     lines.push('');
     lines.push('validation budget 스냅샷(오늘):');
     for (const snapshot of Object.values(report.validationBudgetSnapshots)) {
-      lines.push(`- ${snapshot.exchange}/${snapshot.tradeMode}: BUY ${snapshot.count}/${snapshot.softCap} soft cap (hard ${snapshot.hardCap}, reserve ${snapshot.reserveSlots})`);
+      lines.push(`- ${snapshot.exchange}/${snapshot.tradeMode}: BUY ${snapshot.count}/${snapshot.softCap} soft cap (hard ${snapshot.hardCap}, reserve ${snapshot.reserveSlots}, normal ${snapshot.normalCount}, soft-cap blocks ${snapshot.softCapBlocks})`);
     }
   }
   lines.push('');
@@ -423,7 +473,10 @@ async function main() {
     loadPipelineRows(fromDate, toDate),
     loadTradeModeTradeRows(fromDate, toDate),
   ]);
-  const todayTradeModeTradeRows = await loadTodayTradeModeTradeRows();
+  const [todayTradeModeTradeRows, todaySignalBlockRows] = await Promise.all([
+    loadTodayTradeModeTradeRows(),
+    loadTodaySignalBlockRows(),
+  ]);
   const config = getInvestmentRuntimeConfig();
   const summaries = {
     binance: summarizeExchange(signalRows, blockRows, analysisRows, 'binance'),
@@ -436,7 +489,7 @@ async function main() {
     overseas: summarizeValidationSignals(pipelineRows, tradeModeTradeRows, 'overseas'),
   };
   const validationBudgetSnapshots = {
-    cryptoValidation: buildValidationBudgetSnapshot('binance', 'validation', todayTradeModeTradeRows),
+    cryptoValidation: buildValidationBudgetSnapshot('binance', 'validation', todayTradeModeTradeRows, todaySignalBlockRows),
   };
   const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots);
   const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, suggestions);
