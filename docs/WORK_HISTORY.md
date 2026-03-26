@@ -4847,3 +4847,13 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `loadDomesticRejectBreakdown()`를 추가해 최근 24시간 국내장 주문 실패 subtype을 health/report 상단에서 직접 읽게 했다.
 - 해석:
   - 국내장 자동화에서 가장 뭉친 실패 코드를 운영 가능한 세부 원인으로 복구해, 다음 단계 개선 우선순위를 더 선명하게 만든 작업이다.
+
+## 2026-03-26: KIS 국내장 주문 pacing 보강
+
+- `bots/investment/shared/kis-client.js`
+  - KIS 요청 lane을 `quote`와 `order`로 분리했다.
+  - 주문 POST는 `980ms`, 조회는 `380ms` pacing을 적용한다.
+- `bots/investment/team/hanul.js`
+  - pending signal 간 간격을 `500ms -> 1100ms`로 상향했다.
+- 해석:
+  - 국내장 실패 원인 중 큰 비중을 차지하던 `broker_rate_limited`를 줄이기 위해, 주문 레일을 시세 조회보다 더 보수적으로 운영하도록 입력 경계를 조정한 작업이다.

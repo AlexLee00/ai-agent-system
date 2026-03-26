@@ -1542,3 +1542,19 @@
 - 의미:
   - 지금 당장 필요한 구조는 국내장 주문 실패를 운영 판단 가능한 subtype으로 복구해 screening/approval/execution 품질 문제를 분리해서 보는 것이다.
   - 나중에는 이 분해를 바탕으로 KIS rate limit 재시도 정책, 현재가 조회 품질 경고, 브로커 capability watchlist를 더 세밀하게 붙일 수 있다.
+
+## 2026-03-26 22:29 KST — KIS 국내장 rate limit 완화용 주문 pacing 보강
+
+- 요청 배경:
+  - `domestic_order_rejected` 세부 분류를 복구한 뒤, 최근 30일 국내장 실패 다수가 실제로 `초당 거래건수 초과`였음이 확인됐다.
+  - 현재는 현재가 조회와 주문 요청이 같은 `380ms` 공통 슬롯을 공유하고, 한울 pending 루프도 `500ms` 간격이라 mock KIS 주문 레일에는 다소 공격적이었다.
+- 반영:
+  - [kis-client.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/kis-client.js)
+    - KIS 요청을 `quote` / `order` lane으로 분리
+    - 주문 POST(`/trading/`)는 `KIS_ORDER_MIN_INTERVAL_MS = 980` 적용
+    - 현재가/잔고 등 조회는 기존 `380ms` 유지
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+    - 국내/해외 pending signal 처리 간격을 `500ms -> 1100ms`로 상향
+- 의미:
+  - 지금 당장 필요한 구조는 KIS mock 레일에서 주문 요청을 시세 조회보다 더 보수적으로 pacing해 `broker_rate_limited`를 줄이는 것이다.
+  - 나중에는 거래소/시장별로 lane별 pacing을 runtime-config로 외부화할 수 있다.

@@ -39,25 +39,40 @@ const TR_ID = {
 };
 
 const KIS_MIN_INTERVAL_MS = 380;
+const KIS_ORDER_MIN_INTERVAL_MS = 980;
 const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
 
 const _requestState = {
-  paper: { nextAt: 0, tail: Promise.resolve() },
-  live: { nextAt: 0, tail: Promise.resolve() },
+  paper: {
+    quote: { nextAt: 0, tail: Promise.resolve() },
+    order: { nextAt: 0, tail: Promise.resolve() },
+  },
+  live: {
+    quote: { nextAt: 0, tail: Promise.resolve() },
+    order: { nextAt: 0, tail: Promise.resolve() },
+  },
 };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function scheduleKisSlot(paper) {
+function resolveKisLane(endpoint = '', method = 'GET') {
+  if (String(method).toUpperCase() === 'POST' && String(endpoint).includes('/trading/')) {
+    return 'order';
+  }
+  return 'quote';
+}
+
+async function scheduleKisSlot(paper, lane = 'quote') {
   const key = paper ? 'paper' : 'live';
-  const state = _requestState[key];
+  const state = _requestState[key][lane] || _requestState[key].quote;
+  const minInterval = lane === 'order' ? KIS_ORDER_MIN_INTERVAL_MS : KIS_MIN_INTERVAL_MS;
   const run = async () => {
     const waitMs = Math.max(0, state.nextAt - Date.now());
     if (waitMs > 0) await sleep(waitMs);
-    state.nextAt = Date.now() + KIS_MIN_INTERVAL_MS;
+    state.nextAt = Date.now() + minInterval;
   };
   const scheduled = state.tail.then(run, run);
   state.tail = scheduled.catch(() => {});
@@ -147,7 +162,8 @@ async function kisRequest(method, endpoint, { trId, params, body, paper } = {}, 
   let url = base + endpoint;
   if (params) url += '?' + new URLSearchParams(params).toString();
 
-  await scheduleKisSlot(paper);
+  const lane = resolveKisLane(endpoint, method);
+  await scheduleKisSlot(paper, lane);
 
   try {
     const res = await fetch(url, {
