@@ -9,6 +9,73 @@
 
 ---
 
+## 2026-03-26 18:40 KST — worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차 구현
+
+- 요청 배경:
+  - `/video`는 단계형 채팅 플로우가 어느 정도 정리됐지만, `/video/editor`는 아직 “준비가 끝난 결과를 보여주는 화면”에 가까워 사용자가 컷/효과를 단계적으로 확인하고 수정하는 편집 워크스페이스 구조가 부족했다.
+  - 특히 상단 플레이어, 하단 타임라인, 우측 AI 패널의 시간축과 역할 분리가 흐려 편집기 신뢰도가 떨어졌고, 공통 shell/auth 로딩 경계 때문에 `/video/editor` 진입이 spinner/blank에 걸리는 현상도 반복됐다.
+- 반영:
+  - [cut-proposal-engine.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/cut-proposal-engine.js)
+    - OCR/scene index 기반 불필요 구간 후보를 만드는 컷 제안 엔진 추가
+  - [video-step-api.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/routes/video-step-api.js)
+    - `cut review`, `effect review` 전용 generate/action/confirm 레일 추가
+    - 컷 확정 결과를 이후 일반 step 생성 입력 `sync_map`과 finalize EDL에 반영
+    - protected 원본 영상 `source-video`, 프레임 썸네일 `frame-preview` 경계 추가
+  - [VideoChatWorkflow.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/VideoChatWorkflow.jsx)
+    - `/video` 업로드/인트로/아웃트로/편집의도/요약 흐름을 초기 설정과 수정 모드로 분기
+    - 원본 업로드는 `다음 단계` vs `변경사항 업로드` 구조로 정리하고, intro/outro 카드는 설정 후에도 유지
+  - [ChatCard.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/ChatCard.jsx)
+    - intro/outro/edit intent 입력 높이를 자동 확장으로 정리
+    - 초기 설정과 수정 반영의 버튼 활성 규칙 분리
+  - [EditorChatPanel.jsx](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/EditorChatPanel.jsx)
+    - 컷 단계 액션 영역을 세로형 `프롬프트 -> 설명 -> 수정 전송 -> 컷 편집 확정` 구조로 정리
+  - [TwickEditorWrapper.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/components/TwickEditorWrapper.js)
+    - 상단 `원본 검수 플레이어`와 하단 `timeline-only Twick dock`로 역할 분리
+    - 상단 커스텀 플레이어 도입으로 네이티브 video controls 간섭 제거
+    - 컷 후보 선택, 플레이어/컨트롤러/타임라인 시간축 동기화 1차 적용
+    - Twick DOM inline style/overflow를 후처리해 하단 폭/높이 오버플로우 경계 보강
+  - [twick-editor-scoped.css](/Users/alexlee/projects/ai-agent-system/bots/worker/web/public/twick-editor-scoped.css)
+    - Twick 내부 view/timeline/canvas/container의 폭·높이 경계 scoped override 추가
+  - [page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/video/page.js), [page.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/video/editor/page.js)
+    - `useSearchParams()` 의존을 제거하고 client-side location parsing으로 변경
+    - `/video/editor` mounted/dynamic import 로딩 게이트를 줄여 실제 편집기 렌더를 우선 노출
+  - [app/_shell.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/app/_shell.js)
+    - 비디오 작업 화면은 auth loading 중에도 provisional render 허용
+  - [video-api.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/routes/video-api.js)
+    - editor-ready / editor-failed 신호 경계와 start 복구 흐름 보강
+  - [media-binary-env.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/media-binary-env.js), [run-pipeline.js](/Users/alexlee/projects/ai-agent-system/bots/video/scripts/run-pipeline.js), [render-from-edl.js](/Users/alexlee/projects/ai-agent-system/bots/video/scripts/render-from-edl.js), [test-phase3-batch.js](/Users/alexlee/projects/ai-agent-system/bots/video/scripts/test-phase3-batch.js)
+    - media binary PATH 보강, batch/preview/render 경계 정리
+- 의미:
+  - `/video/editor`는 이제 “preview 결과 확인” 화면이 아니라 `컷 검토 -> 효과 검토 -> 일반 step` 단계형 편집 워크스페이스가 됐다.
+  - 상단 플레이어 / 하단 타임라인 / 우측 AI 패널의 역할이 분리됐고, time source of truth를 하나로 맞추는 방향으로 정리됐다.
+  - auth/shell/build/searchParams 경계를 복구해 `/video/editor` blank/spinner에 갇히던 문제를 줄였다.
+- 검증:
+  - `node --check bots/video/lib/cut-proposal-engine.js`
+  - `node --check bots/video/lib/media-binary-env.js`
+  - `node --check bots/video/scripts/render-from-edl.js`
+  - `node --check bots/video/scripts/run-pipeline.js`
+  - `node --check bots/video/scripts/test-phase3-batch.js`
+  - `node --check bots/worker/web/app/_shell.js`
+  - `node --check bots/worker/web/app/video/page.js`
+  - `node --check bots/worker/web/app/video/editor/page.js`
+  - `node --check bots/worker/web/components/ChatCard.jsx`
+  - `node --check bots/worker/web/components/EditorChatPanel.jsx`
+  - `node --check bots/worker/web/components/TwickEditorWrapper.js`
+  - `node --check bots/worker/web/components/VideoChatWorkflow.jsx`
+  - `node --check bots/worker/web/routes/video-api.js`
+  - `node --check bots/worker/web/routes/video-step-api.js`
+  - `npx next build` (`bots/worker/web`) 반복 성공
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
+  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
+  - `http://127.0.0.1:4001/video`, `http://127.0.0.1:4001/video/editor` 모두 `200`
+- 남은 TODO:
+  - 하단 타임라인에서 컷 요소 클릭/드래그까지 상단 플레이어와 완전 양방향 동기화
+  - effect review 결과를 preview/finalize 렌더에 더 직접 반영
+  - 우측 세부정보 패널과 AI 패널의 역할을 더 정밀하게 분리
+  - 컷/효과 단계 action log를 DB 원장으로 승격
+
+---
+
 ## 2026-03-25 23:59 KST — 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
 
 - 요청 배경:

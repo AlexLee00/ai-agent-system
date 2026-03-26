@@ -1,6 +1,6 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import BottomNav from '@/components/BottomNav';
@@ -18,11 +18,14 @@ export default function AppShell({ children }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  let hasStoredToken = false;
+  if (typeof window !== 'undefined') {
+    try {
+      hasStoredToken = Boolean(window.localStorage.getItem('worker_token'));
+    } catch {
+      hasStoredToken = false;
+    }
+  }
 
   useEffect(() => {
     if (loading) return;
@@ -41,20 +44,10 @@ export default function AppShell({ children }) {
   }, [user, loading, pathname, router]);
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
+  const isVideoWorkspace = pathname === '/video' || pathname === '/video/editor';
+  const allowProvisionalRender = !isPublic && loading && (hasStoredToken || isVideoWorkspace);
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-medium text-slate-600 shadow-sm">
-            워커 화면을 준비하고 있습니다...
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
+  if (loading && !allowProvisionalRender) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin text-3xl">⏳</div>
@@ -64,7 +57,7 @@ export default function AppShell({ children }) {
 
   if (isPublic) return <>{children}</>;
 
-  if (!user) return null;
+  if (!user && !allowProvisionalRender) return null;
   return (
     <div className="min-h-screen overflow-x-clip bg-gray-50">
       {/* PC 사이드바 */}
@@ -75,7 +68,11 @@ export default function AppShell({ children }) {
       {/* 메인 영역 */}
       <div className="min-w-0 lg:pl-60">
         <Header />
-        <main className="min-h-[calc(100vh-3.5rem)] px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-4 lg:min-h-[calc(100vh-4rem)] lg:px-4 lg:py-4 lg:pb-6">
+        <main className={`min-h-[calc(100vh-3.5rem)] px-3 py-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-4 lg:px-4 lg:py-4 lg:pb-6 ${
+          isVideoWorkspace
+            ? 'overflow-hidden lg:h-[calc(100vh-4rem)] lg:min-h-[calc(100vh-4rem)]'
+            : 'lg:min-h-[calc(100vh-4rem)]'
+        }`}>
           {children}
         </main>
       </div>
