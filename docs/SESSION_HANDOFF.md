@@ -1359,3 +1359,20 @@
 - 남은 TODO:
   - `002630` 같은 종목이 반복되는지 `signals.block_code='mock_untradable_symbol'` 기준으로 추적
   - 필요하면 국내장 screening 단계에서 mock 불가 종목 쿨다운/제외 정책 검토
+
+## 2026-03-26 11:31 KST — KIS mock `매매불가 종목` BUY 재시도 쿨다운 추가
+
+- 요청 배경:
+  - `002630 BUY`는 현재가 사전검증까지는 통과했지만, 실제 KIS mock 주문 단계에서만 `매매불가 종목`이 드러났다.
+  - 같은 종목이 screening/approval에서 다시 올라오면 같은 실패를 반복할 가능성이 있어, 브로커 제약 확인 후 짧은 쿨다운이 필요했다.
+- 반영:
+  - [runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/runtime-config.js)
+    - `luna.mockUntradableSymbolCooldownMinutes` 기본값 `1440`(24시간) 추가
+  - [db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js)
+    - `getRecentBlockedSignalByCode()` 추가
+  - [hanul.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hanul.js)
+    - 국내장 BUY + KIS mock 레일에서 최근 `mock_untradable_symbol`이 있으면 사전 리스크 거부
+    - 이때 `mock_untradable_symbol_cooldown` block code를 명시적으로 남기도록 보강
+- 의미:
+  - 지금 당장 필요한 구조는 브로커 mock 제약이 확인된 종목을 같은 세션/같은 날 반복 주문하지 않도록 입력 경계를 회복하는 것이다.
+  - 나중에는 이 쿨다운 히스토리를 screening 단계까지 올려 종목 제외/우회 레일로 확장할 수 있다.

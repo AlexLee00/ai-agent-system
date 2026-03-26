@@ -342,6 +342,40 @@ export async function getRecentSignalDuplicate({
   );
 }
 
+export async function getRecentBlockedSignalByCode({
+  symbol,
+  action = null,
+  exchange = 'binance',
+  tradeMode = null,
+  blockCode,
+  minutesBack = 1440,
+} = {}) {
+  if (!symbol || !blockCode) return null;
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const conditions = [
+    `symbol = $1`,
+    `exchange = $2`,
+    `COALESCE(trade_mode, 'normal') = $3`,
+    `COALESCE(block_code, '') = $4`,
+    `created_at > now() - INTERVAL '1 minute' * $5`,
+  ];
+  const params = [symbol, exchange, effectiveTradeMode, blockCode, minutesBack];
+
+  if (action) {
+    params.push(action);
+    conditions.push(`action = $${params.length}`);
+  }
+
+  return get(
+    `SELECT *
+       FROM signals
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    params,
+  );
+}
+
 export async function insertSignalIfFresh({
   symbol,
   action,

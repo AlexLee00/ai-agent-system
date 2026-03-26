@@ -10,6 +10,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   dynamicTpSlEnabled: true,
   luna: {
     signalDedupeWindowMinutes: 180,
+    mockUntradableSymbolCooldownMinutes: 1440,
     sameDaySymbolReentryBlockEnabled: true,
     minConfidence: {
       live: { binance: 0.50, kis: 0.30, kis_overseas: 0.30 },
@@ -209,6 +210,12 @@ export function getSignalDedupeWindowMinutes() {
   const raw = Number(getLunaRuntimeConfig()?.signalDedupeWindowMinutes);
   if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
   return 180;
+}
+
+export function getMockUntradableSymbolCooldownMinutes() {
+  const raw = Number(getLunaRuntimeConfig()?.mockUntradableSymbolCooldownMinutes);
+  if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
+  return 1440;
 }
 
 export function isSameDaySymbolReentryBlockEnabled() {
