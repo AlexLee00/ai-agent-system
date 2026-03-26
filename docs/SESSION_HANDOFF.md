@@ -1390,3 +1390,25 @@
 - 의미:
   - 지금 당장 필요한 구조는 국내장 mock 브로커 제약을 단순 개별 실패가 아니라 screening 품질/approval 품질의 관찰 신호로 읽는 것이다.
   - 나중에는 이 섹션을 기반으로 mock 불가 종목 watchlist나 screening 제외 정책으로 확장할 수 있다.
+
+## 2026-03-26 11:45 KST — `002630` KIS mock 불가 이력 backfill 재분류
+
+- 요청 배경:
+  - health에 `mock_untradable_symbol` 관찰 섹션을 추가했지만, 기존 `002630` 실패 row는 아직 `domestic_order_rejected`로 남아 있어 새 섹션에 잡히지 않았다.
+- 반영:
+  - [backfill-signal-block-reasons.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/backfill-signal-block-reasons.js)
+    - `--mode=reclassify` 추가
+    - 기존 `domestic_order_rejected` / `legacy_executor_failed` 등으로 저장된 row 중
+      `KIS API 오류 [40070000]` 또는 `매매불가 종목` 문구가 있는 국내장 BUY를 `mock_untradable_symbol`로 재분류하도록 보강
+  - 실제 실행:
+    - `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30 --dry-run`
+    - `updated=1`, 대상 `002630`
+    - 이어서 실제 적용(`dryRun=false`) 완료
+- 결과:
+  - 투자팀 health JSON에서
+    - `signalBlockHealth.top`에 `mock_untradable_symbol: 1건`
+    - `mockUntradableSymbolHealth.warn`에 `002630 mock 주문 불가 1건`
+    - 운영 판단에 `최근 24시간 KIS mock 주문 불가 종목 1건`이 반영됨
+- 의미:
+  - 지금 당장 필요한 구조는 새 실패만 아니라 과거 동일 유형도 같은 기준으로 해석되도록 원장을 정렬하는 것이다.
+  - 나중에는 이 재분류 로직을 다른 브로커 capability 제약(`overseas mock 제한`, `broker_execution_error` subtype)까지 확장할 수 있다.

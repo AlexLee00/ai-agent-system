@@ -4766,3 +4766,17 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 운영 판단에도 low-level warning으로 연결
 - 해석:
   - 개별 브로커 실패를 health/report 레이어의 관찰 신호로 끌어올려, screening 품질 이슈를 운영자가 더 빨리 읽을 수 있게 했다.
+
+## 2026-03-26: `002630` KIS mock 불가 이력 backfill 재분류
+
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `--mode=reclassify`를 추가했다.
+  - 기존 `domestic_order_rejected` / `legacy_executor_failed` 국내장 BUY 중 `KIS API 오류 [40070000]` 또는 `매매불가 종목` 문구가 있는 row를 `mock_untradable_symbol`로 재분류할 수 있게 했다.
+- 실제 적용:
+  - 최근 30일 dry-run 결과 `updated=1`, 대상은 `002630`
+  - 실제 reclassify 실행 후 해당 row가 `mock_untradable_symbol`로 변경됨
+- 결과:
+  - 투자팀 health에서 `mockUntradableSymbolHealth.total = 1`
+  - 경고 문구 `002630 mock 주문 불가 1건`이 직접 보이게 됨
+- 해석:
+  - 새 실패 기준선뿐 아니라 과거 원장까지 같은 의미로 정렬해, health/report의 해석 일관성을 높인 작업이다.

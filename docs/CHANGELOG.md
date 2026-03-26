@@ -2233,3 +2233,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 운영 판단에 low-level 관찰 신호로 연결
 - 의미:
   - 국내장 mock 브로커 제약을 개별 실패 로그가 아니라 health/report 차원의 screening 품질 신호로 끌어올림
+## [2026-03-26] investment mock-untradable reclassification backfill
+
+- `bots/investment/scripts/backfill-signal-block-reasons.js`
+  - `--mode=reclassify` 추가
+  - 기존 국내장 BUY 실패 중 `KIS API 오류 [40070000]` / `매매불가 종목` 문구를 `mock_untradable_symbol`로 재분류 가능하게 보강
+- 운영 적용:
+  - `002630` 실패 1건을 실제로 `domestic_order_rejected -> mock_untradable_symbol`로 소급 정리
+- 의미:
+  - 과거 실패 원장도 새 block-code 체계에 맞춰 정렬해 health/report 집계 일관성 회복
