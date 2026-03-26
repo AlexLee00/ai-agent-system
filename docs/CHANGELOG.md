@@ -2371,3 +2371,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `runtime-config-suggestions`에 `validationBudgetSnapshots.cryptoValidation` 추가
   - text report에 `validation budget 스냅샷(오늘)` 섹션 추가
   - health와 동일하게 `BUY 3/8 soft cap (hard 10, reserve 2)` 기준선 노출
+- `feat(investment): expose crypto validation soft-cap blocks in health`
+  - investment health에 `■ crypto validation soft cap 차단(최근 24시간)` 섹션 추가
+  - `validation_daily_budget_soft_cap` block code 발생 건수를 별도 집계
+  - soft budget 사용량과 실제 차단을 분리 관찰 가능

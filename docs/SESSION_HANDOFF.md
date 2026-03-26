@@ -1771,3 +1771,23 @@
   - 나중에 확장할 구조:
     - validation/live lane별 예산 snapshot 일반화
     - 설정 추천에서 soft cap 근접 시 observe/adjust 후보 자동 생성
+
+## 2026-03-26 — crypto validation soft cap 차단 집계 노출
+
+- 배경
+  - soft budget 사용량(`3/8`)은 보이지만, 실제 `validation_daily_budget_soft_cap` 차단이 발생했는지는 health 상단에서 바로 읽을 수 없었다.
+
+- 이번 변경
+  - [bots/investment/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
+    - `loadCryptoValidationBudgetBlockHealth()` 추가
+    - 최근 24시간 `block_code = validation_daily_budget_soft_cap` 집계
+    - `■ crypto validation soft cap 차단(최근 24시간)` 섹션 추가
+
+- 현재 기준
+  - `최근 crypto validation soft cap 차단 없음`
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - soft budget 사용량과 실제 soft cap 차단 건수를 분리 관찰
+  - 나중에 확장할 구조:
+    - `capital_guard_rejected`와 `validation_daily_budget_soft_cap`를 함께 추적하는 lane-level budget 분석
