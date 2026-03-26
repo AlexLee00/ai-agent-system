@@ -2306,3 +2306,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 최근 24시간 국내장 주문 실패 subtype 요약 섹션 추가
 - 의미:
   - 국내장 자동화 리포트에서 `domestic_order_rejected`를 뭉친 실패가 아니라 운영 가능한 세부 원인으로 읽게 함
+## [2026-03-26] investment KIS order pacing
+
+- `bots/investment/shared/kis-client.js`
+  - KIS 요청을 `quote` / `order` lane으로 분리하고, 주문 POST는 더 긴 interval로 pacing
+- `bots/investment/team/hanul.js`
+  - pending signal 간 간격 상향
+- 의미:
+  - 국내장 `broker_rate_limited`를 줄이기 위해 시세 조회보다 주문 요청을 더 보수적으로 spacing

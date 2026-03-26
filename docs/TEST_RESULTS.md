@@ -1541,3 +1541,5 @@
 | `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30 --dry-run` | ✅ 과거 국내장 `domestic_order_rejected` 10건이 `broker_rate_limited`/`quote_lookup_failed`/`mock_untradable_symbol`로 재분류 가능한지 확인 |
 | `node bots/investment/scripts/backfill-signal-block-reasons.js --mode=reclassify --days=30` | ✅ 최근 30일 국내장 실패 이력 10건을 새 subtype으로 실제 재분류 |
 | `node bots/investment/scripts/health-report.js --json` | ✅ `domesticRejectBreakdown`가 최근 24시간 국내장 주문 실패를 subtype으로 요약하고, 운영 판단 reason에 반영되는지 확인 |
+| `node --check bots/investment/shared/kis-client.js` | ✅ KIS 요청 lane을 `quote` / `order`로 분리하고 주문 간격을 보수적으로 상향한 뒤 문법 통과 |
+| `node --check bots/investment/team/hanul.js` | ✅ KIS pending signal 간 간격을 `1100ms`로 상향한 뒤 문법 통과 |

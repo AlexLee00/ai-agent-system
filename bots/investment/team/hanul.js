@@ -794,7 +794,7 @@ export async function processAllPendingKisSignals() {
       signal_id: signal.id,
       action: signal.action,
     });
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1100));
   }
   logHanulPhase('KIS 국내 pending 전체 처리 완료', startedAt, {
     signal_count: signals.length,
@@ -822,7 +822,7 @@ export async function processAllPendingKisOverseasSignals() {
       signal_id: signal.id,
       action: signal.action,
     });
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1100));
   }
   logHanulPhase('KIS 해외 pending 전체 처리 완료', startedAt, {
     signal_count: signals.length,
