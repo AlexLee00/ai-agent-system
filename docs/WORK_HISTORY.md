@@ -30,6 +30,16 @@
   - 이번 작업은 단순 UI 수정이 아니라 `/video/editor`를 `컷 검토 -> 효과 검토 -> 일반 step` 순서의 실제 편집 워크스페이스로 전환한 단계다.
   - 남은 핵심은 상단 플레이어와 하단 타임라인의 양방향 동기화 완성, 컷/효과 결과의 preview/finalize 반영 고도화다.
 
+## 2026-03-26: 투자팀 국내장 dynamic universe 2차 축소
+
+- `bots/investment/config.yaml`
+  - `screening.domestic.max_dynamic`을 `10 -> 8`로 낮췄다.
+- `bots/investment/shared/secrets.js`
+  - `getDomesticScreeningMaxDynamic()` fallback 기본값도 `8`로 맞췄다.
+- 해석:
+  - health에 국내장 수집 압력을 먼저 노출한 뒤, 실제 병목을 줄이기 위한 2차 입력폭 축소 단계다.
+  - 기존 `dynamic cap -> mock 불가 종목 필터 -> held merge` 구조는 유지하고, dynamic 후보 상한만 한 단계 더 내렸다.
+
 ## 2026-03-25: 투자팀 국내/해외 수집 범위 축소 + 데이터 부족 노이즈 분리 1차
 
 - `bots/investment/shared/secrets.js`에 `screening.domestic.max_dynamic`, `screening.overseas.max_dynamic` getter를 추가했다.
