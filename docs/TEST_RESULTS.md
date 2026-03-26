@@ -1501,3 +1501,4 @@
 | `node --check bots/investment/shared/runtime-config.js` | ✅ `mockUntradableSymbolCooldownMinutes` 기본값 추가 후 문법 통과 |
 | `node --check bots/investment/shared/db.js` | ✅ `getRecentBlockedSignalByCode()` helper 추가 후 문법 통과 |
 | `node --check bots/investment/team/hanul.js` | ✅ 국내장 `LIVE/MOCK` BUY에 `mock_untradable_symbol` 24시간 쿨다운을 추가한 뒤 문법 통과 |
+| `node --check bots/investment/scripts/health-report.js` | ✅ `mock_untradable_symbol` / `mock_untradable_symbol_cooldown` 관찰 섹션 추가 후 문법 통과 |

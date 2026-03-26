@@ -4757,3 +4757,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 해석:
   - 한 번 브로커 mock 제약이 확인된 종목을 같은 날 반복 주문하지 않도록 하는 최소 안전장치다.
   - 향후 screening 단계로 확장 가능한 전단 쿨다운 경계가 생겼다.
+
+## 2026-03-26: 투자팀 health `mock_untradable_symbol` 관찰 섹션 추가
+
+- `bots/investment/scripts/health-report.js`
+  - 최근 24시간 `exchange='kis'` + `block_code IN ('mock_untradable_symbol', 'mock_untradable_symbol_cooldown')`를 집계하는 `loadMockUntradableSymbolHealth()` 추가
+  - text report에 `■ KIS mock 주문 불가 종목` 섹션 추가
+  - 운영 판단에도 low-level warning으로 연결
+- 해석:
+  - 개별 브로커 실패를 health/report 레이어의 관찰 신호로 끌어올려, screening 품질 이슈를 운영자가 더 빨리 읽을 수 있게 했다.
