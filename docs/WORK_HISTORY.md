@@ -4922,3 +4922,15 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 동일 LIVE 포지션이 있으면 `validation_live_position_reentry_preflight`로 즉시 거부하고, 기존 포지션 메타를 signal block에 기록한다.
 - 해석:
   - `RENDER/USDT`처럼 execution 단계 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 approval 앞단에서 줄이는 작업이다.
+
+## 2026-03-27: 아처 usage-aware 기술 인텔리전스 보강
+
+- `bots/claude/lib/archer/fetcher.js`
+  - npm 패키지별 로컬 사용 파일 수와 핵심 경로 사용 수를 집계하는 `fetchPackageUsage()`를 추가했다.
+- `bots/claude/lib/archer/analyzer.js`
+  - npm 컨텍스트에 `로컬 사용 N파일 / 핵심 N파일` 정보를 함께 넣도록 보강했다.
+  - 패치 후보에 로컬 사용 메타를 붙이고, 핵심 경로 사용 시 priority를 한 단계 올려 usage-aware 정렬을 하도록 정리했다.
+  - summary를 `실사용 영향 1순위는 ...` 형태로 더 액션형으로 보강했다.
+  - 웹 하이라이트도 source 원문 title과 링크-제목이 의미 있게 다르면 원문 제목으로 보정하고 재검증 메모를 남기게 했다.
+- 해석:
+  - 아처를 단순 외부 업데이트 요약기에서, 우리 코드베이스 영향도를 반영하는 기술 인텔리전스 레이어로 한 단계 끌어올리는 작업이다.

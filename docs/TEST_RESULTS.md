@@ -20,6 +20,14 @@
 | `node --input-type=module ... SELECT ... FROM signals WHERE exchange='binance' AND block_code='live_position_reentry_blocked' ...` | ✅ 최근 차단 심볼이 `RENDER/USDT`, 과거 누적은 `ROBO/USDT`임을 확인 |
 | `node --input-type=module ... SELECT ... FROM positions WHERE exchange='binance' ...` | ✅ `RENDER/USDT` live 포지션이 실제로 열려 있어 validation BUY 재진입 차단이 정상 정책임을 확인 |
 
+### 아처 usage-aware 보강
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/claude/lib/archer/fetcher.js` | ✅ package usage 수집 로직 추가 후 문법 통과 |
+| `node --check bots/claude/lib/archer/analyzer.js` | ✅ usage-aware priority / highlight 정합성 보강 후 문법 통과 |
+| `node --input-type=module -e "import fetcher from './bots/claude/lib/archer/fetcher.js'; ..."` | ✅ `groq-sdk`가 로컬 11파일/핵심 3파일, `@modelcontextprotocol/sdk`는 로컬 4파일/핵심 0파일로 집계되는 것 확인 |
+
 ### 해외장 mock SELL capability 실검증 후 blocked 정책 복구
 
 | 테스트 | 결과 |

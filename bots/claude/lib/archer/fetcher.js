@@ -15,6 +15,17 @@ const fs       = require('fs');
 const { execSync } = require('child_process');
 const config   = require('./config');
 
+const USAGE_EXCLUDES = [
+  'node_modules',
+  '.git',
+  '.next',
+  '.next_bak',
+  'temp',
+  'uploads',
+  'reports',
+  'tmp',
+];
+
 // ─── 공통 HTTP 유틸 ─────────────────────────────────────────────────
 
 function httpsGet(urlOrOpts, timeout = 8000) {
@@ -104,6 +115,58 @@ async function fetchNpmVersion(pkg) {
 async function fetchAllNpm() {
   const results = await Promise.all(config.NPM.PACKAGES.map(p => fetchNpmVersion(p)));
   return Object.fromEntries(results.map(r => [r.pkg, r]));
+}
+
+function isTrackedUsagePath(filePath) {
+  return !USAGE_EXCLUDES.some((segment) => filePath.includes(`/${segment}/`) || filePath.startsWith(`${segment}/`));
+}
+
+function scoreUsagePath(filePath) {
+  if (
+    filePath.startsWith('packages/core/') ||
+    filePath.startsWith('bots/investment/') ||
+    filePath.startsWith('bots/orchestrator/') ||
+    filePath.startsWith('bots/reservation/') ||
+    filePath.startsWith('bots/worker/')
+  ) {
+    return 'core';
+  }
+  return 'support';
+}
+
+function fetchPackageUsage(packages = []) {
+  const usage = {};
+  for (const pkg of packages) {
+    try {
+      const quoted = `'${pkg.replace(/'/g, `'\\''`)}'`;
+      const raw = execSync(
+        `rg -l ${quoted} ${config.ROOT} --glob '!**/node_modules/**' --glob '!**/.git/**' --glob '!**/.next/**' --glob '!**/.next_bak*/**' --glob '!**/tmp/**' --glob '!**/reports/**' --glob '!**/temp/**' --glob '!**/uploads/**'`,
+        {
+          cwd: config.ROOT,
+          encoding: 'utf8',
+          timeout: 10000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      );
+      const files = raw
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.startsWith(config.ROOT) ? line.slice(config.ROOT.length + 1) : line)
+        .filter(isTrackedUsagePath)
+        .slice(0, 20);
+      const coreFiles = files.filter((file) => scoreUsagePath(file) === 'core');
+      usage[pkg] = {
+        count: files.length,
+        coreCount: coreFiles.length,
+        files,
+        coreFiles: coreFiles.slice(0, 5),
+      };
+    } catch {
+      usage[pkg] = { count: 0, coreCount: 0, files: [], coreFiles: [] };
+    }
+  }
+  return usage;
 }
 
 // ─── npm audit ────────────────────────────────────────────────────────
@@ -210,6 +273,7 @@ async function fetchAll(opts = {}) {
     fetchAllGithub(),
     fetchAllNpm(),
   ]);
+  const packageUsage = fetchPackageUsage(config.NPM.PACKAGES);
 
   let webSources = [];
   if (!opts.skipWeb) {
@@ -223,12 +287,13 @@ async function fetchAll(opts = {}) {
     audit = runNpmAudit();
   }
 
-  return { github, npm, webSources, audit };
+  return { github, npm, webSources, audit, packageUsage };
 }
 
 module.exports = {
   fetchGithubRelease, fetchAllGithub,
   fetchNpmVersion, fetchAllNpm,
+  fetchPackageUsage,
   fetchWebSource, fetchAllWebSources,
   runNpmAudit,
   fetchAll,
