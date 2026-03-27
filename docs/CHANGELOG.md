@@ -2390,3 +2390,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 웹 하이라이트는 source 원문 title과 링크-제목 정합성이 어긋나면 원문 제목으로 보정하고 재검증 메모를 남기도록 보강
 - feat(archer): add deterministic post-processing for patch and highlight output
 - feat(archer): refine package usage scoring toward runtime paths
+- `fix(blog): reduce repeated cross-category GEMS themes`
+  - `bots/blog/lib/gems-writer.js`가 최근 14일 일반 포스팅 제목을 읽어 recent theme dedupe context를 생성
+  - 일반/청크형 포스팅 프롬프트에 최근 발행 글 목록, 금지 theme, 금지 표현을 함께 주입
+  - `AI_AGENT_CONTEXT`의 카테고리별 하드코딩 서사를 참고 예시 수준으로 낮춰, 같은 AI 운영 경험을 여러 카테고리에서 재포장하는 경향을 완화

@@ -4951,3 +4951,14 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 아처가 더 이상 `patches: []`로 비정상 저장되지 않음
   - 웹 하이라이트 링크/제목 쌍 정합성 개선
   - usage 우선순위가 문서/캐시 노이즈에 덜 끌리도록 완화
+
+## 2026-03-27
+
+### 젬스 일반 포스팅 theme dedupe 1차
+- `bots/blog/lib/gems-writer.js`
+  - `AI_AGENT_CONTEXT`의 카테고리별 서사 문구를 강제 연결에서 참고 예시 수준으로 약화
+  - 최근 14일 일반 포스팅 제목을 `bots/blog/output`에서 읽어 recent theme context를 만드는 helper 추가
+  - 최근 발행 제목 목록, 피해야 할 상위 주제 축, 금지 표현을 일반/청크형 프롬프트에 함께 주입
+  - `AI 시대`, `멀티에이전트`, `AI 에이전트`, `30개 AI 에이전트`, `성장 전략`, `운영 전략`, `시장 인사이트` 같은 반복 프레임을 새 글의 기본 서사로 재사용하지 않도록 보강
+- 해석:
+  - 카테고리 중복 문제가 아니라 상위 서사 반복 문제를 먼저 줄이기 위한 1차 방어선이다.

@@ -1657,3 +1657,8 @@
   - `patches: []` 비정상 출력 해소
   - summary/action-first skeleton 반영 확인
   - web highlight source-lock 반영 확인
+
+## 2026-03-27 — 젬스 일반 포스팅 theme dedupe 1차
+
+- `node --check bots/blog/lib/gems-writer.js` ✅
+  - 최근 일반 글 기반 theme dedupe helper 추가 후 CommonJS 문법 정상 확인
