@@ -1983,3 +1983,34 @@
   - `bots/blog/lib/gems-writer.js`에 section-level shortfall 계산(`_getShortSections`)을 기반으로 한 targeted repair를 유지하되, 부족 시 `repairGeneralPostDraft()`를 최대 2회까지 재호출하는 `_runGeneralPostRepairPasses()`를 추가했다.
   - 1차 repair 이후에도 미달/누락이 남으면 2차 repair에서 부족 섹션에만 사례/설명/체크리스트를 덧붙이도록 강제해, `자기계발` 샘플이 `6470자`까지 회복되는 것을 확인했다.
   - 현재 블로그 품질 병목은 theme 중복보다 completion 안정화였고, 이번 수정으로 `6000자` 기준 통과율을 끌어올리는 방향으로 정렬했다.
+
+## 2026-03-27 — 스카팀 네이버 차단 follow-up 정합성 복구
+
+- 배경
+  - 키오스크 예약 차단 실패(`slot_click_failed`)가 발생한 뒤 사용자가 텔레그램에서 “수동 처리 완료”를 전달해도, 다음 `kiosk-monitor` 사이클에서 같은 예약이 다시 `네이버 차단 미확인` 경고로 반복됐다.
+  - 원인은 `처리완료` 경로가 `alerts`만 해결 처리하고, 실제 재시도 판단 source of truth인 `reservation.kiosk_blocks.naver_blocked`를 닫지 못한 점이었다.
+
+- 이번 변경
+  - [bots/reservation/auto/monitors/pickko-kiosk-monitor.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.js)
+    - exact target slot 클릭 실패 시 같은 룸의 다음 available slot을 우선 탐색하도록 보강
+    - 이미 존재하던 `selectedStart !== start` / 90분 guard를 재사용해 임박 시간대 fallback을 안전하게 수용
+  - [bots/reservation/lib/db.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.js)
+    - `markKioskBlockManuallyConfirmed()`, `resolveOpenKioskBlockFollowups()` 추가
+    - 수동 완료 시 `kiosk_blocks`를 `manually_confirmed / operator_confirmed_naver_blocked`로 원장 반영
+  - [bots/reservation/manual/reports/pickko-alerts-resolve.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/reports/pickko-alerts-resolve.js)
+  - [bots/reservation/lib/ska-command-handlers.js](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/ska-command-handlers.js)
+    - `처리완료` 계열 경로가 `alerts`뿐 아니라 열린 `kiosk_blocks` follow-up도 함께 해결하도록 정렬
+
+- 현재 기준
+  - 사용자 수동 처리 완료 건:
+    - `김지순 / 010-5141-5668 / 2026-03-27 14:00~16:50 / 스터디룸B`
+    - `pickko-alerts-resolve.js --phone=010-5141-5668 --date=2026-03-27 --start=14:00` 실행 결과
+    - `네이버 차단 follow-up 1건 수동 완료 반영`
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - `처리완료`가 알림만 닫고 재시도 원장은 남겨두는 불일치를 제거
+    - 예약 임박 시 exact slot만 강제하다 실패하는 경계를 완화
+  - 나중에 확장할 구조:
+    - `slot_click_failed`와 `fallback_next_slot`를 health/report에 별도 관찰 지표로 노출
+    - 수동 완료를 booking-specific command로 더 명시적으로 연결

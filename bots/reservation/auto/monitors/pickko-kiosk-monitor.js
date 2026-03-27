@@ -1011,61 +1011,80 @@ async function clickRoomAvailableSlot(page, roomRaw, startTime) {
     }
 
     const fallbackCandidates = [];
-    for (const row of targetRows) {
-      const targetCell = row.grid.roomCells[roomIndex];
-      if (!targetCell) {
-        fallbackCandidates.push({
-          idx: row.idx,
-          slot24: row.timeline.slot24,
-          label: row.timeline.label,
-          reason: 'room_cell_missing',
-        });
-        continue;
-      }
+    const tryClickRows = (candidateRows, mode = 'exact') => {
+      for (const row of candidateRows) {
+        const targetCell = row.grid.roomCells[roomIndex];
+        if (!targetCell) {
+          fallbackCandidates.push({
+            idx: row.idx,
+            slot24: row.timeline.slot24,
+            label: row.timeline.label,
+            mode,
+            reason: 'room_cell_missing',
+          });
+          continue;
+        }
 
-      const button = targetCell.querySelector('button.calendar-btn, button[class*="calendar-btn"]');
-      if (!button) {
-        fallbackCandidates.push({
-          idx: row.idx,
-          slot24: row.timeline.slot24,
-          label: row.timeline.label,
-          reason: 'button_missing',
-        });
-        continue;
-      }
+        const button = targetCell.querySelector('button.calendar-btn, button[class*="calendar-btn"]');
+        if (!button) {
+          fallbackCandidates.push({
+            idx: row.idx,
+            slot24: row.timeline.slot24,
+            label: row.timeline.label,
+            mode,
+            reason: 'button_missing',
+          });
+          continue;
+        }
 
-      const cls = String(button.className || '');
-      const text = normalize(button.textContent);
-      const isSoldout = cls.includes('soldout') || cls.includes('disabled');
-      const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
-      const isAvailable = cls.includes('avail') || cls.includes('btn-info') || text.includes('예약가능');
+        const cls = String(button.className || '');
+        const text = normalize(button.textContent);
+        const isSoldout = cls.includes('soldout') || cls.includes('disabled');
+        const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
+        const isAvailable = cls.includes('avail') || cls.includes('btn-info') || text.includes('예약가능');
 
-      if (isSoldout || isBlocked || !isAvailable) {
-        fallbackCandidates.push({
-          idx: row.idx,
-          slot24: row.timeline.slot24,
-          label: row.timeline.label,
-          reason: 'button_not_available',
-          btnClass: cls.slice(0, 80),
+        if (isSoldout || isBlocked || !isAvailable) {
+          fallbackCandidates.push({
+            idx: row.idx,
+            slot24: row.timeline.slot24,
+            label: row.timeline.label,
+            mode,
+            reason: 'button_not_available',
+            btnClass: cls.slice(0, 80),
+            btnText: text,
+          });
+          continue;
+        }
+
+        button.scrollIntoView({ block: 'center', inline: 'center' });
+        button.click();
+        const rect = button.getBoundingClientRect();
+        return {
+          found: true,
+          clicked: true,
           btnText: text,
-        });
-        continue;
+          btnClass: cls.slice(0, 80),
+          pos: { cx: Math.round(rect.left + rect.width / 2), cy: Math.round(rect.top + rect.height / 2) },
+          targetLabel: row.timeline.label,
+          targetSlot24: row.timeline.slot24,
+          fallbackFromSlot24: mode === 'fallback_next_slot' ? startTimeArg : null,
+          fallbackUsed: mode === 'fallback_next_slot',
+          scrollDebug,
+          fallbackCandidates,
+        };
       }
+      return null;
+    };
 
-      button.scrollIntoView({ block: 'center', inline: 'center' });
-      button.click();
-      const rect = button.getBoundingClientRect();
-      return {
-        found: true,
-        clicked: true,
-        btnText: text,
-        btnClass: cls.slice(0, 80),
-        pos: { cx: Math.round(rect.left + rect.width / 2), cy: Math.round(rect.top + rect.height / 2) },
-        targetLabel: row.timeline.label,
-        targetSlot24: row.timeline.slot24,
-        scrollDebug,
-        fallbackCandidates,
-      };
+    const exactClick = tryClickRows(targetRows, 'exact');
+    if (exactClick) {
+      return exactClick;
+    }
+
+    const laterRows = rows.filter((row) => row.timeline.slot24 > startTimeArg);
+    const fallbackClick = tryClickRows(laterRows, 'fallback_next_slot');
+    if (fallbackClick) {
+      return fallbackClick;
     }
 
     return {

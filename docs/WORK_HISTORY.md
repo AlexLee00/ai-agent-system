@@ -5001,3 +5001,18 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 2026-03-27: GEMS 일반 글 repair를 section-aware 2-pass 구조로 보강했다.
   - `_getShortSections()`로 섹션별 현재 길이/목표 길이를 계산하고, `writeGeneralPost()`가 `_runGeneralPostRepairPasses()`를 통해 최대 2회의 targeted repair를 수행하도록 확장했다.
   - 검증 결과 `자기계발` 샘플이 `3657 → 5617` 수준에 머물던 이전 상태에서, 2-pass 보강 후 `6470자`까지 회복되었다.
+
+### 스카팀 네이버 차단 follow-up 정합성 복구
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+  - exact target slot 클릭 실패 시 같은 룸의 다음 available slot으로 fallback 시도 추가
+  - 기존 90분 guard와 종료시간 guard를 그대로 유지해 임박 시간대 실패만 완화
+- `bots/reservation/lib/db.js`
+  - `markKioskBlockManuallyConfirmed()`, `resolveOpenKioskBlockFollowups()` 추가
+  - 수동 완료 시 `kiosk_blocks` 원장을 `manually_confirmed`로 닫는 shared helper 제공
+- `bots/reservation/manual/reports/pickko-alerts-resolve.js`
+- `bots/reservation/lib/ska-command-handlers.js`
+  - `처리완료` 계열 경로가 `alerts`뿐 아니라 열린 `kiosk_blocks` follow-up도 함께 해결하도록 정렬
+- 운영 반영:
+  - `김지순 / 010-5141-5668 / 2026-03-27 14:00 / 스터디룸B`
+  - 수동 처리 완료 후 `pickko-alerts-resolve.js --phone=010-5141-5668 --date=2026-03-27 --start=14:00` 실행
+  - 결과: `네이버 차단 follow-up 1건 수동 완료 반영`

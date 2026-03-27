@@ -1709,3 +1709,15 @@
     - 결과: `[자기계발] 내면의 동기 부여: 자신만의 성공 정의 찾기`, `6470자`
   - 회귀 관찰:
     - 1차 repair만으로는 `5617자` 수준에 머물 수 있었으나, 2차 repair 보강 후 `6470자`까지 회복됨
+
+## 2026-03-27 — 스카팀 네이버 차단 follow-up 정합성 복구
+
+- `node --check bots/reservation/lib/db.js` ✅
+- `node --check bots/reservation/lib/ska-command-handlers.js` ✅
+- `node --check bots/reservation/manual/reports/pickko-alerts-resolve.js` ✅
+- `node --check bots/reservation/auto/monitors/pickko-kiosk-monitor.js` ✅
+- `node bots/reservation/manual/reports/pickko-alerts-resolve.js --phone=010-5141-5668 --date=2026-03-27 --start=14:00` ✅
+  - 결과: `미해결 오류 알림 0건 해결 처리 완료 / 네이버 차단 follow-up 1건 수동 완료 반영`
+- 운영 확인:
+  - 패치 전 `kiosk_blocks` 원장에는 `2026-03-27 14:00~16:50 스터디룸B`가 `naver_blocked=0`, `last_block_result=retryable_failure`, `last_block_reason=slot_click_failed`로 남아 있었음
+  - 수동 완료 반영 후 재시도 루프를 멈추는 방향으로 source of truth를 정렬

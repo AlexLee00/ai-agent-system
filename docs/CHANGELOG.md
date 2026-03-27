@@ -2411,3 +2411,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - continuation 이후에도 6000자 미달 또는 섹션 누락이면 `repairGeneralPostDraft()`를 자동 호출하도록 보강
   - repair issue에 현재 글자수 미달과 누락 섹션 정보를 함께 전달해 필요한 부분만 후속 확장
 - blog: GEMS 일반 글이 `6000자` 미달일 때 section-level targeted repair를 최대 2회까지 수행하도록 보강해 completion 안정성을 높였다.
+- `fix(reservation): resolve kiosk followups on manual completion`
+  - `pickko-kiosk-monitor`가 exact slot 클릭 실패 시 같은 룸의 다음 available slot으로 fallback 시도
+  - `pickko-alerts-resolve`와 스카 command handler가 `alerts`뿐 아니라 열린 `kiosk_blocks` follow-up도 함께 `manually_confirmed`로 반영
+  - 사용자가 텔레그램에서 수동 처리 완료를 알린 뒤 같은 예약이 다음 사이클에 다시 경고되는 문제를 완화
