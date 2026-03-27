@@ -1909,3 +1909,26 @@
     - 과도한 분량 강제로 인한 발행 실패를 줄이고 6000자 수준의 완성본을 더 안정적으로 만드는 것
   - 나중에 확장할 구조:
     - 카테고리별 길이 정책 차등화, 부족 시 섹션별 repair 또는 2차 continuation 보강
+
+## 2026-03-27 — 젬스 이미지 다양성 보강
+
+- 배경
+  - 블로그 이미지가 카테고리를 달리해도 비슷한 톤, 비슷한 풍, 비슷한 자세와 구도로 반복되는 경향이 있었다.
+  - 원인은 [bots/blog/lib/img-gen.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/img-gen.js)가 카테고리별 고정 스타일 문구만 붙이고, 타입/상황/태도/구도 분산을 거의 만들지 못하던 점이었다.
+
+- 이번 변경
+  - [bots/blog/lib/img-gen.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/img-gen.js)
+    - 제목/카테고리/이미지 종류(thumb, mid) 기준으로 안정적으로 분산되는 visual variant selector 추가
+    - `실사형(cinematic photo) / 일러스트형(editorial illustration) / 애니메이션형(animation concept art, storyboard) / 인포그래픽형(modern infographic, isometric explainer)`이 카테고리별로 순환되도록 보강
+    - 인물 태도, 상황, 구도, 소품 스타일을 category-aware prompt로 함께 주입
+    - thumb와 mid가 같은 글에서도 서로 다른 프레이밍과 스토리텔링 강조점을 갖도록 분리
+
+- 현재 기준
+  - 프롬프트 샘플 검증 시 `홈페이지와App`, `자기계발`, `개발기획과컨설팅`, `IT정보와분석`이 서로 다른 render type 조합을 갖도록 확인
+  - 다만 일부 카테고리의 thumb는 여전히 `modern infographic scene`이 겹칠 수 있어, 실제 생성본 관찰 후 2차 미세조정 여지는 남는다
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 이미지 결과물이 매번 같은 톤으로 수렴하지 않도록 prompt diversity를 deterministic하게 주입하는 것
+  - 나중에 확장할 구조:
+    - 카테고리별 visual strategy profile, 실제 생성본 기반 novelty scoring, 최근 이미지 스타일 중복 회피

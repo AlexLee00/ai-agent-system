@@ -1672,3 +1672,13 @@
 - `node --input-type=module -e "... writeGeneralPost('홈페이지와App', researchData, {}) ..."` ✅
   - theme dedupe는 유지된 채 제목이 `상태 전이/예외 처리`, `UI/UX 설계` 축으로 생성되는 것 확인
   - 다만 샘플은 `5461자`로 아직 6000자 미달이라, 다음 병목은 continuation 안정성으로 판단
+
+## 2026-03-27 — 젬스 이미지 다양성 보강
+
+- `node --check bots/blog/lib/img-gen.js` ✅
+- `node --input-type=module -e "... _buildThumbPrompt/_buildMidPrompt 샘플 출력 ..."` ✅
+  - `홈페이지와App`, `자기계발`, `개발기획과컨설팅`, `IT정보와분석`의 thumb/mid prompt에서 render type이 분산되는 것 확인
+  - 예:
+    - `홈페이지와App`: `modern infographic scene` / `animation storyboard scene`
+    - `자기계발`: `animation concept art` / `editorial illustration`
+    - `개발기획과컨설팅`: `modern infographic scene` / `documentary-style photo`

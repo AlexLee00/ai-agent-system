@@ -2398,3 +2398,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/blog/lib/gems-writer.js`의 일반 글 최소 분량을 6000자로 하향
   - 시스템 프롬프트/일반 프롬프트/청크 프롬프트의 섹션별 최소 길이를 함께 현실화
   - `bots/blog/lib/runtime-config.js`, `bots/blog/config.json`의 `gemsMinChars`도 6000으로 정렬
+- `feat(blog): diversify GEMS image prompts by visual type`
+  - `bots/blog/lib/img-gen.js`에 deterministic visual variant selector 추가
+  - thumb/mid 이미지가 실사형, 일러스트형, 애니메이션형, 인포그래픽형을 카테고리별로 분산 사용하도록 보강
+  - 인물 태도, 상황, 구도, 소품 스타일을 prompt에 함께 넣어 결과물의 톤과 풍이 반복되지 않도록 조정

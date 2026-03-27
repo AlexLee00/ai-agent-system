@@ -156,23 +156,156 @@ function _saveBuffer(buffer, outputPath) {
 
 const STYLE_BASE = 'Clean, modern, professional blog thumbnail. No text overlay. Soft lighting, high resolution.';
 
+function _hashSeed(input) {
+  const text = String(input || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function _pickVariant(list, seed, offset = 0) {
+  if (!Array.isArray(list) || !list.length) return '';
+  return list[(seed + offset) % list.length];
+}
+
+function _buildVisualVariant(title, postType, category, label) {
+  const seed = _hashSeed(`${postType}:${category}:${label}:${title}`);
+  const categoryTypePools = {
+    '최신IT트렌드': {
+      thumb: ['cinematic photo', 'animation concept art', 'modern infographic scene'],
+      mid: ['isometric explainer visual', 'animation storyboard scene', 'editorial illustration'],
+    },
+    'IT정보와분석': {
+      thumb: ['modern infographic scene', 'editorial illustration', 'documentary-style photo'],
+      mid: ['isometric explainer visual', 'editorial illustration', 'modern infographic scene'],
+    },
+    '홈페이지와App': {
+      thumb: ['editorial illustration', 'cinematic photo', 'modern infographic scene'],
+      mid: ['isometric explainer visual', 'editorial illustration', 'animation storyboard scene'],
+    },
+    '자기계발': {
+      thumb: ['cinematic photo', 'animation concept art', 'editorial illustration'],
+      mid: ['animation storyboard scene', 'documentary-style photo', 'editorial illustration'],
+    },
+    '도서리뷰': {
+      thumb: ['documentary-style photo', 'editorial illustration', 'animation concept art'],
+      mid: ['editorial illustration', 'documentary-style photo', 'animation storyboard scene'],
+    },
+    '성장과성공': {
+      thumb: ['cinematic photo', 'modern infographic scene', 'editorial illustration'],
+      mid: ['editorial illustration', 'isometric explainer visual', 'documentary-style photo'],
+    },
+    '개발기획과컨설팅': {
+      thumb: ['modern infographic scene', 'editorial illustration', 'cinematic photo'],
+      mid: ['editorial illustration', 'isometric explainer visual', 'documentary-style photo'],
+    },
+    default: {
+      thumb: ['cinematic photo', 'editorial illustration', 'animation concept art', 'modern infographic scene'],
+      mid: ['editorial illustration', 'isometric explainer visual', 'animation storyboard scene', 'documentary-style photo'],
+    },
+  };
+  const categoryTypePool = categoryTypePools[category] || categoryTypePools.default;
+  const typePool = label === 'thumb' ? categoryTypePool.thumb : categoryTypePool.mid;
+
+  const shotPool = ['wide shot', 'three-quarter view', 'close-up focus', 'over-the-shoulder composition'];
+  const attitudePool = ['calm and focused', 'confident and proactive', 'curious and analytical', 'warm and collaborative'];
+  const situationPool = {
+    '최신IT트렌드': [
+      'future technology showroom',
+      'AI operations command room',
+      'city-scale connected digital infrastructure',
+    ],
+    'IT정보와분석': [
+      'strategy room with dashboards and decision boards',
+      'market analysis desk with layered reports',
+      'data review session with charts and briefing materials',
+    ],
+    '홈페이지와App': [
+      'product design studio reviewing app states',
+      'web and mobile UI planning table with wireframes',
+      'design critique session about user flows and edge cases',
+    ],
+    '자기계발': [
+      'personal routine space at sunrise',
+      'quiet reflective workspace with notes and progress board',
+      'daily habit review moment with subtle motion and energy',
+    ],
+    '도서리뷰': [
+      'reading desk with layered notes and bookmarks',
+      'cozy library corner with thoughtful review mood',
+      'book discussion setting with reflective atmosphere',
+    ],
+    '성장과성공': [
+      'goal review wall with milestones',
+      'achievement planning desk with momentum cues',
+      'long-term progress scene with compounding growth metaphor',
+    ],
+    '개발기획과컨설팅': [
+      'planning workshop with roadmap and system diagrams',
+      'consulting session around a service blueprint',
+      'product strategy review with whiteboard and stakeholder notes',
+    ],
+    default: [
+      'modern professional workspace',
+      'thoughtful planning scene',
+      'structured problem-solving environment',
+    ],
+  };
+
+  const propPool = {
+    thumb: [
+      'clear focal subject with bold silhouette',
+      'layered devices, notes, and visual cues',
+      'strong depth with foreground-background separation',
+      'subtle motion and directional light',
+    ],
+    mid: [
+      'supporting objects that explain the idea',
+      'step-by-step visual logic with subtle symbols',
+      'spatial layout showing process and relationships',
+      'clean scene with informative details',
+    ],
+  };
+
+  return {
+    renderType: _pickVariant(typePool, seed, 0),
+    shot: _pickVariant(shotPool, seed, 1),
+    attitude: _pickVariant(attitudePool, seed, 2),
+    situation: _pickVariant(situationPool[category] || situationPool.default, seed, 3),
+    propStyle: _pickVariant(propPool[label] || propPool.thumb, seed, 4),
+  };
+}
+
 function _buildThumbPrompt(title, postType, category) {
   if (postType === 'lecture') {
     const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
     return `${STYLE_BASE} Topic: "${topic}". Technology and software development theme. Dark modern UI aesthetic, code editor vibes, subtle Node.js green accent color (#68a063). Abstract digital background.`;
   }
+  const visual = _buildVisualVariant(title, postType, category, 'thumb');
   const categoryStyles = {
-    '최신IT트렌드':       'Futuristic technology theme, AI and innovation, glowing neural network, deep blue and purple gradient.',
-    'IT정보와분석':       'Data visualization, charts and graphs, business intelligence, clean infographic style, blue tones.',
-    '홈페이지와App':      'Modern web and mobile app design, UI/UX, smartphone and laptop, clean white and blue.',
-    '자기계발':           'Growth mindset, sunrise, open book, person climbing stairs, warm orange and yellow tones.',
-    '도서리뷰':           'Open book with soft light, cozy reading atmosphere, warm tones, library background.',
-    '성장과성공':         'Success concept, upward arrow, achievement trophy, motivated person, gold and navy tones.',
-    '개발기획과컨설팅':   'Project planning, whiteboard with diagrams, team collaboration, professional office setting.',
+    '최신IT트렌드':       'Futuristic technology theme, AI and innovation, deep blue, cyan, and silver accents.',
+    'IT정보와분석':       'Business intelligence mood, structured dashboards, charts, and analytical visual cues.',
+    '홈페이지와App':      'Product design mood, UI/UX artifacts, wireframes, smartphone and laptop interplay, clean white and blue.',
+    '자기계발':           'Personal growth mood, disciplined routine, reflective energy, warm orange and neutral tones.',
+    '도서리뷰':           'Thoughtful reading mood, books, notes, library textures, warm and calm light.',
+    '성장과성공':         'Achievement and momentum mood, strategic progress symbols, gold and navy contrast.',
+    '개발기획과컨설팅':   'Planning and facilitation mood, service blueprints, whiteboard systems, collaboration energy.',
   };
-  const style = categoryStyles[category] || 'Modern professional blog image, clean minimal design.';
+  const style = categoryStyles[category] || 'Modern professional blog image with strong concept storytelling.';
   const topic = title.replace(/\[.*?\]\s*/, '').trim();
-  return `${STYLE_BASE} Topic: "${topic}". ${style}`;
+  return [
+    STYLE_BASE,
+    `Topic: "${topic}".`,
+    `Render type: ${visual.renderType}.`,
+    `Scene: ${visual.situation}.`,
+    `Mood and attitude: ${visual.attitude}.`,
+    `Composition: ${visual.shot}, ${visual.propStyle}.`,
+    style,
+    'Keep the image visually distinct from generic AI-tech thumbnails; avoid repeating the same pose, same lighting, and same layout every time.',
+  ].join(' ');
 }
 
 function _buildMidPrompt(title, postType, category) {
@@ -180,8 +313,18 @@ function _buildMidPrompt(title, postType, category) {
     const topic = title.replace(/\[Node\.js \d+강\]\s*/, '').trim();
     return `${STYLE_BASE} Illustrating the concept of "${topic}" in software development. Code snippets, flowchart elements, or system architecture diagram style. Dark theme, developer aesthetic.`;
   }
+  const visual = _buildVisualVariant(title, postType, category, 'mid');
   const topic = title.replace(/\[.*?\]\s*/, '').trim();
-  return `${STYLE_BASE} Detailed illustration supporting the blog post about "${topic}". Engaging, informative visual with subtle icons or abstract shapes related to "${category}".`;
+  return [
+    STYLE_BASE,
+    `Detailed supporting visual for "${topic}".`,
+    `Render type: ${visual.renderType}.`,
+    `Situation: ${visual.situation}.`,
+    `Character presence and attitude: ${visual.attitude}.`,
+    `Composition: ${visual.shot}, ${visual.propStyle}.`,
+    `Use category-aware objects and context for "${category}", not just abstract shapes.`,
+    'Make this image complementary to the thumbnail, with a different framing, situation, and storytelling emphasis.',
+  ].join(' ');
 }
 
 /**
@@ -329,5 +472,7 @@ module.exports = {
   generateWithOpenAI,
   generatePostImages,
   generateInstaCard,
+  _buildThumbPrompt,
+  _buildMidPrompt,
   IMAGES_DIR,
 };
