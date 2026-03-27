@@ -20,6 +20,7 @@ import {
   getKisOverseasMarketStatus,
 } from '../shared/secrets.js';
 import { getValidationSoftBudgetConfig } from '../shared/runtime-config.js';
+import { loadCandidates as loadForceExitCandidates } from './force-exit-candidate-report.js';
 
 const require = createRequire(import.meta.url);
 const {
@@ -774,37 +775,28 @@ function getStalePositionThresholdHours(exchange) {
 }
 
 async function loadStalePositionHealth() {
-  const rows = await pgPool.query(
-    'investment',
-    `
-      SELECT
-        exchange,
-        symbol,
-        paper,
-        COALESCE(trade_mode, 'normal') AS trade_mode,
-        amount,
-        avg_price,
-        updated_at,
-        ROUND((amount * avg_price)::numeric, 2) AS position_value,
-        ROUND(EXTRACT(EPOCH FROM (NOW() - updated_at))/3600::numeric, 1) AS age_hours
-      FROM investment.positions
-      WHERE amount > 0
-        AND paper = false
-      ORDER BY updated_at ASC
-    `,
-  ).catch(() => []);
+  const staleRows = await loadForceExitCandidates().catch(() => []);
+  const actionableRows = staleRows.filter((row) => row.readiness === 'ready_now' || row.readiness === 'guarded_ready');
+  const blockedRows = staleRows.filter((row) => row.readiness === 'blocked_by_capability');
+  const waitingRows = staleRows.filter((row) => row.readiness === 'wait_market_open');
 
-  const staleRows = rows.filter((row) => {
-    const ageHours = Number(row.age_hours || 0);
-    const thresholdHours = getStalePositionThresholdHours(row.exchange);
-    return ageHours >= thresholdHours;
-  });
-
-  const warn = staleRows.slice(0, 8).map((row) => {
-    const thresholdHours = getStalePositionThresholdHours(row.exchange);
-    const value = Number(row.position_value || 0).toFixed(2);
-    return `  ${formatLaneLabel(row.exchange, row.trade_mode)} ${row.symbol} ${Number(row.age_hours || 0).toFixed(1)}h / value ${value} (threshold ${thresholdHours}h)`;
-  });
+  const warn = [
+    ...actionableRows.slice(0, 4).map((row) => {
+      const thresholdHours = getStalePositionThresholdHours(row.exchange);
+      const value = Number(row.positionValue || 0).toFixed(2);
+      return `  [actionable] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessLabel}, threshold ${thresholdHours}h)`;
+    }),
+    ...blockedRows.slice(0, 4).map((row) => {
+      const thresholdHours = getStalePositionThresholdHours(row.exchange);
+      const value = Number(row.positionValue || 0).toFixed(2);
+      return `  [blocked] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessReason}, threshold ${thresholdHours}h)`;
+    }),
+    ...waitingRows.slice(0, 2).map((row) => {
+      const thresholdHours = getStalePositionThresholdHours(row.exchange);
+      const value = Number(row.positionValue || 0).toFixed(2);
+      return `  [waiting] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessReason}, threshold ${thresholdHours}h)`;
+    }),
+  ];
 
   const ok = staleRows.length === 0
     ? ['  장기 미결 LIVE 포지션 없음']
@@ -816,6 +808,14 @@ async function loadStalePositionHealth() {
     ok,
     warn,
     staleRows,
+    actionableRows,
+    blockedRows,
+    waitingRows,
+    readinessSummary: {
+      actionable: actionableRows.length,
+      blockedByCapability: blockedRows.length,
+      waitMarketOpen: waitingRows.length,
+    },
   };
 }
 
@@ -988,7 +988,7 @@ function buildDecision(
       {
         active: stalePositionHealth.warnCount > 0,
         level: 'medium',
-        reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — force-exit/정리 기준 점검 필요`,
+        reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — 실행 가능 ${stalePositionHealth.readinessSummary?.actionable || 0}건 / capability 제약 ${stalePositionHealth.readinessSummary?.blockedByCapability || 0}건 / 장중 대기 ${stalePositionHealth.readinessSummary?.waitMarketOpen || 0}건`,
       },
       {
         active: cryptoLiveGateHealth.warnCount > 0,
@@ -1056,7 +1056,16 @@ function formatText(report) {
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ crypto validation soft budget(오늘)', report.cryptoValidationSoftBudgetHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection(`■ crypto validation soft cap 차단(최근 ${Math.round(report.cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간)`, report.cryptoValidationBudgetBlockHealth, { okLimit: 1, warnLimit: 8 }),
-    buildHealthCountSection('■ 장기 미결 LIVE 포지션', report.stalePositionHealth, { okLimit: 1, warnLimit: 8 }),
+    {
+      title: '■ 장기 미결 LIVE 포지션',
+      lines: report.stalePositionHealth.warnCount > 0
+        ? [
+            `  총 ${report.stalePositionHealth.warnCount}건`,
+            `  실행 가능 ${report.stalePositionHealth.readinessSummary?.actionable || 0}건 / capability 제약 ${report.stalePositionHealth.readinessSummary?.blockedByCapability || 0}건 / 장중 대기 ${report.stalePositionHealth.readinessSummary?.waitMarketOpen || 0}건`,
+            ...report.stalePositionHealth.warn.slice(0, 8),
+          ]
+        : ['  장기 미결 LIVE 포지션 없음'],
+    },
     buildHealthCountSection('■ 암호화폐 LIVE 게이트(최근 3일)', report.cryptoLiveGateHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection('■ KIS 실행 capability', report.kisCapabilityHealth, { okLimit: 1, warnLimit: 2 }),
     buildHealthCountSection('■ rail별 신규 진입 한도(오늘)', report.tradeLaneHealth, { okLimit: 6, warnLimit: 6 }),
