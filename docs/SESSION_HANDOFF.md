@@ -2015,3 +2015,4 @@
     - `slot_click_failed`와 `fallback_next_slot`를 health/report에 별도 관찰 지표로 노출
     - 수동 완료를 booking-specific command로 더 명시적으로 연결
 - 2026-03-28 00:00 KST 기준 투자팀 health-report의 장기 미결 LIVE 포지션 섹션을 readiness-aware로 보강했다. 이제 stale 6건을 `실행 가능 2건(RENDER/USDT, SIGN/USDT)`과 `capability 제약 4건(ORCL, NVTS, HIMS, NBIS)`으로 분리해 보여주며, 운영 판단 reason도 같은 분류를 따른다.
+- 같은 stale 섹션에 `severity`를 추가했다. 현재 actionable 2건은 모두 `observe-first`로 분류되며, `strong_force_exit_candidate`이거나 포지션 value가 `$100+`일 때만 `execute-now`로 승격한다. 2026-03-28 00:00 KST 기준 `execute-now 0 / observe-first 2 / blocked 4`다.
