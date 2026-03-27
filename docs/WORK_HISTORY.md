@@ -4962,3 +4962,14 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `AI 시대`, `멀티에이전트`, `AI 에이전트`, `30개 AI 에이전트`, `성장 전략`, `운영 전략`, `시장 인사이트` 같은 반복 프레임을 새 글의 기본 서사로 재사용하지 않도록 보강
 - 해석:
   - 카테고리 중복 문제가 아니라 상위 서사 반복 문제를 먼저 줄이기 위한 1차 방어선이다.
+
+### 젬스 일반 글 최소 분량 6000자 하향
+- `bots/blog/lib/gems-writer.js`
+  - 일반 글 최소 기준을 6000자로 하향
+  - 본론/IT 뉴스/스터디카페/마무리 섹션 최소 분량을 현실적인 수준으로 함께 완화
+  - chunked 생성의 group별 최소 길이도 6000자 기준에 맞춰 재조정
+- `bots/blog/lib/runtime-config.js`
+- `bots/blog/config.json`
+  - `gemsMinChars`를 6000으로 정렬
+- 해석:
+  - 주제 다양성 개선 이후 남은 병목이 분량 강제와 이어쓰기 실패였기 때문에, 운영 안정화를 위해 하드 기준을 먼저 낮춘 작업이다.

@@ -2394,3 +2394,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/blog/lib/gems-writer.js`가 최근 14일 일반 포스팅 제목을 읽어 recent theme dedupe context를 생성
   - 일반/청크형 포스팅 프롬프트에 최근 발행 글 목록, 금지 theme, 금지 표현을 함께 주입
   - `AI_AGENT_CONTEXT`의 카테고리별 하드코딩 서사를 참고 예시 수준으로 낮춰, 같은 AI 운영 경험을 여러 카테고리에서 재포장하는 경향을 완화
+- `fix(blog): lower GEMS general-post minimum length to 6000`
+  - `bots/blog/lib/gems-writer.js`의 일반 글 최소 분량을 6000자로 하향
+  - 시스템 프롬프트/일반 프롬프트/청크 프롬프트의 섹션별 최소 길이를 함께 현실화
+  - `bots/blog/lib/runtime-config.js`, `bots/blog/config.json`의 `gemsMinChars`도 6000으로 정렬

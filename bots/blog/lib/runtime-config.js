@@ -16,7 +16,7 @@ const DEFAULTS = {
     dailyLogStaleMs: 36 * 60 * 60 * 1000,
   },
   generation: {
-    gemsMinChars: 8000,
+    gemsMinChars: 6000,
     posMinChars: 7000,
     continueMaxTokens: 8000,
     writerMaxRetries: 1,
