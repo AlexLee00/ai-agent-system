@@ -52,6 +52,20 @@ function majorVersion(version) {
   return match ? Number(match[1]) : null;
 }
 
+const PACKAGE_CRITICALITY = {
+  '@anthropic-ai/sdk': 4,
+  'groq-sdk': 4,
+  '@modelcontextprotocol/sdk': 4,
+  'ccxt': 3,
+  'better-sqlite3': 3,
+  'duckdb': 2,
+  'playwright': 2,
+};
+
+function packageCriticality(pkg) {
+  return PACKAGE_CRITICALITY[pkg] || 1;
+}
+
 function buildDeterministicPatchList(data = {}, existingPatches = []) {
   const npm = data.npm || {};
   const packageUsage = data.packageUsage || {};
@@ -69,7 +83,8 @@ function buildDeterministicPatchList(data = {}, existingPatches = []) {
     const breaking = majorVersion(current) !== null && majorVersion(latest) !== null
       ? majorVersion(current) !== majorVersion(latest)
       : false;
-    let priority = usage.coreCount > 0 ? 'high' : usage.count > 0 ? 'medium' : 'low';
+    const criticality = packageCriticality(pkg);
+    let priority = usage.coreCount > 0 || criticality >= 4 ? 'high' : usage.count > 0 ? 'medium' : 'low';
     if (breaking) priority = 'high';
     if (existing?.priority && priorityRank(existing.priority) > priorityRank(priority)) {
       priority = existing.priority;
@@ -81,9 +96,9 @@ function buildDeterministicPatchList(data = {}, existingPatches = []) {
     } else {
       reasons.push('최신 패치/버그 수정 반영이 필요합니다.');
     }
-    if (usage.count > 0) {
-      reasons.push(`로컬 사용 ${usage.count}파일${usage.coreCount > 0 ? `, 핵심 경로 ${usage.coreCount}파일` : ''}입니다.`);
-    } else {
+    if (criticality >= 4) {
+      reasons.push('핵심 런타임 SDK 경로에 영향이 있어 우선 점검이 필요합니다.');
+    } else if (usage.count === 0) {
       reasons.push('현재 저장소 기준 직접 사용 흔적은 적습니다.');
     }
 
@@ -107,6 +122,8 @@ function buildDeterministicPatchList(data = {}, existingPatches = []) {
   return patches.sort((a, b) => {
     const diff = priorityRank(b.priority) - priorityRank(a.priority);
     if (diff !== 0) return diff;
+    const criticalityDiff = packageCriticality(b.package) - packageCriticality(a.package);
+    if (criticalityDiff !== 0) return criticalityDiff;
     return (b.local_usage?.coreCount || 0) - (a.local_usage?.coreCount || 0);
   }).slice(0, 5);
 }
@@ -135,6 +152,8 @@ function enrichPatchPriorities(analysis, packageUsage = {}) {
     const rank = { critical: 4, high: 3, medium: 2, low: 1 };
     const diff = (rank[b.priority] || 0) - (rank[a.priority] || 0);
     if (diff !== 0) return diff;
+    const criticalityDiff = packageCriticality(b.package) - packageCriticality(a.package);
+    if (criticalityDiff !== 0) return criticalityDiff;
     return (b.local_usage?.coreCount || 0) - (a.local_usage?.coreCount || 0);
   });
   return analysis;
@@ -213,9 +232,16 @@ function enrichSummary(analysis, data = {}) {
   const normalizedBody = deterministic && summaryBody.startsWith(deterministic)
     ? summaryBody.slice(deterministic.length).trim()
     : summaryBody;
+  const cleanedBody = normalizedBody
+    .replace(/이번 주에는 보안 취약점이 없으며, 패키지 업데이트 필요 사항도 없습니다\.?/g, '')
+    .replace(/보안 취약점이 없으며, 패키지 업데이트 필요 사항도 없습니다\.?/g, '')
+    .replace(/패키지 업데이트 필요 사항도 없습니다\.?/g, '')
+    .replace(/보안 취약점이 없습니다\.?/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   analysis.summary = deterministic
-    ? `${deterministic}${normalizedBody ? ` ${normalizedBody}` : ''}`.trim()
-    : normalizedBody;
+    ? `${deterministic}${cleanedBody ? ` ${cleanedBody}` : ''}`.trim()
+    : cleanedBody;
   return analysis;
 }
 
