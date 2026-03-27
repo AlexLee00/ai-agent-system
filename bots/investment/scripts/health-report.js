@@ -779,12 +779,21 @@ async function loadStalePositionHealth() {
   const actionableRows = staleRows.filter((row) => row.readiness === 'ready_now' || row.readiness === 'guarded_ready');
   const blockedRows = staleRows.filter((row) => row.readiness === 'blocked_by_capability');
   const waitingRows = staleRows.filter((row) => row.readiness === 'wait_market_open');
+  const executeNowRows = actionableRows.filter((row) =>
+    row.candidateLevel === 'strong_force_exit_candidate' || Number(row.positionValue || 0) >= 100,
+  );
+  const observeFirstRows = actionableRows.filter((row) => !executeNowRows.includes(row));
 
   const warn = [
-    ...actionableRows.slice(0, 4).map((row) => {
+    ...observeFirstRows.slice(0, 4).map((row) => {
       const thresholdHours = getStalePositionThresholdHours(row.exchange);
       const value = Number(row.positionValue || 0).toFixed(2);
-      return `  [actionable] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessLabel}, threshold ${thresholdHours}h)`;
+      return `  [observe-first] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessLabel}, threshold ${thresholdHours}h)`;
+    }),
+    ...executeNowRows.slice(0, 4).map((row) => {
+      const thresholdHours = getStalePositionThresholdHours(row.exchange);
+      const value = Number(row.positionValue || 0).toFixed(2);
+      return `  [execute-now] ${formatLaneLabel(row.exchange, row.tradeMode)} ${row.symbol} ${Number(row.ageHours || 0).toFixed(1)}h / value ${value} (${row.readinessLabel}, threshold ${thresholdHours}h)`;
     }),
     ...blockedRows.slice(0, 4).map((row) => {
       const thresholdHours = getStalePositionThresholdHours(row.exchange);
@@ -809,10 +818,14 @@ async function loadStalePositionHealth() {
     warn,
     staleRows,
     actionableRows,
+    observeFirstRows,
+    executeNowRows,
     blockedRows,
     waitingRows,
     readinessSummary: {
       actionable: actionableRows.length,
+      observeFirst: observeFirstRows.length,
+      executeNow: executeNowRows.length,
       blockedByCapability: blockedRows.length,
       waitMarketOpen: waitingRows.length,
     },
@@ -988,7 +1001,7 @@ function buildDecision(
       {
         active: stalePositionHealth.warnCount > 0,
         level: 'medium',
-        reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — 실행 가능 ${stalePositionHealth.readinessSummary?.actionable || 0}건 / capability 제약 ${stalePositionHealth.readinessSummary?.blockedByCapability || 0}건 / 장중 대기 ${stalePositionHealth.readinessSummary?.waitMarketOpen || 0}건`,
+        reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — 즉시 실행 ${stalePositionHealth.readinessSummary?.executeNow || 0}건 / 관찰 우선 ${stalePositionHealth.readinessSummary?.observeFirst || 0}건 / capability 제약 ${stalePositionHealth.readinessSummary?.blockedByCapability || 0}건`,
       },
       {
         active: cryptoLiveGateHealth.warnCount > 0,
@@ -1061,7 +1074,7 @@ function formatText(report) {
       lines: report.stalePositionHealth.warnCount > 0
         ? [
             `  총 ${report.stalePositionHealth.warnCount}건`,
-            `  실행 가능 ${report.stalePositionHealth.readinessSummary?.actionable || 0}건 / capability 제약 ${report.stalePositionHealth.readinessSummary?.blockedByCapability || 0}건 / 장중 대기 ${report.stalePositionHealth.readinessSummary?.waitMarketOpen || 0}건`,
+            `  즉시 실행 ${report.stalePositionHealth.readinessSummary?.executeNow || 0}건 / 관찰 우선 ${report.stalePositionHealth.readinessSummary?.observeFirst || 0}건 / capability 제약 ${report.stalePositionHealth.readinessSummary?.blockedByCapability || 0}건 / 장중 대기 ${report.stalePositionHealth.readinessSummary?.waitMarketOpen || 0}건`,
             ...report.stalePositionHealth.warn.slice(0, 8),
           ]
         : ['  장기 미결 LIVE 포지션 없음'],

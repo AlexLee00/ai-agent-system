@@ -5017,3 +5017,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 수동 처리 완료 후 `pickko-alerts-resolve.js --phone=010-5141-5668 --date=2026-03-27 --start=14:00` 실행
   - 결과: `네이버 차단 follow-up 1건 수동 완료 반영`
 - 2026-03-28: `bots/investment/scripts/health-report.js`가 `force-exit-candidate-report`의 readiness 메타를 재사용하도록 변경했다. 장기 미결 LIVE 포지션을 actionable / blocked_by_capability / wait_market_open으로 분리해 health JSON/text와 운영 판단 문구에 반영했다.
+- 2026-03-28: stale actionable 포지션을 `observe-first`와 `execute-now`로 한 단계 더 세분화했다. 현재 crypto stale 2건(RENDER/USDT, SIGN/USDT)은 threshold를 막 넘긴 소액 포지션으로 `observe-first`에 남기고, health/report reason도 `즉시 실행 0 / 관찰 우선 2 / capability 제약 4`로 갱신했다.
