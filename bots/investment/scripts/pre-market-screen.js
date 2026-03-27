@@ -16,7 +16,13 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 import * as db from '../shared/db.js';
-import { getInvestmentTradeMode, getKisSymbols, getKisOverseasSymbols } from '../shared/secrets.js';
+import {
+  getInvestmentTradeMode,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+  getKisSymbols,
+  getKisOverseasSymbols,
+} from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.js';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.js';
@@ -33,6 +39,13 @@ const PRESCREENED_FILE = {
 
 const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
 const PRESCREENED_RAG_TTL_MS = 24 * 3600 * 1000;  // 24시간 (RAG 폴백)
+
+function shouldSkipPreScreen(status) {
+  if (!status) return false;
+  if (status.holiday?.isHoliday) return true;
+  if (status.isWeekend) return true;
+  return false;
+}
 
 async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode = getInvestmentTradeMode()) {
   if (market !== 'domestic' || !Array.isArray(symbols) || symbols.length === 0) return symbols;
@@ -158,6 +171,16 @@ async function main() {
   console.log(`\n🔍 [장전 스크리닝] ${label} 시작 — ${nowKst}`);
 
   await db.initSchema();
+
+  if (market === 'domestic' || market === 'overseas') {
+    const marketStatus = market === 'domestic'
+      ? await getKisMarketStatus()
+      : await getKisOverseasMarketStatus();
+    if (shouldSkipPreScreen(marketStatus)) {
+      console.log(`  ⏭️ [장전 스크리닝] ${label} 스킵 — ${marketStatus.reason}`);
+      return;
+    }
+  }
 
   const resolved = await resolveSymbolsWithFallback({
     market,
