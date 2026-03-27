@@ -686,6 +686,34 @@ export async function evaluateSignal(signal, opts = {}) {
   }
 
   if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
+    const livePosition = await db.getLivePosition(symbol, signal.exchange).catch(() => null);
+    if (livePosition && livePosition.paper === false) {
+      const reason = '동일 LIVE 포지션 보유 중 — validation BUY 사전 차단';
+      if (persist && signal.id) {
+        await db.updateSignalBlock(signal.id, {
+          status: SIGNAL_STATUS.REJECTED,
+          reason,
+          code: 'validation_live_position_reentry_preflight',
+          meta: {
+            exchange: signal.exchange,
+            symbol,
+            action,
+            trade_mode: signalTradeMode,
+            existing_trade_mode: livePosition.trade_mode || 'normal',
+            existing_paper: livePosition.paper,
+            existing_amount: livePosition.amount,
+            existing_avg_price: livePosition.avg_price,
+            existing_updated_at: livePosition.updated_at,
+          },
+        }).catch(() => {});
+      }
+      if (persist) await notifyRiskRejection({ symbol, action, reason });
+      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
+      return { approved: false, reason };
+    }
+  }
+
+  if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
     const softBudget = getValidationSoftBudgetConfig('binance');
     if (softBudget.enabled && softBudget.reserveDailyBuySlots > 0) {
       const policy = getCapitalConfig('binance', 'validation');

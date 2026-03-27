@@ -2379,3 +2379,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `runtime-config-suggestions`가 오늘 `validation_daily_budget_soft_cap`, `capital_guard_rejected`, normal BUY 수를 함께 읽도록 보강
   - `validationBudgetSnapshots.cryptoValidation`에 `normalCount`, `softCapBlocks`, `capitalGuardBlocks` 추가
   - soft cap 차단이 실제 발생했을 때 reserve slot 유지/완화 후보를 자동 제안할 수 있는 기준선 추가
+- `fix(investment): preflight crypto validation reentry`
+  - `nemesis`가 `binance + validation + BUY`에서 기존 LIVE 포지션 존재 여부를 approval 단계에서 먼저 확인
+  - 동일 심볼 LIVE 포지션이 있으면 `validation_live_position_reentry_preflight`로 조기 거부
+  - execution 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 앞단에서 축소
