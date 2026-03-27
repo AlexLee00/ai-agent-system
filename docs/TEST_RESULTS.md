@@ -1695,3 +1695,11 @@
   - 다만 이미지 내부에 `FLOWS`, `EDGE CASES`, `Habits` 같은 readable text가 남는 샘플이 있어 프롬프트를 추가 강화
 - `node --input-type=module -e "... _buildThumbPrompt/_buildMidPrompt 출력 ..."` ✅
   - readable text, letters, numbers, UI labels, whiteboard text 금지 규칙이 prompt에 반영된 것 확인
+
+## 2026-03-27 — 젬스 일반 글 미달 자동 repair 보강
+
+- `node --check bots/blog/lib/gems-writer.js` ✅
+- `node --input-type=module -e "... writeGeneralPost('홈페이지와App', researchData, {}) ..."` ✅
+  - continuation + repair 보강 후 샘플 1건이 `6320자`로 6000자 기준 통과 확인
+- 추가 샘플 1건 이상은 실행 중
+  - 편차 재확인은 후속 관찰 필요

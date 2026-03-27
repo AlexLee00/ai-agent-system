@@ -1954,3 +1954,28 @@
     - 이미지 모델이 UI/문서 장면을 그릴 때 임의의 영어 텍스트를 써버리는 문제를 프롬프트 단계에서 먼저 줄이는 것
   - 나중에 확장할 구조:
     - OCR/vision 기반 post-check, readable text 감지 시 자동 재생성
+
+## 2026-03-27 — 젬스 일반 글 미달 자동 repair 보강
+
+- 배경
+  - theme dedupe와 6000자 하향 이후에도 일반 글 샘플이 5000자대에서 멈추는 경우가 반복됐다.
+  - 핵심 병목은 주제 중복보다 `continuation`이 남은 섹션만 안정적으로 채우지 못하는 점이었다.
+
+- 이번 변경
+  - [bots/blog/lib/gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)
+    - 현재 본문에서 누락된 섹션 marker를 계산하는 `_getMissingMarkers()` 추가
+    - `writeGeneralPost()`가 continuation 이후에도
+      - 최소 글자수 미달
+      - 또는 섹션 누락
+      인 경우 `repairGeneralPostDraft()`를 자동 호출하도록 보강
+    - repair prompt에 현재 글자수 미달과 누락 섹션 정보를 issue 형태로 넘겨, 필요한 부분만 확장/복구하게 정리
+
+- 현재 기준
+  - 재검증 샘플 중 `홈페이지와App` 1건은 `6320자`까지 올라와 6000자 기준을 통과하는 것 확인
+  - 추가 샘플은 실행 중이라 편차는 더 관찰 필요
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 1회 continuation 실패가 바로 발행 실패로 이어지지 않도록 repair를 후속 안전장치로 붙이는 것
+  - 나중에 확장할 구조:
+    - 섹션별 completeness score, 부족 섹션만 재생성하는 targeted repair, multi-pass continuation

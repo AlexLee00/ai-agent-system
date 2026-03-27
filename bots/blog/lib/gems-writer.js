@@ -230,6 +230,11 @@ function _getDetectedMarkers(text) {
     .sort((a, b) => a.index - b.index);
 }
 
+function _getMissingMarkers(text) {
+  const detected = new Set(_getDetectedMarkers(text).map(item => item.marker));
+  return GENERAL_SECTION_MARKERS.filter(marker => !detected.has(marker));
+}
+
 function _sanitizeContinuation(baseContent, continuationText) {
   const continuation = String(continuationText || '').trim();
   if (!continuation) {
@@ -632,6 +637,42 @@ ${_buildVariationBlock(sectionVariation)}
 
   // _THE_END_ 마커 제거
   content = content.replace(/_THE_END_/g, '').trim();
+
+  const missingMarkers = _getMissingMarkers(content);
+  const needsRepair = content.length < MIN_CHARS_GENERAL || missingMarkers.length > 0;
+
+  if (needsRepair) {
+    const issues = [];
+    if (content.length < MIN_CHARS_GENERAL) {
+      issues.push({
+        severity: 'warn',
+        msg: `현재 글자수 ${content.length}자로 최소 기준 ${MIN_CHARS_GENERAL}자에 미달함. 부족한 섹션을 확장해 ${MIN_CHARS_GENERAL}자 이상으로 보강할 것.`,
+      });
+    }
+    if (missingMarkers.length > 0) {
+      issues.push({
+        severity: 'warn',
+        msg: `누락된 섹션: ${missingMarkers.join(', ')}. 빠진 섹션을 추가하고 기존 구조를 유지할 것.`,
+      });
+    }
+
+    try {
+      console.log(`[젬스] repair 호출 — chars=${content.length}, missing=${missingMarkers.length}`);
+      const repaired = await repairGeneralPostDraft(
+        category,
+        researchData,
+        { content },
+        { issues },
+        sectionVariation
+      );
+      content = String(repaired.content || content).trim();
+      if (repaired.model) usedModel = repaired.model;
+      fallbackUsed = fallbackUsed || !!repaired.fallbackUsed;
+      console.log(`[젬스] repair 완료: ${content.length}자`);
+    } catch (e) {
+      console.warn(`[젬스] repair 실패 (무시): ${e.message}`);
+    }
+  }
 
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
