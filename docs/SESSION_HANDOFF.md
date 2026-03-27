@@ -1831,3 +1831,27 @@
     - execution 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 approval 앞단에서 줄이는 것
   - 나중에 확장할 구조:
     - `fresh live reentry`와 `stale position reentry`를 분리한 lane-aware reentry policy
+
+## 2026-03-27 — 아처 보고서 usage-aware 보강
+
+- 배경
+  - [archer-2026-03-27.md](/Users/alexlee/projects/ai-agent-system/bots/claude/reports/archer-2026-03-27.md)는 패치 후보 버전 자체는 맞았지만, `groq-sdk`와 `@modelcontextprotocol/sdk`를 같은 `medium` 우선순위로 다뤄 우리 코드 사용 맥락을 충분히 반영하지 못했다.
+
+- 이번 변경
+  - [bots/claude/lib/archer/fetcher.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/archer/fetcher.js)
+    - npm 패키지별 로컬 사용 파일 수와 핵심 경로 사용 수를 수집하는 `fetchPackageUsage()` 추가
+  - [bots/claude/lib/archer/analyzer.js](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/archer/analyzer.js)
+    - npm 컨텍스트에 `로컬 사용 N파일 / 핵심 N파일` 정보를 함께 주입
+    - 패치 후보에 로컬 사용 메타를 붙이고, 핵심 경로 사용 시 priority를 한 단계 상향
+    - summary를 `실사용 영향 1순위는 ...` 형태로 더 액션형으로 정렬
+    - 웹 하이라이트는 동일 링크 기준 source title과 의미 있게 다르면 원문 제목으로 보정하고 정합성 재검증 메모를 남기도록 보강
+
+- 현재 기준
+  - `groq-sdk`: 로컬 사용 11파일 / 핵심 경로 3파일
+  - `@modelcontextprotocol/sdk`: 로컬 사용 4파일 / 핵심 경로 0파일
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 아처가 외부 업데이트 나열이 아니라 우리 코드 영향도 기준으로 패치 우선순위를 재정렬하는 것
+  - 나중에 확장할 구조:
+    - 워크스페이스별 사용도 가중치, 운영 경로/실행 빈도 기반 패치 점수화

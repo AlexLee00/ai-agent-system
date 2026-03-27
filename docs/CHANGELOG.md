@@ -2383,3 +2383,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `nemesis`가 `binance + validation + BUY`에서 기존 LIVE 포지션 존재 여부를 approval 단계에서 먼저 확인
   - 동일 심볼 LIVE 포지션이 있으면 `validation_live_position_reentry_preflight`로 조기 거부
   - execution 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 앞단에서 축소
+- `feat(archer): make patch intelligence usage-aware`
+  - `fetcher`가 npm 패키지별 로컬 사용 파일 수와 핵심 경로 사용 수를 함께 수집
+  - `analyzer`가 패치 후보에 로컬 사용 메타를 붙이고, 핵심 경로 사용 시 priority를 한 단계 상향
+  - 아처 summary를 `실사용 영향 1순위` 기준으로 더 액션형으로 정렬
+  - 웹 하이라이트는 source 원문 title과 링크-제목 정합성이 어긋나면 원문 제목으로 보정하고 재검증 메모를 남기도록 보강
