@@ -4973,3 +4973,12 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `gemsMinChars`를 6000으로 정렬
 - 해석:
   - 주제 다양성 개선 이후 남은 병목이 분량 강제와 이어쓰기 실패였기 때문에, 운영 안정화를 위해 하드 기준을 먼저 낮춘 작업이다.
+
+### 젬스 이미지 다양성 보강
+- `bots/blog/lib/img-gen.js`
+  - 제목/카테고리/이미지 종류를 seed로 쓰는 visual variant selector 추가
+  - thumb/mid에 대해 실사형, 일러스트형, 애니메이션형, 인포그래픽형을 category-aware pool에서 고르도록 보강
+  - 인물 태도, 상황, 구도, 소품 스타일을 함께 프롬프트에 주입
+  - thumb와 mid가 같은 글에서도 서로 다른 구도와 스토리텔링 역할을 갖도록 분리
+- 해석:
+  - 이미지 생성 품질의 핵심 병목이 “모델 성능”보다 “프롬프트 다양성 부족”이라는 점을 보강한 작업이다.
