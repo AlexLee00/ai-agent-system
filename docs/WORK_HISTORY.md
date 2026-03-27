@@ -5018,3 +5018,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 결과: `네이버 차단 follow-up 1건 수동 완료 반영`
 - 2026-03-28: `bots/investment/scripts/health-report.js`가 `force-exit-candidate-report`의 readiness 메타를 재사용하도록 변경했다. 장기 미결 LIVE 포지션을 actionable / blocked_by_capability / wait_market_open으로 분리해 health JSON/text와 운영 판단 문구에 반영했다.
 - 2026-03-28: stale actionable 포지션을 `observe-first`와 `execute-now`로 한 단계 더 세분화했다. 현재 crypto stale 2건(RENDER/USDT, SIGN/USDT)은 threshold를 막 넘긴 소액 포지션으로 `observe-first`에 남기고, health/report reason도 `즉시 실행 0 / 관찰 우선 2 / capability 제약 4`로 갱신했다.
+- 2026-03-28: `loadCapitalGuardBreakdown()`에 lane snapshot(`validationCount`, `normalCount`, `validationRatio`, `topReason`)을 추가했다. health 텍스트/decision이 이제 `validation 59건 (90.8%) / normal 6건 / dominant daily trade limit 63건`을 직접 보여줘, crypto 병목이 threshold보다 validation budget 구조에 있다는 점을 더 선명히 드러낸다.

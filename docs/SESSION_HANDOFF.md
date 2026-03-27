@@ -2016,3 +2016,4 @@
     - 수동 완료를 booking-specific command로 더 명시적으로 연결
 - 2026-03-28 00:00 KST 기준 투자팀 health-report의 장기 미결 LIVE 포지션 섹션을 readiness-aware로 보강했다. 이제 stale 6건을 `실행 가능 2건(RENDER/USDT, SIGN/USDT)`과 `capability 제약 4건(ORCL, NVTS, HIMS, NBIS)`으로 분리해 보여주며, 운영 판단 reason도 같은 분류를 따른다.
 - 같은 stale 섹션에 `severity`를 추가했다. 현재 actionable 2건은 모두 `observe-first`로 분류되며, `strong_force_exit_candidate`이거나 포지션 value가 `$100+`일 때만 `execute-now`로 승격한다. 2026-03-28 00:00 KST 기준 `execute-now 0 / observe-first 2 / blocked 4`다.
+- crypto 정책 병목 해석도 health에 보강했다. `capitalGuardBreakdown`에 validation/normal lane 스냅샷과 dominant guard를 추가해, 현재 `crypto capital guard 65건 중 validation 59건 (90.8%) / normal 6건 / daily trade limit 63건`이 health reason과 본문에 직접 보인다.

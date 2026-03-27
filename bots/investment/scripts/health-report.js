@@ -414,15 +414,29 @@ async function loadCapitalGuardBreakdown(periodDays = 14) {
     byTradeMode.set(row.trade_mode, (byTradeMode.get(row.trade_mode) || 0) + Number(row.cnt || 0));
   }
 
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const reasonRows = [...byReasonGroup.entries()]
+    .map(([group, count]) => ({ group, count, label: formatGuardReasonGroup(group) }))
+    .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko'));
+  const tradeModeRows = [...byTradeMode.entries()]
+    .map(([tradeMode, count]) => ({ tradeMode, count }))
+    .sort((a, b) => b.count - a.count || a.tradeMode.localeCompare(b.tradeMode, 'ko'));
+  const validationCount = Number(tradeModeRows.find((row) => row.tradeMode === 'validation')?.count || 0);
+  const normalCount = Number(tradeModeRows.find((row) => row.tradeMode === 'normal')?.count || 0);
+  const validationRatio = total > 0 ? Number(((validationCount / total) * 100).toFixed(1)) : 0;
+  const topReason = reasonRows[0] || null;
+
   return {
     periodDays,
-    total: rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0),
-    byReasonGroup: [...byReasonGroup.entries()]
-      .map(([group, count]) => ({ group, count, label: formatGuardReasonGroup(group) }))
-      .sort((a, b) => b.count - a.count || a.group.localeCompare(b.group, 'ko')),
-    byTradeMode: [...byTradeMode.entries()]
-      .map(([tradeMode, count]) => ({ tradeMode, count }))
-      .sort((a, b) => b.count - a.count || a.tradeMode.localeCompare(b.tradeMode, 'ko')),
+    total,
+    byReasonGroup: reasonRows,
+    byTradeMode: tradeModeRows,
+    laneSnapshot: {
+      validationCount,
+      normalCount,
+      validationRatio,
+      topReason,
+    },
   };
 }
 
@@ -996,7 +1010,7 @@ function buildDecision(
       {
         active: capitalGuardBreakdown.total > 0,
         level: capitalGuardBreakdown.byReasonGroup[0]?.group === 'daily_trade_limit' ? 'medium' : 'low',
-        reason: `최근 ${capitalGuardBreakdown.periodDays}일 crypto capital guard ${capitalGuardBreakdown.total}건 — 최다 ${capitalGuardBreakdown.byReasonGroup[0]?.label || 'n/a'} ${capitalGuardBreakdown.byReasonGroup[0]?.count || 0}건 / mode ${capitalGuardBreakdown.byTradeMode[0]?.tradeMode || 'n/a'} ${capitalGuardBreakdown.byTradeMode[0]?.count || 0}건`,
+        reason: `최근 ${capitalGuardBreakdown.periodDays}일 crypto capital guard ${capitalGuardBreakdown.total}건 — validation ${capitalGuardBreakdown.laneSnapshot?.validationCount || 0}건 (${capitalGuardBreakdown.laneSnapshot?.validationRatio || 0}%) / normal ${capitalGuardBreakdown.laneSnapshot?.normalCount || 0}건 / 최다 ${capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
       },
       {
         active: stalePositionHealth.warnCount > 0,
@@ -1053,6 +1067,8 @@ function formatText(report) {
       lines: report.capitalGuardBreakdown.total > 0
         ? [
             `  총 ${report.capitalGuardBreakdown.total}건`,
+            `  validation ${report.capitalGuardBreakdown.laneSnapshot?.validationCount || 0}건 (${report.capitalGuardBreakdown.laneSnapshot?.validationRatio || 0}%) / normal ${report.capitalGuardBreakdown.laneSnapshot?.normalCount || 0}건`,
+            `  dominant guard: ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${report.capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
             ...report.capitalGuardBreakdown.byReasonGroup.map((row) => `  ${row.label}: ${row.count}건`),
             ...report.capitalGuardBreakdown.byTradeMode.map((row) => `  mode ${row.tradeMode}: ${row.count}건`),
           ]
