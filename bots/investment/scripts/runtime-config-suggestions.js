@@ -9,6 +9,7 @@
 import * as db from '../shared/db.js';
 import { getInvestmentRuntimeConfig, getValidationSoftBudgetConfig } from '../shared/runtime-config.js';
 import { getCapitalConfig } from '../shared/capital-manager.js';
+import { loadCryptoLiveGateReview } from './crypto-live-gate-review.js';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -300,7 +301,58 @@ function buildCapitalGuardBiasSnapshot(rows = []) {
   };
 }
 
-function buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots = {}, capitalGuardBias = null) {
+function buildValidationBudgetPolicySnapshot(
+  cryptoValidationBudget = null,
+  capitalGuardBias = null,
+  cryptoLiveGateReview = null,
+) {
+  const validationRatio = Number(capitalGuardBias?.validationRatio || 0);
+  const closedReviews = Number(cryptoLiveGateReview?.metrics?.closedReviews || 0);
+  const weak = Number(cryptoLiveGateReview?.metrics?.pipeline?.weak || 0);
+  const gateDecision = String(cryptoLiveGateReview?.liveGate?.decision || 'unknown');
+  const softCapBlocks = Number(cryptoValidationBudget?.softCapBlocks || 0);
+
+  let decision = 'hold_current_structure';
+  let decisionLabel = '현 구조 유지';
+  const reasons = [
+    `soft cap 차단 ${softCapBlocks}건`,
+    `validation capital guard ${validationRatio}%`,
+    `LIVE gate ${gateDecision}`,
+    `closed review ${closedReviews}건 / weak ${weak}건`,
+  ];
+
+  if (softCapBlocks > 0 && gateDecision !== 'blocked' && weak <= 20 && closedReviews >= 3) {
+    decision = 'consider_raise_validation_budget';
+    decisionLabel = '상향 검토 가능';
+    reasons.unshift('validation daily budget 상향 검토 가능');
+  } else if (validationRatio >= 80) {
+    decision = 'consider_policy_split';
+    decisionLabel = '정책 분리 검토';
+    reasons.unshift('총량 상향보다 validation 전용 budget 구조 분리 검토 우선');
+  } else {
+    reasons.unshift('현재 값 유지 및 추가 관찰');
+  }
+
+  return {
+    decision,
+    decisionLabel,
+    softCapBlocks,
+    validationRatio,
+    gateDecision,
+    closedReviews,
+    weak,
+    reasons,
+  };
+}
+
+function buildSuggestions(
+  config,
+  summaries,
+  validationSummaries,
+  validationBudgetSnapshots = {},
+  capitalGuardBias = null,
+  validationBudgetPolicy = null,
+) {
   const suggestions = [];
   const crypto = summaries.binance;
   const domestic = summaries.kis;
@@ -451,27 +503,37 @@ function buildSuggestions(config, summaries, validationSummaries, validationBudg
     });
   }
 
-  if (capitalGuardBias?.total > 0 && capitalGuardBias.validationRatio >= 80) {
+  if (validationBudgetPolicy?.decision === 'consider_policy_split') {
     suggestions.push({
       key: 'capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades',
       current: getCapitalConfig('binance', 'validation')?.max_daily_trades,
       suggested: getCapitalConfig('binance', 'validation')?.max_daily_trades,
       action: 'observe',
       confidence: 'medium',
-      reason: `최근 ${capitalGuardBias.total}건의 crypto capital guard 중 validation이 ${capitalGuardBias.validationCount}건 (${capitalGuardBias.validationRatio}%)을 차지합니다. dominant reason도 ${capitalGuardBias.topReason?.reason || 'n/a'}라 threshold 조정보다 validation 전용 daily budget 구조를 먼저 분리 검토하는 것이 자연스럽습니다.`,
+      reason: `현재 정책 판단은 ${validationBudgetPolicy.decisionLabel}입니다. ${validationBudgetPolicy.reasons.join(' / ')} 기준으로, 지금은 max_daily_trades 총량 상향보다 validation 전용 daily budget 구조 분리 검토가 우선입니다.`,
+    });
+  } else if (validationBudgetPolicy?.decision === 'consider_raise_validation_budget') {
+    suggestions.push({
+      key: 'capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades',
+      current: getCapitalConfig('binance', 'validation')?.max_daily_trades,
+      suggested: Number(getCapitalConfig('binance', 'validation')?.max_daily_trades || 0) + 2,
+      action: 'promote_candidate',
+      confidence: 'medium',
+      reason: `현재 정책 판단은 ${validationBudgetPolicy.decisionLabel}입니다. ${validationBudgetPolicy.reasons.join(' / ')} 기준으로 validation daily budget 상향 비교 실험 후보입니다.`,
     });
   }
 
   return suggestions;
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, suggestions) {
   return {
     periodDays: days,
     marketSummary: summaries,
     validationSummary: validationSummaries,
     validationBudgetSnapshots,
     capitalGuardBias,
+    validationBudgetPolicy,
     suggestions,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
   };
@@ -506,6 +568,14 @@ function printHuman(report) {
     lines.push(`- 총 ${report.capitalGuardBias.total}건 / validation ${report.capitalGuardBias.validationCount}건 (${report.capitalGuardBias.validationRatio}%) / normal ${report.capitalGuardBias.normalCount}건`);
     if (report.capitalGuardBias.topReason) {
       lines.push(`  dominant reason: ${report.capitalGuardBias.topReason.reason} (${report.capitalGuardBias.topReason.count}건)`);
+    }
+  }
+  if (report.validationBudgetPolicy) {
+    lines.push('');
+    lines.push('crypto validation budget 정책 판단:');
+    lines.push(`- ${report.validationBudgetPolicy.decisionLabel}`);
+    for (const reason of report.validationBudgetPolicy.reasons || []) {
+      lines.push(`  ${reason}`);
     }
   }
   lines.push('');
@@ -554,8 +624,14 @@ async function main() {
     cryptoValidation: buildValidationBudgetSnapshot('binance', 'validation', todayTradeModeTradeRows, todaySignalBlockRows),
   };
   const capitalGuardBias = buildCapitalGuardBiasSnapshot(capitalGuardTradeModeRows);
-  const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias);
-  const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, suggestions);
+  const cryptoLiveGateReview = await loadCryptoLiveGateReview(3);
+  const validationBudgetPolicy = buildValidationBudgetPolicySnapshot(
+    validationBudgetSnapshots.cryptoValidation,
+    capitalGuardBias,
+    cryptoLiveGateReview,
+  );
+  const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy);
+  const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, suggestions);
 
   let saved = null;
   if (write) {
