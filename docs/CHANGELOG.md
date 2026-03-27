@@ -2418,3 +2418,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `feat(investment)`: 투자팀 health-report의 장기 미결 LIVE 포지션 섹션을 readiness-aware로 보강. stale 후보를 실행 가능/actionable, capability 제약, 장중 대기로 분리 표시.
 - 2026-03-28 — `feat(investment)`: stale actionable 포지션 severity 추가. `strong_force_exit_candidate` 또는 `$100+` 포지션만 `execute-now`로 승격하고, 나머지 actionable은 `observe-first`로 표기.
 - 2026-03-28 — `feat(investment)`: crypto capital guard 분해 보강. health-report가 validation/normal 비중과 dominant guard reason을 함께 노출하도록 개선.
+- 2026-03-28 — `feat(investment)`: runtime-config-suggestions에 crypto capital guard 편중 스냅샷과 validation daily budget 분리 검토 제안 추가.

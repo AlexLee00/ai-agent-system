@@ -135,6 +135,22 @@ async function loadTodaySignalBlockRows() {
   `);
 }
 
+async function loadCapitalGuardTradeModeRows(fromDate, toDate) {
+  return db.query(`
+    SELECT
+      COALESCE(trade_mode, 'normal') AS trade_mode,
+      COALESCE(NULLIF(block_reason, ''), 'unknown') AS block_reason,
+      COUNT(*) AS cnt
+    FROM signals
+    WHERE exchange = 'binance'
+      AND CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
+      AND status IN ('failed', 'rejected', 'expired')
+      AND COALESCE(block_code, '') = 'capital_guard_rejected'
+    GROUP BY 1, 2
+    ORDER BY cnt DESC, trade_mode ASC, block_reason ASC
+  `);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -259,7 +275,32 @@ function buildValidationBudgetSnapshot(exchange, tradeMode, todayTradeRows, toda
   };
 }
 
-function buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots = {}) {
+function buildCapitalGuardBiasSnapshot(rows = []) {
+  const total = rows.reduce((sum, row) => sum + Number(row.cnt || 0), 0);
+  const byTradeMode = new Map();
+  const byReason = new Map();
+  for (const row of rows) {
+    const tradeMode = String(row.trade_mode || 'normal');
+    const reason = String(row.block_reason || 'unknown');
+    byTradeMode.set(tradeMode, (byTradeMode.get(tradeMode) || 0) + Number(row.cnt || 0));
+    byReason.set(reason, (byReason.get(reason) || 0) + Number(row.cnt || 0));
+  }
+  const validationCount = Number(byTradeMode.get('validation') || 0);
+  const normalCount = Number(byTradeMode.get('normal') || 0);
+  const validationRatio = total > 0 ? round((validationCount / total) * 100, 1) : 0;
+  const topReason = [...byReason.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason, 'ko'))[0] || null;
+  return {
+    total,
+    validationCount,
+    normalCount,
+    validationRatio,
+    topReason,
+  };
+}
+
+function buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots = {}, capitalGuardBias = null) {
   const suggestions = [];
   const crypto = summaries.binance;
   const domestic = summaries.kis;
@@ -410,15 +451,27 @@ function buildSuggestions(config, summaries, validationSummaries, validationBudg
     });
   }
 
+  if (capitalGuardBias?.total > 0 && capitalGuardBias.validationRatio >= 80) {
+    suggestions.push({
+      key: 'capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades',
+      current: getCapitalConfig('binance', 'validation')?.max_daily_trades,
+      suggested: getCapitalConfig('binance', 'validation')?.max_daily_trades,
+      action: 'observe',
+      confidence: 'medium',
+      reason: `최근 ${capitalGuardBias.total}건의 crypto capital guard 중 validation이 ${capitalGuardBias.validationCount}건 (${capitalGuardBias.validationRatio}%)을 차지합니다. dominant reason도 ${capitalGuardBias.topReason?.reason || 'n/a'}라 threshold 조정보다 validation 전용 daily budget 구조를 먼저 분리 검토하는 것이 자연스럽습니다.`,
+    });
+  }
+
   return suggestions;
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, suggestions) {
   return {
     periodDays: days,
     marketSummary: summaries,
     validationSummary: validationSummaries,
     validationBudgetSnapshots,
+    capitalGuardBias,
     suggestions,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
   };
@@ -447,6 +500,14 @@ function printHuman(report) {
       lines.push(`- ${snapshot.exchange}/${snapshot.tradeMode}: BUY ${snapshot.count}/${snapshot.softCap} soft cap (hard ${snapshot.hardCap}, reserve ${snapshot.reserveSlots}, normal ${snapshot.normalCount}, soft-cap blocks ${snapshot.softCapBlocks})`);
     }
   }
+  if (report.capitalGuardBias?.total > 0) {
+    lines.push('');
+    lines.push('crypto capital guard 편중(최근 기간):');
+    lines.push(`- 총 ${report.capitalGuardBias.total}건 / validation ${report.capitalGuardBias.validationCount}건 (${report.capitalGuardBias.validationRatio}%) / normal ${report.capitalGuardBias.normalCount}건`);
+    if (report.capitalGuardBias.topReason) {
+      lines.push(`  dominant reason: ${report.capitalGuardBias.topReason.reason} (${report.capitalGuardBias.topReason.count}건)`);
+    }
+  }
   lines.push('');
   lines.push('설정 제안:');
   for (const item of report.suggestions) {
@@ -469,6 +530,7 @@ async function main() {
     loadBlockCodeRows(fromDate, toDate),
     loadAnalysisRows(fromDate, toDate),
   ]);
+  const capitalGuardTradeModeRows = await loadCapitalGuardTradeModeRows(fromDate, toDate);
   const [pipelineRows, tradeModeTradeRows] = await Promise.all([
     loadPipelineRows(fromDate, toDate),
     loadTradeModeTradeRows(fromDate, toDate),
@@ -491,8 +553,9 @@ async function main() {
   const validationBudgetSnapshots = {
     cryptoValidation: buildValidationBudgetSnapshot('binance', 'validation', todayTradeModeTradeRows, todaySignalBlockRows),
   };
-  const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots);
-  const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, suggestions);
+  const capitalGuardBias = buildCapitalGuardBiasSnapshot(capitalGuardTradeModeRows);
+  const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias);
+  const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, suggestions);
 
   let saved = null;
   if (write) {
