@@ -2421,3 +2421,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `feat(investment)`: runtime-config-suggestions에 crypto capital guard 편중 스냅샷과 validation daily budget 분리 검토 제안 추가.
 - 2026-03-28 — `docs(investment)`: `VALIDATION_LANE_POLICY.md`에 crypto validation daily budget 운영 기준과 상향/유지/분리 검토 조건 추가.
 - 2026-03-28 — `feat(investment)`: health-report에 `cryptoValidationBudgetPolicyHealth` 추가. validation soft cap, capital guard 편중, LIVE gate, closed review/weak를 함께 해석해 현재 정책 판단(`정책 분리 검토`)을 직접 노출.
+- 2026-03-28 — `feat(investment)`: runtime-config-suggestions에 `validationBudgetPolicy` 스냅샷 추가. health와 동일한 근거로 `정책 분리 검토`를 출력하고, `capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades` 제안 사유에 직접 연결.
