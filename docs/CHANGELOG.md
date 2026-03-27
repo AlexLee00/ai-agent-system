@@ -2426,3 +2426,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `feat(investment)`: runtime-config-suggestions에 `validationBudgetPolicyTrend` 추가. 직전 policy snapshot 대비 현재 판단 유지/변경과 validation capital guard 비중 변화(%p)를 함께 표시.
 - 2026-03-28 — `fix(claude)`: 덱스터 `코드 무결성`의 git 상태 집계가 generated temp/build 경로를 제외하도록 보강.
 - 2026-03-28 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline 갱신.
+- 2026-03-28 — `fix(investment)`: `pre-market-screen.js`가 국내/해외 장전 스크리닝 시작 직후 시장 상태를 조회하도록 보강. `장외 시간`은 장전 실행 특성상 허용하되, `주말/공휴일/NYSE 휴장`이면 저장/알림 없이 스킵해 주말 `장전 스크리닝 완료 (국내주식)` 오발송을 차단.

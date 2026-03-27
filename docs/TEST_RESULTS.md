@@ -1733,3 +1733,7 @@
 - 2026-03-28: `node bots/claude/src/dexter.js --update-checksums` ✅
   - 결과: `체크섬 갱신 완료: 89개 파일`
 - 2026-03-28: `node bots/claude/src/dexter.js`를 sandbox 밖에서 재실행해, 실제 서비스/네트워크/DB/봇 상태는 정상이고 핵심 잔여 이슈가 `코드 무결성`, `Git 무결성`, `오류 패턴 분석`에 집중되는 것 확인.
+- 2026-03-28: `node --check bots/investment/scripts/pre-market-screen.js` ✅
+- 2026-03-28: `node --input-type=module -e "import { getKisMarketStatus } from './bots/investment/shared/secrets.js'; ..."` ✅
+  - 결과: `2026-03-28 08:00 KST` 기준 `{"isOpen":false,"reason":"주말 (토요일)","isWeekend":true,...}` 반환 확인
+  - 해석: 휴장 판단 로직 자체는 이미 정상이며, 이번 패치는 `pre-market-screen.js`가 그 판단을 실제로 사용하도록 연결하는 수정임
