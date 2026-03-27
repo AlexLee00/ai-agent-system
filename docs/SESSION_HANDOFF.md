@@ -1814,3 +1814,20 @@
     - soft cap이 실제로 걸렸을 때 reserve slot 조정 방향을 운영 리포트에서 바로 읽게 하는 것
   - 나중에 확장할 구조:
     - soft cap 차단 누적치와 normal lane 점유율을 함께 본 자동 reserve slot 튜닝
+
+## 2026-03-27 — crypto validation BUY reentry 사전 차단
+
+- 배경
+  - 최근 `RENDER/USDT`처럼 기존 LIVE 포지션이 이미 열린 심볼에 대해 `validation BUY`가 다시 추천되고, [hephaestos.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/hephaestos.js) 실행 단계에서 `live_position_reentry_blocked`로 막히는 노이즈가 남아 있었다.
+
+- 이번 변경
+  - [bots/investment/team/nemesis.js](/Users/alexlee/projects/ai-agent-system/bots/investment/team/nemesis.js)
+    - `binance + validation + BUY`에 대해 approval 단계에서 현재 LIVE 포지션 존재 여부를 먼저 조회
+    - 동일 심볼 LIVE 포지션이 있으면 `validation_live_position_reentry_preflight`로 즉시 거부
+    - `existing_trade_mode`, `existing_amount`, `existing_avg_price` 등 기존 포지션 메타를 signal block에 함께 기록
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - execution 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 approval 앞단에서 줄이는 것
+  - 나중에 확장할 구조:
+    - `fresh live reentry`와 `stale position reentry`를 분리한 lane-aware reentry policy

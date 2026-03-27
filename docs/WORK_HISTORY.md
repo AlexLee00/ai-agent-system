@@ -4914,3 +4914,11 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - investment health에 `crypto validation soft cap 차단(최근 24시간)` 섹션을 추가해 실제 `validation_daily_budget_soft_cap` 발생 건수를 별도 관찰 가능하게 정리
 - `runtime-config-suggestions`가 이제 오늘 `validation_daily_budget_soft_cap`, `capital_guard_rejected`, normal BUY 수까지 함께 읽어 reserve slot 유지/완화 후보를 제안할 수 있게 정리
 - 현재 스냅샷은 `binance/validation BUY 3/8 soft cap (hard 10, reserve 2, normal 0, soft-cap blocks 0)`로, 아직 실제 soft cap 차단 표본은 없는 상태
+
+## 2026-03-27: crypto validation reentry preflight
+
+- `bots/investment/team/nemesis.js`
+  - `binance + validation + BUY`에서 기존 LIVE 포지션을 approval 단계에서 먼저 조회하도록 보강했다.
+  - 동일 LIVE 포지션이 있으면 `validation_live_position_reentry_preflight`로 즉시 거부하고, 기존 포지션 메타를 signal block에 기록한다.
+- 해석:
+  - `RENDER/USDT`처럼 execution 단계 직전 `live_position_reentry_blocked`로 떨어지던 validation BUY 노이즈를 approval 앞단에서 줄이는 작업이다.

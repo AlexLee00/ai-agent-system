@@ -12,6 +12,14 @@
 | `node bots/investment/scripts/runtime-config-suggestions.js --json` | ✅ `validationBudgetSnapshots.cryptoValidation`에 `normalCount`, `softCapBlocks`, `capitalGuardBlocks`가 포함되고 현재 `3/8`, `normal 0`, `soft-cap blocks 0` 확인 |
 | `node bots/investment/scripts/runtime-config-suggestions.js` | ✅ text report에 `normal`, `soft-cap blocks`가 함께 출력되는 것 확인 |
 
+### crypto validation reentry preflight
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/investment/team/nemesis.js` | ✅ `validation_live_position_reentry_preflight` 분기 추가 후 문법 통과 |
+| `node --input-type=module ... SELECT ... FROM signals WHERE exchange='binance' AND block_code='live_position_reentry_blocked' ...` | ✅ 최근 차단 심볼이 `RENDER/USDT`, 과거 누적은 `ROBO/USDT`임을 확인 |
+| `node --input-type=module ... SELECT ... FROM positions WHERE exchange='binance' ...` | ✅ `RENDER/USDT` live 포지션이 실제로 열려 있어 validation BUY 재진입 차단이 정상 정책임을 확인 |
+
 ### 해외장 mock SELL capability 실검증 후 blocked 정책 복구
 
 | 테스트 | 결과 |
