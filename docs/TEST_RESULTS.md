@@ -1725,3 +1725,4 @@
 - 2026-03-28: 같은 health-report 검증에서 stale severity가 `즉시 실행 0 / 관찰 우선 2 / capability 제약 4 / 장중 대기 0`으로 노출되는 것 확인. `RENDER/USDT`, `SIGN/USDT`는 `[observe-first]`로 출력됨.
 - 2026-03-28: `node bots/investment/scripts/health-report.js --json` / 텍스트 리포트에서 `crypto capital guard 65건`이 `validation 59건 (90.8%) / normal 6건 / dominant daily trade limit 63건`으로 함께 노출되는 것 확인.
 - 2026-03-28: `node bots/investment/scripts/runtime-config-suggestions.js --json` / 텍스트 리포트에서 `capitalGuardBias.total=65`, `validationRatio=90.8` 스냅샷과 `capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades`의 `observe` 제안이 함께 출력되는 것 확인.
+- 2026-03-28: `bots/investment/docs/VALIDATION_LANE_POLICY.md` 업데이트 완료. 문서에 `validation max_daily_trades=10`, `soft cap=8`, `reserve=2`, `validation 59/65 (90.8%)` 기준과 유지/상향/분리 검토 조건이 반영된 것 확인.

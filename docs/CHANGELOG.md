@@ -2419,3 +2419,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `feat(investment)`: stale actionable 포지션 severity 추가. `strong_force_exit_candidate` 또는 `$100+` 포지션만 `execute-now`로 승격하고, 나머지 actionable은 `observe-first`로 표기.
 - 2026-03-28 — `feat(investment)`: crypto capital guard 분해 보강. health-report가 validation/normal 비중과 dominant guard reason을 함께 노출하도록 개선.
 - 2026-03-28 — `feat(investment)`: runtime-config-suggestions에 crypto capital guard 편중 스냅샷과 validation daily budget 분리 검토 제안 추가.
+- 2026-03-28 — `docs(investment)`: `VALIDATION_LANE_POLICY.md`에 crypto validation daily budget 운영 기준과 상향/유지/분리 검토 조건 추가.
