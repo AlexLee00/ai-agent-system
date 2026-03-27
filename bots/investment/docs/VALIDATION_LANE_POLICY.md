@@ -70,6 +70,92 @@
   - crypto `normal + live` 확대
   - LIVE gate 완화 또는 공격적 증설
 
+## crypto validation daily budget 기준
+
+### 현재 운영값
+
+- `capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades = 10`
+- `runtime_config.luna.validationSoftBudget.binance.reserveDailyBuySlots = 2`
+- 따라서 현재 운영 해석은 아래와 같다.
+  - hard cap: `10`
+  - soft cap: `8`
+  - reserve slots: `2`
+
+### 현재 해석
+
+- validation lane은 normal live 확대 전 표본을 쌓는 guarded lane이다.
+- 따라서 validation budget은 단순 체결량 목표가 아니라
+  - 검증 표본 확보
+  - risk budget 보호
+  - normal lane 여유 보존
+를 동시에 만족해야 한다.
+
+### 최근 관찰 기준
+
+- 최근 14일 crypto capital guard:
+  - 총 `65건`
+  - validation `59건`
+  - normal `6건`
+  - validation 비중 `90.8%`
+- dominant reason:
+  - `daily trade limit`
+
+이 수치는 현재 병목이
+- confidence threshold 자체
+- soft budget 오작동
+보다
+- **validation lane의 daily trade limit 편중**
+에 더 가깝다는 뜻이다.
+
+## 운영 판단 기준
+
+### 1. 지금 당장 필요한 구조
+
+- 현재 값(`validation max_daily_trades = 10`, `reserve = 2`)은 **즉시 올리지 않는다**
+- 이유:
+  - soft cap 차단이 아직 폭증하지 않았고
+  - LIVE gate도 여전히 `blocked`이며
+  - near-threshold weak와 PAPER 부족이 남아 있기 때문이다.
+
+즉 현재의 기본 판단은:
+- **threshold 완화보다 budget 구조 관찰이 우선**
+- **budget 상향보다 lane 역할 정렬이 우선**
+
+### 2. 유지 조건
+
+아래 조건이면 현 값을 유지한다.
+
+- `validation_daily_budget_soft_cap` 차단이 거의 없거나 낮다
+- `capital_guard_rejected`는 많지만, 새 cycle에서 추가 악화가 없다
+- `LIVE gate = blocked` 상태가 유지된다
+- `validation LIVE`가 여전히 guarded sample 역할에 머문다
+
+### 3. 상향 검토 조건
+
+아래가 함께 충족될 때만 `validation max_daily_trades` 상향을 검토한다.
+
+- `validation_daily_budget_soft_cap`가 실제로 반복 발생한다
+- same-day / live reentry가 안정적이다
+- `closed review` 표본이 늘어난다
+- near-threshold weak 비중이 완화된다
+- `normal` lane 체결이 별도로 안정적이다
+
+즉 상향은
+- “지금 막히니 늘리자”가 아니라
+- **검증 lane이 실제로 포화됐고, 그 외 병목이 완화됐을 때만**
+후보가 된다.
+
+### 4. 분리 검토 조건
+
+현재처럼 `capital_guard`의 80%+가 validation에 몰리면,
+우선순위는 총량 상향보다 아래 설계를 검토하는 것이다.
+
+- validation 전용 daily budget을 별도 정책으로 더 명시화
+- normal lane과 validation lane의 목적을 문서/health/report에서 더 분리
+- validation LIVE를 “실거래 확대”가 아니라 “guarded sample”로 계속 명시
+
+즉 **validation 편중은 값 조정보다 정책 구조의 신호**로 본다.
+
 ## 지금 당장 필요한 구조
 
 - health/report에서는 아래를 분리해서 보여준다.
@@ -96,6 +182,14 @@
   - workspace A: `validation LIVE 허용`
   - workspace B: `PAPER validation 필수`
 
+- 선택지 D. lane별 budget 정책 분리
+  - workspace / 시장 / trade_mode별로
+    - hard cap
+    - soft cap
+    - reserve slots
+    - reentry cooldown
+  을 개별 정책으로 분리
+
 ## 후속 점검 지표
 
 - `NORMAL LIVE / PAPER` 체결 수
@@ -107,6 +201,8 @@
   - `daily trade limit`
   - `max positions`
   - `validation` 비중
+- `validation_daily_budget_soft_cap`
+- `validation max_daily_trades` 대비 실제 사용률
 - `paper_position_reentry_blocked`
 - `live_position_reentry_blocked`
 
@@ -117,6 +213,9 @@
   - `capital_guard`
   - `reentry`
 가 높으면 즉시 gate 완화로 가지 않는다.
+- validation budget이 자주 막혀도
+  - 바로 `max_daily_trades`를 올리기보다
+  - 먼저 validation 편중 구조와 lane 역할을 점검한다.
 - `PAPER` 표본이 부족하더라도
   - 현재 운영이 `validation LIVE` 중심이라면
   - 리포트는 이를 숨기지 않고 그대로 드러내야 한다.
