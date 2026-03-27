@@ -1662,3 +1662,13 @@
 
 - `node --check bots/blog/lib/gems-writer.js` ✅
   - 최근 일반 글 기반 theme dedupe helper 추가 후 CommonJS 문법 정상 확인
+
+## 2026-03-27 — 젬스 일반 글 최소 분량 6000자 하향
+
+- `node --check bots/blog/lib/gems-writer.js` ✅
+- `node --check bots/blog/lib/runtime-config.js` ✅
+- `node --input-type=module -e "import { createRequire } from 'module'; const require = createRequire(import.meta.url); const { getBlogGenerationRuntimeConfig } = require('./bots/blog/lib/runtime-config.js'); console.log(JSON.stringify(getBlogGenerationRuntimeConfig(), null, 2));"` ✅
+  - `gemsMinChars = 6000` 확인
+- `node --input-type=module -e "... writeGeneralPost('홈페이지와App', researchData, {}) ..."` ✅
+  - theme dedupe는 유지된 채 제목이 `상태 전이/예외 처리`, `UI/UX 설계` 축으로 생성되는 것 확인
+  - 다만 샘플은 `5461자`로 아직 6000자 미달이라, 다음 병목은 continuation 안정성으로 판단

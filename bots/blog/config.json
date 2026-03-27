@@ -10,7 +10,7 @@
       "dailyLogStaleMs": 129600000
     },
     "generation": {
-      "gemsMinChars": 8000,
+      "gemsMinChars": 6000,
       "posMinChars": 7000,
       "continueMaxTokens": 8000,
       "writerMaxRetries": 1,

@@ -1885,3 +1885,27 @@
     - 카테고리 회전만으로는 막지 못하던 상위 theme 반복을 프롬프트 레이어에서 먼저 차단하는 것
   - 나중에 확장할 구조:
     - 제목/본문 novelty score, 최근 발행 주제 분류, 자동 재시도까지 포함한 blog topic planner
+
+## 2026-03-27 — 젬스 일반 글 최소 분량 6000자 하향
+
+- 배경
+  - theme dedupe는 효과가 있었지만, 기존 8000자 기준은 이어쓰기 재시작과 미완성 초안을 과도하게 유발했다.
+  - 실제 샘플도 주제는 좋아졌지만 길이 때문에 품질 게이트에 반복적으로 걸렸다.
+
+- 이번 변경
+  - [bots/blog/lib/gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)
+    - 일반 글 최소 기준을 8000자 → 6000자로 하향
+    - 시스템 프롬프트와 일반/청크형 프롬프트의 섹션별 최소 길이를 현실적인 수준으로 완화
+  - [bots/blog/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/runtime-config.js)
+  - [bots/blog/config.json](/Users/alexlee/projects/ai-agent-system/bots/blog/config.json)
+    - `gemsMinChars` 기본값/런타임값을 6000으로 정렬
+
+- 현재 기준
+  - 런타임 설정은 `gemsMinChars = 6000`으로 반영 완료
+  - 다만 샘플 재생성은 아직 `5461자`로 미달해, 다음 병목은 분량 기준보다 이어쓰기 안정성으로 판단됨
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 과도한 분량 강제로 인한 발행 실패를 줄이고 6000자 수준의 완성본을 더 안정적으로 만드는 것
+  - 나중에 확장할 구조:
+    - 카테고리별 길이 정책 차등화, 부족 시 섹션별 repair 또는 2차 continuation 보강
