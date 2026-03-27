@@ -345,6 +345,33 @@ function buildValidationBudgetPolicySnapshot(
   };
 }
 
+function buildValidationBudgetPolicyTrend(currentPolicy = null, previousSnapshot = null) {
+  const previousPolicy = previousSnapshot?.validationBudgetPolicy || null;
+  if (!currentPolicy) return null;
+  if (!previousPolicy) {
+    return {
+      status: 'no_history',
+      label: '비교 이력 없음',
+      lines: ['첫 policy snapshot이거나 직전 비교 대상이 아직 없습니다.'],
+    };
+  }
+
+  const changed = previousPolicy.decision !== currentPolicy.decision;
+  const previousRatio = Number(previousSnapshot?.capitalGuardBias?.validationRatio || 0);
+  const currentRatio = Number(currentPolicy?.validationRatio || 0);
+  const delta = round(currentRatio - previousRatio, 1);
+
+  return {
+    status: changed ? 'changed' : 'stable',
+    label: changed ? '직전 대비 판단 변경' : '직전 대비 판단 유지',
+    lines: [
+      `이전 판단: ${previousPolicy.decisionLabel || previousPolicy.decision || 'n/a'}`,
+      `현재 판단: ${currentPolicy.decisionLabel || currentPolicy.decision || 'n/a'}`,
+      `validation capital guard 비중 변화: ${previousRatio}% → ${currentRatio}% (${delta >= 0 ? '+' : ''}${delta}%p)`,
+    ],
+  };
+}
+
 function buildSuggestions(
   config,
   summaries,
@@ -526,7 +553,7 @@ function buildSuggestions(
   return suggestions;
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, suggestions) {
   return {
     periodDays: days,
     marketSummary: summaries,
@@ -534,6 +561,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     validationBudgetSnapshots,
     capitalGuardBias,
     validationBudgetPolicy,
+    validationBudgetPolicyTrend,
     suggestions,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
   };
@@ -576,6 +604,14 @@ function printHuman(report) {
     lines.push(`- ${report.validationBudgetPolicy.decisionLabel}`);
     for (const reason of report.validationBudgetPolicy.reasons || []) {
       lines.push(`  ${reason}`);
+    }
+  }
+  if (report.validationBudgetPolicyTrend) {
+    lines.push('');
+    lines.push(`crypto validation budget 판단 추세:`);
+    lines.push(`- ${report.validationBudgetPolicyTrend.label}`);
+    for (const line of report.validationBudgetPolicyTrend.lines || []) {
+      lines.push(`  ${line}`);
     }
   }
   lines.push('');
@@ -625,13 +661,28 @@ async function main() {
   };
   const capitalGuardBias = buildCapitalGuardBiasSnapshot(capitalGuardTradeModeRows);
   const cryptoLiveGateReview = await loadCryptoLiveGateReview(3);
+  const recentLogs = await db.getRecentRuntimeConfigSuggestionLogs(2).catch(() => []);
+  const previousPolicySnapshot = recentLogs?.[0]?.policy_snapshot || null;
   const validationBudgetPolicy = buildValidationBudgetPolicySnapshot(
     validationBudgetSnapshots.cryptoValidation,
     capitalGuardBias,
     cryptoLiveGateReview,
   );
+  const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
+    validationBudgetPolicy,
+    previousPolicySnapshot,
+  );
   const suggestions = buildSuggestions(config, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy);
-  const report = buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, suggestions);
+  const report = buildReport(
+    days,
+    summaries,
+    validationSummaries,
+    validationBudgetSnapshots,
+    capitalGuardBias,
+    validationBudgetPolicy,
+    validationBudgetPolicyTrend,
+    suggestions,
+  );
 
   let saved = null;
   if (write) {
