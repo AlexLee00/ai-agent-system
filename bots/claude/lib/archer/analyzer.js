@@ -20,6 +20,10 @@ function normalizeDateLabel(value) {
   return Number.isNaN(asDate.getTime()) ? String(value).slice(0, 10) : asDate.toISOString().slice(0, 10);
 }
 
+function priorityRank(priority = 'medium') {
+  return { critical: 4, high: 3, medium: 2, low: 1 }[priority] || 0;
+}
+
 function bumpPriority(priority = 'medium') {
   if (priority === 'low') return 'medium';
   if (priority === 'medium') return 'high';
@@ -43,6 +47,70 @@ function hasMeaningfulTitleMismatch(a, b) {
   return ratio < 0.34;
 }
 
+function majorVersion(version) {
+  const match = String(version || '').match(/^(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function buildDeterministicPatchList(data = {}, existingPatches = []) {
+  const npm = data.npm || {};
+  const packageUsage = data.packageUsage || {};
+  const currentVersions = config.CURRENT_VERSIONS || {};
+  const existingMap = new Map((existingPatches || []).map(patch => [patch.package, patch]));
+  const patches = [];
+
+  for (const [pkg, info] of Object.entries(npm)) {
+    const current = currentVersions[pkg];
+    const latest = info?.version;
+    if (!current || !latest || current === latest) continue;
+
+    const usage = packageUsage[pkg] || { count: 0, coreCount: 0, files: [], coreFiles: [] };
+    const existing = existingMap.get(pkg);
+    const breaking = majorVersion(current) !== null && majorVersion(latest) !== null
+      ? majorVersion(current) !== majorVersion(latest)
+      : false;
+    let priority = usage.coreCount > 0 ? 'high' : usage.count > 0 ? 'medium' : 'low';
+    if (breaking) priority = 'high';
+    if (existing?.priority && priorityRank(existing.priority) > priorityRank(priority)) {
+      priority = existing.priority;
+    }
+
+    const reasons = [];
+    if (breaking) {
+      reasons.push('메이저 버전 차이가 있어 적용 전 호환성 점검이 필요합니다.');
+    } else {
+      reasons.push('최신 패치/버그 수정 반영이 필요합니다.');
+    }
+    if (usage.count > 0) {
+      reasons.push(`로컬 사용 ${usage.count}파일${usage.coreCount > 0 ? `, 핵심 경로 ${usage.coreCount}파일` : ''}입니다.`);
+    } else {
+      reasons.push('현재 저장소 기준 직접 사용 흔적은 적습니다.');
+    }
+
+    patches.push({
+      package: pkg,
+      current,
+      latest,
+      priority,
+      reason: existing?.reason || reasons.join(' '),
+      action: existing?.action || `npm update ${pkg}`,
+      breaking: existing?.breaking ?? breaking,
+      local_usage: {
+        count: usage.count || 0,
+        coreCount: usage.coreCount || 0,
+        files: usage.files || [],
+        coreFiles: usage.coreFiles || [],
+      },
+    });
+  }
+
+  return patches.sort((a, b) => {
+    const diff = priorityRank(b.priority) - priorityRank(a.priority);
+    if (diff !== 0) return diff;
+    return (b.local_usage?.coreCount || 0) - (a.local_usage?.coreCount || 0);
+  }).slice(0, 5);
+}
+
 function enrichPatchPriorities(analysis, packageUsage = {}) {
   const patches = Array.isArray(analysis?.patches) ? analysis.patches : [];
   for (const patch of patches) {
@@ -54,7 +122,10 @@ function enrichPatchPriorities(analysis, packageUsage = {}) {
       coreFiles: usage.coreFiles || [],
     };
     if (usage.count > 0) {
-      patch.reason = `${patch.reason} (로컬 사용 ${usage.count}파일${usage.coreCount > 0 ? `, 핵심 경로 ${usage.coreCount}파일` : ''})`;
+      const usageNote = `(로컬 사용 ${usage.count}파일${usage.coreCount > 0 ? `, 핵심 경로 ${usage.coreCount}파일` : ''})`;
+      if (!String(patch.reason || '').includes(usageNote)) {
+        patch.reason = `${patch.reason} ${usageNote}`.trim();
+      }
     }
     if (usage.coreCount > 0) {
       patch.priority = bumpPriority(patch.priority);
@@ -69,30 +140,106 @@ function enrichPatchPriorities(analysis, packageUsage = {}) {
   return analysis;
 }
 
+function findBestSourceItem(source, highlight) {
+  const items = source?.items || [];
+  if (items.length === 0) return null;
+
+  const exactLink = items.find(srcItem => srcItem.link === highlight.link);
+  if (exactLink) return exactLink;
+
+  const titleTokens = normalizeTextTokens(highlight.title);
+  const scored = items.map(srcItem => {
+    const sourceTokens = normalizeTextTokens(srcItem.title);
+    const overlap = titleTokens.filter(token => sourceTokens.includes(token)).length;
+    return { srcItem, overlap };
+  }).sort((a, b) => b.overlap - a.overlap);
+
+  if ((scored[0]?.overlap || 0) > 0) return scored[0].srcItem;
+  return items[0];
+}
+
 function enrichWebHighlights(analysis, webSources = []) {
   const highlights = Array.isArray(analysis?.web_highlights) ? analysis.web_highlights : [];
   const byLabel = new Map(webSources.map(src => [String(src.label || '').trim(), src]));
+  const normalized = [];
   for (const item of highlights) {
     const source = byLabel.get(String(item.source || '').trim());
-    if (!source) continue;
-    const matched = (source.items || []).find(srcItem => srcItem.link === item.link);
-    if (matched && hasMeaningfulTitleMismatch(item.title, matched.title)) {
-      item.reason = `${item.reason} [링크-제목 정합성 재검증 필요]`;
-      item.title = matched.title;
+    if (!source) {
+      normalized.push(item);
+      continue;
     }
+    const matched = findBestSourceItem(source, item);
+    if (!matched) continue;
+
+    const titleMismatch = hasMeaningfulTitleMismatch(item.title, matched.title);
+    const linkMismatch = item.link !== matched.link;
+    if (titleMismatch || linkMismatch) {
+      item.reason = `${item.reason || ''}${item.reason ? ' ' : ''}[링크-제목 정합성 재검증 필요]`.trim();
+    }
+    item.title = matched.title;
+    item.link = matched.link;
+    normalized.push(item);
   }
-  analysis.web_highlights = highlights;
+  analysis.web_highlights = normalized.slice(0, 5);
   return analysis;
 }
 
-function enrichSummary(analysis) {
+function enrichSummary(analysis, data = {}) {
   const patches = Array.isArray(analysis?.patches) ? analysis.patches : [];
   const topPatch = patches.find(item => (item.local_usage?.count || 0) > 0);
-  if (!topPatch) return analysis;
-  const prefix = `실사용 영향 1순위는 ${topPatch.package} (${topPatch.local_usage.count}파일${topPatch.local_usage.coreCount > 0 ? `, 핵심 경로 ${topPatch.local_usage.coreCount}파일` : ''})입니다.`;
-  if (!analysis.summary || !analysis.summary.includes(prefix)) {
-    analysis.summary = `${prefix} ${analysis.summary || ''}`.trim();
+  const highlights = Array.isArray(analysis?.web_highlights) ? analysis.web_highlights : [];
+  const techniques = Array.isArray(analysis?.ai_techniques) ? analysis.ai_techniques : [];
+  const llmApi = Array.isArray(analysis?.llm_api) ? analysis.llm_api : [];
+  const segments = [];
+
+  if (topPatch) {
+    segments.push(`실사용 영향 1순위는 ${topPatch.package} (${topPatch.local_usage.count}파일${topPatch.local_usage.coreCount > 0 ? `, 핵심 경로 ${topPatch.local_usage.coreCount}파일` : ''})입니다.`);
+  } else if (patches.length > 0) {
+    segments.push(`이번 주 패치 검토 1순위는 ${patches[0].package}입니다.`);
+  } else if (llmApi[0]?.title) {
+    segments.push(`이번 주 운영 액션 1순위는 ${llmApi[0].provider}의 '${llmApi[0].title}' 영향 점검입니다.`);
   }
+
+  if (techniques[0]?.title) {
+    segments.push(`연구 관찰 1순위는 '${techniques[0].title}'입니다.`);
+  }
+
+  if (highlights[0]?.title) {
+    segments.push(`웹 하이라이트는 '${highlights[0].title}'입니다.`);
+  }
+
+  const deterministic = segments.join(' ');
+  const summaryBody = String(analysis.summary || '').trim();
+  const normalizedBody = deterministic && summaryBody.startsWith(deterministic)
+    ? summaryBody.slice(deterministic.length).trim()
+    : summaryBody;
+  analysis.summary = deterministic
+    ? `${deterministic}${normalizedBody ? ` ${normalizedBody}` : ''}`.trim()
+    : normalizedBody;
+  return analysis;
+}
+
+function normalizeAnalysis(analysis, data = {}) {
+  if (!analysis || typeof analysis !== 'object') return analysis;
+
+  const deterministicPatches = buildDeterministicPatchList(data, analysis.patches || []);
+  if (!Array.isArray(analysis.patches) || analysis.patches.length === 0) {
+    analysis.patches = deterministicPatches;
+  } else {
+    const merged = new Map();
+    for (const patch of deterministicPatches) merged.set(patch.package, patch);
+    for (const patch of analysis.patches) {
+      merged.set(patch.package, {
+        ...merged.get(patch.package),
+        ...patch,
+      });
+    }
+    analysis.patches = Array.from(merged.values());
+  }
+
+  enrichPatchPriorities(analysis, data.packageUsage || {});
+  enrichWebHighlights(analysis, data.webSources || []);
+  enrichSummary(analysis, data);
   return analysis;
 }
 
@@ -266,10 +413,7 @@ async function analyze(data, cache = {}) {
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    enrichPatchPriorities(parsed, data.packageUsage || {});
-    enrichWebHighlights(parsed, data.webSources || []);
-    enrichSummary(parsed);
-    return parsed;
+    return normalizeAnalysis(parsed, data);
   } catch (e) {
     console.warn('  ⚠️ [아처] JSON 파싱 오류:', e.message);
     return null;
@@ -369,4 +513,9 @@ async function buildBillingTrendSection() {
   return lines.join('\n');
 }
 
-module.exports = { analyze, buildContext, buildBillingTrendSection };
+module.exports = {
+  analyze,
+  normalizeAnalysis,
+  buildContext,
+  buildBillingTrendSection,
+};

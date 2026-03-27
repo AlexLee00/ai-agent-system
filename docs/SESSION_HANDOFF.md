@@ -1855,3 +1855,14 @@
     - 아처가 외부 업데이트 나열이 아니라 우리 코드 영향도 기준으로 패치 우선순위를 재정렬하는 것
   - 나중에 확장할 구조:
     - 워크스페이스별 사용도 가중치, 운영 경로/실행 빈도 기반 패치 점수화
+## 2026-03-27 — 아처 deterministic 후처리 + runtime-aware usage 정밀화
+
+- 아처 `analyzer`에 deterministic normalize를 보강해, LLM이 `patches: []`를 반환해도 npm 버전 차이가 있으면 patch 후보를 복구하도록 정리했다.
+- `archer.js` 저장 직전에 `normalizeAnalysis()`를 한 번 더 강제해, 리포트/patch ticket/PATCH_REQUEST가 동일한 후처리 불변식을 따르도록 맞췄다.
+- web highlight는 source item의 `title + link` 쌍으로 정규화되도록 보강했고, mismatch가 있으면 `[링크-제목 정합성 재검증 필요]`를 남기도록 했다.
+- package usage 집계는 `docs`, `reports`, `cache`, `package-lock.json`, `PATCH_REQUEST.md`, `bots/registry.json`, `bots/claude/lib/archer/config.js` 등을 제외하고 runtime 중심 경로로 좁혔다.
+- 최신 재생성 결과:
+  - patch section 복구 완료
+  - summary action-first 복구 완료
+  - highlight source-lock 복구 완료
+  - 다만 `ccxt`가 여전히 usage 1순위로 나와 patch priority가 운영 감각보다 다소 넓게 잡히는 점은 후속 정밀화 여지로 남는다.
