@@ -4990,3 +4990,11 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - thumb/mid 각각에 readable words 금지 문구를 추가해 후속 한글 오버레이와 충돌하는 텍스트 생성을 줄이도록 보강
 - 해석:
   - 실제 생성본에서 드러난 문제를 prompt layer에서 즉시 보정한 1차 조치다.
+
+### 젬스 일반 글 미달 자동 repair 보강
+- `bots/blog/lib/gems-writer.js`
+  - `_getMissingMarkers()` 추가
+  - `writeGeneralPost()`가 continuation 이후에도 6000자 미달 또는 섹션 누락이면 `repairGeneralPostDraft()`를 자동 호출하도록 보강
+  - repair issue에 현재 글자수와 누락 섹션을 함께 넣어 필요한 부분만 확장하게 정리
+- 해석:
+  - 일반 글 생성의 핵심 병목이 theme이 아니라 completion 안정성이라는 점을 반영한 보강이다.

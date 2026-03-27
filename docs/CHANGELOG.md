@@ -2406,3 +2406,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/blog/lib/img-gen.js`의 base prompt에 readable text, letters, numbers, UI labels, whiteboard text 금지 규칙 추가
   - 문서/화면/보드/클립보드 등장 시 abstract blocks와 placeholder mark만 허용하도록 보강
   - thumb/mid prompt 모두에 readable words 금지 문구를 재강조
+- `fix(blog): auto-repair short GEMS general posts`
+  - `bots/blog/lib/gems-writer.js`에 `_getMissingMarkers()` 추가
+  - continuation 이후에도 6000자 미달 또는 섹션 누락이면 `repairGeneralPostDraft()`를 자동 호출하도록 보강
+  - repair issue에 현재 글자수 미달과 누락 섹션 정보를 함께 전달해 필요한 부분만 후속 확장
