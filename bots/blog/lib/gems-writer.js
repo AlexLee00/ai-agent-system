@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const kst = require('../../../packages/core/lib/kst');
 
 /**
@@ -31,14 +33,9 @@ const AI_AGENT_CONTEXT = `
 재룡 님(승호아빠)이 직접 개발·운영 중인 멀티에이전트 AI 봇 시스템.
 5개 팀, 30+ 봇 — 스카(스터디카페 관리), 루나(자동매매), 클로드(시스템감시), 블로(블로그), 워커(SaaS)
 
-카테고리별 자연스러운 연결:
-- 자기계발 → "AI 에이전트 30개를 지휘하며 깨달은 성장의 법칙"
-- 성장과성공 → "1일 1커밋 120일, 완강이 가르쳐준 복리 효과"
-- 최신IT트렌드 → "직접 구축한 멀티에이전트 시스템으로 본 AI 트렌드"
-- IT정보와분석 → "자동매매 봇 데이터로 분석한 시장 인사이트"
-- 개발기획과컨설팅 → "30개 봇 아키텍처 설계 경험에서 배운 PM의 역할"
-- 홈페이지와App → "SaaS 근로관리 시스템 개발기"
-- 도서리뷰 → "이 책의 원리가 내 에이전트 시스템 설계에 어떻게 적용되었나"
+카테고리 연결 문구는 "가능한 참고 예시"일 뿐이며, 최근 발행 글과 주제 축이 겹치면 사용하지 마라.
+같은 원천 경험(AI 에이전트 운영, 멀티에이전트 설계, 자동매매 운영 경험)을 여러 카테고리에서 반복 재포장하지 말고,
+카테고리별로 완전히 다른 문제의식과 독자 효용을 세워라.
 
 샌드위치 화법의 "일상 에피소드" 부분에서 1~2회 자연스럽게 언급하라.
 `.trim();
@@ -46,6 +43,29 @@ const AI_AGENT_CONTEXT = `
 // ─── IT 카테고리 뉴스 분석 섹션 적용 대상 ────────────────────────────
 
 const IT_NEWS_CATEGORIES = ['최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅'];
+const BLOG_OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const RECENT_GENERAL_THEME_WINDOW_DAYS = 14;
+const RECENT_GENERAL_THEME_LIMIT = 12;
+const THEME_SIGNAL_MAP = [
+  { label: 'AI 시대 프레임', patterns: [/AI 시대/gi] },
+  { label: '멀티에이전트 운영 프레임', patterns: [/멀티에이전트/gi, /멀티 에이전트/gi] },
+  { label: 'AI 에이전트 운영 인사이트', patterns: [/AI 에이전트/gi, /30개 .*에이전트/gi, /30개 AI 에이전트/gi] },
+  { label: '성장/자기계발 전략', patterns: [/성장 전략/gi, /성장의 법칙/gi, /자기계발/gi] },
+  { label: '운영/개발 전략', patterns: [/운영 전략/gi, /개발 전략/gi, /설계 경험/gi] },
+  { label: '시장/투자 인사이트', patterns: [/시장 인사이트/gi, /전략적 투자/gi] },
+];
+const TITLE_FORBIDDEN_PHRASES = [
+  'AI 시대',
+  '멀티에이전트',
+  '멀티 에이전트',
+  'AI 에이전트',
+  '30개 에이전트',
+  '30개 AI 에이전트',
+  '성장 전략',
+  '성장의 법칙',
+  '운영 전략',
+  '시장 인사이트',
+];
 
 // ─── GEO 최적화 규칙 ─────────────────────────────────────────────────
 
@@ -74,6 +94,104 @@ function _weatherToContext(weather) {
 function _estimateCost(usage) {
   if (!usage) return 0;
   return ((usage.prompt_tokens || 0) * 2.5 + (usage.completion_tokens || 0) * 10) / 1_000_000;
+}
+
+function _safeReadDir(dirPath) {
+  try {
+    return fs.readdirSync(dirPath);
+  } catch {
+    return [];
+  }
+}
+
+function _parseRecentGeneralPostMeta(filename) {
+  const match = filename.match(/^(\d{4}-\d{2}-\d{2})_general_([^ ]+)\s+(.+)\.html$/);
+  if (!match) return null;
+
+  const [, dateString, category, title] = match;
+  const publishedAt = new Date(`${dateString}T00:00:00+09:00`);
+  if (Number.isNaN(publishedAt.getTime())) return null;
+
+  return {
+    filename,
+    dateString,
+    category,
+    title: title.trim(),
+    publishedAt,
+  };
+}
+
+function _loadRecentGeneralThemes(category, days = RECENT_GENERAL_THEME_WINDOW_DAYS) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const recentPosts = _safeReadDir(BLOG_OUTPUT_DIR)
+    .map(_parseRecentGeneralPostMeta)
+    .filter(Boolean)
+    .filter(post => post.publishedAt >= cutoff)
+    .sort((a, b) => b.publishedAt - a.publishedAt)
+    .slice(0, RECENT_GENERAL_THEME_LIMIT);
+
+  const detectedThemeLabels = new Set();
+  const blockedPhrases = new Set();
+
+  for (const post of recentPosts) {
+    for (const signal of THEME_SIGNAL_MAP) {
+      if (signal.patterns.some(pattern => pattern.test(post.title))) {
+        detectedThemeLabels.add(signal.label);
+      }
+    }
+
+    for (const phrase of TITLE_FORBIDDEN_PHRASES) {
+      if (post.title.includes(phrase)) {
+        blockedPhrases.add(phrase);
+      }
+    }
+  }
+
+  return {
+    recentPosts,
+    detectedThemeLabels: Array.from(detectedThemeLabels),
+    blockedPhrases: Array.from(blockedPhrases),
+  };
+}
+
+function _buildRecentThemeDedupeBlock(category) {
+  const themeContext = _loadRecentGeneralThemes(category);
+  if (!themeContext.recentPosts.length) return '';
+
+  const recentTitleLines = themeContext.recentPosts
+    .map((post, index) => `${index + 1}. [${post.dateString}][${post.category}] ${post.title}`)
+    .join('\n');
+
+  const blockedThemeLines = themeContext.detectedThemeLabels.length
+    ? themeContext.detectedThemeLabels.map((label, index) => `${index + 1}. ${label}`).join('\n')
+    : '1. 최근 상위 서사와 겹치는 AI 운영 경험 반복';
+
+  const blockedPhraseLines = themeContext.blockedPhrases.length
+    ? themeContext.blockedPhrases.map((phrase, index) => `${index + 1}. ${phrase}`).join('\n')
+    : '1. 최근 제목 핵심 표현 반복 금지';
+
+  return `
+[최근 발행 일반 글 — 주제 중복 금지]
+아래 글들과 같은 상위 서사, 같은 문제의식, 같은 제목 프레임을 반복하지 마라.
+특히 "같은 운영 경험을 카테고리만 바꿔 재포장"하는 방식은 금지한다.
+
+최근 발행 글:
+${recentTitleLines}
+
+이번 글에서 피해야 할 상위 주제 축:
+${blockedThemeLines}
+
+이번 글 제목/소제목에서 피해야 할 표현:
+${blockedPhraseLines}
+
+[중복 방지 규칙 — 반드시 준수]
+1. 위 최근 글과 다른 질문에서 출발하라.
+2. 같은 시스템 경험을 쓰더라도 전혀 다른 문제 정의, 다른 독자 효용, 다른 실전 상황으로 전개하라.
+3. 제목 첫 문장에 위 금지 표현을 재사용하지 말 것.
+4. "AI 시대 / 멀티에이전트 / 30개 AI 에이전트 / 성장 전략 / 운영 전략 / 시장 인사이트" 프레임을 기본 주제로 삼지 말 것.
+5. 이번 글은 카테고리(${category}) 자체의 독자 고민을 먼저 세우고, AI 운영 경험은 필요할 때 보조 사례로만 제한적으로 사용하라.
+`.trim();
 }
 
 const GENERAL_SECTION_MARKERS = [
@@ -403,6 +521,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const newsAnalysisBlock = IT_NEWS_CATEGORIES.includes(category)
     ? '\n' + _buildNewsAnalysisBlock(itNews, category) + '\n'
     : '';
+  const recentThemeBlock = '\n' + _buildRecentThemeDedupeBlock(category) + '\n';
 
   const userPrompt = `
 다음 일반 포스팅을 작성하라:
@@ -415,8 +534,9 @@ ${weatherContext}
 [최신 IT 뉴스 (서론에 활용 — 상위 3개 선택)]
 ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 
-${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}
+${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}${recentThemeBlock}
 카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.
+단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
 ★★★ 글자수 요구사항 (반드시 준수) ★★★
@@ -674,13 +794,15 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const bookReviewBlock = category === '도서리뷰'
     ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
     : (researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}\n` : '');
+  const recentThemeBlock = _buildRecentThemeDedupeBlock(category);
 
   const baseCtx = `
 [카테고리] ${category}
 [발행일] ${today}
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${newsBlock}
-${bookReviewBlock}${experienceBlock}`.trim();
+${bookReviewBlock}${experienceBlock}
+${recentThemeBlock}`.trim();
 
   const chunks = [
     {

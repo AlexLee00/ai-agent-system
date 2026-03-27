@@ -1866,3 +1866,22 @@
   - summary action-first 복구 완료
   - highlight source-lock 복구 완료
   - 다만 `ccxt`가 여전히 usage 1순위로 나와 patch priority가 운영 감각보다 다소 넓게 잡히는 점은 후속 정밀화 여지로 남는다.
+
+## 2026-03-27 — 젬스 일반 포스팅 theme dedupe 1차
+
+- 배경
+  - 최근 일반 포스팅이 카테고리만 달라도 `AI 시대`, `멀티에이전트`, `AI 에이전트 운영`, `성장 전략`, `시장 인사이트` 같은 상위 서사를 반복해 발행 후보가 과도하게 유사해졌다.
+  - 근본 원인은 [bots/blog/lib/gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)의 `AI_AGENT_CONTEXT`가 카테고리별 대표 서사를 하드코딩해, LLM이 같은 경험을 다른 카테고리에서 재포장하도록 유도하던 점이었다.
+
+- 이번 변경
+  - [bots/blog/lib/gems-writer.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.js)
+    - 카테고리별 AI 운영 경험 문구를 "강제 서사"에서 "가능한 참고 예시" 수준으로 약화
+    - 최근 14일 일반 글 제목을 `bots/blog/output`에서 직접 읽어 최근 발행 제목 목록, 상위 주제 축, 금지 표현을 추출하는 theme dedupe helper 추가
+    - 일반 포스팅 / chunked 포스팅 프롬프트에 최근 발행 일반 글 목록과 중복 방지 규칙을 함께 주입
+    - `AI 시대 / 멀티에이전트 / 30개 AI 에이전트 / 성장 전략 / 운영 전략 / 시장 인사이트` 같은 반복 프레임을 이번 글의 기본 주제로 삼지 말도록 강제
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 카테고리 회전만으로는 막지 못하던 상위 theme 반복을 프롬프트 레이어에서 먼저 차단하는 것
+  - 나중에 확장할 구조:
+    - 제목/본문 novelty score, 최근 발행 주제 분류, 자동 재시도까지 포함한 blog topic planner
