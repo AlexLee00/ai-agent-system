@@ -1979,3 +1979,7 @@
     - 1회 continuation 실패가 바로 발행 실패로 이어지지 않도록 repair를 후속 안전장치로 붙이는 것
   - 나중에 확장할 구조:
     - 섹션별 completeness score, 부족 섹션만 재생성하는 targeted repair, multi-pass continuation
+- 2026-03-27: 블로그 GEMS 일반 글 completion 안정화 2차 보강.
+  - `bots/blog/lib/gems-writer.js`에 section-level shortfall 계산(`_getShortSections`)을 기반으로 한 targeted repair를 유지하되, 부족 시 `repairGeneralPostDraft()`를 최대 2회까지 재호출하는 `_runGeneralPostRepairPasses()`를 추가했다.
+  - 1차 repair 이후에도 미달/누락이 남으면 2차 repair에서 부족 섹션에만 사례/설명/체크리스트를 덧붙이도록 강제해, `자기계발` 샘플이 `6470자`까지 회복되는 것을 확인했다.
+  - 현재 블로그 품질 병목은 theme 중복보다 completion 안정화였고, 이번 수정으로 `6000자` 기준 통과율을 끌어올리는 방향으로 정렬했다.

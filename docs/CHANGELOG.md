@@ -2410,3 +2410,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/blog/lib/gems-writer.js`에 `_getMissingMarkers()` 추가
   - continuation 이후에도 6000자 미달 또는 섹션 누락이면 `repairGeneralPostDraft()`를 자동 호출하도록 보강
   - repair issue에 현재 글자수 미달과 누락 섹션 정보를 함께 전달해 필요한 부분만 후속 확장
+- blog: GEMS 일반 글이 `6000자` 미달일 때 section-level targeted repair를 최대 2회까지 수행하도록 보강해 completion 안정성을 높였다.

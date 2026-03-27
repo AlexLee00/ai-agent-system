@@ -4998,3 +4998,6 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - repair issue에 현재 글자수와 누락 섹션을 함께 넣어 필요한 부분만 확장하게 정리
 - 해석:
   - 일반 글 생성의 핵심 병목이 theme이 아니라 completion 안정성이라는 점을 반영한 보강이다.
+- 2026-03-27: GEMS 일반 글 repair를 section-aware 2-pass 구조로 보강했다.
+  - `_getShortSections()`로 섹션별 현재 길이/목표 길이를 계산하고, `writeGeneralPost()`가 `_runGeneralPostRepairPasses()`를 통해 최대 2회의 targeted repair를 수행하도록 확장했다.
+  - 검증 결과 `자기계발` 샘플이 `3657 → 5617` 수준에 머물던 이전 상태에서, 2-pass 보강 후 `6470자`까지 회복되었다.

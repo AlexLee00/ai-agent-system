@@ -208,6 +208,20 @@ const GENERAL_SECTION_MARKERS = [
   '해시태그',
 ];
 
+const GENERAL_SECTION_TARGETS = {
+  'AI 스니펫 요약': 120,
+  '이 글에서 배울 수 있는 것': 120,
+  '승호아빠 인사말': 280,
+  '본론 섹션 1': 1400,
+  '본론 섹션 2': 1400,
+  '본론 섹션 3': 1400,
+  '이번 주 IT 뉴스 분석': 450,
+  '스터디카페 홍보 섹션': 520,
+  '마무리 제언': 320,
+  '함께 읽으면 좋은 글': 120,
+  '해시태그': 80,
+};
+
 function _findMarkerIndex(text, marker) {
   if (!text) return -1;
   const candidates = [
@@ -233,6 +247,104 @@ function _getDetectedMarkers(text) {
 function _getMissingMarkers(text) {
   const detected = new Set(_getDetectedMarkers(text).map(item => item.marker));
   return GENERAL_SECTION_MARKERS.filter(marker => !detected.has(marker));
+}
+
+function _extractSectionBodies(text) {
+  const detected = _getDetectedMarkers(text);
+  if (!detected.length) return {};
+
+  const sections = {};
+  for (let i = 0; i < detected.length; i += 1) {
+    const current = detected[i];
+    const next = detected[i + 1];
+    const start = current.index;
+    const end = next ? next.index : text.length;
+    sections[current.marker] = text.slice(start, end).trim();
+  }
+  return sections;
+}
+
+function _getShortSections(text, category) {
+  const sections = _extractSectionBodies(text);
+  const targets = Object.entries(GENERAL_SECTION_TARGETS)
+    .filter(([marker]) => category !== '도서리뷰' || marker !== '이번 주 IT 뉴스 분석')
+    .filter(([marker]) => IT_NEWS_CATEGORIES.includes(category) || marker !== '이번 주 IT 뉴스 분석');
+
+  return targets
+    .map(([marker, minChars]) => {
+      const body = sections[marker] || '';
+      return {
+        marker,
+        currentChars: body.length,
+        minChars,
+        missing: !body,
+      };
+    })
+    .filter(section => section.missing || section.currentChars < section.minChars);
+}
+
+async function _runGeneralPostRepairPasses(category, researchData, content, sectionVariation, usedModel, fallbackUsed, minCharsGeneral) {
+  let repairedContent = String(content || '').trim();
+  let nextUsedModel = usedModel;
+  let nextFallbackUsed = fallbackUsed;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const missingMarkers = _getMissingMarkers(repairedContent);
+    const shortSections = _getShortSections(repairedContent, category);
+    const needsRepair = repairedContent.length < minCharsGeneral || missingMarkers.length > 0 || shortSections.length > 0;
+
+    if (!needsRepair) break;
+
+    const issues = [];
+    if (repairedContent.length < minCharsGeneral) {
+      issues.push({
+        severity: 'warn',
+        msg: `현재 글자수 ${repairedContent.length}자로 최소 기준 ${minCharsGeneral}자에 미달함. 부족한 섹션을 확장해 ${minCharsGeneral}자 이상으로 보강할 것.`,
+      });
+    }
+    if (missingMarkers.length > 0) {
+      issues.push({
+        severity: 'warn',
+        msg: `누락된 섹션: ${missingMarkers.join(', ')}. 빠진 섹션을 추가하고 기존 구조를 유지할 것.`,
+      });
+    }
+    if (shortSections.length > 0) {
+      issues.push({
+        severity: 'warn',
+        msg: `부족한 섹션 길이: ${shortSections.map(section => `${section.marker}(${section.currentChars}/${section.minChars}자)`).join(', ')}. 부족한 섹션만 우선 확장하고 다른 섹션은 줄이지 말 것.`,
+      });
+    }
+    if (attempt === 2) {
+      issues.push({
+        severity: 'warn',
+        msg: '2차 보정 단계다. 이미 충분한 섹션은 건드리지 말고, 부족한 섹션에만 사례, 설명, 체크리스트, 실천 포인트를 덧붙여 분량을 채울 것.',
+      });
+    }
+
+    try {
+      console.log(`[젬스] repair 호출 #${attempt} — chars=${repairedContent.length}, missing=${missingMarkers.length}, short=${shortSections.length}`);
+      const repaired = await repairGeneralPostDraft(
+        category,
+        researchData,
+        { content: repairedContent },
+        { issues },
+        sectionVariation
+      );
+      repairedContent = String(repaired.content || repairedContent).trim();
+      if (repaired.model) nextUsedModel = repaired.model;
+      nextFallbackUsed = nextFallbackUsed || !!repaired.fallbackUsed;
+      console.log(`[젬스] repair 완료 #${attempt}: ${repairedContent.length}자`);
+    } catch (e) {
+      console.warn(`[젬스] repair 실패 #${attempt} (무시): ${e.message}`);
+      break;
+    }
+  }
+
+  return {
+    content: repairedContent,
+    model: nextUsedModel,
+    fallbackUsed: nextFallbackUsed,
+  };
 }
 
 function _sanitizeContinuation(baseContent, continuationText) {
@@ -638,40 +750,21 @@ ${_buildVariationBlock(sectionVariation)}
   // _THE_END_ 마커 제거
   content = content.replace(/_THE_END_/g, '').trim();
 
-  const missingMarkers = _getMissingMarkers(content);
-  const needsRepair = content.length < MIN_CHARS_GENERAL || missingMarkers.length > 0;
+  const repairResult = await _runGeneralPostRepairPasses(
+    category,
+    researchData,
+    content,
+    sectionVariation,
+    usedModel,
+    fallbackUsed,
+    MIN_CHARS_GENERAL
+  );
+  content = repairResult.content;
+  usedModel = repairResult.model;
+  fallbackUsed = repairResult.fallbackUsed;
 
-  if (needsRepair) {
-    const issues = [];
-    if (content.length < MIN_CHARS_GENERAL) {
-      issues.push({
-        severity: 'warn',
-        msg: `현재 글자수 ${content.length}자로 최소 기준 ${MIN_CHARS_GENERAL}자에 미달함. 부족한 섹션을 확장해 ${MIN_CHARS_GENERAL}자 이상으로 보강할 것.`,
-      });
-    }
-    if (missingMarkers.length > 0) {
-      issues.push({
-        severity: 'warn',
-        msg: `누락된 섹션: ${missingMarkers.join(', ')}. 빠진 섹션을 추가하고 기존 구조를 유지할 것.`,
-      });
-    }
-
-    try {
-      console.log(`[젬스] repair 호출 — chars=${content.length}, missing=${missingMarkers.length}`);
-      const repaired = await repairGeneralPostDraft(
-        category,
-        researchData,
-        { content },
-        { issues },
-        sectionVariation
-      );
-      content = String(repaired.content || content).trim();
-      if (repaired.model) usedModel = repaired.model;
-      fallbackUsed = fallbackUsed || !!repaired.fallbackUsed;
-      console.log(`[젬스] repair 완료: ${content.length}자`);
-    } catch (e) {
-      console.warn(`[젬스] repair 실패 (무시): ${e.message}`);
-    }
+  if (content.length < MIN_CHARS_GENERAL) {
+    console.log(`[젬스] repair 이후에도 글자수 미달: ${content.length}자`);
   }
 
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
@@ -712,6 +805,9 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
+  const shortSectionLines = _getShortSections(content, category)
+    .map((section, index) => `${index + 1}. ${section.marker} — 현재 ${section.currentChars}자 / 목표 ${section.minChars}자`)
+    .join('\n');
 
   const bookReviewBlock = category === '도서리뷰'
     ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
@@ -734,11 +830,15 @@ ${issueLines}
 [중요 지시]
 1. 기존 글의 제목, 핵심 주장, 전개 순서를 최대한 유지하라.
 2. 부족한 섹션/해시태그/스터디카페 문단/개인 경험만 보강하라.
-3. 글자수가 부족하면 필요한 섹션만 확장하라. 이미 충분한 문단은 반복하지 말 것.
+3. 글자수가 부족하면 필요한 섹션만 확장하라. 이미 충분한 문단은 반복하거나 축약하지 말 것.
 4. 새 글을 처음부터 다시 작성하지 말 것.
 5. 마지막에는 전체 보정된 완성본만 출력하라. 설명문, 메모, 사족 금지.
 6. 모든 보정이 끝난 뒤 마지막 줄에 _THE_END_ 를 적어라.
+7. 아래 [부족 섹션] 목록이 있으면 그 섹션을 우선 보강하고, 목록에 없는 섹션은 가능한 한 그대로 유지하라.
 ${_buildVariationBlock(sectionVariation)}
+
+[부족 섹션]
+${shortSectionLines || '1. 별도 부족 섹션 없음'}
 
 [기존 초안 시작]
 ${content}
