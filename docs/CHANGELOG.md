@@ -2427,3 +2427,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `fix(claude)`: 덱스터 `코드 무결성`의 git 상태 집계가 generated temp/build 경로를 제외하도록 보강.
 - 2026-03-28 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline 갱신.
 - 2026-03-28 — `fix(investment)`: `pre-market-screen.js`가 국내/해외 장전 스크리닝 시작 직후 시장 상태를 조회하도록 보강. `장외 시간`은 장전 실행 특성상 허용하되, `주말/공휴일/NYSE 휴장`이면 저장/알림 없이 스킵해 주말 `장전 스크리닝 완료 (국내주식)` 오발송을 차단.
+- 2026-03-28 — `feat(investment)`: `pipeline-market-runner.js`가 `collect_overload_detected`를 `screening / held / mixed` 과부하로 해석하도록 보강. 암호화폐 경고 메시지가 이제 `tasks`, `screening`, `held` 숫자뿐 아니라 현재 부하가 동적 스크리닝 확대인지, 보유 포지션 carry 관찰인지, 혼합 상태인지 직접 설명한다.

@@ -21,6 +21,33 @@ const COLLECT_WARNING_THRESHOLDS = {
   wideUniverseSymbols: 20,
 };
 
+function buildCollectOverloadProfile(metrics = {}) {
+  const screeningCount = Number(metrics.screeningSymbolCount || 0);
+  const heldCount = Number(metrics.heldAddedCount || metrics.heldSymbolCount || 0);
+  const perSymbolNodeCount = Number(metrics.perSymbolNodeCount || 0);
+  const totalTasks = Number(metrics.totalTasks || 0);
+  const screeningTaskShare = screeningCount * perSymbolNodeCount;
+  const heldTaskShare = heldCount * perSymbolNodeCount;
+
+  let dominantSource = 'mixed';
+  const diff = Math.abs(screeningTaskShare - heldTaskShare);
+  const mixedTolerance = Math.max(perSymbolNodeCount, 4);
+  if (diff > mixedTolerance) {
+    if (heldTaskShare > screeningTaskShare) dominantSource = 'held';
+    else if (screeningTaskShare > heldTaskShare) dominantSource = 'screening';
+  }
+
+  return {
+    screeningCount,
+    heldCount,
+    perSymbolNodeCount,
+    totalTasks,
+    screeningTaskShare,
+    heldTaskShare,
+    dominantSource,
+  };
+}
+
 function isDataSparsityError(message = '') {
   const text = String(message || '');
   return text.includes('데이터 부족') || text.toLowerCase().includes('insufficient candle');
@@ -134,6 +161,13 @@ export async function runMarketCollectPipeline({
     concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
     ragArtifactsSkipped: tasks.length,
     overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
+    overloadProfile: buildCollectOverloadProfile({
+      screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
+      heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
+      heldAddedCount: Number(universeMeta.heldAddedCount || 0),
+      perSymbolNodeCount: perSymbolNodes.length,
+      totalTasks,
+    }),
     warnings: buildCollectWarnings({
       tasks,
       symbols,
@@ -189,12 +223,20 @@ export function summarizeCollectWarnings(warnings = [], metrics = {}) {
   }
 
   if (warnings.includes('collect_overload_detected')) {
-    const screeningCount = Number(metrics.screeningSymbolCount || 0);
-    const heldCount = Number(metrics.heldAddedCount || metrics.heldSymbolCount || 0);
+    const overload = buildCollectOverloadProfile(metrics);
+    const screeningCount = overload.screeningCount;
+    const heldCount = overload.heldCount;
     if (screeningCount > 0 || heldCount > 0) {
       lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}, screening=${screeningCount}, held=${heldCount}).`);
     } else {
       lines.push(`수집 대상이 과도하게 넓어 부하가 높습니다 (tasks=${metrics.totalTasks || 0}).`);
+    }
+    if (overload.dominantSource === 'held' && heldCount > 0) {
+      lines.push(`현재 과부하는 신규 스크리닝 확대보다 보유 포지션 carry 관찰 부담 영향이 더 큽니다.`);
+    } else if (overload.dominantSource === 'screening' && screeningCount > 0) {
+      lines.push(`현재 과부하는 보유 포지션보다 동적 스크리닝 universe 폭 영향이 더 큽니다.`);
+    } else if (screeningCount > 0 && heldCount > 0) {
+      lines.push(`현재 과부하는 동적 스크리닝과 보유 포지션 관찰이 함께 겹친 혼합 상태입니다.`);
     }
   }
 
