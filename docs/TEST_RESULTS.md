@@ -1703,3 +1703,9 @@
   - continuation + repair 보강 후 샘플 1건이 `6320자`로 6000자 기준 통과 확인
 - 추가 샘플 1건 이상은 실행 중
   - 편차 재확인은 후속 관찰 필요
+- 2026-03-27
+  - `node --check bots/blog/lib/gems-writer.js` ✅
+  - `node --input-type=module -e "import { writeGeneralPost } from './bots/blog/lib/gems-writer.js'; ... '자기계발' ..."` ✅
+    - 결과: `[자기계발] 내면의 동기 부여: 자신만의 성공 정의 찾기`, `6470자`
+  - 회귀 관찰:
+    - 1차 repair만으로는 `5617자` 수준에 머물 수 있었으나, 2차 repair 보강 후 `6470자`까지 회복됨
