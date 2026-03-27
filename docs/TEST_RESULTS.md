@@ -1730,3 +1730,6 @@
 - 2026-03-28: `node --check bots/investment/scripts/runtime-config-suggestions.js` / `node bots/investment/scripts/runtime-config-suggestions.js --json` / 텍스트 리포트에서 `validationBudgetPolicy.decision = consider_policy_split`, `decisionLabel = 정책 분리 검토`가 출력되고, `capital_management.by_exchange.binance.trade_modes.validation.max_daily_trades` 제안 reason이 동일한 정책 checkpoint를 직접 포함하는 것 확인.
 - 2026-03-28: `node --check bots/investment/shared/db.js` / `node bots/investment/scripts/runtime-config-suggestions.js --write --json` 검증 완료. 저장된 suggestion log `c8bf5a68-d180-4bd7-ad24-40ca30a42325`를 조회했을 때 `policy_snapshot`이 존재하고 `validationBudgetPolicy.decision = consider_policy_split`가 함께 보존되는 것 확인.
 - 2026-03-28: `node --check bots/investment/scripts/runtime-config-suggestions.js` / `node bots/investment/scripts/runtime-config-suggestions.js --json` / 텍스트 리포트에서 `validationBudgetPolicyTrend.status = stable`, `label = 직전 대비 판단 유지`, `validation capital guard 비중 변화: 90.8% → 90.8% (+0%p)`가 함께 출력되는 것 확인.
+- 2026-03-28: `node bots/claude/src/dexter.js --update-checksums` ✅
+  - 결과: `체크섬 갱신 완료: 89개 파일`
+- 2026-03-28: `node bots/claude/src/dexter.js`를 sandbox 밖에서 재실행해, 실제 서비스/네트워크/DB/봇 상태는 정상이고 핵심 잔여 이슈가 `코드 무결성`, `Git 무결성`, `오류 패턴 분석`에 집중되는 것 확인.

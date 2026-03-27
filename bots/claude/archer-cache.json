@@ -1,17 +1,17 @@
 {
-  "lastRun": "2026-03-23",
+  "lastRun": "2026-03-27",
   "versions": {
     "@anthropic-ai/sdk": "0.80.0",
-    "@modelcontextprotocol/sdk": "1.27.1",
-    "groq-sdk": "1.1.1",
+    "@modelcontextprotocol/sdk": "1.28.0",
+    "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.8.0",
-    "ccxt": "4.5.44",
+    "ccxt": "4.5.45",
     "playwright": "1.58.2"
   },
   "lastAnalysis": {
-    "summary": "이번 주에는 OpenAI의 새로운 모델 출시와 도메인 특화 임베딩 모델 구축 방법에 대한 논의가 주목받고 있습니다. 보안 취약점은 발견되지 않았으며, 패키지 업데이트는 필요하지 않습니다. OpenAI의 인수 소식과 자동화 연구자 개발은 향후 기술 발전에 큰 영향을 미칠 것으로 예상됩니다.",
-    "patchCount": 0,
+    "summary": "실사용 영향 1순위는 @anthropic-ai/sdk (5파일, 핵심 경로 2파일)입니다. 연구 관찰 1순위는 'Implicit Turn-Wise Policy Optimization for Proactive User-LLM Interaction'입니다. 웹 하이라이트는 'Inside our approach to the Model Spec'입니다. 이번 주에는 OpenAI의 안전 버그 바운티 프로그램이 도입되어 AI 개발의 안전성을 높일 수 있는 기회가 생겼습니다. 또한, 새로운 정책 최적화 방법론과 비용 효율적인 평가 방법이 제안되어 우리의 시스템에 적용 가능성이 높습니다. 주요 웹 소스에서는 모델 사양과 도메인 특화 임베딩 모델 구축에 대한 유용한 자료가 공개되었습니다.",
+    "patchCount": 5,
     "securityCount": 0,
     "llmApiCount": 1
   }

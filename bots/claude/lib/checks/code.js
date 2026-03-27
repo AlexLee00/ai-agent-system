@@ -14,6 +14,14 @@ const { execSync } = require('child_process');
 const cfg    = require('../config');
 
 const CHECKSUM_FILE = path.join(cfg.BOTS.claude, '.checksums.json');
+const GENERATED_PATH_PATTERNS = [
+  /^bots\/video\/temp\//,
+  /^bots\/worker\/web\/\.next\//,
+  /^bots\/worker\/web\/\.next_bak_/,
+  /^tmp\//,
+  /^sync_map\.json$/,
+  /^=$/,
+];
 
 function sha256(filePath) {
   try {
@@ -31,6 +39,15 @@ function loadChecksums() {
 
 function saveChecksums(map) {
   fs.writeFileSync(CHECKSUM_FILE, JSON.stringify(map, null, 2));
+}
+
+function parseChangedPath(line) {
+  if (!line || line.length < 4) return '';
+  return line.slice(3).trim().replace(/^"(.*)"$/, '$1');
+}
+
+function isGeneratedPath(filePath) {
+  return GENERATED_PATH_PATTERNS.some((pattern) => pattern.test(filePath));
 }
 
 /**
@@ -122,11 +139,13 @@ async function run() {
   try {
     const dirty = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 15000, shell: true }).trim();
     const lines = dirty ? dirty.split('\n').filter(Boolean) : [];
-    if (lines.length === 0) {
+    const paths = lines.map(parseChangedPath).filter(Boolean);
+    const meaningfulPaths = paths.filter((filePath) => !isGeneratedPath(filePath));
+    if (meaningfulPaths.length === 0) {
       items.push({ label: 'git 상태', status: 'ok', detail: '변경 없음 (clean)' });
     } else {
-      const suffix = lines.length >= 200 ? ' (일부)' : '';
-      items.push({ label: 'git 상태', status: 'warn', detail: `미커밋 변경 ${lines.length}개${suffix}` });
+      const suffix = meaningfulPaths.length >= 200 ? ' (일부)' : '';
+      items.push({ label: 'git 상태', status: 'warn', detail: `미커밋 변경 ${meaningfulPaths.length}개${suffix}` });
     }
   } catch {
     items.push({ label: 'git 상태', status: 'warn', detail: 'git 조회 실패' });
