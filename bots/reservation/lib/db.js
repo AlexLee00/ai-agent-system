@@ -503,9 +503,13 @@ async function markKioskBlockManuallyConfirmed(phone, date, start, options = {})
     || String(phone || '').replace(/\D+/g, '');
   if (!phoneRaw) return null;
 
-  const effectiveEnd = options.end !== undefined ? options.end : (reservation?.end || null);
-  const effectiveRoom = room || reservation?.room || null;
-  const existing = await getKioskBlock(phoneRaw, date, start, effectiveEnd, effectiveRoom);
+  const probeEnd = options.end !== undefined ? options.end : (reservation?.end || null);
+  const probeRoom = room || reservation?.room || null;
+  const existing = await getKioskBlock(phoneRaw, date, start, probeEnd, probeRoom);
+  const effectiveEnd = options.end !== undefined
+    ? options.end
+    : (reservation?.end || existing?.end || null);
+  const effectiveRoom = room || reservation?.room || existing?.room || null;
   const appliedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T') + '+09:00';
   const payload = {
     name: options.name || existing?.name || reservation?.name || null,
