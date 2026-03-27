@@ -110,6 +110,10 @@ async function main() {
       analysis = { patches: [], security: [], llm_api: [], ai_techniques: [], web_highlights: [], summary: '분석 생략 (--no-claude)' };
     }
 
+    if (analysis && !analysis.error) {
+      analysis = analyzer.normalizeAnalysis(analysis, data);
+    }
+
     // 4. 리포트 저장
     const { filePath } = await reporter.report({ data, analysis, runDate });
 

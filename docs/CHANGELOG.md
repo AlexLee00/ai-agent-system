@@ -2388,3 +2388,5 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `analyzer`가 패치 후보에 로컬 사용 메타를 붙이고, 핵심 경로 사용 시 priority를 한 단계 상향
   - 아처 summary를 `실사용 영향 1순위` 기준으로 더 액션형으로 정렬
   - 웹 하이라이트는 source 원문 title과 링크-제목 정합성이 어긋나면 원문 제목으로 보정하고 재검증 메모를 남기도록 보강
+- feat(archer): add deterministic post-processing for patch and highlight output
+- feat(archer): refine package usage scoring toward runtime paths

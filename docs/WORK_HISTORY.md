@@ -4934,3 +4934,20 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 웹 하이라이트도 source 원문 title과 링크-제목이 의미 있게 다르면 원문 제목으로 보정하고 재검증 메모를 남기게 했다.
 - 해석:
   - 아처를 단순 외부 업데이트 요약기에서, 우리 코드베이스 영향도를 반영하는 기술 인텔리전스 레이어로 한 단계 끌어올리는 작업이다.
+## 2026-03-27
+
+### 아처 deterministic 후처리 + runtime-aware usage 정밀화
+- `bots/claude/lib/archer/analyzer.js`
+  - deterministic patch fallback 추가
+  - web highlight source-lock 보강
+  - summary action-first skeleton 강제
+  - 중복 normalize 시 summary/reason 중복이 누적되지 않도록 idempotent 처리
+- `bots/claude/src/archer.js`
+  - 저장 직전 `normalizeAnalysis()`를 다시 호출해 최종 산출물 불변식 강제
+- `bots/claude/lib/archer/fetcher.js`
+  - usage 집계에서 docs/cache/generated/meta 노이즈 제외
+  - runtime-aware scoring 강화
+- 결과
+  - 아처가 더 이상 `patches: []`로 비정상 저장되지 않음
+  - 웹 하이라이트 링크/제목 쌍 정합성 개선
+  - usage 우선순위가 문서/캐시 노이즈에 덜 끌리도록 완화

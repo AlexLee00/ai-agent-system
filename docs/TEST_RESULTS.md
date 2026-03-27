@@ -1647,3 +1647,13 @@
   - `ok[0] = 최근 crypto validation soft cap 차단 없음`
 - `node bots/investment/scripts/health-report.js` ✅
   - `■ crypto validation soft cap 차단(최근 24시간)` 섹션 출력 확인
+## 2026-03-27 — 아처 deterministic 후처리 + runtime-aware usage 정밀화
+
+- `node --check bots/claude/lib/archer/analyzer.js` ✅
+- `node --check bots/claude/lib/archer/fetcher.js` ✅
+- `node --check bots/claude/src/archer.js` ✅
+- `node --input-type=module -e "import fetcher from './bots/claude/lib/archer/fetcher.js'; console.log(JSON.stringify(fetcher.fetchPackageUsage(['ccxt','groq-sdk','@anthropic-ai/sdk','better-sqlite3']), null, 2));"` ✅
+- `node bots/claude/src/archer.js` ✅
+  - `patches: []` 비정상 출력 해소
+  - summary/action-first skeleton 반영 확인
+  - web highlight source-lock 반영 확인

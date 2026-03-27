@@ -24,6 +24,38 @@ const USAGE_EXCLUDES = [
   'uploads',
   'reports',
   'tmp',
+  'docs',
+  'samples',
+  'fixtures',
+  'coverage',
+];
+
+const USAGE_FILE_EXCLUDES = [
+  'package-lock.json',
+  'PATCH_REQUEST.md',
+  'bots/claude/archer-cache.json',
+  'bots/registry.json',
+  'bots/claude/lib/archer/config.js',
+];
+
+const RUNTIME_PREFIXES = [
+  'packages/core/',
+  'bots/investment/shared/',
+  'bots/investment/team/',
+  'bots/investment/src/',
+  'bots/orchestrator/',
+  'bots/reservation/shared/',
+  'bots/reservation/src/',
+  'bots/worker/src/',
+  'bots/worker/scripts/',
+];
+
+const SUPPORT_PREFIXES = [
+  'bots/claude/lib/',
+  'bots/claude/src/',
+  'bots/investment/scripts/',
+  'bots/reservation/scripts/',
+  'bots/worker/scripts/',
 ];
 
 // ─── 공통 HTTP 유틸 ─────────────────────────────────────────────────
@@ -118,18 +150,16 @@ async function fetchAllNpm() {
 }
 
 function isTrackedUsagePath(filePath) {
+  if (USAGE_FILE_EXCLUDES.includes(filePath)) return false;
   return !USAGE_EXCLUDES.some((segment) => filePath.includes(`/${segment}/`) || filePath.startsWith(`${segment}/`));
 }
 
 function scoreUsagePath(filePath) {
-  if (
-    filePath.startsWith('packages/core/') ||
-    filePath.startsWith('bots/investment/') ||
-    filePath.startsWith('bots/orchestrator/') ||
-    filePath.startsWith('bots/reservation/') ||
-    filePath.startsWith('bots/worker/')
-  ) {
+  if (RUNTIME_PREFIXES.some((prefix) => filePath.startsWith(prefix))) {
     return 'core';
+  }
+  if (SUPPORT_PREFIXES.some((prefix) => filePath.startsWith(prefix))) {
+    return 'support';
   }
   return 'support';
 }
@@ -154,6 +184,7 @@ function fetchPackageUsage(packages = []) {
         .filter(Boolean)
         .map((line) => line.startsWith(config.ROOT) ? line.slice(config.ROOT.length + 1) : line)
         .filter(isTrackedUsagePath)
+        .filter((file) => file.endsWith('.js') || file.endsWith('.cjs') || file.endsWith('.mjs') || file.endsWith('.ts') || file.endsWith('.json'))
         .slice(0, 20);
       const coreFiles = files.filter((file) => scoreUsagePath(file) === 'core');
       usage[pkg] = {
