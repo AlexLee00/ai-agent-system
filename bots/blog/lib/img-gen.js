@@ -154,7 +154,13 @@ function _saveBuffer(buffer, outputPath) {
 
 // ── 4. 블로그 포스팅 이미지 2장 (대표 + 중간) ─────────────────
 
-const STYLE_BASE = 'Clean, modern, professional blog thumbnail. No text overlay. Soft lighting, high resolution.';
+const STYLE_BASE = [
+  'Clean, modern, professional blog thumbnail.',
+  'No text overlay.',
+  'Soft lighting, high resolution.',
+  'Absolutely no readable text, letters, numbers, words, UI labels, logos, signage, checklist text, whiteboard text, or typography anywhere in the image.',
+  'If documents, screens, boards, or clipboards appear, render only abstract wireframe blocks, empty cards, icons, or illegible placeholder marks.',
+].join(' ');
 
 function _hashSeed(input) {
   const text = String(input || '');
@@ -305,6 +311,7 @@ function _buildThumbPrompt(title, postType, category) {
     `Composition: ${visual.shot}, ${visual.propStyle}.`,
     style,
     'Keep the image visually distinct from generic AI-tech thumbnails; avoid repeating the same pose, same lighting, and same layout every time.',
+    'Do not render any readable words on walls, screens, papers, or devices; use diagram shapes or blank interface blocks only.',
   ].join(' ');
 }
 
@@ -324,6 +331,7 @@ function _buildMidPrompt(title, postType, category) {
     `Composition: ${visual.shot}, ${visual.propStyle}.`,
     `Use category-aware objects and context for "${category}", not just abstract shapes.`,
     'Make this image complementary to the thumbnail, with a different framing, situation, and storytelling emphasis.',
+    'No readable text on clipboards, notebooks, calendars, dashboards, or interface panels; replace with icon-like placeholders and empty structure.',
   ].join(' ');
 }
 

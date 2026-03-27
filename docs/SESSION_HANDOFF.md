@@ -1932,3 +1932,25 @@
     - 이미지 결과물이 매번 같은 톤으로 수렴하지 않도록 prompt diversity를 deterministic하게 주입하는 것
   - 나중에 확장할 구조:
     - 카테고리별 visual strategy profile, 실제 생성본 기반 novelty scoring, 최근 이미지 스타일 중복 회피
+
+## 2026-03-27 — 젬스 이미지 readable text 금지 강화
+
+- 배경
+  - 샘플 이미지를 실제 생성해 보니 tone/풍 분산은 개선됐지만, `FLOWS`, `EDGE CASES`, `Habits`처럼 읽히는 텍스트가 이미지 내부에 다시 생기는 문제가 확인됐다.
+  - 블로그 썸네일/중간 이미지 기준으로는 readable text가 시각 품질을 떨어뜨리고, 후속 한글 오버레이와도 충돌할 수 있다.
+
+- 이번 변경
+  - [bots/blog/lib/img-gen.js](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/img-gen.js)
+    - `STYLE_BASE`에 readable text, letters, numbers, UI labels, whiteboard text 금지 규칙을 더 강하게 추가
+    - 문서/화면/보드/클립보드가 등장할 때는 abstract wireframe block, empty cards, icon-like placeholders만 쓰도록 보강
+    - thumb/mid prompt 각각에 `readable words 금지`를 다시 한 번 명시
+
+- 현재 기준
+  - 프롬프트 문자열 기준으로는 text 금지 규칙이 명확히 강화됨
+  - 다음 실제 이미지 생성본에서 텍스트 잔존이 줄어드는지 재확인 필요
+
+- 의도
+  - 지금 당장 필요한 구조:
+    - 이미지 모델이 UI/문서 장면을 그릴 때 임의의 영어 텍스트를 써버리는 문제를 프롬프트 단계에서 먼저 줄이는 것
+  - 나중에 확장할 구조:
+    - OCR/vision 기반 post-check, readable text 감지 시 자동 재생성

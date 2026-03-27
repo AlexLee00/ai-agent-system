@@ -4982,3 +4982,11 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - thumb와 mid가 같은 글에서도 서로 다른 구도와 스토리텔링 역할을 갖도록 분리
 - 해석:
   - 이미지 생성 품질의 핵심 병목이 “모델 성능”보다 “프롬프트 다양성 부족”이라는 점을 보강한 작업이다.
+
+### 젬스 이미지 readable text 금지 강화
+- `bots/blog/lib/img-gen.js`
+  - `STYLE_BASE`에 readable text, letters, numbers, UI labels, whiteboard text 금지 규칙을 추가
+  - 문서/화면/보드/클립보드가 등장할 때 abstract wireframe blocks, empty cards, icon-like placeholders만 쓰도록 지시 강화
+  - thumb/mid 각각에 readable words 금지 문구를 추가해 후속 한글 오버레이와 충돌하는 텍스트 생성을 줄이도록 보강
+- 해석:
+  - 실제 생성본에서 드러난 문제를 prompt layer에서 즉시 보정한 1차 조치다.

@@ -2402,3 +2402,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `bots/blog/lib/img-gen.js`에 deterministic visual variant selector 추가
   - thumb/mid 이미지가 실사형, 일러스트형, 애니메이션형, 인포그래픽형을 카테고리별로 분산 사용하도록 보강
   - 인물 태도, 상황, 구도, 소품 스타일을 prompt에 함께 넣어 결과물의 톤과 풍이 반복되지 않도록 조정
+- `fix(blog): harden GEMS image prompts against readable text`
+  - `bots/blog/lib/img-gen.js`의 base prompt에 readable text, letters, numbers, UI labels, whiteboard text 금지 규칙 추가
+  - 문서/화면/보드/클립보드 등장 시 abstract blocks와 placeholder mark만 허용하도록 보강
+  - thumb/mid prompt 모두에 readable words 금지 문구를 재강조
