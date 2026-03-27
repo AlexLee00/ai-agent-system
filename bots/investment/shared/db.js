@@ -167,6 +167,7 @@ export async function initSchema() {
   for (const [col, type] of [
     ['reviewed_at', 'TIMESTAMP'],
     ['applied_at', 'TIMESTAMP'],
+    ['policy_snapshot', 'JSONB'],
   ]) {
     try { await run(`ALTER TABLE runtime_config_suggestion_log ADD COLUMN IF NOT EXISTS ${col} ${type}`); } catch { /* 무시 */ }
   }
@@ -812,6 +813,7 @@ export async function insertRuntimeConfigSuggestionLog({
   actionableCount = 0,
   marketSummary,
   suggestions,
+  policySnapshot = null,
   reviewStatus = 'pending',
   reviewNote = null,
 }) {
@@ -821,16 +823,18 @@ export async function insertRuntimeConfigSuggestionLog({
        actionable_count,
        market_summary,
        suggestions,
+       policy_snapshot,
        review_status,
        review_note
      )
-     VALUES ($1, $2, $3, $4, $5, $6)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, captured_at`,
     [
       periodDays,
       actionableCount,
       JSON.stringify(marketSummary ?? {}),
       JSON.stringify(suggestions ?? []),
+      JSON.stringify(policySnapshot ?? {}),
       reviewStatus,
       reviewNote,
     ],
@@ -840,7 +844,7 @@ export async function insertRuntimeConfigSuggestionLog({
 
 export async function getRecentRuntimeConfigSuggestionLogs(limit = 10) {
   return query(
-    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, reviewed_at, applied_at, captured_at
+    `SELECT id, period_days, actionable_count, market_summary, suggestions, policy_snapshot, review_status, review_note, reviewed_at, applied_at, captured_at
      FROM runtime_config_suggestion_log
      ORDER BY captured_at DESC
      LIMIT $1`,
@@ -850,7 +854,7 @@ export async function getRecentRuntimeConfigSuggestionLogs(limit = 10) {
 
 export async function getRuntimeConfigSuggestionLogById(id) {
   return get(
-    `SELECT id, period_days, actionable_count, market_summary, suggestions, review_status, review_note, reviewed_at, applied_at, captured_at
+    `SELECT id, period_days, actionable_count, market_summary, suggestions, policy_snapshot, review_status, review_note, reviewed_at, applied_at, captured_at
      FROM runtime_config_suggestion_log
      WHERE id = $1`,
     [id],

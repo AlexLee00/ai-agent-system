@@ -640,6 +640,11 @@ async function main() {
       actionableCount: report.actionableSuggestions,
       marketSummary: report.marketSummary,
       suggestions: report.suggestions,
+      policySnapshot: {
+        validationBudgetPolicy: report.validationBudgetPolicy,
+        capitalGuardBias: report.capitalGuardBias,
+        validationBudgetSnapshots: report.validationBudgetSnapshots,
+      },
     });
     report.saved = saved;
   }
