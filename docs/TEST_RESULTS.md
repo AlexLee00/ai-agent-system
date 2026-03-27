@@ -1737,3 +1737,7 @@
 - 2026-03-28: `node --input-type=module -e "import { getKisMarketStatus } from './bots/investment/shared/secrets.js'; ..."` ✅
   - 결과: `2026-03-28 08:00 KST` 기준 `{"isOpen":false,"reason":"주말 (토요일)","isWeekend":true,...}` 반환 확인
   - 해석: 휴장 판단 로직 자체는 이미 정상이며, 이번 패치는 `pre-market-screen.js`가 그 판단을 실제로 사용하도록 연결하는 수정임
+- 2026-03-28: `node --check bots/investment/shared/pipeline-market-runner.js` ✅
+- 2026-03-28: `node --input-type=module -e "import { summarizeCollectWarnings, buildCollectAlertMessage } from './bots/investment/shared/pipeline-market-runner.js'; ..."` ✅
+  - 결과: `tasks=61, screening=8, held=7` 케이스에서 경고 문구가 `혼합 상태`로 출력되는 것 확인
+  - 해석: 암호화폐 수집 과부하를 universe 과대 하나로 단정하지 않고, held carry와 screening 기여를 함께 읽도록 보강됨
