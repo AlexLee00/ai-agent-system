@@ -1723,3 +1723,4 @@
   - 수동 완료 반영 후 재시도 루프를 멈추는 방향으로 source of truth를 정렬
 - 2026-03-28: `node --check bots/investment/scripts/health-report.js` 통과. `node bots/investment/scripts/health-report.js --json` 및 텍스트 리포트에서 stale 6건이 `실행 가능 2 / capability 제약 4 / 장중 대기 0`으로 분리 표기되는 것 확인.
 - 2026-03-28: 같은 health-report 검증에서 stale severity가 `즉시 실행 0 / 관찰 우선 2 / capability 제약 4 / 장중 대기 0`으로 노출되는 것 확인. `RENDER/USDT`, `SIGN/USDT`는 `[observe-first]`로 출력됨.
+- 2026-03-28: `node bots/investment/scripts/health-report.js --json` / 텍스트 리포트에서 `crypto capital guard 65건`이 `validation 59건 (90.8%) / normal 6건 / dominant daily trade limit 63건`으로 함께 노출되는 것 확인.
