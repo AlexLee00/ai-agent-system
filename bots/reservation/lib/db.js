@@ -490,6 +490,106 @@ async function getOpenManualBlockFollowups(fromDate) {
   })).filter((row) => row.phoneRaw);
 }
 
+async function markKioskBlockManuallyConfirmed(phone, date, start, options = {}) {
+  if (!phone || !date || !start) return null;
+
+  const room = options.room || null;
+  const reservation = room
+    ? await findReservationBySlot(phone, date, start, room).catch(() => null)
+    : await findReservationByBooking(phone, date, start).catch(() => null);
+
+  const phoneRaw = options.phoneRaw
+    || reservation?.phoneRaw
+    || String(phone || '').replace(/\D+/g, '');
+  if (!phoneRaw) return null;
+
+  const effectiveEnd = options.end !== undefined ? options.end : (reservation?.end || null);
+  const effectiveRoom = room || reservation?.room || null;
+  const existing = await getKioskBlock(phoneRaw, date, start, effectiveEnd, effectiveRoom);
+  const appliedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T') + '+09:00';
+  const payload = {
+    name: options.name || existing?.name || reservation?.name || null,
+    date,
+    start,
+    end: effectiveEnd,
+    room: effectiveRoom,
+    amount: Number(options.amount ?? existing?.amount ?? 0),
+    naverBlocked: true,
+    firstSeenAt: existing?.firstSeenAt || appliedAt,
+    blockedAt: existing?.blockedAt || appliedAt,
+    naverUnblockedAt: null,
+    lastBlockAttemptAt: appliedAt,
+    lastBlockResult: 'manually_confirmed',
+    lastBlockReason: options.reason || 'operator_confirmed_naver_blocked',
+    blockRetryCount: Number(existing?.blockRetryCount || 0),
+  };
+
+  await upsertKioskBlock(phoneRaw, date, start, payload);
+  await recordKioskBlockAttempt(phoneRaw, date, start, {
+    ...payload,
+    incrementRetry: false,
+  });
+
+  return {
+    phone,
+    phoneRaw,
+    date,
+    start,
+    end: effectiveEnd,
+    room: effectiveRoom,
+  };
+}
+
+async function resolveOpenKioskBlockFollowups(args = {}) {
+  const phone = args.phone || null;
+  const date = args.date || null;
+  const start = args.start || args.start_time || null;
+
+  if (phone && date && start) {
+    const row = await markKioskBlockManuallyConfirmed(phone, date, start, args);
+    return row ? [row] : [];
+  }
+
+  const rows = await pgPool.query(SCHEMA, `
+    SELECT
+      kb.phone_raw_enc,
+      kb.date,
+      kb.start_time,
+      kb.end_time,
+      kb.room,
+      r.phone,
+      r.name_enc
+    FROM kiosk_blocks kb
+    LEFT JOIN reservations r
+      ON r.date = kb.date
+     AND r.start_time = kb.start_time
+     AND (kb.end_time IS NULL OR r.end_time IS NULL OR kb.end_time = r.end_time)
+     AND (kb.room IS NULL OR r.room IS NULL OR kb.room = r.room)
+     AND kb.phone_raw_enc = r.phone_raw_enc
+    WHERE kb.naver_blocked <> 1
+      AND kb.naver_unblocked_at IS NULL
+      AND kb.last_block_result IN ('retryable_failure', 'deferred', 'uncertain')
+      AND NULLIF(kb.last_block_attempt_at, '')::timestamptz >= now() - interval '24 hours'
+    ORDER BY kb.last_block_attempt_at DESC NULLS LAST
+  `);
+
+  const touched = [];
+  for (const row of rows) {
+    const phoneRaw = _safeDec(row.phone_raw_enc);
+    const effectivePhone = row.phone || phoneRaw;
+    if (!effectivePhone || !row.date || !row.start_time) continue;
+    const touchedRow = await markKioskBlockManuallyConfirmed(effectivePhone, row.date, row.start_time, {
+      phoneRaw,
+      end: row.end_time,
+      room: row.room,
+      name: _safeDec(row.name_enc),
+    });
+    if (touchedRow) touched.push(touchedRow);
+  }
+
+  return touched;
+}
+
 async function pruneOldKioskBlocks(beforeDate) {
   const result = await pgPool.run(SCHEMA,
     'DELETE FROM kiosk_blocks WHERE date < $1', [beforeDate]);
@@ -976,6 +1076,8 @@ module.exports = {
   getBlockedKioskBlocks,
   getKioskBlocksForDate,
   getOpenManualBlockFollowups,
+  markKioskBlockManuallyConfirmed,
+  resolveOpenKioskBlockFollowups,
   pruneOldKioskBlocks,
   // alerts
   addAlert,

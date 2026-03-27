@@ -8,6 +8,7 @@ const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webho
 const { createSkaReadService } = require('./ska-read-service');
 const { runManualReservationRegistration } = require('./manual-reservation');
 const { runManualReservationCancellation } = require('./manual-cancellation');
+const { resolveOpenKioskBlockFollowups } = require('./db');
 
 function createSkaCommandHandlers({ pgPool, rag }) {
   const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
@@ -106,6 +107,7 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     const { issueType = '알람', detail = '', resolution = '처리 완료' } = args;
     try {
       const resolved = await resolveErrorAlerts(args);
+      const kioskFollowups = await resolveOpenKioskBlockFollowups(args);
       await storeReservationResolution(rag, {
         issueType,
         detail,
@@ -115,9 +117,12 @@ function createSkaCommandHandlers({ pgPool, rag }) {
       return {
         ok: true,
         resolved,
+        kioskFollowups: kioskFollowups.length,
         message: resolved > 0
-          ? `RAG 저장 완료 / 미해결 오류 알림 ${resolved}건 해결 처리`
-          : 'RAG 저장 완료 / 미해결 오류 알림 없음',
+          ? `RAG 저장 완료 / 미해결 오류 알림 ${resolved}건 해결 처리${kioskFollowups.length > 0 ? ` / 네이버 차단 follow-up ${kioskFollowups.length}건 수동 완료 반영` : ''}`
+          : (kioskFollowups.length > 0
+            ? `RAG 저장 완료 / 네이버 차단 follow-up ${kioskFollowups.length}건 수동 완료 반영`
+            : 'RAG 저장 완료 / 미해결 오류 알림 없음'),
       };
     } catch (e) {
       return { ok: false, error: e.message };
