@@ -880,6 +880,49 @@ async function loadCryptoLiveGateHealth() {
   }
 }
 
+function loadCryptoValidationBudgetPolicyHealth(
+  cryptoValidationSoftBudgetHealth,
+  cryptoValidationBudgetBlockHealth,
+  cryptoLiveGateHealth,
+  capitalGuardBreakdown,
+) {
+  const validationRatio = Number(capitalGuardBreakdown?.laneSnapshot?.validationRatio || 0);
+  const closedReviews = Number(cryptoLiveGateHealth?.review?.metrics?.closedReviews || 0);
+  const weak = Number(cryptoLiveGateHealth?.review?.metrics?.pipeline?.weak || 0);
+  const gateDecision = String(cryptoLiveGateHealth?.review?.liveGate?.decision || 'unknown');
+  const softCapBlocks = Number(cryptoValidationBudgetBlockHealth?.total || 0);
+
+  let decision = 'hold_current_structure';
+  let decisionLabel = '현 구조 유지';
+  const reasons = [
+    `  soft cap 차단: ${softCapBlocks}건`,
+    `  validation capital guard 비중: ${validationRatio}%`,
+    `  LIVE gate: ${gateDecision}`,
+    `  closed review: ${closedReviews}건 / weak: ${weak}건`,
+  ];
+
+  if (softCapBlocks > 0 && gateDecision !== 'blocked' && weak <= 20 && closedReviews >= 3) {
+    decision = 'consider_raise_validation_budget';
+    decisionLabel = '상향 검토 가능';
+    reasons.unshift('  판단: validation daily budget 상향 검토 가능');
+  } else if (validationRatio >= 80) {
+    decision = 'consider_policy_split';
+    decisionLabel = '정책 분리 검토';
+    reasons.unshift('  판단: 총량 상향보다 validation 전용 budget 구조 분리 검토 우선');
+  } else {
+    reasons.unshift('  판단: 현재 값 유지 및 추가 관찰');
+  }
+
+  return {
+    decision,
+    decisionLabel,
+    okCount: decision === 'hold_current_structure' ? 1 : 0,
+    warnCount: decision !== 'hold_current_structure' ? 1 : 0,
+    ok: decision === 'hold_current_structure' ? reasons : [],
+    warn: decision !== 'hold_current_structure' ? reasons : [],
+  };
+}
+
 async function loadKisCapabilityHealth() {
   const domesticMode = getKisExecutionModeInfo('국내주식');
   const overseasMode = getKisExecutionModeInfo('해외주식');
@@ -936,6 +979,7 @@ function buildDecision(
   stalePositionHealth,
   cryptoLiveGateHealth,
   capitalGuardBreakdown,
+  cryptoValidationBudgetPolicyHealth,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -1013,6 +1057,11 @@ function buildDecision(
         reason: `최근 ${capitalGuardBreakdown.periodDays}일 crypto capital guard ${capitalGuardBreakdown.total}건 — validation ${capitalGuardBreakdown.laneSnapshot?.validationCount || 0}건 (${capitalGuardBreakdown.laneSnapshot?.validationRatio || 0}%) / normal ${capitalGuardBreakdown.laneSnapshot?.normalCount || 0}건 / 최다 ${capitalGuardBreakdown.laneSnapshot?.topReason?.label || 'n/a'} ${capitalGuardBreakdown.laneSnapshot?.topReason?.count || 0}건`,
       },
       {
+        active: cryptoValidationBudgetPolicyHealth?.decision === 'consider_policy_split',
+        level: 'medium',
+        reason: `crypto validation budget 정책 판단 — ${cryptoValidationBudgetPolicyHealth?.decisionLabel || '현 구조 유지'}`,
+      },
+      {
         active: stalePositionHealth.warnCount > 0,
         level: 'medium',
         reason: `장기 미결 LIVE 포지션 ${stalePositionHealth.warnCount}건 — 즉시 실행 ${stalePositionHealth.readinessSummary?.executeNow || 0}건 / 관찰 우선 ${stalePositionHealth.readinessSummary?.observeFirst || 0}건 / capability 제약 ${stalePositionHealth.readinessSummary?.blockedByCapability || 0}건`,
@@ -1085,6 +1134,7 @@ function formatText(report) {
     buildHealthCountSection(`■ 국내장 주문 실패 분해(최근 ${Math.round(report.domesticRejectBreakdown.windowMinutes / 60)}시간)`, report.domesticRejectBreakdown, { okLimit: 1, warnLimit: 10 }),
     buildHealthCountSection('■ crypto validation soft budget(오늘)', report.cryptoValidationSoftBudgetHealth, { okLimit: 1, warnLimit: 1 }),
     buildHealthCountSection(`■ crypto validation soft cap 차단(최근 ${Math.round(report.cryptoValidationBudgetBlockHealth.windowMinutes / 60)}시간)`, report.cryptoValidationBudgetBlockHealth, { okLimit: 1, warnLimit: 8 }),
+    buildHealthCountSection('■ crypto validation budget 정책 판단', report.cryptoValidationBudgetPolicyHealth, { okLimit: 1, warnLimit: 8 }),
     {
       title: '■ 장기 미결 LIVE 포지션',
       lines: report.stalePositionHealth.warnCount > 0
@@ -1148,6 +1198,12 @@ async function buildReport() {
   const stalePositionHealth = await loadStalePositionHealth();
   const cryptoLiveGateHealth = await loadCryptoLiveGateHealth();
   const capitalGuardBreakdown = await loadCapitalGuardBreakdown();
+  const cryptoValidationBudgetPolicyHealth = loadCryptoValidationBudgetPolicyHealth(
+    cryptoValidationSoftBudgetHealth,
+    cryptoValidationBudgetBlockHealth,
+    cryptoLiveGateHealth,
+    capitalGuardBreakdown,
+  );
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
     serviceRows,
@@ -1165,6 +1221,7 @@ async function buildReport() {
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
+    cryptoValidationBudgetPolicyHealth,
   );
 
   const report = {
@@ -1188,6 +1245,7 @@ async function buildReport() {
     stalePositionHealth,
     cryptoLiveGateHealth,
     capitalGuardBreakdown,
+    cryptoValidationBudgetPolicyHealth,
     kisCapabilityHealth,
     decision,
   };
