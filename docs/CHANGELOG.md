@@ -2415,3 +2415,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `pickko-kiosk-monitor`가 exact slot 클릭 실패 시 같은 룸의 다음 available slot으로 fallback 시도
   - `pickko-alerts-resolve`와 스카 command handler가 `alerts`뿐 아니라 열린 `kiosk_blocks` follow-up도 함께 `manually_confirmed`로 반영
   - 사용자가 텔레그램에서 수동 처리 완료를 알린 뒤 같은 예약이 다음 사이클에 다시 경고되는 문제를 완화
+- 2026-03-28 — `feat(investment)`: 투자팀 health-report의 장기 미결 LIVE 포지션 섹션을 readiness-aware로 보강. stale 후보를 실행 가능/actionable, capability 제약, 장중 대기로 분리 표시.

@@ -5016,3 +5016,4 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - `김지순 / 010-5141-5668 / 2026-03-27 14:00 / 스터디룸B`
   - 수동 처리 완료 후 `pickko-alerts-resolve.js --phone=010-5141-5668 --date=2026-03-27 --start=14:00` 실행
   - 결과: `네이버 차단 follow-up 1건 수동 완료 반영`
+- 2026-03-28: `bots/investment/scripts/health-report.js`가 `force-exit-candidate-report`의 readiness 메타를 재사용하도록 변경했다. 장기 미결 LIVE 포지션을 actionable / blocked_by_capability / wait_market_open으로 분리해 health JSON/text와 운영 판단 문구에 반영했다.
