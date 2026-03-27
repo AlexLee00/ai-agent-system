@@ -1682,3 +1682,16 @@
     - `홈페이지와App`: `modern infographic scene` / `animation storyboard scene`
     - `자기계발`: `animation concept art` / `editorial illustration`
     - `개발기획과컨설팅`: `modern infographic scene` / `documentary-style photo`
+
+## 2026-03-27 — 젬스 이미지 readable text 금지 강화
+
+- `node --check bots/blog/lib/img-gen.js` ✅
+- 샘플 이미지 실제 생성 ✅
+  - `/Users/alexlee/projects/ai-agent-system/bots/blog/output/images/2026-03-27_general__홈페이지와App__성공적인_SaaS_앱_개발_전략_thumb.png`
+  - `/Users/alexlee/projects/ai-agent-system/bots/blog/output/images/2026-03-27_general__홈페이지와App__성공적인_SaaS_앱_개발_전략_mid.png`
+  - `/Users/alexlee/projects/ai-agent-system/bots/blog/output/images/2026-03-27_general__자기계발__습관_설계로_집중력_회복하는_법_thumb.png`
+  - `/Users/alexlee/projects/ai-agent-system/bots/blog/output/images/2026-03-27_general__자기계발__습관_설계로_집중력_회복하는_법_mid.png`
+  - 톤/풍/상황 분산은 확인
+  - 다만 이미지 내부에 `FLOWS`, `EDGE CASES`, `Habits` 같은 readable text가 남는 샘플이 있어 프롬프트를 추가 강화
+- `node --input-type=module -e "... _buildThumbPrompt/_buildMidPrompt 출력 ..."` ✅
+  - readable text, letters, numbers, UI labels, whiteboard text 금지 규칙이 prompt에 반영된 것 확인
