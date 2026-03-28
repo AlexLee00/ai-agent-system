@@ -2,35 +2,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.ska.log-rotate</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/log-rotate.js</string>
-    </array>
-
-    <!-- 매일 04:05 실행 (db-backup 04:00 완료 후) -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>4</integer>
-        <key>Minute</key>
-        <integer>5</integer>
-    </dict>
-
-    <key>StandardOutPath</key>
-    <string>/tmp/ska-log-rotate.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/ska-log-rotate.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>/Users/alexlee</string>
-        <key>PATH</key>
-        <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.ska.log-rotate</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/log-rotate.js</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ska-log-rotate.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/ska-log-rotate.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>4</integer>
+		<key>Minute</key>
+		<integer>5</integer>
+	</dict>
 </dict>
 </plist>

@@ -2,30 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.agent.nightly-sync</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>/Users/alexlee/projects/ai-agent-system/scripts/nightly-sync.sh</string>
-  </array>
-
-  <!-- 매일 자정 00:00 실행 -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>0</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-
-  <key>StandardOutPath</key>
-  <string>/tmp/nightly-sync.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/nightly-sync.log</string>
-
-  <key>RunAtLoad</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict/>
+	<key>Label</key>
+	<string>ai.agent.nightly-sync</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/projects/ai-agent-system/scripts/nightly-sync.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/nightly-sync.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/nightly-sync.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>0</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
 </dict>
 </plist>

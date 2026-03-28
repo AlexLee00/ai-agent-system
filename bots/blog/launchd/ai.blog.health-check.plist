@@ -2,33 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.blog.health-check</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-check.js</string>
-    </array>
-
-    <!-- 10분마다 실행 -->
-    <key>StartInterval</key>
-    <integer>600</integer>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>/tmp/blog-health-check.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/blog-health-check.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>/Users/alexlee</string>
-        <key>PATH</key>
-        <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.blog.health-check</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-check.js</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/blog-health-check.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/blog-health-check.log</string>
+	<key>StartInterval</key>
+	<integer>600</integer>
 </dict>
 </plist>

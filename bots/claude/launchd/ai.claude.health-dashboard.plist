@@ -2,42 +2,34 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.claude.health-dashboard</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-dashboard-server.js</string>
-    <string>--port=3032</string>
-  </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/claude</string>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-  </dict>
-
-  <key>KeepAlive</key>
-  <true/>
-
-  <key>RunAtLoad</key>
-  <true/>
-
-  <key>StandardOutPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/claude-health-dashboard.log</string>
-
-  <key>StandardErrorPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/claude-health-dashboard-error.log</string>
-
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>ai.claude.health-dashboard</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-dashboard-server.js</string>
+		<string>--port=3032</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/.openclaw/workspace/logs/claude-health-dashboard-error.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/.openclaw/workspace/logs/claude-health-dashboard.log</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/claude</string>
 </dict>
 </plist>

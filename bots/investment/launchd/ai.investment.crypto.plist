@@ -1,45 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.investment.crypto</string>
-  <!-- Phase 3-A: 암호화폐 5분 사이클 (OPS_MODE — 2026-03-03 전환) -->
-  <!-- 현재 normal 거래 레일의 호환 라벨로 유지 -->
-  <!-- 설치: cp launchd/ai.investment.crypto.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.crypto.plist -->
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/markets/crypto.js</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-  <!-- 5분 주기 (암호화폐 실시간 사이클) -->
-  <key>StartInterval</key>
-  <integer>300</integer>
-  <key>StandardOutPath</key>
-  <string>/tmp/investment-crypto.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/investment-crypto.err.log</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>PAPER_MODE</key>
-    <string>false</string>
-    <key>INVESTMENT_TRADE_MODE</key>
-    <string>normal</string>
-  </dict>
-  <!-- 부팅 시 자동 실행 -->
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>INVESTMENT_TRADE_MODE</key>
+		<string>normal</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.crypto</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/markets/crypto.js</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-crypto.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-crypto.log</string>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 </dict>
 </plist>

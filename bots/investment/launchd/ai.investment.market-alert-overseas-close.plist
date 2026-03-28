@@ -1,57 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.investment.market-alert-overseas-close</string>
-
-  <!-- 해외장(미국) 종료 매매일지 — KST 06:00 (UTC 21:00 전날) -->
-  <!-- 서머타임 적용 시 KST 05:00 (UTC 20:00 전날) — plist 수동 조정 필요 -->
-  <!-- 설치: cp bots/investment/launchd/ai.investment.market-alert-overseas-close.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.market-alert-overseas-close.plist -->
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
-    <string>--market=overseas</string>
-    <string>--event=close</string>
-  </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-
-  <!-- KST 06:00 (서머타임: KST 05:00) — launchd 로컬 시간 기준 -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>6</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-
-  <key>StandardOutPath</key>
-  <string>/tmp/investment-market-alert-overseas-close.log</string>
-
-  <key>StandardErrorPath</key>
-  <string>/tmp/investment-market-alert-overseas-close.err.log</string>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>PAPER_MODE</key>
-    <string>false</string>
-  </dict>
-
-  <key>RunAtLoad</key>
-  <false/>
-
-  <key>KeepAlive</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.market-alert-overseas-close</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
+		<string>--market=overseas</string>
+		<string>--event=close</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-market-alert-overseas-close.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-market-alert-overseas-close.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>6</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 </dict>
 </plist>
