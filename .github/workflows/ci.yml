@@ -1,0 +1,46 @@
+name: CI — Lint & Syntax Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax check (changed JS files)
+        run: |
+          echo "=== JS Syntax Check ==="
+          ERRORS=0
+          find bots packages -name "*.js" -not -path "*/node_modules/*" | while read f; do
+            node --check "$f" 2>/dev/null || { echo "❌ $f"; ERRORS=$((ERRORS+1)); }
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "❌ $ERRORS files failed syntax check"
+            exit 1
+          fi
+          echo "✅ All files passed"
+
+      - name: Check for secrets in code
+        run: |
+          echo "=== Secret Scan ==="
+          if grep -rn "sk-ant-api03-[a-zA-Z0-9_-]\{20,\}\|gsk_[a-zA-Z0-9]\{30,\}" \
+            --include="*.js" --include="*.json" --include="*.yaml" --include="*.plist" \
+            . | grep -v node_modules | grep -v "example\|YOUR_KEY"; then
+            echo "❌ Secrets detected in code!"
+            exit 1
+          fi
+          echo "✅ No secrets found"

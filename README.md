@@ -1,6 +1,10 @@
 # 🤖 AI Agent System
 
-맥북프로 M1 Pro 기반 멀티 에이전트 AI 봇 시스템 | v4.0 (2026-03-08)
+맥 스튜디오 M4 Max 기반 멀티 에이전트 AI 봇 시스템 | v4.1 (2026-03-29)
+
+> 5개 팀 · 30+ 봇 · Node.js · PostgreSQL+pgvector · Groq/OpenAI/Gemini LLM
+> 운영: Mac Studio M4 Max 36GB (24/7) | 개발: MacBook (Claude Code)
+> GitHub Actions CI 자동 검증
 
 ---
 
