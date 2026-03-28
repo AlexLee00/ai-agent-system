@@ -3,7 +3,7 @@ import { getInvestmentNode } from '../nodes/index.js';
 import { recordNodeResult, runNode } from './node-runner.js';
 import * as db from './db.js';
 import { ACTIONS, ANALYST_TYPES, validateSignal } from './signal.js';
-import { getDebateLimit, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.js';
+import { getDebateLimit, getExitDecisions, getMinConfidence, getPortfolioDecision, inspectPortfolioContext, shouldDebateForSymbol } from '../team/luna.js';
 import { evaluateSignal } from '../team/nemesis.js';
 import { notifyError } from './report.js';
 import { loadAnalysesForSession } from '../nodes/helpers.js';
@@ -59,6 +59,156 @@ function buildMidGapPromotedAmount(amountUsdt, exchange) {
   return numeric;
 }
 
+async function executeApprovedDecision({
+  decision,
+  sessionId,
+  exchange,
+  currentPortfolio,
+  symbolAnalysesMap,
+  l21Node,
+  l30Node,
+  l31Node,
+  l32Node,
+  l33Node,
+  l34Node,
+  riskRejectReasons,
+  stage = 'execute',
+  analystSignalsOverride = null,
+}) {
+  const analyses = symbolAnalysesMap.get(decision.symbol) || [];
+  const analystSignals = analystSignalsOverride || buildAnalystSignals(analyses);
+  const isFullExitSell = stage === 'exit' && decision.action === ACTIONS.SELL && Number(decision.amount_usdt) === 0;
+  const amountUsdt = decision.amount_usdt ?? (exchange === 'binance' ? 100 : 500);
+  const signalData = {
+    symbol: decision.symbol,
+    action: decision.action,
+    amountUsdt,
+    confidence: decision.confidence,
+    reasoning: `[루나] ${decision.reasoning}`,
+    exchange,
+    analystSignals,
+  };
+  const { valid } = validateSignal(signalData);
+  if (!valid && !isFullExitSell) {
+    return {
+      symbol: decision.symbol,
+      action: decision.action,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      adjustedAmount: null,
+      signalId: null,
+      skipped: true,
+      skipReason: 'invalid_signal',
+      risk: null,
+      stage,
+      invalidSignal: true,
+    };
+  }
+
+  const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
+  const riskResult = await evaluateSignal({
+    symbol: decision.symbol,
+    action: decision.action,
+    amount_usdt: signalData.amountUsdt,
+    confidence: decision.confidence,
+    reasoning: signalData.reasoning,
+    exchange,
+  }, {
+    totalUsdt: currentPortfolio.totalAsset,
+    atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
+    currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
+    persist: false,
+  }).catch(err => ({ approved: false, reason: err.message, error: true }));
+
+  await recordNodeResult(l21Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+  }, {
+    symbol: decision.symbol,
+    market: exchange,
+    decision: {
+      ...decision,
+      analyst_signals: analystSignals,
+    },
+    portfolio: {
+      totalAsset: currentPortfolio.totalAsset,
+      positionCount: currentPortfolio.positionCount,
+      usdtFree: currentPortfolio.usdtFree,
+    },
+    risk: riskResult,
+  });
+
+  if (!riskResult?.approved) {
+    const riskReason = String(riskResult?.reason || 'risk_rejected');
+    riskRejectReasons[riskReason] = (riskRejectReasons[riskReason] || 0) + 1;
+    return {
+      symbol: decision.symbol,
+      action: decision.action,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      adjustedAmount: null,
+      signalId: null,
+      skipped: true,
+      skipReason: riskReason,
+      risk: riskResult,
+      stage,
+    };
+  }
+
+  const saved = await runNode(l30Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+  });
+
+  const ragStore = await runNode(l33Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+  });
+
+  const notify = await runNode(l32Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+    storeArtifact: false,
+  });
+
+  const execute = await runNode(l31Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+  });
+
+  const journal = await runNode(l34Node, {
+    sessionId,
+    market: exchange,
+    symbol: decision.symbol,
+    meta: { bridge: 'luna_orchestrate', stage },
+    storeArtifact: false,
+  });
+
+  return {
+    symbol: decision.symbol,
+    action: decision.action,
+    confidence: decision.confidence,
+    reasoning: decision.reasoning,
+    adjustedAmount: riskResult.adjustedAmount ?? null,
+    signalId: saved.result?.signalId ?? null,
+    notify: notify.result,
+    ragStore: ragStore.result,
+    execution: execute.result,
+    journal: journal.result,
+    stage,
+  };
+}
+
 export async function runDecisionExecutionPipeline({
   sessionId,
   symbols,
@@ -94,6 +244,10 @@ export async function runDecisionExecutionPipeline({
   let midGapRejectedByRisk = 0;
   let invalidSignalSkipped = 0;
   let portfolioDecision = null;
+  let exitPhaseEvaluated = 0;
+  let exitPhaseSellSignals = 0;
+  let exitPhaseExecuted = 0;
+  const exitResults = [];
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -120,6 +274,9 @@ export async function runDecisionExecutionPipeline({
     midGapPromoted,
     midGapRejectedByRisk,
     invalidSignalSkipped,
+    exitPhaseEvaluated,
+    exitPhaseSellSignals,
+    exitPhaseExecuted,
     savedExecutionWork: riskRejected * 5,
     warnings: buildDecisionWarnings({
       symbols,
@@ -144,6 +301,75 @@ export async function runDecisionExecutionPipeline({
     if (entries.length === 0) return null;
     entries.sort((a, b) => b[1] - a[1]);
     return entries[0][0];
+  }
+
+  const openPositions = await db.getOpenPositions(exchange, false, investmentTradeMode).catch(() => []);
+  if (openPositions.length > 0) {
+    console.log(`\n🔴 [EXIT Phase] ${openPositions.length}개 보유 포지션 청산 판단...`);
+    try {
+      const exitDecisionResult = await getExitDecisions(openPositions, exchange);
+      const exitDecisions = Array.isArray(exitDecisionResult?.decisions) ? exitDecisionResult.decisions : [];
+      exitPhaseEvaluated = exitDecisions.length;
+
+      for (const dec of exitDecisions) {
+        if (dec.action !== ACTIONS.SELL) continue;
+        exitPhaseSellSignals++;
+
+        const exitDecision = {
+          symbol: dec.symbol,
+          action: ACTIONS.SELL,
+          amount_usdt: 0,
+          confidence: dec.confidence,
+          reasoning: `[EXIT] ${dec.reasoning}`,
+          exit_type: dec.exit_type || 'normal_exit',
+        };
+
+        await recordNodeResult(l13Node, {
+          sessionId,
+          market: exchange,
+          symbol: dec.symbol,
+          meta: { bridge: 'luna_orchestrate', stage: 'exit' },
+        }, {
+          symbol: dec.symbol,
+          market: exchange,
+          decision: exitDecision,
+          analystSignals: 'EXIT_PHASE',
+          exitView: exitDecisionResult?.exit_view || null,
+        });
+
+        const exitResult = await executeApprovedDecision({
+          decision: exitDecision,
+          sessionId,
+          exchange,
+          currentPortfolio,
+          symbolAnalysesMap,
+          l21Node,
+          l30Node,
+          l31Node,
+          l32Node,
+          l33Node,
+          l34Node,
+          riskRejectReasons,
+          stage: 'exit',
+          analystSignalsOverride: 'EXIT_PHASE',
+        });
+
+        if (exitResult?.invalidSignal) {
+          invalidSignalSkipped++;
+          continue;
+        }
+        if (exitResult) exitResults.push(exitResult);
+        if (exitResult?.skipReason) {
+          riskRejected++;
+        }
+        if (isActuallyExecuted(exitResult)) exitPhaseExecuted++;
+      }
+
+      console.log(`✅ [EXIT Phase] 완료: ${exitPhaseSellSignals}건 SELL / 실행 ${exitPhaseExecuted}건`);
+    } catch (err) {
+      console.error(`  ❌ [EXIT Phase] 실패: ${err.message}`);
+      await notifyError(`루나 EXIT Phase - ${exchange}`, err);
+    }
   }
 
   for (const symbol of symbols) {
@@ -198,18 +424,20 @@ export async function runDecisionExecutionPipeline({
   if (symbolDecisions.length === 0) {
     const metrics = buildMetrics({
       bridgeStatus: 'no_symbol_decisions',
-      executedSymbols: 0,
+      approvedSignals: exitResults.filter(item => !item.skipped).length,
+      executedSymbols: exitResults.filter(isActuallyExecuted).length,
     });
     await finishPipelineRun(sessionId, {
       status: 'completed',
       meta: {
         bridge_status: 'no_symbol_decisions',
         decided_symbols: 0,
-        executed_symbols: 0,
+        executed_symbols: metrics.executedSymbols,
         decision_count: 0,
         buy_decisions: 0,
         sell_decisions: 0,
         hold_decisions: 0,
+        approved_signals: metrics.approvedSignals,
         debate_count: metrics.debateCount,
         debate_limit: metrics.debateLimit,
         risk_rejected: metrics.riskRejected,
@@ -222,13 +450,16 @@ export async function runDecisionExecutionPipeline({
         mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
         mid_gap_executed: 0,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
+        exit_phase_evaluated: metrics.exitPhaseEvaluated,
+        exit_phase_sell_signals: metrics.exitPhaseSellSignals,
+        exit_phase_executed: metrics.exitPhaseExecuted,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
       },
     });
     return {
-      results: [],
+      results: exitResults,
       metrics,
     };
   }
@@ -268,6 +499,9 @@ export async function runDecisionExecutionPipeline({
         mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
         mid_gap_executed: 0,
         invalid_signal_skipped: metrics.invalidSignalSkipped,
+        exit_phase_evaluated: metrics.exitPhaseEvaluated,
+        exit_phase_sell_signals: metrics.exitPhaseSellSignals,
+        exit_phase_executed: metrics.exitPhaseExecuted,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
@@ -281,7 +515,7 @@ export async function runDecisionExecutionPipeline({
 
   const actionCounts = countDecisionActions();
 
-  const results = [];
+  const results = [...exitResults];
   for (const dec of (portfolioDecision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
     const runtimeMinConf = getMinConfidence(exchange);
@@ -463,6 +697,9 @@ export async function runDecisionExecutionPipeline({
       mid_gap_rejected_by_risk: completedMetrics.midGapRejectedByRisk,
       mid_gap_executed: completedMetrics.midGapExecuted,
       invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
+      exit_phase_evaluated: completedMetrics.exitPhaseEvaluated,
+      exit_phase_sell_signals: completedMetrics.exitPhaseSellSignals,
+      exit_phase_executed: completedMetrics.exitPhaseExecuted,
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
       investment_trade_mode: investmentTradeMode,

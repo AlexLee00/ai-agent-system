@@ -608,7 +608,7 @@ export function calcKellyPosition(winRate, rrRatio, mode = 'half') {
  */
 export async function evaluateSignal(signal, opts = {}) {
   const { symbol, action } = signal;
-  let amountUsdt   = signal.amount_usdt || 100;
+  let amountUsdt   = signal.amount_usdt ?? 100;
   const totalUsdt  = opts.totalUsdt || 10000;
   const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
   const rules      = getRules(signal.exchange);

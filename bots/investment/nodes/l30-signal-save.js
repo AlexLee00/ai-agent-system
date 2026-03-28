@@ -23,7 +23,9 @@ async function run({ sessionId, market, symbol }) {
   }
 
   const { analyses } = await loadAnalysesForSession(sessionId, symbol, market);
-  const analystSignals = buildAnalystSignals(analyses);
+  const analystSignals = decisionHit?.payload?.analystSignals
+    || decision?.analyst_signals
+    || buildAnalystSignals(analyses);
   const amountUsdt = risk?.approved
     ? (risk.adjustedAmount ?? decision.amount_usdt)
     : (decision.amount_usdt ?? 0);
