@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 NODE="$(which node)"
 if [ -z "$NODE" ]; then
-  NODE="/usr/local/bin/node"
+  NODE="/opt/homebrew/bin/node"
 fi
 
 # 인수 전달 ($@ → --full, --telegram, --fix 등)

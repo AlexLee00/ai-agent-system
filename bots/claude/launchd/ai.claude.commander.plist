@@ -9,7 +9,7 @@
 		<key>NODE_ENV</key>
 		<string>production</string>
 		<key>PATH</key>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
@@ -17,7 +17,7 @@
 	<string>ai.claude.commander</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/src/claude-commander.js</string>
 	</array>
 	<key>RunAtLoad</key>

@@ -5,7 +5,7 @@
 # - 로그 유지 (날짜별 아카이브, 7일 보존)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-kiosk-monitor.lock"
 LOG_DIR="/tmp"
 LOG_DATE=$(date '+%Y-%m-%d')

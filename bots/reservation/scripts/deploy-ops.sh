@@ -22,8 +22,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="/tmp/ska-deploy.log"
 
-NODE_BIN="$HOME/.nvm/versions/node/v24.13.1/bin/node"
-[ ! -f "$NODE_BIN" ] && NODE_BIN=$(which node)
+NODE_BIN="/opt/homebrew/bin/node"
+[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
 
 DEXTER_SCRIPT="$HOME/projects/ai-agent-system/bots/claude/src/dexter.js"
 NAVER_PLIST="$HOME/Library/LaunchAgents/ai.ska.naver-monitor.plist"

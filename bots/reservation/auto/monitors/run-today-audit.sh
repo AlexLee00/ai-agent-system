@@ -5,7 +5,7 @@
 # - 픽코 예약 vs 네이버 예약불가 상태 비교 → 누락 차단 / 초과 해제
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 LOCK_FILE="$HOME/.openclaw/workspace/today-audit.lock"
 LOG_FILE="/tmp/today-audit.log"
 

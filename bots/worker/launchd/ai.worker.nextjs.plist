@@ -17,7 +17,7 @@
 	<string>ai.worker.nextjs</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>node_modules/.bin/next</string>
 		<string>start</string>
 		<string>-H</string>

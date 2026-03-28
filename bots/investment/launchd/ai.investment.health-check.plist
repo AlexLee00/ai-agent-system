@@ -7,13 +7,13 @@
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
 		<key>PATH</key>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 	</dict>
 	<key>Label</key>
 	<string>ai.investment.health-check</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.js</string>
 	</array>
 	<key>RunAtLoad</key>

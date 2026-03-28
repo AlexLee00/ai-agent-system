@@ -5717,8 +5717,8 @@ app.use((err, req, res, _next) => {
 });
 
 // ── Claude Code (SSE 스트리밍 + DB 동기화) ───────────────────────────
-const NODE_BIN         = '/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node';
-const CLAUDE_CLI       = '/Users/alexlee/.nvm/versions/node/v24.13.1/lib/node_modules/@anthropic-ai/claude-code/cli.js';
+const NODE_BIN         = '/opt/homebrew/bin/node';
+const CLAUDE_CLI       = process.env.CLAUDE_CODE_CLI || '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js';
 const CLAUDE_WORKDIR   = '/Users/alexlee/projects/ai-agent-system';
 const CLAUDE_SPAWN_LOG = '/Users/alexlee/.openclaw/workspace/logs/claude-code-spawns.jsonl';
 

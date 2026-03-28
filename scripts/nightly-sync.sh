@@ -6,12 +6,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_FILE="/tmp/nightly-sync.log"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
-# launchd에서는 PATH가 비어 node를 못 찾는 경우가 있어, 먼저 NVM을 불러와 절대 경로를 고정한다.
-if [ -s "$HOME/.nvm/nvm.sh" ]; then
-  # shellcheck disable=SC1090
-  . "$HOME/.nvm/nvm.sh"
+# launchd에서는 PATH가 제한될 수 있어 Homebrew Node를 우선 사용한다.
+NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
+if [ ! -x "$NODE_BIN" ]; then
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
 fi
-NODE_BIN="${NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 if [ -z "$NODE_BIN" ]; then
   echo "[$DATE] ❌ node 실행 경로를 찾지 못했습니다." >> "$LOG_FILE"
   exit 1

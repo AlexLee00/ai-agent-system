@@ -10,7 +10,7 @@ PROJECT_DIR="$HOME/projects/ai-agent-system"
 LOG_FILE="/tmp/post-reboot.log"
 FOLLOWUP_FILE="/tmp/post-reboot-followup.txt"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
-TELEGRAM_NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+TELEGRAM_NODE="/opt/homebrew/bin/node"
 DRY_RUN=0
 
 if [ "${1:-}" = "--dry-run" ]; then

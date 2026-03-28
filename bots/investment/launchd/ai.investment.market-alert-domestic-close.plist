@@ -11,7 +11,7 @@
 		<key>PAPER_MODE</key>
 		<string>false</string>
 		<key>PATH</key>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>
@@ -19,7 +19,7 @@
 	<string>ai.investment.market-alert-domestic-close</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
 		<string>--market=domestic</string>
 		<string>--event=close</string>
