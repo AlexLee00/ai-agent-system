@@ -1741,3 +1741,7 @@
 - 2026-03-28: `node --input-type=module -e "import { summarizeCollectWarnings, buildCollectAlertMessage } from './bots/investment/shared/pipeline-market-runner.js'; ..."` ✅
   - 결과: `tasks=61, screening=8, held=7` 케이스에서 경고 문구가 `혼합 상태`로 출력되는 것 확인
   - 해석: 암호화폐 수집 과부하를 universe 과대 하나로 단정하지 않고, held carry와 screening 기여를 함께 읽도록 보강됨
+- 2026-03-28: 루나팀 재설계 로드맵 문서 추가 완료
+  - 결과:
+    - [bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md](/Users/alexlee/projects/ai-agent-system/bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md) 생성
+    - `docs/SESSION_HANDOFF.md`, `docs/WORK_HISTORY.md`, `docs/CHANGELOG.md`, `docs/TEST_RESULTS.md` 동기화
