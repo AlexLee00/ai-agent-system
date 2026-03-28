@@ -144,9 +144,14 @@ async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.
   return { ok: true };
 }
 
-async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason) {
+async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
-  const entry = openEntries.find(e => e.symbol === symbol && Boolean(e.is_paper) === Boolean(isPaper));
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const entry = openEntries.find(e =>
+    e.symbol === symbol
+      && Boolean(e.is_paper) === Boolean(isPaper)
+      && (e.trade_mode || 'normal') === effectiveTradeMode
+  );
   if (!entry) return;
 
   const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
@@ -508,15 +513,15 @@ export async function executeSignal(signal) {
         totalUsdt: order.totalKrw,
         paper:     sellPaperMode,
         exchange:  'kis',
-        tradeMode: sellPaperMode ? signalTradeMode : null,
+        tradeMode: signalTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis',
         paper: sellPaperMode,
-        tradeMode: sellPaperMode ? signalTradeMode : null,
+        tradeMode: signalTradeMode,
       });
-      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell').catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'domestic', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);
@@ -738,15 +743,15 @@ export async function executeOverseasSignal(signal) {
         totalUsdt: order.totalUsd,
         paper:     sellPaperMode,
         exchange:  'kis_overseas',
-        tradeMode: sellPaperMode ? signalTradeMode : null,
+        tradeMode: signalTradeMode,
       };
 
       await db.deletePosition(symbol, {
         exchange: 'kis_overseas',
         paper: sellPaperMode,
-        tradeMode: sellPaperMode ? signalTradeMode : null,
+        tradeMode: signalTradeMode,
       });
-      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell').catch(() => {});
+      await closeOpenJournalForSymbol(symbol, 'overseas', sellPaperMode, trade.price, trade.totalUsdt, exitReasonOverride || 'sell', trade.tradeMode).catch(() => {});
 
     } else {
       console.log(`  ⏸️ HOLD — 실행 없음`);

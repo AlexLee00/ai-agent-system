@@ -666,10 +666,11 @@ export async function deletePosition(symbol, { exchange = null, paper = null, tr
   if (paper !== null) {
     params.push(paper === true);
     conditions.push(`paper = $${params.length}`);
-    if (paper === true) {
-      params.push(tradeMode || getInvestmentTradeMode());
-      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
-    }
+  }
+  if (tradeMode || paper !== null) {
+    const effectiveMode = tradeMode || getInvestmentTradeMode();
+    params.push(effectiveMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
 
   await run(`DELETE FROM positions WHERE ${conditions.join(' AND ')}`, params);
