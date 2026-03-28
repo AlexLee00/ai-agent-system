@@ -186,6 +186,19 @@ function getLunaSystem(exchange) {
   return LUNA_SYSTEM_CRYPTO;
 }
 
+const LUNA_EXIT_SYSTEM = `당신은 루나(Luna), 루나팀의 포지션 청산 전문가다.
+현재 보유 포지션을 분석해 SELL 또는 HOLD를 판단한다.
+
+핵심 원칙:
+- 각 포지션에 대해 반드시 SELL 또는 HOLD를 결정한다
+- SELL은 수익 실현, 손절, 추세 약화, 시장 레짐 악화, 장기 보유 재평가 중 하나 이상 근거가 있어야 한다
+- HOLD는 아직 청산보다 보유 기대값이 높을 때만 선택한다
+- reasoning은 한국어 80자 이내로 간결하게 작성한다
+- confidence는 0~1 범위의 숫자다
+
+응답 형식 (JSON만, 다른 텍스트 없이):
+{"decisions":[{"symbol":"BTC/USDT","action":"SELL","confidence":0.72,"reasoning":"추세 약화 및 목표 수익 달성"}],"exit_view":"전체 포지션 판단 요약"}`.trim();
+
 // PORTFOLIO_PROMPT는 함수로 생성 — 실제 심볼 목록을 예시에 반영해 LLM 환각 방지
 function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const exampleSymbol = symbols[0] || 'SYMBOL';
@@ -413,6 +426,76 @@ export function buildAnalysisSummary(analyses) {
                 : 'TA';
     return `[${label}] ${a.signal} | ${((a.confidence || 0) * 100).toFixed(0)}% | ${a.reasoning || ''}`;
   }).join('\n');
+}
+
+function buildExitPrompt(openPositions, exchange = 'binance') {
+  const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  const lines = openPositions.map((pos) => {
+    const pnl = Number(pos.unrealized_pnl || 0);
+    const avgPrice = Number(pos.avg_price || 0);
+    const currentPrice = Number(pos.current_price || avgPrice || 0);
+    const pnlPct = avgPrice > 0
+      ? (((currentPrice - avgPrice) / avgPrice) * 100).toFixed(2)
+      : '0.00';
+    const heldHours = Number(pos.held_hours || 0).toFixed(1);
+    const analyses = Array.isArray(pos.analyses) && pos.analyses.length > 0
+      ? buildAnalysisSummary(pos.analyses)
+      : '분석 데이터 없음';
+    return [
+      `- ${pos.symbol}`,
+      `  수량: ${pos.amount}`,
+      `  평균단가: ${avgPrice}`,
+      `  현재가: ${currentPrice}`,
+      `  미실현손익: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} (${pnlPct}%)`,
+      `  보유시간: ${heldHours}h`,
+      `  trade_mode: ${pos.trade_mode || 'normal'}`,
+      `  분석가:`,
+      analyses.split('\n').map(line => `    ${line}`).join('\n'),
+    ].join('\n');
+  }).join('\n\n');
+
+  return [
+    `시장: ${label} (${exchange})`,
+    '',
+    '당신은 포지션 청산 전문가입니다.',
+    '현재 보유 중인 포지션을 분석하고, 청산이 필요한 포지션을 판단하세요.',
+    '',
+    '판단 기준:',
+    '1. 수익 실현 (TP): 목표 수익률 도달 시',
+    '2. 손절 (SL): 손실 한도 초과 시',
+    '3. 추세 전환: 분석가 신호가 SELL/HOLD로 전환 시',
+    '4. 보유 기간: 장기 보유(72시간+) 시 재평가',
+    '5. 시장 레짐: 시장 전반 하락 국면 시',
+    '',
+    '각 포지션에 대해 SELL 또는 HOLD를 반드시 지정하세요.',
+    '',
+    '[보유 포지션]',
+    lines,
+  ].join('\n');
+}
+
+function normalizeExitDecision(rawDecision, fallbackPosition) {
+  const action = String(rawDecision?.action || 'HOLD').toUpperCase();
+  return {
+    symbol: rawDecision?.symbol || fallbackPosition?.symbol,
+    action: action === ACTIONS.SELL ? ACTIONS.SELL : ACTIONS.HOLD,
+    confidence: Math.max(0, Math.min(1, Number(rawDecision?.confidence ?? 0.5))),
+    reasoning: String(rawDecision?.reasoning || '').trim().slice(0, 180) || 'EXIT 판단 근거 없음',
+    exit_type: 'normal_exit',
+  };
+}
+
+function buildExitFallback(openPositions) {
+  return {
+    decisions: openPositions.map(pos => ({
+      symbol: pos.symbol,
+      action: ACTIONS.HOLD,
+      confidence: 0.5,
+      reasoning: 'EXIT fallback — 보수적으로 HOLD 유지',
+      exit_type: 'normal_exit',
+    })),
+    exit_view: 'EXIT fallback — 모든 포지션 HOLD',
+  };
 }
 
 function buildVoteFallbackDecision(analyses, exchange = 'binance', reason = '분석가 투표 기반 fallback') {
@@ -646,6 +729,67 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     if (fallback) return fallback;
   }
   return parsed;
+}
+
+export async function getExitDecisions(openPositions, exchange = 'binance') {
+  if (!Array.isArray(openPositions) || openPositions.length === 0) {
+    return { decisions: [], exit_view: 'no_positions' };
+  }
+
+  const enrichedPositions = [];
+  for (const position of openPositions) {
+    const analyses = await db.getRecentAnalysis(position.symbol, 180, exchange).catch(() => []);
+    const entryTime = position.entry_time || position.updated_at || null;
+    const heldHours = entryTime
+      ? Math.max(0, (Date.now() - new Date(entryTime).getTime()) / 3600000)
+      : 0;
+    enrichedPositions.push({
+      ...position,
+      analyses,
+      held_hours: heldHours,
+      current_price: position.current_price || position.avg_price || 0,
+    });
+  }
+
+  const userPrompt = buildExitPrompt(enrichedPositions, exchange);
+
+  let raw;
+  try {
+    raw = await callLLM('luna', LUNA_EXIT_SYSTEM, userPrompt, 1024);
+  } catch (err) {
+    if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
+      console.warn(`[luna] exit decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
+      return buildExitFallback(enrichedPositions);
+    }
+    throw err;
+  }
+
+  const parsed = parseJSON(raw);
+  if (!parsed || !Array.isArray(parsed.decisions)) {
+    return buildExitFallback(enrichedPositions);
+  }
+
+  const bySymbol = new Map(enrichedPositions.map(pos => [pos.symbol, pos]));
+  const decisions = parsed.decisions
+    .map(item => normalizeExitDecision(item, bySymbol.get(item?.symbol)))
+    .filter(item => item.symbol && bySymbol.has(item.symbol));
+
+  for (const position of enrichedPositions) {
+    if (!decisions.some(dec => dec.symbol === position.symbol)) {
+      decisions.push({
+        symbol: position.symbol,
+        action: ACTIONS.HOLD,
+        confidence: 0.5,
+        reasoning: 'LLM 응답 누락 — 기본 HOLD',
+        exit_type: 'normal_exit',
+      });
+    }
+  }
+
+  return {
+    decisions,
+    exit_view: parsed.exit_view || 'EXIT 판단 요약 없음',
+  };
 }
 
 // ─── 포트폴리오 컨텍스트 ───────────────────────────────────────────

@@ -81,10 +81,10 @@ log "  ✅ 디스크 여유 공간 OK ($(( AVAIL_KB / 1024 ))MB)"
 # 1-3. secrets.json 파일 존재 확인
 SECRETS_FILE="$BOT_DIR/secrets.json"
 if [ ! -f "$SECRETS_FILE" ]; then
-  log_err "[1중] secrets.json 없음 → cp secrets.example.json secrets.json 후 재실행"
-  exit 1
+  log "  ⚠️  secrets.json 없음 — preflight에서 실제 필수 키를 다시 확인"
+else
+  log "  ✅ secrets.json 존재"
 fi
-log "  ✅ secrets.json 존재"
 
 # 1-4. 네트워크 연결 확인 (네이버 스마트플레이스 도달 가능 여부)
 if curl -sf --max-time 5 "https://naver.com" -o /dev/null 2>&1; then

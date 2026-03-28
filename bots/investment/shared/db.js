@@ -655,6 +655,76 @@ export async function getPaperPositions(exchange = null, tradeMode = null) {
   return query(`SELECT * FROM positions WHERE amount > 0 AND paper = true ORDER BY updated_at ASC`);
 }
 
+export async function getOpenPositions(exchange = null, paper = false, tradeMode = null) {
+  if (exchange && tradeMode) {
+    return query(
+      `SELECT p.symbol, p.amount, p.avg_price, p.unrealized_pnl, p.exchange, p.paper,
+              COALESCE(p.trade_mode, 'normal') AS trade_mode,
+              COALESCE(
+                (
+                  SELECT MIN(tj.entry_time)
+                  FROM trade_journal tj
+                  WHERE tj.symbol = p.symbol
+                    AND tj.exchange = p.exchange
+                    AND tj.is_paper = p.paper
+                    AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    AND tj.status = 'open'
+                ),
+                (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
+              ) AS entry_time,
+              p.updated_at
+       FROM positions p
+       WHERE p.amount > 0 AND p.exchange = $1 AND p.paper = $2 AND COALESCE(p.trade_mode, 'normal') = $3
+       ORDER BY entry_time ASC`,
+      [exchange, paper === true, tradeMode],
+    );
+  }
+  if (exchange) {
+    return query(
+      `SELECT p.symbol, p.amount, p.avg_price, p.unrealized_pnl, p.exchange, p.paper,
+              COALESCE(p.trade_mode, 'normal') AS trade_mode,
+              COALESCE(
+                (
+                  SELECT MIN(tj.entry_time)
+                  FROM trade_journal tj
+                  WHERE tj.symbol = p.symbol
+                    AND tj.exchange = p.exchange
+                    AND tj.is_paper = p.paper
+                    AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    AND tj.status = 'open'
+                ),
+                (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
+              ) AS entry_time,
+              p.updated_at
+       FROM positions p
+       WHERE p.amount > 0 AND p.exchange = $1 AND p.paper = $2
+       ORDER BY entry_time ASC`,
+      [exchange, paper === true],
+    );
+  }
+  return query(
+    `SELECT p.symbol, p.amount, p.avg_price, p.unrealized_pnl, p.exchange, p.paper,
+            COALESCE(p.trade_mode, 'normal') AS trade_mode,
+            COALESCE(
+              (
+                SELECT MIN(tj.entry_time)
+                FROM trade_journal tj
+                WHERE tj.symbol = p.symbol
+                  AND tj.exchange = p.exchange
+                  AND tj.is_paper = p.paper
+                  AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                  AND tj.status = 'open'
+              ),
+              (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
+            ) AS entry_time,
+            p.updated_at
+     FROM positions p
+     WHERE p.amount > 0 AND p.paper = $1
+     ORDER BY entry_time ASC`,
+    [paper === true],
+  );
+}
+
 export async function deletePosition(symbol, { exchange = null, paper = null, tradeMode = null } = {}) {
   const conditions = [`symbol = $1`];
   const params = [symbol];
@@ -893,7 +963,7 @@ export default {
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory, getLatestTradeBySignalId, getSameDayTrade,
-  upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, deletePosition,
+  upsertPosition, getPosition, getLivePosition, getPaperPosition, getAllPositions, getPaperPositions, getOpenPositions, deletePosition,
   getTodayPnl,
   insertScreeningHistory,
   getRecentScreeningSymbols,
