@@ -6,7 +6,7 @@
 # ============================================================
 
 LOG_FILE="$HOME/.openclaw/workspace/naver-monitor.log"
-CHAT_ID="***REMOVED***"
+CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 REPORT_TIME=$(date '+%Y-%m-%d %H:%M')
 
 # ── 1. 로그 파일 존재 여부 확인 ──────────────────────────────

@@ -24,7 +24,7 @@ const { getGeminiImageKey, getOpenAIKey } = require('../../../packages/core/lib/
 
 const OUTPUT_DIR  = path.join(__dirname, '..', 'output');
 const IMAGES_DIR  = path.join(OUTPUT_DIR, 'images');
-const GDRIVE_DIR  = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost/images';
+const GDRIVE_DIR  = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 
 const NANO_BANANA_MODEL = 'gemini-2.5-flash-image';
 

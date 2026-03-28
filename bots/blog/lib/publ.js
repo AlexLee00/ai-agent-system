@@ -13,7 +13,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag-safe');
 
 const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
-const GDRIVE_DIR    = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost';
+const GDRIVE_DIR    = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
 
 function normalizeTitleKey(value) {
   return String(value || '')

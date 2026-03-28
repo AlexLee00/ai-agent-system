@@ -22,7 +22,7 @@ const path = require('path');
 
 // ── 저장 경로 (img-gen.js 패턴 동일) ────────────────────────────────
 const INSTA_DIR   = path.join(__dirname, '..', 'output', 'images', 'insta');
-const GDRIVE_DIR  = '/Users/alexlee/Library/CloudStorage/GoogleDrive-***REMOVED***/내 드라이브/010_BlogPost/insta';
+const GDRIVE_DIR  = process.env.GDRIVE_BLOG_INSTA || '/tmp/blog-insta';
 
 // ── N40: 문단별 요약 (insta-summarize) ──────────────────────────────
 

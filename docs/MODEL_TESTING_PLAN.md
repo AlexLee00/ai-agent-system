@@ -193,7 +193,7 @@ function getNextGroqKey(model) {
 
 | 계정 | 용도 | 상태 |
 |------|------|------|
-| ***REMOVED*** | 현재 스카봇 primary | ✅ 사용 중 |
+| admin@example.com | 현재 스카봇 primary | ✅ 사용 중 |
 | (추가 계정 1) | 감성분석가 전용 | 🔄 생성 예정 |
 
 ---

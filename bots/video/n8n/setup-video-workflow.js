@@ -8,7 +8,7 @@ const { resolveProductionWebhookUrl } = require('../../../packages/core/lib/n8n-
 const { resolveVideoN8nToken } = require('../lib/video-n8n-config');
 
 const WORKFLOW_PATH = path.join(__dirname, 'video-pipeline-workflow.json');
-const EMAIL = process.env.N8N_EMAIL || '***REMOVED***';
+const EMAIL = process.env.N8N_EMAIL || 'admin@example.com';
 const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
 const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const VIDEO_TOKEN = resolveVideoN8nToken();
