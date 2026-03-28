@@ -1,55 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.investment.prescreen-domestic</string>
-
-  <!-- 국내주식 장전 종목 확정 — KST 08:00 (UTC 23:00 전날) -->
-  <!-- 설치: cp bots/investment/launchd/ai.investment.prescreen-domestic.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.prescreen-domestic.plist -->
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/pre-market-screen.js</string>
-    <string>domestic</string>
-  </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-
-  <!-- KST 08:00 = UTC 23:00 (전날) -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>8</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-
-  <key>StandardOutPath</key>
-  <string>/tmp/investment-prescreen-domestic.log</string>
-
-  <key>StandardErrorPath</key>
-  <string>/tmp/investment-prescreen-domestic.err.log</string>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>PAPER_MODE</key>
-    <string>false</string>
-  </dict>
-
-  <key>RunAtLoad</key>
-  <false/>
-
-  <key>KeepAlive</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.prescreen-domestic</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/pre-market-screen.js</string>
+		<string>domestic</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-prescreen-domestic.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-prescreen-domestic.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>8</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 </dict>
 </plist>

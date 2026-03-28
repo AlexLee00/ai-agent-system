@@ -2,34 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.worker.claude-monitor</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>scripts/claude-api-monitor.js</string>
-    <string>--alert-only</string>
-  </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/worker</string>
-
-  <key>StartInterval</key>
-  <integer>60</integer>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
-  </dict>
-
-  <key>RunAtLoad</key>
-  <false/>
-
-  <key>StandardOutPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor-error.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.worker.claude-monitor</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>scripts/claude-api-monitor.js</string>
+		<string>--alert-only</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor-error.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor.log</string>
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/worker</string>
 </dict>
 </plist>

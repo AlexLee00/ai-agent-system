@@ -2,52 +2,46 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.ska.pickko-verify</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/run-verify.sh</string>
-    </array>
-
-    <!-- 하루 3회: 08:00 / 14:00 / 20:00 -->
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>8</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>14</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>20</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-    </array>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/tmp/pickko-verify-launchd.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/pickko-verify-launchd.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>/Users/alexlee</string>
-        <key>PATH</key>
-        <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.ska.pickko-verify</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/run-verify.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/pickko-verify-launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/pickko-verify-launchd.log</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>8</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>14</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
 </dict>
 </plist>

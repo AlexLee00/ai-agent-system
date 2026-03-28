@@ -1,42 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.ska.rebecca-weekly</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/run-rebecca.sh</string>
-    <string>weekly</string>
-  </array>
-
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>8</integer>
-    <key>Minute</key>
-    <integer>5</integer>
-    <key>Weekday</key>
-    <integer>1</integer>
-  </dict>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-  </dict>
-
-  <key>StandardOutPath</key>
-  <string>/tmp/ska-rebecca-weekly.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/ska-rebecca-weekly.err</string>
-
-  <key>RunAtLoad</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.ska.rebecca-weekly</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/run-rebecca.sh</string>
+		<string>weekly</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ska-rebecca-weekly.err</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/ska-rebecca-weekly.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>8</integer>
+		<key>Minute</key>
+		<integer>5</integer>
+		<key>Weekday</key>
+		<integer>1</integer>
+	</dict>
 </dict>
 </plist>

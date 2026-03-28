@@ -2,39 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.ska.forecast-daily</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/run-forecast.sh</string>
-        <string>daily</string>
-    </array>
-
-    <!-- 매일 18:00 — 익일 예상 매출 예측 + 텔레그램 전송 -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>18</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/tmp/ska-forecast-daily.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/ska-forecast-daily.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>/Users/alexlee</string>
-        <key>PATH</key>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.ska.forecast-daily</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/scripts/run-forecast.sh</string>
+		<string>daily</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ska-forecast-daily.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/ska-forecast-daily.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>18</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
 </dict>
 </plist>

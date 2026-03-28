@@ -1,48 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>ai.openclaw.gateway</string>
-    
-    <key>Comment</key>
-    <string>OpenClaw Gateway (v2026.2.19-2)</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>ProgramArguments</key>
-    <array>
-      <string>/bin/bash</string>
-      <string>/Users/alexlee/.openclaw/start-gateway.sh</string>
-    </array>
-    
-    <key>StandardOutPath</key>
-    <string>/Users/alexlee/.openclaw/logs/gateway.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/alexlee/.openclaw/logs/gateway.err.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>TMPDIR</key>
-    <string>/var/folders/5r/5024qfb56hx2lkvw6jc_ldbm0000gn/T/</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm:/Users/alexlee/.local/bin:/Users/alexlee/.npm-global/bin:/Users/alexlee/bin:/Users/alexlee/.volta/bin:/Users/alexlee/.asdf/shims:/Users/alexlee/.bun/bin:/Users/alexlee/Library/Application Support/fnm/aliases/default/bin:/Users/alexlee/.fnm/aliases/default/bin:/Users/alexlee/Library/pnpm:/Users/alexlee/.local/share/pnpm:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>OPENCLAW_GATEWAY_PORT</key>
-    <string>18789</string>
-    <key>OPENCLAW_GATEWAY_TOKEN</key>
-    <string>f5cf6afe6efbc868068fce441e0a116ff7a836fdc93d0f56</string>
-    <key>OPENCLAW_LAUNCHD_LABEL</key>
-    <string>ai.openclaw.gateway</string>
-    <key>OPENCLAW_SYSTEMD_UNIT</key>
-    <string>openclaw-gateway.service</string>
-    <key>OPENCLAW_SERVICE_MARKER</key>
-    <string>openclaw</string>
-    <key>OPENCLAW_SERVICE_KIND</key>
-    <string>gateway</string>
-    <key>OPENCLAW_SERVICE_VERSION</key>
-    <string>2026.2.19-2</string>
-    </dict>
-  </dict>
+<dict>
+	<key>Comment</key>
+	<string>OpenClaw Gateway (v2026.2.19-2)</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>OPENCLAW_GATEWAY_PORT</key>
+		<string>18789</string>
+		<key>OPENCLAW_GATEWAY_TOKEN</key>
+		<string>f5cf6afe6efbc868068fce441e0a116ff7a836fdc93d0f56</string>
+		<key>OPENCLAW_LAUNCHD_LABEL</key>
+		<string>ai.openclaw.gateway</string>
+		<key>OPENCLAW_SERVICE_KIND</key>
+		<string>gateway</string>
+		<key>OPENCLAW_SERVICE_MARKER</key>
+		<string>openclaw</string>
+		<key>OPENCLAW_SERVICE_VERSION</key>
+		<string>2026.2.19-2</string>
+		<key>OPENCLAW_SYSTEMD_UNIT</key>
+		<string>openclaw-gateway.service</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm:/Users/alexlee/.local/bin:/Users/alexlee/.npm-global/bin:/Users/alexlee/bin:/Users/alexlee/.volta/bin:/Users/alexlee/.asdf/shims:/Users/alexlee/.bun/bin:/Users/alexlee/Library/Application Support/fnm/aliases/default/bin:/Users/alexlee/.fnm/aliases/default/bin:/Users/alexlee/Library/pnpm:/Users/alexlee/.local/share/pnpm:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>TMPDIR</key>
+		<string>/var/folders/5r/5024qfb56hx2lkvw6jc_ldbm0000gn/T/</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>ai.openclaw.gateway</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/.openclaw/start-gateway.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/.openclaw/logs/gateway.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/.openclaw/logs/gateway.log</string>
+</dict>
 </plist>

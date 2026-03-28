@@ -2,38 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.ska.etl</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/src/etl.py</string>
-    </array>
-
-    <!-- 매일 00:30 — SQLite → DuckDB 일간 매출 동기화 -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>0</integer>
-        <key>Minute</key>
-        <integer>30</integer>
-    </dict>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/tmp/ska-etl.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/ska-etl.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>/Users/alexlee</string>
-        <key>PATH</key>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-    </dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.ska.etl</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/src/etl.py</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/ska-etl.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/ska-etl.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>0</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
 </dict>
 </plist>

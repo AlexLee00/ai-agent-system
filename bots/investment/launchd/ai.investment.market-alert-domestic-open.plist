@@ -1,56 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>
-  <string>ai.investment.market-alert-domestic-open</string>
-
-  <!-- 국내장 시작 알림 — KST 09:00 (UTC 00:00) -->
-  <!-- 설치: cp bots/investment/launchd/ai.investment.market-alert-domestic-open.plist ~/Library/LaunchAgents/ -->
-  <!--        launchctl load ~/Library/LaunchAgents/ai.investment.market-alert-domestic-open.plist -->
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
-    <string>--market=domestic</string>
-    <string>--event=open</string>
-  </array>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
-
-  <!-- KST 09:00 (launchd 로컬 시간 기준) -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>9</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-
-  <key>StandardOutPath</key>
-  <string>/tmp/investment-market-alert-domestic-open.log</string>
-
-  <key>StandardErrorPath</key>
-  <string>/tmp/investment-market-alert-domestic-open.err.log</string>
-
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key>
-    <string>/Users/alexlee</string>
-    <key>PATH</key>
-    <string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
-    <key>NODE_ENV</key>
-    <string>production</string>
-    <key>PAPER_MODE</key>
-    <string>false</string>
-  </dict>
-
-  <key>RunAtLoad</key>
-  <false/>
-
-  <key>KeepAlive</key>
-  <false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+		<key>PATH</key>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.market-alert-domestic-open</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/market-alert.js</string>
+		<string>--market=domestic</string>
+		<string>--event=open</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-market-alert-domestic-open.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-market-alert-domestic-open.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>9</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
 </dict>
 </plist>
