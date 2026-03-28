@@ -16,7 +16,7 @@ const fs     = require('fs');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
 const N8N_BASE = 'http://localhost:5678';
-const EMAIL    = '***REMOVED***';
+const EMAIL    = process.env.N8N_EMAIL || 'admin@example.com';
 const PASSWORD = 'TeamJay2026!';
 const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
 
@@ -348,7 +348,7 @@ return [{
         typeVersion: 1.2,
         position: [1560, 300],
         parameters: {
-          chatId: '***REMOVED***',
+          chatId: process.env.TELEGRAM_CHAT_ID || '',
           text:   '⚠️ <b>미복구 긴급 장애 — 마스터 확인 필요</b>\\n───────────────────\\n5분 경과 후에도 복구 미확인\\n수동 점검이 필요합니다.',
           additionalFields: { parse_mode: 'HTML' },
         },

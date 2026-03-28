@@ -9,7 +9,7 @@
 | 4 | CRITICAL | 즉시 발송 + 직접 발송 폴백 | 즉시 발송 |
 
 ## 명령 권한
-- chat_id: ***REMOVED*** (사용자 전용)
+- chat_id: <YOUR_CHAT_ID> (사용자 전용)
 - 미인가 chat_id → 무음 처리
 
 ## 무음 범위

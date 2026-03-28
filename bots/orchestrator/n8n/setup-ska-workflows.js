@@ -17,7 +17,7 @@ const yaml = require('js-yaml');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
 const N8N_BASE = 'http://localhost:5678';
-const EMAIL    = '***REMOVED***';
+const EMAIL    = process.env.N8N_EMAIL || 'admin@example.com';
 const PASSWORD = 'TeamJay2026!';
 
 // ── secrets / config 로드 ──────────────────────────────────────────────────

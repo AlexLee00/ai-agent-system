@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
-const EMAIL = '***REMOVED***';
+const EMAIL = process.env.N8N_EMAIL || 'admin@example.com';
 const PASSWORD = 'TeamJay2026!';
 const WORKFLOW_PATH = path.join(__dirname, '../api/n8n-workflow.json');
 const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });

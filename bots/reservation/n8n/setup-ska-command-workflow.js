@@ -14,7 +14,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
-const EMAIL = '***REMOVED***';
+const EMAIL = process.env.N8N_EMAIL || 'admin@example.com';
 const PASSWORD = 'TeamJay2026!';
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-ska-command-workflow.json');
 const SECRETS_PATH = path.join(__dirname, '../secrets.json');

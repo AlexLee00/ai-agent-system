@@ -170,7 +170,7 @@ curl -s -X POST http://localhost:8100/ask \
 | Fallback 1 | `anthropic/claude-haiku-4-5` |
 | Fallback 2 | `ollama/qwen2.5:7b` (느림, 비상용) |
 | 채널 | Telegram (@SCAFE8282_BOT) |
-| 사장님 chat_id | `***REMOVED***` |
+| 사장님 chat_id | `<YOUR_CHAT_ID>` |
 | 워크스페이스 | `~/.openclaw/workspace/` |
 
 **Ollama 주의:** Homebrew 빌드는 M1에서 MLX GPU 가속 안됨 → ~4분 응답, Telegram 봇에 사용 불가.

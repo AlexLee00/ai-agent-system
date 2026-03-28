@@ -131,7 +131,7 @@ function isAuthorized(chatId) {
         path.join(__dirname, '..', '..', 'reservation', 'secrets.json'), 'utf8'
       ));
       _allowedChatIds = [s.telegram_chat_id, s.telegram_group_id].filter(Boolean).map(String);
-    } catch { _allowedChatIds = ['***REMOVED***']; }
+    } catch { _allowedChatIds = [process.env.TELEGRAM_CHAT_ID || '']; }
   }
   return _allowedChatIds.includes(String(chatId));
 }

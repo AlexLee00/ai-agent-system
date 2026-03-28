@@ -38,7 +38,7 @@ export function loadSecrets() {
     const c = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8'));
     _secrets = {
       telegram_bot_token:   c.telegram?.bot_token  || '',
-      telegram_chat_id:     String(c.telegram?.chat_id || '***REMOVED***'),
+      telegram_chat_id:     String(c.telegram?.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
       // 바이낸스
       binance_api_key:      c.binance?.api_key     || '',
       binance_api_secret:   c.binance?.api_secret  || '',

@@ -598,7 +598,7 @@ export OLLAMA_NUM_GPU=99            # GPU 레이어 최대화 (M4 Pro)
 ### 텔레그램 봇
 
 - 봇: `@SCAFE8282_BOT`
-- 사장님 chat_id: `***REMOVED***`
+- 사장님 chat_id: `<YOUR_CHAT_ID>`
 - 상태: ✅ 정상 연결
 
 ### 멀티에이전트 구성 (맥미니 이전 후)
