@@ -1745,3 +1745,20 @@
   - 결과:
     - [bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md](/Users/alexlee/projects/ai-agent-system/bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md) 생성
     - `docs/SESSION_HANDOFF.md`, `docs/WORK_HISTORY.md`, `docs/CHANGELOG.md`, `docs/TEST_RESULTS.md` 동기화
+- 2026-03-29: `node --check bots/investment/team/hephaestos.js` ✅
+  - 결과: SELL `totalUsdt` 폴백, `deletePosition()` 호출부 `tradeMode` 전달, crypto journal close `trade_mode` 스코프 추가 후 문법 통과
+- 2026-03-29: `node --check bots/investment/team/hanul.js` ✅
+  - 결과: 국내/해외 SELL `tradeMode` 정렬, journal close `trade_mode` 스코프 추가 후 문법 통과
+- 2026-03-29: `node --check bots/investment/shared/db.js` ✅
+  - 결과: LIVE/PAPER 공통 `deletePosition()` `trade_mode` 스코프 적용 후 문법 통과
+- 2026-03-29: `node --check bots/investment/shared/pipeline-decision-runner.js` ✅
+- 2026-03-29: `psql -d jay -c "SELECT indexdef FROM pg_indexes WHERE tablename='positions' AND schemaname='investment';"` ✅
+  - 결과: `CREATE UNIQUE INDEX idx_positions_scope_unique ON investment.positions USING btree (symbol, exchange, paper, trade_mode)` 확인
+- 2026-03-29: `psql -d jay -c "SELECT status, COUNT(*) FROM investment.pipeline_runs GROUP BY status ORDER BY status;"` ✅
+  - 결과: `completed 1214 / running 1 / timeout 109`
+- 2026-03-29: `psql -d jay -c "SELECT symbol, status, exit_reason FROM investment.trade_journal WHERE symbol='006340' ORDER BY trade_id;"` ✅
+  - 결과: `006340` journal 6건 모두 `closed`, 이 중 5건 `orphan_cleanup`
+- 2026-03-29: `node bots/orchestrator/scripts/health-report.js` ✅
+  - 결과: `ai.orchestrator`, `ai.n8n.server` 정상, `gateway` 다운(PID 없음) 1건 경고
+- 2026-03-29: 잔여 데이터 리스크 확인
+  - `psql -d jay -c "SELECT trade_id, pnl_percent FROM investment.trade_journal WHERE status='closed' AND exit_price IS NOT NULL ORDER BY exit_time;"` 결과 기준 `-100` 6건, `379.6409` 1건, `112.1384`/`110.4593` 2건이 남아 있어 PnL mismatch 보정 스크립트가 후속 필요

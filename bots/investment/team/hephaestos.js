@@ -294,9 +294,14 @@ function isStopLossOnlyMode(mode = null) {
     || mode === 'exchange_stop_loss_only';
 }
 
-async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason) {
+async function closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries('crypto');
-  const entry = openEntries.find(e => e.symbol === symbol && Boolean(e.is_paper) === Boolean(isPaper));
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const entry = openEntries.find(e =>
+    e.symbol === symbol
+      && Boolean(e.is_paper) === Boolean(isPaper)
+      && (e.trade_mode || 'normal') === effectiveTradeMode
+  );
   if (!entry) return;
 
   const pnlAmount  = (exitValue || 0) - (entry.entry_value || 0);
@@ -389,6 +394,7 @@ async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
       order.price,
       (paperPos.amount || 0) * (order.price || 0),
       'promoted_to_live',
+      paperPos.trade_mode || 'normal',
     ).catch(() => {});
 
     await db.upsertPosition({
@@ -1104,7 +1110,7 @@ export async function executeSignal(signal) {
         side:      'sell',
         amount:    order.amount || amount,
         price:     order.price,
-        totalUsdt: order.totalUsdt,
+        totalUsdt: order.totalUsdt || ((order.amount || amount) * (order.price || 0)),
         paper:     sellPaperMode,
         exchange:  'binance',
         tradeMode: signalTradeMode,
@@ -1113,7 +1119,7 @@ export async function executeSignal(signal) {
       await db.deletePosition(symbol, {
         exchange: 'binance',
         paper: sellPaperMode,
-        tradeMode: sellPaperMode ? signalTradeMode : null,
+        tradeMode: signalTradeMode,
       });
 
     } else {
@@ -1186,6 +1192,7 @@ export async function executeSignal(signal) {
           trade.price,
           trade.totalUsdt,
           exitReasonOverride || 'signal_reverse',
+          trade.tradeMode,
         );
       }
     } catch (journalErr) {

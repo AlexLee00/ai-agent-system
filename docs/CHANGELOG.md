@@ -2429,3 +2429,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-28 — `fix(investment)`: `pre-market-screen.js`가 국내/해외 장전 스크리닝 시작 직후 시장 상태를 조회하도록 보강. `장외 시간`은 장전 실행 특성상 허용하되, `주말/공휴일/NYSE 휴장`이면 저장/알림 없이 스킵해 주말 `장전 스크리닝 완료 (국내주식)` 오발송을 차단.
 - 2026-03-28 — `feat(investment)`: `pipeline-market-runner.js`가 `collect_overload_detected`를 `screening / held / mixed` 과부하로 해석하도록 보강. 암호화폐 경고 메시지가 이제 `tasks`, `screening`, `held` 숫자뿐 아니라 현재 부하가 동적 스크리닝 확대인지, 보유 포지션 carry 관찰인지, 혼합 상태인지 직접 설명한다.
 - 2026-03-28 — `docs(investment)`: [bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md](/Users/alexlee/projects/ai-agent-system/bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md) 추가. 루나팀 재설계 방향, 에이전트 역할 재정의, `n8n`/`RAG` 적용 원칙, 맥스튜디오 도입 후 백테스트·예측·검증 엔진 배치안, 데이터 모델 초안, Phase 1~5 로드맵을 문서화.
+- 2026-03-29 — `fix(investment)`: `hephaestos.js` SELL 체결의 `totalUsdt`가 비어도 `amount * price` 폴백으로 exit value를 보존하도록 수정.
+- 2026-03-29 — `fix(investment)`: `deletePosition()`이 `paper` 여부와 무관하게 `trade_mode`를 함께 스코프하도록 보강해 LIVE SELL이 validation/normal 포지션을 함께 지우지 않도록 정리.
+- 2026-03-29 — `fix(investment)`: `hephaestos.js`, `hanul.js`의 `closeOpenJournalForSymbol()`이 `trade_mode`까지 매칭하도록 확장하고, crypto SELL, 국내/해외 SELL, paper→live 승격 경로에서 동일한 `tradeMode`를 전달하도록 정렬.
+- 2026-03-29 — `ops(investment)`: `investment.pipeline_runs`의 1시간 초과 `running` 109건을 `timeout`으로 정리하고, `006340` orphan journal 5건을 `orphan_cleanup`으로 종료.
+- 2026-03-29 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline 갱신.

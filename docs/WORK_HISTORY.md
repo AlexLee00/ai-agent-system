@@ -5030,3 +5030,27 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - 2026-03-28: `bots/investment/scripts/pre-market-screen.js`에 국내/해외 장전 스크리닝의 휴장 가드를 추가했다. 기존에는 `getKisMarketStatus()` / `getKisOverseasMarketStatus()`가 이미 구현돼 있어도 prescreen 메인 경로에서 호출하지 않아 주말에도 `장전 스크리닝 완료` 알림이 발송됐는데, 이제 `db.initSchema()` 직후 시장 상태를 조회해 `holiday.isHoliday` 또는 `isWeekend`면 저장/알림 없이 조기 종료한다. 장전 실행 특성상 `장외 시간`은 허용하고 `주말/공휴일/NYSE 휴장`만 막는 구조다.
 - 2026-03-28: `bots/investment/shared/pipeline-market-runner.js`에 crypto 수집 과부하 해석 보강을 추가했다. `buildCollectOverloadProfile()`이 `screeningSymbolCount`, `heldAddedCount`, `perSymbolNodeCount`를 기준으로 `collect_overload_detected`의 주된 원인을 `screening / held / mixed`로 분류하고, alert 문구도 “동적 스크리닝 universe 폭”과 “보유 포지션 carry 관찰 부담” 중 무엇이 더 큰지 직접 설명한다. 현재 `tasks=61, screening=8, held=7` 같은 케이스는 혼합 부하로 본다.
 - 2026-03-28: 루나팀 전체 재설계 로드맵 문서 [bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md](/Users/alexlee/projects/ai-agent-system/bots/investment/docs/LUNA_REDESIGN_PHASE_1_TO_5.md)를 작성했다. 문서는 현재 병목, 에이전트별 역할 재정의, `n8n`/`RAG` 적절성, 맥스튜디오 도입 후 백테스트·예측·검증 엔진 배치안, 데이터 모델 초안, Phase 1~5 구현 로드맵을 정리한다.
+- 2026-03-29: 루나팀 P1 즉시 수정 1차를 적용했다.
+  - `bots/investment/team/hephaestos.js`
+    - 바이낸스 SELL에서 `order.totalUsdt`가 비어도 `amount * price`로 `trade.totalUsdt`를 계산하도록 보강
+    - SELL 후 `deletePosition()` 호출에 `signalTradeMode`를 항상 전달
+    - `closeOpenJournalForSymbol()`이 `symbol + is_paper + trade_mode`로 저널을 닫도록 수정
+    - paper→live 승격 경로도 `paperPos.trade_mode`를 함께 넘겨 wrong journal close를 방지
+  - `bots/investment/team/hanul.js`
+    - 국내/해외 SELL 모두 `tradeMode`를 `signalTradeMode`로 고정해 포지션 삭제/저널 close 스코프를 일관화
+    - `closeOpenJournalForSymbol()`이 `trade_mode`까지 매칭하도록 확장
+  - `bots/investment/shared/db.js`
+    - `deletePosition()`이 `paper`가 `false`여도 `COALESCE(trade_mode, 'normal')` 조건을 적용하도록 보강
+- 2026-03-29: 루나팀 P1 데이터 정리 1차를 운영 DB에 반영했다.
+  - `investment.pipeline_runs`: 1시간 초과 `running` 109건을 `timeout`으로 정리
+  - `investment.trade_journal`: `006340` open journal 5건을 `orphan_cleanup`으로 종료
+  - 정리 후 상태: `pipeline_runs = completed 1214 / running 1 / timeout 109`, `006340` journal 6건 전부 `closed`
+- 2026-03-29: 정적/운영 검증을 재실행했다.
+  - `node --check bots/investment/team/hephaestos.js`
+  - `node --check bots/investment/team/hanul.js`
+  - `node --check bots/investment/shared/db.js`
+  - `node --check bots/investment/shared/pipeline-decision-runner.js`
+  - `node bots/orchestrator/scripts/health-report.js`
+  - 결과: 코드 문법 오류 없음, 오케스트레이터 health는 `gateway` 다운 1건만 경고
+- 2026-03-29: 덱스터 checksum baseline을 다시 갱신했다.
+  - `node bots/claude/src/dexter.js --update-checksums`
