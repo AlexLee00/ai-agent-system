@@ -5,13 +5,13 @@
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+		<string>/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>Label</key>
 	<string>ai.worker.claude-monitor</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>scripts/claude-api-monitor.js</string>
 		<string>--alert-only</string>
 	</array>

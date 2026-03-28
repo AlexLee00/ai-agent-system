@@ -5,7 +5,7 @@
 # - 로그 유지 (/tmp/pickko-daily-summary.log, 최신 500줄)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-daily-summary.lock"
 LOG_FILE="/tmp/pickko-daily-summary.log"
 

@@ -5,7 +5,7 @@
 
 set -e
 
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 ROOT="/Users/alexlee/projects/ai-agent-system"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 속도 테스트 시작"

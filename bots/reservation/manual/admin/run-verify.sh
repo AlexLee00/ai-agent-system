@@ -9,7 +9,7 @@
 #   4. 로그 → /tmp/pickko-verify.log (최근 500줄 유지)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 LOCK_FILE="$HOME/.openclaw/workspace/pickko-verify.lock"
 LOG_FILE="/tmp/pickko-verify.log"
 

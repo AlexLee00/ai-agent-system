@@ -20,7 +20,7 @@ if [ -z "$GROQ_API_KEY" ]; then
   export GROQ_API_KEY="$(grep -A2 "accounts:" "$CONFIG_YAML" | grep "api_key" | head -1 | sed 's/.*api_key: *"\(.*\)"/\1/')"
 fi
 
-NODE="/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node"
+NODE="/opt/homebrew/bin/node"
 SCRIPT="$(dirname "$0")/../web/server.js"
 
 exec "$NODE" "$SCRIPT"

@@ -55,30 +55,15 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════
-section "2단계: Node.js (nvm + v24.13.1 LTS)"
+section "2단계: Node.js (Homebrew)"
 # ═══════════════════════════════════════════════════════════
 
-if [[ ! -d "$HOME/.nvm" ]]; then
-  log "nvm 설치 중 ..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  ok "nvm 설치 완료"
+if ! command -v node &>/dev/null; then
+  log "Homebrew Node.js 설치 중 ..."
+  brew install node
+  ok "Node.js 설치 완료: $(node --version)"
 else
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  ok "nvm 이미 설치됨"
-fi
-
-TARGET_NODE="v24.13.1"
-if ! node --version 2>/dev/null | grep -q "24"; then
-  log "Node.js $TARGET_NODE 설치 중 ..."
-  nvm install "$TARGET_NODE"
-  nvm use "$TARGET_NODE"
-  nvm alias default "$TARGET_NODE"
-  ok "Node.js $(node --version) 설치 완료"
-else
-  ok "Node.js $(node --version) 이미 설치됨"
+  ok "Node.js 이미 설치됨: $(node --version)"
 fi
 
 # ═══════════════════════════════════════════════════════════
@@ -170,7 +155,7 @@ if [[ -f "$PLIST" ]]; then
   ok "TMPDIR 수정 완료"
 fi
 
-# Node 경로 수정 (nvm 경로가 다를 경우)
+# Node 경로 수정 (Homebrew 경로 기준)
 NODE_PATH="$(which node)"
 NODE_BIN_DIR="$(dirname "$NODE_PATH")"
 OPENCLAW_BIN="$(ls "$NODE_BIN_DIR/../lib/node_modules/openclaw/dist/index.js" 2>/dev/null || echo "")"
@@ -206,12 +191,12 @@ print('plist 업데이트 완료')
 fi
 
 # 모든 plist의 HOME 경로 확인 (보통 /Users/alexlee로 동일)
-log "PATH 환경변수 수정 (nvm 경로 주입) ..."
-for plist in ~/Library/LaunchAgents/ai.ska.*.plist ~/Library/LaunchAgents/ai.agent.*.plist; do
-  [[ -f "$plist" ]] || continue
-  # nvm 노드 경로를 현재 시스템의 node 경로로 교체
+  log "PATH 환경변수 수정 (Homebrew node 경로 반영) ..."
+  for plist in ~/Library/LaunchAgents/ai.ska.*.plist ~/Library/LaunchAgents/ai.agent.*.plist; do
+    [[ -f "$plist" ]] || continue
+  # 기존 node 경로를 현재 시스템의 node 경로로 교체
   sed -i '' \
-    "s|/Users/alexlee/.nvm/versions/node/v[^/]*/bin|$NODE_BIN_DIR|g" \
+    "s|/Users/alexlee/.*/versions/node/v[^/]*/bin|$NODE_BIN_DIR|g" \
     "$plist" 2>/dev/null && true
 done
 ok "PATH 경로 수정 완료"

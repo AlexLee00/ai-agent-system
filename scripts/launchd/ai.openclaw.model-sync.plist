@@ -8,7 +8,7 @@
 	<string>ai.openclaw.model-sync</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/.nvm/versions/node/v24.13.1/bin/node</string>
+		<string>/opt/homebrew/bin/node</string>
 		<string>/Users/alexlee/projects/ai-agent-system/scripts/deploy-context.js</string>
 		<string>--all</string>
 	</array>

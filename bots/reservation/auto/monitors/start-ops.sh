@@ -20,8 +20,8 @@ NAVER_PROFILE="$HOME/.openclaw/workspace/naver-profile"
 NAVER_MONITOR_SCRIPT="$BOT_DIR/auto/monitors/naver-monitor.js"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 
-NODE_BIN="$HOME/.nvm/versions/node/v24.13.1/bin/node"
-[ ! -f "$NODE_BIN" ] && NODE_BIN=$(which node)
+NODE_BIN="/opt/homebrew/bin/node"
+[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
