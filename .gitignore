@@ -67,3 +67,22 @@ bots/claude/dexter-fixes.json
 *.wav
 *.srt
 dfd_*/
+
+# ─── Public 전환 추가 ───
+
+# DB 덤프/백업
+*.dump
+*.backup
+*.sql.gz
+
+# BFG 정리 보고서
+*.bfg-report/
+
+# 임시 파일
+*.tmp
+
+# Claude Code 프로젝트
+.claude/
+
+# macOS launchd 비활성화 백업
+LaunchAgents.disabled/
