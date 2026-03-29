@@ -8,6 +8,7 @@ const { healthRoute } = require('../lib/routes/health');
 const { pgQueryRoute } = require('../lib/routes/pg');
 const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
+const { secretsRoute } = require('../lib/routes/secrets');
 
 env.ensureOps('Resource API Hub');
 env.printModeBanner('Resource API Hub');
@@ -52,6 +53,15 @@ app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
 app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
 app.get('/hub/services/status', generalLimiter, servicesStatusRoute);
 app.get('/hub/env', generalLimiter, envRoute);
+
+const secretsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'secrets rate limit exceeded (10/min)' },
+});
+app.get('/hub/secrets/:category', secretsLimiter, secretsRoute);
 
 app.use('/hub', (req, res) => {
   res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
