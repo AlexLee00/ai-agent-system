@@ -194,13 +194,52 @@ async function executeApprovedDecision({
     storeArtifact: false,
   });
 
+  const signalId = saved.result?.signalId ?? null;
+  const signalStatus = execute.result?.signalStatus ?? null;
+  const signalBlockCode = execute.result?.signalBlockCode ?? null;
+  const signalBlockReason = execute.result?.signalBlockReason ?? null;
+  const signalBlockMeta = execute.result?.signalBlockMeta ?? null;
+
+  if (stage === 'exit' && signalId && signalBlockCode === 'sell_amount_below_minimum') {
+    await db.updateSignalBlock(signalId, {
+      status: 'skipped_below_min',
+      reason: signalBlockReason || '최소 수량 미달',
+      code: signalBlockCode,
+      meta: {
+        ...(signalBlockMeta || {}),
+        stage,
+        skippedBy: 'exit_phase',
+      },
+    }).catch(() => {});
+
+    return {
+      symbol: decision.symbol,
+      action: decision.action,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      adjustedAmount: riskResult.adjustedAmount ?? null,
+      signalId,
+      skipped: true,
+      skipReason: 'exit_below_minimum',
+      signalStatus: 'skipped_below_min',
+      blockCode: signalBlockCode,
+      notify: notify.result,
+      ragStore: ragStore.result,
+      execution: execute.result,
+      journal: journal.result,
+      stage,
+    };
+  }
+
   return {
     symbol: decision.symbol,
     action: decision.action,
     confidence: decision.confidence,
     reasoning: decision.reasoning,
     adjustedAmount: riskResult.adjustedAmount ?? null,
-    signalId: saved.result?.signalId ?? null,
+    signalId,
+    signalStatus,
+    blockCode: signalBlockCode,
     notify: notify.result,
     ragStore: ragStore.result,
     execution: execute.result,
@@ -247,6 +286,7 @@ export async function runDecisionExecutionPipeline({
   let exitPhaseEvaluated = 0;
   let exitPhaseSellSignals = 0;
   let exitPhaseExecuted = 0;
+  let exitBelowMinSkipped = 0;
   const exitResults = [];
 
   function countDecisionActions() {
@@ -277,6 +317,7 @@ export async function runDecisionExecutionPipeline({
     exitPhaseEvaluated,
     exitPhaseSellSignals,
     exitPhaseExecuted,
+    exitBelowMinSkipped,
     savedExecutionWork: riskRejected * 5,
     warnings: buildDecisionWarnings({
       symbols,
@@ -359,6 +400,11 @@ export async function runDecisionExecutionPipeline({
           continue;
         }
         if (exitResult) exitResults.push(exitResult);
+        if (exitResult?.skipReason === 'exit_below_minimum') {
+          exitBelowMinSkipped++;
+          console.log(`⏭️ [EXIT] ${dec.symbol} 최소 수량 미달 — 스킵`);
+          continue;
+        }
         if (exitResult?.skipReason) {
           riskRejected++;
         }
@@ -453,6 +499,7 @@ export async function runDecisionExecutionPipeline({
         exit_phase_evaluated: metrics.exitPhaseEvaluated,
         exit_phase_sell_signals: metrics.exitPhaseSellSignals,
         exit_phase_executed: metrics.exitPhaseExecuted,
+        exit_below_min_skipped: metrics.exitBelowMinSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
@@ -502,6 +549,7 @@ export async function runDecisionExecutionPipeline({
         exit_phase_evaluated: metrics.exitPhaseEvaluated,
         exit_phase_sell_signals: metrics.exitPhaseSellSignals,
         exit_phase_executed: metrics.exitPhaseExecuted,
+        exit_below_min_skipped: metrics.exitBelowMinSkipped,
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
@@ -700,6 +748,7 @@ export async function runDecisionExecutionPipeline({
       exit_phase_evaluated: completedMetrics.exitPhaseEvaluated,
       exit_phase_sell_signals: completedMetrics.exitPhaseSellSignals,
       exit_phase_executed: completedMetrics.exitPhaseExecuted,
+      exit_below_min_skipped: completedMetrics.exitBelowMinSkipped,
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
       investment_trade_mode: investmentTradeMode,

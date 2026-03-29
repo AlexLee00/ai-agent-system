@@ -1273,10 +1273,14 @@ export async function executeSignal(signal) {
 
   } catch (e) {
     console.error(`  ❌ 실행 오류: ${e.message}`);
+    const failureCode = e?.code === 'sell_amount_below_minimum'
+      ? 'sell_amount_below_minimum'
+      : 'broker_execution_error';
     await persistFailure(e.message, {
-      code: 'broker_execution_error',
+      code: failureCode,
       meta: {
         error: String(e.message).slice(0, 240),
+        ...(e?.meta || {}),
       },
     });
     await notifyError(`헤파이스토스 - ${symbol} ${action}`, e);
