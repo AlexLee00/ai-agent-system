@@ -3,6 +3,86 @@
 > 다음 세션은 먼저 [SESSION_CONTEXT_INDEX.md](/Users/alexlee/projects/ai-agent-system/docs/SESSION_CONTEXT_INDEX.md)를 읽고 이 문서를 보세요.
 > 현재 active risk / watch / recently resolved만 빠르게 보려면 [ACTIVE_OPS_SUMMARY.md](/Users/alexlee/projects/ai-agent-system/docs/ACTIVE_OPS_SUMMARY.md)를 함께 확인하세요.
 
+---
+
+## 2026-03-29 KST — 전체 소스코드 딥 분석 세션 (맥 스튜디오 운영 전환 후 첫 전체 분석)
+
+### 이번 세션 목적
+메티(전략 Claude)가 전체 ai-agent-system 레포지토리를 처음부터 끝까지 빠짐없이 읽고 분석.
+Mac Studio M4 Max 36GB/512GB 운영 전환(2026-03-29) 이후 코드베이스 전체 파악 목적.
+
+### 완료된 분석
+
+#### packages/core/lib/ (공유 모듈)
+- `pg-pool.js` — PostgreSQL 커넥션 풀 싱글톤 (스키마별, ? → $N 자동변환, exponential backoff)
+- `rag.js` / `rag-safe.js` — pgvector 기반 RAG (10 컬렉션, OpenAI text-embedding-3-small 1536차원)
+- `telegram-sender.js` — Forum Topic 라우팅 + Throttle(1500ms) + Rate Limit 준수 + 배치
+- `llm-router.js` / `llm-fallback.js` / `llm-model-selector.js` / `llm-keys.js` — LLM 라우팅 체계
+- `heartbeat.js`, `billing-guard.js`, `llm-logger.js`, `kst.js`, `message-envelope.js`
+- `intent-core.js`, `intent-store.js`, `health-state-manager.js`, `reporting-hub.js`
+- `reservation-rag.js`, `n8n-runner.js`, `n8n-webhook-registry.js`
+- `shadow-mode.js`, `db/helpers.js`, `file-guard.js`, `agent-heartbeats.js`
+
+#### bots/investment (루나팀) — 전체 완료
+- `markets/`: crypto.js (30분+BTC±3% 긴급 트리거), domestic.js, overseas.js
+- `team/`: luna.js, nemesis.js, hephaestos.js, hanul.js, aria.js, oracle.js, sophia.js, hermes.js, argos.js, zeus.js, athena.js, chronos.js(Skeleton-Phase3D)
+- `nodes/`: L01~L34 전체 + helpers.js + index.js (17개 노드)
+- `shared/`: db.js, llm-client.js, capital-manager.js, pipeline-decision-runner.js, signal.js(자산보호5원칙), pipeline-db.js, node-runner.js, trade-journal-db.js, market-regime.js, analyst-accuracy.js, cost-tracker.js, dual-model-report.js, kis-client.js(643줄), report.js, runtime-config.js, secrets.js(511줄), rag-client.js, time-mode.js, trade-review-metrics.js, universe-fallback.js, upbit-client.js, mainbot-client.js, pipeline-market-runner.js, onchain-data.js, llm.js
+- `scripts/`: 주요 25개 (fix-pnl-mismatch.js, update-unrealized-pnl.js, force-exit-runner.js, pre-market-screen.js, screening-monitor.js, health-check.js 등)
+
+#### bots/claude (클로드팀) — 전체 완료
+- `lib/checks/`: 20개 모듈 전체 (billing.js, bot-behavior.js, bots.js, code.js, database.js, deps.js, health-state.js, heartbeat-check.js, llm-cost.js, logs.js, n8n.js, network.js, openclaw.js, patterns.js, resources.js, security.js, self-diagnosis.js, ska.js, team-leads.js, workspace-git.js)
+- `lib/`: claude-lead-brain.js(Shadow Mode), dexter-mode.js(Normal/Emergency), doctor.js(WHITELIST 7개), reporter.js, team-bus.js, autofix.js, ai-analyst.js, daily-report.js
+- `lib/archer/`: analyzer.js, fetcher.js, patcher.js(PATCH_REQUEST.md 자동생성), store.js
+- `src/`: dexter.js(22체크), archer.js, claude-commander.js(748줄, NLP자동학습), dexter-quickcheck.js
+
+#### bots/reservation (스카팀) — 핵심 파일 완료
+- `auto/monitors/naver-monitor.js` (2464줄) — Puppeteer, 5분 주기
+- `lib/`: db.js(1154줄), state-bus.js, ska-team.js, pickko.js, secrets.js, ska-command-handlers.js, ska-read-service.js, runtime-config.js
+
+### 핵심 발견사항 요약
+
+1. **루나팀 파이프라인**: L01→L14(수집·판단) → L21(리스크) → L30→L34(실행·기록). EXIT 전용 경로(P1-10) 구현 완료.
+2. **클로드팀**: 덱스터 22체크 + Shadow 판단(gpt-4o→gpt-4o-mini→llama-4-scout 폴백). 독터 WHITELIST 7가지 복구 타입. Emergency 모드 (OpenClaw 3분 다운/팀장 90분 무응답 시 자동 전환).
+3. **LLM 라우팅**: luna→gpt-4o, nemesis/oracle→Groq dual경쟁, hermes/sophia→gpt-4o-mini. 전사 billing-guard + llm-logger 통합.
+4. **DB**: PostgreSQL jay DB, 스키마 분리(investment/reservation/claude/ska/worker/blog). pgvector 10컬렉션.
+5. **state-bus**: agent_state/agent_events/agent_tasks 3테이블로 팀원↔팀장 이벤트 버스 구현.
+
+### 미완료 파일 (다음 세션에서 이어야 함)
+
+우선순위 높음:
+- `bots/reservation/lib/` 나머지 17개 파일 (manual-*.js, browser.js, crypto.js, pickko-stats.js, ska-command-queue.js, ska-intent-learning.js 등)
+- `bots/reservation/auto/monitors/pickko-kiosk-monitor.js`
+- `bots/reservation/src/` 전체
+
+우선순위 중간:
+- `bots/blog/lib/` 나머지 18개 파일 (blo.js, gems-writer.js, pos-writer.js, publ.js 등)
+- `bots/worker/lib/` 전체 (ai-client.js, ai-policy.js, approval.js, auth.js 등 20+개)
+- `bots/worker/src/` 전체 (worker-lead.js, task-runner.js 등)
+- `bots/orchestrator/lib/` 전체 + `src/mainbot.js`
+- `bots/video/` 전체
+- `bots/ska/src/` Python 파일 전체
+- `packages/core/lib/` 나머지 30+개 파일
+
+### 현재 운영 이슈 (병행 추적)
+1. **n8n 자격증명 복호화 오류** — encryptionKey 불일치로 CRITICAL 알람 발생 중. PostgreSQL+Telegram 자격증명 n8n UI에서 재입력 필요.
+2. **루나팀 P1 미완료** — PnL 보정 스크립트(9건 MISMATCH), max_daily_trades 상향, unrealized_pnl 갱신 스크립트 (Codex로 구현 예정)
+3. **CalDigit TS4 독 이더넷 미인식** — A/S 예정, WiFi(en1) 사용 중
+
+### 인프라 전환 완료 (2026-03-29)
+- Mac Studio M4 Max 36GB/512GB → 운영 전용 (24/7, 에이전트 정상 가동 확인)
+- 자동 배포: `git push` → deploy.sh cron 5분 + GitHub Actions CI
+- SSH 터널: 개발 DB 접근은 SSH 포트 포워딩(5432) 사용
+- OpenClaw TMPDIR 수정 완료 (포트 18789 정상)
+- GitHub Public 전환 완료
+
+### 소스코드 분석 참고 문서
+- 소스코드 분석 노션: `325ff93a809a81899098e3b15401b06f`
+- 루나팀 딥 분석: `331ff93a809a81cb86e5faebb24faf1d`
+- 메인 허브: `31fff93a809a81468d84c5f74b3485e4`
+
+---
+
 > 세션 마감 준비 메모 (2026-03-22)
 > `bots/claude/.checksums.json`은 이번 세션 말미에 다시 갱신됐다.
 > 다만 현재 워킹트리에는 비디오 외 `orchestrator / reservation / ska`의 미커밋 변경이 함께 남아 있으므로, 체크섬은 “현재 dirty workspace 기준 최신 상태”로 해석해야 한다.
