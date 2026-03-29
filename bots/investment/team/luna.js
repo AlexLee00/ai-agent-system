@@ -193,6 +193,9 @@ const LUNA_EXIT_SYSTEM = `당신은 루나(Luna), 루나팀의 포지션 청산 
 - 각 포지션에 대해 반드시 SELL 또는 HOLD를 결정한다
 - SELL은 수익 실현, 손절, 추세 약화, 시장 레짐 악화, 장기 보유 재평가 중 하나 이상 근거가 있어야 한다
 - HOLD는 아직 청산보다 보유 기대값이 높을 때만 선택한다
+- 손실 포지션은 HOLD보다 SELL을 우선 검토한다
+- 72시간 이상 보유했거나 손실폭이 -5% 이하이면 SELL 쪽으로 강하게 기울어야 한다
+- 분석가 다수가 SELL/HOLD이고 미실현손익이 음수면 HOLD를 남발하지 않는다
 - reasoning은 한국어 80자 이내로 간결하게 작성한다
 - confidence는 0~1 범위의 숫자다
 
@@ -438,8 +441,12 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
       ? (((currentPrice - avgPrice) / avgPrice) * 100).toFixed(2)
       : '0.00';
     const heldHours = Number(pos.held_hours || 0).toFixed(1);
-    const analyses = Array.isArray(pos.analyses) && pos.analyses.length > 0
-      ? buildAnalysisSummary(pos.analyses)
+    const analysesList = Array.isArray(pos.analyses) ? pos.analyses : [];
+    const sellLikeCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'SELL').length;
+    const holdCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'HOLD').length;
+    const buyCount = analysesList.filter(item => String(item.signal || '').toUpperCase() === 'BUY').length;
+    const analyses = analysesList.length > 0
+      ? buildAnalysisSummary(analysesList)
       : '분석 데이터 없음';
     return [
       `- ${pos.symbol}`,
@@ -449,6 +456,7 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
       `  미실현손익: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} (${pnlPct}%)`,
       `  보유시간: ${heldHours}h`,
       `  trade_mode: ${pos.trade_mode || 'normal'}`,
+      `  분석가 집계: BUY ${buyCount} / HOLD ${holdCount} / SELL ${sellLikeCount}`,
       `  분석가:`,
       analyses.split('\n').map(line => `    ${line}`).join('\n'),
     ].join('\n');
@@ -466,6 +474,11 @@ function buildExitPrompt(openPositions, exchange = 'binance') {
     '3. 추세 전환: 분석가 신호가 SELL/HOLD로 전환 시',
     '4. 보유 기간: 장기 보유(72시간+) 시 재평가',
     '5. 시장 레짐: 시장 전반 하락 국면 시',
+    '',
+    'SELL 우선 규칙:',
+    '- 미실현손익이 음수이고 분석가 다수가 SELL/HOLD면 SELL을 우선 검토',
+    '- 미실현손익 -5% 이하 손실은 특별한 반전 근거가 없으면 SELL',
+    '- 72시간 이상 장기 보유는 명확한 상승 근거가 없으면 SELL',
     '',
     '각 포지션에 대해 SELL 또는 HOLD를 반드시 지정하세요.',
     '',
@@ -493,6 +506,11 @@ function buildExitFallback(openPositions) {
     const pnlPct = avgPrice > 0
       ? ((currentPrice - avgPrice) / avgPrice) * 100
       : 0;
+    const analyses = Array.isArray(pos.analyses) ? pos.analyses : [];
+    const sellLikeCount = analyses.filter(item => {
+      const signal = String(item.signal || '').toUpperCase();
+      return signal === 'SELL' || signal === 'HOLD';
+    }).length;
 
     if (heldHours >= 72) {
       return {
@@ -509,6 +527,15 @@ function buildExitFallback(openPositions) {
         action: ACTIONS.SELL,
         confidence: 0.64,
         reasoning: 'EXIT fallback — 손실 -5% 이하 손절',
+        exit_type: 'normal_exit',
+      };
+    }
+    if (pnlPct < 0 && heldHours >= 24 && sellLikeCount >= 2) {
+      return {
+        symbol: pos.symbol,
+        action: ACTIONS.SELL,
+        confidence: 0.6,
+        reasoning: 'EXIT fallback — 음수 손익 + 약세 분석 우세',
         exit_type: 'normal_exit',
       };
     }
@@ -772,11 +799,17 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
     const heldHours = entryTime
       ? Math.max(0, (Date.now() - new Date(entryTime).getTime()) / 3600000)
       : 0;
+    const avgPrice = Number(position.avg_price || 0);
+    const amount = Number(position.amount || 0);
+    const unrealizedPnl = Number(position.unrealized_pnl || 0);
+    const derivedCurrentPrice = avgPrice > 0 && amount > 0
+      ? avgPrice + (unrealizedPnl / amount)
+      : avgPrice;
     enrichedPositions.push({
       ...position,
       analyses,
       held_hours: heldHours,
-      current_price: position.current_price || position.avg_price || 0,
+      current_price: position.current_price || derivedCurrentPrice || avgPrice || 0,
     });
   }
 

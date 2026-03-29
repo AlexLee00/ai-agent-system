@@ -254,7 +254,7 @@ async function checkKisRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getLivePosition(symbol, 'kis')
+    const pos = await db.getLivePosition(symbol, 'kis', tradeMode)
       || await db.getPaperPosition(symbol, 'kis', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 포지션 없음` };
   }
@@ -288,7 +288,7 @@ async function checkKisOverseasRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getLivePosition(symbol, 'kis_overseas')
+    const pos = await db.getLivePosition(symbol, 'kis_overseas', tradeMode)
       || await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 해외 포지션 없음` };
   }
@@ -374,7 +374,7 @@ export async function executeSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const livePosition = await db.getLivePosition(symbol, 'kis');
+      const livePosition = await db.getLivePosition(symbol, 'kis', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
       const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
         ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis', tradeMode: signalTradeMode })
@@ -488,10 +488,23 @@ export async function executeSignal(signal) {
       }
 
     } else if (action === ACTIONS.SELL) {
-      const livePosition = await db.getLivePosition(symbol, 'kis');
+      const livePosition = await db.getLivePosition(symbol, 'kis', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'kis', signalTradeMode);
-      const position = livePosition || paperPosition;
-      const sellPaperMode = !livePosition && !!paperPosition;
+      if (paperMode && livePosition && !paperPosition) {
+        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          code: 'position_mode_conflict',
+          market: 'domestic',
+          symbol,
+          action,
+          amount: amountKrw,
+        });
+        return { success: false, reason };
+      }
+      const position = paperPosition || livePosition;
+      const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 포지션 없음 — SELL 스킵`);
@@ -505,7 +518,7 @@ export async function executeSignal(signal) {
         return { success: false, reason: '포지션 없음' };
       }
 
-      const order = await kis.marketSell(symbol, Math.floor(qty), paperMode);
+      const order = await kis.marketSell(symbol, Math.floor(qty), sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,
@@ -605,7 +618,7 @@ export async function executeOverseasSignal(signal) {
     let trade;
 
     if (action === ACTIONS.BUY) {
-      const livePosition = await db.getLivePosition(symbol, 'kis_overseas');
+      const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
       const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
         ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'kis_overseas', tradeMode: signalTradeMode })
@@ -718,10 +731,23 @@ export async function executeOverseasSignal(signal) {
       }
 
     } else if (action === ACTIONS.SELL) {
-      const livePosition = await db.getLivePosition(symbol, 'kis_overseas');
+      const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
-      const position = livePosition || paperPosition;
-      const sellPaperMode = !livePosition && !!paperPosition;
+      if (paperMode && livePosition && !paperPosition) {
+        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
+        console.warn(`  ⚠️ ${reason}`);
+        await markSignalFailedDetailed(signalId, {
+          reason,
+          code: 'position_mode_conflict',
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+        });
+        return { success: false, reason };
+      }
+      const position = paperPosition || livePosition;
+      const sellPaperMode = paperMode || (!livePosition && !!paperPosition);
       const qty = position?.amount;
       if (!qty || qty < 1) {
         console.warn(`  ⚠️ ${symbol} 해외 포지션 없음 — SELL 스킵`);
@@ -735,7 +761,7 @@ export async function executeOverseasSignal(signal) {
         return { success: false, reason: '해외 포지션 없음' };
       }
 
-      const order = await kis.marketSellOverseas(symbol, Math.floor(qty), paperMode);
+      const order = await kis.marketSellOverseas(symbol, Math.floor(qty), sellPaperMode);
       trade = {
         signalId, symbol, side: 'sell',
         amount:    order.qty,

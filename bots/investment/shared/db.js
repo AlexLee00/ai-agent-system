@@ -561,9 +561,7 @@ export async function getSameDayTrade({
 // ─── positions ──────────────────────────────────────────────────────
 
 export async function upsertPosition({ symbol, amount, avgPrice, unrealizedPnl, exchange = 'binance', paper = false, tradeMode = null }) {
-  const effectiveTradeMode = paper === true
-    ? (tradeMode || getInvestmentTradeMode())
-    : 'normal';
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   await run(
     `INSERT INTO positions (symbol, amount, avg_price, unrealized_pnl, paper, exchange, trade_mode, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, now())
@@ -590,10 +588,10 @@ export async function getPosition(symbol, { exchange = null, paper = null, trade
   if (paper !== null) {
     params.push(paper === true);
     conditions.push(`paper = $${params.length}`);
-    if (paper === true) {
-      params.push(tradeMode || getInvestmentTradeMode());
-      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
-    }
+  }
+  if (tradeMode) {
+    params.push(tradeMode);
+    conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
   }
 
   const orderBy = paper === null
@@ -603,8 +601,8 @@ export async function getPosition(symbol, { exchange = null, paper = null, trade
   return get(`SELECT * FROM positions WHERE ${conditions.join(' AND ')} ${orderBy} LIMIT 1`, params);
 }
 
-export async function getLivePosition(symbol, exchange = null) {
-  return getPosition(symbol, { exchange, paper: false });
+export async function getLivePosition(symbol, exchange = null, tradeMode = null) {
+  return getPosition(symbol, { exchange, paper: false, tradeMode });
 }
 
 export async function getPaperPosition(symbol, exchange = null, tradeMode = null) {
