@@ -15,10 +15,17 @@ const path   = require('path');
 const fs     = require('fs');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
-const N8N_BASE = 'http://localhost:5678';
+const N8N_BASE = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const EMAIL    = process.env.N8N_EMAIL || 'admin@example.com';
-const PASSWORD = 'TeamJay2026!';
-const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
+const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
+const parsedBaseUrl = new URL(N8N_BASE);
+const client = createN8nSetupClient({
+  host: parsedBaseUrl.hostname || '127.0.0.1',
+  port: Number(parsedBaseUrl.port || 5678),
+  email: EMAIL,
+  password: PASSWORD,
+  logger: console,
+});
 
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
 const secrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
@@ -34,8 +41,8 @@ let _cookie = '';
 function request(method, path, body) {
   return new Promise((resolve, reject) => {
     const opts = {
-      hostname: 'localhost',
-      port: 5678,
+      hostname: parsedBaseUrl.hostname || '127.0.0.1',
+      port: Number(parsedBaseUrl.port || 5678),
       path,
       method,
       headers: {

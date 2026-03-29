@@ -16,9 +16,10 @@ const fs   = require('fs');
 const yaml = require('js-yaml');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
-const N8N_BASE = 'http://localhost:5678';
+const N8N_BASE = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const EMAIL    = process.env.N8N_EMAIL || 'admin@example.com';
-const PASSWORD = 'TeamJay2026!';
+const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
+const parsedBaseUrl = new URL(N8N_BASE);
 
 // ── secrets / config 로드 ──────────────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
@@ -33,7 +34,13 @@ const SKA_TOPIC  = String(TOPICS.ska  || '');
 const GEN_TOPIC  = String(TOPICS.general || TOPICS.claude_lead || '');
 
 const GEMINI_KEY = investCfg.gemini?.api_key || '';
-const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
+const client = createN8nSetupClient({
+  host: parsedBaseUrl.hostname || '127.0.0.1',
+  port: Number(parsedBaseUrl.port || 5678),
+  email: EMAIL,
+  password: PASSWORD,
+  logger: console,
+});
 
 // ── HTTP 유틸 ──────────────────────────────────────────────────────────────
 let _cookie = '';
@@ -41,8 +48,8 @@ let _cookie = '';
 function request(method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const opts = {
-      hostname: 'localhost',
-      port: 5678,
+      hostname: parsedBaseUrl.hostname || '127.0.0.1',
+      port: Number(parsedBaseUrl.port || 5678),
       path: urlPath,
       method,
       headers: {
