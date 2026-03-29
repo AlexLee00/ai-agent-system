@@ -7,7 +7,7 @@
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
 		<key>PATH</key>
-		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 	</dict>
 	<key>Label</key>
 	<string>ai.ska.rebecca-weekly</string>

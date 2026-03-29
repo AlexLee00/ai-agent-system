@@ -6,7 +6,7 @@
 # 사용법: run-rebecca.sh [daily|weekly]
 
 PYTHON=/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python
-NODE=/usr/bin/env node
+NODE=/opt/homebrew/bin/node
 REBECCA=/Users/alexlee/projects/ai-agent-system/bots/ska/src/rebecca.py
 PUBLISHER=/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js
 

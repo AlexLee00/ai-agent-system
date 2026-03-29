@@ -1799,3 +1799,11 @@
   - 결과: `ai.orchestrator`, `ai.n8n.server` 정상, `gateway` 다운(PID 없음) 1건 경고
 - 2026-03-29: 잔여 데이터 리스크 확인
   - `psql -d jay -c "SELECT trade_id, pnl_percent FROM investment.trade_journal WHERE status='closed' AND exit_price IS NOT NULL ORDER BY exit_time;"` 결과 기준 `-100` 6건, `379.6409` 1건, `112.1384`/`110.4593` 2건이 남아 있어 PnL mismatch 보정 스크립트가 후속 필요
+- 2026-03-29: `bots/ska/scripts/run-rebecca.sh daily` ✅
+  - 결과: 일간 리포트 생성, `[python-report] ✅ reporting-hub 발행 완료` 확인
+- 2026-03-29: `launchctl print gui/501/ai.ska.rebecca` ✅
+  - 결과: `last exit code = 0`
+- 2026-03-29: `bots/ska/scripts/run-rebecca.sh weekly` ✅
+  - 결과: 주간 리포트 생성, `[python-report] ✅ reporting-hub 발행 완료` 확인
+- 2026-03-29: `launchctl print gui/501/ai.ska.rebecca-weekly` ✅
+  - 결과: `last exit code = 0`
