@@ -26,6 +26,7 @@ async function run({ sessionId, market, symbol }) {
   const executionInput = {
     ...signal,
     amountUsdt: signal.amount_usdt,
+    exit_reason_override: saved.decision?.exit_type || null,
     tpPrice: saved.risk?.tpPrice ?? null,
     slPrice: saved.risk?.slPrice ?? null,
     tpslSource: saved.risk?.tpslSource ?? null,
