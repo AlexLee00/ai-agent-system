@@ -9,6 +9,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
+import { hostname } from 'os';
 import yaml from 'js-yaml';
 
 const _require = createRequire(import.meta.url);
@@ -111,7 +112,15 @@ export function getTradingMode() {
   if (process.env.PAPER_MODE === 'false') return 'live';
   if (process.env.PAPER_MODE === 'true')  return 'paper';
   const s = loadSecrets();
-  return normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
+  const resolved = normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
+
+  // ── 안전장치: 운영 서버(MacStudio)가 아닌 곳에서 live 차단 ──
+  if (resolved === 'live' && !hostname().includes('MacStudio')) {
+    console.warn(`⚠️ [secrets] 비운영 서버(${hostname()})에서 live 모드 감지 → paper 강제 전환`);
+    return 'paper';
+  }
+
+  return resolved;
 }
 
 function resolveBrokerMode(overrideMode) {
