@@ -81,6 +81,7 @@ async function sendTelegram(input) {
   const message = typeof input === 'string' ? { text: input } : (input || {});
   const text = String(message.text || '').trim();
   if (!text) return false;
+  const topicTeam = normalizeTopicTeam(message.team);
 
   const chunks = splitMessage(text);
   let allOk = true;
@@ -88,15 +89,23 @@ async function sendTelegram(input) {
     const chunk = chunks[index];
     const isSingleChunk = chunks.length === 1;
     const ok = isSingleChunk && message.replyMarkup
-      ? await sender.sendWithOptions('general', chunk, {
+      ? await sender.sendWithOptions(topicTeam, chunk, {
         replyMarkup: message.replyMarkup,
         disableWebPagePreview: true,
       })
-      : await sender.send('general', chunk);
+      : await sender.sendBuffered(topicTeam, chunk);
     if (!ok) allOk = false;
     if (chunks.length > 1) await new Promise(r => setTimeout(r, 1100));
   }
   return allOk;
+}
+
+function normalizeTopicTeam(team = 'general') {
+  const normalized = String(team || 'general').trim().toLowerCase();
+  if (normalized === 'reservation') return 'ska';
+  if (normalized === 'investment') return 'luna';
+  if (normalized === 'claude') return 'claude-lead';
+  return normalized || 'general';
 }
 
 async function flushPendingTelegrams() {

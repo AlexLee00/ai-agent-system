@@ -50,8 +50,11 @@ const _topics = () => _secrets().telegram_topic_ids || {};
 // telegram_topic_ids.{ general, ska, luna, claude_lead, meeting, emergency }
 const TOPIC_KEYS = {
   'general':     'general',
+  'reservation': 'ska',
   'ska':         'ska',
+  'investment':  'luna',
   'luna':        'luna',
+  'claude':      'claude_lead',
   'claude-lead': 'claude_lead',
   'meeting':     'meeting',
   'emergency':   'emergency',
@@ -256,6 +259,24 @@ async function send(team, message) {
   return true;  // 배치 버퍼 추가 성공
 }
 
+async function sendBuffered(team, message) {
+  if (process.env.TELEGRAM_ENABLED === '0') return true;
+  const normalized = _normalizeForMobile(message);
+
+  if (_isFilenameLeak(normalized)) {
+    console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
+    return false;
+  }
+
+  const threadId = _getThreadId(team);
+  const text = normalized.slice(0, TG_MAX);
+  const ok = await _doSend(text, threadId);
+  if (ok) return true;
+  console.warn(`⚠️ [telegram-sender] 배치 발송 최종 실패 — 대기큐 저장 (topic=${team})`);
+  _savePending(team, normalized);
+  return false;
+}
+
 async function sendWithOptions(team, message, options = {}) {
   if (process.env.TELEGRAM_ENABLED === '0') return true;
   const normalized = _normalizeForMobile(message);
@@ -338,4 +359,4 @@ async function flushPending() {
   } catch { /* 무시 */ }
 }
 
-module.exports = { send, sendWithOptions, sendDirect, sendCritical, flushPending };
+module.exports = { send, sendBuffered, sendWithOptions, sendDirect, sendCritical, flushPending };

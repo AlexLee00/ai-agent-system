@@ -71,6 +71,7 @@ function buildSingleDelivery(item) {
   return {
     text: formatSingle(item),
     replyMarkup,
+    team: item?.team || 'general',
   };
 }
 
