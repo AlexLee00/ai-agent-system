@@ -159,10 +159,19 @@ async function getReservation(id) {
 }
 
 async function findReservationByBooking(phone, date, start) {
+  const normalizedPhone = String(phone || '').replace(/\D+/g, '');
   const row = await pgPool.get(
     SCHEMA,
-    'SELECT * FROM reservations WHERE phone = $1 AND date = $2 AND start_time = $3 ORDER BY updated_at DESC NULLS LAST LIMIT 1',
-    [phone, date, start],
+    `
+      SELECT *
+      FROM reservations
+      WHERE regexp_replace(phone, '\\D', '', 'g') = $1
+        AND date = $2
+        AND start_time = $3
+      ORDER BY updated_at DESC NULLS LAST
+      LIMIT 1
+    `,
+    [normalizedPhone, date, start],
   );
   return row ? _decryptRow(row) : null;
 }
@@ -177,12 +186,13 @@ async function findReservationByCompositeKey(compositeKey) {
 }
 
 async function findReservationBySlot(phone, date, start, room = null) {
+  const normalizedPhone = String(phone || '').replace(/\D+/g, '');
   const row = await pgPool.get(
     SCHEMA,
     `
       SELECT *
       FROM reservations
-      WHERE phone = $1
+      WHERE regexp_replace(phone, '\\D', '', 'g') = $1
         AND date = $2
         AND start_time = $3
         AND ($4::text IS NULL OR room = $4)
@@ -646,11 +656,16 @@ async function updateAlertSent(alertId, sentAt) {
 }
 
 async function resolveAlert(phone, date, start) {
+  const normalizedPhone = String(phone || '').replace(/\D+/g, '');
   const result = await pgPool.run(SCHEMA, `
     UPDATE alerts
     SET resolved=1, resolved_at=to_char(now(),'YYYY-MM-DD HH24:MI:SS')
-    WHERE resolved=0 AND type='error' AND phone=$1 AND date=$2 AND start_time=$3
-  `, [phone, date, start]);
+    WHERE resolved=0
+      AND type='error'
+      AND regexp_replace(phone, '\\D', '', 'g') = $1
+      AND date=$2
+      AND start_time=$3
+  `, [normalizedPhone, date, start]);
   return result.rowCount;
 }
 
