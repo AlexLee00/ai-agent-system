@@ -12,19 +12,49 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { fetchHubSecrets } = require('./hub-client');
 
 const CONFIG_PATH = path.join(__dirname, '..', '..', '..', 'bots', 'investment', 'config.yaml');
 
 let _config = null;
+let _hubInitDone = false;
+
+function loadConfigLocal() {
+  try {
+    const yaml = require('js-yaml');
+    return yaml.load(fs.readFileSync(CONFIG_PATH, 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+async function initHubConfig() {
+  if (_hubInitDone) return !!_config;
+
+  const hubData = await fetchHubSecrets('llm');
+  if (hubData) {
+    _config = {
+      anthropic: hubData.anthropic || {},
+      openai: hubData.openai || {},
+      gemini: hubData.gemini || {},
+      groq: hubData.groq || {},
+      cerebras: hubData.cerebras || {},
+      sambanova: hubData.sambanova || {},
+      xai: hubData.xai || {},
+      billing: hubData.billing || {},
+    };
+    _hubInitDone = true;
+    return true;
+  }
+
+  _config = loadConfigLocal();
+  _hubInitDone = true;
+  return false;
+}
 
 function loadConfig() {
   if (_config) return _config;
-  try {
-    const yaml = require('js-yaml');
-    _config = yaml.load(fs.readFileSync(CONFIG_PATH, 'utf8')) || {};
-  } catch {
-    _config = {};
-  }
+  _config = loadConfigLocal();
   return _config;
 }
 
@@ -51,6 +81,7 @@ function getBillingBudget() {
 }
 
 module.exports = {
+  initHubConfig,
   getAnthropicKey,
   getAnthropicAdminKey,
   getOpenAIKey,

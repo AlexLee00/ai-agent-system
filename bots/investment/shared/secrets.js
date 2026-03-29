@@ -15,10 +15,12 @@ import yaml from 'js-yaml';
 const _require = createRequire(import.meta.url);
 const kst     = _require('../../../packages/core/lib/kst');
 const env     = _require('../../../packages/core/lib/env');
+const _hubClient = _require('../../../packages/core/lib/hub-client');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let _secrets = null;
+let _hubInitDone = false;
 
 function normalizeMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -30,6 +32,69 @@ function normalizeInvestmentTradeMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'normal' || normalized === 'validation') return normalized;
   return null;
+}
+
+/**
+ * Hub에서 전체 config를 가져와 시크릿 캐시에 주입.
+ * 투자팀 시작점에서 선택적으로 1회 호출 가능.
+ * 실패 시 기존 loadSecrets() 폴백을 유지한다.
+ * @returns {Promise<boolean>}
+ */
+export async function initHubSecrets() {
+  if (_hubInitDone) return !!_secrets;
+
+  const hubData = await _hubClient.fetchHubSecrets('config');
+  if (hubData) {
+    const c = hubData;
+    _secrets = {
+      telegram_bot_token:   c.telegram?.bot_token || '',
+      telegram_chat_id:     String(c.telegram?.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
+      binance_api_key:      c.binance?.api_key || '',
+      binance_api_secret:   c.binance?.api_secret || '',
+      binance_testnet:      c.binance?.testnet || false,
+      binance_symbols:      c.binance?.symbols || ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
+      binance_deposit_address_usdt: c.binance?.deposit_address_usdt || '',
+      upbit_access_key:     c.upbit?.access_key || '',
+      upbit_secret_key:     c.upbit?.secret_key || '',
+      kis_app_key:          c.kis?.app_key || '',
+      kis_app_secret:       c.kis?.app_secret || '',
+      kis_paper_app_key:    c.kis?.paper_app_key || '',
+      kis_paper_app_secret: c.kis?.paper_app_secret || '',
+      kis_account_number:   c.kis?.account_number || '',
+      kis_paper_account_number: c.kis?.paper_account_number || '',
+      kis_paper_trading:    c.kis?.paper_trading !== false,
+      kis_symbols:          c.kis?.symbols || [],
+      kis_overseas_symbols: c.kis?.overseas_symbols || [],
+      screening_domestic_core: c.screening?.domestic?.core || [],
+      screening_overseas_core: c.screening?.overseas?.core || [],
+      screening_crypto_core:   c.screening?.crypto?.core || [],
+      screening_domestic_max_dynamic: Number(c.screening?.domestic?.max_dynamic || 0),
+      screening_overseas_max_dynamic: Number(c.screening?.overseas?.max_dynamic || 0),
+      screening_crypto_max_dynamic:   Number(c.screening?.crypto?.max_dynamic || 0),
+      anthropic_api_key:    c.anthropic?.api_key || '',
+      groq_api_key:         c.groq?.accounts?.[0]?.api_key || '',
+      groq_api_keys:        (c.groq?.accounts || []).map((account) => account.api_key).filter(Boolean),
+      cerebras_api_key:     c.cerebras?.api_key || '',
+      sambanova_api_key:    c.sambanova?.api_key || '',
+      xai_api_key:          c.xai?.api_key || '',
+      naver_client_id:      c.news?.naver_client_id || '',
+      naver_client_secret:  c.news?.naver_client_secret || '',
+      dart_api_key:         c.news?.dart_api_key || '',
+      cryptopanic_api_key:  c.news?.cryptopanic_api_key || '',
+      alpha_vantage_api_key: c.news?.alpha_vantage_api_key || '',
+      trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),
+      binance_mode: normalizeMode(c.binance_mode) || 'inherit',
+      kis_mode: normalizeMode(c.kis_mode) || 'inherit',
+      investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
+      paper_mode: c.paper_mode !== false,
+    };
+    _hubInitDone = true;
+    return true;
+  }
+
+  loadSecrets();
+  _hubInitDone = true;
+  return false;
 }
 
 export function loadSecrets() {
