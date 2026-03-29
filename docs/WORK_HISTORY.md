@@ -5099,3 +5099,7 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
   - 결과: 코드 문법 오류 없음, 오케스트레이터 health는 `gateway` 다운 1건만 경고
 - 2026-03-29: 덱스터 checksum baseline을 다시 갱신했다.
   - `node bots/claude/src/dexter.js --update-checksums`
+- 2026-03-29: 스카 리포트 봇 `rebecca` 계열을 복구했다.
+  - `brew install python@3.12` 후 `bots/ska/venv`를 재생성하고 `requirements.txt` 전체를 설치했다.
+  - `bots/ska/scripts/run-rebecca.sh`의 `NODE=/usr/bin/env node` 오기재를 `/opt/homebrew/bin/node`로 수정해 reporting-hub 발행이 정상 완료되도록 정리했다.
+  - `bots/reservation/launchd/ai.ska.rebecca-weekly.plist`와 live plist의 PATH를 `bots/ska/venv/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin`으로 맞췄다.
