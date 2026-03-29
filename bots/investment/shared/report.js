@@ -9,10 +9,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const sender  = require('../../../packages/core/lib/telegram-sender');
 import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.js';
-const {
-  publishEventPipeline,
-  buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
+const { createEventReporter } = require('../../../packages/core/lib/telegram/reporter');
 
 const DIVIDER = '──────────';
 const SMALL_DIVIDER = '──────────';
@@ -24,43 +21,24 @@ function compactReasoning(reasoning, maxLength = 90) {
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-function publishLunaMessage({
-  message,
-  eventType = 'report',
-  alertLevel = 1,
-  payload = null,
-  criticalTelegramMode = 'both',
-}) {
-  const event = {
-    from_bot: 'luna',
-    team: 'investment',
-    event_type: eventType,
-    alert_level: alertLevel,
-    message,
-    payload,
-  };
-  return publishEventPipeline({
-    event,
-    policy: {
-      cooldownMs: alertLevel >= 3 ? 60_000 : 5 * 60_000,
-      quietHours: {
-        timezone: 'KST',
-        startHour: 23,
-        endHour: 8,
-        maxAlertLevel: 1,
-      },
-    },
-    targets: buildSeverityTargets({
-      event,
-      sender,
-      topicTeam: 'luna',
-      includeQueue: false,
-      includeTelegram: true,
-      includeN8n: true,
-      criticalTelegramMode,
-    }),
-  }).then((result) => result.ok);
-}
+const publishLunaMessage = createEventReporter({
+  sender,
+  fromBot: 'luna',
+  team: 'investment',
+  topicTeam: 'luna',
+  defaultEventType: 'report',
+  defaultAlertLevel: 1,
+  defaultCooldownMs: 5 * 60_000,
+  quietHours: {
+    timezone: 'KST',
+    startHour: 23,
+    endHour: 8,
+    maxAlertLevel: 1,
+  },
+  includeQueue: false,
+  includeTelegram: true,
+  includeN8n: true,
+});
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────
 
