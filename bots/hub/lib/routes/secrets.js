@@ -2,8 +2,10 @@
 /**
  * routes/secrets.js — 시크릿 프록시
  *
- * DEV에서 OPS의 API 키를 Hub를 통해 안전하게 조회.
- * 카테고리별로 필요한 키만 반환, 티어 4(OPS 전용)는 마스킹.
+ * OPS/DEV 모두 Hub를 1순위로 사용, 로컬 config.yaml은 폴백.
+ * Hub는 원본을 그대로 반환. DEV 안전은 클라이언트의 env.js
+ * (MODE=dev → PAPER_MODE=true) + hostname 체크가 담당.
+ * 티어 4(OPS 전용 예약 키)만 마스킹.
  *
  * 카테고리:
  *   llm         — LLM API 키 (Anthropic/OpenAI/Gemini/Groq 등)
@@ -70,28 +72,15 @@ const CATEGORY_HANDLERS = {
     };
   },
 
-  // 거래소 키 (티어 3: DEV는 paper/testnet 강제)
+  // 거래소 키 — 원본 반환 (DEV 안전은 클라이언트 env.js가 담당)
   exchange: () => {
     const c = loadConfigYaml();
     return {
-      binance: {
-        api_key: c.binance?.api_key,
-        api_secret: c.binance?.api_secret,
-        testnet: true,
-        symbols: c.binance?.symbols || [],
-      },
-      upbit: {
-        access_key: c.upbit?.access_key,
-        secret_key: c.upbit?.secret_key,
-      },
-      kis: {
-        app_key: c.kis?.paper_app_key || c.kis?.app_key,
-        app_secret: c.kis?.paper_app_secret || c.kis?.app_secret,
-        account_number: c.kis?.paper_account_number || c.kis?.account_number,
-        paper_trading: true,
-      },
-      trading_mode: 'paper',
-      paper_mode: true,
+      binance: c.binance || {},
+      upbit: c.upbit || {},
+      kis: c.kis || {},
+      trading_mode: c.trading_mode,
+      paper_mode: c.paper_mode,
     };
   },
 
@@ -124,16 +113,9 @@ const CATEGORY_HANDLERS = {
     };
   },
 
-  // config.yaml 전체 (DEV 안전 오버라이드)
+  // config.yaml 전체 — 원본 반환 (DEV 안전은 클라이언트 env.js가 담당)
   config: () => {
-    const c = loadConfigYaml();
-    return {
-      ...c,
-      trading_mode: 'paper',
-      paper_mode: true,
-      binance: { ...(c.binance || {}), testnet: true },
-      kis: { ...(c.kis || {}), paper_trading: true },
-    };
+    return loadConfigYaml();
   },
 };
 
