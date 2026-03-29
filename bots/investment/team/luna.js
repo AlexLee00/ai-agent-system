@@ -486,15 +486,44 @@ function normalizeExitDecision(rawDecision, fallbackPosition) {
 }
 
 function buildExitFallback(openPositions) {
-  return {
-    decisions: openPositions.map(pos => ({
+  const decisions = openPositions.map((pos) => {
+    const avgPrice = Number(pos.avg_price || 0);
+    const currentPrice = Number(pos.current_price || avgPrice || 0);
+    const heldHours = Number(pos.held_hours || 0);
+    const pnlPct = avgPrice > 0
+      ? ((currentPrice - avgPrice) / avgPrice) * 100
+      : 0;
+
+    if (heldHours >= 72) {
+      return {
+        symbol: pos.symbol,
+        action: ACTIONS.SELL,
+        confidence: 0.58,
+        reasoning: 'EXIT fallback — 72시간 이상 장기 보유 재평가',
+        exit_type: 'normal_exit',
+      };
+    }
+    if (pnlPct <= -5) {
+      return {
+        symbol: pos.symbol,
+        action: ACTIONS.SELL,
+        confidence: 0.64,
+        reasoning: 'EXIT fallback — 손실 -5% 이하 손절',
+        exit_type: 'normal_exit',
+      };
+    }
+    return {
       symbol: pos.symbol,
       action: ACTIONS.HOLD,
       confidence: 0.5,
       reasoning: 'EXIT fallback — 보수적으로 HOLD 유지',
       exit_type: 'normal_exit',
-    })),
-    exit_view: 'EXIT fallback — 모든 포지션 HOLD',
+    };
+  });
+
+  return {
+    decisions,
+    exit_view: 'EXIT fallback — 장기보유/손절 규칙 기반 판단',
   };
 }
 

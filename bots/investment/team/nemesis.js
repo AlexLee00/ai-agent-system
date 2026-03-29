@@ -754,7 +754,7 @@ export async function evaluateSignal(signal, opts = {}) {
 
   const todayPnl = await db.getTodayPnl();
   const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
-  if (lossPct >= rules.MAX_DAILY_LOSS_PCT) {
+  if (action === ACTIONS.BUY && lossPct >= rules.MAX_DAILY_LOSS_PCT) {
     const reason = `일일 손실 한도 초과 (${(lossPct * 100).toFixed(1)}%)`;
     if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
     if (persist) await notifyRiskRejection({ symbol, action, reason });
