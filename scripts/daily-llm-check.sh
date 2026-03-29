@@ -6,7 +6,7 @@
 set -e
 
 NODE="/opt/homebrew/bin/node"
-ROOT="/Users/alexlee/projects/ai-agent-system"
+ROOT="${PROJECT_ROOT:-$HOME/projects/ai-agent-system}"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 속도 테스트 시작"
 $NODE "$ROOT/scripts/speed-test.js" --telegram --runs=2

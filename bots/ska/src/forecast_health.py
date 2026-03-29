@@ -9,11 +9,12 @@ ska-015: 포캐스트 헬스 리포트
   bots/ska/venv/bin/python bots/ska/src/forecast_health.py [--days=30] [--json]
 """
 import json
+import os
 import sys
 import psycopg2
 from datetime import date as date_type, timedelta
 
-sys.path.insert(0, '/Users/alexlee/projects/ai-agent-system')
+sys.path.insert(0, os.environ.get('PROJECT_ROOT', os.path.expanduser('~/projects/ai-agent-system')))
 from packages.core.lib.health_core import build_health_report, build_health_decision_section
 
 PG_SKA = "dbname=jay options='-c search_path=ska,public'"

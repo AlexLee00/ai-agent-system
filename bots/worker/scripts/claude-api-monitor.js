@@ -13,6 +13,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const os   = require('os');
 const https = require('https');
 
 const kst    = require('../../../packages/core/lib/kst');
@@ -25,7 +26,7 @@ const {
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
-const SPAWN_LOG   = '/Users/alexlee/.openclaw/workspace/logs/claude-code-spawns.jsonl';
+const SPAWN_LOG   = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
 
 // ── 설정 ──────────────────────────────────────────────────────────────

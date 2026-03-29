@@ -3,8 +3,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const root = '/Users/alexlee/projects/ai-agent-system';
+const root = process.env.PROJECT_ROOT || path.join(os.homedir(), 'projects', 'ai-agent-system');
 
 function readJson(filePath) {
   try {
