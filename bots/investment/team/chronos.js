@@ -11,6 +11,7 @@
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import * as db from '../shared/db.js';
+import { isPaperMode } from '../shared/secrets.js';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
@@ -21,7 +22,7 @@ const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
  * - DB 연결 확인
  */
 export function chronosGuard() {
-  const isPaper = process.env.PAPER_MODE !== 'false';
+  const isPaper = isPaperMode();
   if (!isPaper) {
     console.warn('  ⚠️ [크로노스] LIVE 모드에서 백테스팅 주의 — DB 부하 가능');
   }
