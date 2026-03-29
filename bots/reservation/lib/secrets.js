@@ -13,10 +13,12 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 
 const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
 
 let _cache = null;
+let _hubSharedInitDone = false;
 
 // ─── 로드 ───────────────────────────────────────────────────────────
 
@@ -36,6 +38,32 @@ function loadSecrets() {
   }
 
   return _cache;
+}
+
+/**
+ * Hub에서 reservation 공유 키를 가져와 로컬 시크릿에 병합.
+ * 운영 자격증명(pickko/naver/db)은 로컬 파일을 계속 우선 사용한다.
+ * @returns {Promise<boolean>} Hub 로드 성공 여부
+ */
+async function initHubSharedSecrets() {
+  if (_hubSharedInitDone) return !!_cache;
+
+  const local = loadSecrets();
+  const hubData = await fetchHubSecrets('reservation-shared');
+  if (hubData) {
+    _cache = {
+      ...local,
+      telegram_bot_token: hubData.telegram_bot_token || local.telegram_bot_token || '',
+      telegram_chat_id: hubData.telegram_chat_id || local.telegram_chat_id || '',
+      telegram_group_id: hubData.telegram_group_id || local.telegram_group_id || '',
+      telegram_topic_ids: hubData.telegram_topic_ids || local.telegram_topic_ids || {},
+    };
+    _hubSharedInitDone = true;
+    return true;
+  }
+
+  _hubSharedInitDone = true;
+  return false;
 }
 
 // ─── 키 접근 헬퍼 ───────────────────────────────────────────────────
@@ -112,6 +140,7 @@ function hasDataGokrKeys() {
 
 module.exports = {
   loadSecrets,
+  initHubSharedSecrets,
   requireSecret,
   hasSecret,
   getSecret,
