@@ -109,12 +109,16 @@ export function loadSecrets() {
 // ─── executionMode / legacy PAPER_MODE ──────────────────────────────
 
 export function getTradingMode() {
-  if (process.env.PAPER_MODE === 'false') return 'live';
-  if (process.env.PAPER_MODE === 'true')  return 'paper';
-  const s = loadSecrets();
-  const resolved = normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
+  let resolved;
+  if (process.env.PAPER_MODE === 'false')     resolved = 'live';
+  else if (process.env.PAPER_MODE === 'true') resolved = 'paper';
+  else {
+    const s = loadSecrets();
+    resolved = normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
+  }
 
   // ── 안전장치: 운영 서버(MacStudio)가 아닌 곳에서 live 차단 ──
+  // 환경변수·config 어디서 live가 왔든 최종 관문으로 hostname 체크
   if (resolved === 'live' && !hostname().includes('MacStudio')) {
     console.warn(`⚠️ [secrets] 비운영 서버(${hostname()})에서 live 모드 감지 → paper 강제 전환`);
     return 'paper';
