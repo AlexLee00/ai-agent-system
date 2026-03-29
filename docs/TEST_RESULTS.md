@@ -1807,3 +1807,7 @@
   - 결과: 주간 리포트 생성, `[python-report] ✅ reporting-hub 발행 완료` 확인
 - 2026-03-29: `launchctl print gui/501/ai.ska.rebecca-weekly` ✅
   - 결과: `last exit code = 0`
+- 2026-03-29: `bots/ska/scripts/run-forecast.sh daily` ✅
+  - 결과: `forecast_results` 1건 저장, `training_feature_daily` 동기화 완료, `[python-report] ✅ reporting-hub 발행 완료` 확인
+- 2026-03-29: `node bots/claude/src/dexter.js --update-checksums` ✅
+  - 결과: `체크섬 갱신 완료: 89개 파일`

@@ -5,7 +5,7 @@
 # launchd ai.ska.forecast-weekly (매주 금요일 18:00)
 
 PYTHON=/Users/alexlee/projects/ai-agent-system/bots/ska/venv/bin/python
-NODE=/usr/bin/env node
+NODE=/opt/homebrew/bin/node
 FORECAST=/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py
 PUBLISHER=/Users/alexlee/projects/ai-agent-system/packages/core/scripts/publish-python-report.js
 
