@@ -52,6 +52,9 @@ async function run({ sessionId, market, symbol }) {
     signalId: saved.signalId,
     execution: result,
     signalStatus: updatedSignal?.status ?? null,
+    signalBlockCode: updatedSignal?.block_code ?? null,
+    signalBlockReason: updatedSignal?.block_reason ?? null,
+    signalBlockMeta: updatedSignal?.block_meta ?? null,
     trade,
   };
 }
