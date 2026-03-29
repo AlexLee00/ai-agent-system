@@ -241,6 +241,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
 const ANALYST_WEIGHTS = {
   [ANALYST_TYPES.TA_MTF]:    0.35,
   [ANALYST_TYPES.ONCHAIN]:   0.25,
+  [ANALYST_TYPES.SENTINEL]:  0.35,
   [ANALYST_TYPES.SENTIMENT]: 0.20,
   [ANALYST_TYPES.NEWS]:      0.15,
 };
@@ -423,6 +424,7 @@ export function buildAnalysisSummary(analyses) {
   return analyses.map(a => {
     const label = a.analyst === ANALYST_TYPES.TA_MTF    ? 'TA(MTF)'
                 : a.analyst === ANALYST_TYPES.ONCHAIN   ? '온체인'
+                : a.analyst === ANALYST_TYPES.SENTINEL  ? 'sentinel'
                 : a.analyst === ANALYST_TYPES.NEWS      ? '뉴스'
                 : a.analyst === ANALYST_TYPES.SENTIMENT ? '감성'
                 : a.analyst === ANALYST_TYPES.X_SEARCH  ? 'X감성'

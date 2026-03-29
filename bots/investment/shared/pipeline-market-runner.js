@@ -3,9 +3,9 @@ import { finishPipelineRun } from './pipeline-db.js';
 import { getInvestmentNode } from '../nodes/index.js';
 
 const COLLECT_NODE_SETS = {
-  binance: ['L06', 'L02', 'L03', 'L04', 'L05'],
-  kis: ['L06', 'L02', 'L03', 'L04'],
-  kis_overseas: ['L06', 'L02', 'L03', 'L04'],
+  binance: ['L06', 'L02', 'L03', 'L05'],
+  kis: ['L06', 'L02', 'L03'],
+  kis_overseas: ['L06', 'L02', 'L03'],
 };
 
 const COLLECT_CONCURRENCY_LIMIT = {

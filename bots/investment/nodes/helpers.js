@@ -40,7 +40,7 @@ export async function loadLatestNodePayload(sessionId, nodeId, symbol) {
 export async function loadAnalysesForSession(sessionId, symbol, market) {
   const artifacts = await loadNodePayloads(sessionId, ['L02', 'L03', 'L04', 'L05'], symbol);
   const fromArtifacts = artifacts
-    .map(item => normalizeAnalysisPayload(item.nodeId, item.payload, symbol, market))
+    .flatMap(item => normalizeAnalysisPayloads(item.nodeId, item.payload, symbol, market))
     .filter(Boolean);
 
   if (fromArtifacts.length > 0) {
@@ -83,11 +83,22 @@ export function buildAnalystSignals(analyses = []) {
   ].join('|');
 }
 
-function normalizeAnalysisPayload(nodeId, payload, symbol, market) {
+function normalizeAnalysisPayloads(nodeId, payload, symbol, market) {
   if (!payload || typeof payload !== 'object') return null;
+  if (Array.isArray(payload.analyses)) {
+    return payload.analyses.map((entry) => ({
+      symbol,
+      analyst: entry.analyst,
+      signal: entry.signal,
+      confidence: entry.confidence,
+      reasoning: entry.reasoning,
+      metadata: entry.metadata || {},
+      exchange: market,
+    }));
+  }
   const analyst = ANALYST_BY_NODE[nodeId];
   if (!analyst) return null;
-  return {
+  return [{
     symbol,
     analyst,
     signal: payload.signal,
@@ -95,7 +106,7 @@ function normalizeAnalysisPayload(nodeId, payload, symbol, market) {
     reasoning: payload.reasoning,
     metadata: extractMetadata(nodeId, payload),
     exchange: market,
-  };
+  }];
 }
 
 function extractMetadata(nodeId, payload) {
