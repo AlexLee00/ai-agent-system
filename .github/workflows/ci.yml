@@ -44,3 +44,39 @@ jobs:
             exit 1
           fi
           echo "✅ No secrets found"
+
+  deploy:
+    name: 운영 배포 (맥 스튜디오)
+    needs: lint-and-check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: self-hosted
+    environment: production
+    env:
+      PROJECT_ROOT: /Users/alexlee/projects/ai-agent-system
+
+    steps:
+      - name: 코드 동기화
+        run: |
+          cd "$PROJECT_ROOT"
+          git pull origin main
+
+      - name: 의존성 갱신 확인
+        run: |
+          cd "$PROJECT_ROOT"
+          if git diff --name-only HEAD~1 HEAD | grep -qE "package\.json|package-lock\.json"; then
+            echo "📦 package.json 변경 감지 — npm install 실행"
+            npm install --production
+          else
+            echo "✅ 의존성 변경 없음"
+          fi
+
+      - name: 변경된 팀만 재시작
+        run: |
+          cd "$PROJECT_ROOT"
+          bash scripts/smart-restart.sh
+
+      - name: 배포 후 헬스체크 (실패해도 배포는 성공)
+        run: |
+          sleep 15
+          cd "$PROJECT_ROOT"
+          node bots/claude/scripts/health-check.js --post-deploy --json || true
