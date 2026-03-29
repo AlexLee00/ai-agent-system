@@ -4,6 +4,33 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-03-29: n8n local bridge 복구와 worker/blog/ska webhook 정상화
+
+- 맥 스튜디오 migration 이후 `n8n -> localhost -> ::1`로 빠지던 local bridge 경로를 전수 점검했다.
+- `bots/worker/context/n8n-worker-chat-workflow.json`
+  - worker local bridge를 `127.0.0.1:4000` 기준으로 정리했다.
+  - webhook wrapper를 그대로 넘기지 않도록 `jsonBody = $json.body || $json`으로 바꿨다.
+  - `specifyBody=json`을 추가해 body 누락을 막았다.
+- `bots/blog/api/n8n-workflow.json`
+  - blog node server URL을 `127.0.0.1:3100`로 정리했다.
+  - `typeVersion 4.2`, `specifyBody=json`으로 통일했다.
+  - 각 노드가 중간 노드 출력이 아니라 `파이프라인 파싱`의 `sessionId/topic/postType/...`를 직접 참조하도록 정리했다.
+- `bots/reservation/context/n8n-ska-command-workflow.json`
+  - ska local bridge를 `127.0.0.1:3031`로 맞췄다.
+- `bots/reservation/launchd/ai.ska.dashboard.plist`
+  - migration 후 비어 있던 `3031` dashboard/webhook 서버를 launchd 서비스로 승격했다.
+- 운영 반영:
+  - live n8n DB의 workflow definition/history snapshot을 직접 수정해 stale `localhost`와 잘못된 body schema를 보정했다.
+  - `ai.n8n.server`, `ai.worker.web`, `ai.blog.node-server`, `ai.ska.dashboard`를 반복 재기동하며 live 상태를 맞췄다.
+  - `bots/worker/secrets.json`에는 누락된 `worker_webhook_secret`를 복구했다.
+- 최종 결과:
+  - `스카팀 읽기 명령 intake`는 `success`
+  - `워커팀 자연어 업무 intake`는 유효 payload 기준 `success`
+  - `블로그팀 동적 포스팅`은 `sessionId 필수` 실패를 넘기고 최신 실행 `949 success`
+  - 블로그는 기능상 성공했지만 `글 생성` 단계가 약 `53.7초` 걸리고 품질 검증 `passed=false`로 끝난다.
+- 해석:
+  - 이번 작업은 단순 health-report 수정이 아니라, migration 이후 끊어진 `n8n -> local bridge -> 팀별 서비스` production 경로를 실제 실행 단위로 복원한 단계다.
+
 ## 2026-03-26: worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
 
 - `bots/video/lib/cut-proposal-engine.js`를 추가해 OCR/scene index 기반 컷 후보 엔진을 붙였다.

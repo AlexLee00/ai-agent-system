@@ -16,7 +16,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3031/api/webhooks/n8n/ska-command",
+        "url": "http://127.0.0.1:3031/api/webhooks/n8n/ska-command",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
