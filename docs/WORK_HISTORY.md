@@ -31,6 +31,24 @@
 - 해석:
   - 이번 작업은 단순 health-report 수정이 아니라, migration 이후 끊어진 `n8n -> local bridge -> 팀별 서비스` production 경로를 실제 실행 단위로 복원한 단계다.
 
+## 2026-03-29: 블로팀 발행 상태 전이 정합성 복구
+
+- 오늘자 블로그 발행 여부를 점검하는 과정에서 `publish_schedule`은 `published`인데 실제 `blog.posts`는 `ready`로 남아 있는 불일치를 확인했다.
+- 원인 1:
+  - `bots/blog/lib/publ.js`가 새 포스트를 저장할 때 `publish_date = CURRENT_DATE + 1`로 고정해 하루 뒤 날짜로 넣고 있었다.
+- 원인 2:
+  - `bots/blog/lib/blo.js`가 초안 파일/DB 생성 직후 `publish_schedule`를 바로 `published`로 올리고 있었다.
+  - 실제 네이버 URL 기록 경로는 별도 `mark-published-url.js`였기 때문에, 원장 기준으로는 아직 발행 전인데 schedule만 먼저 닫히는 구조였다.
+- 수정:
+  - `publish_date`는 연결된 `scheduleId`의 `publish_schedule.publish_date`를 그대로 쓰도록 변경했다.
+  - 초안 생성 직후 schedule 상태는 `ready`로 두고, `markPublished()` 실행 시점에만 `posts + publish_schedule`를 함께 `published`로 올리도록 바꿨다.
+- 운영 보정:
+  - `blog.posts 77/78`의 날짜를 `2026-03-29`로 맞췄다.
+  - `blog.publish_schedule 39/40`는 `published -> ready`로 되돌려 현재 원장과 일치시켰다.
+- 해석:
+  - 오늘자 블로그 2건은 “생성 완료 + 발행 대기”가 정확한 상태다.
+  - 이후 네이버 URL이 기록되면 그때 발행 완료로 해석하면 된다.
+
 ## 2026-03-26: worker-web `/video`, `/video/editor` 단계형 편집 워크스페이스 1차
 
 - `bots/video/lib/cut-proposal-engine.js`를 추가해 OCR/scene index 기반 컷 후보 엔진을 붙였다.

@@ -30,6 +30,15 @@
 | `SELECT left(d.data::text, 6000) FROM n8n.execution_data WHERE executionId=949;` | ✅ `Webhook -> 파이프라인 파싱 -> 날씨/IT뉴스/Node.js 업데이트/RAG/관련 포스팅/글 생성/품질 검증/완료 응답` 전체 실행 확인 |
 | `tail -n 80 bots/blog/blog-node-server.log` | ✅ 글 생성/repair 로그 확인, `글 생성` 노드가 약 `53.7s` 소요되고 최종 `charCount=5055`, `passed=false`이지만 워크플로우는 성공 종료 |
 
+### 블로팀 발행 상태 전이 정합성 복구
+
+| 테스트 | 결과 |
+|--------|------|
+| `node --check bots/blog/lib/blo.js` | ✅ 초안 생성 직후 schedule 상태를 `ready`로 바꾸는 수정 후 문법 통과 |
+| `node --check bots/blog/lib/publ.js` | ✅ `publish_date`/`markPublished()` 정합성 수정 후 문법 통과 |
+| `SELECT id, title, publish_date, status, naver_url FROM blog.posts WHERE id IN (77,78);` | ✅ `publish_date=2026-03-29`, `status=ready`, `naver_url IS NULL` 확인 |
+| `SELECT id, publish_date, post_type, status, post_id FROM blog.publish_schedule WHERE id IN (39,40);` | ✅ 잘못 `published`였던 오늘 스케줄 2건을 `ready`로 정정하고 `post_id 77/78` 연결 유지 확인 |
+
 ## 2026-03-26
 
 ### crypto soft budget runtime suggestion 보강
