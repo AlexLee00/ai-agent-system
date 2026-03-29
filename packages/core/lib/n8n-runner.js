@@ -1,5 +1,7 @@
 'use strict';
 
+const { N8N_ENABLED } = require('./env');
+
 const DEFAULT_HEALTH_TIMEOUT_MS = Number(process.env.N8N_HEALTH_TIMEOUT_MS || 2500);
 const DEFAULT_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 30000);
 const DEFAULT_BACKOFF_MS = 30 * 60 * 1000;
@@ -57,6 +59,9 @@ async function triggerWebhookCandidates({
   timeoutMs = DEFAULT_WEBHOOK_TIMEOUT_MS,
   headers = {},
 }) {
+  if (!N8N_ENABLED) {
+    return { ok: false, skipped: true, reason: 'n8n_not_available_in_dev', failures: [] };
+  }
   const failures = [];
   for (const url of [...new Set((candidates || []).filter(Boolean))]) {
     try {
@@ -110,6 +115,17 @@ async function runWithN8nFallback({
   backoffMs = DEFAULT_BACKOFF_MS,
   logger = console,
 }) {
+  if (!N8N_ENABLED) {
+    logger.log('[n8n-runner] DEV 환경 — n8n 미설치, 스킵');
+    return {
+      ok: false,
+      skipped: true,
+      source: 'direct',
+      reason: 'n8n_not_available_in_dev',
+      ...(typeof directRunner === 'function' ? await directRunner() : {}),
+    };
+  }
+
   const state = getCircuitState(circuitName);
   if (state.open) {
     logger.log(`[n8n] 우회 중 (${circuitName}: ${state.reason})`);

@@ -27,11 +27,12 @@ const { addReservation, updateReservation, getReservation, markSeen, upsertKiosk
 const { buildReservationId } = require('../../lib/reservation-key');
 const kst = require('../../../../packages/core/lib/kst');
 const { fail } = require('../../lib/cli');
+const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const ARGS = parseArgs(process.argv);
 
 const VALID_ROOMS = ['A1', 'A2', 'B'];
-const MODE = process.env.MODE || 'ops';
+const MODE = IS_OPS ? 'ops' : 'dev';
 const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
 const IS_PENDING_ONLY = Boolean(ARGS['pending-only'] || ARGS.pendingOnly);
 const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS.skipNameSync);
@@ -81,7 +82,7 @@ const child = spawn('node', childArgs, {
   cwd: __dirname,
   env: {
     ...process.env,
-    MODE: process.env.MODE || 'ops',
+    MODE,
     SKIP_NAME_SYNC: SKIP_NAME_SYNC ? '1' : '0',
     MANUAL_RETRY: IS_MANUAL_RETRY ? '1' : '0',
     SKIP_FINAL_PAYMENT: IS_PENDING_ONLY ? '1' : '0',

@@ -45,13 +45,14 @@ const { loadSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
+const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const ARGS = parseArgs(process.argv);
 
-const MODE = (process.env.MODE || 'dev').toLowerCase();
+const MODE = IS_OPS ? 'ops' : 'dev';
 const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
   .split(',').map(p => p.trim()).filter(p => /^\d{11}$/.test(p));
 
@@ -106,7 +107,7 @@ if (['14일권', '28일권'].includes(TICKET_NAME) && COUNT > 1) {
 
 // ── DEV 모드 보호 ────────────────────────────────────────────────────────
 
-if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_RAW)) {
+if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
   fail(`DEV 모드: 화이트리스트 번호만 허용 (입력: ${PHONE_RAW})\nOPS 모드 사용: MODE=ops node src/pickko-ticket.js ...`);
 }
 

@@ -14,6 +14,7 @@ import yaml from 'js-yaml';
 
 const _require = createRequire(import.meta.url);
 const kst     = _require('../../../packages/core/lib/kst');
+const env     = _require('../../../packages/core/lib/env');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -110,8 +111,9 @@ export function loadSecrets() {
 
 export function getTradingMode() {
   let resolved;
-  if (process.env.PAPER_MODE === 'false')     resolved = 'live';
-  else if (process.env.PAPER_MODE === 'true') resolved = 'paper';
+  const explicitPaperMode = Reflect.get(process.env, 'PAPER_MODE');
+  if (explicitPaperMode === 'false')     resolved = 'live';
+  else if (explicitPaperMode === 'true') resolved = 'paper';
   else {
     const s = loadSecrets();
     resolved = normalizeMode(s.trading_mode) || (s.paper_mode === false ? 'live' : 'paper');
@@ -119,7 +121,7 @@ export function getTradingMode() {
 
   // ── 안전장치: 운영 서버(MacStudio)가 아닌 곳에서 live 차단 ──
   // 환경변수·config 어디서 live가 왔든 최종 관문으로 hostname 체크
-  if (resolved === 'live' && !hostname().includes('MacStudio')) {
+  if (resolved === 'live' && !hostname().includes('MacStudio') && !env.IS_OPS) {
     console.warn(`⚠️ [secrets] 비운영 서버(${hostname()})에서 live 모드 감지 → paper 강제 전환`);
     return 'paper';
   }

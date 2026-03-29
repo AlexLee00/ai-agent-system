@@ -27,9 +27,10 @@
 const { execSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
+const { LAUNCHD_AVAILABLE, OPENCLAW_PORT: ENV_OPENCLAW_PORT } = require('../../../../packages/core/lib/env');
 
 const OPENCLAW_SERVICE = 'ai.openclaw.gateway';
-const OPENCLAW_PORT    = 18789;
+const OPENCLAW_PORT    = ENV_OPENCLAW_PORT > 0 ? ENV_OPENCLAW_PORT : 18789;
 
 // 메모리 임계값
 const MEM_WARN_MB = 800;    // 경고 (재시작 직후 기준선 ~520MB 포함 여유)
@@ -62,6 +63,7 @@ function saveMemState(state) {
 // ── launchd 상태 조회 ──────────────────────────────────────────────
 
 function getLaunchdStatus(serviceId) {
+  if (!LAUNCHD_AVAILABLE) return null;
   try {
     const out = execSync(
       `launchctl list | awk '$3 == "${serviceId}" {print $1, $2}'`,
@@ -149,6 +151,15 @@ function analyzeLeakTrend(history, currentMb) {
 
 async function run() {
   const items = [];
+
+  if (!LAUNCHD_AVAILABLE) {
+    items.push({
+      label: 'OpenClaw 게이트웨이 (launchd)',
+      status: 'ok',
+      detail: 'DEV 환경 — launchd 서비스 미등록',
+    });
+    return { name: 'OpenClaw 게이트웨이 건강', status: 'ok', items };
+  }
 
   // 1. launchd 서비스 상태
   const launchd = getLaunchdStatus(OPENCLAW_SERVICE);

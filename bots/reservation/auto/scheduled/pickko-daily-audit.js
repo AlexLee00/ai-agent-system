@@ -18,11 +18,12 @@ const { publishToMainBot } = require('../../lib/mainbot-client');
 const { getAllNaverKeys } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const shadow = require('../../../../packages/core/lib/shadow-mode');
+const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
-const MODE = (process.env.MODE || 'ops').toLowerCase();
+const MODE = IS_OPS ? 'ops' : 'dev';
 
 // KST 기준 오늘 날짜 (YYYY-MM-DD)
 function getTodayKST() {

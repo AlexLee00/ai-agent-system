@@ -16,7 +16,7 @@ function isOpsMode()  { return env.IS_OPS; }
 
 function assertOpsReady() {
   const errors = [];
-  if (process.env.MODE !== 'ops') errors.push('MODE=ops 환경변수 미설정');
+  if (!env.IS_OPS) errors.push('MODE=ops 환경변수 미설정');
   if (!hasSecret('pickko_id'))           errors.push('pickko_id 미설정');
   if (!hasSecret('pickko_pw'))           errors.push('pickko_pw 미설정');
   if (!hasSecret('naver_id'))            errors.push('naver_id 미설정');

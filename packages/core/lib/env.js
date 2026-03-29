@@ -91,6 +91,43 @@ const PAPER_MODE = process.env.PAPER_MODE !== 'false' || IS_DEV;
 /** Node.js 환경 ('production' | 'development' | 'test') */
 const NODE_ENV = process.env.NODE_ENV || (IS_OPS ? 'production' : 'development');
 
+// ─── 서비스 접근 주소 ─────────────────────────────────────────────────────
+
+const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
+
+const N8N_ENABLED = IS_OPS
+  ? (process.env.N8N_ENABLED !== 'false')
+  : (process.env.N8N_ENABLED === 'true');
+
+const PG_HOST = process.env.PG_HOST || 'localhost';
+const PG_PORT = parseInt(process.env.PG_PORT || '5432', 10);
+
+const LAUNCHD_AVAILABLE = IS_OPS
+  ? (process.env.LAUNCHD_AVAILABLE !== 'false')
+  : (process.env.LAUNCHD_AVAILABLE === 'true');
+
+const OPENCLAW_PORT = IS_OPS
+  ? parseInt(process.env.OPENCLAW_PORT || '18789', 10)
+  : -1;
+
+const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE ||
+  path.join(os.homedir(), '.openclaw', 'workspace');
+
+const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||
+  path.join(os.homedir(), '.openclaw', 'logs');
+
+// ─── Resource API Hub ────────────────────────────────────────────────
+
+const HUB_BASE_URL = IS_DEV
+  ? (process.env.HUB_BASE_URL || 'http://localhost:7788')
+  : null;
+
+const USE_HUB = IS_DEV && !!HUB_BASE_URL;
+
+const HUB_AUTH_TOKEN = process.env.HUB_AUTH_TOKEN || '';
+
+const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
+
 // ─── 모드 보호 ───────────────────────────────────────────────────────────
 
 /**
@@ -194,6 +231,22 @@ module.exports = {
   IS_DEV,
   PAPER_MODE,
   NODE_ENV,
+
+  // 서비스 접근
+  N8N_BASE_URL,
+  N8N_ENABLED,
+  PG_HOST,
+  PG_PORT,
+  LAUNCHD_AVAILABLE,
+  OPENCLAW_PORT,
+  OPENCLAW_WORKSPACE,
+  OPENCLAW_LOGS,
+
+  // Resource API Hub
+  HUB_BASE_URL,
+  USE_HUB,
+  HUB_AUTH_TOKEN,
+  HUB_PORT,
 
   // 보호 가드
   ensureOps,

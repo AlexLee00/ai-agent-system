@@ -14,6 +14,7 @@
 const { execSync } = require('child_process');
 const fs           = require('fs');
 const path         = require('path');
+const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
 
 // crashed 알람 쿨다운: 동일 서비스 1시간 이내 중복 발송 방지
 const CRASH_COOLDOWN_MS = 60 * 60 * 1000;
@@ -43,6 +44,7 @@ const CRITICAL_SERVICES = [
 // ── launchd 상태 조회 ──────────────────────────────────────────────
 
 function getLaunchdStatus(serviceId) {
+  if (!LAUNCHD_AVAILABLE) return null;
   try {
     const out = execSync(
       `launchctl list | awk '$3 == "${serviceId}" {print $1, $2}'`,
@@ -60,6 +62,15 @@ async function run() {
   const items = [];
   const state = loadState();
   let stateChanged = false;
+
+  if (!LAUNCHD_AVAILABLE) {
+    items.push({
+      label: '핵심 launchd 서비스',
+      status: 'ok',
+      detail: 'DEV 환경 — launchd 서비스 미등록',
+    });
+    return { name: '핵심 봇 프로세스 건강', status: 'ok', items };
+  }
 
   // launchd 핵심 서비스 점검
   for (const svc of CRITICAL_SERVICES) {
