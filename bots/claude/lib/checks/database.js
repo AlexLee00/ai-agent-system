@@ -308,7 +308,11 @@ except Exception as e:
 
 async function checkSkaDuckDB(items) {
   if (!fs.existsSync(cfg.DBS.ska)) {
-    items.push({ label: 'DuckDB (스카)', status: 'warn', detail: 'ska.duckdb 파일 없음 (ETL 미실행)' });
+    items.push({
+      label: 'DuckDB (스카)',
+      status: 'ok',
+      detail: 'ska.duckdb 없음 — 현재 운영은 PostgreSQL 중심, DuckDB 분석 스토어는 선택 사항',
+    });
     return;
   }
 
