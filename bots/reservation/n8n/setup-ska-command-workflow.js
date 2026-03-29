@@ -15,7 +15,9 @@ const path = require('path');
 const fs = require('fs');
 
 const EMAIL = process.env.N8N_EMAIL || 'admin@example.com';
-const PASSWORD = 'TeamJay2026!';
+const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
+const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
+const parsedBaseUrl = new URL(N8N_BASE_URL);
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-ska-command-workflow.json');
 const SECRETS_PATH = path.join(__dirname, '../secrets.json');
 
@@ -33,8 +35,8 @@ function request(method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = http.request({
-      hostname: 'localhost',
-      port: 5678,
+      hostname: parsedBaseUrl.hostname || '127.0.0.1',
+      port: Number(parsedBaseUrl.port || 5678),
       path: urlPath,
       method,
       headers: {

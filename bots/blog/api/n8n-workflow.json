@@ -20,7 +20,40 @@
       "typeVersion": 2,
       "position": [460, 300],
       "parameters": {
-        "jsCode": "// 웹훅 입력 파싱\nconst body = $input.item.json.body || $input.item.json;\nconst {\n  postType,\n  sessionId,\n  pipeline,\n  variations,\n  category,\n  lectureNumber,\n  lectureTitle,\n  topic,\n} = body;\n\nreturn [{\n  json: {\n    postType,\n    sessionId,\n    pipeline,\n    variations,\n    category: category || null,\n    lectureNumber: lectureNumber || null,\n    lectureTitle: lectureTitle || null,\n    topic: topic || category || lectureTitle || (postType === 'lecture' ? 'Node.js' : '일반 포스팅'),\n  }\n}];"
+        "jsCode": "// 웹훅 입력 파싱\nconst body = $input.item.json.body || $input.item.json;\nconst {\n  postType,\n  sessionId,\n  pipeline,\n  variations,\n  category,\n  lectureNumber,\n  lectureTitle,\n  topic,\n  postId,\n  scheduleId,\n  publishedUrl,\n  url,\n} = body;\n\nreturn [{\n  json: {\n    postType,\n    sessionId,\n    pipeline,\n    variations,\n    category: category || null,\n    lectureNumber: lectureNumber || null,\n    lectureTitle: lectureTitle || null,\n    topic: topic || category || lectureTitle || (postType === 'lecture' ? 'Node.js' : '일반 포스팅'),\n    postId: postId || null,\n    scheduleId: scheduleId || null,\n    publishedUrl: publishedUrl || url || null,\n  }\n}];"
+      }
+    },
+    {
+      "id": "if-published-url",
+      "name": "발행 URL 포함?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('파이프라인 파싱').item.json.publishedUrl || '' }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-mark-published",
+      "name": "발행 URL 기록",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:3100/api/blog/mark-published",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { postId: $('파이프라인 파싱').item.json.postId, scheduleId: $('파이프라인 파싱').item.json.scheduleId, url: $('파이프라인 파싱').item.json.publishedUrl } }}",
+        "options": {}
       }
     },
     {
@@ -28,7 +61,7 @@
       "name": "날씨 수집",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 160],
+      "position": [900, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/weather",
@@ -44,7 +77,7 @@
       "name": "IT뉴스 수집",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300],
+      "position": [1120, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/it-news",
@@ -60,7 +93,7 @@
       "name": "Node.js 업데이트 수집",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 440],
+      "position": [1340, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/nodejs-updates",
@@ -76,7 +109,7 @@
       "name": "RAG 실전 사례",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 300],
+      "position": [1560, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/rag-experiences",
@@ -92,7 +125,7 @@
       "name": "관련 포스팅",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 440],
+      "position": [1780, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/related-posts",
@@ -108,7 +141,7 @@
       "name": "글 생성",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 300],
+      "position": [2000, 320],
       "parameters": {
         "method": "POST",
         "url": "=http://127.0.0.1:3100/api/blog/node/write-{{ $('파이프라인 파싱').item.json.postType === 'lecture' ? 'lecture' : 'general' }}",
@@ -124,7 +157,7 @@
       "name": "품질 검증",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 300],
+      "position": [2220, 320],
       "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:3100/api/blog/node/quality-check",
@@ -136,14 +169,25 @@
       }
     },
     {
-      "id": "respond-webhook",
+      "id": "respond-webhook-pipeline",
       "name": "완료 응답",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1560, 300],
+      "position": [2440, 320],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: true, sessionId: $('파이프라인 파싱').item.json.sessionId, quality: $('품질 검증').item.json }) }}"
+      }
+    },
+    {
+      "id": "respond-webhook-published",
+      "name": "발행 완료 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 180],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, mode: 'mark_published', result: $('발행 URL 기록').item.json }) }}"
       }
     }
   ],
@@ -156,8 +200,23 @@
     "파이프라인 파싱": {
       "main": [
         [
+          { "node": "발행 URL 포함?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "발행 URL 포함?": {
+      "main": [
+        [
+          { "node": "발행 URL 기록", "type": "main", "index": 0 }
+        ],
+        [
           { "node": "날씨 수집", "type": "main", "index": 0 }
         ]
+      ]
+    },
+    "발행 URL 기록": {
+      "main": [
+        [{ "node": "발행 완료 응답", "type": "main", "index": 0 }]
       ]
     },
     "날씨 수집": {

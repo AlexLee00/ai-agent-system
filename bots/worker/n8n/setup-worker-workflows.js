@@ -14,10 +14,18 @@ const fs = require('fs');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 
 const EMAIL = process.env.N8N_EMAIL || 'admin@example.com';
-const PASSWORD = 'TeamJay2026!';
+const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
+const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-worker-chat-workflow.json');
 const SECRETS_PATH = path.join(__dirname, '../secrets.json');
-const client = createN8nSetupClient({ email: EMAIL, password: PASSWORD, logger: console });
+const parsedBaseUrl = new URL(N8N_BASE_URL);
+const client = createN8nSetupClient({
+  host: parsedBaseUrl.hostname || '127.0.0.1',
+  port: Number(parsedBaseUrl.port || 5678),
+  email: EMAIL,
+  password: PASSWORD,
+  logger: console,
+});
 
 function loadSecrets() {
   return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
