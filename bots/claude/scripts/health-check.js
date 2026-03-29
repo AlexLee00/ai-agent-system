@@ -15,9 +15,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 const { publishToMainBot } = require('../lib/mainbot-client');
 const hsm = require('../../../packages/core/lib/health-state-manager');
+const {
+  getLaunchctlStatus,
+  DEFAULT_NORMAL_EXIT_CODES,
+} = require('../../../packages/core/lib/health-provider');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.claude.commander'];
@@ -33,7 +36,7 @@ const ALL_SERVICES = [
 ];
 
 // 정상 종료 코드
-const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const CLAUDE_ROOT = path.join(__dirname, '..');
 
 function hasRecentDexterReport() {
@@ -60,24 +63,6 @@ function isExpectedExit(label, exitCode) {
   return false;
 }
 
-// ─── launchctl 파싱 ──────────────────────────────────────────────
-
-function getLaunchctlStatus() {
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
-  const services = {};
-  for (const line of raw.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-    const [pid, exitCode, label] = parts;
-    services[label] = {
-      running: pid !== '-',
-      pid: pid !== '-' ? parseInt(pid) : null,
-      exitCode: parseInt(exitCode) || 0,
-    };
-  }
-  return services;
-}
-
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
@@ -85,7 +70,7 @@ async function main() {
 
   let status;
   try {
-    status = getLaunchctlStatus();
+    status = getLaunchctlStatus(ALL_SERVICES);
   } catch (e) {
     console.error(`[클로드 헬스체크] launchctl 실행 실패: ${e.message}`);
     process.exit(1);
