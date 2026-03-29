@@ -87,14 +87,34 @@ async function marketSell(symbol, amount, paperMode) {
     return { amount, price, totalUsdt, dryRun: true };
   }
   const ex = getExchange();
-  return await ex.createOrder(symbol, 'market', 'sell', amount);
+  await ex.loadMarkets();
+  const normalizedAmount = roundSellAmount(symbol, amount);
+  const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
+  if (normalizedAmount <= 0 || (minSellAmount > 0 && normalizedAmount < minSellAmount)) {
+    const error = new Error(`sell_amount_below_minimum:${symbol}:${normalizedAmount}:${minSellAmount}`);
+    error.code = 'sell_amount_below_minimum';
+    error.meta = {
+      symbol,
+      requestedAmount: amount,
+      normalizedAmount,
+      minSellAmount,
+    };
+    throw error;
+  }
+  return await ex.createOrder(symbol, 'market', 'sell', normalizedAmount);
 }
 
 async function getMinSellAmount(symbol) {
   const ex = getExchange();
   await ex.loadMarkets();
   const market = ex.market(symbol);
-  return Number(market?.limits?.amount?.min || 0);
+  const exchangeMin = Number(market?.limits?.amount?.min || 0);
+  const rawPrecision = market?.precision?.amount;
+  let precisionStep = 0;
+  if (typeof rawPrecision === 'number' && Number.isFinite(rawPrecision)) {
+    precisionStep = rawPrecision >= 1 ? (1 / (10 ** rawPrecision)) : rawPrecision;
+  }
+  return Math.max(exchangeMin, precisionStep);
 }
 
 function roundSellAmount(symbol, amount) {
