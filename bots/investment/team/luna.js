@@ -203,7 +203,7 @@ const LUNA_EXIT_SYSTEM = `당신은 루나(Luna), 루나팀의 포지션 청산 
 {"decisions":[{"symbol":"BTC/USDT","action":"SELL","confidence":0.72,"reasoning":"추세 약화 및 목표 수익 달성"}],"exit_view":"전체 포지션 판단 요약"}`.trim();
 
 // PORTFOLIO_PROMPT는 함수로 생성 — 실제 심볼 목록을 예시에 반영해 LLM 환각 방지
-function buildPortfolioPrompt(symbols, exchange = 'binance') {
+function buildPortfolioPrompt(symbols, exchange = 'binance', exitSummary = null) {
   const exampleSymbol = symbols[0] || 'SYMBOL';
   const isStock       = exchange === 'kis' || exchange === 'kis_overseas';
   const minConf       = getMinConfidence(exchange);
@@ -219,6 +219,9 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
   const diversificationRule = isStock
     ? ''
     : '\n- 암호화폐는 동일 시간대에 기대값이 있는 심볼을 1개만 고집하지 말고 2~4개 분산 진입 후보를 유지\n- HOLD 남발 금지: 명확한 반대 근거가 없으면 BUY/SELL/HOLD 중 기대값이 가장 높은 쪽을 선택\n- 2개 이상 후보의 기대값이 비슷하면 하나만 선택하지 말고 소규모 분산 진입 결정을 우선\n- BUY/SELL 후보가 있는데 전부 HOLD로 돌리지 말고, 가장 우세한 방향의 심볼부터 우선 배치';
+  const exitRule = exitSummary?.closedCount
+    ? '\n- 방금 EXIT Phase에서 청산된 포지션과 회수된 현금을 반영해 가용 자산을 재배치하되, 방금 청산한 동일 심볼 재진입은 더 보수적으로 판단'
+    : '';
   return `당신은 루나팀 수석 펀드매니저입니다. 개별 심볼 신호를 포트폴리오 맥락에서 검토합니다.${isStock ? ` (주식 — ${LUNA_STOCK_PROFILE.promptTag})` : ''}
 
 분석 대상 심볼: ${symbols.join(', ')}
@@ -232,7 +235,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance') {
 - 동시 포지션: 최대 ${MAX_POS_COUNT}개
 - 일손실 한도: ${dailyLoss}
 - confidence ${minConf} 미만: HOLD
-- ${amountRule}
+- ${amountRule}${exitRule}
 - 가용 현금 범위를 초과하는 매수 금지${diversificationRule}`;
 }
 
@@ -723,7 +726,7 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
 
 // ─── 포트폴리오 판단 ───────────────────────────────────────────────
 
-export async function getPortfolioDecision(symbolDecisions, portfolio, exchange = 'binance') {
+export async function getPortfolioDecision(symbolDecisions, portfolio, exchange = 'binance', exitSummary = null) {
   if (symbolDecisions.length === 0) return null;
 
   const symbols     = [...new Set(symbolDecisions.map(s => s.symbol))];
@@ -737,6 +740,20 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     regimeSection = formatMarketRegime(regime);
   } catch { /* 시장 레짐 실패 시 무시 */ }
 
+  const exitSection = exitSummary?.closedCount
+    ? [
+        `=== EXIT Phase 결과 ===`,
+        `방금 ${exitSummary.closedCount}개 포지션을 청산했습니다.`,
+        ...(Array.isArray(exitSummary.closedPositions) ? exitSummary.closedPositions.map(item => {
+          const reclaimed = Number(item.reclaimedUsdt || 0);
+          const reclaimedText = reclaimed > 0 ? ` | 회수 $${reclaimed.toFixed(2)}` : '';
+          return `- ${item.symbol}: ${item.reason || '청산'}${reclaimedText}`;
+        }) : []),
+        `회수된 USDT: $${Number(exitSummary.reclaimedUsdt || 0).toFixed(2)}`,
+        ``,
+      ].join('\n')
+    : '';
+
   const userMsg = [
     `=== 포트폴리오 현황 ===`,
     `USDT 가용: $${portfolio.usdtFree.toFixed(2)} | 총자산: $${portfolio.totalAsset.toFixed(2)}`,
@@ -745,6 +762,7 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     ``,
     regimeSection,
     regimeSection ? `` : '',
+    exitSection,
     `=== 분석가 신호 (${symbols.join(', ')}) ===`,
     signalLines,
     ``,
@@ -753,7 +771,7 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
 
   let raw;
   try {
-    raw = await callLLM('luna', buildPortfolioPrompt(symbols, exchange), userMsg, 768);
+    raw = await callLLM('luna', buildPortfolioPrompt(symbols, exchange, exitSummary), userMsg, 768);
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] portfolio decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);

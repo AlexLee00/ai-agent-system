@@ -3,7 +3,7 @@ import { fetchNodeArtifacts } from '../shared/node-runner.js';
 
 const NODE_ID = 'L14';
 
-async function run({ sessionId, market, symbolDecisions = null, portfolio = null }) {
+async function run({ sessionId, market, symbolDecisions = null, portfolio = null, exitSummary = null }) {
   if (!sessionId) throw new Error('sessionId 필요');
 
   let decisions = symbolDecisions;
@@ -24,7 +24,7 @@ async function run({ sessionId, market, symbolDecisions = null, portfolio = null
   }
 
   const currentPortfolio = portfolio || await inspectPortfolioContext(market);
-  const portfolioDecision = await getPortfolioDecision(decisions, currentPortfolio, market);
+  const portfolioDecision = await getPortfolioDecision(decisions, currentPortfolio, market, exitSummary);
   return {
     market,
     decisions,
@@ -34,6 +34,7 @@ async function run({ sessionId, market, symbolDecisions = null, portfolio = null
       positionCount: currentPortfolio.positionCount,
       todayPnl: currentPortfolio.todayPnl,
     },
+    exitSummary,
     portfolioDecision,
   };
 }
