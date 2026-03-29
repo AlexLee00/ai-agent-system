@@ -33,6 +33,7 @@ fi
 if echo "$CHANGED" | grep -q "^packages/core"; then
   echo ""
   echo "⚠️  packages/core 변경 — 전체 팀 순차 재시작"
+  restart_service "ai.hub.resource-api"
   restart_service "ai.investment.crypto"
   restart_service "ai.ska.commander"
   restart_service "ai.ska.naver-monitor"
@@ -88,7 +89,8 @@ if echo "$CHANGED" | grep -q "^bots/claude"; then
 fi
 
 if echo "$CHANGED" | grep -q "^bots/hub"; then
-  echo "ℹ️ hub 변경 감지 — 현재 launchd 서비스 라벨 미구성, 재시작 스킵"
+  restart_service "ai.hub.resource-api"
+  RESTARTED=$((RESTARTED+1))
 fi
 
 if [ "$RESTARTED" -eq 0 ]; then

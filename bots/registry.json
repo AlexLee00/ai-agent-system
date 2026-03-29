@@ -199,6 +199,19 @@
         "logFile": "/tmp/ska-analytics.log"
       }
     },
+    "hub": {
+      "name": "Resource API Hub",
+      "team": "hub",
+      "teamRole": "리소스 프록시",
+      "description": "OPS 리소스 안전 프록시 (DEV→OPS)",
+      "status": "ops",
+      "contextPath": "bots/hub",
+      "runtime": "node",
+      "entrypoint": "bots/hub/src/hub.js",
+      "launchd": "ai.hub.resource-api",
+      "type": "service",
+      "port": 7788
+    },
     "investment": {
       "name": "루나 Phase 3 (Luna v3)",
       "team": "루나팀",
