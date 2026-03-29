@@ -630,7 +630,7 @@ async function reportUnresolvedAlerts() {
         reservation.status === 'cancelled' ||
         reservation.markedSeen ||
         reservation.seenOnly ||
-        ['manual', 'manual_retry', 'verified', 'time_elapsed', 'cancelled'].includes(reservation.pickkoStatus)
+        ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed', 'cancelled'].includes(reservation.pickkoStatus)
       );
 
       if (isTerminalReservation) {
@@ -1139,7 +1139,7 @@ async function monitorBookings() {
               const key = toKey(b);
               if (await isSeenId(key)) continue;
               const existing = await getReservation(key);
-              if (existing && (existing.status === 'completed' || ['manual', 'manual_retry'].includes(existing.pickkoStatus))) {
+              if (existing && (existing.status === 'completed' || ['manual', 'manual_retry', 'manual_pending'].includes(existing.pickkoStatus))) {
                 await markSeen(key);
                 autoMarked++;
                 log(`🔄 [자동마킹] ${maskPhone(existing.phone || b.phone)} ${existing.date || b.date} → ${existing.pickkoStatus || existing.status} → seen 처리`);
@@ -2284,7 +2284,7 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
       const currentRetries = currentEntry?.retries || 0;
       if (currentEntry && (
         currentEntry.status === 'completed' ||
-        ['manual', 'manual_retry', 'verified', 'time_elapsed'].includes(currentEntry.pickkoStatus)
+        ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed'].includes(currentEntry.pickkoStatus)
       )) {
         log(`✅ [건너뜀] 이미 수동/완료 처리됨: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
         await markSeen(bookingId);

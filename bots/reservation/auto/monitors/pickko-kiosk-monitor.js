@@ -2021,7 +2021,7 @@ async function verifyBlockInGrid(page, roomRaw, start, end) {
         missingIndex === requestedSlots.length - 1 &&
         prevMatched &&
         addThirtyMinutes(prevMatched.slot) === missing.slot &&
-        missing.reason === 'suspended_not_found';
+        ['suspended_not_found', 'timeline_row_not_found', 'grid_row_not_found', 'room_cell_not_found', 'button_not_found'].includes(missing.reason);
 
       if (isTrailingContinuation) {
         matchedSlots.push({

@@ -82,6 +82,7 @@ const SKIP_NAME_SYNC =
   process.env.SKIP_NAME_SYNC === '1' ||
   process.env.MANUAL_RETRY === '1' ||
   !ENABLE_NAME_SYNC;
+const SKIP_FINAL_PAYMENT = process.env.SKIP_FINAL_PAYMENT === '1';
 // 테스트 전용: 결제금액을 0으로 변경하지 않고 실제 금액으로 결제
 // SKIP_PRICE_ZERO=1 node src/pickko-accurate.js ...
 const SKIP_PRICE_ZERO = process.env.SKIP_PRICE_ZERO === '1';
@@ -1319,6 +1320,28 @@ async function main() {
     log(`   룸: ✅`);
     log(`   날짜: ✅`);
 
+    if (SKIP_FINAL_PAYMENT) {
+      log('\n⏸️ [7-7단계] 결제대기 등록 모드 — 결제 단계 생략');
+      log(`✅ [SUCCESS] 픽코 예약 등록 완료 (결제대기 상태 유지)`);
+      log(`📅 예약정보: ${PHONE_NOHYPHEN} / ${DATE} / ${chosen.start}~${chosen.end} / ${ROOM}`);
+
+      const shouldCloseBrowser = MODE === 'ops' || (process.env.HOLD_BROWSER !== '1');
+      if (shouldCloseBrowser) {
+        log(`🔒 [종료] 브라우저 종료 (MODE=${MODE})`);
+        try { await browser.close(); } catch (e) {
+          log(`⚠️ 브라우저 종료 실패(무시): ${e.message}`);
+        }
+      } else {
+        log(`🔍 [대기] 브라우저 유지 (MODE=${MODE}, HOLD_BROWSER=1) → 검증용`);
+        log(`⏱️ 5분 대기 중... (완료 확인 후 Ctrl+C로 종료)`);
+        await delay(300_000);
+        try { await browser.close(); } catch (e) {}
+      }
+
+      await releaseLock();
+      process.exit(3);
+    }
+
     // ======================== 8단계: 결제(확정) ========================
     setStage('PAYMENT');
     log('\n[8단계] 결제(확정) 처리');
@@ -1648,9 +1671,16 @@ async function main() {
       process.exit(2);
     }
 
-    // ⚠️ 슬롯에 동일 고객이 이미 등록됨 → 결제대기 여부 확인 후 결제 완료 처리
+    // ⚠️ 슬롯에 동일 고객이 이미 등록됨
     if (err.code === 'ALREADY_REGISTERED') {
       logStageFailure('ALREADY_REGISTERED', err.message, { currentStage });
+      if (SKIP_FINAL_PAYMENT) {
+        log(`⚠️ [이미 등록됨] 결제대기 모드 유지 — 결제 단계 생략: ${err.message}`);
+        try { await browser.close(); } catch(e) {}
+        await releaseLock();
+        process.exit(3);
+      }
+
       log(`⚠️ [이미 등록됨] 결제대기 여부 확인 → pickko-pay-pending.js 실행: ${err.message}`);
       try { await browser.close(); } catch(e) {}
       await releaseLock();

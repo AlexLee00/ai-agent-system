@@ -33,6 +33,7 @@ const ARGS = parseArgs(process.argv);
 const VALID_ROOMS = ['A1', 'A2', 'B'];
 const MODE = process.env.MODE || 'ops';
 const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
+const IS_PENDING_ONLY = Boolean(ARGS['pending-only'] || ARGS.pendingOnly);
 const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS.skipNameSync);
 const SKIP_NAVER_BLOCK = IS_MANUAL_RETRY || Boolean(ARGS['skip-naver-block'] || ARGS.skipNaverBlock);
 
@@ -83,6 +84,7 @@ const child = spawn('node', childArgs, {
     MODE: process.env.MODE || 'ops',
     SKIP_NAME_SYNC: SKIP_NAME_SYNC ? '1' : '0',
     MANUAL_RETRY: IS_MANUAL_RETRY ? '1' : '0',
+    SKIP_FINAL_PAYMENT: IS_PENDING_ONLY ? '1' : '0',
   },
   // child stdout/stderr → 부모의 stderr (로그용), 부모 stdout은 JSON 전용
   stdio: ['ignore', process.stderr, process.stderr]
@@ -96,9 +98,13 @@ child.on('close', async (code) => {
   const key = buildReservationId(normalized.phone, normalized.date, normalized.start);
   const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
-  if (code === 0 || code === 2) {
-    // DB에 항목 기록 (code 0: manual 완료, code 2: 시간 경과 완료)
-    const pickkoStatus = code === 2 ? 'time_elapsed' : (IS_MANUAL_RETRY ? 'manual_retry' : 'manual');
+  if (code === 0 || code === 2 || code === 3) {
+    // DB에 항목 기록 (code 0: manual 완료, code 2: 시간 경과 완료, code 3: 결제대기 등록)
+    const pickkoStatus = code === 2
+      ? 'time_elapsed'
+      : code === 3
+        ? 'manual_pending'
+        : (IS_MANUAL_RETRY ? 'manual_retry' : 'manual');
     const errorReason  = code === 2 ? '시간 경과로 등록 불가' : null;
     try {
       const existing = await getReservation(key);
@@ -127,8 +133,8 @@ child.on('close', async (code) => {
       process.stderr.write(`[pickko-register] 예약 상태 반영 실패 (${key}): ${e.message}\n`);
     }
 
-    // 픽코 등록 성공(code 0) 시 네이버 예약불가 처리
-    if (code === 0 && !SKIP_NAVER_BLOCK) {
+    // 픽코 등록 성공(code 0/3) 시 네이버 예약불가 처리
+    if ((code === 0 || code === 3) && !SKIP_NAVER_BLOCK) {
       // 1. DB 선등록 (naverBlocked=false) — spawn 실패 시 kiosk-monitor Phase 2A가 자동 재시도
       upsertKioskBlock(normalized.phone, normalized.date, normalized.start, {
         name: customerName, date: normalized.date, start: normalized.start,
@@ -177,6 +183,10 @@ child.on('close', async (code) => {
 
     const message = code === 2
       ? `시간 경과로 픽코 등록 생략: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 — 픽코에서 직접 확인 필요`
+      : code === 3
+        ? SKIP_NAVER_BLOCK
+          ? `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`
+          : `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`
       : SKIP_NAVER_BLOCK
         ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
         : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`;
