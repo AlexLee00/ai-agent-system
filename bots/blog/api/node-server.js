@@ -27,6 +27,9 @@ const richer         = require('../lib/richer');
 const posWriter      = require('../lib/pos-writer');
 const gemsWriter     = require('../lib/gems-writer');
 const qualityChecker = require('../lib/quality-checker');
+const pgPool         = require('../../../packages/core/lib/pg-pool');
+const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
+const { markPublished } = require('../lib/publ');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
 const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
@@ -64,6 +67,28 @@ pipelineStore.ensureSchema().catch(e =>
 app.get('/health', (req, res) => {
   res.json({ ok: true, port: PORT });
 });
+
+async function findTargetPost({ postId, scheduleId }) {
+  if (postId) {
+    return pgPool.get('blog', `
+      SELECT id, title, status, naver_url, metadata, created_at
+      FROM blog.posts
+      WHERE id = $1
+    `, [postId]);
+  }
+
+  if (scheduleId) {
+    return pgPool.get('blog', `
+      SELECT id, title, status, naver_url, metadata, created_at
+      FROM blog.posts
+      WHERE metadata->>'schedule_id' = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [String(scheduleId)]);
+  }
+
+  return null;
+}
 
 // ─── 수집 노드 ────────────────────────────────────────────────────────
 
@@ -318,6 +343,48 @@ app.post('/api/blog/rag/store', requireLocalNodeAccess, async (req, res) => {
   } catch (e) {
     console.error('[노드서버] /rag/store 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * POST /api/blog/mark-published
+ * body: { postId?, scheduleId?, url }
+ * → 네이버 블로그 canonical URL을 기록하고 post/schedule 상태를 published로 전환
+ */
+app.post('/api/blog/mark-published', requireLocalNodeAccess, async (req, res) => {
+  const { postId = null, scheduleId = null, url } = req.body || {};
+  if (!url) {
+    return res.status(400).json({ ok: false, error: 'url 필수' });
+  }
+  if (!postId && !scheduleId) {
+    return res.status(400).json({ ok: false, error: 'postId 또는 scheduleId 필수' });
+  }
+
+  const parsed = parseNaverBlogUrl(url);
+  if (!parsed.ok) {
+    return res.status(400).json({ ok: false, error: `유효한 네이버 블로그 URL이 아닙니다: ${parsed.reason}` });
+  }
+
+  try {
+    const row = await findTargetPost({ postId, scheduleId });
+    if (!row) {
+      return res.status(404).json({ ok: false, error: '대상 blog.posts 행을 찾을 수 없습니다.' });
+    }
+
+    await markPublished(row.id, parsed.canonicalUrl);
+
+    return res.json({
+      ok: true,
+      postId: row.id,
+      title: row.title,
+      status: 'published',
+      savedUrl: parsed.canonicalUrl,
+      blogId: parsed.blogId,
+      logNo: parsed.logNo,
+    });
+  } catch (e) {
+    console.error('[노드서버] /mark-published 오류:', e.message);
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
