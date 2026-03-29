@@ -524,7 +524,7 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
   // 미추적 BTC 확인
   const walletBal    = await getExchange().fetchBalance();
   const walletBtc    = walletBal.free?.BTC || 0;
-  const trackedBtcPos = await db.getLivePosition('BTC/USDT').catch(() => null);
+  const trackedBtcPos = await db.getLivePosition('BTC/USDT', null, getInvestmentTradeMode()).catch(() => null);
   const trackedBtc   = trackedBtcPos?.amount || 0;
   const untrackedBtc = walletBtc - trackedBtc;
 
@@ -639,7 +639,7 @@ async function _liquidateUntrackedForCapital(excludeBase, paperMode) {
     if (!free || free <= 0)     continue;
 
     const sym        = `${coin}/USDT`;
-    const trackedPos = await db.getLivePosition(sym).catch(() => null);
+    const trackedPos = await db.getLivePosition(sym, null, getInvestmentTradeMode()).catch(() => null);
     const trackedAmt = trackedPos?.amount || 0;
     const untracked  = free - trackedAmt;
 
@@ -782,7 +782,7 @@ export async function executeSignal(signal) {
       try {
         const walletBal  = await getExchange().fetchBalance();
         const walletFree = walletBal.free?.[base] || 0;
-        const trackedPos = await db.getLivePosition(symbol);
+        const trackedPos = await db.getLivePosition(symbol, null, signalTradeMode);
         const trackedAmt = trackedPos?.amount || 0;
         const untracked  = walletFree - trackedAmt;
 
@@ -846,7 +846,7 @@ export async function executeSignal(signal) {
         console.warn(`  ⚠️ 미추적 잔고 흡수 실패 (일반 매수 계속): ${e.message}`);
       }
 
-      const livePosition = await db.getLivePosition(symbol, 'binance');
+      const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
       const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
         ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
@@ -1067,16 +1067,31 @@ export async function executeSignal(signal) {
 
     } else if (action === ACTIONS.SELL) {
       // DB 포지션 우선, 없으면 실제 바이낸스 잔고 조회 (외부 매수 코인도 매도 가능)
-      const livePosition = await db.getLivePosition(symbol, 'binance');
+      const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
       const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
-      const position = livePosition || paperPosition;
+      if (globalPaperMode && livePosition && !paperPosition) {
+        const reason = '실포지션 보유 중에는 PAPER SELL로 혼합 청산을 실행할 수 없음';
+        console.warn(`  ⚠️ ${reason}`);
+        await persistFailure(reason, {
+          code: 'position_mode_conflict',
+          meta: {
+            paperMode: globalPaperMode,
+            liveAmount: livePosition.amount || 0,
+            tradeMode: signalTradeMode,
+          },
+        });
+        return { success: false, reason };
+      }
+      const position = paperPosition || livePosition;
       let amount = position?.amount;
-      const sellPaperMode = !livePosition && Boolean(paperPosition);
+      const sellPaperMode = globalPaperMode || (!livePosition && Boolean(paperPosition));
       const base = symbol.split('/')[0];
-      const bal  = await getExchange().fetchBalance();
-      const freeBalance = Number(bal.free?.[base] || 0);
+      const bal  = sellPaperMode ? null : await getExchange().fetchBalance();
+      const freeBalance = Number(bal?.free?.[base] || 0);
       if (!amount || amount <= 0) {
-        amount = freeBalance;
+        amount = sellPaperMode
+          ? Number(livePosition?.amount || paperPosition?.amount || 0)
+          : freeBalance;
         if (amount <= 0) {
           console.warn(`  ⚠️ ${symbol} 보유량 없음 (DB+바이낸스 모두 0) — SELL 스킵`);
           await persistFailure('보유량 없음', {
