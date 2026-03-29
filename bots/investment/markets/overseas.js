@@ -27,6 +27,7 @@ import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
 import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
+import { finishPipelineRun } from '../shared/pipeline-db.js';
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.js';
 
@@ -86,6 +87,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
 export async function runOverseasCycle(symbols) {
   const { paper: paperMode, tag } = getKisExecutionModeInfo('해외주식');
   const startTime = Date.now();
+  let sessionId = null;
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`🗽 ${tag} 미국주식 사이클 시작 — ${kst.toKST(new Date())}`);
@@ -101,6 +103,7 @@ export async function runOverseasCycle(symbols) {
       triggerType: 'cycle',
       meta: { market_script: 'overseas' },
     });
+    sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logPipelineMetrics('미국주식 수집', collect.metrics);
@@ -142,6 +145,16 @@ export async function runOverseasCycle(symbols) {
     return results;
 
   } catch (e) {
+    if (sessionId) {
+      await finishPipelineRun(sessionId, {
+        status: 'failed',
+        meta: {
+          bridge_status: 'market_cycle_failed',
+          market_script: 'overseas',
+          cycle_error: e.message,
+        },
+      }).catch(() => {});
+    }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 미국주식 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);
@@ -152,6 +165,7 @@ export async function runOverseasCycle(symbols) {
 
 export async function runOverseasResearchCycle(symbols) {
   const startTime = Date.now();
+  let sessionId = null;
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`📚 [RESEARCH] 미국주식 장외 분석 시작 — ${kst.toKST(new Date())}`);
@@ -166,6 +180,7 @@ export async function runOverseasResearchCycle(symbols) {
       triggerType: 'research',
       meta: { market_script: 'overseas', research_only: true },
     });
+    sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logPipelineMetrics('미국주식 연구수집', collect.metrics);
@@ -190,8 +205,28 @@ export async function runOverseasResearchCycle(symbols) {
       message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n다음 장 watchlist 갱신 완료\n소요: ${elapsed}초`,
     });
 
+    await finishPipelineRun(sessionId, {
+      status: 'completed',
+      meta: {
+        bridge_status: 'research_collect_completed',
+        market_script: 'overseas',
+        research_only: true,
+      },
+    });
+
     return [];
   } catch (e) {
+    if (sessionId) {
+      await finishPipelineRun(sessionId, {
+        status: 'failed',
+        meta: {
+          bridge_status: 'research_collect_failed',
+          market_script: 'overseas',
+          research_only: true,
+          cycle_error: e.message,
+        },
+      }).catch(() => {});
+    }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 미국주식 장외 연구 오류 (${elapsed}초): ${e.message}`);
     publishToMainBot({ from_bot: 'luna', event_type: 'system_error', alert_level: 2, message: `❌ 미국주식 장외 연구 오류\n${e.message}` });

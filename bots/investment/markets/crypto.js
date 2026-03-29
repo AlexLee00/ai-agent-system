@@ -28,6 +28,7 @@ import { getLunaParams } from '../shared/time-mode.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
 import { buildCollectAlertMessage, runMarketCollectPipeline, summarizeNodeStatuses } from '../shared/pipeline-market-runner.js';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.js';
+import { finishPipelineRun } from '../shared/pipeline-db.js';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.js';
 
@@ -180,6 +181,7 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
   const { paper: paperMode, tag } = getMarketExecutionModeInfo('crypto', '암호화폐');
   const startTime = Date.now();
   const params    = getLunaParams();
+  let sessionId   = null;
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`🚀 ${tag} 암호화폐 사이클 시작 — ${kst.toKST(new Date())}`);
@@ -201,6 +203,7 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
         heldAddedCount: Number(universeMeta.heldAddedCount || 0),
       },
     });
+    sessionId = collect.sessionId;
     console.log(`  🧩 [노드] session=${collect.sessionId}`);
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logPipelineMetrics('암호화폐 수집', collect.metrics);
@@ -236,6 +239,16 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
     return results;
 
   } catch (e) {
+    if (sessionId) {
+      await finishPipelineRun(sessionId, {
+        status: 'failed',
+        meta: {
+          bridge_status: 'market_cycle_failed',
+          market_script: 'crypto',
+          cycle_error: e.message,
+        },
+      }).catch(() => {});
+    }
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`\n❌ 사이클 오류 (${elapsed}초): ${e.message}`);
     console.error(e.stack);

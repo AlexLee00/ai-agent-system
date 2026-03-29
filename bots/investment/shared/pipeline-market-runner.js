@@ -1,4 +1,5 @@
 import { createPipelineSession, runNode } from './node-runner.js';
+import { finishPipelineRun } from './pipeline-db.js';
 import { getInvestmentNode } from '../nodes/index.js';
 
 const COLLECT_NODE_SETS = {
@@ -74,115 +75,129 @@ export async function runMarketCollectPipeline({
     meta,
   });
 
-  const summaries = [];
-  const portfolioNode = getInvestmentNode('L06');
-  if (portfolioNode) {
-    try {
-      const result = await runNode(portfolioNode, {
-        sessionId,
-        market,
-        meta: { stage: 'collect', ...meta },
-      });
-      summaries.push({ nodeId: 'L06', status: 'completed', symbol: null, outputRef: result.outputRef });
-    } catch (err) {
-      summaries.push({ nodeId: 'L06', status: 'failed', symbol: null, error: err.message });
-    }
-  }
-
-  const perSymbolNodes = nodeIds.filter(nodeId => nodeId !== 'L06');
-  const tasks = [];
-  for (const symbol of symbols) {
-    for (const nodeId of perSymbolNodes) {
-      const node = getInvestmentNode(nodeId);
-      if (!node) continue;
-      tasks.push(async () => (
-        runNode(node, {
+  try {
+    const summaries = [];
+    const portfolioNode = getInvestmentNode('L06');
+    if (portfolioNode) {
+      try {
+        const result = await runNode(portfolioNode, {
           sessionId,
           market,
-          symbol,
           meta: { stage: 'collect', ...meta },
-          // Collect nodes already persist their real analysis into DB.
-          // Skip RAG artifacts here to avoid search/store storms on wide universes.
-          storeArtifact: false,
-        }).then(result => ({
-          nodeId,
-          status: 'completed',
-          symbol,
-          outputRef: result.outputRef,
-        })).catch(err => ({
-          nodeId,
-          status: 'failed',
-          symbol,
-          error: err.message,
-        }))
-      ));
+        });
+        summaries.push({ nodeId: 'L06', status: 'completed', symbol: null, outputRef: result.outputRef });
+      } catch (err) {
+        summaries.push({ nodeId: 'L06', status: 'failed', symbol: null, error: err.message });
+      }
     }
-  }
 
-  summaries.push(...await runWithConcurrencyLimit(tasks, COLLECT_CONCURRENCY_LIMIT[market] || 4));
+    const perSymbolNodes = nodeIds.filter(nodeId => nodeId !== 'L06');
+    const tasks = [];
+    for (const symbol of symbols) {
+      for (const nodeId of perSymbolNodes) {
+        const node = getInvestmentNode(nodeId);
+        if (!node) continue;
+        tasks.push(async () => (
+          runNode(node, {
+            sessionId,
+            market,
+            symbol,
+            meta: { stage: 'collect', ...meta },
+            // Collect nodes already persist their real analysis into DB.
+            // Skip RAG artifacts here to avoid search/store storms on wide universes.
+            storeArtifact: false,
+          }).then(result => ({
+            nodeId,
+            status: 'completed',
+            symbol,
+            outputRef: result.outputRef,
+          })).catch(err => ({
+            nodeId,
+            status: 'failed',
+            symbol,
+            error: err.message,
+          }))
+        ));
+      }
+    }
 
-  const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
-  const failedTasks = summaries.filter(item => item.status === 'failed').length;
-  const failedSummaries = summaries.filter(item => item.status === 'failed');
-  const dataSparsityFailures = failedSummaries.filter(item => isDataSparsityError(item.error)).length;
-  const failedCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
-  const failedHardCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId) && !isDataSparsityError(item.error)).length;
-  const failedEnrichmentTasks = failedSummaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
-  const totalEnrichmentTasks = summaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
-  const totalCoreTasks = Math.max(totalTasks - totalEnrichmentTasks, 0);
-  const llmGuardFailedTasks = failedSummaries.filter(item =>
-    String(item.error || '').includes('LLM 긴급 차단 중')
-  ).length;
-  const failedNodeCounts = failedSummaries.reduce((acc, item) => {
-    acc[item.nodeId] = (acc[item.nodeId] || 0) + 1;
-    return acc;
-  }, {});
-  const metrics = {
-    durationMs: Date.now() - startedAt,
-    symbolCount: symbols.length,
-    screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
-    heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
-    heldAddedCount: Number(universeMeta.heldAddedCount || 0),
-    perSymbolNodeCount: perSymbolNodes.length,
-    totalTasks,
-    failedTasks,
-    failureRate: totalTasks > 0 ? failedTasks / totalTasks : 0,
-    totalCoreTasks,
-    failedCoreTasks,
-    failedHardCoreTasks,
-    coreFailureRate: totalCoreTasks > 0 ? failedCoreTasks / totalCoreTasks : 0,
-    hardCoreFailureRate: totalCoreTasks > 0 ? failedHardCoreTasks / totalCoreTasks : 0,
-    totalEnrichmentTasks,
-    failedEnrichmentTasks,
-    enrichmentFailureRate: totalEnrichmentTasks > 0 ? failedEnrichmentTasks / totalEnrichmentTasks : 0,
-    dataSparsityFailures,
-    llmGuardFailedTasks,
-    failedNodeCounts,
-    concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
-    ragArtifactsSkipped: tasks.length,
-    overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
-    overloadProfile: buildCollectOverloadProfile({
+    summaries.push(...await runWithConcurrencyLimit(tasks, COLLECT_CONCURRENCY_LIMIT[market] || 4));
+
+    const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
+    const failedTasks = summaries.filter(item => item.status === 'failed').length;
+    const failedSummaries = summaries.filter(item => item.status === 'failed');
+    const dataSparsityFailures = failedSummaries.filter(item => isDataSparsityError(item.error)).length;
+    const failedCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+    const failedHardCoreTasks = failedSummaries.filter(item => !ENRICHMENT_NODE_IDS.has(item.nodeId) && !isDataSparsityError(item.error)).length;
+    const failedEnrichmentTasks = failedSummaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+    const totalEnrichmentTasks = summaries.filter(item => ENRICHMENT_NODE_IDS.has(item.nodeId)).length;
+    const totalCoreTasks = Math.max(totalTasks - totalEnrichmentTasks, 0);
+    const llmGuardFailedTasks = failedSummaries.filter(item =>
+      String(item.error || '').includes('LLM 긴급 차단 중')
+    ).length;
+    const failedNodeCounts = failedSummaries.reduce((acc, item) => {
+      acc[item.nodeId] = (acc[item.nodeId] || 0) + 1;
+      return acc;
+    }, {});
+    const metrics = {
+      durationMs: Date.now() - startedAt,
+      symbolCount: symbols.length,
       screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
       heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
       heldAddedCount: Number(universeMeta.heldAddedCount || 0),
       perSymbolNodeCount: perSymbolNodes.length,
       totalTasks,
-    }),
-    warnings: buildCollectWarnings({
-      tasks,
-      symbols,
       failedTasks,
-      totalTasks,
-      limit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+      failureRate: totalTasks > 0 ? failedTasks / totalTasks : 0,
       totalCoreTasks,
       failedCoreTasks,
+      failedHardCoreTasks,
+      coreFailureRate: totalCoreTasks > 0 ? failedCoreTasks / totalCoreTasks : 0,
+      hardCoreFailureRate: totalCoreTasks > 0 ? failedHardCoreTasks / totalCoreTasks : 0,
       totalEnrichmentTasks,
       failedEnrichmentTasks,
+      enrichmentFailureRate: totalEnrichmentTasks > 0 ? failedEnrichmentTasks / totalEnrichmentTasks : 0,
+      dataSparsityFailures,
       llmGuardFailedTasks,
-    }),
-  };
+      failedNodeCounts,
+      concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+      ragArtifactsSkipped: tasks.length,
+      overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
+      overloadProfile: buildCollectOverloadProfile({
+        screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
+        heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
+        heldAddedCount: Number(universeMeta.heldAddedCount || 0),
+        perSymbolNodeCount: perSymbolNodes.length,
+        totalTasks,
+      }),
+      warnings: buildCollectWarnings({
+        tasks,
+        symbols,
+        failedTasks,
+        totalTasks,
+        limit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+        totalCoreTasks,
+        failedCoreTasks,
+        totalEnrichmentTasks,
+        failedEnrichmentTasks,
+        llmGuardFailedTasks,
+      }),
+    };
 
-  return { sessionId, market, symbols, summaries, metrics };
+    return { sessionId, market, symbols, summaries, metrics };
+  } catch (err) {
+    await finishPipelineRun(sessionId, {
+      status: 'failed',
+      meta: {
+        bridge_status: 'collect_failed',
+        collect_error: err.message,
+        market,
+        market_script: meta?.market_script || null,
+        research_only: Boolean(meta?.research_only),
+      },
+    }).catch(() => {});
+    throw err;
+  }
 }
 
 export function summarizeNodeStatuses(summaries = []) {
