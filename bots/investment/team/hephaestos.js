@@ -90,6 +90,19 @@ async function marketSell(symbol, amount, paperMode) {
   return await ex.createOrder(symbol, 'market', 'sell', amount);
 }
 
+async function getMinSellAmount(symbol) {
+  const ex = getExchange();
+  await ex.loadMarkets();
+  const market = ex.market(symbol);
+  return Number(market?.limits?.amount?.min || 0);
+}
+
+function roundSellAmount(symbol, amount) {
+  const ex = getExchange();
+  const precise = Number(ex.amountToPrecision(symbol, amount));
+  return Number.isFinite(precise) ? precise : 0;
+}
+
 function extractOrderId(orderLike) {
   if (!orderLike) return null;
   return orderLike.id?.toString?.()
@@ -1116,6 +1129,26 @@ export async function executeSignal(signal) {
             drift,
           },
         }).catch(() => {});
+      }
+
+      if (!sellPaperMode) {
+        const minSellAmount = await getMinSellAmount(symbol).catch(() => 0);
+        const roundedAmount = roundSellAmount(symbol, amount);
+        if (roundedAmount <= 0 || (minSellAmount > 0 && roundedAmount < minSellAmount)) {
+          const reason = `최소 매도 수량 미달 (${roundedAmount || amount} < ${minSellAmount || 'exchange_min'})`;
+          console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
+          await persistFailure(reason, {
+            code: 'sell_amount_below_minimum',
+            meta: {
+              requestedAmount: amount,
+              roundedAmount,
+              minSellAmount,
+              sellPaperMode,
+            },
+          });
+          return { success: false, reason };
+        }
+        amount = roundedAmount;
       }
 
       const order = await marketSell(symbol, amount, sellPaperMode);
