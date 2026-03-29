@@ -24,7 +24,7 @@ const {
   findReservationByCompositeKey, findReservationBySlot,
   rollbackProcessing, pruneOldReservations,
   isCancelledKey, addCancelledKey, pruneOldCancelledKeys,
-  addAlert, updateAlertSent, resolveAlert, getUnresolvedAlerts, pruneOldAlerts,
+  addAlert, updateAlertSent, resolveAlert, resolveAlertsByTitle, getUnresolvedAlerts, pruneOldAlerts,
   getTodayStats,
   upsertFutureConfirmed, getStaleConfirmed, deleteStaleConfirmed, pruneOldFutureConfirmed,
 } = require('../../lib/db');
@@ -597,6 +597,17 @@ async function resolveAlertsByBooking(phone, date, start) {
     }
   } catch (err) {
     log(`⚠️ 알림 해결 마킹 실패: ${err.message}`);
+  }
+}
+
+async function resolveSystemAlertByTitle(title, reason) {
+  try {
+    const count = await resolveAlertsByTitle(title);
+    if (count > 0) {
+      log(`✅ [알림 해결] ${title} → ${count}건 해결됨 마킹${reason ? ` (${reason})` : ''}`);
+    }
+  } catch (err) {
+    log(`⚠️ 시스템 알림 해결 마킹 실패: ${err.message}`);
   }
 }
 
@@ -1486,6 +1497,11 @@ async function monitorBookings() {
             reason: `카운터는 ${delta}건 증가했지만 이번 사이클 신규 취소 처리 0건`,
             action: '취소 탭 / cancelled_keys / naver-monitor 로그를 즉시 확인하세요.',
           });
+        } else if (cancelledCount === 0) {
+          await resolveSystemAlertByTitle(
+            '🚨 네이버 취소 카운터 증가 이상',
+            '오늘 취소=0, 취소 탭=0건 안정화 확인',
+          );
         }
         previousCancelledCount = cancelledCount;
 
