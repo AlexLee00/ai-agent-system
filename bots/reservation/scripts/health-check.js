@@ -73,7 +73,7 @@ async function main() {
 
   let status;
   try {
-    status = getLaunchctlStatus();
+    status = getLaunchctlStatus(ALL_SERVICES);
   } catch (e) {
     console.error(`[헬스체크] launchctl 실행 실패: ${e.message}`);
     process.exit(1);
