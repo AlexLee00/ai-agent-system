@@ -640,6 +640,15 @@ async function resolveAlert(phone, date, start) {
   return result.rowCount;
 }
 
+async function resolveAlertsByTitle(title) {
+  const result = await pgPool.run(SCHEMA, `
+    UPDATE alerts
+    SET resolved=1, resolved_at=to_char(now(),'YYYY-MM-DD HH24:MI:SS')
+    WHERE resolved=0 AND type='error' AND title=$1
+  `, [title]);
+  return result.rowCount;
+}
+
 async function getUnresolvedAlerts() {
   return pgPool.query(SCHEMA,
     "SELECT * FROM alerts WHERE resolved=0 AND type='error' ORDER BY timestamp ASC");
@@ -1087,6 +1096,7 @@ module.exports = {
   addAlert,
   updateAlertSent,
   resolveAlert,
+  resolveAlertsByTitle,
   getUnresolvedAlerts,
   pruneOldAlerts,
   // daily_summary
