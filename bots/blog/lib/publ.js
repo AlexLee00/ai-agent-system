@@ -198,9 +198,19 @@ async function publishToFile(postData) {
   const safeTitle = (title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
   const filename  = `${today}_${postType}_${safeTitle}.html`;
   const filepath  = path.join(OUTPUT_DIR, filename);
+  let publishDate = today;
 
   if (scheduleId) {
     try {
+      const scheduleRow = await pgPool.get('blog', `
+        SELECT publish_date
+          FROM blog.publish_schedule
+         WHERE id = $1
+      `, [scheduleId]);
+      if (scheduleRow?.publish_date) {
+        publishDate = scheduleRow.publish_date;
+      }
+
       const existing = await pgPool.get('blog', `
         SELECT id, metadata
           FROM blog.posts
@@ -247,13 +257,14 @@ async function publishToFile(postData) {
     const rows = await pgPool.query('blog', `
       INSERT INTO blog.posts
         (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags, metadata)
-      VALUES ($1, $2, $3, $4, CURRENT_DATE + 1, 'ready', $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, 'ready', $6, $7, $8, $9)
       RETURNING id
     `, [
       title,
       category,
       postType,
       lectureNumber || null,
+      publishDate,
       charCount,
       linkedContent,
       hashtags || [],
@@ -297,11 +308,26 @@ async function publishToFile(postData) {
 async function markPublished(postId, naverUrl) {
   if (!postId) return;
   try {
+    const row = await pgPool.get('blog', `
+      SELECT metadata
+      FROM blog.posts
+      WHERE id = $1
+    `, [postId]);
+
     await pgPool.run('blog', `
       UPDATE blog.posts
       SET status = 'published', naver_url = $2
       WHERE id = $1
     `, [postId, naverUrl || null]);
+
+    const scheduleId = row?.metadata?.schedule_id ? Number(row.metadata.schedule_id) : null;
+    if (scheduleId) {
+      await pgPool.run('blog', `
+        UPDATE blog.publish_schedule
+        SET status = 'published', post_id = $2, updated_at = NOW()
+        WHERE id = $1
+      `, [scheduleId, postId]);
+    }
   } catch (e) {
     console.warn('[퍼블] 상태 업데이트 실패:', e.message);
   }

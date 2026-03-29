@@ -38,6 +38,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 단순 설정 점검이 아니라, migration 후 `worker/ska/blog -> n8n -> local bridge` 경로가 모두 한 머신의 production routing 규약에 맞게 다시 묶였다.
   - 이후 health-report에서 보이는 n8n 오류는 stale record가 아니라 실제 최신 failure인지 분리해 해석할 수 있게 됐다.
 
+## 13주차 운영 복구 (2026-03-29) — 블로팀 발행 상태 전이 정합성 복구
+
+- `bots/blog/lib/blo.js`
+  - 초안 생성 직후 `publish_schedule`를 바로 `published`로 올리던 동작을 `ready`로 조정
+- `bots/blog/lib/publ.js`
+  - `blog.posts.publish_date`를 `CURRENT_DATE + 1` 고정값이 아니라 연결된 `publish_schedule.publish_date`를 따르도록 수정
+  - `markPublished()`가 `blog.posts`뿐 아니라 연결된 `blog.publish_schedule`도 함께 `published`로 올리도록 보강
+- 운영 조치:
+  - 이미 잘못 하루 밀려 저장된 `blog.posts 77/78`의 `publish_date`를 `2026-03-29`로 보정
+  - 실제 `naver_url` 없이 `published`로 보이던 `blog.publish_schedule 39/40`는 `ready`로 되돌려 원장과 일치시킴
+- 결과:
+  - 오늘자 블로그 2건은 현재 기준 `생성 완료 + 발행 대기(ready)`로 해석하는 것이 맞음
+  - 이후 `mark-published-url` 실행 시 `posts`와 `publish_schedule`이 함께 `published`로 정렬됨
+
 ## 12주차 후속 (2026-03-26) — 해외장 mock SELL capability 실검증 후 blocked 정책 복구
 
 - `bots/investment/team/hanul.js`

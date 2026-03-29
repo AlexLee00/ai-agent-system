@@ -184,7 +184,7 @@ async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail) {
   const published = await publishToFile(postData);
 
   if (scheduleId) {
-    await updateScheduleStatus(scheduleId, 'published', published.postId);
+    await updateScheduleStatus(scheduleId, 'ready', published.postId);
   }
 
   await _emitEvent(eventDetail.type === 'lecture' ? 'post_completed' : 'post_completed', {
