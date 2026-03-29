@@ -13,8 +13,22 @@
 
 const { encrypt, decrypt, hashKioskKey, hashKioskKeyLegacy } = require('./crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
 
 const SCHEMA = 'reservation';
+const schemaDb = createSchemaDbHelpers(pgPool, SCHEMA);
+
+function query(sql, params = []) {
+  return schemaDb.query(sql, params);
+}
+
+function run(sql, params = []) {
+  return schemaDb.run(sql, params);
+}
+
+function get(sql, params = []) {
+  return schemaDb.get(sql, params);
+}
 
 // ─── reservations ──────────────────────────────────────────────────
 
@@ -1061,6 +1075,9 @@ async function getSchemaVersion() {
 }
 
 module.exports = {
+  query,
+  run,
+  get,
   // 마이그레이션
   initMigrationsTable, getAppliedMigrations, recordMigration, removeMigration, getSchemaVersion,
   // reservations

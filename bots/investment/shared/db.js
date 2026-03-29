@@ -10,27 +10,29 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
 import { getInvestmentTradeMode } from './secrets.js';
 import { getSignalDedupeWindowMinutes } from './runtime-config.js';
 
 const SCHEMA = 'investment';
 let _schemaInitPromise = null;
+const schemaDb = createSchemaDbHelpers(pgPool, SCHEMA);
 
 // ─── 기본 쿼리 래퍼 (외부 호환 API 유지) ──────────────────────────────
 
 /** SELECT 쿼리 — rows 배열 반환 */
 export function query(sql, params = []) {
-  return pgPool.query(SCHEMA, sql, params);
+  return schemaDb.query(sql, params);
 }
 
 /** INSERT / UPDATE / DELETE — { rowCount, rows } 반환 */
 export function run(sql, params = []) {
-  return pgPool.run(SCHEMA, sql, params);
+  return schemaDb.run(sql, params);
 }
 
 /** 단일 행 SELECT — row 또는 null */
 export function get(sql, params = []) {
-  return pgPool.get(SCHEMA, sql, params);
+  return schemaDb.get(sql, params);
 }
 
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
