@@ -11,11 +11,14 @@
  * 자동: launchd ai.blog.health-check (10분마다)
  */
 
-const { execSync } = require('child_process');
 const http   = require('http');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
+const {
+  getLaunchctlStatus,
+  DEFAULT_NORMAL_EXIT_CODES,
+} = require('../../../packages/core/lib/health-provider');
 const {
   publishEventPipeline,
   buildSeverityTargets,
@@ -69,25 +72,7 @@ const ALL_SERVICES = [
 ];
 
 // 정상 종료 코드
-const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
-
-// ─── launchctl 파싱 ──────────────────────────────────────────────
-
-function getLaunchctlStatus() {
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
-  const services = {};
-  for (const line of raw.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-    const [pid, exitCode, label] = parts;
-    services[label] = {
-      running: pid !== '-',
-      pid: pid !== '-' ? parseInt(pid) : null,
-      exitCode: parseInt(exitCode) || 0,
-    };
-  }
-  return services;
-}
+const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 
 function checkNodeServerHealth() {
   return new Promise(resolve => {
@@ -172,7 +157,7 @@ async function main() {
 
   let status;
   try {
-    status = getLaunchctlStatus();
+    status = getLaunchctlStatus(ALL_SERVICES);
   } catch (e) {
     console.error(`[블로그 헬스체크] launchctl 실행 실패: ${e.message}`);
     process.exit(1);

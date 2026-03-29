@@ -11,10 +11,13 @@
  * 자동: launchd ai.worker.health-check (10분마다)
  */
 
-const { execSync } = require('child_process');
 const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 const { getWorkerHealthRuntimeConfig } = require('../lib/runtime-config');
+const {
+  getLaunchctlStatus,
+  DEFAULT_NORMAL_EXIT_CODES,
+} = require('../../../packages/core/lib/health-provider');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -29,7 +32,7 @@ const CONTINUOUS = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.w
 const ALL_SERVICES = ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'];
 
 // 정상 종료 코드
-const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
+const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const healthRuntimeConfig = getWorkerHealthRuntimeConfig();
 const HTTP_TIMEOUT_MS = Number(healthRuntimeConfig.httpTimeoutMs || 5000);
 
@@ -69,24 +72,6 @@ async function notify(msg, level = 3) {
   } catch { /* 무시 */ }
 }
 
-// ─── launchctl 파싱 ──────────────────────────────────────────────
-
-function getLaunchctlStatus() {
-  const raw = execSync('launchctl list', { encoding: 'utf-8' });
-  const services = {};
-  for (const line of raw.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-    const [pid, exitCode, label] = parts;
-    services[label] = {
-      running: pid !== '-',
-      pid: pid !== '-' ? parseInt(pid) : null,
-      exitCode: parseInt(exitCode) || 0,
-    };
-  }
-  return services;
-}
-
 async function checkHttp(url) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
@@ -113,7 +98,7 @@ async function main() {
 
   let status;
   try {
-    status = getLaunchctlStatus();
+    status = getLaunchctlStatus(ALL_SERVICES);
   } catch (e) {
     console.error(`[워커 헬스체크] launchctl 실행 실패: ${e.message}`);
     process.exit(1);
