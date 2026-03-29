@@ -2485,3 +2485,5 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-03-29 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline 갱신.
 - 2026-03-29 — `fix(ska)`: `ai.ska.rebecca` 복구를 위해 Homebrew `python@3.12` 기반 `bots/ska/venv`를 재구성하고, `bots/ska/scripts/run-rebecca.sh`의 Node 경로를 `/opt/homebrew/bin/node`로 정리했다.
 - 2026-03-29 — `fix(ska)`: `bots/reservation/launchd/ai.ska.rebecca-weekly.plist`의 PATH에 `bots/ska/venv/bin`과 `/opt/homebrew/bin`을 포함시켜 weekly launchd도 동일 런타임을 사용하도록 맞췄다.
+- 2026-03-29 — `fix(ska)`: `bots/ska/scripts/run-forecast.sh`도 `/opt/homebrew/bin/node`를 사용하도록 정리해 forecast 리포트 발행 경로를 Homebrew 런타임과 일치시켰다.
+- 2026-03-29 — `chore(claude)`: `node bots/claude/src/dexter.js --update-checksums`로 checksum baseline을 다시 갱신했다.
