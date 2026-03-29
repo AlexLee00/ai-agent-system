@@ -19,7 +19,9 @@ import https from 'https';
 import { fileURLToPath } from 'url';
 
 import { createRequire } from 'module';
-const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
+const require = createRequire(import.meta.url);
+const kst = require('../../../packages/core/lib/kst');
+const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats');
 import * as db from '../shared/db.js';
 import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
@@ -232,6 +234,13 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
+    await writeHeartbeat('luna-crypto', 'ok', {
+      sessionId,
+      symbolCount: symbols.length,
+      durationSec: Number(elapsed),
+      exitPhaseExecuted: Number(decision.metrics?.exitPhaseExecuted || 0),
+      approvedSignals: Number(decision.metrics?.approvedSignals || 0),
+    }).catch(() => {});
     console.log(`\n${'═'.repeat(60)}`);
     console.log(`✅ ${tag} 사이클 완료 — ${elapsed}초 | ${results.length}개 신호 | LLM $${cost.usage.toFixed(4)}/일`);
     console.log(`${'═'.repeat(60)}\n`);
@@ -239,6 +248,11 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
     return results;
 
   } catch (e) {
+    await writeHeartbeat('luna-crypto', 'error', {
+      sessionId,
+      symbolCount: symbols.length,
+      error: e.message,
+    }).catch(() => {});
     if (sessionId) {
       await finishPipelineRun(sessionId, {
         status: 'failed',

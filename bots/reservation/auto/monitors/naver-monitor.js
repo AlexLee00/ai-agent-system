@@ -38,6 +38,7 @@ const { updateAgentState } = require('../../lib/state-bus');
 const { getNaverLaunchOptions, isHeadedMode } = require('../../lib/browser');
 const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
 const kst = require('../../../../packages/core/lib/kst');
+const { writeHeartbeat } = require('../../../../packages/core/lib/agent-heartbeats');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -1689,6 +1690,10 @@ async function monitorBookings() {
         }
 
         await updateAgentState('andy', 'idle');
+        await writeHeartbeat('andy', 'ok', {
+          cycle: checkCount,
+          status: 'idle',
+        }).catch(() => {});
         // 사이클 소요 시간 기반 대기 (타임아웃 누적으로 인한 주기 밀림 방지)
         const cycleElapsed = Date.now() - cycleStart;
         const sleepMs = Math.max(0, MONITOR_INTERVAL - cycleElapsed);
@@ -1706,6 +1711,10 @@ async function monitorBookings() {
         log(`❌ 루프 오류: ${err.message}`);
         await errorTracker.fail(err); // 연속 오류 카운터 증가 (임계값 도달 시 텔레그램 알림)
         recordHeartbeat({ status: 'error', error: err }); // 오류 상태 기록
+        await writeHeartbeat('andy', 'error', {
+          cycle: checkCount,
+          error: err.message,
+        }).catch(() => {});
 
         const msg = String(err.message || '');
         if (/detached/i.test(msg) || /Connection closed/i.test(msg)) {
