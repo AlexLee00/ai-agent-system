@@ -32,6 +32,7 @@ export const ANALYST_TYPES = Object.freeze({
   MACRO:       'macro',       // 거시경제 (오라클)
   NEWS:        'news',        // 뉴스 (헤르메스)
   SENTIMENT:   'sentiment',   // 커뮤니티 감성 (소피아)
+  SENTINEL:    'sentinel',    // 외부 인텔리전스 통합 래퍼 (헤르메스+소피아)
   FEAR_GREED:  'fear_greed',  // 공포탐욕지수 (소피아)
   CRYPTO_PANIC:'crypto_panic',// CryptoPanic (소피아)
   NAVER_DISC:  'naver_disc',  // 네이버 증권 종목토론실 (소피아 — 국내주식)
