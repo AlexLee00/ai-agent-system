@@ -118,9 +118,13 @@ const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||
 
 // ─── Resource API Hub ────────────────────────────────────────────────
 
-const HUB_BASE_URL = IS_DEV
-  ? (process.env.HUB_BASE_URL || 'http://localhost:7788')
-  : null;
+/**
+ * Hub 베이스 URL
+ * OPS: http://localhost:7788 (자기 자신의 Hub, 시크릿 접근용)
+ * DEV: http://localhost:7788 (Tailscale/SSH 터널 경유)
+ * Hub가 시크릿의 유일한 진입점 → OPS/DEV 모두 필요
+ */
+const HUB_BASE_URL = process.env.HUB_BASE_URL || 'http://localhost:7788';
 
 const USE_HUB = IS_DEV && !!HUB_BASE_URL;
 
