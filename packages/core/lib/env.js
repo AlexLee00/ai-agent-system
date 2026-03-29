@@ -126,6 +126,9 @@ const USE_HUB = IS_DEV && !!HUB_BASE_URL;
 
 const HUB_AUTH_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 
+/** 시크릿 Hub 경로 사용 여부 (자동배포 안전성을 위해 기본값은 false) */
+const USE_HUB_SECRETS = process.env.USE_HUB_SECRETS === 'true';
+
 const HUB_PORT = parseInt(process.env.HUB_PORT || '7788', 10);
 
 // ─── 모드 보호 ───────────────────────────────────────────────────────────
@@ -246,6 +249,7 @@ module.exports = {
   HUB_BASE_URL,
   USE_HUB,
   HUB_AUTH_TOKEN,
+  USE_HUB_SECRETS,
   HUB_PORT,
 
   // 보호 가드
