@@ -9,6 +9,7 @@
  *   llm         — LLM API 키 (Anthropic/OpenAI/Gemini/Groq 등)
  *   telegram    — bot_token + chat_id
  *   exchange    — Binance/Upbit/KIS (DEV: paper/testnet 강제)
+ *   reservation-shared — reservation 공유 가능 키
  *   reservation — 공유키만, OPS전용 마스킹
  *   config      — config.yaml 전체 (DEV 안전 오버라이드)
  */
@@ -95,6 +96,17 @@ const CATEGORY_HANDLERS = {
   },
 
   // 예약 시크릿 (티어 2 공유 + 티어 4 마스킹)
+  'reservation-shared': () => {
+    const d = loadJson(RSV_SECRETS);
+    return {
+      telegram_bot_token: d.telegram_bot_token || '',
+      telegram_chat_id: d.telegram_chat_id || '',
+      telegram_group_id: d.telegram_group_id || '',
+      telegram_topic_ids: d.telegram_topic_ids || {},
+    };
+  },
+
+  // 하위 호환용 reservation 묶음
   reservation: () => {
     const d = loadJson(RSV_SECRETS);
     return {
