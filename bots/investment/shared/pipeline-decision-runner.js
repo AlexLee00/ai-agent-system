@@ -34,6 +34,25 @@ function buildAnalystSignals(analyses) {
   ].join('|');
 }
 
+function buildExitEntryBridgeSummary(exitResults = []) {
+  const executed = exitResults.filter(isActuallyExecuted).filter(item => item?.action === ACTIONS.SELL);
+  const closedPositions = executed.map((item) => {
+    const trade = item.execution?.trade || item.execution?.execution?.trade || item.trade || null;
+    const reclaimedUsdt = Number(trade?.total_usdt ?? trade?.totalUsdt ?? 0);
+    return {
+      symbol: item.symbol,
+      reason: item.reasoning || 'EXIT Phase 청산',
+      reclaimedUsdt,
+    };
+  });
+  const reclaimedUsdt = closedPositions.reduce((sum, item) => sum + Number(item.reclaimedUsdt || 0), 0);
+  return {
+    closedCount: closedPositions.length,
+    reclaimedUsdt,
+    closedPositions,
+  };
+}
+
 function classifyWeakSignalReason(confidence, minConfidence) {
   const gap = Number(minConfidence || 0) - Number(confidence || 0);
   if (gap <= 0.03) return 'confidence_near_threshold';
@@ -288,6 +307,7 @@ export async function runDecisionExecutionPipeline({
   let exitPhaseExecuted = 0;
   let exitBelowMinSkipped = 0;
   const exitResults = [];
+  let exitEntrySummary = null;
 
   function countDecisionActions() {
     const counts = { buy: 0, sell: 0, hold: 0 };
@@ -412,6 +432,7 @@ export async function runDecisionExecutionPipeline({
       }
 
       console.log(`✅ [EXIT Phase] 완료: ${exitPhaseSellSignals}건 SELL / 실행 ${exitPhaseExecuted}건`);
+      exitEntrySummary = buildExitEntryBridgeSummary(exitResults);
     } catch (err) {
       console.error(`  ❌ [EXIT Phase] 실패: ${err.message}`);
       await notifyError(`루나 EXIT Phase - ${exchange}`, err);
@@ -500,6 +521,8 @@ export async function runDecisionExecutionPipeline({
         exit_phase_sell_signals: metrics.exitPhaseSellSignals,
         exit_phase_executed: metrics.exitPhaseExecuted,
         exit_below_min_skipped: metrics.exitBelowMinSkipped,
+        exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
+        exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
@@ -517,6 +540,7 @@ export async function runDecisionExecutionPipeline({
     meta: { bridge: 'luna_orchestrate', stage: 'portfolio' },
     symbolDecisions,
     portfolio: currentPortfolio,
+    exitSummary: exitEntrySummary,
   });
   portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
   if (!portfolioDecision) {
@@ -550,6 +574,8 @@ export async function runDecisionExecutionPipeline({
         exit_phase_sell_signals: metrics.exitPhaseSellSignals,
         exit_phase_executed: metrics.exitPhaseExecuted,
         exit_below_min_skipped: metrics.exitBelowMinSkipped,
+        exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
+        exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
         saved_execution_work: metrics.savedExecutionWork,
         warnings: metrics.warnings,
         investment_trade_mode: investmentTradeMode,
@@ -749,6 +775,8 @@ export async function runDecisionExecutionPipeline({
       exit_phase_sell_signals: completedMetrics.exitPhaseSellSignals,
       exit_phase_executed: completedMetrics.exitPhaseExecuted,
       exit_below_min_skipped: completedMetrics.exitBelowMinSkipped,
+      exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
+      exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
       investment_trade_mode: investmentTradeMode,
