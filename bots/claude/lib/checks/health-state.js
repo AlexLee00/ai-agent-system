@@ -16,10 +16,12 @@
 
 const { execSync } = require('child_process');
 const hsm = require('../../../../packages/core/lib/health-state-manager');
+const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
 
 // ─── launchctl 조회 ───────────────────────────────────────────────
 
 function getLaunchctlInfo(label) {
+  if (!LAUNCHD_AVAILABLE) return { found: false };
   try {
     const raw = execSync('launchctl list', { encoding: 'utf-8', timeout: 5000 });
     for (const line of raw.split('\n')) {
@@ -44,6 +46,7 @@ function getLaunchctlInfo(label) {
 // ─── kickstart ───────────────────────────────────────────────────
 
 function kickstart(label) {
+  if (!LAUNCHD_AVAILABLE) return false;
   try {
     const uid = process.getuid();
     execSync(`launchctl kickstart -k gui/${uid}/${label}`, { timeout: 10000 });
@@ -58,6 +61,11 @@ function kickstart(label) {
 async function run() {
   const items = [];
   const state = hsm.loadState();
+
+  if (!LAUNCHD_AVAILABLE) {
+    items.push({ label: '헬스 상태 파일', status: 'ok', detail: 'DEV 환경 — launchd 서비스 미등록' });
+    return { name: '전 팀 헬스 상태 복구', status: 'ok', items };
+  }
 
   if (!state || Object.keys(state).length === 0) {
     items.push({ label: '헬스 상태 파일', status: 'ok', detail: '비정상 종료 잔존 없음' });

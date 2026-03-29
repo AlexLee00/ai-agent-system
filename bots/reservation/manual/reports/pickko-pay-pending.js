@@ -29,12 +29,13 @@ const { parseArgs } = require('../../lib/args');
 const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
+const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 // ======================== 설정 ========================
 const SECRETS   = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
-const MODE      = (process.env.MODE || 'ops').toLowerCase();
+const MODE      = IS_OPS ? 'ops' : 'dev';
 
 const ARGS          = parseArgs(process.argv);
 const PHONE_RAW     = (ARGS.phone || '').replace(/\D/g, '');
@@ -58,7 +59,7 @@ log(`📋 결제완료 처리 대상: ${PHONE_RAW} / ${DATE} / ${START}~${END} /
 const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
   .split(',').map(p => p.trim()).filter(p => /^\d{10,11}$/.test(p));
 
-if (MODE === 'dev' && !DEV_WHITELIST.includes(PHONE_RAW)) {
+if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
   log(`🛑 DEV 모드: 화이트리스트 아님 (${PHONE_RAW}) → 실행 안 함`);
   process.exit(0);
 }

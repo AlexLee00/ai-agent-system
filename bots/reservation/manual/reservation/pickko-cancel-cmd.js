@@ -25,6 +25,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
+const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const ARGS = parseArgs(process.argv);
 
@@ -55,7 +56,7 @@ function runScript(scriptPath, args, label) {
   return new Promise((resolve) => {
     const child = spawn('node', [scriptPath, ...args], {
       cwd: __dirname,
-      env: { ...process.env, MODE: process.env.MODE || 'ops' },
+      env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
       stdio: ['ignore', process.stderr, process.stderr]
     });
     child.on('error', err => {

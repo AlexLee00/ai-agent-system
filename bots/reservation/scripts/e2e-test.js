@@ -27,6 +27,11 @@ const path = require('path');
 let passed = 0;
 let failed = 0;
 
+function setModeForTest(value) {
+  if (value == null) Reflect.deleteProperty(process.env, 'MODE');
+  else Reflect.set(process.env, 'MODE', value);
+}
+
 function step(name, fn) {
   process.stdout.write(`  ${name}... `);
   try {
@@ -204,15 +209,15 @@ async function runTests() {
   const { getMode, isOpsMode: checkOpsMode, printModeBanner, guardRealAction } = require('../lib/mode');
 
   await step('getMode() 기본값 dev', () => {
-    delete process.env.MODE;
+    setModeForTest(null);
     const mode = getMode();
     if (mode !== 'dev') throw new Error(`기본 모드 오류: ${mode}`);
   });
 
   await step('MODE=ops 감지', () => {
-    process.env.MODE = 'ops';
+    setModeForTest('ops');
     if (!checkOpsMode()) throw new Error('ops 감지 실패');
-    delete process.env.MODE;
+    setModeForTest(null);
     if (checkOpsMode()) throw new Error('dev 복원 실패');
   });
 
@@ -222,7 +227,7 @@ async function runTests() {
   });
 
   await step('guardRealAction DEV 차단', () => {
-    delete process.env.MODE; // dev 모드 강제
+    setModeForTest(null); // dev 모드 강제
     try {
       guardRealAction('e2e-테스트-액션');
       throw new Error('차단되어야 했으나 통과됨');
@@ -273,11 +278,11 @@ async function runTests() {
 
   await step('preflightSystemCheck (2중) 통과', async () => {
     // OPS 가드 체크가 있으므로 MODE=ops 설정
-    process.env.MODE = 'ops';
+    setModeForTest('ops');
     try {
       await preflightSystemCheck();
     } finally {
-      delete process.env.MODE;
+      setModeForTest(null);
     }
   });
 

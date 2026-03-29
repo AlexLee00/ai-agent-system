@@ -11,6 +11,7 @@
 const fs   = require('fs');
 const { execSync } = require('child_process');
 const cfg  = require('../config');
+const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
 
 function parsePsLine(line = '') {
   const trimmed = String(line || '').trim();
@@ -49,6 +50,7 @@ function etimeToMinutes(etime = '') {
 }
 
 function getKnownLaunchdPids() {
+  if (!LAUNCHD_AVAILABLE) return new Set();
   try {
     const raw = execSync('launchctl list', { encoding: 'utf8', timeout: 5000 });
     const pids = new Set();
@@ -84,6 +86,7 @@ function isAllowedNodeCommand(command = '') {
 
 // launchd 서비스 상태
 function launchdStatus(label) {
+  if (!LAUNCHD_AVAILABLE) return null;
   try {
     const out = execSync(`launchctl list | grep "${label}"`, { encoding: 'utf8', timeout: 5000 }).trim();
     if (!out) return null;
@@ -95,6 +98,15 @@ function launchdStatus(label) {
 }
 
 function checkLaunchd(items) {
+  if (!LAUNCHD_AVAILABLE) {
+    items.push({
+      label: 'launchd 서비스 상태',
+      status: 'ok',
+      detail: 'DEV 환경 — launchd 서비스 미등록',
+    });
+    return;
+  }
+
   const SERVICES = [
     // 클로드팀
     { id: 'ai.claude.dexter',         label: '클로드팀 덱스터 full (launchd)' },

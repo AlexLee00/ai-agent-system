@@ -39,6 +39,7 @@ const { getNaverLaunchOptions, isHeadedMode } = require('../../lib/browser');
 const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
 const kst = require('../../../../packages/core/lib/kst');
 const { writeHeartbeat } = require('../../../../packages/core/lib/agent-heartbeats');
+const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 // 인증 정보 (secrets.json에서 로드)
 const SECRETS = loadSecrets();
@@ -79,7 +80,7 @@ function autoBugReport({ title, desc, severity = 'high', category = 'reliability
 const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
 // ✅ 홈(검은 예약현황 박스)로 바로 가는 URL
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
-const MODE = (process.env.MODE || 'dev').toLowerCase();
+const MODE = IS_OPS ? 'ops' : 'dev';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10); // ops=5분, dev=2분 기본
 const MONITOR_DURATION = 2 * 60 * 60 * 1000; // 2시간
 const NAVER_MONITOR_RUNTIME = getReservationNaverMonitorConfig();

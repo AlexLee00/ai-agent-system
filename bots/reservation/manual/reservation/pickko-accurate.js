@@ -20,6 +20,7 @@ const { loginToPickko } = require('../../lib/pickko');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const { acquirePickkoLock, releasePickkoLock } = require('../../lib/state-bus');
 const { publishToMainBot } = require('../../lib/mainbot-client');
+const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 function buildStageError(code, message) {
   const error = new Error(message);
@@ -76,7 +77,7 @@ const START_TIME = normalized.start;
 const END_TIME = normalized.end;
 const ROOM = normalized.room;
 
-const MODE = (process.env.MODE || 'dev').toLowerCase();
+const MODE = IS_OPS ? 'ops' : 'dev';
 const ENABLE_NAME_SYNC = process.env.ENABLE_NAME_SYNC === '1';
 const SKIP_NAME_SYNC =
   process.env.SKIP_NAME_SYNC === '1' ||
@@ -110,7 +111,7 @@ log(`📞 입력 번호: ${PHONE_NOHYPHEN}`);
 // 이것은 절대 규칙이다. 예외는 없다.
 // ================================================================================
 
-if (MODE === 'dev') {
+if (IS_DEV) {
   // 🔐 DEV 모드: 화이트리스트 검증 필수
   if (!DEV_WHITELIST.includes(PHONE_NOHYPHEN)) {
     const errorMsg = `
@@ -1695,7 +1696,7 @@ async function main() {
           `--room=${ROOM}`,
         ], {
           cwd: __dirname,
-          env: { ...process.env, MODE: process.env.MODE || 'ops' },
+          env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
           stdio: ['ignore', process.stdout, process.stderr],
         });
         child.on('close', resolve);

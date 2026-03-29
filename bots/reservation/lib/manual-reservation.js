@@ -3,6 +3,7 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 const kst = require('../../../packages/core/lib/kst');
+const { IS_OPS } = require('../../../packages/core/lib/env');
 const { transformPhoneNumber, transformRoom, validateTimeRange } = require('./validation');
 
 function formatKstDate(date) {
@@ -328,7 +329,7 @@ function runSingleReservationRegistration(reservation, options = {}) {
 
   const result = spawnSync('node', childArgs, {
     cwd: path.dirname(scriptPath),
-    env: { ...process.env, MODE: process.env.MODE || 'ops' },
+    env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 2,
   });

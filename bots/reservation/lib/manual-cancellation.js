@@ -9,6 +9,7 @@ const {
   parseNameFromText,
 } = require('./manual-reservation');
 const { transformPhoneNumber } = require('./validation');
+const { IS_OPS } = require('../../../packages/core/lib/env');
 
 function parseCancellationName(text) {
   const sanitized = String(text || '')
@@ -81,7 +82,7 @@ function runManualReservationCancellation(args = {}) {
 
   const result = spawnSync('node', childArgs, {
     cwd: path.dirname(scriptPath),
-    env: { ...process.env, MODE: process.env.MODE || 'ops' },
+    env: { ...process.env, MODE: IS_OPS ? 'ops' : 'dev' },
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 2,
   });

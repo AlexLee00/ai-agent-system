@@ -34,6 +34,7 @@ const {
   getReservation,
   markSeen,
 } = require('../../lib/db');
+const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 // ──────────────────────────────────────────────
 // 설정
@@ -41,7 +42,7 @@ const {
 const SECRETS    = loadSecrets();
 const PICKKO_ID  = SECRETS.pickko_id;
 const PICKKO_PW  = SECRETS.pickko_pw;
-const MODE       = (process.env.MODE || 'ops').toLowerCase();
+const MODE       = IS_OPS ? 'ops' : 'dev';
 const DRY_RUN    = process.argv.includes('--dry-run');
 
 // ──────────────────────────────────────────────

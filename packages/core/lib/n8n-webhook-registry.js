@@ -1,13 +1,15 @@
 'use strict';
 
 const pgPool = require('./pg-pool');
+const { N8N_ENABLED, N8N_BASE_URL: DEFAULT_N8N_BASE } = require('./env');
 
 async function resolveProductionWebhookUrl({
   workflowName,
   method = 'POST',
   pathSuffix = '',
-  baseUrl = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678',
+  baseUrl = DEFAULT_N8N_BASE,
 } = {}) {
+  if (!N8N_ENABLED) return null;
   if (!workflowName) return null;
 
   const rows = await pgPool.query('public', `
