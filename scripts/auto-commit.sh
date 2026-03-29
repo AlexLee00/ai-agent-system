@@ -1,8 +1,8 @@
 #!/bin/bash
 # auto-commit.sh - ai-agent-system 변경사항 자동 커밋 & 푸시
 
-REPO_DIR="/Users/alexlee/projects/ai-agent-system"
-LOG_FILE="/Users/alexlee/.openclaw/logs/auto-commit.log"
+REPO_DIR="${PROJECT_ROOT:-$HOME/projects/ai-agent-system}"
+LOG_FILE="$HOME/.openclaw/logs/auto-commit.log"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"

@@ -4,8 +4,9 @@
 const fs = require('fs');
 const { execFileSync, execSync, spawnSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 
-const ROOT = '/Users/alexlee/projects/ai-agent-system';
+const ROOT = process.env.PROJECT_ROOT || path.join(os.homedir(), 'projects', 'ai-agent-system');
 
 const TEAM_HEALTH_COMMANDS = [
   { team: 'orchestrator', script: path.join(ROOT, 'bots/orchestrator/scripts/health-report.js') },

@@ -10,9 +10,12 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { homedir } from 'os';
+import { join } from 'path';
 import * as db from '../shared/db.js';
 
 const execFileAsync = promisify(execFile);
+const PROJECT_ROOT = process.env.PROJECT_ROOT || join(homedir(), 'projects', 'ai-agent-system');
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -70,10 +73,10 @@ async function loadInvestmentHealth() {
   try {
     const result = await Promise.race([
       execFileAsync('node', [
-        '/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js',
+        join(PROJECT_ROOT, 'bots/investment/scripts/health-report.js'),
         '--json',
       ], {
-        cwd: '/Users/alexlee/projects/ai-agent-system',
+        cwd: PROJECT_ROOT,
         maxBuffer: 1024 * 1024,
       }),
       new Promise((_, reject) => {
