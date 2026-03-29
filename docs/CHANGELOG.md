@@ -3,6 +3,41 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 13주차 운영 복구 (2026-03-29) — n8n localhost/IPv6 경로 복구 + worker/blog/ska webhook 정상화
+
+- `bots/worker/context/n8n-worker-chat-workflow.json`
+  - local bridge URL을 `localhost`에서 `127.0.0.1`로 통일
+  - `jsonBody`를 `{{ $json.body || $json }}`로 바꿔 n8n webhook wrapper body를 worker API 입력 형태로 정렬
+  - `specifyBody: json`을 명시해 live 실행에서 body가 비지 않도록 보강
+- `bots/blog/api/n8n-workflow.json`
+  - 모든 local node URL을 `127.0.0.1:3100` 기준으로 통일
+  - HTTP Request 노드를 `typeVersion 4.2 + specifyBody=json`으로 정리
+  - 각 노드가 이전 노드 출력이 아니라 `파이프라인 파싱`의 `sessionId/topic/postType/...`를 직접 참조하도록 수정
+- `bots/reservation/context/n8n-ska-command-workflow.json`
+  - ska local bridge URL을 `127.0.0.1:3031`로 정리
+- `bots/reservation/launchd/ai.ska.dashboard.plist` 추가
+  - `dashboard-server.js`를 launchd 서비스로 승격해 `3031` webhook/dashboard 포트를 상시 기동
+- 운영 조치:
+  - live n8n workflow definition과 history snapshot의 local bridge URL을 `localhost`에서 `127.0.0.1`로 직접 보정
+  - `ai.blog.node-server`, `ai.ska.dashboard`, `ai.worker.web`, `ai.n8n.server` 재기동으로 production webhook 경로 재등록
+  - `bots/worker/secrets.json`에 `worker_webhook_secret`를 복구해 worker local bridge 인증 정상화
+- 결과:
+  - `스카팀 읽기 명령 intake`는 최신 실행이 `success`
+  - `워커팀 자연어 업무 intake`는 최신 유효 payload 기준 `success`
+  - `블로그팀 동적 포스팅`은 `sessionId 필수` 즉시 실패 구간을 넘기고 최신 실행 `949`가 `success`로 완료
+  - `CRITICAL 알림 에스컬레이션`은 `waiting` 상태로 정상 대기
+
+## 13주차 운영 복구 (2026-03-29) — n8n migration 검증 중 드러난 launchd/Node 경로 정렬
+
+- `bots/reservation/launchd/ai.ska.dashboard.plist` 추가
+- `bots/worker/context/n8n-worker-chat-workflow.json`
+- `bots/reservation/context/n8n-ska-command-workflow.json`
+- `bots/blog/api/n8n-workflow.json`
+  - Homebrew Node 기반 운영 환경에서 맥 스튜디오 migration 이후 실제 live 서비스가 바라보는 로컬 포트/바디 전송 규약을 재정렬
+- 의미:
+  - 단순 설정 점검이 아니라, migration 후 `worker/ska/blog -> n8n -> local bridge` 경로가 모두 한 머신의 production routing 규약에 맞게 다시 묶였다.
+  - 이후 health-report에서 보이는 n8n 오류는 stale record가 아니라 실제 최신 failure인지 분리해 해석할 수 있게 됐다.
+
 ## 12주차 후속 (2026-03-26) — 해외장 mock SELL capability 실검증 후 blocked 정책 복구
 
 - `bots/investment/team/hanul.js`

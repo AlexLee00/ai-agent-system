@@ -16,7 +16,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:4000/api/webhooks/n8n/chat-intake",
+        "url": "http://127.0.0.1:4000/api/webhooks/n8n/chat-intake",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -28,7 +28,8 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "jsonBody": "={{$json}}",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body || $json }}",
         "options": {}
       },
       "id": "HTTP_1",

@@ -2,6 +2,34 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-03-29
+
+### n8n local bridge 복구 및 webhook end-to-end 재검증
+
+| 테스트 | 결과 |
+|--------|------|
+| `launchctl print gui/501/ai.worker.web` | ✅ `ai.worker.web` running, `WORKER_PORT=4000` 확인 |
+| `launchctl print gui/501/ai.blog.node-server` | ✅ `127.0.0.1:3100` live service running 확인 |
+| `launchctl print gui/501/ai.ska.dashboard` | ✅ 신규 `ai.ska.dashboard` launch agent running 확인 |
+| `lsof -nP -iTCP:4000 -sTCP:LISTEN` | ✅ worker local bridge 포트 리슨 확인 |
+| `lsof -nP -iTCP:3100 -sTCP:LISTEN` | ✅ blog node server 포트 리슨 확인 |
+| `lsof -nP -iTCP:3031 -sTCP:LISTEN` | ✅ ska dashboard/webhook 포트 리슨 확인 |
+| `node bots/worker/scripts/check-n8n-intake-path.js` | ✅ 최종 기준 `n8nHealthy=true`, `webhookStatus=200`, `webhookHealthy=true` |
+| `node bots/reservation/scripts/check-n8n-command-path.js` | ✅ 최종 기준 `n8nHealthy=true`, `webhookStatus=200`, `webhookHealthy=true` |
+| `node bots/blog/scripts/check-n8n-pipeline-path.js` | ✅ 최종 기준 `n8nHealthy=true`, `webhookStatus=200`, `webhookHealthy=true` |
+| `node bots/orchestrator/scripts/check-n8n-critical-path.js` | ✅ 최종 기준 `n8nHealthy=true`, `webhookStatus=200`, `webhookHealthy=true` |
+| `SELECT id, status FROM n8n.execution_entity ORDER BY id DESC LIMIT 12;` | ✅ worker latest `947 success`, blog latest `949 success`, ska latest `936 success` 확인 |
+| `curl -s -o /dev/null -w 'worker %{http_code}\n' -X POST http://127.0.0.1:5678/webhook/ERE1IaKSay8dVequ/webhook/worker-chat-intake ...` | ✅ HTTP `200`, 최신 `execution_entity` 기준 `947 success` |
+| `curl -s -o /dev/null -w 'blog %{http_code}\n' -X POST http://127.0.0.1:5678/webhook/a6gGbdUkHu4Xi0W1/webhook/blog-pipeline ...` | ✅ HTTP `200`, 최신 `execution_entity` 기준 `949 success` |
+| `SELECT left(d.data::text, ...) FROM n8n.execution_data ...` | ✅ worker는 `session_id/company_id/user_id/message`가 local bridge까지 전달, blog는 `sessionId`가 `완료 응답`까지 유지되는 것 확인 |
+
+### 블로그 파이프라인 품질/실행시간 관찰
+
+| 테스트 | 결과 |
+|--------|------|
+| `SELECT left(d.data::text, 6000) FROM n8n.execution_data WHERE executionId=949;` | ✅ `Webhook -> 파이프라인 파싱 -> 날씨/IT뉴스/Node.js 업데이트/RAG/관련 포스팅/글 생성/품질 검증/완료 응답` 전체 실행 확인 |
+| `tail -n 80 bots/blog/blog-node-server.log` | ✅ 글 생성/repair 로그 확인, `글 생성` 노드가 약 `53.7s` 소요되고 최종 `charCount=5055`, `passed=false`이지만 워크플로우는 성공 종료 |
+
 ## 2026-03-26
 
 ### crypto soft budget runtime suggestion 보강

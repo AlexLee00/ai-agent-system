@@ -27,121 +27,112 @@
       "id": "node-weather",
       "name": "날씨 수집",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [680, 160],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/weather",
+        "url": "http://127.0.0.1:3100/api/blog/node/weather",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId } }}",
+        "options": {}
       }
     },
     {
       "id": "node-it-news",
       "name": "IT뉴스 수집",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [680, 300],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/it-news",
+        "url": "http://127.0.0.1:3100/api/blog/node/it-news",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId } }}",
+        "options": {}
       }
     },
     {
       "id": "node-nodejs",
       "name": "Node.js 업데이트 수집",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [680, 440],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/nodejs-updates",
+        "url": "http://127.0.0.1:3100/api/blog/node/nodejs-updates",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId } }}",
+        "options": {}
       }
     },
     {
       "id": "node-rag-exp",
       "name": "RAG 실전 사례",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [900, 300],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/rag-experiences",
+        "url": "http://127.0.0.1:3100/api/blog/node/rag-experiences",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
-          "topic": "={{ $('파이프라인 파싱').item.json.topic }}",
-          "postType": "={{ $('파이프라인 파싱').item.json.postType }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId, topic: $('파이프라인 파싱').item.json.topic, postType: $('파이프라인 파싱').item.json.postType } }}",
+        "options": {}
       }
     },
     {
       "id": "node-related",
       "name": "관련 포스팅",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [900, 440],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/related-posts",
+        "url": "http://127.0.0.1:3100/api/blog/node/related-posts",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
-          "topic": "={{ $('파이프라인 파싱').item.json.topic }}",
-          "lectureNumber": "={{ $('파이프라인 파싱').item.json.lectureNumber }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId, topic: $('파이프라인 파싱').item.json.topic, lectureNumber: $('파이프라인 파싱').item.json.lectureNumber } }}",
+        "options": {}
       }
     },
     {
       "id": "node-write",
       "name": "글 생성",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [1120, 300],
       "parameters": {
         "method": "POST",
-        "url": "=http://localhost:3100/api/blog/node/write-{{ $('파이프라인 파싱').item.json.postType === 'lecture' ? 'lecture' : 'general' }}",
+        "url": "=http://127.0.0.1:3100/api/blog/node/write-{{ $('파이프라인 파싱').item.json.postType === 'lecture' ? 'lecture' : 'general' }}",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
-          "category": "={{ $('파이프라인 파싱').item.json.category || '자기계발' }}",
-          "lectureNumber": "={{ $('파이프라인 파싱').item.json.lectureNumber || 1 }}",
-          "lectureTitle": "={{ $('파이프라인 파싱').item.json.lectureTitle || 'Node.js 기초' }}",
-          "sectionVariation": "={{ $('파이프라인 파싱').item.json.variations }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId, category: $('파이프라인 파싱').item.json.category || '자기계발', lectureNumber: $('파이프라인 파싱').item.json.lectureNumber || 1, lectureTitle: $('파이프라인 파싱').item.json.lectureTitle || 'Node.js 기초', sectionVariation: $('파이프라인 파싱').item.json.variations } }}",
+        "options": {}
       }
     },
     {
       "id": "node-quality",
       "name": "품질 검증",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "typeVersion": 4.2,
       "position": [1340, 300],
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:3100/api/blog/node/quality-check",
+        "url": "http://127.0.0.1:3100/api/blog/node/quality-check",
         "sendBody": true,
-        "bodyContentType": "json",
-        "body": {
-          "sessionId": "={{ $('파이프라인 파싱').item.json.sessionId }}",
-          "postType": "={{ $('파이프라인 파싱').item.json.postType }}"
-        }
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { sessionId: $('파이프라인 파싱').item.json.sessionId, postType: $('파이프라인 파싱').item.json.postType } }}",
+        "options": {}
       }
     },
     {
