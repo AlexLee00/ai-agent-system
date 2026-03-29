@@ -94,6 +94,7 @@ if echo "$CHANGED" | grep -q "^packages/core"; then
   restart_service "ai.worker.task-runner"
   restart_service "ai.orchestrator"
   restart_service "ai.claude.dexter"
+  restart_service "ai.hub.resource-api"
   echo "✅ 전체 재시작 완료"
   exit 0
 fi
@@ -130,6 +131,11 @@ echo "$CHANGED" | grep -q "^bots/orchestrator" && {
 
 echo "$CHANGED" | grep -q "^bots/claude" && {
   restart_service "ai.claude.dexter"
+  RESTARTED=$((RESTARTED+1))
+}
+
+echo "$CHANGED" | grep -q "^bots/hub" && {
+  restart_service "ai.hub.resource-api"
   RESTARTED=$((RESTARTED+1))
 }
 
@@ -189,6 +195,20 @@ BLOG_LLM_MODEL=         # gpt4o | gemini
 # ─── 개발 편의 (맥북 에어 DEV 전용) ────────────────────────────────
 # SSH 터널 상태에서 원격 PostgreSQL 접근 확인용
 # ssh -L 5432:localhost:5432 mac-studio -N -f
+
+# ─── Resource API Hub ────────────────────────────────────────────────
+# 맥 스튜디오(OPS): Hub 서버로 동작 (포트 7788)
+# 맥북 에어(DEV): Hub 클라이언트 (Tailscale/SSH 터널 경유)
+HUB_BASE_URL=           # DEV: http://localhost:7788 / OPS: (미설정, null)
+HUB_AUTH_TOKEN=          # 공유 Bearer Token (crypto.randomBytes(32).toString('hex'))
+HUB_PORT=                # 7788 (OPS Hub 서버 바인드 포트)
+
+# ─── 시크릿 관리 (API 키 티어 참고) ──────────────────────────────────
+# 티어 1: Hub 프록시 → DEV에 키 불필요 (DB, n8n)
+# 티어 2: 공유 가능 → LLM API 키, Telegram (종량제/동일 봇)
+# 티어 3: DEV 오버라이드 → 트레이딩 키, JWT (sync-dev-secrets.sh가 자동 패치)
+# 티어 4: OPS 전용 → Naver/Pickko 로그인, DB 암호화 키 (DEV 미복사)
+# 상세: docs/DEV_ENV_SETUP_MACBOOK_AIR.md 섹션 19 참고
 ```
 
 ---
@@ -208,6 +228,8 @@ PG_PORT=5432
 PG_USER=alexlee
 PG_DATABASE=jay
 TELEGRAM_CHAT_ID=665606590
+HUB_BASE_URL=http://localhost:7788
+HUB_AUTH_TOKEN=
 ```
 
 docs/env.production.example 신규 생성:
@@ -224,6 +246,8 @@ PG_PORT=5432
 PG_USER=alexlee
 PG_DATABASE=jay
 TELEGRAM_CHAT_ID=665606590
+HUB_PORT=7788
+HUB_AUTH_TOKEN=
 ```
 
 ---
