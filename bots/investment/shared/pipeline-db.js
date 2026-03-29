@@ -86,7 +86,11 @@ export async function createPipelineRun({
 
 export async function finishPipelineRun(sessionId, { status = 'completed', meta = null } = {}) {
   await ensurePipelineSchema();
-  const row = await get(`SELECT started_at, meta FROM pipeline_runs WHERE session_id = ?`, [sessionId]);
+  const row = await get(`SELECT started_at, meta, status FROM pipeline_runs WHERE session_id = ?`, [sessionId]);
+  if (!row) return { updated: false, reason: 'not_found' };
+  if (row.status && row.status !== 'running') {
+    return { updated: false, reason: 'already_terminal', status: row.status };
+  }
   const finishedAt = Date.now();
   const durationMs = row?.started_at ? finishedAt - Number(row.started_at) : null;
   const mergedMeta = meta == null
@@ -96,8 +100,9 @@ export async function finishPipelineRun(sessionId, { status = 'completed', meta 
   await run(`
     UPDATE pipeline_runs
     SET status = ?, finished_at = ?, duration_ms = ?, meta = COALESCE(?, meta)
-    WHERE session_id = ?
+    WHERE session_id = ? AND status = 'running'
   `, [status, finishedAt, durationMs, mergedMeta, sessionId]);
+  return { updated: true, status };
 }
 
 export async function startNodeRun({
