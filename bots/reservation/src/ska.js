@@ -23,6 +23,7 @@ const {
   ensureIntentTables,
   getNamedIntentLearningPath,
 } = require('../../../packages/core/lib/intent-store');
+const { initHubSharedSecrets } = require('../lib/secrets');
 const { checkSkaTeamIdentity } = require('../lib/ska-team');
 const { createSkaCommandHandlers } = require('../lib/ska-command-handlers');
 const { createSkaIntentLearning } = require('../lib/ska-intent-learning');
@@ -111,6 +112,7 @@ const COMMAND_POLL_MS = 5000;
 let _identityCounter = 0;
 
 async function main() {
+  await initHubSharedSecrets();
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
   await ensureIntentTables(pgPool, { schema: 'ska' });
