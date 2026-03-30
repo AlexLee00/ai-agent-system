@@ -99,8 +99,8 @@
 [✅] P5 Phase E: reservation 진입점 Hub 커넥터 → 완료
 [✅] 루나팀 P1 잔여: unrealized_pnl KIS 18/18 + max_daily_trades 상향 → 완료
 [✅] OPS 관측성: Hub 에러 + 덱스터[23] + 닥터 능동화 → 19/19 완료
-[🔄] 에러 수정: crypto 최소수량 SELL skip + DB 정리 (코덱스 구현 완료, 커밋+배포 대기)
-[🔄] DEV CLI: ops-query.sh + ops-errors.sh (코덱스 구현 완료, 커밋 대기)
+[✅] 에러 수정: crypto 최소수량 SELL skip + dust 포지션 DELETE 정리 → 커밋 완료
+[✅] DEV CLI: ops-query.sh + ops-errors.sh → 커밋 완료
 [ ] OpenClaw Phase 1: mainbot.js 흡수 설계 (노션 분석 완료: 333ff93a809a81799b3fc77e34884a93)
 [ ] n8n 자격증명 재입력 (PostgreSQL+Telegram, UI에서)
 [ ] 블로팀: 네이버 실전 발행 1건 확인
