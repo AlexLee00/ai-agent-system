@@ -2,7 +2,22 @@
 
 > 작성: 메티 (전략+설계)
 > 계기: 젬스 도서 리뷰 hallucination 발견 ("Composing Selfhood" 허구 도서)
-> 범위: 코드 딥 분석 + 품질 강화 + 장기 비전
+> 범위: 코드 딥 분석 + 양질 글 작성 성능 향상 + 장기 비전
+
+---
+
+## 우선순위 [확정]
+
+```
+1순위: 젬스(GEMS) + 포스(POS) 양쪽 글 작성 성능 개선
+  → 양질의 블로그 글 작성 능력 향상
+  → 최신 SEO/AEO/GEO 기술 적용
+  → 자연스러운 한국어 표현 강화
+
+2순위: 젬스 도서리뷰 hallucination 수정
+  → 허구 도서 생성 방지
+  → API 키 설정 + 검증 로직 추가
+```
 
 ---
 
@@ -111,32 +126,35 @@ Phase 5: 멀티 플랫폼 (네이버 + 티스토리 + 워드프레스)
 ### 분석 대상 (7,467줄, 25파일)
 
 ```
-핵심 파이프라인 (우선 분석):
-  lib/blo.js              714줄  ← 팀장, 전체 파이프라인 오케스트레이션
-  lib/gems-writer.js     1027줄  ← 일반 포스팅 작성 (도서 리뷰 포함)
-  lib/pos-writer.js       632줄  ← 강의 포스팅 작성
-  lib/book-research.js    207줄  ← 도서 검색 (hallucination 근원)
-  lib/quality-checker.js  147줄  ← 품질 검증
-
-수집/콘텐츠:
-  lib/richer.js           252줄  ← 정보 수집 (뉴스/날씨/SEO)
-  lib/maestro.js          342줄  ← LLM 호출 래퍼
-  lib/bonus-insights.js   171줄  ← 추가 인사이트
+★ 1순위 — 글 작성 성능 (젬스 + 포스 공통):
+  lib/gems-writer.js     1027줄  ← 일반 포스팅 작성 (LLM 프롬프트 핵심)
+  lib/pos-writer.js       632줄  ← 강의 포스팅 작성 (LLM 프롬프트 핵심)
+  lib/maestro.js          342줄  ← LLM 호출 래퍼 (모델 선택, 토큰 관리)
+  lib/quality-checker.js  147줄  ← 품질 검증 (AI 탐지 리스크 포함)
+  lib/richer.js           252줄  ← 정보 수집 (뉴스/날씨/SEO — 글 소재)
   lib/section-ratio.js    149줄  ← 섹션 비율 조정
-  lib/star.js             284줄  ← 별점/평가
+  lib/bonus-insights.js   171줄  ← 추가 인사이트 생성
 
-발행/스케줄:
+★ 2순위 — 도서리뷰 이슈:
+  lib/book-research.js    207줄  ← 도서 검색 (hallucination 근원)
+
+파이프라인/오케스트레이션:
+  lib/blo.js              714줄  ← 팀장, 전체 파이프라인 오케스트레이션
+  lib/daily-config.js     (크기 미확인) ← 일일 설정
+  lib/category-rotation.js 102줄  ← 카테고리 순환
+  lib/pipeline-store.js   (크기 미확인) ← 파이프라인 상태
+
+발행/콘텐츠:
   lib/publ.js             342줄  ← 발행 (네이버 블로그)
   lib/schedule.js         218줄  ← 발행 스케줄
   lib/social.js           232줄  ← 소셜 미디어
   lib/img-gen.js          486줄  ← 이미지 생성
+  lib/star.js             284줄  ← 별점/평가
 
 커리큘럼/피드백:
   lib/curriculum-planner.js 582줄  ← 강의 커리큘럼
   lib/ai-feedback.js      207줄  ← AI 피드백 루프
-  lib/daily-config.js     (크기 미확인) ← 일일 설정
-  lib/category-rotation.js 102줄  ← 카테고리 순환
-  lib/pipeline-store.js   (크기 미확인) ← 파이프라인 상태
+  lib/runtime-config.js   101줄  ← 런타임 설정
 
 인프라:
   api/node-server.js      438줄  ← HTTP 서버
@@ -144,17 +162,29 @@ Phase 5: 멀티 플랫폼 (네이버 + 티스토리 + 워드프레스)
   scripts/health-check.js 254줄  ← 헬스체크
 ```
 
-### 분석 체크리스트
+### 1차 분석 완료 (이번 세션)
 
 ```
-[ ] 데이터 흐름: blo.js → richer.js → gems/pos → quality → publ
-[ ] book-research.js: API 키 설정 상태, 폴백 로직, 실패 시 동작
-[ ] gems-writer.js: 도서 정보 전달 방식, LLM 프롬프트 분석
-[ ] quality-checker.js: 현재 검증 항목, 누락된 검증
-[ ] maestro.js: LLM 호출 구조, 에러 처리
-[ ] 전체 파이프라인: 실패 시 동작, 재시도 로직
-[ ] config.json: API 키 설정 여부
-[ ] 최신 블로그 기술 리서치: SEO, AEO, GEO 트렌드
+[✅] config.json: LLM 체인 구조 분석 (GPT-4o → GPT-4o-mini → Gemini Flash)
+[✅] book-research.js: 전체 207줄 분석 완료 — hallucination 근본 원인 추적
+[✅] quality-checker.js: 전체 147줄 분석 완료 — AI 탐지 리스크 6개 항목
+[✅] gems-writer.js: 시스템 프롬프트 + 도서리뷰 블록 + 섹션 구조 분석
+[✅] blo.js: 도서리뷰 파이프라인 경로 추적 (273~310줄)
+[✅] DB 분석: posts/publish_schedule 테이블 — hallucination 증거 확보
+[✅] 2026 SEO/AEO/GEO 최신 트렌드 리서치
+```
+
+### 미분석 (다음 세션)
+
+```
+[ ] pos-writer.js: 강의 포스팅 프롬프트 + 품질 → 1순위
+[ ] gems-writer.js 나머지: writeGeneralPost/writeGeneralPostChunked 상세
+[ ] richer.js: 정보 수집 소스/품질 분석
+[ ] maestro.js: LLM 호출 구조, 에러 처리, 재시도
+[ ] blo.js 전체: 파이프라인 흐름 + 에러 처리
+[ ] publ.js: 네이버 발행 자동화 상태
+[ ] ai-feedback.js: 피드백 루프 동작 여부
+[ ] curriculum-planner.js: 강의 커리큘럼 품질
 ```
 
 ---
