@@ -124,22 +124,31 @@ CLI: node shared/ohlcv-fetcher.js --symbol=BTC/USDT --from=2025-01-01 --timefram
 
 ---
 
-## 작업 4: Ollama HTTP 클라이언트
+## 작업 4: Ollama HTTP 클라이언트 (공용 계층)
 
-새 파일: `bots/investment/shared/ollama-client.js`
+새 파일: `packages/core/lib/ollama-client.js`
+
+⚠️ 루나팀 전용이 아닌 **공용 계층**에 배치 (hub-client.js와 동일 레벨)
+이유: 블로팀(글 품질 검증), RAG 임베딩 로컬 전환 등 다른 팀도 사용 예정
 
 ```
 역할:
-  로컬 Ollama REST API (localhost:11434) 호출 래퍼
-  Chronos Layer 2~3에서 사용
+  로컬 Ollama REST API 호출 래퍼
+  OPS: localhost:11434
+  DEV: Tailscale 경유 REDACTED_TAILSCALE_IP:11434 (Hub 패턴과 동일)
+
+환경변수:
+  OLLAMA_BASE_URL — 기본값: http://localhost:11434
+  DEV에서는 env.js에서 자동 설정:
+    MODE=dev → OLLAMA_BASE_URL=http://REDACTED_TAILSCALE_IP:11434
 
 함수:
   isOllamaAvailable() → boolean
-    GET http://localhost:11434/api/version
+    GET ${OLLAMA_BASE_URL}/api/version
     타임아웃 3초
 
   callOllama(model, prompt, options={}) → string|null
-    POST http://localhost:11434/api/generate
+    POST ${OLLAMA_BASE_URL}/api/generate
     body: { model, prompt, stream: false, options }
     타임아웃: qwen2.5:7b → 30초, deepseek-r1:32b → 120초
     에러 시: null 반환 (백테스트 중단 방지)
@@ -149,8 +158,17 @@ CLI: node shared/ohlcv-fetcher.js --symbol=BTC/USDT --from=2025-01-01 --timefram
     callOllama 호출 후 JSON.parse 시도
     파싱 실패 시: null 반환
 
-패턴: 기존 hub-client.js와 동일 (AbortController + 타임아웃 + null 반환)
-참고: OPS Hub는 localhost:7788, Ollama는 localhost:11434 — 포트 충돌 없음
+패턴: hub-client.js와 동일 (env.js에서 BASE_URL 읽기 + AbortController + 타임아웃 + null 반환)
+```
+
+### env.js 수정
+
+```
+packages/core/lib/env.js에 추가:
+
+  OLLAMA_BASE_URL:
+    MODE=ops → 'http://localhost:11434'
+    MODE=dev → 'http://REDACTED_TAILSCALE_IP:11434' (Tailscale 경유)
 ```
 
 ---
@@ -240,7 +258,7 @@ npm install technicalindicators
 # 2. 문법 검사
 node --check bots/investment/shared/ohlcv-fetcher.js
 node --check bots/investment/shared/ta-indicators.js
-node --check bots/investment/shared/ollama-client.js
+node --check packages/core/lib/ollama-client.js
 node --check bots/investment/team/chronos.js
 
 # 3. git push
@@ -249,7 +267,7 @@ git commit -m "feat(luna): Chronos Layer 1~3 백테스팅 엔진
 
 - ohlcv-fetcher.js: ccxt OHLCV 수집 + PostgreSQL 캐시
 - ta-indicators.js: RSI/MACD/BB/ATR 기술지표
-- ollama-client.js: 로컬 Ollama HTTP 클라이언트
+- ollama-client.js: 로컬 Ollama HTTP 클라이언트 (packages/core/lib/ 공용)
 - chronos.js: 3계층 백테스팅 (규칙→감성LLM→판단LLM)
 - migration: ohlcv_cache 테이블"
 git push origin main
@@ -265,7 +283,7 @@ node bots/investment/shared/ohlcv-fetcher.js \
 
 # 5. Ollama 클라이언트 테스트
 node -e "
-const { callOllama, isOllamaAvailable } = require('./bots/investment/shared/ollama-client');
+const { callOllama, isOllamaAvailable } = require('./packages/core/lib/ollama-client');
 (async () => {
   console.log('available:', await isOllamaAvailable());
   const r = await callOllama('qwen2.5:7b', 'Say hello');
