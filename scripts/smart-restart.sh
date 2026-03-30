@@ -24,6 +24,25 @@ restart_service() {
   sleep 2
 }
 
+reload_launch_agent() {
+  local label="$1"
+  local source_plist="$2"
+  local target_plist="$HOME/Library/LaunchAgents/${label}.plist"
+
+  if [ ! -f "$source_plist" ]; then
+    echo "  ⚠️ plist 없음 — 재로딩 스킵: $source_plist"
+    return
+  fi
+
+  echo "♻️  launchd 재로딩: $label"
+  cp "$source_plist" "$target_plist"
+  launchctl bootout "gui/${UID_VALUE}" "$target_plist" 2>/dev/null || true
+  launchctl bootstrap "gui/${UID_VALUE}" "$target_plist" 2>/dev/null \
+    && echo "  ✅ $label bootstrap" \
+    || echo "  ⚠️ $label bootstrap 실패"
+  sleep 2
+}
+
 echo "📋 변경 파일 감지 중..."
 if [ -z "$CHANGED" ]; then
   echo "ℹ️ 변경 파일 없음 (첫 배포 또는 git 이력 없음)"
@@ -50,6 +69,18 @@ if echo "$CHANGED" | grep -q "^packages/core"; then
 fi
 
 RESTARTED=0
+RELOADED=0
+
+if echo "$CHANGED" | grep -qE '(^bots/.+/launchd/.*\.plist$|^scripts/launchd/.*\.plist$)'; then
+  while IFS= read -r plist; do
+    [ -n "$plist" ] || continue
+    label="$(basename "$plist" .plist)"
+    reload_launch_agent "$label" "$PROJECT_ROOT/$plist"
+    RELOADED=$((RELOADED+1))
+  done <<EOF
+$(echo "$CHANGED" | grep -E '(^bots/.+/launchd/.*\.plist$|^scripts/launchd/.*\.plist$)')
+EOF
+fi
 
 if echo "$CHANGED" | grep -q "^bots/investment"; then
   restart_service "ai.investment.crypto"
@@ -94,7 +125,13 @@ if echo "$CHANGED" | grep -q "^bots/hub"; then
 fi
 
 if [ "$RESTARTED" -eq 0 ]; then
-  echo "ℹ️ 재시작 대상 없음 (docs/config 변경만 감지됨)"
+  if [ "$RELOADED" -eq 0 ]; then
+    echo "ℹ️ 재시작 대상 없음 (docs/config 변경만 감지됨)"
+  fi
 else
   echo "✅ ${RESTARTED}개 팀 재시작 완료"
+fi
+
+if [ "$RELOADED" -gt 0 ]; then
+  echo "✅ ${RELOADED}개 launchd plist 재로딩 완료"
 fi
