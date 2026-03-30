@@ -8,8 +8,8 @@
  * executionMode / brokerAccountMode 기준:
  *   - PAPER_MODE=true  → executionMode=paper (실제 주문 차단)
  *   - PAPER_MODE=false → executionMode=live  (브로커 계좌로 주문 실행)
- *   - kis.paper_trading=true  → brokerAccountMode=mock
- *   - kis.paper_trading=false → brokerAccountMode=real
+ *   - kis_mode=paper → brokerAccountMode=mock
+ *   - kis_mode=live  → brokerAccountMode=real
  *
  * ⚠️ 업비트는 거래 대상이 아님.
  *    업비트는 KRW↔암호화폐 입출금 게이트웨이 전용 (바이낸스 자금 이동).

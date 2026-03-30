@@ -39,8 +39,10 @@
 
 - `PAPER_MODE` / `trading_mode`
   - `executionMode`를 결정하는 레거시 입력
-- `kis.paper_trading`
+- `kis_mode`
   - 주식 시장의 `brokerAccountMode`를 결정
+- `kis.paper_trading`
+  - deprecated 레거시 입력
 - `binance_testnet`
   - 레거시 실험용 플래그
   - 현재 운영 기준의 `brokerAccountMode` 분류에는 사용하지 않음

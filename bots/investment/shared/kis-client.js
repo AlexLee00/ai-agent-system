@@ -3,8 +3,8 @@
  *
  * 역할: 국내주식(KOSPI/KOSDAQ) + 해외주식(미국) 시장가 주문
  * brokerAccountMode:
- *   - mock: config.yaml kis.paper_trading: true (기본값)
- *   - real: config.yaml kis.paper_trading: false
+ *   - mock: config.yaml kis_mode=paper
+ *   - real: config.yaml kis_mode=live
  * executionMode는 별도이며, 실제 주문 차단 여부는 PAPER_MODE / trading_mode가 결정한다.
  *
  * API 문서: https://apiportal.koreainvestment.com/

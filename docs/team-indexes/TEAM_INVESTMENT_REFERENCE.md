@@ -53,7 +53,8 @@
   - 국내/해외주식: `brokerAccountMode=mock/real` 사용 가능
 - 레거시 설정 매핑
   - `PAPER_MODE` / `trading_mode`: `executionMode`
-  - `kis.paper_trading`: 주식 `brokerAccountMode`
+  - `kis_mode`: 주식 `brokerAccountMode`
+  - `kis.paper_trading`: deprecated 레거시 입력
   - `binance_testnet`: 레거시 실험 플래그 (현재 운영 분류에는 미사용)
 - 현재 저장 구조는 `paper` 레거시 필드를 일부 유지하지만, 운영 해석과 리포트는 `executionMode / brokerAccountMode` 기준을 우선한다.
 - 주식 공격적 매매 기준:

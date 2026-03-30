@@ -83,7 +83,6 @@ export async function initHubSecrets() {
       kis_paper_app_secret: c.kis?.paper_app_secret || '',
       kis_account_number:   c.kis?.account_number || '',
       kis_paper_account_number: c.kis?.paper_account_number || '',
-      kis_paper_trading:    c.kis?.paper_trading !== false,
       kis_symbols:          c.kis?.symbols || [],
       kis_overseas_symbols: c.kis?.overseas_symbols || [],
       screening_domestic_core: c.screening?.domestic?.core || [],
@@ -143,7 +142,6 @@ export function loadSecrets() {
       kis_paper_app_secret: c.kis?.paper_app_secret|| '',
       kis_account_number:         c.kis?.account_number        || '',
       kis_paper_account_number:   c.kis?.paper_account_number  || '',
-      kis_paper_trading:    c.kis?.paper_trading   !== false,
       kis_symbols:          c.kis?.symbols          || [],  // 아르고스 동적 선정
       kis_overseas_symbols: c.kis?.overseas_symbols || [],  // 아르고스 동적 선정
       screening_domestic_core: c.screening?.domestic?.core || [],
