@@ -117,6 +117,30 @@ async function getMinSellAmount(symbol) {
   return Math.max(exchangeMin, precisionStep);
 }
 
+async function cleanupDustLivePosition(symbol, position, tradeMode, meta = {}) {
+  if (!position) return;
+  await db.deletePosition(symbol, {
+    exchange: position.exchange || 'binance',
+    paper: false,
+    tradeMode,
+  });
+  console.log(`  ⚠️ ${symbol} 실잔고 최소수량 미달 → DB 포지션 삭제 정리`);
+  if (meta.signalId) {
+    await db.updateSignalBlock(meta.signalId, {
+      reason: `dust_position_cleaned:${meta.roundedAmount || 0}:${meta.minSellAmount || 0}`,
+      code: 'dust_position_cleaned',
+      meta: {
+        exchange: position.exchange || 'binance',
+        symbol,
+        dbAmount: Number(position.amount || 0),
+        freeBalance: Number(meta.freeBalance || 0),
+        roundedAmount: Number(meta.roundedAmount || 0),
+        minSellAmount: Number(meta.minSellAmount || 0),
+      },
+    }).catch(() => {});
+  }
+}
+
 function roundSellAmount(symbol, amount) {
   const ex = getExchange();
   const precise = Number(ex.amountToPrecision(symbol, amount));
@@ -1157,6 +1181,12 @@ export async function executeSignal(signal) {
         if (roundedAmount <= 0 || (minSellAmount > 0 && roundedAmount < minSellAmount)) {
           const reason = `최소 매도 수량 미달 (${roundedAmount || amount} < ${minSellAmount || 'exchange_min'})`;
           console.warn(`  ⚠️ ${symbol} ${reason} — SELL 스킵`);
+          await cleanupDustLivePosition(symbol, livePosition, signalTradeMode, {
+            signalId,
+            freeBalance,
+            roundedAmount: roundedAmount || amount,
+            minSellAmount,
+          });
           await persistFailure(reason, {
             code: 'sell_amount_below_minimum',
             meta: {
