@@ -9,6 +9,7 @@ const { pgQueryRoute } = require('../lib/routes/pg');
 const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
 const { secretsRoute } = require('../lib/routes/secrets');
+const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
 
 env.ensureOps('Resource API Hub');
 env.printModeBanner('Resource API Hub');
@@ -53,6 +54,8 @@ app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
 app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
 app.get('/hub/services/status', generalLimiter, servicesStatusRoute);
 app.get('/hub/env', generalLimiter, envRoute);
+app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);
+app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
 
 const secretsLimiter = rateLimit({
   windowMs: 60 * 1000,
