@@ -35,19 +35,33 @@ DEV에서 OPS 문제를 디버깅하려면 두 축이 필요:
 ### 배포 순서
 
 ```
-1. DEV에서 전체 구현 + 문법 검사
-2. git push origin main
+── DEV 단계 (코덱스가 맥북 에어에서 진행) ──
+1. 전체 코드 구현 + 문법 검사
+2. git add + commit + push origin main
+
+── OPS 단계 (코덱스가 맥 스튜디오에서 진행 — OPS 설정 절차 적용) ──
 3. OPS에서 git pull
 4. Hub 재시작: launchctl kickstart -kp gui/$(id -u)/ai.hub.resource-api
-5. 덱스터는 launchd가 자동 재시작 (주기 실행)
-6. DEV에서 Hub API 호출로 검증
+5. Hub 에러 엔드포인트 동작 확인:
+   curl -s http://localhost:7788/hub/errors/summary \
+     -H "Authorization: Bearer $HUB_AUTH_TOKEN"
+6. 덱스터 다음 주기 실행 시 [23] error-logs 점검 확인:
+   tail -30 /tmp/dexter.log | grep error-logs
+7. 닥터 scanAndRecover() 동작 확인:
+   tail -30 /tmp/dexter.log | grep 닥터
+
+※ OPS에서의 검증은 반드시 운영 환경에서 실행해야 함
+  (DEV에서는 /tmp/*.err.log가 없고, Hub가 로컬에 없으므로 검증 불가)
 ```
 
 ### DEV에서 테스트 가능 범위
 
-- hub-client.js queryOpsDb() / fetchOpsErrors() → DEV에서 Tailscale 경유 OPS Hub 호출
-- CLI 스크립트 → DEV에서 바로 실행
-- Hub 엔드포인트 / 덱스터 / 닥터 → OPS 배포 후에만 검증 가능
+- ✅ 문법 검사 (전 파일 node --check)
+- ✅ hub-client.js queryOpsDb() / fetchOpsErrors() 함수 존재 확인
+- ✅ CLI 스크립트 (ops-query.sh, ops-errors.sh) 실행 권한 + 구문 확인
+- ❌ Hub 에러 엔드포인트 — /tmp/*.err.log는 OPS에만 존재 → **OPS에서 검증 필수**
+- ❌ 덱스터 [23] 에러 체크 — OPS Hub에 접근해야 함 → **OPS에서 검증 필수**
+- ❌ 닥터 scanAndRecover() — OPS Hub + 에러 로그 필요 → **OPS에서 검증 필수**
 
 ---
 
@@ -472,26 +486,53 @@ console.log('fetchOpsErrors:', typeof hc.fetchOpsErrors);
 chmod +x scripts/ops-query.sh scripts/ops-errors.sh
 ```
 
-### OPS 배포 후 (메티가 점검 — git push → OPS pull → 재시작)
+### OPS 배포 후 (코덱스가 맥 스튜디오에서 검증 — OPS 설정 절차 적용)
+
+⚠️ 아래 검증은 반드시 OPS(맥 스튜디오)에서 실행해야 함.
+DEV에서는 /tmp/*.err.log 파일이 없고, Hub가 localhost가 아니므로 검증 불가.
 
 ```bash
-# 4. Hub 에러 엔드포인트 (OPS Hub 재시작 후)
-curl -s http://REDACTED_TAILSCALE_IP:7788/hub/errors/summary \
-  -H "Authorization: Bearer $HUB_AUTH_TOKEN" | python3 -m json.tool
+# 4. OPS에서 git pull + Hub 재시작
+cd ~/projects/ai-agent-system && git pull origin main
+launchctl kickstart -kp gui/$(id -u)/ai.hub.resource-api
 
-# 5. DEV에서 Hub PG 쿼리 (Tailscale 경유)
+# 5. Hub 에러 엔드포인트 동작 확인 (OPS 로컬)
+curl -s http://localhost:7788/hub/errors/summary \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" | python3 -m json.tool
+# → 기대: { "ok": true, "total": N, "with_errors": M, ... }
+
+curl -s http://localhost:7788/hub/errors/recent?minutes=60 \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" | python3 -m json.tool
+# → 기대: 서비스별 에러 집계 + recent_errors 배열
+
+# 6. 덱스터 에러 체크 동작 확인 (다음 주기 실행 대기 후)
+tail -30 /tmp/dexter.log | grep error-logs
+# → 기대: [23] error-logs 점검 결과 출력
+
+# 7. 닥터 scanAndRecover() 동작 확인
+tail -30 /tmp/dexter.log | grep 닥터
+# → 기대: 에러 10건 이상 서비스가 있으면 자동 복구 시도 로그
+```
+
+### DEV에서 OPS Hub API 경유 검증 (Tailscale)
+
+```bash
+# 8. DEV에서 Hub PG 쿼리 (Tailscale 경유)
 node -e "
 const { queryOpsDb } = require('./packages/core/lib/hub-client');
 queryOpsDb('investment', 'SELECT count(*) as cnt FROM positions WHERE amount > 0')
   .then(rows => console.log('positions:', rows));
 "
 
-# 6. DEV CLI 래퍼
+# 9. DEV에서 Hub 에러 조회 (Tailscale 경유)
+node -e "
+const { fetchOpsErrors } = require('./packages/core/lib/hub-client');
+fetchOpsErrors(60).then(d => console.log(JSON.stringify(d, null, 2)));
+"
+
+# 10. DEV CLI 래퍼
 ./scripts/ops-query.sh investment "SELECT count(*) FROM positions WHERE amount > 0"
 ./scripts/ops-errors.sh 60
-
-# 7. 덱스터 에러 체크 동작 확인 (OPS 덱스터 로그)
-ssh alexlee@REDACTED_TAILSCALE_IP "tail -20 /tmp/dexter.log | grep error-logs"
 ```
 
 ## 커밋 메시지
