@@ -288,6 +288,13 @@ async function checkKisOverseasRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
+    if (isKisPaper()) {
+      return {
+        approved: false,
+        reason: `${symbol} 해외 모의투자 계좌는 SELL 주문을 지원하지 않음`,
+        code: 'mock_operation_unsupported',
+      };
+    }
     const pos = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode)
       || await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 해외 포지션 없음` };
