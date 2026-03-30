@@ -45,15 +45,26 @@
 * 맥북 에어 완성: Homebrew + Node 25 + PG 17 + Python 3.12 + Claude Code + SSH
 * Tailscale 양방향 연결 (SSH 터널 불필요)
 
-### P5 시크릿 Hub 커넥터 — ✅ Phase A~D 완료 (2026-03-30)
+### P5 시크릿 Hub 커넥터 — ✅ Phase A~E 전체 완료 (2026-03-30)
 
-* hub-client.js, llm-keys.js initHubConfig, investment/secrets.js initHubSecrets
-* Hub secrets 5카테고리 (llm/telegram/exchange/reservation/config)
-* Hub 원본 반환 (paper 강제 제거), OPS trading_mode=live 유지
-* ai.env.setup.plist Hub 변수 3개 설정
-* Phase D: 에이전트 진입점 Hub 커넥터 연결 완료
+* Phase A~D: 전 팀 Hub 커넥터 연결 (14곳 init 호출, 25파일 1011줄)
+* Phase E: reservation 진입점 Hub 커넥터 (ska.js + health-check.js)
+* Hub secrets 7카테고리 OPS 실가동 (config/llm/reservation-shared/reservation/exchange/telegram/health)
+* 4중 안전장치: .zprofile + config.yaml + hostname + applyDevSafetyOverrides()
 * llm-control 서비스 계층 리팩터링 + runtime-config 공용화
-* E2E 47/47 통과, 체크리스트 41/42 통과
+
+### 루나팀 P1 잔여 — ✅ 2건 완료 (2026-03-30)
+
+* unrealized_pnl KIS 국내/해외 연동: 18/18 갱신 성공 (커밋 51a2ca5)
+* max_daily_trades 상향: binance 20, kis/overseas 16, 기본 12 (OPS config.yaml 직접 반영)
+
+### OPS 관측성 — ✅ 구현+검증 완료 (2026-03-30)
+
+* Hub 에러 엔드포인트: /hub/errors/recent + /hub/errors/summary (19/19 통과)
+* hub-client.js 확장: queryOpsDb(sql, schema) + fetchOpsErrors()
+* 덱스터 [23] error-logs 점검 카테고리 추가
+* 닥터 능동화: scanAndRecover() — 에러 10건+ 서비스 자동 재시작
+* 에러 수정 프롬프트: CODEX_OPS_ERROR_FIX.md (crypto 최소수량 142건 + DEV CLI)
 
 ---
 
@@ -85,8 +96,12 @@
 ## 즉시 해야 할 작업 (이번 주)
 
 ```
-[ ] P5 Phase E: reservation 진입점 Hub 커넥터 (프롬프트 준비됨: docs/CODEX_PHASE_E_RESERVATION.md)
-[ ] config.yaml 물리 통합 (reservation/worker secrets.json 흡수) → Hub 코드 단순화
+[✅] P5 Phase E: reservation 진입점 Hub 커넥터 → 완료
+[✅] 루나팀 P1 잔여: unrealized_pnl KIS 18/18 + max_daily_trades 상향 → 완료
+[✅] OPS 관측성: Hub 에러 + 덱스터[23] + 닥터 능동화 → 19/19 완료
+[🔄] 에러 수정: crypto 최소수량 SELL skip + DB 정리 (코덱스 구현 완료, 커밋+배포 대기)
+[🔄] DEV CLI: ops-query.sh + ops-errors.sh (코덱스 구현 완료, 커밋 대기)
+[ ] OpenClaw Phase 1: mainbot.js 흡수 설계 (노션 분석 완료: 333ff93a809a81799b3fc77e34884a93)
 [ ] n8n 자격증명 재입력 (PostgreSQL+Telegram, UI에서)
 [ ] 블로팀: 네이버 실전 발행 1건 확인
 [ ] 워커팀: telegram_bot_token 설정
@@ -142,12 +157,15 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
   docs/OPUS_FINAL_HANDOFF.md            ← 최종 인수인계
   docs/ROLE_PRINCIPLES.md               ← 역할 분담 원칙 [불변]
   docs/DEV_ENV_SETUP_MACBOOK_AIR.md     ← DEV 셋업 가이드
-  docs/CODEX_PHASE_E_RESERVATION.md     ← 다음 코덱스 프롬프트
+  docs/CODEX_OPS_ERROR_FIX.md           ← 에러 수정 (코덱스 커밋 대기)
+  docs/CODEX_OPS_OBSERVABILITY_DEV.md   ← DEV CLI 래퍼
+  docs/CODEX_OPS_OBSERVABILITY_OPS.md   ← OPS 에러 수집 + 닥터 능동화
 
 노션:
   메인 허브: 31fff93a809a81468d84c5f74b3485e4
   루나팀 재설계: 331ff93a809a81cb86e5faebb24faf1d
   소스코드 분석: 325ff93a809a81899098e3b15401b06f
+  OpenClaw 통합: 333ff93a809a81799b3fc77e34884a93
 ```
 
 ---
@@ -172,4 +190,4 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
 |------|------|
 | 2026-03-28 | Tier 0 + Tier 1 완료 |
 | 2026-03-29 | DEV↔OPS 환경 분리 (P1~P4) |
-| 2026-03-30 | P5 시크릿 Hub 커넥터 + Phase D + Tailscale + 역할 원칙 |
+| 2026-03-30 | P5 Phase A~E 전체 완료 + 루나팀 P1 잔여 2건 + OPS 관측성 19/19 + 에러 수정 |
