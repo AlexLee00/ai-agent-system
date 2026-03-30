@@ -1,0 +1,116 @@
+'use strict';
+
+const env = require('./env');
+
+const LOCAL_MODEL_FAST = 'qwen2.5-7b';
+const LOCAL_MODEL_DEEP = 'deepseek-r1-32b';
+
+function getBaseUrl() {
+  return env.LOCAL_LLM_BASE_URL || '';
+}
+
+async function requestJson(path, options = {}, timeoutMs = 3000) {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return null;
+
+  const url = `${baseUrl}${path}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok) {
+      console.warn(`[local-llm-client] ${path}: HTTP ${res.status}`);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    console.warn(`[local-llm-client] ${path}: ${message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getAvailableModels() {
+  const json = await requestJson('/v1/models');
+  if (!json?.data || !Array.isArray(json.data)) return [];
+  return json.data.map((item) => item.id).filter(Boolean);
+}
+
+async function isLocalLLMAvailable() {
+  const models = await getAvailableModels();
+  return models.length > 0;
+}
+
+async function callLocalLLM(model, messages, options = {}) {
+  const timeoutMs = options.timeoutMs
+    || (model === LOCAL_MODEL_DEEP ? 120000 : 30000);
+
+  const json = await requestJson('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: options.max_tokens || options.maxTokens || 512,
+      temperature: options.temperature ?? 0.2,
+    }),
+  }, timeoutMs);
+
+  return json?.choices?.[0]?.message?.content || null;
+}
+
+async function callLocalLLMJSON(model, messages, options = {}) {
+  const text = await callLocalLLM(model, messages, options);
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```json/gi, '```')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const fenceMatch = cleaned.match(/```([\s\S]*?)```/);
+    if (fenceMatch) {
+      const fenced = fenceMatch[1].trim();
+      try {
+        return JSON.parse(fenced);
+      } catch {
+        // continue
+      }
+    }
+
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) return null;
+
+    const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      for (let start = cleaned.indexOf('{'); start !== -1; start = cleaned.indexOf('{', start + 1)) {
+        const end = cleaned.lastIndexOf('}');
+        if (end <= start) continue;
+        try {
+          return JSON.parse(cleaned.slice(start, end + 1));
+        } catch {
+          // try next start
+        }
+      }
+      return null;
+    }
+  }
+}
+
+module.exports = {
+  LOCAL_MODEL_FAST,
+  LOCAL_MODEL_DEEP,
+  getAvailableModels,
+  isLocalLLMAvailable,
+  callLocalLLM,
+  callLocalLLMJSON,
+};
