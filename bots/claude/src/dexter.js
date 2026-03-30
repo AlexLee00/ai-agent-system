@@ -30,6 +30,7 @@ const checks = {
   database:       require('../lib/checks/database'),
   security:       require('../lib/checks/security'),
   logs:           require('../lib/checks/logs'),
+  errorLogs:      require('../lib/checks/error-logs'),
   bots:           require('../lib/checks/bots'),
   resources:      require('../lib/checks/resources'),
   network:        require('../lib/checks/network'),
@@ -104,6 +105,7 @@ async function main() {
     () => checks.hub.run(),
     () => checks.healthState.run(),
     () => checks.logs.run(),
+    () => checks.errorLogs.run(),
     () => checks.security.run(),
     () => checks.database.run(),
     () => checks.code.run(),
@@ -319,6 +321,17 @@ async function main() {
     await doctor.pollDoctorTasks();
   } catch (e) {
     console.warn('⚠️ 독터 태스크 처리 실패 (무시):', e.message);
+  }
+
+  try {
+    const doctor = require('../lib/doctor');
+    const recoveries = await doctor.scanAndRecover();
+    if (recoveries.length > 0) {
+      const ok = recoveries.filter((item) => item.success).length;
+      console.log(`  🔧 [닥터 능동] ${ok}/${recoveries.length}건 자동 복구`);
+    }
+  } catch (e) {
+    console.warn('⚠️ 닥터 능동 스캔 실패 (무시):', e.message);
   }
 
   // Emergency 폴백: 클로드(팀장) 무응답 시 직접 복구 (agent_tasks 루프 우회)

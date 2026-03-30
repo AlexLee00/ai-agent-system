@@ -335,6 +335,51 @@ async function pollDoctorTasks() {
   }
 }
 
+async function scanAndRecover() {
+  const { fetchOpsErrors } = require('../../../packages/core/lib/hub-client');
+
+  try {
+    const data = await fetchOpsErrors(10);
+    if (!data?.ok || data.total_errors === 0) return [];
+
+    const recoveries = [];
+    for (const svc of data.services) {
+      if (svc.error_count < 10) continue;
+
+      const label = _serviceToLaunchd(svc.service);
+      if (!label) continue;
+      if (!canRecover('restart_launchd_service')) continue;
+      const task = WHITELIST.restart_launchd_service;
+      if (!task.allowed_services.includes(label)) continue;
+
+      console.log(`  🔧 [닥터] ${svc.service} 에러 ${svc.error_count}건 → ${label} 재시작`);
+      const result = await execute('restart_launchd_service', { label }, 'doctor-autoscan');
+      recoveries.push({
+        service: svc.service,
+        label,
+        error_count: svc.error_count,
+        success: result.success,
+        message: result.message,
+      });
+    }
+    return recoveries;
+  } catch (error) {
+    console.warn('[doctor] scanAndRecover 실패:', error.message);
+    return [];
+  }
+}
+
+function _serviceToLaunchd(service) {
+  const map = {
+    'investment-crypto': 'ai.investment.crypto',
+    'investment-domestic': null,
+    'investment-overseas': null,
+    dexter: 'ai.claude.dexter',
+    'ska-commander': 'ai.ska.commander',
+  };
+  return map[service] || null;
+}
+
 /**
  * 과거 성공한 복구 방법 조회 (RAG 검색)
  * @param {string} issueType  task_type 또는 이슈 설명
@@ -405,6 +450,7 @@ module.exports = {
   getRecoveryHistory,
   getAvailableTasks,
   pollDoctorTasks,
+  scanAndRecover,
   emergencyDirectRecover,
   getPastSuccessfulFix,
   WHITELIST,
