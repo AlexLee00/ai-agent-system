@@ -66,6 +66,20 @@
 * 닥터 능동화: scanAndRecover() — 에러 10건+ 서비스 자동 재시작
 * 에러 수정 프롬프트: CODEX_OPS_ERROR_FIX.md (crypto 최소수량 142건 + DEV CLI)
 
+### 루나팀 에러 전부 해소 — ✅ (2026-03-30)
+
+* crypto 최소수량 SELL: roundSellAmount try-catch (55b4519) → 142건/시간 → 0건
+* domestic tradeMode: signalTradeMode 수정 (579b3b2) → 12건 → 0건
+* dust DB 정리: STO/PROVE/ENA 포지션 삭제, 신규 매수 정상
+* overseas/argos/prescreen: 외부 API 문제 (수정 불필요)
+
+### 블로팀 코드 딥 분석 — ✅ 완료 (2026-03-30)
+
+* 7,467줄/25파일 전체 분석: docs/BLOG_DEEP_ANALYSIS_2026-03-30.md (245줄)
+* 발견 F1~F6: 글자수미달/날씨수치/품질관대/프롬프트복잡/피드백부재/hallucination
+* 개선계획 P1~P5 수립: 날씨수치제거/품질검증강화/프롬프트최적화/hallucination방지/SEO-AEO-GEO
+* 전략 문서: docs/BLOG_TEAM_STRATEGY_2026-03-30.md (223줄)
+
 ---
 
 ## 현재 시스템 상태
@@ -80,7 +94,7 @@
   허브:   ✅ resource-api (uptime 7339s, PG+n8n OK)
 
 인프라:
-  맥 스튜디오: 24/7 운영, Hub(:7788), PG, n8n, OpenClaw
+  맥 스튜디오: 24/7 운영, Hub(:7788), PG, n8n, OpenClaw, MLX(:11434 설치 중)
   맥북 에어: DEV 환경 완성, Tailscale 연결
   배포: git push → 5분 cron 자동 pull + GitHub Actions CI
   시크릿: Hub 1순위 → 로컬 config.yaml 폴백
@@ -89,6 +103,7 @@
   Tailscale: 맥 스튜디오(REDACTED_TAILSCALE_IP) ↔ 맥북 에어(100.66.201.86)
   SSH: 양방향 비밀번호 없이 연결
   Hub: DEV → http://REDACTED_TAILSCALE_IP:7788 (Tailscale 직접)
+  MLX: DEV → http://REDACTED_TAILSCALE_IP:11434 (Tailscale 직접, Hub 경유 안 함)
 ```
 
 ---
@@ -99,9 +114,14 @@
 [✅] P5 Phase E: reservation 진입점 Hub 커넥터 → 완료
 [✅] 루나팀 P1 잔여: unrealized_pnl KIS 18/18 + max_daily_trades 상향 → 완료
 [✅] OPS 관측성: Hub 에러 + 덱스터[23] + 닥터 능동화 → 19/19 완료
-[✅] 에러 수정: crypto 최소수량 SELL skip + dust 포지션 DELETE 정리 → 커밋 완료
+[✅] 에러 수정: crypto 최소수량 roundSellAmount try-catch (55b4519) → 142건/시간 해소
+[✅] 에러 수정: domestic tradeMode (579b3b2) → 12건 해소
 [✅] DEV CLI: ops-query.sh + ops-errors.sh → 커밋 완료
-[ ] OpenClaw Phase 1: mainbot.js 흡수 설계 (노션 분석 완료: 333ff93a809a81799b3fc77e34884a93)
+[✅] 블로팀 코드 딥 분석: 7,467줄/25파일, F1~F6 발견, P1~P5 수립
+[🔄] 루나팀 Chronos Phase A: MLX 설치 OPS 진행 중
+[ ] 루나팀 Chronos Phase A: Layer 1~3 코드 구현 (DEV, OPS 완료 후)
+[ ] 블로팀 P1~P5: 코덱스 프롬프트 작성 → 구현
+[ ] OpenClaw Phase 1: mainbot.js 흡수 설계 (노션: 333ff93a809a81799b3fc77e34884a93)
 [ ] n8n 자격증명 재입력 (PostgreSQL+Telegram, UI에서)
 [ ] 블로팀: 네이버 실전 발행 1건 확인
 [ ] 워커팀: telegram_bot_token 설정
@@ -114,10 +134,18 @@
 ### Tier 2 — 2~4주 (기능 확장)
 
 ```
-[ ] 루나팀 Phase 3: Chronos VectorBT 백테스팅
+[🔄] 루나팀 Chronos Phase A: MLX + 3계층 백테스팅
+     OPS: MLX v0.31.1 + qwen2.5-7b + deepseek-r1-32b (설치 진행 중)
+     DEV: local-llm-client.js(공용) + ohlcv-fetcher + ta-indicators + chronos Layer 1~3
+     결정: Ollama→MLX 전환 (20~50% 빠름, Apple 네이티브, arXiv 2511.05502)
+     결정: local-llm-client.js → packages/core/lib/ (공용, Hub 경유 안 함)
+     결정: Tailscale 직접 접근 (OPS :11434 → DEV REDACTED_TAILSCALE_IP:11434)
+     프롬프트: docs/CODEX_CHRONOS_PHASE_A_OPS.md + DEV.md
 [ ] 루나팀 Phase 3: 검증 3단계 (Shadow → Confirmation → Live)
 [ ] 루나팀 Phase 4: DCA 전략
-[ ] Ollama 설치 + RAG 임베딩 로컬 전환 (Mac Studio GPU 활용)
+[ ] 블로팀 P1~P5: 날씨수치제거/품질검증강화/프롬프트최적화/hallucination방지/SEO-AEO-GEO
+     분석: docs/BLOG_DEEP_ANALYSIS_2026-03-30.md (F1~F6, P1~P5)
+     전략: docs/BLOG_TEAM_STRATEGY_2026-03-30.md
 [ ] ComfyUI 설치 + 이미지 비용 $0 전환
 [ ] TS Phase 1: TypeScript 강화
 ```
@@ -157,9 +185,14 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
   docs/OPUS_FINAL_HANDOFF.md            ← 최종 인수인계
   docs/ROLE_PRINCIPLES.md               ← 역할 분담 원칙 [불변]
   docs/DEV_ENV_SETUP_MACBOOK_AIR.md     ← DEV 셋업 가이드
-  docs/CODEX_OPS_ERROR_FIX.md           ← 에러 수정 (코덱스 커밋 대기)
+  docs/CODEX_OPS_ERROR_FIX.md           ← 에러 수정 (완료)
   docs/CODEX_OPS_OBSERVABILITY_DEV.md   ← DEV CLI 래퍼
   docs/CODEX_OPS_OBSERVABILITY_OPS.md   ← OPS 에러 수집 + 닥터 능동화
+  docs/CODEX_CHRONOS_PHASE_A_OPS.md     ← Chronos MLX 인프라 (OPS, 270줄)
+  docs/CODEX_CHRONOS_PHASE_A_DEV.md     ← Chronos Layer 1~3 코드 (DEV, 194줄)
+  docs/BLOG_DEEP_ANALYSIS_2026-03-30.md ← 블로팀 딥 분석 (245줄)
+  docs/BLOG_TEAM_STRATEGY_2026-03-30.md ← 블로팀 전략 재설계 (223줄)
+  docs/CODEX_LUNA_ROUNDSELL_FIX.md      ← 최소수량 수정 (완료, 55b4519)
 
 노션:
   메인 허브: 31fff93a809a81468d84c5f74b3485e4
@@ -175,7 +208,7 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
 | 팀 | 역할 | 상태 |
 |----|------|------|
 | 스카팀 | 스터디카페 예약/키오스크 관리 | ✅ 운영 중 |
-| 루나팀 | 암호화폐·주식 자동매매 | ✅ 운영 중 (재설계 대기) |
+| 루나팀 | 암호화폐·주식 자동매매 | ✅ 운영 중 (Chronos MLX 구축 중) |
 | 클로드팀 | 시스템 모니터링 (Dexter) | ✅ 운영 중 |
 | 블로팀 | 네이버 블로그 자동화 | ✅ 기본 운영 (본격 개발 대기) |
 | 워커팀 | 비즈니스 관리 SaaS | ✅ 운영 중 |
@@ -190,4 +223,5 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
 |------|------|
 | 2026-03-28 | Tier 0 + Tier 1 완료 |
 | 2026-03-29 | DEV↔OPS 환경 분리 (P1~P4) |
-| 2026-03-30 | P5 Phase A~E 전체 완료 + 루나팀 P1 잔여 2건 + OPS 관측성 19/19 + 에러 수정 |
+| 2026-03-30 | P5 전체 완료 + OPS 관측성 19/19 + 에러 수정 |
+| 2026-03-30 | 블로팀 딥분석 완료 + 루나팀 에러 전부 해소 + Chronos MLX 착수 |
