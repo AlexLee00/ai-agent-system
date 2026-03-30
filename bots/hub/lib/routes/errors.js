@@ -6,9 +6,14 @@ const path = require('path');
 const LOG_DIR = '/tmp';
 const ERR_SUFFIX = '.err.log';
 
+function isErrorLikeLine(line) {
+  return /❌|error|exception|traceback|fatal|uncaught|rejected|failed/i.test(line);
+}
+
 async function errorsRecentRoute(req, res) {
   const minutes = parseInt(req.query.minutes || '60', 10);
   const serviceFilter = req.query.service || null;
+  const cutoffMs = Date.now() - (minutes * 60 * 1000);
 
   const files = fs.readdirSync(LOG_DIR)
     .filter((file) => file.endsWith(ERR_SUFFIX))
@@ -19,10 +24,15 @@ async function errorsRecentRoute(req, res) {
     const filePath = path.join(LOG_DIR, file);
     try {
       const stat = fs.statSync(filePath);
+      if (stat.mtimeMs < cutoffMs) continue;
       if (stat.size === 0) continue;
 
       const content = fs.readFileSync(filePath, 'utf8');
-      const lines = content.split('\n').filter((line) => line.trim());
+      const lines = content
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter(isErrorLikeLine);
       if (lines.length === 0) continue;
 
       results.push({
