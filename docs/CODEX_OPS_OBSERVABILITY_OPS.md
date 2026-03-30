@@ -261,15 +261,23 @@ try {
 
 ---
 
-## 사전 조건
+## 실행 순서 (OPS 먼저!)
 
-이 프롬프트 실행 전에 DEV 프롬프트(`CODEX_OPS_OBSERVABILITY_DEV.md`)가 완료되어야 함.
-`fetchOpsErrors()`가 `hub-client.js`에 있어야 덱스터 체크 + 닥터 스캔이 동작.
+⚠️ 이 OPS 프롬프트를 **먼저** 실행해야 함.
+Hub 에러 서버가 없으면 DEV 클라이언트/CLI가 동작하지 않음.
 
-실행 순서:
-1. DEV 프롬프트 먼저 구현 (hub-client.js + CLI) → DEV에서 commit + push
-2. OPS에서 git pull (DEV 코드 반영)
-3. 이 OPS 프롬프트 구현 (Hub 엔드포인트 + 덱스터 + 닥터) → OPS에서 직접 구현
+```
+1단계: 이 OPS 프롬프트 실행 (맥 스튜디오)
+  → Hub 에러 엔드포인트 구현
+  → hub-client.js에 queryOpsDb() + fetchOpsErrors() 추가
+  → 덱스터 [23] + 닥터 scanAndRecover() 추가
+  → OPS에서 검증 + commit + push
+
+2단계: DEV 프롬프트 실행 (맥북 에어) — CODEX_OPS_OBSERVABILITY_DEV.md
+  → git pull (OPS 코드 반영)
+  → CLI 래퍼만 추가 (ops-query.sh, ops-errors.sh)
+  → DEV에서 Tailscale 경유 OPS Hub 호출 테스트
+```
 
 ---
 
