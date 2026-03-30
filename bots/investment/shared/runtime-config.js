@@ -1,10 +1,13 @@
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import yaml from 'js-yaml';
 import { getInvestmentTradeMode, isPaperMode } from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { createRuntimeConfigLoader, deepMerge } = require('../../../packages/core/lib/runtime-config-loader');
 
 const DEFAULT_RUNTIME_CONFIG = {
   dynamicTpSlEnabled: true,
@@ -155,27 +158,12 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
 };
 
-let cachedConfig = null;
-
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function deepMerge(base, override) {
-  if (!isObject(base) || !isObject(override)) return override ?? base;
-  const merged = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    merged[key] = isObject(value) && isObject(base[key])
-      ? deepMerge(base[key], value)
-      : value;
-  }
-  return merged;
-}
-
-function loadRuntimeConfig() {
-  if (cachedConfig) return cachedConfig;
-  try {
-    const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+const { loadRuntimeConfig } = createRuntimeConfigLoader({
+  fs: { readFileSync },
+  defaults: DEFAULT_RUNTIME_CONFIG,
+  configPath: join(__dirname, '..', 'config.yaml'),
+  format: 'yaml',
+  extractRuntimeConfig: (raw = {}) => {
     const legacyCapitalRuntime = raw.capital_management && (
       raw.capital_management.dynamicTpSlEnabled !== undefined ||
       raw.capital_management.luna ||
@@ -191,14 +179,9 @@ function loadRuntimeConfig() {
           llmPolicies: raw.capital_management.llmPolicies,
         }
       : {};
-    const runtimeOverride = raw.runtime_config || raw.capital_management?.runtime_config || legacyCapitalRuntime || {};
-    cachedConfig = deepMerge(DEFAULT_RUNTIME_CONFIG, runtimeOverride);
-    return cachedConfig;
-  } catch {
-    cachedConfig = { ...DEFAULT_RUNTIME_CONFIG };
-    return cachedConfig;
-  }
-}
+    return raw.runtime_config || raw.capital_management?.runtime_config || legacyCapitalRuntime || {};
+  },
+});
 
 export function getInvestmentRuntimeConfig() {
   return loadRuntimeConfig();

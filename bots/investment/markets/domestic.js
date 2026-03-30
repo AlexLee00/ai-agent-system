@@ -21,8 +21,7 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo, getDomesticScreeningMaxDynamic } from '../shared/secrets.js';
-import { getInvestmentTradeMode } from '../shared/secrets.js';
+import { initHubSecrets, getKisSymbols, getKisMarketStatus, getKisExecutionModeInfo, getDomesticScreeningMaxDynamic, getInvestmentTradeMode } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
@@ -113,6 +112,7 @@ async function filterMockUntradableDomesticCandidates(symbols, tradeMode = getIn
  * @param {string[]} symbols  ex) ['005930', '000660']
  */
 export async function runDomesticCycle(symbols) {
+  await initHubSecrets();
   const { paper: paperMode, tag } = getKisExecutionModeInfo('국내주식');
   const startTime = Date.now();
   let sessionId = null;
@@ -192,6 +192,7 @@ export async function runDomesticCycle(symbols) {
 }
 
 export async function runDomesticResearchCycle(symbols) {
+  await initHubSecrets();
   const startTime = Date.now();
   let sessionId = null;
 
@@ -306,6 +307,7 @@ async function logPipelineMetrics(label, metrics = {}) {
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await initHubSecrets();
   const args      = process.argv.slice(2);
   const symArg    = args.find(a => a.startsWith('--symbols='));
   const force     = args.includes('--force');

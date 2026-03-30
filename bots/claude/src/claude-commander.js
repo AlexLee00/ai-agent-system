@@ -16,6 +16,7 @@ const path    = require('path');
 const os      = require('os');
 const { execSync, spawn } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const teamBus = require('../lib/team-bus');
 const {
   AUTO_PROMOTE_DEFAULTS,
@@ -714,6 +715,7 @@ async function processCommands() {
 let _identityCounter = 0;
 
 async function main() {
+  await initHubConfig();
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
   await ensureIntentTables(pgPool, { schema: 'claude' });

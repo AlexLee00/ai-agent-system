@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtime-config-loader');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 
@@ -39,28 +40,11 @@ const DEFAULTS = {
   },
 };
 
-function mergeDeep(base, override) {
-  if (!override || typeof override !== 'object' || Array.isArray(override)) return base;
-  const next = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    if (value && typeof value === 'object' && !Array.isArray(value) && base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) {
-      next[key] = mergeDeep(base[key], value);
-    } else {
-      next[key] = value;
-    }
-  }
-  return next;
-}
-
-function loadRuntimeConfig() {
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    return mergeDeep(DEFAULTS, parsed.runtime_config || {});
-  } catch {
-    return DEFAULTS;
-  }
-}
+const { loadRuntimeConfig } = createRuntimeConfigLoader({
+  fs,
+  defaults: DEFAULTS,
+  configPath: CONFIG_PATH,
+});
 
 function getWorkerLeadRuntimeConfig() {
   return loadRuntimeConfig().lead;

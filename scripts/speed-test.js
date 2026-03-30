@@ -39,96 +39,25 @@
 
 const fs     = require('fs');
 const path   = require('path');
-const http   = require('http');
-const https  = require('https');
 const sender = require('../packages/core/lib/telegram-sender');
+const { writeLatestSpeedSnapshot } = require('../packages/core/lib/llm-control/service');
+const {
+  OPENCLAW_CONFIG,
+  loadModels,
+  loadProviderKey,
+  applyFastest,
+} = require('../packages/core/lib/llm-control/tester-support');
+const {
+  PROVIDER_ENDPOINTS,
+  OPENAI_COMPAT_PROVIDERS,
+  refreshGeminiToken,
+  benchmarkModel,
+} = require('../packages/core/lib/llm-control/tester');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
-const OPENCLAW_CONFIG        = path.join(process.env.HOME, '.openclaw/openclaw.json');
-const AUTH_PROFILES_FILE     = path.join(process.env.HOME, '.openclaw/agents/main/agent/auth-profiles.json');
-const SPEED_TEST_KEYS_FILE   = path.join(process.env.HOME, '.openclaw/speed-test-keys.json');
 const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-latest.json');
 const SPEED_TEST_HISTORY_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-history.jsonl');
-const INVEST_SECRETS_FILE    = path.join(__dirname, '../bots/investment/secrets.json');
-const GEMINI_CLIENT_ID     = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
-const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
-const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
-const CODE_ASSIST_VERSION  = 'v1internal';
-const OLLAMA_BASE          = 'http://127.0.0.1:11434';
 const TEST_PROMPT          = 'Reply with exactly one word: ok';
-
-// OpenAI-호환 프로바이더 엔드포인트 (미등록: xai/mistral/together/fireworks/deepinfra)
-const PROVIDER_ENDPOINTS = {
-  'openai':     'https://api.openai.com/v1',
-  'groq':       'https://api.groq.com/openai/v1',
-  'cerebras':   'https://api.cerebras.ai/v1',
-  'sambanova':  'https://api.sambanova.ai/v1',
-  'openrouter': 'https://openrouter.ai/api/v1',
-  // 미등록 — API 키 발급 후 speed-test-keys.json에 추가하면 자동 활성화
-  'xai':        'https://api.x.ai/v1',
-  'mistral':    'https://api.mistral.ai/v1',
-  'together':   'https://api.together.xyz/v1',
-  'fireworks':  'https://api.fireworks.ai/inference/v1',
-  'deepinfra':  'https://api.deepinfra.com/v1/openai',
-};
-
-// 프로바이더별 환경변수명
-const PROVIDER_ENV_KEYS = {
-  'groq':       'GROQ_API_KEY',
-  'cerebras':   'CEREBRAS_API_KEY',
-  'sambanova':  'SAMBANOVA_API_KEY',
-  'openrouter': 'OPENROUTER_API_KEY',
-  'xai':        'XAI_API_KEY',
-  'mistral':    'MISTRAL_API_KEY',
-  'together':   'TOGETHER_API_KEY',
-  'fireworks':  'FIREWORKS_API_KEY',
-  'deepinfra':  'DEEPINFRA_API_KEY',
-};
-
-const PROVIDER_ICONS = {
-  'google-gemini-cli': '✨',
-  'openai':            '🤖',
-  'groq':              '⚡',
-  'cerebras':          '🧠',
-  'sambanova':         '🔥',
-  'openrouter':        '🔀',
-  'ollama':            '🦙',
-  'xai':               '𝕏 ',
-  'mistral':           '🌀',
-  'together':          '🤝',
-  'fireworks':         '🎆',
-  'deepinfra':         '🏗️',
-};
-
-const SUPPORTED_MODEL_ALIASES = {
-  'groq/moonshotai/kimi-k2-instruct': 'groq/moonshotai/kimi-k2-instruct-0905',
-};
-
-const SPEED_TEST_MODEL_CATALOG = {
-  'google-gemini-cli': new Set([
-    'google-gemini-cli/gemini-2.5-flash-lite',
-    'google-gemini-cli/gemini-2.5-flash',
-    'google-gemini-cli/gemini-2.5-pro',
-  ]),
-  'openai': new Set([
-    'openai/gpt-4o-mini',
-    'openai/gpt-4o',
-    'openai/o4-mini',
-    'openai/o3-mini',
-  ]),
-  'groq': new Set([
-    'groq/llama-3.1-8b-instant',
-    'groq/llama-3.3-70b-versatile',
-    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
-    'groq/moonshotai/kimi-k2-instruct-0905',
-    'groq/qwen/qwen3-32b',
-    'groq/openai/gpt-oss-20b',
-  ]),
-  'cerebras': new Set([
-    'cerebras/llama3.1-8b',
-    'cerebras/gpt-oss-120b',
-  ]),
-};
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
 const args              = process.argv.slice(2);
@@ -154,380 +83,6 @@ function yellow(s){ return `\x1b[33m${s}\x1b[0m`; }
 function red(s)   { return `\x1b[31m${s}\x1b[0m`; }
 function cyan(s)  { return `\x1b[36m${s}\x1b[0m`; }
 
-// ─── 모델 목록 로드 ────────────────────────────────────────────────────────
-function loadModels() {
-  const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
-  const allModels = cfg?.agents?.defaults?.models ?? {};
-
-  const supported = Object.keys(allModels).map((id) => SUPPORTED_MODEL_ALIASES[id] || id).filter(id =>
-    id.startsWith('google-gemini-cli/') ||
-    id.startsWith('ollama/')            ||
-    id.startsWith('openai/')            ||
-    id.startsWith('groq/')              ||
-    id.startsWith('cerebras/')          ||
-    id.startsWith('sambanova/')         ||
-    id.startsWith('openrouter/')        ||
-    id.startsWith('xai/')               ||
-    id.startsWith('mistral/')           ||
-    id.startsWith('together/')          ||
-    id.startsWith('fireworks/')         ||
-    id.startsWith('deepinfra/')
-  ).filter((id, index, arr) => arr.indexOf(id) === index)
-   .filter((id) => {
-     const provider = id.split('/')[0];
-     const catalog = SPEED_TEST_MODEL_CATALOG[provider];
-     return !catalog || catalog.has(id);
-   });
-
-  if (modelArg) {
-    const filter = modelArg.split(',');
-    return supported.filter(id => filter.some(f => id.includes(f)));
-  }
-  return supported;
-}
-
-function classifySpeedTestError(provider, modelId, errorMessage = '') {
-  const message = String(errorMessage || '');
-  const lower = message.toLowerCase();
-
-  if (lower.includes('enotfound') || lower.includes('eai_again')) {
-    return 'network_unavailable';
-  }
-  if (lower.includes('eperm: operation not permitted')) {
-    return 'snapshot_write_failed';
-  }
-  if (lower.includes('http 429') || lower.includes('rate limit') || lower.includes('exhausted your capacity')) {
-    return 'rate_limited';
-  }
-  if (provider === 'google-gemini-cli' && lower.includes('does not support setting thinking_budget to 0')) {
-    return 'gemini_thinking_budget_unsupported';
-  }
-  if (lower.includes('does not exist or you do not have access to it')) {
-    return 'unsupported_or_no_access';
-  }
-  if (lower.includes('unsupported model') || lower.includes('model not found')) {
-    return 'unsupported_model';
-  }
-  if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('forbidden')) {
-    return 'auth_or_access_failed';
-  }
-  return 'request_failed';
-}
-
-function buildGeminiThinkingConfig(model) {
-  if (model === 'gemini-2.5-pro') {
-    return { thinkingBudget: -1 };
-  }
-  if (model === 'gemini-2.5-flash' || model === 'gemini-2.5-flash-lite') {
-    return { thinkingBudget: 0 };
-  }
-  return undefined;
-}
-
-// ─── API 키 로드 ───────────────────────────────────────────────────────────
-function loadSpeedTestKeys() {
-  try { return JSON.parse(fs.readFileSync(SPEED_TEST_KEYS_FILE, 'utf-8')); }
-  catch { return {}; }
-}
-
-function loadOpenAIKey() {
-  const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile  = Object.values(profiles.profiles ?? {}).find(p => p.provider === 'openai');
-  return profile?.key ?? process.env.OPENAI_API_KEY ?? null;
-}
-
-// invest/secrets.json에서 무료 LLM 키 조회 (groq/cerebras/sambanova)
-function loadInvestSecretKeys() {
-  const INVEST_KEY_MAP = {
-    groq:      'groq_api_key',
-    cerebras:  'cerebras_api_key',
-    sambanova: 'sambanova_api_key',
-  };
-  try {
-    const s = JSON.parse(fs.readFileSync(INVEST_SECRETS_FILE, 'utf-8'));
-    const result = {};
-    for (const [provider, field] of Object.entries(INVEST_KEY_MAP)) {
-      if (s[field]) result[provider] = s[field];
-    }
-    return result;
-  } catch { return {}; }
-}
-
-function loadProviderKey(provider) {
-  if (provider === 'openai') return loadOpenAIKey();
-  const keys = loadSpeedTestKeys();
-  if (keys[provider]) return keys[provider];
-  const envVar = PROVIDER_ENV_KEYS[provider];
-  if (envVar && process.env[envVar]) return process.env[envVar];
-  // invest/secrets.json fallback (groq/cerebras/sambanova)
-  const investKeys = loadInvestSecretKeys();
-  if (investKeys[provider]) return investKeys[provider];
-  return null;
-}
-
-// ─── Google OAuth 토큰 갱신 ───────────────────────────────────────────────
-async function refreshGeminiToken() {
-  const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile  = Object.values(profiles.profiles ?? {})
-    .find(p => p.provider === 'google-gemini-cli' && p.type === 'oauth');
-  if (!profile) throw new Error('Google OAuth 프로파일 없음');
-
-  if (profile.access && profile.expires && Date.now() < profile.expires - 5 * 60 * 1000) {
-    return profile.access;
-  }
-
-  const body = new URLSearchParams({
-    grant_type:    'refresh_token',
-    refresh_token: profile.refresh,
-    client_id:     GEMINI_CLIENT_ID,
-    client_secret: GEMINI_CLIENT_SECRET,
-  }).toString();
-
-  const data = await httpPost('https://oauth2.googleapis.com/token', body,
-    { 'Content-Type': 'application/x-www-form-urlencoded' });
-
-  if (data.error) throw new Error(`토큰 갱신 실패: ${data.error_description ?? data.error}`);
-
-  const profileKey = Object.keys(profiles.profiles)
-    .find(k => profiles.profiles[k].provider === 'google-gemini-cli');
-  profiles.profiles[profileKey].access  = data.access_token;
-  profiles.profiles[profileKey].expires = Date.now() + (data.expires_in ?? 3600) * 1000;
-  if (data.refresh_token) profiles.profiles[profileKey].refresh = data.refresh_token;
-  fs.writeFileSync(AUTH_PROFILES_FILE, JSON.stringify(profiles, null, 2) + '\n');
-
-  return data.access_token;
-}
-
-// ─── HTTP 유틸 ─────────────────────────────────────────────────────────────
-function httpPost(url, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const lib = u.protocol === 'https:' ? https : http;
-    const bodyBuf = typeof body === 'string' ? Buffer.from(body) : Buffer.from(JSON.stringify(body));
-    const req = lib.request({
-      hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
-      path: u.pathname + u.search, method: 'POST',
-      headers: { 'Content-Length': bodyBuf.length, ...headers },
-    }, (res) => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', () => { try { resolve(JSON.parse(raw)); } catch { resolve(raw); } });
-    });
-    req.on('error', reject);
-    req.write(bodyBuf);
-    req.end();
-  });
-}
-
-function httpStream(url, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const lib = u.protocol === 'https:' ? https : http;
-    const bodyBuf = Buffer.from(JSON.stringify(body));
-    const start = Date.now();
-    let ttft = null;
-
-    const req = lib.request({
-      hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80),
-      path: u.pathname + u.search, method: 'POST',
-      headers: { 'Content-Length': bodyBuf.length, ...headers },
-    }, (res) => {
-      let raw = '';
-      res.on('data', chunk => {
-        if (ttft === null) ttft = Date.now() - start;
-        raw += chunk.toString();
-      });
-      res.on('end', () => resolve({
-        ttft: ttft ?? Date.now() - start,
-        total: Date.now() - start,
-        raw,
-        status: res.statusCode,
-      }));
-    });
-    req.on('error', reject);
-    req.write(bodyBuf);
-    req.end();
-  });
-}
-
-// ─── Gemini 테스트 (Cloud Code API, SSE) ───────────────────────────────────
-async function testGemini(modelId, accessToken) {
-  const model     = modelId.split('/')[1];  // google-gemini-cli/gemini-2.5-flash → gemini-2.5-flash
-  const profiles  = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile   = Object.values(profiles.profiles ?? {}).find(p => p.provider === 'google-gemini-cli');
-  const projectId = profile?.projectId ?? 'inspiring-shell-k4g6t';
-
-  // 올바른 URL: v1internal:streamGenerateContent?alt=sse (SSE 스트리밍)
-  const url  = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_VERSION}:streamGenerateContent?alt=sse`;
-  const thinkingConfig = buildGeminiThinkingConfig(model);
-  const body = {
-    model:   model,   // "gemini-2.5-flash" (models/ 접두사 없음)
-    project: projectId,
-    request: {
-      contents: [{ role: 'user', parts: [{ text: TEST_PROMPT }] }],
-      generationConfig: {
-        maxOutputTokens: 200,
-        ...(thinkingConfig ? { thinkingConfig } : {}),
-      },
-    },
-  };
-
-  const { ttft, total, raw, status } = await httpStream(url, body, {
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type':  'application/json',
-  });
-
-  if (status >= 400) {
-    let msg = '';
-    try { msg = JSON.parse(raw)?.error?.message || raw.slice(0, 60); } catch {}
-    throw new Error(`HTTP ${status}: ${msg}`);
-  }
-
-  // SSE 파싱: data: {"response": {"candidates": [...]}}
-  let text = '';
-  for (const line of raw.split('\n').filter(l => l.startsWith('data: '))) {
-    try {
-      const d = JSON.parse(line.slice(6));
-      text += d?.response?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    } catch {}
-  }
-
-  return { ttft, total, ok: text.length > 0 || raw.includes('"text"'), text: text.trim().slice(0, 30) };
-}
-
-// ─── Ollama 테스트 ─────────────────────────────────────────────────────────
-async function testOllama(modelId) {
-  const model = modelId.split('/')[1];
-  const start = Date.now();
-  let ttft    = null;
-
-  return new Promise((resolve, reject) => {
-    const body = Buffer.from(JSON.stringify({ model, prompt: TEST_PROMPT, stream: true }));
-    const req  = http.request({
-      hostname: '127.0.0.1', port: 11434, path: '/api/generate', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
-    }, (res) => {
-      let text = '';
-      res.on('data', chunk => {
-        if (ttft === null) ttft = Date.now() - start;
-        try {
-          for (const line of chunk.toString().trim().split('\n')) {
-            const d = JSON.parse(line);
-            if (d.response) text += d.response;
-          }
-        } catch {}
-      });
-      res.on('end', () => resolve({
-        ttft: ttft ?? Date.now() - start, total: Date.now() - start,
-        ok: text.length > 0, text: text.trim().slice(0, 30),
-      }));
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-// ─── OpenAI 호환 테스트 (OpenAI / Groq / Cerebras / SambaNova / OpenRouter) ─
-async function testOpenAICompat(provider, modelId, apiKey) {
-  const endpoint = PROVIDER_ENDPOINTS[provider];
-  if (!endpoint) throw new Error(`알 수 없는 프로바이더: ${provider}`);
-
-  const model   = modelId.split('/').slice(1).join('/');
-  const url     = `${endpoint}/chat/completions`;
-  const headers = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type':  'application/json',
-  };
-  if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://github.com/ai-agent-system';
-    headers['X-Title']      = 'openclaw-speed-test';
-  }
-
-  // o-시리즈 추론 모델은 max_completion_tokens 사용 (max_tokens 미지원)
-  const isReasoningModel = /^o\d/.test(model);
-  const body = {
-    model,
-    messages: [{ role: 'user', content: TEST_PROMPT }],
-    stream:   true,
-  };
-  if (isReasoningModel) body.max_completion_tokens = 50;
-  else                   body.max_tokens = 10;
-
-  const { ttft, total, raw, status } = await httpStream(url, body, headers);
-
-  if (status >= 400) {
-    let msg = '';
-    try { msg = JSON.parse(raw)?.error?.message || JSON.parse(raw)?.message || raw.slice(0, 80); }
-    catch { msg = raw.slice(0, 80); }
-    throw new Error(`HTTP ${status}: ${msg}`);
-  }
-
-  // SSE 파싱
-  let text = '';
-  for (const line of raw.split('\n').filter(l => l.startsWith('data: ') && !l.includes('[DONE]'))) {
-    try { text += JSON.parse(line.slice(6))?.choices?.[0]?.delta?.content ?? ''; } catch {}
-  }
-
-  return { ttft, total, ok: text.length > 0 || raw.includes('content'), text: text.trim().slice(0, 30) };
-}
-
-// ─── 단일 모델 벤치마크 ────────────────────────────────────────────────────
-const OPENAI_COMPAT_PROVIDERS = new Set([
-  'openai', 'groq', 'cerebras', 'sambanova', 'openrouter',
-  'xai', 'mistral', 'together', 'fireworks', 'deepinfra',
-]);
-
-async function benchmarkModel(modelId, ctx) {
-  const provider = modelId.split('/')[0];
-  const icon     = PROVIDER_ICONS[provider] || '❓';
-  const shortId  = modelId.split('/').slice(1).join('/');
-  const label    = `${icon} ${shortId}`;
-
-  process.stdout.write(`  ${label.padEnd(34)} `);
-
-  const results = [];
-  for (let i = 0; i < runsArg; i++) {
-    try {
-      let r;
-      if (provider === 'google-gemini-cli')        r = await testGemini(modelId, ctx.geminiToken);
-      else if (provider === 'ollama')               r = await testOllama(modelId);
-      else if (OPENAI_COMPAT_PROVIDERS.has(provider)) r = await testOpenAICompat(provider, modelId, ctx.keys[provider]);
-      else throw new Error('미지원 프로바이더');
-      results.push(r);
-      process.stdout.write(dim('.'));
-    } catch (e) {
-      process.stdout.write(red('✗'));
-      results.push({
-        ttft: null,
-        total: null,
-        ok: false,
-        error: e.message,
-        errorClass: classifySpeedTestError(provider, modelId, e.message),
-      });
-    }
-  }
-  process.stdout.write('\n');
-
-  const valid = results.filter(r => r.ttft !== null && r.ok);
-  if (valid.length === 0) {
-    return {
-      modelId,
-      label,
-      provider,
-      ttft: null,
-      total: null,
-      ok: false,
-      error: results[0]?.error,
-      errorClass: results[0]?.errorClass || classifySpeedTestError(provider, modelId, results[0]?.error),
-    };
-  }
-
-  const avgTTFT  = Math.round(valid.reduce((s, r) => s + r.ttft,  0) / valid.length);
-  const avgTotal = Math.round(valid.reduce((s, r) => s + r.total, 0) / valid.length);
-  return { modelId, label, provider, ttft: avgTTFT, total: avgTotal, ok: true, sample: valid[0]?.text };
-}
-
 // ─── Telegram 알림 ────────────────────────────────────────────────────────
 function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   const dateStr = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -551,72 +106,24 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
 }
 
 function writeLatestSnapshot(results, { applied, recommended, current } = {}) {
-  const payload = {
-    capturedAt: new Date().toISOString(),
+  const status = writeLatestSpeedSnapshot(results, {
     prompt: TEST_PROMPT,
     runs: runsArg,
     current: current || null,
     recommended: recommended || null,
     applied: applied || null,
-    results: results.map((r, index) => ({
-      rank: index + 1,
-      modelId: r.modelId,
-      provider: r.provider,
-      label: r.label,
-      ttft: r.ttft,
-      total: r.total,
-      ok: r.ok === true,
-      error: r.error || null,
-      errorClass: r.errorClass || null,
-    })),
-  };
-  const status = {
-    latestSaved: false,
-    historySaved: false,
-    latestError: null,
-    historyError: null,
-  };
-  try {
-    fs.mkdirSync(path.dirname(SPEED_TEST_LATEST_FILE), { recursive: true });
-    fs.writeFileSync(SPEED_TEST_LATEST_FILE, JSON.stringify(payload, null, 2) + '\n');
-    status.latestSaved = true;
+  });
+  if (status.latestSaved) {
     log(dim(`\n  📝 최신 속도 스냅샷 저장: ${SPEED_TEST_LATEST_FILE}`));
-  } catch (e) {
-    status.latestError = e.message;
-    log(dim(`\n  ⚠️ 속도 스냅샷 저장 실패: ${e.message}`));
+  } else {
+    log(dim(`\n  ⚠️ 속도 스냅샷 저장 실패: ${status.latestError}`));
   }
-  try {
-    fs.mkdirSync(path.dirname(SPEED_TEST_HISTORY_FILE), { recursive: true });
-    fs.appendFileSync(SPEED_TEST_HISTORY_FILE, JSON.stringify(payload) + '\n');
-    status.historySaved = true;
+  if (status.historySaved) {
     log(dim(`  🗂️ 속도 히스토리 누적: ${SPEED_TEST_HISTORY_FILE}`));
-  } catch (e) {
-    status.historyError = e.message;
-    log(dim(`  ⚠️ 속도 히스토리 저장 실패: ${e.message}`));
+  } else {
+    log(dim(`  ⚠️ 속도 히스토리 저장 실패: ${status.historyError}`));
   }
   return status;
-}
-
-// ─── openclaw.json 업데이트 ────────────────────────────────────────────────
-function applyFastest(results) {
-  const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
-
-  // primary는 Gemini(무료 OAuth) 중 가장 빠른 모델 — 버전 무관 자동 교체
-  const geminiValid = results.filter(r => r.ok && r.provider === 'google-gemini-cli');
-  if (geminiValid.length === 0) { log('\n⚠️  적용할 Gemini 모델 결과 없음'); return null; }
-
-  cfg.agents.defaults.model.primary = geminiValid[0].modelId;
-
-  const geminiRest  = geminiValid.slice(1).map(r => r.modelId);
-  const ollamaList  = results.filter(r => r.ok && r.provider === 'ollama').map(r => r.modelId);
-  const otherList   = results.filter(r => r.ok && !['google-gemini-cli','ollama'].includes(r.provider)).map(r => r.modelId);
-  cfg.agents.defaults.model.fallbacks = [...geminiRest, ...ollamaList, ...otherList];
-
-  fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-  log(`\n✅ openclaw.json 업데이트 완료`);
-  log(`   primary:   ${geminiValid[0].modelId}`);
-  log(`   fallbacks: ${cfg.agents.defaults.model.fallbacks.join(', ')}`);
-  return geminiValid[0].modelId;
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────────────
@@ -625,7 +132,7 @@ async function main() {
   log(dim(`   프롬프트: "${TEST_PROMPT}"`));
   log(dim(`   반복: ${runsArg}회 평균\n`));
 
-  const models = loadModels();
+  const models = loadModels(fs, { modelArg });
   if (models.length === 0) { log(red('테스트할 모델 없음')); process.exit(1); }
 
   const ctx = { geminiToken: null, keys: {} };
@@ -644,7 +151,7 @@ async function main() {
   // OpenAI-호환 프로바이더 키 로드
   for (const provider of Object.keys(PROVIDER_ENDPOINTS)) {
     if (!models.some(m => m.startsWith(`${provider}/`))) continue;
-    const key = loadProviderKey(provider);
+      const key = loadProviderKey(fs, provider);
     if (key) {
       ctx.keys[provider] = key;
       log(`🔑 ${provider.padEnd(14)} API 키 ${green('✅')}`);
@@ -657,7 +164,7 @@ async function main() {
   if (models.some(m => m.startsWith('ollama/'))) {
     try {
       await new Promise((res, rej) => {
-        const req = http.get(`${OLLAMA_BASE}/api/tags`, () => res());
+        const req = require('http').get('http://127.0.0.1:11434/api/tags', () => res());
         req.on('error', rej);
         req.setTimeout(2000, () => { req.destroy(); rej(new Error('timeout')); });
       });
@@ -676,7 +183,16 @@ async function main() {
     const provider = modelId.split('/')[0];
     if (provider === 'google-gemini-cli' && !ctx.geminiToken) continue;
     if (OPENAI_COMPAT_PROVIDERS.has(provider) && !ctx.keys[provider]) continue;
-    const r = await benchmarkModel(modelId, ctx);
+    const r = await benchmarkModel(modelId, ctx, {
+      runs: runsArg,
+      prompt: TEST_PROMPT,
+      onProgress: ({ type, label }) => {
+        if (type === 'start') process.stdout.write(`  ${label.padEnd(34)} `);
+        if (type === 'success') process.stdout.write(dim('.'));
+        if (type === 'error') process.stdout.write(red('✗'));
+      },
+    });
+    process.stdout.write('\n');
     results.push(r);
   }
 
@@ -714,7 +230,15 @@ async function main() {
   if (fastest && fastest.modelId !== current) {
     log(`  최고 속도: ${green(fastest.modelId)} (TTFT ${fastest.ttft}ms)`);
     if (doApply) {
-      appliedModel = applyFastest(results);
+      appliedModel = applyFastest(fs, results);
+      if (appliedModel) {
+        const updated = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
+        log(`\n✅ openclaw.json 업데이트 완료`);
+        log(`   primary:   ${appliedModel}`);
+        log(`   fallbacks: ${(updated?.agents?.defaults?.model?.fallbacks || []).join(', ')}`);
+      } else {
+        log('\n⚠️  적용할 Gemini 모델 결과 없음');
+      }
     } else {
       log(dim(`\n  Gemini 기준 적용: node scripts/speed-test.js --apply`));
     }

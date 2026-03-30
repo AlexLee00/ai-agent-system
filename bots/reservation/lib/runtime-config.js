@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const yaml = require('js-yaml');
+const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtime-config-loader');
 
 const DEFAULT_RUNTIME_CONFIG = {
   browser: {
@@ -24,34 +24,12 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
 };
 
-let cachedConfig = null;
-
-function isObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function deepMerge(base, override) {
-  if (!isObject(base) || !isObject(override)) return override ?? base;
-  const merged = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    merged[key] = isObject(value) && isObject(base[key])
-      ? deepMerge(base[key], value)
-      : value;
-  }
-  return merged;
-}
-
-function loadRuntimeConfig() {
-  if (cachedConfig) return cachedConfig;
-  try {
-    const raw = yaml.load(fs.readFileSync(path.join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
-    cachedConfig = deepMerge(DEFAULT_RUNTIME_CONFIG, raw.runtime_config || {});
-    return cachedConfig;
-  } catch {
-    cachedConfig = { ...DEFAULT_RUNTIME_CONFIG };
-    return cachedConfig;
-  }
-}
+const { loadRuntimeConfig } = createRuntimeConfigLoader({
+  fs,
+  defaults: DEFAULT_RUNTIME_CONFIG,
+  configPath: path.join(__dirname, '..', 'config.yaml'),
+  format: 'yaml',
+});
 
 function getReservationRuntimeConfig() {
   return loadRuntimeConfig();

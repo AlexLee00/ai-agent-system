@@ -23,6 +23,7 @@ const store   = require('../lib/archer/store');
 const cfg     = require('../lib/archer/config');
 const teamBus = require('../lib/team-bus');
 const kst     = require('../../../packages/core/lib/kst');
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 
 const ARGS       = process.argv.slice(2);
 const TELEGRAM   = ARGS.includes('--telegram');
@@ -72,6 +73,7 @@ function extractVersions(data) {
 // ─── 메인 ─────────────────────────────────────────────────────────────
 
 async function main() {
+  await initHubConfig();
   console.log(`\n🏹 ${BOT_NAME} (Archer) 기술 인텔리전스 봇 v2.0 가동\n`);
   writeLog('START');
 

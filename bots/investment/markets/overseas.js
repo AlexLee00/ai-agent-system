@@ -21,7 +21,7 @@ import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearch
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 import * as db from '../shared/db.js';
-import { getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo, getOverseasScreeningMaxDynamic } from '../shared/secrets.js';
+import { initHubSecrets, getKisOverseasSymbols, getKisOverseasMarketStatus, getKisExecutionModeInfo, getOverseasScreeningMaxDynamic } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { resolveSymbolsWithFallback, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.js';
@@ -85,6 +85,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * @param {string[]} symbols  ex) ['AAPL', 'TSLA', 'NVDA']
  */
 export async function runOverseasCycle(symbols) {
+  await initHubSecrets();
   const { paper: paperMode, tag } = getKisExecutionModeInfo('해외주식');
   const startTime = Date.now();
   let sessionId = null;
@@ -164,6 +165,7 @@ export async function runOverseasCycle(symbols) {
 }
 
 export async function runOverseasResearchCycle(symbols) {
+  await initHubSecrets();
   const startTime = Date.now();
   let sessionId = null;
 
@@ -278,6 +280,7 @@ async function logPipelineMetrics(label, metrics = {}) {
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await initHubSecrets();
   const args      = process.argv.slice(2);
   const symArg    = args.find(a => a.startsWith('--symbols='));
   const force     = args.includes('--force');

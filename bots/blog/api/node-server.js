@@ -28,6 +28,7 @@ const posWriter      = require('../lib/pos-writer');
 const gemsWriter     = require('../lib/gems-writer');
 const qualityChecker = require('../lib/quality-checker');
 const pgPool         = require('../../../packages/core/lib/pg-pool');
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { markPublished } = require('../lib/publ');
 
@@ -57,10 +58,17 @@ function requireLocalNodeAccess(req, res, next) {
 
 // ─── 초기화 ───────────────────────────────────────────────────────────
 
-// 앱 시작 시 RAG 스토어 스키마 확인
-pipelineStore.ensureSchema().catch(e =>
-  console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message)
-);
+async function bootstrap() {
+  await initHubConfig();
+  pipelineStore.ensureSchema().catch(e =>
+    console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message)
+  );
+
+  app.listen(PORT, HOST, () => {
+    console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
+    console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
+  });
+}
 
 // ─── 헬스체크 ─────────────────────────────────────────────────────────
 
@@ -422,9 +430,9 @@ app.get('/api/blog/rag/session', requireLocalNodeAccess, async (req, res) => {
 
 // ─── 서버 시작 ────────────────────────────────────────────────────────
 
-app.listen(PORT, HOST, () => {
-  console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
-  console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
+bootstrap().catch((error) => {
+  console.error('[노드서버] 기동 실패:', error.message);
+  process.exit(1);
 });
 
 module.exports = app;
