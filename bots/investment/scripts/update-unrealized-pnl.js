@@ -7,11 +7,14 @@
  */
 import pg from 'pg';
 import ccxt from 'ccxt';
+import { initHubSecrets } from '../shared/secrets.js';
+import { getDomesticPrice, getOverseasPrice } from '../shared/kis-client.js';
 
 const { Pool } = pg;
 const pool = new Pool({ database: 'jay', user: process.env.USER || 'alexlee' });
 
 async function main() {
+  await initHubSecrets();
   console.log(`\n=== unrealized_pnl 갱신 (${new Date().toLocaleString('ko-KR')}) ===\n`);
 
   // LIVE 포지션 조회
@@ -43,30 +46,54 @@ async function main() {
     }
   }
 
-  let updated = 0;
-  for (const pos of positions) {
-    let currentPrice = null;
-
-    if (pos.exchange === 'binance') {
-      currentPrice = binancePrices[pos.symbol];
+  async function updatePosition(pos, currentPrice, label, priceDisplay, decimals = 4) {
+    if (!currentPrice || pos.avg_price <= 0) {
+      console.log(`⏸️ ${pos.symbol} (${label}): 시세 미조회`);
+      return 0;
     }
-    // 국내장/해외장은 장중에만 시세 조회 가능 — 향후 KIS API 연동
-    // 현재는 바이낸스만 갱신
 
-    if (currentPrice && pos.avg_price > 0) {
-      const unrealizedPnl = (currentPrice - pos.avg_price) * pos.amount;
-      const pnlPct = ((currentPrice - pos.avg_price) / pos.avg_price * 100).toFixed(2);
+    const unrealizedPnl = (currentPrice - pos.avg_price) * pos.amount;
+    const pnlPct = ((currentPrice - pos.avg_price) / pos.avg_price * 100).toFixed(2);
 
-      await pool.query(`
-        UPDATE investment.positions 
-        SET unrealized_pnl = $1, updated_at = now()
-        WHERE symbol = $2 AND exchange = $3 AND paper = false AND trade_mode = $4
-      `, [unrealizedPnl, pos.symbol, pos.exchange, pos.trade_mode]);
+    await pool.query(`
+      UPDATE investment.positions
+      SET unrealized_pnl = $1, updated_at = now()
+      WHERE symbol = $2 AND exchange = $3 AND paper = false AND trade_mode = $4
+    `, [unrealizedPnl, pos.symbol, pos.exchange, pos.trade_mode]);
 
-      console.log(`✅ ${pos.symbol}: ${currentPrice} (${pnlPct > 0 ? '+' : ''}${pnlPct}%) unrealized=${unrealizedPnl.toFixed(4)}`);
-      updated++;
-    } else {
-      console.log(`⏸️ ${pos.symbol} (${pos.exchange}): 시세 미조회`);
+    console.log(`✅ ${pos.symbol} (${label}): ${priceDisplay} (${pnlPct > 0 ? '+' : ''}${pnlPct}%) unrealized=${unrealizedPnl.toFixed(decimals)}`);
+    return 1;
+  }
+
+  let updated = 0;
+
+  for (const pos of binancePositions) {
+    updated += await updatePosition(
+      pos,
+      binancePrices[pos.symbol],
+      'binance',
+      String(binancePrices[pos.symbol] || ''),
+      4,
+    );
+  }
+
+  const kisPositions = positions.filter((p) => p.exchange === 'kis');
+  for (const pos of kisPositions) {
+    try {
+      const price = await getDomesticPrice(pos.symbol, false);
+      updated += await updatePosition(pos, price, 'KIS', `${price}원`, 0);
+    } catch (e) {
+      console.log(`⚠️ ${pos.symbol} (KIS): ${e.message}`);
+    }
+  }
+
+  const kisOverseasPositions = positions.filter((p) => p.exchange === 'kis_overseas');
+  for (const pos of kisOverseasPositions) {
+    try {
+      const { price } = await getOverseasPrice(pos.symbol);
+      updated += await updatePosition(pos, price, 'KIS해외', `$${price}`, 4);
+    } catch (e) {
+      console.log(`⚠️ ${pos.symbol} (KIS해외): ${e.message}`);
     }
   }
 

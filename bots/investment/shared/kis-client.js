@@ -248,7 +248,7 @@ export async function getDomesticPrice(symbol, paper) {
  *  - 가격조회: NAS/NYS (HHDFS76200200 API 요구)
  *  - 주문 EXCD: NASD/NYSE (order API 요구)
  */
-async function getOverseasPrice(symbol) {
+export async function getOverseasPrice(symbol) {
   // 가격조회용 (shorter code)
   const PRICE_EXCD = {
     AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
