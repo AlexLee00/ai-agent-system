@@ -27,6 +27,20 @@ const WKR_SECRETS = path.join(env.PROJECT_ROOT, 'bots/worker/secrets.json');
 let _configCache = null;
 let _configMtime = 0;
 
+function sanitizeKisConfig(kis) {
+  if (!kis || typeof kis !== 'object') return kis || {};
+  const { paper_trading, ...rest } = kis;
+  return rest;
+}
+
+function sanitizeConfig(config) {
+  if (!config || typeof config !== 'object') return {};
+  return {
+    ...config,
+    kis: sanitizeKisConfig(config.kis),
+  };
+}
+
 function loadConfigYaml() {
   try {
     const yaml = require('js-yaml');
@@ -78,7 +92,7 @@ const CATEGORY_HANDLERS = {
     return {
       binance: c.binance || {},
       upbit: c.upbit || {},
-      kis: c.kis || {},
+      kis: sanitizeKisConfig(c.kis),
       trading_mode: c.trading_mode,
       paper_mode: c.paper_mode,
     };
@@ -115,7 +129,7 @@ const CATEGORY_HANDLERS = {
 
   // config.yaml 전체 — 원본 반환 (DEV 안전은 클라이언트 env.js가 담당)
   config: () => {
-    return loadConfigYaml();
+    return sanitizeConfig(loadConfigYaml());
   },
 };
 
