@@ -254,7 +254,7 @@ async function checkKisRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getLivePosition(symbol, 'kis', tradeMode)
+    const pos = await db.getLivePosition(symbol, 'kis', signalTradeMode)
       || await db.getPaperPosition(symbol, 'kis', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 포지션 없음` };
   }
@@ -288,7 +288,7 @@ async function checkKisOverseasRisk(signal) {
     }
   }
   if (action === ACTIONS.SELL) {
-    const pos = await db.getLivePosition(symbol, 'kis_overseas', tradeMode)
+    const pos = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode)
       || await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode);
     if (!pos || pos.amount <= 0) return { approved: false, reason: `${symbol} 해외 포지션 없음` };
   }
