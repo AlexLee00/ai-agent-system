@@ -21,6 +21,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let _secrets = null;
 let _hubInitDone = false;
+const _warnedKeys = new Set();
+
+function warnOnce(key, message) {
+  if (_warnedKeys.has(key)) return;
+  _warnedKeys.add(key);
+  console.warn(message);
+}
 
 function normalizeMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -543,9 +550,35 @@ export function getKisOverseasMarketStatus(date = new Date()) {
 
 export function isKisPaper() {
   const s = loadSecrets();
-  if (s.kis_paper_trading === true) return true;
-  if (s.kis_paper_trading === false) return false;
-  return resolveBrokerMode(s.kis_mode) === 'paper';
+  const explicitKisMode = normalizeMode(s.kis_mode);
+
+  if (explicitKisMode && explicitKisMode !== 'inherit') {
+    const resolvedFromMode = resolveBrokerMode(explicitKisMode) === 'paper';
+    if (typeof s.kis_paper_trading === 'boolean' && s.kis_paper_trading !== resolvedFromMode) {
+      warnOnce(
+        'kis-mode-legacy-conflict',
+        `⚠️ [secrets] kis_mode=${explicitKisMode} 와 kis.paper_trading=${String(s.kis_paper_trading)} 충돌 감지 -> kis_mode 우선 적용`,
+      );
+    }
+    return resolvedFromMode;
+  }
+
+  if (s.kis_paper_trading === true) {
+    warnOnce(
+      'kis-paper-trading-legacy',
+      '⚠️ [secrets] kis.paper_trading 레거시 설정 사용 중 -> 향후 kis_mode로 통합 필요',
+    );
+    return true;
+  }
+  if (s.kis_paper_trading === false) {
+    warnOnce(
+      'kis-paper-trading-legacy',
+      '⚠️ [secrets] kis.paper_trading 레거시 설정 사용 중 -> 향후 kis_mode로 통합 필요',
+    );
+    return false;
+  }
+
+  return resolveBrokerMode('inherit') === 'paper';
 }
 
 export function getKisExecutionModeInfo(marketLabel = '주식') {

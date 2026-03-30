@@ -48,7 +48,7 @@ upbit:
 kis:
   app_key: "YOUR_KIS_APP_KEY"
   app_secret: "YOUR_KIS_APP_SECRET"
-  paper_trading: true
+  paper_trading: true  # deprecated: 신규 설정은 kis_mode 사용 권장
   paper_app_key: "YOUR_KIS_PAPER_APP_KEY"
   paper_app_secret: "YOUR_KIS_PAPER_APP_SECRET"
   account_number: ""
