@@ -116,6 +116,12 @@ const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE ||
 const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||
   path.join(os.homedir(), '.openclaw', 'logs');
 
+const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
+  IS_OPS
+    ? 'http://localhost:11434'
+    : 'http://REDACTED_TAILSCALE_IP:11434'
+);
+
 // ─── Resource API Hub ────────────────────────────────────────────────
 
 /**
@@ -248,6 +254,7 @@ module.exports = {
   OPENCLAW_PORT,
   OPENCLAW_WORKSPACE,
   OPENCLAW_LOGS,
+  LOCAL_LLM_BASE_URL,
 
   // Resource API Hub
   HUB_BASE_URL,
