@@ -97,7 +97,7 @@ OPS 재부팅 시 자동 시작:
   <key>EnvironmentVariables</key>
   <dict>
     <key>OLLAMA_HOST</key>
-    <string>127.0.0.1:11434</string>
+    <string>0.0.0.0:11434</string>
   </dict>
 </dict>
 </plist>
@@ -107,6 +107,20 @@ OPS 재부팅 시 자동 시작:
 launchctl load ~/Library/LaunchAgents/ai.ollama.serve.plist
 launchctl list | grep ollama
 # 기대: PID  0  ai.ollama.serve
+```
+
+### 참고: DEV(맥북 에어)에서 접근
+
+OLLAMA_HOST=0.0.0.0 설정으로 Tailscale 경유 접근 가능:
+```
+OPS: localhost:11434 (로컬)
+DEV: http://REDACTED_TAILSCALE_IP:11434 (Tailscale 경유, Hub 패턴과 동일)
+```
+
+Hub와 동일한 구조:
+```
+Hub:    OPS localhost:7788  → DEV REDACTED_TAILSCALE_IP:7788
+Ollama: OPS localhost:11434 → DEV REDACTED_TAILSCALE_IP:11434
 ```
 
 ---
