@@ -3,6 +3,7 @@
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
+const { initHubConfig } = require(path.join(__dirname, '../../../packages/core/lib/llm-keys'));
 const {
   ensureChatSchema,
   saveMessage,
@@ -307,6 +308,7 @@ async function processOne() {
 }
 
 async function main() {
+  await initHubConfig();
   console.log('[worker-task-runner] 실행기 가동');
   // eslint-disable-next-line no-constant-condition
   while (true) {

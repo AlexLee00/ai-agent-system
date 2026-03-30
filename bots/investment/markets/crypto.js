@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 const kst = require('../../../packages/core/lib/kst');
 const { writeHeartbeat } = require('../../../packages/core/lib/agent-heartbeats');
 import * as db from '../shared/db.js';
-import { getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.js';
+import { initHubSecrets, getSymbols, getMarketExecutionModeInfo, getInvestmentTradeMode, getCryptoScreeningMaxDynamic } from '../shared/secrets.js';
 import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker } from '../shared/cost-tracker.js';
 import { getLunaParams } from '../shared/time-mode.js';
@@ -180,6 +180,7 @@ tracker.once('BUDGET_EXCEEDED', async ({ type }) => {
  * @param {string[]} symbols  ex) ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
  */
 export async function runCryptoCycle(symbols, universeMeta = {}) {
+  await initHubSecrets();
   const { paper: paperMode, tag } = getMarketExecutionModeInfo('crypto', '암호화폐');
   const startTime = Date.now();
   const params    = getLunaParams();
@@ -317,6 +318,7 @@ async function logPipelineMetrics(label, metrics = {}) {
 // ─── CLI 실행 ───────────────────────────────────────────────────────
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await initHubSecrets();
   const args      = process.argv.slice(2);
   const symArg    = args.find(a => a.startsWith('--symbols='));
   const force     = args.includes('--force');

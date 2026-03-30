@@ -34,6 +34,20 @@ function normalizeInvestmentTradeMode(value) {
   return null;
 }
 
+function applyDevSafetyOverrides(secrets) {
+  if (env.IS_OPS) return secrets;
+
+  return {
+    ...secrets,
+    trading_mode: 'paper',
+    paper_mode: true,
+    binance_mode: secrets.binance_mode === 'live' ? 'paper' : (secrets.binance_mode || 'inherit'),
+    kis_mode: secrets.kis_mode === 'live' ? 'paper' : (secrets.kis_mode || 'inherit'),
+    binance_testnet: true,
+    kis_paper_trading: true,
+  };
+}
+
 /**
  * Hub에서 전체 config를 가져와 시크릿 캐시에 주입.
  * 투자팀 시작점에서 선택적으로 1회 호출 가능.
@@ -46,7 +60,7 @@ export async function initHubSecrets() {
   const hubData = await _hubClient.fetchHubSecrets('config');
   if (hubData) {
     const c = hubData;
-    _secrets = {
+    _secrets = applyDevSafetyOverrides({
       telegram_bot_token:   c.telegram?.bot_token || '',
       telegram_chat_id:     String(c.telegram?.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
       binance_api_key:      c.binance?.api_key || '',
@@ -87,7 +101,7 @@ export async function initHubSecrets() {
       kis_mode: normalizeMode(c.kis_mode) || 'inherit',
       investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
       paper_mode: c.paper_mode !== false,
-    };
+    });
     _hubInitDone = true;
     return true;
   }

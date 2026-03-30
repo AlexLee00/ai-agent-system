@@ -8,9 +8,11 @@
  * 실행: node bots/blog/scripts/run-daily.js
  */
 
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { run } = require('../lib/blo');
 
-run()
+initHubConfig()
+  .then(() => run())
   .then(results => {
     const ok  = results.filter(r => !r.error && !r.skipped).length;
     const err = results.filter(r => r.error).length;

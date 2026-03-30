@@ -1,15 +1,13 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const {
   describeLLMSelector,
-} = require(path.join(__dirname, '../packages/core/lib/llm-model-selector'));
-const {
   buildSpeedLookup,
   buildSelectorAdvice,
-} = require(path.join(__dirname, '../packages/core/lib/llm-selector-advisor'));
+  loadLatestSpeedSnapshot,
+} = require(path.join(__dirname, '../packages/core/lib/llm-control/service'));
 
 const orchestratorRuntime = require(path.join(__dirname, '../bots/orchestrator/lib/runtime-config'));
 const workerRuntime = require(path.join(__dirname, '../bots/worker/lib/runtime-config'));
@@ -30,17 +28,6 @@ async function getInvestmentPolicyOverrideSafe() {
     const moduleUrl = pathToFileURL(path.join(__dirname, '../bots/investment/shared/runtime-config.js')).href;
     const mod = await import(moduleUrl);
     return mod.getInvestmentLLMPolicyConfig().investmentAgentPolicy || null;
-  } catch {
-    return null;
-  }
-}
-
-const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
-
-function loadLatestSpeedSnapshot() {
-  try {
-    if (!fs.existsSync(SPEED_TEST_LATEST_FILE)) return null;
-    return JSON.parse(fs.readFileSync(SPEED_TEST_LATEST_FILE, 'utf8'));
   } catch {
     return null;
   }

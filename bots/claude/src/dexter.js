@@ -18,6 +18,7 @@
 const fs      = require('fs');
 const cfg     = require('../lib/config');
 const teamBus = require('../lib/team-bus');
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { publishToMainBot } = require('../lib/mainbot-client');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
@@ -84,6 +85,7 @@ async function main() {
   const TELEGRAM = _args.includes('--telegram');
   const FIX      = _args.includes('--fix');
 
+  await initHubConfig();
   acquireLock();
 
   // 팀버스: 시작 상태 등록
