@@ -124,32 +124,32 @@ CLI: node shared/ohlcv-fetcher.js --symbol=BTC/USDT --from=2025-01-01 --timefram
 
 ---
 
-## 작업 4: Ollama HTTP 클라이언트 (공용 계층)
+## 작업 4: Ollama HTTP 클라이언트 (공용 계층, Hub 경유)
 
 새 파일: `packages/core/lib/ollama-client.js`
 
-⚠️ 루나팀 전용이 아닌 **공용 계층**에 배치 (hub-client.js와 동일 레벨)
-이유: 블로팀(글 품질 검증), RAG 임베딩 로컬 전환 등 다른 팀도 사용 예정
+⚠️ **Hub 경유** — Ollama 직접 접근이 아닌 Hub 프록시 라우트 사용.
+hub-client.js와 동일한 패턴 (env.js에서 HUB_BASE_URL 읽기).
 
 ```
-역할:
-  로컬 Ollama REST API 호출 래퍼
-  OPS: localhost:11434
-  DEV: Tailscale 경유 REDACTED_TAILSCALE_IP:11434 (Hub 패턴과 동일)
+접근 경로:
+  OPS: Hub localhost:7788/hub/ollama/* → Ollama localhost:11434
+  DEV: Hub REDACTED_TAILSCALE_IP:7788/hub/ollama/* → Ollama localhost:11434
 
-환경변수:
-  OLLAMA_BASE_URL — 기본값: http://localhost:11434
-  DEV에서는 env.js에서 자동 설정:
-    MODE=dev → OLLAMA_BASE_URL=http://REDACTED_TAILSCALE_IP:11434
+  기존 패턴과 동일:
+    시크릿: Hub /hub/secrets/*
+    DB:     Hub /hub/pg/query
+    에러:   Hub /hub/errors/*
+    Ollama: Hub /hub/ollama/*  ← 신규 (동일 패턴)
 
 함수:
   isOllamaAvailable() → boolean
-    GET ${OLLAMA_BASE_URL}/api/version
+    GET ${HUB_BASE_URL}/hub/ollama/version
     타임아웃 3초
 
   callOllama(model, prompt, options={}) → string|null
-    POST ${OLLAMA_BASE_URL}/api/generate
-    body: { model, prompt, stream: false, options }
+    POST ${HUB_BASE_URL}/hub/ollama/generate
+    body: { model, prompt, options }
     타임아웃: qwen2.5:7b → 30초, deepseek-r1:32b → 120초
     에러 시: null 반환 (백테스트 중단 방지)
     options 기본값: { temperature: 0.3, num_predict: 500 }
@@ -158,17 +158,24 @@ CLI: node shared/ohlcv-fetcher.js --symbol=BTC/USDT --from=2025-01-01 --timefram
     callOllama 호출 후 JSON.parse 시도
     파싱 실패 시: null 반환
 
-패턴: hub-client.js와 동일 (env.js에서 BASE_URL 읽기 + AbortController + 타임아웃 + null 반환)
+  getOllamaModels() → string[]|null
+    GET ${HUB_BASE_URL}/hub/ollama/models
+    설치된 모델 목록 반환
+
+패턴: hub-client.js의 fetchHubSecrets()와 동일
+  - env.HUB_BASE_URL 사용
+  - env.HUB_AUTH_TOKEN으로 인증
+  - AbortController + 타임아웃
+  - 실패 시 null 반환 + console.warn
 ```
 
-### env.js 수정
+### env.js 수정 — 불필요 (기존 HUB_BASE_URL 그대로 사용)
 
 ```
-packages/core/lib/env.js에 추가:
-
-  OLLAMA_BASE_URL:
-    MODE=ops → 'http://localhost:11434'
-    MODE=dev → 'http://REDACTED_TAILSCALE_IP:11434' (Tailscale 경유)
+Hub 경유이므로 OLLAMA_BASE_URL 환경변수 불필요!
+기존 HUB_BASE_URL만으로 충분:
+  OPS: HUB_BASE_URL=http://localhost:7788
+  DEV: HUB_BASE_URL=http://REDACTED_TAILSCALE_IP:7788
 ```
 
 ---
@@ -267,7 +274,7 @@ git commit -m "feat(luna): Chronos Layer 1~3 백테스팅 엔진
 
 - ohlcv-fetcher.js: ccxt OHLCV 수집 + PostgreSQL 캐시
 - ta-indicators.js: RSI/MACD/BB/ATR 기술지표
-- ollama-client.js: 로컬 Ollama HTTP 클라이언트 (packages/core/lib/ 공용)
+- ollama-client.js: Hub 경유 Ollama 클라이언트 (packages/core/lib/ 공용)
 - chronos.js: 3계층 백테스팅 (규칙→감성LLM→판단LLM)
 - migration: ohlcv_cache 테이블"
 git push origin main
@@ -281,7 +288,7 @@ node bots/investment/shared/ohlcv-fetcher.js \
   --symbol=BTC/USDT --from=2026-03-01 --timeframe=1h
 # 기대: ~720개 캔들 수집 + DB 저장
 
-# 5. Ollama 클라이언트 테스트
+# 5. Ollama 클라이언트 테스트 (Hub 경유)
 node -e "
 const { callOllama, isOllamaAvailable } = require('./packages/core/lib/ollama-client');
 (async () => {

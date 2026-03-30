@@ -97,7 +97,7 @@ OPS 재부팅 시 자동 시작:
   <key>EnvironmentVariables</key>
   <dict>
     <key>OLLAMA_HOST</key>
-    <string>0.0.0.0:11434</string>
+    <string>127.0.0.1:11434</string>
   </dict>
 </dict>
 </plist>
@@ -109,19 +109,105 @@ launchctl list | grep ollama
 # 기대: PID  0  ai.ollama.serve
 ```
 
-### 참고: DEV(맥북 에어)에서 접근
+---
 
-OLLAMA_HOST=0.0.0.0 설정으로 Tailscale 경유 접근 가능:
+## 작업 5: Hub에 Ollama 프록시 라우트 추가
+
+DEV에서 Ollama 직접 접근 대신 Hub 경유 (기존 아키텍처 일관성 유지):
+
 ```
-OPS: localhost:11434 (로컬)
-DEV: http://REDACTED_TAILSCALE_IP:11434 (Tailscale 경유, Hub 패턴과 동일)
+DEV → Hub :7788/hub/ollama/generate → localhost:11434/api/generate
+DEV → Hub :7788/hub/ollama/version  → localhost:11434/api/version
+
+기존 패턴과 동일:
+  시크릿: Hub → config.yaml
+  DB:     Hub → PostgreSQL :5432
+  에러:   Hub → /tmp/*.err.log
+  Ollama: Hub → Ollama :11434  ← 신규
 ```
 
-Hub와 동일한 구조:
+### 새 파일: `bots/hub/lib/routes/ollama.js`
+
+```javascript
+'use strict';
+
+const OLLAMA_BASE = 'http://127.0.0.1:11434';
+
+/**
+ * POST /hub/ollama/generate — Ollama 추론 프록시
+ * body: { model, prompt, options }
+ */
+async function ollamaGenerateRoute(req, res) {
+  const { model, prompt, options = {} } = req.body || {};
+  if (!model || !prompt) {
+    return res.status(400).json({ ok: false, error: 'model and prompt required' });
+  }
+
+  try {
+    const r = await fetch(`${OLLAMA_BASE}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt, stream: false, options }),
+      signal: AbortSignal.timeout(120_000),  // deepseek-r1:32b 최대 2분
+    });
+
+    if (!r.ok) {
+      return res.status(r.status).json({ ok: false, error: `ollama ${r.status}` });
+    }
+
+    const data = await r.json();
+    return res.json({ ok: true, response: data.response, model: data.model });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: e.message });
+  }
+}
+
+/**
+ * GET /hub/ollama/version — Ollama 서버 상태 확인
+ */
+async function ollamaVersionRoute(req, res) {
+  try {
+    const r = await fetch(`${OLLAMA_BASE}/api/version`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const data = await r.json();
+    return res.json({ ok: true, ...data });
+  } catch (e) {
+    return res.json({ ok: false, error: e.message });
+  }
+}
+
+/**
+ * GET /hub/ollama/models — 설치된 모델 목록
+ */
+async function ollamaModelsRoute(req, res) {
+  try {
+    const r = await fetch(`${OLLAMA_BASE}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await r.json();
+    return res.json({ ok: true, models: data.models || [] });
+  } catch (e) {
+    return res.json({ ok: false, error: e.message });
+  }
+}
+
+module.exports = { ollamaGenerateRoute, ollamaVersionRoute, ollamaModelsRoute };
 ```
-Hub:    OPS localhost:7788  → DEV REDACTED_TAILSCALE_IP:7788
-Ollama: OPS localhost:11434 → DEV REDACTED_TAILSCALE_IP:11434
+
+### hub.js 수정 — Ollama 라우트 등록
+
+기존 에러 라우트 등록 이후에 추가:
+
+```javascript
+const { ollamaGenerateRoute, ollamaVersionRoute, ollamaModelsRoute } = require('./lib/routes/ollama');
+app.post('/hub/ollama/generate', generalLimiter, ollamaGenerateRoute);
+app.get('/hub/ollama/version', generalLimiter, ollamaVersionRoute);
+app.get('/hub/ollama/models', generalLimiter, ollamaModelsRoute);
 ```
+
+인증: `/hub` 하위이므로 기존 `authMiddleware` 자동 적용.
+hub.js를 읽고 기존 라우트 등록 패턴을 따를 것.
 
 ---
 
@@ -140,12 +226,44 @@ ollama list
 launchctl list | grep ollama
 # 기대: PID  0  ai.ollama.serve
 
-# 4. 재부팅 시뮬레이션 (선택)
-launchctl kickstart -kp gui/$(id -u)/ai.ollama.serve
-sleep 3
-curl -s http://localhost:11434/api/version
-# 기대: 정상 응답
+# 4. Hub Ollama 라우트 문법 검사
+node --check bots/hub/src/hub.js
+node --check bots/hub/lib/routes/ollama.js
+
+# 5. Hub 재시작
+launchctl kickstart -kp gui/$(id -u)/ai.hub.resource-api
+
+# 6. Hub 경유 Ollama 테스트
+source ~/.zprofile
+curl -s http://localhost:7788/hub/ollama/version \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" | python3 -m json.tool
+# 기대: { "ok": true, "version": "..." }
+
+curl -s http://localhost:7788/hub/ollama/models \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" | python3 -m json.tool
+# 기대: { "ok": true, "models": [...] }
+
+curl -s -X POST http://localhost:7788/hub/ollama/generate \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5:7b","prompt":"Say hello"}' | python3 -m json.tool
+# 기대: { "ok": true, "response": "...", "model": "qwen2.5:7b" }
+
+# 7. 인증 차단 확인 (토큰 없이)
+curl -s http://localhost:7788/hub/ollama/version
+# 기대: { "error": "missing_bearer_token" }
 ```
 
-⚠️ 이 작업은 Git 커밋 없음 — 시스템 인프라 설정만.
-완료 후 운영 채팅(메티)에게 결과를 보고해줘.
+## 커밋
+
+```
+feat(ops): Hub Ollama 프록시 라우트 + Ollama launchd 서비스
+
+- bots/hub/lib/routes/ollama.js: generate/version/models 프록시
+- hub.js: Ollama 라우트 등록
+- ai.ollama.serve.plist: launchd 자동 실행
+- Ollama는 127.0.0.1만 바인딩, Hub 경유로 DEV 접근
+```
+
+⚠️ launchd plist는 Git에 포함하지 않음 (시스템 인프라).
+Hub 라우트 코드(ollama.js + hub.js 수정)는 Git 커밋.
