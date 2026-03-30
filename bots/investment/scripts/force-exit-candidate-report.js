@@ -16,7 +16,6 @@ import {
   getKisExecutionModeInfo,
   getKisMarketStatus,
   getKisOverseasMarketStatus,
-  isKisPaper,
 } from '../shared/secrets.js';
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -83,7 +82,7 @@ async function classifyExecutionReadiness(row) {
   }
 
   const modeInfo = getKisExecutionModeInfo(row.exchange === 'kis' ? '국내주식' : '해외주식');
-  const isMock = modeInfo.brokerAccountMode === 'mock' || isKisPaper();
+  const isMock = modeInfo.brokerAccountMode === 'mock';
   const marketStatus = row.exchange === 'kis'
     ? await getKisMarketStatus()
     : getKisOverseasMarketStatus();
