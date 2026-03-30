@@ -142,9 +142,13 @@ async function cleanupDustLivePosition(symbol, position, tradeMode, meta = {}) {
 }
 
 function roundSellAmount(symbol, amount) {
-  const ex = getExchange();
-  const precise = Number(ex.amountToPrecision(symbol, amount));
-  return Number.isFinite(precise) ? precise : 0;
+  try {
+    const ex = getExchange();
+    const precise = Number(ex.amountToPrecision(symbol, amount));
+    return Number.isFinite(precise) ? precise : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function extractOrderId(orderLike) {
