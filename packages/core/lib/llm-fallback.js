@@ -27,7 +27,13 @@
  *   // result: { text: string, provider, model, attempt }
  */
 
-const { getAnthropicKey, getOpenAIKey, getGeminiKey, getGroqAccounts } = require('./llm-keys');
+const {
+  initHubConfig,
+  getAnthropicKey,
+  getOpenAIKey,
+  getGeminiKey,
+  getGroqAccounts,
+} = require('./llm-keys');
 const { logLLMCall } = require('./llm-logger');
 const billingGuard = require('./billing-guard');
 const { trackTokens } = require('./token-tracker');
@@ -209,6 +215,8 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
 async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} }) {
+  await initHubConfig();
+
   // ★ 긴급 차단 체크
   const guardScope = logMeta.team || 'global';
   if (billingGuard.isBlocked(guardScope)) {
