@@ -16,7 +16,7 @@ function getUpbit() {
   if (_upbit) return _upbit;
   const s = loadSecrets();
   if (!s.upbit_access_key || !s.upbit_secret_key) {
-    throw new Error('업비트 API 키 미설정 (config.yaml upbit.access_key/secret_key)');
+    throw new Error('업비트 API 키 미설정 (Hub secrets upbit.access_key/secret_key)');
   }
   _upbit = new ccxt.upbit({
     apiKey: s.upbit_access_key,
@@ -37,7 +37,7 @@ function getBinance() {
   if (_binance) return _binance;
   const s = loadSecrets();
   if (!s.binance_api_key || !s.binance_api_secret) {
-    throw new Error('바이낸스 API 키 미설정 (config.yaml binance.api_key/api_secret)');
+    throw new Error('바이낸스 API 키 미설정 (Hub secrets binance.api_key/api_secret)');
   }
   _binance = new ccxt.binance({
     apiKey: s.binance_api_key,

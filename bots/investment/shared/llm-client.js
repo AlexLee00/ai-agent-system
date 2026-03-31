@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml         from 'js-yaml';
 import { tracker }  from './cost-tracker.js';
-import { getTradingMode, getInvestmentGuardScope } from './secrets.js';
+import { getTradingMode, getInvestmentGuardScope, initHubSecrets, loadSecrets } from './secrets.js';
 import { getInvestmentLLMPolicyConfig } from './runtime-config.js';
 
 // CJS 토큰 트래커 (orchestrator 공용)
@@ -115,7 +115,6 @@ const DUAL_MODEL = process.env.LUNA_DUAL_MODEL !== 'false';
 
 // ─── Groq 클라이언트 (라운드로빈) ────────────────────────────────────
 
-const _groqAccounts = (_cfg.groq?.accounts || []).filter(a => a.api_key);
 let   _GroqClass    = null;
 let   _groqClients  = null;
 let   _groqIdx      = 0;
@@ -128,12 +127,14 @@ function getGroqClass() {
 }
 
 function nextGroqClient() {
+  const groqAccounts = (loadSecrets().groq_api_keys || []).filter(Boolean).map((api_key) => ({ api_key }));
+
   if (!_groqClients) {
     const GroqClass = getGroqClass();
-    _groqClients = _groqAccounts.map(a =>
+    _groqClients = groqAccounts.map(a =>
       new GroqClass({ apiKey: a.api_key, timeout: _LLM_TIMEOUTS.groq, maxRetries: 1 }));
   }
-  if (_groqClients.length === 0) throw new Error('Groq API 키 없음 — config.yaml groq.accounts 설정 필요');
+  if (_groqClients.length === 0) throw new Error('Groq API 키 없음 — Hub secrets groq.accounts 설정 필요');
   const client = _groqClients[_groqIdx % _groqClients.length];
   _groqIdx++;
   return client;
@@ -152,8 +153,8 @@ function getAnthropicClass() {
 
 function getAnthropic() {
   if (_anthropic) return _anthropic;
-  const apiKey = _cfg.anthropic?.api_key || '';
-  if (!apiKey) throw new Error('Anthropic API 키 없음 — config.yaml anthropic.api_key 설정 필요');
+  const apiKey = loadSecrets().anthropic_api_key || '';
+  if (!apiKey) throw new Error('Anthropic API 키 없음 — Hub secrets anthropic.api_key 설정 필요');
   const AnthropicClass = getAnthropicClass();
   _anthropic = new AnthropicClass({
     apiKey,
@@ -177,8 +178,8 @@ function getOpenAIClass() {
 
 function getOpenAI() {
   if (_openai) return _openai;
-  const apiKey = _cfg.openai?.api_key || '';
-  if (!apiKey) throw new Error('OpenAI API 키 없음 — config.yaml openai.api_key 설정 필요');
+  const apiKey = loadSecrets().openai_api_key || '';
+  if (!apiKey) throw new Error('OpenAI API 키 없음 — Hub secrets openai.api_key 설정 필요');
   const OpenAIClass = getOpenAIClass();
   _openai = new OpenAIClass({ apiKey, timeout: _LLM_TIMEOUTS.openai, maxRetries: 1 });
   return _openai;
@@ -206,6 +207,7 @@ export function parseJSON(text) {
  * @returns {Promise<string>}  LLM 응답 텍스트
  */
 export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 512, options = {}) {
+  await initHubSecrets();
   // ★ 긴급 차단 체크
   const guardScope = resolveInvestmentLLMGuardScope(options);
   if (_billingGuard?.isBlocked(guardScope)) {
