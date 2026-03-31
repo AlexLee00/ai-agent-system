@@ -183,6 +183,15 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
       const resp = await _callGemini(opts);
       return { raw: resp, text: _extractText(resp, 'gemini'), usage: null };
     }
+    case 'local': {
+      const localLLM = require('./local-llm-client');
+      const result = await localLLM.callLocalLLM(model, [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ], { maxTokens, temperature });
+      if (!result) throw new Error('로컬 LLM 응답 없음');
+      return { raw: null, text: result.trim(), usage: null };
+    }
     default:
       throw new Error(`알 수 없는 provider: ${provider}`);
   }

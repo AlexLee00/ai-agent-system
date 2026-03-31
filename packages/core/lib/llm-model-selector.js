@@ -34,6 +34,7 @@ function _deepMerge(base, override) {
 
 function inferProviderFromModel(model = '') {
   if (!model) return 'anthropic';
+  if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
   if (model.startsWith('groq/')) return 'groq';
   if (
     model.startsWith('meta-llama/') ||
@@ -274,6 +275,18 @@ function _buildSelectorRegistry() {
         groq_scout: [
           { provider: 'groq', model: groqScoutModel },
           { provider: 'openai', model: openaiMiniModel },
+        ],
+        local_fast: [
+          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'groq', model: groqScoutModel },
+        ],
+        local_deep: [
+          { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
+          { provider: 'groq', model: groqScoutModel },
+        ],
+        groq_with_local: [
+          { provider: 'groq', model: 'moonshotai/kimi-k2-instruct-0905', maxTokens: 2048, temperature: 0.1 },
+          { provider: 'local', model: 'deepseek-r1-32b', maxTokens: 2048, temperature: 0.1 },
         ],
       };
       return {
