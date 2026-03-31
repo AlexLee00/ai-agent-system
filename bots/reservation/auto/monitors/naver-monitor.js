@@ -12,7 +12,7 @@ const puppeteer = require('puppeteer');
 const { spawn, spawnSync } = require('child_process');
 const { transformAndNormalizeData } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
-const { loadSecrets } = require('../../lib/secrets');
+const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
 const { flushPendingTelegrams } = require('../../lib/telegram');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
@@ -41,10 +41,6 @@ const kst = require('../../../../packages/core/lib/kst');
 const { writeHeartbeat } = require('../../../../packages/core/lib/agent-heartbeats');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 
-// 인증 정보 (secrets.json에서 로드)
-const SECRETS = loadSecrets();
-const NAVER_ID = SECRETS.naver_id;
-const NAVER_PW = SECRETS.naver_pw;
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
 
@@ -388,9 +384,9 @@ async function naverLogin(page) {
       const pwSel = (await page.$('input#pw')) ? 'input#pw' : 'input[name="pw"]';
 
       await page.click(idSel, { clickCount: 3 });
-      await page.type(idSel, NAVER_ID, { delay: 30 });
+      await page.type(idSel, getSecret('naver_id', ''), { delay: 30 });
       await page.click(pwSel, { clickCount: 3 });
-      await page.type(pwSel, NAVER_PW, { delay: 30 });
+      await page.type(pwSel, getSecret('naver_pw', ''), { delay: 30 });
 
       // 로그인 버튼
       const loginBtnSel = (await page.$('button#log\.login')) ? 'button#log\.login'
@@ -2455,7 +2451,10 @@ function runPickko(booking, bookingId = null, naveraPage = null) {
 }
 
 // 실행
-monitorBookings()
+(async () => {
+  await initHubSecrets();
+  return monitorBookings();
+})()
   .then(() => markStopped({ reason: '정상 종료' }))
   .catch(async err => {
     log(`❌ 예상치 못한 오류: ${err.message}`);

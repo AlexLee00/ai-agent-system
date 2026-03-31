@@ -17,7 +17,7 @@ const ROOT   = path.join(__dirname, '../../..');
 const pgPool = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
 const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
 const { initHubConfig } = require(path.join(ROOT, 'packages/core/lib/llm-keys'));
-const { getSecret } = require('../lib/secrets');
+const { initHubSecrets, getSecret } = require('../lib/secrets');
 const { getWorkerLeadRuntimeConfig } = require('../lib/runtime-config');
 const { ensureChatSchema, handleChatMessage } = require('../lib/chat-agent');
 
@@ -297,6 +297,7 @@ function _helpMessage(user) {
 
 // ── 메인 루프 ─────────────────────────────────────────────────────────
 async function main() {
+  await initHubSecrets();
   await initHubConfig();
   console.log('[worker-lead] 워커팀장 봇 가동');
   // eslint-disable-next-line no-constant-condition

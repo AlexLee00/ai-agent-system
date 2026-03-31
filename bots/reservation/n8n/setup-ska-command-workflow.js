@@ -20,10 +20,17 @@ const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const parsedBaseUrl = new URL(N8N_BASE_URL);
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-ska-command-workflow.json');
 const SECRETS_PATH = path.join(__dirname, '../secrets.json');
+const STORE_PATH = path.join(__dirname, '../../hub/secrets-store.json');
 
 let cookie = '';
 
 function loadSecrets() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    if (raw?.reservation) return raw.reservation;
+  } catch {
+    // fallback to local secrets.json
+  }
   try {
     return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
   } catch {

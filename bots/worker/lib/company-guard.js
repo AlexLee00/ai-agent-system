@@ -17,13 +17,13 @@ const SCHEMA = 'worker';
 
 // ── 인증 ─────────────────────────────────────────────────────────────
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers['authorization'] || '';
   const token  = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: '인증이 필요합니다.', code: 'UNAUTHORIZED' });
 
   try {
-    req.user = verifyToken(token);
+    req.user = await verifyToken(token);
     next();
   } catch {
     return res.status(401).json({ error: '유효하지 않거나 만료된 토큰입니다.', code: 'TOKEN_INVALID' });

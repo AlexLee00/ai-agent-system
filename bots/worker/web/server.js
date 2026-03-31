@@ -1512,7 +1512,7 @@ app.post('/api/auth/login',
         }
       } catch (_) { /* 무시 */ }
 
-      const token = generateToken(user);
+      const token = await generateToken(user);
       const { password_hash: _, ...safeUser } = user;
       const hydratedUser = await buildUserResponse(safeUser);
       res.json({ token, user: hydratedUser, must_change_pw: !!user.must_change_pw });
@@ -6000,7 +6000,7 @@ function setupChatWebSocket(server) {
         return;
       }
 
-      const user = verifyToken(token);
+      const user = await verifyToken(token);
       const dbUser = await pgPool.get(SCHEMA,
         `SELECT id, company_id, username, role, name
          FROM worker.users
@@ -6129,15 +6129,18 @@ function setupChatWebSocket(server) {
 
 // ── 서버 기동 ────────────────────────────────────────────────────────
 if (require.main === module) {
+  const { initHubSecrets } = require('../lib/secrets');
   // RAG 스키마 초기화 (pgvector 테이블, 비동기 — 실패해도 서버 기동 계속)
   rag.initSchema().catch(e => console.error('[RAG] 스키마 초기화 실패:', e.message));
   ensureChatSchema().catch(e => console.error('[worker/chat] 스키마 초기화 실패:', e.message));
   setupTaskEventListener().catch(e => console.error('[worker/task-events] listener 초기화 실패:', e.message));
-  const server = http.createServer(app);
-  setupChatWebSocket(server);
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[worker/server] API 서버 기동 — http://0.0.0.0:${PORT}`);
-    console.log(`[worker/server] WebSocket 채널 기동 — ws://0.0.0.0:${PORT}/ws/chat`);
+  initHubSecrets().catch((e) => console.warn(`[worker/secrets] Hub 초기화 실패: ${e.message}`)).finally(() => {
+    const server = http.createServer(app);
+    setupChatWebSocket(server);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`[worker/server] API 서버 기동 — http://0.0.0.0:${PORT}`);
+      console.log(`[worker/server] WebSocket 채널 기동 — ws://0.0.0.0:${PORT}/ws/chat`);
+    });
   });
 }
 

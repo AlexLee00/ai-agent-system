@@ -199,13 +199,27 @@ const CATEGORY_HANDLERS = {
       telegram_chat_id: d.telegram_chat_id || '',
       telegram_group_id: d.telegram_group_id || '',
       telegram_topic_ids: d.telegram_topic_ids || {},
-      // 티어 4: OPS 전용 — 마스킹
-      naver_id: '', naver_pw: '',
-      pickko_id: '', pickko_pw: '',
-      naver_url: '', pickko_url: '',
-      db_encryption_key: '', db_key_pepper: '',
-      datagokr_holiday_key: '', datagokr_weather_key: '',
-      datagokr_neis_key: '', datagokr_festival_key: '',
+      naver_id: d.naver_id || '',
+      naver_pw: d.naver_pw || '',
+      pickko_id: d.pickko_id || '',
+      pickko_pw: d.pickko_pw || '',
+      naver_url: d.naver_url || '',
+      pickko_url: d.pickko_url || '',
+      db_encryption_key: d.db_encryption_key || '',
+      db_key_pepper: d.db_key_pepper || '',
+      datagokr_holiday_key: d.datagokr_holiday_key || '',
+      datagokr_weather_key: d.datagokr_weather_key || '',
+      datagokr_neis_key: d.datagokr_neis_key || '',
+      datagokr_festival_key: d.datagokr_festival_key || '',
+    };
+  },
+
+  worker: () => {
+    const store = loadSecretsStore();
+    const d = store?.worker || loadJson(WKR_SECRETS);
+    return {
+      worker_jwt_secret: d.worker_jwt_secret || '',
+      worker_webhook_secret: d.worker_webhook_secret || '',
     };
   },
 

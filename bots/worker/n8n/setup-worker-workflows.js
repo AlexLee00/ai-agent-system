@@ -18,6 +18,7 @@ const PASSWORD = process.env.N8N_PASSWORD || 'TeamJay2026!';
 const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const WORKFLOW_PATH = path.join(__dirname, '../context/n8n-worker-chat-workflow.json');
 const SECRETS_PATH = path.join(__dirname, '../secrets.json');
+const STORE_PATH = path.join(__dirname, '../../hub/secrets-store.json');
 const parsedBaseUrl = new URL(N8N_BASE_URL);
 const client = createN8nSetupClient({
   host: parsedBaseUrl.hostname || '127.0.0.1',
@@ -28,6 +29,10 @@ const client = createN8nSetupClient({
 });
 
 function loadSecrets() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    if (raw?.worker) return raw.worker;
+  } catch { /* store fallback */ }
   return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
 }
 
