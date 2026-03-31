@@ -1,4 +1,4 @@
-# Opus 세션 인수인계 — Chronos + 문서 체계 v2 + STRATEGY v4 (2026-03-31)
+# Opus 세션 인수인계 — Chronos Layer 2~3 검증 완료 (2026-03-31)
 
 > 작성일: 2026-03-31 | 모델: Claude Opus 4.6 (메티)
 
@@ -6,42 +6,45 @@
 
 ## 이번 세션 성과
 
-### Chronos Phase A — OPS+DEV 완료
-- OPS 검증 10/10: MLX v0.31.1, qwen+deepseek, launchd
-- DEV 커밋 79b0d73: 711줄/9파일, Layer 1 동작 (121캔들→49신호→2거래)
-- Layer 2~3 LLM 호출 검증 대기 (strategy='2'/'3' 필요)
+### Chronos Phase A — Layer 1~3 전체 검증 완료!!
 
-### 문서 체계 v2 + STRATEGY v4 완성
-- 48+31=79파일 정리 → docs/ 루트 5개만
-- 7대 카테고리 디렉토리 확정 (strategy/dev/history/research/codex/guides/archive)
-- CLAUDE.md 리팩터링: 367→116줄 (68% 축소)
-- STRATEGY.md v4 신설 (159줄): Self-Healing→Self-Evolving→Recursive Science→Bounded Autonomy
-- 팀별 CLAUDE.md 6개 생성 (investment/blog/claude/reservation/worker/core)
+```
+✅ Layer 1: 121캔들→49신호→2거래 (0.0초)
+✅ Layer 2 (qwen2.5-7b): 49신호 감성분석 완료 (90.6초)
+✅ Layer 3 (deepseek-r1-32b): 3신호 종합판단 완료 (189초)
 
-### 리서치
-- Kimi K2/K2.5: 128GB→불가 | 70B: 스왑→불가 → 32B 유지
-- Self-Evolving + Self-Healing + Recursive Science 패턴
-- 멀티에이전트: TradingAgents/CrewAI/LangGraph
-- Claude Code Skills/Subagents/Hooks 적용 분석
+Layer 3 샘플 결과:
+  L2 sentiment (qwen): BULLISH, confidence 0.8
+  L3 judge (deepseek): BUY, confidence 0.95, size 0.8
+  finalAction: BUY
+
+발견사항:
+  - maxLayer2Signals/maxLayer3Signals는 잘못된 옵션명 → 올바른 옵션: maxSignals
+  - Desktop Commander가 DEV(맥북에어)에 연결됨 → OPS는 SSH 경유 필요
+  - deepseek on_demand 로드 포함 189초 (3분 9초) → maxSignals 제한 중요
+```
+
+### 문서 체계 v2 + STRATEGY v4 (이전 세션에서 완료)
+- CLAUDE.md 367→116줄 리팩터링
+- STRATEGY.md v4 (159줄) + 팀별 CLAUDE.md 6개
+- docs/ 79파일 아카이브 → 루트 5개만
 
 ---
 
 ## 다음 세션
 
 ```
-1순위: Chronos Layer 2~3 LLM 호출 검증
-  → strategy='2' (qwen만), strategy='3' (deepseek 포함)
-  → deepseek on_demand 로드 20초+ → 타임아웃 180,000ms 이상
-
-2순위: D 전략 심화 — 제이와 대화
+1순위: D 전략 심화 — 제이와 대화
   → STRATEGY.md v4 §1~3 구체화 (Self-Evolving 실행 계획)
   → Claude Code Skills Phase 1 (팀별 커스텀 Skills)
   → team-jay-strategy.md 분해 → 각 카테고리로
 
-3순위: B — IMPLEMENTATION_TRACKER 업데이트
+2순위: B — IMPLEMENTATION_TRACKER 업데이트
   → 749줄 → 300줄 압축 + 03-19 이후 변화 반영
 
-4순위: 블로팀 P1~P5 코덱스 프롬프트 작성
+3순위: 블로팀 P1~P5 코덱스 프롬프트 작성
+
+4순위: 옵션B (스카팀 reservation Phase E) 설계
 ```
 
 ---
@@ -49,11 +52,8 @@
 ## 핵심 결정
 
 ```
-[DECISION] 문서 체계 7대 카테고리 확정
-[DECISION] CLAUDE.md 200줄 이하 원칙 (현재 116줄)
-[DECISION] STRATEGY.md v4: Self-Healing + Self-Evolving + Recursive Science + Bounded Autonomy
-[DECISION] 팀별 CLAUDE.md → Claude Code 중첩 자동 로드
-[DECISION] Claude Code Skills/Hooks → D 전략 하위로 도입
-[DECISION] 프레임워크 도입 + Python 부분 도입 가능 (제이 방침)
-[DECISION] Ollama→MLX, Kimi K2 불가, 70B 불가 → 32B 유지
+[DECISION] Chronos Phase A 전체 완료 — Layer 1~3 동작 확인
+[DECISION] 옵션명: maxSignals (maxLayer2Signals/maxLayer3Signals 아님)
+[DECISION] Desktop Commander → DEV 연결, OPS는 SSH 경유
+[DECISION] deepseek 189초/3신호 → 전체 신호 처리 시 maxSignals 제한 필수
 ```
