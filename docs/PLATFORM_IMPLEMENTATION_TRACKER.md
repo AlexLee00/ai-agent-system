@@ -133,6 +133,7 @@ DEV: MacBook Air M3 24GB — Tailscale 연결 (2026-03-29 셋업 완료)
 - [ ] Cloudflare Tunnel 외부 접속
 
 ### 공통
+- [ ] 라이트(Write) 구현 — 제이 직속, 문서 관리+팀장회의록+일일 리포트
 - [ ] OpenClaw Phase 1: mainbot.js 흡수
 - [ ] ComfyUI + 이미지 비용 $0 전환
 - [ ] TS Phase 1: TypeScript 강화
