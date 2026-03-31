@@ -91,3 +91,8 @@ dfd_*/
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/
+
+# Hub 시크릿 저장소 (절대 공개 금지)
+bots/hub/secrets-store.json
+# Hub 시크릿 저장소
+bots/hub/secrets-store.json
