@@ -41,7 +41,7 @@ async function fetchHubSecrets(category, timeoutMs = 3000) {
   }
 }
 
-async function queryOpsDb(sql, schema = 'investment', timeoutMs = 5000) {
+async function queryOpsDb(sql, schema = 'investment', params = [], timeoutMs = 5000) {
   if (!env.HUB_BASE_URL) return null;
 
   const url = `${env.HUB_BASE_URL}/hub/pg/query`;
@@ -55,7 +55,7 @@ async function queryOpsDb(sql, schema = 'investment', timeoutMs = 5000) {
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ sql, schema }),
+      body: JSON.stringify({ sql, schema, params: Array.isArray(params) ? params : [] }),
       signal: controller.signal,
     });
 

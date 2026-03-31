@@ -34,6 +34,7 @@
 
 const { Pool } = require('pg');
 const os = require('os');
+const env = require('./env');
 
 // ── 설정 ──────────────────────────────────────────────────────────────
 
@@ -193,6 +194,17 @@ async function _safeQuery(pool, sql, params) {
   throw lastErr;
 }
 
+// ── Hub API 경유 (DEV 환경) ───────────────────────────────────────────
+
+async function _queryViaHub(schema, sql, params = []) {
+  const { queryOpsDb } = require('./hub-client');
+  const result = await queryOpsDb(parameterize(sql), schema, params);
+  if (!result) return { rows: [], rowCount: 0 };
+  return { rows: result.rows || [], rowCount: result.rowCount || 0 };
+}
+
+const _useHub = !env.IS_OPS && !!env.HUB_BASE_URL;
+
 // ── 공개 API ──────────────────────────────────────────────────────────
 
 /**
@@ -203,6 +215,10 @@ async function _safeQuery(pool, sql, params) {
  * @returns {Promise<Array>}
  */
 async function query(schema, sql, params = []) {
+  if (_useHub) {
+    const result = await _queryViaHub(schema, sql, params);
+    return result.rows;
+  }
   const pool = getPool(schema);
   const { rows } = await _safeQuery(pool, parameterize(sql), params);
   return rows;
@@ -212,6 +228,9 @@ async function query(schema, sql, params = []) {
  * INSERT/UPDATE/DELETE — { rowCount, rows } 반환
  */
 async function run(schema, sql, params = []) {
+  if (_useHub) {
+    return _queryViaHub(schema, sql, params);
+  }
   const pool = getPool(schema);
   const result = await _safeQuery(pool, parameterize(sql), params);
   return { rowCount: result.rowCount, rows: result.rows };
