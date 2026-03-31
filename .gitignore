@@ -86,10 +86,8 @@ dfd_*/
 # 임시 파일
 *.tmp
 
-# Claude Code 프로젝트 (개인 설정만 제외, skills/agents/hooks는 포함)
-.claude/settings.json
-.claude/settings.local.json
-.claude/agent-memory/
+# Claude Code 프로젝트 (개인 설정 — 깃 제외)
+.claude/
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/
