@@ -10,6 +10,7 @@
  *   llm         — LLM API 키 (Anthropic/OpenAI/Gemini/Groq 등)
  *   telegram    — bot_token + chat_id
  *   exchange    — Binance/Upbit/KIS (DEV: paper/testnet 강제)
+ *   openclaw    — gateway/hooks 토큰
  *   reservation-shared — reservation 공유 가능 키
  *   reservation — 공유키만, OPS전용 마스킹
  *   config      — config.yaml 전체 (DEV 안전 오버라이드)
@@ -158,6 +159,15 @@ const CATEGORY_HANDLERS = {
       kis: sanitizeKisConfig(c.kis),
       trading_mode: c.trading_mode,
       paper_mode: c.paper_mode,
+    };
+  },
+
+  openclaw: () => {
+    const store = loadSecretsStore();
+    const d = store?.openclaw || {};
+    return {
+      gateway_token: d.gateway_token || '',
+      hooks_token: d.hooks_token || '',
     };
   },
 

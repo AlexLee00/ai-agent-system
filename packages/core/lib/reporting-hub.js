@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const { runWithN8nFallback } = require('./n8n-runner');
+const openclawClient = require('./openclaw-client');
 
 const ALERT_LEVEL_LABELS = {
   1: '안내',
@@ -384,6 +385,42 @@ async function publishToQueue({
   } catch (error) {
     console.warn(`[reporting-hub] queue publish failed: ${error.message}`);
     return { ok: false, channel: 'queue', event: normalized, error: error.message };
+  }
+}
+
+async function publishToWebhook({
+  event,
+  policy,
+}) {
+  const normalized = normalizeEvent(event);
+  const decision = evaluateDeliveryPolicy('webhook', normalized, policy);
+  if (!decision.allowed) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: decision.reason,
+      channel: 'webhook',
+      event: normalized,
+    };
+  }
+  try {
+    const result = await openclawClient.postAlarm({
+      message: normalized.message,
+      team: normalized.team,
+      alertLevel: normalized.alert_level,
+      fromBot: normalized.from_bot,
+    });
+    return {
+      ok: result.ok,
+      channel: 'webhook',
+      event: normalized,
+      status: result.status,
+      body: result.body,
+      error: result.error,
+    };
+  } catch (error) {
+    console.warn(`[reporting-hub] webhook publish failed: ${error.message}`);
+    return { ok: false, channel: 'webhook', event: normalized, error: error.message };
   }
 }
 
@@ -933,6 +970,7 @@ module.exports = {
   validatePayloadSchema,
   normalizePayload,
   buildEventPayload,
+  publishToWebhook,
   publishToQueue,
   publishToTelegram,
   publishToTelegramApi,
