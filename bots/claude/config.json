@@ -1,4 +1,13 @@
 {
+  "skills": [
+    "code-review",
+    "verify-loop",
+    "security-pipeline",
+    "session-analyzer",
+    "tdd",
+    "handoff-verify",
+    "build-system"
+  ],
   "runtime_config": {
     "thresholds": {
       "diskMinMB": 500,

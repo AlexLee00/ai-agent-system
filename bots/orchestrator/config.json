@@ -1,4 +1,9 @@
 {
+  "skills": [
+    "team-orchestrator",
+    "session-wrap",
+    "eval-harness"
+  ],
   "runtime_config": {
     "health": {
       "n8nHealthUrl": "http://127.0.0.1:5678/healthz",

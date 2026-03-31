@@ -1,4 +1,7 @@
 {
+  "skills": [
+    "eval-harness"
+  ],
   "runtime_config": {
     "health": {
       "nodeServerHealthUrl": "http://127.0.0.1:3100/health",

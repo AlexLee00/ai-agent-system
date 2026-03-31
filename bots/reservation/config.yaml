@@ -1,3 +1,5 @@
+skills:
+  - eval-harness        # 예약성공률/정합성 일일 측정
 runtime_config:
   browser:
     launchRetries: 3
