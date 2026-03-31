@@ -2,10 +2,9 @@
 /**
  * routes/secrets.js — 시크릿 프록시
  *
- * OPS/DEV 모두 Hub를 1순위로 사용, 로컬 config.yaml은 폴백.
- * Hub는 원본을 그대로 반환. DEV 안전은 클라이언트의 env.js
- * (MODE=dev → PAPER_MODE=true) + hostname 체크가 담당.
- * 티어 4(OPS 전용 예약 키)만 마스킹.
+ * 모든 시크릿은 secrets-store.json에서 읽는다.
+ * config.yaml은 런타임 설정(billing, screening, capital_management 등)만 담당한다.
+ * DEV 안전은 클라이언트의 env.js (MODE=dev → PAPER_MODE=true) + hostname 체크가 담당.
  *
  * 카테고리:
  *   llm         — LLM API 키 (Anthropic/OpenAI/Gemini/Groq 등)
@@ -21,8 +20,6 @@ const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
-const RSV_SECRETS = path.join(env.PROJECT_ROOT, 'bots/reservation/secrets.json');
-const WKR_SECRETS = path.join(env.PROJECT_ROOT, 'bots/worker/secrets.json');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
 let _configCache = null;
@@ -69,11 +66,6 @@ function loadSecretsStore() {
     console.warn('[secrets] secrets-store.json 로드 실패:', err.message);
     return null;
   }
-}
-
-function loadJson(filepath) {
-  try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
-  catch { return {}; }
 }
 
 function mergeRuntimeAndSecrets(runtime, secrets) {
@@ -172,16 +164,7 @@ const CATEGORY_HANDLERS = {
   // 예약 시크릿 (티어 2 공유 + 티어 4 마스킹)
   'reservation-shared': () => {
     const store = loadSecretsStore();
-    if (store?.reservation) {
-      return {
-        telegram_bot_token: store.reservation.telegram_bot_token || '',
-        telegram_chat_id: store.reservation.telegram_chat_id || '',
-        telegram_group_id: store.reservation.telegram_group_id || '',
-        telegram_topic_ids: store.reservation.telegram_topic_ids || {},
-      };
-    }
-
-    const d = loadJson(RSV_SECRETS);
+    const d = store?.reservation || {};
     return {
       telegram_bot_token: d.telegram_bot_token || '',
       telegram_chat_id: d.telegram_chat_id || '',
@@ -193,7 +176,7 @@ const CATEGORY_HANDLERS = {
   // 하위 호환용 reservation 묶음
   reservation: () => {
     const store = loadSecretsStore();
-    const d = store?.reservation || loadJson(RSV_SECRETS);
+    const d = store?.reservation || {};
     return {
       telegram_bot_token: d.telegram_bot_token || '',
       telegram_chat_id: d.telegram_chat_id || '',
@@ -216,7 +199,7 @@ const CATEGORY_HANDLERS = {
 
   worker: () => {
     const store = loadSecretsStore();
-    const d = store?.worker || loadJson(WKR_SECRETS);
+    const d = store?.worker || {};
     return {
       worker_jwt_secret: d.worker_jwt_secret || '',
       worker_webhook_secret: d.worker_webhook_secret || '',

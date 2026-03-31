@@ -5,18 +5,9 @@ const path = require('path');
 const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 const env = require('../../../packages/core/lib/env');
 
-const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 let _cache = null;
 let _hubInitDone = false;
-
-function loadLocalSecrets() {
-  try {
-    return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
 
 function loadStoreSecrets() {
   try {
@@ -30,16 +21,15 @@ function loadStoreSecrets() {
 function _load() {
   if (_cache) return _cache;
   const store = loadStoreSecrets();
-  _cache = Object.keys(store).length > 0 ? store : loadLocalSecrets();
+  _cache = Object.keys(store).length > 0 ? store : {};
   return _cache;
 }
 
 async function initHubSecrets() {
   if (_hubInitDone) return !!_cache;
 
-  const local = loadLocalSecrets();
   const store = loadStoreSecrets();
-  const base = Object.keys(store).length > 0 ? { ...local, ...store } : local;
+  const base = Object.keys(store).length > 0 ? store : {};
   try {
     const hubData = await fetchHubSecrets('worker');
     if (hubData) {
@@ -64,4 +54,4 @@ function requireSecret(key) {
   return v;
 }
 
-module.exports = { loadLocalSecrets, initHubSecrets, getSecret, requireSecret };
+module.exports = { initHubSecrets, getSecret, requireSecret };

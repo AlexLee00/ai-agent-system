@@ -46,7 +46,6 @@ __pycache__/
 # 민감 정보
 secrets.json
 pickko-kiosk-seen.json
-bots/investment/config.yaml
 *.key
 *api_key*
 *api-key*
@@ -58,7 +57,6 @@ bots/investment/config.yaml
 
 # Remote Control 자동 생성 파일
 RC_CONTEXT.md
-bots/worker/secrets.json
 bots/blog/output/
 .llm-emergency-stop
 
@@ -93,6 +91,5 @@ dfd_*/
 LaunchAgents.disabled/
 
 # Hub 시크릿 저장소 (절대 공개 금지)
-bots/hub/secrets-store.json
 # Hub 시크릿 저장소
 bots/hub/secrets-store.json
