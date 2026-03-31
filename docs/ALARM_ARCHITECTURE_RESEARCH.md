@@ -160,7 +160,7 @@ OpenClaw 생태계에서 발견된 패턴:
 **1. OpenAI OAuth 연동으로 모델 확장**
 - OpenClaw이 이미 multi-provider 지원 (Google, Groq, Anthropic, OpenAI)
 - OpenAI OAuth로 GPT-5.4 등 추가 모델 사용 가능
-- 폴백 체인: 로컬 MLX(qwen2.5-7b) → Groq → OpenAI → Anthropic
+- 폴백 체인: OpenAI OAuth(GPT-5.4) → 로컬 MLX(qwen2.5-7b) → Groq → Anthropic
 
 **2. "라이트" 에이전트의 알람 모니터링 임무**
 - 봇이 보낸 알람(입력)과 에이전트가 전달한 알람(출력) 비교
@@ -379,7 +379,7 @@ Step 4: 보고서 최종 갱신
   
 정기 리포트 → OpenClaw cron → 에이전트 → Telegram
 
-모델 폴백: 로컬 MLX → Groq → OpenAI OAuth → Anthropic
+모델 폴백: OpenAI OAuth → 로컬 MLX → Groq → Anthropic
 장애 복구: 닥터 + 덱스터 + launchd 자동 재시작
 ```
 
