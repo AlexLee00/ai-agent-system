@@ -128,6 +128,8 @@ const CATEGORY_HANDLERS = {
       return {
         bot_token: store.telegram.bot_token,
         chat_id: String(store.telegram.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
+        group_id: String(store.telegram.group_id || ''),
+        topic_ids: store.telegram.topic_ids || {},
       };
     }
 
@@ -135,6 +137,8 @@ const CATEGORY_HANDLERS = {
     return {
       bot_token: c.telegram?.bot_token,
       chat_id: String(c.telegram?.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
+      group_id: String(c.telegram?.group_id || ''),
+      topic_ids: c.telegram?.topic_ids || {},
     };
   },
 
