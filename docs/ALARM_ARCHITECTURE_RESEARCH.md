@@ -135,44 +135,75 @@ OpenClaw 생태계에서 발견된 패턴:
 
 ### 3.1 안 비교
 
-| 항목 | A안: 전면 교체 | B안: 하이브리드 (권장) | C안: 현행 유지 |
+| 항목 | A안: 전면 교체 | B안: 하이브리드 | C안: 단일 통합 (채택) |
 |------|---------------|---------------------|-------------|
-| 경로 A (큐) | webhook으로 교체 | webhook 주력 + 폴링 폴백 | 유지 |
-| 경로 B (직접) | 유지 (긴급 경로) | 유지 (긴급 경로) | 유지 |
-| 경로 C (스크립트) | cron으로 교체 | cron 점진 전환 | 유지 |
-| mainbot.js | 제거 | 폴백 모드 전환 | 유지 |
-| 리스크 | 높음 (빅뱅) | 낮음 (점진적) | 없음 |
-| 지연 | ~100ms | ~100ms (주력) | ~1.5s (평균) |
-| PG 부하 | 대폭 감소 | 감소 | 현행 |
+| 경로 A (큐) | webhook 교체 | webhook + 폴링 폴백 | OpenClaw 단일 |
+| 경로 B (직접) | 유지 (긴급) | 유지 (긴급) | OpenClaw 통합 |
+| 경로 C (스크립트) | cron 교체 | cron 점진 전환 | OpenClaw cron |
+| mainbot.js | 제거 | 폴백 전환 | 제거 |
+| 에이전트 인지 | ✅ | ❌ (직접 경로) | ✅ 전부 인지 |
+| 알람 생략 방지 | 프롬프트만 | 해당 없음 | 라이트 모니터링 |
+| 장애 대응 | launchd | 폴백 경로 | 닥터+덱스터 |
+| 리스크 | 높음 | 낮음 | 중간 (점진적) |
+| 지연 | ~100ms | ~100ms (주력) | ~400ms (LLM) |
+| PG 부하 | 대폭 감소 | 감소 | 대폭 감소 |
 
-**B안 (하이브리드) 권장 이유:**
-1. 점진적 전환 — 한 팀씩 webhook으로 이동
-2. 폴백 안전망 — webhook 실패 시 기존 큐 폴링 유지
-3. 기존 filter.js 로직 보존 — 무음/야간보류/배치 계속 동작
-4. 경로 B(긴급) 무변경 — 보안/긴급 알람은 현행 유지
+### 3.2 C안 채택 — 단일 경로 통합 (마스터 결정)
 
-### 3.2 B안 아키텍처 (하이브리드)
+**B안이 가진 치명적 문제 (마스터 지적):**
+- 경로 B(직접 발송 19곳)를 유지하면 에이전트(제이)가 그 알람의 존재를 모른다
+- "루나에서 SELL 났는데 스카 예약은?" 같은 크로스팀 판단 불가능
+- 에이전트가 시스템 전체 상황을 파악할 수 없음 → AI 에이전트의 가치 반감
+
+**C안이 해결하는 방법:**
+
+**1. OpenAI OAuth 연동으로 모델 확장**
+- OpenClaw이 이미 multi-provider 지원 (Google, Groq, Anthropic, OpenAI)
+- OpenAI OAuth로 GPT-5.4 등 추가 모델 사용 가능
+- 폴백 체인: 로컬 MLX(qwen2.5-7b) → Groq → OpenAI → Anthropic
+
+**2. "라이트" 에이전트의 알람 모니터링 임무**
+- 봇이 보낸 알람(입력)과 에이전트가 전달한 알람(출력) 비교
+- 생략 감지 시 에스컬레이션 (텔레그램 긴급 채널)
+- 기록 축적 → RAG → 에이전트 학습 (자기 개선 루프)
+- Standing Orders로 "알람 원문 반드시 전달" 규칙 강제
+
+**3. OpenClaw 장애 = 시스템 장애**
+- 닥터(scanAndRecover) + 덱스터(heartbeat) 이미 가동
+- launchd로 Gateway 자동 재시작
+- 별도 폴백 경로 불필요 → 아키텍처 단순화
+- 3경로 → 1경로 = 유지보수 비용 1/3
+
+### 3.3 C안 아키텍처 (단일 경로)
 
 ```
-[Phase 1: webhook 추가 — 기존과 병행]
+[최종 목표 아키텍처]
 
-봇 → openclaw-client.postHook()
-  → POST /hooks/agent (deliver:true, channel:telegram)
-    → OpenClaw Gateway → 에이전트 실행 → Telegram 발송
-  
-  실패 시 폴백:
-  → reporting-hub.publishToQueue() → mainbot_queue
-    → mainbot.js 폴링 → filter.js → Telegram 발송
+모든 봇 알람 → POST /hooks/agent
+  → OpenClaw Gateway
+    → 에이전트(제이) 실행
+      → Standing Orders: "알람 원문 반드시 전달"
+      → 필요시 분석/판단 추가
+        → Telegram 발송 (deliver:true, channel:telegram)
+    → 라이트: 입력/출력 비교 → 생략 감지 → 에스컬레이션
 
-[Phase 2: 폴링 빈도 감소]
-  mainbot.js 폴링 간격: 3초 → 30초 (안전망 전용)
+정기 리포트 → OpenClaw cron
+  → 에이전트 실행 → Telegram 발송
 
-[Phase 3: 폴링 제거 (선택)]
-  webhook 안정 확인 후 mainbot.js 큐 폴링 비활성화
-  ※ filter.js 로직은 hooks transform으로 이전
+제거 대상:
+  ✗ mainbot.js (큐 폴링)
+  ✗ mainbot_queue 테이블 (폴링 대상)
+  ✗ filter.js (에이전트가 판단 대신)
+  ✗ telegram-sender.js 직접 호출 19곳 → webhook으로 교체
+  ✗ scripts/*.js 의 텔레그램 발송 → cron으로 교체
+
+유지:
+  ✓ telegram-sender.js 모듈 자체 (OpenClaw 내부에서 활용 가능)
+  ✓ message-envelope.js (봇 간 메시지 포맷)
+  ✓ reporting-hub.js (이벤트 정규화 + webhook 발행)
 ```
 
-### 3.3 핵심 신규 모듈: openclaw-client.js
+### 3.4 핵심 신규 모듈: openclaw-client.js
 
 ```javascript
 // packages/core/lib/openclaw-client.js — OpenClaw webhook 클라이언트
@@ -206,35 +237,47 @@ async function postHook({ message, name, channel = 'telegram', to, agentId }) {
 }
 ```
 
-### 3.4 경로별 전환 계획
+### 3.5 전환 계획 — 3경로 → 1경로
 
-**경로 A (큐 → webhook) — 단계적 전환**
+**Phase 1: hooks 활성화 + Standing Orders (즉시)**
 ```
-Step 1: openclaw-client.js 작성 (packages/core/lib/)
-Step 2: reporting-hub.js에 webhook 채널 추가
-        publishToWebhook() → openclaw-client.postHook()
-        실패 시 publishToQueue() 폴백
-Step 3: investment 팀 먼저 전환 (mainbot-client.js 수정)
-Step 4: 1주일 모니터링 → 나머지 팀 전환
-Step 5: mainbot.js 폴링 간격 3초 → 30초
-Step 6: 안정 확인 후 폴링 비활성화 (선택)
+Step 1: hooks.enabled=true + hooks.token 생성
+Step 2: AGENTS.md에 Standing Orders 추가:
+        "모든 webhook 알람은 원문 그대로 텔레그램에 전달.
+         절대 생략 금지. 판단이 필요한 경우 원문 + 분석을 함께 전달."
+Step 3: POST /hooks/agent 테스트 (deliver:true)
 ```
 
-**경로 B (직접 발송) — 변경 없음**
+**Phase 2: 경로 A(큐) → webhook 전환 (1일차)**
 ```
-현행 유지: sender.send() / sendCritical() 19곳
-이유: 보안 알람(file-guard), 긴급 알람은 최단 경로 필수
-     OpenClaw 장애 시에도 독립 동작해야 함
+Step 1: openclaw-client.js 작성
+Step 2: reporting-hub.publishToWebhook() 추가
+Step 3: investment 팀 먼저 전환
+Step 4: 라이트 모니터링 시작 (입력/출력 비교)
 ```
 
-**경로 C (스크립트 → OpenClaw cron) — 점진적 전환**
+**Phase 3: 경로 B(직접 발송 19곳) → webhook 전환 (1주차)**
 ```
-Step 1: OpenClaw cron으로 일일 리포트 1건 등록
-        openclaw cron add --name "Daily stability"
-          --cron "0 8 * * *" --tz Asia/Seoul
-          --session isolated --announce --channel telegram
-Step 2: 2주 모니터링 → 나머지 스크립트 전환
-Step 3: launchd plist 비활성화 (삭제 아님)
+Step 1: file-guard sendCritical → postHook 교체
+Step 2: guardian, reviewer, builder → postHook 교체
+Step 3: video팀 → postHook 교체
+Step 4: 라이트 생략 감지 확인 (1주간 0건 목표)
+```
+
+**Phase 4: 경로 C(스크립트) → OpenClaw cron (2주차)**
+```
+Step 1: stability-dashboard → cron 등록
+Step 2: weekly-stability-report → cron 등록
+Step 3: 나머지 스크립트 순차 전환
+Step 4: launchd plist 비활성화
+```
+
+**Phase 5: 정리 (1개월차)**
+```
+Step 1: mainbot.js 비활성화 → mainbot_queue 테이블 아카이브
+Step 2: filter.js → Standing Orders로 로직 이전 확인
+Step 3: telegram-sender.js 직접 호출 0건 확인
+Step 4: 보고서 최종 갱신
 ```
 
 ---
@@ -266,11 +309,12 @@ Step 3: launchd plist 비활성화 (삭제 아님)
 
 | 리스크 | 영향 | 대응 |
 |--------|------|------|
-| OpenClaw Gateway 장애 | webhook 전달 불가 | 폴백: publishToQueue() 유지 |
-| hooks.token 유출 | 외부에서 알람 주입 가능 | bind:loopback (localhost만) |
-| 텔레그램 Rate Limit | 대량 알람 시 429 | 기존 배치+throttle 유지 |
-| filter.js 로직 미적용 | 무음/야간보류 미동작 | Phase 1에서는 큐 폴백으로 보존 |
-| 이중 발송 | 동일 알람 2회 수신 | message_id 기반 중복제거 |
+| OpenClaw Gateway 장애 | 전체 알람 중단 | 닥터+덱스터+launchd 자동 복구 |
+| 에이전트 알람 생략 | 마스터가 알람 못 받음 | 라이트 모니터링 + 에스컬레이션 |
+| hooks.token 유출 | 외부 알람 주입 | bind:loopback (localhost만) |
+| LLM 추론 지연 | ~400ms 추가 | 로컬 MLX(326ms), 수용 가능 |
+| Standing Orders 무시 | LLM 특성상 가끔 발생 | 라이트가 감지 → 재발송 |
+| OpenAI OAuth 장애 | 외부 모델 사용 불가 | 로컬 MLX + Groq 폴백 |
 
 ---
 
@@ -278,63 +322,70 @@ Step 3: launchd plist 비활성화 (삭제 아님)
 
 ```
 즉시 (10분)
-  └→ hooks.enabled=true + hooks.token 생성 + secrets-store 저장
-  └→ POST /hooks/wake + /hooks/agent 엔드포인트 테스트
+  └→ hooks.enabled=true + hooks.token 생성
+  └→ AGENTS.md Standing Orders 추가
+  └→ POST /hooks/agent 엔드포인트 테스트
 
 1일차 (2~3시간)
-  └→ openclaw-client.js 작성 (packages/core/lib/)
-  └→ reporting-hub.js에 publishToWebhook() 추가 (폴백 포함)
+  └→ openclaw-client.js 작성
+  └→ reporting-hub.publishToWebhook() 추가
+  └→ 라이트 모니터링 로직 설계
   └→ investment 팀 webhook 전환 + 테스트
 
-1주차 모니터링
-  └→ webhook 성공률, 지연시간, 폴백 발동 횟수 추적
-  └→ 문제 없으면 claude/reservation/worker 팀 전환
+1주차
+  └→ 직접 발송 19곳 → webhook 전환
+  └→ 라이트 생략 감지 테스트 (0건 목표)
+  └→ 문제 없으면 전체 팀 전환
 
 2주차
-  └→ mainbot.js 폴링 간격 3초 → 30초
-  └→ OpenClaw cron으로 일일 리포트 1건 등록
+  └→ 스크립트 → OpenClaw cron 전환
+  └→ launchd plist 비활성화
 
 1개월차
-  └→ 전체 팀 webhook 전환 완료
-  └→ 스크립트 → cron 전환 (점진적)
-  └→ mainbot.js 폴링 비활성화 여부 결정
+  └→ mainbot.js 비활성화 + mainbot_queue 아카이브
+  └→ 3경로 → 1경로 전환 완료 확인
 ```
 
 ---
 
 ## 7. 결론
 
-### 권장안: B안 (하이브리드 — Webhook 주력 + 폴링 안전망)
+### 채택안: C안 (단일 경로 통합 — 마스터 결정)
 
-**이유:**
-1. **업계 표준** — 폴링→Webhook은 검증된 마이그레이션 경로
-2. **점진적 전환** — 한 팀씩 이동하여 리스크 최소화
-3. **기존 자산 보존** — filter.js, 야간보류, 배치 로직 계속 활용
-4. **OpenClaw 시너지** — hooks/cron/multi-agent 자연스럽게 확장
-5. **PG 부하 감소** — 1,200회/시간 빈 쿼리 제거
-6. **지연 개선** — 평균 1.5초 → ~100ms
+**핵심 근거 (마스터 3가지 통찰):**
 
-**변경하지 않는 것:**
-- 경로 B (직접 발송 19곳) — 보안/긴급 경로 보존
-- telegram-sender.js — 최종 발송 모듈 공용 유지
-- message-envelope.js — 봇 간 메시지 포맷 유지
+1. **에이전트가 모든 알람을 인지해야 한다**
+   → 직접 발송 경로를 유지하면 에이전트가 시스템 상황을 파악할 수 없음
+   → 크로스팀 판단, 연관 분석, 패턴 감지 불가능
+   → AI 에이전트의 핵심 가치 반감
 
-**최종 목표 아키텍처:**
+2. **라이트 에이전트가 생략을 모니터링한다**
+   → 입력(봇 알람) vs 출력(텔레그램 발송) 비교
+   → 생략 감지 시 에스컬레이션
+   → Standing Orders + 라이트 = 이중 안전장치
+
+3. **OpenClaw 장애 = 시스템 장애다**
+   → 닥터, 덱스터, launchd가 이미 복구 체계 구축
+   → 별도 폴백 경로 = 불필요한 복잡도
+   → 단일 경로 = 유지보수 비용 1/3
+
+**최종 아키텍처:**
 ```
-봇 → reporting-hub → openclaw-client → POST /hooks/agent
-                                          ↓
-                                    OpenClaw Gateway
-                                     ↓          ↓
-                              에이전트 실행   Telegram 발송
-                              (filter 로직)   (deliver:true)
+모든 봇 알람 → POST /hooks/agent
+  → OpenClaw Gateway
+    → 에이전트(제이) 실행 (Standing Orders 강제)
+      → Telegram 발송 (deliver:true)
+    → 라이트: 입력/출력 비교 → 생략 감지
+  
+정기 리포트 → OpenClaw cron → 에이전트 → Telegram
 
-긴급 경로 (변경 없음):
-봇 → telegram-sender.sendCritical() → Telegram API 직접
-
-정기 리포트:
-OpenClaw cron → 에이전트 실행 → Telegram 발송
+모델 폴백: 로컬 MLX → Groq → OpenAI OAuth → Anthropic
+장애 복구: 닥터 + 덱스터 + launchd 자동 재시작
 ```
+
+**제거 대상:** mainbot.js, mainbot_queue, filter.js, 직접 발송 19곳, 스크립트 발송 7곳
+**유지 대상:** telegram-sender.js(모듈), message-envelope.js, reporting-hub.js
 
 ---
 
-*끝. 메티 작성, 마스터 승인 대기.*
+*끝. 메티 작성, 마스터 승인 완료. C안 채택.*
