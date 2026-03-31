@@ -17,18 +17,17 @@
  *   await rag.store('operations', '루나 크립토 사이클 오류', { bot: 'dexter' }, 'dexter');
  *   const hits = await rag.search('operations', '루나 오류', { limit: 5 });
  *
- * 임베딩: OpenAI text-embedding-3-small (1536차원, $0.02/1M tokens)
+ * 임베딩: 로컬 MLX Qwen3-Embedding-0.6B (1024차원)
  * 인덱스: HNSW (고속 근사 검색)
  */
 
-const https  = require('https');
 const { execFile } = require('child_process');
 const pgPool = require('./pg-pool');
-const { getOpenAIKey } = require('./llm-keys');
 
 const SCHEMA = 'reservation';
-const EMBED_MODEL = 'text-embedding-3-small';
-const EMBED_DIM   = 1536;
+const EMBED_MODEL = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
+const EMBED_DIM   = Number(process.env.EMBED_DIM) || 1024;
+const EMBED_URL   = process.env.EMBED_URL || 'http://localhost:11434/v1/embeddings';
 
 function execCurl(args) {
   return new Promise((resolve, reject) => {
@@ -41,28 +40,6 @@ function execCurl(args) {
       resolve(stdout);
     });
   });
-}
-
-async function createEmbeddingViaCurl(text, apiKey) {
-  const payload = JSON.stringify({
-    model: EMBED_MODEL,
-    input: text.slice(0, 8000),
-  });
-  const raw = await execCurl([
-    '-sS',
-    '-m', '20',
-    'https://api.openai.com/v1/embeddings',
-    '-H', `Authorization: Bearer ${apiKey}`,
-    '-H', 'Content-Type: application/json',
-    '-d', payload,
-  ]);
-  const resp = JSON.parse(raw);
-  if (resp.error) throw new Error(resp.error.message);
-  const vec = resp.data?.[0]?.embedding;
-  if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
-    throw new Error(`임베딩 차원 오류: ${vec?.length ?? '없음'}`);
-  }
-  return vec;
 }
 
 // 허용 컬렉션 (SQL Injection 방지용 화이트리스트)
@@ -132,65 +109,31 @@ async function initSchema() {
 // ── 임베딩 생성 ──────────────────────────────────────────────────────
 
 /**
- * OpenAI text-embedding-3-small로 텍스트 임베딩 생성
+ * 로컬 MLX embeddings 엔드포인트로 텍스트 임베딩 생성
  * @param {string} text
- * @returns {Promise<number[]>}  1536차원 벡터
+ * @returns {Promise<number[]>}
  */
 async function createEmbedding(text) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OpenAI API 키 없음 — RAG 임베딩 불가');
-
-  const body = JSON.stringify({
+  const payload = JSON.stringify({
     model: EMBED_MODEL,
-    input: text.slice(0, 8000),  // 최대 8000자 (토큰 절약)
+    input: text.slice(0, 8000),
   });
 
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.openai.com',
-      path:     '/v1/embeddings',
-      method:   'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
+  const raw = await execCurl([
+    '-sS',
+    '-m', '30',
+    EMBED_URL,
+    '-H', 'Content-Type: application/json',
+    '-d', payload,
+  ]);
 
-    const req = https.request(options, res => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const resp = JSON.parse(data);
-          if (resp.error) throw new Error(resp.error.message);
-          const vec = resp.data?.[0]?.embedding;
-          if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
-            throw new Error(`임베딩 차원 오류: ${vec?.length ?? '없음'}`);
-          }
-          resolve(vec);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-
-    req.on('error', async (error) => {
-      if (!['ENOTFOUND', 'EAI_AGAIN'].includes(error?.code)) {
-        reject(error);
-        return;
-      }
-      try {
-        const vec = await createEmbeddingViaCurl(text, apiKey);
-        resolve(vec);
-      } catch (fallbackError) {
-        reject(fallbackError);
-      }
-    });
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('임베딩 타임아웃')); });
-    req.write(body);
-    req.end();
-  });
+  const resp = JSON.parse(raw);
+  if (resp.error) throw new Error(resp.error.message || JSON.stringify(resp.error));
+  const vec = resp.data?.[0]?.embedding;
+  if (!Array.isArray(vec) || vec.length !== EMBED_DIM) {
+    throw new Error(`임베딩 차원 오류: ${vec?.length ?? '없음'} (기대: ${EMBED_DIM})`);
+  }
+  return vec;
 }
 
 // ── 저장 ────────────────────────────────────────────────────────────
