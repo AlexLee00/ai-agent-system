@@ -1,14 +1,12 @@
 'use strict';
 
 /**
- * lib/secrets.js — secrets.json 로드 + 키 검증
+ * lib/secrets.js — reservation 시크릿 로더
  *
- * 폴백 전략:
- *   - secrets.json 없음         → 경고 출력 후 빈 객체로 진행 (치명적 키 접근 시 개별 에러)
- *   - 치명적 키 누락            → requireSecret() 호출 시 명확한 에러 메시지 + process.exit(1)
- *   - 비치명적 키 누락          → 경고만, 해당 기능 비활성화
- *     - telegram_bot_token 없음 → 텔레그램 알림 비활성화
- *     - datagokr_* 없음        → 레베카/이브 봇 전용 (코어 봇은 영향 없음)
+ * 원칙:
+ *   - 1순위: Hub API
+ *   - 2순위: bots/hub/secrets-store.json
+ *   - 실패 시: 빈 객체
  */
 
 const fs   = require('fs');
@@ -16,29 +14,12 @@ const path = require('path');
 const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 const env = require('../../../packages/core/lib/env');
 
-const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
 let _cache = null;
 let _hubSharedInitDone = false;
 
 // ─── 로드 ───────────────────────────────────────────────────────────
-
-function loadLocalSecrets() {
-  try {
-    return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8'));
-  } catch (e) {
-    const hasStore = Object.keys(loadStoreSecrets()).length > 0;
-    if (hasStore) return {};
-    if (e.code === 'ENOENT') {
-      console.warn('⚠️  secrets.json 없음 — 환경변수 또는 기본값으로 동작합니다');
-      console.warn(`   예시 파일: cp secrets.example.json secrets.json && chmod 600 secrets.json`);
-    } else {
-      console.warn(`⚠️  secrets.json 파싱 실패: ${e.message}`);
-    }
-    return {};
-  }
-}
 
 function loadStoreSecrets() {
   try {
@@ -52,7 +33,7 @@ function loadStoreSecrets() {
 function loadSecrets() {
   if (_cache) return _cache;
   const store = loadStoreSecrets();
-  _cache = Object.keys(store).length > 0 ? store : loadLocalSecrets();
+  _cache = Object.keys(store).length > 0 ? store : {};
   return _cache;
 }
 
@@ -63,9 +44,8 @@ function loadSecrets() {
 async function initHubSecrets() {
   if (_hubSharedInitDone) return !!_cache;
 
-  const local = loadLocalSecrets();
   const store = loadStoreSecrets();
-  const base = Object.keys(store).length > 0 ? { ...local, ...store } : local;
+  const base = Object.keys(store).length > 0 ? store : {};
   try {
     const hubData = await fetchHubSecrets('reservation');
     if (hubData) {
@@ -102,8 +82,8 @@ async function initHubSharedSecrets() {
 function requireSecret(key) {
   const val = loadSecrets()[key];
   if (!val) {
-    console.error(`❌ 필수 설정 누락: secrets.json의 "${key}" 값이 없습니다.`);
-    console.error(`   secrets.json을 확인하고 값을 입력한 후 다시 시작하세요.`);
+    console.error(`❌ 필수 설정 누락: reservation secrets의 "${key}" 값이 없습니다.`);
+    console.error('   Hub secrets-store.json 또는 Hub API 구성을 확인한 후 다시 시작하세요.');
     process.exit(1);
   }
   return val;
@@ -166,7 +146,6 @@ function hasDataGokrKeys() {
 
 module.exports = {
   loadSecrets,
-  loadLocalSecrets,
   initHubSecrets,
   initHubSharedSecrets,
   requireSecret,

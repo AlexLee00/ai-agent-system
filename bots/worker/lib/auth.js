@@ -12,26 +12,18 @@
 
 const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
-const crypto = require('crypto');
-const fs     = require('fs');
-const path   = require('path');
 const { initHubSecrets, getSecret } = require('./secrets');
 
 const SALT_ROUNDS = 12;
-const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
 
-// JWT 시크릿 — secrets.json 없으면 자동 생성 후 저장
+// JWT 시크릿 — Hub / secrets-store에 존재해야 함
 async function getJwtSecret() {
   await initHubSecrets();
-  let secret = getSecret('worker_jwt_secret');
+  const secret = getSecret('worker_jwt_secret');
   if (!secret) {
-    secret = crypto.randomBytes(48).toString('hex');
-    // secrets.json이 없으면 생성, 있으면 worker_jwt_secret만 추가
-    let existing = {};
-    try { existing = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8')); } catch { /* 없음 */ }
-    existing.worker_jwt_secret = secret;
-    fs.writeFileSync(SECRETS_PATH, JSON.stringify(existing, null, 2), { mode: 0o600 });
-    console.log('[worker/auth] worker_jwt_secret 자동 생성 → secrets.json 저장');
+    throw new Error(
+      '[worker/auth] worker_jwt_secret 누락 — Hub secrets-store 확인 필요',
+    );
   }
   return secret;
 }
