@@ -30,3 +30,7 @@ jobs:
       - name: 라이트 — 문서 동기화 (push 모드)
         run: node bots/orchestrator/src/write.js --mode=push
         continue-on-error: true
+
+      - name: 덱스터 체크섬 자동 갱신
+        run: node bots/claude/src/dexter.js --update-checksums
+        continue-on-error: true

@@ -74,6 +74,11 @@ jobs:
             echo "✅ 의존성 변경 없음"
           fi
 
+      - name: 덱스터 체크섬 자동 갱신
+        run: |
+          cd "$PROJECT_ROOT"
+          node bots/claude/src/dexter.js --update-checksums || true
+
       - name: 변경된 팀만 재시작
         run: |
           cd "$PROJECT_ROOT"
