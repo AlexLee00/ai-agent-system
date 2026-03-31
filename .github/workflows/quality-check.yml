@@ -1,0 +1,36 @@
+name: 클로드팀 품질 검사 + 라이트
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+
+jobs:
+  quality-check:
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 리뷰어 — 코드 리뷰
+        run: node bots/claude/src/reviewer.js
+        continue-on-error: true
+
+      - name: 가디언 — 보안 검사
+        run: node bots/claude/src/guardian.js
+        continue-on-error: true
+
+      - name: 빌더 — 빌드 검증
+        run: node bots/claude/src/builder.js
+        continue-on-error: true
+
+      - name: 라이트 — 문서 동기화 (push 모드)
+        run: node bots/orchestrator/src/write.js --mode=push
+        continue-on-error: true
