@@ -210,6 +210,71 @@ Phase 3 (Tier 3): Hub MCP + 보안 6계층
   6계층 보안: 시크릿필터+원격차단+SQL방지+코드변경+레이트리밋+커밋검사
 ```
 
+### Claude Cowork + ai-agent-system 연동 (신규)
+```
+목표: Cowork의 데스크톱 자동화 + 우리 에이전트 시스템 결합
+
+Cowork 핵심 기능 (2026-03):
+  - 파일 시스템 직접 접근 (폴더 지정, 샌드박스)
+  - MCP 커넥터 (Gmail, Google Drive, Notion, Slack 등)
+  - Computer Use (키보드+마우스 제어, Dispatch로 원격)
+  - Projects (폴더+지시+태스크 히스토리 지속)
+  - Skills (SKILL.md로 프로젝트별 커스텀 지시)
+
+연동 방안 (검토 대상):
+  A) Cowork Project를 ai-agent-system 폴더에 연결
+     → Cowork가 우리 봇 파일을 직접 읽고 실행 가능
+     → 라이트(Write) 역할을 Cowork가 보조
+     → 일일 리포트 생성, 문서 업데이트 초안 등
+
+  B) Cowork MCP 커넥터 활용
+     → Gmail/Slack/Notion 연동 → 우리 봇에 없는 채널 확장
+     → Cowork가 외부 서비스 데이터 수집 → 우리 DB에 저장
+
+  C) Computer Use + 우리 대시보드
+     → Cowork가 워커 웹(:3000) 접속 → UI 자동 테스트
+     → Dispatch로 폰에서 → 맥 스튜디오에서 작업 실행
+
+  우선순위: A → B → C (점진적 도입)
+  연구팀 과제로 지정
+```
+
+### GPT-5.4 모델 연동 — OpenAI OAuth (신규)
+```
+목표: 클로드팀 등 코드 다루는 에이전트에 GPT-5.4 능력 추가
+
+GPT-5.4 현황 (2026-03):
+  - 1M 토큰 컨텍스트, 128K 최대 출력
+  - 코딩/도구사용/에이전트 워크플로우 SOTA
+  - Computer Use 내장
+  - 가격: $2.50/1M입력, $20/1M출력 (OpenRouter)
+  - gpt-5.4-mini, gpt-5.4-nano도 존재 (저비용)
+
+연동 방안:
+  A) OpenClaw OAuth 경유 (ChatGPT Plus 계정)
+     → openclaw auth openai-codex → GPT-5.4 사용
+     → ⚠️ 이슈: /v1/responses 엔드포인트 401 문제 (GitHub #38706)
+     → 워크어라운드: codex-responses 엔드포인트 사용
+     → 비용: ChatGPT Plus 구독료만 (API 별도 비용 없음)
+
+  B) OpenAI API 키 직접 사용
+     → 비용 발생하지만 안정적
+     → gpt-5.4-nano ($0.10/1M입력) → 분류/추출 용도로 초저가
+
+  C) OpenRouter 경유 (멀티 프로바이더)
+     → OpenAI + Anthropic + Groq 등 통합 라우팅
+     → 우리 llm-model-selector.js와 직접 연결 가능
+
+적용 대상:
+  리뷰어 — GPT-5.4로 코드 리뷰 (Claude + GPT 이중 리뷰)
+  가디언 — GPT-5.4 보안 분석 (다른 모델 관점)
+  닥터 L3 — GPT-5.4로 코드 패치 시도 (Claude 실패 시 폴백)
+  연구팀 — 최신 기술 분석에 GPT-5.4 활용
+
+우선순위: A(OpenClaw OAuth) → B(API 키 폴백) → C(OpenRouter 장기)
+비용 원칙: 5대 원칙 "비용 의식" — nano/mini 우선, 5.4는 핵심 판단에만
+```
+
 ### 클로드팀 보강 — 개발 자동화 (Claude Forge 패턴 적용)
 ```
 현재 클로드팀:
