@@ -114,14 +114,12 @@
 [✅] P5 Phase E: reservation 진입점 Hub 커넥터 → 완료
 [✅] 루나팀 P1 잔여: unrealized_pnl KIS 18/18 + max_daily_trades 상향 → 완료
 [✅] OPS 관측성: Hub 에러 + 덱스터[23] + 닥터 능동화 → 19/19 완료
-[✅] 에러 수정: crypto 최소수량 roundSellAmount try-catch (55b4519) → 142건/시간 해소
-[✅] 에러 수정: domestic tradeMode (579b3b2) → 12건 해소
+[✅] 에러 수정: crypto roundSellAmount (55b4519) + domestic tradeMode (579b3b2)
 [✅] DEV CLI: ops-query.sh + ops-errors.sh → 커밋 완료
 [✅] 블로팀 코드 딥 분석: 7,467줄/25파일, F1~F6 발견, P1~P5 수립
-[🔄] 루나팀 Chronos Phase A: MLX 설치 OPS 진행 중
-[ ] 루나팀 Chronos Phase A: Layer 1~3 코드 구현 (DEV, OPS 완료 후)
-[ ] 블로팀 P1~P5: 코덱스 프롬프트 작성 → 구현
-[ ] OpenClaw Phase 1: mainbot.js 흡수 설계 (노션: 333ff93a809a81799b3fc77e34884a93)
+[✅] Chronos Phase A OPS: MLX v0.31.1 + mlx-openai-server + 모델 + launchd
+[✅] Chronos Phase A DEV: local-llm-client + ohlcv-fetcher + ta-indicators + chronos (79b0d73)
+[🔄] Chronos Layer 2~3 검증: LLM 호출 동작 확인 대기
 [ ] n8n 자격증명 재입력 (PostgreSQL+Telegram, UI에서)
 [ ] 블로팀: 네이버 실전 발행 1건 확인
 [ ] 워커팀: telegram_bot_token 설정
@@ -129,40 +127,107 @@
 
 ---
 
-## 다음 전략 기획 우선순위
-
-### Tier 2 — 2~4주 (기능 확장)
+## 기술 수용 원칙 [확정]
 
 ```
-[🔄] 루나팀 Chronos Phase A: MLX + 3계층 백테스팅
-     OPS: MLX v0.31.1 + qwen2.5-7b + deepseek-r1-32b (설치 진행 중)
-     DEV: local-llm-client.js(공용) + ohlcv-fetcher + ta-indicators + chronos Layer 1~3
-     결정: Ollama→MLX 전환 (20~50% 빠름, Apple 네이티브, arXiv 2511.05502)
-     결정: local-llm-client.js → packages/core/lib/ (공용, Hub 경유 안 함)
-     결정: Tailscale 직접 접근 (OPS :11434 → DEV REDACTED_TAILSCALE_IP:11434)
-     프롬프트: docs/CODEX_CHRONOS_PHASE_A_OPS.md + DEV.md
-[ ] 루나팀 Phase 3: 검증 3단계 (Shadow → Confirmation → Live)
-[ ] 루나팀 Phase 4: DCA 전략
-[ ] 블로팀 P1~P5: 날씨수치제거/품질검증강화/프롬프트최적화/hallucination방지/SEO-AEO-GEO
-     분석: docs/BLOG_DEEP_ANALYSIS_2026-03-30.md (F1~F6, P1~P5)
-     전략: docs/BLOG_TEAM_STRATEGY_2026-03-30.md
+1. Node.js 기반 유지 + Python 부분 도입 가능
+   → MLX(Python)는 이미 도입 완료 (Chronos Phase A)
+   → 투자/ML 영역에서 Python 서비스 도입 열려있음
+
+2. 프레임워크 도입에 열린 자세
+   → 안정성/효율성을 위한 프레임워크 도입 적극 검토
+   → "자체 개발"이 "남의 것 안 쓴다"가 아님
+   → 좋은 도구/패턴은 적극 활용
+
+3. 클로드의 도메인 지식 + 실행력 활용
+   → 새 기술 도입에 보수적일 필요 없음
+   → 빠른 프로토타이핑 → 검증 → 적용 사이클
+```
+
+---
+
+## 개발 우선순위 (2026-03-31 조정)
+
+### 1순위: 루나팀 + 로컬 LLM 안정화
+
+```
+[🔄] Chronos Layer 2~3 검증 완료
+     → strategy='2' (qwen 7b 감성 시뮬) 동작 확인
+     → strategy='3' (deepseek 32b 판단 시뮬) 동작 확인
+     → deepseek on_demand 첫 로드 시간 측정
+     → 발견: strategy='3' 필요 ('default'→Layer1 폴백)
+
+[ ] 로컬 LLM 활용 안정화
+     → MLX 서버 장시간 안정성 검증 (24시간+)
+     → 메모리 모니터링 (36GB 내 안정 동작 확인)
+     → deepseek on_demand 로드/언로드 사이클 안정성
+     → 에러 핸들링: LLM 미응답 시 Layer 1 폴백 확인
+
+[ ] Chronos Phase B: 파라미터 최적화 루프
+     → RSI/MACD/BB 임계값 조합 자동 탐색
+     → 결과: 샤프비율/MDD/승률 비교표
+     → 텔레그램 리포트 연동
+
+[ ] 루나팀 검증 전환 분석
+     → Shadow Mode 일치율 데이터 분석
+     → Shadow → Confirmation 전환 조건 검토
+```
+
+### 2순위: 블로팀 성능 개선
+
+```
+[ ] 블로팀 P1~P5 코덱스 프롬프트 작성 → 구현
+     P1: 날씨수치제거 (양쪽 writer _weatherToContext)
+     P2: 품질검증강화 (필수 섹션 확대 + AI리스크 차단)
+     P3: 프롬프트최적화 (글자수 일치 + 핵심 규칙 우선)
+     P4: hallucination방지 (도서 5중 방어)
+     P5: SEO-AEO-GEO 최신 기술 적용
+```
+
+### 3순위: 멀티에이전트 고도화 (기술 도입 검토)
+
+```
+2026 멀티에이전트 커뮤니티 리서치 반영 (2026-03-31):
+
+[ ] TradingAgents 패턴 → 루나팀 재설계
+     → 멀티에이전트 토론 패턴 (분석가 독립분석→토론→PM 결정)
+     → 현재 순차 파이프라인 → 병렬+토론 구조 검토
+     → 패턴 참고 또는 Python 서비스 부분 도입
+
+[ ] LangGraph 상태 그래프 → 투자 파이프라인
+     → ENTRY→LIVE→EXIT 상태 머신 정식 모델링
+     → 에지 케이스 관리 강화 (실투자 손실 방지)
+     → Python 서비스 또는 Node.js 패턴 구현
+
+[ ] CrewAI 선언적 정의 → 팀 구조 고도화
+     → 역할-태스크-도구 선언적 봇 정의
+     → 새 봇 추가 시 config 하나로 정의
+
+[ ] MCP 표준 프로토콜 → 에이전트 통신
+     → 봇을 MCP 서버로 노출 → Claude Code 직접 제어
+     → A2A(Google) 프로토콜 장기 검토
+
+참고 프로젝트:
+  TradingAgents — 트레이딩 데스크 멀티에이전트 토론
+  AI Hedge Fund — bull/bear/기본/기술/리스크 협업
+  CrewAI (44K+ stars) — 역할 기반 에이전트 협업
+  LangGraph (25K+ stars) — 상태 기반 그래프 오케스트레이션
+  AutoGen (54K+ stars) — 이벤트 드리븐 멀티에이전트
+  OWL/CAMEL-AI — 브라우저+터미널+MCP 멀티에이전트
+```
+
+### 4순위: 인프라 + 플랫폼 확장
+
+```
+[ ] OpenClaw Phase 1: mainbot 흡수 설계
 [ ] ComfyUI 설치 + 이미지 비용 $0 전환
-[ ] TS Phase 1: TypeScript 강화
-```
-
-### Tier 3 — 5~8주 (플랫폼 확장)
-
-```
-[ ] 루나팀 Phase 4: 펀딩레이트 + 그리드
-[ ] 루나팀 Phase 5: SaaS 확장
-
-[ ] 블로팀 본격 개발 (Node.js 120강 33강 진행 중)
+[ ] 루나팀 DCA 전략
+[ ] 블로팀 본격 개발 (120강 33강 진행 중)
 [ ] 비디오팀 Phase 3 (Twick SDK + AI 편집)
 [ ] 워커팀 SaaS 개발 재개
-[ ] TS Phase 2: Elixir 오케스트레이션
-[ ] TS Phase 3: Python 마이크로서비스
+[ ] TS Phase 1~3: TypeScript → Elixir → Python 마이크로서비스
 [ ] Cloudflare Tunnel + 도메인
-[ ] Docker 하이브리드 전략 구현
+[ ] Docker 하이브리드 전략
 ```
 
 ### 운영 이슈 (보류)
@@ -225,3 +290,4 @@ DB: /opt/homebrew/opt/postgresql@17/bin/psql -U alexlee -d jay
 | 2026-03-29 | DEV↔OPS 환경 분리 (P1~P4) |
 | 2026-03-30 | P5 전체 완료 + OPS 관측성 19/19 + 에러 수정 |
 | 2026-03-30 | 블로팀 딥분석 완료 + 루나팀 에러 전부 해소 + Chronos MLX 착수 |
+| 2026-03-31 | Chronos Phase A OPS+DEV 완료 + 우선순위 재조정 + 기술 수용 원칙 확정 |
