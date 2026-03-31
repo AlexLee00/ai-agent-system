@@ -30,6 +30,8 @@ const TEAM_TOPIC = {
 };
 
 let _token = null;
+let _groupId = null;
+let _topicIds = null;
 
 function _readStoreToken() {
   try {
@@ -37,6 +39,18 @@ function _readStoreToken() {
     return store?.openclaw?.hooks_token || '';
   } catch {
     return '';
+  }
+}
+
+function _readStoreTopicInfo() {
+  try {
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    return {
+      groupId: store?.telegram?.group_id || '',
+      topicIds: store?.telegram?.topic_ids || {},
+    };
+  } catch {
+    return { groupId: '', topicIds: {} };
   }
 }
 
@@ -49,6 +63,25 @@ async function _getToken() {
     || _readStoreToken()
     || '';
   return _token;
+}
+
+async function _getTopicInfo() {
+  if (_groupId && _topicIds) {
+    return { groupId: _groupId, topicIds: _topicIds };
+  }
+
+  const hubData = await fetchHubSecrets('telegram');
+  const storeData = _readStoreTopicInfo();
+
+  _groupId = hubData?.group_id
+    || process.env.TELEGRAM_GROUP_ID
+    || storeData.groupId
+    || '';
+  _topicIds = hubData?.topic_ids
+    || storeData.topicIds
+    || {};
+
+  return { groupId: _groupId, topicIds: _topicIds };
 }
 
 async function postAlarm({
@@ -67,6 +100,11 @@ async function postAlarm({
   const normalizedTeam = TEAM_TOPIC[team] || 'general';
   const key = sessionKey || `hook:${normalizedTeam}:${fromBot}`;
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
+  const { groupId, topicIds } = await _getTopicInfo();
+  const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
+  const to = groupId
+    ? (topicId ? `${groupId}:topic:${topicId}` : groupId)
+    : undefined;
 
   try {
     const res = await fetch(HOOK_URL, {
@@ -82,6 +120,7 @@ async function postAlarm({
         sessionKey: key,
         deliver: true,
         channel: 'telegram',
+        to,
         wakeMode: 'now',
         timeoutSeconds: TIMEOUT_MS / 1000,
       }),
