@@ -23,16 +23,8 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: 리뷰어 — 코드 리뷰
-        run: node bots/claude/src/reviewer.js
-        continue-on-error: true
-
-      - name: 가디언 — 보안 검사
-        run: node bots/claude/src/guardian.js
-        continue-on-error: true
-
-      - name: 빌더 — 빌드 검증
-        run: node bots/claude/src/builder.js
+      - name: 품질 검사 통합 (리뷰어+가디언+빌더 → 1건 발송)
+        run: node bots/claude/src/quality-report.js
         continue-on-error: true
 
       - name: 라이트 — 문서 동기화 (push 모드)
