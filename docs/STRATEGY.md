@@ -169,11 +169,58 @@ RAG 일일 성장 사이클:
 
 ## §3. 기술 전략
 
-### Claude Code Skills/Subagents/Hooks (D 하위 C)
+### Claude Code Skills/Subagents/Hooks (D 하위 C, Claude Forge 패턴 참고)
 ```
-Phase 1 (즉시): 팀별 CLAUDE.md + 커스텀 Skills 5~10개
-Phase 2 (Tier 2): Hooks (안전장치 자동화) + Subagents (메티 검증 자동화)
-Phase 3 (Tier 3): Hub를 MCP 서버로 노출 + GitHub MCP 연결
+참고: github.com/sangrokjung/claude-forge (분석 완료, 설치 아닌 패턴 참고)
+
+Phase 1 (즉시): 팀별 CLAUDE.md ✅ + 커스텀 Skills 5개
+  /plan      — 구현 계획 수립 + 위험 요소 파악
+  /tdd       — RED→GREEN→REFACTOR 테스트 주도 개발
+  /code-review — 코드 품질/보안/성능 자동 검토
+  /verify-loop — 빌드/테스트 실패 → 자동 수정 → 재시도 반복
+  /handoff-verify — 새 컨텍스트(fork)에서 독립 이중 검증
+
+Phase 2 (Tier 2): Hooks 자동화 + MCP 추가
+  PreToolUse: OPS 파일 수정 차단, secrets 접근 차단, 보안 검사
+  PostToolUse: 자동 node --check, 영향 테스트 실행
+  MCP 추가: context7 (최신 문서 조회), memory (세션 기억)
+
+Phase 3 (Tier 3): Hub MCP + 보안 6계층
+  Hub를 MCP 서버로 노출 → Claude Code에서 직접 제어
+  6계층 보안: 시크릿필터+원격차단+SQL방지+코드변경+레이트리밋+커밋검사
+```
+
+### 클로드팀 보강 — 개발 자동화 (Claude Forge 패턴 적용)
+```
+현재 클로드팀:
+  클로드(팀장) → 덱스터(22개 체크) + 아처(인텔리전스) + 닥터(복구)
+
+보강 후 클로드팀:
+  클로드(팀장)
+    [유지] 덱스터 — 시스템 점검 (감지)
+    [유지] 아처 — 기술 인텔리전스
+    [강화] 닥터 — 복구 전문가 (인프라+코드 통합)
+      Level 1: 서비스 재시작 (현재 scanAndRecover)
+      Level 2: 설정 조정 (runtime_config 자동 튜닝)
+      Level 3: 코드 패치 (/verify-loop, 자동 수정+테스트+재시도)
+    [신설] 리뷰어 — 코드 리뷰 자동화 (/code-review)
+    [신설] 가디언 — 보안 분석 (6계층 보안 훅)
+    [신설] 빌더 — 빌드/배포 자동화 (워커 Next.js + TS 컴파일 + npm)
+
+코드 구현 후 자동화 워크플로:
+  코덱스 구현 완료
+  → 리뷰어: 자동 코드 리뷰 (품질/보안/성능)
+  → 닥터 Level 3: 테스트 실행 → 실패 시 자동 수정 → verify-loop
+  → 가디언: 보안 검사
+  → 빌더: 빌드 검증 (Next.js, npm)
+  → 메티: 전략적 최종 확인만
+  → 마스터: 승인
+
+유지보수/패치 자동화:
+  덱스터 에러 감지
+  → 닥터 Level 1~3: 재시작 → 설정 조정 → 코드 패치 (단계적 에스컬레이션)
+  → 코드 변경 시: 리뷰어 + 가디언 + 빌더 검증
+  → 마스터 승인 (코드 변경 시만)
 ```
 
 ### 멀티에이전트 패턴 참고
@@ -199,12 +246,15 @@ MCP/A2A:       에이전트 통신 표준화 → 장기 (⭐)
 
 ### 즉시 진행 중
 ```
-[🔄] Chronos Phase A: Layer 2~3 LLM 호출 검증 (strategy='2'/'3')
-[🔄] 문서 체계 v2: STRATEGY.md + CLAUDE.md 리팩터링 (이 작업)
+[✅] Chronos Phase A: Layer 1~3 검증 완료
+[✅] 문서 체계 v2 + CLAUDE.md 리팩터링 + STRATEGY.md v4
+[🔄] Claude Forge 패턴 분석 → 클로드팀 보강 설계 완료, 구현 대기
 ```
 
 ### Tier 2 — 2~4주
 ```
+[ ] Claude Code Skills Phase 1: /plan /tdd /code-review /verify-loop /handoff-verify
+[ ] 클로드팀 보강: 리뷰어 + 가디언 + 빌더 신설, 닥터 Level 1~3 강화
 [ ] 블로팀 P1~P5 구현 (날씨수치/품질검증/프롬프트/hallucination/SEO)
 [ ] 옵션B (스카팀 reservation Phase E) 설계
 [ ] OpenClaw Phase 1: mainbot.js 흡수
@@ -215,6 +265,8 @@ MCP/A2A:       에이전트 통신 표준화 → 장기 (⭐)
 
 ### Tier 3 — 5~8주
 ```
+[ ] Claude Code Hooks Phase 2: 보안 자동화 + MCP (context7, memory)
+[ ] Claude Code 보안 6계층 구현
 [ ] 루나팀 Phase 4: 펀딩레이트 + 그리드
 [ ] 블로팀 본격 개발 (24노드 n8n)
 [ ] 비디오팀 Phase 3 (Twick + ComfyUI + Whisper)
@@ -258,4 +310,5 @@ DEV: MacBook Air M3 24GB — Tailscale 연결
 
 | 날짜 | 변경 |
 |------|------|
-| 2026-03-31 | v4 신설 — Self-Evolving/Self-Healing/Recursive Science/Bounded Autonomy |
+| 2026-03-31 | v4 §0 일일성장원칙+체계화우선+팀적용순서(9팀), §1 4계층 팀별 적용 계획 |
+| 2026-03-31 | v4 §3 Claude Forge 패턴 분석→Skills/Hooks/보안 설계, 클로드팀 보강(닥터강화+리뷰어+가디언+빌더) |
