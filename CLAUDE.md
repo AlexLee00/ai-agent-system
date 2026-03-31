@@ -1,7 +1,7 @@
 # 팀 제이 (Team Jay) — Claude Code 세션 가이드
 
 > 레포: AlexLee00/ai-agent-system
-> 최종 업데이트: 2026-03-31
+> 최종 업데이트: 2026-04-01
 
 ---
 
@@ -43,8 +43,20 @@ Layer 1: 팀원 봇 (규칙) — 실행·보고
 OPS: Mac Studio M4 Max 36GB (24/7 운영)
   Hub(:7788), PostgreSQL(:5432), n8n(:5678), MLX(:11434), OpenClaw(:18789)
 DEV: MacBook Air M3 (개발 전용, Tailscale 연결)
-배포: git push → 5분 cron 자동 pull + GitHub Actions CI
+배포: git push → 5분 cron 자동 pull + GitHub Actions CI (self-hosted runner OPS)
 DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
+
+시크릿 아키텍처:
+  bots/hub/secrets-store.json = Single Source of Truth (모든 API 키, gitignore)
+  bots/investment/config.yaml = 런타임 설정만 (git 추적, API 키 없음!)
+  reservation/worker secrets.json = 삭제됨 (Hub 경유)
+
+LLM 아키텍처:
+  로컬 MLX (:11434) — qwen2.5-7b(빠른) + deepseek-r1-32b(깊은) + qwen3-embed-0.6b(임베딩)
+  7/10 에이전트 로컬화: hermes/sophia/zeus/athena/nemesis/oracle → local_fast
+  루나 → groq_with_local (Groq Kimi K2 → deepseek 폴백)
+  임베딩: Qwen3-Embedding-0.6B (1024차원, 로컬, 비용$0)
+  DEV DB 접근: PG_DIRECT=true → SSH 터널 직접 연결 (INSERT 가능)
 ```
 
 ## 문서 체계 (7대 카테고리)
@@ -78,7 +90,8 @@ DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
 ## 절대 규칙 (변경 불가)
 
 - 시스템 기본 언어: **한국어**
-- secrets.json, API 키 파일은 절대 Git 커밋 금지
+- secrets-store.json, API 키 파일은 절대 Git 커밋 금지 (pre-commit hook 차단)
+- config.yaml은 git 추적 가능 (API 키 없음, 런타임 설정만)
 - 소스코드 수정 권한: **마스터(Alex)와 Claude Code만** — 모든 봇 절대 금지
 - 실투자 보호: TP/SL 거래소 설정 필수. tp_sl_set 확인 전 포지션 활성화 금지
 - DB/코드 파일 자동 삭제 금지
@@ -89,9 +102,14 @@ DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
 ## 공통 유틸리티 (신규 코드 필수 사용)
 
 - **시간**: `packages/core/lib/kst.js` — `new Date()` 직접 사용 금지, `kst.today()` 등 사용
-- **DB**: `packages/core/lib/pg-pool.js` — 공용 PostgreSQL 연결
+- **DB**: `packages/core/lib/pg-pool.js` — 공용 PostgreSQL 연결 (DEV: PG_DIRECT=true면 직접, 아니면 Hub 경유)
 - **Hub**: `packages/core/lib/hub-client.js` — 시크릿/에러/DB 쿼리
-- **LLM**: `packages/core/lib/local-llm-client.js` — 로컬 MLX LLM (공용)
+- **LLM 호출**: `packages/core/lib/llm-fallback.js` — 프로바이더별 폴백 체인 (local/groq/anthropic/openai/gemini)
+- **LLM 키**: `packages/core/lib/llm-keys.js` — Hub secrets-store에서 API 키 로딩 (initHubConfig 필수!)
+- **LLM 선택**: `packages/core/lib/llm-model-selector.js` — 에이전트별 라우팅 (local_fast/local_deep/groq_with_local)
+- **LLM 로컬**: `packages/core/lib/local-llm-client.js` — 로컬 MLX LLM (qwen2.5-7b/deepseek-r1-32b)
+- **RAG**: `packages/core/lib/rag.js` — 로컬 MLX 임베딩 (Qwen3-Embedding-0.6B, 1024차원, pgvector)
+- **스킬**: `packages/core/lib/skills/` — 14개 공용 스킬 + loader.js (봇 config에서 자동 로딩)
 - **환경**: `packages/core/lib/env.js` — DEV/OPS 환경 분기
 - **launchd**: StartCalendarInterval은 KST 기준 — UTC 변환 금지
 

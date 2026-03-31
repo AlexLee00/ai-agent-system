@@ -1,6 +1,6 @@
 # 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-03-31
+> 마지막 업데이트: 2026-04-01
 > 목적: 실제 코드 구현 상태와 커밋 이력 기준으로 개발 진행 상황을 추적한다.
 > 원칙: 완료(날짜+근거) / 진행 중(현재+남은 것) / 미완료 3단계 분류
 > 참조: docs/STRATEGY.md (전략), team-jay-strategy.md (상세 원본)
@@ -9,34 +9,73 @@
 
 ## 0. 현재 최우선 과제
 
-- **Chronos**: Layer 2~3 검증 완료 → Tier 2 본격 구현
+- **OpenClaw**: Phase 1 mainbot.js 흡수 (C안, 연구팀)
 - **블로팀**: P1~P5 코덱스 프롬프트 작성 → 구현
-- **옵션B**: 스카팀 reservation Phase E 설계
-- **OpenClaw**: Phase 1 mainbot.js 흡수
-- **문서**: D 전략 통합 (STRATEGY.md v4 심화)
+- **D 분해**: 인프라+루나 (docs/strategy/luna.md + docs/DEVELOPMENT.md)
+- **Chronos**: Tier 2 본격 구현 (Phase A 완료)
+- **닥터 L3**: verify-loop 연동 강화
 
 ---
 
-## 1. 인프라 현황 (2026-03-31)
+## 1. 인프라 현황 (2026-04-01)
 
 ```
 OPS: Mac Studio M4 Max 36GB — 24/7 운영 (2026-03-29 전환 완료)
   PostgreSQL 17 + pgvector (:5432) — 9 스키마
-  Hub (:7788) — secrets/errors/pg-query/health
-  MLX v0.31.1 (:11434) — qwen2.5-7b + deepseek-r1-32b (2026-03-31)
+  Hub (:7788) — secrets-store.json(14섹션) / errors / pg-query / health
+  MLX v0.31.1 (:11434) — qwen2.5-7b + deepseek-r1-32b + qwen3-embed-0.6b
   n8n (:5678), OpenClaw (:18789)
-  launchd 56+ plist, deploy.sh cron 5분, GitHub Actions CI
+  launchd 56+ plist, deploy.sh cron 5분
+  GitHub Actions CI (self-hosted runner, OPS ARM64)
+  ai.write.daily (매일 07:00 KST 일일 리포트)
 
 DEV: MacBook Air M3 24GB — Tailscale 연결 (2026-03-29 셋업 완료)
   4중 안전장치: .zprofile + config.yaml + hostname체크 + applyDevSafetyOverrides()
   SSH 터널 (포트 15432→OPS PG), Hub/MLX Tailscale 직접 접근
+  PG_DIRECT=true → SQL Guard 우회 INSERT 가능
 
 네트워크: Tailscale VPN (REDACTED_TAILSCALE_IP ↔ 100.66.201.86)
+
+시크릿: secrets-store.json = Single Source of Truth
+  config.yaml = 런타임 설정만 (git 추적, API 키 없음)
+  reservation/worker secrets.json = 삭제됨 (Hub 경유)
+
+LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
+  로컬: qwen2.5-7b (hermes/sophia/zeus/athena/nemesis/oracle)
+  Groq+로컬폴백: kimi-k2→deepseek-r1-32b (루나)
+  임베딩: Qwen3-Embedding-0.6B (1024차원, 로컬, $0)
 ```
 
 ---
 
 ## 2. 완료된 개발 축 (최신 → 과거순)
+
+### 2026-04-01: Hub Secrets Store + LLM 최적화 + 임베딩 전환 + 스킬 전체
+
+| 항목 | 상태 | 커밋/근거 |
+|------|------|----------|
+| Hub Secrets Store 아키텍처 변경 | ✅ | secrets-store.json=14섹션 SSoT |
+| config.yaml API 키 제거 | ✅ | 런타임 설정만, git 추적 시작 (f268316) |
+| reservation/worker secrets.json 삭제 | ✅ | Hub 경유 전환 (db9ea15) |
+| 폴백 코드 제거 (Step 6) | ✅ | Hub 전용 (8db0e54) |
+| llm-client.js Hub 경유 변경 | ✅ | initHubSecrets→loadSecrets (db9ea15) |
+| llm-keys.js initHubConfig | ✅ | llm-fallback에서 자동 호출 |
+| pre-commit hook 업데이트 | ✅ | config.yaml 허용, secrets-store.json 차단 |
+| PG_DIRECT 옵션 | ✅ | DEV INSERT 가능 (10495dd) |
+| LLM 로컬 전환 (7개 에이전트) | ✅ | local_fast/groq_with_local (7ef89b6) |
+| llm-model-selector local 프로바이더 | ✅ | 3개 라우트 추가 |
+| llm-fallback provider=local | ✅ | local-llm-client 연동 |
+| 임베딩 로컬 전환 | ✅ | OpenAI→MLX Qwen3-Embedding-0.6B (3e0984d) |
+| pgvector 차원 변경 (1536→1024) | ✅ | 4개 테이블 + HNSW 인덱스 |
+| 재임베딩 1,691건 | ✅ | rag_operations+trades+tech+video |
+| groq accounts 구조 수정 | ✅ | 문자열→객체 배열 |
+| 공용 스킬 Phase 1 | ✅ | 4파일 328줄 (code-review, verify-loop, plan) |
+| 공용 스킬 Phase 2 | ✅ | 7파일 742줄 (클로드팀+라이트) |
+| 공용 스킬 Phase 3 | ✅ | 12파일 1,150줄 (나머지 11개) |
+| 공용 스킬 Phase 4 | ✅ | loader.js + 6팀 config 등록 + 체크섬 자동화 |
+| CI/CD self-hosted runner | ✅ | OPS ARM64 + quality-check.yml |
+| 라이트 daily cron | ✅ | ai.write.daily plist (07:00 KST) |
+| 공개 레포 보안 검사 | ✅ | 시크릿 노출 0건 |
 
 ### 2026-03-31: Chronos Phase A + 문서 체계 v2
 
