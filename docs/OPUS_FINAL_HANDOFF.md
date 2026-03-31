@@ -1,49 +1,53 @@
-# Opus 세션 인수인계 — Skills 재설계 필요 (2026-03-31)
+# Opus 세션 인수인계 — Skills 재설계 + CF 15개 분석 완료 (2026-03-31)
 
 > 작성일: 2026-03-31 | 모델: Claude Opus 4.6 (메티)
 
 ---
 
-## 이번 세션 성과 + 방향 전환
+## 이번 세션 핵심 성과 + 방향 전환
 
-### Skills Phase 1 구현 (커밋 c18c640)
-- .claude/skills/ 5개 SKILL.md 생성 (222줄)
-- /plan, /tdd, /code-review, /verify-loop, /handoff-verify
+### ⚠️ 역할 원칙 위반 발생 + 즉시 수정
+- 메티가 packages/core/lib/skills/ 직접 구현 → revert 완료 (커밋 b326439)
+- 교훈: 메티는 설계+프롬프트만, 코드 구현은 반드시 코덱스
 
-### ⚠️ 마스터 피드백 — 방향 전환 필요!
+### ⚠️ 마스터 피드백 — 프레임워크 독립 원칙
 ```
 "스킬, 훅스를 반드시 클로드 코드로 사용하도록 하는것은 아니야!
  우리 에이전트가 이것을 사용할 수 있도록 구현하는거야!!
  프레임워크에 종속되지 않도록 하자!!"
 ```
 
-### 재설계 방향
+### 확정된 방향: A안 (packages/core/lib/skills/ Node.js 모듈)
 ```
-현재 (프레임워크 종속):
-  .claude/skills/plan/SKILL.md → Claude Code 전용 슬래시 커맨드
-  → 우리 30+ 봇(Node.js)이 사용 불가
+위치: packages/core/lib/skills/ ← 공용 (hub-client, local-llm-client와 동급)
+사용: 봇이 require()로 직접 사용 + 코덱스도 참조 가능
+원칙: 프레임워크 완전 독립, Single Source of Truth
+.claude/: 깃에서 제외 (.gitignore)
+```
 
-목표 (프레임워크 독립):
-  "팀 제이 표준 절차서" = 봇도 읽고, 코덱스도 읽는 범용 문서+코드
-  → 덱스터가 /code-review 체크리스트를 자동 실행
-  → 닥터가 /verify-loop 패턴으로 자동 수정+재시도
-  → 리뷰어가 /code-review 규칙으로 코드 검토
-  → 코덱스(Claude Code)도 동일 절차서 참조
+### Claude Forge 15개 스킬 전체 분석 완료
+```
+⭐⭐⭐ 필수 4개:
+  security-pipeline   → 가디언: CWE Top 25 + STRIDE 보안 체크
+  eval-harness        → 일일 성장: 성과 측정 프레임워크
+  team-orchestrator   → 제이(메인봇): 9팀 조율 엔진
+  session-wrap        → 세션 마무리: HANDOFF 자동 생성 + 일일 리포트
 
-구현 방안 (다음 세션에서 설계):
-  A) packages/core/lib/skills/ 에 Node.js 모듈로 구현
-     → 체크리스트를 함수로 export
-     → 봇이 require()로 사용
-     → Claude Code는 SKILL.md로도 참조 가능 (이중 인터페이스)
+⭐⭐ 높은 가치 5개:
+  build-system        → 빌더: 워커 Next.js + npm 빌드
+  instinct-learning   → 일일 성장 핵심: 패턴 학습→자동 적용
+  pattern-to-skill    → LLM 졸업 엔진 연결: 반복 패턴→규칙 전환
+  skill-explorer      → 연구팀: 새 기술 발굴+적용
+  session-analyzer    → 리뷰어: 세션 검증 분석
 
-  B) docs/skills/ 에 범용 YAML/JSON+Markdown으로
-     → 봇이 파싱해서 사용
-     → Claude Code도 읽기 가능
+  이전 설계 5개:
+  code-review         → 리뷰어: 5단계 코드 리뷰
+  verify-loop         → 닥터 L3: 자동 검증 재시도 (3회)
+  plan                → 기획: 구현 계획 구조화
+  tdd                 → 테스터: RED→GREEN→REFACTOR
+  handoff-verify      → 독립 이중 검증
 
-  C) 하이브리드: 코어 로직은 Node.js, 절차서는 Markdown
-     → packages/core/lib/skills/code-review.js (실행 코드)
-     → .claude/skills/code-review/SKILL.md (Claude Code 참조)
-     → 둘이 같은 체크리스트를 공유
+  합계: 14개 공용 스킬 모듈 (packages/core/lib/skills/)
 ```
 
 ---
@@ -51,10 +55,12 @@
 ## 다음 세션
 
 ```
-1순위: Skills 재설계 — 프레임워크 독립적 구현
-  → A/B/C 방안 중 결정
-  → 현재 .claude/skills/ 5개를 범용 모듈로 전환
-  → 핵심: 봇(Node.js)이 사용 가능 + Claude Code도 참조 가능
+1순위: 14개 공용 스킬 모듈 코덱스 구현 프롬프트 작성 (메티의 역할!)
+  → 메티가 설계서+프롬프트 작성 → 코덱스가 구현 → 메티가 점검
+  → 구현 우선순위:
+    Phase 1: code-review + verify-loop + plan (기본 3개)
+    Phase 2: security-pipeline + eval-harness + team-orchestrator (핵심 4개)
+    Phase 3: 나머지 7개
 
 2순위: OpenClaw 기술 연구 + Phase 1 (C안, 연구팀 첫 과제)
 
@@ -63,16 +69,13 @@
 4순위: 블로팀 P1~P5 코덱스 프롬프트
 ```
 
-## 핵심 결정 (이번 세션 누적)
+## 핵심 결정
 
 ```
-[DECISION] Skills/Hooks는 프레임워크 독립적으로 구현 (Claude Code 종속 금지)
-[DECISION] 우리 에이전트(30+ 봇)가 직접 사용할 수 있어야 함
-[DECISION] Chronos Phase A 완전 검증 완료 (Layer 1~3)
-[DECISION] 닥터+패처 A안 (닥터에 흡수, L1→L2→L3)
-[DECISION] 클로드팀 신설: 리뷰어+가디언+빌더
-[DECISION] OpenClaw C안: Phase1+고급연구, 연구팀 첫 과제
-[DECISION] 일일 성장 환류: 데이터→분석→피드백 (루나팀 첫 대상)
-[DECISION] 팀 적용순서 9팀, 팀 역할 확정
-[DECISION] team-jay-strategy.md 삭제 (히스토리에 있음)
+[DECISION] Skills는 프레임워크 독립 — packages/core/lib/skills/ Node.js 모듈
+[DECISION] .claude/는 깃에서 제외 (.gitignore)
+[DECISION] 봇이 require()로 직접 사용 + 코덱스도 참조 가능
+[DECISION] A안 확정 (Single Source of Truth, Node.js)
+[DECISION] CF 15개 스킬 분석 → 14개 공용 모듈 목록 확정
+[DECISION] 메티 직접 구현 금지 — 역할 원칙 재확인
 ```
