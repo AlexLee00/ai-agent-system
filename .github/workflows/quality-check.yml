@@ -8,6 +8,10 @@ on:
       - '*.md'
       - '.gitignore'
 
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality-check:
     runs-on: self-hosted
