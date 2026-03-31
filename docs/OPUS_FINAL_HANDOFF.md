@@ -1,4 +1,4 @@
-# Opus 세션 인수인계 — Phase 1+2 완료 + Cowork/GPT-5.4 전략 (2026-03-31)
+# Opus 세션 인수인계 — CI/CD 완성 + Phase 1+2 전체 동작 (2026-03-31)
 
 > 작성일: 2026-03-31 | 모델: Claude Opus 4.6 (메티)
 
@@ -6,32 +6,31 @@
 
 ## 이번 세션 전체 성과
 
-### Phase 1 — 공용 스킬 모듈 (코덱스 구현 + 메티 검증 ✅)
-- packages/core/lib/skills/ 4파일 328줄
-- code-review.js(160), verify-loop.js(79), plan.js(82), index.js(7)
-- 문법 4/4 + 소프트 3/3 통과
+### CI/CD 파이프라인 완성 ✅
+- GitHub Actions self-hosted runner 설치 (OPS 맥 스튜디오, ARM64)
+- .github/workflows/quality-check.yml 배포
+- 클로드팀 품질 검사 + 라이트 #1 — 47초에 실행 확인!
+- git push → 자동으로 리뷰어+가디언+빌더+라이트 실행
 
-### Phase 2 — 클로드팀 품질 그룹 + 라이트 (코덱스 구현 + 메티 검증 ✅)
-- 7파일 742줄
-- 클로드팀: reviewer.js(127) + guardian.js(132) + builder.js(82)
-- 라이트: write.js(99) + report-aggregator.js(156) + doc-sync-checker.js(85) + changelog-writer.js(61)
-- 문법 7/7 + 소프트 7/7 + 하드 5/5 통과
+### Phase 1 + Phase 2 전체 완료 (11파일 1,070줄)
+- Phase 1: skills 4파일 328줄 (code-review, verify-loop, plan, index)
+- Phase 2: 클로드팀+라이트 7파일 742줄 (reviewer, guardian, builder, write + lib/write/ 3개)
 
-### 전략 추가 2건 (STRATEGY.md 314→399줄)
-- Claude Cowork + ai-agent-system 연동 (A/B/C 방안, 연구팀 과제)
-- GPT-5.4 OpenAI OAuth 연동 (OpenClaw OAuth / API키 / OpenRouter)
+### 전략 추가 (STRATEGY.md 399줄)
+- Claude Cowork 연동 (A/B/C 방안)
+- GPT-5.4 OpenAI OAuth 연동 (OpenClaw/#38706)
+- 라이트(Write) 신설 — 제이 직속 bots/orchestrator/
 
 ---
 
 ## 다음 세션
 
 ```
-1순위: GitHub Actions 설정 + launchd 등록
-  → .github/workflows/quality-check.yml (리뷰어+가디언+빌더+라이트)
-  → self-hosted runner 설정 (OPS) 또는 deploy.sh 대체
-  → 라이트 일일 cron launchd plist 등록
+1순위: 라이트 일일 cron launchd 등록 (OPS)
+  → ai.write.daily.plist 생성 + launchctl load
+  → 매일 07:00 KST 일일 리포트 자동 실행
 
-2순위: 나머지 스킬 모듈 Phase 3 프롬프트
+2순위: Phase 3 스킬 프롬프트 (나머지 9개)
   → 필수4: security-pipeline + eval-harness + team-orchestrator + session-wrap
   → 높은가치5: build-system + instinct-learning + pattern-to-skill + skill-explorer + session-analyzer
 
@@ -40,7 +39,6 @@
   → Cowork 연동 검토
 
 4순위: D 분해 (인프라+루나)
-  → docs/strategy/luna.md + docs/DEVELOPMENT.md
 
 5순위: 블로팀 P1~P5 코덱스 프롬프트
 ```
@@ -48,10 +46,9 @@
 ## 핵심 결정
 
 ```
-[DECISION] Phase 1+2 코덱스 구현 전체 검증 완료 (11파일 1,070줄)
-[DECISION] Claude Cowork 연동: A(폴더연결)→B(MCP)→C(ComputerUse) 점진 도입
-[DECISION] GPT-5.4: A(OpenClaw OAuth)→B(API키)→C(OpenRouter) — 비용 의식 원칙
-[DECISION] 적용 대상: 리뷰어/가디언/닥터L3/연구팀에 GPT-5.4 이중 검증
-[DECISION] 라이트(Write): bots/orchestrator/, B안(초안→승인), GitHub Actions+cron
-[DECISION] 클로드팀 트리거: 정상=GitHub Actions, 오류=덱스터+닥터
+[DECISION] CI/CD: GitHub Actions self-hosted runner (OPS) 확정
+[DECISION] 클로드팀 품질 검사 워크플로우 동작 확인 (#1, 47초)
+[DECISION] paths-ignore: docs/md (불필요 실행 방지)
+[DECISION] continue-on-error: true (리포트 목적, 배포 차단 안 함)
+[DECISION] Phase 1+2 전체 검증 완료 (11파일 1,070줄)
 ```
