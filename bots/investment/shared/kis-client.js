@@ -119,7 +119,7 @@ async function getToken(paper) {
   const key = paper ? s.kis_paper_app_key    : s.kis_app_key;
   const sec = paper ? s.kis_paper_app_secret : s.kis_app_secret;
 
-  if (!key || key.length < 5) throw new Error(`KIS ${paper ? '모의' : '실전'} appkey 미설정`);
+  if (!key || key.length < 5) throw new Error(`KIS ${paper ? '모의' : '실전'} appkey 미설정 (Hub secrets)`);
 
   const url = (paper ? BASE_URL_PAPER : BASE_URL_LIVE) + '/oauth2/tokenP';
   const res = await fetch(url, {

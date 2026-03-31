@@ -23,9 +23,12 @@ const env = require('../../../../packages/core/lib/env');
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const RSV_SECRETS = path.join(env.PROJECT_ROOT, 'bots/reservation/secrets.json');
 const WKR_SECRETS = path.join(env.PROJECT_ROOT, 'bots/worker/secrets.json');
+const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
 let _configCache = null;
 let _configMtime = 0;
+let _secretsCache = null;
+let _secretsMtime = 0;
 
 function sanitizeKisConfig(kis) {
   if (!kis || typeof kis !== 'object') return kis || {};
@@ -55,15 +58,63 @@ function loadConfigYaml() {
   }
 }
 
+function loadSecretsStore() {
+  try {
+    const stat = fs.statSync(SECRETS_STORE);
+    if (_secretsCache && stat.mtimeMs === _secretsMtime) return _secretsCache;
+    _secretsCache = JSON.parse(fs.readFileSync(SECRETS_STORE, 'utf8'));
+    _secretsMtime = stat.mtimeMs;
+    return _secretsCache;
+  } catch (err) {
+    console.warn('[secrets] secrets-store.json 로드 실패:', err.message);
+    return null;
+  }
+}
+
 function loadJson(filepath) {
   try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
   catch { return {}; }
+}
+
+function mergeRuntimeAndSecrets(runtime, secrets) {
+  const merged = { ...(runtime || {}) };
+  const source = secrets || {};
+
+  Object.keys(source).forEach((key) => {
+    const left = merged[key];
+    const right = source[key];
+    if (
+      left && right
+      && typeof left === 'object' && !Array.isArray(left)
+      && typeof right === 'object' && !Array.isArray(right)
+    ) {
+      merged[key] = { ...left, ...right };
+      return;
+    }
+    merged[key] = right;
+  });
+
+  return merged;
 }
 
 const CATEGORY_HANDLERS = {
 
   // LLM API 키 (티어 2: 공유)
   llm: () => {
+    const store = loadSecretsStore();
+    if (store?.anthropic || store?.openai || store?.gemini || store?.groq) {
+      return {
+        anthropic: store.anthropic || {},
+        openai: store.openai || {},
+        gemini: store.gemini || {},
+        groq: { accounts: store.groq?.accounts || [] },
+        cerebras: store.cerebras || {},
+        sambanova: store.sambanova || {},
+        xai: store.xai || {},
+        billing: loadConfigYaml().billing || {},
+      };
+    }
+
     const c = loadConfigYaml();
     return {
       anthropic: { api_key: c.anthropic?.api_key, admin_api_key: c.anthropic?.admin_api_key },
@@ -79,6 +130,14 @@ const CATEGORY_HANDLERS = {
 
   // 텔레그램 (티어 2: 공유)
   telegram: () => {
+    const store = loadSecretsStore();
+    if (store?.telegram) {
+      return {
+        bot_token: store.telegram.bot_token,
+        chat_id: String(store.telegram.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
+      };
+    }
+
     const c = loadConfigYaml();
     return {
       bot_token: c.telegram?.bot_token,
@@ -88,6 +147,18 @@ const CATEGORY_HANDLERS = {
 
   // 거래소 키 — 원본 반환 (DEV 안전은 클라이언트 env.js가 담당)
   exchange: () => {
+    const store = loadSecretsStore();
+    if (store?.binance || store?.upbit || store?.kis) {
+      const runtime = loadConfigYaml();
+      return {
+        binance: mergeRuntimeAndSecrets(runtime.binance, store.binance),
+        upbit: store.upbit || {},
+        kis: sanitizeKisConfig(mergeRuntimeAndSecrets(runtime.kis, store.kis)),
+        trading_mode: runtime.trading_mode,
+        paper_mode: runtime.paper_mode,
+      };
+    }
+
     const c = loadConfigYaml();
     return {
       binance: c.binance || {},
@@ -100,6 +171,16 @@ const CATEGORY_HANDLERS = {
 
   // 예약 시크릿 (티어 2 공유 + 티어 4 마스킹)
   'reservation-shared': () => {
+    const store = loadSecretsStore();
+    if (store?.reservation) {
+      return {
+        telegram_bot_token: store.reservation.telegram_bot_token || '',
+        telegram_chat_id: store.reservation.telegram_chat_id || '',
+        telegram_group_id: store.reservation.telegram_group_id || '',
+        telegram_topic_ids: store.reservation.telegram_topic_ids || {},
+      };
+    }
+
     const d = loadJson(RSV_SECRETS);
     return {
       telegram_bot_token: d.telegram_bot_token || '',
@@ -111,7 +192,8 @@ const CATEGORY_HANDLERS = {
 
   // 하위 호환용 reservation 묶음
   reservation: () => {
-    const d = loadJson(RSV_SECRETS);
+    const store = loadSecretsStore();
+    const d = store?.reservation || loadJson(RSV_SECRETS);
     return {
       telegram_bot_token: d.telegram_bot_token || '',
       telegram_chat_id: d.telegram_chat_id || '',
@@ -129,7 +211,9 @@ const CATEGORY_HANDLERS = {
 
   // config.yaml 전체 — 원본 반환 (DEV 안전은 클라이언트 env.js가 담당)
   config: () => {
-    return sanitizeConfig(loadConfigYaml());
+    const runtime = loadConfigYaml();
+    const store = loadSecretsStore();
+    return sanitizeConfig(store ? mergeRuntimeAndSecrets(runtime, store) : runtime);
   },
 };
 
