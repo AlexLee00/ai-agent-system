@@ -8,7 +8,7 @@ import { createRequire } from 'module';
 
 const require  = createRequire(import.meta.url);
 const pgPool   = require('../../../packages/core/lib/pg-pool');
-const { publishToQueue } = require('../../../packages/core/lib/reporting-hub');
+const { publishToQueue, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 
 /**
  * 메인봇 큐에 알람 발행
@@ -21,13 +21,30 @@ const { publishToQueue } = require('../../../packages/core/lib/reporting-hub');
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
 export async function publishToMainBot({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }) {
-  const result = await publishToQueue({
-    pgPool,
-    schema: 'claude',
-    event: { from_bot, team, event_type, alert_level, message, payload },
+  const event = { from_bot, team, event_type, alert_level, message, payload };
+
+  const webhookResult = await publishToWebhook({
+    event,
     policy: {
       cooldownMs: 2 * 60_000,
     },
   });
-  return result.ok;
+
+  if (webhookResult.ok && !webhookResult.skipped) {
+    return true;
+  }
+
+  console.warn(
+    `[mainbot-client] webhook 실패/스킵, 큐 폴백: ${webhookResult.error || webhookResult.reason || 'unknown'}`,
+  );
+
+  const queueResult = await publishToQueue({
+    pgPool,
+    schema: 'claude',
+    event,
+    policy: {
+      cooldownMs: 2 * 60_000,
+    },
+  });
+  return queueResult.ok;
 }
