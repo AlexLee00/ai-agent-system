@@ -15,13 +15,14 @@ const jwt    = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs     = require('fs');
 const path   = require('path');
-const { getSecret } = require('./secrets');
+const { initHubSecrets, getSecret } = require('./secrets');
 
 const SALT_ROUNDS = 12;
 const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
 
 // JWT 시크릿 — secrets.json 없으면 자동 생성 후 저장
-function _getJwtSecret() {
+async function getJwtSecret() {
+  await initHubSecrets();
   let secret = getSecret('worker_jwt_secret');
   if (!secret) {
     secret = crypto.randomBytes(48).toString('hex');
@@ -35,7 +36,6 @@ function _getJwtSecret() {
   return secret;
 }
 
-const JWT_SECRET  = _getJwtSecret();
 const JWT_OPTIONS = { algorithm: 'HS256', expiresIn: '24h' };
 
 // ── 비밀번호 ──────────────────────────────────────────────────────────
@@ -77,14 +77,16 @@ async function verifyPassword(plain, hash) {
 
 // ── JWT ───────────────────────────────────────────────────────────────
 
-function generateToken(user) {
+async function generateToken(user) {
   const payload = { id: user.id, company_id: user.company_id, role: user.role };
+  const JWT_SECRET = await getJwtSecret();
   return jwt.sign(payload, JWT_SECRET, JWT_OPTIONS);
 }
 
-function verifyToken(token) {
+async function verifyToken(token) {
   // throws on invalid/expired
+  const JWT_SECRET = await getJwtSecret();
   return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
 }
 
-module.exports = { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy };
+module.exports = { hashPassword, verifyPassword, generateToken, verifyToken, validatePasswordPolicy, getJwtSecret };

@@ -17,7 +17,7 @@
 
 const fs = require('fs');
 const { publishToMainBot } = require('../lib/mainbot-client');
-const { initHubSharedSecrets } = require('../lib/secrets');
+const { initHubSecrets } = require('../lib/secrets');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
 
@@ -70,7 +70,7 @@ function checkNaverLogStaleness() {
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
-  await initHubSharedSecrets();
+  await initHubSecrets();
   console.log(`[헬스체크] 시작 — ${new Date().toISOString()}`);
 
   let status;

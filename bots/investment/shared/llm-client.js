@@ -69,11 +69,11 @@ try {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// ─── 설정 로드 (config.yaml → secrets.json fallback) ─────────────────
+// ─── 설정 로드 (config.yaml 런타임 + Hub secrets 병합) ───────────────
 
 let _cfg;
 try {
-  _cfg = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8'));
+  _cfg = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
 } catch {
   try {
     const s = JSON.parse(readFileSync(join(__dirname, '..', 'secrets.json'), 'utf8'));
@@ -86,6 +86,46 @@ try {
   } catch {
     _cfg = { trading_mode: 'paper', paper_mode: true, anthropic: { api_key: '' }, groq: { accounts: [] } };
   }
+}
+
+const _secrets = loadSecrets();
+
+if (!_cfg.anthropic?.api_key) {
+  _cfg.anthropic = {
+    ...(_cfg.anthropic || {}),
+    api_key: _secrets.anthropic_api_key || '',
+    admin_api_key: _secrets.anthropic_admin_api_key || '',
+  };
+}
+if (!_cfg.groq?.accounts?.length) {
+  _cfg.groq = {
+    ...(_cfg.groq || {}),
+    accounts: (_secrets.groq_api_keys || []).map((api_key) => ({ api_key })),
+  };
+}
+if (!_cfg.openai?.api_key) {
+  _cfg.openai = {
+    ...(_cfg.openai || {}),
+    api_key: _secrets.openai_api_key || '',
+    admin_api_key: _secrets.openai_admin_api_key || '',
+    model: _cfg.openai?.model || _secrets.openai_model || 'gpt-4o',
+  };
+}
+if (!_cfg.gemini?.api_key) {
+  _cfg.gemini = {
+    ...(_cfg.gemini || {}),
+    api_key: _secrets.gemini_api_key || '',
+    image_api_key: _secrets.gemini_image_api_key || '',
+  };
+}
+if (!_cfg.cerebras?.api_key) {
+  _cfg.cerebras = { ...(_cfg.cerebras || {}), api_key: _secrets.cerebras_api_key || '' };
+}
+if (!_cfg.sambanova?.api_key) {
+  _cfg.sambanova = { ...(_cfg.sambanova || {}), api_key: _secrets.sambanova_api_key || '' };
+}
+if (!_cfg.xai?.api_key) {
+  _cfg.xai = { ...(_cfg.xai || {}), api_key: _secrets.xai_api_key || '' };
 }
 
 export const PAPER_MODE = getTradingMode() === 'paper';

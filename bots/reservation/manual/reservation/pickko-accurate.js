@@ -13,7 +13,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { transformAndNormalizeData, validateTimeRange } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
-const { loadSecrets } = require('../../lib/secrets');
+const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
@@ -37,12 +37,7 @@ function logStageFailure(code, message, extra = {}) {
   log(`PICKKO_FAILURE_STAGE=${code} ${JSON.stringify(payload)}`);
 }
 
-// 인증 정보 (secrets.json에서 로드)
-const SECRETS = loadSecrets();
-
-
-const PICKKO_ID = SECRETS.pickko_id;
-const PICKKO_PW = SECRETS.pickko_pw;
+loadSecrets();
 // ======================== 입력 파라미터 ========================
 // 기본값(테스트용). 운영 연결 시 naver-monitor에서 argv로 주입.
 const DEFAULTS = {
@@ -315,6 +310,7 @@ async function main() {
   };
 
   try {
+    await initHubSecrets();
     log(`🚀 픽코 예약 등록 시작`);
 
     // 픽코 단독접근 락 획득
@@ -342,7 +338,7 @@ async function main() {
     // ======================== 1단계: 로그인 ========================
     setStage('LOGIN');
     log('\n[1단계] 로그인');
-    await loginToPickko(page, PICKKO_ID, PICKKO_PW, delay);
+    await loginToPickko(page, getSecret('pickko_id', ''), getSecret('pickko_pw', ''), delay);
     log('✅ 로그인 완료');
 
     // ✅ 시간 범위 변환 확인 (로그인 후)

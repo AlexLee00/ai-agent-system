@@ -14,56 +14,82 @@
 const fs   = require('fs');
 const path = require('path');
 const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
+const env = require('../../../packages/core/lib/env');
 
 const SECRETS_PATH = path.join(__dirname, '..', 'secrets.json');
+const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
 let _cache = null;
 let _hubSharedInitDone = false;
 
 // ─── 로드 ───────────────────────────────────────────────────────────
 
-function loadSecrets() {
-  if (_cache) return _cache;
-
+function loadLocalSecrets() {
   try {
-    _cache = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8'));
+    return JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8'));
   } catch (e) {
+    const hasStore = Object.keys(loadStoreSecrets()).length > 0;
+    if (hasStore) return {};
     if (e.code === 'ENOENT') {
       console.warn('⚠️  secrets.json 없음 — 환경변수 또는 기본값으로 동작합니다');
       console.warn(`   예시 파일: cp secrets.example.json secrets.json && chmod 600 secrets.json`);
     } else {
       console.warn(`⚠️  secrets.json 파싱 실패: ${e.message}`);
     }
-    _cache = {};
+    return {};
   }
+}
 
+function loadStoreSecrets() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf-8'));
+    return raw?.reservation || {};
+  } catch {
+    return {};
+  }
+}
+
+function loadSecrets() {
+  if (_cache) return _cache;
+  const store = loadStoreSecrets();
+  _cache = Object.keys(store).length > 0 ? store : loadLocalSecrets();
   return _cache;
 }
 
 /**
- * Hub에서 reservation 공유 키를 가져와 로컬 시크릿에 병합.
- * 운영 자격증명(pickko/naver/db)은 로컬 파일을 계속 우선 사용한다.
+ * Hub에서 reservation 키를 가져와 로컬 시크릿에 병합.
  * @returns {Promise<boolean>} Hub 로드 성공 여부
  */
-async function initHubSharedSecrets() {
+async function initHubSecrets() {
   if (_hubSharedInitDone) return !!_cache;
 
-  const local = loadSecrets();
-  const hubData = await fetchHubSecrets('reservation-shared');
-  if (hubData) {
-    _cache = {
-      ...local,
-      telegram_bot_token: hubData.telegram_bot_token || local.telegram_bot_token || '',
-      telegram_chat_id: hubData.telegram_chat_id || local.telegram_chat_id || '',
-      telegram_group_id: hubData.telegram_group_id || local.telegram_group_id || '',
-      telegram_topic_ids: hubData.telegram_topic_ids || local.telegram_topic_ids || {},
-    };
-    _hubSharedInitDone = true;
-    return true;
+  const local = loadLocalSecrets();
+  const store = loadStoreSecrets();
+  const base = Object.keys(store).length > 0 ? { ...local, ...store } : local;
+  try {
+    const hubData = await fetchHubSecrets('reservation');
+    if (hubData) {
+      _cache = { ...base, ...hubData };
+      _hubSharedInitDone = true;
+      return true;
+    }
+    const sharedData = await fetchHubSecrets('reservation-shared');
+    if (sharedData) {
+      _cache = { ...base, ...sharedData };
+      _hubSharedInitDone = true;
+      return true;
+    }
+  } catch (e) {
+    console.warn(`[reservation/secrets] Hub 시크릿 로드 실패: ${e.message}`);
   }
 
+  _cache = base;
   _hubSharedInitDone = true;
   return false;
+}
+
+async function initHubSharedSecrets() {
+  return initHubSecrets();
 }
 
 // ─── 키 접근 헬퍼 ───────────────────────────────────────────────────
@@ -140,6 +166,8 @@ function hasDataGokrKeys() {
 
 module.exports = {
   loadSecrets,
+  loadLocalSecrets,
+  initHubSecrets,
   initHubSharedSecrets,
   requireSecret,
   hasSecret,
