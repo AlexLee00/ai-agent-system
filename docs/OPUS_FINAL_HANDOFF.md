@@ -1,81 +1,68 @@
-# Opus 세션 인수인계 — Skills 재설계 + CF 15개 분석 완료 (2026-03-31)
+# Opus 세션 인수인계 — Skills Phase 1 검증 + 클로드팀 설계 + 라이트 신설 (2026-03-31)
 
 > 작성일: 2026-03-31 | 모델: Claude Opus 4.6 (메티)
 
 ---
 
-## 이번 세션 핵심 성과 + 방향 전환
+## 이번 세션 성과
 
-### ⚠️ 역할 원칙 위반 발생 + 즉시 수정
-- 메티가 packages/core/lib/skills/ 직접 구현 → revert 완료 (커밋 b326439)
-- 교훈: 메티는 설계+프롬프트만, 코드 구현은 반드시 코덱스
+### Skills Phase 1 — 코덱스 구현 + 메티 검증 완료
+- code-review.js (160줄), verify-loop.js (79줄), plan.js (82줄), index.js (7줄)
+- 문법 테스트 4/4 통과, 소프트 테스트 3/3 통과
+- 위치: packages/core/lib/skills/ (프레임워크 독립, 공용)
 
-### ⚠️ 마스터 피드백 — 프레임워크 독립 원칙
-```
-"스킬, 훅스를 반드시 클로드 코드로 사용하도록 하는것은 아니야!
- 우리 에이전트가 이것을 사용할 수 있도록 구현하는거야!!
- 프레임워크에 종속되지 않도록 하자!!"
-```
+### 클로드팀 설계 심화
+- 정상 주기: GitHub Actions (git push → 리뷰어+가디언+빌더 자동 실행)
+- 오류 상황: 덱스터 감지 → 닥터 L1→L2→L3 에스컬레이션
+- 품질 그룹(리뷰어+가디언+빌더) = GitHub Actions 트리거
+- 감지/복구 그룹(덱스터+닥터) = launchd cron 유지
 
-### 확정된 방향: A안 (packages/core/lib/skills/ Node.js 모듈)
-```
-위치: packages/core/lib/skills/ ← 공용 (hub-client, local-llm-client와 동급)
-사용: 봇이 require()로 직접 사용 + 코덱스도 참조 가능
-원칙: 프레임워크 완전 독립, Single Source of Truth
-.claude/: 깃에서 제외 (.gitignore)
-```
+### 라이트(Write) 신설 — 제이 직속
+- 위치: bots/orchestrator/src/write.js + lib/write/
+- 범위: B안 (감지+초안 → 마스터 승인 후 반영)
+- 트리거: GitHub Actions (git push) + 일일 cron
 
-### Claude Forge 15개 스킬 전체 분석 완료
-```
-⭐⭐⭐ 필수 4개:
-  security-pipeline   → 가디언: CWE Top 25 + STRIDE 보안 체크
-  eval-harness        → 일일 성장: 성과 측정 프레임워크
-  team-orchestrator   → 제이(메인봇): 9팀 조율 엔진
-  session-wrap        → 세션 마무리: HANDOFF 자동 생성 + 일일 리포트
+라이트 역할:
+  📝 일일 리포트 — 팀별 리포트 취합 (daily-report, health-report 등)
+  📝 CHANGELOG/WORK_HISTORY — 커밋 기반 자동 추가
+  📝 문서 불일치 감지 — 코드 변경 vs CLAUDE.md/TRACKER 비교 → 초안 제안
+  📝 팀장회의록 — sessions_send 요약 → 텔레그램 게시
+  📝 주간 리포트 — 일일 취합 종합
 
-⭐⭐ 높은 가치 5개:
-  build-system        → 빌더: 워커 Next.js + npm 빌드
-  instinct-learning   → 일일 성장 핵심: 패턴 학습→자동 적용
-  pattern-to-skill    → LLM 졸업 엔진 연결: 반복 패턴→규칙 전환
-  skill-explorer      → 연구팀: 새 기술 발굴+적용
-  session-analyzer    → 리뷰어: 세션 검증 분석
-
-  이전 설계 5개:
-  code-review         → 리뷰어: 5단계 코드 리뷰
-  verify-loop         → 닥터 L3: 자동 검증 재시도 (3회)
-  plan                → 기획: 구현 계획 구조화
-  tdd                 → 테스터: RED→GREEN→REFACTOR
-  handoff-verify      → 독립 이중 검증
-
-  합계: 14개 공용 스킬 모듈 (packages/core/lib/skills/)
-```
+기존 리포트 분석 완료 (연동 대상):
+  루나: report.js, trading-journal.js, weekly-trade-review.js, analyst-accuracy.js
+  클로드: daily-report.js, archer/reporter.js
+  스카: pickko-daily-audit.js, pickko-daily-summary.js
+  공용: api-usage-report.js, collect-kpi.js, weekly-team-report.js
 
 ---
 
 ## 다음 세션
 
 ```
-1순위: 14개 공용 스킬 모듈 코덱스 구현 프롬프트 작성 (메티의 역할!)
-  → 메티가 설계서+프롬프트 작성 → 코덱스가 구현 → 메티가 점검
-  → 구현 우선순위:
-    Phase 1: code-review + verify-loop + plan (기본 3개)
-    Phase 2: security-pipeline + eval-harness + team-orchestrator (핵심 4개)
-    Phase 3: 나머지 7개
+1순위: Phase 2 코덱스 프롬프트 작성 — 클로드팀 봇 구현
+  → 클로드팀 품질 그룹 (GitHub Actions 트리거):
+    리뷰어: code-review.js 사용 → git diff → 자동 리뷰 → 텔레그램
+    가디언: security-pipeline → 보안 검사 자동화
+    빌더: 워커 Next.js 빌드 검증
+  → 닥터 L3 강화: verify-loop.js 사용
+  → 라이트: bots/orchestrator/src/write.js
 
-2순위: OpenClaw 기술 연구 + Phase 1 (C안, 연구팀 첫 과제)
+2순위: 나머지 스킬 모듈 (security-pipeline, eval-harness, team-orchestrator 등)
 
-3순위: D 분해 — 인프라+루나 우선
+3순위: OpenClaw 기술 연구 + Phase 1
 
-4순위: 블로팀 P1~P5 코덱스 프롬프트
+4순위: D 분해 (인프라+루나)
 ```
 
 ## 핵심 결정
 
 ```
-[DECISION] Skills는 프레임워크 독립 — packages/core/lib/skills/ Node.js 모듈
-[DECISION] .claude/는 깃에서 제외 (.gitignore)
-[DECISION] 봇이 require()로 직접 사용 + 코덱스도 참조 가능
-[DECISION] A안 확정 (Single Source of Truth, Node.js)
-[DECISION] CF 15개 스킬 분석 → 14개 공용 모듈 목록 확정
-[DECISION] 메티 직접 구현 금지 — 역할 원칙 재확인
+[DECISION] Skills Phase 1 코덱스 구현 검증 완료 (4파일, 328줄)
+[DECISION] 클로드팀 트리거: 정상=GitHub Actions, 오류=덱스터+닥터
+[DECISION] 라이트(Write) 신설: 제이 직속, bots/orchestrator/에 배치
+[DECISION] 라이트 범위: B안 (감지+초안 → 마스터 승인)
+[DECISION] 라이트 구현은 클로드팀 봇과 함께 Phase 2에서
+[DECISION] 먼저 클로드팀(자동 검증 인프라) → 이후 나머지 스킬/봇 구현
+[DECISION] 기존 리포트 분석 → 라이트가 취합+관리할 리포트 목록 확정
 ```
