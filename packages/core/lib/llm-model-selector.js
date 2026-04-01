@@ -103,30 +103,212 @@ function _dedupeByProvider(chain) {
   );
 }
 
+const TEAM_SELECTOR_DEFAULTS = {
+  claude: {
+    dexter: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+      ],
+    },
+    archer: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.2 },
+        { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.3 },
+      ],
+    },
+    lead: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+  },
+  blog: {
+    'pos.writer': {
+      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.82 },
+      fallbacks: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.82 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+      ],
+    },
+    'gems.writer': {
+      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.85 },
+      fallbacks: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.85 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+      ],
+    },
+    'social.summarize': {
+      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [],
+    },
+    'social.caption': {
+      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [],
+    },
+    'star.summarize': {
+      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'star.caption': {
+      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'curriculum.recommend': {
+      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 2000, temperature: 0.7 },
+      fallbacks: [
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2000, temperature: 0.7 },
+      ],
+    },
+    'curriculum.generate': {
+      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 8000, temperature: 0.5 },
+      fallbacks: [],
+    },
+    _fallback: {
+      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+  },
+  worker: {
+    'chat.task_intake': {
+      primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+  },
+  core: {
+    'chunked.gpt4o': {
+      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
+      fallbacks: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
+      ],
+    },
+    'chunked.default': {
+      primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
+      fallbacks: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
+      fallbacks: [
+        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
+      ],
+    },
+  },
+};
+
+const AGENT_MODEL_REGISTRY = {
+  claude: {
+    reviewer: null,
+    guardian: null,
+    builder: null,
+    'quality-report': null,
+    dexter: 'claude.dexter.ai_analyst',
+    archer: 'claude.archer.tech_analysis',
+    lead: 'claude.lead.system_issue_triage',
+    commander: null,
+  },
+  blog: {
+    blo: null,
+    richer: null,
+    pos: 'blog.pos.writer',
+    gems: 'blog.gems.writer',
+    publ: null,
+    star: 'blog.star.summarize',
+    'social-summarize': 'blog.social.summarize',
+    'social-caption': 'blog.social.caption',
+    'curriculum-recommend': 'blog.curriculum.recommend',
+    'curriculum-generate': 'blog.curriculum.generate',
+  },
+  worker: {
+    lead: null,
+    web: null,
+    nextjs: null,
+    'task-runner': null,
+    'task-intake': 'worker.chat.task_intake',
+    'ai-fallback': 'worker.ai.fallback',
+  },
+  core: {
+    'chunked-gpt4o': 'core.chunked.gpt4o',
+    'chunked-default': 'core.chunked.default',
+  },
+};
+
+function _normalizeTeamDefaultEntry(entry) {
+  if (_isObject(entry) && entry.enabled === false) {
+    return {
+      enabled: false,
+      primary: null,
+      fallbacks: [],
+      chain: [],
+    };
+  }
+  if (!_isObject(entry) || !_isObject(entry.primary)) return null;
+  return {
+    enabled: true,
+    primary: _clone(entry.primary),
+    fallbacks: Array.isArray(entry.fallbacks) ? _clone(entry.fallbacks) : [],
+    chain: [_clone(entry.primary), ...(Array.isArray(entry.fallbacks) ? _clone(entry.fallbacks) : [])],
+  };
+}
+
+function _resolveFromTeamDefault(selectorKey) {
+  const parts = String(selectorKey || '').split('.');
+  const team = parts[0];
+  const restKey = parts.slice(1).join('.');
+  const shortKey = parts[1] || '';
+  const teamDefaults = TEAM_SELECTOR_DEFAULTS[team];
+  if (!teamDefaults) return null;
+
+  if (restKey === '_default') {
+    return _normalizeTeamDefaultEntry(teamDefaults._fallback || null);
+  }
+
+  return _normalizeTeamDefaultEntry(
+    teamDefaults[restKey]
+    || teamDefaults[shortKey]
+    || teamDefaults._fallback
+    || null
+  );
+}
+
 function _buildSelectorRegistry() {
   return {
-    'claude.archer.tech_analysis': [
-      { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.2 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.3 },
-      { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.3 },
-    ],
-
-    'claude.lead.system_issue_triage': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 300, temperature: 0.1 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 300, temperature: 0.1 },
-      { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
-    ],
-
-    'claude.dexter.ai_analyst': ({ level = 2 }) => ({
-      provider: 'openai',
-      model: level >= 4 ? 'gpt-4o' : 'gpt-4o-mini',
-      maxTokens: 300,
-      temperature: 0.1,
-    }),
+    'claude._default': () => _resolveFromTeamDefault('claude._default'),
+    'claude.archer.tech_analysis': () => _resolveFromTeamDefault('claude.archer.tech_analysis'),
+    'claude.lead.system_issue_triage': () => _resolveFromTeamDefault('claude.lead.system_issue_triage'),
+    'claude.dexter.ai_analyst': () => _resolveFromTeamDefault('claude.dexter.ai_analyst'),
 
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback } = {}) => ({
       primary: {
-        provider: 'openai',
+        provider: 'openai-oauth',
         model: intentPrimary || 'gpt-5-mini',
       },
       fallback: {
@@ -178,61 +360,22 @@ function _buildSelectorRegistry() {
       return _dedupeByProvider(chain);
     },
 
-    'worker.chat.task_intake': [
-      { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
-    ],
+    'worker._default': () => _resolveFromTeamDefault('worker._default'),
+    'worker.chat.task_intake': () => _resolveFromTeamDefault('worker.chat.task_intake'),
 
-    'blog.pos.writer': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.82 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.82 },
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
-    ],
+    'blog._default': () => _resolveFromTeamDefault('blog._default'),
+    'blog.pos.writer': () => _resolveFromTeamDefault('blog.pos.writer'),
+    'blog.gems.writer': () => _resolveFromTeamDefault('blog.gems.writer'),
+    'blog.social.summarize': () => _resolveFromTeamDefault('blog.social.summarize'),
+    'blog.social.caption': () => _resolveFromTeamDefault('blog.social.caption'),
+    'blog.star.summarize': () => _resolveFromTeamDefault('blog.star.summarize'),
+    'blog.star.caption': () => _resolveFromTeamDefault('blog.star.caption'),
+    'blog.curriculum.recommend': () => _resolveFromTeamDefault('blog.curriculum.recommend'),
+    'blog.curriculum.generate': () => _resolveFromTeamDefault('blog.curriculum.generate'),
 
-    'blog.gems.writer': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.85 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.85 },
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
-    ],
-
-    'blog.social.summarize': [
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-    ],
-
-    'blog.social.caption': [
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-    ],
-
-    'blog.star.summarize': [
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-      { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-    ],
-
-    'blog.star.caption': [
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-      { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-    ],
-
-    'blog.curriculum.recommend': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 2000, temperature: 0.7 },
-      { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2000, temperature: 0.7 },
-    ],
-
-    'blog.curriculum.generate': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 8000, temperature: 0.5 },
-    ],
-
-    'core.chunked.gpt4o': [
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
-    ],
-
-    'core.chunked.default': [
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
-      { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
-      { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
-    ],
+    'core._default': () => _resolveFromTeamDefault('core._default'),
+    'core.chunked.gpt4o': () => _resolveFromTeamDefault('core.chunked.gpt4o'),
+    'core.chunked.default': () => _resolveFromTeamDefault('core.chunked.default'),
 
     'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-4o', policyOverride } = {}) => {
       const defaultRoutes = {
@@ -259,22 +402,22 @@ function _buildSelectorRegistry() {
       const anthropicModel = policyOverride?.anthropicModel || 'claude-haiku-4-5-20251001';
       const routeChains = {
         openai_perf: [
-          { provider: 'openai', model: openaiPerfModel },
+          { provider: 'openai-oauth', model: openaiPerfModel },
           { provider: 'groq', model: groqScoutModel },
         ],
         dual_groq: [
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
           { provider: 'groq', model: groqCompetitionModels[1] || groqScoutModel },
-          { provider: 'openai', model: openaiPerfModel },
+          { provider: 'openai-oauth', model: openaiPerfModel },
         ],
         openai_mini: [
-          { provider: 'openai', model: openaiMiniModel },
+          { provider: 'openai-oauth', model: openaiMiniModel },
           { provider: 'groq', model: groqScoutModel },
-          { provider: 'openai', model: openaiPerfModel },
+          { provider: 'openai-oauth', model: openaiPerfModel },
         ],
         groq_scout: [
           { provider: 'groq', model: groqScoutModel },
-          { provider: 'openai', model: openaiMiniModel },
+          { provider: 'openai-oauth', model: openaiMiniModel },
         ],
         local_fast: [
           { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
@@ -308,6 +451,7 @@ const SELECTOR_REGISTRY = _buildSelectorRegistry();
 
 function _normalizeChainFromPolicy(policy) {
   if (Array.isArray(policy)) return _clone(policy);
+  if (policy?.enabled === false) return [];
   if (Array.isArray(policy?.chain)) return _clone(policy.chain);
   if (Array.isArray(policy?.fallbackChain)) return _clone(policy.fallbackChain);
   if (_isObject(policy?.primary)) {
@@ -340,6 +484,16 @@ function selectLLMChain(key, options = {}) {
 
 function describeLLMSelector(key, options = {}) {
   const resolved = selectLLMPolicy(key, options);
+  if (resolved?.enabled === false) {
+    return {
+      key,
+      kind: 'none',
+      primary: null,
+      fallbacks: [],
+      chain: [],
+      enabled: false,
+    };
+  }
   const chain = _normalizeChainFromPolicy(resolved);
   if (chain) {
     return {
@@ -361,6 +515,45 @@ function listLLMSelectorKeys() {
   return Object.keys(SELECTOR_REGISTRY).sort();
 }
 
+function listAgentModelTargets(team = null) {
+  const teams = team ? { [team]: AGENT_MODEL_REGISTRY[team] || {} } : AGENT_MODEL_REGISTRY;
+  const entries = [];
+  for (const [teamName, agents] of Object.entries(teams)) {
+    for (const [agentName, selectorKey] of Object.entries(agents || {})) {
+      entries.push({
+        team: teamName,
+        agent: agentName,
+        selectorKey: selectorKey || null,
+        selected: Boolean(selectorKey),
+      });
+    }
+  }
+  return entries.sort((a, b) => `${a.team}.${a.agent}`.localeCompare(`${b.team}.${b.agent}`));
+}
+
+function describeAgentModel(team, agentName, selectorOptions = {}) {
+  const selectorKey = AGENT_MODEL_REGISTRY?.[team]?.[agentName] || null;
+  if (!selectorKey) {
+    return {
+      team,
+      agent: agentName,
+      selectorKey: null,
+      selected: false,
+      description: null,
+      chain: [],
+    };
+  }
+  const description = describeLLMSelector(selectorKey, selectorOptions[selectorKey] || {});
+  return {
+    team,
+    agent: agentName,
+    selectorKey,
+    selected: Array.isArray(description?.chain) && description.chain.length > 0,
+    description,
+    chain: Array.isArray(description?.chain) ? description.chain : [],
+  };
+}
+
 module.exports = {
   inferProviderFromModel,
   buildSingleChain,
@@ -368,4 +561,6 @@ module.exports = {
   selectLLMChain,
   describeLLMSelector,
   listLLMSelectorKeys,
+  listAgentModelTargets,
+  describeAgentModel,
 };

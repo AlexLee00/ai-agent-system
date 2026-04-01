@@ -419,7 +419,13 @@ async function analyze(data, cache = {}) {
       chain:        ARCHER_CHAIN,
       systemPrompt: SYSTEM_PROMPT,
       userPrompt:   contextText,
-      logMeta: { team: 'claude', bot: 'archer', requestType: 'architecture_review' },
+      logMeta: {
+        team: 'claude',
+        bot: 'archer',
+        agentName: 'archer',
+        selectorKey: 'claude.archer.tech_analysis',
+        requestType: 'architecture_review',
+      },
     });
     if (attempt > 1) {
       console.log(`  ↳ [아처] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);

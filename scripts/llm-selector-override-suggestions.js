@@ -36,11 +36,11 @@ const SELECTOR_PATHS = {
   },
   'claude.dexter.ai_analyst.warn': {
     config: 'bots/claude/config.json',
-    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.lowModel',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.chain',
   },
   'claude.dexter.ai_analyst.critical': {
     config: 'bots/claude/config.json',
-    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.highModel',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.chain',
   },
   'blog.pos.writer': {
     config: 'bots/blog/config.json',

@@ -266,7 +266,13 @@ async function evaluateWithClaudeLead(results) {
       chain:        LLM_CHAIN,
       systemPrompt: SYSTEM_PROMPT,
       userPrompt:   _buildUserPrompt(issues, ragContext),
-      logMeta: { team: 'claude', bot: 'claude-lead', requestType: 'system_issue_triage' },
+      logMeta: {
+        team: 'claude',
+        bot: 'claude-lead',
+        agentName: 'lead',
+        selectorKey: 'claude.lead.system_issue_triage',
+        requestType: 'system_issue_triage',
+      },
     });
     if (attempt > 1 || usedModel !== MODEL) {
       console.log(`  ↳ [클로드 팀장] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
