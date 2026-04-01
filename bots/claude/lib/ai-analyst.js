@@ -11,14 +11,12 @@
  * 인사이트 저장소: ~/.openclaw/workspace/dexter-insights.json (최대 20개 FIFO)
  */
 
-const OpenAI = require('openai');
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
 
-const { getOpenAIKey }              = require('../../../packages/core/lib/llm-keys');
-const { getTimeout }                = require('../../../packages/core/lib/llm-timeouts');
-const { selectLLMPolicy }           = require('../../../packages/core/lib/llm-model-selector');
+const { callWithFallback }          = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain }            = require('../../../packages/core/lib/llm-model-selector');
 const { getPatterns, getNewErrors } = require('./error-history');
 const cfg = require('./config');
 
@@ -151,23 +149,12 @@ function normalizeInsight(parsed, summary) {
 }
 
 async function analyzeWithAI(results, elapsed, level) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) {
-    console.warn('  ⚠️ AI 분석 스킵: OpenAI API 키 없음');
-    return null;
-  }
-
   const policyOverride = cfg.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'];
-  const policy = selectLLMPolicy('claude.dexter.ai_analyst', {
+  const chain = selectLLMChain('claude.dexter.ai_analyst', {
     level,
-    policyOverride: policyOverride
-      ? {
-          model: level >= 4 ? (policyOverride.highModel || 'gpt-4o') : (policyOverride.lowModel || 'gpt-4o-mini'),
-        }
-      : null,
+    policyOverride,
   });
-  const model  = policy.model;
-  const client = new OpenAI({ apiKey, timeout: getTimeout(model), maxRetries: 1 });
+  const model  = chain[0]?.model || 'gpt-5.4';
 
   // 1. 이슈 항목 추출
   const issues = results.flatMap(r =>
@@ -191,21 +178,17 @@ async function analyzeWithAI(results, elapsed, level) {
   const prevInsights = loadInsights().slice(-3)
     .map(i => `${i.timestamp}: ${i.diagnosis} (${i.trend})`).join('\n') || null;
 
-  // 4. OpenAI 호출
-  const resp = await client.chat.completions.create({
-    model,
-    max_tokens:      300,
-    temperature:     0.1,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary) },
-    ],
+  // 4. LLM 호출
+  const { text } = await callWithFallback({
+    chain,
+    systemPrompt: SYSTEM_PROMPT,
+    userPrompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
+    logMeta: { team: 'claude', bot: 'dexter', requestType: 'system_diagnosis' },
   });
 
   let parsed;
   try {
-    parsed = JSON.parse(resp.choices[0]?.message?.content || '{}');
+    parsed = JSON.parse(String(text || '{}'));
   } catch {
     return null;
   }

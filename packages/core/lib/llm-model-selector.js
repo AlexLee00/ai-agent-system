@@ -308,6 +308,7 @@ const SELECTOR_REGISTRY = _buildSelectorRegistry();
 
 function _normalizeChainFromPolicy(policy) {
   if (Array.isArray(policy)) return _clone(policy);
+  if (Array.isArray(policy?.chain)) return _clone(policy.chain);
   if (Array.isArray(policy?.fallbackChain)) return _clone(policy.fallbackChain);
   if (_isObject(policy?.primary)) {
     const chain = [_clone(policy.primary)];

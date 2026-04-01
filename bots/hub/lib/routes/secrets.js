@@ -175,6 +175,16 @@ const CATEGORY_HANDLERS = {
     };
   },
 
+  openai_oauth: () => {
+    const store = loadSecretsStore();
+    const d = store?.openai_oauth || {};
+    return {
+      access_token: d.access_token || '',
+      model: d.model || 'gpt-5.4',
+      provider: d.provider || 'openai-codex',
+    };
+  },
+
   // 예약 시크릿 (티어 2 공유 + 티어 4 마스킹)
   'reservation-shared': () => {
     const store = loadSecretsStore();

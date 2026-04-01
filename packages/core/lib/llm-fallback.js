@@ -37,9 +37,17 @@ const {
 const { logLLMCall } = require('./llm-logger');
 const billingGuard = require('./billing-guard');
 const { trackTokens } = require('./token-tracker');
+const { fetchHubSecrets } = require('./hub-client');
+const env = require('./env');
+const fs = require('fs');
+const path = require('path');
 
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
+let _oauthToken = null;
+let _oauthTokenExpiry = 0;
+const OAUTH_CACHE_TTL = 300_000;
+const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
 function _extractText(resp, provider) {
@@ -92,6 +100,62 @@ async function _callOpenAI({ model, maxTokens, temperature = 0.1, systemPrompt, 
       { role: 'user',   content: userPrompt },
     ],
   });
+}
+
+async function _getOAuthToken() {
+  if (_oauthToken && Date.now() < _oauthTokenExpiry) return _oauthToken;
+
+  try {
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    if (store?.openai_oauth?.access_token) {
+      _oauthToken = store.openai_oauth.access_token;
+      _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
+      return _oauthToken;
+    }
+  } catch { /* DEV나 미동기화 상태면 Hub 경유 */ }
+
+  const data = await fetchHubSecrets('openai_oauth');
+  if (data?.access_token) {
+    _oauthToken = data.access_token;
+    _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
+    return _oauthToken;
+  }
+
+  return null;
+}
+
+async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }) {
+  const token = await _getOAuthToken();
+  if (!token) throw new Error('OpenAI OAuth 토큰 없음');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      model: model || 'gpt-5.4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: maxTokens,
+      temperature,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    if (res.status === 401 || res.status === 403) {
+      _oauthToken = null;
+      _oauthTokenExpiry = 0;
+    }
+    throw new Error(`OpenAI OAuth HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ''}`);
+  }
+
+  return res.json();
 }
 
 async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
@@ -179,6 +243,10 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
     }
     case 'openai': {
       const resp = await _callOpenAI(opts);
+      return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
+    }
+    case 'openai-oauth': {
+      const resp = await _callOpenAIOAuth(opts);
       return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
     }
     case 'groq': {
