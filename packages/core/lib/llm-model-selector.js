@@ -362,23 +362,27 @@ function _buildSelectorRegistry() {
     'worker.ai.fallback': ({
       groqModel = 'llama-4-scout-17b-16e-instruct',
       preferredApi = 'groq',
-      configuredProviders = ['groq', 'anthropic', 'gemini', 'openai'],
+      configuredProviders = ['groq', 'local', 'anthropic', 'gemini', 'openai'],
       maxTokens = 1024,
       policyOverride = null,
     } = {}) => {
       const configured = new Set(configuredProviders || []);
       const providerModels = {
         groq: _stripGroqPrefix(policyOverride?.providerModels?.groq || groqModel),
+        local: policyOverride?.providerModels?.local || 'qwen2.5-7b',
         anthropic: policyOverride?.providerModels?.anthropic || 'claude-haiku-4-5-20251001',
         gemini: policyOverride?.providerModels?.gemini || 'gemini-2.5-flash',
         openai: policyOverride?.providerModels?.openai || 'gpt-4o-mini',
       };
       const primary = _resolvePreferredProvider(preferredApi, providerModels.groq, maxTokens);
+      if (preferredApi === 'local') primary.provider = 'local';
+      if (preferredApi === 'local') primary.model = providerModels.local;
       if (preferredApi === 'anthropic') primary.model = providerModels.anthropic;
       if (preferredApi === 'openai') primary.model = providerModels.openai;
       if (preferredApi === 'gemini') primary.model = providerModels.gemini;
       const fallback = [
         { provider: 'groq', model: `groq/${providerModels.groq}`, maxTokens, temperature: 0.1 },
+        { provider: 'local', model: providerModels.local, maxTokens, temperature: 0.1 },
         { provider: 'anthropic', model: providerModels.anthropic, maxTokens, temperature: 0.1 },
         { provider: 'gemini', model: providerModels.gemini, maxTokens, temperature: 0.1 },
         { provider: 'openai', model: providerModels.openai, maxTokens, temperature: 0.1 },
@@ -454,7 +458,7 @@ function _buildSelectorRegistry() {
         ],
         groq_scout: [
           { provider: 'groq', model: groqScoutModel },
-          { provider: 'groq', model: groqCompetitionModels[1] || 'openai/gpt-oss-20b' },
+          { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
           { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         ],
         local_fast: [
