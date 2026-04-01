@@ -544,7 +544,7 @@ async function callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { skip
 
 async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback = false, symbol = null, guardScope = null } = {}) {
   let lastErr;
-  const maxAttempts = Math.max(_groqClients?.length || _groqAccounts.length || 0, 1);
+  const maxAttempts = Math.max(_groqClients?.length || 0, 1);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const t0 = Date.now();
     try {
