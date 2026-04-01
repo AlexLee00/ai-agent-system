@@ -172,17 +172,22 @@ async function preflightConnCheck() {
     errors.push(`네이버 연결 실패: ${e.message}`);
   }
 
-  // 3-2. 텔레그램 테스트 발송
-  try {
-    const { sendTelegram } = require('./telegram');
-    const ok = await sendTelegram('[3중 체크] 스카봇 OPS 시작 — 연결 확인');
-    if (ok) {
-      console.log('      ✅ 텔레그램 연결');
-    } else {
-      errors.push('텔레그램 발송 실패 (token 또는 네트워크 확인)');
+  // 3-2. 텔레그램 연결성
+  // 기본은 무소음 모드로 두고, 필요 시에만 실제 발송 검증한다.
+  if (process.env.SKIP_TELEGRAM_CONN_TEST !== '0') {
+    console.log('      ✅ 텔레그램 연결 체크 생략 (무소음 모드)');
+  } else {
+    try {
+      const { sendTelegram } = require('./telegram');
+      const ok = await sendTelegram('[3중 체크] 스카봇 OPS 시작 — 연결 확인');
+      if (ok) {
+        console.log('      ✅ 텔레그램 연결');
+      } else {
+        errors.push('텔레그램 발송 실패 (token 또는 네트워크 확인)');
+      }
+    } catch (e) {
+      errors.push(`텔레그램 체크 오류: ${e.message}`);
     }
-  } catch (e) {
-    errors.push(`텔레그램 체크 오류: ${e.message}`);
   }
 
   if (errors.length > 0) {
@@ -241,13 +246,18 @@ async function shutdownCleanup({ reason = '정상 종료', error = false, locks 
   }
 
   // 텔레그램 종료 알림
-  try {
-    const { sendTelegram } = require('./telegram');
-    const emoji = error ? '❌' : '🏁';
-    await sendTelegram(`${emoji} [스카봇 OPS] 종료\n사유: ${reason}`);
-    console.log('      ✅ 텔레그램 종료 알림');
-  } catch (e) {
-    console.warn(`      ⚠️  텔레그램 알림 실패: ${e.message}`);
+  // 정상적인 SIGTERM 재시작은 너무 시끄러워서 기본적으로 알리지 않는다.
+  if (error || process.env.SKA_NOTIFY_SHUTDOWN === '1') {
+    try {
+      const { sendTelegram } = require('./telegram');
+      const emoji = error ? '❌' : '🏁';
+      await sendTelegram(`${emoji} [스카봇 OPS] 종료\n사유: ${reason}`);
+      console.log('      ✅ 텔레그램 종료 알림');
+    } catch (e) {
+      console.warn(`      ⚠️  텔레그램 알림 실패: ${e.message}`);
+    }
+  } else {
+    console.log('      ℹ️  정상 종료 알림 생략');
   }
 
   console.log('  ✅ [3중 종료] 정리 완료');

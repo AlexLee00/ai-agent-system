@@ -1668,8 +1668,8 @@ async function monitorBookings() {
 
         detachRetryCount = 0; // 정상 완료 시 재시도 카운터 리셋
 
-        // ✅ Heartbeat: 1시간마다 텔레그램으로 생존 신호 전송 (09:00~22:00만)
-        if (Date.now() - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
+        // ✅ Heartbeat: 필요 시에만 1시간마다 전송 (기본 무소음)
+        if (process.env.SKA_ENABLE_HEARTBEAT_ALERTS === '1' && Date.now() - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
           const hHour = parseInt(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).replace(/\D/g, ''), 10);
           if (hHour >= 9 && hHour < 22) {
             const upMin = Math.floor((Date.now() - startTime) / 60000);
