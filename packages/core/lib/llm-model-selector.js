@@ -136,53 +136,63 @@ const TEAM_SELECTOR_DEFAULTS = {
   },
   blog: {
     'pos.writer': {
-      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.82 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
       fallbacks: [
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.82 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'gems.writer': {
-      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 16000, temperature: 0.85 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 16000, temperature: 0.85 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'social.summarize': {
-      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-      fallbacks: [],
-    },
-    'social.caption': {
-      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
-      fallbacks: [],
-    },
-    'star.summarize': {
-      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'social.caption': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'star.summarize': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'star.caption': {
-      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'curriculum.recommend': {
-      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 2000, temperature: 0.7 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.7 },
       fallbacks: [
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2000, temperature: 0.7 },
       ],
     },
     'curriculum.generate': {
-      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 8000, temperature: 0.5 },
-      fallbacks: [],
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
+      fallbacks: [
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 8000, temperature: 0.5 },
+      ],
     },
     _fallback: {
-      primary: { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -190,36 +200,50 @@ const TEAM_SELECTOR_DEFAULTS = {
     'chat.task_intake': {
       primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 250, temperature: 0.1 },
       fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 250, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
   core: {
     'chunked.gpt4o': {
-      primary: { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     'chunked.default': {
       primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
-        { provider: 'openai', model: 'gpt-4o', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     _fallback: {
       primary: { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
-        { provider: 'openai', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.75 },
       ],
+    },
+  },
+  video: {
+    'step-proposal': {
+      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 180, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 180, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [],
     },
   },
 };
@@ -258,6 +282,9 @@ const AGENT_MODEL_REGISTRY = {
   core: {
     'chunked-gpt4o': 'core.chunked.gpt4o',
     'chunked-default': 'core.chunked.default',
+  },
+  video: {
+    edi: 'video.step-proposal',
   },
 };
 
@@ -377,15 +404,19 @@ function _buildSelectorRegistry() {
     'core.chunked.gpt4o': () => _resolveFromTeamDefault('core.chunked.gpt4o'),
     'core.chunked.default': () => _resolveFromTeamDefault('core.chunked.default'),
 
-    'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-4o', policyOverride } = {}) => {
+    'video._default': () => _resolveFromTeamDefault('video._default'),
+    'video.step-proposal': () => _resolveFromTeamDefault('video.step-proposal'),
+
+    'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-5.4', policyOverride } = {}) => {
       const defaultRoutes = {
         luna: 'openai_perf',
         nemesis: 'dual_groq',
-        oracle: 'dual_groq',
-        hermes: 'openai_mini',
-        sophia: 'openai_mini',
+        oracle: 'groq_scout',
+        hermes: 'local_primary',
+        sophia: 'local_primary',
         zeus: 'openai_mini',
         athena: 'openai_mini',
+        argos: 'local_fast',
       };
       const configuredRoutes = _isObject(policyOverride?.agentRoutes)
         ? { ...defaultRoutes, ...policyOverride.agentRoutes }
@@ -404,6 +435,7 @@ function _buildSelectorRegistry() {
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
           { provider: 'groq', model: groqScoutModel },
+          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         ],
         dual_groq: [
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
@@ -415,9 +447,15 @@ function _buildSelectorRegistry() {
           { provider: 'groq', model: groqScoutModel },
           { provider: 'openai-oauth', model: openaiPerfModel },
         ],
-        groq_scout: [
+        local_primary: [
+          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
           { provider: 'groq', model: groqScoutModel },
           { provider: 'openai-oauth', model: openaiMiniModel },
+        ],
+        groq_scout: [
+          { provider: 'groq', model: groqScoutModel },
+          { provider: 'groq', model: groqCompetitionModels[1] || 'openai/gpt-oss-20b' },
+          { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
         ],
         local_fast: [
           { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
