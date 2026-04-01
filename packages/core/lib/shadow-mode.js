@@ -23,6 +23,7 @@ const pgPool  = require('./pg-pool');
 const cache   = require('./llm-cache');
 const llmLog  = require('./llm-logger');
 const { getTimeout } = require('./llm-timeouts');
+const { callLocalLLMJSON } = require('./local-llm-client');
 
 const SCHEMA = 'reservation';
 
@@ -34,7 +35,8 @@ const TEAM_MODE = {
 };
 
 // ── Groq 모델 ────────────────────────────────────────────────────────
-const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const SHADOW_PRIMARY = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const SHADOW_FALLBACK = 'qwen2.5-7b';
 
 // ── 테이블 초기화 ─────────────────────────────────────────────────────
 let _tableReady = false;
@@ -104,7 +106,7 @@ async function _callGroq(systemPrompt, userContent) {
     const groq = clients[(_groqIdx + attempt) % clients.length];
     try {
       const res = await groq.chat.completions.create({
-        model:           GROQ_MODEL,
+        model:           SHADOW_PRIMARY,
         messages:        [
           { role: 'system', content: sysPrompt    },
           { role: 'user',   content: userContent  },
@@ -126,6 +128,30 @@ async function _callGroq(systemPrompt, userContent) {
     }
   }
   throw lastErr;
+}
+
+async function _callLocal(systemPrompt, userContent) {
+  const parsed = await callLocalLLMJSON(SHADOW_FALLBACK, [
+    {
+      role: 'system',
+      content: /json/i.test(systemPrompt)
+        ? systemPrompt
+        : `${systemPrompt}\nJSON 형식으로만 답하세요.`,
+    },
+    { role: 'user', content: userContent },
+  ], {
+    maxTokens: 400,
+    temperature: 0.1,
+    timeoutMs: 30000,
+  });
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('local shadow JSON 응답 없음');
+  }
+
+  parsed._in = 0;
+  parsed._out = 0;
+  return parsed;
 }
 
 // ── 결과 비교 ─────────────────────────────────────────────────────────
@@ -224,6 +250,8 @@ async function evaluate({ team, context, input, ruleEngine, llmPrompt, mode }) {
   let cacheHit     = false;
   let inputTokens  = 0;
   let outputTokens = 0;
+  let usedFallback = false;
+  let usedModel    = SHADOW_PRIMARY;
 
   const inputStr  = typeof input === 'string' ? input : JSON.stringify(input);
   const cacheType = `shadow_${context}`;
@@ -235,15 +263,22 @@ async function evaluate({ team, context, input, ruleEngine, llmPrompt, mode }) {
       llmResult = JSON.parse(hit.response);
       cacheHit  = true;
     } else {
-      // 2-b. Groq 호출
-      const raw    = await _callGroq(llmPrompt, inputStr);
+      // 2-b. Groq 호출, 실패 시 로컬 fallback
+      let raw;
+      try {
+        raw = await _callGroq(llmPrompt, inputStr);
+      } catch (primaryErr) {
+        raw = await _callLocal(llmPrompt, inputStr);
+        usedFallback = true;
+        usedModel = SHADOW_FALLBACK;
+      }
       inputTokens  = raw._in  || 0;
       outputTokens = raw._out || 0;
       delete raw._in;
       delete raw._out;
       llmResult    = raw;
       // 2-c. 캐시 저장
-      await cache.setCache(team, cacheType, inputStr, JSON.stringify(llmResult), GROQ_MODEL);
+      await cache.setCache(team, cacheType, inputStr, JSON.stringify(llmResult), usedModel);
     }
   } catch (e) {
     llmError = e.message;
@@ -258,7 +293,7 @@ async function evaluate({ team, context, input, ruleEngine, llmPrompt, mode }) {
   llmLog.logLLMCall({
     team,
     bot:         `shadow_${team}_${context}`,
-    model:       GROQ_MODEL,
+    model:       usedModel,
     requestType: cacheType,
     inputTokens,
     outputTokens,
@@ -272,7 +307,7 @@ async function evaluate({ team, context, input, ruleEngine, llmPrompt, mode }) {
   const inputSummary = inputStr.slice(0, 200).replace(/\d{6,}/g, '***');
   _logShadowResult({
     team, context, inputSummary, ruleResult, llmResult,
-    llmError, match, mode: effectiveMode, elapsedMs: elapsed,
+    llmError, match, mode: effectiveMode, fallback: usedFallback, elapsedMs: elapsed,
   }).catch(e => { console.warn('[shadow-mode] shadow_log 기록 실패 (메인 로직에 영향 없음):', e.message); });
 
   // 6. 모드별 실행 결과 결정

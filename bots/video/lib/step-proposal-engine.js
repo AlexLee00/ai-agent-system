@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { listKeywordMatches, matchByEmbedding } = require('./sync-matcher');
 
 function clamp01(value, fallback = 0.5) {
@@ -44,12 +45,6 @@ function normalizeConfidence(match = {}) {
     return labelMap[match.confidence];
   }
   return labelMap[match.match_type === 'hold' ? 'low' : 'medium'] || 0.5;
-}
-
-function inferProviderFromModel(model) {
-  const lower = String(model || '').toLowerCase();
-  if (lower.startsWith('gemini') || lower.startsWith('google-gemini-cli/')) return 'gemini';
-  return 'openai';
 }
 
 function safeJsonParseObject(text) {
@@ -199,9 +194,6 @@ function generateSteps(syncMap, config = {}, options = {}) {
 
 async function attachRedEvaluation(steps, config = {}) {
   const stepConfig = ensureStepConfig(config);
-  const redProvider = inferProviderFromModel(stepConfig.red_model);
-  const fallbackProvider = redProvider === 'openai' ? 'gemini' : 'openai';
-  const fallbackModel = redProvider === 'openai' ? 'gemini-2.5-flash' : 'gpt-4o-mini';
 
   const nextSteps = [];
   for (const step of ensureArray(steps)) {
@@ -232,15 +224,14 @@ async function attachRedEvaluation(steps, config = {}) {
 
     try {
       const result = await callWithFallback({
-        chain: [
-          { provider: redProvider, model: stepConfig.red_model, maxTokens: 180, temperature: 0.1 },
-          { provider: fallbackProvider, model: fallbackModel, maxTokens: 180, temperature: 0.1 },
-        ],
+        chain: selectLLMChain('video.step-proposal'),
         systemPrompt,
         userPrompt,
         logMeta: {
           team: 'video',
           bot: 'step-proposal-engine',
+          agentName: 'edi',
+          selectorKey: 'video.step-proposal',
           requestType: 'step_red_evaluation',
         },
       });
