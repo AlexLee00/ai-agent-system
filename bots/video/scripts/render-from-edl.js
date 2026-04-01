@@ -7,7 +7,7 @@ const { applyMediaBinaryEnv } = require('../lib/media-binary-env');
 applyMediaBinaryEnv(process.env);
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const telegramSender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { loadConfig } = require('../src/index');
 const { loadEDL, renderFinal } = require('../lib/edl-builder');
 const { probeDurationMs } = require('../lib/ffmpeg-preprocess');
@@ -136,12 +136,17 @@ async function main() {
       status: 'completed',
     });
     await updateSessionStatus(edit.session_id);
-    await telegramSender.send(TEAM_NAME, [
-      '[비디오] 최종 렌더 완료',
-      `세트 ID: ${edit.id}`,
-      `제목: ${edit.title || edit.id}`,
-      `파일: ${result.outputPath}`,
-    ].join('\n'));
+    await postAlarm({
+      message: [
+        '[비디오] 최종 렌더 완료',
+        `세트 ID: ${edit.id}`,
+        `제목: ${edit.title || edit.id}`,
+        `파일: ${result.outputPath}`,
+      ].join('\n'),
+      team: TEAM_NAME,
+      alertLevel: 2,
+      fromBot: 'render-from-edl',
+    });
   } catch (error) {
     await updateVideoEdit(edit.id, {
       status: 'failed',
@@ -156,12 +161,17 @@ async function main() {
         WHERE id = $1`,
       [edit.session_id, toErrorMessage(error)]
     );
-    await telegramSender.send(TEAM_NAME, [
-      '[비디오] 최종 렌더 실패',
-      `세트 ID: ${edit.id}`,
-      `제목: ${edit.title || edit.id}`,
-      `사유: ${toErrorMessage(error)}`,
-    ].join('\n'));
+    await postAlarm({
+      message: [
+        '[비디오] 최종 렌더 실패',
+        `세트 ID: ${edit.id}`,
+        `제목: ${edit.title || edit.id}`,
+        `사유: ${toErrorMessage(error)}`,
+      ].join('\n'),
+      team: TEAM_NAME,
+      alertLevel: 2,
+      fromBot: 'render-from-edl',
+    });
     throw error;
   }
 }

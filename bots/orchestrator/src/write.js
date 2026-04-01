@@ -4,7 +4,7 @@
 const path = require('path');
 const { execSync } = require('child_process');
 
-const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const kst = require('../../../packages/core/lib/kst');
 const env = require('../../../packages/core/lib/env');
 const aggregator = require('../lib/write/report-aggregator');
@@ -64,7 +64,7 @@ async function runOnPush(options = {}) {
   const syncIssues = docSyncChecker.checkAll(changedFiles);
   const changelogEntry = changelogWriter.generateEntry('1 day ago');
   const message = formatPushReport(syncIssues, changelogEntry);
-  const sent = options.test ? false : await sender.send('meeting', message);
+  const sent = options.test ? false : (await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok;
   return { changedFiles, syncIssues, changelogEntry, sent, message };
 }
 
@@ -78,7 +78,7 @@ async function runDaily(options = {}) {
     '전일 커밋 요약:',
     changelogWriter.formatChangelogEntry(commits).slice(0, 1200),
   ].join('\n');
-  const sent = options.test ? false : await sender.send('meeting', message);
+  const sent = options.test ? false : (await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok;
   return { collected, sent, message };
 }
 

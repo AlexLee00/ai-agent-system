@@ -6,7 +6,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const skills = require('../../../packages/core/lib/skills');
-const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
 const reviewer = require('./reviewer');
 
@@ -104,9 +104,12 @@ async function runSecurityCheck(options = {}) {
   const message = formatSecurityReport(payload);
   let sent = false;
   if (!testMode) {
-    sent = payload.critical.length > 0
-      ? await sender.sendCritical('claude', message)
-      : await sender.send('claude', message);
+    sent = (await postAlarm({
+      message,
+      team: 'claude',
+      alertLevel: payload.critical.length > 0 ? 4 : 2,
+      fromBot: 'guardian',
+    })).ok;
   }
 
   return {
