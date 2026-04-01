@@ -3,18 +3,15 @@
 /**
  * lib/mainbot-client.js — 스카팀 → 메인봇 알람 발행 클라이언트 (CJS)
  *
- * PostgreSQL jay.claude 스키마 mainbot_queue에 INSERT.
- * 메인봇이 실행 중이 아니어도 큐에 쌓이면 재시작 시 처리.
+ * OpenClaw webhook 우선 경로만 사용한다.
  */
-
-const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
 /**
- * 메인봇 큐에 알람 발행
+ * OpenClaw webhook으로 알람 발행
  * @param {object} opts
  * @param {string} opts.from_bot     발신 봇 ID (ska, andy, jimmy, rebecca, eve)
  * @param {string} [opts.team]       팀명 (기본: reservation)
@@ -32,9 +29,7 @@ async function publishToMainBot({ from_bot, team = 'reservation', event_type, al
     },
     targets: buildSeverityTargets({
       event,
-      pgPool,
-      schema: 'claude',
-      includeQueue: true,
+      includeQueue: false,
       includeTelegram: false,
       includeN8n: true,
     }),

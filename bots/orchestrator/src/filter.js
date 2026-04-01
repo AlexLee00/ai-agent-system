@@ -3,6 +3,10 @@
 /**
  * src/filter.js — 알람 필터링 엔진
  *
+ * DEPRECATED:
+ *   OpenClaw Standing Orders가 알람 전달 규칙의 주 경로다. 이 파일은 레거시
+ *   mainbot_queue 소비 경로가 남아 있는 동안만 보존한다.
+ *
  * mainbot_queue에 들어온 항목을 처리 방식 결정:
  *   - 무음 → skip
  *   - 야간 + MEDIUM 이하 → morning_queue 보류
