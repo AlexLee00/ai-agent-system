@@ -5,7 +5,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const skills = require('../../../packages/core/lib/skills');
-const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
 
 const ROOT = env.PROJECT_ROOT;
@@ -85,7 +85,7 @@ async function runReview(options = {}) {
 
   if (jsFiles.length === 0) {
     const message = '✅ 코드 리뷰 스킵 — 변경된 JS 파일이 없습니다.';
-    if (!testMode) await sender.send('claude', message);
+    if (!testMode) await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'reviewer' });
     return {
       files: [],
       summary: { totalFiles: 0, syntaxFails: 0, critical: 0, high: 0, medium: 0, pass: true },
@@ -99,7 +99,7 @@ async function runReview(options = {}) {
   const message = formatReport(result);
   let sent = false;
   if (!testMode) {
-    sent = await sender.send('claude', message);
+    sent = (await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'reviewer' })).ok;
   }
 
   return {

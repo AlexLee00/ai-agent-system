@@ -4,7 +4,7 @@
 const path = require('path');
 const { execSync } = require('child_process');
 
-const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const env = require('../../../packages/core/lib/env');
 const reviewer = require('./reviewer');
 
@@ -39,7 +39,7 @@ async function runBuildCheck(options = {}) {
   const changedFiles = Array.isArray(options.files) ? options.files : await reviewer.getChangedFiles();
   if (!needsBuild(changedFiles)) {
     const message = formatBuildReport({ skipped: true });
-    if (!testMode) await sender.send('claude', message);
+    if (!testMode) await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'builder' });
     return { skipped: true, pass: true, sent: !testMode, message };
   }
 
@@ -52,7 +52,7 @@ async function runBuildCheck(options = {}) {
       timeout: 180000,
     });
     const message = formatBuildReport({ skipped: false, pass: true, project: 'bots/worker/web' });
-    const sent = testMode ? false : await sender.send('claude', message);
+    const sent = testMode ? false : (await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'builder' })).ok;
     return { skipped: false, pass: true, sent, message, project: 'bots/worker/web' };
   } catch (error) {
     const stderr = String(error.stderr || error.stdout || error.message || '').trim();
@@ -62,7 +62,7 @@ async function runBuildCheck(options = {}) {
       project: 'bots/worker/web',
       error: stderr,
     });
-    const sent = testMode ? false : await sender.sendCritical('claude', message);
+    const sent = testMode ? false : (await postAlarm({ message, team: 'claude', alertLevel: 4, fromBot: 'builder' })).ok;
     return { skipped: false, pass: false, sent, message, error: stderr, project: 'bots/worker/web' };
   }
 }

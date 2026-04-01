@@ -7,7 +7,7 @@ const { applyMediaBinaryEnv } = require('../lib/media-binary-env');
 applyMediaBinaryEnv(process.env);
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const telegramSender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 const { startTrace, withTrace } = require('../../../packages/core/lib/trace');
 
@@ -453,7 +453,7 @@ async function notifyFailure(step, title, error) {
     `단계: ${step}`,
     `사유: ${toErrorMessage(error)}`,
   ].join('\n');
-  await telegramSender.send(TEAM_NAME, message);
+  await postAlarm({ message, team: TEAM_NAME, alertLevel: 2, fromBot: 'run-pipeline' });
 }
 
 async function main() {
@@ -721,12 +721,17 @@ async function main() {
         status: 'completed',
       });
 
-      await telegramSender.send(TEAM_NAME, [
-        '[비디오] 렌더링 완료',
-        `제목: ${titleForMessage}`,
-        `파일: ${renderResult.outputPath}`,
-        `총 시간: ${totalMs}ms`,
-      ].join('\n'));
+      await postAlarm({
+        message: [
+          '[비디오] 렌더링 완료',
+          `제목: ${titleForMessage}`,
+          `파일: ${renderResult.outputPath}`,
+          `총 시간: ${totalMs}ms`,
+        ].join('\n'),
+        team: TEAM_NAME,
+        alertLevel: 2,
+        fromBot: 'run-pipeline',
+      });
 
       try {
         const transitionCount = (edl?.edits || []).filter((item) => item.type === 'transition').length;

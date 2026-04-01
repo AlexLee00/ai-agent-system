@@ -13,6 +13,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { postAlarm } = require('./openclaw-client');
 
 // ─── 수정 금지 확장자 ────────────────────────────────────────────
 const PROTECTED_EXTENSIONS = new Set([
@@ -133,12 +134,14 @@ function _warn(callerBot, filePath, reason) {
 function safeWriteFile(filePath, content, callerBot = 'unknown', encoding = 'utf8') {
   if (!canWrite(filePath, callerBot)) {
     // 텔레그램 CRITICAL 알림 (fire-and-forget)
-    try {
-      const sender = require('./telegram-sender');
-      sender.sendCritical('general',
-        `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`
-      );
-    } catch { /* 발송 실패 무시 */ }
+    postAlarm({
+      message: `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`,
+      team: 'general',
+      alertLevel: 4,
+      fromBot: 'file-guard',
+    }).catch((error) => {
+      console.error(`[file-guard] 보안 알람 발송 실패: ${error.message}`);
+    });
 
     throw new Error(`[file-guard] ${callerBot}의 소스코드 수정 시도 차단: ${filePath}`);
   }
@@ -152,10 +155,12 @@ function safeWriteFile(filePath, content, callerBot = 'unknown', encoding = 'utf
 async function safeWriteFileAsync(filePath, content, callerBot = 'unknown', encoding = 'utf8') {
   if (!canWrite(filePath, callerBot)) {
     try {
-      const sender = require('./telegram-sender');
-      await sender.sendCritical('general',
-        `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`
-      );
+      await postAlarm({
+        message: `🚨 [보안] 소스코드 수정 시도 차단!\n봇: ${callerBot}\n파일: ${filePath}\n→ 마스터 확인 필요`,
+        team: 'general',
+        alertLevel: 4,
+        fromBot: 'file-guard',
+      });
     } catch { /* 무시 */ }
 
     throw new Error(`[file-guard] ${callerBot}의 소스코드 수정 시도 차단: ${filePath}`);

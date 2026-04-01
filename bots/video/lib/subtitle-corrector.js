@@ -9,7 +9,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getOpenAIKey, getGeminiKey } = require('../../../packages/core/lib/llm-keys');
 const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const telegramSender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 const BOT_NAME = 'subtitle-corrector';
 const TEAM_NAME = 'video';
@@ -377,12 +377,17 @@ async function correctFile(inputSrtPath, outputSrtPath, config) {
   } catch (error) {
     fs.mkdirSync(path.dirname(outputSrtPath), { recursive: true });
     fs.writeFileSync(outputSrtPath, originalSrt, 'utf8');
-    await telegramSender.sendCritical('general', [
-      '🚨 비디오 자막 교정 실패',
-      `파일: ${path.basename(inputSrtPath)}`,
-      `사유: ${error.message}`,
-      '조치: 원본 SRT로 폴백되어 파이프라인은 계속 진행됩니다.',
-    ].join('\n'));
+    await postAlarm({
+      message: [
+        '🚨 비디오 자막 교정 실패',
+        `파일: ${path.basename(inputSrtPath)}`,
+        `사유: ${error.message}`,
+        '조치: 원본 SRT로 폴백되어 파이프라인은 계속 진행됩니다.',
+      ].join('\n'),
+      team: 'general',
+      alertLevel: 4,
+      fromBot: 'subtitle-corrector',
+    });
     return {
       outputPath: outputSrtPath,
       stats: {

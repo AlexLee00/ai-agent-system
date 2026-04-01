@@ -10,6 +10,7 @@ const kst = require('../../../packages/core/lib/kst');
 const fs     = require('fs');
 const cfg    = require('./config');
 const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
   publishEventPipeline,
@@ -98,16 +99,11 @@ function buildTelegramText(results, elapsed) {
  * 덱스터 리포트 발송 — 🔧 클로드 Forum Topic 경유
  */
 function sendTelegram(text) {
-  return publishToTelegram({
-    sender,
-    topicTeam: 'claude-lead',
-    event: {
-      from_bot: 'dexter',
-      team: 'claude',
-      event_type: 'report',
-      alert_level: 1,
-      message: text,
-    },
+  return postAlarm({
+    message: text,
+    team: 'claude',
+    alertLevel: 1,
+    fromBot: 'dexter',
   }).then((result) => result.ok);
 }
 

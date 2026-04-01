@@ -3,7 +3,7 @@
 
 // 품질 검사 통합 리포트 — 리뷰어+가디언+빌더 결과를 1건으로 묶어 발송
 
-const sender = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const kst = require('../../../packages/core/lib/kst');
 const reviewer = require('./reviewer');
 const guardian = require('./guardian');
@@ -78,9 +78,12 @@ async function run() {
   if (!testMode) {
     const hasCritical = (grdResult.critical || []).length > 0
       || (revResult.summary?.critical || 0) > 0;
-    sent = hasCritical
-      ? await sender.sendCritical('claude', message)
-      : await sender.send('claude', message);
+    sent = (await postAlarm({
+      message,
+      team: 'claude',
+      alertLevel: hasCritical ? 4 : 2,
+      fromBot: 'quality-report',
+    })).ok;
   }
 
   console.log(message);
