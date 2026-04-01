@@ -99,10 +99,22 @@ function _normalizeForMobile(message) {
   return compact.join('\n').trim();
 }
 
+const PENDING_MAX_AGE_MS = 30 * 60 * 1000;  // 30분 초과 메시지 폐기
+const PENDING_MAX_RETRIES = 3;              // 최대 재시도 3회
+const PENDING_MAX_QUEUE = 50;               // 큐 최대 50건
+
 function _savePending(team, message) {
   try {
     if (!fs.existsSync(WORKSPACE)) return;
-    const entry = JSON.stringify({ team, message, savedAt: new Date().toISOString() });
+    // 큐 크기 제한
+    if (fs.existsSync(PENDING_FILE)) {
+      const lines = fs.readFileSync(PENDING_FILE, 'utf-8').split('\n').filter(Boolean);
+      if (lines.length >= PENDING_MAX_QUEUE) {
+        console.warn(`⚠️ [telegram-sender] 대기큐 한도 초과 (${lines.length}건) — 신규 메시지 폐기`);
+        return;
+      }
+    }
+    const entry = JSON.stringify({ team, message, savedAt: new Date().toISOString(), retries: 0 });
     fs.appendFileSync(PENDING_FILE, entry + '\n', 'utf-8');
   } catch { /* 유실보다 무시가 낫다 */ }
 }
@@ -396,6 +408,7 @@ async function flushPending() {
 
   console.log(`📤 [telegram-sender] 대기큐 재발송 시작: ${lines.length}건`);
 
+  const now = Date.now();
   const remaining = [];
   for (const line of lines) {
     let entry;
@@ -403,12 +416,23 @@ async function flushPending() {
 
     if (entry.message?.length > TG_MAX) continue;  // 영구 실패 → 폐기
 
+    // TTL: 30분 초과 메시지 폐기
+    const savedAt = entry.savedAt ? new Date(entry.savedAt).getTime() : 0;
+    if (savedAt > 0 && (now - savedAt) > PENDING_MAX_AGE_MS) continue;
+
+    // 재시도 횟수 초과 → 폐기
+    const retries = (entry.retries || 0) + 1;
+    if (retries > PENDING_MAX_RETRIES) continue;
+
     // 신형(team) / 구형(chatId) 포맷 모두 지원
     const team = entry.team || 'general';
     const ok = env.IS_OPS
       ? await send(team, entry.message)
       : await _doSend(entry.message, entry.threadId ?? _getThreadId(team));
-    if (!ok) remaining.push(line);
+    if (!ok) {
+      entry.retries = retries;
+      remaining.push(JSON.stringify(entry));
+    }
   }
 
   try {
