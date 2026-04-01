@@ -23,7 +23,6 @@ const path = require('path');
 const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
-const sender = require('../../../packages/core/lib/telegram-sender');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -85,9 +84,9 @@ function reportInsteadOfFix(action, target, fixes = null) {
       },
       targets: buildSeverityTargets({
         event,
-        sender,
         topicTeam: 'claude-lead',
         includeQueue: false,
+        includeTelegram: false,
       }),
       policy: {
         dedupe: false,

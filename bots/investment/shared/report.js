@@ -1,13 +1,11 @@
 /**
  * shared/report.js — 루나팀 알림 리포터 (Phase 3-A ESM)
  *
- * 모든 알림은 telegram-sender.js 경유로 💰 루나 Forum Topic에 직접 발송.
- * CRITICAL(오류) 알림은 🚨 긴급 + 💰 루나 이중 발송.
+ * 모든 알림은 OpenClaw webhook 경유를 우선 사용한다.
  */
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const sender  = require('../../../packages/core/lib/telegram-sender');
 import { formatExecutionTag, getMarketExecutionModeInfo } from './secrets.js';
 const { createEventReporter } = require('../../../packages/core/lib/telegram/reporter');
 
@@ -22,7 +20,6 @@ function compactReasoning(reasoning, maxLength = 90) {
 }
 
 const publishLunaMessage = createEventReporter({
-  sender,
   fromBot: 'luna',
   team: 'investment',
   topicTeam: 'luna',
@@ -36,7 +33,7 @@ const publishLunaMessage = createEventReporter({
     maxAlertLevel: 1,
   },
   includeQueue: false,
-  includeTelegram: true,
+  includeTelegram: false,
   includeN8n: true,
 });
 

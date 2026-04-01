@@ -16,7 +16,6 @@ const https                  = require('https');
 const pgPool                 = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback }   = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain }     = require('../../../packages/core/lib/llm-model-selector');
-const tg                     = require('../../../packages/core/lib/telegram-sender');
 const { runIfOps }           = require('../../../packages/core/lib/mode-guard');
 const {
   buildNoticeEvent,
@@ -271,9 +270,9 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
       event: { ...notice, message: rendered },
       targets: buildSeverityTargets({
         event: notice,
-        sender: tg,
         topicTeam: 'blog',
         includeQueue: false,
+        includeTelegram: false,
         includeN8n: false,
       }),
       policy: { cooldownMs: 30 * 60_000 },

@@ -15,7 +15,7 @@
 const path   = require('path');
 const ROOT   = path.join(__dirname, '..');
 const shadow = require(path.join(ROOT, 'packages/core/lib/shadow-mode'));
-const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
+const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
 
 const SEND_TG = process.argv.includes('--telegram');
 
@@ -89,7 +89,13 @@ async function main() {
   console.log(report);
 
   if (SEND_TG) {
-    const ok = await sender.send('general', report);
+    const result = await openclawClient.postAlarm({
+      team: 'general',
+      message: report,
+      alertLevel: 1,
+      fromBot: 'luna-transition-analysis',
+    });
+    const ok = Boolean(result?.ok);
     console.log(`\n텔레그램 발송: ${ok ? '✅' : '❌'}`);
   }
 

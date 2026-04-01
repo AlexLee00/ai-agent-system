@@ -13,7 +13,6 @@ const { spawn, spawnSync } = require('child_process');
 const { transformAndNormalizeData } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
-const { flushPendingTelegrams } = require('../../lib/telegram');
 const { publishToMainBot } = require('../../lib/mainbot-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
 const { printModeBanner, getModeSuffix } = require('../../lib/mode');
@@ -43,6 +42,17 @@ const { IS_OPS } = require('../../../../packages/core/lib/env');
 
 const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
+
+function ensureHeadedFlag(reason = 'unknown') {
+  try {
+    if (!fs.existsSync(HEADED_FLAG_PATH)) {
+      fs.writeFileSync(HEADED_FLAG_PATH, `${kst.datetimeStr()} ${reason}\n`, 'utf8');
+      log(`👀 headed 플래그 생성: ${HEADED_FLAG_PATH} (${reason})`);
+    }
+  } catch (err) {
+    log(`⚠️ headed 플래그 생성 실패: ${err.message}`);
+  }
+}
 
 // ─── 자동 버그리포트 ────────────────────────────────────────────────────
 // 오늘 이미 등록된 동일 제목의 버그는 재등록 안 함 (하루 1회 dedup)
@@ -134,25 +144,28 @@ function runStartupPickkoVerification() {
 
   try {
     const verifyScript = path.join(__dirname, '../../manual/admin/pickko-verify.js');
-    log('🔎 [시작 검증] 미해결 알림 보고 전 pickko-verify 실행');
-    const result = spawnSync('node', [verifyScript], {
+    log('🔎 [시작 검증] pickko-verify 백그라운드 실행');
+    const child = spawn('node', [verifyScript], {
       cwd: path.join(__dirname, '../../manual/admin'),
       env: process.env,
-      encoding: 'utf8',
-      timeout: NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReportTimeoutMs,
-      maxBuffer: 8 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-
-    if (result.error) {
-      log(`⚠️ [시작 검증] pickko-verify 실행 실패: ${result.error.message}`);
-      return;
-    }
-    if (result.status !== 0) {
-      log(`⚠️ [시작 검증] pickko-verify 비정상 종료 (exit=${result.status})`);
-      if (result.stderr) log(result.stderr.trim().slice(0, 400));
-      return;
-    }
-    log('✅ [시작 검증] pickko-verify 완료');
+    let stderr = '';
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk || '');
+      if (stderr.length > 1200) stderr = stderr.slice(-1200);
+    });
+    child.on('error', (err) => {
+      log(`⚠️ [시작 검증] pickko-verify 실행 실패: ${err.message}`);
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        log('✅ [시작 검증] pickko-verify 완료');
+        return;
+      }
+      log(`⚠️ [시작 검증] pickko-verify 비정상 종료 (exit=${code})`);
+      if (stderr.trim()) log(stderr.trim().slice(0, 400));
+    });
   } catch (err) {
     log(`⚠️ [시작 검증] pickko-verify 예외: ${err.message}`);
   }
@@ -412,9 +425,11 @@ async function naverLogin(page) {
 
       if (!securityCheck.alreadyDone && (securityCheck.isNaverAuth || securityCheck.hasSecurityKeyword)) {
         log(`🔐 보안인증 화면 감지: ${JSON.stringify(securityCheck)}`);
+        ensureHeadedFlag('naver-security-auth');
         const _authMsg = `🔐 네이버 보안인증 필요!\n\n` +
           `로그인 후 추가 인증 화면이 감지됐어요.\n` +
-          `원격으로 맥북에 접속해서 인증을 완료해주세요.\n\n` +
+          `브라우저를 보이는 모드로 자동 전환했습니다.\n` +
+          `맥 스튜디오에서 인증 화면을 완료해주세요.\n\n` +
           `✅ 인증 완료되면 자동으로 모니터링이 재개됩니다.\n` +
           `⏳ 최대 30분 대기 후 자동으로 재시작됩니다.`;
         publishToMainBot({ from_bot: 'andy', event_type: 'alert', alert_level: 4, message: _authMsg });
@@ -803,9 +818,6 @@ async function monitorBookings() {
     printModeBanner('naver-monitor');
     recordHeartbeat({ status: 'starting' });
     log('🚀 네이버 예약 모니터링 시작 (2시간)');
-
-    // ⚠️ 시작 시 이전 세션 미전송 알림 재발송 (네트워크 단절 등으로 유실된 메시지)
-    await flushPendingTelegrams();
 
     // ⚠️ 시작 시 수동 완료/직접 등록 건을 먼저 픽코 기준으로 재검증
     runStartupPickkoVerification();

@@ -28,6 +28,8 @@
 
 const fs   = require('fs');
 const path = require('path');
+const env = require('./env');
+const openclawClient = require('./openclaw-client');
 
 // ── 시크릿 로드 (lazy, 캐싱) ─────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
@@ -232,6 +234,16 @@ async function send(team, message) {
     return false;
   }
 
+  if (env.IS_OPS) {
+    const result = await openclawClient.postAlarm({
+      team,
+      message: normalized,
+      alertLevel: _isUrgent(normalized) ? 4 : 2,
+      fromBot: 'telegram-sender',
+    });
+    return Boolean(result?.ok);
+  }
+
   const threadId = _getThreadId(team);
 
   // 긴급 메시지: 배치 우회, 즉시 발송
@@ -268,6 +280,16 @@ async function sendBuffered(team, message) {
     return false;
   }
 
+  if (env.IS_OPS) {
+    const result = await openclawClient.postAlarm({
+      team,
+      message: normalized,
+      alertLevel: _isUrgent(normalized) ? 4 : 2,
+      fromBot: 'telegram-sender',
+    });
+    return Boolean(result?.ok);
+  }
+
   const threadId = _getThreadId(team);
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId);
@@ -284,6 +306,16 @@ async function sendWithOptions(team, message, options = {}) {
   if (_isFilenameLeak(normalized)) {
     console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
     return false;
+  }
+
+  if (env.IS_OPS) {
+    const result = await openclawClient.postAlarm({
+      team,
+      message: normalized,
+      alertLevel: _isUrgent(normalized) ? 4 : 2,
+      fromBot: 'telegram-sender',
+    });
+    return Boolean(result?.ok);
   }
 
   const threadId = _getThreadId(team);
@@ -305,6 +337,11 @@ async function sendDirect(chatId, message, options = {}) {
     return false;
   }
 
+  if (env.IS_OPS) {
+    console.warn('[telegram-sender] sendDirect는 OPS에서 비활성화됨 — OpenClaw topic 라우팅 사용');
+    return false;
+  }
+
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, options.threadId || null, {
     ...options,
@@ -319,6 +356,26 @@ async function sendDirect(chatId, message, options = {}) {
  * @param {string} message CRITICAL 메시지
  */
 async function sendCritical(team, message) {
+  if (env.IS_OPS) {
+    const full = `🚨 CRITICAL\n${message}`;
+    const tasks = [openclawClient.postAlarm({
+      team: 'emergency',
+      message: `🚨 [${team}] CRITICAL\n${message}`,
+      alertLevel: 4,
+      fromBot: 'telegram-sender',
+    })];
+    if (team !== 'emergency') {
+      tasks.push(openclawClient.postAlarm({
+        team,
+        message: full,
+        alertLevel: 4,
+        fromBot: 'telegram-sender',
+      }));
+    }
+    const results = await Promise.all(tasks);
+    return results.every((result) => Boolean(result?.ok));
+  }
+
   const full = `🚨 [${team}] CRITICAL\n${message}`;
   const tasks = [send('emergency', full)];
   if (team !== 'emergency') tasks.push(send(team, `🚨 CRITICAL\n${message}`));
@@ -347,9 +404,10 @@ async function flushPending() {
     if (entry.message?.length > TG_MAX) continue;  // 영구 실패 → 폐기
 
     // 신형(team) / 구형(chatId) 포맷 모두 지원
-    const team     = entry.team || 'general';
-    const threadId = entry.threadId ?? _getThreadId(team);
-    const ok       = await _doSend(entry.message, threadId);  // Rate Limit 처리 포함
+    const team = entry.team || 'general';
+    const ok = env.IS_OPS
+      ? await send(team, entry.message)
+      : await _doSend(entry.message, entry.threadId ?? _getThreadId(team));
     if (!ok) remaining.push(line);
   }
 

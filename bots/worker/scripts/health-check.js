@@ -11,7 +11,6 @@
  * 자동: launchd ai.worker.health-check (10분마다)
  */
 
-const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 const { getWorkerHealthRuntimeConfig } = require('../lib/runtime-config');
 const {
@@ -61,9 +60,9 @@ async function notify(msg, level = 3) {
       },
       targets: buildSeverityTargets({
         event,
-        sender,
         topicTeam: 'general',
         includeQueue: false,
+        includeTelegram: false,
       }),
       policy: {
         cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,

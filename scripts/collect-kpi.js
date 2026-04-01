@@ -12,7 +12,7 @@
 const path     = require('path');
 const ROOT     = path.join(__dirname, '..');
 const pgPool   = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
-const sender   = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
+const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
 
 const SCHEMA = 'reservation';
 
@@ -213,7 +213,12 @@ async function main() {
       await collectDailyKPI(today);
       const report = await weeklyReport();
       console.log(report);
-      await sender.send('general', report);
+      await openclawClient.postAlarm({
+        team: 'general',
+        message: report,
+        alertLevel: 1,
+        fromBot: 'collect-kpi',
+      });
       console.log('[KPI] 텔레그램 발송 완료');
     } else if (args.includes('--report')) {
       const report = await weeklyReport();

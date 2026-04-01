@@ -27,7 +27,7 @@
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
-const sender = require('../packages/core/lib/telegram-sender');
+const openclawClient = require('../packages/core/lib/openclaw-client');
 
 const LOG_FILE         = path.join(os.homedir(), '.openclaw', 'api-usage.jsonl');
 const SPEED_TEST_KEYS  = path.join(os.homedir(), '.openclaw', 'speed-test-keys.json');
@@ -119,7 +119,12 @@ function usageBar(used, limit, width = 20) {
 
 // ─── Telegram 전송 ─────────────────────────────────────────────────
 function sendTelegram(text) {
-  return sender.send('claude-lead', text);
+  return openclawClient.postAlarm({
+    team: 'claude-lead',
+    message: text,
+    alertLevel: 1,
+    fromBot: 'api-usage-report',
+  }).then((result) => Boolean(result?.ok));
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────

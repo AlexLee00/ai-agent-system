@@ -15,7 +15,7 @@
 const path   = require('path');
 const ROOT   = path.join(__dirname, '..');
 const grad   = require(path.join(ROOT, 'packages/core/lib/llm-graduation'));
-const sender = require(path.join(ROOT, 'packages/core/lib/telegram-sender'));
+const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
 
 const SEND_TG = process.argv.includes('--telegram');
 const TEAMS   = ['ska', 'claude-lead', 'luna'];
@@ -66,7 +66,12 @@ async function main() {
   ].join('\n');
 
   if (SEND_TG) {
-    const ok = await sender.send('claude-lead', approvalGuide);
+    const ok = (await openclawClient.postAlarm({
+      team: 'claude-lead',
+      message: approvalGuide,
+      alertLevel: 2,
+      fromBot: 'run-graduation-analysis',
+    })).ok;
     console.log(`\n텔레그램 발송: ${ok ? '✅' : '❌'}`);
   } else {
     console.log('\n' + approvalGuide);

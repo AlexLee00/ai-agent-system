@@ -240,8 +240,14 @@ if (require.main === module) {
     printDashboard(metrics);
 
     if (SEND_TG) {
+      const openclawClient = require('../packages/core/lib/openclaw-client');
       const report = buildDailyStabilityReport(metrics);
-      const ok = await sender.send('general', report);
+      const ok = (await openclawClient.postAlarm({
+        team: 'general',
+        message: report,
+        alertLevel: 1,
+        fromBot: 'stability-dashboard',
+      })).ok;
       console.log(`텔레그램 발송: ${ok ? '✅' : '❌'}`);
     }
   })().catch(e => { console.error('❌:', e.message); process.exit(1); });

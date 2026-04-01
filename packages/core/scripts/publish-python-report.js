@@ -3,7 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const sender = require('../lib/telegram-sender');
 const {
   buildEventPayload,
   normalizeEvent,
@@ -114,11 +113,10 @@ async function main() {
     },
     targets: buildSeverityTargets({
       event,
-      sender,
       topicTeam,
       telegramPrefix: '',
       includeQueue: false,
-      includeTelegram: true,
+      includeTelegram: false,
       includeN8n: false,
     }),
   });

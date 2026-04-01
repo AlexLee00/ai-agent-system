@@ -38,9 +38,9 @@ send_telegram() {
   local msg_file="$1"
   "$TELEGRAM_NODE" -e "
     const fs = require('fs');
-    const sender = require('$PROJECT_DIR/packages/core/lib/telegram-sender');
+    const openclawClient = require('$PROJECT_DIR/packages/core/lib/openclaw-client');
     const text = fs.readFileSync('$msg_file', 'utf-8');
-    sender.send('claude-lead', text).catch(() => {});
+    openclawClient.postAlarm({ team: 'claude-lead', message: text, alertLevel: 1, fromBot: 'pre-reboot' }).catch(() => {});
     setTimeout(() => {}, 3000);
   " 2>/dev/null || true
 }
