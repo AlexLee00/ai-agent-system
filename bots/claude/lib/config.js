@@ -61,6 +61,34 @@ function _scanBotFiles() {
   return result;
 }
 
+function _scanSkillFiles() {
+  const result = [];
+  const skillsDir = path.join(ROOT, 'packages', 'core', 'lib', 'skills');
+
+  try {
+    if (!fs.existsSync(skillsDir)) return result;
+    fs.readdirSync(skillsDir)
+      .filter((f) => f.endsWith('.js'))
+      .sort()
+      .forEach((f) => result.push(`packages/core/lib/skills/${f}`));
+  } catch (_) {}
+
+  return result;
+}
+
+function _buildCriticalFiles() {
+  const seen = new Set();
+  const result = [];
+
+  for (const rel of [..._scanBotFiles(), ..._scanSkillFiles()]) {
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    result.push(rel);
+  }
+
+  return result;
+}
+
 module.exports = {
   ROOT,
 
@@ -101,7 +129,7 @@ module.exports = {
   },
 
   // ─── 핵심 파일 무결성 체크 대상 ────────────────────
-  CRITICAL_FILES: _scanBotFiles(),
+  CRITICAL_FILES: _buildCriticalFiles(),
 
   // ─── 네트워크 엔드포인트 ───────────────────────────
   ENDPOINTS: {
