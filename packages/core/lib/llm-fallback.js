@@ -41,6 +41,9 @@ const { fetchHubSecrets } = require('./hub-client');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
@@ -127,37 +130,63 @@ async function _getOAuthToken() {
 }
 
 async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }) {
-  const token = await _getOAuthToken();
-  if (!token) throw new Error('OpenAI OAuth 토큰 없음');
+  const prompt = [
+    '[SYSTEM]',
+    systemPrompt || '',
+    '',
+    '[USER]',
+    userPrompt || '',
+  ].join('\n');
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      model: model || 'gpt-5.4',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: maxTokens,
-      temperature,
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
+  const args = [
+    'agent',
+    '--agent', 'main',
+    '--json',
+    '--message', prompt,
+    '--timeout', String(Math.max(10, Math.ceil(timeoutMs / 1000))),
+  ];
+
+  const { stdout, stderr } = await execFileAsync('openclaw', args, {
+    timeout: timeoutMs + 5000,
+    maxBuffer: 2 * 1024 * 1024,
+    env: process.env,
   });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    if (res.status === 401 || res.status === 403) {
-      _oauthToken = null;
-      _oauthTokenExpiry = 0;
-    }
-    throw new Error(`OpenAI OAuth HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ''}`);
+  const output = String(stdout || '').trim();
+  if (!output) {
+    throw new Error(`OpenClaw agent 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
   }
 
-  return res.json();
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    throw new Error(`OpenClaw agent JSON 파싱 실패: ${output.slice(0, 160)}`);
+  }
+
+  if (parsed?.status !== 'ok') {
+    throw new Error(`OpenClaw agent 실패: ${parsed?.summary || parsed?.status || 'unknown'}`);
+  }
+
+  const text = parsed?.result?.payloads?.[0]?.text || '';
+  const usage = parsed?.result?.meta?.agentMeta?.lastCallUsage || parsed?.result?.meta?.agentMeta?.usage || null;
+  const provider = parsed?.result?.meta?.agentMeta?.provider || 'openai-codex';
+  const usedModel = parsed?.result?.meta?.agentMeta?.model || model || 'gpt-5.4';
+
+  return {
+    choices: [{ message: { content: text } }],
+    usage: usage ? {
+      prompt_tokens: usage.input || 0,
+      completion_tokens: usage.output || 0,
+      total_tokens: usage.total || ((usage.input || 0) + (usage.output || 0)),
+    } : null,
+    _openclaw: {
+      provider,
+      model: usedModel,
+      runId: parsed?.runId || null,
+      durationMs: parsed?.result?.meta?.durationMs || null,
+    },
+  };
 }
 
 function _inferErrorType(err) {
