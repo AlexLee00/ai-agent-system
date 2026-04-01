@@ -77,6 +77,7 @@ async function run() {
   const stored = loadChecksums();
   const current = {};
   let changed = 0;
+  let missingBaseline = 0;
 
   // 1. 핵심 파일 체크섬 비교 (초기 베이스라인 없으면 현재 상태를 저장)
   const isFirstRun = Object.keys(stored).length === 0;
@@ -92,7 +93,14 @@ async function run() {
 
     current[rel] = hash;
 
-    if (!isFirstRun && stored[rel] && stored[rel] !== hash) {
+    if (!isFirstRun && !stored[rel]) {
+      missingBaseline++;
+      items.push({
+        label: rel,
+        status: 'warn',
+        detail: '체크섬 베이스라인 없음 — --update-checksums 실행 필요',
+      });
+    } else if (!isFirstRun && stored[rel] && stored[rel] !== hash) {
       changed++;
 
       // 마지막 git 커밋 확인 — Claude Code 외 수정이면 CRITICAL
@@ -125,13 +133,13 @@ async function run() {
   // 첫 실행 시만 베이스라인 저장 (이후엔 --update-checksums으로만 갱신)
   if (isFirstRun) saveChecksums(current);
 
-  if (changed === 0) {
+  if (changed === 0 && missingBaseline === 0) {
     items.unshift({ label: '체크섬', status: 'ok', detail: `핵심 파일 ${cfg.CRITICAL_FILES.length}개 무결` });
   } else {
     const suspicious = items.filter(i => i.status === 'error').length;
     const summary = suspicious > 0
-      ? `🚨 ${suspicious}개 무단 수정 의심 (미커밋), ${changed}개 전체 변경`
-      : `${changed}개 파일 변경 감지`;
+      ? `🚨 ${suspicious}개 무단 수정 의심 (미커밋), ${changed}개 변경, ${missingBaseline}개 베이스라인 누락`
+      : `${changed}개 파일 변경, ${missingBaseline}개 베이스라인 누락`;
     items.unshift({ label: '체크섬', status: suspicious > 0 ? 'error' : 'warn', detail: summary });
   }
 

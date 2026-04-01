@@ -164,18 +164,38 @@ function fixChecksums(results, fixes) {
   const codeSection = results.find(r => r.name === '코드 무결성');
   if (!codeSection) return;
 
-  const mismatch = codeSection.items.filter(
-    i => i.status === 'warn' && i.label !== '체크섬' && i.label !== 'git 상태' && !i.label.includes('문법')
+  const candidates = codeSection.items.filter(
+    (i) => i.status === 'warn'
+      && i.label !== '체크섬'
+      && i.label !== 'git 상태'
+      && !i.label.includes('문법')
   );
-  if (mismatch.length === 0) return;
+  if (candidates.length === 0) return;
+
+  const hasSyntaxError = codeSection.items.some(
+    (i) => i.status === 'error' && String(i.label || '').startsWith('문법:')
+  );
+  if (hasSyntaxError) return;
 
   // git diff로 해당 파일이 실제 변경됐는지 확인
   try {
     const gitDiff = execSync('git -C "' + cfg.ROOT + '" diff --name-only HEAD', { encoding: 'utf8', timeout: 5000 });
     const changedFiles = gitDiff.split('\n').map(f => f.trim()).filter(Boolean);
+    const gitStatus = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 5000, shell: true }).trim();
+    const isClean = !gitStatus;
 
-    // 체크섬 불일치 파일 중 git에서 변경된 파일 → 의도적 수정으로 간주, 자동 갱신
-    const toUpdate = mismatch.filter(i => changedFiles.some(f => i.label.includes(path.basename(f))));
+    // 1) 워킹트리 clean + 경고만 남은 경우 → 커밋 후 의도적 변경으로 간주
+    // 2) 미커밋 상태라도 git diff에 잡힌 체크섬 불일치 파일 → 의도적 수정으로 간주
+    const baselineMissing = candidates.filter((i) =>
+      String(i.detail || '').includes('체크섬 베이스라인 없음')
+    );
+    const mismatched = candidates.filter((i) =>
+      !String(i.detail || '').includes('체크섬 베이스라인 없음')
+    );
+    const changedMismatch = mismatched.filter((i) =>
+      changedFiles.some((f) => i.label.includes(path.basename(f)))
+    );
+    const toUpdate = isClean ? candidates : [...baselineMissing, ...changedMismatch];
     if (toUpdate.length === 0) return;
 
     const { updateChecksums } = require('./checks/code');
@@ -183,7 +203,9 @@ function fixChecksums(results, fixes) {
     fixes.push({
       label:  `체크섬 자동 갱신`,
       status: 'ok',
-      detail: `git 변경 파일 ${toUpdate.length}개 → ${result.updated}개 갱신`,
+      detail: isClean
+        ? `git clean + 문법 정상 → ${toUpdate.length}개 항목 기준 ${result.updated}개 갱신`
+        : `git 변경 파일 ${toUpdate.length}개 → ${result.updated}개 갱신`,
     });
   } catch { /* git 없으면 무시 */ }
 }
