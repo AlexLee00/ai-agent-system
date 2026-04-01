@@ -46,8 +46,10 @@ const path = require('path');
 let _groqIdx = 0;
 let _oauthToken = null;
 let _oauthTokenExpiry = 0;
+let _evalTableReady = false;
 const OAUTH_CACHE_TTL = 300_000;
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const EVAL_EXCLUDED_PROVIDERS = new Set(['openai-oauth', 'openai', 'anthropic']);
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
 function _extractText(resp, provider) {
@@ -156,6 +158,88 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
   }
 
   return res.json();
+}
+
+function _inferErrorType(err) {
+  const message = String(err?.message || '').toLowerCase();
+  if (!message) return null;
+  if (message.includes('429') || message.includes('rate limit') || message.includes('quota')) return 'rate_limit';
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout';
+  if (message.includes('401') || message.includes('403') || message.includes('auth')) return 'auth';
+  if (message.includes('network') || message.includes('fetch failed') || message.includes('ehostunreach') || message.includes('etimedout')) return 'network';
+  return 'unknown';
+}
+
+async function _ensureEvalTable() {
+  if (_evalTableReady || !env.IS_OPS) return;
+  try {
+    const pgPool = require('./pg-pool');
+    await pgPool.run('claude', `
+      CREATE TABLE IF NOT EXISTS llm_model_eval (
+        id            SERIAL PRIMARY KEY,
+        selector_key  VARCHAR(100) NOT NULL,
+        agent_name    VARCHAR(50)  NOT NULL,
+        team          VARCHAR(20)  NOT NULL,
+        provider      VARCHAR(30)  NOT NULL,
+        model         VARCHAR(60)  NOT NULL,
+        is_primary    BOOLEAN DEFAULT false,
+        is_fallback   BOOLEAN DEFAULT false,
+        latency_ms    INTEGER,
+        success       BOOLEAN NOT NULL,
+        error_type    VARCHAR(50),
+        token_input   INTEGER,
+        token_output  INTEGER,
+        quality_score REAL,
+        created_at    TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pgPool.run('claude', 'CREATE INDEX IF NOT EXISTS idx_llm_eval_selector ON llm_model_eval(selector_key, created_at DESC)');
+    await pgPool.run('claude', 'CREATE INDEX IF NOT EXISTS idx_llm_eval_model ON llm_model_eval(provider, model, created_at DESC)');
+    _evalTableReady = true;
+  } catch { /* 평가 테이블 생성 실패는 메인 로직에 영향 없음 */ }
+}
+
+async function _recordModelEval({
+  selectorKey,
+  agentName,
+  team,
+  provider,
+  model,
+  isPrimary,
+  latencyMs,
+  success,
+  errorType,
+  tokenInput,
+  tokenOutput,
+}) {
+  if (EVAL_EXCLUDED_PROVIDERS.has(provider)) return;
+  if (!env.IS_OPS) return;
+  if (!selectorKey || !agentName || !team) return;
+
+  try {
+    await _ensureEvalTable();
+    const pgPool = require('./pg-pool');
+    await pgPool.run('claude', `
+      INSERT INTO llm_model_eval
+        (selector_key, agent_name, team, provider, model,
+         is_primary, is_fallback, latency_ms, success, error_type,
+         token_input, token_output)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    `, [
+      selectorKey,
+      agentName,
+      team,
+      provider,
+      model,
+      isPrimary,
+      !isPrimary,
+      latencyMs,
+      success,
+      errorType || null,
+      tokenInput || null,
+      tokenOutput || null,
+    ]);
+  } catch { /* 기록 실패 무시 */ }
 }
 
 async function _groqSingleCall(apiKey, groqModel, maxTokens, temperature, systemPrompt, userPrompt) {
@@ -301,11 +385,11 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
     try {
       const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt);
       const latencyMs = Date.now() - t0;
+      const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
+      const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;
 
       // LLM 사용 로깅
       if (logMeta.team) {
-        const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
-        const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;
         try {
           logLLMCall({
             team:         logMeta.team,
@@ -331,6 +415,20 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
         }).catch(() => {});
       }
 
+      _recordModelEval({
+        selectorKey: logMeta.selectorKey,
+        agentName: logMeta.agentName,
+        team: logMeta.team,
+        provider: cfg.provider,
+        model: cfg.model,
+        isPrimary: i === 0,
+        latencyMs,
+        success: true,
+        errorType: null,
+        tokenInput: tokensIn,
+        tokenOutput: tokensOut,
+      }).catch(() => {});
+
       if (i > 0) {
         console.log(`  ↳ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 성공`);
       }
@@ -354,6 +452,20 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
           });
         } catch { /* 로깅 실패 무시 */ }
       }
+
+      _recordModelEval({
+        selectorKey: logMeta.selectorKey,
+        agentName: logMeta.agentName,
+        team: logMeta.team,
+        provider: cfg.provider,
+        model: cfg.model,
+        isPrimary: i === 0,
+        latencyMs,
+        success: false,
+        errorType: _inferErrorType(e),
+        tokenInput: null,
+        tokenOutput: null,
+      }).catch(() => {});
 
       const isLast = i === chain.length - 1;
       console.warn(`  ⚠️ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 실패: ${e.message?.slice(0, 80)}${isLast ? ' — 모든 폴백 소진' : ' → 다음 시도...'}`);

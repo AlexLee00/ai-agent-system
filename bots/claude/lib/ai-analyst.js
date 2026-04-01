@@ -183,7 +183,13 @@ async function analyzeWithAI(results, elapsed, level) {
     chain,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
-    logMeta: { team: 'claude', bot: 'dexter', requestType: 'system_diagnosis' },
+    logMeta: {
+      team: 'claude',
+      bot: 'dexter',
+      agentName: 'dexter',
+      selectorKey: 'claude.dexter.ai_analyst',
+      requestType: 'system_diagnosis',
+    },
   });
 
   let parsed;

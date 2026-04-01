@@ -270,14 +270,14 @@ const SELECTOR_EDIT_CONFIG = {
     path: 'runtime_config.llmSelectorOverrides.claude.lead.system_issue_triage.chain',
   },
   'claude.dexter.ai_analyst.warn': {
-    type: 'singleModel',
+    type: 'chain',
     config: 'bots/claude/config.json',
-    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.lowModel',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.chain',
   },
   'claude.dexter.ai_analyst.critical': {
-    type: 'singleModel',
+    type: 'chain',
     config: 'bots/claude/config.json',
-    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.highModel',
+    path: 'runtime_config.llmSelectorOverrides.claude.dexter.ai_analyst.chain',
   },
   'blog.pos.writer': {
     type: 'chain',
@@ -1049,16 +1049,12 @@ async function describeRuntimeSelectorByKey(key) {
     case 'claude.dexter.ai_analyst.warn':
       return describeLLMSelector('claude.dexter.ai_analyst', {
         level: 2,
-        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-          ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
-          : null,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
       });
     case 'claude.dexter.ai_analyst.critical':
       return describeLLMSelector('claude.dexter.ai_analyst', {
         level: 4,
-        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-          ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
-          : null,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
       });
     case 'blog.pos.writer':
     case 'blog.gems.writer':
@@ -1171,15 +1167,11 @@ async function getGlobalSelectorSummary() {
       }),
       dexterWarn: describeLLMSelector('claude.dexter.ai_analyst', {
         level: 2,
-        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-          ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
-          : null,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
       }),
       dexterCritical: describeLLMSelector('claude.dexter.ai_analyst', {
         level: 4,
-        policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-          ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
-          : null,
+        policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
       }),
     },
     blog: {

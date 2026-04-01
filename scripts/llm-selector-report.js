@@ -114,15 +114,11 @@ async function buildReport() {
     }), speedLookup),
     formatSelectorBlock('Dexter Analyst (warn/error)', describeLLMSelector('claude.dexter.ai_analyst', {
       level: 2,
-      policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-        ? { model: claudeOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
-        : null,
+      policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
     }), speedLookup),
     formatSelectorBlock('Dexter Analyst (critical)', describeLLMSelector('claude.dexter.ai_analyst', {
       level: 4,
-      policyOverride: claudeOverrides['claude.dexter.ai_analyst']
-        ? { model: claudeOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
-        : null,
+      policyOverride: claudeOverrides['claude.dexter.ai_analyst'] || null,
     }), speedLookup),
     formatSelectorBlock('Blog POS Writer', describeLLMSelector('blog.pos.writer', {
       policyOverride: blogOverrides['blog.pos.writer'],
@@ -202,15 +198,11 @@ async function main() {
       }),
       dexterWarn: describeLLMSelector('claude.dexter.ai_analyst', {
         level: 2,
-        policyOverride: claudeConfig.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst']
-          ? { model: claudeConfig.RUNTIME.llmSelectorOverrides['claude.dexter.ai_analyst'].lowModel || 'gpt-4o-mini' }
-          : null,
+        policyOverride: claudeConfig.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'] || null,
       }),
       dexterCritical: describeLLMSelector('claude.dexter.ai_analyst', {
         level: 4,
-        policyOverride: claudeConfig.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst']
-          ? { model: claudeConfig.RUNTIME.llmSelectorOverrides['claude.dexter.ai_analyst'].highModel || 'gpt-4o' }
-          : null,
+        policyOverride: claudeConfig.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'] || null,
       }),
     },
     blog: {
