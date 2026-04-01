@@ -1,112 +1,114 @@
-# Opus 세션 인수인계 (2026-04-01 세션 7 — 최종)
+# Opus 세션 인수인계 (2026-04-02 세션 8 — 최종)
 
-> 작성일: 2026-04-01 | 모델: Claude Opus 4.6 (메티)
-> 이전 트랜스크립트: /mnt/transcripts/2026-04-01-02-25-05-ops-dev-openclaw-alarm-oauth-selector.txt
+> 작성일: 2026-04-02 | 모델: Claude Opus 4.6 (메티)
+> 이전 트랜스크립트: /mnt/transcripts/2026-04-01-13-43-52-2026-04-01-02-25-05-ops-dev-openclaw-alarm-oauth-selector.txt
 
 ---
 
-## 이번 세션 성과 (세션 6+7 통합)
+## 이번 세션 성과
 
-### OpenClaw 알람 단일 경로 Phase 1~3 완성 ✅
-- P1: hooks+Standing Orders+openclaw-client+Topic 라우팅
-- P2: bots/ 19곳 postAlarm 전환 (DEV 코덱스)
-- P3: scripts/ 11곳+telegram-sender OPS 프록시 (IS_OPS→postAlarm)
-  sendCritical: emergency+해당팀 이중 발송
-  sendDirect: OPS 비활성화 (양방향 미적용)
+### 1. 코덱스 1순위 LLM 모델 재편성 — 메티 검증 완료 ✅
+- 56 에이전트 전체 selector 동작 확인
+- 블로팀: oauth/gpt-5.4 전면 전환 (social/star 마스터확정) ✅
+- 루나팀: hermes/sophia 로컬 전환, luna 5.4 승격, oracle scout ✅
+- 워커팀: local fallback 삽입, video selector 등록 ✅
+- 발견 2건 수정 프롬프트 작성 (CODEX_LLM_MODEL_REORG_FIX.md)
+  - oracle groq_scout F1 중복 (scout→gpt-oss-20b)
+  - worker.ai.fallback local 미삽입
 
-### OpenAI OAuth → OpenClaw CLI 경유 ✅
-- _callOpenAIOAuth: execFile('openclaw', ['agent', '--json'])
-- OAuth 429 해결 + 토큰 0→0 해결 (agentMeta.lastCallUsage)
+### 2. 코덱스 2순위 Phase 4 — 진행 중 (코덱스 구현)
+- alert resolve OpenClaw 통합 구현됨
+- pickko-alerts-resolve.js --list/--recent 옵션 추가됨
+- TOOLS.md + AGENTS.md Standing Orders 업데이트됨
+- 테스트 결과: 미해결 알람 0건이라 실제 resolve 검증 대기
+- 다음: 미해결 알람 발생 시 자연어 resolve 검증 필요
 
-### 팀별 Selector 공용화 + 모델 평가 ✅
-- TEAM_SELECTOR_DEFAULTS: claude/blog/worker/core 4팀
-- 에이전트별 primary+fallbacks, _resolveFromTeamDefault()
-- llm_model_eval 테이블, EVAL_EXCLUDED(oauth/openai/anthropic)
+### 3. self-improving 스킬 설치 + 셋업 완료 ✅
+- clawhub install self-improving@1.2.16
+- ~/self-improving/ 디렉토리 구조 생성 (memory/corrections/domains/projects/archive)
+- memory.md 초기화: alert resolve 패턴, 예약 등록 패턴, Standing Orders 규칙
+- domains/alert-resolve.md: 자연어 패턴 + 식별 키 추출 규칙 + 실행 명령
+- AGENTS.md steering: self-improving 경로 추가 + 학습 라우팅 규칙
+- SOUL.md steering: 자기 개선 행동 지침 추가
+- OpenClaw 9/51 스킬 ready (self-improving 포함)
 
-### 코덱스 독자 변경 검증 ✅
-- capital-manager.js: loadSecrets() 우선 + config.yaml 폴백
-- hub-client.js: 메모리 캐시(3~10초) + 429 쿨다운
-- dexter: 스킬 16개 자동추적 + baseline 분리
-- CI: Node.js 24 대응 (checkout/setup-node v5)
+### 4. OpenClaw 에이전트 학습 전략 수립 ✅
+- 서칭 결과 3레벨 발견: self-improving(즉시) + Self-Evolve(RAG) + RL(불필요)
+- 제이 아이디어 검증: "RAG에 Q&A 저장 + 성공 누적" = Self-Evolve와 정확히 일치
+- 우리 인프라 이미 보유: pgvector + rag.js + llm_model_eval + llm_usage_log
+- n8n 불필요 확정 (OpenClaw + pgvector + self-improving으로 충분)
 
-### 전체 에이전트 LLM 분석 + 재편성 프롬프트 ✅
-- 56 에이전트, 30 LLM 사용, 26 미사용
-- 7일 35,000+ 호출 실측 분석
-- CODEX_LLM_MODEL_REORG.md (501줄): 변경9, Fallback추가5, Selector등록1
+### 5. OpenClaw 모델 적용 범위 정리 ✅
+- main 에이전트(스카) 1개만 gpt-5.4 적용
+- 팀 제이 56개 에이전트는 별개 (llm-model-selector.js)
+- subagents 설정만 존재, 별도 에이전트 미등록
 
-### Phase 4 설계 완료 ✅ (커밋 95eb01a)
-- CODEX_PHASE4_MAINBOT_OPENCLAW.md (384줄)
-- A안 채택: exec + Skill + Standing Orders (한 번에 진행)
-- mainbot.js 퇴역 + filter.js→Standing Orders + alert resolve OpenClaw
-- isPickkoAlertResolveCommand 12패턴→LLM 자연어 이해 대체
-
-### OpenClaw 공식문서 + 커뮤니티 서칭 ✅
-- 5가지 메커니즘 발견: Internal Hooks, Webhook Mappings, exec+Skill, Standing Orders, message:received
-- A안(exec+Skill+Standing Orders)이 최적: 기존 패턴 재사용, 코드 변경 0줄
-- enqueue-ska-reservation.js와 동일 구조로 alert-resolve 구현
+### 6. 코덱스 독자 변경 확인 ✅
+- 커밋 24b934c: LLM fallback rebalance + recent alert resolve
+- 커밋 c927d6e: 텔레그램 대기큐 폭증 방지 (TTL + 재시도 제한)
 
 ---
 
 ## 다음 세션 우선순위
 
 ```
-1순위: LLM 모델 재편성 (CODEX_LLM_MODEL_REORG.md)
-  hermes/sophia 로컬 전환 (13,000회/주 → $0)
-  blog 전면 oauth/gpt-5.4 (social/star 마스터확정)
-  shadow_luna/ska fallback 추가
-  video/step-proposal selector 등록
+1순위: LLM 모델 수정 2건 (CODEX_LLM_MODEL_REORG_FIX.md, 103줄)
+  - oracle F1 중복 수정 (scout→gpt-oss-20b)
+  - worker.ai.fallback local 삽입
 
-2순위: Phase 4 통합 (CODEX_PHASE4_MAINBOT_OPENCLAW.md)
-  Task 1: TOOLS.md에 alert-resolve 등록
-  Task 2: Standing Orders 알람 해제 규칙
-  Task 3: filter.js → Standing Orders 이전
-  Task 4: mainbot.js 퇴역 + 큐 아카이브
-  Task 5: router.js isPickkoAlertResolveCommand 제거
-  Task 6: 미해결 알람 목록 조회 도구
+2순위: Phase 4 검증 — 실제 미해결 알람으로 자연어 resolve 테스트
+  - 미해결 픽코 알람 1건 생성
+  - "B룸 18:30 건 끝났어" 자연어 답장
+  - --recent가 실제 resolve 하는지 검증
 
-3순위: 블로팀 P1~P5 개선 구현
-4순위: D 분해 (인프라+루나)
+3순위: RAG 경험 저장 설계 (CODEX_SELF_IMPROVING_RAG.md, 코덱스 프롬프트 커밋됨)
+  - alert_resolve_experience 테이블 생성
+  - intent-response-result triplet 저장
+  - 성공률 기반 랭킹
+  - 3회 반복 → Standing Orders 자동 승격
+
+4순위: 블로팀 P1~P5 개선 구현
+5순위: D 분해 (인프라+루나)
 ```
 
 ## 핵심 결정
 
 ```
-[DECISION] C안 채택: 3경로→1경로 단일 통합 (마스터)
-[DECISION] 클로드팀=코드분야→OpenAI OAuth+GPT-5.4 (마스터)
-[DECISION] 팀별 Selector 공용화: _default가 에이전트별 primary/fallback (마스터)
-[DECISION] 모델 평가: openai-oauth/openai/anthropic 제외, 폴백만 (마스터)
-[DECISION] blog social/star → oauth/gpt-5.4 (마스터: 고성능 필요)
-[DECISION] telegram-sender OPS 프록시: 모든 send에 IS_OPS 분기
-[DECISION] OpenClaw CLI 경유: execFile('openclaw', ['agent', '--json'])
-[DECISION] Phase 4: A안 exec+Skill+Standing Orders, 단계 나눌 필요 없이 한 번에
-[DECISION] isPickkoAlertResolveCommand 12패턴→OpenClaw LLM 자연어 이해로 대체
+[DECISION] self-improving 스킬 설치 → Active 모드 (3회 반복 시 패턴 제안)
+[DECISION] RAG 경험 저장: pgvector에 intent-response-result triplet
+[DECISION] n8n 불필요 — OpenClaw + pgvector + self-improving으로 충분
+[DECISION] OpenClaw gpt-5.4 = main(스카)만, 팀 제이 56개는 별개 시스템
+[DECISION] Phase 4B alert resolve: 코덱스 구현 완료, 실제 검증 대기
 ```
 
-## 코덱스 프롬프트 (미구현)
+## 코덱스 프롬프트 상태
 
 ```
-docs/codex/CODEX_LLM_MODEL_REORG.md (501줄) — 전체 에이전트 모델 재편성
-  Task 1~6: 루나/블로/투자/워커+공용/비디오/오케스트레이터
+완료 (구현됨):
+  CODEX_LLM_MODEL_REORG.md (501줄) — 전체 에이전트 모델 재편성 ✅
+  CODEX_PHASE4_MAINBOT_OPENCLAW.md (384줄) — Phase 4 통합 (진행중)
 
-docs/codex/CODEX_PHASE4_MAINBOT_OPENCLAW.md (384줄) — Phase 4 통합
-  Task 1~6: TOOLS.md/Standing Orders/filter이전/mainbot퇴역/router정리/조회도구
-
-docs/codex/CODEX_SKILL_PROCESS_CHECK.md (193줄) — 에러 5건 + 미배정 스킬
-docs/codex/CODEX_CONFIG_YAML_AUDIT.md (222줄) — config.yaml 전수검사
+미구현:
+  CODEX_LLM_MODEL_REORG_FIX.md (103줄) — 모델 검증 수정 2건
+  CODEX_SELF_IMPROVING_RAG.md — 에이전트 자기학습 + RAG 경험 누적
+  CODEX_SKILL_PROCESS_CHECK.md (193줄) — 에러 5건 + 미배정 스킬
+  CODEX_CONFIG_YAML_AUDIT.md (222줄) — config.yaml 전수검사
 ```
 
-## 에러 프로세스 (미해결)
+## self-improving 구조
 
 ```
-ai.claude.dexter — exit 1 (보안 경고: secrets.json 없음, .gitignore)
-ai.openclaw.model-sync — exit 1
-ai.ska.eve-crawl — exit 1
-ai.ops.platform.backend/frontend — exit 78 ×2
-```
+~/self-improving/
+├── memory.md          # HOT: alert resolve 패턴 + 예약 + Standing Orders
+├── corrections.md     # 수정 로그 (빈 상태)
+├── index.md           # 인덱스
+├── heartbeat-state.md # 하트비트 상태
+├── domains/
+│   └── alert-resolve.md  # 자연어 패턴 + 식별 키 + 실행 명령
+├── projects/          # (비어있음)
+└── archive/           # (비어있음)
 
-## 라이트 문서 점검 알람 (야간 수신, 다음 세션 처리)
-
-```
-오케스트레이터 CLAUDE.md 부재 3건 → Phase 4 구현 시 함께 처리
-TRACKER 반영 필요 6건 → Phase 4에서 자연스럽게 해결
+~/.openclaw/workspace/skills/self-improving/  # 스킬 본체 (v1.2.16)
+  AGENTS.md → self-improving 경로 추가됨
+  SOUL.md → 자기 개선 행동 지침 추가됨
 ```
