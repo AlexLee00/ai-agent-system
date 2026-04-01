@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml from 'js-yaml';
 import ccxt from 'ccxt';
-import { getInvestmentTradeMode } from './secrets.js';
+import { getInvestmentTradeMode, loadSecrets } from './secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -81,14 +81,20 @@ let _ex = null;
 function getEx() {
   if (_ex) return _ex;
   try {
+    const secrets = loadSecrets();
     const c = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8'));
     _ex = new ccxt.binance({
-      apiKey: c.binance?.api_key || '',
-      secret: c.binance?.api_secret || '',
+      apiKey: secrets.binance_api_key || c.binance?.api_key || '',
+      secret: secrets.binance_api_secret || c.binance?.api_secret || '',
       options: { defaultType: 'spot' },
     });
   } catch {
-    _ex = new ccxt.binance({});
+    const secrets = loadSecrets();
+    _ex = new ccxt.binance({
+      apiKey: secrets.binance_api_key || '',
+      secret: secrets.binance_api_secret || '',
+      options: { defaultType: 'spot' },
+    });
   }
   return _ex;
 }
