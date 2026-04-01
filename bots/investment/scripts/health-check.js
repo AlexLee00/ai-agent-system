@@ -15,7 +15,6 @@ import { createRequire } from 'module';
 import { validateTradeReview } from './validate-trade-review.js';
 
 const require = createRequire(import.meta.url);
-const sender  = require('../../../packages/core/lib/telegram-sender');
 const hsm     = require('../../../packages/core/lib/health-state-manager');
 const {
   buildNoticeEvent,
@@ -78,9 +77,9 @@ async function notify(msg, level = 3) {
       },
       targets: buildSeverityTargets({
         event,
-        sender,
         topicTeam: 'luna',
         includeQueue: false,
+        includeTelegram: false,
       }),
       policy: {
         cooldownMs: level >= 3 ? 60_000 : 5 * 60_000,

@@ -12,7 +12,6 @@
  */
 
 const http   = require('http');
-const sender = require('../../../packages/core/lib/telegram-sender');
 const hsm    = require('../../../packages/core/lib/health-state-manager');
 const { getBlogHealthRuntimeConfig } = require('../lib/runtime-config');
 const {
@@ -52,10 +51,9 @@ async function notify(msg, level = 3) {
       },
       targets: buildSeverityTargets({
         event,
-        sender,
         topicTeam: 'blog',
         includeQueue: false,
-        includeTelegram: true,
+        includeTelegram: false,
         includeN8n: true,
       }),
     });

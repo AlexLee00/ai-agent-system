@@ -15,7 +15,6 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
-const sender = require('../../../packages/core/lib/telegram-sender');
 const {
   publishEventPipeline,
   buildSeverityTargets,
@@ -91,8 +90,7 @@ function isFilenameLeak(message) {
 }
 
 /**
- * 텔레그램 메시지 발송 — Forum Topic 라우팅 (🏢 스카 채널)
- * 내부적으로 telegram-sender.js를 사용하여 3회 재시도 + pending 큐 관리.
+ * 스카팀 메시지 발송 — OpenClaw webhook 경유
  * @param {string} message  발송할 메시지 본문
  * @param {string} [chatId] 수신자 chat_id (하위 호환, Forum 모드에서는 무시)
  * @returns {Promise<boolean>}
@@ -127,11 +125,10 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
     },
     targets: buildSeverityTargets({
       event,
-      sender,
       topicTeam: 'ska',
       telegramPrefix: `🔔 ${TEAM_NAME}\n\n`,
       includeQueue: false,
-      includeTelegram: true,
+      includeTelegram: false,
       includeN8n: true,
     }),
   });

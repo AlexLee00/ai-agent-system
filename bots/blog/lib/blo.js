@@ -48,7 +48,6 @@ const {
 const { checkQuality }                              = require('./quality-checker');
 const { publishToFile }                             = require('./publ');
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
-const tg                                            = require('../../../packages/core/lib/telegram-sender');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const { createMessage }                             = require('../../../packages/core/lib/message-envelope');
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
@@ -218,15 +217,15 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
       await runIfOps(
         'blog-tg',
         () => publishEventPipeline({
-          event: { ...notice, message: renderNoticeEvent(notice) || msg },
-          targets: buildSeverityTargets({
-            event: notice,
-            sender: tg,
-            topicTeam: 'blog',
-            includeQueue: false,
-            includeN8n: false,
-          }),
-          policy: { cooldownMs: 30 * 60_000 },
+      event: { ...notice, message: renderNoticeEvent(notice) || msg },
+      targets: buildSeverityTargets({
+        event: notice,
+        topicTeam: 'blog',
+        includeQueue: false,
+        includeTelegram: false,
+        includeN8n: false,
+      }),
+      policy: { cooldownMs: 30 * 60_000 },
         }),
         () => console.log('[DEV] 텔레그램 생략')
       );

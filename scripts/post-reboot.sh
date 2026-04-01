@@ -38,11 +38,16 @@ send_telegram() {
   PROJECT_DIR_ENV="$PROJECT_DIR" MSG_FILE_ENV="$msg_file" \
   "$TELEGRAM_NODE" - <<'NODE' 2>/dev/null || true
 const fs = require('fs');
-const sender = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/telegram-sender');
+const openclawClient = require(process.env.PROJECT_DIR_ENV + '/packages/core/lib/openclaw-client');
 
 (async () => {
   const text = fs.readFileSync(process.env.MSG_FILE_ENV, 'utf-8');
-  await sender.send('claude-lead', text);
+  await openclawClient.postAlarm({
+    team: 'claude-lead',
+    message: text,
+    alertLevel: 1,
+    fromBot: 'post-reboot',
+  });
 })().catch(() => {});
 NODE
 }

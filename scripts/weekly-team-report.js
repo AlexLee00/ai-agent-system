@@ -12,7 +12,7 @@
 
 const pgPool = require('../packages/core/lib/pg-pool');
 const rag    = require('../packages/core/lib/rag');
-const tg     = require('../packages/core/lib/telegram-sender');
+const openclawClient = require('../packages/core/lib/openclaw-client');
 
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
@@ -228,10 +228,16 @@ async function main() {
 
   // 텔레그램 발송
   try {
-    await tg.send('claude', report);
-    console.log('\n✅ 텔레그램 발송 완료');
+    const sent = await openclawClient.postAlarm({
+      team: 'claude-lead',
+      message: report,
+      alertLevel: 1,
+      fromBot: 'weekly-team-report',
+    });
+    if (!sent?.ok) throw new Error(sent?.error || `status_${sent?.status || 'unknown'}`);
+    console.log('\n✅ OpenClaw 발송 완료');
   } catch (e) {
-    console.warn('\n⚠️ 텔레그램 발송 실패:', e.message);
+    console.warn('\n⚠️ OpenClaw 발송 실패:', e.message);
   }
 
   // RAG 저장

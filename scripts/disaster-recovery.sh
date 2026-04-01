@@ -162,8 +162,13 @@ fi
 # 텔레그램 복구 완료 알림
 ELAPSED=$(( $(date +%s) - START_TIME ))
 run "node -e \"
-  const sender = require('$PROJECT_DIR/packages/core/lib/telegram-sender');
-  sender.sendCritical('general', '🚨 재해 복구 완료\\\\n맥북에서 OPS 전환됨\\\\n소요: ${ELAPSED}초\\\\n백업: $(basename $LATEST)');
+  const openclawClient = require('$PROJECT_DIR/packages/core/lib/openclaw-client');
+  openclawClient.postAlarm({
+    team: 'emergency',
+    message: '🚨 재해 복구 완료\\\\n맥북에서 OPS 전환됨\\\\n소요: ${ELAPSED}초\\\\n백업: $(basename $LATEST)',
+    alertLevel: 4,
+    fromBot: 'disaster-recovery'
+  });
 \""
 ok "텔레그램 CRITICAL 알림 발송"
 

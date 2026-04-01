@@ -18,7 +18,6 @@ const https = require('https');
 
 const kst    = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const sender = require('../../../packages/core/lib/telegram-sender');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -191,9 +190,9 @@ async function main() {
       event: notice,
       targets: buildSeverityTargets({
         event: notice,
-        sender,
         topicTeam: 'claude-lead',
         includeQueue: false,
+        includeTelegram: false,
       }),
       policy: {
         cooldownMs: hasAlert ? 5 * 60_000 : 30 * 60_000,

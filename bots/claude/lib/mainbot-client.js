@@ -1,20 +1,18 @@
 'use strict';
 
 /**
- * lib/mainbot-client.js — 클로드팀 → 텔레그램 알람 발행 클라이언트 (CJS)
+ * lib/mainbot-client.js — 클로드팀 알람 발행 클라이언트 (CJS)
  *
- * telegram-sender.js 경유로 🔧 클로드 Forum Topic에 직접 발송.
- * alert_level >= 3 (HIGH/CRITICAL) 은 🚨 긴급 + 🔧 클로드 이중 발송.
+ * OpenClaw webhook 경유로 전달하고, 실패 시 queue/n8n 정책에 따른다.
  */
 
-const sender = require('../../../packages/core/lib/telegram-sender');
 const {
   publishEventPipeline,
   buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 
 /**
- * 클로드팀 알람 발행 → 텔레그램 Forum Topic 직접 라우팅
+ * 클로드팀 알람 발행 → OpenClaw webhook 우선
  * @param {object} opts
  * @param {string} opts.from_bot     발신 봇 ID (dexter, archer)
  * @param {string} [opts.team]       팀명 (기본: claude)
@@ -39,10 +37,9 @@ async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_l
     },
     targets: buildSeverityTargets({
       event,
-      sender,
       topicTeam,
       includeQueue: false,
-      includeTelegram: true,
+      includeTelegram: false,
       includeN8n: true,
     }),
   });

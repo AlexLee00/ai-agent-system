@@ -39,7 +39,7 @@
 
 const fs     = require('fs');
 const path   = require('path');
-const sender = require('../packages/core/lib/telegram-sender');
+const openclawClient = require('../packages/core/lib/openclaw-client');
 const { writeLatestSpeedSnapshot } = require('../packages/core/lib/llm-control/service');
 const {
   OPENCLAW_CONFIG,
@@ -102,7 +102,12 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   }
 
   const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}\n\n❌ 실패: ${failed}개`;
-  return sender.send('claude-lead', text);
+  return openclawClient.postAlarm({
+    team: 'claude-lead',
+    message: text,
+    alertLevel: 1,
+    fromBot: 'speed-test',
+  });
 }
 
 function writeLatestSnapshot(results, { applied, recommended, current } = {}) {

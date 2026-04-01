@@ -2,19 +2,15 @@
 const kst = require('../../../packages/core/lib/kst');
 
 /**
- * lib/reporter.js — 덱스터 리포트 포맷 + 텔레그램 발송
- *
- * 텔레그램 발송: telegram-sender.js 경유 → 🔧 클로드 Forum Topic
+ * lib/reporter.js — 덱스터 리포트 포맷 + 알람 발송
  */
 
 const fs     = require('fs');
 const cfg    = require('./config');
-const sender = require('../../../packages/core/lib/telegram-sender');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const {
   publishEventPipeline,
-  publishToTelegram,
   buildNoticeEvent,
   buildEventPayload,
   renderNoticeEvent,
@@ -256,10 +252,9 @@ function publishDexterNotice({
       event,
       pgPool,
       schema: 'claude',
-      sender,
       topicTeam: 'claude-lead',
       includeQueue: false,
-      includeTelegram: true,
+      includeTelegram: false,
       includeN8n: true,
     }),
   }).then((result) => result.ok);
