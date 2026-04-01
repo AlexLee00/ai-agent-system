@@ -1,17 +1,16 @@
 /**
  * shared/mainbot-client.js — 루나팀 → 메인봇 알람 발행 클라이언트 (ESM)
  *
- * PostgreSQL jay.claude 스키마 mainbot_queue에 INSERT.
+ * OpenClaw webhook 경유로 전달한다.
  */
 
 import { createRequire } from 'module';
 
 const require  = createRequire(import.meta.url);
-const pgPool   = require('../../../packages/core/lib/pg-pool');
-const { publishToQueue, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
+const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 
 /**
- * 메인봇 큐에 알람 발행
+ * OpenClaw webhook으로 알람 발행
  * @param {object} opts
  * @param {string} opts.from_bot     발신 봇 ID (luna, jason, tyler, molly, chris...)
  * @param {string} [opts.team]       팀명 (기본: investment)
@@ -33,18 +32,6 @@ export async function publishToMainBot({ from_bot, team = 'investment', event_ty
   if (webhookResult.ok && !webhookResult.skipped) {
     return true;
   }
-
-  console.warn(
-    `[mainbot-client] webhook 실패/스킵, 큐 폴백: ${webhookResult.error || webhookResult.reason || 'unknown'}`,
-  );
-
-  const queueResult = await publishToQueue({
-    pgPool,
-    schema: 'claude',
-    event,
-    policy: {
-      cooldownMs: 2 * 60_000,
-    },
-  });
-  return queueResult.ok;
+  console.warn(`[mainbot-client] webhook 실패/스킵: ${webhookResult.error || webhookResult.reason || 'unknown'}`);
+  return false;
 }

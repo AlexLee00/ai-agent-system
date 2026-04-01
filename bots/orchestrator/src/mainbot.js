@@ -5,6 +5,10 @@ const kst = require('../../../packages/core/lib/kst');
 /**
  * src/mainbot.js — 메인봇 알람 큐 처리기
  *
+ * DEPRECATED:
+ *   OpenClaw webhook/topic 경로가 주 경로가 되었고, 이 프로세스는 레거시 mainbot_queue
+ *   관찰·정리 참고용으로만 유지한다. 신규 알람 발행 경로를 추가하지 않는다.
+ *
  * 역할:
  *   1. mainbot_queue 폴링 — 봇 알람 수신 → filter.js → Telegram 발송
  *   2. 아침 브리핑 (08:00 KST) — 야간 보류 알람 발송
