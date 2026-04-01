@@ -60,21 +60,17 @@
 
 ```
 1순위: LLM 모델 재편성 (CODEX_LLM_MODEL_REORG.md, 501줄)
-  - hermes/sophia 로컬 전환 (13,000회/주 → $0)
-  - blog 전면 oauth/gpt-5.4 (social 28%→100%)
-  - shadow_luna/ska fallback 추가
-  - video/step-proposal selector 등록
 
-2순위: Phase 4A — mainbot.js 비활성화
-  - mainbot_queue 아카이브
-  - filter.js 로직 → Standing Orders 확인
+2순위: Phase 4 통합 (CODEX_PHASE4_MAINBOT_OPENCLAW.md, 384줄)
+  Task 1: TOOLS.md에 alert-resolve 등록
+  Task 2: Standing Orders 알람 해제 규칙
+  Task 3: filter.js → Standing Orders 이전
+  Task 4: mainbot.js 퇴역 + 큐 아카이브
+  Task 5: router.js isPickkoAlertResolveCommand 제거
+  Task 6: 미해결 알람 목록 조회 도구
 
-3순위: Phase 4B — alert resolve OpenClaw 통합 (연구)
-  - isPickkoAlertResolveCommand → LLM 자연어 이해
-  - booking_key 기반 안전 실행 설계
-
-4순위: 블로팀 P1~P5 개선 구현
-5순위: D 분해 (인프라+루나)
+3순위: 블로팀 P1~P5 개선 구현
+4순위: D 분해 (인프라+루나)
 ```
 
 ## 핵심 결정 (이번 세션)
