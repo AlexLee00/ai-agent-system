@@ -223,6 +223,9 @@ bots/investment/shared/analyst-accuracy.js
 bots/investment/shared/trade-journal-db.js
 bots/investment/shared/llm-client.js
 packages/core/lib/billing-guard.js
+bots/investment/scripts/analyze-rr.js
+bots/investment/scripts/trading-journal.js
+bots/investment/scripts/weekly-trade-review.js
 ```
 
 ### 루나팀
