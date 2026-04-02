@@ -561,4 +561,5 @@ async function buildWeeklyFeedbackReport() {
 module.exports = {
   logLLMCall, getDailyCost, getCostBreakdown, buildDailyCostReport,
   analyzeCostTrend, analyzeModelEfficiency, buildWeeklyFeedbackReport,
+  _calcCostForModel: _calcCost,
 };
