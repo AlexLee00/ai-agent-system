@@ -492,6 +492,36 @@ RAG 경험 저장            EvolveR Self-Distillation    arXiv 2510.16079
   📋 블로팀 P1~P5 개선
 ```
 
+### Phase 0.5: 미생성 팀 구축 — 마스터 확정
+```
+TRACKER 미구현 항목 분류 결과:
+  🅰 제이 랜드 포함 6건 (검증3단계, RAG강화, SaaS, Skills, 피드백RAG, Standing Orders)
+  🅱 독립 먼저 7건 (P1~P5, Phase4, Chronos, sentinel, Nemesis, 워커UX, 문서)
+  🅲 제이 랜드 이후 7건 (DCA, n8n스카, 옵션B, CF Tunnel, ComfyUI, TS1, TS2)
+  ※ secretary(비서팀): 문서상 유지, 필요 시 구축 (마스터 결정)
+
+1단계 (🅱 독립 먼저 — 현재 코덱스 마무리):
+  ⏳ 블로팀 P1~P5 (코덱스 진행중)
+  ⏳ OpenClaw Phase 4 (코덱스 진행중)
+  📋 sentinel 통합 + Nemesis 분해 (Agent Registry 등록 전 필수)
+
+1.5단계 (미생성 팀 구축):
+  ① 연구팀 (bots/academic → bots/research 리네임)
+     현재: package.json만 존재, 코드 없음
+     v2 역할: 기술 서칭→코드 구현/실험→에이전트 반영→필드 투입→피드백
+     = v2 핵심 엔진! 가장 먼저 구축
+
+  ② 감정팀 (bots/legal)
+     현재: package.json만 존재, 코드 없음
+     v2 역할: 법원 SW 감정 자동화 (감정 유형별 전문 에이전트 풀)
+     = 첫 적용 4팀 중 하나
+
+  ③ 데이터 사이언스 팀 (bots/data 신규 생성)
+     완전 신규! 디렉토리부터 생성
+     v2 역할: 정기 데이터 수집 총괄 + 가공/분석 + 인사이트 아카이빙
+     = 데이터 기반 자율 진화의 핵심
+```
+
 ### Phase 1: 기반 구축 (2~4주) — 블로+루나+감정+연구 동시 착수
 ```
 1-1. RAG 경험 저장 구현
