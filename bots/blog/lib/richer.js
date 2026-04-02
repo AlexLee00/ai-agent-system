@@ -13,6 +13,7 @@ const https  = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag-safe');
 const env    = require('../../../packages/core/lib/env');
+const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
@@ -31,6 +32,121 @@ function httpsGet(url, timeout = 10000) {
     req.setTimeout(timeout, () => { req.destroy(); reject(new Error('timeout')); });
     req.on('error', reject);
   });
+}
+
+function httpsGetText(url, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'ai-agent-blog/1.0' } }, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+    req.setTimeout(timeout, () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+  });
+}
+
+function _extractMetric(html, patterns) {
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (!match) continue;
+    const value = Number(String(match[1] || '').replace(/[^\d]/g, ''));
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function extractNaverBlogStats(html = '') {
+  return {
+    views: _extractMetric(html, [
+      /readCount["'=:\s]+([0-9,]+)/i,
+      /viewCount["'=:\s]+([0-9,]+)/i,
+      /postViewCount["'=:\s]+([0-9,]+)/i,
+      /visitorCount["'=:\s]+([0-9,]+)/i,
+    ]),
+    comments: _extractMetric(html, [
+      /commentCount["'=:\s]+([0-9,]+)/i,
+      /comment_cnt["'=:\s]+([0-9,]+)/i,
+    ]),
+    likes: _extractMetric(html, [
+      /sympathyCount["'=:\s]+([0-9,]+)/i,
+      /sympathyCnt["'=:\s]+([0-9,]+)/i,
+      /likeItCount["'=:\s]+([0-9,]+)/i,
+    ]),
+  };
+}
+
+async function searchNaverBlogByTitle(title) {
+  try {
+    const clientId = process.env.NAVER_CLIENT_ID || process.env.NAVER_SEARCH_CLIENT_ID || process.env.NAVER_OPENAPI_CLIENT_ID;
+    const clientSecret = process.env.NAVER_CLIENT_SECRET || process.env.NAVER_SEARCH_CLIENT_SECRET || process.env.NAVER_OPENAPI_CLIENT_SECRET;
+    if (!clientId || !clientSecret || !title) return null;
+
+    const url = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(title)}&display=3&sort=sim`;
+    const data = await new Promise((resolve, reject) => {
+      const req = https.get(url, {
+        headers: {
+          'User-Agent': 'ai-agent-blog/1.0',
+          'X-Naver-Client-Id': clientId,
+          'X-Naver-Client-Secret': clientSecret,
+        },
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => body += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+      req.on('error', reject);
+    });
+
+    const item = Array.isArray(data?.items) ? data.items.find((entry) => parseNaverBlogUrl(entry?.link || '').ok) : null;
+    return item?.link || null;
+  } catch (e) {
+    console.warn('[리처] 네이버 블로그 검색 실패:', e.message);
+    return null;
+  }
+}
+
+async function fetchNaverBlogStats(post = {}) {
+  const urlCandidates = [];
+  if (post.naver_url) urlCandidates.push(post.naver_url);
+  if (post.url) urlCandidates.push(post.url);
+  if (post.metadata?.url) urlCandidates.push(post.metadata.url);
+
+  let resolvedUrl = urlCandidates.find(Boolean) || null;
+  if (!resolvedUrl && post.title) {
+    resolvedUrl = await searchNaverBlogByTitle(post.title);
+  }
+  if (!resolvedUrl) {
+    return { views: 0, comments: 0, likes: 0, source: 'unresolved' };
+  }
+
+  const parsed = parseNaverBlogUrl(resolvedUrl);
+  const targets = parsed.ok
+    ? [parsed.mobileUrl, parsed.canonicalUrl, resolvedUrl].filter(Boolean)
+    : [resolvedUrl];
+
+  for (const target of targets) {
+    try {
+      const html = await httpsGetText(target, 15000);
+      const stats = extractNaverBlogStats(html);
+      return {
+        ...stats,
+        url: target,
+        source: target.includes('m.blog.naver.com') ? 'mobile_html' : 'html',
+      };
+    } catch (e) {
+      console.warn('[리처] 네이버 블로그 성과 수집 실패:', e.message);
+    }
+  }
+
+  return { views: 0, comments: 0, likes: 0, url: resolvedUrl, source: 'fallback_zero' };
 }
 
 // ─── 데이터 수집 ─────────────────────────────────────────────────────
@@ -265,7 +381,14 @@ async function searchPopularPatterns(category = 'general') {
     }
     const merged = [];
     for (const query of _buildPopularPatternQueries(category)) {
-      const hits = await rag.search('experience', query, { limit: 3, threshold: 0.35 });
+      const hits = await rag.search('experience', query, {
+        limit: 3,
+        threshold: 0.35,
+        filter: {
+          team: 'blog',
+          intent: 'blog_success',
+        },
+      });
       for (const hit of hits || []) {
         const signature = `${hit.content || ''}|${JSON.stringify(hit.metadata || {})}`;
         if (merged.some((item) => item.signature === signature)) continue;
@@ -288,6 +411,9 @@ module.exports = {
   fetchITNews,
   fetchNodejsUpdates,
   fetchWeather,
+  extractNaverBlogStats,
+  fetchNaverBlogStats,
+  searchNaverBlogByTitle,
   searchRealExperiences,
   searchRelatedPosts,
   searchPopularPatterns,
