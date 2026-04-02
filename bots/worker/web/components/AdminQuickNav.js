@@ -12,6 +12,7 @@ const DEFAULT_ITEMS = [
   { href: '/admin/companies', label: '업체 관리' },
   { href: '/admin/users', label: '사용자 관리' },
   { href: '/admin/monitoring', label: 'LLM API 현황' },
+  { href: '/admin/agent-office', label: '에이전트 오피스' },
   { href: '/admin/monitoring/blog-links', label: '블로그 URL 입력' },
 ];
 
