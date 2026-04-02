@@ -14,6 +14,8 @@ const {
   agentsListRoute,
   agentsDashboardRoute,
   agentsAlwaysOnRoute,
+  agentsTraceStatsRoute,
+  agentTraceStatsRoute,
   agentDetailRoute,
 } = require('../lib/routes/agents');
 
@@ -65,6 +67,8 @@ app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
 app.get('/hub/agents', generalLimiter, agentsListRoute);
 app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);
 app.get('/hub/agents/always-on', generalLimiter, agentsAlwaysOnRoute);
+app.get('/hub/agents/stats/traces', generalLimiter, agentsTraceStatsRoute);
+app.get('/hub/agents/:name/stats/traces', generalLimiter, agentTraceStatsRoute);
 app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
 const secretsLimiter = rateLimit({

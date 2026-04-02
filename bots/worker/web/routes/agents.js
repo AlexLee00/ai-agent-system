@@ -55,6 +55,26 @@ module.exports = function mountAgentRoutes(app, authMiddleware) {
     }
   });
 
+  app.get('/api/agents/stats/traces', authMiddleware, async (req, res) => {
+    try {
+      const query = req.query.days ? `?days=${encodeURIComponent(req.query.days)}` : '';
+      const data = await proxyHubAgents(`/hub/agents/stats/traces${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '에이전트 trace 통계를 불러오지 못했습니다.' });
+    }
+  });
+
+  app.get('/api/agents/:name/stats/traces', authMiddleware, async (req, res) => {
+    try {
+      const query = req.query.days ? `?days=${encodeURIComponent(req.query.days)}` : '';
+      const data = await proxyHubAgents(`/hub/agents/${encodeURIComponent(req.params.name)}/stats/traces${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '에이전트 상세 trace 통계를 불러오지 못했습니다.' });
+    }
+  });
+
   app.get('/api/agents/:name', authMiddleware, async (req, res) => {
     try {
       const data = await proxyHubAgents(`/hub/agents/${encodeURIComponent(req.params.name)}`);
