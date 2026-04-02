@@ -36,53 +36,50 @@
 
 에이전트 1: 스카우트 — 분야별 전문 서칭 에이전트 그룹
 
+  원칙: 스카우트는 분야별 서칭만 담당한다.
+        서칭 결과는 프로페서가 판단하여 적절한 팀에 배분한다.
+        하나의 서칭 결과가 여러 팀에 동시 적용될 수 있다.
+        스카우트는 특정 팀에 종속되지 않는다.
+
   스카우트-AI (Scout-AI) — AI/멀티에이전트 기술 서칭
     분야: Self-Evolving Agents, LLM 최적화, 프롬프트 엔지니어링, RAG, MCP
     소스: arXiv (cs.MA, cs.AI, cs.CL), GitHub trending, HuggingFace
-    적용 대상: 모든 팀 공통 (에이전트 아키텍처 개선)
     모델: groq/llama (빠른 분류) + anthropic (심층 분석)
 
   스카우트-파이낸스 (Scout-Finance) — 투자/트레이딩 전략 서칭
     분야: 퀀트 전략, 기술적 분석, 시장 미시구조, 리스크 관리, DeFi
     소스: arXiv (q-fin), SSRN, GitHub (trading-strategy), TradingView
-    적용 대상: 루나팀 (Chronos, Nemesis, 전략 최적화)
     모델: groq/llama + local/qwen2.5-7b
 
   스카우트-콘텐츠 (Scout-Content) — 콘텐츠/SEO/블로그 서칭
     분야: SEO 트렌드, AEO/GEO, AI 콘텐츠 탐지 우회, 독자 참여율
     소스: Google Search Central 블로그, Moz, Ahrefs 블로그, DEV.to
-    적용 대상: 블로팀 (포스/젬스 작가 프롬프트 개선)
     모델: local/qwen2.5-7b (빈번한 서칭, 비용 $0)
 
   스카우트-리걸 (Scout-Legal) — 법률/SW감정 서칭
     분야: SW 감정 방법론, 법원 판례, 디지털 포렌식, 소스코드 분석 기법
     소스: 법률 DB (대법원 종합법률정보), 한국소프트웨어감정평가학회, 학술지
-    적용 대상: 감정팀 (감정 유형별 전문성 강화)
     모델: anthropic (법률 정확성 요구)
 
   스카우트-데이터 (Scout-Data) — 데이터 사이언스/분석 서칭
     분야: 데이터 파이프라인, 이상 탐지, 시계열 분석, MLOps, 관측성
     소스: arXiv (cs.DB, stat.ML), Databricks/Snowflake 블로그, KDnuggets
-    적용 대상: 데이터 사이언스 팀 (분석 기법 강화)
     모델: local/qwen2.5-7b
 
   스카우트-미디어 (Scout-Media) — 영상/편집 기술 서칭
     분야: AI 영상 편집, 자동 자막, 썸네일 생성, CapCut/Twick 기술
     소스: GitHub (video-editing, ffmpeg), YouTube API, arXiv (cs.CV)
-    적용 대상: 에디팀 (자동 편집 파이프라인)
     모델: local/qwen2.5-7b
 
   스카우트-인프라 (Scout-Infra) — 시스템/인프라/보안 서칭
     분야: 로컬 LLM 최적화, macOS 자동화, 보안 패치, 모니터링
     소스: GitHub (mlx, ollama), Homebrew, Apple Developer, CVE 데이터베이스
-    적용 대상: 클로드팀 (덱스터/닥터/아처 강화)
     모델: local/qwen2.5-7b
 
   스카우트-마켓 (Scout-Market) — 마케팅/수익화 서칭
     분야: 네이버 인기 키워드, 광고 수익 최적화(애드센스/제휴), SNS 마케팅 전략,
           경쟁 블로그/채널 분석, 콘텐츠 바이럴 패턴, 수익화 모델
     소스: 네이버 키워드 도구, Google Trends, SNS 분석 도구, 마케팅 블로그
-    적용 대상: 블로팀 (수익 극대화) + 워커팀 (SaaS 마케팅) + 전체 (수익 구조)
     모델: local/qwen2.5-7b (빈번한 서칭, 비용 $0)
 
   스카우트 공통 패턴:
