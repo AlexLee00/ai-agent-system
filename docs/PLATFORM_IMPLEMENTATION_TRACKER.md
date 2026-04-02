@@ -91,7 +91,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 | 문서 체계 v2 | ✅ | 7대 카테고리, 79파일 아카이브 |
 | CLAUDE.md 리팩터링 | ✅ | 367→116줄 (68% 축소) |
 | STRATEGY.md v4 | ✅ | 159줄 신설 |
-| 팀별 CLAUDE.md | ✅ | 6개 생성 |
+| 팀별 CLAUDE.md | ✅ | 7개 생성 (investment/claude/reservation/blog/worker/video/orchestrator) |
 
 ### 2026-03-30: 블로팀 딥분석 + 루나팀 에러 해소 + DEV↔OPS 환경
 
@@ -233,6 +233,7 @@ bots/orchestrator/src/router.js — 제이 라우터 (isPickkoAlertResolveComman
 bots/orchestrator/src/mainbot.js — 알람 큐 처리 (Phase 4 퇴역 예정)
 bots/orchestrator/src/filter.js — 알람 필터링 (Phase 4 Standing Orders 이전 예정)
 bots/orchestrator/scripts/experience-store-cli.js — RAG 경험 저장 CLI (04-02 신규)
+bots/orchestrator/CLAUDE.md — Claude Code 컨텍스트 (04-02 신규)
 ```
 
 ### RAG + 자기학습
