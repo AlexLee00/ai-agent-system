@@ -214,6 +214,7 @@ bots/investment/team/_deprecated/sophia.js
 bots/investment/team/hermes.js
 bots/investment/team/sentinel.js
 bots/investment/team/sophia.js
+bots/blog/lib/runtime-config.js
 ```
 
 ### 루나팀
@@ -259,6 +260,9 @@ bots/orchestrator/lib/write/doc-sync-checker.js
 bots/orchestrator/src/write.js
 bots/worker/lib/ai-client.js
 bots/worker/lib/llm-api-monitoring.js
+bots/orchestrator/config.json
+bots/orchestrator/lib/jay-model-policy.js
+bots/orchestrator/lib/runtime-config.js
 ```
 
 ### RAG + 자기학습
