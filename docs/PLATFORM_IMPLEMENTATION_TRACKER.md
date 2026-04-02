@@ -218,6 +218,7 @@ bots/investment/team/sophia.js
 bots/blog/lib/runtime-config.js
 packages/core/lib/hiring-contract.js
 packages/core/lib/competition-engine.js
+bots/investment/team/hanul.js
 ```
 
 ### 루나팀
