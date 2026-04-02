@@ -42,7 +42,7 @@ const NEW_AGENTS = [
   { name: 'hera', display_name: '헤라', team: 'luna', role: 'analyst_long', specialty: '장기가치역발상분석(저평가매수,공포시진입)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#a78bfa', accessory: 'chart' } },
   { name: 'aegis', display_name: '이지스', team: 'luna', role: 'risk', specialty: '적응형유연리스크(ATR동적손절,VIX연동)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#38bdf8', accessory: 'shield' } },
   { name: 'hound', display_name: '하운드', team: 'luna', role: 'watcher', specialty: '소셜커뮤니티감시(Reddit/X/텔레그램/웨일추적)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#fb923c', accessory: 'magnifier' } },
-  { name: 'hermes', display_name: '헤르메스', team: 'luna', role: 'executor', specialty: '암호화폐스캘핑(수초~수분,차익거래)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#facc15', accessory: 'compass' } },
+  { name: 'hermes-luna', display_name: '헤르메스', team: 'luna', role: 'executor', specialty: '암호화폐스캘핑(수초~수분,차익거래)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#facc15', accessory: 'compass' } },
   { name: 'midas', display_name: '미다스', team: 'luna', role: 'executor', specialty: '주식배당장기보유(분기리밸런싱,현금흐름)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#fbbf24', accessory: 'crown' } },
   { name: 'funder', display_name: '펀더', team: 'luna', role: 'fundamental', specialty: '펀더멘탈분석(재무제표,어닝,PER/PBR,내부자거래)', llm_model: 'openai-oauth/gpt-5.4', dot_character: { color: '#059669', accessory: 'glasses' } },
   { name: 'vibe', display_name: '바이브', team: 'luna', role: 'sentiment', specialty: '시장감성분석(Fear&Greed,소셜온도,FOMO/FUD)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#e879f9', accessory: 'compass' } },

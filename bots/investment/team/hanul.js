@@ -146,12 +146,14 @@ async function getKisExecutionPreflight({ market = 'domestic', action = ACTIONS.
 
 async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exitValue, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
-  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-  const entry = openEntries.find(e =>
+  const scopedEntries = openEntries.filter((e) =>
     e.symbol === symbol
-      && Boolean(e.is_paper) === Boolean(isPaper)
-      && (e.trade_mode || 'normal') === effectiveTradeMode
+      && Boolean(e.is_paper) === Boolean(isPaper),
   );
+  const effectiveTradeMode = tradeMode || null;
+  const entry = effectiveTradeMode
+    ? scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode)
+    : (scopedEntries.length === 1 ? scopedEntries[0] : null);
   if (!entry) return;
 
   const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
@@ -205,12 +207,14 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
 
 async function closeStaleOpenJournalForSymbol(symbol, market, isPaper, exitReason, tradeMode = null) {
   const openEntries = await journalDb.getOpenJournalEntries(market);
-  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-  const entry = openEntries.find(e =>
+  const scopedEntries = openEntries.filter((e) =>
     e.symbol === symbol
-      && Boolean(e.is_paper) === Boolean(isPaper)
-      && (e.trade_mode || 'normal') === effectiveTradeMode
+      && Boolean(e.is_paper) === Boolean(isPaper),
   );
+  const effectiveTradeMode = tradeMode || null;
+  const entry = effectiveTradeMode
+    ? scopedEntries.find((e) => (e.trade_mode || 'normal') === effectiveTradeMode)
+    : (scopedEntries.length === 1 ? scopedEntries[0] : null);
   if (!entry) return;
 
   await journalDb.closeJournalEntry(entry.trade_id, {
