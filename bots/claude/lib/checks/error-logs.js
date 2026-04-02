@@ -1,6 +1,42 @@
 'use strict';
 
 const { fetchOpsErrors } = require('../../../../packages/core/lib/hub-client');
+const { execSync } = require('child_process');
+const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
+
+const SERVICE_LABEL_MAP = {
+  'investment-crypto': 'ai.investment.crypto',
+  'investment-domestic': 'ai.investment.domestic',
+  'investment-overseas': 'ai.investment.overseas',
+  'investment-prescreen-domestic': 'ai.investment.prescreen-domestic',
+  'investment-reporter': 'ai.investment.reporter',
+  'investment-argos': 'ai.investment.argos',
+  'investment-market-alert-overseas-open': 'ai.investment.market-alert-overseas-open',
+  'investment-market-alert-overseas-close': 'ai.investment.market-alert-overseas-close',
+  'investment-market-alert-domestic-open': 'ai.investment.market-alert-domestic-open',
+  'investment-market-alert-crypto-daily': 'ai.investment.market-alert-crypto-daily',
+  'openclaw-model-sync': 'ai.openclaw.model-sync',
+  'mlx-server': 'ai.mlx.server',
+};
+
+function getLaunchdStatus(label) {
+  if (!LAUNCHD_AVAILABLE || !label) return null;
+  try {
+    const out = execSync(`launchctl print gui/501/${label}`, { encoding: 'utf8', timeout: 5000 });
+    const state = out.match(/state = ([^\n]+)/)?.[1]?.trim() || '';
+    const pid = out.match(/\npid = ([^\n]+)/)?.[1]?.trim() || '';
+    const lastExitCode = Number(out.match(/last exit code = ([^\n]+)/)?.[1]?.trim() || NaN);
+    return { state, pid, lastExitCode };
+  } catch {
+    return null;
+  }
+}
+
+function isCurrentlyHealthy(launchdStatus) {
+  if (!launchdStatus) return false;
+  if (launchdStatus.state === 'running' || launchdStatus.state === 'xpcproxy') return true;
+  return Number.isFinite(launchdStatus.lastExitCode) && launchdStatus.lastExitCode === 0;
+}
 
 async function checkErrorLogs() {
   const items = [];
@@ -20,12 +56,22 @@ async function checkErrorLogs() {
       items.push({ label: '에러 로그', status: 'ok', detail: '최근 1시간 에러 없음' });
     } else {
       for (const svc of data.services) {
-        const status = svc.error_count >= 10 ? 'error' : svc.error_count >= 3 ? 'warn' : 'ok';
+        const launchdLabel = SERVICE_LABEL_MAP[svc.service] || null;
+        const launchdStatus = getLaunchdStatus(launchdLabel);
+        const healthyNow = isCurrentlyHealthy(launchdStatus);
+        let status = svc.error_count >= 10 ? 'error' : svc.error_count >= 3 ? 'warn' : 'ok';
         const tail = svc.recent_errors[svc.recent_errors.length - 1] || '';
+        let detail = `${svc.error_count}건 — ${tail.slice(0, 200)}`;
+
+        if (healthyNow) {
+          status = 'ok';
+          detail += ` | 현재 상태 정상 (${launchdStatus.state || `exit ${launchdStatus.lastExitCode}`})`;
+        }
+
         items.push({
           label: svc.service,
           status,
-          detail: `${svc.error_count}건 — ${tail.slice(0, 200)}`,
+          detail,
         });
       }
     }
