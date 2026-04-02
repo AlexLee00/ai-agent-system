@@ -285,6 +285,7 @@ bots/worker/web/lib/menu-access.js
 bots/orchestrator/scripts/seed-blog-agents-phase2.js
 bots/orchestrator/migrations/008-competitions.sql
 bots/worker/web/components/AgentCharts.js
+bots/orchestrator/scripts/update-luna-agents.js
 ```
 
 ### RAG + 자기학습
