@@ -6,12 +6,23 @@
 
 const pgPool = require('./pg-pool');
 
+const TEAM_ALIASES = {
+  research: 'darwin',
+  legal: 'justin',
+  data: 'sigma',
+};
+
+function normalizeTeam(team) {
+  const key = String(team || '').trim().toLowerCase();
+  return TEAM_ALIASES[key] || key;
+}
+
 async function getAgent(name) {
   return pgPool.get('agent', 'SELECT * FROM agent.registry WHERE name = $1', [name]);
 }
 
 async function getAgentsByTeam(team) {
-  return pgPool.query('agent', 'SELECT * FROM agent.registry WHERE team = $1 ORDER BY score DESC, name', [team]);
+  return pgPool.query('agent', 'SELECT * FROM agent.registry WHERE team = $1 ORDER BY score DESC, name', [normalizeTeam(team)]);
 }
 
 async function getTopAgents(role, limit = 3) {
@@ -161,6 +172,7 @@ async function completeContract(contractId, scoreResult) {
 }
 
 async function registerAgent(data) {
+  const normalizedTeam = normalizeTeam(data.team);
   return pgPool.get(
     'agent',
     `INSERT INTO agent.registry (
@@ -183,7 +195,7 @@ async function registerAgent(data) {
     [
       data.name,
       data.display_name,
-      data.team,
+      normalizedTeam,
       data.role,
       data.specialty || null,
       data.llm_model || null,
@@ -217,6 +229,7 @@ async function getDashboardData() {
 }
 
 module.exports = {
+  normalizeTeam,
   getAgent,
   getAgentsByTeam,
   getTopAgents,

@@ -41,6 +41,32 @@ function _getLunaRoleBonus(requestedRole, agentRole) {
   return family?.has(agentRole) ? 0.45 : 0;
 }
 
+function _getTeamRoleAliases(team) {
+  if (team === 'sigma') {
+    return {
+      etl: new Set(['etl', 'engineer']),
+      engineer: new Set(['engineer', 'etl']),
+      ml: new Set(['ml', 'ml_engineer']),
+      ml_engineer: new Set(['ml_engineer', 'ml']),
+      visualization: new Set(['visualization', 'visualizer']),
+      visualizer: new Set(['visualizer', 'visualization']),
+      governance: new Set(['governance']),
+      analyst: new Set(['analyst']),
+    };
+  }
+
+  return {};
+}
+
+function _matchRole(team, requestedRole, agentRole) {
+  if (!requestedRole) return true;
+  if (requestedRole === agentRole) return true;
+
+  const aliases = _getTeamRoleAliases(team);
+  const family = aliases[requestedRole];
+  return family ? family.has(agentRole) : false;
+}
+
 async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
 
@@ -48,7 +74,7 @@ async function selectBestAgent(role, team = null, requirements = {}) {
   let candidates;
   if (team) {
     const teamAgents = await registry.getAgentsByTeam(team);
-    candidates = teamAgents.filter((a) => a.role === role);
+    candidates = teamAgents.filter((a) => _matchRole(team, role, a.role));
     if (!candidates.length) candidates = teamAgents; // 팀 내 폴백 (role 무관)
   } else {
     candidates = await registry.getTopAgents(role, limit);
@@ -70,7 +96,7 @@ async function selectBestAgent(role, team = null, requirements = {}) {
 
 async function hire(agentName, taskData = {}) {
   return registry.createContract(agentName, {
-    employer_team: taskData.team || taskData.employer_team || 'unknown',
+    employer_team: taskData.team || taskData.employer_team || taskData.employerTeam || 'unknown',
     task: taskData.description || taskData.task || '',
     requirements: taskData.requirements || {},
     reward: taskData.reward || {
