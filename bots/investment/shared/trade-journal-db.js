@@ -29,6 +29,141 @@ function ensureInit() {
   return _initPromise;
 }
 
+function _buildAnalystSignalsJson(rationaleData = {}) {
+  const analystSignals = {};
+
+  if (rationaleData.aria_signal != null) analystSignals.aria = { signal: rationaleData.aria_signal };
+  if (rationaleData.oracle_signal != null) analystSignals.oracle = { signal: rationaleData.oracle_signal };
+  if (rationaleData.hermes_signal != null) analystSignals.sentinel = { signal: rationaleData.hermes_signal };
+  if (rationaleData.sophia_signal != null && !analystSignals.sentinel) {
+    analystSignals.sentinel = { signal: rationaleData.sophia_signal };
+  }
+
+  if (rationaleData.analyst_signals && typeof rationaleData.analyst_signals === 'object') {
+    Object.assign(analystSignals, rationaleData.analyst_signals);
+  }
+
+  return analystSignals;
+}
+
+function _buildAnalystAccuracyJson(review = {}) {
+  const analystAccuracy = {};
+
+  if (review.aria_accurate != null) analystAccuracy.aria = review.aria_accurate;
+  if (review.oracle_accurate != null) analystAccuracy.oracle = review.oracle_accurate;
+  if (review.hermes_accurate != null) analystAccuracy.sentinel = review.hermes_accurate;
+  if (review.sophia_accurate != null && analystAccuracy.sentinel == null) {
+    analystAccuracy.sentinel = review.sophia_accurate;
+  }
+
+  if (review.analyst_accuracy && typeof review.analyst_accuracy === 'object') {
+    Object.assign(analystAccuracy, review.analyst_accuracy);
+  }
+
+  return analystAccuracy;
+}
+
+function _buildPerformanceAccuracyMap(data = {}) {
+  const accuracyMap = {};
+
+  if (data.aria_accuracy != null) accuracyMap.aria = data.aria_accuracy;
+  if (data.oracle_accuracy != null) accuracyMap.oracle = data.oracle_accuracy;
+  if (data.hermes_accuracy != null) accuracyMap.sentinel = data.hermes_accuracy;
+  if (data.sophia_accuracy != null && accuracyMap.sentinel == null) {
+    accuracyMap.sentinel = data.sophia_accuracy;
+  }
+
+  if (data.analyst_accuracy_map && typeof data.analyst_accuracy_map === 'object') {
+    Object.assign(accuracyMap, data.analyst_accuracy_map);
+  }
+
+  return accuracyMap;
+}
+
+async function migrateToJsonb() {
+  const rationalePending = await get(
+    `SELECT COUNT(*) AS count
+     FROM trade_rationale
+     WHERE COALESCE(analyst_signals, '{}'::jsonb) = '{}'::jsonb
+       AND (
+         aria_signal IS NOT NULL OR sophia_signal IS NOT NULL OR oracle_signal IS NOT NULL OR hermes_signal IS NOT NULL
+       )`,
+  ).catch(() => null);
+
+  if (Number(rationalePending?.count || 0) > 0) {
+    console.log(`[DB전환] trade_rationale ${rationalePending.count}건 JSONB 마이그레이션...`);
+    await run(`
+      UPDATE trade_rationale
+      SET analyst_signals = jsonb_strip_nulls(jsonb_build_object(
+        'aria', CASE
+          WHEN aria_signal IS NOT NULL THEN jsonb_build_object('signal', aria_signal)
+        END,
+        'oracle', CASE
+          WHEN oracle_signal IS NOT NULL THEN jsonb_build_object('signal', oracle_signal)
+        END,
+        'sentinel', CASE
+          WHEN hermes_signal IS NOT NULL THEN jsonb_build_object('signal', hermes_signal)
+          WHEN sophia_signal IS NOT NULL THEN jsonb_build_object('signal', sophia_signal)
+        END
+      ))
+      WHERE COALESCE(analyst_signals, '{}'::jsonb) = '{}'::jsonb
+        AND (
+          aria_signal IS NOT NULL OR sophia_signal IS NOT NULL OR oracle_signal IS NOT NULL OR hermes_signal IS NOT NULL
+        )
+    `);
+  }
+
+  const reviewPending = await get(
+    `SELECT COUNT(*) AS count
+     FROM trade_review
+     WHERE COALESCE(analyst_accuracy, '{}'::jsonb) = '{}'::jsonb
+       AND (
+         aria_accurate IS NOT NULL OR sophia_accurate IS NOT NULL OR oracle_accurate IS NOT NULL OR hermes_accurate IS NOT NULL
+       )`,
+  ).catch(() => null);
+
+  if (Number(reviewPending?.count || 0) > 0) {
+    console.log('[DB전환] trade_review 마이그레이션...');
+    await run(`
+      UPDATE trade_review
+      SET analyst_accuracy = jsonb_strip_nulls(jsonb_build_object(
+        'aria', aria_accurate,
+        'oracle', oracle_accurate,
+        'sentinel', COALESCE(hermes_accurate, sophia_accurate)
+      ))
+      WHERE COALESCE(analyst_accuracy, '{}'::jsonb) = '{}'::jsonb
+        AND (
+          aria_accurate IS NOT NULL OR sophia_accurate IS NOT NULL OR oracle_accurate IS NOT NULL OR hermes_accurate IS NOT NULL
+        )
+    `);
+  }
+
+  const performancePending = await get(
+    `SELECT COUNT(*) AS count
+     FROM performance_daily
+     WHERE COALESCE(analyst_accuracy_map, '{}'::jsonb) = '{}'::jsonb
+       AND (
+         aria_accuracy IS NOT NULL OR sophia_accuracy IS NOT NULL OR oracle_accuracy IS NOT NULL OR hermes_accuracy IS NOT NULL
+       )`,
+  ).catch(() => null);
+
+  if (Number(performancePending?.count || 0) > 0) {
+    console.log('[DB전환] performance_daily 마이그레이션...');
+    await run(`
+      UPDATE performance_daily
+      SET analyst_accuracy_map = jsonb_strip_nulls(jsonb_build_object(
+        'aria', aria_accuracy,
+        'oracle', oracle_accuracy,
+        'sentinel', COALESCE(hermes_accuracy, sophia_accuracy)
+      ))
+      WHERE COALESCE(analyst_accuracy_map, '{}'::jsonb) = '{}'::jsonb
+        AND (
+          aria_accuracy IS NOT NULL OR sophia_accuracy IS NOT NULL OR oracle_accuracy IS NOT NULL OR hermes_accuracy IS NOT NULL
+        )
+    `);
+  }
+}
+
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
 export async function initJournalSchema() {
@@ -117,6 +252,9 @@ export async function initJournalSchema() {
   `);
   try { await run(`CREATE INDEX IF NOT EXISTS idx_rationale_trade   ON trade_rationale(trade_id)`); }  catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_rationale_signal  ON trade_rationale(signal_id)`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS analyst_signals JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS strategy_config JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS debate_log JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
 
   // ── trade_review: 사후 평가 ────────────────────────────────────────
   await run(`
@@ -147,6 +285,7 @@ export async function initJournalSchema() {
     )
   `);
   try { await run(`CREATE INDEX IF NOT EXISTS idx_review_trade ON trade_review(trade_id)`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE trade_review ADD COLUMN IF NOT EXISTS analyst_accuracy JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
 
   // ── performance_daily: 일간 성과 ───────────────────────────────────
   await run(`
@@ -178,6 +317,9 @@ export async function initJournalSchema() {
       UNIQUE(date, market)
     )
   `);
+  try { await run(`ALTER TABLE performance_daily ADD COLUMN IF NOT EXISTS analyst_accuracy_map JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE performance_daily ADD COLUMN IF NOT EXISTS team_score NUMERIC(4,2)`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE performance_daily ADD COLUMN IF NOT EXISTS strategy_used JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
 
   // ── luna_monitor: 에러율 + API + 실행속도 추적 ──────────────────────
   await run(`
@@ -200,6 +342,10 @@ export async function initJournalSchema() {
       await run(`INSERT INTO schema_migrations (version, name) VALUES (4, 'trade_journal_system')`);
     }
   } catch { /* 무시 */ }
+
+  await migrateToJsonb().catch((err) => {
+    console.warn('[trade-journal] JSONB 마이그레이션 실패 (계속 진행):', err.message);
+  });
 
   console.log('✅ 매매일지 스키마 초기화 완료');
 }
@@ -509,6 +655,7 @@ export async function insertRationale(rationaleData) {
   await ensureInit();
   const now = Date.now();
   try {
+    const analystSignals = _buildAnalystSignalsJson(rationaleData);
     await run(
       `INSERT INTO trade_rationale (
         trade_id, signal_id,
@@ -517,8 +664,9 @@ export async function insertRationale(rationaleData) {
         luna_decision, luna_reasoning, luna_confidence,
         nemesis_verdict, nemesis_notes,
         position_size_original, position_size_approved,
+        analyst_signals, strategy_config, debate_log,
         created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         rationaleData.trade_id ?? null, rationaleData.signal_id ?? null,
         rationaleData.aria_signal ?? null, rationaleData.sophia_signal ?? null,
@@ -529,6 +677,9 @@ export async function insertRationale(rationaleData) {
         rationaleData.luna_confidence ?? null,
         rationaleData.nemesis_verdict ?? null, rationaleData.nemesis_notes ?? null,
         rationaleData.position_size_original ?? null, rationaleData.position_size_approved ?? null,
+        JSON.stringify(analystSignals),
+        JSON.stringify(rationaleData.strategy_config || {}),
+        JSON.stringify(rationaleData.debate_log || {}),
         now,
       ],
     );
@@ -553,14 +704,15 @@ export async function linkRationaleToTrade(tradeId, signalId) {
 export async function insertReview(tradeId, review) {
   await ensureInit();
   try {
+    const analystAccuracy = _buildAnalystAccuracyJson(review);
     await run(
       `INSERT INTO trade_review (
         trade_id, entry_timing, exit_timing, signal_accuracy,
         risk_managed, tp_sl_protected, execution_speed,
         max_favorable, max_adverse,
         aria_accurate, sophia_accurate, oracle_accurate, hermes_accurate,
-        luna_review, lessons_learned, strategy_adjustment, reviewed_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        luna_review, lessons_learned, strategy_adjustment, analyst_accuracy, reviewed_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         tradeId,
         review.entry_timing ?? null, review.exit_timing ?? null, review.signal_accuracy ?? null,
@@ -569,7 +721,7 @@ export async function insertReview(tradeId, review) {
         review.aria_accurate ?? null, review.sophia_accurate ?? null,
         review.oracle_accurate ?? null, review.hermes_accurate ?? null,
         review.luna_review ?? null, review.lessons_learned ?? null,
-        review.strategy_adjustment ?? null, Date.now(),
+        review.strategy_adjustment ?? null, JSON.stringify(analystAccuracy), Date.now(),
       ],
     );
   } catch (e) {
@@ -582,6 +734,7 @@ export async function insertReview(tradeId, review) {
 export async function upsertDailyPerformance(date, market, data) {
   await ensureInit();
   const now = Date.now();
+  const analystAccuracyMap = _buildPerformanceAccuracyMap(data);
   await run(
     `INSERT INTO performance_daily (
       date, market,
@@ -589,8 +742,9 @@ export async function upsertDailyPerformance(date, market, data) {
       pnl_gross, pnl_net, fees_total,
       best_trade_pnl, worst_trade_pnl, avg_hold_time,
       aria_accuracy, sophia_accuracy, oracle_accuracy, hermes_accuracy,
+      analyst_accuracy_map, team_score, strategy_used,
       created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT (date, market) DO UPDATE SET
       total_trades    = excluded.total_trades,
       winning_trades  = excluded.winning_trades,
@@ -605,7 +759,10 @@ export async function upsertDailyPerformance(date, market, data) {
       aria_accuracy   = excluded.aria_accuracy,
       sophia_accuracy = excluded.sophia_accuracy,
       oracle_accuracy = excluded.oracle_accuracy,
-      hermes_accuracy = excluded.hermes_accuracy`,
+      hermes_accuracy = excluded.hermes_accuracy,
+      analyst_accuracy_map = excluded.analyst_accuracy_map,
+      team_score      = excluded.team_score,
+      strategy_used   = excluded.strategy_used`,
     [
       date, market,
       data.total_trades ?? 0, data.winning_trades ?? 0, data.losing_trades ?? 0,
@@ -614,6 +771,9 @@ export async function upsertDailyPerformance(date, market, data) {
       data.best_trade_pnl ?? null, data.worst_trade_pnl ?? null, data.avg_hold_time ?? null,
       data.aria_accuracy ?? null, data.sophia_accuracy ?? null,
       data.oracle_accuracy ?? null, data.hermes_accuracy ?? null,
+      JSON.stringify(analystAccuracyMap),
+      data.team_score ?? null,
+      JSON.stringify(data.strategy_used || {}),
       now,
     ],
   );
