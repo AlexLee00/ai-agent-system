@@ -229,6 +229,7 @@ bots/blog/config.json — 운영 설정
 ```
 bots/claude/src/dexter.js — 시스템 점검 (22개 체크)
 bots/claude/lib/team-bus.js — 팀 버스
+bots/claude/.checksums.json
 ```
 
 ### 스카/워커/오케스트레이터
