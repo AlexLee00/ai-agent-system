@@ -15,9 +15,9 @@ const TEAM_COLORS = {
   ska: 'border-teal-200 bg-teal-50',
   worker: 'border-purple-200 bg-purple-50',
   video: 'border-pink-200 bg-pink-50',
-  research: 'border-indigo-200 bg-indigo-50',
-  legal: 'border-slate-300 bg-slate-50',
-  data: 'border-cyan-200 bg-cyan-50',
+  darwin: 'border-indigo-200 bg-indigo-50',
+  justin: 'border-slate-300 bg-slate-50',
+  sigma: 'border-cyan-200 bg-cyan-50',
   jay: 'border-orange-200 bg-orange-50',
 };
 
@@ -29,9 +29,9 @@ const TEAM_LABELS = {
   ska: '스카',
   worker: '워커',
   video: '에디',
-  research: '연구',
-  legal: '감정',
-  data: '데이터',
+  darwin: '다윈',
+  justin: '저스틴',
+  sigma: '시그마',
   jay: '제이',
 };
 
