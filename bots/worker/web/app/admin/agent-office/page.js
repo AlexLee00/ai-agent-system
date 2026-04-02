@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Brain, Users, Zap } from 'lucide-react';
 import AdminPageHero from '@/components/AdminPageHero';
+import AgentCharts from '@/components/AgentCharts';
 import AdminQuickNav from '@/components/AdminQuickNav';
 import { api } from '@/lib/api';
 
@@ -234,6 +235,8 @@ export default function AgentOfficePage() {
           })}
         </div>
       </section>
+
+      <AgentCharts />
 
       {selectedAgent ? (
         <div
