@@ -227,6 +227,7 @@ bots/investment/scripts/analyze-rr.js
 bots/investment/scripts/trading-journal.js
 bots/investment/scripts/weekly-trade-review.js
 packages/core/lib/agent-registry.js
+bots/blog/lib/commenter.js
 ```
 
 ### 루나팀
