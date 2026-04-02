@@ -306,6 +306,7 @@ bots/worker/web/components/DotCharacter.js
 bots/orchestrator/scripts/seed-three-teams.js
 bots/orchestrator/scripts/seed-blog-reinforce.js
 bots/orchestrator/scripts/seed-team-reinforce-phase6.js
+bots/orchestrator/scripts/team-skill-cli.js
 ```
 
 ### RAG + 자기학습
