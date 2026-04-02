@@ -44,7 +44,7 @@ async function main() {
     throw new Error(`알 수 없는 node: ${args.node || '(없음)'}`);
   }
 
-  if (!symbol && !symbols.length && ['L02', 'L03', 'L04', 'L05'].includes(node.id)) {
+  if (!symbol && !symbols.length && ['L02', 'L03', 'L05'].includes(node.id)) {
     throw new Error(`${node.id}는 --symbol 필요`);
   }
 

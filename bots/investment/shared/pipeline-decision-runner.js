@@ -26,11 +26,12 @@ function isActuallyExecuted(resultItem) {
 
 function buildAnalystSignals(analyses) {
   const getChar = s => !s ? 'N' : s.toUpperCase() === 'BUY' ? 'B' : s.toUpperCase() === 'SELL' ? 'S' : 'N';
+  const sentinelSignal = analyses.find(a => a.analyst === ANALYST_TYPES.SENTINEL)?.signal;
   return [
     `A:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.TA_MTF)?.signal)}`,
     `O:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.ONCHAIN)?.signal)}`,
-    `H:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal)}`,
-    `S:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal)}`,
+    `H:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal || sentinelSignal)}`,
+    `S:${getChar(analyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal || sentinelSignal)}`,
   ].join('|');
 }
 
