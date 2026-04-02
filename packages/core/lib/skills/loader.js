@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '../../../..');
 const BOT_CONFIGS = [
   { id: 'investment',   path: 'bots/investment/config.yaml' },
   { id: 'claude',       path: 'bots/claude/config.json' },
+  { id: 'legal',        path: 'bots/legal/config.json' },
   { id: 'reservation',  path: 'bots/reservation/config.yaml' },
   { id: 'blog',         path: 'bots/blog/config.json' },
   { id: 'worker',       path: 'bots/worker/config.json' },
@@ -28,7 +29,7 @@ function parseYamlSkills(content) {
     }
     // skills 블록 안에서 - 항목 수집
     if (inSkills) {
-      const match = line.match(/^\s+-\s+([a-z0-9-]+)/);
+      const match = line.match(/^\s+-\s+([a-z0-9-/]+)/);
       if (match) {
         skills.push(match[1]);
       } else if (/^\S/.test(line)) {
