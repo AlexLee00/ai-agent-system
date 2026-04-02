@@ -232,6 +232,7 @@ packages/core/lib/skills/darwin/source-ranking.js
 packages/core/lib/skills/index.js
 packages/core/lib/skills/justin/citation-audit.js
 packages/core/lib/skills/sigma/data-quality-guard.js
+packages/core/lib/skills/loader.js
 ```
 
 ### 루나팀
