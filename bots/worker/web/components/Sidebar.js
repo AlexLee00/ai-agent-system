@@ -87,6 +87,7 @@ export default function Sidebar() {
               ...(showCompanies ? [{ href: '/admin/companies', icon: Building2, label: '업체 관리' }] : []),
               ...(showUsers ? [{ href: '/admin/users', icon: UserCog, label: '사용자 관리' }] : []),
               ...(showIntents ? [{ href: '/admin/intents', icon: BrainCircuit, label: '인텐트 학습' }] : []),
+              ...(showMasterGroup ? [{ href: '/admin/agent-office', icon: Users, label: '에이전트 오피스' }] : []),
             ].map(item => {
               const active = isActivePath(item.href);
               const Icon   = item.icon;
