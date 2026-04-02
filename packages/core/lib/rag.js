@@ -10,6 +10,7 @@
  *   reservation.rag_operations  운영 이슈·알림 (덱스터, 제이)
  *   reservation.rag_trades      투자 매매 기록 (루나팀)
  *   reservation.rag_tech        기술 인텔리전스 (아처)
+ *   reservation.rag_experience  OpenClaw/에이전트 경험 triplet
  *
  * 사용법:
  *   const rag = require('../../../packages/core/lib/rag');
@@ -57,6 +58,7 @@ const VALID_COLLECTIONS = [
   'rag_work_docs',     // 업무문서 (미래 확장)
   'rag_blog',          // 블로그팀 — 과거 포스팅 / 인기 패턴 / 실전 사례
   'rag_video',         // 비디오팀 — 편집 이력, 피드백, EDL 패턴
+  'rag_experience',    // 에이전트 자기학습 — 질문/응답/결과 triplet
 ];
 
 function _validateCollection(name) {
@@ -103,7 +105,7 @@ async function initSchema() {
     `, []);
   }
 
-  console.log('[RAG] 스키마 초기화 완료 (rag_operations, rag_trades, rag_tech, rag_video)');
+  console.log('[RAG] 스키마 초기화 완료 (rag_operations, rag_trades, rag_tech, rag_video, rag_experience)');
 }
 
 // ── 임베딩 생성 ──────────────────────────────────────────────────────
@@ -276,6 +278,62 @@ async function stats(collection) {
   };
 }
 
+/**
+ * 에이전트 경험 triplet 저장
+ * @param {object} params
+ * @param {string} params.userInput
+ * @param {string} params.intent
+ * @param {string} params.response
+ * @param {string} params.result
+ * @param {object} [params.details]
+ * @param {string} [params.team]
+ * @param {string} [params.sourceBot]
+ * @returns {Promise<number>}
+ */
+async function storeExperience({
+  userInput,
+  intent,
+  response,
+  result,
+  details = {},
+  team = 'general',
+  sourceBot = 'openclaw',
+}) {
+  const content = String(userInput || '').trim();
+  if (!content) throw new Error('storeExperience: userInput is required');
+  if (!intent) throw new Error('storeExperience: intent is required');
+  if (!response) throw new Error('storeExperience: response is required');
+  if (!result) throw new Error('storeExperience: result is required');
+
+  const metadata = {
+    intent,
+    response,
+    result,
+    team,
+    timestamp: new Date().toISOString(),
+    ...details,
+  };
+  return store('experience', content, metadata, sourceBot);
+}
+
+/**
+ * 유사 경험 검색 (성공 경험만)
+ * @param {string} query
+ * @param {object} [opts]
+ * @param {string|null} [opts.intent]
+ * @param {string|null} [opts.team]
+ * @param {number} [opts.limit]
+ * @param {number|null} [opts.threshold]
+ * @returns {Promise<Array>}
+ */
+async function searchExperience(query, opts = {}) {
+  const { intent = null, team = null, limit = 5, threshold = null } = opts;
+  const filter = { result: 'success' };
+  if (intent) filter.intent = intent;
+  if (team) filter.team = team;
+  return search('experience', query, { limit, threshold, filter });
+}
+
 module.exports = {
   initSchema,
   createEmbedding,
@@ -284,6 +342,8 @@ module.exports = {
   search,
   cleanOld,
   stats,
+  storeExperience,
+  searchExperience,
   VALID_COLLECTIONS,
   EMBED_MODEL,
   EMBED_DIM,
