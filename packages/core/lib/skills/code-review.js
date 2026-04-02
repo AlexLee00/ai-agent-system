@@ -4,6 +4,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
+const PATTERN_SKIP_FILES = new Set(['.checksums.json']);
 
 const SECURITY_PATTERNS = [
   {
@@ -29,7 +30,7 @@ const SECURITY_PATTERNS = [
   {
     severity: 'HIGH',
     desc: '템플릿 문자열 기반 쓰기 SQL 의심',
-    match: (line) => /`[^`]*(DELETE|DROP|INSERT|UPDATE)[^`]*`/i.test(line),
+    match: (line) => /`[^`]*\b(DELETE|DROP|INSERT|UPDATE)\b[^`]*\b(INTO|FROM|SET|WHERE|TABLE)\b[^`]*`/i.test(line),
   },
 ];
 
@@ -86,6 +87,9 @@ function checkSyntax(files) {
 
 function checkPatterns(filePath) {
   try {
+    if (PATTERN_SKIP_FILES.has(require('path').basename(filePath))) {
+      return [];
+    }
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n');
     const findings = [];
