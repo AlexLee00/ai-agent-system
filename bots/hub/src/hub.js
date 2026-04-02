@@ -22,6 +22,12 @@ const {
   agentsCompetitionStartRoute,
   agentsCompetitionCompleteRoute,
   agentsCompetitionHistoryRoute,
+  skillsListRoute,
+  skillsSelectRoute,
+  skillsEvaluateRoute,
+  toolsListRoute,
+  toolsSelectRoute,
+  toolsEvaluateRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 } = require('../lib/routes/agents');
@@ -82,6 +88,12 @@ app.post('/hub/agents/evaluate', generalLimiter, agentsEvaluateRoute);
 app.post('/hub/agents/competition/start', generalLimiter, agentsCompetitionStartRoute);
 app.post('/hub/agents/competition/complete', generalLimiter, agentsCompetitionCompleteRoute);
 app.get('/hub/agents/competition/history', generalLimiter, agentsCompetitionHistoryRoute);
+app.get('/hub/skills', generalLimiter, skillsListRoute);
+app.get('/hub/skills/select', generalLimiter, skillsSelectRoute);
+app.post('/hub/skills/evaluate', generalLimiter, skillsEvaluateRoute);
+app.get('/hub/tools', generalLimiter, toolsListRoute);
+app.get('/hub/tools/select', generalLimiter, toolsSelectRoute);
+app.post('/hub/tools/evaluate', generalLimiter, toolsEvaluateRoute);
 app.get('/hub/agents/:name/stats/traces', generalLimiter, agentTraceStatsRoute);
 app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
