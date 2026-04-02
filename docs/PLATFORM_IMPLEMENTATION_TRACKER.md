@@ -289,6 +289,7 @@ bots/worker/web/components/AgentCharts.js
 bots/orchestrator/scripts/update-luna-agents.js
 bots/worker/web/app/globals.css
 bots/worker/web/components/DotCharacter.js
+bots/orchestrator/scripts/seed-three-teams.js
 ```
 
 ### RAG + 자기학습
