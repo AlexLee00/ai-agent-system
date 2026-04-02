@@ -29,7 +29,7 @@
  *
  * 스키마:
  *   getPool(schema) → search_path를 해당 스키마로 설정한 풀 반환
- *   지원 스키마: claude | reservation | investment | ska
+ *   지원 스키마: claude | reservation | investment | ska | agent
  */
 
 const { Pool } = require('pg');
@@ -50,7 +50,7 @@ const PG_CONFIG = {
 };
 
 // 유효 스키마 목록
-const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
+const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'agent', 'public']);
 
 // 스키마별 풀 싱글톤 맵
 const _pools = new Map();
