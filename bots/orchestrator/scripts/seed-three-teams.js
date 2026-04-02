@@ -38,18 +38,18 @@ const NEW_AGENTS = [
   { name: 'canvas', display_name: '캔버스', team: 'data', role: 'visualizer', specialty: '데이터시각화+대시보드+리포트', llm_model: 'openai-oauth/gpt-5.4', dot_character: { color: '#f97316', accessory: 'chart' } },
   { name: 'curator', display_name: '큐레이터', team: 'data', role: 'governance', specialty: '데이터거버넌스+품질기준+카탈로그', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#14b8a6', accessory: 'book' } },
 
-  { name: 'echo', display_name: '에코', team: 'luna', role: 'analyst_short', specialty: '단기평균회귀분석(볼린저밴드역추세,승률70%목표)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#f43f5e', accessory: 'chart' } },
-  { name: 'hera', display_name: '헤라', team: 'luna', role: 'analyst_long', specialty: '장기가치역발상분석(저평가매수,공포시진입)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#a78bfa', accessory: 'chart' } },
+  { name: 'echo', display_name: '에코', team: 'luna', role: 'analyst', specialty: '단기평균회귀분석(볼린저밴드역추세,승률70%목표)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#f43f5e', accessory: 'chart' } },
+  { name: 'hera', display_name: '헤라', team: 'luna', role: 'analyst', specialty: '장기가치역발상분석(저평가매수,공포시진입)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#a78bfa', accessory: 'chart' } },
   { name: 'aegis', display_name: '이지스', team: 'luna', role: 'risk', specialty: '적응형유연리스크(ATR동적손절,VIX연동)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#38bdf8', accessory: 'shield' } },
-  { name: 'hound', display_name: '하운드', team: 'luna', role: 'watcher', specialty: '소셜커뮤니티감시(Reddit/X/텔레그램/웨일추적)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#fb923c', accessory: 'magnifier' } },
-  { name: 'hermes-luna', display_name: '헤르메스', team: 'luna', role: 'executor', specialty: '암호화폐스캘핑(수초~수분,차익거래)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#facc15', accessory: 'compass' } },
+  { name: 'hound', display_name: '하운드', team: 'luna', role: 'analyst', specialty: '소셜커뮤니티감시(Reddit/X/텔레그램/웨일추적)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#fb923c', accessory: 'magnifier' } },
+  { name: 'swift', display_name: '스위프트', team: 'luna', role: 'executor', specialty: '암호화폐스캘핑(수초~수분,차익거래)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#facc15', accessory: 'compass' } },
   { name: 'midas', display_name: '미다스', team: 'luna', role: 'executor', specialty: '주식배당장기보유(분기리밸런싱,현금흐름)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#fbbf24', accessory: 'crown' } },
-  { name: 'funder', display_name: '펀더', team: 'luna', role: 'fundamental', specialty: '펀더멘탈분석(재무제표,어닝,PER/PBR,내부자거래)', llm_model: 'openai-oauth/gpt-5.4', dot_character: { color: '#059669', accessory: 'glasses' } },
-  { name: 'vibe', display_name: '바이브', team: 'luna', role: 'sentiment', specialty: '시장감성분석(Fear&Greed,소셜온도,FOMO/FUD)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#e879f9', accessory: 'compass' } },
+  { name: 'funder', display_name: '펀더', team: 'luna', role: 'analyst', specialty: '펀더멘탈분석(재무제표,어닝,PER/PBR,내부자거래)', llm_model: 'openai-oauth/gpt-5.4', dot_character: { color: '#059669', accessory: 'glasses' } },
+  { name: 'vibe', display_name: '바이브', team: 'luna', role: 'analyst', specialty: '시장감성분석(Fear&Greed,소셜온도,FOMO/FUD)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#e879f9', accessory: 'compass' } },
   { name: 'bullish', display_name: '불리쉬', team: 'luna', role: 'debater', specialty: '낙관론자(매수근거수집,상승시나리오,토론매수편)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#22c55e', accessory: 'chart' } },
   { name: 'bearish', display_name: '베어리쉬', team: 'luna', role: 'debater', specialty: '비관론자(매도근거수집,하락시나리오,토론매도편)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#ef4444', accessory: 'chart' } },
-  { name: 'chaineye', display_name: '체인아이', team: 'luna', role: 'onchain', specialty: '온체인분석(MVRV,거래소잔고,웨일추적,스테이블코인)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#06b6d4', accessory: 'magnifier' } },
-  { name: 'macro', display_name: '매크로', team: 'luna', role: 'macro', specialty: '매크로분석(Fed정책,DXY,글로벌M2,금리,채권)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#8b5cf6', accessory: 'compass' } },
+  { name: 'chaineye', display_name: '체인아이', team: 'luna', role: 'analyst', specialty: '온체인분석(MVRV,거래소잔고,웨일추적,스테이블코인)', llm_model: 'local/qwen2.5-7b', dot_character: { color: '#06b6d4', accessory: 'magnifier' } },
+  { name: 'macro', display_name: '매크로', team: 'luna', role: 'analyst', specialty: '매크로분석(Fed정책,DXY,글로벌M2,금리,채권)', llm_model: 'groq/llama-4-scout', dot_character: { color: '#8b5cf6', accessory: 'compass' } },
 ];
 
 async function main() {

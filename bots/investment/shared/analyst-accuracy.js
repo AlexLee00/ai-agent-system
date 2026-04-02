@@ -40,6 +40,11 @@ const WEIGHT_STEP = 0.05;
 const THRESHOLD_HIGH = 0.70;  // 70%+ → 가중치 증가
 const THRESHOLD_LOW  = 0.50;  // 50%- → 가중치 감소
 
+function _jsonbAnalystKey(botName) {
+  if (botName === 'sophia' || botName === 'hermes') return 'sentinel';
+  return botName;
+}
+
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
 function _weekCutoff(weeksAgo = 0) {
@@ -70,6 +75,28 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
 
   const cutoff = _weekCutoff(weeks - 1);
   const col    = analyst.column;
+  const jsonbKey = _jsonbAnalystKey(botName);
+
+  const jsonbRow = await pgPool.get(SCHEMA, `
+    SELECT
+      COUNT(*) FILTER (WHERE (analyst_accuracy->>$1) IS NOT NULL) AS total,
+      COUNT(*) FILTER (WHERE (analyst_accuracy->>$1)::boolean = true) AS accurate
+    FROM trade_review
+    WHERE reviewed_at > $2
+      AND analyst_accuracy != '{}'::jsonb
+  `, [jsonbKey, cutoff]);
+
+  const jsonbTotal = Number(jsonbRow?.total ?? 0);
+  if (jsonbTotal > 0) {
+    const accurate = Number(jsonbRow?.accurate ?? 0);
+    return {
+      botName,
+      total: jsonbTotal,
+      accurate,
+      rate: jsonbTotal > 0 ? accurate / jsonbTotal : null,
+      weeks,
+    };
+  }
 
   const row = await pgPool.get(SCHEMA, `
     SELECT
@@ -98,6 +125,7 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
   if (!analyst) throw new Error(`알 수 없는 봇: ${botName}`);
 
   const col = analyst.column;
+  const jsonbKey = _jsonbAnalystKey(botName);
   const results = [];
 
   for (let w = 1; w <= nWeeks; w++) {
@@ -112,6 +140,30 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
     } else {
       whereClause = `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND ${col} IS NOT NULL`;
       params      = [from, to];
+    }
+
+    const jsonbWhereClause = w === 1
+      ? `WHERE reviewed_at > $1 AND (analyst_accuracy->>$2) IS NOT NULL`
+      : `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND (analyst_accuracy->>$3) IS NOT NULL`;
+    const jsonbParams = w === 1 ? [from, jsonbKey] : [from, to, jsonbKey];
+    const jsonbRow = await pgPool.get(SCHEMA, `
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE (${w === 1 ? "analyst_accuracy->>$2" : "analyst_accuracy->>$3"})::boolean = true) AS accurate
+      FROM trade_review
+      ${jsonbWhereClause}
+    `, jsonbParams);
+
+    const jsonbTotal = Number(jsonbRow?.total ?? 0);
+    if (jsonbTotal > 0) {
+      const accurate = Number(jsonbRow?.accurate ?? 0);
+      results.push({
+        week: w,
+        total: jsonbTotal,
+        accurate,
+        rate: jsonbTotal > 0 ? accurate / jsonbTotal : null,
+      });
+      continue;
     }
 
     const row = await pgPool.get(SCHEMA, `
