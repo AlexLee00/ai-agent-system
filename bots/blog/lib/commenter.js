@@ -31,8 +31,26 @@ function expandHome(value) {
   return raw;
 }
 
+function readOpenClawGatewayTokenFromConfig() {
+  try {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return String(parsed?.gateway?.auth?.token || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 function getCommenterConfig() {
   const runtime = getBlogCommenterConfig();
+  const browserToken = String(
+    runtime.browserToken
+    || process.env.OPENCLAW_BROWSER_TOKEN
+    || process.env.OPENCLAW_GATEWAY_TOKEN
+    || readOpenClawGatewayTokenFromConfig()
+    || ''
+  ).trim();
   return {
     enabled: runtime.enabled === true,
     blogId: String(runtime.blogId || '').trim(),
@@ -41,7 +59,7 @@ function getCommenterConfig() {
     activeEndHour: Number(runtime.activeEndHour || 22),
     browserHttpUrl: String(runtime.browserHttpUrl || '').trim(),
     browserWsEndpoint: String(runtime.browserWsEndpoint || '').trim(),
-    browserToken: String(runtime.browserToken || process.env.OPENCLAW_BROWSER_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || '').trim(),
+    browserToken,
     profileDir: expandHome(runtime.profileDir || path.join(env.OPENCLAW_WORKSPACE, 'naver-profile')),
     pageReadMinSec: Number(runtime.pageReadMinSec || 30),
     pageReadMaxSec: Number(runtime.pageReadMaxSec || 90),
