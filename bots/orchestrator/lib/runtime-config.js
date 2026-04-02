@@ -15,7 +15,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
   jayModels: {
     gatewayPrimary: 'google-gemini-cli/gemini-2.5-flash',
-    intentPrimary: 'gpt-5-mini',
+    intentPrimary: 'gpt-5.4',
     intentFallback: 'gemini-2.5-flash',
     chatFallbackChain: [
       { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
@@ -24,7 +24,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
   llmSelectorOverrides: {
     'orchestrator.jay.intent': {
-      primary: { provider: 'openai', model: 'gpt-5-mini' },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4' },
       fallback: { provider: 'gemini', model: 'gemini-2.5-flash' },
     },
     'orchestrator.jay.chat_fallback': {

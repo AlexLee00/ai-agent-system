@@ -21,7 +21,7 @@ function buildIntentParsePolicy() {
   const config = getJayModelConfig();
   const selectorOverrides = getLLMSelectorOverrides();
   const legacyOverride = {
-    primary: { provider: 'openai', model: config.intentPrimary || 'gpt-5-mini' },
+    primary: { provider: 'openai-oauth', model: config.intentPrimary || 'gpt-5.4' },
     fallback: { provider: 'gemini', model: config.intentFallback || 'gemini-2.5-flash' },
   };
   return selectLLMPolicy('orchestrator.jay.intent', {
