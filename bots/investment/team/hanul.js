@@ -800,6 +800,24 @@ export async function executeOverseasSignal(signal) {
     return { success: true, trade };
 
   } catch (e) {
+    if (e?.message && e.message.includes('APBK1526')) {
+      console.warn(`  ⚠️ ${symbol} KIS 해외잔고 미존재 → DB 포지션 삭제 정리`);
+      await db.deletePosition(symbol, {
+        exchange: 'kis_overseas',
+        paper: false,
+        tradeMode: signalTradeMode,
+      });
+      await markSignalFailedDetailed(signalId, {
+        reason: 'KIS 해외잔고 미존재 — DB 포지션 삭제 정리',
+        code: 'kis_overseas_no_balance_cleaned',
+        market: 'overseas',
+        symbol,
+        action,
+        amount: amountUsd,
+      });
+      return { success: false, reason: 'KIS 해외잔고 미존재 — 정리됨' };
+    }
+
     console.error(`  ❌ 해외 실행 오류: ${e.message}`);
     await markSignalFailedDetailed(signalId, {
       reason: e.message,
