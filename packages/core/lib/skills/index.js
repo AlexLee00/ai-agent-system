@@ -14,10 +14,16 @@ const skillExplorer = require('./skill-explorer');
 const sessionAnalyzer = require('./session-analyzer');
 const tdd = require('./tdd');
 const handoffVerify = require('./handoff-verify');
+const darwinSourceRanking = require('./darwin/source-ranking');
+const justinCitationAudit = require('./justin/citation-audit');
+const sigmaDataQualityGuard = require('./sigma/data-quality-guard');
 
 module.exports = {
   codeReview, verifyLoop, plan,
   securityPipeline, evalHarness, teamOrchestrator, sessionWrap,
   buildSystem, instinctLearning, patternToSkill, skillExplorer, sessionAnalyzer,
   tdd, handoffVerify,
+  darwin: { sourceRanking: darwinSourceRanking },
+  justin: { citationAudit: justinCitationAudit },
+  sigma: { dataQualityGuard: sigmaDataQualityGuard },
 };
