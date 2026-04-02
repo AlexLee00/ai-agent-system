@@ -290,6 +290,7 @@ bots/orchestrator/scripts/update-luna-agents.js
 bots/worker/web/app/globals.css
 bots/worker/web/components/DotCharacter.js
 bots/orchestrator/scripts/seed-three-teams.js
+bots/orchestrator/scripts/seed-blog-reinforce.js
 ```
 
 ### RAG + 자기학습
