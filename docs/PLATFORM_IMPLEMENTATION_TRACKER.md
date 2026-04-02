@@ -281,6 +281,7 @@ bots/worker/web/routes/agents.js
 bots/worker/lib/menu-policy.js
 bots/worker/web/components/Sidebar.js
 bots/worker/web/lib/menu-access.js
+bots/orchestrator/scripts/seed-blog-agents-phase2.js
 ```
 
 ### RAG + 자기학습
