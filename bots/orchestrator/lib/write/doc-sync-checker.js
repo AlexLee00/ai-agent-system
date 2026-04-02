@@ -82,4 +82,21 @@ function checkAll(changedFiles) {
   return [...unique.values()];
 }
 
-module.exports = { checkAll };
+function findUntrackedFiles(changedFiles) {
+  const files = Array.isArray(changedFiles) ? changedFiles.filter(Boolean) : [];
+  const trackerPath = path.join(ROOT, 'docs/PLATFORM_IMPLEMENTATION_TRACKER.md');
+  let trackerText = '';
+  try {
+    trackerText = fs.readFileSync(trackerPath, 'utf8');
+  } catch {
+    return [];
+  }
+
+  return [...new Set(files)]
+    .filter((file) => /^(bots\/|packages\/core\/lib\/)/.test(file))
+    .filter((file) => fileExists(file))
+    .filter((file) => !trackerText.includes(file))
+    .sort();
+}
+
+module.exports = { checkAll, findUntrackedFiles };
