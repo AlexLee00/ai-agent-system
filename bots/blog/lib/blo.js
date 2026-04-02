@@ -54,6 +54,7 @@ const { createMessage }                             = require('../../../packages
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
 const env                                           = require('../../../packages/core/lib/env');
+const tg                                            = require('../../../packages/core/lib/telegram-sender');
 const {
   buildReportEvent,
   renderReportEvent,

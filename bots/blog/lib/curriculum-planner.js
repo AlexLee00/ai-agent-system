@@ -17,6 +17,7 @@ const pgPool                 = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback }   = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain }     = require('../../../packages/core/lib/llm-model-selector');
 const { runIfOps }           = require('../../../packages/core/lib/mode-guard');
+const tg                     = require('../../../packages/core/lib/telegram-sender');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
