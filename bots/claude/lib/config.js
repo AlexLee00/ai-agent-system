@@ -125,7 +125,7 @@ module.exports = {
 
   // ─── secrets 경로 (텔레그램 토큰 읽기) — investment는 config.yaml 사용
   SECRETS: {
-    reservation: path.join(ROOT, 'bots', 'reservation', 'secrets.json'),
+    reservation: path.join(ROOT, 'bots', 'hub', 'secrets-store.json'),
   },
 
   // ─── 핵심 파일 무결성 체크 대상 ────────────────────
