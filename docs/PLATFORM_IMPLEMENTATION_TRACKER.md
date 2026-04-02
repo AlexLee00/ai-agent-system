@@ -204,6 +204,11 @@ packages/core/lib/rag.js              — pgvector RAG
 packages/core/lib/llm-fallback.js
 packages/core/lib/llm-logger.js
 packages/core/lib/llm-model-selector.js
+bots/investment/nodes/helpers.js
+bots/investment/nodes/index.js
+bots/investment/nodes/l03-sentinel.js
+bots/investment/scripts/run-pipeline-node.js
+bots/investment/shared/pipeline-decision-runner.js
 ```
 
 ### 루나팀
