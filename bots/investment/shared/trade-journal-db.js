@@ -80,6 +80,34 @@ function _buildPerformanceAccuracyMap(data = {}) {
   return accuracyMap;
 }
 
+function _normalizeLegacyAnalystAccuracy(row = {}) {
+  const accuracy = row.analyst_accuracy && typeof row.analyst_accuracy === 'object'
+    ? row.analyst_accuracy
+    : {};
+
+  return {
+    ...row,
+    aria_accurate: row.aria_accurate ?? accuracy.aria ?? null,
+    sophia_accurate: row.sophia_accurate ?? accuracy.sentinel ?? null,
+    oracle_accurate: row.oracle_accurate ?? accuracy.oracle ?? null,
+    hermes_accurate: row.hermes_accurate ?? accuracy.sentinel ?? null,
+  };
+}
+
+function _normalizeLegacyPerformanceAccuracy(row = {}) {
+  const accuracyMap = row.analyst_accuracy_map && typeof row.analyst_accuracy_map === 'object'
+    ? row.analyst_accuracy_map
+    : {};
+
+  return {
+    ...row,
+    aria_accuracy: row.aria_accuracy ?? accuracyMap.aria ?? null,
+    sophia_accuracy: row.sophia_accuracy ?? accuracyMap.sentinel ?? null,
+    oracle_accuracy: row.oracle_accuracy ?? accuracyMap.oracle ?? null,
+    hermes_accuracy: row.hermes_accuracy ?? accuracyMap.sentinel ?? null,
+  };
+}
+
 async function migrateToJsonb() {
   const rationalePending = await get(
     `SELECT COUNT(*) AS count
@@ -451,7 +479,7 @@ export async function getLatestJournalEntryBySignalId(signalId) {
 export async function getReviewByTradeId(tradeId) {
   await ensureInit();
   const rows = await query(`SELECT * FROM trade_review WHERE trade_id = ? LIMIT 1`, [tradeId]);
-  return rows[0] || null;
+  return rows[0] ? _normalizeLegacyAnalystAccuracy(rows[0]) : null;
 }
 
 export async function getTradeReviewInsight(symbol, exchange, days = 60) {
@@ -464,10 +492,10 @@ export async function getTradeReviewInsight(symbol, exchange, days = 60) {
       ROUND(AVG(j.pnl_percent)::numeric, 4) AS avg_pnl_percent,
       ROUND(AVG(r.max_favorable)::numeric, 4) AS avg_max_favorable,
       ROUND(AVG(r.max_adverse)::numeric, 4) AS avg_max_adverse,
-      ROUND(AVG(CASE WHEN r.aria_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS aria_accuracy,
-      ROUND(AVG(CASE WHEN r.sophia_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS sophia_accuracy,
-      ROUND(AVG(CASE WHEN r.oracle_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS oracle_accuracy,
-      ROUND(AVG(CASE WHEN r.hermes_accurate = true THEN 1 ELSE 0 END)::numeric, 4) AS hermes_accuracy
+      ROUND(AVG(CASE WHEN COALESCE((r.analyst_accuracy->>'aria')::boolean, r.aria_accurate) = true THEN 1 ELSE 0 END)::numeric, 4) AS aria_accuracy,
+      ROUND(AVG(CASE WHEN COALESCE((r.analyst_accuracy->>'sentinel')::boolean, r.sophia_accurate) = true THEN 1 ELSE 0 END)::numeric, 4) AS sophia_accuracy,
+      ROUND(AVG(CASE WHEN COALESCE((r.analyst_accuracy->>'oracle')::boolean, r.oracle_accurate) = true THEN 1 ELSE 0 END)::numeric, 4) AS oracle_accuracy,
+      ROUND(AVG(CASE WHEN COALESCE((r.analyst_accuracy->>'sentinel')::boolean, r.hermes_accurate) = true THEN 1 ELSE 0 END)::numeric, 4) AS hermes_accuracy
     FROM trade_journal j
     LEFT JOIN trade_review r ON r.trade_id = j.trade_id
     WHERE j.symbol = ?
@@ -781,15 +809,17 @@ export async function upsertDailyPerformance(date, market, data) {
 
 export async function getDailyPerformance(date) {
   await ensureInit();
-  return query(`SELECT * FROM performance_daily WHERE date = ? ORDER BY market`, [date]);
+  const rows = await query(`SELECT * FROM performance_daily WHERE date = ? ORDER BY market`, [date]);
+  return rows.map(_normalizeLegacyPerformanceAccuracy);
 }
 
 export async function getWeeklyPerformance(startDate, endDate) {
   await ensureInit();
-  return query(
+  const rows = await query(
     `SELECT * FROM performance_daily WHERE date >= ? AND date <= ? ORDER BY date, market`,
     [startDate, endDate],
   );
+  return rows.map(_normalizeLegacyPerformanceAccuracy);
 }
 
 // ─── luna_monitor ─────────────────────────────────────────────────────

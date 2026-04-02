@@ -197,10 +197,10 @@ async function analyzeRR() {
   const accuracy = await db.get(`
     SELECT
       COUNT(*)                                                               AS reviews,
-      ROUND((AVG(CASE WHEN aria_accurate    THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS aria_acc,
-      ROUND((AVG(CASE WHEN sophia_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS sophia_acc,
-      ROUND((AVG(CASE WHEN oracle_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS oracle_acc,
-      ROUND((AVG(CASE WHEN hermes_accurate  THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS hermes_acc
+      ROUND((AVG(CASE WHEN COALESCE((analyst_accuracy->>'aria')::boolean, aria_accurate) THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS aria_acc,
+      ROUND((AVG(CASE WHEN COALESCE((analyst_accuracy->>'sentinel')::boolean, sophia_accurate) THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS sophia_acc,
+      ROUND((AVG(CASE WHEN COALESCE((analyst_accuracy->>'oracle')::boolean, oracle_accurate) THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS oracle_acc,
+      ROUND((AVG(CASE WHEN COALESCE((analyst_accuracy->>'sentinel')::boolean, hermes_accurate) THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS hermes_acc
     FROM trade_review
     WHERE reviewed_at >= ?
   `, [sinceMs]);

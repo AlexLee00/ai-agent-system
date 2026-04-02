@@ -78,10 +78,10 @@ async function fetchRecentTradeReviews(days) {
       r.max_adverse,
       r.signal_accuracy,
       r.execution_speed,
-      r.aria_accurate,
-      r.sophia_accurate,
-      r.oracle_accurate,
-      r.hermes_accurate
+      COALESCE((r.analyst_accuracy->>'aria')::boolean, r.aria_accurate) AS aria_accurate,
+      COALESCE((r.analyst_accuracy->>'sentinel')::boolean, r.sophia_accurate) AS sophia_accurate,
+      COALESCE((r.analyst_accuracy->>'oracle')::boolean, r.oracle_accurate) AS oracle_accurate,
+      COALESCE((r.analyst_accuracy->>'sentinel')::boolean, r.hermes_accurate) AS hermes_accurate
     FROM trade_journal j
     LEFT JOIN trade_review r ON r.trade_id = j.trade_id
     WHERE CAST(to_timestamp(j.exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
