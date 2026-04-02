@@ -17,6 +17,11 @@ const {
   evaluate,
   getLowPerformersForRehab,
 } = require('../../../../packages/core/lib/hiring-contract');
+const {
+  startCompetition,
+  completeCompetition,
+  getCompetitionHistory,
+} = require('../../../../packages/core/lib/competition-engine');
 
 async function agentsListRoute(req, res) {
   const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
@@ -90,6 +95,34 @@ async function agentsEvaluateRoute(req, res) {
   return res.json({ ok: true, evaluation });
 }
 
+async function agentsCompetitionStartRoute(req, res) {
+  const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : '';
+  const team = typeof req.body?.team === 'string' && req.body.team.trim() ? req.body.team.trim() : 'blog';
+  if (!topic) {
+    return res.status(400).json({ ok: false, error: 'topic required' });
+  }
+  const competition = await startCompetition(topic, team);
+  return res.json({ ok: true, competition });
+}
+
+async function agentsCompetitionCompleteRoute(req, res) {
+  const competitionId = Number.parseInt(req.body?.competitionId, 10);
+  if (!competitionId) {
+    return res.status(400).json({ ok: false, error: 'competitionId required' });
+  }
+  const resultA = req.body?.resultA || {};
+  const resultB = req.body?.resultB || {};
+  const competition = await completeCompetition(competitionId, resultA, resultB);
+  return res.json({ ok: true, competition });
+}
+
+async function agentsCompetitionHistoryRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : 'blog';
+  const limit = Number.parseInt(req.query.limit, 10) || 10;
+  const competitions = await getCompetitionHistory(team, limit);
+  return res.json({ ok: true, count: competitions.length, team, competitions });
+}
+
 async function agentTraceStatsRoute(req, res) {
   const days = Number.parseInt(req.query.days, 10) || 7;
   const stats = await getAgentTraceStats(req.params.name, days);
@@ -124,6 +157,9 @@ module.exports = {
   agentsLowPerformersRoute,
   agentsHireRoute,
   agentsEvaluateRoute,
+  agentsCompetitionStartRoute,
+  agentsCompetitionCompleteRoute,
+  agentsCompetitionHistoryRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 };

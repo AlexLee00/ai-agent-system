@@ -27,6 +27,33 @@ async function proxyHubAgents(hubPath, timeoutMs = 4000) {
   }
 }
 
+async function proxyHubAgentsWithBody(hubPath, body, timeoutMs = 4000) {
+  const baseUrl = String(env.HUB_BASE_URL || 'http://localhost:7788').replace(/\/+$/, '');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${hubPath}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN || ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body || {}),
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = data.error || `Hub HTTP ${response.status}`;
+      throw new Error(error);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 module.exports = function mountAgentRoutes(app, authMiddleware) {
   app.get('/api/agents', authMiddleware, async (req, res) => {
     try {
@@ -62,6 +89,37 @@ module.exports = function mountAgentRoutes(app, authMiddleware) {
       res.json(data);
     } catch (error) {
       res.status(500).json({ ok: false, error: error.message || '에이전트 trace 통계를 불러오지 못했습니다.' });
+    }
+  });
+
+  app.post('/api/agents/competition/start', authMiddleware, async (req, res) => {
+    try {
+      const data = await proxyHubAgentsWithBody('/hub/agents/competition/start', req.body || {});
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '경쟁 시작에 실패했습니다.' });
+    }
+  });
+
+  app.post('/api/agents/competition/complete', authMiddleware, async (req, res) => {
+    try {
+      const data = await proxyHubAgentsWithBody('/hub/agents/competition/complete', req.body || {});
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '경쟁 완료 처리에 실패했습니다.' });
+    }
+  });
+
+  app.get('/api/agents/competition/history', authMiddleware, async (req, res) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.team) params.set('team', String(req.query.team));
+      if (req.query.limit) params.set('limit', String(req.query.limit));
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const data = await proxyHubAgents(`/hub/agents/competition/history${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '경쟁 이력을 불러오지 못했습니다.' });
     }
   });
 

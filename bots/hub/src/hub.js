@@ -19,6 +19,9 @@ const {
   agentsLowPerformersRoute,
   agentsHireRoute,
   agentsEvaluateRoute,
+  agentsCompetitionStartRoute,
+  agentsCompetitionCompleteRoute,
+  agentsCompetitionHistoryRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 } = require('../lib/routes/agents');
@@ -76,6 +79,9 @@ app.get('/hub/agents/low-performers', generalLimiter, agentsLowPerformersRoute);
 app.get('/hub/agents/stats/traces', generalLimiter, agentsTraceStatsRoute);
 app.post('/hub/agents/hire', generalLimiter, agentsHireRoute);
 app.post('/hub/agents/evaluate', generalLimiter, agentsEvaluateRoute);
+app.post('/hub/agents/competition/start', generalLimiter, agentsCompetitionStartRoute);
+app.post('/hub/agents/competition/complete', generalLimiter, agentsCompetitionCompleteRoute);
+app.get('/hub/agents/competition/history', generalLimiter, agentsCompetitionHistoryRoute);
 app.get('/hub/agents/:name/stats/traces', generalLimiter, agentTraceStatsRoute);
 app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
