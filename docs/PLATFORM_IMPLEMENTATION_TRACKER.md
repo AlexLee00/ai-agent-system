@@ -228,6 +228,10 @@ bots/investment/scripts/trading-journal.js
 bots/investment/scripts/weekly-trade-review.js
 packages/core/lib/agent-registry.js
 bots/blog/lib/commenter.js
+packages/core/lib/skills/darwin/source-ranking.js
+packages/core/lib/skills/index.js
+packages/core/lib/skills/justin/citation-audit.js
+packages/core/lib/skills/sigma/data-quality-guard.js
 ```
 
 ### 루나팀
