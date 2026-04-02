@@ -20,8 +20,22 @@ const ERROR_THRESH = Number(cfg.RUNTIME?.patterns?.errorThreshold || 5);
 const WARN_THRESH = Number(cfg.RUNTIME?.patterns?.warnThreshold || 3);
 const CLEANUP_DAYS = Number(cfg.RUNTIME?.patterns?.cleanupDays || 30);
 
-async function run() {
+function buildActiveIssueSet(results = []) {
+  const active = new Set();
+  for (const result of results) {
+    for (const item of (result.items || [])) {
+      if (!['warn', 'error', 'critical'].includes(item.status)) continue;
+      active.add(`${result.name}||${String(item.label || '').trim()}`);
+    }
+  }
+  return active;
+}
+
+async function run(results = []) {
   const items = [];
+  const activeIssues = buildActiveIssueSet(results);
+  let hiddenResolvedPatterns = 0;
+  let hiddenResolvedNew = 0;
 
   // 오래된 이력 정리 (30일)
   const deleted = await cleanup(CLEANUP_DAYS);
@@ -36,6 +50,10 @@ async function run() {
     items.push({ label: `반복 패턴 (${PATTERN_DAYS}일)`, status: 'ok', detail: '반복 오류 없음' });
   } else {
     for (const p of patterns) {
+      if (activeIssues.size > 0 && !activeIssues.has(`${p.check_name}||${String(p.label || '').trim()}`)) {
+        hiddenResolvedPatterns++;
+        continue;
+      }
       const isError = p.cnt >= ERROR_THRESH;
       const status  = isError ? 'error' : 'warn';
       // UTC → KST (+9h) 변환 (last_seen이 이미 Z 포함 가능)
@@ -55,6 +73,10 @@ async function run() {
 
   if (newErrors.length > 0) {
     for (const e of newErrors) {
+      if (activeIssues.size > 0 && !activeIssues.has(`${e.check_name}||${String(e.label || '').trim()}`)) {
+        hiddenResolvedNew++;
+        continue;
+      }
       // UTC → KST (+9h) 변환 (detected_at이 이미 Z 포함 가능)
       const detectedStr = e.detected_at?.endsWith('Z') ? e.detected_at : (e.detected_at + 'Z');
       const utcMs  = new Date(detectedStr).getTime();
@@ -65,6 +87,15 @@ async function run() {
         detail: `${kstStr} KST 첫 등장 (${e.status}) — 추이 관찰 중`,
       });
     }
+  }
+
+  const hiddenTotal = hiddenResolvedPatterns + hiddenResolvedNew;
+  if (hiddenTotal > 0) {
+    items.push({
+      label: '해결된 과거 패턴 숨김',
+      status: 'ok',
+      detail: `현재 활성 이슈와 무관한 과거 패턴 ${hiddenTotal}건 제외`,
+    });
   }
 
   const hasError = items.some(i => i.status === 'error');

@@ -192,7 +192,7 @@ async function main() {
 
   // 패턴 분석 체크 (이력 기반 — 항상 마지막 실행)
   try {
-    const r = await checks.patterns.run();
+    const r = await checks.patterns.run(results);
     results.push(r);
     if (!SILENT) process.stdout.write(`  ${r.status === 'ok' ? '✅' : r.status === 'warn' ? '⚠️' : '❌'} ${r.name}\n`);
   } catch (e) {
