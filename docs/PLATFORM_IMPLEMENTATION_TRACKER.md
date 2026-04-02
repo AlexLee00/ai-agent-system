@@ -269,6 +269,9 @@ bots/orchestrator/lib/runtime-config.js
 bots/worker/web/app/admin/agent-office/page.js
 bots/worker/web/components/AdminQuickNav.js
 bots/worker/web/routes/agents.js
+bots/worker/lib/menu-policy.js
+bots/worker/web/components/Sidebar.js
+bots/worker/web/lib/menu-access.js
 ```
 
 ### RAG + 자기학습
