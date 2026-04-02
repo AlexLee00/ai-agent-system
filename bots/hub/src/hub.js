@@ -10,6 +10,12 @@ const { n8nWebhookRoute, n8nHealthRoute } = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
 const { secretsRoute } = require('../lib/routes/secrets');
 const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
+const {
+  agentsListRoute,
+  agentsDashboardRoute,
+  agentsAlwaysOnRoute,
+  agentDetailRoute,
+} = require('../lib/routes/agents');
 
 env.ensureOps('Resource API Hub');
 env.printModeBanner('Resource API Hub');
@@ -56,6 +62,10 @@ app.get('/hub/services/status', generalLimiter, servicesStatusRoute);
 app.get('/hub/env', generalLimiter, envRoute);
 app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);
 app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
+app.get('/hub/agents', generalLimiter, agentsListRoute);
+app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);
+app.get('/hub/agents/always-on', generalLimiter, agentsAlwaysOnRoute);
+app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
 const secretsLimiter = rateLimit({
   windowMs: 60 * 1000,
