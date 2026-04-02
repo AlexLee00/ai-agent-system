@@ -342,3 +342,73 @@ Step 8: AdminQuickNav에 "Agent Office" 메뉴 추가
 ③ WebSocket은 브로드캐스트만 (클라이언트→서버 명령 불가)
 ④ 소스코드/시크릿 노출 없음 (API 응답에서 code_path 제외)
 ```
+
+
+---
+
+## 8. LLM 관측성 — 오픈소스 체리픽 설계
+
+> Langfuse/Grafana를 직접 설치하지 않고, 핵심 패턴만 추출하여 자체 시스템에 통합
+
+### 8-1. Langfuse에서 따온 패턴
+
+```
+① Trace → Span → Generation 계층 구조
+  Langfuse 원본: trace.span({ name }).generation({ model, input, output })
+  팀 제이 적용: llm-fallback.js에 trace 후킹 → PostgreSQL 직접 저장
+  외부 서비스 의존 없음, 접속지점 추가 없음
+
+② 토큰/비용 자동 추적
+  Langfuse 원본: tokens_used, cost_usd, latency_ms 자동 수집
+  팀 제이 적용: 기존 llm_usage_log 테이블에 agent_name, trace_id 추가
+  기존 인프라 100% 재활용
+
+③ 비동기 이벤트 큐 (배치 플러시)
+  Langfuse 원본: SDK가 이벤트 큐에 쌓고 배치로 전송 (지연 없음)
+  팀 제이 적용: trace-collector.js 모듈 — 메모리 큐 → 5초/10건 배치 플러시
+```
+
+### 8-2. Grafana에서 따온 패턴
+
+```
+④ PostgreSQL 직접 쿼리 → 시계열 차트
+  Grafana 원본: SQL 데이터소스 → 시계열 시각화
+  팀 제이 적용: 워커 포털 API에서 SQL 집계 → Recharts 렌더링
+  접속지점 1개 유지 (워커 포털)
+
+⑤ 알림 룰 엔진
+  Grafana 원본: 조건 기반 알림 → Slack/Telegram
+  팀 제이 적용: 덱스터 점검에 성과 이상 탐지 규칙 추가
+  기존 텔레그램 알림 인프라 재활용
+```
+
+### 8-3. 새로 구현할 모듈
+
+```
+파일: packages/core/lib/trace-collector.js
+역할: Langfuse SDK의 경량 자체 구현
+기능:
+  → startTrace(agentName, team, taskType) → traceId
+  → addGeneration(traceId, { model, provider, input, output, tokens, cost, latency })
+  → endTrace(traceId, { result, score, confidence })
+  → 내부 큐: 메모리 배열, 5초마다 또는 10건 도달 시 PostgreSQL 배치 INSERT
+  → llm-fallback.js 후킹: LLM 호출 전 startTrace, 호출 후 addGeneration
+
+DB 테이블: agent.traces (마이그레이션 추가)
+  id, trace_id, agent_name, team, task_type
+  model, provider, input_tokens, output_tokens
+  cost_usd, latency_ms, status, error_message
+  confidence, score, created_at
+
+대시보드 차트 API: /api/agents/stats/charts
+  → SQL 집계: 일별 토큰/비용/에러/품질
+  → Recharts LineChart/BarChart로 렌더링
+  → 접속지점 추가 없음 (기존 워커 포털)
+
+장점:
+  ✅ 접속지점 1개 (워커 포털만)
+  ✅ 외부 서비스 0개 (Docker 추가 안 함)
+  ✅ 비용 $0 (PostgreSQL jay DB 재활용)
+  ✅ 기존 코드 수정 최소 (llm-fallback.js 2~3줄)
+  ✅ Langfuse 핵심 기능 90% 커버
+```
