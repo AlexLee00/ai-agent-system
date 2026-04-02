@@ -195,6 +195,42 @@ LLM 에이전트에서의 구현:
   E. 점수 → Registry 반영: 자동 루프로 다음 고용에 영향
 ```
 
+### 2-9. 민원게시판 (Agent Feedback Board) — 마스터 아이디어
+```
+에이전트가 작업 중 발견한 문제점, 개선 요청, 건의사항을 등록하는 공식 채널.
+에이전트도 팀 제이의 구성원으로서 목소리를 낼 수 있는 구조.
+
+등록 가능 유형:
+  🔧 버그 리포트: "이 API가 404 반환됨" "DB 타임아웃 발생"
+  💡 개선 제안: "프롬프트에 X 추가하면 품질 올라갈 것" "이 워크플로우 비효율적"
+  🆘 도움 요청: "이 작업에 필요한 도구가 없음" "권한 부족"
+  📊 성과 자가진단: "최근 3건 품질 하락, 원인 추정: 모델 변경"
+  🤝 협업 요청: "이 작업은 다른 역할 에이전트와 협업이 필요"
+
+민원 구조:
+  {
+    id: "TICKET-2026-04-02-001",
+    agent: "IT기술작가A",
+    team: "blog",
+    type: "improvement",         // bug | improvement | help | self_diagnosis | collaboration
+    priority: "medium",          // low | medium | high | critical
+    title: "코드 블록에 실행 결과 예시 추가 제안",
+    description: "독자 체류시간 향상을 위해 코드 실행 결과를 주석으로 포함하면 좋겠음",
+    expected_impact: "글자수 +500, 체류시간 +15%",
+    created_at: "2026-04-02T10:00:00Z",
+    status: "open"               // open | reviewing | accepted | rejected | implemented
+  }
+
+운영 방식:
+  1) 에이전트가 작업 완료 후 자동으로 민원 등록 (문제 발견 시)
+  2) 연구팀이 민원을 분석하여 패턴 추출
+  3) 반복 민원 3건+ → 시스템 개선 과제로 승격
+  4) 마스터에게 주간 민원 요약 리포트 (텔레그램)
+
+저장: PostgreSQL agent_feedback 테이블
+연동: RAG 경험 저장과 연결 (민원 → 개선 → 결과 추적)
+```
+
 ---
 
 ## 3. 커뮤니티 리서치 결과
