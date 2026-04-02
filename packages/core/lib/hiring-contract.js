@@ -25,9 +25,27 @@ function _normalizeEmotionScore(value, fallback = 0) {
   return Number.isFinite(score) ? score : fallback;
 }
 
+function _getLunaRoleBonus(requestedRole, agentRole) {
+  if (!requestedRole || !agentRole) return 0;
+  if (requestedRole === agentRole) return 1.0;
+
+  const families = {
+    analyst: new Set(['analyst', 'analyst_short', 'analyst_long', 'fundamental', 'sentiment', 'onchain', 'macro', 'watcher', 'debater']),
+    researcher: new Set(['analyst', 'analyst_short', 'analyst_long', 'fundamental', 'sentiment', 'onchain', 'macro', 'watcher']),
+    risk: new Set(['risk', 'debater', 'macro']),
+    executor: new Set(['executor', 'risk', 'debater']),
+    watcher: new Set(['watcher', 'sentiment', 'onchain', 'macro']),
+  };
+
+  const family = families[requestedRole];
+  return family?.has(agentRole) ? 0.45 : 0;
+}
+
 async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
-  const candidates = await registry.getTopAgents(role, limit);
+  const candidates = team === 'luna'
+    ? await registry.getAgentsByTeam(team)
+    : await registry.getTopAgents(role, limit);
   if (!candidates || candidates.length === 0) return null;
 
   let filtered = team
@@ -40,7 +58,8 @@ async function selectBestAgent(role, team = null, requirements = {}) {
     const emotion = agent.emotion_state || {};
     const fatigue = _normalizeEmotionScore(emotion.fatigue, 0);
     const confidence = _normalizeEmotionScore(emotion.confidence, 5);
-    const adjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05);
+    const roleBonus = team === 'luna' ? _getLunaRoleBonus(role, agent.role) : 0;
+    const adjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05) + roleBonus;
     return { agent, adjustedScore };
   });
 
