@@ -31,15 +31,59 @@
 
 ```
 팀장: 프로페서 (Professor) — 연구 총괄, 사이클 오케스트레이션
-  역할: 연구 주제 선정, 실험 계획 수립, 결과 평가, 전체 팀 배포 결정
+  역할: 연구 주제 선정, 스카우트 배정, 실험 계획 수립, 결과 평가, 전체 팀 배포 결정
   모델: claude-code/sonnet 또는 anthropic (고품질 판단 필요)
 
-에이전트 1: 스카우트 (Scout) — 기술 서칭 전문
-  역할: arXiv, GitHub, 커뮤니티(DEV.to, HN, Reddit) 서칭
-  모델: groq/llama (빠른 분류) + anthropic (심층 분석)
-  입력: 연구 주제 키워드
-  출력: 논문/프로젝트 요약 리포트 (제목, 핵심, 적용 가능성 점수)
-  참고: 아처(archer)의 기술 수집 패턴 재활용
+에이전트 1: 스카우트 — 분야별 전문 서칭 에이전트 그룹
+
+  스카우트-AI (Scout-AI) — AI/멀티에이전트 기술 서칭
+    분야: Self-Evolving Agents, LLM 최적화, 프롬프트 엔지니어링, RAG, MCP
+    소스: arXiv (cs.MA, cs.AI, cs.CL), GitHub trending, HuggingFace
+    적용 대상: 모든 팀 공통 (에이전트 아키텍처 개선)
+    모델: groq/llama (빠른 분류) + anthropic (심층 분석)
+
+  스카우트-파이낸스 (Scout-Finance) — 투자/트레이딩 전략 서칭
+    분야: 퀀트 전략, 기술적 분석, 시장 미시구조, 리스크 관리, DeFi
+    소스: arXiv (q-fin), SSRN, GitHub (trading-strategy), TradingView
+    적용 대상: 루나팀 (Chronos, Nemesis, 전략 최적화)
+    모델: groq/llama + local/qwen2.5-7b
+
+  스카우트-콘텐츠 (Scout-Content) — 콘텐츠/SEO/블로그 서칭
+    분야: SEO 트렌드, AEO/GEO, AI 콘텐츠 탐지 우회, 독자 참여율
+    소스: Google Search Central 블로그, Moz, Ahrefs 블로그, DEV.to
+    적용 대상: 블로팀 (포스/젬스 작가 프롬프트 개선)
+    모델: local/qwen2.5-7b (빈번한 서칭, 비용 $0)
+
+  스카우트-리걸 (Scout-Legal) — 법률/SW감정 서칭
+    분야: SW 감정 방법론, 법원 판례, 디지털 포렌식, 소스코드 분석 기법
+    소스: 법률 DB (대법원 종합법률정보), 한국소프트웨어감정평가학회, 학술지
+    적용 대상: 감정팀 (감정 유형별 전문성 강화)
+    모델: anthropic (법률 정확성 요구)
+
+  스카우트-데이터 (Scout-Data) — 데이터 사이언스/분석 서칭
+    분야: 데이터 파이프라인, 이상 탐지, 시계열 분석, MLOps, 관측성
+    소스: arXiv (cs.DB, stat.ML), Databricks/Snowflake 블로그, KDnuggets
+    적용 대상: 데이터 사이언스 팀 (분석 기법 강화)
+    모델: local/qwen2.5-7b
+
+  스카우트-미디어 (Scout-Media) — 영상/편집 기술 서칭
+    분야: AI 영상 편집, 자동 자막, 썸네일 생성, CapCut/Twick 기술
+    소스: GitHub (video-editing, ffmpeg), YouTube API, arXiv (cs.CV)
+    적용 대상: 에디팀 (자동 편집 파이프라인)
+    모델: local/qwen2.5-7b
+
+  스카우트-인프라 (Scout-Infra) — 시스템/인프라/보안 서칭
+    분야: 로컬 LLM 최적화, macOS 자동화, 보안 패치, 모니터링
+    소스: GitHub (mlx, ollama), Homebrew, Apple Developer, CVE 데이터베이스
+    적용 대상: 클로드팀 (덱스터/닥터/아처 강화)
+    모델: local/qwen2.5-7b
+
+  스카우트 공통 패턴:
+    입력: 연구 주제 키워드 (프로페서가 배정)
+    출력: 논문/프로젝트 요약 리포트 (제목, 핵심, 적용 가능성 점수 0~10)
+    저장: research.topics 테이블
+    빈도: 각 스카우트 매일 1회 실행 (분야별 시차 배치)
+    기존 자산: 아처(archer)의 GitHub/npm 수집 패턴을 스카우트-AI/인프라가 재활용
 
 에이전트 2: 랩러너 (LabRunner) — 코드 구현/실험 전문
   역할: 스카우트가 발굴한 기법을 코드로 구현, 벤치마크 실행
@@ -78,7 +122,15 @@ bots/research/                       ← academic에서 리네임
 │   └── EXPERIMENT_TEMPLATE.md       ← 실험 리포트 템플릿
 ├── lib/
 │   ├── professor.js                 ← 팀장 (오케스트레이션)
-│   ├── scout.js                     ← 기술 서칭
+│   ├── scout/                       ← 분야별 스카우트
+│   │   ├── scout-base.js            ← 공용 서칭 패턴 (추상 클래스)
+│   │   ├── scout-ai.js              ← AI/멀티에이전트
+│   │   ├── scout-finance.js         ← 투자/트레이딩
+│   │   ├── scout-content.js         ← 콘텐츠/SEO
+│   │   ├── scout-legal.js           ← 법률/SW감정
+│   │   ├── scout-data.js            ← 데이터 사이언스
+│   │   ├── scout-media.js           ← 영상/편집
+│   │   └── scout-infra.js           ← 시스템/보안
 │   ├── lab-runner.js                ← 코드 구현/실험
 │   ├── adapter.js                   ← 에이전트 반영
 │   ├── ambulance.js                 ← 저성과 분석
