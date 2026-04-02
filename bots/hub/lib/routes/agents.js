@@ -7,6 +7,10 @@ const {
   getAlwaysOnStatus,
   getDashboardData,
 } = require('../../../../packages/core/lib/agent-registry');
+const {
+  getTraceStats,
+  getAgentTraceStats,
+} = require('../../../../packages/core/lib/trace-collector');
 
 async function agentsListRoute(req, res) {
   const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
@@ -36,6 +40,27 @@ async function agentsAlwaysOnRoute(req, res) {
   });
 }
 
+async function agentsTraceStatsRoute(req, res) {
+  const days = Number.parseInt(req.query.days, 10) || 7;
+  const stats = await getTraceStats(days);
+  return res.json({
+    ok: true,
+    days,
+    stats,
+  });
+}
+
+async function agentTraceStatsRoute(req, res) {
+  const days = Number.parseInt(req.query.days, 10) || 7;
+  const stats = await getAgentTraceStats(req.params.name, days);
+  return res.json({
+    ok: true,
+    agent: req.params.name,
+    days,
+    stats,
+  });
+}
+
 async function agentDetailRoute(req, res) {
   const agent = await getAgent(req.params.name);
   if (!agent) {
@@ -54,5 +79,7 @@ module.exports = {
   agentsListRoute,
   agentsDashboardRoute,
   agentsAlwaysOnRoute,
+  agentsTraceStatsRoute,
+  agentTraceStatsRoute,
   agentDetailRoute,
 };
