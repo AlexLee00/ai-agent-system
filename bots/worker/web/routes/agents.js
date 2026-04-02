@@ -92,6 +92,76 @@ module.exports = function mountAgentRoutes(app, authMiddleware) {
     }
   });
 
+  app.get('/api/skills', authMiddleware, async (req, res) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.team) params.set('team', String(req.query.team));
+      if (req.query.category) params.set('category', String(req.query.category));
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const data = await proxyHubAgents(`/hub/skills${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '스킬 목록을 불러오지 못했습니다.' });
+    }
+  });
+
+  app.get('/api/skills/select', authMiddleware, async (req, res) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.team) params.set('team', String(req.query.team));
+      if (req.query.category) params.set('category', String(req.query.category));
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const data = await proxyHubAgents(`/hub/skills/select${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '스킬 선택에 실패했습니다.' });
+    }
+  });
+
+  app.post('/api/skills/evaluate', authMiddleware, async (req, res) => {
+    try {
+      const data = await proxyHubAgentsWithBody('/hub/skills/evaluate', req.body || {});
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '스킬 평가 반영에 실패했습니다.' });
+    }
+  });
+
+  app.get('/api/tools', authMiddleware, async (req, res) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.team) params.set('team', String(req.query.team));
+      if (req.query.capability) params.set('capability', String(req.query.capability));
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const data = await proxyHubAgents(`/hub/tools${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '도구 목록을 불러오지 못했습니다.' });
+    }
+  });
+
+  app.get('/api/tools/select', authMiddleware, async (req, res) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.team) params.set('team', String(req.query.team));
+      if (req.query.capability) params.set('capability', String(req.query.capability));
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const data = await proxyHubAgents(`/hub/tools/select${query}`);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '도구 선택에 실패했습니다.' });
+    }
+  });
+
+  app.post('/api/tools/evaluate', authMiddleware, async (req, res) => {
+    try {
+      const data = await proxyHubAgentsWithBody('/hub/tools/evaluate', req.body || {});
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message || '도구 평가 반영에 실패했습니다.' });
+    }
+  });
+
   app.post('/api/agents/competition/start', authMiddleware, async (req, res) => {
     try {
       const data = await proxyHubAgentsWithBody('/hub/agents/competition/start', req.body || {});

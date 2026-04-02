@@ -18,6 +18,16 @@ const {
   getLowPerformersForRehab,
 } = require('../../../../packages/core/lib/hiring-contract');
 const {
+  listSkills,
+  selectBestSkill,
+  evaluateSkill,
+} = require('../../../../packages/core/lib/skill-selector');
+const {
+  listTools,
+  selectBestTool,
+  evaluateTool,
+} = require('../../../../packages/core/lib/tool-selector');
+const {
   startCompetition,
   completeCompetition,
   getCompetitionHistory,
@@ -123,6 +133,62 @@ async function agentsCompetitionHistoryRoute(req, res) {
   return res.json({ ok: true, count: competitions.length, team, competitions });
 }
 
+async function skillsListRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  const category = typeof req.query.category === 'string' && req.query.category.trim() ? req.query.category.trim() : null;
+  const skills = await listSkills(team, category);
+  return res.json({ ok: true, count: skills.length, team, category, skills });
+}
+
+async function skillsSelectRoute(req, res) {
+  const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  if (!category) {
+    return res.status(400).json({ ok: false, error: 'category required' });
+  }
+  const skill = await selectBestSkill(category, team);
+  return res.json({ ok: true, category, team, skill });
+}
+
+async function skillsEvaluateRoute(req, res) {
+  const skillName = typeof req.body?.skillName === 'string' ? req.body.skillName.trim() : '';
+  if (!skillName) {
+    return res.status(400).json({ ok: false, error: 'skillName required' });
+  }
+  const success = !!req.body?.success;
+  const latencyMs = req.body?.latencyMs ?? req.body?.latency_ms ?? null;
+  const updated = await evaluateSkill(skillName, success, latencyMs);
+  return res.json({ ok: true, skillName, updated });
+}
+
+async function toolsListRoute(req, res) {
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  const capability = typeof req.query.capability === 'string' && req.query.capability.trim() ? req.query.capability.trim() : null;
+  const tools = await listTools(team, capability);
+  return res.json({ ok: true, count: tools.length, team, capability, tools });
+}
+
+async function toolsSelectRoute(req, res) {
+  const capability = typeof req.query.capability === 'string' ? req.query.capability.trim() : '';
+  const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
+  if (!capability) {
+    return res.status(400).json({ ok: false, error: 'capability required' });
+  }
+  const tool = await selectBestTool(capability, team);
+  return res.json({ ok: true, capability, team, tool });
+}
+
+async function toolsEvaluateRoute(req, res) {
+  const toolName = typeof req.body?.toolName === 'string' ? req.body.toolName.trim() : '';
+  if (!toolName) {
+    return res.status(400).json({ ok: false, error: 'toolName required' });
+  }
+  const success = !!req.body?.success;
+  const latencyMs = req.body?.latencyMs ?? req.body?.latency_ms ?? null;
+  const updated = await evaluateTool(toolName, success, latencyMs);
+  return res.json({ ok: true, toolName, updated });
+}
+
 async function agentTraceStatsRoute(req, res) {
   const days = Number.parseInt(req.query.days, 10) || 7;
   const stats = await getAgentTraceStats(req.params.name, days);
@@ -160,6 +226,12 @@ module.exports = {
   agentsCompetitionStartRoute,
   agentsCompetitionCompleteRoute,
   agentsCompetitionHistoryRoute,
+  skillsListRoute,
+  skillsSelectRoute,
+  skillsEvaluateRoute,
+  toolsListRoute,
+  toolsSelectRoute,
+  toolsEvaluateRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 };
