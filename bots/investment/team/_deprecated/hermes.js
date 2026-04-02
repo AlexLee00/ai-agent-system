@@ -1,6 +1,5 @@
 /**
  * team/hermes.js — 헤르메스 (뉴스 분석가)
- * 호환 레이어: sentinel 통합 이후에도 기존 직접 호출 경로를 유지한다.
  *
  * 역할: 3시장 뉴스 수집 + 감성 분류
  * LLM: Groq Scout (paper+live 모두 무료)

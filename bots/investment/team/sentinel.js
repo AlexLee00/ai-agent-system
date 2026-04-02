@@ -5,8 +5,8 @@
  * 이전: sophia.js (커뮤니티) + hermes.js (뉴스) 통합
  */
 
-import { analyzeNews } from './hermes.js';
-import { analyzeSentiment, combineSentiment } from './sophia.js';
+import { analyzeNews } from './_deprecated/hermes.js';
+import { analyzeSentiment, combineSentiment } from './_deprecated/sophia.js';
 import { ACTIONS, ANALYST_TYPES } from '../shared/signal.js';
 
 function scoreFromSignal(signal, confidence = 0) {
@@ -65,4 +65,3 @@ export async function analyze(symbol = 'BTC/USDT', exchange = 'binance') {
     ...combined,
   };
 }
-
