@@ -340,7 +340,7 @@ MCP/A2A:       에이전트 통신 표준화 → 장기 (⭐)
 ```
 [ ] Claude Code Skills Phase 1: /plan /tdd /code-review /verify-loop /handoff-verify
 [ ] 클로드팀 보강: 리뷰어 + 가디언 + 빌더 신설, 닥터 Level 1~3 강화
-[ ] 블로팀 P1~P5 구현 (날씨수치/품질검증/프롬프트/hallucination/SEO)
+[x] 블로팀 P1~P5 구현 (F7 인덱스복구 + 분할생성 + 품질강화 + 프롬프트간소화 + 성과피드백 + RAG)
 [ ] 옵션B (스카팀 reservation Phase E) 설계
 [ ] OpenClaw Phase 1: mainbot.js 흡수
 [ ] 루나팀: Shadow→Confirmation 전환 분석
