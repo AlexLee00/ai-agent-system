@@ -1044,6 +1044,107 @@ N8N 워크플로우와 연동: 각 노드 사이에 검증 노드 자동 삽입
 
 ---
 
+### §10-9. 커뮤니티/연구 검증 — 제이 랜드 설계의 학술·업계 근거 (2026-04-02)
+
+제이 랜드의 핵심 설계 결정을 커뮤니티 사례 및 학술 연구로 검증.
+모든 핵심 패턴이 2025-2026 최신 트렌드와 정확히 일치함을 확인.
+
+```
+══ DB 아키텍처: PostgreSQL JSONB 동적 스키마 ══
+
+검증: TigerData "Agentic Postgres" (2026)
+  "JSONB: 2014년부터 11년. MongoDB만큼 빠르면서 ACID 보장"
+  "2026년, 그냥 PostgreSQL 쓰세요"
+  → 48,000+ 기업 사용 (Netflix, Spotify, Uber, Reddit, Instagram)
+
+적용:
+  trade_rationale.analyst_signals JSONB → 에이전트 추가/삭제 시 ALTER TABLE 불필요
+  trade_rationale.strategy_config JSONB → 전략 조합별 성과 비교 가능
+  trade_review.analyst_accuracy JSONB → 동적 에이전트 정확도 추적
+  PostgreSQL 단일화 (pgvector + JSONB + 시계열) = 업계 정석
+
+
+══ 관측성: Langfuse Trace 패턴 ══
+
+검증: Langfuse (오픈소스, GitHub 19K+ 스타)
+  아키텍처: PostgreSQL + ClickHouse (분석 전용)
+  구조: Trace → Span → Generation (계층적)
+  메타데이터: JSONB로 user_id, tags, session_id 동적 저장
+  평가: 비용 추적 + 지연시간 + 사용자 피드백 + LLM-as-Judge
+
+적용:
+  agent.traces 테이블 = Langfuse Trace 패턴
+  trace-collector.js 비동기 큐 + 배치 플러시 = Langfuse 동일 패턴
+  비용 $0 자체 구현 = Langfuse 셀프호스트와 같은 전략
+  AgentCharts.js Recharts 5탭 = Grafana 체리픽
+
+
+══ 자기진화: Self-Evolving AI Agents ══
+
+검증: arXiv 2508.07407 (2025.08)
+  "에이전트가 상호작용 데이터와 환경 피드백 기반으로 자동 시스템 개선"
+  핵심 패턴: 성공/실패 사례에서 핵심 요소 식별
+  평가 점수 기반 최적화, 프롬프트 최적화 (MCTS)
+
+적용:
+  hiring-contract evaluate() = 결과 피드백
+  agent.performance_history = 시계열 점수 추적
+  competition-engine = 에이전트 간 경쟁으로 성과 비교
+  Standing Orders 승격 = 반복 패턴 자동화 (자기진화)
+  메딕(진단) + 멘토(재교육) = 저성과 에이전트 개선
+
+
+══ 팀 추상화: Agno 프레임워크 ══
+
+검증: Agno (agno.com, 2026)
+  Team 추상화: Team(name, members, db=Postgres, enable_memories)
+  3차원 평가: accuracy + reliability + performance
+  PostgreSQL 기반 팀 메모리 + 성과 추적
+
+적용:
+  team 기반 그룹핑 (luna/blog/claude/ska 등)
+  strategy_config JSONB = 팀 조합 기록
+  team_score = 팀 전체 성과 점수
+  고용 조합 = 전략 선택 (에이전트 선택이 투자 전략 결정)
+
+
+══ 콘텐츠 멀티에이전트: CrewAI + 업계 표준 ══
+
+검증: CrewAI (2026, 업계 표준)
+  Agent: role + goal + backstory (동적 정의)
+  Researcher→Critic→Writer 파이프라인 31% 성능 향상 (GAIA 벤치마크)
+  "More agents ≠ better results. More efficient workflows = better ROI"
+  업계 표준 7+6역할: Research/Planner/Writer/Editor/SEO/Fact-Checker/Publisher
+    + Brand Voice/Visual/Style Analyst/GEO/Analytics/Social
+
+적용:
+  agent-registry.js = CrewAI Agent 동적 정의
+  hiring-contract.js = CrewAI Task 할당 패턴
+  maestro.js = CrewAI Crew 오케스트레이터
+  블로팀 26에이전트 = 업계 표준 역할 + 성향 변형 패턴
+
+
+══ 투자 멀티에이전트: TradingAgents (ICML 2025) ══
+
+검증: TradingAgents (MIT+UCLA, arXiv 2412.20138)
+  7역할: Fundamental/Sentiment/News/Technical Analyst
+    + Bull/Bear Researcher + Trader
+  Bull vs Bear 토론 → 편향 제거
+  구조화된 보고서 소통 → 전화효과 방지
+  누적수익률, 샤프비율, 최대낙폭 모두 베이스라인 대비 우수
+
+적용:
+  루나팀 20에이전트 = TradingAgents 역할 + 성향 변형
+  불리쉬 vs 베어리쉬 토론 = Bull/Bear Researcher 패턴
+  전략 조합 (아리아+오라클 vs 에코+헤라) = 고용이 투자 전략 결정
+  네메시스/이지스 = Risk Management Team 변형
+```
+
+결론: 제이 랜드의 설계는 2025-2026 학술·업계 최신 패턴과 정확히 일치.
+추가 참고: Langfuse ClickHouse 분리(규모 커지면), Self-Evolving Agents MCTS 프롬프트 최적화(연구팀 활용).
+
+---
+
 *이 문서는 마스터 확정 사항이 반영된 전략 문서.*
 *Phase 0 완료 후 Phase 1 상세 설계로 진행.*
 *메티 기획, 마스터 방향 설정, 코덱스 구현.*
