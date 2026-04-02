@@ -133,6 +133,7 @@ export const PAPER_MODE = getTradingMode() === 'paper';
 const {
   selectLLMPolicy,
 } = require('../../../packages/core/lib/llm-model-selector.js');
+const { getAgent: getRegistryAgent } = require('../../../packages/core/lib/agent-registry');
 
 const INVESTMENT_LLM_POLICIES = getInvestmentLLMPolicyConfig();
 const INVESTMENT_AGENT_POLICY_OVERRIDE = INVESTMENT_LLM_POLICIES.investmentAgentPolicy || null;
@@ -254,8 +255,10 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     const r = _billingGuard.getBlockReason(guardScope);
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
+  const registryAgent = await getRegistryAgent(agentName).catch(() => null);
   const agentPolicy = selectLLMPolicy('investment.agent_policy', {
     agentName,
+    agentModel: registryAgent?.llm_model || null,
     openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
     policyOverride: INVESTMENT_AGENT_POLICY_OVERRIDE,
   });

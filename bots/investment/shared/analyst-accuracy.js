@@ -22,6 +22,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
+const { getAgentsByTeam } = require('../../../packages/core/lib/agent-registry');
 
 const SCHEMA = 'investment';
 
@@ -43,6 +44,32 @@ const THRESHOLD_LOW  = 0.50;  // 50%- → 가중치 감소
 function _jsonbAnalystKey(botName) {
   if (botName === 'sophia' || botName === 'hermes') return 'sentinel';
   return botName;
+}
+
+function _fallbackAnalystMeta(botName) {
+  return ANALYSTS.find((a) => a.name === botName) || null;
+}
+
+async function getActiveAnalysts() {
+  const agents = await getAgentsByTeam('luna');
+  const active = agents.filter((agent) =>
+    agent.status !== 'archived'
+      && ['leader', 'analyst', 'risk', 'executor', 'debater'].includes(agent.role),
+  );
+  if (active.length === 0) return ANALYSTS;
+
+  const analystPool = active.filter((agent) => agent.name !== 'luna');
+  const defaultWeight = analystPool.length > 0 ? _round2(1 / analystPool.length) : 0;
+  return analystPool.map((agent) => {
+    const fallback = _fallbackAnalystMeta(agent.name);
+    return {
+      name: agent.name,
+      label: agent.display_name || fallback?.label || agent.name,
+      role: agent.specialty || fallback?.role || agent.role,
+      column: fallback?.column || null,
+      defaultWeight: fallback?.defaultWeight ?? defaultWeight,
+    };
+  });
 }
 
 // ── 헬퍼 ──────────────────────────────────────────────────────────────
@@ -70,11 +97,10 @@ function _round2(n) {
  * @returns {Promise<{total, accurate, rate, weeks}>}
  */
 async function getWeeklyAccuracy(botName, weeks = 1) {
-  const analyst = ANALYSTS.find(a => a.name === botName);
-  if (!analyst) throw new Error(`알 수 없는 봇: ${botName}`);
+  const analyst = _fallbackAnalystMeta(botName);
 
   const cutoff = _weekCutoff(weeks - 1);
-  const col    = analyst.column;
+  const col    = analyst?.column || null;
   const jsonbKey = _jsonbAnalystKey(botName);
 
   const jsonbRow = await pgPool.get(SCHEMA, `
@@ -96,6 +122,10 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
       rate: jsonbTotal > 0 ? accurate / jsonbTotal : null,
       weeks,
     };
+  }
+
+  if (!col) {
+    return { botName, total: 0, accurate: 0, rate: null, weeks };
   }
 
   const row = await pgPool.get(SCHEMA, `
@@ -121,26 +151,15 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
  * @returns {Promise<Array<{week, total, accurate, rate}>>}
  */
 async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
-  const analyst = ANALYSTS.find(a => a.name === botName);
-  if (!analyst) throw new Error(`알 수 없는 봇: ${botName}`);
+  const analyst = _fallbackAnalystMeta(botName);
 
-  const col = analyst.column;
+  const col = analyst?.column || null;
   const jsonbKey = _jsonbAnalystKey(botName);
   const results = [];
 
   for (let w = 1; w <= nWeeks; w++) {
     const from = _weekCutoff(w - 1);
     const to   = _weekCutoff(w - 2);
-
-    let whereClause;
-    let params;
-    if (w === 1) {
-      whereClause = `WHERE reviewed_at > $1 AND ${col} IS NOT NULL`;
-      params      = [from];
-    } else {
-      whereClause = `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND ${col} IS NOT NULL`;
-      params      = [from, to];
-    }
 
     const jsonbWhereClause = w === 1
       ? `WHERE reviewed_at > $1 AND (analyst_accuracy->>$2) IS NOT NULL`
@@ -164,6 +183,21 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
         rate: jsonbTotal > 0 ? accurate / jsonbTotal : null,
       });
       continue;
+    }
+
+    if (!col) {
+      results.push({ week: w, total: 0, accurate: 0, rate: null });
+      continue;
+    }
+
+    let whereClause;
+    let params;
+    if (w === 1) {
+      whereClause = `WHERE reviewed_at > $1 AND ${col} IS NOT NULL`;
+      params      = [from];
+    } else {
+      whereClause = `WHERE reviewed_at > $1 AND reviewed_at <= $2 AND ${col} IS NOT NULL`;
+      params      = [from, to];
     }
 
     const row = await pgPool.get(SCHEMA, `
@@ -251,13 +285,14 @@ async function calculateWeightAdjustment(botName, currentWeight) {
  * @returns {Promise<{text: string, adjustments: Array}>}
  */
 async function buildAccuracyReport(currentWeights = {}) {
+  const analysts = await getActiveAnalysts();
   const adjustments = [];
   const lines = [
     '📊 분석팀 주간 성적표',
     '════════════════════════',
   ];
 
-  for (const analyst of ANALYSTS) {
+  for (const analyst of analysts) {
     const w    = currentWeights[analyst.name] ?? analyst.defaultWeight;
     const adj  = await calculateWeightAdjustment(analyst.name, w);
     adjustments.push(adj);
@@ -284,7 +319,7 @@ async function buildAccuracyReport(currentWeights = {}) {
   if (lowPerformers.length > 0) {
     lines.push('');
     for (const lp of lowPerformers) {
-      const analyst = ANALYSTS.find(a => a.name === lp.botName);
+      const analyst = analysts.find(a => a.name === lp.botName);
       lines.push(`⚠️ ${analyst?.label ?? lp.botName} 3주 연속 50% 미만 — 역할 재검토 필요`);
     }
   }
@@ -322,6 +357,7 @@ function normalizeWeights(weights) {
 
 export {
   ANALYSTS,
+  getActiveAnalysts,
   getWeeklyAccuracy,
   getWeeklyAccuracyHistory,
   calculateWeightAdjustment,

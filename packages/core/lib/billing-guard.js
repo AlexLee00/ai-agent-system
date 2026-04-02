@@ -20,14 +20,6 @@ const DEFAULT_SYMBOL_GUARD_TTL_MS = 15 * 60 * 1000;
 const SCOPE_ALIASES = {
   global: 'global',
   luna: 'investment',
-  nemesis: 'investment',
-  oracle: 'investment',
-  argos: 'investment',
-  hermes: 'investment',
-  sophia: 'investment',
-  athena: 'investment',
-  zeus: 'investment',
-  hephaestos: 'investment',
   investment: 'investment',
   worker: 'worker',
   blog: 'blog',
@@ -63,8 +55,12 @@ function getStopFile(scope = 'global') {
 
 function inferScope(data = {}, fallbackScope = 'global') {
   if (data.scope) return normalizeScope(data.scope);
+  if (data.team) {
+    const teamScope = data.team === 'luna' ? 'investment' : data.team;
+    return normalizeScope(teamScope);
+  }
   const text = `${data.reason || ''} ${data.activated_by || ''}`;
-  if (/\[(luna|nemesis|oracle|argos|hermes|sophia|athena|zeus|hephaestos)\]/i.test(text)) {
+  if (/\[(luna|investment)\]/i.test(text)) {
     return 'investment';
   }
   return normalizeScope(fallbackScope);
