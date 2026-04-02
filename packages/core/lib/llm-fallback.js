@@ -9,6 +9,7 @@
  * 지원 provider:
  *   anthropic — claude-sonnet-4-6 등 (Anthropic SDK)
  *   openai    — gpt-4o
+ *   claude-code — Claude Code CLI 비대화식 실행
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
  *
@@ -61,6 +62,9 @@ function _extractText(resp, provider) {
   }
   if (provider === 'openai' || provider === 'groq') {
     return resp?.choices?.[0]?.message?.content?.trim() || '';
+  }
+  if (provider === 'claude-code') {
+    return resp?.result?.trim() || '';
   }
   if (provider === 'gemini') {
     // SDK v0.21+ 응답 구조: resp.response.text()
@@ -185,6 +189,65 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
       model: usedModel,
       runId: parsed?.runId || null,
       durationMs: parsed?.result?.meta?.durationMs || null,
+    },
+  };
+}
+
+async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000 }) {
+  const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
+  const args = [
+    '-p',
+    '--output-format', 'json',
+    '--max-turns', '1',
+    '--model', resolvedModel,
+    '--tools', '',
+    '--permission-mode', 'default',
+    '--no-session-persistence',
+  ];
+  if (systemPrompt) args.push('--system-prompt', systemPrompt);
+  args.push(userPrompt || '');
+
+  let stdout = '';
+  let stderr = '';
+  try {
+    const result = await execFileAsync('/opt/homebrew/bin/claude', args, {
+      timeout: timeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+      env: process.env,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (error) {
+    stdout = error?.stdout || '';
+    stderr = error?.stderr || error?.message || '';
+  }
+
+  const output = String(stdout || '').trim();
+  if (!output) {
+    throw new Error(`Claude Code 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    throw new Error(`Claude Code JSON 파싱 실패: ${output.slice(0, 160)}`);
+  }
+
+  if (parsed?.is_error || parsed?.result?.includes?.('Not logged in')) {
+    throw new Error(parsed?.result || 'Claude Code 실행 실패');
+  }
+
+  return {
+    result: parsed?.result || '',
+    usage: parsed?.usage ? {
+      input_tokens: parsed.usage.input_tokens || 0,
+      output_tokens: parsed.usage.output_tokens || 0,
+    } : null,
+    _claudeCode: {
+      model: Object.keys(parsed?.modelUsage || {})[0] || resolvedModel,
+      sessionId: parsed?.session_id || null,
+      durationMs: parsed?.duration_ms || null,
     },
   };
 }
@@ -361,6 +424,10 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
     case 'openai-oauth': {
       const resp = await _callOpenAIOAuth(opts);
       return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
+    }
+    case 'claude-code': {
+      const resp = await _callClaudeCode(opts);
+      return { raw: resp, text: _extractText(resp, 'claude-code'), usage: resp.usage };
     }
     case 'groq': {
       const resp = await _callGroq(opts);

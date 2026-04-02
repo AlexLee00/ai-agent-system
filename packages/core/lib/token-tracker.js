@@ -23,6 +23,8 @@ const PRICING = {
   'claude-sonnet-4-6':                          { input: 3.00,  output: 15.00,  free: false },
   'claude-opus-4-6':                            { input: 15.00, output: 75.00,  free: false },
   'claude-haiku-4-5-20251001':                  { input: 1.00,  output: 5.00,   free: false },
+  'claude-code/sonnet':                         { input: 3.00,  output: 15.00,  free: false },
+  'claude-code/opus':                           { input: 15.00, output: 75.00,  free: false },
   'meta-llama/llama-4-scout-17b-16e-instruct':  { input: 0,     output: 0,      free: true  },
   'google-gemini-cli/gemini-2.5-flash':         { input: 0,     output: 0,      free: true  },
   'gemini-2.5-flash':                           { input: 0,     output: 0,      free: true  },

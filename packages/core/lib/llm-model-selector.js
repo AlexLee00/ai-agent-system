@@ -34,6 +34,7 @@ function _deepMerge(base, override) {
 
 function inferProviderFromModel(model = '') {
   if (!model) return 'anthropic';
+  if (model.startsWith('claude-code/')) return 'claude-code';
   if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
   if (model.startsWith('groq/')) return 'groq';
   if (
@@ -81,6 +82,9 @@ function _applyPolicyOverride(resolved, policyOverride, options = {}) {
 }
 
 function _resolvePreferredProvider(preferredApi, groqModel, maxTokens) {
+  if (preferredApi === 'claude-code') {
+    return { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.1 };
+  }
   if (preferredApi === 'anthropic') {
     return { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 };
   }
@@ -91,6 +95,14 @@ function _resolvePreferredProvider(preferredApi, groqModel, maxTokens) {
     return { provider: 'gemini', model: 'gemini-2.5-flash', maxTokens, temperature: 0.1 };
   }
   return { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 };
+}
+
+function _sanitizeConfiguredProviders(preferredApi, configuredProviders = []) {
+  const list = Array.isArray(configuredProviders) ? configuredProviders.slice() : [];
+  if (preferredApi === 'claude-code') {
+    return list.filter((provider) => provider !== 'anthropic');
+  }
+  return list;
 }
 
 function _stripGroqPrefix(model = '') {
@@ -362,14 +374,15 @@ function _buildSelectorRegistry() {
     'worker.ai.fallback': ({
       groqModel = 'llama-4-scout-17b-16e-instruct',
       preferredApi = 'groq',
-      configuredProviders = ['groq', 'local', 'anthropic', 'gemini', 'openai'],
+      configuredProviders = ['groq', 'local', 'claude-code', 'anthropic', 'gemini', 'openai'],
       maxTokens = 1024,
       policyOverride = null,
     } = {}) => {
-      const configured = new Set(configuredProviders || []);
+      const configured = new Set(_sanitizeConfiguredProviders(preferredApi, configuredProviders));
       const providerModels = {
         groq: _stripGroqPrefix(policyOverride?.providerModels?.groq || groqModel),
         local: policyOverride?.providerModels?.local || 'qwen2.5-7b',
+        'claude-code': policyOverride?.providerModels?.['claude-code'] || 'claude-code/sonnet',
         anthropic: policyOverride?.providerModels?.anthropic || 'claude-haiku-4-5-20251001',
         gemini: policyOverride?.providerModels?.gemini || 'gemini-2.5-flash',
         openai: policyOverride?.providerModels?.openai || 'gpt-4o-mini',
@@ -377,12 +390,14 @@ function _buildSelectorRegistry() {
       const primary = _resolvePreferredProvider(preferredApi, providerModels.groq, maxTokens);
       if (preferredApi === 'local') primary.provider = 'local';
       if (preferredApi === 'local') primary.model = providerModels.local;
+      if (preferredApi === 'claude-code') primary.model = providerModels['claude-code'];
       if (preferredApi === 'anthropic') primary.model = providerModels.anthropic;
       if (preferredApi === 'openai') primary.model = providerModels.openai;
       if (preferredApi === 'gemini') primary.model = providerModels.gemini;
       const fallback = [
         { provider: 'groq', model: `groq/${providerModels.groq}`, maxTokens, temperature: 0.1 },
         { provider: 'local', model: providerModels.local, maxTokens, temperature: 0.1 },
+        { provider: 'claude-code', model: providerModels['claude-code'], maxTokens, temperature: 0.1 },
         { provider: 'anthropic', model: providerModels.anthropic, maxTokens, temperature: 0.1 },
         { provider: 'gemini', model: providerModels.gemini, maxTokens, temperature: 0.1 },
         { provider: 'openai', model: providerModels.openai, maxTokens, temperature: 0.1 },

@@ -30,8 +30,9 @@ async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
 }
 
 async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, logMeta = {}) {
-  const preferredApi = await getWorkerMonitoringPreference().catch(() => 'groq');
-  const configuredProviders = ['groq', 'anthropic', 'gemini', 'openai']
+  const forcedPreferredApi = String(logMeta?.preferredApi || '').trim().toLowerCase();
+  const preferredApi = forcedPreferredApi || await getWorkerMonitoringPreference().catch(() => 'groq');
+  const configuredProviders = ['groq', 'claude-code', 'anthropic', 'gemini', 'openai']
     .filter((provider) => isProviderConfigured(provider));
   const selectorOverrides = getWorkerLLMSelectorOverrides();
   const chain = selectLLMChain('worker.ai.fallback', {
@@ -48,7 +49,11 @@ async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, lo
     userPrompt: user,
     logMeta: { team: 'worker', bot: 'ai-client', requestType: 'ai_question', preferredApi, ...logMeta },
   });
-  return { text: result.text, model: `${result.provider}/${result.model}`, preferredApi };
+  const resolvedModel = String(result.model || '');
+  const modelId = resolvedModel.startsWith(`${result.provider}/`)
+    ? resolvedModel
+    : `${result.provider}/${resolvedModel}`;
+  return { text: result.text, model: modelId, preferredApi };
 }
 
 module.exports = { callLLM, callLLMWithFallback };
