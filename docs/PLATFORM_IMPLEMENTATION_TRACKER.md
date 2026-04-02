@@ -141,7 +141,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 | 항목 | 현재 상태 | 남은 것 |
 |------|----------|---------|
 | Chronos Tier 2 | Phase A 완료, Layer 1~3 동작 | 전략 최적화, VectorBT, walk-forward |
-| 블로팀 P1~P5 | 딥분석+계획 완료 | 코덱스 프롬프트 작성→구현 |
+| 블로팀 P1~P5 | ✅ 구현 완료 | F7 인덱스 리셋(55) + P1 분할생성 + P2 품질강화 + P3 프롬프트간소화 + P4 성과수집 + P5 RAG (d7ffff6, 2dab41a, 16a6e93) |
 | 워커 확인창 UX | 핵심 메뉴 1차 완료 | 캔버스 시각 마감, 관리자 위젯 심화 |
 | 스카 shadow 관찰 | 저장+리뷰 연결 완료 | MAPE gap 기준 ensemble 편입 |
 | 피드백 RAG | 적재+유사사례 조회 완료 | 품질 랭킹, training export |
@@ -232,8 +232,16 @@ bots/investment/config.yaml            — 운영 설정
 ### 블로팀
 ```
 bots/blog/lib/maestro.js(342줄) — 팀장/오케스트레이터
-bots/blog/lib/pos-writer.js(632줄) — POS 작가
-bots/blog/lib/blo.js(714줄) — 메인 봇
+bots/blog/lib/pos-writer.js — POS 작가 (P1 분할생성 + P3 프롬프트 간소화)
+bots/blog/lib/gems-writer.js — GEMS 작가 (P1 분할생성 + P3 프롬프트 간소화)
+bots/blog/lib/blo.js — 메인 봇 (P1~P5 통합)
+bots/blog/lib/quality-checker.js — 품질 검증 (P2 섹션마커+AI탐지+코드검증)
+bots/blog/lib/publ.js — 발행+성과수집 (P4 7일후 조회수/공감)
+bots/blog/lib/richer.js — 정보수집+RAG (P5 실전사례 활용)
+bots/blog/lib/category-rotation.js — 강의 번호 관리 (F7 발행검증)
+bots/blog/context/POS_PERSONA.md — POS 참조문서 (P3 분리)
+bots/blog/context/GEMS_PERSONA.md — GEMS 참조문서 (P3 분리)
+bots/blog/scripts/collect-performance.js — 성과 수집 스크립트 (P4)
 bots/blog/config.json — 운영 설정
 ```
 
