@@ -54,9 +54,30 @@ async function getNextLectureNumber() {
 }
 
 /**
- * 강의 번호 증가 (발행 후 호출)
+ * 강의 번호 증가 (발행 성공 확인 후에만 호출)
+ * - posts 테이블에 해당 강의가 존재하는지 검증
+ * - 미존재 시 인덱스 증가 스킵 (순서 점프 방지)
  */
 async function advanceLectureNumber() {
+  const current = await pgPool.get('blog', `
+    SELECT current_index, series_name FROM blog.category_rotation
+    WHERE rotation_type = 'lecture_series' LIMIT 1
+  `);
+  if (!current) return;
+
+  const nextNumber = (current.current_index ?? 0) + 1;
+
+  // 발행 정합성 검증: 현재 강의(nextNumber)가 실제 발행되었는지 확인
+  const published = await pgPool.get('blog', `
+    SELECT id FROM blog.posts
+    WHERE post_type = 'lecture' AND lecture_number = $1 LIMIT 1
+  `, [nextNumber]);
+
+  if (!published) {
+    console.warn(`[category-rotation] ⚠️ ${nextNumber}강 미발행 — 인덱스 증가 스킵`);
+    return;
+  }
+
   await pgPool.run('blog', `
     UPDATE blog.category_rotation
     SET current_index = current_index + 1, updated_at = NOW()
