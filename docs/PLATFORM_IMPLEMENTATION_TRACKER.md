@@ -217,6 +217,7 @@ bots/investment/team/sentinel.js
 bots/investment/team/sophia.js
 bots/blog/lib/runtime-config.js
 packages/core/lib/hiring-contract.js
+packages/core/lib/competition-engine.js
 ```
 
 ### 루나팀
@@ -282,6 +283,7 @@ bots/worker/lib/menu-policy.js
 bots/worker/web/components/Sidebar.js
 bots/worker/web/lib/menu-access.js
 bots/orchestrator/scripts/seed-blog-agents-phase2.js
+bots/orchestrator/migrations/008-competitions.sql
 ```
 
 ### RAG + 자기학습
