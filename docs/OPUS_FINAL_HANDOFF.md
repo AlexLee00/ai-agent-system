@@ -1,4 +1,4 @@
-# Opus 세션 인수인계 (2026-04-02 세션 12)
+# Opus 세션 인수인계 (2026-04-02 세션 13)
 
 > 작성일: 2026-04-02 | 모델: Claude Opus 4.6 (메티)
 
@@ -6,47 +6,59 @@
 
 ## 이번 세션 성과
 
-### 1. Phase 1 설계 3개 완료 ✅ (776줄)
-- Agent Registry (209줄): 3테이블 + API 14함수
-- 모니터링 대시보드 (414줄): 에이전트 오피스 UI + 오픈소스 체리픽 LLM 관측성
-- 고용 계약 시스템 (223줄): 5가지 인센티브 + 점수 공식
+### 1. Phase 2 설계 완료 ✅ (326줄)
+- 에이전트 세분화: 블로팀 6→16 (작가4+기획3+수집4+편집2)
+- 그룹 경쟁 엔진: A/B 병렬, 품질 평가(LLM60%+규칙40%)
+- 대시보드 차트: Recharts 5탭
+- 점진적 전환: Shadow Mode → 동적 선택 → 경쟁 모드
 
-### 2. Phase 1 구현 4단계 전부 완료! ✅
-- Step 1: Agent Registry — 구현+OPS검증 완료 (DB jay, 27에이전트, Hub 4엔드포인트)
-- Step 2: 대시보드 — 구현+검증 완료 (page.js 308줄 + routes 66줄)
-- Step 3: 고용 계약 — 구현+소프트테스트 완료 (hire+evaluate+select 전체 흐름)
-- Step 4: trace-collector — 구현+검증 완료 (Langfuse 체리픽, 비동기 큐)
+### 2. Phase 2 구현 프롬프트 5개 전부 작성 ✅ (992줄)
+- Step 1: 블로팀 세분화 (212줄) — 구현 완료 ✅
+- Step 2: 그룹 경쟁 엔진 (302줄) — 구현 완료 ✅
+- Step 3: 대시보드 차트 (189줄) — 구현 완료 ✅
+- Step 4: 마에스트로 Shadow Mode (163줄) — 구현 완료 ✅
+- Step 5: 루나팀 재편성 (126줄) — 구현 완료 ✅
 
-### 3. 오픈소스 분석 + 체리픽 전략 수립 ✅
-- Langfuse 분석: Trace→Span→Generation, 비동기 큐, 배치 플러시
-- Grafana 분석: PostgreSQL→시계열 차트, 알림 룰
-- 결론: 외부 서비스 설치 안 하고 핵심 패턴만 자체 구현
-- 접속지점 1개(워커 포털), 외부 서비스 0개, 비용 $0
+### 3. Phase 2 코덱스 구현 + 검증 전부 완료 ✅
+- Step 1 (aab64c3): 10에이전트 시딩 → 37에이전트
+- Step 2 (a62d458): competitions 테이블 + competition-engine.js
+- Step 3 (e87b3b9): AgentCharts.js Recharts 5탭
+- Step 4 (7914729): blo.js shadow hire/evaluate + maestro 경쟁 준비
+- Step 5 (66424aa): 루나팀 8에이전트 역할 명확화
+- HEAD: b40c214
 
-### 4. LLM 모델 재편성 커밋 ✅
-- openai/gpt-4o → openai-oauth/gpt-5.4 (블로+오케스트레이터)
+### 4. UI 실제 확인 ✅
+- 에이전트 오피스: 37에이전트 카드 표시, 팀별 색상, 상세 모달
+- 상시 에이전트 바: 6개 (아처/덱스터/닥터/라이트/앤디/이브)
+- 운영 차트: 5탭 (토큰/비용/에러/품질/경쟁) — 데이터 축적 중
+- Shadow Mode: 실제 블로그 실행에서 계약 1건 생성 확인!
 
-### 5. Claw Code 분석 + v2 전략 추가 ✅
-- Claude Code 소스 유출 사건 심층 분석
-- KAIROS, Buddy 시스템, 40개 도구 플러그인 참고
-
-### 6. Phase 0.5 미생성 3팀 설계 완료 ✅ (1,295줄)
-- 연구팀 502줄 / 15 에이전트 (서칭 방법론 상세)
-- 감정팀 485줄 / 10 에이전트 (실제 SW 감정 14단계)
-- 데이터팀 325줄 / 8 에이전트 (실제 AI/데이터 부서)
+### 5. Phase 1 Step 1~3 코덱스 구현 검증 ✅ (이전 세션 이어서)
+- LLM 모델 재편성: openai/gpt-4o → openai-oauth/gpt-5.4
 
 ---
 
-## 핵심 결정
+## 전체 Phase 현황
 
 ```
-[DECISION] Phase 0.5 설계 완료 — 닫기
-[DECISION] DB명 "jay" 유지 (ai_agent 변경 안 함)
-[DECISION] 오픈소스 체리픽 방식 채택 (Langfuse/Grafana 설치 안 함)
-[DECISION] 접속지점 1개 (워커 포털만)
-[DECISION] 에이전트 이름: 연구팀 전부 고유 네이밍, 감정팀 컨트로 추가
-[DECISION] 초기 간소화: 데이터팀 블루프린트/내러티브 Phase 2로 연기
-[DECISION] 데이터팀 오라클 이름 충돌 → 변경 필요
+Phase 0: ✅ 거의 완료
+  ⏳ Phase 4 alert resolve만 대기
+
+Phase 0.5: ✅ 닫기 (설계 완료)
+  연구팀 502줄/15에이전트, 감정팀 485줄/10에이전트, 데이터팀 325줄/8에이전트
+
+Phase 1: ✅ 전부 완료
+  Step 1: Agent Registry (DB jay, 27→37에이전트)
+  Step 2: 대시보드 (에이전트 오피스, 워커 포털 4001)
+  Step 3: 고용 계약 (hire+evaluate+selectBestAgent)
+  Step 4: trace-collector (Langfuse 체리픽, 비동기 큐)
+
+Phase 2: ✅ 전부 완료!
+  Step 1: 블로팀 세분화 (6→16에이전트, 37 전체)
+  Step 2: 그룹 경쟁 엔진 (competition-engine.js)
+  Step 3: 대시보드 차트 (AgentCharts.js Recharts 5탭)
+  Step 4: 마에스트로 Shadow Mode (blo.js hire/evaluate 기록)
+  Step 5: 루나팀 재편성 (8에이전트 역할 명확화)
 ```
 
 ---
@@ -54,17 +66,19 @@
 ## 다음 세션 우선순위
 
 ```
-Phase 1 마무리:
-  ⚠️ Step 3 고용 계약 — 커밋+푸시 필요 (코덱스 구현 완료, 미커밋)
-  📋 워커 포털 UI 확인 — 브라우저에서 에이전트 오피스 접속 확인
+Phase 2 후속:
+  📋 Shadow Mode 데이터 축적 모니터링 (1주일)
+  📋 데이터 충분 시 COMPETITION_ENABLED=true 전환 (마스터 승인)
+  📋 대시보드 차트에 실제 trace 데이터 표시 확인
 
-Phase 2 설계 시작:
-  📋 에이전트 세분화 (블로+루나 첫 적용)
-  📋 그룹 경쟁 구현 (블로팀 A/B 그룹)
-  📋 대시보드 차트 연동 (trace 데이터 → Recharts)
+Phase 3 설계 시작:
+  📋 학습 강화 프로그램 (저성과 에이전트 재교육)
+  📋 전체 팀 적용 확대 (블로→루나→감정→연구→...)
+  📋 Phase 0.5 설계 3팀 실제 구현 시작 (연구팀 첫 번째)
 
-Phase 0 잔여:
+인프라:
   ⏳ Phase 4 alert resolve (검증 대기)
+  📋 .checksums.json 미커밋 정리
 ```
 
 ---
@@ -74,29 +88,30 @@ Phase 0 잔여:
 ```
 전략: docs/MULTI_AGENT_EXPANSION_v2.md (1,050줄)
 
-설계 (docs/design/):
-  DESIGN_RESEARCH_TEAM.md     502줄 (연구팀 15에이전트)
-  DESIGN_APPRAISAL_TEAM.md    485줄 (감정팀 10에이전트)
-  DESIGN_DATA_SCIENCE_TEAM.md 325줄 (데이터팀 8에이전트)
-  DESIGN_AGENT_REGISTRY.md    209줄 (Phase 1 기반)
-  DESIGN_DASHBOARD.md         414줄 (대시보드 + LLM 관측성)
-  DESIGN_HIRING_CONTRACT.md   223줄 (고용 계약)
+설계 (docs/design/) — 총 2,411줄:
+  DESIGN_RESEARCH_TEAM.md     502줄
+  DESIGN_APPRAISAL_TEAM.md    485줄
+  DESIGN_DATA_SCIENCE_TEAM.md 325줄
+  DESIGN_AGENT_REGISTRY.md    209줄
+  DESIGN_DASHBOARD.md         414줄
+  DESIGN_HIRING_CONTRACT.md   223줄
+  DESIGN_PHASE2.md            326줄
 
-코덱스 (Phase 1 — 전부 구현 완료):
-  CODEX_PHASE1_AGENT_REGISTRY.md     401줄 ✅
-  CODEX_PHASE1_DASHBOARD.md          346줄 ✅
-  CODEX_PHASE1_HIRING_CONTRACT.md    303줄 ✅
-  CODEX_PHASE1_TRACE_COLLECTOR.md    382줄 ✅
+코덱스 (전부 구현 완료):
+  Phase 1: CODEX_PHASE1_AGENT_REGISTRY.md (401줄) ✅
+  Phase 1: CODEX_PHASE1_DASHBOARD.md (346줄) ✅
+  Phase 1: CODEX_PHASE1_HIRING_CONTRACT.md (303줄) ✅
+  Phase 1: CODEX_PHASE1_TRACE_COLLECTOR.md (382줄) ✅
+  Phase 2: CODEX_PHASE2_STEP1_BLOG_AGENTS.md (212줄) ✅
+  Phase 2: CODEX_PHASE2_STEP2_COMPETITION.md (302줄) ✅
+  Phase 2: CODEX_PHASE2_STEP3_CHARTS.md (189줄) ✅
+  Phase 2: CODEX_PHASE2_STEP4_MAESTRO.md (163줄) ✅
+  Phase 2: CODEX_PHASE2_STEP5_LUNA.md (126줄) ✅
 
-구현 완료 파일:
-  packages/core/lib/agent-registry.js    (232줄)
-  packages/core/lib/hiring-contract.js   (신규)
-  packages/core/lib/trace-collector.js   (신규)
-  packages/core/lib/llm-fallback.js      (후킹 추가)
-  bots/orchestrator/migrations/006-agent-registry.sql
-  bots/orchestrator/migrations/007-agent-traces.sql
-  bots/orchestrator/scripts/seed-agent-registry.js
-  bots/hub/lib/routes/agents.js          (확장)
-  bots/worker/web/app/admin/agent-office/page.js
-  bots/worker/web/routes/agents.js
+제이 랜드 현재 상태:
+  에이전트: 37개 (블로16+루나8+클로드5+스카4+제이2+워커1+에디1)
+  대시보드: 에이전트 오피스 + 운영 차트 5탭
+  고용 계약: Shadow Mode 실전 동작 중
+  LLM 관측성: trace-collector 실전 동작 중
+  그룹 경쟁: 엔진 준비 완료 (활성화 대기)
 ```
