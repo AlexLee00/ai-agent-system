@@ -5,8 +5,17 @@ const env = require('./env');
 const LOCAL_MODEL_FAST = 'qwen2.5-7b';
 const LOCAL_MODEL_DEEP = 'deepseek-r1-32b';
 
+function normalizeBaseUrl(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
 function getBaseUrl() {
-  return env.LOCAL_LLM_BASE_URL || '';
+  return normalizeBaseUrl(env.LOCAL_LLM_BASE_URL || '');
+}
+
+function getEmbeddingsUrl() {
+  const baseUrl = getBaseUrl();
+  return baseUrl ? `${baseUrl}/v1/embeddings` : '';
 }
 
 async function requestJson(path, options = {}, timeoutMs = 3000) {
@@ -109,6 +118,8 @@ async function callLocalLLMJSON(model, messages, options = {}) {
 module.exports = {
   LOCAL_MODEL_FAST,
   LOCAL_MODEL_DEEP,
+  getBaseUrl,
+  getEmbeddingsUrl,
   getAvailableModels,
   isLocalLLMAvailable,
   callLocalLLM,

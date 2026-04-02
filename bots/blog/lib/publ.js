@@ -16,6 +16,7 @@ const env    = require('../../../packages/core/lib/env');
 const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
 const GDRIVE_DIR    = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
+let _performanceColumnsState = null;
 
 function normalizeTitleKey(value) {
   return String(value || '')
@@ -48,6 +49,25 @@ async function loadPublishedLinkMap() {
     console.warn('[퍼블] 내부 링크 맵 조회 실패:', e.message);
     return new Map();
   }
+}
+
+async function hasPerformanceColumns() {
+  if (_performanceColumnsState !== null) return _performanceColumnsState;
+  try {
+    const rows = await pgPool.query('public', `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'blog'
+        AND table_name = 'posts'
+        AND column_name IN ('views', 'comments', 'likes')
+    `);
+    const names = new Set(rows.map((row) => row.column_name));
+    _performanceColumnsState = names.has('views') && names.has('comments') && names.has('likes');
+  } catch (e) {
+    console.warn('[퍼블] 성과 컬럼 확인 실패:', e.message);
+    _performanceColumnsState = false;
+  }
+  return _performanceColumnsState;
 }
 
 function replaceInternalLinkPlaceholders(content, titleUrlMap) {
@@ -348,23 +368,35 @@ async function recordPerformance(postId, metrics = {}) {
   const views = Number(metrics.views || 0);
   const comments = Number(metrics.comments || 0);
   const likes = Number(metrics.likes || 0);
+  const hasColumns = await hasPerformanceColumns();
 
   try {
-    const row = await pgPool.get('blog', `
-      UPDATE blog.posts
-      SET views = $2,
-          comments = $3,
-          likes = $4,
-          metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb
-      WHERE id = $1
-      RETURNING title, category, char_count
-    `, [
-      postId,
-      views,
-      comments,
-      likes,
-      JSON.stringify({ views, comments, likes, performance_collected_at: new Date().toISOString() }),
-    ]);
+    const payload = JSON.stringify({ views, comments, likes, performance_collected_at: new Date().toISOString() });
+    const row = hasColumns
+      ? await pgPool.get('blog', `
+        UPDATE blog.posts
+        SET views = $2,
+            comments = $3,
+            likes = $4,
+            metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb
+        WHERE id = $1
+        RETURNING title, category, char_count
+      `, [
+        postId,
+        views,
+        comments,
+        likes,
+        payload,
+      ])
+      : await pgPool.get('blog', `
+        UPDATE blog.posts
+        SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1
+        RETURNING title, category, char_count
+      `, [
+        postId,
+        payload,
+      ]);
 
     if (row && views > 0) {
       await rag.initSchema();
@@ -392,13 +424,12 @@ async function recordPerformance(postId, metrics = {}) {
 }
 
 async function getPerformanceCollectionCandidates(days = 7) {
-  if (DEV_HUB_READONLY) return [];
   try {
     return await pgPool.query('blog', `
-      SELECT id, title, category, publish_date, naver_url, views, comments, likes, metadata
+      SELECT id, title, category, publish_date, naver_url, metadata
       FROM blog.posts
       WHERE status = 'published'
-        AND publish_date <= CURRENT_DATE - ($1::int || ' days')::interval
+        AND publish_date <= CURRENT_DATE - $1::int
         AND (
           metadata->>'performance_collected_at' IS NULL
           OR metadata->>'performance_collected_at' = ''

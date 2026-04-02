@@ -24,11 +24,15 @@
 
 const { execFile } = require('child_process');
 const pgPool = require('./pg-pool');
+const { getEmbeddingsUrl } = require('./local-llm-client');
 
 const SCHEMA = 'reservation';
 const EMBED_MODEL = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
 const EMBED_DIM   = Number(process.env.EMBED_DIM) || 1024;
-const EMBED_URL   = process.env.EMBED_URL || 'http://localhost:11434/v1/embeddings';
+
+function getEmbedUrl() {
+  return process.env.EMBED_URL || getEmbeddingsUrl() || 'http://localhost:11434/v1/embeddings';
+}
 
 function execCurl(args) {
   return new Promise((resolve, reject) => {
@@ -124,7 +128,7 @@ async function createEmbedding(text) {
   const raw = await execCurl([
     '-sS',
     '-m', '30',
-    EMBED_URL,
+    getEmbedUrl(),
     '-H', 'Content-Type: application/json',
     '-d', payload,
   ]);
