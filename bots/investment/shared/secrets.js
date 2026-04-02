@@ -64,9 +64,14 @@ function applyDevSafetyOverrides(secrets) {
 export async function initHubSecrets() {
   if (_hubInitDone) return !!_secrets;
 
-  const hubData = await _hubClient.fetchHubSecrets('config');
-  if (hubData) {
-    const c = hubData;
+  const [hubConfig, hubLlm] = await Promise.all([
+    _hubClient.fetchHubSecrets('config'),
+    _hubClient.fetchHubSecrets('llm'),
+  ]);
+
+  if (hubConfig || hubLlm) {
+    const c = hubConfig || {};
+    const llm = hubLlm || {};
     _secrets = applyDevSafetyOverrides({
       telegram_bot_token:   c.telegram?.bot_token || '',
       telegram_chat_id:     String(c.telegram?.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
@@ -91,18 +96,18 @@ export async function initHubSecrets() {
       screening_domestic_max_dynamic: Number(c.screening?.domestic?.max_dynamic || 0),
       screening_overseas_max_dynamic: Number(c.screening?.overseas?.max_dynamic || 0),
       screening_crypto_max_dynamic:   Number(c.screening?.crypto?.max_dynamic || 0),
-      anthropic_api_key:    c.anthropic?.api_key || '',
-      anthropic_admin_api_key: c.anthropic?.admin_api_key || '',
-      openai_api_key:       c.openai?.api_key || '',
-      openai_admin_api_key: c.openai?.admin_api_key || '',
-      openai_model:         c.openai?.model || 'gpt-4o',
-      gemini_api_key:       c.gemini?.api_key || '',
-      gemini_image_api_key: c.gemini?.image_api_key || '',
-      groq_api_key:         c.groq?.accounts?.[0]?.api_key || '',
-      groq_api_keys:        (c.groq?.accounts || []).map((account) => account.api_key).filter(Boolean),
-      cerebras_api_key:     c.cerebras?.api_key || '',
-      sambanova_api_key:    c.sambanova?.api_key || '',
-      xai_api_key:          c.xai?.api_key || '',
+      anthropic_api_key:    llm.anthropic?.api_key || c.anthropic?.api_key || '',
+      anthropic_admin_api_key: llm.anthropic?.admin_api_key || c.anthropic?.admin_api_key || '',
+      openai_api_key:       llm.openai?.api_key || c.openai?.api_key || '',
+      openai_admin_api_key: llm.openai?.admin_api_key || c.openai?.admin_api_key || '',
+      openai_model:         llm.openai?.model || c.openai?.model || 'gpt-4o',
+      gemini_api_key:       llm.gemini?.api_key || c.gemini?.api_key || '',
+      gemini_image_api_key: llm.gemini?.image_api_key || c.gemini?.image_api_key || '',
+      groq_api_key:         llm.groq?.accounts?.[0]?.api_key || c.groq?.accounts?.[0]?.api_key || '',
+      groq_api_keys:        ((llm.groq?.accounts || c.groq?.accounts || [])).map((account) => account.api_key).filter(Boolean),
+      cerebras_api_key:     llm.cerebras?.api_key || c.cerebras?.api_key || '',
+      sambanova_api_key:    llm.sambanova?.api_key || c.sambanova?.api_key || '',
+      xai_api_key:          llm.xai?.api_key || c.xai?.api_key || '',
       naver_client_id:      c.news?.naver_client_id || '',
       naver_client_secret:  c.news?.naver_client_secret || '',
       dart_api_key:         c.news?.dart_api_key || '',
