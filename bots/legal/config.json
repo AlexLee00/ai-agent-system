@@ -1,5 +1,9 @@
 {
   "skills": [
     "justin/citation-audit"
+  ],
+  "mcps": [
+    "postgresql",
+    "filesystem"
   ]
 }
