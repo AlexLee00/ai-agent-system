@@ -70,6 +70,7 @@ const { searchFeedbackCases } = require(path.join(__dirname, '../../../packages/
 const videoApi = require('./routes/video-api');
 const videoStepApi = require('./routes/video-step-api');
 const videoInternalApi = require('./routes/video-internal-api');
+const mountAgentRoutes = require('./routes/agents');
 const {
   buildScheduleProposal,
   normalizeScheduleProposal,
@@ -779,6 +780,7 @@ app.use('/api/', limiter);
 app.use('/api/video/internal', express.json({ limit: '5mb' }), videoInternalApi);
 app.use('/api/video/steps', requireAuth, videoStepApi);
 app.use('/api/video', requireAuth, videoApi);
+mountAgentRoutes(app, requireAuth);
 
 // ── 접근 로그 (OWASP) — 모든 라우트 앞에 배치 ─────────────────────
 app.use(accessLogger);
