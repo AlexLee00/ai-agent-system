@@ -318,6 +318,102 @@ sessions_send: 피어 에이전트 간 직접 메시지
 5. 에이전트 모니터링 대시보드 (카드 뷰 + 성과) → 없음
 ```
 
+### 3-6. Self-Evolving Agents 종합 서베이 (arXiv 2508.07407, 2025)
+```
+"자율 진화 에이전트"가 하나의 연구 분야로 확립됨
+GitHub: Awesome-Self-Evolving-Agents 리포 (100+ 논문 수록)
+
+핵심 분류 (Self-Evolving Taxonomy):
+  무엇을 진화시키나: 프롬프트, 메모리, 도구, 워크플로우, 에이전트 역할
+  언제 진화시키나: 작업 중(실시간 반영) vs 작업 후(회고적 개선)
+  어떻게 진화시키나: RL, 모방학습, 진화 알고리즘, 메타러닝
+
+→ 제이 랜드의 "데이터→분석→설계→구현→피드백" 루프가
+  학술적으로 "Self-Evolving Agent Framework"와 정확히 일치
+→ 연구팀이 이 서베이를 기반으로 최신 기법 적용 가능
+```
+
+### 3-7. EvolveR — 경험 기반 자율 진화 (arXiv 2510.16079, 2025)
+```
+2단계 생명주기:
+  ① Offline Self-Distillation: 경험 → 추상적 전략 원칙으로 증류
+  ② Online Interaction: 증류된 원칙 기반으로 작업 → 새 경험 축적
+
+→ 제이 랜드의 RAG 경험 저장 + Standing Orders 승격과 동일 패턴
+→ 3회 반복 성공 → Standing Orders = "전략 원칙 증류"
+→ 구현 방향: experience-store.js의 getPromotionCandidates()가 이 역할
+```
+
+### 3-8. OpenAI Self-Evolving Agents 공식 쿡북 (2026)
+```
+OpenAI가 공식 쿡북에서 자율 진화 에이전트 패턴 공개
+루프: Baseline Agent → 피드백 → 프롬프트 최적화 → 평가(0.8 이상) → 교체
+실패 시: 최대 10회 재시도 → 안 되면 엔지니어 알림
+
+→ 제이 랜드의 "학습 강화 프로그램"과 동일 패턴
+→ 점수 미달 → 연구팀 분석 → 프롬프트 튜닝 → 재시험 → 복귀/퇴역
+→ 구현 참고: OpenAI 쿡북 코드 직접 참조 가능
+```
+
+### 3-9. Karpathy의 Recursive Science (2026년 3월)
+```
+Andrej Karpathy가 2026.3에 공개한 프로젝트:
+  "에이전트가 자기 코드를 수정 → 5분 테스트 → 평가 → 개선 시에만 커밋"
+  "연구는 이제 자율 에이전트 스웜의 영역이다"
+
+→ 제이 랜드의 연구팀 역할과 동일
+→ 서칭 → 구현/실험 → 평가 → 개선 시에만 반영
+→ STRATEGY.md의 "Recursive Science" 원칙과 직접 연결
+```
+
+### 3-10. Data Lake + Agent Observability (업계 전망, 2026)
+```
+업계 컨센서스:
+  "2026년 AI의 최대 병목은 모델이 아니라 데이터 파편화"
+  → Data Lake로 통합 + 데이터 리니지(계보) 추적 필수
+  → Time-travel: 과거 스냅샷으로 되돌리기 가능
+  → 데이터 품질 모니터링이 AI 품질의 기반
+
+Agent Observability 폭발적 성장:
+  15+개 전문 플랫폼 출현 (LangSmith, Langfuse, Arize, Maxim, Splunk)
+  89%의 조직이 에이전트 모니터링 구현
+  핵심: 트레이싱 + 비용 추적 + 품질 평가 + 이상 감지
+
+→ 데이터 사이언스 팀의 역할이 업계에서도 핵심
+→ 모니터링 대시보드 구현 방향: Langfuse/Maxim 패턴 참고
+→ 데이터 리니지 = RAG 경험 저장의 metadata 계보 추적
+```
+
+### 3-11. SEMA — 자율 진화 멀티에이전트 (2026)
+```
+StarCraft II에서 100% 승률 달성, 토큰 비용 90% 절감
+구조적 엔트로피 기반 프루닝 (중요한 정보만 남기고 노이즈 제거)
+의사결정 지연 50% 이상 감소
+
+→ 데이터 사이언스 팀이 해야 할 "의미있는 데이터 추출"과 동일
+→ 원시 데이터에서 노이즈 제거 → 핵심만 남기기
+→ 토큰 비용 절감 = 팀 제이의 "비용 $0" 목표와 일치
+```
+
+### 3-12. 학술 근거 총정리
+```
+제이 아이디어              학술/커뮤니티 대응           논문/출처
+──────────              ──────────────          ──────────
+에이전트 풀+동적 고용     CrewAI Dynamic Selection    CrewAI 포럼 2025
+고용 계약+인센티브        Principal-Agent Contract     arXiv 2407.18074 (노벨경제학상)
+확신도 보고              Confidence-weighted Rewards  arXiv 2505.18286
+인센티브 자동 조정        Auto-adjusting Incentives    arXiv 2409.02960 (+22%)
+그룹 경쟁               SEMA Competition             arXiv 2603.23875
+연구팀 진화 사이클        Karpathy Recursive Science   GitHub 2026.3
+학습 강화               OpenAI Self-Evolving 쿡북     OpenAI 2026
+RAG 경험 저장            EvolveR Self-Distillation    arXiv 2510.16079
+자율 진화 루프            Self-Evolving Framework      arXiv 2508.07407 서베이
+데이터 사이언스           Data Lake + Observability    Databricks/Splunk 2026
+모니터링 대시보드         Agent Observability          Langfuse/Maxim/Arize
+민원게시판               Agent Feedback Loop          Matoffo Hybrid Incentives
+안전 가드레일            Safety Benchmark              arXiv 2512.20798
+```
+
 ---
 
 ## 4. 기술 기반 (이미 보유)
