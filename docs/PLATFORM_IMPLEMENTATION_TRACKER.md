@@ -226,6 +226,7 @@ packages/core/lib/billing-guard.js
 bots/investment/scripts/analyze-rr.js
 bots/investment/scripts/trading-journal.js
 bots/investment/scripts/weekly-trade-review.js
+packages/core/lib/agent-registry.js
 ```
 
 ### 루나팀
