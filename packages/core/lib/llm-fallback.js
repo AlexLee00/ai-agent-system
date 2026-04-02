@@ -36,6 +36,7 @@ const {
   getGroqAccounts,
 } = require('./llm-keys');
 const { logLLMCall } = require('./llm-logger');
+const traceCollector = require('./trace-collector');
 const billingGuard = require('./billing-guard');
 const { trackTokens } = require('./token-tracker');
 const { fetchHubSecrets } = require('./hub-client');
@@ -472,6 +473,8 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
   if (!chain || chain.length === 0) throw new Error('폴백 체인이 비어 있음');
+  const traceRoute = logMeta.selectorKey || logMeta.requestType || null;
+  const trace = traceCollector.startTrace(logMeta.agentName || logMeta.bot || null, logMeta.team || null, traceRoute);
 
   let lastError;
   for (let i = 0; i < chain.length; i++) {
@@ -525,6 +528,18 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
         tokenOutput: tokensOut,
       }).catch(() => {});
 
+      traceCollector.recordGeneration(trace, {
+        model: cfg.model,
+        provider: cfg.provider,
+        route: traceRoute,
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
+        latencyMs,
+        status: i > 0 ? 'fallback' : 'success',
+        fallbackUsed: i > 0,
+        fallbackProvider: i > 0 ? cfg.provider : null,
+      });
+
       if (i > 0) {
         console.log(`  ↳ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 성공`);
       }
@@ -562,6 +577,17 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
         tokenInput: null,
         tokenOutput: null,
       }).catch(() => {});
+
+      traceCollector.recordGeneration(trace, {
+        model: cfg.model,
+        provider: cfg.provider,
+        route: traceRoute,
+        latencyMs,
+        status: 'error',
+        errorMessage: e.message,
+        fallbackUsed: i > 0,
+        fallbackProvider: i > 0 ? cfg.provider : null,
+      });
 
       const isLast = i === chain.length - 1;
       console.warn(`  ⚠️ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 실패: ${e.message?.slice(0, 80)}${isLast ? ' — 모든 폴백 소진' : ' → 다음 시도...'}`);
