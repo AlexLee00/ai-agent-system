@@ -133,7 +133,7 @@ SW 감정이란:
   역할: 감정서 초안의 논리 일관성, 법률 용어 정확성, 증거 충분성 검증
   이름 유래: 밸런스(저울) — 양측 균형 잡힌 공정한 검증
 
-에이전트 9: 컨트랙트 (Contract) — 계약서 검토 전문
+에이전트 9: 컨트로 (Contro) — 계약서 검토 전문
   역할: SW 개발 계약서, 유지보수 계약서, SLA 등 계약 문서 분석
   모델: anthropic (법률 문서 분석, 계약 조항 해석)
   기능:
@@ -244,7 +244,7 @@ bots/legal/                          ← 기존 디렉토리 활용
 │   ├── defense.js                   ← 피고 자료 분석
 │   ├── quill.js                     ← 감정서 초안 작성
 │   ├── balance.js                   ← 품질 검증
-│   ├── contract.js                  ← 계약서 검토
+│   ├── contro.js                  ← 계약서 검토
 │   ├── appraisal-store.js           ← 감정 DB 저장
 │   └── similarity-engine.js         ← 코드 유사도 측정 엔진
 ├── scripts/
