@@ -42,12 +42,41 @@ function _getLunaRoleBonus(requestedRole, agentRole) {
 }
 
 function _getTeamRoleAliases(team) {
+  if (team === 'darwin') {
+    return {
+      synthesis: new Set(['synthesis', 'synthesizer']),
+      synthesizer: new Set(['synthesis', 'synthesizer']),
+      verify: new Set(['reviewer', 'source_auditor', 'replicator', 'counterexample']),
+      research: new Set(['researcher', 'searcher', 'synthesizer']),
+      researcher: new Set(['researcher', 'searcher', 'synthesizer']),
+      searcher: new Set(['searcher', 'researcher']),
+      reviewer: new Set(['reviewer', 'source_auditor', 'counterexample']),
+    };
+  }
+
+  if (team === 'justin') {
+    return {
+      verify: new Set(['reviewer', 'citation_verifier', 'judge_simulator']),
+      reviewer: new Set(['reviewer', 'citation_verifier', 'judge_simulator']),
+      evidence: new Set(['evidence_mapper', 'precedent_comparer', 'damages_analyst']),
+      analyst: new Set(['analyst', 'citation_verifier', 'evidence_mapper', 'precedent_comparer', 'damages_analyst']),
+      writer: new Set(['writer']),
+    };
+  }
+
   if (team === 'sigma') {
     return {
       etl: new Set(['etl', 'engineer']),
       engineer: new Set(['engineer', 'etl']),
       ml: new Set(['ml', 'ml_engineer']),
       ml_engineer: new Set(['ml_engineer', 'ml']),
+      experiment: new Set(['experiment', 'experiment_designer']),
+      experiment_designer: new Set(['experiment', 'experiment_designer']),
+      feature: new Set(['feature', 'feature_engineer']),
+      feature_engineer: new Set(['feature', 'feature_engineer']),
+      quality: new Set(['quality', 'qa_sentinel', 'governance']),
+      qa_sentinel: new Set(['quality', 'qa_sentinel']),
+      observability: new Set(['observability', 'visualizer', 'visualization']),
       visualization: new Set(['visualization', 'visualizer']),
       visualizer: new Set(['visualizer', 'visualization']),
       governance: new Set(['governance']),
