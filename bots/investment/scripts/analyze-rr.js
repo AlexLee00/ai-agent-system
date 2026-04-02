@@ -223,7 +223,7 @@ async function analyzeRR() {
 
   // ── 6. 켈리 기준 포지션 사이징 (전체 실적 기반) ────────────────────
   if (total >= 10 && currentRR !== 'N/A') {
-    const { calcKellyPosition } = await import('../team/nemesis.js');
+    const { calcKellyPosition } = await import('../team/budget.js');
     const winRateFrac = wins / total;
     const rrVal       = parseFloat(currentRR);
     if (rrVal > 0) {

@@ -671,6 +671,7 @@ export async function evaluateSignal(signal, opts = {}) {
 
     if (persist && signal.id) {
       try {
+        const shadowHiring = await journalDb.hireAnalystForSignal(signal.exchange, symbol).catch(() => null);
         await journalDb.insertRationale({
           signal_id: signal.id,
           luna_decision: 'enter',
@@ -680,6 +681,7 @@ export async function evaluateSignal(signal, opts = {}) {
           nemesis_notes: adaptiveResult.llm.reasoning ?? null,
           position_size_original: signal.amount_usdt,
           position_size_approved: amountUsdt,
+          strategy_config: shadowHiring ? { shadow_hiring: shadowHiring } : {},
         });
       } catch (e) {
         console.warn(`  ⚠️ 매매일지 rationale 기록 실패: ${e.message}`);

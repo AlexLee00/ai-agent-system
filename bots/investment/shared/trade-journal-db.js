@@ -14,6 +14,7 @@ import { computeTradeExcursions } from './trade-review-metrics.js';
 import { getInvestmentTradeMode } from './secrets.js';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
+const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
 
 // ─── 지연 초기화 (첫 호출 시 자동 실행) ────────────────────────────
 
@@ -105,6 +106,17 @@ function _normalizeLegacyPerformanceAccuracy(row = {}) {
     sophia_accuracy: row.sophia_accuracy ?? accuracyMap.sentinel ?? null,
     oracle_accuracy: row.oracle_accuracy ?? accuracyMap.oracle ?? null,
     hermes_accuracy: row.hermes_accuracy ?? accuracyMap.sentinel ?? null,
+  };
+}
+
+function _extractShadowHiring(strategyConfig = {}) {
+  const payload = strategyConfig?.shadow_hiring || strategyConfig?.shadowHiring || null;
+  if (!payload || typeof payload !== 'object') return null;
+  const contractId = payload.contractId ?? payload.contract_id ?? null;
+  if (!contractId) return null;
+  return {
+    contractId,
+    analyst: payload.analyst || null,
   };
 }
 
@@ -641,6 +653,32 @@ export async function ensureAutoReview(tradeId, opts = {}) {
     strategy_adjustment: opts.strategyAdjustment ?? null,
   });
 
+  try {
+    const rationaleRows = await query(
+      `SELECT strategy_config
+       FROM trade_rationale
+       WHERE trade_id = ? OR signal_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tradeId, trade.signal_id ?? null],
+    );
+    const shadowHiring = _extractShadowHiring(rationaleRows[0]?.strategy_config || {});
+    if (shadowHiring?.contractId) {
+      const accurate = pnlPercent != null ? pnlPercent > 0 : null;
+      if (accurate != null) {
+        await evaluateAnalystContract(shadowHiring.contractId, accurate, {
+          duration_ms: trade.hold_duration ?? null,
+          quality: accurate ? 8.0 : 3.0,
+          symbol: trade.symbol,
+          exchange: trade.exchange,
+          analyst: shadowHiring.analyst,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(`[루나고용] 자동 평가 실패 (${tradeId}):`, err.message);
+  }
+
   return getReviewByTradeId(tradeId);
 }
 
@@ -713,6 +751,38 @@ export async function insertRationale(rationaleData) {
     );
   } catch (e) {
     console.warn('[trade-journal] trade_rationale INSERT 실패 (메인 로직에 영향 없음):', e.message);
+  }
+}
+
+export async function hireAnalystForSignal(market, symbol) {
+  await ensureInit();
+  try {
+    const bestAnalyst = await hiringContract.selectBestAgent('analyst', 'luna', { limit: 10 });
+    if (!bestAnalyst) return null;
+    console.log(`[루나고용] 분석가 선택: ${bestAnalyst.name} (${bestAnalyst.specialty || bestAnalyst.role})`);
+    const contract = await hiringContract.hire(bestAnalyst.name, {
+      team: 'luna',
+      description: `analysis: ${market}/${symbol}`,
+      requirements: { accuracy_min: 0.6 },
+    });
+    return { contractId: contract.contractId, analyst: bestAnalyst.name };
+  } catch (e) {
+    console.warn('[루나고용] 실패 (무시):', e.message);
+    return null;
+  }
+}
+
+export async function evaluateAnalystContract(contractId, accurate, details = {}) {
+  if (!contractId) return null;
+  try {
+    return await hiringContract.evaluate(contractId, {
+      quality: accurate ? 8.0 : 3.0,
+      accuracy: accurate,
+      ...details,
+    }, null);
+  } catch (e) {
+    console.warn('[루나고용] 평가 실패 (무시):', e.message);
+    return null;
   }
 }
 
@@ -869,6 +939,7 @@ export default {
   generateTradeId,
   insertJournalEntry, closeJournalEntry, getJournalEntryByTradeId, getLatestJournalEntryBySignalId, getReviewByTradeId, getTradeReviewInsight, ensureAutoReview, getOpenJournalEntries, getJournalByDate,
   insertRationale, linkRationaleToTrade,
+  hireAnalystForSignal, evaluateAnalystContract,
   insertReview,
   upsertDailyPerformance, getDailyPerformance, getWeeklyPerformance,
   logMonitorEvent, getApiFailureCount, getExecutionDelayStats, getUnresolvedIssues,

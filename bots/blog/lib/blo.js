@@ -67,6 +67,18 @@ const pipelineStore                                 = require('./pipeline-store'
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const COMPETITION_DAYS                              = [1, 3, 5];
 
+async function _selectBlogWriter(taskLabel, fallbackName) {
+  try {
+    const bestWriter = await hiringContract.selectBestAgent('writer', 'blog', { limit: 5 });
+    const writerName = bestWriter?.name || fallbackName;
+    console.log(`[고용] ${taskLabel} 작가 선택: ${writerName} (점수: ${bestWriter?.score || 'N/A'})`);
+    return writerName;
+  } catch (error) {
+    console.warn(`[고용] ${taskLabel} 작가 선택 실패 — ${fallbackName} 폴백:`, error.message);
+    return fallbackName;
+  }
+}
+
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
 async function ensureSchema() {
@@ -581,9 +593,10 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const context = prepared.context;
   const startTime = Date.now();
   let contractId = null;
+  const writerName = await _selectBlogWriter('강의', 'pos');
 
   try {
-    const contract = await hiringContract.hire('pos', {
+    const contract = await hiringContract.hire(writerName, {
       team: 'blog',
       description: `lecture: ${context.lectureTitle || '자동 주제'}`,
       requirements: { quality_min: 7.0, min_chars: 9000 },
@@ -670,9 +683,10 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
   const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
   const startTime = Date.now();
   let contractId = null;
+  const writerName = await _selectBlogWriter('일반', 'gems');
 
   try {
-    const contract = await hiringContract.hire('gems', {
+    const contract = await hiringContract.hire(writerName, {
       team: 'blog',
       description: `general: ${context.category || '자동 주제'}`,
       requirements: { quality_min: 7.0, min_chars: 9000 },
