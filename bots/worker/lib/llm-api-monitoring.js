@@ -17,7 +17,7 @@ const { getWorkerLLMSelectorOverrides } = require('./runtime-config');
 
 const SCHEMA = 'worker';
 const PREFERENCE_KEY = 'worker_monitoring_llm_api';
-const ALLOWED_APIS = ['groq', 'anthropic', 'openai', 'gemini'];
+const ALLOWED_APIS = ['groq', 'claude-code', 'anthropic', 'openai', 'gemini'];
 const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
 
 const API_CATALOG = {
@@ -26,6 +26,12 @@ const API_CATALOG = {
     label: 'Groq',
     primaryModel: 'meta-llama/llama-4-maverick-17b-128e-instruct',
     description: '빠른 응답이 필요한 워커 웹 분석에 적합한 무료 우선 경로입니다.',
+  },
+  'claude-code': {
+    key: 'claude-code',
+    label: 'Claude Code',
+    primaryModel: 'claude-code/sonnet',
+    description: '로그인 기반 Claude Code CLI를 통해 계정 인증 경로를 재사용하는 공식 브리지 후보입니다.',
   },
   anthropic: {
     key: 'anthropic',
@@ -105,6 +111,7 @@ async function ensureSystemPreferencesTable() {
 
 function isProviderConfigured(provider) {
   if (provider === 'groq') return Array.isArray(getGroqAccounts()) && getGroqAccounts().length > 0;
+  if (provider === 'claude-code') return require('fs').existsSync('/opt/homebrew/bin/claude');
   if (provider === 'anthropic') return Boolean(getAnthropicKey());
   if (provider === 'openai') return Boolean(getOpenAIKey());
   if (provider === 'gemini') return Boolean(getGeminiKey());
@@ -234,6 +241,7 @@ function buildChangeImpactSummary({ event, beforeRows, afterRows, windowHours = 
 }
 
 function providerFromModel(model = '') {
+  if (model.startsWith('claude-code/')) return 'claude-code';
   if (model.startsWith('claude-')) return 'anthropic';
   if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
   if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini';

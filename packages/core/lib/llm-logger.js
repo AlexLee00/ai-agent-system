@@ -86,6 +86,8 @@ const PRICING = {
   'claude-haiku-4-5':                         { input: 1.00,  output: 5.00  },
   'claude-sonnet-4-6':                        { input: 3.00,  output: 15.00 },
   'claude-opus-4-6':                          { input: 15.00, output: 75.00 },
+  'claude-code/sonnet':                       { input: 3.00,  output: 15.00 },
+  'claude-code/opus':                         { input: 15.00, output: 75.00 },
   'google-gemini-cli/gemini-2.5-flash':       { input: 0,     output: 0     },
   'gemini-2.5-flash':                         { input: 0,     output: 0     },
   'gpt-4o':                                   { input: 2.50,  output: 10.00 },
@@ -110,6 +112,8 @@ function _kstDate() {
 
 function _normalizeModel(model) {
   if (!model) return '';
+  if (model === 'claude-code/sonnet' || model === 'sonnet') return 'claude-code/sonnet';
+  if (model === 'claude-code/opus' || model === 'opus') return 'claude-code/opus';
   // gpt-4o-2024-08-06 → gpt-4o
   if (model.startsWith('gpt-4o-mini')) return 'gpt-4o-mini';
   if (model.startsWith('gpt-4o'))     return 'gpt-4o';
