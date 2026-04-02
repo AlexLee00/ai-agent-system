@@ -39,7 +39,7 @@ const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
 const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
 const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
-const COMPETITION_ENABLED = false;
+const COMPETITION_ENABLED = true;
 const COMPETITION_DAYS = [1, 3, 5];
 
 const _n8nCircuit = {

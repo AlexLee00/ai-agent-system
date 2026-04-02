@@ -65,6 +65,7 @@ const {
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
 const pipelineStore                                 = require('./pipeline-store');
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
+const COMPETITION_DAYS                              = [1, 3, 5];
 
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
@@ -73,6 +74,20 @@ async function ensureSchema() {
     await pgPool.run('blog', 'SELECT 1 FROM blog.daily_config LIMIT 1');
   } catch {
     console.warn('[블로] blog 스키마 미초기화 — 마이그레이션 필요: bots/blog/migrations/001-blog-schema.sql');
+  }
+}
+
+async function prepareCompetition(topic, postType) {
+  const today = new Date().getDay();
+  if (!COMPETITION_DAYS.includes(today)) {
+    return null;
+  }
+
+  try {
+    return await maestro.runCompetition(topic, postType);
+  } catch (error) {
+    console.warn(`[블로] 경쟁 준비 실패 — 기존 파이프라인으로 폴백 (${postType}):`, error.message);
+    return null;
   }
 }
 
@@ -781,6 +796,8 @@ async function run() {
         // 스케줄 상태 → writing
         if (lectureSchedule?.id) await updateScheduleStatus(lectureSchedule.id, 'writing');
 
+        await prepareCompetition(lectureTitle, 'lecture');
+
         const r = await runLecturePost(researchData, traceCtx, {
           number, seriesName, lectureTitle,
         }, lectureSchedule?.id);
@@ -805,6 +822,8 @@ async function run() {
 
       // 스케줄 상태 → writing
       if (scheduleId) await updateScheduleStatus(scheduleId, 'writing');
+
+      await prepareCompetition(category, 'general');
 
       const r = await runGeneralPost(researchData, traceCtx, {
         category,
