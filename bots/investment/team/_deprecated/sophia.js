@@ -1,6 +1,5 @@
 /**
  * team/sophia.js — 소피아 (커뮤니티 감성 분석가)
- * 호환 레이어: sentinel 통합 이후에도 기존 직접 호출 경로를 유지한다.
  *
  * 역할: 커뮤니티 감성 분석 (3시장)
  * LLM: Groq llama-4-scout (PAPER) / Groq llama-4-scout (LIVE, sophia는 Groq 전용)
