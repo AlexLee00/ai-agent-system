@@ -25,6 +25,27 @@ const DEFAULTS = {
     maestroHealthTimeoutMs: 2500,
     maestroCircuitCooldownMs: 30 * 60 * 1000,
   },
+  commenter: {
+    enabled: false,
+    blogId: 'cafe_library',
+    maxDaily: 20,
+    activeStartHour: 8,
+    activeEndHour: 22,
+    browserHttpUrl: 'http://127.0.0.1:18791',
+    browserWsEndpoint: '',
+    browserToken: '',
+    profileDir: '~/.openclaw/workspace/naver-profile',
+    pageReadMinSec: 30,
+    pageReadMaxSec: 90,
+    typingMinSec: 20,
+    typingMaxSec: 45,
+    betweenCommentsMinSec: 60,
+    betweenCommentsMaxSec: 180,
+    minReplyLen: 50,
+    maxReplyLen: 200,
+    maxDetectPerCycle: 20,
+    maxProcessPerCycle: 20,
+  },
   llmSelectorOverrides: {
     'blog.pos.writer': {
       chain: [
@@ -92,8 +113,13 @@ function getBlogLLMSelectorOverrides() {
   return loadRuntimeConfig().llmSelectorOverrides || {};
 }
 
+function getBlogCommenterConfig() {
+  return loadRuntimeConfig().commenter || {};
+}
+
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
+  getBlogCommenterConfig,
   getBlogLLMSelectorOverrides,
 };
