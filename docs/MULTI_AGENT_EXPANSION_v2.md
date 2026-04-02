@@ -1149,3 +1149,39 @@ N8N 워크플로우와 연동: 각 노드 사이에 검증 노드 자동 삽입
 *Phase 0 완료 후 Phase 1 상세 설계로 진행.*
 *메티 기획, 마스터 방향 설정, 코덱스 구현.*
 *연구팀이 10장 모듈을 순차 구현하여 제이 랜드를 더 탄탄하게 만든다.*
+
+
+---
+
+## §10-10. 팀별 스킬 + MCP 외부연동 전략 (2026-04-03 추가)
+
+> 근거: MCP 공식 레지스트리 177K+ 도구, arXiv 2603.23802 분석,
+>       Frase/altFINS/Nansen/VectCutAPI/네이버 검색광고 MCP 등 커뮤니티 검증
+
+### 전략 요약
+
+에이전트의 능력 = 스킬(내부) + MCP(외부)
+
+- **스킬** = 내부 Node.js 모듈 (packages/core/lib/skills/)
+  33개 스킬 × 8팀, 비용 $0, 완전 제어
+- **MCP** = 외부 서비스 연결 (Model Context Protocol)
+  무료 9개 + 유료 4개 = 13 MCP 연동
+  2026 업계 표준 (Anthropic+OpenAI+Google 채택)
+
+### 즉시 적용 MCP (비용 $0)
+
+| MCP | 팀 | 핵심 |
+|---|---|---|
+| Alpha Vantage | 루나 | 60+ 금융 도구 (주식/외환/암호화폐) |
+| 네이버 검색광고 | 블로 | 키워드 검색량/경쟁강도 (한국 55~60%) |
+| binance-mcp | 루나 | 실시간 바이낸스 시장 데이터 |
+| CapCut MCP | 에디 | 11개 영상 편집 도구 (VectCutAPI) |
+| GitHub MCP | 연구+블로 | 레포/이슈/PR/트렌딩 |
+| Context7 MCP | 연구 | 개발자 문서 실시간 접근 |
+| Semgrep MCP | 연구 | 코드 보안 분석 |
+
+### 상세 설계서
+
+→ docs/design/DESIGN_SKILLS_MCP.md (484줄)
+  8팀 × (스킬 상세 + MCP 연동 + 구현 우선순위)
+
