@@ -13,8 +13,10 @@ const kst = require('../../../packages/core/lib/kst');
 
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const env = require('../../../packages/core/lib/env');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ─── 상수 ─────────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ function _shuffle(arr) {
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
 async function _ensureHistoryTable() {
+  if (DEV_HUB_READONLY) return;
   try {
     await pgPool.run('blog', `
       CREATE TABLE IF NOT EXISTS blog.execution_history (
@@ -123,6 +126,7 @@ async function getRecentHistory(postType, days = 7) {
  * @param {object} variations
  */
 async function saveExecutionHistory(date, postType, pipeline, variations) {
+  if (DEV_HUB_READONLY) return;
   try {
     await pgPool.run('blog', `
       INSERT INTO blog.execution_history (run_date, post_type, pipeline, variations)

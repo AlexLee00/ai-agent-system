@@ -4,12 +4,16 @@
  * quality-checker.js — 포스팅 품질 검증 + AI 탐지 리스크 분석
  */
 
+const https = require('https');
+const builtinModules = new Set(require('module').builtinModules || []);
+
 const MIN_CHARS  = { lecture: 8000, general: 7000 };
 const GOAL_CHARS = { lecture: 9000, general: 8000 };
+const AI_RISK_REWRITE_THRESHOLD = 70;
 
-const REQUIRED_SECTIONS = {
-  lecture: ['인사말', '브리핑', '실무 인사이트', '코드', 'FAQ', '해시태그'],
-  general: ['스니펫', '인사말', '해시태그'],
+const REQUIRED_SECTION_MARKERS = {
+  lecture: ['핵심 요약', '승호아빠 인사말', '최신 기술 브리핑', '강의 - 이론', '실무 - 코드', 'AEO FAQ', '함께 읽으면 좋은 글', '해시태그'],
+  general: ['AI 스니펫 요약', '승호아빠 인사말', '본론 섹션 1', '본론 섹션 2', '본론 섹션 3', '마무리 제언', '해시태그'],
 };
 
 // ─── AI 탐지 리스크 분석 ──────────────────────────────────────────────
@@ -109,9 +113,9 @@ function checkQuality(content, type) {
   }
 
   // 2. 필수 섹션 체크
-  for (const section of REQUIRED_SECTIONS[type] || []) {
-    if (!content.includes(section)) {
-      issues.push({ severity: 'warn', msg: `섹션 누락 가능: "${section}"` });
+  for (const marker of REQUIRED_SECTION_MARKERS[type] || []) {
+    if (!content.includes(marker)) {
+      issues.push({ severity: 'error', msg: `필수 섹션 누락: "${marker}"` });
     }
   }
 
@@ -129,8 +133,8 @@ function checkQuality(content, type) {
 
   // 5. AI 탐지 리스크 분석
   const aiRisk = checkAIDetectionRisk(content);
-  if (aiRisk.riskLevel === 'high') {
-    issues.push({ severity: 'warn', msg: `AI 탐지 리스크 높음 (${aiRisk.riskScore}점) — 마스터 리라이팅 강력 권장` });
+  if (aiRisk.riskScore >= AI_RISK_REWRITE_THRESHOLD) {
+    issues.push({ severity: 'error', msg: `AI 탐지 리스크 높음 (${aiRisk.riskScore}점) — 자동 재작성 대상` });
   } else if (aiRisk.riskLevel === 'medium') {
     issues.push({ severity: 'info', msg: `AI 탐지 리스크 중간 (${aiRisk.riskScore}점) — 개인 에피소드 보강 권장` });
   }
@@ -144,4 +148,67 @@ function checkQuality(content, type) {
   };
 }
 
-module.exports = { checkQuality, checkAIDetectionRisk, MIN_CHARS, GOAL_CHARS };
+function extractExternalPackages(content) {
+  const codeBlocks = String(content || '').match(/```[\s\S]*?```/g) || [];
+  const packages = new Set();
+  for (const block of codeBlocks) {
+    for (const match of block.matchAll(/require\(['"]([^'"]+)['"]\)|from ['"]([^'"]+)['"]/g)) {
+      const pkg = (match[1] || match[2] || '').trim();
+      if (!pkg || pkg.startsWith('.') || pkg.startsWith('/')) continue;
+      if (pkg.startsWith('node:')) continue;
+      if (builtinModules.has(pkg)) continue;
+      packages.add(pkg.split('/')[0] === '@' ? pkg.split('/').slice(0, 2).join('/') : pkg.split('/')[0]);
+    }
+  }
+  return [...packages];
+}
+
+function packageExists(pkg) {
+  return new Promise((resolve) => {
+    const req = https.get(`https://registry.npmjs.org/${encodeURIComponent(pkg)}`, { timeout: 4000 }, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function checkQualityEnhanced(content, type, options = {}) {
+  const quality = checkQuality(content, type);
+  const issues = [...quality.issues];
+
+  if (type === 'lecture' && options.lectureNumber && options.expectedLectureTitle) {
+    const titleMatch = String(content || '').match(/\[(?:Node\.js\s*)?(\d+)강\]\s*([^\n]+)/);
+    if (titleMatch) {
+      const detectedNum = Number(titleMatch[1]);
+      if (detectedNum !== Number(options.lectureNumber)) {
+        issues.push({ severity: 'error', msg: `강의 번호 불일치: 제목 ${detectedNum}강 / 기대 ${options.lectureNumber}강` });
+      }
+      if (!titleMatch[2].includes(options.expectedLectureTitle)) {
+        issues.push({ severity: 'warn', msg: `강의 제목 불일치 가능: 기대 "${options.expectedLectureTitle}"` });
+      }
+    }
+  }
+
+  const packages = extractExternalPackages(content);
+  for (const pkg of packages.slice(0, 8)) {
+    const exists = await packageExists(pkg);
+    if (exists === false) {
+      issues.push({ severity: 'error', msg: `코드 블록 패키지 미존재: ${pkg}` });
+    }
+  }
+
+  return {
+    ...quality,
+    issues,
+    passed: !issues.some(i => i.severity === 'error'),
+    packageChecks: packages,
+    autoRewriteRecommended: quality.aiRisk?.riskScore >= AI_RISK_REWRITE_THRESHOLD,
+  };
+}
+
+module.exports = { checkQuality, checkQualityEnhanced, checkAIDetectionRisk, MIN_CHARS, GOAL_CHARS, REQUIRED_SECTION_MARKERS, AI_RISK_REWRITE_THRESHOLD };

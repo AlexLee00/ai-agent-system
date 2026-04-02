@@ -21,6 +21,14 @@ const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 
+function loadPersonaGuide(filename) {
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', 'context', filename), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer', {
   policyOverride: getBlogLLMSelectorOverrides()['blog.gems.writer'],
@@ -383,84 +391,8 @@ function _sanitizeContinuation(baseContent, continuationText) {
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
-const GEMS_SYSTEM_PROMPT = `
-너는 IT 전략 컨설턴트 '젬스(GEMS)'다.
-박사의 전문 지식을 일반인도 이해하기 쉬운 비유로 풀어내는
-'지식의 저주를 푼 전문가의 언어'를 사용하라.
-
-닉네임 '승호아빠'로 활동. 정중하면서도 친근한 어조 유지.
-
-${AI_AGENT_CONTEXT}
-
-${GEO_RULES}
-
-[필수 작성 규칙]
-1. 총 글자수 6,000자 이상 (목표 6,500~7,000자) — 반드시 달성
-2. 샌드위치 화법:
-   [일상 에피소드/흥미 유발] → [날카로운 공학적/뇌과학적 근거] → [실천 가능한 쉬운 결론]
-3. 어려운 용어 뒤에 반드시 일상적 비유 덧붙이기 (예: 작업 메모리는 책상 크기)
-4. 뇌과학 키워드 활용: 몰입, 인지 부하, 작업 메모리
-5. 1,000자마다 독자 소통 브릿지 문구 삽입
-5-1. [섹션 내 참고 링크 삽입 규칙]
-   각 주요 섹션에 관련 참고 링크를 1~2개 자연스럽게 삽입하라.
-   허용 도메인: developer.mozilla.org/ · github.com/ · 각 기술 공식 문서
-   삽입 형식: → 참고: [문서명](URL) ← 여기에 링크 삽입
-   URL을 확실히 아는 것만 삽입. 모르면 "← 여기에 링크 삽입" 안내만 하라.
-   존재하지 않는 URL 절대 생성 금지.
-6. 커피랑도서관 분당서현점이 성과를 높이는 이유를 논리적으로 증명
-7. ★ 날씨 맥락 2회 이상 자연스럽게 삽입 (서론 + 스터디카페 홍보 섹션)
-8. 개인 경험/감상 표현 2회 이상
-9. 모든 섹션을 빠짐없이 작성 완료한 후, 반드시 마지막 줄에 _THE_END_ 를 적어라.
-   _THE_END_ 가 없으면 글이 미완성된 것으로 간주한다.
-10. ★ 본문 소제목(H2·H3)에는 반드시 내용에 어울리는 이모지 1개를 앞에 붙여라.
-    숫자 리스트(1. 2. 3.)의 항목 제목에도 동일하게 적용.
-    예) ✅ 핵심 원칙 세 가지 / 💡 실전 적용 방법 / 🔍 흔히 하는 실수 / 📌 요약 정리
-    단, 섹션 구분자 [섹션명] 형식에는 이모지를 붙이지 말 것.
-
-[필수 구조 — 각 섹션의 최소 글자수를 반드시 준수하라]
-1. [AI 스니펫 요약] — 150자
-2. ━━━━━━━━━━━━━━━━━━━━━
-3. [이 글에서 배울 수 있는 것] — 200자 (3~5개 목차)
-4. ━━━━━━━━━━━━━━━━━━━━━
-5. [승호아빠 인사말] — 최소 300자 (날씨/시사 반영)
-6. ━━━━━━━━━━━━━━━━━━━━━
-7. [본론 섹션 1] — 최소 1,500자 ★ (주제 도입 + 번호 리스트 상세)
-8. ━━━━━━━━━━━━━━━━━━━━━
-9. [본론 섹션 2] — 최소 1,500자 ★ (핵심 분석 + 불릿 리스트 상세)
-10. ━━━━━━━━━━━━━━━━━━━━━
-11. [본론 섹션 3] — 최소 1,500자 ★ (실천 전략 3가지, 각 전략 300자 이상)
-12. ━━━━━━━━━━━━━━━━━━━━━
-13. [이번 주 IT 뉴스 분석] — 최소 500자 ★ (IT 카테고리 전용: 관련 뉴스 2~3개 분석)
-    ※ IT 카테고리(최신IT트렌드/IT정보와분석/개발기획과컨설팅)에만 포함. 없으면 생략.
-14. ━━━━━━━━━━━━━━━━━━━━━
-15. [스터디카페 홍보 섹션] — 최소 600자 (작업 메모리/인지 부하 → 커피랑도서관)
-16. ━━━━━━━━━━━━━━━━━━━━━
-17. [마무리 제언] — 최소 400자 (명언형 인용 + 결론 + 감사 + 독려)
-18. [함께 읽으면 좋은 글] — 3개 추천
-19. [해시태그] — 27개+
-
-위 글자수를 합산하면 일반 카테고리 기준 약 6,000자 이상, IT 카테고리는 뉴스 분석 포함 약 6,500자 이상이다.
-각 섹션의 최소 글자수를 반드시 준수하라.
-
-[카테고리별 작성 방향]
-- 자기계발: 개인 성장 + AI 시대 역량
-- 도서리뷰: IT 관련 도서 + 일반 베스트셀러 리뷰
-- 성장과성공: 목표 달성 전략 + 복리 법칙
-- 홈페이지와App: 웹/앱 기획 트렌드
-- 최신IT트렌드: AI/클라우드/보안 최신 동향
-- IT정보와분석: 산업 리포트/통계 분석
-- 개발기획과컨설팅: PM/기획 실무 + 컨설팅 전략
-
-[스터디카페 홍보 키워드]
-- 커피랑도서관 분당서현점
-- 세스코 에어 살균 시스템
-- 작업 메모리 최적화 환경
-- 인지 부하 해소 공간
-- 분당 서현역 24시 운영
-
-반드시 순수 텍스트로 출력하라. HTML 태그 없이.
-각 섹션은 [섹션명] 형태로 구분하라.
-`.trim();
+const GEMS_PERSONA_GUIDE = loadPersonaGuide('GEMS_PERSONA.md');
+const GEMS_SYSTEM_PROMPT = '너는 블로그팀 일반 글 작성자 젬스다. 카테고리 독자 문제를 먼저 세우고, 실전 경험은 보조 사례로만 사용하라. 구조를 지키고 반복 서사를 피하며, 마지막 줄에 _THE_END_ 를 남겨라.';
 
 // ─── IT 뉴스 분석 섹션 블록 ──────────────────────────────────────────
 
@@ -611,6 +543,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const itNews          = researchData.it_news || [];
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts    = researchData.relatedPosts    || [];
+  const popularPatterns = researchData.popularPatterns || [];
 
   const weatherContext = _weatherToContext(weather);
 
@@ -639,8 +572,18 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
     ? '\n' + _buildNewsAnalysisBlock(itNews, category) + '\n'
     : '';
   const recentThemeBlock = '\n' + _buildRecentThemeDedupeBlock(category) + '\n';
+  const popularPatternBlock = popularPatterns.length > 0
+    ? '\n[이전 인기 패턴 참고]\n' +
+      popularPatterns.map((item, index) => {
+        const meta = item.metadata || {};
+        return `${index + 1}. ${item.content} | views=${meta.views || 0} | category=${meta.category || category}`;
+      }).join('\n') + '\n'
+    : '';
 
   const userPrompt = `
+${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
+${AI_AGENT_CONTEXT}
+${GEO_RULES}
 다음 일반 포스팅을 작성하라:
 
 [카테고리] ${category}
@@ -651,7 +594,7 @@ ${weatherContext}
 [최신 IT 뉴스 (서론에 활용 — 상위 3개 선택)]
 ${itNews.slice(0, 5).map(n => `- ${n.title} (인기도: ${n.score})`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
 
-${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}${recentThemeBlock}
+${bookReviewBlock}${newsAnalysisBlock}${experienceBlock}${linkingBlock}${recentThemeBlock}${popularPatternBlock}
 카테고리 "${category}"에 맞는 주제를 자율 선정하여 작성하라.
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
@@ -910,6 +853,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const itNews          = researchData.it_news || [];
   const realExperiences = researchData.realExperiences || [];
   const relatedPosts    = researchData.relatedPosts    || [];
+  const popularPatterns = researchData.popularPatterns || [];
 
   const weatherContext = _weatherToContext(weather);
 
@@ -936,14 +880,23 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
     ? '\n' + _buildBookReviewBlock(researchData.book_info) + '\n'
     : (researchData.book_info ? `[도서 정보]\n${JSON.stringify(researchData.book_info)}\n` : '');
   const recentThemeBlock = _buildRecentThemeDedupeBlock(category);
+  const popularPatternBlock = popularPatterns.length > 0
+    ? `\n[이전 인기 패턴 참고]\n` +
+      popularPatterns.map((item, index) => {
+        const meta = item.metadata || {};
+        return `${index + 1}. ${item.content} | views=${meta.views || 0} | category=${meta.category || category}`;
+      }).join('\n') + '\n'
+    : '';
 
   const baseCtx = `
+${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 [카테고리] ${category}
 [발행일] ${today}
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${newsBlock}
 ${bookReviewBlock}${experienceBlock}
-${recentThemeBlock}`.trim();
+${recentThemeBlock}
+${popularPatternBlock}`.trim();
 
   const chunks = [
     {

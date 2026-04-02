@@ -29,12 +29,18 @@ const kst = require('./kst');
 
 const crypto  = require('crypto');
 const pgPool  = require('./pg-pool');
+const env     = require('./env');
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ── 초기화 플래그 ─────────────────────────────────────────────────────
 let _initialized = false;
 
 async function _ensureTable() {
   if (_initialized) return;
+  if (DEV_HUB_READONLY) {
+    _initialized = true;
+    return;
+  }
   await pgPool.run('reservation', `
     CREATE TABLE IF NOT EXISTS llm_cache (
       id              SERIAL PRIMARY KEY,
@@ -128,9 +134,11 @@ async function getCached(team, requestType, input) {
 
     if (!row) return null;
 
-    await pgPool.run('reservation', `
-      UPDATE llm_cache SET hit_count = hit_count + 1 WHERE id = $1
-    `, [row.id]);
+    if (!DEV_HUB_READONLY) {
+      await pgPool.run('reservation', `
+        UPDATE llm_cache SET hit_count = hit_count + 1 WHERE id = $1
+      `, [row.id]);
+    }
 
     return { response: row.response, model: row.model, hitCount: parseInt(row.hit_count) + 1 };
   } catch { return null; }
@@ -145,6 +153,7 @@ async function getCached(team, requestType, input) {
  * @param {string}        model       사용한 모델
  */
 async function setCache(team, requestType, input, response, model) {
+  if (DEV_HUB_READONLY) return;
   try {
     await _ensureTable();
     const key     = generateCacheKey(team, requestType, input);
@@ -200,6 +209,7 @@ async function getCacheStats(days = 7) {
  * @returns {Promise<number>} 삭제 건수
  */
 async function cleanExpired() {
+  if (DEV_HUB_READONLY) return 0;
   try {
     await _ensureTable();
     const { rowCount } = await pgPool.run('reservation', `

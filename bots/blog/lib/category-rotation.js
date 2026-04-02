@@ -85,6 +85,14 @@ async function advanceLectureNumber() {
   `);
 }
 
+async function resetLectureNumber(currentIndex = 55) {
+  await pgPool.run('blog', `
+    UPDATE blog.category_rotation
+    SET current_index = $1, updated_at = NOW()
+    WHERE rotation_type = 'lecture_series'
+  `, [Number(currentIndex || 0)]);
+}
+
 /**
  * 현재 시리즈 완료 여부 체크
  */
@@ -118,6 +126,7 @@ module.exports = {
   advanceGeneralCategory,
   getNextLectureNumber,
   advanceLectureNumber,
+  resetLectureNumber,
   isSeriesComplete,
   getLectureTitle,
 };

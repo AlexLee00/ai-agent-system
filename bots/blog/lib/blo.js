@@ -45,13 +45,14 @@ const {
   writeGeneralPostChunked,
   repairGeneralPostDraft,
 }                                                   = require('./gems-writer');
-const { checkQuality }                              = require('./quality-checker');
-const { publishToFile }                             = require('./publ');
+const { checkQualityEnhanced }                      = require('./quality-checker');
+const { publishToFile, recordPerformance }          = require('./publ');
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const { createMessage }                             = require('../../../packages/core/lib/message-envelope');
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
+const env                                           = require('../../../packages/core/lib/env');
 const {
   buildReportEvent,
   renderReportEvent,
@@ -62,6 +63,7 @@ const {
 }                                                   = require('../../../packages/core/lib/reporting-hub');
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
 const pipelineStore                                 = require('./pipeline-store');
+const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
 
@@ -76,6 +78,7 @@ async function ensureSchema() {
 // ─── State Bus 이벤트 발행 ────────────────────────────────────────────
 
 async function _emitEvent(eventType, detail) {
+  if (DEV_HUB_READONLY) return;
   try {
     await stateBus.emitEvent('blog-blo', 'claude-lead', eventType, detail);
   } catch (e) {
@@ -87,18 +90,12 @@ async function _emitEvent(eventType, detail) {
 
 async function searchPastPosts(topic) {
   try {
-    await rag.initSchema();
+    if (!DEV_HUB_READONLY) {
+      await rag.initSchema();
+    }
     const hits = await rag.search('blog', topic, { limit: 3, threshold: 0.6 });
     return hits || [];
   } catch { return []; }
-}
-
-async function getPopularPatterns() {
-  try {
-    const hits = await rag.search('blog', '인기패턴 popular_pattern', { limit: 5 });
-    if (!hits?.length) return null;
-    return { topPosts: hits.map(h => h.content?.slice(0, 100)) };
-  } catch { return null; }
 }
 
 // ─── 리라이팅 가이드 생성 ─────────────────────────────────────────────
@@ -125,19 +122,26 @@ function _logQualityResult(quality, charCount) {
 
 async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   let post = draft;
-  let quality = checkQuality(post.content, kind);
+  let quality = await checkQualityEnhanced(post.content, kind, {
+    lectureNumber: kind === 'lecture' ? context.number : null,
+    expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
+  });
   _logQualityResult(quality, post.charCount);
 
-  if (!quality.passed) {
-    console.log('[품질] 초안 보정 시도...');
+  for (let attempt = 0; attempt < 2 && (!quality.passed || quality.autoRewriteRecommended); attempt += 1) {
+    console.log(`[품질] 초안 보정 시도... (${attempt + 1}/2)`);
     const retry = await repairFn(context, post, quality, variation);
-    const retryQuality = checkQuality(retry.content, kind);
+    const retryQuality = await checkQualityEnhanced(retry.content, kind, {
+      lectureNumber: kind === 'lecture' ? context.number : null,
+      expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
+    });
+    post = retry;
+    quality = retryQuality;
     if (retryQuality.passed) {
-      post = retry;
-      quality = retryQuality;
       console.log('[품질] ✅ 초안 보정 통과');
+      if (!retryQuality.autoRewriteRecommended) break;
     } else {
-      console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 최초 결과 유지');
+      console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 추가 보정 여부 판단');
     }
   }
 
@@ -190,6 +194,10 @@ async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail) {
     ...eventDetail,
     traceId: traceCtx.trace_id,
   });
+
+  if (published?.postId && postData?.performanceMetrics) {
+    await recordPerformance(published.postId, postData.performanceMetrics);
+  }
 
   return published;
 }
@@ -251,6 +259,9 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   console.log(`[블로] MessageEnvelope → 포스 (${writeReq.message_id.slice(0, 8)})`);
 
   const preparedResearch = { ...researchData };
+  if (researchData.lecturePopularPatterns?.length) {
+    preparedResearch.popularPatterns = researchData.lecturePopularPatterns;
+  }
   const pastPosts = await searchPastPosts(lectureTitle);
   if (pastPosts.length > 0) {
     console.log(`[블로] 유사 과거 포스팅 ${pastPosts.length}건 발견 — 차별화 데이터 포함`);
@@ -329,7 +340,13 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
   });
 
-  await advanceLectureNumber();
+  if (!published?.reused && !DEV_HUB_READONLY) {
+    await advanceLectureNumber();
+  } else if (published?.reused) {
+    console.log(`[블로] 강의 ${context.number}강 재실행 감지 — 인덱스 증가 생략`);
+  } else {
+    console.log(`[블로] DEV/HUB 읽기 전용 — 강의 인덱스 증가 생략 (${context.number}강)`);
+  }
 
   const instaContent = await _createInstaContentSafe(
     post.content,
@@ -379,7 +396,13 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     charCount: post.charCount,
   });
 
-  await advanceGeneralCategory();
+  if (!published?.reused && !DEV_HUB_READONLY) {
+    await advanceGeneralCategory();
+  } else if (published?.reused) {
+    console.log(`[블로] 일반 포스팅 재실행 감지 (${context.category}) — 카테고리 증가 생략`);
+  } else {
+    console.log(`[블로] DEV/HUB 읽기 전용 — 일반 카테고리 증가 생략 (${context.category})`);
+  }
 
   return {
     type:         'general',
@@ -411,8 +434,8 @@ async function _prepareDailyRun(traceCtx) {
   });
 
   const researchData = await richer.research('general', false);
-  const popularPatterns = await getPopularPatterns();
-  if (popularPatterns) researchData.popularPatterns = popularPatterns;
+  researchData.popularPatterns = await richer.searchPopularPatterns('general');
+  researchData.lecturePopularPatterns = await richer.searchPopularPatterns('lecture');
 
   const scheduleContext = await getTodayContext();
   const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
@@ -543,10 +566,13 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
   return await withTrace(traceCtx, async () => {
     const runLocalDraft = async variation => {
-      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
-      const post = useChunked
-        ? await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation)
-        : await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
+      let post;
+      try {
+        post = await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation);
+      } catch (e) {
+        console.warn('[블로] 강의 분할 생성 실패 — 단일 생성 폴백:', e.message);
+        post = await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
+      }
       return _runQualityRepair(
         'lecture',
         context,
@@ -585,10 +611,13 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
 
   return await withTrace(traceCtx, async () => {
     const runLocalDraft = async variation => {
-      const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
-      const post = useChunked
-        ? await writeGeneralPostChunked(context.category, context.researchData, variation)
-        : await writeGeneralPost(context.category, context.researchData, variation);
+      let post;
+      try {
+        post = await writeGeneralPostChunked(context.category, context.researchData, variation);
+      } catch (e) {
+        console.warn('[블로] 일반 분할 생성 실패 — 단일 생성 폴백:', e.message);
+        post = await writeGeneralPost(context.category, context.researchData, variation);
+      }
       return _runQualityRepair(
         'general',
         { category: context.category, data: context.researchData },
