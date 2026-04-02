@@ -204,6 +204,7 @@ packages/core/lib/rag.js              — pgvector RAG
 packages/core/lib/llm-fallback.js
 packages/core/lib/llm-logger.js
 packages/core/lib/llm-model-selector.js
+packages/core/lib/shadow-mode.js        — 섀도우 모드 (에이전트 alias 해석, 04-02)
 bots/investment/nodes/helpers.js
 bots/investment/nodes/index.js
 bots/investment/nodes/l03-sentinel.js
@@ -238,8 +239,10 @@ bots/blog/config.json — 운영 설정
 
 ### 클로드팀
 ```
-bots/claude/src/dexter.js — 시스템 점검 (22개 체크)
+bots/claude/src/dexter.js — 시스템 점검 (23개 체크, error-logs 추가)
 bots/claude/lib/team-bus.js — 팀 버스
+bots/claude/lib/checks/security.js — 보안 점검 (false positive 수정, 04-02)
+bots/claude/lib/doctor.js — 자동 복구 (scanAndRecover 능동화, 03-30)
 bots/claude/.checksums.json
 ```
 
