@@ -15,10 +15,10 @@
 import https from 'https';
 import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
-import * as db from '../shared/db.js';
-import { callLLM, parseJSON } from '../shared/llm-client.js';
-import { loadSecrets } from '../shared/secrets.js';
-import { ANALYST_TYPES, ACTIONS } from '../shared/signal.js';
+import * as db from '../../shared/db.js';
+import { callLLM, parseJSON } from '../../shared/llm-client.js';
+import { loadSecrets } from '../../shared/secrets.js';
+import { ANALYST_TYPES, ACTIONS } from '../../shared/signal.js';
 
 // ─── 소스 설정 ────────────────────────────────────────────────────────
 
