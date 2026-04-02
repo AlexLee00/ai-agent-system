@@ -15,7 +15,7 @@
     },
     "jayModels": {
       "gatewayPrimary": "google-gemini-cli/gemini-2.5-flash",
-      "intentPrimary": "gpt-5-mini",
+      "intentPrimary": "gpt-5.4",
       "intentFallback": "gemini-2.5-flash",
       "chatFallbackChain": [
         {
@@ -35,8 +35,8 @@
     "llmSelectorOverrides": {
       "orchestrator.jay.intent": {
         "primary": {
-          "provider": "openai",
-          "model": "gpt-5-mini"
+          "provider": "openai-oauth",
+          "model": "gpt-5.4"
         },
         "fallback": {
           "provider": "gemini",
