@@ -240,6 +240,9 @@ bots/orchestrator/src/mainbot.js — 알람 큐 처리 (Phase 4 퇴역 예정)
 bots/orchestrator/src/filter.js — 알람 필터링 (Phase 4 Standing Orders 이전 예정)
 bots/orchestrator/scripts/experience-store-cli.js — RAG 경험 저장 CLI (04-02 신규)
 bots/orchestrator/CLAUDE.md — Claude Code 컨텍스트 (04-02 신규)
+bots/orchestrator/lib/write/doc-archiver.js
+bots/orchestrator/lib/write/doc-sync-checker.js
+bots/orchestrator/src/write.js
 ```
 
 ### RAG + 자기학습
