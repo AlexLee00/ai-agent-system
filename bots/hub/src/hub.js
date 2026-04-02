@@ -15,6 +15,10 @@ const {
   agentsDashboardRoute,
   agentsAlwaysOnRoute,
   agentsTraceStatsRoute,
+  agentsSelectRoute,
+  agentsLowPerformersRoute,
+  agentsHireRoute,
+  agentsEvaluateRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 } = require('../lib/routes/agents');
@@ -67,7 +71,11 @@ app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
 app.get('/hub/agents', generalLimiter, agentsListRoute);
 app.get('/hub/agents/dashboard', generalLimiter, agentsDashboardRoute);
 app.get('/hub/agents/always-on', generalLimiter, agentsAlwaysOnRoute);
+app.get('/hub/agents/select', generalLimiter, agentsSelectRoute);
+app.get('/hub/agents/low-performers', generalLimiter, agentsLowPerformersRoute);
 app.get('/hub/agents/stats/traces', generalLimiter, agentsTraceStatsRoute);
+app.post('/hub/agents/hire', generalLimiter, agentsHireRoute);
+app.post('/hub/agents/evaluate', generalLimiter, agentsEvaluateRoute);
 app.get('/hub/agents/:name/stats/traces', generalLimiter, agentTraceStatsRoute);
 app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 
