@@ -1,5 +1,6 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
+const env = require('../../../packages/core/lib/env');
 
 /**
  * bots/blog/lib/schedule.js — 일자별 발행 스케줄 관리
@@ -28,6 +29,7 @@ function _getPlanner() {
 
 const IS_TEST    = process.env.BLOG_TEST_MODE  === 'true';
 const RUN_DATE   = process.env.BLOG_RUN_DATE  || null;   // YYYY-MM-DD, 미설정 시 오늘
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 function _today() {
   return RUN_DATE || kst.today();
@@ -71,6 +73,7 @@ async function getScheduleByDate(date) {
  * @param {number|null} [postId]
  */
 async function updateScheduleStatus(id, status, postId = null) {
+  if (DEV_HUB_READONLY) return;
   try {
     await pgPool.run('blog', `
       UPDATE blog.publish_schedule
@@ -88,6 +91,7 @@ async function updateScheduleStatus(id, status, postId = null) {
  * @param {{ book_title, book_author, book_isbn }} bookInfo
  */
 async function updateBookInfo(id, bookInfo) {
+  if (DEV_HUB_READONLY) return;
   try {
     await pgPool.run('blog', `
       UPDATE blog.publish_schedule
@@ -114,6 +118,14 @@ async function ensureSchedule(date = _today()) {
     // category-rotation에서 현재 값 조회
     const { category } = await getNextGeneralCategory();
 
+    if (DEV_HUB_READONLY) {
+      console.log(`[스케줄] DEV/HUB 읽기 전용 — ${date} 합성 스케줄 사용 (${category})`);
+      return [
+        { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
+        { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
+      ];
+    }
+
     await pgPool.run('blog', `
       INSERT INTO blog.publish_schedule (publish_date, post_type, category, status)
       VALUES
@@ -126,6 +138,13 @@ async function ensureSchedule(date = _today()) {
     return await getScheduleByDate(date);
   } catch (e) {
     console.warn('[스케줄] 자동 생성 실패:', e.message);
+    if (DEV_HUB_READONLY) {
+      const { category } = await getNextGeneralCategory().catch(() => ({ category: '자기계발' }));
+      return [
+        { id: null, publish_date: date, post_type: 'lecture', category: 'Node.js강의', status: 'scheduled' },
+        { id: null, publish_date: date, post_type: 'general', category, status: 'scheduled' },
+      ];
+    }
     return [];
   }
 }

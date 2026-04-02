@@ -11,9 +11,11 @@ const fs     = require('fs');
 const path   = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag-safe');
+const env    = require('../../../packages/core/lib/env');
 
 const OUTPUT_DIR    = path.join(__dirname, '..', 'output');
 const GDRIVE_DIR    = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 function normalizeTitleKey(value) {
   return String(value || '')
@@ -200,7 +202,7 @@ async function publishToFile(postData) {
   const filepath  = path.join(OUTPUT_DIR, filename);
   let publishDate = today;
 
-  if (scheduleId) {
+  if (scheduleId && !DEV_HUB_READONLY) {
     try {
       const scheduleRow = await pgPool.get('blog', `
         SELECT publish_date
@@ -253,50 +255,56 @@ async function publishToFile(postData) {
 
   // DB 기록
   let postId = null;
-  try {
-    const rows = await pgPool.query('blog', `
-      INSERT INTO blog.posts
-        (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags, metadata)
-      VALUES ($1, $2, $3, $4, $5, 'ready', $6, $7, $8, $9)
-      RETURNING id
-    `, [
-      title,
-      category,
-      postType,
-      lectureNumber || null,
-      publishDate,
-      charCount,
-      linkedContent,
-      hashtags || [],
-      {
-        schedule_id: scheduleId || null,
-        filename,
-        generated_on: today,
-      },
-    ]);
-    postId = rows[0]?.id;
-    console.log(`[퍼블] 저장 완료: ${filename} (DB ID: ${postId})`);
-  } catch (e) {
-    console.warn('[퍼블] DB 저장 실패:', e.message);
+  if (!DEV_HUB_READONLY) {
+    try {
+      const rows = await pgPool.query('blog', `
+        INSERT INTO blog.posts
+          (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags, metadata)
+        VALUES ($1, $2, $3, $4, $5, 'ready', $6, $7, $8, $9)
+        RETURNING id
+      `, [
+        title,
+        category,
+        postType,
+        lectureNumber || null,
+        publishDate,
+        charCount,
+        linkedContent,
+        hashtags || [],
+        {
+          schedule_id: scheduleId || null,
+          filename,
+          generated_on: today,
+        },
+      ]);
+      postId = rows[0]?.id;
+      console.log(`[퍼블] 저장 완료: ${filename} (DB ID: ${postId})`);
+    } catch (e) {
+      console.warn('[퍼블] DB 저장 실패:', e.message);
+    }
+  } else {
+    console.log(`[퍼블] DEV/HUB 읽기 전용 — DB 저장 생략 (${filename})`);
   }
 
   // RAG 저장 — 과거 포스팅 참조 + 중복 방지용
-  try {
-    await rag.initSchema();
-    await rag.store('blog',
-      `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
-      {
-        type:           postType,
-        category,
-        lecture_number: lectureNumber || null,
-        char_count:     charCount,
-        publish_date:   today,
-        filename,
-      },
-      'blog-publ'
-    );
-  } catch (e) {
-    console.warn('[퍼블] RAG 저장 실패:', e.message);
+  if (!DEV_HUB_READONLY) {
+    try {
+      await rag.initSchema();
+      await rag.store('blog',
+        `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+        {
+          type:           postType,
+          category,
+          lecture_number: lectureNumber || null,
+          char_count:     charCount,
+          publish_date:   today,
+          filename,
+        },
+        'blog-publ'
+      );
+    } catch (e) {
+      console.warn('[퍼블] RAG 저장 실패:', e.message);
+    }
   }
 
   return { filepath, postId, filename, content: linkedContent };
@@ -307,6 +315,7 @@ async function publishToFile(postData) {
  */
 async function markPublished(postId, naverUrl) {
   if (!postId) return;
+  if (DEV_HUB_READONLY) return;
   try {
     const row = await pgPool.get('blog', `
       SELECT metadata
@@ -333,9 +342,81 @@ async function markPublished(postId, naverUrl) {
   }
 }
 
+async function recordPerformance(postId, metrics = {}) {
+  if (!postId) return null;
+  if (DEV_HUB_READONLY) return null;
+  const views = Number(metrics.views || 0);
+  const comments = Number(metrics.comments || 0);
+  const likes = Number(metrics.likes || 0);
+
+  try {
+    const row = await pgPool.get('blog', `
+      UPDATE blog.posts
+      SET views = $2,
+          comments = $3,
+          likes = $4,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb
+      WHERE id = $1
+      RETURNING title, category, char_count
+    `, [
+      postId,
+      views,
+      comments,
+      likes,
+      JSON.stringify({ views, comments, likes, performance_collected_at: new Date().toISOString() }),
+    ]);
+
+    if (row && views > 0) {
+      await rag.initSchema();
+      await rag.store('experience',
+        `[blog_success] ${row.title} | views=${views} | comments=${comments} | likes=${likes}`,
+        {
+          intent: 'blog_success',
+          team: 'blog',
+          category: row.category,
+          views,
+          comments,
+          likes,
+          charCount: Number(row.char_count || 0),
+          postId,
+        },
+        'blog-publ'
+      );
+    }
+
+    return row;
+  } catch (e) {
+    console.warn('[퍼블] 성과 기록 실패:', e.message);
+    return null;
+  }
+}
+
+async function getPerformanceCollectionCandidates(days = 7) {
+  if (DEV_HUB_READONLY) return [];
+  try {
+    return await pgPool.query('blog', `
+      SELECT id, title, category, publish_date, naver_url, views, comments, likes, metadata
+      FROM blog.posts
+      WHERE status = 'published'
+        AND publish_date <= CURRENT_DATE - ($1::int || ' days')::interval
+        AND (
+          metadata->>'performance_collected_at' IS NULL
+          OR metadata->>'performance_collected_at' = ''
+        )
+      ORDER BY publish_date ASC
+      LIMIT 20
+    `, [days]);
+  } catch (e) {
+    console.warn('[퍼블] 성과 수집 대상 조회 실패:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
   publishToFile,
   markPublished,
+  recordPerformance,
+  getPerformanceCollectionCandidates,
   OUTPUT_DIR,
   normalizeTitleKey,
   replaceInternalLinkPlaceholders,

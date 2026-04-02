@@ -1,5 +1,6 @@
 'use strict';
 const kst = require('./kst');
+const env = require('./env');
 
 /**
  * lib/token-tracker.js — 전체 봇 LLM 토큰 사용 통합 추적
@@ -13,6 +14,7 @@ const kst = require('./kst');
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 const SCHEMA = 'claude';
 
@@ -33,6 +35,7 @@ const PRICING = {
  * 토큰 사용 기록
  */
 async function trackTokens({ bot, team, model, provider, taskType = 'unknown', tokensIn = 0, tokensOut = 0, durationMs = 0, costUsd }) {
+  if (DEV_HUB_READONLY) return;
   try {
     const p       = PRICING[model] || { input: 0, output: 0, free: false };
     const isFree  = p.free || provider === 'groq' || provider === 'google';

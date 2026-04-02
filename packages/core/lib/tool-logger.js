@@ -25,6 +25,8 @@
  */
 
 const pgPool = require('./pg-pool');
+const env = require('./env');
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 let _getTraceId = () => null;
 try {
@@ -46,6 +48,7 @@ try {
  * @param {object} [options.metadata] - 추가 메타데이터 (금액, 심볼 등)
  */
 async function logToolCall(tool_name, action, options = {}) {
+  if (DEV_HUB_READONLY) return;
   const trace_id = _getTraceId();
 
   try {

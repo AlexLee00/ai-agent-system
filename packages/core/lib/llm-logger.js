@@ -1,5 +1,6 @@
 'use strict';
 const kst = require('./kst');
+const env = require('./env');
 
 /**
  * packages/core/lib/llm-logger.js — 전체 팀 통합 LLM 사용 추적
@@ -15,6 +16,7 @@ const kst = require('./kst');
 
 const pgPool        = require('./pg-pool');
 const billingGuard  = require('./billing-guard');
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ── 긴급 차단 한도 ─────────────────────────────────────────────────────
 const EMERGENCY_LIMITS = {
@@ -29,6 +31,10 @@ let _initialized = false;
 
 async function _ensureTable() {
   if (_initialized) return;
+  if (DEV_HUB_READONLY) {
+    _initialized = true;
+    return;
+  }
   await pgPool.run('reservation', `
     CREATE TABLE IF NOT EXISTS llm_usage_log (
       id            SERIAL PRIMARY KEY,
@@ -149,6 +155,7 @@ async function logLLMCall({
   success      = true,
   errorMsg     = null,
 }) {
+  if (DEV_HUB_READONLY) return;
   try {
     await _ensureTable();
     const cost = costUsd !== undefined ? costUsd : _calcCost(model, inputTokens, outputTokens);

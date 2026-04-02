@@ -12,6 +12,9 @@
 const https  = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag-safe');
+const env    = require('../../../packages/core/lib/env');
+
+const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -126,13 +129,15 @@ async function research(category, needsBookInfo = false) {
   };
 
   // 캐시 저장
-  try {
-    await pgPool.run('blog', `
-      INSERT INTO blog.research_cache (date, category, data, source)
-      VALUES (CURRENT_DATE, $1, $2, 'daily_research')
-    `, [category, JSON.stringify(result)]);
-  } catch (e) {
-    console.warn('[리처] 캐시 저장 실패:', e.message);
+  if (!DEV_HUB_READONLY) {
+    try {
+      await pgPool.run('blog', `
+        INSERT INTO blog.research_cache (date, category, data, source)
+        VALUES (CURRENT_DATE, $1, $2, 'daily_research')
+      `, [category, JSON.stringify(result)]);
+    } catch (e) {
+      console.warn('[리처] 캐시 저장 실패:', e.message);
+    }
   }
 
   console.log(
@@ -151,7 +156,9 @@ async function research(category, needsBookInfo = false) {
 async function searchRealExperiences(topic, postType = 'lecture') {
   const episodes = [];
   try {
-    await rag.initSchema();
+    if (!DEV_HUB_READONLY) {
+      await rag.initSchema();
+    }
 
     // tech — 개발 크래시/오류 수정 사례
     const techHits = await rag.search('tech', topic, { limit: 2, threshold: 0.5 });
@@ -214,7 +221,9 @@ async function searchRealExperiences(topic, postType = 'lecture') {
  */
 async function searchRelatedPosts(topic, currentLectureNum = null) {
   try {
-    await rag.initSchema();
+    if (!DEV_HUB_READONLY) {
+      await rag.initSchema();
+    }
     const hits = await rag.search('blog', topic, { limit: 5, threshold: 0.5 });
     if (!hits?.length) return [];
 
@@ -242,6 +251,38 @@ async function searchRelatedPosts(topic, currentLectureNum = null) {
   }
 }
 
+function _buildPopularPatternQueries(category = 'general') {
+  if (category === 'lecture') {
+    return ['blog_success Node.js강의', 'blog_success lecture'];
+  }
+  return [`blog_success ${category}`];
+}
+
+async function searchPopularPatterns(category = 'general') {
+  try {
+    if (!DEV_HUB_READONLY) {
+      await rag.initSchema();
+    }
+    const merged = [];
+    for (const query of _buildPopularPatternQueries(category)) {
+      const hits = await rag.search('experience', query, { limit: 3, threshold: 0.35 });
+      for (const hit of hits || []) {
+        const signature = `${hit.content || ''}|${JSON.stringify(hit.metadata || {})}`;
+        if (merged.some((item) => item.signature === signature)) continue;
+        merged.push({
+          signature,
+          content: hit.content?.slice(0, 200),
+          metadata: hit.metadata || {},
+        });
+      }
+    }
+    return merged.slice(0, 3).map(({ signature, ...item }) => item);
+  } catch (e) {
+    console.warn('[리처] 인기 패턴 검색 실패:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
   research,
   fetchITNews,
@@ -249,4 +290,5 @@ module.exports = {
   fetchWeather,
   searchRealExperiences,
   searchRelatedPosts,
+  searchPopularPatterns,
 };

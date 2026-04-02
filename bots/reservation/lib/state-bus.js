@@ -179,7 +179,7 @@ async function emitEvent(fromAgent, toAgent, eventType, payload, priority = 'nor
       VALUES ($1,$2,$3,$4,$5,$6)
       RETURNING id
     `, [fromAgent, toAgent, eventType, priority, JSON.stringify(payload ?? null), now]);
-    return rows[0].id;
+    return rows[0]?.id || null;
   } catch (e) {
     console.error('[state-bus] emitEvent 실패:', e.message);
     return null;
