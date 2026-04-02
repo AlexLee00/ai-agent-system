@@ -173,8 +173,10 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Cloudflare Tunnel 외부 접속
 
 ### 공통
-- [ ] 라이트(Write) 구현 — 제이 직속, 문서 관리+팀장회의록+일일 리포트
-- [ ] OpenClaw Phase 1: mainbot.js 흡수
+- [x] 라이트(Write) 구현 ✅ — 제이 직속, 문서 점검+CHANGELOG+일일 리포트 (ai.write.daily 07:00 KST)
+  - 보강 계획: 팀장회의록 자동 생성, 주간 종합 리포트, 문서 정합성 재검증 강화
+- [x] OpenClaw Phase 1~3 완성 ✅ — 알람 단일 경로 + OAuth + Selector + 평가
+- [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve Standing Orders (코덱스 진행중)
 - [ ] ComfyUI + 이미지 비용 $0 전환
 - [ ] TS Phase 1: TypeScript 강화
 - [ ] TS Phase 2: Elixir 오케스트레이션
