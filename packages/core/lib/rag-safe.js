@@ -68,6 +68,8 @@ function _isCapacityError(error) {
     'insufficient_quota',
     'billing',
     'embedding',
+    'different vector dimensions',
+    'dimensions, not',
     'timeout',
     'timed out',
     'openai',
