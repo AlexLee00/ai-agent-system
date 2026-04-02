@@ -24,6 +24,9 @@ import {
   getValidationSoftBudgetConfig,
   isDynamicTpSlEnabled,
 } from '../shared/runtime-config.js';
+import { check as checkHardRule } from './hard-rule.js';
+import { calculate as calculateBudget, calcKellyPosition } from './budget.js';
+import { evaluate as evaluateAdaptiveRisk } from './adaptive-risk.js';
 const NEMESIS_RUNTIME = getNemesisRuntimeConfig();
 function getCryptoRiskThresholds() {
   const base = {
@@ -117,15 +120,6 @@ ADJUST 조건:
 `.trim();
   if (exchange === 'kis' || exchange === 'kis_overseas') return getNemesisStockSystem();
   return cryptoSystem;
-}
-
-function isConfidenceDrivenRejection(reason = '') {
-  return /확신도|신뢰도/.test(reason || '');
-}
-
-function buildCryptoStarterAmount(amountUsdt, rules, thresholds = getCryptoRiskThresholds()) {
-  const starter = Math.floor(amountUsdt * (thresholds.cryptoStarterScale ?? 0.60));
-  return Math.max(rules.MIN_ORDER_USDT, starter);
 }
 
 // ─── 하드 규칙 (마켓별 분기) ─────────────────────────────────────────
@@ -586,19 +580,6 @@ export async function getDynamicRRWeighted(symbol, minSamples = 10) {
  * @param {'half'|'full'} [mode='half']
  * @returns {number} 포지션 비율 (0.01 ~ 0.05)
  */
-export function calcKellyPosition(winRate, rrRatio, mode = 'half') {
-  const p = winRate;
-  const q = 1 - p;
-  const b = rrRatio;
-  if (b <= 0 || p <= 0 || p >= 1) return 0.01;
-
-  const kelly = (p * b - q) / b;
-  if (kelly <= 0) return 0.01; // 음수 → 최소 포지션
-
-  const raw = mode === 'half' ? kelly / 2 : kelly;
-  return Math.min(raw, 0.05); // 최대 5% 캡
-}
-
 // ─── 메인 신호 평가 ─────────────────────────────────────────────────
 
 /**
@@ -608,7 +589,6 @@ export function calcKellyPosition(winRate, rrRatio, mode = 'half') {
  */
 export async function evaluateSignal(signal, opts = {}) {
   const { symbol, action } = signal;
-  let amountUsdt   = signal.amount_usdt ?? 100;
   const totalUsdt  = opts.totalUsdt || 10000;
   const traceId    = `NMS-${symbol?.replace('/', '')}-${Date.now()}`;
   const rules      = getRules(signal.exchange);
@@ -617,319 +597,87 @@ export async function evaluateSignal(signal, opts = {}) {
   const isCryptoExchange = signal.exchange === 'binance';
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
   const stockThresholds = getStockRiskThresholds();
+  const hardRuleResult = await checkHardRule(signal, {
+    totalUsdt, traceId, rules, persist, isStockExchange, isCryptoExchange, signalTradeMode, stockThresholds,
+  }, {
+    db,
+    notifyRiskRejection,
+    isKisPaper,
+    getMockUntradableSymbolCooldownMinutes,
+    getInvestmentTradeMode,
+    getValidationSoftBudgetConfig,
+    getCapitalConfig,
+    getDailyTradeCount,
+  });
+  if (hardRuleResult?.approved === false) return hardRuleResult;
 
-  // ── v1 하드 규칙 ──
-  if (action === ACTIONS.BUY) {
-    if (amountUsdt < rules.MIN_ORDER_USDT) {
-      if (isCryptoExchange && totalUsdt >= rules.MIN_ORDER_USDT) {
-        const prev = amountUsdt;
-        amountUsdt = rules.MIN_ORDER_USDT;
-        console.log(`  📐 [네메시스] 최소 주문 보정: $${prev} → $${amountUsdt} (crypto min-order floor)`);
-      } else {
-        const reason = `최소 주문 미달 ($${amountUsdt} < $${rules.MIN_ORDER_USDT})`;
-        if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-        if (persist) await notifyRiskRejection({ symbol, action, reason });
-        return { approved: false, reason };
-      }
-    }
-    if (amountUsdt > rules.MAX_ORDER_USDT) {
-      amountUsdt = rules.MAX_ORDER_USDT;
-      console.log(`  📐 [네메시스] 최대 주문 초과 → $${amountUsdt} 로 조정`);
-    }
-    const pct = amountUsdt / totalUsdt;
-    if (pct > rules.MAX_SINGLE_POSITION_PCT) {
-      amountUsdt = Math.floor(totalUsdt * rules.MAX_SINGLE_POSITION_PCT);
-      console.log(`  📐 [네메시스] 포지션 한도 조정 → $${amountUsdt} (${(rules.MAX_SINGLE_POSITION_PCT * 100).toFixed(0)}%)`);
-    }
-  }
-
-  if (action === ACTIONS.BUY && isStockExchange && (signal.confidence ?? 0) < stockThresholds.stockRejectConfidence) {
-    const reason = `주식 공격적 모드 최소 확신도 미달 (${(signal.confidence ?? 0).toFixed(2)} < ${stockThresholds.stockRejectConfidence.toFixed(2)})`;
-    if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-    if (persist) await notifyRiskRejection({ symbol, action, reason });
-    if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
-    return { approved: false, reason };
-  }
-
-  if (action === ACTIONS.BUY && signal.exchange === 'kis' && isKisPaper()) {
-    const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
-    const recentMockUntradable = await db.getRecentBlockedSignalByCode({
-      symbol,
-      action: ACTIONS.BUY,
-      exchange: 'kis',
-      tradeMode: signal.trade_mode || getInvestmentTradeMode(),
-      blockCode: 'mock_untradable_symbol',
-      minutesBack: cooldownMinutes,
-    });
-    if (recentMockUntradable) {
-      const cooldownHours = (cooldownMinutes / 60).toFixed(cooldownMinutes % 60 === 0 ? 0 : 1);
-      const reason = `${symbol} 최근 KIS mock 주문 불가 종목으로 확인됨 — ${cooldownHours}시간 승인 쿨다운`;
-      if (persist && signal.id) {
-        await db.updateSignalBlock(signal.id, {
-          status: SIGNAL_STATUS.REJECTED,
-          reason,
-          code: 'mock_untradable_symbol_recent',
-          meta: {
-            exchange: signal.exchange,
-            symbol,
-            action,
-            amount: amountUsdt,
-            cooldown_minutes: cooldownMinutes,
-            source_signal_id: recentMockUntradable.id,
-          },
-        }).catch(() => {});
-      }
-      if (persist) await notifyRiskRejection({ symbol, action, reason });
-      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
-      return { approved: false, reason };
-    }
-  }
-
-  if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
-    const livePosition = await db.getLivePosition(symbol, signal.exchange).catch(() => null);
-    if (livePosition && livePosition.paper === false) {
-      const reason = '동일 LIVE 포지션 보유 중 — validation BUY 사전 차단';
-      if (persist && signal.id) {
-        await db.updateSignalBlock(signal.id, {
-          status: SIGNAL_STATUS.REJECTED,
-          reason,
-          code: 'validation_live_position_reentry_preflight',
-          meta: {
-            exchange: signal.exchange,
-            symbol,
-            action,
-            trade_mode: signalTradeMode,
-            existing_trade_mode: livePosition.trade_mode || 'normal',
-            existing_paper: livePosition.paper,
-            existing_amount: livePosition.amount,
-            existing_avg_price: livePosition.avg_price,
-            existing_updated_at: livePosition.updated_at,
-          },
-        }).catch(() => {});
-      }
-      if (persist) await notifyRiskRejection({ symbol, action, reason });
-      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
-      return { approved: false, reason };
-    }
-  }
-
-  if (action === ACTIONS.BUY && isCryptoExchange && signalTradeMode === 'validation') {
-    const softBudget = getValidationSoftBudgetConfig('binance');
-    if (softBudget.enabled && softBudget.reserveDailyBuySlots > 0) {
-      const policy = getCapitalConfig('binance', 'validation');
-      const softCap = Math.max(1, policy.max_daily_trades - softBudget.reserveDailyBuySlots);
-      const validationDailyBuys = await getDailyTradeCount({
-        exchange: 'binance',
-        tradeMode: 'validation',
-        side: 'buy',
-      }).catch(() => 0);
-
-      if (validationDailyBuys >= softCap) {
-        const reason =
-          `crypto validation 일간 예산 soft cap 도달: 현재 ${validationDailyBuys}건 / soft cap ${softCap}건` +
-          ` (총 한도 ${policy.max_daily_trades}건, reserve ${softBudget.reserveDailyBuySlots}건)`;
-        if (persist && signal.id) {
-          await db.updateSignalBlock(signal.id, {
-            status: SIGNAL_STATUS.REJECTED,
-            reason,
-            code: 'validation_daily_budget_soft_cap',
-            meta: {
-              exchange: signal.exchange,
-              symbol,
-              action,
-              trade_mode: signalTradeMode,
-              daily_validation_buys: validationDailyBuys,
-              soft_cap: softCap,
-              hard_cap: policy.max_daily_trades,
-              reserve_slots: softBudget.reserveDailyBuySlots,
-            },
-          }).catch(() => {});
-        }
-        if (persist) await notifyRiskRejection({ symbol, action, reason });
-        if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: null, reason }).catch(() => {});
-        return { approved: false, reason };
-      }
-    }
-  }
-
-  const todayPnl = await db.getTodayPnl();
-  const lossPct  = (todayPnl.pnl || 0) < 0 ? Math.abs(todayPnl.pnl) / totalUsdt : 0;
-  if (action === ACTIONS.BUY && lossPct >= rules.MAX_DAILY_LOSS_PCT) {
-    const reason = `일일 손실 한도 초과 (${(lossPct * 100).toFixed(1)}%)`;
-    if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-    if (persist) await notifyRiskRejection({ symbol, action, reason });
-    return { approved: false, reason };
-  }
-
-  let positionCount = 0;
-  if (action === ACTIONS.BUY) {
-    const positions = await db.getAllPositions(signal.exchange, false);
-    positionCount   = positions.length;
-    if (positionCount >= rules.MAX_OPEN_POSITIONS) {
-      const reason = `최대 포지션 초과 (${positionCount}/${rules.MAX_OPEN_POSITIONS})`;
-      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      if (persist) await notifyRiskRejection({ symbol, action, reason });
-      return { approved: false, reason };
-    }
-  }
-
-  if (action === ACTIONS.BUY && isStockExchange) {
-    const autoApproveLimit = signal.exchange === 'kis'
-      ? stockThresholds.stockAutoApproveDomestic
-      : stockThresholds.stockAutoApproveOverseas;
-    if (amountUsdt <= autoApproveLimit) {
-      if (persist) {
-        if (signal.id) {
-          await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
-          await db.updateSignalAmount(signal.id, amountUsdt);
-        }
-        await db.insertRiskLog({
-          traceId,
-          symbol,
-          exchange: signal.exchange,
-          decision: 'APPROVE',
-          riskScore: 1,
-          reason: `주식 공격적 모드 소규모 자동 승인 (${amountUsdt} <= ${autoApproveLimit})`,
-        }).catch(() => {});
-      }
-      console.log(`  ✅ [네메시스] ${symbol} ${action} ${amountUsdt} 자동 승인 (공격적 주식 모드)`);
-      return { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true };
-    }
-    const starterApproveLimit = signal.exchange === 'kis'
-      ? stockThresholds.stockStarterApproveDomestic
-      : stockThresholds.stockStarterApproveOverseas;
-    if ((signal.confidence ?? 0) >= stockThresholds.stockStarterApproveConfidence && amountUsdt <= starterApproveLimit) {
-      if (persist) {
-        if (signal.id) {
-          await db.updateSignalStatus(signal.id, SIGNAL_STATUS.APPROVED);
-          await db.updateSignalAmount(signal.id, amountUsdt);
-        }
-        await db.insertRiskLog({
-          traceId,
-          symbol,
-          exchange: signal.exchange,
-          decision: 'APPROVE',
-          riskScore: 2,
-          reason: `주식 validation starter 승인 (${amountUsdt} <= ${starterApproveLimit}, confidence ${(signal.confidence ?? 0).toFixed(2)})`,
-        }).catch(() => {});
-      }
-      console.log(`  ✅ [네메시스] ${symbol} ${action} ${amountUsdt} starter 승인 (validation 주식 모드)`);
-      return { approved: true, adjustedAmount: amountUsdt, traceId, autoApproved: true, starterApproved: true };
-    }
-  }
+  let amountUsdt = hardRuleResult.amountUsdt;
+  let positionCount = hardRuleResult.positionCount;
+  let todayPnl = hardRuleResult.todayPnl;
+  let dynamicTPSL;
 
   // ── v2: 조정 계수 ──
-  let dynamicTPSL; // function scope — BUY 블록 내에서 할당, tpslResult에서 참조
   if (action === ACTIONS.BUY) {
-    const cryptoThresholds = getCryptoRiskThresholds();
-    const [volFactor, corrFactor] = await Promise.all([
-      calcVolatilityFactor(symbol, opts.atrRatio),
-      calcCorrelationFactor(symbol, signal.exchange),
-    ]);
-    const timeFactor   = calcTimeFactor();
-    const combinedFact = volFactor * corrFactor * timeFactor;
-
-    if (combinedFact < 1.0) {
-      const prev = amountUsdt;
-      amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(amountUsdt * combinedFact));
-      console.log(`  📐 [네메시스] 금액 조정: $${prev} → $${amountUsdt} (vol×${volFactor} corr×${corrFactor} time×${timeFactor})`);
-    }
-
-    const llm = await evaluateWithLLM({ signal, adjustedAmount: amountUsdt, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange: signal.exchange });
-    console.log(`  🤖 [네메시스 LLM] ${llm.decision}: ${llm.reasoning}`);
-
-    if (
-      llm.decision === 'REJECT' &&
-      isCryptoExchange &&
-      (signal.confidence ?? 0) >= cryptoThresholds.cryptoStarterApproveConfidence &&
-      (llm.risk_score ?? 0) <= cryptoThresholds.cryptoStarterApproveMaxRisk &&
-      isConfidenceDrivenRejection(llm.reasoning)
-    ) {
-      const starterAmount = buildCryptoStarterAmount(amountUsdt, rules, cryptoThresholds);
-      console.log(`  🔓 [네메시스] crypto starter 승인: ${symbol} $${amountUsdt} → $${starterAmount} (confidence ${(signal.confidence ?? 0).toFixed(2)})`);
-      amountUsdt = starterAmount;
-      llm.decision = 'ADJUST';
-      llm.reasoning = `crypto starter 승인 — 확신도 ${(signal.confidence ?? 0).toFixed(2)} 구간은 소액 분산진입 우선`;
-    }
-
-    if (llm.decision === 'REJECT') {
-      if (persist && signal.id) await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED);
-      if (persist) await notifyRiskRejection({ symbol, action, reason: `[LLM] ${llm.reasoning}` });
-      if (persist) await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: 'REJECT', riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
-      return { approved: false, reason: llm.reasoning };
-    }
-    if (llm.decision === 'ADJUST' && llm.adjusted_amount) {
-      amountUsdt = Math.max(rules.MIN_ORDER_USDT, Math.floor(llm.adjusted_amount));
-    }
-
-    if (persist) {
-      await db.insertRiskLog({ traceId, symbol, exchange: signal.exchange, decision: llm.decision, riskScore: llm.risk_score ?? null, reason: llm.reasoning }).catch(() => {});
-    }
-
-    // ── Phase 3: 동적 R/R 우선순위 체인 (레짐→가중→단순→ATR→고정) ──
     await ensureAtrColumn();
-    let _rrData = null;
-    if (opts.atrRatio) {
-      _rrData = await getDynamicRRByRegime(symbol, opts.atrRatio);
-      if (_rrData) console.log(`  📊 [네메시스] ${_rrData.regime} 레짐 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
-    }
-    if (!_rrData) {
-      _rrData = await getDynamicRRWeighted(symbol);
-      if (_rrData) console.log(`  📊 [네메시스] 시간가중 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
-    }
-    if (!_rrData) {
-      _rrData = await getDynamicRR(symbol);
-      if (_rrData) console.log(`  📊 [네메시스] 단순 R/R: TP+${(_rrData.suggested_tp_pct * 100).toFixed(1)}% / SL-${(_rrData.suggested_sl_pct * 100).toFixed(1)}% (${_rrData.sample_size}건)`);
-    }
+    const budgetResult = await calculateBudget(signal, {
+      totalUsdt,
+      rules,
+      traceId,
+      persist,
+      isStockExchange,
+      isCryptoExchange,
+      stockThresholds,
+      amountUsdt,
+      atrRatio: opts.atrRatio,
+      entryEstimate: opts.currentPrice || null,
+    }, {
+      db,
+      calcVolatilityFactor,
+      calcCorrelationFactor,
+      calcTimeFactor,
+      getDynamicRRByRegime,
+      getDynamicRRWeighted,
+      getDynamicRR,
+      calculateDynamicTPSL,
+      applyReviewTpslAdjustment,
+      calcReviewAdjustment,
+      isDynamicTPSLEnabled,
+    });
 
-    // 켈리 포지션 사이징 (실적 데이터 기반 R/R 있을 때만)
-    if (_rrData) {
-      const kellyPct    = calcKellyPosition(parseFloat(_rrData.win_rate) / 100, parseFloat(_rrData.rr_ratio), 'half');
-      const kellyAmount = Math.max(rules.MIN_ORDER_USDT, Math.floor(totalUsdt * kellyPct));
-      if (kellyAmount < amountUsdt) {
-        console.log(`  📐 [네메시스 켈리] $${amountUsdt} → $${kellyAmount} (Half Kelly ${(kellyPct * 100).toFixed(1)}%, R/R ${_rrData.rr_ratio}, 승률 ${_rrData.win_rate}%)`);
-        amountUsdt = kellyAmount;
-      }
-    }
+    if (budgetResult.autoApproval) return budgetResult.autoApproval;
+    amountUsdt = budgetResult.amountUsdt;
+    dynamicTPSL = budgetResult.dynamicTPSL;
 
-    const reviewAdjustment = await calcReviewAdjustment(symbol, signal.exchange, amountUsdt);
-    if (reviewAdjustment.factor < 1 && reviewAdjustment.adjustedAmount < amountUsdt) {
-      console.log(`  📐 [네메시스 리뷰] $${amountUsdt} → $${reviewAdjustment.adjustedAmount} (${reviewAdjustment.notes.join(', ')})`);
-      amountUsdt = reviewAdjustment.adjustedAmount;
-    }
+    const adaptiveResult = await evaluateAdaptiveRisk(signal, {
+      amountUsdt,
+      rules,
+      persist,
+      traceId,
+      isCryptoExchange,
+      todayPnl,
+      positionCount,
+      volFactor: budgetResult.volFactor,
+      corrFactor: budgetResult.corrFactor,
+      timeFactor: budgetResult.timeFactor,
+    }, {
+      evaluateWithLLM,
+      getCryptoRiskThresholds,
+      notifyRiskRejection,
+      db,
+    });
 
-    // ── Phase 2: 동적 TP/SL 산출 (레짐/가중/단순 → ATR → 고정) ──
-    const entryEstimate = opts.currentPrice || null;
-    const _tpslEnabled  = isDynamicTPSLEnabled();
-    dynamicTPSL = (_rrData && _tpslEnabled)
-      ? {
-          tpPct:   _rrData.suggested_tp_pct,
-          slPct:   _rrData.suggested_sl_pct,
-          tpPrice: entryEstimate ? entryEstimate * (1 + _rrData.suggested_tp_pct) : null,
-          slPrice: entryEstimate ? entryEstimate * (1 - _rrData.suggested_sl_pct) : null,
-          source:  _rrData.source,
-          applied: true,
-        }
-      : calculateDynamicTPSL(symbol, entryEstimate, opts.atrRatio);
-    if (reviewAdjustment.insight?.closedTrades >= 3) {
-      dynamicTPSL = applyReviewTpslAdjustment(dynamicTPSL, reviewAdjustment.insight, entryEstimate);
-    }
-    const tpslTag = dynamicTPSL.applied ? '✅ 적용' : '⏸️ 미적용 (비활성화)';
-    console.log(
-      `  📐 [네메시스 TP/SL] ${symbol}: TP+${(dynamicTPSL.tpPct * 100).toFixed(1)}%` +
-      ` / SL-${(dynamicTPSL.slPct * 100).toFixed(1)}% (${dynamicTPSL.source}, ${tpslTag})`
-    );
+    if (!adaptiveResult.approved) return adaptiveResult;
+    amountUsdt = adaptiveResult.adjustedAmount;
 
-    // ── 매매일지 판단 근거 기록 (승인/수정된 BUY만) ───────────────────
     if (persist && signal.id) {
       try {
         await journalDb.insertRationale({
-          signal_id:             signal.id,
-          luna_decision:         'enter',
-          luna_reasoning:        signal.reasoning || '',
-          luna_confidence:       signal.confidence ?? null,
-          nemesis_verdict:       llm.decision === 'ADJUST' ? 'modified' : 'approved',
-          nemesis_notes:         llm.reasoning ?? null,
+          signal_id: signal.id,
+          luna_decision: 'enter',
+          luna_reasoning: signal.reasoning || '',
+          luna_confidence: signal.confidence ?? null,
+          nemesis_verdict: adaptiveResult.llm.decision === 'ADJUST' ? 'modified' : 'approved',
+          nemesis_notes: adaptiveResult.llm.reasoning ?? null,
           position_size_original: signal.amount_usdt,
           position_size_approved: amountUsdt,
         });

@@ -64,10 +64,14 @@ function buildAnalystWeights(exchange = 'binance') {
     ? (isPaperMode() ? ANALYST_WEIGHT_CONFIG.stocksPaper : ANALYST_WEIGHT_CONFIG.stocksLive)
     : ANALYST_WEIGHT_CONFIG.crypto;
   const fallback = ANALYST_WEIGHT_CONFIG.default || {};
+  const sentinelBase = profile?.sentinel
+    ?? ((profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT])
+      + (profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS])) / 2;
 
   return normalizeWeights({
     [ANALYST_TYPES.TA_MTF]: profile?.taMtf ?? fallback.taMtf ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
     [ANALYST_TYPES.ONCHAIN]: profile?.onchain ?? fallback.onchain ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.SENTINEL]: sentinelBase,
     [ANALYST_TYPES.SENTIMENT]: profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
     [ANALYST_TYPES.NEWS]: profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
   });
@@ -368,9 +372,12 @@ function buildEmergencyPortfolioFallback(symbolDecisions, portfolio, exchange, r
 }
 
 function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}, fallbackWeights = ANALYST_WEIGHTS) {
+  const sentinelWeight = suggestedWeights.sentinel
+    ?? (((suggestedWeights.sophia ?? fallbackWeights[ANALYST_TYPES.SENTIMENT]) + (suggestedWeights.hermes ?? fallbackWeights[ANALYST_TYPES.NEWS])) / 2);
   return normalizeWeights({
     [ANALYST_TYPES.TA_MTF]: suggestedWeights.aria ?? fallbackWeights[ANALYST_TYPES.TA_MTF],
     [ANALYST_TYPES.ONCHAIN]: suggestedWeights.oracle ?? fallbackWeights[ANALYST_TYPES.ONCHAIN],
+    [ANALYST_TYPES.SENTINEL]: sentinelWeight,
     [ANALYST_TYPES.SENTIMENT]: suggestedWeights.sophia ?? fallbackWeights[ANALYST_TYPES.SENTIMENT],
     [ANALYST_TYPES.NEWS]: suggestedWeights.hermes ?? fallbackWeights[ANALYST_TYPES.NEWS],
   });
@@ -381,6 +388,7 @@ async function loadAdaptiveAnalystWeights(exchange = 'binance') {
   try {
     const report = await buildAccuracyReport({
       aria: baseWeights[ANALYST_TYPES.TA_MTF],
+      sentinel: baseWeights[ANALYST_TYPES.SENTINEL],
       sophia: baseWeights[ANALYST_TYPES.SENTIMENT],
       oracle: baseWeights[ANALYST_TYPES.ONCHAIN],
       hermes: baseWeights[ANALYST_TYPES.NEWS],
@@ -955,7 +963,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 
   console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
-  console.log(`  ⚖️ [루나] 분석가 가중치: TA ${analystWeights[ANALYST_TYPES.TA_MTF].toFixed(2)} | 온체인 ${analystWeights[ANALYST_TYPES.ONCHAIN].toFixed(2)} | 감성 ${analystWeights[ANALYST_TYPES.SENTIMENT].toFixed(2)} | 뉴스 ${analystWeights[ANALYST_TYPES.NEWS].toFixed(2)}`);
+  console.log(`  ⚖️ [루나] 분석가 가중치: TA ${analystWeights[ANALYST_TYPES.TA_MTF].toFixed(2)} | 온체인 ${analystWeights[ANALYST_TYPES.ONCHAIN].toFixed(2)} | sentinel ${analystWeights[ANALYST_TYPES.SENTINEL].toFixed(2)} | 감성 ${analystWeights[ANALYST_TYPES.SENTIMENT].toFixed(2)} | 뉴스 ${analystWeights[ANALYST_TYPES.NEWS].toFixed(2)}`);
 
   for (const symbol of symbols) {
     try {
@@ -1051,11 +1059,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     // 분석 봇 신호 패턴 추출 (상관관계 분석용)
     const _getChar = s => !s ? 'N' : s.toUpperCase() === 'BUY' ? 'B' : s.toUpperCase() === 'SELL' ? 'S' : 'N';
     const _symAnalyses = symbolAnalysesMap.get(dec.symbol) || [];
+    const _sentinelSignal = _symAnalyses.find(a => a.analyst === ANALYST_TYPES.SENTINEL)?.signal;
     const analystSignals = [
       `A:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.TA_MTF)?.signal)}`,
       `O:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.ONCHAIN)?.signal)}`,
-      `H:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal)}`,
-      `S:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal)}`,
+      `H:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.NEWS)?.signal || _sentinelSignal)}`,
+      `S:${_getChar(_symAnalyses.find(a => a.analyst === ANALYST_TYPES.SENTIMENT)?.signal || _sentinelSignal)}`,
     ].join('|');
 
     // 펀딩레이트 극단값 경고 (오라클 메타데이터 참조)

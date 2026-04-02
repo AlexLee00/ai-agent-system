@@ -5,12 +5,11 @@ import { ANALYST_TYPES } from '../shared/signal.js';
 
 const ANALYST_BY_NODE = {
   L02: ANALYST_TYPES.TA_MTF,
-  L03: ANALYST_TYPES.NEWS,
-  L04: ANALYST_TYPES.SENTIMENT,
+  L03: ANALYST_TYPES.SENTINEL,
   L05: ANALYST_TYPES.ONCHAIN,
 };
 
-const COLLECT_NODE_IDS = ['L02', 'L03', 'L04', 'L05'];
+const COLLECT_NODE_IDS = ['L02', 'L03', 'L05'];
 const _pipelineRunCache = new Map();
 const _sessionCollectCache = new Map();
 
@@ -38,7 +37,7 @@ export async function loadLatestNodePayload(sessionId, nodeId, symbol) {
 }
 
 export async function loadAnalysesForSession(sessionId, symbol, market) {
-  const artifacts = await loadNodePayloads(sessionId, ['L02', 'L03', 'L04', 'L05'], symbol);
+  const artifacts = await loadNodePayloads(sessionId, ['L02', 'L03', 'L05'], symbol);
   const fromArtifacts = artifacts
     .flatMap(item => normalizeAnalysisPayloads(item.nodeId, item.payload, symbol, market))
     .filter(Boolean);
@@ -75,11 +74,12 @@ export async function loadAnalysesForSession(sessionId, symbol, market) {
 export function buildAnalystSignals(analyses = []) {
   const byAnalyst = new Map(analyses.map(item => [item.analyst, item]));
   const getChar = (signal) => !signal ? 'N' : signal.toUpperCase() === 'BUY' ? 'B' : signal.toUpperCase() === 'SELL' ? 'S' : 'N';
+  const sentinelSignal = byAnalyst.get(ANALYST_TYPES.SENTINEL)?.signal;
   return [
     `A:${getChar(byAnalyst.get(ANALYST_TYPES.TA_MTF)?.signal)}`,
     `O:${getChar(byAnalyst.get(ANALYST_TYPES.ONCHAIN)?.signal)}`,
-    `H:${getChar(byAnalyst.get(ANALYST_TYPES.NEWS)?.signal)}`,
-    `S:${getChar(byAnalyst.get(ANALYST_TYPES.SENTIMENT)?.signal)}`,
+    `H:${getChar(byAnalyst.get(ANALYST_TYPES.NEWS)?.signal || sentinelSignal)}`,
+    `S:${getChar(byAnalyst.get(ANALYST_TYPES.SENTIMENT)?.signal || sentinelSignal)}`,
   ].join('|');
 }
 
@@ -118,10 +118,12 @@ function extractMetadata(nodeId, payload) {
     };
   }
   if (nodeId === 'L03') {
-    return { sentiment: payload.sentiment ?? null };
-  }
-  if (nodeId === 'L04') {
-    return { sentiment: payload.sentiment ?? null, combinedScore: payload.combinedScore ?? null };
+    return {
+      sentiment: payload.sentiment ?? null,
+      combinedScore: payload.combinedScore ?? null,
+      community: payload.metadata?.community ?? null,
+      news: payload.metadata?.news ?? null,
+    };
   }
   if (nodeId === 'L05') {
     return {

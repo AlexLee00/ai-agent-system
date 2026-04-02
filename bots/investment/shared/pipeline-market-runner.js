@@ -14,7 +14,7 @@ const COLLECT_CONCURRENCY_LIMIT = {
   kis_overseas: 4,
 };
 
-const ENRICHMENT_NODE_IDS = new Set(['L03', 'L04', 'L05']);
+const ENRICHMENT_NODE_IDS = new Set(['L03', 'L05']);
 
 const COLLECT_WARNING_THRESHOLDS = {
   overloadTasks: 60,

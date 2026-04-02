@@ -141,7 +141,7 @@ async function fetchFearGreedIndex() {
  * @param {number|null} newsScore       -1~1 (CryptoPanic 뉴스 투표 비율) 또는 null
  * @returns {{ combined: number, fgNorm: number|null, label: string }}
  */
-function combineSentiment(communityScore, fearGreed, newsScore) {
+export function combineSentiment(communityScore, fearGreed, newsScore) {
   const fgNorm = fearGreed != null ? (fearGreed - 50) / 50 : null;
 
   // 소셜(Reddit/DC)은 커뮤니티 점수에 포함 → community 기본비중 0.5 (0.4+0.1)
