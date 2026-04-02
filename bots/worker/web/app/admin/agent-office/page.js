@@ -5,6 +5,7 @@ import { Activity, Brain, Users, Zap } from 'lucide-react';
 import AdminPageHero from '@/components/AdminPageHero';
 import AgentCharts from '@/components/AgentCharts';
 import AdminQuickNav from '@/components/AdminQuickNav';
+import DotCharacter from '@/components/DotCharacter';
 import { api } from '@/lib/api';
 
 const TEAM_COLORS = {
@@ -167,6 +168,12 @@ export default function AgentOfficePage() {
               onClick={() => setSelectedAgent(agent)}
               className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
             >
+              <DotCharacter
+                color={agent.dot_character?.color || '#10b981'}
+                accessory={agent.dot_character?.accessory || 'none'}
+                status={agent.status}
+                size={22}
+              />
               <span>{getAlwaysOnDot(agent.updated_at)}</span>
               <span>{agent.display_name || agent.name}</span>
               <span className="text-slate-400">{toScore(agent.score).toFixed(1)}</span>
@@ -205,7 +212,7 @@ export default function AgentOfficePage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-          {agents.map((agent) => {
+          {agents.map((agent, index) => {
             const badge = STATUS_BADGE[agent.status] || STATUS_BADGE.idle;
             const teamClass = TEAM_COLORS[agent.team] || 'border-slate-200 bg-slate-50';
             const emotion = agent.emotion_state || {};
@@ -215,9 +222,17 @@ export default function AgentOfficePage() {
                 key={agent.name}
                 type="button"
                 onClick={() => setSelectedAgent(agent)}
-                className={`rounded-2xl border-2 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${teamClass}`}
+                className={`agent-card-enter rounded-2xl border-2 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${teamClass}`}
+                style={{ animationDelay: `${index * 40}ms` }}
               >
-                <div className="mb-2 text-center text-2xl">🤖</div>
+                <div className={`mb-2 flex justify-center ${agent.status === 'active' ? 'animate-agent-float' : ''}`}>
+                  <DotCharacter
+                    color={agent.dot_character?.color || '#6366f1'}
+                    accessory={agent.dot_character?.accessory || 'none'}
+                    status={agent.status}
+                    size={44}
+                  />
+                </div>
                 <div className="truncate text-sm font-semibold text-slate-900">{agent.display_name || agent.name}</div>
                 <div className="truncate text-xs text-slate-500">{agent.specialty || agent.role || '역할 미정'}</div>
                 <div className="mt-2 flex items-center gap-1 text-sm font-semibold text-slate-800">
@@ -247,6 +262,16 @@ export default function AgentOfficePage() {
             className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
+            <div className="mb-4 flex justify-center">
+              <div className="animate-agent-float">
+                <DotCharacter
+                  color={selectedAgent.dot_character?.color || '#6366f1'}
+                  accessory={selectedAgent.dot_character?.accessory || 'none'}
+                  status={selectedAgent.status}
+                  size={56}
+                />
+              </div>
+            </div>
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
