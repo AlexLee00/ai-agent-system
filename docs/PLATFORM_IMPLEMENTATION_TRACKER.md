@@ -221,6 +221,8 @@ packages/core/lib/competition-engine.js
 bots/investment/team/hanul.js
 bots/investment/shared/analyst-accuracy.js
 bots/investment/shared/trade-journal-db.js
+bots/investment/shared/llm-client.js
+packages/core/lib/billing-guard.js
 ```
 
 ### 루나팀
