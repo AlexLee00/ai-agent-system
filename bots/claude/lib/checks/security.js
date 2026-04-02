@@ -26,14 +26,14 @@ function fileMode(filePath) {
 function checkSecretsPermissions(items) {
   for (const [team, p] of Object.entries(cfg.SECRETS)) {
     if (!fs.existsSync(p)) {
-      items.push({ label: `secrets.json (${team})`, status: 'warn', detail: '파일 없음' });
+      items.push({ label: `secrets store (${team})`, status: 'warn', detail: '파일 없음' });
       continue;
     }
     const mode = fileMode(p);
     if (mode === '600') {
-      items.push({ label: `secrets.json (${team})`, status: 'ok', detail: '권한 600 ✅' });
+      items.push({ label: `secrets store (${team})`, status: 'ok', detail: '권한 600 ✅' });
     } else {
-      items.push({ label: `secrets.json (${team})`, status: 'error', detail: `권한 ${mode} (600이어야 함) → chmod 600 ${p}` });
+      items.push({ label: `secrets store (${team})`, status: 'error', detail: `권한 ${mode} (600이어야 함) → chmod 600 ${p}` });
     }
   }
 }
@@ -115,7 +115,7 @@ function checkGitignore(items) {
   }
 
   const content  = fs.readFileSync(gitignorePath, 'utf8');
-  const required = ['secrets.json', 'config.yaml', '*.duckdb', '*.db'];
+  const required = ['secrets.json', 'bots/hub/secrets-store.json', '*.duckdb', '*.db'];
   const missing  = required.filter(p => !content.includes(p));
 
   if (missing.length > 0) {

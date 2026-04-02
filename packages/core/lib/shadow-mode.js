@@ -37,6 +37,7 @@ const TEAM_MODE = {
 // ── Groq 모델 ────────────────────────────────────────────────────────
 const SHADOW_PRIMARY = 'meta-llama/llama-4-scout-17b-16e-instruct';
 const SHADOW_FALLBACK = 'qwen2.5-7b';
+const GROQ_MODEL = SHADOW_PRIMARY;
 
 // ── 테이블 초기화 ─────────────────────────────────────────────────────
 let _tableReady = false;
