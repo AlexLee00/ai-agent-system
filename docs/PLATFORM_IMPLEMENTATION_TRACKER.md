@@ -1,6 +1,6 @@
 # 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-04-01
+> 마지막 업데이트: 2026-04-02
 > 목적: 실제 코드 구현 상태와 커밋 이력 기준으로 개발 진행 상황을 추적한다.
 > 원칙: 완료(날짜+근거) / 진행 중(현재+남은 것) / 미완료 3단계 분류
 > 참조: docs/STRATEGY.md (전략), team-jay-strategy.md (상세 원본)
@@ -9,11 +9,12 @@
 
 ## 0. 현재 최우선 과제
 
-- **OpenClaw**: Phase 1 mainbot.js 흡수 (C안, 연구팀)
-- **블로팀**: P1~P5 코덱스 프롬프트 작성 → 구현
+- **OpenClaw**: Phase 1~3 완성 ✅ / Phase 4 코덱스 진행중 (alert resolve + mainbot 퇴역)
+- **LLM 재편성**: 구현 완료 ✅ (수정 2건 포함)
+- **RAG 경험 저장**: 코덱스 구현 완료 (미커밋, experience-store.js + CLI)
+- **블로팀**: F7 강의 순서 버그 + P1~P5 코덱스 프롬프트 완료
 - **D 분해**: 인프라+루나 (docs/strategy/luna.md + docs/DEVELOPMENT.md)
-- **Chronos**: Tier 2 본격 구현 (Phase A 완료)
-- **닥터 L3**: verify-loop 연동 강화
+- **멀티에이전트 v2**: 전략 수립 완료 (docs/MULTI_AGENT_EXPANSION_v2.md)
 
 ---
 
@@ -224,9 +225,22 @@ bots/claude/lib/team-bus.js — 팀 버스
 ### 스카/워커/오케스트레이터
 ```
 bots/reservation/auto/monitors/ — 네이버/픽코 모니터
+bots/reservation/manual/reports/pickko-alerts-resolve.js — 미해결 알람 해제 CLI (--list/--recent 추가, 04-01)
+bots/reservation/lib/mainbot-client.js — mainbot 큐 폴백 (Phase 3에서 postAlarm 전환)
 bots/ska/src/forecast.py — 매출 예측
 bots/worker/web/server.js — 워커 웹
-bots/orchestrator/src/router.js — 제이 라우터
+bots/orchestrator/src/router.js — 제이 라우터 (isPickkoAlertResolveCommand → OpenClaw 전환 예정)
+bots/orchestrator/src/mainbot.js — 알람 큐 처리 (Phase 4 퇴역 예정)
+bots/orchestrator/src/filter.js — 알람 필터링 (Phase 4 Standing Orders 이전 예정)
+bots/orchestrator/scripts/experience-store-cli.js — RAG 경험 저장 CLI (04-02 신규)
+```
+
+### RAG + 자기학습
+```
+packages/core/lib/experience-store.js — 에이전트 경험 triplet 저장/검색/통계 (04-02 신규)
+packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-02)
+~/.openclaw/workspace/skills/self-improving/ — 자기학습 스킬 v1.2.16 (04-02 설치)
+~/self-improving/ — 자기학습 메모리 (memory.md, corrections.md, domains/)
 ```
 
 ---
@@ -235,6 +249,13 @@ bots/orchestrator/src/router.js — 제이 라우터
 
 | 날짜 | 결정 |
 |------|------|
+| 04-02 | self-improving 스킬 설치 + RAG 경험 저장 설계 (pgvector triplet) |
+| 04-02 | 블로팀 F7: 강의 번호 점프 발견 (17건 미발행, 인덱스 리셋 필요) |
+| 04-01 | OpenClaw Phase 1~3 완성: 알람 단일 경로 (webhook + OPS 프록시) |
+| 04-01 | OAuth OpenClaw CLI 경유 + 팀별 Selector 공용화 + 모델 평가 |
+| 04-01 | 전체 56 에이전트 LLM 모델 재편성 (변경9, Fallback5, Selector1) |
+| 04-01 | Phase 4 설계: exec+Skill+Standing Orders A안 (mainbot 퇴역) |
+| 04-01 | n8n 불필요 확정 (현 단계, v2 멀티에이전트 확장 시 재도입) |
 | 03-31 | Ollama→MLX 전환 (20~50% 빠름, arXiv 2511.05502) |
 | 03-31 | local-llm-client.js → packages/core/lib/ 공용 (Hub 경유 안 함) |
 | 03-31 | Kimi K2: 128GB 필요→불가 / 70B: 스왑→32B 유지 |
@@ -252,5 +273,6 @@ bots/orchestrator/src/router.js — 제이 라우터
 
 | 날짜 | 변경 |
 |------|------|
+| 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
 | 2026-03-19 | 초기 작성 (749줄) |
