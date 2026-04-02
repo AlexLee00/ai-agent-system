@@ -219,6 +219,8 @@ bots/blog/lib/runtime-config.js
 packages/core/lib/hiring-contract.js
 packages/core/lib/competition-engine.js
 bots/investment/team/hanul.js
+bots/investment/shared/analyst-accuracy.js
+bots/investment/shared/trade-journal-db.js
 ```
 
 ### 루나팀
