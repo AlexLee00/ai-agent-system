@@ -14,6 +14,7 @@ const kst = require('../../../packages/core/lib/kst');
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
+const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
@@ -38,6 +39,8 @@ const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
 const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
 const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
+const COMPETITION_ENABLED = false;
+const COMPETITION_DAYS = [1, 3, 5];
 
 const _n8nCircuit = {
   disabledUntil: 0,
@@ -259,6 +262,22 @@ function _resetCircuit() {
   _n8nCircuit.reason = '';
 }
 
+async function runCompetition(topic, postType) {
+  if (!COMPETITION_ENABLED) return null;
+  const today = new Date().getDay();
+  if (!COMPETITION_DAYS.includes(today)) return null;
+
+  console.log(`[경쟁] 그룹 경쟁 시작: ${topic} (${postType})`);
+  try {
+    const competition = await competitionEngine.startCompetition(topic, 'blog');
+    console.log(`[경쟁] 그룹 A: ${competition.groupA.join(',')} / B: ${competition.groupB.join(',')}`);
+    return competition;
+  } catch (error) {
+    console.error('[경쟁] 시작 실패:', error.message);
+    return null;
+  }
+}
+
 // ─── 메인 ─────────────────────────────────────────────────────────────
 
 /**
@@ -343,4 +362,4 @@ async function run(postType, directRunner = null, payload = {}) {
   return { sessionId, pipeline, variations, n8nTriggered: n8nOk };
 }
 
-module.exports = { run, buildDynamicPipeline, buildDynamicVariation };
+module.exports = { run, runCompetition, buildDynamicPipeline, buildDynamicVariation };

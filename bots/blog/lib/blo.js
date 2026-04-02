@@ -49,6 +49,7 @@ const { checkQualityEnhanced }                      = require('./quality-checker
 const { publishToFile, recordPerformance }          = require('./publ');
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
+const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
 const { createMessage }                             = require('../../../packages/core/lib/message-envelope');
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
@@ -563,88 +564,176 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const prepared = await _prepareLectureContext(researchData, traceCtx, preloaded);
   if (prepared.skipped) return prepared.result;
   const context = prepared.context;
+  const startTime = Date.now();
+  let contractId = null;
 
-  return await withTrace(traceCtx, async () => {
-    const runLocalDraft = async variation => {
-      let post;
-      try {
-        post = await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation);
-      } catch (e) {
-        console.warn('[블로] 강의 분할 생성 실패 — 단일 생성 폴백:', e.message);
-        post = await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
-      }
-      return _runQualityRepair(
+  try {
+    const contract = await hiringContract.hire('pos', {
+      team: 'blog',
+      description: `lecture: ${context.lectureTitle || '자동 주제'}`,
+      requirements: { quality_min: 7.0, min_chars: 9000 },
+    });
+    contractId = contract.contractId;
+  } catch (e) {
+    console.warn('[shadow] hire 기록 실패 (무시):', e.message);
+  }
+
+  try {
+    const result = await withTrace(traceCtx, async () => {
+      const runLocalDraft = async variation => {
+        let post;
+        try {
+          post = await writeLecturePostChunked(context.number, context.lectureTitle, context.researchData, variation);
+        } catch (e) {
+          console.warn('[블로] 강의 분할 생성 실패 — 단일 생성 폴백:', e.message);
+          post = await writeLecturePost(context.number, context.lectureTitle, context.researchData, variation);
+        }
+        return _runQualityRepair(
+          'lecture',
+          context,
+          post,
+          variation,
+          async (ctx, currentPost, quality) => repairLecturePostDraft(
+            ctx.number,
+            ctx.lectureTitle,
+            ctx.researchData,
+            currentPost,
+            quality,
+            variation
+          )
+        );
+      };
+
+      const { post, quality } = await _resolvePipelineExecution(
         'lecture',
-        context,
-        post,
-        variation,
-        async (ctx, currentPost, quality) => repairLecturePostDraft(
-          ctx.number,
-          ctx.lectureTitle,
-          ctx.researchData,
-          currentPost,
-          quality,
-          variation
-        )
+        context.sectionVariation,
+        {
+          lectureNumber: context.number,
+          lectureTitle: context.lectureTitle,
+          topic: context.lectureTitle,
+        },
+        runLocalDraft
       );
-    };
 
-    const { post, quality } = await _resolvePipelineExecution(
-      'lecture',
-      context.sectionVariation,
-      {
-        lectureNumber: context.number,
-        lectureTitle: context.lectureTitle,
-        topic: context.lectureTitle,
-      },
-      runLocalDraft
-    );
+      const finalized = await _finalizeLecturePost(post, quality, context, scheduleId, traceCtx);
 
-    return _finalizeLecturePost(post, quality, context, scheduleId, traceCtx);
-  });
+      if (contractId) {
+        try {
+          await hiringContract.evaluate(contractId, {
+            quality: Number(quality?.score || (quality?.passed ? 8 : 5)),
+            char_count: post?.charCount || 0,
+            duration_ms: Date.now() - startTime,
+          }, null);
+        } catch (e) {
+          console.warn('[shadow] evaluate 기록 실패 (무시):', e.message);
+        }
+      }
+
+      return finalized;
+    });
+
+    return result;
+  } catch (error) {
+    if (contractId) {
+      try {
+        await hiringContract.evaluate(contractId, {
+          quality: 0,
+          duration_ms: Date.now() - startTime,
+          hallucination: false,
+        }, null);
+      } catch (e) {
+        console.warn('[shadow] evaluate 실패 기록 (무시):', e.message);
+      }
+    }
+    throw error;
+  }
 }
 
 // ─── 일반 포스팅 ──────────────────────────────────────────────────────
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
   const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
+  const startTime = Date.now();
+  let contractId = null;
 
-  return await withTrace(traceCtx, async () => {
-    const runLocalDraft = async variation => {
-      let post;
-      try {
-        post = await writeGeneralPostChunked(context.category, context.researchData, variation);
-      } catch (e) {
-        console.warn('[블로] 일반 분할 생성 실패 — 단일 생성 폴백:', e.message);
-        post = await writeGeneralPost(context.category, context.researchData, variation);
-      }
-      return _runQualityRepair(
+  try {
+    const contract = await hiringContract.hire('gems', {
+      team: 'blog',
+      description: `general: ${context.category || '자동 주제'}`,
+      requirements: { quality_min: 7.0, min_chars: 9000 },
+    });
+    contractId = contract.contractId;
+  } catch (e) {
+    console.warn('[shadow] hire 기록 실패 (무시):', e.message);
+  }
+
+  try {
+    const result = await withTrace(traceCtx, async () => {
+      const runLocalDraft = async variation => {
+        let post;
+        try {
+          post = await writeGeneralPostChunked(context.category, context.researchData, variation);
+        } catch (e) {
+          console.warn('[블로] 일반 분할 생성 실패 — 단일 생성 폴백:', e.message);
+          post = await writeGeneralPost(context.category, context.researchData, variation);
+        }
+        return _runQualityRepair(
+          'general',
+          { category: context.category, data: context.researchData },
+          post,
+          variation,
+          async (ctx, currentPost, quality) => repairGeneralPostDraft(
+            ctx.category,
+            ctx.data,
+            currentPost,
+            quality,
+            variation
+          )
+        );
+      };
+
+      const { post, quality } = await _resolvePipelineExecution(
         'general',
-        { category: context.category, data: context.researchData },
-        post,
-        variation,
-        async (ctx, currentPost, quality) => repairGeneralPostDraft(
-          ctx.category,
-          ctx.data,
-          currentPost,
-          quality,
-          variation
-        )
+        context.sectionVariation,
+        {
+          category: context.category,
+          topic: context.category,
+        },
+        runLocalDraft
       );
-    };
 
-    const { post, quality } = await _resolvePipelineExecution(
-      'general',
-      context.sectionVariation,
-      {
-        category: context.category,
-        topic: context.category,
-      },
-      runLocalDraft
-    );
+      const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx);
 
-    return _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx);
-  });
+      if (contractId) {
+        try {
+          await hiringContract.evaluate(contractId, {
+            quality: Number(quality?.score || (quality?.passed ? 8 : 5)),
+            char_count: post?.charCount || 0,
+            duration_ms: Date.now() - startTime,
+          }, null);
+        } catch (e) {
+          console.warn('[shadow] evaluate 기록 실패 (무시):', e.message);
+        }
+      }
+
+      return finalized;
+    });
+
+    return result;
+  } catch (error) {
+    if (contractId) {
+      try {
+        await hiringContract.evaluate(contractId, {
+          quality: 0,
+          duration_ms: Date.now() - startTime,
+          hallucination: false,
+        }, null);
+      } catch (e) {
+        console.warn('[shadow] evaluate 실패 기록 (무시):', e.message);
+      }
+    }
+    throw error;
+  }
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────────
