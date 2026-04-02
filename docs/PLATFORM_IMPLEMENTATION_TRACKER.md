@@ -263,6 +263,9 @@ bots/worker/lib/llm-api-monitoring.js
 bots/orchestrator/config.json
 bots/orchestrator/lib/jay-model-policy.js
 bots/orchestrator/lib/runtime-config.js
+bots/worker/web/app/admin/agent-office/page.js
+bots/worker/web/components/AdminQuickNav.js
+bots/worker/web/routes/agents.js
 ```
 
 ### RAG + 자기학습
