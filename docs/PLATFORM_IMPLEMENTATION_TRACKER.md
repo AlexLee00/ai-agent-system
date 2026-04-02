@@ -201,6 +201,9 @@ packages/core/lib/health-provider.js  — 공용 헬스
 packages/core/lib/reporting-hub.js    — 공용 알림/리포트
 packages/core/lib/ai-feedback-core.js — AI 피드백 루프
 packages/core/lib/rag.js              — pgvector RAG
+packages/core/lib/llm-fallback.js
+packages/core/lib/llm-logger.js
+packages/core/lib/llm-model-selector.js
 ```
 
 ### 루나팀
@@ -243,6 +246,8 @@ bots/orchestrator/CLAUDE.md — Claude Code 컨텍스트 (04-02 신규)
 bots/orchestrator/lib/write/doc-archiver.js
 bots/orchestrator/lib/write/doc-sync-checker.js
 bots/orchestrator/src/write.js
+bots/worker/lib/ai-client.js
+bots/worker/lib/llm-api-monitoring.js
 ```
 
 ### RAG + 자기학습
