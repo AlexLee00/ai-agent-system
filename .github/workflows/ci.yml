@@ -67,7 +67,16 @@ jobs:
       - name: 코드 동기화
         run: |
           cd "$PROJECT_ROOT"
-          git pull origin main
+          echo "=== OPS deploy sync ==="
+          git fetch origin main
+          echo "HEAD(before): $(git rev-parse --short HEAD)"
+          echo "FETCH_HEAD:    $(git rev-parse --short FETCH_HEAD)"
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "⚠️ 운영 워킹트리에 로컬 변경이 있습니다. 단방향 배포 원칙에 따라 최신 main 기준으로 덮어씁니다."
+            git status --short
+          fi
+          git reset --hard FETCH_HEAD
+          echo "HEAD(after):  $(git rev-parse --short HEAD)"
 
       - name: 의존성 갱신 확인
         run: |
