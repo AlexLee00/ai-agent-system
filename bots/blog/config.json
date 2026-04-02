@@ -22,7 +22,7 @@
       "maestroCircuitCooldownMs": 1800000
     },
     "commenter": {
-      "enabled": false,
+      "enabled": true,
       "blogId": "cafe_library",
       "maxDaily": 20,
       "activeStartHour": 8,
