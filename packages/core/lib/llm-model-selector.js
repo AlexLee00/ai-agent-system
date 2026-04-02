@@ -97,6 +97,35 @@ function _resolvePreferredProvider(preferredApi, groqModel, maxTokens) {
   return { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 };
 }
 
+function _buildRouteFromAgentModel(agentModel, {
+  openaiPerfModel = 'gpt-5.4',
+  openaiMiniModel = 'gpt-4o-mini',
+  groqScoutModel = 'meta-llama/llama-4-scout-17b-16e-instruct',
+  groqCompetitionModels = ['openai/gpt-oss-20b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+} = {}) {
+  const normalized = String(agentModel || '').trim();
+  if (!normalized) return null;
+
+  if (normalized === 'openai-oauth/gpt-5.4') return 'openai_perf';
+  if (normalized.startsWith('openai-oauth/')) return 'openai_mini';
+  if (normalized.startsWith('local/')) return normalized.includes('deepseek') ? 'local_deep' : 'local_primary';
+  if (normalized.startsWith('groq/')) {
+    const lower = normalized.toLowerCase();
+    if (lower.includes('gpt-oss') || lower.includes('scout')) return 'groq_scout';
+    return 'groq_with_local';
+  }
+  if (normalized === 'anthropic') return 'groq_with_local';
+  if (normalized.startsWith('claude-code/')) return 'groq_with_local';
+  if (normalized.startsWith('anthropic/')) return 'groq_with_local';
+  if (normalized.startsWith('gemini/')) return 'openai_mini';
+  if (normalized.startsWith('google-gemini-cli/')) return 'openai_mini';
+  if (normalized === openaiPerfModel) return 'openai_perf';
+  if (normalized === openaiMiniModel) return 'openai_mini';
+  if (normalized === groqScoutModel) return 'groq_scout';
+  if (groqCompetitionModels.includes(normalized)) return 'dual_groq';
+  return null;
+}
+
 function _sanitizeConfiguredProviders(preferredApi, configuredProviders = []) {
   const list = Array.isArray(configuredProviders) ? configuredProviders.slice() : [];
   if (preferredApi === 'claude-code') {
@@ -426,7 +455,7 @@ function _buildSelectorRegistry() {
     'video._default': () => _resolveFromTeamDefault('video._default'),
     'video.step-proposal': () => _resolveFromTeamDefault('video.step-proposal'),
 
-    'investment.agent_policy': ({ agentName, openaiPerfModel = 'gpt-5.4', policyOverride } = {}) => {
+    'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride } = {}) => {
       const defaultRoutes = {
         luna: 'openai_perf',
         nemesis: 'dual_groq',
@@ -440,7 +469,6 @@ function _buildSelectorRegistry() {
       const configuredRoutes = _isObject(policyOverride?.agentRoutes)
         ? { ...defaultRoutes, ...policyOverride.agentRoutes }
         : defaultRoutes;
-      const route = configuredRoutes[agentName] || 'groq_scout';
       const openaiMiniModel = policyOverride?.openaiMiniModel || 'gpt-4o-mini';
       const groqScoutModel = policyOverride?.groqScoutModel || 'meta-llama/llama-4-scout-17b-16e-instruct';
       const groqCompetitionModels = Array.isArray(policyOverride?.groqCompetitionModels) && policyOverride.groqCompetitionModels.length > 0
@@ -450,6 +478,12 @@ function _buildSelectorRegistry() {
             'meta-llama/llama-4-scout-17b-16e-instruct',
           ];
       const anthropicModel = policyOverride?.anthropicModel || 'claude-haiku-4-5-20251001';
+      const route = _buildRouteFromAgentModel(agentModel, {
+        openaiPerfModel,
+        openaiMiniModel,
+        groqScoutModel,
+        groqCompetitionModels,
+      }) || configuredRoutes[agentName] || 'groq_scout';
       const routeChains = {
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
