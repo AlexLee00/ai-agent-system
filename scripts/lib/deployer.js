@@ -221,15 +221,17 @@ function updateSystemStatus(deployedBotId, registry) {
     if (m) history = m[1].trim().split('\n').filter(l => l.trim());
   }
   const deployed = registry.bots[deployedBotId];
-  const targets = deployed.deployTargets.map(t => t.type).join('+') || '-';
+  const deployedTargets = Array.isArray(deployed?.deployTargets) ? deployed.deployTargets : [];
+  const targets = deployedTargets.map(t => t.type).join('+') || '-';
   history.unshift(`- ${now} — **${deployedBotId}** (${deployed.name}) [${targets}]`);
   if (history.length > 10) history = history.slice(0, 10);
 
   // 봇 현황 테이블
   const emoji = { ops: '✅', dev: '🔧', planned: '⏳' };
   const rows = Object.entries(registry.bots).map(([id, b]) => {
-    const oc = b.deployTargets.find(t => t.type === 'openclaw');
-    const loginType = oc ? `${oc.type}/${oc.loginType}` : (b.deployTargets[0]?.type || '-');
+    const deployTargets = Array.isArray(b.deployTargets) ? b.deployTargets : [];
+    const oc = deployTargets.find(t => t.type === 'openclaw');
+    const loginType = oc ? `${oc.type}/${oc.loginType}` : (deployTargets[0]?.type || '-');
     return `| ${emoji[b.status] || '❓'} | \`${id}\` | ${b.name} | ${b.model?.primary || '-'} | ${loginType} |`;
   }).join('\n');
 
@@ -279,7 +281,9 @@ function deployBot(botId, registry, targetTypeFilter = null) {
     return false;
   }
 
-  if (bot.deployTargets.length === 0) {
+  const deployTargets = Array.isArray(bot.deployTargets) ? bot.deployTargets : [];
+
+  if (deployTargets.length === 0) {
     log(`⏳ [${botId}] deployTargets 없음 (${bot.status}) - 스킵`);
     return true;
   }
@@ -292,7 +296,7 @@ function deployBot(botId, registry, targetTypeFilter = null) {
 
   log(`\n🤖 봇: ${bot.name} (${botId}) | 상태: ${bot.status} | 모델: ${bot.model?.primary}`);
 
-  for (const target of bot.deployTargets) {
+  for (const target of deployTargets) {
     if (targetTypeFilter && target.type !== targetTypeFilter) continue;
 
     if (target.type === 'openclaw') {
@@ -312,7 +316,8 @@ function deployBot(botId, registry, targetTypeFilter = null) {
 // ─── 역동기화: 워크스페이스 → context/ ───────────────────────────────────
 function syncBot(botId, registry) {
   const bot = registry.bots[botId];
-  if (!bot || bot.deployTargets.length === 0) {
+  const deployTargets = Array.isArray(bot?.deployTargets) ? bot.deployTargets : [];
+  if (!bot || deployTargets.length === 0) {
     log(`❌ [${botId}] 동기화 대상 없음`);
     return false;
   }
@@ -320,7 +325,7 @@ function syncBot(botId, registry) {
   const contextDir = path.join(ROOT, bot.contextPath);
   log(`\n🔄 역동기화: ${botId} (워크스페이스 → context/)`);
 
-  for (const target of bot.deployTargets) {
+  for (const target of deployTargets) {
     const workspace = expandHome(target.workspace);
     log(`\n  📥 [${target.type}] ${workspace}`);
 
