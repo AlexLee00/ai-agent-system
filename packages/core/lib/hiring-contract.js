@@ -43,18 +43,19 @@ function _getLunaRoleBonus(requestedRole, agentRole) {
 
 async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
-  const candidates = team === 'luna'
-    ? await registry.getAgentsByTeam(team)
-    : await registry.getTopAgents(role, limit);
+
+  // team이 주어지면 항상 팀 내에서만 검색 (글로벌 폴백 금지!)
+  let candidates;
+  if (team) {
+    const teamAgents = await registry.getAgentsByTeam(team);
+    candidates = teamAgents.filter((a) => a.role === role);
+    if (!candidates.length) candidates = teamAgents; // 팀 내 폴백 (role 무관)
+  } else {
+    candidates = await registry.getTopAgents(role, limit);
+  }
   if (!candidates || candidates.length === 0) return null;
 
-  let filtered = team
-    ? candidates.filter((agent) => agent.team === team)
-    : candidates;
-
-  if (!filtered.length) filtered = candidates;
-
-  const ranked = filtered.map((agent) => {
+  const ranked = candidates.map((agent) => {
     const emotion = agent.emotion_state || {};
     const fatigue = _normalizeEmotionScore(emotion.fatigue, 0);
     const confidence = _normalizeEmotionScore(emotion.confidence, 5);
