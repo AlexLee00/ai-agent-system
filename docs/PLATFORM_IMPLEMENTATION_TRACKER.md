@@ -209,6 +209,11 @@ bots/investment/nodes/index.js
 bots/investment/nodes/l03-sentinel.js
 bots/investment/scripts/run-pipeline-node.js
 bots/investment/shared/pipeline-decision-runner.js
+bots/investment/team/_deprecated/hermes.js
+bots/investment/team/_deprecated/sophia.js
+bots/investment/team/hermes.js
+bots/investment/team/sentinel.js
+bots/investment/team/sophia.js
 ```
 
 ### 루나팀
