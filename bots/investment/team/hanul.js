@@ -203,6 +203,27 @@ async function closeOpenJournalForSymbol(symbol, market, isPaper, exitPrice, exi
   }).catch(() => {});
 }
 
+async function closeStaleOpenJournalForSymbol(symbol, market, isPaper, exitReason, tradeMode = null) {
+  const openEntries = await journalDb.getOpenJournalEntries(market);
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+  const entry = openEntries.find(e =>
+    e.symbol === symbol
+      && Boolean(e.is_paper) === Boolean(isPaper)
+      && (e.trade_mode || 'normal') === effectiveTradeMode
+  );
+  if (!entry) return;
+
+  await journalDb.closeJournalEntry(entry.trade_id, {
+    exitReason,
+    exitPrice: null,
+    exitValue: null,
+    pnlAmount: null,
+    pnlPercent: null,
+    pnlNet: null,
+  });
+  await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
+}
+
 async function checkKisRisk(signal) {
   const { action, amount_usdt: amountKrw, symbol } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
@@ -801,12 +822,22 @@ export async function executeOverseasSignal(signal) {
 
   } catch (e) {
     if (e?.message && e.message.includes('APBK1526')) {
+      const livePosition = await db.getLivePosition(symbol, 'kis_overseas', signalTradeMode).catch(() => null);
+      const paperPosition = await db.getPaperPosition(symbol, 'kis_overseas', signalTradeMode).catch(() => null);
+      const cleanupPaperMode = paperMode || (!livePosition && !!paperPosition);
       console.warn(`  ⚠️ ${symbol} KIS 해외잔고 미존재 → DB 포지션 삭제 정리`);
       await db.deletePosition(symbol, {
         exchange: 'kis_overseas',
-        paper: false,
+        paper: cleanupPaperMode,
         tradeMode: signalTradeMode,
       });
+      await closeStaleOpenJournalForSymbol(
+        symbol,
+        'overseas',
+        cleanupPaperMode,
+        'broker_no_balance_cleanup',
+        signalTradeMode,
+      ).catch(() => {});
       await markSignalFailedDetailed(signalId, {
         reason: 'KIS 해외잔고 미존재 — DB 포지션 삭제 정리',
         code: 'kis_overseas_no_balance_cleaned',
