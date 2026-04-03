@@ -198,6 +198,24 @@ async function checkQualityEnhanced(content, type, options = {}) {
     }
   }
 
+  if (type === 'general' && options.category === '도서리뷰') {
+    const expectedBook = options.bookInfo || null;
+    const expectedIsbn = String(expectedBook?.isbn || '').replace(/[^0-9]/g, '');
+    const expectedTitle = String(expectedBook?.title || '').trim();
+    const expectedAuthor = String(expectedBook?.author || '').split(',')[0].trim();
+
+    if (!expectedBook || !expectedIsbn || String(expectedBook.source || '') === 'fallback') {
+      issues.push({ severity: 'error', msg: '도서리뷰 검증 실패: ISBN13 있는 검증 도서 정보가 필요함' });
+    } else {
+      if (expectedTitle && !String(content || '').includes(expectedTitle)) {
+        issues.push({ severity: 'error', msg: `도서리뷰 제목/본문에 검증된 도서명이 없음: "${expectedTitle}"` });
+      }
+      if (expectedAuthor && !String(content || '').includes(expectedAuthor)) {
+        issues.push({ severity: 'warn', msg: `도서리뷰 본문에 검증된 저자명이 약하게 나타남: "${expectedAuthor}"` });
+      }
+    }
+  }
+
   const packages = extractExternalPackages(content);
   for (const pkg of packages.slice(0, 8)) {
     const exists = await packageExists(pkg);

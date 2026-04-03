@@ -13,6 +13,7 @@ const https  = require('https');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const rag    = require('../../../packages/core/lib/rag-safe');
 const env    = require('../../../packages/core/lib/env');
+const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
@@ -78,8 +79,7 @@ function extractNaverBlogStats(html = '') {
 
 async function searchNaverBlogByTitle(title) {
   try {
-    const clientId = process.env.NAVER_CLIENT_ID || process.env.NAVER_SEARCH_CLIENT_ID || process.env.NAVER_OPENAPI_CLIENT_ID;
-    const clientSecret = process.env.NAVER_CLIENT_SECRET || process.env.NAVER_SEARCH_CLIENT_SECRET || process.env.NAVER_OPENAPI_CLIENT_SECRET;
+    const { clientId, clientSecret } = await resolveNaverCredentials();
     if (!clientId || !clientSecret || !title) return null;
 
     const url = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(title)}&display=3&sort=sim`;

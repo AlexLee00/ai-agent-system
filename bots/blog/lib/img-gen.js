@@ -4,147 +4,44 @@ const kst = require('../../../packages/core/lib/kst');
 /**
  * img-gen.js — 블로그팀 이미지 생성
  *
- * 전략: OpenAI gpt-image-1 Medium 메인(유료) → Nano Banana 폴백(무료)
+ * 전략: ComfyUI 로컬 메인 + 로컬 재시도
  *
  * 함수:
  *   generateImage(prompt, opts)          — 단건 생성 (폴백 체인)
- *   generateWithOpenAI(prompt, opts)     — OpenAI gpt-image-1 medium 직접 호출 (메인)
- *   generateWithNanoBanana(prompt, opts) — Gemini 직접 호출 (폴백)
+ *   generateWithComfyUI(prompt, opts)    — ComfyUI 로컬 생성 (메인)
  *   generatePostImages({ title, postType, category }) — 블로그 포스팅 이미지 2장
  *   generateInstaCard(summary, cardIndex, outputPath) — 인스타 카드 1장
  *
  * 비용:
- *   OpenAI medium: ~$0.04/장 (1024×1024, 메인)
- *   Nano Banana: 무료 500장/일 (RPM 15, RPD 1,000, 폴백 시에만)
+ *   로컬 자원 사용 (메인)
  */
 
 const fs   = require('fs');
 const path = require('path');
-const { getGeminiImageKey, getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
+const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
+const { generateWithComfyUI } = require('../../../packages/core/lib/local-image-client');
 
 const OUTPUT_DIR  = path.join(__dirname, '..', 'output');
 const IMAGES_DIR  = path.join(OUTPUT_DIR, 'images');
 const GDRIVE_DIR  = process.env.GDRIVE_BLOG_IMAGES || '/tmp/blog-images';
 
-const NANO_BANANA_MODEL = 'gemini-2.5-flash-image';
-
-// 비율 → OpenAI 사이즈 매핑
-const OPENAI_SIZE_MAP = {
-  '1:1':  '1024x1024',
-  '16:9': '1536x1024',
-  '9:16': '1024x1536',
-  '3:4':  '1024x1536',
-  '4:3':  '1536x1024',
-};
-
-// ── 1. Nano Banana (메인 — 무료) ────────────────────────────────
+// ── 1. 메인 체인 (ComfyUI local-only + retry) ───────────────────
 
 /**
- * Nano Banana로 이미지 생성 (Buffer 반환)
- * @param {string} prompt
- * @param {{ aspectRatio?: string }} [opts]
- * @returns {Promise<{ buffer: Buffer, source: 'nano_banana' }>}
- */
-async function generateWithNanoBanana(prompt, opts = {}) {
-  const apiKey = getGeminiImageKey();
-  if (!apiKey) throw new Error('GEMINI_IMAGE_KEY / GEMINI_API_KEY 없음');
-
-  const { GoogleGenerativeAI } = require('@google/generative-ai');
-  const { aspectRatio = '1:1' } = opts;
-
-  const genai = new GoogleGenerativeAI(apiKey);
-  const model = genai.getGenerativeModel({ model: NANO_BANANA_MODEL });
-
-  // 비율은 프롬프트로 전달 (SDK에서 imageGenerationConfig 미지원)
-  const aspectHint = aspectRatio !== '1:1' ? ` Aspect ratio ${aspectRatio}.` : '';
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt + aspectHint }] }],
-    generationConfig: {
-      responseModalities: ['IMAGE', 'TEXT'],
-    },
-  });
-
-  const parts   = result.response?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
-
-  if (!imgPart?.inlineData?.data) throw new Error('Nano Banana 이미지 응답 없음');
-
-  return { buffer: Buffer.from(imgPart.inlineData.data, 'base64'), source: 'nano_banana' };
-}
-
-// ── 2. OpenAI gpt-image-1 Medium (폴백 — 유료) ──────────────────
-
-/**
- * OpenAI gpt-image-1 이미지 생성
- * quality: OPENAI_IMAGE_QUALITY 환경변수 (high|medium|low, 기본 medium)
- * @param {string} prompt
- * @param {{ aspectRatio?: string }} [opts]
- * @returns {Promise<{ buffer: Buffer, source: 'openai_high' }>}
- */
-async function generateWithOpenAI(prompt, opts = {}) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OPENAI_API_KEY 없음');
-
-  const OpenAI = require('openai');
-  const { aspectRatio = '1:1' } = opts;
-  const size    = OPENAI_SIZE_MAP[aspectRatio] || '1024x1024';
-  const quality = process.env.OPENAI_IMAGE_QUALITY || 'medium';
-
-  const openai    = new OpenAI({ apiKey });
-  const response  = await openai.images.generate({
-    model:   'gpt-image-1',
-    prompt,
-    n:       1,
-    size,
-    quality,
-  });
-
-  const imageData = response.data?.[0];
-  let buffer;
-
-  if (imageData?.b64_json) {
-    buffer = Buffer.from(imageData.b64_json, 'base64');
-  } else if (imageData?.url) {
-    const https = require('https');
-    buffer = await new Promise((resolve, reject) => {
-      https.get(imageData.url, res => {
-        const chunks = [];
-        res.on('data', c => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks)));
-        res.on('error', reject);
-      }).on('error', reject);
-    });
-  } else {
-    throw new Error('OpenAI 이미지 응답 없음');
-  }
-
-  return { buffer, source: 'openai_medium' };
-}
-
-// ── 3. 메인 체인 (OpenAI Medium → Nano Banana 폴백) ─────────────
-
-/**
- * 이미지 생성 — OpenAI medium 메인, 실패 시 Nano Banana 폴백
+ * 이미지 생성 — ComfyUI local-only, 내부 retry 포함
  * @param {string} prompt
  * @param {{ aspectRatio?: string, outputPath?: string }} [opts]
  * @returns {Promise<{ buffer: Buffer, source: string, fallback: boolean }>}
  */
 async function generateImage(prompt, opts = {}) {
   const { outputPath, ...genOpts } = opts;
-
-  // OpenAI medium 시도 (메인)
-  try {
-    const result = await generateWithOpenAI(prompt, genOpts);
-    if (outputPath) _saveBuffer(result.buffer, outputPath);
-    return { ...result, fallback: false };
-  } catch (e) {
-    console.warn(`  ⚠️ [img-gen] OpenAI 실패 → Nano Banana 폴백: ${e.message}`);
-  }
-
-  // Nano Banana 폴백 (무료)
-  const result = await generateWithNanoBanana(prompt, genOpts);
+  const runtimeProfile = await selectRuntime('blog', 'image-local');
+  const result = await generateWithComfyUI(prompt, {
+    ...genOpts,
+    runtimeProfile,
+  });
   if (outputPath) _saveBuffer(result.buffer, outputPath);
-  return { ...result, fallback: true };
+  return { ...result, fallback: false };
 }
 
 function _saveBuffer(buffer, outputPath) {
@@ -347,7 +244,7 @@ async function generatePostImages({ title, postType, category }) {
   const safeSlug = (title || '').replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 40);
   const slug     = `${today}_${postType}_${safeSlug}`;
 
-  console.log(`[이미지] 생성 시작 (OpenAI Medium 메인 → Nano Banana 폴백) — ${title}`);
+  console.log(`[이미지] 생성 시작 (ComfyUI local-only) — ${title}`);
 
   const thumbPrompt = _buildThumbPrompt(title, postType, category);
   const midPrompt   = _buildMidPrompt(title, postType, category);
@@ -372,6 +269,11 @@ async function generatePostImages({ title, postType, category }) {
     _genAndSave(thumbPrompt, 'thumb').catch(e => { console.warn('[이미지] 대표 실패:', e.message); return null; }),
     _genAndSave(midPrompt, 'mid').catch(e => { console.warn('[이미지] 중간 실패:', e.message); return null; }),
   ]);
+
+  if (!thumb && !mid) {
+    console.warn('[이미지] 대표/중간 이미지 모두 실패 — 이미지 없이 포스팅 진행');
+    return null;
+  }
 
   return { thumb, mid };
 }
@@ -476,8 +378,6 @@ async function generateInstaCard(summary, cardIndex, outputPath) {
 
 module.exports = {
   generateImage,
-  generateWithNanoBanana,
-  generateWithOpenAI,
   generatePostImages,
   generateInstaCard,
   _buildThumbPrompt,

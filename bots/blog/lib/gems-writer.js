@@ -508,7 +508,14 @@ ${newsList}
  * @returns {string}
  */
 function _buildBookReviewBlock(bookInfo) {
-  if (!bookInfo?.title) return '';
+  if (!bookInfo?.title || !bookInfo?.isbn) {
+    return `
+[도서리뷰 전용 지시 — 반드시 준수]
+현재 검증된 도서 정보가 충분하지 않다.
+ISBN13이 없는 도서는 실존 검증 실패로 간주한다.
+도서 정보가 불완전하면 도서리뷰를 작성하지 마라.
+`.trim();
+  }
 
   return `
 [도서리뷰 전용 지시 — 반드시 준수]
@@ -521,13 +528,16 @@ function _buildBookReviewBlock(bookInfo) {
 ${bookInfo.description ? `- 소개: ${bookInfo.description.slice(0, 300)}` : ''}
 
 도서리뷰 작성 규칙:
-1. 위 도서를 실제로 읽은 독자(승호아빠) 입장에서 리뷰하라.
-2. [본론 섹션 1]: 책 소개 + 저자 소개 + 읽게 된 계기 (1,500자 이상)
-3. [본론 섹션 2]: 핵심 내용 3가지 챕터 요약 + 인상 깊은 구절 직접 인용 (1,500자 이상)
-4. [본론 섹션 3]: ai-agent-system 개발에 어떻게 적용했는지 실전 연결 (1,500자 이상)
-5. 평점: 별점(★★★★☆ 형식) + 200자 총평 포함
-6. "이런 분께 추천": 독자 대상 3가지 구체적으로 명시
-7. 표지 이미지는 별도 삽입 예정이므로 "[도서 표지 이미지]" 텍스트 자리표시자 삽입
+1. 위에 제공된 도서 외의 다른 책을 절대 지어내지 마라.
+2. ISBN이 없는 도서는 실존 검증 실패로 간주한다.
+3. 책 정보가 비어 있거나 의심스러우면 리뷰를 작성하지 마라.
+4. 위 도서를 실제로 읽은 독자(승호아빠) 입장에서 리뷰하라.
+5. [본론 섹션 1]: 책 소개 + 저자 소개 + 읽게 된 계기 (1,500자 이상)
+6. [본론 섹션 2]: 핵심 내용 3가지 챕터 요약 + 인상 깊은 구절 직접 인용 (1,500자 이상)
+7. [본론 섹션 3]: ai-agent-system 개발에 어떻게 적용했는지 실전 연결 (1,500자 이상)
+8. 평점: 별점(★★★★☆ 형식) + 200자 총평 포함
+9. "이런 분께 추천": 독자 대상 3가지 구체적으로 명시
+10. 표지 이미지는 별도 삽입 예정이므로 "[도서 표지 이미지]" 텍스트 자리표시자 삽입
 `.trim();
 }
 
@@ -601,6 +611,9 @@ function _buildVariationBlock(variation = {}) {
  * @returns {{ content, charCount, model, title }}
  */
 async function writeGeneralPost(category, researchData, sectionVariation = {}) {
+  if (category === '도서리뷰' && !researchData?.book_info?.isbn) {
+    throw new Error('검증된 도서 정보가 없어 도서리뷰 작성 불가');
+  }
   const today    = new Date().toLocaleDateString('ko-KR');
   const cacheKey = `gems_general_${category}_${kst.today()}`;
 
@@ -820,6 +833,9 @@ ${_buildVariationBlock(sectionVariation)}
  * @returns {Promise<{ content, charCount, model, title, fallbackUsed, repairedFromDraft: true }>}
  */
 async function repairGeneralPostDraft(category, researchData, draft, quality, sectionVariation = {}) {
+  if (category === '도서리뷰' && !researchData?.book_info?.isbn) {
+    throw new Error('검증된 도서 정보가 없어 도서리뷰 보정 불가');
+  }
   const content = String(draft?.content || '').trim();
   if (!content) {
     throw new Error('repairGeneralPostDraft: draft.content 비어 있음');

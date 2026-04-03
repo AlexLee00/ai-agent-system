@@ -5,7 +5,10 @@
  *
  * 1순위: 네이버 책 검색 API (NAVER_CLIENT_ID / NAVER_CLIENT_SECRET)
  * 2순위: Google Books API (GOOGLE_BOOKS_API_KEY — 선택)
- * 폴백:  베스트셀러 목록에서 랜덤 선택 (API 없을 때)
+ * 정책:
+ *   - 후보 검색 -> 선택 -> 검증
+ *   - API 모두 실패 시 null 반환
+ *   - fallback 도서는 writer에 전달하지 않음
  *
  * 반환값:
  *   {
@@ -19,6 +22,10 @@ const https  = require('https');
 const http   = require('http');
 const fs     = require('fs');
 const path   = require('path');
+const {
+  resolveNaverCredentials,
+  resolveGoogleBooksApiKey,
+} = require('../../../packages/core/lib/news-credentials');
 
 const COVER_DIR = path.join(__dirname, '..', 'output', 'images', 'books');
 
@@ -95,8 +102,7 @@ async function downloadCover(url, isbn) {
  * @returns {object|null}
  */
 async function searchNaverBook() {
-  const clientId     = process.env.NAVER_CLIENT_ID;
-  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  const { clientId, clientSecret } = await resolveNaverCredentials();
   if (!clientId || !clientSecret) return null;
 
   try {
@@ -133,6 +139,70 @@ async function searchNaverBook() {
   }
 }
 
+async function searchNaverBookByQuery(query) {
+  const { clientId, clientSecret } = await resolveNaverCredentials();
+  if (!clientId || !clientSecret || !query) return null;
+
+  try {
+    const url = `https://openapi.naver.com/v1/search/book.json?query=${encodeURIComponent(query)}&display=5&sort=sim`;
+    const { status, body } = await httpsGet(url, {
+      'X-Naver-Client-Id':     clientId,
+      'X-Naver-Client-Secret': clientSecret,
+    });
+
+    if (status !== 200 || !body?.items?.length) return null;
+    const item = body.items[0];
+    const isbn = (item.isbn || '').split(' ')[0];
+    return {
+      title:       item.title?.replace(/<[^>]+>/g, '') || '',
+      author:      item.author?.replace(/<[^>]+>/g, '') || '',
+      isbn,
+      publisher:   item.publisher || '',
+      pubDate:     item.pubdate  || '',
+      description: (item.description || '').replace(/<[^>]+>/g, '').slice(0, 500),
+      coverUrl:    item.image || null,
+      source:      'naver',
+    };
+  } catch (e) {
+    console.warn('[도서] 네이버 재검증 실패:', e.message);
+    return null;
+  }
+}
+
+async function searchNaverBookCandidates() {
+  const { clientId, clientSecret } = await resolveNaverCredentials();
+  if (!clientId || !clientSecret) return [];
+
+  const results = [];
+  for (const keyword of buildSearchKeywords().slice(0, 4)) {
+    try {
+      const url = `https://openapi.naver.com/v1/search/book.json?query=${encodeURIComponent(keyword)}&display=5&sort=sim`;
+      const { status, body } = await httpsGet(url, {
+        'X-Naver-Client-Id':     clientId,
+        'X-Naver-Client-Secret': clientSecret,
+      });
+      if (status !== 200 || !body?.items?.length) continue;
+
+      for (const item of body.items.slice(0, 5)) {
+        const isbn = (item.isbn || '').split(' ')[0];
+        results.push({
+          title: item.title,
+          author: item.author,
+          isbn,
+          publisher: item.publisher,
+          pubDate: item.pubdate,
+          description: item.description,
+          coverUrl: item.image || null,
+          source: 'naver',
+        });
+      }
+    } catch (e) {
+      console.warn('[도서] 네이버 후보 검색 실패:', e.message);
+    }
+  }
+  return uniqueByBookSignature(results);
+}
+
 // ─── Google Books API ─────────────────────────────────────────────────
 
 /**
@@ -140,7 +210,7 @@ async function searchNaverBook() {
  * @returns {object|null}
  */
 async function searchGoogleBook() {
-  const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
+  const apiKey = await resolveGoogleBooksApiKey();
   const queries = ['subject:computers+language:ko', 'subject:self-help+language:ko', 'intitle:개발자'];
   const q       = queries[Math.floor(Math.random() * queries.length)];
   const keyPart = apiKey ? `&key=${apiKey}` : '';
@@ -171,6 +241,67 @@ async function searchGoogleBook() {
   }
 }
 
+async function searchGoogleBookByQuery(query) {
+  const apiKey = await resolveGoogleBooksApiKey();
+  if (!query) return null;
+  const keyPart = apiKey ? `&key=${apiKey}` : '';
+
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&orderBy=relevance&printType=books${keyPart}`;
+    const { status, body } = await httpsGet(url);
+    if (status !== 200 || !body?.items?.length) return null;
+
+    const item  = body.items[0];
+    const info  = item.volumeInfo || {};
+    const isbn  = (info.industryIdentifiers || []).find(i => i.type === 'ISBN_13')?.identifier || '';
+    return {
+      title:       info.title || '',
+      author:      (info.authors || []).join(', '),
+      isbn,
+      publisher:   info.publisher || '',
+      pubDate:     info.publishedDate || '',
+      description: (info.description || '').slice(0, 500),
+      coverUrl:    info.imageLinks?.thumbnail?.replace('http://', 'https://') || null,
+      source:      'google',
+    };
+  } catch (e) {
+    console.warn('[도서] Google Books 재검증 실패:', e.message);
+    return null;
+  }
+}
+
+async function searchGoogleBookCandidates() {
+  const apiKey = await resolveGoogleBooksApiKey();
+  const keyPart = apiKey ? `&key=${apiKey}` : '';
+  const results = [];
+
+  for (const query of buildSearchKeywords().slice(0, 4)) {
+    try {
+      const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&orderBy=relevance&printType=books${keyPart}`;
+      const { status, body } = await httpsGet(url);
+      if (status !== 200 || !body?.items?.length) continue;
+
+      for (const item of body.items.slice(0, 5)) {
+        const info = item.volumeInfo || {};
+        const isbn = (info.industryIdentifiers || []).find(i => i.type === 'ISBN_13')?.identifier || '';
+        results.push({
+          title: info.title || '',
+          author: (info.authors || []).join(', '),
+          isbn,
+          publisher: info.publisher || '',
+          pubDate: info.publishedDate || '',
+          description: info.description || '',
+          coverUrl: info.imageLinks?.thumbnail?.replace('http://', 'https://') || null,
+          source: 'google',
+        });
+      }
+    } catch (e) {
+      console.warn('[도서] Google 후보 검색 실패:', e.message);
+    }
+  }
+  return uniqueByBookSignature(results);
+}
+
 // ─── 폴백 ─────────────────────────────────────────────────────────────
 
 function getFallbackBook() {
@@ -178,30 +309,126 @@ function getFallbackBook() {
   return { ...book, description: '', coverUrl: null, source: 'fallback' };
 }
 
+function normalizeBook(value = {}) {
+  return {
+    title: String(value.title || '').replace(/<[^>]+>/g, '').trim(),
+    author: String(value.author || '').replace(/<[^>]+>/g, '').trim(),
+    isbn: String(value.isbn || '').replace(/[^0-9]/g, ''),
+    publisher: String(value.publisher || '').trim(),
+    pubDate: String(value.pubDate || '').trim(),
+    description: String(value.description || '').replace(/<[^>]+>/g, '').trim().slice(0, 500),
+    coverUrl: value.coverUrl || null,
+    source: String(value.source || '').trim(),
+  };
+}
+
+function uniqueByBookSignature(items = []) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const normalized = normalizeBook(item);
+    const signature = normalized.isbn || `${normalized.title}|${normalized.author}`;
+    if (!signature || seen.has(signature)) continue;
+    seen.add(signature);
+    unique.push(normalized);
+  }
+  return unique;
+}
+
+function scoreBookCandidate(candidate = {}, sourceFrequency = new Map()) {
+  let score = 0;
+  if (candidate.isbn && candidate.isbn.length === 13) score += 5;
+  if (candidate.coverUrl) score += 2;
+  if (candidate.description) score += 2;
+  if (candidate.publisher) score += 1;
+  score += Number(sourceFrequency.get(candidate.isbn || `${candidate.title}|${candidate.author}`) || 0) * 3;
+  return score;
+}
+
+function buildSearchKeywords() {
+  const topicKeywords = [
+    '개발자 추천 도서',
+    '개발자 자기계발 도서',
+    '소프트웨어 설계 책',
+    '클린 코드 책',
+    'IT 트렌드 도서',
+    'AI 인공지능 도서',
+  ];
+  const titleKeywords = FALLBACK_BOOKS.slice(0, 6).map((book) => book.title);
+  return [...new Set([...topicKeywords, ...titleKeywords])];
+}
+
 // ─── 메인 ─────────────────────────────────────────────────────────────
+
+async function searchBookCandidates() {
+  const naverCandidates = await searchNaverBookCandidates();
+  const googleCandidates = await searchGoogleBookCandidates();
+  const merged = uniqueByBookSignature([...naverCandidates, ...googleCandidates]);
+
+  const sourceFrequency = new Map();
+  for (const item of [...naverCandidates, ...googleCandidates]) {
+    const key = item.isbn || `${item.title}|${item.author}`;
+    sourceFrequency.set(key, (sourceFrequency.get(key) || 0) + 1);
+  }
+
+  return merged
+    .map((candidate) => ({ ...candidate, score: scoreBookCandidate(candidate, sourceFrequency) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function selectBookCandidate(candidates = []) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  return candidates[0] || null;
+}
 
 /**
  * 도서리뷰용 책 정보 수집
- * 네이버 → Google Books → 폴백 순서
+ * 후보 검색 -> 선택 -> 재검증 순서
  *
  * @returns {{
  *   title, author, isbn, publisher, pubDate, description,
- *   coverUrl, coverPath, source
- * }}
+ *   coverUrl, coverPath, source, verification_candidates
+ * } | null}
  */
 async function researchBook() {
-  console.log('[도서] 도서 정보 수집 시작...');
+  console.log('[도서] 도서 후보 검색 시작...');
 
-  let book = await searchNaverBook()
-    || await searchGoogleBook()
-    || getFallbackBook();
+  const candidates = await searchBookCandidates();
+  const primary = selectBookCandidate(candidates);
+  if (!primary) {
+    console.warn('[도서] 후보 검색 실패 — 사용 가능한 도서 API 결과 없음');
+    return null;
+  }
 
-  // 표지 이미지 다운로드
-  const coverPath = book.coverUrl ? await downloadCover(book.coverUrl, book.isbn) : null;
-  book = { ...book, coverPath };
+  const verificationCandidates = [primary];
+  if (primary.title) {
+    const query = [primary.title, primary.author].filter(Boolean).join(' ');
+    if (primary.source === 'naver') {
+      const googleCandidate = await searchGoogleBookByQuery(query);
+      if (googleCandidate) verificationCandidates.push(googleCandidate);
+    } else if (primary.source === 'google') {
+      const naverCandidate = await searchNaverBookByQuery(query);
+      if (naverCandidate) verificationCandidates.push(naverCandidate);
+    }
+  }
 
-  console.log(`[도서] ✅ ${book.title} — ${book.author} (${book.source})`);
+  const coverPath = primary.coverUrl ? await downloadCover(primary.coverUrl, primary.isbn) : null;
+  const book = {
+    ...primary,
+    coverPath,
+    verification_candidates: uniqueByBookSignature(verificationCandidates),
+  };
+
+  console.log(`[도서] ✅ 선택: ${book.title} — ${book.author} (${book.source})`);
   return book;
 }
 
-module.exports = { researchBook, downloadCover };
+module.exports = {
+  researchBook,
+  downloadCover,
+  searchBookCandidates,
+  selectBookCandidate,
+  searchNaverBookCandidates,
+  searchGoogleBookCandidates,
+  getFallbackBook,
+};

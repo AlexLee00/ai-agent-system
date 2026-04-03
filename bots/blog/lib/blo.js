@@ -20,6 +20,7 @@ const { createInstaContent }                        = require('./star');
 const { getConfig }                                 = require('./daily-config');
 const {
   advanceGeneralCategory,
+  getNextGeneralCategory,
   advanceLectureNumber,
   isSeriesComplete,
   getLectureTitle,
@@ -28,8 +29,10 @@ const {
 const {
   getTodayContext,
   updateScheduleStatus,
+  updateScheduleCategory,
 }                                                   = require('./schedule');
 const { researchBook }                              = require('./book-research');
+const { blog: blogSkills }                          = require('../../../packages/core/lib/skills');
 const {
   dailyCurriculumCheck,
   transitionSeries,
@@ -154,6 +157,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   let quality = await checkQualityEnhanced(post.content, kind, {
     lectureNumber: kind === 'lecture' ? context.number : null,
     expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
+    category: kind === 'general' ? context.category : null,
+    bookInfo: kind === 'general' ? context.book_info || context.data?.book_info || null : null,
   });
   _logQualityResult(quality, post.charCount);
 
@@ -163,6 +168,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
     const retryQuality = await checkQualityEnhanced(retry.content, kind, {
       lectureNumber: kind === 'lecture' ? context.number : null,
       expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
+      category: kind === 'general' ? context.category : null,
+      bookInfo: kind === 'general' ? context.book_info || context.data?.book_info || null : null,
     });
     post = retry;
     quality = retryQuality;
@@ -330,25 +337,47 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     } else {
       try {
         const book = await researchBook();
-        preparedResearch.book_info = book;
-        if (scheduleId && book?.title) {
+        const verification = blogSkills.bookSourceVerify.verifyBookSources({
+          primary: book,
+          candidates: book?.verification_candidates || [book],
+        });
+        if (!verification.ok) {
+          console.warn(`[젬스] 도서 검증 실패 — 도서리뷰 스킵: ${verification.reasons.join(', ')}`);
+          return {
+            skipped: true,
+            reason: `도서 검증 실패: ${verification.reasons.join(', ')}`,
+            category,
+            sectionVariation,
+          };
+        }
+
+        preparedResearch.book_info = verification.book;
+        if (scheduleId && verification.book?.title) {
           const { updateBookInfo } = require('./schedule');
           await updateBookInfo(scheduleId, {
-            book_title: book.title,
-            book_author: book.author,
-            book_isbn: book.isbn,
+            book_title: verification.book.title,
+            book_author: verification.book.author,
+            book_isbn: verification.book.isbn,
           });
         }
       } catch (e) {
-        console.warn('[젬스] 도서 정보 수집 실패 (기본 진행):', e.message);
+        console.warn('[젬스] 도서 정보 수집/검증 실패 — 도서리뷰 스킵:', e.message);
+        return {
+          skipped: true,
+          reason: `도서 정보 수집/검증 실패: ${e.message}`,
+          category,
+          sectionVariation,
+        };
       }
     }
   }
 
   return {
+    skipped: false,
     category,
     sectionVariation,
     researchData: preparedResearch,
+    book_info: preparedResearch.book_info || null,
   };
 }
 
@@ -402,6 +431,9 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   const images = await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(e => {
     console.warn('[이미지] 생성 실패 (일반):', e.message); return null;
   });
+  if (!images) {
+    console.log('[이미지] 일반 포스팅은 이미지 없이 발행 계속 진행');
+  }
 
   const instaContent = await _createInstaContentSafe(
     post.content,
@@ -682,6 +714,32 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null) {
   const context = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId);
+  if (context?.skipped) {
+    const canFallbackCategory = context.category === '도서리뷰' && !preloaded._bookFallbackTried;
+    if (canFallbackCategory) {
+      await advanceGeneralCategory();
+      const nextCategoryInfo = await getNextGeneralCategory();
+      if (scheduleId) {
+        await updateScheduleCategory(scheduleId, nextCategoryInfo.category);
+      }
+      console.log(`[블로] 도서리뷰 스킵 — 같은 런에서 다음 일반 카테고리로 전환: ${nextCategoryInfo.category}`);
+      return runGeneralPost(researchData, traceCtx, {
+        ...preloaded,
+        category: nextCategoryInfo.category,
+        bookInfo: null,
+        _bookFallbackTried: true,
+      }, scheduleId);
+    }
+    if (!DEV_HUB_READONLY) {
+      await advanceGeneralCategory();
+    }
+    return {
+      type: 'general',
+      skipped: true,
+      reason: context.reason,
+      category: context.category,
+    };
+  }
   const startTime = Date.now();
   let contractId = null;
   const writerName = await _selectBlogWriter('일반', 'gems');
