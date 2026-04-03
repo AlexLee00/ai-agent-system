@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
+const { selectRuntime } = require('../../../packages/core/lib/runtime-selector');
 const llmLogger = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 
@@ -59,9 +60,11 @@ async function transcribe(audioPath, config) {
     throw new Error('OPENAI API 키를 찾을 수 없습니다. llm-keys.js 설정 또는 OPENAI_API_KEY를 확인해 주세요.');
   }
 
-  const model = config.whisper.model;
+  const runtimeProfile = await selectRuntime(TEAM_NAME, 'stt');
+  const model = runtimeProfile?.direct_model || config.whisper.model;
   const language = config.whisper.language;
   const responseFormat = config.whisper.response_format;
+  const whisperUrl = runtimeProfile?.direct_endpoint || WHISPER_URL;
 
   const startedAt = Date.now();
   let attempt = 0;
@@ -81,7 +84,7 @@ async function transcribe(audioPath, config) {
       form.append('language', language);
       form.append('response_format', responseFormat);
 
-      const response = await fetch(WHISPER_URL, {
+      const response = await fetch(whisperUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -112,6 +115,8 @@ async function transcribe(audioPath, config) {
             model,
             language,
             responseFormat,
+            selectorKey: 'video.stt',
+            runtimePurpose: 'stt',
             attempt,
             status: response.status,
           },
@@ -145,6 +150,8 @@ async function transcribe(audioPath, config) {
           model,
           language,
           responseFormat,
+          selectorKey: 'video.stt',
+          runtimePurpose: 'stt',
           attempt,
           segmentCount: segments.length,
           duration,
@@ -173,6 +180,8 @@ async function transcribe(audioPath, config) {
           model,
           language,
           responseFormat,
+          selectorKey: 'video.stt',
+          runtimePurpose: 'stt',
           attempt,
         },
       });
@@ -221,7 +230,7 @@ async function generateSubtitle(audioPath, outputSrtPath, config) {
   await llmLogger.logLLMCall({
     team: TEAM_NAME,
     bot: BOT_NAME,
-    model: config.whisper.model,
+    model: runtimeProfile?.direct_model || config.whisper.model,
     requestType: 'audio_transcription',
     inputTokens: 0,
     outputTokens: 0,
