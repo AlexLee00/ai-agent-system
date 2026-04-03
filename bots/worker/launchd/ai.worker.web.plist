@@ -4,12 +4,6 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>CLAUDE_CODE_NAME</key>
-		<string>worker-ops</string>
-		<key>CLAUDE_CODE_SETTINGS</key>
-		<string>/Users/alexlee/.openclaw/.claude/worker-ops.settings.json</string>
-		<key>OPENCLAW_AGENT</key>
-		<string>worker-ops</string>
 		<key>WORKER_PORT</key>
 		<string>4000</string>
 	</dict>
