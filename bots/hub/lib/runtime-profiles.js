@@ -36,6 +36,19 @@ const PROFILES = {
       primary_routes: ['claude-code/sonnet', 'openai-oauth/gpt-5.4'],
       fallback_routes: ['groq/qwen/qwen3-32b'],
     },
+    'image-local': {
+      openclaw_agent: 'blog-writer',
+      claude_code_name: 'blog-writer',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/blog-writer.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      local_image: true,
+      engine: 'comfyui',
+      base_url: 'http://127.0.0.1:8188',
+      workflow_template_path: '/Users/alexlee/projects/ai-agent-system/bots/blog/config/comfyui-workflow-template.json',
+      timeout_ms: 300000,
+      poll_ms: 1500,
+      max_retries: 3,
+    },
   },
   luna: {
     default: {

@@ -24,6 +24,7 @@ import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
+const { resolveNaverCredentials } = _require('../../../packages/core/lib/news-credentials');
 
 const _domesticMetaCache = new Map();
 let _dartCorpCodeMapPromise = null;
@@ -242,8 +243,8 @@ function filterRelevant(items, symbol, exchange) {
 // ─── 네이버 뉴스 검색 API ───────────────────────────────────────────
 
 async function fetchNaverNews(symbol, stockName) {
-  const s = loadSecrets();
-  if (!s.naver_client_id || !s.naver_client_secret) {
+  const { clientId, clientSecret } = await resolveNaverCredentials();
+  if (!clientId || !clientSecret) {
     console.warn(`  ⚠️ [헤르메스] 네이버 API 키 없음 — 국내주식 뉴스 스킵`);
     return [];
   }
@@ -253,8 +254,8 @@ async function fetchNaverNews(symbol, stockName) {
 
   try {
     const { status, body } = await httpsGetRaw('openapi.naver.com', path, {
-      'X-Naver-Client-Id':     s.naver_client_id,
-      'X-Naver-Client-Secret': s.naver_client_secret,
+      'X-Naver-Client-Id':     clientId,
+      'X-Naver-Client-Secret': clientSecret,
     });
     if (status !== 200) return [];
     const data = JSON.parse(body);

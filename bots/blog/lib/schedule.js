@@ -103,6 +103,19 @@ async function updateBookInfo(id, bookInfo) {
   }
 }
 
+async function updateScheduleCategory(id, category) {
+  if (DEV_HUB_READONLY) return;
+  try {
+    await pgPool.run('blog', `
+      UPDATE blog.publish_schedule
+      SET category = $1, updated_at = NOW()
+      WHERE id = $2
+    `, [category, id]);
+  } catch (e) {
+    console.warn('[스케줄] 카테고리 업데이트 실패:', e.message);
+  }
+}
+
 // ─── 자동 생성 ────────────────────────────────────────────────────────
 
 /**
@@ -231,6 +244,7 @@ module.exports = {
   getScheduleByDate,
   updateScheduleStatus,
   updateBookInfo,
+  updateScheduleCategory,
   ensureSchedule,
   resolveTestLecture,
   getTodayContext,

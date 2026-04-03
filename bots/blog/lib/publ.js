@@ -155,6 +155,13 @@ function _contentToHtml(content, title, images = null) {
   const midImg = images?.mid?.filename
     ? `<div class="post-mid-img"><img src="images/${images.mid.filename}" alt="${title || ''} 본문 이미지" loading="lazy"></div>`
     : '';
+  const imageStyles = (thumbImg || midImg)
+    ? `
+  .post-thumb { margin: 0 0 24px; text-align: center; }
+  .post-thumb img { max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .post-mid-img { margin: 24px 0; text-align: center; }
+  .post-mid-img img { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.10); }`
+    : '';
 
   // 본문 중간에 midImg 삽입 (전체 본문의 40% 위치 부근 <h2> 앞)
   let finalBody = body;
@@ -191,10 +198,7 @@ function _contentToHtml(content, title, images = null) {
   .hashtags { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; }
   .hashtag { display: inline-block; background: #e8f0fe; color: #1a73e8; border-radius: 12px; padding: 2px 9px; margin: 2px 3px; font-size: 0.82rem; }
   .post-meta { color: #888; font-size: 0.82rem; margin-bottom: 20px; }
-  .post-thumb { margin: 0 0 24px; text-align: center; }
-  .post-thumb img { max-width: 100%; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
-  .post-mid-img { margin: 24px 0; text-align: center; }
-  .post-mid-img img { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.10); }
+${imageStyles}
 </style>
 </head>
 <body>
