@@ -259,6 +259,32 @@ const PROFILES = {
       fallback_routes: ['local/qwen2.5-7b'],
     },
   },
+  worker: {
+    default: {
+      openclaw_agent: 'worker-ops',
+      claude_code_name: 'worker-ops',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/worker-ops.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['groq/llama-4-scout-17b-16e-instruct', 'claude-code/sonnet'],
+      fallback_routes: ['openai/gpt-4o-mini', 'google-gemini-cli/gemini-2.5-flash'],
+    },
+    assistant: {
+      openclaw_agent: 'worker-ops',
+      claude_code_name: 'worker-ops',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/worker-ops.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['groq/llama-4-scout-17b-16e-instruct', 'claude-code/sonnet'],
+      fallback_routes: ['openai/gpt-4o-mini', 'google-gemini-cli/gemini-2.5-flash'],
+    },
+    intake: {
+      openclaw_agent: 'worker-ops',
+      claude_code_name: 'worker-ops',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/worker-ops.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['claude-code/sonnet', 'groq/llama-4-scout-17b-16e-instruct'],
+      fallback_routes: ['openai/gpt-4o-mini'],
+    },
+  },
 };
 
 function selectRuntimeProfile(team, purpose = 'default') {

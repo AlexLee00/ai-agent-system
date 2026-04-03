@@ -24,7 +24,7 @@ async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
     chain: buildSingleChain(model, maxTokens, 0.1),
     systemPrompt: system,
     userPrompt: user,
-    logMeta: { team: 'worker', bot: 'ai-client', requestType: 'ai_question', ...logMeta },
+    logMeta: { team: 'worker', purpose: 'assistant', bot: 'ai-client', requestType: 'ai_question', ...logMeta },
   });
   return result.text;
 }
@@ -47,7 +47,7 @@ async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, lo
     chain,
     systemPrompt: system,
     userPrompt: user,
-    logMeta: { team: 'worker', bot: 'ai-client', requestType: 'ai_question', preferredApi, ...logMeta },
+    logMeta: { team: 'worker', purpose: 'assistant', bot: 'ai-client', requestType: 'ai_question', preferredApi, ...logMeta },
   });
   const resolvedModel = String(result.model || '');
   const modelId = resolvedModel.startsWith(`${result.provider}/`)

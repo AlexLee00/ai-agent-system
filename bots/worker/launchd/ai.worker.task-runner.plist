@@ -4,8 +4,14 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
+		<key>CLAUDE_CODE_NAME</key>
+		<string>worker-ops</string>
+		<key>CLAUDE_CODE_SETTINGS</key>
+		<string>/Users/alexlee/.openclaw/.claude/worker-ops.settings.json</string>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
+		<key>OPENCLAW_AGENT</key>
+		<string>worker-ops</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 	</dict>

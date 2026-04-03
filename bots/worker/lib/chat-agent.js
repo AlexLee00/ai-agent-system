@@ -318,7 +318,7 @@ async function parseLlmIntent(text) {
       }),
       systemPrompt,
       userPrompt,
-      logMeta: { team: 'worker', bot: 'worker-chat', requestType: 'task_intake' },
+      logMeta: { team: 'worker', purpose: 'intake', bot: 'worker-chat', requestType: 'task_intake' },
     });
     const cleaned = result.text.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);
