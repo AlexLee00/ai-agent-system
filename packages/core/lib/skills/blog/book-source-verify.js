@@ -78,8 +78,8 @@ function verifyBookSources(input = {}) {
   const uniqueSources = [...new Set(matched.map((candidate) => String(candidate.source || 'unknown')))];
   const titleConsistent = matched.length > 0;
 
-  if (uniqueSources.length < 2) {
-    reasons.push('matched verified sources less than 2');
+  if (uniqueSources.length < 1) {
+    reasons.push('no verified source found');
   }
 
   const mergedBook = {

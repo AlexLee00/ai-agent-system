@@ -71,11 +71,15 @@ const pipelineStore                                 = require('./pipeline-store'
 const DEV_HUB_READONLY                              = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const COMPETITION_DAYS                              = [1, 3, 5];
 
-async function _selectBlogWriter(taskLabel, fallbackName) {
+async function _selectBlogWriter(taskLabel, fallbackName, taskHint = null) {
   try {
-    const bestWriter = await hiringContract.selectBestAgent('writer', 'blog', { limit: 5 });
+    const bestWriter = await hiringContract.selectBestAgent('writer', 'blog', {
+      limit: 5,
+      mode: 'balanced',
+      taskHint,
+    });
     const writerName = bestWriter?.name || fallbackName;
-    console.log(`[고용] ${taskLabel} 작가 선택: ${writerName} (점수: ${bestWriter?.score || 'N/A'})`);
+    console.log(`[고용] ${taskLabel} 작가 선택: ${writerName} (점수: ${bestWriter?.score || 'N/A'}, specialty: ${bestWriter?.specialty || 'N/A'})`);
     return writerName;
   } catch (error) {
     console.warn(`[고용] ${taskLabel} 작가 선택 실패 — ${fallbackName} 폴백:`, error.message);
@@ -678,7 +682,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const context = prepared.context;
   const startTime = Date.now();
   let contractId = null;
-  const writerName = await _selectBlogWriter('강의', 'pos');
+  const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
 
   try {
     const contract = await hiringContract.hire(writerName, {
@@ -797,7 +801,11 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
   }
   const startTime = Date.now();
   let contractId = null;
-  const writerName = await _selectBlogWriter('일반', 'gems');
+  const writerName = await _selectBlogWriter(
+    context.category === '도서리뷰' ? '도서리뷰' : '일반',
+    'gems',
+    context.category === '도서리뷰' ? '도서 감성 에세이' : (context.category || '에세이')
+  );
 
   try {
     const contract = await hiringContract.hire(writerName, {

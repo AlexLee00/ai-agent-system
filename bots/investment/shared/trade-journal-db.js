@@ -757,7 +757,11 @@ export async function insertRationale(rationaleData) {
 export async function hireAnalystForSignal(market, symbol) {
   await ensureInit();
   try {
-    const bestAnalyst = await hiringContract.selectBestAgent('analyst', 'luna', { limit: 10 });
+    const bestAnalyst = await hiringContract.selectBestAgent('analyst', 'luna', {
+      limit: 10,
+      mode: 'balanced',
+      taskHint: market === 'crypto' ? '암호화폐 온체인' : '주식 펀더멘탈',
+    });
     if (!bestAnalyst) return null;
     console.log(`[루나고용] 분석가 선택: ${bestAnalyst.name} (${bestAnalyst.specialty || bestAnalyst.role})`);
     const contract = await hiringContract.hire(bestAnalyst.name, {
