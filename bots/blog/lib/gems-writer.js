@@ -703,7 +703,7 @@ ${_buildVariationBlock(sectionVariation)}
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt,
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post' },
+      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post' },
     });
     content      = result.text;
     usedModel    = result.model;
@@ -733,7 +733,7 @@ ${_buildVariationBlock(sectionVariation)}
         systemPrompt: GEMS_SYSTEM_PROMPT,
         userPrompt:   continuePrompt,
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
-        logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_continue' },
+        logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -888,7 +888,7 @@ ${content}
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt:   repairPrompt,
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_repair' },
+      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post_repair' },
     });
     repaired     = result.text;
     usedModel    = result.model;
@@ -1061,7 +1061,7 @@ ${linkingBlock}
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
     timeoutMs: BLOG_CHUNK_TIMEOUT_MS,
-    logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
+    logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post_chunked' },
     onChunkComplete: ({ id, charCount, index }) =>
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
   });

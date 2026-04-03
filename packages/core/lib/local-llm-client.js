@@ -9,17 +9,17 @@ function normalizeBaseUrl(value) {
   return String(value || '').replace(/\/+$/, '');
 }
 
-function getBaseUrl() {
-  return normalizeBaseUrl(env.LOCAL_LLM_BASE_URL || '');
+function getBaseUrl(options = {}) {
+  return normalizeBaseUrl(options.baseUrl || env.LOCAL_LLM_BASE_URL || '');
 }
 
-function getEmbeddingsUrl() {
-  const baseUrl = getBaseUrl();
+function getEmbeddingsUrl(options = {}) {
+  const baseUrl = getBaseUrl(options);
   return baseUrl ? `${baseUrl}/v1/embeddings` : '';
 }
 
 async function requestJson(path, options = {}, timeoutMs = 3000) {
-  const baseUrl = getBaseUrl();
+  const baseUrl = getBaseUrl(options);
   if (!baseUrl) return null;
 
   const url = `${baseUrl}${path}`;
@@ -58,6 +58,7 @@ async function callLocalLLM(model, messages, options = {}) {
     || (model === LOCAL_MODEL_DEEP ? 120000 : 30000);
 
   const json = await requestJson('/v1/chat/completions', {
+    baseUrl: options.baseUrl,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

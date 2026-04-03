@@ -28,6 +28,7 @@ const {
   toolsListRoute,
   toolsSelectRoute,
   toolsEvaluateRoute,
+  runtimeSelectRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 } = require('../lib/routes/agents');
@@ -94,6 +95,7 @@ app.post('/hub/skills/evaluate', generalLimiter, skillsEvaluateRoute);
 app.get('/hub/tools', generalLimiter, toolsListRoute);
 app.get('/hub/tools/select', generalLimiter, toolsSelectRoute);
 app.post('/hub/tools/evaluate', generalLimiter, toolsEvaluateRoute);
+app.get('/hub/runtime/select', generalLimiter, runtimeSelectRoute);
 app.get('/hub/agents/:name/stats/traces', generalLimiter, agentTraceStatsRoute);
 app.get('/hub/agents/:name', generalLimiter, agentDetailRoute);
 

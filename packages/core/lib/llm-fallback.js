@@ -40,6 +40,7 @@ const traceCollector = require('./trace-collector');
 const billingGuard = require('./billing-guard');
 const { trackTokens } = require('./token-tracker');
 const { fetchHubSecrets } = require('./hub-client');
+const { selectRuntime } = require('./runtime-selector');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
@@ -134,8 +135,8 @@ async function _getOAuthToken() {
   return null;
 }
 
-async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false }) {
-  const openclawAgent = String(process.env.OPENCLAW_AGENT || 'main').trim() || 'main';
+async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false, runtimeProfile = null }) {
+  const openclawAgent = String(runtimeProfile?.openclaw_agent || process.env.OPENCLAW_AGENT || 'main').trim() || 'main';
   const prompt = [
     '[SYSTEM]',
     systemPrompt || '',
@@ -159,7 +160,10 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
     const result = await execFileAsync('openclaw', args, {
       timeout: timeoutMs + 5000,
       maxBuffer: 2 * 1024 * 1024,
-      env: process.env,
+      env: {
+        ...process.env,
+        OPENCLAW_AGENT: openclawAgent,
+      },
     });
     stdout = result.stdout || '';
     stderr = result.stderr || '';
@@ -214,10 +218,10 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
   };
 }
 
-async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000 }) {
+async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }) {
   const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
-  const claudeSessionName = String(process.env.CLAUDE_CODE_NAME || '').trim();
-  const claudeSettingsFile = String(process.env.CLAUDE_CODE_SETTINGS || '').trim();
+  const claudeSessionName = String(runtimeProfile?.claude_code_name || process.env.CLAUDE_CODE_NAME || '').trim();
+  const claudeSettingsFile = String(runtimeProfile?.claude_code_settings || process.env.CLAUDE_CODE_SETTINGS || '').trim();
   const claudeAgent = String(process.env.CLAUDE_CODE_AGENT || '').trim();
   const args = [
     '-p',
@@ -240,7 +244,11 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     const result = await execFileAsync('/opt/homebrew/bin/claude', args, {
       timeout: timeoutMs,
       maxBuffer: 2 * 1024 * 1024,
-      env: process.env,
+      env: {
+        ...process.env,
+        CLAUDE_CODE_NAME: claudeSessionName || process.env.CLAUDE_CODE_NAME,
+        CLAUDE_CODE_SETTINGS: claudeSettingsFile || process.env.CLAUDE_CODE_SETTINGS,
+      },
     });
     stdout = result.stdout || '';
     stderr = result.stderr || '';
@@ -435,7 +443,7 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
 
 // ── provider 디스패처 ─────────────────────────────────────────────────
 
-async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs) {
+async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile = null) {
   const { provider, model, maxTokens, temperature } = cfg;
   const opts = {
     model,
@@ -445,6 +453,7 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs) {
     userPrompt,
     timeoutMs: cfg.timeoutMs || timeoutMs,
     local: cfg.local === true,
+    runtimeProfile,
   };
 
   switch (provider) {
@@ -477,13 +486,39 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs) {
       const result = await localLLM.callLocalLLM(model, [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
-      ], { maxTokens, temperature });
+      ], {
+        maxTokens,
+        temperature,
+        baseUrl: runtimeProfile?.local_llm_base_url || null,
+      });
       if (!result) throw new Error('로컬 LLM 응답 없음');
       return { raw: null, text: result.trim(), usage: null };
     }
     default:
       throw new Error(`알 수 없는 provider: ${provider}`);
   }
+}
+
+function _inferRuntimePurpose(logMeta = {}) {
+  const explicit = String(logMeta.purpose || '').trim();
+  if (explicit) return explicit;
+
+  const requestType = String(logMeta.requestType || '').trim().toLowerCase();
+  const team = String(logMeta.team || '').trim().toLowerCase();
+
+  if (team === 'blog') {
+    if (requestType.includes('curriculum')) return 'curriculum';
+    if (requestType.includes('insta') || requestType.includes('social')) return 'social';
+    if (requestType.includes('lecture') || requestType.includes('general')) return 'writer';
+  }
+
+  if (team === 'investment' || team === 'luna') {
+    if (requestType.includes('valid')) return 'validator';
+    if (requestType.includes('command')) return 'commander';
+    return 'analyst';
+  }
+
+  return 'default';
 }
 
 // ── 메인 폴백 체인 실행 ───────────────────────────────────────────────
@@ -497,7 +532,7 @@ async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs) {
  * @returns {Promise<{text, provider, model, attempt}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
-async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null }) {
+async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }) {
   await initHubConfig();
 
   // ★ 긴급 차단 체크
@@ -507,6 +542,12 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
     throw new Error(`🚨 LLM 긴급 차단 중: ${r?.reason || '알 수 없음'} — 마스터 해제 필요`);
   }
   if (!chain || chain.length === 0) throw new Error('폴백 체인이 비어 있음');
+  const runtimeTeam = String(team || logMeta.team || '').trim() || null;
+  const runtimePurpose = String(purpose || _inferRuntimePurpose(logMeta)).trim() || 'default';
+  const runtimeProfile = runtimeTeam ? await selectRuntime(runtimeTeam, runtimePurpose) : null;
+  const runtimeOpenClawAgent = String(runtimeProfile?.openclaw_agent || '').trim() || null;
+  const runtimeClaudeCodeName = String(runtimeProfile?.claude_code_name || '').trim() || null;
+  const runtimeSelectionReason = runtimeProfile ? 'team-runtime-profile' : 'env-fallback';
   const traceRoute = logMeta.selectorKey || logMeta.requestType || null;
   const trace = traceCollector.startTrace(logMeta.agentName || logMeta.bot || null, logMeta.team || null, traceRoute);
 
@@ -516,7 +557,7 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
     const t0      = Date.now();
     const attempt = i + 1;
     try {
-      const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs);
+      const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile);
       const latencyMs = Date.now() - t0;
       const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
       const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;
@@ -533,6 +574,11 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
             outputTokens: tokensOut,
             latencyMs,
             success: true,
+            runtimeTeam,
+            runtimePurpose,
+            runtimeOpenClawAgent,
+            runtimeClaudeCodeName,
+            runtimeSelectionReason,
           });
         } catch { /* 로깅 실패 무시 */ }
         // 토큰 트래커 (비용 통계)
@@ -572,6 +618,8 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
         status: i > 0 ? 'fallback' : 'success',
         fallbackUsed: i > 0,
         fallbackProvider: i > 0 ? cfg.provider : null,
+        confidence: null,
+        qualityScore: null,
       });
 
       if (i > 0) {
@@ -594,6 +642,11 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
             latencyMs,
             success:     false,
             errorMsg:    e.message?.slice(0, 200),
+            runtimeTeam,
+            runtimePurpose,
+            runtimeOpenClawAgent,
+            runtimeClaudeCodeName,
+            runtimeSelectionReason,
           });
         } catch { /* 로깅 실패 무시 */ }
       }

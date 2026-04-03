@@ -209,7 +209,7 @@ ${trendSummary}
       }),
       systemPrompt: PLANNER_SYSTEM,
       userPrompt,
-      logMeta: { team: 'blog', bot: 'blog-richer', requestType: 'curriculum_planning' },
+      logMeta: { team: 'blog', purpose: 'curriculum', bot: 'blog-richer', requestType: 'curriculum_planning' },
     });
 
     const match = result.text.match(/\{[\s\S]*\}/);
@@ -352,7 +352,7 @@ async function generateCurriculum(topic, lectureCount = 100) {
       }),
       systemPrompt: CURRICULUM_SYSTEM,
       userPrompt,
-      logMeta: { team: 'blog', bot: 'blog-richer', requestType: 'curriculum_generate' },
+      logMeta: { team: 'blog', purpose: 'curriculum', bot: 'blog-richer', requestType: 'curriculum_generate' },
     });
     const match = result.text.match(/\{[\s\S]*\}/);
     parsed = match ? JSON.parse(match[0]) : null;

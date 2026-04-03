@@ -295,7 +295,7 @@ ${_buildVariationBlock(sectionVariation)}
       systemPrompt: POS_SYSTEM_PROMPT,
       userPrompt,
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post' },
+      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post' },
     });
     content      = result.text;
     usedModel    = result.model;
@@ -326,7 +326,7 @@ ${_buildVariationBlock(sectionVariation)}
         systemPrompt: POS_SYSTEM_PROMPT,
         userPrompt:   continuePrompt,
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
-        logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_continue' },
+        logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -412,7 +412,7 @@ ${content}
       chain:        POS_LLM_CHAIN,
       systemPrompt: POS_SYSTEM_PROMPT,
       userPrompt:   repairPrompt,
-      logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_repair' },
+      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post_repair' },
     });
     repaired     = result.text;
     usedModel    = result.model;
@@ -575,7 +575,7 @@ ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
     timeoutMs: BLOG_CHUNK_TIMEOUT_MS,
-    logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_chunked' },
+    logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post_chunked' },
     onChunkComplete: ({ id, charCount, index }) =>
       console.log(`[포스] 청크 ${id} 완료: ${charCount}자 (${index + 1}/4)`),
   });

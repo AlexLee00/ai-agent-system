@@ -65,7 +65,7 @@ ${content.slice(0, 6000)}
     }),
     systemPrompt: SUMMARIZE_SYSTEM,
     userPrompt,
-    logMeta: { team: 'blog', bot: 'social', requestType: 'insta_summarize' },
+    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_summarize' },
   });
 
   try {
@@ -128,7 +128,7 @@ ${content.slice(0, 3000)}
     }),
     systemPrompt: CAPTION_SYSTEM,
     userPrompt,
-    logMeta: { team: 'blog', bot: 'social', requestType: 'insta_caption' },
+    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_caption' },
   });
 
   try {
