@@ -98,6 +98,8 @@ function _matchRole(team, requestedRole, agentRole) {
 
 async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
+  const mode = requirements.mode || 'balanced';
+  const taskHint = String(requirements.taskHint || '').trim().toLowerCase();
 
   // team이 주어지면 항상 팀 내에서만 검색 (글로벌 폴백 금지!)
   let candidates;
@@ -115,11 +117,38 @@ async function selectBestAgent(role, team = null, requirements = {}) {
     const fatigue = _normalizeEmotionScore(emotion.fatigue, 0);
     const confidence = _normalizeEmotionScore(emotion.confidence, 5);
     const roleBonus = team === 'luna' ? _getLunaRoleBonus(role, agent.role) : 0;
-    const adjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05) + roleBonus;
+    let specialtyBonus = 0;
+    const specialty = String(agent.specialty || '').toLowerCase();
+    if (taskHint && specialty) {
+      if (specialty.includes(taskHint) || taskHint.split(/\s+/).some((word) => word && specialty.includes(word))) {
+        specialtyBonus = 1.0;
+      }
+    }
+    const adjustedScore = Number(agent.score || 0) - (fatigue * 0.1) + (confidence * 0.05) + roleBonus + specialtyBonus;
     return { agent, adjustedScore };
   });
 
   ranked.sort((a, b) => b.adjustedScore - a.adjustedScore);
+  if (mode === 'greedy') {
+    return ranked[0]?.agent || null;
+  }
+
+  if (mode === 'explore') {
+    const idx = Math.floor(Math.random() * ranked.length);
+    return ranked[idx]?.agent || null;
+  }
+
+  const EPSILON = 0.2;
+  if (Math.random() < EPSILON && ranked.length > 1) {
+    const explorePool = ranked.slice(1);
+    const idx = Math.floor(Math.random() * explorePool.length);
+    const chosen = explorePool[idx]?.agent;
+    if (chosen) {
+      console.log(`[고용] ε-탐색: ${chosen.name} 선택 (최고 ${ranked[0].agent.name} 대신)`);
+    }
+    return chosen || ranked[0]?.agent || null;
+  }
+
   return ranked[0]?.agent || null;
 }
 

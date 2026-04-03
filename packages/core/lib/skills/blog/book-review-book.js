@@ -14,14 +14,14 @@ const { verifyBookSources } = require('./book-source-verify');
 const COVER_DIR = path.join(__dirname, '..', '..', '..', '..', '..', 'bots', 'blog', 'output', 'images', 'books');
 
 const CANONICAL_BOOKS = [
-  { title: '소프트웨어 장인', author: '산드로 만쿠소' },
-  { title: '클린 코드', author: '로버트 마틴' },
-  { title: '클린 아키텍처', author: '로버트 마틴' },
-  { title: '함께 자라기', author: '김창준' },
-  { title: '피닉스 프로젝트', author: '진 킴' },
-  { title: '데브옵스 핸드북', author: '진 킴' },
-  { title: '아토믹 해빗', author: '제임스 클리어' },
-  { title: '원씽', author: '게리 켈러' },
+  { title: '소프트웨어 장인', author: '산드로 만쿠소', isbn: '9788968482397' },
+  { title: '클린 코드', author: '로버트 마틴', isbn: '9788966260959' },
+  { title: '클린 아키텍처', author: '로버트 마틴', isbn: '9788966262472' },
+  { title: '함께 자라기', author: '김창준', isbn: '9788966262335' },
+  { title: '피닉스 프로젝트', author: '진 킴', isbn: '9788966261437' },
+  { title: '데브옵스 핸드북', author: '진 킴', isbn: '9788966261857' },
+  { title: '아토믹 해빗', author: '제임스 클리어', isbn: '9788966262588' },
+  { title: '원씽', author: '게리 켈러', isbn: '9788901153667' },
 ];
 
 const DEFAULT_TOPIC_KEYWORDS = [
@@ -68,13 +68,17 @@ function normalizeBook(value = {}) {
   };
 }
 
-function uniqueByBookSignature(items = []) {
+function uniqueByBookSignature(items = [], options = {}) {
   const seen = new Set();
   const unique = [];
+  const keepSources = options.keepSources === true;
   for (const item of items) {
     if (!item) continue;
     const normalized = normalizeBook(item);
-    const signature = normalized.isbn || `${normalized.title}|${normalized.author}`;
+    const baseSignature = normalized.isbn || `${normalized.title}|${normalized.author}`;
+    const signature = keepSources
+      ? `${baseSignature}|${normalized.source || 'unknown'}`
+      : baseSignature;
     if (!signature || seen.has(signature)) continue;
     seen.add(signature);
     unique.push(normalized);
@@ -320,7 +324,7 @@ async function buildVerificationCandidates(primary) {
 
   if (naverCandidate) verificationCandidates.push(naverCandidate);
   if (googleCandidate) verificationCandidates.push(googleCandidate);
-  return uniqueByBookSignature(verificationCandidates);
+  return uniqueByBookSignature(verificationCandidates, { keepSources: true });
 }
 
 async function searchCanonicalVerifiedBooks() {
@@ -342,14 +346,14 @@ async function searchCanonicalVerifiedBooks() {
       {
         title: book.title,
         author: book.author,
-        isbn: primary.isbn,
+        isbn: book.isbn || primary.isbn,
         publisher: primary.publisher,
         pubDate: primary.pubDate,
         description: primary.description,
         coverUrl: primary.coverUrl,
         source: 'catalog',
       },
-    ]);
+    ], { keepSources: true });
     const verification = verifyBookSources({
       primary,
       candidates: verificationCandidates,
@@ -377,34 +381,38 @@ async function resolveBookForReview(input = {}) {
 
   for (const primary of candidates.slice(0, 8)) {
     const verificationCandidates = await buildVerificationCandidates(primary);
-    const canonicalMatch = findCanonicalMatch(primary);
+    const resolvedPrimary = verificationCandidates.find((candidate) =>
+      candidate && candidate.isbn && candidate.source !== 'catalog'
+    ) || verificationCandidates.find((candidate) => candidate && candidate.isbn) || primary;
+    const canonicalMatch = findCanonicalMatch(resolvedPrimary) || findCanonicalMatch(primary);
     if (canonicalMatch) {
       verificationCandidates.push({
         title: canonicalMatch.title,
         author: canonicalMatch.author,
-        isbn: primary.isbn,
-        publisher: primary.publisher,
-        pubDate: primary.pubDate,
-        description: primary.description,
-        coverUrl: primary.coverUrl,
+        isbn: canonicalMatch.isbn || resolvedPrimary.isbn || primary.isbn || '',
+        publisher: resolvedPrimary.publisher || primary.publisher,
+        pubDate: resolvedPrimary.pubDate || primary.pubDate,
+        description: resolvedPrimary.description || primary.description,
+        coverUrl: resolvedPrimary.coverUrl || primary.coverUrl,
         source: 'catalog',
       });
     }
+    const normalizedCandidates = uniqueByBookSignature(verificationCandidates, { keepSources: true });
     const verification = verifyBookSources({
-      primary,
-      candidates: uniqueByBookSignature(verificationCandidates),
+      primary: resolvedPrimary,
+      candidates: normalizedCandidates,
     });
 
     if (!verification.ok) {
-      console.warn(`[도서스킬] 후보 제외: ${primary.title} — ${verification.reasons.join(', ')}`);
+      console.warn(`[도서스킬] 후보 제외: ${resolvedPrimary.title || primary.title} — ${verification.reasons.join(', ')}`);
       continue;
     }
 
-    const coverPath = primary.coverUrl ? await downloadCover(primary.coverUrl, primary.isbn) : null;
+    const coverPath = resolvedPrimary.coverUrl ? await downloadCover(resolvedPrimary.coverUrl, resolvedPrimary.isbn) : null;
     const book = {
       ...verification.book,
       coverPath,
-      verification_candidates: verificationCandidates,
+      verification_candidates: normalizedCandidates,
     };
 
     console.log(`[도서스킬] ✅ 검증 선택: ${book.title} — ${book.author} (${book.source})`);
