@@ -4,16 +4,10 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>CLAUDE_CODE_NAME</key>
-		<string>worker-ops</string>
-		<key>CLAUDE_CODE_SETTINGS</key>
-		<string>/Users/alexlee/.openclaw/.claude/worker-ops.settings.json</string>
 		<key>NEXT_PUBLIC_API_URL</key>
 		<string>http://localhost:4000</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
-		<key>OPENCLAW_AGENT</key>
-		<string>worker-ops</string>
 		<key>PATH</key>
 		<string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
 	</dict>
