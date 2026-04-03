@@ -309,6 +309,7 @@ bots/orchestrator/scripts/seed-blog-reinforce.js
 bots/orchestrator/scripts/seed-team-reinforce-phase6.js
 bots/orchestrator/scripts/team-skill-cli.js
 bots/orchestrator/scripts/team-mcp-cli.js
+bots/reservation/manual/reports/log-report.sh
 ```
 
 ### RAG + 자기학습
