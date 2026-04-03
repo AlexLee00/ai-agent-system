@@ -29,6 +29,7 @@ const sigmaExperimentDesign = require('./sigma/experiment-design');
 const sigmaCausalCheck = require('./sigma/causal-check');
 const sigmaFeaturePlanner = require('./sigma/feature-planner');
 const sigmaObservabilityPlanner = require('./sigma/observability-planner');
+const blogBookReviewBook = require('./blog/book-review-book');
 const blogBookSourceVerify = require('./blog/book-source-verify');
 
 module.exports = {
@@ -58,6 +59,7 @@ module.exports = {
     observabilityPlanner: sigmaObservabilityPlanner,
   },
   blog: {
+    bookReviewBook: blogBookReviewBook,
     bookSourceVerify: blogBookSourceVerify,
   },
 };

@@ -504,7 +504,7 @@ ${newsList}
 
 /**
  * 도서리뷰 카테고리 전용 추가 지시 블록
- * @param {object} bookInfo — researchBook() 결과
+ * @param {object} bookInfo — bookReviewBook 스킬 결과
  * @returns {string}
  */
 function _buildBookReviewBlock(bookInfo) {
