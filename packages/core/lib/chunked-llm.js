@@ -30,6 +30,7 @@ function _buildChain(model, maxTokens) {
  *   - model: 'gemini' | 'gpt4o' | fallback chain array (기본 'gemini')
  *   - contextCarry: 이전 청크 마지막 N자 전달 (기본 200)
  *   - maxRetries: 청크별 재시도 (기본 1)
+ *   - timeoutMs: 청크별 LLM 대기 시간 (기본 공용 fallback 설정)
  *   - onChunkComplete: ({ id, charCount, index }) => void
  *   - logMeta: 공용 llm-fallback 로깅 메타
  * @returns {{ content, charCount, chunks, totalTokens }}
@@ -39,6 +40,7 @@ async function chunkedGenerate(systemPrompt, chunks, options = {}) {
     model = 'gemini',
     contextCarry = 200,
     maxRetries = 1,
+    timeoutMs,
     onChunkComplete,
     logMeta = {},
   } = options;
@@ -64,6 +66,7 @@ async function chunkedGenerate(systemPrompt, chunks, options = {}) {
           chain: _buildChain(model, 4096),
           systemPrompt,
           userPrompt: fullPrompt,
+          timeoutMs,
           logMeta: {
             ...logMeta,
             requestType: `${logMeta.requestType || 'chunked_generate'}:${chunk.id}`,

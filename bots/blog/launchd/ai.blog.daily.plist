@@ -6,6 +6,12 @@
 	<dict>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
+		<key>OPENCLAW_AGENT</key>
+		<string>blog-writer</string>
+		<key>CLAUDE_CODE_NAME</key>
+		<string>blog-writer</string>
+		<key>CLAUDE_CODE_SETTINGS</key>
+		<string>/Users/alexlee/.openclaw/.claude/blog-writer.settings.json</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 	</dict>

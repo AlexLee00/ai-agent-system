@@ -20,6 +20,9 @@ const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selecto
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
+const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
+const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
+const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
 function loadPersonaGuide(filename) {
   try {
@@ -200,6 +203,75 @@ ${blockedPhraseLines}
 4. "AI 시대 / 멀티에이전트 / 30개 AI 에이전트 / 성장 전략 / 운영 전략 / 시장 인사이트" 프레임을 기본 주제로 삼지 말 것.
 5. 이번 글은 카테고리(${category}) 자체의 독자 고민을 먼저 세우고, AI 운영 경험은 필요할 때 보조 사례로만 제한적으로 사용하라.
 `.trim();
+}
+
+function _defaultGeneralSnippet(title, category) {
+  return [
+    '[AI 스니펫 요약]',
+    `${category} 관점에서 "${title || '이번 주제'}"를 실전적으로 풀어낸 글이다. 핵심 개념을 정리하고, 바로 적용할 수 있는 판단 기준과 실행 포인트를 함께 제시한다. 바쁜 일정 속에서도 무엇부터 우선순위를 잡아야 하는지 빠르게 이해할 수 있도록 정리했다.`,
+  ].join('\n');
+}
+
+function _defaultCafeSection(weatherContext) {
+  return [
+    '[스터디카페 홍보 섹션]',
+    `${weatherContext}처럼 집중력이 쉽게 흔들리는 날에는 작업 공간의 질이 생각보다 큰 차이를 만든다. 커피랑도서관 분당서현점은 조용한 좌석 환경과 안정적인 작업 동선을 갖춰서 글쓰기, 기획, 개발 문서 정리 같은 깊은 집중 작업을 이어가기 좋다. 특히 장시간 앉아 있어도 답답하지 않도록 세스코 에어 시스템으로 공기 질을 관리하고 있어, 머리가 무거워지기 쉬운 오후 시간대에도 작업 리듬을 비교적 안정적으로 유지할 수 있다. 실제로 복잡한 기획서를 다듬거나 긴 글을 마무리해야 할 때는 주변 소음보다도 ‘얼마나 바로 다시 몰입할 수 있는가’가 중요한데, 이런 점에서 커피랑도서관은 공부뿐 아니라 실무 작업 공간으로도 충분히 설득력이 있다.`,
+  ].join('\n');
+}
+
+function _defaultChecklistSection(category) {
+  return [
+    '[실전 적용 체크리스트]',
+    `${category} 주제를 읽고 끝내지 않으려면 바로 적용 가능한 체크리스트가 필요하다. 먼저 오늘 글에서 배운 핵심 개념을 한 문장으로 다시 적어 보고, 지금 하고 있는 일에 그대로 붙일 수 있는지 판단해야 한다. 다음으로는 이번 주 안에 시도할 수 있는 행동을 세 가지로 쪼개는 것이 좋다. 너무 큰 계획보다 바로 실행 가능한 작은 단위가 실제 변화를 만든다. 마지막으로 실행 후 무엇이 달라졌는지 기록해야 한다. 기록이 남아야 다음 판단의 기준이 생기고, 같은 시행착오를 줄일 수 있다. 결국 좋은 인사이트는 많이 읽는 것보다, 실행하고 돌아보는 루프를 만드는 데서 진짜 가치가 생긴다.`,
+  ].join('\n');
+}
+
+function _defaultLinkingSection(relatedPosts = []) {
+  const picks = relatedPosts.slice(0, 3);
+  if (!picks.length) return '';
+  return [
+    '[함께 읽으면 좋은 글]',
+    ...picks.map((post) => `→ [${post.title}] ← 여기에 링크 삽입`),
+  ].join('\n');
+}
+
+function _defaultHashtags(category) {
+  return [
+    '[해시태그]',
+    `#${category.replace(/\s+/g, '')} #실전인사이트 #업무생산성 #문제해결 #기획력 #실행전략 #집중력 #학습루틴 #커피랑도서관 #분당서현 #스터디카페 #작업공간 #몰입환경 #세스코에어 #실무팁 #성장기록 #인사이트정리 #실행체크리스트 #하루루틴 #지식정리 #콘텐츠기획 #실전적용 #생산성향상 #집중습관 #업무루틴 #질문형학습 #꾸준한성장`,
+  ].join('\n');
+}
+
+function _ensureGeneralQualityFloor(content, { category, weatherContext, relatedPosts, minChars }) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+
+  const lines = next.split('\n');
+  const titleLine = lines.find((line) => line.trim().length > 0) || `[${category}]`;
+
+  if (!next.includes('AI 스니펫 요약')) {
+    next = [titleLine, _defaultGeneralSnippet(titleLine.replace(/^\[[^\]]+\]\s*/, ''), category), next.slice(titleLine.length).trim()].filter(Boolean).join('\n\n');
+  }
+
+  if (!next.includes('커피랑도서관') && !next.includes('분당서현')) {
+    next = `${next}\n\n${_defaultCafeSection(weatherContext)}`;
+  }
+
+  if (!next.includes('함께 읽으면 좋은 글')) {
+    const linking = _defaultLinkingSection(relatedPosts);
+    if (linking) next = `${next}\n\n${linking}`;
+  }
+
+  const hashtagCount = (next.match(/#[^\s#\n]+/g) || []).length;
+  if (hashtagCount < 15) {
+    next = `${next}\n\n${_defaultHashtags(category)}`;
+  }
+
+  if (next.length < minChars) {
+    next = `${next}\n\n${_defaultChecklistSection(category)}`;
+  }
+
+  return next.trim();
 }
 
 const GENERAL_SECTION_MARKERS = [
@@ -630,6 +702,7 @@ ${_buildVariationBlock(sectionVariation)}
       chain:        GEMS_LLM_CHAIN,
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt,
+      timeoutMs: BLOG_WRITER_TIMEOUT_MS,
       logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post' },
     });
     content      = result.text;
@@ -659,6 +732,7 @@ ${_buildVariationBlock(sectionVariation)}
         chain:        GEMS_CONTINUE_CHAIN,
         systemPrompt: GEMS_SYSTEM_PROMPT,
         userPrompt:   continuePrompt,
+        timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
         logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
@@ -706,6 +780,13 @@ ${_buildVariationBlock(sectionVariation)}
   usedModel = repairResult.model;
   fallbackUsed = repairResult.fallbackUsed;
 
+  content = _ensureGeneralQualityFloor(content, {
+    category,
+    weatherContext,
+    relatedPosts,
+    minChars: MIN_CHARS_GENERAL,
+  });
+
   if (content.length < MIN_CHARS_GENERAL) {
     console.log(`[젬스] repair 이후에도 글자수 미달: ${content.length}자`);
   }
@@ -748,6 +829,9 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
+  const missingMarkerLines = _getMissingMarkers(content)
+    .map((marker, index) => `${index + 1}. ${marker}`)
+    .join('\n');
   const shortSectionLines = _getShortSections(content, category)
     .map((section, index) => `${index + 1}. ${section.marker} — 현재 ${section.currentChars}자 / 목표 ${section.minChars}자`)
     .join('\n');
@@ -778,7 +862,12 @@ ${issueLines}
 5. 마지막에는 전체 보정된 완성본만 출력하라. 설명문, 메모, 사족 금지.
 6. 모든 보정이 끝난 뒤 마지막 줄에 _THE_END_ 를 적어라.
 7. 아래 [부족 섹션] 목록이 있으면 그 섹션을 우선 보강하고, 목록에 없는 섹션은 가능한 한 그대로 유지하라.
+8. [누락 섹션] 목록이 있으면 반드시 해당 섹션명을 그대로 사용해 새 섹션을 추가하라.
+9. "AI 스니펫 요약", "스터디카페 홍보 섹션", "해시태그"가 누락되었으면 반드시 정확한 섹션명으로 다시 작성하라.
 ${_buildVariationBlock(sectionVariation)}
+
+[누락 섹션]
+${missingMarkerLines || '1. 없음'}
 
 [부족 섹션]
 ${shortSectionLines || '1. 별도 부족 섹션 없음'}
@@ -798,6 +887,7 @@ ${content}
       chain:        GEMS_LLM_CHAIN,
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt:   repairPrompt,
+      timeoutMs: BLOG_WRITER_TIMEOUT_MS,
       logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_repair' },
     });
     repaired     = result.text;
@@ -838,7 +928,8 @@ ${content}
  * 3그룹 분할 생성 — Gemini Flash (무료) 기본
  * group_a: AI스니펫 + 목차 + 인사말 + 본론1  (~1,900자+)
  * group_b: 본론2 + 본론3                      (~2,700자+)
- * group_c: 스터디카페 홍보 + 마무리 + 링크 + 해시태그 (~1,200자+)
+ * group_c: 스터디카페 홍보 + 마무리 (~1,250자+)
+ * group_d: 링크 + 해시태그 (~250자+)
  *
  * @param {string} category
  * @param {object} researchData
@@ -847,7 +938,7 @@ ${content}
  */
 async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
-  const model    = process.env.BLOG_LLM_MODEL || 'gemini';
+  const model    = process.env.BLOG_LLM_MODEL || GEMS_LLM_CHAIN;
 
   const weather         = researchData.weather || {};
   const itNews          = researchData.it_news || [];
@@ -936,9 +1027,8 @@ ${_buildVariationBlock(sectionVariation)}`,
     },
     {
       id:       'group_c',
-      minChars: 1200,
+      minChars: 1250,
       prompt: `${baseCtx}
-${linkingBlock}
 카테고리 "${category}" 포스팅의 마무리 섹션을 작성하라.
 앞서 작성된 3개의 본론 섹션에 이어 자연스럽게 마무리하라.
 날씨 맥락(${weatherContext})을 스터디카페 섹션에 자연스럽게 포함하라.
@@ -947,10 +1037,22 @@ ${linkingBlock}
 1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 자연 연결, 세스코 에어 + 날씨 환경 연결, 불릿 리스트, 600자 이상
 2. ━━━━━━━━━━━━━━━━━━━━━
 3. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
-4. [함께 읽으면 좋은 글] — 관련 포스팅 3개 추천
-5. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개 이상 (질문형 키워드 포함)
 
-글자수 요구: 전체 1,200자 이상. 스터디카페 섹션 최소 600자.`,
+글자수 요구: 전체 1,250자 이상. 스터디카페 섹션 최소 600자.`,
+    },
+    {
+      id:       'group_d',
+      minChars: 220,
+      prompt: `${baseCtx}
+${linkingBlock}
+카테고리 "${category}" 포스팅의 마감 메타 정보를 작성하라.
+이미 본론과 마무리 제언은 작성되었다. 아래 두 섹션만 작성하라.
+
+작성할 섹션 (모두 포함, 생략 금지):
+1. [함께 읽으면 좋은 글] — 관련 포스팅 3개 추천
+2. [해시태그] — 주제 관련 15개 + 스터디카페 홍보 12개 = 27개 이상 (질문형 키워드 포함)
+
+글자수 요구: 전체 220자 이상.`,
     },
   ];
 
@@ -958,6 +1060,7 @@ ${linkingBlock}
     model,
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
+    timeoutMs: BLOG_CHUNK_TIMEOUT_MS,
     logMeta: { team: 'blog', bot: 'blog-gems', requestType: 'general_post_chunked' },
     onChunkComplete: ({ id, charCount, index }) =>
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
