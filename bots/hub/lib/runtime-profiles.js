@@ -310,6 +310,17 @@ const PROFILES = {
       primary_routes: ['openai-oauth/gpt-5.4', 'claude-code/sonnet'],
       fallback_routes: ['local/qwen2.5-7b'],
     },
+    stt: {
+      openclaw_agent: 'video-edi',
+      claude_code_name: 'video-edi',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/video-edi.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['openai/whisper-1'],
+      fallback_routes: [],
+      direct_provider: 'openai',
+      direct_model: 'whisper-1',
+      direct_endpoint: 'https://api.openai.com/v1/audio/transcriptions',
+    },
     review: {
       openclaw_agent: 'video-edi',
       claude_code_name: 'video-edi',
