@@ -52,11 +52,7 @@ async function listTools(team = null, capability = null) {
   }
   if (capability) {
     params.push(capability);
-    conditions.push(`EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements_text(capabilities) AS capability_item(value)
-      WHERE capability_item.value = $${params.length}
-    )`);
+    conditions.push(`capabilities @> jsonb_build_array($${params.length}::TEXT)`);
   }
 
   const rows = await pgPool.query(
