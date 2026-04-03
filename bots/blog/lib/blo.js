@@ -19,6 +19,7 @@ const { generatePostImages }                        = require('./img-gen');
 const { createInstaContent }                        = require('./star');
 const { getConfig }                                 = require('./daily-config');
 const {
+  GENERAL_CATEGORIES,
   advanceGeneralCategory,
   getNextGeneralCategory,
   advanceLectureNumber,
@@ -31,7 +32,6 @@ const {
   updateScheduleStatus,
   updateScheduleCategory,
 }                                                   = require('./schedule');
-const { researchBook }                              = require('./book-research');
 const { blog: blogSkills }                          = require('../../../packages/core/lib/skills');
 const {
   dailyCurriculumCheck,
@@ -81,6 +81,60 @@ async function _selectBlogWriter(taskLabel, fallbackName) {
     console.warn(`[고용] ${taskLabel} 작가 선택 실패 — ${fallbackName} 폴백:`, error.message);
     return fallbackName;
   }
+}
+
+function _getNextFallbackGeneralCategory(currentCategory) {
+  const categories = Array.isArray(GENERAL_CATEGORIES) ? GENERAL_CATEGORIES : [];
+  if (!categories.length) return '자기계발';
+
+  const currentIndex = categories.indexOf(currentCategory);
+  const startIndex = currentIndex >= 0 ? currentIndex : 0;
+
+  for (let offset = 1; offset <= categories.length; offset += 1) {
+    const candidate = categories[(startIndex + offset) % categories.length];
+    if (candidate && candidate !== '도서리뷰') return candidate;
+  }
+
+  return categories.find((category) => category !== '도서리뷰') || '자기계발';
+}
+
+function _extractTopicKeywords(researchData = {}) {
+  const keywordSet = new Set();
+
+  const pushKeyword = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    keywordSet.add(text);
+  };
+
+  pushKeyword(researchData?.it_news?.[0]?.title);
+  pushKeyword(researchData?.it_news?.[1]?.title);
+  pushKeyword(researchData?.nodejs_updates?.[0]?.name);
+  pushKeyword(researchData?.nodejs_updates?.[0]?.tag);
+  pushKeyword(researchData?.popularPatterns?.[0]?.title);
+
+  [
+    '개발자 성장',
+    '소프트웨어 설계',
+    '개발 조직 문화',
+    'AI 개발',
+    '생산성',
+  ].forEach(pushKeyword);
+
+  return [...keywordSet].slice(0, 8);
+}
+
+function _buildBookReviewSkillInput(researchData = {}) {
+  const topic = String(
+    researchData?.it_news?.[0]?.title
+    || researchData?.nodejs_updates?.[0]?.name
+    || '개발자 성장과 소프트웨어 설계'
+  ).trim();
+
+  return {
+    topic,
+    keywords: _extractTopicKeywords(researchData),
+  };
 }
 
 // ─── 스키마 초기화 ────────────────────────────────────────────────────
@@ -336,28 +390,26 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
       console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title}`);
     } else {
       try {
-        const book = await researchBook();
-        const verification = blogSkills.bookSourceVerify.verifyBookSources({
-          primary: book,
-          candidates: book?.verification_candidates || [book],
-        });
-        if (!verification.ok) {
-          console.warn(`[젬스] 도서 검증 실패 — 도서리뷰 스킵: ${verification.reasons.join(', ')}`);
+        const skillInput = _buildBookReviewSkillInput(researchData);
+        console.log(`[젬스] 도서리뷰 주제 선정: ${skillInput.topic}`);
+        const book = await blogSkills.bookReviewBook.resolveBookForReview(skillInput);
+        if (!book) {
+          console.warn('[젬스] 도서 검색/선택/검증 실패 — 도서리뷰 스킵');
           return {
             skipped: true,
-            reason: `도서 검증 실패: ${verification.reasons.join(', ')}`,
+            reason: '도서 검색/선택/검증 실패',
             category,
             sectionVariation,
           };
         }
 
-        preparedResearch.book_info = verification.book;
-        if (scheduleId && verification.book?.title) {
+        preparedResearch.book_info = book;
+        if (scheduleId && book?.title) {
           const { updateBookInfo } = require('./schedule');
           await updateBookInfo(scheduleId, {
-            book_title: verification.book.title,
-            book_author: verification.book.author,
-            book_isbn: verification.book.isbn,
+            book_title: book.title,
+            book_author: book.author,
+            book_isbn: book.isbn,
           });
         }
       } catch (e) {
@@ -719,13 +771,16 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     if (canFallbackCategory) {
       await advanceGeneralCategory();
       const nextCategoryInfo = await getNextGeneralCategory();
+      const fallbackCategory = nextCategoryInfo?.category === '도서리뷰'
+        ? _getNextFallbackGeneralCategory(context.category)
+        : (nextCategoryInfo?.category || _getNextFallbackGeneralCategory(context.category));
       if (scheduleId) {
-        await updateScheduleCategory(scheduleId, nextCategoryInfo.category);
+        await updateScheduleCategory(scheduleId, fallbackCategory);
       }
-      console.log(`[블로] 도서리뷰 스킵 — 같은 런에서 다음 일반 카테고리로 전환: ${nextCategoryInfo.category}`);
+      console.log(`[블로] 도서리뷰 스킵 — 같은 런에서 다음 일반 카테고리로 전환: ${fallbackCategory}`);
       return runGeneralPost(researchData, traceCtx, {
         ...preloaded,
-        category: nextCategoryInfo.category,
+        category: fallbackCategory,
         bookInfo: null,
         _bookFallbackTried: true,
       }, scheduleId);
