@@ -86,6 +86,21 @@ dfd_*/
 
 # Claude Code 프로젝트 (개인 설정 — 깃 제외)
 .claude/
+bots/*/.openclaw/
+bots/claude/AGENTS.md
+bots/claude/BOOTSTRAP.md
+bots/claude/HEARTBEAT.md
+bots/claude/IDENTITY.md
+bots/claude/SOUL.md
+bots/claude/TOOLS.md
+bots/claude/USER.md
+bots/orchestrator/AGENTS.md
+bots/orchestrator/BOOTSTRAP.md
+bots/orchestrator/HEARTBEAT.md
+bots/orchestrator/IDENTITY.md
+bots/orchestrator/SOUL.md
+bots/orchestrator/TOOLS.md
+bots/orchestrator/USER.md
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/

@@ -39,12 +39,18 @@
           "model": "gpt-5.4"
         },
         "fallback": {
-          "provider": "gemini",
-          "model": "gemini-2.5-flash"
+          "provider": "claude-code",
+          "model": "claude-code/sonnet"
         }
       },
       "orchestrator.jay.chat_fallback": {
         "chain": [
+          {
+            "provider": "claude-code",
+            "model": "claude-code/sonnet",
+            "maxTokens": 300,
+            "temperature": 0.3
+          },
           {
             "provider": "groq",
             "model": "openai/gpt-oss-20b",
