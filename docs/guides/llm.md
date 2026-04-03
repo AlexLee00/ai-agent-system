@@ -835,7 +835,7 @@ console.log('최종 답변:', response.message.content);
 
 REST API:
 ```bash
-curl http://localhost:11434/api/chat -d '{
+curl http://127.0.0.1:11434/api/chat -d '{
   "model": "deepseek-r1:14b",
   "think": true,
   "messages": [{ "role": "user", "content": "..." }],
@@ -928,7 +928,7 @@ OS + 여유      → ~8 GB
 
 ### 8.7 Ollama API 레퍼런스
 
-**Base URL:** `http://localhost:11434`
+**Base URL:** `http://127.0.0.1:11434`
 
 | 엔드포인트 | 용도 |
 |-----------|------|

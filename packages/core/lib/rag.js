@@ -31,7 +31,7 @@ const EMBED_MODEL = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
 const EMBED_DIM   = Number(process.env.EMBED_DIM) || 1024;
 
 function getEmbedUrl() {
-  return process.env.EMBED_URL || getEmbeddingsUrl() || 'http://localhost:11434/v1/embeddings';
+  return process.env.EMBED_URL || getEmbeddingsUrl() || 'http://127.0.0.1:11434/v1/embeddings';
 }
 
 function execCurl(args) {

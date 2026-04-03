@@ -118,7 +118,7 @@ const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||
 
 const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
   IS_OPS
-    ? 'http://localhost:11434'
+    ? 'http://127.0.0.1:11434'
     : 'http://REDACTED_TAILSCALE_IP:11434'
 );
 
