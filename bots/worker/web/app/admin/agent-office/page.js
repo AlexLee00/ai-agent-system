@@ -61,6 +61,22 @@ function getAlwaysOnDot(updatedAt) {
   return '🔴';
 }
 
+function getModelDisplay(agent) {
+  if (agent?.llm_model) return agent.llm_model;
+
+  const management = agent?.config?.llm_management;
+  if (management === 'runtime-managed') {
+    const runtimeTeam = agent?.config?.runtime_team || agent?.team || 'runtime';
+    const runtimePurpose = agent?.config?.runtime_purpose || 'default';
+    return `runtime-managed (${runtimeTeam}/${runtimePurpose})`;
+  }
+  if (management === 'non-llm') {
+    const reason = agent?.config?.non_llm_reason || 'non-llm';
+    return `non-llm (${reason})`;
+  }
+  return '없음';
+}
+
 export default function AgentOfficePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -297,7 +313,7 @@ export default function AgentOfficePage() {
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">모델</span>
-                <span className="text-right">{selectedAgent.llm_model || '없음'}</span>
+                <span className="text-right">{getModelDisplay(selectedAgent)}</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">작업</span>
