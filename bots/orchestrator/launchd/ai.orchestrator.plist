@@ -10,12 +10,6 @@
 		<string>production</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-		<key>OPENCLAW_AGENT</key>
-		<string>jay-orchestrator</string>
-		<key>CLAUDE_CODE_NAME</key>
-		<string>jay-orchestrator</string>
-		<key>CLAUDE_CODE_SETTINGS</key>
-		<string>/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
