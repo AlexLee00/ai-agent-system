@@ -4,9 +4,9 @@
 const { registerAgent } = require('../../../packages/core/lib/agent-registry');
 
 const AGENTS = [
-  { name: 'blo', display_name: '블로', team: 'blog', role: 'leader', specialty: '블로그 팀장', llm_model: 'anthropic', code_path: 'bots/blog/lib/blo.js' },
-  { name: 'pos', display_name: '포스', team: 'blog', role: 'writer', specialty: 'IT기술작가', llm_model: 'anthropic', code_path: 'bots/blog/lib/pos-writer.js', dot_character: { color: '#6366f1', accessory: 'glasses' } },
-  { name: 'gems', display_name: '젬스', team: 'blog', role: 'writer', specialty: '감성에세이작가', llm_model: 'anthropic', code_path: 'bots/blog/lib/gems-writer.js', dot_character: { color: '#a855f7', accessory: 'pen' } },
+  { name: 'blo', display_name: '블로', team: 'blog', role: 'leader', specialty: '블로그 팀장', llm_model: 'claude-code/sonnet', code_path: 'bots/blog/lib/blo.js' },
+  { name: 'pos', display_name: '포스', team: 'blog', role: 'writer', specialty: 'IT기술작가', llm_model: 'claude-code/sonnet', code_path: 'bots/blog/lib/pos-writer.js', dot_character: { color: '#6366f1', accessory: 'glasses' } },
+  { name: 'gems', display_name: '젬스', team: 'blog', role: 'writer', specialty: '감성에세이작가', llm_model: 'openai-oauth/gpt-5.4', code_path: 'bots/blog/lib/gems-writer.js', dot_character: { color: '#a855f7', accessory: 'pen' } },
   { name: 'richer', display_name: '리처', team: 'blog', role: 'researcher', specialty: '자료수집', llm_model: 'local/qwen2.5-7b', code_path: 'bots/blog/lib/richer.js' },
   { name: 'publ', display_name: '퍼블', team: 'blog', role: 'publisher', specialty: '발행관리', code_path: 'bots/blog/lib/publ.js' },
   { name: 'maestro', display_name: '마에스트로', team: 'blog', role: 'orchestrator', specialty: '파이프라인', code_path: 'bots/blog/lib/maestro.js' },
