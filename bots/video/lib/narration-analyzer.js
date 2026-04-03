@@ -4,11 +4,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const OpenAI = require('openai');
-
-const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { generateSubtitle } = require('./whisper-client');
 const { correctFile } = require('./subtitle-corrector');
 const { probeDurationMs } = require('./ffmpeg-preprocess');
@@ -378,10 +376,6 @@ async function transcribeNarration(audioPath, config, options = {}) {
 }
 
 async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OpenAI API 키가 없습니다.');
-
-  const client = new OpenAI({ apiKey, timeout: timeoutMs });
   const payload = entries.map((entry) => ({
     index: entry.index,
     start_s: entry.startSec,
@@ -396,34 +390,33 @@ async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
   ].join('\n');
 
   const startedAt = Date.now();
-  const response = await client.chat.completions.create({
-    model: modelName,
-    temperature: 0.1,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'user', content: prompt },
-    ],
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.narration-analyzer'),
+    systemPrompt: [
+      '당신은 FlutterFlow 강의용 나레이션 구간 분석기다.',
+      '자막 엔트리를 의미 단위 구간으로 묶어 JSON 객체 하나만 반환한다.',
+      '형식은 { "segments": [ ... ] } 이어야 한다.',
+    ].join('\n'),
+    userPrompt: prompt,
+    timeoutMs,
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'analysis',
+      bot: 'narration-analyzer',
+      agentName: 'narration-analyzer',
+      selectorKey: 'video.narration-analyzer',
+      requestType: 'narration_segment_analysis',
+    },
   });
-  const text = response?.choices?.[0]?.message?.content || '';
+  const text = response?.text || '';
   const parsed = JSON.parse(text);
   const segments = Array.isArray(parsed?.segments) ? parsed.segments : [];
 
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'narration-analyzer',
-    model: modelName,
-    requestType: 'narration_segment_analysis',
-    inputTokens: response?.usage?.prompt_tokens || 0,
-    outputTokens: response?.usage?.completion_tokens || 0,
-    costUsd: 0,
-    latencyMs: Date.now() - startedAt,
-    success: true,
-  });
-  await logToolCall('llm_openai', 'narration_segment_analysis', {
+  await logToolCall(`llm_${response.provider}`, 'narration_segment_analysis', {
     bot: BOT_NAME,
     success: true,
     duration_ms: Date.now() - startedAt,
-    metadata: { model: modelName, entryCount: entries.length },
+    metadata: { model: response.model || modelName, provider: response.provider, entryCount: entries.length },
   });
 
   return segments;

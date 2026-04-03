@@ -8,11 +8,10 @@ const { promisify } = require('util');
 
 const sharp = require('sharp');
 const Tesseract = require('tesseract.js');
-const OpenAI = require('openai');
 
-const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 const execFileAsync = promisify(execFile);
 
@@ -417,9 +416,6 @@ function fallbackClassifyFrame(frame) {
 }
 
 async function callSceneClassifier(batch, modelName, timeoutMs) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OpenAI API 키가 없습니다.');
-
   const prompt = [
     '다음은 FlutterFlow 노코드 개발 도구의 화면 OCR 텍스트입니다.',
     '각 프레임에 대해 JSON 배열로만 답하세요.',
@@ -433,36 +429,34 @@ async function callSceneClassifier(batch, modelName, timeoutMs) {
     })), null, 2),
   ].join('\n');
 
-  const client = new OpenAI({ apiKey, timeout: timeoutMs });
   const startedAt = Date.now();
-  const response = await client.chat.completions.create({
-    model: modelName,
-    temperature: 0.1,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'user', content: `${prompt}\n\n응답 형식: { "frames": [ ... ] }` },
-    ],
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.scene-indexer'),
+    systemPrompt: [
+      '당신은 FlutterFlow 비디오 편집용 장면 분류기다.',
+      '입력된 OCR 텍스트를 보고 각 프레임을 설명과 장면 타입으로 분류한다.',
+      '반드시 JSON 객체 하나만 반환하고 형식은 { "frames": [ ... ] } 여야 한다.',
+    ].join('\n'),
+    userPrompt: `${prompt}\n\n응답 형식: { "frames": [ ... ] }`,
+    timeoutMs,
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'editing',
+      bot: 'scene-indexer',
+      agentName: 'scene-indexer',
+      selectorKey: 'video.scene-indexer',
+      requestType: 'scene_classification',
+    },
   });
-  const text = response?.choices?.[0]?.message?.content || '';
+  const text = response?.text || '';
   const parsed = JSON.parse(text);
   const frames = Array.isArray(parsed?.frames) ? parsed.frames : extractJsonArray(text);
 
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'scene-indexer',
-    model: modelName,
-    requestType: 'scene_classification',
-    inputTokens: response?.usage?.prompt_tokens || 0,
-    outputTokens: response?.usage?.completion_tokens || 0,
-    costUsd: 0,
-    latencyMs: Date.now() - startedAt,
-    success: true,
-  });
-  await logToolCall('llm_openai', 'scene_classification', {
+  await logToolCall(`llm_${response.provider}`, 'scene_classification', {
     bot: BOT_NAME,
     success: true,
     duration_ms: Date.now() - startedAt,
-    metadata: { model: modelName, batchSize: batch.length },
+    metadata: { model: response.model || modelName, provider: response.provider, batchSize: batch.length },
   });
 
   if (!Array.isArray(frames)) {
