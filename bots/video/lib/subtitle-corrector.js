@@ -3,22 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const OpenAI = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const { getOpenAIKey, getGeminiKey } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 const BOT_NAME = 'subtitle-corrector';
 const TEAM_NAME = 'video';
 const CHUNK_SIZE = 50;
-const OPENAI_PRICING = {
-  input: 0.15,
-  output: 0.60,
-};
-
 const SYSTEM_PROMPT = `당신은 FlutterFlow, Firebase, Supabase, Dart, Widget, API, JSON,
 Authentication, Database, Query, Column, Row, Navigation, Action,
 Parameter, Component, State, Variable 등 IT 전문용어에 정통한
@@ -100,78 +92,32 @@ function rebuildChunkWithOriginalStructure(originalChunk, correctedChunk) {
   return rebuilt.join('\n\n');
 }
 
-function estimateTokens(text) {
-  return Math.max(1, Math.ceil(String(text || '').length / 4));
-}
-
-function calcOpenAICost(inputTokens, outputTokens) {
-  return Number((((inputTokens * OPENAI_PRICING.input) + (outputTokens * OPENAI_PRICING.output)) / 1_000_000).toFixed(6));
-}
-
-async function callOpenAICorrection(chunkText, settings) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) {
-    throw new Error('OpenAI API 키가 없습니다.');
-  }
-
-  const client = new OpenAI({ apiKey });
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    temperature: settings.temperature,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: chunkText },
-    ],
-  });
-
-  const text = response?.choices?.[0]?.message?.content?.trim();
-  if (!text) {
-    throw new Error('OpenAI 응답 본문이 비어 있습니다.');
-  }
-
-  const inputTokens = response?.usage?.prompt_tokens || 0;
-  const outputTokens = response?.usage?.completion_tokens || 0;
-  return {
-    text,
-    provider: 'openai',
-    model: settings.model,
-    inputTokens,
-    outputTokens,
-    costUsd: calcOpenAICost(inputTokens, outputTokens),
-  };
-}
-
-async function callGeminiCorrection(chunkText, settings) {
-  const apiKey = getGeminiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API 키가 없습니다.');
-  }
-
-  const genai = new GoogleGenerativeAI(apiKey);
-  const model = genai.getGenerativeModel({
-    model: settings.model,
-    systemInstruction: SYSTEM_PROMPT,
-    generationConfig: {
-      temperature: settings.temperature,
-      thinkingConfig: { thinkingBudget: 0 },
+async function callSharedCorrection(chunkText) {
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.subtitle-correction'),
+    systemPrompt: SYSTEM_PROMPT,
+    userPrompt: chunkText,
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'editing',
+      bot: BOT_NAME,
+      agentName: 'subtitle-corrector',
+      selectorKey: 'video.subtitle-correction',
+      requestType: 'subtitle_correction',
     },
   });
 
-  const response = await model.generateContent(chunkText);
-  const text = response?.response?.text?.()?.trim();
+  const text = String(response?.text || '').trim();
   if (!text) {
-    throw new Error('Gemini 응답 본문이 비어 있습니다.');
+    throw new Error('공용 LLM 응답 본문이 비어 있습니다.');
   }
 
-  const usage = response?.response?.usageMetadata || {};
-  const inputTokens = usage.promptTokenCount || estimateTokens(chunkText);
-  const outputTokens = usage.candidatesTokenCount || estimateTokens(text);
   return {
     text,
-    provider: 'gemini',
-    model: settings.model,
-    inputTokens,
-    outputTokens,
+    provider: response.provider,
+    model: response.model,
+    inputTokens: 0,
+    outputTokens: 0,
     costUsd: 0,
   };
 }
@@ -192,82 +138,42 @@ async function withRetries(fn, retries) {
 
 async function runChunkCorrection(chunkText, config, chunkIndex) {
   const settings = config.subtitle_correction;
-  const primary = {
-    provider: settings.llm_provider,
-    model: settings.llm_model,
-    temperature: settings.temperature,
-  };
-  const fallback = {
-    provider: settings.fallback_provider === 'google' ? 'gemini' : settings.fallback_provider,
-    model: settings.fallback_model,
-    temperature: settings.temperature,
-  };
+  const startedAt = Date.now();
 
-  const chain = [primary, fallback];
-  let lastError = null;
+  try {
+    const result = await withRetries(() => callSharedCorrection(chunkText), settings.max_retries);
+    const durationMs = Date.now() - startedAt;
 
-  for (const candidate of chain) {
-    const action = candidate.provider === 'openai' ? callOpenAICorrection : callGeminiCorrection;
-    const startedAt = Date.now();
-
-    try {
-      const result = await withRetries(() => action(chunkText, candidate), settings.max_retries);
-      const durationMs = Date.now() - startedAt;
-
-      await logLLMCall({
-        team: TEAM_NAME,
-        bot: BOT_NAME,
+    await logToolCall(`llm_${result.provider}`, 'subtitle_correction', {
+      bot: BOT_NAME,
+      success: true,
+      duration_ms: durationMs,
+      metadata: {
+        chunkIndex,
         model: result.model,
-        requestType: 'subtitle_correction',
+        provider: result.provider,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         costUsd: result.costUsd,
-        latencyMs: durationMs,
-        success: true,
-      });
+        selectorKey: 'video.subtitle-correction',
+      },
+    });
 
-      await logToolCall(`llm_${result.provider}`, 'subtitle_correction', {
-        bot: BOT_NAME,
-        success: true,
-        duration_ms: durationMs,
-        metadata: {
-          chunkIndex,
-          model: result.model,
-          provider: result.provider,
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
-          costUsd: result.costUsd,
-        },
-      });
-
-      return result;
-    } catch (error) {
-      lastError = error;
-      const durationMs = Date.now() - startedAt;
-      await logLLMCall({
-        team: TEAM_NAME,
-        bot: BOT_NAME,
-        model: candidate.model,
-        requestType: 'subtitle_correction',
-        latencyMs: durationMs,
-        success: false,
-        errorMsg: error.message,
-      });
-      await logToolCall(`llm_${candidate.provider}`, 'subtitle_correction', {
-        bot: BOT_NAME,
-        success: false,
-        duration_ms: durationMs,
-        error: error.message,
-        metadata: {
-          chunkIndex,
-          model: candidate.model,
-          provider: candidate.provider,
-        },
-      });
-    }
+    return result;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    await logToolCall('llm_fallback', 'subtitle_correction', {
+      bot: BOT_NAME,
+      success: false,
+      duration_ms: durationMs,
+      error: error.message,
+      metadata: {
+        chunkIndex,
+        selectorKey: 'video.subtitle-correction',
+      },
+    });
+    throw error;
   }
-
-  throw lastError || new Error('자막 교정 LLM 체인이 모두 실패했습니다.');
 }
 
 function normalizeSrtOutput(text) {

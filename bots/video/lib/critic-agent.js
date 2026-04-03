@@ -5,12 +5,9 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
-const OpenAI = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const { getOpenAIKey, getGeminiKey } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 const { enhanceCriticWithRAG } = require('./video-rag');
 
 const execFileAsync = promisify(execFile);
@@ -18,23 +15,10 @@ const execFileAsync = promisify(execFile);
 const BOT_NAME = 'video';
 const TEAM_NAME = 'video';
 const SUBTITLE_CHUNK_SIZE = 25;
-const OPENAI_FALLBACK_MODEL = 'gpt-4o-mini';
 const LLM_TIMEOUT_MS = 45 * 1000;
-const OPENAI_PRICING = {
-  input: 0.15,
-  output: 0.60,
-};
 
 function toErrorMessage(error) {
   return error?.stderr || error?.stdout || error?.message || String(error || '알 수 없는 오류');
-}
-
-function estimateTokens(text) {
-  return Math.max(1, Math.ceil(String(text || '').length / 4));
-}
-
-function calcOpenAICost(inputTokens, outputTokens) {
-  return Number((((inputTokens * OPENAI_PRICING.input) + (outputTokens * OPENAI_PRICING.output)) / 1_000_000).toFixed(6));
 }
 
 async function runCommand(bin, args, action, metadata = {}) {
@@ -161,108 +145,43 @@ function mapSubtitleIssues(issues) {
     .filter(Boolean);
 }
 
-async function callGemini(prompt, modelName) {
-  const apiKey = getGeminiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API 키가 없습니다.');
-  }
-
+async function callCriticLLM(prompt) {
   const startedAt = Date.now();
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 0 },
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.critic'),
+    systemPrompt: [
+      '당신은 비디오 자막 RED 리뷰어다.',
+      '주어진 자막 청크에서 IT 전문용어 오류, 맞춤법 오류, 길이 문제를 찾아 JSON 배열만 반환하라.',
+      '[{ "entry": 번호, "type": "typo"|"terminology"|"length", "current": "현재 텍스트", "fix": "수정 텍스트" }]',
+      '오류가 없으면 반드시 []만 반환하라.',
+    ].join('\n'),
+    userPrompt: prompt,
+    timeoutMs: LLM_TIMEOUT_MS,
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'review',
+      bot: 'critic-agent',
+      agentName: 'critic',
+      selectorKey: 'video.critic',
+      requestType: 'critic_subtitle_review',
     },
   });
-  const result = await Promise.race([
-    model.generateContent(prompt),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini 호출 timeout')), LLM_TIMEOUT_MS)),
-  ]);
-  const text = result?.response?.text?.() || '';
-  const usage = result?.response?.usageMetadata || {};
-  const inputTokens = usage.promptTokenCount || estimateTokens(prompt);
-  const outputTokens = usage.candidatesTokenCount || estimateTokens(text);
   const durationMs = Date.now() - startedAt;
 
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'critic-agent',
-    model: modelName,
-    requestType: 'critic_subtitle_review',
-    inputTokens,
-    outputTokens,
-    costUsd: 0,
-    latencyMs: durationMs,
-    success: true,
-  });
-  await logToolCall('llm_gemini', 'critic_subtitle_review', {
+  await logToolCall(`llm_${response.provider}`, 'critic_subtitle_review', {
     bot: BOT_NAME,
     success: true,
     duration_ms: durationMs,
-    metadata: { model: modelName, inputTokens, outputTokens, costUsd: 0 },
+    metadata: { model: response.model, provider: response.provider, costUsd: 0 },
   });
 
   return {
-    text,
-    inputTokens,
-    outputTokens,
+    text: response.text,
+    inputTokens: 0,
+    outputTokens: 0,
     costUsd: 0,
-    provider: 'gemini',
-    model: modelName,
-  };
-}
-
-async function callOpenAI(prompt, modelName = OPENAI_FALLBACK_MODEL) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) {
-    throw new Error('OpenAI API 키가 없습니다.');
-  }
-
-  const startedAt = Date.now();
-  const client = new OpenAI({ apiKey });
-  const response = await Promise.race([
-    client.chat.completions.create({
-      model: modelName,
-      temperature: 0.1,
-      messages: [
-        { role: 'user', content: prompt },
-      ],
-    }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI 호출 timeout')), LLM_TIMEOUT_MS)),
-  ]);
-  const text = response?.choices?.[0]?.message?.content || '';
-  const inputTokens = response?.usage?.prompt_tokens || estimateTokens(prompt);
-  const outputTokens = response?.usage?.completion_tokens || estimateTokens(text);
-  const costUsd = calcOpenAICost(inputTokens, outputTokens);
-  const durationMs = Date.now() - startedAt;
-
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'critic-agent',
-    model: modelName,
-    requestType: 'critic_subtitle_review',
-    inputTokens,
-    outputTokens,
-    costUsd,
-    latencyMs: durationMs,
-    success: true,
-  });
-  await logToolCall('llm_openai', 'critic_subtitle_review', {
-    bot: BOT_NAME,
-    success: true,
-    duration_ms: durationMs,
-    metadata: { model: modelName, inputTokens, outputTokens, costUsd },
-  });
-
-  return {
-    text,
-    inputTokens,
-    outputTokens,
-    costUsd,
-    provider: 'openai',
-    model: modelName,
+    provider: response.provider,
+    model: response.model,
   };
 }
 
@@ -273,13 +192,8 @@ async function analyzeSubtitles(subtitlePath, config) {
   const issues = [];
   let hasParseFailure = false;
   let llmCostUsd = 0;
-  let llmProvider = String(config?.quality_loop?.critic?.provider || 'gemini').toLowerCase();
-  let llmModel = config?.quality_loop?.critic?.model || 'gemini-2.5-flash';
-
-  const primaryProvider = llmProvider === 'google' ? 'gemini' : llmProvider;
-  const primaryModel = llmModel;
-  const fallbackProvider = primaryProvider === 'openai' ? null : 'openai';
-  const fallbackModel = OPENAI_FALLBACK_MODEL;
+  let llmProvider = 'unknown';
+  let llmModel = 'unknown';
 
   for (const chunk of chunks) {
     const chunkText = chunk
@@ -297,23 +211,16 @@ async function analyzeSubtitles(subtitlePath, config) {
 
     let response;
     try {
-      if (primaryProvider === 'openai') {
-        response = await callOpenAI(prompt, primaryModel);
-      } else {
-        response = await callGemini(prompt, primaryModel);
-      }
-    } catch (geminiError) {
-      await logToolCall(primaryProvider === 'openai' ? 'llm_openai' : 'llm_gemini', 'critic_subtitle_review', {
+      response = await callCriticLLM(prompt);
+    } catch (llmError) {
+      await logToolCall('llm_fallback', 'critic_subtitle_review', {
         bot: BOT_NAME,
         success: false,
         duration_ms: 0,
-        error: toErrorMessage(geminiError),
-        metadata: { model: primaryModel },
+        error: toErrorMessage(llmError),
+        metadata: { selectorKey: 'video.critic' },
       });
-      if (!fallbackProvider) {
-        throw geminiError;
-      }
-      response = await callOpenAI(prompt, fallbackModel);
+      throw llmError;
     }
 
     llmCostUsd += Number(response.costUsd || 0);
