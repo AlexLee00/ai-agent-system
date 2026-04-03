@@ -8,7 +8,13 @@
 LOG_FILE="$HOME/.openclaw/workspace/naver-monitor.log"
 CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 REPORT_TIME=$(date '+%Y-%m-%d %H:%M')
-OPENCLAW_AGENT_NAME="${OPENCLAW_AGENT:-ska-ops}"
+OPENCLAW_AGENT_NAME=$(
+  /opt/homebrew/bin/node /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/resolve-openclaw-agent.cjs ska reporting ska-ops 2>/dev/null
+)
+
+if [ -z "$OPENCLAW_AGENT_NAME" ]; then
+  OPENCLAW_AGENT_NAME="ska-ops"
+fi
 
 # ── 1. 로그 파일 존재 여부 확인 ──────────────────────────────
 if [ ! -f "$LOG_FILE" ]; then
