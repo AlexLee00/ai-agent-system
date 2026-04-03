@@ -4,12 +4,6 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>OPENCLAW_AGENT</key>
-		<string>luna-ops</string>
-		<key>CLAUDE_CODE_NAME</key>
-		<string>luna-ops</string>
-		<key>CLAUDE_CODE_SETTINGS</key>
-		<string>/Users/alexlee/.openclaw/.claude/luna-ops.settings.json</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
