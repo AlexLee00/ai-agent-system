@@ -115,6 +115,13 @@ bots/reservation/IDENTITY.md
 bots/reservation/SOUL.md
 bots/reservation/TOOLS.md
 bots/reservation/USER.md
+bots/video/AGENTS.md
+bots/video/BOOTSTRAP.md
+bots/video/HEARTBEAT.md
+bots/video/IDENTITY.md
+bots/video/SOUL.md
+bots/video/TOOLS.md
+bots/video/USER.md
 bots/worker/AGENTS.md
 bots/worker/BOOTSTRAP.md
 bots/worker/HEARTBEAT.md
