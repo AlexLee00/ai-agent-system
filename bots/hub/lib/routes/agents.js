@@ -32,6 +32,7 @@ const {
   completeCompetition,
   getCompetitionHistory,
 } = require('../../../../packages/core/lib/competition-engine');
+const { selectRuntimeProfile } = require('../runtime-profiles');
 
 async function agentsListRoute(req, res) {
   const team = typeof req.query.team === 'string' && req.query.team.trim() ? req.query.team.trim() : null;
@@ -189,6 +190,24 @@ async function toolsEvaluateRoute(req, res) {
   return res.json({ ok: true, toolName, updated });
 }
 
+async function runtimeSelectRoute(req, res) {
+  const team = typeof req.query.team === 'string' ? req.query.team.trim() : '';
+  const purpose = typeof req.query.purpose === 'string' && req.query.purpose.trim()
+    ? req.query.purpose.trim()
+    : 'default';
+  if (!team) {
+    return res.status(400).json({ ok: false, error: 'team required' });
+  }
+  const profile = selectRuntimeProfile(team, purpose);
+  return res.json({
+    ok: true,
+    team,
+    purpose,
+    profile,
+    selection_reason: profile ? 'team-runtime-profile' : 'no-runtime-profile',
+  });
+}
+
 async function agentTraceStatsRoute(req, res) {
   const days = Number.parseInt(req.query.days, 10) || 7;
   const stats = await getAgentTraceStats(req.params.name, days);
@@ -232,6 +251,7 @@ module.exports = {
   toolsListRoute,
   toolsSelectRoute,
   toolsEvaluateRoute,
+  runtimeSelectRoute,
   agentTraceStatsRoute,
   agentDetailRoute,
 };

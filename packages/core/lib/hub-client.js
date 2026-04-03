@@ -150,8 +150,48 @@ async function fetchOpsErrors(minutes = 60, service = null, timeoutMs = 3000) {
   }
 }
 
+async function fetchHubRuntimeProfile(team, purpose = 'default', timeoutMs = 3000) {
+  if (!env.HUB_BASE_URL || !team) return null;
+
+  const cacheKey = getCacheKey('runtime', `${team}:${purpose}`);
+  const cached = getCached(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const url = `${env.HUB_BASE_URL}/hub/runtime/select?team=${encodeURIComponent(team)}&purpose=${encodeURIComponent(purpose)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      console.warn(`[hub-client] runtime ${team}/${purpose}: HTTP ${res.status}`);
+      if (res.status === 429) setCached(cacheKey, null, 3000);
+      return null;
+    }
+
+    const json = await res.json();
+    const data = json?.profile || null;
+    setCached(cacheKey, data, 5000);
+    return data;
+  } catch (err) {
+    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    console.warn(`[hub-client] runtime ${team}/${purpose}: ${message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 module.exports = {
   fetchHubSecrets,
   queryOpsDb,
   fetchOpsErrors,
+  fetchHubRuntimeProfile,
 };

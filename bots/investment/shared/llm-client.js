@@ -297,7 +297,8 @@ async function callSharedFallback(agentName, agentPolicy, systemPrompt, userProm
     userPrompt,
     timeoutMs: options.timeoutMs || null,
     logMeta: {
-      team: 'investment',
+      team: 'luna',
+      purpose: options.purpose || (String(options.requestType || '').toLowerCase().includes('valid') ? 'validator' : 'analyst'),
       bot: agentName,
       agentName,
       requestType: 'trade_signal',
