@@ -16,10 +16,16 @@
 
   <key>EnvironmentVariables</key>
   <dict>
+    <key>CLAUDE_CODE_NAME</key>
+    <string>ska-ops</string>
+    <key>CLAUDE_CODE_SETTINGS</key>
+    <string>/Users/alexlee/.openclaw/.claude/ska-ops.settings.json</string>
     <key>HOME</key>
     <string>/Users/alexlee</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>OPENCLAW_AGENT</key>
+    <string>ska-ops</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>

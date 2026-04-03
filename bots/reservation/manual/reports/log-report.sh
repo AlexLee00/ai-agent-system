@@ -8,6 +8,7 @@
 LOG_FILE="$HOME/.openclaw/workspace/naver-monitor.log"
 CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 REPORT_TIME=$(date '+%Y-%m-%d %H:%M')
+OPENCLAW_AGENT_NAME="${OPENCLAW_AGENT:-ska-ops}"
 
 # ── 1. 로그 파일 존재 여부 확인 ──────────────────────────────
 if [ ! -f "$LOG_FILE" ]; then
@@ -58,8 +59,8 @@ ${CONTEXT_LOGS}
 최대 5줄로 핵심만 요약해줘."
 
 ANALYSIS=$(openclaw agent \
+  --agent "$OPENCLAW_AGENT_NAME" \
   --message "$PROMPT" \
-  --local \
   2>/dev/null | tail -50)
 
 # openclaw --local 실패 시 텍스트만 전송
@@ -81,6 +82,7 @@ ${ANALYSIS}
 가능하시면 '응' 또는 '지금 봐줘'라고 답장해주세요!"
 
 openclaw agent \
+  --agent "$OPENCLAW_AGENT_NAME" \
   --message "$REPORT" \
   --channel telegram \
   --deliver \
