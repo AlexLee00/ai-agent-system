@@ -285,6 +285,32 @@ const PROFILES = {
       fallback_routes: ['openai/gpt-4o-mini'],
     },
   },
+  video: {
+    default: {
+      openclaw_agent: 'video-edi',
+      claude_code_name: 'video-edi',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/video-edi.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['openai-oauth/gpt-5.4', 'claude-code/sonnet'],
+      fallback_routes: ['local/qwen2.5-7b', 'google-gemini-cli/gemini-2.5-flash'],
+    },
+    editing: {
+      openclaw_agent: 'video-edi',
+      claude_code_name: 'video-edi',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/video-edi.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['openai-oauth/gpt-5.4', 'claude-code/sonnet'],
+      fallback_routes: ['local/qwen2.5-7b'],
+    },
+    review: {
+      openclaw_agent: 'video-edi',
+      claude_code_name: 'video-edi',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/video-edi.settings.json',
+      local_llm_base_url: LOCAL_LLM_BASE_URL,
+      primary_routes: ['claude-code/sonnet', 'openai-oauth/gpt-5.4'],
+      fallback_routes: ['google-gemini-cli/gemini-2.5-flash'],
+    },
+  },
 };
 
 function selectRuntimeProfile(team, purpose = 'default') {

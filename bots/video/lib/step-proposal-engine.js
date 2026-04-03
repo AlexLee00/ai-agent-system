@@ -229,6 +229,7 @@ async function attachRedEvaluation(steps, config = {}) {
         userPrompt,
         logMeta: {
           team: 'video',
+          purpose: 'editing',
           bot: 'step-proposal-engine',
           agentName: 'edi',
           selectorKey: 'video.step-proposal',
