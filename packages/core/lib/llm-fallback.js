@@ -134,7 +134,8 @@ async function _getOAuthToken() {
   return null;
 }
 
-async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }) {
+async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false }) {
+  const openclawAgent = String(process.env.OPENCLAW_AGENT || 'main').trim() || 'main';
   const prompt = [
     '[SYSTEM]',
     systemPrompt || '',
@@ -145,17 +146,36 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
 
   const args = [
     'agent',
-    '--agent', 'main',
+    '--agent', openclawAgent,
     '--json',
     '--message', prompt,
     '--timeout', String(Math.max(10, Math.ceil(timeoutMs / 1000))),
   ];
+  if (local) args.push('--local');
 
-  const { stdout, stderr } = await execFileAsync('openclaw', args, {
-    timeout: timeoutMs + 5000,
-    maxBuffer: 2 * 1024 * 1024,
-    env: process.env,
-  });
+  let stdout = '';
+  let stderr = '';
+  try {
+    const result = await execFileAsync('openclaw', args, {
+      timeout: timeoutMs + 5000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: process.env,
+    });
+    stdout = result.stdout || '';
+    stderr = result.stderr || '';
+  } catch (error) {
+    const exitCode = error?.code ?? 'unknown';
+    const signal = error?.signal || '';
+    stdout = error?.stdout || '';
+    stderr = error?.stderr || error?.message || '';
+    const detail = [
+      `exit=${exitCode}`,
+      signal ? `signal=${signal}` : null,
+      stderr ? `stderr=${String(stderr).trim().slice(0, 400)}` : null,
+      stdout ? `stdout=${String(stdout).trim().slice(0, 240)}` : null,
+    ].filter(Boolean).join(' | ');
+    throw new Error(`OpenClaw agent 실행 실패: ${detail}`);
+  }
 
   const output = String(stdout || '').trim();
   if (!output) {
@@ -196,6 +216,9 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
 
 async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000 }) {
   const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
+  const claudeSessionName = String(process.env.CLAUDE_CODE_NAME || '').trim();
+  const claudeSettingsFile = String(process.env.CLAUDE_CODE_SETTINGS || '').trim();
+  const claudeAgent = String(process.env.CLAUDE_CODE_AGENT || '').trim();
   const args = [
     '-p',
     '--output-format', 'json',
@@ -205,6 +228,9 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     '--permission-mode', 'default',
     '--no-session-persistence',
   ];
+  if (claudeAgent) args.push('--agent', claudeAgent);
+  if (claudeSessionName) args.push('--name', claudeSessionName);
+  if (claudeSettingsFile) args.push('--settings', claudeSettingsFile);
   if (systemPrompt) args.push('--system-prompt', systemPrompt);
   args.push(userPrompt || '');
 
@@ -409,9 +435,17 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
 
 // ── provider 디스패처 ─────────────────────────────────────────────────
 
-async function _callProvider(cfg, systemPrompt, userPrompt) {
+async function _callProvider(cfg, systemPrompt, userPrompt, timeoutMs) {
   const { provider, model, maxTokens, temperature } = cfg;
-  const opts = { model, maxTokens, temperature, systemPrompt, userPrompt };
+  const opts = {
+    model,
+    maxTokens,
+    temperature,
+    systemPrompt,
+    userPrompt,
+    timeoutMs: cfg.timeoutMs || timeoutMs,
+    local: cfg.local === true,
+  };
 
   switch (provider) {
     case 'anthropic': {
@@ -463,7 +497,7 @@ async function _callProvider(cfg, systemPrompt, userPrompt) {
  * @returns {Promise<{text, provider, model, attempt}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
-async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} }) {
+async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null }) {
   await initHubConfig();
 
   // ★ 긴급 차단 체크
@@ -482,7 +516,7 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {} 
     const t0      = Date.now();
     const attempt = i + 1;
     try {
-      const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt);
+      const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs);
       const latencyMs = Date.now() - t0;
       const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
       const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;

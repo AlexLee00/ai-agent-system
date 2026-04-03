@@ -182,7 +182,11 @@ async function checkQualityEnhanced(content, type, options = {}) {
   const issues = [...quality.issues];
 
   if (type === 'lecture' && options.lectureNumber && options.expectedLectureTitle) {
-    const titleMatch = String(content || '').match(/\[(?:Node\.js\s*)?(\d+)강\]\s*([^\n]+)/);
+    const titleLine = String(content || '')
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line.length > 0) || '';
+    const titleMatch = titleLine.match(/\[(?:Node\.js\s*)?(\d+)강\]\s*([^\n]+)/);
     if (titleMatch) {
       const detectedNum = Number(titleMatch[1]);
       if (detectedNum !== Number(options.lectureNumber)) {

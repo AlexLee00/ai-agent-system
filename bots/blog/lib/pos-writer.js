@@ -18,6 +18,9 @@ const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selecto
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
+const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
+const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
+const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
 function loadPersonaGuide(filename) {
   try {
@@ -291,6 +294,7 @@ ${_buildVariationBlock(sectionVariation)}
       chain:        POS_LLM_CHAIN,
       systemPrompt: POS_SYSTEM_PROMPT,
       userPrompt,
+      timeoutMs: BLOG_WRITER_TIMEOUT_MS,
       logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post' },
     });
     content      = result.text;
@@ -321,6 +325,7 @@ ${_buildVariationBlock(sectionVariation)}
         chain:        POS_CONTINUE_CHAIN,
         systemPrompt: POS_SYSTEM_PROMPT,
         userPrompt:   continuePrompt,
+        timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
         logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
@@ -444,7 +449,7 @@ const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 
 /**
  * 4그룹으로 나눠서 호출 → 합쳐서 하나의 강의 포스팅 완성
- * 환경변수 BLOG_LLM_MODEL: 'gemini' (무료) | 'gpt4o' (유료 폴백)
+ * 환경변수 BLOG_LLM_MODEL이 없으면 blog.pos.writer 체인을 그대로 사용
  *
  * @param {number} lectureNumber
  * @param {string} lectureTitle
@@ -460,7 +465,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
 
   const weatherContext  = _weatherToContext(weather);
-  const model           = process.env.BLOG_LLM_MODEL || 'gemini';
+  const model           = process.env.BLOG_LLM_MODEL || POS_LLM_CHAIN;
 
   const experienceBlock = realExperiences.length > 0
     ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
@@ -569,6 +574,7 @@ ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
     model,
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
+    timeoutMs: BLOG_CHUNK_TIMEOUT_MS,
     logMeta: { team: 'blog', bot: 'blog-pos', requestType: 'lecture_post_chunked' },
     onChunkComplete: ({ id, charCount, index }) =>
       console.log(`[포스] 청크 ${id} 완료: ${charCount}자 (${index + 1}/4)`),
