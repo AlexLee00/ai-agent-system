@@ -177,45 +177,42 @@ const TEAM_SELECTOR_DEFAULTS = {
   },
   blog: {
     'pos.writer': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 16000, temperature: 0.82 },
       fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
-        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'gems.writer': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 16000, temperature: 0.85 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 12000, temperature: 0.75 },
         { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 12000, temperature: 0.75 },
-        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'social.summarize': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'social.caption': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'star.summarize': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'star.caption': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'curriculum.recommend': {
@@ -225,9 +222,9 @@ const TEAM_SELECTOR_DEFAULTS = {
       ],
     },
     'curriculum.generate': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.5 },
       fallbacks: [
-        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 8000, temperature: 0.5 },
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
       ],
     },
     _fallback: {
@@ -510,8 +507,8 @@ function _buildSelectorRegistry() {
         oracle: 'groq_scout',
         hermes: 'local_primary',
         sophia: 'local_primary',
-        zeus: 'openai_mini',
-        athena: 'openai_mini',
+        zeus: 'groq_scout',
+        athena: 'groq_scout',
         argos: 'local_fast',
       };
       const configuredRoutes = _isObject(policyOverride?.agentRoutes)
