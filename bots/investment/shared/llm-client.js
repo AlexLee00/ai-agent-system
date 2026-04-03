@@ -134,9 +134,11 @@ const {
   selectLLMPolicy,
 } = require('../../../packages/core/lib/llm-model-selector.js');
 const { getAgent: getRegistryAgent } = require('../../../packages/core/lib/agent-registry');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback.js');
 
 const INVESTMENT_LLM_POLICIES = getInvestmentLLMPolicyConfig();
 const INVESTMENT_AGENT_POLICY_OVERRIDE = INVESTMENT_LLM_POLICIES.investmentAgentPolicy || null;
+const USE_SHARED_FALLBACK_ENGINE = INVESTMENT_AGENT_POLICY_OVERRIDE?.useSharedFallbackEngine !== false;
 
 // ─── 모델 상수 ───────────────────────────────────────────────────────
 
@@ -262,6 +264,12 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     openaiPerfModel: _cfg.openai?.model || 'gpt-4o',
     policyOverride: INVESTMENT_AGENT_POLICY_OVERRIDE,
   });
+  if (USE_SHARED_FALLBACK_ENGINE && agentPolicy.route !== 'dual_groq') {
+    return callSharedFallback(agentName, agentPolicy, systemPrompt, userPrompt, maxTokens, {
+      ...options,
+      guardScope,
+    });
+  }
   if (agentPolicy.route === 'openai_perf') {
     return callOpenAI(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
   }
@@ -274,6 +282,32 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
     return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
   }
   return callGroq(agentName, systemPrompt, userPrompt, maxTokens, { ...options, guardScope });
+}
+
+async function callSharedFallback(agentName, agentPolicy, systemPrompt, userPrompt, maxTokens, options = {}) {
+  const chain = (agentPolicy.fallbackChain || []).map((entry) => ({
+    provider: entry.provider,
+    model: entry.model,
+    maxTokens: entry.maxTokens || maxTokens,
+    temperature: entry.temperature ?? 0.1,
+  }));
+  const result = await callWithFallback({
+    chain,
+    systemPrompt,
+    userPrompt,
+    timeoutMs: options.timeoutMs || null,
+    logMeta: {
+      team: 'investment',
+      bot: agentName,
+      agentName,
+      requestType: 'trade_signal',
+      selectorKey: `investment.${agentPolicy.route}`,
+      market: getCurrentInvestmentMarket(),
+      symbol: options.symbol || null,
+      guardScope: options.guardScope || null,
+    },
+  });
+  return result.text || '';
 }
 
 function normalizeScopeToken(value) {
