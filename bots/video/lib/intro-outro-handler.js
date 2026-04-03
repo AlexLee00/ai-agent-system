@@ -5,11 +5,9 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
-const OpenAI = require('openai');
-
-const { getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 const execFileAsync = promisify(execFile);
 
@@ -108,43 +106,38 @@ async function normalizeClipToTarget(filePath, outputPath, options) {
 }
 
 async function callTitleCardPlanner(prompt, title, options, config) {
-  const apiKey = getOpenAIKey();
-  if (!apiKey) throw new Error('OpenAI API 키가 없습니다.');
   const introOutro = ensureIntroOutroConfig(config);
-  const client = new OpenAI({ apiKey });
   const startedAt = Date.now();
-  const response = await client.chat.completions.create({
-    model: introOutro.llm_model,
-    temperature: 0.2,
-    response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          'FFmpeg drawtext/overlay용 제목 카드 사양을 JSON으로 생성하세요.',
-          '{ "bgColor": "black", "textColor": "white", "fontSize": 72, "title": "...", "subtitle": "...", "fadeInSec": 0.5, "fadeOutSec": 0.5 }',
-          `title=${title}`,
-          `prompt=${prompt}`,
-          `durationSec=${options.durationSec}`,
-          `target=${options.targetWidth}x${options.targetHeight}@${options.targetFps}`,
-          `logo=${options.logoPath || 'none'}`,
-        ].join('\n'),
-      },
-    ],
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.intro-outro'),
+    systemPrompt: [
+      '당신은 FFmpeg 제목 카드 기획기다.',
+      '입력된 조건에 맞는 제목 카드 사양을 JSON 객체 하나로만 반환한다.',
+      '{ "bgColor": "black", "textColor": "white", "fontSize": 72, "title": "...", "subtitle": "...", "fadeInSec": 0.5, "fadeOutSec": 0.5 }',
+    ].join('\n'),
+    userPrompt: [
+      `title=${title}`,
+      `prompt=${prompt}`,
+      `durationSec=${options.durationSec}`,
+      `target=${options.targetWidth}x${options.targetHeight}@${options.targetFps}`,
+      `logo=${options.logoPath || 'none'}`,
+    ].join('\n'),
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'editing',
+      bot: 'intro-outro-handler',
+      agentName: 'intro-outro-handler',
+      selectorKey: 'video.intro-outro',
+      requestType: 'intro_outro_plan',
+    },
   });
-  const content = response?.choices?.[0]?.message?.content || '{}';
+  const content = response?.text || '{}';
   const parsed = JSON.parse(content);
-
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'intro-outro-handler',
-    model: introOutro.llm_model,
-    requestType: 'intro_outro_plan',
-    inputTokens: response?.usage?.prompt_tokens || 0,
-    outputTokens: response?.usage?.completion_tokens || 0,
-    costUsd: 0,
-    latencyMs: Date.now() - startedAt,
+  await logToolCall(`llm_${response.provider}`, 'intro_outro_plan', {
+    bot: BOT_NAME,
     success: true,
+    duration_ms: Date.now() - startedAt,
+    metadata: { model: response.model || introOutro.llm_model, provider: response.provider },
   });
 
   return parsed;

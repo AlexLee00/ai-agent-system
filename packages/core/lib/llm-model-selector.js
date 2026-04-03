@@ -310,6 +310,20 @@ const TEAM_SELECTOR_DEFAULTS = {
         { provider: 'local', model: 'qwen2.5-7b', maxTokens: 4096, temperature: 0.1 },
       ],
     },
+    refiner: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    'intro-outro': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.2 },
+        { provider: 'local', model: 'qwen2.5-7b', maxTokens: 1024, temperature: 0.2 },
+      ],
+    },
     _fallback: {
       primary: { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [],
@@ -358,6 +372,8 @@ const AGENT_MODEL_REGISTRY = {
     'subtitle-corrector': 'video.subtitle-correction',
     'scene-indexer': 'video.scene-indexer',
     'narration-analyzer': 'video.narration-analyzer',
+    refiner: 'video.refiner',
+    'intro-outro-handler': 'video.intro-outro',
   },
 };
 
