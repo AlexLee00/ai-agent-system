@@ -8,6 +8,12 @@
 		<string>/Users/alexlee</string>
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<key>OPENCLAW_AGENT</key>
+		<string>claude-ops</string>
+		<key>CLAUDE_CODE_NAME</key>
+		<string>claude-ops</string>
+		<key>CLAUDE_CODE_SETTINGS</key>
+		<string>/Users/alexlee/.openclaw/.claude/claude-ops.settings.json</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>
