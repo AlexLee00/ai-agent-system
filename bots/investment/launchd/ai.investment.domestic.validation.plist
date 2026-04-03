@@ -10,16 +10,10 @@
 		<string>validation</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
-		<key>OPENCLAW_AGENT</key>
-		<string>luna-ops</string>
 		<key>PAPER_MODE</key>
 		<string>false</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-		<key>CLAUDE_CODE_NAME</key>
-		<string>luna-ops</string>
-		<key>CLAUDE_CODE_SETTINGS</key>
-		<string>/Users/alexlee/.openclaw/.claude/luna-ops.settings.json</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>
