@@ -5,12 +5,9 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
-const OpenAI = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const { getGeminiKey, getGroqAccounts } = require('../../../packages/core/lib/llm-keys');
-const { logLLMCall } = require('../../../packages/core/lib/llm-logger');
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
+const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
 
 const { loadEDL, saveEDL, applyPatch } = require('./edl-builder');
 const { normalizeAudio } = require('./ffmpeg-preprocess');
@@ -24,10 +21,6 @@ const LLM_TIMEOUT_MS = 45 * 1000;
 
 function toErrorMessage(error) {
   return error?.stderr || error?.stdout || error?.message || String(error || '알 수 없는 오류');
-}
-
-function estimateTokens(text) {
-  return Math.max(1, Math.ceil(String(text || '').length / 4));
 }
 
 function safeParseFloat(value, fallback = 0) {
@@ -156,134 +149,43 @@ function splitLongLine(text) {
   return `${normalized.slice(0, bestIndex).trim()}\n${normalized.slice(bestIndex + 1).trim()}`;
 }
 
-function stripGroqPrefix(modelName) {
-  return String(modelName || '').replace(/^groq\//, '');
-}
-
-function getGroqApiKey() {
-  const accounts = getGroqAccounts();
-  const accountKey = Array.isArray(accounts) ? accounts.find(account => account?.api_key)?.api_key : null;
-  return accountKey || process.env.GROQ_API_KEY || null;
-}
-
-async function callGroqRefine(prompt, modelName) {
-  const apiKey = getGroqApiKey();
-  if (!apiKey) {
-    throw new Error('Groq API 키가 없습니다.');
-  }
-
+async function callSharedRefine(prompt) {
   const startedAt = Date.now();
-  const client = new OpenAI({
-    apiKey,
-    baseURL: 'https://api.groq.com/openai/v1',
-  });
-  const response = await Promise.race([
-    client.chat.completions.create({
-      model: stripGroqPrefix(modelName),
-      temperature: 0.1,
-      reasoning_effort: 'low',
-      messages: [
-        { role: 'user', content: prompt },
-      ],
-    }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Groq 호출 timeout')), LLM_TIMEOUT_MS)),
-  ]);
-
-  const text = response?.choices?.[0]?.message?.content?.trim();
-  if (!text) {
-    throw new Error('Groq 응답 본문이 비어 있습니다.');
-  }
-
-  const inputTokens = response?.usage?.prompt_tokens || estimateTokens(prompt);
-  const outputTokens = response?.usage?.completion_tokens || estimateTokens(text);
-  const durationMs = Date.now() - startedAt;
-
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'refiner-agent',
-    model: modelName,
-    requestType: 'subtitle_refine',
-    inputTokens,
-    outputTokens,
-    costUsd: 0,
-    latencyMs: durationMs,
-    success: true,
-  });
-
-  await logToolCall('llm_groq', 'subtitle_refine', {
-    bot: BOT_NAME,
-    success: true,
-    duration_ms: durationMs,
-    metadata: { model: modelName, inputTokens, outputTokens, costUsd: 0 },
-  });
-
-  return {
-    text,
-    costUsd: 0,
-    provider: 'groq',
-    model: modelName,
-  };
-}
-
-async function callGeminiRefine(prompt, modelName = 'gemini-2.5-flash') {
-  const apiKey = getGeminiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API 키가 없습니다.');
-  }
-
-  const startedAt = Date.now();
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 0 },
+  const response = await callWithFallback({
+    chain: selectLLMChain('video.refiner'),
+    systemPrompt: [
+      '당신은 FlutterFlow 강의 자막 보정기다.',
+      '자막 문맥을 자연스럽게 다듬고, 수정된 텍스트만 반환한다.',
+    ].join('\n'),
+    userPrompt: prompt,
+    timeoutMs: LLM_TIMEOUT_MS,
+    logMeta: {
+      team: TEAM_NAME,
+      purpose: 'editing',
+      bot: 'refiner-agent',
+      agentName: 'refiner',
+      selectorKey: 'video.refiner',
+      requestType: 'subtitle_refine',
     },
   });
-  const response = await Promise.race([
-    model.generateContent(prompt),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini 호출 timeout')), LLM_TIMEOUT_MS)),
-  ]);
-  const text = response?.response?.text?.()?.trim();
-  if (!text) {
-    throw new Error('Gemini 응답 본문이 비어 있습니다.');
-  }
-
-  const usage = response?.response?.usageMetadata || {};
-  const inputTokens = usage.promptTokenCount || estimateTokens(prompt);
-  const outputTokens = usage.candidatesTokenCount || estimateTokens(text);
   const durationMs = Date.now() - startedAt;
 
-  await logLLMCall({
-    team: TEAM_NAME,
-    bot: 'refiner-agent',
-    model: modelName,
-    requestType: 'subtitle_refine',
-    inputTokens,
-    outputTokens,
-    costUsd: 0,
-    latencyMs: durationMs,
-    success: true,
-  });
-
-  await logToolCall('llm_gemini', 'subtitle_refine', {
+  await logToolCall(`llm_${response.provider}`, 'subtitle_refine', {
     bot: BOT_NAME,
     success: true,
     duration_ms: durationMs,
-    metadata: { model: modelName, inputTokens, outputTokens, costUsd: 0 },
+    metadata: { model: response.model, provider: response.provider, costUsd: 0 },
   });
 
   return {
-    text,
+    text: String(response.text || '').trim(),
     costUsd: 0,
-    provider: 'gemini',
-    model: modelName,
+    provider: response.provider,
+    model: response.model,
   };
 }
 
 async function refineSubtitleWithLLM(text, config) {
-  const provider = String(config?.quality_loop?.refiner?.provider || 'groq').toLowerCase();
-  const model = config?.quality_loop?.refiner?.model || 'groq/gpt-oss-20b';
   const prompt = [
     '다음 자막 텍스트를 교정해주세요. FlutterFlow IT 강의 자막입니다.',
     '수정된 텍스트만 반환하세요.',
@@ -291,19 +193,16 @@ async function refineSubtitleWithLLM(text, config) {
   ].join('\n');
 
   try {
-    if (provider === 'gemini') {
-      return await callGeminiRefine(prompt, model);
-    }
-    return await callGroqRefine(prompt, model);
+    return await callSharedRefine(prompt);
   } catch (primaryError) {
-    await logToolCall(provider === 'gemini' ? 'llm_gemini' : 'llm_groq', 'subtitle_refine', {
+    await logToolCall('llm_fallback', 'subtitle_refine', {
       bot: BOT_NAME,
       success: false,
       duration_ms: 0,
       error: toErrorMessage(primaryError),
-      metadata: { model },
+      metadata: { selectorKey: 'video.refiner' },
     });
-    return callGeminiRefine(prompt, 'gemini-2.5-flash');
+    return callSharedRefine(prompt);
   }
 }
 
