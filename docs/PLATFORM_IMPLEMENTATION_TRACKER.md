@@ -350,6 +350,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 2026-04-03 | 69커밋/158파일/+13510줄. Phase6 스킬/MCP/도구 3계층동적선택. 90에이전트(+53). P1수정(hermes→swift+role정규화+팀격리). JSONB팀추적. 런타임셀렉터. 댓글자동화. LLM정규화. 워크플로우엔진. CLI4개. |
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
 | 2026-03-19 | 초기 작성 (749줄) |

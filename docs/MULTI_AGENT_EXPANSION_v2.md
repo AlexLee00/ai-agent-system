@@ -1185,3 +1185,42 @@ N8N 워크플로우와 연동: 각 노드 사이에 검증 노드 자동 삽입
 → docs/design/DESIGN_SKILLS_MCP.md (484줄)
   8팀 × (스킬 상세 + MCP 연동 + 구현 우선순위)
 
+
+
+---
+
+## §10-10. Phase 6 구현 완료 — 3계층 동적 선택 시스템 (2026-04-03)
+
+> 커밋: 530bf9c~bebb479 (69커밋, 158파일, +13,510줄)
+> 근거: Microsoft Azure AI Foundry MCP 동적 발견, Oracle Agent Card 자동 등록,
+>       Cirrius Agent→Skills→MCP 3계층, mcp-agent 구성 패턴
+
+### 핵심 달성
+
+팀장이 에이전트+스킬+MCP를 동적으로 선택하는 3계층 시스템 구현 완료.
+
+```
+팀장 → selectBestAgent(role, team) → 누가? ✅
+팀장 → selectBestSkill(category, team) → 무엇으로? ✅
+팀장 → selectBestTool(capability, team) → 어떤 도구로? ✅
+```
+
+### 구현 내역
+
+| 카테고리 | 파일 수 | 줄 수 | 핵심 |
+|---|---|---|---|
+| 스킬 시스템 | 31 | 4,198 | 공용16+다윈5+저스틴5+시그마5+블로그2 |
+| MCP 레이어 | 4 | ~400 | free-registry+loader+team-router |
+| 선택 엔진 | 3 | ~400 | skill-selector+tool-selector+pipeline |
+| 워크플로우 | 4 | ~300 | qa+retro+review+ship |
+| 런타임 셀렉터 | 2 | ~400 | runtime-profiles+runtime-selector |
+| 블로그 댓글 | 3 | ~920 | commenter+migration+launchd |
+| CLI 도구 | 4 | ~180 | team-skill/mcp/pipeline/workflow |
+| DB | 2 | ~140 | 009-migration+seed-skills-tools |
+
+### 설계서
+
+- docs/design/DESIGN_SKILL_TOOL_SELECTOR.md (283줄) — 3계층 설계
+- docs/design/DESIGN_SKILLS_MCP.md (484줄) — 8팀 스킬+MCP 상세
+- docs/design/DESIGN_TEAM_TRACKING.md (242줄) — JSONB 팀 추적
+- docs/design/DESIGN_TEAM_RUNTIME_SELECTOR.md — 런타임 분리
