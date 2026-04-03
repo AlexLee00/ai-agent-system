@@ -421,6 +421,7 @@ async function analyze(data, cache = {}) {
       userPrompt:   contextText,
       logMeta: {
         team: 'claude',
+        purpose: 'reporting',
         bot: 'archer',
         agentName: 'archer',
         selectorKey: 'claude.archer.tech_analysis',
