@@ -268,6 +268,7 @@ async function evaluateWithClaudeLead(results) {
       userPrompt:   _buildUserPrompt(issues, ragContext),
       logMeta: {
         team: 'claude',
+        purpose: 'lead',
         bot: 'claude-lead',
         agentName: 'lead',
         selectorKey: 'claude.lead.system_issue_triage',

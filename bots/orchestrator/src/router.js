@@ -680,7 +680,7 @@ async function geminiChatFallback(text) {
       chain: buildJayChatFallbackChain(),
       systemPrompt: '너는 AI 봇 시스템의 총괄 허브 제이(Jay)야. 마스터(Alex)가 운영하는 스카팀(스터디카페 관리), 루나팀(암호화폐 자동매매), 클로드팀(시스템 유지보수) 에이전트들을 관리해. 친근하고 간결한 한국어로 답해. 명령 처리 외의 일반 대화에 짧게 응답해. 과장하지 말고, 모르면 모른다고 말해.',
       userPrompt: text,
-      logMeta: { team: 'orchestrator', bot: 'jay', requestType: 'chat_fallback' },
+      logMeta: { team: 'orchestrator', purpose: 'fallback', bot: 'jay', requestType: 'chat_fallback' },
     });
     return responseText?.trim() || null;
   } catch { return null; }

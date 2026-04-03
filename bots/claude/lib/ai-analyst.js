@@ -185,6 +185,7 @@ async function analyzeWithAI(results, elapsed, level) {
     userPrompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
     logMeta: {
       team: 'claude',
+      purpose: 'triage',
       bot: 'dexter',
       agentName: 'dexter',
       selectorKey: 'claude.dexter.ai_analyst',
