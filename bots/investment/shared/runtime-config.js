@@ -137,6 +137,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   },
   llmPolicies: {
     investmentAgentPolicy: {
+      useSharedFallbackEngine: true,
       openaiPerfModel: 'gpt-4o',
       openaiMiniModel: 'gpt-4o-mini',
       groqScoutModel: 'meta-llama/llama-4-scout-17b-16e-instruct',

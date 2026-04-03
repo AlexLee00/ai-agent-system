@@ -101,6 +101,13 @@ bots/orchestrator/IDENTITY.md
 bots/orchestrator/SOUL.md
 bots/orchestrator/TOOLS.md
 bots/orchestrator/USER.md
+bots/investment/AGENTS.md
+bots/investment/BOOTSTRAP.md
+bots/investment/HEARTBEAT.md
+bots/investment/IDENTITY.md
+bots/investment/SOUL.md
+bots/investment/TOOLS.md
+bots/investment/USER.md
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/
