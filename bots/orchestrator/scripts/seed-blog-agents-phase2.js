@@ -92,7 +92,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'reviewer',
     specialty: '품질검증+AI탐지체크',
-    llm_model: 'anthropic',
+    llm_model: 'claude-code/sonnet',
     dot_character: { color: '#ef4444', accessory: 'shield' },
   },
 ];

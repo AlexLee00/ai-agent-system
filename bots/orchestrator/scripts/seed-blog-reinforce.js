@@ -46,7 +46,7 @@ const BLOG_REINFORCEMENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: '심층리서치전문(arXiv논문+GitHub코드+공식문서정독,전문성최적화)',
-    llm_model: 'anthropic',
+    llm_model: 'claude-code/sonnet',
     dot_character: { color: '#6366f1', accessory: 'magnifier' },
   },
   {
@@ -55,7 +55,7 @@ const BLOG_REINFORCEMENTS = [
     team: 'blog',
     role: 'critic',
     specialty: '능동적비판자(논리허점지적,독자반박예측,Writer→Critic루프,31%품질향상)',
-    llm_model: 'anthropic',
+    llm_model: 'claude-code/sonnet',
     dot_character: { color: '#dc2626', accessory: 'shield' },
   },
   {
