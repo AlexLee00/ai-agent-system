@@ -44,6 +44,7 @@ const PROFILES = {
       local_image: true,
       engine: 'comfyui',
       base_url: 'http://127.0.0.1:8188',
+      checkpoint_name: 'sd_xl_base_1.0.safetensors',
       workflow_template_path: '/Users/alexlee/projects/ai-agent-system/bots/blog/config/comfyui-workflow-template.json',
       timeout_ms: 300000,
       poll_ms: 1500,

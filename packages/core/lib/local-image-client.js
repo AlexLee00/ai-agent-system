@@ -62,7 +62,7 @@ function buildWorkflow(profile, prompt, opts = {}) {
     WIDTH: size.width,
     HEIGHT: size.height,
     OUTPUT_PREFIX: outputPrefix,
-    CKPT_NAME: process.env.BLOG_COMFYUI_CHECKPOINT || 'model.safetensors',
+    CKPT_NAME: process.env.BLOG_COMFYUI_CHECKPOINT || profile?.checkpoint_name || 'sd_xl_base_1.0.safetensors',
     STEPS: Number(process.env.BLOG_COMFYUI_STEPS || 28),
     CFG: Number(process.env.BLOG_COMFYUI_CFG || 6.5),
   };
@@ -74,12 +74,24 @@ function buildWorkflow(profile, prompt, opts = {}) {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    if (error?.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(error?.message || '')) {
+      throw new Error(`ComfyUI 서버에 연결할 수 없습니다 (${url}). 서버가 실행 중인지 확인하세요.`);
+    }
+    throw error;
+  }
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`ComfyUI HTTP ${response.status}: ${text || 'empty response'}`);
   }
   return text ? JSON.parse(text) : {};
+}
+
+async function ensureComfyUiReachable(baseUrl) {
+  await fetchJson(`${baseUrl}/system_stats`);
 }
 
 async function queuePrompt(baseUrl, workflow, clientId) {
@@ -149,6 +161,9 @@ async function generateWithComfyUI(prompt, opts = {}) {
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     const startedAt = Date.now();
     try {
+      if (attempt === 1) {
+        await ensureComfyUiReachable(baseUrl);
+      }
       const { workflow, outputPrefix } = buildWorkflow(profile, prompt, opts);
       const queued = await queuePrompt(baseUrl, workflow, clientId);
       const promptId = queued?.prompt_id;
