@@ -108,6 +108,13 @@ bots/investment/IDENTITY.md
 bots/investment/SOUL.md
 bots/investment/TOOLS.md
 bots/investment/USER.md
+bots/reservation/AGENTS.md
+bots/reservation/BOOTSTRAP.md
+bots/reservation/HEARTBEAT.md
+bots/reservation/IDENTITY.md
+bots/reservation/SOUL.md
+bots/reservation/TOOLS.md
+bots/reservation/USER.md
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/
