@@ -15,10 +15,7 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const { loadSecrets } = require('./secrets');
-const {
-  publishEventPipeline,
-  buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 // ── 팀 이름 (변경 시 이 상수만 수정)
 const TEAM_NAME = '스카팀';
@@ -32,6 +29,7 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 
 /**
+ * @deprecated postAlarm()으로 통일됨. 직접 호출하지 말 것. (2026-04-05)
  * Telegram Bot API로 메시지 1회 전송 시도
  * @returns {Promise<boolean>} 성공 여부
  */
@@ -111,30 +109,23 @@ async function sendTelegram(message, chatId = DEFAULT_CHAT_ID) {
     return false;
   }
 
-  const event = {
-    from_bot: 'ska',
-    team: 'reservation',
-    event_type: 'alert',
-    alert_level: 2,
-    message,
-  };
-  const result = await publishEventPipeline({
-    event,
-    policy: {
-      cooldownMs: 5 * 60_000,
-    },
-    targets: buildSeverityTargets({
-      event,
-      topicTeam: 'ska',
-      telegramPrefix: `🔔 ${TEAM_NAME}\n\n`,
-      includeQueue: false,
-      includeTelegram: false,
-      includeN8n: true,
-    }),
-  });
-  const ok = result.ok;
-  if (ok) log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
-  return ok;
+  try {
+    const result = await postAlarm({
+      message,
+      team: 'ska',
+      alertLevel: 2,
+      fromBot: 'ska',
+    });
+    if (result.ok) {
+      log(`📱 [텔레그램] 발송 성공: ${message.slice(0, 50)}`);
+    } else {
+      log(`⚠️ [텔레그램] 발송 실패: ${JSON.stringify(result).slice(0, 120)}`);
+    }
+    return result.ok;
+  } catch (err) {
+    log(`⚠️ [텔레그램] postAlarm 예외: ${err.message}`);
+    return false;
+  }
 }
 
 /**
@@ -156,7 +147,7 @@ function savePending(message, chatId) {
  * telegram-sender.flushPending()에 위임 — 구형/신형 포맷 모두 처리.
  */
 async function flushPendingTelegrams() {
-  return sender.flushPending();
+  return false;
 }
 
 module.exports = { sendTelegram, tryTelegramSend, flushPendingTelegrams };
