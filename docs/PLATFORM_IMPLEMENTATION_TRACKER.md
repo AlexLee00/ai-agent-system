@@ -194,6 +194,8 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 
 ### P1 — 단기 (04-07 ~ 04-18)
 - [ ] 블로팀 Phase B 피드백 루프 (04-07~11)
+- [ ] 다윈팀 Sprint 1: arXiv+HF 자율 스캔 파이프라인 (04-07~11)
+- [ ] 다윈팀 Sprint 2: 자율 고용 통합 + 9도메인 확대 + 자기진화 (04-14~18)
 - [ ] 자율 고용: 전 팀 Level 1 (ε-greedy) 확산 (스카/워커/비디오)
 - [ ] CC: 야간 메모리 증류 — nightly-distill.js (autoDream 패턴)
 - [ ] CC: 도구별 권한 레이어 — skill-selector permission (auto/approve/block)
