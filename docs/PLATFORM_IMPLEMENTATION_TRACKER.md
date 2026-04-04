@@ -204,10 +204,13 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
-- [ ] Gemma 4: 자유형 보조 배치 (worker/blog research/video) — JSON 파이프라인 보류
-  - 26B 3회 테스트: JSON reason 반복·깨짐 (1/3 부분성공)
-  - 한국어 ✅ tool calling ✅ JSON strict ❌ 속도: 14→6→1.6초
-  - 다음: 8B vs 26B vs qwen2.5-7b 최종 비교표
+- [ ] Gemma 4: 시범 배치 3개 에이전트 (04-07~13 모니터링)
+  - 라이트(write): 일일 리포트 한국어 인사이트 추가
+  - 마에스트로(maestro): 블로그 주제 추천 한국어 생성
+  - 레베카(rebecca): 매출 리포트 한국어 인사이트 추가
+  - 26B 3회 테스트: JSON ❌ / 한국어 ✅ / tool calling ✅
+  - 판정: GREEN(>90%성공+4+/5품질)→확대 / YELLOW→연장 / RED→철수
+  - 코덱스: CODEX_GEMMA4_PILOT.md
 - [ ] 블로팀 Phase C SEO+GEO (04-14~18)
 
 ### P2 — 중기 (04-21 ~ 05-09)
