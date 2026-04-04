@@ -161,3 +161,19 @@ bots/claude/dexter-fixes.json
 
 # 블로그 서버 로그
 bots/blog/*.log
+
+# ─── 사용자 업로드 파일 (깃 제외) ───
+bots/worker/uploads/
+bots/blog/output/
+
+# ─── OCR 학습 데이터 (대용량) ───
+*.traineddata
+
+# ─── 런타임 생성 파일 ───
+bots/claude/.checksums.json
+bots/reservation/src/.test-counter
+.test-counter
+
+# ─── 자동 생성 리포트 ───
+bots/claude/reports/archer-*.md
+bots/claude/reports/patches/*.json
