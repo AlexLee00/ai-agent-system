@@ -33,6 +33,7 @@ const AGENTS = [
 
   { name: 'jay', display_name: '제이', team: 'jay', role: 'leader', specialty: '오케스트레이터', config: { llm_management: 'runtime-managed', runtime_team: 'orchestrator', runtime_purpose: 'fallback' } },
   { name: 'write', display_name: '라이트', team: 'jay', role: 'writer', specialty: '문서점검', is_always_on: true, config: { llm_management: 'runtime-managed', runtime_team: 'orchestrator', runtime_purpose: 'fallback' } },
+  { name: 'steward', display_name: '스튜어드', team: 'jay', role: 'ops_assistant', specialty: '운영비서(TRACKER+코덱스+git+동기화+텔레그램+일일요약)', is_always_on: true, code_path: 'bots/orchestrator/src/steward.js', config: { llm_management: 'non-llm', non_llm_reason: 'ops-assistant-deterministic-logic' } },
 
   { name: 'worker', display_name: '워커', team: 'worker', role: 'leader', specialty: 'SaaS플랫폼', config: { llm_management: 'runtime-managed', runtime_team: 'worker', runtime_purpose: 'assistant' } },
   { name: 'video', display_name: '비디오', team: 'video', role: 'leader', specialty: '영상편집', config: { llm_management: 'runtime-managed', runtime_team: 'video', runtime_purpose: 'default' } },
