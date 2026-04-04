@@ -17,20 +17,13 @@ const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
-
-function loadPersonaGuide(filename) {
-  try {
-    return fs.readFileSync(path.join(__dirname, '..', 'context', filename), 'utf8').trim();
-  } catch {
-    return '';
-  }
-}
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer', {
@@ -89,23 +82,6 @@ const GEO_RULES = `
 `.trim();
 
 // ─── 날씨 → 글 맥락 변환 ─────────────────────────────────────────────
-
-function _weatherToContext(weather) {
-  const desc = weather.description || '맑음';
-  const temp = weather.temperature != null ? `${weather.temperature}°C` : '';
-
-  if (/비|rain/i.test(desc))   return `봄비가 내리는 ${temp}의 오늘`;
-  if (/눈|snow/i.test(desc))   return `눈 내리는 겨울 ${temp}의 아침`;
-  if (/흐림|cloud/i.test(desc)) return `흐린 ${temp}의 오늘`;
-  if (weather.temperature < 10) return `쌀쌀한 ${temp}의 오늘`;
-  if (weather.temperature > 28) return `무더운 ${temp}의 오늘`;
-  return `쾌청한 ${desc} ${temp}의 오늘`;
-}
-
-function _estimateCost(usage) {
-  if (!usage) return 0;
-  return ((usage.prompt_tokens || 0) * 2.5 + (usage.completion_tokens || 0) * 10) / 1_000_000;
-}
 
 function _safeReadDir(dirPath) {
   try {
@@ -630,7 +606,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const relatedPosts    = researchData.relatedPosts    || [];
   const popularPatterns = researchData.popularPatterns || [];
 
-  const weatherContext = _weatherToContext(weather);
+  const weatherContext = weatherToContext(weather, { detailed: false });
 
   const experienceBlock = realExperiences.length > 0
     ? `\n[실전 에피소드 — 샌드위치 화법의 "일상 에피소드" 부분에 녹여라]\n` +
@@ -841,7 +817,7 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
     throw new Error('repairGeneralPostDraft: draft.content 비어 있음');
   }
 
-  const weatherContext = _weatherToContext(researchData.weather || {});
+  const weatherContext = weatherToContext(researchData.weather || {}, { detailed: false });
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -962,7 +938,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const relatedPosts    = researchData.relatedPosts    || [];
   const popularPatterns = researchData.popularPatterns || [];
 
-  const weatherContext = _weatherToContext(weather);
+  const weatherContext = weatherToContext(weather, { detailed: false });
 
   const experienceBlock = realExperiences.length > 0
     ? `\n[실전 에피소드 — 샌드위치 화법의 "일상 에피소드" 부분에 녹여라]\n` +

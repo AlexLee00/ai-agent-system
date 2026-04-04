@@ -8,27 +8,18 @@
  * 모델: GPT-4o (OpenAI)
  */
 
-const fs = require('fs');
-const path = require('path');
 const toolLogger = require('../../../packages/core/lib/tool-logger');
 const llmCache   = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require('./runtime-config');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
-
-function loadPersonaGuide(filename) {
-  try {
-    return fs.readFileSync(path.join(__dirname, '..', 'context', filename), 'utf8').trim();
-  } catch {
-    return '';
-  }
-}
 
 // 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
 const POS_LLM_CHAIN = selectLLMChain('blog.pos.writer', {
@@ -81,28 +72,6 @@ AI 검색엔진(네이버 AI, ChatGPT, Gemini)이 이 글을 출처로 인용할
 `.trim();
 
 // ─── 날씨 → 글 맥락 변환 ─────────────────────────────────────────────
-
-function _weatherToContext(weather) {
-  const desc = weather.description || '맑음';
-  const temp = weather.temperature != null ? `${weather.temperature}°C` : '';
-  const feels = weather.feels_like != null ? ` (체감 ${weather.feels_like}°C)` : '';
-  const hum  = weather.humidity != null ? `, 습도 ${weather.humidity}%` : '';
-
-  if (/비|rain/i.test(desc))  return `봄비가 추적추적 내리는 ${temp}의 오늘${hum}`;
-  if (/눈|snow/i.test(desc))  return `눈이 내리는 ${temp}의 겨울 아침${hum}`;
-  if (/흐림|cloud/i.test(desc)) return `흐린 하늘 아래 ${temp}${feels}의 쌀쌀한 오늘${hum}`;
-  if (weather.temperature < 10) return `기온 ${temp}${feels}의 쌀쌀한 오늘, 커피 한 잔이 생각나는`;
-  if (weather.temperature > 28) return `${temp}의 무더운 오늘, 에어컨 바람이 시원한`;
-  return `${desc} ${temp}${feels}의 쾌청한 오늘${hum}`;
-}
-
-// ─── OpenAI 비용 추정 ─────────────────────────────────────────────────
-
-function _estimateCost(usage) {
-  if (!usage) return 0;
-  // gpt-4o: input $2.5/1M, output $10/1M
-  return ((usage.prompt_tokens || 0) * 2.5 + (usage.completion_tokens || 0) * 10) / 1_000_000;
-}
 
 // ─── 시스템 프롬프트 ─────────────────────────────────────────────────
 
@@ -197,7 +166,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const relatedPosts   = researchData.relatedPosts   || [];
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
 
-  const weatherContext = _weatherToContext(weather);
+  const weatherContext = weatherToContext(weather);
 
   // 실전 에피소드 블록
   const experienceBlock = realExperiences.length > 0
@@ -371,7 +340,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
     throw new Error('repairLecturePostDraft: draft.content 비어 있음');
   }
 
-  const weatherContext = _weatherToContext(researchData.weather || {});
+  const weatherContext = weatherToContext(researchData.weather || {});
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -464,7 +433,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const relatedPosts    = researchData.relatedPosts   || [];
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
 
-  const weatherContext  = _weatherToContext(weather);
+  const weatherContext  = weatherToContext(weather);
   const model           = process.env.BLOG_LLM_MODEL || POS_LLM_CHAIN;
 
   const experienceBlock = realExperiences.length > 0
