@@ -194,7 +194,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 
 ### P1 — 단기 (04-07 ~ 04-18)
 - [ ] 블로팀 Phase B 피드백 루프 (04-07~11)
-- [ ] 다윈팀 Sprint 1: arXiv+HF 자율 스캔 파이프라인 (04-07~11)
+- [ ] 다윈팀 Sprint 1: arXiv+HF 자율 스캔 파이프라인 (골격 ✅, 실런 테스트 대기)
 - [ ] 다윈팀 Sprint 2: 자율 고용 통합 + 9도메인 확대 + 자기진화 (04-14~18)
 - [ ] 자율 고용: 전 팀 Level 1 (ε-greedy) 확산 (스카/워커/비디오)
 - [ ] CC: 야간 메모리 증류 — nightly-distill.js (autoDream 패턴)
@@ -445,6 +445,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | 다윈Sprint1 골격 완료: arxiv-client+hf-papers-client+research-evaluator+research-scanner+plist+rag_research. node --check+plutil 통과. 실런 테스트 대기 |
 | 04-05 | 다윈팀 자율연구 심층연구: 7프레임워크(AgentLab/AgentRxiv/AI-Researcher/STELLA/O-Researcher/HybridRAG) + 2주스프린트 설계. CC종합 §17-2추가, 출처44~49(6건). 총 610줄49출처 |
 | 04-05 | CC종합 §15~17 추가: 워커웹+Paperclip+픽셀오피스 3계층 통합설계 + TradingView MCP 2접근법 + 다윈팀 자율연구 3Phase. 출처 31~43(13건). 10팀113에이전트 전수 확인 |
 | 04-05 | 알람 Phase3 완료(4214825): blo+curriculum+reporter+approval→postAlarm. Gemma4 주석처리(보류). Phase4(deprecated+grep검증) 남음 |
