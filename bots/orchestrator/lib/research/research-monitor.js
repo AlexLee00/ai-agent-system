@@ -36,6 +36,11 @@ function collectMetrics(scanResult, durationMs) {
     relevance_rate: relevanceRate,
     store_success_rate: storeSuccessRate,
     keyword_evolution_count: Number(scanResult.keywordEvolutionCount || 0),
+    proposals_generated: Number(scanResult.proposals || 0),
+    proposals_verified: Number(scanResult.verified || 0),
+    proposal_pass_rate: Number(scanResult.proposals || 0) > 0
+      ? Math.round((Number(scanResult.verified || 0) / Number(scanResult.proposals || 0)) * 100)
+      : 0,
   };
 }
 
@@ -59,6 +64,9 @@ async function checkAnomalies(metrics) {
   if (metrics.relevance_rate > 80) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드가 너무 좁을 수 있음`);
   if (metrics.relevance_rate < 5 && metrics.evaluated > 0) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드 튜닝 필요`);
   if (!metrics.alarm_sent && metrics.high_relevance > 0) alerts.push('🚨 알림 전달 실패! postAlarm 점검 필요');
+  if (metrics.proposals_generated > 0 && metrics.proposal_pass_rate < 30) {
+    alerts.push(`⚠️ 프로토타입 검증 통과율 ${metrics.proposal_pass_rate}% — edison 프롬프트 튜닝 필요`);
+  }
 
   if (alerts.length > 0) {
     await postAlarm({

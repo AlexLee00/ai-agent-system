@@ -196,7 +196,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] 블로팀 Phase B 피드백 루프 (04-07~11)
 - [x] 다윈팀 Sprint 1: ✅ 완료! arXiv+HF 자율 스캔 (97713ee, 실런 108건→30평가→29적합)
 - [x] 다윈팀 Sprint 2: ✅ 자율 고용 + 9도메인 + 모니터링 + 키워드진화 연결 완료
-- [ ] 다윈팀 Sprint 3: 자율 적용 파이프라인 (graft→edison→proof-r + 승인 게이트)
+- [x] 다윈팀 Sprint 3: ✅ 자율 적용 (applicator+proposal-store+sandbox+검증+승인게이트)
 - [ ] 자율 고용: 전 팀 Level 1 (ε-greedy) 확산 (스카/워커/비디오)
 - [ ] CC: 야간 메모리 증류 — nightly-distill.js (autoDream 패턴)
 - [ ] CC: 도구별 권한 레이어 — skill-selector permission (auto/approve/block)

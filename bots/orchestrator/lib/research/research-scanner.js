@@ -7,6 +7,7 @@
 const arxivClient = require('./arxiv-client');
 const hfClient = require('./hf-papers-client');
 const evaluator = require('./research-evaluator');
+const applicator = require('./applicator');
 const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
 const rag = require('../../../../packages/core/lib/rag');
@@ -22,6 +23,7 @@ const DOMAIN_DELAY_MS = 5_000;
 const ARXIV_RESULTS_PER_DOMAIN = 15;
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
+const MAX_DAILY_PROPOSALS = 3;
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -284,6 +286,22 @@ async function run() {
 
   const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
   const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
+  const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
+  const proposalCandidates = [...highRelevance]
+    .sort((a, b) => b.relevance_score - a.relevance_score)
+    .slice(0, MAX_DAILY_PROPOSALS);
+  const proposalResults = [];
+  for (const paper of proposalCandidates) {
+    try {
+      const applied = await applicator.apply(paper);
+      proposalResults.push({ arxiv_id: paper.arxiv_id, ...applied });
+      await _sleep(3_000);
+    } catch (err) {
+      console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${err.message}`);
+    }
+  }
+  const proposalCount = proposalResults.filter((item) => item.proposal).length;
+  const verifiedCount = proposalResults.filter((item) => item.verification?.passed).length;
   let keywordEvolutionCount = 0;
 
   if (new Date().getDay() === 0) {
@@ -306,6 +324,8 @@ async function run() {
     evaluationFailures,
     durationSec,
     keywordEvolutionCount,
+    proposals: proposalCount,
+    verified: verifiedCount,
     searchers: searchers.map(({ name, domain, score, hired }) => ({ name, domain, score, hired })),
   };
 
@@ -313,7 +333,7 @@ async function run() {
   await monitor.storeMetrics(metrics);
   await monitor.checkAnomalies(metrics);
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
-  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, ${highRelevanceCount}건 후보 알림, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
+  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
   return result;
 }
