@@ -136,3 +136,28 @@ LaunchAgents.disabled/
 # Hub 시크릿 저장소 (절대 공개 금지)
 # Hub 시크릿 저장소
 bots/hub/secrets-store.json
+
+# ─── 자동 생성 런타임 파일 (깃 제외) ───
+
+# 다윈팀 연구 스캐너 자동 생성물
+docs/research/proposals/*.json
+bots/orchestrator/lib/research/sandbox/*
+!bots/orchestrator/lib/research/sandbox/.gitkeep
+
+# 텔레그램 대기큐
+pending-telegrams.jsonl
+*.jsonl
+
+# 운영 로그 (*.log는 이미 포함, 추가 경로)
+/tmp/research-scanner.*
+/tmp/reporting-payload-warnings.jsonl
+
+# 블로그 자동 생성 출력
+bots/blog/output/
+
+# 덱스터/아처 운영 이력
+bots/claude/*.log
+bots/claude/dexter-fixes.json
+
+# 블로그 서버 로그
+bots/blog/*.log
