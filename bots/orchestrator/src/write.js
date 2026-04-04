@@ -11,6 +11,7 @@ const aggregator = require('../lib/write/report-aggregator');
 const docSyncChecker = require('../lib/write/doc-sync-checker');
 const changelogWriter = require('../lib/write/changelog-writer');
 const docArchiver = require('../lib/write/doc-archiver');
+const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 
 const ROOT = env.PROJECT_ROOT;
 
@@ -108,6 +109,33 @@ async function runDaily(options = {}) {
       messageLines.push(`  · ${item.file} (참조 ${item.refCount}회)`);
     });
   }
+
+  try {
+    const insightPrompt = `당신은 팀 제이의 일일 리포트 분석가입니다.
+아래 데이터를 보고 "오늘의 핵심 인사이트"를 한국어 1~3줄로 간결하게 작성하세요.
+숫자 나열보다 패턴, 주의사항, 추천을 중심으로 적으세요.
+
+데이터:
+${JSON.stringify(collected, null, 2).slice(0, 2000)}`;
+
+    const insight = await generateGemmaPilotText({
+      team: 'orchestrator',
+      purpose: 'gemma-insight',
+      bot: 'write',
+      requestType: 'daily-insight',
+      prompt: insightPrompt,
+      maxTokens: 300,
+      temperature: 0.7,
+      timeoutMs: 10000,
+    });
+
+    if (insight?.ok && insight.content) {
+      messageLines.push('', '🔍 AI 인사이트 (gemma4):', insight.content.trim());
+    }
+  } catch (error) {
+    console.warn(`[write] gemma4 인사이트 생략: ${error.message}`);
+  }
+
   const message = messageLines.join('\n');
   const sent = options.test ? false : (await postAlarm({ message, team: 'general', alertLevel: 2, fromBot: 'write' })).ok;
   return { collected, sent, message };

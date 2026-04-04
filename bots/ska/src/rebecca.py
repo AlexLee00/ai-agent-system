@@ -25,6 +25,7 @@ launchd:
 import sys
 import os
 import json
+import subprocess
 import psycopg2
 from datetime import date as date_type, timedelta
 from runtime_config import get_rebecca_config
@@ -44,6 +45,8 @@ PG_RES = "dbname=jay options='-c search_path=reservation,public'"
 
 WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
 REBECCA_RUNTIME = get_rebecca_config()
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+GEMMA_PILOT_CLI = os.path.join(PROJECT_ROOT, 'packages', 'core', 'scripts', 'gemma-pilot-cli.js')
 
 
 # ─── psycopg2 헬퍼 ──────────────────────────────────────────────────────────────
@@ -456,12 +459,44 @@ def format_telegram(report):
         'lines': env_lines,
     })
 
-    return build_report(
+    result = build_report(
         '📊 레베카 일간 현황 리포트',
         summary=f'📅 {m}월 {day}일 ({wd})',
         sections=sections,
     )
 
+    try:
+        prompt = f"""당신은 스터디카페 매출 분석가입니다.
+오늘 매출: {d.get('revenue', 0):,}원
+7일 평균: {avg.get('avg_revenue', 0):,}원
+이상치: {', '.join(anomalies) if anomalies else '없음'}
+
+특이사항을 한국어 1줄로 간결하게 작성하세요."""
+        proc = subprocess.run(
+            [
+                'node',
+                GEMMA_PILOT_CLI,
+                '--team=ska',
+                '--purpose=gemma-insight',
+                '--bot=rebecca',
+                '--requestType=daily-insight',
+                '--maxTokens=150',
+                '--temperature=0.7',
+                '--timeoutMs=10000',
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=12,
+            cwd=PROJECT_ROOT,
+        )
+        insight = (proc.stdout or '').strip()
+        if insight:
+            result += f"\n\n🔍 AI: {insight}"
+    except Exception as e:
+        print(f"[rebecca] gemma4 인사이트 생략: {e}", file=sys.stderr)
+
+    return result
 
 # ─── 주간 회고 (ska-009) ──────────────────────────────────────────────────────
 
