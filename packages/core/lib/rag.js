@@ -62,6 +62,7 @@ const VALID_COLLECTIONS = [
   'rag_work_docs',     // 업무문서 (미래 확장)
   'rag_blog',          // 블로그팀 — 과거 포스팅 / 인기 패턴 / 실전 사례
   'rag_video',         // 비디오팀 — 편집 이력, 피드백, EDL 패턴
+  'rag_research',      // 다윈팀 — 논문 스캔 결과 / 적합성 평가
   'rag_experience',    // 에이전트 자기학습 — 질문/응답/결과 triplet
 ];
 
