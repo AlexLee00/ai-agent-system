@@ -715,6 +715,15 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
     }
   }
 
+  if (!lastError) {
+    const coolingProviders = chain
+      .filter((c) => _isProviderCoolingDown(c.provider))
+      .map((c) => c.provider);
+    lastError = new Error(
+      `모든 LLM provider가 연속 실패로 쿨다운 중: [${coolingProviders.join(', ')}]. ` +
+      `${FAILURE_COOLDOWN_MS / 1000}초 후 자동 재시도됩니다.`
+    );
+  }
   throw lastError;
 }
 
