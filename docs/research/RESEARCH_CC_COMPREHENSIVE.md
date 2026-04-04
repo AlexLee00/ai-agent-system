@@ -668,3 +668,86 @@ Sprint 1 이후 적정성 판정 (04-11):
 [47] Deep Research Survey: arxiv.org/html/2508.12752v1 (planning→web→report)
 [48] Agentic Hybrid RAG: arxiv.org/html/2508.05660v1 (Neo4j+FAISS+arXiv API)
 [49] O-Researcher: arxiv.org/pdf/2601.03743 (멀티에이전트 딥리서치, SFT+RL)
+
+
+---
+
+## §18. Hugging Face 활용 — 다윈팀 연구 자원
+
+### 18-1. HF에서 가져올 핵심 자원 5가지
+
+**① huggingface.co/papers (Trending Papers)** — 매일 AI 논문 자동 수집 소스!
+arXiv의 논문을 커뮤니티가 큐레이션+토론. Librarian Bot이 유사 논문 자동 추천.
+우리 활용: 다윈팀 searcher가 HF Papers API를 arXiv API와 병렬 호출
+→ 커뮤니티 관심도(upvotes) 기반 필터링 가능!
+
+**② AI Scientist v2 (SakanaAI, 4.43k★)** — 최초 완전 AI 논문 피어리뷰 통과!
+오픈소스: github.com/SakanaAI/AI-Scientist-v2
+가설 생성 → 실험 설계/실행 → 데이터 분석 → 논문 작성 전 파이프라인.
+Progressive agentic tree-search + 전용 experiment manager agent.
+VLM 피드백 루프: 그래프/차트 반복 개선.
+우리 활용: 코드 참조하여 다윈팀 scholar+edison+proof-r 파이프라인 구축.
+
+**③ Hyperagents (2.08k★)** — 자기참조 시스템: task agent + meta agent가 서로 수정!
+메타인지 자기개선 → 코딩 외 도메인에서도 성능 향상.
+관련: Group-Evolving Agents(경험 공유), AgentFactory(서브에이전트 축적),
+SAGE(멀티에이전트 자기진화), EvoSkill(자동 스킬 발견).
+우리 활용: 다윈팀 mentor+medic이 다른 에이전트를 자동 개선하는 패턴!
+
+**④ HF Paper Publisher Skill** — arXiv 논문을 HF Hub에 자동 게시/링크.
+paper_manager.py: index(arXiv ID→HF), link(모델/데이터셋 연결), check(존재확인).
+우리 활용: 다윈팀 연구 결과를 HF Hub에 자동 게시 → 커뮤니티 노출.
+
+**⑤ Step-DeepResearch** — 원자적 능력 분해 + 프로그레시브 학습 파이프라인.
+Deep Research를 원자 능력으로 분해: planning, information gathering, reflection, report writing.
+각 능력별 합성 데이터 생성 → SFT → RL 강화.
+우리 활용: 다윈팀 에이전트별 능력 분해 → 각자 특화 학습!
+
+### 18-2. HF API 활용 설계
+
+```
+다윈팀 일일 수집 소스 (병렬):
+  ① arXiv API → 키워드별 최신 논문 (무료, 무제한)
+  ② HF Papers API → 트렌딩 논문 + 커뮤니티 점수 (무료)
+  ③ HF Datasets 검색 → 관련 데이터셋 자동 발견
+
+HF Papers API 예시:
+  GET https://huggingface.co/api/papers?sort=trending
+  → title, arxiv_id, upvotes, comments 반환
+  → upvotes ≥ 50 → "핫 논문"으로 분류
+  → Librarian Bot 추천 논문도 수집
+
+적용 타임라인:
+  Sprint 1 Day 1: arXiv API + HF Papers API 병렬 수집 구현
+  → 수집량 2배! 커뮤니티 검증된 논문 우선순위 자동 부여
+```
+
+### 18-3. AI Scientist v2 → 다윈팀 매핑
+
+```
+AI Scientist v2 에이전트          →  다윈팀 에이전트
+  Experiment Manager              →  darwin (총괄)
+  Hypothesis Generator            →  scholar (심층연구)
+  Code Writer + Executor          →  edison (프로토타입)
+  Paper Writer                    →  weaver (통합) + quill (작성)
+  AI Reviewer (VLM)               →  proof-r + skeptic-r (3중 검증)
+  Tree Search Navigator           →  graft (적용 탐색)
+
+차이점: AI Scientist v2는 "새 논문 생성"이 목표
+       우리는 "기존 시스템 개선"이 목표
+       → 코드 구조만 참조, 목표는 다름!
+```
+
+---
+
+## 출처 (추가분)
+
+[50] AI Scientist v2: huggingface.co/papers/2504.08066 (SakanaAI, 4.43k★)
+[51] AI Scientist v1: huggingface.co/papers/2408.06292 (SakanaAI)
+[52] Hyperagents: huggingface.co/papers/2603.19461 (자기참조 메타인지)
+[53] AgentRxiv HF: huggingface.co/papers/2503.18102 (5.38k collections)
+[54] HF Paper Publisher: agentskills.so/skills/hugging-face-paper-publisher
+[55] HF Paper Explorer: huggingface-paper-explorer.vercel.app
+[56] Step-DeepResearch: arxiv.org/html/2512.20491v1 (원자적 능력 분해)
+[57] DeepScientist: HF Trending (베이지안 최적화 자율 과학 발견)
+[58] SKILL0: HF Trending (제로샷 자율 행동, 동적 커리큘럼)
