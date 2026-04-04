@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.steward.hourly</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/steward.js</string>
+		<string>--mode=hourly</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/steward-hourly.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/steward-hourly.err</string>
+</dict>
+</plist>
