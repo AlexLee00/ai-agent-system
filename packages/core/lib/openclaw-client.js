@@ -25,6 +25,11 @@ const TEAM_TOPIC = {
   claude: 'claude_lead',
   'claude-lead': 'claude_lead',
   blog: 'blog',
+  worker: 'worker',
+  video: 'video',
+  darwin: 'darwin',
+  justin: 'justin',
+  sigma: 'sigma',
   meeting: 'meeting',
   emergency: 'emergency',
 };
