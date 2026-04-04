@@ -249,7 +249,76 @@ AgentOffice(커뮤니티) 비교:
 
 ---
 
-## 12. 출처
+---
+
+## 13. GStack + 에이전트 스킬팩 생태계
+
+### GStack (Garry Tan, YC CEO)
+
+```
+출시: 2026-03-12, 39K stars (11일), MIT
+실적: "60일간 600,000줄+ 프로덕션 코드"
+핵심: 28개 슬래시 명령 = "가상 개발팀" 스킬팩
+
+역할 기반 구조:
+  /office-hours — YC 스타일 제품 대화 (아이디어 10배 개선)
+  /plan-ceo-review — CEO 리뷰 (스코프, 포지셔닝, 우선순위)
+  /plan-eng-review — 엔지니어링 리뷰 ★ 유일한 필수 게이트!
+  /plan-design-review — 디자인 리뷰 (UI/UX 점수, Slop 감지)
+  /review — PR 코드 리뷰 (자동 수정 + 이슈 등급)
+  /investigate — 체계적 디버깅 ("조사 없이 수정 없다")
+  /qa — QA 테스트 + 원자적 커밋 수정
+  /cso — 보안 감사 (OWASP Top 10 + STRIDE)
+  /browse — 실제 Chromium 브라우저 (Playwright+CDP)
+  /memory — 세션 간 학습 관리
+  /codex — OpenAI Codex 크로스 모델 리뷰
+
+Scope 관리 (독특!):
+  SELECTIVE EXPANSION — 기회 하나씩 표면화, 체리픽
+  HOLD SCOPE — 현재 계획 고수
+  SCOPE REDUCTION — 최소 실행 가능 버전
+```
+
+### 업계 스킬팩 비교 (2026)
+
+```
+GStack (39K stars): 역할 기반 28명령, 팀 일관성 강점
+Superpowers (106K stars): 7단계 TDD 파이프라인, "1% Rule" 코드 품질 강점
+Hermes Agent (Nous Research): 자기 학습 루프, 경험→스킬 ≈ Standing Orders!
+
+업계 스택 수렴: model → runtime → harness → agent (LAMP 모먼트!)
+```
+
+### 우리 시스템과 비교
+
+```
+GStack에 있고 우리에게 없는 것:
+  ❌ 다단계 리뷰 게이트 (CEO/Eng/Design)
+  ❌ Scope 관리 (SELECTIVE/HOLD/REDUCE)
+  ❌ 크로스 모델 리뷰 (/codex 교차 검증)
+  ❌ "조사 없이 수정 없다" 디버깅 원칙
+  ❌ "그리게 하면 더 완전해짐" 다이어그램 강제
+
+우리에게 있고 GStack에 없는 것:
+  ✅ 90에이전트 × 9팀 도메인 특화 (GStack은 개발 전용)
+  ✅ ε-greedy 경쟁 + 자율 고용
+  ✅ 4단계 LLM 폴백 + 로컬 $0
+  ✅ Doctor 자율 복구 + Standing Orders
+
+적용 방안:
+  P1: 다단계 리뷰 게이트 도입
+    quality-checker → 1단계(자동) + 2단계(LLM판단) + 3단계(마스터)
+  P1: /investigate 패턴 적용
+    Doctor autofix에 "조사→진단→수정" 3단계 강제
+  P2: Scope 관리 패턴
+    코덱스 프롬프트에 HOLD/SELECTIVE/REDUCE 지시
+  P2: Shadow Mode → 크로스 모델 리뷰 확장
+    qwen vs gemma4 교차 검증 (이미 기반 있음!)
+```
+
+---
+
+## 14. 출처
 
 [1] CC 유출: alex000kim.com [2] Harness 2026: philschmid.de
 [3] Harness Engineering: anup.io [4] Agent Engineering: morphllm.com
@@ -262,3 +331,7 @@ AgentOffice(커뮤니티) 비교:
 [16] AgentOffice: github.com/harishkotra/agent-office
 [17] Star-Office-UI: agentcrunch.ai/article/star-office-ai-crew
 [18] Pixel Agent Desk: github.com/Mgpixelart/pixel-agent-desk
+[19] GStack: github.com/garrytan/gstack
+[20] GStack vs Superpowers: particula.tech/blog/superpowers-vs-gstack
+[21] Agent Frameworks 2026: agentconn.com/blog/best-open-source-ai-agent-frameworks-2026
+[22] GStack Guide: openclawapi.org/en/blog/2026-03-24-gstack-beginners-guide
