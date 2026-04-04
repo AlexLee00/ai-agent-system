@@ -10,7 +10,7 @@
 ## 0. 현재 최우선 과제
 
 - **알람 체계 통일**: ✅ Phase1~4 전체 완료! postAlarm 단일 API 통일 (6096344)
-- **CC 패턴 P0**: 연속실패제한(llm-fallback.js) + Strict Write Discipline(rag.js)
+- **CC P0**: ✅ 완료! 연속실패제한(MAX=5,COOLDOWN=60s) + Strict Write(성공만 저장) (ed4a715)
 - **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
 - **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
