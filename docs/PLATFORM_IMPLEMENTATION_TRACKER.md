@@ -200,6 +200,8 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] CC: Doctor 예방적 스캔 — 경고 징후 탐지
 - [ ] GStack: 다단계 리뷰 게이트 — quality-checker 1단계(자동)+2단계(LLM)+3단계(마스터)
 - [ ] GStack: Doctor에 "조사→진단→수정" 3단계 강제 (/investigate 패턴)
+- [ ] Paperclip: 에이전트별 토큰 예산 — billing-guard 세분화 (80%경고/100%중지)
+- [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
 - [ ] Gemma 4 Ollama 테스트 (e4b + 26b MoE)
@@ -214,6 +216,9 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] CC: autofix 3단계 권한 (safe/warn/block)
 - [ ] GStack: Scope 관리 — 코덱스 프롬프트에 HOLD/SELECTIVE/REDUCE 지시
 - [ ] GStack: Shadow Mode → 크로스 모델 리뷰 확장 (qwen vs gemma4)
+- [ ] Paperclip: Goal Ancestry — 태스크에 "왜" 표시 (미션→프로젝트→태스크)
+- [ ] Paperclip: 승인 게이트 UI — Mailbox + 거버넌스 시각화
+- [ ] Paperclip: 태스크 티켓 시스템 — GitHub 이슈 스타일 agent_tasks 강화
 - [ ] 대규모 파일 분리: edl-builder 971줄 / rebecca.py 937줄
 - [ ] 스카: Python↔Node 인터페이스 표준화
 - [ ] 블로팀 Phase D 콘텐츠 심화 (04-21~05-02)
@@ -224,6 +229,10 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] CC: KAIROS 자율 데몬 — 5분 주기 모니터링
 - [ ] CC: 프롬프트 기반 오케스트레이션 — 코드→프롬프트
 - [ ] CC: Build to Delete 아키텍처
+- [ ] Paperclip: Persistent Agent State — 에이전트 실행 간 컨텍스트 유지
+- [ ] Paperclip: 팀 템플릿 export/import (Clipmart 유사)
+- [ ] Paperclip: 감사 로그 뷰 — trace/llm-logger 대시보드 시각화
+- [ ] Paperclip: 모바일 대시보드 — 에이전트 오피스 모바일 최적화
 - [ ] Chronos Tier 2: VectorBT + walk-forward + strategy_registry
 - [ ] 블로팀 Phase E 자율 진화
 - [ ] 비디오팀 Phase 3: CapCut급 타임라인 UI
@@ -428,7 +437,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
-| 2026-04-05 | GStack+픽셀오피스+자율고용 연구 반영. 코덱스43개→archive. CC종합 14섹션→GStack포함. TRACKER P1~P2에 GStack 4건 추가. 출처 18→22건. |
+| 2026-04-05 | GStack+Paperclip+픽셀오피스+자율고용 연구 반영. 코덱스43개→archive. CC종합 15섹션(GStack+Paperclip포함). TRACKER P1~P3에 GStack4+Paperclip7건 추가. 워커웹 유지+Paperclip거버넌스흡수 결정. 출처 18→26건. |
 | 2026-04-04 | Phase A 완료+CC유출연구+9팀딥분석+자율고용확산계획. 통합 우선순위 P0~P3 재정리. CC패턴14건+자율고용3단계+대규모파일분리5건. 연구4파일→1파일통합(163줄). |
 | 2026-04-03 | 69커밋/158파일/+13510줄. Phase6 스킬/MCP/도구 3계층동적선택. 90에이전트(+53). P1수정(hermes→swift+role정규화+팀격리). JSONB팀추적. 런타임셀렉터. 댓글자동화. LLM정규화. 워크플로우엔진. CLI4개. |
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |

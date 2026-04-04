@@ -318,7 +318,51 @@ GStack에 있고 우리에게 없는 것:
 
 ---
 
-## 14. 출처
+## 14. Paperclip — "제로 휴먼 컴퍼니" 오케스트레이션
+
+```
+출시: 2026-03 초, 31K+ stars, MIT, 셀프호스트
+핵심: "OpenClaw이 직원이라면, Paperclip은 회사"
+스택: Node.js + 임베디드 PostgreSQL + React 대시보드
+
+아키텍처:
+  CEO 에이전트 → Manager 에이전트 → Worker 에이전트
+  = 우리의 마스터 → 팀장 → 에이전트와 동일 구조!
+
+핵심 기능:
+  Bring Your Own Agent — 아무 에이전트나 "하트비트 보내면 고용"
+  Goal Ancestry — 태스크→프로젝트→미션 추적 ("왜"를 항상 알고 있음)
+  Budget — 에이전트별 월 예산, 80% 경고, 100% 자동 중지
+  Atomic Execution — 이중 작업 없음, 비용 폭주 없음
+  Persistent Agent State — 하트비트 간 컨텍스트 유지
+  Governance — 승인 게이트 + 설정 버전관리 + 롤백
+  Multi-Company — 한 배포로 여러 회사 격리
+  Clipmart (예정) — 원클릭 회사 템플릿 설치
+```
+
+### 우리 워커웹 vs Paperclip UI
+
+```
+결론: 워커웹 유지! + Paperclip 거버넌스 패턴 흡수!
+
+Paperclip은 범용 "회사 OS" — 도메인 기능 없음
+워커웹은 도메인 특화 — 영상에디터, 매출관리, 출석관리 포함
+36,094줄/288파일 + 21+ 마이그레이션 = 버리기엔 투자 큼
+
+Paperclip에서 흡수할 패턴:
+  ❌→P1: 에이전트별 토큰 예산 (billing-guard 세분화)
+  ❌→P1: 조직도 트리 뷰 (에이전트 오피스에 추가)
+  ❌→P2: Goal Ancestry (태스크에 "왜" 표시)
+  ❌→P2: 승인 게이트 UI (Mailbox 패턴 시각화)
+  ❌→P2: 태스크 티켓 시스템 (GitHub 이슈 스타일)
+  ❌→P3: 감사 로그 뷰 (trace/llm-logger 시각화)
+  ❌→P3: Persistent Agent State (실행 간 컨텍스트 유지)
+  ❌→P3: 팀 템플릿 export/import (Clipmart 유사)
+```
+
+---
+
+## 15. 출처
 
 [1] CC 유출: alex000kim.com [2] Harness 2026: philschmid.de
 [3] Harness Engineering: anup.io [4] Agent Engineering: morphllm.com
@@ -335,3 +379,7 @@ GStack에 있고 우리에게 없는 것:
 [20] GStack vs Superpowers: particula.tech/blog/superpowers-vs-gstack
 [21] Agent Frameworks 2026: agentconn.com/blog/best-open-source-ai-agent-frameworks-2026
 [22] GStack Guide: openclawapi.org/en/blog/2026-03-24-gstack-beginners-guide
+[23] Paperclip: github.com/paperclipai/paperclip
+[24] Paperclip Analysis: medium.com/@alexrozdolskiy (org chart for agents)
+[25] Paperclip Tutorial: paperclipai.info
+[26] Zero-Human Company: flowtivity.ai/blog/zero-human-company
