@@ -87,7 +87,7 @@ async function _storeEvaluatedPapers(evaluated) {
 
 async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTime) {
   const highRelevance = evaluated.filter((paper) => paper.relevance_score >= 7);
-  if (highRelevance.length === 0) return 0;
+  if (highRelevance.length === 0) return { highRelevanceCount: 0, alarmSent: false };
 
   const lines = [
     `🔬 다윈팀 일일 리서치 (${kst.today()})`,
@@ -104,14 +104,18 @@ async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTim
 
   lines.push('', `소요: ${Math.round((Date.now() - startTime) / 1000)}초`);
 
-  await postAlarm({
+  const alarmResult = await postAlarm({
     message: lines.join('\n'),
     team: 'general',
     alertLevel: 1,
     fromBot: 'research-scanner',
   });
+  const alarmSent = alarmResult?.ok === true;
+  if (!alarmSent) {
+    console.warn('[research-scanner] 텔레그램 알림 전달 실패');
+  }
 
-  return highRelevance.length;
+  return { highRelevanceCount: highRelevance.length, alarmSent };
 }
 
 async function _generateWeeklyReport(papers) {
@@ -153,20 +157,21 @@ async function run() {
   }
 
   const storedCount = await _storeEvaluatedPapers(evaluated);
-  const alertedCount = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
+  const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
 
   if (new Date().getDay() === 0) {
     await _generateWeeklyReport(evaluated);
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
-  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${alertedCount}건 알림, ${durationSec}초`);
+  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${highRelevanceCount}건 후보 알림, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
   return {
     total: unique.length,
     evaluated: evaluated.length,
     stored: storedCount,
-    highRelevance: alertedCount,
+    highRelevance: highRelevanceCount,
+    alarmSent,
     durationSec,
   };
 }
@@ -180,6 +185,10 @@ if (require.main === module) {
   run()
     .then((result) => {
       console.log('결과:', JSON.stringify(result));
+      if (result.total === 0) {
+        console.error('[research-scanner] 수집 0건 — 네트워크 장애 가능!');
+        process.exit(1);
+      }
       process.exit(0);
     })
     .catch((err) => {
