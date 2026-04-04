@@ -385,3 +385,133 @@ Paperclip에서 흡수할 패턴:
 [28] Harness Engineering Evolution: epsilla.com/blogs/harness-engineering-evolution
 [29] Harness Engineering Explained: datasciencedojo.com/blog/harness-engineering
 [30] Agent Harness Explained: firecrawl.dev/blog/what-is-an-agent-harness
+
+
+---
+
+## §15. 워커웹 + Paperclip + 에이전트 픽셀 오피스 통합 설계
+
+### 15-1. 커뮤니티 통합 사례
+
+**Mission Control (jeturing/mission-control)** — 우리 워커웹과 80% 동일 스택!
+Next.js + SQLite + OpenClaw Gateway. 칸반 보드(MissionQueue.tsx) + AI 계획(PlanningTab.tsx)
++ 에이전트 패널(AgentsSidebar.tsx) + 실시간 이벤트(LiveFeed.tsx) + 태스크 생성(TaskModal.tsx).
+API: tasks(CRUD+계획+디스패치), agents(관리), openclaw(프록시), webhooks(완료).
+
+**AgentOffice** — Phaser.js(픽셀 렌더링) + React(UI 오버레이) 하이브리드.
+Canvas 위에 React: Chat, TaskBoard, SystemLog, Inspector, Layout Editor.
+Phaser→React 통신: Custom EventTarget (eventBus). Focus Mode: 에이전트 클릭 → 카메라 추적.
+핵심 기술: Phaser keyboard 충돌 해결(input.keyboard.capture), TypeScript 클로저 내로잉 문제.
+
+**Star-Office-UI** — "시각화 레이어는 오케스트레이션 위에 올리는 것" (AgentCrunch 평가).
+AI 에이전트 상태(working/idle/error)를 읽어 픽셀 캐릭터로 표현. mco-org/mco 연동.
+MIT 라이선스 코드, 아트 에셋은 비상업 학습용만.
+
+**Pixel Agents (pablodelucca)** — VS Code 확장. Claude Code 터미널 = 캐릭터.
+64×64 타일 그리드, 모듈러 에셋(furniture/manifest.json), 오픈소스 에셋.
+실시간 활동 추적: 타이핑/읽기/명령실행. Sub-agent 시각화(Task tool 하위 에이전트).
+
+### 15-2. 3계층 통합 설계안
+
+```
+Layer 3: 픽셀 오피스 (시각화) — Phaser.js Canvas
+  10팀 = 10개 방, 113에이전트 픽셀 캐릭터
+  상태 반영: 타이핑/읽기/대기/에러/수면
+  DotCharacter SVG → Phaser 스프라이트 전환
+
+Layer 2: Paperclip 거버넌스 — React 오버레이
+  조직도 트리 뷰 (팀장→에이전트)
+  에이전트별 예산 + Goal Ancestry
+  승인 게이트 UI (Mailbox 패턴)
+
+Layer 1: 워커웹 (기존) — Next.js 4001포트
+  매출/출석/채팅/영상편집/설정
+```
+
+---
+
+## §16. TradingView MCP 실시간 차트분석 + 자동매매
+
+### 16-1. 접근법 A: 데이터 MCP (atilaahmettaner/tradingview-mcp)
+
+Python + Yahoo Finance + MCP Protocol (218★). 멀티 에이전트 토론:
+Technical Analyst(볼린저+RSI+MACD) + Sentiment Analyst(Reddit 감성+모멘텀)
++ Risk Manager(변동성+드로다운+평균회귀) → STRONG BUY~STRONG SELL + 신뢰도.
+백테스팅: Supertrend +31.5%(Sharpe 2.1), Bollinger +18.3%(Sharpe 3.4).
+OpenClaw 통합: Telegram→OpenClaw→trading.py→tradingview-mcp→Yahoo Finance.
+
+### 16-2. 접근법 B: 차트 제어 MCP (tradesdontlie + ulianbass fork)
+
+Node.js + Chrome DevTools Protocol + TradingView Desktop (78도구!).
+Pine Script AI 작성+주입+컴파일+디버깅. 차트 탐색/인디케이터/그리기/알림.
+리플레이 모드(히스토리 바 순회). 스크린샷→AI 시각 분석. JSONL 스트리밍.
+Morning Brief 워크플로우(Jackson fork): 워치리스트 스캔→인디케이터 읽기→세션 바이어스.
+Trading Rules Config: rules.json에 규칙 정의→AI가 규칙 기반 판단.
+
+### 16-3. 루나팀 연동 방안
+
+방안 1(추천 P1): 데이터 MCP 통합 — Python 서버 추가, 무료.
+방안 2(P3): 차트 MCP 통합 — TradingView Desktop + 78도구, 유료.
+방안 3(최종): 하이브리드 — 데이터(무료)+차트(유료) 통합.
+
+---
+
+## §17. 연구팀(다윈) 자율 연구 에이전트 개선
+
+### 17-1. 핵심 논문/프레임워크
+
+**VoltAgent/awesome-ai-agent-papers** — 2026 AI 에이전트 논문 큐레이션.
+매주 arXiv 검색, 필터링, 카테고리화. 우리 다윈팀이 이 작업을 자동화해야!
+
+**The AI Scientist** — 완전 자동 연구 파이프라인: 아이디어 생성→코드 작성→실행→논문 초안.
+ML 하위 분야에 적용. 우리 다윈팀의 최종 목표와 동일!
+
+**NovelSeek** — AI Scientist 확장: 참신성 검증 추가, 폐쇄 루프 연구 사이클.
+
+**PaperQA / LitLLM** — RAG 기반 자동 문헌 리뷰. 우리 RAG(pgvector) + 다윈 searcher와 결합 가능.
+
+**AAMAS 2026** — 자율 에이전트 멀티에이전트 시스템 학회 (2026 최신).
+DyTopo(동적 토폴로지), MonoScale(안전한 에이전트 풀 확장), Agent Drift(행동 퇴화).
+
+**"Multi-Agent Teams Hold Experts Back"** — 자기조직 LLM 에이전트 팀이 최고 멤버보다 나은가?
+우리 경쟁 시스템(월수금 경쟁)과 직결되는 연구!
+
+### 17-2. 다윈팀 개선 방안
+
+현재: 22에이전트 (9 searcher + 4 builder/deployer + 4 reviewer + 5 기타)
+문제: searcher가 수동 요청에만 반응, 자율 서칭 사이클 없음!
+
+개선안:
+```
+Phase 1: 자율 arXiv 스캔 사이클 (매주 자동)
+  neuron/gold-r/ink/gavel/matrix-r/frame/gear/pulse → arXiv API 자동 호출
+  → 키워드별 최신 논문 수집 → 요약 생성 → pgvector 저장
+  → weaver가 주간 리서치 리포트 자동 생성
+
+Phase 2: 논문 → 적용 가능성 자동 평가
+  proof-r + skeptic-r → 수집된 논문의 우리 시스템 적용 가능성 0~10점 평가
+  → 7점 이상 → graft에게 자동 전달 → 적용 프로토타입
+
+Phase 3: AI Scientist 패턴 도입
+  scholar → 가설 생성 → edison → 코드 구현 → proof-r → 검증
+  → mentor → 결과 반영 → medic → 실패 진단
+  = 완전 자율 연구 사이클!
+```
+
+---
+
+## 출처 (추가분)
+
+[31] Pixel Agents: github.com/pablodelucca/pixel-agents
+[32] AgentOffice: dev.to/harishkotra/agentoffice-self-growing-ai-teams
+[33] Mission Control: github.com/jeturing/mission-control
+[34] Star-Office-UI: agentcrunch.ai/article/star-office-ai-crew
+[35] TradingView MCP (Data): github.com/atilaahmettaner/tradingview-mcp (218★)
+[36] TradingView MCP (Chart): github.com/tradesdontlie/tradingview-mcp (78도구)
+[37] TradingView MCP Jackson: github.com/LewisWJackson/tradingview-mcp-jackson
+[38] TradingView MCP Guide: pineify.app/resources/blog/tradingview-mcp-complete-guide
+[39] VoltAgent AI Agent Papers: github.com/VoltAgent/awesome-ai-agent-papers (2026)
+[40] Agentic AI for Science: arxiv.org/html/2503.08979v1
+[41] From AI for Science to Agentic Science: arxiv.org/html/2508.14111v1
+[42] AAMAS 2026: arxiv.org/list/cs.MA/current
+[43] AI Agent Papers Weekly: github.com/masamasa59/ai-agent-papers
