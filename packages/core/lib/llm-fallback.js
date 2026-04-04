@@ -56,6 +56,34 @@ let _evalTableReady = false;
 const OAUTH_CACHE_TTL = 300_000;
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const EVAL_EXCLUDED_PROVIDERS = new Set(['openai-oauth', 'openai', 'anthropic']);
+const MAX_CONSECUTIVE_FAILURES = 5;
+const FAILURE_COOLDOWN_MS = 60_000;
+const _providerFailures = new Map();
+
+function _isProviderCoolingDown(provider) {
+  const entry = _providerFailures.get(provider);
+  if (!entry || entry.count < MAX_CONSECUTIVE_FAILURES) return false;
+  if (Date.now() - entry.lastFailAt > FAILURE_COOLDOWN_MS) {
+    _providerFailures.delete(provider);
+    return false;
+  }
+  return true;
+}
+
+function _recordProviderFailure(provider) {
+  const key = String(provider || '').trim();
+  if (!key) return;
+  const entry = _providerFailures.get(key) || { count: 0, lastFailAt: 0 };
+  entry.count += 1;
+  entry.lastFailAt = Date.now();
+  _providerFailures.set(key, entry);
+}
+
+function _recordProviderSuccess(provider) {
+  const key = String(provider || '').trim();
+  if (!key) return;
+  _providerFailures.delete(key);
+}
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
 function _extractText(resp, provider) {
@@ -554,11 +582,16 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
   let lastError;
   for (let i = 0; i < chain.length; i++) {
     const cfg     = chain[i];
+    if (_isProviderCoolingDown(cfg.provider)) {
+      console.warn(`[llm-fallback] ${cfg.provider} 연속 ${MAX_CONSECUTIVE_FAILURES}회 실패 → 쿨다운 중, 건너뜀`);
+      continue;
+    }
     const t0      = Date.now();
     const attempt = i + 1;
     try {
       const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile);
       const latencyMs = Date.now() - t0;
+      _recordProviderSuccess(cfg.provider);
       const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
       const tokensOut = usage?.output_tokens || usage?.completion_tokens || 0;
 
@@ -630,6 +663,7 @@ async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {},
 
     } catch (e) {
       lastError = e;
+      _recordProviderFailure(cfg.provider);
       const latencyMs = Date.now() - t0;
 
       if (logMeta.team) {

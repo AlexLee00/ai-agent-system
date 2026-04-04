@@ -153,7 +153,11 @@ async function createEmbedding(text) {
  * @param {string} sourceBot   생성 봇 이름 (예: 'dexter', 'luna', 'archer')
  * @returns {Promise<number>}  삽입된 행 id
  */
-async function store(collection, content, metadata = {}, sourceBot = 'unknown') {
+async function store(collection, content, metadata = {}, sourceBot = 'unknown', options = {}) {
+  if (options.successOnly && !options.isSuccess) {
+    console.log(`[rag] Strict Write: 실패 결과 저장 건너뜀 (${sourceBot}/${collection})`);
+    return null;
+  }
   const table = _validateCollection(collection);
   const embedding = await createEmbedding(content);
   const vecStr = `[${embedding.join(',')}]`;
@@ -302,12 +306,19 @@ async function storeExperience({
   details = {},
   team = 'general',
   sourceBot = 'openclaw',
+  successOnly = true,
 }) {
   const content = String(userInput || '').trim();
   if (!content) throw new Error('storeExperience: userInput is required');
   if (!intent) throw new Error('storeExperience: intent is required');
   if (!response) throw new Error('storeExperience: response is required');
   if (!result) throw new Error('storeExperience: result is required');
+  const normalizedResult = String(result).trim().toLowerCase();
+  const isSuccess = normalizedResult === 'success' || normalizedResult === 'ok' || result === true;
+  if (successOnly && !isSuccess) {
+    console.log(`[rag] Strict Write: 실패 경험 저장 건너뜀 (${sourceBot}, result=${result})`);
+    return null;
+  }
 
   const metadata = {
     intent,
@@ -317,7 +328,7 @@ async function storeExperience({
     timestamp: new Date().toISOString(),
     ...details,
   };
-  return store('experience', content, metadata, sourceBot);
+  return store('experience', content, metadata, sourceBot, { successOnly, isSuccess });
 }
 
 /**
