@@ -26,8 +26,8 @@ const _require = createRequire(import.meta.url);
 const shadow   = _require('../../../packages/core/lib/shadow-mode.js');
 const pgPool   = _require('../../../packages/core/lib/pg-pool.js');
 const kst      = _require('../../../packages/core/lib/kst');
+const { postAlarm } = _require('../../../packages/core/lib/openclaw-client.js');
 const {
-  publishEventPipeline,
   buildNoticeEvent,
   buildEventPayload,
   renderNoticeEvent,
@@ -392,32 +392,21 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
           detailLines.push(`검토 필요: ${adj.botName} 3주 연속 50% 미만`);
         }
       }
-      await publishEventPipeline({
-        event: {
-          from_bot: 'luna',
-          team: 'investment',
-          event_type: 'accuracy_alert',
-          alert_level: 2,
-          message: renderNoticeEvent(buildNoticeEvent({
-            from_bot: 'luna',
-            team: 'investment',
-            event_type: 'accuracy_alert',
-            alert_level: 2,
-            title: '분석팀 가중치 조정 제안',
-            summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
-            details: detailLines,
-            action: '자동 변경 없이 마스터 승인 후 반영',
-          })),
-          payload: buildEventPayload({
-            title: '분석팀 가중치 조정 제안',
-            summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
-            details: detailLines,
-            action: '자동 변경 없이 마스터 승인 후 반영',
-          }),
-        },
-        targets: [
-          { type: 'queue', pgPool, schema: 'claude' },
-        ],
+      const alertNotice = buildNoticeEvent({
+        from_bot: 'luna',
+        team: 'investment',
+        event_type: 'accuracy_alert',
+        alert_level: 2,
+        title: '분석팀 가중치 조정 제안',
+        summary: '최근 정확도 기준으로 검토가 필요한 변경안이 있습니다',
+        details: detailLines,
+        action: '자동 변경 없이 마스터 승인 후 반영',
+      });
+      await postAlarm({
+        message: renderNoticeEvent(alertNotice),
+        team: 'luna',
+        alertLevel: 2,
+        fromBot: 'reporter',
       });
       console.log('\n📊 가중치 조정 알림 발송 완료');
     }
@@ -457,27 +446,11 @@ export async function generateReport({ days = 30, telegram = false } = {}) {
       ],
       footer: '상세: 콘솔 리포트 참고',
     }));
-    await publishEventPipeline({
-      event: {
-        from_bot: 'luna',
-        team: 'investment',
-        event_type: 'report',
-        alert_level: 1,
-        message: reportMessage,
-        payload: buildEventPayload({
-          title: '루나팀 투자 리포트',
-          summary: `기준: ${kstStr()} | 최근 ${days}일`,
-          details: [
-            `총 신호: ${sigTotal}개`,
-            `USDT 가용: $${(usdtBal?.free || 0).toFixed(2)}`,
-            `총 자산(추정): $${equity.toFixed(2)}`,
-          ],
-          action: '상세 원문은 콘솔 출력 리포트를 참고',
-        }),
-      },
-      targets: [
-        { type: 'queue', pgPool, schema: 'claude' },
-      ],
+    await postAlarm({
+      message: reportMessage,
+      team: 'luna',
+      alertLevel: 1,
+      fromBot: 'reporter',
     });
     console.log('\n📱 제이 큐 발송 완료');
   }

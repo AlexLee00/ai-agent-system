@@ -17,12 +17,10 @@ const pgPool                 = require('../../../packages/core/lib/pg-pool');
 const { callWithFallback }   = require('../../../packages/core/lib/llm-fallback');
 const { selectLLMChain }     = require('../../../packages/core/lib/llm-model-selector');
 const { runIfOps }           = require('../../../packages/core/lib/mode-guard');
-const tg                     = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm }          = require('../../../packages/core/lib/openclaw-client');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
-  publishEventPipeline,
-  buildSeverityTargets,
 } = require('../../../packages/core/lib/reporting-hub');
 const {
   ensureBlogFeedbackTables,
@@ -267,16 +265,11 @@ async function proposeToMaster(candidates, currentSeries, remainingLectures) {
   const rendered = renderNoticeEvent(notice) || msg;
   await runIfOps(
     'blog-tg',
-    () => publishEventPipeline({
-      event: { ...notice, message: rendered },
-      targets: buildSeverityTargets({
-        event: notice,
-        topicTeam: 'blog',
-        includeQueue: false,
-        includeTelegram: false,
-        includeN8n: false,
-      }),
-      policy: { cooldownMs: 30 * 60_000 },
+    () => postAlarm({
+      message: rendered,
+      team: 'blog',
+      alertLevel: notice.alert_level || 2,
+      fromBot: 'blog-richer',
     }),
     () => console.log('[DEV] 텔레그램 생략\n' + rendered)
   );
@@ -405,16 +398,11 @@ async function generateCurriculum(topic, lectureCount = 100) {
   });
   await runIfOps(
     'blog-tg',
-    () => publishEventPipeline({
-      event: { ...createdNotice, message: renderNoticeEvent(createdNotice) || msg },
-      targets: buildSeverityTargets({
-        event: createdNotice,
-        sender: tg,
-        topicTeam: 'blog',
-        includeQueue: false,
-        includeN8n: false,
-      }),
-      policy: { cooldownMs: 30 * 60_000 },
+    () => postAlarm({
+      message: renderNoticeEvent(createdNotice) || msg,
+      team: 'blog',
+      alertLevel: createdNotice.alert_level || 1,
+      fromBot: 'blog-richer',
     }),
     () => {}
   );
@@ -474,16 +462,11 @@ async function transitionSeries() {
       });
       await runIfOps(
         'blog-tg',
-        () => publishEventPipeline({
-          event: { ...transitionNotice, message: renderNoticeEvent(transitionNotice) || msg },
-          targets: buildSeverityTargets({
-            event: transitionNotice,
-            sender: tg,
-            topicTeam: 'blog',
-            includeQueue: false,
-            includeN8n: false,
-          }),
-          policy: { cooldownMs: 30 * 60_000 },
+        () => postAlarm({
+          message: renderNoticeEvent(transitionNotice) || msg,
+          team: 'blog',
+          alertLevel: transitionNotice.alert_level || 2,
+          fromBot: 'blog-richer',
         }),
         () => console.log('[DEV] 시리즈 전환 생략')
       );

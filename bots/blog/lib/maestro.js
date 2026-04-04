@@ -17,7 +17,7 @@ const env = require('../../../packages/core/lib/env');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
-const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
+// const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ─── 상수 ─────────────────────────────────────────────────────────────
@@ -298,41 +298,43 @@ async function run(postType, directRunner = null, payload = {}) {
   const history   = await getRecentHistory(postType, 7);
   let gemmaRecommendation = null;
 
-  try {
-    const historyTopics = history
-      .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
-      .filter(Boolean)
-      .slice(0, 10);
-    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-    const today = dayNames[new Date().getDay()];
-    const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
-    const recPrompt = `당신은 네이버 블로그 주제 추천 전문가입니다.
-오늘은 ${today}요일입니다.
-포스팅 유형: ${postType}
-최근 주제: ${historyTopics.join(', ') || '없음'}
-날씨/상황: ${weatherContext}
-
-겹치지 않는 새로운 추천 주제 3개를 한국어로 간결하게 작성하세요.
-번호 없이 한 줄씩만 작성하세요.`;
-
-    const recResult = await generateGemmaPilotText({
-      team: 'blog',
-      purpose: 'gemma-topic',
-      bot: 'maestro',
-      requestType: 'topic-recommendation',
-      prompt: recPrompt,
-      maxTokens: 200,
-      temperature: 0.8,
-      timeoutMs: 10000,
-    });
-
-    if (recResult?.ok && recResult.content) {
-      gemmaRecommendation = recResult.content.trim();
-      console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
-    }
-  } catch (error) {
-    console.warn(`[maestro] gemma4 추천 생략: ${error.message}`);
-  }
+  // Gemma 4 pilot 보류 (2026-04-04)
+  // MLX gemma4 안정화 후 주석 해제 + 모델명만 교체해서 재개한다.
+  // try {
+  //   const historyTopics = history
+  //     .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
+  //     .filter(Boolean)
+  //     .slice(0, 10);
+  //   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  //   const today = dayNames[new Date().getDay()];
+  //   const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
+  //   const recPrompt = `당신은 네이버 블로그 주제 추천 전문가입니다.
+  // 오늘은 ${today}요일입니다.
+  // 포스팅 유형: ${postType}
+  // 최근 주제: ${historyTopics.join(', ') || '없음'}
+  // 날씨/상황: ${weatherContext}
+  //
+  // 겹치지 않는 새로운 추천 주제 3개를 한국어로 간결하게 작성하세요.
+  // 번호 없이 한 줄씩만 작성하세요.`;
+  //
+  //   const recResult = await generateGemmaPilotText({
+  //     team: 'blog',
+  //     purpose: 'gemma-topic',
+  //     bot: 'maestro',
+  //     requestType: 'topic-recommendation',
+  //     prompt: recPrompt,
+  //     maxTokens: 200,
+  //     temperature: 0.8,
+  //     timeoutMs: 10000,
+  //   });
+  //
+  //   if (recResult?.ok && recResult.content) {
+  //     gemmaRecommendation = recResult.content.trim();
+  //     console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
+  //   }
+  // } catch (error) {
+  //   console.warn(`[maestro] gemma4 추천 생략: ${error.message}`);
+  // }
 
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
 
