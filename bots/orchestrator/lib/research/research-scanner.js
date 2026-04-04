@@ -7,14 +7,21 @@
 const arxivClient = require('./arxiv-client');
 const hfClient = require('./hf-papers-client');
 const evaluator = require('./research-evaluator');
+const keywordEvolver = require('./keyword-evolver');
+const monitor = require('./research-monitor');
 const rag = require('../../../../packages/core/lib/rag');
+const hiringContract = require('../../../../packages/core/lib/hiring-contract');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const kst = require('../../../../packages/core/lib/kst');
 
-const ACTIVE_DOMAINS = ['neuron', 'gold-r', 'ink'];
-const MAX_EVALUATIONS_PER_RUN = 30;
+const MAX_EVALUATIONS_PER_RUN = 50;
 const EVALUATION_DELAY_MS = 1_000;
 const DURATION_WARNING_THRESHOLD_SEC = 300;
+const DOMAIN_DELAY_MS = 5_000;
+const ARXIV_RESULTS_PER_DOMAIN = 15;
+const SCHEMA = 'reservation';
+const TABLE = 'rag_research';
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,12 +41,38 @@ function _dedupePapers(papers) {
   return unique;
 }
 
-async function _collectPapers() {
+async function _selectSearchers() {
+  const domains = Object.keys(arxivClient.DOMAIN_KEYWORDS);
+  const selected = [];
+
+  for (const domain of domains) {
+    try {
+      const best = await hiringContract.selectBestAgent('searcher', 'darwin', {
+        taskHint: domain,
+        excludeNames: selected.map((item) => item.name),
+        mode: 'balanced',
+      });
+      if (best) {
+        selected.push({ name: best.name, domain, score: Number(best.score || 0), hired: true });
+        continue;
+      }
+    } catch (err) {
+      console.warn(`[research-scanner] searcher 고용 실패 (${domain}): ${err.message}`);
+    }
+    selected.push({ name: domain, domain, score: 0, hired: false });
+  }
+
+  console.log(`[research-scanner] 고용된 searcher: ${selected.map((item) => `${item.name}(${item.domain})`).join(', ')}`);
+  return selected;
+}
+
+async function _collectPapers(searchers) {
   const arxivResults = [];
-  for (const domain of ACTIVE_DOMAINS) {
-    const papers = await arxivClient.searchByDomain(domain, 20);
+  for (const { name, domain } of searchers) {
+    const papers = await arxivClient.searchByDomain(domain, ARXIV_RESULTS_PER_DOMAIN);
     arxivResults.push(...papers);
-    console.log(`[research-scanner] arXiv ${domain}: ${papers.length}건`);
+    console.log(`[research-scanner] ${name}→arXiv ${domain}: ${papers.length}건`);
+    await _sleep(DOMAIN_DELAY_MS);
   }
 
   const trending = await hfClient.fetchTrending();
@@ -55,8 +88,32 @@ async function _collectPapers() {
   return [...arxivResults, ...trending, ...keywordPapers];
 }
 
+async function _storeExperienceIfNeeded(paper) {
+  if ((paper.relevance_score || 0) < 7) return false;
+  try {
+    await rag.storeExperience({
+      userInput: `arXiv 논문 발견: ${paper.title}`,
+      intent: 'research_discovery',
+      response: paper.korean_summary,
+      result: 'success',
+      sourceBot: 'research-scanner',
+      details: {
+        arxiv_id: paper.arxiv_id,
+        domain: paper.domain,
+        relevance_score: paper.relevance_score,
+      },
+      team: 'darwin',
+    });
+    return true;
+  } catch (err) {
+    console.warn(`[research-scanner] 경험 저장 실패 (${paper.arxiv_id}): ${err.message}`);
+    return false;
+  }
+}
+
 async function _storeEvaluatedPapers(evaluated) {
   let storedCount = 0;
+  let experienceCount = 0;
 
   for (const paper of evaluated) {
     try {
@@ -78,12 +135,15 @@ async function _storeEvaluatedPapers(evaluated) {
         'research-scanner'
       );
       storedCount += 1;
+      if (await _storeExperienceIfNeeded(paper)) {
+        experienceCount += 1;
+      }
     } catch (err) {
       console.warn(`[research-scanner] 저장 실패 (${paper.arxiv_id}): ${err.message}`);
     }
   }
 
-  return storedCount;
+  return { storedCount, experienceCount };
 }
 
 async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTime) {
@@ -119,27 +179,86 @@ async function _alertHighRelevance(uniqueCount, evaluated, storedCount, startTim
   return { highRelevanceCount: highRelevance.length, alarmSent };
 }
 
-async function _generateWeeklyReport(papers) {
-  const topPapers = papers
-    .filter((paper) => paper.relevance_score >= 5)
-    .sort((a, b) => b.relevance_score - a.relevance_score)
+async function _loadWeeklyResearchRows() {
+  return pgPool.query(SCHEMA, `
+    SELECT content, metadata, created_at
+    FROM ${SCHEMA}.${TABLE}
+    WHERE created_at >= now() - interval '7 days'
+      AND COALESCE(metadata->>'type', '') != 'daily_metrics'
+    ORDER BY created_at DESC
+    LIMIT 200
+  `, []);
+}
+
+async function _generateWeeklyReport() {
+  const weekData = await _loadWeeklyResearchRows();
+  if (!weekData || weekData.length === 0) return { report: '', keywordEvolutionCount: 0 };
+
+  const sevenPlus = weekData.filter((row) => Number(row.metadata?.relevance_score || 0) >= 7).length;
+  const fiveToSix = weekData.filter((row) => {
+    const score = Number(row.metadata?.relevance_score || 0);
+    return score >= 5 && score < 7;
+  }).length;
+
+  const lines = [
+    '# 🔬 다윈팀 주간 리서치 리포트',
+    `> ${kst.today()} (자동 생성)`,
+    '',
+    '## 수집 현황',
+    `- 총 수집: ${weekData.length}건`,
+    `- 적합성 7점+: ${sevenPlus}건`,
+    `- 적합성 5~6점: ${fiveToSix}건`,
+    '',
+    '## 도메인별 현황',
+  ];
+
+  const byDomain = {};
+  for (const row of weekData) {
+    const domain = row.metadata?.domain || 'unknown';
+    if (!byDomain[domain]) byDomain[domain] = { total: 0, high: 0 };
+    byDomain[domain].total += 1;
+    if (Number(row.metadata?.relevance_score || 0) >= 7) byDomain[domain].high += 1;
+  }
+  for (const [domain, stats] of Object.entries(byDomain).sort((a, b) => b[1].total - a[1].total)) {
+    lines.push(`- ${domain}: ${stats.total}건 (7점+: ${stats.high}건)`);
+  }
+
+  lines.push('', '## TOP 10 논문');
+  const topPapers = weekData
+    .filter((row) => Number(row.metadata?.relevance_score || 0) >= 5)
+    .sort((a, b) => Number(b.metadata?.relevance_score || 0) - Number(a.metadata?.relevance_score || 0))
     .slice(0, 10);
-
-  if (topPapers.length === 0) return;
-
-  const lines = [`📊 다윈팀 주간 리서치 리포트 (${kst.today()})`];
-  lines.push(`이번 주 평가: ${papers.length}건 | 적합성 5점+: ${topPapers.length}건`);
-  lines.push('');
   topPapers.forEach((paper, index) => {
-    lines.push(`${index + 1}. [${paper.relevance_score}점] ${paper.korean_summary}`);
+    lines.push(`${index + 1}. [${paper.metadata?.relevance_score}점] ${String(paper.content || '').split('\n')[0]}`);
+    if (paper.metadata?.arxiv_id) {
+      lines.push(`   https://arxiv.org/abs/${paper.metadata.arxiv_id}`);
+    }
   });
 
+  lines.push('', '## 키워드 진화');
+  let keywordEvolutionCount = 0;
+  for (const domain of Object.keys(arxivClient.DOMAIN_KEYWORDS)) {
+    const suggested = await keywordEvolver.suggestKeywords(domain);
+    if (suggested.length > 0) {
+      keywordEvolutionCount += suggested.length;
+      lines.push(`📈 ${domain}: ${suggested.join(', ')}`);
+    }
+  }
+
+  const trendText = await monitor.weeklyTrend();
+  if (trendText) {
+    lines.push('', '## 모니터링 추세', trendText);
+  }
+
+  const report = lines.join('\n');
   await postAlarm({
-    message: lines.join('\n'),
+    message: report.slice(0, 4000),
     team: 'general',
     alertLevel: 1,
     fromBot: 'research-scanner',
   });
+
+  return { report, keywordEvolutionCount };
 }
 
 async function run() {
@@ -147,43 +266,61 @@ async function run() {
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
   await rag.initSchema();
 
-  const allPapers = await _collectPapers();
+  const searchers = await _selectSearchers();
+  const allPapers = await _collectPapers(searchers);
   const unique = _dedupePapers(allPapers);
   console.log(`[research-scanner] 중복 제거 후: ${unique.length}건 (전체 ${allPapers.length}건)`);
 
   const evaluated = [];
+  let evaluationFailures = 0;
   for (const paper of unique.slice(0, MAX_EVALUATIONS_PER_RUN)) {
     const evaluation = await evaluator.evaluatePaper(paper);
     evaluated.push({ ...paper, ...evaluation });
+    if (evaluation.reason === '평가 실패') {
+      evaluationFailures += 1;
+    }
     await _sleep(EVALUATION_DELAY_MS);
   }
 
-  const storedCount = await _storeEvaluatedPapers(evaluated);
+  const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
   const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
+  let keywordEvolutionCount = 0;
 
   if (new Date().getDay() === 0) {
-    await _generateWeeklyReport(evaluated);
+    const weekly = await _generateWeeklyReport();
+    keywordEvolutionCount = Number(weekly?.keywordEvolutionCount || 0);
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   if (durationSec > DURATION_WARNING_THRESHOLD_SEC) {
     console.warn(`[research-scanner] 실행 시간 경고: ${durationSec}초 (기준 ${DURATION_WARNING_THRESHOLD_SEC}초 초과)`);
   }
-  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${highRelevanceCount}건 후보 알림, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
-
-  return {
+  const result = {
+    totalRaw: allPapers.length,
     total: unique.length,
     evaluated: evaluated.length,
     stored: storedCount,
+    experiencesStored: experienceCount,
     highRelevance: highRelevanceCount,
     alarmSent,
+    evaluationFailures,
     durationSec,
+    keywordEvolutionCount,
+    searchers: searchers.map(({ name, domain, score, hired }) => ({ name, domain, score, hired })),
   };
+
+  const metrics = monitor.collectMetrics(result, Date.now() - startTime);
+  await monitor.storeMetrics(metrics);
+  await monitor.checkAnomalies(metrics);
+  console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
+  console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, ${highRelevanceCount}건 후보 알림, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
+
+  return result;
 }
 
 module.exports = {
   run,
-  ACTIVE_DOMAINS,
+  _selectSearchers,
 };
 
 if (require.main === module) {

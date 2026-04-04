@@ -100,6 +100,11 @@ async function selectBestAgent(role, team = null, requirements = {}) {
   const limit = Number.isFinite(Number(requirements.limit)) ? Number(requirements.limit) : 5;
   const mode = requirements.mode || 'balanced';
   const taskHint = String(requirements.taskHint || '').trim().toLowerCase();
+  const excludeNames = new Set(
+    Array.isArray(requirements.excludeNames)
+      ? requirements.excludeNames.map((name) => String(name || '').trim()).filter(Boolean)
+      : []
+  );
 
   // team이 주어지면 항상 팀 내에서만 검색 (글로벌 폴백 금지!)
   let candidates;
@@ -109,6 +114,11 @@ async function selectBestAgent(role, team = null, requirements = {}) {
     if (!candidates.length) candidates = teamAgents; // 팀 내 폴백 (role 무관)
   } else {
     candidates = await registry.getTopAgents(role, limit);
+  }
+  if (!candidates || candidates.length === 0) return null;
+
+  if (excludeNames.size > 0) {
+    candidates = candidates.filter((agent) => !excludeNames.has(String(agent.name || '').trim()));
   }
   if (!candidates || candidates.length === 0) return null;
 
