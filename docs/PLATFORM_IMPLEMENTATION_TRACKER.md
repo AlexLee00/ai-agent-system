@@ -9,7 +9,7 @@
 
 ## 0. 현재 최우선 과제
 
-- **알람 체계 통일**: Phase1✅스카복구 Phase2✅클로드 Phase3 진행중(블로+루나+워커)
+- **알람 체계 통일**: Phase1✅스카 Phase2✅클로드 Phase3✅블로+루나+워커 → Phase4 정리 남음
 - **CC 패턴 P0**: 연속실패제한(llm-fallback.js) + Strict Write Discipline(rag.js)
 - **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
@@ -443,6 +443,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | 알람 Phase3 완료(4214825): blo+curriculum+reporter+approval→postAlarm. Gemma4 주석처리(보류). Phase4(deprecated+grep검증) 남음 |
 | 04-05 | Gemma4 시범배치 최종: 26B timeout, 8B도 실전 15초+ → 일시 보류. 주석 처리+MLX 대기. 알람 Phase1 완료(스카복구), Phase2 완료(클로드), Phase3 진행중(블로+루나+워커) |
 | 04-05 | Gemma4 26B 시범배치: 구조 ✅ 성공(안전성 달성), 모델 ❌ 실패(timeout). 26B→8B(gemma4:latest) 교체 결정. 코덱스 구현 잘함 |
 | 04-05 | 알람 체계 통일 설계: 4경로→postAlarm 단일 API. 스카팀 근본 원인 = includeTelegram:false+sender누락→타겟0개 |
