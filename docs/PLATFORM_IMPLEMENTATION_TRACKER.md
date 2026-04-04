@@ -1,20 +1,20 @@
 # 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-04-02
+> 마지막 업데이트: 2026-04-04
 > 목적: 실제 코드 구현 상태와 커밋 이력 기준으로 개발 진행 상황을 추적한다.
 > 원칙: 완료(날짜+근거) / 진행 중(현재+남은 것) / 미완료 3단계 분류
-> 참조: docs/STRATEGY.md (전략), team-jay-strategy.md (상세 원본)
+> 참조: docs/STRATEGY.md, docs/research/RESEARCH_CC_COMPREHENSIVE.md
 
 ---
 
 ## 0. 현재 최우선 과제
 
-- **OpenClaw**: Phase 1~3 완성 ✅ / Phase 4 코덱스 진행중 (alert resolve + mainbot 퇴역)
-- **LLM 재편성**: 구현 완료 ✅ (수정 2건 포함)
-- **RAG 경험 저장**: 코덱스 구현 완료 (미커밋, experience-store.js + CLI)
-- **블로팀**: F7 강의 순서 버그 + P1~P5 코덱스 프롬프트 완료
-- **D 분해**: 인프라+루나 (docs/strategy/luna.md + docs/DEVELOPMENT.md)
-- **멀티에이전트 v2**: 전략 수립 완료 (docs/MULTI_AGENT_EXPANSION_v2.md)
+- **CC 패턴 P0**: 연속실패제한(llm-fallback.js) + Strict Write Discipline(rag.js)
+- **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
+- **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
+- **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
+- **경쟁 결과 확인**: 첫 경쟁 결과 (월요일)
+- **Gemma 4**: Ollama 테스트 (e4b + 26b MoE)
 
 ---
 
@@ -50,6 +50,35 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 ---
 
 ## 2. 완료된 개발 축 (최신 → 과거순)
+
+### 2026-04-04: Phase A 기반안정화 + CC 유출 연구 + 자율 고용
+
+| 항목 | 상태 | 커밋/근거 |
+|------|------|----------|
+| Phase A-1: ISBN 보충 + quality-checker warn | ✅ | 9936자 이슈0건, ISBN 9791186659489 |
+| Phase A-2: ComfyUI MPS + FLUX 이중경로 | ✅ | 대표=FLUX, 나머지=SDXL |
+| Phase A-3: blog-utils.js 공용 함수 추출 | ✅ | ea66034 (weatherToContext+estimateCost+loadPersonaGuide) |
+| 블로팀 전략기획서 v2 | ✅ | blog-strategy-v2.md 382줄, 5Phase 로드맵 |
+| Gemma 4 도입 검토 + 프롬프트 | ✅ | CODEX_GEMMA4_ROLLOUT.md (Ollama→MLX→본격) |
+| 네이버 API/MCP 조사 | ✅ | 임시저장 불가, 현행 유지 |
+| CC 유출 종합 연구 | ✅ | RESEARCH_CC_COMPREHENSIVE.md 163줄 (4파일→1파일) |
+| 9팀 전수 분석 + 팀별 딥 분석 | ✅ | CC 하네스 6구성요소 비교 + Gap 14건 |
+| 에이전트 하네스 + 서브에이전트 감독 연구 | ✅ | 5대 난제 + 감독 패턴 5가지 + 6대 원칙 |
+
+### 2026-04-03: Phase 0~3 + 90에이전트 + Phase 6 스킬/MCP
+
+| 항목 | 상태 | 커밋/근거 |
+|------|------|----------|
+| Phase 0.5: 53 신규 에이전트 (총 90) | ✅ | 연구15+감정10+데이터6+루나12+블로10 |
+| 팀장 자율 고용 (ε-greedy, EPSILON=0.2) | ✅ | hiring-contract.js taskHint+specialty |
+| 경쟁 시스템 활성화 (월/수/금) | ✅ | competition-engine.js (9abbfa5) |
+| Phase B-1: JSONB 비파괴적 전환 | ✅ | 기존 데이터 마이그레이션+하드테스트 |
+| Phase 2C: DotCharacter SVG+애니메이션 | ✅ | 0a23b65 |
+| Phase 6: 3계층 동적 선택 | ✅ | skill-selector+tool-selector+pipeline |
+| 스킬 31파일 + MCP 4파일 | ✅ | 공용16+다윈5+저스틴5+시그마5+블로2 |
+| 런타임 셀렉터 전팀 분리 | ✅ | runtime-profiles 360줄 |
+| 블로그 댓글 자동화 | ✅ | commenter.js 859줄 |
+| 158파일 13,510줄 구현 | ✅ | CODEX_PHASE06_1~11 |
 
 ### 2026-04-01: Hub Secrets Store + LLM 최적화 + 임베딩 전환 + 스킬 전체
 
@@ -140,51 +169,67 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 
 | 항목 | 현재 상태 | 남은 것 |
 |------|----------|---------|
+| 블로팀 Phase A~E | Phase A ✅ 완료 | Phase B 피드백루프 (04-07~11) |
+| 자율 고용 전팀 확산 | 블로팀 ε-greedy ✅ | 루나/클로드/스카/워커/비디오 적용 |
+| CC 패턴 적용 | 연구 완료 ✅ | P0 즉시 → P1~P3 순차 |
 | Chronos Tier 2 | Phase A 완료, Layer 1~3 동작 | 전략 최적화, VectorBT, walk-forward |
-| 블로팀 P1~P5 | ✅ 구현 완료 | F7 인덱스 리셋(55) + P1 분할생성 + P2 품질강화 + P3 프롬프트간소화 + P4 성과수집 + P5 RAG (d7ffff6, 2dab41a, 16a6e93) |
-| 워커 확인창 UX | 핵심 메뉴 1차 완료 | 캔버스 시각 마감, 관리자 위젯 심화 |
-| 스카 shadow 관찰 | 저장+리뷰 연결 완료 | MAPE gap 기준 ensemble 편입 |
-| 피드백 RAG | 적재+유사사례 조회 완료 | 품질 랭킹, training export |
-| 문서 체계 v2 | 디렉토리+파일 정리 완료 | STRATEGY.md 심화 (D 작업) |
+| Phase 6 스킬/MCP | 158파일 구현 완료 | 런타임 검증 |
+| LLM 모델 재편성 | 프롬프트 501줄 ✅ | 수정 2건 검증 |
+| 워커 확인창 UX | 핵심 메뉴 1차 완료 | 캔버스 마감, 관리자 위젯 |
+| 스카 shadow 관찰 | 저장+리뷰 연결 완료 | MAPE gap ensemble 편입 |
+| Gemma 4 도입 | 검토 완료 | Ollama 테스트 → 2주 후 MLX |
 
 ---
 
-## 4. 미완료 개발 축
+## 4. 미완료 개발 축 (통합 우선순위)
 
-### 루나팀
+### P0 — 즉시 (이번 주)
+- [ ] CC: 연속실패제한 — llm-fallback.js MAX_FAILURES=5 (3줄)
+- [ ] CC: Strict Write Discipline — rag.js 성공 시에만 메모리 기록
+- [ ] 자율 고용: 루나팀 적용 (taskHint: crypto→chaineye, stock→funder)
+- [ ] 자율 고용: 클로드팀 적용 (taskHint: monitoring→dexter, recovery→doctor)
+
+### P1 — 단기 (04-07 ~ 04-18)
+- [ ] 블로팀 Phase B 피드백 루프 (04-07~11)
+- [ ] 자율 고용: 전 팀 Level 1 (ε-greedy) 확산 (스카/워커/비디오)
+- [ ] CC: 야간 메모리 증류 — nightly-distill.js (autoDream 패턴)
+- [ ] CC: 도구별 권한 레이어 — skill-selector permission (auto/approve/block)
+- [ ] CC: 루나 독립 노드 병렬화 — l03+l04+l05 Promise.allSettled
+- [ ] CC: Doctor 예방적 스캔 — 경고 징후 탐지
+- [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
+- [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
+- [ ] Gemma 4 Ollama 테스트 (e4b + 26b MoE)
+- [ ] 블로팀 Phase C SEO+GEO (04-14~18)
+
+### P2 — 중기 (04-21 ~ 05-09)
+- [ ] 자율 고용: Level 2 태스크-스페셜티 매칭 전팀 적용
+- [ ] CC: 컨텍스트 압축 — context-compactor.js (Micro+Auto)
+- [ ] CC: Mailbox 패턴 — approval-queue.js (감정팀/루나팀 위험 작업)
+- [ ] CC: AgentTool — agent-tool.js (에이전트 간 위임/스폰)
+- [ ] CC: 에이전트 오피스 CC 메트릭 대시보드
+- [ ] CC: autofix 3단계 권한 (safe/warn/block)
+- [ ] 대규모 파일 분리: edl-builder 971줄 / rebecca.py 937줄
+- [ ] 스카: Python↔Node 인터페이스 표준화
+- [ ] 블로팀 Phase D 콘텐츠 심화 (04-21~05-02)
+- [ ] 경쟁 결과 → RAG 피드백 루프
+
+### P3 — 장기 (05-05 ~)
+- [ ] 자율 고용: Level 3 팀장 LLM 판단 (CrewAI 패턴)
+- [ ] CC: KAIROS 자율 데몬 — 5분 주기 모니터링
+- [ ] CC: 프롬프트 기반 오케스트레이션 — 코드→프롬프트
+- [ ] CC: Build to Delete 아키텍처
 - [ ] Chronos Tier 2: VectorBT + walk-forward + strategy_registry
-- [ ] 검증 3단계 (Shadow→Confirmation→Live)
-- [ ] DCA 전략 + 펀딩레이트 + 그리드
-- [ ] sentinel 통합 (sophia+hermes→sentinel.js)
-- [ ] Nemesis 분해 (Hard Rule + Budget + Adaptive Risk)
-
-### 블로팀
-- [ ] P1 날씨 수치 제거 + P2 품질 검증 강화
-- [ ] P3 프롬프트 최적화 + P4 hallucination 방지
-- [ ] P5 SEO-AEO-GEO + 실전 발행
-
-### 스카팀
-- [ ] n8n node화 2차 (write/ops 계열)
-- [ ] RAG retrieval 활용 강화
-- [ ] 옵션B (reservation Phase E)
-
-### 워커팀
-- [ ] SaaS 본격 개발 (채팅+캔버스 패턴)
-- [ ] Cloudflare Tunnel 외부 접속
-
-### 공통
-- [x] 라이트(Write) 구현 ✅ — 제이 직속, 문서 점검+CHANGELOG+일일 리포트 (ai.write.daily 07:00 KST)
-  - 보강 계획 (CODEX_WRITE_ENHANCEMENT.md):
-    - 코덱스 프롬프트 완료 감지 + 자동 archive/ 이동
-    - TRACKER 신규 파일 자동 추가 (최대 5건)
-    - 루트 문서 아카이브 후보 제안
-    - 주간 문서 정리 리포트 (일요일)
-- [x] OpenClaw Phase 1~3 완성 ✅ — 알람 단일 경로 + OAuth + Selector + 평가
-- [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve Standing Orders (코덱스 진행중)
-- [ ] ComfyUI + 이미지 비용 $0 전환
+- [ ] 블로팀 Phase E 자율 진화
+- [ ] 비디오팀 Phase 3: CapCut급 타임라인 UI
 - [ ] TS Phase 1: TypeScript 강화
-- [ ] TS Phase 2: Elixir 오케스트레이션
-- [ ] Claude Code Skills/Subagents/Hooks 도입
+- [ ] SaaS 본격 개발 (워커 채팅+캔버스)
+
+### 기존 미완료 (팀별)
+
+루나: 검증 3단계, DCA+펀딩레이트+그리드, sentinel 통합
+스카: n8n node화 2차, RAG retrieval, 옵션B
+워커: Cloudflare Tunnel 외부 접속
+공통: ComfyUI 이미지 $0, TS Phase 2 Elixir, Claude Code Skills/Hooks
 
 ---
 
@@ -326,6 +371,14 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 결정 |
 |------|------|
+| 04-04 | CC 유출 종합 연구: 하네스 6구성요소+5대 난제+감독 패턴 5가지 정리 |
+| 04-04 | 자율 고용 3단계: ε-greedy(L1) → 태스크매칭(L2) → LLM판단(L3) 전팀 확산 |
+| 04-04 | 블로팀 Phase A 완료, SDXL+FLUX 이중경로, 발행 현행 유지 |
+| 04-04 | Gemma 4: Ollama 테스트 → 2주 후 MLX (26B MoE=M4 Max 최적) |
+| 04-04 | 네이버 API: 임시저장 불가, MCP보다 직접 호출 적합 |
+| 04-04 | CC 개선 로드맵 14건 수립 (P0~P3, RESEARCH_CC_COMPREHENSIVE.md) |
+| 04-03 | Phase 0.5: 53 신규 에이전트 (90에이전트), 경쟁 월/수/금 |
+| 04-03 | Phase 6: 3계층 동적 선택(Agent→Skill→Tool), 158파일 13,510줄 |
 | 04-02 | self-improving 스킬 설치 + RAG 경험 저장 설계 (pgvector triplet) |
 | 04-02 | 블로팀 F7: 강의 번호 점프 발견 (17건 미발행, 인덱스 리셋 필요) |
 | 04-01 | OpenClaw Phase 1~3 완성: 알람 단일 경로 (webhook + OPS 프록시) |
@@ -350,6 +403,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 2026-04-04 | Phase A 완료+CC유출연구+9팀딥분석+자율고용확산계획. 통합 우선순위 P0~P3 재정리. CC패턴14건+자율고용3단계+대규모파일분리5건. 연구4파일→1파일통합(163줄). |
 | 2026-04-03 | 69커밋/158파일/+13510줄. Phase6 스킬/MCP/도구 3계층동적선택. 90에이전트(+53). P1수정(hermes→swift+role정규화+팀격리). JSONB팀추적. 런타임셀렉터. 댓글자동화. LLM정규화. 워크플로우엔진. CLI4개. |
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
