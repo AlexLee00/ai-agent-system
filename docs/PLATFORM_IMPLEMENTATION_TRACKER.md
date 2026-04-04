@@ -321,6 +321,7 @@ packages/core/lib/skills/justin/citation-audit.js
 packages/core/lib/skills/sigma/data-quality-guard.js
 packages/core/lib/skills/loader.js
 packages/core/lib/mcp/free-registry.js
+packages/core/lib/openclaw-client.js
 ```
 
 ### 루나팀
@@ -397,6 +398,7 @@ bots/orchestrator/scripts/seed-team-reinforce-phase6.js
 bots/orchestrator/scripts/team-skill-cli.js
 bots/orchestrator/scripts/team-mcp-cli.js
 bots/reservation/manual/reports/log-report.sh
+bots/orchestrator/lib/research/research-scanner.js
 ```
 
 ### RAG + 자기학습
