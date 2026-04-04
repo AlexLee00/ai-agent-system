@@ -166,3 +166,32 @@
 
 상세: docs/research/RESEARCH_AGENT_HARNESS.md 참조
 ```
+
+
+---
+
+## 팀별 심층 딥 분석 (신규!)
+
+```
+연구 문서:
+  docs/research/RESEARCH_TEAM_DEEP_ANALYSIS.md (630줄)
+  docs/research/RESEARCH_AGENT_HARNESS.md (417줄)
+  docs/research/RESEARCH_CLAUDE_CODE_LEAK.md (391줄)
+  docs/research/RESEARCH_TEAM_ARCHITECTURE_REVIEW.md (349줄)
+
+1차 (코어+오케스트레이터+루나+클로드):
+  코어: llm-fallback 연속실패제한❌, rag StrictWrite❌, 4단계폴백✅
+  오케스트레이터: night-handler≈KAIROS, intent 3단계파싱✅
+  루나: 15노드DAG✅>CC, Bull/Bear토론✅, 병렬❌
+  클로드: Doctor scanAndRecover✅>CC, autofix reportInsteadOfFix✅
+
+2차 (워커+스카+비디오+신규팀):
+  워커: chat-agent 876줄 리팩토링, approval≈CC mailbox
+  스카: forecast.py 2,047줄 최대 안티패턴!, Python↔Node 혼합
+  비디오: critic/refiner≈CC Coordinator-Worker, edl-builder 971줄
+  신규: 연구(KAIROS적합), 감정(4티어권한필수), 데이터(MicroCompact필수)
+
+대규모 파일 안티패턴 (CC print.ts 5,594줄 교훈):
+  forecast.py 2,047줄 / blo.js 991줄 / edl-builder.js 971줄
+  rebecca.py 937줄 / chat-agent.js 876줄
+```
