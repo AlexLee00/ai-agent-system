@@ -24,7 +24,7 @@ const DOMAIN_DELAY_MS = 3_000;
 const ARXIV_RESULTS_PER_DOMAIN = 10;
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
-const MAX_DAILY_PROPOSALS = 3;
+const MAX_DAILY_PROPOSALS = 2;
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
