@@ -205,6 +205,9 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
 - [ ] Gemma 4: 자유형 보조 배치 (worker/blog research/video) — JSON 파이프라인 보류
+  - 26B 3회 테스트: JSON reason 반복·깨짐 (1/3 부분성공)
+  - 한국어 ✅ tool calling ✅ JSON strict ❌ 속도: 14→6→1.6초
+  - 다음: 8B vs 26B vs qwen2.5-7b 최종 비교표
 - [ ] 블로팀 Phase C SEO+GEO (04-14~18)
 
 ### P2 — 중기 (04-21 ~ 05-09)
@@ -437,8 +440,9 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
-| 2026-04-05 | GStack+Paperclip+픽셀오피스+자율고용 연구 반영. 코덱스43개→archive. CC종합 15섹션(GStack+Paperclip포함). TRACKER P1~P3에 GStack4+Paperclip7건 추가. 워커웹 유지+Paperclip거버넌스흡수 결정. 출처 18→26건. |
-| 2026-04-04 | Phase A 완료+CC유출연구+9팀딥분석+자율고용확산계획. 통합 우선순위 P0~P3 재정리. CC패턴14건+자율고용3단계+대규모파일분리5건. 연구4파일→1파일통합(163줄). |
+| 04-05 | Gemma4 26B JSON 3회 테스트: strict output 미통과 (reason 반복·깨짐). 자유형 한국어/보조 가능, 파이프라인용 보류. MLX 배치 재검토 대기 |
+| 04-05 | GStack+Paperclip+픽셀오피스+Hashimoto 연구→CC종합+TRACKER 통합. 코덱스43개 archive. 에이전트 90→113. 워커웹유지+Paperclip거버넌스흡수 |
+| 04-04 | Phase A 완료+CC유출연구+9팀딥분석+자율고용확산계획. 통합 우선순위 P0~P3 재정리. CC패턴14건+자율고용3단계+대규모파일분리5건. 연구4파일→1파일통합(163줄). |
 | 2026-04-03 | 69커밋/158파일/+13510줄. Phase6 스킬/MCP/도구 3계층동적선택. 113에이전트(+53). P1수정(hermes→swift+role정규화+팀격리). JSONB팀추적. 런타임셀렉터. 댓글자동화. LLM정규화. 워크플로우엔진. CLI4개. |
 | 2026-04-02 | 라이트 제안 반영: 신규 파일 6건 추적 추가 (experience-store, pickko-alerts-resolve, mainbot, filter, orchestrator scripts). 아키텍처 결정 7건 추가 (Phase 1~3, OAuth, 모델 재편성, Phase 4, n8n, self-improving, F7). 현재 과제 갱신. |
 | 2026-03-31 | 749줄→~200줄 대폭 압축. 03-19 이후 12일간 변화 반영. 맥미니→맥스튜디오, Ollama→MLX, Chronos Phase A, 문서 체계 v2, 블로팀 딥분석, 에러 해소 |
