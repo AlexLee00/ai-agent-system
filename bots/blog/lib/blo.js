@@ -382,9 +382,31 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   let preparedResearch = { ...researchData };
   if (needsBook) {
     const scheduledBook = preloaded.bookInfo;
-    if (scheduledBook?.book_title) {
-      preparedResearch.book_info = scheduledBook;
-      console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title}`);
+    if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
+      preparedResearch.book_info = {
+        title: scheduledBook.book_title,
+        author: scheduledBook.book_author || '',
+        isbn: scheduledBook.book_isbn,
+        source: 'schedule',
+      };
+      console.log(`[젬스] 스케줄 도서 정보 사용: ${scheduledBook.book_title} (ISBN: ${scheduledBook.book_isbn})`);
+    } else if (scheduledBook?.book_title) {
+      // ISBN 없는 스케줄 → resolveBookForReview로 보완
+      console.log(`[젬스] 스케줄 도서 ISBN 없음 → 검색으로 보완: ${scheduledBook.book_title}`);
+      try {
+        const book = await blogSkills.bookReviewBook.resolveBookForReview({ topic: scheduledBook.book_title });
+        if (book) {
+          preparedResearch.book_info = book;
+          if (scheduleId) {
+            const { updateBookInfo } = require('./schedule');
+            await updateBookInfo(scheduleId, { book_title: book.title, book_author: book.author, book_isbn: book.isbn });
+          }
+        } else {
+          console.warn('[젬스] 스케줄 도서 검색 보완 실패');
+        }
+      } catch (e) {
+        console.warn('[젬스] 스케줄 도서 검색 보완 에러:', e.message);
+      }
     } else {
       try {
         const skillInput = _buildBookReviewSkillInput(researchData);
