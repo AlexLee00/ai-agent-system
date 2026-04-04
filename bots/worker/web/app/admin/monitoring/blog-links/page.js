@@ -8,6 +8,7 @@ import AdminPageHero from '@/components/AdminPageHero';
 import { api } from '@/lib/api';
 
 export default function BlogPublishedUrlPage() {
+  const DEFAULT_LIMIT = 100;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -15,12 +16,13 @@ export default function BlogPublishedUrlPage() {
   const [payload, setPayload] = useState(null);
   const [selectedPostId, setSelectedPostId] = useState('');
   const [url, setUrl] = useState('');
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await api.get('/admin/monitoring/blog-published-urls');
+      const data = await api.get(`/admin/monitoring/blog-published-urls?limit=${limit}`);
       setPayload(data);
       setSelectedPostId((current) => {
         const pending = (data.rows || []).filter((row) => row.needs_url);
@@ -36,7 +38,7 @@ export default function BlogPublishedUrlPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [limit]);
 
   const rows = payload?.rows || [];
   const summary = payload?.summary || { total: 0, missingUrl: 0, scheduled: 0, published: 0 };
@@ -62,6 +64,7 @@ export default function BlogPublishedUrlPage() {
       const data = await api.post('/admin/monitoring/blog-published-urls', {
         post_id: Number(selectedPostId),
         url: url.trim(),
+        limit,
       });
       setPayload({ rows: data.rows || [], summary: data.summary || summary });
       setNotice(data.message || '블로그 발행 URL을 저장했습니다.');
@@ -84,7 +87,7 @@ export default function BlogPublishedUrlPage() {
         tone="slate"
         description="수동 발행한 네이버 블로그 URL을 운영 화면에서 바로 기록합니다. 기록된 URL은 내부 링킹과 발행 상태 판단의 기준이 됩니다."
         stats={[
-          { label: '최근 글', value: summary.total || 0, caption: '최근 20건 기준' },
+          { label: '최근 글', value: summary.total || 0, caption: `최근 ${limit}건 기준` },
           { label: '입력 필요', value: summary.missingUrl || 0, caption: 'published 또는 발행일이 지난 ready 글' },
           { label: '발행예정', value: summary.scheduled || 0, caption: '미래 publish_date + ready + URL 미입력' },
           { label: '발행 완료', value: summary.published || 0, caption: 'naver_url 기록 포함' },
@@ -102,10 +105,23 @@ export default function BlogPublishedUrlPage() {
               <p className="mt-1 text-sm text-slate-500">이미 발행된 글 중 URL이 비어 있는 경우만 입력 대상으로 보입니다. `ready` 상태 글은 발행예정 섹션에서 따로 확인합니다.</p>
               <p className="mt-1 text-xs text-slate-400">발행일이 오늘 이하인 `ready` 글은 실제 발행 확인이 필요한 대상으로 자동 승격됩니다.</p>
             </div>
-            <button type="button" className="btn-secondary text-sm" onClick={load} disabled={loading}>
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              새로고침
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                className="input-base h-10 min-w-[120px] text-sm"
+                value={limit}
+                onChange={(event) => setLimit(Number(event.target.value))}
+                disabled={loading || saving}
+              >
+                <option value={20}>최근 20건</option>
+                <option value={50}>최근 50건</option>
+                <option value={100}>최근 100건</option>
+                <option value={200}>최근 200건</option>
+              </select>
+              <button type="button" className="btn-secondary text-sm" onClick={load} disabled={loading}>
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                새로고침
+              </button>
+            </div>
           </div>
 
           <div>

@@ -935,7 +935,7 @@ async function buildWorkerMonitoringPayload(user) {
   };
 }
 
-async function buildBlogPublishedUrlPayload(limit = 20) {
+async function buildBlogPublishedUrlPayload(limit = 100) {
   const todayKst = kst.today();
   const rows = await pgPool.query('blog', `
     SELECT id, title, status, naver_url, publish_date, created_at
@@ -1849,7 +1849,11 @@ app.get('/api/admin/monitoring/blog-published-urls',
   requireRole('admin', 'master'),
   async (req, res) => {
     try {
-      res.json(await buildBlogPublishedUrlPayload(20));
+      const requestedLimit = Number.parseInt(String(req.query.limit || ''), 10);
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, 500)
+        : 100;
+      res.json(await buildBlogPublishedUrlPayload(limit));
     } catch (error) {
       res.status(500).json({
         error: '블로그 발행 URL 목록을 불러오지 못했습니다.',
@@ -1888,6 +1892,11 @@ app.post('/api/admin/monitoring/blog-published-urls',
 
       await markPublished(post.id, parsed.canonicalUrl);
 
+      const requestedLimit = Number.parseInt(String(req.query.limit || req.body.limit || ''), 10);
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, 500)
+        : 100;
+
       res.json({
         success: true,
         message: `블로그 URL을 기록했습니다: ${post.title}`,
@@ -1899,7 +1908,7 @@ app.post('/api/admin/monitoring/blog-published-urls',
           blog_id: parsed.blogId,
           log_no: parsed.logNo,
         },
-        ...(await buildBlogPublishedUrlPayload(20)),
+        ...(await buildBlogPublishedUrlPayload(limit)),
       });
     } catch (error) {
       res.status(500).json({
