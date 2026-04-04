@@ -14,6 +14,7 @@ const kst = require('../../../../packages/core/lib/kst');
 const ACTIVE_DOMAINS = ['neuron', 'gold-r', 'ink'];
 const MAX_EVALUATIONS_PER_RUN = 30;
 const EVALUATION_DELAY_MS = 1_000;
+const DURATION_WARNING_THRESHOLD_SEC = 300;
 
 function _sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,6 +145,7 @@ async function _generateWeeklyReport(papers) {
 async function run() {
   const startTime = Date.now();
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
+  await rag.initSchema();
 
   const allPapers = await _collectPapers();
   const unique = _dedupePapers(allPapers);
@@ -164,6 +166,9 @@ async function run() {
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
+  if (durationSec > DURATION_WARNING_THRESHOLD_SEC) {
+    console.warn(`[research-scanner] 실행 시간 경고: ${durationSec}초 (기준 ${DURATION_WARNING_THRESHOLD_SEC}초 초과)`);
+  }
   console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${highRelevanceCount}건 후보 알림, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
   return {
