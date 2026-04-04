@@ -382,3 +382,248 @@ P3: Doctor → KAIROS 데몬으로 확장
   □ 비디오팀 (11,652줄) — Twick + RED/BLUE 검증
   □ 연구/감정/데이터팀 (신규) — 초기 설계 검토
 ```
+
+
+---
+
+## 5. 워커팀 심층 분석 (36,094줄/288파일)
+
+### 5-1. 구조 개요
+
+```
+워커팀 = SaaS 포털 + 에이전트 오피스
+  lib/ (4,356줄):
+    chat-agent.js (876줄) — 채팅 에이전트 (가장 큰 파일!)
+    llm-api-monitoring.js (601줄) — LLM API 모니터링
+    approval.js (403줄) — 승인 워크플로우
+    ai-feedback-service.js (249줄) — AI 피드백
+    menu-policy.js (226줄) — 메뉴 정책
+    schedule-ai.js (166줄) — 일정 AI
+    attendance-ai.js (145줄) — 출석 AI
+
+  web/ (225 JS파일):
+    Next.js 앱 (에이전트 오피스, 영상 편집기, 채팅, 매출 등)
+    admin/agent-office — 90에이전트 관리 대시보드!
+    video/editor — 비디오 편집기 UI
+    21+ 마이그레이션 파일
+```
+
+### 5-2. CC 비교
+
+```
+CC에 없는 것 (우리 강점!):
+  ✅ 에이전트 오피스 — 시각적 에이전트 관리 대시보드!
+  ✅ approval.js — 승인 워크플로우 (CC의 mailbox 패턴 유사!)
+  ✅ llm-api-monitoring — LLM 사용량 모니터링 (CC의 관측성)
+  ✅ 마이그레이션 21+개 — 체계적 DB 스키마 관리
+
+CC에서 배울 것:
+  ❌ chat-agent.js 876줄 — 대규모 파일 안티패턴! (CC print.ts 5,594줄 교훈)
+  ❌ 에이전트 오피스에 CC 패턴 메트릭 없음
+     → 컨텍스트 사용량, 캐시 히트율, 실패율, 비용 시각화 필요
+  ❌ 채팅에서 에이전트 위임 없음 (단일 chat-agent 처리)
+
+개선안:
+  P1: chat-agent.js 리팩토링 (876줄 → 3파일)
+     chat-router.js — 의도 분류 + 라우팅
+     chat-handler.js — 응답 생성
+     chat-state.js — 대화 상태 관리
+  P2: 에이전트 오피스에 CC 메트릭 대시보드 추가
+     - 에이전트별 토큰 사용량 그래프
+     - 실패율 + 평균 응답시간 차트
+     - 경쟁 결과 승률 시각화
+  P2: approval.js → CC mailbox 패턴으로 강화
+     현재: 단순 승인/거부
+     개선: 승인 대기열 + 자동 만료 + 에스컬레이션
+```
+
+---
+
+## 6. 스카팀 심층 분석 (58,238줄/294파일) ★ 가장 큰 코드베이스!
+
+### 6-1. 구조 개요
+
+```
+Python 코어 (4,971줄/8파일):
+  forecast.py (2,047줄!) — 매출 예측 ★ 가장 큰 단일 파일!
+  rebecca.py (937줄) — 네이버 예약 모니터링
+  eve.py (637줄) — 이브 에이전트
+  eve_crawl.py (589줄) — 크롤링
+  forecast_health.py (345줄) — 예측 헬스체크
+  etl.py (268줄) — 데이터 ETL
+  weather.py (71줄) — 날씨 데이터
+
+Node.js 보조:
+  lib/runtime-config.js (92줄)
+
++ reservation 봇 (22,397줄/90파일): 예약 관리
+```
+
+### 6-2. CC 비교
+
+```
+CC에서 배울 것:
+  ❌ forecast.py 2,047줄!!! — 최대 안티패턴!
+     CC print.ts 5,594줄과 동일 문제
+     → 분리 시급: forecast_model.py + forecast_api.py + forecast_viz.py
+  ❌ Python↔Node 혼합 — 통신 오버헤드, 디버깅 어려움
+  ❌ 컨텍스트 관리 없음 (예약 모니터링 장시간 실행)
+  ❌ 실패 복구 패턴 약함 (rebecca 크롤링 실패 시?)
+
+CC에 없는 강점:
+  ✅ 실제 비즈니스 운영 자동화! (CC는 코딩 도구만)
+  ✅ ETL 파이프라인 (etl.py)
+  ✅ 매출 예측 ML (forecast.py)
+
+개선안:
+  P1: forecast.py 2,047줄 → 3파일 분리
+     forecast_model.py — ML 모델 로직
+     forecast_api.py — API 엔드포인트
+     forecast_report.py — 리포트 생성
+  P2: Python↔Node 인터페이스 명확화
+     → JSON-RPC 또는 HTTP API로 통신 표준화
+     → 현재: 혼합 호출 → 표준 인터페이스
+  P2: rebecca.py 크롤링 실패 복구 강화
+     → MAX_CONSECUTIVE_FAILURES 패턴 적용
+     → 실패 시 Doctor 팀에 알림
+  P3: 예약 모니터링 컨텍스트 관리
+     → 장시간 실행 시 상태 요약 + 정리
+```
+
+---
+
+## 7. 비디오팀 심층 분석 (11,652줄/48파일)
+
+### 7-1. 구조 개요
+
+```
+핵심 파이프라인:
+  run-pipeline.js (810줄) — 전체 파이프라인 실행
+  edl-builder.js (971줄) — EDL(편집 결정 목록) 생성
+  scene-indexer.js (575줄) — 장면 인덱싱
+  narration-analyzer.js (504줄) — 나레이션 분석
+  sync-matcher.js (463줄) — 동기화 매칭
+  step-proposal-engine.js (439줄) — 편집 단계 제안
+  video-rag.js (486줄) — 비디오 RAG
+
+품질 검증:
+  critic-agent.js (570줄) — 비평 에이전트 (RED 역할!)
+  refiner-agent.js (670줄) — 개선 에이전트 (BLUE 역할!)
+```
+
+### 7-2. CC 비교
+
+```
+CC 패턴과 매우 유사한 구조!:
+  ✅ critic-agent = CC의 "약한 작업을 승인하지마" 패턴!
+  ✅ refiner-agent = CC의 워커 에이전트 (수정 전담)
+  ✅ run-pipeline = CC의 coordinatorMode (파이프라인 조율)
+  ✅ video-rag = 경험 학습 (CC의 메모리 패턴)
+
+CC에서 배울 것:
+  ❌ critic/refiner 판단이 코드 기반 (프롬프트 기반 아님)
+  ❌ 병렬 처리 약함 (장면 분석 순차)
+  ❌ 컨텍스트 관리 없음 (영상 메타데이터 누적)
+  ❌ edl-builder 971줄 — 분리 후보
+
+개선안:
+  P1: scene-indexer 병렬화 (장면별 독립 분석)
+     const scenes = await Promise.allSettled(
+       segments.map(s => analyzeScene(s))
+     );
+  P2: critic-agent를 프롬프트 기반으로 전환
+     → 현재: 코드 규칙으로 품질 판단
+     → 개선: LLM(gemma4) 프롬프트로 품질 판단 (더 유연!)
+  P2: video-rag 강화 (편집 패턴 학습)
+     → "이전 유사 영상에서 효과적이었던 편집 패턴" RAG 검색
+  P3: Gemma 4 멀티모달 활용 (이미지/비디오 이해)
+```
+
+---
+
+## 8. 신규팀 분석 (연구/감정/데이터)
+
+### 8-1. 연구팀 (15에이전트)
+
+```
+CC 패턴 적용 기회:
+  ✅ KAIROS /dream 패턴 — 연구 결과 야간 증류에 최적!
+  ✅ Coordinator-Worker — 여러 연구원이 병렬 조사
+  ✅ Progressive Disclosure — 논문 검색 → 관련 논문만 상세 로드
+
+설계 제안:
+  frame(팀장) → 코디네이터 프롬프트 기반
+  연구원 에이전트 → 워커 (arXiv, GitHub, 논문 검색)
+  야간 증류 → 하루 연구 결과 자동 정리
+  Standing Orders → "이 분야에서 이 패턴이 효과적" 자동 규칙화
+```
+
+### 8-2. 감정팀 (10에이전트)
+
+```
+CC 패턴 적용 기회:
+  ✅ 4티어 권한 — 법원 문서 접근 권한 엄격 필요!
+  ✅ Strict Write Discipline — 감정 결과 정확성 최우선
+  ✅ mailbox 패턴 — 감정 판단은 반드시 전문가 승인
+
+설계 제안:
+  briefing(팀장) → 코디네이터 (마스터 승인 필수)
+  분석 에이전트 → 워커 (데이터 분석, 코드 분석)
+  모든 출력에 Strict Write → 검증 후에만 저장
+  approval-queue 적용 → 감정 결과 마스터 최종 승인
+```
+
+### 8-3. 데이터팀 (6에이전트)
+
+```
+CC 패턴 적용 기회:
+  ✅ MicroCompact — 대용량 데이터 처리 시 컨텍스트 관리
+  ✅ Progressive Disclosure — 데이터셋 요약 → 상세 분석 순서
+  ✅ Build to Delete — 데이터 파이프라인 모듈화
+
+설계 제안:
+  pivot(팀장) → 데이터 파이프라인 조율
+  분석 에이전트 → ETL + 시각화 + 리포트
+  대용량 데이터 처리 시 컨텍스트 압축 필수
+```
+
+---
+
+## 9. 전체 시스템 횡단 개선 종합
+
+```
+┌──────────┬────────────────────────────────┬──────┐
+│ 우선순위  │ 개선사항                        │ 영향 │
+├──────────┼────────────────────────────────┼──────┤
+│ P0 즉시  │ 연속실패제한 (llm-fallback)      │ 전팀 │
+│ P0 즉시  │ Strict Write (rag.js)          │ 전팀 │
+├──────────┼────────────────────────────────┼──────┤
+│ P1 단기  │ 대규모파일 분리                 │ 4팀  │
+│          │  forecast.py 2,047줄            │ 스카 │
+│          │  chat-agent.js 876줄            │ 워커 │
+│          │  edl-builder.js 971줄           │ 비디오│
+│          │  blo.js 991줄 (진행중!)         │ 블로 │
+│ P1 단기  │ 독립노드 병렬화                 │ 루나 │
+│ P1 단기  │ 야간회고 (night-handler)         │ 전팀 │
+│ P1 단기  │ Doctor 예방적 스캔              │ 클로드│
+├──────────┼────────────────────────────────┼──────┤
+│ P2 중기  │ 에이전트오피스 CC메트릭          │ 워커 │
+│ P2 중기  │ Python↔Node 인터페이스 표준화    │ 스카 │
+│ P2 중기  │ critic-agent 프롬프트 전환       │ 비디오│
+│ P2 중기  │ approval→mailbox 패턴 강화      │ 워커 │
+│ P2 중기  │ autofix 3단계 권한              │ 클로드│
+│ P2 중기  │ context-compactor MicroCompact  │ 전팀 │
+├──────────┼────────────────────────────────┼──────┤
+│ P3 장기  │ 프롬프트 기반 오케스트레이션      │ 전팀 │
+│ P3 장기  │ AgentTool 서브에이전트 스폰      │ 전팀 │
+│ P3 장기  │ KAIROS 데몬                     │ 전팀 │
+│ P3 장기  │ Build to Delete 아키텍처         │ 전팀 │
+└──────────┴────────────────────────────────┴──────┘
+
+대규모 파일 안티패턴 경고 (CC print.ts 5,594줄 교훈):
+  forecast.py   2,047줄 ← 최우선 분리!
+  blo.js          991줄 ← Phase A-3 진행중
+  edl-builder.js  971줄 ← P1 분리
+  rebecca.py      937줄 ← P2 분리
+  chat-agent.js   876줄 ← P1 분리
+```
