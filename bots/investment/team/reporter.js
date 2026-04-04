@@ -18,7 +18,6 @@ import { fileURLToPath } from 'url';
 import { createRequire }  from 'module';
 import * as db          from '../shared/db.js';
 import { loadSecrets, getMarketExecutionModeInfo } from '../shared/secrets.js';
-import { publishToMainBot } from '../shared/mainbot-client.js';
 import { tracker }      from '../shared/cost-tracker.js';
 import { buildAccuracyReport } from '../shared/analyst-accuracy.js';
 
@@ -29,7 +28,6 @@ const kst      = _require('../../../packages/core/lib/kst');
 const { postAlarm } = _require('../../../packages/core/lib/openclaw-client.js');
 const {
   buildNoticeEvent,
-  buildEventPayload,
   renderNoticeEvent,
   buildReportEvent,
   renderReportEvent,

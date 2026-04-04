@@ -1,9 +1,8 @@
 'use strict';
 
-const { sendTelegram, tryTelegramSend, flushPendingTelegrams } = require('./telegram');
+const { sendTelegram, flushPendingTelegrams } = require('./telegram');
 
 module.exports = {
   sendTelegram,
-  tryTelegramSend,
   flushPendingTelegrams,
 };
