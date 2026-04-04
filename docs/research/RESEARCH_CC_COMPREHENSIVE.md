@@ -515,3 +515,156 @@ Phase 3: AI Scientist 패턴 도입
 [41] From AI for Science to Agentic Science: arxiv.org/html/2508.14111v1
 [42] AAMAS 2026: arxiv.org/list/cs.MA/current
 [43] AI Agent Papers Weekly: github.com/masamasa59/ai-agent-papers
+
+
+---
+
+## §17-2. 자율 연구 에이전트 심층 분석 (추가 연구)
+
+### 핵심 프레임워크 7개 비교
+
+**Agent Laboratory** — 3단계 파이프라인: 문헌 리뷰→실험→리포트 작성.
+PhD/Postdoc 에이전트 역할 분리. mle-solver(실험자동화)+paper-solver(보고서생성).
+o1-preview 구동 시 최고 품질. 비용 84% 절감 (vs 기존 자율 연구).
+Co-pilot 모드: 사람 피드백을 단계별로 주입. 오픈소스.
+
+**AgentRxiv** — 협력적 자율 연구. 여러 Agent Laboratory가 공유 arXiv에 논문 게시.
+병렬 연구: wall-clock 시간 단축, 하지만 중복 실험으로 비용 증가.
+핵심 통찰: 개별 연구실이 아닌 "연구 커뮤니티" 시뮬레이션.
+
+**AI-Researcher** — 최소 입력(참조 논문 10~15개)으로 전체 파이프라인 자동화.
+Knowledge Acquisition Agent: arXiv+GitHub 자동 탐색.
+GitHub 저장소 5개+ 자동 선별 (최신성+스타수+코드품질 필터).
+Docker 컨테이너화: 안전한 실험 환경, 자율 패키지 설치.
+
+**STELLA** — 자기진화 바이오의학 에이전트. 도구+추론 템플릿 라이브러리 동적 확장.
+운영 경험 증가 → 정확도 2배! 우리 Standing Orders/RAG 패턴과 동일!
+
+**ResearchAgent** — 리뷰 에이전트 패널이 아이디어를 점진적 개선.
+우리 다윈팀 proof-r+skeptic-r+skeptic-d 리뷰어 3중 구조와 유사!
+
+**O-Researcher** — 멀티에이전트 딥 리서치. Planner+Tool-User+Summarizer.
+쿼리 분해 → 서브쿼리별 병렬 에이전트 → 서브리포트 → 통합.
+SFT+RL 학습으로 오픈소스 모델도 deep research 가능.
+
+**Agentic Hybrid RAG** — arXiv/PubMed/Google Scholar API 자동 수집.
+Neo4j 지식그래프 + FAISS 벡터스토어 하이브리드.
+동적 검색 모드 선택 (GraphRAG vs VectorRAG). 우리 pgvector와 결합 가능!
+
+### 우리 다윈팀 현재 vs 목표
+
+현재 다윈팀 (22에이전트):
+  searcher 9명: 도메인별 서칭 (AI/투자/콘텐츠/법률/데이터/영상/시스템/마케팅/최신성)
+  builder 2명: edison(프로토타입), graft(적용)
+  reviewer 3명: proof-r, skeptic-r, skeptic-d (3중 검증)
+  기타: darwin(총괄), scholar(심층), mentor(교육), medic(진단), weaver(통합)
+  
+  문제: 모든 searcher가 수동 요청에만 반응!
+  → 마스터/메티가 지시하지 않으면 아무것도 안 함!
+
+목표: STELLA 패턴 — "운영 경험 → 자기진화 → 정확도 2배"
+
+### 빠른 적용 타임라인 (2주 스프린트)
+
+```
+━━━ Sprint 1 (04-07 ~ 04-11, 5일) ━━━
+
+Day 1-2: arXiv API 자동 스캔 구현
+  대상: neuron(AI) + gold-r(투자) + ink(콘텐츠)
+  구현: cron job (매일 06:00) → arXiv API 호출
+    → 키워드별 최신 20건 수집
+    → 제목+요약+URL을 pgvector에 저장
+  키워드 예시:
+    neuron: "multi-agent system", "LLM agent", "tool use"
+    gold-r: "algorithmic trading", "portfolio optimization"
+    ink: "content generation", "SEO optimization"
+  난이도: ★★☆ (arXiv API는 무료+간단)
+
+Day 3-4: 자동 요약 + 적합성 평가
+  weaver가 수집된 논문 요약 자동 생성 (qwen2.5-7b)
+  proof-r이 "우리 시스템 적용 가능성" 0~10점 자동 평가
+  7점 이상 → 텔레그램 리포트로 마스터에게 알림
+
+Day 5: 주간 리서치 리포트 자동 생성
+  weaver가 1주간 수집 결과를 종합
+  → docs/research/WEEKLY_RESEARCH_REPORT.md 자동 갱신
+  → 텔레그램으로 주간 요약 발송
+
+━━━ Sprint 2 (04-14 ~ 04-18, 5일) ━━━
+
+Day 6-7: 적용 프로토타입 자동 생성
+  graft가 7점+ 논문 중 "구현 가능" 판단 건에 대해
+  → edison에게 프로토타입 코드 요청
+  → 최소한 "이런 식으로 적용 가능" 스켈레톤
+
+Day 8-9: RAG 경험 저장 연동
+  수집→평가→적용 사이클의 결과를 pgvector에 저장
+  → 성공 패턴 학습 (Strict Write: 성공만 저장!)
+  → Standing Orders 자동 승격 (3회 반복 패턴)
+
+Day 10: 자기진화 루프 완성
+  STELLA 패턴: 경험 축적 → 검색 키워드 자동 개선
+  → 다음 주 arXiv 스캔이 더 정확해짐!
+```
+
+
+### 적정성 판단 기준
+
+```
+Sprint 1 이후 적정성 판정 (04-11):
+  ① arXiv API 호출 성공률 > 95%
+  ② 일일 수집 논문 수: 20건+ / 에이전트
+  ③ 적합성 평가 소요시간: < 30초/건 (qwen2.5-7b)
+  ④ 7점+ 논문 발견율: 주당 3~5건 예상
+  ⑤ 텔레그램 리포트 정상 발송
+
+  GREEN → Sprint 2 진행
+  YELLOW → 키워드 튜닝 후 1주 연장
+  RED → 수동 모드로 전환
+```
+
+### 핵심 차별점: AI Scientist vs 우리
+
+```
+  AI Scientist: 범용 ML 연구 → 논문 작성까지
+  우리 다윈팀: 우리 시스템 개선에 특화!
+
+  AI Scientist가 못 하는 것:
+    × 우리 113에이전트 구조를 모름
+    × 우리 코드베이스에 적용할 수 없음
+    × 우리 비즈니스 도메인(투자/블로그/스카/감정) 특화 불가
+
+  우리만 할 수 있는 것:
+    ✅ 논문에서 패턴 추출 → 우리 에이전트에 직접 적용
+    ✅ 실험 결과를 실제 운영 데이터로 검증
+    ✅ Standing Orders로 성공 패턴 영구화
+    ✅ 10팀 9도메인 크로스 적용 (투자 패턴→블로그 적용 등)
+```
+
+### 다윈팀 역할 재정의
+
+```
+현재 (수동):
+  마스터/메티 → "이것 좀 조사해줘" → searcher → 결과 반환
+
+목표 (자율):
+  cron 06:00 → searcher 9명 병렬 arXiv 스캔
+  → weaver 요약 → proof-r 평가 (0~10점)
+  → 7점+ → graft "적용 방안 초안" → edison "프로토타입"
+  → mentor "에이전트 재교육" → medic "실패 진단"
+  → pgvector 저장 → 다음 사이클 키워드 개선
+  = 완전 자율 연구 루프!
+
+마스터 역할: "이것 조사해" → "주간 리포트 확인 + 적용 승인"
+```
+
+---
+
+## 출처 (추가분)
+
+[44] Agent Laboratory: arxiv.org/pdf/2501.04227 (o1-preview, 84% 비용절감)
+[45] AgentRxiv: arxiv.org/html/2503.18102v1 (협력적 자율 연구)
+[46] AI-Researcher: arxiv.org/html/2505.18705v1 (10~15 참조논문→전체파이프라인)
+[47] Deep Research Survey: arxiv.org/html/2508.12752v1 (planning→web→report)
+[48] Agentic Hybrid RAG: arxiv.org/html/2508.05660v1 (Neo4j+FAISS+arXiv API)
+[49] O-Researcher: arxiv.org/pdf/2601.03743 (멀티에이전트 딥리서치, SFT+RL)

@@ -443,6 +443,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | 다윈팀 자율연구 심층연구: 7프레임워크(AgentLab/AgentRxiv/AI-Researcher/STELLA/O-Researcher/HybridRAG) + 2주스프린트 설계. CC종합 §17-2추가, 출처44~49(6건). 총 610줄49출처 |
 | 04-05 | CC종합 §15~17 추가: 워커웹+Paperclip+픽셀오피스 3계층 통합설계 + TradingView MCP 2접근법 + 다윈팀 자율연구 3Phase. 출처 31~43(13건). 10팀113에이전트 전수 확인 |
 | 04-05 | 알람 Phase3 완료(4214825): blo+curriculum+reporter+approval→postAlarm. Gemma4 주석처리(보류). Phase4(deprecated+grep검증) 남음 |
 | 04-05 | Gemma4 시범배치 최종: 26B timeout, 8B도 실전 15초+ → 일시 보류. 주석 처리+MLX 대기. 알람 Phase1 완료(스카복구), Phase2 완료(클로드), Phase3 진행중(블로+루나+워커) |
