@@ -12,15 +12,16 @@ const keywordEvolver = require('./keyword-evolver');
 const monitor = require('./research-monitor');
 const rag = require('../../../../packages/core/lib/rag');
 const hiringContract = require('../../../../packages/core/lib/hiring-contract');
+const registry = require('../../../../packages/core/lib/agent-registry');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
 const kst = require('../../../../packages/core/lib/kst');
 
-const MAX_EVALUATIONS_PER_RUN = 50;
+const MAX_EVALUATIONS_PER_RUN = 40;
 const EVALUATION_DELAY_MS = 1_000;
 const DURATION_WARNING_THRESHOLD_SEC = 300;
-const DOMAIN_DELAY_MS = 5_000;
-const ARXIV_RESULTS_PER_DOMAIN = 15;
+const DOMAIN_DELAY_MS = 3_000;
+const ARXIV_RESULTS_PER_DOMAIN = 10;
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
 const MAX_DAILY_PROPOSALS = 3;
@@ -45,9 +46,34 @@ function _dedupePapers(papers) {
 
 async function _selectSearchers() {
   const domains = Object.keys(arxivClient.DOMAIN_KEYWORDS);
+  let teamAgents = [];
+
+  try {
+    teamAgents = await registry.getAgentsByTeam('darwin');
+  } catch (err) {
+    console.warn(`[research-scanner] 다윈 agent registry 조회 실패: ${err.message}`);
+  }
+
   const selected = [];
 
   for (const domain of domains) {
+    const exactMatch = teamAgents.find((agent) => {
+      const agentName = String(agent?.name || '').trim().toLowerCase();
+      return agentName === String(domain).trim().toLowerCase()
+        && !selected.some((item) => item.name === agent.name);
+    });
+
+    if (exactMatch) {
+      selected.push({
+        name: exactMatch.name,
+        domain,
+        score: Number(exactMatch.score || 0),
+        hired: true,
+        exact: true,
+      });
+      continue;
+    }
+
     try {
       const best = await hiringContract.selectBestAgent('searcher', 'darwin', {
         taskHint: domain,
@@ -55,13 +81,13 @@ async function _selectSearchers() {
         mode: 'balanced',
       });
       if (best) {
-        selected.push({ name: best.name, domain, score: Number(best.score || 0), hired: true });
+        selected.push({ name: best.name, domain, score: Number(best.score || 0), hired: true, exact: false });
         continue;
       }
     } catch (err) {
       console.warn(`[research-scanner] searcher 고용 실패 (${domain}): ${err.message}`);
     }
-    selected.push({ name: domain, domain, score: 0, hired: false });
+    selected.push({ name: domain, domain, score: 0, hired: false, exact: false });
   }
 
   console.log(`[research-scanner] 고용된 searcher: ${selected.map((item) => `${item.name}(${item.domain})`).join(', ')}`);
