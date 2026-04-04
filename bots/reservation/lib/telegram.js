@@ -29,7 +29,8 @@ const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
 
 /**
- * @deprecated postAlarm()으로 통일됨. 직접 호출하지 말 것. (2026-04-05)
+ * @deprecated 2026-04-05 postAlarm()으로 통일됨. 직접 호출하지 말 것.
+ * 재개 조건: postAlarm 장애 시 직접 Bot API 폴백이 꼭 필요할 때만.
  * Telegram Bot API로 메시지 1회 전송 시도
  * @returns {Promise<boolean>} 성공 여부
  */
@@ -150,4 +151,4 @@ async function flushPendingTelegrams() {
   return false;
 }
 
-module.exports = { sendTelegram, tryTelegramSend, flushPendingTelegrams };
+module.exports = { sendTelegram, tryTelegramSend, flushPendingTelegrams }; // deprecated compatibility export
