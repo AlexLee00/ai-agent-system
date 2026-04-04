@@ -137,4 +137,32 @@
   packages/core/lib/runtime-selector.js — Hub fallback 보강
 
 인수인계: docs/OPUS_FINAL_HANDOFF.md (본 문서)
+
+연구:
+  docs/research/RESEARCH_CLAUDE_CODE_LEAK.md (391줄) — CC vs TJ 아키텍처 비교
+  docs/research/RESEARCH_TEAM_ARCHITECTURE_REVIEW.md (349줄) — 9팀 전수 분석
+  docs/research/RESEARCH_AGENT_HARNESS.md (417줄) — 에이전트 하네스 & 에이전틱 AI 심층 연구
+```
+
+---
+
+## 에이전트 하네스 연구 핵심 (신규!)
+
+```
+"에이전트 루프는 20줄. 하네스는 512,000줄." — CC에서 증명
+
+5대 난제 + CC 해법 + 우리 적용:
+  ① 권한: "시도 vs 허용" 분리 → 스킬별 permission 필드
+  ② 도구: "80% 제거하니 결과 좋아짐" → 팀별 도구 서브셋 제한
+  ③ 서브에이전트: 격리 워크트리 + 캐시 공유 → AgentTool 패턴
+  ④ 메모리: Strict Write Discipline + autoDream → 성공시만 기록 + 야간 증류
+  ⑤ 컨텍스트: 4단계 압축 → context-compactor.js
+
+적용 로드맵 11건:
+  P0: 연속실패제한 + Strict Write Discipline
+  P1: 도구권한 + 야간증류 + Progressive Disclosure
+  P2: 컨텍스트압축 + 메일박스 + AgentTool
+  P3: AutoCompact + 프롬프트오케스트레이션 + Build to Delete
+
+상세: docs/research/RESEARCH_AGENT_HARNESS.md 참조
 ```
