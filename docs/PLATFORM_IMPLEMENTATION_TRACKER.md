@@ -209,7 +209,8 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
   - 라이트(write): 일일 리포트 한국어 인사이트 추가
   - 마에스트로(maestro): 블로그 주제 추천 한국어 생성
   - 레베카(rebecca): 매출 리포트 한국어 인사이트 추가
-  - 26B 3회 테스트: JSON ❌ / 한국어 ✅ / tool calling ✅
+  - 구조: ✅ 성공 (try-catch+timeout+폴백 안전!)
+  - 26B: ❌ 실패 (timeout 초과, 너무 느림) → 8B로 교체!
   - 판정: GREEN(>90%성공+4+/5품질)→확대 / YELLOW→연장 / RED→철수
   - 코덱스: CODEX_GEMMA4_PILOT.md
 - [ ] 블로팀 Phase C SEO+GEO (04-14~18)
@@ -444,6 +445,8 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | Gemma4 26B 시범배치: 구조 ✅ 성공(안전성 달성), 모델 ❌ 실패(timeout). 26B→8B(gemma4:latest) 교체 결정. 코덱스 구현 잘함 |
+| 04-05 | 알람 체계 통일 설계: 4경로→postAlarm 단일 API. 스카팀 근본 원인 = includeTelegram:false+sender누락→타겟0개 |
 | 04-05 | Gemma4 26B JSON 3회 테스트: strict output 미통과 (reason 반복·깨짐). 자유형 한국어/보조 가능, 파이프라인용 보류. MLX 배치 재검토 대기 |
 | 04-05 | GStack+Paperclip+픽셀오피스+Hashimoto 연구→CC종합+TRACKER 통합. 코덱스43개 archive. 에이전트 90→113. 워커웹유지+Paperclip거버넌스흡수 |
 | 04-04 | Phase A 완료+CC유출연구+9팀딥분석+자율고용확산계획. 통합 우선순위 P0~P3 재정리. CC패턴14건+자율고용3단계+대규모파일분리5건. 연구4파일→1파일통합(163줄). |
