@@ -133,3 +133,53 @@ Phase B-1: JSONB 비파괴적 전환 완료
 코덱스: docs/codex/ (PHASE_A3, BOOK_REVIEW_ISBN_FIX, IMAGE_QUALITY 등)
 구현: packages/core/lib/blog-utils.js, bots/blog/lib/img-gen.js 외
 ```
+
+
+---
+
+## ★ 다음 세션 즉시 작업 (미완료!)
+
+```
+이번 세션에서 발견했지만 미완료된 핵심 작업:
+
+1. CC 종합 문서 보강:
+   ❌ 자율고용 3단계 상세 추가 (현재 1줄 언급만)
+   ❌ 에이전트 픽셀 오피스 연구 결과 추가
+
+2. PLATFORM_IMPLEMENTATION_TRACKER.md 업데이트:
+   ❌ 픽셀 오피스 로드맵 추가
+   ❌ 전체 문서↔코드 비교 (구현됨/구현중/미구현 분류)
+   ❌ 우선순위 재조정
+
+3. 전체 문서 정리 (대규모 작업!):
+   ❌ docs/ 85+파일 전수 확인
+   ❌ 완료된 코덱스 → archive/ 이동
+   ❌ docs/ 루트 문서 정리
+```
+
+---
+
+## 에이전트 픽셀 오피스 서칭 결과 (신규!)
+
+```
+2026년 2~3월 트렌드! 주요 프로젝트 5개:
+  ① Pixel Agents (VS Code, Claude Code 연동, 서브에이전트 시각화)
+  ② AgentOffice (Phaser+Ollama, 자율고용=우리 hiring-contract!)
+  ③ Star-Office-UI (OpenClaw 픽셀 대시보드)
+  ④ Pixel Agent Desk (Electron, 활동 히트맵, 토큰 분석)
+  ⑤ Mission Control (Monitor Grid + Pixel Office)
+
+우리 보유: DotCharacter SVG ✅ / 에이전트 오피스 ✅ / 90에이전트 ✅
+우리 미보유: 실시간 활동 시각화 ❌ / 레이아웃 에디터 ❌ / 토큰 헬스바 ❌
+```
+
+---
+
+## 핵심 참조 문서
+
+```
+추적: docs/PLATFORM_IMPLEMENTATION_TRACKER.md (410줄) ← 구현 추적 마스터!
+전략: docs/strategy/blog-strategy-v2.md (382줄)
+연구: docs/research/RESEARCH_CC_COMPREHENSIVE.md (163줄)
+인수인계: docs/OPUS_FINAL_HANDOFF.md (본 문서)
+```
