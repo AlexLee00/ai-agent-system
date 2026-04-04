@@ -13,10 +13,10 @@
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { getSecret } = require('./secrets');
+const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
 const {
   buildNoticeEvent,
   renderNoticeEvent,
-  publishEventPipeline,
 } = require(path.join(__dirname, '../../../packages/core/lib/reporting-hub'));
 const {
   markWorkerFeedbackConfirmed,
@@ -339,22 +339,11 @@ async function sendApprovalRequest({ chatId, requestId, action, requesterName, p
   const text = renderNoticeEvent(notice) || _buildApprovalText(requestId, action, requesterName, payload);
 
   try {
-    await publishEventPipeline({
-      event: {
-        ...notice,
-        message: text,
-      },
-      targets: [{
-        type: 'telegram_api',
-        token,
-        chatId,
-        parseMode: 'HTML',
-        replyMarkup: keyboard,
-        policy: {
-          cooldownMs: 30 * 1000,
-          key: `worker-approval:${requestId}`,
-        },
-      }],
+    await postAlarm({
+      message: text,
+      team: 'general',
+      alertLevel: notice.alert_level || 2,
+      fromBot: 'approval',
     });
   } catch (e) {
     console.warn('[approval] 텔레그램 발송 실패:', e.message);

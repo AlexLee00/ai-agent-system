@@ -57,14 +57,12 @@ const { createMessage }                             = require('../../../packages
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
 const env                                           = require('../../../packages/core/lib/env');
-const tg                                            = require('../../../packages/core/lib/telegram-sender');
+const { postAlarm }                                 = require('../../../packages/core/lib/openclaw-client');
 const {
   buildReportEvent,
   renderReportEvent,
   buildNoticeEvent,
   renderNoticeEvent,
-  publishEventPipeline,
-  buildSeverityTargets,
 }                                                   = require('../../../packages/core/lib/reporting-hub');
 const stateBus                                      = require('../../../bots/reservation/lib/state-bus');
 const pipelineStore                                 = require('./pipeline-store');
@@ -318,16 +316,11 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
       });
       await runIfOps(
         'blog-tg',
-        () => publishEventPipeline({
-      event: { ...notice, message: renderNoticeEvent(notice) || msg },
-      targets: buildSeverityTargets({
-        event: notice,
-        topicTeam: 'blog',
-        includeQueue: false,
-        includeTelegram: false,
-        includeN8n: false,
-      }),
-      policy: { cooldownMs: 30 * 60_000 },
+        () => postAlarm({
+          message: renderNoticeEvent(notice) || msg,
+          team: 'blog',
+          alertLevel: notice.alert_level || 2,
+          fromBot: 'blog-blo',
         }),
         () => console.log('[DEV] 텔레그램 생략')
       );
@@ -627,16 +620,11 @@ async function _sendDailyReport(results, traceCtx) {
   const renderedReport = renderReportEvent(reportEvent) || reportLines.join('\n');
   await runIfOps(
     'blog-tg',
-    () => publishEventPipeline({
-      event: { ...reportEvent, message: renderedReport },
-      targets: buildSeverityTargets({
-        event: reportEvent,
-        sender: tg,
-        topicTeam: 'blog',
-        includeQueue: false,
-        includeN8n: false,
-      }),
-      policy: { cooldownMs: 30 * 60_000 },
+    () => postAlarm({
+      message: renderedReport,
+      team: 'blog',
+      alertLevel: reportEvent.alert_level || 1,
+      fromBot: 'blog-blo',
     }),
     () => console.log('[DEV] 텔레그램 생략\n' + renderedReport)
   ).catch(e => console.warn('[블로] 텔레그램 발송 실패:', e.message));
@@ -659,15 +647,11 @@ async function _sendDailyReport(results, traceCtx) {
     });
     await runIfOps(
       'blog-tg-err',
-      () => publishEventPipeline({
-        event: { ...errNotice, message: renderNoticeEvent(errNotice) || errMsg },
-        targets: buildSeverityTargets({
-          event: errNotice,
-          sender: tg,
-          topicTeam: 'claude-lead',
-          includeQueue: false,
-        }),
-        policy: { cooldownMs: 10 * 60_000 },
+      () => postAlarm({
+        message: renderNoticeEvent(errNotice) || errMsg,
+        team: 'claude',
+        alertLevel: errNotice.alert_level || 3,
+        fromBot: 'blog-blo',
       }),
       () => {}
     ).catch(() => {});
