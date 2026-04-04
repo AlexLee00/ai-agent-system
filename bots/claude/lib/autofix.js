@@ -23,12 +23,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
-const {
-  buildNoticeEvent,
-  renderNoticeEvent,
-  buildSeverityTargets,
-  publishEventPipeline,
-} = require('../../../packages/core/lib/reporting-hub');
+const { buildNoticeEvent, renderNoticeEvent } = require('../../../packages/core/lib/reporting-hub');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -77,20 +73,11 @@ function reportInsteadOfFix(action, target, fixes = null) {
         action: '상세 점검: /claude-health',
       },
     });
-    publishEventPipeline({
-      event: {
-        ...event,
-        message: renderNoticeEvent(event),
-      },
-      targets: buildSeverityTargets({
-        event,
-        topicTeam: 'claude-lead',
-        includeQueue: false,
-        includeTelegram: false,
-      }),
-      policy: {
-        dedupe: false,
-      },
+    postAlarm({
+      message: renderNoticeEvent(event),
+      team: 'claude',
+      alertLevel: event.alert_level || 4,
+      fromBot: 'dexter-autofix',
     }).catch(() => {});
   } catch { /* 텔레그램 발송 실패 무시 */ }
   if (fixes) {
