@@ -9,7 +9,7 @@
 
 ## 0. 현재 최우선 과제
 
-- **알람 체계 통일**: 4경로→postAlarm 단일 API. 스카팀 긴급 복구! (CODEX_ALARM_UNIFY.md)
+- **알람 체계 통일**: Phase1✅스카복구 Phase2✅클로드 Phase3 진행중(블로+루나+워커)
 - **CC 패턴 P0**: 연속실패제한(llm-fallback.js) + Strict Write Discipline(rag.js)
 - **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
@@ -205,13 +205,11 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
-- [ ] Gemma 4: 시범 배치 3개 에이전트 (04-07~13 모니터링)
-  - 라이트(write): 일일 리포트 한국어 인사이트 추가
-  - 마에스트로(maestro): 블로그 주제 추천 한국어 생성
-  - 레베카(rebecca): 매출 리포트 한국어 인사이트 추가
+- [ ] Gemma 4: 시범 배치 일시 보류 (코드 주석 처리, MLX 대기)
   - 구조: ✅ 성공 (try-catch+timeout+폴백 안전!)
-  - 26B: ❌ 실패 (timeout 초과, 너무 느림) → 8B로 교체!
-  - 판정: GREEN(>90%성공+4+/5품질)→확대 / YELLOW→연장 / RED→철수
+  - 26B: ❌ timeout 초과 / 8B: ❌ 실전 프롬프트에서도 15초+ 초과
+  - 결정: 3개 파일 gemma4 호출 주석 처리 (삭제 아님!)
+  - MLX gemma4 출시 시 주석 해제 + 모델명 변경 → 즉시 재개
   - 코덱스: CODEX_GEMMA4_PILOT.md
 - [ ] 블로팀 Phase C SEO+GEO (04-14~18)
 
@@ -445,6 +443,7 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 
 | 날짜 | 변경 |
 |------|------|
+| 04-05 | Gemma4 시범배치 최종: 26B timeout, 8B도 실전 15초+ → 일시 보류. 주석 처리+MLX 대기. 알람 Phase1 완료(스카복구), Phase2 완료(클로드), Phase3 진행중(블로+루나+워커) |
 | 04-05 | Gemma4 26B 시범배치: 구조 ✅ 성공(안전성 달성), 모델 ❌ 실패(timeout). 26B→8B(gemma4:latest) 교체 결정. 코덱스 구현 잘함 |
 | 04-05 | 알람 체계 통일 설계: 4경로→postAlarm 단일 API. 스카팀 근본 원인 = includeTelegram:false+sender누락→타겟0개 |
 | 04-05 | Gemma4 26B JSON 3회 테스트: strict output 미통과 (reason 반복·깨짐). 자유형 한국어/보조 가능, 파이프라인용 보류. MLX 배치 재검토 대기 |
