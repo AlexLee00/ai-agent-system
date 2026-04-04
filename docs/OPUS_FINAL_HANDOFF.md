@@ -1,173 +1,140 @@
-# Opus 세션 인수인계 (2026-04-03 세션 14 최종)
+# 세션 인수인계 — 2026-04-04
 
-> 작성일: 2026-04-03 | 모델: Claude Opus 4.6 (메티)
-> 오늘 커밋: 69건 | 변경: 158파일, +13,510줄, -1,220줄
-> 신규 81파일, 수정 76파일, 삭제 1파일
-
----
-
-## 이번 세션 전체 성과
-
-### 1. Phase 2C UI 강화 ✅ (0a23b65)
-- DotCharacter.js SVG (9악세서리+상태별 애니메이션)
-- 에이전트 오피스 90에이전트 대시보드 확인
-
-### 2. Phase 3 경쟁 활성화 ✅ (9abbfa5)
-- COMPETITION_ENABLED=true, 월/수/금 경쟁, 폴백 안전
-
-### 3. Phase 0.5 + 보강 ✅ (+53에이전트, 37→90!)
-- 3팀 신설: 연구15+감정10+데이터6
-- 루나 보강 12: 성향변형6(에코/헤라/이지스/하운드/스위프트/미다스)+신규전문6(펀더/바이브/불리쉬/베어리쉬/체인아이/매크로)
-- 블로 보강 10: 작가변형2+편집변형2+수집변형1+신규전문5
-
-### 4. P1 수정 전부 완료 ✅
-- hermes→swift 이름 변경 + DB UPDATE 완료
-- role 정규화 7건 (analyst_short/long/watcher/... → analyst) + DB UPDATE 완료
-- selectBestAgent 팀 격리 (a4ec4ce) — team 주어지면 팀 내에서만!
-- 블로팀 동적 선택: hire('pos')→selectBestAgent('writer','blog') (5fea345)
-- 루나팀 고용 연결: hireAnalystForSignal + evaluateAnalystContract (5fea345)
-- 전 팀 테스트 통과: blog/luna/research/data/legal 5팀 격리 확인
-
-### 5. Phase B JSONB 전환 ✅
-- B-1: JSONB 비파괴적 추가 (analyst_signals/strategy_config/debate_log/analyst_accuracy/team_score)
-- B-2: JSONB 읽기 전환 (4cb12ac) + Registry 기반 동적 로드 (a376761)
-- 하드 테스트 통과 (analyze-rr.js)
-- 런타임 이슈 수정 (calcKellyPosition → budget.js)
-
-### 6. Phase 6 스킬/MCP/도구 시스템 ✅ (코덱스 구현!)
-구현된 파일 (코덱스 69커밋 중 핵심):
-
-**스킬 시스템 (31파일, 4,198줄):**
-- packages/core/lib/skills/index.js — 전체 스킬 통합 내보내기
-- packages/core/lib/skills/loader.js — config.json/yaml에서 스킬 로드
-- packages/core/lib/skill-selector.js — selectBestSkill (hiring-contract 패턴!)
-- packages/core/lib/tool-selector.js — selectBestTool (159줄)
-- packages/core/lib/team-skill-mcp-pipeline.js — 팀장 오케스트레이션 파이프라인 (118줄)
-- 공용 스킬 16개: code-review, verify-loop, plan, security-pipeline, tdd 등
-- 다윈(연구) 전용 5개: source-ranking, counterexample, replicator, synthesis, source-auditor
-- 저스틴(감정) 전용 5개: citation-audit, evidence-map, judge-simulator, precedent-comparer, damages-analyst
-- 시그마(데이터) 전용 5개: data-quality-guard, experiment-design, causal-check, feature-planner, observability-planner
-- 블로그 전용 2개: book-review-book, book-source-verify
-
-**MCP 레이어 (4파일):**
-- packages/core/lib/mcp/index.js — MCP 통합 내보내기
-- packages/core/lib/mcp/free-registry.js — 무료 MCP 서버 레지스트리
-- packages/core/lib/mcp/loader.js — MCP 서버 동적 로드
-- packages/core/lib/mcp/team-router.js — 팀별 MCP 라우팅
-
-**워크플로우 엔진 (5파일):**
-- packages/core/lib/workflows/index.js
-- qa-workflow.js, retro-workflow.js, review-workflow.js, ship-workflow.js
-
-**CLI 도구 (4파일):**
-- team-skill-cli.js, team-mcp-cli.js, team-pipeline-cli.js, workflow-cli.js
-
-**DB 마이그레이션:**
-- 009-skill-tool-registry.sql — agent.skills + agent.tools 테이블 (55줄)
-- seed-skills-tools.js — 스킬/도구 시딩 (88줄)
-
-### 7. 팀 런타임 셀렉터 ✅ (코덱스 구현!)
-- bots/hub/lib/runtime-profiles.js (360줄) — 전 팀 런타임 프로필 정의
-- packages/core/lib/runtime-selector.js — 팀별 런타임 선택
-- 루나팀: investment 에이전트 런타임 분리 (c30c6d7)
-- 블로팀: writer 런타임 분리 (9315871)
-- 비디오팀: critic/refiner/subtitle/scene 런타임 분리 (6커밋)
-- 클로드/스카/워커팀: 각각 런타임 분리 + launchd env 커플링 제거
-
-### 8. 블로그 댓글 자동화 ✅ (코덱스 구현!)
-- bots/blog/lib/commenter.js (859줄!) — 댓글 자동화 전체 구현
-- bots/blog/migrations/006-comments.sql — 댓글 DB 스키마
-- bots/blog/launchd/ai.blog.commenter.plist — launchd 서비스
-- bots/blog/scripts/run-commenter.js — 실행 스크립트
-
-### 9. LLM 모델 정규화 ✅ (코덱스 구현!)
-- 전체 에이전트 llm_model 재편성 (8d2e924, 178a3df, df1b74d)
-- 블로+루나 LLM 정책 정렬
-
-### 10. 블로그 책 리뷰 + 이미지 파이프라인 ✅
-- book-research.js 삭제 → book-review-book.js + book-source-verify.js (신규)
-- local-image-client.js — 로컬 이미지 생성 (ComfyUI 워크플로우)
-- gems-writer.js 확장 (+159줄)
-
-### 11. 기타
-- .gitignore 대폭 보강 (+43줄)
-- CI: OPS deploy checkout 수정 (b358d77)
-- RAG: 레거시 임베딩 마이그레이션 스크립트 (169줄)
-- RAG: 벡터 차원 불일치 시 백오프 (d9e2243)
-- 에이전트 오피스 UI 업데이트 (page.js +30줄)
+> 이전 세션: /mnt/transcripts/2026-04-04-02-42-42-2026-04-04-blog-stabilize-gemma4-image.txt
+> 이전 트랜스크립트 카탈로그: /mnt/transcripts/journal.txt
 
 ---
 
-## 핵심 결정
+## 오늘 세션 완료 작업 (13커밋!)
+
+### 1. 블로팀 3대 이슈 검증 ✅
+- 인사말 반복 금지 (Group B/C/D) — 코덱스 적용 확인
+- 도서 선정 완화 (uniqueSources 2→1) — 적용 확인
+- ε-greedy 자율적 고용 (EPSILON=0.2 + taskHint) — 테스트 통과
+
+### 2. 도서리뷰 ISBN 수정 ✅
+- 원인: 스케줄 도서에 ISBN 미저장 → quality-checker error 거부
+- 수정1: blo.js scheduledBook 정규화 + ISBN 보충 (resolveBookForReview)
+- 수정2: quality-checker.js ISBN error→warn 완화
+- 실전 확인: 품질 ✅ 9936자, AI리스크 low, 이슈 0건, ISBN 9791186659489
+
+### 3. 이미지 품질 향상 — 3단계 완료 ✅
+- Step 1: ComfyUI CPU→MPS 전환 (devices: mps) ✅
+- Step 2: 설정 최적화 (플래그 + runtime fallback 보강) ✅
+- Step 3: FLUX 모델 설치 + 동작 확인 ✅
+  - flux1-dev-Q8_0.gguf + ComfyUI-GGUF + clip_l + t5xxl + ae
+  - FLUX 10-step: ~195초 (MPS)
+  - 이중 경로 확정: 도서리뷰 대표=FLUX, 나머지=SDXL
+
+### 4. Phase A 기반안정화 100% 완료 ✅
+- A-1: book_info 정규화 ✅
+- A-2: 이미지 안정화 ✅
+- A-3: blog-utils.js 공용 함수 추출 ✅ (ea66034)
+  - weatherToContext (detailed 옵션으로 차이 보존)
+  - estimateCost
+  - loadPersonaGuide
+
+### 5. Gemma 4 도입 검토 + 프롬프트 ✅
+- 커뮤니티 서칭: 출시 2일차, Apache 2.0, 4모델
+- 26B MoE (3.8B active) = M4 Max 36GB 최적
+- 마스터 판단 "올라마 테스트만, MLX는 아직" = 100% 적절
+- Phase1(Ollama)→Phase2(MLX 2주후)→Phase3(본격운영)
+
+### 6. 블로팀 전략기획서 v2 ✅
+- docs/strategy/blog-strategy-v2.md (382줄)
+- 26에이전트, 일일 파이프라인, 커뮤니티 벤치마크
+- 5 Phase 로드맵: A→B→C→D→E + 일정 확정
+
+### 7. 네이버 API/MCP 조사 ✅
+- MCP 서버 8개+ 존재 (전부 오픈소스 MIT)
+- 결론: MCP보다 직접 API 호출이 우리 시스템에 적합
+- 블로그 글쓰기 API: 있음 (OAuth 필요), 임시저장: 불가
+- 예약 발행: 공식 API에 없음
+- 발행 방식: 현재 유지 (구글드라이브 → 제이 검토 → 수동 발행)
+
+### 8. 클로드 코드 유출 분석 + 전체 아키텍처 비교 ✅
+- docs/research/RESEARCH_CLAUDE_CODE_LEAK.md (391줄)
+- docs/research/RESEARCH_TEAM_ARCHITECTURE_REVIEW.md (349줄)
+- 9영역 비교: 에이전트/메모리/도구/컨텍스트/보안/실패처리
+- Top3 Gap: 컨텍스트압축 + 연속실패제한 + 야간메모리증류
+- Top5 강점: 멀티팀경쟁 + 도메인특화 + Doctor자율복구 + 4단계폴백 + StandingOrders
+
+---
+
+## 핵심 결정 사항
 
 ```
-[DECISION] hermes→swift 이름 변경 (기존 뉴스분석가 5곳 충돌)
-[DECISION] 7개 role → analyst 정규화 (specialty로 구분)
-[DECISION] selectBestAgent 팀 격리 (team 주어지면 팀 내에서만)
-[DECISION] 3계층 동적 선택: Agent → Skill → Tool (hiring-contract 패턴 확장)
-[DECISION] DB: 에이전트 이름 컬럼 → JSONB 동적 구조
-[DECISION] MCP: 무료 MCP 먼저, 유료는 추후 (비용 $0 우선)
-[DECISION] 런타임: 팀별 런타임 프로필 분리 (Hub 중앙 관리)
+[DECISION] 카테고리 7개 순환 = 의도된 정상 동작 (도서리뷰 재발행 = 이전 품질 미달)
+[DECISION] 이미지: SDXL(기본) + FLUX(도서리뷰 대표만) 이중 경로
+[DECISION] ComfyUI: CPU→MPS 전환 완료
+[DECISION] Gemma 4: Ollama 테스트 → 2주 후 MLX 시범 배치
+[DECISION] 네이버 API: MCP보다 직접 호출 적합, 임시저장 불가
+[DECISION] 블로그 발행: 현재 방식 유지 (구글드라이브 → 제이 검토 → 수동 발행)
+[DECISION] 클로드 코드 패턴: 연구 문서로 정리, 추가 검토 후 점진 적용
 ```
 
 ---
 
-## 다음 세션 우선순위
+## PENDING 작업
+
+### 블로팀 일정 (확정)
 
 ```
-검증 필요:
-  📋 스킬/도구 시딩 실행 확인 (agent.skills + agent.tools)
-  📋 selectBestSkill / selectBestTool E2E 테스트
-  📋 team-skill-mcp-pipeline.js 실전 동작 확인
-  📋 런타임 셀렉터 OPS 동작 확인
-  📋 블로그 댓글 자동화 실전 확인
+✅ Phase A: 기반 안정화  — 04-04 완료!!
+📋 Phase B: 피드백 루프  — 04-07 (월) ~ 04-11 (금)
+   B-1 성과→RAG, B-2 생성반영, B-3 Standing Orders, B-4 대시보드
+📋 Phase C: SEO + GEO    — 04-14 (월) ~ 04-18 (금)
+   C-1 네이버키워드API, C-2 SEO스킬, C-3 GEO스킬, C-4 이중채점
+📋 Phase D: 콘텐츠 심화  — 04-21 (월) ~ 05-02 (금)
+   D-1 팩트체크, D-2 아웃라인, D-3 멀티모달, D-4 크로스플랫폼
+📋 Phase E: 자율 진화    — 05-05 (월) ~ 지속
+```
 
-후속:
-  📋 Phase B-4: 기존 컬럼 DROP (2주 후 마스터 승인)
-  📋 전략 조합별 승률 대시보드 (strategy_config JSONB)
-  📋 MCP 외부 연결 실전: Alpha Vantage, 네이버 검색광고, GitHub
-  📋 워크플로우 엔진 실전 적용 (qa/retro/review/ship)
-  📋 비디오팀 Phase 3 (CapCut MCP 연동)
+### 전체 시스템 (CC 패턴 적용)
+
+```
+📋 P0: llm-fallback.js 연속 실패 제한 (3줄 추가)
+📋 P0: self-improving Strict Write Discipline
+📋 P1: context-compactor.js (MicroCompact)
+📋 P1: nightly-distill.js (야간 메모리 증류)
+📋 각 팀별 심층 딥 분석 (순차 진행)
+```
+
+### 기타
+
+```
+📋 FLUX steps 28→10 미반영 원인 추적
+📋 Gemma 4 Ollama 테스트 (e4b + 26b MoE)
+📋 첫 경쟁 결과 확인 (월요일)
+📋 LLM 모델 재편성 수정 2건 검증
 ```
 
 ---
 
-## 핵심 파일 (신규)
+## 핵심 파일 경로
 
 ```
-스킬/도구 시스템:
-  packages/core/lib/skill-selector.js — selectBestSkill
-  packages/core/lib/tool-selector.js — selectBestTool
-  packages/core/lib/team-skill-mcp-pipeline.js — 팀장 오케스트레이션
-  packages/core/lib/skills/ — 31파일 (공용+다윈+저스틴+시그마+블로그)
-  packages/core/lib/mcp/ — 4파일 (registry+loader+router+index)
-  packages/core/lib/workflows/ — 5파일 (qa/retro/review/ship+index)
+전략:
+  docs/strategy/blog-strategy-v2.md (382줄) — 블로팀 전략기획서 v2
 
-런타임:
-  bots/hub/lib/runtime-profiles.js — 360줄 전 팀 프로필
-  packages/core/lib/runtime-selector.js — 팀별 런타임 선택
+연구:
+  docs/research/RESEARCH_CLAUDE_CODE_LEAK.md (391줄) — CC vs TJ 비교
+  docs/research/RESEARCH_TEAM_ARCHITECTURE_REVIEW.md (349줄) — 9팀 전수 분석
 
-블로그:
-  bots/blog/lib/commenter.js — 859줄 댓글 자동화
-  bots/blog/migrations/006-comments.sql
+코덱스 프롬프트:
+  docs/codex/CODEX_PHASE_A_STABILIZE.md — Phase A 기반안정화
+  docs/codex/CODEX_PHASE_A3_BLOG_UTILS.md — 공용 함수 추출
+  docs/codex/CODEX_BOOK_REVIEW_ISBN_FIX.md — ISBN 보충 + 품질 완화
+  docs/codex/CODEX_IMAGE_QUALITY_IMPROVE.md — MPS + FLUX + 최적화
+  docs/codex/CODEX_GEMMA4_ROLLOUT.md — Gemma 4 도입 3Phase
+  docs/codex/CODEX_BLOG_THREE_ISSUES.md — 3대 이슈 수정
 
-DB:
-  bots/orchestrator/migrations/009-skill-tool-registry.sql
-  bots/orchestrator/scripts/seed-skills-tools.js
+구현:
+  packages/core/lib/blog-utils.js — 공용 함수 (신규!)
+  bots/blog/lib/img-gen.js — SDXL+FLUX 이중 경로
+  bots/blog/config/comfyui-workflow-flux.json — FLUX 워크플로우
+  bots/hub/lib/runtime-profiles.js — image-local-flux 프로필
+  packages/core/lib/runtime-selector.js — Hub fallback 보강
 
-CLI:
-  bots/orchestrator/scripts/team-skill-cli.js
-  bots/orchestrator/scripts/team-mcp-cli.js
-  bots/orchestrator/scripts/team-pipeline-cli.js
-  bots/orchestrator/scripts/workflow-cli.js
-
-설계:
-  docs/design/DESIGN_SKILL_TOOL_SELECTOR.md (283줄)
-  docs/design/DESIGN_SKILLS_MCP.md
-  docs/design/DESIGN_TEAM_TRACKING.md (242줄)
-  docs/design/DESIGN_TEAM_RUNTIME_SELECTOR.md
-
-코덱스 (Phase 6):
-  CODEX_PHASE06_1~11 (11개 프롬프트!)
-  CODEX_SKILL_TOOL_SELECTOR.md (305줄)
+인수인계: docs/OPUS_FINAL_HANDOFF.md (본 문서)
 ```
