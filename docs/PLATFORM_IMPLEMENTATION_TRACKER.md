@@ -14,7 +14,7 @@
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
 - **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
 - **경쟁 결과 확인**: 첫 경쟁 결과 (월요일)
-- **Gemma 4**: Ollama 테스트 (e4b + 26b MoE)
+- **Gemma 4**: 26b JSON 불안정 확인 → 자유형 보조만 가능, 파이프라인용 보류
 - **코덱스 정리**: 43개 완료→archive 이동 완료 (04-05), 6개 활성 유지
 - **픽셀 오피스**: P1 DotCharacter 실시간 상태 반영 (커뮤니티 트렌드 반영)
 
@@ -204,7 +204,7 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 - [ ] Paperclip: 에이전트 오피스에 조직도 트리 뷰
 - [ ] 대규모 파일 분리: forecast.py 2,047줄 / chat-agent.js 876줄
 - [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
-- [ ] Gemma 4 Ollama 테스트 (e4b + 26b MoE)
+- [ ] Gemma 4: 자유형 보조 배치 (worker/blog research/video) — JSON 파이프라인 보류
 - [ ] 블로팀 Phase C SEO+GEO (04-14~18)
 
 ### P2 — 중기 (04-21 ~ 05-09)
