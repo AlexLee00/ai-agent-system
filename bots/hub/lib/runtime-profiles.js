@@ -1,6 +1,7 @@
 'use strict';
 
 const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435';
 
 const PROFILES = {
   blog: {
@@ -49,6 +50,17 @@ const PROFILES = {
       timeout_ms: 300000,
       poll_ms: 1500,
       max_retries: 3,
+    },
+    'gemma-topic': {
+      openclaw_agent: 'blog-writer',
+      claude_code_name: 'blog-writer',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/blog-writer.settings.json',
+      provider: 'ollama',
+      base_url: OLLAMA_BASE_URL,
+      model: 'gemma4:26b',
+      timeout_ms: 10000,
+      max_tokens: 200,
+      temperature: 0.8,
     },
   },
   luna: {
@@ -246,6 +258,17 @@ const PROFILES = {
       primary_routes: ['claude-code/sonnet', 'groq/meta-llama/llama-4-scout-17b-16e-instruct'],
       fallback_routes: ['google-gemini-cli/gemini-2.5-flash'],
     },
+    'gemma-insight': {
+      openclaw_agent: 'jay-orchestrator',
+      claude_code_name: 'jay-orchestrator',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/jay-orchestrator.settings.json',
+      provider: 'ollama',
+      base_url: OLLAMA_BASE_URL,
+      model: 'gemma4:26b',
+      timeout_ms: 10000,
+      max_tokens: 300,
+      temperature: 0.7,
+    },
   },
   ska: {
     default: {
@@ -255,6 +278,17 @@ const PROFILES = {
       local_llm_base_url: LOCAL_LLM_BASE_URL,
       primary_routes: ['openai-oauth/gpt-5.4', 'claude-code/sonnet'],
       fallback_routes: ['local/qwen2.5-7b', 'google-gemini-cli/gemini-2.5-flash'],
+    },
+    'gemma-insight': {
+      openclaw_agent: 'ska-ops',
+      claude_code_name: 'ska-ops',
+      claude_code_settings: '/Users/alexlee/.openclaw/.claude/ska-ops.settings.json',
+      provider: 'ollama',
+      base_url: OLLAMA_BASE_URL,
+      model: 'gemma4:26b',
+      timeout_ms: 10000,
+      max_tokens: 150,
+      temperature: 0.7,
     },
     monitoring: {
       openclaw_agent: 'ska-ops',

@@ -17,6 +17,7 @@ const env = require('../../../packages/core/lib/env');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig } = require('./runtime-config');
+const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 
 // ─── 상수 ─────────────────────────────────────────────────────────────
@@ -295,14 +296,53 @@ async function run(postType, directRunner = null, payload = {}) {
   // 세션 ID: 날짜_타입_4바이트난수
   const sessionId = `${kst.today()}_${postType}_${crypto.randomBytes(4).toString('hex')}`;
   const history   = await getRecentHistory(postType, 7);
+  let gemmaRecommendation = null;
+
+  try {
+    const historyTopics = history
+      .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
+      .filter(Boolean)
+      .slice(0, 10);
+    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+    const today = dayNames[new Date().getDay()];
+    const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
+    const recPrompt = `당신은 네이버 블로그 주제 추천 전문가입니다.
+오늘은 ${today}요일입니다.
+포스팅 유형: ${postType}
+최근 주제: ${historyTopics.join(', ') || '없음'}
+날씨/상황: ${weatherContext}
+
+겹치지 않는 새로운 추천 주제 3개를 한국어로 간결하게 작성하세요.
+번호 없이 한 줄씩만 작성하세요.`;
+
+    const recResult = await generateGemmaPilotText({
+      team: 'blog',
+      purpose: 'gemma-topic',
+      bot: 'maestro',
+      requestType: 'topic-recommendation',
+      prompt: recPrompt,
+      maxTokens: 200,
+      temperature: 0.8,
+      timeoutMs: 10000,
+    });
+
+    if (recResult?.ok && recResult.content) {
+      gemmaRecommendation = recResult.content.trim();
+      console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
+    }
+  } catch (error) {
+    console.warn(`[maestro] gemma4 추천 생략: ${error.message}`);
+  }
+
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
 
   console.log(`[마에스트로] ${postType} — 세션: ${sessionId}`);
   console.log(`  노드: ${pipeline.join(' → ')}`);
   console.log(`  인사말: ${variations.greetingStyle}, 이미지: ${variations.imageCount}장`);
+  if (gemmaRecommendation) console.log(`  gemma4 추천 반영 후보:\n${gemmaRecommendation}`);
 
   let n8nOk = false;
-  const body = JSON.stringify({ postType, sessionId, pipeline, variations, ...payload });
+  const body = JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
 
   if (_isCircuitOpen()) {
     console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
@@ -356,10 +396,10 @@ async function run(postType, directRunner = null, payload = {}) {
   // n8n 실패 시 directRunner 폴백
   if (!n8nOk && directRunner) {
     console.log('  ↳ directRunner 실행');
-    return await directRunner(variations, payload);
+    return await directRunner(variations, { ...payload, gemmaRecommendation });
   }
 
-  return { sessionId, pipeline, variations, n8nTriggered: n8nOk };
+  return { sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered: n8nOk };
 }
 
 module.exports = { run, runCompetition, buildDynamicPipeline, buildDynamicVariation };
