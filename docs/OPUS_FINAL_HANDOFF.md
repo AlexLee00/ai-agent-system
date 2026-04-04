@@ -14,7 +14,6 @@
 5. **CC 유출 종합 연구** (4파일→1파일 통합 163줄)
 6. **9팀 전수 분석 + 팀별 딥 분석**
 7. **에이전트 하네스 + 서브에이전트 감독 연구**
-8. **통합 실행 계획 수립** (MASTER_ROADMAP.md)
 
 ---
 
@@ -25,36 +24,110 @@
 [DECISION] Gemma 4: Ollama 테스트 → 2주 후 MLX
 [DECISION] 네이버 API: 임시저장 불가, 현행 유지
 [DECISION] CC 패턴: 연구 문서 정리, 점진 적용
-[DECISION] 통합 로드맵: 17항목, W1~M3+ 일정
 ```
 
 ---
 
-## 다음 실행 (MASTER_ROADMAP.md 기준)
+## 팀장 자율 적용 (Phase 0~3 + 0.5, 완료)
 
 ```
-W1 이번주 즉시:
-  ① 연속실패제한 + Strict Write (CC P0)
-  ② LLM 모델재편성 수정 2건
+Phase 0.5: 53 신규 에이전트 추가 → 전체 90에이전트
+  - 3팀 신설: 연구(15) + 감정(10) + 데이터(6)
+  - 루나 보강(12) + 블로 보강(10)
 
-W2 다음주 (04-07~11):
-  ③ 블로팀 Phase B 피드백 루프 + 경쟁결과→RAG
-  ④ 야간 메모리 증류 + Doctor 예방적 스캔
-  ⑤ 첫경쟁확인 + Gemma4 Ollama + Phase4
+팀장 자율 고용 시스템:
+  - hiring-contract.js ε-greedy (EPSILON=0.2)
+  - taskHint → specialty 매칭
+  - fatigue/confidence 감정 점수 반영
+  - 고용 조합 = 전략 선택 (핵심 인사이트!)
 
-W3~4 (04-14~25):
-  ⑥ 도구별 권한 + 팀별 서브셋
-  ⑦ 블로팀 Phase C SEO+GEO
-  ⑧ 대규모파일 리팩토링 (forecast 2,047줄 등)
+경쟁 시스템: 월/수/금 활성화
+  - competition-engine.js (formGroups → startCompetition → evaluate)
+  - 4축 평가: 글자수+섹션수+AI리스크+코드블록
+
+Phase B-1: JSONB 비파괴적 전환 완료
+  - 기존 데이터 마이그레이션 + 하드 테스트 통과
 ```
+
+---
+
+## 진행 중인 개발 축
+
+| 항목 | 현재 상태 | 남은 것 |
+|------|----------|---------|
+| Chronos Tier 2 | Phase A 완료, Layer 1~3 동작 | 전략 최적화, VectorBT, walk-forward |
+| 블로팀 P1~P5 | ✅ 구현 완료 + Phase A 완료 | Phase B 피드백루프 (04-07~11) |
+| 워커 확인창 UX | 핵심 메뉴 1차 완료 | 캔버스 시각 마감, 관리자 위젯 심화 |
+| 스카 shadow 관찰 | 저장+리뷰 연결 완료 | MAPE gap 기준 ensemble 편입 |
+| 피드백 RAG | 적재+유사사례 조회 완료 | 품질 랭킹, training export |
+| 문서 체계 v2 | 디렉토리+파일 정리 완료 | STRATEGY.md 심화 |
+| CC 연구 | 종합 문서 완료 (163줄) | P0~P3 점진 적용 |
+| Phase 6 스킬/MCP | 158파일 13,510줄 구현 완료 | 런타임 검증 |
+| LLM 모델 재편성 | 프롬프트 완료 (501줄) | 수정 2건 검증 |
+
+---
+
+## 미완료 개발 축
+
+### 루나팀
+- [ ] Chronos Tier 2: VectorBT + walk-forward + strategy_registry
+- [ ] 검증 3단계 (Shadow→Confirmation→Live)
+- [ ] DCA 전략 + 펀딩레이트 + 그리드
+- [ ] sentinel 통합 (sophia+hermes→sentinel.js)
+- [ ] 독립 노드 병렬화 l03+l04+l05 (CC P1)
+- [ ] 거래 결과 → RAG → 다음 판단 반영 (CC P1)
+
+### 블로팀
+- [x] Phase A 기반안정화 ✅ 완료
+- [ ] Phase B 피드백 루프 (04-07~11)
+- [ ] Phase C SEO+GEO (04-14~18)
+- [ ] Phase D 콘텐츠 심화 (04-21~05-02)
+- [ ] Phase E 자율 진화 (05-05~)
+
+### 스카팀
+- [ ] n8n node화 2차 (write/ops 계열)
+- [ ] forecast.py 2,047줄 분리! (CC 안티패턴)
+- [ ] Python↔Node 인터페이스 표준화 (CC P2)
+
+### 워커팀
+- [ ] chat-agent.js 876줄 리팩토링 (CC 안티패턴)
+- [ ] approval→mailbox 패턴 강화 (CC P2)
+- [ ] SaaS 본격 개발 (채팅+캔버스 패턴)
+
+### 클로드팀
+- [ ] Doctor 예방적 스캔 (CC P1)
+- [ ] autofix 3단계 권한 safe/warn/block (CC P2)
+- [ ] autofix LLM 프롬프트 기반 진단 (CC P2)
+
+### 비디오팀
+- [ ] Phase 3: CapCut급 타임라인 UI (Twick React SDK)
+- [ ] edl-builder.js 971줄 분리 (CC 안티패턴)
+- [ ] critic-agent 프롬프트 기반 전환 (CC P2)
+
+### 공통/전체
+- [ ] OpenClaw Phase 4: mainbot.js 퇴역 + alert resolve
+- [ ] CC P0: 연속실패제한 + Strict Write Discipline
+- [ ] CC P1: 야간 메모리 증류 (nightly-distill.js)
+- [ ] CC P1: 도구별 권한 레이어 (skill-selector permission)
+- [ ] CC P2: 컨텍스트 압축 (context-compactor.js)
+- [ ] CC P2: Mailbox 패턴 (approval-queue.js)
+- [ ] CC P2: AgentTool (에이전트 간 위임)
+- [ ] CC P3: KAIROS 자율 데몬
+- [ ] CC P3: 프롬프트 기반 오케스트레이션
+- [ ] CC P3: Build to Delete 아키텍처
+- [ ] Gemma 4 Ollama 테스트
+- [ ] ComfyUI 이미지 비용 $0 전환
+- [ ] TS Phase 1: TypeScript 강화
+- [ ] Claude Code Skills/Subagents/Hooks 도입
 
 ---
 
 ## 핵심 파일
 
 ```
-★ 마스터 로드맵: docs/strategy/MASTER_ROADMAP.md ← 새로 만듬!
 전략: docs/strategy/blog-strategy-v2.md (382줄)
-연구: docs/research/RESEARCH_CC_COMPREHENSIVE.md (163줄)
+연구: docs/research/RESEARCH_CC_COMPREHENSIVE.md (163줄) ← 4파일 통합!
 인수인계: docs/OPUS_FINAL_HANDOFF.md (본 문서)
+코덱스: docs/codex/ (PHASE_A3, BOOK_REVIEW_ISBN_FIX, IMAGE_QUALITY 등)
+구현: packages/core/lib/blog-utils.js, bots/blog/lib/img-gen.js 외
 ```
