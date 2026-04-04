@@ -9,7 +9,7 @@
 
 ## 0. 현재 최우선 과제
 
-- **알람 체계 통일**: Phase1✅스카 Phase2✅클로드 Phase3✅블로+루나+워커 → Phase4 정리 남음
+- **알람 체계 통일**: ✅ Phase1~4 전체 완료! postAlarm 단일 API 통일 (6096344)
 - **CC 패턴 P0**: 연속실패제한(llm-fallback.js) + Strict Write Discipline(rag.js)
 - **자율 고용 전팀 확산**: 블로팀 ε-greedy → 전 팀 확대 (hiring-contract.js)
 - **블로팀 Phase B**: 피드백 루프 (04-07~11 예정)
