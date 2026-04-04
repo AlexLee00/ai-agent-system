@@ -353,9 +353,30 @@ MCP: 네이버 검색광고 MCP (retn.kr), Frase SEO MCP
 
 ---
 
+## 🔬 연구 참조 (추가 검토 필요)
+
+```
+[TAG:CLAUDE-CODE-LEAK] docs/research/RESEARCH_CLAUDE_CODE_LEAK.md
+  → autoCompact 실패 제한, KAIROS 야간 증류, 코디네이터 프롬프트화
+  → 프롬프트 캐시 최적화, 감정 감지 정규식, 보안 체크리스트
+  → Phase B~E에서 점진적 검토 + 적용
+
+[TAG:GEMMA4] docs/codex/CODEX_GEMMA4_ROLLOUT.md
+  → 26B MoE 테스트 중 (Ollama), 2주 후 MLX 시범 배치 검토
+  → 리서치 보조, 구조화 출력, 품질 판단 보조 후보
+
+[TAG:NAVER-API] 네이버 검색광고/블로그 API 직접 연동
+  → MCP보다 직접 호출이 우리 시스템에 적합
+  → 키워드 검색량 API, 블로그 글쓰기 API (임시저장 불가)
+  → 발행 방식: 현재 구글드라이브 유지 (제이 검토 후 수동 발행)
+```
+
+---
+
 ## 변경 이력
 
 | 날짜 | 변경 |
 |------|------|
+| 2026-04-04 | 연구 참조 태그 추가 (클로드코드유출+Gemma4+네이버API) |
 | 2026-04-04 | v2 전략기획서 신규 작성. 26에이전트+커뮤니티 벤치마크+5Phase 로드맵+리팩토링 계획 |
 | 2026-03-30 | v1 전략 재설계 (hallucination 계기) + 코드 딥분석 (7,467줄/25파일) |
