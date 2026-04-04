@@ -1,0 +1,163 @@
+# 클로드 코드 유출 종합 연구 — 에이전트 하네스 · 아키텍처 · 팀별 분석
+
+> 작성: 메티 (Claude Opus 4.6)
+> 작성일: 2026-04-04
+> 범위: CC 유출 분석 + 에이전트 하네스 + 9팀 딥 분석 + 개선 로드맵
+> 통합: RESEARCH_CLAUDE_CODE_LEAK + TEAM_ARCHITECTURE_REVIEW + AGENT_HARNESS + TEAM_DEEP_ANALYSIS
+
+---
+
+## 1. 사건 개요
+
+2026-03-31, npm 소스맵 실수로 클로드 코드 512,000줄 TypeScript 유출.
+1,906파일, 44 피처 플래그, 전체 에이전트 하네스 아키텍처 노출.
+핵심: 모델 가중치가 아닌 "하네스" — 도구/메모리/권한/오케스트레이션 체계.
+
+---
+
+## 2. 에이전트 하네스 — 정의 + 구성 + 원칙
+
+"모델은 상품. 하네스가 해자." "루프는 20줄. 하네스는 512,000줄."
+
+### 6대 구성요소
+① 프롬프트 — CC: 프롬프트 기반 오케스트레이션 (배포 없이 변경)
+② 메모리 — CC: 3계층(MEMORY.md→토픽→트랜스크립트)+Strict Write+autoDream
+③ 도구 — CC: ~40도구, 29K줄, "시도 vs 허용" 분리
+④ 오케스트레이션 — CC: Coordinator-Worker, 프롬프트 기반 위임
+⑤ 가드레일 — CC: 4티어 권한, bashSecurity 23항목, mailbox
+⑥ 관측성 — CC: 14 캐시파괴벡터, frustration 정규식
+
+### 6대 원칙 (2026 업계 합의)
+① Start Simple — 원자적 도구 + 모델이 계획
+② Build to Delete — 모델 향상 시 제거 가능하게
+③ Engineer Corrections Permanently — 일회성→영구 제약 (≈ Standing Orders!)
+④ Minimal Necessary Intervention — 비가역적 행동/보안 경계에서만 개입
+⑤ Monitor Entropy — 드리프트 감시, 리팩터 에이전트 정기 실행
+⑥ Instrument for Traceability — 모든 에이전트 스텝 로깅
+
+---
+
+## 3. 5대 난제 + CC 해법 + 우리 현황
+
+### 권한 (Permission)
+CC: 4티어(Trust→Check→Approve→Bypass), "시도 vs 허용" 분리
+TJ: DEV/OPS 4중 안전장치 ✅ / 도구별 세밀 권한 ❌
+적용: skill-selector permission 필드 (auto/approve/block)
+
+### 도구 (Tool)
+CC: ~40도구. Vercel: "80% 제거하니 결과 좋아짐!"
+TJ: 33스킬+4MCP ✅ / 팀별 서브셋 ❌ / Build to Delete ❌
+적용: 팀별 도구 서브셋, 미사용 도구 비활성화, Progressive Disclosure
+
+### 서브에이전트 (Sub-agent)
+CC: 격리 워크트리+메일박스+캐시 공유. Cursor: 동등에이전트 실패→3역할(P-W-J) 성공!
+TJ: 9팀 격리 ✅ / hiring-contract ✅ / 병렬 ❌ / 메일박스 ❌
+적용: Promise.allSettled 병렬화, AgentTool 패턴, 코디네이터→워커 확장
+
+### 메모리 (Memory)
+CC: 3계층+Strict Write+autoDream. "메모리는 힌트, 코드베이스로 검증"
+TJ: pgvector RAG ✅ / StrictWrite ❌ / autoDream ❌
+적용: P0 성공시만 기록, P1 nightly-distill.js, P2 핫/콜드 분리
+
+### 컨텍스트 (Context) ★ 가장 큰 Gap!
+CC: 4단계 압축(Micro→Auto→Full→Time). MAX_FAILURES=3(25만/일 절약!)
+TJ: 로그 로테이션만 ✅ / 4단계 압축 전체 ❌
+적용: P0 연속실패제한, P1 MicroCompact, P2 AutoCompact
+
+---
+
+## 4. 감독 패턴 5가지
+
+① Supervisor — 감독자가 분해+위임+종합. TJ: blo.js ≈ 유사
+② Planner-Worker-Judge — Cursor 검증! 계획→병렬→품질판단→반복. TJ: 루나 DAG ≈ 유사
+③ Sparse Supervision — 루틴 90% 자율, 핵심 10% 감독. TJ: Standing Orders = 이 패턴!
+④ Mailbox — 위험 작업 비동기 승인 대기열. TJ: ❌ 없음
+⑤ Consensus/Debate — 다자간 독립 판단. TJ: Bull/Bear ✅
+
+감독 깊이: Level 3 전략(마스터) → Level 2 전술(코디네이터, 자동화 핵심!) → Level 1 실행(워커)
+
+## 5. 에이전틱 AI 7대 패턴
+
+① Plan-Act-Verify ② Progressive Disclosure ③ Red-Green Testing
+④ Coordinator-Worker ⑤ Mailbox ⑥ Consensus ⑦ Build to Delete
+
+---
+
+## 6. 팀별 심층 분석
+
+### 코어 (13,973줄/63파일)
+- llm-fallback: 4단계폴백 ✅ / 연속실패제한 ❌ / 서킷브레이커 ❌
+- hiring-contract: ε-greedy ★CC없음 / competition-engine ★CC없음
+- rag.js: pgvector ✅ / StrictWrite ❌ / shadow-mode A/B ★CC없음
+
+### 오케스트레이터 (10,146줄)
+- intent-parser: 3단계파싱 ✅ / night-handler ≈ KAIROS ✅ / 프롬프트오케스트레이션 ❌
+
+### 루나 (28,363줄)
+- 15노드DAG ✅>CC / Bull/Bear토론 ✅ / 병렬 ❌ / 피드백루프 ❌
+
+### 클로드 (12,345줄)
+- Doctor scanAndRecover ✅>CC / autofix reportInsteadOfFix ✅ / 예방스캔 ❌
+
+### 워커 (36,094줄)
+- chat-agent 876줄 리팩토링! / approval ≈ mailbox / 에이전트오피스 ✅
+
+### 스카 (58,238줄)
+- forecast.py 2,047줄 최대 안티패턴! / Python↔Node 혼합
+
+### 비디오 (11,652줄)
+- critic/refiner ≈ CC Coordinator-Worker / edl-builder 971줄
+
+### 신규팀
+- 연구: KAIROS적합 / 감정: 4티어권한+Mailbox / 데이터: MicroCompact
+
+---
+
+## 7. 우리만의 강점 (CC에 없음!)
+
+★ ε-greedy 동적 고용 / ★ 에이전트 경쟁 (월수금)
+★ Shadow Mode A/B / ★ Doctor 자율 복구 (KAIROS 미출시, 우리는 운영중!)
+★ Standing Orders ≈ Engineer Corrections Permanently
+★ 4단계 LLM 폴백 / ★ 로컬 LLM $0
+
+## 8. 대규모 파일 안티패턴
+
+forecast.py 2,047줄 / blo.js 991줄 / edl-builder 971줄 / rebecca.py 937줄 / chat-agent 876줄
+
+---
+
+## 9. 종합 개선 로드맵
+
+### P0 즉시
+1. **연속 실패 제한** — llm-fallback.js MAX_FAILURES=5 (3줄)
+2. **Strict Write** — rag.js 성공 시에만 메모리 기록
+
+### P1 단기 (1~2주)
+3. 야간 메모리 증류 — nightly-distill.js (autoDream)
+4. 도구별 권한 — skill-selector permission (auto/approve/block)
+5. 대규모 파일 분리 — forecast.py, chat-agent.js
+6. 루나 노드 병렬화 — l03+l04+l05 Promise.allSettled
+7. Doctor 예방적 스캔 — Planner 확장
+
+### P2 중기 (2~4주)
+8. 컨텍스트 압축 — context-compactor.js (Micro+Auto)
+9. Mailbox 패턴 — approval-queue.js
+10. AgentTool — agent-tool.js (에이전트 간 위임)
+11. 에이전트 오피스 CC 메트릭 대시보드
+
+### P3 장기 (1~2개월)
+12. KAIROS 자율 데몬 — 5분 주기 모니터링
+13. 프롬프트 기반 오케스트레이션 — 코드→프롬프트
+14. Build to Delete — 모듈화, 모델 향상 시 제거
+
+---
+
+## 10. 출처
+
+[1] CC 유출: alex000kim.com [2] Harness 2026: philschmid.de
+[3] Harness Engineering: anup.io [4] Agent Engineering: morphllm.com
+[5] CC Harness: wavespeed.ai [6] 7 Lessons: particula.tech
+[7] Trends 2026: machinelearningmastery.com [8] Architecture: neo4j.com
+[9] 2025→2026: aakashgupta.medium.com [10] CC Analysis: medium.com/@marc.bara
+[11] Design Patterns: sitepoint.com [12] Supervisor: docs.kore.ai
+[13] Coherence: mikemason.ca [14] Workflows: stackai.com
