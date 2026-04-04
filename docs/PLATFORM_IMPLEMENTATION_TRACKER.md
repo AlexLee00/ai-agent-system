@@ -1,6 +1,6 @@
 # 플랫폼 구현 추적 문서
 
-> 마지막 업데이트: 2026-04-04
+> 마지막 업데이트: 2026-04-05
 > 목적: 실제 코드 구현 상태와 커밋 이력 기준으로 개발 진행 상황을 추적한다.
 > 원칙: 완료(날짜+근거) / 진행 중(현재+남은 것) / 미완료 3단계 분류
 > 참조: docs/STRATEGY.md, docs/research/RESEARCH_CC_COMPREHENSIVE.md
@@ -15,6 +15,8 @@
 - **OpenClaw Phase 4**: mainbot.js 퇴역 + alert resolve Standing Orders
 - **경쟁 결과 확인**: 첫 경쟁 결과 (월요일)
 - **Gemma 4**: Ollama 테스트 (e4b + 26b MoE)
+- **코덱스 정리**: 43개 완료→archive 이동 완료 (04-05), 6개 활성 유지
+- **픽셀 오피스**: P1 DotCharacter 실시간 상태 반영 (커뮤니티 트렌드 반영)
 
 ---
 
@@ -230,6 +232,25 @@ LLM: 7/10 에이전트 로컬화 (OpenAI 429 대응)
 스카: n8n node화 2차, RAG retrieval, 옵션B
 워커: Cloudflare Tunnel 외부 접속
 공통: ComfyUI 이미지 $0, TS Phase 2 Elixir, Claude Code Skills/Hooks
+
+### 에이전트 픽셀 오피스 로드맵 (신규!)
+- [ ] P1: DotCharacter에 실시간 상태 반영 (LLM호출중/대기/에러 애니메이션)
+- [ ] P2: 토큰/비용 대시보드 (에이전트별 히트맵+차트)
+- [ ] P2: 에이전트 오피스에 CC 메트릭 추가 (실패율/캐시히트)
+- [ ] P3: 픽셀 오피스 풀 구현 (Phaser.js, 9팀 9개 오피스 방)
+- [ ] P3: 서브에이전트 스폰 시각화
+- [ ] P3: 오피스 레이아웃 에디터
+- 참조: Pixel Agents(VS Code), AgentOffice(Phaser+Ollama), Star-Office-UI, Pixel Agent Desk
+
+### 코덱스 파일 상태 (2026-04-05 업데이트)
+- 완료 → archive 이동: 43개 (Phase1~6, Phase A, Blog P1~P5, 3대이슈, ISBN, 이미지 등)
+- 활성 (진행중/미시작): 6개
+  - CODEX_PHASE4_MAINBOT_OPENCLAW.md — mainbot 퇴역 (진행중)
+  - CODEX_PHASE_B_TEAM_TRACKING.md — Phase B (04-07 시작 예정)
+  - CODEX_GEMMA4_ROLLOUT.md — Ollama 테스트 중
+  - CODEX_GEMMA4_ADOPTION.md — 미시작
+  - CODEX_LUNA_SENTINEL_NEMESIS.md — sentinel 구현됨, nemesis 재설계 대기
+  - CODEX_OVERSEAS_SELL_FIX.md — 미확인
 
 ---
 

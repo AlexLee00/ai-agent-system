@@ -152,7 +152,104 @@ forecast.py 2,047줄 / blo.js 991줄 / edl-builder 971줄 / rebecca.py 937줄 / 
 
 ---
 
-## 10. 출처
+---
+
+## 10. 자율 고용 시스템 상세 (CC에 없는 우리 고유 강점!)
+
+### 3단계 자율 고용 모델
+
+```
+Level 1: ε-greedy 탐색 (구현 완료 ✅)
+  hiring-contract.js EPSILON=0.2
+  80% 최고 점수 에이전트 선택 + 20% 랜덤 탐색
+  taskHint → specialty 매칭 (crypto→chaineye, stock→funder)
+  fatigue/confidence 감정 점수 반영
+  adjustedScore = score - (fatigue×0.1) + (confidence×0.05) + roleBonus + specialtyBonus
+
+Level 2: 태스크-스페셜티 매칭 (부분 구현)
+  블로팀 적용 완료 / 루나팀 적용 완료 / 나머지 팀 미적용
+  팀별 roleAlias 매핑 (analyst→다양한 역할)
+
+Level 3: 팀장 LLM 판단 (미구현)
+  팀장 에이전트가 LLM으로 최적 멤버 선택
+  CrewAI 패턴 참조 → 프롬프트 기반 위임
+```
+
+### 경쟁 시스템 (competition-engine.js)
+
+```
+월/수/금 활성화 — formGroups → startCompetition → evaluateResults → completeCompetition
+4축 평가: 글자수(10) + 섹션수(10) + AI리스크(10) + 코드블록(10) = 최대 40점
+승자/패자 점수 반영 → 자연 수렴
+JSONB 비파괴적 팀 추적 (Phase B-1 완료)
+```
+
+### CC 대비 분석
+
+```
+CC: 서브에이전트를 AgentTool로 스폰 (도구 호출로 통일)
+  → 정적 선택, 경쟁 없음, 자율 성장 없음
+
+TJ: hiring-contract + competition-engine
+  → 동적 선택 (ε-greedy), 경쟁으로 품질 수렴, 자율 성장
+  → "고용 조합 = 전략 선택" 핵심 인사이트!
+  → CC에 없는 진화적 에이전트 선택 메커니즘
+
+AgentOffice(커뮤니티) 비교:
+  AgentOffice: hire_agent 도구로 LLM이 고용 결정 → 최대 7명
+  TJ: ε-greedy+점수+감정+specialty → 90에이전트! 규모 차원 다름
+```
+
+---
+
+## 11. 에이전트 픽셀 오피스 연구
+
+### 커뮤니티 트렌드 (2026년 2~3월 동시 다발)
+
+```
+① Pixel Agents (pablodelucca) ★ VS Code 확장
+  Claude Code JSONL 로그 모니터링 (비침투적)
+  1에이전트=1캐릭터, 서브에이전트 스폰 시각화
+  오피스 레이아웃 에디터, BFS 경로탐색
+  로드맵: 토큰 헬스바, 에이전트 팀 조율, Git worktree
+
+② AgentOffice (harishkotra) ★ 자율 성장팀
+  Phaser.js+React+Colyseus+Ollama (100% 로컬!)
+  15초 Think Loop: Perceive→Think→Act→Remember
+  hire_agent 도구로 자율 고용 (우리 hiring-contract 유사!)
+  SQLite+Ollama 임베딩 메모리
+
+③ Star-Office-UI — OpenClaw AI팀용 픽셀 대시보드, Flask+Phaser
+④ Pixel Agent Desk — Electron, Claude Code hooks, 활동 히트맵, 토큰 분석, PiP
+⑤ Mission Control — Monitor Grid + Pixel Office + 실시간 시각화
+```
+
+### 우리 시스템과 비교
+
+```
+우리가 가진 것:
+  ✅ DotCharacter SVG+애니메이션 (Phase 2C, 0a23b65)
+  ✅ 에이전트 오피스 대시보드 (admin/agent-office)
+  ✅ 90에이전트 × 9팀 = 커뮤니티 최대 규모!
+  ✅ 경쟁 시스템+차트 (AgentCharts.js)
+
+우리에게 없는 것 (적용 후보):
+  ❌ 실시간 에이전트 활동 시각화 (타이핑/읽기/대기 애니메이션)
+  ❌ 서브에이전트 스폰 시각화
+  ❌ 오피스 레이아웃 에디터
+  ❌ 토큰 헬스바 / 활동 히트맵
+  ❌ PiP 모드 (항상 위에 떠있는 미니 오피스)
+
+적용 로드맵:
+  P1: DotCharacter에 실시간 상태 반영 (LLM호출중/대기/에러)
+  P2: 토큰/비용 대시보드 (에이전트별 히트맵+차트)
+  P2: 에이전트 오피스에 CC 메트릭 추가 (실패율/캐시히트)
+  P3: 픽셀 오피스 풀 구현 (Phaser.js, 9개 오피스 방)
+```
+
+---
+
+## 12. 출처
 
 [1] CC 유출: alex000kim.com [2] Harness 2026: philschmid.de
 [3] Harness Engineering: anup.io [4] Agent Engineering: morphllm.com
@@ -161,3 +258,7 @@ forecast.py 2,047줄 / blo.js 991줄 / edl-builder 971줄 / rebecca.py 937줄 / 
 [9] 2025→2026: aakashgupta.medium.com [10] CC Analysis: medium.com/@marc.bara
 [11] Design Patterns: sitepoint.com [12] Supervisor: docs.kore.ai
 [13] Coherence: mikemason.ca [14] Workflows: stackai.com
+[15] Pixel Agents: github.com/pablodelucca/pixel-agents
+[16] AgentOffice: github.com/harishkotra/agent-office
+[17] Star-Office-UI: agentcrunch.ai/article/star-office-ai-crew
+[18] Pixel Agent Desk: github.com/Mgpixelart/pixel-agent-desk
