@@ -6,10 +6,7 @@
  * OpenClaw webhook 경유로 전달하고, 실패 시 queue/n8n 정책에 따른다.
  */
 
-const {
-  publishEventPipeline,
-  buildSeverityTargets,
-} = require('../../../packages/core/lib/reporting-hub');
+const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
 
 /**
  * 클로드팀 알람 발행 → OpenClaw webhook 우선
@@ -22,26 +19,11 @@ const {
  * @param {object} [opts.payload]    JSON 구조화 데이터 (무시됨 — 로그 호환용)
  */
 async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_level = 2, message, payload }) {
-  const topicTeam = team === 'claude' ? 'claude-lead' : team;
-  const event = { from_bot, team, event_type, alert_level, message, payload };
-  const result = await publishEventPipeline({
-    event,
-    policy: {
-      cooldownMs: alert_level >= 3 ? 60_000 : 5 * 60_000,
-      quietHours: {
-        timezone: 'KST',
-        startHour: 23,
-        endHour: 8,
-        maxAlertLevel: 1,
-      },
-    },
-    targets: buildSeverityTargets({
-      event,
-      topicTeam,
-      includeQueue: false,
-      includeTelegram: false,
-      includeN8n: true,
-    }),
+  const result = await postAlarm({
+    message,
+    team,
+    alertLevel: alert_level,
+    fromBot: from_bot || event_type || 'claude',
   });
   return result.ok;
 }
