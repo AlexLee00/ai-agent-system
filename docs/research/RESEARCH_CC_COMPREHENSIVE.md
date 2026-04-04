@@ -197,7 +197,7 @@ TJ: hiring-contract + competition-engine
 
 AgentOffice(커뮤니티) 비교:
   AgentOffice: hire_agent 도구로 LLM이 고용 결정 → 최대 7명
-  TJ: ε-greedy+점수+감정+specialty → 90에이전트! 규모 차원 다름
+  TJ: ε-greedy+점수+감정+specialty → 113에이전트! 규모 차원 다름
 ```
 
 ---
@@ -230,7 +230,7 @@ AgentOffice(커뮤니티) 비교:
 우리가 가진 것:
   ✅ DotCharacter SVG+애니메이션 (Phase 2C, 0a23b65)
   ✅ 에이전트 오피스 대시보드 (admin/agent-office)
-  ✅ 90에이전트 × 9팀 = 커뮤니티 최대 규모!
+  ✅ 113에이전트 × 9팀 = 커뮤니티 최대 규모!
   ✅ 경쟁 시스템+차트 (AgentCharts.js)
 
 우리에게 없는 것 (적용 후보):
@@ -251,72 +251,70 @@ AgentOffice(커뮤니티) 비교:
 
 ---
 
-## 13. GStack + 에이전트 스킬팩 생태계
-
-### GStack (Garry Tan, YC CEO)
-
-```
-출시: 2026-03-12, 39K stars (11일), MIT
-실적: "60일간 600,000줄+ 프로덕션 코드"
-핵심: 28개 슬래시 명령 = "가상 개발팀" 스킬팩
-
-역할 기반 구조:
-  /office-hours — YC 스타일 제품 대화 (아이디어 10배 개선)
-  /plan-ceo-review — CEO 리뷰 (스코프, 포지셔닝, 우선순위)
-  /plan-eng-review — 엔지니어링 리뷰 ★ 유일한 필수 게이트!
-  /plan-design-review — 디자인 리뷰 (UI/UX 점수, Slop 감지)
-  /review — PR 코드 리뷰 (자동 수정 + 이슈 등급)
-  /investigate — 체계적 디버깅 ("조사 없이 수정 없다")
-  /qa — QA 테스트 + 원자적 커밋 수정
-  /cso — 보안 감사 (OWASP Top 10 + STRIDE)
-  /browse — 실제 Chromium 브라우저 (Playwright+CDP)
-  /memory — 세션 간 학습 관리
-  /codex — OpenAI Codex 크로스 모델 리뷰
-
-Scope 관리 (독특!):
-  SELECTIVE EXPANSION — 기회 하나씩 표면화, 체리픽
-  HOLD SCOPE — 현재 계획 고수
-  SCOPE REDUCTION — 최소 실행 가능 버전
-```
-
-### 업계 스킬팩 비교 (2026)
-
-```
-GStack (39K stars): 역할 기반 28명령, 팀 일관성 강점
-Superpowers (106K stars): 7단계 TDD 파이프라인, "1% Rule" 코드 품질 강점
-Hermes Agent (Nous Research): 자기 학습 루프, 경험→스킬 ≈ Standing Orders!
-
-업계 스택 수렴: model → runtime → harness → agent (LAMP 모먼트!)
-```
-
-### 우리 시스템과 비교
-
-```
-GStack에 있고 우리에게 없는 것:
-  ❌ 다단계 리뷰 게이트 (CEO/Eng/Design)
-  ❌ Scope 관리 (SELECTIVE/HOLD/REDUCE)
-  ❌ 크로스 모델 리뷰 (/codex 교차 검증)
-  ❌ "조사 없이 수정 없다" 디버깅 원칙
-  ❌ "그리게 하면 더 완전해짐" 다이어그램 강제
-
-우리에게 있고 GStack에 없는 것:
-  ✅ 90에이전트 × 9팀 도메인 특화 (GStack은 개발 전용)
-  ✅ ε-greedy 경쟁 + 자율 고용
-  ✅ 4단계 LLM 폴백 + 로컬 $0
-  ✅ Doctor 자율 복구 + Standing Orders
-
-적용 방안:
-  P1: 다단계 리뷰 게이트 도입
-    quality-checker → 1단계(자동) + 2단계(LLM판단) + 3단계(마스터)
-  P1: /investigate 패턴 적용
-    Doctor autofix에 "조사→진단→수정" 3단계 강제
-  P2: Scope 관리 패턴
-    코덱스 프롬프트에 HOLD/SELECTIVE/REDUCE 지시
-  P2: Shadow Mode → 크로스 모델 리뷰 확장
-    qwen vs gemma4 교차 검증 (이미 기반 있음!)
-```
 
 ---
+
+## 13. GStack + 하네스 엔지니어링 원류
+
+### Garry Tan의 GStack (54.2K ★, github.com/garrytan/gstack)
+
+```
+YC CEO 직접 사용 Claude Code 세팅 — 38개 디렉토리!
+"60일간 600,000줄+ 프로덕션 코드"
+
+핵심 스킬 (역할 기반):
+  /office-hours — YC 제품 대화 / /plan-ceo-review — CEO 전략 리뷰
+  /plan-eng-review — 엔지니어링 리뷰 ★ 유일한 필수 게이트!
+  /plan-design-review — 디자인 리뷰 / /design-shotgun — 여러 시안 동시
+  /review — PR 코드 리뷰 / /investigate — "조사 없이 수정 없다"
+  /qa — QA + 원자적 커밋 / /cso — 보안 감사 (OWASP+STRIDE)
+  /browse — Playwright+CDP 브라우저 / /codex — 크로스 모델 리뷰
+  /guard — 위험 명령 차단 / /ship + /land-and-deploy — 릴리스
+  /canary — 카나리 배포 / /freeze — 코드 동결 / /retro — 회고
+  AGENTS.md — 매 실수마다 줄 추가!
+
+Scope 관리: SELECTIVE EXPANSION / HOLD SCOPE / SCOPE REDUCTION
+```
+
+### Mitchell Hashimoto의 하네스 엔지니어링 (mitchellh.com, 2026-02-05)
+
+```
+HashiCorp 공동 창립자, Terraform/Vagrant/Packer 제작자
+
+3단계 진화:
+  프롬프트 엔지니어링 (2022~24) → 컨텍스트 엔지니어링 (2025) → 하네스 엔지니어링 (2026)
+
+핵심 정의:
+  "에이전트가 실수할 때마다, 그 실수가 다시는 안 일어나게 시스템을 고쳐라"
+
+6단계 여정:
+  Step 1: 챗봇 버려라 → 에이전트 써라
+  Step 2: 내 작업 재현 (이중 작업으로 학습!)
+  Step 3: 퇴근 전 30분 에이전트 → "다음 날 워밍 스타트"
+  Step 4: 확실한 것 위임 ★ "에이전트 알림을 끄라!"
+  Step 5: 하네스 엔지니어링 ★★★ = ① AGENTS.md + ② 프로그래밍된 도구
+  Step 6: 항상 에이전트 실행 (작업일 10~20%)
+
+업계 영향:
+  → OpenAI "하네스 엔지니어링" 발표 (3명, 0줄 수작업, 100만줄!)
+  → 2026 업계 표준 용어 정착
+```
+
+### 업계 스킬팩 비교 + 우리 적용
+
+```
+GStack(54K): 역할 기반 38디렉토리, 팀 일관성
+Superpowers(106K): 7단계 TDD, "1% Rule" 코드 품질
+Hermes Agent(Nous): 자기 학습, 경험→스킬 ≈ Standing Orders!
+업계 수렴: model → runtime → harness → agent (LAMP 모먼트)
+
+Hashimoto 6단계 vs 팀 제이:
+  Step 1~4: ✅ 전부 달성! / Step 5: 부분 (강화 필요!) / Step 6: ✅ 24/7!
+
+GStack 흡수 대상:
+  P1: /investigate "조사→진단→수정" + /plan-eng-review 필수 게이트
+  P2: Scope 관리 + /codex 크로스 모델 → Shadow Mode 확장
+```
 
 ## 14. Paperclip — "제로 휴먼 컴퍼니" 오케스트레이션
 
@@ -375,7 +373,7 @@ Paperclip에서 흡수할 패턴:
 [16] AgentOffice: github.com/harishkotra/agent-office
 [17] Star-Office-UI: agentcrunch.ai/article/star-office-ai-crew
 [18] Pixel Agent Desk: github.com/Mgpixelart/pixel-agent-desk
-[19] GStack: github.com/garrytan/gstack
+[19] GStack: github.com/garrytan/gstack (54.2K stars)
 [20] GStack vs Superpowers: particula.tech/blog/superpowers-vs-gstack
 [21] Agent Frameworks 2026: agentconn.com/blog/best-open-source-ai-agent-frameworks-2026
 [22] GStack Guide: openclawapi.org/en/blog/2026-03-24-gstack-beginners-guide
@@ -383,3 +381,7 @@ Paperclip에서 흡수할 패턴:
 [24] Paperclip Analysis: medium.com/@alexrozdolskiy (org chart for agents)
 [25] Paperclip Tutorial: paperclipai.info
 [26] Zero-Human Company: flowtivity.ai/blog/zero-human-company
+[27] Mitchell Hashimoto: mitchellh.com/writing/my-ai-adoption-journey (2026-02-05)
+[28] Harness Engineering Evolution: epsilla.com/blogs/harness-engineering-evolution
+[29] Harness Engineering Explained: datasciencedojo.com/blog/harness-engineering
+[30] Agent Harness Explained: firecrawl.dev/blog/what-is-an-agent-harness

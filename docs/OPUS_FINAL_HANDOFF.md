@@ -33,7 +33,7 @@
 ## 팀장 자율 적용 (Phase 0~3 + 0.5, 완료)
 
 ```
-Phase 0.5: 53 신규 에이전트 추가 → 전체 90에이전트
+Phase 0.5: 53 신규 에이전트 추가 → 전체 113에이전트
   - 3팀 신설: 연구(15) + 감정(10) + 데이터(6)
   - 루나 보강(12) + 블로 보강(10)
 
@@ -169,7 +169,7 @@ Phase B-1: JSONB 비파괴적 전환 완료
   ④ Pixel Agent Desk (Electron, 활동 히트맵, 토큰 분석)
   ⑤ Mission Control (Monitor Grid + Pixel Office)
 
-우리 보유: DotCharacter SVG ✅ / 에이전트 오피스 ✅ / 90에이전트 ✅
+우리 보유: DotCharacter SVG ✅ / 에이전트 오피스 ✅ / 113에이전트 ✅
 우리 미보유: 실시간 활동 시각화 ❌ / 레이아웃 에디터 ❌ / 토큰 헬스바 ❌
 ```
 
