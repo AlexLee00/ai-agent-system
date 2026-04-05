@@ -483,6 +483,12 @@ packages/core/lib/rag.js — pgvector RAG (rag_experience 컬렉션 추가, 04-0
 | CC-F | P1 | experience_record "why" 필드 | ⬜ | 이번 주 |
 | CC-G | P1 | 에러 보류+복구 패턴 — P2-12 강화 | ⬜ | 이번 주 |
 | CC-H | P2 | 리더-워커 4단계 (시그마팀) | ⬜ | 분기 |
+| ECC-1 | P2 | 메타 에이전트 강화 (시그마팀 확인) | ⬜ | 분기 |
+| ECC-2 | P1 | 핵심 스킬 추가 (search-first/verification-loop) | ⬜ | 이번 달 |
+| ECC-3 | P1 | 훅 시스템 3단계 프로파일 (CC-B 통합) | ⬜ | 이번 달 |
+| ECC-4 | P1 | 세션 종료 시 패턴 자동 추출 | ⬜ | 이번 주 |
+| ECC-5 | P1 | 보안 가이드 + 스킬 보안 스캔 | ⬜ | 이번 달 |
+| ECC-6 | P2 | 작업 유형별 동적 컨텍스트 | ⬜ | 분기 |
 
 ---
 

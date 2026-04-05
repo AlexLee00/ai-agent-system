@@ -345,3 +345,34 @@ Claude Code 소스 분석:
   [9] 위키독스 "별첨 91. 클로드 코드 소스 코드 분석서" (2026-04-01)
       1,884 TypeScript 파일, 8대 설계 패턴, 10개 서브시스템
 ```
+
+
+---
+
+## 12. ECC(Everything Claude Code) 분석 기반 추가 보완점 (2026-04-06)
+
+> 출처: 갓대희 블로그 "하네스 엔지니어링 — ECC 리뷰"
+> ECC: 133K⭐, 36에이전트, 151스킬, 25+훅
+> 상세: docs/research/RESEARCH_ECC_ANALYSIS.md (237줄)
+
+### 추가 식별 보완점 (ECC-1~6)
+
+| ID | 항목 | 심각도 | 대상 시기 | 상세 |
+|----|------|--------|-----------|------|
+| ECC-1 | 메타 에이전트 강화 | P2 | 분기 | harness-optimizer 패턴. 시그마팀이 이미 역할 수행 — 확인/강화 |
+| ECC-2 | 핵심 스킬 추가 | P1 | 이번 달 | search-first(코딩전리서치), verification-loop(자동검증), cost-aware-pipeline |
+| ECC-3 | 훅 시스템 3단계 프로파일 | P1 | 이번 달 | minimal/standard/strict. CC-B 통합! |
+| ECC-4 | 세션 종료 시 패턴 자동 추출 | P1 | 이번 주 | 스튜어드 session에 통합. /learn + /evolve 패턴 |
+| ECC-5 | 보안 가이드 + 스킬 보안 스캔 | P1 | 이번 달 | AgentShield 패턴. Snyk: 공개 스킬 36% 인젝션! |
+| ECC-6 | 작업 유형별 동적 컨텍스트 | P2 | 분기 | trade.md/publish.md/research.md 분리 주입 |
+
+### ECC에서 배울 핵심 인사이트
+
+```
+① "MCP를 CLI로 대체" — MCP는 기존 CLI 래핑이 많음. CLI 직접 사용 = 토큰 절감!
+② "search-first" — 코딩 전 기존 패키지 조사. 바로 코드부터 작성하기 안티패턴 방지!
+③ "프로파일 기반 훅" — 팀/프로젝트에 따라 훅 강도 조절 (minimal/standard/strict)
+④ "/learn → /evolve" — 세션에서 패턴 추출 → 스킬로 진화! 자가 학습 파이프라인!
+⑤ "악의적 입력 전제 보안" — 모델이 설득당해도 시스템이 안전하게 동작!
+⑥ "MCP 20~30개 설정, 동시 10개 미만" — 컨텍스트 윈도우 200K가 70K로 줄어들 수 있음!
+```
